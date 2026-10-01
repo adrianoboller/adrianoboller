@@ -200,6 +200,33 @@ pub fn criar_tarefa_com(
         .map_err(|e| recusa(StatusCode::BAD_REQUEST, format!("images: {e}")))?;
     let modelo = n.model.unwrap_or_else(|| s.default_model.clone());
     let agente = (s.factory)(&modelo).map_err(|e| recusa(StatusCode::BAD_REQUEST, e))?;
+    // O fim conferido se recusa NA ENTRADA quando nao pode valer: verificar sem
+    // `shell.exec` seria a porta lateral do shell negado, e esquema que nao e objeto nao
+    // descreve resposta nenhuma. O motor fecha de novo (a CLI nao passa por aqui).
+    let verificar = n
+        .verificar
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty());
+    if let Some(v) = &verificar {
+        if v.len() > 4_096 {
+            return Err(recusa(
+                StatusCode::BAD_REQUEST,
+                "verificar maior que 4096".into(),
+            ));
+        }
+        if !agente.config.capabilities.contains("shell.exec") {
+            return Err(recusa(
+                StatusCode::BAD_REQUEST,
+                "verificar pede a capacidade shell.exec, que este agente nao concede".into(),
+            ));
+        }
+    }
+    if n.saida_esquema.as_ref().is_some_and(|e| !e.is_object()) {
+        return Err(recusa(
+            StatusCode::BAD_REQUEST,
+            "saida_esquema tem de ser um objeto de esquema JSON".into(),
+        ));
+    }
     // Depois da validacao: pedido invalido nao gasta a cota de quem errou o campo.
     if let Err(seg) = s.limite.tomar() {
         return Err(Recusa {
@@ -210,6 +237,8 @@ pub fn criar_tarefa_com(
     }
     let mut t = Task::new(objetivo, modelo);
     t.webhook = n.webhook;
+    t.verificar = verificar;
+    t.saida_esquema = n.saida_esquema;
     s.store
         .save(&t)
         .map_err(|e| recusa(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;

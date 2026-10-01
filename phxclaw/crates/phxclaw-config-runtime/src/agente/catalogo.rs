@@ -250,6 +250,13 @@ const FIXAS: &[L] = &[
         ("Servidores de linguagem (LSP) nas ferramentas de código; 0 desliga", "Language servers (LSP) in the code tools; 0 turns them off"),
     ),
     c(
+        "agente.tentativas_argumento",
+        "PHXCLAW_TENTATIVAS_ARGUMENTO",
+        I,
+        Some("2"),
+        ("Novas tentativas por ferramenta depois de argumento inválido (seguidas); esgotou, a tarefa falha", "Retries per tool after an invalid argument (consecutive); when exhausted, the task fails"),
+    ),
+    c(
         "agente.heartbeat_min",
         "PHXCLAW_HEARTBEAT_MIN",
         I,
@@ -818,6 +825,13 @@ const FIXAS: &[L] = &[
         P,
         None,
         ("Pasta da interface (PWA)", "Interface folder (PWA)"),
+    ),
+    c(
+        "ui.bootstrap_css",
+        "PHXCLAW_UI_BOOTSTRAP_CSS",
+        P,
+        None,
+        ("Folha LOCAL do Bootstrap 5.3 nas telas geradas (nunca CDN); vazio = vendor/bootstrap-5.3.3/bootstrap.min.css", "LOCAL Bootstrap 5.3 stylesheet for generated screens (never a CDN); empty = vendor/bootstrap-5.3.3/bootstrap.min.css"),
     ),
     c(
         "clima.api",

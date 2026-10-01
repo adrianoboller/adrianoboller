@@ -2,8 +2,13 @@
 //! da maquina num repositorio temporario e o binario oficial do gitleaks, conferido por
 //! SHA-256. As credenciais daqui tem o FORMATO real e valor inventado.
 //!
-//! Sem bwrap ou sem o binario, os testes dizem PULADO e saem -- o relatorio da frente tem
-//! de contar isso como nao rodado, nunca como verde.
+//! Sem bwrap ou sem o binario, o teste PULA pelo `comum/pulado.rs`: sai `ok`, mas o pulo
+//! vai para `target/tmp/pulados.jsonl`, que o portao conta (e na maquina do integrador,
+//! que tem os dois, pulo e NoGo). Antes ele so dizia PULADO num `eprintln!` que o libtest
+//! captura, e o placar contava o teste como verde.
+
+#[path = "comum/pulado.rs"]
+mod pulado;
 
 use phxclaw_agent::git::GitTool;
 use phxclaw_agent::segredos::Varredura;
@@ -33,11 +38,14 @@ fn gitleaks() -> Option<(PathBuf, PathBuf, String)> {
     ));
     let sha = var("PHXCLAW_GITLEAKS_SHA256", SHA_GITLEAKS_8_28_0);
     let Some(bwrap) = phxclaw_agent::arquivos::achar_bwrap() else {
-        eprintln!("PULADO: sem bwrap");
+        pulado::pular("bwrap", "sem bwrap");
         return None;
     };
     if !bin.is_file() {
-        eprintln!("PULADO: sem o gitleaks em {bin:?} (PHXCLAW_GITLEAKS_BIN)");
+        pulado::pular(
+            "gitleaks",
+            &format!("sem o gitleaks em {bin:?} (PHXCLAW_GITLEAKS_BIN)"),
+        );
         return None;
     }
     Some((bwrap, bin, sha))
@@ -266,7 +274,13 @@ async fn desligada_passa_avisando_exigida_e_hash_errado_recusam() {
 
     g.segredos = Varredura {
         bin: Some(bin.clone()),
-        sha256: Some(format!("{}0", &sha[..63])),
+        // O ultimo digito TROCADO: com «...0» fixo, um SHA declarado que ja terminasse em 0
+        // (PHXCLAW_GITLEAKS_SHA256 de outra versao) faria o hash «errado» igual ao certo.
+        sha256: Some(format!(
+            "{}{}",
+            &sha[..63],
+            if sha.ends_with('0') { '1' } else { '0' }
+        )),
         exigir: false,
         erro: None,
     };
@@ -290,5 +304,274 @@ async fn desligada_passa_avisando_exigida_e_hash_errado_recusam() {
     .unwrap();
     assert!(r["commit"]["commit"].is_string(), "{r}");
     assert_eq!(r["varredura_de_segredos"]["feita"], false, "{r}");
+    let _ = std::fs::remove_dir_all(&d);
+}
+
+/// A1: o que o git julga binario era pulado e a varredura dizia «limpo». Os tres jeitos
+/// reproduzidos pela revisao de seguranca (byte NUL e UTF-16; `-diff` no `.gitattributes`
+/// e no `.git/info/attributes`; `core.bigFileThreshold=1`) agora bloqueiam.
+#[tokio::test]
+async fn arquivo_que_o_git_chama_de_binario_nao_escapa() {
+    let Some((bwrap, bin, sha)) = gitleaks() else {
+        return;
+    };
+    let linha = format!("k = \"{AWS_FALSA}\"\n");
+    let utf16: Vec<u8> = std::iter::once(0xFEFFu16)
+        .chain(linha.encode_utf16())
+        .flat_map(u16::to_le_bytes)
+        .collect();
+    type Preparo = Box<dyn Fn(&Path)>;
+    let casos: Vec<(&str, &str, Preparo)> = vec![
+        ("nul", "nul.txt", {
+            let l = linha.clone();
+            Box::new(move |r: &Path| {
+                std::fs::write(r.join("nul.txt"), format!("{}\0\n", l.trim_end())).unwrap()
+            })
+        }),
+        (
+            "utf16",
+            "u16.txt",
+            Box::new(move |r: &Path| std::fs::write(r.join("u16.txt"), &utf16).unwrap()),
+        ),
+        ("gitattributes", "attr.txt", {
+            let l = linha.clone();
+            Box::new(move |r: &Path| {
+                std::fs::write(r.join(".gitattributes"), "attr.txt -diff\n").unwrap();
+                std::fs::write(r.join("attr.txt"), &l).unwrap();
+            })
+        }),
+        ("info-attributes", "info.txt", {
+            let l = linha.clone();
+            Box::new(move |r: &Path| {
+                std::fs::create_dir_all(r.join(".git/info")).unwrap();
+                std::fs::write(r.join(".git/info/attributes"), "* binary\n").unwrap();
+                std::fs::write(r.join("info.txt"), &l).unwrap();
+            })
+        }),
+        ("bigFileThreshold", "grande.txt", {
+            let l = linha.clone();
+            Box::new(move |r: &Path| {
+                git_fora(r, &["config", "core.bigFileThreshold", "1"]);
+                std::fs::write(r.join("grande.txt"), &l).unwrap();
+            })
+        }),
+    ];
+    for (nome, arquivo, preparar) in casos {
+        let d = tmp(nome);
+        let g = ferramenta(&bwrap, &bin, &sha);
+        let (c, repo) = repo_iniciado(&g, &d).await;
+        preparar(&repo);
+        let e = json_de(&g, &c, json!({"action":"add","path":"repo","paths":["."]})).await;
+        let m = match e {
+            Err(ToolError::Denied(m)) => m,
+            outro => panic!("{nome}: esperado Denied, veio {outro:?}"),
+        };
+        // Lido de verdade (achado com a regra), e nao so recusado por ser binario.
+        assert!(
+            m.contains(arquivo) && m.contains("aws-access-token") && !m.contains(AWS_FALSA),
+            "{nome}: {m}"
+        );
+        // O commit do que entrou por fora tambem.
+        git_fora(&repo, &["add", "-A"]);
+        let e = json_de(
+            &g,
+            &c,
+            json!({"action":"commit","path":"repo","message":"x"}),
+        )
+        .await;
+        assert!(
+            matches!(e, Err(ToolError::Denied(_))),
+            "{nome} commit: {e:?}"
+        );
+        let _ = std::fs::remove_dir_all(&d);
+    }
+}
+
+/// M1: `diff.relative=true` escondia o arquivo fora da subpasta pedida em `path`.
+#[tokio::test]
+async fn diff_relative_nao_esconde_arquivo_fora_da_subpasta() {
+    let Some((bwrap, bin, sha)) = gitleaks() else {
+        return;
+    };
+    let d = tmp("subpasta");
+    let g = ferramenta(&bwrap, &bin, &sha);
+    let (c, repo) = repo_iniciado(&g, &d).await;
+    std::fs::create_dir_all(repo.join("sub")).unwrap();
+    std::fs::write(repo.join("sub/ok.txt"), "limpo\n").unwrap();
+    std::fs::write(repo.join("raiz.py"), format!("K = \"{AWS_FALSA}\"\n")).unwrap();
+    git_fora(&repo, &["config", "diff.relative", "true"]);
+    git_fora(&repo, &["add", "-A"]);
+    let e = json_de(
+        &g,
+        &c,
+        json!({"action":"commit","path":"repo/sub","message":"so a sub"}),
+    )
+    .await
+    .unwrap_err()
+    .to_string();
+    assert!(e.contains("raiz.py:1"), "{e}");
+    let _ = std::fs::remove_dir_all(&d);
+}
+
+/// M2: a mensagem do commit tambem vira historia.
+#[tokio::test]
+async fn mensagem_do_commit_e_varrida() {
+    let Some((bwrap, bin, sha)) = gitleaks() else {
+        return;
+    };
+    let d = tmp("mensagem");
+    let g = ferramenta(&bwrap, &bin, &sha);
+    let (c, repo) = repo_iniciado(&g, &d).await;
+    std::fs::write(repo.join("ok.txt"), "limpo\n").unwrap();
+    git_fora(&repo, &["add", "-A"]);
+    let e = json_de(
+        &g,
+        &c,
+        json!({"action":"commit","path":"repo","message":format!("chave {GITHUB_FALSO}")}),
+    )
+    .await
+    .unwrap_err()
+    .to_string();
+    assert!(
+        e.contains("(mensagem):1") && !e.contains(GITHUB_FALSO),
+        "{e}"
+    );
+    let _ = std::fs::remove_dir_all(&d);
+}
+
+/// B1: o `add` recusado nao deixa o blob do segredo no banco de objetos.
+#[tokio::test]
+async fn add_recusado_nao_deixa_objeto() {
+    let Some((bwrap, bin, sha)) = gitleaks() else {
+        return;
+    };
+    let d = tmp("objetos");
+    let g = ferramenta(&bwrap, &bin, &sha);
+    let (c, repo) = repo_iniciado(&g, &d).await;
+    let objetos = |r: &Path| {
+        let s = std::process::Command::new("git")
+            .arg("-C")
+            .arg(r)
+            .args(["count-objects", "-v"])
+            .output()
+            .unwrap();
+        String::from_utf8_lossy(&s.stdout).into_owned()
+    };
+    std::fs::write(repo.join("novo.py"), format!("X = \"{GITHUB_FALSO}\"\n")).unwrap();
+    let antes = objetos(&repo);
+    assert!(
+        json_de(
+            &g,
+            &c,
+            json!({"action":"add","path":"repo","paths":["novo.py"]})
+        )
+        .await
+        .is_err()
+    );
+    assert_eq!(
+        objetos(&repo),
+        antes,
+        "o add recusado deixou objeto no repositorio"
+    );
+    let _ = std::fs::remove_dir_all(&d);
+}
+
+/// A2: `stash push -u` gravava os nao rastreados num commit (`stash@{0}^3`) sem varredura,
+/// e `branch_create` com essa base fazia dele um ramo.
+#[tokio::test]
+async fn stash_e_varrido_e_ramo_so_de_nome() {
+    let Some((bwrap, bin, sha)) = gitleaks() else {
+        return;
+    };
+    let d = tmp("stash");
+    let g = ferramenta(&bwrap, &bin, &sha);
+    let (c, repo) = repo_iniciado(&g, &d).await;
+    std::fs::write(repo.join("a.txt"), "um\n").unwrap();
+    git_fora(&repo, &["add", "a.txt"]);
+    json_de(
+        &g,
+        &c,
+        json!({"action":"commit","path":"repo","message":"base"}),
+    )
+    .await
+    .unwrap();
+    std::fs::write(repo.join("solto.py"), format!("K = \"{AWS_FALSA}\"\n")).unwrap();
+    let e = json_de(
+        &g,
+        &c,
+        json!({"action":"stash","op":"push","path":"repo","include_untracked":true}),
+    )
+    .await
+    .unwrap_err()
+    .to_string();
+    assert!(e.contains("solto.py:1"), "{e}");
+    // Mudanca rastreada sem preparar: o stash sem -u tambem a grava.
+    std::fs::remove_file(repo.join("solto.py")).unwrap();
+    std::fs::write(repo.join("a.txt"), format!("um\nK = \"{AWS_FALSA}\"\n")).unwrap();
+    let e = json_de(&g, &c, json!({"action":"stash","op":"push","path":"repo"}))
+        .await
+        .unwrap_err()
+        .to_string();
+    assert!(e.contains("a.txt:2"), "{e}");
+    for base in ["stash@{0}^3", "HEAD~1", "main:a.txt", "a..b"] {
+        let e = json_de(
+            &g,
+            &c,
+            json!({"action":"branch_create","path":"repo","branch":"x","base":base}),
+        )
+        .await
+        .unwrap_err();
+        assert!(matches!(e, ToolError::InvalidArguments(_)), "{base}: {e}");
+    }
+    let e = json_de(
+        &g,
+        &c,
+        json!({"action":"checkout","path":"repo","branch":"y","create":true,"base":"stash@{0}"}),
+    )
+    .await
+    .unwrap_err();
+    assert!(matches!(e, ToolError::InvalidArguments(_)), "{e}");
+    let _ = std::fs::remove_dir_all(&d);
+}
+
+/// `commit -a` leva o que ja e RASTREADO (`add -u`): o arquivo nao rastreado com segredo
+/// fica fora do commit, e por isso fica fora da varredura. Varrer a pasta inteira (`add -A`)
+/// recusaria um commit limpo por um arquivo que ele nao leva -- e o teste de cima nao via,
+/// porque la o segredo tambem estava numa mudanca rastreada.
+#[tokio::test]
+async fn commit_a_nao_varre_nem_leva_o_nao_rastreado() {
+    let Some((bwrap, bin, sha)) = gitleaks() else {
+        return;
+    };
+    let d = tmp("nao-rastreado");
+    let g = ferramenta(&bwrap, &bin, &sha);
+    let (c, repo) = repo_iniciado(&g, &d).await;
+    std::fs::write(repo.join("leia.txt"), "versao 1\n").unwrap();
+    git_fora(&repo, &["add", "leia.txt"]);
+    json_de(
+        &g,
+        &c,
+        json!({"action":"commit","path":"repo","message":"um"}),
+    )
+    .await
+    .unwrap();
+    std::fs::write(repo.join("leia.txt"), "versao 2\n").unwrap();
+    std::fs::write(
+        repo.join("rascunho.py"),
+        format!("CHAVE = \"{AWS_FALSA}\"\n"),
+    )
+    .unwrap();
+    let r = json_de(
+        &g,
+        &c,
+        json!({"action":"commit","path":"repo","message":"dois","all":true}),
+    )
+    .await
+    .unwrap_or_else(|e| panic!("commit -a limpo recusado: {e}"));
+    assert_eq!(r["varredura_de_segredos"]["feita"], true, "{r}");
+    assert!(
+        !indice(&repo).contains("rascunho.py"),
+        "o nao rastreado entrou no commit"
+    );
     let _ = std::fs::remove_dir_all(&d);
 }

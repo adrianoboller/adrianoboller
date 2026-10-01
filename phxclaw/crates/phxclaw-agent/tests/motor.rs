@@ -1,6 +1,7 @@
 //! O motor com um LLM roteirizado: o que se prova e o laco, a politica, a evidencia e a
 //! persistencia -- o modelo real entra em outro teste.
 
+use phxclaw_agent::motor;
 use phxclaw_agent::*;
 use phxclaw_agent_core::Tool;
 use phxclaw_evidence_ledger::EvidenceLedger;
@@ -423,4 +424,332 @@ async fn resposta_sem_o_arquivo_pedido_termina_falha_e_nao_concluida() {
         .await;
     assert_eq!(t.status, TaskStatus::Failed);
     assert!(t.error.unwrap().contains("site/index.html"));
+}
+
+// ------------------------------------------------------------------ fim conferido (SP000028)
+
+fn office_e_arquivos() -> Vec<Arc<dyn Tool>> {
+    let mut v = tools_basicas();
+    v.extend(phxclaw_agent::adaptadores::office_tools());
+    v
+}
+
+fn final_(resposta: serde_json::Value) -> phxclaw_agent_core::LlmReply {
+    ScriptedLlm::call("f", "final_answer", json!({ "answer": resposta }))
+}
+
+async fn rodar(
+    roteiro: Vec<phxclaw_agent_core::LlmReply>,
+    cfg: AgentConfig,
+    t: Task,
+) -> (Task, Arc<ScriptedLlm>, TaskStore) {
+    let llm = Arc::new(ScriptedLlm::new(roteiro));
+    let s = store();
+    let a = Agent::new(llm.clone(), office_e_arquivos(), cfg, s.clone());
+    let fim = a.run(t, &CancelFlag::default(), &NoObserver).await;
+    (fim, llm, s)
+}
+
+/// O caso real (qwen2.5:3b, 30/09, tarefa 01a0f2c9): `create_document` com `level` errado.
+/// O erro volta com o CAMINHO do campo, o que veio e o esperado, e o modelo corrige; a
+/// tabela com numero (`[[1, "Joao", ...]]`, a chamada medida que o serde recusava sem dizer
+/// onde) agora passa.
+#[tokio::test]
+async fn create_document_devolve_o_caminho_do_campo_e_o_modelo_corrige() {
+    let tabela = json!({"header":["ID","Nome","Email"],"rows":[[1,"João","joao@example.com"]],"type":"table"});
+    let (t, llm, s) = rodar(
+        vec![
+            ScriptedLlm::call(
+                "c1",
+                "create_document",
+                json!({"path":"erp/document.docx","blocks":[
+                    {"level":"um","text":"ERP de Oficina","type":"heading"}, tabela.clone()]}),
+            ),
+            ScriptedLlm::call(
+                "c2",
+                "create_document",
+                json!({"path":"erp/document.docx","blocks":[
+                    {"level":1,"text":"ERP de Oficina","type":"heading"}, tabela]}),
+            ),
+            final_(json!("feito: erp/document.docx")),
+        ],
+        AgentConfig {
+            require_final_tool: true,
+            ..AgentConfig::default().grant(&["doc.write", "fs.write"])
+        },
+        Task::new("crie o documento", "roteiro"),
+    )
+    .await;
+    assert_eq!(t.status, TaskStatus::Completed, "{:?}", t.error);
+    let p0 = &t.steps[0];
+    assert_eq!(p0.outcome, motor::DESFECHO_INVALIDO, "{p0:?}");
+    let ao_modelo = llm.seen.lock().unwrap()[1]
+        .0
+        .last()
+        .unwrap()
+        .content
+        .clone();
+    for trecho in [
+        "\"field\":\"blocks[0].level\"",
+        "\"got\":\"string \\\"um\\\"\"",
+        "\"expected\":\"integer\"",
+        "try again",
+        "Retries left for create_document: 2",
+    ] {
+        assert!(ao_modelo.contains(trecho), "falta {trecho} em {ao_modelo}");
+    }
+    assert_eq!(t.steps[1].outcome, "ok", "{:?}", t.steps[1]);
+    assert!(s.workdir(&t.id).join("erp/document.docx").exists());
+}
+
+/// Erro de argumento que o modelo larga para tras nao fecha `completed`: o fim e recusado
+/// e devolvido ao modelo (o motivo nomeia a ferramenta), e esgotadas as recusas a tarefa
+/// termina FALHA dizendo por que. Os dois caminhos de fim: `final_answer` e texto.
+#[tokio::test]
+async fn erro_de_argumento_sem_conserto_nao_fecha_completed() {
+    let invalida = ScriptedLlm::call("c1", "create_document", json!({"answer":"x"}));
+    let ok = ScriptedLlm::call("c0", "write_file", json!({"path":"a.txt","content":"a"}));
+    let (t, llm, _) = rodar(
+        vec![
+            ok.clone(),
+            invalida.clone(),
+            final_(json!("pronto")),
+            final_(json!("pronto")),
+            final_(json!("pronto")),
+            final_(json!("pronto")),
+        ],
+        AgentConfig {
+            require_final_tool: true,
+            ..AgentConfig::default().grant(&["doc.write", "fs.write"])
+        },
+        Task::new("x", "roteiro"),
+    )
+    .await;
+    assert_eq!(t.status, TaskStatus::Failed);
+    let e = t.error.clone().unwrap();
+    assert!(
+        e.contains("sem conserto") && e.contains("create_document"),
+        "{e}"
+    );
+    let recusado = llm.seen.lock().unwrap()[3]
+        .0
+        .last()
+        .unwrap()
+        .content
+        .clone();
+    assert!(
+        recusado.contains("never fixed: create_document"),
+        "{recusado}"
+    );
+
+    // Fim em texto (sem `final_answer`): a mesma conferencia.
+    let (t, _, _) = rodar(
+        vec![
+            ok,
+            invalida,
+            ScriptedLlm::text("pronto"),
+            ScriptedLlm::text("pronto"),
+            ScriptedLlm::text("pronto"),
+            ScriptedLlm::text("pronto"),
+        ],
+        AgentConfig::default().grant(&["doc.write", "fs.write"]),
+        Task::new("x", "roteiro"),
+    )
+    .await;
+    assert_eq!(t.status, TaskStatus::Failed, "{:?}", t.steps);
+    assert!(t.error.unwrap().contains("sem conserto"));
+}
+
+/// O orcamento: 2 novas tentativas SEGUIDAS por ferramenta; a que passa zera a conta.
+#[tokio::test]
+async fn orcamento_de_argumento_esgota_e_a_chamada_boa_zera() {
+    // Caminhos diferentes: a mesma chamada pela 3a vez nem roda (`repetida`), e o teste
+    // mediria o corte de repeticao em vez do orcamento.
+    let ruim = |n: u32| {
+        ScriptedLlm::call(
+            "c",
+            "create_document",
+            json!({"path": format!("r{n}.docx")}),
+        )
+    };
+    let boa = |n: u32| {
+        ScriptedLlm::call(
+            "b",
+            "create_document",
+            json!({"path": format!("d{n}.docx"), "blocks":[{"type":"paragraph","text":"oi"}]}),
+        )
+    };
+    let cfg = || AgentConfig::default().grant(&["doc.write", "fs.write"]);
+    // tres seguidas: a terceira passa do teto 2 e a tarefa para ali.
+    let (t, _, _) = rodar(
+        vec![ruim(1), ruim(2), ruim(3), ScriptedLlm::text("nunca chega")],
+        cfg(),
+        Task::new("x", "roteiro"),
+    )
+    .await;
+    assert_eq!(t.status, TaskStatus::Failed);
+    let e = t.error.unwrap();
+    assert!(e.contains("orcamento de 2") && e.contains("blocks"), "{e}");
+    // Duas invalidas, uma boa, duas invalidas, uma boa: nunca passa do teto.
+    let (t, _, _) = rodar(
+        vec![
+            ruim(1),
+            ruim(2),
+            boa(1),
+            ruim(3),
+            ruim(4),
+            boa(2),
+            ScriptedLlm::text("ok"),
+        ],
+        cfg(),
+        Task::new("x", "roteiro"),
+    )
+    .await;
+    assert_eq!(t.status, TaskStatus::Completed, "{:?}", t.error);
+    // Orcamento 0: a primeira invalida ja encerra.
+    let (t, _, _) = rodar(
+        vec![ruim(1), ScriptedLlm::text("x")],
+        AgentConfig {
+            tentativas_de_argumento: 0,
+            ..cfg()
+        },
+        Task::new("x", "roteiro"),
+    )
+    .await;
+    assert_eq!(t.status, TaskStatus::Failed);
+}
+
+/// `--verificar`: codigo diferente de 0 recusa o fim e volta ao modelo; consertado, fecha.
+/// Sempre falhando, a tarefa termina FALHA com o codigo. Sem `shell.exec`, nem comeca.
+#[tokio::test]
+async fn verificar_com_codigo_1_recusa_o_fim() {
+    if shell().is_none() {
+        eprintln!("bwrap ausente: pulado");
+        return;
+    }
+    let cfg = || AgentConfig {
+        require_final_tool: true,
+        ..AgentConfig::default().grant(&["fs.write", "shell.exec"])
+    };
+    let tarefa = |cmd: &str| {
+        let mut t = Task::new("x", "roteiro");
+        t.verificar = Some(cmd.into());
+        t
+    };
+    let escreve =
+        |p: &str| ScriptedLlm::call("w", "write_file", json!({"path": p, "content": "1"}));
+    let (t, llm, _) = rodar(
+        vec![
+            escreve("a.txt"),
+            final_(json!("pronto")),
+            escreve("pronto.txt"),
+            final_(json!("pronto")),
+        ],
+        cfg(),
+        tarefa("test -f pronto.txt"),
+    )
+    .await;
+    assert_eq!(t.status, TaskStatus::Completed, "{:?}", t.error);
+    let recusa = llm.seen.lock().unwrap()[2]
+        .0
+        .last()
+        .unwrap()
+        .content
+        .clone();
+    assert!(recusa.contains("exited with 1"), "{recusa}");
+
+    let (t, _, _) = rodar(
+        vec![
+            escreve("a.txt"),
+            final_(json!("a")),
+            final_(json!("a")),
+            final_(json!("a")),
+            final_(json!("a")),
+        ],
+        cfg(),
+        tarefa("echo falta-o-teste >&2; exit 1"),
+    )
+    .await;
+    assert_eq!(t.status, TaskStatus::Failed);
+    let e = t.error.unwrap();
+    assert!(
+        e.contains("saiu com 1") && e.contains("falta-o-teste"),
+        "{e}"
+    );
+
+    let (t, _, _) = rodar(
+        vec![final_(json!("a"))],
+        AgentConfig::default().grant(&["fs.write"]),
+        tarefa("true"),
+    )
+    .await;
+    assert_eq!(t.status, TaskStatus::Failed);
+    assert!(t.error.unwrap().contains("shell.exec"));
+}
+
+/// `--saida-esquema`: o `final_answer` pede o objeto, o mesmo validador o confere, e o
+/// texto que CONTEM o JSON (o que o modelo pequeno manda) e aceito.
+#[tokio::test]
+async fn saida_tipada_confere_a_resposta_final() {
+    let mut tarefa = Task::new("some", "roteiro");
+    tarefa.saida_esquema = Some(json!({"type":"object","properties":{
+        "total":{"type":"integer"}},"required":["total"]}));
+    let (t, llm, _) = rodar(
+        vec![
+            ScriptedLlm::call("w", "write_file", json!({"path":"a.txt","content":"1"})),
+            final_(json!({"soma": 3})),
+            final_(json!("Resultado:\n```json\n{\"total\": 3}\n```")),
+        ],
+        AgentConfig {
+            require_final_tool: true,
+            ..AgentConfig::default().grant(&["fs.write"])
+        },
+        tarefa,
+    )
+    .await;
+    assert_eq!(t.status, TaskStatus::Completed, "{:?}", t.error);
+    assert_eq!(t.answer.as_deref(), Some("{\"total\":3}"));
+    let recusa = llm.seen.lock().unwrap()[2]
+        .0
+        .last()
+        .unwrap()
+        .content
+        .clone();
+    assert!(
+        recusa.contains("output schema") && recusa.contains("\"field\":\"total\""),
+        "{recusa}"
+    );
+}
+
+/// Linha-objeto na planilha (o formato medido do qwen2.5:1.5b): antes do portao virava
+/// linha VAZIA e a planilha saia «criada» sem dado; agora as chaves viram o cabecalho e os
+/// valores entram, e o portao aceita (o esquema diz `array` ou `object`).
+#[tokio::test]
+async fn planilha_com_linha_objeto_grava_os_valores() {
+    let (t, llm, _) = rodar(
+        vec![
+            ScriptedLlm::call(
+                "s",
+                "create_spreadsheet",
+                json!({"path":"estoque.xlsx","sheets":[{"name":"Itens","rows":[
+                    {"Item":"Parafuso","Quantidade":"10"},{"Item":"Porca","Quantidade":20}]}]}),
+            ),
+            ScriptedLlm::call("r", "read_document", json!({"path":"estoque.xlsx"})),
+            ScriptedLlm::text("estoque.xlsx"),
+        ],
+        AgentConfig::default().grant(&["doc.write", "fs.read"]),
+        Task::new("x", "roteiro"),
+    )
+    .await;
+    assert_eq!(t.status, TaskStatus::Completed, "{:?}", t.steps);
+    assert_eq!(t.steps[0].outcome, "ok", "{:?}", t.steps[0]);
+    let lido = llm.seen.lock().unwrap()[2]
+        .0
+        .last()
+        .unwrap()
+        .content
+        .clone();
+    for trecho in ["Item", "Quantidade", "Parafuso", "Porca", "20"] {
+        assert!(lido.contains(trecho), "falta {trecho} em {lido}");
+    }
 }

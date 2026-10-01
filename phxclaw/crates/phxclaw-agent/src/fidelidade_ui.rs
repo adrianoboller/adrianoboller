@@ -29,20 +29,29 @@ pub const TELAS: usize = GABARITO.len();
 /// de cada tela, que sai no resultado).
 pub const JANELA: (u32, u32) = (1280, 1200);
 
-/// Servidor de UMA pagina, so no loopback: o Chromium nao ve arquivo nem rede.
-struct Pagina {
-    base: String,
-    html: Arc<Mutex<String>>,
+/// Arquivo servido ao lado da pagina: (caminho da requisicao, tipo, corpo).
+pub(crate) type Extra = Arc<Mutex<Option<(String, &'static str, Vec<u8>)>>>;
+
+/// Servidor de UMA pagina, so no loopback: o Chromium nao ve arquivo nem rede. A prova
+/// responsiva (`responsivo_ui`) usa o mesmo servidor; o alvo Bootstrap precisa de uma folha
+/// de estilo ao lado, servida pelo `extra` -- e por isso a folha vem do loopback e nao de
+/// uma CDN, que a politica do navegador recusaria e a prova mediria sem estilo.
+pub(crate) struct Pagina {
+    pub(crate) base: String,
+    pub(crate) html: Arc<Mutex<String>>,
+    /// (caminho da requisicao, tipo, corpo): o que nao casar recebe o `html`.
+    pub(crate) extra: Extra,
     parar: Arc<AtomicBool>,
 }
 
 impl Pagina {
-    fn subir() -> Result<Self, String> {
+    pub(crate) fn subir() -> Result<Self, String> {
         let l = TcpListener::bind("127.0.0.1:0").map_err(|e| e.to_string())?;
         let base = format!("http://{}", l.local_addr().map_err(|e| e.to_string())?);
         let html = Arc::new(Mutex::new(String::new()));
+        let extra: Extra = Arc::default();
         let parar = Arc::new(AtomicBool::new(false));
-        let (h, p) = (html.clone(), parar.clone());
+        let (h, x, p) = (html.clone(), extra.clone(), parar.clone());
         std::thread::spawn(move || {
             for s in l.incoming() {
                 if p.load(Ordering::Relaxed) {
@@ -50,18 +59,35 @@ impl Pagina {
                 }
                 let Ok(mut s) = s else { continue };
                 let mut b = [0u8; 4096];
-                let _ = s.read(&mut b);
-                let corpo = h.lock().unwrap_or_else(|e| e.into_inner()).clone();
+                let n = s.read(&mut b).unwrap_or(0);
+                let pedido = String::from_utf8_lossy(&b[..n]);
+                let caminho = pedido.split_whitespace().nth(1).unwrap_or("/");
+                let (tipo, corpo) = match &*x.lock().unwrap_or_else(|e| e.into_inner()) {
+                    Some((c, t, corpo)) if c == caminho => (*t, corpo.clone()),
+                    _ => (
+                        "text/html; charset=utf-8",
+                        h.lock()
+                            .unwrap_or_else(|e| e.into_inner())
+                            .clone()
+                            .into_bytes(),
+                    ),
+                };
                 let _ = s.write_all(
                     format!(
-                        "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{corpo}",
+                        "HTTP/1.1 200 OK\r\nContent-Type: {tipo}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
                         corpo.len()
                     )
                     .as_bytes(),
                 );
+                let _ = s.write_all(&corpo);
             }
         });
-        Ok(Pagina { base, html, parar })
+        Ok(Pagina {
+            base,
+            html,
+            extra,
+            parar,
+        })
     }
 }
 
@@ -180,7 +206,7 @@ async fn fotografar(
     Ok((caixas, fora))
 }
 
-fn faixa(v: impl Iterator<Item = Option<f64>>) -> Value {
+pub(crate) fn faixa(v: impl Iterator<Item = Option<f64>>) -> Value {
     let v: Vec<f64> = v.flatten().collect();
     match Faixa::de(&v) {
         Some(f) => json!({"n": f.n, "min": r4(f.min), "mediana": r4(f.mediana), "max": r4(f.max)}),
@@ -188,7 +214,7 @@ fn faixa(v: impl Iterator<Item = Option<f64>>) -> Value {
     }
 }
 
-fn r4(v: f64) -> f64 {
+pub(crate) fn r4(v: f64) -> f64 {
     (v * 10000.0).round() / 10000.0
 }
 

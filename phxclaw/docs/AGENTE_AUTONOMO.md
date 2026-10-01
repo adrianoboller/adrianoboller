@@ -13,6 +13,9 @@ cargo build -p phxclaw
 ./target/debug/phxclaw core status                 # estado SONDADO (sandbox, navegador, modelo)
 ```
 
+O que configurar primeiro, credenciais, confiança no projeto e medição:
+[GUIA_DO_OPERADOR.md](GUIA_DO_OPERADOR.md).
+
 Modelos: `ollama:<modelo>` (local), `openai:<modelo>`, `anthropic:<modelo>`, `gemini:<modelo>`
 (chaves em `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`).
 
@@ -26,7 +29,7 @@ sem SMTP não há `send_email`, sem token não há `github` — e por isso há d
 montou aqui e o que existe no código mas não montou.
 
 <!-- gerado:ferramentas:inicio -->
-Medido em 2026-10-01 por `python3 tools/gerar_doc_agente.py`, de `phxclaw ferramentas` (versao 0.70.0, binario de 2026-10-01 15:57), com `PHXCLAW_CAPACIDADES` no padrao. **65 ferramentas montadas nesta maquina**, 54 concedidas por padrao.
+Medido em 2026-10-01 por `python3 tools/gerar_doc_agente.py`, de `phxclaw ferramentas` (versao 0.70.0, binario de 2026-10-01 17:14), com `PHXCLAW_CAPACIDADES` no padrao. **65 ferramentas montadas nesta maquina**, 54 concedidas por padrao.
 
 | Capacidade | Padrao | Ferramentas |
 |---|---|---|
@@ -213,7 +216,7 @@ CREDENCIAIS (vao para o SecretBroker, nunca para arquivo):
 MEDICAO (so numero medido, com faixa min-max, N e data):
   repetir       Repete uma gravacao sem modelo e acusa a divergencia com o passo
   avaliar       Compara modelos pelo agente: p50/p95, tokens/s, CPU, energia e acerto
-  ui            Prova a conversao de tela em ida e volta contra o gabarito
+  ui            Prova as telas geradas: ida e volta (fidelidade) e larguras (responsivo)
   skill         Otimiza uma skill por A/B medido; so promove sem cruzar faixas
 
 DIAGNOSTICO:
@@ -317,7 +320,7 @@ Bearer em `var/agente/api.token` (0600) ou `PHXCLAW_API_TOKEN`. Só loopback por
 
 | Método | Rota | O quê |
 |---|---|---|
-| POST | `/v1/tasks` | `{objective, model?, plan_first?, webhook?}` → `{id}` |
+| POST | `/v1/tasks` | `{objective, model?, plan_first?, webhook?, verificar?, saida_esquema?}` → `{id}` |
 | GET | `/v1/tasks`, `/v1/tasks/{id}` | lista / estado, passos, resposta, artefatos |
 | POST | `/v1/tasks/{id}/plan`, `/approve` | Plan Mode: editar o plano e aprovar |
 | POST | `/v1/tasks/{id}/cancel` | cancela |
@@ -335,6 +338,38 @@ balde (`PHXCLAW_API_TAREFAS_POR_MINUTO`, padrão 10): além dele, `429` com `Ret
 - o fim é a ferramenta `final_answer`; texto solto recebe até 2 lembretes;
 - **conclusão verificada**: arquivo citado no objetivo tem de existir, senão a tarefa termina
   `failed` dizendo qual falta.
+- **argumento validado no portão** (SP000028): antes de a ferramenta rodar, o portão único
+  (`call_tool_com`, o mesmo do `mcp-serve` e dos fluxos) confere os argumentos contra o esquema
+  dela com o validador próprio (`src/esquema.rs`, sem crate: `type`, `properties`, `required`,
+  `enum`, `items`, `minimum`, `maximum`, `pattern`; palavra desconhecida de esquema MCP passa
+  com nota). Volta ao modelo **todos** os erros em JSON, cada um com o caminho
+  (`blocks[0].level`), o que veio e o esperado. Coerção só do que nenhuma ferramenta lia
+  diferente: `"5"` → 5 onde o esquema pede inteiro, `"true"` → booleano; `null` em campo
+  opcional é ausência;
+- **orçamento de argumento**: 2 novas tentativas **seguidas** por ferramenta
+  (`agente.tentativas_argumento`); a chamada que passa zera a conta, como no PydanticAI.
+  Esgotou, a tarefa termina `failed` dizendo a ferramenta e o último erro;
+- **fim conferido**: a tarefa não fecha `completed` com chamada de argumento inválido sem
+  conserto. Decisão: a resposta final é **recusada e devolvida ao modelo** (como as outras
+  conferências do fim) até o limite de recusas; esgotado, `failed` com o motivo. O `concluir`
+  confere de novo, como última porta. O mesmo vale para o fim em texto;
+- **comando de verificação** (`--verificar "cmd"` na CLI, `verificar` na API): roda no mesmo
+  executor do hook `Stop` (bwrap, sem rede, a pasta da tarefa em `/work`); código ≠ 0 recusa o
+  fim. Pede `shell.exec` — sem ela a API recusa na entrada e o motor falha no começo, para o
+  verificar não virar a porta lateral do shell negado;
+- **saída tipada** (`--saida-esquema arq.json`, `saida_esquema` na API): o `final_answer` pede
+  o objeto do esquema, e o mesmo validador o confere; o texto que contém o JSON é aceito.
+- **medido** (01/10/2026, qwen2.5:1.5b, 5 casos de documento/planilha/apresentação/cálculo ×
+  3 rodadas, `PHXCLAW_CAPACIDADES=fs.read,fs.write,doc.write,calc`): argumento inválido por
+  rodada **0,25–0,71** antes e **0,43–0,62** depois (faixas se cruzam: sem vencedor); acerto por
+  rodada **0,20–0,20** antes e **0,20–0,60** depois (encostam: sem vencedor). O que mudou fora da
+  faixa: chamadas inválidas **corrigidas** pelo modelo na tentativa seguinte, **0 de 5** tarefas
+  antes e **3 de 8** depois (1 por rodada, nas 3) — e só depois de o erro de campo ausente levar a
+  `description` dele (sem ela, medido no meio: **0 de 10**). Antes, 4 das 15 execuções caíram no
+  prazo de 300 s do provedor (CPU disputada); depois, nenhuma — confusor declarado.
+- `create_spreadsheet` aceita linha-objeto (`{"Item": 1, "Qtd": 5}`, o formato do 1.5b): as
+  chaves viram o cabeçalho (ordem alfabética do `serde_json`). Antes ela virava linha vazia e a
+  planilha saía «criada» sem dado — 2 dos 3 acertos medidos antes eram planilha sem dado.
 
 ## O que está provado e o que não está
 

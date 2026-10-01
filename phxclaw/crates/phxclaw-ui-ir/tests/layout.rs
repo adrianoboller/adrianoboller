@@ -233,14 +233,43 @@ fn para_ir_grava_caixa_relativa_grupo_e_ordem() {
     assert_eq!(s.groups[0].kind, "section");
 }
 
+/// O JSON como um leitor v1 o escreveria: sem `layouts` e sem intencao nas secoes.
+fn como_v1(app: &App) -> serde_json::Value {
+    let mut v: serde_json::Value = serde_json::to_value(app).unwrap();
+    for t in v["screens"].as_array_mut().unwrap() {
+        for chave in ["sections", "header"] {
+            for s in t[chave].as_array_mut().into_iter().flatten() {
+                let o = s.as_object_mut().unwrap();
+                o.remove("layout");
+                o.remove("conteiner");
+            }
+        }
+    }
+    v["ir_version"] = 1.into();
+    v
+}
+
 #[test]
 fn ui_ir_v1_continua_lendo_e_versao_do_futuro_se_recusa() {
     let (app, _) = from_sql("Vendas", PEDIDOS);
-    let mut v: serde_json::Value = serde_json::to_value(&app).unwrap();
-    assert!(v.get("layouts").is_none(), "sem layout, o JSON sai como v1");
-    v["ir_version"] = 1.into();
+    assert_eq!(app.ir_version, 3);
+    let v3: serde_json::Value = serde_json::to_value(&app).unwrap();
+    assert!(
+        v3.get("layouts").is_none(),
+        "sem layout lido, nao ha `layouts`"
+    );
+    let mut v = como_v1(&app);
     let velho = App::de_json(&v.to_string()).unwrap();
     assert!(velho.layouts.is_empty());
+    // v1 sem intencao desenha IGUAL ao v3 com a intencao padrao: a padrao e a do motor
+    let tira_versao = |h: String| h.replace("UI-IR v1 ", "UI-IR v3 ");
+    assert_eq!(tira_versao(html::render(&velho)), html::render(&app));
+    v["ir_version"] = 2.into();
+    App::de_json(&v.to_string()).expect("v2 le");
+    // intencao de layout num v2 e mentira de versao: recusa
+    let mut v2_com = v3.clone();
+    v2_com["ir_version"] = 2.into();
+    assert!(App::de_json(&v2_com.to_string()).is_err());
     v["ir_version"] = (IR_VERSION + 1).into();
     assert!(App::de_json(&v.to_string()).is_err());
 }
@@ -451,4 +480,33 @@ fn gabarito_tem_vinte_telas_e_cada_uma_tem_tela_de_edicao() {
         assert_eq!(md, g.padrao == "mestre_detalhe", "{}", g.nome);
         assert!(!fidelidade::campos_da_tela(&app, &t).is_empty());
     }
+}
+
+#[test]
+fn grupo_rand_cai_quando_um_campo_muda_de_secao() {
+    // sem este caso, `grupo_rand` sempre 1,0 passava em todos os testes (mutante M10 da
+    // prova F): os outros so comparam a tela com ela mesma ou com grupos identicos
+    let (origem, _) = from_sql("Vendas", PEDIDOS);
+    let tela = fidelidade::tela_de(&origem, "pedido").unwrap();
+    let mut conv = origem.clone();
+    let Some(Screen::MasterDetail { header, .. }) =
+        conv.screens.iter_mut().find(|s| s.id() == tela)
+    else {
+        panic!("tela do pedido")
+    };
+    let s = header
+        .iter_mut()
+        .find(|s| s.fields.len() >= 3)
+        .expect("secao com 3 ou mais campos");
+    let campo = s.fields.pop().unwrap();
+    header.push(Section {
+        title: "Sozinho".into(),
+        fields: vec![campo],
+        layout: None,
+        conteiner: None,
+    });
+    let m = fidelidade::comparar(&origem, &tela, "mestre_detalhe", &[], &conv, "pedido");
+    let r = m.grupo_rand.expect("ha pares");
+    assert!(0.0 < r && r < 1.0, "grupo_rand {r}");
+    assert_eq!(m.achados, m.origem, "o campo so mudou de secao, nao sumiu");
 }

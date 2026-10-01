@@ -416,7 +416,7 @@
     {
       "capacidade": "gonogo.write",
       "concedida": false,
-      "descricao": "Integrators' council Go/NoGo. action: record {integration, integrator, verdict: OK|NOGO, errors? (required for NOGO), integrators? (other active integrators)}; status {integration}. Decision: any current NOGO -> NOGO; an active integrator without verdict -> WAIT; all OK -> GO. Only the same integrator can replace own NOGO.",
+      "descricao": "Integrators' council Go/NoGo. action: open {integration, integrators} declares the council (fixed afterwards); record {integration, integrator, verdict: OK|NOGO, errors? (required for NOGO)} -- the integrator must be in the council, and once a name is recorded only the same task can record for it again; status {integration}. Decision: any current NOGO -> NOGO; a council member without verdict -> WAIT; all OK -> GO.",
       "grupo": "gonogo",
       "nome": "go_no_go"
     },

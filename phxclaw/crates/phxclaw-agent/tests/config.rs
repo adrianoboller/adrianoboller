@@ -1,8 +1,8 @@
 //! `GET`/`PUT /v1/config` pelo fio HTTP de verdade: o contrato da tela de configuracao.
 //!
-//! Um teste so, de proposito: ele fixa variaveis de ambiente (o projeto e uma chave que
-//! «vem do ambiente»), e outro teste no mesmo binario lendo o ambiente ao mesmo tempo
-//! seria corrida.
+//! Os dois testes mexem no ambiente (o projeto, uma chave que «vem do ambiente») e no
+//! estado de configuracao do processo: um le enquanto o outro escreve seria corrida, entao
+//! os dois seguram `AMBIENTE` do comeco ao fim.
 
 use phxclaw_agent::agenda::Agenda;
 use phxclaw_agent::api::{AgentFactory, ApiState, Limite, router};
@@ -13,13 +13,18 @@ use std::sync::{Arc, Mutex};
 
 const TOKEN: &str = "token-de-teste-com-tamanho-suficiente";
 
+/// Serializa os testes deste binario: os dois mexem no ambiente do processo. Do tokio, e nao
+/// da `std`, porque a guarda atravessa `await`.
+static AMBIENTE: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 #[tokio::test]
 async fn get_e_put_do_config_com_if_match_conflito_e_recusas() {
+    let _ambiente = AMBIENTE.lock().await;
     let dir = std::env::temp_dir().join(format!("phx-config-api-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     let proj = dir.join("proj");
     std::fs::create_dir_all(&proj).unwrap();
-    // SAFETY: unico teste deste binario, antes de qualquer outra thread ler o ambiente.
+    // SAFETY: `AMBIENTE` seguro; nenhum outro teste deste binario le o ambiente agora.
     // O teste tira TODA variavel PHXCLAW_* herdada antes de comecar: o integrador roda a suite
     // com PHXCLAW_WHISPER_BIN definida (exigida pelos testes de voz), e a chave voz.whisper.bin
     // voltava "vem do ambiente", nao editavel. Remover uma por uma deixaria a proxima de fora.
@@ -97,6 +102,13 @@ async fn get_e_put_do_config_com_if_match_conflito_e_recusas() {
 
     let v = get().await;
     assert_eq!(v["revisao"], 0);
+    // Perguntar se o segredo existe nao cria cofre: o unico `master.key` e o do xai,
+    // guardado acima. O GET passa por todas as chaves-segredo do catalogo.
+    assert_eq!(
+        cofres(&dir),
+        vec![dir.join("xai/segredos/master.key")],
+        "o GET criou cofre vazio"
+    );
     assert!(
         v["arquivos"]["pasta"]
             .as_str()
@@ -233,5 +245,71 @@ async fn get_e_put_do_config_com_if_match_conflito_e_recusas() {
         "{disco}"
     );
 
+    assert_eq!(cofres(&dir), vec![dir.join("xai/segredos/master.key")]);
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Defeito da prova F (01/10/2026), CONSERTADO: a leitura do processo (`config::valor`/`texto`, a
+/// que `git.segredos.*`, `agente.tentativas_argumento` e `ui.bootstrap_css` usam) nao ve o
+/// que se grava na pasta fixada por `config::iniciar`. Depois do `definir` -- o mesmo que o
+/// `PUT /v1/config` chama --, o `esquecer` zera o cache e a proxima leitura recarrega da
+/// `pasta_padrao()` (PHXCLAW_HOME ou `var/agente`), e nao da pasta fixada. E o `iniciar`
+/// nao era chamado em lugar nenhum fora deste teste: `phxclaw --pasta X serve` gravava em
+/// `X/config.json` e o processo lia `var/agente`. Medido: `left: "ollama:qwen2.5:1.5b"`
+/// (o padrao), `right: "da-pasta"`. Conserto: a pasta fixada mora fora do cache (o
+/// `esquecer` solta so a configuracao) e a CLI a fixa em todo comando (`fixar_pasta`).
+#[tokio::test]
+async fn leitura_do_processo_ve_o_que_o_definir_gravou_na_pasta_fixada() {
+    let _ambiente = AMBIENTE.lock().await;
+    let dir = std::env::temp_dir().join(format!("phx-config-proc-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    // SAFETY: `AMBIENTE` seguro; nenhum outro teste deste binario le o ambiente agora.
+    unsafe {
+        for (k, _) in std::env::vars() {
+            if k.starts_with("PHXCLAW_") {
+                std::env::remove_var(k);
+            }
+        }
+    }
+    use phxclaw_agent::config::{Escopo, definir, fixar_pasta, iniciar, texto};
+    iniciar(&dir).unwrap();
+    let mut m = serde_json::Map::new();
+    m.insert("modelo.padrao".into(), json!("da-pasta"));
+    assert_eq!(definir(&dir, Escopo::Pasta, &m, Some(0)).unwrap(), 1);
+    assert_eq!(
+        texto("modelo.padrao").unwrap().as_deref(),
+        Some("da-pasta"),
+        "depois de gravar, o processo releu outra pasta"
+    );
+    // O caminho da CLI: so fixar (sem carregar), gravar, e a leitura seguinte ve a gravacao.
+    let outra = dir.join("outra");
+    std::fs::create_dir_all(&outra).unwrap();
+    fixar_pasta(&outra);
+    m.insert("modelo.padrao".into(), json!("da-outra"));
+    assert_eq!(definir(&outra, Escopo::Pasta, &m, Some(0)).unwrap(), 1);
+    assert_eq!(
+        texto("modelo.padrao").unwrap().as_deref(),
+        Some("da-outra"),
+        "fixar_pasta nao valeu depois de gravar"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Todo `master.key` sob `dir`, em ordem.
+fn cofres(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
+    let mut achados = Vec::new();
+    let mut pilha = vec![dir.to_path_buf()];
+    while let Some(d) = pilha.pop() {
+        for e in std::fs::read_dir(&d).into_iter().flatten().flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                pilha.push(p);
+            } else if p.file_name().is_some_and(|n| n == "master.key") {
+                achados.push(p);
+            }
+        }
+    }
+    achados.sort();
+    achados
 }

@@ -569,3 +569,128 @@ async fn variante_invalida_nem_vai_ao_ab_e_fica_no_registro() {
         "{reg}"
     );
 }
+
+// ------------------------------------------------------------------ prova F (01/10/2026)
+
+/// A faixa e o juiz tambem NA CHAMADA do `avaliar`, nao so na funcao `faixas_decidem`: as
+/// medianas diferem (200 contra 250 tokens/s) e as faixas se cruzam ([100-250] e
+/// [125-400]). Pela faixa, nao ha vencedor; pela mediana, «b» venceria. O teste antigo usava
+/// tokens/s IGUAIS nos dois, e ai mediana e faixa dao a mesma resposta -- o defeito de
+/// decidir pela mediana passava.
+#[tokio::test]
+async fn avaliar_nao_declara_vencedor_com_mediana_melhor_e_faixas_cruzadas() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let raiz = tmp("avalia-cruza");
+    let m = Montagem::new(TaskStore::new(raiz.join("tasks")).unwrap());
+    // ns por resposta: 2 respostas de 20 tokens -> tokens/s = 20e9 / ns.
+    let ns_a = [200_000_000u64, 100_000_000, 80_000_000]; // 100, 200, 250
+    let ns_b = [160_000_000u64, 80_000_000, 50_000_000]; // 125, 250, 400
+    let (ka, kb) = (AtomicUsize::new(0), AtomicUsize::new(0));
+    let fabrica = |modelo: &str| -> Result<Agent, String> {
+        let ns = if modelo == "a" {
+            ns_a[ka.fetch_add(1, Ordering::SeqCst)]
+        } else {
+            ns_b[kb.fetch_add(1, Ordering::SeqCst)]
+        };
+        let r = vec![
+            resposta_medida(
+                ScriptedLlm::call("c", "calculator", json!({"expression": "6*7"})),
+                ns,
+            ),
+            resposta_medida(fim("42"), ns),
+        ];
+        Ok(m.agent_with(Arc::new(ScriptedLlm::new(r))))
+    };
+    let a = avaliar(
+        &fabrica,
+        &["a".into(), "b".into()],
+        &[caso_42()],
+        3,
+        &raiz.join("saida"),
+        &LeitorEnergia::de_raiz(&tmp("sys-vazio-2"), None),
+    )
+    .await
+    .unwrap();
+    let faixa = |i: usize| match &a.modelos[i].tokens_por_s {
+        Medida::Faixa(f) => (f.min.round(), f.mediana.round(), f.max.round()),
+        outro => panic!("{outro:?}"),
+    };
+    // A montagem e a que o teste diz: sem isto, um erro aqui viraria «passou por engano».
+    assert_eq!(faixa(0), (100.0, 200.0, 250.0));
+    assert_eq!(faixa(1), (125.0, 250.0, 400.0));
+    let v = a
+        .vencedores
+        .iter()
+        .find(|v| v.metrica == "tokens_por_s")
+        .unwrap();
+    assert_eq!(
+        v.modelo, None,
+        "mediana melhor dentro do ruido virou vitoria: {v:?}"
+    );
+    assert!(v.motivo.contains("faixas se cruzam"), "{v:?}");
+}
+
+/// O mesmo na otimizacao de skill: a variante acerta em 2 de 3 rodadas (faixa [0-1],
+/// mediana 1) e a original nunca (faixa [0-0]). Mediana e media dizem «melhor»; as faixas
+/// encostam no 0, e encostar e cruzar -- nao promove, e a skill fica como estava.
+#[tokio::test]
+async fn variante_que_acerta_as_vezes_encosta_na_faixa_e_nao_e_promovida() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let raiz = tmp("skill-as-vezes");
+    let skills = raiz.join("skills");
+    std::fs::create_dir_all(skills.join("conta")).unwrap();
+    std::fs::write(skills.join("conta/SKILL.md"), ORIGINAL).unwrap();
+    let gerador = ScriptedLlm::new(vec![ScriptedLlm::text(
+        "```markdown\n---\nname: conta\ndescription: Faz contas.\n---\nPASSO 1: skill_load.\n```",
+    )]);
+    let variante = gerar_variante(&gerador, "conta", ORIGINAL).await.unwrap();
+    let m = Montagem::new(TaskStore::new(raiz.join("tasks")).unwrap());
+    let k = AtomicUsize::new(0);
+    let fab = |_modelo: &str, pasta: &Path| {
+        let texto = std::fs::read_to_string(pasta.join("conta/SKILL.md")).unwrap();
+        // Variante: acerta nas execucoes 0 e 2, erra na 1.
+        let acerta =
+            texto.contains("PASSO 1") && k.fetch_add(1, Ordering::SeqCst).is_multiple_of(2);
+        let r = if acerta {
+            vec![
+                ScriptedLlm::call("s", "skill_load", json!({"name": "conta"})),
+                ScriptedLlm::call("c", "calculator", json!({"expression": "6*7"})),
+                fim("42"),
+            ]
+        } else {
+            vec![
+                ScriptedLlm::call("c", "calculator", json!({"expression": "6*6"})),
+                fim("36"),
+            ]
+        };
+        com_pasta_de_skills(m.agent_with(Arc::new(ScriptedLlm::new(r))), pasta)
+    };
+    let casos = [caso_skill()];
+    let p = PedidoOtimizacao {
+        skill: "conta",
+        pasta_skills: &skills,
+        modelo: "roteiro",
+        casos: &casos,
+        rodadas: 3,
+        trabalho: &raiz.join("ab"),
+    };
+    let d = ab(&fab, &p, &variante).await.unwrap();
+    // A montagem: a variante acertou as vezes e a original nunca.
+    assert_eq!(
+        (d.acerto_original.min, d.acerto_original.max),
+        (0.0, 0.0),
+        "{d:?}"
+    );
+    assert_eq!(
+        (d.acerto_variante.min, d.acerto_variante.max),
+        (0.0, 1.0),
+        "{d:?}"
+    );
+    assert!(d.acerto_variante.mediana > d.acerto_original.mediana);
+    assert!(!d.promovida, "promovida pela mediana: {}", d.motivo);
+    assert!(d.motivo.contains("empate nao promove"), "{}", d.motivo);
+    assert_eq!(
+        std::fs::read_to_string(skills.join("conta/SKILL.md")).unwrap(),
+        ORIGINAL
+    );
+}

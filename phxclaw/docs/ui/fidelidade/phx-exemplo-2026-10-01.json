@@ -1,0 +1,971 @@
+{
+  "adaptadores": [
+    "phoenix",
+    "bootstrap"
+  ],
+  "colunas_contra_o_exemplo": {
+    "iguais": 10,
+    "larguras": 10,
+    "linhas": [
+      {
+        "exemplo": 1,
+        "exemplo_conteiner_px": 254,
+        "largura": 320,
+        "nossas_por_adaptador": [
+          1,
+          1
+        ],
+        "nossos_conteineres_px": [
+          288.0,
+          288.0
+        ]
+      },
+      {
+        "exemplo": 1,
+        "exemplo_conteiner_px": 294,
+        "largura": 360,
+        "nossas_por_adaptador": [
+          1,
+          1
+        ],
+        "nossos_conteineres_px": [
+          328.0,
+          328.0
+        ]
+      },
+      {
+        "exemplo": 1,
+        "exemplo_conteiner_px": 324,
+        "largura": 390,
+        "nossas_por_adaptador": [
+          1,
+          1
+        ],
+        "nossos_conteineres_px": [
+          358.0,
+          358.0
+        ]
+      },
+      {
+        "exemplo": 1,
+        "exemplo_conteiner_px": 498,
+        "largura": 576,
+        "nossas_por_adaptador": [
+          1,
+          1
+        ],
+        "nossos_conteineres_px": [
+          544.0,
+          544.0
+        ]
+      },
+      {
+        "exemplo": 2,
+        "exemplo_conteiner_px": 682.09375,
+        "largura": 768,
+        "nossas_por_adaptador": [
+          2,
+          2
+        ],
+        "nossos_conteineres_px": [
+          736.0,
+          736.0
+        ]
+      },
+      {
+        "exemplo": 2,
+        "exemplo_conteiner_px": 893.46875,
+        "largura": 991,
+        "nossas_por_adaptador": [
+          2,
+          2
+        ],
+        "nossos_conteineres_px": [
+          959.0,
+          959.0
+        ]
+      },
+      {
+        "exemplo": 2,
+        "exemplo_conteiner_px": 670.4375,
+        "largura": 992,
+        "nossas_por_adaptador": [
+          2,
+          2
+        ],
+        "nossos_conteineres_px": [
+          696.0,
+          696.0
+        ]
+      },
+      {
+        "exemplo": 2,
+        "exemplo_conteiner_px": 943.46875,
+        "largura": 1280,
+        "nossas_por_adaptador": [
+          2,
+          2
+        ],
+        "nossos_conteineres_px": [
+          984.0,
+          984.0
+        ]
+      },
+      {
+        "exemplo": 4,
+        "exemplo_conteiner_px": 1250,
+        "largura": 1600,
+        "nossas_por_adaptador": [
+          4,
+          4
+        ],
+        "nossos_conteineres_px": [
+          1304.0,
+          1304.0
+        ]
+      },
+      {
+        "exemplo": 4,
+        "exemplo_conteiner_px": 1570,
+        "largura": 1920,
+        "nossas_por_adaptador": [
+          4,
+          4
+        ],
+        "nossos_conteineres_px": [
+          1624.0,
+          1624.0
+        ]
+      }
+    ]
+  },
+  "comando": "phxclaw ui responsivo --phx ARQ.phx.json [--bootstrap-css ARQ] [--exemplo index.html]",
+  "data": "2026-10-01 18:30",
+  "fora": "simulacao, configuracoes, dialogos de JSON e de agente, armazenamento local e eventos: sao da aplicacao de demonstracao, nao do layout gerado",
+  "passou": 105,
+  "total": 105,
+  "verificacoes": [
+    {
+      "detalhe": 3905,
+      "nome": "PHX JSON: ida e volta identica byte a byte",
+      "passou": true
+    },
+    {
+      "detalhe": [
+        "01a0f85a-635d-7553-8b0f-d5be7a41be81",
+        "01a0f85a-635d-7b3a-8c74-f568ffb5cbdb",
+        "01a0f85a-635d-7495-9b3a-3761411c55dd",
+        "01a0f85a-635d-7828-bafc-0ed759bbe9c7"
+      ],
+      "nome": "phoenix: quatro cartoes do JSON, com o UUID de cada um",
+      "passou": true
+    },
+    {
+      "detalhe": 0,
+      "nome": "phoenix: sem rolagem horizontal da pagina a 320px",
+      "passou": true
+    },
+    {
+      "detalhe": {
+        "colunas": 1,
+        "conteiner_px": 288.0,
+        "esperado": 1
+      },
+      "nome": "phoenix: colunas do conteiner a 320px",
+      "passou": true
+    },
+    {
+      "detalhe": {
+        "mesmos_nos": true
+      },
+      "nome": "phoenix: identidades e nos preservados a 320px",
+      "passou": true
+    },
+    {
+      "detalhe": false,
+      "nome": "phoenix: casca a 320px (lado a lado a partir de 992)",
+      "passou": true
+    },
+    {
+      "detalhe": 0,
+      "nome": "phoenix: sem rolagem horizontal da pagina a 360px",
+      "passou": true
+    },
+    {
+      "detalhe": {
+        "colunas": 1,
+        "conteiner_px": 328.0,
+        "esperado": 1
+      },
+      "nome": "phoenix: colunas do conteiner a 360px",
+      "passou": true
+    },
+    {
+      "detalhe": {
+        "mesmos_nos": true
+      },
+      "nome": "phoenix: identidades e nos preservados a 360px",
+      "passou": true
+    },
+    {
+      "detalhe": false,
+      "nome": "phoenix: casca a 360px (lado a lado a partir de 992)",
+      "passou": true
+    },
+    {
+      "detalhe": 0,
+      "nome": "phoenix: sem rolagem horizontal da pagina a 390px",
+      "passou": true
+    },
+    {
+      "detalhe": {
+        "colunas": 1,
+        "conteiner_px": 358.0,
+        "esperado": 1
+      },
+      "nome": "phoenix: colunas do conteiner a 390px",
+      "passou": true
+    },
+    {
+      "detalhe": {
+        "mesmos_nos": true
+      },
+      "nome": "phoenix: identidades e nos preservados a 390px",
+      "passou": true
+    },
+    {
+      "detalhe": false,
+      "nome": "phoenix: casca a 390px (lado a lado a partir de 992)",
+      "passou": true
+    },
+    {
+      "detalhe": 0,
+      "nome": "phoenix: sem rolagem horizontal da pagina a 576px",
+      "passou": true
+    },
+    {
+      "detalhe": {
+        "colunas": 1,
+        "conteiner_px": 544.0,
+        "esperado": 1
+      },
+      "nome": "phoenix: colunas do conteiner a 576px",
+      "passou": true
+    },
+    {
+      "detalhe": {
+        "mesmos_nos": true
+      },
+      "nome": "phoenix: identidades e nos preservados a 576px",
+      "passou": true
+    },
+    {
+      "detalhe": false,
+      "nome": "phoenix: casca a 576px (lado a lado a partir de 992)",
+      "passou": true
+    },
+    {
+      "detalhe": 0,
+      "nome": "phoenix: sem rolagem horizontal da pagina a 768px",
+      "passou": true
+    },
+    {
+      "detalhe": {
+        "colunas": 2,
+        "conteiner_px": 736.0,
+        "esperado": 2
+      },
+      "nome": "phoenix: colunas do conteiner a 768px",
+      "passou": true
+    },
+    {
+      "detalhe": {
+        "mesmos_nos": true
+      },
+      "nome": "phoenix: identidades e nos preservados a 768px",
+      "passou": true
+    },
+    {
+      "detalhe": false,
+      "nome": "phoenix: casca a 768px (lado a lado a partir de 992)",
+      "passou": true
+    },
+    {
+      "detalhe": 0,
+      "nome": "phoenix: sem rolagem horizontal da pagina a 991px",
+      "passou": true
+    },
+    {
+      "detalhe": {
+        "colunas": 2,
+        "conteiner_px": 959.0,
+        "esperado": 2
+      },
+      "nome": "phoenix: colunas do conteiner a 991px",
+      "passou": true
+    },
+    {
+      "detalhe": {
+        "mesmos_nos": true
+      },
+      "nome": "phoenix: identidades e nos preservados a 991px",
+      "passou": true
+    },
+    {
+      "detalhe": false,
+      "nome": "phoenix: casca a 991px (lado a lado a partir de 992)",
+      "passou": true
+    },
+    {
+      "detalhe": 0,
+      "nome": "phoenix: sem rolagem horizontal da pagina a 992px",
+      "passou": true
+    },
+    {
+      "detalhe": {
+        "colunas": 2,
+        "conteiner_px": 696.0,
+        "esperado": 2
+      },
+      "nome": "phoenix: colunas do conteiner a 992px",
+      "passou": true
+    },
+    {
+      "detalhe": {
+        "mesmos_nos": true
+      },
+      "nome": "phoenix: identidades e nos preservados a 992px",
+      "passou": true
+    },
+    {
+      "detalhe": true,
+      "nome": "phoenix: casca a 992px (lado a lado a partir de 992)",
+      "passou": true
+    },
+    {
+      "detalhe": 0,
+      "nome": "phoenix: sem rolagem horizontal da pagina a 1280px",
+      "passou": true
+    },
+    {
+      "detalhe": {
+        "colunas": 2,
+        "conteiner_px": 984.0,
+        "esperado": 2
+      },
+      "nome": "phoenix: colunas do conteiner a 1280px",
+      "passou": true
+    },
+    {
+      "detalhe": {
+        "mesmos_nos": true
+      },
+      "nome": "phoenix: identidades e nos preservados a 1280px",
+      "passou": true
+    },
+    {
+      "detalhe": true,
+      "nome": "phoenix: casca a 1280px (lado a lado a partir de 992)",
+      "passou": true
+    },
+    {
+      "detalhe": 0,
+      "nome": "phoenix: sem rolagem horizontal da pagina a 1600px",
+      "passou": true
+    },
+    {
+      "detalhe": {
+        "colunas": 4,
+        "conteiner_px": 1304.0,
+        "esperado": 4
+      },
+      "nome": "phoenix: colunas do conteiner a 1600px",
+      "passou": true
+    },
+    {
+      "detalhe": {
+        "mesmos_nos": true
+      },
+      "nome": "phoenix: identidades e nos preservados a 1600px",
+      "passou": true
+    },
+    {
+      "detalhe": true,
+      "nome": "phoenix: casca a 1600px (lado a lado a partir de 992)",
+      "passou": true
+    },
+    {
+      "detalhe": 0,
+      "nome": "phoenix: sem rolagem horizontal da pagina a 1920px",
+      "passou": true
+    },
+    {
+      "detalhe": {
+        "colunas": 4,
+        "conteiner_px": 1624.0,
+        "esperado": 4
+      },
+      "nome": "phoenix: colunas do conteiner a 1920px",
+      "passou": true
+    },
+    {
+      "detalhe": {
+        "mesmos_nos": true
+      },
+      "nome": "phoenix: identidades e nos preservados a 1920px",
+      "passou": true
+    },
+    {
+      "detalhe": true,
+      "nome": "phoenix: casca a 1920px (lado a lado a partir de 992)",
+      "passou": true
+    },
+    {
+      "detalhe": {
+        "colunas": 4,
+        "conteiner": 1180,
+        "ids": [
+          "01a0f85a-635d-7553-8b0f-d5be7a41be81",
+          "01a0f85a-635d-7b3a-8c74-f568ffb5cbdb",
+          "01a0f85a-635d-7495-9b3a-3761411c55dd",
+          "01a0f85a-635d-7828-bafc-0ed759bbe9c7"
+        ],
+        "janela": 1600,
+        "lado_a_lado": true,
+        "mesmos": true,
+        "rolagem": 0
+      },
+      "nome": "phoenix: painel 1180px numa janela de 1600: 4 colunas",
+      "passou": true
+    },
+    {
+      "detalhe": {
+        "colunas": 2,
+        "conteiner": 720,
+        "ids": [
+          "01a0f85a-635d-7553-8b0f-d5be7a41be81",
+          "01a0f85a-635d-7b3a-8c74-f568ffb5cbdb",
+          "01a0f85a-635d-7495-9b3a-3761411c55dd",
+          "01a0f85a-635d-7828-bafc-0ed759bbe9c7"
+        ],
+        "janela": 1600,
+        "lado_a_lado": true,
+        "mesmos": true,
+        "rolagem": 0
+      },
+      "nome": "phoenix: painel 720px numa janela de 1600: 2 colunas",
+      "passou": true
+    },
+    {
+      "detalhe": {
+        "colunas": 1,
+        "conteiner": 360,
+        "ids": [
+          "01a0f85a-635d-7553-8b0f-d5be7a41be81",
+          "01a0f85a-635d-7b3a-8c74-f568ffb5cbdb",
+          "01a0f85a-635d-7495-9b3a-3761411c55dd",
+          "01a0f85a-635d-7828-bafc-0ed759bbe9c7"
+        ],
+        "janela": 1600,
+        "lado_a_lado": true,
+        "mesmos": true,
+        "rolagem": 0
+      },
+      "nome": "phoenix: painel 360px numa janela de 1600: 1 colunas",
+      "passou": true
+    },
+    {
+      "detalhe": {
+        "colunas": 4,
+        "conteiner": 1304,
+        "ids": [
+          "01a0f85a-635d-7553-8b0f-d5be7a41be81",
+          "01a0f85a-635d-7b3a-8c74-f568ffb5cbdb",
+          "01a0f85a-635d-7495-9b3a-3761411c55dd",
+          "01a0f85a-635d-7828-bafc-0ed759bbe9c7"
+        ],
+        "janela": 1600,
+        "lado_a_lado": true,
+        "mesmos": true,
+        "rolagem": 0
+      },
+      "nome": "phoenix: painel  numa janela de 1600: 4 colunas",
+      "passou": true
+    },
+    {
+      "detalhe": {
+        "colunas": 1,
+        "esperado": 1
+      },
+      "nome": "phoenix: fronteira exata do conteiner 639px",
+      "passou": true
+    },
+    {
+      "detalhe": {
+        "colunas": 2,
+        "esperado": 2
+      },
+      "nome": "phoenix: fronteira exata do conteiner 640px",
+      "passou": true
+    },
+    {
+      "detalhe": {
+        "colunas": 2,
+        "esperado": 2
+      },
+      "nome": "phoenix: fronteira exata do conteiner 641px",
+      "passou": true
+    },
+    {
+      "detalhe": {
+        "colunas": 2,
+        "esperado": 2
+      },
+      "nome": "phoenix: fronteira exata do conteiner 1119px",
+      "passou": true
+    },
+    {
+      "detalhe": {
+        "colunas": 4,
+        "esperado": 4
+      },
+      "nome": "phoenix: fronteira exata do conteiner 1120px",
+      "passou": true
+    },
+    {
+      "detalhe": {
+        "colunas": 4,
+        "esperado": 4
+      },
+      "nome": "phoenix: fronteira exata do conteiner 1121px",
+      "passou": true
+    },
+    {
+      "detalhe": {
+        "colunas": 1,
+        "conteiner": 360,
+        "ids": [
+          "01a0f85a-635d-7553-8b0f-d5be7a41be81",
+          "01a0f85a-635d-7b3a-8c74-f568ffb5cbdb",
+          "01a0f85a-635d-7495-9b3a-3761411c55dd",
+          "01a0f85a-635d-7828-bafc-0ed759bbe9c7"
+        ],
+        "janela": 1920,
+        "lado_a_lado": true,
+        "mesmos": true,
+        "rolagem": 0
+      },
+      "nome": "phoenix: painel de 360 px numa janela de 1920: 1 coluna",
+      "passou": true
+    },
+    {
+      "detalhe": [
+        "01a0f85a-635d-7553-8b0f-d5be7a41be81",
+        "01a0f85a-635d-7b3a-8c74-f568ffb5cbdb",
+        "01a0f85a-635d-7495-9b3a-3761411c55dd",
+        "01a0f85a-635d-7828-bafc-0ed759bbe9c7"
+      ],
+      "nome": "bootstrap: quatro cartoes do JSON, com o UUID de cada um",
+      "passou": true
+    },
+    {
+      "detalhe": 0,
+      "nome": "bootstrap: sem rolagem horizontal da pagina a 320px",
+      "passou": true
+    },
+    {
+      "detalhe": {
+        "colunas": 1,
+        "conteiner_px": 288.0,
+        "esperado": 1
+      },
+      "nome": "bootstrap: colunas do conteiner a 320px",
+      "passou": true
+    },
+    {
+      "detalhe": {
+        "mesmos_nos": true
+      },
+      "nome": "bootstrap: identidades e nos preservados a 320px",
+      "passou": true
+    },
+    {
+      "detalhe": false,
+      "nome": "bootstrap: casca a 320px (lado a lado a partir de 992)",
+      "passou": true
+    },
+    {
+      "detalhe": 0,
+      "nome": "bootstrap: sem rolagem horizontal da pagina a 360px",
+      "passou": true
+    },
+    {
+      "detalhe": {
+        "colunas": 1,
+        "conteiner_px": 328.0,
+        "esperado": 1
+      },
+      "nome": "bootstrap: colunas do conteiner a 360px",
+      "passou": true
+    },
+    {
+      "detalhe": {
+        "mesmos_nos": true
+      },
+      "nome": "bootstrap: identidades e nos preservados a 360px",
+      "passou": true
+    },
+    {
+      "detalhe": false,
+      "nome": "bootstrap: casca a 360px (lado a lado a partir de 992)",
+      "passou": true
+    },
+    {
+      "detalhe": 0,
+      "nome": "bootstrap: sem rolagem horizontal da pagina a 390px",
+      "passou": true
+    },
+    {
+      "detalhe": {
+        "colunas": 1,
+        "conteiner_px": 358.0,
+        "esperado": 1
+      },
+      "nome": "bootstrap: colunas do conteiner a 390px",
+      "passou": true
+    },
+    {
+      "detalhe": {
+        "mesmos_nos": true
+      },
+      "nome": "bootstrap: identidades e nos preservados a 390px",
+      "passou": true
+    },
+    {
+      "detalhe": false,
+      "nome": "bootstrap: casca a 390px (lado a lado a partir de 992)",
+      "passou": true
+    },
+    {
+      "detalhe": 0,
+      "nome": "bootstrap: sem rolagem horizontal da pagina a 576px",
+      "passou": true
+    },
+    {
+      "detalhe": {
+        "colunas": 1,
+        "conteiner_px": 544.0,
+        "esperado": 1
+      },
+      "nome": "bootstrap: colunas do conteiner a 576px",
+      "passou": true
+    },
+    {
+      "detalhe": {
+        "mesmos_nos": true
+      },
+      "nome": "bootstrap: identidades e nos preservados a 576px",
+      "passou": true
+    },
+    {
+      "detalhe": false,
+      "nome": "bootstrap: casca a 576px (lado a lado a partir de 992)",
+      "passou": true
+    },
+    {
+      "detalhe": 0,
+      "nome": "bootstrap: sem rolagem horizontal da pagina a 768px",
+      "passou": true
+    },
+    {
+      "detalhe": {
+        "colunas": 2,
+        "conteiner_px": 736.0,
+        "esperado": 2
+      },
+      "nome": "bootstrap: colunas do conteiner a 768px",
+      "passou": true
+    },
+    {
+      "detalhe": {
+        "mesmos_nos": true
+      },
+      "nome": "bootstrap: identidades e nos preservados a 768px",
+      "passou": true
+    },
+    {
+      "detalhe": false,
+      "nome": "bootstrap: casca a 768px (lado a lado a partir de 992)",
+      "passou": true
+    },
+    {
+      "detalhe": 0,
+      "nome": "bootstrap: sem rolagem horizontal da pagina a 991px",
+      "passou": true
+    },
+    {
+      "detalhe": {
+        "colunas": 2,
+        "conteiner_px": 959.0,
+        "esperado": 2
+      },
+      "nome": "bootstrap: colunas do conteiner a 991px",
+      "passou": true
+    },
+    {
+      "detalhe": {
+        "mesmos_nos": true
+      },
+      "nome": "bootstrap: identidades e nos preservados a 991px",
+      "passou": true
+    },
+    {
+      "detalhe": false,
+      "nome": "bootstrap: casca a 991px (lado a lado a partir de 992)",
+      "passou": true
+    },
+    {
+      "detalhe": 0,
+      "nome": "bootstrap: sem rolagem horizontal da pagina a 992px",
+      "passou": true
+    },
+    {
+      "detalhe": {
+        "colunas": 2,
+        "conteiner_px": 696.0,
+        "esperado": 2
+      },
+      "nome": "bootstrap: colunas do conteiner a 992px",
+      "passou": true
+    },
+    {
+      "detalhe": {
+        "mesmos_nos": true
+      },
+      "nome": "bootstrap: identidades e nos preservados a 992px",
+      "passou": true
+    },
+    {
+      "detalhe": true,
+      "nome": "bootstrap: casca a 992px (lado a lado a partir de 992)",
+      "passou": true
+    },
+    {
+      "detalhe": 0,
+      "nome": "bootstrap: sem rolagem horizontal da pagina a 1280px",
+      "passou": true
+    },
+    {
+      "detalhe": {
+        "colunas": 2,
+        "conteiner_px": 984.0,
+        "esperado": 2
+      },
+      "nome": "bootstrap: colunas do conteiner a 1280px",
+      "passou": true
+    },
+    {
+      "detalhe": {
+        "mesmos_nos": true
+      },
+      "nome": "bootstrap: identidades e nos preservados a 1280px",
+      "passou": true
+    },
+    {
+      "detalhe": true,
+      "nome": "bootstrap: casca a 1280px (lado a lado a partir de 992)",
+      "passou": true
+    },
+    {
+      "detalhe": 0,
+      "nome": "bootstrap: sem rolagem horizontal da pagina a 1600px",
+      "passou": true
+    },
+    {
+      "detalhe": {
+        "colunas": 4,
+        "conteiner_px": 1304.0,
+        "esperado": 4
+      },
+      "nome": "bootstrap: colunas do conteiner a 1600px",
+      "passou": true
+    },
+    {
+      "detalhe": {
+        "mesmos_nos": true
+      },
+      "nome": "bootstrap: identidades e nos preservados a 1600px",
+      "passou": true
+    },
+    {
+      "detalhe": true,
+      "nome": "bootstrap: casca a 1600px (lado a lado a partir de 992)",
+      "passou": true
+    },
+    {
+      "detalhe": 0,
+      "nome": "bootstrap: sem rolagem horizontal da pagina a 1920px",
+      "passou": true
+    },
+    {
+      "detalhe": {
+        "colunas": 4,
+        "conteiner_px": 1624.0,
+        "esperado": 4
+      },
+      "nome": "bootstrap: colunas do conteiner a 1920px",
+      "passou": true
+    },
+    {
+      "detalhe": {
+        "mesmos_nos": true
+      },
+      "nome": "bootstrap: identidades e nos preservados a 1920px",
+      "passou": true
+    },
+    {
+      "detalhe": true,
+      "nome": "bootstrap: casca a 1920px (lado a lado a partir de 992)",
+      "passou": true
+    },
+    {
+      "detalhe": {
+        "colunas": 4,
+        "conteiner": 1180,
+        "ids": [
+          "01a0f85a-635d-7553-8b0f-d5be7a41be81",
+          "01a0f85a-635d-7b3a-8c74-f568ffb5cbdb",
+          "01a0f85a-635d-7495-9b3a-3761411c55dd",
+          "01a0f85a-635d-7828-bafc-0ed759bbe9c7"
+        ],
+        "janela": 1600,
+        "lado_a_lado": true,
+        "mesmos": true,
+        "rolagem": 0
+      },
+      "nome": "bootstrap: painel 1180px numa janela de 1600: 4 colunas",
+      "passou": true
+    },
+    {
+      "detalhe": {
+        "colunas": 2,
+        "conteiner": 720,
+        "ids": [
+          "01a0f85a-635d-7553-8b0f-d5be7a41be81",
+          "01a0f85a-635d-7b3a-8c74-f568ffb5cbdb",
+          "01a0f85a-635d-7495-9b3a-3761411c55dd",
+          "01a0f85a-635d-7828-bafc-0ed759bbe9c7"
+        ],
+        "janela": 1600,
+        "lado_a_lado": true,
+        "mesmos": true,
+        "rolagem": 0
+      },
+      "nome": "bootstrap: painel 720px numa janela de 1600: 2 colunas",
+      "passou": true
+    },
+    {
+      "detalhe": {
+        "colunas": 1,
+        "conteiner": 360,
+        "ids": [
+          "01a0f85a-635d-7553-8b0f-d5be7a41be81",
+          "01a0f85a-635d-7b3a-8c74-f568ffb5cbdb",
+          "01a0f85a-635d-7495-9b3a-3761411c55dd",
+          "01a0f85a-635d-7828-bafc-0ed759bbe9c7"
+        ],
+        "janela": 1600,
+        "lado_a_lado": true,
+        "mesmos": true,
+        "rolagem": 0
+      },
+      "nome": "bootstrap: painel 360px numa janela de 1600: 1 colunas",
+      "passou": true
+    },
+    {
+      "detalhe": {
+        "colunas": 4,
+        "conteiner": 1304,
+        "ids": [
+          "01a0f85a-635d-7553-8b0f-d5be7a41be81",
+          "01a0f85a-635d-7b3a-8c74-f568ffb5cbdb",
+          "01a0f85a-635d-7495-9b3a-3761411c55dd",
+          "01a0f85a-635d-7828-bafc-0ed759bbe9c7"
+        ],
+        "janela": 1600,
+        "lado_a_lado": true,
+        "mesmos": true,
+        "rolagem": 0
+      },
+      "nome": "bootstrap: painel  numa janela de 1600: 4 colunas",
+      "passou": true
+    },
+    {
+      "detalhe": {
+        "colunas": 1,
+        "esperado": 1
+      },
+      "nome": "bootstrap: fronteira exata do conteiner 639px",
+      "passou": true
+    },
+    {
+      "detalhe": {
+        "colunas": 2,
+        "esperado": 2
+      },
+      "nome": "bootstrap: fronteira exata do conteiner 640px",
+      "passou": true
+    },
+    {
+      "detalhe": {
+        "colunas": 2,
+        "esperado": 2
+      },
+      "nome": "bootstrap: fronteira exata do conteiner 641px",
+      "passou": true
+    },
+    {
+      "detalhe": {
+        "colunas": 2,
+        "esperado": 2
+      },
+      "nome": "bootstrap: fronteira exata do conteiner 1119px",
+      "passou": true
+    },
+    {
+      "detalhe": {
+        "colunas": 4,
+        "esperado": 4
+      },
+      "nome": "bootstrap: fronteira exata do conteiner 1120px",
+      "passou": true
+    },
+    {
+      "detalhe": {
+        "colunas": 4,
+        "esperado": 4
+      },
+      "nome": "bootstrap: fronteira exata do conteiner 1121px",
+      "passou": true
+    },
+    {
+      "detalhe": {
+        "colunas": 1,
+        "conteiner": 360,
+        "ids": [
+          "01a0f85a-635d-7553-8b0f-d5be7a41be81",
+          "01a0f85a-635d-7b3a-8c74-f568ffb5cbdb",
+          "01a0f85a-635d-7495-9b3a-3761411c55dd",
+          "01a0f85a-635d-7828-bafc-0ed759bbe9c7"
+        ],
+        "janela": 1920,
+        "lado_a_lado": true,
+        "mesmos": true,
+        "rolagem": 0
+      },
+      "nome": "bootstrap: painel de 360 px numa janela de 1920: 1 coluna",
+      "passou": true
+    }
+  ],
+  "versao_bootstrap": "5.3.6"
+}

@@ -171,7 +171,7 @@ def verify_ui() -> None:
         ROOT / "apps/phxclaw-ui/index.html",
         ROOT / "apps/phxclaw-ui/assets/app.css",
         ROOT / "apps/phxclaw-ui/assets/app.js",
-        ROOT / "apps/phxclaw-ui/assets/phoenix-mark.svg",
+        ROOT / "apps/phxclaw-ui/assets/marca-96.png",
         ROOT / "preview/splash.png",
         ROOT / "preview/dashboard.png",
     ]

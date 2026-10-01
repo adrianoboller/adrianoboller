@@ -164,7 +164,7 @@ Returns file:line and the matching passage. Use it before answering questions ab
                 .into(),
             parameters: json!({"type":"object","properties":{
                 "query":{"type":"string"},
-                "max_results":{"type":"integer","minimum":1,"maximum":10}
+                "max_results":{"type":"integer","description":"1 to 10; larger values are capped"}
             },"required":["query"]}),
         }
     }

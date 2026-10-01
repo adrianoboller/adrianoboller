@@ -173,13 +173,24 @@ class ClienteApi:
         modelo: str | None = None,
         plano_primeiro: bool = False,
         webhook: str | None = None,
+        verificar: str | None = None,
+        saida_esquema: dict[str, Any] | None = None,
     ) -> str:
-        """Cria e devolve o id; a tarefa roda em segundo plano no servidor."""
+        """Cria e devolve o id; a tarefa roda em segundo plano no servidor.
+
+        `verificar`: comando que confere o fim no sandbox da tarefa (codigo != 0 recusa a
+        resposta; o servidor exige a capacidade shell.exec). `saida_esquema`: esquema JSON
+        da resposta final, conferido pelo mesmo validador dos argumentos das ferramentas.
+        """
         corpo: dict[str, Any] = {"objective": objetivo, "plan_first": plano_primeiro}
         if modelo is not None:
             corpo["model"] = modelo
         if webhook is not None:
             corpo["webhook"] = webhook
+        if verificar is not None:
+            corpo["verificar"] = verificar
+        if saida_esquema is not None:
+            corpo["saida_esquema"] = saida_esquema
         return str(self._pedir("POST", "/v1/tasks", corpo)["id"])
 
     def tarefa(self, id: str) -> Tarefa:

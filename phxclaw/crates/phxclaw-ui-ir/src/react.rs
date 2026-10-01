@@ -4,8 +4,12 @@
 //! `telas.jsx` e o GERADO -- um componente por tela, com a descricao dela escrita no
 //! proprio arquivo, para quem abrir o projeto editar tela por tela. O CSS e o mesmo do
 //! renderizador HTML: duas copias de estilo divergiriam na primeira correcao de contraste.
+//! E a grade tambem: as classes que o motor responsivo da a cada secao e o «campo largo»
+//! vao calculadas no JSON embutido (`_conteiner`, `_layout`, `_largo`), para o JSX nao
+//! repetir em JavaScript a conta que o motor ja faz em Rust.
 
-use crate::ir::{App, Screen};
+use crate::ir::{App, Screen, Section};
+use crate::responsivo;
 use serde_json::{Value, json};
 
 /// Arquivos do projeto: (caminho relativo, conteudo).
@@ -67,8 +71,8 @@ fn index(app: &App) -> String {
     format!(
         "<!doctype html>\n<html lang=\"pt-BR\">\n<head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n\
          <title>{nome}</title>\n<style>{}\n#raiz{{display:contents}}</style></head>\n\
-         <body><div id=\"raiz\"></div><script src=\"dist/app.js\"></script></body>\n</html>\n",
-        crate::html::CSS
+         <body class=\"phx-app\"><div id=\"raiz\"></div><script src=\"dist/app.js\"></script></body>\n</html>\n",
+        crate::html::css(app)
     )
 }
 
@@ -86,10 +90,9 @@ fn telas(app: &App) -> String {
                 .fields
                 .iter()
                 .map(|f| {
-                    (
-                        f.name.clone(),
-                        serde_json::to_value(f).unwrap_or(Value::Null),
-                    )
+                    let mut v = serde_json::to_value(f).unwrap_or(Value::Null);
+                    v["_largo"] = Value::Bool(responsivo::campo_largo(f));
+                    (f.name.clone(), v)
                 })
                 .collect();
             (e.name.clone(), Value::Object(m))
@@ -107,9 +110,16 @@ fn telas(app: &App) -> String {
         js(&campos)
     );
     let mut lista = vec![];
+    let mut fora = vec![];
     for t in &app.screens {
+        // painel de cartoes (PHX JSON) ainda nao tem componente React: fica de fora DITO, no
+        // cabecalho do arquivo, em vez de um componente vazio que pareceria a tela
+        if let Screen::Painel { id, .. } = t {
+            fora.push(id.clone());
+            continue;
+        }
         let c = componente(t.id());
-        let desc = js(t);
+        let desc = js(&com_classes(t));
         let corpo = match t {
             Screen::List { entity, .. } => {
                 format!(
@@ -121,6 +131,7 @@ fn telas(app: &App) -> String {
                 "<Cadastro tela={{TELA}} campos={{CAMPOS[{}]}} rotulos={{ROTULOS}} />",
                 js(entity)
             ),
+            Screen::Painel { .. } => unreachable!("painel sai antes, sem componente"),
             Screen::MasterDetail { master, detail, .. } => {
                 let itens = app
                     .entities
@@ -149,17 +160,53 @@ fn telas(app: &App) -> String {
         .menu
         .iter()
         .map(|g| {
-            json!({"title": g.title, "itens": g.screens.iter().filter_map(|id| {
+            json!({"title": g.title, "itens": g.screens.iter().filter(|id| !fora.contains(id)).filter_map(|id| {
                 app.screens.iter().find(|s| s.id() == id).map(|s| json!({"id": id, "title": s.title()}))
             }).collect::<Vec<_>>()})
         })
         .collect();
+    if !fora.is_empty() {
+        s.push_str(&format!(
+            "// telas de painel nao desenhadas neste adaptador (use o HTML ou o Bootstrap): {}\n",
+            fora.join(", ")
+        ));
+    }
     s.push_str(&format!(
         "export const TELAS = [\n{}\n];\nexport const MENU = {};\n",
         lista.join(",\n"),
         js(&menu)
     ));
     s
+}
+
+/// A tela como o JSX a le: cada secao com as classes do motor (`_conteiner`, `_layout`), e a
+/// consulta com as dos filtros (a intencao padrao, como no HTML).
+fn com_classes(t: &Screen) -> Value {
+    let mut v = serde_json::to_value(t).unwrap_or(Value::Null);
+    let classes = |s: &Section| {
+        let (c, l) = responsivo::classes_da_secao(s);
+        json!({"_conteiner": c, "_layout": l})
+    };
+    for chave in ["sections", "header"] {
+        if let Some(secoes) = v.get_mut(chave).and_then(Value::as_array_mut) {
+            for s in secoes {
+                if let Ok(sec) = serde_json::from_value::<Section>(s.clone()) {
+                    let k = classes(&sec);
+                    s["_conteiner"] = k["_conteiner"].clone();
+                    s["_layout"] = k["_layout"].clone();
+                }
+            }
+        }
+    }
+    if matches!(t, Screen::List { .. }) {
+        v["_filtros"] = classes(&Section {
+            title: String::new(),
+            fields: vec![],
+            layout: None,
+            conteiner: None,
+        });
+    }
+    v
 }
 
 const MAIN_JSX: &str = r##"
@@ -184,7 +231,7 @@ function App() {
         {MENU.map((g) => (
           <div key={g.title}>
             <h2>{g.title}</h2>
-            <ul>
+            <ul className="phx-menu-lista">
               {g.itens.map((i) => (
                 <li key={i.id}>
                   <a href={"#" + i.id} aria-current={i.id === tela.id ? "page" : undefined}>{i.title}</a>
@@ -197,7 +244,7 @@ function App() {
       </nav>
       <main>
         {/* key: trocar de tela zera o estado do formulario, como abrir outra janela */}
-        <section className="tela" id={tela.id} key={tela.id} aria-labelledby={tela.id + "-t"}>
+        <section className="tela phx-tela" id={tela.id} key={tela.id} aria-labelledby={tela.id + "-t"}>
           <h1 id={tela.id + "-t"}>{tela.title}</h1>
           <tela.Comp />
         </section>
@@ -268,8 +315,8 @@ export function Controle({ id, f, rotulos, valor, muda }) {
     case "decimal": return <input type="number" step={Math.pow(10, -w.scale)} {...txt} />;
     case "money":
       return (
-        <span className="moeda"><span aria-hidden="true">R$</span>
-          <input inputMode="decimal" className="num" placeholder="0,00" {...txt} /></span>
+        <span className="phx-junto"><span aria-hidden="true">R$</span>
+          <input inputMode="decimal" className="num" data-money placeholder="0,00" {...txt} /></span>
       );
     case "date": return <Data id={id} f={f} valor={valor ?? ""} muda={muda} />;
     case "date_time": return <Data id={id} f={f} valor={valor ?? ""} muda={muda} dh />;
@@ -285,7 +332,7 @@ export function Controle({ id, f, rotulos, valor, muda }) {
     case "lookup": {
       const r = (rotulos[w.entity] || w.entity).toLowerCase();
       return (
-        <span className="lookup">
+        <span className="phx-junto">
           <select {...txt}><option value="">Selecione {r}</option></select>
           <button type="button" className="acao query mini" title={"Pesquisar " + r} aria-label={"Pesquisar " + r}>&#128269;</button>
         </span>
@@ -297,14 +344,13 @@ export function Controle({ id, f, rotulos, valor, muda }) {
 
 function Secoes({ secoes, campos, rotulos, prefixo, dados, muda }) {
   return secoes.map((s) => (
-    <fieldset key={s.title}>
+    <fieldset key={s.title} className={s._conteiner}>
       <legend>{s.title}</legend>
-      <div className="grade-form">
+      <div className={s._layout}>
         {s.fields.map((n) => campos[n]).filter(Boolean).map((f) => {
           const id = prefixo + "-" + f.name;
-          const largo = f.widget.kind === "text_area" || (f.max_len || 0) > 80;
           return (
-            <div key={f.name} className={"campo" + (largo ? " largo" : "")}>
+            <div key={f.name} className={"phx-campo" + (f._largo ? " phx-largo" : "")}>
               <label htmlFor={id}>{f.label}{f.required && <> <span className="obrig" aria-hidden="true">*</span></>}</label>
               <Controle id={id} f={f} rotulos={rotulos} valor={dados[f.name]} muda={(v) => muda(f.name, v)} />
             </div>
@@ -317,7 +363,7 @@ function Secoes({ secoes, campos, rotulos, prefixo, dados, muda }) {
 
 function Acoes({ acoes }) {
   return (
-    <div className="acoes">
+    <div className="acoes phx-fila">
       {acoes.map((a) => <button key={a.id} type="button" className={"acao " + a.kind} data-acao={a.id}>{a.label}</button>)}
     </div>
   );
@@ -332,21 +378,21 @@ export function Consulta({ tela, campos }) {
   const rot = (n) => (campos[n] ? campos[n].label : n);
   return (
     <>
-      <form className="filtros" role="search">
-        <div className="grade-form">
+      <form className={"filtros " + tela._filtros._conteiner} role="search">
+        <div className={tela._filtros._layout}>
           {tela.search_fields.map((n) => (
-            <div key={n} className="campo">
+            <div key={n} className="phx-campo">
               <label htmlFor={tela.id + "-f-" + n}>{rot(n)}</label>
               <input id={tela.id + "-f-" + n} type="search" />
             </div>
           ))}
         </div>
-        <div className="acoes">
+        <div className="acoes phx-fila">
           <button type="button" className="acao query">Pesquisar</button>
           <a className="acao include" href={"#" + tela.opens}>Incluir</a>
         </div>
       </form>
-      <div className="tabela"><table>
+      <div className="phx-tabela"><table>
         <thead><tr>{tela.columns.map((c) => <th key={c} scope="col">{rot(c)}</th>)}</tr></thead>
         <tbody><tr><td colSpan={tela.columns.length} className="vazio">Nenhum registro. Use Pesquisar ou Incluir.</td></tr></tbody>
       </table></div>
@@ -375,18 +421,18 @@ export function MestreDetalhe({ tela, campos, camposDet, rotulos, rotuloItens })
       <Secoes secoes={tela.header} campos={campos} rotulos={rotulos} prefixo={tela.id} dados={d} muda={muda} />
       <fieldset>
         <legend>{rotuloItens}</legend>
-        <div className="tabela"><table className="itens">
+        <div className="phx-tabela"><table className="itens">
           <thead><tr>{cols.map((f) => <th key={f.name} scope="col">{f.label}</th>)}<th><span className="sr">Ações</span></th></tr></thead>
           <tbody>
             {itens.map((i) => (
               <tr key={i.k}>
                 {cols.map((f) => (
-                  <td key={f.name}>
+                  <td key={f.name} data-rotulo={f.label}>
                     <Controle id={tela.id + "-det-" + f.name + "-" + i.k} f={f} rotulos={rotulos}
                       valor={i[f.name]} muda={(v) => mudaItem(i.k, f.name, v)} />
                   </td>
                 ))}
-                <td><button type="button" className="acao delete mini" aria-label="Remover item"
+                <td data-rotulo="Ações"><button type="button" className="acao delete mini" aria-label="Remover item"
                   onClick={() => setItens((l) => l.filter((x) => x.k !== i.k))}>&#10005;</button></td>
               </tr>
             ))}
@@ -394,7 +440,7 @@ export function MestreDetalhe({ tela, campos, camposDet, rotulos, rotuloItens })
         </table></div>
         <button type="button" className="acao include" data-add-item
           onClick={() => setItens((l) => [...l, { k: ++seq.current }])}>Adicionar item</button>
-        <div className="totais">
+        <div className="totais phx-fila phx-fim">
           {tela.totals.map((t) => (
             <div key={t.sum_of} className="total"><span>{t.label}</span>
               <output data-soma={t.sum_of}>{brl(itens.reduce((s, i) => s + num(i[t.sum_of]), 0))}</output></div>

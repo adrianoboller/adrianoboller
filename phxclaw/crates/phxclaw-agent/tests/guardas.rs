@@ -7,6 +7,7 @@ use phxclaw_agent::montagem::{CAPACIDADES_PADRAO, Montagem};
 use phxclaw_agent::motor::{CAPACIDADES_DE_LEITURA, CAPACIDADES_QUE_ESCREVEM};
 use phxclaw_agent::regras::RegrasDeComando;
 use phxclaw_agent::*;
+use phxclaw_agent::{esquema, motor};
 use phxclaw_agent_core::{BoxFut, Tool, ToolContext, ToolError, ToolOutput, ToolSpec};
 use serde_json::{Value, json};
 use std::collections::BTreeSet;
@@ -393,4 +394,116 @@ fn todo_processo_desta_crate_passa_pelo_bwrap_ou_esta_declarado() {
         FORA_DO_BWRAP.iter().all(|(_, _, m)| m.len() > 40),
         "excecao sem motivo"
     );
+}
+
+// ------------------------------------------------------------------ validador de esquema
+
+/// A medida que decidiu o validador e a catraca dele: as palavras-chave dos esquemas de
+/// TODAS as ferramentas que a montagem registra. Palavra nova num esquema nativo reprova
+/// aqui ate o validador conferi-la (ou ela entrar como anotacao): esquema de MCP pode
+/// trazer o que quiser e passa com nota, mas o nativo nao pode ficar sem conferencia calado.
+#[test]
+fn todo_esquema_nativo_usa_so_palavras_conferidas() {
+    let m = Montagem::new(TaskStore::new(tmp("esq")).unwrap());
+    let a = m.agent_with(Arc::new(ScriptedLlm::new(vec![])));
+    let mut palavras = std::collections::BTreeMap::new();
+    for t in a
+        .tools
+        .iter()
+        .filter(|t| !t.capability().starts_with("mcp."))
+    {
+        let p = t.spec().parameters;
+        assert_eq!(
+            p.get("type").and_then(Value::as_str),
+            Some("object"),
+            "{}: esquema de argumentos tem de ser objeto",
+            t.spec().name
+        );
+        esquema::palavras_usadas(&p, &mut palavras);
+    }
+    eprintln!(
+        "ferramentas montadas: {}; palavras: {palavras:?}",
+        a.tools.len()
+    );
+    let soltas: Vec<_> = palavras
+        .keys()
+        .filter(|k| {
+            !esquema::PALAVRAS_CONFERIDAS.contains(&k.as_str())
+                && !esquema::PALAVRAS_DE_ANOTACAO.contains(&k.as_str())
+        })
+        .collect();
+    assert!(
+        soltas.is_empty(),
+        "palavra de esquema que o validador nao confere: {soltas:?}"
+    );
+    assert!(a.tools.len() >= 60, "montagem encolheu: {}", a.tools.len());
+}
+
+/// O portao unico valida ANTES de a ferramenta rodar, e o `call_tool` publico (o do
+/// `mcp-serve` e do fluxo) passa pelo mesmo: nenhuma porta roda argumento invalido.
+#[tokio::test]
+async fn portao_valida_antes_de_rodar_inclusive_pelo_call_tool_publico() {
+    struct ComEsquema(Arc<AtomicUsize>);
+    impl Tool for ComEsquema {
+        fn spec(&self) -> ToolSpec {
+            ToolSpec {
+                name: "conta".into(),
+                description: "conta".into(),
+                parameters: json!({"type":"object","properties":{
+                    "n":{"type":"integer","maximum":3}},"required":["n"]}),
+            }
+        }
+        fn capability(&self) -> &'static str {
+            "calc"
+        }
+        fn run<'a>(
+            &'a self,
+            a: Value,
+            _c: &'a ToolContext,
+        ) -> BoxFut<'a, Result<ToolOutput, ToolError>> {
+            Box::pin(async move {
+                self.0.fetch_add(1, Ordering::SeqCst);
+                Ok(ToolOutput::text(format!("n={}", a["n"])))
+            })
+        }
+    }
+    let rodou = Arc::new(AtomicUsize::new(0));
+    let s = TaskStore::new(tmp("portao")).unwrap();
+    let ag = Agent::new(
+        Arc::new(ScriptedLlm::new(vec![])),
+        vec![Arc::new(ComEsquema(rodou.clone()))],
+        AgentConfig::default().grant(&["calc"]),
+        s.clone(),
+    );
+    let ctx = ToolContext {
+        task_id: "t".into(),
+        workdir: tmp("portao-w"),
+        timeout: std::time::Duration::from_secs(5),
+    };
+    let ledger =
+        phxclaw_evidence_ledger::EvidenceLedger::open(ctx.workdir.join("ev.jsonl")).unwrap();
+    let chamada = |args: Value| phxclaw_agent_core::ToolCall {
+        id: "c".into(),
+        name: "conta".into(),
+        arguments: args,
+    };
+    let (texto, desfecho, _) = ag
+        .call_tool(&chamada(json!({"n": 9})), &ctx, &ledger, "t")
+        .await;
+    assert_eq!(desfecho, motor::DESFECHO_INVALIDO, "{texto}");
+    assert!(
+        texto.contains("\"field\":\"n\"") && texto.contains("<= 3"),
+        "{texto}"
+    );
+    assert_eq!(
+        rodou.load(Ordering::SeqCst),
+        0,
+        "rodou com argumento invalido"
+    );
+    // Texto numerico vira numero (o lax) e a ferramenta recebe o valor coagido.
+    let (texto, desfecho, _) = ag
+        .call_tool(&chamada(json!({"n": "2"})), &ctx, &ledger, "t")
+        .await;
+    assert_eq!((desfecho, texto.as_str()), ("ok", "n=2"));
+    assert_eq!(rodou.load(Ordering::SeqCst), 1);
 }

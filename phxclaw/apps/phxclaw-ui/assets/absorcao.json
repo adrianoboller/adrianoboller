@@ -962,5 +962,252 @@
     "estado": "parcial"
    }
   ]
+ },
+ "vscode": {
+  "total": 52,
+  "no_agente": 28,
+  "parcial": 10,
+  "nao": 14,
+  "pct_agente": 53.8,
+  "pct_com_bibliotecas": 63.5,
+  "falta": [
+   "minimapa",
+   "dobra_codigo",
+   "console_depuracao",
+   "stage_por_trecho",
+   "merge_conflitos",
+   "perfis",
+   "workspace_multi_raiz",
+   "remoto_ssh_containers",
+   "live_share",
+   "breadcrumbs",
+   "snippets",
+   "emmet",
+   "sugestao_inline_ia",
+   "settings_sync"
+  ],
+  "pela_metade": [
+   "substituir_projeto",
+   "depurador",
+   "tarefas_build",
+   "plugins",
+   "marketplace_extensoes",
+   "tunel_remoto",
+   "explorador_testes",
+   "timeline_arquivo",
+   "acessibilidade",
+   "ide_web"
+  ],
+  "lido_em": "01/10/2026",
+  "capacidades": [
+   {
+    "id": "ide",
+    "estado": "agente"
+   },
+   {
+    "id": "editor_abas",
+    "estado": "agente"
+   },
+   {
+    "id": "editor_divisao",
+    "estado": "agente"
+   },
+   {
+    "id": "multicursor",
+    "estado": "agente"
+   },
+   {
+    "id": "minimapa",
+    "estado": "nao"
+   },
+   {
+    "id": "dobra_codigo",
+    "estado": "nao"
+   },
+   {
+    "id": "lsp",
+    "estado": "agente"
+   },
+   {
+    "id": "ir_para_definicao",
+    "estado": "agente"
+   },
+   {
+    "id": "renomear_simbolo",
+    "estado": "agente"
+   },
+   {
+    "id": "code_actions",
+    "estado": "agente"
+   },
+   {
+    "id": "formatacao",
+    "estado": "agente"
+   },
+   {
+    "id": "busca_projeto",
+    "estado": "agente"
+   },
+   {
+    "id": "substituir_projeto",
+    "estado": "parcial"
+   },
+   {
+    "id": "busca_arquivos",
+    "estado": "agente"
+   },
+   {
+    "id": "paleta_comandos",
+    "estado": "agente"
+   },
+   {
+    "id": "atalhos_configuraveis",
+    "estado": "agente"
+   },
+   {
+    "id": "terminal_integrado",
+    "estado": "agente"
+   },
+   {
+    "id": "depurador",
+    "estado": "parcial"
+   },
+   {
+    "id": "console_depuracao",
+    "estado": "nao"
+   },
+   {
+    "id": "tarefas_build",
+    "estado": "parcial"
+   },
+   {
+    "id": "git",
+    "estado": "agente"
+   },
+   {
+    "id": "diff_git",
+    "estado": "agente"
+   },
+   {
+    "id": "stage_por_trecho",
+    "estado": "nao"
+   },
+   {
+    "id": "blame",
+    "estado": "agente"
+   },
+   {
+    "id": "merge_conflitos",
+    "estado": "nao"
+   },
+   {
+    "id": "explorador_arquivos",
+    "estado": "agente"
+   },
+   {
+    "id": "problemas_diagnosticos",
+    "estado": "agente"
+   },
+   {
+    "id": "plugins",
+    "estado": "parcial"
+   },
+   {
+    "id": "marketplace_extensoes",
+    "estado": "parcial"
+   },
+   {
+    "id": "configuracoes_json_tela",
+    "estado": "agente"
+   },
+   {
+    "id": "perfis",
+    "estado": "nao"
+   },
+   {
+    "id": "temas",
+    "estado": "agente"
+   },
+   {
+    "id": "workspace_multi_raiz",
+    "estado": "nao"
+   },
+   {
+    "id": "remoto_ssh_containers",
+    "estado": "nao"
+   },
+   {
+    "id": "tunel_remoto",
+    "estado": "parcial"
+   },
+   {
+    "id": "live_share",
+    "estado": "nao"
+   },
+   {
+    "id": "notebook",
+    "estado": "agente"
+   },
+   {
+    "id": "explorador_testes",
+    "estado": "parcial"
+   },
+   {
+    "id": "timeline_arquivo",
+    "estado": "parcial"
+   },
+   {
+    "id": "outline_simbolos",
+    "estado": "agente"
+   },
+   {
+    "id": "breadcrumbs",
+    "estado": "nao"
+   },
+   {
+    "id": "snippets",
+    "estado": "nao"
+   },
+   {
+    "id": "emmet",
+    "estado": "nao"
+   },
+   {
+    "id": "chat_ia",
+    "estado": "agente"
+   },
+   {
+    "id": "modo_agente",
+    "estado": "agente"
+   },
+   {
+    "id": "sugestao_inline_ia",
+    "estado": "nao"
+   },
+   {
+    "id": "mcp_cliente",
+    "estado": "agente"
+   },
+   {
+    "id": "instrucoes_projeto",
+    "estado": "agente"
+   },
+   {
+    "id": "settings_sync",
+    "estado": "nao"
+   },
+   {
+    "id": "acessibilidade",
+    "estado": "parcial"
+   },
+   {
+    "id": "idiomas_interface",
+    "estado": "agente"
+   },
+   {
+    "id": "ide_web",
+    "estado": "parcial"
+   }
+  ]
  }
 }

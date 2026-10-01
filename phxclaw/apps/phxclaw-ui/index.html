@@ -5,7 +5,9 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <meta name="theme-color" content="#010418" />
   <title>PhxClaw • Command Center</title>
-  <link rel="icon" href="./assets/phoenix-mark.svg" type="image/svg+xml" />
+  <!-- Identidade: artes do dono (01/10/2026), recortadas por scripts/marca_da_tela.py. -->
+  <link rel="icon" href="./assets/favicon-32.png" type="image/png" sizes="32x32" />
+  <link rel="icon" href="./assets/favicon-48.png" type="image/png" sizes="48x48" />
   <link rel="stylesheet" href="./assets/app.css" />
   <link rel="stylesheet" href="./assets/tarefas.css" />
   <!-- phx-grid (do dono, JS puro, sem dependencia): versao e origem em assets/vendor/phx-grid/VERSAO.
@@ -13,7 +15,7 @@
   <link rel="stylesheet" href="./assets/grades.css" />
   <!-- Aplicativo instalavel (PWA): o mesmo cliente no navegador, no celular e na ponte. -->
   <link rel="manifest" href="./manifest.webmanifest" />
-  <link rel="apple-touch-icon" href="./assets/icone-192.png" />
+  <link rel="apple-touch-icon" sizes="192x192" href="./assets/icone-192.png" />
   <!-- Tema (escuro da marca ou claro em papel quente): antes do corpo, para o primeiro quadro
        ja sair no tema escolhido. Depois das folhas: le o token --fundo para o theme-color. -->
   <script src="./assets/tema.js"></script>
@@ -29,11 +31,18 @@
     <div class="splash-orbit orbit-b"></div>
     <div class="splash-glow"></div>
     <div class="splash-center">
+      <!-- A arte tem a palavra em branco: no tema claro ela some no papel, entao ha duas
+           variantes (a do claro com a palavra na tinta do --fundo da marca) e o CSS mostra
+           so a do tema. A escondida tem alt vazio e sai da arvore de acessibilidade.
+           data-src: so o app.js poe o src, e so quando a abertura vai MESMO aparecer (abrir());
+           com ?tela=, #tela ou o PWA instalado ela nem baixa. loading="lazy": a variante do
+           outro tema esta em display:none e nao baixa. Com src direto as duas disputavam banda
+           com o JS no celular de rede lenta (qualificacao M4/M5: 1a tela util 1,4 s -> 2,6 s). -->
       <div class="mark-wrap">
-        <img src="./assets/phoenix-mark.svg" class="brand-mark" alt="PhxClaw" />
-        <span class="mark-ring"></span>
+        <img data-src="./assets/abertura-escuro.png" class="brand-mark so-escuro" width="251" height="260" loading="lazy" decoding="async" alt="PhxClaw" />
+        <img data-src="./assets/abertura-claro.png" class="brand-mark so-claro" width="251" height="260" loading="lazy" decoding="async" alt="" />
       </div>
-      <div class="wordmark"><span>PHOENIX</span><b>CLAW</b></div>
+      <div class="wordmark"><span>Phx</span><b>Claw</b></div>
       <div class="strap" data-txt="splash.strap">CONSTRUINDO UM SOFTWARE MELHOR AMANHÃ</div>
       <div class="splash-rule"></div>
       <div class="boot-row">
@@ -49,8 +58,8 @@
   <div id="app" class="app-shell" aria-hidden="true" inert>
     <header class="topbar">
       <div class="brand-mini">
-        <img src="./assets/phoenix-mark.svg" alt="" />
-        <div><strong>PHOENIX<span>CLAW</span></strong><small><span>COMMAND CENTER</span> • <span id="brandVersion">—</span></small></div>
+        <img src="./assets/marca-96.png" width="47" height="47" alt="" />
+        <div><strong>Phx<span>Claw</span></strong><small><span>COMMAND CENTER</span> • <span id="brandVersion">—</span></small></div>
       </div>
       <!-- Estado do topo: so o que o host DISSE (app.js, desenharTopo). Sem host, diz que
            nao ha host -- o «CORE ONLINE» cravado com o ponto pulsando mentia na previa web

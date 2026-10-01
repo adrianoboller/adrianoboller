@@ -280,7 +280,7 @@ pub fn campos_da_tela(app: &App, tela: &str) -> Vec<CampoDaTela> {
             entity, sections, ..
         } => (entity, sections),
         Screen::MasterDetail { master, header, .. } => (master, header),
-        Screen::List { .. } => return vec![],
+        Screen::List { .. } | Screen::Painel { .. } => return vec![],
     };
     for sec in secoes {
         for f in &sec.fields {

@@ -89,6 +89,14 @@
             "string",
             "null"
           ]
+        },
+        "tentativas_argumento": {
+          "default": 2,
+          "description": "Novas tentativas por ferramenta depois de argumento inválido (seguidas); esgotou, a tarefa falha (ambiente: PHXCLAW_TENTATIVAS_ARGUMENTO)",
+          "type": [
+            "integer",
+            "null"
+          ]
         }
       },
       "type": "object"
@@ -2175,6 +2183,13 @@
           "type": [
             "string",
             "array"
+          ]
+        },
+        "bootstrap_css": {
+          "description": "Folha LOCAL do Bootstrap 5.3 nas telas geradas (nunca CDN); vazio = vendor/bootstrap-5.3.3/bootstrap.min.css (ambiente: PHXCLAW_UI_BOOTSTRAP_CSS)",
+          "type": [
+            "string",
+            "null"
           ]
         },
         "dir": {

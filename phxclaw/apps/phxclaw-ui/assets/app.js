@@ -61,6 +61,8 @@ function desenharEtapas() {
 }
 
 function abrir() {
+  // A arte da abertura so baixa quando a abertura aparece (index.html, data-src).
+  for (const img of splash.querySelectorAll('img[data-src]')) img.src = img.dataset.src;
   desenharEtapas();
   idiomas.aoTrocar(desenharEtapas);
   const todas = Promise.all(ETAPAS.map(e => Promise.resolve(e.pronto).catch(() => {}).then(() => { e.feita = true; desenharEtapas(); })));
@@ -532,7 +534,7 @@ carregadores.ferramentas = async () => {
   buscaDaGrade(document.getElementById('ferramentasFiltro'), 'ferramentas');
 };
 
-const NOMES_PRODUTO = { openclaw: 'OpenClaw', hermes: 'Hermes', claude_code: 'Claude Code', codex: 'Codex', openjarvis: 'OpenJarvis' };
+const NOMES_PRODUTO = { openclaw: 'OpenClaw', hermes: 'Hermes', claude_code: 'Claude Code', codex: 'Codex', openjarvis: 'OpenJarvis', vscode: 'VS Code' };
 
 // Os tres estados se distinguem pela FORMA, nao so pela cor: no agente = cheio, pela metade =
 // hachurado, nao = so contorno tracejado. Em escala de cinza (ou para quem nao ve a cor) a

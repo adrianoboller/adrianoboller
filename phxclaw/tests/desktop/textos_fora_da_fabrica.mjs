@@ -38,12 +38,12 @@ const TETO_SPLASH_POR_ETAPA = 0;
 const ISENTOS = new Map([
   ['PhxClaw • Command Center', 'marca (titulo da janela)'], ['PhxClaw', 'marca'],
   ['COMMAND CENTER', 'marca (o nome do produto, o mesmo do titulo da janela)'],
-  ['PHOENIX', 'marca'], ['CLAW', 'marca'],
+  ['Phx', 'marca'], ['Claw', 'marca'],
   ['PT', 'codigo do idioma no botao de troca'], ['EN', 'codigo do idioma no botao de troca'],
   ['ZERO TRUST', 'nome da politica de seguranca (config/constitution.json)'],
   ['Deny-by-default', 'nome da politica de seguranca (config/constitution.json)'],
   ['IDE', 'sigla (nome da tela)'], ['bash —', 'nome do programa na aba; o resto e o titulo do terminal (dado)'],
-  ['OpenClaw', 'produto'], ['Hermes', 'produto'], ['Claude Code', 'produto'], ['Codex', 'produto'], ['OpenJarvis', 'produto'],
+  ['OpenClaw', 'produto'], ['Hermes', 'produto'], ['Claude Code', 'produto'], ['Codex', 'produto'], ['OpenJarvis', 'produto'], ['VS Code', 'produto'],
   // (As 15 etapas do boot, nomes de modulo do kernel, sairam com o temporizador da abertura:
   // isento sem uso e porta aberta para o texto voltar cravado sem ninguem ver.)
 ]);

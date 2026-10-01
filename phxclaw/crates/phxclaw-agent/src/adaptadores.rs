@@ -35,7 +35,7 @@ impl Tool for WebSearchTool {
         ToolSpec {
             name: "web_search".into(),
             description: "Search the web. Returns titles, URLs and snippets. Then open promising URLs with browser_open.".into(),
-            parameters: json!({"type":"object","properties":{"query":{"type":"string"},"max_results":{"type":"integer","minimum":1,"maximum":10}},"required":["query"]}),
+            parameters: json!({"type":"object","properties":{"query":{"type":"string"},"max_results":{"type":"integer","description":"1 to 10; larger values are capped"}},"required":["query"]}),
         }
     }
     fn capability(&self) -> &'static str {
@@ -360,6 +360,49 @@ pub fn office_tools() -> Vec<Arc<dyn Tool>> {
     .collect()
 }
 
+/// As linhas de uma aba. Linha-objeto (`{"Item": 1, "Qtd": 5}`, o formato que o modelo
+/// pequeno manda -- medido, qwen2.5:1.5b, 01/10) vira valores, e as chaves do primeiro
+/// objeto viram o cabecalho. Antes do portao validar, ela virava linha VAZIA e a planilha
+/// saia «criada» sem dado; recusar so trocaria o vazio por falha. As colunas saem na ordem
+/// do mapa do `serde_json` (alfabetica): a ordem que o modelo escreveu nao chega aqui.
+fn linhas_da_planilha(r: &[Value]) -> Vec<Vec<phxclaw_office::Cell>> {
+    let mut cabecalho: Option<Vec<String>> = None;
+    let mut saida = Vec::new();
+    for linha in r {
+        match linha {
+            Value::Object(o) => {
+                // Cabecalho das chaves so quando nenhuma linha-lista veio antes: se veio, ela
+                // ja e o cabecalho que o modelo escreveu.
+                let ja_tem_cabecalho = !saida.is_empty();
+                let chaves = cabecalho.get_or_insert_with(|| {
+                    let c: Vec<String> = o.keys().cloned().collect();
+                    if !ja_tem_cabecalho {
+                        saida.push(
+                            c.iter()
+                                .map(|k| phxclaw_office::Cell::Text(k.clone()))
+                                .collect(),
+                        );
+                    }
+                    c
+                });
+                saida.push(
+                    chaves
+                        .iter()
+                        .map(|k| o.get(k).map(celula).unwrap_or(phxclaw_office::Cell::Empty))
+                        .collect(),
+                );
+            }
+            outro => saida.push(
+                outro
+                    .as_array()
+                    .map(|c| c.iter().map(celula).collect())
+                    .unwrap_or_default(),
+            ),
+        }
+    }
+    saida
+}
+
 /// Celula a partir de JSON simples: modelo pequeno erra o formato etiquetado do serde, entao
 /// a ferramenta aceita o valor cru -- numero e numero, "=..." e formula, null e vazio.
 fn celula(v: &Value) -> phxclaw_office::Cell {
@@ -372,6 +415,47 @@ fn celula(v: &Value) -> phxclaw_office::Cell {
         Value::String(s) => Cell::Text(s.clone()),
         outro => Cell::Text(outro.to_string()),
     }
+}
+
+/// Os blocos do `create_document`, um a um: o erro do serde ganha o indice do bloco
+/// (`blocks[2]: missing field text`), que o esquema sozinho nao alcanca -- o campo
+/// obrigatorio muda com o `type`. Numero em celula, item ou cabecalho vira texto: o modelo
+/// manda `[1, "Joao"]` numa tabela (medido, qwen2.5:3b), e recusar o 1 nao ajuda ninguem.
+fn blocos_do_documento(args: &Value) -> Result<Vec<phxclaw_office::Block>, ToolError> {
+    let em_texto = |v: &mut Value| {
+        if v.is_number() {
+            *v = Value::String(v.to_string());
+        }
+    };
+    let blocos = match args.get("blocks") {
+        None | Some(Value::Null) => return Ok(vec![]),
+        Some(Value::Array(a)) => a.clone(),
+        Some(_) => {
+            return Err(ToolError::InvalidArguments(
+                "blocks: esperado array de blocos".into(),
+            ));
+        }
+    };
+    blocos
+        .into_iter()
+        .enumerate()
+        .map(|(i, mut b)| {
+            for campo in ["items", "header"] {
+                if let Some(Value::Array(a)) = b.get_mut(campo) {
+                    a.iter_mut().for_each(em_texto);
+                }
+            }
+            if let Some(Value::Array(linhas)) = b.get_mut("rows") {
+                for l in linhas.iter_mut() {
+                    if let Value::Array(c) = l {
+                        c.iter_mut().for_each(em_texto);
+                    }
+                }
+            }
+            serde_json::from_value(b)
+                .map_err(|e| ToolError::InvalidArguments(format!("blocks[{i}]: {e}")))
+        })
+        .collect()
 }
 
 fn caminho_com_extensao(
@@ -398,12 +482,26 @@ impl Tool for OfficeTool {
             OfficeKind::Document => ToolSpec {
                 name: "create_document".into(),
                 description: "Create a Word .docx file. blocks: [{type:'heading',level:1,text}, {type:'paragraph',text,bold?}, {type:'bullets',items:[..]}, {type:'table',header:[..],rows:[[..]]}].".into(),
-                parameters: json!({"type":"object","properties":{"path":{"type":"string","description":"relative path ending in .docx"},"title":{"type":"string"},"blocks":{"type":"array","items":{"type":"object"}}},"required":["path","blocks"]}),
+                // O bloco detalhado e o que da ao validador do portao o caminho do erro
+                // (`blocks[0].level`); com `items: object` ele so via «e um objeto».
+                parameters: json!({"type":"object","properties":{
+                    "path":{"type":"string","description":"relative path ending in .docx"},
+                    "title":{"type":"string"},
+                    "blocks":{"type":"array","items":{"type":"object","properties":{
+                        "type":{"type":"string","enum":["heading","paragraph","bullets","table"]},
+                        "level":{"type":"integer","minimum":1,"maximum":3},
+                        "text":{"type":"string"},
+                        "bold":{"type":"boolean"},
+                        "items":{"type":"array","items":{"type":["string","number"]}},
+                        "header":{"type":"array","items":{"type":["string","number"]}},
+                        "rows":{"type":"array","items":{"type":"array","items":{"type":["string","number"]}}}
+                    },"required":["type"]}}
+                },"required":["path","blocks"]}),
             },
             OfficeKind::Spreadsheet => ToolSpec {
                 name: "create_spreadsheet".into(),
                 description: "Create an Excel .xlsx file. Each sheet has rows of plain values: numbers stay numbers, strings starting with '=' are formulas (e.g. '=SUM(B2:B4)'), null is an empty cell.".into(),
-                parameters: json!({"type":"object","properties":{"path":{"type":"string","description":"relative path ending in .xlsx"},"sheets":{"type":"array","items":{"type":"object","properties":{"name":{"type":"string"},"rows":{"type":"array","items":{"type":"array"}},"bold_header":{"type":"boolean"}},"required":["name","rows"]}}},"required":["path","sheets"]}),
+                parameters: json!({"type":"object","properties":{"path":{"type":"string","description":"relative path ending in .xlsx"},"sheets":{"type":"array","items":{"type":"object","properties":{"name":{"type":"string"},"rows":{"type":"array","items":{"type":["array","object"]}},"bold_header":{"type":"boolean"}},"required":["name","rows"]}}},"required":["path","sheets"]}),
             },
             OfficeKind::Presentation => ToolSpec {
                 name: "create_presentation".into(),
@@ -440,10 +538,7 @@ impl Tool for OfficeTool {
                             .and_then(Value::as_str)
                             .unwrap_or("")
                             .to_string(),
-                        blocks: serde_json::from_value(
-                            args.get("blocks").cloned().unwrap_or(json!([])),
-                        )
-                        .map_err(invalido)?,
+                        blocks: blocos_do_documento(&args)?,
                     };
                     phxclaw_office::write_docx(&doc, &alvo).map_err(of)?;
                     rel
@@ -460,16 +555,7 @@ impl Tool for OfficeTool {
                         let rows = s
                             .get("rows")
                             .and_then(Value::as_array)
-                            .map(|r| {
-                                r.iter()
-                                    .map(|linha| {
-                                        linha
-                                            .as_array()
-                                            .map(|c| c.iter().map(celula).collect())
-                                            .unwrap_or_default()
-                                    })
-                                    .collect()
-                            })
+                            .map(|r| linhas_da_planilha(r))
                             .unwrap_or_default();
                         sheets.push(phxclaw_office::Sheet {
                             name: s

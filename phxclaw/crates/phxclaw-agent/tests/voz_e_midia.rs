@@ -1236,8 +1236,27 @@ mod pagos {
         t3.run(json!({"text":"oi","output":"pcm.wav"}), &c)
             .await
             .unwrap();
-        let w = info_wav(&std::fs::read(c.workdir.join("pcm.wav")).unwrap()).unwrap();
+        let bruto = std::fs::read(c.workdir.join("pcm.wav")).unwrap();
+        let w = info_wav(&bruto).unwrap();
         assert!((w.segundos - 0.5).abs() < 0.01, "{w:?}");
+        // O cabecalho conferido CAMPO A CAMPO contra o RIFF/WAVE (PCM 16 kHz, mono, 16 bits),
+        // e nao pelo `info_wav`: ele so le taxa, canais, bits e o tamanho do `data`, e o
+        // servidor falso monta o WAV com o mesmo `wav_de_pcm` sob prova. Byte rate e
+        // block align errados passavam pelos dois -- e e por eles que o tocador mede o tempo.
+        let u32_em = |i: usize| u32::from_le_bytes(bruto[i..i + 4].try_into().unwrap());
+        let u16_em = |i: usize| u16::from_le_bytes(bruto[i..i + 2].try_into().unwrap());
+        assert_eq!(&bruto[0..4], b"RIFF");
+        assert_eq!(u32_em(4) as usize, bruto.len() - 8, "tamanho do RIFF");
+        assert_eq!(&bruto[8..16], b"WAVEfmt ");
+        assert_eq!(u32_em(16), 16, "fmt PCM tem 16 bytes");
+        assert_eq!(u16_em(20), 1, "formato PCM");
+        assert_eq!(u16_em(22), 1, "mono");
+        assert_eq!(u32_em(24), 16_000, "taxa");
+        assert_eq!(u32_em(28), 32_000, "byte rate = 16000 * 1 * 16/8");
+        assert_eq!(u16_em(32), 2, "block align = 1 * 16/8");
+        assert_eq!(u16_em(34), 16, "bits");
+        assert_eq!(&bruto[36..40], b"data");
+        assert_eq!(u32_em(40), 16_000, "meio segundo de PCM");
         assert!(
             log.lock()
                 .unwrap()

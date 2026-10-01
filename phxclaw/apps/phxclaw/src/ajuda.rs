@@ -60,12 +60,15 @@ pub const COMANDOS: &[Comando] = &[
         resumo: "Roda o agente agora, mostrando cada passo",
         apelidos: &["agent"],
         uso: "agente \"objetivo\" [--modelo M] [--plano [--sim]] [--estilo NOME] [--imagem ARQ]... \
-              [--gravar ARQ] [--pasta DIR]",
+              [--gravar ARQ] [--verificar \"CMD\"] [--saida-esquema ARQ] [--pasta DIR]",
         descricao: "Roda o agente agora, mostrando cada passo. --plano: so leitura, executa \
                     depois da aprovacao. Perguntas do agente sao respondidas aqui. --imagem \
                     (ate 4, png/jpeg/gif/webp): o modelo ve a imagem junto do objetivo. --gravar: \
                     cada pedido/resposta do modelo e cada ferramenta em JSONL, segredo redigido \
-                    (repita com `repetir`).",
+                    (repita com `repetir`). --verificar: comando que confere o fim no sandbox da \
+                    tarefa (pede shell.exec); codigo diferente de 0 recusa a resposta. \
+                    --saida-esquema: esquema JSON da resposta final, conferido pelo mesmo \
+                    validador dos argumentos das ferramentas.",
     },
     Comando {
         grupo: Grupo::Agente,
@@ -144,12 +147,15 @@ pub const COMANDOS: &[Comando] = &[
     Comando {
         grupo: Grupo::EquipeEFluxos,
         nome: "gonogo",
-        resumo: "Conselho de integradores: registrar parecer, ver, decidir Go/NoGo",
+        resumo: "Conselho de integradores: abrir, registrar parecer, ver, decidir Go/NoGo",
         apelidos: &["go-no-go"],
-        uso: "gonogo registrar INTEGRACAO INTEGRADOR OK|NOGO [--erro \"...\"]... [--integradores a,b] \
-              [--pasta DIR] | ver INTEGRACAO | decidir INTEGRACAO",
-        descricao: "Cada integrador registra o proprio parecer (NOGO exige os erros). Algum NOGO \
-                    vigente: NOGO; falta parecer de integrador ativo: AGUARDAR; todos OK: GO. So o \
+        uso: "gonogo abrir INTEGRACAO --integradores a,b | registrar INTEGRACAO INTEGRADOR OK|NOGO \
+              [--erro \"...\"]... [--credencial TOKEN|-] | ver INTEGRACAO | decidir INTEGRACAO \
+              [--pasta DIR]",
+        descricao: "Quem abre declara o conselho, que nao muda. O primeiro parecer de cada \
+                    integrador devolve UMA vez a credencial dele (guardada no SecretBroker); os \
+                    seguintes a exigem (--credencial -, pelo stdin). NOGO exige os erros. Algum \
+                    NOGO vigente: NOGO; falta parecer do conselho: AGUARDAR; todos OK: GO. So o \
                     mesmo integrador troca o NOGO dele. Saida 0 GO, 2 NOGO, 3 AGUARDAR.",
     },
     Comando {
@@ -307,16 +313,30 @@ pub const COMANDOS: &[Comando] = &[
     Comando {
         grupo: Grupo::Medicao,
         nome: "ui",
-        resumo: "Prova a conversao de tela em ida e volta contra o gabarito",
+        resumo: "Prova as telas geradas: ida e volta (fidelidade) e larguras (responsivo)",
         apelidos: &[],
-        uso: "ui fidelidade [--telas N] [--modelo N] [--prazo S] [--saida DIR] [--capturas DIR]",
+        uso: "ui fidelidade [--telas N] [--modelo N] [--prazo S] [--saida DIR] [--capturas DIR] \
+              | responsivo [--alvo html|bootstrap] [--bootstrap-css ARQ] [--telas N] [--saida DIR] \
+              [--capturas DIR] | responsivo --phx ARQ.phx.json [--bootstrap-css ARQ] \
+              [--exemplo INDEX.html] | importar ARQ.phx.json [--saida DIR] [--bootstrap-css CAMINHO]",
         descricao: "Gera as telas do gabarito (20, do design_erp_ui), desenha cada uma no \
                     Chromium headless, le o PNG pelo screenshot_to_erp_ui (OCR + layout; com o \
                     modelo de visao so nas N primeiras de --modelo, ~90 s cada, --prazo por \
                     pergunta) e compara com o \
                     UI-IR de origem: achados, perdidos, inventados, rotulo, tipo, ordem (Kendall), \
                     grupo e posicao, com faixa min-max e data. Grava SAIDA/fidelidade-DATA.json \
-                    (padrao docs/ui/fidelidade); --capturas guarda os PNG para refazer o OCR.",
+                    (padrao docs/ui/fidelidade); --capturas guarda os PNG para refazer o OCR. \
+                    responsivo: as mesmas 20 telas em 320, 390, md e 1280 px e um pixel antes e no \
+                    ponto de cada quebra de breakpoints.json; mede rolagem da pagina, cortados, \
+                    sobrepostos, alvos de toque, Tab (anel e ordem), colunas contra o IR, painel \
+                    de 360 px em janela de 1920 e redimensionar sem recriar no. --alvo bootstrap \
+                    pede o bootstrap.min.css LOCAL (--bootstrap-css) e compara com o phoenix. \
+                    Grava SAIDA/responsivo-ALVO-DATA.json; o arquivo do dia nao se sobrescreve. \
+                    --phx: o PHX JSON do Phoenix nos dois adaptadores (rolagem, colunas por \
+                    largura e por painel, fronteiras, identidades, casca) e, com --exemplo, as \
+                    colunas do index.html do dono nas mesmas larguras; grava phx-exemplo-DATA.json. \
+                    importar: PHX JSON -> UI-IR + telas phoenix e Bootstrap (folha LOCAL) e o \
+                    PHX JSON escrito de volta, dizendo se a ida e volta saiu identica.",
     },
     Comando {
         grupo: Grupo::Medicao,

@@ -1,0 +1,156 @@
+{
+  "schemaVersion": "0.1.0",
+  "uuid": "01a0f85a-635d-7220-a38b-5dea09c60924",
+  "name": "PhxClaw Responsive Demo",
+  "version": "0.1.0",
+  "demo": true,
+  "ui": {
+    "adapter": "bootstrap",
+    "adapterVersion": "5.3.6",
+    "theme": "dark",
+    "shellBreakpointPx": 992
+  },
+  "tokens": {
+    "spacing": {
+      "md": "16px"
+    },
+    "accent": "#fa9866",
+    "radius": "16px"
+  },
+  "defaults": {
+    "projectName": "Phoenix Studio",
+    "mission": "Criar um cadastro de clientes com formulário, filtros e tabela responsiva.",
+    "density": "comfortable"
+  },
+  "view": {
+    "uuid": "01a0f85a-635d-795c-a9b4-863b74a84990",
+    "type": "Panel",
+    "name": "Agentes",
+    "queryContainer": "agents-panel",
+    "children": [
+      {
+        "uuid": "01a0f85a-635d-779c-988d-e809b97a1822",
+        "type": "Collection",
+        "items": {
+          "binding": "state.agents",
+          "key": "uuid"
+        },
+        "templateRef": {
+          "uuid": "01a0f85a-635d-7302-8af1-8bedbd1f54bc",
+          "version": "0.1.0"
+        },
+        "layout": {
+          "type": "grid",
+          "gap": "spacing.md",
+          "columns": 1,
+          "responsive": {
+            "basis": "container",
+            "target": "agents-panel",
+            "rules": [
+              {
+                "minWidthPx": 640,
+                "columns": 2
+              },
+              {
+                "minWidthPx": 1120,
+                "columns": 4
+              }
+            ]
+          }
+        }
+      }
+    ]
+  },
+  "templates": [
+    {
+      "uuid": "01a0f85a-635d-7302-8af1-8bedbd1f54bc",
+      "version": "0.1.0",
+      "type": "AgentCard",
+      "events": {
+        "activate": "agent.inspect"
+      }
+    }
+  ],
+  "agents": [
+    {
+      "uuid": "01a0f85a-635d-7553-8b0f-d5be7a41be81",
+      "name": "Neo",
+      "role": "Arquitetura",
+      "initials": "NE",
+      "tone": "amber",
+      "task": "Planejar a estrutura da tela",
+      "capabilities": [
+        "layout.plan",
+        "json.propose"
+      ],
+      "detail": "Propõe a estrutura declarativa, os componentes e as regras de adaptação."
+    },
+    {
+      "uuid": "01a0f85a-635d-7b3a-8c74-f568ffb5cbdb",
+      "name": "Trinity",
+      "role": "Interface",
+      "initials": "TR",
+      "tone": "violet",
+      "task": "Montar componentes responsivos",
+      "capabilities": [
+        "ui.compose",
+        "theme.apply"
+      ],
+      "detail": "Combina o adaptador visual Bootstrap com o layout definido pelo contrato."
+    },
+    {
+      "uuid": "01a0f85a-635d-7495-9b3a-3761411c55dd",
+      "name": "Morpheus",
+      "role": "Revisão",
+      "initials": "MO",
+      "tone": "blue",
+      "task": "Revisar fluxo e consistência",
+      "capabilities": [
+        "ui.review",
+        "template.check"
+      ],
+      "detail": "Revisa a consistência dos componentes e a organização do fluxo de trabalho."
+    },
+    {
+      "uuid": "01a0f85a-635d-7828-bafc-0ed759bbe9c7",
+      "name": "Seraph",
+      "role": "Qualidade",
+      "initials": "SE",
+      "tone": "green",
+      "task": "Verificar a interface",
+      "capabilities": [
+        "ui.test",
+        "a11y.review"
+      ],
+      "detail": "Representa a etapa de qualidade. Esta simulação não executa uma auditoria real."
+    }
+  ],
+  "components": [
+    {
+      "uuid": "01a0f85a-635d-72c4-99e0-d2f6eb3c841c",
+      "type": "MissionForm"
+    },
+    {
+      "uuid": "01a0f85a-635d-7d75-8512-a1274679c870",
+      "type": "ProjectSettings"
+    },
+    {
+      "uuid": "01a0f85a-635d-7297-b93d-7d61bf8399cb",
+      "type": "EventConsole"
+    },
+    {
+      "uuid": "01a0f85a-635d-700b-a06e-d9aaa4299f40",
+      "type": "ContainerWidthControl"
+    },
+    {
+      "uuid": "01a0f85a-635d-7bcd-b1f5-b9028acf95ed",
+      "type": "Navigation"
+    }
+  ],
+  "simulation": {
+    "stepDurationMs": 850,
+    "allowNetwork": false,
+    "allowShell": false,
+    "allowModels": false
+  }
+}

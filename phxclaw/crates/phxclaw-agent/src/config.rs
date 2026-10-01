@@ -98,29 +98,57 @@ pub fn carregar(pasta: &Path) -> Result<Configuracao, Vec<Erro>> {
 
 type Carregada = (PathBuf, Arc<Configuracao>);
 
-fn atual() -> &'static Mutex<Option<Carregada>> {
-    static A: OnceLock<Mutex<Option<Carregada>>> = OnceLock::new();
-    A.get_or_init(|| Mutex::new(None))
+/// O estado do processo: a pasta FIXADA (o `--pasta` da CLI) e a configuracao carregada dela.
+/// Ficam separadas porque o `esquecer` (depois de gravar) solta so a carregada: juntas, ele
+/// apagava a pasta junto, e a leitura seguinte recarregava da `pasta_padrao()` -- o PUT
+/// gravava em `X/config.json` e o processo passava a ler `var/agente` (prova F, 01/10).
+#[derive(Default)]
+struct Estado {
+    fixada: Option<PathBuf>,
+    carregada: Option<Carregada>,
 }
 
-/// Fixa a pasta do processo (o `--pasta` da CLI) e carrega. Sem chamar, vale
-/// `pasta_padrao()` na primeira leitura.
+fn atual() -> &'static Mutex<Estado> {
+    static A: OnceLock<Mutex<Estado>> = OnceLock::new();
+    A.get_or_init(|| Mutex::new(Estado::default()))
+}
+
+fn estado() -> std::sync::MutexGuard<'static, Estado> {
+    atual().lock().unwrap_or_else(|p| p.into_inner())
+}
+
+/// Fixa a pasta do processo SEM carregar: a CLI chama no comeco de todo comando, e o
+/// arquivo invalido continua erro so de quem le (o `phxclaw config` que o conserta nao pode
+/// morrer por ele).
+pub fn fixar_pasta(pasta: &Path) {
+    let mut g = estado();
+    if g.carregada.as_ref().is_some_and(|(p, _)| p != pasta) {
+        g.carregada = None;
+    }
+    g.fixada = Some(pasta.to_path_buf());
+}
+
+/// Fixa a pasta do processo e carrega. Sem fixar, vale `pasta_padrao()` na leitura.
 pub fn iniciar(pasta: &Path) -> Result<(), String> {
     let c = carregar(pasta).map_err(|e| carga::em_texto(&e))?;
-    *atual().lock().unwrap_or_else(|p| p.into_inner()) = Some((pasta.to_path_buf(), Arc::new(c)));
+    let mut g = estado();
+    g.fixada = Some(pasta.to_path_buf());
+    g.carregada = Some((pasta.to_path_buf(), Arc::new(c)));
     Ok(())
 }
 
 /// A configuracao do processo. Arquivo invalido e ERRO, nao «vale o padrao»: seguir com o
 /// padrao calado faria uma restricao escrita no arquivo deixar de valer sem ninguem ver.
 pub fn configuracao() -> Result<Arc<Configuracao>, String> {
-    let mut g = atual().lock().unwrap_or_else(|p| p.into_inner());
-    if let Some((_, c)) = g.as_ref() {
+    let mut g = estado();
+    let pasta = g.fixada.clone().unwrap_or_else(pasta_padrao);
+    if let Some((p, c)) = g.carregada.as_ref()
+        && *p == pasta
+    {
         return Ok(c.clone());
     }
-    let pasta = pasta_padrao();
     let c = Arc::new(carregar(&pasta).map_err(|e| carga::em_texto(&e))?);
-    *g = Some((pasta, c.clone()));
+    g.carregada = Some((pasta, c.clone()));
     Ok(c)
 }
 
@@ -133,11 +161,12 @@ pub fn texto(chave: &str) -> Result<Option<String>, String> {
     Ok(configuracao()?.texto(chave))
 }
 
-/// Esquece a configuracao carregada (depois de gravar, a proxima leitura rele).
+/// Esquece a configuracao carregada (depois de gravar, a proxima leitura rele). A pasta
+/// fixada FICA: e ela que a proxima leitura rele.
 fn esquecer(pasta: &Path) {
-    let mut g = atual().lock().unwrap_or_else(|p| p.into_inner());
-    if g.as_ref().is_some_and(|(p, _)| p == pasta) {
-        *g = None;
+    let mut g = estado();
+    if g.carregada.as_ref().is_some_and(|(p, _)| p == pasta) {
+        g.carregada = None;
     }
 }
 

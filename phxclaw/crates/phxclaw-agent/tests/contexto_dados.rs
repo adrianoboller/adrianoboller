@@ -12,6 +12,9 @@ use phxclaw_agent_core::tarefa::NovaTarefa;
 use phxclaw_agent_core::{Message, Tool, ToolContext};
 use phxclaw_egress_broker::{EgressBroker, EgressPolicy};
 use phxclaw_skill_runtime::SkillFolder;
+
+#[path = "comum/pulado.rs"]
+mod pulado;
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::io::{Read, Write};
@@ -330,6 +333,7 @@ fn importa_skills_dos_quatro_formatos_com_scripts_desligados_e_origem() {
 #[test]
 fn corpus_real_de_skills_quando_apontado() {
     let Ok(dir) = std::env::var("PHXCLAW_CORPUS_SKILLS") else {
+        pulado::pular("PHXCLAW_CORPUS_SKILLS", "corpus de skills nao apontado");
         return;
     };
     let destino = SkillFolder::new(tmp("skills-corpus"));
@@ -535,6 +539,10 @@ async fn prova_real_de_visao_quando_apontada() {
         std::env::var("PHXCLAW_PROVA_VISAO"),
         std::env::var("PHXCLAW_PROVA_VISAO_PNG"),
     ) else {
+        pulado::pular(
+            "PHXCLAW_PROVA_VISAO",
+            "modelo de visao e imagem nao apontados",
+        );
         return;
     };
     let esperado = std::env::var("PHXCLAW_PROVA_VISAO_TEXTO").unwrap_or_else(|_| "4271".into());
@@ -581,6 +589,7 @@ async fn gabarito_real_de_documentos_quando_apontado() {
         std::env::var("PHXCLAW_PROVA_DOCS"),
         std::env::var("PHXCLAW_PROVA_DOCS_GABARITO"),
     ) else {
+        pulado::pular("PHXCLAW_PROVA_DOCS", "documentos e gabarito nao apontados");
         return;
     };
     let agente = tmp("docs-real");
@@ -621,4 +630,51 @@ async fn gabarito_real_de_documentos_quando_apontado() {
             ini.elapsed().as_millis()
         );
     }
+}
+
+/// A fusao NA CHAMADA do `buscar`, e nao so na `fundir_por_posicao`: o teste de cima poe o
+/// 2o do BM25 em 1o no cosseno, e ai «so o cosseno» e «BM25 + cosseno» dao o mesmo topo --
+/// trocar a fusao pelo cosseno puro passava. Aqui o cosseno poe o ULTIMO do BM25 em 1o e o
+/// 1o do BM25 em 2o: pela soma por posicao (k = 60) o 1o do BM25 fica na frente
+/// (1/61 + 1/62 contra 1/(60 + n) + 1/61, com n >= 4); pelo cosseno puro, o ultimo.
+#[tokio::test]
+async fn fusao_nao_e_so_o_cosseno_o_bm25_pesa_no_topo() {
+    let (docs, _) = gabarito();
+    let agente = tmp("docs-emb-2");
+    indexar(&agente, &docs).unwrap();
+    let mut t = DocSearchTool::da_pasta(&agente).unwrap();
+    let (bm25, _) = t.buscar("arquivo banco digito", 5).await;
+    let n = bm25.len();
+    assert!(n >= 4, "a montagem pede 4 candidatos: {bm25:?}");
+    // Consulta [1, 0]; o ultimo candidato do BM25 e o mais parecido, o 1o vem logo atras.
+    let mut vetores = vec![vec![1.0, 0.0]];
+    for i in 0..n {
+        vetores.push(if i == n - 1 {
+            vec![1.0, 0.0]
+        } else if i == 0 {
+            vec![0.9, 0.1]
+        } else {
+            vec![0.0, 1.0]
+        });
+    }
+    let (base, _) = servidor(|_| {
+        HashMap::from([(
+            "/api/embed".to_string(),
+            (
+                "application/json".into(),
+                json!({"embeddings": vetores}).to_string(),
+            ),
+        )])
+    });
+    t.embed = Some(Arc::new(
+        phxclaw_llm::OllamaLlm::new(&base, "all-minilm").unwrap(),
+    ));
+    let (r, ok) = t.buscar("arquivo banco digito", 5).await;
+    assert!(ok.is_ok(), "{ok:?}");
+    assert_eq!(
+        r[0].caminho,
+        bm25[0].caminho,
+        "o cosseno sozinho decidiu o topo: {:?}",
+        r.iter().map(|x| &x.caminho).collect::<Vec<_>>()
+    );
 }

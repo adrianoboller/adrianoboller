@@ -212,6 +212,21 @@
       "variavel": "PHXCLAW_SKILLS_DIR"
     },
     {
+      "chave": "agente.tentativas_argumento",
+      "comando_do_segredo": null,
+      "descricao": "Novas tentativas por ferramenta depois de argumento inválido (seguidas); esgotou, a tarefa falha",
+      "descricao_en": "Retries per tool after an invalid argument (consecutive); when exhausted, the task fails",
+      "motivo_so_ambiente": null,
+      "motivo_so_ambiente_en": null,
+      "natureza": "config",
+      "opcoes": null,
+      "padrao": 2,
+      "secao": "agente",
+      "segredo": false,
+      "tipo": "inteiro",
+      "variavel": "PHXCLAW_TENTATIVAS_ARGUMENTO"
+    },
+    {
       "chave": "api.host",
       "comando_do_segredo": null,
       "descricao": "Endereço em que a API escuta; expor é decisão do operador",
@@ -3683,6 +3698,21 @@
       "segredo": false,
       "tipo": "texto",
       "variavel": "PHXCLAW_E2E_WHISPER_MODEL_SHA256"
+    },
+    {
+      "chave": "ui.bootstrap_css",
+      "comando_do_segredo": null,
+      "descricao": "Folha LOCAL do Bootstrap 5.3 nas telas geradas (nunca CDN); vazio = vendor/bootstrap-5.3.3/bootstrap.min.css",
+      "descricao_en": "LOCAL Bootstrap 5.3 stylesheet for generated screens (never a CDN); empty = vendor/bootstrap-5.3.3/bootstrap.min.css",
+      "motivo_so_ambiente": null,
+      "motivo_so_ambiente_en": null,
+      "natureza": "config",
+      "opcoes": null,
+      "padrao": null,
+      "secao": "ui",
+      "segredo": false,
+      "tipo": "caminho",
+      "variavel": "PHXCLAW_UI_BOOTSTRAP_CSS"
     },
     {
       "chave": "ui.dir",

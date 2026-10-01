@@ -220,7 +220,7 @@ impl Tool for MemorySearchTool {
             description: "Search notes saved by previous tasks, by words.".into(),
             parameters: json!({"type":"object","properties":{
                 "query":{"type":"string"},
-                "limit":{"type":"integer","minimum":1,"maximum":10}
+                "limit":{"type":"integer","description":"1 to 10; larger values are capped"}
             },"required":["query"]}),
         }
     }

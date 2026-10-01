@@ -196,6 +196,26 @@ pub fn referencia(s: &str) -> Result<String, ToolError> {
     Ok(s.to_string())
 }
 
+/// Nome de ramo, ou sha, para as acoes que CRIAM ou movem ramo (`init`, `checkout`,
+/// `branch_*`, `git_worktree`). Sem `@{`, `^`, `~`, `:` nem `..`: com eles, `stash@{0}^3`
+/// (o commit dos nao rastreados de um stash) virava ramo, e o que entra num ramo tem de ter
+/// passado pela varredura de segredos. As acoes que so LEEM continuam com `referencia`.
+pub fn nome_de_ramo(s: &str) -> Result<String, ToolError> {
+    let r = referencia(s)?;
+    let ok = !r.starts_with('.')
+        && !r.contains("..")
+        && !r.ends_with(".lock")
+        && r.chars()
+            .all(|c| c.is_ascii_alphanumeric() || "._/-".contains(c));
+    if !ok {
+        return Err(ToolError::InvalidArguments(format!(
+            "nome de ramo invalido: {r:?} (so nome de ramo ou sha: letras, digitos e ._/-; sem \
+             @{{, ^, ~, : ou ..)"
+        )));
+    }
+    Ok(r)
+}
+
 fn lista_de_caminhos(args: &Value) -> Vec<String> {
     match args.get("paths") {
         Some(Value::Array(a)) => a
@@ -843,7 +863,7 @@ impl GitTool {
             "init" => {
                 let mut a = s(&["init", "-q"]);
                 if let Some(b) = texto(args, "branch") {
-                    a.push(format!("--initial-branch={}", referencia(b)?));
+                    a.push(format!("--initial-branch={}", nome_de_ramo(b)?));
                 }
                 // A pasta pode nao existir ainda: vai como argumento do init, nao no `-C`.
                 let alvo = if repo.is_empty() { "." } else { repo };
@@ -873,7 +893,14 @@ impl GitTool {
                 let msg = exigir(args, "message")?;
                 let todos = booleano(args, "all");
                 let varredura = self
-                    .varrer(ctx, repo, crate::segredos::Gravacao::Commit { todos })
+                    .varrer(
+                        ctx,
+                        repo,
+                        crate::segredos::Gravacao::Commit {
+                            todos,
+                            mensagem: msg.to_string(),
+                        },
+                    )
                     .await?;
                 let mut a = s(&["commit", "-q", "--no-verify"]);
                 if todos {
@@ -897,29 +924,29 @@ impl GitTool {
                           "varredura_de_segredos": varredura}))
             }
             "checkout" => {
-                let b = referencia(exigir(args, "branch")?)?;
+                let b = nome_de_ramo(exigir(args, "branch")?)?;
                 let mut a = s(&["switch", "-q"]);
                 if booleano(args, "create") {
                     a.push("-c".into());
                 }
                 a.push(b.clone());
                 if let Some(base) = texto(args, "base") {
-                    a.push(referencia(base)?);
+                    a.push(nome_de_ramo(base)?);
                 }
                 self.git(ctx, repo, a).await?;
                 Ok(json!({"ramo_atual": b}))
             }
             "branch_create" => {
-                let b = referencia(exigir(args, "branch")?)?;
+                let b = nome_de_ramo(exigir(args, "branch")?)?;
                 let mut a = vec!["branch".to_string(), b.clone()];
                 if let Some(base) = texto(args, "base") {
-                    a.push(referencia(base)?);
+                    a.push(nome_de_ramo(base)?);
                 }
                 self.git(ctx, repo, a).await?;
                 Ok(json!({"criado": b}))
             }
             "branch_delete" => {
-                let b = referencia(exigir(args, "branch")?)?;
+                let b = nome_de_ramo(exigir(args, "branch")?)?;
                 // `-d` recusa ramo nao integrado; apagar trabalho nao integrado e pedido
                 // explicito (`force`).
                 let flag = if booleano(args, "force") { "-D" } else { "-d" };
@@ -933,8 +960,20 @@ impl GitTool {
                     .get("index")
                     .and_then(Value::as_u64)
                     .map(|i| format!("stash@{{{i}}}"));
+                let mut varredura = Value::Null;
                 let a: Vec<String> = match op {
                     "push" => {
+                        // O stash grava commit: passa pela mesma varredura do `commit`.
+                        varredura = self
+                            .varrer(
+                                ctx,
+                                repo,
+                                crate::segredos::Gravacao::Stash {
+                                    nao_rastreados: booleano(args, "include_untracked"),
+                                    mensagem: texto(args, "message").map(str::to_string),
+                                },
+                            )
+                            .await?;
                         let mut a = s(&["stash", "push", "-q"]);
                         if booleano(args, "include_untracked") {
                             a.push("-u".into());
@@ -964,7 +1003,11 @@ impl GitTool {
                     .map(|(r, m)| json!({"ref": r, "mensagem": m}))
                     .collect();
                 let status = self.ler(ctx, repo, "status", args).await?;
-                Ok(json!({"op": op, "pilha": lista, "status": status}))
+                let mut r = json!({"op": op, "pilha": lista, "status": status});
+                if !varredura.is_null() {
+                    r["varredura_de_segredos"] = varredura;
+                }
+                Ok(r)
             }
             outra => Err(ToolError::InvalidArguments(format!(
                 "action desconhecida em git_write: {outra} (init, add, commit, checkout, \
@@ -1123,7 +1166,7 @@ selects the main repo."
                 "add" => {
                     let nome = nome_de_arvore(exigir(&args, "name")?)?;
                     let ramo =
-                        referencia(texto(&args, "branch").unwrap_or(&format!("phxclaw/{nome}")))?;
+                        nome_de_ramo(texto(&args, "branch").unwrap_or(&format!("phxclaw/{nome}")))?;
                     let dir = format!(".worktrees/{nome}");
                     let mut a: Vec<String> = vec![
                         "worktree".into(),
@@ -1134,7 +1177,7 @@ selects the main repo."
                         dir.clone(),
                     ];
                     if let Some(b) = texto(&args, "base") {
-                        a.push(referencia(b)?);
+                        a.push(nome_de_ramo(b)?);
                     }
                     git(a).await?;
                     // O exclude mora no diretorio COMUM do git (vale para todas as arvores).
@@ -1302,6 +1345,25 @@ rename to y.txt
         assert!(referencia("main; rm -rf /").is_err());
         assert_eq!(referencia(" HEAD~2 ").unwrap(), "HEAD~2");
         assert!(referencia("origin/main..topico").is_ok());
+    }
+
+    #[test]
+    fn ramo_so_de_nome_ou_sha() {
+        for ok in ["main", "phxclaw/tarefa-1", "v1.2", "0a1b2c3d"] {
+            assert!(nome_de_ramo(ok).is_ok(), "{ok}");
+        }
+        for nao in [
+            "stash@{0}^3",
+            "HEAD~1",
+            "main^",
+            "main:a",
+            "a..b",
+            "@",
+            "-x",
+            ".x",
+        ] {
+            assert!(nome_de_ramo(nao).is_err(), "{nao}");
+        }
     }
 
     #[test]

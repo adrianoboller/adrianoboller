@@ -83,6 +83,15 @@ pub struct Task {
     /// se grava a cada passo, e reescrever megabytes de base64 por passo nao compra nada.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub images: Vec<String>,
+    /// Comando de verificacao do fim (`--verificar` na CLI, `verificar` na API): roda no MESMO
+    /// sandbox dos hooks, na pasta da tarefa, e codigo diferente de 0 recusa a conclusao.
+    /// Fica na tarefa, e nao na configuracao, porque o criterio de pronto e de cada pedido.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub verificar: Option<String>,
+    /// Esquema JSON da resposta final (`--saida-esquema`): o `final_answer` passa a pedir
+    /// o objeto, e o MESMO validador das ferramentas o confere antes de aceitar.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub saida_esquema: Option<Value>,
 }
 
 impl Task {
@@ -105,6 +114,8 @@ impl Task {
             webhook: None,
             question: None,
             images: vec![],
+            verificar: None,
+            saida_esquema: None,
         }
     }
 }
@@ -166,6 +177,13 @@ pub struct NovaTarefa {
     /// pedido: quem chama pela rede nao escolhe onde o servidor escreve.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub gravar: bool,
+    /// Comando que confere o fim, no sandbox da tarefa (ver `Task::verificar`). Pede a
+    /// capacidade `shell.exec`: sem ela, verificar seria a porta lateral do shell negado.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub verificar: Option<String>,
+    /// Esquema JSON da resposta final (ver `Task::saida_esquema`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub saida_esquema: Option<Value>,
 }
 
 /// Resposta 202 de `POST /v1/tasks`.

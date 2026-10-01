@@ -252,6 +252,47 @@ impl Page {
         .map(|_| ())
     }
 
+    /// Tab de teclado de verdade. `el.focus()` por script nao serve para provar a ordem de
+    /// tabulacao (pula o `tabindex` do navegador) nem o anel de foco (`:focus-visible` so
+    /// liga, garantido, quando o foco veio do teclado).
+    pub async fn tecla_tab(&self) -> Result<()> {
+        for tipo in ["keyDown", "keyUp"] {
+            self.call(
+                "Input.dispatchKeyEvent",
+                json!({
+                    "type": tipo, "key": "Tab", "code": "Tab",
+                    "windowsVirtualKeyCode": 9, "nativeVirtualKeyCode": 9
+                }),
+            )
+            .await?;
+        }
+        Ok(())
+    }
+
+    /// Emula a tela de um aparelho: largura e altura em CSS px e, se `celular`, o toque e a
+    /// meta viewport valendo. Trocar a janela do processo nao basta para provar layout de
+    /// celular: o `--window-size` do headless nao liga `pointer: coarse` nem le a meta
+    /// viewport, e a pagina responderia como um desktop estreito.
+    pub async fn emular_tela(&self, largura: u32, altura: u32, celular: bool) -> Result<()> {
+        self.call(
+            "Emulation.setDeviceMetricsOverride",
+            json!({
+                "width": largura, "height": altura,
+                "deviceScaleFactor": 1, "mobile": celular
+            }),
+        )
+        .await?;
+        // o CDP recusa `maxTouchPoints` 0 mesmo desligando: com toque desligado, omitido
+        let toque = if celular {
+            json!({ "enabled": true, "maxTouchPoints": 5 })
+        } else {
+            json!({ "enabled": false })
+        };
+        self.call("Emulation.setTouchEmulationEnabled", toque)
+            .await
+            .map(|_| ())
+    }
+
     pub async fn screenshot_png(&self) -> Result<Vec<u8>> {
         let r = self
             .call("Page.captureScreenshot", json!({ "format": "png" }))

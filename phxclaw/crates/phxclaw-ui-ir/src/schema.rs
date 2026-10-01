@@ -772,6 +772,8 @@ pub fn analyze(nome_app: &str, p: &Parsed) -> App {
         screens,
         menu,
         layouts: vec![],
+        quebra_da_casca_px: None,
+        tokens: Default::default(),
     }
 }
 
@@ -800,9 +802,16 @@ fn secoes(e: &Entity) -> Vec<Section> {
     ]
     .into_iter()
     .filter(|(_, f)| !f.is_empty())
-    .map(|(t, fields)| Section {
-        title: t.into(),
-        fields,
+    .map(|(t, fields)| {
+        // a intencao vai ESCRITA no IR (v3): o adaptador le, nao adivinha; e e a mesma
+        // padrao do motor, para o IR de SQL e o v1/v2 sem intencao desenharem igual
+        let (layout, conteiner) = crate::responsivo::intencao_padrao();
+        Section {
+            title: t.into(),
+            fields,
+            layout: Some(layout),
+            conteiner: Some(conteiner),
+        }
     })
     .collect()
 }

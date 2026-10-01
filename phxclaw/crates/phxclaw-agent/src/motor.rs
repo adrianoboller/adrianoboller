@@ -51,6 +51,10 @@ pub struct AgentConfig {
     /// Com prazo, o modelo ganha o `ask_user` e a regra `perguntar` tem a quem perguntar.
     /// Sem prazo (subagente, `mcp-serve`), ninguem acompanha a tarefa: `perguntar` nega.
     pub prazo_de_resposta: Option<Duration>,
+    /// Novas tentativas por ferramenta depois de um argumento invalido, contadas SEGUIDAS
+    /// (a chamada que passa zera, como no PydanticAI). Esgotou, a tarefa termina FALHA.
+    /// 2 e o medido: com 1, o 3B morria na primeira correcao que errava outro campo.
+    pub tentativas_de_argumento: u32,
 }
 
 impl Default for AgentConfig {
@@ -70,6 +74,7 @@ impl Default for AgentConfig {
             estilo: None,
             instrucoes_projeto: None,
             prazo_de_resposta: None,
+            tentativas_de_argumento: 2,
         }
     }
 }
@@ -208,6 +213,17 @@ const PROMPT_PLANO: &str = "PLAN MODE: you can only read and research (the tools
 
 const ASK_USER: &str = "ask_user";
 
+/// Desfecho do passo cujo argumento nao passou: pelo esquema no portao, ou pela propria
+/// ferramenta (`ToolError::InvalidArguments`). E ele que o orcamento e o fim conferem.
+pub const DESFECHO_INVALIDO: &str = "invalido";
+
+/// Por que o fim nao foi aceito: o texto que volta ao modelo (ingles, como o resto do
+/// prompt) e o erro da tarefa quando as recusas acabam.
+struct FimRecusado {
+    ao_modelo: String,
+    erro: String,
+}
+
 /// Como a espera de uma pergunta terminou.
 enum Resposta {
     Texto(String),
@@ -342,13 +358,47 @@ impl Agent {
         let caps = self.capacidades(plano);
         let pode_perguntar = self.pode_perguntar(&caps);
         let mut specs = self.specs_de(&caps);
+        // Verificacao pedida que nao pode rodar fecha AGORA, e nao depois do trabalho todo:
+        // e a regra dos hooks (guarda configurada que nao roda, fecha), e o `shell.exec`
+        // negado nao pode voltar pela porta do `verificar`.
+        if !plano && let Some(cmd) = task.verificar.clone() {
+            let motivo = if !caps.contains("shell.exec") {
+                Some("a capacidade shell.exec nao foi concedida")
+            } else if crate::arquivos::achar_bwrap().is_none() {
+                Some("nao ha bwrap para roda-lo no sandbox")
+            } else {
+                None
+            };
+            if let Some(m) = motivo {
+                return self.finish(
+                    task,
+                    TaskStatus::Failed,
+                    Some(format!("verificacao `{cmd}` pedida e {m}")),
+                    obs,
+                );
+            }
+        }
         if self.config.require_final_tool {
+            let (descricao, parametros) = match &task.saida_esquema {
+                // Saida tipada: o `answer` e o objeto do esquema, e o mesmo validador do
+                // portao o confere antes de o fim ser aceito.
+                Some(e) => (
+                    "Call this ONLY when everything the user asked is done. `answer` MUST be JSON \
+matching the given schema (an object, not prose)."
+                        .to_string(),
+                    json!({"type":"object","properties":{"answer": e},"required":["answer"]}),
+                ),
+                None => (
+                    "Call this ONLY when everything the user asked is done (all requested files created). \
+The answer is shown to the user."
+                        .to_string(),
+                    json!({"type":"object","properties":{"answer":{"type":"string"}},"required":["answer"]}),
+                ),
+            };
             specs.push(ToolSpec {
                 name: "final_answer".into(),
-                description: "Call this ONLY when everything the user asked is done (all requested files created). \
-The answer is shown to the user."
-                    .into(),
-                parameters: json!({"type":"object","properties":{"answer":{"type":"string"}},"required":["answer"]}),
+                description: descricao,
+                parameters: parametros,
             });
         }
         if pode_perguntar {
@@ -467,7 +517,7 @@ proceed without a decision or information that only the user has; do not ask wha
             task.usage.input_tokens += reply.usage.input_tokens;
             task.usage.output_tokens += reply.usage.output_tokens;
             if let Some(fim) = reply.tool_calls.iter().find(|c| c.name == "final_answer") {
-                let r = fim
+                let mut r = fim
                     .arguments
                     .get("answer")
                     .and_then(Value::as_str)
@@ -503,10 +553,38 @@ Create them with the appropriate tool first.",
                 };
                 let recusa = match recusa.filter(|_| lembretes < 3) {
                     Some(m) => Some(m),
-                    None => self
-                        .hook_antes_de_responder(&task, &ctx, &r, &mut bloqueios_stop)
-                        .await
-                        .map(|m| format!("final_answer REJECTED by the project's Stop hook: {m}")),
+                    None => {
+                        let resposta = fim
+                            .arguments
+                            .get("answer")
+                            .cloned()
+                            .unwrap_or_else(|| Value::String(r.clone()));
+                        match self.conferir_fim(&task, &ctx, &resposta, plano).await {
+                            Err(f) if lembretes < 3 => Some(f.ao_modelo),
+                            Err(f) => {
+                                self.record(
+                                    &mut task,
+                                    passo,
+                                    "ferramenta",
+                                    Some("final_answer".into()),
+                                    fim.arguments.clone(),
+                                    "recusado",
+                                    &f.ao_modelo,
+                                );
+                                return self.finish(task, TaskStatus::Failed, Some(f.erro), obs);
+                            }
+                            Ok(texto) => {
+                                r = texto;
+                                self.hook_antes_de_responder(&task, &ctx, &r, &mut bloqueios_stop)
+                                    .await
+                                    .map(|m| {
+                                        format!(
+                                            "final_answer REJECTED by the project's Stop hook: {m}"
+                                        )
+                                    })
+                            }
+                        }
+                    }
                 };
                 if let Some(motivo) = recusa {
                     lembretes += 1;
@@ -544,7 +622,45 @@ If everything requested is already done, call final_answer.",
                 continue;
             }
             if reply.tool_calls.is_empty() {
-                let r = reply.content.trim().to_string();
+                let mut r = reply.content.trim().to_string();
+                // O fim em texto passa pela MESMA conferencia do `final_answer`: e o caminho
+                // irmao, e o fim conferido so num dos dois seria a porta do outro.
+                match self
+                    .conferir_fim(&task, &ctx, &Value::String(r.clone()), plano)
+                    .await
+                {
+                    Err(f) if lembretes < 3 => {
+                        lembretes += 1;
+                        self.record(
+                            &mut task,
+                            passo,
+                            "pensamento",
+                            None,
+                            Value::Null,
+                            "recusado",
+                            &r,
+                        );
+                        msgs.push(Message::assistant(reply.content.clone(), vec![]));
+                        msgs.push(Message::user(format!(
+                            "{}\nContinue the work.",
+                            f.ao_modelo
+                        )));
+                        continue;
+                    }
+                    Err(f) => {
+                        self.record(
+                            &mut task,
+                            passo,
+                            "pensamento",
+                            None,
+                            Value::Null,
+                            "recusado",
+                            &r,
+                        );
+                        return self.finish(task, TaskStatus::Failed, Some(f.erro), obs);
+                    }
+                    Ok(texto) => r = texto,
+                }
                 if let Some(m) = self
                     .hook_antes_de_responder(&task, &ctx, &r, &mut bloqueios_stop)
                     .await
@@ -675,6 +791,38 @@ state the assumption you made in the final answer."
                         }
                     }
                 };
+                // Orcamento de argumento: conta as invalidas SEGUIDAS desta ferramenta,
+                // contando esta. Passou do teto, a tarefa termina FALHA dizendo qual
+                // ferramenta e o ultimo erro -- repetir o mesmo erro ate o teto de passos
+                // so gastaria o modelo.
+                let mut texto = texto;
+                if outcome == DESFECHO_INVALIDO {
+                    let seguidas = invalidas_seguidas(&task, &call.name) + 1;
+                    let teto = self.config.tentativas_de_argumento;
+                    if seguidas > teto {
+                        self.record(
+                            &mut task,
+                            passo,
+                            "ferramenta",
+                            Some(call.name.clone()),
+                            call.arguments.clone(),
+                            outcome,
+                            &texto,
+                        );
+                        let e = format!(
+                            "argumentos invalidos em {} {seguidas} vez(es) seguida(s); orcamento de {teto} \
+nova(s) tentativa(s) esgotado. Ultimo erro: {}",
+                            call.name,
+                            truncate_for_model(texto.trim(), 600)
+                        );
+                        return self.finish(task, TaskStatus::Failed, Some(e), obs);
+                    }
+                    texto.push_str(&format!(
+                        "\nRetries left for {}: {}.",
+                        call.name,
+                        teto + 1 - seguidas
+                    ));
+                }
                 self.record(
                     &mut task,
                     passo,
@@ -868,6 +1016,7 @@ state the assumption you made in the final answer."
     ) -> (String, &'static str, Vec<Artifact>) {
         let tool = self.ferramenta(&call.name);
         let mut rodou = false;
+        let mut pelo_esquema = false;
         let repetida = tool.is_none() && self.tools.iter().any(|t| t.spec().name == call.name);
         let (resultado, capability): (Result<ToolOutput, ToolError>, String) = match tool {
             None if repetida => (
@@ -894,6 +1043,15 @@ state the assumption you made in the final answer."
                 t.capability().to_string(),
             ),
             Some(t) => {
+                // O esquema se confere ANTES de tudo que depende do argumento (regra, hook,
+                // ponto de restauracao, a ferramenta): argumento invalido nao chega a nada
+                // disso, e volta ao modelo com TODOS os erros e o caminho de cada campo.
+                // Medido (qwen2.5:3b, 30/09): o erro cru do serde, sem caminho, fez o modelo
+                // repetir o mesmo erro duas vezes.
+                let validacao = crate::esquema::validar(&t.spec().parameters, &call.arguments);
+                if !validacao.ok() {
+                    pelo_esquema = true;
+                }
                 let regra = self.veredito_de_comando(call, caps).and_then(|v| {
                     use crate::regras::Decisao;
                     match v.decisao {
@@ -905,15 +1063,21 @@ state the assumption you made in the final answer."
                         _ => None,
                     }
                 });
+                // Com a varredura de segredos exigida, o shell nao grava no git por fora do
+                // `git_write` (segredos.rs diz o alcance e o limite).
+                let regra = regra.or_else(|| {
+                    crate::segredos::recusa_no_shell(t.comando_de_shell(&call.arguments).as_deref())
+                });
                 let pre = match regra {
                     Some(m) => Some(m),
+                    None if pelo_esquema => None,
                     None => self
                         .disparar_hook(
                             crate::hooks::Evento::AntesDaFerramenta,
                             Some(&call.name),
                             &ctx.workdir,
                             json!({"hook_event_name": "PreToolUse", "task_id": task_id,
-                                   "tool_name": call.name, "tool_input": call.arguments}),
+                                   "tool_name": call.name, "tool_input": validacao.valor}),
                         )
                         .await
                         .bloqueio
@@ -921,6 +1085,9 @@ state the assumption you made in the final answer."
                 };
                 let r = match pre {
                     Some(m) => Err(ToolError::Denied(m)),
+                    None if pelo_esquema => Err(ToolError::InvalidArguments(
+                        crate::esquema::mensagem_ao_modelo(&call.name, &validacao),
+                    )),
                     None => {
                         rodou = true;
                         // Ponto de restauracao no portao, depois das regras e do PreToolUse
@@ -930,7 +1097,9 @@ state the assumption you made in the final answer."
                         }
                         match tokio::time::timeout(
                             self.config.tool_timeout,
-                            t.run(call.arguments.clone(), ctx),
+                            // O valor COAGIDO ("5" -> 5 onde o esquema pede inteiro): o
+                            // que o validador aceitou e o que a ferramenta recebe.
+                            t.run(validacao.valor.clone(), ctx),
                         )
                         .await
                         {
@@ -950,6 +1119,17 @@ state the assumption you made in the final answer."
                 format!("NEGADO pela politica: {m}"),
                 "negado",
                 EvidenceOutcome::Denied,
+                vec![],
+            ),
+            // O texto do validador ja e a mensagem inteira; o da ferramenta ganha o prefixo
+            // de sempre. Os dois sao argumento invalido para o orcamento e para o fim.
+            Err(ToolError::InvalidArguments(m)) if pelo_esquema => {
+                (m, DESFECHO_INVALIDO, EvidenceOutcome::Failed, vec![])
+            }
+            Err(e @ ToolError::InvalidArguments(_)) if capability != "desconhecida" => (
+                format!("ERRO: {e}"),
+                DESFECHO_INVALIDO,
+                EvidenceOutcome::Failed,
                 vec![],
             ),
             Err(e) => (
@@ -1016,14 +1196,85 @@ state the assumption you made in the final answer."
         });
     }
 
+    /// O fim conferido, antes de a resposta ser aceita (o `final_answer` e o fim em texto
+    /// passam aqui): nenhum argumento invalido sem conserto, a resposta no esquema de saida
+    /// quando a tarefa traz um, e o comando de verificacao saindo com 0. Devolve a resposta
+    /// final (o JSON compacto, na saida tipada) ou o motivo da recusa.
+    ///
+    /// Decisao: RECUSAR e devolver ao modelo, como as outras conferencias do fim, ate o
+    /// limite de recusas; esgotado, a tarefa termina FALHA com o motivo. So falhar direto
+    /// jogaria fora a tarefa que o modelo ainda consertaria com uma volta; so recusar
+    /// deixaria o fim sem garantia quando o modelo insiste.
+    async fn conferir_fim(
+        &self,
+        task: &Task,
+        ctx: &ToolContext,
+        resposta: &Value,
+        plano: bool,
+    ) -> Result<String, FimRecusado> {
+        let texto = || match resposta {
+            Value::String(s) => s.trim().to_string(),
+            outro => outro.to_string(),
+        };
+        if plano {
+            return Ok(texto());
+        }
+        if let Some(e) = pendencias_de_argumento(task) {
+            return Err(FimRecusado {
+                ao_modelo: format!(
+                    "final_answer REJECTED: these tool calls failed with invalid arguments and were never fixed: \
+{}. Call them again with valid arguments (the errors are in their results above) before finishing.",
+                    e.ao_modelo
+                ),
+                erro: e.erro,
+            });
+        }
+        let mut final_ = texto();
+        if let Some(esquema) = &task.saida_esquema {
+            let v = crate::esquema::resposta_tipada(esquema, resposta);
+            if !v.ok() {
+                return Err(FimRecusado {
+                    ao_modelo: format!(
+                        "final_answer REJECTED: the answer does not match the output schema.\n{}",
+                        crate::esquema::mensagem_ao_modelo("final_answer", &v)
+                    ),
+                    erro: format!(
+                        "resposta fora do esquema de saida: {}",
+                        serde_json::to_string(&v.erros).unwrap_or_default()
+                    ),
+                });
+            }
+            final_ = v.valor.to_string();
+        }
+        if let Some(cmd) = &task.verificar
+            && let Err((codigo, saida)) =
+                rodar_verificacao(cmd, &ctx.workdir, self.config.tool_timeout).await
+        {
+            return Err(FimRecusado {
+                ao_modelo: format!(
+                    "final_answer REJECTED: the verification command `{cmd}` exited with {codigo}. Fix the \
+work so that it passes, then finish.\n{saida}"
+                ),
+                erro: format!("verificacao `{cmd}` saiu com {codigo}: {saida}"),
+            });
+        }
+        Ok(final_)
+    }
+
     /// Toda conclusao passa por aqui: se o objetivo pediu arquivos que nao existem, a tarefa
     /// termina FALHA, dizendo quais. Medido: depois de 3 recusas, uma resposta em texto
     /// ("Your website is live at [insert URL here]") saia como completed sem o arquivo.
+    /// O argumento invalido sem conserto tambem se confere AQUI, alem do `conferir_fim`:
+    /// e a ultima porta antes do `Completed`, e caminho novo que esquecer a primeira cai
+    /// nesta.
     fn concluir(&self, task: Task, workdir: &std::path::Path, obs: &dyn Observer) -> Task {
         let faltando: Vec<String> = arquivos_pedidos(&task.objective)
             .into_iter()
             .filter(|f| !workdir.join(f).exists())
             .collect();
+        if let Some(e) = pendencias_de_argumento(&task) {
+            return self.finish(task, TaskStatus::Failed, Some(e.erro), obs);
+        }
         if faltando.is_empty() {
             self.finish(task, TaskStatus::Completed, None, obs)
         } else {
@@ -1052,6 +1303,93 @@ state the assumption you made in the final answer."
         task.updated_at = Utc::now();
         self.persist(&task, obs);
         task
+    }
+}
+
+/// Quantas chamadas SEGUIDAS de `ferramenta` terminaram em argumento invalido, contadas
+/// do fim para o comeco ate a ultima que passou. Sai dos passos gravados, e nao de um
+/// contador ao lado: o `task.json` e a unica fonte, e a tarefa retomada conta igual.
+fn invalidas_seguidas(task: &Task, ferramenta: &str) -> u32 {
+    let mut n = 0;
+    for p in task.steps.iter().rev() {
+        if p.kind != "ferramenta" || p.tool.as_deref() != Some(ferramenta) {
+            continue;
+        }
+        match p.outcome.as_str() {
+            "ok" => break,
+            DESFECHO_INVALIDO => n += 1,
+            _ => {}
+        }
+    }
+    n
+}
+
+/// As ferramentas cuja ULTIMA chamada (entre as que passaram e as invalidas) foi argumento
+/// invalido: o erro que o modelo deixou para tras. `None` se nao ha nenhuma.
+fn pendencias_de_argumento(task: &Task) -> Option<FimRecusado> {
+    let mut ultima: std::collections::BTreeMap<&str, bool> = std::collections::BTreeMap::new();
+    for p in &task.steps {
+        if let (Some(t), "ferramenta") = (p.tool.as_deref(), p.kind.as_str()) {
+            match p.outcome.as_str() {
+                "ok" => {
+                    ultima.insert(t, false);
+                }
+                DESFECHO_INVALIDO => {
+                    ultima.insert(t, true);
+                }
+                _ => {}
+            }
+        }
+    }
+    let nomes: Vec<String> = ultima
+        .into_iter()
+        .filter(|(_, invalida)| *invalida)
+        .map(|(t, _)| format!("{t} ({}x)", invalidas_seguidas(task, t)))
+        .collect();
+    (!nomes.is_empty()).then(|| FimRecusado {
+        ao_modelo: nomes.join(", "),
+        erro: format!(
+            "conclusao nao verificada: chamada com argumento invalido sem conserto: {}",
+            nomes.join(", ")
+        ),
+    })
+}
+
+/// O comando de verificacao no MESMO executor do hook `Stop` (`run_in_workdir_com`, o
+/// bwrap do `shell`, sem rede, a pasta da tarefa em `/work`). `Err((codigo, saida))` quando
+/// nao sai com 0; sem bwrap e recusa, nunca execucao fora do sandbox.
+async fn rodar_verificacao(
+    cmd: &str,
+    workdir: &std::path::Path,
+    prazo: Duration,
+) -> Result<(), (String, String)> {
+    let Some(bwrap) = crate::arquivos::achar_bwrap() else {
+        return Err(("-".into(), "no bwrap to run it in the sandbox".into()));
+    };
+    let c = phxclaw_sandbox::WorkdirCommand {
+        workdir: workdir.to_path_buf(),
+        script: cmd.to_string(),
+        timeout: prazo,
+        network: false,
+        max_output_bytes: 16 * 1024,
+    };
+    let r = tokio::task::spawn_blocking(move || {
+        phxclaw_sandbox::run_in_workdir_com(&bwrap, &c, &phxclaw_sandbox::SandboxExtras::default())
+    })
+    .await;
+    match r {
+        Ok(Ok(o)) if o.exit_code == Some(0) => Ok(()),
+        Ok(Ok(o)) => {
+            let saida = format!("{}\n{}", o.stdout.trim(), o.stderr.trim());
+            Err((
+                o.exit_code
+                    .map(|c| c.to_string())
+                    .unwrap_or_else(|| "sinal/prazo".into()),
+                truncate_for_model(saida.trim(), 2_000),
+            ))
+        }
+        Ok(Err(e)) => Err(("-".into(), e.to_string())),
+        Err(e) => Err(("-".into(), e.to_string())),
     }
 }
 

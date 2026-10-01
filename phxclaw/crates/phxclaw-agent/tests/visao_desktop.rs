@@ -6,10 +6,15 @@
 //! trocada com outro teste rodando ao lado e corrida.
 
 #[cfg(not(feature = "desktop"))]
+#[path = "comum/pulado.rs"]
+mod pulado;
+
+#[cfg(not(feature = "desktop"))]
 #[test]
 fn desktop_desligado() {
-    eprintln!(
-        "PULADO: feature `desktop` desligada (cargo test -p phxclaw-agent --features desktop)"
+    pulado::pular(
+        "feature desktop",
+        "desligada (cargo test -p phxclaw-agent --features desktop)",
     );
 }
 

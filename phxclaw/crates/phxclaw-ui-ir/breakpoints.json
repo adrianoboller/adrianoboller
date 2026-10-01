@@ -1,0 +1,8 @@
+{
+  "_fonte": "Os cinco pontos de quebra do Bootstrap 5.3 ($grid-breakpoints em scss/_variables.scss; https://getbootstrap.com/docs/5.3/layout/breakpoints/). Unica fonte: as constantes Rust (responsivo::bp) e todo CSS gerado saem daqui, e o teste numeros_de_quebra_so_no_json reprova o numero escrito em outro lugar.",
+  "sm": 576,
+  "md": 768,
+  "lg": 992,
+  "xl": 1200,
+  "xxl": 1400
+}

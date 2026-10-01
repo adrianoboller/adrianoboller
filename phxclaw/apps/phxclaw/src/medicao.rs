@@ -212,11 +212,33 @@ pub async fn skill(args: &[String]) -> Result<()> {
     Ok(())
 }
 
-/// `phxclaw ui fidelidade`: a prova de ida e volta da conversao de tela (SP000022).
+/// Grava o resultado em `SAIDA/PREFIXO-DATA.json` sem apagar o do mesmo dia: o arquivo
+/// anterior e a linha de base de quem compara antes e depois, e sobrescreve-lo pela segunda
+/// corrida da tarde apagaria justamente o "antes".
+fn gravar_resultado(saida: &Path, prefixo: &str, v: &serde_json::Value) -> Result<PathBuf> {
+    std::fs::create_dir_all(saida)?;
+    let data = v["data"].as_str().unwrap_or("");
+    let dia = data.get(..10).unwrap_or("").to_string();
+    let mut arq = saida.join(format!("{prefixo}-{dia}.json"));
+    if arq.exists() {
+        let hora: String = data.get(11..).unwrap_or("").replace(':', "");
+        arq = saida.join(format!("{prefixo}-{dia}-{hora}.json"));
+    }
+    std::fs::write(&arq, serde_json::to_vec_pretty(v)?)?;
+    Ok(arq)
+}
+
+/// `phxclaw ui fidelidade|responsivo`: as provas das telas geradas.
 pub async fn ui(args: &[String]) -> Result<()> {
-    const USO: &str = "uso: phxclaw ui fidelidade [--telas N] [--modelo N] [--prazo S] [--saida DIR] [--capturas DIR]";
-    if args.first().map(String::as_str) != Some("fidelidade") {
-        bail!("{USO}");
+    const USO: &str = "uso: phxclaw ui fidelidade [--telas N] [--modelo N] [--prazo S] [--saida DIR] [--capturas DIR] \
+                       | ui responsivo [--alvo html|bootstrap] [--bootstrap-css ARQ] [--telas N] [--saida DIR] [--capturas DIR] \
+                       | ui responsivo --phx ARQ.phx.json [--bootstrap-css ARQ] [--exemplo INDEX.html] [--saida DIR] \
+                       | ui importar ARQ.phx.json [--saida DIR] [--bootstrap-css CAMINHO]";
+    match args.first().map(String::as_str) {
+        Some("fidelidade") => {}
+        Some("responsivo") => return ui_responsivo(args, USO).await,
+        Some("importar") => return ui_importar(args, USO),
+        _ => bail!("{USO}"),
     }
     let num = |k: &str, padrao: usize| -> Result<usize> {
         opcao(args, k)
@@ -244,15 +266,84 @@ pub async fn ui(args: &[String]) -> Result<()> {
     .await
     .map_err(anyhow::Error::msg)?;
     print!("{}", phxclaw_agent::fidelidade_ui::tabela(&v));
-    std::fs::create_dir_all(&saida)?;
-    let dia = v["data"]
-        .as_str()
-        .unwrap_or("")
-        .get(..10)
-        .unwrap_or("")
-        .to_string();
-    let arq = saida.join(format!("fidelidade-{dia}.json"));
-    std::fs::write(&arq, serde_json::to_vec_pretty(&v)?)?;
+    let arq = gravar_resultado(&saida, "fidelidade", &v)?;
+    println!("resultado: {}", arq.display());
+    Ok(())
+}
+
+/// `phxclaw ui importar ARQ.phx.json`: PHX JSON -> UI-IR -> telas phoenix e Bootstrap.
+fn ui_importar(args: &[String], uso: &str) -> Result<()> {
+    let Some(arq) = args.get(1).filter(|a| !a.starts_with("--")) else {
+        bail!("{uso}");
+    };
+    let arq = PathBuf::from(arq);
+    let saida = opcao(args, "--saida")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            arq.with_file_name(format!(
+                "{}-gerado",
+                arq.file_stem().and_then(|s| s.to_str()).unwrap_or("phx")
+            ))
+        });
+    let r =
+        phxclaw_agent::ui::importar_phx(&arq, &saida, opcao(args, "--bootstrap-css").as_deref())
+            .map_err(anyhow::Error::msg)?;
+    println!("{r}");
+    Ok(())
+}
+
+/// `phxclaw ui responsivo`: as 20 telas do gabarito, ou o PHX JSON do dono (`--phx`).
+async fn ui_responsivo(args: &[String], uso: &str) -> Result<()> {
+    use phxclaw_agent::responsivo_ui::{self, Alvo};
+    let saida = opcao(args, "--saida")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("docs/ui/fidelidade"));
+    if let Some(phx) = opcao(args, "--phx") {
+        let texto = std::fs::read_to_string(&phx).with_context(|| phx.clone())?;
+        let css = opcao(args, "--bootstrap-css")
+            .map(|c| std::fs::read(&c).with_context(|| c.clone()))
+            .transpose()?;
+        let exemplo = opcao(args, "--exemplo")
+            .map(|e| std::fs::read_to_string(&e).with_context(|| e.clone()))
+            .transpose()?;
+        let v = responsivo_ui::medir_phx(&texto, css, exemplo)
+            .await
+            .map_err(anyhow::Error::msg)?;
+        print!("{}", responsivo_ui::tabela_phx(&v));
+        let arq = gravar_resultado(&saida, "phx-exemplo", &v)?;
+        println!("resultado: {}", arq.display());
+        if v["passou"] != v["total"] {
+            std::process::exit(1);
+        }
+        return Ok(());
+    }
+    let alvo = match opcao(args, "--alvo").as_deref().unwrap_or("html") {
+        "html" => Alvo::Html,
+        "bootstrap" => {
+            // a prova nao baixa nada: a folha e um arquivo local, servido no loopback
+            let Some(css) = opcao(args, "--bootstrap-css") else {
+                bail!(
+                    "--alvo bootstrap pede --bootstrap-css ARQ (o bootstrap.min.css local)\n{uso}"
+                );
+            };
+            Alvo::Bootstrap {
+                css: std::fs::read(&css).with_context(|| css.clone())?,
+            }
+        }
+        outro => bail!("--alvo {outro}: use html ou bootstrap\n{uso}"),
+    };
+    let telas = opcao(args, "--telas")
+        .map(|v| v.parse::<usize>())
+        .transpose()
+        .context("--telas: numero")?
+        .unwrap_or(phxclaw_agent::fidelidade_ui::TELAS);
+    let capturas = opcao(args, "--capturas").map(PathBuf::from);
+    let v = responsivo_ui::medir(&alvo, telas, &[], capturas.as_deref())
+        .await
+        .map_err(anyhow::Error::msg)?;
+    print!("{}", responsivo_ui::tabela(&v));
+    let prefixo = format!("responsivo-{}", v["alvo"].as_str().unwrap_or("html"));
+    let arq = gravar_resultado(&saida, &prefixo, &v)?;
     println!("resultado: {}", arq.display());
     Ok(())
 }

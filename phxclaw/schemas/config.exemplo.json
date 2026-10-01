@@ -13,7 +13,8 @@
       "heartbeat_min: Intervalo do heartbeat em minutos; 0 desliga [inteiro; ambiente PHXCLAW_HEARTBEAT_MIN]",
       "lsp: Servidores de linguagem (LSP) nas ferramentas de código; 0 desliga [booleano; ambiente PHXCLAW_LSP]",
       "memoria_escopo: Escopo da memória persistente (<pasta>/tasks/_memoria/<escopo>.json) [texto; ambiente PHXCLAW_MEMORIA_ESCOPO]",
-      "skills_dir: Pasta das skills; vazio = <pasta>/tasks/_skills [caminho; ambiente PHXCLAW_SKILLS_DIR]"
+      "skills_dir: Pasta das skills; vazio = <pasta>/tasks/_skills [caminho; ambiente PHXCLAW_SKILLS_DIR]",
+      "tentativas_argumento: Novas tentativas por ferramenta depois de argumento inválido (seguidas); esgotou, a tarefa falha [inteiro; ambiente PHXCLAW_TENTATIVAS_ARGUMENTO]"
     ],
     "agentes_dir": null,
     "capacidades": null,
@@ -22,7 +23,8 @@
     "heartbeat_min": 30,
     "lsp": true,
     "memoria_escopo": "padrao",
-    "skills_dir": null
+    "skills_dir": null,
+    "tentativas_argumento": 2
   },
   "api": {
     "//": [
@@ -554,8 +556,10 @@
   },
   "ui": {
     "//": [
+      "bootstrap_css: Folha LOCAL do Bootstrap 5.3 nas telas geradas (nunca CDN); vazio = vendor/bootstrap-5.3.3/bootstrap.min.css [caminho; ambiente PHXCLAW_UI_BOOTSTRAP_CSS]",
       "dir: Pasta da interface (PWA) [caminho; ambiente PHXCLAW_UI_DIR]"
     ],
+    "bootstrap_css": null,
     "dir": null
   },
   "voz": {

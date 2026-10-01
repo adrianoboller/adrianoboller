@@ -452,3 +452,45 @@ fn balde_repoe_fichas_com_o_tempo() {
     std::thread::sleep(Duration::from_millis(1100));
     assert!(l.tomar().is_ok());
 }
+
+/// O fim conferido pela API: `verificar` sem `shell.exec` no agente e recusado na entrada
+/// (seria a porta lateral do shell negado), esquema que nao e objeto tambem; o valido
+/// chega a tarefa gravada.
+#[tokio::test]
+async fn verificar_sem_shell_e_esquema_invalido_se_recusam_na_entrada() {
+    let (base, _) = subir(vec![]).await;
+    let pedir = |corpo: Value| {
+        let base = base.clone();
+        async move {
+            cli()
+                .post(format!("{base}/v1/tasks"))
+                .bearer_auth(TOKEN)
+                .json(&corpo)
+                .send()
+                .await
+                .unwrap()
+        }
+    };
+    let r = pedir(json!({"objective": "x", "verificar": "cargo test"})).await;
+    assert_eq!(r.status(), 400);
+    assert!(r.text().await.unwrap().contains("shell.exec"));
+    let r = pedir(json!({"objective": "x", "saida_esquema": "objeto"})).await;
+    assert_eq!(r.status(), 400);
+    let esquema = json!({"type":"object","properties":{"ok":{"type":"boolean"}}});
+    let r = pedir(json!({"objective": "x", "saida_esquema": esquema})).await;
+    assert_eq!(r.status(), 202);
+    let id = r.json::<Value>().await.unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let t: Value = cli()
+        .get(format!("{base}/v1/tasks/{id}"))
+        .bearer_auth(TOKEN)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(t["saida_esquema"], esquema);
+}

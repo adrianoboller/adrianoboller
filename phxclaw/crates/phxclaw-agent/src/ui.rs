@@ -26,6 +26,8 @@ CREATE TABLE statements. Give the DDL in 'sql' or a file of the task in 'sql_pat
                 "app_name":{"type":"string"},
                 "folder":{"type":"string","description":"output folder, default erp"},
                 "react":{"type":"boolean","description":"also write a React project in <folder>/react (npm install && npm run build)"},
+                "bootstrap":{"type":"boolean","description":"also write <folder>/bootstrap/index.html with Bootstrap 5.3 component classes (same layout engine; the CSS file is LOCAL, never a CDN)"},
+                "bootstrap_css":{"type":"string","description":"local path of bootstrap.min.css relative to <folder>/bootstrap/index.html; default config ui.bootstrap_css or vendor/bootstrap-5.3.3/bootstrap.min.css"},
                 "flutter":{"type":"boolean","description":"also write a Flutter project in <folder>/flutter"},
                 "rust":{"type":"boolean","description":"also write the business rules as a Rust crate in <folder>/rust (cargo test)"},
                 "wlanguage":{"type":"boolean","description":"also write the same business rules as WLanguage procedures in <folder>/wlanguage (for WinDev/WebDev)"}
@@ -120,6 +122,21 @@ pub fn gravar_app(
     if quer("wlanguage") {
         extras.push(("wlanguage", phxclaw_ui_ir::wlanguage::render(app)));
     }
+    // a folha do Bootstrap: argumento, depois `ui.bootstrap_css` do config, depois o caminho
+    // padrao com a versao fixada. O adaptador recusa CDN; o arquivo quem poe e o projeto.
+    let css_bootstrap = args
+        .get("bootstrap_css")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(String::from)
+        .or_else(|| crate::config::texto("ui.bootstrap_css").ok().flatten())
+        .unwrap_or_else(|| phxclaw_ui_ir::bootstrap::CSS_PADRAO.to_string());
+    if quer("bootstrap") {
+        let h = phxclaw_ui_ir::bootstrap::render(app, &css_bootstrap)
+            .map_err(ToolError::InvalidArguments)?;
+        extras.push(("bootstrap", vec![("index.html".to_string(), h)]));
+    }
     for (sub, lista) in extras {
         for (p, c) in lista {
             let rel = format!("{pasta}/{sub}/{p}");
@@ -157,6 +174,12 @@ pub fn gravar_app(
     if quer("wlanguage") {
         r.push_str(&format!(
             "\nregras em WLanguage em {pasta}/wlanguage (nao compiladas aqui: conferir no WinDev)"
+        ));
+    }
+    if quer("bootstrap") {
+        r.push_str(&format!(
+            "\nversao Bootstrap {} em {pasta}/bootstrap/index.html; a folha e LOCAL: ponha o bootstrap.min.css em {pasta}/bootstrap/{css_bootstrap}",
+            phxclaw_ui_ir::bootstrap::VERSAO
         ));
     }
     if !avisos.is_empty() {
@@ -324,6 +347,8 @@ outputs as design_erp_ui. Labels not actually written on the screenshot are disc
                 "folder":{"type":"string","description":"output folder, default erp"},
                 "flutter":{"type":"boolean"},
                 "react":{"type":"boolean"},
+                "bootstrap":{"type":"boolean"},
+                "bootstrap_css":{"type":"string"},
                 "rust":{"type":"boolean"},
                 "wlanguage":{"type":"boolean"},
                 "vision":{"type":"boolean","description":"ask the local vision model (default true); false = OCR + layout only"}
@@ -412,4 +437,54 @@ outputs as design_erp_ui. Labels not actually written on the screenshot are disc
             Ok(saida)
         })
     }
+}
+
+/// `phxclaw ui importar ARQ.phx.json`: o PHX JSON do Phoenix vira UI-IR e as duas telas web
+/// (adaptador «phoenix» e Bootstrap), pelo mesmo motor de `design_erp_ui`. Grava tambem o
+/// PHX JSON escrito DE VOLTA a partir do IR, e diz se a ida e volta saiu identica: e a
+/// prova de que nada do arquivo se perdeu na traducao.
+pub fn importar_phx(
+    arq: &std::path::Path,
+    saida: &std::path::Path,
+    css_bootstrap: Option<&str>,
+) -> Result<String, String> {
+    let texto = std::fs::read_to_string(arq).map_err(|e| format!("{}: {e}", arq.display()))?;
+    let (env, app) = phxclaw_ui_ir::phx_json::ler(&texto)?;
+    let volta = phxclaw_ui_ir::phx_json::escrever(&env, &app)?;
+    let css = css_bootstrap.map(String::from).unwrap_or_else(|| {
+        format!(
+            "vendor/bootstrap-{}/bootstrap.min.css",
+            env.versao_do_adaptador
+        )
+    });
+    let boot = phxclaw_ui_ir::bootstrap::render_com_versao(&app, &css, &env.versao_do_adaptador)?;
+    let gravar = |rel: &str, c: &str| -> Result<(), String> {
+        let p = saida.join(rel);
+        if let Some(d) = p.parent() {
+            std::fs::create_dir_all(d).map_err(|e| e.to_string())?;
+        }
+        std::fs::write(&p, c).map_err(|e| format!("{}: {e}", p.display()))
+    };
+    gravar(
+        "ui-ir.json",
+        &serde_json::to_string_pretty(&app).map_err(|e| e.to_string())?,
+    )?;
+    gravar("index.html", &phxclaw_ui_ir::html::render(&app))?;
+    gravar("bootstrap/index.html", &boot)?;
+    gravar("app.phx.json", &volta)?;
+    let dir = saida.display();
+    let ida = if volta == texto {
+        "identica"
+    } else {
+        "DIFERENTE (veja app.phx.json)"
+    };
+    Ok(format!(
+        "{}: {} tela(s), UI-IR v{} em {dir}/ui-ir.json; telas em {dir}/index.html e \
+{dir}/bootstrap/index.html (Bootstrap {} LOCAL: ponha a folha em {dir}/bootstrap/{css}); \
+ida e volta do PHX JSON: {ida}",
+        arq.display(),
+        app.screens.len(),
+        app.ir_version,
+        env.versao_do_adaptador,
+    ))
 }

@@ -77,7 +77,7 @@ secret rotation) need human approval and are refused. Never put secrets in argum
                     "node":{"type":"string","description":"node_uuid"},
                     "capability":{"type":"string"},
                     "arguments":{"type":"object"},
-                    "timeout_s":{"type":"integer","minimum":1,"maximum":600}
+                    "timeout_s":{"type":"integer","description":"1 to 600; larger values are capped"}
                 },"required":["node","capability"]}),
             }
         } else {

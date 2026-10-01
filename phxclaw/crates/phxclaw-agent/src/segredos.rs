@@ -1,5 +1,5 @@
 //! Varredura de segredos antes de gravar no git: o hook nativo de `PreToolUse` do
-//! `git_write` nas acoes `add` e `commit`, com o binario oficial do gitleaks (MIT, versao
+//! `git_write` nas acoes `add`, `commit` e `stash push`, com o binario oficial do gitleaks (MIT, versao
 //! travada pelo SHA-256 que o operador declara).
 //!
 //! Decisoes que valem saber antes de mexer:
@@ -7,11 +7,33 @@
 //! - **Mora na ferramenta, nao no `hooks.json`.** O `parallel_tasks` (nuvem.rs) faz `add` e
 //!   `commit` chamando o `GitTool` direto, sem passar pelo portao do motor; uma guarda no
 //!   portao deixaria esse caminho irmao gravar segredo calado. Dentro de `escrever`, todo
-//!   `add`/`commit` passa por ela -- o do modelo, o do `mcp-serve` e o da nuvem.
+//!   `add`/`commit` passa por ela -- o do modelo, o do `mcp-serve` e o da nuvem. O `stash
+//!   push` tambem, porque ele grava commit (o `-u` guarda os nao rastreados no terceiro pai,
+//!   e `stash@{0}^3` virava ramo com o segredo sem varredura nenhuma).
+//! - **A porta irma e o `shell`.** Ele roda o mesmo git no mesmo /work. Com a varredura
+//!   EXIGIDA, o portao recusa a linha de shell que chama `git` gravando historia (commit,
+//!   stash, merge, rebase, cherry-pick, am, revert, pull, commit-tree), apontando o
+//!   `git_write`. E conferencia de TEXTO: um script gravado em arquivo e chamado depois
+//!   passa por ela. Quem precisa da garantia inteira nao concede `shell.exec` -- a
+//!   capacidade do shell e o disco inteiro de /work, e nenhuma regra de texto a fecha.
 //! - **Varre o que SERIA gravado, sem tocar no indice de verdade.** O indice e copiado para
 //!   um temporario do sandbox, o `add` (ou o `add -u` do `commit -a`) roda nele, e o diff
 //!   `--cached` dele e o que o commit levaria. Recusar depois de `git add` exigiria desfazer
-//!   o indice do operador, que pode ter coisa preparada antes.
+//!   o indice do operador, que pode ter coisa preparada antes. Os objetos que esse `add`
+//!   cria vao para uma pasta temporaria do sandbox (`GIT_OBJECT_DIRECTORY`, com o banco de
+//!   verdade como alternativo so de leitura): a gravacao recusada nao deixa o blob do
+//!   segredo em `.git/objects`.
+//! - **Todo arquivo e lido como texto, e o que nao se leu como texto fecha.** O git pula o
+//!   conteudo de arquivo que julga binario -- byte NUL, UTF-16, `-diff` no `.gitattributes`
+//!   ou no `.git/info/attributes`, `core.bigFileThreshold` pequeno no `.git/config` -- e o
+//!   diff dizia so «Binary files differ»: a varredura respondia limpo sem ter lido nada.
+//!   Agora o diff vai com `--text` (que passa por cima dos atributos e do limiar, que ainda
+//!   sobe por `-c`), `--no-relative` (o `diff.relative` escondia arquivo fora da subpasta)
+//!   e prefixos fixos (o `diff.mnemonicPrefix` trocava `a/`/`b/`). Linha com NUL e lida
+//!   tirando os NUL (UTF-16) ou trocando-os por espaco (binario), e se mesmo assim o git
+//!   devolver um arquivo como binario, a gravacao e recusada: nunca «limpo» sobre o que
+//!   nao se leu.
+//! - **A mensagem do commit tambem e varrida.** Ela vira historia como o arquivo.
 //! - **O gitleaks nao roda git nem le regra da arvore.** O diff sai do motor do git desta
 //!   casa (`rodar_roteiro_git`, com filtros e textconv do repositorio neutralizados); o
 //!   gitleaks recebe pelo stdin so as linhas ADICIONADAS e roda numa pasta vazia. Rodando
@@ -60,7 +82,25 @@ pub struct Varredura {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Gravacao {
     Add(Vec<String>),
-    Commit { todos: bool },
+    Commit {
+        todos: bool,
+        mensagem: String,
+    },
+    /// `stash push`: as mudancas rastreadas (preparadas ou nao) e, com `-u`, as novas.
+    Stash {
+        nao_rastreados: bool,
+        mensagem: Option<String>,
+    },
+}
+
+impl Gravacao {
+    fn mensagem(&self) -> Option<&str> {
+        match self {
+            Gravacao::Add(_) => None,
+            Gravacao::Commit { mensagem, .. } => Some(mensagem),
+            Gravacao::Stash { mensagem, .. } => mensagem.as_deref(),
+        }
+    }
 }
 
 /// Um achado, ja sem o segredo.
@@ -150,7 +190,12 @@ impl Varredura {
             ))
         })?;
         let diff = diff_do_que_sera_gravado(bwrap, workdir, repo, g, timeout).await?;
-        let fluxo = Fluxo::do_diff(&analisar_diff(&diff));
+        let arquivos = analisar_diff(&diff);
+        nada_pulado(&arquivos)?;
+        let mut fluxo = Fluxo::do_diff(&arquivos);
+        if let Some(m) = g.mensagem() {
+            fluxo.acrescentar(MENSAGEM, m);
+        }
         if fluxo.origem.iter().all(Option::is_none) {
             return Ok(Veredito::Limpo { linhas: 0 });
         }
@@ -162,6 +207,30 @@ impl Varredura {
         }
         Err(ToolError::Denied(texto_do_bloqueio(&achados)))
     }
+}
+
+/// Arquivo que o git devolveu como binario nao foi lido. Com `--text` nao deve sobrar
+/// nenhum; se sobrar (versao do git, caso que ninguem previu), fecha em vez de dizer limpo.
+pub fn nada_pulado(arquivos: &[ArquivoDiff]) -> Result<(), ToolError> {
+    let pulados: Vec<&str> = arquivos
+        .iter()
+        .filter(|a| a.binario)
+        .map(|a| a.caminho.as_str())
+        .collect();
+    if pulados.is_empty() {
+        return Ok(());
+    }
+    Err(ToolError::Denied(format!(
+        "varredura de segredos: o git nao mostrou como texto {} arquivo(s) ({}); o que nao se \
+         leu nao se declara limpo, gravacao recusada",
+        pulados.len(),
+        pulados
+            .iter()
+            .take(10)
+            .copied()
+            .collect::<Vec<_>>()
+            .join(", ")
+    )))
 }
 
 pub fn texto_do_bloqueio(achados: &[Achado]) -> String {
@@ -197,8 +266,17 @@ async fn diff_do_que_sera_gravado(
             let c: String = caminhos.iter().map(|p| format!(" {}", aspas(p))).collect();
             format!("add --{c}")
         }
-        Gravacao::Commit { todos: true } => "add -u".into(),
-        Gravacao::Commit { todos: false } => String::new(),
+        Gravacao::Commit { todos: true, .. } => "add -u".into(),
+        Gravacao::Commit { todos: false, .. } => String::new(),
+        // O stash guarda a arvore rastreada inteira; com `-u`, tambem o que nao e ignorado.
+        Gravacao::Stash {
+            nao_rastreados: false,
+            ..
+        } => "add -u".into(),
+        Gravacao::Stash {
+            nao_rastreados: true,
+            ..
+        } => "add -A".into(),
     };
     let s = rodar_roteiro_git(
         bwrap,
@@ -207,17 +285,23 @@ async fn diff_do_que_sera_gravado(
         |git| {
             // Indice ausente (repositorio sem nada preparado) e indice vazio: o arquivo
             // temporario tem de NAO existir, um arquivo de zero bytes o git recusa.
+            // Objetos novos numa pasta do sandbox, com o banco de verdade como alternativo:
+            // o `add` de prova nao deixa blob nenhum no repositorio.
             let mut r = format!(
                 "orig=$({git} rev-parse --path-format=absolute --git-path index) || exit 96\n\
+                 objs=$({git} rev-parse --path-format=absolute --git-path objects) || exit 96\n\
                  idx=$(mktemp -u /tmp/phxclaw-indice.XXXXXX)\n\
+                 mkdir -p /tmp/phxclaw-objetos || exit 96\n\
                  if [ -f \"$orig\" ]; then cp \"$orig\" \"$idx\" || exit 96; fi\n\
-                 export GIT_INDEX_FILE=\"$idx\"\n"
+                 export GIT_INDEX_FILE=\"$idx\" GIT_OBJECT_DIRECTORY=/tmp/phxclaw-objetos \
+                 GIT_ALTERNATE_OBJECT_DIRECTORIES=\"$objs\"\n"
             );
             if !preparar.is_empty() {
                 r.push_str(&format!("{git} {preparar} || exit $?\n"));
             }
             r.push_str(&format!(
-                "exec {git} diff --cached --no-color --no-ext-diff --no-textconv -U0"
+                "exec {git} -c core.bigFileThreshold=2047m diff --cached --text --no-relative \
+                 --src-prefix=a/ --dst-prefix=b/ --no-color --no-ext-diff --no-textconv -U0"
             ));
             r
         },
@@ -265,7 +349,7 @@ impl Fluxo {
                                 f.separar();
                                 abriu = true;
                             }
-                            f.texto.push_str(&l[1..]);
+                            f.texto.push_str(&como_texto(&l[1..]));
                             f.texto.push('\n');
                             f.origem.push(Some((a.caminho.clone(), n)));
                             n += 1;
@@ -277,6 +361,16 @@ impl Fluxo {
             }
         }
         f
+    }
+
+    /// Texto que nao e arquivo (a mensagem do commit), com a origem dada.
+    pub fn acrescentar(&mut self, origem: &str, texto: &str) {
+        self.separar();
+        for (i, l) in texto.lines().enumerate() {
+            self.texto.push_str(&como_texto(l));
+            self.texto.push('\n');
+            self.origem.push(Some((origem.to_string(), i as u64 + 1)));
+        }
     }
 
     fn separar(&mut self) {
@@ -291,6 +385,50 @@ impl Fluxo {
         self.origem
             .get(usize::try_from(linha).ok()?.checked_sub(1)?)?
             .as_ref()
+    }
+}
+
+/// A linha de shell grava historia no git? Devolve o subcomando. Conferencia de texto,
+/// com o limite dito no topo do modulo.
+pub fn shell_grava_no_git(linha: &str) -> Option<String> {
+    static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let re = RE.get_or_init(|| {
+        regex::Regex::new(
+            r"(?:^|[;&|(\s`/])git(?:\s+(?:-[cC]\s+\S+|--?[\w.-]+(?:=\S+)?))*\s+(commit-tree|commit|stash|merge|rebase|cherry-pick|am|revert|pull)\b",
+        )
+        .expect("regex fixa")
+    });
+    re.captures(linha).map(|c| c[1].to_string())
+}
+
+/// A recusa do portao para a linha de shell, quando a varredura esta exigida (ou a
+/// configuracao nao se leu: guarda que nao se le fecha, como no `git_write`).
+pub fn recusa_no_shell(linha: Option<&str>) -> Option<String> {
+    let sub = shell_grava_no_git(linha?)?;
+    let v = Varredura::da_configuracao();
+    (v.exigir || v.erro.is_some()).then(|| {
+        format!(
+            "varredura de segredos exigida: `git {sub}` pelo shell grava sem varredura; use o \
+             git_write (add, commit, stash)"
+        )
+    })
+}
+
+/// Origem dos achados na mensagem do commit ou do stash.
+pub const MENSAGEM: &str = "(mensagem)";
+
+/// Uma linha com NUL lida como texto. NUL em pelo menos um terco dos caracteres e UTF-16
+/// (um a cada dois bytes): tirar os NUL devolve o texto. Pouco NUL e binario: o NUL vira
+/// espaco, para dois pedacos de texto nao se colarem num falso segredo.
+pub fn como_texto(l: &str) -> std::borrow::Cow<'_, str> {
+    let nul = l.bytes().filter(|&b| b == 0).count();
+    if nul == 0 {
+        return l.into();
+    }
+    if nul * 3 >= l.len() {
+        l.replace('\0', "").into()
+    } else {
+        l.replace('\0', " ").into()
     }
 }
 
@@ -450,6 +588,51 @@ diff --git a/b.rs b/b.rs
     }
 
     #[test]
+    fn arquivo_binario_no_diff_fecha() {
+        let d = "diff --git a/f.bin b/f.bin\nnew file mode 100644\nindex 0000000..1111111\n\
+                 Binary files /dev/null and b/f.bin differ\n";
+        let e = nada_pulado(&analisar_diff(d)).unwrap_err().to_string();
+        assert!(e.contains("f.bin"), "{e}");
+        assert!(nada_pulado(&analisar_diff(DIFF)).is_ok());
+    }
+
+    #[test]
+    fn nul_vira_texto_legivel_e_mensagem_tem_origem() {
+        assert_eq!(como_texto("A\0K\0I\0A\0"), "AKIA", "UTF-16");
+        assert_eq!(como_texto("chave\0valor = 1"), "chave valor = 1", "binario");
+        assert_eq!(como_texto("normal"), "normal");
+        let mut f = Fluxo::do_diff(&analisar_diff(DIFF));
+        let n = f.origem.len();
+        f.acrescentar(MENSAGEM, "titulo\n\ncorpo");
+        assert_eq!(f.onde(n as u64 + 2), Some(&(MENSAGEM.to_string(), 1)));
+        assert_eq!(f.onde(n as u64 + 4), Some(&(MENSAGEM.to_string(), 3)));
+    }
+
+    #[test]
+    fn shell_que_grava_no_git_e_reconhecido() {
+        for l in [
+            "git commit -m x",
+            "cd r && git -C sub commit -am y",
+            "git -c user.name=x stash push -u",
+            "/usr/bin/git cherry-pick abc",
+            "true; git --no-pager merge t",
+            "(git rebase main)",
+            "git commit-tree HEAD^{tree}",
+        ] {
+            assert!(shell_grava_no_git(l).is_some(), "{l}");
+        }
+        for l in [
+            "git status",
+            "git log --grep commit",
+            "ls commit",
+            "digit commit",
+        ] {
+            assert!(shell_grava_no_git(l).is_none(), "{l}");
+        }
+        assert!(recusa_no_shell(None).is_none());
+    }
+
+    #[test]
     fn relatorio_vira_arquivo_linha_e_regra_sem_ler_o_segredo() {
         let f = Fluxo::do_diff(&analisar_diff(DIFF));
         let r = r#"[{"RuleID":"aws-access-token","StartLine":4,"Secret":"AKIAXXXX","Match":"AKIAXXXX","Line":"k=AKIAXXXX"},
@@ -474,7 +657,10 @@ diff --git a/b.rs b/b.rs
     #[tokio::test]
     async fn sem_binario_avisa_e_com_exigir_recusa() {
         let d = std::env::temp_dir();
-        let g = Gravacao::Commit { todos: false };
+        let g = Gravacao::Commit {
+            todos: false,
+            mensagem: "x".into(),
+        };
         let p = Duration::from_secs(5);
         let v = Varredura::default()
             .antes_de_gravar(Path::new("/nao/ha"), &d, "", &g, p)

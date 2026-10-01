@@ -346,6 +346,7 @@ impl Montagem {
             estilo: self.estilo_de_saida(),
             instrucoes_projeto: self.instrucoes_do_projeto(),
             prazo_de_resposta: Some(PRAZO_DE_RESPOSTA),
+            tentativas_de_argumento: tentativas_de_argumento()?,
             ..AgentConfig::default()
         }
         .grant(&caps);
@@ -399,6 +400,16 @@ impl Montagem {
 }
 
 /// Nomes que aparecem mais de uma vez, em ordem.
+/// O orcamento de argumento invalido (`agente.tentativas_argumento`), pelo ponto unico da
+/// configuracao. Arquivo invalido e erro da montagem, nao o padrao calado: a regra do
+/// `config::configuracao`.
+fn tentativas_de_argumento() -> Result<u32, String> {
+    Ok(crate::config::valor("agente.tentativas_argumento")?
+        .and_then(|v| v.as_u64().or_else(|| v.as_str()?.trim().parse().ok()))
+        .map(|n| u32::try_from(n).unwrap_or(u32::MAX))
+        .unwrap_or(2))
+}
+
 pub fn nomes_repetidos(tools: &[Arc<dyn Tool>]) -> Vec<String> {
     let mut vistos = std::collections::BTreeSet::new();
     let mut rep = std::collections::BTreeSet::new();

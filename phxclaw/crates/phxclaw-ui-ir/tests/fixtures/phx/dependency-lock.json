@@ -1,0 +1,11 @@
+{
+  "bootstrap": {
+    "version": "5.3.6",
+    "file": "bootstrap-5.3.6.min.css",
+    "sha256": "a31a97d0b41c95bbebb09b7c2329a4c672129f8369d96cb6ad8f638e84250c48",
+    "sha384": "sha384-4Q6Gf2aSP4eDXB8Miphtr37CMZZQ5oXLH2yaXMJ2w8e2ZtHTl7GptT4jmndRuHDT",
+    "source": "https://github.com/twbs/bootstrap/tree/v5.3.6",
+    "license": "MIT",
+    "note": "Cópia local fixada. Não é declarada a versão mais recente."
+  }
+}

@@ -416,6 +416,178 @@
   "canal_nostr": {
    "estado": "parcial",
    "evidencia": "so nota publica; sem mensagem direta cifrada"
+  },
+  "editor_abas": {
+   "estado": "agente",
+   "evidencia": "Helix 25.07.1 no IDE do desktop (apps/phxclaw-desktop/src-tauri/src/terminal.rs): bufferline e :buffer-next; abas de terminais #ideAbas em apps/phxclaw-ui/index.html"
+  },
+  "editor_divisao": {
+   "estado": "agente",
+   "evidencia": "Helix 25.07.1 no IDE do desktop (apps/phxclaw-desktop/src-tauri/src/terminal.rs): :vsplit/:hsplit (helix-term/src/commands/typed.rs)"
+  },
+  "multicursor": {
+   "estado": "agente",
+   "evidencia": "Helix 25.07.1 no IDE do desktop (apps/phxclaw-desktop/src-tauri/src/terminal.rs): selecao multipla nativa do Helix"
+  },
+  "minimapa": {
+   "estado": "nao",
+   "evidencia": "Helix 25.07.1 nao tem minimapa; a tela do IDE e so a grade do terminal"
+  },
+  "dobra_codigo": {
+   "estado": "nao",
+   "evidencia": "Helix 25.07.1 nao tem dobra de codigo (nenhum comando fold em helix-term/src/commands.rs)"
+  },
+  "ir_para_definicao": {
+   "estado": "agente",
+   "evidencia": "Helix 25.07.1 no IDE do desktop (apps/phxclaw-desktop/src-tauri/src/terminal.rs): goto_definition/goto_reference com rust-analyzer (hx --health rust: OK); em Python so o ruff, sem definicao"
+  },
+  "renomear_simbolo": {
+   "estado": "agente",
+   "evidencia": "Helix 25.07.1 no IDE do desktop (apps/phxclaw-desktop/src-tauri/src/terminal.rs): rename_symbol via rust-analyzer; em Python nao (so ruff no PATH)"
+  },
+  "code_actions": {
+   "estado": "agente",
+   "evidencia": "Helix 25.07.1 no IDE do desktop (apps/phxclaw-desktop/src-tauri/src/terminal.rs): code_action via LSP (rust-analyzer, ruff)"
+  },
+  "formatacao": {
+   "estado": "agente",
+   "evidencia": "Helix 25.07.1 no IDE do desktop (apps/phxclaw-desktop/src-tauri/src/terminal.rs): :format e format_selections via LSP"
+  },
+  "busca_projeto": {
+   "estado": "agente",
+   "evidencia": "Helix 25.07.1 no IDE do desktop (apps/phxclaw-desktop/src-tauri/src/terminal.rs): global_search (espaco /); agente: busca.rs grep respeitando .gitignore"
+  },
+  "substituir_projeto": {
+   "estado": "parcial",
+   "evidencia": "busca existe; substituir em todos os arquivos nao: o Helix nao tem, e o agente so via edit_file arquivo a arquivo"
+  },
+  "paleta_comandos": {
+   "estado": "agente",
+   "evidencia": "Helix 25.07.1 no IDE do desktop (apps/phxclaw-desktop/src-tauri/src/terminal.rs): command_palette (espaco ?)"
+  },
+  "atalhos_configuraveis": {
+   "estado": "agente",
+   "evidencia": "Helix 25.07.1 no IDE do desktop (apps/phxclaw-desktop/src-tauri/src/terminal.rs): [keys] no config.toml do Helix; o PhxClaw nao tem tela de atalhos"
+  },
+  "depurador": {
+   "estado": "parcial",
+   "evidencia": "Helix tem DAP experimental (dap_toggle_breakpoint, dap_variables), mas hx --health rust: lldb-dap ausente, python: sem adaptador; nada do PhxClaw configura ou prova"
+  },
+  "console_depuracao": {
+   "estado": "nao",
+   "evidencia": "o DAP do Helix nao tem REPL/avaliacao de expressao; PhxClaw nao tem console de depuracao"
+  },
+  "tarefas_build": {
+   "estado": "parcial",
+   "evidencia": "rust_project (sistema.rs) e python_project (python.rs: setup/test/lint/typecheck/run) com acoes fixas; sem tarefa definida pelo usuario (tasks.json)"
+  },
+  "diff_git": {
+   "estado": "agente",
+   "evidencia": "git.rs action diff (analisar_diff) e gutter de diff do Helix"
+  },
+  "stage_por_trecho": {
+   "estado": "nao",
+   "evidencia": "git_write add so por caminho (git.rs:875); Helix so descarta trecho (:reset-diff-change), nao faz stage"
+  },
+  "blame": {
+   "estado": "agente",
+   "evidencia": "git.rs action blame (analisar_blame, --porcelain); sem blame em linha no editor"
+  },
+  "merge_conflitos": {
+   "estado": "nao",
+   "evidencia": "git.rs nao tem merge/rebase nem resolucao de conflito; sem editor de 3 vias"
+  },
+  "explorador_arquivos": {
+   "estado": "agente",
+   "evidencia": "Helix 25.07.1 no IDE do desktop (apps/phxclaw-desktop/src-tauri/src/terminal.rs): file_explorer (novo na 25.07)"
+  },
+  "problemas_diagnosticos": {
+   "estado": "agente",
+   "evidencia": "Helix 25.07.1 no IDE do desktop (apps/phxclaw-desktop/src-tauri/src/terminal.rs): diagnostics picker; agente: lsp.rs anexa diagnostico a write_file/edit_file"
+  },
+  "marketplace_extensoes": {
+   "estado": "parcial",
+   "evidencia": "crates/phxclaw-community-registry so como biblioteca: nenhum uso em phxclaw-agent nem na UI"
+  },
+  "configuracoes_json_tela": {
+   "estado": "agente",
+   "evidencia": "apps/phxclaw-ui/assets/config.js: grade do config.json com diff e If-Match; phxclaw config e /v1/config pelo mesmo motor"
+  },
+  "perfis": {
+   "estado": "nao",
+   "evidencia": "nenhum perfil de configuracao/extensoes no config nem na UI"
+  },
+  "temas": {
+   "estado": "agente",
+   "evidencia": "apps/phxclaw-ui/assets/tema.js claro/escuro; 174 temas do Helix em /opt/helix/runtime/themes"
+  },
+  "workspace_multi_raiz": {
+   "estado": "nao",
+   "evidencia": "IDE abre UMA pasta (PHXCLAW_PROJETO em terminal.rs); lsp.rs manda um workspaceFolder so"
+  },
+  "remoto_ssh_containers": {
+   "estado": "nao",
+   "evidencia": "sem desenvolvimento remoto por SSH, container ou WSL"
+  },
+  "tunel_remoto": {
+   "estado": "parcial",
+   "evidencia": "remoto.rs: ponte por conexao de saida, mas so as rotas de tarefa passam; editor e terminal nao atravessam"
+  },
+  "live_share": {
+   "estado": "nao",
+   "evidencia": "sem edicao colaborativa em tempo real"
+  },
+  "explorador_testes": {
+   "estado": "parcial",
+   "evidencia": "python_project test e rust_project rodam testes pelo agente; sem explorador/arvore de testes na UI"
+  },
+  "timeline_arquivo": {
+   "estado": "parcial",
+   "evidencia": "git.rs action log aceita paths (historico de commits por arquivo) e checkpoint_list cobre so escrita do agente; falta o historico local das gravacoes do usuario e a vista por arquivo"
+  },
+  "outline_simbolos": {
+   "estado": "agente",
+   "evidencia": "Helix 25.07.1 no IDE do desktop (apps/phxclaw-desktop/src-tauri/src/terminal.rs): symbol_picker e workspace_symbol_picker via LSP"
+  },
+  "breadcrumbs": {
+   "estado": "nao",
+   "evidencia": "Helix 25.07.1 nao tem breadcrumbs"
+  },
+  "snippets": {
+   "estado": "nao",
+   "evidencia": "Helix 25.07.1 so expande snippet vindo do LSP (goto_next_tabstop); snippet do usuario nao existe. Na duvida entre parcial e nao, ficou nao: o que o usuario usa e o snippet proprio"
+  },
+  "emmet": {
+   "estado": "nao",
+   "evidencia": "sem Emmet; nenhum emmet-ls configurado"
+  },
+  "chat_ia": {
+   "estado": "agente",
+   "evidencia": "tela de tarefas da UI (tarefas.js), webchat e API /v1/tasks"
+  },
+  "modo_agente": {
+   "estado": "agente",
+   "evidencia": "o proprio agente: edita, roda shell no bwrap e testa (ferramentas.rs, motor.rs)"
+  },
+  "sugestao_inline_ia": {
+   "estado": "nao",
+   "evidencia": "sem sugestao de codigo fantasma no editor; o Helix nao tem e o PhxClaw nao injeta"
+  },
+  "settings_sync": {
+   "estado": "nao",
+   "evidencia": "sem sincronizacao de configuracao entre maquinas"
+  },
+  "acessibilidade": {
+   "estado": "parcial",
+   "evidencia": "UI com aria e prova AX (tests/desktop/qualificacao/acess.mjs); o editor e um canvas (#termCanvas), invisivel a leitor de tela"
+  },
+  "idiomas_interface": {
+   "estado": "agente",
+   "evidencia": "apps/phxclaw-ui/assets/textos.json: 266 chaves em pt e en; idiomas.js troca pela tela. O Helix so em ingles"
+  },
+  "ide_web": {
+   "estado": "parcial",
+   "evidencia": "o PWA serve a UI, mas o IDE so abre no desktop: terminal_abrir e invoke do Tauri (app.js:950)"
   }
  }
 }

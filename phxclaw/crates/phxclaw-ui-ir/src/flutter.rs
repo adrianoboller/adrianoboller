@@ -110,7 +110,14 @@ fn telas(app: &App) -> String {
         dart(&Value::Object(campos))
     );
     let mut lista = vec![];
+    let mut fora = vec![];
     for t in &app.screens {
+        // painel de cartoes (PHX JSON) ainda nao tem widget: fica de fora DITO, no codigo
+        // gerado, em vez de um widget que nao foi compilado aqui (nao ha Flutter na maquina)
+        if let Screen::Painel { id, .. } = t {
+            fora.push(id.clone());
+            continue;
+        }
         let c = classe(t.id());
         let desc = dart(&serde_json::to_value(t).unwrap_or(Value::Null));
         let corpo = match t {
@@ -122,6 +129,7 @@ fn telas(app: &App) -> String {
                 "Cadastro(tela: tela, campos: campos[{}], rotulos: rotulos)",
                 dart(&json!(entity))
             ),
+            Screen::Painel { .. } => unreachable!("painel sai antes, sem widget"),
             Screen::MasterDetail { master, detail, .. } => {
                 let itens = app
                     .entities
@@ -151,8 +159,17 @@ fn telas(app: &App) -> String {
     let menu: Vec<Value> = app
         .menu
         .iter()
-        .map(|g| json!({"title": g.title, "itens": g.screens}))
+        .map(|g| {
+            let itens: Vec<&String> = g.screens.iter().filter(|id| !fora.contains(id)).collect();
+            json!({"title": g.title, "itens": itens})
+        })
         .collect();
+    if !fora.is_empty() {
+        s.push_str(&format!(
+            "// telas de painel nao desenhadas neste adaptador (use o HTML ou o Bootstrap): {}\n",
+            fora.join(", ")
+        ));
+    }
     s.push_str(&format!(
         "final List<Tela> telas = [\n{}\n];\n\nconst List<dynamic> menu = {};\n",
         lista.join("\n"),
@@ -193,9 +210,11 @@ fn teste(app: &App) -> String {
                     )
                 })
                 .unwrap_or_default();
+            // a janela do teste e a do maior ponto de quebra (breakpoints.json): o desenho
+            // de desktop largo, sem um numero de quebra escrito fora do JSON
             casos.push_str(&format!(
                 "  testWidgets('{id}: itens somam e data inexistente e recusada', (tester) async {{\n    \
-                 tester.view.physicalSize = const Size(1400, 1600);\n    \
+                 tester.view.physicalSize = const Size({largura}, 1600);\n    \
                  tester.view.devicePixelRatio = 1.0;\n    \
                  addTearDown(tester.view.reset);\n    \
                  await tester.pumpWidget(const AppErp(inicial: '{id}'));\n    \
@@ -208,7 +227,8 @@ fn teste(app: &App) -> String {
                  expect(brl(1244.75), 'R\\$ 1.244,75');\n    \
                  await tester.tap(find.byKey(const Key('{id}-del-1')));\n    await tester.pump();\n    \
                  expect(find.text('R\\$ 1.234,25'), findsOneWidget);\n{prova_data}  }});\n\n",
-                c = tot.sum_of
+                c = tot.sum_of,
+                largura = crate::responsivo::bp("xxl")
             ));
         }
     }

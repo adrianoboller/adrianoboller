@@ -40,6 +40,10 @@ fn main() -> Result<()> {
         print!("{}", ajuda::de(c, PRODUCT_CLI));
         return Ok(());
     }
+    // A pasta do comando vale para TODA leitura de configuracao do processo, inclusive a que
+    // se recarrega depois de um `PUT /v1/config`: sem fixar, `config::valor` lia
+    // `var/agente` enquanto o comando gravava em `--pasta` (prova F, 01/10).
+    phxclaw_agent::config::fixar_pasta(&pasta(&args[1..]));
     match args[0].as_str() {
         "version" | "--version" | "-V" => println!("{PRODUCT_NAME} {VERSION}"),
         "core" => core_command(&args[1..])?,
@@ -79,8 +83,12 @@ com PHXCLAW_IMAGEM_PROVEDOR=nanobanana (capacidade media.generate)"
         "fluxo" | "workflow" => runtime()?.block_on(fluxo(&args[1..]))?,
         "equipe" | "team" => runtime()?.block_on(equipe(&args[1..]))?,
         "gonogo" | "go-no-go" => {
-            let (texto, codigo) = phxclaw_agent::gonogo::cli(&args[1..], &pasta(&args[1..]))
-                .map_err(anyhow::Error::msg)?;
+            let (texto, codigo) = phxclaw_agent::gonogo::cli(
+                &args[1..],
+                &pasta(&args[1..]),
+                &mut std::io::stdin().lock(),
+            )
+            .map_err(anyhow::Error::msg)?;
             print!("{texto}");
             if codigo != 0 {
                 std::process::exit(codigo);
@@ -137,11 +145,12 @@ fn opcoes(args: &[String], nome: &str) -> Vec<String> {
         .collect()
 }
 
+/// `--pasta`, ou a pasta padrao do ponto unico da configuracao (`PHXCLAW_HOME` ou
+/// `var/agente`): uma regra so, para a CLI e o `config::valor` nunca lerem pastas diferentes.
 fn pasta(args: &[String]) -> PathBuf {
     opcao(args, "--pasta")
         .map(PathBuf::from)
-        .or_else(|| env::var("PHXCLAW_HOME").ok().map(PathBuf::from))
-        .unwrap_or_else(|| PathBuf::from("var/agente"))
+        .unwrap_or_else(phxclaw_agent::config::pasta_padrao)
 }
 
 /// Mostra cada passo novo assim que o motor grava.
@@ -178,8 +187,16 @@ async fn agente(args: &[String]) -> Result<()> {
         .find(|(i, a)| {
             !a.starts_with("--")
                 && !(*i > 0
-                    && ["--modelo", "--pasta", "--estilo", "--imagem", "--gravar"]
-                        .contains(&args[i - 1].as_str()))
+                    && [
+                        "--modelo",
+                        "--pasta",
+                        "--estilo",
+                        "--imagem",
+                        "--gravar",
+                        "--verificar",
+                        "--saida-esquema",
+                    ]
+                    .contains(&args[i - 1].as_str()))
         })
         .map(|(_, a)| a)
         .context("uso: phxclaw agente \"objetivo\" [--modelo ollama:qwen2.5:1.5b] [--plano] [--imagem ARQ]... [--pasta DIR]")?;
@@ -196,6 +213,19 @@ async fn agente(args: &[String]) -> Result<()> {
     }
     let agente = m.agent(&modelo).map_err(anyhow::Error::msg)?;
     let mut t = Task::new(objetivo.clone(), modelo.clone());
+    // O fim conferido: o comando roda no sandbox da tarefa e o esquema se le aqui, antes de
+    // gastar o modelo -- arquivo que nao e JSON de objeto para agora, dizendo qual.
+    t.verificar = opcao(args, "--verificar").filter(|v| !v.trim().is_empty());
+    if let Some(arq) = opcao(args, "--saida-esquema") {
+        let e: serde_json::Value = serde_json::from_slice(
+            &std::fs::read(&arq).with_context(|| format!("--saida-esquema {arq}"))?,
+        )
+        .with_context(|| format!("--saida-esquema {arq}: JSON invalido"))?;
+        if !e.is_object() {
+            bail!("--saida-esquema {arq}: o esquema tem de ser um objeto JSON");
+        }
+        t.saida_esquema = Some(e);
+    }
     // As mesmas funcoes da rota `POST /v1/tasks`: gravar em `work/entrada/` e anexar.
     if !imagens.is_empty() {
         store.save(&t)?;

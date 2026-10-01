@@ -171,6 +171,13 @@ fn segredo_nunca_entra_no_arquivo_e_a_recusa_diz_o_comando() {
     }
     assert!(credencial_aparente("postgresql://eu@db/x").is_none());
     assert!(credencial_aparente("https://api.x.ai/v1").is_none());
+    // A senha embutida e a da AUTORIDADE (antes da primeira `/`): porta com `:` e `@` no
+    // CAMINHO nao sao senha. Sem cortar a autoridade, `host:porta/.../@ana` virava
+    // «usuario:senha@» e o endereco legitimo era recusado no arquivo.
+    assert!(credencial_aparente("http://localhost:8888/@ana").is_none());
+    assert!(credencial_aparente("https://busca.local:443/perfil/@ana?q=a:b").is_none());
+    assert!(credencial_aparente("http://localhost:8888/x?u=eu:pw@y").is_none());
+    assert!(credencial_aparente("https://eu:senha@busca.local:443/x").is_some());
     // Chave so de ambiente tambem nao mora no arquivo.
     let e = validar_documento(&json!({"agente": {"pasta": "/x"}})).unwrap_err();
     assert!(e[0].motivo.contains("PHXCLAW_HOME"), "{e:?}");

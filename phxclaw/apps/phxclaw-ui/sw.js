@@ -12,16 +12,20 @@
 // a tela caia na fonte do sistema (qualificacao de 01/10/2026, G7).
 // Casca 4: a IBM Plex Mono (dado em mono, Style Phoenix Padrao) entrou, local como a Exo 2.
 // Casca 6: o tema.js (tema claro do Style Phoenix Padrao) entrou.
-const CACHE = 'phxclaw-casca-6';
+// Casca 7: a identidade virou as artes do dono (01/10/2026): sai o phoenix-mark.svg, entram
+// a marca do topo, os favicons, a abertura nos dois temas e o icone mascaravel.
+const CACHE = 'phxclaw-casca-7';
 const CASCA = [
   './', './index.html', './manifest.webmanifest',
   './assets/app.css', './assets/app.js', './assets/tema.js', './assets/idiomas.js', './assets/tarefas.js', './assets/tarefas.css',
   './assets/grades.js', './assets/grades.css', './assets/config.js', './assets/config-catalogo.json',
   './assets/vendor/phx-grid/phx-grid.js', './assets/vendor/phx-grid/phx-grid.css',
-  './assets/textos.json', './assets/phoenix-mark.svg', './assets/fonte/exo2-latin.woff2',
+  './assets/textos.json', './assets/fonte/exo2-latin.woff2',
   './assets/fonte/ibmplexmono-400.woff2', './assets/fonte/ibmplexmono-700.woff2',
   './assets/equipe.json', './assets/ferramentas.json', './assets/absorcao.json',
-  './assets/icone-192.png', './assets/icone-512.png',
+  './assets/icone-192.png', './assets/icone-512.png', './assets/icone-mascaravel-512.png',
+  './assets/marca-96.png', './assets/favicon-32.png', './assets/favicon-48.png',
+  './assets/abertura-escuro.png', './assets/abertura-claro.png',
 ];
 
 self.addEventListener('install', e => {
