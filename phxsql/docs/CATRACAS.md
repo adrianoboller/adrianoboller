@@ -1697,6 +1697,37 @@ struct), `o_show_server_settings_nao_vaza_segredo` (SQL, custa 30 s por
 prova no `servidor.rs`) e `a_senha_nao_vai_para_o_disco` (§15.7.6: é
 território da §15.2).
 
+### 15.8 As nove pétreas que tinham teste e nenhum defeito reposto (pedido 622)
+
+A auditoria QA de 01/10/2026 achou nove pétreas do `CLAUDE.md` com teste no
+código e **nenhuma** entrada no catálogo: nada provava que o teste delas cai.
+Uma guarda por pétrea, cada uma repondo o defeito **no ponto onde a decisão é
+tomada**, e provada em 01/10/2026 com `provar-guardas.py --so <id>` (árvore
+limpa verde antes, o `caem` vermelho com o defeito, o `seguem` verde):
+
+| pétrea | guarda | teste que cai | veredito |
+|---|---|---|---|
+| ordem de digitação | `ordem-de-digitacao-reaproveita-slot` (o `.reg` volta a usar o primeiro slot livre) | `exclusao_nao_reaproveita_slot_e_preserva_a_ordem` | PROVADA 1/1 |
+| `ao_excluir` só restringir | `ao-excluir-aceita-cascata` | `ao_excluir_so_aceita_restringir` | PROVADA 1/1 |
+| chave nasce conferida — o padrão | `chave-declarada-nasce-sem-conferir` | `a_chave_declarada_nasce_conferida` | PROVADA 1/1 |
+| chave nasce conferida — a saída escrita | `chave-sem-saida-para-nao-conferir` | `quem_pede_para_nao_conferir_continua_podendo` | PROVADA 1/1 |
+| o pai veio antes, pelo `rowstamp` | `carimbo-por-tabela-empata-pai-e-filha` (contador por tabela) | `o_pai_nunca_tem_o_mesmo_carimbo_da_filha` | PROVADA 1/1 |
+| guarda nova entra pedida | `versao-imposta-ao-cliente-antigo` | `atualizar_sem_versao_continua_gravando` | PROVADA 1/1 |
+| catraca da ficha compartilhada | `quinta-operacao-na-ficha-compartilhada` (o `ler` na pista sem medir) | `so_as_duas_operacoes_medidas_usam_a_ficha_compartilhada` | PROVADA 1/1 |
+| lista de canceláveis | `operacao-cancelavel-fora-da-lista` (o `exportar` sai da lista) | `toda_operacao_com_ponto_de_cancelamento_esta_na_lista` | PROVADA 1/1 |
+| leitura repetível | `elo-implicito-sem-trava` (já existia, nunca julgada) | `o_elo_implicito_respeita_a_leitura_repetivel_de_outra_transacao` | PROVADA 1/1 |
+| 175 no sentido «imposta» | `indice-da-chave-imposto-a-quem-nao-confere` (`verificar:false` ganha índice) | `com_o_indice_ja_la_ou_sem_conferir_nada_nasce` | PROVADA 1/1 |
+
+**Nenhum teste passou por engano**: os dez caíram na primeira rodada, e
+nenhum precisou de conserto. A pétrea «chave nasce conferida» ganhou **duas**
+entradas porque é um par — um portão que conferisse toda chave passaria pela
+primeira e tiraria a opção calado; a segunda é a que o acusa. Os `seguem` de
+cada uma foram escolhidos para dizer que a troca não quebra o caminho em
+geral: sem exclusão o slot não se reaproveita, e dentro de uma tabela só o
+contador por tabela continua monótono — as trocas ferem **só** a pétrea.
+
+`PISO_DAS_ENTRADAS` subiu de 691 para **700** (691 + 9) no mesmo passo.
+
 ## 16. `TETO_DEBUG_COM_SEGREDO` — a régua da lei que a guarda só exemplificava
 
 **O defeito que motivou** (16/09/2026): nove structs em três crates

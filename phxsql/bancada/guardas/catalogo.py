@@ -22583,4 +22583,250 @@ pub const PRAZO_SOB_A_TRAVA: Duration = Duration::from_secs(3600);""",
         "seguem": ["com_somente_leitura_a_escrita_local_e_recusada_e_a_replica_segue"],
         "prazo": 1800,
     },
+    # ------------------------------------------- pedido 622: as nove petreas
+    #
+    # Auditoria QA de 01/10/2026: nove petreas do CLAUDE.md tinham teste no
+    # codigo e nenhuma entrada aqui -- nada provava que o teste delas cai com
+    # o defeito de volta. Cada entrada abaixo repoe o defeito que a petrea
+    # proibe, no ponto onde a decisao e tomada, e nomeia o teste que mede o
+    # DANO (o rowid reaproveitado, o orfao gravado, o indice que nasceu), nao
+    # o veredito. A da leitura repetivel ja tinha entrada,
+    # `elo-implicito-sem-trava`, e o que faltava era julga-la.
+    {
+        "id": "ordem-de-digitacao-reaproveita-slot",
+        "titulo": "o `.reg` reaproveita o slot da linha excluída, e a linha nova entra no meio da ordem de digitação",
+        "porque": (
+            "petrea do CLAUDE.md: «o `.reg` nunca reaproveita slot excluido». "
+            "O rowid e a ordem de digitacao e o endereco que a replica "
+            "repete; reaproveitar o buraco poria a linha 6 no lugar da 3 e "
+            "mentiria sobre quem foi digitado antes. Pedido 622."
+        ),
+        "arquivo": "crates/phxsql-store/src/reg.rs",
+        "trecho": """        let rowid = self.slot_count + 1;
+""",
+        "troca": """        // DEFEITO REPOSTO (622): o primeiro slot livre volta a ser usado.
+        let livre = if self.live_count < self.slot_count {
+            (1..=self.slot_count).find(|&r| matches!(self.ler(r), Ok(None)))
+        } else {
+            None
+        };
+        let rowid = livre.unwrap_or(self.slot_count + 1);
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--lib"],
+        "caem": ["reg::tests::exclusao_nao_reaproveita_slot_e_preserva_a_ordem"],
+        "seguem": [
+            # Sem exclusao nao ha buraco, e o defeito nao age: a troca nao
+            # quebra o `inserir` em geral, so a garantia da petrea.
+            "reg::tests::insere_le_e_conta",
+            "reg::tests::atualiza_no_mesmo_slot",
+        ],
+    },
+    {
+        "id": "ao-excluir-aceita-cascata",
+        "titulo": "a declaração da chave aceita `ao_excluir` em cascata, e o pai com filhos passa a poder morrer",
+        "porque": (
+            "regra primordial da integridade, palavra do dono: «nunca pode "
+            "matar o registro pai se tem filhos... a opcao Cascade/Cascade "
+            "nao existe em PhxSql». A recusa e na DECLARACAO; o defeito "
+            "reposto e o motor de antes, que aceitava cascata no excluir. "
+            "Pedido 622."
+        ),
+        "arquivo": "crates/phxsql-server/src/valores.rs",
+        "trecho": """    if lado == Lado::AoExcluir && acao != AcaoRi::Restringir {
+""",
+        "troca": """    // DEFEITO REPOSTO (622): cascata volta a valer no excluir.
+    if lado == Lado::AoExcluir && acao != AcaoRi::Restringir && acao != AcaoRi::Cascata {
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": ["servidor::testes_chave_estrangeira::ao_excluir_so_aceita_restringir"],
+        "seguem": [
+            "servidor::testes_chave_estrangeira::a_chave_declarada_nasce_conferida",
+            "servidor::testes_chave_estrangeira::com_verificar_o_orfao_e_recusado",
+        ],
+    },
+    {
+        "id": "chave-declarada-nasce-sem-conferir",
+        "titulo": "a chave declarada sem `verificar` volta a nascer sem conferir, e o órfão entra calado",
+        "porque": (
+            "decisao do dono: «chave declarada NASCE conferida». Uma chave "
+            "que precisa ser LEMBRADA de conferir nao honra o «nunca» da "
+            "regra primordial -- o esquecimento vira o padrao. Primeiro lado "
+            "do par. Pedido 622."
+        ),
+        "arquivo": "crates/phxsql-server/src/valores.rs",
+        "trecho": """        .conferindo(f.booleano_ou("verificar", true)))
+""",
+        "troca": """        // DEFEITO REPOSTO (622): o padrao volta a ser nao conferir.
+        .conferindo(f.booleano_ou("verificar", false)))
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": ["servidor::testes_chave_estrangeira::a_chave_declarada_nasce_conferida"],
+        "seguem": [
+            "servidor::testes_chave_estrangeira::quem_pede_para_nao_conferir_continua_podendo",
+            "servidor::testes_chave_estrangeira::com_verificar_o_orfao_e_recusado",
+        ],
+    },
+    {
+        "id": "chave-sem-saida-para-nao-conferir",
+        "titulo": "o `verificar: false` escrito deixa de valer, e quem escolheu não conferir perde a opção junto com o padrão",
+        "porque": (
+            "o outro lado do par da mesma decisao do dono: o interruptor "
+            "continua existindo para quem ESCREVE que nao quer conferir. Um "
+            "portao que conferisse tudo passaria pelo primeiro lado e "
+            "tiraria a opcao calado. Pedido 622."
+        ),
+        "arquivo": "crates/phxsql-server/src/valores.rs",
+        "trecho": """        .conferindo(f.booleano_ou("verificar", true)))
+""",
+        "troca": """        // DEFEITO REPOSTO (622): toda chave confere, pedida ou nao.
+        .conferindo(true))
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": ["servidor::testes_chave_estrangeira::quem_pede_para_nao_conferir_continua_podendo"],
+        "seguem": [
+            "servidor::testes_chave_estrangeira::a_chave_declarada_nasce_conferida",
+            "servidor::testes_chave_estrangeira::com_verificar_a_linha_que_tem_mae_entra",
+        ],
+    },
+    {
+        "id": "carimbo-por-tabela-empata-pai-e-filha",
+        "titulo": "o `rowstamp` sai de um contador por tabela, e o pai e a filha nascem com o mesmo carimbo",
+        "porque": (
+            "invariante do dono acima do voto, pedido 289: «o pai veio antes "
+            "do filho -- e isso e provavel no dado». Pai e filha moram em "
+            "tabelas diferentes; um contador por tabela daria 1 e 1, e a "
+            "prova de ordem deixaria de existir. Por isso o contador e um "
+            "`AtomicU64` do processo. Pedido 622."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """        let carimbo = crate::no::proximo_carimbo()?;
+""",
+        "troca": """        // DEFEITO REPOSTO (622): o carimbo e da tabela, nao do processo.
+        let carimbo = self.reg.ultimo_carimbo() + 1;
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "carimbo-e-faixa"],
+        "caem": ["o_pai_nunca_tem_o_mesmo_carimbo_da_filha"],
+        "seguem": [
+            # Dentro de UMA tabela o contador por tabela ainda e monotono: a
+            # troca so quebra o que atravessa tabelas, que e a petrea.
+            "mil_linhas_no_mesmo_instante_saem_com_mil_carimbos",
+            "a_alteracao_nao_renova_o_carimbo",
+        ],
+    },
+    {
+        "id": "versao-imposta-ao-cliente-antigo",
+        "titulo": "a guarda de conflito passa a exigir `versao`, e todo cliente antigo para de gravar",
+        "porque": (
+            "petrea «guarda nova entra pedida, nao imposta»: protecao que "
+            "quebra todo cliente antigo nao e protecao, e estrago -- e o "
+            "teste que a trava e o do comportamento VELHO. Pedido 622."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """    let esperada = p.inteiro_ou("versao", 0).max(0) as u64;
+    if esperada == 0 {
+        return Ok(());
+    }
+""",
+        "troca": """    let esperada = p.inteiro_ou("versao", 0).max(0) as u64;
+    // DEFEITO REPOSTO (622): a versao vira obrigatoria.
+    if esperada == 0 {
+        return Err(PhxError::Esquema("informe a versao da linha".into()));
+    }
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": ["servidor::testes_conflito::atualizar_sem_versao_continua_gravando"],
+        "seguem": [
+            "servidor::testes_conflito::atualizar_devolve_a_versao_nova",
+            "servidor::testes_conflito::atualizar_com_versao_velha_recusa",
+        ],
+    },
+    {
+        "id": "quinta-operacao-na-ficha-compartilhada",
+        "titulo": "o `ler` entra na pista de leitura sem a varredura de escrita escondida, e a catraca da ficha compartilhada tem de acusar",
+        "porque": (
+            "a catraca `so_as_duas_operacoes_medidas_usam_a_ficha_compartilhada` "
+            "existe porque `op_ler` parece leitura obvia e tem escrita "
+            "escondida propria (a trilha de acesso). O defeito reposto e "
+            "exatamente a distracao que o comentario dela descreve: o `ler` "
+            "ganhando o caminho rapido sem medir. Pedido 622."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        let com_versao = p.booleano_ou("com_versao", false);
+        let _trava = self.travar_dados()?;
+""",
+        "troca": """        let com_versao = p.booleano_ou("com_versao", false);
+        // DEFEITO REPOSTO (622): o `ler` toma a ficha compartilhada sem medir.
+        if !com_versao {
+            let trava = self.travar_dados_para_ler()?;
+            if let Some(mut t) = self.abrir_para_ler_travada(&trava, p, sessao)? {
+                return Ok(match t.ler(rowid)? {
+                    None => Json::Nulo,
+                    Some(l) => linha_para_json(&l, t.esquema()),
+                });
+            }
+        }
+        let _trava = self.travar_dados()?;
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_janela_e_cadeia::so_as_duas_operacoes_medidas_usam_a_ficha_compartilhada",
+        ],
+        "seguem": [
+            "servidor::testes_da_ficha_compartilhada::sem_a_ficha_compartilhada_nada_muda",
+            "servidor::testes_conflito::ler_com_versao_devolve_a_linha_e_a_versao",
+        ],
+    },
+    {
+        "id": "operacao-cancelavel-fora-da-lista",
+        "titulo": "uma operação com ponto de cancelamento fica fora de `OPS_CANCELAVEIS`, e a tela mostra o botão desabilitado",
+        "porque": (
+            "a lista anda junto com os `siga()` do servidor e e conferida "
+            "contra o FONTE: operacao com fase cancelavel fora dela nasce "
+            "com o botao desabilitado e ninguem descobre por leitura, porque "
+            "nada quebra. O defeito reposto e o esquecimento: o `exportar` "
+            "com fase e sem lugar na lista. Pedido 622."
+        ),
+        "arquivo": "crates/phxsql-server/src/telemetria.rs",
+        "trecho": """    "exportar",
+""",
+        "troca": """    // DEFEITO REPOSTO (622): o `exportar` saiu da lista.
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": ["telemetria::testes::toda_operacao_com_ponto_de_cancelamento_esta_na_lista"],
+        "seguem": ["telemetria::testes::a_fase_da_telemetria_so_aceita_frase_fixa"],
+    },
+    {
+        "id": "indice-da-chave-imposto-a-quem-nao-confere",
+        "titulo": "a chave com `verificar: false` ganha índice na filha, e a guarda nova passa a ser imposta",
+        "porque": (
+            "pedido 175 no sentido «imposta»: o indice nasce com a chave "
+            "CONFERIDA, e quem dispensou a conferencia nao paga indice. As "
+            "duas guardas do 175 provam o lado «nao nasce»; nada provava o "
+            "lado contrario, e o defeito mora no nucleo, onde alcanca o "
+            "`criar_tabela` e a `declarar_fk` de uma vez. Pedido 622."
+        ),
+        "arquivo": "crates/phxsql-core/src/schema.rs",
+        "trecho": """        if !fk.verificar {
+            return None;
+        }
+""",
+        "troca": """        // DEFEITO REPOSTO (622): toda chave pede indice, conferida ou nao.
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "indice-da-chave-e-de-texto"],
+        "caem": ["com_o_indice_ja_la_ou_sem_conferir_nada_nasce"],
+        "seguem": [
+            "o_exemplo_do_manual_nasce_com_o_indice_da_chave",
+            "declarar_a_chave_numa_filha_com_dado_cria_o_indice_e_o_monta",
+        ],
+        "prazo": 1800,
+    },
 ]
