@@ -43,9 +43,11 @@ RLS_URL = f"host={PGHOST} port={PGPORT} user=phx_rls dbname={DB}"
 BLOQUEIOS = {
     "desktop_os_automation_e2e": "exige desktop FISICO (teclado, mouse, captura reais); aqui so ha Xvfb",
     "device_pairing_wss_keyring_multiplatform_e2e": (
-        "exige hardware multiplataforma (Windows, macOS, Android, iOS). O servidor WSS existe "
-        "desde 30/09 e o pareamento esta provado em Linux entre processos, com TLS, token de "
-        "uso unico, reconexao pela chave guardada e cerca crescente; falta o resto das plataformas"),
+        "exige hardware multiplataforma (Windows, macOS, Android, iOS). O pareamento esta "
+        "provado em Linux entre processos (TLS, token de uso unico, reconexao pela chave "
+        "guardada, cerca crescente) e, desde 01/10, com o binario Windows rodando no Wine 9.0 "
+        "contra o servidor Linux, inclusive pelo Credential Manager. Wine nao e Windows: "
+        "faltam Windows real, macOS, Android e iOS"),
     "channel_provider_credentialed_e2e": "PHXCLAW_TELEGRAM_BOT_TOKEN/PHXCLAW_TELEGRAM_CHAT_ID nao definidos (bot do BotFather, nas variaveis do ambiente)",
     "real_stt_model_e2e": "PHXCLAW_E2E_WHISPER_* nao definidos (whisper.cpp + modelo com SHA-256 de fonte externa)",
 }

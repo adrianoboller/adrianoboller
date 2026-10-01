@@ -11,7 +11,7 @@
 //!   sem chaveiro do sistema); sem isso vale o chaveiro, e chaveiro que nao persiste recusa
 use phxclaw_device_transport::servidor::Boasvindas;
 use phxclaw_device_transport::{
-    DevicePlatform, EnrollmentRequest, NodeHello, NodeIdentity, WssDeviceClient,
+    DevicePlatform, EnrollmentRequest, NodeHello, NodeIdentity, WssDeviceClient, parear,
     platform_default_capabilities,
 };
 use phxclaw_key_provider::{ArquivoKeyProvider, KeyProvider, OsKeyringProvider};
@@ -50,23 +50,20 @@ use PHXCLAW_DEVICE_KEYSTORE=arquivo:/pasta"
     let mut seq = 0u64;
     let identity = match env::var("PHXCLAW_ENROLLMENT_TOKEN") {
         Ok(token) => {
-            let id = NodeIdentity::generate_and_store(keyring.as_ref(), node_uuid)?;
             let pedido = EnrollmentRequest {
                 tenant_uuid,
                 node_uuid,
-                display_name: env::var("HOSTNAME").unwrap_or_else(|_| "no".into()),
+                display_name: env::var("HOSTNAME")
+                    .or_else(|_| env::var("COMPUTERNAME"))
+                    .unwrap_or_else(|_| "no".into()),
                 platform,
                 agent_version: env!("CARGO_PKG_VERSION").into(),
-                public_key_ed25519_b64: id.public_key_ed25519_b64.clone(),
+                public_key_ed25519_b64: String::new(),
                 enrollment_token: token,
                 capabilities: platform_default_capabilities(platform),
             };
-            let body = serde_json::to_vec(&pedido)?;
-            client
-                .send(&id.sign_envelope(Uuid::nil(), seq, "device.enroll", &body)?)
-                .await?;
+            let id = parear(&mut client, keyring.as_ref(), pedido).await?;
             seq += 1;
-            esperar(&mut client, "device.enrolled").await?;
             println!("pareado");
             id
         }

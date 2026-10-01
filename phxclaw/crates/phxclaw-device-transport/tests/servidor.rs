@@ -321,3 +321,51 @@ async fn sem_tls_nao_conecta_e_certificado_estranho_e_recusado() {
             .is_err()
     );
 }
+
+/// Defeito achado rodando o no Windows (pelo Wine) contra este servidor: o segundo
+/// pareamento, com o token ja gasto, gravava uma chave nova ANTES da recusa, e o no
+/// pareado de verdade passava a assinar com uma chave que o servidor nao conhece.
+#[tokio::test]
+async fn pareamento_recusado_nao_apaga_a_identidade_que_ja_vale() {
+    let Some((url, ca, _, tenant)) = subir().await else {
+        return;
+    };
+    let ch = Chaveiro::default();
+    let no = Uuid::now_v7();
+    let pedido_do_no = || EnrollmentRequest {
+        tenant_uuid: tenant,
+        node_uuid: no,
+        display_name: "notebook do teste".into(),
+        platform: DevicePlatform::Linux,
+        agent_version: "0.70.0".into(),
+        public_key_ed25519_b64: String::new(),
+        enrollment_token: TOKEN.into(),
+        capabilities: platform_default_capabilities(DevicePlatform::Linux),
+    };
+    let mut c = WssDeviceClient::connect_with_ca(&url, &ca).await.unwrap();
+    parear(&mut c, &ch, pedido_do_no()).await.unwrap();
+
+    let mut c = WssDeviceClient::connect_with_ca(&url, &ca).await.unwrap();
+    let Err(erro) = parear(&mut c, &ch, pedido_do_no()).await else {
+        panic!("o mesmo token pareou duas vezes");
+    };
+    assert!(
+        matches!(erro, DeviceTransportError::PairingRejected(ref m) if m.contains("token")),
+        "{erro}"
+    );
+
+    // a chave guardada continua a que o servidor conhece
+    let id = NodeIdentity::load(&ch, no).unwrap();
+    let mut c = WssDeviceClient::connect_with_ca(&url, &ca).await.unwrap();
+    c.send(
+        &id.sign_envelope(Uuid::nil(), 1, "device.hello", &ola(tenant))
+            .unwrap(),
+    )
+    .await
+    .unwrap();
+    let r = c.receive().await.unwrap();
+    assert_eq!(
+        r.kind, "device.welcome",
+        "identidade perdida no pareamento recusado"
+    );
+}

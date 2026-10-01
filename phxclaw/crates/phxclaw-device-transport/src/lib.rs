@@ -125,17 +125,18 @@ impl NodeIdentity {
         provider: &dyn KeyProvider,
         node_uuid: Uuid,
     ) -> Result<Self, DeviceTransportError> {
-        let mut seed = [0u8; 32];
-        getrandom::fill(&mut seed).map_err(|e| DeviceTransportError::Random(e.to_string()))?;
-        let signing_key = SigningKey::from_bytes(&seed);
-        let material = KeyMaterial::new(seed.to_vec())?;
-        provider.store(&key_id(node_uuid), &material)?;
+        let id = Self::efemera(node_uuid)?;
+        id.guardar(provider)?;
+        Ok(id)
+    }
+
+    /// Grava a semente no chaveiro, por cima da que houver para este no.
+    pub fn guardar(&self, provider: &dyn KeyProvider) -> Result<(), DeviceTransportError> {
+        let mut seed = self.signing_key.to_bytes();
+        let material = KeyMaterial::new(seed.to_vec());
         seed.fill(0);
-        Ok(Self {
-            node_uuid,
-            public_key_ed25519_b64: B64.encode(signing_key.verifying_key().as_bytes()),
-            signing_key,
-        })
+        provider.store(&key_id(self.node_uuid), &material?)?;
+        Ok(())
     }
 
     /// Identidade que nao vai para o chaveiro: a do servidor, que assina as respostas
@@ -205,6 +206,35 @@ fn hex_lower(bytes: &[u8]) -> String {
 pub struct WssDeviceClient {
     socket: WebSocketStream<MaybeTlsStream<TcpStream>>,
 }
+/// Pareamento do lado do no. A chave nasce em memoria e so vai para o chaveiro depois do
+/// `device.enrolled`: gravada antes, um pareamento RECUSADO (token ja gasto, ou alguem
+/// repetindo o token) sobrescrevia a identidade que o servidor conhece, e o no nunca mais
+/// religava -- medido em 01/10 com o binario Windows ("invalid signature" no hello).
+/// A chave publica do pedido e preenchida aqui, com a da chave que sera guardada.
+pub async fn parear(
+    cliente: &mut WssDeviceClient,
+    chaveiro: &dyn KeyProvider,
+    mut pedido: EnrollmentRequest,
+) -> Result<NodeIdentity, DeviceTransportError> {
+    let id = NodeIdentity::efemera(pedido.node_uuid)?;
+    pedido.public_key_ed25519_b64 = id.public_key_ed25519_b64.clone();
+    let corpo = serde_json::to_vec(&pedido)
+        .map_err(|e| DeviceTransportError::Serialization(e.to_string()))?;
+    cliente
+        .send(&id.sign_envelope(Uuid::nil(), 0, "device.enroll", &corpo)?)
+        .await?;
+    let r = cliente.receive().await?;
+    if r.kind != "device.enrolled" {
+        let motivo = r
+            .decode_and_verify_body()
+            .map(|b| String::from_utf8_lossy(&b).into_owned())
+            .unwrap_or_else(|_| r.kind.clone());
+        return Err(DeviceTransportError::PairingRejected(motivo));
+    }
+    id.guardar(chaveiro)?;
+    Ok(id)
+}
+
 impl WssDeviceClient {
     pub async fn connect(endpoint: &str) -> Result<Self, DeviceTransportError> {
         let url = Url::parse(endpoint).map_err(|_| DeviceTransportError::InvalidUrl)?;
