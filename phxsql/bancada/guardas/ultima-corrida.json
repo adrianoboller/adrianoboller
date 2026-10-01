@@ -3227,9 +3227,9 @@
       "id": "chave-anulavel-como-identidade-do-bidirecional",
       "titulo": "o bidirecional volta a aceitar indice unico sobre coluna que aceita nulo como identidade: a linha de chave nula de um no apaga a do outro",
       "veredito": "PROVADA",
-      "segundos": 40.04,
+      "segundos": 40.64,
       "notas": [],
-      "quando": "2026-10-01 03:54"
+      "quando": "2026-10-01 06:50"
     },
     {
       "id": "apoio-engole-a-falha-do-bind",
@@ -3438,6 +3438,70 @@
       "segundos": 86.12,
       "notas": [],
       "quando": "2026-10-01 06:27"
+    },
+    {
+      "id": "troca-de-chave-vira-linha-nova",
+      "titulo": "No bidirecional, a alteração que troca a chave virava inserção nova do outro lado e a linha antiga ficava: a imagem só dizia o «depois»",
+      "veredito": "PROVADA",
+      "segundos": 7.1,
+      "notas": [],
+      "quando": "2026-10-01 06:50"
+    },
+    {
+      "id": "fio-cifrado-perde-o-antes",
+      "titulo": "A imagem aberta para o fio numa tabela cifrada era remontada só até os externos, e a troca de chave perdia o «antes» só ali",
+      "veredito": "PROVADA",
+      "segundos": 8.99,
+      "notas": [],
+      "quando": "2026-10-01 06:50"
+    },
+    {
+      "id": "composta-casa-pela-primeira-coluna",
+      "titulo": "A chave composta do bidirecional casando só pela primeira coluna: (1,2) e (1,3) caem na identidade de (1,1)",
+      "veredito": "PROVADA",
+      "segundos": 77.36,
+      "notas": [],
+      "quando": "2026-10-01 06:50"
+    },
+    {
+      "id": "numero-de-origem-conferido-so-no-par",
+      "titulo": "O número de origem do bidirecional conferido só contra o próprio: dois caixas com o mesmo número entre si não eram vistos, e o central suprimia os eventos de um ao servir o outro",
+      "veredito": "PROVADA",
+      "segundos": 42.72,
+      "notas": [],
+      "quando": "2026-10-01 06:50"
+    },
+    {
+      "id": "numero-de-origem-atribuido-ignorado",
+      "titulo": "O `numero_servidor` lido do config e ignorado na conta do número de origem: o caixa inocente continua no hash que colide",
+      "veredito": "PROVADA",
+      "segundos": 40.29,
+      "notas": [],
+      "quando": "2026-10-01 06:50"
+    },
+    {
+      "id": "imagem-com-sobra-ignorada",
+      "titulo": "O decodificador da imagem ignorava calado os bytes que sobravam depois dos externos: um campo novo passaria despercebido por todo binário anterior",
+      "veredito": "PROVADA",
+      "segundos": 7.16,
+      "notas": [],
+      "quando": "2026-10-01 06:50"
+    },
+    {
+      "id": "registro-de-numeros-ilegivel-vira-vazio",
+      "titulo": "O `replicacao-numeros.json` ilegível lido como vazio: a colisão que ele existe para recusar passaria e iria para dentro dos `.log`",
+      "veredito": "PROVADA",
+      "segundos": 78.0,
+      "notas": [],
+      "quando": "2026-10-01 06:50"
+    },
+    {
+      "id": "numero-aceito-antes-do-disco",
+      "titulo": "O par novo de número de origem entrava na memória antes de o registro ir ao disco: com o disco recusando, a chamada seguinte o aceitava sem nunca ter gravado",
+      "veredito": "PROVADA",
+      "segundos": 78.15,
+      "notas": [],
+      "quando": "2026-10-01 06:50"
     },
     {
       "id": "cifra-do-fio-imposta",

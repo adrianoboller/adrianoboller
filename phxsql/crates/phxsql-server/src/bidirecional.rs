@@ -35,9 +35,10 @@
 //! ordem de chegada, e o insert local de A e o de B podem ganhar o mesmo
 //! rowid. Entre servidores, a linha se identifica pela chave unica
 //! ([`chave_unica`]) -- o mesmo desenho da sincronia do DbLink. Consequencia
-//! honesta: **o modo bidirecional exige tabela com chave unica de uma
-//! coluna**; sem ela a tabela e recusada com o motivo escrito (o HFSQL(R)
-//! tambem impoe identificador adequado para replicar).
+//! honesta: **o modo bidirecional exige tabela com chave unica** -- de uma
+//! coluna ou composta, todas obrigatorias (pedidos 331 e 517); sem ela a
+//! tabela e recusada com o motivo escrito (o HFSQL(R) tambem impoe
+//! identificador adequado para replicar).
 
 #[cfg(test)]
 use crate::apoio_teste::DirTemp;
@@ -47,6 +48,7 @@ use std::path::Path;
 use phxsql_core::error::Result;
 use phxsql_core::json::Json;
 use phxsql_core::schema::Schema;
+use phxsql_core::value::Value;
 use phxsql_store::log::Operacao;
 
 /// A identidade numerica de um servidor, derivada do `id_servidor`.
@@ -63,10 +65,11 @@ use phxsql_store::log::Operacao;
 /// # A colisao, dita com honestidade
 ///
 /// Dois ids diferentes PODEM cair no mesmo numero (1 chance em 65.535 por
-/// par). Colisao aqui suprimiria eventos de um terceiro servidor inocente.
-/// Por isso a replica confere ao conectar: se o hash do id do source bater
-/// com o do proprio id sendo os textos diferentes, a rodada para com erro --
-/// troca-se um id e acabou. Ver `rodada_bidirecional`.
+/// par, e 0,32% com 21 nos). Colisao aqui suprimiria eventos de um terceiro
+/// servidor inocente. Por isso o numero se confere contra TODO par ja visto
+/// ([`conferir_numero`]), e nao so contra o proprio -- e por isso existe o
+/// numero ATRIBUIDO ([`numero_do_servidor`], pedido 329), que nao colide por
+/// construcao. O hash fica como o numero de quem nao atribuiu nenhum.
 pub fn hash_id(id: &str) -> u16 {
     let c = phxsql_core::crc::crc32(id.trim().as_bytes());
     let dobrado = ((c >> 16) ^ (c & 0xFFFF)) as u16;
@@ -75,6 +78,131 @@ pub fn hash_id(id: &str) -> u16 {
     } else {
         dobrado
     }
+}
+
+/// O numero de origem deste servidor: o ATRIBUIDO, senao o [`hash_id`].
+///
+/// # Por que atribuido (pedido 329)
+///
+/// O `hash_id` sorteia 16 bits, e com 21 nos a chance de dois cairem no mesmo
+/// numero e 0,32% -- 209,7x a do par. Os tres maduros convergem em
+/// «identidade atribuida, nao hash»: o `RepOriginId` do PostgreSQL tem os
+/// mesmos 16 bits e e ATRIBUIDO (`origin.c` procura o primeiro livre), e o
+/// `server_id` do MySQL e da MariaDB e escolhido pelo operador. Atribuido, o
+/// numero nao colide por construcao -- e os 16 bits do evento do `.log`
+/// bastam, sem formato novo.
+///
+/// Sem numero atribuido (zero), vale o hash: e o comportamento de sempre, e
+/// a guarda nova entra pedida. `id` vazio devolve zero, que e «escrita local».
+pub fn numero_do_servidor(atribuido: u16, id: &str) -> u16 {
+    if atribuido != 0 {
+        atribuido
+    } else if id.trim().is_empty() {
+        0
+    } else {
+        hash_id(id)
+    }
+}
+
+/// Quem e dono de cada numero de origem que este no ja viu -- o proprio, as
+/// origens que ele puxa e os que puxam dele.
+pub type Numeros = BTreeMap<u16, String>;
+
+/// Confere `numero -> id` contra TODOS os pares ja vistos, e anota se for novo.
+///
+/// # Por que o conjunto, e nao o par
+///
+/// A conferencia antiga comparava o hash do outro com o MEU, e so: dois caixas
+/// com o mesmo numero ENTRE SI nunca eram comparados por ninguem, porque
+/// nenhum dos dois e o outro. O central guardava os eventos de um com aquele
+/// numero, e o filtro `para` suprimia esses eventos ao servir o outro --
+/// calado. Aqui o numero e conferido contra todo id que este no ja viu, entao
+/// o central ve os dois.
+///
+/// Devolve `Ok(true)` quando o par e novo (quem chama grava o arquivo),
+/// `Ok(false)` quando ja era conhecido, e `Err` com a frase que nomeia os
+/// dois ids quando o numero ja pertence a outro.
+pub fn conferir_numero(
+    numeros: &mut Numeros,
+    numero: u16,
+    id: &str,
+) -> std::result::Result<bool, String> {
+    let id = id.trim();
+    match numeros.get(&numero) {
+        Some(dono) if dono == id => Ok(false),
+        Some(dono) => Err(format!(
+            "colisao de identidade: {dono:?} e {id:?} usam o mesmo numero de \
+             origem ({numero}); de a cada servidor o seu \
+             replicacao.numero_servidor (1..65535) -- com o mesmo numero, os \
+             eventos de um sao suprimidos ao servir o outro"
+        )),
+        None => {
+            numeros.insert(numero, id.to_string());
+            Ok(true)
+        }
+    }
+}
+
+/// O registro dos numeros, ao lado das posicoes.
+///
+/// # Por que DURAVEL
+///
+/// Porque o numero de origem fica gravado no `.log` de cada evento aplicado,
+/// para sempre: um id novo que ganhasse o numero de um velho herdaria os
+/// eventos dele, e a supressao do `para` os esconderia de quem os merece. O
+/// PostgreSQL guarda as origens de replicacao em catalogo pelo mesmo motivo.
+///
+/// Um numero NUNCA e reatribuido a outro id, nem depois de o id sair: o
+/// `.log` dos parceiros guarda o numero para sempre, e reatribui-lo faria
+/// eventos velhos mudarem de dono. Um id renumerado (do hash para o
+/// atribuido) fica com os dois numeros, e e o certo.
+///
+/// # Ausente e vazio; ILEGIVEL e recusa
+///
+/// Ausente e o primeiro arranque: registro vazio. Ilegivel NAO vira vazio --
+/// vazio aceitaria a colisao que o registro existe para recusar, e a gravaria
+/// nos `.log`, onde nenhuma recuperacao a desfaz. Volta `Err` com o motivo, e
+/// quem chama recusa todo par ate alguem consertar o arquivo -- a mesma
+/// decisao do pedido 534 para o estado do cluster (parecer do DBA de
+/// 01/10/2026, §3).
+pub fn ler_numeros(caminho: &Path) -> std::result::Result<Numeros, String> {
+    let texto = match std::fs::read_to_string(caminho) {
+        Ok(t) => t,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Numeros::new()),
+        Err(e) => return Err(format!("{} nao se le ({e})", caminho.display())),
+    };
+    let ilegivel = |porque: &str| {
+        format!(
+            "{} ilegivel ({porque}): o registro dos numeros de origem nao se le, e \
+             sem ele um numero ja usado poderia ir para outro servidor -- conserte \
+             ou restaure o arquivo",
+            caminho.display()
+        )
+    };
+    let Ok(Json::Objeto(pares)) = Json::analisar(&texto) else {
+        return Err(ilegivel("nao e um objeto JSON"));
+    };
+    let mut numeros = Numeros::new();
+    for (k, v) in pares {
+        let (Some(n), Some(id)) = (k.parse::<u16>().ok().filter(|n| *n != 0), v.texto()) else {
+            return Err(ilegivel(&format!("entrada {k:?} nao e numero -> id")));
+        };
+        numeros.insert(n, id.to_string());
+    }
+    Ok(numeros)
+}
+
+/// Grava o registro pela MESMA troca duravel das posicoes (pedido 535).
+pub fn gravar_numeros(caminho: &Path, numeros: &Numeros) -> Result<()> {
+    let texto = Json::Objeto(
+        numeros
+            .iter()
+            .map(|(n, id)| (n.to_string(), Json::texto_de(id)))
+            .collect(),
+    )
+    .escrever();
+    crate::config::gravar_privado(caminho, texto.as_bytes())?;
+    Ok(())
 }
 
 /// O ultimo toque conhecido numa chave: quando, por quem, e se foi exclusao.
@@ -148,15 +276,27 @@ pub fn colisao_de_criacao(operacao: Operacao, origem_ev: u16, local: Option<&Toq
         && matches!(local, Some(t) if !t.excluido && t.origem != origem_ev)
 }
 
-/// A chave unica de UMA coluna que identifica a linha entre servidores.
+/// O indice que identifica a linha entre servidores e as colunas dele, na
+/// ordem do indice -- o que [`chave_unica`] devolve.
+pub type Identidade = (String, Vec<usize>);
+
+/// A chave unica que identifica a linha entre servidores: o indice e as
+/// colunas dele, na ordem do indice.
 ///
-/// Na ordem: a chave primaria, senao o primeiro indice unico de uma coluna.
-/// `None` = a tabela nao tem identidade replicavel, e o modo bidirecional a
-/// recusa com o motivo escrito ([`por_que_sem_chave`]). Chave COMPOSTA tambem
-/// fica de fora por enquanto -- mesma regra da sincronia do DbLink, ate alguem
-/// precisar dela com o pedido na mesa.
+/// Na ordem: a chave primaria, senao o primeiro indice unico. `None` = a
+/// tabela nao tem identidade replicavel, e o modo bidirecional a recusa com o
+/// motivo escrito ([`por_que_sem_chave`]).
 ///
-/// # A coluna da chave tem de ser obrigatoria (pedido 517)
+/// # A chave COMPOSTA entra (pedido 331)
+///
+/// Os quatro motores aceitam identidade de varias colunas (`REPLICA IDENTITY
+/// USING INDEX` do PostgreSQL, a PK composta do Galera e do Group
+/// Replication, a sessao do SQLite) e nos quatro a identidade e a TUPLA
+/// inteira: uma coluna diferente e OUTRA linha, nao um conflito. Convergencia,
+/// aceite (`docs/propostas/decisoes-onda-01-10-2026.md` §331). A tupla vira
+/// texto pela [`chave_da_tupla`], que e o mesmo motor da sincronia do DbLink.
+///
+/// # Toda coluna da chave tem de ser obrigatoria (pedido 517)
 ///
 /// NULL nao colide com NULL num indice unico, entao cada no pode ter a sua
 /// linha de chave nula -- e casar por essa chave faria a alteracao de um
@@ -164,43 +304,57 @@ pub fn colisao_de_criacao(operacao: Operacao, origem_ev: u16, local: Option<&Toq
 /// Os tres maduros convergem: o PostgreSQL so aceita como `REPLICA IDENTITY
 /// USING INDEX` o indice unico de colunas `NOT NULL`; o MySQL so identifica
 /// por chave unica de colunas todas `NOT NULL`; o InnoDB so promove a indice
-/// agrupado o unico sem NULL. Aceite automatico.
-pub fn chave_unica(esquema: &Schema) -> Option<(String, usize)> {
-    // O `e_coluna_de_sistema`, e nao dois literais crus: um indice unico
-    // sobre uma coluna de sistema nova viraria a IDENTIDADE replicavel da
-    // tabela, e o casamento entre servidores passaria a ser por um carimbo que
-    // e local de cada no. Silencioso, e so aparecendo como linha duplicada.
+/// agrupado o unico sem NULL. Aceite automatico -- e na composta vale para
+/// CADA coluna, pela mesma razao: um NULL so ja tira a tupla da unicidade.
+pub fn chave_unica(esquema: &Schema) -> Option<Identidade> {
     let serve = |i: &phxsql_core::schema::IndexDef| {
-        unico_de_uma_coluna(esquema, i) && !esquema.colunas()[i.colunas[0].coluna].nullable
+        unico_sem_coluna_de_sistema(esquema, i)
+            && i.colunas
+                .iter()
+                .all(|c| !esquema.colunas()[c.coluna].nullable)
     };
     esquema
         .indices()
         .iter()
         .find(|i| i.primario && serve(i))
         .or_else(|| esquema.indices().iter().find(|i| serve(i)))
-        .map(|i| (i.nome.clone(), i.colunas[0].coluna))
+        .map(|i| (i.nome.clone(), i.colunas.iter().map(|c| c.coluna).collect()))
 }
 
-/// O indice e unico, de UMA coluna, e ela nao e de sistema? A metade da
+/// O indice e unico, tem coluna, e nenhuma delas e de sistema? A metade da
 /// pergunta do [`chave_unica`] que o [`por_que_sem_chave`] tambem faz -- uma
 /// vez so, para as duas nunca discordarem sobre qual indice «quase servia».
-fn unico_de_uma_coluna(esquema: &Schema, i: &phxsql_core::schema::IndexDef) -> bool {
+///
+/// O `e_coluna_de_sistema`, e nao dois literais crus: um indice unico sobre
+/// uma coluna de sistema nova viraria a IDENTIDADE replicavel da tabela, e o
+/// casamento entre servidores passaria a ser por um carimbo que e local de
+/// cada no. Na composta vale para cada coluna: uma so local ja faz a tupla
+/// local.
+fn unico_sem_coluna_de_sistema(esquema: &Schema, i: &phxsql_core::schema::IndexDef) -> bool {
     i.unico
-        && i.colunas.len() == 1
-        && !phxsql_core::schema::e_coluna_de_sistema(&esquema.colunas()[i.colunas[0].coluna].nome)
+        && !i.colunas.is_empty()
+        && i.colunas
+            .iter()
+            .all(|c| !phxsql_core::schema::e_coluna_de_sistema(&esquema.colunas()[c.coluna].nome))
 }
 
 /// Por que [`chave_unica`] nao achou identidade em `tabela` -- a frase da
 /// recusa, dizendo o que fazer.
 ///
-/// Quando o que falta e so a coluna ser obrigatoria, a frase nomeia o indice e
-/// a coluna: «crie um indice unico» mandaria criar o que ja existe.
+/// Quando o que falta e so uma coluna ser obrigatoria, a frase nomeia o
+/// indice e a coluna: «crie um indice unico» mandaria criar o que ja existe.
 pub fn por_que_sem_chave(esquema: &Schema, tabela: &str) -> String {
     let anulavel = esquema
         .indices()
         .iter()
-        .find(|i| unico_de_uma_coluna(esquema, i))
-        .map(|i| (&i.nome, &esquema.colunas()[i.colunas[0].coluna].nome));
+        .filter(|i| unico_sem_coluna_de_sistema(esquema, i))
+        .find_map(|i| {
+            i.colunas
+                .iter()
+                .map(|c| &esquema.colunas()[c.coluna])
+                .find(|c| c.nullable)
+                .map(|c| (&i.nome, &c.nome))
+        });
     match anulavel {
         Some((indice, coluna)) => format!(
             "a chave unica {indice} de {tabela} esta sobre a coluna {coluna}, que aceita \
@@ -209,10 +363,28 @@ pub fn por_que_sem_chave(esquema: &Schema, tabela: &str) -> String {
              obrigatoria"
         ),
         None => format!(
-            "sem chave unica de uma coluna: o bidirecional casa as linhas pela chave, e \
-             {tabela} nao tem uma (crie um indice unico, ou uma chave primaria)"
+            "sem chave unica: o bidirecional casa as linhas pela chave, e {tabela} nao \
+             tem uma (crie um indice unico ou uma chave primaria; a composta serve com \
+             todas as colunas obrigatorias)"
         ),
     }
+}
+
+/// Os valores da identidade de uma linha, na ordem das colunas da chave.
+pub fn tupla(valores: &[Value], colunas: &[usize]) -> Vec<Value> {
+    colunas
+        .iter()
+        .map(|c| valores.get(*c).cloned().unwrap_or(Value::Null))
+        .collect()
+}
+
+/// A identidade de uma linha em texto -- a chave do mapa de toques.
+///
+/// UM motor para a uma coluna e para a composta: a de uma coluna devolve o
+/// texto de sempre (`chave_canonica`), e por isso o toque gravado antes do
+/// pedido 331 continua casando.
+pub fn chave_da_tupla(valores: &[Value], colunas: &[usize]) -> String {
+    crate::dblink::sincronia::chave_canonica_da_tupla(&tupla(valores, colunas))
 }
 
 /// O que a replica bidirecional lembra de cada tabela, em memoria.
@@ -850,7 +1022,7 @@ mod testes {
         ]);
         let (indice, pos) = chave_unica(&e).unwrap();
         assert_eq!(indice, "porId");
-        assert_eq!(pos, 0);
+        assert_eq!(pos, vec![0]);
     }
 
     #[test]
@@ -861,22 +1033,115 @@ mod testes {
         ]);
         let (indice, pos) = chave_unica(&e).unwrap();
         assert_eq!(indice, "porCpf");
-        assert_eq!(pos, 1);
+        assert_eq!(pos, vec![1]);
+        // O comportamento VELHO do pedido 331: a de uma coluna casa pelo
+        // texto de sempre.
+        let linha = [Value::Int(1), Value::Str("123".into()), Value::Null];
+        assert_eq!(
+            chave_da_tupla(&linha, &pos),
+            crate::dblink::sincronia::chave_canonica(&linha[1])
+        );
     }
 
     /// Sem chave unica nao ha identidade entre servidores: a tabela e recusada
-    /// no modo bidirecional, com o motivo escrito -- e composta idem.
+    /// no modo bidirecional, com o motivo escrito.
     #[test]
-    fn sem_chave_unica_ou_com_composta_nao_ha_identidade() {
+    fn sem_chave_unica_nao_ha_identidade() {
         let sem = esquema(vec![IndexDef::new("porNome", vec![IndexColumn::asc(2)])]);
         assert!(chave_unica(&sem).is_none());
+    }
 
+    /// Pedido 331: a composta ENTRA, e a identidade e a tupla inteira. Era
+    /// `is_none()` ate aqui -- o teste mudou de sentido de proposito, e o
+    /// irmao que trava o velho e o `sem_primaria_serve_o_primeiro_unico_de_uma_coluna`.
+    #[test]
+    fn a_composta_de_colunas_obrigatorias_e_a_identidade() {
         let composta = esquema(vec![IndexDef::new(
             "porIdCpf",
             vec![IndexColumn::asc(0), IndexColumn::asc(1)],
         )
         .unico()]);
-        assert!(chave_unica(&composta).is_none());
+        let (indice, cols) = chave_unica(&composta).unwrap();
+        assert_eq!(indice, "porIdCpf");
+        assert_eq!(cols, vec![0, 1]);
+        let um = [Value::Int(1), Value::Str("1".into()), Value::Null];
+        let dois = [Value::Int(1), Value::Str("2".into()), Value::Null];
+        assert_ne!(
+            chave_da_tupla(&um, &cols),
+            chave_da_tupla(&dois, &cols),
+            "coluna diferente e OUTRA linha"
+        );
+    }
+
+    /// A composta com coluna que aceita NULL fica de fora pela regra do 517,
+    /// e a recusa nomeia a coluna.
+    #[test]
+    fn a_composta_com_coluna_que_aceita_nulo_nao_e_identidade() {
+        let e = esquema(vec![IndexDef::new(
+            "porIdNome",
+            vec![IndexColumn::asc(0), IndexColumn::asc(2)],
+        )
+        .unico()]);
+        assert!(chave_unica(&e).is_none());
+        let motivo = por_que_sem_chave(&e, "t");
+        assert!(
+            motivo.contains("porIdNome") && motivo.contains("nome"),
+            "{motivo}"
+        );
+    }
+
+    // ------------------------------------------------- o numero (pedido 329)
+
+    #[test]
+    fn numero_atribuido_manda_e_sem_ele_vale_o_hash() {
+        assert_eq!(numero_do_servidor(7, "caixa-01"), 7);
+        assert_eq!(numero_do_servidor(0, "caixa-01"), hash_id("caixa-01"));
+        assert_eq!(numero_do_servidor(0, "  "), 0, "sem id, escrita local");
+    }
+
+    /// **Prova do pedido 329, na unidade.** Dois caixas com o mesmo numero
+    /// ENTRE SI: o central, que viu o primeiro, recusa o segundo nomeando os
+    /// dois. Reposto o defeito, `conferir_numero` aceitando qualquer numero
+    /// que nao seja o proprio, a terceira asercao cai.
+    #[test]
+    fn o_numero_se_confere_contra_todos_os_pares_vistos() {
+        let mut vistos = Numeros::new();
+        assert_eq!(conferir_numero(&mut vistos, 1, "central"), Ok(true));
+        assert_eq!(conferir_numero(&mut vistos, 40, "caixa-a"), Ok(true));
+        let e = conferir_numero(&mut vistos, 40, "caixa-b").unwrap_err();
+        assert!(e.contains("caixa-a") && e.contains("caixa-b"), "{e}");
+        assert_eq!(conferir_numero(&mut vistos, 40, "caixa-a"), Ok(false));
+        assert_eq!(vistos.get(&40).map(String::as_str), Some("caixa-a"));
+    }
+
+    #[test]
+    fn os_numeros_atravessam_o_arquivo() {
+        let dir = DirTemp::novo("numeros");
+        let caminho = dir.join("replicacao-numeros.json");
+        assert_eq!(ler_numeros(&caminho), Ok(Numeros::new()), "ausente e vazio");
+        let mut n = Numeros::new();
+        n.insert(7, "caixa-07".into());
+        n.insert(65535, "central".into());
+        gravar_numeros(&caminho, &n).unwrap();
+        assert_eq!(ler_numeros(&caminho), Ok(n));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// **Parecer do DBA, §3.** O registro ILEGIVEL nao vira vazio: vazio
+    /// aceitaria a colisao que ele existe para recusar.
+    ///
+    /// **Defeito reposto**: `ler_numeros` devolvendo `Ok(Numeros::new())` no
+    /// JSON que nao se le -- a asercao do `is_err` cai.
+    #[test]
+    fn o_registro_ilegivel_recusa_e_nao_vira_vazio() {
+        let dir = DirTemp::novo("numeros-ilegivel");
+        let caminho = dir.join("replicacao-numeros.json");
+        std::fs::write(&caminho, "{\"7\": \"caixa-07\", trunc").unwrap();
+        let e = ler_numeros(&caminho).unwrap_err();
+        assert!(e.contains("replicacao-numeros.json"), "{e}");
+        std::fs::write(&caminho, "{\"zero\": \"x\"}").unwrap();
+        assert!(ler_numeros(&caminho).is_err(), "entrada torta passou");
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     /// Pedido 517: o unico sobre coluna que aceita nulo nao e identidade, e
@@ -901,7 +1166,7 @@ mod testes {
         let e = esquema(vec![
             IndexDef::new("porCpf", vec![IndexColumn::asc(1)]).unico()
         ]);
-        assert_eq!(chave_unica(&e), Some(("porCpf".to_string(), 1)));
+        assert_eq!(chave_unica(&e), Some(("porCpf".to_string(), vec![1])));
     }
 
     // -------------------------------------------------------- o agendador

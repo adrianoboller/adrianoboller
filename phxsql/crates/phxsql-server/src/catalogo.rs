@@ -1570,6 +1570,13 @@ pub const OPERACOES: &[Operacao] = &[
                  voltam (é o que mata o laço do bidirecional), e a posição \
                  `ate` anda por cima deles mesmo assim",
             ),
+            opc(
+                "para_numero",
+                "integer",
+                "o número de origem de quem pede (1..65535, pedido 329); ausente = \
+                 o hash do `para`. O número é conferido contra todo par já visto, \
+                 e o que pertence a outro id é recusado nomeando os dois",
+            ),
         ],
         exemplo: r#"{"op":"replicar","database":"loja","tabela":"clientes","desde":0,"max":500,"para":"servidor-b"}"#,
         ferramenta_mcp: false,

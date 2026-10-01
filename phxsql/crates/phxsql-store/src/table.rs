@@ -836,6 +836,47 @@ fn montar_imagem(payload: &[u8], externos: &[(u16, Vec<u8>)]) -> Vec<u8> {
     out
 }
 
+/// Etiqueta do rabo da imagem que leva o payload ANTIGO de uma alteracao que
+/// mudou a chave de um indice unico. Ver [`anexar_o_antes`].
+///
+/// `0xA5`, e nao `1`: marca propria, que nao se confunde com um byte de
+/// contagem ou de tamanho caindo ali por acaso -- o parecer do DBA de
+/// 01/10/2026 (`dba-parecer-formatos-01-10-2026.md` §2) pede marca propria.
+const RABO_DO_ANTES: u8 = 0xA5;
+
+/// Pendura na imagem de uma ALTERACAO o payload de ANTES -- so quando a
+/// alteracao mudou a chave de um indice unico.
+///
+/// # Por que existe
+///
+/// Medido no bidirecional (01/10/2026): a imagem e o «depois», e quem casa
+/// por chave do outro lado procura a linha pela chave NOVA. Nao acha, insere
+/// uma linha nova, e a antiga FICA -- uma alteracao virava duas linhas. O
+/// PostgreSQL manda a chave antiga quando a identidade muda (`REPLICA
+/// IDENTITY`), e o SQLite registra a troca como DELETE+INSERT; os dois levam o
+/// «antes». Aqui ele vai num RABO da imagem:
+///
+/// ```text
+/// [imagem de sempre][RABO_DO_ANTES u8][tam u32][payload antigo]
+/// ```
+///
+/// # Por que no rabo, e por que so o payload
+///
+/// No rabo porque quem le a imagem para no fim dos externos e nunca olhou o
+/// que vem depois (`abrir_imagem_com_selo`): a replica fiel, que aplica por
+/// rowid, continua lendo exatamente o que lia, e um `.log` antigo -- sem
+/// rabo -- le como «a chave nao mudou», que e o comportamento de antes.
+///
+/// So o payload, sem os externos, porque o que o outro lado precisa dele e a
+/// CHAVE, e chave nao mora em `Memo`/`Bin`: ler o anexo velho so para pendura-
+/// lo aqui seria pagar uma leitura de bloco por nada. E so quando a chave
+/// MUDA: a alteracao comum nao paga um byte.
+fn anexar_o_antes(imagem: &mut Vec<u8>, antes: &[u8]) {
+    imagem.push(RABO_DO_ANTES);
+    imagem.extend_from_slice(&(antes.len() as u32).to_le_bytes());
+    imagem.extend_from_slice(antes);
+}
+
 fn caminho(diretorio: &Path, nome: &str, ext: &str) -> PathBuf {
     diretorio.join(format!("{nome}.{ext}"))
 }
@@ -5534,9 +5575,44 @@ impl Table {
     /// A imagem do diario, e a conferencia de que ela CABE -- antes da
     /// primeira escrita da linha (pedido 498).
     fn preparar_diario(&mut self, payload: &[u8]) -> Result<Vec<u8>> {
-        let imagem = self.imagem_do_diario(payload)?;
+        self.preparar_diario_com_antes(payload, None)
+    }
+
+    /// O [`Self::preparar_diario`] da alteracao: com `antes`, o payload antigo
+    /// vai no rabo da imagem ([`anexar_o_antes`]) -- e o teto confere a imagem
+    /// INTEIRA, rabo junto, porque e ela que vai ao arquivo.
+    fn preparar_diario_com_antes(
+        &mut self,
+        payload: &[u8],
+        antes: Option<&[u8]>,
+    ) -> Result<Vec<u8>> {
+        let mut imagem = self.imagem_do_diario(payload)?;
+        if let (Some(antes), false) = (antes, imagem.is_empty()) {
+            anexar_o_antes(&mut imagem, antes);
+        }
         self.log.conferir_teto(imagem.len())?;
         Ok(imagem)
+    }
+
+    /// A alteracao muda a chave de algum indice UNICO? E a pergunta que
+    /// decide se a imagem leva o «antes» ([`anexar_o_antes`]).
+    ///
+    /// Qualquer unico, e nao so a identidade do bidirecional: quem escolhe a
+    /// identidade e o servidor (`bidirecional::chave_unica`), e o store nao
+    /// deve repetir aquela regra -- duas copias dela divergiriam no dia em que
+    /// uma aprendesse um caso. Pendurar o «antes» quando muda um unico que nao
+    /// e a identidade custa um payload a mais num evento raro; esquecer
+    /// quando muda a identidade custa a linha duplicada do outro lado.
+    fn muda_chave_unica(
+        &self,
+        chaves_antigas: &[Option<Vec<u8>>],
+        chaves_novas: &[Option<Vec<u8>>],
+    ) -> bool {
+        self.esquema
+            .indices()
+            .iter()
+            .enumerate()
+            .any(|(i, d)| d.unico && chaves_antigas.get(i) != chaves_novas.get(i))
     }
 
     fn anotar_imagem(
@@ -5994,8 +6070,15 @@ impl Table {
         let valores = &completos[..];
         let ponteiros_antigos = self.ponteiros(&antigo)?;
         let payload = self.montar_payload(valores)?;
+        // A troca de chave leva o «antes» no rabo da imagem -- ver
+        // `anexar_o_antes`. A filha da cascata passa por AQUI tambem (o
+        // `aplicar_ao_alterar` chama o `atualizar` dela), entao a chave da
+        // filha que muda com a da mae chega ao outro lado do mesmo jeito.
+        let antes = self
+            .muda_chave_unica(&chaves_antigas, &chaves_novas)
+            .then_some(&antigo[..]);
         // Pedido 498: o diario confere que cabe ANTES da primeira escrita.
-        let imagem = match self.preparar_diario(&payload) {
+        let imagem = match self.preparar_diario_com_antes(&payload, antes) {
             Ok(i) => i,
             Err(e) => {
                 if let Ok(novos) = self.ponteiros(&payload) {
@@ -6725,7 +6808,7 @@ impl Table {
         if imagem.is_empty() || !self.reg.cifrada() {
             return Ok(imagem.to_vec());
         }
-        let (payload, externos) = Table::abrir_imagem_com_selo(imagem)?;
+        let (payload, externos, fim) = Table::desmontar_imagem(imagem)?;
         let mut abertos = Vec::with_capacity(externos.len());
         for (coluna, selado, bytes) in externos {
             let bytes = if selado {
@@ -6735,7 +6818,12 @@ impl Table {
             };
             abertos.push((coluna, bytes));
         }
-        Ok(montar_imagem(&payload, &abertos))
+        // O rabo (o «antes» de uma troca de chave) viaja como veio: remontar so
+        // ate os externos o perderia justamente na tabela cifrada, e a troca
+        // de chave voltaria a virar linha nova do outro lado so ali.
+        let mut out = montar_imagem(&payload, &abertos);
+        out.extend_from_slice(&imagem[fim..]);
+        Ok(out)
     }
 
     /// Completa o evento que o `.log` ficou devendo -- pedido 498.
@@ -6821,6 +6909,70 @@ impl Table {
     /// conteudo)`.
     #[allow(clippy::type_complexity)]
     pub fn abrir_imagem_com_selo(imagem: &[u8]) -> Result<(Vec<u8>, Vec<(u16, bool, Vec<u8>)>)> {
+        let (payload, externos, _) = Table::desmontar_imagem(imagem)?;
+        Ok((payload, externos))
+    }
+
+    /// O payload ANTIGO que a imagem de uma alteracao leva quando a chave de
+    /// um indice unico mudou -- `None` quando nao leva (ver
+    /// [`anexar_o_antes`]).
+    pub fn payload_antes_da_imagem(imagem: &[u8]) -> Result<Option<Vec<u8>>> {
+        let (_, _, fim) = Table::desmontar_imagem(imagem)?;
+        Ok(Table::ler_o_rabo(imagem, fim)?.map(<[u8]>::to_vec))
+    }
+
+    /// O que vem depois dos externos: nada, ou o rabo do «antes» INTEIRO e
+    /// mais nada. Qualquer outra sobra e RECUSADA.
+    ///
+    /// # Por que recusar, e nao ignorar
+    ///
+    /// Ignorar foi o defeito de formato que o parecer do DBA de 01/10/2026
+    /// achou (§2): o decodificador nao conferia se sobrava byte, entao um
+    /// campo novo acrescentado depois dos externos seria ignorado CALADO por
+    /// todo binario anterior -- o par de versoes diferentes divergindo sem
+    /// erro, o pior jeito de introduzir campo. Recusando, um binario diante de
+    /// um campo que nao conhece falha FECHADO e diz que precisa atualizar.
+    fn ler_o_rabo(imagem: &[u8], fim: usize) -> Result<Option<&[u8]>> {
+        let rabo = &imagem[fim.min(imagem.len())..];
+        if rabo.is_empty() {
+            return Ok(None);
+        }
+        let desconhecido = || {
+            PhxError::Corrompido(format!(
+                "imagem de linha com {} byte(s) depois dos externos que este binario nao \
+                 conhece: e campo de uma versao mais nova -- atualize este servidor -- \
+                 ou imagem corrompida",
+                rabo.len()
+            ))
+        };
+        if rabo[0] != RABO_DO_ANTES {
+            return Err(desconhecido());
+        }
+        let tam = rabo
+            .get(1..5)
+            .map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]) as usize)
+            .ok_or_else(desconhecido)?;
+        // O rabo tem de fechar a imagem EXATO: byte a mais depois dele e a
+        // mesma sobra desconhecida, so que um campo adiante.
+        if rabo.len() != 5 + tam {
+            return Err(desconhecido());
+        }
+        Ok(Some(&rabo[5..]))
+    }
+
+    /// Os valores de ANTES de uma alteracao que mudou a chave, quando a imagem
+    /// os leva. Sem externos: o que se quer deles e a chave, e as colunas
+    /// externas voltam nulas -- inventar bytes seria pior.
+    pub fn valores_antes_da_imagem(&mut self, imagem: &[u8]) -> Result<Option<Vec<Value>>> {
+        match Table::payload_antes_da_imagem(imagem)? {
+            Some(antes) => Ok(Some(self.decodificar_com_externos(&antes, &[])?)),
+            None => Ok(None),
+        }
+    }
+
+    /// Desmonta a imagem e diz onde ela ACABA -- o que vem depois e o rabo.
+    #[allow(clippy::type_complexity)]
+    fn desmontar_imagem(imagem: &[u8]) -> Result<(Vec<u8>, Vec<(u16, bool, Vec<u8>)>, usize)> {
         let curta = || PhxError::Corrompido("imagem de linha truncada".into());
         let ler_u32 = |i: usize| -> Result<u32> {
             imagem
@@ -6852,7 +7004,12 @@ impl Table {
             ));
             i += n;
         }
-        Ok((payload, externos))
+        // A sobra se confere AQUI, e nao so em quem le o «antes»: todo leitor
+        // de imagem passa por esta funcao -- a replica fiel, o bidirecional, a
+        // abertura para o fio --, e a que esquecesse de conferir seria a que
+        // ignora calada.
+        Table::ler_o_rabo(imagem, i)?;
+        Ok((payload, externos, i))
     }
 
     /// Os valores da linha que uma imagem carrega, com os externos DELA.
