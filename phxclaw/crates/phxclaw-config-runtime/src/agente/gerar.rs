@@ -113,8 +113,8 @@ pub fn esquema() -> Value {
     raiz.insert(
         "description".into(),
         json!(
-            "Gerado do catalogo (phxclaw-config-runtime/src/agente/catalogo.rs). Precedencia: \
-             ambiente > .phxclaw/config.json do projeto confiado > <pasta>/config.json > padrao. \
+            "Gerado do catálogo (phxclaw-config-runtime/src/agente/catalogo.rs). Precedência: \
+             ambiente > .phxclaw/config.json do projeto confiado > <pasta>/config.json > padrão. \
              Segredo nunca entra aqui: vai para o SecretBroker."
         ),
     );
@@ -125,7 +125,7 @@ pub fn esquema() -> Value {
             .expect("properties");
         props.insert(
             CAMPO_REVISAO.into(),
-            json!({"type": "integer", "minimum": 0, "description": "Revisao do arquivo (a gravacao sobe de um)"}),
+            json!({"type": "integer", "minimum": 0, "description": "Revisão do arquivo (a gravação sobe de um)"}),
         );
         props.insert("$schema".into(), json!({"type": "string"}));
     }
@@ -142,9 +142,9 @@ pub fn exemplo() -> Value {
     raiz.insert(
         CAMPO_COMENTARIO.into(),
         json!([
-            "config.json do PhxClaw, gerado do catalogo (phxclaw config exemplo).",
-            "Precedencia: ambiente > .phxclaw/config.json do projeto confiado > <pasta>/config.json > padrao.",
-            "null = nao definido aqui. Segredo nunca entra: vai para o SecretBroker (phxclaw config mostrar diz o comando)."
+            "config.json do PhxClaw, gerado do catálogo (phxclaw config exemplo).",
+            "Precedência: ambiente > .phxclaw/config.json do projeto confiado > <pasta>/config.json > padrão.",
+            "null = não definido aqui. Segredo nunca entra: vai para o SecretBroker (phxclaw config mostrar diz o comando)."
         ]),
     );
     for c in catalogo().iter().filter(|c| c.no_arquivo()) {
@@ -187,7 +187,10 @@ pub fn entrada(c: &Chave) -> Map<String, Value> {
     m.insert("secao".into(), json!(c.secao()));
     m.insert("tipo".into(), json!(c.tipo.nome()));
     m.insert("opcoes".into(), opcoes(c));
+    // A descricao e ROTULO (texto de tela): vai nos dois idiomas, e a tela escolhe pelo
+    // idioma da fabrica. `descricao` continua sendo o portugues, para quem ja le o contrato.
     m.insert("descricao".into(), json!(c.descricao));
+    m.insert("descricao_en".into(), json!(c.descricao_en));
     m.insert(
         "padrao".into(),
         if c.segredo() { Value::Null } else { padrao(c) },
@@ -202,6 +205,7 @@ pub fn entrada(c: &Chave) -> Map<String, Value> {
     m.insert("natureza".into(), json!(natureza));
     m.insert("comando_do_segredo".into(), json!(comando));
     m.insert("motivo_so_ambiente".into(), json!(motivo));
+    m.insert("motivo_so_ambiente_en".into(), json!(c.motivo_en));
     if let Tipo::Lista(sep) = c.tipo {
         m.insert("separador_no_ambiente".into(), json!(sep.to_string()));
     }

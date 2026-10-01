@@ -168,3 +168,39 @@ async fn design_erp_ui_sem_tabela_recusa_em_vez_de_gravar_tela_vazia() {
     );
     assert!(!c.workdir.join("erp").exists());
 }
+
+/// Leitura (OCR real do pedido, em TSV) -> SQL -> UI-IR com o layout gravado na tela: o
+/// mesmo `app_da_leitura` do `screenshot_to_erp_ui` e da prova de fidelidade.
+#[test]
+fn leitura_so_ocr_vira_ui_ir_com_layout_na_tela_do_documento() {
+    use phxclaw_agent::ui::{LeituraDeTela, app_da_leitura};
+    use phxclaw_ui_ir::layout;
+    let tsv = include_str!("../../phxclaw-ui-ir/tests/fixtures/pedido_ocr.tsv");
+    let (p, w, h) = layout::ler_tsv(tsv);
+    let lay = layout::analisar(&p, w, h);
+    let l = LeituraDeTela {
+        linhas: layout::linhas(&p),
+        campos: lay.campos(),
+        itens: lay.colunas(),
+        layout: lay,
+        modelo: None,
+        respostas: vec![],
+    };
+    let (app, _, sql) = app_da_leitura("Vendas", "Pedido", &l);
+    assert!(sql.contains("data_emissao date NOT NULL"), "{sql}");
+    let lay = &app.layouts[0];
+    assert_eq!(lay.screen, "pedido_cadastro");
+    let campo = |n: &str| lay.items.iter().find(|i| i.field == n).unwrap();
+    assert_eq!(campo("id").tab_order, 0, "Codigo lido e a chave");
+    assert!(campo("cliente").tab_order < campo("situacao").tab_order);
+    let g = lay
+        .groups
+        .iter()
+        .find(|g| g.id == campo("valor_frete").group)
+        .unwrap();
+    assert_eq!(g.title, "Valores");
+    assert!(campo("observacao").bbox.y > campo("valor_frete").bbox.y);
+    // o UI-IR gravado volta a ler, com o layout
+    let j = serde_json::to_string(&app).unwrap();
+    assert_eq!(phxclaw_ui_ir::App::de_json(&j).unwrap(), app);
+}

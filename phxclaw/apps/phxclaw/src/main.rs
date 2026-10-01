@@ -78,6 +78,14 @@ com PHXCLAW_IMAGEM_PROVEDOR=nanobanana (capacidade media.generate)"
         "dispositivos" | "devices" => runtime()?.block_on(dispositivos(&args[1..]))?,
         "fluxo" | "workflow" => runtime()?.block_on(fluxo(&args[1..]))?,
         "equipe" | "team" => runtime()?.block_on(equipe(&args[1..]))?,
+        "gonogo" | "go-no-go" => {
+            let (texto, codigo) = phxclaw_agent::gonogo::cli(&args[1..], &pasta(&args[1..]))
+                .map_err(anyhow::Error::msg)?;
+            print!("{texto}");
+            if codigo != 0 {
+                std::process::exit(codigo);
+            }
+        }
         "ferramentas" | "tools" => runtime()?.block_on(ferramentas())?,
         "revisar" | "review" => runtime()?.block_on(revisar(&args[1..]))?,
         "forja" | "forge" => forja(&args[1..])?,
@@ -93,6 +101,7 @@ com PHXCLAW_IMAGEM_PROVEDOR=nanobanana (capacidade media.generate)"
         "voz" | "voice" => runtime()?.block_on(voz(&args[1..]))?,
         "repetir" | "replay" => runtime()?.block_on(medicao::repetir(&args[1..]))?,
         "avaliar" | "eval" => runtime()?.block_on(medicao::avaliar(&args[1..]))?,
+        "ui" => runtime()?.block_on(medicao::ui(&args[1..]))?,
         "skill" => runtime()?.block_on(medicao::skill(&args[1..]))?,
         "skills" => contexto::skills(&args[1..])?,
         "indexar" | "index" => contexto::indexar(&args[1..])?,

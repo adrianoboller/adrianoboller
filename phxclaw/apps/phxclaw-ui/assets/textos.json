@@ -7,6 +7,8 @@
     "menu.ferramentas": { "pt": "Ferramentas", "en": "Tools" },
     "menu.absorcao": { "pt": "Absorção", "en": "Absorption" },
     "idioma.trocar": { "pt": "Trocar o idioma da tela", "en": "Change the screen language" },
+    "tema.para_claro": { "pt": "Mudar para o tema claro", "en": "Switch to the light theme" },
+    "tema.para_escuro": { "pt": "Mudar para o tema escuro", "en": "Switch to the dark theme" },
     "topo.nucleo_espera": { "pt": "NÚCLEO: AGUARDANDO O HOST", "en": "CORE: WAITING FOR THE HOST" },
     "topo.nucleo_ativo": { "pt": "NÚCLEO ATIVO", "en": "CORE ACTIVE" },
     "topo.nucleo_erro": { "pt": "NÚCLEO SEM RESPOSTA", "en": "CORE NOT ANSWERING" },

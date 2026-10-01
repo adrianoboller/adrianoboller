@@ -771,6 +771,7 @@ pub fn analyze(nome_app: &str, p: &Parsed) -> App {
         entities,
         screens,
         menu,
+        layouts: vec![],
     }
 }
 

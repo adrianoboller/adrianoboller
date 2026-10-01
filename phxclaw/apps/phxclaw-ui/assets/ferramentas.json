@@ -414,6 +414,13 @@
       "nome": "git_worktree"
     },
     {
+      "capacidade": "gonogo.write",
+      "concedida": false,
+      "descricao": "Integrators' council Go/NoGo. action: record {integration, integrator, verdict: OK|NOGO, errors? (required for NOGO), integrators? (other active integrators)}; status {integration}. Decision: any current NOGO -> NOGO; an active integrator without verdict -> WAIT; all OK -> GO. Only the same integrator can replace own NOGO.",
+      "grupo": "gonogo",
+      "nome": "go_no_go"
+    },
+    {
       "capacidade": "fs.read",
       "concedida": true,
       "descricao": "Read-only language server queries on files in the task directory (rust (.rs), python (.py, .pyi)). action=definition|references|hover need path, line and column (1-based); action=symbols with path lists the file's symbols, with query searches the workspace; action=diagnostics returns the file's errors and warnings. Never edits files.",
@@ -451,6 +458,6 @@
   ],
   "gerado_por": "phxclaw ferramentas",
   "observacao": "montadas nesta maquina: shell exige bwrap, navegador exige Chromium, e-mail e banco exigem configuracao",
-  "total": 64,
+  "total": 65,
   "versao": "0.70.0"
 }

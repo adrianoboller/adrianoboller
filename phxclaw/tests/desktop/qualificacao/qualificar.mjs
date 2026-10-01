@@ -13,7 +13,14 @@
 // Uso: PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node tests/desktop/qualificacao/qualificar.mjs
 //        [--ui DIR]        arvore a medir (padrao apps/phxclaw-ui); RED = copia com o conserto desfeito
 //        [--so B1,G7,...]  so estas sondas; sai 1 se alguma reprovar
-// Sai 1 se alguma tela nao estiver QUALIFICADA. Grava tests/desktop/out/qualificacao/qualificar.json.
+//        [--tema escuro|claro]  so um tema (padrao: os DOIS, uma passada inteira por tema)
+// Sai 1 se alguma tela nao estiver QUALIFICADA em algum tema. Grava
+// tests/desktop/out/qualificacao/qualificar.json.
+//
+// DOIS TEMAS (Style Phoenix Padrao): toda sonda roda no escuro da marca e no claro em papel
+// quente. O tema entra como o usuario o escolhe (phxclaw.tema no localStorage) e o
+// prefers-color-scheme do contexto concorda com ele. O esperado por tema (fundo, laranja do
+// anel, tokens) sai do fonte do PhxSql, bloco :root ou :root[data-tema="claro"].
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { subir } from './servidor.mjs';
@@ -24,6 +31,23 @@ const iSo = process.argv.indexOf('--so');
 const SO = iSo > 0 ? new Set(process.argv[iSo + 1].split(',')) : null;
 const quer = id => !SO || SO.has(id);
 const FAB = JSON.parse(readFileSync(join(UI, 'assets/textos.json'), 'utf8')).textos;
+const iTema = process.argv.indexOf('--tema');
+const TEMAS = iTema > 0 ? [process.argv[iTema + 1]] : ['escuro', 'claro'];
+let TEMA = TEMAS[0];
+const esquemaDo = t => (t === 'claro' ? 'light' : 'dark');
+// Os tokens do console do PhxSql por tema, lidos do fonte de la (nao de uma copia aqui).
+const FONTE_PHX = readFileSync(join(RAIZ, '../phxsql/crates/phxsql-server/ui/index.html'), 'utf8');
+const tokensPhx = t => {
+  const bloco = FONTE_PHX.match(t === 'claro' ? /:root\[data-tema="claro"\]\{([\s\S]*?)\n\}/ : /:root\{([\s\S]*?)\n\}/)[1].replace(/\/\*[\s\S]*?\*\//g, '');
+  return Object.fromEntries([...bloco.matchAll(/(--[a-z0-9-]+)\s*:\s*(#[0-9a-fA-F]{3,8})/g)].map(x => [x[1], x[2].toLowerCase()]));
+};
+const rgbDe = h => { const x = h.replace('#', ''); const n = parseInt(x.length === 3 ? x.replace(/./g, c => c + c) : x, 16); return `rgb(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255})`; };
+// O tema escolhido entra antes da pagina, como o botao do topo o guarda.
+// So na primeira carga da aba (marca no sessionStorage): recarregar tem de mostrar o que a
+// PAGINA guardou, e nao o que o roteiro pos de novo.
+const comTema = async (ctx, t = TEMA) => ctx.addInitScript(x => {
+  try { if (!sessionStorage.getItem('q.tema')) { localStorage.setItem('phxclaw.tema', x); sessionStorage.setItem('q.tema', '1'); } } catch {}
+}, t);
 
 // Telas do veredito. «mesa»: tela de trabalho de mesa, onde um defeito so a 390 e ressalva;
 // Tarefas, a barra e o PWA sao o caminho do celular (start_url do aplicativo instalavel).
@@ -39,8 +63,8 @@ const achados = [];
 // sev: bloqueia | grave | medio | cosmetico. so390: o defeito so existe a 390.
 // principal: false quando o defeito esta fora do caminho principal da tela.
 function achado(id, sev, telas, ok, evid, { so390 = false, principal = true } = {}) {
-  achados.push({ id, sev, telas, ok: !!ok, evid, so390, principal });
-  console.log(`${ok ? 'ok   ' : 'FALHA'} ${id.padEnd(4)} ${sev.padEnd(9)} ${telas.join(',').padEnd(22)} ${String(evid).slice(0, 220)}`);
+  achados.push({ id, sev, telas, ok: !!ok, evid, so390, principal, tema: TEMA });
+  console.log(`${ok ? 'ok   ' : 'FALHA'} ${TEMA.padEnd(6)} ${id.padEnd(4)} ${sev.padEnd(9)} ${telas.join(',').padEnd(22)} ${String(evid).slice(0, 220)}`);
 }
 
 const { srv, porta, modo } = await subir(UI, { config: CONFIG });
@@ -51,7 +75,9 @@ async function pagina({ w = 1366, h = null, lang = 'pt', tauri = true, token = t
   const ctx = await browser.newContext({
     viewport: { width: w, height: h || (w === 390 ? 844 : w === 1920 ? 1080 : w === 768 ? 1024 : 768) },
     locale: 'pt-BR', isMobile: w === 390, hasTouch: w <= 768, serviceWorkers: sw, reducedMotion: reducedMotion || 'no-preference',
+    colorScheme: esquemaDo(TEMA),
   });
+  await comTema(ctx);
   if (tauri) await ctx.addInitScript(stubTauriFn, GRADE);
   await ctx.addInitScript(([l, t]) => { try { if (t) localStorage.setItem('phxclaw.token', 'token-de-teste'); localStorage.setItem('phxclaw.idioma', l); } catch {} }, [lang, token]);
   const page = await ctx.newPage();
@@ -76,6 +102,7 @@ const linhasDaGrade = (page, sel) => page.$$eval(`${sel} .phx-tabela > tbody > t
   .map(tr => tr.getBoundingClientRect().height));
 const mediana = a => { const s = [...a].sort((x, y) => x - y); return s.length ? s[Math.floor(s.length / 2)] : 0; };
 
+async function rodar() {
 /* ============================ BLOQUEIA ============================ */
 await sonda('B1', async () => {
   const r = [];
@@ -252,7 +279,8 @@ await sonda('G6', async () => {
   const ids = await page.$$eval('.topbar button', bs => bs.map((b, i) => { b.dataset.qi = String(i); return b.id; }));
   const r = [];
   for (let i = 0; i < ids.length; i++) {
-    if (ids[i] === 'trocarIdioma') continue;
+    // Idioma e tema trocam a tela em vez de abrir algo; o do tema e a sonda T1.
+    if (ids[i] === 'trocarIdioma' || ids[i] === 'trocarTema') continue;
     const sel = `.topbar button[data-qi="${i}"]`;
     const nome = await page.$eval(sel, b => (b.getAttribute('aria-label') || b.getAttribute('title') || b.textContent || '').trim());
     const antes = await page.evaluate(() => [...document.querySelectorAll('[role="dialog"],[role="search"],dialog,.paleta,.busca-global')].filter(e => e.getClientRects().length && !e.hidden).length);
@@ -283,7 +311,8 @@ await sonda('G7', async () => {
   // Jornada A do relatorio: primeira visita com rede (o SW instala a casca) e a rede cai.
   const s2 = await subir(UI, { config: CONFIG });
   const O2 = `http://localhost:${s2.porta}`;
-  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, locale: 'pt-BR', isMobile: true, hasTouch: true });
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, locale: 'pt-BR', isMobile: true, hasTouch: true, colorScheme: esquemaDo(TEMA) });
+  await comTema(ctx);
   await ctx.addInitScript(() => { try { localStorage.setItem('phxclaw.token', 'token-de-teste'); } catch {} });
   const page = await ctx.newPage();
   await page.goto(`${O2}/?tela=tarefas`);
@@ -384,7 +413,8 @@ await sonda('G10', async () => {
     const m = cs.outlineColor.match(/\d+(\.\d+)?/g)?.map(Number) || [0, 0, 0];
     const lin = c => { c /= 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; };
     const L = ([r, g, b]) => 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
-    const contraste = (L(m) + 0.05) / (L([1, 4, 24]) + 0.05);
+    const f = getComputedStyle(document.documentElement).backgroundColor.match(/\d+/g).slice(0, 3).map(Number);
+    const contraste = (Math.max(L(m), L(f)) + 0.05) / (Math.min(L(m), L(f)) + 0.05);
     const ajuda = (document.getElementById('termCanvas').getAttribute('aria-describedby') || '').split(/\s+/).map(id => document.getElementById(id)?.textContent || '').join(' ');
     return { largura: w, contraste: +contraste.toFixed(2), ajuda };
   });
@@ -498,7 +528,8 @@ await sonda('M4|M5', async () => {
   const medir = async (url, celular = true) => {
     const runs = [];
     for (let i = 0; i < 3; i++) {
-      const ctx = await browser.newContext({ viewport: celular ? { width: 390, height: 844 } : { width: 1366, height: 768 }, serviceWorkers: 'block' });
+      const ctx = await browser.newContext({ viewport: celular ? { width: 390, height: 844 } : { width: 1366, height: 768 }, serviceWorkers: 'block', colorScheme: esquemaDo(TEMA) });
+      await comTema(ctx);
       await ctx.addInitScript(() => {
         try { localStorage.setItem('phxclaw.token', 't'); } catch {}
         const marca = () => { const a = document.getElementById('app'); const s = document.getElementById('splash');
@@ -571,8 +602,8 @@ await sonda('M9', async () => {
     return { n: b.length, classes: b[0]?.className ?? '', cor };
   });
   await ctx.close();
-  const [r, g, bl] = (m.cor.match(/\d+/g) || [0, 0, 0]).map(Number);
-  const rosa = r > 200 && bl > 120 && g < r - 60;
+  // O rosa do tema da vez (o claro escurece o rosa, pelo contraste sobre papel).
+  const rosa = m.cor === rgbDe(tokensPhx(TEMA)['--acao-marcar']);
   achado('M9', 'medio', ['config'], m.n > 0 && /\bmarca\b/.test(m.classes) && !/\bexclui\b/.test(m.classes) && rosa, JSON.stringify(m));
 });
 
@@ -582,19 +613,22 @@ await sonda('M10', async () => {
   await page.waitForTimeout(200);
   const m = await page.evaluate(() => {
     const cs = s => { const c = getComputedStyle(document.querySelector(s)); return { bg: c.backgroundColor, img: c.backgroundImage }; };
-    const opacoNoGradiente = img => [...img.matchAll(/linear-gradient\(([^)]*\([^)]*\))*[^)]*\)/g)].some(m => /rgb\(/.test(m[0]));
+    // Gradiente linear com cor opaca (rgb() sem alfa, ou color(srgb ...) sem «/ a») pinta por
+    // cima do fundo do token.
+    const opacoNoGradiente = img => [...img.matchAll(/linear-gradient\(([^)]*\([^)]*\))*[^)]*\)/g)].some(m => /rgb\(|color\(srgb [^/)]+\)/.test(m[0]));
     const shell = cs('.app-shell'), splash = cs('.splash');
     return { shell: shell.bg, shellImg: shell.img !== 'none', splash: splash.bg, splashOpaco: opacoNoGradiente(splash.img), tema: document.querySelector('meta[name="theme-color"]').content };
   });
   await ctx.close();
   const man = JSON.parse(readFileSync(join(UI, 'manifest.webmanifest'), 'utf8'));
-  const ok = m.shell === 'rgb(1, 4, 24)' && !m.shellImg && m.splash === 'rgb(1, 4, 24)' && !m.splashOpaco && m.tema.toLowerCase() === '#010418' && man.theme_color.toLowerCase() === '#010418';
+  // O fundo do tema da vez; o manifesto e estatico (vale na instalacao) e fica no da marca.
+  const fundoTema = tokensPhx(TEMA)['--fundo'], fundoMarca = tokensPhx('escuro')['--fundo'];
+  const ok = m.shell === rgbDe(fundoTema) && !m.shellImg && m.splash === rgbDe(fundoTema) && !m.splashOpaco && m.tema.toLowerCase() === fundoTema && man.theme_color.toLowerCase() === fundoMarca;
   achado('M10', 'medio', ['splash', 'topo'], ok, JSON.stringify({ ...m, manifesto: man.theme_color }));
   // STYLE PHOENIX PADRAO (docs/ui/STYLE_PHOENIX_PADRAO.md): os tokens que o PhxClaw adota tem o
   // NOME e o VALOR do console do PhxSql, lidos do fonte de la (nao de uma copia aqui).
-  const fontePhx = join(RAIZ, '../phxsql/crates/phxsql-server/ui/index.html');
-  const raizPhx = readFileSync(fontePhx, 'utf8').match(/:root\{([\s\S]*?)\n\}/)[1].replace(/\/\*[\s\S]*?\*\//g, '');
-  const valorPhx = Object.fromEntries([...raizPhx.matchAll(/(--[a-z0-9-]+)\s*:\s*(#[0-9a-fA-F]{3,8})/g)].map(x => [x[1], x[2].toLowerCase()]));
+  // No claro, o bloco :root[data-tema="claro"] de la.
+  const valorPhx = tokensPhx(TEMA);
   const ADOTADOS = ['--fundo', '--painel', '--painel-2', '--painel-3', '--realce', '--linha', '--linha-forte', '--texto', '--texto-2', '--texto-3', '--laranja',
     '--acao-incluir', '--acao-alterar', '--acao-marcar', '--acao-excluir', '--acao-consultar'];
   const { ctx: c2, page: p2 } = await pagina({ w: 1366 });
@@ -610,7 +644,7 @@ await sonda('M10', async () => {
   const divergem = ADOTADOS.filter(n => est.tok[n] !== valorPhx[n]).map(n => `${n}=${est.tok[n]}/${valorPhx[n]}`);
   const temFonte = n => fontes.some(f => f.startsWith(n));
   const okEstilo = !divergem.length && temFonte('Exo 2') && temFonte('IBM Plex Mono') && est.tracos.length === 1;
-  achado('M10', 'medio', ['topo'], okEstilo, `Style Phoenix Padrao: tokens divergentes do PhxSql ${divergem.length ? divergem.join(' ') : '0'} de ${ADOTADOS.length}; fontes locais carregadas ${fontes.join(', ')}; espessuras de traco dos icones ${JSON.stringify(est.tracos)}`);
+  achado('M10', 'medio', ['topo'], okEstilo, `Style Phoenix Padrao (${TEMA}): tokens divergentes do PhxSql ${divergem.length ? divergem.join(' ') : '0'} de ${ADOTADOS.length}; fontes locais carregadas ${fontes.join(', ')}; espessuras de traco dos icones ${JSON.stringify(est.tracos)}`);
 });
 
 await sonda('M11', async () => {
@@ -651,9 +685,14 @@ await sonda('M14', async () => {
   await abrirTela(page, 'config', 1500);
   const d = await page.$$eval('#configConteudo td[data-tag="descricao"]', t => t.slice(0, 40).map(x => x.textContent));
   await ctx.close();
+  // E pela API (GET /v1/config, a vista do motor, com token): a mesma escolha pelo idioma.
+  const { ctx: c2, page: p2 } = await pagina({ w: 1366, lang: 'en' });
+  await abrirTela(p2, 'config', 1500);
+  const d2 = await p2.$$eval('#configConteudo td[data-tag="descricao"]', t => t.slice(0, 40).map(x => x.textContent));
+  await c2.close();
   const pt = new Set(cat.chaves.map(c => c.descricao));
-  const emPt = d.filter(x => pt.has(x)).length;
-  achado('M14', 'medio', ['config'], semAcento === 0 && emPt === 0, `${semAcento} descricoes do catalogo sem acento; EN: ${emPt}/${d.length} descricoes ainda em PT`);
+  const emPt = d.filter(x => pt.has(x)).length, emPt2 = d2.filter(x => pt.has(x)).length;
+  achado('M14', 'medio', ['config'], semAcento === 0 && emPt === 0 && emPt2 === 0 && d.length > 0 && d2.length > 0, `${semAcento} descricoes do catalogo sem acento; EN: ${emPt}/${d.length} descricoes ainda em PT no catalogo, ${emPt2}/${d2.length} pela API`);
 });
 
 await sonda('M15', async () => {
@@ -696,7 +735,7 @@ await sonda('C1|C4|C5', async () => {
   const avatar = await page.evaluate(() => document.querySelector('.avatar')?.textContent ?? null);
   await ctx.close();
   // O anel e o --laranja do Style Phoenix Padrao (o PhxSql usa o mesmo :focus-visible).
-  achado('C1', 'cosmetico', ['topo'], m === 'solid 2px rgb(255, 138, 28)', `anel de foco de uma acao: ${m}`);
+  achado('C1', 'cosmetico', ['topo'], m === `solid 2px ${rgbDe(tokensPhx(TEMA)['--laranja'])}`, `anel de foco de uma acao: ${m}`);
   achado('C4', 'cosmetico', ['topo'], avatar === null, `avatar fixo: ${avatar}`);
   achado('C5', 'cosmetico', ['rodape'], !rodape, `rodape dentro de <main>: ${rodape}`);
 });
@@ -716,28 +755,232 @@ await sonda('C2', async () => {
   achado('C2', 'cosmetico', ['topo'], soltas.length === 0, `hover das acoes fora de @media(hover:hover): ${soltas.length}`);
 });
 
+/* ============================ TEMA (Style Phoenix Padrao) ============================ */
+// O fundo, o painel e o laranja do tema da vez, como a pagina os resolve.
+const tokensNaPagina = page => page.evaluate(() => {
+  const cs = getComputedStyle(document.documentElement);
+  return Object.fromEntries(['--fundo', '--painel-2', '--texto', '--laranja'].map(n => [n, cs.getPropertyValue(n).trim().toLowerCase()]));
+});
+const outro = t => (t === 'claro' ? 'escuro' : 'claro');
+
+await sonda('T1', async () => {
+  // A alternancia: visivel no topo, com nome acessivel pela fabrica, troca o tema, guarda a
+  // escolha e, sem escolha, segue o sistema -- inclusive sem localStorage.
+  const r = {};
+  for (const w of [1366, 390]) {
+    const { ctx, page } = await pagina({ w });
+    await abrirTela(page, 'geral', 900);
+    const bt = page.locator('.topbar').getByRole('button', { name: /tema|theme/i });
+    const n = await bt.count();
+    const caixa = n === 1 ? await bt.boundingBox() : null;
+    const antes = await page.evaluate(() => document.documentElement.dataset.tema);
+    const nome0 = n === 1 ? await bt.getAttribute('aria-label') : null;
+    if (n === 1) await bt.click();
+    await page.waitForTimeout(200);
+    const depois = await page.evaluate(() => ({ tema: document.documentElement.dataset.tema, meta: document.querySelector('meta[name="theme-color"]').content.toLowerCase(), fundo: getComputedStyle(document.documentElement).getPropertyValue('--fundo').trim().toLowerCase() }));
+    const nome1 = n === 1 ? await bt.getAttribute('aria-label') : null;
+    await page.reload();
+    await page.waitForTimeout(600);
+    const guardado = await page.evaluate(() => document.documentElement.dataset.tema);
+    await page.screenshot({ path: join(CAP, `q_T1_${TEMA}_${w}.png`) });
+    await ctx.close();
+    r[w] = { n, dentro: !!caixa && caixa.x >= 0 && caixa.x + caixa.width <= w && caixa.width >= 24 && caixa.height >= 24, antes, nome0, depois: depois.tema, nome1, meta: depois.meta === depois.fundo, guardado };
+  }
+  // Sem escolha guardada: o sistema decide, e a troca do sistema com a pagina aberta vale.
+  const sistema = {};
+  for (const esquema of ['light', 'dark']) {
+    const ctx = await browser.newContext({ viewport: { width: 1366, height: 768 }, colorScheme: esquema });
+    const page = await ctx.newPage();
+    await page.goto(`${ORIG}/index.html?screen=dashboard#geral`);
+    await page.waitForTimeout(400);
+    const inicio = await page.evaluate(() => document.documentElement.dataset.tema);
+    await page.emulateMedia({ colorScheme: esquema === 'light' ? 'dark' : 'light' });
+    await page.waitForTimeout(200);
+    sistema[esquema] = [inicio, await page.evaluate(() => document.documentElement.dataset.tema)];
+    await ctx.close();
+  }
+  // localStorage que lanca (modo privado, politica): a pagina abre, segue o sistema e troca.
+  const ctx = await browser.newContext({ viewport: { width: 1366, height: 768 }, colorScheme: esquemaDo(TEMA) });
+  await ctx.addInitScript(() => { const nao = () => { throw new Error('sem armazenamento'); }; Storage.prototype.getItem = nao; Storage.prototype.setItem = nao; });
+  const page = await ctx.newPage();
+  const erros = [];
+  page.on('pageerror', e => erros.push(String(e)));
+  await page.goto(`${ORIG}/index.html?screen=dashboard#geral`);
+  await page.waitForTimeout(700);
+  const semLs0 = await page.evaluate(() => document.documentElement.dataset.tema);
+  await page.click('#trocarTema').catch(e => erros.push(String(e)));
+  const semLs1 = await page.evaluate(() => document.documentElement.dataset.tema);
+  await ctx.close();
+  // O nome em ingles sai da fabrica tambem.
+  const { ctx: c4, page: p4 } = await pagina({ w: 1366, lang: 'en' });
+  await abrirTela(p4, 'geral', 700);
+  const nomeEn = await p4.$eval('#trocarTema', b => b.getAttribute('aria-label')).catch(() => null);
+  await c4.close();
+  const ok = Object.values(r).every(x => x.n === 1 && x.dentro && x.antes === TEMA && x.depois === outro(TEMA) && x.nome0 !== x.nome1 && /\p{L}{3}/u.test(x.nome0 || '') && x.meta && x.guardado === outro(TEMA))
+    && sistema.light.join() === 'claro,escuro' && sistema.dark.join() === 'escuro,claro'
+    && semLs0 === TEMA && semLs1 === outro(TEMA) && !erros.length
+    && nomeEn === (TEMA === 'claro' ? FAB['tema.para_escuro']?.en : FAB['tema.para_claro']?.en);
+  achado('T1', 'grave', ['topo'], ok, JSON.stringify({ r, sistema, semLocalStorage: [semLs0, semLs1, erros.slice(0, 1)], nomeEn }));
+});
+
+await sonda('T2', async () => {
+  // O que pinta fora da folha acompanha o tema: o canvas do terminal (cor que vem do motor),
+  // a grade e o cubo do phx-grid (tokens copiados na montagem). Mede no tema da vez e
+  // depois de trocar com a tela aberta.
+  const { ctx, page } = await pagina({ w: 1366 });
+  const canvasMede = () => page.evaluate(() => {
+    const c = document.getElementById('termCanvas');
+    const g = c.getContext('2d');
+    const d = g.getImageData(0, 0, c.width, c.height).data;
+    const px = (x, y) => { const i = (y * c.width + x) * 4; return [d[i], d[i + 1], d[i + 2]]; };
+    const lin = v => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
+    const L = ([r, gg, b]) => 0.2126 * lin(r) + 0.7152 * lin(gg) + 0.0722 * lin(b);
+    const fundo = px(c.width - 4, c.height - 4);
+    // Linhas 0 a 7 da grade de prova (prompt, texto padrao, amarelo e azul do ls): a tinta
+    // mais forte de cada linha tem de passar de 4,5:1 sobre o fundo.
+    const dpr = window.devicePixelRatio || 1, h = Math.ceil(14 * 1.25) * dpr;
+    const linhas = [];
+    for (let l = 0; l < 8; l++) {
+      let max = 1;
+      for (let y = Math.round(l * h); y < Math.round((l + 1) * h); y += 1) for (let x = 0; x < Math.min(c.width, 500 * dpr); x += 2) {
+        const p = px(x, y); const a = L(p), b = L(fundo); max = Math.max(max, (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05));
+      }
+      linhas.push(+max.toFixed(2));
+    }
+    const hex = p => '#' + p.map(v => v.toString(16).padStart(2, '0')).join('');
+    return { fundo: hex(fundo), linhas };
+  });
+  const gradeMede = () => page.evaluate(() => {
+    const wrap = document.querySelector('#agentesConteudo .phx-grid');
+    const th = document.querySelector('#agentesConteudo .phx-th');
+    return { escuro: wrap?.classList.contains('phx-tema-escuro'), th: th ? getComputedStyle(th).backgroundColor : null };
+  });
+  const cuboMede = () => page.evaluate(() => {
+    const cb = document.querySelector('#tela-absorcao .phx-cubo');
+    return cb ? { escuro: cb.classList.contains('phx-tema-escuro'), fundo: getComputedStyle(cb).backgroundColor } : null;
+  });
+  const fase = async () => {
+    const tok = await tokensNaPagina(page);
+    await abrirTela(page, 'agentes', 1000);
+    const grade = await gradeMede();
+    await abrirTela(page, 'absorcao', 1000);
+    // O cubo nasce no primeiro VER CUBO; depois so se mostra (o tema troca nele aberto).
+    if (await page.$eval('#absorcaoVerCubo', b => b.getAttribute('aria-pressed') !== 'true').catch(() => false)) {
+      await page.click('#absorcaoVerCubo');
+      await page.waitForTimeout(800);
+    }
+    const cubo = await cuboMede();
+    await abrirTela(page, 'ide', 500);
+    if (!(await page.$('#ideAbas button'))) { await page.click('#ideAbrirBash'); await page.waitForTimeout(500); }
+    else await page.waitForTimeout(300);
+    const term = await canvasMede();
+    const tema = await page.evaluate(() => document.documentElement.dataset.tema);
+    return { tema, tok, grade, cubo, term,
+      okTerm: term.fundo === tok['--fundo'] && term.linhas.every(x => x >= 4.5),
+      ok: grade.th === rgbDe(tok['--painel-2']) && grade.escuro === (tema === 'escuro')
+        && cubo !== null && cubo.escuro === (tema === 'escuro') && cubo.fundo === rgbDe(tok['--fundo']) };
+  };
+  await abrirTela(page, 'geral', 600);
+  const a = await fase();
+  await page.screenshot({ path: join(CAP, `q_T2_ide_${TEMA}.png`) });
+  await page.click('#trocarTema');
+  await page.waitForTimeout(300);
+  const b = await fase();
+  await page.screenshot({ path: join(CAP, `q_T2_ide_${TEMA}_trocado.png`) });
+  await ctx.close();
+  const ev = x => `${x.tema}: canvas fundo ${x.term.fundo} (token ${x.tok['--fundo']}) tinta por linha ${x.term.linhas.join('/')}; cabecalho da grade ${x.grade.th} (token ${x.tok['--painel-2']}) classe escuro=${x.grade.escuro}; cubo ${JSON.stringify(x.cubo)}`;
+  achado('T2', 'grave', ['ide'], a.okTerm && b.okTerm && b.tema === outro(TEMA), `${ev(a)} || trocado ${ev(b)}`);
+  achado('T2', 'grave', ['agentes', 'absorcao'], a.ok && b.ok, `grade e cubo: ${a.ok && b.ok ? 'seguem o tema' : `${ev(a)} || ${ev(b)}`}`);
+});
+
+await sonda('T3', async () => {
+  // Cor so nos tokens: nenhuma regra da folha fora de :root e :root[data-tema] traz cor
+  // literal (#hex, rgb(), hsl()). Medido pelo CSSOM da pagina carregada, regra por regra,
+  // dentro de @media tambem; url() fica de fora (o ruido e um SVG embutido).
+  const { ctx, page } = await pagina({ w: 1366 });
+  await abrirTela(page, 'agentes', 900);
+  const lit = await page.evaluate(() => {
+    const achou = [];
+    const anda = (regras, arq) => {
+      for (const r of regras) {
+        if (r.cssRules && !r.selectorText) { anda(r.cssRules, arq); continue; }
+        if (!r.selectorText || /^:root(\[data-tema="[a-z]+"\])?$/.test(r.selectorText.trim())) continue;
+        const corpo = r.style.cssText.replace(/url\([^)]*\)/g, '');
+        const m = corpo.match(/#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(/g);
+        if (m) achou.push(`${arq}: ${r.selectorText.slice(0, 40)} ${m.join(' ')}`);
+      }
+    };
+    for (const ss of document.styleSheets) {
+      const arq = (ss.href || '').split('/').pop();
+      if (/^(app|grades|tarefas)\.css$/.test(arq)) anda(ss.cssRules, arq);
+    }
+    return achou;
+  });
+  await ctx.close();
+  achado('T3', 'medio', ['topo'], lit.length === 0, `${lit.length} regras com cor fora dos tokens ${JSON.stringify(lit.slice(0, 6))}`);
+});
+
+await sonda('T4', async () => {
+  // Layout nas 4 larguras, tela por tela, no tema da vez: a pagina nao rola de lado e a tela
+  // aberta tambem nao (o que rola de lado e o envoltorio da grade, por dentro).
+  const r = {};
+  for (const w of [1920, 1366, 768, 390]) {
+    const { ctx, page } = await pagina({ w });
+    for (const t of ['splash', ...TELAS]) {
+      if (t === 'splash') { await page.goto(`${ORIG}/index.html?screen=splash`); await page.waitForTimeout(1200); }
+      else await abrirTela(page, t, t === 'config' ? 1400 : 800);
+      const m = await page.evaluate(t => {
+        const de = document.documentElement;
+        const sec = t === 'splash' ? document.querySelector('.splash-center') : document.querySelector('section.tela:not([hidden])');
+        return { doc: de.scrollWidth - de.clientWidth, tela: sec ? sec.scrollWidth - sec.clientWidth : 0 };
+      }, t);
+      if (w === 1366 || w === 390) await page.screenshot({ path: join(CAP, `q_T4_${TEMA}_${t}_${w}.png`) });
+      (r[t] ||= {})[w] = m;
+    }
+    await ctx.close();
+  }
+  for (const [t, por] of Object.entries(r)) {
+    const ruins = Object.entries(por).filter(([, m]) => m.doc > 1 || m.tela > 1);
+    const tela = t === 'splash' ? 'splash' : t;
+    achado('T4', 'grave', [tela], !ruins.length, ruins.length ? `rola de lado: ${JSON.stringify(Object.fromEntries(ruins))}` : `4 larguras sem rolagem lateral`, { so390: ruins.length > 0 && ruins.every(([w]) => w === '390') });
+  }
+});
+}
+
+for (const t of TEMAS) {
+  TEMA = t;
+  console.log(`\n======== TEMA ${t.toUpperCase()} ========`);
+  await rodar();
+}
+
 await browser.close();
 srv.close();
 
 /* ============================ VEREDITO ============================ */
+// Um veredito por tema: a tela so esta QUALIFICADA se estiver nos dois.
 const VER = {};
-for (const [k, t] of Object.entries(QTELAS)) {
-  const meus = achados.filter(a => a.telas.includes(k));
-  const falhos = meus.filter(a => !a.ok);
-  const fortes = falhos.filter(a => a.sev === 'bloqueia' || a.sev === 'grave');
-  const nao = fortes.filter(a => a.principal && !(a.so390 && t.mesa));
-  const veredito = nao.length ? 'NAO QUALIFICADA' : fortes.length ? 'QUALIFICADA COM RESSALVAS' : 'QUALIFICADA';
-  VER[k] = { nome: t.nome, veredito, fortes: [...new Set(fortes.map(a => a.id))], outros: [...new Set(falhos.filter(a => !fortes.includes(a)).map(a => a.id))] };
+for (const tm of TEMAS) {
+  VER[tm] = {};
+  for (const [k, t] of Object.entries(QTELAS)) {
+    const meus = achados.filter(a => a.tema === tm && a.telas.includes(k));
+    const falhos = meus.filter(a => !a.ok);
+    const fortes = falhos.filter(a => a.sev === 'bloqueia' || a.sev === 'grave');
+    const nao = fortes.filter(a => a.principal && !(a.so390 && t.mesa));
+    const veredito = nao.length ? 'NAO QUALIFICADA' : fortes.length ? 'QUALIFICADA COM RESSALVAS' : 'QUALIFICADA';
+    VER[tm][k] = { nome: t.nome, veredito, fortes: [...new Set(fortes.map(a => a.id))], outros: [...new Set(falhos.filter(a => !fortes.includes(a)).map(a => a.id))] };
+  }
 }
 if (SO) {
-  console.log(`sondas pedidas: ${achados.filter(a => a.ok).length}/${achados.length} ok`);
-  writeFileSync(join(OUT, 'qualificar-parcial.json'), JSON.stringify({ ui: UI, achados }, null, 1));
+  console.log(`sondas pedidas: ${achados.filter(a => a.ok).length}/${achados.length} ok (temas: ${TEMAS.join(', ')})`);
+  writeFileSync(join(OUT, 'qualificar-parcial.json'), JSON.stringify({ ui: UI, temas: TEMAS, achados }, null, 1));
   process.exit(achados.some(a => !a.ok) ? 1 : 0);
 }
-console.log('\nVEREDITO POR TELA (criterio do relatorio de 01/10/2026)');
-for (const v of Object.values(VER)) console.log(`  ${v.nome.padEnd(26)} ${v.veredito.padEnd(26)} ${v.fortes.length ? `[${v.fortes.join(' ')}]` : ''}${v.outros.length ? ` medios/cosmeticos: ${v.outros.join(' ')}` : ''}`);
+for (const tm of TEMAS) {
+  console.log(`\nVEREDITO POR TELA, TEMA ${tm.toUpperCase()} (criterio do relatorio de 01/10/2026)`);
+  for (const v of Object.values(VER[tm])) console.log(`  ${v.nome.padEnd(26)} ${v.veredito.padEnd(26)} ${v.fortes.length ? `[${v.fortes.join(' ')}]` : ''}${v.outros.length ? ` medios/cosmeticos: ${v.outros.join(' ')}` : ''}`);
+}
 const nFalhas = achados.filter(a => !a.ok).length;
-console.log(`sondas: ${achados.length - nFalhas}/${achados.length} ok • telas QUALIFICADAS: ${Object.values(VER).filter(v => v.veredito === 'QUALIFICADA').length}/${Object.keys(VER).length}`);
-writeFileSync(join(OUT, SO ? 'qualificar-parcial.json' : 'qualificar.json'), JSON.stringify({ ui: UI, achados, veredito: VER }, null, 1));
-if (SO) process.exit(achados.some(a => !a.ok) ? 1 : 0);
-process.exit(Object.values(VER).every(v => v.veredito === 'QUALIFICADA') ? 0 : 1);
+const qual = tm => Object.values(VER[tm]).filter(v => v.veredito === 'QUALIFICADA').length;
+console.log(`sondas: ${achados.length - nFalhas}/${achados.length} ok • telas QUALIFICADAS: ${TEMAS.map(tm => `${tm} ${qual(tm)}/${Object.keys(QTELAS).length}`).join(' • ')}`);
+writeFileSync(join(OUT, 'qualificar.json'), JSON.stringify({ ui: UI, temas: TEMAS, achados, veredito: VER }, null, 1));
+process.exit(TEMAS.every(tm => Object.values(VER[tm]).every(v => v.veredito === 'QUALIFICADA')) ? 0 : 1);

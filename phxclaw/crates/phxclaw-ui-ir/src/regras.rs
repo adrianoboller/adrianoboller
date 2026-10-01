@@ -103,6 +103,9 @@ pub fn msg_chave_repetida(e: &Entidade) -> String {
 }
 
 pub fn de(app: &App) -> Vec<Entidade> {
+    // Rust e WLanguage validam na ordem de tabulacao lida (v2): o primeiro erro e o do
+    // primeiro campo da tela
+    let app = &app.com_layout();
     let chave_de = |ent: &str| {
         app.entities
             .iter()

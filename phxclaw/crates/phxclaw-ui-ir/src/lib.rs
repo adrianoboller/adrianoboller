@@ -5,10 +5,12 @@
 //! renderizador (`html`) nao conhece SQL. Renderizadores novos (React, WinDev, WebDev,
 //! Flutter) leem o mesmo IR sem tocar na inteligencia de ERP.
 
+pub mod fidelidade;
 pub mod flutter;
 pub mod html;
 pub mod imagem;
 pub mod ir;
+pub mod layout;
 pub mod react;
 pub mod regras;
 pub mod rust;

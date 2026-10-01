@@ -8,6 +8,8 @@ use crate::ir::{App, Screen};
 use serde_json::{Value, json};
 
 pub fn render(app: &App) -> Vec<(String, String)> {
+    // o JSON embutido ja sai com secoes e colunas na ordem lida (v2): o app nao a refaz
+    let app = &app.com_layout();
     vec![
         ("pubspec.yaml".into(), pubspec(app)),
         // proprio, para o `flutter create` nao escrever um que inclui o pacote

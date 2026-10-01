@@ -180,6 +180,8 @@ pub const CAPACIDADES_QUE_ESCREVEM: &[&str] = &[
     "device.command",
     "media.tts",
     "media.generate",
+    // Parecer Go/NoGo do conselho de integradores: grava na pasta do agente.
+    "gonogo.write",
 ];
 
 /// Capacidades cujas ferramentas criam processo. Para elas a regra de comando vale MESMO

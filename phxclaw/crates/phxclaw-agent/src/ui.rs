@@ -78,6 +78,18 @@ pub fn gravar_telas(
     ctx: &ToolContext,
 ) -> Result<ToolOutput, ToolError> {
     let (app, avisos) = phxclaw_ui_ir::from_sql(nome, sql);
+    gravar_app(&app, &avisos, pasta, args, ctx)
+}
+
+/// O UI-IR ja montado -> arquivos. Quem chega por print passa por aqui com o layout lido
+/// dentro do app; quem chega por SQL, sem.
+pub fn gravar_app(
+    app: &phxclaw_ui_ir::App,
+    avisos: &[String],
+    pasta: &str,
+    args: &Value,
+    ctx: &ToolContext,
+) -> Result<ToolOutput, ToolError> {
     if app.entities.is_empty() {
         // Tela vazia publicada como sucesso seria a pior resposta: diz por que.
         return Err(ToolError::InvalidArguments(format!(
@@ -91,22 +103,22 @@ pub fn gravar_telas(
     }
     let dir = confine(&ctx.workdir, pasta).map_err(ToolError::Denied)?;
     std::fs::create_dir_all(&dir).map_err(|e| ToolError::Failed(e.to_string()))?;
-    let ir = serde_json::to_vec_pretty(&app).map_err(|e| ToolError::Failed(e.to_string()))?;
+    let ir = serde_json::to_vec_pretty(app).map_err(|e| ToolError::Failed(e.to_string()))?;
     std::fs::write(dir.join("ui-ir.json"), ir).map_err(|e| ToolError::Failed(e.to_string()))?;
-    std::fs::write(dir.join("index.html"), phxclaw_ui_ir::html::render(&app))
+    std::fs::write(dir.join("index.html"), phxclaw_ui_ir::html::render(app))
         .map_err(|e| ToolError::Failed(e.to_string()))?;
     let mut artefatos = vec![];
     let react = args.get("react").and_then(Value::as_bool) == Some(true);
     let quer = |k: &str| args.get(k).and_then(Value::as_bool) == Some(true);
     let mut extras = vec![];
     if react {
-        extras.push(("react", phxclaw_ui_ir::react::render(&app)));
+        extras.push(("react", phxclaw_ui_ir::react::render(app)));
     }
     if quer("rust") {
-        extras.push(("rust", phxclaw_ui_ir::rust::render(&app)));
+        extras.push(("rust", phxclaw_ui_ir::rust::render(app)));
     }
     if quer("wlanguage") {
-        extras.push(("wlanguage", phxclaw_ui_ir::wlanguage::render(&app)));
+        extras.push(("wlanguage", phxclaw_ui_ir::wlanguage::render(app)));
     }
     for (sub, lista) in extras {
         for (p, c) in lista {
@@ -158,7 +170,8 @@ pub fn gravar_telas(
 
 /// Print de tela -> telas ERP. A borda le a imagem (OCR com tesseract e tres perguntas a um
 /// modelo de visao local); o nucleo deterministico (`phxclaw_ui_ir::imagem`) confirma cada
-/// rotulo contra o OCR e escreve o SQL. O que o modelo inventar nao passa: rotulo que nao
+/// rotulo contra o OCR e escreve o SQL, e o layout (`phxclaw_ui_ir::layout`) grava no UI-IR
+/// a posicao, o grupo e a ordem de cada rotulo pelas caixas do mesmo OCR. O que o modelo inventar nao passa: rotulo que nao
 /// esta escrito na tela e descartado.
 pub struct ScreenshotToErpUiTool;
 
@@ -168,15 +181,131 @@ const PERGUNTA_CAMPOS: &str = "This is a screenshot of a business application fo
 const PERGUNTA_LISTAS: &str = "List the labels of the dropdown (select) fields in the main form area, exactly as written. Answer only a JSON array of strings.";
 const PERGUNTA_GRADE: &str = "What are the column headers of the items table in this screenshot? Answer only a JSON array of strings.";
 
-async fn ocr(png: &std::path::Path, prazo: std::time::Duration) -> Result<Vec<String>, ToolError> {
+/// O que se leu de uma captura: o OCR (linhas e layout), o que o modelo disse quando foi
+/// perguntado, e os rotulos que ficaram.
+pub struct LeituraDeTela {
+    pub linhas: Vec<String>,
+    pub layout: phxclaw_ui_ir::layout::Layout,
+    /// Modelo de visao perguntado; `None` = so OCR + layout.
+    pub modelo: Option<String>,
+    pub respostas: Vec<String>,
+    pub campos: Vec<phxclaw_ui_ir::imagem::Rotulo>,
+    pub itens: Vec<phxclaw_ui_ir::imagem::Rotulo>,
+}
+
+/// Servidor e modelo de visao configurados: a UNICA leitura deles, para a ferramenta e a
+/// prova de fidelidade perguntarem ao mesmo modelo.
+pub fn modelo_de_visao() -> (String, String) {
+    let modelo = std::env::var("PHXCLAW_MODELO_VISAO").unwrap_or_else(|_| "qwen2.5vl:3b".into());
+    let base = std::env::var("OLLAMA_HOST").unwrap_or_else(|_| "http://127.0.0.1:11434".into());
+    let base = if base.starts_with("http") {
+        base
+    } else {
+        format!("http://{base}")
+    };
+    (base, modelo)
+}
+
+/// Le uma captura. O OCR roda UMA vez, em TSV, no bwrap: dele saem as linhas (a regua da
+/// confirmacao) e o layout (posicao, grupo, ordem). Com `visao`, as tres perguntas ao
+/// modelo, confirmadas pelo OCR; sem, os rotulos vem do proprio layout -- o modo que a
+/// prova de fidelidade mede sem esperar ~90 s de modelo por tela.
+pub async fn ler_tela(
+    png: &std::path::Path,
+    visao: Option<(&str, &str)>,
+    prazo: std::time::Duration,
+) -> Result<LeituraDeTela, ToolError> {
+    use phxclaw_ui_ir::{imagem, layout};
     // psm 11 (texto esparso): rotulo de tela nao e paragrafo
-    Ok(crate::visao::tesseract(png, "por+eng", Some(11), prazo)
-        .await?
-        .lines()
-        .map(str::trim)
-        .filter(|l| !l.is_empty())
-        .map(str::to_owned)
-        .collect())
+    let tsv = crate::visao::tesseract_tsv(png, "por+eng", Some(11), prazo).await?;
+    let (palavras, largura, altura) = layout::ler_tsv(&tsv);
+    let linhas = layout::linhas(&palavras);
+    let lay = layout::analisar(&palavras, largura, altura);
+    let Some((base, modelo)) = visao else {
+        return Ok(LeituraDeTela {
+            linhas,
+            campos: lay.campos(),
+            itens: lay.colunas(),
+            layout: lay,
+            modelo: None,
+            respostas: vec![],
+        });
+    };
+    let bytes = std::fs::read(png).map_err(|e| ToolError::Failed(e.to_string()))?;
+    let llm = phxclaw_llm::OllamaLlm::with_timeout(base, modelo, prazo)
+        .map_err(|e| ToolError::Failed(e.to_string()))?;
+    let mut respostas = vec![];
+    for p in [PERGUNTA_CAMPOS, PERGUNTA_LISTAS, PERGUNTA_GRADE] {
+        let r = llm
+            .perguntar_com_imagem(p, &bytes)
+            .await
+            .map_err(|e| ToolError::Failed(format!("modelo de visao {modelo}: {e}")))?;
+        respostas.push(r);
+    }
+    let itens = lay.confirmar_colunas(&imagem::confirmar(
+        &imagem::lista_da_resposta(&respostas[2]),
+        &[],
+        &linhas,
+    ));
+    let campos = imagem::confirmar(
+        &imagem::lista_da_resposta(&respostas[0]),
+        &imagem::lista_da_resposta(&respostas[1]),
+        &linhas,
+    );
+    let campos = imagem::sem_itens(&campos, &itens);
+    Ok(LeituraDeTela {
+        linhas,
+        layout: lay,
+        modelo: Some(modelo.to_string()),
+        respostas,
+        campos,
+        itens,
+    })
+}
+
+/// Leitura -> SQL -> UI-IR, com o layout lido gravado na tela principal da tabela. Cada
+/// rotulo vira o campo pelo MESMO `imagem::coluna` que escreveu o SQL; o "Codigo" e a chave.
+pub fn app_da_leitura(
+    nome: &str,
+    tabela: &str,
+    l: &LeituraDeTela,
+) -> (phxclaw_ui_ir::App, Vec<String>, String) {
+    use phxclaw_ui_ir::{Screen, imagem};
+    let sql = imagem::sql(tabela, &l.campos, &l.itens);
+    let (mut app, avisos) = phxclaw_ui_ir::from_sql(nome, &sql);
+    let t = imagem::coluna(tabela);
+    let ti = format!("{t}_item");
+    let tela = app.screens.iter().find_map(|s| match s {
+        Screen::Form { id, entity, .. } if *entity == t => Some(id.clone()),
+        Screen::MasterDetail { id, master, .. } if *master == t => Some(id.clone()),
+        _ => None,
+    });
+    let existe = |app: &phxclaw_ui_ir::App, e: &str, c: &str| {
+        app.entities
+            .iter()
+            .any(|x| x.name == e && x.fields.iter().any(|f| f.name == c))
+    };
+    if let Some(tela) = tela {
+        let mut escolhidos = vec![];
+        for (rotulos, ent) in [(&l.campos, &t), (&l.itens, &ti)] {
+            for r in rotulos {
+                let c = match imagem::coluna(&r.texto).as_str() {
+                    "codigo" => "id".to_string(),
+                    c => c.to_string(),
+                };
+                if let Some(i) = l.layout.achar(&r.texto)
+                    && existe(&app, ent, &c)
+                    && !escolhidos.iter().any(|(j, _, _)| *j == i)
+                {
+                    escolhidos.push((i, ent.clone(), c));
+                }
+            }
+        }
+        if !escolhidos.is_empty() {
+            app.layouts.push(l.layout.para_ir(&tela, &escolhidos));
+        }
+    }
+    (app, avisos, sql)
 }
 
 impl Tool for ScreenshotToErpUiTool {
@@ -196,7 +325,8 @@ outputs as design_erp_ui. Labels not actually written on the screenshot are disc
                 "flutter":{"type":"boolean"},
                 "react":{"type":"boolean"},
                 "rust":{"type":"boolean"},
-                "wlanguage":{"type":"boolean"}
+                "wlanguage":{"type":"boolean"},
+                "vision":{"type":"boolean","description":"ask the local vision model (default true); false = OCR + layout only"}
             },"required":["image","table"]}),
         }
     }
@@ -209,7 +339,6 @@ outputs as design_erp_ui. Labels not actually written on the screenshot are disc
         ctx: &'a ToolContext,
     ) -> BoxFut<'a, Result<ToolOutput, ToolError>> {
         Box::pin(async move {
-            use phxclaw_ui_ir::imagem;
             let texto = |k: &str| {
                 args.get(k)
                     .and_then(Value::as_str)
@@ -226,40 +355,21 @@ outputs as design_erp_ui. Labels not actually written on the screenshot are disc
                 .trim_matches('/')
                 .to_string();
             let caminho = confine(&ctx.workdir, img).map_err(ToolError::Denied)?;
-            let bytes = std::fs::read(&caminho).map_err(|e| ToolError::Failed(e.to_string()))?;
-
-            let linhas = ocr(&caminho, ctx.timeout).await?;
-            let modelo =
-                std::env::var("PHXCLAW_MODELO_VISAO").unwrap_or_else(|_| "qwen2.5vl:3b".into());
-            let base =
-                std::env::var("OLLAMA_HOST").unwrap_or_else(|_| "http://127.0.0.1:11434".into());
-            let base = if base.starts_with("http") {
-                base
-            } else {
-                format!("http://{base}")
-            };
-            let visao = phxclaw_llm::OllamaLlm::with_timeout(&base, &modelo, ctx.timeout)
-                .map_err(|e| ToolError::Failed(e.to_string()))?;
-            let mut respostas = vec![];
-            for p in [PERGUNTA_CAMPOS, PERGUNTA_LISTAS, PERGUNTA_GRADE] {
-                let r = visao
-                    .perguntar_com_imagem(p, &bytes)
-                    .await
-                    .map_err(|e| ToolError::Failed(format!("modelo de visao {modelo}: {e}")))?;
-                respostas.push(r);
-            }
-            let itens = imagem::confirmar(&imagem::lista_da_resposta(&respostas[2]), &[], &linhas);
-            let campos = imagem::confirmar(
-                &imagem::lista_da_resposta(&respostas[0]),
-                &imagem::lista_da_resposta(&respostas[1]),
-                &linhas,
-            );
-            let campos = imagem::sem_itens(&campos, &itens);
+            // vision:false = so OCR + layout, sem modelo (o modo da prova de fidelidade)
+            let (base, modelo) = modelo_de_visao();
+            let com_modelo = args.get("vision").and_then(Value::as_bool) != Some(false);
+            let l = ler_tela(
+                &caminho,
+                com_modelo.then_some((base.as_str(), modelo.as_str())),
+                ctx.timeout,
+            )
+            .await?;
+            let (campos, itens) = (&l.campos, &l.itens);
             let dir = confine(&ctx.workdir, &pasta).map_err(ToolError::Denied)?;
             std::fs::create_dir_all(&dir).map_err(|e| ToolError::Failed(e.to_string()))?;
             // a trilha da leitura: o que o OCR viu, o que o modelo disse, o que ficou
             let leitura = json!({
-                "imagem": img, "modelo": modelo, "ocr": linhas, "respostas": respostas,
+                "imagem": img, "modelo": l.modelo, "ocr": l.linhas, "respostas": l.respostas,
                 "campos": campos.iter().map(|r| json!({"rotulo": r.texto, "obrigatorio": r.obrigatorio, "lista": r.lista})).collect::<Vec<_>>(),
                 "itens": itens.iter().map(|r| r.texto.clone()).collect::<Vec<_>>(),
             });
@@ -271,14 +381,17 @@ outputs as design_erp_ui. Labels not actually written on the screenshot are disc
             if campos.is_empty() {
                 return Err(ToolError::Failed(format!(
                     "nenhum rotulo confirmado na tela (o OCR leu {} linhas; o modelo disse {:?}); veja {pasta}/leitura.json",
-                    linhas.len(),
-                    respostas[0].chars().take(200).collect::<String>()
+                    l.linhas.len(),
+                    l.respostas
+                        .first()
+                        .map(|r| r.chars().take(200).collect::<String>())
+                        .unwrap_or_default()
                 )));
             }
-            let sql = imagem::sql(tabela, &campos, &itens);
+            let (app, avisos, sql) = app_da_leitura(nome, tabela, &l);
             std::fs::write(dir.join("tela.sql"), &sql)
                 .map_err(|e| ToolError::Failed(e.to_string()))?;
-            let mut saida = gravar_telas(nome, &sql, &pasta, &args, ctx)?;
+            let mut saida = gravar_app(&app, &avisos, &pasta, &args, ctx)?;
             for f in ["tela.sql", "leitura.json"] {
                 saida.artifacts.push(
                     artifact_for(&ctx.workdir, &format!("{pasta}/{f}"))

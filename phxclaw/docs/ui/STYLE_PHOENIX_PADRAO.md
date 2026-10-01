@@ -67,3 +67,26 @@ A sprint de qualificação da UI do PhxClaw (SP000027) passa a usar este documen
 os mesmos nomes de token (`--fundo`, `--painel`, `--laranja`, `--acao-*`), Exo 2 + IBM Plex Mono
 **locais**, os dois temas, ícones de traço uniforme e as cinco cores de ação só onde há ação. Os
 nove defeitos acima não se copiam.
+
+## Tema claro ligado (01/10/2026)
+
+- **Como se escolhe:** o botão do topo (sol no escuro, lua no claro; nome acessível pela fábrica,
+  `tema.para_claro` / `tema.para_escuro`) guarda a escolha em `phxclaw.tema`; sem escolha vale o
+  `prefers-color-scheme` do sistema, e a troca do sistema com a página aberta também vale. Só o
+  clique guarda — o PhxSql guarda o tema do sistema já na primeira visita, e daí em diante
+  trocar o sistema não muda mais nada. `localStorage` que lança não derruba a página (`tema.js`).
+- **Onde mora a cor:** só nos dois blocos de token do `app.css`. As 49 cores literais que havia
+  fora deles (48 `rgba()` de painel, brilho e contorno no `app.css`/`grades.css`, e o `#000` da
+  máscara do splash, que virou `black`) viraram mistura de token (`color-mix`), e por isso
+  a troca não precisa de regra nenhuma por tema. Fora dos blocos: 0 hex, 0 rgb().
+- **O que pinta fora da folha acompanha:** o canvas do terminal (fundo e texto padrão viram
+  `--fundo`/`--texto`; a outra tinta do motor escurece até 4,5:1 sobre o fundo dela, como o
+  `minimumContrastRatio` dos emuladores), a grade e o cubo do phx-grid (classe de tema e tokens
+  relidos), e o `theme-color` (lido do `--fundo`).
+- **Duas divergências do PhxSql, medidas:** `--aviso` claro é `#7d5f18` e não `#8a6a1f` (este
+  mede 4,37:1 sobre `--painel-2`), e o texto em âmbar usa `--aviso`, não `--ambar` (`#a06a00`
+  mede 4,2:1 sobre o papel). Os 16 tokens adotados (sonda M10) seguem iguais aos do PhxSql nos
+  dois temas. O `--aviso` do PhxSql no claro é defeito de lá, a reportar.
+- **Prova:** `tests/desktop/qualificacao/qualificar.mjs` roda as 12 telas nos dois temas (sondas
+  T1 alternância, T2 terminal/grade/cubo, T3 cor fora dos tokens, T4 layout nas 4 larguras, e
+  todas as anteriores, com o esperado por tema lido do fonte do PhxSql).

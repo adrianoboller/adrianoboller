@@ -11,10 +11,11 @@
 // PRIMEIRA visita sem rede mandava «rodar cargo» (o arquivo existia; quem caiu foi a rede) e
 // a tela caia na fonte do sistema (qualificacao de 01/10/2026, G7).
 // Casca 4: a IBM Plex Mono (dado em mono, Style Phoenix Padrao) entrou, local como a Exo 2.
-const CACHE = 'phxclaw-casca-5';
+// Casca 6: o tema.js (tema claro do Style Phoenix Padrao) entrou.
+const CACHE = 'phxclaw-casca-6';
 const CASCA = [
   './', './index.html', './manifest.webmanifest',
-  './assets/app.css', './assets/app.js', './assets/idiomas.js', './assets/tarefas.js', './assets/tarefas.css',
+  './assets/app.css', './assets/app.js', './assets/tema.js', './assets/idiomas.js', './assets/tarefas.js', './assets/tarefas.css',
   './assets/grades.js', './assets/grades.css', './assets/config.js', './assets/config-catalogo.json',
   './assets/vendor/phx-grid/phx-grid.js', './assets/vendor/phx-grid/phx-grid.css',
   './assets/textos.json', './assets/phoenix-mark.svg', './assets/fonte/exo2-latin.woff2',

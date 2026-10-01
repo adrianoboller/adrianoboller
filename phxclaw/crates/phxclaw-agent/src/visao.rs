@@ -87,6 +87,27 @@ pub async fn tesseract(
     psm: Option<u8>,
     prazo: Duration,
 ) -> Result<String, ToolError> {
+    tesseract_com(imagem, idiomas, psm, None, prazo).await
+}
+
+/// O mesmo tesseract, no mesmo bwrap, com a saida em TSV: uma linha por palavra com a
+/// caixa dela -- e o que o layout da tela (`phxclaw_ui_ir::layout`) le.
+pub async fn tesseract_tsv(
+    imagem: &Path,
+    idiomas: &str,
+    psm: Option<u8>,
+    prazo: Duration,
+) -> Result<String, ToolError> {
+    tesseract_com(imagem, idiomas, psm, Some("tsv"), prazo).await
+}
+
+async fn tesseract_com(
+    imagem: &Path,
+    idiomas: &str,
+    psm: Option<u8>,
+    formato: Option<&str>,
+    prazo: Duration,
+) -> Result<String, ToolError> {
     let vazia = PastaTemp::nova("phx-tess")?;
     let mut argv = vec![
         "tesseract".to_string(),
@@ -98,6 +119,8 @@ pub async fn tesseract(
     if let Some(p) = psm {
         argv.extend(["--psm".into(), p.to_string()]);
     }
+    // o formato e um arquivo de configuracao do proprio tesseract, e vai por ultimo
+    argv.extend(formato.map(str::to_string));
     let saida = isolado(&argv, imagem, &vazia.0, prazo).await?;
     if saida.exit_code == Some(127) {
         return Err(ToolError::Failed(

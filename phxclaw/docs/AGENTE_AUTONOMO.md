@@ -26,7 +26,7 @@ sem SMTP não há `send_email`, sem token não há `github` — e por isso há d
 montou aqui e o que existe no código mas não montou.
 
 <!-- gerado:ferramentas:inicio -->
-Medido em 2026-10-01 por `python3 tools/gerar_doc_agente.py`, de `phxclaw ferramentas` (versao 0.70.0, binario de 2026-10-01 12:25), com `PHXCLAW_CAPACIDADES` no padrao. **64 ferramentas montadas nesta maquina**, 54 concedidas por padrao.
+Medido em 2026-10-01 por `python3 tools/gerar_doc_agente.py`, de `phxclaw ferramentas` (versao 0.70.0, binario de 2026-10-01 15:57), com `PHXCLAW_CAPACIDADES` no padrao. **65 ferramentas montadas nesta maquina**, 54 concedidas por padrao.
 
 | Capacidade | Padrao | Ferramentas |
 |---|---|---|
@@ -40,6 +40,7 @@ Medido em 2026-10-01 por `python3 tools/gerar_doc_agente.py`, de `phxclaw ferram
 | `fs.write` | sim | `write_file`, `edit_file`, `image_render`, `zip`, `data_file_format`, `pdf_create`, `notebook_edit`, `checkpoint_restore` |
 | `git.read` | sim | `git` |
 | `git.write` | sim | `git_write`, `git_worktree` |
+| `gonogo.write` | **nao** | `go_no_go` |
 | `media.generate` | **nao** | `image_generate` |
 | `media.stt` | **nao** | `transcribe` |
 | `media.tts` | **nao** | `speak` |
@@ -124,6 +125,7 @@ Medido em 2026-10-01 por `python3 tools/gerar_doc_agente.py`, de `phxclaw ferram
 | `git` | `git.read` | Read a git repository in the task directory, structured JSON. action: status; diff {rev?, cached?, paths?} (files and hunks); log {rev?, limit?, paths?}; show {rev}; blame {file, start_line?, end_line?, rev?}; branches. 'path' selects the repo folder (default: task root). |
 | `git_write` | `git.write` | Change a git repository in the task directory (sandboxed, no network). action: init {branch?}; add {paths}; commit {message, all?}; checkout {branch, create?, base?}; branch_create {branch, base?}; branch_delete {branch, force?}; stash {op: push\|pop\|apply\|drop\|list, message?, include_untracked?, index?}. 'path' selects the repo folder (default: task root). |
 | `git_worktree` | `git.write` | Isolated git worktrees for parallel tasks. action=add {name, branch?, base?} creates <repo>/.worktrees/<name> on branch phxclaw/<name> (returns its path, usable as 'path' in git/git_write and file tools); action=list; action=remove {name, force?}. 'path' selects the main repo. |
+| `go_no_go` | `gonogo.write` | Integrators' council Go/NoGo. action: record {integration, integrator, verdict: OK\|NOGO, errors? (required for NOGO), integrators? (other active integrators)}; status {integration}. Decision: any current NOGO -> NOGO; an active integrator without verdict -> WAIT; all OK -> GO. Only the same integrator can replace own NOGO. |
 | `lsp` | `fs.read` | Read-only language server queries on files in the task directory (rust (.rs), python (.py, .pyi)). action=definition\|references\|hover need path, line and column (1-based); action=symbols with path lists the file's symbols, with query searches the workspace; action=diagnostics returns the file's errors and warnings. Never edits files. |
 | `team_list` | `team.read` | List the 111 PhxClaw team roles (id \| name \| macro-area \| type \| criticality \| main capability \| when to call). Filter with 'macroarea' and/or 'text'; pass 'id' (number or name) to get one role in full. Use before team_delegate to pick the right role. |
 | `team_delegate` | `team.delegate` | Delegate one self-contained sub-task to a PhxClaw team role (by id or name, see team_list). The role runs as a sub-agent with its own mission and limits and only the tools both it and you are allowed; returns its answer. Human roles do not run: they come back asking for a human decision. |
@@ -187,6 +189,7 @@ AGENTE:
 
 EQUIPE E FLUXOS:
   equipe        Os papeis da equipe: listar, mostrar, delegar
+  gonogo        Conselho de integradores: registrar parecer, ver, decidir Go/NoGo
   fluxo         Fluxo em DAG: rodar e retomar
 
 CODIGO:
@@ -210,6 +213,7 @@ CREDENCIAIS (vao para o SecretBroker, nunca para arquivo):
 MEDICAO (so numero medido, com faixa min-max, N e data):
   repetir       Repete uma gravacao sem modelo e acusa a divergencia com o passo
   avaliar       Compara modelos pelo agente: p50/p95, tokens/s, CPU, energia e acerto
+  ui            Prova a conversao de tela em ida e volta contra o gabarito
   skill         Otimiza uma skill por A/B medido; so promove sem cruzar faixas
 
 DIAGNOSTICO:

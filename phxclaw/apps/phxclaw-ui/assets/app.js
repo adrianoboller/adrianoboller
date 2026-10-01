@@ -766,6 +766,47 @@ const ide = (() => {
 
   const hex = n => `#${(n >>> 0).toString(16).padStart(6, '0')}`;
 
+  // TEMA DO TERMINAL: o motor manda as cores ja resolvidas para o fundo escuro da marca (o
+  // fundo padrao dele E o --fundo escuro). No claro o canvas acompanha a folha: o fundo e o
+  // texto padrao viram os tokens --fundo e --texto (e o video reverso, que troca os dois,
+  // continua trocado), e toda outra cor de letra escurece ate 4,5:1 sobre o fundo dela -- o
+  // mesmo que o minimumContrastRatio dos emuladores faz. O TEXTO nao muda: so a tinta.
+  let tintas = null;
+  const cache = new Map();
+  const rgb = n => [(n >>> 16) & 255, (n >>> 8) & 255, n & 255];
+  const deHex = h => parseInt(h.replace('#', '').replace(/^(.)(.)(.)$/, '$1$1$2$2$3$3'), 16);
+  const lum = c => { const l = v => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }; const [r, g, b] = rgb(c); return 0.2126 * l(r) + 0.7152 * l(g) + 0.0722 * l(b); };
+  const razao = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
+  function lerTintas() {
+    const cs = getComputedStyle(document.documentElement);
+    const t = n => deHex(cs.getPropertyValue(n).trim());
+    tintas = { claro: document.documentElement.dataset.tema === 'claro', fundo: t('--fundo'), texto: t('--texto'), cursor: cs.getPropertyValue('--ambar').trim() };
+    cache.clear();
+  }
+  // O fundo de um trecho no tema da tela.
+  function fundoNoTema(s, n) {
+    if (!tintas.claro) return n;
+    if (n === s.fundo) return tintas.fundo;
+    if (n === s.frente) return tintas.texto;
+    return n;
+  }
+  // A letra de um trecho no tema da tela, legivel sobre o fundo dela.
+  function letraNoTema(s, n, fundo) {
+    if (!tintas.claro) return n;
+    if (n === s.frente) return tintas.texto;
+    if (n === s.fundo) return tintas.fundo;
+    const k = `${n}/${fundo}`;
+    if (cache.has(k)) return cache.get(k);
+    let c = n;
+    const escurecer = lum(fundo) > 0.18;
+    for (let i = 0; i < 20 && razao(c, fundo) < 4.5; i++) {
+      const [r, g, b] = rgb(c).map(v => Math.round(escurecer ? v * 0.85 : v + (255 - v) * 0.15));
+      c = (r << 16) | (g << 8) | b;
+    }
+    cache.set(k, c);
+    return c;
+  }
+
   function medir() {
     ctx.font = FONTE;
     cel = { w: ctx.measureText('M').width, h: Math.ceil(FONTE_PX * 1.25) };
@@ -791,18 +832,20 @@ const ide = (() => {
   }
 
   function desenharLinha(s, y) {
+    if (!tintas) lerTintas();
     const linha = s.grade[y] || [];
-    ctx.fillStyle = hex(s.fundo);
+    ctx.fillStyle = hex(fundoNoTema(s, s.fundo));
     ctx.fillRect(0, y * cel.h, canvas.width, cel.h);
     ctx.textBaseline = 'top';
     for (const t of linha) {
       const x0 = t.x * cel.w;
+      const fundo = fundoNoTema(s, t.fundo);
       if (t.fundo !== s.fundo) {
-        ctx.fillStyle = hex(t.fundo);
+        ctx.fillStyle = hex(fundo);
         ctx.fillRect(x0, y * cel.h, t.largura * cel.w, cel.h);
       }
       ctx.font = `${t.estilo & 2 ? 'italic ' : ''}${t.estilo & 1 ? 'bold ' : ''}${FONTE}`;
-      ctx.fillStyle = hex(t.frente);
+      ctx.fillStyle = hex(letraNoTema(s, t.frente, fundo));
       const chars = [...t.texto];
       const ty = y * cel.h + 2;
       if (chars.length === t.largura) chars.forEach((c, i) => { if (c !== ' ') ctx.fillText(c, x0 + i * cel.w, ty); });
@@ -813,8 +856,8 @@ const ide = (() => {
     const c = s.cursor;
     if (c && c.y === y && !s.encerrado) {
       const cx = c.x * cel.w, cy = c.y * cel.h;
-      ctx.fillStyle = '#ffc43d';
-      ctx.strokeStyle = '#ffc43d';
+      ctx.fillStyle = tintas.cursor;
+      ctx.strokeStyle = tintas.cursor;
       if (!focado || c.forma === 'oco') ctx.strokeRect(cx + 0.5, cy + 0.5, cel.w - 1, cel.h - 1);
       else if (c.forma === 'barra') ctx.fillRect(cx, cy, 2, cel.h);
       else if (c.forma === 'sublinhado') ctx.fillRect(cx, cy + cel.h - 2, cel.w, 2);
@@ -827,7 +870,8 @@ const ide = (() => {
     prepararCanvas();
     const todas = linhas === null;
     if (todas) {
-      ctx.fillStyle = hex(s.fundo);
+      if (!tintas) lerTintas();
+      ctx.fillStyle = hex(fundoNoTema(s, s.fundo));
       ctx.fillRect(0, 0, canvas.width, canvas.height);
     }
     const ys = todas ? [...Array(s.linhas).keys()] : linhas;
@@ -984,6 +1028,8 @@ const ide = (() => {
   botaoFechar.addEventListener('click', fechar);
   if (listen) listen('terminal_grade', ({ payload }) => aoGrade(payload));
 
+  // Trocou o tema: as tintas se releem e a tela inteira do terminal se repinta.
+  tema.aoTrocar(() => { lerTintas(); if (ativa) desenhar(ativa, null); });
   return { aoMostrar: () => { if (ativa) { redimensionar(); desenhar(ativa, null); canvas.focus(); } } };
 })();
 carregadores.ide = ide.aoMostrar;

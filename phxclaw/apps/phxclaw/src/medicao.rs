@@ -211,3 +211,48 @@ pub async fn skill(args: &[String]) -> Result<()> {
     );
     Ok(())
 }
+
+/// `phxclaw ui fidelidade`: a prova de ida e volta da conversao de tela (SP000022).
+pub async fn ui(args: &[String]) -> Result<()> {
+    const USO: &str = "uso: phxclaw ui fidelidade [--telas N] [--modelo N] [--prazo S] [--saida DIR] [--capturas DIR]";
+    if args.first().map(String::as_str) != Some("fidelidade") {
+        bail!("{USO}");
+    }
+    let num = |k: &str, padrao: usize| -> Result<usize> {
+        opcao(args, k)
+            .map(|v| v.parse::<usize>())
+            .transpose()
+            .with_context(|| format!("{k}: numero"))
+            .map(|v| v.unwrap_or(padrao))
+    };
+    let telas = num("--telas", phxclaw_agent::fidelidade_ui::TELAS)?;
+    // o modelo leva ~90 s por tela: so quando pedido, e o comando diz quantas
+    let com_modelo = num("--modelo", 0)?;
+    let saida = opcao(args, "--saida")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("docs/ui/fidelidade"));
+    let capturas = opcao(args, "--capturas").map(PathBuf::from);
+    // prazo por pergunta ao modelo: 300 s nao bastou com a maquina carregada (01/10: a
+    // imagem 1280x1200 levou ~100 s so para decodificar)
+    let prazo = num("--prazo", 300)?;
+    let v = phxclaw_agent::fidelidade_ui::medir(
+        telas,
+        com_modelo,
+        std::time::Duration::from_secs(prazo as u64),
+        capturas.as_deref(),
+    )
+    .await
+    .map_err(anyhow::Error::msg)?;
+    print!("{}", phxclaw_agent::fidelidade_ui::tabela(&v));
+    std::fs::create_dir_all(&saida)?;
+    let dia = v["data"]
+        .as_str()
+        .unwrap_or("")
+        .get(..10)
+        .unwrap_or("")
+        .to_string();
+    let arq = saida.join(format!("fidelidade-{dia}.json"));
+    std::fs::write(&arq, serde_json::to_vec_pretty(&v)?)?;
+    println!("resultado: {}", arq.display());
+    Ok(())
+}

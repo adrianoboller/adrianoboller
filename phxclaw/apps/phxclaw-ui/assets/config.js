@@ -7,7 +7,9 @@
 //   * 409: outra gravacao passou na frente -- nada se perde: recarrega mantendo o digitado.
 //   * 422: a celula da chave recusada fica marcada com o motivo que o agente deu.
 //   * Segredo NUNCA tem campo de valor: a tela diz se esta guardado e como se guarda.
-// Rotulo se traduz (fabrica); chave, descricao, valor, motivo e comando sao DADO do agente.
+// Rotulo se traduz (fabrica); chave, valor, motivo e comando sao DADO do agente. A DESCRICAO
+// da chave e rotulo (o catalogo a traz em cada idioma: descricao, descricao_en), e a tela a
+// escolhe pelo idioma da fabrica -- em ingles ela saia em portugues (qualificacao, M14).
 (() => {
   const $ = id => document.getElementById(id);
   const alvo = $('configConteudo');
@@ -119,10 +121,14 @@
   // «So alterados»: o que nao esta no padrao (veio de arquivo ou do ambiente) ou foi mexido
   // agora. O recorte e feito aqui, nos dados: uma coluna escondida para filtrar apareceria
   // no seletor de colunas.
+  // Pelo CODIGO do idioma (campo descricao_<codigo>), nunca pela frase; sem o campo, o
+  // portugues -- melhor nenhuma traducao do que uma inventada (o degrau da fabrica).
+  const descricaoNoIdioma = c => (idiomas.atual !== 'pt' && c[`descricao_${idiomas.atual}`]) || c.descricao;
+
   function linhas() {
     const so = soAlteradosEl.checked;
     return (vista?.chaves || []).filter(c => !so || c.origem !== 'padrao' || pendentes.has(c.chave)).map(c => ({
-      chave: c.chave, secao: c.secao, origem: c.origem, descricao: c.descricao,
+      chave: c.chave, secao: c.secao, origem: c.origem, descricao: descricaoNoIdioma(c),
       padrao: c.segredo ? texto(null) : texto(c.padrao),
       // Texto do valor so para a busca e a exportacao; segredo nao entra nem assim.
       valor: c.segredo ? '' : texto(valorNaTela(c)),

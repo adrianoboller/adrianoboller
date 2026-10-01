@@ -44,7 +44,7 @@
 .grade-alvo td.phx-est-st-erro{color:var(--vermelho);box-shadow:inset 3px 0 0 var(--vermelho)}
 .grade-alvo td.phx-est-st-anda{color:var(--info);box-shadow:inset 3px 0 0 var(--info)}
 .grade-alvo td.phx-est-abs-agente{color:var(--ok);box-shadow:inset 4px 0 0 var(--ok)}
-.grade-alvo td.phx-est-abs-parcial{color:var(--ambar);background-image:linear-gradient(90deg,transparent 0,transparent 0),repeating-linear-gradient(45deg,var(--aviso) 0 2px,transparent 2px 5px);background-size:4px 100%,4px 100%;background-repeat:no-repeat}
+.grade-alvo td.phx-est-abs-parcial{color:var(--aviso);background-image:linear-gradient(90deg,transparent 0,transparent 0),repeating-linear-gradient(45deg,var(--aviso) 0 2px,transparent 2px 5px);background-size:4px 100%,4px 100%;background-repeat:no-repeat}
 .grade-alvo td.phx-est-abs-nao{color:var(--texto);border-left:1px dashed var(--texto-2)}
 
 .tarefas-lista.grade-alvo{border:0;overflow:visible}
@@ -64,16 +64,16 @@
 .grade-barra .marcar input{width:auto}
 .filtro-sel{background:var(--painel);border:1px solid var(--linha-forte);color:var(--texto);border-radius:6px;padding:7px 10px;font:inherit;font-size:var(--fs-1)}
 .filtro-sel option:disabled{color:var(--texto-3)}
-.cfg-painel{border:1px solid var(--linha-forte);border-radius:8px;padding:12px 14px;margin:0 0 12px;background:rgba(9,25,38,.85)}
+.cfg-painel{border:1px solid var(--linha-forte);border-radius:8px;padding:12px 14px;margin:0 0 12px;background:color-mix(in srgb,var(--painel) 85%,transparent)}
 .cfg-painel[hidden]{display:none}
 .cfg-painel h2{font-size:var(--fs-3);margin:0 0 8px}
-.cfg-conflito{border-color:var(--aviso);color:var(--ambar)}
+.cfg-conflito{border-color:var(--aviso);color:var(--aviso)}
 .cfg-conflito p{margin:0 0 10px;font-size:var(--fs-2)}
 .cfg-diff{border-collapse:collapse;width:100%;margin-bottom:10px;font-size:var(--fs-1)}
 .cfg-diff th{text-align:left;color:var(--texto-2);font-weight:600;padding:4px 8px;border-bottom:1px solid var(--linha-forte)}
 .cfg-diff td{padding:4px 8px;border-bottom:1px solid var(--linha);color:var(--texto)}
 .cfg-diff td.de{color:var(--texto-2);text-decoration:line-through;text-decoration-color:var(--vermelho)}
-.cfg-diff td.para{color:var(--ambar)}
+.cfg-diff td.para{color:var(--aviso)}
 #configConteudo td[data-tag="valor"]{min-width:220px}
 #configConteudo .cfg-ed[type="text"],#configConteudo .cfg-ed[type="number"],#configConteudo select.cfg-ed{width:min(100%,320px);padding:4px 6px}
 #configConteudo .cfg-ed[type="checkbox"]{width:16px;height:16px}
@@ -97,9 +97,9 @@
 .grade-alvo td.phx-est-origem-projeto{color:var(--texto);outline:3px double var(--violeta)}
 .grade-alvo td.phx-est-origem-pasta{color:var(--laranja);outline:1px solid var(--laranja)}
 .grade-alvo td.phx-est-origem-padrao{color:var(--texto-2);outline:1px dashed var(--texto-3)}
-.grade-alvo td.phx-est-cfg-pendente{background:rgba(255,196,61,.07)}
+.grade-alvo td.phx-est-cfg-pendente{background:color-mix(in srgb,var(--aviso) 7%,transparent)}
 .grade-alvo td.phx-est-cfg-pendente:first-child{box-shadow:inset 3px 0 0 var(--aviso)}
-.grade-alvo td.phx-est-cfg-erro{background:rgba(255,94,108,.09)}
+.grade-alvo td.phx-est-cfg-erro{background:color-mix(in srgb,var(--vermelho) 9%,transparent)}
 .grade-alvo td.phx-est-cfg-erro:first-child{box-shadow:inset 3px 0 0 var(--vermelho)}
 
 /* MODO CARTAO (ate 640 px): a 390 a linha da grade media 185 px em Tarefas, 203 em Agentes e

@@ -123,6 +123,8 @@ fn acoes_html(acoes: &[Action]) -> String {
 }
 
 pub fn render(app: &App) -> String {
+    // ordem e grupos lidos de uma captura (v2) entram pelo mesmo caminho dos outros desenhos
+    let app = &app.com_layout();
     let mut telas = String::new();
     for s in &app.screens {
         let corpo = match s {

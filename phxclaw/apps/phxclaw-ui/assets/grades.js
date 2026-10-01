@@ -194,8 +194,8 @@ const grades = (() => {
   // A marca (phxclaw/marca e CLAUDE.md): fundo #010418, Exo 2, contorno nas acoes. Chaves do
   // configurarVisual do phx-grid; o cubo recebe os MESMOS tokens por visualParaTokens.
   // A grade le os TOKENS da folha (app.css, Style Phoenix Padrao) na hora de montar: uma
-  // definicao so de cor para a tela e para a grade, e o tema claro (proxima sprint) chega a
-  // grade sem uma linha aqui. Hex digitado aqui era a segunda copia da paleta.
+  // definicao so de cor para a tela e para a grade, e o tema claro chega a grade sem uma cor
+  // aqui. Hex digitado aqui era a segunda copia da paleta.
   function visualMarca() {
     const cs = getComputedStyle(document.documentElement);
     const t = n => cs.getPropertyValue(`--${n}`).trim();
@@ -216,6 +216,11 @@ const grades = (() => {
   }
 
   const tokensDaMarca = () => PG().visualParaTokens(visualMarca());
+
+  // O tema da grade segue o da tela (tema.js): a classe do phx-grid (o que o mapa do
+  // configurarVisual nao alcanca: selecao, nota, edicao) e os tokens relidos da folha.
+  const temaDaTela = () => (typeof tema !== 'undefined' && tema.atual === 'claro' ? 'claro' : 'escuro');
+  const aoTema = f => { if (typeof tema !== 'undefined') tema.aoTrocar(f); };
 
   // Uma grade com troca de idioma: a troca guarda o layout (ordem, filtro, grupo, colunas
   // escondidas, pagina), refaz a grade com os titulos novos e devolve o layout -- o titulo
@@ -251,13 +256,15 @@ const grades = (() => {
       const cfg = def.cfg();
       contexto.camposRotulo = new Set(cfg.colunas.filter(c => c.valores || c.formatoGrupo).map(c => c.campo));
       g = PG().criar(alvo, {
-        tema: 'escuro', agrupavel: true, totais: true, dicas: false, ...cfg,
+        tema: temaDaTela(), agrupavel: true, totais: true, dicas: false, ...cfg,
         aoLog: ev => def.aoLog?.(ev, g),
       });
       if (!g || g.ok === false) throw new Error(`phx-grid: ${g?.erro}`);
       g.configurarVisual(visualMarca());
       alvo.dataset.grade = def.nome;
       if (layout) {
+        // O layout guarda o tema de quando foi tirado; vale o da tela agora.
+        layout.tema = temaDaTela();
         for (const c of layout.colunas) c.titulo = null;
         g.aplicarLayout(layout);
       } else def.inicial?.(g);
@@ -275,6 +282,7 @@ const grades = (() => {
     }
     montar(null);
     idiomas.aoTrocar(refazer);
+    aoTema(t => { if (g) { g.setTema(t); g.configurarVisual(visualMarca()); } });
     return { get g() { return g; }, refazer, aplicar: () => vig?.aplicar() };
   }
 
@@ -291,7 +299,7 @@ const grades = (() => {
     function montar(layout) {
       PG().definirTextos(textosDoPhxGrid());
       alvo.replaceChildren();
-      c = PG().cubo(alvo, { tema: 'escuro', painelCampos: false, ...def.cfg() });
+      c = PG().cubo(alvo, { tema: temaDaTela(), painelCampos: false, ...def.cfg() });
       if (!c || c.ok === false) throw new Error(`phx-grid cubo: ${c?.erro}`);
       const raiz = alvo.querySelector('.phx-cubo');
       for (const [k, v] of Object.entries(tokensDaMarca())) if (k[0] !== '!') raiz.style.setProperty(k, v);
@@ -300,6 +308,12 @@ const grades = (() => {
     }
     montar(null);
     idiomas.aoTrocar(() => { if (!c) return; const l = c.layout(); vig?.parar(); c.destruir?.(); montar(l); });
+    aoTema(t => {
+      const raiz = alvo.querySelector('.phx-cubo');
+      if (!raiz) return;
+      raiz.classList.toggle('phx-tema-escuro', t === 'escuro');
+      for (const [k, v] of Object.entries(tokensDaMarca())) if (k[0] !== '!') raiz.style.setProperty(k, v);
+    });
     return { get c() { return c; } };
   }
 

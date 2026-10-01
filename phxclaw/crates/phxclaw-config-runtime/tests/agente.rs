@@ -415,3 +415,128 @@ fn levantamento_do_fonte_e_catraca_das_leituras_soltas() {
         String::from_utf8_lossy(&s.stderr)
     );
 }
+
+/// Palavras-guia: a forma sem acento que, no texto em portugues, so pode aparecer com
+/// acento. Lista curta de proposito -- e a amostra das que ja sairam erradas na tela
+/// (qualificacao da UI de 01/10/2026, M14: «Binario», «nao configuracao»).
+const SEM_ACENTO: &[&str] = &[
+    "configuracao",
+    "padrao",
+    "diretorio",
+    "endereco",
+    "nao",
+    "so",
+    "servico",
+    "usuario",
+    "binario",
+    "revisao",
+    "saida",
+    "codigo",
+    "memoria",
+    "executavel",
+    "numero",
+    "publica",
+    "publicas",
+    "obrigatoria",
+    "obrigatorio",
+    "visao",
+    "seguranca",
+    "relatorio",
+    "duracao",
+    "medicao",
+    "ativacao",
+    "pagina",
+    "espaco",
+    "verificacao",
+    "raizes",
+    "propria",
+    "criacao",
+    "decisao",
+    "transcricao",
+    "reordenacao",
+    "missao",
+    "papeis",
+    "visivel",
+    "destinatarios",
+    "audio",
+];
+
+/// Palavras que so existem em portugues: texto «em ingles» com uma delas e copia nao
+/// traduzida.
+const SO_PORTUGUES: &[&str] = &[
+    "do", "da", "dos", "das", "que", "para", "nao", "pasta", "chave", "senha", "modelo",
+];
+
+/// As palavras de um texto, sem as que sao codigo (caminho, constante, `chave=valor`,
+/// `host:porta`): `CAPACIDADES_PADRAO` e `_memoria` sao identificadores, e identificador
+/// nao leva acento.
+fn palavras(t: &str) -> impl Iterator<Item = String> + '_ {
+    t.split_whitespace()
+        .map(|w| w.trim_matches(|c: char| "()[],;:.«»\"'".contains(c)))
+        .filter(|w| !w.is_empty() && !w.contains(|c: char| "_/.=<>:@".contains(c)))
+        .map(str::to_lowercase)
+}
+
+/// A descricao e a do motivo sao ROTULO: portugues com acento e ingles em toda chave.
+/// Reprova chave sem ingles, ingles que e o portugues copiado, e portugues sem acento
+/// onde a palavra-guia exige.
+#[test]
+fn descricao_tem_ingles_e_portugues_com_acento() {
+    let mut erros = vec![];
+    for c in catalogo() {
+        let mut pt = vec![c.descricao.as_str()];
+        let mut en = vec![c.descricao_en.as_str()];
+        if let Natureza::Ambiente { motivo } = &c.natureza {
+            pt.push(motivo);
+            match c.motivo_en {
+                Some(m) => en.push(m),
+                None => erros.push(format!("{}: motivo sem ingles", c.chave)),
+            }
+        }
+        for t in &pt {
+            for p in palavras(t) {
+                if SEM_ACENTO.contains(&p.as_str()) {
+                    erros.push(format!("{}: «{p}» sem acento em «{t}»", c.chave));
+                }
+            }
+        }
+        for t in &en {
+            if t.trim().is_empty() {
+                erros.push(format!("{}: sem ingles", c.chave));
+            } else if !t.is_ascii() {
+                erros.push(format!("{}: ingles com acento «{t}»", c.chave));
+            }
+            for p in palavras(t) {
+                if SO_PORTUGUES.contains(&p.as_str()) {
+                    erros.push(format!("{}: ingles com «{p}» em «{t}»", c.chave));
+                }
+            }
+        }
+    }
+    assert!(
+        erros.is_empty(),
+        "{} defeitos:\n{}",
+        erros.len(),
+        erros.join("\n")
+    );
+}
+
+/// O catalogo da tela e a API levam os dois idiomas (a tela escolhe pela fabrica).
+#[test]
+fn a_entrada_do_catalogo_leva_os_dois_idiomas() {
+    let c = por_chave("acao.bin").unwrap();
+    let e = gerar::entrada(c);
+    assert_eq!(
+        e["descricao"],
+        json!("Binário do phxclaw exportado entre passos")
+    );
+    assert_eq!(
+        e["descricao_en"],
+        json!("phxclaw binary exported between steps")
+    );
+    assert!(e["motivo_so_ambiente_en"]
+        .as_str()
+        .is_some_and(|m| m.contains("GitHub Action")));
+    let d = gerar::entrada(por_chave("canais.discord.token").unwrap());
+    assert_eq!(d["descricao_en"], json!("Bot token (discord)"));
+}

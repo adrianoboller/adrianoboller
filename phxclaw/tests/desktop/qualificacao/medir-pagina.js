@@ -1,11 +1,22 @@
 // Executa DENTRO da pagina (page.evaluate). Mede contraste, corte, sobreposicao, alvos de toque,
 // fundos cheios, cores e tamanhos. Devolve um objeto serializavel.
 (opts) => {
+  // Duas formas de cor computada: rgb()/rgba() e color(srgb r g b / a), que e como o Chromium
+  // devolve um color-mix() (a folha mistura tokens desde o tema claro). Ler so a primeira fazia
+  // a camada misturada sumir da conta do fundo, calada.
+  const COR = /rgba?\([^)]+\)|color\(srgb [^)]+\)/g;
   const parse = s => {
-    const m = s && s.match(/rgba?\(([^)]+)\)/);
+    if (!s) return null;
+    let m = s.match(/rgba?\(([^)]+)\)/);
+    if (m) {
+      const p = m[1].split(/[ ,/]+/).filter(Boolean).map(Number);
+      return { r: p[0], g: p[1], b: p[2], a: p.length > 3 ? p[3] : 1 };
+    }
+    m = s.match(/color\(srgb ([^)]+)\)/);
     if (!m) return null;
-    const p = m[1].split(/[ ,/]+/).filter(Boolean).map(Number);
-    return { r: p[0], g: p[1], b: p[2], a: p.length > 3 ? p[3] : 1 };
+    const [cor, alfa] = m[1].split('/');
+    const p = cor.trim().split(/\s+/).map(Number);
+    return { r: p[0] * 255, g: p[1] * 255, b: p[2] * 255, a: alfa === undefined ? 1 : +alfa };
   };
   const lin = c => { c /= 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; };
   const lum = c => 0.2126 * lin(c.r) + 0.7152 * lin(c.g) + 0.0722 * lin(c.b);
@@ -43,7 +54,7 @@
       const cs = getComputedStyle(n);
       const bi = cs.backgroundImage;
       if (bi && bi !== 'none' && /gradient/.test(bi) && n.className !== 'noise') {
-        const cores = [...bi.matchAll(/rgba?\([^)]+\)/g)].map(m => parse(m[0])).filter(Boolean);
+        const cores = [...bi.matchAll(COR)].map(m => parse(m[0])).filter(Boolean);
         // gradiente radial com transparent ocupa so uma regiao: ignora as paradas transparentes
         const opacas = cores.filter(c => c.a > 0);
         if (opacas.length) {
@@ -55,7 +66,9 @@
       if (bc && bc.a > 0) camadas.push(bc);
       if (bc && bc.a >= 1) break;
     }
-    let base = { r: 1, g: 4, b: 24, a: 1 }; // #010418, o fundo do html
+    // O fundo do html (o --fundo do tema da pagina: #010418 no escuro, #f7f5f2 no claro).
+    let base = parse(getComputedStyle(document.documentElement).backgroundColor) || { r: 1, g: 4, b: 24, a: 1 };
+    base = { ...base, a: 1 };
     for (let i = camadas.length - 1; i >= 0; i--) base = sobre(camadas[i], base);
     return { cor: base, aprox };
   };

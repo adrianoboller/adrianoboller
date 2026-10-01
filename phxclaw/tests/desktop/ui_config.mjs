@@ -260,10 +260,13 @@ try {
   check('botoes so contorno: salvar amarelo, recarregar azul, voltar ao padrao rosa (marca), nenhum vermelho',
     botoes.every(b => b.fundo === 'rgba(0, 0, 0, 0)') && botoes.some(b => /altera/.test(b.c)) && botoes.some(b => /consulta/.test(b.c)) && botoes.some(b => /\bmarca\b/.test(b.c)) && !botoes.some(b => /exclui/.test(b.c)), JSON.stringify(botoes.slice(0, 4)));
 
-  // Idioma: rotulos mudam, chave e descricao (dado) nao.
+  // Idioma: rotulos mudam e a chave (dado) nao. A DESCRICAO da chave e rotulo (o catalogo a
+  // traz em cada idioma; qualificacao, M14): em ingles e a descricao_en da propria chave.
   const ler = () => page.evaluate(() => ({
     cab: [...document.querySelectorAll('#configConteudo thead th[data-tag]:not(.phx-frow-cel) .phx-th-titulo')].map(e => e.firstChild.textContent),
-    dado: [...document.querySelectorAll('#configConteudo td[data-tag="chave"], #configConteudo td[data-tag="descricao"]')].map(e => e.textContent).join('|'),
+    dado: [...document.querySelectorAll('#configConteudo td[data-tag="chave"]')].map(e => e.textContent).join('|'),
+    desc: [...document.querySelectorAll('#configConteudo tbody tr')].filter(tr => tr.querySelector('td[data-tag="descricao"]'))
+      .map(tr => [tr.querySelector('td[data-tag="chave"]').textContent, tr.querySelector('td[data-tag="descricao"]').textContent]),
     origem: [...document.querySelectorAll('#configConteudo td[data-tag="origem"]')].map(e => e.textContent),
   }));
   const pt = await ler();
@@ -272,8 +275,11 @@ try {
   const en = await ler();
   await page.click('#trocarIdioma');
   await page.waitForTimeout(600);
-  check('idioma: cabecalhos e origem mudam pela chave; chave e descricao (dado) nao',
-    en.cab.includes(fab['config.col.chave'].en) && en.origem.includes(fab['config.origem.ambiente'].en) && en.dado === pt.dado && pt.cab.join() !== en.cab.join(), en.cab.slice(0, 3).join(','));
+  const porChave = new Map(st.vista.chaves.map(c => [c.chave, c]));
+  const descOk = (lista, campo) => lista.length > 0 && lista.every(([k, d]) => porChave.get(k)?.[campo] === d);
+  check('idioma: cabecalhos, origem e descricao mudam pela chave; a chave (dado) nao',
+    en.cab.includes(fab['config.col.chave'].en) && en.origem.includes(fab['config.origem.ambiente'].en) && en.dado === pt.dado && pt.cab.join() !== en.cab.join()
+      && descOk(pt.desc, 'descricao') && descOk(en.desc, 'descricao_en'), `${en.cab.slice(0, 3).join(',')} • ${JSON.stringify(en.desc[0])} • ${en.desc.length} descricoes`);
   check('sem erro de JavaScript na pagina', erros.length === 0, erros.join(' | ').slice(0, 300));
   await page.close();
 

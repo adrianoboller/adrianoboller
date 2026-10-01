@@ -14,6 +14,9 @@
   <!-- Aplicativo instalavel (PWA): o mesmo cliente no navegador, no celular e na ponte. -->
   <link rel="manifest" href="./manifest.webmanifest" />
   <link rel="apple-touch-icon" href="./assets/icone-192.png" />
+  <!-- Tema (escuro da marca ou claro em papel quente): antes do corpo, para o primeiro quadro
+       ja sair no tema escolhido. Depois das folhas: le o token --fundo para o theme-color. -->
+  <script src="./assets/tema.js"></script>
 </head>
 <body>
   <div class="noise"></div>
@@ -63,6 +66,9 @@
       <div class="top-actions">
         <button id="abrirPaleta" type="button" class="icone" aria-haspopup="dialog" aria-keyshortcuts="Control+K"
           aria-label="Buscar e comandos (Ctrl+K)" data-txt-al="paleta.abrir" title="Buscar e comandos (Ctrl+K)" data-txt-tt="paleta.abrir"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5 21 21"/></svg></button>
+        <!-- Tema: o icone mostra para onde o clique leva (sol no escuro, lua no claro); o nome
+             acessivel vem da fabrica e diz o mesmo (tema.js). -->
+        <button id="trocarTema" type="button" class="icone" aria-label="Mudar para o tema claro" title="Mudar para o tema claro"><svg class="ico-sol" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2.5M12 19v2.5M2.5 12H5M19 12h2.5M5.3 5.3l1.8 1.8M16.9 16.9l1.8 1.8M5.3 18.7l1.8-1.8M16.9 7.1l1.8-1.8"/></svg><svg class="ico-lua" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg></button>
         <button id="trocarIdioma" title="Trocar o idioma da tela" data-txt-tt="idioma.trocar" aria-label="Trocar o idioma da tela" data-txt-al="idioma.trocar">PT</button>
       </div>
     </header>

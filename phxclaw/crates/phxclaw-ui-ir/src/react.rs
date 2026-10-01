@@ -10,6 +10,8 @@ use serde_json::{Value, json};
 
 /// Arquivos do projeto: (caminho relativo, conteudo).
 pub fn render(app: &App) -> Vec<(String, String)> {
+    // o JSON embutido ja sai com secoes e colunas na ordem lida (v2): o componente nao a refaz
+    let app = &app.com_layout();
     vec![
         ("package.json".into(), package(app)),
         ("index.html".into(), index(app)),

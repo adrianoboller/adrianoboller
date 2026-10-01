@@ -93,6 +93,30 @@ pub async fn rodar_git(
     args: Vec<String>,
     timeout: Duration,
 ) -> Result<WorkdirOutput, ToolError> {
+    let args: String = args.iter().map(|a| format!(" {}", aspas(a))).collect();
+    rodar_roteiro_git(
+        bwrap,
+        workdir,
+        repo,
+        |git| format!("exec {git}{args}"),
+        timeout,
+        4 * 1024 * 1024,
+    )
+    .await
+}
+
+/// O mesmo motor do `rodar_git` para quem precisa de mais de um git na mesma chamada (a
+/// varredura de segredos monta um indice temporario e le o diff dele). `corpo` recebe o
+/// prefixo `git -c ... "$@" -C repo` ja neutralizado e devolve as linhas de shell: assim a
+/// configuracao segura e a neutralizacao continuam escritas uma vez so.
+pub async fn rodar_roteiro_git(
+    bwrap: &Path,
+    workdir: &Path,
+    repo: &str,
+    corpo: impl FnOnce(&str) -> String,
+    timeout: Duration,
+    max_output_bytes: usize,
+) -> Result<WorkdirOutput, ToolError> {
     let seguras: String = CONFIG_SEGURA
         .iter()
         .map(|c| format!(" -c {}", aspas(c)))
@@ -103,17 +127,13 @@ pub async fn rodar_git(
         format!(" -C {}", aspas(repo))
     };
     let mut script = neutralizar(&seguras, &repo_c);
-    script.push_str(&format!("exec git{seguras} \"$@\"{repo_c}"));
-    for a in &args {
-        script.push(' ');
-        script.push_str(&aspas(a));
-    }
+    script.push_str(&corpo(&format!("git{seguras} \"$@\"{repo_c}")));
     let cmd = WorkdirCommand {
         workdir: workdir.to_path_buf(),
         script,
         timeout,
         network: false,
-        max_output_bytes: 4 * 1024 * 1024,
+        max_output_bytes,
     };
     let extras = SandboxExtras {
         ro_binds: vec![],
@@ -641,6 +661,8 @@ pub struct GitTool {
     pub bwrap: PathBuf,
     pub escrita: bool,
     pub timeout: Duration,
+    /// Varredura de segredos antes de `add`/`commit` (`segredos.rs`).
+    pub segredos: crate::segredos::Varredura,
 }
 
 impl GitTool {
@@ -649,14 +671,39 @@ impl GitTool {
             bwrap,
             escrita: false,
             timeout: Duration::from_secs(60),
+            segredos: crate::segredos::Varredura::default(),
         }
     }
+    /// A configuracao da varredura e lida AQUI, e nao por quem monta: a nuvem
+    /// (`parallel_tasks`) cria o seu `GitTool` de escrita, e uma varredura que dependesse
+    /// de quem monta lembrar dela deixaria aquele caminho sem guarda.
     pub fn escrita(bwrap: PathBuf) -> Self {
         Self {
             bwrap,
             escrita: true,
             timeout: Duration::from_secs(60),
+            segredos: crate::segredos::Varredura::da_configuracao(),
         }
+    }
+
+    /// A gravacao vai levar segredo? `Err(Denied)` bloqueia; `Ok` volta no resultado.
+    async fn varrer(
+        &self,
+        ctx: &ToolContext,
+        repo: &str,
+        g: crate::segredos::Gravacao,
+    ) -> Result<Value, ToolError> {
+        let v = self
+            .segredos
+            .antes_de_gravar(
+                &self.bwrap,
+                &ctx.workdir,
+                repo,
+                &g,
+                self.timeout.min(ctx.timeout),
+            )
+            .await?;
+        Ok(v.json())
     }
 
     async fn git(
@@ -812,15 +859,24 @@ impl GitTool {
                         "falta 'paths' (use [\".\"] para tudo)".into(),
                     ));
                 }
+                let varredura = self
+                    .varrer(ctx, repo, crate::segredos::Gravacao::Add(caminhos.clone()))
+                    .await?;
                 let mut a = s(&["add", "--"]);
                 a.extend(caminhos);
                 self.git(ctx, repo, a).await?;
-                self.ler(ctx, repo, "status", args).await
+                let mut st = self.ler(ctx, repo, "status", args).await?;
+                st["varredura_de_segredos"] = varredura;
+                Ok(st)
             }
             "commit" => {
                 let msg = exigir(args, "message")?;
+                let todos = booleano(args, "all");
+                let varredura = self
+                    .varrer(ctx, repo, crate::segredos::Gravacao::Commit { todos })
+                    .await?;
                 let mut a = s(&["commit", "-q", "--no-verify"]);
-                if booleano(args, "all") {
+                if todos {
                     a.push("-a".into());
                 }
                 a.push("-m".into());
@@ -837,7 +893,8 @@ impl GitTool {
                         ],
                     )
                     .await?;
-                Ok(json!({"commit": analisar_commits(&o).into_iter().next()}))
+                Ok(json!({"commit": analisar_commits(&o).into_iter().next(),
+                          "varredura_de_segredos": varredura}))
             }
             "checkout" => {
                 let b = referencia(exigir(args, "branch")?)?;

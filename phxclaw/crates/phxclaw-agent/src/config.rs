@@ -170,7 +170,7 @@ pub fn segredo_presente(pasta: &Path, c: &Chave) -> bool {
 fn motivo_nao_editavel(c: &Chave, origem: Origem) -> Option<String> {
     match &c.natureza {
         Natureza::Segredo { comando, .. } => Some(format!("segredo: guarde com `{comando}`")),
-        Natureza::Ambiente { motivo } => Some(format!("so ambiente: {motivo}")),
+        Natureza::Ambiente { motivo } => Some(format!("só ambiente: {motivo}")),
         Natureza::Config if origem == Origem::Ambiente => Some("vem do ambiente".into()),
         Natureza::Config => None,
     }

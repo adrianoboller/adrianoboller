@@ -143,6 +143,17 @@ pub const COMANDOS: &[Comando] = &[
     },
     Comando {
         grupo: Grupo::EquipeEFluxos,
+        nome: "gonogo",
+        resumo: "Conselho de integradores: registrar parecer, ver, decidir Go/NoGo",
+        apelidos: &["go-no-go"],
+        uso: "gonogo registrar INTEGRACAO INTEGRADOR OK|NOGO [--erro \"...\"]... [--integradores a,b] \
+              [--pasta DIR] | ver INTEGRACAO | decidir INTEGRACAO",
+        descricao: "Cada integrador registra o proprio parecer (NOGO exige os erros). Algum NOGO \
+                    vigente: NOGO; falta parecer de integrador ativo: AGUARDAR; todos OK: GO. So o \
+                    mesmo integrador troca o NOGO dele. Saida 0 GO, 2 NOGO, 3 AGUARDAR.",
+    },
+    Comando {
+        grupo: Grupo::EquipeEFluxos,
         nome: "fluxo",
         resumo: "Fluxo em DAG: rodar e retomar",
         apelidos: &["workflow"],
@@ -292,6 +303,20 @@ pub const COMANDOS: &[Comando] = &[
                     modelo, pelo agente inteiro. Cada numero sai com faixa min-max, N e data; \
                     vencedor so quando as faixas nao se cruzam. Energia so de RAPL ou NVIDIA: \
                     sem eles, «não medida». Cada execucao fica gravada em SAIDA/gravacoes.",
+    },
+    Comando {
+        grupo: Grupo::Medicao,
+        nome: "ui",
+        resumo: "Prova a conversao de tela em ida e volta contra o gabarito",
+        apelidos: &[],
+        uso: "ui fidelidade [--telas N] [--modelo N] [--prazo S] [--saida DIR] [--capturas DIR]",
+        descricao: "Gera as telas do gabarito (20, do design_erp_ui), desenha cada uma no \
+                    Chromium headless, le o PNG pelo screenshot_to_erp_ui (OCR + layout; com o \
+                    modelo de visao so nas N primeiras de --modelo, ~90 s cada, --prazo por \
+                    pergunta) e compara com o \
+                    UI-IR de origem: achados, perdidos, inventados, rotulo, tipo, ordem (Kendall), \
+                    grupo e posicao, com faixa min-max e data. Grava SAIDA/fidelidade-DATA.json \
+                    (padrao docs/ui/fidelidade); --capturas guarda os PNG para refazer o OCR.",
     },
     Comando {
         grupo: Grupo::Medicao,

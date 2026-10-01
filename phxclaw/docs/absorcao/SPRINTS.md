@@ -35,12 +35,12 @@ abaixo aparece em exatamente uma sprint.
 | SP000018 | — | config.json central, fase 1: catálogo, precedência, recusa de segredo, `phxclaw config`, catraca | — | CONCLUÍDA (f27402e5) |
 | SP000019 | — | Tela de configuração do config.json (GET/PUT /v1/config) e phx-grid nas listagens | — | CONCLUÍDA (f27402e5) |
 | SP000020 | — | config.json, fase 2: leitores migrados ao ponto único (catraca até 0); os 103 JSON de config/ | — | PLANEJADA |
-| SP000021 | 6 | Tela→UI-IR com layout pelas caixas do OCR; troca medida para qwen3-vl | — | PLANEJADA |
-| SP000022 | 6 | Prova de fidelidade da conversão de tela (ida e volta + bloco/texto/posição) | — | PLANEJADA |
-| SP000023 | 6 | Segredo no commit: gitleaks num hook do git_write | — | PLANEJADA |
+| SP000021 | 6 | Tela→UI-IR com layout pelas caixas do OCR; troca medida para qwen3-vl | — | CONCLUÍDA (onda 6) |
+| SP000022 | 6 | Prova de fidelidade da conversão de tela (ida e volta + bloco/texto/posição) | — | CONCLUÍDA (onda 6) |
+| SP000023 | 6 | Segredo no commit: gitleaks num hook do git_write | — | CONCLUÍDA (onda 6) |
 | SP000024 | 7 | Navegador pela árvore de acessibilidade (refs, elemento novo marcado, coberto por modal fora); MCPs por configuração (context7, dbhub); embedding de código se o recall pedir | — | PLANEJADA |
 | SP000025 | 7 | pywinauto pelo device-node num Windows com WinDev | — | BLOQUEADA (dono: máquina Windows) |
-| SP000026 | — | Conselho de integradores no agente: `go_no_go` registra parecer por integrador; Go só unânime, um NoGo bloqueia, parecer faltando aguarda | — | PLANEJADA |
+| SP000026 | — | Conselho de integradores no agente: `go_no_go` registra parecer por integrador; Go só unânime, um NoGo bloqueia, parecer faltando aguarda | — | CONCLUÍDA (onda 6) |
 | SP000027 | — | Qualificação da UI (12/12 telas, Style Phoenix Padrão) | — | CONCLUÍDA (cd48386e) |
 | SP000028 | 7 | Portão que valida e confere o fim: validador de esquema com caminho e todos os erros, 2 tentativas por ferramenta, final_answer tipado, comando de verificação, fim com falha sem resolver recusado | — | PLANEJADA |
 | SP000029 | 7 | Retomar e bifurcar pela gravação: `retomar --do-passo N`, passo humano no fluxo, pergunta pendente que sobrevive a reinício | — | PLANEJADA |

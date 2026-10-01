@@ -1,18 +1,18 @@
 {
   "//": [
-    "config.json do PhxClaw, gerado do catalogo (phxclaw config exemplo).",
-    "Precedencia: ambiente > .phxclaw/config.json do projeto confiado > <pasta>/config.json > padrao.",
-    "null = nao definido aqui. Segredo nunca entra: vai para o SecretBroker (phxclaw config mostrar diz o comando)."
+    "config.json do PhxClaw, gerado do catálogo (phxclaw config exemplo).",
+    "Precedência: ambiente > .phxclaw/config.json do projeto confiado > <pasta>/config.json > padrão.",
+    "null = não definido aqui. Segredo nunca entra: vai para o SecretBroker (phxclaw config mostrar diz o comando)."
   ],
   "agente": {
     "//": [
-      "agentes_dir: Pasta dos manifestos dos papeis da equipe (config/agents) [caminho; ambiente PHXCLAW_AGENTES_DIR]",
+      "agentes_dir: Pasta dos manifestos dos papéis da equipe (config/agents) [caminho; ambiente PHXCLAW_AGENTES_DIR]",
       "capacidades: Capacidades liberadas (web.search, fs.read...); vazio = CAPACIDADES_PADRAO [lista; ambiente PHXCLAW_CAPACIDADES]",
-      "estilo: Estilo de saida padrao (embutido ou .phxclaw/estilos/<nome>.md) [texto; ambiente PHXCLAW_ESTILO]",
+      "estilo: Estilo de saída padrão (embutido ou .phxclaw/estilos/<nome>.md) [texto; ambiente PHXCLAW_ESTILO]",
       "heartbeat_arquivo: Arquivo do heartbeat; vazio = HEARTBEAT.md do projeto ou da pasta [caminho; ambiente PHXCLAW_HEARTBEAT]",
       "heartbeat_min: Intervalo do heartbeat em minutos; 0 desliga [inteiro; ambiente PHXCLAW_HEARTBEAT_MIN]",
-      "lsp: Servidores de linguagem (LSP) nas ferramentas de codigo; 0 desliga [booleano; ambiente PHXCLAW_LSP]",
-      "memoria_escopo: Escopo da memoria persistente (<pasta>/tasks/_memoria/<escopo>.json) [texto; ambiente PHXCLAW_MEMORIA_ESCOPO]",
+      "lsp: Servidores de linguagem (LSP) nas ferramentas de código; 0 desliga [booleano; ambiente PHXCLAW_LSP]",
+      "memoria_escopo: Escopo da memória persistente (<pasta>/tasks/_memoria/<escopo>.json) [texto; ambiente PHXCLAW_MEMORIA_ESCOPO]",
       "skills_dir: Pasta das skills; vazio = <pasta>/tasks/_skills [caminho; ambiente PHXCLAW_SKILLS_DIR]"
     ],
     "agentes_dir": null,
@@ -26,11 +26,11 @@
   },
   "api": {
     "//": [
-      "host: Endereco em que a API escuta; expor e decisao do operador [texto; ambiente PHXCLAW_API_HOST]",
+      "host: Endereço em que a API escuta; expor é decisão do operador [texto; ambiente PHXCLAW_API_HOST]",
       "porta: Porta da API do app de mesa [inteiro; ambiente PHXCLAW_API_PORT]",
-      "tarefas_por_minuto: Teto de criacao de tarefas pela API (balde de fichas) [inteiro; ambiente PHXCLAW_API_TAREFAS_POR_MINUTO]",
+      "tarefas_por_minuto: Teto de criação de tarefas pela API (balde de fichas) [inteiro; ambiente PHXCLAW_API_TAREFAS_POR_MINUTO]",
       "url_cliente: Servidor que o SDK e o exemplo do SDK chamam [texto; ambiente PHXCLAW_URL]",
-      "url_publica: URL publica do agente (links de site e de artefato) [texto; ambiente PHXCLAW_PUBLIC_URL]",
+      "url_publica: URL pública do agente (links de site e de artefato) [texto; ambiente PHXCLAW_PUBLIC_URL]",
       "webhook_origens: Origens para onde o webhook de fim de tarefa pode ir; vazio = recusado [lista; ambiente PHXCLAW_WEBHOOK_ORIGINS]"
     ],
     "host": "127.0.0.1",
@@ -49,21 +49,21 @@
   "canais": {
     "discord": {
       "//": [
-        "base: Base do servico; vazio = a oficial [texto; ambiente PHXCLAW_DISCORD_BASE]",
-        "permitidos: Conversas de discord que podem falar com o agente (obrigatoria) [lista; ambiente PHXCLAW_DISCORD_PERMITIDOS]"
+        "base: Base do serviço; vazio = a oficial [texto; ambiente PHXCLAW_DISCORD_BASE]",
+        "permitidos: Conversas de discord que podem falar com o agente (obrigatória) [lista; ambiente PHXCLAW_DISCORD_PERMITIDOS]"
       ],
       "base": null,
       "permitidos": null
     },
     "email": {
       "//": [
-        "ca: Autoridade (PEM) no lugar das raizes publicas [caminho; ambiente PHXCLAW_EMAIL_CANAL_CA]",
-        "exigir_dmarc: Exige DMARC do remetente; nao desliga [booleano; ambiente PHXCLAW_EMAIL_CANAL_EXIGIR_DMARC]",
+        "ca: Autoridade (PEM) no lugar das raízes públicas [caminho; ambiente PHXCLAW_EMAIL_CANAL_CA]",
+        "exigir_dmarc: Exige DMARC do remetente; não desliga [booleano; ambiente PHXCLAW_EMAIL_CANAL_EXIGIR_DMARC]",
         "imap: Servidor IMAP host:porta [texto; ambiente PHXCLAW_EMAIL_CANAL_IMAP]",
         "pasta: Pasta lida [texto; ambiente PHXCLAW_EMAIL_CANAL_PASTA]",
-        "permitidos: Conversas de email que podem falar com o agente (obrigatoria) [lista; ambiente PHXCLAW_EMAIL_CANAL_PERMITIDOS]",
-        "tls: TLS no soquete; desligado so vale para loopback [booleano; ambiente PHXCLAW_EMAIL_CANAL_TLS]",
-        "usuario: Usuario do IMAP [texto; ambiente PHXCLAW_EMAIL_CANAL_USUARIO]"
+        "permitidos: Conversas de email que podem falar com o agente (obrigatória) [lista; ambiente PHXCLAW_EMAIL_CANAL_PERMITIDOS]",
+        "tls: TLS no soquete; desligado só vale para loopback [booleano; ambiente PHXCLAW_EMAIL_CANAL_TLS]",
+        "usuario: Usuário do IMAP [texto; ambiente PHXCLAW_EMAIL_CANAL_USUARIO]"
       ],
       "ca": null,
       "exigir_dmarc": true,
@@ -76,8 +76,8 @@
     "feishu": {
       "//": [
         "app_id: ID do app [texto; ambiente PHXCLAW_FEISHU_APP_ID]",
-        "base: Base do servico; vazio = a oficial [texto; ambiente PHXCLAW_FEISHU_BASE]",
-        "permitidos: Conversas de feishu que podem falar com o agente (obrigatoria) [lista; ambiente PHXCLAW_FEISHU_PERMITIDOS]"
+        "base: Base do serviço; vazio = a oficial [texto; ambiente PHXCLAW_FEISHU_BASE]",
+        "permitidos: Conversas de feishu que podem falar com o agente (obrigatória) [lista; ambiente PHXCLAW_FEISHU_PERMITIDOS]"
       ],
       "app_id": null,
       "base": null,
@@ -85,9 +85,9 @@
     },
     "googlechat": {
       "//": [
-        "base: Base do servico; vazio = a oficial [texto; ambiente PHXCLAW_GOOGLECHAT_BASE]",
-        "espaco: Espaco do Google Chat [texto; ambiente PHXCLAW_GOOGLECHAT_ESPACO]",
-        "permitidos: Conversas de googlechat que podem falar com o agente (obrigatoria) [lista; ambiente PHXCLAW_GOOGLECHAT_PERMITIDOS]"
+        "base: Base do serviço; vazio = a oficial [texto; ambiente PHXCLAW_GOOGLECHAT_BASE]",
+        "espaco: Espaço do Google Chat [texto; ambiente PHXCLAW_GOOGLECHAT_ESPACO]",
+        "permitidos: Conversas de googlechat que podem falar com o agente (obrigatória) [lista; ambiente PHXCLAW_GOOGLECHAT_PERMITIDOS]"
       ],
       "base": null,
       "espaco": null,
@@ -95,11 +95,11 @@
     },
     "irc": {
       "//": [
-        "ca: Autoridade (PEM) no lugar das raizes publicas [caminho; ambiente PHXCLAW_IRC_CA]",
+        "ca: Autoridade (PEM) no lugar das raízes públicas [caminho; ambiente PHXCLAW_IRC_CA]",
         "endereco: Servidor host:porta [texto; ambiente PHXCLAW_IRC_ENDERECO]",
         "nick: Apelido do bot [texto; ambiente PHXCLAW_IRC_NICK]",
-        "permitidos: Conversas de irc que podem falar com o agente (obrigatoria) [lista; ambiente PHXCLAW_IRC_PERMITIDOS]",
-        "tls: TLS no soquete; desligado so vale para loopback [booleano; ambiente PHXCLAW_IRC_TLS]"
+        "permitidos: Conversas de irc que podem falar com o agente (obrigatória) [lista; ambiente PHXCLAW_IRC_PERMITIDOS]",
+        "tls: TLS no soquete; desligado só vale para loopback [booleano; ambiente PHXCLAW_IRC_TLS]"
       ],
       "ca": null,
       "endereco": null,
@@ -109,25 +109,25 @@
     },
     "line": {
       "//": [
-        "base: Base do servico; vazio = a oficial [texto; ambiente PHXCLAW_LINE_BASE]",
-        "permitidos: Conversas de line que podem falar com o agente (obrigatoria) [lista; ambiente PHXCLAW_LINE_PERMITIDOS]"
+        "base: Base do serviço; vazio = a oficial [texto; ambiente PHXCLAW_LINE_BASE]",
+        "permitidos: Conversas de line que podem falar com o agente (obrigatória) [lista; ambiente PHXCLAW_LINE_PERMITIDOS]"
       ],
       "base": null,
       "permitidos": null
     },
     "mastodon": {
       "//": [
-        "base: Base do servico (obrigatoria) [texto; ambiente PHXCLAW_MASTODON_BASE]",
-        "permitidos: Conversas de mastodon que podem falar com o agente (obrigatoria) [lista; ambiente PHXCLAW_MASTODON_PERMITIDOS]"
+        "base: Base do serviço (obrigatória) [texto; ambiente PHXCLAW_MASTODON_BASE]",
+        "permitidos: Conversas de mastodon que podem falar com o agente (obrigatória) [lista; ambiente PHXCLAW_MASTODON_PERMITIDOS]"
       ],
       "base": null,
       "permitidos": null
     },
     "matrix": {
       "//": [
-        "base: Base do servico (obrigatoria) [texto; ambiente PHXCLAW_MATRIX_BASE]",
-        "permitidos: Conversas de matrix que podem falar com o agente (obrigatoria) [lista; ambiente PHXCLAW_MATRIX_PERMITIDOS]",
-        "usuario: Usuario do bot [texto; ambiente PHXCLAW_MATRIX_USUARIO]"
+        "base: Base do serviço (obrigatória) [texto; ambiente PHXCLAW_MATRIX_BASE]",
+        "permitidos: Conversas de matrix que podem falar com o agente (obrigatória) [lista; ambiente PHXCLAW_MATRIX_PERMITIDOS]",
+        "usuario: Usuário do bot [texto; ambiente PHXCLAW_MATRIX_USUARIO]"
       ],
       "base": null,
       "permitidos": null,
@@ -135,9 +135,9 @@
     },
     "mattermost": {
       "//": [
-        "base: Base do servico (obrigatoria) [texto; ambiente PHXCLAW_MATTERMOST_BASE]",
+        "base: Base do serviço (obrigatória) [texto; ambiente PHXCLAW_MATTERMOST_BASE]",
         "bot_id: ID do bot [texto; ambiente PHXCLAW_MATTERMOST_BOT_ID]",
-        "permitidos: Conversas de mattermost que podem falar com o agente (obrigatoria) [lista; ambiente PHXCLAW_MATTERMOST_PERMITIDOS]"
+        "permitidos: Conversas de mattermost que podem falar com o agente (obrigatória) [lista; ambiente PHXCLAW_MATTERMOST_PERMITIDOS]"
       ],
       "base": null,
       "bot_id": null,
@@ -145,15 +145,15 @@
     },
     "messenger": {
       "//": [
-        "base: Base do servico; vazio = a oficial [texto; ambiente PHXCLAW_MESSENGER_BASE]",
-        "permitidos: Conversas de messenger que podem falar com o agente (obrigatoria) [lista; ambiente PHXCLAW_MESSENGER_PERMITIDOS]"
+        "base: Base do serviço; vazio = a oficial [texto; ambiente PHXCLAW_MESSENGER_BASE]",
+        "permitidos: Conversas de messenger que podem falar com o agente (obrigatória) [lista; ambiente PHXCLAW_MESSENGER_PERMITIDOS]"
       ],
       "base": null,
       "permitidos": null
     },
     "nostr": {
       "//": [
-        "permitidos: Conversas de nostr que podem falar com o agente (obrigatoria) [lista; ambiente PHXCLAW_NOSTR_PERMITIDOS]",
+        "permitidos: Conversas de nostr que podem falar com o agente (obrigatória) [lista; ambiente PHXCLAW_NOSTR_PERMITIDOS]",
         "relay: Relay wss:// [texto; ambiente PHXCLAW_NOSTR_RELAY]"
       ],
       "permitidos": null,
@@ -163,8 +163,8 @@
       "//": [
         "app_id: ID do app [texto; ambiente PHXCLAW_REDDIT_APP_ID]",
         "oauth: Base oauth; vazio = a oficial [texto; ambiente PHXCLAW_REDDIT_OAUTH]",
-        "permitidos: Conversas de reddit que podem falar com o agente (obrigatoria) [lista; ambiente PHXCLAW_REDDIT_PERMITIDOS]",
-        "usuario: Usuario [texto; ambiente PHXCLAW_REDDIT_USUARIO]",
+        "permitidos: Conversas de reddit que podem falar com o agente (obrigatória) [lista; ambiente PHXCLAW_REDDIT_PERMITIDOS]",
+        "usuario: Usuário [texto; ambiente PHXCLAW_REDDIT_USUARIO]",
         "www: Base www; vazio = a oficial [texto; ambiente PHXCLAW_REDDIT_WWW]"
       ],
       "app_id": null,
@@ -175,10 +175,10 @@
     },
     "rocketchat": {
       "//": [
-        "base: Base do servico (obrigatoria) [texto; ambiente PHXCLAW_ROCKETCHAT_BASE]",
-        "permitidos: Conversas de rocketchat que podem falar com o agente (obrigatoria) [lista; ambiente PHXCLAW_ROCKETCHAT_PERMITIDOS]",
+        "base: Base do serviço (obrigatória) [texto; ambiente PHXCLAW_ROCKETCHAT_BASE]",
+        "permitidos: Conversas de rocketchat que podem falar com o agente (obrigatória) [lista; ambiente PHXCLAW_ROCKETCHAT_PERMITIDOS]",
         "tipo: Tipo de sala [texto; ambiente PHXCLAW_ROCKETCHAT_TIPO]",
-        "usuario_id: ID do usuario do bot [texto; ambiente PHXCLAW_ROCKETCHAT_USUARIO_ID]"
+        "usuario_id: ID do usuário do bot [texto; ambiente PHXCLAW_ROCKETCHAT_USUARIO_ID]"
       ],
       "base": null,
       "permitidos": null,
@@ -187,9 +187,9 @@
     },
     "signal": {
       "//": [
-        "base: Base do servico [texto; ambiente PHXCLAW_SIGNAL_BASE]",
-        "numero: Numero do bot [texto; ambiente PHXCLAW_SIGNAL_NUMERO]",
-        "permitidos: Conversas de signal que podem falar com o agente (obrigatoria) [lista; ambiente PHXCLAW_SIGNAL_PERMITIDOS]"
+        "base: Base do serviço [texto; ambiente PHXCLAW_SIGNAL_BASE]",
+        "numero: Número do bot [texto; ambiente PHXCLAW_SIGNAL_NUMERO]",
+        "permitidos: Conversas de signal que podem falar com o agente (obrigatória) [lista; ambiente PHXCLAW_SIGNAL_PERMITIDOS]"
       ],
       "base": "http://127.0.0.1:8080",
       "numero": null,
@@ -197,19 +197,19 @@
     },
     "slack": {
       "//": [
-        "base: Base do servico; vazio = a oficial [texto; ambiente PHXCLAW_SLACK_BASE]",
-        "permitidos: Conversas de slack que podem falar com o agente (obrigatoria) [lista; ambiente PHXCLAW_SLACK_PERMITIDOS]"
+        "base: Base do serviço; vazio = a oficial [texto; ambiente PHXCLAW_SLACK_BASE]",
+        "permitidos: Conversas de slack que podem falar com o agente (obrigatória) [lista; ambiente PHXCLAW_SLACK_PERMITIDOS]"
       ],
       "base": null,
       "permitidos": null
     },
     "sms": {
       "//": [
-        "base: Base do servico; vazio = a oficial [texto; ambiente PHXCLAW_SMS_BASE]",
+        "base: Base do serviço; vazio = a oficial [texto; ambiente PHXCLAW_SMS_BASE]",
         "conta: Conta do provedor [texto; ambiente PHXCLAW_SMS_CONTA]",
-        "numero: Numero de envio [texto; ambiente PHXCLAW_SMS_NUMERO]",
-        "permitidos: Conversas de sms que podem falar com o agente (obrigatoria) [lista; ambiente PHXCLAW_SMS_PERMITIDOS]",
-        "url_publica: URL publica do webhook [texto; ambiente PHXCLAW_SMS_URL_PUBLICA]"
+        "numero: Número de envio [texto; ambiente PHXCLAW_SMS_NUMERO]",
+        "permitidos: Conversas de sms que podem falar com o agente (obrigatória) [lista; ambiente PHXCLAW_SMS_PERMITIDOS]",
+        "url_publica: URL pública do webhook [texto; ambiente PHXCLAW_SMS_URL_PUBLICA]"
       ],
       "base": null,
       "conta": null,
@@ -221,8 +221,8 @@
       "//": [
         "app_id: ID do app [texto; ambiente PHXCLAW_TEAMS_APP_ID]",
         "login: Endpoint de login; vazio = o oficial [texto; ambiente PHXCLAW_TEAMS_LOGIN]",
-        "permitidos: Conversas de teams que podem falar com o agente (obrigatoria) [lista; ambiente PHXCLAW_TEAMS_PERMITIDOS]",
-        "servicos: Origens de servico aceitas; vazio = a oficial [lista; ambiente PHXCLAW_TEAMS_SERVICOS]"
+        "permitidos: Conversas de teams que podem falar com o agente (obrigatória) [lista; ambiente PHXCLAW_TEAMS_PERMITIDOS]",
+        "servicos: Origens de serviço aceitas; vazio = a oficial [lista; ambiente PHXCLAW_TEAMS_SERVICOS]"
       ],
       "app_id": null,
       "login": null,
@@ -231,17 +231,17 @@
     },
     "telegram": {
       "//": [
-        "chats: Chats que podem falar com o agente (obrigatorio) [lista; ambiente PHXCLAW_TELEGRAM_CHATS]"
+        "chats: Chats que podem falar com o agente (obrigatório) [lista; ambiente PHXCLAW_TELEGRAM_CHATS]"
       ],
       "chats": null
     },
     "twitch": {
       "//": [
-        "ca: Autoridade (PEM) no lugar das raizes publicas [caminho; ambiente PHXCLAW_TWITCH_CA]",
+        "ca: Autoridade (PEM) no lugar das raízes públicas [caminho; ambiente PHXCLAW_TWITCH_CA]",
         "endereco: Servidor host:porta [texto; ambiente PHXCLAW_TWITCH_ENDERECO]",
         "nick: Apelido do bot [texto; ambiente PHXCLAW_TWITCH_NICK]",
-        "permitidos: Conversas de twitch que podem falar com o agente (obrigatoria) [lista; ambiente PHXCLAW_TWITCH_PERMITIDOS]",
-        "tls: TLS no soquete; desligado so vale para loopback [booleano; ambiente PHXCLAW_TWITCH_TLS]"
+        "permitidos: Conversas de twitch que podem falar com o agente (obrigatória) [lista; ambiente PHXCLAW_TWITCH_PERMITIDOS]",
+        "tls: TLS no soquete; desligado só vale para loopback [booleano; ambiente PHXCLAW_TWITCH_TLS]"
       ],
       "ca": null,
       "endereco": null,
@@ -251,8 +251,8 @@
     },
     "viber": {
       "//": [
-        "base: Base do servico; vazio = a oficial [texto; ambiente PHXCLAW_VIBER_BASE]",
-        "permitidos: Conversas de viber que podem falar com o agente (obrigatoria) [lista; ambiente PHXCLAW_VIBER_PERMITIDOS]",
+        "base: Base do serviço; vazio = a oficial [texto; ambiente PHXCLAW_VIBER_BASE]",
+        "permitidos: Conversas de viber que podem falar com o agente (obrigatória) [lista; ambiente PHXCLAW_VIBER_PERMITIDOS]",
         "remetente: Nome do remetente [texto; ambiente PHXCLAW_VIBER_REMETENTE]"
       ],
       "base": null,
@@ -261,22 +261,22 @@
     },
     "webchat": {
       "//": [
-        "permitidos: Conversas de webchat que podem falar com o agente (obrigatoria) [lista; ambiente PHXCLAW_WEBCHAT_PERMITIDOS]"
+        "permitidos: Conversas de webchat que podem falar com o agente (obrigatória) [lista; ambiente PHXCLAW_WEBCHAT_PERMITIDOS]"
       ],
       "permitidos": null
     },
     "webhook": {
       "//": [
-        "permitidos: Conversas de webhook que podem falar com o agente (obrigatoria) [lista; ambiente PHXCLAW_WEBHOOK_PERMITIDOS]",
-        "saida_url: URL de saida [texto; ambiente PHXCLAW_WEBHOOK_SAIDA_URL]"
+        "permitidos: Conversas de webhook que podem falar com o agente (obrigatória) [lista; ambiente PHXCLAW_WEBHOOK_PERMITIDOS]",
+        "saida_url: URL de saída [texto; ambiente PHXCLAW_WEBHOOK_SAIDA_URL]"
       ],
       "permitidos": null,
       "saida_url": null
     },
     "whatsapp": {
       "//": [
-        "base: Base do servico; vazio = a oficial [texto; ambiente PHXCLAW_WHATSAPP_BASE]",
-        "permitidos: Conversas de whatsapp que podem falar com o agente (obrigatoria) [lista; ambiente PHXCLAW_WHATSAPP_PERMITIDOS]",
+        "base: Base do serviço; vazio = a oficial [texto; ambiente PHXCLAW_WHATSAPP_BASE]",
+        "permitidos: Conversas de whatsapp que podem falar com o agente (obrigatória) [lista; ambiente PHXCLAW_WHATSAPP_PERMITIDOS]",
         "phone_id: phone_number_id [texto; ambiente PHXCLAW_WHATSAPP_PHONE_ID]"
       ],
       "base": null,
@@ -285,11 +285,11 @@
     },
     "xmpp": {
       "//": [
-        "ca: Autoridade (PEM) no lugar das raizes publicas [caminho; ambiente PHXCLAW_XMPP_CA]",
+        "ca: Autoridade (PEM) no lugar das raízes públicas [caminho; ambiente PHXCLAW_XMPP_CA]",
         "endereco: Servidor host:porta [texto; ambiente PHXCLAW_XMPP_ENDERECO]",
         "jid: JID do bot [texto; ambiente PHXCLAW_XMPP_JID]",
-        "permitidos: Conversas de xmpp que podem falar com o agente (obrigatoria) [lista; ambiente PHXCLAW_XMPP_PERMITIDOS]",
-        "tls: TLS no soquete; desligado so vale para loopback [booleano; ambiente PHXCLAW_XMPP_TLS]"
+        "permitidos: Conversas de xmpp que podem falar com o agente (obrigatória) [lista; ambiente PHXCLAW_XMPP_PERMITIDOS]",
+        "tls: TLS no soquete; desligado só vale para loopback [booleano; ambiente PHXCLAW_XMPP_TLS]"
       ],
       "ca": null,
       "endereco": null,
@@ -299,9 +299,9 @@
     },
     "zulip": {
       "//": [
-        "base: Base do servico (obrigatoria) [texto; ambiente PHXCLAW_ZULIP_BASE]",
+        "base: Base do serviço (obrigatória) [texto; ambiente PHXCLAW_ZULIP_BASE]",
         "email: E-mail do bot [texto; ambiente PHXCLAW_ZULIP_EMAIL]",
-        "permitidos: Conversas de zulip que podem falar com o agente (obrigatoria) [lista; ambiente PHXCLAW_ZULIP_PERMITIDOS]"
+        "permitidos: Conversas de zulip que podem falar com o agente (obrigatória) [lista; ambiente PHXCLAW_ZULIP_PERMITIDOS]"
       ],
       "base": null,
       "email": null,
@@ -323,7 +323,7 @@
       "controle_webview: App de mesa: controlar webview [booleano; ambiente PHXCLAW_ENABLE_WEBVIEW_CONTROL]",
       "entrada: App de mesa: mouse e teclado [booleano; ambiente PHXCLAW_ENABLE_INPUT]",
       "exec_host: App de mesa: executar comando no host [booleano; ambiente PHXCLAW_ENABLE_HOST_EXEC]",
-      "hx: App de mesa: executavel do Helix [caminho; ambiente PHXCLAW_HX]",
+      "hx: App de mesa: executável do Helix [caminho; ambiente PHXCLAW_HX]",
       "shells: App de mesa: shells [booleano; ambiente PHXCLAW_ENABLE_SHELLS]",
       "webview_origens: App de mesa: origens permitidas na webview [lista; ambiente PHXCLAW_WEBVIEW_ALLOWED_ORIGINS]",
       "webviews_externas: App de mesa: webviews externas [booleano; ambiente PHXCLAW_ENABLE_EXTERNAL_WEBVIEWS]"
@@ -340,12 +340,12 @@
   },
   "dispositivos": {
     "//": [
-      "ca_pem: Autoridade (PEM) que o no aceita no TLS [caminho; ambiente PHXCLAW_DEVICE_CA_PEM]",
-      "host: Endereco do servidor de dispositivos [texto; ambiente PHXCLAW_DEVICE_HOST]",
-      "keystore: Arquivo da chave do no de dispositivo [caminho; ambiente PHXCLAW_DEVICE_KEYSTORE]",
-      "no_uuid: UUID do no de dispositivo [texto; ambiente PHXCLAW_NODE_UUID]",
-      "tenant_uuid: Inquilino (UUID) do no de dispositivo e da ponte [texto; ambiente PHXCLAW_TENANT_UUID]",
-      "wss_url: Endereco WSS do servidor para o no de dispositivo [texto; ambiente PHXCLAW_DEVICE_WSS_URL]"
+      "ca_pem: Autoridade (PEM) que o nó aceita no TLS [caminho; ambiente PHXCLAW_DEVICE_CA_PEM]",
+      "host: Endereço do servidor de dispositivos [texto; ambiente PHXCLAW_DEVICE_HOST]",
+      "keystore: Arquivo da chave do nó de dispositivo [caminho; ambiente PHXCLAW_DEVICE_KEYSTORE]",
+      "no_uuid: UUID do nó de dispositivo [texto; ambiente PHXCLAW_NODE_UUID]",
+      "tenant_uuid: Inquilino (UUID) do nó de dispositivo e da ponte [texto; ambiente PHXCLAW_TENANT_UUID]",
+      "wss_url: Endereço WSS do servidor para o nó de dispositivo [texto; ambiente PHXCLAW_DEVICE_WSS_URL]"
     ],
     "ca_pem": null,
     "host": "127.0.0.1",
@@ -356,7 +356,7 @@
   },
   "documentos": {
     "//": [
-      "embed: Modelo de embedding da reordenacao (so ollama:) [texto; ambiente PHXCLAW_DOCS_EMBED]"
+      "embed: Modelo de embedding da reordenação (só ollama:) [texto; ambiente PHXCLAW_DOCS_EMBED]"
     ],
     "embed": null
   },
@@ -364,11 +364,11 @@
     "//": [
       "api: Base da API da ElevenLabs [texto; ambiente PHXCLAW_ELEVENLABS_API]",
       "estabilidade: stability da voz (0 a 1) [real; ambiente PHXCLAW_ELEVENLABS_ESTABILIDADE]",
-      "formato: Formato de saida da fala (wav_16000, pcm_22050...) [texto; ambiente PHXCLAW_ELEVENLABS_FORMATO]",
+      "formato: Formato de saída da fala (wav_16000, pcm_22050...) [texto; ambiente PHXCLAW_ELEVENLABS_FORMATO]",
       "modelo: Modelo de fala da ElevenLabs [texto; ambiente PHXCLAW_ELEVENLABS_MODELO]",
       "similaridade: similarity_boost da voz (0 a 1) [real; ambiente PHXCLAW_ELEVENLABS_SIMILARIDADE]",
-      "stt_modelo: Modelo de transcricao da ElevenLabs [texto; ambiente PHXCLAW_ELEVENLABS_STT_MODELO]",
-      "voz: voice_id da ElevenLabs (obrigatorio com voz.tts.provedor=elevenlabs) [texto; ambiente PHXCLAW_ELEVENLABS_VOZ]"
+      "stt_modelo: Modelo de transcrição da ElevenLabs [texto; ambiente PHXCLAW_ELEVENLABS_STT_MODELO]",
+      "voz: voice_id da ElevenLabs (obrigatório com voz.tts.provedor=elevenlabs) [texto; ambiente PHXCLAW_ELEVENLABS_VOZ]"
     ],
     "api": "https://api.elevenlabs.io",
     "estabilidade": null,
@@ -380,7 +380,7 @@
   },
   "email": {
     "//": [
-      "permitidos: Destinatarios permitidos do send_email [lista; ambiente PHXCLAW_EMAIL_PERMITIDOS]",
+      "permitidos: Destinatários permitidos do send_email [lista; ambiente PHXCLAW_EMAIL_PERMITIDOS]",
       "remetente: Remetente do e-mail [texto; ambiente PHXCLAW_EMAIL_FROM]"
     ],
     "permitidos": null,
@@ -389,8 +389,8 @@
       "//": [
         "host: Servidor SMTP [texto; ambiente PHXCLAW_SMTP_HOST]",
         "porta: Porta SMTP; vazio = 465 (tls), 587 (starttls) ou 25 (plain) [inteiro; ambiente PHXCLAW_SMTP_PORT]",
-        "seguranca: Seguranca do SMTP [enum tls|starttls|plain; ambiente PHXCLAW_SMTP_SECURITY]",
-        "usuario: Usuario do SMTP [texto; ambiente PHXCLAW_SMTP_USER]"
+        "seguranca: Segurança do SMTP [enum tls|starttls|plain; ambiente PHXCLAW_SMTP_SECURITY]",
+        "usuario: Usuário do SMTP [texto; ambiente PHXCLAW_SMTP_USER]"
       ],
       "host": null,
       "porta": null,
@@ -412,11 +412,23 @@
       "api": "https://gitlab.com/api/v4"
     }
   },
+  "git": {
+    "segredos": {
+      "//": [
+        "exigir: Recusa add/commit do git_write quando a varredura de segredos não pode ser feita [booleano; ambiente PHXCLAW_GITLEAKS_EXIGIR]",
+        "gitleaks_bin: Executável do gitleaks que varre add/commit do git_write (sem ele, a varredura não é feita e o resultado diz isso) [caminho; ambiente PHXCLAW_GITLEAKS_BIN]",
+        "gitleaks_sha256: SHA-256 esperado do executável do gitleaks; sem ele o binário não roda [texto; ambiente PHXCLAW_GITLEAKS_SHA256]"
+      ],
+      "exigir": false,
+      "gitleaks_bin": null,
+      "gitleaks_sha256": null
+    }
+  },
   "imagem": {
     "//": [
-      "comfy_fluxo: Fluxo do ComfyUI (obrigatorio com imagem.provedor=comfyui) [caminho; ambiente PHXCLAW_COMFY_WORKFLOW]",
+      "comfy_fluxo: Fluxo do ComfyUI (obrigatório com imagem.provedor=comfyui) [caminho; ambiente PHXCLAW_COMFY_WORKFLOW]",
       "modelo: Modelo do gerador de imagem (openai: gpt-image-1) [texto; ambiente PHXCLAW_IMAGEM_MODELO]",
-      "provedor: Gerador de imagem; vazio = so o SVG local [enum openai|comfyui|nanobanana; ambiente PHXCLAW_IMAGEM_PROVEDOR]",
+      "provedor: Gerador de imagem; vazio = só o SVG local [enum openai|comfyui|nanobanana; ambiente PHXCLAW_IMAGEM_PROVEDOR]",
       "url: Base do gerador de imagem (openai: https://api.openai.com) [texto; ambiente PHXCLAW_IMAGEM_URL]"
     ],
     "comfy_fluxo": null,
@@ -432,15 +444,15 @@
   },
   "missao": {
     "//": [
-      "estado_dir: Pasta de estado da CLI de missao [caminho; ambiente PHXCLAW_STATE_DIR]"
+      "estado_dir: Pasta de estado da CLI de missão [caminho; ambiente PHXCLAW_STATE_DIR]"
     ],
     "estado_dir": null
   },
   "modelo": {
     "//": [
-      "local: Modelo local dos papeis da equipe que a planilha roteia para o Ollama [texto; ambiente PHXCLAW_MODELO_LOCAL]",
-      "padrao: Modelo padrao do agente e da API (provedor:modelo) [texto; ambiente PHXCLAW_MODELO]",
-      "visao: Modelo de visao da leitura de tela [texto; ambiente PHXCLAW_MODELO_VISAO]"
+      "local: Modelo local dos papéis da equipe que a planilha roteia para o Ollama [texto; ambiente PHXCLAW_MODELO_LOCAL]",
+      "padrao: Modelo padrão do agente e da API (provedor:modelo) [texto; ambiente PHXCLAW_MODELO]",
+      "visao: Modelo de visão da leitura de tela [texto; ambiente PHXCLAW_MODELO_VISAO]"
     ],
     "local": null,
     "padrao": "ollama:qwen2.5:1.5b",
@@ -448,7 +460,7 @@
   },
   "navegador": {
     "//": [
-      "chromium: Executavel do Chromium [caminho; ambiente PHXCLAW_CHROMIUM]"
+      "chromium: Executável do Chromium [caminho; ambiente PHXCLAW_CHROMIUM]"
     ],
     "chromium": null
   },
@@ -472,14 +484,14 @@
   },
   "ponte": {
     "//": [
-      "host: Endereco em que a ponte de controle remoto escuta [texto; ambiente PHXCLAW_PONTE_HOST]"
+      "host: Endereço em que a ponte de controle remoto escuta [texto; ambiente PHXCLAW_PONTE_HOST]"
     ],
     "host": "127.0.0.1"
   },
   "pontes": {
     "claw": {
       "//": [
-        "bin: Executavel do claw-code [caminho; ambiente PHXCLAW_CLAW_BIN]",
+        "bin: Executável do claw-code [caminho; ambiente PHXCLAW_CLAW_BIN]",
         "timeout_ms: Prazo do claw-code em ms [inteiro; ambiente PHXCLAW_CLAW_TIMEOUT_MS]",
         "workspace: Pasta de trabalho do claw-code [caminho; ambiente PHXCLAW_CLAW_WORKSPACE]"
       ],
@@ -489,7 +501,7 @@
     },
     "octopus": {
       "//": [
-        "bin: Executavel do Octopus [caminho; ambiente PHXCLAW_OCTOPUS_BIN]",
+        "bin: Executável do Octopus [caminho; ambiente PHXCLAW_OCTOPUS_BIN]",
         "workspace: Pasta de trabalho do Octopus [caminho; ambiente PHXCLAW_OCTOPUS_WORKSPACE]"
       ],
       "bin": "octopus-console",
@@ -497,7 +509,7 @@
     },
     "openclaw_rs": {
       "//": [
-        "bin: Executavel do openclaw-rs [caminho; ambiente PHXCLAW_OPENCLAW_RS_BIN]",
+        "bin: Executável do openclaw-rs [caminho; ambiente PHXCLAW_OPENCLAW_RS_BIN]",
         "timeout_ms: Prazo do openclaw-rs em ms [inteiro; ambiente PHXCLAW_OPENCLAW_RS_TIMEOUT_MS]",
         "workspace: Pasta de trabalho do openclaw-rs [caminho; ambiente PHXCLAW_OPENCLAW_RS_WORKSPACE]"
       ],
@@ -507,8 +519,8 @@
     },
     "rustclaw": {
       "//": [
-        "bin: Executavel do rustclaw [caminho; ambiente PHXCLAW_RUSTCLAW_BIN]",
-        "prompt_no_argv: Permite o prompt na linha de comando do rustclaw (fica visivel no ps) [booleano; ambiente PHXCLAW_RUSTCLAW_ALLOW_PROMPT_ARGV]",
+        "bin: Executável do rustclaw [caminho; ambiente PHXCLAW_RUSTCLAW_BIN]",
+        "prompt_no_argv: Permite o prompt na linha de comando do rustclaw (fica visível no ps) [booleano; ambiente PHXCLAW_RUSTCLAW_ALLOW_PROMPT_ARGV]",
         "timeout_ms: Prazo do rustclaw em ms [inteiro; ambiente PHXCLAW_RUSTCLAW_TIMEOUT_MS]",
         "workspace: Pasta de trabalho do rustclaw [caminho; ambiente PHXCLAW_RUSTCLAW_WORKSPACE]"
       ],
@@ -529,7 +541,7 @@
   "python": {
     "//": [
       "bin: Interpretador Python das ferramentas [caminho; ambiente PHXCLAW_PYTHON]",
-      "uv: Executavel do uv [caminho; ambiente PHXCLAW_UV]"
+      "uv: Executável do uv [caminho; ambiente PHXCLAW_UV]"
     ],
     "bin": null,
     "uv": null
@@ -549,9 +561,9 @@
   "voz": {
     "kws": {
       "//": [
-        "bin: Executavel da palavra de ativacao [caminho; ambiente PHXCLAW_KWS_BIN]",
-        "modelo_dir: Pasta do modelo da palavra de ativacao [caminho; ambiente PHXCLAW_KWS_MODEL_DIR]",
-        "modelo_sha256: SHA-256 esperado do modelo da palavra de ativacao [texto; ambiente PHXCLAW_KWS_MODEL_SHA256]"
+        "bin: Executável da palavra de ativação [caminho; ambiente PHXCLAW_KWS_BIN]",
+        "modelo_dir: Pasta do modelo da palavra de ativação [caminho; ambiente PHXCLAW_KWS_MODEL_DIR]",
+        "modelo_sha256: SHA-256 esperado do modelo da palavra de ativação [texto; ambiente PHXCLAW_KWS_MODEL_SHA256]"
       ],
       "bin": null,
       "modelo_dir": null,
@@ -579,7 +591,7 @@
     },
     "whisper": {
       "//": [
-        "bin: Executavel do whisper.cpp [caminho; ambiente PHXCLAW_WHISPER_BIN]",
+        "bin: Executável do whisper.cpp [caminho; ambiente PHXCLAW_WHISPER_BIN]",
         "modelo: Modelo do whisper.cpp [caminho; ambiente PHXCLAW_WHISPER_MODEL]",
         "modelo_sha256: SHA-256 esperado do modelo do whisper [texto; ambiente PHXCLAW_WHISPER_MODEL_SHA256]"
       ],

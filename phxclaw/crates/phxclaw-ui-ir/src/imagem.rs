@@ -60,7 +60,7 @@ pub fn confirmar(campos: &[String], listas: &[String], ocr: &[String]) -> Vec<Ro
 
 /// Texto de exemplo dentro do campo ("Selecione produto", "dd/mm/aaaa") esta escrito na
 /// tela e passa pelo OCR, mas nao e rotulo (medido: virava a coluna selecione_produto).
-fn texto_de_exemplo(normalizado: &str) -> bool {
+pub(crate) fn texto_de_exemplo(normalizado: &str) -> bool {
     // "R$", "%", "4": simbolo ou numero solto nao e rotulo (medido: "R$" virava coluna "r")
     normalizado
         .chars()
@@ -72,7 +72,8 @@ fn texto_de_exemplo(normalizado: &str) -> bool {
             "digite",
             "informe",
             "escolha",
-            "ddmmaaaa",
+            // "ddmm" e nao "ddmmaaaa": medido em 01/10, o OCR leu "dd/mmyaaaa"
+            "ddmm",
             "pesquisar",
         ]
         .iter()

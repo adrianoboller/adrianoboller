@@ -295,6 +295,13 @@ impl Montagem {
             tools.push(Arc::new(d));
         }
         tools.extend(crate::git::ferramentas_de_codigo(&self.store, llm.clone()));
+        // Pareceres do conselho de integradores, na pasta do agente (a mesma da CLI
+        // `phxclaw gonogo`); `gonogo.write` fica fora do padrao: e o papel 111 que o pede.
+        tools.push(Arc::new(crate::gonogo::GoNoGoTool {
+            conselho: crate::gonogo::Conselho::da_pasta_do_agente(
+                self.store.root().parent().unwrap_or(self.store.root()),
+            ),
+        }));
         tools.extend(self.forjas.iter().cloned());
         // `x_search` so com chave da xAI guardada (`phxclaw xai chave`); `x.search` fora do
         // padrao: e conta paga do operador.
