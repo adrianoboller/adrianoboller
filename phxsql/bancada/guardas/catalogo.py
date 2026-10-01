@@ -19948,4 +19948,58 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "servidor::testes_do_rebaixar_sem_disco::rebaixar_com_disco_nao_inventa_aviso",
         ],
     },
+    {
+        "id": "backup-copia-sob-a-exclusiva",
+        "titulo": "O backup copiava com a ficha EXCLUSIVA da trava de dados: a leitura parava a cópia inteira (100 GB = 50 a 64 min sem ler nada)",
+        "porque": (
+            "pedido 513, passo 1 (H2 da decisao de 01/10/2026). A copia so le "
+            "`raiz`; basta excluir quem escreve. Medido pelo soquete com a "
+            "copia parada 1,5 s: leitura de 1.358 ms com a troca, 1 ms com o "
+            "conserto; a escrita espera 1,5 s nos dois."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        let _retrato = self.retrato.tirar_retrato();
+        let _trava = self.travar_dados_para_ler()?;
+""",
+        "troca": """        // DEFEITO REPOSTO (513): a copia segura a ficha exclusiva.
+        let _trava = self.travar_dados()?;
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_do_retrato_do_backup::a_leitura_nao_espera_o_backup_e_a_escrita_espera",
+        ],
+        "seguem": [
+            "servidor::testes_do_panico_sob_a_trava::backup_em_panico_sob_a_trava_falha_e_o_servidor_fica",
+        ],
+        "prazo": 600,
+    },
+    {
+        "id": "backup-sem-portao-do-retrato",
+        "titulo": "A cópia do backup com a ficha COMPARTILHADA e sem o portão do retrato: o primeiro escritor na fila do `RwLock` fazia toda leitura nova esperar a cópia inteira",
+        "porque": (
+            "pedido 513, a H2 ingenua. O `RwLock` da `std` no Linux prefere o "
+            "escritor: com um escritor esperando, o leitor novo espera junto. "
+            "A troca de trava sozinha passava num teste que lesse ANTES de "
+            "gravar e nao comprava nada no dia de uso. Medido pelo soquete: "
+            "leitura de 1.373 ms com a troca (escritor na fila), 1 ms com o "
+            "portao."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        let _retrato = self.retrato.tirar_retrato();
+        let _trava = self.travar_dados_para_ler()?;
+""",
+        "troca": """        // DEFEITO REPOSTO (513): a ficha compartilhada sem o portao.
+        let _trava = self.travar_dados_para_ler()?;
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_do_retrato_do_backup::a_leitura_nao_espera_o_backup_e_a_escrita_espera",
+        ],
+        "seguem": [
+            "retrato::testes::o_retrato_espera_quem_esta_dentro_e_barra_quem_chega",
+        ],
+        "prazo": 600,
+    },
 ]

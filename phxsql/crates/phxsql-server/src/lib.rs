@@ -49,6 +49,7 @@ pub mod profiler;
 pub mod pulso;
 pub mod replica;
 pub mod rest;
+mod retrato;
 pub mod rodizio;
 pub mod rotinas;
 pub mod saude_do_disco;

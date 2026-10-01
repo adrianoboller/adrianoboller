@@ -449,6 +449,11 @@ dia, nunca no desejado:
   contador (`drop-do-congelamento-esquece-o-contador`) e o arbitro que
   engolia o rebaixar (`arbitro-engole-o-rebaixar`). 560 + 5 = 565.
   No merge com as frentes que levaram o piso a 579: 579 + 5 = 584.
+  **SUBIU para 586 em 01/10/2026** (pedido 513, passo 1): duas guardas --
+  a copia do backup sob a ficha EXCLUSIVA (`backup-copia-sob-a-exclusiva`)
+  e a ficha compartilhada sem o portao do retrato, que o `RwLock` que
+  prefere o escritor deixava parar a leitura (`backup-sem-portao-do-retrato`).
+  584 + 2 = 586, contado pelo `--catraca` (585 entradas mais 1 aposentada).
 
 # A QUINTA REGUA: a tabela publicada pode ser MENOR que o catalogo
 
@@ -555,7 +560,7 @@ TETO_TESTE_MORTO = 0
 TETO_TRECHO_AMBIGUO = 0
 TETO_TESTE_FORA_DO_BINARIO = 0
 TETO_TESTE_SEM_MODULO = 0
-PISO_DAS_ENTRADAS = 584
+PISO_DAS_ENTRADAS = 586
 
 # ------------------------------------------------------------- APOSENTADAS
 #

@@ -2356,6 +2356,37 @@ cache e não **alocação**: o `Vec<RowId>` intermediário carregava uma entrada
 linha da tabela, `RowId = u64` — **7,63 MiB por leitura ordenada, por leitor**, a
 um milhão de linhas. Hoje ele carrega o pedaço que a página precisa.
 
+### 16.10 A terceira tomada: a cópia do backup, e o escritor que espera FORA da fila (01/10, pedido 513)
+
+A cópia do backup (`Servidor::copiar_o_retrato`, a MESMA para o protocolo e o
+agendado) deixou a ficha exclusiva e passou a tomar a compartilhada. Ela não abre
+tabela — lê os arquivos de `raiz` byte a byte — e escreve só no destino, que
+`backup::executar`/`executar_zip` recusam dentro da raiz antes do primeiro byte.
+A catraca `so_as_duas_operacoes_medidas_usam_a_ficha_compartilhada` passou a
+cobrar **três** chamadas, com o motivo da terceira escrito nela.
+
+**A troca sozinha não comprava nada**, e isso só apareceu com um escritor na
+fila: o `RwLock` da `std` no Linux recusa leitor novo quando há escritor
+esperando. Daí o **portão do retrato** (`crates/phxsql-server/src/retrato.rs`):
+durante a cópia o escritor espera ANTES da fila do `RwLock`, dentro do
+`travar_dados()` e dentro do cronômetro da telemetria. Sem cópia em curso o
+portão custa um `fetch_add` e um `load` na entrada e um `fetch_sub` e um `load`
+na saída — nenhum mutex. A consistência do retrato **não depende** do portão: o
+escritor que escapasse dele ainda pararia na ficha de leitura da cópia; o portão
+só decide se o LEITOR espera.
+
+| a cópia segura | leitura com escritor na fila | escrita |
+|---|---|---|
+| ficha exclusiva (antes) | 1.358 ms | 1.507 ms |
+| ficha de leitura sem portão | 1.373 ms | 1.521 ms |
+| ficha de leitura + portão | **1 ms** | 1.506 ms |
+
+Pelo soquete, cópia parada 1,5 s (`servidor::testes_do_retrato_do_backup`). O
+limite que fica: a tabela gravada na última janela `por_lote` antes da cópia tem
+o cabeçalho do `.log` atrasado, a ficha compartilhada recua para curá-lo (§16.3),
+e essa primeira leitura espera a cópia. Cognição:
+`cognicao_rwlock-prefere-o-escritor-e-a-leitura-do-backup-para_20261001_0340.md`.
+
 ---
 
 ## 17. O mapa das threads — semáforo e teto (16/09/2026, pedido 248)
