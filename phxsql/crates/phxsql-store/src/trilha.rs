@@ -1057,9 +1057,67 @@ impl TrilhaFile {
     }
 
     /// Le em ordem cronologica. `limite` zero devolve tudo.
+    ///
+    /// O `pular` e posicao CONTADA, e por isso nao serve para paginar uma
+    /// exportacao: um expurgo entre duas paginas tira um volume da frente, a
+    /// contagem desliza e o auditor pula registros sem saber (pedido 487).
+    /// Quem pagina usa [`TrilhaFile::ler_depois_de`]; este fica para quem le
+    /// de uma vez, e para o cliente antigo, que continua recebendo o mesmo.
     pub fn ler(&mut self, pular: u64, limite: u64) -> Result<Vec<Evento>> {
-        let mut saida = Vec::new();
         let mut vistos = 0u64;
+        self.percorrer(limite, |_| {
+            let entrega = vistos >= pular;
+            vistos += 1;
+            entrega
+        })
+    }
+
+    /// A pagina seguinte ao registro `cursor` -- pedido 487.
+    ///
+    /// # Por que a POSICAO do cursor, e nao a comparacao dos UUIDs
+    ///
+    /// O que os maduros fazem e `WHERE id > :ultimo`, e aqui isso seria
+    /// `uuid > cursor`. So que o UUID v7 cresce dentro de um processo e NAO
+    /// atravessa reinicio com o relogio puxado para tras: o arquivo e
+    /// append-only e a ordem dele e a da gravacao, e um registro gravado
+    /// depois de um reinicio assim teria UUID menor que o cursor -- a
+    /// comparacao o pularia, que e o defeito que este cursor existe para
+    /// matar. Entao o cursor e procurado pelo que ele e, e a pagina comeca
+    /// logo depois dele, na ordem do arquivo. O expurgo derruba volume
+    /// inteiro e nunca reescreve o que fica, entao a posicao de um registro
+    /// vivo nao muda entre duas paginas.
+    ///
+    /// # E quando o cursor foi expurgado
+    ///
+    /// Ai nao ha posicao para achar, e a comparacao e a melhor resposta que
+    /// sobra: entrega o que tem UUID maior. O segundo valor devolvido diz
+    /// `false` nesse caso, para quem audita SABER que a pagina saiu pelo
+    /// caminho de reserva -- calar isso seria o mesmo defeito por outra porta.
+    pub fn ler_depois_de(&mut self, cursor: &Uuid, limite: u64) -> Result<(Vec<Evento>, bool)> {
+        let alvo = *cursor.bytes();
+        let mut achou = false;
+        let saida = self.percorrer(limite, |cab| {
+            if achou {
+                return true;
+            }
+            achou = cab[24..40] == alvo;
+            false
+        })?;
+        if achou {
+            return Ok((saida, true));
+        }
+        let saida = self.percorrer(limite, |cab| cab[24..40] > alvo[..])?;
+        Ok((saida, false))
+    }
+
+    /// Anda pelos registros em ordem e entrega os que `entregar` aceita, pelo
+    /// cabecalho -- o texto so se le (e se decifra) do que vai sair.
+    fn percorrer(
+        &mut self,
+        limite: u64,
+        mut entregar: impl FnMut(&[u8; REGISTRO_CAB]) -> bool,
+    ) -> Result<Vec<Evento>> {
+        let mut saida = Vec::new();
         for volume in self.volumes_vivos()? {
             let cab = self.cab(volume)?;
             let nome = self.volumes.caminho(volume).display().to_string();
@@ -1074,7 +1132,7 @@ impl TrilhaFile {
                         self.volumes.caminho(volume).display()
                     )));
                 }
-                if vistos >= pular {
+                if entregar(&cabecalho) {
                     let mut buf = vec![0u8; n];
                     self.volumes.ler(volume, offset, &mut buf)?;
                     saida.push(Evento::ler(&buf, &cab, offset, &nome)?);
@@ -1082,7 +1140,6 @@ impl TrilhaFile {
                         return Ok(saida);
                     }
                 }
-                vistos += 1;
                 offset += n as u64;
             }
         }

@@ -43,7 +43,7 @@
 use crate::carga::{decimal_para_texto, texto_para_decimal, valor_de_texto};
 use crate::error::{citar, PhxError, Result, LITERAL_REDIGIDO};
 use crate::types::ColumnType;
-use crate::value::Value;
+use crate::value::{escrever_inline, Value};
 
 // ------------------------------------------------------------------ valores
 
@@ -152,11 +152,16 @@ impl Valor {
     fn descricao(&self) -> String {
         match self {
             Valor::Nulo => "NULL".into(),
-            Valor::Bool(b) => format!("o booleano {b}"),
-            Valor::Num(n) => format!("o numero {}", n.texto()),
-            // Quem recusa aqui recusa pelo TIPO, e o texto pode ser o valor
-            // de uma linha gravada (`nome + 1`): o conteudo nunca foi o
-            // diagnostico, e a mensagem vai ao `acessos.log` -- pedido 497.
+            // Quem recusa aqui recusa pelo TIPO, e o valor pode ser o de uma
+            // linha gravada (`nome + 1`) ou o que uma conta tirou dela
+            // (`renda / 1000`): o conteudo nunca foi o diagnostico, e a
+            // mensagem vai ao `acessos.log` -- pedido 497 para o texto, 558
+            // para o numero e o booleano. Redigir os tres AQUI, e nao na
+            // coluna de destino, e o que alcanca a conta que parte de coluna
+            // marcada e cai numa coluna sem marca: a porta do 464 so conhece
+            // o destino, e o motor da expressao e quem conhece o valor.
+            Valor::Bool(_) => "um booleano".into(),
+            Valor::Num(_) => "um numero".into(),
             Valor::Texto(_) => format!("o texto {LITERAL_REDIGIDO}"),
         }
     }
@@ -1213,7 +1218,31 @@ fn arredondar(n: Numero, casas: u8) -> Result<Numero> {
 /// Do resultado da conta para o valor que a coluna grava. Nada aqui
 /// arredonda nem trunca em silencio: decimal com casas demais recusa
 /// mandando usar `ROUND`, e real numa coluna inteira recusa do mesmo jeito.
+///
+/// # A faixa do tipo se confere AQUI, e pelo motor do slot
+///
+/// `renda / 1000` numa coluna `Int1` da 500, que e um `Int` valido e nao
+/// cabe em 8 bits. Sem esta conferencia quem recusava era o slot, la na
+/// gravacao, com `500 nao cabe em inteiro de 8 bits` -- e o slot so passa a
+/// recusa pela porta da coluna de DESTINO (pedido 464), que nao sabe que a
+/// conta partiu de coluna marcada (pedido 558). A conferencia chama o MESMO
+/// `escrever_inline` que vai gravar, num rascunho: a regra de faixa continua
+/// escrita num lugar so, e a recusa sai daqui com o tipo e sem o valor.
 pub fn coagir(v: &Valor, ty: &ColumnType) -> Result<Value> {
+    let valor = converter(v, ty)?;
+    if !valor.e_null() && !matches!(ty, ColumnType::Bin | ColumnType::Memo) {
+        let mut rascunho = vec![0u8; ty.largura()];
+        escrever_inline(&valor, ty, &mut rascunho).map_err(|_| {
+            PhxError::LimiteExcedido(format!(
+                "a expressao devolveu {} e a coluna e {ty:?}: nao cabe",
+                v.descricao()
+            ))
+        })?;
+    }
+    Ok(valor)
+}
+
+fn converter(v: &Valor, ty: &ColumnType) -> Result<Value> {
     let recusa = |o_que: &str| {
         PhxError::Tipo(format!(
             "a expressao devolveu {} e a coluna e {ty:?}: {o_que}",
@@ -1266,7 +1295,14 @@ pub fn coagir(v: &Valor, ty: &ColumnType) -> Result<Value> {
         // Data, hora, instante e identificador: o texto ISO, pelo mesmo
         // conversor da importacao -- um conversor, nao dois.
         (Valor::Texto(t), ColumnType::Date | ColumnType::Time | ColumnType::DateTime)
-        | (Valor::Texto(t), ColumnType::Uuid | ColumnType::Uuid256) => valor_de_texto(t, ty)?,
+        // O conversor cita o texto que recusa (ate 48 bytes), e aqui o texto
+        // e o resultado da conta -- que pode partir de coluna marcada e cair
+        // numa coluna sem marca, onde a porta do 464 nao redige. A frase dele
+        // e jogada fora inteira, como no `Column::recusa_de_valor`: redigir
+        // analisando, nunca recortando (pedido 558).
+        | (Valor::Texto(t), ColumnType::Uuid | ColumnType::Uuid256) => {
+            valor_de_texto(t, ty).map_err(|_| recusa("nao e um valor do tipo"))?
+        }
         _ => return Err(recusa("tipos incompativeis")),
     })
 }

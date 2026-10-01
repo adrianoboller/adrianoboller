@@ -13974,14 +13974,18 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "CONTAGEM de linhas por balde, que e agregado do dado."
         ),
         "arquivo": "crates/phxsql-server/src/servidor.rs",
-        "trecho": r"""                let r = dc::peneirar_baldes(r, &sem_ler);
+        # Pedido 543: a peneira do 369 virou a do oraculo do rowid inteiro
+        # (contagem, `existe`, `slots`, `volumes`, `arquivos`), e por isso o
+        # teste do 543 cai junto quando ela some do `esquema`.
+        "trecho": r"""                let r = dc::peneirar_oraculo_do_rowid(r, &sem_ler);
 """,
-        "troca": r"""                let r = r; // DEFEITO REPOSTO (369): sem peneirar_baldes
+        "troca": r"""                let r = r; // DEFEITO REPOSTO (369): sem a peneira do esquema
 """,
         "pacote": "phxsql-server",
         "alvo": ["--lib"],
         "caem": [
             "servidor::testes_direito_por_coluna::baldes_perdem_a_contagem_so_quando_a_coluna_da_particao_esta_negada",
+            "servidor::testes_direito_por_coluna::a_coluna_que_particiona_negada_nao_sai_pelo_rowid_nem_pelo_balde",
         ],
         "seguem": [
             "servidor::testes_direito_por_coluna::o_esquema_continua_inteiro_e_diz_o_que_falta",
@@ -18979,6 +18983,115 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         "seguem": [
             "catalogo::testes_excluir_vai_ao_disco::excluir_esvaziar_e_expurgar_vao_ao_disco",
             "catalogo::testes_gestao::excluir_tabela_leva_os_arquivos_dela_e_so_os_dela",
+        ],
+    },
+    {
+        "id": "trilha-pagina-por-contagem",
+        "titulo": "A exportação da trilha paginava só por `pular`: um expurgo entre duas páginas fazia o auditor pular registro vivo sem aviso",
+        "porque": (
+            "pedido 487: o `pular` conta posicao, e o expurgo derruba volume "
+            "da frente -- a contagem desliza por cima de registros que nunca "
+            "saem. O `depois_de` procura o registro do cursor e comeca logo "
+            "depois dele; cursor expurgado sai pela comparacao dos UUIDs e "
+            "diz `cursor_achado: false`. O defeito reposto e o cursor ignorado."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        } else if let Some(c) = &cursor {
+""",
+        "troca": """        // DEFEITO REPOSTO (487): o cursor e ignorado, so o `pular` pagina.
+        } else if let Some(c) = cursor.as_ref().filter(|_| false) {
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_da_ficha_compartilhada::a_trilha_pagina_por_cursor_e_o_expurgo_nao_faz_pular_registro",
+        ],
+        "seguem": [
+            "servidor::testes_da_ficha_compartilhada::a_trilha_de_dado_pessoal_sobrevive_a_pista_de_leitura",
+        ],
+    },
+    {
+        "id": "rowid-revela-coluna-negada",
+        "titulo": "Com a coluna que particiona negada pelo direito, a primeira letra (ou o período) de cada linha saía pelo rowid, pelos baldes, pelo `slots` e pelo catálogo",
+        "porque": (
+            "pedido 543: a recusa do 358 disparava pela MARCA, e coluna negada "
+            "por direito tinha protecao menor que coluna marcada. Uma pergunta "
+            "so -- `coluna_do_rowid_negada` -- decide para o portao do direito "
+            "por coluna: a operacao de linha recusa, e o `esquema` e o "
+            "`sistabelas` perdem o que conta linha por balde. O defeito "
+            "reposto e o codigo de antes: ninguem pergunta."
+        ),
+        "arquivo": "crates/phxsql-server/src/direito_coluna.rs",
+        "trecho": """pub fn coluna_do_rowid_negada(esquema: &Json, sem_ler: &[String]) -> Option<String> {
+    if sem_ler.is_empty() {
+        return None;
+    }
+""",
+        "troca": """pub fn coluna_do_rowid_negada(esquema: &Json, sem_ler: &[String]) -> Option<String> {
+    // DEFEITO REPOSTO (543): ninguem pergunta que coluna o rowid revela.
+    if !sem_ler.is_empty() || sem_ler.is_empty() {
+        return None;
+    }
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        # O 369 cai junto, e deve: a contagem por balde passou a sair pela
+        # MESMA pergunta, que e o ponto de ter uma pergunta so.
+        "caem": [
+            "servidor::testes_direito_por_coluna::a_coluna_que_particiona_negada_nao_sai_pelo_rowid_nem_pelo_balde",
+            "servidor::testes_direito_por_coluna::baldes_perdem_a_contagem_so_quando_a_coluna_da_particao_esta_negada",
+        ],
+        "seguem": [
+            "servidor::testes_direito_por_coluna::o_esquema_diz_o_material_em_disco",
+        ],
+    },
+    {
+        "id": "conta-cita-numero-de-coluna-marcada",
+        "titulo": "A recusa da expressão citava número e booleano, e a conta que parte de coluna marcada e cai em coluna sem marca saía com o valor",
+        "porque": (
+            "pedido 558: a porta do 464 so conhece a coluna de DESTINO. "
+            "`faixa Int1 = renda / 1000` recusava no slot com `500 nao cabe`, "
+            "`dia Date = cod` citava o CPF pelo conversor de data e `-ativo` "
+            "dizia `o booleano true`. Quem conhece o valor e o motor da "
+            "expressao: a `descricao` redige os tres, o `coagir` confere a "
+            "faixa pelo mesmo `escrever_inline` do slot e joga fora a frase "
+            "do conversor."
+        ),
+        "trocas": [
+            {
+                "arquivo": "crates/phxsql-core/src/expressao.rs",
+                "trecho": """            Valor::Bool(_) => "um booleano".into(),
+            Valor::Num(_) => "um numero".into(),
+""",
+                "troca": """            // DEFEITO REPOSTO (558, 1/3): numero e booleano citados.
+            Valor::Bool(b) => format!("o booleano {b}"),
+            Valor::Num(n) => format!("o numero {}", n.texto()),
+""",
+            },
+            {
+                "arquivo": "crates/phxsql-core/src/expressao.rs",
+                "trecho": """    if !valor.e_null() && !matches!(ty, ColumnType::Bin | ColumnType::Memo) {
+""",
+                "troca": """    // DEFEITO REPOSTO (558, 2/3): a faixa fica para o slot.
+    if false && !valor.e_null() && !matches!(ty, ColumnType::Bin | ColumnType::Memo) {
+""",
+            },
+            {
+                "arquivo": "crates/phxsql-core/src/expressao.rs",
+                "trecho": """            valor_de_texto(t, ty).map_err(|_| recusa("nao e um valor do tipo"))?
+""",
+                "troca": """            // DEFEITO REPOSTO (558, 3/3): a frase do conversor, com o texto.
+            valor_de_texto(t, ty)?
+""",
+            },
+        ],
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_recusa_sem_dado_pessoal::a_conta_que_parte_de_coluna_marcada_nao_cita_o_valor",
+        ],
+        "seguem": [
+            "servidor::testes_recusa_sem_dado_pessoal::a_coluna_sem_marca_continua_citando_o_valor",
         ],
     },
 ]

@@ -579,6 +579,23 @@ pub const FABRICA: &[MensagemFabrica] = &[
         ],
     },
     MensagemFabrica {
+        nome: "erro.rowid_revela_coluna_negada",
+        textos: [
+            "a coluna {coluna} de {tabela} nao pode ser lida por este usuario, e a \
+             tabela e particionada por ela: o rowid de cada linha diz o balde, e o \
+             balde e a primeira letra (ou o periodo) da coluna. Libere a coluna ou \
+             negue a tabela inteira",
+            "",
+            "column {coluna} of {tabela} cannot be read by this user, and the table \
+             is partitioned by it: each row's rowid tells the bucket, and the bucket \
+             is the column's first letter (or period). Grant the column or deny the \
+             whole table",
+            "",
+            "",
+            "",
+        ],
+    },
+    MensagemFabrica {
         nome: "erro.pulso_de_no_desconhecido",
         textos: [
             "o pulso de {id} nao e aceito por este no: nao e um dos OUTROS nos deste cluster",

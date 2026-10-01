@@ -7971,7 +7971,58 @@ impl Servidor {
         let tabela = pedido.texto_ou("tabela", "").trim().to_string();
 
         match dc::classe(op) {
-            PorColuna::Nenhum => self.executar(op, pedido, sessao),
+            PorColuna::Nenhum => {
+                // `excluir` e `restaurar` nao devolvem coluna nenhuma, e por
+                // isso sao `Nenhum` -- mas andam por um rowid escolhido, e
+                // «existe»/«nao existe» balde a balde e o mesmo oraculo do
+                // pedido 543. O campo que decide e o `rowid` do pedido: quem
+                // nao o manda nao paga nem a lista de colunas negadas.
+                if pedido.campo("rowid").is_some() {
+                    self.recusar_linha_cujo_rowid_revela_coluna_negada(
+                        &base,
+                        &tabela,
+                        &u.colunas_negadas(&base, &tabela, Atividade::Ler),
+                        sessao,
+                    )?;
+                }
+                self.executar(op, pedido, sessao)
+            }
+
+            // Uma linha por tabela, sem campo `tabela` no pedido: o crivo do
+            // oraculo do rowid passa linha a linha (pedido 543). So pergunta
+            // o esquema das tabelas em que ESTE usuario tem coluna negada --
+            // as outras saem como sempre sairam, sem trabalho nenhum.
+            PorColuna::Catalogo => {
+                let r = self.executar(op, pedido, sessao)?;
+                let Json::Objeto(pares) = r else {
+                    return Ok(r);
+                };
+                let mut saida = Vec::with_capacity(pares.len());
+                for (k, v) in pares {
+                    let v = match (k.as_str(), v) {
+                        ("tabelas", Json::Lista(linhas)) => {
+                            let mut novas = Vec::with_capacity(linhas.len());
+                            for linha in linhas {
+                                let nome = linha.texto_ou("tabela", "").to_string();
+                                let sem_ler = u.colunas_negadas(&base, &nome, Atividade::Ler);
+                                let negada = !sem_ler.is_empty()
+                                    && self
+                                        .coluna_do_rowid_negada(&base, &nome, &sem_ler, sessao)?
+                                        .is_some();
+                                novas.push(if negada {
+                                    dc::peneirar_linha_do_catalogo(linha)
+                                } else {
+                                    linha
+                                });
+                            }
+                            Json::Lista(novas)
+                        }
+                        (_, v) => v,
+                    };
+                    saida.push((k, v));
+                }
+                Ok(Json::Objeto(saida))
+            }
 
             // A definicao de um job e dado que alguem digitou (pedido 350): o
             // valor da coluna negada sai redigido, analisando o pedido.
@@ -8020,15 +8071,16 @@ impl Servidor {
                 let r = self.executar(op, pedido, sessao)?;
                 let sem_ler = u.colunas_negadas(&base, &tabela, Atividade::Ler);
                 let sem_alterar = u.colunas_negadas(&base, &tabela, Atividade::Alterar);
-                // O histograma da particao alfanumerica e' agregado do DADO,
-                // nao da estrutura -- sai quando a coluna que particiona a
-                // tabela esta em `sem_ler` (pedido 369, irma do 358 pelo
-                // outro lado: la o vazamento vinha pelo rowid, aqui pelo
-                // balde). Sai antes do atalho de baixo porque ele so olha o
-                // par (sem_ler, sem_alterar) vazio, e este e' vazio nos dois
-                // quando nao ha regra -- exatamente o caso em que
-                // `peneirar_baldes` tambem nao mexe em nada.
-                let r = dc::peneirar_baldes(r, &sem_ler);
+                // O que conta linha por balde e' agregado do DADO, nao da
+                // estrutura -- sai quando a coluna que o rowid revela esta em
+                // `sem_ler` (pedidos 369 e 543, irmas do 358 pelo outro lado:
+                // la o vazamento vinha pelo rowid, aqui pelo balde). Sai
+                // antes do atalho de baixo porque ele so olha o par
+                // (sem_ler, sem_alterar) vazio, e este e' vazio nos dois
+                // quando nao ha regra -- exatamente o caso em que a peneira
+                // tambem nao mexe em nada. A resposta ja e o esquema, entao a
+                // pergunta «que coluna o rowid revela?» se le dela mesma.
+                let r = dc::peneirar_oraculo_do_rowid(r, &sem_ler);
                 if sem_ler.is_empty() && sem_alterar.is_empty() {
                     return Ok(r);
                 }
@@ -8052,6 +8104,9 @@ impl Servidor {
                 if negadas.is_empty() {
                     return self.executar(op, pedido, sessao);
                 }
+                self.recusar_linha_cujo_rowid_revela_coluna_negada(
+                    &base, &tabela, &negadas, sessao,
+                )?;
                 self.recusar_pergunta_sobre_coluna_negada(
                     pedido, sessao, &base, &tabela, &negadas,
                 )?;
@@ -8066,6 +8121,15 @@ impl Servidor {
                 if u.regras_de_coluna(&base, &tabela).is_empty() {
                     return self.executar(op, pedido, sessao);
                 }
+                // A escrita tambem anda por rowid: `atualizar`/`excluir` num
+                // rowid escolhido respondem «existe» ou «nao existe», e isso,
+                // balde a balde, e o `existe` que a peneira do esquema tira.
+                self.recusar_linha_cujo_rowid_revela_coluna_negada(
+                    &base,
+                    &tabela,
+                    &u.colunas_negadas(&base, &tabela, Atividade::Ler),
+                    sessao,
+                )?;
                 let (ajustado, mantidas) =
                     self.escrita_sob_direito_por_coluna(op, pedido, sessao, &base, &tabela)?;
                 let r = self.executar(op, &ajustado, sessao)?;
@@ -8088,6 +8152,59 @@ impl Servidor {
                 Ok(Json::Objeto(pares))
             }
         }
+    }
+
+    /// A coluna negada que o ROWID desta tabela revela, se houver -- pedido
+    /// 543. Pelo `executar("esquema")`, como o [`Servidor::colunas_do_indice`]
+    /// e pelo mesmo motivo: um segundo caminho para ler esquema seria mais um
+    /// lugar que a sobreposicao da transacao e o `schema.tabela` teriam de
+    /// aprender. Quem chama ja conferiu que `sem_ler` nao e vazia, entao o
+    /// esquema so e pedido para quem tem coluna negada NESTA tabela.
+    fn coluna_do_rowid_negada(
+        &self,
+        base: &str,
+        tabela: &str,
+        sem_ler: &[String],
+        sessao: &Sessao,
+    ) -> Result<Option<String>> {
+        let ped = Json::objeto(vec![
+            ("database", Json::texto_de(base)),
+            ("tabela", Json::texto_de(tabela)),
+        ]);
+        let e = self.executar("esquema", &ped, sessao)?;
+        Ok(crate::direito_coluna::coluna_do_rowid_negada(&e, sem_ler))
+    }
+
+    /// Recusa a operacao de LINHA numa tabela cujo rowid revela coluna negada
+    /// a este usuario -- pedido 543, a recusa do 358 alinhada ao direito.
+    ///
+    /// # Por que recusar, e nao peneirar
+    ///
+    /// Na particao por letra (ou por periodo), `rowid = (balde - 1) *
+    /// registros_por_arquivo + slot`: o rowid de cada linha E o balde, e o
+    /// balde e a primeira letra da coluna (ou o mes e o ano dela). Nao ha
+    /// peneira que tire isso da resposta sem tirar o rowid -- e sem rowid a
+    /// linha nao se le de volta nem se altera. O 358 ja decidiu o mesmo para a
+    /// coluna MARCADA, recusando a combinacao na criacao; a coluna negada por
+    /// direito tinha protecao menor que a marcada, e era esse o furo. Recusar
+    /// e mais seguro que vazar, e a recusa diz as duas saidas que existem.
+    fn recusar_linha_cujo_rowid_revela_coluna_negada(
+        &self,
+        base: &str,
+        tabela: &str,
+        sem_ler: &[String],
+        sessao: &Sessao,
+    ) -> Result<()> {
+        if sem_ler.is_empty() || tabela.is_empty() {
+            return Ok(());
+        }
+        let Some(coluna) = self.coluna_do_rowid_negada(base, tabela, sem_ler, sessao)? else {
+            return Ok(());
+        };
+        Err(PhxError::Autorizacao(self.msg(
+            "erro.rowid_revela_coluna_negada",
+            &[("coluna", &coluna), ("tabela", &format!("{base}.{tabela}"))],
+        )))
     }
 
     /// A leitura tambem PERGUNTA, e a pergunta responde sem mostrar a coluna.
@@ -21569,6 +21686,18 @@ impl Servidor {
                                 Some(i) => Json::texto_de(&e.colunas()[i].nome),
                             },
                         ),
+                        // A coluna que o ROWID devolve a quem so viu o rowid
+                        // (pedido 543). Sai separada da `coluna` pelo motivo
+                        // que `coluna_que_o_rowid_revela` escreve: hoje as
+                        // duas respondem igual, e o direito por coluna tem de
+                        // ler a pergunta certa no dia em que divergirem.
+                        (
+                            "coluna_do_rowid",
+                            match pag.modo.coluna_que_o_rowid_revela() {
+                                None => Json::Nulo,
+                                Some(i) => Json::texto_de(&e.colunas()[i].nome),
+                            },
+                        ),
                         ("bytes_por_arquivo", Json::de_u64(pag.bytes_por_arquivo)),
                     ])
                 } else {
@@ -23238,10 +23367,52 @@ impl Servidor {
             .collect();
         let tem_trilha = t.tem_trilha();
         let total = t.total_da_trilha()?;
+        // `depois_de` e o cursor estavel da exportacao (pedido 487): o `pular`
+        // conta posicao, e um expurgo entre duas paginas faz a contagem
+        // deslizar por cima de registros que nunca saem. Os dois juntos nao
+        // tem leitura unica -- pular a partir do cursor? -- e a ambiguidade
+        // vira recusa em vez de palpite.
+        let cursor = match p.campo("depois_de").filter(|v| !matches!(v, Json::Nulo)) {
+            None => None,
+            Some(v) => {
+                if p.campo("pular").is_some() {
+                    return Err(PhxError::Esquema(
+                        "mande \"depois_de\" ou \"pular\", e nao os dois: o cursor ja diz \
+                         onde a pagina comeca"
+                            .into(),
+                    ));
+                }
+                let texto = v.texto().unwrap_or("");
+                Some(
+                    phxsql_core::uuid::Uuid::de_texto(texto.trim()).map_err(|_| {
+                        PhxError::Esquema(
+                            "\"depois_de\" e o \"uuid\" do ultimo registro da pagina anterior \
+                         (o \"proximo\" da resposta)"
+                                .into(),
+                        )
+                    })?,
+                )
+            }
+        };
+        let mut cursor_achado = None;
         let lista = if so_do_rowid {
             t.trilha_de(self.rowid(p)?)?
+        } else if let Some(c) = &cursor {
+            let (l, achou) = t.trilha_depois_de(c, limite)?;
+            cursor_achado = Some(achou);
+            l
         } else {
             t.trilha(pular, limite)?
+        };
+        // O cursor da proxima pagina e o ULTIMO LIDO, antes do filtro por
+        // tipo: o filtro roda depois do limite, e o ultimo ENTREGUE deixaria
+        // a proxima pagina reler o que o filtro jogou fora. Pagina que nao
+        // encheu e a ultima, e diz isso com `null`.
+        let proximo = match lista.last() {
+            Some(e) if !so_do_rowid && limite > 0 && lista.len() as u64 >= limite => {
+                Json::texto_de(e.uuid.to_string())
+            }
+            _ => Json::Nulo,
         };
 
         let registros: Vec<Json> = lista
@@ -23282,7 +23453,7 @@ impl Servidor {
             })
             .collect();
 
-        Ok(Json::objeto(vec![
+        let resposta = Json::objeto(vec![
             ("database", Json::texto_de(p.texto_ou("database", ""))),
             ("tabela", Json::texto_de(p.texto_ou("tabela", ""))),
             ("total", Json::de_u64(total)),
@@ -23301,7 +23472,18 @@ impl Servidor {
                 Json::Bool(phxsql_store::trilha::acessos_ligados()),
             ),
             ("registros", Json::Lista(registros)),
-        ]))
+        ]);
+        let Json::Objeto(mut pares) = resposta else {
+            return Ok(resposta);
+        };
+        pares.push(("proximo".to_string(), proximo));
+        // So aparece para quem mandou cursor: `false` diz que o registro do
+        // cursor foi expurgado e a pagina saiu pela comparacao dos UUIDs --
+        // o auditor precisa SABER disso, e nao deduzir.
+        if let Some(achou) = cursor_achado {
+            pares.push(("cursor_achado".to_string(), Json::Bool(achou)));
+        }
+        Ok(Json::Objeto(pares))
     }
 
     /// `esvaziar_lixeira`: daqui nao volta. **So administrador.**
@@ -35867,6 +36049,142 @@ mod testes_direito_por_coluna {
         );
     }
 
+    /// **Pedido 543: com a coluna que particiona negada, a primeira letra (ou
+    /// o periodo) de cada linha nao sai por porta nenhuma.**
+    ///
+    /// As quatro portas do parecer, e a quinta, pelo `despachar`: (1)
+    /// `paginacao.baldes[].existe`; (2) `esquema.slots` (e o `arquivos`, que e
+    /// o `existe` com outro nome); (3) `sistabelas.slots`; (4) o rowid do
+    /// `varrer` -- e do `ler` e da escrita, que andam pelo mesmo rowid; (5)
+    /// `volumes[].periodo` numa particao mensal sobre `Date` negada.
+    ///
+    /// O controle e o comportamento velho: com a regra numa coluna que NAO
+    /// particiona (`id`), ana varre e o esquema vem inteiro.
+    ///
+    /// **Defeito reposto** (a decisao `dc::coluna_do_rowid_negada`
+    /// respondendo sempre `None`, que e o que o codigo de antes fazia por nao
+    /// perguntar): caem as cinco portas, uma linha por porta no vermelho --
+    /// `existe`, `slots`, `arquivos`, `sistabelas.slots`, o rowid pelo
+    /// `varrer`, `ler`, `excluir` e `atualizar`, e o `periodo`.
+    #[test]
+    fn a_coluna_que_particiona_negada_nao_sai_pelo_rowid_nem_pelo_balde() {
+        let dir = dir_temp("oraculo-543");
+        let negando = |coluna: &str| {
+            cadastro(&format!(
+                r#"{{"*":{{"ler":true,"inserir":true,"alterar":true,"excluir":true,
+                     "criar":true,"reindexar":true,"diario":true,"verificar":true,
+                     "replicar":true,"administrar":true,
+                     "tabelas":{{"vip":{{"ler":true,"inserir":true,"alterar":true,
+                       "excluir":true,"criar":true,"diario":true,"administrar":true,
+                       "replicar":true,"verificar":true,"reindexar":true,
+                       "colunas":{{"{coluna}":{{"ler":false,"alterar":false}}}}}},
+                     "lanc":{{"ler":true,"inserir":true,"alterar":true,
+                       "excluir":true,"criar":true,"diario":true,"administrar":true,
+                       "replicar":true,"verificar":true,"reindexar":true,
+                       "colunas":{{"emissao":{{"ler":false,"alterar":false}}}}}}}}}}}}"#
+            ))
+        };
+        let (s, ana) = servidor_com_particao_por_letra(&dir, negando("cidade"));
+        let dono = Sessao::default();
+        s.executar(
+            "criar_tabela",
+            &pedido(
+                r#"{"database":"b","tabela":"lanc",
+                    "colunas":[{"nome":"id","tipo":"Int8","obrigatoria":true},
+                               {"nome":"emissao","tipo":"Date","obrigatoria":true}],
+                    "registros_por_arquivo":1000,
+                    "particao":"mensal","particao_coluna":"emissao"}"#,
+            ),
+            &dono,
+        )
+        .unwrap();
+        s.executar(
+            "inserir",
+            &pedido(r#"{"database":"b","tabela":"lanc","linha":{"id":1,"emissao":"2026-03-05"}}"#),
+            &dono,
+        )
+        .unwrap();
+
+        let mut vazou = Vec::new();
+        let e = pede(&s, &ana, r#""op":"esquema","database":"b","tabela":"vip""#).unwrap();
+        let baldes = e
+            .campo("paginacao")
+            .and_then(|p| p.campo("baldes"))
+            .and_then(Json::lista)
+            .unwrap_or(&[]);
+        if baldes.iter().any(|b| b.campo("existe").is_some()) {
+            vazou.push("(1) paginacao.baldes[].existe".to_string());
+        }
+        for campo in ["slots", "arquivos"] {
+            if e.campo(campo).is_some() {
+                vazou.push(format!("(2) esquema.{campo}"));
+            }
+        }
+        let cat = pede(&s, &ana, r#""op":"sistabelas","database":"b""#).unwrap();
+        for t in cat.campo("tabelas").and_then(Json::lista).unwrap_or(&[]) {
+            if t.texto_ou("tabela", "") == "vip" && t.campo("slots").is_some() {
+                vazou.push("(3) sistabelas.slots".to_string());
+            }
+        }
+        for (porta, corpo) in [
+            ("varrer", r#""op":"varrer","database":"b","tabela":"vip""#),
+            (
+                "ler",
+                r#""op":"ler","database":"b","tabela":"vip","rowid":1"#,
+            ),
+            (
+                "excluir",
+                r#""op":"excluir","database":"b","tabela":"vip","rowid":999999"#,
+            ),
+            (
+                "atualizar",
+                r#""op":"atualizar","database":"b","tabela":"vip","rowid":999999,
+                   "valores":{"id":9}"#,
+            ),
+        ] {
+            match pede(&s, &ana, corpo) {
+                Err(PhxError::Autorizacao(m)) if m.contains("cidade") => {}
+                outro => vazou.push(format!("(4) rowid pelo {porta}: {outro:?}")),
+            }
+        }
+        let el = pede(&s, &ana, r#""op":"esquema","database":"b","tabela":"lanc""#).unwrap();
+        if el.escrever().contains("2026-03") {
+            vazou.push(format!("(5) volumes[].periodo: {}", el.escrever()));
+        }
+        assert!(
+            vazou.is_empty(),
+            "a coluna que particiona, negada, ainda sai por:\n  {}",
+            vazou.join("\n  ")
+        );
+        // A estrutura do balde fica: e geometria, igual para toda tabela.
+        assert!(
+            !baldes.is_empty()
+                && baldes
+                    .iter()
+                    .all(|b| b.campo("letra").is_some() && b.campo("primeiro_rowid").is_some()),
+            "a peneira levou junto o que nao e dado: {}",
+            e.escrever()
+        );
+
+        // CONTROLE: a regra numa coluna que NAO particiona nao muda nada.
+        let dir2 = dir_temp("oraculo-543-controle");
+        let (s2, ana2) = servidor_com_particao_por_letra(&dir2, negando("id"));
+        let v = pede(&s2, &ana2, r#""op":"varrer","database":"b","tabela":"vip""#).unwrap();
+        assert_eq!(
+            v.campo("linhas").and_then(Json::lista).map(|l| l.len()),
+            Some(3),
+            "{}",
+            v.escrever()
+        );
+        let e2 = pede(
+            &s2,
+            &ana2,
+            r#""op":"esquema","database":"b","tabela":"vip""#,
+        )
+        .unwrap();
+        assert!(e2.campo("slots").is_some(), "{}", e2.escrever());
+    }
+
     /// O `esquema` diz o material EM DISCO da tabela. Aqui o cofre esta
     /// desligado -- este binario nao pode liga-lo, a chave e do processo --,
     /// entao a resposta certa e `em_claro`, e o campo tem de EXISTIR: um
@@ -45365,6 +45683,121 @@ mod testes_da_ficha_compartilhada {
             "a varredura de uma tabela com coluna marcada nao deixou rastro \
              na trilha: a pista de leitura engoliu o registro"
         );
+    }
+
+    /// **Pedido 487: a exportacao da trilha pagina por cursor, e um expurgo
+    /// entre duas paginas nao faz o auditor pular registro.**
+    ///
+    /// Sete registros em dois volumes (r1..r3 fechado, r4..r7 ativo). A
+    /// primeira pagina leva r1..r4; o expurgo derruba o volume de r1..r3. Pelo
+    /// `pular: 4` a segunda pagina sai VAZIA -- r5, r6 e r7 estao vivos e nunca
+    /// saem (o controle, que prova que o cenario desliza mesmo). Pelo
+    /// `depois_de` ela traz r5 e r6. E o cursor que o expurgo levou (r2) nao
+    /// vira silencio: a pagina sai pela comparacao dos UUIDs e diz
+    /// `cursor_achado: false`.
+    ///
+    /// **Defeito reposto** (o `op_trilha` ignorando o `depois_de` e lendo so
+    /// pelo `pular`): a segunda pagina volta `[r4, r5]` em vez de `[r5, r6]`,
+    /// e a asserção do conteudo cai.
+    #[test]
+    fn a_trilha_pagina_por_cursor_e_o_expurgo_nao_faz_pular_registro() {
+        let (s, _dir) = servidor("trilha-cursor", false);
+        let dono = Sessao::default();
+        s.executar(
+            "marcar_lgpd",
+            &pedido(r#"{"database":"b","tabela":"c","colunas":{"cpf":"pessoal"}}"#),
+            &dono,
+        )
+        .unwrap();
+        let trilha = |extra: &str| -> Json {
+            s.executar(
+                "trilha",
+                &pedido(&format!(
+                    r#"{{"database":"b","tabela":"c","tipo":"acesso"{extra}}}"#
+                )),
+                &dono,
+            )
+            .unwrap()
+        };
+        let uuids = |r: &Json| -> Vec<String> {
+            r.campo("registros")
+                .and_then(Json::lista)
+                .unwrap_or(&[])
+                .iter()
+                .map(|e| e.texto_ou("uuid", "").to_string())
+                .collect()
+        };
+        for _ in 0..3 {
+            varrer(&s, "");
+        }
+        // Fecha o ativo sem derrubar nada: `ate` no passado nao alcanca
+        // registro nenhum.
+        s.executar(
+            "expurgar_trilha",
+            &pedido(
+                r#"{"database":"b","tabela":"c","motivo":"corte","ate":"2000-01-01",
+                    "fechar_ativo":true}"#,
+            ),
+            &dono,
+        )
+        .unwrap();
+        for _ in 0..4 {
+            varrer(&s, "");
+        }
+        let todos = uuids(&trilha(""));
+        assert_eq!(todos.len(), 7, "o cenario nao montou sete acessos");
+
+        let p1 = trilha(r#","limite":4"#);
+        assert_eq!(uuids(&p1), todos[0..4].to_vec());
+        let proximo = p1.texto_ou("proximo", "").to_string();
+        assert_eq!(proximo, todos[3], "o cursor da pagina e o ultimo lido");
+
+        std::thread::sleep(std::time::Duration::from_millis(3));
+        s.executar(
+            "expurgar_trilha",
+            &pedido(&format!(
+                r#"{{"database":"b","tabela":"c","motivo":"prazo","ate_ms":{}}}"#,
+                crate::agora_ms()
+            )),
+            &dono,
+        )
+        .unwrap();
+
+        // O controle: pela contagem, r5..r7 somem da exportacao.
+        assert!(
+            uuids(&trilha(r#","limite":2,"pular":4"#)).is_empty(),
+            "o cenario nao deslizou"
+        );
+
+        let p2 = trilha(&format!(r#","limite":2,"depois_de":"{proximo}""#));
+        assert_eq!(
+            uuids(&p2),
+            todos[4..6].to_vec(),
+            "o expurgo entre as paginas fez a exportacao pular registro vivo: {}",
+            p2.escrever()
+        );
+        assert_eq!(p2.campo("cursor_achado"), Some(&Json::Bool(true)));
+
+        // O cursor que o expurgo levou: a pagina sai, e DIZ por onde saiu.
+        let p3 = trilha(&format!(r#","limite":2,"depois_de":"{}""#, todos[1]));
+        assert_eq!(uuids(&p3), todos[3..5].to_vec());
+        assert_eq!(p3.campo("cursor_achado"), Some(&Json::Bool(false)));
+
+        // A ultima pagina diz que acabou.
+        let p4 = trilha(&format!(r#","limite":2,"depois_de":"{}""#, todos[6]));
+        assert!(uuids(&p4).is_empty());
+        assert_eq!(p4.campo("proximo"), Some(&Json::Nulo));
+
+        // Cursor e contagem juntos nao tem leitura unica: recusa.
+        assert!(s
+            .executar(
+                "trilha",
+                &pedido(&format!(
+                    r#"{{"database":"b","tabela":"c","pular":1,"depois_de":"{proximo}"}}"#
+                )),
+                &dono,
+            )
+            .is_err());
     }
 
     /// **Prova real do A8 (revisao SEC de 17/09/2026, pedido 285).** O
@@ -65535,6 +65968,88 @@ mod testes_recusa_sem_dado_pessoal {
             &format!(r#"{{"database":"b","tabela":"p","linha":{{"id":6,"doc":"{DOC}"}}}}"#),
         );
         redigida("faixa do Int4", &r, DOC, "doc");
+    }
+
+    /// **Pedido 558: a conta que PARTE de coluna marcada nao cita o valor,
+    /// mesmo caindo numa coluna sem marca.**
+    ///
+    /// A porta do 464 olha a coluna de DESTINO, e aqui o destino e sem marca:
+    /// `faixa` (`Int1 = renda / 1000`), `dia` (`Date = cod`) e `neg`
+    /// (`Int8 = -ativo`) nao sao dado pessoal, e o valor que a conta carrega
+    /// e. Quem redige e o motor da expressao, que e quem conhece o valor -- a
+    /// `descricao` do numero e do booleano, e a recusa do conversor de data
+    /// dentro do `coagir`.
+    ///
+    /// **Defeito reposto** (a `descricao` voltando a escrever `o numero {n}`
+    /// e `o booleano {b}`, e o `coagir` com o `valor_de_texto(t, ty)?` cru):
+    /// cai cada caminho, com `o numero 500`, o CPF e `o booleano true`.
+    #[test]
+    fn a_conta_que_parte_de_coluna_marcada_nao_cita_o_valor() {
+        let dir = DirTemp::novo("recusa-558-conta");
+        let s = servidor(&dir);
+        let dono = Sessao::default();
+        s.executar(
+            "criar_tabela",
+            &pedido(
+                r#"{"database":"b","tabela":"q",
+                    "colunas":[{"nome":"id","tipo":"Int8"},
+                               {"nome":"renda","tipo":"Int8"},
+                               {"nome":"cod","tipo":"Str(20)"},
+                               {"nome":"ativo","tipo":"Bool"},
+                               {"nome":"faixa","tipo":"Int1","calculada":"renda / 1000"},
+                               {"nome":"dia","tipo":"Date","calculada":"cod"},
+                               {"nome":"neg","tipo":"Int8","calculada":"-ativo"}]}"#,
+            ),
+            &dono,
+        )
+        .unwrap();
+        s.executar(
+            "marcar_lgpd",
+            &pedido(
+                r#"{"database":"b","tabela":"q",
+                    "colunas":{"renda":"sensivel","cod":"pessoal","ativo":"pessoal"}}"#,
+            ),
+            &dono,
+        )
+        .unwrap();
+        let mut vazou = Vec::new();
+        for (quem, linha, valor) in [
+            (
+                "numero derivado",
+                r#"{"id":1,"renda":500000,"cod":null,"ativo":null}"#,
+                "500",
+            ),
+            (
+                "texto que vira data",
+                r#"{"id":2,"renda":null,"cod":"999.888.777-66","ativo":null}"#,
+                CPF,
+            ),
+            (
+                "booleano na conta",
+                r#"{"id":3,"renda":null,"cod":null,"ativo":true}"#,
+                "true",
+            ),
+        ] {
+            let r = resposta(
+                &s,
+                "inserir",
+                &format!(r#"{{"database":"b","tabela":"q","linha":{linha}}}"#),
+            );
+            // So a recusa e conferida aqui, e nao a frase: com o defeito
+            // quem recusa o numero e o slot, que nao nomeia a conta.
+            assert!(
+                !r.starts_with('{'),
+                "{quem}: o cenario nao recusou pela conta: {r}"
+            );
+            if r.contains(valor) {
+                vazou.push(format!("{quem}: {r}"));
+            }
+        }
+        assert!(
+            vazou.is_empty(),
+            "a recusa da conta citou o valor que partiu de coluna marcada:\n  {}",
+            vazou.join("\n  ")
+        );
     }
 
     /// **O comportamento velho.** Coluna sem marca continua citando o valor

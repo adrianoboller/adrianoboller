@@ -1004,6 +1004,11 @@ pub const OPERACOES: &[Operacao] = &[
             opc("tipo", "string", "`alteracao` ou `acesso`; vazio traz os dois"),
             opc("limite", "integer", "quantos trazer"),
             opc("pular", "integer", "quantos saltar"),
+            opc(
+                "depois_de",
+                "string",
+                "o `proximo` da página anterior: cursor que um expurgo não desloca",
+            ),
         ],
         exemplo: r#"{"op":"trilha","database":"loja","tabela":"clientes","limite":50}"#,
         ferramenta_mcp: false,
