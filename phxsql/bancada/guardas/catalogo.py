@@ -18565,10 +18565,14 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "o `levar_ao_disco` sincroniza a mae dela."
         ),
         "arquivo": "crates/phxsql-store/src/catalogo.rs",
-        "trecho": """        let pendente = PorSincronizar::entrada_nova(&caminho);
+        "trecho": """        let mut pendente = PorSincronizar::entrada_nova(&caminho);
+        pendente.reservas.push(reserva);
         Ok((caminho, pendente))""",
         "troca": """        // DEFEITO REPOSTO (589): a pasta nova do schema sem fsync do database.
-        Ok((caminho, PorSincronizar::default()))""",
+        // (A reserva do 605 fica: o defeito e so o `fsync` que falta.)
+        let mut pendente = PorSincronizar::default();
+        pendente.reservas.push(reserva);
+        Ok((caminho, pendente))""",
         "pacote": "phxsql-store",
         "alvo": ["--lib"],
         "caem": [
@@ -21933,6 +21937,96 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         "alvo": ["--test", "indice-da-chave-e-de-texto"],
         "caem": ["redeclarar_o_indice_de_texto_exige_administrar"],
         "seguem": ["o_indice_de_texto_se_redeclara_numa_tabela_que_ja_existe"],
+        "prazo": 1800,
+    },
+    {
+        "id": "criacao-sem-reserva-605",
+        "titulo": "A tabela recém-criada atendia um terceiro antes do fsync da pasta de quem a criou",
+        "porque": (
+            "pedido 605. O `fsync` da pasta saiu da trava (589) e a tabela ja "
+            "era visivel: B inseria, ouvia «ok», e a queda levava tabela e "
+            "linha. M2 com strace: 3/3 vermelho antes, 0/3 depois. Reposto (a "
+            "criacao nao reserva o nome), B grava dentro da janela."
+        ),
+        "arquivo": "crates/phxsql-store/src/catalogo.rs",
+        "trecho": """        pendente
+            .reservas
+            .push(crate::nascendo::reservar(&dir, esquema.nome())?);""",
+        "troca": """        // DEFEITO REPOSTO (605): a tabela nasce sem reserva.""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_do_terceiro_na_tabela_que_nasce::o_terceiro_so_ouve_ok_depois_do_fsync_da_pasta_e_espera_fora_da_trava",
+        ],
+        "seguem": [
+            "servidor::testes_do_terceiro_na_tabela_que_nasce::criar_e_usar_na_mesma_conexao_continua_igual",
+        ],
+        "prazo": 1800,
+    },
+    {
+        "id": "abrir-nao-espera-a-tabela-que-nasce-605",
+        "titulo": "Abrir uma tabela não esperava a que ainda nascia — só o campo «tabela» do servidor esperava",
+        "porque": (
+            "pedido 605, a GARANTIA de dentro: a cascata, a chave, a juncao e o "
+            "SQL abrem tabela sem passar pelo campo que o `executar` le. "
+            "Reposto, outra thread abre a tabela antes do `levar_ao_disco`."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """        crate::nascendo::esperar(&diretorio, nome);""",
+        "troca": """        // DEFEITO REPOSTO (605): abrir nao espera o nome que nasce.""",
+        "pacote": "phxsql-store",
+        "alvo": ["--lib"],
+        "caem": [
+            "catalogo::testes_copia_entre_bancos::a_tabela_que_nasce_so_abre_para_outro_depois_do_fsync",
+        ],
+        "seguem": [
+            "nascendo::testes::o_nome_que_nasce_segura_o_terceiro_ate_publicar",
+        ],
+        "prazo": 1200,
+    },
+    {
+        "id": "copia-nasce-sem-reserva-605",
+        "titulo": "A cópia de tabela, irmã da criação, nascia sem reserva e atendia um terceiro antes do fsync",
+        "porque": (
+            "pedido 605, o caminho irmao: `duplicar_tabela` e `copiar_tabela` "
+            "chamam o mesmo par (criar sob a trava, `levar_ao_disco` fora). "
+            "Reposto, a copia abre para outra thread antes do `fsync`."
+        ),
+        "arquivo": "crates/phxsql-store/src/catalogo.rs",
+        "trecho": """        let reservas = vec![crate::nascendo::reservar(dir_d, nome_d)?];""",
+        "troca": """        // DEFEITO REPOSTO (605): a copia nasce sem reserva.
+        let reservas: Vec<crate::nascendo::Reserva> = Vec::new();""",
+        "pacote": "phxsql-store",
+        "alvo": ["--lib"],
+        "caem": [
+            "catalogo::testes_copia_entre_bancos::a_tabela_que_nasce_so_abre_para_outro_depois_do_fsync",
+        ],
+        "seguem": [
+            "nascendo::testes::o_nome_que_nasce_segura_o_terceiro_ate_publicar",
+        ],
+        "prazo": 1200,
+    },
+    {
+        "id": "terceiro-espera-dentro-da-trava-605",
+        "titulo": "Quem achava a tabela nascendo esperava com a trava global na mão e parava o servidor inteiro",
+        "porque": (
+            "pedido 605: a espera do terceiro tem de ser FORA da trava global "
+            "(desenho do J, saida c). Reposto (sem a espera do `executar`), B "
+            "espera dentro do `Table::abrir_com` segurando a trava, e a "
+            "vizinha C nao anda ate o `fsync` de A terminar."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        if phxsql_store::nascendo::quantas() > 0 && !COM_A_TRAVA.with(std::cell::Cell::get) {""",
+        "troca": """        // DEFEITO REPOSTO (605): a espera so acontece dentro da trava.
+        if false {""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_do_terceiro_na_tabela_que_nasce::o_terceiro_so_ouve_ok_depois_do_fsync_da_pasta_e_espera_fora_da_trava",
+        ],
+        "seguem": [
+            "servidor::testes_do_terceiro_na_tabela_que_nasce::criar_e_usar_na_mesma_conexao_continua_igual",
+        ],
         "prazo": 1800,
     },
 ]

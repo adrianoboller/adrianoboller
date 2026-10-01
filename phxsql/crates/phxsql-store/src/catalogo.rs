@@ -438,9 +438,13 @@ impl Instancia {
         if caminho.exists() {
             return Err(PhxError::Esquema(format!("database {nome} ja existe")));
         }
+        // Pedido 605: reservado ANTES de a pasta existir, para nenhum terceiro
+        // gravar dentro dela antes de a entrada dela estar no disco.
+        let reserva = crate::nascendo::reservar(&self.base, nome)?;
         crate::util::criar_diretorio_do_banco(&caminho)?;
         let mut pendente = PorSincronizar::entrada_nova(&caminho);
         pendente.arquivos.push(escrever_marca(&caminho, tipo)?);
+        pendente.reservas.push(reserva);
         crate::separador::marcar_novo(&caminho)?;
         Ok((
             Database {
@@ -842,12 +846,17 @@ impl Database {
     pub fn garantir_schema_adiando_o_fsync(&self, nome: &str) -> Result<(PathBuf, PorSincronizar)> {
         validar_nome("schema", nome)?;
         let caminho = self.caminho.join(nome);
+        // Pedido 605: a pasta que OUTRA operacao ainda leva ao disco nao serve
+        // de morada antes de chegar la -- nem a do database acima dela.
+        crate::nascendo::esperar(&self.caminho, nome);
         if caminho.is_dir() {
             return Ok((caminho, PorSincronizar::default()));
         }
+        let reserva = crate::nascendo::reservar(&self.caminho, nome)?;
         crate::util::criar_diretorio_do_banco(&caminho)?;
         crate::separador::marcar_novo(&caminho)?;
-        let pendente = PorSincronizar::entrada_nova(&caminho);
+        let mut pendente = PorSincronizar::entrada_nova(&caminho);
+        pendente.reservas.push(reserva);
         Ok((caminho, pendente))
     }
 
@@ -966,6 +975,15 @@ impl Database {
             Some(s) => self.garantir_schema_adiando_o_fsync(s)?,
         };
         exigir_nome_que_volta(&dir, esquema.nome())?;
+        // Pedido 605: o nome entra RESERVADO antes do primeiro arquivo, e sai
+        // so quando o `levar_ao_disco` terminar -- ate la, quem abre espera
+        // (`crate::nascendo`). A pasta acima que ainda nasce por outra
+        // operacao tambem segura: morar nela antes do `fsync` dela e o mesmo
+        // defeito.
+        crate::nascendo::esperar(&dir, esquema.nome());
+        pendente
+            .reservas
+            .push(crate::nascendo::reservar(&dir, esquema.nome())?);
         let mut t = Table::criar(dir, esquema)?;
         self.politica.aplicar(&mut t);
         pendente.arquivos.extend(t.descritores_da_criacao()?);
@@ -1517,6 +1535,10 @@ impl Database {
         dir_d: &Path,
         nome_d: &str,
     ) -> Result<PorSincronizar> {
+        // Pedido 605: a copia e uma tabela que NASCE, e o irmao do
+        // `criar_tabela` -- a mesma reserva, antes do primeiro arquivo.
+        crate::nascendo::esperar(dir_d, nome_d);
+        let reservas = vec![crate::nascendo::reservar(dir_d, nome_d)?];
         let mut arquivos = Vec::new();
         // Copia e historia NOVA (pedido 601): UMA linhagem para todos os
         // volumes da copia e o espelho deles, que carregam o mesmo bloco.
@@ -1544,6 +1566,7 @@ impl Database {
         }
         Ok(PorSincronizar {
             arquivos,
+            reservas,
             ..PorSincronizar::default()
         })
     }
@@ -1568,8 +1591,12 @@ impl Database {
 /// *fsyncgate* (pedido 552). Entao a operacao devolve os descritores
 /// abertos, e quem chama solta a trava e leva ao disco antes de responder.
 ///
-/// A janela entre soltar e sincronizar e a de qualquer escrita sem `fsync`:
-/// a tabela ja e visivel, mas ninguem ouviu «ok» por ela ainda.
+/// A janela entre soltar e sincronizar e a de qualquer escrita sem `fsync`
+/// para QUEM CRIOU: ninguem ouviu «ok» por ela ainda. Para um TERCEIRO ela
+/// nao era: a tabela ja era visivel, e o «ok» dele saia antes do `fsync` da
+/// pasta (pedido 605, medido). Por isso o nome que nasce vai RESERVADO aqui
+/// dentro ([`crate::nascendo`]) e so se publica no fim do
+/// [`Self::levar_ao_disco`].
 ///
 /// # Um tipo so para as quatro operacoes
 ///
@@ -1588,15 +1615,18 @@ pub struct PorSincronizar {
     /// e sem o `fsync` dela a tabela excluida volta numa queda, inteira ou
     /// pela metade -- depois de o cliente ouvir «excluida».
     entradas_que_sairam: Vec<PathBuf>,
+    /// Os nomes que NASCEM aqui, reservados ate o fim do [`Self::levar_ao_disco`]
+    /// -- pedido 605. Saem no `Drop`: no caminho feliz depois do ultimo
+    /// `fsync`, no de erro junto com o resto.
+    reservas: Vec<crate::nascendo::Reserva>,
 }
 
 impl PorSincronizar {
     /// Uma pasta que acabou de nascer, e nada mais por enquanto.
     fn entrada_nova(pasta: &Path) -> PorSincronizar {
         PorSincronizar {
-            arquivos: Vec::new(),
             entradas_novas: vec![pasta.to_path_buf()],
-            entradas_que_sairam: Vec::new(),
+            ..PorSincronizar::default()
         }
     }
 
@@ -1620,6 +1650,7 @@ impl PorSincronizar {
         self.arquivos.extend(outra.arquivos);
         self.entradas_novas.extend(outra.entradas_novas);
         self.entradas_que_sairam.extend(outra.entradas_que_sairam);
+        self.reservas.extend(outra.reservas);
     }
 
     /// O `fsync` de cada arquivo NO DESCRITOR QUE O ESCREVEU, e depois o de
@@ -1656,7 +1687,13 @@ impl PorSincronizar {
         for (_, entrada) in ordem {
             crate::sincronia::sincronizar_os_diretorios(entrada, entrada, true)?;
         }
-        Ok(self.arquivos.len())
+        let levados = self.arquivos.len();
+        // A PUBLICACAO do pedido 605, e so aqui: o ultimo `fsync` de pasta
+        // voltou, e a reserva sai -- quem esperava pelo nome acorda. Escrita
+        // e nao deixada ao fim do escopo, para ninguem mover um `fsync` para
+        // depois dela sem ver.
+        drop(self);
+        Ok(levados)
     }
 }
 
@@ -1717,6 +1754,29 @@ pub fn reg_cifrado(base: &Path, database: &str, qualificado: &str) -> RegNoDisco
 
 /// O diretorio em que a tabela mora, com todo nome conferido antes de virar
 /// caminho. `None` para nome que nao passa no [`validar_nome`].
+/// A espera do pedido 605 pelos NOMES do pedido, para quem ainda nao abriu
+/// nada -- o servidor, antes de tomar a trava global (ver `crate::nascendo`).
+///
+/// Pela mesma resolucao de caminho do [`reg_cifrado`], e pelo mesmo motivo:
+/// compor `base/database/tabela` no servidor seria uma segunda copia da regra
+/// de caminho, sem o `validar_nome`. Nome invalido nao espera: a recusa dele
+/// vem depois, de quem abre. Sem `qualificado`, espera so pelo database.
+pub fn esperar_pelo_nome(base: &Path, database: &str, qualificado: &str) {
+    if crate::nascendo::quantas() == 0 || database.is_empty() {
+        return;
+    }
+    if qualificado.is_empty() {
+        if validar_nome("database", database).is_ok() {
+            crate::nascendo::esperar(base, database);
+        }
+        return;
+    }
+    if let Some(dir) = diretorio_da_tabela(base, database, qualificado) {
+        let (_, nome) = separar_qualificado(qualificado);
+        crate::nascendo::esperar(&dir, &nome);
+    }
+}
+
 fn diretorio_da_tabela(base: &Path, database: &str, qualificado: &str) -> Option<PathBuf> {
     validar_nome("database", database).ok()?;
     let (schema, nome) = separar_qualificado(qualificado);
@@ -3103,6 +3163,57 @@ mod testes_copia_entre_bancos {
         assert!(c.esquema().chave_primaria().is_some());
 
         let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// **Pedido 605, a GARANTIA de dentro**: a tabela criada pela porta que
+    /// adia o `fsync` nao abre para OUTRA thread ate o `levar_ao_disco`
+    /// terminar -- e abre logo depois. E o `Table::abrir_com` que espera, e
+    /// por isso vale para toda porta de abertura (cascata, chave, juncao, SQL),
+    /// e nao so para o campo `tabela` que o servidor le. A copia, irma da
+    /// criacao, entra na mesma prova.
+    #[test]
+    fn a_tabela_que_nasce_so_abre_para_outro_depois_do_fsync() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::sync::Arc;
+        let base = crate::apoio_teste::DirTemp::novo("phx-nascendo-605");
+        let cat = Instancia::nova(&base).unwrap();
+        let db = cat.criar_database("b").unwrap();
+        db.criar_tabela(None, esquema("origem")).unwrap();
+        let abrir_noutra = |nome: &'static str| {
+            let voltou = Arc::new(AtomicBool::new(false));
+            let v = Arc::clone(&voltou);
+            let raiz = base.to_path_buf();
+            let h = std::thread::spawn(move || {
+                let r = Instancia::nova(&raiz)
+                    .unwrap()
+                    .abrir_database("b")
+                    .unwrap()
+                    .abrir_tabela(None, nome)
+                    .map(|_| ());
+                v.store(true, Ordering::SeqCst);
+                r
+            });
+            (voltou, h)
+        };
+        let criada = db
+            .criar_tabela_adiando_o_fsync(None, esquema("nova"))
+            .unwrap()
+            .1;
+        let copiada = db
+            .duplicar_tabela_adiando_o_fsync("origem", "copia")
+            .unwrap();
+        for (nome, pendente) in [("nova", criada), ("copia", copiada)] {
+            let (voltou, h) = abrir_noutra(nome);
+            std::thread::sleep(std::time::Duration::from_millis(200));
+            assert!(
+                !voltou.load(Ordering::SeqCst),
+                "outra thread abriu {nome} antes do `fsync` da pasta"
+            );
+            pendente.levar_ao_disco().unwrap();
+            h.join()
+                .unwrap()
+                .unwrap_or_else(|e| panic!("{nome}: depois de publicar, abrir falhou: {e}"));
+        }
     }
 
     #[test]

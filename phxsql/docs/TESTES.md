@@ -999,6 +999,7 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `dblink-sem-teto-de-bytes` | O resultado do DbLink só tem teto de LINHAS: o par decide quanto pesa cada uma (até 128 MiB no MySQL, 64 MiB no PostgreSQL) e o servidor guarda gigabytes | 2 | ✅ provada |
 | `dblink-max-mib-sem-leitor` | O `max_mib` da ligação do DbLink aparece no arquivo e na tela e nenhum cliente o lê: o teto de bytes fica o de fábrica, diga a ligação o que disser | 1 | ✅ provada |
 | `criar-tabela-sem-fsync-dos-arquivos` | `criar_tabela` respondia «criada» com o `.reg`, o `.ndx` e os outros arquivos só no cache do núcleo: numa queda a tabela podia sumir ou voltar sem o esquema | 1 | ✅ provada |
+| `garantir-schema-sem-fsync-do-database` | `criar_schema` e `criar_tabela` num schema novo criavam a pasta sem `fsync` do database: o schema que o cliente ouviu criar podia sumir numa queda | 2 | ✅ provada |
 | `excluir-tabela-sem-fsync-da-pasta` | `excluir_tabela` respondia «excluída» com os `unlink` só no cache do núcleo: numa queda a tabela voltava, inteira ou pela metade | 1 | ✅ provada |
 | `esvaziar-lixeira-sem-fsync-da-pasta` | `esvaziar_lixeira` apagava os volumes do `.trash` sem `fsync` da pasta: numa queda o dado apagado de vez voltava, com o `.reason` dizendo que saiu | 1 | ✅ provada |
 | `expurgo-da-trilha-sem-fsync-da-pasta` | A fase 3 do expurgo da trilha apagava os volumes do `.lgpd` sem `fsync` da pasta: numa queda o volume vencido voltava, com o rastro selado dizendo que saiu | 1 | ✅ provada |
@@ -1127,11 +1128,15 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `novo-orfao-sobrevive-ao-excluir-tabela` | Excluir e renomear a tabela deixavam para trás os *.novo de uma reescrita interrompida | 3 | ✅ provada |
 | `fts-ao-lado-sobrevive-a-abertura` | O .fts.novo de uma redeclaração morta ficava no disco até a próxima redeclaração | 1 | ✅ provada |
 | `redeclarar-texto-com-so-criar` | Redeclarar o índice de texto pedia só criar, e copia o .reg inteiro como o acrescentar_coluna | 1 | ✅ provada |
+| `criacao-sem-reserva-605` | A tabela recém-criada atendia um terceiro antes do fsync da pasta de quem a criou | 1 | ✅ provada |
+| `abrir-nao-espera-a-tabela-que-nasce-605` | Abrir uma tabela não esperava a que ainda nascia — só o campo «tabela» do servidor esperava | 1 | ✅ provada |
+| `copia-nasce-sem-reserva-605` | A cópia de tabela, irmã da criação, nascia sem reserva e atendia um terceiro antes do fsync | 1 | ✅ provada |
+| `terceiro-espera-dentro-da-trava-605` | Quem achava a tabela nascendo esperava com a trava global na mão e parava o servidor inteiro | 1 | ✅ provada |
 | `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | — | 🪦 aposentada (18/09/2026) |
 
-**486 das 661 guardas do catálogo: 1 aposentada, 481 provadas, 4 redundantes** — 14920 s de mutação, medido de 2026-09-16 15:25 a 2026-10-01 17:19, em 6 datas (2026-09-16: 113, 2026-09-17: 8, 2026-09-18: 3, 2026-09-24: 177, 2026-09-30: 37, 2026-10-01: 148).
+**491 das 665 guardas do catálogo: 1 aposentada, 486 provadas, 4 redundantes** — 15113 s de mutação, medido de 2026-09-16 15:25 a 2026-10-01 18:04, em 6 datas (2026-09-16: 113, 2026-09-17: 8, 2026-09-18: 3, 2026-09-24: 177, 2026-09-30: 37, 2026-10-01: 153).
 
-> **Esta rodada NÃO julgou 176 das 661 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 176 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 175 das 665 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 175 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
 - `fk-antes-do-default` — a chave estrangeira confere a linha crua, e o DEFAULT sem mãe grava a filha órfã
 - `fk-antes-do-default-pelo-servidor` — o DEFAULT e a calculada sem mãe gravam a órfã pelo servidor, fora e dentro da transação
@@ -1306,7 +1311,6 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 - `copia-de-tabela-sem-fsync-da-pasta` — A cópia de tabela sincronizava os arquivos e não a pasta: o nome novo podia sumir numa queda depois do «ok»
 - `colar-em-schema-novo-sem-fsync-do-database` — Colar num schema que ainda não existe criava a pasta dele sem `fsync` do database: a cópia sincronizada podia morar numa pasta que a queda leva
 - `porta-anunciada-em-pedacos` — A linha «porta de dados escutando em …» saía em várias escritas: quem lia o log no meio via a porta pela metade
-- `garantir-schema-sem-fsync-do-database` — `criar_schema` e `criar_tabela` num schema novo criavam a pasta sem `fsync` do database: o schema que o cliente ouviu criar podia sumir numa queda
 - `criar-database-sem-fsync-da-base` — `criar_database` criava a pasta sem `fsync` da base: o database que o cliente ouviu criar podia sumir numa queda
 - `marca-do-database-sem-fsync` — O marcador `_database.json` nascia sem `fsync`: numa queda uma colmeia voltava como database padrão, calada
 

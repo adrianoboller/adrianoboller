@@ -1387,6 +1387,11 @@ pub struct Servidor {
     /// depender de corrida nenhuma.
     #[cfg(test)]
     na_janela_sem_trava: Mutex<Option<Box<dyn FnOnce() + Send>>>,
+    /// So nos testes: roda UMA vez no `criar_tabela`, entre soltar a trava e
+    /// levar a tabela ao disco -- a janela do pedido 605, onde o terceiro
+    /// entra sem depender de corrida.
+    #[cfg(test)]
+    na_janela_da_criacao: Mutex<Option<Box<dyn FnOnce() + Send>>>,
     /// So nos testes: a PROXIMA operacao com este nome arma, na thread que a
     /// atende, o panico de teste do motor (`ndx::panico_de_teste`) -- pedido
     /// 451. O panico e o do motor, no meio de uma escrita de verdade e com a
@@ -1892,6 +1897,8 @@ impl Servidor {
             passada_quebra_congela: std::sync::atomic::AtomicBool::new(false),
             #[cfg(test)]
             na_janela_sem_trava: Mutex::new(None),
+            #[cfg(test)]
+            na_janela_da_criacao: Mutex::new(None),
             #[cfg(test)]
             panico_de_teste_na_op: Mutex::new(None),
             #[cfg(test)]
@@ -13138,6 +13145,19 @@ impl Servidor {
     }
 
     fn executar(&self, op: &str, p: &Json, sessao: &Sessao) -> Result<Json> {
+        // Pedido 605: a tabela que outra conexao acabou de criar e ainda leva
+        // ao disco nao se usa antes de chegar la -- e a espera e AQUI, sem a
+        // trava global na mao, para quem espera nao segurar as outras tabelas.
+        // A garantia mora no `Table::abrir_com`, que espera tambem pelo nome
+        // que nao veio no campo `tabela`; esta e a que poupa a fila. Sem nada
+        // nascendo, um `load`.
+        if phxsql_store::nascendo::quantas() > 0 && !COM_A_TRAVA.with(std::cell::Cell::get) {
+            phxsql_store::catalogo::esperar_pelo_nome(
+                &self.config.base,
+                p.texto_ou("database", "").trim(),
+                p.texto_ou("tabela", "").trim(),
+            );
+        }
         // O PORTAO DAS TRANSACOES, e ele vem antes do despacho inteiro.
         //
         // Um `load(Relaxed)` num `AtomicUsize`, e nada mais, quando nao ha
@@ -20539,6 +20559,19 @@ impl Servidor {
         let esquema_criado = t.esquema().clone();
         drop(t);
         drop(dados);
+        // A janela do pedido 605: a tabela existe, a trava saiu, o `fsync`
+        // ainda nao -- e e aqui que o teste poe o terceiro.
+        #[cfg(test)]
+        {
+            let gancho = self
+                .na_janela_da_criacao
+                .lock()
+                .ok()
+                .and_then(|mut g| g.take());
+            if let Some(g) = gancho {
+                g();
+            }
+        }
         pendente.levar_ao_disco()?;
         let qualificado = phxsql_store::catalogo::qualificar(schema.as_deref(), &nome);
         // A regra de coluna que ja ESPERAVA por esta tabela -- pedido 235. O
@@ -71465,5 +71498,167 @@ mod testes_da_absorcao_do_bidi {
         rodada(&s);
         assert_eq!(mapa(&s), antes);
         assert_eq!(antes.0, 10);
+    }
+}
+
+/// **Pedido 605: o TERCEIRO so ouve «ok» na tabela que acabou de nascer
+/// depois do `fsync` da pasta de quem a criou.**
+///
+/// O gancho `na_janela_da_criacao` roda na thread do `criar_tabela`, com a
+/// tabela ja no disco, a trava solta e o `fsync` ainda por fazer -- a janela
+/// que o M2 do desenho alarga com `strace` (`bancada/durabilidade/
+/// terceiro-605.py`). Dentro dela entram duas conexoes:
+///
+/// * B insere na tabela que nasce: tem de ESPERAR a publicacao;
+/// * C insere numa vizinha: tem de ANDAR -- e ela que prova que B espera fora
+///   da trava global, e nao segurando o servidor inteiro.
+#[cfg(test)]
+mod testes_do_terceiro_na_tabela_que_nasce {
+    use super::*;
+    use std::sync::atomic::AtomicBool;
+
+    fn pedido(txt: &str) -> Json {
+        Json::analisar(txt).unwrap()
+    }
+
+    fn preparar(nome: &str) -> (Arc<Servidor>, DirTemp) {
+        let dir = DirTemp::novo(&format!("terceiro-605-{nome}"));
+        let config = Config {
+            base: dir.to_path_buf(),
+            log_acessos: dir.join("acessos.log"),
+            blacklist: dir.join("blacklist.json"),
+            dblink: dir.join("dblink.json"),
+            token: "t".into(),
+            ..Config::default()
+        };
+        let s = Servidor::novo(config).unwrap();
+        let dono = Sessao::default();
+        for (op, txt) in [
+            ("criar_database", r#"{"database":"b"}"#),
+            (
+                "criar_tabela",
+                r#"{"database":"b","tabela":"vizinha",
+                    "colunas":[{"nome":"id","tipo":"Int4"}]}"#,
+            ),
+        ] {
+            s.executar(op, &pedido(txt), &dono).unwrap();
+        }
+        (s, dir)
+    }
+
+    const NOVA: &str = r#"{"database":"b","tabela":"nova",
+        "colunas":[{"nome":"id","tipo":"Int4","obrigatoria":true}],
+        "indices":[{"nome":"porId","colunas":["id"],"unico":true}]}"#;
+
+    type Resultado = Arc<Mutex<Option<std::result::Result<(), String>>>>;
+
+    /// Roda `op` noutra thread; devolve a marca de «voltou» e o resultado.
+    fn noutra_thread(
+        s: &Arc<Servidor>,
+        op: &'static str,
+        txt: &'static str,
+    ) -> (Arc<AtomicBool>, Resultado) {
+        let voltou = Arc::new(AtomicBool::new(false));
+        let r: Resultado = Arc::new(Mutex::new(None));
+        let (s, v, r2) = (Arc::clone(s), Arc::clone(&voltou), Arc::clone(&r));
+        std::thread::spawn(move || {
+            let x = s.executar(op, &pedido(txt), &Sessao::default());
+            *r2.lock().unwrap() = Some(x.map(|_| ()).map_err(|e| format!("{e:?}")));
+            v.store(true, Ordering::SeqCst);
+        });
+        (voltou, r)
+    }
+
+    fn ate(voltou: &AtomicBool, ms: u64) -> bool {
+        let fim = Instant::now() + Duration::from_millis(ms);
+        while Instant::now() < fim {
+            if voltou.load(Ordering::SeqCst) {
+                return true;
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        voltou.load(Ordering::SeqCst)
+    }
+
+    /// (B voltou na janela?, C voltou na janela?, a marca e o resultado de B)
+    type Visto = (bool, bool, Arc<AtomicBool>, Resultado);
+
+    #[test]
+    fn o_terceiro_so_ouve_ok_depois_do_fsync_da_pasta_e_espera_fora_da_trava() {
+        let (s, _dir) = preparar("janela");
+        let visto: Arc<Mutex<Option<Visto>>> = Arc::new(Mutex::new(None));
+        {
+            let (s2, visto) = (Arc::clone(&s), Arc::clone(&visto));
+            *s.na_janela_da_criacao.lock().unwrap() = Some(Box::new(move || {
+                let (b, rb) = noutra_thread(
+                    &s2,
+                    "inserir",
+                    r#"{"database":"b","tabela":"nova","linha":{"id":1}}"#,
+                );
+                // Folga para B chegar a esperar antes de C entrar.
+                std::thread::sleep(Duration::from_millis(100));
+                let (c, _rc) = noutra_thread(
+                    &s2,
+                    "inserir",
+                    r#"{"database":"b","tabela":"vizinha","linha":{"id":7}}"#,
+                );
+                let c_andou = ate(&c, 2_000);
+                let b_passou = b.load(Ordering::SeqCst);
+                *visto.lock().unwrap() = Some((b_passou, c_andou, b, rb));
+            }));
+        }
+        s.executar("criar_tabela", &pedido(NOVA), &Sessao::default())
+            .expect("a criacao tinha de responder");
+        let (b_passou, c_andou, b, rb) = visto
+            .lock()
+            .unwrap()
+            .take()
+            .expect("o gancho nao rodou: a criacao nao passou pela janela");
+        assert!(
+            !b_passou,
+            "o terceiro ouviu «ok» na tabela que ainda nao estava no disco: \
+             o `fsync` da pasta de quem criou nao tinha terminado"
+        );
+        assert!(
+            c_andou,
+            "a vizinha nao andou enquanto B esperava: a espera segurou a trava global"
+        );
+        assert!(ate(&b, 5_000), "B nao acordou depois da publicacao");
+        let r = rb.lock().unwrap().clone().unwrap();
+        assert!(r.is_ok(), "B esperou e depois falhou: {r:?}");
+    }
+
+    /// **O comportamento VELHO**: quem cria e usa na mesma conexao nao sente
+    /// nada -- o «ok» do criar so sai depois da publicacao, entao nao ha o que
+    /// esperar, e a resposta continua a mesma.
+    #[test]
+    fn criar_e_usar_na_mesma_conexao_continua_igual() {
+        let (s, dir) = preparar("mesma");
+        let dono = Sessao::default();
+        let r = s.executar("criar_tabela", &pedido(NOVA), &dono).unwrap();
+        assert_eq!(r.texto_ou("tabela", ""), "nova");
+        assert!(
+            !phxsql_store::nascendo::reservada(&dir.join("b"), "nova"),
+            "o criar respondeu com a tabela ainda reservada"
+        );
+        let antes = Instant::now();
+        s.executar(
+            "inserir",
+            &pedido(r#"{"database":"b","tabela":"nova","linha":{"id":1}}"#),
+            &dono,
+        )
+        .unwrap();
+        let r = s
+            .executar(
+                "varrer",
+                &pedido(r#"{"database":"b","tabela":"nova"}"#),
+                &dono,
+            )
+            .unwrap();
+        assert_eq!(r.inteiro_ou("registros", -1), 1, "{}", r.escrever());
+        assert!(
+            antes.elapsed() < Duration::from_secs(5),
+            "usar a tabela recem-criada na mesma conexao passou a esperar"
+        );
     }
 }

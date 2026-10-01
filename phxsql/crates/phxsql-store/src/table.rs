@@ -2151,6 +2151,12 @@ impl Table {
         cauda_do_diario: bool,
     ) -> Result<SemEscrever> {
         let diretorio = resolver(diretorio.as_ref());
+        // Pedido 605: o nome que outra operacao ainda leva ao disco nao se
+        // abre -- nem para ler, porque a resposta falaria de uma tabela que a
+        // queda pode levar. E aqui pelo mesmo motivo do congelamento logo
+        // abaixo: e o ponto por onde toda abertura passa. Sem nada nascendo,
+        // um `load`. Ver `crate::nascendo`.
+        crate::nascendo::esperar(&diretorio, nome);
         // O PONTO UNICO do congelamento, e e aqui porque e aqui que TODA
         // tabela gravavel nasce: o pedido do cliente
         // (`Database::abrir_qualificada`), a cascata do `ao_alterar`

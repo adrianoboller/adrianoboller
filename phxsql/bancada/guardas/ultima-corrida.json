@@ -2870,6 +2870,14 @@
       "quando": "2026-09-30 23:46"
     },
     {
+      "id": "garantir-schema-sem-fsync-do-database",
+      "titulo": "`criar_schema` e `criar_tabela` num schema novo criavam a pasta sem `fsync` do database: o schema que o cliente ouviu criar podia sumir numa queda",
+      "veredito": "PROVADA",
+      "segundos": 9.7,
+      "notas": [],
+      "quando": "2026-10-01 18:04"
+    },
+    {
       "id": "excluir-tabela-sem-fsync-da-pasta",
       "titulo": "`excluir_tabela` respondia «excluída» com os `unlink` só no cache do núcleo: numa queda a tabela voltava, inteira ou pela metade",
       "veredito": "PROVADA",
@@ -3875,9 +3883,9 @@
       "id": "novo-orfao-sobrevive-ao-excluir-tabela",
       "titulo": "Excluir e renomear a tabela deixavam para trás os *.novo de uma reescrita interrompida",
       "veredito": "PROVADA",
-      "segundos": 7.78,
+      "segundos": 7.19,
       "notas": [],
-      "quando": "2026-10-01 17:19"
+      "quando": "2026-10-01 18:04"
     },
     {
       "id": "fts-ao-lado-sobrevive-a-abertura",
@@ -3894,6 +3902,38 @@
       "segundos": 20.79,
       "notas": [],
       "quando": "2026-10-01 17:19"
+    },
+    {
+      "id": "criacao-sem-reserva-605",
+      "titulo": "A tabela recém-criada atendia um terceiro antes do fsync da pasta de quem a criou",
+      "veredito": "PROVADA",
+      "segundos": 80.49,
+      "notas": [],
+      "quando": "2026-10-01 18:04"
+    },
+    {
+      "id": "abrir-nao-espera-a-tabela-que-nasce-605",
+      "titulo": "Abrir uma tabela não esperava a que ainda nascia — só o campo «tabela» do servidor esperava",
+      "veredito": "PROVADA",
+      "segundos": 9.77,
+      "notas": [],
+      "quando": "2026-10-01 18:04"
+    },
+    {
+      "id": "copia-nasce-sem-reserva-605",
+      "titulo": "A cópia de tabela, irmã da criação, nascia sem reserva e atendia um terceiro antes do fsync",
+      "veredito": "PROVADA",
+      "segundos": 9.93,
+      "notas": [],
+      "quando": "2026-10-01 18:04"
+    },
+    {
+      "id": "terceiro-espera-dentro-da-trava-605",
+      "titulo": "Quem achava a tabela nascendo esperava com a trava global na mão e parava o servidor inteiro",
+      "veredito": "PROVADA",
+      "segundos": 83.68,
+      "notas": [],
+      "quando": "2026-10-01 18:04"
     },
     {
       "id": "cifra-do-fio-imposta",
