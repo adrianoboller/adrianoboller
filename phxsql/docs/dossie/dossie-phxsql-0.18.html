@@ -409,7 +409,7 @@ footer p{max-width:var(--medida)}
 
 <header class="capa">
   <!-- selo:inicio (gerado por docs/dossie/numeros-do-projeto.py) -->
-  <div class="selo">Dossiê técnico · versão 0.19.0 · retrato de 30/09/2026 14:31 UTC · commit <code>5825fe21</code></div>
+  <div class="selo">Dossiê técnico · versão 0.19.0 · retrato de 01/10/2026 01:45 UTC · commit <code>46bad091</code></div>
   <p class="selo-aviso">Se este retrato for mais velho que a última rodada de trabalho, o link que você abriu mostra uma versão fixada: peça o link novo, ou abra a página pelo dono.</p>
   <!-- selo:fim -->
   <h1>Ph<span class="x">x</span>Sql <span class="leve">— sete arquivos,<br>uma tabela</span></h1>
@@ -446,12 +446,12 @@ footer p{max-width:var(--medida)}
 
   <div class="painel">
   <!-- projeto:inicio (gerado por docs/dossie/numeros-do-projeto.py) -->
-    <div><div class="v">290.105</div><div class="r">linhas de Rust</div></div>
-    <div><div class="v">3.388</div><div class="r">testes</div></div>
+    <div><div class="v">302.324</div><div class="r">linhas de Rust</div></div>
+    <div><div class="v">3.489</div><div class="r">testes</div></div>
     <div><div class="v">0</div><div class="r">dependências</div></div>
     <div><div class="v">9</div><div class="r">crates</div></div>
     <div><div class="v">7</div><div class="r">arquivos/tabela</div></div>
-    <div><div class="v">80.767</div><div class="r">linhas de doc</div></div>
+    <div><div class="v">81.418</div><div class="r">linhas de doc</div></div>
   <!-- projeto:fim -->
   </div>
 </header>
@@ -479,8 +479,8 @@ footer p{max-width:var(--medida)}
     <span class="t">A escolha que define o projeto</span>
     <p>Slots excluídos <strong>nunca são reaproveitados</strong>. Reaproveitar manteria o
     arquivo compacto, mas percorrer o <code>.reg</code> deixaria de devolver os registros
-    na ordem em que foram digitados. O espaço volta com compactação explícita — e a
-    ordem, nunca se perde.</p>
+    na ordem em que foram digitados. O espaço não volta: compactar renumeraria o <code>rowid</code>, que é
+    endereço, e foi recusado (<a href="#s33">seção 33</a>). A ordem nunca se perde.</p>
   </div>
 </section>
 
@@ -4918,12 +4918,10 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
   <em>linhas</em>.</p>
 
   <div class="nota">
-    <p><strong>Há SQL escrito à mão desde a 0.18.0</strong>, e ele não passa
-    por aqui: a operação <code>sql</code> traduz um <code>SELECT</code> simples
-    (ver a <a href="#s27">seção 27</a>), e junção e união continuam sendo
-    operações próprias do protocolo, com tela. O que <strong>não</strong> existe é
-    <code>ON a.x &gt; b.y</code>: o <em>hash join</em> casa por igualdade, e
-    desigualdade pede outro algoritmo.</p>
+    <p><strong>Há SQL escrito à mão desde a 0.18.0</strong>: a operação
+    <code>sql</code> (<a href="#s27">seção 27</a>) traduz para estas mesmas
+    operações. O <em>hash join</em> casa por igualdade; o que sobra do
+    <code>ON</code> vira filtro.</p>
   </div>
 </section>
 
@@ -4946,7 +4944,7 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
   dependências</strong>. A crate <code>phxsql-sql</code> é léxico, sintaxe e
   tradutor escritos com a <code>std</code>.</p>
 
-  <p>A operação <code>sql</code> traduz um <code>SELECT</code> simples para as
+  <p>A operação <code>sql</code> traduz o SQL (alcance medido na <a href="#s33">seção 33</a>) para as
   operações do protocolo e o executa <strong>pelo mesmo portão de
   permissão</strong> — pelo <code>executar_derivado</code>, que já existia. O
   teste que trava isso chama-se
@@ -5134,11 +5132,10 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
   separadas, porque quem declarou quatro e ficou com seis precisa ver quais duas
   entraram sem ele pedir.</p>
 
-  <p>A <strong>chave estrangeira não contribui</strong> — e isso é honestidade,
-  não descuido: ela é declarada e nunca imposta na gravação
-  (<a href="#s33">seção 33</a>), então <code>Cascata</code> não alcança tabela
-  nenhuma hoje. Há um teste que trava essa afirmação e que falha no dia em que
-  ela mudar.</p>
+  <p>A <strong>chave estrangeira não contribui</strong> para o escopo: ela é
+  conferida na gravação (nasce conferida — <a href="#s33">seção 33</a>), mas
+  conferir lê a mãe, não grava nela. O teste
+  <code>o_gatilho_entra_no_escopo_efetivo_e_a_fk_nao</code> trava isso.</p>
 
   <h3>Se a energia cair exatamente aqui</h3>
 
@@ -5781,14 +5778,12 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
   </div>
 
   <div class="nota nao">
-    <span class="t">4 — A interface está 41% traduzida</span>
+    <span class="t">4 — A interface ainda não está toda traduzida</span>
     <p>A máquina de idiomas existe desde a 0.17.0 e funciona; o que falta é o
     miolo das telas. O cromo inteiro e a tela de entrada estão nos seis idiomas;
     o resto está em português cravado no fonte — hoje concentrado quase todo
-    num arquivo só, o <code>index.html</code>. O número <strong>não</strong>
-    ficou parado em 11%: rodadas sucessivas de tradução levaram a fábrica de
-    303 para 645 e depois para 1.188 chaves, contra 1.707 textos ainda
-    cravados — e é medido, com catraca que só desce, na <a href="#s30">seção
+    num arquivo só, o <code>index.html</code>. O número de hoje
+    sai do gerador, com catraca que só desce, no painel da <a href="#s30">seção
     30</a>.</p>
   </div>
 
@@ -6067,7 +6062,7 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
         <tr>
           <td>Ordem de digitação vs. compactação</td>
           <td>Slot excluído nunca é reaproveitado</td>
-          <td>Varrer o <code>.reg</code> devolve a ordem digitada. O espaço volta só com compactação explícita.</td>
+          <td>Varrer o <code>.reg</code> devolve a ordem digitada. O espaço não volta: o comando de compactar não existe, e foi recusado.</td>
         </tr>
         <tr>
           <td>Dependências externas</td>
@@ -6187,8 +6182,8 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
 <!-- pedidos:inicio (gerado por docs/dossie/pagina-dos-pedidos.py) -->
     <div><div class="v">598</div><div class="r">pedidos, ao todo</div></div>
     <div><div class="v">456</div><div class="r">feitos</div></div>
-    <div><div class="v">17</div><div class="r">parciais</div></div>
-    <div><div class="v">41</div><div class="r">planejados</div></div>
+    <div><div class="v">18</div><div class="r">parciais</div></div>
+    <div><div class="v">40</div><div class="r">planejados</div></div>
     <div><div class="v">84</div><div class="r">depois da versão</div></div>
     <div><div class="v">11,3%</div><div class="r">falta da versão (sem ⏸, desde 24/09/2026)</div></div>
   <!-- pedidos:fim -->
@@ -6222,7 +6217,7 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
     details.pergunta p{margin:.5rem 0}
   </style>
 <!-- perguntas:inicio (gerado por docs/dossie/perguntas-no-dossie.py) -->
-  <p class="leve">31 respostas, lidas de <code>docs/pdf/respostas/</code> em 30/09/2026 12:53 UTC (commit <code>d6b7813a</code>). O PDF completo — comando, saída real e data de cada corrida — é <code>docs/pdf/phxsql-26-perguntas.pdf</code>, gerado por <code>docs/pdf/gerar.py</code>.</p>
+  <p class="leve">31 respostas, lidas de <code>docs/pdf/respostas/</code> em 01/10/2026 01:45 UTC (commit <code>46bad091</code>). O PDF completo — comando, saída real e data de cada corrida — é <code>docs/pdf/phxsql-26-perguntas.pdf</code>, gerado por <code>docs/pdf/gerar.py</code>.</p>
   
   <details class="pergunta"><summary>0.1) Índice de texto — o .fts contra a varredura. Onde fica os .fts por que o dossiê não tem no gráfico: Organograma dos arquivos?</summary><p>Você apontou certo: o <code>.fts</code> <b>não estava na Figura 1</b> do dossiê («Organograma dos arquivos» — <i>cada tabela é: SEMPRE os sete, SÓ ÀS VEZES três</i>), e medido antes de mexer ele <b>também não estava</b> na Figura 8 (o caminho de uma inserção, que desenhava 8 extensões) <b>nem na tabela-mestra de arquivos do <code>docs/FORMATO.md</code></b> (9 linhas, sem <code>.fts</code>). Três lugares, o mesmo buraco.</p>
 <p>A causa é uma só: o inventário «que arquivos uma tabela tem» mora em <b>três lugares escritos à mão</b> e nenhum sai do código — a lista certa é a de <code>arquivos_da_tabela</code> no <code>catalogo.rs</code>. O <code>.fts</code> entrou no motor em 07/09/2026 (pedido 200) e ninguém voltou às figuras: <i>figura desenhada à mão envelhece como número digitado à mão.</i></p>
@@ -6278,8 +6273,8 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
 
 <footer>
   <!-- rodape:inicio (gerado por docs/dossie/numeros-do-projeto.py) -->
-  <p>PhxSql 0.19.0 · 290.105 linhas de Rust em 9 crates,
-  mais 1288 KiB de interface · 3.388 testes ·
+  <p>PhxSql 0.19.0 · 302.324 linhas de Rust em 9 crates,
+  mais 1288 KiB de interface · 3.489 testes ·
   nenhuma dependência externa.
   Especificação byte a byte em <code>docs/FORMATO.md</code>, cadastro e
   permissões em <code>docs/USUARIOS.md</code>, a replicação em

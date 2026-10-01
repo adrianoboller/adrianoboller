@@ -223,7 +223,7 @@ nenhum. A árvore e o catálogo passam a listar só o que dá para abrir.
 ## Estado atual
 
 <!-- readme:testes:inicio (gerado por docs/dossie/numeros-do-projeto.py) -->
-O motor de armazenamento está completo e testado: **3.388 testes** no projeto inteiro, com **142 operações** no protocolo e **0 dependências externas** (só a `std`) — o que faz o projeto compilar offline.
+O motor de armazenamento está completo e testado: **3.489 testes** no projeto inteiro, com **142 operações** no protocolo e **0 dependências externas** (só a `std`) — o que faz o projeto compilar offline.
 <!-- readme:testes:fim -->
 
 | Peça | Situação |
@@ -460,8 +460,8 @@ O desenho está em `docs/TESTES.md` §7.
 
 **Ordem de digitação é uma garantia, não um acaso.** Slots excluídos nunca são
 reaproveitados. Reaproveitar manteria o arquivo compacto, mas percorrer o `.reg`
-deixaria de devolver os registros na ordem em que foram digitados. O espaço volta
-com compactação explícita.
+deixaria de devolver os registros na ordem em que foram digitados. O espaço não volta:
+compactar renumeraria o `rowid`, que é endereço, e foi recusado.
 
 **A B+tree não conhece tipos.** As chaves chegam já codificadas de forma que
 comparar bytes dá a mesma ordem que comparar valores. Um único código de árvore

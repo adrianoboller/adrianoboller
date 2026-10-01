@@ -693,7 +693,7 @@ nem o publicador a alcançam. Na interface do artefato:
 Abrir o link **numa janela anônima** (ou deslogado, como um visitante) e ler o
 selo da capa. Desde o pedido 326 ele traz a data:
 
-> Dossiê técnico · versão 0.19.0 · **retrato de DD/MM/AAAA**
+> Dossiê técnico · versão X.Y.Z · **retrato de DD/MM/AAAA HH:MM UTC · commit `abcdef12`**
 
 Se a data for a da última corrida dos geradores, o link está servindo a versão
 viva. Se for anterior, continua fixado — e agora **o visitante também
@@ -704,6 +704,28 @@ visível. A data é a da **corrida do gerador**, e não a da publicação, de
 propósito: a página não tem como saber quando foi publicada, e carimbar a
 publicação seria um número que ninguém mede. É a mesma disciplina da página dos
 testes — cada número com a data em que foi medido.
+
+### O passo exato do integrador, a cada fecho de rodada
+
+A publicação é do integrador; o compartilhamento é do dono. A parte do
+integrador, na ordem:
+
+1. Rodar a receita inteira **com** o `numeros-do-projeto.py` (sem
+   `--sem-testes` se mudou código): é ele que regrava o selo com a hora e o
+   commit. Sem ele, o selo diz a rodada anterior e a conferência abaixo mente.
+2. Conferir o selo contra a árvore, **antes** de comitar: o commit do selo
+   (`grep -o 'commit <code>[0-9a-f]*' docs/dossie/dossie-phxsql-*.html`) é
+   o `git rev-parse --short=8 HEAD` da árvore medida. Diferente, rodar o
+   passo 1 de novo.
+3. Publicar **passando a URL** acima — ler inteira a versão publicada antes,
+   como manda o guarda.
+4. Ler a resposta do serviço. Se ela ainda disser *«viewers see a pinned
+   earlier version»*, anotar a data e a frase no pedido 326 do
+   `PENDENCIAS.md` e mandar ao dono os três passos de cima (menu **Share**).
+   Não há o que o integrador mude ali.
+5. Depois que o dono refizer: janela anônima, ler o selo, e ele tem de ser o
+   do fonte publicado (o `grep` do passo 2). Igual, fecha o 326; diferente,
+   continua fixado.
 
 ## O aviso de «download morto» na publicação é FALSO POSITIVO
 

@@ -919,8 +919,8 @@ Registros são **sempre anexados no fim**. Excluir marca o slot como livre, mas
 o slot **não é reaproveitado**. Essa é uma escolha deliberada: reaproveitar
 manteria o arquivo compacto, mas quebraria a garantia de que percorrer o `.reg`
 do início ao fim devolve os registros na ordem em que foram digitados. O espaço
-de slots excluídos só volta com uma compactação explícita, que renumera os
-rowids e reconstrói os índices.
+de slots excluídos **não volta**: a compactação renumeraria os rowids, que são
+endereço, e está recusada — o comando não existe (§17).
 
 Com paginação a garantia continua valendo, porque o volume N+1 vem sempre
 depois do N e dentro de cada volume os slots seguem em ordem de inserção.
