@@ -286,7 +286,8 @@ O motor de armazenamento está completo e testado: **3.489 testes** no projeto i
 | Trava por tabela no lugar da trava única global | pendente |
 | Integração no FraseSQL como `engine = "phxsql"` | pendente |
 | Transações `BEGIN`/`COMMIT`/`ROLLBACK`/`SAVEPOINT` | pronto — nada vai a disco antes do `COMMIT`, e a ordem de digitação fica intacta |
-| Compactação, modo exclusivo, TLS | pendente — a compactação esbarra na ordem de digitação (`docs/COMPARACAO.md`), e o TLS virou cifra própria do fio ([`docs/CIFRA-DO-FIO.md`](docs/CIFRA-DO-FIO.md)), que **não** é TLS |
+| Compactação do `.reg` | recusada — renumeraria o `rowid`, que é endereço, e quebraria a ordem de digitação (`docs/COMPARACAO.md`) |
+| Modo exclusivo, TLS | pendente — o TLS virou cifra própria do fio ([`docs/CIFRA-DO-FIO.md`](docs/CIFRA-DO-FIO.md)), que **não** é TLS |
 
 O roteiro completo, com as decisões tomadas e o que cada peça depende, está em
 [`docs/PLANO.md`](docs/PLANO.md); a revisão do que ainda falta, com o porquê de

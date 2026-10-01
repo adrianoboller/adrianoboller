@@ -199,6 +199,47 @@ publica; e roda também dentro de `confere_versoes()`, guardado pelo mesmo
 `command -v python3` do `docs/versao/conferir.py`, para que o próprio
 empacotador se recuse quando o número não descreve mais a árvore.
 
+### E o portão confere o CONTRATO, não só os números — pedido 335, metade 2
+
+O parecer externo de 17/09/2026 achou **seis** pares de frases que davam dois
+estados à mesma capacidade (a FK «declarada e nunca imposta» contra «aplicada
+em todas as portas»; «o espaço volta com compactação explícita» com o comando
+recusado; «41% traduzida» contra o painel gerado). O dono decidiu em
+01/10/2026 pela via **(B)**: a prosa continua escrita à mão, e a publicação
+**reprova** quando ela contradiz a célula.
+
+```bash
+python3 docs/dossie/catraca-prosa-x-celula.py              # sai != 0 com arquivo:linha
+python3 docs/dossie/catraca-prosa-x-celula.py --lista      # as células e de onde saíram
+python3 docs/dossie/catraca-prosa-x-celula.py --autoteste  # a prova real, nos dois sentidos
+```
+
+- **A célula não se digita quando há medida**: o comparativo da §33
+  (`bancada/comparativo/resultados.json`), o `CAPABILITIES.json` e o
+  `PENDENCIAS.md` pelo leitor da página dos pedidos. Onde não há medida, ela é
+  **âncora**: o estado está no léxico e a catraca confere no fonte o teste que o
+  prova e o código que não pode existir (um `fn compactar`, por exemplo).
+- **O léxico é explícito e mora ao lado**: `contrato-das-capacidades.json`, por
+  capacidade **e por estado**. Célula que muda para um estado sem frases
+  reprova — léxico calado não é léxico limpo. Cada achado imprime a frase que
+  casou e a célula que ela contradiz.
+- **Citação histórica** («não era imposta — … Não é mais») entra por trecho
+  exato no léxico, com o motivo; trecho que não casa mais **reprova**.
+- Roda nos três arquivos (`@dossie`, `README.md`, `docs/FORMATO.md`), no fecho
+  deste portão e no `bancada/catracas/todas.py` (achada pela varredura de
+  `--catraca`).
+
+A primeira corrida, depois da rodada que dizia as seis consertadas, achou
+**três** ainda vivas fora do dossiê: o `FORMATO.md` com «traduz um `SELECT`
+simples» e «falta a expressão em `WHERE`», e o `README.md` com a compactação
+«pendente». Consertadas à mão na mesma frente.
+
+**O que ela não pega**: redação que nenhum sinal prevê, capacidade fora do
+léxico, arquivo fora dos três, e dois parágrafos que se contradizem sem que
+nenhum contradiga a célula. «Compactação» e «compressão» dividem palavra — o
+autoteste forjando a célula mostrou o «Compactados, não» da lixeira (que é
+compressão) casando o sinal da compactação do `.reg`.
+
 **Sem argumento nenhum**, e isso é conserto de 07/09/2026, não estilo. O nome
 do dossiê some da receita porque ele muda a cada refação, e quem o acha é o
 `dossie_da_pasta.py` — **um dono só**, varrendo `dossie-phxsql-*.html` na

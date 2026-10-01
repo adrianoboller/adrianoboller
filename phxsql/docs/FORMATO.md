@@ -3834,9 +3834,11 @@ Documentado aqui para não haver surpresa:
   `.bkp` é o reparo. O que o full-page-write compraria exigiria um journal de
   páginas, que é o WAL que este desenho não tem. Ver `TRANSACOES.md` §11.2.
 - **A camada SQL não mora aqui.** Esta é a camada de armazenamento. O parser e
-  o executor entram por cima, e já existem em parte: a op `sql` traduz um
-  `SELECT` simples (`docs/SQL.md`) e os corpos de gatilho e de procedimento
-  (`docs/TRIGGERS.md`). O que falta é o planejador e a expressão em `WHERE`.
+  o executor entram por cima: a op `sql` (`docs/SQL.md`) e os corpos de
+  gatilho e de procedimento (`docs/TRIGGERS.md`). O alcance do SQL não se
+  repete aqui — é o medido no `docs/COMPARATIVO.md` (expressão no `WHERE`,
+  subconsulta, CTE e função de janela respondem). O que não existe é o
+  planejador de índice (`crates/phxsql-sql/src/lib.rs`).
 - **A cifra cobre três arquivos, não os sete.** Esta linha é de quando a cifra
   nasceu, e ela **envelheceu em três passos**: `.log`, `.trash` e `.reason`
   vieram primeiro (versão 3); depois vieram o `.reg` (versão 5), o `.bin` e o
