@@ -15,18 +15,35 @@ import { chromium } from '/opt/node22/lib/node_modules/playwright/index.mjs';
 import { mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-const [,, comNumero, semNumero, saida = '.'] = process.argv;
-if (!comNumero || !semNumero) { console.error('uso: prova-estoque.mjs <com-numero.html> <sem-numero.html> [pasta]'); process.exit(2); }
+/* Modo loja: --tema <id> <url-do-produto> [pasta]. Abre o preview daquele
+   tema (cookie) e faz as mesmas conferencias no HTML que a Shopify serve.
+   O caminho "sem numero" nao se prova ao vivo: exigiria mudar a
+   configuracao do tema. */
+const args = process.argv.slice(2);
+let tema = null;
+if (args[0] === '--tema') { tema = args[1]; args.splice(0, 2); }
+const [comNumero, semNumero, saida = '.'] = args;
+if (!comNumero || (!tema && !semNumero)) {
+  console.error('uso: prova-estoque.mjs <com-numero.html> <sem-numero.html> [pasta]\n     prova-estoque.mjs --tema <id> <url-do-produto> [pasta]');
+  process.exit(2);
+}
 mkdirSync(saida, { recursive: true });
+const alvo = (p) => (tema ? p : 'file://' + resolve(p));
 
 const NUMERO = '5541995712681';
 const falhas = [];
 const confere = (ok, msg) => { console.log((ok ? 'ok    ' : 'FALHA ') + msg); if (!ok) falhas.push(msg); };
-const browser = await chromium.launch();
+const browser = await chromium.launch(tema ? { proxy: { server: process.env.HTTPS_PROXY } } : {});
 
 for (const [w, h] of [[390, 844], [1280, 900]]) {
   const page = await (await browser.newContext({ viewport: { width: w, height: h } })).newPage();
-  await page.goto('file://' + resolve(comNumero), { waitUntil: 'load' });
+  // o cookie de preview sai desta visita; sem ele a loja serve o tema publicado
+  if (tema) await page.goto(new URL('/?preview_theme_id=' + tema, comNumero).href, { waitUntil: 'domcontentloaded' });
+  await page.goto(alvo(comNumero), { waitUntil: 'load' });
+  if (tema) {
+    const servido = await page.evaluate(() => (window.Shopify && window.Shopify.theme && String(window.Shopify.theme.id)) || '');
+    confere(servido === tema, `${w}px: servido pelo tema ${tema} (${servido})`);
+  }
 
   const le = () => page.evaluate(() => {
     const a = document.querySelector('[data-pp-wa]');
@@ -67,12 +84,14 @@ for (const [w, h] of [[390, 844], [1280, 900]]) {
   await page.locator('[data-pp-stock]').scrollIntoViewIfNeeded();
   const r = await page.locator('[data-pp-stock]').boundingBox();
   const topo = Math.max(0, r.y - 90);
-  await page.screenshot({ path: `${saida}/estoque-${w}.png`, clip: { x: 0, y: topo, width: w, height: Math.min(h - topo, r.height + 130) } });
+  await page.screenshot({ path: `${saida}/estoque-${tema ? 'loja-' : ''}${w}.png`, clip: { x: 0, y: topo, width: w, height: Math.min(h - topo, r.height + 130) } });
 
   // sem numero: volta o status pela contagem, e nenhum link morto
-  await page.goto('file://' + resolve(semNumero), { waitUntil: 'load' });
-  const s = await page.evaluate(() => ({ link: !!document.querySelector('[data-pp-wa]'), texto: document.querySelector('[data-pp-stock]').innerText.trim() }));
-  confere(!s.link && s.texto === 'Em estoque', `${w}px sem numero: volta "${s.texto}" sem link`);
+  if (semNumero) {
+    await page.goto(alvo(semNumero), { waitUntil: 'load' });
+    const s = await page.evaluate(() => ({ link: !!document.querySelector('[data-pp-wa]'), texto: document.querySelector('[data-pp-stock]').innerText.trim() }));
+    confere(!s.link && s.texto === 'Em estoque', `${w}px sem numero: volta "${s.texto}" sem link`);
+  }
   await page.context().close();
 }
 
