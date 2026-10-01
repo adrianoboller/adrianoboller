@@ -1,0 +1,11 @@
+[package]
+name = "phx-sql-contract"
+version = "0.7.0"
+edition = "2024"
+license = "MIT"
+description = "Stable UnifiedSqlModel JSON contract serializer"
+
+[dependencies]
+phx-sql-model = { path = "../phx-sql-model" }
+phx-sql-parser-api = { path = "../phx-sql-parser-api" }
+serde_json = "1"

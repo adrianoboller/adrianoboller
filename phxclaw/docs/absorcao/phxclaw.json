@@ -256,6 +256,62 @@
   "tarefas": {
    "estado": "agente",
    "evidencia": "TaskStore e shell_bg (segundo plano)"
+  },
+  "entrada_imagem": {
+   "estado": "parcial",
+   "evidencia": "o agente le imagem por OCR (visao.rs), mas o modelo nao recebe a imagem"
+  },
+  "instrucoes_projeto": {
+   "estado": "nao",
+   "evidencia": "o agente nao le um AGENTS.md do projeto"
+  },
+  "regras_comando": {
+   "estado": "parcial",
+   "evidencia": "politica por ferramenta (capability), nao por comando"
+  },
+  "gatilhos_evento": {
+   "estado": "nao",
+   "evidencia": ""
+  },
+  "revisao_codigo": {
+   "estado": "nao",
+   "evidencia": ""
+  },
+  "gitlab": {
+   "estado": "nao",
+   "evidencia": ""
+  },
+  "linear": {
+   "estado": "nao",
+   "evidencia": ""
+  },
+  "github_action": {
+   "estado": "nao",
+   "evidencia": ""
+  },
+  "tarefas_nuvem_paralelas": {
+   "estado": "parcial",
+   "evidencia": "phxclaw servir roda tarefas em segundo plano no proprio servidor; nao ha ambiente isolado por tarefa na nuvem"
+  },
+  "ambientes_nuvem": {
+   "estado": "nao",
+   "evidencia": ""
+  },
+  "modelo_local": {
+   "estado": "agente",
+   "evidencia": "phxclaw-llm: Ollama, provado na certificacao"
+  },
+  "terminal_integrado": {
+   "estado": "nao",
+   "evidencia": ""
+  },
+  "voz_conversa": {
+   "estado": "nao",
+   "evidencia": ""
+  },
+  "gravar_repetir": {
+   "estado": "nao",
+   "evidencia": ""
   }
  }
 }

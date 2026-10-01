@@ -1,0 +1,25 @@
+{
+  "name": "phx-mindset-sql-web",
+  "version": "0.7.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "node --check sw.js && node --check app.js && node --check src/enhancer.js && node --check src/analysis-service.js && node --check src/sql-worker.js && node --check src/live-db-service.js && node --check src/live-db-dialog.js && node --check src/model/unified-model.js && node --check src/schema-diff.js && node --check src/projections/graph-projection.js && node --check src/parsers/common.js && node --check src/parsers/detector.js && node --check src/parsers/registry.js && node --check src/parsers/postgresql.js && node --check src/parsers/mysql.js && node --check src/parsers/sqlite.js && node --check src/parsers/sqlserver.js && node scripts/architecture-check.mjs",
+    "serve": "python3 -m http.server 8080",
+    "test:baseline": "node scripts/test-baseline.mjs",
+    "test:dialects": "node scripts/test-dialects.mjs",
+    "test": "npm run check && npm run test:baseline && npm run test:dialects && npm run test:parsers && npm run test:projection-parity && npm run test:advanced && npm run test:schema-diff && npm run test:renderer-isolation && npm run test:live-contract && npm run test:introspection-architecture && npm run test:rust-static",
+    "test:parsers": "node scripts/test-parsers.mjs",
+    "test:projection-parity": "node scripts/test-projection-parity.mjs",
+    "test:renderer-immutability": "node scripts/test-renderer-immutability.mjs",
+    "test:live-contract": "node scripts/test-live-contract.mjs",
+    "test:introspection-architecture": "node scripts/test-introspection-architecture.mjs",
+    "test:rust-static": "python3 scripts/test-rust-static.py",
+    "test:advanced": "node scripts/test-advanced-features.mjs",
+    "test:schema-diff": "node scripts/test-schema-diff.mjs",
+    "test:renderer-isolation": "node scripts/test-renderer-isolation.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

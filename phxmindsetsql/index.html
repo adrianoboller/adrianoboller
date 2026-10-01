@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="theme-color" content="#0a0f1d" />
+  <meta name="description" content="PhxMindSetSQL — visualizador SQL em MindSet, DER relacional, grafo Obsidian e visão híbrida." />
+  <title>PhxMindSetSQL</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" href="assets/icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<div id="app" class="app-shell">
+  <header class="topbar">
+    <div class="brand" title="PhxMindSetSQL">
+      <div class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></div>
+      <div class="brand-copy"><strong>PHX</strong><span>MindSetSQL</span></div>
+      <span class="version">v0.7</span>
+    </div>
+
+    <div class="search-wrap">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m21 21-4.35-4.35m2.35-5.65a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z"/></svg>
+      <input id="searchInput" type="search" autocomplete="off" spellcheck="false" placeholder="Buscar tabela, coluna, função, migration…" aria-label="Buscar objetos SQL" />
+      <kbd>⌘K</kbd>
+    </div>
+
+    <div class="top-actions">
+      <button id="openFileBtn" class="btn primary" type="button" title="Abrir arquivo SQL">
+        <svg viewBox="0 0 24 24"><path d="M12 3v12m0 0 4-4m-4 4-4-4M4 17v3h16v-3"/></svg><span>Abrir SQL</span>
+      </button>
+      <input id="fileInput" type="file" accept=".sql,text/plain" hidden />
+      <button id="connectDbBtn" class="btn secondary" type="button" title="Conectar a um banco via Gateway Rust">
+        <svg viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="7" ry="3"/><path d="M5 5v6c0 1.7 3.1 3 7 3s7-1.3 7-3V5M5 11v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6"/></svg><span>Conectar DB</span>
+      </button>
+      <button id="schemaDiffBtn" class="btn secondary diff-btn" type="button" title="Comparar schema do arquivo com banco vivo" disabled>
+        <svg viewBox="0 0 24 24"><path d="M8 5h11M8 12h11M8 19h11M3 5h1M3 12h1M3 19h1"/></svg><span>Schema Diff</span>
+      </button>
+      <button id="exportBtn" class="icon-btn" type="button" title="Exportar visão atual"><svg viewBox="0 0 24 24"><path d="M12 16V4m0 0L8 8m4-4 4 4M5 14v6h14v-6"/></svg></button>
+      <button id="themeBtn" class="icon-btn" type="button" title="Alternar tema"><svg viewBox="0 0 24 24"><path d="M21 12.8A8.5 8.5 0 1 1 11.2 3a6.6 6.6 0 0 0 9.8 9.8Z"/></svg></button>
+      <button id="inspectorToggle" class="icon-btn mobile-only" type="button" title="Inspector"><svg viewBox="0 0 24 24"><path d="M5 4h14v16H5zM9 4v16"/></svg></button>
+    </div>
+  </header>
+
+  <section class="metric-strip" aria-label="Resumo do SQL">
+    <div class="source-chip"><span class="status-dot"></span><span id="sourceName">Carregando baseline…</span></div>
+    <div class="metrics" id="metrics"></div>
+  </section>
+
+  <main class="workspace">
+    <aside class="left-panel" id="leftPanel">
+      <nav class="view-nav" aria-label="Modos de visualização">
+        <button class="view-button active" data-view="mindset" type="button"><span class="view-icon mindset-icon">⌘</span><span><strong>MindSet</strong><small>Mapa semântico</small></span><em>1</em></button>
+        <button class="view-button" data-view="relational" type="button"><span class="view-icon relational-icon">▦</span><span><strong>Relacional</strong><small>DER estilo WinDev</small></span><em>2</em></button>
+        <button class="view-button" data-view="obsidian" type="button"><span class="view-icon obsidian-icon">◇</span><span><strong>Obsidian</strong><small>Knowledge graph</small></span><em>3</em></button>
+        <button class="view-button" data-view="hybrid" type="button"><span class="view-icon hybrid-icon">✣</span><span><strong>Hybrid</strong><small>Estrutura + contexto</small></span><em>4</em></button>
+      </nav>
+
+      <div class="panel-section">
+        <div class="section-heading"><span>MIGRATIONS</span><button id="clearMigration" type="button">Todas</button></div>
+        <div id="migrationList" class="migration-list"></div>
+      </div>
+
+      <div class="panel-section filter-section">
+        <div class="section-heading"><span>OBJETOS</span><span id="filterCount"></span></div>
+        <div id="kindFilters" class="kind-filters"></div>
+      </div>
+
+      <div class="panel-section compact-controls">
+        <label>Vizinhança <output id="depthOutput">1 salto</output><input id="depthRange" type="range" min="1" max="3" value="1" /></label>
+        <label class="toggle-row"><span>Labels progressivos</span><input id="labelToggle" type="checkbox" checked /><i></i></label>
+        <label class="toggle-row"><span>Animações</span><input id="motionToggle" type="checkbox" checked /><i></i></label>
+      </div>
+    </aside>
+
+    <section class="stage" id="stage">
+      <div class="stage-toolbar">
+        <div class="breadcrumb" id="breadcrumb"><span>PhxClaw</span><b>/</b><strong>MindSet</strong></div>
+        <div class="stage-actions"><span id="renderEngine" class="engine-chip" title="Motor gráfico ativo">SVG/Canvas</span>
+          <button class="tool-btn" id="fitBtn" type="button" title="Ajustar à tela"><svg viewBox="0 0 24 24"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/></svg><span>Fit</span></button>
+          <button class="tool-btn" id="focusBtn" type="button" title="Focar seleção"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3"/></svg><span>Foco</span></button>
+          <div class="zoom-control"><button id="zoomOut" type="button">−</button><output id="zoomOutput">100%</output><button id="zoomIn" type="button">+</button></div>
+          <button class="tool-btn" id="presentationBtn" type="button" title="Modo apresentação"><svg viewBox="0 0 24 24"><path d="M4 5h16v11H4zM9 21l3-5 3 5"/></svg></button>
+        </div>
+      </div>
+
+      <div class="canvas-stack" id="canvasStack">
+        <div id="mindsetView" class="view-layer active"><svg id="mindsetSvg" class="vector-canvas" viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMid meet" aria-label="Mapa MindSet"></svg></div>
+        <div id="relationalView" class="view-layer"><div id="relationalWorld" class="relational-world"><svg id="relationalEdges" class="edge-layer"></svg><div id="relationalNodes" class="node-layer"></div></div></div>
+        <div id="obsidianView" class="view-layer"><div id="sigmaContainer" class="sigma-container" aria-label="Grafo Obsidian WebGL" hidden></div><canvas id="obsidianCanvas" aria-label="Grafo Obsidian"></canvas><div class="graph-legend"><span><i class="c-core"></i>Core</span><span><i class="c-data"></i>Dados</span><span><i class="c-security"></i>Segurança</span><span><i class="c-ai"></i>IA/Agentes</span></div></div>
+        <div id="hybridView" class="view-layer"><svg id="hybridSvg" class="vector-canvas" viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMid meet" aria-label="Visão híbrida"></svg></div>
+      </div>
+
+      <div class="minimap" id="minimap" aria-hidden="true"><canvas id="miniCanvas"></canvas><div class="mini-viewport"></div></div>
+      <div class="mobile-viewbar" id="mobileViewbar">
+        <button class="active" data-view="mindset" type="button">⌘<small>MindSet</small></button>
+        <button data-view="relational" type="button">▦<small>DER</small></button>
+        <button data-view="obsidian" type="button">◇<small>Graph</small></button>
+        <button data-view="hybrid" type="button">✣<small>Hybrid</small></button>
+      </div>
+    </section>
+
+    <aside class="inspector" id="inspector">
+      <div class="inspector-head">
+        <div><span class="eyebrow">INSPECTOR</span><h2 id="inspectName">Selecione um objeto</h2></div>
+        <button id="closeInspector" class="icon-btn mobile-only" type="button" aria-label="Fechar inspector">×</button>
+      </div>
+      <div id="inspectMeta" class="inspect-meta"></div>
+      <div class="inspector-tabs"><button class="active" data-tab="structure" type="button">Estrutura</button><button data-tab="relations" type="button">Relações</button><button data-tab="ddl" type="button">DDL</button></div>
+      <div id="inspectorBody" class="inspector-body"><div class="empty-state"><div class="empty-orbit">◇</div><p>Clique em uma tabela ou nó para examinar sua estrutura, relações e DDL.</p></div></div>
+    </aside>
+  </main>
+
+  <footer class="statusbar"><span id="statusText">Inicializando…</span><span class="status-right"><b id="visibleCount">0</b> objetos visíveis <i></i> render local <i></i> offline-ready</span></footer>
+
+  <div id="searchResults" class="search-results" hidden></div>
+
+  <dialog id="connectDialog" class="connect-dialog" aria-labelledby="connectTitle">
+    <form id="connectForm" method="dialog">
+      <div class="dialog-head"><div><span class="eyebrow">LIVE DATABASE</span><h2 id="connectTitle">Conectar banco</h2><p>O navegador fala apenas com o Gateway Rust. Drivers e credenciais ficam fora dos renderers.</p></div><button id="closeConnectDialog" class="icon-btn" type="button" aria-label="Fechar">×</button></div>
+      <div class="gateway-row"><label>Gateway<input id="gatewayUrl" type="url" inputmode="url" placeholder="mesma origem" /></label><div class="gateway-health"><i></i><span id="gatewayState">verificando…</span><button id="refreshProfiles" type="button">Atualizar</button></div></div>
+      <label>Modo<select id="connectionMode"><option value="profile">Profile seguro do Gateway</option><option value="ephemeral">Conexão efêmera</option></select></label>
+      <div id="profileConnectionFields" class="dialog-grid"><label class="full">Profile<select id="dbProfile"><option>Carregando…</option></select></label><p class="field-note full">Recomendado: a senha vem de variável de ambiente no Gateway e nunca entra no PWA.</p></div>
+      <div id="ephemeralConnectionFields" class="dialog-grid" hidden>
+        <label>Dialeto<select id="dbDialect"><option value="postgresql">PostgreSQL</option><option value="mysql">MySQL / MariaDB</option><option value="sqlite">SQLite</option><option value="sqlserver">SQL Server</option></select></label>
+        <label class="server-field">Host<input id="dbHost" value="127.0.0.1" autocomplete="off" /></label>
+        <label class="server-field">Porta<input id="dbPort" type="number" min="1" max="65535" value="5432" /></label>
+        <label class="server-field">Database<input id="dbDatabase" autocomplete="off" /></label>
+        <label class="server-field">Usuário<input id="dbUser" autocomplete="username" /></label>
+        <label class="server-field">Senha<input id="dbPassword" type="password" autocomplete="current-password" /></label>
+        <label class="server-field">TLS<select id="dbTls"><option value="prefer">Preferir</option><option value="require">Obrigatório</option><option value="disable">Desabilitado</option></select></label>
+        <label id="sqlitePathField" class="full" hidden>Arquivo SQLite no Gateway<input id="dbPath" placeholder="./data/app.sqlite" autocomplete="off" /></label>
+        <p class="field-note full warning">Conexão efêmera vem desabilitada no Gateway por padrão. Habilite somente em ambiente controlado com <code>PHX_ALLOW_EPHEMERAL=1</code>.</p>
+      </div>
+      <div class="dialog-options"><label class="form-check"><input id="includeSystem" type="checkbox" /> Incluir schemas do sistema</label><label class="form-check"><input id="includePolicies" type="checkbox" /> Policies/RLS quando suportado</label><label class="form-check"><input id="includeAdvanced" type="checkbox" checked /> Objetos avançados</label><label class="form-check"><input id="includeStatistics" type="checkbox" checked /> Cardinalidade/tamanho</label></div>
+      <div id="connectionStatus" class="connection-status" role="status" aria-live="polite"></div>
+      <div class="dialog-actions"><button id="cancelConnect" class="btn secondary" type="button">Cancelar</button><button id="connectSubmit" class="btn primary" type="submit">Ler catálogo</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="diffDialog" class="connect-dialog diff-dialog" aria-labelledby="diffTitle">
+    <div class="diff-shell">
+      <div class="dialog-head"><div><span class="eyebrow">SCHEMA DIFF</span><h2 id="diffTitle">Arquivo SQL × banco vivo</h2><p>Comparação neutra entre dois UnifiedSqlModel. O renderer apenas exibe o resultado.</p></div><button id="closeDiffDialog" class="icon-btn" type="button" aria-label="Fechar">×</button></div>
+      <div id="diffSummary" class="diff-summary"></div>
+      <div id="diffDetails" class="diff-details"></div>
+      <div class="dialog-actions"><button id="showFileModel" class="btn secondary" type="button">Ver arquivo</button><button id="showLiveModel" class="btn secondary" type="button">Ver banco vivo</button><button class="btn primary" type="button" onclick="document.getElementById('diffDialog').close()">Fechar</button></div>
+    </div>
+  </dialog>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+</div>
+<script type="module" src="app.js"></script>
+</body>
+</html>

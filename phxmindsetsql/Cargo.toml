@@ -1,0 +1,20 @@
+[workspace]
+members = [
+  "crates/phx-sql-model",
+  "crates/phx-sql-parser-api",
+  "crates/phx-parser-postgresql",
+  "crates/phx-parser-common",
+  "crates/phx-parser-mysql",
+  "crates/phx-parser-sqlite",
+  "crates/phx-parser-sqlserver",
+  "crates/phx-sql-projection",
+  "crates/phx-sql-core",
+  "crates/phx-sql-contract",
+  "crates/phx-sql-introspection-api",
+  "crates/phx-introspector-postgresql",
+  "crates/phx-introspector-mysql",
+  "crates/phx-introspector-sqlite",
+  "crates/phx-introspector-sqlserver",
+  "crates/phx-sql-gateway",
+]
+resolver = "2"

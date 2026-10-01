@@ -1,0 +1,9 @@
+[package]
+name = "phx-parser-common"
+version = "0.7.0"
+edition = "2024"
+description = "Parser-only lexical DDL utilities for PhxMindSetSQL"
+license = "MIT"
+[dependencies]
+regex = "1"
+phx-sql-model = { path = "../phx-sql-model" }

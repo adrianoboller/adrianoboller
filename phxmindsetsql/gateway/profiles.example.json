@@ -1,0 +1,23 @@
+{
+  "profiles": [
+    {
+      "id": "local-postgres",
+      "label": "PostgreSQL local",
+      "dialect": "postgresql",
+      "host": "127.0.0.1",
+      "port": 5432,
+      "database": "phxclaw",
+      "username": "phx_reader",
+      "password_env": "PHX_DB_PASSWORD",
+      "tls": "prefer"
+    },
+    {
+      "id": "sqlite-demo",
+      "label": "SQLite local",
+      "dialect": "sqlite",
+      "database": "demo",
+      "path": "./data/demo.sqlite",
+      "tls": "disable"
+    }
+  ]
+}

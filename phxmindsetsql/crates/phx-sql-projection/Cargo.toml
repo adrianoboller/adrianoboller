@@ -1,0 +1,10 @@
+[package]
+name = "phx-sql-projection"
+version = "0.7.0"
+edition = "2024"
+description = "Renderer-neutral graph projections for PhxMindSetSQL"
+license = "MIT"
+
+[dependencies]
+phx-sql-model = { path = "../phx-sql-model" }
+serde = { version = "1", features = ["derive"] }

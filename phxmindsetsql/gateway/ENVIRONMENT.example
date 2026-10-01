@@ -1,0 +1,10 @@
+# Copie gateway/profiles.example.json para gateway/profiles.json.
+# Não coloque senha diretamente no JSON; use password_env.
+PHX_DB_PASSWORD=troque-esta-senha
+PHX_PROFILES_FILE=./gateway/profiles.json
+PHX_WEB_ROOT=.
+PHX_BIND=127.0.0.1:8787
+# Segurança: desligado por padrão. Habilite só em ambiente local/controlado.
+PHX_ALLOW_EPHEMERAL=0
+# Exemplo de logs:
+RUST_LOG=phx_sql_gateway=info,tower_http=info

@@ -1,0 +1,9 @@
+[package]
+name="phx-parser-mysql"
+version = "0.7.0"
+edition="2024"
+license="MIT"
+[dependencies]
+phx-sql-model={path="../phx-sql-model"}
+phx-sql-parser-api={path="../phx-sql-parser-api"}
+phx-parser-common={path="../phx-parser-common"}

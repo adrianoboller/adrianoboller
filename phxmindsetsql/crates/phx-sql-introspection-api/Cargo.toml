@@ -1,0 +1,13 @@
+[package]
+name = "phx-sql-introspection-api"
+version = "0.7.0"
+edition = "2024"
+description = "Neutral live-database introspection contract for PhxMindSetSQL"
+license = "MIT"
+
+[dependencies]
+async-trait = "0.1"
+phx-sql-model = { path = "../phx-sql-model" }
+phx-sql-parser-api = { path = "../phx-sql-parser-api" }
+serde = { version = "1", features = ["derive"] }
+thiserror = "2"

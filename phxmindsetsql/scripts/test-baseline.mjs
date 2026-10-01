@@ -1,0 +1,24 @@
+import fs from 'node:fs';
+import assert from 'node:assert/strict';
+import {parseWithRegistry} from '../src/parsers/registry.js';
+import {projectTableGraph} from '../src/projections/graph-projection.js';
+
+const sql=fs.readFileSync(new URL('../assets/PhxClaw_PostgreSQL_FULL_INSTALL_v0.60.sql',import.meta.url),'utf8');
+const {model,dialect}=parseWithRegistry(sql,'PhxClaw_PostgreSQL_FULL_INSTALL_v0.60.sql');
+assert.equal(dialect,'postgresql');
+assert.equal(model.contract_version,'1.1');
+assert.equal(model.stats.tables,294);
+assert.equal(model.stats.columns,2837);
+assert.equal(model.stats.foreign_keys,254);
+assert.equal(model.stats.migrations,55);
+assert.equal(model.stats.functions,46);
+assert.equal(model.stats.triggers,58);
+assert.equal(model.stats.indexes,76);
+assert.equal(model.stats.policies,68);
+assert.equal(model.stats.check_constraints,669);
+assert.equal(model.stats.generated_columns,2);
+assert.equal(model.stats.extensions,1);
+const graph=projectTableGraph(model);
+assert.equal(graph.nodes.length,294);
+assert.equal(graph.edges.length,254);
+console.log('baseline-test: OK — 294 tabelas / 2.837 colunas / 254 FKs / 669 CHECKs / 2 generated / pgcrypto');

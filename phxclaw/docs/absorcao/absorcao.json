@@ -114,5 +114,45 @@
    "lsp"
   ],
   "lido_em": "01/10/2026"
+ },
+ "codex": {
+  "total": 43,
+  "no_agente": 16,
+  "parcial": 8,
+  "nao": 19,
+  "pct_agente": 37.2,
+  "pct_com_bibliotecas": 46.5,
+  "falta": [
+   "geracao_midia",
+   "hooks",
+   "instrucoes_projeto",
+   "worktrees",
+   "gatilhos_evento",
+   "revisao_codigo",
+   "github",
+   "gitlab",
+   "linear",
+   "github_action",
+   "ambientes_nuvem",
+   "busca_sessoes",
+   "ide",
+   "terminal_integrado",
+   "web_nuvem",
+   "celular",
+   "remote_control",
+   "voz_conversa",
+   "gravar_repetir"
+  ],
+  "pela_metade": [
+   "entrada_imagem",
+   "mcp_cliente",
+   "skills",
+   "plugins",
+   "memoria",
+   "regras_comando",
+   "canal_slack",
+   "tarefas_nuvem_paralelas"
+  ],
+  "lido_em": "01/10/2026"
  }
 }

@@ -1,0 +1,22 @@
+{
+  "lines": 4774,
+  "bytes": 339355,
+  "tables": 294,
+  "columns": 2837,
+  "foreign_keys": 254,
+  "check_constraints": 669,
+  "generated_columns": 2,
+  "views": 3,
+  "materialized_views": 0,
+  "sequences": 0,
+  "functions": 46,
+  "triggers": 58,
+  "indexes": 76,
+  "policies": 68,
+  "schemas": 5,
+  "synonyms": 0,
+  "events": 0,
+  "extensions": 1,
+  "partitions": 0,
+  "migrations": 55
+}

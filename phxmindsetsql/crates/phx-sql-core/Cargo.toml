@@ -1,0 +1,25 @@
+[package]
+name = "phx-sql-core"
+version = "0.7.0"
+edition = "2024"
+description = "Composition/WASM facade for isolated PhxMindSetSQL parsers and neutral projections"
+license = "MIT"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = []
+wasm = ["dep:wasm-bindgen"]
+
+[dependencies]
+phx-sql-model = { path = "../phx-sql-model" }
+phx-sql-parser-api = { path = "../phx-sql-parser-api" }
+phx-parser-postgresql = { path = "../phx-parser-postgresql" }
+phx-parser-mysql = { path = "../phx-parser-mysql" }
+phx-parser-sqlite = { path = "../phx-parser-sqlite" }
+phx-parser-sqlserver = { path = "../phx-parser-sqlserver" }
+phx-sql-projection = { path = "../phx-sql-projection" }
+phx-sql-contract = { path = "../phx-sql-contract" }
+serde_json = "1"
+wasm-bindgen = { version = "0.2", optional = true }

@@ -1,0 +1,9 @@
+[package]
+name = "phx-sql-model"
+version = "0.7.0"
+edition = "2024"
+description = "Dialect-neutral SQL intermediate model for PhxMindSetSQL"
+license = "MIT"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }

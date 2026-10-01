@@ -1,0 +1,26 @@
+[package]
+name = "phx-sql-gateway"
+version = "0.7.0"
+edition = "2024"
+license = "MIT"
+description = "Local-first HTTP gateway for live database introspection in PhxMindSetSQL"
+
+[[bin]]
+name = "phx-sql-gateway"
+path = "src/main.rs"
+
+[dependencies]
+axum = "0.8"
+phx-sql-introspection-api = { path = "../phx-sql-introspection-api" }
+phx-sql-contract = { path = "../phx-sql-contract" }
+phx-sql-parser-api = { path = "../phx-sql-parser-api" }
+phx-introspector-postgresql = { path = "../phx-introspector-postgresql" }
+phx-introspector-mysql = { path = "../phx-introspector-mysql" }
+phx-introspector-sqlite = { path = "../phx-introspector-sqlite" }
+phx-introspector-sqlserver = { path = "../phx-introspector-sqlserver" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "signal"] }
+tower-http = { version = "0.6", features = ["fs", "trace"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

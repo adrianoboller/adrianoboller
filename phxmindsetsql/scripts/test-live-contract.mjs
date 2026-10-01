@@ -1,0 +1,20 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import {parseWithRegistry} from '../src/parsers/registry.js';
+import {createLiveDbService} from '../src/live-db-service.js';
+import {assertUnifiedSqlModel} from '../src/model/unified-model.js';
+import {projectTableGraph} from '../src/projections/graph-projection.js';
+
+const root=path.resolve(process.cwd());
+const sql=fs.readFileSync(path.join(root,'tests/fixtures/equivalent.postgresql.sql'),'utf8');
+const parsed=parseWithRegistry(sql,'fixture.postgresql.sql','postgresql').model;
+const live=structuredClone(parsed);live.source='live:postgresql://127.0.0.1:5432/demo';live.source_kind='live_database';live.producer='postgresql-catalog-introspector';live.parser=live.producer;live.migrations=[];live.stats.migrations=0;
+const calls=[];
+const fakeFetch=async(url,opt={})=>{calls.push({url,opt});let data;if(url.endsWith('/health'))data={ok:true,version:'0.7.0',profiles:1,ephemeral:false};else if(url.endsWith('/profiles'))data=[{id:'demo',label:'Demo',dialect:'postgresql',host:'127.0.0.1',port:5432,database:'demo'}];else if(url.endsWith('/introspect'))data=live;else return new Response('{}',{status:404,headers:{'content-type':'application/json'}});return new Response(JSON.stringify(data),{status:200,headers:{'content-type':'application/json'}})};
+const service=createLiveDbService({baseUrl:'http://gateway.test',fetchImpl:fakeFetch});
+assert.equal((await service.health()).version,'0.7.0');assert.equal((await service.profiles())[0].id,'demo');
+const model=assertUnifiedSqlModel(await service.introspect({profileId:'demo'}));assert.equal(model.source_kind,'live_database');assert.equal(model.producer,'postgresql-catalog-introspector');
+const a=projectTableGraph(parsed),b=projectTableGraph(model);assert.deepEqual(b.nodes,a.nodes);assert.deepEqual(b.edges,a.edges);
+const body=JSON.parse(calls.find(c=>c.url.endsWith('/introspect')).opt.body);assert.equal(body.profile_id,'demo');assert.equal(body.connection,null);
+console.log('live-contract: OK — gateway model enters the same graph projection without parser/render changes');

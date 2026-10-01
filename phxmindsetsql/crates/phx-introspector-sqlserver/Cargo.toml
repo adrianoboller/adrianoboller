@@ -1,0 +1,15 @@
+[package]
+name = "phx-introspector-sqlserver"
+version = "0.7.0"
+edition = "2024"
+license = "MIT"
+description = "Microsoft SQL Server live catalog introspector for PhxMindSetSQL"
+
+[dependencies]
+async-trait = "0.1"
+phx-sql-introspection-api = { path = "../phx-sql-introspection-api" }
+phx-sql-model = { path = "../phx-sql-model" }
+phx-sql-parser-api = { path = "../phx-sql-parser-api" }
+tiberius = { version = "0.13", default-features = false, features = ["rustls"] }
+tokio = { version = "1", features = ["net", "time"] }
+tokio-util = { version = "0.7", features = ["compat"] }

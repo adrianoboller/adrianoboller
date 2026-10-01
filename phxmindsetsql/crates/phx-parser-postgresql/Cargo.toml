@@ -1,0 +1,11 @@
+[package]
+name = "phx-parser-postgresql"
+version = "0.7.0"
+edition = "2024"
+description = "PostgreSQL parser adapter for PhxMindSetSQL"
+license = "MIT"
+
+[dependencies]
+regex = "1"
+phx-sql-model = { path = "../phx-sql-model" }
+phx-sql-parser-api = { path = "../phx-sql-parser-api" }
