@@ -941,6 +941,26 @@ já derrubou a própria sessão aqui.
 A primeira corrida achou **80.088 diretórios de teste soltos, 6,4 GB**. O
 ambiente tinha chegado a 560 MB livres, e ninguém sabia por quê.
 
+**Trabalho de frente nunca mora só numa pasta — ordem do dono, 01/10/2026.**
+Palavra dele, depois de uma limpeza apagar quatro frentes prontas: *«Isso não
+pode acontecer. Deve ter um cuidado maior.»* A conferência que apagou dizia
+«integrada» quando o ramo da frente era ancestral do HEAD — e como frente não
+comita, o ramo dela é sempre a base, e a base é sempre ancestral. Três travas,
+todas obrigatórias:
+
+- **Salvar antes de tudo.** `phxsql/salvar-frentes.sh` grava o trabalho de
+  toda cópia de frente como objeto do git em `refs/salvas/<frente>/<carimbo>`,
+  por um índice temporário, sem tocar no índice nem nos arquivos do agente.
+  Roda a cada 10 minutos enquanto houver frente no ar, e antes de toda
+  limpeza.
+- **Árvore suja nunca é integrada.** Só `phxsql/limpar-frentes.sh` apaga cópia
+  de frente, e só com as três provas: `git status --porcelain` vazio, ponta
+  alcançável do HEAD, nenhum processo com cwd, descritor ou mapa lá dentro.
+- **Nunca `git worktree remove -f`** em cópia de frente. O `-f` pula
+  justamente a proteção que teria parado o erro.
+
+O caso está em `docs/cognicao/cognicao_ancestral-do-head-nao-prova-que-o-trabalho-foi-integrado_20261001_0500.md`.
+
 ### E — Designer gráfico
 
 Responde pela tela: paleta, tipografia, contraste, responsividade, e a marca

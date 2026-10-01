@@ -14,7 +14,10 @@ a catraca do 335, 600+601+245) sumiram assim. A prova de «nenhum processo usa»
 `git -C <copia> status --porcelain` vazio (nada fora de commit) E o commit da
 ponta alcançável do HEAD. Árvore suja nunca é «integrada», seja qual for o
 grafo. E nunca `-f -f` numa cópia que a conferência não provou limpa: o `-f`
-existe para pular exatamente a proteção que teria parado o erro.
+existe para pular exatamente a proteção que teria parado o erro. Por ordem do
+dono, além disso, o trabalho de toda frente é salvo como objeto do git
+(`phxsql/salvar-frentes.sh`, `refs/salvas/`) a cada 10 minutos e antes de
+toda limpeza, e só `phxsql/limpar-frentes.sh` apaga cópia de frente.
 
 ## O que aconteceu
 

@@ -34,3 +34,7 @@ frentes prontas: frente não comita, então o ramo dela é sempre a base, e a ba
 é sempre ancestral do HEAD. Antes de apagar, exija `git -C <copia> status
 --porcelain` vazio **e** a ponta alcançável do HEAD — e nunca `-f -f` numa cópia
 que a conferência não provou limpa.
+
+E antes de qualquer limpeza, o trabalho de toda frente vira objeto do git por um
+índice temporário, numa referência protegida (`refs/salvas/<frente>/<carimbo>`),
+sem tocar no índice do agente — a pasta pode sumir, o trabalho não.
