@@ -60,8 +60,12 @@ done
 [ "$(id -u)" = 0 ] || { echo "precisa de root: instala pacote de sistema" >&2; exit 2; }
 
 rust() {
-  [ -n "$RUST_VER" ] || RUST_VER=$(curl -fsS https://static.rust-lang.org/dist/channel-rust-stable.toml \
-    | awk '/^\[pkg.rust\]/{f=1} f&&/^version/{print $3; exit}' | tr -d '"')
+  # O awk le ATE O FIM e imprime so a primeira versao: saindo na primeira linha, quem
+  # escrevia no cano (curl, depois printf) levava SIGPIPE, e o pipefail matava o script
+  # calado (medido duas vezes em 01/10).
+  local canal
+  [ -n "$RUST_VER" ] || { canal=$(curl -fsS https://static.rust-lang.org/dist/channel-rust-stable.toml)
+    RUST_VER=$(printf '%s\n' "$canal" | awk '/^\[pkg.rust\]/{f=1} f&&/^version/&&!d{print $3; d=1}' | tr -d '"'); }
   if ! command -v rustup >/dev/null; then
     curl -fsS https://sh.rustup.rs | sh -s -- -y --default-toolchain none
     # shellcheck disable=SC1091

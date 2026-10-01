@@ -1,98 +1,98 @@
 {
-  "agent": null,
-  "capabilities": [
-    "environment.install",
-    "environment.health"
+ "agent": null,
+ "capabilities": [
+  "environment.install",
+  "environment.health"
+ ],
+ "contracts": {
+  "input_schema": "schemas/process-envelope.schema.json",
+  "output_schema": "schemas/process-reply.schema.json"
+ },
+ "core_api": ">=0.5.0, <0.6.0",
+ "dependencies": [],
+ "description": "Instala e atualiza o ambiente de desenvolvimento no Linux: Rust, PostgreSQL e Python com bibliotecas de desenvolvimento de sistemas, das fontes oficiais e conferidos (SHA-256, impressao digital PGDG, Sigstore).",
+ "entrypoint": {
+  "type": "process",
+  "value": "plugins/builtin/artifacts/ambiente-instalador"
+ },
+ "extension_points": [],
+ "integrity": {
+  "artifact": "plugins/builtin/artifacts/ambiente-instalador",
+  "digest": "80487a4778b00dfef71907100164d07dc0e9b94a268dce3a09162d33da6218e8",
+  "hash_algorithm": "sha256",
+  "provenance": "PhxClaw v0.70 / plugin de ambiente, 01/10/2026",
+  "signature": "m3FK9mSjzBeY4AXD2dHzytBfMQwbk2PuLv9gGD/yeRs2v0PCe5DJBYkGWXamAmDWcCUwuybYKxyxf/anY15LDA==",
+  "signature_algorithm": "ed25519",
+  "signer": "phxclaw-dev-root-2026-v07"
+ },
+ "kind": "tool",
+ "lifecycle": {
+  "disable": "ambiente.disable",
+  "enable": "ambiente.enable",
+  "health": "ambiente.health",
+  "install": "ambiente.install",
+  "uninstall": "ambiente.uninstall"
+ },
+ "manifest_version": "1.2.0",
+ "model_provider": null,
+ "name": "com.phxclaw.tool.ambiente",
+ "permissions": [
+  {
+   "name": "system.admin",
+   "scopes": [
+    "packages/*",
+    "/opt/*"
+   ]
+  },
+  {
+   "name": "net.download",
+   "scopes": [
+    "official-sources/*"
+   ]
+  }
+ ],
+ "rollback": {
+  "steps": [
+   "disable plugin",
+   "restore previous signed manifest and artifact",
+   "re-run integrity and health gates"
   ],
-  "contracts": {
-    "input_schema": "schemas/process-envelope.schema.json",
-    "output_schema": "schemas/process-reply.schema.json"
-  },
-  "core_api": ">=0.5.0, <0.6.0",
-  "dependencies": [],
-  "description": "Instala e atualiza o ambiente de desenvolvimento no Linux: Rust, PostgreSQL e Python com bibliotecas de desenvolvimento de sistemas, das fontes oficiais e conferidos (SHA-256, impressao digital PGDG, Sigstore).",
-  "entrypoint": {
-    "type": "process",
-    "value": "plugins/builtin/artifacts/ambiente-instalador"
-  },
-  "extension_points": [],
-  "integrity": {
-    "artifact": "plugins/builtin/artifacts/ambiente-instalador",
-    "digest": "61c512214db54c02d551e1f99c6e1bc3f73c6ab4c465c09a9ce1f56760e5c686",
-    "hash_algorithm": "sha256",
-    "provenance": "PhxClaw v0.70 / plugin de ambiente, 01/10/2026",
-    "signature": "NbXN/ajrJKF0d73h7loWelpQ/WVDpmdsS6HjwRpEZLtA7OquOe9uoWdDfgR5WXD5FwXFtaA7NTbDMMFeHndcDw==",
-    "signature_algorithm": "ed25519",
-    "signer": "phxclaw-dev-root-2026-v07"
-  },
-  "kind": "tool",
-  "lifecycle": {
-    "disable": "ambiente.disable",
-    "enable": "ambiente.enable",
-    "health": "ambiente.health",
-    "install": "ambiente.install",
-    "uninstall": "ambiente.uninstall"
-  },
-  "manifest_version": "1.2.0",
-  "model_provider": null,
-  "name": "com.phxclaw.tool.ambiente",
-  "permissions": [
-    {
-      "name": "system.admin",
-      "scopes": [
-        "packages/*",
-        "/opt/*"
-      ]
-    },
-    {
-      "name": "net.download",
-      "scopes": [
-        "official-sources/*"
-      ]
-    }
+  "strategy": "disable_and_restore_previous"
+ },
+ "sandbox": {
+  "cpu_quota_percent": 100,
+  "environment_allowlist": [
+   "PHXCLAW_PYTHON_ENV",
+   "PY_ASSINANTE"
   ],
-  "rollback": {
-    "steps": [
-      "disable plugin",
-      "restore previous signed manifest and artifact",
-      "re-run integrity and health gates"
-    ],
-    "strategy": "disable_and_restore_previous"
-  },
-  "sandbox": {
-    "cpu_quota_percent": 100,
-    "environment_allowlist": [
-      "PHXCLAW_PYTHON_ENV",
-      "PY_ASSINANTE"
-    ],
-    "memory_mb": 4096,
-    "network": "allowlist",
-    "network_allowlist": [
-      "static.rust-lang.org",
-      "sh.rustup.rs",
-      "apt.postgresql.org",
-      "www.postgresql.org",
-      "www.python.org",
-      "pypi.org",
-      "files.pythonhosted.org",
-      "astral.sh"
-    ],
-    "read_only_paths": [],
-    "timeout_ms": 3600000,
-    "write_paths": [
-      "/opt",
-      "/usr/lib/postgresql",
-      "/etc/apt/sources.list.d",
-      "/usr/share/keyrings"
-    ]
-  },
-  "tests": [
-    {
-      "command": "plugins/builtin/artifacts/ambiente-instalador --health",
-      "name": "ambiente-health",
-      "required": true
-    }
+  "memory_mb": 4096,
+  "network": "allowlist",
+  "network_allowlist": [
+   "static.rust-lang.org",
+   "sh.rustup.rs",
+   "apt.postgresql.org",
+   "www.postgresql.org",
+   "www.python.org",
+   "pypi.org",
+   "files.pythonhosted.org",
+   "astral.sh"
   ],
-  "uuid": "01a0f571-ea30-7306-96db-ad6435344b1b",
-  "version": "0.5.0"
+  "read_only_paths": [],
+  "timeout_ms": 3600000,
+  "write_paths": [
+   "/opt",
+   "/usr/lib/postgresql",
+   "/etc/apt/sources.list.d",
+   "/usr/share/keyrings"
+  ]
+ },
+ "tests": [
+  {
+   "command": "plugins/builtin/artifacts/ambiente-instalador --health",
+   "name": "ambiente-health",
+   "required": true
+  }
+ ],
+ "uuid": "01a0f571-ea30-7306-96db-ad6435344b1b",
+ "version": "0.5.0"
 }
