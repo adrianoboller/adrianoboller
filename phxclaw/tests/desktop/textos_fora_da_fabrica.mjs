@@ -13,17 +13,22 @@
 // chave da fabrica que ninguem pede (chave morta e pior que chave faltando).
 //
 // Uso: PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node tests/desktop/textos_fora_da_fabrica.mjs [--tudo] [--isentos] [--ui DIR]
-// Sai 1 se o placar passar do TETO (catraca: so desce) ou se o laco quebrar.
+// Sai 1 se o placar passar do TETO_SPLASH_POR_ETAPA (catraca: so desce) ou se o laco quebrar.
 import { createRequire } from 'node:module';
 import { readFileSync, existsSync } from 'node:fs';
 import { dirname, join, extname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 // Catraca: SO DESCE. Traduziu N textos, baixe o teto no mesmo commit.
-// 140 medidos antes da fabrica (mesma arvore, sem textos.json); 119 com o primeiro lote
-// (menu lateral + Agentes + IDE + aviso de arquivo ausente); 46 com Visao geral,
-// Ferramentas e Absorcao. Falta: barra do topo, splash, rodape e o painel do host.
-const TETO = 46;
+//
+// TETO_SPLASH_POR_ETAPA substitui o antigo TETO (aposentado em 46, e nao subido): aquele
+// media o splash amostrando pelo relogio de parede, e a coleta, mais lenta que uma etapa do
+// boot, pulava rotulos -- a mesma arvore deu 33, 34 e 35. A regua nova para o relogio da
+// pagina e coleta as 15 etapas, uma a uma; mede MAIS, entao nasce no numero medido do dia
+// (35, ja com o painel do host traduzido) em vez de subir o teto velho. Historico da regua
+// antiga: 140 antes da fabrica, 119 no primeiro lote, 46 com Visao geral/Ferramentas/Absorcao.
+// Falta: barra do topo, splash, rodape.
+const TETO_SPLASH_POR_ETAPA = 35;
 
 // Texto que nao se traduz, com o motivo: nome proprio, marca, sigla tecnica, identificador.
 // Comparado depois de tirar dado e chave, sem espaco nas pontas.
@@ -121,7 +126,7 @@ function registrar(estado, lista) {
   }
 }
 
-async function abrir(browser, { modo = 'host', semEquipe = false, url = '?screen=dashboard', real = false } = {}) {
+async function abrir(browser, { modo = 'host', semEquipe = false, url = '?screen=dashboard', real = false, relogio = false } = {}) {
   const page = await browser.newPage({ viewport: { width: 1560, height: 960 } });
   await page.route(`${ORIGEM}/**`, route => {
     const caminho = decodeURIComponent(new URL(route.request().url()).pathname);
@@ -133,6 +138,8 @@ async function abrir(browser, { modo = 'host', semEquipe = false, url = '?screen
     return route.fulfill({ status: 200, body: readFileSync(arq), contentType: TIPOS[extname(arq)] || 'application/octet-stream' });
   });
   await page.addInitScript(stubTauri, modo);
+  // Relogio parado: os timers da pagina so andam quando o roteiro manda (clock.runFor).
+  if (relogio) { await page.clock.install({ time: 0 }); await page.clock.pauseAt(1000); }
   await page.goto(`${ORIGEM}/index.html${url}`);
   // So mede depois de a fabrica chegar: antes dela a tela mostra o padrao do fonte, e a
   // conta oscilaria com o tempo de rede (oscilou: 121 e 140 na mesma arvore).
@@ -183,11 +190,13 @@ try {
   await percorrer(p, 'sem-equipe');
   await p.close();
 
-  // Splash: o rotulo do boot troca a cada 190 ms; amostra durante a animacao inteira.
-  p = await abrir(browser, { url: '?screen=splash' });
-  for (let i = 0; i < 80; i++) {
+  // Splash: o rotulo do boot troca a cada 190 ms. Amostrar pelo relogio de parede oscilava
+  // (33, 34 e 35 na mesma arvore: a coleta demora mais que uma etapa e pula rotulos); com o
+  // relogio da pagina parado, avanca-se uma etapa por vez e cada rotulo e coletado uma vez.
+  p = await abrir(browser, { url: '?screen=splash', relogio: true });
+  for (let i = 0; i < 24; i++) {
     registrar('splash', await coletar(p));
-    await p.waitForTimeout(50);
+    await p.clock.runFor(200);
   }
   await p.close();
 
@@ -236,10 +245,10 @@ const lista = [...cravados.keys()].sort();
 if (TUDO) for (const t of lista) console.log(`  ${JSON.stringify(t)}  [${[...cravados.get(t)].join(',')}]`);
 if (process.argv.includes('--isentos')) for (const t of [...isentosVistos].sort()) console.log(`  isento ${JSON.stringify(t)} :: ${ISENTOS.get(t)}`);
 const porIdioma = fabrica ? fabrica.idiomas.map(i => `${i} ${Object.values(fabrica.textos).filter(v => v[i]).length}`).join(' • ') : 'sem textos.json';
-console.log(`textos cravados (fora da fabrica): ${lista.length}  teto ${TETO}`);
+console.log(`textos cravados (fora da fabrica): ${lista.length}  teto ${TETO_SPLASH_POR_ETAPA}`);
 console.log(`isentos vistos: ${isentosVistos.size}  isentos sem uso: ${ISENTOS.size - isentosVistos.size}`);
 console.log(`fabrica: ${existentes.size} chaves • pedidas pela tela ${pedidas.size} • ${porIdioma}`);
 console.log(`laco: faltando ${faltando.length}${faltando.length ? ` (${faltando.join(', ')})` : ''} • mortas ${mortas.length}${mortas.length ? ` (${mortas.join(', ')})` : ''} • pt vazio ${ptVazio.length}`);
 console.log(`troca de idioma (en -> botao -> pt): ${trocaOk ? 'ok' : `FALHA ${trocaDetalhe}`}`);
-const ok = trocaOk && lista.length <= TETO && !faltando.length && !mortas.length && !ptVazio.length;
+const ok = trocaOk && lista.length <= TETO_SPLASH_POR_ETAPA && !faltando.length && !mortas.length && !ptVazio.length;
 process.exit(ok ? 0 : 1);

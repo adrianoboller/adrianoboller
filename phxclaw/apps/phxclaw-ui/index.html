@@ -112,15 +112,15 @@
 
       <section class="live-runtime-grid">
         <article class="panel live-runtime-panel" data-fonte="host">
-          <header class="panel-head"><div><span class="eyebrow">F14 • REAL TIME</span><h2>Desktop Host / Event Stream</h2></div><span id="apiEndpoint" class="policy">BROWSER MODE</span></header>
+          <header class="panel-head"><div><span class="eyebrow" data-txt="geral.host_sobretitulo">F14 • TEMPO REAL</span><h2 data-txt="geral.host_titulo">Desktop Host / fluxo de eventos</h2></div><span id="apiEndpoint" class="policy"></span></header>
           <div class="runtime-status-row">
-            <div><small>SESSION UUIDv7</small><b id="hostSession">—</b></div>
-            <div><small>LIVE RECEIVERS</small><b id="liveReceivers">—</b></div>
-            <div><small>EVIDENCE CHAIN</small><b id="evidenceState">WAIT</b></div>
-            <div><small>HOST POLICY</small><b id="hostPolicy">DENY</b></div>
+            <div><small data-txt="geral.host_sessao">SESSÃO UUIDv7</small><b id="hostSession">—</b></div>
+            <div><small data-txt="geral.host_receptores">RECEPTORES AO VIVO</small><b id="liveReceivers">—</b></div>
+            <div><small data-txt="geral.host_evidencias">CADEIA DE EVIDÊNCIAS</small><b id="evidenceState"></b></div>
+            <div><small data-txt="geral.host_politica">POLÍTICA DO HOST</small><b id="hostPolicy"></b></div>
           </div>
           <div class="event-console" id="eventConsole" aria-live="polite">
-            <div class="event-empty">Aguardando Desktop Host Tauri…</div>
+            <div class="event-empty" data-txt="geral.host_aguardando">Aguardando o Desktop Host (Tauri)…</div>
           </div>
         </article>
       </section>

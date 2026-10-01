@@ -102,6 +102,22 @@ function renderEvent(event) {
   }
 }
 
+// O painel do host guarda o que o host DISSE e desenha o rotulo na hora: assim a troca de
+// idioma refaz o rotulo sem apagar o dado (endereco, contagem, politica) que veio dele.
+// Um data-txt aqui seria pior: o aplicar() da fabrica trocaria o dado pelo rotulo padrao.
+const hostVisto = { api: 'navegador', evidencia: 'espera', politica: '' };
+function desenharHost() {
+  const a = hostVisto.api;
+  apiEndpoint.textContent = a === 'navegador' ? txt('geral.host_modo_navegador', 'MODO NAVEGADOR')
+    : a === 'fora' ? txt('geral.host_api_fora', 'API FORA DO AR') : txt('geral.host_api', 'API {addr}', { addr: a.addr });
+  const e = hostVisto.evidencia;
+  evidenceState.textContent = e === 'espera' ? txt('geral.host_espera', 'AGUARDANDO')
+    : e === 'invalida' ? txt('geral.host_invalida', 'INVÁLIDA') : txt('geral.host_valida', 'VÁLIDA • {registros}', { registros: e.registros });
+  hostPolicy.textContent = hostVisto.politica || txt('geral.host_negado', 'NEGADO');
+}
+desenharHost();
+idiomas.aoTrocar(desenharHost);
+
 async function connectNativeBridge() {
   if (!invoke || !listen) {
     nativeBridgeStatus.textContent = 'WEB PREVIEW';
@@ -121,16 +137,18 @@ async function connectNativeBridge() {
     }
     hostSession.textContent = compactUuid(status.session_uuid);
     liveReceivers.textContent = String(status.live_bus?.receiver_count ?? 0);
-    hostPolicy.textContent = [
+    hostVisto.politica = [
       status.policy?.command_execution ? 'CMD' : null,
       status.policy?.desktop_input ? 'INPUT' : null,
       status.policy?.screen_capture ? 'SCREEN' : null,
       status.policy?.webview_control ? 'DOM' : null,
-    ].filter(Boolean).join(' + ') || 'DENY';
-    apiEndpoint.textContent = status.api?.addr ? `API ${status.api.addr}` : 'API OFFLINE';
+    ].filter(Boolean).join(' + ');
+    hostVisto.api = status.api?.addr ? { addr: status.api.addr } : 'fora';
+    desenharHost();
 
     const verify = await invoke('verify_evidence');
-    evidenceState.textContent = verify.valid ? `VALID • ${verify.records}` : 'INVALID';
+    hostVisto.evidencia = verify.valid ? { registros: verify.records } : 'invalida';
+    desenharHost();
 
     const snapshot = await invoke('events_snapshot', { limit: 20 });
     snapshot.forEach(renderEvent);

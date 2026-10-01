@@ -69,6 +69,20 @@
     "absorcao.barra": { "pt": "{partes} — total {total}", "en": "{partes} — total {total}" },
     "absorcao.rodape": { "pt": "{pct_agente}% no agente • {pct_lib}% contando bibliotecas • {total} capacidades • lido em {lido_em}", "en": "{pct_agente}% in the agent • {pct_lib}% counting libraries • {total} capabilities • read on {lido_em}" },
     "absorcao.falta": { "pt": "Falta ({n})", "en": "Missing ({n})" },
-    "absorcao.pela_metade": { "pt": "Pela metade ({n})", "en": "Partial ({n})" }
+    "absorcao.pela_metade": { "pt": "Pela metade ({n})", "en": "Partial ({n})" },
+    "geral.host_sobretitulo": { "pt": "F14 • TEMPO REAL", "en": "F14 • REAL TIME" },
+    "geral.host_titulo": { "pt": "Desktop Host / fluxo de eventos", "en": "Desktop Host / event stream" },
+    "geral.host_sessao": { "pt": "SESSÃO UUIDv7", "en": "SESSION UUIDv7" },
+    "geral.host_receptores": { "pt": "RECEPTORES AO VIVO", "en": "LIVE RECEIVERS" },
+    "geral.host_evidencias": { "pt": "CADEIA DE EVIDÊNCIAS", "en": "EVIDENCE CHAIN" },
+    "geral.host_politica": { "pt": "POLÍTICA DO HOST", "en": "HOST POLICY" },
+    "geral.host_aguardando": { "pt": "Aguardando o Desktop Host (Tauri)…", "en": "Waiting for the Desktop Host (Tauri)…" },
+    "geral.host_modo_navegador": { "pt": "MODO NAVEGADOR", "en": "BROWSER MODE" },
+    "geral.host_api_fora": { "pt": "API FORA DO AR", "en": "API OFFLINE" },
+    "geral.host_api": { "pt": "API {addr}", "en": "API {addr}" },
+    "geral.host_espera": { "pt": "AGUARDANDO", "en": "WAIT" },
+    "geral.host_invalida": { "pt": "INVÁLIDA", "en": "INVALID" },
+    "geral.host_valida": { "pt": "VÁLIDA • {registros}", "en": "VALID • {registros}" },
+    "geral.host_negado": { "pt": "NEGADO", "en": "DENY" }
   }
 }

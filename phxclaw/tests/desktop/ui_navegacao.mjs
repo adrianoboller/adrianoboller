@@ -240,12 +240,12 @@ try {
   // muda nunca (nome de papel, de ferramenta, capability, produto, numero).
   const fab = lerAsset('textos.json').textos;
   const DADO = {
-    geral: '#geralAgentes, #geralFerramentas, #geralAbsorcao, #geralMacro .macro > span, #geralMacro .macro b, #geralCapacidades code, #geralCapacidades em, #geralAbsorcaoLista .mini > span, #geralAbsorcaoLista .seg em, #geralAbsorcaoLista .mini b',
+    geral: '#kernelVersion, #hostSession, #liveReceivers, #geralAgentes, #geralFerramentas, #geralAbsorcao, #geralMacro .macro > span, #geralMacro .macro b, #geralCapacidades code, #geralCapacidades em, #geralAbsorcaoLista .mini > span, #geralAbsorcaoLista .seg em, #geralAbsorcaoLista .mini b',
     ferramentas: '#ferramentasConteudo header code.cap, #ferramentasConteudo .ficha b, #ferramentasConteudo .ficha p, #ferramentasConteudo .exige code',
     absorcao: '#absorcaoConteudo h2, #absorcaoConteudo .seg em, #absorcaoConteudo li',
   };
   const ROTULO_JS = {
-    geral: '#geralAgentesNota, #geralFerramentasNota, #geralAbsorcaoNota, #geralAbsorcaoLista .tri-legenda',
+    geral: '#geralAgentesNota, #geralFerramentasNota, #geralAbsorcaoNota, #geralAbsorcaoLista .tri-legenda, #apiEndpoint, #evidenceState, #hostPolicy',
     ferramentas: '#ferramentasResumo, #ferramentasConteudo .rotulo-cap, #ferramentasConteudo .exige > span, #ferramentasConteudo .marcas span',
     absorcao: '#absorcaoResumo, #absorcaoLegenda, #absorcaoConteudo .tri-legenda, #absorcaoConteudo small, #absorcaoConteudo summary',
   };
