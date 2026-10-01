@@ -590,6 +590,14 @@ dia, nunca no desejado:
   (`copia-nasce-sem-reserva-605`) e a espera do terceiro com a trava global
   na mao (`terceiro-espera-dentro-da-trava-605`). 663, medido pelo
   `--numeros` nesta arvore.
+  **SUBIU para 671 em 01/10/2026** (666 + 5; pedidos 624 e 625): a copia de
+  tabela que levava volumes de duas versoes (`copia-leva-volumes-de-duas-versoes`),
+  a sobra da FASE A que a abertura gravavel nao recolhia
+  (`sobra-da-fase-a-fica-sem-dono`), a tabela sem paginacao que nem se varria
+  (`sobra-sem-paginacao-nao-se-varre`), o `*.novo` de troca viva que o vizinho
+  apagaria (`novo-com-dono-apagado-pelo-vizinho`) e a FASE B que trocava meio
+  conjunto (`fase-b-troca-meio-conjunto`), as cinco provadas no `store`. 671,
+  medido pelo `--numeros` nesta arvore; o integrador resolve o numero no merge.
 
 # A QUINTA REGUA: a tabela publicada pode ser MENOR que o catalogo
 
@@ -696,7 +704,7 @@ TETO_TESTE_MORTO = 0
 TETO_TRECHO_AMBIGUO = 0
 TETO_TESTE_FORA_DO_BINARIO = 0
 TETO_TESTE_SEM_MODULO = 0
-PISO_DAS_ENTRADAS = 666
+PISO_DAS_ENTRADAS = 671
 
 # ------------------------------------------------------------- APOSENTADAS
 #

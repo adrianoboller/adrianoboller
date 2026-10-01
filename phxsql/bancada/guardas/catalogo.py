@@ -2130,7 +2130,8 @@ GUARDAS = [
             trocar_pelo_novo(caminho)?;
 """,
         "troca": """        // DEFEITO REPOSTO: o espelho nao acompanha a troca.
-        for (v, _, caminho, espelho) in &primeiros {
+        for (caminho, espelho) in &pendente.trocas {
+            let _ = espelho;
             let espelho: &Option<PathBuf> = &None;
             trocar_pelo_novo(caminho)?;
 """,
@@ -22028,5 +22029,114 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "servidor::testes_do_terceiro_na_tabela_que_nasce::criar_e_usar_na_mesma_conexao_continua_igual",
         ],
         "prazo": 1800,
+    },
+    {
+        "id": "copia-leva-volumes-de-duas-versoes",
+        "titulo": "A cópia de tabela no meio de uma troca decidida levava volumes de duas versões",
+        "porque": (
+            "pedido 624: a copia deixa os `*.novo` de fora, e numa troca "
+            "DECIDIDA (volume 1 ja novo) e nao terminada levava o volume 1 na "
+            "largura nova e os outros na velha, sem a peca que terminaria. "
+            "Reposto, a `copia` (e a `clientes` colada em outro database) nao "
+            "abre: «uma alteracao de estrutura ficou pela metade»."
+        ),
+        "arquivo": "crates/phxsql-store/src/catalogo.rs",
+        "trecho": """            crate::reg::RegFile::terminar_troca_antes_de_copiar(dir_o, nome_o)?;""",
+        "troca": """            // DEFEITO REPOSTO (624): copia sem terminar a troca.
+            let _ = (dir_o, nome_o);""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "troca-interrompida"],
+        "caem": [
+            "duplicar_no_meio_da_troca_decidida_leva_uma_versao_so",
+            "colar_no_meio_da_troca_decidida_leva_uma_versao_so",
+            "a_copia_da_tabela_congelada_com_troca_decidida_recusa",
+        ],
+        "seguem": ["a_copia_com_sobra_de_fase_a_leva_a_tabela_velha"],
+        "prazo": 1200,
+    },
+    {
+        "id": "sobra-da-fase-a-fica-sem-dono",
+        "titulo": "Os *.novo do .reg de uma fase A morta ficavam no disco enquanto a tabela vivesse",
+        "porque": (
+            "pedido 625: a FASE A morta deixa a copia inteira do `.reg` ao "
+            "lado (coluna marcada inclusive), e so a proxima reescrita ou o "
+            "excluir a levavam. Reposto, a abertura gravavel serve a tabela e "
+            "os `clientes#00N.reg.novo` continuam no disco."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """            reg.recolher_sobras_da_fase_a()?;""",
+        "troca": """            // DEFEITO REPOSTO (625): a abertura nao recolhe a sobra.
+            let _ = &mut reg;""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "troca-interrompida"],
+        "caem": [
+            "a_abertura_gravavel_recolhe_a_sobra_da_fase_a_e_a_leitura_nao",
+            "a_sobra_da_tabela_sem_paginacao_tambem_se_recolhe",
+        ],
+        "seguem": [
+            "o_novo_de_uma_troca_viva_nao_e_sobra",
+            "a_copia_com_sobra_de_fase_a_leva_a_tabela_velha",
+        ],
+        "prazo": 1200,
+    },
+    {
+        "id": "sobra-sem-paginacao-nao-se-varre",
+        "titulo": "A tabela sem paginação não tinha os *.novo varridos, e a sobra dela ficava",
+        "porque": (
+            "pedido 625: a varredura dos `*.novo` saia cedo quando a "
+            "paginacao estava desligada -- certo para troca DECIDIDA, que ali "
+            "nao existe, e errado para a sobra, que existe. Reposto, o "
+            "`clientes.reg.novo` da tabela de um volume so fica."
+        ),
+        "arquivo": "crates/phxsql-store/src/reg.rs",
+        "trecho": """        let paginada = self.esquema.paginacao().ligada();""",
+        "troca": """        let paginada = self.esquema.paginacao().ligada();
+        // DEFEITO REPOSTO (625): sem paginacao nao se olha o disco.
+        if !paginada {
+            return (trocas, sobras);
+        }""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "troca-interrompida"],
+        "caem": ["a_sobra_da_tabela_sem_paginacao_tambem_se_recolhe"],
+        "seguem": ["a_abertura_gravavel_recolhe_a_sobra_da_fase_a_e_a_leitura_nao"],
+        "prazo": 1200,
+    },
+    {
+        "id": "novo-com-dono-apagado-pelo-vizinho",
+        "titulo": "A abertura gravável apagaria o *.novo de uma troca ainda viva",
+        "porque": (
+            "pedido 625: recolher sobra na abertura so e seguro se o `*.novo` "
+            "nao tem dono -- a FASE A de uma fase so nao congela, e quem "
+            "escapar do congelamento abriria no meio dela. Reposto, o vizinho "
+            "apaga o palco e a FASE B recusa «sumiu antes da troca»."
+        ),
+        "arquivo": "crates/phxsql-store/src/reg.rs",
+        "trecho": """            if novos_com_dono::tem_dono(&novo) {""",
+        "troca": """            // DEFEITO REPOSTO (625): sobra e todo `*.novo` achado.
+            if false && novos_com_dono::tem_dono(&novo) {""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "troca-interrompida"],
+        "caem": ["o_novo_de_uma_troca_viva_nao_e_sobra"],
+        "seguem": ["a_abertura_gravavel_recolhe_a_sobra_da_fase_a_e_a_leitura_nao"],
+        "prazo": 1200,
+    },
+    {
+        "id": "fase-b-troca-meio-conjunto",
+        "titulo": "A fase B trocava o conjunto pela metade quando um *.novo tinha sumido",
+        "porque": (
+            "pedido 625: o `trocar_pelo_novo` pula o volume sem `*.novo`, e "
+            "com a abertura recolhendo sobras isso deixou de ser so teoria. "
+            "Reposto, os volumes 1 e 2 trocam, o 3 fica velho sem a peca, e a "
+            "tabela nunca mais abre («pela metade»)."
+        ),
+        "arquivo": "crates/phxsql-store/src/reg.rs",
+        "trecho": """            if !caminho_do_novo(caminho).exists() {""",
+        "troca": """            // DEFEITO REPOSTO (625): a FASE B nao confere as pecas.
+            if false && !caminho_do_novo(caminho).exists() {""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "troca-interrompida"],
+        "caem": ["a_fase_b_recusa_quando_um_novo_sumiu"],
+        "seguem": ["o_novo_de_uma_troca_viva_nao_e_sobra"],
+        "prazo": 1200,
     },
 ]

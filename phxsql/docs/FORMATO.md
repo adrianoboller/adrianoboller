@@ -310,11 +310,23 @@ O volume 1 é o **ponto de compromisso**, e por isso ele responde sozinho em
 que estado o conjunto está:
 
 - volume 1 ainda velho → a troca nem começou. Os `*.novo` que houver são lixo
-  de uma fase que não decidiu nada, e a abertura não toca em nada;
+  de uma fase que não decidiu nada. A abertura que só **lê** não toca em nada;
+  a abertura **gravável** os recolhe (pedido 625), porque cada um é a cópia
+  inteira de um volume — coluna marcada como dado pessoal inclusive — e
+  esperar a próxima reescrita sobrescrevê-los era deixá-los sem dono enquanto
+  a tabela vivesse. O que tem dono não sai: o `*.novo` de uma troca viva neste
+  processo (a `TrocaPendente`) fica, e se ainda assim faltar um na fase B, ela
+  recusa **antes** do primeiro `rename`;
 - volume 1 já novo e algum volume com a largura velha → a alteração está
   **decidida** e faltou terminar. O `*.novo` daquele volume é um arquivo
   completo e sincronizado: o `rename` que faltava acontece na abertura, e a
   tabela abre inteira.
+
+A **cópia de tabela** (`duplicar_tabela`, `copiar_tabela_para`) não leva os
+`*.novo`, e por isso termina a troca decidida pela mesma decisão **antes** de
+copiar (pedido 624) — senão levaria o volume 1 numa largura e o resto na outra,
+sem a peça que terminaria. Tabela congelada com troca decidida recusa a cópia;
+sem `*.novo` do `.reg` ao lado, a cópia nem abre o `.reg`.
 
 E se o `*.novo` também sumiu, a abertura **recusa** o conjunto, dizendo qual
 volume ficou para trás — em vez de ler o volume 3 com a largura do volume 1,

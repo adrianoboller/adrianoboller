@@ -2709,6 +2709,14 @@ pub mod panico_de_teste {
         /// os `*.novo` do `.reg`, nem a FASE B. E a queda que deixava o
         /// vocabulario da coluna orfao no disco.
         FtsAoLadoDepoisDoSincronizar,
+        /// `RegFile::alargar_fase_b` (pedido 625): todos os `*.novo` da FASE A
+        /// prontos e sincronizados, e nenhum `rename`. E a queda que deixava a
+        /// copia inteira do `.reg` ao lado, sem dono, enquanto a tabela vivesse.
+        FaseBAntesDaPrimeiraTroca,
+        /// `RegFile::alargar_fase_b` (pedido 624): o volume 1 ja trocado -- a
+        /// alteracao DECIDIDA -- e os outros ainda velhos, com o `*.novo` ao
+        /// lado. E o estado que a copia de tabela levava misturado.
+        FaseBDepoisDoVolume1,
     }
 
     #[cfg(debug_assertions)]
