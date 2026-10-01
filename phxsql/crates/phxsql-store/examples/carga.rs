@@ -89,7 +89,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     match fase {
         "criar" => {
             std::fs::create_dir_all(&dir)?;
-            Table::criar(&dir, esquema())?;
+            // Cada fase e um PROCESSO: desde o pedido 522 so o `sincronizar` baixa a
+            // marca de sujo do `.ndx` no disco, e o `fechar` atesta so para o proprio
+            // processo. Sem isto a fase seguinte abria e recebia «reconstrua com
+            // reparar indice» (medido em 01/10, a bancada parada desde 08/09). Fica fora
+            // do relogio: criar nao e fase medida.
+            Table::criar(&dir, esquema())?.sincronizar()?;
         }
         "inserir" => {
             let mut t = Table::abrir(&dir, "precos")?;

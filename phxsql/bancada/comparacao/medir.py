@@ -77,8 +77,10 @@ CARGA = Path(os.environ.get("PHX_CARGA", RAIZ / "target/release/examples/carga")
 # isso, uma fase longa do MySQL(R) deixa a base do PhxSql parada por mais de
 # meia hora e o zelador a apaga no meio da corrida.
 TRABALHO = Path(os.environ.get("PHX_TRABALHO", f"/tmp/phx-comparacao-{os.getpid()}"))
-RESULTADOS = AQUI / "um-milhao.json"
-PARCIAL = AQUI / "um-milhao.parcial.json"
+# `PHX_SAIDA` grava noutro arquivo: uma corrida com outro conjunto de motores nao pode
+# apagar a que ja esta publicada com motores que hoje nao estao nesta maquina.
+RESULTADOS = AQUI / os.environ.get("PHX_SAIDA", "um-milhao.json")
+PARCIAL = RESULTADOS.with_suffix(".parcial.json")
 COMANDO = AQUI / "comando.sql"
 
 BANCO = "trio"
@@ -93,6 +95,11 @@ CLI_MYSQL = ["mysql", "--protocol=socket"]
 CLI_MARIADB = ["mysql", "--protocol=tcp", "-h", "127.0.0.1", "-P", "3307",
                "-u", "root", "-pbenchpw"]
 CONTAINER_MARIADB = "bench-mariadb"
+# PostgreSQL(R) pelo psql por soquete Unix, como o MySQL(R) local: o trabalho chega como
+# TEXTO por arquivo, e o piso desse caminho e medido (`SELECT;`) como o do `DO 1;`.
+CLI_PG = ["psql", "-h", os.environ.get("PHX_PG_HOST", "/tmp"),
+          "-p", os.environ.get("PHX_PG_PORTA", "55432"), "-U", "postgres",
+          "-X", "-q", "-t", "-A", "-v", "ON_ERROR_STOP=1"]
 
 CIDADES = [
     "Blumenau", "Joinville", "Itajai", "Curitiba",
@@ -454,6 +461,109 @@ def ajuste_do_mysql(cli=None):
             "versao": campos[2]}
 
 
+# -------------------------------------------------------------- PostgreSQL
+
+
+def sql_pg(comando, banco=BANCO):
+    """Por ARQUIVO, sempre, pelo mesmo motivo do MySQL(R): um milhao de linhas nao cabe
+    na linha de comando."""
+    COMANDO.write_text(comando)
+    return subprocess.run(CLI_PG + ["-d", banco, "-f", str(COMANDO)],
+                          capture_output=True, text=True)
+
+
+def cronometra_pg(comando):
+    COMANDO.write_text(comando)
+    t0 = time.monotonic()
+    r = subprocess.run(CLI_PG + ["-d", BANCO, "-f", str(COMANDO)],
+                       capture_output=True, text=True)
+    seg = time.monotonic() - t0
+    if r.returncode != 0:
+        raise SystemExit(f"psql falhou:\n{r.stderr[:600]}")
+    return seg, r.stdout
+
+
+def confere_pg():
+    # `cadastro - DATE '1970-01-01'` e o numero do dia, a grandeza que os outros somam
+    r = sql_pg("SELECT count(*), coalesce(sum(valor),0),"
+               " coalesce(sum(cadastro - DATE '1970-01-01'),0) FROM precos;")
+    q, v, c = r.stdout.strip().split("|")
+    return (int(q), int(v), int(c))
+
+
+def corre_postgresql(n, ops, tempos):
+    """O MESMO roteiro da familia MySQL, frase por frase: so o dialeto do esquema e o
+    cliente mudam. `START TRANSACTION`/`COMMIT` por fase, lotes de 50.000 na carga."""
+    r = sql_pg(f"DROP DATABASE IF EXISTS {BANCO};", banco="postgres")
+    r = sql_pg(f"CREATE DATABASE {BANCO};", banco="postgres")
+    if r.returncode != 0:
+        raise SystemExit(f"psql nao criou o banco:\n{r.stderr[:600]}")
+    sql_pg("""CREATE TABLE precos (
+                id BIGINT NOT NULL PRIMARY KEY,
+                produto VARCHAR(40) NOT NULL,
+                cidade VARCHAR(20),
+                valor BIGINT,
+                cadastro DATE);
+              CREATE INDEX porCidade ON precos (cidade);""")
+
+    partes = ["START TRANSACTION;\n"]
+    for base in range(0, n, LOTE):
+        quantos = min(LOTE, n - base)
+        valores = ",".join(
+            "(%d,'%s','%s',%d,'%s')" % (i, p, c, v, data_sql(d))
+            for i, p, c, v, d in (linha(x) for x in range(base + 1, base + quantos + 1))
+        )
+        partes.append(f"INSERT INTO precos VALUES {valores};\n")
+    partes.append("COMMIT;\n")
+    seg, _ = cronometra_pg("".join(partes))
+    tempos["inserir"].append(seg)
+    marcos = [confere_pg()]
+
+    seg, saida = cronometra_pg(
+        "".join(f"SELECT id FROM precos WHERE id={alvo(k, n)};\n" for k in range(ops)))
+    tempos["buscar"].append(seg)
+    achados = len(saida.split())
+
+    seg, _ = cronometra_pg(
+        "START TRANSACTION;\n"
+        + "".join(
+            "UPDATE precos SET produto='%s', cidade='%s', valor=999900, cadastro='%s'"
+            " WHERE id=%d;\n" % (p, c, data_sql(d), i)
+            for i, p, c, _, d in (linha(alvo(k, n)) for k in range(ops))
+        )
+        + "COMMIT;\n")
+    tempos["atualizar"].append(seg)
+    marcos.append(confere_pg())
+
+    seg, _ = cronometra_pg(
+        "START TRANSACTION;\n"
+        + "".join(f"DELETE FROM precos WHERE id={alvo(k, n)};\n" for k in range(ops))
+        + "COMMIT;\n")
+    tempos["excluir"].append(seg)
+    marcos.append(confere_pg())
+
+    r = sql_pg("SELECT pg_total_relation_size('precos');")
+    disco = int(r.stdout.strip() or 0)
+    return {"marcos": marcos, "achados": achados, "disco": disco}
+
+
+def piso_pg(ops):
+    """`SELECT;` e a instrucao vazia do PostgreSQL(R): transporte + analise, nada mais."""
+    seg, _ = cronometra_pg("".join("SELECT;\n" for _ in range(ops)))
+    return seg
+
+
+def ajuste_do_pg():
+    r = sql_pg("SELECT current_setting('synchronous_commit'), current_setting('fsync'),"
+               " current_setting('wal_sync_method'), current_setting('server_version');",
+               banco="postgres")
+    campos = r.stdout.strip().split("|")
+    if len(campos) < 4:
+        return {}
+    return {"synchronous_commit": campos[0], "fsync": campos[1],
+            "wal_sync_method": campos[2], "versao": campos[3]}
+
+
 # -------------------------------------------------------------------- corrida
 
 
@@ -493,7 +603,7 @@ def fmt_rodada(t):
     return "  ".join(f"{f} {t[f][-1]:7.3f}s" for f in FASES if t[f])
 
 
-def durabilidade(ajuste, ajuste_maria=None):
+def durabilidade(ajuste, ajuste_maria=None, ajuste_pg=None):
     """O regime de cada motor, em texto de tela -- montado do que o servidor
     respondeu, e nao de uma frase digitada aqui."""
     d = {
@@ -502,13 +612,16 @@ def durabilidade(ajuste, ajuste_maria=None):
                     + ", ".join(f"{k}={v}" for k, v in ajuste.items()),
         "SQLite(R)": "synchronous=FULL, journal DELETE, uma transação por fase",
     }
+    if ajuste_pg:
+        d["PostgreSQL(R)"] = ("uma transação por fase; "
+                              + ", ".join(f"{k}={v}" for k, v in ajuste_pg.items()))
     if ajuste_maria:
         d["MariaDB(R)"] = ("uma transação por fase; "
                            + ", ".join(f"{k}={v}" for k, v in ajuste_maria.items()))
     return d
 
 
-def ressalvas(n, ops, rodadas, piso):
+def ressalvas(n, ops, rodadas, piso, piso_pg=None):
     """O que estes numeros nao dizem, montado a partir do que foi medido.
 
     Fica em funcao propria, e nao dentro do `monta`, porque este texto APARECE
@@ -529,9 +642,9 @@ def ressalvas(n, ops, rodadas, piso):
         f"de {mil(LOTE)} linhas. A forma do MySQL(R) é a mais barata das três por "
         "linha, então a barra dele nesta fase é OTIMISTA. As fases pontuais são "
         "uma instrução por operação nos três.",
-        "O MySQL(R) é o único que recebe o trabalho como TEXTO por soquete — não "
-        "existe MySQL(R) embutido nesta máquina, e os outros dois são biblioteca "
-        "no próprio processo. O piso desse formato foi medido: " + piso_txt,
+        "O MySQL(R) recebe o trabalho como TEXTO por soquete — não existe MySQL(R) "
+        "embutido nesta máquina, e PhxSql e SQLite(R) são biblioteca no próprio "
+        "processo. O piso desse formato foi medido: " + piso_txt,
         "O SQLite(R) publicado é a variante `rowid` (`id INTEGER PRIMARY KEY`), "
         "que é a que casa com o InnoDB por ter a chave agrupada e a que FAVORECE "
         "o SQLite(R) — são duas estruturas contra as três da variante `2ind`. A "
@@ -539,6 +652,11 @@ def ressalvas(n, ops, rodadas, piso):
         "Durabilidade casada: uma sincronização no fim de cada fase nos três. Não "
         "é o regime de quem grava pedido a pedido — uma bancada com `commit` por "
         "linha daria outros números, e é a que importa para esse caso.",
+        *([f"O PostgreSQL(R) também recebe TEXTO por soquete (psql, arquivo por "
+           f"fase), pelo mesmo roteiro do MySQL(R), e a carga inicial chega nos "
+           f"mesmos lotes de {mil(LOTE)}. O piso dele foi medido: "
+           f"{statistics.median(piso_pg):.3f} s para {mil(ops)} instruções vazias "
+           "(`SELECT;`)."] if piso_pg else []),
         "Uma máquina só, com o que mais estivesse rodando nela. O bigode de mínimo "
         f"a máximo das {rodadas} rodadas é a medida dessa inquietude: barra lisa "
         "afirmaria uma precisão que o número não tem.",
@@ -546,17 +664,17 @@ def ressalvas(n, ops, rodadas, piso):
 
 
 def monta(n, ops, rodadas, tempos, marcos, achados, disco, piso, quais,
-          piso_maria=None):
+          piso_maria=None, piso_pg_=None):
     fases = {}
     for f in FASES:
         fases[f] = {}
-        for m in ("phxsql", "mysql", "sqlite", "mariadb"):
+        for m in ("phxsql", "mysql", "sqlite", "mariadb", "postgresql"):
             amostras = tempos.get(m, {}).get(f)
             fases[f][m] = resumo(amostras) if amostras else {
                 "mediana_s": None, "min_s": None, "max_s": None
             }
 
-    ress = ressalvas(n, ops, rodadas, piso)
+    ress = ressalvas(n, ops, rodadas, piso, piso_pg_)
 
     return {
         "linhas": n,
@@ -570,6 +688,8 @@ def monta(n, ops, rodadas, tempos, marcos, achados, disco, piso, quais,
                             if tempos["sqlite-2ind"][f] else None) for f in FASES},
         "piso_do_mysql_s": resumo(piso) if piso else None,
         "piso_do_mariadb_s": resumo(piso_maria) if piso_maria else None,
+        "piso_do_postgresql_s": resumo(piso_pg_) if piso_pg_ else None,
+        "ajuste_do_postgresql": ajuste_do_pg() if "postgresql" in quais else {},
         "trabalho_conferido": {
             "etapas": ["inserir", "atualizar", "excluir"],
             "marcos_por_motor": {m: [list(x) for x in v] for m, v in marcos.items()},
@@ -581,6 +701,7 @@ def monta(n, ops, rodadas, tempos, marcos, achados, disco, piso, quais,
         "durabilidade": durabilidade(
             ajuste_do_mysql() if "mysql" in quais else {},
             ajuste_do_mysql(CLI_MARIADB) if "mariadb" in quais else None,
+            ajuste_do_pg() if "postgresql" in quais else None,
         ),
         "ressalvas": ress,
     }
@@ -633,9 +754,9 @@ def principal():
     print(f"    motores: {', '.join(quais)}", flush=True)
 
     tempos = {m: {f: [] for f in FASES}
-              for m in ("phxsql", "sqlite", "mysql", "mariadb")}
+              for m in ("phxsql", "sqlite", "mysql", "mariadb", "postgresql")}
     tempos["sqlite-2ind"] = {f: [] for f in FASES}
-    marcos, achados, disco, piso, piso_maria = {}, {}, {}, [], []
+    marcos, achados, disco, piso, piso_maria, piso_pg_ = {}, {}, {}, [], [], []
 
     for r in range(rodadas):
         print(f"-- rodada {r + 1}/{rodadas}", flush=True)
@@ -662,13 +783,19 @@ def principal():
             disco["mariadb"] = saiu["disco"]
             piso_maria.append(piso_mysql(ops, CLI_MARIADB))
             print("   mariadb " + fmt_rodada(tempos["mariadb"]), flush=True)
+        if "postgresql" in quais:
+            saiu = corre_postgresql(n, ops, tempos["postgresql"])
+            marcos["postgresql"], achados["postgresql"] = saiu["marcos"], saiu["achados"]
+            disco["postgresql"] = saiu["disco"]
+            piso_pg_.append(piso_pg(ops))
+            print("   postgre " + fmt_rodada(tempos["postgresql"]), flush=True)
         guardar({"parcial": True, "rodadas_feitas": r + 1, "tempos": tempos})
 
     confere_trio(marcos, achados, ["inserir", "atualizar", "excluir"])
     print(f"== trabalho igual conferido: {marcos[quais[0]]}", flush=True)
 
     d = monta(n, ops, rodadas, tempos, marcos, achados, disco, piso, quais,
-              piso_maria)
+              piso_maria, piso_pg_)
     guardar(d)
     os.replace(PARCIAL, RESULTADOS)
     COMANDO.unlink(missing_ok=True)
