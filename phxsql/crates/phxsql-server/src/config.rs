@@ -2914,6 +2914,12 @@ pub(crate) fn gravar_privado(caminho: &Path, corpo: &[u8]) -> std::io::Result<()
     }
     let mut arq = abrir_privado(&temporario)?;
     arq.write_all(corpo)?;
+    // Direto, e nao pelo `sincronia::sync_all`, de proposito (pedido 598,
+    // medido em 01/10/2026): pelo motor, a recusa deste `fsync` num servidor
+    // de pe vira `abort()` pelo gancho do 509 (saida 134), e hoje ela volta
+    // como `Err` a quem gravou o config. Levar ao motor muda a conduta de
+    // producao, e isso e decisao do 509 sobre o disco do config -- nao uma
+    // arrumacao. O `fsync` da PASTA ja passa pelo motor, no `trocar_duravel`.
     arq.sync_all()?;
     drop(arq);
     // Troca atomica: um corte de energia no meio deixa o arquivo antigo
@@ -9795,8 +9801,67 @@ mod testes_gravacao {
     /// Pedido 467, o caso que o motivou: o `dblink.json` e o config passam
     /// pelo `gravar_privado`, e ele so responde depois do `fsync` do
     /// diretorio -- senao a queda voltava com o arquivo ANTIGO.
+    ///
+    /// # Por que num processo FILHO (pedido 597)
+    ///
+    /// A recusa armada passa pelo `trocar_duravel`, que chama o gancho do
+    /// processo -- e o `Servidor::novo` de qualquer outro teste deste binario
+    /// registra o `abort` do 509 nele. Rodando aqui dentro, o teste so passava
+    /// porque `config::` vem antes de `servidor::` na ordem alfabetica: com um
+    /// servidor de pe antes, o binario inteiro caia por SIGABRT (medido, saida
+    /// 134). Afrouxar o gancho para o teste passar seria trocar a garantia de
+    /// producao por uma conveniencia de prova; o filho e um processo onde
+    /// ninguem registrou gancho, que e a situacao que este teste descreve (a
+    /// biblioteca recebe o `Err`).
+    ///
+    /// E o pai sobe um servidor ANTES, de proposito: assim a ordem ruim e a
+    /// de sempre, e quem trouxer a prova de volta para dentro deste processo
+    /// ve o SIGABRT na primeira corrida, e nao no dia em que a ordem mudar.
+    #[cfg(unix)]
     #[test]
     fn gravar_privado_so_responde_depois_do_fsync_do_diretorio() {
+        let base = DirTemp::novo("gravar-privado-597-base");
+        let mut c = Config {
+            base: base.0.clone(),
+            log_acessos: base.join("acessos.log"),
+            blacklist: base.join("blacklist.json"),
+            dblink: base.join("dblink.json"),
+            jobs: base.join("jobs.json"),
+            token: "t".into(),
+            ..Config::default()
+        };
+        c.cifra_fio.exigir = false;
+        let _servidor = crate::servidor::Servidor::novo(c).expect("subir o servidor do pai");
+
+        let saida = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "config::testes_gravacao::filho_gravar_privado_com_fsync_do_diretorio_recusado",
+                "--exact",
+                "--ignored",
+                "--nocapture",
+                "--test-threads=1",
+            ])
+            .output()
+            .expect("reexecutar o proprio binario de teste");
+        let texto = format!(
+            "{}{}",
+            String::from_utf8_lossy(&saida.stdout),
+            String::from_utf8_lossy(&saida.stderr)
+        );
+        assert!(saida.status.success(), "o filho falhou:\n{texto}");
+        // Filtro que nao casa nada tambem sai com sucesso: sem esta conta, um
+        // nome trocado faria o teste passar sem provar nada.
+        assert!(
+            texto.contains("1 passed"),
+            "o filho nao rodou a prova:\n{texto}"
+        );
+    }
+
+    /// O corpo da prova de cima, num processo sem gancho registrado.
+    #[cfg(unix)]
+    #[test]
+    #[ignore = "roda so dentro de gravar_privado_so_responde_depois_do_fsync_do_diretorio"]
+    fn filho_gravar_privado_com_fsync_do_diretorio_recusado() {
         use phxsql_store::sincronia::falha_de_teste::{armar, desarmar, Onde};
         let dir = DirTemp::novo("gravar-privado-dir");
         armar(&dir, Onde::Fsync, 1);

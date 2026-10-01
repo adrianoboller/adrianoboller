@@ -1152,7 +1152,7 @@ impl Volumes {
         if let Some(pos) = self.ordem.iter().position(|v| *v == volume) {
             self.ordem.remove(pos);
         }
-        std::fs::remove_file(self.caminho(volume))?;
+        remover_volume(&self.caminho(volume))?;
         {
             let mut r = trava(&self.pendentes);
             r.escritos.remove(&volume);
@@ -1197,7 +1197,7 @@ impl Volumes {
         let volumes = self.existentes();
         self.fechar_todos();
         for v in volumes {
-            std::fs::remove_file(self.caminho(v))?;
+            remover_volume(&self.caminho(v))?;
         }
         // As marcas de escrita morrem com os arquivos: nao ha pagina suja a
         // levar para um inode que deixou de existir. `sincronizar_listas`
@@ -1208,6 +1208,22 @@ impl Volumes {
         *trava(&self.pendentes) = Registro::default();
         Ok(())
     }
+}
+
+/// O `unlink` de um volume, com o ponto de prova do erro no meio (pedido
+/// 598): sem ele, o esquecimento dos volumes que ja sairam antes do erro so se
+/// provaria com um disco que recusa `unlink`, e como root nem a permissao
+/// recusa.
+fn remover_volume(caminho: &Path) -> Result<()> {
+    #[cfg(debug_assertions)]
+    if let Some(e) = crate::sincronia::falha_de_teste::disparar(
+        caminho,
+        crate::sincronia::falha_de_teste::Onde::RemocaoDeVolume,
+    ) {
+        return Err(PhxError::Io(e));
+    }
+    std::fs::remove_file(caminho)?;
+    Ok(())
 }
 
 #[cfg(test)]

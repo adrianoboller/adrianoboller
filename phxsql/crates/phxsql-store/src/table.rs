@@ -7653,25 +7653,45 @@ impl Table {
     /// dizendo que saiu. Quem segura a trava global usa
     /// [`Self::esvaziar_lixeira_adiando_o_fsync`].
     pub fn esvaziar_lixeira(&mut self, motivo: &str) -> Result<u64> {
-        let (apagadas, pendente) = self.esvaziar_lixeira_adiando_o_fsync(motivo)?;
+        let (apagadas, pendente) = self.esvaziar_lixeira_adiando_o_fsync(motivo);
+        // Mesmo no erro (pedido 598, o irmao do 595 no excluir): o volume que
+        // ja saiu volta numa queda sem o `fsync` da pasta.
         pendente.levar_ao_disco()?;
-        Ok(apagadas)
+        apagadas
     }
 
     /// O [`Self::esvaziar_lixeira`] sem o `fsync` da pasta, que volta em
     /// [`crate::catalogo::PorSincronizar`] para o servidor esperar o disco
     /// fora da trava global (catraca `alcancam-fsync-2`).
+    ///
+    /// O [`crate::catalogo::PorSincronizar`] volta FORA do `Result`, pelo
+    /// motivo do `excluir_tabela_adiando_o_fsync` (pedido 598): o
+    /// `apagar_tudo` da lixeira apaga volume por volume, e o erro no terceiro
+    /// deixa dois ja fora -- um `?` aqui os esquecia sem `fsync`. Vazio quando
+    /// o erro vem antes de qualquer `unlink` (o motivo recusado, o `.reason`
+    /// que nao gravou): ai nao ha pasta a levar.
     pub fn esvaziar_lixeira_adiando_o_fsync(
         &mut self,
         motivo: &str,
-    ) -> Result<(u64, crate::catalogo::PorSincronizar)> {
+    ) -> (Result<u64>, crate::catalogo::PorSincronizar) {
+        let mut tocou = false;
+        let apagadas = self.esvaziar_lixeira_juntando(motivo, &mut tocou);
+        let pendente = if tocou {
+            crate::catalogo::PorSincronizar::entradas_que_sairam(vec![self.lixeira.caminho(1)])
+        } else {
+            crate::catalogo::PorSincronizar::default()
+        };
+        (apagadas, pendente)
+    }
+
+    /// O corpo do [`Self::esvaziar_lixeira_adiando_o_fsync`]: `tocou` vira
+    /// `true` antes do primeiro `unlink`, e nao depois do ultimo.
+    fn esvaziar_lixeira_juntando(&mut self, motivo: &str, tocou: &mut bool) -> Result<u64> {
         self.conferir_motivo(motivo)?;
         self.motivos.registrar(Tipo::Expurgo, 0, motivo, "")?;
         self.motivos.sincronizar()?;
-        let apagadas = self.lixeira.esvaziar()?;
-        let pendente =
-            crate::catalogo::PorSincronizar::entradas_que_sairam(vec![self.lixeira.caminho(1)]);
-        Ok((apagadas, pendente))
+        *tocou = true;
+        self.lixeira.esvaziar()
     }
 
     /// Fase 1 do expurgo da trilha (pedido 368): decide o que sai e grava o
@@ -7735,21 +7755,27 @@ impl Table {
         &mut self,
         selado: &trilha::ExpurgoSelado,
     ) -> Result<Vec<u32>> {
-        let (saiu, pendente) = self.concluir_expurgo_da_trilha_adiando_o_fsync(selado)?;
+        let (saiu, pendente) = self.concluir_expurgo_da_trilha_adiando_o_fsync(selado);
+        // Mesmo no erro (pedido 598): o volume que ja saiu deve o `fsync`.
         pendente.levar_ao_disco()?;
-        Ok(saiu)
+        saiu
     }
 
     /// A fase 3 sem o `fsync` da pasta, para o servidor esperar o disco fora
     /// da trava global, como ja faz com o rastro na fase 2.
+    ///
+    /// O [`crate::catalogo::PorSincronizar`] volta FORA do `Result` (pedido
+    /// 598), pelo motivo do `excluir_tabela_adiando_o_fsync`: o erro no meio
+    /// deixa volumes ja apagados, e quem chama leva ao disco nos dois casos.
     pub fn concluir_expurgo_da_trilha_adiando_o_fsync(
         &mut self,
         selado: &trilha::ExpurgoSelado,
-    ) -> Result<(Vec<u32>, crate::catalogo::PorSincronizar)> {
-        let saiu = self.trilha.apagar_expurgados(selado)?;
-        let nomes = saiu.iter().map(|v| self.trilha.caminho(*v)).collect();
+    ) -> (Result<Vec<u32>>, crate::catalogo::PorSincronizar) {
+        let mut tocados = Vec::new();
+        let r = self.trilha.apagar_expurgados_juntando(selado, &mut tocados);
+        let nomes = tocados.iter().map(|v| self.trilha.caminho(*v)).collect();
         let pendente = crate::catalogo::PorSincronizar::entradas_que_sairam(nomes);
-        Ok((saiu, pendente))
+        (r.map(|()| tocados), pendente)
     }
 
     /// As tres fases do expurgo da trilha de uma vez, para quem nao tem trava

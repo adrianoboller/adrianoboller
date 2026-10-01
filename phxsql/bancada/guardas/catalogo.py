@@ -9185,12 +9185,17 @@ pub fn limpar() {
             }
             Err(crate::cluster::RecusaDoPulso::Outra(e)) => return Err(e),
         };
-        estado.registrar(&id, pulso);
+        // Pedido 597: era um `let _ =` dentro do `registrar`, e o pulso
+        // respondia como se a epoca espelhada estivesse no disco.
+        let nao_gravou = estado.registrar(&id, pulso).err();
 """,
+        # REANCORADO em 01/10/2026 (pedido 597): o `registrar` passou a
+        # devolver a falha de gravar a epoca, e o pulso a guarda para a
+        # resposta. O defeito reposto continua o de origem.
         "troca": """        // DEFEITO REPOSTO: o pulso entra sem provar quem o mandou, e o `id`
         // do corpo vale como identidade -- o A1 do pedido 278.
         let identidade = crate::cluster::Identidade::Provada;
-        estado.registrar(&id, pulso);
+        let nao_gravou = estado.registrar(&id, pulso).err();
 """,
         "pacote": "phxsql-server",
         "alvo": ["--test", "identidade-do-pulso"],
@@ -18509,10 +18514,13 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "o `levar_ao_disco` sincroniza a pasta -- no servidor, fora da trava."
         ),
         "arquivo": "crates/phxsql-store/src/table.rs",
-        "trecho": """        let pendente =
-            crate::catalogo::PorSincronizar::entradas_que_sairam(vec![self.lixeira.caminho(1)]);""",
-        "troca": """        // DEFEITO REPOSTO (591): o `.trash` esvaziado sem fsync da pasta.
-        let pendente = crate::catalogo::PorSincronizar::default();""",
+        # REANCORADO em 01/10/2026 (pedido 598): o pendente nasce dentro de um
+        # `if tocou`, porque o erro antes do primeiro `unlink` nao deve nada.
+        "trecho": """            crate::catalogo::PorSincronizar::entradas_que_sairam(vec![self.lixeira.caminho(1)])
+""",
+        "troca": """            // DEFEITO REPOSTO (591): o `.trash` esvaziado sem fsync da pasta.
+            crate::catalogo::PorSincronizar::default()
+""",
         "pacote": "phxsql-store",
         "alvo": ["--lib"],
         "caem": ["catalogo::testes_excluir_vai_ao_disco::excluir_esvaziar_e_expurgar_vao_ao_disco"],
@@ -18979,6 +18987,165 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         "seguem": [
             "catalogo::testes_excluir_vai_ao_disco::excluir_esvaziar_e_expurgar_vao_ao_disco",
             "catalogo::testes_gestao::excluir_tabela_leva_os_arquivos_dela_e_so_os_dela",
+        ],
+    },
+    {
+        "id": "prova-do-gravar-privado-dentro-do-processo",
+        "titulo": "a prova do `gravar_privado` rodava no mesmo processo de um `Servidor::novo`: o gancho do 509 virava a recusa armada em SIGABRT, e ela só passava pela ordem alfabética",
+        "porque": (
+            "pedido 597. A recusa armada no `fsync` da pasta passa pelo gancho "
+            "do processo, e todo `Servidor::novo` registra o `abort` do 509. O "
+            "teste passava porque `config::` vem antes de `servidor::`; com um "
+            "servidor de pe antes, o binario caia por SIGABRT (saida 134, "
+            "medido). O conserto roda a prova num processo FILHO sem gancho, e "
+            "o pai sobe um servidor ANTES de proposito: a ordem ruim e a de "
+            "sempre. Reposto o defeito -- a prova de volta para dentro --, o "
+            "binario aborta na primeira corrida."
+        ),
+        "arquivo": "crates/phxsql-server/src/config.rs",
+        "trecho": """        let _servidor = crate::servidor::Servidor::novo(c).expect("subir o servidor do pai");
+""",
+        "troca": """        let _servidor = crate::servidor::Servidor::novo(c).expect("subir o servidor do pai");
+        // DEFEITO REPOSTO (597): a prova roda NESTE processo, com o gancho do
+        // 509 registrado pelo servidor de cima.
+        if std::env::var_os("PHX_NUNCA_597").is_none() {
+            filho_gravar_privado_com_fsync_do_diretorio_recusado();
+            return;
+        }
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        # ESPERA "aborta": o defeito nao FALHA o teste, derruba o binario --
+        # que e exatamente o que o pedido 597 mediu.
+        "espera": "aborta",
+        "caem": ["config::testes_gravacao::gravar_privado_so_responde_depois_do_fsync_do_diretorio"],
+        "seguem": [],
+        "prazo": 420,
+    },
+    {
+        "id": "pular-engole-a-posicao",
+        "titulo": "o `replicacao_pular` respondia «pulou» por uma posição que não foi ao disco: um reinício devolvia o par ao evento descartado",
+        "porque": (
+            "pedido 597. A gravacao do `replicacao-posicoes.json` era um "
+            "`let _ =`, DEPOIS de a parada ja ter saido da memoria. O conserto "
+            "grava antes, devolve a falha e repoe o mapa. Reposto o defeito, a "
+            "operacao responde Ok com o arquivo ausente."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """            if let Err(e) = bidirecional::gravar_posicoes(
+                &self.config.base.join("replicacao-posicoes.json"),
+                &pos,
+            ) {
+""",
+        "troca": """            // DEFEITO REPOSTO (597): a falha de gravar a posicao e engolida.
+            if let Err(e) = bidirecional::gravar_posicoes(
+                &self.config.base.join("replicacao-posicoes.json"),
+                &pos,
+            )
+            .or_else(|_| Ok::<(), PhxError>(()))
+            {
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": ["servidor::testes_do_pular_manual::pular_que_nao_grava_a_posicao_diz_que_nao_pulou"],
+        "seguem": [
+            "servidor::testes_do_pular_manual::pular_anda_para_depois_do_evento_e_solta_a_parada",
+            "servidor::testes_do_pular_manual::sem_a_posicao_do_source_o_pulo_recusa_em_vez_de_adivinhar",
+        ],
+    },
+    {
+        "id": "registrar-engole-a-epoca-espelhada",
+        "titulo": "o `registrar` do cluster engolia a falha de gravar a época espelhada: o pulso respondia como se ela estivesse no disco",
+        "porque": (
+            "pedido 597, resto do 534. A replica que espelha a epoca do master "
+            "grava o estado; a falha era `let _ = self.persistir()`. Agora o "
+            "`registrar` a devolve, e o pulso a diz no campo `aviso` e no log."
+        ),
+        "arquivo": "crates/phxsql-server/src/cluster.rs",
+        "trecho": """                gravou = self.persistir();
+""",
+        "troca": """                // DEFEITO REPOSTO (597): a falha de gravar e engolida.
+                let _ = self.persistir();
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": ["cluster::testes::registrar_que_nao_grava_a_epoca_espelhada_devolve_o_erro"],
+        "seguem": [
+            "cluster::testes::replica_redireciona_para_o_master",
+            "cluster::testes::promover_que_nao_chega_ao_disco_nao_libera_escrita",
+        ],
+    },
+    {
+        "id": "blacklist-regravada-no-lugar",
+        "titulo": "o `blacklist.json` era regravado no lugar e sem `fsync`: a queda no meio deixava JSON pela metade, e o arranque o recusa",
+        "porque": (
+            "pedido 598, resto do 595. `Blacklist::gravar` usava "
+            "`escrever_do_banco` NO LUGAR. Passa pelo motor "
+            "`sincronia::gravar_duravel` (temporario, `fsync` no descritor que "
+            "escreveu, `rename`, `fsync` da pasta); quem chama toma so a "
+            "`lista_negra`, nunca a trava global de dados. Provado por "
+            "`strace -y`."
+        ),
+        "arquivo": "crates/phxsql-server/src/blacklist.rs",
+        "trecho": """        phxsql_store::sincronia::gravar_duravel(&self.caminho, doc.escrever_identado().as_bytes())
+""",
+        "troca": """        // DEFEITO REPOSTO (598): no lugar, sem fsync.
+        Ok(phxsql_store::permissao::escrever_do_banco(&self.caminho, doc.escrever_identado())?)
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": ["blacklist::tests::a_lista_vai_ao_disco_pela_troca_duravel"],
+        "seguem": ["blacklist::tests::comando_proibido_bloqueia_na_hora"],
+    },
+    {
+        "id": "esvaziar-esquece-no-erro",
+        "titulo": "o erro no meio do `esvaziar_lixeira` esquecia os volumes do `.trash` que já tinham saído sem `fsync` da pasta",
+        "porque": (
+            "pedido 598, o mesmo defeito que o 595 fechou no excluir. O `?` de "
+            "`esvaziar_lixeira_adiando_o_fsync` descartava o pendente; agora "
+            "ele volta FORA do `Result`. Provado por `strace -y`, com o "
+            "`unlink` do segundo volume recusado pela arma "
+            "`Onde::RemocaoDeVolume`."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """        let pendente = if tocou {
+""",
+        "troca": """        // DEFEITO REPOSTO (598): o erro esquece o que ja saiu.
+        let pendente = if tocou && apagadas.is_ok() {
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--lib"],
+        "caem": ["catalogo::testes_excluir_vai_ao_disco::o_erro_no_meio_do_esvaziar_e_do_expurgo_leva_ao_disco"],
+        "seguem": [
+            "catalogo::testes_excluir_vai_ao_disco::excluir_esvaziar_e_expurgar_vao_ao_disco",
+            "catalogo::testes_excluir_vai_ao_disco::o_erro_no_meio_leva_ao_disco_o_que_saiu",
+        ],
+    },
+    {
+        "id": "expurgo-esquece-no-erro",
+        "titulo": "o erro no meio da fase 3 do expurgo da trilha esquecia os volumes do `.lgpd` que já tinham saído sem `fsync` da pasta",
+        "porque": (
+            "pedido 598, irmao do de cima. `apagar_expurgados_juntando` anota "
+            "cada volume ANTES do `unlink`, e "
+            "`concluir_expurgo_da_trilha_adiando_o_fsync` devolve o pendente "
+            "FORA do `Result`."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """        let nomes = tocados.iter().map(|v| self.trilha.caminho(*v)).collect();
+""",
+        "troca": """        // DEFEITO REPOSTO (598): o erro esquece o que ja saiu.
+        let nomes = if r.is_ok() {
+            tocados.iter().map(|v| self.trilha.caminho(*v)).collect()
+        } else {
+            Vec::new()
+        };
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--lib"],
+        "caem": ["catalogo::testes_excluir_vai_ao_disco::o_erro_no_meio_do_esvaziar_e_do_expurgo_leva_ao_disco"],
+        "seguem": [
+            "catalogo::testes_excluir_vai_ao_disco::excluir_esvaziar_e_expurgar_vao_ao_disco",
+            "catalogo::testes_excluir_vai_ao_disco::o_erro_no_meio_leva_ao_disco_o_que_saiu",
         ],
     },
 ]

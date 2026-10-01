@@ -3524,4 +3524,167 @@ mod testes_excluir_vai_ao_disco {
             "o erro no meio deixou os nomes que sairam sem fsync da pasta\n{texto}"
         );
     }
+
+    /// Os volumes de `nome` com a extensao `ext` na pasta, em ordem de nome.
+    fn volumes_de(pasta: &Path, nome: &str, ext: &str) -> Vec<PathBuf> {
+        let mut v: Vec<PathBuf> = std::fs::read_dir(pasta)
+            .unwrap()
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| {
+                p.file_name().is_some_and(|f| {
+                    let f = f.to_string_lossy();
+                    f.starts_with(nome) && f.ends_with(ext)
+                })
+            })
+            .collect();
+        v.sort();
+        v
+    }
+
+    /// O filho do 598: o esvaziar da lixeira e o expurgo da trilha, cada um
+    /// com o `unlink` do SEGUNDO volume recusado (a arma
+    /// `Onde::RemocaoDeVolume`) depois de o primeiro ja ter saido.
+    #[test]
+    #[ignore = "roda so dentro de o_erro_no_meio_do_esvaziar_e_do_expurgo_leva_ao_disco"]
+    fn filho_do_erro_no_meio_598() {
+        use crate::sincronia::falha_de_teste::{armar, desarmar, Onde};
+        let base = PathBuf::from(std::env::var("PHX_598_DIR").unwrap());
+        let pasta = base.join("d");
+        let inst = Instancia::nova(&base).unwrap();
+        let d = inst.criar_database("d").unwrap();
+        // Um byte por volume: cada linha descartada abre um volume do
+        // `.trash`, e duas bastam para haver um «segundo».
+        let pag = phxsql_core::paginacao::Paginacao::nova(1_000, 9)
+            .unwrap()
+            .com_bytes_por_arquivo(1)
+            .unwrap();
+        let mut lixo = d
+            .criar_tabela(None, esquema("lixo").com_paginacao(pag).unwrap())
+            .unwrap();
+        for i in 1..=2i64 {
+            let r = lixo
+                .inserir(&[Value::Int(i), Value::Str(format!("l{i}@x.com"))])
+                .unwrap();
+            lixo.excluir_de_vez(r, "m").unwrap();
+        }
+        lixo.sincronizar().unwrap();
+        let trash = volumes_de(&pasta, "lixo", ".trash");
+        assert!(
+            trash.len() >= 2,
+            "a premissa: dois volumes do .trash: {trash:?}"
+        );
+
+        // A trilha de `fica`: tres volumes fechados, como no filho do 591.
+        let mut t = d.criar_tabela(None, esquema("fica")).unwrap();
+        t.definir_usuario(7);
+        t.inserir(&[Value::Int(1), Value::Str("a@x.com".into())])
+            .unwrap();
+        for v in 0..3u32 {
+            for i in 0..3u32 {
+                let email = format!("a{v}{i}@x.com");
+                t.atualizar(1, &[Value::Int(1), Value::Str(email)]).unwrap();
+            }
+            assert!(t.fechar_volume_da_trilha(true, 0).unwrap().is_some());
+        }
+        t.sincronizar().unwrap();
+        let ativo = pasta.join("fica.lgpd");
+        let fechados: Vec<PathBuf> = volumes_de(&pasta, "fica", ".lgpd")
+            .into_iter()
+            .filter(|p| *p != ativo)
+            .collect();
+        assert!(
+            fechados.len() >= 2,
+            "a premissa: volumes fechados: {fechados:?}"
+        );
+
+        passo(&base, 0);
+        armar(&trash[1], Onde::RemocaoDeVolume, 1);
+        let r = lixo.esvaziar_lixeira("limpeza");
+        desarmar(&trash[1]);
+        assert!(r.is_err(), "a premissa: o erro no meio do esvaziar");
+        passo(&base, 1);
+        let limite = phxsql_core::datahora::ms_de_instante_iso("2099-01-01").unwrap();
+        armar(&fechados[1], Onde::RemocaoDeVolume, 1);
+        let r = t.expurgar_trilha(limite, "prazo vencido");
+        desarmar(&fechados[1]);
+        assert!(r.is_err(), "a premissa: o erro no meio do expurgo");
+        passo(&base, 2);
+    }
+
+    /// **Pedido 598, contra o sistema operacional: o erro no meio do esvaziar
+    /// e do expurgo.** O mesmo defeito que o 595 fechou no `excluir_tabela`:
+    /// o `?` das duas `_adiando_o_fsync` descartava o pendente, e o volume que
+    /// ja tinha saido ficava so no cache do nucleo -- a lixeira «esvaziada» ou
+    /// o volume da trilha «expurgado» voltavam numa queda.
+    #[test]
+    fn o_erro_no_meio_do_esvaziar_e_do_expurgo_leva_ao_disco() {
+        if std::process::Command::new("strace")
+            .arg("-V")
+            .output()
+            .is_err()
+        {
+            eprintln!("sem strace nesta maquina: a prova do 598 NAO MEDIDA");
+            return;
+        }
+        let t = crate::apoio_teste::DirTemp::novo("cat-598-strace");
+        let base = std::fs::canonicalize(&t.0).unwrap();
+        let traco = t.0.join("traco.txt");
+        let saida = std::process::Command::new("strace")
+            .args(["-f", "-y", "-e", "trace=openat,fsync,unlink,unlinkat", "-o"])
+            .arg(&traco)
+            .arg(std::env::current_exe().unwrap())
+            .args([
+                "--ignored",
+                "--exact",
+                "catalogo::testes_excluir_vai_ao_disco::filho_do_erro_no_meio_598",
+            ])
+            .env("PHX_598_DIR", &base)
+            .output()
+            .unwrap();
+        assert!(
+            saida.status.success(),
+            "{}",
+            String::from_utf8_lossy(&saida.stderr)
+        );
+        let texto = std::fs::read_to_string(&traco).unwrap();
+        let linhas: Vec<&str> = texto.lines().filter(|l| l.contains(" = ")).collect();
+        let marca = |n: u32| {
+            let alvo = format!("\"{}\"", base.join(format!("passo-{n}")).display());
+            linhas
+                .iter()
+                .position(|l| l.contains("openat(") && l.contains(&alvo))
+                .unwrap_or_else(|| panic!("a premissa: o passo {n} no traco:\n{texto}"))
+        };
+        let pasta = base.join("d");
+        let fsync_da_pasta = format!("<{}>)", pasta.display());
+        let mut erros = Vec::new();
+        for (n, nome, ext) in [(1, "lixo", ".trash"), (2, "fica", ".lgpd")] {
+            let janela = &linhas[marca(n - 1) + 1..marca(n)];
+            let Some(saiu) = janela.iter().rposition(|l| {
+                l.contains("unlink")
+                    && l.trim_end().ends_with("= 0")
+                    && l.split('"').nth(1).is_some_and(|c| {
+                        let p = Path::new(c);
+                        p.parent().is_some_and(|x| x == pasta)
+                            && p.file_name().is_some_and(|f| {
+                                let f = f.to_string_lossy();
+                                f.starts_with(nome) && f.ends_with(ext)
+                            })
+                    })
+            }) else {
+                erros.push(format!("passo {n}: a premissa: nenhum {nome}*{ext} saiu"));
+                continue;
+            };
+            let sincronizou = janela[saiu + 1..].iter().any(|l| {
+                l.contains("fsync(") && l.contains(&fsync_da_pasta) && l.trim_end().ends_with("= 0")
+            });
+            if !sincronizou {
+                erros.push(format!(
+                    "passo {n}: o erro no meio deixou {nome}*{ext} que saiu sem fsync da pasta"
+                ));
+            }
+        }
+        assert!(erros.is_empty(), "{erros:#?}\n{texto}");
+    }
 }

@@ -547,7 +547,18 @@ impl EstadoCluster {
     /// `cluster.estado.json`. O crivo NAO resolve a identidade do pulso (um
     /// no da lista continua podendo dizer que e outro) -- isso e desenho, e
     /// esta na mesa do dono.
-    pub fn registrar(&self, id: &str, pulso: PulsoDeNo) {
+    ///
+    /// # O `Err` e so do disco, e o registro acontece assim mesmo (pedido 597)
+    ///
+    /// Espelhar a epoca do master grava o estado; a falha dessa gravacao era
+    /// um `let _ =`, e quem pulsou ouvia que tudo correu bem. Agora ela volta,
+    /// e quem chama a diz -- na resposta do pulso e no log. O mapa e a epoca
+    /// em MEMORIA mudam do mesmo jeito: a replica que nao espelhasse a epoca
+    /// por causa do disco seguiria redirecionando para um master que ela
+    /// mesma sabe destronado. O que a falha custa e o arranque seguinte, que
+    /// volta com a epoca velha ate o proximo pulso do master -- o mesmo preco
+    /// que o [`Self::rebaixar`] ja declara.
+    pub fn registrar(&self, id: &str, pulso: PulsoDeNo) -> Result<()> {
         let teto = self.maior_epoca_vista().saturating_add(FOLGA_DE_EPOCA);
         if pulso.epoca > teto {
             eprintln!(
@@ -555,7 +566,7 @@ impl EstadoCluster {
                  (maior vista + {FOLGA_DE_EPOCA}): ignorado",
                 pulso.epoca
             );
-            return;
+            return Ok(());
         }
         if pulso.posicao >= phxsql_core::json::INTEIRO_EXATO_MAX {
             eprintln!(
@@ -563,20 +574,22 @@ impl EstadoCluster {
                  exato de JSON: ignorado",
                 pulso.posicao
             );
-            return;
+            return Ok(());
         }
         let agora = pulso.quando_ms;
+        let mut gravou = Ok(());
         if pulso.papel == PapelVivo::Master && pulso.epoca >= self.epoca() {
             self.master_visto_ms.store(agora, Ordering::SeqCst);
             // Replica espelha a epoca do master: e assim que "houve eleicao
             // N" atravessa o cluster ate quem nunca falou com o novo master.
             if self.papel() == PapelVivo::Replica && pulso.epoca > self.epoca() {
                 self.epoca.store(pulso.epoca, Ordering::SeqCst);
-                let _ = self.persistir();
+                gravou = self.persistir();
             }
             *self.master_id.travar() = Some(id.to_string());
         }
         self.nos.travar().insert(id.to_string(), pulso);
+        gravou
     }
 
     /* ------------------------------ a identidade de quem pulsa (pedido 278)
@@ -1539,6 +1552,41 @@ mod testes {
         assert_eq!(e.epoca(), 0);
     }
 
+    /// Pedido 597: a replica que espelha a epoca do master e nao consegue
+    /// grava-la DIZ isso -- era um `let _ =`, e o pulso respondia como se o
+    /// estado estivesse no disco. A memoria espelha assim mesmo (ver a nota
+    /// do `registrar`). Mesma falha forjada do teste de cima, pelo mesmo
+    /// motivo. **Defeito reposto** (`let _ = self.persistir()`): o `registrar`
+    /// devolve Ok e a primeira asercao cai.
+    #[test]
+    fn registrar_que_nao_grava_a_epoca_espelhada_devolve_o_erro() {
+        let dir = DirTemp::novo("cluster-registrar-sem-disco");
+        let e = EstadoCluster::novo(config_de_teste(), &dir, crate::config::Papel::Replica);
+        let tmp = crate::config::temporario_de(&dir.join("cluster.estado.json"));
+        std::fs::create_dir_all(tmp.join("ocupado")).unwrap();
+        let r = e.registrar(
+            "no1",
+            PulsoDeNo {
+                papel: PapelVivo::Master,
+                epoca: 4,
+                posicao: 10,
+                incompleta: false,
+                prioridade: 0,
+                quando_ms: crate::agora_ms(),
+            },
+        );
+        assert!(
+            r.is_err(),
+            "a epoca espelhada nao foi ao disco e o registrar disse Ok"
+        );
+        assert_eq!(
+            e.epoca(),
+            4,
+            "a memoria deixou de espelhar por causa do disco"
+        );
+        assert_eq!(e.master_atual().unwrap().0, "no1");
+    }
+
     /// A replica redireciona para o master que conhece -- com o pedaco
     /// `REDIRECIONA host:porta` no comeco do CORPO.
     ///
@@ -1567,7 +1615,8 @@ mod testes {
                 prioridade: 0,
                 quando_ms: crate::agora_ms(),
             },
-        );
+        )
+        .unwrap();
         match e.recusa_de_escrita() {
             Some(PhxError::Redireciona(m)) => {
                 assert!(m.starts_with("REDIRECIONA 127.0.0.1:5310"), "{m}")
@@ -1605,7 +1654,8 @@ mod testes {
                 prioridade: 0,
                 quando_ms: crate::agora_ms(),
             },
-        );
+        )
+        .unwrap();
         assert_eq!(e.master_atual().unwrap().0, "no1");
 
         // O antigo master (epoca 1) pulsa: continua registrado como no vivo,
@@ -1620,7 +1670,8 @@ mod testes {
                 prioridade: 0,
                 quando_ms: crate::agora_ms(),
             },
-        );
+        )
+        .unwrap();
         assert_eq!(e.master_atual().unwrap().0, "no1");
         assert_eq!(e.mapa().len(), 2);
 
@@ -1649,7 +1700,8 @@ mod testes {
         let dir = DirTemp::novo("cluster-epoca-absurda");
         let e = EstadoCluster::novo(config_de_teste(), &dir, crate::config::Papel::Replica);
         e.promover(3).unwrap();
-        e.registrar("no1", pulso(PapelVivo::Master, u64::MAX, 10));
+        e.registrar("no1", pulso(PapelVivo::Master, u64::MAX, 10))
+            .unwrap();
         assert!(
             e.maior_epoca_vista() <= 3 + FOLGA_DE_EPOCA,
             "a epoca absurda envenenou a maior vista: {}",
@@ -1666,7 +1718,8 @@ mod testes {
             "o pulso torto nao pode entrar no mapa dos vivos"
         );
         // O mesmo com `i64::MAX`, que e o que o `json.rs` entrega para 1e19.
-        e.registrar("no3", pulso(PapelVivo::Master, i64::MAX as u64, 10));
+        e.registrar("no3", pulso(PapelVivo::Master, i64::MAX as u64, 10))
+            .unwrap();
         assert!(e.maior_epoca_vista() <= 3 + FOLGA_DE_EPOCA);
         assert_eq!(e.papel(), PapelVivo::Master);
         let _ = std::fs::remove_dir_all(&dir);
@@ -1681,7 +1734,8 @@ mod testes {
         let dir = DirTemp::novo("cluster-folga");
         let e = EstadoCluster::novo(config_de_teste(), &dir, crate::config::Papel::Replica);
         assert_eq!(e.epoca(), 0);
-        e.registrar("no1", pulso(PapelVivo::Master, FOLGA_DE_EPOCA, 10));
+        e.registrar("no1", pulso(PapelVivo::Master, FOLGA_DE_EPOCA, 10))
+            .unwrap();
         assert_eq!(
             e.epoca(),
             FOLGA_DE_EPOCA,
@@ -1689,14 +1743,17 @@ mod testes {
         );
         assert_eq!(e.master_atual().unwrap().0, "no1");
         // Um degrau acima da folga, a partir da maior vista agora: nao conta.
-        e.registrar("no3", pulso(PapelVivo::Master, 2 * FOLGA_DE_EPOCA + 1, 10));
+        e.registrar("no3", pulso(PapelVivo::Master, 2 * FOLGA_DE_EPOCA + 1, 10))
+            .unwrap();
         assert_eq!(e.maior_epoca_vista(), FOLGA_DE_EPOCA);
         assert_eq!(e.mapa().len(), 1);
         // Posicao no limite do inteiro exato entra; a partir dele, nao.
         let exato = phxsql_core::json::INTEIRO_EXATO_MAX;
-        e.registrar("no3", pulso(PapelVivo::Replica, FOLGA_DE_EPOCA, exato - 1));
+        e.registrar("no3", pulso(PapelVivo::Replica, FOLGA_DE_EPOCA, exato - 1))
+            .unwrap();
         assert_eq!(e.mapa().len(), 2);
-        e.registrar("no3", pulso(PapelVivo::Replica, FOLGA_DE_EPOCA, exato));
+        e.registrar("no3", pulso(PapelVivo::Replica, FOLGA_DE_EPOCA, exato))
+            .unwrap();
         assert_eq!(
             e.mapa()["no3"].posicao,
             exato - 1,
@@ -1956,8 +2013,9 @@ mod testes {
         e.definir_posicao(10, false);
         let mut calado = pulso(PapelVivo::Master, 2, 10);
         calado.quando_ms -= 60_000;
-        e.registrar("no1", calado);
-        e.registrar("no3", pulso(PapelVivo::Replica, 2, 10));
+        e.registrar("no1", calado).unwrap();
+        e.registrar("no3", pulso(PapelVivo::Replica, 2, 10))
+            .unwrap();
         e.nos.envenenar();
 
         let agora = crate::agora_ms();
@@ -1981,7 +2039,8 @@ mod testes {
             "o no envenenado nao chega a eleicao que o resto do cluster faz"
         );
         // E o pulso que chega DEPOIS do veneno continua contando.
-        e.registrar("no3", pulso(PapelVivo::Replica, 2, 77));
+        e.registrar("no3", pulso(PapelVivo::Replica, 2, 77))
+            .unwrap();
         assert_eq!(
             e.mapa().get("no3").map(|p| p.posicao),
             Some(77),
@@ -2003,7 +2062,7 @@ mod testes {
     fn a_familia_das_travas_do_cluster_recupera_o_veneno() {
         let dir = DirTemp::novo("cluster-familia-veneno");
         let e = EstadoCluster::novo(config_de_teste(), &dir, crate::config::Papel::Replica);
-        e.registrar("no1", pulso(PapelVivo::Master, 2, 10));
+        e.registrar("no1", pulso(PapelVivo::Master, 2, 10)).unwrap();
 
         e.master_id.envenenar();
         assert_eq!(

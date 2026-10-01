@@ -439,6 +439,10 @@ pub mod falha_de_teste {
         /// A gravacao de um motivo (`.reason`) devolve ENOSPC -- o observador
         /// da exclusao de vez que falha com o slot ja liberado (pedido 498).
         GravacaoDoMotivo,
+        /// O `unlink` de um volume devolve EBUSY -- o erro no MEIO de uma
+        /// exclusao de varios volumes (o esvaziar da lixeira, o expurgo da
+        /// trilha), depois de os anteriores ja terem saido (pedido 598).
+        RemocaoDeVolume,
     }
 
     #[cfg(debug_assertions)]
@@ -498,6 +502,7 @@ pub mod falha_de_teste {
             | Onde::GravacaoDaTrilha
             | Onde::GravacaoDoDiario
             | Onde::GravacaoDoMotivo => 28,
+            Onde::RemocaoDeVolume => 16,
         }))
     }
 }

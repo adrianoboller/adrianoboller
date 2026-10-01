@@ -613,9 +613,15 @@ impl Blacklist {
                 Json::Lista(self.bloqueios.iter().map(Bloqueio::para_json).collect()),
             ),
         ]);
-        // 0600 pelo motor da permissao do banco (pedido 542).
-        phxsql_store::permissao::escrever_do_banco(&self.caminho, doc.escrever_identado())?;
-        Ok(())
+        // Pedido 598: pela troca duravel (temporario 0600 pelo motor da
+        // permissao, `fsync`, `rename`, `fsync` da pasta), e nao NO LUGAR.
+        // Regravado no lugar, uma queda entre o truncar e o escrever deixava
+        // o arquivo vazio ou pela metade, e o `abrir` do arranque recusa JSON
+        // torto -- o servidor nao subia por causa da lista de bloqueio. E a
+        // queda logo depois da resposta podia devolver o IP ja desbloqueado
+        // pelo administrador. Nenhum chamador segura a trava global de dados:
+        // os portoes da porta tomam so a `lista_negra`.
+        phxsql_store::sincronia::gravar_duravel(&self.caminho, doc.escrever_identado().as_bytes())
     }
 
     /// Grava e anota o carimbo, para nao reler a propria escrita.
@@ -946,6 +952,126 @@ mod tests {
     }
 
     const T0: i64 = 1_800_000_000_000;
+
+    /// O filho que o teste de baixo roda debaixo do `strace`: um bloqueio e um
+    /// desbloqueio, as duas gravacoes que a porta faz.
+    #[cfg(unix)]
+    #[test]
+    #[ignore = "roda so dentro de a_lista_vai_ao_disco_pela_troca_duravel"]
+    fn filho_da_lista_duravel() {
+        let d = PathBuf::from(std::env::var("PHX_598_DIR").unwrap());
+        let mut bl = Blacklist::abrir(d.join("blacklist.json")).unwrap();
+        let p = politica();
+        let (_, aviso) =
+            bloqueou(bl.violacao_grave("203.0.113.9", "excluir", "comando proibido", &p, T0));
+        assert!(aviso.is_none(), "{aviso:?}");
+        assert!(bl.desbloquear("203.0.113.9", &p).unwrap());
+    }
+
+    /// **Pedido 598, contra o sistema operacional:** cada gravacao do
+    /// `blacklist.json` e temporario com `fsync` no descritor que o escreveu,
+    /// `rename` para o nome final e `fsync` da pasta, NESTA ordem (`strace
+    /// -y`). Era `escrever_do_banco` NO LUGAR, sem `fsync`: a queda no meio
+    /// deixava o arquivo pela metade, e o arranque recusa JSON torto.
+    ///
+    /// **Defeito reposto** (o `escrever_do_banco` de antes): nao ha `rename`
+    /// nenhum, e a contagem das trocas cai.
+    ///
+    /// **Nao medido:** a queda em si; o que se prova e a ordem e o descritor.
+    #[cfg(unix)]
+    #[test]
+    fn a_lista_vai_ao_disco_pela_troca_duravel() {
+        use std::process::Command;
+        if Command::new("strace").arg("-V").output().is_err() {
+            eprintln!("sem strace nesta maquina: a prova do 598 NAO MEDIDA");
+            return;
+        }
+        let t = dir_temp("598-strace");
+        let d = std::fs::canonicalize(&t).unwrap();
+        let traco = d.join("traco.txt");
+        let saida = Command::new("strace")
+            .args([
+                "-f",
+                "-qq",
+                "-y",
+                "-e",
+                "trace=openat,write,fsync,close,rename,renameat,renameat2",
+                "-o",
+            ])
+            .arg(&traco)
+            .arg(std::env::current_exe().unwrap())
+            .args([
+                "--ignored",
+                "--exact",
+                "blacklist::tests::filho_da_lista_duravel",
+                "--test-threads=1",
+            ])
+            .env("PHX_598_DIR", &d)
+            .output()
+            .unwrap();
+        assert!(
+            saida.status.success(),
+            "{}",
+            String::from_utf8_lossy(&saida.stderr)
+        );
+        let texto = std::fs::read_to_string(&traco).unwrap();
+        let linhas: Vec<&str> = texto
+            .lines()
+            .filter(|l| l.contains(" = ") && !l.contains("= -1"))
+            .collect();
+        let final_ = d.join("blacklist.json").display().to_string();
+        let tmp = format!("{final_}.novo");
+        let pasta = d.display().to_string();
+        let trocas: Vec<usize> = linhas
+            .iter()
+            .enumerate()
+            .filter(|(_, l)| {
+                l.contains("rename")
+                    && l.contains(&format!("\"{tmp}\", "))
+                    && l.contains(&format!("\"{final_}\""))
+            })
+            .map(|(i, _)| i)
+            .collect();
+        assert_eq!(
+            trocas.len(),
+            2,
+            "o bloqueio e o desbloqueio nao trocaram o arquivo por rename:\n{texto}"
+        );
+        let mut desde = 0;
+        for i in trocas {
+            let antes = &linhas[desde..i];
+            let fd = antes
+                .iter()
+                .rev()
+                .find(|l| l.contains("openat(") && l.contains(&format!("\"{tmp}\"")))
+                .and_then(|l| l.rsplit("= ").next())
+                // O `-y` imprime o retorno como `3</caminho>`: so o numero.
+                .map(|s| s.split('<').next().unwrap_or("").trim().to_string())
+                .unwrap_or_else(|| panic!("o temporario nao nasceu por openat:\n{texto}"));
+            let escreveu = antes
+                .iter()
+                .position(|l| l.contains(&format!("write({fd}<{tmp}>")))
+                .unwrap_or_else(|| panic!("nada escrito no temporario:\n{texto}"));
+            assert!(
+                antes[escreveu..]
+                    .iter()
+                    .any(|l| l.contains(&format!("fsync({fd}<{tmp}>)"))),
+                "rename sem fsync do temporario no descritor que escreveu:\n{texto}"
+            );
+            let depois = &linhas[i + 1..];
+            let fim = depois
+                .iter()
+                .position(|l| l.contains("rename"))
+                .unwrap_or(depois.len());
+            assert!(
+                depois[..fim]
+                    .iter()
+                    .any(|l| l.contains("fsync(") && l.contains(&format!("<{pasta}>)"))),
+                "rename sem fsync da pasta depois:\n{texto}"
+            );
+            desde = i + 1;
+        }
+    }
 
     #[test]
     fn comando_proibido_bloqueia_na_hora() {
