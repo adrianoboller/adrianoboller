@@ -34,7 +34,8 @@ const product = {
 const schema = JSON.parse(src.match(/{%\s*schema\s*%}([\s\S]*?){%\s*endschema\s*%}/)[1]);
 const settings = {};
 for (const s of schema.settings) if ('default' in s) settings[s.id] = s.default;
-Object.assign(settings, { warranty_link: '/pages/garantia' });
+// AJUSTES='{"whatsapp_number":""}' simula o dono mudando a configuracao no editor
+Object.assign(settings, { warranty_link: '/pages/garantia' }, JSON.parse(process.env.AJUSTES || '{}'));
 const section = { id: 'product-whatsapp', settings };
 
 // ---- engine ----

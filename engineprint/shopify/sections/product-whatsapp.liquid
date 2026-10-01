@@ -23,7 +23,8 @@
   · miniaturas numa fila rolavel no celular (sem quebrar linha);
   · zoom em tela cheia ao tocar na foto;
   · variantes como cartoes com preco (em vez de <select>);
-  · linha de estoque a partir do dado real da variante;
+  · linha de estoque: link "Verificar estoque" para o WhatsApp configurado
+    (sem numero, volta ao dado real da variante);
   · faixa de confianca com icones; barra fixa de compra no
     celular quando o botao principal sai da tela;
   · descricao longa dividida em sanfonas pelos <h3> dela.
@@ -332,19 +333,49 @@
           </button>
 
           {%- comment -%}
-            Linha de estoque: vem do dado da variante, nunca de texto fixo.
-            "Ultimas N" so aparece com 1..5 unidades contadas pela Shopify;
-            o prazo de envio so aparece se o dono escrever um.
+            Linha de estoque. Decisao do dono (01/10/2026): em vez de anunciar
+            "Em estoque" / "Esgotado" pela contagem da Shopify, um link
+            "Verificar estoque" que abre o WhatsApp configurado na secao, ja
+            com o produto (e a variante) na mensagem — as vendas acontecem
+            tambem fora do site, e a contagem nao e a palavra final.
+            Sem numero configurado volta o comportamento antigo (contagem da
+            variante), porque link morto e pior que status aproximado.
+            O prazo de envio, se escrito, continua ao lado.
           {%- endcomment -%}
-          <p class="pp__stock" data-pp-stock data-dispatch="{{ section.settings.dispatch_text | escape }}">
-            {%- if product_var.available -%}
+          {%- liquid
+            assign pp_wa_num = section.settings.whatsapp_number | default: '' | remove: ' ' | remove: '+' | remove: '-' | remove: '(' | remove: ')' | remove: '.'
+            assign pp_wa_msg = section.settings.whatsapp_message | default: 'Olá! Quero verificar o estoque de {produto}.'
+            assign pp_wa_item = product.title
+            unless product.has_only_default_variant
+              assign pp_wa_item = pp_wa_item | append: ' (' | append: product_var.title | append: ')'
+            endunless
+            assign pp_wa_texto = pp_wa_msg | replace: '{produto}', pp_wa_item
+          -%}
+          <p class="pp__stock{% if pp_wa_num != blank %} pp__stock--wa{% endif %}" data-pp-stock data-dispatch="{{ section.settings.dispatch_text | escape }}">
+            {%- if pp_wa_num != blank -%}
+              <a
+                class="pp__stock-link"
+                href="https://wa.me/{{ pp_wa_num }}?text={{ pp_wa_texto | url_encode }}"
+                target="_blank"
+                rel="noopener"
+                data-pp-wa
+                data-pp-wa-num="{{ pp_wa_num }}"
+                data-pp-wa-msg="{{ pp_wa_msg | escape }}"
+                data-pp-wa-title="{{ product.title | escape }}"
+              >
+                <svg class="pp__stock-ic" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2Zm0 1.8a8.2 8.2 0 1 1-4.2 15.3l-.3-.2-3 .8.8-2.9-.2-.3A8.2 8.2 0 0 1 12 3.8Zm-3.3 4.4c-.2 0-.5 0-.7.3-.3.3-1 1-1 2.4s1 2.8 1.2 3c.1.2 2 3.2 5 4.4 2.5 1 3 .8 3.5.7.6-.1 1.8-.7 2-1.4.2-.7.2-1.3.2-1.4-.1-.1-.3-.2-.6-.3l-2-1c-.3-.1-.5-.1-.7.1l-.9 1.1c-.2.2-.3.2-.6.1-.3-.2-1.3-.5-2.4-1.5-.9-.8-1.5-1.8-1.7-2.1-.2-.3 0-.5.1-.6l.5-.5.3-.5c.1-.2 0-.4 0-.5l-.9-2.2c-.2-.5-.4-.5-.6-.5h-.7Z"/></svg>Verificar estoque
+              </a>
+            {%- elsif product_var.available -%}
               {%- if product_var.inventory_management == 'shopify' and product_var.inventory_quantity > 0 and product_var.inventory_quantity <= 5 -%}
                 <i class="pp__dot pp__dot--low"></i>Últimas {{ product_var.inventory_quantity }} unidades
               {%- else -%}
-                <i class="pp__dot"></i>Em estoque{% if section.settings.dispatch_text != blank %} · {{ section.settings.dispatch_text }}{% endif %}
+                <i class="pp__dot"></i>Em estoque
               {%- endif -%}
             {%- else -%}
               <i class="pp__dot pp__dot--out"></i>Esgotado no momento
+            {%- endif -%}
+            {%- if section.settings.dispatch_text != blank and product_var.available -%}
+              <span class="pp__stock-prazo">· {{ section.settings.dispatch_text }}</span>
             {%- endif -%}
           </p>
 
@@ -716,6 +747,13 @@
   .pp__add[disabled] { opacity: .5; cursor: not-allowed; }
 
   .pp__stock { margin: -.35rem 0 0; display: flex; align-items: center; justify-content: center; gap: .45rem; font-size: .86rem; font-weight: 600; color: #1d7a3a; }
+  /* "Verificar estoque": link sublinhado, verde do WhatsApp, com o icone
+     dele — a pessoa tem de ver que e clicavel e para onde vai */
+  .pp__stock--wa { color: #1d7a3a; }
+  .pp__stock-link { display: inline-flex; align-items: center; gap: .4rem; color: inherit; text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; }
+  .pp__stock-link:hover { color: #0f5c2a; }
+  .pp__stock-ic { flex: 0 0 auto; }
+  .pp__stock-prazo { font-weight: 500; color: #6e6e73; }
   .pp__dot { width: 8px; height: 8px; border-radius: 999px; background: #1d7a3a; box-shadow: 0 0 0 3px rgba(29,122,58,.15); }
   .pp__stock--low, .pp__dot--low { color: #b45309; }
   .pp__dot--low { background: #f59e0b; box-shadow: 0 0 0 3px rgba(245,158,11,.18); }
@@ -982,14 +1020,25 @@
           return vals;
         };
 
+        const waLink = sec.querySelector('[data-pp-wa]');
         const renderStock = (v) => {
           if (!stockEl) return;
           const dispatch = stockEl.dataset.dispatch || '';
+          const prazo = dispatch && v.available ? '<span class="pp__stock-prazo">· ' + dispatch + '</span>' : '';
+          if (waLink) {
+            // "Verificar estoque": o link fica, so a mensagem muda com a variante escolhida
+            const item = v.title && v.title !== 'Default Title' ? waLink.dataset.ppWaTitle + ' (' + v.title + ')' : waLink.dataset.ppWaTitle;
+            waLink.href = 'https://wa.me/' + waLink.dataset.ppWaNum + '?text=' + encodeURIComponent((waLink.dataset.ppWaMsg || '').replace('{produto}', item));
+            const prazoEl = stockEl.querySelector('.pp__stock-prazo');
+            if (prazoEl) prazoEl.remove();
+            if (prazo) stockEl.insertAdjacentHTML('beforeend', prazo);
+            return;
+          }
           let cls = 'pp__dot', txt;
           if (!v.available) { cls += ' pp__dot--out'; txt = 'Esgotado no momento'; stockEl.className = 'pp__stock pp__stock--out'; }
           else if (v.inventory_management === 'shopify' && v.inventory_quantity > 0 && v.inventory_quantity <= 5) { cls += ' pp__dot--low'; txt = 'Últimas ' + v.inventory_quantity + ' unidades'; stockEl.className = 'pp__stock pp__stock--low'; }
-          else { txt = 'Em estoque' + (dispatch ? ' · ' + dispatch : ''); stockEl.className = 'pp__stock'; }
-          stockEl.innerHTML = '<i class="' + cls + '"></i>' + txt;
+          else { txt = 'Em estoque'; stockEl.className = 'pp__stock'; }
+          stockEl.innerHTML = '<i class="' + cls + '"></i>' + txt + prazo;
         };
 
         const update = () => {
@@ -1151,7 +1200,9 @@
     { "type": "checkbox", "id": "show_sticky", "label": "Barra fixa de compra no celular", "default": true },
     { "type": "checkbox", "id": "split_description", "label": "Dividir a descrição em seções pelos títulos (h3)", "default": true },
     { "type": "header", "content": "Estoque" },
-    { "type": "text", "id": "dispatch_text", "label": "Prazo de envio (opcional)", "placeholder": "envio em até 2 dias úteis", "info": "Aparece ao lado de \"Em estoque\". Vazio = não promete prazo." },
+    { "type": "text", "id": "whatsapp_number", "label": "WhatsApp do \"Verificar estoque\"", "default": "5541995712681", "info": "Só números, com DDI e DDD (55 41 9...). Vazio = volta a mostrar \"Em estoque\" / \"Esgotado\" pela contagem da Shopify." },
+    { "type": "text", "id": "whatsapp_message", "label": "Mensagem que o cliente envia", "default": "Olá! Quero verificar o estoque de {produto}.", "info": "{produto} vira o nome do produto e a variante escolhida." },
+    { "type": "text", "id": "dispatch_text", "label": "Prazo de envio (opcional)", "placeholder": "envio em até 2 dias úteis", "info": "Aparece ao lado de \"Verificar estoque\". Vazio = não promete prazo." },
     { "type": "header", "content": "Frete, garantia e confiança" },
     { "type": "text", "id": "shipping_text", "label": "Texto de frete", "default": "Frete grátis para todo o Brasil" },
     { "type": "text", "id": "warranty_text", "label": "Texto de garantia", "default": "Garantia de 2 anos" },
