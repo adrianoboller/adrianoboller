@@ -757,13 +757,16 @@
      ou clicar, NADA muda de cor — o link so cresce 5%, numa transicao de
      220 ms so no transform, que o navegador anima no compositor sem
      engasgar. Pedido do dono (01/10/2026). O laranja que aparecia vinha do
-     base.css do tema: `p > a:hover { --button-color: var(--color-primary-hover) }`
-     — este link e filho direto do <p> da linha; a regra abaixo, com tres
-     classes, ganha dela e fixa a cor herdada em todos os estados. */
+     base.css do tema, que pinta todo link dentro de <p> no hover com
+     `color: var(--color-primary-hover)` por um seletor que ganha de tres
+     classes (medido no preview: a cor computada era rgb(255,138,31) mesmo
+     com `color: inherit` aqui). Em vez de disputar especificidade, as tres
+     variaveis que o tema usa para pintar link passam a valer currentColor
+     dentro deste link — e currentColor na propriedade color e herdar. */
   .pp__stock--wa { color: #1d7a3a; }
   .pp__stock--wa.pp__stock--out { color: #6e6e73; }
-  .pp__stock-link { display: inline-flex; align-items: center; gap: .45rem; color: inherit; text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; transform-origin: 50% 50%; transition: transform .22s cubic-bezier(.22, 1, .36, 1); }
-  .pp__stock .pp__stock-link:is(:hover, :focus, :focus-visible, :active, :visited) { color: inherit; }
+  .pp__stock-link { --color-primary: currentColor; --color-primary-hover: currentColor; --button-color: currentColor; display: inline-flex; align-items: center; gap: .45rem; color: inherit; text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; transform-origin: 50% 50%; transition: transform .22s cubic-bezier(.22, 1, .36, 1); }
+  .pp__stock .pp__stock-link:is(:hover, :focus, :focus-visible, :active, :visited) { --button-color: currentColor; color: inherit; }
   .pp__stock .pp__stock-link:is(:hover, :focus-visible, :active) { transform: scale(1.05); }
   @media (prefers-reduced-motion: reduce) { .pp__stock-link { transition: none; } }
   .pp__stock-prazo { font-weight: 500; color: #6e6e73; }
