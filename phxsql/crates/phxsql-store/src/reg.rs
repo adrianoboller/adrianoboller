@@ -1377,6 +1377,46 @@ impl RegFile {
         Ok(novo)
     }
 
+    /// Regrava o bloco de esquema com estes indices a mais (pedido 175).
+    ///
+    /// Indice e declaracao no `.reg` pelo mesmo motivo da chave: nao entra no
+    /// slot. A lista mora no MEIO do bloco, prefixada por contagem desde a
+    /// v2, entao a versao do `PSCH` nao muda -- um indice a mais e uma volta
+    /// a mais no laco que ja existe. O `.ndx` e de quem chama
+    /// ([`crate::table::Table::acrescentar_indices`]).
+    pub fn regravar_indices(&mut self, novos: Vec<phxsql_core::schema::IndexDef>) -> Result<bool> {
+        let novo = self.esquema.clone().com_indices(novos)?;
+        self.conferir_slot_inalterado(&novo, "acrescentar indice")?;
+        self.regravar_esquema(novo)
+    }
+
+    /// O esquema com OUTRA lista de indices de texto, conferido -- sem gravar
+    /// nada (pedido 364). Substitui a lista inteira, como o
+    /// [`RegFile::regravar_chaves_estrangeiras`]: quem redeclara diz o estado
+    /// que quer, e nao a diferenca. Quem grava e a FASE A/B, e o `.fts` e de
+    /// quem chama ([`crate::table::Table::preparar_indices_de_texto`]).
+    pub fn esquema_com_indices_de_texto(
+        &self,
+        textos: Vec<phxsql_core::schema::IndiceDeTexto>,
+    ) -> Result<Schema> {
+        let novo = self.esquema.clone().com_indices_de_texto(textos)?;
+        self.conferir_slot_inalterado(&novo, "redeclarar indice de texto")?;
+        Ok(novo)
+    }
+
+    /// O cinto dos caminhos de declaracao: o endereco de cada linha sai do
+    /// `slot_size`, e declarar nao pode toca-lo.
+    fn conferir_slot_inalterado(&self, novo: &Schema, oque: &str) -> Result<()> {
+        let faixas = faixas_pessoais(novo)?;
+        let esperado = SLOT_CAB + novo.payload_len() + self.material.rabo(largura_marcada(&faixas));
+        if esperado != self.slot_size {
+            return Err(PhxError::Esquema(format!(
+                "{oque} mudaria o slot_size; isso e alterar estrutura, e nao declaracao"
+            )));
+        }
+        Ok(())
+    }
+
     /// Regrava a marca de dado pessoal de uma ou mais colunas.
     ///
     /// # Por que isto e declaracao, e nao alteracao de estrutura
@@ -1475,11 +1515,21 @@ impl RegFile {
     /// `terminar_troca_interrompida`, que ja reconhece `*.novo` pela geometria
     /// (`slot_size`, `data_offset`, CRC do esquema) e por isso cobre tambem
     /// este caso.
+    ///
+    /// Quem chama com um bloco que CABE (pedido 364: a redeclaracao do indice
+    /// de texto passa sempre por aqui, para nao gravar cabecalho no lugar
+    /// fora da trava) ganha o primeiro slot onde ele ja esta -- mover o dado
+    /// para tras por um bloco menor nao compraria nada e mudaria o endereco
+    /// de toda linha.
     pub fn regravar_esquema_fase_a(&mut self, novo: Schema) -> Result<TrocaDoEsquema> {
         let bytes = novo.serializar();
         let crc = crc32(&bytes);
         let origem = self.data_offset;
-        let destino = alinhar(self.cab_len as u64 + bytes.len() as u64, ALINHAMENTO);
+        let destino = if self.cab_len as u64 + bytes.len() as u64 <= origem {
+            origem
+        } else {
+            alinhar(self.cab_len as u64 + bytes.len() as u64, ALINHAMENTO)
+        };
 
         self.volumes.fechar_todos();
         let mut primeiros: Vec<(u32, RowId, PathBuf, Option<PathBuf>)> = Vec::new();

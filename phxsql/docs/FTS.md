@@ -408,6 +408,43 @@ pista exigiria o vaivém do `varrer` — tentar, receber `None`, soltar a ficha 
 refazer —, e isso é otimização a se fazer com número, depois de a bancada
 dizer se ela paga.
 
+### 9.1 Redeclarar numa tabela que já existe (pedido 364)
+
+```json
+{"op":"redeclarar_indices_texto","database":"loja","tabela":"chamados",
+ "indices_texto":[{"nome":"porCorpo","coluna":"corpo"}]}
+```
+
+A lista **substitui a inteira**, no mesmo formato e pelo mesmo leitor do
+`criar_tabela` (`valores::indices_de_texto_de_json`), e o `.fts` se refaz do
+`.reg` pelo mesmo laço do `reindexar` — nenhuma das duas metades é cópia.
+Devolve `indices_texto` e `linhas_indexadas`. Três decisões:
+
+* **O `.fts` que estava no disco nunca é reaproveitado.** É o órfão do defeito
+  do 353: ele não acompanhou as gravações feitas enquanto a declaração faltava.
+  Guarda `fts-orfao-reaproveitado-na-redeclaracao`.
+* **A lista vazia tira a declaração e apaga o arquivo** — declaração vazia com
+  `.fts` ao lado é o órfão que o pedido existe para não deixar. Guarda
+  `fts-orfao-na-lista-vazia`.
+* **Campo ausente é recusado**, e não lido como lista vazia: apagar o índice
+  porque o cliente errou o nome do campo seria «campo aceito e ignorado» com o
+  sinal trocado.
+
+Pede o poder de **criar**, como a `declarar_fk`: o `criar_tabela` sempre pôde
+declarar o índice, e redeclarar não pode pedir mais que nascer.
+
+**O O(linhas) roda fora da trava global**, no padrão do `acrescentar_coluna`:
+a tabela congela, a trava sai, e a FASE A monta o `.fts` novo **ao lado**
+(`<tabela>.fts.novo`, já sincronizado) e os `*.novo` do `.reg` — inclusive
+quando o bloco de esquema caberia no lugar, porque gravar o cabeçalho no lugar
+exige a trava e a catraca `alcancam-fsync-2` não deixa entrar mais uma seção
+com `fsync` sob ela. A FASE B, de volta sob a trava, é só `unlink` e `rename`,
+nesta ordem: o `.fts` velho sai, o `.reg` troca pelo volume 1, o `.fts` novo
+entra. Uma queda em qualquer ponto deixa um esquema **sem** `.fts`, nunca um
+`.fts` montado para outra declaração — e a abertura refaz o que falta do
+`.reg`. O preço: o `.reg` é copiado inteiro mesmo quando o bloco cabia. O
+`fsync` da pasta nos `rename` acontece sob a trava, como no `acrescentar_coluna`.
+
 ## 10. O furo que a operação nova revelou — e que não era dela
 
 `Atividade::da_operacao` termina em `_ => Administrar`. Para operação

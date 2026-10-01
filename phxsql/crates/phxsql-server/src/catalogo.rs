@@ -1252,8 +1252,10 @@ pub const OPERACOES: &[Operacao] = &[
     Operacao {
         nome: "declarar_fk",
         apelidos: &[],
-        resumo: "Declara uma chave estrangeira numa tabela que já existe -- \
-                 declara, não impõe: o motor não a confere na gravação.",
+        resumo: "Declara uma chave estrangeira numa tabela que já existe. \
+                 Nasce CONFERIDA, e o índice que ela pede na tabela filha \
+                 nasce junto quando falta -- a resposta o nomeia em \
+                 `indices_criados`.",
         parametros: &[
             DB,
             TAB,
@@ -1299,6 +1301,25 @@ pub const OPERACOES: &[Operacao] = &[
                  toca em dado nenhum -- a chave nunca foi imposta.",
         parametros: &[DB, TAB, obr("nome", "string", "o nome da chave declarada")],
         exemplo: r#"{"op":"excluir_fk","database":"loja","tabela":"pedidos","nome":"fk_cliente"}"#,
+        ferramenta_mcp: false,
+    },
+    Operacao {
+        nome: "redeclarar_indices_texto",
+        apelidos: &[],
+        resumo: "Redeclara os índices de texto de uma tabela que já existe e \
+                 refaz o `.fts` a partir do `.reg`. A lista substitui a \
+                 inteira; vazia tira o índice de texto e apaga o arquivo.",
+        parametros: &[
+            DB,
+            TAB,
+            obr(
+                "indices_texto",
+                "array",
+                "a lista inteira, no formato do `criar_tabela`: \
+                 [{\"nome\":...,\"coluna\":...,\"dobrar\":true}]",
+            ),
+        ],
+        exemplo: r#"{"op":"redeclarar_indices_texto","database":"loja","tabela":"produtos","indices_texto":[{"nome":"porDescricao","coluna":"descricao"}]}"#,
         ferramenta_mcp: false,
     },
     Operacao {

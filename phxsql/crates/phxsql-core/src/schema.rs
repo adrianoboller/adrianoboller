@@ -1936,6 +1936,126 @@ impl Schema {
         &self.indices
     }
 
+    /// O indice que serve para procurar por estas colunas, se houver.
+    ///
+    /// Serve o indice cujas PRIMEIRAS colunas sao exatamente as pedidas, na
+    /// ordem -- um indice por (empresa, cliente) serve para procurar por
+    /// empresa sozinha, mas nao o contrario. Preferimos o unico quando ha os
+    /// dois, porque referencia para chave nao-unica casa com varias linhas e a
+    /// pergunta aqui e so "existe alguma?".
+    ///
+    /// Mora no esquema, e nao no `store`, desde o pedido 175: a mesma regra
+    /// decide quando a gravacao RECUSA por falta de indice e quando a
+    /// declaracao CRIA o indice que falta. Duas copias dela seriam o indice
+    /// criado que a conferencia nao reconhece.
+    pub fn indice_que_cobre(&self, colunas: &[String]) -> Option<String> {
+        let serve = |idx: &IndexDef| {
+            idx.colunas.len() >= colunas.len()
+                && colunas.iter().enumerate().all(|(k, nome)| {
+                    self.colunas
+                        .get(idx.colunas[k].coluna)
+                        .is_some_and(|c| c.nome == *nome)
+                })
+        };
+        self.indices
+            .iter()
+            .find(|i| i.unico && serve(i))
+            .or_else(|| self.indices.iter().find(|i| serve(i)))
+            .map(|i| i.nome.clone())
+    }
+
+    /// Os indices que a FILHA precisa ter para as chaves conferidas que ela
+    /// declara, e que ainda nao tem (pedido 175).
+    ///
+    /// # Por que criar, e nao recusar nem adiar
+    ///
+    /// A chave conferida pede indice dos dois lados, e sem o da filha a mae
+    /// perde o `excluir` INTEIRO -- inclusive da linha que ninguem
+    /// referencia, porque o motor nao consegue nem perguntar. MySQL e MariaDB
+    /// criam esse indice sozinhos do lado da filha; do lado da mae os dois
+    /// recusam, e aqui tambem: criar indice em tabela alheia nao cabe a quem
+    /// declara a chave. `docs/PARECER-175-INDICE-NA-DECLARACAO.md`.
+    ///
+    /// So a chave com `verificar`: quem declarou sem conferir dispensou a
+    /// garantia, e cobrar dele o indice seria cobrar o custo permanente de
+    /// uma descida a mais por insercao sem ele ter pedido nada.
+    ///
+    /// O nome sai da chave (`idx_<chave>`), porque o indice que nasce sem
+    /// ninguem ter escrito precisa dizer de onde veio a quem le o esquema.
+    pub fn indices_que_as_chaves_pedem(&self) -> Vec<IndexDef> {
+        let mut com_os_novos = self.clone();
+        let mut novos = Vec::new();
+        for fk in &self.chaves_estrangeiras {
+            // Os ja escolhidos contam: duas chaves pelas mesmas colunas
+            // ganham UM indice, e nao dois iguais.
+            if let Some(idx) = com_os_novos.indice_que_a_chave_pede(fk) {
+                com_os_novos.indices.push(idx.clone());
+                novos.push(idx);
+            }
+        }
+        novos
+    }
+
+    /// O indice que ESTA chave pede na filha, se ela o pede e ele falta.
+    ///
+    /// Separado do laco de cima porque a `declarar_fk` cria so o da chave que
+    /// esta nascendo: chave declarada antes, sem indice, continua como
+    /// estava -- guarda nova entra pedida, nao imposta.
+    pub fn indice_que_a_chave_pede(&self, fk: &ForeignKey) -> Option<IndexDef> {
+        if !fk.verificar {
+            return None;
+        }
+        let nomes: Vec<String> = fk
+            .colunas
+            .iter()
+            .filter_map(|&c| self.colunas.get(c).map(|x| x.nome.clone()))
+            .collect();
+        // Coluna inexistente: `com_chaves_estrangeiras` ja recusa.
+        if nomes.len() != fk.colunas.len() || self.indice_que_cobre(&nomes).is_some() {
+            return None;
+        }
+        let ocupado = |n: &str| {
+            self.indices.iter().any(|i| i.nome == n)
+                || self.indices_de_texto.iter().any(|t| t.nome == n)
+        };
+        let base = format!("idx_{}", fk.nome);
+        let mut nome = base.clone();
+        let mut k = 2;
+        while ocupado(&nome) {
+            nome = format!("{base}_{k}");
+            k += 1;
+        }
+        let colunas = fk.colunas.iter().map(|&c| IndexColumn::asc(c)).collect();
+        Some(IndexDef::new(nome, colunas))
+    }
+
+    /// O esquema com estes indices a mais, no FIM da lista.
+    ///
+    /// No fim, e nao em ordem: a posicao de um indice e o numero da arvore
+    /// dele no `.ndx`, e inserir no meio renumeraria as arvores que ja
+    /// existem. As conferencias sao as do `do_disco` -- o mesmo caminho que
+    /// confere o `CREATE TABLE` --, e nao uma segunda lista delas.
+    pub fn com_indices(mut self, novos: Vec<IndexDef>) -> Result<Schema> {
+        if novos.is_empty() {
+            return Ok(self);
+        }
+        let mut todos = self.indices.clone();
+        todos.extend(novos);
+        if let Some(t) = self
+            .indices_de_texto
+            .iter()
+            .find(|t| todos.iter().any(|i| i.nome == t.nome))
+        {
+            return Err(PhxError::Esquema(format!(
+                "o indice {} tem o mesmo nome de um indice de texto",
+                t.nome
+            )));
+        }
+        Schema::do_disco(self.nome.clone(), self.colunas.clone(), todos.clone())?;
+        self.indices = todos;
+        Ok(self)
+    }
+
     /// Bytes do bitmap de nulos no inicio do payload.
     pub fn bitmap_len(&self) -> usize {
         self.bitmap_len
@@ -3928,5 +4048,84 @@ mod testes_da_linhagem {
             .com_coluna(Column::new("cidade", ColumnType::Str(10)), 2)
             .unwrap();
         assert_eq!(novo.linhagem(), e.linhagem());
+    }
+}
+
+/// Pedido 175: a regra do indice que a chave pede, do lado do esquema.
+#[cfg(test)]
+mod indice_que_a_chave_pede {
+    use super::*;
+
+    fn filha(indices: Vec<IndexDef>, fks: Vec<ForeignKey>) -> Schema {
+        Schema::new(
+            "pedidos",
+            vec![
+                Column::new("id", ColumnType::Int4).obrigatoria(),
+                Column::new("cliente_id", ColumnType::Int4),
+                Column::new("obs", ColumnType::Str(20)),
+            ],
+            indices,
+        )
+        .unwrap()
+        .com_chaves_estrangeiras(fks)
+        .unwrap()
+    }
+
+    fn pk() -> IndexDef {
+        IndexDef::new("porId", vec![IndexColumn::asc(0)]).primaria()
+    }
+
+    fn fk(nome: &str) -> ForeignKey {
+        ForeignKey::new(nome, vec![1], "clientes", vec!["id".into()])
+    }
+
+    #[test]
+    fn a_chave_conferida_sem_indice_pede_um_com_o_nome_dela() {
+        let e = filha(vec![pk()], vec![fk("fk_cliente")]);
+        let novos = e.indices_que_as_chaves_pedem();
+        assert_eq!(novos.len(), 1);
+        assert_eq!(novos[0].nome, "idx_fk_cliente");
+        // O criado e o que a conferencia da gravacao reconhece: a mesma regra.
+        let e = e.com_indices(novos).unwrap();
+        assert!(e.indice_que_cobre(&["cliente_id".into()]).is_some());
+        assert!(e.indices_que_as_chaves_pedem().is_empty(), "idempotente");
+    }
+
+    /// O comportamento velho: quem ja tem indice, e quem nao confere, nao
+    /// ganham nada.
+    #[test]
+    fn com_indice_ou_sem_conferir_nada_e_pedido() {
+        let por_cliente =
+            IndexDef::new("porCliente", vec![IndexColumn::asc(1), IndexColumn::asc(0)]);
+        let e = filha(vec![pk(), por_cliente], vec![fk("fk_cliente")]);
+        assert!(e.indices_que_as_chaves_pedem().is_empty());
+        let e = filha(vec![pk()], vec![fk("fk_solta").conferindo(false)]);
+        assert!(e.indices_que_as_chaves_pedem().is_empty());
+    }
+
+    #[test]
+    fn duas_chaves_pelas_mesmas_colunas_ganham_um_indice_so() {
+        let e = filha(vec![pk()], vec![fk("fk_a"), fk("fk_b")]);
+        let novos = e.indices_que_as_chaves_pedem();
+        assert_eq!(novos.len(), 1, "{novos:?}");
+        assert_eq!(novos[0].nome, "idx_fk_a");
+    }
+
+    #[test]
+    fn nome_ocupado_ganha_sufixo_em_vez_de_colidir() {
+        let ocupa = IndexDef::new("idx_fk_cliente", vec![IndexColumn::asc(2)]);
+        let e = filha(vec![pk(), ocupa], vec![fk("fk_cliente")]);
+        let novos = e.indices_que_as_chaves_pedem();
+        assert_eq!(novos[0].nome, "idx_fk_cliente_2");
+        assert!(e.com_indices(novos).is_ok());
+    }
+
+    #[test]
+    fn com_indices_confere_pelo_mesmo_caminho_do_create_table() {
+        let e = filha(vec![pk()], Vec::new());
+        let repetido = IndexDef::new("porId", vec![IndexColumn::asc(1)]);
+        assert!(e.clone().com_indices(vec![repetido]).is_err());
+        let fora = IndexDef::new("porNada", vec![IndexColumn::asc(99)]);
+        assert!(e.com_indices(vec![fora]).is_err());
     }
 }

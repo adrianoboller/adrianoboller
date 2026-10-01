@@ -240,13 +240,19 @@ sentidos por `o_indice_de_texto_sobrevive_a_coluna_nova` e
 `depois_da_coluna_nova_a_busca_por_texto_continua_achando`.
 
 **O formato não mudou**: o bloco do `PSCH` grava a lista desde a v8 (§2), e o
-que se perdia era o conteúdo *antes* de serializar. Mas **a tabela que já
-perdeu a declaração não se recupera sozinha**, e isto é o que falta: não há
-operação de redeclarar índice de texto numa tabela existente — o
-`criar_tabela` é o único caminho que os aceita, e o `.fts` órfão do disco
-continua ocupando espaço sem ninguém o consultar. O par disto para a chave
-estrangeira existe (`RegFile::redeclarar_chaves_estrangeiras`); para o índice
-de texto, não. Até haver, recuperar exige recriar a tabela.
+que se perdia era o conteúdo *antes* de serializar. **A tabela que já perdeu a
+declaração não se recupera sozinha** — e desde o pedido 364 há por onde
+recuperá-la: `{"op":"redeclarar_indices_texto", "indices_texto":[...]}`
+(`Table::redeclarar_indices_de_texto`, `RegFile::regravar_indices_de_texto`)
+regrava a lista inteira no `PSCH`, pelo mesmo leitor de JSON do `criar_tabela`,
+e **refaz o `.fts` do `.reg`** pelo mesmo laço do `reindexar`. O `.fts` órfão
+**nunca é reaproveitado**: ele não acompanhou as gravações feitas sem a
+declaração, e reaproveitá-lo seria uma busca que acha menos que a varredura. A
+lista vazia tira a declaração **e apaga o arquivo**. O formato não muda: a
+versão do `PSCH` continua a mesma, e o `slot_size` é conferido antes de gravar.
+O `.reg` troca pela FASE A/B do pedido 422 **sempre**, e quando o bloco novo
+cabe antes do slot 1 o `data_offset` **fica onde estava** — nenhum rowid muda
+de endereço; a ordem dos `unlink`/`rename` está no `docs/FTS.md` §9.1.
 
 **O que a linha antiga recebe.** O valor padrão declarado, ou nulo. Coluna
 obrigatória **sem** padrão, numa tabela que já tem linha, é **recusada**: ou o

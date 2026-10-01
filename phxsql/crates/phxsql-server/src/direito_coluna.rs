@@ -255,6 +255,10 @@ pub const CLASSES: &[(&str, PorColuna)] = &[
     ("criar_tabela", PorColuna::Nenhum),
     ("declarar_fk", PorColuna::Nenhum),
     ("excluir_fk", PorColuna::Nenhum),
+    // Devolve os NOMES dos indices de texto e quantas linhas entraram no
+    // `.fts` -- o numero de linhas que o `esquema` ja mostra, como o
+    // `reindexar`. Nao ha slot nem valor de coluna nela.
+    ("redeclarar_indices_texto", PorColuna::Nenhum),
     // Devolve `slots_reescritos` -- a marca d'agua (pedido 600).
     ("acrescentar_coluna", PorColuna::MarcaDagua),
     // Nao e `Estrutura`, e a diferenca importa: ela nao devolve nem recebe

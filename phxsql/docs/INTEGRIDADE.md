@@ -329,9 +329,15 @@ corrompida esconder as órfãs das outras.
   O mesmo vale para a linha que o upsert solto altera e as da sincronia do
   DbLink; o conserto é outro pedido.
 * **A exigência de índice dos dois lados é imposta na gravação, não na
-  declaração.** Dá para declarar uma chave conferida sem os índices e só
-  descobrir no primeiro `excluir`. O verificador relata; a recusa na declaração
-  quebraria a ordem legítima «declare a chave, crie o índice».
+  declaração** — e desde o pedido 175 o lado da **filha** não falta mais por
+  esquecimento: o `criar_tabela` e a `declarar_fk` **criam** o índice que a
+  chave conferida pede na filha (`idx_<chave>`, nomeado na resposta em
+  `indices_criados`), como MySQL(R) e MariaDB(R) fazem. Do lado da **mãe**
+  continua a recusa na gravação: criar índice em tabela alheia não cabe a quem
+  declara a chave. Chave com `"verificar": false` não ganha índice, e chave
+  declarada antes do 175 fica como estava. A regra de «qual índice cobre» é
+  uma só (`Schema::indice_que_cobre`) para quem cria e para quem recusa.
+  Parecer e números: `docs/PARECER-175-INDICE-NA-DECLARACAO.md`.
 
 ## 7. O que MySQL(R) e MariaDB(R) fazem — medido contra o nosso gargalo
 

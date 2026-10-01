@@ -558,6 +558,15 @@ dia, nunca no desejado:
   cadeia marcada calada (`ledger-marcado-recebido-calado`) e o censo que le a
   forma e nao a marca (`censo-do-ledger-le-a-forma-e-nao-a-marca`). 634,
   medido pelo `--numeros` nesta arvore.
+  **SUBIU para 649 em 01/10/2026** (644 + 5; pedidos 175 e 364): cinco
+  guardas -- a chave conferida que nascia sem o indice da filha no
+  `criar_tabela` (`indice-da-chave-nao-nasce-no-criar-tabela`) e no
+  `declarar_fk` (`indice-da-chave-nao-nasce-no-declarar-fk`), o `.fts` orfao
+  reaproveitado na redeclaracao (`fts-orfao-reaproveitado-na-redeclaracao`) e
+  o que ficava no disco com a lista vazia (`fts-orfao-na-lista-vazia`) --
+  as quatro provadas pelo soquete -- e o `.fts` montado pela declaracao velha
+  (`fts-montado-pela-declaracao-velha`), provada no `store`. 649, medido pelo
+  `--numeros` nesta arvore.
 
 # A QUINTA REGUA: a tabela publicada pode ser MENOR que o catalogo
 
@@ -664,7 +673,7 @@ TETO_TESTE_MORTO = 0
 TETO_TRECHO_AMBIGUO = 0
 TETO_TESTE_FORA_DO_BINARIO = 0
 TETO_TESTE_SEM_MODULO = 0
-PISO_DAS_ENTRADAS = 644
+PISO_DAS_ENTRADAS = 649
 
 # ------------------------------------------------------------- APOSENTADAS
 #

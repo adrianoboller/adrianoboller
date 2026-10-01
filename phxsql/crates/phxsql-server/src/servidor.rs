@@ -302,6 +302,9 @@ pub(crate) const OPS_ESCRITA: &[&str] = &[
     // no `.reg` -- catalogo, mas catalogo gravado em disco.
     "declarar_fk",
     "excluir_fk",
+    // Redeclarar o indice de texto regrava o bloco de esquema e refaz -- ou
+    // apaga -- o `.fts` (pedido 364).
+    "redeclarar_indices_texto",
     // Acrescentar coluna reescreve o `.reg` inteiro. E a maior escrita de
     // estrutura que existe aqui.
     "acrescentar_coluna",
@@ -13011,6 +13014,7 @@ impl Servidor {
             "migrar_esquema" => self.op_migrar_esquema(p, sessao),
             "declarar_fk" => self.op_declarar_fk(p, sessao),
             "excluir_fk" => self.op_excluir_fk(p, sessao),
+            "redeclarar_indices_texto" => self.op_redeclarar_indices_texto(p, sessao),
             "excluir_tabela" => self.op_excluir_tabela(p),
             "duplicar_tabela" => self.op_duplicar_tabela(p, sessao),
             "copiar_tabela" => self.op_copiar_tabela(p, sessao),
@@ -20251,7 +20255,14 @@ impl Servidor {
     /// caminho pela rede -- so escrevendo Rust.
     fn op_criar_tabela(&self, p: &Json) -> Result<Json> {
         let database = p.texto_ou("database", "");
-        let mut esquema = crate::valores::esquema_de_json(p)?;
+        let esquema = crate::valores::esquema_de_json(p)?;
+        // Pedido 175: a chave conferida sem indice na filha tirava da MAE o
+        // `excluir` inteiro, e o exemplo do nosso proprio `MANUAL.txt` caia
+        // nisso. O indice nasce aqui, pela mesma regra da `declarar_fk`, e a
+        // resposta o diz -- estrutura que nasce sem ser dita mente.
+        let criados = esquema.indices_que_as_chaves_pedem();
+        let indices_criados: Vec<String> = criados.iter().map(|i| i.nome.clone()).collect();
+        let mut esquema = esquema.com_indices(criados)?;
 
         // `filial.clientes` e o schema `filial` mais a tabela `clientes`, e
         // nao uma tabela chamada "filial.clientes".
@@ -20325,6 +20336,13 @@ impl Servidor {
                 Json::Bool(esquema_criado.paginacao().registros_por_arquivo > 0),
             ),
         ];
+        // So quando ha, como os avisos: a resposta de sempre nao muda.
+        if !indices_criados.is_empty() {
+            pares.push((
+                "indices_criados",
+                Json::Lista(indices_criados.iter().map(Json::texto_de).collect()),
+            ));
+        }
         // So quando ha: a resposta de sempre nao ganha campo vazio.
         if !avisos.is_empty() {
             for aviso in &avisos {
@@ -20386,10 +20404,10 @@ impl Servidor {
     /// ate a coluna de outra tabela. Ate aqui a chave so entrava junto com o
     /// `criar_tabela` -- e o diagrama liga tabelas que ja nasceram.
     ///
-    /// Declarar nao e impor: a chave fica no esquema, o `esquema` a devolve e
-    /// o diagrama a desenha, mas nenhuma gravacao a confere -- ha teste que
-    /// trava esse comportamento. Por isso a operacao pede o poder de CRIAR,
-    /// como o `criar_tabela` que sempre pode declara-la, e nao mais.
+    /// A chave nasce CONFERIDA (decisao do dono), e desde o pedido 175 o
+    /// indice que ela pede na FILHA nasce junto quando falta -- e a resposta
+    /// o nomeia em `indices_criados`. A operacao pede o poder de CRIAR, como
+    /// o `criar_tabela` que sempre pode declara-la, e nao mais.
     fn op_declarar_fk(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
         // `tabela_ref` e obrigatoria AQUI, embora o leitor da chave aceite
         // `tabela` como apelido dela: neste pedido o campo `tabela` e a
@@ -20441,11 +20459,20 @@ impl Servidor {
         }
         let dados = self.travar_dados()?;
         let reescreveu = t.redeclarar_depois_de_conferir(fks, recibo, troca)?;
+        // Pedido 175: o indice da FILHA nasce com a chave, pela mesma regra
+        // do `criar_tabela` -- so para a chave que esta nascendo, e so se ela
+        // confere. Ainda congelada e sob a trava: o `.ndx` se refaz aqui, e
+        // ninguem pode gravar na filha entre o esquema novo e a arvore nova.
+        let novo_indice = t.esquema().indice_que_a_chave_pede(&fk_nova);
+        let indices_criados = t.acrescentar_indices(novo_indice.into_iter().collect())?;
+        if !indices_criados.is_empty() {
+            self.gravar_de_verdade(&dados, &mut t, p)?;
+        }
         // O congelamento sai antes da trava: quem estava esperando por ela
         // encontra as tabelas ja abertas.
         drop(solta);
         drop(dados);
-        Ok(Json::objeto(vec![
+        let mut pares = vec![
             ("database", Json::texto_de(p.texto_ou("database", ""))),
             ("tabela", Json::texto_de(p.texto_ou("tabela", ""))),
             ("nome", Json::texto_de(nome)),
@@ -20457,7 +20484,16 @@ impl Servidor {
             // o esquema grava e devolve -- nunca um literal a parte.
             ("imposta", Json::Bool(imposta)),
             ("arquivos_reescritos", Json::Bool(reescreveu)),
-        ]))
+        ];
+        // So quando ha, como no `criar_tabela`: a resposta de sempre nao muda
+        // para quem declara a chave com o indice ja la.
+        if !indices_criados.is_empty() {
+            pares.push((
+                "indices_criados",
+                Json::Lista(indices_criados.iter().map(Json::texto_de).collect()),
+            ));
+        }
+        Ok(Json::objeto(pares))
     }
 
     /// **Pedido 422: a varredura da chave que nasce conferida roda FORA da
@@ -21021,6 +21057,76 @@ impl Servidor {
                 "chaves_estrangeiras",
                 Json::de_u64(t.esquema().chaves_estrangeiras().len() as u64),
             ),
+        ]))
+    }
+
+    /// Redeclara os indices de TEXTO de uma tabela que ja existe (pedido 364).
+    ///
+    /// Ate aqui o `criar_tabela` era o unico caminho que aceitava
+    /// `indices_texto`, e quem perdeu a declaracao no defeito do pedido 353
+    /// ficava com um `.fts` orfao e so recuperava recriando a tabela. A
+    /// lista chega no MESMO campo e pelo MESMO leitor do `criar_tabela`
+    /// (`valores::indices_de_texto_de_json`), e o `.fts` se refaz pelo MESMO
+    /// laco do `reindexar` -- nenhuma das duas metades e copia.
+    ///
+    /// Substitui a lista inteira; a lista vazia tira a declaracao e apaga o
+    /// arquivo. Campo ausente e recusado, e nao lido como vazio: apagar um
+    /// indice porque o cliente errou o nome do campo seria o defeito de
+    /// «campo aceito e ignorado» com o sinal trocado.
+    fn op_redeclarar_indices_texto(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
+        let lista = p
+            .campo("indices_texto")
+            .or_else(|| p.campo("indices_de_texto"))
+            .and_then(Json::lista)
+            .ok_or_else(|| {
+                PhxError::Esquema(
+                    "informe \"indices_texto\" como lista -- a lista inteira que a \
+                     tabela passa a ter; vazia tira o indice de texto"
+                        .into(),
+                )
+            })?;
+        let dados = self.travar_dados()?;
+        let mut t = self.abrir_travada(&dados, p, sessao)?;
+        // A mesma pergunta do `acrescentar_coluna`: transacao viva que
+        // alcanca a tabela segura a troca do esquema, e quem cede e o DDL.
+        if let Some(recado) = self.transacao_na_vizinhanca(
+            &dados,
+            p.texto_ou("database", ""),
+            p.texto_ou("tabela", ""),
+            &t,
+        )? {
+            return Err(PhxError::EmTransacao(recado));
+        }
+        let textos = crate::valores::indices_de_texto_de_json(lista, t.esquema())?;
+        // O padrao do `acrescentar_coluna`: congela com a trava na mao, solta,
+        // faz o O(linhas) fora -- o `.fts` montado ao lado e os `*.novo` do
+        // `.reg` --, e retoma so para os `rename`. Uma secao nova com `fsync`
+        // sob a trava global a catraca `alcancam-fsync-2` nao deixa entrar.
+        let congelada = phxsql_store::congelamento::congelar(
+            t.diretorio(),
+            t.nome(),
+            "redeclarando o indice de texto".to_string(),
+        )?;
+        drop(dados);
+        let troca = t.preparar_indices_de_texto(textos)?;
+        let dados = self.travar_dados()?;
+        let linhas = t.redeclarar_indices_de_texto_fase_b(troca)?;
+        drop(dados);
+        drop(congelada);
+        Ok(Json::objeto(vec![
+            ("database", Json::texto_de(p.texto_ou("database", ""))),
+            ("tabela", Json::texto_de(p.texto_ou("tabela", ""))),
+            (
+                "indices_texto",
+                Json::Lista(
+                    t.esquema()
+                        .indices_de_texto()
+                        .iter()
+                        .map(|it| Json::texto_de(&it.nome))
+                        .collect(),
+                ),
+            ),
+            ("linhas_indexadas", Json::de_u64(linhas)),
         ]))
     }
 

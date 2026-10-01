@@ -18,7 +18,7 @@ use phxsql_core::datahora::civil_de_dias;
 use phxsql_core::error::{PhxError, Result};
 use phxsql_core::expressao;
 use phxsql_core::keyenc::{escrever_componente, largura_componente};
-use phxsql_core::schema::{AcaoRi, ForeignKey, Schema};
+use phxsql_core::schema::{AcaoRi, ForeignKey, IndexDef, IndiceDeTexto, Schema};
 use phxsql_core::types::ColumnType;
 use phxsql_core::uuid::Uuid;
 use phxsql_core::value::{escrever_inline, ler_inline, Ponteiro, Value};
@@ -1068,29 +1068,30 @@ pub fn nome_simples(qualificado: &str) -> &str {
     qualificado.rsplit_once('.').map_or(qualificado, |(_, t)| t)
 }
 
-/// O indice da mae que serve para procurar por estas colunas, se houver.
+/// A redeclaracao do indice de texto entre as duas fases (pedido 364): os
+/// `*.novo` do `.reg`, o `.fts` montado ao lado, e quantas linhas entraram
+/// nele. Ver [`Table::preparar_indices_de_texto`].
+pub struct TrocaDosTextos {
+    reg: crate::reg::TrocaDoEsquema,
+    ao_lado: PathBuf,
+    linhas: u64,
+}
+
+impl TrocaDosTextos {
+    /// Desiste da troca: os `*.novo` saem, e nada vivo foi tocado.
+    pub fn descartar(self) {
+        self.reg.descartar();
+        let _ = std::fs::remove_file(&self.ao_lado);
+    }
+}
+
+/// O indice que serve para procurar por estas colunas, se houver.
 ///
-/// Serve o indice cujas PRIMEIRAS colunas sao exatamente as referenciadas, na
-/// ordem -- um indice por (empresa, cliente) serve para procurar por empresa
-/// sozinha, mas nao o contrario. Preferimos o unico quando ha os dois, porque
-/// referencia para chave nao-unica casa com varias linhas e a pergunta aqui e
-/// so "existe alguma?".
+/// A regra mora em [`Schema::indice_que_cobre`] desde o pedido 175: a
+/// declaracao que CRIA o indice da chave pergunta a mesma coisa que a
+/// gravacao que RECUSA por falta dele.
 pub(crate) fn indice_que_cobre(esquema: &Schema, colunas_ref: &[String]) -> Option<String> {
-    let serve = |idx: &phxsql_core::schema::IndexDef| {
-        idx.colunas.len() >= colunas_ref.len()
-            && colunas_ref.iter().enumerate().all(|(k, nome)| {
-                esquema
-                    .colunas()
-                    .get(idx.colunas[k].coluna)
-                    .is_some_and(|c| c.nome == *nome)
-            })
-    };
-    let indices = esquema.indices();
-    indices
-        .iter()
-        .find(|i| i.unico && serve(i))
-        .or_else(|| indices.iter().find(|i| serve(i)))
-        .map(|i| i.nome.clone())
+    esquema.indice_que_cobre(colunas_ref)
 }
 
 /// O diretorio da tabela em caminho ABSOLUTO lexico, resolvido UMA vez.
@@ -1450,6 +1451,194 @@ impl Table {
                 && nome_simples(&a.tabela_ref) == nome_simples(&fk.tabela_ref)
                 && a.colunas_ref == fk.colunas_ref
         })
+    }
+
+    /// Acrescenta indices a uma tabela que ja existe, e os monta do `.reg`
+    /// (pedido 175).
+    ///
+    /// O esquema primeiro, o `.ndx` depois, pela mesma maquina que o
+    /// `reindexar` ja usa para «indice novo acrescentado a uma tabela que ja
+    /// tem dados»: hoje nao existe construtor de UMA arvore so, entao se paga
+    /// a reconstrucao inteira -- 180 ms a 100.000 linhas contra 21 ms que um
+    /// construtor dedicado custaria (`PARECER-175` §3.3). Na tabela vazia,
+    /// que e quando se modela, sao 70 us.
+    ///
+    /// Uma queda entre os dois passos deixa o esquema com o indice e o `.ndx`
+    /// sem a arvore dele; a abertura recusa o `.ndx` que nao bate com o
+    /// esquema, e o `reindexar` e a saida que ja existe para isso.
+    ///
+    /// Devolve os nomes criados, na ordem.
+    pub fn acrescentar_indices(&mut self, novos: Vec<IndexDef>) -> Result<Vec<String>> {
+        if novos.is_empty() {
+            return Ok(Vec::new());
+        }
+        let nomes: Vec<String> = novos.iter().map(|i| i.nome.clone()).collect();
+        self.reg.regravar_indices(novos)?;
+        self.esquema = self.reg.esquema().clone();
+        self.colunas_marcadas = marcadas_do_esquema(&self.esquema);
+        self.indices_de_texto = textos_do_esquema(&self.esquema);
+        self.gravar_pag()?;
+        self.reindexar()?;
+        Ok(nomes)
+    }
+
+    /// Os indices que as chaves conferidas desta tabela pedem e ela ainda nao
+    /// tem. A regra e do esquema -- [`Schema::indices_que_as_chaves_pedem`].
+    pub fn indices_que_as_chaves_pedem(&self) -> Vec<IndexDef> {
+        self.esquema.indices_que_as_chaves_pedem()
+    }
+
+    /// Redeclara os indices de TEXTO de uma tabela que ja existe (pedido
+    /// 364), e refaz o `.fts` a partir do `.reg` -- as duas fases de uma vez,
+    /// para quem nao tem trava global a soltar entre elas.
+    ///
+    /// Substitui a lista inteira, como a [`Table::redeclarar_chaves_estrangeiras`].
+    /// E a saida de quem perdeu a declaracao no defeito do pedido 353: o
+    /// esquema estava sem ela e o `.fts` continuava no disco, orfao.
+    ///
+    /// # O `.fts` que estava la: reconstruir, nunca reaproveitar
+    ///
+    /// Arquivo de indice que sobreviveu a um esquema que nao o declarava nao
+    /// acompanhou nenhuma gravacao desde entao -- reaproveita-lo seria uma
+    /// busca que acha MENOS que a varredura, calada. Entao o `.fts` nasce de
+    /// novo pelo MESMO laco do `reindexar` (`montar_fts_em`), e a lista
+    /// vazia apaga o arquivo: declaracao vazia com arquivo ao lado e
+    /// exatamente o orfao que este pedido existe para nao deixar.
+    ///
+    /// Devolve quantas linhas entraram no `.fts`.
+    pub fn redeclarar_indices_de_texto(&mut self, textos: Vec<IndiceDeTexto>) -> Result<u64> {
+        let troca = self.preparar_indices_de_texto(textos)?;
+        self.redeclarar_indices_de_texto_fase_b(troca)
+    }
+
+    /// A FASE A da redeclaracao do indice de texto: o trabalho que custa
+    /// O(linhas), sem tocar em nenhum arquivo vivo.
+    ///
+    /// Monta o `.fts` novo AO LADO (`<tabela>.fts.novo`), sincronizado e com
+    /// a marca de queda baixada, e escreve os `*.novo` do `.reg` com o bloco
+    /// de esquema novo pela FASE A do pedido 422 -- inclusive quando o bloco
+    /// caberia no lugar. Gravar o cabecalho no lugar seria o caminho barato,
+    /// mas so com a trava global na mao, porque a pista de leitura le o
+    /// cabecalho de uma tabela congelada; e a catraca `alcancam-fsync-2` nao
+    /// deixa entrar mais uma secao com `fsync` sob a trava. A copia inteira
+    /// do `.reg` e O(linhas), como a reconstrucao do `.fts` que ja se paga
+    /// aqui -- o custo dobra, e sai da trava.
+    ///
+    /// Quem chama congelou a tabela: nada grava nela ate a FASE B.
+    pub fn preparar_indices_de_texto(
+        &mut self,
+        textos: Vec<IndiceDeTexto>,
+    ) -> Result<TrocaDosTextos> {
+        let novo = self.reg.esquema_com_indices_de_texto(textos)?;
+        let ao_lado = caminho(&self.diretorio, &self.nome, &format!("{EXT_FTS}.novo"));
+        let linhas = if novo.indices_de_texto().is_empty() {
+            0
+        } else {
+            match self.montar_fts_ao_lado(&novo, &ao_lado) {
+                Ok(n) => n,
+                Err(e) => {
+                    let _ = std::fs::remove_file(&ao_lado);
+                    return Err(e);
+                }
+            }
+        };
+        let reg = match self.reg.regravar_esquema_fase_a(novo) {
+            Ok(t) => t,
+            Err(e) => {
+                let _ = std::fs::remove_file(&ao_lado);
+                return Err(e);
+            }
+        };
+        Ok(TrocaDosTextos {
+            reg,
+            ao_lado,
+            linhas,
+        })
+    }
+
+    /// A FASE B: so `unlink` e `rename`, na ordem que torna toda queda
+    /// recuperavel sem `.fts` velho servindo esquema novo.
+    ///
+    /// 1. o `.fts` velho SAI primeiro. Queda aqui deixa o esquema velho sem
+    ///    `.fts`, e a abertura o refaz do `.reg` -- pelo esquema velho, que e
+    ///    o certo;
+    /// 2. o `.reg` troca pelo volume 1, que e o ponto de compromisso
+    ///    ([`crate::reg::RegFile::regravar_esquema_fase_b`]);
+    /// 3. o `.fts` novo entra. Queda entre 2 e 3 deixa o esquema novo sem
+    ///    `.fts`, e a abertura o refaz -- pelo esquema novo.
+    ///
+    /// Em nenhuma ordem um `.fts` montado para uma declaracao serve outra: e
+    /// o defeito do 364 visto pela queda, e nao pelo esquecimento.
+    ///
+    /// Se o retrato do `.reg` nao bate, a troca aborta com o esquema velho no
+    /// disco e o `.fts` apagado: a proxima abertura o refaz. Este punho nao
+    /// serve mais depois do erro -- quem chama o descarta.
+    pub fn redeclarar_indices_de_texto_fase_b(&mut self, t: TrocaDosTextos) -> Result<u64> {
+        let vivo = caminho(&self.diretorio, &self.nome, EXT_FTS);
+        // O punho sai calado antes do arquivo: o `Drop` dele gravaria de
+        // volta o que se esta apagando.
+        if let Some(f) = self.fts.as_mut() {
+            f.abandonar();
+        }
+        self.fts = None;
+        let apagado = match std::fs::remove_file(&vivo) {
+            Ok(()) => Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(e) => Err(PhxError::from(e)),
+        };
+        if let Err(e) = apagado {
+            t.reg.descartar();
+            let _ = std::fs::remove_file(&t.ao_lado);
+            return Err(e);
+        }
+        if let Err(e) = self.reg.regravar_esquema_fase_b(t.reg) {
+            let _ = std::fs::remove_file(&t.ao_lado);
+            return Err(e);
+        }
+        self.esquema = self.reg.esquema().clone();
+        self.colunas_marcadas = marcadas_do_esquema(&self.esquema);
+        self.indices_de_texto = textos_do_esquema(&self.esquema);
+        if !self.indices_de_texto.is_empty() {
+            // Pelo motor unico da troca duravel (pedido 467), e nao por um
+            // `rename` solto: e o mesmo `fsync` de pasta que os `rename` do
+            // `.reg` logo acima ja pagaram. Se a queda vier antes dele, a
+            // abertura acha o esquema novo sem `.fts` e o refaz.
+            crate::sincronia::trocar_duravel(&t.ao_lado, &vivo)?;
+            let dobra = self.indices_de_texto.iter().map(|(_, d)| *d).collect();
+            self.fts = Some(FtsFile::abrir(&vivo, dobra)?);
+        }
+        self.gravar_pag()?;
+        Ok(t.linhas)
+    }
+
+    /// Monta o `.fts` de `novo` em `destino`, pelo MESMO laco do
+    /// `reconstruir_fts`, sem tocar no `.fts` vivo deste punho.
+    ///
+    /// O laco le a declaracao do `self`, entao ela e trocada pela nova so
+    /// durante a montagem e volta depois -- inclusive no erro. As colunas
+    /// sao as mesmas nos dois esquemas (so a lista de texto muda), e por
+    /// isso a decodificacao da linha nao muda.
+    fn montar_fts_ao_lado(&mut self, novo: &Schema, destino: &Path) -> Result<u64> {
+        let vivo = self.fts.take();
+        let esquema_vivo = std::mem::replace(&mut self.esquema, novo.clone());
+        let textos_vivos = std::mem::replace(&mut self.indices_de_texto, textos_do_esquema(novo));
+        let feito = self.montar_fts_em(destino).and_then(|n| {
+            // Os dois `fsync` e a marca de queda baixada AQUI, fora da trava:
+            // o arquivo entra no lugar ja limpo, e a FASE B nao sincroniza.
+            if let Some(f) = self.fts.as_mut() {
+                f.sincronizar()?;
+            }
+            Ok(n)
+        });
+        if let Some(mut montado) = self.fts.take() {
+            if feito.is_err() {
+                montado.abandonar();
+            }
+        }
+        self.fts = vivo;
+        self.esquema = esquema_vivo;
+        self.indices_de_texto = textos_vivos;
+        feito
     }
 
     /// Acrescenta uma coluna a tabela, **preservando o rowid de cada linha**.
@@ -2156,6 +2345,20 @@ impl Table {
         if self.fts.is_none() {
             return Ok(0);
         }
+        self.recriar_fts_do_reg()
+    }
+
+    /// O corpo do [`Table::reconstruir_fts`], no arquivo vivo.
+    fn recriar_fts_do_reg(&mut self) -> Result<u64> {
+        let vivo = caminho(&self.diretorio, &self.nome, EXT_FTS);
+        self.montar_fts_em(&vivo)
+    }
+
+    /// Recria o `.fts` em `destino` e o enche do `.reg`. E o laco UNICO de
+    /// reconstrucao: o `reindexar` o usa no arquivo vivo e a redeclaracao do
+    /// pedido 364 ao lado dele -- e nao um segundo laco que um dia esqueca a
+    /// janela de escrita.
+    fn montar_fts_em(&mut self, destino: &Path) -> Result<u64> {
         // RECRIA antes de varrer, como o `reindexar` faz com o `.ndx`. Sem
         // isto a reconstrucao nao e idempotente -- a segunda passada bate em
         // «chave completa ja existe no indice» --, e a marca de «ficou para
@@ -2171,7 +2374,7 @@ impl Table {
         // com a pagina fechada. E a saida escrita para quem ligou a cifra
         // depois de a tabela existir (pedido 340, `SEGURANCA.md` §11.3).
         self.fts = Some(FtsFile::recriar(
-            caminho(&self.diretorio, &self.nome, EXT_FTS),
+            destino,
             dobra,
             texto_sobre_coluna_marcada(&self.esquema),
         )?);
