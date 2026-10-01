@@ -640,6 +640,19 @@ dia, nunca no desejado:
   (`regravar-esquema-troca-volume-a-volume-632`) e o cinto da abertura que
   renomeava `*.novo` incompleto (`troca-decidida-renomeia-novo-incompleto-632`).
   693, medido pelo `--numeros`.
+  **SUBIU para 702 em 01/10/2026** (no merge, 693 + 9; pedido 622, auditoria QA): as
+  petreas que tinham teste e nenhum defeito reposto -- a ordem de digitacao
+  (`ordem-de-digitacao-reaproveita-slot`), o `ao_excluir` so restringir
+  (`ao-excluir-aceita-cascata`), a chave que nasce conferida nos dois lados
+  do par (`chave-declarada-nasce-sem-conferir`,
+  `chave-sem-saida-para-nao-conferir`), o pai antes pelo `rowstamp`
+  (`carimbo-por-tabela-empata-pai-e-filha`), a guarda nova pedida
+  (`versao-imposta-ao-cliente-antigo`), a catraca da ficha compartilhada
+  (`quinta-operacao-na-ficha-compartilhada`), a lista de cancelaveis
+  (`operacao-cancelavel-fora-da-lista`) e o 175 no sentido «imposta»
+  (`indice-da-chave-imposto-a-quem-nao-confere`). A da leitura repetivel ja
+  existia (`elo-implicito-sem-trava`) e so faltava julga-la. 702, medido pelo
+  `--numeros`.
 
 # A QUINTA REGUA: a tabela publicada pode ser MENOR que o catalogo
 
@@ -746,7 +759,7 @@ TETO_TESTE_MORTO = 0
 TETO_TRECHO_AMBIGUO = 0
 TETO_TESTE_FORA_DO_BINARIO = 0
 TETO_TESTE_SEM_MODULO = 0
-PISO_DAS_ENTRADAS = 693
+PISO_DAS_ENTRADAS = 702
 
 # ------------------------------------------------------------- APOSENTADAS
 #

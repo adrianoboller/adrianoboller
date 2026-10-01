@@ -2614,6 +2614,14 @@
       "quando": "2026-09-30 13:25"
     },
     {
+      "id": "elo-implicito-sem-trava",
+      "titulo": "o elo que só o COMMIT descobre escreve sem trava, e a leitura repetível de outra transação lê 5 e depois 6",
+      "veredito": "PROVADA",
+      "segundos": 82.86,
+      "notas": [],
+      "quando": "2026-10-01 21:28"
+    },
+    {
       "id": "backup-sem-fsync",
       "titulo": "o backup responde \"concluido\" sem `fsync` nenhum",
       "veredito": "PROVADA",
@@ -4142,6 +4150,78 @@
       "segundos": 8.32,
       "notas": [],
       "quando": "2026-10-01 21:07"
+    },
+    {
+      "id": "ordem-de-digitacao-reaproveita-slot",
+      "titulo": "o `.reg` reaproveita o slot da linha excluída, e a linha nova entra no meio da ordem de digitação",
+      "veredito": "PROVADA",
+      "segundos": 11.19,
+      "notas": [],
+      "quando": "2026-10-01 21:28"
+    },
+    {
+      "id": "ao-excluir-aceita-cascata",
+      "titulo": "a declaração da chave aceita `ao_excluir` em cascata, e o pai com filhos passa a poder morrer",
+      "veredito": "PROVADA",
+      "segundos": 79.47,
+      "notas": [],
+      "quando": "2026-10-01 21:28"
+    },
+    {
+      "id": "chave-declarada-nasce-sem-conferir",
+      "titulo": "a chave declarada sem `verificar` volta a nascer sem conferir, e o órfão entra calado",
+      "veredito": "PROVADA",
+      "segundos": 86.26,
+      "notas": [],
+      "quando": "2026-10-01 21:28"
+    },
+    {
+      "id": "chave-sem-saida-para-nao-conferir",
+      "titulo": "o `verificar: false` escrito deixa de valer, e quem escolheu não conferir perde a opção junto com o padrão",
+      "veredito": "PROVADA",
+      "segundos": 78.76,
+      "notas": [],
+      "quando": "2026-10-01 21:28"
+    },
+    {
+      "id": "carimbo-por-tabela-empata-pai-e-filha",
+      "titulo": "o `rowstamp` sai de um contador por tabela, e o pai e a filha nascem com o mesmo carimbo",
+      "veredito": "PROVADA",
+      "segundos": 6.83,
+      "notas": [],
+      "quando": "2026-10-01 21:28"
+    },
+    {
+      "id": "versao-imposta-ao-cliente-antigo",
+      "titulo": "a guarda de conflito passa a exigir `versao`, e todo cliente antigo para de gravar",
+      "veredito": "PROVADA",
+      "segundos": 78.84,
+      "notas": [],
+      "quando": "2026-10-01 21:28"
+    },
+    {
+      "id": "quinta-operacao-na-ficha-compartilhada",
+      "titulo": "o `ler` entra na pista de leitura sem a varredura de escrita escondida, e a catraca da ficha compartilhada tem de acusar",
+      "veredito": "PROVADA",
+      "segundos": 82.87,
+      "notas": [],
+      "quando": "2026-10-01 21:28"
+    },
+    {
+      "id": "operacao-cancelavel-fora-da-lista",
+      "titulo": "uma operação com ponto de cancelamento fica fora de `OPS_CANCELAVEIS`, e a tela mostra o botão desabilitado",
+      "veredito": "PROVADA",
+      "segundos": 85.81,
+      "notas": [],
+      "quando": "2026-10-01 21:28"
+    },
+    {
+      "id": "indice-da-chave-imposto-a-quem-nao-confere",
+      "titulo": "a chave com `verificar: false` ganha índice na filha, e a guarda nova passa a ser imposta",
+      "veredito": "PROVADA",
+      "segundos": 20.78,
+      "notas": [],
+      "quando": "2026-10-01 21:28"
     },
     {
       "id": "alter-com-regra-sem-aviso",
