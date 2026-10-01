@@ -548,6 +548,15 @@ dia, nunca no desejado:
   **SUBIU para 638 em 01/10/2026** (no merge, 637 + 1; pedido 322): o portao da carga
   que lia um campo so e deixava a tabela reservada se ler pelo lado B de um
   `juntar` (`portao-da-carga-le-um-campo-so`), provada pelo soquete. 629,
+  **SUBIU para 644 em 01/10/2026** (no merge, 638 + 6; pedidos 330, 300 e 424): seis
+  guardas -- a absorcao do diario local inteira sob a exclusiva
+  (`bidi-absorve-o-diario-sob-a-exclusiva`), a rodada seguinte sem a marca do
+  diario (`bidi-rodada-seguinte-sem-a-marca-do-diario`), a cauda do `.log`
+  recusada sob a compartilhada (`diario-sob-a-compartilhada-recusa-a-cauda`),
+  a posicao do cluster somando tabela que nao replica
+  (`posicao-do-cluster-conta-tabela-que-nao-replica`), a replica que cria a
+  cadeia marcada calada (`ledger-marcado-recebido-calado`) e o censo que le a
+  forma e nao a marca (`censo-do-ledger-le-a-forma-e-nao-a-marca`). 634,
   medido pelo `--numeros` nesta arvore.
 
 # A QUINTA REGUA: a tabela publicada pode ser MENOR que o catalogo
@@ -655,7 +664,7 @@ TETO_TESTE_MORTO = 0
 TETO_TRECHO_AMBIGUO = 0
 TETO_TESTE_FORA_DO_BINARIO = 0
 TETO_TESTE_SEM_MODULO = 0
-PISO_DAS_ENTRADAS = 638
+PISO_DAS_ENTRADAS = 644
 
 # ------------------------------------------------------------- APOSENTADAS
 #

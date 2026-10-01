@@ -1737,9 +1737,9 @@
       "id": "posicao-nao-encolhe-em-silencio",
       "titulo": "tabela que nao abre some da soma do diario sem marcar `incompleta`",
       "veredito": "PROVADA",
-      "segundos": 72.86,
+      "segundos": 88.51,
       "notas": [],
-      "quando": "2026-10-01 06:01"
+      "quando": "2026-10-01 13:06"
     },
     {
       "id": "eleicao-prefere-completa",
@@ -3411,9 +3411,9 @@
       "id": "faixa-sem-saida",
       "titulo": "a tabela gravada pelo contador `v + 1` não abria (a faixa recusa) e o remédio exigia abrir: ficava sem saída",
       "veredito": "PROVADA",
-      "segundos": 6.67,
+      "segundos": 8.7,
       "notas": [],
-      "quando": "2026-10-01 11:21"
+      "quando": "2026-10-01 13:06"
     },
     {
       "id": "reconciliar-fora-da-faixa",
@@ -3667,9 +3667,9 @@
       "id": "replica-fiel-sem-conferir-a-linhagem",
       "titulo": "a replica fiel abre a tabela daqui sem conferir a linhagem do source: tabela de outra historia recebe os eventos no rowid de outra linha",
       "veredito": "PROVADA",
-      "segundos": 99.34,
+      "segundos": 97.12,
       "notas": [],
-      "quando": "2026-10-01 12:14"
+      "quando": "2026-10-01 13:06"
     },
     {
       "id": "aplicar-sem-conferir-a-linhagem",
@@ -3702,6 +3702,54 @@
       "segundos": 24.37,
       "notas": [],
       "quando": "2026-10-01 12:24"
+    },
+    {
+      "id": "bidi-absorve-o-diario-sob-a-exclusiva",
+      "titulo": "A primeira rodada do bidirecional depois do arranque absorvia o diário local inteiro com a trava exclusiva na mão",
+      "veredito": "PROVADA",
+      "segundos": 87.81,
+      "notas": [],
+      "quando": "2026-10-01 13:06"
+    },
+    {
+      "id": "diario-sob-a-compartilhada-recusa-a-cauda",
+      "titulo": "A leitura do diário sob a ficha compartilhada recusava a tabela escrita desde o último fecho da janela, e a absorção do bidirecional voltava inteira para a exclusiva",
+      "veredito": "PROVADA",
+      "segundos": 11.19,
+      "notas": [],
+      "quando": "2026-10-01 13:06"
+    },
+    {
+      "id": "bidi-rodada-seguinte-sem-a-marca-do-diario",
+      "titulo": "Cada rodada do bidirecional com um evento local novo caminhava o diário desde o começo do volume para lê-lo",
+      "veredito": "PROVADA",
+      "segundos": 91.49,
+      "notas": [],
+      "quando": "2026-10-01 13:06"
+    },
+    {
+      "id": "posicao-do-cluster-conta-tabela-que-nao-replica",
+      "titulo": "A posição somada do cluster contava tabela que não é replicada, e o nó com dado local ganhava a eleição",
+      "veredito": "PROVADA",
+      "segundos": 102.26,
+      "notas": [],
+      "quando": "2026-10-01 13:06"
+    },
+    {
+      "id": "ledger-marcado-recebido-calado",
+      "titulo": "A réplica criava a cadeia de ledger com coluna marcada sem gritar nem contar",
+      "veredito": "PROVADA",
+      "segundos": 30.3,
+      "notas": [],
+      "quando": "2026-10-01 13:06"
+    },
+    {
+      "id": "censo-do-ledger-le-a-forma-e-nao-a-marca",
+      "titulo": "O censo do ledger achava a cadeia pela forma e não lia o byte de marca: a cadeia marcada saía limpa",
+      "veredito": "PROVADA",
+      "segundos": 13.66,
+      "notas": [],
+      "quando": "2026-10-01 13:06"
     },
     {
       "id": "cifra-do-fio-imposta",

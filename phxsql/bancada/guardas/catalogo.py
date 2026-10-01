@@ -8666,6 +8666,9 @@ pub fn limpar() {
                 continue;
             };
             for t in tabelas {
+                if alcance.is_some_and(|ts| !ts.contains(&t)) {
+                    continue;
+                }
                 match db.abrir_qualificada(&t) {
                     Ok(mut tab) => match tab.eventos() {
                         Ok(n) => {
@@ -8683,6 +8686,9 @@ pub fn limpar() {
                 continue;
             };
             for t in tabelas {
+                if alcance.is_some_and(|ts| !ts.contains(&t)) {
+                    continue;
+                }
                 if let Ok(mut tab) = db.abrir_qualificada(&t) {
                     if let Ok(n) = tab.eventos() {
                         total += n;
@@ -20421,9 +20427,9 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "pelo protocolo e `ajustar_sequencia` com `pelo_maior`."
         ),
         "arquivo": "crates/phxsql-store/src/table.rs",
-        "trecho": """        let mut t = match Table::abrir_com(diretorio, nome, true, false)? {
+        "trecho": """        let mut t = match Table::abrir_com(diretorio, nome, true, false, false)? {
 """,
-        "troca": """        let mut t = match Table::abrir_com(diretorio, nome, true, true)? { // DEFEITO REPOSTO (290-b)
+        "troca": """        let mut t = match Table::abrir_com(diretorio, nome, true, true, false)? { // DEFEITO REPOSTO (290-b)
 """,
         "pacote": "phxsql-store",
         "alvo": ["--test", "reconciliar-sequencia"],
@@ -21349,5 +21355,148 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         # nos dois de cima e cai aqui.
         "seguem": ["sem_reserva_e_depois_da_queda_o_juntar_continua"],
         "prazo": 600,
+    },
+    {
+        "id": "bidi-absorve-o-diario-sob-a-exclusiva",
+        "titulo": "A primeira rodada do bidirecional depois do arranque absorvia o diário local inteiro com a trava exclusiva na mão",
+        "porque": (
+            "pedido 330. O mapa de toques e estado de processo: processo novo, "
+            "mapa vazio, e o diario local inteiro passava pelo mapa sob "
+            "`travar_dados()` -- 2,26-2,63 us por evento em release, 2,3-2,5 s "
+            "de servidor parado num diario de 1 M. Reposto, os 3.000 eventos do "
+            "teste passam todos pela exclusiva."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        self.pre_absorver_sob_leitura(
+            database,
+            &no.nome,
+            &format!("{database}/{}", no.nome),
+            meu_hash,
+        )?;""",
+        "troca": """        // DEFEITO REPOSTO (330): a absorcao inteira sob a exclusiva.
+        let _ = Self::pre_absorver_sob_leitura;""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_da_absorcao_do_bidi::a_primeira_rodada_absorve_o_grosso_fora_da_exclusiva",
+        ],
+        "seguem": [
+            "servidor::testes_da_absorcao_do_bidi::sem_evento_novo_a_rodada_nao_absorve_nada",
+        ],
+        "prazo": 1800,
+    },
+    {
+        "id": "diario-sob-a-compartilhada-recusa-a-cauda",
+        "titulo": "A leitura do diário sob a ficha compartilhada recusava a tabela escrita desde o último fecho da janela, e a absorção do bidirecional voltava inteira para a exclusiva",
+        "porque": (
+            "pedido 330, achado provando: o cabecalho do `.log` so vai a disco "
+            "no `sincronizar`, e a abertura de leitura comum recusa a cauda alem "
+            "dele (corrigir e escrever). Sob carga, era a recusa de toda fatia da "
+            "pre-absorcao. Reposto, a abertura do diario recusa igual a comum."
+        ),
+        "arquivo": "crates/phxsql-store/src/log.rs",
+        "trecho": """            l.curar_em_memoria(volume_atual)?;""",
+        "troca": """            // DEFEITO REPOSTO (330): a cauda recusa tambem aqui.
+            if l.curar(volume_atual, false)? > 0 {
+                return Ok(None);
+            }""",
+        "pacote": "phxsql-store",
+        "alvo": ["--lib"],
+        "caem": ["leitura::testes::o_diario_conta_a_cauda_na_memoria_sem_gravar"],
+        "seguem": [
+            "leitura::testes::a_tabela_que_precisaria_escrever_para_abrir_manda_para_a_exclusiva",
+        ],
+        "prazo": 1200,
+    },
+    {
+        "id": "bidi-rodada-seguinte-sem-a-marca-do-diario",
+        "titulo": "Cada rodada do bidirecional com um evento local novo caminhava o diário desde o começo do volume para lê-lo",
+        "porque": (
+            "pedido 330, o irmao achado medindo. O servidor reabre a tabela a "
+            "cada rodada e a reaberta nao tem marca: ler o evento novo depois "
+            "de `vistos` caminhava cabecalho por cabecalho -- 507-517 ms por "
+            "rodada num diario de 1 M, contra 0,1 ms com a marca guardada no "
+            "mapa (`--example custo-da-absorcao-do-bidi`)."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """            mapa.marca = tabela.marca_do_diario();""",
+        "troca": """            // DEFEITO REPOSTO (330): a marca nao fica guardada.
+            let _ = tabela.marca_do_diario();""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_da_absorcao_do_bidi::a_rodada_seguinte_comeca_da_marca_guardada",
+        ],
+        "seguem": [
+            "servidor::testes_da_absorcao_do_bidi::a_primeira_rodada_absorve_o_grosso_fora_da_exclusiva",
+        ],
+        "prazo": 1800,
+    },
+    {
+        "id": "posicao-do-cluster-conta-tabela-que-nao-replica",
+        "titulo": "A posição somada do cluster contava tabela que não é replicada, e o nó com dado local ganhava a eleição",
+        "porque": (
+            "pedido 300 (3). O comentario dizia «somada sobre as tabelas "
+            "replicadas»; o codigo somava todo database do disco. Reposto, a "
+            "replica que tem 5 eventos replicados e 8 locais publica 13."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """            (crate::cluster::PapelVivo::Master, _) => EscopoDaPosicao::Tudo,""",
+        "troca": """            // DEFEITO REPOSTO (300): todo mundo soma tudo.
+            _ => EscopoDaPosicao::Tudo,""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_config_gravar::a_replica_soma_so_o_que_o_master_anunciou",
+            "servidor::testes_config_gravar::o_master_soma_tudo_e_a_replica_sem_anuncio_diz_que_nao_sabe",
+        ],
+        "seguem": [
+            "servidor::testes_config_gravar::a_posicao_por_tabela_vai_ao_painel_e_nao_ao_voto",
+            "servidor::testes_posicao_do_diario::tabela_que_nao_abre_nao_pode_encolher_a_posicao_em_silencio",
+        ],
+        "prazo": 1800,
+    },
+    {
+        "id": "ledger-marcado-recebido-calado",
+        "titulo": "A réplica criava a cadeia de ledger com coluna marcada sem gritar nem contar",
+        "porque": (
+            "pedido 424. A recusa do ledger mora na DECLARACAO, e a replica "
+            "remonta o esquema por `Schema::desserializar`, que nao julga. A "
+            "petrea «guarda nova entra pedida» ganhou da regua 7x2: a replica "
+            "cria -- e grita e conta. Reposto, o contador "
+            "`ledger_marcado_recebido` fica em 0 com a cadeia marcada criada."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """                let (e_ledger, marcadas) = phxsql_store::ledger::recensear(e);""",
+        "troca": """                // DEFEITO REPOSTO (424): a replica nao olha o que cria.
+                let (e_ledger, marcadas) = (false, Vec::<String>::new());""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "ledger-marcado-na-replica"],
+        "caem": ["a_replica_cria_a_cadeia_marcada_grita_e_conta"],
+        "seguem": ["sem_cadeia_marcada_o_contador_fica_em_zero"],
+        "prazo": 1800,
+    },
+    {
+        "id": "censo-do-ledger-le-a-forma-e-nao-a-marca",
+        "titulo": "O censo do ledger achava a cadeia pela forma e não lia o byte de marca: a cadeia marcada saía limpa",
+        "porque": (
+            "pedido 424, a ressalva do parecer C de 23/09: o `grep` por "
+            "`porAltura` acha a FORMA, e a marca e um byte por coluna no fim do "
+            "bloco `PSCH`. Reposto, a cadeia legada com `cpf` marcado sai do "
+            "censo como cadeia limpa."
+        ),
+        "arquivo": "crates/phxsql-store/src/ledger.rs",
+        "trecho": """        .filter(|c| c.dado_pessoal.e_pessoal())
+        .map(|c| c.nome.clone())""",
+        "troca": """        // DEFEITO REPOSTO (424): o censo nao le a marca.
+        .filter(|_| false)
+        .map(|c| c.nome.clone())""",
+        "pacote": "phxsql-store",
+        "alvo": ["--lib"],
+        "caem": ["ledger::testes::o_censo_acha_a_cadeia_marcada_e_so_ela"],
+        "seguem": [
+            "ledger::testes::cadeia_marcada_gravada_antes_da_guarda_abre_le_e_grava",
+        ],
+        "prazo": 1200,
     },
 ]

@@ -356,7 +356,16 @@ como sempre foi). As consequências práticas, sem eufemismo:
 4. **A posição comparada é a soma dos eventos** das tabelas replicadas. Sem
    transação entre tabelas não há ordem global, e a soma é o agregado
    honesto disponível; a prova fina de igualdade continua sendo o retrato
-   SHA-256 (a bancada confere os dois).
+   SHA-256 (a bancada confere os dois). **«Replicadas» quer dizer o que o
+   master anuncia** (pedido 300, 01/10/2026): a réplica aprende na rodada da
+   replicação a lista que o `bancos` e o `posicao` do master respondem — a
+   mesma que ela alcança — e só soma isso; um database que só mora nela não
+   infla a posição. O master soma o que tem, porque é o que serve. A réplica
+   que nunca ouviu um master soma tudo e publica a posição **incompleta**. O
+   anúncio é durável em `cluster.anunciadas.json` (FORMATO §20), para o
+   arranque a frio não voltar a contar o que não replica. O que isto **não**
+   resolve: a escrita local numa tabela replicada continua contando (pedido
+   300, item 4).
 5. **A fresta entre «o master calou» e «os pares envelheceram».** A eleição
    conta quem **pulsou** dentro da janela, e o silêncio do master sai do
    **mesmo relógio**. Os dois prazos não vencem juntos quando os nós caem em

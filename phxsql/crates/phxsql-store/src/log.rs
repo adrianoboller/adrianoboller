@@ -486,6 +486,29 @@ impl LogFile {
         nome: &str,
         paginacao: Paginacao,
     ) -> Result<Option<LogFile>> {
+        LogFile::abrir_para_ler_com(diretorio, nome, paginacao, false)
+    }
+
+    /// O [`LogFile::abrir_sem_escrever`] que NAO recusa a cauda alem do
+    /// cabecalho: conta com ela na memoria (ver [`LogFile::curar_em_memoria`])
+    /// -- pedido 330. So para quem le o DIARIO sob a ficha compartilhada: a
+    /// tabela escrita desde o ultimo fecho da janela tem o cabecalho atras do
+    /// arquivo, e sem isto toda fatia da absorcao do bidirecional recusava sob
+    /// um escritor da mesma tabela, devolvendo a absorcao inteira a exclusiva.
+    pub fn abrir_sem_escrever_com_a_cauda(
+        diretorio: impl AsRef<Path>,
+        nome: &str,
+        paginacao: Paginacao,
+    ) -> Result<Option<LogFile>> {
+        LogFile::abrir_para_ler_com(diretorio, nome, paginacao, true)
+    }
+
+    fn abrir_para_ler_com(
+        diretorio: impl AsRef<Path>,
+        nome: &str,
+        paginacao: Paginacao,
+        cauda_em_memoria: bool,
+    ) -> Result<Option<LogFile>> {
         let paginacao = crate::diario::paginacao(paginacao);
         let volumes = Volumes::novo(diretorio, nome, EXT_LOG, paginacao);
         let existentes = volumes.existentes();
@@ -516,8 +539,11 @@ impl LogFile {
         l.cab(volume_atual)?;
         // A cura ANDA, e nao grava: se ela achou evento alem do fim que o
         // cabecalho declara, e porque o cabecalho precisa ser corrigido -- e
-        // corrigir e escrever.
-        if l.curar(volume_atual, false)? > 0 {
+        // corrigir e escrever. Quem so le o diario conta com a cauda na
+        // memoria em vez de recusar.
+        if cauda_em_memoria {
+            l.curar_em_memoria(volume_atual)?;
+        } else if l.curar(volume_atual, false)? > 0 {
             return Ok(None);
         }
         Ok(Some(l))
@@ -855,6 +881,33 @@ impl LogFile {
     /// primeiro que nao confere, ou no fim do arquivo. Regiao zerada nao passa
     /// -- o CRC-32 de 36 bytes zerados nao e zero.
     fn curar(&mut self, volume: u32, gravar: bool) -> Result<u64> {
+        let (achados, cab) = self.cauda_alem_do_cabecalho(volume)?;
+        if achados > 0 && gravar {
+            self.gravar_cab(cab)?;
+        }
+        Ok(achados)
+    }
+
+    /// A mesma varredura da cura, com o cabecalho corrigido SO na memoria
+    /// deste `LogFile` -- pedido 330.
+    ///
+    /// Existe para quem le o diario sob a ficha compartilhada: com ela na mao
+    /// nenhum escritor anexa, entao o arquivo esta parado, e os eventos alem
+    /// do `fim` gravado sao eventos inteiros (o CRC de cada um confere) que so
+    /// esperam o `sincronizar` para entrar no cabecalho. Contar com eles na
+    /// memoria da a mesma vista que a abertura exclusiva daria depois de
+    /// curar -- sem gravar um byte.
+    fn curar_em_memoria(&mut self, volume: u32) -> Result<u64> {
+        let (achados, cab) = self.cauda_alem_do_cabecalho(volume)?;
+        if achados > 0 {
+            self.cabs.insert(volume, cab);
+        }
+        Ok(achados)
+    }
+
+    /// Quantos eventos inteiros o arquivo tem alem do `fim` do cabecalho, e o
+    /// cabecalho que os contaria. Nao grava nada.
+    fn cauda_alem_do_cabecalho(&mut self, volume: u32) -> Result<(u64, Cabecalho)> {
         // O reparo pode cortar o rabo do arquivo: uma marca apontando para
         // dentro do que sumiu passaria a apontar para nada.
         self.marca = None;
@@ -886,11 +939,7 @@ impl LogFile {
             cab = cab.com(cab.fim + evento.ocupa(), cab.quantos + 1);
             achados += 1;
         }
-
-        if achados > 0 && gravar {
-            self.gravar_cab(cab)?;
-        }
-        Ok(achados)
+        Ok((achados, cab))
     }
 
     /// Total de eventos em todos os volumes.

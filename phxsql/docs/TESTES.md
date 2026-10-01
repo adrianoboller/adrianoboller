@@ -1103,11 +1103,17 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `teto-de-colunas-sem-o-bit-do-selo` | o esquema aceita ate 65.535 colunas: a coluna 32.768 externa e lida na imagem como a 0, selada | 1 | ✅ provada |
 | `evento-pre-344-ao-fio-sem-abrir` | o evento do diario gravado antes do 344 (externo selado, sem o bit) sai para o fio como veio: a replica grava o cifrado como se fosse o anexo | 1 | ✅ provada |
 | `portao-da-carga-le-um-campo-so` | O portão da carga (Portão 4) lia só `"tabela"`: a tabela reservada pelo `BULKINSERT` se lia como o lado B de um `juntar` | 2 | ✅ provada |
+| `bidi-absorve-o-diario-sob-a-exclusiva` | A primeira rodada do bidirecional depois do arranque absorvia o diário local inteiro com a trava exclusiva na mão | 1 | ✅ provada |
+| `diario-sob-a-compartilhada-recusa-a-cauda` | A leitura do diário sob a ficha compartilhada recusava a tabela escrita desde o último fecho da janela, e a absorção do bidirecional voltava inteira para a exclusiva | 1 | ✅ provada |
+| `bidi-rodada-seguinte-sem-a-marca-do-diario` | Cada rodada do bidirecional com um evento local novo caminhava o diário desde o começo do volume para lê-lo | 1 | ✅ provada |
+| `posicao-do-cluster-conta-tabela-que-nao-replica` | A posição somada do cluster contava tabela que não é replicada, e o nó com dado local ganhava a eleição | 2 | ✅ provada |
+| `ledger-marcado-recebido-calado` | A réplica criava a cadeia de ledger com coluna marcada sem gritar nem contar | 1 | ✅ provada |
+| `censo-do-ledger-le-a-forma-e-nao-a-marca` | O censo do ledger achava a cadeia pela forma e não lia o byte de marca: a cadeia marcada saía limpa | 1 | ✅ provada |
 | `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | — | 🪦 aposentada (18/09/2026) |
 
-**462 das 637 guardas do catálogo: 1 aposentada, 457 provadas, 4 redundantes** — 13882 s de mutação, medido em 2026-09-16 15:25.
+**468 das 643 guardas do catálogo: 1 aposentada, 463 provadas, 4 redundantes** — 14234 s de mutação, medido em 2026-09-16 15:25.
 
-> **Esta rodada NÃO julgou 176 das 637 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 176 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 176 das 643 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 176 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
 - `fk-antes-do-default` — a chave estrangeira confere a linha crua, e o DEFAULT sem mãe grava a filha órfã
 - `fk-antes-do-default-pelo-servidor` — o DEFAULT e a calculada sem mãe gravam a órfã pelo servidor, fora e dentro da transação

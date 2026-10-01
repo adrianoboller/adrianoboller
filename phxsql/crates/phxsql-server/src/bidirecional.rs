@@ -396,6 +396,21 @@ pub fn chave_da_tupla(valores: &[Value], colunas: &[usize]) -> String {
 pub struct MapaDeToques {
     /// Eventos do diario local ja absorvidos no mapa.
     pub vistos: u64,
+    /// Onde a ultima absorcao parou no `.log` -- pedido 330.
+    ///
+    /// O servidor reabre a tabela a cada rodada, e a tabela reaberta nao tem
+    /// marca: ler UM evento novo depois de `vistos` caminhava do comeco do
+    /// volume ate ele, cabecalho por cabecalho, com a trava exclusiva na mao.
+    /// Medido (`--example custo-da-absorcao-do-bidi`, release, 01/10/2026):
+    /// **507-517 ms** por rodada com um evento local novo num diario de 1 M,
+    /// contra **0,1 ms** com a marca guardada aqui. E dica, nao verdade: a
+    /// marca errada faz ler menos, nunca ler lixo (ver `MarcaDoDiario`).
+    pub marca: Option<phxsql_store::log::MarcaDoDiario>,
+    /// Quantos eventos esta tabela ja absorveu com a trava EXCLUSIVA na mao.
+    /// O resto foi pela compartilhada, em fatias (pedido 330). E o numero que
+    /// prova onde a absorcao acontece: com o desenho certo, a primeira rodada
+    /// depois do arranque deixa aqui so a cauda, menos de um lote.
+    pub absorvidos_sob_a_exclusiva: u64,
     /// Chave canonica -> ultimo toque.
     pub toques: HashMap<String, Toque>,
     /// Quantas colisoes de criacao (defeito (a)) esta tabela ja sofreu neste

@@ -2365,6 +2365,22 @@ tabela — lê os arquivos de `raiz` byte a byte — e escreve só no destino, q
 A catraca `so_as_duas_operacoes_medidas_usam_a_ficha_compartilhada` passou a
 cobrar **três** chamadas, com o motivo da terceira escrito nela.
 
+E **quatro** em 01/10/2026 (pedido 330): a pré-absorção do diário local no mapa
+de toques do bidirecional (`pre_absorver_sob_leitura`), em fatias de 10 ms sob
+a compartilhada, deixando só a cauda (menos de um lote) para a exclusiva. A
+admissão é de tipo, como a do `coletar_rowids`: o corpo é
+`absorver_diario_local<T: DiarioLegivel>`, e o `DiarioLegivel` não tem método de
+escrita. Quando a tabela foi escrita desde o último fecho da janela, a abertura
+compartilhada comum recusa (o cabeçalho do `.log` ficou atrás do arquivo, e
+corrigi-lo é escrever) — medido, a recusa caía em fatia sob carga e a absorção
+voltava inteira para a exclusiva. Por isso ela abre por
+`Raiz::abrir_diario_para_ler`, o mesmo corpo de resolução, que conta a cauda
+além do cabeçalho **na memória** (`LogFile::curar_em_memoria`): com a ficha
+compartilhada na mão nenhum escritor anexa, e os eventos além do `fim` são
+inteiros pelo CRC de cada um. A vista é a que a abertura exclusiva daria depois
+de curar, sem gravar um byte. Medido em release: 2,26–2,63 µs por evento,
+2,3–2,5 s de servidor parado num diário de 1 M antes do conserto.
+
 **A troca sozinha não comprava nada**, e isso só apareceu com um escritor na
 fila: o `RwLock` da `std` no Linux recusa leitor novo quando há escritor
 esperando. Daí o **portão do retrato** (`crates/phxsql-server/src/retrato.rs`):

@@ -627,6 +627,23 @@ impl Raiz {
     /// [`TabelaLeitura`](crate::leitura::TabelaLeitura), aberta por
     /// [`Table::abrir_para_ler`], que recusa quando abrir escreveria.
     pub fn abrir_para_ler(&self, database: &str, qualificado: &str) -> Result<Aberta> {
+        self.abrir_para_ler_com(database, qualificado, Table::abrir_para_ler)
+    }
+
+    /// O [`Raiz::abrir_para_ler`] de quem le so o DIARIO -- pedido 330: a cauda
+    /// do `.log` alem do cabecalho entra pela memoria em vez de recusar (ver
+    /// [`Table::abrir_para_ler_o_diario`]). O caminho, os nomes e as recusas
+    /// sao os MESMOS, pelo mesmo corpo.
+    pub fn abrir_diario_para_ler(&self, database: &str, qualificado: &str) -> Result<Aberta> {
+        self.abrir_para_ler_com(database, qualificado, Table::abrir_para_ler_o_diario)
+    }
+
+    fn abrir_para_ler_com(
+        &self,
+        database: &str,
+        qualificado: &str,
+        abrir: fn(PathBuf, &str) -> Result<SemEscrever>,
+    ) -> Result<Aberta> {
         // A politica nao importa aqui: o que sai e uma tabela de LEITURA.
         let so_para_achar_o_caminho = Instancia {
             base: self.base.clone(),
@@ -651,8 +668,8 @@ impl Raiz {
         // diario que precisava de cura, porque as duas se consertam diferente.
         // A UNICA excecao e a tabela que nao existe, e ela e nomeada pela
         // mesma regra do `abrir_tabela` -- ver `tabela_que_nao_existe`.
-        let aberta = Table::abrir_para_ler(dir, &nome)
-            .map_err(|e| db.tabela_que_nao_existe(e, schema.as_deref(), &nome));
+        let aberta =
+            abrir(dir, &nome).map_err(|e| db.tabela_que_nao_existe(e, schema.as_deref(), &nome));
         Ok(match aberta? {
             SemEscrever::Aberta(t) => Aberta::Pronta(crate::leitura::TabelaLeitura::nova(t)),
             SemEscrever::PrecisaEscrever(porque) => Aberta::PrecisaDaFichaExclusiva(porque),
