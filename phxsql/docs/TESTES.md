@@ -1061,9 +1061,9 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `backup-sem-portao-do-retrato` | A cópia do backup com a ficha COMPARTILHADA e sem o portão do retrato: o primeiro escritor na fila do `RwLock` fazia toda leitura nova esperar a cópia inteira | 1 | ✅ provada |
 | `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | — | 🪦 aposentada (18/09/2026) |
 
-**418 das 593 guardas do catálogo: 1 aposentada, 413 provadas, 4 redundantes** — 12230 s de mutação, medido em 2026-09-16 15:25.
+**418 das 596 guardas do catálogo: 1 aposentada, 413 provadas, 4 redundantes** — 12230 s de mutação, medido em 2026-09-16 15:25.
 
-> **Esta rodada NÃO julgou 176 das 593 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 176 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 179 das 596 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 179 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
 - `fk-antes-do-default` — a chave estrangeira confere a linha crua, e o DEFAULT sem mãe grava a filha órfã
 - `fk-antes-do-default-pelo-servidor` — o DEFAULT e a calculada sem mãe gravam a órfã pelo servidor, fora e dentro da transação
@@ -1241,6 +1241,9 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 - `garantir-schema-sem-fsync-do-database` — `criar_schema` e `criar_tabela` num schema novo criavam a pasta sem `fsync` do database: o schema que o cliente ouviu criar podia sumir numa queda
 - `criar-database-sem-fsync-da-base` — `criar_database` criava a pasta sem `fsync` da base: o database que o cliente ouviu criar podia sumir numa queda
 - `marca-do-database-sem-fsync` — O marcador `_database.json` nascia sem `fsync`: numa queda uma colmeia voltava como database padrão, calada
+- `manifesto-velho-apagado-pelo-nome` — o backup apaga o manifesto velho pelo NOME do destino: um link trocado no meio da corrida apaga o backup.json de OUTRO backup
+- `destino-do-backup-conferido-so-pelo-nome` — o destino do backup é conferido pelo NOME e aberto depois pelo descritor: a troca de um link no meio põe as cópias dentro do database vivo
+- `chave-sem-urandom-pela-mistura` — sem /dev/urandom (Windows), a chave efêmera do TLS e do Noise e a do autoassinado saem de SHA-256 de relógio, PID e endereço
 
 As guardas que esta corrida ainda cita, hoje aposentadas:
 

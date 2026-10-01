@@ -6558,6 +6558,53 @@ escrever.
 ainda sincroniza a pasta pelo nome, dentro do motor do 467 — é o motor da troca
 durável da raiz de dados, e mudá-lo alcança todo chamador.
 
+### 33.6 O destino trocado no meio da corrida: manifesto e conferência pelo descritor (pedido 611)
+
+Os dois irmãos que o 593 e o 554 deixaram (revisão SEC independente de
+01/10/2026, S6 e S7). Os dois têm a mesma forma: **o nome se lia de novo
+depois de o descritor já estar aberto**, e um link do caminho virando entre as
+duas leituras fazia o nome e a pasta aberta serem coisas diferentes.
+
+- **S6 — o manifesto velho.** `invalidar_manifesto_velho` apagava
+  `destino.join("backup.json")` depois do `Pasta::abrir`. Com a troca no meio,
+  as cópias iam para a pasta aberta e o `backup.json` apagado era o de **outro
+  backup**, que o `restaurar` passava a recusar inteiro. Agora o `lstat` e o
+  `remove_file` passam pela pasta aberta (`no_destino`), o motor do 593.
+- **S7 — a conferência do destino.** `conferir_destino` (554) lê o nome; o
+  `Pasta::abrir` segue o nome de novo (por desenho: o destino é escolha de
+  quem chama). Com a troca no meio, **medido contra o SO**, as cópias caíam em
+  `dados/loja/rh/` — o schema `rh` dentro do database `loja`, visível a quem só
+  tem direito em `loja`. Agora `conferir_destino_aberto` confere o **descritor**:
+  o dev/inode da pasta aberta e de cada pasta acima dela (subindo por
+  `/proc/self/fd/N/..`, que o núcleo resolve pela pasta aberta, não pelo nome)
+  contra o da raiz, e o da raiz e de cada pasta acima dela contra o da pasta
+  aberta. A conferência pelo nome fica antes, para a recusa comum sair sem criar
+  pasta nenhuma; a mensagem é a mesma (`misturado`, um lugar só).
+
+**A prova, contra o SO com a troca de verdade** (`tests/destino-trocado-na-janela.rs`):
+uma thread vira um link do caminho do destino entre os dois lados, por
+`symlink` + `rename` atômico, enquanto o laço chama `backup::executar`. Teto de
+**4.000 voltas ou 20 s**, porque a corrida é sorte e teste sem teto trava a
+suíte.
+
+| prova | com o conserto | com o defeito reposto (medido) |
+|---|---|---|
+| `copias_nunca_caem_dentro_da_raiz_pela_troca_na_janela` | 4.000 voltas, nenhuma cópia dentro da raiz (1.106 no destino de fora, 2.894 recusadas) | caiu dentro em 4, 6, 36 e 1.792 voltas (quatro corridas) |
+| `o_manifesto_apagado_e_o_da_pasta_aberta` | 4.000 voltas, o manifesto do outro nunca sai sem cópia ter ido para lá | apagado em 7, 30 e 38 voltas |
+| `o_destino_se_confere_pelo_que_se_abriu_e_nao_pelo_nome` (unidade, sem corrida) | a pasta aberta dentro da raiz, igual a ela ou acima dela recusa com nome inocente; a de fora passa | — (testa a função direto) |
+
+Guardas `manifesto-velho-apagado-pelo-nome` e
+`destino-do-backup-conferido-so-pelo-nome`, PROVADAS.
+
+**O que fica, dito.** (1) **Fora do Linux** a `Pasta` não tem descritor: a
+subida dos ancestrais é pelo caminho real, e a janela fica; **fora do Unix** a
+`std` não dá inode, a lista vem vazia e só sobra a conferência pelo nome. (2) O
+**ZIP** (`executar_zip`) é irmão de forma mas não de motor: confere o nome e
+grava o `.part` pelo nome, sem `Pasta` — conferir um descritor que a escrita não
+usa não fecharia nada. A janela dele põe **um arquivo `.zip.part`** dentro da
+raiz, não uma árvore de schema; fica nomeada aqui, junto do `rename` final do
+594.
+
 ## 34. O texto da visão entregava o literal a quem só lê (pedido 359)
 
 A op `visoes` pede só `ler` (`usuarios.rs`) e é `PorColuna::Nenhum`
@@ -6650,3 +6697,50 @@ lista negra atrás de proxy barra todos de uma vez). As guardas de tela não
 cabem no catálogo (`provar-guardas.py` repõe defeito e roda `cargo test`); a
 prova delas é o roteiro versionado acima, que reprova 4 de 5 com o binário de
 antes.
+
+## 37. Sem `/dev/urandom`, a chave vinha do relógio e do PID (pedido 606)
+
+O achado A3 da auditoria de setembro, reaberto pelo J no plano do 572 (§5.1):
+`senha::bytes_aleatorios` lê `/dev/urandom`, e onde ele não existe
+(**Windows**, o alvo do pacote e do driver ODBC) caía em
+`SHA-256(nanos ‖ contador ‖ pid ‖ endereço)`. Dali saem a efêmera X25519 do TLS
+e do Noise (pela semente de `cifra::sortear`), a privada P-256 e a do
+autoassinado. Mistura serve a **sal**, que pede unicidade; para **chave**, quem
+estima o instante do arranque e o PID refaz a efêmera e decifra o tráfego
+gravado.
+
+**O conserto, só com a `std`** (hipótese H2 do plano; H1, o FFI para o
+`ProcessPrng`, morre por pedir `extern` que a pétrea não deixa): a primeira
+`RandomState` de cada **thread nova** é semeada por `hashmap_random_keys()`,
+que no Windows são 16 bytes do `ProcessPrng` (`RtlGenRandom` no alvo `win7`).
+`colher_da_std` sobe quatro threads, faz cada uma hashear entradas fixas com a
+sua semente, e o SHA-256 das quatro colheitas é a semente de 32 bytes. Duas
+threads com a mesma colheita = **fonte morta**, e a chamada **derruba** em vez
+de cair na mistura (H3). A mistura fica servindo **só ao sal** (`sal_novo`).
+Linux e macOS continuam no `/dev/urandom`, lido de uma vez.
+
+**O que a `std` garante, e o que é detalhe dela.** Garantido (documentação):
+`RandomState` vem de «a high quality, secure source of randomness provided by
+the host». Detalhe (lido no fonte da 1.94.1, `library/std/src/hash/random.rs`
+e `sys/random/{mod,windows}.rs`): a semeadura **por thread**. Se a `std`
+passar a semear uma vez por processo, a entrada cai de 512 para 128 bits do
+sistema — ainda sem relógio — e **nenhum teste vê isso** (o SipHash esconde a
+relação entre as chaves). Num alvo sem gerador (`unsupported.rs`, que usa
+endereços), a conferência de fonte morta também não pega: o caminho só vale
+onde a `std` tem gerador.
+
+| prova (`phxsql-core`, `senha::tests`) | com o conserto | com o defeito reposto |
+|---|---|---|
+| `sem_urandom_a_chave_nao_sai_do_relogio_nem_do_pid` | relógio, contador, PID e endereço fixados na thread: duas chaves diferentes | as duas iguais (a mistura repetida, 16 bytes duas vezes) |
+| `dois_processos_no_mesmo_instante_dao_chaves_diferentes` | dois **processos** filhos, subidos juntos e com o mesmo ambiente fixado: a mistura velha dá o mesmo nos dois (premissa), a chave dá diferente | chaves iguais nos dois processos |
+| `duas_threads_novas_colhem_diferente` | 16 threads novas, 16 sementes; duas colheitas diferentes | — (vigia a premissa da fonte morta) |
+
+Guarda `chave-sem-urandom-pela-mistura`, PROVADA.
+
+**Não medido no Windows.** O caminho provado é o genérico da `std`, rodado no
+Linux; o alvo `x86_64-pc-windows-gnu` **não está instalado** neste contêiner
+(`rustup target list --installed`: só o Linux), nem `wine`. O código novo não
+tem `cfg` de plataforma — é o mesmo texto nos dois —, mas compilar e rodar no
+Windows (`bancada/windows/provar.sh`, dois `phxsqld.exe` no mesmo milissegundo)
+continua pendente. O `uuid.rs` tem reserva própria de relógio para onde não há
+`/dev/urandom`; UUID não é segredo, e fica.

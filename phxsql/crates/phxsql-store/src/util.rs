@@ -452,6 +452,23 @@ impl Pasta {
         self.dir.as_ref()
     }
 
+    /// O dev/inode desta pasta e de cada pasta ACIMA dela, ate a raiz do
+    /// sistema -- pedido 611 (S7). Sobe pelo DESCRITOR (`/proc/self/fd/N/..`,
+    /// `../..`, ...): o nucleo resolve o `N` pela pasta aberta, e nao pelo nome
+    /// que ela tinha, entao a resposta e sobre onde a corrida vai escrever, e
+    /// nao sobre o que o nome aponta agora. Sem descritor, sobe pelo caminho
+    /// real, e a janela da troca fica -- a mesma da [`Pasta`].
+    pub fn ancestrais(&self) -> std::io::Result<Vec<(u64, u64)>> {
+        match &self.dir {
+            #[cfg(unix)]
+            Some(d) => {
+                use std::os::fd::AsRawFd;
+                ancestrais(&Path::new("/proc/self/fd").join(d.as_raw_fd().to_string()))
+            }
+            _ => ancestrais(&self.real),
+        }
+    }
+
     /// O `fstat` do descritor; sem ele, o `lstat` do caminho real.
     pub fn metadados(&self) -> std::io::Result<std::fs::Metadata> {
         match &self.dir {
@@ -575,6 +592,35 @@ impl Nascida {
             _ => false,
         }
     }
+}
+
+/// Teto de niveis de [`ancestrais`]: o `PATH_MAX` do Linux (4096) nao cabe
+/// mais que ~1365 `../`, e uma arvore que nao chega a raiz dentro disso e
+/// laco ou defeito -- recusa em vez de girar.
+const TETO_DE_NIVEIS: usize = 1024;
+
+/// O dev/inode de `inicio` e de cada pasta acima, pelo `..` do NUCLEO (que
+/// nao e o `parent()` lexico: atravessa link e ponto de montagem como o disco
+/// os ve), ate a raiz do sistema, onde `..` e ela mesma. Fora do Unix a `std`
+/// nao da o inode, e a lista volta vazia -- quem confere fica com a
+/// conferencia pelo nome, dita.
+pub fn ancestrais(inicio: &Path) -> std::io::Result<Vec<(u64, u64)>> {
+    let mut vistos: Vec<(u64, u64)> = Vec::new();
+    let mut atual = inicio.to_path_buf();
+    for _ in 0..TETO_DE_NIVEIS {
+        let Some(id) = identidade(&std::fs::metadata(&atual)?) else {
+            return Ok(Vec::new());
+        };
+        if vistos.last() == Some(&id) {
+            return Ok(vistos);
+        }
+        vistos.push(id);
+        atual.push("..");
+    }
+    Err(std::io::Error::other(format!(
+        "{}: mais de {TETO_DE_NIVEIS} pastas acima sem chegar a raiz do sistema",
+        inicio.display()
+    )))
 }
 
 /// O que identifica um arquivo ou pasta para quem o reencontra depois:

@@ -735,14 +735,57 @@ fn conferir_destino(raiz: &Path, destino: &Path, acima_tambem: bool) -> Result<(
             None
         };
         if let Some(relacao) = relacao {
-            return Err(PhxError::Esquema(format!(
-                "o destino do backup {} {relacao} raiz de dados {}: o backup \
-                 iria se misturar com o banco vivo. Escolha uma pasta fora \
-                 da raiz e que nao a contenha",
-                destino.display(),
-                raiz.display()
-            )));
+            return Err(misturado(raiz, destino, relacao));
         }
+    }
+    Ok(())
+}
+
+/// A recusa das duas conferencias do destino -- a do nome
+/// ([`conferir_destino`]) e a do descritor ([`conferir_destino_aberto`]) --,
+/// num lugar so: o usuario recebe a mesma frase, qualquer que tenha pego.
+fn misturado(raiz: &Path, destino: &Path, relacao: &str) -> PhxError {
+    PhxError::Esquema(format!(
+        "o destino do backup {} {relacao} raiz de dados {}: o backup \
+         iria se misturar com o banco vivo. Escolha uma pasta fora \
+         da raiz e que nao a contenha",
+        destino.display(),
+        raiz.display()
+    ))
+}
+
+/// A mesma pergunta de [`conferir_destino`], feita ao DESCRITOR que a
+/// corrida abriu -- pedido 611 (S7).
+///
+/// O [`conferir_destino`] le o nome; o `Pasta::abrir`, depois, segue o nome
+/// de novo (por desenho: o destino e escolha de quem chama). Entre os dois,
+/// trocar um link do caminho fazia o nome conferido ser um e a pasta aberta
+/// outra: medido contra o SO, as copias caiam em `dados/loja/rh/` -- o
+/// schema `rh` dentro do database `loja` (`tests/destino-trocado-na-janela.rs`).
+/// Por isso a conferencia que vale e esta: o dev/inode da pasta ABERTA e o de
+/// cada pasta acima dela (subindo pelo descritor) contra o da raiz, e o da
+/// raiz e de cada pasta acima dela contra o da pasta aberta. A do nome fica
+/// antes, para a recusa comum sair antes de criar pasta nenhuma.
+///
+/// Fora do Linux a `Pasta` nao tem descritor e a subida e pelo nome; fora do
+/// Unix nao ha inode e a lista vem vazia -- fica so a conferencia pelo nome,
+/// com a janela, dita.
+fn conferir_destino_aberto(
+    raiz: &Path,
+    destino: &Path,
+    aberto: &crate::util::Pasta,
+    acima_tambem: bool,
+) -> Result<()> {
+    let do_destino = aberto.ancestrais()?;
+    let da_raiz = crate::util::ancestrais(raiz)?;
+    let (Some(eu), Some(r)) = (do_destino.first(), da_raiz.first()) else {
+        return Ok(());
+    };
+    if do_destino.contains(r) {
+        return Err(misturado(raiz, destino, "fica dentro da"));
+    }
+    if acima_tambem && da_raiz.contains(eu) {
+        return Err(misturado(raiz, destino, "contem a"));
     }
     Ok(())
 }
@@ -917,9 +960,11 @@ fn copiar_arvore(
     // Pedido 568: daqui para dentro o destino se percorre pelo descritor de
     // cada pasta, sem seguir link em componente nenhum. O proprio `destino`
     // e o unico nome que se segue: ele e escolha de quem chama.
-    copias
-        .ancoras
-        .push(Arc::new(crate::util::Pasta::abrir(destino)?));
+    let aberto = crate::util::Pasta::abrir(destino)?;
+    // Pedido 611 (S7): o nome ja foi conferido la em cima, mas quem recebe as
+    // copias e o descritor -- e e ele que se confere, antes da primeira.
+    conferir_destino_aberto(raiz, destino, &aberto, true)?;
+    copias.ancoras.push(Arc::new(aberto));
     let mut ancora_de: BTreeMap<PathBuf, usize> = BTreeMap::new();
     ancora_de.insert(PathBuf::new(), 0);
     let arquivos = listar(raiz)?;
@@ -931,7 +976,7 @@ fn copiar_arvore(
     // o `restaurar` a recusa inteira ("nao e um backup do PhxSql") em vez de
     // confiar num manifesto que mente. So' depois do `listar`: se a leitura
     // da raiz recusa, nenhuma copia mudou e o backup velho continua valendo.
-    invalidar_manifesto_velho(destino)?;
+    invalidar_manifesto_velho(copias)?;
     for arquivo in arquivos {
         let rel = relativo(raiz, &arquivo);
         let dados = std::fs::read(&arquivo)?;
@@ -1002,10 +1047,17 @@ fn entrar_na_pasta(
     Ok(indice)
 }
 
-/// Apaga pelo NOME o `backup.json` que ja estava no destino -- pedido 577.
+/// Apaga o `backup.json` que ja estava no destino -- pedido 577.
 ///
-/// `remove_file` nao segue link nem abre FIFO (pedidos 568/570): se o nome
-/// for um link, some o link e o alvo fica. Um DIRETORIO nesse nome nao e'
+/// Pedido 611 (S6): pela pasta que a corrida ABRIU ([`no_destino`]), e nao
+/// por `destino.join`. Pelo nome, a troca do destino por um link entre o
+/// `Pasta::abrir` e este passo fazia o `remove_file` atravessar o link e
+/// apagar o manifesto de OUTRO backup -- que o `restaurar` passava a recusar
+/// inteiro --, enquanto as copias iam para a pasta aberta. Medido contra o
+/// SO com a troca na janela (`tests/destino-trocado-na-janela.rs`).
+///
+/// `remove_file` nao segue link nem abre FIFO no ULTIMO nome (pedidos
+/// 568/570): se o nome for um link, some o link e o alvo fica. Um DIRETORIO nesse nome nao e'
 /// manifesto de ninguem (o `restaurar` e o `conferir` pedem arquivo) e nao se
 /// apaga -- nada recursivo aqui. A recusa do `remove_file` SOBE: seguir
 /// sobrescrevendo copias com o manifesto velho no lugar e' o defeito que este
@@ -1018,8 +1070,8 @@ fn entrar_na_pasta(
 /// e aquele `fsync` ainda pode devolver o manifesto velho junto de copias ja
 /// sobrescritas -- e o [`conferir`] o acusa pelo SHA. Fechar essa janela pede
 /// o `fsync` sob a trava, ou a remocao antes dela em cada chamador.
-fn invalidar_manifesto_velho(destino: &Path) -> Result<()> {
-    let manifesto = destino.join(MANIFESTO);
+fn invalidar_manifesto_velho(copias: &Copias) -> Result<()> {
+    let manifesto = no_destino(copias, MANIFESTO);
     match std::fs::symlink_metadata(&manifesto) {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
         Err(e) => Err(e.into()),
@@ -1346,6 +1398,39 @@ mod tests {
         let e = crate::sincronia::sincronizar_pasta_sem_abortar(&base, &mae)
             .expect_err("repetir o fsync da pasta que recusou responderia Ok sem o dado");
         assert!(e.to_string().contains("554"), "{e}");
+    }
+
+    /// **Pedido 611 (S7): a conferencia do descritor nao depende do nome.**
+    ///
+    /// Sem corrida: a pasta ABERTA e uma (dentro da raiz, ou acima dela) e o
+    /// nome passado e outro, inocente -- o retrato exato do que a troca na
+    /// janela deixa (a prova com a troca de verdade, contra o SO, esta em
+    /// `tests/destino-trocado-na-janela.rs`). Pelo nome as duas passariam; pelo
+    /// descritor as duas recusam. E o comportamento velho fica: a pasta de
+    /// fora passa, e a acima da raiz passa quando `acima_tambem` e falso (o
+    /// zip).
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn o_destino_se_confere_pelo_que_se_abriu_e_nao_pelo_nome() {
+        let base = temp("destino-611");
+        let raiz = base.join("dados");
+        std::fs::create_dir_all(raiz.join("loja")).unwrap();
+        std::fs::create_dir_all(base.join("fora")).unwrap();
+        let inocente = base.join("fora");
+        let abrir = |p: &Path| crate::util::Pasta::abrir(p).unwrap();
+
+        let e = conferir_destino_aberto(&raiz, &inocente, &abrir(&raiz.join("loja")), true)
+            .expect_err("a pasta aberta fica DENTRO da raiz");
+        assert!(e.to_string().contains("fica dentro da"), "{e}");
+        let e = conferir_destino_aberto(&raiz, &inocente, &abrir(&raiz), false)
+            .expect_err("a pasta aberta E a raiz");
+        assert!(e.to_string().contains("fica dentro da"), "{e}");
+        let e = conferir_destino_aberto(&raiz, &inocente, &abrir(&base), true)
+            .expect_err("a pasta aberta CONTEM a raiz");
+        assert!(e.to_string().contains("contem a"), "{e}");
+
+        conferir_destino_aberto(&raiz, &inocente, &abrir(&inocente), true).unwrap();
+        conferir_destino_aberto(&raiz, &inocente, &abrir(&base), false).unwrap();
     }
 
     /// Pedido 554: o destino que se mistura com a raiz e recusado ANTES de

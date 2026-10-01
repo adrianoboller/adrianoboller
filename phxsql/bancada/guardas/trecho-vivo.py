@@ -469,6 +469,12 @@ dia, nunca no desejado:
   e a ficha compartilhada sem o portao do retrato, que o `RwLock` que
   prefere o escritor deixava parar a leitura (`backup-sem-portao-do-retrato`).
   584 + 2 = 586, contado pelo `--catraca` (585 entradas mais 1 aposentada).
+  **SUBIU para 597 em 01/10/2026** (pedidos 611 e 606): tres guardas -- o
+  manifesto velho apagado pelo nome do destino (`manifesto-velho-apagado-pelo-nome`),
+  o destino conferido so pelo nome e aberto depois pelo descritor
+  (`destino-do-backup-conferido-so-pelo-nome`) e a chave sem `/dev/urandom`
+  saindo da mistura de relogio e PID (`chave-sem-urandom-pela-mistura`).
+  594 + 3 = 597, contado pelo `--catraca` (596 entradas mais 1 aposentada).
 
 # A QUINTA REGUA: a tabela publicada pode ser MENOR que o catalogo
 
@@ -575,7 +581,7 @@ TETO_TESTE_MORTO = 0
 TETO_TRECHO_AMBIGUO = 0
 TETO_TESTE_FORA_DO_BINARIO = 0
 TETO_TESTE_SEM_MODULO = 0
-PISO_DAS_ENTRADAS = 594
+PISO_DAS_ENTRADAS = 597
 
 # ------------------------------------------------------------- APOSENTADAS
 #
