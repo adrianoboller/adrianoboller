@@ -77,6 +77,20 @@ figcaption{display:flex;gap:14px;align-items:baseline;flex-wrap:wrap}
 .moldura a:focus-visible{outline:2px solid var(--acento);outline-offset:2px}
 .falta{padding:40px 16px;text-align:center;color:var(--mudo);font-size:14px}
 footer{grid-column:1/-1;color:var(--mudo);font-size:13px;border-top:1px solid var(--linha);padding-top:16px}
+/* Impressao (o PDF): uma tela por folha, em paisagem, sem o indice lateral. */
+@page{size:A4 landscape;margin:10mm}
+@media print{
+  body{padding:0}
+  .casca{display:block}
+  nav.indice{display:none}
+  main{display:block}
+  section.cap{break-before:page}
+  section.cap>p{margin-bottom:8px}
+  figure{break-inside:avoid}
+  .telas figure+figure{break-before:page}
+  .moldura img{max-height:128mm;width:auto;max-width:100%;margin:0 auto}
+  footer{break-before:page}
+}
 """
 
 
@@ -111,7 +125,8 @@ def main():
         corpo.append(
             f'<section class="cap" id="cap{k}"><h2><span>{k:02d}</span>{e(c["nome"])}</h2>'
             f'<p>{e(c["sub"])}</p><div class="telas">{"".join(figs)}</div></section>')
-    pagina = f"""<title>Telas do PhxSql</title>
+    pagina = f"""<meta charset="utf-8">
+<title>Telas do PhxSql</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Exo+2:wght@600;700&family=Source+Sans+3:wght@400;600&display=swap">
 <style>{ESTILO}</style>
