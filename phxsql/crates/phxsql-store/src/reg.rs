@@ -2002,7 +2002,7 @@ impl RegFile {
     ///
     /// Sem cifra, ou em coluna nao marcada, devolve o proprio conteudo.
     pub fn selar_externo(&self, coluna: u16, dados: &[u8]) -> Vec<u8> {
-        if !self.material.cifrado() || !self.externa_marcada(coluna) || dados.is_empty() {
+        if !self.externo_selado(coluna, dados) {
             return dados.to_vec();
         }
         let mut nonce = [0u8; cifra::XNONCE_LEN];
@@ -2138,9 +2138,32 @@ fn espalhar_faixas(faixas: &[(usize, usize)], payload: &mut [u8], junto: &[u8]) 
 impl RegFile {
     /// Abre o conteudo selado por [`RegFile::selar_externo`].
     pub fn abrir_externo(&self, coluna: u16, guardado: &[u8]) -> Result<Vec<u8>> {
-        if !self.material.cifrado() || !self.externa_marcada(coluna) || guardado.is_empty() {
+        if !self.externo_selado(coluna, guardado) {
             return Ok(guardado.to_vec());
         }
+        self.abrir_selado(coluna, guardado)
+    }
+
+    /// Este conteudo, guardado por ESTE arquivo, esta selado?
+    ///
+    /// E a pergunta que o selar e o abrir fazem, escrita uma vez so: as duas
+    /// copias do mesmo `||` que existiam ate o pedido 344 eram a mesma decisao
+    /// em dois lugares. E ela so vale para o que ESTE arquivo guardou -- quem
+    /// recebe conteudo de outro servidor nao pode responde-la pelo proprio
+    /// estado, porque a cifra de la nao e a daqui. Por isso a imagem de
+    /// replicacao carrega a resposta da ORIGEM junto de cada externo (ver
+    /// `Table::imagem_da_linha`).
+    pub fn externo_selado(&self, coluna: u16, guardado: &[u8]) -> bool {
+        self.material.cifrado() && self.externa_marcada(coluna) && !guardado.is_empty()
+    }
+
+    /// Abre um conteudo que SE SABE selado, sem perguntar ao estado deste
+    /// arquivo se ele selaria.
+    ///
+    /// Existe para a imagem de replicacao, onde quem diz «selado» e a origem:
+    /// passar pelo [`RegFile::abrir_externo`] num arquivo sem cifra devolveria
+    /// o texto cifrado como se fosse o conteudo, sem erro (pedido 344-1).
+    pub fn abrir_selado(&self, coluna: u16, guardado: &[u8]) -> Result<Vec<u8>> {
         if guardado.len() < cifra::XNONCE_LEN {
             return Err(PhxError::Corrompido(format!(
                 "conteudo cifrado da coluna {coluna} sem os {} bytes de nonce",

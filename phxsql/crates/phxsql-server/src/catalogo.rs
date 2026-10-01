@@ -521,7 +521,7 @@ pub const OPERACOES: &[Operacao] = &[
     Operacao {
         nome: "visoes",
         apelidos: &[],
-        resumo: "As visões do banco, com o SQL de cada uma como foi escrito.",
+        resumo: "As visões do banco. O SQL vai inteiro a quem administra o banco ou escreveu a visão, e redigido (cada literal vira ?) a quem só lê.",
         parametros: &[DB],
         exemplo: r#"{"op":"visoes","database":"loja"}"#,
         ferramenta_mcp: false,

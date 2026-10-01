@@ -41,7 +41,9 @@ pub const ARQUIVO: &str = "visoes.json";
 #[derive(Debug, Clone)]
 pub struct Visao {
     pub nome: String,
-    /// O SQL como o autor escreveu -- e o que a listagem devolve verbatim.
+    /// O SQL como o autor escreveu. Verbatim, so a quem o escreveu ou
+    /// administra o database: aos outros a listagem devolve
+    /// [`Visao::para_json_redigida`] (pedido 359).
     pub sql: String,
     pub criado_em: String,
     pub criado_por: String,
@@ -52,6 +54,33 @@ impl Visao {
         Json::objeto(vec![
             ("nome", Json::texto_de(&self.nome)),
             ("sql", Json::texto_de(&self.sql)),
+            ("criado_em", Json::texto_de(&self.criado_em)),
+            ("criado_por", Json::texto_de(&self.criado_por)),
+        ])
+    }
+
+    /// A visao para quem tem so `ler` no database (pedido 359).
+    ///
+    /// # Por que o SQL sai REDIGIDO, e nao omitido nem recortado
+    ///
+    /// O texto guarda o que o autor digitou: `WHERE cpf='52998224725'` traz o
+    /// valor, e o comentario (`-- senha: x`) vem junto. Quem so le o catalogo
+    /// tem direito a FORMA da consulta -- que tabelas e colunas ela usa --, e
+    /// nao ao literal. Recortar dependeria de o literal estar escrito de um
+    /// jeito; analisar acha todos. E o MESMO motor do `perfil.txt` do
+    /// Profiler ([`phxsql_sql::usuario::normalizado`]): cada literal vira `?`,
+    /// o nome entre aspas duplas vira `"***"` (no MySQL(R) aspas duplas sao
+    /// texto), o comentario some porque o lexico o descarta, e o que nao se
+    /// analisa vira o tamanho em bytes. Uma segunda redacao aqui seria a
+    /// decisao escrita duas vezes, e a copia esquecida vazaria.
+    pub fn para_json_redigida(&self) -> Json {
+        Json::objeto(vec![
+            ("nome", Json::texto_de(&self.nome)),
+            (
+                "sql",
+                Json::texto_de(phxsql_sql::usuario::normalizado(&self.sql)),
+            ),
+            ("redigido", Json::Bool(true)),
             ("criado_em", Json::texto_de(&self.criado_em)),
             ("criado_por", Json::texto_de(&self.criado_por)),
         ])

@@ -415,6 +415,12 @@ dia, nunca no desejado:
   (`erro-no-meio-da-exclusao-sem-fsync`). 540 + 4 = 544, contado pelo
   `--catraca`.
   No merge com o 546 e o 534/535 (que levaram o piso a 547): 547 + 4 = 551.
+  **SUBIU para 554 em 01/10/2026** (pedidos 344 e 359): tres guardas -- a
+  replica que decidia pelo proprio cofre se o externo vinha selado
+  (`externo-selado-gravado-como-anexo`), o `replicar` que mandava o externo
+  selado ao fio (`replicar-manda-o-externo-selado`) e a op `visoes` que
+  entregava o literal a quem so le (`visoes-entrega-o-literal`). 551 + 3 =
+  554, contado pelo `--catraca`.
   impedir. Ele e a unica coisa nesta regua que reprova o APAGAMENTO; tudo o
   mais aqui reprova o envelhecimento.
 
@@ -523,7 +529,7 @@ TETO_TESTE_MORTO = 0
 TETO_TRECHO_AMBIGUO = 0
 TETO_TESTE_FORA_DO_BINARIO = 0
 TETO_TESTE_SEM_MODULO = 0
-PISO_DAS_ENTRADAS = 551
+PISO_DAS_ENTRADAS = 554
 
 # ------------------------------------------------------------- APOSENTADAS
 #

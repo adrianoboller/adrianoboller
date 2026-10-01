@@ -21,6 +21,15 @@
 //! que. O achado do pedido 342 nao e nenhuma das duas metades: e que elas
 //! erram para lados opostos, pelo mesmo cano e no mesmo evento, e nunca foram
 //! desenhadas juntas.
+//!
+//! # O que o pedido 344 mudou: o DIARIO sela, o FIO abre
+//!
+//! Selada no fio, a metade externa nao replicava: o sal e por arquivo, e nem a
+//! mesma senha abre o selado de outro `.reg`. Hoje a imagem do DIARIO continua
+//! levando o externo selado -- e diz que selou, pelo bit `EXTERNO_SELADO` --,
+//! e o `replicar` a abre so na resposta (`Table::imagem_para_o_fio`), pelo fio
+//! que o 342 ja exige cifrado. Quem recebe imagem selada recusa NOMEANDO o
+//! motivo, em vez de gravar o texto cifrado como o anexo.
 
 mod comum;
 use std::sync::Mutex;
@@ -29,6 +38,7 @@ use phxsql_core::schema::{Column, IndexColumn, IndexDef, Schema};
 use phxsql_core::types::{ColumnType, DadoPessoal};
 use phxsql_core::value::Value;
 use phxsql_store::cofre;
+use phxsql_store::log::Operacao;
 use phxsql_store::table::Table;
 
 static UM_DE_CADA_VEZ: Mutex<()> = Mutex::new(());
@@ -166,4 +176,131 @@ fn sem_coluna_marcada_a_imagem_e_a_de_sempre() {
 
     cofre::desligar();
     let _ = std::fs::remove_dir_all(&d);
+}
+
+/// O esquema do caso 344: o externo marcado e um `Bin`, onde o texto cifrado
+/// cabe calado (num `Memo` ele ao menos quebraria o UTF-8).
+fn esquema_bin() -> Schema {
+    Schema::new(
+        "laudos",
+        vec![
+            Column::new("id", ColumnType::Int8).obrigatoria(),
+            Column::new("anexo", ColumnType::Bin).com_dado_pessoal(DadoPessoal::Sensivel),
+        ],
+        vec![IndexDef::new("porId", vec![IndexColumn::asc(0)])
+            .unico()
+            .primaria()],
+    )
+    .unwrap()
+}
+
+/// A imagem do DIARIO de uma origem com cofre, e a mesma imagem ABERTA para
+/// o fio. O diretorio da origem sai junto, para a limpeza.
+fn imagens_da_origem(rotulo: &str) -> (Vec<u8>, Vec<u8>, comum::DirTemp) {
+    let d = comum::DirTemp::novo(rotulo);
+    cofre::definir(SENHA, RAPIDO).unwrap();
+    let mut t = Table::criar(&d, esquema_bin()).unwrap();
+    let rowid = t
+        .inserir(&[Value::Int(1), Value::Bin(FICHA.as_bytes().to_vec())])
+        .unwrap();
+    let do_diario = t.imagem_da_linha_do_rowid(rowid).unwrap();
+    let do_fio = t.imagem_para_o_fio(&do_diario).unwrap();
+    (do_diario, do_fio, d)
+}
+
+/// **344, a recusa que NOMEIA.** A imagem do diario -- selada com a chave do
+/// arquivo da origem -- aplicada direto numa replica: sem cofre recusa
+/// dizendo que falta o cofre; com a MESMA senha recusa dizendo que a chave e
+/// outra por construcao, e nunca «o dado foi alterado».
+///
+/// # O vermelho
+///
+/// Antes do selo na imagem, a replica sem cofre gravava os 68 bytes selados
+/// como o anexo e respondia `ok`; a com cofre devolvia o erro do cofre,
+/// «ou o dado foi alterado».
+#[test]
+fn imagem_selada_recusa_nomeando_e_nunca_grava_o_selado() {
+    let _t = UM_DE_CADA_VEZ.lock().unwrap_or_else(|e| e.into_inner());
+    cofre::desligar();
+    let (do_diario, _, d_o) = imagens_da_origem("344-recusa-origem");
+    assert!(
+        !contem(&do_diario, FICHA.as_bytes()),
+        "controle: o diario tinha de levar o anexo selado"
+    );
+
+    // Replica SEM cofre.
+    cofre::desligar();
+    let d_r = comum::DirTemp::novo("344-recusa-sem-cofre");
+    let mut r = Table::criar(&d_r, esquema_bin()).unwrap();
+    let e = match r.aplicar_evento(Operacao::Inclusao, 1, &do_diario) {
+        Ok(_) => panic!(
+            "a replica sem cofre aceitou o anexo selado e guardou {:?}",
+            r.ler(1).unwrap()
+        ),
+        Err(e) => e.to_string(),
+    };
+    assert!(e.contains("anexo") && e.contains("cofre"), "{e}");
+    // Fora da faixa ou ausente: as duas querem dizer que nada se gravou.
+    assert!(
+        r.ler(1).map(|l| l.is_none()).unwrap_or(true),
+        "gravou a linha mesmo recusando"
+    );
+    drop(r);
+
+    // Replica com a MESMA senha.
+    cofre::definir(SENHA, RAPIDO).unwrap();
+    let d_m = comum::DirTemp::novo("344-recusa-mesma-senha");
+    let mut m = Table::criar(&d_m, esquema_bin()).unwrap();
+    let e = match m.aplicar_evento(Operacao::Inclusao, 1, &do_diario) {
+        Ok(_) => panic!("a chave da replica abriu o selado de outro arquivo"),
+        Err(e) => e.to_string(),
+    };
+    assert!(e.contains("sal e por arquivo"), "{e}");
+    assert!(
+        !e.contains("o dado foi alterado"),
+        "acusou adulteracao: {e}"
+    );
+    drop(m);
+
+    cofre::desligar();
+    for d in [&d_o, &d_r, &d_m] {
+        let _ = std::fs::remove_dir_all(d);
+    }
+}
+
+/// **344, o caminho que replica.** A imagem aberta para o fio entra na
+/// replica sem cofre E na com a mesma senha, com o anexo IGUAL -- o conteudo,
+/// nao o veredito.
+#[test]
+fn imagem_aberta_para_o_fio_replica_com_e_sem_cofre() {
+    let _t = UM_DE_CADA_VEZ.lock().unwrap_or_else(|e| e.into_inner());
+    cofre::desligar();
+    let (_, do_fio, d_o) = imagens_da_origem("344-fio-origem");
+    let mut dirs = vec![d_o];
+    for com_cofre in [false, true] {
+        cofre::desligar();
+        if com_cofre {
+            cofre::definir(SENHA, RAPIDO).unwrap();
+        }
+        let d = comum::DirTemp::novo(if com_cofre {
+            "344-fio-com-cofre"
+        } else {
+            "344-fio-sem-cofre"
+        });
+        let mut r = Table::criar(&d, esquema_bin()).unwrap();
+        r.aplicar_evento(Operacao::Inclusao, 1, &do_fio).unwrap();
+        let linha = r.ler(1).unwrap().unwrap();
+        assert_eq!(
+            linha[1],
+            Value::Bin(FICHA.as_bytes().to_vec()),
+            "com_cofre={com_cofre}"
+        );
+        assert_eq!(r.cifrada(), com_cofre);
+        drop(r);
+        dirs.push(d);
+    }
+    cofre::desligar();
+    for d in &dirs {
+        let _ = std::fs::remove_dir_all(d);
+    }
 }
