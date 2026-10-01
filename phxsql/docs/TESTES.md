@@ -1057,11 +1057,13 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `recuperacao-do-embutido-sem-politica` | o embutido que replica completa a marca da queda com a politica do diario PADRAO, e o evento recuperado sai sem imagem | 2 | ✅ provada |
 | `recuperacao-do-schema-sem-politica` | a recuperacao das marcas abre a pasta de cada schema como um `Database` novo, com a politica do diario padrao: o COMMIT completado ali sai sem imagem | 1 | ✅ provada |
 | `check-novo-contra-a-linha-velha` | `acrescentar_coluna` com CHECK que linhas que ja existem violam e aceito, e a tabela fica com duas verdades | 1 | ✅ provada |
+| `backup-copia-sob-a-exclusiva` | O backup copiava com a ficha EXCLUSIVA da trava de dados: a leitura parava a cópia inteira (100 GB = 50 a 64 min sem ler nada) | 1 | ✅ provada |
+| `backup-sem-portao-do-retrato` | A cópia do backup com a ficha COMPARTILHADA e sem o portão do retrato: o primeiro escritor na fila do `RwLock` fazia toda leitura nova esperar a cópia inteira | 1 | ✅ provada |
 | `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | — | 🪦 aposentada (18/09/2026) |
 
-**416 das 591 guardas do catálogo: 1 aposentada, 411 provadas, 4 redundantes** — 12086 s de mutação, medido em 2026-09-16 15:25.
+**418 das 593 guardas do catálogo: 1 aposentada, 413 provadas, 4 redundantes** — 12230 s de mutação, medido em 2026-09-16 15:25.
 
-> **Esta rodada NÃO julgou 176 das 591 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 176 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 176 das 593 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 176 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
 - `fk-antes-do-default` — a chave estrangeira confere a linha crua, e o DEFAULT sem mãe grava a filha órfã
 - `fk-antes-do-default-pelo-servidor` — o DEFAULT e a calculada sem mãe gravam a órfã pelo servidor, fora e dentro da transação

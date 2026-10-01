@@ -3336,6 +3336,22 @@
       "quando": "2026-10-01 05:23"
     },
     {
+      "id": "backup-copia-sob-a-exclusiva",
+      "titulo": "O backup copiava com a ficha EXCLUSIVA da trava de dados: a leitura parava a cópia inteira (100 GB = 50 a 64 min sem ler nada)",
+      "veredito": "PROVADA",
+      "segundos": 74.37,
+      "notas": [],
+      "quando": "2026-10-01 05:46"
+    },
+    {
+      "id": "backup-sem-portao-do-retrato",
+      "titulo": "A cópia do backup com a ficha COMPARTILHADA e sem o portão do retrato: o primeiro escritor na fila do `RwLock` fazia toda leitura nova esperar a cópia inteira",
+      "veredito": "PROVADA",
+      "segundos": 69.69,
+      "notas": [],
+      "quando": "2026-10-01 05:48"
+    },
+    {
       "id": "cifra-do-fio-imposta",
       "titulo": "a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho",
       "veredito": "PROVADA",

@@ -1065,6 +1065,11 @@ pub struct Servidor {
     /// emprestimo: `&Raiz` (N leitores ao mesmo tempo) so alcanca tabela de
     /// LEITURA; `&mut Raiz` (um de cada vez) alcanca a `Instancia` inteira.
     dados: RwLock<Raiz>,
+    /// O portao do retrato -- pedido 513. Durante a copia do backup a
+    /// escrita espera AQUI, antes da fila do `RwLock`, e nao dentro dela:
+    /// escritor na fila faz o leitor novo esperar tambem, e ai a ficha
+    /// compartilhada do backup nao comprava nada. Ver `crate::retrato`.
+    retrato: crate::retrato::PortaoDoRetrato,
     /// Quantos panicos desenrolaram com a trava de dados na mao, e quantos
     /// deles o reparo TERMINOU -- pedido 451.
     ///
@@ -1790,6 +1795,7 @@ impl Servidor {
             sujas: Mutex::new(std::collections::HashSet::new()),
             config,
             dados: RwLock::new(raiz),
+            retrato: crate::retrato::PortaoDoRetrato::default(),
             panicos_na_trava: AtomicU64::new(0),
             reparos_da_trava: AtomicU64::new(0),
             log: Mutex::new(log),
@@ -2186,6 +2192,11 @@ impl Servidor {
             a.esperando_trava();
         }
         let pedida = medindo.then(Instant::now);
+        // O portao do retrato ANTES da fila do `RwLock` (pedido 513): com um
+        // backup copiando, o escritor dorme aqui e nao na fila -- la ele
+        // faria todo leitor novo esperar junto. Dentro do cronometro de
+        // proposito: para quem pediu, e espera pela trava do mesmo jeito.
+        let passagem = self.retrato.passar();
         // O veneno so passa quando o reparo o alcancou -- ver
         // `panicos_na_trava` e o `TravaMedida::drop`, pedido 451.
         let guarda = match self.dados.write() {
@@ -2218,6 +2229,7 @@ impl Servidor {
             servidor: self,
             tomada_no_desenrolar: std::thread::panicking(),
             marca_em_voo: None,
+            _passagem: passagem,
         })
     }
 
@@ -6383,6 +6395,52 @@ impl Servidor {
         quando.min(agora)
     }
 
+    /// A COPIA de um backup -- o protocolo e o agendado passam por aqui, e e
+    /// o UNICO lugar que decide sob que trava ela roda (pedido 513, passo 1).
+    ///
+    /// # Ficha compartilhada, e o portao antes dela
+    ///
+    /// A copia so LE `raiz`; o que ela escreve vai para o destino, e destino
+    /// dentro da raiz e recusado antes do primeiro byte (`backup.rs`). Entao
+    /// basta excluir quem ESCREVE -- e e o portao do retrato que exclui,
+    /// segurando os escritores antes da fila do `RwLock` (`crate::retrato`
+    /// diz por que na fila nao serve). Quem mais tem a ficha compartilhada
+    /// sao o `varrer` e o `coletar_rowids`, que pelo tipo `Legivel` nao
+    /// gravam nada (`docs/CONCORRENCIA.md` §16); o recuo deles para a
+    /// exclusiva espera no portao, como qualquer escritor.
+    ///
+    /// Antes era a ficha EXCLUSIVA a copia inteira: 100 GB eram 50-64 min com
+    /// a LEITURA parada tambem. A escrita continua esperando a copia inteira
+    /// -- tirar a escrita da espera e o passo 2 do 513.
+    ///
+    /// # A reentrancia, ANTES do portao
+    ///
+    /// Uma thread com a ficha exclusiva na mao esta na conta do portao: se
+    /// ela fechasse o portao, esperaria a si mesma para sempre. A pergunta
+    /// vem antes, e vira o mesmo erro comum da `COM_A_TRAVA`.
+    ///
+    /// # O gancho de teste tem nome PROPRIO
+    ///
+    /// O `despachar` arma o panico de teste pelo nome da OPERACAO, antes de
+    /// qualquer trava. Com o gancho chamado `backup`, a pausa da prova do 513
+    /// disparava ali, com trava nenhuma na mao -- e a escrita passava em 1 ms.
+    fn copiar_o_retrato<T>(
+        &self,
+        #[allow(unused_variables)] gancho: &str,
+        copiar: impl FnOnce() -> Result<T>,
+    ) -> Result<T> {
+        if COM_A_TRAVA.with(std::cell::Cell::get) {
+            return Err(trava_reentrante());
+        }
+        let _retrato = self.retrato.tirar_retrato();
+        let _trava = self.travar_dados_para_ler()?;
+        // So nos testes: o panico (pedido 502) ou a pausa (pedido 513) com a
+        // ficha da copia na mao.
+        #[cfg(test)]
+        self.armar_panico_de_teste(gancho);
+        copiar()
+    }
+
     fn rodar_backup_agendado(&self, quando: i64) -> Result<String> {
         let b = &self.config.backup;
         // O `fsync` (e o manifesto/rename final) saem da trava (pedido
@@ -6394,14 +6452,11 @@ impl Servidor {
         // O zip volta com o descritor de quem o escreveu (pedido 552), e e
         // nele que o `finalizar_zip` sincroniza -- por isso viaja inteiro, e
         // nao so o caminho.
-        let (destino, r, a_sincronizar, zip) = {
-            let _trava = self.travar_dados()?;
-            // So nos testes: o panico COM a trava de escrita na mao (pedido
-            // 502) -- o que abortava o processo quando o backup rodava na
-            // thread de servico.
-            #[cfg(test)]
-            self.armar_panico_de_teste("backup_agendado");
-            if b.zip {
+        // A trava da copia e decidida no `copiar_o_retrato`, o MESMO do
+        // `op_backup` -- e la que mora o gancho de teste do panico (pedido
+        // 502), agora com a ficha COMPARTILHADA na mao (pedido 513).
+        let (destino, r, a_sincronizar, zip) = self.copiar_o_retrato("backup_agendado", || {
+            Ok(if b.zip {
                 let (zip, r) = phxsql_store::backup::executar_zip(
                     &self.config.base,
                     &b.destino,
@@ -6417,8 +6472,8 @@ impl Servidor {
                 let (r, a_sincronizar) =
                     phxsql_store::backup::executar(&self.config.base, &pasta, quando)?;
                 (pasta, r, Some(a_sincronizar), None)
-            }
-        };
+            })
+        })?;
         if let Some(a_sincronizar) = a_sincronizar {
             phxsql_store::backup::concluir(&destino, quando, &r, &a_sincronizar)?;
         } else if let Some(zip) = &zip {
@@ -19353,6 +19408,10 @@ impl Servidor {
             Some((_, PanicoDeTeste::Aqui)) => {
                 panic!("panico de teste em {op}");
             }
+            Some((_, PanicoDeTeste::Pausa(quanto, aviso))) => {
+                eprintln!("{aviso}");
+                std::thread::sleep(quanto);
+            }
             None => {}
         }
     }
@@ -24126,7 +24185,8 @@ impl Servidor {
         );
     }
 
-    /// Copia de seguranca, com a trava de dados segurada do inicio ao fim.
+    /// Copia de seguranca: a escrita espera a copia inteira, a leitura nao
+    /// (pedido 513 -- ver [`Servidor::copiar_o_retrato`]).
     ///
     /// `"zip": true` faz um arquivo unico chamado
     /// `Banco_Admin_Data_HoraMin.zip`, com o manifesto dentro. Sem isso,
@@ -24148,16 +24208,15 @@ impl Servidor {
             sessao.login().to_string()
         };
 
-        // A trava fica presa a COPIA inteira -- e o que "consistente" quer
-        // dizer sem transacao: nenhuma escrita acontece no meio. O `fsync`
-        // (e o manifesto/rename final) NAO ficam: so tocam o destino, nunca
-        // leem `raiz`, e a catraca `alcancam-fsync-2` proibe alcancar
-        // `sync_all` com a trava na mao (pedido 513/524). UM bloco de trava
-        // so, como sempre -- ver a nota do modulo em `backup.rs`, condicoes
-        // C1 e C2.
-        let (caminho_zip, r, a_sincronizar) = {
-            let _trava = self.travar_dados()?;
-            if em_zip {
+        // O retrato vale a COPIA inteira -- e o que "consistente" quer dizer
+        // sem transacao: nenhuma escrita acontece no meio. Quem decide sob
+        // que trava e o `copiar_o_retrato`, o MESMO do backup agendado. O
+        // `fsync` (e o manifesto/rename final) ficam FORA: so tocam o
+        // destino, nunca leem `raiz`, e a catraca `alcancam-fsync-2` proibe
+        // alcancar `sync_all` com a trava na mao (pedido 513/524) -- ver a
+        // nota do modulo em `backup.rs`, condicoes C1 e C2.
+        let (caminho_zip, r, a_sincronizar) = self.copiar_o_retrato("backup_copia", || {
+            Ok(if em_zip {
                 let (caminho, r) = phxsql_store::backup::executar_zip(
                     &self.config.base,
                     std::path::Path::new(&destino),
@@ -24173,8 +24232,8 @@ impl Servidor {
                     quando,
                 )?;
                 (None, r, Some(a_sincronizar))
-            }
-        };
+            })
+        })?;
         if let Some(a_sincronizar) = a_sincronizar {
             phxsql_store::backup::concluir(
                 std::path::Path::new(&destino),
@@ -30300,8 +30359,13 @@ enum PanicoDeTeste {
     /// conexao desenrola tomando a trava de novo (M2).
     ForaDaTrava,
     /// O panico no proprio gancho, onde quer que ele esteja -- no backup
-    /// agendado, com a trava de ESCRITA na mao (pedido 502).
+    /// agendado, com a ficha da copia na mao (pedidos 502 e 513).
     Aqui,
+    /// A PAUSA no proprio gancho, pelo tempo dado, dizendo o texto no erro
+    /// padrao -- a copia LENTA do backup, com a ficha dela na mao (pedido
+    /// 513). Com prazo, e nao sem fim: o servidor de teste tem de terminar
+    /// sozinho mesmo se ninguem o matar.
+    Pausa(Duration, &'static str),
 }
 
 /// Desliga o `relogio_de_jobs` quando a thread do relogio sai -- o irmao do
@@ -30748,6 +30812,12 @@ struct TravaMedida<'a> {
     /// ainda existir quando o `Drop` roda: um registro com guarda propria,
     /// declarada depois da trava, cairia ANTES dela no desenrolar.
     marca_em_voo: Option<MarcaEmVoo>,
+    /// A passagem pelo portao do retrato (pedido 513). O ULTIMO campo de
+    /// proposito: campo cai na ordem da declaracao, depois do corpo do
+    /// `Drop`, e assim ela so sai da conta quando o guard de ESCRITA ja
+    /// caiu. Antes dele, o backup acharia a conta zerada com um escritor
+    /// ainda segurando a ficha exclusiva.
+    _passagem: crate::retrato::Passagem<'a>,
 }
 
 /// A marca do `COMMIT` em voo numa [`TravaMedida`] -- pedido 451.
@@ -45598,7 +45668,7 @@ mod testes_janela_e_cadeia {
         }
     }
 
-    /// A catraca do ALCANCE da ficha compartilhada: **DUAS** operacoes a tomam.
+    /// A catraca do ALCANCE da ficha compartilhada: **TRES** chamadas a tomam.
     ///
     /// A decisao do dono era «so o `varrer`», e a segunda leva entrou MEDIDA
     /// (15/09/2026): o `coletar_rowids`, o substrato do `UPDATE`/`DELETE` por
@@ -45607,6 +45677,14 @@ mod testes_janela_e_cadeia {
     /// escrita** -- entao ele nao consegue ter a varredura de escrita escondida
     /// que esta catraca existe para achar (a trilha de dado pessoal, o espelho,
     /// a criacao do `.trash`), e devolve so' rowids, nenhum valor de coluna.
+    ///
+    /// A terceira entrou MEDIDA em 01/10/2026 (pedido 513): a COPIA do backup,
+    /// pelo `copiar_o_retrato` -- uma chamada so para o protocolo e o
+    /// agendado. A medicao que a admitiu: ela nao abre tabela nenhuma (le os
+    /// arquivos de `raiz` byte a byte), e o que ela escreve vai para o
+    /// destino, que `backup::executar`/`executar_zip` recusam dentro da raiz
+    /// antes do primeiro byte. Quem a acompanha e o portao do retrato, que
+    /// tira os escritores da fila (`crate::retrato`).
     ///
     /// Sem esta catraca, a proxima leva entra por distracao: `op_ler`,
     /// `op_buscar` e `op_sistabelas` sao todas leituras e todas parecem obvias
@@ -45627,13 +45705,14 @@ mod testes_janela_e_cadeia {
             .filter(|l| l.contains(&agulha))
             .count();
         assert_eq!(
-            usos, 2,
-            "ha {usos} operacoes tomando a ficha compartilhada, e as medidas \
-             sao DUAS -- o `varrer` e o `coletar_rowids`, os dois provados \
-             so'-leitura pelo tipo `Legivel`. Uma terceira entra MEDIDA: cada \
-             operacao nova precisa da propria varredura de escrita escondida \
-             (a trilha de dado pessoal, o espelho, a criacao do .trash) achada \
-             antes"
+            usos, 3,
+            "ha {usos} chamadas tomando a ficha compartilhada, e as medidas \
+             sao TRES -- o `varrer` e o `coletar_rowids`, os dois provados \
+             so'-leitura pelo tipo `Legivel`, e a copia do backup \
+             (`copiar_o_retrato`, pedido 513), que nao abre tabela e escreve \
+             so fora da raiz. Uma quarta entra MEDIDA: cada operacao nova \
+             precisa da propria varredura de escrita escondida (a trilha de \
+             dado pessoal, o espelho, a criacao do .trash) achada antes"
         );
     }
 
@@ -64876,6 +64955,10 @@ mod testes_do_panico_sob_a_trava {
     /// quando PAROU no meio da cascata -- e o pai so mata depois de ler isto.
     const PAUSA_540: &str = "PHXSQL pausa de teste no meio da cascata solta (pedido 540)";
 
+    /// O que o filho do cenario `backup_pausado` diz quando a copia do backup
+    /// agendado PAROU com a ficha na mao (pedido 513).
+    const PAUSA_513: &str = "PHXSQL pausa de teste na copia do backup (pedido 513)";
+
     /// Sobe o FILHO: este mesmo binario de testes, reexecutado so no
     /// [`filho_do_panico_451`], com o cenario pedido.
     ///
@@ -65958,8 +66041,10 @@ mod testes_do_panico_sob_a_trava {
         );
     }
 
-    /// **502 (c): o backup agendado em panico com a trava de ESCRITA na mao
-    /// vira backup que FALHOU, e o servidor fica de pe.**
+    /// **502 (c): o backup agendado em panico com a ficha da copia na mao
+    /// vira backup que FALHOU, e o servidor fica de pe.** Desde o 513 a
+    /// ficha e a COMPARTILHADA, e o panico tem de religar a escrita tambem:
+    /// o `ping` passa de qualquer jeito, entao a prova grava depois.
     ///
     /// Com o defeito (o backup na propria thread `backup-agendado`): `SIGABRT`
     /// na primeira volta. Com o conserto: a falha sai no erro padrao, com o
@@ -65978,6 +66063,12 @@ mod testes_do_panico_sob_a_trava {
         }
         let erro = esperar_texto(Duration::from_secs(5), "PANICO", || diagnostico(&dir));
         let servindo = pedir(porta, r#""op":"ping""#);
+        // O portao do retrato (pedido 513) religado pelo `Drop` no
+        // desenrolar: sem ele, esta gravacao esperaria para sempre.
+        let gravou = pedir(
+            porta,
+            r#""op":"inserir","database":"loja","tabela":"carga","valores":{"n":1}"#,
+        );
         let _ = filho.kill();
         let _ = filho.wait();
         assert!(
@@ -65985,30 +66076,41 @@ mod testes_do_panico_sob_a_trava {
             "o panico do backup nao virou falha dita: {erro}"
         );
         ok(servindo, "o servidor de pe depois do panico do backup");
+        ok(gravou, "a escrita depois do panico do backup");
     }
 
     /// **502 (d): o backup que derrubou o processo NAO roda de novo no
     /// arranque.** O irmao do (b), pela lapide no destino.
+    ///
+    /// A queda era o `abort` do reparo que falha (H5), com o backup segurando
+    /// a ficha EXCLUSIVA. Desde o 513 a copia segura a COMPARTILHADA, que nao
+    /// grava nada e por isso nao tem reparo a fazer -- e o processo cai por
+    /// `SIGKILL` no meio da copia, que e a queda de verdade que a lapide
+    /// existe para lembrar. Com o defeito (sem lapide), o segundo arranque
+    /// para de novo na pausa, e o aviso dela aparece.
     #[cfg(unix)]
     #[test]
     fn corrida_de_backup_que_derrubou_o_processo_nao_roda_de_novo_no_arranque() {
         let dir = DirTemp::novo("panico-502-lapide-backup");
-        let (mut filho, porta) = subir_filho(&dir, "backup_reparo_falha");
-        let st = fim_do_filho(&mut filho, Duration::from_secs(10))
-            .unwrap_or_else(|| panic!("o reparo que falha tinha de derrubar (H5)"));
-        caiu_pelo_abort(st, &dir, porta);
+        let (mut filho, _porta) = subir_filho(&dir, "backup_pausado");
+        let parou = esperar_texto(Duration::from_secs(10), PAUSA_513, || diagnostico(&dir));
+        let _ = filho.kill();
+        let _ = filho.wait();
+        assert!(
+            parou.contains(PAUSA_513),
+            "o backup agendado nunca chegou a copia: {parou}"
+        );
 
-        let (mut filho, porta) = subir_de_novo(&dir, "backup_reparo_falha");
-        if let Some(st) = fim_do_filho(&mut filho, Duration::from_secs(3)) {
-            panic!(
-                "LACO DE QUEDAS: o backup que derrubou o processo rodou DE NOVO no \
-                 arranque e derrubou outra vez ({st:?}): {}",
-                diagnostico(&dir)
-            );
-        }
+        let (mut filho, porta) = subir_de_novo(&dir, "backup_pausado");
+        let segundo = esperar_texto(Duration::from_secs(3), PAUSA_513, || diagnostico(&dir));
         let servindo = pedir(porta, r#""op":"ping""#);
         let _ = filho.kill();
         let _ = filho.wait();
+        assert!(
+            !segundo.contains(PAUSA_513),
+            "LACO DE QUEDAS: o backup que derrubou o processo rodou DE NOVO no \
+             arranque: {segundo}"
+        );
         ok(servindo, "o servidor de pe no segundo arranque");
         assert!(
             diagnostico(&dir).contains("nunca terminou"),
@@ -66060,11 +66162,14 @@ mod testes_do_panico_sob_a_trava {
                 *s.panico_de_teste_na_op.lock().unwrap() =
                     Some(("backup_agendado".into(), PanicoDeTeste::Aqui));
             }
-            "backup_reparo_falha" => {
+            // Pedido 513: a copia do backup agendado PARA com a ficha na mao,
+            // e o pai mata o processo por `SIGKILL` no meio dela.
+            "backup_pausado" => {
                 loja_por_dentro(&s);
-                s.reparo_falha_de_teste.store(true, Ordering::SeqCst);
-                *s.panico_de_teste_na_op.lock().unwrap() =
-                    Some(("backup_agendado".into(), PanicoDeTeste::Aqui));
+                *s.panico_de_teste_na_op.lock().unwrap() = Some((
+                    "backup_agendado".into(),
+                    PanicoDeTeste::Pausa(Duration::from_secs(50), PAUSA_513),
+                ));
             }
             "reparo_falha" => {
                 s.reparo_falha_de_teste.store(true, Ordering::SeqCst);
@@ -68802,5 +68907,218 @@ mod testes_do_rebaixar_sem_disco {
         let motivos = s.rodada_do_arbitro(&estado, crate::agora_ms());
         assert_eq!(estado.papel(), PapelVivo::Replica);
         assert!(!diz_que_nao_gravou(&motivos), "{motivos:?}");
+    }
+}
+
+/// Pedido 513, passo 1: a copia do backup nao para a LEITURA, e continua
+/// parando a ESCRITA -- provado pelo soquete, na porta de dados de producao.
+///
+/// A copia lenta e a pausa de teste no gancho da copia
+/// (`PanicoDeTeste::Pausa`), com a ficha dela na mao: e o que um backup de
+/// 100 GB faz durante 50 minutos, comprimido em 1,5 s.
+#[cfg(test)]
+mod testes_do_retrato_do_backup {
+    use super::*;
+    use crate::apoio_teste::{DirTemp, Ligacao};
+
+    /// Quanto a copia fica parada com a ficha na mao.
+    const PAUSA: Duration = Duration::from_millis(1500);
+
+    fn falar(porta: u16, corpo: &str) -> Json {
+        let corpo: String = corpo.split_whitespace().collect::<Vec<_>>().join(" ");
+        let r = Ligacao::nova(porta)
+            .pedir(&format!("{{\"token\":\"t\",{corpo}}}"))
+            .unwrap_or_else(|| panic!("a conexao caiu sem resposta: {corpo}"));
+        let j = Json::analisar(&r).unwrap_or_else(|e| panic!("resposta ilegivel {r:?}: {e}"));
+        assert!(j.booleano_ou("ok", false), "{corpo}: {r}");
+        j.campo("resultado").cloned().unwrap_or(j)
+    }
+
+    /// O `.reg` da tabela, achado andando a arvore -- o lugar exato dele e do
+    /// formato, e esta prova nao depende disso.
+    fn achar_reg(raiz: &std::path::Path, nome: &str) -> Option<std::path::PathBuf> {
+        for e in std::fs::read_dir(raiz).ok()?.flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                if let Some(a) = achar_reg(&p, nome) {
+                    return Some(a);
+                }
+            } else if p.file_name().is_some_and(|n| n == nome) {
+                return Some(p);
+            }
+        }
+        None
+    }
+
+    /// **A leitura feita durante o backup NAO espera a copia, mesmo com um
+    /// escritor esperando; a escrita espera, e o retrato nao a contem.**
+    ///
+    /// Os dois defeitos que esta prova derruba, cada um com a sua guarda no
+    /// catalogo: a copia sob a ficha EXCLUSIVA (o de antes -- a leitura
+    /// espera a pausa inteira) e a ficha compartilhada SEM o portao do
+    /// retrato (a H2 ingenua -- o escritor na fila do `RwLock` faz a leitura
+    /// nova esperar junto). Por isso o escritor entra ANTES da leitura: lendo
+    /// antes de gravar, a H2 ingenua passaria por engano.
+    #[test]
+    fn a_leitura_nao_espera_o_backup_e_a_escrita_espera() {
+        let dir = DirTemp::novo("retrato-513");
+        let destino = dir.with_file_name(format!(
+            "{}-backup",
+            dir.file_name().unwrap().to_string_lossy()
+        ));
+        let _ = std::fs::remove_dir_all(&destino);
+        let mut c = Config {
+            base: dir.to_path_buf(),
+            log_acessos: dir.join("acessos.log"),
+            blacklist: dir.join("blacklist.json"),
+            dblink: dir.join("dblink.json"),
+            jobs: dir.join("jobs.json"),
+            token: "t".into(),
+            ..Config::default()
+        };
+        c.cifra_fio.exigir = false;
+        let s = Arc::new(Servidor::novo(c).unwrap());
+        let ouvinte = TcpListener::bind("127.0.0.1:0").unwrap();
+        let porta = ouvinte.local_addr().unwrap().port();
+        let fio = {
+            let s = Arc::clone(&s);
+            std::thread::spawn(move || s.aceitar_ate_mandarem_parar(&ouvinte))
+        };
+
+        falar(porta, r#""op":"criar_database","database":"loja""#);
+        falar(
+            porta,
+            r#""op":"criar_tabela","database":"loja","tabela":"clientes",
+               "colunas":[{"nome":"id","tipo":"Int8","obrigatoria":true},
+                          {"nome":"nome","tipo":"Str(20)"}],
+               "indices":[{"nome":"porId","colunas":["id"],"unico":true}]"#,
+        );
+        for id in 1..=5 {
+            falar(
+                porta,
+                &format!(
+                    r#""op":"inserir","database":"loja","tabela":"clientes",
+                       "valores":{{"id":{id},"nome":"C{id}"}}"#
+                ),
+            );
+        }
+        // A primeira leitura depois das gravacoes CURA o cabecalho do `.log`,
+        // que so vai a disco no `sincronizar` (a janela `por_lote`): ate la a
+        // ficha compartilhada recusa abrir a tabela e o `varrer` recua para a
+        // exclusiva. Durante um backup esse recuo ESPERA a copia -- e o limite
+        // medido do passo 1, escrito no MANUAL §11: so a tabela gravada na
+        // ultima janela antes do backup paga. Aqui a cura vem antes, para a
+        // prova medir o portao e nao a janela.
+        falar(
+            porta,
+            r#""op":"varrer","database":"loja","tabela":"clientes","max":1"#,
+        );
+        let reg = achar_reg(&dir, "clientes.reg").expect("o .reg da tabela");
+        let antes = std::fs::metadata(&reg).unwrap().len();
+
+        // O gancho NAO tem o nome da operacao: o `despachar` arma pelo nome
+        // da op ANTES de qualquer trava, e a pausa ali pararia so a conexao
+        // -- a prova passaria por engano, ou cairia pelo motivo errado.
+        *s.panico_de_teste_na_op.lock().unwrap() = Some((
+            "backup_copia".into(),
+            PanicoDeTeste::Pausa(PAUSA, "pausa de teste na copia do backup (pedido 513)"),
+        ));
+        let backup = {
+            let d = destino.display().to_string();
+            std::thread::spawn(move || {
+                falar(porta, &format!(r#""op":"backup","destino":"{d}""#));
+            })
+        };
+        // A arma sai do campo quando a copia a dispara: dali em diante a
+        // ficha da copia esta na mao e a pausa correndo. Prazo de 10 s.
+        let ate = Instant::now() + Duration::from_secs(10);
+        while s.panico_de_teste_na_op.lock().unwrap().is_some() {
+            assert!(Instant::now() < ate, "a copia do backup nunca comecou");
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        let pausou = Instant::now();
+
+        let escrita = std::thread::spawn(move || {
+            let t = Instant::now();
+            falar(
+                porta,
+                r#""op":"inserir","database":"loja","tabela":"clientes",
+                   "valores":{"id":6,"nome":"C6"}"#,
+            );
+            t.elapsed()
+        });
+        // O escritor chega primeiro e fica esperando -- e e com ele esperando
+        // que a leitura tem de passar.
+        std::thread::sleep(Duration::from_millis(150));
+        let t = Instant::now();
+        let pagina = falar(
+            porta,
+            r#""op":"varrer","database":"loja","tabela":"clientes","max":100"#,
+        );
+        let leitura = t.elapsed();
+        let restava = PAUSA.saturating_sub(pausou.elapsed());
+
+        let espera_da_escrita = escrita.join().unwrap();
+        backup.join().unwrap();
+        let depois = falar(
+            porta,
+            r#""op":"varrer","database":"loja","tabela":"clientes","max":100"#,
+        );
+        let conferido = falar(
+            porta,
+            &format!(
+                r#""op":"conferir_backup","destino":"{}""#,
+                destino.display()
+            ),
+        );
+        let copiado =
+            achar_reg(&destino, "clientes.reg").map(|p| std::fs::metadata(p).unwrap().len());
+
+        s.parar_de_aceitar.store(true, Ordering::SeqCst);
+        let _ = TcpStream::connect(("127.0.0.1", porta));
+        let _ = fio.join();
+        let _ = std::fs::remove_dir_all(&destino);
+
+        eprintln!(
+            "513: leitura durante o backup {} ms, escrita {} ms (pausa {} ms)",
+            leitura.as_millis(),
+            espera_da_escrita.as_millis(),
+            PAUSA.as_millis()
+        );
+        assert!(
+            leitura < PAUSA / 4,
+            "a leitura ESPEROU o backup: {leitura:?} com a copia parada {PAUSA:?} \
+             (restavam {restava:?} quando ela terminou)"
+        );
+        let linhas = |j: &Json| j.escrever().matches("\"C").count();
+        assert_eq!(
+            linhas(&pagina),
+            5,
+            "a leitura do meio do backup viu a escrita que devia estar \
+             esperando: {}",
+            pagina.escrever()
+        );
+        assert!(
+            espera_da_escrita >= PAUSA / 2,
+            "a escrita NAO esperou a copia: {espera_da_escrita:?} com a copia \
+             parada {PAUSA:?}"
+        );
+        assert_eq!(
+            linhas(&depois),
+            6,
+            "a escrita se perdeu: {}",
+            depois.escrever()
+        );
+        assert!(
+            conferido.booleano_ou("integro", false),
+            "o backup nao confere: {}",
+            conferido.escrever()
+        );
+        assert_eq!(
+            copiado,
+            Some(antes),
+            "o retrato tem o .reg de outro instante: a escrita entrou no meio \
+             da copia"
+        );
     }
 }

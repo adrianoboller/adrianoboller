@@ -3550,14 +3550,27 @@ COM O SERVIDOR NO AR
 
 O QUE "CONSISTENTE" QUER DIZER AQUI
 
-    Nao ha transacoes, entao consistente quer dizer uma coisa precisa:
-    NENHUMA ESCRITA ACONTECE DURANTE A COPIA. A operacao "backup" segura a
-    trava unica de dados do inicio ao fim, e como toda escrita passa por essa
-    mesma trava, nao ha registro pela metade.
+    Consistente quer dizer uma coisa precisa: NENHUMA ESCRITA ACONTECE
+    DURANTE A COPIA. Toda escrita (inclusive o COMMIT inteiro) passa pela
+    trava unica de dados, e enquanto o backup copia ela espera -- entao nao
+    ha registro pela metade nem commit pela metade no retrato.
+
+    A LEITURA NAO ESPERA (pedido 513, desde 01/10/2026). A copia segura a
+    trava em modo de leitura, e a escrita que chega espera num portao ANTES
+    da fila da trava -- senao o primeiro escritor na fila faria toda leitura
+    nova esperar junto. Medido pelo soquete com a copia parada 1,5 s e um
+    escritor esperando: a grade respondeu em 1 ms (era 1.358 ms); a escrita
+    esperou 1.506 ms, como antes.
+
+    O limite, medido: a grade de uma tabela gravada na ultima janela de
+    durabilidade (recursos.lote_milissegundos) antes do backup ainda
+    precisa curar o cabecalho do diario, e essa primeira leitura espera a
+    copia terminar. As demais nao esperam.
 
     E menos do que um snapshot de verdade: uma escrita longa faz o backup
-    esperar, e o backup faz a escrita esperar. E o que da para prometer sem
-    mentir enquanto nao houver commit.
+    esperar, e o backup faz a escrita esperar a copia inteira. Tirar a
+    escrita da espera (copiar sem trava e acertar no fim, como o
+    mariabackup) e o passo 2 do pedido 513, ainda nao feito.
 
     Pela linha de comando NAO ha essa garantia -- ela nao segura trava
     nenhuma. Com o servidor no ar, use a operacao.

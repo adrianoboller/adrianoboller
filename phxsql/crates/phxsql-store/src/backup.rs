@@ -11,12 +11,17 @@
 //! # Consistencia
 //!
 //! "Consistente" aqui quer dizer uma coisa precisa: **nenhuma escrita acontece
-//! durante a copia**. Quem chama segura a trava unica de dados do inicio ao
-//! fim, e como toda escrita passa por essa mesma trava, nao ha registro pela
-//! metade no meio do caminho.
+//! durante a copia**. Quem chama exclui todo ESCRITOR do inicio ao fim, e como
+//! toda escrita passa pela trava unica de dados, nao ha registro pela metade
+//! no meio do caminho.
+//!
+//! Desde o pedido 513 (passo 1) o servidor faz isso com a ficha de LEITURA da
+//! trava mais o portao do retrato (`phxsql-server`, `retrato.rs`): o leitor
+//! continua andando durante a copia, e so o escritor espera. Este modulo nao
+//! sabe de trava nenhuma -- ele so le `raiz` e escreve no destino, fora dela.
 //!
 //! E menos do que um snapshot de verdade -- uma escrita longa faz o backup
-//! esperar, e o backup faz a escrita esperar.
+//! esperar, e o backup faz a escrita esperar a copia inteira.
 //!
 //! # E a transacao, que passou a existir, nao muda isto
 //!
@@ -40,8 +45,8 @@
 //!
 //! # Escrever e sincronizar sao DOIS passos, de proposito -- pedido 524/513
 //!
-//! Quem chama segura `travar_dados()` do inicio ao fim da COPIA (ela le
-//! `raiz`, e e isso que a trava protege). O `fsync`, que so' toca o DESTINO
+//! Quem chama segura a trava de dados (a ficha de leitura, desde o 513) do
+//! inicio ao fim da COPIA (ela le `raiz`, e e isso que a trava protege). O `fsync`, que so' toca o DESTINO
 //! e nao le `raiz` nenhuma, nao precisa da trava -- e a catraca
 //! `alcancam-fsync-2` (`bancada/concorrencia/mapa-da-trava.py`) e quem cobra
 //! isso: ela conta secoes que alcancam `sync_all` com a trava na mao, e SO'
