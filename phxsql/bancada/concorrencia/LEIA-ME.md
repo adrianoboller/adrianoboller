@@ -67,7 +67,9 @@ um bloco por rótulo (`antes`, `depois`, `sem-teto`), cada um com a data.
 **A catraca do mapa e a unica coisa desta pasta que roda sozinha**, como item 0
 da `bancada/bateria/prova-bateria.py` -- antes de qualquer servidor subir,
 porque e estatica. Ela guarda tres tetos: `codigo-do-dono` (5),
-`alcancam-fsync-2` (23) e `rede-ou-espera` (0). SO DESCE: medir mais reprova
+`alcancam-fsync-2` (23) e `rede-ou-espera-2` (11 -- substitui a `rede-ou-espera`,
+teto 0, aposentada em 01/10/2026 quando a regua aprendeu a ver `Condvar::wait`
+e a chamada `modulo::funcao(`; pedido 627). SO DESCE: medir mais reprova
 porque alguem acrescentou o que a lei proibe, e medir MENOS tambem reprova,
 porque quem melhorou baixa o teto no mesmo commit.
 

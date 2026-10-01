@@ -622,6 +622,10 @@ dia, nunca no desejado:
   coluna negada lida (`calculada-derivada-de-negada-se-le`) e a recusa que
   diz a linha sobre a marcada (`recusa-da-calculada-marcada-diz-a-linha`).
   664 + 4, medido pelo `--numeros` nesta arvore.
+  **SUBIU para 685 em 01/10/2026** (683 + 2; pedido 629, SEC M1): a espera
+  de fora da tabela que nasce que so lia o campo `tabela`
+  (`espera-de-fora-so-le-o-campo-tabela-629`) e a espera de dentro da trava
+  sem prazo (`espera-de-dentro-sem-prazo-629`). Medido pelo `--numeros`.
 
 # A QUINTA REGUA: a tabela publicada pode ser MENOR que o catalogo
 
@@ -728,7 +732,7 @@ TETO_TESTE_MORTO = 0
 TETO_TRECHO_AMBIGUO = 0
 TETO_TESTE_FORA_DO_BINARIO = 0
 TETO_TESTE_SEM_MODULO = 0
-PISO_DAS_ENTRADAS = 683
+PISO_DAS_ENTRADAS = 685
 
 # ------------------------------------------------------------- APOSENTADAS
 #

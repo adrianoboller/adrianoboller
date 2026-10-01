@@ -68,6 +68,16 @@ pub enum PhxError {
     /// inteiro enquanto a reescrita corre. So a gravacao espera, e por isso
     /// `adianta_repetir` e verdadeiro.
     EmMigracao(String),
+    /// A tabela (ou a pasta dela) acabou de ser criada por outra operacao e
+    /// ainda vai ao disco -- pedido 605 --, e a espera por ela COM a trava
+    /// global na mao passou do prazo (pedido 629).
+    ///
+    /// Primo do `EmCarga` e do `EmMigracao`, e separado deles pelo motivo de
+    /// sempre: quem esbarra precisa saber o que segura a tabela. Aqui e o
+    /// `fsync` da pasta de quem a criou, que termina sozinho em milissegundos
+    /// num disco sao -- por isso `adianta_repetir` e verdadeiro. Esperar mais
+    /// la dentro faria um `fsync` lento parar o servidor inteiro.
+    Nascendo(String),
     /// Credencial invalida ou poder insuficiente.
     Autorizacao(String),
     /// Valor excede o limite fisico do formato.
@@ -193,6 +203,7 @@ impl PhxError {
             PhxError::SpareEmEspera(_) => 4004,
             PhxError::EmTransacao(_) => 4005,
             PhxError::EmMigracao(_) => 4006,
+            PhxError::Nascendo(_) => 4007,
             PhxError::Io(_) => 5001,
             // Familia SISTEMA: o problema esta no ESTADO do sistema de
             // arquivos (duas fontes de configuracao presentes), nao no
@@ -225,6 +236,7 @@ impl PhxError {
             PhxError::SpareEmEspera(_) => "SPARE_EM_ESPERA",
             PhxError::EmTransacao(_) => "EM_TRANSACAO",
             PhxError::EmMigracao(_) => "EM_MIGRACAO",
+            PhxError::Nascendo(_) => "NASCENDO",
             PhxError::Io(_) => "ERRO_DE_ES",
             PhxError::Cancelado(_) => "CANCELADO",
             PhxError::TransacaoAbortada(_) => "TRANSACAO_ABORTADA",
@@ -313,6 +325,10 @@ impl PhxError {
             // Reescrever o arquivo de dados inteiro e governanca de
             // recurso, como a reserva de carga: a mesma sprint do `EmCarga`.
             PhxError::EmMigracao(_) => "SP000012",
+            // A reserva da tabela que nasce existe pela durabilidade do
+            // `fsync` da pasta (605): quem mudaria esta recusa e a matriz de
+            // falhas, a mesma sprint do `Io` e do `Corrompido`.
+            PhxError::Nascendo(_) => "SP000010",
             PhxError::TransacaoAbortada(_) => "SP000006",
             PhxError::Io(_) => "SP000010",
             // Cancelamento e literalmente o titulo da SP000012.
@@ -360,6 +376,7 @@ impl PhxError {
                 | PhxError::EmCarga(_)
                 | PhxError::EmTransacao(_)
                 | PhxError::EmMigracao(_)
+                | PhxError::Nascendo(_)
         )
     }
 }
@@ -401,6 +418,7 @@ impl PhxError {
             PhxError::EmCarga(m) => format!("tabela em carga: {m}"),
             PhxError::EmTransacao(m) => format!("tabela em transacao: {m}"),
             PhxError::EmMigracao(m) => format!("tabela em reescrita: {m}"),
+            PhxError::Nascendo(m) => format!("tabela nascendo: {m}"),
             PhxError::LimiteExcedido(m) => format!("limite excedido: {m}"),
             // Sem prefixo de recusa: a mensagem ja comeca com
             // `REDIRECIONA host:porta`, que e o endereco para onde ir.
@@ -540,6 +558,7 @@ mod testes_codigo {
             PhxError::EmCarga(String::new()),
             PhxError::EmTransacao(String::new()),
             PhxError::EmMigracao(String::new()),
+            PhxError::Nascendo(String::new()),
             PhxError::TransacaoAbortada(String::new()),
             PhxError::Autorizacao(String::new()),
             PhxError::Redireciona(String::new()),
@@ -570,6 +589,7 @@ mod testes_codigo {
             PhxError::EmCarga(_) => "EmCarga",
             PhxError::EmTransacao(_) => "EmTransacao",
             PhxError::EmMigracao(_) => "EmMigracao",
+            PhxError::Nascendo(_) => "Nascendo",
             PhxError::Autorizacao(_) => "Autorizacao",
             PhxError::LimiteExcedido(_) => "LimiteExcedido",
             PhxError::SpareEmEspera(_) => "SpareEmEspera",
@@ -600,7 +620,9 @@ mod testes_codigo {
         // sendo reescrita inteira. Pedido 421.
         // 20 -> 21 em 24/09/2026: a `ConfigAmbiguo` (5002), o impasse do par
         // config.json/config.phz -- pedido 481.
-        assert_eq!(quantas, 21, "entrou ou saiu variante: {nomes:?}");
+        // 21 -> 22 em 01/10/2026: a `Nascendo` (4007), a espera da tabela
+        // que nasce com a trava na mao, agora com prazo -- pedido 629.
+        assert_eq!(quantas, 22, "entrou ou saiu variante: {nomes:?}");
     }
 
     /// **A sprint citada tem de EXISTIR no roteiro.**

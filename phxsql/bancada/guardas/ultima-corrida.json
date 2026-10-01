@@ -3899,33 +3899,33 @@
       "id": "criacao-sem-reserva-605",
       "titulo": "A tabela recém-criada atendia um terceiro antes do fsync da pasta de quem a criou",
       "veredito": "PROVADA",
-      "segundos": 80.49,
+      "segundos": 84.46,
       "notas": [],
-      "quando": "2026-10-01 18:04"
+      "quando": "2026-10-01 20:21"
     },
     {
       "id": "abrir-nao-espera-a-tabela-que-nasce-605",
       "titulo": "Abrir uma tabela não esperava a que ainda nascia — só o campo «tabela» do servidor esperava",
       "veredito": "PROVADA",
-      "segundos": 9.77,
+      "segundos": 10.74,
       "notas": [],
-      "quando": "2026-10-01 18:04"
+      "quando": "2026-10-01 20:21"
     },
     {
       "id": "copia-nasce-sem-reserva-605",
       "titulo": "A cópia de tabela, irmã da criação, nascia sem reserva e atendia um terceiro antes do fsync",
       "veredito": "PROVADA",
-      "segundos": 9.93,
+      "segundos": 11.17,
       "notas": [],
-      "quando": "2026-10-01 18:04"
+      "quando": "2026-10-01 20:21"
     },
     {
       "id": "terceiro-espera-dentro-da-trava-605",
       "titulo": "Quem achava a tabela nascendo esperava com a trava global na mão e parava o servidor inteiro",
       "veredito": "PROVADA",
-      "segundos": 83.68,
+      "segundos": 79.44,
       "notas": [],
-      "quando": "2026-10-01 18:04"
+      "quando": "2026-10-01 20:21"
     },
     {
       "id": "marca-do-diario-de-outra-vida-620",
@@ -4062,6 +4062,22 @@
       "segundos": 7.74,
       "notas": [],
       "quando": "2026-10-01 19:19"
+    },
+    {
+      "id": "espera-de-fora-so-le-o-campo-tabela-629",
+      "titulo": "A espera da tabela que nasce, fora da trava, lia só o campo «tabela» e mandava o juntar esperar com a trava global na mão",
+      "veredito": "PROVADA",
+      "segundos": 82.17,
+      "notas": [],
+      "quando": "2026-10-01 20:21"
+    },
+    {
+      "id": "espera-de-dentro-sem-prazo-629",
+      "titulo": "A espera da tabela que nasce DENTRO da trava global não tinha prazo: um fsync lento de pasta parava o servidor inteiro",
+      "veredito": "PROVADA",
+      "segundos": 81.38,
+      "notas": [],
+      "quando": "2026-10-01 20:21"
     },
     {
       "id": "alter-com-regra-sem-aviso",
