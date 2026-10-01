@@ -20,6 +20,10 @@ const DISCORD_DEFAULT_ORIGIN: &str = "https://discord.com";
 const SLACK_DEFAULT_ORIGIN: &str = "https://slack.com";
 const GRAPH_DEFAULT_ORIGIN: &str = "https://graph.microsoft.com";
 const META_GRAPH_DEFAULT_ORIGIN: &str = "https://graph.facebook.com";
+/// Teto da espera do long polling: o cliente HTTP desiste em 30 s.
+pub const TELEGRAM_MAX_POLL_SECS: u64 = 25;
+/// Teto de texto de uma mensagem do Telegram, em unidades UTF-16 (e assim que ele conta).
+pub const TELEGRAM_MAX_TEXT: usize = 4096;
 
 #[derive(Debug, Clone)]
 pub struct ProviderEndpointPolicy {
@@ -201,6 +205,59 @@ impl TelegramProvider {
                 provider_message_id: result.message_id.to_string(),
                 metadata: json!({"provider":"telegram","account_id":self.account_id}),
             })
+        })
+    }
+
+    /// Long polling do `getUpdates`. O `offset` e o proximo `update_id` esperado: pedir com
+    /// ele confirma ao Telegram tudo o que veio antes. O prazo do servidor fica abaixo do
+    /// prazo do cliente (30 s), senao toda espera vazia viraria erro de tempo esgotado.
+    pub fn get_updates(
+        &self,
+        offset: Option<i64>,
+        timeout_secs: u64,
+    ) -> Result<Vec<TelegramUpdate>, ProviderError> {
+        self.policy.validate(&self.base_origin)?;
+        let timeout_secs = timeout_secs.min(TELEGRAM_MAX_POLL_SECS);
+        self.with_token("channel:telegram:receive", |token| {
+            let endpoint = format!(
+                "{}/bot{}/getUpdates",
+                self.base_origin.trim_end_matches('/'),
+                token.expose()
+            );
+            let mut corpo = json!({"timeout": timeout_secs, "allowed_updates": ["message"]});
+            if let Some(o) = offset {
+                corpo["offset"] = json!(o);
+            }
+            let response = self
+                .client
+                .post(endpoint)
+                .json(&corpo)
+                .send()
+                .map_err(|error| {
+                    ProviderError::Request(scrub_text(
+                        &error.without_url().to_string(),
+                        std::slice::from_ref(token),
+                    ))
+                })?;
+            let status = response.status();
+            let body = response.text().map_err(|error| {
+                ProviderError::Request(scrub_text(
+                    &error.without_url().to_string(),
+                    std::slice::from_ref(token),
+                ))
+            })?;
+            if !status.is_success() {
+                return Err(ProviderError::Http {
+                    status: status.as_u16(),
+                    body: scrub_text(&body, std::slice::from_ref(token)),
+                });
+            }
+            let parsed: TelegramUpdatesResponse = serde_json::from_str(&body)
+                .map_err(|error| ProviderError::Response(error.to_string()))?;
+            if !parsed.ok {
+                return Err(ProviderError::Response("Telegram returned ok=false".into()));
+            }
+            Ok(parsed.result)
         })
     }
 
@@ -992,6 +1049,43 @@ struct TelegramMessage {
     message_id: i64,
 }
 
+/// Uma atualizacao do `getUpdates`. So `message` interessa ao canal; o resto (mensagem
+/// editada, enquete, botao) chega como `None` e so faz o offset andar.
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+pub struct TelegramUpdate {
+    pub update_id: i64,
+    #[serde(default)]
+    pub message: Option<TelegramIncoming>,
+}
+
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+pub struct TelegramIncoming {
+    pub message_id: i64,
+    pub chat: TelegramChat,
+    #[serde(default)]
+    pub from: Option<TelegramFrom>,
+    /// Foto, audio e figurinha chegam sem texto.
+    #[serde(default)]
+    pub text: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+pub struct TelegramChat {
+    pub id: i64,
+}
+
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+pub struct TelegramFrom {
+    pub id: i64,
+}
+
+#[derive(Debug, Deserialize)]
+struct TelegramUpdatesResponse {
+    ok: bool,
+    #[serde(default)]
+    result: Vec<TelegramUpdate>,
+}
+
 #[derive(Debug, Deserialize)]
 struct TelegramMeResponse {
     ok: bool,
@@ -1021,7 +1115,7 @@ pub fn provider_metadata() -> Value {
         "telegram": {
             "provider_id": "phxclaw.telegram.rest",
             "default_origin": TELEGRAM_DEFAULT_ORIGIN,
-            "secret_scopes": ["channel:telegram:send", "channel:telegram:probe"]
+            "secret_scopes": ["channel:telegram:send", "channel:telegram:probe", "channel:telegram:receive"]
         },
         "discord": {
             "provider_id": "phxclaw.discord.rest",
@@ -1080,6 +1174,111 @@ mod tests {
             }
         });
         format!("http://{addr}")
+    }
+
+    /// Responde uma vez com `status` e o corpo dado; `{REQ}` no corpo vira a requisicao
+    /// recebida inteira (linha, cabecalhos e corpo), para o teste ver o que saiu pelo fio.
+    fn servidor_de_uma_resposta(
+        status: &str,
+        corpo: &str,
+    ) -> (String, std::sync::mpsc::Receiver<String>) {
+        let l = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = l.local_addr().unwrap();
+        let (tx, rx) = std::sync::mpsc::channel();
+        let status = status.to_string();
+        let corpo = corpo.to_string();
+        std::thread::spawn(move || {
+            if let Ok((mut s, _)) = l.accept() {
+                let mut buf = vec![0u8; 16384];
+                let n = s.read(&mut buf).unwrap_or(0);
+                let req = String::from_utf8_lossy(&buf[..n]).to_string();
+                let corpo =
+                    corpo.replace("{REQ}", &req.replace('"', "'").replace(['\r', '\n'], " "));
+                let _ = s.write_all(
+                    format!(
+                        "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{corpo}",
+                        corpo.len()
+                    )
+                    .as_bytes(),
+                );
+                let _ = tx.send(req);
+            }
+        });
+        (format!("http://{addr}"), rx)
+    }
+
+    fn provedor_para(origem: &str) -> (TelegramProvider, std::path::PathBuf) {
+        let dir = std::env::temp_dir().join(format!("phx-chan-{}", uuid::Uuid::now_v7()));
+        let key = Arc::new(FileMasterKeyProvider::new(dir.join("master.key")));
+        key.ensure().unwrap();
+        let broker = Arc::new(
+            SecretBroker::new(
+                dir.join("secrets"),
+                key,
+                LiveEventHub::new(16, 16),
+                EvidenceLedger::open(dir.join("evidence.jsonl")).unwrap(),
+            )
+            .unwrap(),
+        );
+        let d = broker
+            .store(
+                "telegram",
+                "channels",
+                vec!["channel:telegram:receive".into()],
+                SecretValue::new(TOKEN.into()),
+            )
+            .unwrap();
+        let p = TelegramProvider::new_with_origin(
+            broker,
+            d.uuid,
+            "conta",
+            origem,
+            ProviderEndpointPolicy::locked_defaults()
+                .with_origin(origem)
+                .allow_http(true),
+        )
+        .unwrap();
+        (p, dir)
+    }
+
+    #[test]
+    fn get_updates_le_as_mensagens_e_manda_o_offset() {
+        let (origem, rx) = servidor_de_uma_resposta(
+            "200 OK",
+            r#"{"ok":true,"result":[{"update_id":7,"message":{"message_id":1,"chat":{"id":42},"from":{"id":9},"text":"oi"}},{"update_id":8,"edited_message":{}}]}"#,
+        );
+        let (p, dir) = provedor_para(&origem);
+        let u = p.get_updates(Some(7), 99).unwrap();
+        assert_eq!(u.len(), 2);
+        assert_eq!(u[0].update_id, 7);
+        let m = u[0].message.as_ref().unwrap();
+        assert_eq!((m.chat.id, m.text.as_deref()), (42, Some("oi")));
+        assert!(u[1].message.is_none(), "edicao nao e mensagem nova");
+        let req = rx.recv().unwrap();
+        assert!(req.contains("\"offset\":7"), "offset nao foi: {req}");
+        assert!(
+            req.contains(&format!("\"timeout\":{TELEGRAM_MAX_POLL_SECS}")),
+            "prazo acima do teto do cliente: {req}"
+        );
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn erro_do_get_updates_nao_devolve_o_token() {
+        // O servidor devolve a requisicao no corpo do erro: a linha da requisicao tem o token.
+        let (origem, _rx) =
+            servidor_de_uma_resposta("401 Unauthorized", r#"{"ok":false,"description":"{REQ}"}"#);
+        let (p, dir) = provedor_para(&origem);
+        let erro = p
+            .get_updates(None, 1)
+            .expect_err("401 tem de falhar")
+            .to_string();
+        assert!(erro.contains("401"), "{erro}");
+        assert!(
+            !erro.contains("TOKEN-QUE-NAO-PODE-VAZAR"),
+            "token vazou no erro: {erro}"
+        );
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]

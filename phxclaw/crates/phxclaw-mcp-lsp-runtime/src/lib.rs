@@ -423,6 +423,106 @@ pub fn validate_response_id(
     }
 }
 
+// ---- ferramentas MCP: o fio dos dois lados -------------------------------------------
+// Cliente e servidor do agente montam e leem `tools/list` e `tools/call` por aqui, para o
+// formato de fio morar num lugar so: um lado que escrevesse `inputSchema` a mao e o outro
+// que lesse `input_schema` so se desencontrariam no primeiro servidor de terceiros.
+
+pub const JSONRPC_PARSE_ERROR: i64 = -32700;
+pub const JSONRPC_INVALID_REQUEST: i64 = -32600;
+pub const JSONRPC_METHOD_NOT_FOUND: i64 = -32601;
+pub const JSONRPC_INVALID_PARAMS: i64 = -32602;
+
+/// Ferramenta como o servidor MCP a anuncia em `tools/list`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct McpToolDescriptor {
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(rename = "inputSchema", default = "schema_objeto_vazio")]
+    pub input_schema: Value,
+}
+
+fn schema_objeto_vazio() -> Value {
+    json!({"type": "object"})
+}
+
+/// Le o `result` de um `tools/list`: as ferramentas e o cursor da proxima pagina.
+pub fn parse_tools_list_result(
+    result: &Value,
+) -> Result<(Vec<McpToolDescriptor>, Option<String>), ProtocolError> {
+    let tools = result
+        .get("tools")
+        .cloned()
+        .ok_or(ProtocolError::InvalidJsonRpcShape)?;
+    let tools: Vec<McpToolDescriptor> = serde_json::from_value(tools)?;
+    let cursor = result
+        .get("nextCursor")
+        .and_then(Value::as_str)
+        .filter(|c| !c.is_empty())
+        .map(str::to_owned);
+    Ok((tools, cursor))
+}
+
+/// Texto de um `tools/call`: junta os itens de texto; o que nao e texto vira uma linha que
+/// diz o que era, em vez de sumir calado. Sem item nenhum, cai no `structuredContent`.
+pub fn tool_result_text(result: &Value) -> String {
+    let mut partes = Vec::new();
+    for item in result
+        .get("content")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+    {
+        match item.get("type").and_then(Value::as_str) {
+            Some("text") => partes.push(
+                item.get("text")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_owned(),
+            ),
+            Some(tipo) => partes.push(format!(
+                "[{tipo} {}]",
+                item.get("mimeType")
+                    .or_else(|| item.get("uri"))
+                    .and_then(Value::as_str)
+                    .unwrap_or("sem tipo")
+            )),
+            None => {}
+        }
+    }
+    if partes.is_empty()
+        && let Some(s) = result.get("structuredContent")
+    {
+        return s.to_string();
+    }
+    partes.join("\n")
+}
+
+/// Versao que o servidor responde ao `initialize`: a pedida, se a conhecemos; senao a
+/// mais nova da era legada, e o cliente decide se aceita (e o que a especificacao manda).
+pub fn negotiate_server_version(requested: Option<&str>) -> &'static str {
+    requested
+        .and_then(|v| negotiate_legacy_version(v).ok())
+        .unwrap_or(MCP_DEFAULT_LEGACY_PROTOCOL)
+}
+
+pub fn jsonrpc_result(id: Value, result: Value) -> Value {
+    json!({"jsonrpc": "2.0", "id": id, "result": result})
+}
+
+pub fn jsonrpc_error(id: Value, code: i64, message: &str) -> Value {
+    json!({"jsonrpc": "2.0", "id": id, "error": {"code": code, "message": message}})
+}
+
+pub fn tool_call_result(text: &str, is_error: bool) -> Value {
+    json!({"content": [{"type": "text", "text": text}], "isError": is_error})
+}
+
+pub fn tools_list_result(tools: &[McpToolDescriptor]) -> Value {
+    json!({"tools": tools})
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -502,6 +602,52 @@ mod tests {
     }
 
     #[test]
+    fn lista_de_ferramentas_ida_e_volta_no_mesmo_fio() {
+        let t = McpToolDescriptor {
+            name: "somar".into(),
+            description: Some("soma".into()),
+            input_schema: json!({"type":"object","properties":{"a":{"type":"number"}}}),
+        };
+        let fio = tools_list_result(std::slice::from_ref(&t));
+        assert!(fio["tools"][0].get("inputSchema").is_some());
+        let (lidas, cursor) = parse_tools_list_result(&fio).unwrap();
+        assert_eq!(lidas, vec![t]);
+        assert_eq!(cursor, None);
+        // Servidor que omite o esquema e a descricao continua legivel.
+        let (lidas, cursor) =
+            parse_tools_list_result(&json!({"tools":[{"name":"x"}],"nextCursor":"p2"})).unwrap();
+        assert_eq!(lidas[0].input_schema, json!({"type":"object"}));
+        assert_eq!(cursor.as_deref(), Some("p2"));
+        assert!(parse_tools_list_result(&json!({})).is_err());
+    }
+
+    #[test]
+    fn texto_do_resultado_nao_some_calado() {
+        let r = json!({"content":[{"type":"text","text":"a"},{"type":"image","mimeType":"image/png","data":"x"}]});
+        assert_eq!(tool_result_text(&r), "a\n[image image/png]");
+        assert_eq!(
+            tool_result_text(&json!({"content":[],"structuredContent":{"v":1}})),
+            "{\"v\":1}"
+        );
+        let e = tool_call_result("falhou", true);
+        assert!(tool_result_is_error(&e));
+        assert_eq!(tool_result_text(&e), "falhou");
+    }
+
+    #[test]
+    fn servidor_responde_a_versao_pedida_ou_a_mais_nova() {
+        assert_eq!(
+            negotiate_server_version(Some(MCP_PROTOCOL_2024_11_05)),
+            MCP_PROTOCOL_2024_11_05
+        );
+        assert_eq!(
+            negotiate_server_version(Some("1999-01-01")),
+            MCP_DEFAULT_LEGACY_PROTOCOL
+        );
+        assert_eq!(negotiate_server_version(None), MCP_DEFAULT_LEGACY_PROTOCOL);
+    }
+
+    #[test]
     fn initialized_notification_is_emitted_for_legacy() {
         let n = legacy_initialized_notification();
         assert_eq!(n.method, "notifications/initialized");
@@ -515,9 +661,10 @@ mod tests {
 
 pub mod managed_runtime {
     use super::{
-        JsonRpcId, JsonRpcMessageClass, JsonRpcRequest, JsonRpcResponse,
-        MCP_DEFAULT_LEGACY_PROTOCOL, MCP_DEFAULT_MODERN_PROTOCOL, classify_jsonrpc_message,
-        encode_content_length_message, encode_mcp_line,
+        JsonRpcId, JsonRpcMessageClass, JsonRpcNotification, JsonRpcRequest, JsonRpcResponse,
+        MCP_DEFAULT_LEGACY_PROTOCOL, MCP_DEFAULT_MODERN_PROTOCOL, McpToolDescriptor,
+        classify_jsonrpc_message, encode_content_length_message, encode_mcp_line,
+        negotiate_legacy_version, parse_tools_list_result,
     };
     use futures_util::StreamExt;
     use phxclaw_event_bus::EventEnvelope;
@@ -544,7 +691,7 @@ pub mod managed_runtime {
         task::JoinHandle,
         time::{sleep, timeout},
     };
-    use url::Url;
+    pub use url::Url;
     use uuid::Uuid;
 
     pub const DEFAULT_MAX_FRAME_BYTES: usize = 4 * 1024 * 1024;
@@ -1107,6 +1254,98 @@ pub mod managed_runtime {
                 .terminate(Duration::from_millis(self.policy.shutdown_timeout_ms))
                 .await
         }
+
+        /// Mata o filho sem prazo de cortesia. Para o estouro: o servidor que nao respondeu
+        /// no prazo nao vai sair sozinho porque o stdin fechou.
+        pub async fn kill(mut self) -> Result<Vec<u8>, RuntimeError> {
+            let child = self.child.take().ok_or(RuntimeError::SessionClosed)?;
+            child.terminate(Duration::ZERO).await
+        }
+
+        /// `initialize` + `notifications/initialized`, conferindo a versao que o servidor
+        /// devolveu. Devolve a versao combinada.
+        pub async fn initialize_negotiated(
+            &mut self,
+            client_name: &str,
+            client_version: &str,
+        ) -> Result<String, RuntimeError> {
+            let ex = self.initialize_legacy(client_name, client_version).await?;
+            negotiated_version(ex)
+        }
+
+        /// `tools/list` seguindo o cursor. O teto de paginas segura o servidor que devolve
+        /// sempre o mesmo cursor.
+        pub async fn list_tools(&mut self) -> Result<Vec<McpToolDescriptor>, RuntimeError> {
+            let mut out = Vec::new();
+            let mut cursor: Option<String> = None;
+            for _ in 0..MAX_TOOL_PAGES {
+                let params = cursor
+                    .take()
+                    .map(|c| json!({"cursor": c}))
+                    .unwrap_or_else(|| json!({}));
+                let ex = self
+                    .request(
+                        JsonRpcRequest::new("tools/list", params),
+                        Cancellation::default(),
+                    )
+                    .await?;
+                let (tools, next) = parse_tools_list_result(&exchange_result(ex)?)
+                    .map_err(|e| RuntimeError::Protocol(e.to_string()))?;
+                out.extend(tools);
+                match next {
+                    Some(c) => cursor = Some(c),
+                    None => return Ok(out),
+                }
+            }
+            Err(RuntimeError::Protocol("tools/list: paginas demais".into()))
+        }
+
+        /// `tools/call`; devolve o `result` cru (o chamador le texto e `isError`).
+        pub async fn call_tool(
+            &mut self,
+            name: &str,
+            arguments: Value,
+            cancellation: Cancellation,
+        ) -> Result<Value, RuntimeError> {
+            let ex = self
+                .request(
+                    JsonRpcRequest::new(
+                        "tools/call",
+                        json!({"name": name, "arguments": arguments}),
+                    ),
+                    cancellation,
+                )
+                .await?;
+            exchange_result(ex)
+        }
+    }
+
+    /// Teto de paginas do `tools/list`.
+    pub const MAX_TOOL_PAGES: usize = 64;
+
+    /// O `result` de uma troca, ou o erro JSON-RPC como erro de runtime: o erro do servidor
+    /// nao derruba a sessao, mas tambem nao pode passar por resposta vazia.
+    pub fn exchange_result(ex: JsonRpcExchange) -> Result<Value, RuntimeError> {
+        if let Some(e) = ex.response.error {
+            return Err(RuntimeError::Rpc {
+                code: e.code,
+                message: e.message,
+            });
+        }
+        ex.response
+            .result
+            .ok_or_else(|| RuntimeError::Protocol("resposta sem result".into()))
+    }
+
+    fn negotiated_version(ex: JsonRpcExchange) -> Result<String, RuntimeError> {
+        let result = exchange_result(ex)?;
+        let version = result
+            .get("protocolVersion")
+            .and_then(Value::as_str)
+            .ok_or_else(|| RuntimeError::Protocol("initialize sem protocolVersion".into()))?;
+        negotiate_legacy_version(version)
+            .map(str::to_owned)
+            .map_err(|e| RuntimeError::Protocol(e.to_string()))
     }
 
     pub struct LspStdioSession {
@@ -1304,6 +1543,9 @@ pub mod managed_runtime {
         endpoint_policy: HttpEndpointPolicy,
         capabilities: CapabilityPolicy,
         audit: RuntimeAudit,
+        /// `Mcp-Session-Id` que o servidor deu no `initialize`; vai em todo pedido seguinte.
+        /// Sem ele, servidor com estado responde 400 a tudo depois do handshake.
+        mcp_session_id: std::sync::Mutex<Option<String>>,
     }
 
     impl McpStreamableHttpClient {
@@ -1326,7 +1568,128 @@ pub mod managed_runtime {
                 endpoint_policy,
                 capabilities,
                 audit,
+                mcp_session_id: std::sync::Mutex::new(None),
             })
+        }
+
+        fn session_header(&self) -> Option<String> {
+            self.mcp_session_id
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .clone()
+        }
+
+        fn remember_session(&self, response: &reqwest::Response) {
+            if let Some(id) = response
+                .headers()
+                .get("mcp-session-id")
+                .and_then(|v| v.to_str().ok())
+            {
+                *self
+                    .mcp_session_id
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner()) = Some(id.to_owned());
+            }
+        }
+
+        /// Notificacao (sem resposta JSON-RPC): o servidor devolve 202 sem corpo.
+        pub async fn notify(
+            &self,
+            notification: &JsonRpcNotification,
+            protocol_version: &str,
+        ) -> Result<(), RuntimeError> {
+            self.capabilities.allow_method(&notification.method)?;
+            let mut builder = self
+                .client
+                .post(self.endpoint.clone())
+                .header("Accept", "application/json, text/event-stream")
+                .header("Content-Type", "application/json")
+                .header("MCP-Protocol-Version", protocol_version)
+                .json(notification);
+            if let Some(id) = self.session_header() {
+                builder = builder.header("Mcp-Session-Id", id);
+            }
+            let response = controlled(
+                async { Ok(builder.send().await?) },
+                Duration::from_millis(self.policy.request_timeout_ms),
+                Cancellation::default(),
+            )
+            .await?;
+            if !response.status().is_success() {
+                return Err(RuntimeError::HttpStatus(response.status().as_u16()));
+            }
+            Ok(())
+        }
+
+        /// `initialize` + `notifications/initialized`; devolve a versao combinada, que vai
+        /// no cabecalho `MCP-Protocol-Version` de todo pedido seguinte.
+        pub async fn initialize_negotiated(
+            &self,
+            client_name: &str,
+            client_version: &str,
+            cancellation: Cancellation,
+        ) -> Result<String, RuntimeError> {
+            let ex = self
+                .request(
+                    super::legacy_initialize_request(client_name, client_version),
+                    MCP_DEFAULT_LEGACY_PROTOCOL,
+                    cancellation,
+                )
+                .await?;
+            let version = negotiated_version(ex)?;
+            self.notify(&super::legacy_initialized_notification(), &version)
+                .await?;
+            Ok(version)
+        }
+
+        pub async fn list_tools(
+            &self,
+            protocol_version: &str,
+            cancellation: Cancellation,
+        ) -> Result<Vec<McpToolDescriptor>, RuntimeError> {
+            let mut out = Vec::new();
+            let mut cursor: Option<String> = None;
+            for _ in 0..MAX_TOOL_PAGES {
+                let params = cursor
+                    .take()
+                    .map(|c| json!({"cursor": c}))
+                    .unwrap_or_else(|| json!({}));
+                let ex = self
+                    .request(
+                        JsonRpcRequest::new("tools/list", params),
+                        protocol_version,
+                        cancellation.clone(),
+                    )
+                    .await?;
+                let (tools, next) = parse_tools_list_result(&exchange_result(ex)?)
+                    .map_err(|e| RuntimeError::Protocol(e.to_string()))?;
+                out.extend(tools);
+                match next {
+                    Some(c) => cursor = Some(c),
+                    None => return Ok(out),
+                }
+            }
+            Err(RuntimeError::Protocol("tools/list: paginas demais".into()))
+        }
+
+        pub async fn call_tool(
+            &self,
+            name: &str,
+            arguments: Value,
+            protocol_version: &str,
+            cancellation: Cancellation,
+        ) -> Result<Value, RuntimeError> {
+            let ex = self
+                .request(
+                    JsonRpcRequest::new(
+                        "tools/call",
+                        json!({"name": name, "arguments": arguments}),
+                    ),
+                    protocol_version,
+                    cancellation,
+                )
+                .await?;
+            exchange_result(ex)
         }
 
         pub async fn request(
@@ -1354,6 +1717,9 @@ pub mod managed_runtime {
                 .header("Content-Type", "application/json")
                 .header("MCP-Protocol-Version", protocol_version)
                 .json(&request);
+            if let Some(id) = self.session_header() {
+                builder = builder.header("Mcp-Session-Id", id);
+            }
             if protocol_version == MCP_DEFAULT_MODERN_PROTOCOL {
                 builder = builder.header("Mcp-Method", &method);
                 if let Some(name) = request
@@ -1375,6 +1741,7 @@ pub mod managed_runtime {
             if !status.is_success() {
                 return Err(RuntimeError::HttpStatus(status.as_u16()));
             }
+            self.remember_session(&response);
             let content_type = response
                 .headers()
                 .get(reqwest::header::CONTENT_TYPE)
@@ -1526,6 +1893,8 @@ pub mod managed_runtime {
         ReconnectExhausted,
         #[error("protocol error: {0}")]
         Protocol(String),
+        #[error("JSON-RPC error {code}: {message}")]
+        Rpc { code: i64, message: String },
         #[error(transparent)]
         Io(#[from] std::io::Error),
         #[error(transparent)]

@@ -416,7 +416,10 @@ impl SecretBroker {
             {
                 continue;
             }
-            let envelope: SecretFileEnvelope = serde_json::from_slice(&fs::read(entry.path())?)?;
+            // Mesmo leitor do `read_envelope`: ler o arquivo como JSON cru tropecava no
+            // prefixo magico que `write_secret` grava, e todo broker com um segredo guardado
+            // deixava de abrir no reinicio.
+            let envelope = parse_envelope(&fs::read(entry.path())?)?;
             loaded.insert(envelope.descriptor.uuid, envelope.descriptor);
         }
         self.state
@@ -496,13 +499,7 @@ impl SecretBroker {
 
     fn read_envelope(&self, secret_uuid: Uuid) -> Result<SecretFileEnvelope, SecretBrokerError> {
         let descriptor = self.descriptor(secret_uuid)?;
-        let bytes = fs::read(self.path_for(&descriptor))?;
-        if !bytes.starts_with(FILE_MAGIC) {
-            return Err(SecretBrokerError::Crypto(
-                "invalid secret file magic".into(),
-            ));
-        }
-        Ok(serde_json::from_slice(&bytes[FILE_MAGIC.len()..])?)
+        parse_envelope(&fs::read(self.path_for(&descriptor))?)
     }
 
     fn record(
@@ -562,6 +559,16 @@ fn validate_name(value: &str) -> Result<(), SecretBrokerError> {
         return Err(SecretBrokerError::InvalidName);
     }
     Ok(())
+}
+
+/// O unico leitor de envelope em disco: o formato e `FILE_MAGIC` seguido do JSON.
+fn parse_envelope(bytes: &[u8]) -> Result<SecretFileEnvelope, SecretBrokerError> {
+    let Some(json) = bytes.strip_prefix(FILE_MAGIC) else {
+        return Err(SecretBrokerError::Crypto(
+            "invalid secret file magic".into(),
+        ));
+    };
+    Ok(serde_json::from_slice(json)?)
 }
 
 /// Unico jeito de gravar arquivo secreto nesta base (chave mestra, envelope de segredo,
@@ -640,6 +647,76 @@ pub fn scrub_text(text: &str, known_values: &[SecretValue]) -> String {
     output
 }
 
+/// Prefixos de credencial que se reconhecem SEM marcador ao lado: quem cola uma chave num
+/// texto livre raramente escreve `token=` antes dela.
+const PREFIXOS_DE_CREDENCIAL: &[&str] = &[
+    "sk-",
+    "ghp_",
+    "gho_",
+    "ghs_",
+    "ghu_",
+    "github_pat_",
+    "glpat-",
+    "xoxb-",
+    "xoxp-",
+    "AKIA",
+    "AIza",
+];
+
+/// O que `scrub_text` faz sem segredo conhecido, mais o que tem FORMA de credencial: chave
+/// privada PEM, palavra com prefixo de chave de provedor e JWT. Existe a parte de
+/// `scrub_text` porque mudar o que ela tapa mudaria em silencio a saida de quem ja a chama;
+/// quem quer a tarja mais larga pede esta.
+pub fn scrub_secret_like(text: &str) -> String {
+    let mut output = scrub_text(text, &[]);
+    while let Some(ini) = output.find("-----BEGIN ") {
+        let resto = &output[ini..];
+        let fim = resto
+            .find("-----END ")
+            .and_then(|e| resto[e + 9..].find("-----").map(|f| e + 9 + f + 5))
+            .unwrap_or(resto.len());
+        output.replace_range(ini..ini + fim, "[REDACTED]");
+    }
+    let mut saida = String::with_capacity(output.len());
+    let mut palavra = String::new();
+    let fecha = |palavra: &mut String, saida: &mut String| {
+        if parece_credencial(palavra) {
+            saida.push_str("[REDACTED]");
+        } else {
+            saida.push_str(palavra);
+        }
+        palavra.clear();
+    };
+    for ch in output.chars() {
+        if ch.is_whitespace() || matches!(ch, '"' | '\'' | ',' | ';' | '(' | ')' | '<' | '>' | '`')
+        {
+            fecha(&mut palavra, &mut saida);
+            saida.push(ch);
+        } else {
+            palavra.push(ch);
+        }
+    }
+    fecha(&mut palavra, &mut saida);
+    saida
+}
+
+fn parece_credencial(palavra: &str) -> bool {
+    // A palavra pode vir com `chave:` colado na frente; olha-se o pedaco depois do ultimo
+    // separador de rotulo.
+    let nucleo = palavra.rsplit([':', '=']).next().unwrap_or(palavra);
+    let nucleo = nucleo.trim_end_matches(['.', '!', '?']);
+    let corpo_ok = |s: &str| {
+        s.chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
+    };
+    // Prefixo sozinho ("sk-" numa frase) nao e chave: exige-se corpo depois dele.
+    let com_prefixo = PREFIXOS_DE_CREDENCIAL
+        .iter()
+        .any(|p| nucleo.starts_with(p) && nucleo.len() >= p.len() + 12 && corpo_ok(nucleo));
+    let jwt = nucleo.starts_with("eyJ") && nucleo.split('.').count() == 3 && nucleo.len() >= 30;
+    com_prefixo || jwt
+}
+
 fn scrub_after_marker(text: &str, marker: &str) -> String {
     let mut output = text.to_owned();
     let mut cursor = 0usize;
@@ -673,6 +750,22 @@ mod tests {
         let secret = SecretValue::new("abc123".into());
         let scrubbed = scrub_text("token=abc123 Authorization: Bearer abc123", &[secret]);
         assert!(!scrubbed.contains("abc123"));
+    }
+
+    #[test]
+    fn tarja_o_que_tem_forma_de_credencial_e_deixa_o_texto_comum() {
+        let t = scrub_secret_like(
+            "use sk-proj-ABCdef0123456789xyz, ghp_0123456789abcdefABCDEF e \
+             eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.c2lnbmF0dXJh; password=abc123\n\
+             -----BEGIN PRIVATE KEY-----\nMIIEv\n-----END PRIVATE KEY----- fim",
+        );
+        for vazou in ["sk-proj", "ghp_0123", "eyJhbG", "abc123", "MIIEv"] {
+            assert!(!t.contains(vazou), "{vazou} vazou: {t}");
+        }
+        assert!(t.ends_with(" fim"), "{t}");
+        // Texto comum, prefixo solto e versao nao sao credencial.
+        let comum = "o sk- do prefixo, task-runner 1.2.3 e AKIA curto";
+        assert_eq!(scrub_secret_like(comum), comum);
     }
 
     #[cfg(unix)]

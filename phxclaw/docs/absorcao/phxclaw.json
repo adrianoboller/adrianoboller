@@ -30,20 +30,20 @@
    "evidencia": "visao.rs DesktopTool screenshot"
   },
   "mcp_cliente": {
-   "estado": "parcial",
-   "evidencia": "crates/phxclaw-mcp-lsp-runtime, fora do agente"
+   "estado": "agente",
+   "evidencia": "crates/phxclaw-agent/src/mcp.rs: servidores de PHXCLAW_MCP_CONFIG viram ferramentas mcp__servidor__ferramenta"
   },
   "mcp_servidor": {
-   "estado": "nao",
-   "evidencia": "o runtime MCP e so cliente"
+   "estado": "agente",
+   "evidencia": "phxclaw mcp-serve: as ferramentas que a politica concede, pela mesma montagem e o mesmo portao"
   },
   "lsp": {
    "estado": "parcial",
    "evidencia": "crates/phxclaw-mcp-lsp-runtime, fora do agente"
   },
   "canal_telegram": {
-   "estado": "parcial",
-   "evidencia": "crates/phxclaw-channel-providers, fora do agente; E2E real espera o token"
+   "estado": "agente",
+   "evidencia": "crates/phxclaw-agent/src/canal.rs: phxclaw canal telegram (entrada e saida), channel_send; provado contra Telegram falso, real espera o token"
   },
   "canal_whatsapp": {
    "estado": "parcial",
@@ -62,8 +62,8 @@
    "evidencia": "phxclaw-channel-providers, fora do agente"
   },
   "canais_push": {
-   "estado": "parcial",
-   "evidencia": "phxclaw-channel-gateway, fora do agente"
+   "estado": "agente",
+   "evidencia": "phxclaw canal telegram: mensagem do canal vira tarefa"
   },
   "canal_signal": {
    "estado": "nao",
@@ -126,16 +126,16 @@
    "evidencia": "crates/phxclaw-task-graph e mission-runtime, fora do agente"
   },
   "memoria": {
-   "estado": "parcial",
-   "evidencia": "crates/phxclaw-memory-context, fora do agente"
+   "estado": "agente",
+   "evidencia": "crates/phxclaw-agent/src/memoria.rs memory_save/memory_search; injecao no inicio da tarefa"
   },
   "busca_sessoes": {
    "estado": "nao",
    "evidencia": ""
   },
   "skills": {
-   "estado": "parcial",
-   "evidencia": "crates/phxclaw-skill-runtime, fora do agente"
+   "estado": "agente",
+   "evidencia": "crates/phxclaw-agent/src/skills.rs skill_load; nome e descricao no prompt"
   },
   "hooks": {
    "estado": "nao",
@@ -262,8 +262,8 @@
    "evidencia": "o agente le imagem por OCR (visao.rs), mas o modelo nao recebe a imagem"
   },
   "instrucoes_projeto": {
-   "estado": "nao",
-   "evidencia": "o agente nao le um AGENTS.md do projeto"
+   "estado": "parcial",
+   "evidencia": "skills e memoria cobrem parte; nao le AGENTS.md do projeto"
   },
   "regras_comando": {
    "estado": "parcial",

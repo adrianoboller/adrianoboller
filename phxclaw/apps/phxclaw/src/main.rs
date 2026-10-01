@@ -29,6 +29,8 @@ fn main() -> Result<()> {
         "db" => db_command(&args[1..])?,
         "agente" | "agent" => runtime()?.block_on(agente(&args[1..]))?,
         "servir" | "serve" => runtime()?.block_on(servir(&args[1..]))?,
+        "canal" | "channel" => runtime()?.block_on(canal(&args[1..]))?,
+        "mcp-serve" => runtime()?.block_on(mcp_serve(&args[1..]))?,
         "dispositivos" | "devices" => runtime()?.block_on(dispositivos(&args[1..]))?,
         other => bail!("unknown command: {other}. Run `{PRODUCT_CLI} --help`."),
     }
@@ -163,7 +165,58 @@ async fn servir(args: &[String]) -> Result<()> {
     };
     let m = Montagem::new(store.clone());
     let factory: AgentFactory = Arc::new(move |modelo: &str| m.agent(modelo));
-    let state = ApiState {
+    let state = estado_api(&raiz, store, factory, token)?;
+    let agenda_state = state.clone();
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(Duration::from_secs(20)).await;
+            let n = disparar_agenda(&agenda_state);
+            if n > 0 {
+                println!("agenda: {n} tarefa(s) disparada(s)");
+            }
+        }
+    });
+    // Loopback por padrao: expor a API na rede e decisao explicita do operador.
+    let host = env::var("PHXCLAW_API_HOST").unwrap_or_else(|_| "127.0.0.1".into());
+    let l = tokio::net::TcpListener::bind((host.as_str(), porta)).await?;
+    println!(
+        "API de tarefas em http://{}  (token em {})",
+        l.local_addr()?,
+        raiz.join("api.token").display()
+    );
+    axum::serve(l, router(state)).await?;
+    Ok(())
+}
+
+/// Ferramentas do agente como servidor MCP por stdio. A MESMA montagem do `agente` e do
+/// `servir`, com o mesmo `PHXCLAW_CAPACIDADES`: uma lista paralela aqui seria uma segunda
+/// politica para o mesmo produto. O stdout e o fio do protocolo; nada mais se escreve nele.
+async fn mcp_serve(args: &[String]) -> Result<()> {
+    let store = TaskStore::new(pasta(args).join("tasks"))?;
+    let trabalho = match opcao(args, "--trabalho") {
+        Some(d) => PathBuf::from(d),
+        None => env::current_dir()?,
+    };
+    let modelo = opcao(args, "--modelo")
+        .or_else(|| env::var("PHXCLAW_MODELO").ok())
+        .unwrap_or_else(|| MODELO_PADRAO.into());
+    let agente = Montagem::new(store)
+        .agent(&modelo)
+        .map_err(anyhow::Error::msg)?;
+    let entrada = tokio::io::BufReader::new(tokio::io::stdin());
+    phxclaw_agent::mcp::servir(&agente, trabalho, entrada, tokio::io::stdout()).await?;
+    Ok(())
+}
+
+/// O estado da API de tarefas, um so para todas as portas que criam tarefa: a rota HTTP
+/// do `servir` e o canal do Telegram dividem modelo padrao e balde de fichas por aqui.
+fn estado_api(
+    raiz: &std::path::Path,
+    store: TaskStore,
+    factory: AgentFactory,
+    token: String,
+) -> Result<ApiState> {
+    Ok(ApiState {
         store,
         factory,
         default_model: env::var("PHXCLAW_MODELO").unwrap_or_else(|_| MODELO_PADRAO.into()),
@@ -184,26 +237,49 @@ async fn servir(args: &[String]) -> Result<()> {
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(10),
         )),
-    };
-    let agenda_state = state.clone();
-    tokio::spawn(async move {
-        loop {
-            tokio::time::sleep(Duration::from_secs(20)).await;
-            let n = disparar_agenda(&agenda_state);
-            if n > 0 {
-                println!("agenda: {n} tarefa(s) disparada(s)");
-            }
-        }
-    });
-    // Loopback por padrao: expor a API na rede e decisao explicita do operador.
-    let host = env::var("PHXCLAW_API_HOST").unwrap_or_else(|_| "127.0.0.1".into());
-    let l = tokio::net::TcpListener::bind((host.as_str(), porta)).await?;
-    println!(
-        "API de tarefas em http://{}  (token em {})",
-        l.local_addr()?,
-        raiz.join("api.token").display()
-    );
-    axum::serve(l, router(state)).await?;
+    })
+}
+
+/// `phxclaw canal telegram`: o token sai do ambiente direto para o SecretBroker (envelope
+/// cifrado na pasta) e nunca e impresso; so os chats de `PHXCLAW_TELEGRAM_CHATS` falam com
+/// o agente, e cada mensagem vira tarefa pela mesma `criar_tarefa` da API.
+async fn canal(args: &[String]) -> Result<()> {
+    if args.first().map(String::as_str) != Some("telegram") {
+        bail!(
+            "uso: phxclaw canal telegram [--pasta DIR]  (PHXCLAW_TELEGRAM_BOT_TOKEN, PHXCLAW_TELEGRAM_CHATS)"
+        );
+    }
+    let raiz = pasta(args);
+    let token = env::var("PHXCLAW_TELEGRAM_BOT_TOKEN")
+        .ok()
+        .filter(|t| !t.trim().is_empty())
+        .context("falta PHXCLAW_TELEGRAM_BOT_TOKEN")?;
+    let chats = phxclaw_agent::canal::chats_da_lista(
+        &env::var("PHXCLAW_TELEGRAM_CHATS").unwrap_or_default(),
+    )
+    .map_err(anyhow::Error::msg)?;
+    let log: phxclaw_agent::canal::Registro = Arc::new(|l: &str| eprintln!("{l}"));
+    let canal = phxclaw_agent::canal::ligar_telegram(
+        &raiz.join("canal"),
+        phxclaw_secret_broker::SecretValue::new(token),
+        chats,
+        log,
+    )
+    .await
+    .map_err(anyhow::Error::msg)?;
+    let store = TaskStore::new(raiz.join("tasks"))?;
+    let mut m = Montagem::new(store.clone());
+    m.canal = Some(canal.clone());
+    let factory: AgentFactory = Arc::new(move |modelo: &str| m.agent(modelo));
+    // O canal nao abre porta HTTP: o Bearer da API nao serve a ninguem aqui, e nasce
+    // aleatorio para nao existir um token fixo esquecido no estado.
+    let state = estado_api(
+        &raiz,
+        store,
+        factory,
+        phxclaw_api_gateway::generate_bearer_token(),
+    )?;
+    canal.laco(state).await;
     Ok(())
 }
 
@@ -346,8 +422,12 @@ USAGE:
   {PRODUCT_CLI} <COMMAND>
 
 COMMANDS:
+  mcp-serve [--trabalho DIR] [--modelo M] [--pasta DIR]
+                     Agent tools as an MCP server over stdio (same PHXCLAW_CAPACIDADES)
   agente \"objetivo\" [--modelo M] [--plano] [--pasta DIR]
                      Run the autonomous agent now, showing each step
+  canal telegram [--pasta DIR]
+                     Telegram as agent channel (PHXCLAW_TELEGRAM_BOT_TOKEN, PHXCLAW_TELEGRAM_CHATS=id,id)
   servir [--porta 8787] [--pasta DIR]
                      Task API (create, follow, plan approval, cancel, artifacts, schedules)
   dispositivos --cert C --chave K --tokens F [--porta 8788]

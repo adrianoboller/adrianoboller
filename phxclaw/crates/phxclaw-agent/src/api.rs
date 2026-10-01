@@ -107,49 +107,89 @@ fn auth(s: &ApiState, h: &HeaderMap) -> Result<(), (StatusCode, Json<Value>)> {
     }
 }
 
-#[derive(Deserialize)]
-struct NovaTarefa {
-    objective: String,
+#[derive(Deserialize, Default)]
+pub struct NovaTarefa {
+    pub objective: String,
     #[serde(default)]
-    model: Option<String>,
+    pub model: Option<String>,
     /// Plan Mode: gera o plano e espera aprovacao antes de executar.
     #[serde(default)]
-    plan_first: bool,
+    pub plan_first: bool,
     #[serde(default)]
-    webhook: Option<String>,
+    pub webhook: Option<String>,
+}
+
+/// Recusa de criacao, com o codigo HTTP que a rota devolve. O canal de mensagens recebe a
+/// mesma recusa e a traduz em resposta ao chat.
+#[derive(Debug)]
+pub struct Recusa {
+    pub status: StatusCode,
+    pub erro: String,
+    /// Segundos ate a proxima ficha, quando a recusa e o limite de criacao.
+    pub retry_after: Option<u64>,
+}
+
+/// Tarefa criada e ja gravada: `fim` entrega o estado final da execucao (ou, no Plan Mode,
+/// a tarefa esperando aprovacao).
+pub struct Criada {
+    pub id: String,
+    pub fim: tokio::task::JoinHandle<Task>,
 }
 
 async fn criar(State(s): State<ApiState>, h: HeaderMap, Json(n): Json<NovaTarefa>) -> Resp {
     auth(&s, &h)?;
+    match criar_tarefa(&s, n) {
+        Ok(c) => Ok((StatusCode::ACCEPTED, Json(json!({"id": c.id}))).into_response()),
+        Err(Recusa {
+            retry_after: Some(seg),
+            erro: e,
+            ..
+        }) => Ok((
+            StatusCode::TOO_MANY_REQUESTS,
+            [(header::RETRY_AFTER, seg.to_string())],
+            Json(json!({"error": e, "retry_after": seg})),
+        )
+            .into_response()),
+        Err(r) => Err(erro(r.status, r.erro)),
+    }
+}
+
+/// O UNICO caminho de criar tarefa: a rota HTTP e os canais de mensagem passam por aqui,
+/// para a validacao, o modelo padrao e o balde de fichas nao divergirem entre as portas.
+pub fn criar_tarefa(s: &ApiState, n: NovaTarefa) -> Result<Criada, Recusa> {
+    let recusa = |status, e: String| Recusa {
+        status,
+        erro: e,
+        retry_after: None,
+    };
     let objetivo = n.objective.trim();
     if objetivo.is_empty() || objetivo.len() > 20_000 {
-        return Err(erro(
+        return Err(recusa(
             StatusCode::BAD_REQUEST,
-            "objective vazio ou maior que 20000",
+            "objective vazio ou maior que 20000".into(),
         ));
     }
     if let Some(w) = &n.webhook {
-        webhook_permitido(&s, w).map_err(|e| erro(StatusCode::BAD_REQUEST, e))?;
+        webhook_permitido(s, w).map_err(|e| recusa(StatusCode::BAD_REQUEST, e))?;
     }
     let modelo = n.model.unwrap_or_else(|| s.default_model.clone());
-    let agente = (s.factory)(&modelo).map_err(|e| erro(StatusCode::BAD_REQUEST, e))?;
+    let agente = (s.factory)(&modelo).map_err(|e| recusa(StatusCode::BAD_REQUEST, e))?;
     // Depois da validacao: pedido invalido nao gasta a cota de quem errou o campo.
     if let Err(seg) = s.limite.tomar() {
-        return Ok((
-            StatusCode::TOO_MANY_REQUESTS,
-            [(header::RETRY_AFTER, seg.to_string())],
-            Json(json!({"error": "limite de criacao de tarefas", "retry_after": seg})),
-        )
-            .into_response());
+        return Err(Recusa {
+            status: StatusCode::TOO_MANY_REQUESTS,
+            erro: "limite de criacao de tarefas".into(),
+            retry_after: Some(seg),
+        });
     }
     let mut t = Task::new(objetivo, modelo);
     t.webhook = n.webhook;
     s.store
         .save(&t)
-        .map_err(|e| erro(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(|e| recusa(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     let id = t.id.clone();
     let st = s.clone();
-    if n.plan_first {
+    let fim = if n.plan_first {
         tokio::spawn(async move {
             let mut t = t;
             match agente.plan(&mut t).await {
@@ -160,15 +200,16 @@ async fn criar(State(s): State<ApiState>, h: HeaderMap, Json(n): Json<NovaTarefa
                 }
             }
             let _ = st.store.save(&t);
-        });
+            t
+        })
     } else {
-        executar(st, agente, t);
-    }
-    Ok((StatusCode::ACCEPTED, Json(json!({"id": id}))).into_response())
+        executar(st, agente, t)
+    };
+    Ok(Criada { id, fim })
 }
 
 /// Roda em segundo plano, registra o cancelamento e chama o webhook no fim.
-pub fn executar(s: ApiState, agente: Agent, t: Task) {
+pub fn executar(s: ApiState, agente: Agent, t: Task) -> tokio::task::JoinHandle<Task> {
     let cancel = CancelFlag::default();
     s.running
         .lock()
@@ -181,7 +222,8 @@ pub fn executar(s: ApiState, agente: Agent, t: Task) {
         if let Some(w) = fim.webhook.clone() {
             chamar_webhook(&s, &w, &fim).await;
         }
-    });
+        fim
+    })
 }
 
 fn webhook_permitido(s: &ApiState, url: &str) -> Result<(), String> {

@@ -9,7 +9,8 @@ phxclaw-device-transport = { path = "../../crates/phxclaw-device-transport" }
 anyhow.workspace = true
 axum.workspace = true
 serde_json.workspace = true
-tokio.workspace = true
+# `io-std`: o `mcp-serve` fala MCP pelo stdin/stdout do processo.
+tokio = { workspace = true, features = ["io-std"] }
 phxclaw-agent = { path = "../../crates/phxclaw-agent" }
 phxclaw-api-gateway = { path = "../../crates/phxclaw-api-gateway" }
 phxclaw-browser = { path = "../../crates/phxclaw-browser" }

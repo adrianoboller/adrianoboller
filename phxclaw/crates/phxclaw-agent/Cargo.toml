@@ -14,7 +14,11 @@ phxclaw-evidence-ledger = { path = "../phxclaw-evidence-ledger" }
 phxclaw-rustclaw-native = { path = "../phxclaw-rustclaw-native" }
 phxclaw-sandbox = { path = "../phxclaw-sandbox" }
 phxclaw-ui-ir = { path = "../phxclaw-ui-ir" }
+phxclaw-memory-context = { path = "../phxclaw-memory-context" }
+phxclaw-skill-runtime = { path = "../phxclaw-skill-runtime" }
+phxclaw-secret-broker = { path = "../phxclaw-secret-broker" }
 phxclaw-media-intelligence = { path = "../phxclaw-media-intelligence" }
+phxclaw-mcp-lsp-runtime = { path = "../phxclaw-mcp-lsp-runtime" }
 # Atras da feature `desktop`: o xcap liga libgbm, libdrm, libwayland-client e libxcb no
 # binario, e o agente de servidor nao deve passar a exigir biblioteca de sessao grafica.
 phxclaw-system-automation = { path = "../phxclaw-system-automation", optional = true }
@@ -31,6 +35,11 @@ lettre = { version = "0.11", default-features = false, features = ["builder", "s
 phxclaw-api-gateway = { path = "../phxclaw-api-gateway" }
 phxclaw-egress-broker = { path = "../phxclaw-egress-broker" }
 phxclaw-http-client = { path = "../phxclaw-http-client" }
+# Canal de mensagens (Telegram): provedor com token por concessao curta do broker.
+phxclaw-channel-gateway = { path = "../phxclaw-channel-gateway" }
+phxclaw-channel-providers = { path = "../phxclaw-channel-providers" }
+phxclaw-live-bus = { path = "../phxclaw-live-bus" }
+uuid.workspace = true
 postgres.workspace = true
 
 [features]

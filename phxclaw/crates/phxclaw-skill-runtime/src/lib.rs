@@ -434,6 +434,158 @@ impl LazySkillResolver {
     }
 }
 
+/// Uma skill em texto: o `SKILL.md` com cabecalho `---` (nome, descricao) e o corpo em
+/// Markdown. E o formato que o agente le da pasta de skills; o manifesto JSON acima e o do
+/// registro com versao e promocao, outra pergunta.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SkillDoc {
+    pub name: String,
+    pub description: String,
+    pub body: String,
+}
+
+/// Teto do `SKILL.md` lido: o corpo vai inteiro para o contexto do modelo.
+pub const SKILL_DOC_MAX_BYTES: u64 = 64 * 1024;
+/// Teto da descricao: ela vai para o prompt de TODA tarefa, uma linha por skill.
+pub const SKILL_DESCRIPTION_MAX_CHARS: usize = 300;
+
+/// Nome de skill: letras ASCII, digitos, `-` e `_`, ate 64. Sem ponto e sem barra, para
+/// o nome nunca virar caminho -- nem `..`, nem `a/b`, nem absoluto.
+pub fn validate_skill_name(name: &str) -> Result<(), SkillError> {
+    let ok = !name.is_empty()
+        && name.len() <= 64
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_'));
+    if ok {
+        Ok(())
+    } else {
+        Err(SkillError::InvalidName(name.chars().take(80).collect()))
+    }
+}
+
+/// Le o texto de um `SKILL.md`. O cabecalho e `chave: valor` por linha entre duas linhas
+/// `---`; so `name` e `description` sao obrigatorias, o resto se ignora.
+pub fn parse_skill_doc(text: &str) -> Result<SkillDoc, SkillError> {
+    let text = text.strip_prefix('\u{feff}').unwrap_or(text);
+    // `split_inclusive` e nao `lines`: o tamanho de cada linha conta o `\r\n` inteiro, e o
+    // corpo comeca no byte certo tambem em arquivo salvo no Windows.
+    let mut linhas = text.split_inclusive('\n');
+    if linhas.next().map(str::trim_end) != Some("---") {
+        return Err(SkillError::InvalidDoc("missing --- header".into()));
+    }
+    let mut name = None;
+    let mut description = None;
+    let mut fechou = false;
+    let mut consumido = text.find('\n').map_or(text.len(), |i| i + 1);
+    for linha in linhas.by_ref() {
+        consumido += linha.len();
+        let linha = linha.trim_end();
+        if linha.trim_end() == "---" {
+            fechou = true;
+            break;
+        }
+        if let Some((k, v)) = linha.split_once(':') {
+            let v = v.trim().trim_matches(|c| c == '"' || c == '\'').to_string();
+            match k.trim() {
+                "name" => name = Some(v),
+                "description" => description = Some(v),
+                _ => {}
+            }
+        }
+    }
+    if !fechou {
+        return Err(SkillError::InvalidDoc("unterminated --- header".into()));
+    }
+    let name = name.ok_or_else(|| SkillError::InvalidDoc("missing name".into()))?;
+    validate_skill_name(&name)?;
+    let description =
+        description.ok_or_else(|| SkillError::InvalidDoc("missing description".into()))?;
+    if description.is_empty() || description.chars().count() > SKILL_DESCRIPTION_MAX_CHARS {
+        return Err(SkillError::InvalidDoc(format!(
+            "description must have 1 to {SKILL_DESCRIPTION_MAX_CHARS} characters"
+        )));
+    }
+    let body = text
+        .get(consumido.min(text.len())..)
+        .unwrap_or("")
+        .trim()
+        .to_string();
+    Ok(SkillDoc {
+        name,
+        description,
+        body,
+    })
+}
+
+/// A pasta de skills: `<raiz>/<nome>/SKILL.md`, uma pasta por skill.
+#[derive(Debug, Clone)]
+pub struct SkillFolder {
+    root: PathBuf,
+}
+
+impl SkillFolder {
+    pub fn new(root: impl Into<PathBuf>) -> Self {
+        Self { root: root.into() }
+    }
+
+    pub fn root(&self) -> &Path {
+        &self.root
+    }
+
+    /// Le uma skill pelo nome. O nome se valida ANTES de virar caminho, e o caminho
+    /// canonico tem de continuar dentro da raiz: um symlink na pasta nao leva para fora.
+    /// A skill cujo cabecalho diz outro nome que a pasta e recusada, para o nome do
+    /// prompt e o nome do pedido serem sempre o mesmo.
+    pub fn load(&self, name: &str) -> Result<SkillDoc, SkillError> {
+        validate_skill_name(name)?;
+        let raiz = self.root.canonicalize()?;
+        let caminho = self.root.join(name).join("SKILL.md").canonicalize()?;
+        if !caminho.starts_with(&raiz) {
+            return Err(SkillError::PathEscape(name.to_string()));
+        }
+        let tamanho = fs::metadata(&caminho)?.len();
+        if tamanho > SKILL_DOC_MAX_BYTES {
+            return Err(SkillError::InvalidDoc(format!(
+                "SKILL.md has {tamanho} bytes, above {SKILL_DOC_MAX_BYTES}"
+            )));
+        }
+        let doc = parse_skill_doc(&fs::read_to_string(&caminho)?)?;
+        if doc.name != name {
+            return Err(SkillError::IndexMismatch(name.to_string()));
+        }
+        Ok(doc)
+    }
+
+    /// Todas as skills validas, por nome. A invalida fica de fora e volta em `rejected`
+    /// com o motivo: uma skill quebrada nao derruba a lista das outras, e nao some calada.
+    pub fn scan(&self) -> SkillScan {
+        let mut scan = SkillScan::default();
+        let Ok(entradas) = fs::read_dir(&self.root) else {
+            return scan;
+        };
+        let mut nomes: Vec<String> = entradas
+            .flatten()
+            .filter(|e| e.path().is_dir())
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .collect();
+        nomes.sort();
+        for nome in nomes {
+            match self.load(&nome) {
+                Ok(doc) => scan.skills.push(doc),
+                Err(e) => scan.rejected.push((nome, e.to_string())),
+            }
+        }
+        scan
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct SkillScan {
+    pub skills: Vec<SkillDoc>,
+    pub rejected: Vec<(String, String)>,
+}
+
 fn canonical_skill_hash(manifest: &SkillManifest) -> Result<String, SkillError> {
     let mut clone = manifest.clone();
     clone.sha256.clear();
@@ -507,6 +659,10 @@ pub enum SkillError {
     IndexMismatch(String),
     #[error("skill manifest hash mismatch: {0}")]
     HashMismatch(String),
+    #[error("invalid skill name: {0:?}")]
+    InvalidName(String),
+    #[error("invalid SKILL.md: {0}")]
+    InvalidDoc(String),
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error(transparent)]
@@ -534,5 +690,106 @@ mod tests {
             SkillState::Validated,
             &SkillResolutionPolicy::default()
         ));
+    }
+    fn pasta() -> PathBuf {
+        let d = std::env::temp_dir().join(format!("phx-skills-{}", new_uuid_v7().simple()));
+        fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    fn grava(raiz: &Path, pasta: &str, texto: &str) {
+        fs::create_dir_all(raiz.join(pasta)).unwrap();
+        fs::write(raiz.join(pasta).join("SKILL.md"), texto).unwrap();
+    }
+
+    #[test]
+    fn skill_md_le_cabecalho_e_corpo() {
+        let d = parse_skill_doc(
+            "---\nname: relatorio-pdf\ndescription: \"Gera relatorio\"\nversion: 1\n---\n\n# Passos\n1. a\n",
+        )
+        .unwrap();
+        assert_eq!(d.name, "relatorio-pdf");
+        assert_eq!(d.description, "Gera relatorio");
+        assert_eq!(d.body, "# Passos\n1. a");
+        let w = parse_skill_doc("---\r\nname: w\r\ndescription: W\r\n---\r\ncorpo\r\n").unwrap();
+        assert_eq!((w.description.as_str(), w.body.as_str()), ("W", "corpo"));
+        assert!(parse_skill_doc("sem cabecalho").is_err());
+        assert!(parse_skill_doc("---\nname: a\n").is_err());
+        assert!(
+            parse_skill_doc("---\nname: a\n---\ncorpo").is_err(),
+            "sem descricao"
+        );
+    }
+
+    #[test]
+    fn nome_com_caminho_e_recusado_antes_de_tocar_o_disco() {
+        for hostil in ["../x", "a/b", "/etc", "..", ".", "a.b", "", "a b"] {
+            assert!(
+                matches!(validate_skill_name(hostil), Err(SkillError::InvalidName(_))),
+                "{hostil:?} passou"
+            );
+        }
+        assert!(validate_skill_name("relatorio_pdf-2").is_ok());
+        let raiz = pasta();
+        let fora = raiz.with_extension("fora");
+        grava(
+            &fora,
+            "segredo",
+            "---\nname: segredo\ndescription: x\n---\nvazou",
+        );
+        let f = SkillFolder::new(raiz.join("skills"));
+        fs::create_dir_all(f.root()).unwrap();
+        assert!(matches!(
+            f.load("../../segredo"),
+            Err(SkillError::InvalidName(_))
+        ));
+        let _ = fs::remove_dir_all(raiz);
+        let _ = fs::remove_dir_all(fora);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlink_para_fora_da_pasta_e_recusado() {
+        let raiz = pasta();
+        let fora = pasta();
+        grava(&fora, "x", "---\nname: fuga\ndescription: x\n---\nvazou");
+        std::os::unix::fs::symlink(fora.join("x"), raiz.join("fuga")).unwrap();
+        let e = SkillFolder::new(&raiz).load("fuga").unwrap_err();
+        assert!(matches!(e, SkillError::PathEscape(_)), "{e}");
+        let _ = fs::remove_dir_all(raiz);
+        let _ = fs::remove_dir_all(fora);
+    }
+
+    #[test]
+    fn varredura_lista_as_validas_e_diz_quais_recusou() {
+        let raiz = pasta();
+        grava(
+            &raiz,
+            "b-skill",
+            "---\nname: b-skill\ndescription: B\n---\ncorpo b",
+        );
+        grava(
+            &raiz,
+            "a-skill",
+            "---\nname: a-skill\ndescription: A\n---\ncorpo a",
+        );
+        grava(&raiz, "troca", "---\nname: outro\ndescription: T\n---\nx");
+        grava(
+            &raiz,
+            "com.ponto",
+            "---\nname: com.ponto\ndescription: P\n---\nx",
+        );
+        let scan = SkillFolder::new(&raiz).scan();
+        let nomes: Vec<_> = scan.skills.iter().map(|s| s.name.as_str()).collect();
+        assert_eq!(nomes, ["a-skill", "b-skill"]);
+        let recusadas: Vec<_> = scan.rejected.iter().map(|(n, _)| n.as_str()).collect();
+        assert_eq!(recusadas, ["com.ponto", "troca"]);
+        assert!(
+            SkillFolder::new(raiz.join("nao-existe"))
+                .scan()
+                .skills
+                .is_empty()
+        );
+        let _ = fs::remove_dir_all(raiz);
     }
 }

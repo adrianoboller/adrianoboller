@@ -33,6 +33,12 @@ pub struct AgentConfig {
     /// terminava NARRANDO a acao ("I will create rust.xlsx") sem chamar a ferramenta.
     /// Resposta so em texto recebe ate 2 lembretes antes de ser aceita como final.
     pub require_final_tool: bool,
+    /// Memoria entre tarefas. Com ela e com `memory.read` concedida, o motor injeta no
+    /// comeco as memorias mais relevantes para o objetivo. Sem ela, nada se le do disco.
+    pub memoria: Option<crate::memoria::Memoria>,
+    /// Pasta de skills. Com ela e com `skill.read` concedida, o prompt lista nome e
+    /// descricao de cada skill.
+    pub skills: Option<phxclaw_skill_runtime::SkillFolder>,
 }
 
 impl Default for AgentConfig {
@@ -45,6 +51,8 @@ impl Default for AgentConfig {
             capabilities: BTreeSet::new(),
             extra_instructions: None,
             require_final_tool: false,
+            memoria: None,
+            skills: None,
         }
     }
 }
@@ -111,7 +119,7 @@ impl Agent {
 
     /// Ferramentas que a politica deixa o modelo VER. As negadas nem aparecem: modelo que
     /// ve uma ferramenta proibida tenta usa-la e gasta passos.
-    fn visible_specs(&self) -> Vec<ToolSpec> {
+    pub fn visible_specs(&self) -> Vec<ToolSpec> {
         self.tools
             .iter()
             .filter(|t| self.config.capabilities.contains(t.capability()))
@@ -201,6 +209,27 @@ The answer is shown to the user."
         if let Some(x) = &self.config.extra_instructions {
             sistema.push_str("\n\n");
             sistema.push_str(x);
+        }
+        // Memoria e skills entram so com a capacidade de LER concedida: injetar o que a
+        // politica nega a ferramenta seria a porta dos fundos da propria politica. E o
+        // portao vem antes do disco -- negado, nem se abre o arquivo.
+        for bloco in [
+            self.config
+                .memoria
+                .as_ref()
+                .filter(|_| self.config.capabilities.contains("memory.read"))
+                .and_then(|m| m.bloco_para_o_prompt(&task.objective)),
+            self.config
+                .skills
+                .as_ref()
+                .filter(|_| self.config.capabilities.contains("skill.read"))
+                .and_then(crate::skills::bloco_para_o_prompt),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            sistema.push_str("\n\n");
+            sistema.push_str(&bloco);
         }
         let mut msgs = vec![
             Message::system(sistema),
@@ -374,7 +403,9 @@ Do not repeat it; use that result, try a different tool or arguments, or give th
         )
     }
 
-    async fn call_tool(
+    /// O portao unico: capacidade, prazo e evidencia. Publico porque o `mcp-serve` atende
+    /// por aqui -- um servidor MCP com portao proprio seria a segunda copia da politica.
+    pub async fn call_tool(
         &self,
         call: &ToolCall,
         ctx: &ToolContext,

@@ -300,6 +300,13 @@ fn relevance_score(record: &MemoryRecord, query_terms: &BTreeSet<String>) -> i64
     if query_terms.is_empty() {
         return 0;
     }
+    term_score(record, query_terms) + i64::from(record.confidence_millis / 100)
+}
+
+/// So o casamento de termos, sem o bonus de confianca: e o que diz se uma memoria tem
+/// ALGUMA coisa a ver com a pergunta. A busca filtra por ele; o compilador de contexto soma
+/// a confianca por cima. Uma pontuacao so, para as duas nunca discordarem do que casa.
+fn term_score(record: &MemoryRecord, query_terms: &BTreeSet<String>) -> i64 {
     let namespace = record.namespace.to_ascii_lowercase();
     let key = record.key.to_ascii_lowercase();
     let value = serde_json::to_string(&record.value)
@@ -316,7 +323,7 @@ fn relevance_score(record: &MemoryRecord, query_terms: &BTreeSet<String>) -> i64
         let occurrences = value.match_indices(term).count().min(16) as i64;
         score += occurrences * 2;
     }
-    score + i64::from(record.confidence_millis / 100)
+    score
 }
 
 fn tokenize(value: &str) -> BTreeSet<String> {
@@ -327,10 +334,170 @@ fn tokenize(value: &str) -> BTreeSet<String> {
         .collect()
 }
 
+/// Uma memoria achada pela busca, com a pontuacao que a pos ali.
+#[derive(Debug, Clone)]
+pub struct MemoryHit<'a> {
+    pub record: &'a MemoryRecord,
+    pub score: i64,
+}
+
+/// Busca por palavras: so volta o que casa ao menos um termo, o mais pontuado primeiro e,
+/// no empate, o mais novo. Memoria que nao casa nada nao volta, ao contrario do
+/// `ContextCompiler`, que enche o pacote ate o teto: quem pergunta "o que sei sobre X"
+/// quer ouvir "nada" quando nao ha nada.
+///
+/// Termo de menos de 3 letras fica fora DAQUI (o compilador de contexto continua com o
+/// dele): o casamento e por substring, e "de", "do", "em" casam dentro de quase toda
+/// palavra em portugues -- toda memoria voltaria para todo objetivo.
+pub fn search<'a, S: MemoryStore>(store: &'a S, query: &str, limit: usize) -> Vec<MemoryHit<'a>> {
+    let terms: BTreeSet<String> = tokenize(query)
+        .into_iter()
+        .filter(|t| t.chars().count() >= 3)
+        .collect();
+    let now = Utc::now();
+    let mut hits: Vec<MemoryHit<'a>> = store
+        .all()
+        .into_iter()
+        .filter(|r| r.expires_at.is_none_or(|e| e > now))
+        .map(|record| MemoryHit {
+            record,
+            score: term_score(record, &terms),
+        })
+        .filter(|h| h.score > 0)
+        .collect();
+    hits.sort_by(|a, b| {
+        b.score
+            .cmp(&a.score)
+            .then_with(|| b.record.created_at.cmp(&a.record.created_at))
+            .then_with(|| b.record.uuid.cmp(&a.record.uuid))
+    });
+    hits.truncate(limit);
+    hits
+}
+
+/// Tetos do arquivo de memorias. Os dois existem porque o arquivo e lido inteiro a cada
+/// tarefa: sem teto de entradas ele cresce para sempre, e sem teto por entrada uma so
+/// memoria gigante ocupa o contexto que as outras deviam dividir.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MemoryLimits {
+    /// Bytes do `value` serializado de uma entrada.
+    pub max_entry_bytes: usize,
+    pub max_entries: usize,
+}
+
+impl Default for MemoryLimits {
+    fn default() -> Self {
+        Self {
+            max_entry_bytes: 2_000,
+            max_entries: 200,
+        }
+    }
+}
+
+/// Memorias num arquivo JSON so, em ordem de gravacao, com a mais antiga saindo quando o
+/// teto de entradas estoura. Grava por temporario + rename: processo que cai no meio deixa
+/// o arquivo anterior inteiro, nunca um JSON pela metade.
+///
+/// Nao coordena processos: dois processos gravando o mesmo arquivo ao mesmo tempo perdem a
+/// gravacao de um deles (nunca o arquivo). Quem tem varias tarefas no mesmo processo
+/// serializa por fora.
+#[derive(Debug)]
+pub struct FileMemoryStore {
+    path: std::path::PathBuf,
+    limits: MemoryLimits,
+    items: Vec<MemoryRecord>,
+}
+
+impl FileMemoryStore {
+    /// Arquivo ausente e memoria vazia; arquivo ilegivel e erro, para nao sobrescrever com
+    /// nada o que alguem gravou.
+    pub fn open(
+        path: impl Into<std::path::PathBuf>,
+        limits: MemoryLimits,
+    ) -> Result<Self, MemoryError> {
+        let path = path.into();
+        let items = match std::fs::read(&path) {
+            Ok(b) => serde_json::from_slice(&b)?,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => vec![],
+            Err(e) => return Err(e.into()),
+        };
+        Ok(Self {
+            path,
+            limits,
+            items,
+        })
+    }
+
+    pub fn limits(&self) -> MemoryLimits {
+        self.limits
+    }
+
+    pub fn len(&self) -> usize {
+        self.items.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.items.is_empty()
+    }
+
+    /// Grava e devolve as que sairam pelo teto. Entrada acima do teto e recusada inteira:
+    /// cortar em silencio guardaria uma memoria que diz menos do que quem gravou pensa.
+    pub fn append(&mut self, record: MemoryRecord) -> Result<Vec<MemoryRecord>, MemoryError> {
+        let bytes = serde_json::to_vec(&record.value)?.len();
+        if bytes > self.limits.max_entry_bytes {
+            return Err(MemoryError::EntryTooLarge {
+                bytes,
+                max: self.limits.max_entry_bytes,
+            });
+        }
+        self.items
+            .retain(|r| !(r.namespace == record.namespace && r.key == record.key));
+        self.items.push(record);
+        let excesso = self
+            .items
+            .len()
+            .saturating_sub(self.limits.max_entries.max(1));
+        let saidas: Vec<MemoryRecord> = self.items.drain(..excesso).collect();
+        self.save()?;
+        Ok(saidas)
+    }
+
+    fn save(&self) -> Result<(), MemoryError> {
+        if let Some(dir) = self.path.parent() {
+            std::fs::create_dir_all(dir)?;
+        }
+        let mut tmp = self.path.clone().into_os_string();
+        tmp.push(".tmp");
+        std::fs::write(&tmp, serde_json::to_vec_pretty(&self.items)?)?;
+        std::fs::rename(&tmp, &self.path)?;
+        Ok(())
+    }
+}
+
+impl MemoryStore for FileMemoryStore {
+    fn put(&mut self, record: MemoryRecord) -> Result<(), MemoryError> {
+        self.append(record).map(|_| ())
+    }
+
+    fn get(&self, namespace: &str, key: &str) -> Option<&MemoryRecord> {
+        self.items
+            .iter()
+            .find(|r| r.namespace == namespace && r.key == key)
+    }
+
+    fn all(&self) -> Vec<&MemoryRecord> {
+        self.items.iter().collect()
+    }
+}
+
 #[derive(Debug, Error)]
 pub enum MemoryError {
     #[error(transparent)]
     Json(#[from] serde_json::Error),
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
+    #[error("memory entry has {bytes} bytes, above the limit of {max}")]
+    EntryTooLarge { bytes: usize, max: usize },
 }
 
 #[cfg(test)]
@@ -418,5 +585,80 @@ mod tests {
             )
             .unwrap();
         assert_eq!(bundle.items[0].key, "rust");
+    }
+    fn nota(key: &str, texto: &str) -> MemoryRecord {
+        MemoryRecord::new(
+            "agent",
+            key,
+            serde_json::json!({ "text": texto }),
+            MemoryScope::Project("p".into()),
+            DataClassification::Internal,
+            vec![],
+        )
+        .unwrap()
+    }
+
+    fn arquivo() -> std::path::PathBuf {
+        std::env::temp_dir()
+            .join(format!("phx-mem-{}", new_uuid_v7().simple()))
+            .join("m.json")
+    }
+
+    #[test]
+    fn teto_de_entradas_tira_a_mais_antiga_e_sobrevive_a_reabertura() {
+        let p = arquivo();
+        let limites = MemoryLimits {
+            max_entry_bytes: 1_000,
+            max_entries: 2,
+        };
+        let mut s = FileMemoryStore::open(&p, limites).unwrap();
+        assert!(s.append(nota("a", "primeira")).unwrap().is_empty());
+        assert!(s.append(nota("b", "segunda")).unwrap().is_empty());
+        let saiu = s.append(nota("c", "terceira")).unwrap();
+        assert_eq!(
+            saiu.iter().map(|r| r.key.as_str()).collect::<Vec<_>>(),
+            ["a"]
+        );
+        let de_novo = FileMemoryStore::open(&p, limites).unwrap();
+        let chaves: Vec<_> = de_novo.all().iter().map(|r| r.key.clone()).collect();
+        assert_eq!(chaves, ["b", "c"]);
+        let _ = std::fs::remove_dir_all(p.parent().unwrap());
+    }
+
+    #[test]
+    fn entrada_acima_do_teto_e_recusada_inteira() {
+        let p = arquivo();
+        let mut s = FileMemoryStore::open(
+            &p,
+            MemoryLimits {
+                max_entry_bytes: 40,
+                max_entries: 5,
+            },
+        )
+        .unwrap();
+        let e = s.append(nota("a", &"x".repeat(100))).unwrap_err();
+        assert!(matches!(e, MemoryError::EntryTooLarge { .. }), "{e}");
+        assert!(s.is_empty() && !p.exists());
+    }
+
+    #[test]
+    fn busca_so_volta_o_que_casa_e_o_mais_pontuado_primeiro() {
+        let mut s = InMemoryStore::default();
+        s.put(nota("1", "o cliente prefere relatorio em PDF"))
+            .unwrap();
+        s.put(nota(
+            "2",
+            "relatorio mensal sai em PDF, relatorio semanal em XLSX",
+        ))
+        .unwrap();
+        s.put(nota("3", "a senha do wifi muda toda semana"))
+            .unwrap();
+        let achados = search(&s, "Relatorio PDF", 5);
+        let chaves: Vec<_> = achados.iter().map(|h| h.record.key.as_str()).collect();
+        assert_eq!(chaves, ["2", "1"]);
+        assert!(search(&s, "kubernetes", 5).is_empty());
+        assert_eq!(search(&s, "relatorio", 1).len(), 1);
+        // "de" casaria por substring com "toda semana"? Nao: termo curto fica fora.
+        assert!(search(&s, "de em do", 5).is_empty());
     }
 }

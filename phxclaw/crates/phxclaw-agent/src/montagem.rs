@@ -24,6 +24,11 @@ pub const CAPACIDADES_PADRAO: &[&str] = &[
     "shell.exec",
     "agent.spawn",
     "site.publish",
+    // Memoria e skills so tocam arquivos do proprio agente, fora da pasta da tarefa e sem
+    // rede; a gravacao tarja o que tem forma de segredo antes do disco.
+    "memory.read",
+    "memory.write",
+    "skill.read",
 ];
 
 #[derive(Clone)]
@@ -35,6 +40,12 @@ pub struct Montagem {
     /// Sessoes de navegador compartilhadas por todas as tarefas do processo.
     pub browser: Arc<BrowserSessions>,
     pub search: Option<Arc<dyn phxclaw_web_search::SearchBackend>>,
+    /// Canal de mensagens ligado pelo `phxclaw canal telegram`; sem ele, `channel_send`
+    /// nem existe.
+    pub canal: Option<crate::canal::CanalTelegram>,
+    /// Ferramentas dos servidores MCP declarados em `PHXCLAW_MCP_CONFIG`, descobertas uma
+    /// vez na montagem. Capacidade `mcp.<servidor>`, fora do padrao: o operador concede.
+    pub mcp: Vec<Arc<dyn Tool>>,
 }
 
 impl Montagem {
@@ -59,6 +70,8 @@ impl Montagem {
             shell_network: false,
             browser: BrowserSessions::new(policy),
             search: search_backend().ok().map(Arc::from),
+            canal: None,
+            mcp: crate::mcp::carregar_do_ambiente(),
         }
     }
 
@@ -106,10 +119,15 @@ impl Montagem {
         tools.push(Arc::new(crate::visao::DesktopTool));
         tools.extend(office_tools());
         tools.extend(crate::arquivos::arquivos_tools());
+        tools.extend(self.mcp.iter().cloned());
         tools.push(Arc::new(crate::site::PublishSiteTool {
             base_url: std::env::var("PHXCLAW_PUBLIC_URL")
                 .unwrap_or_else(|_| "http://127.0.0.1:8787".into()),
         }));
+        // Fala com chat so se o canal foi ligado, e so roda com `channel.send` concedida.
+        if let Some(c) = &self.canal {
+            tools.push(Arc::new(crate::canal::ChannelSendTool { canal: c.clone() }));
+        }
         // E-mail so existe se o operador configurou SMTP, e so roda se `mail.send` for
         // concedida explicitamente: nao esta no padrao.
         if let Some(c) = crate::email::SmtpConfig::from_env() {
@@ -133,10 +151,25 @@ impl Montagem {
         {
             tools.push(Arc::new(rust));
         }
+        // Memoria e skills: o mesmo `Memoria` e a mesma pasta vao para as ferramentas e para
+        // o motor, que injeta no comeco da tarefa o que a ferramenta acharia.
+        let memoria = crate::memoria::Memoria::do_ambiente(self.store.root());
+        let skills = crate::skills::pasta_do_ambiente(self.store.root());
+        tools.push(Arc::new(crate::memoria::MemorySaveTool {
+            memoria: memoria.clone(),
+        }));
+        tools.push(Arc::new(crate::memoria::MemorySearchTool {
+            memoria: memoria.clone(),
+        }));
+        tools.push(Arc::new(crate::skills::SkillLoadTool {
+            pasta: skills.clone(),
+        }));
         let caps: Vec<&str> = self.capabilities.iter().map(String::as_str).collect();
         let config = AgentConfig {
             max_steps: self.max_steps,
             require_final_tool: true,
+            memoria: Some(memoria),
+            skills: Some(skills),
             ..AgentConfig::default()
         }
         .grant(&caps);
