@@ -4,7 +4,7 @@
      `--catraca` reprova se este arquivo nao bater com o que o extrator
      geraria agora; rode o comando sem flag para atualizar. -->
 
-Gerado dos `cognicao_*.md` com `**Estado:** INFRUTIFERO` -- 7 hoje, de 377 cognicoes no total.
+Gerado dos `cognicao_*.md` com `**Estado:** INFRUTIFERO` -- 8 hoje, de 378 cognicoes no total.
 
 ## «O branch da frente é ancestral do HEAD» não prova que o trabalho dela foi integrado
 
@@ -17,6 +17,12 @@ Gerado dos `cognicao_*.md` com `**Estado:** INFRUTIFERO` -- 7 hoje, de 377 cogni
 - Causa: o conserto das seis contradições do parecer (commit `2c77e6fe`) foi feito por leitura humana das frases que o parecer citou, e a busca parou nas redações citadas; a mesma capacidade dita com outra forma («traduz um `SELECT` simples» no `FORMATO.md`, «Compactação … | pendente» numa tabela do `README.md`) não era uma das frases citadas e ficou.
 - Prevencao: conserto de contradição de contrato fecha com `python3 docs/dossie/catraca-prosa-x-celula.py` verde, e não com a lista do parecer riscada; a catraca roda no fecho do `portao-dos-geradores.py` e no `bancada/catracas/todas.py`.
 - Arquivo: [cognicao_contradicao-consertada-a-mao-sobrevive-fora-do-arquivo-lido_20261001_0413.md](cognicao_contradicao-consertada-a-mao-sobrevive-fora-do-arquivo-lido_20261001_0413.md)
+
+## Derrubar um sistema de arquivos pelo CAMINHO derruba o do contêiner quando a montagem falha calada
+
+- Causa: para medir o pedido 605 (o `fsync` de criar tabela protege um terceiro?), a frente escreveu `bancada/catastrofes/terceiro-605.sh`: monta um ext4 sobre loop e simula a queda com `FS_IOC_SHUTDOWN` + `EXT4_GOING_FLAGS_NOLOGFLUSH` no ponto de montagem. O script não tinha `set -e` nem conferia a montagem. A montagem falhou sem ninguém ver, o ponto de montagem continuou sendo um diretório comum do `/dev/vda`, e o ioctl derrubou o ext4 RAIZ do contêiner sem descarregar o cache. Todo `open` passou a devolver EIO, para todas as frentes e para o integrador, até o contêiner ser reiniciado.
+- Prevencao: o alvo de todo ioctl destrutivo se confere pelo DISPOSITIVO, não pelo caminho: `st_dev` do alvo diferente do `st_dev` de `/` e igual ao do loop recém-montado, e `mountpoint -q` antes de cada derrubada, com `set -e`. Sem essas três conferências o script não roda. Melhor ainda: queda simulada só em VM descartável. O script ficou DESARMADO (primeira linha sai com 99) no ramo da frente, e não se integra sem as conferências.
+- Arquivo: [cognicao_derrubar-o-fs-pelo-caminho-derruba-o-do-conteiner_20261001_0930.md](cognicao_derrubar-o-fs-pelo-caminho-derruba-o-do-conteiner_20261001_0930.md)
 
 ## Dono de arquivo é sinal FORTE, não um palpite como data ou conteúdo
 
