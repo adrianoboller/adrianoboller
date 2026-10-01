@@ -32,6 +32,12 @@ Fonte da seção `product-whatsapp` do tema **EnginePrint Industrial** (Horizon
     node mock/setas.mjs         # setas não abrem o zoom junto
     AJUSTES='{"whatsapp_number":""}' node mock/render.mjs sections/product-whatsapp.liquid bambu-lab-a1 mock/a1-sem.html '{"Padrão":417,"Combo":2580}'
     node mock/prova-estoque.mjs mock/a1.html mock/a1-sem.html   # "Verificar estoque" → WhatsApp, mensagem segue a variante; sem número volta "Em estoque"
+    node mock/prova-estoque.mjs --tema <id-do-tema> https://engineprint.com.br/products/bambu-lab-a1   # a mesma prova no preview da loja
+
+**Cor só se prova no preview da loja.** O mock não carrega o `base.css` do
+tema, e foi ele que pintou o link de laranja no hover por um seletor de
+especificidade (0,3,2) enquanto o mock dizia 36 de 36 — ver
+`cognicao/cognicao_mock_sem_css_do_tema_aprova_o_que_a_loja_reprova_20261001_1915.md`.
 
 `AJUSTES` é um JSON que sobrepõe as configurações da seção, para simular o
 dono mudando algo no editor sem tocar no esquema. Com a loja fora do ar o
