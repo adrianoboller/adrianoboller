@@ -2722,6 +2722,12 @@ pub mod panico_de_teste {
         /// arquivo pela metade que se declara com a geometria nova -- o que a
         /// abertura nao pode confundir com um volume pronto.
         NoMeioDoNovoDoVolume,
+        /// `RegFile::alargar_fase_a` e o irmao `regravar_esquema_fase_a`
+        /// (pedido 427): o retrato ja tirado e o dono dos `*.novo` ja
+        /// registrado, e nenhum byte de `*.novo` escrito. E o ponto em que um
+        /// vizinho fora do congelamento faz NASCER um volume que o retrato
+        /// nao viu.
+        FaseADepoisDoRetrato,
     }
 
     #[cfg(debug_assertions)]
@@ -2729,6 +2735,25 @@ pub mod panico_de_teste {
         static ARMADO: std::cell::Cell<Option<(Ponto, u32)>> = const { std::cell::Cell::new(None) };
         static PAUSA: std::cell::RefCell<Option<(Ponto, u32, String)>> =
             const { std::cell::RefCell::new(None) };
+        static GANCHO: std::cell::RefCell<Option<(Ponto, Gancho)>> =
+            const { std::cell::RefCell::new(None) };
+    }
+
+    #[cfg(debug_assertions)]
+    type Gancho = Box<dyn FnOnce()>;
+
+    /// Arma um GANCHO na primeira passagem por `p`, NESTA thread (pedido
+    /// 427): a thread roda `f` e SEGUE, como se nada tivesse acontecido.
+    ///
+    /// Existe porque o panico e a pausa param a operacao, e o defeito do 427
+    /// so aparece se ela CONTINUAR: e o vizinho que escreve no meio da FASE A
+    /// e a FASE B que vem depois sem saber. Montar o estado a mao entre as
+    /// duas chamadas provaria o intervalo ENTRE as fases, nao o de dentro.
+    pub fn armar_gancho(p: Ponto, f: impl FnOnce() + 'static) {
+        #[cfg(debug_assertions)]
+        GANCHO.with(|g| *g.borrow_mut() = Some((p, Box::new(f))));
+        #[cfg(not(debug_assertions))]
+        let _ = (p, f);
     }
 
     /// Arma o ponto NESTA thread. Dispara uma vez so, e desarma sozinho.
@@ -2777,6 +2802,7 @@ pub mod panico_de_teste {
         {
             ARMADO.with(|a| a.set(None));
             PAUSA.with(|a| *a.borrow_mut() = None);
+            GANCHO.with(|g| *g.borrow_mut() = None);
         }
     }
 
@@ -2809,6 +2835,19 @@ pub mod panico_de_teste {
                 loop {
                     std::thread::park();
                 }
+            }
+            // Tirado da celula ANTES de rodar: o gancho abre tabela e passa
+            // por outros pontos, e um `borrow_mut` vivo ali seria panico de
+            // reentrada em vez do vizinho que o teste quer.
+            let gancho = GANCHO.with(|g| {
+                let mut g = g.borrow_mut();
+                match g.as_ref() {
+                    Some((q, _)) if *q == p => g.take().map(|(_, f)| f),
+                    _ => None,
+                }
+            });
+            if let Some(f) = gancho {
+                f();
             }
         }
         #[cfg(not(debug_assertions))]

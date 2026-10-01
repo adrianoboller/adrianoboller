@@ -640,6 +640,10 @@ dia, nunca no desejado:
   (`regravar-esquema-troca-volume-a-volume-632`) e o cinto da abertura que
   renomeava `*.novo` incompleto (`troca-decidida-renomeia-novo-incompleto-632`).
   693, medido pelo `--numeros`.
+  **SUBIU para 694 em 01/10/2026** (693 + 1; pedido 427): o retrato da FASE A
+  que so fotografava os volumes existentes, e o volume que nascia no meio dela
+  ficava na geometria velha (`retrato-da-fase-a-nao-ve-volume-que-nasce-427`).
+  694, medido pelo `--numeros`.
 
 # A QUINTA REGUA: a tabela publicada pode ser MENOR que o catalogo
 
@@ -746,7 +750,7 @@ TETO_TESTE_MORTO = 0
 TETO_TRECHO_AMBIGUO = 0
 TETO_TESTE_FORA_DO_BINARIO = 0
 TETO_TESTE_SEM_MODULO = 0
-PISO_DAS_ENTRADAS = 693
+PISO_DAS_ENTRADAS = 694
 
 # ------------------------------------------------------------- APOSENTADAS
 #

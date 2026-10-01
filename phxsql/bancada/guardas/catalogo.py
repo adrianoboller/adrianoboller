@@ -22640,4 +22640,33 @@ pub const PRAZO_SOB_A_TRAVA: Duration = Duration::from_secs(3600);""",
         "seguem": ["duplicar_no_meio_da_troca_decidida_leva_uma_versao_so"],
         "prazo": 1200,
     },
+    {
+        "id": "retrato-da-fase-a-nao-ve-volume-que-nasce-427",
+        "titulo": "o retrato da FASE A fotografa so os volumes que existem, e o volume que nasce no meio dela fica na geometria velha",
+        "porque": (
+            "pedido 427: o vizinho que escapa do congelamento e enche o ultimo "
+            "volume faz nascer o seguinte, e nascer nao muda o tamanho de "
+            "nenhum volume velho -- o unico sinal era o `mtime` do volume 1, "
+            "onde moram os contadores. Com o tique grosso (FAT 2 s, HFS+/NFS "
+            "1 s, simulado devolvendo o `mtime`), o retrato batia, a FASE B "
+            "trocava os tres velhos e a tabela parava de abrir (`Corrompido`). "
+            "O ausente entra no retrato como AUSENTE e existir nao depende de "
+            "tique."
+        ),
+        "arquivo": "crates/phxsql-store/src/reg.rs",
+        "trecho": """        for v in self.volumes.candidatos() {""",
+        "troca": """        // DEFEITO REPOSTO (427): so os existentes.
+        for v in Vec::<u32>::new() {""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "volume-que-nasce-na-fase-a"],
+        "caem": [
+            "o_volume_que_nasce_na_fase_a_do_acrescentar_coluna_aborta_a_troca",
+            "o_volume_que_nasce_na_fase_a_do_esquema_aborta_a_troca",
+        ],
+        "seguem": [
+            "com_tique_fino_o_volume_1_ja_denunciava_e_continua",
+            "sem_o_cinto_o_volume_que_nasceu_deixa_a_tabela_sem_abrir",
+        ],
+        "prazo": 1200,
+    },
 ]
