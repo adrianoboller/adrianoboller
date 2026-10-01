@@ -11,6 +11,22 @@ O motivo de o papel existir à parte: numa rodada de seis frentes, três defeito
 apareceram no **encontro** delas — nenhuma frente sozinha podia ver. Integrar é procurar
 exatamente isso, e decidir com número.
 
+## Vários integradores ao mesmo tempo (o conselho)
+
+Ordem do dono, 01/10/2026: *«Pode-se ter diversos integradores trabalhando ao mesmo tempo. Se um
+disser NoGo, os outros aguardam. Só pode dar Go se todos derem previamente erros ou OK, e só com
+OK é que podem todos dar Go.»*
+
+| pareceres registrados | decisão |
+|---|---|
+| algum NoGo | **NoGo** — todos aguardam o conserto; ninguém emite Go |
+| falta parecer de algum integrador ativo | **Aguardar** — mesmo que os presentes sejam todos OK |
+| todos registrados e todos OK | **Go** — unânime, e só então |
+
+Cada integrador registra o próprio parecer (OK, ou NoGo com os erros) antes de olhar o dos outros;
+parecer é de quem o assinou e não se troca por maioria. Um NoGo só deixa de valer quando o mesmo
+integrador, depois do conserto, registra um parecer novo.
+
 ## O roteiro do Go/NoGo
 
 1. **Espere quem toca o mesmo arquivo.** Frente pronta cujo código mora em arquivo que outra

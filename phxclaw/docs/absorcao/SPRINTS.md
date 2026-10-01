@@ -40,6 +40,7 @@ abaixo aparece em exatamente uma sprint.
 | SP000023 | 6 | Segredo no commit: gitleaks num hook do git_write | — | PLANEJADA |
 | SP000024 | 7 | Navegador pela árvore de acessibilidade (refs); MCPs por configuração (context7, dbhub); embedding de código se o recall pedir | — | PLANEJADA |
 | SP000025 | 7 | pywinauto pelo device-node num Windows com WinDev | — | BLOQUEADA (dono: máquina Windows) |
+| SP000026 | — | Conselho de integradores no agente: `go_no_go` registra parecer por integrador; Go só unânime, um NoGo bloqueia, parecer faltando aguarda | — | PLANEJADA |
 | | | **Total de chaves** | **54** | |
 
 ```mermaid
