@@ -4,13 +4,19 @@
      `--catraca` reprova se este arquivo nao bater com o que o extrator
      geraria agora; rode o comando sem flag para atualizar. -->
 
-Gerado dos `cognicao_*.md` com `**Estado:** INFRUTIFERO` -- 7 hoje, de 377 cognicoes no total.
+Gerado dos `cognicao_*.md` com `**Estado:** INFRUTIFERO` -- 8 hoje, de 378 cognicoes no total.
 
 ## «O branch da frente é ancestral do HEAD» não prova que o trabalho dela foi integrado
 
 - Causa: a limpeza de cópias de trabalho decidia «integrada» por `git merge-base --is-ancestor worktree-agent-X HEAD`. As frentes NÃO comitam — a regra da casa é que só o integrador comita —, então o branch de toda frente fica parado no commit de onde ela saiu, e esse commit é SEMPRE ancestral do HEAD. A conferência dizia «integrada» para frente cujo trabalho inteiro morava só na árvore de trabalho, e o `git worktree remove -f -f` o apagou: em 01/10/2026, quatro frentes prontas e com portões verdes (513 passo 1, 329+331, a catraca do 335, 600+601+245) sumiram assim. A prova de «nenhum processo usa» (cwd, descritores, mapas) passou — ela responde outra pergunta.
 - Prevencao: antes de apagar uma cópia de trabalho, exigir as DUAS coisas: `git -C <copia> status --porcelain` vazio (nada fora de commit) E o commit da ponta alcançável do HEAD. Árvore suja nunca é «integrada», seja qual for o grafo. E nunca `-f -f` numa cópia que a conferência não provou limpa: o `-f` existe para pular exatamente a proteção que teria parado o erro. Por ordem do dono, além disso, o trabalho de toda frente é salvo como objeto do git (`phxsql/salvar-frentes.sh`, `refs/salvas/`) a cada 10 minutos e antes de toda limpeza, e só `phxsql/limpar-frentes.sh` apaga cópia de frente.
 - Arquivo: [cognicao_ancestral-do-head-nao-prova-que-o-trabalho-foi-integrado_20261001_0500.md](cognicao_ancestral-do-head-nao-prova-que-o-trabalho-foi-integrado_20261001_0500.md)
+
+## A conferência da réplica fiel não mora na função que o bidirecional também chama
+
+- Causa: a conferência da linhagem entrou em `garantir_tabela_da_replica` pelo nome da função, e o `abrir_para_bidi` também a chama — 6 testes de soquete caíram (5 do bidirecional, onde a linhagem diverge legitimamente).
+- Prevencao: antes de pôr uma conferência numa função, listar quem a chama; a da réplica fiel mora em `recusa_da_linhagem`, chamada só do `abrir_para_replicar`, e sai pelo `romper_continuidade`.
+- Arquivo: [cognicao_conferencia-da-replica-fiel-nao-mora-na-funcao-que-o-bidi-tambem-chama_20261001_1500.md](cognicao_conferencia-da-replica-fiel-nao-mora-na-funcao-que-o-bidi-tambem-chama_20261001_1500.md)
 
 ## Contradição consertada à mão sobrevive no arquivo que ninguém releu
 

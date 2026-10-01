@@ -19423,7 +19423,11 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "«a etiqueta nao confere»."
         ),
         "arquivo": "crates/phxsql-server/src/servidor.rs",
-        "trecho": """            let imagem = t.imagem_para_o_fio(&imagem)?;
+        # O trecho ganhou o `map_err` do pedido 603 (a recusa do evento pre-344
+        # nomeia a posicao); o defeito reposto e o mesmo.
+        "trecho": """            let imagem = t.imagem_para_o_fio(&imagem).map_err(|e| {
+                PhxError::Corrompido(format!("evento {} do diario: {e}", desde + i as u64))
+            })?;
 """,
         "troca": """            // DEFEITO REPOSTO (344): a imagem do diario vai selada ao fio.
 """,
@@ -20874,5 +20878,177 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "servidor::testes_pitr::restaura_ate_um_instante_no_meio_do_diario",
         ],
         "prazo": 600,
+    },
+    {
+        "id": "linhagem-nao-cunhada-na-declaracao",
+        "titulo": "a tabela declarada nasce sem linhagem: duas origens com historias diferentes ficam indistinguiveis e o carimbo empatado de dois servidores recem-nascidos apaga a linha errada",
+        "porque": (
+            "pedido 601, parecer do DBA de 01/10/2026 (H4): o `rowstamp` e "
+            "contador do processo e dois `phxsqld` recem-nascidos emitem o "
+            "mesmo 1. A linhagem (UUID v7 no PSCH v11) e cunhada no "
+            "`Schema::new`, o caminho de DECLARAR; sem ela nao ha o que "
+            "conferir e a garantia «a replica para antes de apagar a linha de "
+            "outra origem» nao vale."
+        ),
+        "arquivo": "crates/phxsql-core/src/schema.rs",
+        "trecho": """        esquema.linhagem = Some(Uuid::v7());
+""",
+        "troca": """        // DEFEITO REPOSTO (601): a tabela nasce sem historia.
+        esquema.linhagem = None;
+""",
+        "pacote": "phxsql-core",
+        "alvo": ["--lib"],
+        "caem": [
+            "schema::testes_da_linhagem::cada_tabela_nasce_com_historia_propria_e_ela_atravessa_o_disco",
+        ],
+        # Nao o teste do v10: ele trunca os 17 bytes da linhagem, e sem ela
+        # cortaria o bloco da v10 -- cairia pela troca, nao pelo defeito.
+        "seguem": [
+            "schema::testes_da_linhagem::acrescentar_coluna_preserva_a_linhagem",
+        ],
+    },
+    {
+        "id": "alter-perde-a-linhagem",
+        "titulo": "acrescentar coluna devolve o esquema sem linhagem: depois do primeiro ALTER a replica deixa de conferir a historia da tabela",
+        "porque": (
+            "pedido 601: `com_coluna` monta um esquema novo pelo `do_disco`, e "
+            "o que nao se carrega ali volta ao padrao -- a mesma doenca medida "
+            "em 18/09/2026 com o indice de texto e com o `passo` da faixa. "
+            "Mudar o esquema nao muda a historia."
+        ),
+        "arquivo": "crates/phxsql-core/src/schema.rs",
+        "trecho": """        let novo = novo.com_linhagem(self.linhagem);
+""",
+        "troca": """        let novo = novo.com_linhagem(None);
+""",
+        "pacote": "phxsql-core",
+        "alvo": ["--lib"],
+        "caem": [
+            "schema::testes_da_linhagem::acrescentar_coluna_preserva_a_linhagem",
+        ],
+        "seguem": [
+            "schema::testes_da_linhagem::cada_tabela_nasce_com_historia_propria_e_ela_atravessa_o_disco",
+        ],
+    },
+    {
+        "id": "copia-leva-a-linhagem-da-origem",
+        "titulo": "a copia de tabela (duplicar e colar) leva a linhagem da origem byte a byte: duas tabelas de historias diferentes passam pela conferencia como a mesma",
+        "porque": (
+            "pedido 601, obrigacao 1 do parecer do DBA: a copia leva o bloco "
+            "`PSCH` byte a byte (586), e copia e historia NOVA. A troca e pelo "
+            "descritor da propria copia, em todo volume e no espelho -- "
+            "reabrir o destino seria descritor sem `fsync` (552)."
+        ),
+        "arquivo": "crates/phxsql-store/src/catalogo.rs",
+        "trecho": """                        crate::reg::cunhar_linhagem_na_copia(&arq.path(), &mut escrito, linhagem)?;
+""",
+        "troca": """                        // DEFEITO REPOSTO (601): a copia leva a linhagem da origem.
+                        let _ = (&mut escrito, linhagem);
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--lib"],
+        "caem": [
+            "catalogo::testes_gestao::a_copia_de_tabela_nasce_com_linhagem_nova_em_todo_volume",
+        ],
+        "seguem": [
+            "catalogo::testes_gestao::duplicar_preserva_os_rowids_e_a_ordem",
+        ],
+    },
+    {
+        "id": "replica-fiel-sem-conferir-a-linhagem",
+        "titulo": "a replica fiel abre a tabela daqui sem conferir a linhagem do source: tabela de outra historia recebe os eventos no rowid de outra linha",
+        "porque": (
+            "pedido 601: o bloco de esquema chega no `posicao` com a linhagem "
+            "do source; a replica nascida dele tem a mesma. Outra linhagem e "
+            "tabela criada por conta aqui ou source que recriou a dele, e a "
+            "recusa tem de vir ANTES do primeiro evento -- inclusive insercao, "
+            "que a conferencia do carimbo nunca pega."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """    let la = no.esquema.as_ref()?.linhagem();
+""",
+        "troca": """    // DEFEITO REPOSTO (601): a replica nao confere a historia.
+    let _ = no.esquema.as_ref()?;
+    let la = None;
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_da_linhagem_na_replica::a_replica_recusa_a_tabela_de_outra_historia",
+        ],
+        "seguem": [],
+        "prazo": 1500,
+    },
+    {
+        "id": "aplicar-sem-conferir-a-linhagem",
+        "titulo": "o `aplicar` ignora a linhagem que veio no pedido: a exclusao de uma caixa recem-nascida apaga a linha de outra com o carimbo empatado",
+        "porque": (
+            "pedido 601, o buraco que o 416 deixou nomeado (cognicao de "
+            "01/10/2026 11:00): duas caixas sem historia emitem o mesmo "
+            "carimbo 1 e `conferir_identidade` ve 1 == 1. Medido pelo soquete: "
+            "sem a linhagem, `aplicados: 1` e a linha de A some."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        let recusa_da_linhagem = match p.texto_ou("linhagem", "").trim() {
+""",
+        "troca": """        // DEFEITO REPOSTO (601): o campo `linhagem` e ignorado.
+        let recusa_da_linhagem: Option<String> = match "" {
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "imagem-pela-politica-do-servidor"],
+        "caem": [
+            "a_linhagem_recusa_a_exclusao_de_outra_historia_com_o_carimbo_empatado",
+        ],
+        "seguem": [
+            "a_exclusao_de_outra_origem_para_em_vez_de_apagar_a_linha_errada",
+        ],
+        "prazo": 1500,
+    },
+    {
+        "id": "teto-de-colunas-sem-o-bit-do-selo",
+        "titulo": "o esquema aceita ate 65.535 colunas: a coluna 32.768 externa e lida na imagem como a 0, selada",
+        "porque": (
+            "pedido 603, NAO 344-b do parecer do DBA: o comentario do "
+            "`EXTERNO_SELADO` dizia «coluna acima de 32767 nao existe» e o "
+            "`do_disco` aceitava `u16::MAX`. O teto baixa ao LER, e so pode "
+            "baixar antes de selar a 0.19.0."
+        ),
+        "arquivo": "crates/phxsql-core/src/schema.rs",
+        "trecho": """        if colunas.len() > TETO_DE_COLUNAS {
+""",
+        "troca": """        if colunas.len() > u16::MAX as usize {
+""",
+        "pacote": "phxsql-core",
+        "alvo": ["--lib"],
+        "caem": [
+            "schema::testes_da_linhagem::o_teto_de_colunas_deixa_o_bit_alto_livre",
+        ],
+        "seguem": [
+            "schema::testes_da_linhagem::cada_tabela_nasce_com_historia_propria_e_ela_atravessa_o_disco",
+        ],
+    },
+    {
+        "id": "evento-pre-344-ao-fio-sem-abrir",
+        "titulo": "o evento do diario gravado antes do 344 (externo selado, sem o bit) sai para o fio como veio: a replica grava o cifrado como se fosse o anexo",
+        "porque": (
+            "pedido 603, NAO 344-a do parecer do DBA: antes do 344 o diario ja "
+            "guardava o externo marcado selado e sem o bit, e "
+            "`imagem_para_o_fio` lia bit ausente como aberto. Na origem -- o "
+            "arquivo que selou -- a etiqueta da cifra decide: abre, ou recusa "
+            "nomeando."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """            } else if self.reg.externo_selado(coluna, &bytes) {
+""",
+        "troca": """            } else if false && self.reg.externo_selado(coluna, &bytes) {
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "imagem-de-replicacao-com-coluna-marcada"],
+        "caem": [
+            "o_evento_de_antes_do_344_abre_na_origem_ou_e_recusado",
+        ],
+        "seguem": [
+            "imagem_aberta_para_o_fio_replica_com_cofre_e_sem_cofre_recusa",
+        ],
     },
 ]

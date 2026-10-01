@@ -375,3 +375,64 @@ fn o_fio_cifrado_leva_o_antes_da_troca_de_chave() {
     drop(t);
     cofre::desligar();
 }
+
+/// Apaga o bit `EXTERNO_SELADO` do primeiro externo da imagem -- o evento
+/// como o diario o gravava ANTES do pedido 344: selado, e sem dizer.
+fn sem_o_bit(imagem: &[u8]) -> Vec<u8> {
+    let mut v = imagem.to_vec();
+    let plen = u32::from_le_bytes(v[0..4].try_into().unwrap()) as usize;
+    let i = 4 + plen + 2;
+    let c = u16::from_le_bytes([v[i], v[i + 1]]);
+    assert_ne!(c & 0x8000, 0, "controle: o diario de hoje acende o bit");
+    v[i..i + 2].copy_from_slice(&(c & 0x7FFF).to_le_bytes());
+    v
+}
+
+/// **Pedido 603 (NAO 344-a do DBA): o evento de ANTES do 344.** O diario ja
+/// guardava o externo marcado selado, sem o bit. A origem -- o arquivo que
+/// selou -- abre pela etiqueta da cifra e manda o anexo; o que nao abre e
+/// recusado nomeando, nunca mandado.
+///
+/// **Defeito reposto**: tirar o braco `externo_selado` do
+/// `imagem_para_o_fio` -- o evento pre-344 sai com o cifrado no lugar do
+/// anexo (a primeira asercao cai), e o lixo sai `Ok` (a segunda cai).
+#[test]
+fn o_evento_de_antes_do_344_abre_na_origem_ou_e_recusado() {
+    let _t = UM_DE_CADA_VEZ.lock().unwrap_or_else(|e| e.into_inner());
+    cofre::desligar();
+    let d = comum::DirTemp::novo("603-pre-344");
+    cofre::definir(SENHA, RAPIDO).unwrap();
+    let mut t = Table::criar(&d, esquema_bin()).unwrap();
+    let rowid = t
+        .inserir(&[Value::Int(1), Value::Bin(FICHA.as_bytes().to_vec())])
+        .unwrap();
+    let do_diario = t.imagem_da_linha_do_rowid(rowid).unwrap();
+    let do_fio = t.imagem_para_o_fio(&do_diario).unwrap();
+
+    let antigo = sem_o_bit(&do_diario);
+    assert!(
+        !contem(&antigo, FICHA.as_bytes()),
+        "controle: o antigo e selado"
+    );
+    let saiu = t.imagem_para_o_fio(&antigo).unwrap();
+    assert!(
+        contem(&saiu, FICHA.as_bytes()),
+        "o evento pre-344 saiu para o fio com o CIFRADO no lugar do anexo"
+    );
+    assert_eq!(saiu, do_fio);
+
+    // O que nao abre: conteudo do mesmo tamanho, sem etiqueta que confira.
+    let mut lixo = antigo.clone();
+    let n = lixo.len();
+    for b in &mut lixo[n - 30..] {
+        *b ^= 0x5A;
+    }
+    let e = match t.imagem_para_o_fio(&lixo) {
+        Ok(_) => panic!("o externo que nao abre foi mandado ao fio"),
+        Err(e) => e.to_string(),
+    };
+    assert!(e.contains("344") && e.contains("bit"), "{e}");
+    drop(t);
+    cofre::desligar();
+    let _ = std::fs::remove_dir_all(&d);
+}

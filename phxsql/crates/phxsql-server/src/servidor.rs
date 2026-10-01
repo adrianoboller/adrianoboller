@@ -3708,7 +3708,7 @@ impl Servidor {
         &self,
         database: &str,
         no: &crate::replica::NoSource,
-    ) -> Result<Option<u64>> {
+    ) -> Result<Option<(u64, Option<String>)>> {
         let trava = self.travar_dados()?;
         let (tabela, pendente) = garantir_tabela_da_replica(&trava, database, no)?;
         let Some(mut tabela) = tabela else {
@@ -3717,12 +3717,13 @@ impl Servidor {
             return Ok(None);
         };
         let eventos = tabela.eventos()?;
+        let outra_historia = recusa_da_linhagem(tabela.esquema(), database, no);
         // Pedido 589: a tabela fecha sob a trava, como sempre fechou; o
         // `fsync` do que nasceu aqui vai depois de solta-la.
         drop(tabela);
         drop(trava);
         pendente.levar_ao_disco()?;
-        Ok(Some(eventos))
+        Ok(Some((eventos, outra_historia)))
     }
 
     /// Aplica UM lote ja lido do soquete. Fase 3: so trabalho no dado.
@@ -4152,10 +4153,19 @@ impl Servidor {
         no: &crate::replica::NoSource,
         origem: &str,
     ) -> Result<u64> {
-        let Some(mut posicao) = self.abrir_para_replicar(database, no)? else {
+        let Some((mut posicao, outra_historia)) = self.abrir_para_replicar(database, no)? else {
             return Ok(0);
         };
         let chave = Self::chave_do_diario(database, &no.nome);
+        // Pedido 601: de OUTRA historia, nada se aplica -- e a recusa vai pelo
+        // MESMO canal da tabela apagada e recriada, que e um dos dois casos
+        // que ela pega (o outro e a tabela criada por conta aqui). Antes de
+        // qualquer evento, inclusive com a posicao em zero: a insercao e o
+        // que a conferencia do carimbo nunca pega.
+        if let Some(motivo) = outra_historia {
+            self.romper_continuidade(origem, &chave, posicao, motivo);
+            return Ok(0);
+        }
         if posicao > 0 {
             if self.continuidade_guardada(&chave, posicao) == Some(false) {
                 return Ok(0);
@@ -29196,7 +29206,11 @@ impl Servidor {
             // de cima ja garantiu o fio cifrado para tabela com coluna
             // marcada, e o `.log` continua selado. Tabela sem coluna externa
             // marcada devolve a mesma imagem, sem custo de cifra.
-            let imagem = t.imagem_para_o_fio(&imagem)?;
+            // A recusa do evento pre-344 (pedido 603) diz QUAL evento: e a
+            // posicao que o operador pula com `replicacao_pular`.
+            let imagem = t.imagem_para_o_fio(&imagem).map_err(|e| {
+                PhxError::Corrompido(format!("evento {} do diario: {e}", desde + i as u64))
+            })?;
             lista.push(Json::objeto(vec![
                 ("operacao", Json::texto_de(e.operacao.nome())),
                 // ONDE este evento mora no diario DAQUI. So o source sabe
@@ -29234,6 +29248,15 @@ impl Servidor {
             // `fim` verdadeiro quer dizer "por enquanto acabou": a replica
             // espera e pergunta de novo, em vez de girar em falso.
             ("fim", Json::Bool(desde + lidos >= total)),
+            // A historia desta tabela (pedido 601): quem empurra estes eventos
+            // pelo `aplicar` a leva junto, e o destino de outra historia recusa.
+            (
+                "linhagem",
+                match t.esquema().linhagem() {
+                    Some(l) => Json::texto_de(l.to_string()),
+                    None => Json::Nulo,
+                },
+            ),
             ("eventos", Json::Lista(lista)),
         ]))
     }
@@ -29252,6 +29275,22 @@ impl Servidor {
         let _trava = self.travar_dados()?;
         let mut t = self.abrir_travada(&_trava, p, sessao)?;
 
+        // Pedido 601: `linhagem` (opcional) e a historia da tabela de onde os
+        // eventos sairam -- o `replicar` a entrega. Vindo, e diferente da
+        // daqui, nada se aplica: rowid e carimbo de duas historias coincidem
+        // por acaso de arranque, e a exclusao de B apagaria a linha de A com
+        // `ok`. Sem o campo, como sempre foi (guarda nova entra pedida).
+        let recusa_da_linhagem = match p.texto_ou("linhagem", "").trim() {
+            "" => None,
+            texto => {
+                let dela = phxsql_core::uuid::Uuid::de_texto(texto)?;
+                t.esquema()
+                    .conferir_linhagem(Some(dela), "aplicar")
+                    .err()
+                    .map(|e| e.to_string())
+            }
+        };
+
         let mut aplicados = 0u64;
         let mut erro = None;
         for e in eventos.iter() {
@@ -29265,6 +29304,10 @@ impl Servidor {
                 }
             };
             let rowid = e.inteiro_ou("rowid", 0).max(0) as u64;
+            if let Some(motivo) = &recusa_da_linhagem {
+                erro = Some(motivo.clone());
+                break;
+            }
             let imagem = match hex_para_bytes(e.texto_ou("imagem", "")) {
                 Ok(b) => b,
                 Err(x) => {
@@ -30648,6 +30691,36 @@ fn fsync_recusado_derruba_o_processo(
 /// reparo que deu certo seria derrubar todas as conexoes por um log.
 fn dizer_no_diagnostico(texto: &str) {
     let _ = writeln!(std::io::stderr(), "{texto}");
+}
+
+/// A recusa da replica FIEL quando a tabela daqui e de outra historia que a do
+/// source -- pedido 601. `None` = segue.
+///
+/// O bloco de esquema chega no `posicao` com a linhagem do source (v11), e a
+/// replica nascida dele tem a mesma, byte a byte. Outra linhagem e uma de duas
+/// coisas: a tabela foi apagada e recriada la, ou foi criada por conta aqui.
+/// Nas duas, rowid e carimbo coincidem por acaso de arranque, e aplicar
+/// apagaria ou sobrescreveria a linha de outra historia. Sem linhagem de um
+/// dos lados (esquema de antes da v11), fica como era.
+///
+/// So na replica fiel: no bidirecional a identidade e a chave, e os caixas de
+/// um central divergem na linhagem legitimamente -- por isso a conferencia
+/// NAO mora no `garantir_tabela_da_replica`, que o bidi tambem chama.
+fn recusa_da_linhagem(
+    aqui: &Schema,
+    database: &str,
+    no: &crate::replica::NoSource,
+) -> Option<String> {
+    let la = no.esquema.as_ref()?.linhagem();
+    aqui.conferir_linhagem(la, &format!("replicacao de {database}.{}", no.nome))
+        .err()
+        .map(|e| {
+            format!(
+                "{e}. A tabela foi apagada e recriada no source, ou criada por conta \
+                 nesta replica. Esta tabela ficou como estava; para segui-la, \
+                 apague-a nesta replica e ela renasce do esquema do source"
+            )
+        })
 }
 
 /// Abre a tabela da replica, criando-a -- e o database -- se ainda nao
@@ -70092,5 +70165,66 @@ mod testes_escopo_do_begin_607 {
         .unwrap();
         assert!(r.inteiro_ou("expira_em_s", -1) <= 2, "{}", r.escrever());
         pede(&s, &mut ana, r#""op":"rollback""#).unwrap();
+    }
+}
+
+/// Pedido 601: a replica FIEL confere a linhagem antes do primeiro evento.
+#[cfg(test)]
+mod testes_da_linhagem_na_replica {
+    use super::*;
+    use phxsql_core::schema::{Column, IndexColumn, IndexDef};
+    use phxsql_core::types::ColumnType;
+
+    fn clientes() -> Schema {
+        Schema::new(
+            "clientes",
+            vec![Column::new("id", ColumnType::Int4).obrigatoria()],
+            vec![IndexDef::new("porId", vec![IndexColumn::asc(0)]).unico()],
+        )
+        .unwrap()
+    }
+
+    fn no(esquema: Schema) -> crate::replica::NoSource {
+        crate::replica::NoSource {
+            nome: "clientes".into(),
+            eventos: 0,
+            esquema: Some(esquema),
+        }
+    }
+
+    /// A tabela daqui e de OUTRA historia que a do source: recusa, e nomeia a
+    /// linhagem e o que fazer. A da MESMA historia, e a do source de antes da
+    /// v11 (sem linhagem), seguem como sempre.
+    ///
+    /// **Defeito reposto**: o `recusa_da_linhagem` sem conferir -- a de outra
+    /// historia segue, e a replica aplicaria os eventos dela no rowid de
+    /// outra linha.
+    #[test]
+    fn a_replica_recusa_a_tabela_de_outra_historia() {
+        let aqui = clientes();
+        let motivo = recusa_da_linhagem(&aqui, "loja", &no(clientes()))
+            .expect("a replica seguiu a tabela de outra historia");
+        for pedaco in [
+            "linhagem",
+            "historia",
+            "apagada e recriada",
+            "loja.clientes",
+        ] {
+            assert!(
+                motivo.contains(pedaco),
+                "a recusa nao diz {pedaco:?}: {motivo}"
+            );
+        }
+        assert_eq!(recusa_da_linhagem(&aqui, "loja", &no(aqui.clone())), None);
+        assert_eq!(
+            recusa_da_linhagem(&aqui, "loja", &no(aqui.clone().com_linhagem(None))),
+            None,
+            "o source sem linhagem (v <= 10) foi recusado"
+        );
+        assert_eq!(
+            recusa_da_linhagem(&aqui.clone().com_linhagem(None), "loja", &no(aqui)),
+            None,
+            "a tabela daqui sem linhagem (v <= 10) foi recusada"
+        );
     }
 }

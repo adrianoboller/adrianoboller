@@ -665,8 +665,9 @@ pub type ImagemAberta = (Vec<u8>, Vec<(u16, Vec<u8>)>);
 /// cofre devolvia o texto cifrado como se fosse o memo, calada (344-1); a com
 /// cofre tentava a chave dela sobre bytes selados com a de la, e o sal e por
 /// arquivo, entao nem a mesma senha abre (344-2). So a origem sabe se selou, e
-/// a resposta dela viaja aqui. Coluna acima de 32767 nao existe (o esquema e
-/// u16 de indice e muito menor), entao o bit esta livre.
+/// a resposta dela viaja aqui. O bit esta livre porque o esquema recusa mais
+/// de `TETO_DE_COLUNAS` (32.767) colunas, inclusive ao LER -- ate o pedido 603
+/// este comentario dizia isso e o esquema aceitava 65.535.
 pub const EXTERNO_SELADO: u16 = 0x8000;
 
 /// Como a pagina por posicao chegou ao inicio dela.
@@ -6813,6 +6814,23 @@ impl Table {
         for (coluna, selado, bytes) in externos {
             let bytes = if selado {
                 self.reg.abrir_selado(coluna, &bytes)?
+            } else if self.reg.externo_selado(coluna, &bytes) {
+                // Pedido 603 (NAO 344-a do DBA): bit apagado onde ESTE arquivo
+                // selaria. Antes do 344 o diario ja guardava o externo marcado
+                // selado, e SEM o bit -- mandar como veio entregava o cifrado
+                // a replica como se fosse o anexo, `ok`. Aqui e a origem, o
+                // arquivo que selou: a etiqueta da cifra decide, e nao um
+                // palpite -- abre, e e o evento pre-344; nao abre, e nao ha
+                // como saber o que e, entao recusa nomeando, em vez de mandar.
+                self.reg.abrir_selado(coluna, &bytes).map_err(|e| {
+                    PhxError::Corrompido(format!(
+                        "{}: o externo da coluna {coluna} veio sem o bit de selado \
+                         numa tabela que o selaria (evento gravado antes do pedido \
+                         344?) e nao abre com a chave deste arquivo ({e}): nao se \
+                         replica o que nao se sabe se e o anexo ou o cifrado",
+                        self.nome
+                    ))
+                })?
             } else {
                 bytes
             };

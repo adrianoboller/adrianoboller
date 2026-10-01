@@ -265,6 +265,77 @@ pub struct Fronteira {
 /// a tabela nao nascer com um arquivo vazio.
 pub const SEM_PERIODO: i64 = i64::MIN;
 
+/// Cunha linhagem NOVA (`PSCH` v11) no volume que acabou de nascer por COPIA
+/// -- pedido 601, obrigacao 1 do parecer do DBA. A copia leva o bloco byte a
+/// byte, e com a linhagem da origem a conferencia da replica veria «a mesma
+/// historia» em duas tabelas.
+///
+/// Le o cabecalho e o bloco da ORIGEM (`de`) e escreve os dois trocados pelo
+/// descritor da COPIA (`copia`), que e o mesmo que a copia leva ao disco
+/// depois de soltar a trava (pedido 586): reabrir o destino seria um
+/// descritor novo sem `fsync` -- o caso *fsyncgate* do 552 -- e um `fsync`
+/// aqui seria um novo sob a trava global (`alcancam-fsync-2`).
+///
+/// O UUID novo tem o tamanho do velho, entao o bloco fica no mesmo lugar e
+/// nenhum slot se move; mudam o bloco, o CRC dele (byte 56) e o CRC do
+/// cabecalho. Tabela sem linhagem (gravada antes da v11) fica sem: inventar
+/// uma agora mudaria o tamanho do bloco, e a copia dela continua como sempre
+/// foi. Devolve se trocou.
+pub(crate) fn cunhar_linhagem_na_copia(
+    de: &Path,
+    copia: &mut File,
+    nova: phxsql_core::uuid::Uuid,
+) -> Result<bool> {
+    let nome_arq = de.display().to_string();
+    let mut origem = File::open(de)?;
+    let mut cab = vec![0u8; CAB_LEN];
+    ler_exato(&mut origem, 0, &mut cab)?;
+    conferir_magic(&nome_arq, MAGIC_REG, &cab[0..8])?;
+    let versao = u16::from_le_bytes([cab[8], cab[9]]);
+    let cab_len = match versao {
+        VERSAO => CAB_LEN,
+        VERSAO_CIFRADO => CAB_LEN_CIFRADO,
+        _ => {
+            return Err(PhxError::VersaoNaoSuportada {
+                arquivo: nome_arq,
+                encontrada: versao,
+                suportada: VERSAO_CIFRADO,
+            })
+        }
+    };
+    cab.resize(cab_len, 0);
+    ler_exato(&mut origem, 0, &mut cab)?;
+    if crc32(&cab[..cab_len - 4]) != Campos(&cab).u32(cab_len - 4) {
+        return Err(PhxError::Corrompido(format!(
+            "cabecalho de {nome_arq} com CRC invalido"
+        )));
+    }
+    let mut bloco = vec![0u8; Campos(&cab).u32(52) as usize];
+    ler_exato(&mut origem, cab_len as u64, &mut bloco)?;
+    if crc32(&bloco) != Campos(&cab).u32(56) {
+        return Err(PhxError::Corrompido(format!(
+            "esquema de {nome_arq} com CRC invalido"
+        )));
+    }
+    let esquema = Schema::desserializar(&bloco)?;
+    if esquema.linhagem().is_none() {
+        return Ok(false);
+    }
+    let novo = esquema.com_linhagem(Some(nova)).serializar();
+    if novo.len() != bloco.len() {
+        return Err(PhxError::Corrompido(format!(
+            "a linhagem nova mudou o tamanho do bloco de esquema de {nome_arq}"
+        )));
+    }
+    por_u32(&mut cab, 56, crc32(&novo));
+    let fim = cab_len - 4;
+    let crc = crc32(&cab[..fim]);
+    por_u32(&mut cab, fim, crc);
+    crate::util::escrever_em(copia, cab_len as u64, &novo)?;
+    crate::util::escrever_em(copia, 0, &cab)?;
+    Ok(true)
+}
+
 impl RegFile {
     /// Os descritores abertos, para o `fsync` da criacao fora da trava --
     /// pedido 589. Ver [`crate::volume::Volumes::descritores`].
