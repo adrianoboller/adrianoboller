@@ -1,0 +1,148 @@
+{
+  "_leia": [
+    "Lexico da catraca prosa x celula (pedido 335, metade 2, via (B) decidida pelo dono em 01/10/2026).",
+    "Quem le: docs/dossie/catraca-prosa-x-celula.py. A prosa continua escrita a mao; esta lista so DETECTA.",
+    "Cada capacidade tem uma CELULA (o estado) e, por estado, as FRASES-SINAL que o contradizem.",
+    "A celula NAO se digita quando ha medida: tipo 'comparativo' le bancada/comparativo/resultados.json e tipo 'numero' le CAPABILITIES.json ou o PENDENCIAS.md.",
+    "Tipo 'ancora' e a excecao declarada: o estado esta escrito aqui, e a catraca confere a PROVA (teste que existe no fonte) e a AUSENCIA (codigo que nao pode existir). Prova sumida ou ausencia quebrada reprova -- a celula envelheceu.",
+    "Se a celula mudar de estado e nao houver frases para o estado novo, a catraca REPROVA dizendo isso: lexico calado nao e lexico limpo.",
+    "'historico' aceita um trecho EXATO que cita a frase velha para narrar a correcao. Trecho que nao casa mais reprova: lista de excecao tambem envelhece.",
+    "Os regex rodam sobre o texto normalizado (sem tags, sem comentarios HTML, sem script/style, sem * e crase, espacos colapsados), sem diferenca de maiusculas."
+  ],
+  "arquivos": ["@dossie", "README.md", "docs/FORMATO.md"],
+  "capacidades": [
+    {
+      "chave": "integridade_referencial_imposta",
+      "titulo": "Integridade referencial conferida na gravacao (contradicao 1 do parecer)",
+      "celula": {
+        "tipo": "ancora",
+        "estado": "implementado",
+        "motivo": "a chave declarada nasce conferida e todas as portas locais de escrita conferem (docs/INTEGRIDADE.md §1)",
+        "prova": [
+          {"arquivo": "crates/phxsql-server/src/servidor.rs", "contem": "fn a_chave_declarada_nasce_conferida("},
+          {"arquivo": "crates/phxsql-server/src/servidor.rs", "contem": "fn o_gatilho_entra_no_escopo_efetivo_e_a_fk_nao("}
+        ]
+      },
+      "contradiz": {
+        "implementado": [
+          {"rx": "declarada,? (?:e|mas) (?:nunca|não) imposta", "porque": "diz que a FK e so declarada"},
+          {"rx": "(?:chave estrangeira|integridade referencial|\\bFK\\b)[^.;]{0,60}?(?:nunca|não) (?:é |está |e )?imposta", "porque": "diz que a FK nao e imposta"},
+          {"rx": "chave estrangeira (?:é|e) (?:só |apenas )?catálogo", "porque": "diz que a FK e so catalogo"},
+          {"rx": "(?:chave estrangeira|\\bFK\\b)[^.;]{0,40}?(?:nunca|não) (?:é |são )?conferida", "porque": "diz que a FK nao se confere"}
+        ]
+      },
+      "historico": [
+        {"arquivo": "@dossie",
+         "trecho": "não era imposta — «a chave estrangeira é catálogo». Não é mais",
+         "motivo": "narra a correcao: cita a frase velha para dizer que deixou de valer"}
+      ]
+    },
+    {
+      "chave": "le_as_proprias_escritas",
+      "titulo": "A transacao ve as proprias escritas, pedido 162 (contradicao 2 do parecer)",
+      "celula": {
+        "tipo": "ancora",
+        "estado": "implementado",
+        "motivo": "read-your-own-writes desde o pedido 162",
+        "prova": [
+          {"arquivo": "crates/phxsql-server/src/servidor.rs", "contem": "fn a_transacao_enxerga_o_que_ela_mesma_escreveu("}
+        ]
+      },
+      "contradiz": {
+        "implementado": [
+          {"rx": "(?:próprias escritas|read-your-own-writes?)[^.;]{0,60}?(?:não (?:está |é )?implementad|não existe|ainda não|não há)", "porque": "diz que ler as proprias escritas nao existe"},
+          {"rx": "não (?:vê|enxerga) as próprias escritas", "porque": "diz que a transacao nao ve o que escreveu"},
+          {"rx": "(?:sem|falta) read-your-own-writes?", "porque": "diz que falta read-your-own-writes"}
+        ]
+      }
+    },
+    {
+      "chave": "sql_alem_do_select_simples",
+      "titulo": "Abrangencia do SQL: CTE, subconsulta, funcao de janela, expressao no WHERE (contradicao 3 do parecer)",
+      "celula": {
+        "tipo": "comparativo",
+        "itens": ["cte", "subconsulta", "funcao_de_janela", "expressao_no_where"]
+      },
+      "contradiz": {
+        "implementado": [
+          {"rx": "traduz (?:só |apenas |somente )?um SELECT simples", "porque": "reduz a op sql a um SELECT simples"},
+          {"rx": "(?:só|apenas|somente) (?:o |um )?SELECT simples", "porque": "reduz o SQL a um SELECT simples"},
+          {"rx": "\\b(?:CTEs?|subconsultas?|funç(?:ão|ões) de janela)\\b[^.;]{0,40}?(?:não existem?|não há|ainda não|não (?:é|são) suportad)", "porque": "diz que um construto medido como presente nao existe"},
+          {"rx": "(?:falta|faltam)[^.;]{0,40}?(?:a )?expressão (?:em|no) WHERE", "porque": "diz que falta expressao no WHERE"}
+        ]
+      }
+    },
+    {
+      "chave": "tls_no_transporte",
+      "titulo": "TLS no transporte",
+      "celula": {
+        "tipo": "comparativo",
+        "itens": ["tls_no_transporte"]
+      },
+      "contradiz": {
+        "nao-existe": [
+          {"rx": "TLS (?:nativo|embutido|implementado|pronto)", "porque": "afirma TLS que o motor nao tem"},
+          {"rx": "(?<!não )(?:phxsqld|servidor|motor) (?:suporta|oferece|termina) TLS", "porque": "afirma que o motor fala TLS"}
+        ],
+        "implementado": [
+          {"rx": "(?:não há|sem|nada disto é) TLS", "porque": "diz que nao ha TLS quando a celula diz que ha"}
+        ]
+      }
+    },
+    {
+      "chave": "traducao_da_interface_pct",
+      "titulo": "Percentual da interface na fabrica de idiomas (contradicao 4 do parecer)",
+      "celula": {
+        "tipo": "numero",
+        "fonte": "CAPABILITIES.json",
+        "caminho": ["idiomas", "pct"]
+      },
+      "contradiz": {
+        "numero": [
+          {"rx": "interface (?:está |esta |fica |ficou )?(?P<n>\\d+)(?:,\\d+)?\\s?% traduzid", "porque": "percentual da interface digitado, diferente do medido"},
+          {"rx": "(?P<n>\\d+)(?:,\\d+)?\\s?% da interface", "porque": "percentual da interface diferente do medido"}
+        ]
+      }
+    },
+    {
+      "chave": "pedidos_parciais",
+      "titulo": "Quantos pedidos estao parciais (contradicao 6 do parecer)",
+      "celula": {
+        "tipo": "numero",
+        "fonte": "docs/PENDENCIAS.md",
+        "caminho": ["parcial"]
+      },
+      "contradiz": {
+        "numero": [
+          {"rx": "\\b(?:as|os) (?P<n>\\d+|uma|duas|três|quatro|cinco|seis|sete|oito|nove|dez|onze|doze|treze|catorze|quatorze|quinze|dezesseis|dezessete|dezoito|dezenove|vinte) (?:pedidos )?parciais\\b", "porque": "contagem de parciais digitada, diferente do PENDENCIAS.md"}
+        ]
+      }
+    },
+    {
+      "chave": "compactacao_do_reg",
+      "titulo": "Compactacao do .reg (contradicao 5 do parecer, a mais grave)",
+      "celula": {
+        "tipo": "ancora",
+        "estado": "recusado",
+        "motivo": "compactar renumeraria o rowid, que e endereco; a ordem de digitacao e petrea",
+        "ausencia": [
+          {"glob": "crates/*/src/**/*.rs", "rx": "fn compactar\\w*\\s*\\(|\"compactar\\w*\"|\"optimize\\w*\"",
+           "porque": "se o comando existir, a celula 'recusado' mente"}
+        ]
+      },
+      "contradiz": {
+        "recusado": [
+          {"rx": "compactação explícita", "porque": "promete um comando de compactar que foi recusado"},
+          {"rx": "o espaço volta (?:só )?(?:com|por|pela|após) (?:a |uma )?compactação", "porque": "diz que o espaco dos slots volta"},
+          {"rx": "(?:slots?|registros?) excluídos?[^.;]{0,60}?(?:só )?voltam? (?:só )?(?:com|por|pela|após)", "porque": "diz que slot excluido volta"},
+          {"rx": "compactação[^|.]{0,60}\\| pendente", "porque": "tabela diz pendente o que foi recusado"},
+          {"rx": "OPTIMIZE TABLE (?:existe|funciona|implementad)", "porque": "afirma o comando recusado"}
+        ],
+        "implementado": [
+          {"rx": "compactação[^.;]{0,60}?recusad", "porque": "diz recusada quando a celula diz que existe"},
+          {"rx": "comando (?:de compactar|de compactação)[^.;]{0,20}?não existe", "porque": "diz que o comando nao existe"}
+        ]
+      }
+    }
+  ]
+}

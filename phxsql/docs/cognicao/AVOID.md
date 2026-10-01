@@ -4,7 +4,13 @@
      `--catraca` reprova se este arquivo nao bater com o que o extrator
      geraria agora; rode o comando sem flag para atualizar. -->
 
-Gerado dos `cognicao_*.md` com `**Estado:** INFRUTIFERO` -- 5 hoje, de 368 cognicoes no total.
+Gerado dos `cognicao_*.md` com `**Estado:** INFRUTIFERO` -- 6 hoje, de 369 cognicoes no total.
+
+## Contradição consertada à mão sobrevive no arquivo que ninguém releu
+
+- Causa: o conserto das seis contradições do parecer (commit `2c77e6fe`) foi feito por leitura humana das frases que o parecer citou, e a busca parou nas redações citadas; a mesma capacidade dita com outra forma («traduz um `SELECT` simples» no `FORMATO.md`, «Compactação … | pendente» numa tabela do `README.md`) não era uma das frases citadas e ficou.
+- Prevencao: conserto de contradição de contrato fecha com `python3 docs/dossie/catraca-prosa-x-celula.py` verde, e não com a lista do parecer riscada; a catraca roda no fecho do `portao-dos-geradores.py` e no `bancada/catracas/todas.py`.
+- Arquivo: [cognicao_contradicao-consertada-a-mao-sobrevive-fora-do-arquivo-lido_20261001_0413.md](cognicao_contradicao-consertada-a-mao-sobrevive-fora-do-arquivo-lido_20261001_0413.md)
 
 ## Dono de arquivo é sinal FORTE, não um palpite como data ou conteúdo
 
