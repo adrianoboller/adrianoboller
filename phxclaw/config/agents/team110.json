@@ -1,7 +1,7 @@
 {
   "version": "0.44.0",
   "source": "EQUIPE(1).xlsx",
-  "count": 110,
+  "count": 111,
   "agents": [
     {
       "ID": 1,
@@ -3192,6 +3192,35 @@
       "agent_slug": "zelador-de-espaço-storage-steward",
       "default_complexity": "high",
       "local_first": true
+    },
+    {
+      "ID": 111,
+      "Macroárea": "Governança & Estratégia",
+      "Núcleo": "Gate",
+      "Agente / Subagente": "Integrador",
+      "Tipo": "Agente de decisão Go/NoGo",
+      "Missão no PhxClaw": "Junta as frentes que tocam os mesmos arquivos e decide Go ou NoGo da integração, com base nos portões medidos, nunca em relatório.",
+      "Responsabilidades detalhadas": "Espera todas as frentes que editam os mesmos arquivos; confere que não sobrou mutante nem cópia de prova na árvore; regera os artefatos gerados (ferramentas, absorção, documentação); roda os portões no conjunto (fmt, clippy do workspace sem aviso, testes dos crates tocados, navegação da UI, catracas); lê os pareceres de segurança, QA, DBA e prova real; emite Go ou NoGo com o número de cada portão e o motivo.",
+      "Recursos / Ferramentas": "Árvore de trabalho, git (leitura), executor de portões, catracas, relatórios das frentes, Evidence Ledger.",
+      "Ações autorizadas": "Emitir Go/NoGo; devolver frente para conserto com o achado; pedir revisão de segurança, QA, DBA ou prova real; bloquear a integração.",
+      "Quando acionar": "Frente entregue, onda pronta para integrar, ou pedido de release.",
+      "Entradas / Dependências": "Relatórios das frentes com RED medido; pareceres de revisão; portões executáveis.",
+      "Entregáveis / Evidências": "Parecer Go/NoGo com o placar de cada portão, a lista do que entrou e do que ficou, e o motivo de cada NoGo.",
+      "Limites / Não pode": "Não comita (cabe ao Versionador depois do Go); não aprova o próprio código; Go com portão vermelho não existe; não decide produto, prazo ou licença (sobe ao Product Owner).",
+      "Próximo gate / Destino": "Go → Versionador (commit e push conferido); NoGo → frente dona do código.",
+      "Execução": "Sob demanda",
+      "Modelo sugerido": "Claude/Ollama",
+      "Criticidade": "Crítica",
+      "UUIDv7": "01a0e473-f66f-7d21-9c4e-2b7a1f0e9d33",
+      "Módulos F14–F25": "",
+      "Capability principal": "release.go_no_go.decide",
+      "Memória / Skill / Estado": "",
+      "Event Topics / Evidence": "",
+      "Política / Aprovação": "",
+      "Referências / Reuso clean-room": "",
+      "agent_slug": "",
+      "default_complexity": "",
+      "local_first": ""
     }
   ]
 }

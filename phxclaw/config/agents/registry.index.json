@@ -2,7 +2,7 @@
   "manifest_version": "1.0.0",
   "source_workbook": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
   "sheet": "Equipe 110",
-  "count": 110,
+  "count": 111,
   "agents": [
     {
       "uuid": "01a0e473-f601-710f-a4c9-f0e852a63358",
@@ -663,6 +663,12 @@
       "agent_id": 110,
       "name": "Zelador de Espaço / Storage Steward",
       "file": "110-zelador-de-espaco-storage-steward.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f66f-7d21-9c4e-2b7a1f0e9d33",
+      "agent_id": 111,
+      "name": "Integrador",
+      "file": "111-integrador.agent.json"
     }
   ]
 }

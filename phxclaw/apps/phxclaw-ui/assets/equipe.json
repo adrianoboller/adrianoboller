@@ -113,9 +113,28 @@
           "quando_acionar": "Sprint/release review ou projeto longo.",
           "tipo": "Agente de alinhamento",
           "uuid": "01a0e473-f636-71b9-8133-865389aee00d"
+        },
+        {
+          "capability_principal": "release.go_no_go.decide",
+          "criticidade": "Crítica",
+          "execucao": "Sob demanda",
+          "humano": false,
+          "id": 111,
+          "macroarea": "Governança & Estratégia",
+          "missao": "Junta as frentes que tocam os mesmos arquivos e decide Go ou NoGo da integração, com base nos portões medidos, nunca em relatório.",
+          "modelos": [
+            "claude",
+            "ollama"
+          ],
+          "nome": "Integrador",
+          "nucleo": "Gate",
+          "prefere_local": true,
+          "quando_acionar": "Frente entregue, onda pronta para integrar, ou pedido de release.",
+          "tipo": "Agente de decisão Go/NoGo",
+          "uuid": "01a0e473-f66f-7d21-9c4e-2b7a1f0e9d33"
         }
       ],
-      "total": 6
+      "total": 7
     },
     {
       "nome": "Engenharia & Arquitetura",
@@ -2112,5 +2131,5 @@
       "total": 3
     }
   ],
-  "total": 110
+  "total": 111
 }

@@ -264,7 +264,18 @@ mod tests {
     fn loads_official_agent_catalog() {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../config/agents");
         let catalog = AgentCatalog::load_dir(root).unwrap();
-        assert_eq!(catalog.len(), 110);
+        let indice: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(
+                std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("../../config/agents/registry.index.json"),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        // O total vem do indice, que lista arquivo por arquivo; o catalogo tem de bater com ele.
+        assert_eq!(catalog.len() as u64, indice["count"].as_u64().unwrap());
+        assert_eq!(indice["agents"].as_array().unwrap().len(), catalog.len());
+        assert!(catalog.get_by_name("Integrador").is_some());
         let research = catalog.get_by_name("Research Agent").unwrap();
         assert!(research.provides("research.collect"));
         assert!(research.can_use_source("rust-official"));

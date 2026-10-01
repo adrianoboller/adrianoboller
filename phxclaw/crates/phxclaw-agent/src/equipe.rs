@@ -1,4 +1,4 @@
-//! A equipe dos 110 papeis da planilha, ativa no agente: listar (`team_list`), delegar
+//! A equipe de papeis (os 110 da planilha e os acrescimos do dono), ativa no agente: listar (`team_list`), delegar
 //! (`team_delegate`) e o JSON da interface saem daqui, e a CLI `phxclaw equipe` chama as
 //! mesmas funcoes. Os manifestos sao os de `config/agents`, lidos pelo `AgentCatalog`.
 //!
@@ -295,7 +295,10 @@ pub fn ferramentas_da_capability(cap: &str) -> &'static [&'static str] {
         | "workspace.diff"
         | "tree_sitter.analyze"
         | "lsp.read"
-        | "evidence.read" => LER,
+        | "evidence.read"
+        // Revisar le o diff; sem esta linha o prefixo "code." abaixo dava ESCRITA a quem so
+        // revisa (o Integrador, que decide Go/NoGo, saia podendo gravar no repositorio).
+        | "code.review" => LER,
         "workspace.file.write" => ESCREVER,
         c if c.starts_with("repo.") => LER,
         c if c.starts_with("knowledge.") && c.ends_with(".read") => LER,

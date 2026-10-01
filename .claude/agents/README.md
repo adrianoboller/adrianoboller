@@ -19,7 +19,7 @@ dele**, e que a dispensa seja registrada.
 | G — QA | `qa` | catracas e catálogo de guardas; catraca só desce |
 | H — Documentação | `documentacao` | número visível sai de gerador, nunca de memória |
 | H — Documentação | `tradutor` | agente multilíngua pétreo (GOV-1, pedido #110): lote coerente na `FABRICA_TELA`, catraca `TETO_ROTULOS_E_CRASE` sempre baixando |
-| I — Versionador/Backup | *(scripts `backup.sh`; integrador comita)* | pacote por script, nunca à mão |
+| I — Versionador/Backup | *(scripts `backup.sh`; comita depois do Go do `integrador`)* | pacote por script, nunca à mão |
 | J — Pesquisador | `pesquisador` | traz o que os outros fazem, **medido contra o nosso gargalo** |
 
 E os **acréscimos medidos** do comparativo com o Phoenix Cast
@@ -30,6 +30,7 @@ E os **acréscimos medidos** do comparativo com o Phoenix Cast
 | SEC | `seguranca` | revisor adversário de segurança — o único gap real; antes era ad hoc |
 | RES-subagentes | `pesquisa-motor`, `pesquisa-bancada` | o J deixa de ser um só e coordena subagentes por domínio |
 | RES-rede | `pesquisa-rede` | transporte P2P, gossip e anti-entropia — o pilar do e-mail P2P é domínio novo (16/09/2026) |
+| INT — Integrador | `integrador` | **dono do Go/NoGo** (ordem do dono, 01/10/2026): roda os portões no conjunto, lê os pareceres e decide; não comita — depois do Go, comita o papel I |
 
 **Recusado por escopo, não por mérito:** a camada de domínio do Phoenix Cast
 (conectores, redes sociais, anúncios, marketplaces, atribuição, React) serve a

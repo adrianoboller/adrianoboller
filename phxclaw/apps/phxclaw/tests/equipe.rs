@@ -14,13 +14,23 @@ fn phxclaw(args: &[&str]) -> std::process::Output {
 }
 
 #[test]
-fn listar_mostra_os_110() {
+fn listar_mostra_todos() {
     let o = phxclaw(&["equipe", "listar"]);
     assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
     let s = String::from_utf8(o.stdout).unwrap();
     let mut linhas = s.lines();
-    assert_eq!(linhas.next(), Some("110 de 110 papeis"));
-    assert_eq!(linhas.filter(|l| l.contains(" | ")).count(), 110);
+    // O total sai do indice dos papeis, nunca digitado aqui.
+    let indice: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../config/agents/registry.index.json"),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let n = indice["count"].as_u64().unwrap() as usize;
+    assert_eq!(linhas.next(), Some(format!("{n} de {n} papeis").as_str()));
+    assert_eq!(linhas.filter(|l| l.contains(" | ")).count(), n);
 }
 
 #[test]
@@ -29,7 +39,11 @@ fn mostrar_e_filtro() {
     assert!(o.status.success());
     assert!(String::from_utf8_lossy(&o.stdout).contains("8 Johnson (agente)"));
     let o = phxclaw(&["equipe", "listar", "--texto", "johnson"]);
-    assert!(String::from_utf8_lossy(&o.stdout).starts_with("1 de 110 papeis"));
+    let s = String::from_utf8_lossy(&o.stdout).to_string();
+    assert!(
+        s.starts_with("1 de ") && s.lines().next().unwrap().ends_with(" papeis"),
+        "{s}"
+    );
 }
 
 /// Papel humano nao chama modelo nenhum: sai com 3 e o pedido de decisao, mesmo sem

@@ -30,12 +30,23 @@ fn basicas() -> Vec<Arc<dyn Tool>> {
     ]
 }
 
+fn total_do_registro() -> u64 {
+    // O total sai do registro dos papeis, nunca digitado: a equipe ja passou de 110 (o
+    // Integrador entrou em 01/10/2026) e o numero cravado em teste envelhece calado.
+    let raiz = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../config/agents/registry.index.json");
+    let v: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(raiz).unwrap()).unwrap();
+    v["count"].as_u64().unwrap()
+}
+
 #[test]
-fn os_110_carregam_e_cada_um_tem_ficha() {
+fn todos_carregam_e_cada_um_tem_ficha() {
     let e = equipe();
     let papeis = e.papeis();
-    assert_eq!(e.len(), 110);
-    assert_eq!(papeis.len(), 110);
+    let total = total_do_registro() as usize;
+    assert_eq!(e.len(), total);
+    assert_eq!(papeis.len(), total);
     for m in &papeis {
         let f = e.ficha(m);
         assert_eq!(e.achar(&f.id.to_string()).unwrap().uuid, m.uuid);
@@ -73,10 +84,10 @@ async fn team_list_filtra_pela_mesma_funcao_da_cli() {
         .await
         .unwrap();
     let esperado = e.listar(Some("Qualidade"), None);
-    assert!(!esperado.is_empty() && esperado.len() < 110);
+    assert!(!esperado.is_empty() && (esperado.len() as u64) < total_do_registro());
     assert_eq!(
         out.content,
-        equipe::texto_da_lista(&esperado, 110),
+        equipe::texto_da_lista(&esperado, e.len()),
         "a ferramenta e a CLI tem de imprimir o mesmo"
     );
     let um = t.run(json!({"id": "8"}), &ctx).await.unwrap();
@@ -259,14 +270,14 @@ fn equipe_json_da_interface_esta_em_dia() {
         "equipe.json desatualizado: cargo run -p phxclaw-agent --example equipe_json"
     );
     let v: serde_json::Value = serde_json::from_str(&arquivo).unwrap();
-    assert_eq!(v["total"], 110);
+    assert_eq!(v["total"], total_do_registro());
     let soma: u64 = v["macroareas"]
         .as_array()
         .unwrap()
         .iter()
         .map(|g| g["papeis"].as_array().unwrap().len() as u64)
         .sum();
-    assert_eq!(soma, 110);
+    assert_eq!(soma, total_do_registro());
 }
 
 /// Papel que declarasse o poder de delegar nao o leva ao filho, mesmo com o pai tendo.
@@ -282,4 +293,27 @@ fn subagente_nunca_recebe_o_poder_de_delegar() {
             .into();
     let caps = equipe::capacidades_do_subagente(&m, &pai);
     assert_eq!(caps.into_iter().collect::<Vec<_>>(), vec!["fs.read"]);
+}
+
+/// O Integrador decide Go/NoGo: le, roda portoes e revisa, mas nao grava no repositorio
+/// (quem comita depois do Go e o Versionador).
+#[test]
+fn integrador_decide_sem_poder_escrever() {
+    let e = equipe();
+    let m = e
+        .papeis()
+        .into_iter()
+        .find(|m| m.name == "Integrador")
+        .expect("papel Integrador no catalogo");
+    let caps = equipe::capacidades_do_papel(m);
+    for proibida in ["fs.write", "doc.write", "git.write"] {
+        assert!(
+            !caps.contains(proibida),
+            "Integrador ganhou {proibida}: {caps:?}"
+        );
+    }
+    for exigida in ["fs.read", "shell.exec", "git.read", "code.review"] {
+        assert!(caps.contains(exigida), "Integrador sem {exigida}: {caps:?}");
+    }
+    assert_eq!(e.capability_principal(m), "release.go_no_go.decide");
 }
