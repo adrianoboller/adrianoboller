@@ -2806,6 +2806,30 @@
       "quando": "2026-09-30 23:05"
     },
     {
+      "id": "dblink-sem-prazo-total",
+      "titulo": "Os três clientes do DbLink (mysql, pg e phx) só têm prazo por LEITURA: um par que goteja um byte antes de cada prazo prende a thread do job ou da conexão para sempre",
+      "veredito": "PROVADA",
+      "segundos": 60.0,
+      "notas": [],
+      "quando": "2026-10-01 00:44"
+    },
+    {
+      "id": "dblink-sem-teto-de-bytes",
+      "titulo": "O resultado do DbLink só tem teto de LINHAS: o par decide quanto pesa cada uma (até 128 MiB no MySQL, 64 MiB no PostgreSQL) e o servidor guarda gigabytes",
+      "veredito": "PROVADA",
+      "segundos": 73.81,
+      "notas": [],
+      "quando": "2026-10-01 00:40"
+    },
+    {
+      "id": "dblink-max-mib-sem-leitor",
+      "titulo": "O `max_mib` da ligação do DbLink aparece no arquivo e na tela e nenhum cliente o lê: o teto de bytes fica o de fábrica, diga a ligação o que disser",
+      "veredito": "PROVADA",
+      "segundos": 61.9,
+      "notas": [],
+      "quando": "2026-10-01 00:42"
+    },
+    {
       "id": "criar-tabela-sem-fsync-dos-arquivos",
       "titulo": "`criar_tabela` respondia «criada» com o `.reg`, o `.ndx` e os outros arquivos só no cache do núcleo: numa queda a tabela podia sumir ou voltar sem o esquema",
       "veredito": "PROVADA",

@@ -280,6 +280,11 @@ pub struct Definicao {
     pub somente_leitura: bool,
     pub timeout_s: u64,
     pub max_linhas: u64,
+    /// O teto de BYTES do resultado, em MiB -- pedido 546. Ver
+    /// [`conexao::TETO_DE_BYTES_DO_RESULTADO`] para o valor de fabrica e o
+    /// porque dele. Mora na ligacao, ao lado do `max_linhas`, porque e o
+    /// mesmo corte visto pelo peso: quem ajusta um acha o outro.
+    pub max_mib: u64,
     /// Tabelas ligadas por sincronia. Campo ausente no arquivo = nenhuma,
     /// entao todo `dblink.json` escrito antes continua abrindo igual.
     pub sincronias: Vec<sincronia::Sincronia>,
@@ -344,6 +349,7 @@ impl std::fmt::Debug for Definicao {
             somente_leitura,
             timeout_s,
             max_linhas,
+            max_mib,
             sincronias,
             cifra,
             chave_do_fio,
@@ -363,6 +369,7 @@ impl std::fmt::Debug for Definicao {
             .field("somente_leitura", somente_leitura)
             .field("timeout_s", timeout_s)
             .field("max_linhas", max_linhas)
+            .field("max_mib", max_mib)
             .field("sincronias", sincronias)
             // Os DOIS estados da cifra, de proposito: `cifra` diz se alguem
             // escreveu a decisao (`None` = herdou o padrao do motor) e
@@ -397,6 +404,7 @@ impl Default for Definicao {
             somente_leitura: true,
             timeout_s: 10,
             max_linhas: 1_000,
+            max_mib: conexao::MIB_DO_RESULTADO_DE_FABRICA,
             sincronias: Vec::new(),
             // `None`, e nao `false`: o padrao desta ligacao depende do MOTOR,
             // e o `Default` nao sabe qual sera. Quem monta por
@@ -470,6 +478,12 @@ impl Definicao {
             max_linhas: j
                 .inteiro_ou("max_linhas", padrao.max_linhas as i64)
                 .clamp(1, 100_000) as u64,
+            // Grampeado, e nao recusado, como o `max_linhas` ao lado: o
+            // campo e ajuste, e um numero fora da faixa diz a intencao
+            // («pouco», «muito») que o grampo cumpre ate onde pode.
+            max_mib: j
+                .inteiro_ou("max_mib", padrao.max_mib as i64)
+                .clamp(1, conexao::MIB_DO_RESULTADO_MAXIMO as i64) as u64,
             sincronias: match j.campo("sincronias").and_then(Json::lista) {
                 None => Vec::new(),
                 Some(l) => l
@@ -516,6 +530,14 @@ impl Definicao {
             ("timeout_s", Json::de_u64(self.timeout_s)),
             ("max_linhas", Json::de_u64(self.max_linhas)),
         ];
+        // O teto de bytes (pedido 546) so vai ao disco quando DIVERGE do de
+        // fabrica, pelo motivo da cifra mais abaixo: o `gravar` reescreve
+        // TODAS as ligacoes, e gravar o padrao fossilizaria numa edicao de
+        // outra ligacao um numero que ninguem escolheu -- alem de mudar o
+        // arquivo de quem nao pediu nada.
+        if self.max_mib != conexao::MIB_DO_RESULTADO_DE_FABRICA {
+            campos.push(("max_mib", Json::de_u64(self.max_mib)));
+        }
         // As DUAS credenciais pelo mesmo caminho: a decisao de quando selar e
         // uma so, e escrita duas vezes uma das copias acabaria gravando em
         // claro o que a outra sela.
@@ -611,6 +633,7 @@ impl Definicao {
             ("somente_leitura", Json::Bool(self.somente_leitura)),
             ("timeout_s", Json::de_u64(self.timeout_s)),
             ("max_linhas", Json::de_u64(self.max_linhas)),
+            ("max_mib", Json::de_u64(self.max_mib)),
             // A cifra EFETIVA, e nao o que esta escrito: quem le a tela quer
             // saber se esta conexao vai pelo tunel, e nao de onde a decisao
             // veio.
@@ -702,6 +725,20 @@ impl Definicao {
             silencio.saturating_mul(MULTIPLO_DO_PRAZO_TOTAL),
             &ROTULO_DO_PRAZO,
         )
+    }
+
+    /// O teto de bytes do resultado desta ligacao, em bytes -- o `max_mib`
+    /// convertido num lugar so, para os tres clientes.
+    pub fn teto_de_bytes(&self) -> u64 {
+        self.max_mib.saturating_mul(1024 * 1024)
+    }
+
+    /// Esta definicao, com o teto de bytes de outra -- a tela nao manda
+    /// `max_mib`, e sem a heranca todo salvar por ela devolveria o teto
+    /// escrito no arquivo ao de fabrica, calado.
+    pub fn com_o_teto_de_bytes_de(mut self, outra: &Definicao) -> Definicao {
+        self.max_mib = outra.max_mib;
+        self
     }
 
     /// A cifra que VALE para esta ligacao -- e o unico lugar que responde.
@@ -956,6 +993,14 @@ impl Definicao {
     /// concreto -- o teste de protocolo, e quem quiser um campo que so o
     /// MySQL(R) tem.
     pub fn conectar(&self) -> Result<mysql::Conexao> {
+        self.conectar_com(self.prazo())
+    }
+
+    /// O mesmo, com o prazo na mao. E o UNICO lugar que abre o cliente
+    /// MySQL(R) a partir de uma ligacao -- o `abrir_com` passa por aqui --,
+    /// e e por isso que o teto de bytes do resultado (pedido 546) entra aqui
+    /// e alcanca os dois caminhos de uma vez.
+    pub(crate) fn conectar_com(&self, prazo: crate::prazo::Prazo) -> Result<mysql::Conexao> {
         match self.motor {
             Motor::MySql => mysql::Conexao::abrir(
                 &self.host,
@@ -963,8 +1008,12 @@ impl Definicao {
                 &self.usuario,
                 self.senha()?,
                 &self.database,
-                self.prazo(),
-            ),
+                prazo,
+            )
+            .map(|mut c| {
+                c.teto_de_bytes = self.teto_de_bytes();
+                c
+            }),
             Motor::Postgres => Err(PhxError::Esquema(
                 "esta ligacao e PostgreSQL(R): use `conectar_pg`, ou `abrir`, \
                  que escolhe o cliente pelo motor da ligacao"
@@ -980,6 +1029,12 @@ impl Definicao {
 
     /// Abre a ligacao pelo cliente PostgreSQL(R).
     pub fn conectar_pg(&self) -> Result<crate::pg::Conexao> {
+        self.conectar_pg_com(self.prazo())
+    }
+
+    /// O mesmo, com o prazo na mao -- o irmao do [`Definicao::conectar_com`],
+    /// pelo mesmo motivo.
+    pub(crate) fn conectar_pg_com(&self, prazo: crate::prazo::Prazo) -> Result<crate::pg::Conexao> {
         match self.motor {
             Motor::Postgres => crate::pg::Conexao::abrir(
                 &self.host,
@@ -987,8 +1042,12 @@ impl Definicao {
                 &self.usuario,
                 self.senha()?,
                 &self.database,
-                self.prazo(),
-            ),
+                prazo,
+            )
+            .map(|mut c| {
+                c.teto_de_bytes = self.teto_de_bytes();
+                c
+            }),
             Motor::MySql => Err(PhxError::Esquema(
                 "esta ligacao e MySQL(R); use `conectar`".into(),
             )),

@@ -54,7 +54,7 @@
 use phxsql_core::error::{PhxError, Result};
 use phxsql_core::json::Json;
 
-use super::conexao::{Coluna, Resultado};
+use super::conexao::{Acumulador, Coluna, Linha, Resultado};
 use super::{nome_seguro, Definicao};
 use crate::prazo::Prazo;
 use crate::replica::Cliente;
@@ -66,6 +66,8 @@ pub struct Conexao {
     pub versao: String,
     /// O papel dele: isolado, source, replica, spare.
     pub papel: String,
+    /// O teto de bytes do resultado, o `max_mib` da ligacao -- pedido 546.
+    teto_de_bytes: u64,
 }
 
 impl Conexao {
@@ -115,6 +117,7 @@ impl Conexao {
             versao: p.texto_ou("phxsql", "").to_string(),
             papel: p.texto_ou("papel", "").to_string(),
             cliente,
+            teto_de_bytes: d.teto_de_bytes(),
         })
     }
 
@@ -139,7 +142,7 @@ impl Conexao {
             ("database", Json::texto_de(database)),
             ("texto", Json::texto_de(sql)),
         ])?;
-        Ok(resultado_do_sql(&r, teto))
+        resultado_do_sql(&r, teto, self.teto_de_bytes)
     }
 }
 
@@ -222,23 +225,30 @@ fn como_texto(v: &Json) -> Option<String> {
 /// objeto nao carrega a ordem do esquema -- carrega a ordem em que o servidor
 /// escreveu aquela linha. Tirar a ordem da primeira linha funcionaria hoje e
 /// mentiria no dia em que uma linha viesse sem um campo nulo.
+///
+/// O corte -- por linhas e por bytes -- e o do motor comum aos tres clientes
+/// (pedido 546). Aqui a resposta inteira ja chegou numa linha do fio, com o
+/// teto do `Canal`; o que o motor limita e a COPIA em `Linha`, que e o que
+/// fica guardado e vira a resposta.
 fn linhas_por_colunas(
     linhas: &[Json],
     colunas: &[Coluna],
     teto: u64,
-) -> (Vec<Vec<Option<String>>>, bool) {
-    let truncado = linhas.len() as u64 > teto;
-    let saida = linhas
-        .iter()
-        .take(teto as usize)
-        .map(|l| {
+    teto_de_bytes: u64,
+) -> Result<(Vec<Linha>, bool)> {
+    let mut guardado = Acumulador::novo(teto, teto_de_bytes);
+    for l in linhas {
+        if !guardado.quer_mais() {
+            break;
+        }
+        guardado.receber(
             colunas
                 .iter()
                 .map(|c| l.campo(&c.nome).and_then(como_texto))
-                .collect()
-        })
-        .collect();
-    (saida, truncado)
+                .collect(),
+        )?;
+    }
+    Ok(guardado.fim())
 }
 
 /// Uma coluna de texto simples, para as respostas que nao tem esquema.
@@ -262,9 +272,9 @@ fn coluna_texto(nome: &str) -> Coluna {
 ///   linha que vem junto faria um `SELECT COUNT(*)` mostrar um registro de
 ///   dado, e quem olha nao saberia se aquilo quer dizer alguma coisa -- o
 ///   mesmo defeito que exercitar o console achou no proprio servidor.
-fn resultado_do_sql(r: &Json, teto: u64) -> Resultado {
+fn resultado_do_sql(r: &Json, teto: u64, teto_de_bytes: u64) -> Result<Resultado> {
     if let Some(n) = r.campo("contagem").and_then(Json::inteiro) {
-        return Resultado {
+        return Ok(Resultado {
             colunas: vec![Coluna {
                 nome: "contagem".into(),
                 tipo: "Int8".into(),
@@ -273,7 +283,7 @@ fn resultado_do_sql(r: &Json, teto: u64) -> Resultado {
             }],
             linhas: vec![vec![Some(n.to_string())]],
             ..Resultado::default()
-        };
+        });
     }
     let linhas = r.campo("linhas").and_then(Json::lista).unwrap_or(&[]);
     let nomes: Vec<String> = match r.campo("colunas").and_then(Json::lista) {
@@ -287,13 +297,13 @@ fn resultado_do_sql(r: &Json, teto: u64) -> Resultado {
             .unwrap_or_default(),
     };
     let colunas: Vec<Coluna> = nomes.iter().map(|n| coluna_texto(n)).collect();
-    let (linhas, truncado) = linhas_por_colunas(linhas, &colunas, teto);
-    Resultado {
+    let (linhas, truncado) = linhas_por_colunas(linhas, &colunas, teto, teto_de_bytes)?;
+    Ok(Resultado {
         colunas,
         linhas,
         afetadas: 0,
         truncado,
-    }
+    })
 }
 
 // ------------------------------------------------------- as seis operacoes
@@ -631,7 +641,7 @@ pub fn ler(d: &Definicao, mut c: Conexao, p: &Json) -> Result<Json> {
     ])?;
     let brutas = r.campo("linhas").and_then(Json::lista).unwrap_or(&[]);
     let tem_mais = brutas.len() as i64 > limite;
-    let (linhas, _) = linhas_por_colunas(brutas, &colunas, limite as u64);
+    let (linhas, _) = linhas_por_colunas(brutas, &colunas, limite as u64, c.teto_de_bytes)?;
     let resultado = Resultado {
         colunas,
         linhas,
@@ -706,6 +716,8 @@ fn base_do_pedido(d: &Definicao, p: &Json) -> String {
 #[cfg(test)]
 mod testes {
     use super::*;
+
+    const BYTES: u64 = super::super::conexao::TETO_DE_BYTES_DO_RESULTADO;
 
     fn esquema_de_prova() -> Json {
         Json::analisar(
@@ -791,7 +803,7 @@ mod testes {
         // A linha chega com os campos FORA de ordem, que e o que um objeto
         // JSON permite -- e e por isso que a ordem nao pode sair dela.
         let linha = Json::analisar(r#"[{"cidade":"Blumenau","rowid":3,"id":9}]"#).unwrap();
-        let (linhas, _) = linhas_por_colunas(linha.lista().unwrap(), &colunas, 10);
+        let (linhas, _) = linhas_por_colunas(linha.lista().unwrap(), &colunas, 10, BYTES).unwrap();
         assert_eq!(
             linhas[0],
             vec![
@@ -809,7 +821,7 @@ mod testes {
     fn a_contagem_nao_devolve_linha_de_dado() {
         let r = Json::analisar(r#"{"sql":"SELECT COUNT(*) FROM c","contagem":3,"registros":3}"#)
             .unwrap();
-        let res = resultado_do_sql(&r, 100);
+        let res = resultado_do_sql(&r, 100, BYTES).unwrap();
         assert_eq!(res.colunas.len(), 1);
         assert_eq!(res.colunas[0].nome, "contagem");
         assert_eq!(res.linhas, vec![vec![Some("3".to_string())]]);
@@ -820,12 +832,12 @@ mod testes {
     #[test]
     fn a_projecao_do_sql_manda_quando_ela_existe() {
         let r = Json::analisar(r#"{"colunas":["nome"],"linhas":[{"id":1,"nome":"Ana"}]}"#).unwrap();
-        let res = resultado_do_sql(&r, 100);
+        let res = resultado_do_sql(&r, 100, BYTES).unwrap();
         assert_eq!(res.colunas.len(), 1);
         assert_eq!(res.celula(0, 0).unwrap(), "Ana");
 
         let inteira = Json::analisar(r#"{"linhas":[{"id":1,"nome":"Ana"}]}"#).unwrap();
-        let res = resultado_do_sql(&inteira, 100);
+        let res = resultado_do_sql(&inteira, 100, BYTES).unwrap();
         let nomes: Vec<&str> = res.colunas.iter().map(|c| c.nome.as_str()).collect();
         assert_eq!(nomes, ["id", "nome"]);
     }
@@ -835,7 +847,7 @@ mod testes {
     #[test]
     fn o_teto_corta_e_a_resposta_avisa() {
         let r = Json::analisar(r#"{"linhas":[{"i":1},{"i":2},{"i":3}]}"#).unwrap();
-        let res = resultado_do_sql(&r, 2);
+        let res = resultado_do_sql(&r, 2, BYTES).unwrap();
         assert_eq!(res.linhas.len(), 2);
         assert!(res.truncado);
     }

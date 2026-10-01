@@ -26126,6 +26126,12 @@ impl Servidor {
             if p.campo("sincronias").is_none() {
                 d = d.com_as_sincronias_de(antiga);
             }
+            // O teto de bytes (pedido 546) pela mesma regra: a tela nao o
+            // manda, e quem o subiu no arquivo para uma sincronia grande nao
+            // pode ve-lo voltar ao de fabrica numa troca de porta.
+            if p.campo("max_mib").is_none() {
+                d = d.com_o_teto_de_bytes_de(antiga);
+            }
             // A CIFRA tem a condicao dela, e nao a do pino: herda-se a DECISAO
             // escrita (o `Option`), para que um salvar que nao fala de cifra
             // nao vire «ninguem decidiu» -- e para que quem escreveu
