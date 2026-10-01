@@ -12733,10 +12733,10 @@ async function verCluster() {
      ${naoVale !== undefined && naoVale !== null
        ? `<p class="leg">${esc(txt("tela.cl_gravado_nao_vale",
            "gravado no arquivo, ainda não vale neste processo"))}</p>` : ""}
-     <div class="nota"><p>${marcado(txt("tela.cl_quorum_nao_imposto",
-       "**Este campo é guardado e ainda NÃO é imposto.**"))}</p>
-       <p>${marcado(txt("tela.cl_quorum_nao_imposto2",
-       "Ele mora no bloco `cluster`, ao lado de `nos`."))}</p></div>`;
+     <div class="nota"><p>${marcado(txt("tela.cl_quorum_imposto",
+       "**O quórum é imposto desde o pedido 207, e vale a quente.**"))}</p>
+       <p>${marcado(txt("tela.cl_quorum_imposto2",
+       "Espera vencida **não desfaz a gravação**: a resposta diz `alcancado:false`."))}</p></div>`;
 
   folha(txt("tela.mi_cluster", "Cluster"),
     `${bloco.id} · ${(est && est.papel) || "—"}`, corpo);

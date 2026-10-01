@@ -657,6 +657,12 @@ dia, nunca no desejado:
   que so fotografava os volumes existentes, e o volume que nascia no meio dela
   ficava na geometria velha (`retrato-da-fase-a-nao-ve-volume-que-nasce-427`).
   703, medido pelo `--numeros`.
+  **SUBIU para 713 em 01/10/2026** (pedido 207, a escrita com quorum): dez
+  guardas novas, todas `quorum-*` -- esperar sem degradar, esperar fora da
+  trava, o ack pedindo a trava, o ack antes do `fsync`, a epoca velha, o
+  master sem `fsync` local, a anotacao fora do ponto unico do diario, contar
+  o master, esperar quem nao existe e voltar sem recuo. 713, medido pelo
+  `--numeros`.
 
 # A QUINTA REGUA: a tabela publicada pode ser MENOR que o catalogo
 
@@ -763,7 +769,7 @@ TETO_TESTE_MORTO = 0
 TETO_TRECHO_AMBIGUO = 0
 TETO_TESTE_FORA_DO_BINARIO = 0
 TETO_TESTE_SEM_MODULO = 0
-PISO_DAS_ENTRADAS = 703
+PISO_DAS_ENTRADAS = 713
 
 # ------------------------------------------------------------- APOSENTADAS
 #

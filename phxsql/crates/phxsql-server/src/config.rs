@@ -546,6 +546,16 @@ impl NoCluster {
     }
 }
 
+/// O prazo de fabrica da espera do quorum (pedido 207): dez segundos, o
+/// `rpl_semi_sync_source_timeout` do MySQL/MariaDB.
+pub const QUORUM_PRAZO_PADRAO_MS: u64 = 10_000;
+/// O piso do prazo: abaixo de 100 ms o `fsync` da replica num disco comum ja
+/// nao cabe, e o quorum degradaria por desenho.
+pub const QUORUM_PRAZO_MINIMO_MS: u64 = 100;
+/// O teto do prazo: a espera segura a trava de dados, e mais de dez minutos
+/// e o servidor parado.
+pub const QUORUM_PRAZO_MAXIMO_MS: u64 = 600_000;
+
 /// Cluster com eleicao e promocao automatica -- pedido 126.
 ///
 /// # Pedida, nao imposta
@@ -584,25 +594,24 @@ pub struct Cluster {
     pub email: Email,
     /// Databases replicados no cluster. Vazio = todos os do master.
     pub databases: Vec<String>,
-    /// Quantos servidores tem de confirmar uma gravacao antes de o cliente
-    /// ouvir "gravei" -- pedido 207, a transacao com quorum.
+    /// Quantas REPLICAS tem de confirmar uma gravacao antes de o cliente
+    /// ouvir "gravei" -- pedido 207, a escrita com quorum.
     ///
-    /// # Ele e GUARDADO e ainda NAO e imposto, e isto esta escrito de proposito
+    /// Conta so replicas, sem o master (`ANY num_sync` do PostgreSQL, o
+    /// `wait_for_replica_count` do MySQL, a «uma replica» do MariaDB: os tres
+    /// contam replicas). Zero = desligado, o master confirma sozinho, como
+    /// sempre foi -- guarda nova entra pedida.
     ///
-    /// A escrita com quorum nao existe: hoje o master confirma sem esperar
-    /// replica nenhuma (o cabecalho do `cluster.rs` diz isso sem eufemismo).
-    /// O campo mora aqui desde antes por uma razao de formato -- **mudanca de
-    /// formato entra cedo**, e o lugar dele e o bloco `cluster`, ao lado de
-    /// `nos`, que e o que o 207 decidiu. Guardar agora custa um inteiro;
-    /// descobrir depois que ele devia morar noutro bloco custa migracao.
-    ///
-    /// Zero = como hoje, o master confirma sozinho. A tela mostra o valor e
-    /// diz, com todas as letras, que ele ainda nao e imposto -- campo que
-    /// finge efeito e pior que campo ausente, e esta casa ja pagou por isso
-    /// com o `recursos.cache_paginas`, que passou tres versoes no arquivo,
-    /// no MANUAL e na tela sem uma linha de codigo o lendo.
-    /// DIVIDA: #207 o quorum e guardado e nao imposto -- a escrita com quorum nao existe, e o master confirma sem esperar replica nenhuma
+    /// O «ok» de uma replica quer dizer APLICOU E GRAVOU EM DISCO (decisao do
+    /// dono, 17/09/2026). Espera vencida nao vira erro: a gravacao fica, a
+    /// resposta diz `alcancado:false` e o servidor entra em degradado ate as
+    /// replicas alcancarem (`docs/REPLICACAO.md` §19). Maior que o numero de
+    /// replicas da lista e recusado na declaracao -- seria esperar quem nao
+    /// existe em todo commit.
     pub quorum_minimo: u64,
+    /// Quanto o commit espera as confirmacoes, em milissegundos. Padrao
+    /// 10.000; fora de 100..600.000 e recusado na declaracao.
+    pub quorum_prazo_ms: u64,
     /// Credenciais com que ESTE no fala com os outros -- as mesmas tres
     /// pecas da origem de replicacao, e pela mesma razao: a senha nunca
     /// aparece em claro, so o hash de onde sai a chave do desafio-resposta.
@@ -661,6 +670,7 @@ impl std::fmt::Debug for Cluster {
             email,
             databases,
             quorum_minimo,
+            quorum_prazo_ms,
             token: _,
             usuario,
             senha_hash: _,
@@ -677,6 +687,7 @@ impl std::fmt::Debug for Cluster {
             .field("email", email)
             .field("databases", databases)
             .field("quorum_minimo", quorum_minimo)
+            .field("quorum_prazo_ms", quorum_prazo_ms)
             .field("token", &"(oculto)")
             .field("usuario", usuario)
             .field("senha_hash", &"(oculto)")
@@ -732,6 +743,11 @@ impl Cluster {
             email: Email::de_json(c)?,
             databases: c.textos("databases"),
             quorum_minimo: c.inteiro_ou("quorum_minimo", 0).max(0) as u64,
+            // Negativo vira zero, e zero e recusado no `validar`: um prazo
+            // escrito errado tem de derrubar o arranque, e nao virar padrao.
+            quorum_prazo_ms: c
+                .inteiro_ou("quorum_prazo_ms", QUORUM_PRAZO_PADRAO_MS as i64)
+                .max(0) as u64,
             token: c.texto_ou("token", "").to_string(),
             usuario: c.texto_ou("usuario", "").trim().to_string(),
             senha_hash: c.texto_ou("senha_hash", "").trim().to_string(),
@@ -808,6 +824,27 @@ impl Cluster {
         if self.email.ligado {
             self.email.validar()?;
         }
+        // O quorum se recusa na DECLARACAO (pedido 207, D-declara): pedir
+        // mais confirmacoes do que ha replicas e esperar quem nao existe em
+        // TODO commit -- o PostgreSQL aceita e pendura; aqui o arranque cai
+        // dizendo o numero.
+        let replicas = self.nos.len() as u64 - 1;
+        if self.quorum_minimo > replicas {
+            return Err(PhxError::Esquema(format!(
+                "cluster.quorum_minimo {} passa do numero de replicas da lista ({replicas}): \
+                 o quorum conta so replicas, sem o master -- com {} nos, o maximo e {replicas}",
+                self.quorum_minimo,
+                self.nos.len()
+            )));
+        }
+        if !(QUORUM_PRAZO_MINIMO_MS..=QUORUM_PRAZO_MAXIMO_MS).contains(&self.quorum_prazo_ms) {
+            return Err(PhxError::Esquema(format!(
+                "cluster.quorum_prazo_ms {} fora de {QUORUM_PRAZO_MINIMO_MS}..{QUORUM_PRAZO_MAXIMO_MS}: \
+                 abaixo disso o commit degrada antes de a replica ter tempo de gravar; \
+                 acima, um commit prende o servidor inteiro por mais de dez minutos",
+                self.quorum_prazo_ms
+            )));
+        }
         // Pino torto e recusado na DECLARACAO, e nao no primeiro pulso: uma
         // chave escrita errada tem de derrubar o arranque com o no nomeado, em
         // vez de virar um tunel sem pino que ninguem pediu -- a mesma decisao
@@ -834,10 +871,11 @@ impl Cluster {
             ),
             ("email", Json::Bool(self.email.ligado)),
             ("quorum_minimo", Json::de_u64(self.quorum_minimo)),
-            // O que o campo acima NAO faz, dito pelo servidor e nao pela tela:
+            ("quorum_prazo_ms", Json::de_u64(self.quorum_prazo_ms)),
+            // O que o campo acima FAZ, dito pelo servidor e nao pela tela:
             // duas telas divergem no dia em que uma for atualizada e a outra
-            // nao, e a que envelhece e sempre a que ninguem compila.
-            ("quorum_imposto", Json::Bool(false)),
+            // nao. Desde o pedido 207 o quorum e imposto -- o commit espera.
+            ("quorum_imposto", Json::Bool(true)),
             // O estado da cifra do cluster e um BOOLEANO informativo, como o
             // `email` acima -- o PINO de cada no NAO sai daqui: a resposta de
             // protocolo nunca carrega material de chave.
@@ -6128,18 +6166,17 @@ pub const CAMPOS_EDITAVEIS: &[(&str, TipoDoCampo, bool)] = &[
     ("diretivas.arquivos", TipoDoCampo::Inteiro, true),
     ("telemetria.alto_uso_ms", TipoDoCampo::Inteiro, true),
     ("telemetria.stress_ms", TipoDoCampo::Inteiro, true),
-    // O quorum minimo da escrita -- pedido 208, a tela; pedido 207, o efeito.
+    // O quorum da escrita -- pedido 208, a tela; pedido 207, o efeito.
     //
-    // `false` (nao vale a quente) e a marca HONESTA hoje: nada o le, entao
-    // gravar nao muda comportamento nenhum. A tela mostra o gravado pelo
-    // caminho que ja existe (`no_arquivo`) e diz ao lado que o campo ainda
-    // nao e imposto. Quando o 207 entrar, esta linha vira `true` no mesmo
-    // commit que fizer o commit espera-lo.
+    // `true` (vale a quente), como o PostgreSQL no reload e as variaveis
+    // dinamicas do MySQL/MariaDB: `op_config_gravar` leva os dois ao cubo
+    // do quorum, e o commit seguinte ja espera (ou deixa de esperar).
     //
     // Os OUTROS campos do bloco `cluster` continuam fora: `nos` tem operacao
     // propria (`cluster_no_acrescentar`), e `token`/`usuario`/`senha_hash`
     // carregam credencial -- e credencial se edita no arquivo.
-    ("cluster.quorum_minimo", TipoDoCampo::Inteiro, false),
+    ("cluster.quorum_minimo", TipoDoCampo::Inteiro, true),
+    ("cluster.quorum_prazo_ms", TipoDoCampo::Inteiro, true),
 ];
 
 /// O valor de `"secao.campo"` dentro de um JSON, ou `None` se nao existe.
@@ -8522,6 +8559,37 @@ mod tests {
             .unwrap()
             .validar()
             .is_err());
+    }
+
+    /// Pedido 207, D-declara: o quorum se recusa na DECLARACAO. Tres nos sao
+    /// duas replicas -- `quorum_minimo:3` esperaria quem nao existe em todo
+    /// commit. E o prazo fora de 100..600.000 tambem cai, com o zero junto.
+    /// O comportamento velho (sem os campos) continua valendo: 0 e 10.000.
+    #[test]
+    fn o_quorum_se_recusa_na_declaracao() {
+        let ler = |extra: &str| {
+            Config::de_json(&Json::analisar(&cluster_minimo(extra)).unwrap())
+                .unwrap()
+                .validar()
+        };
+        let c = Config::de_json(&Json::analisar(&cluster_minimo("")).unwrap()).unwrap();
+        let cl = c.cluster.as_ref().unwrap();
+        assert_eq!((cl.quorum_minimo, cl.quorum_prazo_ms), (0, 10_000));
+        assert!(ler("").is_ok());
+        assert!(
+            ler(r#""quorum_minimo":2,"#).is_ok(),
+            "duas replicas, quorum 2"
+        );
+        let e = ler(r#""quorum_minimo":3,"#).unwrap_err().to_string();
+        assert!(e.contains("quorum_minimo 3") && e.contains("2"), "{e}");
+        for torto in ["0", "99", "600001"] {
+            let e = ler(&format!(r#""quorum_prazo_ms":{torto},"#))
+                .unwrap_err()
+                .to_string();
+            assert!(e.contains("quorum_prazo_ms"), "{torto}: {e}");
+        }
+        assert!(ler(r#""quorum_prazo_ms":100,"#).is_ok());
+        assert!(ler(r#""quorum_prazo_ms":600000,"#).is_ok());
     }
 
     #[test]

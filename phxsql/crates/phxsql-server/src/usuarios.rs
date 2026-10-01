@@ -407,6 +407,9 @@ impl Atividade {
             // que esta vivo. Ja o estado e leitura: e o endereco unico do
             // cluster, e qualquer cliente precisa dele para achar o master.
             "cluster_pulso" => Atividade::Replicar,
+            // O canal do quorum leva o diario com a linha inteira, como o
+            // `replicar`: a mesma permissao, e so ela.
+            "replicar_aguardar" => Atividade::Replicar,
             "cluster_estado" => Atividade::Ler,
             // Mexer na LISTA de nos muda o denominador da maioria -- quem
             // acrescenta um no muda quantos votos fazem um master. Isso e

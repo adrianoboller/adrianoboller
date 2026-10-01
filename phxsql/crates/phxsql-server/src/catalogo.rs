@@ -1779,6 +1779,29 @@ pub const OPERACOES: &[Operacao] = &[
         ferramenta_mcp: false,
     },
     Operacao {
+        nome: "replicar_aguardar",
+        apelidos: &[],
+        resumo: "O canal aberto do quórum de escrita (pedido 207): a réplica do \
+                 cluster confirma o que aplicou e gravou em disco, e espera o \
+                 lote seguinte do commit que está esperando por ela.",
+        parametros: &[
+            obr("id", "string", "o id do nó réplica que conversa"),
+            opc("epoca", "integer", "a época que a réplica conhece"),
+            opc(
+                "confirmado",
+                "array",
+                "`[{database, tabela, posicao}]`: o que a réplica aplicou E gravou em disco",
+            ),
+            opc(
+                "esperar_ms",
+                "integer",
+                "quanto esperar por lote novo; o teto é `cluster.pulso_s`",
+            ),
+        ],
+        exemplo: r#"{"op":"replicar_aguardar","id":"no2","epoca":3,"confirmado":[{"database":"loja","tabela":"clientes","posicao":42}],"esperar_ms":2000}"#,
+        ferramenta_mcp: false,
+    },
+    Operacao {
         nome: "cluster_estado",
         apelidos: &[],
         resumo: "Quem é o master agora, a época e a escrita -- responde igual \

@@ -827,6 +827,22 @@ pub const FABRICA: &[MensagemFabrica] = &[
     // O 503 das portas HTTP (pedido 248): todas as threads ocupadas e a fila
     // de espera esgotada. Vai no corpo da resposta; o `Retry-After` vai no
     // cabecalho, que e protocolo e nao se traduz.
+    // Pedido 207: a escrita com quorum cuja espera venceu. A gravacao FICOU
+    // (o WARNING do `syncrep.c:321` do PostgreSQL), e a frase diz isso antes
+    // de dizer o que faltou. O prefixo e `erro.` porque a fabrica tem um so
+    // (`a_fabrica_e_bem_formada`), mas ela viaja ao lado de um `ok`, no campo
+    // `aviso_quorum` -- nunca como erro do pedido.
+    MensagemFabrica {
+        nome: "erro.quorum_nao_alcancado",
+        textos: [
+            "gravado neste servidor, mas so {confirmado} de {pedido} replica(s) confirmaram a tempo: o dado pode nao estar em outro disco",
+            "écrit sur ce serveur, mais seules {confirmado} sur {pedido} réplique(s) ont confirmé à temps : la donnée peut ne pas être sur un autre disque",
+            "written on this server, but only {confirmado} of {pedido} replica(s) confirmed in time: the data may not be on another disk",
+            "scritto su questo server, ma solo {confirmado} di {pedido} replica/e hanno confermato in tempo: il dato potrebbe non essere su un altro disco",
+            "auf diesem Server geschrieben, aber nur {confirmado} von {pedido} Replik(en) haben rechtzeitig bestätigt: die Daten sind evtl. auf keiner anderen Platte",
+            "grabado en este servidor, pero solo {confirmado} de {pedido} réplica(s) confirmaron a tiempo: el dato puede no estar en otro disco",
+        ],
+    },
     MensagemFabrica {
         nome: "erro.porta_cheia",
         textos: [

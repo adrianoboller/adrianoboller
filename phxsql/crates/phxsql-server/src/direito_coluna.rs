@@ -288,6 +288,7 @@ pub const CLASSES: &[(&str, PorColuna)] = &[
     ("replicacao_pular", PorColuna::Nenhum),
     ("spare_promover", PorColuna::Nenhum),
     ("cluster_pulso", PorColuna::Nenhum),
+    ("replicar_aguardar", PorColuna::Nenhum),
     ("cluster_estado", PorColuna::Nenhum),
     ("cluster_no_acrescentar", PorColuna::Nenhum),
     ("cluster_no_remover", PorColuna::Nenhum),

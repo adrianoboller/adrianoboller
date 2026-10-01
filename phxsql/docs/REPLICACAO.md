@@ -2199,13 +2199,15 @@ contrário do que se suporia. E ele explica a medição anterior: a `medir.py`
 publicou `2-de-3 = 0,661 ms` abrindo o caminho a cada volta; pelo canal quente
 são **0,447 ms**, e a diferença é o aperto de mão que o master **não pagaria**.
 
-**Não foi implementado, e o motivo tem número.** Faltam quatro peças — a
-primeira é decidir o que o «ok» da réplica significa (§19.6). O parecer inteiro,
-com o caminho na ordem em que ele é testável, está em
-`docs/propostas/quorum-de-escrita.md`. O que entrou foi só o **campo**
-`cluster.quorum_minimo`, porque mudança de formato entra cedo, com o servidor
-declarando `"quorum_imposto": false` ao lado dele — campo que finge efeito é
-pior que campo ausente.
+**Naquele dia não foi implementado, e o motivo tinha número.** Faltavam quatro
+peças — a primeira era decidir o que o «ok» da réplica significa (§19.6), e o
+dono decidiu em 17/09/2026: **aplicou e gravou em disco**. O que entrou ali foi
+só o **campo** `cluster.quorum_minimo`, com `"quorum_imposto": false` ao lado.
+**A escrita com quórum entrou em 01/10/2026 — §19.9.** O canal que ela usa
+**não** é o do pulso: é a rota (b), a réplica abre e fica (o contrato,
+`docs/propostas/207-e-513p2-contrato-01-10-2026.md`, recusa a rota do pulso
+pela decisão do dono de 07/09 e pela convergência dos três maduros — quem abre
+é a réplica).
 
 ### 19.8 Como refazer
 
@@ -2219,6 +2221,76 @@ Ele **para** — em vez de publicar um número bonito — se uma réplica puxar
 sozinha (zero eventos no `replicar` significa que ela chegou antes, e o medidor
 estaria medindo o próprio concorrente), e se as réplicas não alcançarem o
 esquema antes da primeira volta.
+
+### 19.9 O que entrou — a escrita com quórum, medida (pedido 207, 01/10/2026)
+
+**Ligar:** `cluster.quorum_minimo: N` (réplicas, sem o master; 0 desliga) e
+`cluster.quorum_prazo_ms` (padrão 10.000, aceito em 100..600.000). Os dois
+valem **a quente** pela op `config_gravar`. `quorum_minimo` maior que o número
+de réplicas da lista é **recusado na declaração**. O bloco `cluster` é o mesmo
+em todos os nós: a réplica só abre o canal do quórum quando o dela também
+está ligado.
+
+**Como funciona, na ordem:**
+
+1. Toda escrita do master, de qualquer família, faz o diário crescer num
+   **ponto único** (`LogFile::registrar_detalhado`). Com o quórum ligado, a
+   tomada da trava de dados liga a anotação da tabela tocada ali.
+2. Quando a trava vai ser solta (o `Drop` da `TravaMedida`, o mesmo ponto
+   único do reparo do pedido 451), o master **sincroniza** as tabelas tocadas
+   (D-local: PG 4 + MySQL 2 = 6 contra MariaDB 3), materializa os eventos pelo
+   **mesmo motor** do `replicar` (`eventos_para_o_fio`) e os entrega ao cubo
+   do quórum (`quorum.rs`), que **não conhece a trava de dados**.
+3. A réplica está parada no `replicar_aguardar`, numa conexão que **ela**
+   abriu e mantém. Leva o lote, aplica pelo mesmo motor do pull
+   (`abrir_para_replicar` + `aplicar_lote_da_replica`, com a conferência de
+   continuidade), faz o `fsync`, e **só então** confirma, no pedido seguinte.
+4. O commit volta quando `quorum_minimo` réplicas confirmaram — com a trava
+   **ainda na mão**: até lá, ninguém lê a linha (o `xact.c:1541` do
+   PostgreSQL faz o mesmo).
+
+**A resposta** ganha `"quorum":{"pedido":N,"confirmado":k,"alcancado":bool,"ms":x}`.
+Espera vencida **não desfaz a gravação** (a convergência dos três: WARNING no
+PostgreSQL, volta ao assíncrono no MySQL e no MariaDB): `alcancado:false`,
+`degradado:true` e o campo `aviso_quorum` com a frase pela fábrica de idiomas.
+Daí em diante o master fica **degradado**: responde na hora, dizendo, e volta
+ao síncrono quando `quorum_minimo` réplicas alcançaram o que ele tem — nunca
+antes do **recuo** (o `replica::Ritmo`: `pulso_s`, dobrando a cada degradação
+em 10 min, teto 60 s). O estado inteiro está em `replicacao_estado.quorum`.
+
+**Medido** (`bancada/quorum/quorum-real.py`, 200 voltas, release, três
+processos em `127.0.0.1`, ext4 em `/dev/vda`, 01/10/2026 22:42 — o **piso**:
+rede e disco de cliente custam mais):
+
+| | mediana | faixa | commits/s |
+|---|---|---|---|
+| sem quórum | **0,305 ms** | 0,188 – 4,170 | 2.732,6 |
+| 1 de 2 | **4,010 ms** (13,15×) | 3,438 – 9,152 | 237,3 |
+| 2 de 2 | **4,345 ms** (14,25×) | 3,593 – 9,741 | 219,9 |
+
+As faixas de «sem» e «com» **não se cruzam** (pedido 155). O contrato tinha
+raciocinado ≈ 3,6 ms e ≈ 280 commits/s por componentes; a bancada mediu 4,0 ms
+e 237/s. O «3,16×» publicado em §19.3 **não tinha nenhum dos dois `fsync`** — é
+o fio, e não o disco. Com a trava global presa na espera, os 237/s são também
+o **teto do servidor inteiro** com o quórum ligado, neste disco.
+
+**`SIGKILL` nas duas réplicas** (pelo PID): o primeiro commit voltou em
+**2.005,7 ms** (prazo 2.000) com `alcancado:false`, `confirmado:0`; o segundo,
+**3,35 ms**, `degradado:true` (0,007 ms de espera no servidor). As réplicas de
+volta: o master voltou ao síncrono em **2,02 s**, e o commit seguinte confirmou.
+
+**Preços que ficam, escritos:**
+
+- **ligar a quente** com a réplica no meio de um pull pode degradar o
+  **primeiro** commit: o pull pede a trava que o commit segura. Espere três
+  pulsos depois de ligar (a bancada espera);
+- **BULKINSERT** com quórum espera a cada lote (cada lote solta a trava), e o
+  `fsync` local acontece a cada lote — o ganho de não sincronizar até o
+  `BULKINSERT(false)` some com o quórum ligado;
+- a atomicidade **entre tabelas** continua não atravessando o fio (pedido 299);
+- a recusa da **época velha** tem prova só da regra pura
+  (`aceita_a_epoca`); o chamador no laço da réplica não tem prova pelo
+  soquete — montar um master de época velha vivo pede uma partição.
 
 ## 20. A réplica que insistia na credencial recusada — e derrubava o operador junto
 

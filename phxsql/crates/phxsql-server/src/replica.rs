@@ -566,8 +566,21 @@ fn puxar_ate(
         campos.push(("para_numero", Json::de_u64(numero as u64)));
     }
     let r = cliente.pedir(campos)?;
+    let eventos = eventos_do_fio(r.campo("eventos"))?;
+    Ok(LoteRecebido {
+        eventos,
+        ate: r.inteiro_ou("ate", desde as i64).max(0) as u64,
+        fim: r.booleano_ou("fim", true),
+    })
+}
+
+/// A lista `eventos` do fio, lida -- UM leitor para o `replicar` de sempre e
+/// para o lote do quorum (pedido 207), que viaja no `replicar_aguardar` com
+/// a mesma forma: dois leitores da mesma lista divergiriam no primeiro campo
+/// novo.
+pub fn eventos_do_fio(lista: Option<&Json>) -> Result<Vec<EventoRecebido>> {
     let mut eventos = Vec::new();
-    for e in r.campo("eventos").and_then(Json::lista).unwrap_or(&[]) {
+    for e in lista.and_then(Json::lista).unwrap_or(&[]) {
         eventos.push(EventoRecebido {
             operacao: match e.texto_ou("operacao", "") {
                 "inclusao" => Operacao::Inclusao,
@@ -590,11 +603,7 @@ fn puxar_ate(
             },
         });
     }
-    Ok(LoteRecebido {
-        eventos,
-        ate: r.inteiro_ou("ate", desde as i64).max(0) as u64,
-        fim: r.booleano_ou("fim", true),
-    })
+    Ok(eventos)
 }
 
 /// Quanto tempo [`ligar`] espera o `connect` antes de desistir.

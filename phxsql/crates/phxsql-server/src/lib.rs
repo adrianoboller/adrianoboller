@@ -47,6 +47,7 @@ pub mod pivot;
 pub use phxsql_core::prazo;
 pub mod profiler;
 pub mod pulso;
+pub mod quorum;
 pub mod replica;
 pub mod rest;
 mod retrato;

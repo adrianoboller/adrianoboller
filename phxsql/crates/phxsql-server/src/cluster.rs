@@ -18,13 +18,19 @@
 //!
 //! # Honestidade: isto NAO e Raft
 //!
-//! Nao ha log replicado por quorum de escrita: o master confirma a escrita
-//! sem esperar replica nenhuma. A eleicao por maioria impede DOIS masters
-//! duradouros (so uma particao enxerga a maioria dos nos CONFIGURADOS), mas
-//! nao impede a perda das ultimas escritas de um master isolado: o que ele
-//! aceitou entre o inicio da particao e o momento em que se ve sem maioria
-//! nao chegou a ninguem, e morre com o rebaixamento. `docs/CLUSTER.md` diz
-//! isso com todas as letras, com o que o operador deve saber.
+//! Nao ha log replicado por consenso. A eleicao por maioria impede DOIS
+//! masters duradouros (so uma particao enxerga a maioria dos nos
+//! CONFIGURADOS), mas nao impede a perda das ultimas escritas de um master
+//! isolado: o que ele aceitou entre o inicio da particao e o momento em que
+//! se ve sem maioria nao chegou a ninguem, e morre com o rebaixamento.
+//!
+//! O que o quorum de escrita (pedido 207, `cluster.quorum_minimo > 0`, em
+//! `quorum.rs`) muda nesse paragrafo, e o que NAO muda: com ele, o commit
+//! espera N replicas aplicarem e gravarem em disco, entao o que o master
+//! confirmou com `alcancado:true` sobrevive ao rebaixamento dele. O master
+//! isolado **continua aceitando** -- a espera vencida nao vira erro (a
+//! convergencia dos tres maduros) --, mas agora **diz** `alcancado:false`,
+//! e degrada. Sem `quorum_minimo`, tudo como antes. `docs/CLUSTER.md` §2.4.
 
 #[cfg(test)]
 use crate::apoio_teste::DirTemp;

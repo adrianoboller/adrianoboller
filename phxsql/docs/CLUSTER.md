@@ -56,7 +56,8 @@ soquete.
   "janela_inatividade_s": 10,        // master calado além disto = caído
   "pulso_s": 3,                      // omitido = um terço da janela
   "avisar_cada_min": 5,              // aceita fração: 0.1 = 6 s
-  "quorum_minimo": 0,                // GUARDADO e ainda NÃO imposto (§2.4)
+  "quorum_minimo": 0,                // réplicas que confirmam cada gravação; 0 = desliga (§2.4)
+  "quorum_prazo_ms": 10000,          // espera vencida: grava, avisa e degrada
   "token": "...", "usuario": "replicador",
   "senha_hash": "pbkdf2-sha256$...", // a MESMA tríade da origem de replicação
   "databases": [],                   // vazio = todos os do master
@@ -322,15 +323,16 @@ e é problema de rede. O que o banco entrega é a **semântica** de endereço
 
 ### 2.4 O que isto NÃO garante — leia antes de confiar
 
-**Não há quórum de escrita.** O master confirma a gravação sem esperar réplica
-nenhuma, e o que ele aceitou entre o início de uma partição e o momento em que
-se vê sem maioria não chegou a ninguém. O campo `cluster.quorum_minimo` já
-existe no formato e a op `config` o devolve ao lado de `"quorum_imposto":
-false` — porque **mudança de formato entra cedo** —, mas nada o lê. O parecer
-medido do que falta está em `docs/propostas/quorum-de-escrita.md`, e o achado
-que ele derruba vale ser lido antes de qualquer plano: o canal aberto que o
-quórum precisaria **já existe**, é o do pulso, e custa **0,089 ms** de ida e
-volta.
+**O quórum de escrita existe desde 01/10/2026 (pedido 207), e é pedido.** Com
+`cluster.quorum_minimo: N`, o commit espera N **réplicas** aplicarem e gravarem
+em disco antes de responder, e a linha fica invisível até lá; a op `config`
+devolve `"quorum_imposto": true`. O que ele **muda** no parágrafo abaixo: o que
+o master confirmou com `alcancado:true` sobrevive ao rebaixamento dele. O que
+ele **não muda**: o master isolado **continua aceitando** — a espera vencida
+não vira erro, como nos três maduros —, mas agora **diz** `alcancado:false` e
+degrada. Sem `quorum_minimo` (o padrão), tudo o que está abaixo vale como
+sempre valeu. Medido: **4,0 ms** por commit com 1 de 2 contra **0,3 ms** sem,
+≈ 237 commits/s de teto neste disco (`docs/REPLICACAO.md` §19.9).
 
 
 **Não é Raft.** Não há log replicado por quórum de escrita: o master

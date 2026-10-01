@@ -22906,4 +22906,273 @@ pub const PRAZO_SOB_A_TRAVA: Duration = Duration::from_secs(3600);""",
         ],
         "prazo": 1200,
     },
+    # ------------------------------------------------ pedido 207, o quorum
+    {
+        "id": "quorum-espera-sem-degradar",
+        "titulo": "o commit com quórum esperando o prazo inteiro a cada gravação, sem o modo degradado: uma réplica caída para o servidor 10 s por commit",
+        "porque": (
+            "pedido 207, D-falha e D-volta: a espera vencida responde ok com "
+            "aviso e poe o servidor em degradado, e o commit seguinte NAO "
+            "espera. Sem o degradado (D1, «esperar sempre»), a trava global "
+            "fica presa o prazo inteiro em todo commit enquanto a replica "
+            "estiver fora -- o servidor inteiro parado, nao so a sessao."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        if cubo.modo() == crate::quorum::Modo::Degradado {""",
+        "troca": """        // DEFEITO REPOSTO (207): esperar sempre, sem o degradado.
+        if false {""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "quorum-de-escrita"],
+        "caem": ["duas_replicas_e_depois_uma_e_depois_nenhuma"],
+        "seguem": ["sem_quorum_a_resposta_e_a_de_sempre"],
+        "prazo": 1200,
+    },
+    {
+        "id": "quorum-espera-fora-da-trava",
+        "titulo": "a espera do quórum depois de soltar a trava de dados: a linha fica visível antes de qualquer réplica ter confirmado",
+        "porque": (
+            "pedido 207, «invisivel ate o ok»: o `xact.c:1541` do PostgreSQL "
+            "segura as travas durante a espera (AFTER_SYNC no MySQL). Esperar "
+            "depois de soltar o guard (o AFTER_COMMIT do MariaDB) deixa um "
+            "leitor ver a linha que o master pode perder num rebaixamento. A "
+            "espera mora no `Drop` da `TravaMedida`, com o guard ainda na mao."
+        ),
+        "trocas": [
+            {
+                "arquivo": "crates/phxsql-server/src/servidor.rs",
+                "trecho": """            cubo.esperar(lotes, &esperar_por)
+""",
+                "troca": """            // DEFEITO REPOSTO (207 1/3): a espera adiada para depois da trava.
+            {
+                ESPERA_ADIADA.with(|e| *e.borrow_mut() = Some((lotes, esperar_por.clone())));
+                crate::quorum::Resultado {
+                    pedido,
+                    confirmado: 0,
+                    alcancado: true,
+                    degradado: false,
+                    ms: 0.0,
+                }
+            }
+""",
+            },
+            {
+                "arquivo": "crates/phxsql-server/src/servidor.rs",
+                "trecho": """        let (op, autenticado, mut resultado) = self.despachar_o_pedido(linha, sessao, ip);
+""",
+                "troca": """        let (op, autenticado, mut resultado) = self.despachar_o_pedido(linha, sessao, ip);
+        // DEFEITO REPOSTO (207 2/3): espera com a trava ja solta.
+        if let Some((l, x)) = ESPERA_ADIADA.with(|e| e.borrow_mut().take()) {
+            if let Some(c) = &self.quorum {
+                let r = c.esperar(l, &x);
+                QUORUM_DO_PEDIDO.with(|q| *q.borrow_mut() = Some(r));
+            }
+        }
+""",
+            },
+            {
+                "arquivo": "crates/phxsql-server/src/servidor.rs",
+                "trecho": """    static COM_A_TRAVA: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+""",
+                "troca": """    static COM_A_TRAVA: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    // DEFEITO REPOSTO (207 3/3): onde a espera adiada mora.
+    #[allow(clippy::type_complexity)]
+    static ESPERA_ADIADA: std::cell::RefCell<Option<(Vec<crate::quorum::LoteDoQuorum>, Vec<crate::quorum::Exigencia>)>> =
+        const { std::cell::RefCell::new(None) };
+""",
+            },
+        ],
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "quorum-de-escrita"],
+        "caem": ["duas_replicas_e_depois_uma_e_depois_nenhuma"],
+        "seguem": ["sem_quorum_a_resposta_e_a_de_sempre"],
+        "prazo": 1200,
+    },
+    {
+        "id": "quorum-ack-pede-a-trava",
+        "titulo": "o `replicar_aguardar` tomando a trava de dados do master: a réplica espera o commit que espera por ela, e todo commit estoura o prazo",
+        "porque": (
+            "pedido 207, D-trava: o commit espera com a trava exclusiva na "
+            "mao, e o caminho do ack nao pode pedi-la -- os eventos viajam "
+            "materializados no cubo do quorum. Com a trava no ack, o primeiro "
+            "commit com quorum ja volta pelo prazo com alcancado:false."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        let entrega = cubo.aguardar(&id, sessao.usuario.as_ref(), &confirmados, esperar);
+""",
+        "troca": """        // DEFEITO REPOSTO (207): o ack pede a trava de dados.
+        let _trava = self.travar_dados()?;
+        let entrega = cubo.aguardar(&id, sessao.usuario.as_ref(), &confirmados, esperar);
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "quorum-de-escrita"],
+        "caem": ["o_commit_espera_a_replica_e_ela_tem_a_linha_no_disco"],
+        "seguem": ["sem_quorum_a_resposta_e_a_de_sempre"],
+        "prazo": 1200,
+    },
+    {
+        "id": "quorum-ack-antes-do-fsync",
+        "titulo": "a réplica confirmando o lote do quórum sem levá-lo ao disco: o «ok» vira «recebi», a garantia que o Cassandra chama de QUORUM",
+        "porque": (
+            "decisao do dono de 17/09/2026 (pedido 207): o ok da replica "
+            "quer dizer APLIQUEI E GRAVEI EM DISCO. Sem o `sincronizar` antes "
+            "da confirmacao, N copias em page cache somem juntas na queda de "
+            "energia -- e o nome continua o mesmo."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """                let arquivos = self.sincronizar_replicada_contando(&database, &tabela)?;
+""",
+        "troca": """                // DEFEITO REPOSTO (207): confirma sem o fsync.
+                let arquivos = 0u64;
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "quorum-de-escrita"],
+        "caem": ["o_commit_espera_a_replica_e_ela_tem_a_linha_no_disco"],
+        "seguem": ["sem_quorum_a_resposta_e_a_de_sempre"],
+        "prazo": 1200,
+    },
+    {
+        "id": "quorum-de-epoca-velha",
+        "titulo": "a réplica aceitando lote de master com época menor que a que ela conhece: o master rebaixado continuaria obtendo confirmação",
+        "porque": (
+            "pedido 207, D-epoca: e o que faz o quorum fechar o paragrafo do "
+            "`cluster.rs` sobre o master isolado. ALCANCE: esta guarda prova a "
+            "REGRA pura (`aceita_a_epoca`); o chamador no laco da replica nao "
+            "tem prova pelo soquete -- montar um master de epoca velha vivo "
+            "pede uma particao, e isso fica escrito como lacuna."
+        ),
+        "arquivo": "crates/phxsql-server/src/quorum.rs",
+        "trecho": """    do_master >= minha
+""",
+        "troca": """    // DEFEITO REPOSTO (207): qualquer epoca serve.
+    let _ = (do_master, minha);
+    true
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": ["quorum::testes::master_de_epoca_velha_nao_obtem_confirmacao"],
+        "seguem": ["quorum::testes::o_quorum_conta_so_replicas"],
+        "prazo": 1200,
+    },
+    {
+        "id": "quorum-sem-fsync-local",
+        "titulo": "o master esperando o quórum sem ter sincronizado a própria gravação: volta como master atrás das réplicas que confirmaram",
+        "porque": (
+            "pedido 207, D-local (L1): PG 4 (`XLogFlush` antes do "
+            "`SyncRepWaitForLSN`) + MySQL 2 (AFTER_SYNC) = 6 contra MariaDB 3. "
+            "O motivo nosso: o master que cai sem `fsync` e volta como master "
+            "fica ATRAS das replicas, e o rowid diverge (a guarda do rowid do "
+            "`aplicar_evento`)."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        let ja = t.arquivos_sincronizados();
+        t.sincronizar()?;
+""",
+        "troca": """        // DEFEITO REPOSTO (207): espera sem sincronizar local.
+        let ja = t.arquivos_sincronizados();
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "quorum-de-escrita"],
+        "caem": ["o_commit_espera_a_replica_e_ela_tem_a_linha_no_disco"],
+        "seguem": ["sem_quorum_a_resposta_e_a_de_sempre"],
+        "prazo": 1200,
+    },
+    {
+        "id": "quorum-escritor-sem-espera",
+        "titulo": "a anotação das tabelas tocadas fora do ponto único onde o diário cresce: a família de escrita esquecida responde «gravei» sem quórum",
+        "porque": (
+            "pedido 207: a espera e uma so (o `Drop` da `TravaMedida`) e a "
+            "anotacao tambem (`LogFile::registrar_detalhado`). Espalhar a "
+            "anotacao por familia de escrita seria a decisao escrita N vezes, "
+            "e a esquecida viraria commit sem quorum que ninguem acha lendo."
+        ),
+        "arquivo": "crates/phxsql-store/src/log.rs",
+        "trecho": """        if ANOTANDO.with(std::cell::Cell::get) {
+            self.anotar_tocada();
+        }
+""",
+        "troca": """        // DEFEITO REPOSTO (207): ninguem anota.
+        if false && ANOTANDO.with(std::cell::Cell::get) {
+            self.anotar_tocada();
+        }
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "quorum-de-escrita"],
+        "caem": [
+            "cada_familia_de_escrita_traz_o_quorum",
+            "o_commit_espera_a_replica_e_ela_tem_a_linha_no_disco",
+        ],
+        "seguem": ["sem_quorum_a_resposta_e_a_de_sempre"],
+        "prazo": 1200,
+    },
+    {
+        "id": "quorum-conta-o-master",
+        "titulo": "o `quorum_minimo` contando o master: `quorum_minimo:2` com três nós fecharia com uma réplica só",
+        "porque": (
+            "pedido 207, D-conta (C2): os tres maduros contam REPLICAS -- "
+            "`ANY num_sync` do PostgreSQL, `wait_for_replica_count` do MySQL, "
+            "a uma replica do MariaDB. Contar o master diz «duas copias» "
+            "quando ha uma fora dele."
+        ),
+        "arquivo": "crates/phxsql-server/src/quorum.rs",
+        "trecho": """        .count() as u64
+}
+
+fn anotar(""",
+        "troca": """        .count() as u64
+        // DEFEITO REPOSTO (207): o master entra na conta.
+        + 1
+}
+
+fn anotar(""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "quorum-de-escrita"],
+        "caem": ["duas_replicas_e_depois_uma_e_depois_nenhuma"],
+        "seguem": ["sem_quorum_a_resposta_e_a_de_sempre"],
+        "prazo": 1200,
+    },
+    {
+        "id": "quorum-espera-quem-nao-existe",
+        "titulo": "o commit com quórum esperando o prazo inteiro sem nenhuma réplica no canal: o arranque do master para o servidor 10 s por nada",
+        "porque": (
+            "pedido 207: o lote vai so para as replicas que ja estao na "
+            "lista do cubo, e o pull de quem chega depois pede a trava que o "
+            "commit segura -- com menos replicas conhecidas que o minimo, a "
+            "espera nao tem como terminar bem. Degradar na hora diz o mesmo "
+            "(`alcancado:false`) sem parar o servidor."
+        ),
+        "arquivo": "crates/phxsql-server/src/quorum.rs",
+        "trecho": """            if passou >= prazo || conhecidas < minimo {""",
+        "troca": """            // DEFEITO REPOSTO (207): espera o prazo mesmo sem ninguem.
+            let _ = conhecidas;
+            if passou >= prazo {""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": ["quorum::testes::sem_replica_conhecida_degrada_sem_esperar_o_prazo"],
+        "seguem": ["quorum::testes::o_quorum_conta_so_replicas"],
+        "prazo": 1200,
+    },
+    {
+        "id": "quorum-volta-sem-recuo",
+        "titulo": "o degradado voltando ao síncrono no primeiro ack, sem o recuo: uma réplica que pisca para o servidor inteiro a cada pulso",
+        "porque": (
+            "pedido 207, D-volta (F2): no MySQL a espera prende a sessao; "
+            "aqui prende o servidor (a trava global). Com F1, uma replica que "
+            "cai a cada pulso deixaria o servidor parado 10/(10+pulso_s) do "
+            "tempo -- 83% com pulso de 2 s (raciocinado). O recuo e o do "
+            "`replica::Ritmo`, que dobra ate 60 s."
+        ),
+        "arquivo": "crates/phxsql-server/src/quorum.rs",
+        "trecho": """    if e.volta_depois_de.is_some_and(|v| agora < v) {
+        return;
+    }
+""",
+        "troca": """    // DEFEITO REPOSTO (207): volta no primeiro ack.
+    let _ = agora;
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": ["quorum::testes::o_degradado_volta_so_depois_do_recuo_e_do_alcance"],
+        "seguem": ["quorum::testes::o_recuo_dobra_a_cada_degradacao"],
+        "prazo": 1200,
+    },
 ]
