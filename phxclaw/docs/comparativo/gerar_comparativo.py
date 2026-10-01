@@ -53,7 +53,9 @@ def phxclaw_medido() -> dict:
     for toml in (RAIZ / "crates/phxclaw-agent/Cargo.toml", RAIZ / "apps/phxclaw/Cargo.toml"):
         deps |= set(re.findall(r"^(phxclaw-[\w-]+)\s*=", toml.read_text(), re.M))
     linhas_rs = int(subprocess.run(
-        "git ls-files '*.rs' | xargs cat | wc -l", shell=True, cwd=RAIZ,
+        # so crates/ e apps/, a mesma regua do dossie: o third_party (fonte de terceiro
+        # guardada para estudo) entraria na conta como linha nossa
+        "git ls-files 'crates/*.rs' 'apps/*.rs' | xargs cat | wc -l", shell=True, cwd=RAIZ,
         capture_output=True, text=True).stdout.strip() or 0)
     crates = len([d for d in (RAIZ / "crates").iterdir() if (d / "Cargo.toml").exists()])
     cert = json.loads(CERT.read_text())

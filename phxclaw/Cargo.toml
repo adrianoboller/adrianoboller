@@ -1,4 +1,7 @@
 [workspace]
+# Fonte de terceiro guardada para estudo (cada uma com o proprio workspace Cargo): sem
+# isto, cargo rodado la dentro sobe ate aqui e recusa por workspace aninhado.
+exclude = ["third_party"]
 members = [
   "crates/phxclaw-provenance-core",
   "crates/phxclaw-safe-source-harvester",
