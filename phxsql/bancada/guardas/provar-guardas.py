@@ -509,6 +509,66 @@ class Arvore:
 
 # ---------------------------------------------------------------- o cargo
 LINHA_DE_TESTE = re.compile(r"^test (\S+) \.\.\. (ok|FAILED|ignored)", re.M)
+# O resumo que o libtest escreve no fim de cada binario: a lista dos que
+# cairam, entre o cabecalho `failures:` e a linha `test result:`. E saida do
+# proprio libtest, e nao texto de teste: o que um teste imprime vai para o
+# PRIMEIRO bloco `failures:`, o dos `---- nome stdout ----`, que nao termina
+# em `test result:`.
+RESUMO_DAS_QUEDAS = re.compile(r"^failures:\n((?:    \S+\n)+)\ntest result: ", re.M)
+
+
+# ------------------------------------------- por que stdout e stderr SEPARADOS
+#
+# Pedido 617, medido em 01/10/2026. A `laco-preso-no-unico-secundario` deu
+# QUEBRADA (2/3 cairam) em 1 de 4 corridas: um `caem` sumiu da saida
+# analisada, e sumido e veredito de entrada envelhecida. A causa, por
+# `strace -e write` no binario de teste: o libtest escreve a linha do veredito
+# em TRES chamadas -- `"test X ... "`, `"FAILED"`, `"\n"` -- no fd 1, e os
+# servidores da prova escrevem no fd 2 FORA da captura do libtest («PhxSql
+# escutando em ...», «porta de dados escutando ...»). Com `stderr=STDOUT` os
+# dois caem no MESMO cano, e uma linha do servidor entre a primeira e a
+# segunda chamada vira `test X ... PhxSql escutando...` + `FAILED` sozinho na
+# linha de baixo -- e a expressao acima nao casa nenhuma das duas. Naquela
+# bateria a janela e larga de proposito: o cenario marcado segura o `COFRE`
+# exclusivo, os vizinhos esperam por ele, e sobem os servidores deles no
+# instante em que ele termina -- que e o instante em que o libtest escreve o
+# veredito dele.
+#
+# O conserto e no ANALISADOR, e nao no teste: o veredito sai so do stdout,
+# que e onde o libtest escreve, e o stderr fica para o que ele e (recado de
+# compilacao, aborto). O resumo `failures:` entra como segunda fonte do mesmo
+# libtest -- uma queda que ele lista nao some porque a linha dela foi
+# atravessada por alguem que escreve no stdout sem captura. O contrario NAO
+# se completa: `ok` so vale pela linha inteira, e um `ok` que some continua
+# sumido, e a guarda continua QUEBRADA dizendo isso. Afrouxar o veredito
+# seria o defeito; aqui so se deixou de perder o que o libtest disse.
+def colher(cmd, cwd, env, prazo):
+    """Roda `cmd` e devolve (stdout, stderr, desfecho, codigo), em canos separados."""
+    p = subprocess.Popen(cmd, cwd=cwd, env=env, text=True,
+                         stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                         start_new_session=True)
+    try:
+        saida, erro = p.communicate(timeout=prazo)
+        desfecho = "rodou"
+    except subprocess.TimeoutExpired:
+        # Pelo grupo, e nao pelo PID: o `cargo` fica de fora do caminho e quem
+        # esta pendurado e o binario de teste que ele criou.
+        try:
+            os.killpg(os.getpgid(p.pid), signal.SIGKILL)
+        except OSError:
+            pass
+        saida, erro = p.communicate()
+        desfecho = "prazo"
+    return saida or "", erro or "", desfecho, p.returncode
+
+
+def vereditos_do_libtest(saida_padrao):
+    """Nome -> veredito, lido SO do stdout do libtest."""
+    vereditos = {n: v for n, v in LINHA_DE_TESTE.findall(saida_padrao)}
+    for bloco in RESUMO_DAS_QUEDAS.findall(saida_padrao):
+        for nome in bloco.split():
+            vereditos.setdefault(nome, "FAILED")
+    return vereditos
 
 
 def rodar(arvore, pacote, alvo, prazo):
@@ -522,27 +582,17 @@ def rodar(arvore, pacote, alvo, prazo):
     amb["CARGO_NET_OFFLINE"] = "true"
     amb.pop("RUSTFLAGS", None)
     inicio = time.time()
-    p = subprocess.Popen(cmd, cwd=arvore.dir, env=amb, text=True,
-                         stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                         start_new_session=True)
-    try:
-        saida = p.communicate(timeout=prazo)[0]
-        desfecho = "rodou"
-    except subprocess.TimeoutExpired:
-        # Pelo grupo, e nao pelo PID: o `cargo` fica de fora do caminho e quem
-        # esta pendurado e o binario de teste que ele criou.
-        try:
-            os.killpg(os.getpgid(p.pid), signal.SIGKILL)
-        except OSError:
-            pass
-        saida = p.communicate()[0] or ""
-        desfecho = "prazo"
+    padrao, erro, desfecho, codigo = colher(cmd, arvore.dir, amb, prazo)
     gasto = time.time() - inicio
-    vereditos = {n: v for n, v in LINHA_DE_TESTE.findall(saida)}
+    vereditos = vereditos_do_libtest(padrao)
+    # O texto inteiro so serve a quem le (o rabo impresso, as linhas `error`)
+    # e as buscas de aborto e de compilacao, que sao do cargo e do processo
+    # -- e esses escrevem no stderr.
+    saida = padrao + ("\n" if padrao and erro else "") + erro
     if desfecho == "rodou":
         if not vereditos and re.search(r"^error(\[E\d+\])?: ", saida, re.M):
             desfecho = "nao compilou"
-        elif p.returncode not in (0, 101):
+        elif codigo not in (0, 101):
             # 134 = SIGABRT. Um "stack overflow" derruba o binario inteiro e
             # nao sobra veredito de teste nenhum -- e o tamanho do estrago E a
             # prova, no unico defeito do catalogo que aborta.
@@ -550,6 +600,75 @@ def rodar(arvore, pacote, alvo, prazo):
         elif "stack overflow" in saida or "process didn't exit successfully" in saida:
             desfecho = "aborta"
     return vereditos, desfecho, saida, gasto
+
+
+def autoteste_analisador():
+    """Prova real do pedido 617, contra o sistema operacional.
+
+    Um processo filho de verdade escreve uma linha de veredito em tres
+    `write`, como o libtest, com uma linha de stderr no meio -- a corrida
+    medida, so que sem sorte: aqui ela acontece toda vez. Com os canos
+    MISTURADOS (o defeito) o teste some; com os canos separados (o conserto)
+    ele aparece com o veredito certo. Os dois lados rodam, para a prova nao
+    passar por engano.
+    """
+    falhas = []
+
+    def conferir(nome, cond, detalhe=""):
+        print("   %s  %s%s" % ("ok " if cond else "FALHOU", nome,
+                              "" if cond else "  -- " + detalhe))
+        if not cond:
+            falhas.append(nome)
+
+    filho = (
+        "import os\n"
+        "os.write(1, b'\\nrunning 2 tests\\n')\n"
+        "os.write(1, b'test o_atravessado ... ')\n"
+        "os.write(2, b'PhxSql 0.19.0 escutando em 127.0.0.1:1 | papel multi\\n')\n"
+        "os.write(1, b'FAILED')\n"
+        "os.write(1, b'\\n')\n"
+        "os.write(1, b'test o_inteiro ... ok\\n')\n"
+        "os.write(1, b'\\nfailures:\\n\\n---- o_atravessado stdout ----\\n"
+        "    nao_e_nome_de_teste\\n\\nfailures:\\n    o_atravessado\\n\\n"
+        "test result: FAILED. 1 passed; 1 failed\\n')\n"
+    )
+    cmd = [sys.executable, "-c", filho]
+
+    # O DEFEITO: os dois canos num so, como o executor fazia ate o 617.
+    p = subprocess.run(cmd, text=True, stdout=subprocess.PIPE,
+                       stderr=subprocess.STDOUT)
+    so_a_linha = {n: v for n, v in LINHA_DE_TESTE.findall(p.stdout)}
+    conferir("com os canos misturados, a linha atravessada se perde (o defeito)",
+             "o_atravessado" not in so_a_linha, str(so_a_linha))
+
+    # As duas defesas se provam SEPARADAS: com as duas juntas, tirar uma so
+    # nao derruba nada, e a prova passaria por engano.
+    #
+    # (1) os canos separados, pelo mesmo caminho que o `rodar` usa -- e so a
+    # linha, sem o resumo.
+    padrao, erro, desfecho, _ = colher(cmd, None, dict(os.environ), 30)
+    so_a_linha = {n: v for n, v in LINHA_DE_TESTE.findall(padrao)}
+    conferir("com os canos separados, a linha do atravessado fica inteira",
+             so_a_linha.get("o_atravessado") == "FAILED", str(so_a_linha))
+    # (2) o resumo do libtest, no texto MISTURADO: a linha se perdeu, a queda
+    # nao.
+    v_mist = vereditos_do_libtest(p.stdout)
+    conferir("no texto misturado, o resumo `failures:` devolve a queda",
+             v_mist.get("o_atravessado") == "FAILED", str(v_mist))
+    v = vereditos_do_libtest(padrao)
+    conferir("o inteiro continua ok", v.get("o_inteiro") == "ok", str(v))
+    conferir("o recado do servidor ficou no stderr",
+             "escutando" in erro and "escutando" not in padrao, repr(erro))
+    conferir("linha de teste capturado nao vira nome de teste",
+             "nao_e_nome_de_teste" not in v, str(v))
+
+    # E o resumo NAO inventa `ok`: uma linha `ok` que some continua sumida.
+    sem_ok = vereditos_do_libtest("test x ... PhxSql\nok\n")
+    conferir("um ok atravessado NAO se completa (o veredito nao afrouxa)",
+             "x" not in sem_ok, str(sem_ok))
+    print("   %s" % ("todos passaram" if not falhas
+                     else "FALHOU: " + ", ".join(falhas)))
+    return 1 if falhas else 0
 
 
 # ------------------------------------------------------------- o veredito
@@ -1074,19 +1193,22 @@ def main():
                     help="prova real da mescla do --json quando --so esta ligado")
     ap.add_argument("--autoteste-tranca-json", action="store_true",
                     help="prova real da trava do --json: dois processos de verdade")
+    ap.add_argument("--autoteste-analisador", action="store_true",
+                    help="prova real do analisador: stderr atravessando a linha do veredito")
     ap.add_argument("--autoteste", action="store_true",
-                    help="roda os tres autotestes deste script, um atras do outro")
+                    help="roda os quatro autotestes deste script, um atras do outro")
     opc = ap.parse_args()
 
     if opc.autoteste:
-        # Um portao para os tres. Autoteste que so se alcanca por bandeira
-        # propria e autoteste que ninguem roda: sao TRES bandeiras para quem
-        # caca um defeito, e UMA para a bateria. E os tres rodam sempre -- sair
-        # no primeiro vermelho esconderia os outros dois, que e' justamente o
+        # Um portao para os quatro. Autoteste que so se alcanca por bandeira
+        # propria e autoteste que ninguem roda: sao QUATRO bandeiras para quem
+        # caca um defeito, e UMA para a bateria. E os quatro rodam sempre -- sair
+        # no primeiro vermelho esconderia os outros tres, que e' justamente o
         # que a bateria precisa saber.
         provas = (("o alcance do COPIAR", autoteste_copiar),
                   ("a mescla do --json", autoteste_mescla_json),
-                  ("a trava do --json (361)", autoteste_tranca_do_json))
+                  ("a trava do --json (361)", autoteste_tranca_do_json),
+                  ("o analisador com canos separados (617)", autoteste_analisador))
         codigos = []
         for titulo, prova in provas:
             print("=== autoteste: %s ===" % titulo)
@@ -1097,6 +1219,9 @@ def main():
               % (len(codigos) - len(maus), len(codigos),
                  "" if not maus else " -- FALHOU: " + ", ".join(maus)))
         return 1 if maus else 0
+    if opc.autoteste_analisador:
+        print("=== autoteste do analisador (pedido 617, 01/10/2026) ===")
+        return autoteste_analisador()
     if opc.autoteste_tranca_json:
         print("=== autoteste da trava do --json (pedido 361, 18/09/2026) ===")
         return autoteste_tranca_do_json()

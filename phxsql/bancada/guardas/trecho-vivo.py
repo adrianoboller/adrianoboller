@@ -545,6 +545,10 @@ dia, nunca no desejado:
   bidirecional honrando o `rownum` do outro
   (`bidirecional-honra-o-rownum-do-outro`). 630, medido pelo `--numeros`
   nesta arvore.
+  **SUBIU para 638 em 01/10/2026** (no merge, 637 + 1; pedido 322): o portao da carga
+  que lia um campo so e deixava a tabela reservada se ler pelo lado B de um
+  `juntar` (`portao-da-carga-le-um-campo-so`), provada pelo soquete. 629,
+  medido pelo `--numeros` nesta arvore.
 
 # A QUINTA REGUA: a tabela publicada pode ser MENOR que o catalogo
 
@@ -651,7 +655,7 @@ TETO_TESTE_MORTO = 0
 TETO_TRECHO_AMBIGUO = 0
 TETO_TESTE_FORA_DO_BINARIO = 0
 TETO_TESTE_SEM_MODULO = 0
-PISO_DAS_ENTRADAS = 637
+PISO_DAS_ENTRADAS = 638
 
 # ------------------------------------------------------------- APOSENTADAS
 #

@@ -1785,9 +1785,9 @@
       "id": "laco-preso-no-unico-secundario",
       "titulo": "chave duplicada num índice único secundário prende o laço do bidirecional para sempre",
       "veredito": "PROVADA",
-      "segundos": 61.8,
+      "segundos": 61.86,
       "notas": [],
-      "quando": "2026-10-01 11:11"
+      "quando": "2026-10-01 12:24"
     },
     {
       "id": "par-parado-reapresentado-a-cada-rodada",
@@ -3694,6 +3694,14 @@
       "segundos": 12.36,
       "notas": [],
       "quando": "2026-10-01 11:35"
+    },
+    {
+      "id": "portao-da-carga-le-um-campo-so",
+      "titulo": "O portão da carga (Portão 4) lia só `\"tabela\"`: a tabela reservada pelo `BULKINSERT` se lia como o lado B de um `juntar`",
+      "veredito": "PROVADA",
+      "segundos": 24.37,
+      "notas": [],
+      "quando": "2026-10-01 12:24"
     },
     {
       "id": "cifra-do-fio-imposta",

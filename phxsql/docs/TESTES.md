@@ -1102,11 +1102,12 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `aplicar-sem-conferir-a-linhagem` | o `aplicar` ignora a linhagem que veio no pedido: a exclusao de uma caixa recem-nascida apaga a linha de outra com o carimbo empatado | 1 | ✅ provada |
 | `teto-de-colunas-sem-o-bit-do-selo` | o esquema aceita ate 65.535 colunas: a coluna 32.768 externa e lida na imagem como a 0, selada | 1 | ✅ provada |
 | `evento-pre-344-ao-fio-sem-abrir` | o evento do diario gravado antes do 344 (externo selado, sem o bit) sai para o fio como veio: a replica grava o cifrado como se fosse o anexo | 1 | ✅ provada |
+| `portao-da-carga-le-um-campo-so` | O portão da carga (Portão 4) lia só `"tabela"`: a tabela reservada pelo `BULKINSERT` se lia como o lado B de um `juntar` | 2 | ✅ provada |
 | `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | — | 🪦 aposentada (18/09/2026) |
 
-**461 das 636 guardas do catálogo: 1 aposentada, 456 provadas, 4 redundantes** — 13857 s de mutação, medido em 2026-09-16 15:25.
+**462 das 637 guardas do catálogo: 1 aposentada, 457 provadas, 4 redundantes** — 13882 s de mutação, medido em 2026-09-16 15:25.
 
-> **Esta rodada NÃO julgou 176 das 636 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 176 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 176 das 637 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 176 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
 - `fk-antes-do-default` — a chave estrangeira confere a linha crua, e o DEFAULT sem mãe grava a filha órfã
 - `fk-antes-do-default-pelo-servidor` — o DEFAULT e a calculada sem mãe gravam a órfã pelo servidor, fora e dentro da transação

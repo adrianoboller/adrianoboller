@@ -12389,12 +12389,18 @@ impl Servidor {
         // nao precisa descobrir que ela esta em carga, e o recado diz QUEM
         // reservou. `bulkinsert` fica de fora para o comando dizer o proprio
         // recado -- e para o administrador conseguir soltar a reserva alheia.
+        //
+        // # O campo que este portao le, e quem NAO tem esse campo (pedido 322)
+        //
+        // Ele lia so `"tabela"`, e a reserva se contornava pedindo a tabela
+        // em carga como o lado B de um `juntar` -- ou em `diferencas`, numa
+        // lista de `unir`, num `juntar` aninhado do `pivotar`, ou como
+        // `destino` de uma copia. A lista de onde a tabela se esconde ja
+        // existe, e e UMA: `direito_coluna::tabelas_do_pedido`. Uma segunda
+        // copia dela aqui seria a lista que alguem esquece de atualizar no dia
+        // em que entrar a proxima operacao com a tabela fora do campo.
         if op != "bulkinsert" {
-            let (db, tab) = (
-                pedido.texto_ou("database", ""),
-                pedido.texto_ou("tabela", ""),
-            );
-            if let Some(recado) = self.barrado_por_carga(db, tab, sessao.ligacao) {
+            if let Some(recado) = self.barrado_por_carga(op, pedido, sessao.ligacao) {
                 return Err(PhxError::EmCarga(recado));
             }
         }
@@ -15742,14 +15748,25 @@ impl Servidor {
     /// Uma reserva vencida e limpa aqui, que e onde alguem repara nela: um
     /// relogio de fundo so para isso seria uma linha de execucao acordando
     /// para, quase sempre, nao fazer nada.
-    fn barrado_por_carga(&self, database: &str, tabela: &str, ligacao: u64) -> Option<String> {
-        if database.is_empty() || tabela.is_empty() {
+    ///
+    /// Confere TODAS as tabelas que o pedido alcanca, e nao so o campo
+    /// `"tabela"` (pedido 322). O portao que decide se ha trabalho vem antes do
+    /// trabalho: sem reserva nenhuma -- o servidor de quase sempre -- nao se
+    /// monta a lista de tabelas, que e uma alocacao por pedido no laco quente
+    /// do `inserir`.
+    fn barrado_por_carga(&self, op: &str, pedido: &Json, ligacao: u64) -> Option<String> {
+        let database = pedido.texto_ou("database", "");
+        if database.is_empty() {
             return None;
         }
-        self.cargas
-            .lock()
-            .ok()?
-            .barra(database, tabela, ligacao, crate::agora_ms())
+        let mut cargas = self.cargas.lock().ok()?;
+        if cargas.quantas() == 0 {
+            return None;
+        }
+        let agora = crate::agora_ms();
+        crate::direito_coluna::tabelas_do_pedido(op, pedido)
+            .iter()
+            .find_map(|t| cargas.barra(database, t, ligacao, agora))
     }
 
     /// Esta tabela esta reservada para carga?
@@ -39039,6 +39056,97 @@ mod testes_bulkinsert {
             e.to_string().contains("porta de dados"),
             "o recado nao explica: {e}"
         );
+    }
+
+    // ------------------------------- quem esconde a tabela do portao (322)
+    //
+    // O portao da carga lia so `"tabela"`. Cada teste abaixo pede a tabela
+    // reservada `c` por um campo que nao e esse, e todos caem com o portao
+    // lendo um campo so. A prova pelo soquete mora em
+    // `tests/carga-pelo-lado-b.rs`; aqui fica a familia inteira.
+
+    /// `com_tabela` e mais uma vizinha `d`, com o mesmo indice: as operacoes
+    /// de duas tabelas precisam de duas.
+    fn com_vizinha(dir: &std::path::Path) -> Arc<Servidor> {
+        let s = com_tabela(dir);
+        s.executar(
+            "criar_tabela",
+            &pedido(
+                r#"{"database":"b","tabela":"d",
+                    "colunas":[{"nome":"id","tipo":"Int4","obrigatoria":true}],
+                    "indices":[{"nome":"porId","colunas":["id"],"unico":true,"primario":true}]}"#,
+            ),
+            &Sessao::default(),
+        )
+        .unwrap();
+        s
+    }
+
+    const JUNTA_B: &str = r#""op":"juntar","database":"b",
+        "a":{"tabela":"d","chave":"id"},"b":{"tabela":"c","chave":"id"}"#;
+
+    fn em_carga(s: &Arc<Servidor>, corpo: &str) {
+        let e = pede(s, 2, corpo).expect_err(corpo);
+        assert_eq!(e.nome(), "EM_CARGA", "{corpo} -> {e}");
+        assert!(e.to_string().contains("b.c"), "nao disse qual: {e}");
+    }
+
+    #[test]
+    fn o_lado_b_do_juntar_nao_contorna_a_reserva() {
+        let dir = dir_temp("lado-b");
+        let s = com_vizinha(&dir);
+        pede(&s, 1, RESERVA).unwrap();
+        em_carga(&s, JUNTA_B);
+    }
+
+    #[test]
+    fn diferencas_unir_e_pivotar_nao_contornam_a_reserva() {
+        let dir = dir_temp("familia");
+        let s = com_vizinha(&dir);
+        pede(&s, 1, RESERVA).unwrap();
+        // Todas antes de reprovar: parar na primeira esconderia as outras.
+        let passaram: Vec<String> = [
+            r#""op":"diferencas","database":"b","a":"d","b":"c","indice":"porId""#,
+            r#""op":"unir","database":"b","tabelas":["d","c"]"#,
+            r#""op":"pivotar","database":"b","tabela":"d",
+               "juntar":[{"tabela":"c","coluna":"id","prefixo":"f","chave":"id"}],
+               "linhas":[{"campo":"f.id"}],"colunas":[{"campo":"id"}],
+               "agregador":"contagem""#,
+        ]
+        .iter()
+        .filter(|corpo| !matches!(pede(&s, 2, corpo), Err(ref e) if e.nome() == "EM_CARGA"))
+        .map(|corpo| corpo.to_string())
+        .collect();
+        assert!(
+            passaram.is_empty(),
+            "alcancaram a tabela em carga: {passaram:?}"
+        );
+    }
+
+    /// A copia que GRAVA na tabela reservada pelo `destino`.
+    #[test]
+    fn a_copia_para_o_destino_reservado_tambem_para() {
+        let dir = dir_temp("destino");
+        let s = com_vizinha(&dir);
+        pede(&s, 1, RESERVA).unwrap();
+        em_carga(
+            &s,
+            r#""op":"duplicar_tabela","database":"b","tabela":"d","destino":"c""#,
+        );
+    }
+
+    /// O comportamento VELHO: sem reserva o `juntar` passa, e quem reservou
+    /// continua juntando a propria tabela. Sem este par, um portao que
+    /// recusasse toda junção passaria com louvor nos de cima.
+    #[test]
+    fn sem_reserva_e_para_o_dono_o_juntar_continua() {
+        let dir = dir_temp("juntar-velho");
+        let s = com_vizinha(&dir);
+        pede(&s, 2, JUNTA_B).expect("sem reserva nenhuma o juntar passava");
+        pede(&s, 1, RESERVA).unwrap();
+        pede(&s, 1, JUNTA_B).expect("o dono da reserva deixou de juntar");
+        pede(&s, 1, SOLTA).unwrap();
+        pede(&s, 2, JUNTA_B).expect("solta a reserva, o outro voltou a juntar");
     }
     // ------------------------------------------------ o indice adiado (324)
     //
