@@ -8,3 +8,6 @@ license.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
+# A tarefa serializada (`tarefa`) carrega datas e nasce com id UUIDv7.
+chrono.workspace = true
+phxclaw-types = { path = "../phxclaw-types" }

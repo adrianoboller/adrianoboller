@@ -5,97 +5,11 @@
 //! Gravar o estado a cada passo e o que permite retomar, auditar e servir a tarefa pela API
 //! depois de o processo cair.
 
-use chrono::{DateTime, Utc};
-use phxclaw_agent_core::{Artifact, Usage};
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum TaskStatus {
-    /// Criada; o plano ainda nao foi feito.
-    Pending,
-    /// Plano pronto e esperando alguem aprovar ou editar (o "Plan Mode").
-    AwaitingApproval,
-    Running,
-    Completed,
-    Failed,
-    Cancelled,
-}
-
-impl TaskStatus {
-    pub fn is_final(self) -> bool {
-        matches!(self, Self::Completed | Self::Failed | Self::Cancelled)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct StepRecord {
-    pub n: u32,
-    pub at: DateTime<Utc>,
-    /// "pensamento" (resposta do modelo) ou "ferramenta".
-    pub kind: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub tool: Option<String>,
-    #[serde(default)]
-    pub arguments: Value,
-    /// ok | erro | negado
-    pub outcome: String,
-    /// Resumo curto para a tela; o conteudo inteiro foi para o modelo e a evidencia.
-    pub summary: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Task {
-    pub id: String,
-    pub objective: String,
-    pub model: String,
-    pub status: TaskStatus,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-    #[serde(default)]
-    pub plan: Vec<String>,
-    #[serde(default)]
-    pub steps: Vec<StepRecord>,
-    #[serde(default)]
-    pub answer: Option<String>,
-    #[serde(default)]
-    pub artifacts: Vec<Artifact>,
-    #[serde(default)]
-    pub usage: Usage,
-    #[serde(default)]
-    pub error: Option<String>,
-    /// Tarefa-mae, quando esta e um subagente.
-    #[serde(default)]
-    pub parent: Option<String>,
-    /// URL chamada quando a tarefa termina (opcional).
-    #[serde(default)]
-    pub webhook: Option<String>,
-}
-
-impl Task {
-    pub fn new(objective: impl Into<String>, model: impl Into<String>) -> Self {
-        let agora = Utc::now();
-        Self {
-            id: phxclaw_types::new_uuid_v7().to_string(),
-            objective: objective.into(),
-            model: model.into(),
-            status: TaskStatus::Pending,
-            created_at: agora,
-            updated_at: agora,
-            plan: vec![],
-            steps: vec![],
-            answer: None,
-            artifacts: vec![],
-            usage: Usage::default(),
-            error: None,
-            parent: None,
-            webhook: None,
-        }
-    }
-}
+// Os tipos de fio moram no contrato comum, para o SDK le-los sem o agente inteiro.
+pub use phxclaw_agent_core::tarefa::{StepRecord, Task, TaskStatus};
 
 #[derive(Debug, Clone)]
 pub struct TaskStore {

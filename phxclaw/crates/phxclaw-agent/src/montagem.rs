@@ -29,6 +29,10 @@ pub const CAPACIDADES_PADRAO: &[&str] = &[
     "memory.read",
     "memory.write",
     "skill.read",
+    // Equipe: ler o catalogo e delegar a um papel. Delegar nao amplia poder -- o
+    // subagente fica na interseccao do papel com o pai, sem rede nova nem recursao.
+    "team.read",
+    "team.delegate",
 ];
 
 #[derive(Clone)]
@@ -46,6 +50,9 @@ pub struct Montagem {
     /// Ferramentas dos servidores MCP declarados em `PHXCLAW_MCP_CONFIG`, descobertas uma
     /// vez na montagem. Capacidade `mcp.<servidor>`, fora do padrao: o operador concede.
     pub mcp: Vec<Arc<dyn Tool>>,
+    /// Os papeis de `config/agents` (`PHXCLAW_AGENTES_DIR`). Catalogo invalido nao
+    /// derruba o agente: vira aviso e `None`, e `team_list`/`team_delegate` nem existem.
+    pub equipe: Option<Arc<crate::equipe::Equipe>>,
 }
 
 impl Montagem {
@@ -72,7 +79,17 @@ impl Montagem {
             search: search_backend().ok().map(Arc::from),
             canal: None,
             mcp: crate::mcp::carregar_do_ambiente(),
+            equipe: carregar_equipe(crate::equipe::Equipe::do_ambiente()),
         }
+    }
+
+    /// Modelo local dos papeis que a planilha roteia para o Ollama
+    /// (`PHXCLAW_MODELO_LOCAL`); spec invalida vira aviso, e o papel cai no modelo do pai.
+    pub fn modelo_local(&self) -> Option<Arc<dyn Llm>> {
+        let spec = std::env::var(crate::equipe::VAR_MODELO_LOCAL).ok()?;
+        phxclaw_llm::from_env(&spec)
+            .map_err(|e| eprintln!("aviso: {}={spec}: {e}", crate::equipe::VAR_MODELO_LOCAL))
+            .ok()
     }
 
     /// Agente para um modelo ("ollama:qwen2.5:1.5b", "openai:...", ...).
@@ -151,6 +168,12 @@ impl Montagem {
         {
             tools.push(Arc::new(rust));
         }
+        // Python no mesmo bwrap; sem interpretador a ferramenta nao se registra.
+        if let Some(py) = crate::arquivos::achar_bwrap()
+            .and_then(|b| crate::python::PythonProjectTool::detectar(b).ok())
+        {
+            tools.push(Arc::new(py));
+        }
         // Memoria e skills: o mesmo `Memoria` e a mesma pasta vao para as ferramentas e para
         // o motor, que injeta no comeco da tarefa o que a ferramenta acharia.
         let memoria = crate::memoria::Memoria::do_ambiente(self.store.root());
@@ -180,9 +203,37 @@ impl Montagem {
             store: self.store.clone(),
             max_parallel: 6,
         });
+        // A equipe recebe a MESMA base do `parallel_research` (antes de ele entrar na
+        // lista): o subagente de papel nao herda nenhuma ferramenta de subagente.
+        if let Some(equipe) = &self.equipe {
+            let base = Agent::new(
+                llm.clone(),
+                tools.clone(),
+                config.clone(),
+                self.store.clone(),
+            );
+            tools.push(Arc::new(crate::equipe::TeamListTool {
+                equipe: equipe.clone(),
+            }));
+            tools.push(Arc::new(crate::equipe::TeamDelegateTool {
+                equipe: equipe.clone(),
+                base,
+                local: self.modelo_local(),
+            }));
+        }
         tools.push(paralelo);
         Agent::new(llm, tools, config, self.store.clone())
     }
+}
+
+/// Catalogo carregado vira equipe; falha vira aviso no stderr (o stdout do `mcp-serve` e
+/// fio de protocolo) e agente sem equipe, nunca agente que nao sobe.
+pub fn carregar_equipe(
+    r: Result<crate::equipe::Equipe, String>,
+) -> Option<Arc<crate::equipe::Equipe>> {
+    r.map_err(|e| eprintln!("aviso: agente sem equipe: {e}"))
+        .ok()
+        .map(Arc::new)
 }
 
 /// O broker da busca libera so as origens do buscador escolhido: pergunta-as ao backend

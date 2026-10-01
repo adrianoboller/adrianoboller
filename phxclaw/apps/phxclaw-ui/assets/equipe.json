@@ -1,0 +1,2116 @@
+{
+  "fonte": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
+  "gerado_por": "cargo run -p phxclaw-agent --example equipe_json",
+  "macroareas": [
+    {
+      "nome": "Governança & Estratégia",
+      "papeis": [
+        {
+          "capability_principal": "governance.objective.approve",
+          "criticidade": "Crítica",
+          "execucao": "Permanente",
+          "humano": true,
+          "id": 1,
+          "macroarea": "Governança & Estratégia",
+          "missao": "Define o objetivo de negócio e mantém a autoridade final sobre prioridades e mudanças críticas.",
+          "modelos": [
+            "humano"
+          ],
+          "nome": "Product Owner – Humano",
+          "nucleo": "Governança",
+          "prefere_local": false,
+          "quando_acionar": "Nova iniciativa, conflito estratégico, release crítica ou mudança constitucional.",
+          "tipo": "Papel humano",
+          "uuid": "01a0e473-f601-710f-a4c9-f0e852a63358"
+        },
+        {
+          "capability_principal": "claw.mcp.status",
+          "criticidade": "Crítica",
+          "execucao": "Permanente",
+          "humano": false,
+          "id": 2,
+          "macroarea": "Governança & Estratégia",
+          "missao": "Coordena toda a fábrica e garante que cada trabalho siga dependências, permissões e gates.",
+          "modelos": [
+            "híbrido"
+          ],
+          "nome": "Master Orchestrator",
+          "nucleo": "Comando",
+          "prefere_local": false,
+          "quando_acionar": "Qualquer demanda aceita para execução.",
+          "tipo": "Agente líder",
+          "uuid": "01a0e473-f602-7e32-9e89-7886eab11711"
+        },
+        {
+          "capability_principal": "requirements.analyze",
+          "criticidade": "Alta",
+          "execucao": "Sob demanda",
+          "humano": false,
+          "id": 3,
+          "macroarea": "Governança & Estratégia",
+          "missao": "Transforma pedidos vagos em escopo executável, MVP e critérios de aceite objetivos.",
+          "modelos": [
+            "claude",
+            "ollama"
+          ],
+          "nome": "Analista",
+          "nucleo": "Produto",
+          "prefere_local": true,
+          "quando_acionar": "Demanda nova ou alteração relevante.",
+          "tipo": "Agente de análise",
+          "uuid": "01a0e473-f603-72b3-946d-c6b9621006f8"
+        },
+        {
+          "capability_principal": "strategy.escalate",
+          "criticidade": "Crítica",
+          "execucao": "Sob demanda",
+          "humano": false,
+          "id": 5,
+          "macroarea": "Governança & Estratégia",
+          "missao": "Mantém a visão de longo prazo e decide o nível correto de escalonamento técnico.",
+          "modelos": [
+            "claude"
+          ],
+          "nome": "Morpheus",
+          "nucleo": "Estratégia",
+          "prefere_local": false,
+          "quando_acionar": "Problema de alta incerteza, conflito de visão ou bloqueio prolongado.",
+          "tipo": "Agente mentor",
+          "uuid": "01a0e473-f605-74d9-812b-8ec827796405"
+        },
+        {
+          "capability_principal": "decision.evidence.resolve",
+          "criticidade": "Crítica",
+          "execucao": "Sob demanda",
+          "humano": false,
+          "id": 6,
+          "macroarea": "Governança & Estratégia",
+          "missao": "Escolhe o caminho técnico com base no repositório e em evidências reais.",
+          "modelos": [
+            "claude"
+          ],
+          "nome": "Oráculo",
+          "nucleo": "Decisão",
+          "prefere_local": false,
+          "quando_acionar": "Decisão difícil, ambiguidade técnica ou conflito entre alternativas.",
+          "tipo": "Agente de decisão",
+          "uuid": "01a0e473-f606-78cd-86b5-d4192e95853c"
+        },
+        {
+          "capability_principal": "goal.drift.detect",
+          "criticidade": "Alta",
+          "execucao": "Permanente",
+          "humano": false,
+          "id": 54,
+          "macroarea": "Governança & Estratégia",
+          "missao": "Detecta desvio entre objetivo original e estado atual da implementação.",
+          "modelos": [
+            "ollama"
+          ],
+          "nome": "Goal Drift Detector",
+          "nucleo": "Governança",
+          "prefere_local": true,
+          "quando_acionar": "Sprint/release review ou projeto longo.",
+          "tipo": "Agente de alinhamento",
+          "uuid": "01a0e473-f636-71b9-8133-865389aee00d"
+        }
+      ],
+      "total": 6
+    },
+    {
+      "nome": "Engenharia & Arquitetura",
+      "papeis": [
+        {
+          "capability_principal": "architecture.design",
+          "criticidade": "Crítica",
+          "execucao": "Sob demanda",
+          "humano": false,
+          "id": 4,
+          "macroarea": "Engenharia & Arquitetura",
+          "missao": "Desenha módulos, limites e trade-offs antes da implementação.",
+          "modelos": [
+            "claude",
+            "codex"
+          ],
+          "nome": "Arquiteto",
+          "nucleo": "Arquitetura",
+          "prefere_local": false,
+          "quando_acionar": "Feature estrutural, novo módulo, breaking change ou mudança de fundação.",
+          "tipo": "Agente de arquitetura",
+          "uuid": "01a0e473-f604-77d8-a13d-7ee652e67964"
+        },
+        {
+          "capability_principal": "contract.schema.define",
+          "criticidade": "Alta",
+          "execucao": "Sob demanda",
+          "humano": false,
+          "id": 7,
+          "macroarea": "Engenharia & Arquitetura",
+          "missao": "Cria as portas do sistema: rotas, interfaces, schemas, auth e contratos.",
+          "modelos": [
+            "claude",
+            "codex"
+          ],
+          "nome": "Chaveiro",
+          "nucleo": "Contratos",
+          "prefere_local": false,
+          "quando_acionar": "Após arquitetura aprovada ou ao integrar sistemas.",
+          "tipo": "Agente de contratos",
+          "uuid": "01a0e473-f607-777c-b4f3-12b3cc967d29"
+        },
+        {
+          "capability_principal": "code.implement",
+          "criticidade": "Alta",
+          "execucao": "Sob demanda",
+          "humano": false,
+          "id": 8,
+          "macroarea": "Engenharia & Arquitetura",
+          "missao": "Implementa a feature no código de negócio conforme contratos e critérios aprovados.",
+          "modelos": [
+            "codex"
+          ],
+          "nome": "Johnson",
+          "nucleo": "Desenvolvimento",
+          "prefere_local": false,
+          "quando_acionar": "Task pronta para implementação.",
+          "tipo": "Agente implementador",
+          "uuid": "01a0e473-f608-7dd4-af8f-1c71de446420"
+        },
+        {
+          "capability_principal": "code.refactor.bulk",
+          "criticidade": "Média",
+          "execucao": "Sob demanda",
+          "humano": false,
+          "id": 9,
+          "macroarea": "Engenharia & Arquitetura",
+          "missao": "Replica de forma consistente um padrão já definido em todos os pontos necessários.",
+          "modelos": [
+            "codex",
+            "ollama"
+          ],
+          "nome": "Smith",
+          "nucleo": "Desenvolvimento",
+          "prefere_local": true,
+          "quando_acionar": "Mudança repetitiva já aprovada.",
+          "tipo": "Agente de propagação",
+          "uuid": "01a0e473-f609-7168-9146-d774a9be6740"
+        },
+        {
+          "capability_principal": "debug.root_cause",
+          "criticidade": "Alta",
+          "execucao": "Sob demanda",
+          "humano": false,
+          "id": 10,
+          "macroarea": "Engenharia & Arquitetura",
+          "missao": "Investiga bugs, reproduz a falha e identifica a causa raiz antes da correção.",
+          "modelos": [
+            "claude",
+            "codex"
+          ],
+          "nome": "Brown",
+          "nucleo": "Debug",
+          "prefere_local": false,
+          "quando_acionar": "Bug, incidente ou comportamento inconsistente.",
+          "tipo": "Agente de investigação",
+          "uuid": "01a0e473-f60a-7901-a95b-af0de0b5123c"
+        },
+        {
+          "capability_principal": "performance.profile",
+          "criticidade": "Alta",
+          "execucao": "Sob demanda",
+          "humano": false,
+          "id": 12,
+          "macroarea": "Engenharia & Arquitetura",
+          "missao": "Encontra hot paths e reduz CPU, I/O, memória e latência com prova mensurável.",
+          "modelos": [
+            "claude",
+            "codex"
+          ],
+          "nome": "Jackson",
+          "nucleo": "Performance",
+          "prefere_local": false,
+          "quando_acionar": "Regressão de performance, metas de SLO ou módulo crítico.",
+          "tipo": "Agente de performance",
+          "uuid": "01a0e473-f60c-7cce-90e3-302e5f81e9fa"
+        },
+        {
+          "capability_principal": "integration.critical",
+          "criticidade": "Crítica",
+          "execucao": "Sob demanda",
+          "humano": false,
+          "id": 14,
+          "macroarea": "Engenharia & Arquitetura",
+          "missao": "Garante que módulos isoladamente corretos funcionem juntos ponta a ponta.",
+          "modelos": [
+            "claude",
+            "codex"
+          ],
+          "nome": "Trinity",
+          "nucleo": "Integração",
+          "prefere_local": false,
+          "quando_acionar": "Integração crítica ou missão de alto risco.",
+          "tipo": "Agente de integração crítica",
+          "uuid": "01a0e473-f60e-7349-8ef7-425daf15e0ed"
+        },
+        {
+          "capability_principal": "problem.exception.resolve",
+          "criticidade": "Crítica",
+          "execucao": "Excepcional",
+          "humano": false,
+          "id": 15,
+          "macroarea": "Engenharia & Arquitetura",
+          "missao": "Resolve problemas inéditos e bloqueios que o fluxo normal não conseguiu solucionar.",
+          "modelos": [
+            "modelo mais forte disponível"
+          ],
+          "nome": "Neo",
+          "nucleo": "Escalação",
+          "prefere_local": false,
+          "quando_acionar": "Falhas repetidas do fluxo normal e escalonamento de Morpheus/Oráculo.",
+          "tipo": "Agente de resolução excepcional",
+          "uuid": "01a0e473-f60f-7a87-bd13-b8cc594c0e63"
+        },
+        {
+          "capability_principal": "gpu.webgpu.evaluate",
+          "criticidade": "Alta",
+          "execucao": "Sob demanda",
+          "humano": false,
+          "id": 25,
+          "macroarea": "Engenharia & Arquitetura",
+          "missao": "Desenvolve e mede a camada gráfica/compute multiplataforma.",
+          "modelos": [
+            "codex"
+          ],
+          "nome": "WebGPU/GPU Agent",
+          "nucleo": "GPU",
+          "prefere_local": false,
+          "quando_acionar": "Feature gráfica/compute ou gargalo GPU.",
+          "tipo": "Agente de GPU",
+          "uuid": "01a0e473-f619-7298-be0c-c694efd0637c"
+        },
+        {
+          "capability_principal": "core.rust.evolve",
+          "criticidade": "Crítica",
+          "execucao": "Sob demanda",
+          "humano": false,
+          "id": 26,
+          "macroarea": "Engenharia & Arquitetura",
+          "missao": "Desenvolve extensões e abstrações próprias que complementam Rust Stable.",
+          "modelos": [
+            "codex"
+          ],
+          "nome": "PhoenixRustCore Agent",
+          "nucleo": "Rust",
+          "prefere_local": false,
+          "quando_acionar": "Gap aprovado por hipótese/RFC.",
+          "tipo": "Agente do núcleo Rust",
+          "uuid": "01a0e473-f61a-75e5-a700-82b23d956190"
+        },
+        {
+          "capability_principal": "compiler.build",
+          "criticidade": "Crítica",
+          "execucao": "Sob demanda",
+          "humano": false,
+          "id": 27,
+          "macroarea": "Engenharia & Arquitetura",
+          "missao": "Constrói parser, análise semântica, otimização e geração de código.",
+          "modelos": [
+            "claude",
+            "codex"
+          ],
+          "nome": "Compiler Agent",
+          "nucleo": "Compilador",
+          "prefere_local": false,
+          "quando_acionar": "Novo frontend/backend ou evolução IR.",
+          "tipo": "Agente de compilador",
+          "uuid": "01a0e473-f61b-7a18-bcb7-555a29859d43"
+        },
+        {
+          "capability_principal": "ir.transform",
+          "criticidade": "Crítica",
+          "execucao": "Sob demanda",
+          "humano": false,
+          "id": 28,
+          "macroarea": "Engenharia & Arquitetura",
+          "missao": "Mantém a representação intermediária estável, tipada e independente de tecnologia.",
+          "modelos": [
+            "claude",
+            "codex"
+          ],
+          "nome": "Phoenix IR Agent",
+          "nucleo": "IR",
+          "prefere_local": false,
+          "quando_acionar": "Nova capacidade sem representação adequada ou breaking change.",
+          "tipo": "Agente de IR",
+          "uuid": "01a0e473-f61c-76a6-9a24-862ff8ce3f31"
+        },
+        {
+          "capability_principal": "format.phxjson.manage",
+          "criticidade": "Crítica",
+          "execucao": "Sob demanda",
+          "humano": false,
+          "id": 29,
+          "macroarea": "Engenharia & Arquitetura",
+          "missao": "Mantém PHX JSON como formato declarativo estável e auditável.",
+          "modelos": [
+            "codex"
+          ],
+          "nome": "PHX JSON Agent",
+          "nucleo": "Formato",
+          "prefere_local": false,
+          "quando_acionar": "Nova entidade/campo ou mudança de contrato.",
+          "tipo": "Agente de formato declarativo",
+          "uuid": "01a0e473-f61d-7108-9296-72259235c74d"
+        },
+        {
+          "capability_principal": "template.manage",
+          "criticidade": "Crítica",
+          "execucao": "Sob demanda",
+          "humano": false,
+          "id": 31,
+          "macroarea": "Engenharia & Arquitetura",
+          "missao": "Implementa templates versionados com herança, composição, slots, overrides e propagação.",
+          "modelos": [
+            "codex"
+          ],
+          "nome": "Template Engine Agent",
+          "nucleo": "Templates",
+          "prefere_local": false,
+          "quando_acionar": "Feature de template ou alteração em modelo mestre.",
+          "tipo": "Agente de templates",
+          "uuid": "01a0e473-f61f-706e-a43f-f39a2a424cc8"
+        },
+        {
+          "capability_principal": "event.command.dispatch",
+          "criticidade": "Alta",
+          "execucao": "Sob demanda",
+          "humano": false,
+          "id": 32,
+          "macroarea": "Engenharia & Arquitetura",
+          "missao": "Mantém eventos tipados e comandos executáveis separados e rastreáveis.",
+          "modelos": [
+            "codex"
+          ],
+          "nome": "Event/Command Agent",
+          "nucleo": "Runtime",
+          "prefere_local": false,
+          "quando_acionar": "Nova interação, ação ou comportamento.",
+          "tipo": "Agente de eventos/comandos",
+          "uuid": "01a0e473-f620-7533-9bea-64a668b0ee29"
+        },
+        {
+          "capability_principal": "runtime.reactive.handle",
+          "criticidade": "Alta",
+          "execucao": "Sob demanda",
+          "humano": false,
+          "id": 33,
+          "macroarea": "Engenharia & Arquitetura",
+          "missao": "Implementa Signals, State e Binding com atualização granular.",
+          "modelos": [
+            "codex"
+          ],
+          "nome": "Reactive Agent",
+          "nucleo": "Runtime",
+          "prefere_local": false,
+          "quando_acionar": "UI/data binding ou state management.",
+          "tipo": "Agente reativo",
+          "uuid": "01a0e473-f621-76d1-b870-fd3b55c7c313"
+        },
+        {
+          "capability_principal": "migration.legacy.modernize",
+          "criticidade": "Crítica",
+          "execucao": "Sob demanda",
+          "humano": false,
+          "id": 38,
+          "macroarea": "Engenharia & Arquitetura",
+          "missao": "Converte linguagens/sistemas legados em Phoenix IR e aplicações Phoenix.",
+          "modelos": [
+            "claude",
+            "codex"
+          ],
+          "nome": "Octopus Agent",
+          "nucleo": "Migração",
+          "prefere_local": false,
+          "quando_acionar": "Projeto legado ou novo frontend de linguagem.",
+          "tipo": "Agente de modernização",
+          "uuid": "01a0e473-f626-7e15-8998-5083b3ec2423"
+        },
+        {
+          "capability_principal": "legacy.web.react.manage",
+          "criticidade": "Média",
+          "execucao": "Sob demanda",
+          "humano": false,
+          "id": 106,
+          "macroarea": "Engenharia & Arquitetura",
+          "missao": "Mantém e migra código React/TypeScript existente quando Phoenix precisar interoperar.",
+          "modelos": [
+            "codex"
+          ],
+          "nome": "React/TypeScript Specialist",
+          "nucleo": "UI legado",
+          "prefere_local": false,
+          "quando_acionar": "Integração com frontend legado.",
+          "tipo": "Agente especialista legado",
+          "uuid": "01a0e473-f66a-7b05-872b-8b3d724fe10a"
+        },
+        {
+          "capability_principal": "rust.domain.implement",
+          "criticidade": "Alta",
+          "execucao": "Sob demanda",
+          "humano": false,
+          "id": 107,
+          "macroarea": "Engenharia & Arquitetura",
+          "missao": "Implementa serviços, domínio, validação e autorização em Rust.",
+          "modelos": [
+            "codex"
+          ],
+          "nome": "Rust API/Domain Engineer",
+          "nucleo": "Rust",
+          "prefere_local": false,
+          "quando_acionar": "Task backend/domínio.",
+          "tipo": "Subagente Rust",
+          "uuid": "01a0e473-f66b-753d-9b63-ff887cd361d2"
+        },
+        {
+          "capability_principal": "claw.prompt",
+          "criticidade": "Alta",
+          "execucao": "Sob demanda",
+          "humano": false,
+          "id": 108,
+          "macroarea": "Engenharia & Arquitetura",
+          "missao": "Implementa concorrência, filas, scheduler, reconciliação e jobs em Rust.",
+          "modelos": [
+            "codex"
+          ],
+          "nome": "Rust Worker Engineer",
+          "nucleo": "Rust",
+          "prefere_local": false,
+          "quando_acionar": "Background processing/task runtime.",
+          "tipo": "Subagente Rust",
+          "uuid": "01a0e473-f66c-74ab-b32c-240f0bfd2eaa"
+        }
+      ],
+      "total": 20
+    },
+    {
+      "nome": "Qualidade & Provas",
+      "papeis": [
+        {
+          "capability_principal": "quality.test.orchestrate",
+          "criticidade": "Alta",
+          "execucao": "Sob demanda",
+          "humano": false,
+          "id": 11,
+          "macroarea": "Qualidade & Provas",
+          "missao": "Escreve e executa testes para interceptar regressões e validar critérios objetivos.",
+          "modelos": [
+            "codex",
+            "ollama"
+          ],
+          "nome": "Jones",
+          "nucleo": "Teste",
+          "prefere_local": true,
+          "quando_acionar": "Após implementação, bug reproduzido ou novo requisito.",
+          "tipo": "Agente líder de testes",
+          "uuid": "01a0e473-f60b-796a-a1ff-a164537cd755"
+        },
+        {
+          "capability_principal": "documentation.truth.sync",
+          "criticidade": "Alta",
+          "execucao": "Sob demanda",
+          "humano": false,
+          "id": 17,
+          "macroarea": "Qualidade & Provas",
+          "missao": "Documenta a decisão e o que o código faz de fato.",
+          "modelos": [
+            "claude",
+            "ollama"
+          ],
+          "nome": "Perséfone",
+          "nucleo": "Documentação",
+          "prefere_local": true,
+          "quando_acionar": "Após implementação relevante.",
+          "tipo": "Agente de verdade documental",
+          "uuid": "01a0e473-f611-72bf-b507-5b0637df19bd"
+        },
+        {
+          "capability_principal": "documentation.generate",
+          "criticidade": "Média",
+          "execucao": "Sob demanda",
+          "humano": false,
+          "id": 18,
+          "macroarea": "Qualidade & Provas",
+          "missao": "Produz documentação técnica e de usuário completa e navegável.",
+          "modelos": [
+            "ollama"
+          ],
+          "nome": "Documentador",
+          "nucleo": "Documentação",
+          "prefere_local": true,
+          "quando_acionar": "Feature/release pronta para documentação.",
+          "tipo": "Agente de documentação",
+          "uuid": "01a0e473-f612-770e-83ad-6e25803412ba"
+        },
+        {
+          "capability_principal": "quality.unit.test",
+          "criticidade": "Média",
+          "execucao": "Sob demanda",
+          "humano": false,
+          "id": 40,
+          "macroarea": "Qualidade & Provas",
+          "missao": "Valida funções e unidades isoladas com rapidez e determinismo.",
+          "modelos": [
+            "codex",
+            "ollama"
+          ],
+          "nome": "Unit Test Agent",
+          "nucleo": "Qualidade",
+          "prefere_local": true,
+          "quando_acionar": "Nova função/módulo ou bug local.",
+          "tipo": "Subagente de teste",
+          "uuid": "01a0e473-f628-7932-8302-5aec809de110"
+        },
+        {
+          "capability_principal": "quality.integration.test",
+          "criticidade": "Alta",
+          "execucao": "Sob demanda",
+          "humano": false,
+          "id": 41,
+          "macroarea": "Qualidade & Provas",
+          "missao": "Valida contratos e interação entre módulos/serviços.",
+          "modelos": [
+            "codex"
+          ],
+          "nome": "Integration Test Agent",
+          "nucleo": "Qualidade",
+          "prefere_local": false,
+          "quando_acionar": "Mudança cross-module.",
+          "tipo": "Subagente de teste",
+          "uuid": "01a0e473-f629-769b-bb50-4313738edb4d"
+        },
+        {
+          "capability_principal": "quality.e2e.test",
+          "criticidade": "Alta",
+          "execucao": "Sob demanda",
+          "humano": false,
+          "id": 42,
+          "macroarea": "Qualidade & Provas",
+          "missao": "Prova jornadas completas do usuário/sistema do início ao fim.",
+          "modelos": [
+            "codex",
+            "ollama"
+          ],
+          "nome": "E2E Agent",
+          "nucleo": "Qualidade",
+          "prefere_local": true,
+          "quando_acionar": "Feature pronta para validação funcional.",
+          "tipo": "Subagente de teste",
+          "uuid": "01a0e473-f62a-7c4c-8c76-539596e38bd3"
+        },
+        {
+          "capability_principal": "quality.browser_wasm.test",
+          "criticidade": "Alta",
+          "execucao": "Sob demanda",
+          "humano": false,
+          "id": 43,
+          "macroarea": "Qualidade & Provas",
+          "missao": "Valida targets WebAssembly nos navegadores suportados.",
+          "modelos": [
+            "codex",
+            "ollama"
+          ],
+          "nome": "Browser/WASM Test Agent",
+          "nucleo": "Qualidade",
+          "prefere_local": true,
+          "quando_acionar": "Mudança WASM/Web.",
+          "tipo": "Subagente de teste",
+          "uuid": "01a0e473-f62b-72ef-88da-f7c5dd2b33f9"
+        },
+        {
+          "capability_principal": "quality.regression.test",
+          "criticidade": "Alta",
+          "execucao": "Permanente",
+          "humano": false,
+          "id": 44,
+          "macroarea": "Qualidade & Provas",
+          "missao": "Impede que bugs conhecidos e comportamentos aceitos retornem.",
+          "modelos": [
+            "ollama"
+          ],
+          "nome": "Regression Agent",
+          "nucleo": "Qualidade",
+          "prefere_local": true,
+          "quando_acionar": "Toda correção e release.",
+          "tipo": "Subagente de teste",
+          "uuid": "01a0e473-f62c-74a3-a753-db209bca4317"
+        },
+        {
+          "capability_principal": "quality.fuzz.test",
+          "criticidade": "Alta",
+          "execucao": "Sob demanda",
+          "humano": false,
+          "id": 45,
+          "macroarea": "Qualidade & Provas",
+          "missao": "Descobre crashes e inconsistências com entradas inesperadas.",
+          "modelos": [
+            "determinístico",
+            "ollama"
+          ],
+          "nome": "Fuzz Agent",
+          "nucleo": "Qualidade",
+          "prefere_local": true,
+          "quando_acionar": "Parsers, codecs, schemas, protocolos e código crítico.",
+          "tipo": "Subagente de teste",
+          "uuid": "01a0e473-f62d-7437-9b52-a3e942163219"
+        },
+        {
+          "capability_principal": "quality.regression.test",
+          "criticidade": "Média",
+          "execucao": "Sob demanda",
+          "humano": false,
+          "id": 46,
+          "macroarea": "Qualidade & Provas",
+          "missao": "Detecta mudanças visuais não intencionais em telas e componentes.",
+          "modelos": [
+            "ollama"
+          ],
+          "nome": "Visual Regression Agent",
+          "nucleo": "Qualidade",
+          "prefere_local": true,
+          "quando_acionar": "Mudança UI/template/theme.",
+          "tipo": "Subagente de teste",
+          "uuid": "01a0e473-f62e-76dd-9584-db8fba3cc8c4"
+        },
+        {
+          "capability_principal": "quality.performance.test",
+          "criticidade": "Alta",
+          "execucao": "Sob demanda",
+          "humano": false,
+          "id": 47,
+          "macroarea": "Qualidade & Provas",
+          "missao": "Mede performance independentemente de quem implementou.",
+          "modelos": [
+            "determinístico",
+            "ollama"
+          ],
+          "nome": "Performance Test Agent",
+          "nucleo": "Qualidade",
+          "prefere_local": true,
+          "quando_acionar": "Mudança em hot path/release.",
+          "tipo": "Subagente de teste",
+          "uuid": "01a0e473-f62f-7ac4-bbff-acbe3d50586d"
+        },
+        {
+          "capability_principal": "quality.security.test",
+          "criticidade": "Crítica",
+          "execucao": "Sob demanda",
+          "humano": false,
+          "id": 48,
+          "macroarea": "Qualidade & Provas",
+          "missao": "Valida controles de segurança por testes práticos autorizados.",
+          "modelos": [
+            "claude",
+            "codex"
+          ],
+          "nome": "Security Test Agent",
+          "nucleo": "Qualidade",
+          "prefere_local": false,
+          "quando_acionar": "Superfície sensível ou release.",
+          "tipo": "Subagente de teste",
+          "uuid": "01a0e473-f630-7221-98bb-b391fe065545"
+        },
+        {
+          "capability_principal": "objective.prove",
+          "criticidade": "Crítica",
+          "execucao": "Sob demanda",
+          "humano": false,
+          "id": 49,
+          "macroarea": "Qualidade & Provas",
+          "missao": "Comprova com prova real que a entrega cumpre o objetivo para o qual foi criada.",
+          "modelos": [
+            "claude",
+            "codex"
+          ],
+          "nome": "Objective Proof Agent – OPA",
+          "nucleo": "Prova",
+          "prefere_local": false,
+          "quando_acionar": "Após QA2 e antes de QA3.",
+          "tipo": "Agente avaliador de objetivo",
+          "uuid": "01a0e473-f631-7976-acb2-61b914cf23ae"
+        },
+        {
+          "capability_principal": "quality.gate.qa1",
+          "criticidade": "Alta",
+          "execucao": "Sob demanda",
+          "humano": false,
+          "id": 50,
+          "macroarea": "Qualidade & Provas",
+          "missao": "Valida qualidade da implementação individual.",
+          "modelos": [
+            "claude",
+            "ollama"
+          ],
+          "nome": "QA Nível 1",
+          "nucleo": "Qualidade",
+          "prefere_local": true,
+          "quando_acionar": "Patch pronto.",
+          "tipo": "Gate de qualidade",
+          "uuid": "01a0e473-f632-7358-9a30-45db2f4f7710"
+        },
+        {
+          "capability_principal": "quality.gate.qa2",
+          "criticidade": "Crítica",
+          "execucao": "Sob demanda",
+          "humano": false,
+          "id": 51,
+          "macroarea": "Qualidade & Provas",
+          "missao": "Valida impacto sistêmico, integração, regressão e compatibilidade.",
+          "modelos": [
+            "claude"
+          ],
+          "nome": "QA Nível 2",
+          "nucleo": "Qualidade",
+          "prefere_local": false,
+          "quando_acionar": "QA1 PASS.",
+          "tipo": "Gate de integração",
+          "uuid": "01a0e473-f633-7bb9-b8ee-90a4d9a45a4d"
+        },
+        {
+          "capability_principal": "quality.gate.qa3",
+          "criticidade": "Crítica",
+          "execucao": "Sob demanda",
+          "humano": false,
+          "id": 52,
+          "macroarea": "Qualidade & Provas",
+          "missao": "Decide se a entrega está pronta para produto/release com base em todas as evidências.",
+          "modelos": [
+            "claude"
+          ],
+          "nome": "QA Nível 3",
+          "nucleo": "Qualidade",
+          "prefere_local": false,
+          "quando_acionar": "Release candidate.",
+          "tipo": "Gate final",
+          "uuid": "01a0e473-f634-742e-a532-1321918650db"
+        },
+        {
+          "capability_principal": "compatibility.validate",
+          "criticidade": "Crítica",
+          "execucao": "Permanente",
+          "humano": false,
+          "id": 77,
+          "macroarea": "Qualidade & Provas",
+          "missao": "Prova compatibilidade retroativa de IR, PHX JSON, APIs, templates e projetos antigos.",
+          "modelos": [
+            "codex",
+            "ollama"
+          ],
+          "nome": "Compatibility Agent",
+          "nucleo": "Compatibilidade",
+          "prefere_local": true,
+          "quando_acionar": "Mudança de schema/API/runtime/toolchain.",
+          "tipo": "Agente de compatibilidade",
+          "uuid": "01a0e473-f64d-75cd-8a00-29b3680a7558"
+        },
+        {
+          "capability_principal": "governance.constitution.enforce",
+          "criticidade": "Crítica",
+          "execucao": "Permanente",
+          "humano": false,
+          "id": 82,
+          "macroarea": "Qualidade & Provas",
+          "missao": "Garante migrations seguras de DB, IR, JSON, templates e formatos.",
+          "modelos": [
+            "claude",
+            "ollama"
+          ],
+          "nome": "Migration Guardian",
+          "nucleo": "Migração",
+          "prefere_local": true,
+          "quando_acionar": "Qualquer migration persistente.",
+          "tipo": "Guardião de migrations",
+          "uuid": "01a0e473-f652-73bf-95cc-e0fe919f7d54"
+        }
+      ],
+      "total": 18
+    },
+    {
+      "nome": "Segurança & Compliance",
+      "papeis": [
+        {
+          "capability_principal": "security.code.review",
+          "criticidade": "Crítica",
+          "execucao": "Sob demanda",
+          "humano": false,
+          "id": 13,
+          "macroarea": "Segurança & Compliance",
+          "missao": "Revisa segurança e bloqueia vulnerabilidades antes do merge.",
+          "modelos": [
+            "claude"
+          ],
+          "nome": "Thompson",
+          "nucleo": "Segurança",
+          "prefere_local": false,
+          "quando_acionar": "Toda feature com superfície relevante; obrigatório antes de release.",
+          "tipo": "Agente de segurança de código",
+          "uuid": "01a0e473-f60d-761f-b597-a103db46e3df"
+        },
+        {
+          "capability_principal": "identity.uuidv7.guard",
+          "criticidade": "Crítica",
+          "execucao": "Permanente",
+          "humano": false,
+          "id": 30,
+          "macroarea": "Segurança & Compliance",
+          "missao": "Garante UUIDv7 único e imutável para entidades persistentes.",
+          "modelos": [
+            "determinístico",
+            "ollama"
+          ],
+          "nome": "UUIDv7 Guardian",
+          "nucleo": "Identidade",
+          "prefere_local": true,
+          "quando_acionar": "Persistência, migration, clone ou import.",
+          "tipo": "Guardião de identidade",
+          "uuid": "01a0e473-f61e-7a08-af45-723fadfdbd38"
+        },
+        {
+          "capability_principal": "governance.constitution.enforce",
+          "criticidade": "Crítica",
+          "execucao": "Permanente",
+          "humano": false,
+          "id": 53,
+          "macroarea": "Segurança & Compliance",
+          "missao": "Protege a Constitution, ADRs e arquitetura contra drift.",
+          "modelos": [
+            "claude",
+            "determinístico"
+          ],
+          "nome": "Guardian",
+          "nucleo": "Governança",
+          "prefere_local": false,
+          "quando_acionar": "Toda mudança estrutural.",
+          "tipo": "Guardião constitucional",
+          "uuid": "01a0e473-f635-7fb8-a692-79562cbd4ff6"
+        },
+        {
+          "capability_principal": "secret.credential.broker",
+          "criticidade": "Crítica",
+          "execucao": "Permanente",
+          "humano": false,
+          "id": 63,
+          "macroarea": "Segurança & Compliance",
+          "missao": "Protege credenciais e entrega acesso temporário sem expor segredo à LLM.",
+          "modelos": [
+            "determinístico"
+          ],
+          "nome": "Secrets Manager",
+          "nucleo": "Segurança",
+          "prefere_local": false,
+          "quando_acionar": "Tool precisa autenticar externamente.",
+          "tipo": "Agente de segredos",
+          "uuid": "01a0e473-f63f-781b-a066-be7496e4cd16"
+        },
+        {
+          "capability_principal": "governance.constitution.enforce",
+          "criticidade": "Crítica",
+          "execucao": "Permanente",
+          "humano": false,
+          "id": 73,
+          "macroarea": "Segurança & Compliance",
+          "missao": "Protege licenças, copyright, proveniência e clean-room engineering.",
+          "modelos": [
+            "claude",
+            "ollama"
+          ],
+          "nome": "Licensor / Clean-Room Guardian",
+          "nucleo": "Licenças",
+          "prefere_local": true,
+          "quando_acionar": "Novo código externo, dataset, repo ou plugin.",
+          "tipo": "Agente de proveniência",
+          "uuid": "01a0e473-f649-7199-8ffe-8302e5f79a04"
+        },
+        {
+          "capability_principal": "governance.constitution.enforce",
+          "criticidade": "Crítica",
+          "execucao": "Permanente",
+          "humano": false,
+          "id": 74,
+          "macroarea": "Segurança & Compliance",
+          "missao": "Audita crates, dependências transitivas, SBOM, CVEs, hashes e updates.",
+          "modelos": [
+            "claude",
+            "ollama"
+          ],
+          "nome": "Supply Chain Guardian",
+          "nucleo": "Supply Chain",
+          "prefere_local": true,
+          "quando_acionar": "Nova dependência/update/release.",
+          "tipo": "Agente de cadeia de suprimentos",
+          "uuid": "01a0e473-f64a-778d-b1d0-39f299fdcb68"
+        },
+        {
+          "capability_principal": "privacy.data.govern",
+          "criticidade": "Crítica",
+          "execucao": "Permanente",
+          "humano": false,
+          "id": 75,
+          "macroarea": "Segurança & Compliance",
+          "missao": "Controla classificação, retenção, PII, logs, anonimização e uso de dados.",
+          "modelos": [
+            "claude",
+            "ollama"
+          ],
+          "nome": "Privacy/Data Governance",
+          "nucleo": "Privacidade",
+          "prefere_local": true,
+          "quando_acionar": "Novo dataset/campo/log/provider.",
+          "tipo": "Agente de governança de dados",
+          "uuid": "01a0e473-f64b-7d70-a70b-ecbeb962da57"
+        },
+        {
+          "capability_principal": "security.ai.redteam",
+          "criticidade": "Crítica",
+          "execucao": "Sob demanda",
+          "humano": false,
+          "id": 79,
+          "macroarea": "Segurança & Compliance",
+          "missao": "Ataca a própria fábrica de agentes para encontrar abuso de tools/context/secrets.",
+          "modelos": [
+            "claude",
+            "codex"
+          ],
+          "nome": "Agent Red Team",
+          "nucleo": "Segurança IA",
+          "prefere_local": false,
+          "quando_acionar": "Mudança em agents/tools/MCP/model gateway ou release.",
+          "tipo": "Agente adversarial de IA",
+          "uuid": "01a0e473-f64f-7808-9d6c-26c8b0404446"
+        },
+        {
+          "capability_principal": "access.zerotrust.enforce",
+          "criticidade": "Crítica",
+          "execucao": "Permanente",
+          "humano": false,
+          "id": 83,
+          "macroarea": "Segurança & Compliance",
+          "missao": "Controla quem pode fazer o quê dentro da fábrica.",
+          "modelos": [
+            "determinístico"
+          ],
+          "nome": "Seraph",
+          "nucleo": "Segurança",
+          "prefere_local": false,
+          "quando_acionar": "Toda execução de agente/tool sensível.",
+          "tipo": "Agente Zero Trust",
+          "uuid": "01a0e473-f653-7e06-8fa5-10c77bec7519"
+        }
+      ],
+      "total": 9
+    },
+    {
+      "nome": "Dados & Integrações",
+      "papeis": [
+        {
+          "capability_principal": "legacy.vendor.isolate",
+          "criticidade": "Alta",
+          "execucao": "Sob demanda",
+          "humano": false,
+          "id": 16,
+          "macroarea": "Dados & Integrações",
+          "missao": "Isola vendor, API externa e legado para evitar contaminação arquitetural.",
+          "modelos": [
+            "claude",
+            "codex"
+          ],
+          "nome": "Merovíngio",
+          "nucleo": "Vendor/Legado",
+          "prefere_local": false,
+          "quando_acionar": "Nova dependência externa, vendor ou legado.",
+          "tipo": "Agente de isolamento externo",
+          "uuid": "01a0e473-f610-77ff-b82c-aaa004721899"
+        },
+        {
+          "capability_principal": "data.model.manage",
+          "criticidade": "Alta",
+          "execucao": "Sob demanda",
+          "humano": false,
+          "id": 36,
+          "macroarea": "Dados & Integrações",
+          "missao": "Mantém modelos, queries, repositories, transactions e abstrações de persistência.",
+          "modelos": [
+            "codex"
+          ],
+          "nome": "Data Agent",
+          "nucleo": "Dados",
+          "prefere_local": false,
+          "quando_acionar": "Feature que persiste/consulta dados.",
+          "tipo": "Agente de dados",
+          "uuid": "01a0e473-f624-7dc6-a802-a5b8d35664a9"
+        },
+        {
+          "capability_principal": "database.postgresql.operate",
+          "criticidade": "Crítica",
+          "execucao": "Permanente",
+          "humano": false,
+          "id": 37,
+          "macroarea": "Dados & Integrações",
+          "missao": "Administra PostgreSQL como banco central de apoio e provider de dados.",
+          "modelos": [
+            "codex",
+            "ollama"
+          ],
+          "nome": "PostgreSQL Agent",
+          "nucleo": "Banco",
+          "prefere_local": true,
+          "quando_acionar": "Mudança de schema, query lenta, persistência PhxClaw.",
+          "tipo": "Agente PostgreSQL",
+          "uuid": "01a0e473-f625-70a7-a3c0-51a2b0ec74c7"
+        },
+        {
+          "capability_principal": "i18n.localize",
+          "criticidade": "Alta",
+          "execucao": "Permanente",
+          "humano": false,
+          "id": 39,
+          "macroarea": "Dados & Integrações",
+          "missao": "Centraliza mensagens e impede textos internacionalizáveis chumbados no código.",
+          "modelos": [
+            "ollama"
+          ],
+          "nome": "Localization / NSL Agent",
+          "nucleo": "Localização",
+          "prefere_local": true,
+          "quando_acionar": "Feature com texto de usuário ou nova língua.",
+          "tipo": "Agente i18n/NSL",
+          "uuid": "01a0e473-f627-75ee-a2ef-53a64bb8f06a"
+        },
+        {
+          "capability_principal": "data.attribution.reconcile",
+          "criticidade": "Média",
+          "execucao": "Sob demanda",
+          "humano": false,
+          "id": 104,
+          "macroarea": "Dados & Integrações",
+          "missao": "Garante origem, deduplicação, definição e reconciliação de eventos e métricas.",
+          "modelos": [
+            "ollama"
+          ],
+          "nome": "Data Attribution Agent",
+          "nucleo": "Dados",
+          "prefere_local": true,
+          "quando_acionar": "Múltiplas fontes alimentam métrica.",
+          "tipo": "Agente de atribuição de dados",
+          "uuid": "01a0e473-f668-758e-ac0f-2b3767ad7d2d"
+        },
+        {
+          "capability_principal": "connector.platform.manage",
+          "criticidade": "Alta",
+          "execucao": "Sob demanda",
+          "humano": false,
+          "id": 109,
+          "macroarea": "Dados & Integrações",
+          "missao": "Cria plataforma padronizada para OAuth, rate limits, retries e APIs externas.",
+          "modelos": [
+            "codex"
+          ],
+          "nome": "Connector Platform Agent",
+          "nucleo": "Integrações",
+          "prefere_local": false,
+          "quando_acionar": "Nova integração externa.",
+          "tipo": "Agente de conectores",
+          "uuid": "01a0e473-f66d-7a71-9cf4-4f1bbb4362b7"
+        }
+      ],
+      "total": 6
+    },
+    {
+      "nome": "Pesquisa & Inovação",
+      "papeis": [
+        {
+          "capability_principal": "research.orchestrate",
+          "criticidade": "Alta",
+          "execucao": "Permanente",
+          "humano": false,
+          "id": 19,
+          "macroarea": "Pesquisa & Inovação",
+          "missao": "Coordena pesquisas, fontes e ciclo PDCA de descoberta técnica.",
+          "modelos": [
+            "claude",
+            "ollama"
+          ],
+          "nome": "Research Lead / Pesquisador PDCA",
+          "nucleo": "Pesquisa",
+          "prefere_local": true,
+          "quando_acionar": "Nova tecnologia, dúvida arquitetural ou radar periódico.",
+          "tipo": "Agente líder de pesquisa",
+          "uuid": "01a0e473-f613-790f-be14-88850e521c18"
+        },
+        {
+          "capability_principal": "research.collect",
+          "criticidade": "Média",
+          "execucao": "Sob demanda",
+          "humano": false,
+          "id": 20,
+          "macroarea": "Pesquisa & Inovação",
+          "missao": "Pesquisa uma questão delimitada em fontes autorizadas e rastreáveis.",
+          "modelos": [
+            "ollama"
+          ],
+          "nome": "Research Agent",
+          "nucleo": "Pesquisa",
+          "prefere_local": true,
+          "quando_acionar": "Task de pesquisa atribuída.",
+          "tipo": "Subagente pesquisador",
+          "uuid": "01a0e473-f614-70da-9cfb-4151c4cb515b"
+        },
+        {
+          "capability_principal": "hypothesis.formulate",
+          "criticidade": "Alta",
+          "execucao": "Permanente",
+          "humano": false,
+          "id": 21,
+          "macroarea": "Pesquisa & Inovação",
+          "missao": "Transforma descobertas, problemas e lacunas em hipóteses testáveis.",
+          "modelos": [
+            "claude",
+            "ollama"
+          ],
+          "nome": "Hypothesis Agent",
+          "nucleo": "Inovação",
+          "prefere_local": true,
+          "quando_acionar": "Pesquisa relevante, bug incerto ou oportunidade de melhoria.",
+          "tipo": "Agente de hipóteses",
+          "uuid": "01a0e473-f615-7bc6-b58e-ccc8c315be7a"
+        },
+        {
+          "capability_principal": "technology.harvest",
+          "criticidade": "Alta",
+          "execucao": "Permanente",
+          "humano": false,
+          "id": 22,
+          "macroarea": "Pesquisa & Inovação",
+          "missao": "Analisa tecnologias externas e extrai conceitos úteis ao Phoenix sem criar dependência arquitetural.",
+          "modelos": [
+            "claude",
+            "ollama"
+          ],
+          "nome": "Technology Harvest",
+          "nucleo": "Inovação",
+          "prefere_local": true,
+          "quando_acionar": "Nova tecnologia relevante ou revisão de stack.",
+          "tipo": "Agente de colheita tecnológica",
+          "uuid": "01a0e473-f616-784f-9b36-65d7a686fd41"
+        },
+        {
+          "capability_principal": "technology.rust.evaluate",
+          "criticidade": "Alta",
+          "execucao": "Permanente",
+          "humano": false,
+          "id": 23,
+          "macroarea": "Pesquisa & Inovação",
+          "missao": "Mantém o Phoenix atualizado com avanços estáveis do Rust.",
+          "modelos": [
+            "codex",
+            "ollama"
+          ],
+          "nome": "Rust Evolution Agent",
+          "nucleo": "Rust",
+          "prefere_local": true,
+          "quando_acionar": "Nova versão Rust Stable ou advisory crítico.",
+          "tipo": "Agente de evolução Rust",
+          "uuid": "01a0e473-f617-7985-8311-d75e0057d77c"
+        },
+        {
+          "capability_principal": "technology.wasm.evaluate",
+          "criticidade": "Alta",
+          "execucao": "Permanente",
+          "humano": false,
+          "id": 24,
+          "macroarea": "Pesquisa & Inovação",
+          "missao": "Monitora a evolução estável de WebAssembly e compatibilidade de browsers/targets.",
+          "modelos": [
+            "codex",
+            "ollama"
+          ],
+          "nome": "WASM Evolution Agent",
+          "nucleo": "WASM",
+          "prefere_local": true,
+          "quando_acionar": "Nova capacidade WASM estável ou regressão.",
+          "tipo": "Agente de evolução WASM",
+          "uuid": "01a0e473-f618-7e89-ae35-cbefc100260c"
+        },
+        {
+          "capability_principal": "prototype.experiment",
+          "criticidade": "Média",
+          "execucao": "Sob demanda",
+          "humano": false,
+          "id": 88,
+          "macroarea": "Pesquisa & Inovação",
+          "missao": "Constrói protótipos descartáveis para testar hipóteses rapidamente.",
+          "modelos": [
+            "codex",
+            "ollama"
+          ],
+          "nome": "Mouse",
+          "nucleo": "Experimentação",
+          "prefere_local": true,
+          "quando_acionar": "Hypothesis com experimento técnico.",
+          "tipo": "Agente prototipador",
+          "uuid": "01a0e473-f658-7333-bb3a-af3afe577499"
+        },
+        {
+          "capability_principal": "assumption.challenge",
+          "criticidade": "Média",
+          "execucao": "Sob demanda",
+          "humano": false,
+          "id": 90,
+          "macroarea": "Pesquisa & Inovação",
+          "missao": "Questiona limitações assumidas e procura simplificações radicais.",
+          "modelos": [
+            "claude",
+            "ollama"
+          ],
+          "nome": "Spoon Boy",
+          "nucleo": "Exploração",
+          "prefere_local": true,
+          "quando_acionar": "Problema aparentemente bloqueado ou caro.",
+          "tipo": "Agente de quebra de pressupostos",
+          "uuid": "01a0e473-f65a-7b3e-8cd5-841d03fd2ed6"
+        },
+        {
+          "capability_principal": "decision.evidence.resolve",
+          "criticidade": "Baixa",
+          "execucao": "Sob demanda",
+          "humano": false,
+          "id": 91,
+          "macroarea": "Pesquisa & Inovação",
+          "missao": "Exploram ideias, edge cases e abordagens alternativas sob supervisão.",
+          "modelos": [
+            "ollama"
+          ],
+          "nome": "Potentials / Aprendizes do Oráculo",
+          "nucleo": "Exploração",
+          "prefere_local": true,
+          "quando_acionar": "Problema exploratório ou hipótese ampla.",
+          "tipo": "Grupo de subagentes experimentais",
+          "uuid": "01a0e473-f65b-7843-bd00-6ec15746660c"
+        }
+      ],
+      "total": 9
+    },
+    {
+      "nome": "Creative Studio & UX",
+      "papeis": [
+        {
+          "capability_principal": "ui.rad.build",
+          "criticidade": "Alta",
+          "execucao": "Sob demanda",
+          "humano": false,
+          "id": 34,
+          "macroarea": "Creative Studio & UX",
+          "missao": "Constrói controles, telas, layouts e infraestrutura visual do Phoenix Studio.",
+          "modelos": [
+            "codex"
+          ],
+          "nome": "UI/RAD Agent",
+          "nucleo": "UI",
+          "prefere_local": false,
+          "quando_acionar": "Feature visual ou RAD.",
+          "tipo": "Agente de UI/RAD",
+          "uuid": "01a0e473-f622-7f3f-ae87-743175a5d8ea"
+        },
+        {
+          "capability_principal": "media.action.process",
+          "criticidade": "Alta",
+          "execucao": "Sob demanda",
+          "humano": false,
+          "id": 35,
+          "macroarea": "Creative Studio & UX",
+          "missao": "Implementa no Phoenix as facilidades úteis de Flash/ActionScript em Rust/WASM.",
+          "modelos": [
+            "codex"
+          ],
+          "nome": "Action/Media Agent",
+          "nucleo": "Media",
+          "prefere_local": false,
+          "quando_acionar": "Feature de animação, visual, mídia ou migração ActionScript.",
+          "tipo": "Agente de mídia/ActionScript concepts",
+          "uuid": "01a0e473-f623-7e37-91d5-fd9a71c267ad"
+        },
+        {
+          "capability_principal": "accessibility.validate",
+          "criticidade": "Alta",
+          "execucao": "Permanente",
+          "humano": false,
+          "id": 76,
+          "macroarea": "Creative Studio & UX",
+          "missao": "Garante uso por teclado, contraste, foco, semântica e tecnologias assistivas.",
+          "modelos": [
+            "claude",
+            "ollama"
+          ],
+          "nome": "Accessibility Agent",
+          "nucleo": "UX",
+          "prefere_local": true,
+          "quando_acionar": "Toda feature UI/template/theme.",
+          "tipo": "Agente de acessibilidade",
+          "uuid": "01a0e473-f64c-73f4-983a-ba644c60d255"
+        },
+        {
+          "capability_principal": "ux.prove",
+          "criticidade": "Alta",
+          "execucao": "Sob demanda",
+          "humano": false,
+          "id": 80,
+          "macroarea": "Creative Studio & UX",
+          "missao": "Verifica se uma pessoa consegue atingir o objetivo com clareza, rapidez e poucos erros.",
+          "modelos": [
+            "claude",
+            "ollama"
+          ],
+          "nome": "User Proof / UX Research",
+          "nucleo": "UX",
+          "prefere_local": true,
+          "quando_acionar": "Feature UX pronta após Accessibility.",
+          "tipo": "Agente de prova de usabilidade",
+          "uuid": "01a0e473-f650-745e-af5f-d56782a190b1"
+        },
+        {
+          "capability_principal": "creative.generate",
+          "criticidade": "Média",
+          "execucao": "Sob demanda",
+          "humano": false,
+          "id": 89,
+          "macroarea": "Creative Studio & UX",
+          "missao": "Cria alternativas visuais, UX, temas, animações e soluções não óbvias.",
+          "modelos": [
+            "modelo multimodal forte",
+            "ollama"
+          ],
+          "nome": "Sati",
+          "nucleo": "Criatividade",
+          "prefere_local": true,
+          "quando_acionar": "Problema de UX/visual aberto.",
+          "tipo": "Agente de criatividade generativa",
+          "uuid": "01a0e473-f659-7406-bb57-477469a028fe"
+        },
+        {
+          "capability_principal": "design.systemic.concept",
+          "criticidade": "Alta",
+          "execucao": "Sob demanda",
+          "humano": false,
+          "id": 92,
+          "macroarea": "Creative Studio & UX",
+          "missao": "Conecta experiência, produto e engenharia antes da execução visual.",
+          "modelos": [
+            "claude",
+            "multimodal"
+          ],
+          "nome": "Leonardo da Vinci",
+          "nucleo": "Creative Studio",
+          "prefere_local": false,
+          "quando_acionar": "Nova tela/produto/jornada complexa.",
+          "tipo": "Diretor de Design Sistêmico",
+          "uuid": "01a0e473-f65c-7e23-b1d6-7c75dec91318"
+        },
+        {
+          "capability_principal": "design.visual.execute",
+          "criticidade": "Alta",
+          "execucao": "Sob demanda",
+          "humano": false,
+          "id": 93,
+          "macroarea": "Creative Studio & UX",
+          "missao": "Transforma conceito aprovado em interface de alto acabamento.",
+          "modelos": [
+            "multimodal forte"
+          ],
+          "nome": "Michelângelo",
+          "nucleo": "Creative Studio",
+          "prefere_local": false,
+          "quando_acionar": "Conceito aprovado.",
+          "tipo": "Mestre de Execução Visual",
+          "uuid": "01a0e473-f65d-7a1d-b60f-8f2e353f1d84"
+        },
+        {
+          "capability_principal": "design.component.engineer",
+          "criticidade": "Alta",
+          "execucao": "Sob demanda",
+          "humano": false,
+          "id": 94,
+          "macroarea": "Creative Studio & UX",
+          "missao": "Transforma design em componentes reutilizáveis e tecnicamente executáveis.",
+          "modelos": [
+            "claude",
+            "codex"
+          ],
+          "nome": "Donatello",
+          "nucleo": "Creative Studio",
+          "prefere_local": false,
+          "quando_acionar": "Visual aprovado ou novo componente.",
+          "tipo": "Engenheiro Criativo de Componentes",
+          "uuid": "01a0e473-f65e-795b-b4bb-311ae6485b36"
+        },
+        {
+          "capability_principal": "design.harmony.guard",
+          "criticidade": "Média",
+          "execucao": "Sob demanda",
+          "humano": false,
+          "id": 95,
+          "macroarea": "Creative Studio & UX",
+          "missao": "Mantém equilíbrio visual, grid, tipografia e consistência entre telas.",
+          "modelos": [
+            "multimodal",
+            "ollama"
+          ],
+          "nome": "Raphaël / Rafael",
+          "nucleo": "Creative Studio",
+          "prefere_local": true,
+          "quando_acionar": "Após conceito ou durante review.",
+          "tipo": "Guardião da Harmonia",
+          "uuid": "01a0e473-f65f-7219-b54a-2165f244699f"
+        },
+        {
+          "capability_principal": "design.creative.gate",
+          "criticidade": "Alta",
+          "execucao": "Sob demanda",
+          "humano": false,
+          "id": 96,
+          "macroarea": "Creative Studio & UX",
+          "missao": "Coordena o Creative Studio e faz o gate de maturidade criativa.",
+          "modelos": [
+            "claude",
+            "multimodal"
+          ],
+          "nome": "Mestre Splinter",
+          "nucleo": "Creative Studio",
+          "prefere_local": false,
+          "quando_acionar": "Antes de Accessibility/User Proof.",
+          "tipo": "Mentor e Diretor de Crítica",
+          "uuid": "01a0e473-f660-7150-842e-9e93a93d7648"
+        },
+        {
+          "capability_principal": "design.theme.color",
+          "criticidade": "Média",
+          "execucao": "Sob demanda",
+          "humano": false,
+          "id": 97,
+          "macroarea": "Creative Studio & UX",
+          "missao": "Cria paletas, temas, atmosfera e identidade visual memorável.",
+          "modelos": [
+            "multimodal"
+          ],
+          "nome": "Van Gogh",
+          "nucleo": "Creative Studio",
+          "prefere_local": false,
+          "quando_acionar": "Nova identidade/theme ou revisão visual.",
+          "tipo": "Especialista em Cor, Emoção e Identidade",
+          "uuid": "01a0e473-f661-77bb-ac3d-0d27237afbf6"
+        },
+        {
+          "capability_principal": "design.motion.audio",
+          "criticidade": "Média",
+          "execucao": "Sob demanda",
+          "humano": false,
+          "id": 98,
+          "macroarea": "Creative Studio & UX",
+          "missao": "Define motion design, timing e feedback multissensorial.",
+          "modelos": [
+            "multimodal",
+            "ollama"
+          ],
+          "nome": "Beethoven",
+          "nucleo": "Creative Studio",
+          "prefere_local": true,
+          "quando_acionar": "Fluxo interativo que se beneficia de feedback.",
+          "tipo": "Especialista em Ritmo e Movimento",
+          "uuid": "01a0e473-f662-7592-be0d-691556ec288f"
+        },
+        {
+          "capability_principal": "ux.simplify",
+          "criticidade": "Média",
+          "execucao": "Sob demanda",
+          "humano": false,
+          "id": 99,
+          "macroarea": "Creative Studio & UX",
+          "missao": "Reduz carga cognitiva e torna jornadas rápidas, previsíveis e naturais.",
+          "modelos": [
+            "claude",
+            "ollama"
+          ],
+          "nome": "Mozart",
+          "nucleo": "Creative Studio",
+          "prefere_local": true,
+          "quando_acionar": "Fluxo complexo ou fricção de uso.",
+          "tipo": "Especialista em Fluidez e Simplicidade",
+          "uuid": "01a0e473-f663-7ba8-968d-2935c62698e3"
+        },
+        {
+          "capability_principal": "ux.context.adapt",
+          "criticidade": "Média",
+          "execucao": "Sob demanda",
+          "humano": false,
+          "id": 100,
+          "macroarea": "Creative Studio & UX",
+          "missao": "Adapta experiência conforme contexto, estado, dispositivo, tema e etapa da jornada.",
+          "modelos": [
+            "multimodal",
+            "ollama"
+          ],
+          "nome": "Vivaldi",
+          "nucleo": "Creative Studio",
+          "prefere_local": true,
+          "quando_acionar": "Experiência deve se adaptar a contexto.",
+          "tipo": "Especialista em Variação Contextual",
+          "uuid": "01a0e473-f664-7319-b7b9-7b5637d211ff"
+        }
+      ],
+      "total": 14
+    },
+    {
+      "nome": "Operações & Infraestrutura",
+      "papeis": [
+        {
+          "capability_principal": "version.semver.manage",
+          "criticidade": "Alta",
+          "execucao": "Sob demanda",
+          "humano": false,
+          "id": 55,
+          "macroarea": "Operações & Infraestrutura",
+          "missao": "Controla SemVer, compatibilidade, tags, changelogs e matriz de versões.",
+          "modelos": [
+            "ollama"
+          ],
+          "nome": "Versionador",
+          "nucleo": "Versões",
+          "prefere_local": true,
+          "quando_acionar": "Entrega aprovada ou mudança de contrato.",
+          "tipo": "Agente de versionamento",
+          "uuid": "01a0e473-f637-7194-be89-ecefe3390927"
+        },
+        {
+          "capability_principal": "release.promote",
+          "criticidade": "Crítica",
+          "execucao": "Sob demanda",
+          "humano": false,
+          "id": 56,
+          "macroarea": "Operações & Infraestrutura",
+          "missao": "Converte release candidate aprovado em release oficial segura e reversível.",
+          "modelos": [
+            "claude",
+            "ollama"
+          ],
+          "nome": "Release Manager",
+          "nucleo": "Release",
+          "prefere_local": true,
+          "quando_acionar": "RC aprovado.",
+          "tipo": "Agente de release",
+          "uuid": "01a0e473-f638-7c91-8f60-c7841a86639f"
+        },
+        {
+          "capability_principal": "build.reproducible",
+          "criticidade": "Alta",
+          "execucao": "Sob demanda",
+          "humano": false,
+          "id": 57,
+          "macroarea": "Operações & Infraestrutura",
+          "missao": "Garante que uma versão possa ser reconstruída a partir de fontes e toolchain registrados.",
+          "modelos": [
+            "determinístico",
+            "ollama"
+          ],
+          "nome": "Reproducible Build Agent",
+          "nucleo": "Build",
+          "prefere_local": true,
+          "quando_acionar": "Release candidate e auditoria.",
+          "tipo": "Agente de build reproduzível",
+          "uuid": "01a0e473-f639-7ee3-b4bd-658857368ae7"
+        },
+        {
+          "capability_principal": "checkpoint.backup.create",
+          "criticidade": "Crítica",
+          "execucao": "Permanente",
+          "humano": false,
+          "id": 58,
+          "macroarea": "Operações & Infraestrutura",
+          "missao": "Protege código, banco, artifacts, configuração e conhecimento da fábrica.",
+          "modelos": [
+            "determinístico",
+            "ollama"
+          ],
+          "nome": "Backup Agent",
+          "nucleo": "Backup",
+          "prefere_local": true,
+          "quando_acionar": "Agenda ou antes de upgrade/release crítica.",
+          "tipo": "Agente de backup",
+          "uuid": "01a0e473-f63a-729d-91a1-22d4866232f0"
+        },
+        {
+          "capability_principal": "checkpoint.restore",
+          "criticidade": "Crítica",
+          "execucao": "Sob demanda",
+          "humano": false,
+          "id": 59,
+          "macroarea": "Operações & Infraestrutura",
+          "missao": "Restaura backups em ambiente limpo e prova recuperação funcional.",
+          "modelos": [
+            "determinístico",
+            "ollama"
+          ],
+          "nome": "Restore Agent",
+          "nucleo": "Backup",
+          "prefere_local": true,
+          "quando_acionar": "Após backup selecionado ou incidente.",
+          "tipo": "Agente de restauração",
+          "uuid": "01a0e473-f63b-7cad-b290-bec9166341e8"
+        },
+        {
+          "capability_principal": "operations.sre.manage",
+          "criticidade": "Alta",
+          "execucao": "Permanente",
+          "humano": false,
+          "id": 60,
+          "macroarea": "Operações & Infraestrutura",
+          "missao": "Mantém disponibilidade, observabilidade e capacidade da fábrica.",
+          "modelos": [
+            "ollama"
+          ],
+          "nome": "SRE/Operations Agent",
+          "nucleo": "Operações",
+          "prefere_local": true,
+          "quando_acionar": "Degradação, alertas ou planejamento de capacidade.",
+          "tipo": "Agente SRE",
+          "uuid": "01a0e473-f63c-7f03-831f-1c952dfae36c"
+        },
+        {
+          "capability_principal": "sandbox.manage",
+          "criticidade": "Crítica",
+          "execucao": "Permanente",
+          "humano": false,
+          "id": 61,
+          "macroarea": "Operações & Infraestrutura",
+          "missao": "Cria ambientes descartáveis e seguros para agentes, builds e experimentos.",
+          "modelos": [
+            "determinístico",
+            "ollama"
+          ],
+          "nome": "Sandbox Manager",
+          "nucleo": "Infra",
+          "prefere_local": true,
+          "quando_acionar": "Toda execução de agente com efeitos ou experimento.",
+          "tipo": "Agente de isolamento",
+          "uuid": "01a0e473-f63d-777f-8139-a6985d95cae5"
+        },
+        {
+          "capability_principal": "plugin.disable",
+          "criticidade": "Alta",
+          "execucao": "Permanente",
+          "humano": false,
+          "id": 62,
+          "macroarea": "Operações & Infraestrutura",
+          "missao": "Mantém Tool Registry e MCPs aprovados com versões, riscos e capabilities.",
+          "modelos": [
+            "claude",
+            "ollama"
+          ],
+          "nome": "Tool/MCP Manager",
+          "nucleo": "Ferramentas",
+          "prefere_local": true,
+          "quando_acionar": "Nova ferramenta/MCP ou update.",
+          "tipo": "Agente de ferramentas",
+          "uuid": "01a0e473-f63e-7112-b100-cfcf4b49c51c"
+        },
+        {
+          "capability_principal": "artifact.registry.manage",
+          "criticidade": "Alta",
+          "execucao": "Permanente",
+          "humano": false,
+          "id": 67,
+          "macroarea": "Operações & Infraestrutura",
+          "missao": "Guarda e versiona binários, WASM, schemas, relatórios, screenshots e SBOMs.",
+          "modelos": [
+            "determinístico",
+            "ollama"
+          ],
+          "nome": "Artifact Manager",
+          "nucleo": "Artefatos",
+          "prefere_local": true,
+          "quando_acionar": "Build/test/release produz artefato.",
+          "tipo": "Agente de artefatos",
+          "uuid": "01a0e473-f643-7271-9c16-dbafea8c5249"
+        },
+        {
+          "capability_principal": "resilience.chaos.test",
+          "criticidade": "Alta",
+          "execucao": "Sob demanda",
+          "humano": false,
+          "id": 78,
+          "macroarea": "Operações & Infraestrutura",
+          "missao": "Prova recuperação sob falhas reais controladas.",
+          "modelos": [
+            "determinístico",
+            "ollama"
+          ],
+          "nome": "Chaos/Resilience Agent",
+          "nucleo": "Resiliência",
+          "prefere_local": true,
+          "quando_acionar": "Antes de releases críticas e periodicamente.",
+          "tipo": "Agente de caos",
+          "uuid": "01a0e473-f64e-7b28-ac9d-f846ee62aee3"
+        },
+        {
+          "capability_principal": "incident.command",
+          "criticidade": "Crítica",
+          "execucao": "Sob demanda",
+          "humano": false,
+          "id": 84,
+          "macroarea": "Operações & Infraestrutura",
+          "missao": "Coordena resposta a incidentes sem confundir contenção com correção.",
+          "modelos": [
+            "claude",
+            "ollama"
+          ],
+          "nome": "Niobe",
+          "nucleo": "Incidentes",
+          "prefere_local": true,
+          "quando_acionar": "Falha operacional relevante.",
+          "tipo": "Incident Commander",
+          "uuid": "01a0e473-f654-7cd0-bdaa-d9b448fe310e"
+        },
+        {
+          "capability_principal": "tool.connectivity.route",
+          "criticidade": "Alta",
+          "execucao": "Permanente",
+          "humano": false,
+          "id": 85,
+          "macroarea": "Operações & Infraestrutura",
+          "missao": "Opera a ponte entre agentes e ferramentas aprovadas.",
+          "modelos": [
+            "determinístico",
+            "ollama"
+          ],
+          "nome": "Link",
+          "nucleo": "Tooling",
+          "prefere_local": true,
+          "quando_acionar": "Agent precisa de capability externa.",
+          "tipo": "Agente de conectividade de ferramentas",
+          "uuid": "01a0e473-f655-79ba-b433-fd32d0718d28"
+        },
+        {
+          "capability_principal": "build.execute",
+          "criticidade": "Alta",
+          "execucao": "Permanente",
+          "humano": false,
+          "id": 86,
+          "macroarea": "Operações & Infraestrutura",
+          "missao": "Transforma código aprovado em artifacts nativos/WASM reproduzíveis.",
+          "modelos": [
+            "determinístico",
+            "ollama"
+          ],
+          "nome": "Tank",
+          "nucleo": "Build",
+          "prefere_local": true,
+          "quando_acionar": "Build solicitado por CI/release.",
+          "tipo": "Agente operador de build",
+          "uuid": "01a0e473-f656-743b-926b-6f8ac00e7132"
+        },
+        {
+          "capability_principal": "infrastructure.provision",
+          "criticidade": "Alta",
+          "execucao": "Permanente",
+          "humano": false,
+          "id": 87,
+          "macroarea": "Operações & Infraestrutura",
+          "missao": "Mantém Proxmox, VMs, containers, storage, CPU/RAM, rede e nós de build.",
+          "modelos": [
+            "ollama"
+          ],
+          "nome": "Dozer",
+          "nucleo": "Infra",
+          "prefere_local": true,
+          "quando_acionar": "Demanda de ambiente, capacity issue ou incident.",
+          "tipo": "Agente de infraestrutura pesada",
+          "uuid": "01a0e473-f657-70e6-aea4-487c8c041cc2"
+        },
+        {
+          "capability_principal": "storage.lifecycle.manage",
+          "criticidade": "Alta",
+          "execucao": "Permanente",
+          "humano": false,
+          "id": 110,
+          "macroarea": "Operações & Infraestrutura",
+          "missao": "Mantém discos e storage saudáveis sem apagar evidências necessárias.",
+          "modelos": [
+            "determinístico",
+            "ollama"
+          ],
+          "nome": "Zelador de Espaço / Storage Steward",
+          "nucleo": "Operações",
+          "prefere_local": true,
+          "quando_acionar": "Threshold de disco, agenda ou antes de builds pesados.",
+          "tipo": "Agente de higiene de storage",
+          "uuid": "01a0e473-f66e-700e-bed6-715110ebbc7c"
+        }
+      ],
+      "total": 15
+    },
+    {
+      "nome": "IA & Conhecimento",
+      "papeis": [
+        {
+          "capability_principal": "repo.rank",
+          "criticidade": "Crítica",
+          "execucao": "Permanente",
+          "humano": false,
+          "id": 64,
+          "macroarea": "IA & Conhecimento",
+          "missao": "Monta o menor pacote de contexto correto para cada tarefa.",
+          "modelos": [
+            "ollama"
+          ],
+          "nome": "Context Compiler",
+          "nucleo": "Contexto",
+          "prefere_local": true,
+          "quando_acionar": "Antes de qualquer execução LLM complexa.",
+          "tipo": "Agente de contexto",
+          "uuid": "01a0e473-f640-799d-9824-531aea38c20c"
+        },
+        {
+          "capability_principal": "knowledge.graph.manage",
+          "criticidade": "Alta",
+          "execucao": "Permanente",
+          "humano": false,
+          "id": 65,
+          "macroarea": "IA & Conhecimento",
+          "missao": "Mantém memória institucional e relações entre decisões, código e histórico.",
+          "modelos": [
+            "ollama"
+          ],
+          "nome": "Knowledge Graph Agent",
+          "nucleo": "Conhecimento",
+          "prefere_local": true,
+          "quando_acionar": "Novo conhecimento relevante ou alteração estrutural.",
+          "tipo": "Agente de conhecimento",
+          "uuid": "01a0e473-f641-7b34-b9e3-ecbd4d238e17"
+        },
+        {
+          "capability_principal": "evidence.graph.manage",
+          "criticidade": "Crítica",
+          "execucao": "Permanente",
+          "humano": false,
+          "id": 66,
+          "macroarea": "IA & Conhecimento",
+          "missao": "Liga cada requisito às provas que sustentam sua conclusão.",
+          "modelos": [
+            "ollama"
+          ],
+          "nome": "Evidence Graph Agent",
+          "nucleo": "Evidência",
+          "prefere_local": true,
+          "quando_acionar": "Durante todo ciclo e especialmente QA3.",
+          "tipo": "Agente de evidências",
+          "uuid": "01a0e473-f642-7a0b-9faa-0d9572211b9f"
+        },
+        {
+          "capability_principal": "model.route",
+          "criticidade": "Crítica",
+          "execucao": "Permanente",
+          "humano": false,
+          "id": 69,
+          "macroarea": "IA & Conhecimento",
+          "missao": "Escolhe Ollama, Codex, Claude ou outro provider conforme tarefa, custo e reputação.",
+          "modelos": [
+            "determinístico",
+            "ollama"
+          ],
+          "nome": "Model Router",
+          "nucleo": "IA",
+          "prefere_local": true,
+          "quando_acionar": "Toda tarefa LLM.",
+          "tipo": "Agente roteador",
+          "uuid": "01a0e473-f645-7d82-8aff-cfaaa5ab5e3d"
+        },
+        {
+          "capability_principal": "model.evaluate",
+          "criticidade": "Alta",
+          "execucao": "Permanente",
+          "humano": false,
+          "id": 70,
+          "macroarea": "IA & Conhecimento",
+          "missao": "Mede qualidade, custo, latência e regressão de cada modelo por tipo de trabalho.",
+          "modelos": [
+            "ollama"
+          ],
+          "nome": "Model Evaluator",
+          "nucleo": "IA",
+          "prefere_local": true,
+          "quando_acionar": "Nova versão/modelo ou periodicamente.",
+          "tipo": "Agente de avaliação de modelos",
+          "uuid": "01a0e473-f646-708d-8a03-c285edd8d91e"
+        },
+        {
+          "capability_principal": "ai.eval.run",
+          "criticidade": "Alta",
+          "execucao": "Permanente",
+          "humano": false,
+          "id": 105,
+          "macroarea": "IA & Conhecimento",
+          "missao": "Avalia qualidade, custo e comportamento de outputs/modelos em tarefas do produto.",
+          "modelos": [
+            "híbrido"
+          ],
+          "nome": "AI Evaluation Agent",
+          "nucleo": "IA",
+          "prefere_local": false,
+          "quando_acionar": "Nova feature/modelo/prompt relevante.",
+          "tipo": "Agente de avaliação de IA",
+          "uuid": "01a0e473-f669-7a16-8a21-a9f42684083a"
+        }
+      ],
+      "total": 6
+    },
+    {
+      "nome": "Gestão & Financeiro",
+      "papeis": [
+        {
+          "capability_principal": "budget.ai.enforce",
+          "criticidade": "Crítica",
+          "execucao": "Permanente",
+          "humano": false,
+          "id": 68,
+          "macroarea": "Gestão & Financeiro",
+          "missao": "Garante teto mensal de IA e controla gasto por task/sprint/modelo.",
+          "modelos": [
+            "determinístico"
+          ],
+          "nome": "Budget Manager",
+          "nucleo": "Financeiro",
+          "prefere_local": false,
+          "quando_acionar": "Cada chamada de modelo pago e fechamento mensal.",
+          "tipo": "Agente de orçamento IA",
+          "uuid": "01a0e473-f644-769d-8ae3-769c0fa16faf"
+        },
+        {
+          "capability_principal": "workflow.scrum.manage",
+          "criticidade": "Média",
+          "execucao": "Permanente",
+          "humano": false,
+          "id": 71,
+          "macroarea": "Gestão & Financeiro",
+          "missao": "Mantém sprints executáveis, WIP controlado e impedimentos visíveis.",
+          "modelos": [
+            "ollama"
+          ],
+          "nome": "Scrum Master",
+          "nucleo": "Gestão",
+          "prefere_local": true,
+          "quando_acionar": "Sprint ativa.",
+          "tipo": "Agente de fluxo",
+          "uuid": "01a0e473-f647-7ab3-878b-993eea61b825"
+        },
+        {
+          "capability_principal": "planning.portfolio.manage",
+          "criticidade": "Alta",
+          "execucao": "Permanente",
+          "humano": false,
+          "id": 72,
+          "macroarea": "Gestão & Financeiro",
+          "missao": "Mantém roadmap, capacidade, dependências e previsão de entrega.",
+          "modelos": [
+            "ollama"
+          ],
+          "nome": "PMO / Planner",
+          "nucleo": "Gestão",
+          "prefere_local": true,
+          "quando_acionar": "Planejamento mensal/quarterly ou mudança relevante.",
+          "tipo": "Agente de planejamento",
+          "uuid": "01a0e473-f648-750b-a5bd-559e1bb9ce20"
+        },
+        {
+          "capability_principal": "cost.finops.optimize",
+          "criticidade": "Média",
+          "execucao": "Permanente",
+          "humano": false,
+          "id": 81,
+          "macroarea": "Gestão & Financeiro",
+          "missao": "Otimiza custo total de IA, cloud, energia, storage, builds e infraestrutura.",
+          "modelos": [
+            "ollama"
+          ],
+          "nome": "FinOps Agent",
+          "nucleo": "Finanças",
+          "prefere_local": true,
+          "quando_acionar": "Fechamento mensal ou aumento de custo.",
+          "tipo": "Agente de custo total",
+          "uuid": "01a0e473-f651-73ac-85cf-08512eae46c4"
+        }
+      ],
+      "total": 4
+    },
+    {
+      "nome": "Produto & Growth",
+      "papeis": [
+        {
+          "capability_principal": "channel.social.operate",
+          "criticidade": "Média",
+          "execucao": "Sob demanda",
+          "humano": false,
+          "id": 101,
+          "macroarea": "Produto & Growth",
+          "missao": "Integra publicação e leitura operacional de redes sociais quando o produto exigir.",
+          "modelos": [
+            "codex",
+            "ollama"
+          ],
+          "nome": "SOC Agent",
+          "nucleo": "Produto/Marketing",
+          "prefere_local": true,
+          "quando_acionar": "Módulo social habilitado.",
+          "tipo": "Agente social",
+          "uuid": "01a0e473-f665-76d0-b8c6-35d37d1a3a0f"
+        },
+        {
+          "capability_principal": "channel.ads.operate",
+          "criticidade": "Alta",
+          "execucao": "Sob demanda",
+          "humano": false,
+          "id": 102,
+          "macroarea": "Produto & Growth",
+          "missao": "Integra campanhas e métricas de anúncios quando aplicável.",
+          "modelos": [
+            "codex",
+            "ollama"
+          ],
+          "nome": "ADS Agent",
+          "nucleo": "Produto/Marketing",
+          "prefere_local": true,
+          "quando_acionar": "Módulo Ads habilitado com autorização.",
+          "tipo": "Agente de publicidade",
+          "uuid": "01a0e473-f666-7f5c-a943-7dde48b0f5f0"
+        },
+        {
+          "capability_principal": "channel.marketplace.operate",
+          "criticidade": "Alta",
+          "execucao": "Sob demanda",
+          "humano": false,
+          "id": 103,
+          "macroarea": "Produto & Growth",
+          "missao": "Integra catálogos, pedidos e operações de marketplaces de forma padronizada.",
+          "modelos": [
+            "codex",
+            "ollama"
+          ],
+          "nome": "Marketplace Agent",
+          "nucleo": "Produto/Marketing",
+          "prefere_local": true,
+          "quando_acionar": "Módulo commerce habilitado.",
+          "tipo": "Agente de marketplaces",
+          "uuid": "01a0e473-f667-7726-82af-c0b6713d8e17"
+        }
+      ],
+      "total": 3
+    }
+  ],
+  "total": 110
+}

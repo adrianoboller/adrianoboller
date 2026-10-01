@@ -15,6 +15,8 @@ use std::future::Future;
 use std::pin::Pin;
 use thiserror::Error;
 
+pub mod tarefa;
+
 pub type BoxFut<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

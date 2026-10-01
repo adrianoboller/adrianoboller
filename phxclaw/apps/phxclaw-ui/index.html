@@ -54,22 +54,21 @@
 
     <aside class="sidebar">
       <nav>
-        <button class="nav active"><span>◫</span><em>Visão geral</em></button>
-        <button class="nav"><span>⌁</span><em>Task Graph</em><b>3</b></button>
-        <button class="nav"><span>◉</span><em>Agentes</em><b>3</b></button>
-        <button class="nav"><span>◇</span><em>Model Gateway</em></button>
-        <button class="nav"><span>⬡</span><em>Plugins</em><b>7</b></button>
-        <button class="nav"><span>▤</span><em>Evidências</em></button>
-        <button class="nav"><span>⌘</span><em>Operações</em></button>
-        <button class="nav"><span>◈</span><em>Capabilities</em><b>89</b></button>
+        <!-- Cada botao nomeia a tela que abre (data-tela); o selo so aparece quando um
+             arquivo gerado deu o numero -- vazio, o CSS o esconde. -->
+        <button class="nav active" data-tela="geral" aria-current="page"><span>◫</span><em>Visão geral</em></button>
+        <button class="nav" data-tela="agentes"><span>◉</span><em>Agentes</em><b id="seloAgentes"></b></button>
+        <button class="nav" data-tela="ide"><span>⌨</span><em>IDE</em><b id="seloIde"></b></button>
+        <button class="nav" data-tela="ferramentas"><span>⚒</span><em>Ferramentas</em><b id="seloFerramentas"></b></button>
+        <button class="nav" data-tela="absorcao"><span>◈</span><em>Absorção</em></button>
       </nav>
       <div class="sidebar-bottom">
         <div class="security-card"><span>◈</span><div><b>ZERO TRUST</b><small>Deny-by-default</small></div></div>
-        <button class="nav"><span>⚙</span><em>Configurações</em></button>
       </div>
     </aside>
 
     <main class="main">
+     <section class="tela ativa" id="tela-geral" data-tela="geral" aria-label="Visão geral">
       <section class="hero-row">
         <div>
           <div class="eyebrow">PHXCLAW / PROJECT PHOENIX OCTOPUS IA</div>
@@ -155,6 +154,49 @@
           </div>
         </article>
       </section>
+     </section>
+
+     <section class="tela" id="tela-agentes" data-tela="agentes" aria-label="Agentes" hidden>
+      <header class="tela-head">
+        <div><span class="eyebrow">EQUIPE / MACROÁREAS</span><h1>Agentes</h1>
+          <p id="agentesResumo" class="tela-sub">Lendo assets/equipe.json…</p></div>
+        <input id="agentesFiltro" class="filtro" type="search" placeholder="Filtrar por nome, missão ou capability" aria-label="Filtrar agentes" />
+      </header>
+      <div id="agentesConteudo" class="grupos"></div>
+     </section>
+
+     <section class="tela tela-ide" id="tela-ide" data-tela="ide" aria-label="IDE" hidden>
+      <header class="tela-head">
+        <div><span class="eyebrow">IDE / HELIX NO MOTOR DE TERMINAL</span><h1>IDE</h1>
+          <p id="ideStatus" class="tela-sub">Nenhum terminal aberto.</p></div>
+        <div class="acoes">
+          <button id="ideAbrirHelix" class="acao inclui">+ HELIX NO PROJETO</button>
+          <button id="ideAbrirBash" class="acao inclui">+ TERMINAL BASH</button>
+          <button id="ideFechar" class="acao exclui" disabled>FECHAR TERMINAL</button>
+        </div>
+      </header>
+      <nav id="ideAbas" class="abas" aria-label="Terminais abertos"></nav>
+      <div id="ideArea" class="term-area">
+        <canvas id="termCanvas" tabindex="0" aria-label="Terminal"></canvas>
+        <div id="ideVazio" class="term-vazio">Abra o Helix na pasta do projeto ou um terminal bash.</div>
+      </div>
+     </section>
+
+     <section class="tela" id="tela-ferramentas" data-tela="ferramentas" aria-label="Ferramentas" hidden>
+      <header class="tela-head">
+        <div><span class="eyebrow">AGENTE / FERRAMENTAS POR CAPACIDADE</span><h1>Ferramentas</h1>
+          <p id="ferramentasResumo" class="tela-sub">Lendo assets/ferramentas.json…</p></div>
+      </header>
+      <div id="ferramentasConteudo" class="grupos"></div>
+     </section>
+
+     <section class="tela" id="tela-absorcao" data-tela="absorcao" aria-label="Absorção" hidden>
+      <header class="tela-head">
+        <div><span class="eyebrow">ABSORÇÃO / CAPACIDADE POR CAPACIDADE</span><h1>Absorção</h1>
+          <p id="absorcaoResumo" class="tela-sub">Lendo assets/absorcao.json…</p></div>
+      </header>
+      <div id="absorcaoConteudo" class="absorcao"></div>
+     </section>
 
       <footer class="footerbar"><span>DISCIPLINA</span><i>•</i><span>SEGURANÇA</span><i>•</i><span>QUALIDADE</span><i>•</i><span>EVOLUÇÃO</span><i>•</i><span>LIBERDADE</span><b>“Juntos somos infinitos.”</b></footer>
     </main>

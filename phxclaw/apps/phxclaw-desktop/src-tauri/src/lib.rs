@@ -27,6 +27,8 @@ use tauri::{Emitter, Manager, State, utils::config::WebviewUrl, webview::Webview
 use url::Url;
 use uuid::Uuid;
 
+mod terminal;
+
 #[derive(Debug, Clone, Serialize)]
 pub struct HostPolicy {
     pub command_execution: bool,
@@ -36,18 +38,25 @@ pub struct HostPolicy {
     pub external_webviews: bool,
     pub webview_control: bool,
     pub api_host_control: bool,
+    /// Terminal do IDE. Ligado por padrao, porque e uma pessoa digitando; desligado quando
+    /// a WebView pode ser dirigida de fora (`webview_control`) sem `command_execution`,
+    /// senao o agente que dirige a tela teria por ali o shell que a politica lhe nega.
+    pub interactive_terminal: bool,
     pub webview_allowed_origins: BTreeSet<String>,
 }
 
 impl HostPolicy {
     fn from_env() -> Self {
+        let command_execution = env_flag("PHXCLAW_ENABLE_HOST_EXEC");
+        let webview_control = env_flag("PHXCLAW_ENABLE_WEBVIEW_CONTROL");
         Self {
-            command_execution: env_flag("PHXCLAW_ENABLE_HOST_EXEC"),
+            command_execution,
             shell_execution: env_flag("PHXCLAW_ENABLE_SHELLS"),
             desktop_input: env_flag("PHXCLAW_ENABLE_INPUT"),
             screen_capture: env_flag("PHXCLAW_ENABLE_SCREEN_CAPTURE"),
             external_webviews: env_flag("PHXCLAW_ENABLE_EXTERNAL_WEBVIEWS"),
-            webview_control: env_flag("PHXCLAW_ENABLE_WEBVIEW_CONTROL"),
+            webview_control,
+            interactive_terminal: terminal::permitido(command_execution, webview_control),
             api_host_control: env_flag("PHXCLAW_API_HOST_CONTROL"),
             webview_allowed_origins: env_csv("PHXCLAW_WEBVIEW_ALLOWED_ORIGINS"),
         }
@@ -393,6 +402,7 @@ pub fn run() {
                 env!("CARGO_PKG_VERSION"),
             ))?;
 
+            app.manage(terminal::Terminais::default());
             app.manage(DesktopState {
                 session_uuid: new_uuid_v7(),
                 hub: hub.clone(),
@@ -493,9 +503,22 @@ pub fn run() {
             evidence_tail,
             verify_evidence,
             create_managed_webview,
+            terminal::terminal_abrir,
+            terminal::terminal_escrever,
+            terminal::terminal_redimensionar,
+            terminal::terminal_rolar,
+            terminal::terminal_fechar,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running PhxClaw Desktop Host");
+        .build(tauri::generate_context!())
+        .expect("error while building PhxClaw Desktop Host")
+        .run(|app, event| {
+            // O Tauri sai sem soltar o estado gerenciado: sem isto, o fim de bash e hx abertos
+            // no IDE dependeria do SIGHUP que o kernel manda ao fechar o PTY, e um filho surdo
+            // a ele sobreviveria ao aplicativo.
+            if let tauri::RunEvent::Exit = event {
+                app.state::<terminal::Terminais>().fechar_todos();
+            }
+        });
 }
 
 async fn dispatch_agent_action(

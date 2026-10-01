@@ -28,6 +28,7 @@ phxclaw-event-bus = { path = "../../../crates/phxclaw-event-bus" }
 phxclaw-live-bus = { path = "../../../crates/phxclaw-live-bus" }
 phxclaw-system-automation = { path = "../../../crates/phxclaw-system-automation", features = ["desktop-input", "screen-capture"] }
 phxclaw-types = { path = "../../../crates/phxclaw-types" }
+phxclaw-terminal = { path = "../../../crates/phxclaw-terminal" }
 phxclaw-webview-control = { path = "../../../crates/phxclaw-webview-control" }
 
 [build-dependencies]

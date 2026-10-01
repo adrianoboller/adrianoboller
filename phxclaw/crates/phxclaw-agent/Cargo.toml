@@ -6,6 +6,8 @@ license.workspace = true
 
 [dependencies]
 phxclaw-agent-core = { path = "../phxclaw-agent-core" }
+# Os 110 papeis da planilha (config/agents), ativos pelo `team_list` e `team_delegate`.
+phxclaw-agent-catalog = { path = "../phxclaw-agent-catalog" }
 phxclaw-browser = { path = "../phxclaw-browser" }
 phxclaw-llm = { path = "../phxclaw-llm" }
 phxclaw-office = { path = "../phxclaw-office" }

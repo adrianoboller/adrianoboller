@@ -32,6 +32,8 @@ fn main() -> Result<()> {
         "canal" | "channel" => runtime()?.block_on(canal(&args[1..]))?,
         "mcp-serve" => runtime()?.block_on(mcp_serve(&args[1..]))?,
         "dispositivos" | "devices" => runtime()?.block_on(dispositivos(&args[1..]))?,
+        "equipe" | "team" => runtime()?.block_on(equipe(&args[1..]))?,
+        "ferramentas" | "tools" => runtime()?.block_on(ferramentas())?,
         other => bail!("unknown command: {other}. Run `{PRODUCT_CLI} --help`."),
     }
     Ok(())
@@ -327,6 +329,59 @@ async fn dispositivos(args: &[String]) -> Result<()> {
     Ok(())
 }
 
+/// `phxclaw equipe`: os 110 papeis pelas MESMAS funcoes do `team_list` e do
+/// `team_delegate` (modulo `equipe` do agente) -- a CLI nao tem lista nem delegacao propria.
+async fn equipe(args: &[String]) -> Result<()> {
+    use phxclaw_agent::equipe as eq;
+    const USO: &str = "uso: phxclaw equipe [listar [--macroarea X] [--texto Y] | mostrar ID | delegar ID \"tarefa\" [--modelo M] [--pasta DIR]]";
+    let sub = args.first().map(String::as_str).unwrap_or("listar");
+    match sub {
+        "listar" | "list" => {
+            let e = eq::Equipe::do_ambiente().map_err(anyhow::Error::msg)?;
+            let fichas = e.listar(
+                opcao(args, "--macroarea").as_deref(),
+                opcao(args, "--texto").as_deref(),
+            );
+            print!("{}", eq::texto_da_lista(&fichas, e.len()));
+        }
+        "mostrar" | "show" => {
+            let e = eq::Equipe::do_ambiente().map_err(anyhow::Error::msg)?;
+            let id = args.get(1).context(USO)?;
+            let m = e.achar(id).map_err(anyhow::Error::msg)?;
+            print!("{}", eq::texto_do_papel(&e, m));
+        }
+        "delegar" | "delegate" => {
+            let (id, tarefa) = (args.get(1).context(USO)?, args.get(2).context(USO)?);
+            let modelo = opcao(args, "--modelo")
+                .or_else(|| env::var("PHXCLAW_MODELO").ok())
+                .unwrap_or_else(|| MODELO_PADRAO.into());
+            let store = TaskStore::new(pasta(args).join("tasks"))?;
+            let m = Montagem::new(store);
+            let e = m
+                .equipe
+                .clone()
+                .context("agente sem equipe (veja o aviso acima)")?;
+            let base = m.agent(&modelo).map_err(anyhow::Error::msg)?;
+            let local = m.modelo_local();
+            let d = eq::delegar(&e, &base, id, tarefa, None, local.as_ref())
+                .await
+                .map_err(anyhow::Error::msg)?;
+            println!("{}", eq::texto_da_delegacao(&d));
+            match d {
+                // Codigo proprio: script que chama a CLI distingue "precisa de gente" de
+                // "o subagente falhou" sem ler o texto.
+                eq::Delegacao::Humano { .. } => std::process::exit(3),
+                eq::Delegacao::Rodou { tarefa, .. } if tarefa.status != TaskStatus::Completed => {
+                    std::process::exit(2)
+                }
+                _ => {}
+            }
+        }
+        _ => bail!("{USO}"),
+    }
+    Ok(())
+}
+
 fn core_command(args: &[String]) -> Result<()> {
     let sub = args.first().map(String::as_str).unwrap_or("status");
     let mut runtime = PhoenixCoreRuntime::new(VERSION, "Master Orchestrator");
@@ -414,6 +469,45 @@ fn detect_platform() -> HostPlatform {
     }
 }
 
+/// As ferramentas que a montagem do agente registra NESTA maquina, em JSON: e o que a tela
+/// Ferramentas do desktop le. Sai da mesma `Montagem` do `agente`, porque uma lista escrita
+/// a mao envelheceria no dia da proxima ferramenta. Varia por maquina (sem bwrap nao ha
+/// shell, sem Chromium nao ha navegador), e o JSON diz isso em vez de esconder.
+async fn ferramentas() -> Result<()> {
+    let pasta = env::temp_dir().join(format!("phxclaw-ferramentas-{}", std::process::id()));
+    let store = TaskStore::new(pasta.join("tasks"))?;
+    let m = Montagem::new(store);
+    let agente = m.agent(MODELO_PADRAO).map_err(anyhow::Error::msg)?;
+    let lista: Vec<serde_json::Value> = agente
+        .tools
+        .iter()
+        .map(|t| {
+            let spec = t.spec();
+            let cap = t.capability();
+            serde_json::json!({
+                "nome": spec.name,
+                "capacidade": cap,
+                "grupo": cap.split('.').next().unwrap_or(cap),
+                "concedida": agente.config.capabilities.contains(cap),
+                "descricao": spec.description,
+            })
+        })
+        .collect();
+    let _ = std::fs::remove_dir_all(&pasta);
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&serde_json::json!({
+            "gerado_por": format!("{PRODUCT_CLI} ferramentas"),
+            "versao": VERSION,
+            "observacao": "montadas nesta maquina: shell exige bwrap, navegador exige Chromium, \
+                           e-mail e banco exigem configuracao",
+            "total": lista.len(),
+            "ferramentas": lista,
+        }))?
+    );
+    Ok(())
+}
+
 fn print_help() {
     println!(
         "{PRODUCT_NAME} {VERSION}
@@ -432,6 +526,10 @@ COMMANDS:
                      Task API (create, follow, plan approval, cancel, artifacts, schedules)
   dispositivos --cert C --chave K --tokens F [--porta 8788]
                      Device WSS server (TLS, one-time pairing tokens, signed envelopes)
+  equipe [listar [--macroarea X] [--texto Y] | mostrar ID | delegar ID \"tarefa\" [--modelo M]]
+                     The 110 team roles of config/agents (PHXCLAW_AGENTES_DIR); delegate runs one
+                     as a sub-agent (PHXCLAW_MODELO_LOCAL for roles routed to Ollama)
+  ferramentas        Agent tools assembled on this machine, as JSON (desktop Tools screen)
   core status        Probed runtime state (sandbox, browser, model server)
   db plan [platform] Show PostgreSQL managed-install plan
   version            Show version

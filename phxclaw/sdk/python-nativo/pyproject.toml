@@ -1,0 +1,29 @@
+[build-system]
+requires = ["maturin>=1.9,<2"]
+build-backend = "maturin"
+
+[project]
+name = "phxclaw-nativo"
+version = "0.70.0"
+description = "Modulo nativo do PhxClaw: SQL -> UI-IR, HTML e normalizacao de OCR, em Rust"
+requires-python = ">=3.10"
+license = "Apache-2.0"
+
+[tool.maturin]
+module-name = "phxclaw_nativo"
+# So no build do maturin: e ela que deixa os simbolos do Python para o interpretador que
+# importa o modulo resolver, em vez de ligar uma libpython dentro da roda.
+features = ["pyo3/extension-module"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["phxclaw_nativo"]

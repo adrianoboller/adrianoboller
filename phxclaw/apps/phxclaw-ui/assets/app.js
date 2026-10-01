@@ -261,3 +261,403 @@ async function executeDomCommand(command) {
 }
 
 connectNativeBridge();
+
+/* ===================== NAVEGACAO ===================== */
+// Cada botao abre a tela do mesmo nome (data-tela). A tela vai no #hash para a captura e o
+// recarregar voltarem ao mesmo lugar; `?tela=` vale igual, para o roteiro de prova.
+const telas = [...document.querySelectorAll('section.tela[data-tela]')];
+const botoesNav = [...document.querySelectorAll('.nav[data-tela]')];
+const carregadores = {};
+
+function mostrarTela(nome) {
+  if (!telas.some(t => t.dataset.tela === nome)) nome = 'geral';
+  for (const t of telas) t.hidden = t.dataset.tela !== nome;
+  for (const b of botoesNav) {
+    const ativo = b.dataset.tela === nome;
+    b.classList.toggle('active', ativo);
+    if (ativo) b.setAttribute('aria-current', 'page');
+    else b.removeAttribute('aria-current');
+  }
+  if (location.hash !== `#${nome}`) history.replaceState(null, '', `#${nome}`);
+  document.body.dataset.tela = nome;
+  carregadores[nome]?.();
+}
+
+botoesNav.forEach(b => b.addEventListener('click', () => mostrarTela(b.dataset.tela)));
+window.addEventListener('hashchange', () => mostrarTela(location.hash.slice(1)));
+
+/* ===================== DADOS GERADOS ===================== */
+// Nenhum numero destas telas e digitado: cada um sai de um JSON gerado do codigo ou dos
+// documentos (tools/gerar_assets_ui.sh, e o exemplo equipe_json para a equipe). Arquivo
+// ausente vira aviso na tela, nunca numero inventado.
+const cacheJson = new Map();
+function lerJson(nome) {
+  if (!cacheJson.has(nome)) {
+    cacheJson.set(nome, fetch(`./assets/${nome}`, { cache: 'no-store' }).then(r => {
+      if (!r.ok) throw new Error(`${nome}: HTTP ${r.status}`);
+      return r.json();
+    }));
+  }
+  return cacheJson.get(nome);
+}
+
+function el(tag, classe, texto) {
+  const e = document.createElement(tag);
+  if (classe) e.className = classe;
+  if (texto !== undefined && texto !== null) e.textContent = String(texto);
+  return e;
+}
+
+function avisoAusente(resumo, conteudo, arquivo, comando) {
+  resumo.textContent = `assets/${arquivo} não existe — a tela não mostra número sem fonte. Gere com: ${comando}`;
+  resumo.classList.add('aviso');
+  conteudo.replaceChildren();
+}
+
+function grupoDeFichas(titulo, contagem, fichas) {
+  const g = el('article', 'grupo');
+  const h = el('header');
+  h.append(el('h2', null, titulo), el('span', null, contagem));
+  const lista = el('div', 'fichas');
+  lista.append(...fichas);
+  g.append(h, lista);
+  return g;
+}
+
+function marcas(lista) {
+  const m = el('div', 'marcas');
+  for (const [texto, classe] of lista) if (texto) m.append(el('span', classe || '', texto));
+  return m;
+}
+
+const seloAgentes = document.getElementById('seloAgentes');
+const seloFerramentas = document.getElementById('seloFerramentas');
+const seloIde = document.getElementById('seloIde');
+lerJson('equipe.json').then(d => { seloAgentes.textContent = String(d.total); }).catch(() => {});
+lerJson('ferramentas.json').then(d => { seloFerramentas.textContent = String(d.total); }).catch(() => {});
+
+carregadores.agentes = async () => {
+  const resumo = document.getElementById('agentesResumo');
+  const conteudo = document.getElementById('agentesConteudo');
+  const filtro = document.getElementById('agentesFiltro');
+  let d;
+  try { d = await lerJson('equipe.json'); } catch {
+    avisoAusente(resumo, conteudo, 'equipe.json', 'cargo run -p phxclaw-agent --example equipe_json');
+    return;
+  }
+  resumo.classList.remove('aviso');
+  resumo.textContent = `${d.total} papéis em ${d.macroareas.length} macroáreas • fonte: ${d.fonte}`;
+  const desenhar = () => {
+    const q = filtro.value.trim().toLowerCase();
+    const casa = p => !q || [p.nome, p.missao, p.capability_principal, p.nucleo]
+      .some(v => String(v ?? '').toLowerCase().includes(q));
+    const grupos = [];
+    for (const m of d.macroareas) {
+      const papeis = m.papeis.filter(casa);
+      if (!papeis.length) continue;
+      grupos.push(grupoDeFichas(m.nome, q ? `${papeis.length} de ${m.total}` : `${m.total}`, papeis.map(p => {
+        const f = el('div', 'ficha');
+        f.append(el('b', null, p.nome), el('p', null, p.missao), el('code', null, p.capability_principal),
+          marcas([[p.humano ? 'HUMANO' : 'AGENTE', p.humano ? 'nao' : 'sim'], [p.criticidade], [p.execucao],
+            [(p.modelos || []).join(' • ')]]));
+        return f;
+      })));
+    }
+    conteudo.replaceChildren(...grupos);
+  };
+  filtro.oninput = desenhar;
+  desenhar();
+};
+
+carregadores.ferramentas = async () => {
+  const resumo = document.getElementById('ferramentasResumo');
+  const conteudo = document.getElementById('ferramentasConteudo');
+  let d;
+  try { d = await lerJson('ferramentas.json'); } catch {
+    avisoAusente(resumo, conteudo, 'ferramentas.json', 'tools/gerar_assets_ui.sh');
+    return;
+  }
+  const concedidas = d.ferramentas.filter(f => f.concedida).length;
+  resumo.classList.remove('aviso');
+  resumo.textContent = `${d.total} ferramentas montadas por \`${d.gerado_por}\` v${d.versao} • ${concedidas} concedidas por padrão • ${d.observacao}`;
+  const porGrupo = new Map();
+  for (const f of d.ferramentas) {
+    if (!porGrupo.has(f.grupo)) porGrupo.set(f.grupo, []);
+    porGrupo.get(f.grupo).push(f);
+  }
+  const grupos = [...porGrupo.entries()].sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]));
+  conteudo.replaceChildren(...grupos.map(([grupo, lista]) => grupoDeFichas(grupo, String(lista.length), lista.map(f => {
+    const c = el('div', 'ficha');
+    const desc = f.descricao.length > 240 ? `${f.descricao.slice(0, 240)}…` : f.descricao;
+    c.append(el('b', null, f.nome), el('p', null, desc), el('code', null, f.capacidade),
+      marcas([[f.concedida ? 'CONCEDIDA POR PADRÃO' : 'EXIGE CONCESSÃO', f.concedida ? 'sim' : 'nao']]));
+    return c;
+  }))));
+};
+
+const NOMES_PRODUTO = { openclaw: 'OpenClaw', hermes: 'Hermes', claude_code: 'Claude Code', codex: 'Codex', openjarvis: 'OpenJarvis' };
+
+carregadores.absorcao = async () => {
+  const resumo = document.getElementById('absorcaoResumo');
+  const conteudo = document.getElementById('absorcaoConteudo');
+  let d;
+  try { d = await lerJson('absorcao.json'); } catch {
+    avisoAusente(resumo, conteudo, 'absorcao.json', 'tools/gerar_assets_ui.sh');
+    return;
+  }
+  const chaves = Object.keys(d);
+  resumo.classList.remove('aviso');
+  resumo.textContent = `${chaves.length} produtos medidos capacidade por capacidade (docs/absorcao/gerar_absorcao.py). Barra cheia: no agente. Hachurada: contando bibliotecas.`;
+  conteudo.replaceChildren(...chaves.map(k => {
+    const p = d[k];
+    const c = el('article', 'produto');
+    c.append(el('h2', null, NOMES_PRODUTO[k] || k));
+    for (const [rotulo, pct, classe] of [['No agente', p.pct_agente, 'barra'], ['Com bibliotecas', p.pct_com_bibliotecas, 'barra lib']]) {
+      c.append(el('small', null, `${rotulo}: ${pct}%`));
+      const b = el('div', classe);
+      const i = el('i');
+      i.style.width = `${Math.max(0, Math.min(100, Number(pct) || 0))}%`;
+      b.append(i);
+      c.append(b);
+    }
+    c.append(el('small', null, `${p.no_agente} de ${p.total} no agente • ${p.parcial} pela metade • ${p.nao} não • lido em ${p.lido_em}`));
+    for (const [rotulo, lista] of [['Falta', p.falta], ['Pela metade', p.pela_metade]]) {
+      if (!lista?.length) continue;
+      const det = el('details');
+      det.append(el('summary', null, `${rotulo} (${lista.length})`));
+      const ul = el('ul');
+      ul.append(...lista.map(x => el('li', null, x)));
+      det.append(ul);
+      c.append(det);
+    }
+    return c;
+  }));
+};
+
+/* ===================== IDE: cliente do motor de terminal ===================== */
+// A tela so desenha e repassa tecla: PTY, emulador, traducao de tecla pelo modo do terminal
+// e a diferenca de grade moram no crate phxclaw-terminal (o mesmo motor para tela, teste e
+// agente). Aqui chegam trechos ja com cor resolvida; aqui sai {tecla, ctrl, alt, shift}.
+const ide = (() => {
+  const canvas = document.getElementById('termCanvas');
+  const area = document.getElementById('ideArea');
+  const vazio = document.getElementById('ideVazio');
+  const abas = document.getElementById('ideAbas');
+  const status = document.getElementById('ideStatus');
+  const botaoHelix = document.getElementById('ideAbrirHelix');
+  const botaoBash = document.getElementById('ideAbrirBash');
+  const botaoFechar = document.getElementById('ideFechar');
+  const ctx = canvas.getContext('2d');
+  const FONTE_PX = 14;
+  const FONTE = `${FONTE_PX}px "DejaVu Sans Mono", ui-monospace, Menlo, Consolas, monospace`;
+  const sessoes = new Map();
+  const pendentes = new Map();
+  let ativa = null;
+  let cel = { w: 8, h: 17 };
+  let focado = false;
+
+  const hex = n => `#${(n >>> 0).toString(16).padStart(6, '0')}`;
+
+  function medir() {
+    ctx.font = FONTE;
+    cel = { w: ctx.measureText('M').width, h: Math.ceil(FONTE_PX * 1.25) };
+  }
+
+  function tamanhoQueCabe() {
+    const r = canvas.getBoundingClientRect();
+    if (r.width < 20 || r.height < 20) return null;
+    medir();
+    return { colunas: Math.max(2, Math.floor(r.width / cel.w)), linhas: Math.max(1, Math.floor(r.height / cel.h)) };
+  }
+
+  function prepararCanvas() {
+    const r = canvas.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    const w = Math.round(r.width * dpr), h = Math.round(r.height * dpr);
+    if (canvas.width !== w || canvas.height !== h) {
+      canvas.width = w;
+      canvas.height = h;
+    }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    medir();
+  }
+
+  function desenharLinha(s, y) {
+    const linha = s.grade[y] || [];
+    ctx.fillStyle = hex(s.fundo);
+    ctx.fillRect(0, y * cel.h, canvas.width, cel.h);
+    ctx.textBaseline = 'top';
+    for (const t of linha) {
+      const x0 = t.x * cel.w;
+      if (t.fundo !== s.fundo) {
+        ctx.fillStyle = hex(t.fundo);
+        ctx.fillRect(x0, y * cel.h, t.largura * cel.w, cel.h);
+      }
+      ctx.font = `${t.estilo & 2 ? 'italic ' : ''}${t.estilo & 1 ? 'bold ' : ''}${FONTE}`;
+      ctx.fillStyle = hex(t.frente);
+      const chars = [...t.texto];
+      const ty = y * cel.h + 2;
+      if (chars.length === t.largura) chars.forEach((c, i) => { if (c !== ' ') ctx.fillText(c, x0 + i * cel.w, ty); });
+      else ctx.fillText(t.texto, x0, ty);
+      if (t.estilo & 4) ctx.fillRect(x0, y * cel.h + cel.h - 2, t.largura * cel.w, 1);
+      if (t.estilo & 8) ctx.fillRect(x0, y * cel.h + cel.h / 2, t.largura * cel.w, 1);
+    }
+    const c = s.cursor;
+    if (c && c.y === y && !s.encerrado) {
+      const cx = c.x * cel.w, cy = c.y * cel.h;
+      ctx.fillStyle = '#ffc43d';
+      ctx.strokeStyle = '#ffc43d';
+      if (!focado || c.forma === 'oco') ctx.strokeRect(cx + 0.5, cy + 0.5, cel.w - 1, cel.h - 1);
+      else if (c.forma === 'barra') ctx.fillRect(cx, cy, 2, cel.h);
+      else if (c.forma === 'sublinhado') ctx.fillRect(cx, cy + cel.h - 2, cel.w, 2);
+      else { ctx.globalAlpha = 0.55; ctx.fillRect(cx, cy, cel.w, cel.h); ctx.globalAlpha = 1; }
+    }
+  }
+
+  function desenhar(s, linhas) {
+    if (s !== ativa || document.body.dataset.tela !== 'ide') return;
+    prepararCanvas();
+    const todas = linhas === null;
+    if (todas) {
+      ctx.fillStyle = hex(s.fundo);
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+    const ys = todas ? [...Array(s.linhas).keys()] : linhas;
+    for (const y of new Set(ys)) desenharLinha(s, y);
+  }
+
+  function aplicar(s, g) {
+    const tocadas = [];
+    const mudouTamanho = g.colunas !== s.colunas || g.linhas !== s.linhas;
+    if (g.completa || g.linhas !== s.linhas) s.grade = new Array(g.linhas).fill(null).map(() => []);
+    s.colunas = g.colunas;
+    s.linhas = g.linhas;
+    s.fundo = g.fundo;
+    s.frente = g.frente;
+    for (const l of g.linhas_alteradas) { s.grade[l.y] = l.trechos; tocadas.push(l.y); }
+    if (s.cursor) tocadas.push(s.cursor.y);
+    s.cursor = g.cursor;
+    if (s.cursor) tocadas.push(s.cursor.y);
+    if (g.titulo !== null && g.titulo !== undefined) s.titulo = g.titulo;
+    if (g.encerrado) s.encerrado = g.encerrado;
+    desenhar(s, g.completa ? null : tocadas);
+    // O status mostra o tamanho que o MOTOR confirmou, nao o que a tela pediu.
+    if (g.titulo != null || g.encerrado || mudouTamanho) atualizarAbas();
+  }
+
+  function aoGrade(payload) {
+    const s = sessoes.get(payload.id);
+    if (!s) {
+      // A primeira grade pode chegar antes de o invoke do abrir voltar com o id.
+      if (!pendentes.has(payload.id)) pendentes.set(payload.id, []);
+      pendentes.get(payload.id).push(payload);
+      return;
+    }
+    aplicar(s, payload);
+  }
+
+  function atualizarAbas() {
+    abas.replaceChildren(...[...sessoes.values()].map(s => {
+      const b = el('button', `${s === ativa ? 'ativa' : ''} ${s.encerrado ? 'morto' : ''}`.trim(),
+        `${s.programa === 'helix' ? 'Helix' : 'bash'}${s.titulo ? ` — ${s.titulo}` : ''}`);
+      b.dataset.id = s.id;
+      b.onclick = () => ativar(s);
+      return b;
+    }));
+    seloIde.textContent = sessoes.size ? String(sessoes.size) : '';
+    vazio.hidden = !!ativa;
+    botaoFechar.disabled = !ativa;
+    if (!ativa) { status.textContent = 'Nenhum terminal aberto.'; return; }
+    const fim = ativa.encerrado ? ` • encerrado (código ${ativa.encerrado.codigo ?? 'sinal'})` : '';
+    status.textContent = `${ativa.programa === 'helix' ? 'Helix' : 'bash'} • pid ${ativa.pid} • ${ativa.colunas}×${ativa.linhas} • ${ativa.cwd}${fim}`;
+  }
+
+  function ativar(s) {
+    ativa = s;
+    atualizarAbas();
+    redimensionar();
+    desenhar(s, null);
+    canvas.focus();
+  }
+
+  async function abrir(programa) {
+    if (!invoke) { status.textContent = 'O terminal exige o host nativo (Tauri); esta é a prévia web.'; status.classList.add('aviso'); return; }
+    const t = tamanhoQueCabe() || { colunas: 100, linhas: 30 };
+    try {
+      const r = await invoke('terminal_abrir', { programa, colunas: t.colunas, linhas: t.linhas });
+      const s = { ...r, colunas: t.colunas, linhas: t.linhas, grade: [], fundo: 0x010418, frente: 0xe6edf3, cursor: null, titulo: '', encerrado: null };
+      sessoes.set(r.id, s);
+      status.classList.remove('aviso');
+      ativar(s);
+      for (const p of pendentes.get(r.id) || []) aplicar(s, p);
+      pendentes.delete(r.id);
+    } catch (e) {
+      status.textContent = String(e?.message ?? e);
+      status.classList.add('aviso');
+    }
+  }
+
+  async function fechar() {
+    if (!ativa) return;
+    const s = ativa;
+    sessoes.delete(s.id);
+    ativa = [...sessoes.values()].pop() || null;
+    atualizarAbas();
+    if (ativa) desenhar(ativa, null);
+    else { prepararCanvas(); ctx.clearRect(0, 0, canvas.width, canvas.height); }
+    try { await invoke('terminal_fechar', { id: s.id }); } catch (e) { console.error(e); }
+  }
+
+  let espera = null;
+  function redimensionar() {
+    clearTimeout(espera);
+    espera = setTimeout(() => {
+      const s = ativa;
+      const t = tamanhoQueCabe();
+      if (!s || !t || s.encerrado) return;
+      if (t.colunas === s.colunas && t.linhas === s.linhas) { desenhar(s, null); return; }
+      invoke('terminal_redimensionar', { id: s.id, colunas: t.colunas, linhas: t.linhas })
+        .catch(e => console.error(e));
+    }, 60);
+  }
+
+  canvas.addEventListener('keydown', e => {
+    // So tecla de gente: um evento sintetico (dispatchEvent pela ponte de DOM) nao e
+    // isTrusted, e nao pode digitar num shell.
+    if (!e.isTrusted || !ativa || ativa.encerrado || e.isComposing) return;
+    if (e.metaKey) return;
+    // Modificador sozinho nao vira byte; nem vale a ida ao host.
+    if (['Control', 'Shift', 'Alt', 'AltGraph', 'Meta', 'CapsLock'].includes(e.key)) return;
+    // Ctrl+Shift+V cola e Ctrl+Shift+C copia: ficam com o navegador, como num terminal.
+    if (e.ctrlKey && e.shiftKey && (e.key === 'V' || e.key === 'C')) return;
+    e.preventDefault();
+    invoke('terminal_escrever', { id: ativa.id, tecla: { tecla: e.key, ctrl: e.ctrlKey, alt: e.altKey, shift: e.shiftKey, meta: e.metaKey } })
+      .catch(err => console.error(err));
+  });
+  document.addEventListener('paste', e => {
+    if (document.activeElement !== canvas || !ativa || !e.isTrusted) return;
+    const texto = e.clipboardData?.getData('text/plain');
+    if (!texto) return;
+    e.preventDefault();
+    invoke('terminal_escrever', { id: ativa.id, colar: texto }).catch(err => console.error(err));
+  });
+  canvas.addEventListener('wheel', e => {
+    if (!ativa) return;
+    e.preventDefault();
+    invoke('terminal_rolar', { id: ativa.id, linhas: e.deltaY < 0 ? 3 : -3 }).catch(() => {});
+  }, { passive: false });
+  canvas.addEventListener('focus', () => { focado = true; if (ativa?.cursor) desenhar(ativa, [ativa.cursor.y]); });
+  canvas.addEventListener('blur', () => { focado = false; if (ativa?.cursor) desenhar(ativa, [ativa.cursor.y]); });
+  canvas.addEventListener('mousedown', () => canvas.focus());
+  new ResizeObserver(redimensionar).observe(area);
+
+  botaoHelix.addEventListener('click', () => abrir('helix'));
+  botaoBash.addEventListener('click', () => abrir('bash'));
+  botaoFechar.addEventListener('click', fechar);
+  if (listen) listen('terminal_grade', ({ payload }) => aoGrade(payload));
+
+  return { aoMostrar: () => { if (ativa) { redimensionar(); desenhar(ativa, null); canvas.focus(); } } };
+})();
+carregadores.ide = ide.aoMostrar;
+
+mostrarTela(params.get('tela') || location.hash.slice(1) || 'geral');

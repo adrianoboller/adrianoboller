@@ -118,8 +118,8 @@
    "evidencia": "ferramentas.rs ParallelAgentsTool"
   },
   "multiagente": {
-   "estado": "parcial",
-   "evidencia": "crates/phxclaw-team-runtime e engineering-swarm, fora do agente"
+   "estado": "agente",
+   "evidencia": "crates/phxclaw-agent/src/equipe.rs: 110 papeis, team_list e team_delegate; o filho recebe so a intersecao das capacidades"
   },
   "workflows": {
    "estado": "parcial",
@@ -159,7 +159,7 @@
   },
   "execucao_codigo": {
    "estado": "agente",
-   "evidencia": "shell no bubblewrap"
+   "evidencia": "shell no bubblewrap e python_project (pytest, ruff, mypy, run)"
   },
   "checkpoints": {
    "estado": "parcial",
@@ -230,8 +230,8 @@
    "evidencia": ""
   },
   "ide": {
-   "estado": "nao",
-   "evidencia": ""
+   "estado": "parcial",
+   "evidencia": "terminal Rust na janela pronto; o Helix ainda nao esta instalado (roteiro em tools/instalar_helix.sh, parado por disco)"
   },
   "busca_x": {
    "estado": "nao",
@@ -302,8 +302,8 @@
    "evidencia": "phxclaw-llm: Ollama, provado na certificacao"
   },
   "terminal_integrado": {
-   "estado": "nao",
-   "evidencia": ""
+   "estado": "agente",
+   "evidencia": "crates/phxclaw-terminal + comandos Tauri: terminal Rust na janela do desktop"
   },
   "voz_conversa": {
    "estado": "nao",

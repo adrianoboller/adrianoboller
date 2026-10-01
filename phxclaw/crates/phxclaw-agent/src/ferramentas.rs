@@ -534,28 +534,13 @@ answer. Use for research over many items (compare products, gather facts about s
             let sub = Agent::new(
                 self.llm.clone(),
                 self.tools.clone(),
-                AgentConfig {
-                    max_steps: self.config.max_steps.min(8),
-                    ..self.config.clone()
-                },
+                config_de_subagente(&self.config),
                 self.store.clone(),
             );
-            let futuros = itens.iter().map(|obj| {
-                let mut t = Task::new(obj.clone(), sub.llm.id());
-                t.parent = Some(ctx.task_id.clone());
-                let sub = sub.clone();
-                async move {
-                    let cancel = CancelFlag::default();
-                    sub.run(t, &cancel, &NoObserver).await
-                }
-            });
-            let feitos = futures_util::future::join_all(futuros).await;
+            let feitos = rodar_subagentes(&sub, &itens, Some(&ctx.task_id)).await;
             let mut texto = String::new();
             for (i, t) in feitos.iter().enumerate() {
-                let corpo = match t.status {
-                    TaskStatus::Completed => t.answer.clone().unwrap_or_default(),
-                    s => format!("[{s:?}] {}", t.error.clone().unwrap_or_default()),
-                };
+                let corpo = corpo_do_subagente(t);
                 texto.push_str(&format!(
                     "### {}. {}\n(subtarefa {})\n{}\n\n",
                     i + 1,
@@ -566,6 +551,40 @@ answer. Use for research over many items (compare products, gather facts about s
             }
             Ok(ToolOutput::text(texto))
         })
+    }
+}
+
+/// Configuracao de um subagente a partir da do pai: menos passos, o resto herdado. Um
+/// lugar so, para o `parallel_research` e o `team_delegate` nao divergirem no teto.
+pub fn config_de_subagente(pai: &AgentConfig) -> AgentConfig {
+    AgentConfig {
+        max_steps: pai.max_steps.min(8),
+        ..pai.clone()
+    }
+}
+
+/// O laco dos subagentes, UM so: cada objetivo vira uma tarefa filha do `pai`, rodando ao
+/// mesmo tempo pelo motor comum. O `parallel_research` e o `team_delegate` passam por
+/// aqui; um segundo laco ao lado seria um segundo lugar para esquecer o `parent` ou o
+/// `finish` das ferramentas.
+pub async fn rodar_subagentes(sub: &Agent, objetivos: &[String], pai: Option<&str>) -> Vec<Task> {
+    let futuros = objetivos.iter().map(|obj| {
+        let mut t = Task::new(obj.clone(), sub.llm.id());
+        t.parent = pai.map(str::to_string);
+        let sub = sub.clone();
+        async move {
+            let cancel = CancelFlag::default();
+            sub.run(t, &cancel, &NoObserver).await
+        }
+    });
+    futures_util::future::join_all(futuros).await
+}
+
+/// O que o pai le de uma filha: a resposta, ou o estado e o erro quando nao concluiu.
+pub fn corpo_do_subagente(t: &Task) -> String {
+    match t.status {
+        TaskStatus::Completed => t.answer.clone().unwrap_or_default(),
+        s => format!("[{s:?}] {}", t.error.clone().unwrap_or_default()),
     }
 }
 

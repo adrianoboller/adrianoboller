@@ -11,8 +11,9 @@
 //!   pode o que continua num lugar so, e a ferramenta negada nem aparece para o modelo.
 //! - **Argumento do modelo nunca passa por shell.** Cada comando e um argv montado com
 //!   valores validados (unidade com caracteres de unidade, PID numerico, IP ja resolvido).
-//!   O unico `sh -c` e o do `rust_project`, dentro do bwrap, e ali o modelo so escolhe
-//!   uma acao de uma lista e um caminho com caracteres permitidos.
+//!   Os unicos `sh -c` sao o do `rust_project` e o do `python_project` (`python.rs`),
+//!   dentro do bwrap: o modelo escolhe uma acao de uma lista e caminhos com caracteres
+//!   permitidos, e os argumentos do script do `python_project` entram entre aspas simples.
 
 use crate::tarefa::confine;
 use phxclaw_agent_core::{
@@ -33,13 +34,13 @@ const TEXTO_MAX: usize = 12_000;
 /// Teto de bytes lidos de stdout e de stderr de um comando do hospedeiro.
 const SAIDA_MAX: usize = 256 * 1024;
 
-fn arg_str<'a>(args: &'a Value, nome: &str) -> Result<&'a str, ToolError> {
+pub(crate) fn arg_str<'a>(args: &'a Value, nome: &str) -> Result<&'a str, ToolError> {
     args.get(nome)
         .and_then(Value::as_str)
         .ok_or_else(|| ToolError::InvalidArguments(format!("falta o campo texto '{nome}'")))
 }
 
-fn arg_opt<'a>(args: &'a Value, nome: &str) -> Option<&'a str> {
+pub(crate) fn arg_opt<'a>(args: &'a Value, nome: &str) -> Option<&'a str> {
     args.get(nome)
         .and_then(Value::as_str)
         .map(str::trim)
@@ -101,7 +102,7 @@ impl Saida {
 /// Binario procurado em diretorios fixos, nunca pelo PATH do processo: o PATH herdado e
 /// configuracao de quem lancou o agente, e um diretorio gravavel nele trocaria o
 /// `systemctl` por outro programa com o mesmo nome.
-fn binario(nome: &str) -> Option<PathBuf> {
+pub(crate) fn binario(nome: &str) -> Option<PathBuf> {
     [
         "/usr/local/sbin",
         "/usr/local/bin",
@@ -1922,7 +1923,7 @@ fn diagnosticos_do_fmt(stdout: &str, raiz: &str) -> Vec<Diagnostico> {
 
 /// Caminho do projeto: relativo a pasta da tarefa, so caracteres que nao precisam de
 /// aspas -- e ele que entra no `sh -c` do sandbox.
-fn caminho_do_projeto(workdir: &Path, rel: &str) -> Result<String, ToolError> {
+pub(crate) fn caminho_do_projeto(workdir: &Path, rel: &str) -> Result<String, ToolError> {
     let rel = rel.trim();
     let rel = rel
         .strip_prefix("/work")

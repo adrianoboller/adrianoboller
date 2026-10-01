@@ -1,0 +1,22 @@
+[package]
+name = "phxclaw-nativo"
+version = "0.70.0"
+edition = "2024"
+license = "Apache-2.0"
+publish = false
+description = "Ponte Python<->Rust do PhxClaw: o nucleo do UI-IR (SQL -> telas de ERP) como modulo nativo"
+
+# Workspace proprio, de proposito: um cdylib do PyO3 dentro do workspace principal entraria
+# no `cargo test --workspace` de todo mundo, e o teste dele precisa ligar com a libpython --
+# que aqui so existe estatica. Quem o constroi e o maturin, e quem o testa e o pytest.
+[workspace]
+
+[lib]
+name = "phxclaw_nativo"
+crate-type = ["cdylib"]
+
+[dependencies]
+# abi3-py310: uma roda serve do 3.10 ao 3.14 sem recompilar por versao.
+pyo3 = { version = "0.29", features = ["abi3-py310"] }
+phxclaw-ui-ir = { path = "../../crates/phxclaw-ui-ir" }
+serde_json = "1"

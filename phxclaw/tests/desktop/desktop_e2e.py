@@ -9,6 +9,9 @@ O que prova, e o que NAO prova:
 - prova que o binario sobe, a WebView carrega a UI empacotada, a ponte IPC responde
   (host_status, verify_evidence, events_snapshot) e a UI mostra o que a ponte devolveu;
 - prova que a politica padrao NEGA shell e input quando chamados pela propria WebView;
+- prova o IDE ponta a ponta: o menu troca de tela, o botao abre bash num PTY de verdade
+  (phxclaw-terminal), o resultado que o bash calculou volta pelo evento terminal_grade e
+  e desenhado, e fechar mata o processo (conferido no /proc);
 - NAO prova automacao de SO em desktop fisico (teclado/mouse/captura reais): isso e o
   gate desktop_os_automation_e2e do native_gate_catalog, e continua pendente.
 
@@ -139,6 +142,61 @@ def main() -> int:
         (OUT / "desktop_e2e.png").write_bytes(base64.b64decode(png))
         check("captura da janela gravada", (OUT / "desktop_e2e.png").stat().st_size > 10_000,
               str(OUT / "desktop_e2e.png"))
+
+        # IDE: o caminho inteiro de verdade -- botao da tela -> IPC -> phxclaw-terminal -> PTY
+        # -> bash -> emulador -> evento terminal_grade -> canvas. O texto procurado e o que o
+        # BASH calculou: a linha do comando tem "phx$((40+2))", so a saida tem "phx42".
+        js("window.__grades=[];window.__TAURI__.event.listen('terminal_grade',e=>window.__grades.push(e.payload));")
+        js("document.querySelector('.nav[data-tela=\"ide\"]').click();")
+        time.sleep(0.5)
+        vis = js("return [...document.querySelectorAll('section.tela')].filter(t=>!t.hidden).map(t=>t.dataset.tela);")
+        check("menu IDE troca para a tela IDE", vis == ["ide"], str(vis))
+        js("document.getElementById('ideAbrirBash').click();")
+        tid = None
+        for _ in range(60):
+            tid = js("return window.__grades.length?window.__grades[0].id:null;")
+            if tid: break
+            time.sleep(0.25)
+        check("terminal_abrir pelo botao + TERMINAL BASH devolveu grade", bool(tid), str(tid))
+        st = texto("ideStatus", diferente_de="Nenhum terminal aberto.")
+        m = re.search(r"pid (\d+)", st or "")
+        pid = int(m.group(1)) if m else None
+        check("status do IDE mostra o pid do bash", bool(pid) and Path(f"/proc/{pid}").exists(), st)
+        esc = async_js("const d=arguments[arguments.length-1];"
+                       f"window.__TAURI__.core.invoke('terminal_escrever',{{id:{json.dumps(tid)},texto:'echo phx$((40+2))\\n'}})"
+                       ".then(r=>d({ok:r}),e=>d({erro:String(e)}));")
+        achou = False
+        for _ in range(60):
+            achou = js("return window.__grades.some(g=>g.linhas_alteradas.some("
+                       "l=>l.trechos.map(t=>t.texto).join('').trim()==='phx42'));")
+            if achou: break
+            time.sleep(0.25)
+        check("bash no PTY calculou phx42 e a grade chegou pelo evento", bool(achou), json.dumps(esc))
+        pintado = js("const c=document.getElementById('termCanvas');const d=c.getContext('2d')"
+                     ".getImageData(0,0,c.width,c.height).data;let n=0;"
+                     "for(let i=0;i<d.length;i+=4)if(d[i]>150||d[i+1]>150)n++;return n;")
+        check("grade desenhada no canvas", (pintado or 0) > 500, f"{pintado} px claros")
+        png = wd("GET", f"{s}/screenshot")
+        (OUT / "desktop_ide.png").write_bytes(base64.b64decode(png))
+        js("document.getElementById('ideFechar').click();")
+        morto = False
+        for _ in range(40):
+            morto = pid is not None and not Path(f"/proc/{pid}").exists()
+            if morto: break
+            time.sleep(0.25)
+        check("FECHAR TERMINAL matou o bash (/proc confirma)", morto, f"pid {pid}")
+        # Helix: sem o hx instalado (tools/instalar_helix.sh), o botao tem de DIZER isso.
+        hx = Path("/opt/helix/hx").exists() or bool(os.environ.get("PHXCLAW_HX")) or bool(shutil.which("hx"))
+        n_antes = js("return window.__grades.length;")
+        js("document.getElementById('ideAbrirHelix').click();")
+        time.sleep(3.0)
+        st = js("return document.getElementById('ideStatus').textContent;") or ""
+        if hx:
+            veio = js("return window.__grades.length;") > n_antes
+            check("+ HELIX NO PROJETO abriu o hx no PTY", veio and "Helix" in st, st)
+            js("document.getElementById('ideFechar').click();")
+        else:
+            check("sem hx instalado, o IDE diz como instalar", "instalar_helix.sh" in st, st)
     except Exception as e:  # falha de infraestrutura tambem e falha, e aparece
         check("sessao WebDriver", False, repr(e)[:300])
     finally:

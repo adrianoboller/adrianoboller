@@ -96,7 +96,11 @@ pub fn router(state: ApiState) -> Router {
 type Resp = Result<Response, (StatusCode, Json<Value>)>;
 
 fn erro(code: StatusCode, msg: impl Into<String>) -> (StatusCode, Json<Value>) {
-    (code, Json(json!({"error": msg.into()})))
+    let corpo = ErroDaApi {
+        error: msg.into(),
+        retry_after: None,
+    };
+    (code, Json(json!(corpo)))
 }
 
 fn auth(s: &ApiState, h: &HeaderMap) -> Result<(), (StatusCode, Json<Value>)> {
@@ -107,17 +111,8 @@ fn auth(s: &ApiState, h: &HeaderMap) -> Result<(), (StatusCode, Json<Value>)> {
     }
 }
 
-#[derive(Deserialize, Default)]
-pub struct NovaTarefa {
-    pub objective: String,
-    #[serde(default)]
-    pub model: Option<String>,
-    /// Plan Mode: gera o plano e espera aprovacao antes de executar.
-    #[serde(default)]
-    pub plan_first: bool,
-    #[serde(default)]
-    pub webhook: Option<String>,
-}
+// Os corpos de fio sao os do contrato comum: o SDK serializa o mesmo tipo que a rota le.
+pub use phxclaw_agent_core::tarefa::{ErroDaApi, NovaTarefa, TarefaCriada, TaskSummary};
 
 /// Recusa de criacao, com o codigo HTTP que a rota devolve. O canal de mensagens recebe a
 /// mesma recusa e a traduz em resposta ao chat.
@@ -139,7 +134,7 @@ pub struct Criada {
 async fn criar(State(s): State<ApiState>, h: HeaderMap, Json(n): Json<NovaTarefa>) -> Resp {
     auth(&s, &h)?;
     match criar_tarefa(&s, n) {
-        Ok(c) => Ok((StatusCode::ACCEPTED, Json(json!({"id": c.id}))).into_response()),
+        Ok(c) => Ok((StatusCode::ACCEPTED, Json(TarefaCriada { id: c.id })).into_response()),
         Err(Recusa {
             retry_after: Some(seg),
             erro: e,
@@ -147,7 +142,10 @@ async fn criar(State(s): State<ApiState>, h: HeaderMap, Json(n): Json<NovaTarefa
         }) => Ok((
             StatusCode::TOO_MANY_REQUESTS,
             [(header::RETRY_AFTER, seg.to_string())],
-            Json(json!({"error": e, "retry_after": seg})),
+            Json(ErroDaApi {
+                error: e,
+                retry_after: Some(seg),
+            }),
         )
             .into_response()),
         Err(r) => Err(erro(r.status, r.erro)),
@@ -252,12 +250,7 @@ async fn chamar_webhook(s: &ApiState, url: &str, t: &Task) {
 }
 
 fn resumo(t: &Task) -> Value {
-    json!({
-        "id": t.id, "objective": t.objective, "status": t.status, "model": t.model,
-        "created_at": t.created_at, "updated_at": t.updated_at, "answer": t.answer,
-        "error": t.error, "steps": t.steps.len(), "artifacts": t.artifacts, "usage": t.usage,
-        "parent": t.parent,
-    })
+    json!(TaskSummary::from(t))
 }
 
 async fn listar(State(s): State<ApiState>, h: HeaderMap) -> Resp {
