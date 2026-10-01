@@ -21088,4 +21088,39 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         ],
         "prazo": 600,
     },
+    {
+        "id": "portao-da-carga-le-um-campo-so",
+        "titulo": "O portão da carga (Portão 4) lia só `\"tabela\"`: a tabela reservada pelo `BULKINSERT` se lia como o lado B de um `juntar`",
+        "porque": (
+            "pedido 322. A promessa do `BULKINSERT` e ninguem mais mexendo na "
+            "tabela enquanto ela entra, e o portao lia um campo so. `juntar` "
+            "guarda as tabelas em `a.tabela`/`b.tabela`, `diferencas` em `a`/`b`, "
+            "`unir` numa lista, `pivotar` num `juntar` aninhado e as copias no "
+            "`destino`. O conserto e a lista UNICA de onde a tabela se esconde, "
+            "`direito_coluna::tabelas_do_pedido` -- nao uma segunda copia dela. "
+            "Medido pelo soquete com o defeito reposto: o `juntar` com "
+            "`b.tabela` reservada responde `ok` e devolve a linha da tabela em "
+            "carga; o `diferencas` tambem."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        crate::direito_coluna::tabelas_do_pedido(op, pedido)
+            .iter()
+            .find_map(|t| cargas.barra(database, t, ligacao, agora))""",
+        "troca": """        // DEFEITO REPOSTO (322): o portao volta a ler um campo so.
+        let _ = op;
+        [pedido.texto_ou("tabela", "").trim().to_string()]
+            .iter()
+            .find_map(|t| cargas.barra(database, t, ligacao, agora))""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "carga-pelo-lado-b"],
+        "caem": [
+            "o_lado_b_do_juntar_nao_le_a_tabela_em_carga",
+            "diferencas_unir_pivotar_e_a_copia_tambem_param",
+        ],
+        # O comportamento VELHO: sem reserva a junção passa, o dono junta, e a
+        # queda da ligacao solta. Um portao que recusasse toda junção passaria
+        # nos dois de cima e cai aqui.
+        "seguem": ["sem_reserva_e_depois_da_queda_o_juntar_continua"],
+        "prazo": 600,
+    },
 ]

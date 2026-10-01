@@ -530,6 +530,10 @@ dia, nunca no desejado:
   FFI que nao chegava ao motor (`faixa-da-cli-nao-chega-ao-motor`,
   `faixa-da-ffi-nao-chega-ao-motor`). 624, medido pelo `--numeros` nesta
   arvore.
+  **SUBIU para 629 em 01/10/2026** (628 + 1; pedido 322): o portao da carga
+  que lia um campo so e deixava a tabela reservada se ler pelo lado B de um
+  `juntar` (`portao-da-carga-le-um-campo-so`), provada pelo soquete. 629,
+  medido pelo `--numeros` nesta arvore.
 
 # A QUINTA REGUA: a tabela publicada pode ser MENOR que o catalogo
 
@@ -636,7 +640,7 @@ TETO_TESTE_MORTO = 0
 TETO_TRECHO_AMBIGUO = 0
 TETO_TESTE_FORA_DO_BINARIO = 0
 TETO_TESTE_SEM_MODULO = 0
-PISO_DAS_ENTRADAS = 628
+PISO_DAS_ENTRADAS = 629
 
 # ------------------------------------------------------------- APOSENTADAS
 #
