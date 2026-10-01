@@ -21726,4 +21726,69 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         ],
         "prazo": 1200,
     },
+    {
+        "id": "novo-orfao-sobrevive-ao-excluir-tabela",
+        "titulo": "Excluir e renomear a tabela deixavam para trás os *.novo de uma reescrita interrompida",
+        "porque": (
+            "pedido 618 (LGPD): o `pertence` do catalogo so reconhece "
+            "`<tabela>.<ext>`, e a redeclaracao do indice de texto que morre "
+            "na FASE A deixa o `clientes.fts.novo` (o vocabulario da coluna "
+            "indexada) e o `clientes.reg.novo` (copia do `.reg` inteiro). "
+            "Reposto, o `excluir_tabela` apaga a tabela e os dois ficam no "
+            "disco sob um nome que nao existe mais; o `renomear_tabela` os "
+            "deixa no nome velho."
+        ),
+        "arquivo": "crates/phxsql-store/src/catalogo.rs",
+        "trecho": """            .strip_suffix(".novo")""",
+        "troca": """            // DEFEITO REPOSTO (618): o `.novo` nao e da tabela.
+            .strip_suffix(".novo-nunca")""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "indice-de-texto"],
+        "caem": [
+            "excluir_a_tabela_leva_o_fts_ao_lado_de_uma_redeclaracao_morta",
+            "excluir_a_tabela_leva_os_novos_do_reg_de_uma_fase_a_sem_fase_b",
+            "renomear_a_tabela_nao_deixa_o_novo_no_nome_velho",
+        ],
+        "seguem": ["a_abertura_recolhe_o_fts_ao_lado_de_uma_redeclaracao_morta"],
+        "prazo": 1200,
+    },
+    {
+        "id": "fts-ao-lado-sobrevive-a-abertura",
+        "titulo": "O .fts.novo de uma redeclaração morta ficava no disco até a próxima redeclaração",
+        "porque": (
+            "pedido 618 (LGPD): so os caminhos de ERRO apagavam o "
+            "`<tabela>.fts.novo`, e o panico depois do `sincronizar` nao e "
+            "erro. Reposto, a tabela abre com a ficha exclusiva, serve, e o "
+            "vocabulario da coluna indexada continua ao lado, sem dono."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """            recolher_fts_ao_lado(&diretorio, nome)?;""",
+        "troca": """            // DEFEITO REPOSTO (618): a abertura nao recolhe o orfao.
+            let _ = (&diretorio, nome);""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "indice-de-texto"],
+        "caem": ["a_abertura_recolhe_o_fts_ao_lado_de_uma_redeclaracao_morta"],
+        "seguem": ["excluir_a_tabela_leva_o_fts_ao_lado_de_uma_redeclaracao_morta"],
+        "prazo": 1200,
+    },
+    {
+        "id": "redeclarar-texto-com-so-criar",
+        "titulo": "Redeclarar o índice de texto pedia só criar, e copia o .reg inteiro como o acrescentar_coluna",
+        "porque": (
+            "pedido 619: a FASE A copia o `.reg` inteiro e congela a tabela "
+            "para escrita enquanto copia -- o custo do `acrescentar_coluna`, "
+            "que exige administrar. Reposto, quem so cria redeclara (e tira) "
+            "o indice de texto da tabela grande de outro, em laco."
+        ),
+        "arquivo": "crates/phxsql-server/src/usuarios.rs",
+        "trecho": """            "acrescentar_coluna" | "redeclarar_indices_texto" => Atividade::Administrar,""",
+        "troca": """            // DEFEITO REPOSTO (619): redeclarar pede so criar.
+            "acrescentar_coluna" => Atividade::Administrar,
+            "redeclarar_indices_texto" => Atividade::Criar,""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "indice-da-chave-e-de-texto"],
+        "caem": ["redeclarar_o_indice_de_texto_exige_administrar"],
+        "seguem": ["o_indice_de_texto_se_redeclara_numa_tabela_que_ja_existe"],
+        "prazo": 1800,
+    },
 ]

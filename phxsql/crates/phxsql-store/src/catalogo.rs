@@ -91,6 +91,26 @@ fn pertence(arquivo: &str, tabela: &str, ext: &str) -> bool {
     sem_ext == tabela || separar_volume(sem_ext).is_some_and(|(t, _)| t == tabela)
 }
 
+/// O [`pertence`], mais o `*.novo` que uma reescrita deixou ao lado do arquivo
+/// (pedido 618): `clientes.fts.novo`, `clientes.reg.novo`,
+/// `clientes#002.reg.novo`, `clientes.pag.novo`.
+///
+/// Existe para quem leva a tabela INTEIRA -- o `excluir_tabela` e o
+/// `renomear_tabela`. Um `*.novo` interrompido e copia de conteudo da tabela
+/// (o `.reg` inteiro, ou o vocabulario da coluna indexada, que pode ser
+/// pessoal): apagar a tabela e deixa-lo e dado pessoal sem dono sob um nome
+/// que nao existe mais; renomear e deixa-lo e orfanar a peca que a abertura
+/// do `.reg` usaria para terminar uma troca decidida.
+///
+/// A copia e o inventario da tela continuam no [`pertence`]: copiar um
+/// arquivo pela metade nao e copiar a tabela, e um `.novo` nao e extensao.
+fn pertence_ou_sobra(arquivo: &str, tabela: &str, ext: &str) -> bool {
+    pertence(arquivo, tabela, ext)
+        || arquivo
+            .strip_suffix(".novo")
+            .is_some_and(|sem| pertence(sem, tabela, ext))
+}
+
 /// O nome nao e um engano de digitacao: e uma tentativa de sair do diretorio.
 ///
 /// Separa as duas coisas de proposito. `"minha tabela!"` e um nome ruim --
@@ -1171,7 +1191,7 @@ impl Database {
             for arq in std::fs::read_dir(&dir)?.flatten() {
                 let f = arq.file_name();
                 let f = f.to_string_lossy();
-                if pertence(&f, nome, ext) {
+                if pertence_ou_sobra(&f, nome, ext) {
                     std::fs::remove_file(arq.path())?;
                     apagados.push(f.to_string());
                     sairam.push(arq.path());
@@ -1311,7 +1331,7 @@ impl Database {
             for arq in std::fs::read_dir(&dir_o)?.flatten() {
                 let f = arq.file_name();
                 let f = f.to_string_lossy();
-                if pertence(&f, nome_o, ext) {
+                if pertence_ou_sobra(&f, nome_o, ext) {
                     // Preserva o sufixo do volume, como a copia faz:
                     // `precos#002.reg` vira `novo#002.reg`.
                     let novo = format!("{nome_d}{}", &f[nome_o.len()..]);

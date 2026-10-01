@@ -308,15 +308,21 @@ impl Atividade {
             // Declarar e desdeclarar chave estrangeira e desenhar o MODELO, e
             // nao mexer em dado. Pede o mesmo poder de quem cria tabela -- que
             // sempre pode declara-la no proprio criar_tabela -- e o portao por
-            // tabela vale, porque as operacoes tem o campo "tabela". O indice
-            // de texto e o mesmo caso (pedido 364): o `criar_tabela` sempre
-            // pode declara-lo, e redeclarar nao pode pedir mais que nascer.
-            "declarar_fk" | "excluir_fk" | "redeclarar_indices_texto" => Atividade::Criar,
+            // tabela vale, porque as operacoes tem o campo "tabela".
+            "declarar_fk" | "excluir_fk" => Atividade::Criar,
             // Acrescentar coluna reescreve o `.reg` INTEIRO -- e a maior
             // escrita de estrutura do motor, e a que nao tem desfazer barato.
             // Nao basta poder criar tabela: isto exige administrar, como o
             // `marcar_lgpd` e o `excluir_tabela` ao lado.
-            "acrescentar_coluna" => Atividade::Administrar,
+            //
+            // A redeclaracao do indice de texto paga o MESMO custo (pedido
+            // 619): a FASE A copia o `.reg` inteiro e refaz o `.fts`, com a
+            // tabela congelada para escrita enquanto copia. O argumento de
+            // antes -- «redeclarar nao pode pedir mais que nascer» -- so vale
+            // para tabela VAZIA: o `criar_tabela` nao copia nada, e quem so
+            // cria podia, em laco, dobrar o disco de uma tabela grande alheia,
+            // congela-la, e tirar a busca de texto dela.
+            "acrescentar_coluna" | "redeclarar_indices_texto" => Atividade::Administrar,
             // Levar a tabela ao PSCH v10 e o `acrescentar_coluna` duas vezes,
             // entao nao pode pedir menos que ele. E o campo que o portao le e
             // o `tabela` de sempre -- com uma excecao que a propria operacao
