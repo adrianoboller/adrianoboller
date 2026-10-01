@@ -4337,10 +4337,14 @@ a recusa acontece. Um teto de 8 KiB (o do Apache e o do nginx) teria sido uma
 recusa **nova**, e foi recusado por isso.
 
 **Porta 5000 — 64 KiB, e é o `TETO_DO_APERTO` que já existia.** Anônimo, num
-servidor com cadastro, só há seis operações legais — `ping`, `login`,
-`desafio`, `quem_sou`, `sair` e `catalogo`, as que `Atividade::da_operacao`
-devolve `None`; toda outra cai no «faça login». A maior delas, um `login` com
-token e prova, não chega a mil bytes: **64× de folga**.
+servidor com cadastro, só há **dezesseis** operações legais — as que
+`Atividade::da_operacao` devolve `None`; toda outra cai no «faça login». Seis
+de sessão (`ping`, `login`, `desafio`, `quem_sou`, `sair`, `catalogo`) e dez de
+controle de transação (`begin` e os apelidos, `commit`, `rollback`, as de
+`savepoint`, `transacao`). Esta seção dizia «seis» até a revisão SEC (B5,
+pedido 445); a lista viva é o teste `as_operacoes_anonimas_sao_estas_dezesseis`,
+tirada do catálogo e não digitada. A maior delas continua sendo um `login`
+com token e prova, que não chega a mil bytes: **64× de folga**.
 
 ### 19.4 Os dois escapes, e por que cada um existe
 
@@ -4563,6 +4567,21 @@ Guarda `pino-cego-sem-a-recusa-do-no-sem-pino`, **PROVADA** pelo
   **diagnóstico local**, vai ao `eprintln!` deste processo e não ao fio. O
   doc-comment do `conferir` carrega a obrigação escrita, para o dia em que
   aparecer um segundo chamador.
+
+**Quem lê esse «local» (revisão SEC, B2, pedido 445).** «Diagnóstico local»
+dizia menos do que é: o stderr do `phxsqld` é o **journal da unidade** do
+MANUAL §7.4 — legível por `adm`/`systemd-journal` e comumente reenviado a
+syslog remoto — e, no contêiner, o `docker logs` e o driver de log. O MANUAL
+§7.4 passou a dizer isso. E o journald **descarta** acima do `RateLimitBurst`
+da unidade: com uma linha por pulso recusado, quem tem a credencial do
+cluster escolhia quando escrever e podia afogar o «REBAIXANDO». Os quatro
+diagnósticos que o remetente dispara (prova recusada, época acima do teto,
+posição fora do inteiro exato e, no `op_cluster_pulso`, o id DESTE nó) saem
+agora por
+`EstadoCluster::diagnosticar_contido`: **uma linha por motivo e por par a cada
+60 s**, pelo silêncio do motor que já existia (`jobs::pode_avisar`), e a
+seguinte conta os calados. Prova pelo stderr de um processo filho:
+`o_pulso_torto_nao_afoga_o_log` — 25 pulsos de cada motivo, 1 linha de cada.
 
 ## 21. Hexadecimal do fio fatiado por byte, e a trava que o pânico levava junto (pedidos 446 e 447)
 
@@ -6492,3 +6511,38 @@ escrever.
 **O irmão que fica:** o `rename` final do ZIP (`trocar_duravel_sem_abortar`)
 ainda sincroniza a pasta pelo nome, dentro do motor do 467 — é o motor da troca
 durável da raiz de dados, e mudá-lo alcança todo chamador.
+
+## 34. O log que o anônimo enchia, os sete baixos da revisão de 434/435, e o congelamento pela caixa (pedidos 444, 445 e 428)
+
+**444 — o `acessos.log` nasce com rodízio.** Decisão do dono (24/09/2026, a H1
+do papel J): `acessos` e `diretivas` nascem no padrão do Profiler, 64 MiB × 4
+antigos, **320 MiB de teto**; quem escreveu o campo, inclusive `0`, fica como
+escreveu. Medido pelo soquete contra o binário de release, 303.104 linhas `x`
+anônimas (606.208 B recebidos, **266 B de log por linha**): com
+`"arquivo_mib": 0` (o padrão de antes), **80.625.664 B num arquivo só**; no
+padrão novo, `acessos.log` 13.517.056 + `acessos.log.1` 67.108.608 — o giro
+aos 64 MiB. Teste que mudou de lado:
+`sem_as_secoes_acessos_e_diretivas_nascem_com_o_rodizio_do_profiler`; o do
+comportamento velho de quem escreveu: `quem_escreveu_zero_continua_sem_rodizio`.
+
+**445 — os sete BAIXOS.**
+
+| | achado | desfecho |
+|---|---|---|
+| B1 | trava do cadastro por linha anônima | **já fechado pelo 442**, medido: release, 4 conexões × 4 Mi linhas vazias — anônima **38–40 ns/linha**, logada **39–42** (a revisão mediu 259–355 contra 34–42). A linha que não passa do `TETO_DO_APERTO` não pergunta o teto, e a vazia volta antes do `despachar` |
+| B2 | o stderr é o journal; uma linha por pulso torto | MANUAL §7.4 diz quem lê; `diagnosticar_contido` no `cluster.rs`, uma linha por motivo e por par a cada 60 s (§20.5) |
+| B3 | relógio aceitava 34/40 | teto 10, sobre o **viés** e não sobre pares diferentes — ver `docs/cognicao/cognicao_catraca-de-relogio-mede-vies-nao-diferenca_20261001_1210.md` |
+| B4 | `tem_pino` por nó sob comentário que recusava o mapa | **não é defeito ativo**: a op `config` pede `Administrar`, e quem administra escreve o próprio `chave_do_fio`. O comentário dizia o contrário e foi corrigido; o teste trava a fronteira (`da_operacao("config") == Administrar`) |
+| B5 | «seis» operações anônimas | eram dezesseis; §19.3 e `teto_da_linha` corrigidos, e a lista sai do catálogo no teste `as_operacoes_anonimas_sao_estas_dezesseis` |
+| B6 | web recusa acima do teto sem rastro | `ler_pedido_http`: linha no `acessos.log`, a recusa escoada antes de fechar, a violação leve se pedida. **A conexão vazia continua sem linha** — anotá-la seria o 444 pela porta web |
+| B7 | `read_line` cru do SMTP | já era o pedido 439, fechado: o `email.rs` lê pelo `Canal` |
+
+**428 — os três MÉDIOS do 422.** (1) A chave do congelamento sai de uma função
+só (`congelamento::chave`), **absoluta e em minúsculas**: em NTFS e APFS
+`Clientes` e `clientes` são o mesmo arquivo — não medido em NTFS/APFS, por
+falta das duas aqui; a prova é a do registro. (2) A recusa da FASE B
+(`conferir_retrato`) cita só o **nome** do arquivo, não a raiz de dados. (3) O
+cabeçalho do `congelamento.rs` deixou de dizer «todos, sem exceção»:
+`excluir_tabela` e `renomear_tabela` passaram a perguntar ao registro, e a
+restauração por cima fica nomeada como quem não pergunta (porta de dados
+parada, e o retrato da FASE B como rede).

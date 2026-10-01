@@ -4873,11 +4873,17 @@ impl Servidor {
             Ok(identidade) => identidade,
             Err(crate::cluster::RecusaDoPulso::ForaDaLista { e_este_no }) => {
                 if e_este_no {
-                    eprintln!(
-                        "cluster: pulso com o id DESTE servidor ({id}) vindo de {:?} -- \
-                         dois nos com o mesmo id no ar?",
-                        sessao.ip
-                    );
+                    // Pelo silencio do motor, e nao um `eprintln!` por pulso: e
+                    // quem MANDA que escolhe quando esta linha sai, e o stderr
+                    // e o journal (pedido 445, SEC B2 -- o irmao das recusas
+                    // do `cluster.rs`). O id aqui e o DESTE no: chave unica.
+                    estado.diagnosticar_contido("este_no", &id, || {
+                        format!(
+                            "cluster: pulso com o id DESTE servidor ({id}) vindo de {:?} -- \
+                             dois nos com o mesmo id no ar?",
+                            sessao.ip
+                        )
+                    });
                 }
                 if self.config.politica.contar_pulso_desconhecido && !sessao.ip.is_empty() {
                     self.violacao_leve(
@@ -9142,12 +9148,8 @@ impl Servidor {
             return;
         }
 
-        let pedido = match http::ler_pedido(&mut fluxo) {
-            Some(p) => p,
-            None => {
-                let _ = http::erro_json(&mut fluxo, 400, "pedido HTTP invalido ou grande demais");
-                return;
-            }
+        let Some(pedido) = self.ler_pedido_http(&mut fluxo, &ip, porta, "web") else {
+            return;
         };
 
         match (pedido.metodo.as_str(), pedido.caminho.as_str()) {
@@ -9682,6 +9684,54 @@ impl Servidor {
         true
     }
 
+    /// Le o pedido de uma das tres portas HTTP -- e, quando ele passa de um
+    /// teto, deixa RASTRO: linha no `acessos.log`, a recusa que chega (escoada
+    /// antes de fechar, senao o RST a engole) e a violacao leve se o operador
+    /// a pediu. E o irmao do pedido 216 na porta web (revisao SEC, B6, pedido
+    /// 445): as tres respondiam 400 e saiam sem anotar nada.
+    ///
+    /// A conexao que fecha sem pedido, ou a linha torta, continua sem linha
+    /// no log -- ver [`http::PedidoLido`] sobre por que anotar essas seria a
+    /// amplificacao do pedido 444.
+    fn ler_pedido_http(
+        &self,
+        fluxo: &mut http::FioWeb,
+        ip: &str,
+        porta: u16,
+        op: &str,
+    ) -> Option<http::Pedido> {
+        let motivo = match http::ler_pedido_medindo(&mut *fluxo) {
+            http::PedidoLido::Pedido(p) => return Some(p),
+            http::PedidoLido::Nada => None,
+            http::PedidoLido::GrandeDemais(m) => Some(m),
+        };
+        let _ = http::erro_json(fluxo, 400, "pedido HTTP invalido ou grande demais");
+        if let Some(motivo) = motivo {
+            let e = PhxError::LimiteExcedido(motivo);
+            self.anotar(&Acesso {
+                quando_ms: crate::agora_ms(),
+                ip: ip.to_string(),
+                porta_origem: porta,
+                op: op.into(),
+                usuario: String::new(),
+                autenticado: false,
+                ok: false,
+                duracao_ms: 0,
+                erro: Some(e.to_string()),
+                database: String::new(),
+                tabela: String::new(),
+                codigo: e.codigo(),
+            });
+            // A MESMA politica da porta 5000, pelo mesmo interruptor: pedida,
+            // nao imposta (pedido 203).
+            if self.config.politica.contar_linha_acima_do_teto {
+                self.violacao_leve(ip, op, "pedido HTTP acima do teto");
+            }
+            http::escoar(fluxo);
+        }
+        None
+    }
+
     /// Esta porta HTTP tem o proxy TLS declarado? E em que secao ele se
     /// declara?
     ///
@@ -9760,12 +9810,8 @@ impl Servidor {
         if !self.portao_de_rede_http(&mut fluxo, &ip, porta, "rest") {
             return;
         }
-        let pedido = match http::ler_pedido(&mut fluxo) {
-            Some(p) => p,
-            None => {
-                let _ = http::erro_json(&mut fluxo, 400, "pedido HTTP invalido ou grande demais");
-                return;
-            }
+        let Some(pedido) = self.ler_pedido_http(&mut fluxo, &ip, porta, "rest") else {
+            return;
         };
         match (pedido.metodo.as_str(), pedido.caminho.as_str()) {
             // A especificacao viaja pela MESMA porta do servico, e nao so pela
@@ -9848,12 +9894,8 @@ impl Servidor {
         if !self.portao_de_rede_http(&mut fluxo, &ip, porta, "swagger") {
             return;
         }
-        let pedido = match http::ler_pedido(&mut fluxo) {
-            Some(p) => p,
-            None => {
-                let _ = http::erro_json(&mut fluxo, 400, "pedido HTTP invalido ou grande demais");
-                return;
-            }
+        let Some(pedido) = self.ler_pedido_http(&mut fluxo, &ip, porta, "swagger") else {
+            return;
         };
         match (pedido.metodo.as_str(), pedido.caminho.as_str()) {
             ("GET", "/") | ("GET", "/index.html") => {
@@ -11230,11 +11272,17 @@ impl Servidor {
     ///
     /// # Por que 64 KiB nao recusa nenhum cliente legitimo
     ///
-    /// Porque anonimo, com cadastro, so ha seis operacoes legais --
-    /// `ping`, `login`, `desafio`, `quem_sou`, `sair` e `catalogo`
-    /// (`Atividade::da_operacao` devolve `None` para elas; toda outra cai no
-    /// «faca login») -- e a maior delas, um `login` com token e prova, nao
-    /// chega a mil bytes. Sessenta e quatro vezes de folga.
+    /// Porque anonimo, com cadastro, so ha DEZESSEIS operacoes legais -- as
+    /// que `Atividade::da_operacao` devolve `None`; toda outra cai no «faca
+    /// login». Seis de sessao (`ping`, `login`, `desafio`, `quem_sou`, `sair`,
+    /// `catalogo`) e dez de controle de transacao (`begin` e os apelidos,
+    /// `commit`, `rollback`, os de `savepoint`, `transacao`). Esta linha
+    /// dizia «seis» (revisao SEC, B5); a lista viva e o teste
+    /// `usuarios::tests::as_operacoes_anonimas_sao_estas_dezesseis`, tirada do
+    /// catalogo. Nenhuma das dez carrega dado -- no maximo um nome de
+    /// savepoint --, e a maior das dezesseis continua sendo um `login` com
+    /// token e prova, que nao chega a mil bytes. Sessenta e quatro vezes de
+    /// folga.
     ///
     /// # Os dois escapes, e por que cada um existe
     ///
@@ -19567,11 +19615,21 @@ impl Servidor {
         let motivo = format!("declarando a chave {}", nova.nome);
         let filha = phxsql_store::congelamento::congelar(t.diretorio(), t.nome(), motivo.clone())?;
         // Autorreferencia: a mae E a filha, e congelar duas vezes a mesma
-        // tabela e o que o registro recusa -- uma posse basta.
+        // tabela e o que o registro recusa -- uma posse basta. «A mesma» e
+        // pela CHAVE do registro, e nao por uma segunda regra de nome escrita
+        // aqui: o `eq_ignore_ascii_case` de antes e a chave em minusculas
+        // divergiam fora do ASCII (`Ação`/`ação`), e a declaracao recusava a
+        // si mesma ao congelar duas vezes a mesma chave (pedido 428).
+        let mesma = |m: &phxsql_store::Table| {
+            phxsql_store::congelamento::chave(m.diretorio(), m.nome())
+                == phxsql_store::congelamento::chave(t.diretorio(), t.nome())
+        };
         let da_mae = match &mae {
-            Some(m) if !m.nome().eq_ignore_ascii_case(t.nome()) => Some(
-                phxsql_store::congelamento::congelar(m.diretorio(), m.nome(), motivo)?,
-            ),
+            Some(m) if !mesma(m) => Some(phxsql_store::congelamento::congelar(
+                m.diretorio(),
+                m.nome(),
+                motivo,
+            )?),
             _ => None,
         };
         Ok(DeclaracaoSolta {

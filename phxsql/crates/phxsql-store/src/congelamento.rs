@@ -31,11 +31,42 @@
 //! escrita abrem por `Database::abrir_qualificada`. Nenhum desses tres passa
 //! pelo portao do servidor, e os tres GRAVAM.
 //!
-//! O ponto por onde todos passam, sem excecao, e [`Table::abrir_com`] com
+//! O ponto por onde toda ABERTURA gravavel passa e [`Table::abrir_com`] com
 //! `escrever = true` -- e e la que este registro e consultado. E a mesma lei
 //! do portao de permissao: *o portao e UM so, e o campo que ele le e o furo*.
 //! Espalhar a conferencia pelas quarenta operacoes deixaria a que alguem
 //! esquecesse como a porta dos fundos, e ninguem a acharia por leitura.
+//!
+//! # Quem mexe nos arquivos SEM abrir a tabela -- o inventario inteiro
+//!
+//! «Toda abertura» nao e «toda escrita», e esta linha dizia «todos, sem
+//! excecao» (pedido 428, revisao SEC). Mexem nos arquivos da tabela sem
+//! passar pelo `abrir_com`:
+//!
+//! * `Database::excluir_tabela` e `Database::renomear_tabela` (`catalogo.rs`)
+//!   -- apagam e movem os arquivos pelo nome. Os dois passam a perguntar a
+//!   [`conferir`] antes de tocar no disco, e por isso estao cobertos.
+//! * a restauracao POR CIMA (`op_restaurar_backup`) troca a pasta do database
+//!   inteira. Ela NAO pergunta a este registro: so roda com a porta de dados
+//!   parada e sem conexao de dados aberta, e se ainda assim cruzar uma
+//!   reescrita, quem segura e o retrato da FASE B
+//!   ([`crate::reg::TrocaPendente::conferir_retrato`]) -- o volume sumido ou
+//!   trocado nao bate com o retrato, e a troca aborta em vez de ressuscitar.
+//!
+//! Quem acrescentar um caminho que mexe no `.reg` sem abrir a tabela entra
+//! nesta lista, ou entra no `conferir`. Inventario que se declara completo e o
+//! motivo de ninguem conferir de novo.
+//!
+//! # A chave nao distingue caixa -- pedido 428
+//!
+//! Em NTFS e APFS `clientes` e `Clientes` sao o MESMO arquivo. Com a chave
+//! sensivel a caixa, eram duas entradas aqui: congelada `clientes`, um
+//! `inserir` em `"Clientes"` passava pelo portao e gravava no volume vivo
+//! durante a FASE A. A chave sai de UMA funcao ([`chave`]), absoluta e em
+//! minusculas, para quem congela e para quem confere. No Linux, onde as duas
+//! grafias sao tabelas diferentes, o preco e recusar a vizinha de mesma
+//! grafia enquanto a outra se reescreve -- recusa com `repetir`, que some
+//! sozinha quando a reescrita termina. Perder escrita confirmada nao some.
 //!
 //! # O que este portao RECUSA a mais do que o necessario, medido
 //!
@@ -131,7 +162,7 @@ impl Drop for Congelada {
 /// tabela sao exatamente o que isto impede, e a segunda tem de ouvir isso em
 /// vez de comecar.
 pub fn congelar(diretorio: &Path, nome: &str, motivo: impl Into<String>) -> Result<Congelada> {
-    let chave = diretorio.join(nome);
+    let chave = chave(diretorio, nome);
     let mut c = CONGELADAS
         .lock()
         .map_err(|_| PhxError::Corrompido("o registro de congelamento esta envenenado".into()))?;
@@ -145,6 +176,18 @@ pub fn congelar(diretorio: &Path, nome: &str, motivo: impl Into<String>) -> Resu
     Ok(Congelada { chave })
 }
 
+/// A chave do registro: o caminho ABSOLUTO da tabela, em minusculas.
+///
+/// Uma funcao so, para quem congela e para quem confere -- e para quem
+/// precisa saber se duas tabelas sao a MESMA posse (a autorreferencia da
+/// declaracao de chave, no servidor). Absoluta porque o `Table::abrir_com`
+/// resolve o diretorio e quem congela pode chegar com ele relativo; em
+/// minusculas pelo NTFS e pelo APFS (ver o cabecalho).
+pub fn chave(diretorio: &Path, nome: &str) -> PathBuf {
+    let dir = crate::volume::absoluto_lexico(diretorio).unwrap_or_else(|| diretorio.to_path_buf());
+    PathBuf::from(dir.join(nome).to_string_lossy().to_lowercase())
+}
+
 /// Esta tabela pode ser aberta para GRAVAR?
 ///
 /// O `Ok(())` e o caminho de sempre, e ele custa um `load` -- ver o cabecalho
@@ -155,7 +198,7 @@ pub fn conferir(diretorio: &Path, nome: &str) -> Result<()> {
     if QUANTAS.load(Ordering::SeqCst) == 0 {
         return Ok(());
     }
-    let chave = diretorio.join(nome);
+    let chave = chave(diretorio, nome);
     let c = CONGELADAS
         .lock()
         .map_err(|_| PhxError::Corrompido("o registro de congelamento esta envenenado".into()))?;
@@ -210,6 +253,36 @@ mod testes {
         assert!(conferir(d, "pedidos").is_ok());
         drop(posse);
         assert!(conferir(d, "clientes").is_ok(), "o Drop nao descongelou");
+    }
+
+    /// Pedido 428: em NTFS e APFS `Clientes` e o mesmo arquivo que
+    /// `clientes`. Congelada uma grafia, a outra tem de recusar tambem --
+    /// senao o `inserir` em `"Clientes"` grava no volume vivo durante a FASE A.
+    #[test]
+    fn a_grafia_com_outra_caixa_tambem_recusa() {
+        let d = std::path::Path::new("/tmp/phxsql-congelamento-caixa");
+        let _posse = congelar(d, "clientes", "migracao").unwrap();
+        let e = conferir(d, "Clientes").unwrap_err();
+        assert!(matches!(e, PhxError::EmMigracao(_)), "{e:?}");
+        let e = conferir(
+            std::path::Path::new("/TMP/phxsql-congelamento-CAIXA"),
+            "CLIENTES",
+        )
+        .unwrap_err();
+        assert!(matches!(e, PhxError::EmMigracao(_)), "{e:?}");
+        // E a recusa nomeia a tabela pela grafia de quem PEDIU.
+        assert!(e.to_string().contains("CLIENTES"), "{e}");
+        let e = congelar(d, "CLIENTES", "outra").unwrap_err();
+        assert!(matches!(e, PhxError::EmMigracao(_)), "{e:?}");
+    }
+
+    /// A chave e absoluta: quem congela com o diretorio relativo e quem
+    /// confere com o resolvido falam da mesma tabela.
+    #[test]
+    fn o_diretorio_relativo_e_o_absoluto_sao_a_mesma_chave() {
+        let rel = std::path::Path::new("phxsql-congelamento-relativo");
+        let abs = std::env::current_dir().unwrap().join(rel);
+        assert_eq!(chave(rel, "t"), chave(&abs, "t"));
     }
 
     #[test]

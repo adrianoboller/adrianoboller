@@ -2816,14 +2816,21 @@ impl TrocaPendente {
         for r in &self.retrato {
             let agora = retratar_um(&r.caminho);
             if agora != *r {
+                // So o NOME do arquivo, nunca o caminho: esta frase vai crua
+                // ao cliente, e quem administra UMA tabela nao tem por que
+                // aprender a raiz de dados do servidor (pedido 428 -- a mesma
+                // classe do `tabela_que_nao_existe` no `catalogo.rs`).
+                let arquivo = r
+                    .caminho
+                    .file_name()
+                    .map(|f| f.to_string_lossy().into_owned())
+                    .unwrap_or_default();
                 return Err(PhxError::Conflito(format!(
-                    "{} mudou enquanto a reescrita montava o arquivo novo \
+                    "{arquivo} mudou enquanto a reescrita montava o arquivo novo \
                      ({} bytes antes, {} agora): a troca foi ABORTADA e a tabela \
                      continua inteira e como estava. Nada foi perdido -- rode a \
                      operacao de novo quando ninguem estiver gravando nela",
-                    r.caminho.display(),
-                    r.bytes,
-                    agora.bytes
+                    r.bytes, agora.bytes
                 )));
             }
         }

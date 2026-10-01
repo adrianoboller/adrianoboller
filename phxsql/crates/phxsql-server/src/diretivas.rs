@@ -127,8 +127,8 @@ pub fn campo_sigiloso(campo: &str) -> bool {
 pub struct Diario {
     caminho: PathBuf,
     /// Teto de bytes por arquivo. Zero = nao rodizia -- o comportamento de
-    /// sempre, e o padrao de quem nao configurou o campo novo do pedido 228
-    /// (`diretivas.arquivo_mib`). A logica de girar e a MESMA do Profiler --
+    /// sempre para quem escreveu `diretivas.arquivo_mib: 0`. Quem NAO escreveu
+    /// o campo nasce com o teto do Profiler desde o pedido 444. A logica de girar e a MESMA do Profiler --
     /// ver `crate::rodizio`, para onde ela foi extraida.
     ///
     /// Atomico, e nao um campo comum: o `registrar` abaixo NAO guarda

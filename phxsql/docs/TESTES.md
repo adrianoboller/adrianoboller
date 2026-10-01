@@ -1019,9 +1019,9 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `erro-no-meio-da-exclusao-sem-fsync` | o erro no meio do `excluir_tabela` esquecia os nomes que já tinham saído sem `fsync` da pasta: numa queda a tabela voltava pela metade | 1 | ✅ provada |
 | `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | — | 🪦 aposentada (18/09/2026) |
 
-**374 das 550 guardas do catálogo: 1 aposentada, 369 provadas, 4 redundantes** — 10173 s de mutação, medido em 2026-09-16 15:25.
+**374 das 559 guardas do catálogo: 1 aposentada, 369 provadas, 4 redundantes** — 10173 s de mutação, medido em 2026-09-16 15:25.
 
-> **Esta rodada NÃO julgou 177 das 550 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 177 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 186 das 559 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 186 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
 - `fk-antes-do-default` — a chave estrangeira confere a linha crua, e o DEFAULT sem mãe grava a filha órfã
 - `fk-antes-do-default-pelo-servidor` — o DEFAULT e a calculada sem mãe gravam a órfã pelo servidor, fora e dentro da transação
@@ -1200,6 +1200,15 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 - `garantir-schema-sem-fsync-do-database` — `criar_schema` e `criar_tabela` num schema novo criavam a pasta sem `fsync` do database: o schema que o cliente ouviu criar podia sumir numa queda
 - `criar-database-sem-fsync-da-base` — `criar_database` criava a pasta sem `fsync` da base: o database que o cliente ouviu criar podia sumir numa queda
 - `marca-do-database-sem-fsync` — O marcador `_database.json` nascia sem `fsync`: numa queda uma colmeia voltava como database padrão, calada
+- `congelamento-sensivel-a-caixa` — a chave do congelamento distinguia caixa: em NTFS e APFS o `inserir` em `"Clientes"` gravava no volume vivo durante a FASE A
+- `excluir-tabela-fura-o-congelamento` — `excluir_tabela` apagava os arquivos de uma tabela em reescrita: mexe no disco SEM abrir a tabela, e o portão do congelamento mora na abertura
+- `renomear-tabela-fura-o-congelamento` — `renomear_tabela` movia os arquivos de uma tabela em reescrita, o irmão do `excluir_tabela`
+- `conflito-do-retrato-publica-o-caminho` — a recusa da FASE B publicava ao cliente o caminho absoluto da raiz de dados do servidor
+- `rodizio-do-acessos-nasce-desligado` — o `acessos.log` nascia sem rodízio: um anônimo escrevia 266 B de log por 2 B recebidos, sem teto
+- `pulso-torto-uma-linha-por-envio` — cada pulso torto escrevia uma linha no stderr, que é o journal: quem tem a credencial do cluster afogava o «REBAIXANDO» no limite de taxa
+- `pulso-com-o-id-deste-no-uma-linha-por-envio` — o pulso com o id DESTE nó escrevia uma linha no stderr por envio — o irmão do B2 no `op_cluster_pulso`
+- `web-acima-do-teto-sem-rastro` — as três portas HTTP recusavam o pedido acima do teto sem linha no `acessos.log` — o irmão do 216 na web
+- `operacao-anonima-fora-do-inventario` — o inventário das operações anônimas dizia «seis» quando eram dezesseis
 
 As guardas que esta corrida ainda cita, hoje aposentadas:
 

@@ -234,3 +234,70 @@ fn o_pedido_de_sempre_continua_passando() {
     .expect("o pedido curto nem conectou");
     assert!(r.contains("200"), "{}", &r[..r.len().min(200)]);
 }
+
+/// As linhas do `acessos.log` desta bateria (vazio se ainda nao existe).
+fn linhas_do_log(base: &std::path::Path) -> Vec<String> {
+    std::fs::read_to_string(base.join("acessos.log"))
+        .unwrap_or_default()
+        .lines()
+        .map(str::to_string)
+        .collect()
+}
+
+/// **Pedido 445 (SEC B6): a recusa por TAMANHO deixa rastro, e a conexao
+/// vazia nao.**
+///
+/// O vermelho: as tres portas HTTP respondiam 400 e saiam sem anotar -- a
+/// sondagem acima do teto na web nao aparecia no `acessos.log`, que e a
+/// metade «visibilidade» do pedido 216 que a porta 5000 tem. O irmao que
+/// fica: a conexao que abre e fecha sem pedido continua SEM linha, senao todo
+/// anonimo ganharia uma linha de log por conexao vazia (a amplificacao do
+/// pedido 444).
+#[test]
+fn o_pedido_acima_do_teto_deixa_rastro_e_a_conexao_vazia_nao() {
+    let d = pasta("rastro");
+    let (_s, alvo) = subir(&d);
+    let antes = linhas_do_log(&d).len();
+
+    // A conexao vazia -- o teste de vida de um balanceador.
+    for _ in 0..5 {
+        drop(TcpStream::connect_timeout(&alvo, Duration::from_secs(2)).unwrap());
+    }
+    std::thread::sleep(Duration::from_millis(300));
+    let depois_das_vazias = linhas_do_log(&d);
+    assert_eq!(
+        depois_das_vazias.len(),
+        antes,
+        "conexao vazia virou linha no acessos.log: {:?}",
+        &depois_das_vazias[antes..]
+    );
+
+    let resposta = despejar_sem_fim(alvo, "GET /saude?").expect("o servidor nao desistiu");
+    assert!(
+        resposta.contains("400"),
+        "a recusa nao chegou ao cliente: {:?}",
+        &resposta[..resposta.len().min(200)]
+    );
+    // Teto de voltas: 100 x 50 ms.
+    let mut novas = Vec::new();
+    for _ in 0..100 {
+        novas = linhas_do_log(&d)[antes..]
+            .iter()
+            .filter(|x| x.contains("grande demais"))
+            .cloned()
+            .collect();
+        if !novas.is_empty() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    assert_eq!(
+        novas.len(),
+        1,
+        "o pedido acima do teto deixou {} linha(s) no acessos.log: {:?}",
+        novas.len(),
+        novas
+    );
+    assert!(novas[0].contains("\"op\":\"web\""), "{}", novas[0]);
+    assert!(novas[0].contains("\"ok\":false"), "{}", novas[0]);
+}

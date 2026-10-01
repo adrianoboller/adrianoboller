@@ -128,8 +128,8 @@ pub struct LogAcessos {
     /// "so memoria" que o Profiler tem.
     arquivo: Option<File>,
     /// Teto de bytes por arquivo. Zero = nao rodizia -- o comportamento de
-    /// sempre, e o padrao de quem nao configurou o campo novo do pedido 228
-    /// (`acessos.arquivo_mib`). A logica de girar e a MESMA do Profiler --
+    /// sempre para quem escreveu `acessos.arquivo_mib: 0`. Quem NAO escreveu
+    /// o campo nasce com o teto do Profiler desde o pedido 444. A logica de girar e a MESMA do Profiler --
     /// ver `crate::rodizio`, para onde ela foi extraida.
     teto_do_arquivo: u64,
     /// Quantos arquivos ANTIGOS guardar, alem do corrente.

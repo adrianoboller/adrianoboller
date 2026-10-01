@@ -1763,6 +1763,44 @@ fn objeto_do_usuario(login: &str, p: &Json, anterior: Option<&Json>) -> Result<J
 mod tests {
     use super::*;
 
+    /// O inventario das operacoes que um ANONIMO pode chamar num servidor
+    /// com cadastro -- as que `da_operacao` devolve `None` --, tirado do
+    /// catalogo e nao digitado. O `teto_da_linha` (servidor.rs) e a §19.3 do
+    /// `SEGURANCA.md` contavam «seis»; eram dezesseis, com as dez de controle
+    /// de transacao (revisao SEC, B5, pedido 445). Quem acrescentar uma
+    /// operacao anonima nova cai aqui e confere se ela cabe nos 64 KiB do
+    /// `TETO_DO_APERTO`, que e a pergunta que aquele inventario sustentava.
+    #[test]
+    fn as_operacoes_anonimas_sao_estas_dezesseis() {
+        let mut anonimas: Vec<&str> = crate::catalogo::OPERACOES
+            .iter()
+            .flat_map(|o| std::iter::once(o.nome).chain(o.apelidos.iter().copied()))
+            .filter(|op| Atividade::da_operacao(op).is_none())
+            .collect();
+        anonimas.sort_unstable();
+        anonimas.dedup();
+        let mut esperadas = vec![
+            "begin",
+            "begin_transaction",
+            "catalogo",
+            "commit",
+            "desafio",
+            "login",
+            "ping",
+            "quem_sou",
+            "release_savepoint",
+            "rollback",
+            "rollback_para",
+            "rollback_to_savepoint",
+            "sair",
+            "savepoint",
+            "start_transaction",
+            "transacao",
+        ];
+        esperadas.sort_unstable();
+        assert_eq!(anonimas, esperadas);
+    }
+
     fn cadastro(txt: &str) -> Cadastro {
         Cadastro::de_json(&Json::analisar(txt).unwrap()).unwrap()
     }

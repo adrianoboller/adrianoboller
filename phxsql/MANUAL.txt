@@ -348,6 +348,22 @@ Detalhes e o que a ligacao ensinou em docs/CONSOLE.md.
     processo aborta de proposito (ver TRANSACOES, «se uma operacao entrar em
     panico»). O arranque seguinte repara antes de abrir a porta.
 
+    O STDERR VAI PARA O JOURNAL. A unidade acima nao redireciona nada, entao
+    o que o phxsqld escreve no stderr vai ao journal da unidade -- que o
+    grupo adm (ou systemd-journal) le, e que muita instalacao reenvia a um
+    syslog remoto. No Docker, o mesmo vai ao "docker logs" e ao driver de log
+    configurado. Entre esses diagnosticos estao os do cluster, e eles dizem
+    qual no tem pino (chave_do_fio) e qual nao: e o mapa que a resposta do
+    pulso NAO entrega pelo fio. Trate esse log como dado de operacao, com o
+    acesso de quem opera.
+
+    E o journald DESCARTA linhas acima do limite de taxa da unidade
+    (RateLimitBurst). Por isso o diagnostico que o OUTRO lado dispara -- o
+    pulso cuja prova nao fecha, o pulso torto -- sai no maximo uma vez por
+    minuto por motivo e por no, e a linha seguinte diz quantos iguais se
+    calaram: quem manda mil pulsos tortos nao afoga o «REBAIXANDO» que voce
+    precisa ver.
+
     O abort nao leva a memoria do processo para o disco: o phxsqld tira do
     core todas as regioes de memoria ao subir (0 em
     /proc/self/coredump_filter, pedido 504), e com elas a senha do cofre.
@@ -985,12 +1001,21 @@ O RODIZIO DO ACESSOS.LOG E DO DIRETIVAS.LOG
       "arquivos": 4
     }
 
-    Ao contrario do Profiler (que NASCE ligado), estas duas NASCEM DESLIGADAS
-    ("arquivo_mib": 0) -- guarda nova entra pedida, e um "acessos.log" ou
-    "diretivas.log" que ja existe em producao nao pode passar a girar sozinho
-    so porque o servidor foi atualizado. Quem quiser o rodizio liga
-    explicitamente, do jeito de sempre: pelo config.json no arranque, ou por
-    ALTER SERVER SET a quente (o efeito vale para o arquivo CORRENTE).
+    As duas NASCEM LIGADAS, no mesmo padrao do Profiler (64 MiB x 4 antigos,
+    320 MiB de teto), desde o pedido 444. Sem teto, quem nem fez login enchia
+    o disco: cada linha recusada de um anonimo escreve ~266 bytes no
+    acessos.log para 2 bytes recebidos. Quem escreveu o campo no config.json,
+    inclusive "arquivo_mib": 0, continua exatamente como escreveu -- o padrao
+    so vale para o campo ausente. Mudar a quente: ALTER SERVER SET (o efeito
+    vale para o arquivo CORRENTE).
+
+    O QUE O RODIZIO CUSTA, e vale saber antes de investigar:
+
+      - o resumo "phxsqld --acessos" e o "op":"acessos" leem o arquivo
+        CORRENTE; o historico antes do ultimo giro esta em acessos.log.1,
+        .2 ... e se le com grep direto nesses arquivos;
+      - acompanhe com "tail -F" (maiusculo), e nao "tail -f": o -f segue o
+        arquivo antigo depois do giro e para de mostrar linha nova.
 
     CACHE DE PAGINAS. O "cache_paginas" diz quantas paginas do .ndx cada
     tabela aberta guarda em RAM. Cada pagina tem 4 KiB, entao 2.048 dao 8 MiB

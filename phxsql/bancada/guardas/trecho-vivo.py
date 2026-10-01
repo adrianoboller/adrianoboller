@@ -415,6 +415,12 @@ dia, nunca no desejado:
   (`erro-no-meio-da-exclusao-sem-fsync`). 540 + 4 = 544, contado pelo
   `--catraca`.
   No merge com o 546 e o 534/535 (que levaram o piso a 547): 547 + 4 = 551.
+  **SUBIU para 560 em 01/10/2026** (pedidos 428, 444 e 445): nove guardas --
+  a chave do congelamento sensivel a caixa, `excluir_tabela` e
+  `renomear_tabela` furando o congelamento, o caminho absoluto na recusa da
+  FASE B, o `acessos.log` nascendo sem rodizio, o pulso torto uma linha por
+  envio e o irmao dele (o id deste no), a web acima do teto sem rastro e o
+  inventario das operacoes anonimas. 551 + 9 = 560, contado pelo `--numeros`.
   impedir. Ele e a unica coisa nesta regua que reprova o APAGAMENTO; tudo o
   mais aqui reprova o envelhecimento.
 
@@ -523,7 +529,7 @@ TETO_TESTE_MORTO = 0
 TETO_TRECHO_AMBIGUO = 0
 TETO_TESTE_FORA_DO_BINARIO = 0
 TETO_TESTE_SEM_MODULO = 0
-PISO_DAS_ENTRADAS = 551
+PISO_DAS_ENTRADAS = 560
 
 # ------------------------------------------------------------- APOSENTADAS
 #
