@@ -321,7 +321,10 @@ troca de chave do `ao_alterar`. Hoje as três buscas passam por
 `irmas::abrir_irma`, que **recusa** nomeando a irmã e a causa. A saída é o
 `excluir_tabela` da própria irmã quebrada (ela pula a si mesma), ou o `reparar`;
 a irmã em troca interrompida (pedido 625) abre, porque o `RegFile::abrir` termina
-a troca. Buraco nomeado: duas irmãs quebradas se trancam uma à outra no
+a troca — salvo quando o `*.novo` da troca decidida está **incompleto** (pedido
+632): aí ela não termina, a irmã não abre e a busca recusa, que é o certo,
+porque renomeá-lo destruiria as linhas que faltam nele (`FORMATO.md`, «A queda
+no meio»). Buraco nomeado: duas irmãs quebradas se trancam uma à outra no
 `excluir_tabela`. Prova em `tests/irma-que-nao-abre.rs` e
 `tests/troca-interrompida.rs`.
 

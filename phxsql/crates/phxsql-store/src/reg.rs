@@ -806,11 +806,17 @@ impl RegFile {
                     && alvo.exists()
                     && geometria_do_volume(&alvo) != esperado
                     && geometria_do_volume(&novo) == esperado;
-                if decidida {
-                    trocas.push((novo, alvo));
-                } else {
+                if !decidida {
                     sobras.push(novo);
+                } else if novo_completo(&novo, &alvo) {
+                    trocas.push((novo, alvo));
                 }
+                // Decidida e INCOMPLETA (pedido 632) nao entra em lista
+                // nenhuma: nem troca -- renomea-la por cima do volume velho
+                // perde as linhas que faltam nela --, nem sobra -- ela e a
+                // unica pista do que a alteracao escreveu, e a abertura
+                // gravavel a apagaria. O conjunto fica misturado, e o
+                // `conferir_volumes_uniformes` recusa dizendo qual volume.
             }
         }
         (trocas, sobras)
@@ -914,15 +920,37 @@ impl RegFile {
                 continue; // volume ilegivel tem dono proprio: o `reparar`
             };
             if achado != esperado {
+                let arquivo = caminho.file_name().unwrap_or_default().to_string_lossy();
+                // O que diverge e dito pelo que diverge: uma regravacao de
+                // esquema mantem o slot e muda o bloco, e «slot de 98 e este
+                // declara 98» mandava procurar a diferenca onde ela nao esta.
+                let diferenca = if achado.0 != self.slot_size {
+                    format!(
+                        "o volume 1 declara slot de {} bytes e este declara {}",
+                        self.slot_size, achado.0
+                    )
+                } else {
+                    "o volume 1 declara outro bloco de esquema que este".to_string()
+                };
+                // Pedido 632: o `*.novo` ao lado que a abertura NAO terminou e
+                // um arquivo incompleto (o `novo_completo` o recusou). Mandar
+                // «reponha o `*.novo`» ai seria mandar por no lugar do volume
+                // inteiro o arquivo que perde as linhas que faltam nele.
+                let saida = if caminho_do_novo(&caminho).exists() {
+                    format!(
+                        "o `{arquivo}.{SUFIXO_NOVO}` ao lado esta INCOMPLETO e nao \
+                         entra no lugar dele; restaure este arquivo do backup"
+                    )
+                } else {
+                    format!(
+                        "restaure este arquivo do backup ou reponha o \
+                         `{arquivo}.{SUFIXO_NOVO}` que a alteracao tinha escrito"
+                    )
+                };
                 return Err(PhxError::Corrompido(format!(
-                    "{}: o volume 1 declara slot de {} bytes e este declara {} -- \
-                     uma alteracao de estrutura ficou pela metade. O volume esta \
-                     inteiro do jeito dele; restaure este arquivo do backup ou \
-                     reponha o `{}.{SUFIXO_NOVO}` que a alteracao tinha escrito",
+                    "{}: {diferenca} -- uma alteracao de estrutura ficou pela \
+                     metade. O volume esta inteiro do jeito dele; {saida}",
                     caminho.display(),
-                    self.slot_size,
-                    achado.0,
-                    caminho.file_name().unwrap_or_default().to_string_lossy(),
                 )));
             }
         }
@@ -1671,17 +1699,14 @@ impl RegFile {
             retrato,
         };
         for ((_, _, caminho, espelho), cab) in primeiros.iter().zip(&cabs) {
-            let escrito =
-                reescrever_volume(caminho, cab, &bytes, origem, destino, false).and_then(|_| {
-                    match espelho {
-                        // O espelho e reescrito LENDO DO ESPELHO, como no caminho
-                        // de uma fase so.
-                        Some(e) if e.exists() => {
-                            reescrever_volume(e, cab, &bytes, origem, destino, false)
-                        }
-                        _ => Ok(()),
-                    }
-                });
+            let escrito = reescrever_volume(caminho, cab, &bytes, origem, destino).and_then(|_| {
+                match espelho {
+                    // O espelho e reescrito LENDO DO ESPELHO, como no caminho
+                    // de uma fase so.
+                    Some(e) if e.exists() => reescrever_volume(e, cab, &bytes, origem, destino),
+                    _ => Ok(()),
+                }
+            });
             if let Err(e) = escrito {
                 a_trocar.descartar();
                 return Err(e);
@@ -1723,49 +1748,31 @@ impl RegFile {
 
     fn regravar_esquema(&mut self, novo: Schema) -> Result<bool> {
         let bytes = novo.serializar();
-        let crc = crc32(&bytes);
-
-        if self.cab_len as u64 + bytes.len() as u64 <= self.data_offset {
-            self.esquema = novo;
-            self.esquema_bytes = bytes;
-            self.esquema_crc = crc;
-            for v in self.volumes.existentes() {
-                self.gravar_cabecalho(v)?;
-            }
-            self.volumes.sincronizar()?;
-            return Ok(false);
+        if self.cab_len as u64 + bytes.len() as u64 > self.data_offset {
+            return self.regravar_esquema_caro(novo);
         }
-
-        let origem = self.data_offset;
-        let destino = alinhar(self.cab_len as u64 + bytes.len() as u64, ALINHAMENTO);
+        self.esquema_crc = crc32(&bytes);
         self.esquema = novo;
         self.esquema_bytes = bytes;
-        self.esquema_crc = crc;
-        self.data_offset = destino;
-        // Os descritores abertos apontariam para o arquivo VELHO depois do
-        // rename; fechados, a proxima leitura reabre o certo.
-        self.volumes.fechar_todos();
         for v in self.volumes.existentes() {
-            let cab = self.montar_cabecalho(v);
-            reescrever_volume(
-                &self.volumes.caminho(v),
-                &cab,
-                &self.esquema_bytes,
-                origem,
-                destino,
-                true,
-            )?;
-            // O espelho e reescrito LENDO DO ESPELHO: a copia independente
-            // dele sobrevive a mudanca, que e para o que ele existe. Uma
-            // queda entre os dois renames deixa o espelho com o tamanho
-            // velho, e e o `espelhar` da proxima abertura que o semeia de
-            // novo -- o mesmo caminho de um espelho que nasceu depois.
-            if let Some(espelho) = self.volumes.caminho_do_espelho(v) {
-                if espelho.exists() {
-                    reescrever_volume(&espelho, &cab, &self.esquema_bytes, origem, destino, true)?;
-                }
-            }
+            self.gravar_cabecalho(v)?;
         }
+        self.volumes.sincronizar()?;
+        Ok(false)
+    }
+
+    fn regravar_esquema_caro(&mut self, novo: Schema) -> Result<bool> {
+        // Pedido 632: o caminho caro e a FASE A inteira e depois a FASE B, e
+        // nao «escreve e troca» volume a volume. O laco de antes trocava o
+        // volume 1 -- o ponto de compromisso -- antes de escrever o `*.novo`
+        // do volume 2; uma queda no meio dele deixava um arquivo de cabecalho
+        // valido e sem slot, que a abertura seguinte tomava pela troca
+        // decidida e renomeava por cima do volume velho. Medido: as 30 linhas
+        // do volume 2 perdidas e a tabela sem abrir. Aqui todo `*.novo` esta
+        // sincronizado antes do primeiro `rename`, que e o que o
+        // `terminar_troca_interrompida` presume.
+        let troca = self.regravar_esquema_fase_a(novo)?;
+        self.regravar_esquema_fase_b(troca)?;
         Ok(true)
     }
 
@@ -3128,22 +3135,24 @@ fn aad_do_slot(volume: u32, rowid: RowId, versao: u64) -> [u8; 20] {
 
 /// Reescreve UM arquivo de volume com o primeiro slot em `destino`.
 ///
-/// Escreve num arquivo ao lado (`*.novo`), sincroniza e troca por `rename`:
-/// uma queda no meio deixa ou o arquivo velho inteiro, ou o novo inteiro --
-/// nunca um meio-termo com o cabecalho de um e os slots do outro. Copiar no
-/// proprio arquivo, de tras para a frente, seria mais barato em disco e
-/// deixaria exatamente esse meio-termo se a maquina caisse.
+/// Escreve num arquivo ao lado (`*.novo`) e sincroniza; **nao troca**. Copiar
+/// no proprio arquivo, de tras para a frente, seria mais barato em disco e
+/// deixaria um meio-termo com o cabecalho de um e os slots do outro se a
+/// maquina caisse.
 ///
-/// Com `trocar` falso para no `*.novo` sincronizado, sem `rename`: e a FASE A
-/// do pedido 422 ([`RegFile::regravar_esquema_fase_a`]), que troca depois,
-/// sob a trava. Um corpo so para os dois caminhos -- a escrita e a mesma.
+/// Quem troca e a FASE B ([`RegFile::regravar_esquema_fase_b`]), e so depois
+/// de TODO volume ter o seu `*.novo` sincronizado. Ate o pedido 632 havia um
+/// `trocar` aqui, e o caminho de uma fase so trocava cada volume logo depois
+/// de escreve-lo: o volume 1 ja trocado e o `*.novo` do volume 2 pela metade
+/// era o estado que a abertura terminava renomeando o arquivo incompleto por
+/// cima do velho. Sem o parametro, nao ha como escrever e trocar no mesmo
+/// passo.
 fn reescrever_volume(
     caminho: &Path,
     cab: &[u8],
     esquema_bytes: &[u8],
     origem: u64,
     destino: u64,
-    trocar: bool,
 ) -> Result<()> {
     let tmp = caminho_do_novo(caminho);
 
@@ -3158,6 +3167,7 @@ fn reescrever_volume(
     if escrito < destino {
         para.write_all(&vec![0u8; (destino - escrito) as usize])?;
     }
+    crate::ndx::panico_de_teste::passar(crate::ndx::panico_de_teste::Ponto::NoMeioDoNovoDoVolume);
     if tamanho > origem {
         de.seek(SeekFrom::Start(origem))?;
         let mut resta = tamanho - origem;
@@ -3171,9 +3181,6 @@ fn reescrever_volume(
     }
     crate::sincronia::sync_all(&para, &tmp)?;
     drop(para);
-    if trocar {
-        crate::sincronia::trocar_duravel(&tmp, caminho)?;
-    }
     Ok(())
 }
 
@@ -3245,6 +3252,37 @@ pub(crate) fn volume_e_paginacao_declarados(caminho: &Path) -> Option<(u32, Pagi
     }
     let esquema = Schema::desserializar(&bytes).ok()?;
     Some((c.u32(12), esquema.paginacao()))
+}
+
+/// O `*.novo` de uma troca decidida tem TODOS os slots do volume que ele
+/// substitui? (pedido 632)
+///
+/// O cabecalho sozinho nao responde: ele e a primeira coisa que o
+/// [`reescrever_volume`] e a FASE A do alargamento escrevem, entao um arquivo
+/// cortado logo depois dele ja se declara com a geometria nova. A resposta e a
+/// conta dos slots -- os dois caminhos levam o i-esimo slot do velho para o
+/// i-esimo do novo, nem um a mais nem um a menos, e um volume vivo nao cresce
+/// durante a troca (a FASE B confere o retrato antes de trocar).
+///
+/// Tamanho, e nao CRC de conteudo: reler o arquivo inteiro em toda abertura
+/// custaria uma passada sobre a tabela, e o que se defende aqui e o arquivo
+/// CORTADO, nao o arquivo adulterado -- adulteracao o CRC de cada slot ja
+/// acusa na leitura.
+fn novo_completo(novo: &Path, alvo: &Path) -> bool {
+    let slots = |caminho: &Path| -> Option<(u64, u64)> {
+        let (slot, inicio, _) = geometria_do_volume(caminho)?;
+        let tamanho = std::fs::metadata(caminho).ok()?.len();
+        let corpo = tamanho.checked_sub(inicio)?;
+        let slot = (slot as u64).max(1);
+        Some((corpo / slot, corpo % slot))
+    };
+    match (slots(novo), slots(alvo)) {
+        (Some((n, _)), Some((v, _))) => n == v,
+        // Volume velho de cabecalho ilegivel: nao ha contagem para comparar,
+        // e o que resta conferir e o proprio `*.novo` sem slot pela metade.
+        (Some((_, resto)), None) => resto == 0,
+        _ => false,
+    }
 }
 
 /// `(slot_size, data_offset, CRC do esquema)` que um arquivo de volume

@@ -19,7 +19,7 @@ use phxsql_core::schema::{Column, IndexColumn, IndexDef, Schema};
 use phxsql_core::types::ColumnType;
 use phxsql_core::value::Value;
 use phxsql_store::catalogo::{Database, Instancia};
-use phxsql_store::ndx::panico_de_teste::{armar, desarmar, Ponto};
+use phxsql_store::ndx::panico_de_teste::{armar, armar_na, desarmar, Ponto};
 use phxsql_store::table::{SemEscrever, Table, Visao};
 
 const NOME: usize = 1;
@@ -341,4 +341,134 @@ fn a_irma_em_troca_interrompida_nao_tranca_a_exclusao_da_vizinha() {
         assert!(v.excluir_suave(2, "t").unwrap(), "{rotulo}");
         conferir_inteira(&dir, "clientes", com_coluna);
     }
+}
+
+// ------------------- pedido 632: o `*.novo` pela metade da troca de uma fase
+
+/// Dois indices de nome comprido: o bloco de esquema cresce mais que a folga
+/// de 64 bytes antes do slot 1, e a regravacao vai pelo caminho CARO.
+fn indices_compridos() -> Vec<IndexDef> {
+    (0..2)
+        .map(|i| {
+            IndexDef::new(
+                format!("porNome_indice_de_nome_bem_comprido_para_nao_caber_{i}"),
+                vec![IndexColumn::asc(NOME)],
+            )
+        })
+        .collect()
+}
+
+/// As linhas de `clientes`, com qualquer versao do esquema.
+fn conferir_linhas(dir: &std::path::Path) {
+    let mut t = Table::abrir(dir, "clientes").unwrap_or_else(|e| panic!("clientes nao abre: {e}"));
+    let linhas = t.varrer_com(Visao::Todas).unwrap();
+    assert_eq!(linhas.len() as i64, LINHAS, "clientes perdeu linhas");
+    for (i, (rowid, v)) in linhas.iter().enumerate() {
+        assert_eq!(*rowid, i as u64 + 1);
+        assert_eq!(v[NOME], Value::Str(format!("cliente {:04}", i + 1)));
+    }
+}
+
+/// **Pedido 632:** o `acrescentar_indices` regrava o esquema de uma fase so.
+/// Ate aqui ele escrevia E trocava volume a volume: o volume 1 ja novo, uma
+/// queda no meio do `*.novo` do volume 2 deixava um arquivo de cabecalho
+/// valido e sem slot nenhum -- e a abertura seguinte o tomava pela troca
+/// decidida e o renomeava por cima do volume 2 velho.
+///
+/// # Prova real
+///
+/// Com o caminho caro do `regravar_esquema` de volta ao laco de antes
+/// (escrever e trocar volume a volume), medido em 01/10/2026: a abertura
+/// renomeia o `clientes#002.reg.novo` de 1.088 bytes (cabecalho e esquema,
+/// zero slot) por cima do `clientes#002.reg` de 3.900 -- as 30 linhas do
+/// volume 2 destruidas no disco -- e a tabela nao abre mais («ficou pela
+/// metade» no volume 3). Com o laco de antes e o cinto do `novo_completo`, o
+/// volume 2 fica inteiro mas a tabela tambem nao abre: o teste cai do mesmo
+/// jeito, e e o conserto da ORDEM que o faz passar.
+#[test]
+fn a_queda_no_meio_do_novo_do_volume_2_nao_perde_linha() {
+    let (_cat, _db, d) = base("uma-fase-v2", true);
+    let dir = d.join("loja");
+    let mut t = Table::abrir(&dir, "clientes").unwrap();
+    armar_na(Ponto::NoMeioDoNovoDoVolume, 2);
+    let morreu = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _ = t.acrescentar_indices(indices_compridos());
+    }));
+    desarmar();
+    assert!(
+        morreu.is_err(),
+        "o panico nao aconteceu: o esquema coube e a regravacao nao foi pelo caminho caro"
+    );
+    drop(t);
+    conferir_linhas(&dir);
+    // A abertura gravavel recolheu a sobra, e a operacao refeita fecha.
+    assert_eq!(novos_do_reg(&dir, "clientes"), Vec::<String>::new());
+    let mut t = Table::abrir(&dir, "clientes").unwrap();
+    t.acrescentar_indices(indices_compridos()).unwrap();
+    drop(t);
+    conferir_linhas(&dir);
+}
+
+/// O cinto do mesmo pedido, na ABERTURA: uma troca decidida (volume 1 ja
+/// novo) cujo `*.novo` do volume 3 nao tem todos os slots do volume velho nao
+/// entra no lugar dele. A abertura recusa o conjunto misturado -- recusa que
+/// se le, em vez de 30 linhas sumidas sem aviso.
+///
+/// O `*.novo` encurtado aqui e montado a mao, e e de proposito: depois do
+/// conserto do caminho de uma fase, nenhum caminho do motor o deixa assim (a
+/// FASE A sincroniza todos antes do primeiro `rename`). A prova e do cinto,
+/// para o dia em que um caminho novo trocar antes de escrever tudo.
+///
+/// # Prova real
+///
+/// Sem a conferencia da contagem de slots no `separar_novos_ao_lado`
+/// (medido em 01/10/2026), o `clientes#003.reg.novo` encurtado e renomeado
+/// por cima do volume velho, a tabela ABRE, e a varredura morre em
+/// «failed to fill whole buffer» -- o volume 3 ja perdido no disco.
+#[test]
+fn a_troca_decidida_nao_renomeia_novo_incompleto() {
+    let (_cat, _db, d) = base("cinto-curto", true);
+    let dir = d.join("loja");
+    morrer_na_fase_b(&dir, Ponto::FaseBDepoisDoVolume1);
+    let novos = novos_do_reg(&dir, "clientes");
+    let curto = novos
+        .iter()
+        .find(|n| n.contains("003"))
+        .unwrap_or_else(|| panic!("sem o `*.novo` do volume 3: {novos:?}"))
+        .clone();
+    let caminho = dir.join(&curto);
+    let tamanho = std::fs::metadata(&caminho).unwrap().len();
+    let velho = std::fs::metadata(dir.join("clientes#003.reg"))
+        .unwrap()
+        .len();
+    // Um slot a menos e um pedaco: nem multiplo, nem completo.
+    std::fs::OpenOptions::new()
+        .write(true)
+        .open(&caminho)
+        .unwrap()
+        .set_len(tamanho - 100)
+        .unwrap();
+    match Table::abrir(&dir, "clientes") {
+        Err(e) => {
+            let e = e.to_string();
+            assert!(e.contains("pela metade"), "{e}");
+            // A recusa nao manda repor o arquivo que perde linhas.
+            assert!(e.contains("INCOMPLETO") && !e.contains("reponha"), "{e}");
+        }
+        Ok(mut t) => {
+            let n = t.varrer_com(Visao::Todas).map(|l| l.len());
+            panic!("o conjunto com o volume 3 encurtado abriu: {n:?}")
+        }
+    }
+    assert!(
+        caminho.exists(),
+        "o `*.novo` encurtado sumiu: foi renomeado"
+    );
+    assert_eq!(
+        std::fs::metadata(dir.join("clientes#003.reg"))
+            .unwrap()
+            .len(),
+        velho,
+        "o volume 3 velho foi trocado"
+    );
 }

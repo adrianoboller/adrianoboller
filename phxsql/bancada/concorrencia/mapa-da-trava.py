@@ -785,8 +785,20 @@ CATRACAS = [
         # de cada volume no lugar e sincroniza -- e isso PRECISA da trava,
         # porque o cabecalho carrega o `slot_count`. Tirar a copia cara da
         # trava nao as tiraria daqui.
+        #
+        # 23 -> 22 em 01/10/2026 (pedido 632), e a descida NAO e melhora: e a
+        # regua de 3 saltos perdendo a `op_excluir_fk` de vista. Medido contra
+        # o HEAD de antes (`--json` nas duas arvores): ela era contada pelo
+        # caminho `... regravar_esquema -> reescrever_volume` (o `sync_all`
+        # direto no corpo), e o conserto do 632 empurrou a reescrita para
+        # `regravar_esquema -> regravar_esquema_caro -> regravar_esquema_fase_a
+        # -> reescrever_volume`, dois saltos alem do corte. A secao CONTINUA
+        # com a trava na mao sobre `fsync` (o caminho barato e o caro do
+        # `regravar_esquema`). Baixado porque a catraca so desce e o numero e
+        # o medido; quem fizer a regua alcanca-la de novo nao sobe o teto --
+        # aposenta esta e nasce outra, pela lei de cima.
         "alcancam-fsync-2",
-        23,
+        22,
         "secoes alcancam `fsync` com a trava na mao. E o que um `RwLock` NAO "
         "conserta -- o escritor continua exclusivo --, e cada uma nova e "
         "1,3 ms de trava presa (§7.1-bis) que a proxima conexao espera. "

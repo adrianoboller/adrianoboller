@@ -4128,6 +4128,22 @@
       "quando": "2026-10-01 20:30"
     },
     {
+      "id": "regravar-esquema-troca-volume-a-volume-632",
+      "titulo": "a regravacao de esquema de uma fase so escreve e troca volume a volume, e a queda no meio do *.novo do volume 2 destroi o volume",
+      "veredito": "PROVADA",
+      "segundos": 8.21,
+      "notas": [],
+      "quando": "2026-10-01 21:07"
+    },
+    {
+      "id": "troca-decidida-renomeia-novo-incompleto-632",
+      "titulo": "a abertura termina a troca decidida com um *.novo que nao tem todos os slots do volume velho",
+      "veredito": "PROVADA",
+      "segundos": 8.32,
+      "notas": [],
+      "quando": "2026-10-01 21:07"
+    },
+    {
       "id": "alter-com-regra-sem-aviso",
       "titulo": "`acrescentar_coluna` com `check` ou `calculada` numa tabela com linha é aceito SEM AVISO, e a linha velha fica fora da regra",
       "veredito": "PROVADA",
