@@ -58,6 +58,7 @@ use std::time::Duration;
 
 use phxsql_core::error::{PhxError, Result};
 
+use crate::dblink::conexao::{Acumulador, TETO_DE_BYTES_DO_RESULTADO};
 use crate::dblink::TETO_DE_COLUNAS;
 use crate::prazo::{self, ComPrazo, Prazo};
 
@@ -108,6 +109,9 @@ pub struct Conexao {
     pub versao: String,
     /// PID do processo do servidor que atende esta conexao.
     pub conexao_id: u32,
+    /// O teto de bytes do resultado -- pedido 546. Ver o campo irmao no
+    /// cliente MySQL(R): nasce no de fabrica, e a ligacao o troca.
+    pub teto_de_bytes: u64,
 }
 
 /// Uma mensagem lida do servidor: o byte de tipo e a carga, sem o tamanho.
@@ -139,6 +143,7 @@ impl Conexao {
             escrita,
             versao: String::new(),
             conexao_id: 0,
+            teto_de_bytes: TETO_DE_BYTES_DO_RESULTADO,
         };
         c.apertar_a_mao(usuario, senha, database)?;
         Ok(c)
@@ -302,18 +307,16 @@ impl Conexao {
 
         let mut r = Resultado::default();
         let mut falha: Option<PhxError> = None;
+        // O que se guarda e decidido pelo motor comum aos tres clientes --
+        // linhas E bytes (pedido 546). Ver `conexao::Acumulador`.
+        let mut guardado = Acumulador::novo(teto, self.teto_de_bytes);
         loop {
             let m = self.ler_mensagem()?;
             match m.tipo {
                 b'T' => r.colunas = ler_descricao(&m.corpo)?,
-                b'D' => {
-                    let linha = ler_linha(&m.corpo, &r.colunas)?;
-                    if (r.linhas.len() as u64) < teto {
-                        r.linhas.push(linha);
-                    } else {
-                        r.truncado = true;
-                    }
-                }
+                // Decodifica-se mesmo a linha que o teto de linhas vai cortar:
+                // a `DataRow` torta depois do teto continua sendo recusa.
+                b'D' => guardado.receber(ler_linha(&m.corpo, &r.colunas)?)?,
                 b'C' => r.afetadas = afetadas_do_rotulo(&m.corpo),
                 // Guarda o erro e CONTINUA lendo ate o `Z`: sair aqui deixaria
                 // o `Z` na fila, e a proxima consulta leria a resposta desta.
@@ -324,6 +327,7 @@ impl Conexao {
                 _ => {}
             }
         }
+        (r.linhas, r.truncado) = guardado.fim();
         match falha {
             Some(e) => Err(e),
             None => Ok(r),
@@ -898,6 +902,7 @@ mod testes {
             escrita,
             versao: String::new(),
             conexao_id: 0,
+            teto_de_bytes: TETO_DE_BYTES_DO_RESULTADO,
         }
     }
 

@@ -294,6 +294,48 @@ caminho de escrita para o banco do outro só porque a ligação permitia.
 - Carga acima de 16 MB chega partida em vários quadros; a leitura junta, a
   escrita não parte (nenhuma consulta que este cliente manda chega perto).
 
+## O teto de bytes do resultado (pedido 546)
+
+O resultado era cortado só por **linhas** (`max_linhas`, até 100.000), e quanto
+pesa cada linha quem diz é o outro lado: até 128 MiB por quadro no MySQL(R),
+64 MiB por mensagem no PostgreSQL(R). Um par malicioso — ou quem está no meio
+do fio em claro — fazia o servidor guardar gigabytes antes do primeiro corte.
+
+Agora há um teto de **bytes**, no campo `max_mib` da ligação (de 1 a 1024;
+fora da faixa, grampeado), contado **enquanto lê**: cada linha é pesada antes
+de entrar — o texto mais a moldura de cada célula, para que linhas de NULOS
+não saiam de graça —, e a que passaria do teto é **recusada** com
+`LIMITE_EXCEDIDO`, dizendo o teto, a linha e quantos bytes já estavam
+guardados. Recusa, e não corte calado: cortar por bytes devolveria menos
+linhas do que o `max_linhas` promete, sem dizer onde a tabela acaba.
+
+| | |
+|---|---|
+| **Valor de fábrica** | **128 MiB** — o `TETO_DO_REGISTRO` do fio, e não um número novo |
+| Faixa | 1 a 1024 MiB (1 GiB é o `MaxAllocSize` do PostgreSQL(R)) |
+| No disco | só quando diverge do de fábrica; o salvar pela tela herda o da ligação |
+| Quem decide | o `Acumulador` de `dblink/conexao.rs`, **um** motor para mysql, pg e phx — o mesmo que corta por linhas |
+
+**Por que 128 MiB** (papel J): os quatro convergem em **não** ter teto sobre a
+soma do resultado no cliente (`PQgetResult` e `mysql_store_result` juntam
+tudo; o `fetch_size` do `postgres_fdw` fatia em 100 *linhas*). Os números que
+existem — `max_allowed_packet` 64 MiB no MySQL(R) 8 e 16 MiB no MariaDB,
+1 GB do PostgreSQL(R) e do SQLite — são tetos de **um** pacote ou valor, outra
+pergunta, e sobre ela a régua empata em 5 a 5. Diverge-se do «sem teto» pela
+restrição do 578: aqui a memória é a do servidor inteiro. E o valor é o único
+que não recusa nada que antes funcionasse: o resultado do `dblink_consultar`
+sai como **um** registro do fio, e todo cliente desta casa lê no máximo
+128 MiB por registro. A sincronia, que grava em tabela em vez de responder, é
+quem pode precisar de mais — sobe o `max_mib`. Escolhido, não medido.
+
+**O que ele não cobre:** a mensagem **uma a uma** continua com o teto dela (o
+quadro do MySQL(R) do pedido 443, os 64 MiB do PostgreSQL(R)), alocada antes
+de ser pesada — o pico é o teto mais uma mensagem. No PhxSql, a resposta
+inteira chega numa linha do `Canal` (128 MiB) e vira árvore `Json` antes da
+cópia que o motor pesa; essa árvore é a de todo `Cliente::pedir`, a réplica
+inclusive, e não é deste pedido. Depois da recusa a conexão fica no meio do
+resultado e não se reaproveita — como no teto de colunas.
+
 ## O cliente PostgreSQL(R)
 
 Está em `crates/phxsql-server/src/pg/`, e nasceu de um pedido que parecia

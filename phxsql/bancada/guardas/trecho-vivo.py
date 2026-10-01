@@ -403,6 +403,10 @@ dia, nunca no desejado:
   do expurgo da trilha idem (`expurgo-da-trilha-sem-fsync-da-pasta`) e o
   motor que esquece a pasta do que saiu (`levar-ao-disco-esquece-o-que-saiu`).
   No merge com o 593 (534): 534 + 4 = 538.
+  **SUBIU para 542 em 01/10/2026** (pedido 546), de 540 medido no catalogo
+  do dia (539 entradas mais 1 aposentada): duas guardas -- o resultado do
+  DbLink so com teto de linhas (`dblink-sem-teto-de-bytes`) e o `max_mib`
+  que ninguem le (`dblink-max-mib-sem-leitor`). Contado pelo `--catraca`.
   impedir. Ele e a unica coisa nesta regua que reprova o APAGAMENTO; tudo o
   mais aqui reprova o envelhecimento.
 
@@ -511,7 +515,7 @@ TETO_TESTE_MORTO = 0
 TETO_TRECHO_AMBIGUO = 0
 TETO_TESTE_FORA_DO_BINARIO = 0
 TETO_TESTE_SEM_MODULO = 0
-PISO_DAS_ENTRADAS = 540
+PISO_DAS_ENTRADAS = 542
 
 # ------------------------------------------------------------- APOSENTADAS
 #

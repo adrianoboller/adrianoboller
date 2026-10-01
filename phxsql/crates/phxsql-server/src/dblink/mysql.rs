@@ -67,6 +67,8 @@ const COM_QUIT: u8 = 0x01;
 // para o PostgreSQL): mora em `dblink`, e nao aqui.
 use super::TETO_DE_COLUNAS;
 
+use super::conexao::{Acumulador, TETO_DE_BYTES_DO_RESULTADO};
+
 /// Uma coluna do resultado, ja traduzida para nomes que a tela entende.
 #[derive(Debug, Clone)]
 pub struct Coluna {
@@ -117,6 +119,11 @@ pub struct Conexao {
     /// Versao anunciada no aperto de mao, para o teste de ligacao mostrar.
     pub versao: String,
     pub conexao_id: u32,
+    /// O teto de bytes do resultado -- pedido 546. Nasce no de fabrica, e
+    /// nao em zero nem em «sem teto»: quem abre sem ligacao (o teste, a
+    /// prova) tambem tem teto. A ligacao o troca pelo `max_mib` dela em
+    /// `Definicao::conectar_com`.
+    pub teto_de_bytes: u64,
 }
 
 impl Conexao {
@@ -142,6 +149,7 @@ impl Conexao {
             sequencia: 0,
             versao: String::new(),
             conexao_id: 0,
+            teto_de_bytes: TETO_DE_BYTES_DO_RESULTADO,
         };
         c.apertar_a_mao(usuario, senha, database)?;
         Ok(c)
@@ -331,8 +339,9 @@ impl Conexao {
             ));
         }
 
-        let mut linhas = Vec::new();
-        let mut truncado = false;
+        // O que se guarda e decidido pelo motor comum aos tres clientes --
+        // linhas E bytes (pedido 546). Ver `conexao::Acumulador`.
+        let mut guardado = Acumulador::novo(teto, self.teto_de_bytes);
         loop {
             let q = self.ler_quadro()?;
             if eh_eof(&q) {
@@ -341,14 +350,14 @@ impl Conexao {
             if q.first() == Some(&0xFF) {
                 return Err(self.erro_do_servidor(&q));
             }
-            if linhas.len() as u64 >= teto {
-                // Ler ate o fim mesmo depois do teto: parar no meio deixaria
-                // linhas na conexao e o proximo comando leria resposta alheia.
-                truncado = true;
-                continue;
+            // Ler ate o fim mesmo depois do teto de linhas: parar no meio
+            // deixaria linhas na conexao e o proximo comando leria resposta
+            // alheia. A linha cortada nem se decodifica.
+            if guardado.quer_mais() {
+                guardado.receber(ler_linha(&q, &colunas)?)?;
             }
-            linhas.push(ler_linha(&q, &colunas)?);
         }
+        let (linhas, truncado) = guardado.fim();
         Ok(Resultado {
             colunas,
             linhas,
@@ -878,6 +887,7 @@ mod testes {
             sequencia: 0,
             versao: String::new(),
             conexao_id: 0,
+            teto_de_bytes: TETO_DE_BYTES_DO_RESULTADO,
         }
     }
 

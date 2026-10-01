@@ -21,7 +21,8 @@
 
 use crate::prazo::Prazo;
 
-use phxsql_core::error::Result;
+use phxsql_core::error::{PhxError, Result};
+use phxsql_core::fio::TETO_DO_REGISTRO;
 use phxsql_core::json::Json;
 
 use super::{mysql, phx, Definicao, Motor};
@@ -113,6 +114,163 @@ impl Resultado {
             ("truncado", Json::Bool(self.truncado)),
         ])
     }
+}
+
+/// Uma linha do resultado, como os tres clientes a montam.
+pub type Linha = Vec<Option<String>>;
+
+const MIB: u64 = 1024 * 1024;
+
+/// O teto de BYTES do resultado que nasce em toda ligacao -- pedido 546.
+///
+/// # O defeito
+///
+/// O resultado era cortado so por LINHAS, e quanto pesa cada linha quem diz
+/// e o outro lado: ate 128 MiB por quadro no MySQL(R) (o 443 limitou o
+/// quadro, nao a soma), 64 MiB por mensagem no PostgreSQL(R). `max_linhas`
+/// vai a 100.000, entao um par malicioso -- ou quem esta no meio do fio em
+/// claro -- fazia este processo guardar terabytes antes do primeiro corte.
+///
+/// # A decisao do valor (papel J, regua do CLAUDE.md)
+///
+/// Hipoteses escritas antes: (a) 64 MiB, o `max_allowed_packet` do
+/// MySQL(R) 8; (b) 1 GiB, o `MaxAllocSize` do PostgreSQL(R) e o
+/// `SQLITE_MAX_LENGTH`; (c) o [`TETO_DO_REGISTRO`] desta casa, 128 MiB.
+///
+/// Os quatro CONVERGEM em nao ter teto sobre a SOMA do resultado no cliente:
+/// o `PQgetResult` da libpq e o `mysql_store_result` (MySQL e MariaDB) juntam
+/// tudo; o `postgres_fdw` fatia em `fetch_size` = 100 LINHAS, sem bytes; o
+/// SQLite entrega linha a linha. Os numeros de (a) e (b) sao tetos de UM
+/// pacote ou de UM valor -- outra pergunta. E sobre ESSES a regua empata:
+/// 64 MiB do MySQL (2) mais 16 MiB do MariaDB, padrao desde a 10.2.4 (3), dao
+/// 5 contra 1 GB do PG (4) mais 1e9 do SQLite (1), 5. Empate de pergunta
+/// alheia nao decide a nossa.
+///
+/// Diverge-se do «sem teto» pela restricao do 578: la quem opera derruba a
+/// sessao; aqui a memoria e a do servidor inteiro, e quem escolhe quanto ele
+/// reserva seria o par. Vence (c), e e o unico dos tres que NAO e um numero
+/// novo: o resultado do `dblink_consultar` sai daqui como UM registro do
+/// fio, e todo cliente desta casa (replica, console, ODBC) le no maximo
+/// [`TETO_DO_REGISTRO`] por registro. Um resultado acima disso nao chegaria
+/// a ninguem de qualquer jeito -- o teto nao recusa nada que antes
+/// funcionasse ponta a ponta. A sincronia, que guarda em tabela em vez de
+/// responder, e quem pode precisar de mais: sobe `max_mib` na ligacao.
+/// Escolhido, nao medido.
+pub const TETO_DE_BYTES_DO_RESULTADO: u64 = TETO_DO_REGISTRO;
+
+/// O `max_mib` de fabrica, na unidade que a ligacao escreve.
+pub const MIB_DO_RESULTADO_DE_FABRICA: u64 = TETO_DE_BYTES_DO_RESULTADO / MIB;
+
+/// O maior `max_mib` que uma ligacao aceita: 1 GiB, o `MaxAllocSize` do
+/// PostgreSQL(R) -- acima disso nem o maior dos quatro guarda um valor so.
+/// Sem teto aqui, `"max_mib": 9e18` devolveria o defeito por configuracao.
+pub const MIB_DO_RESULTADO_MAXIMO: u64 = 1024;
+
+/// O que os tres clientes guardam de um resultado -- o motor UNICO do corte
+/// por linhas e do teto de bytes (pedido 546).
+///
+/// Existe para que «guardo esta linha?» tenha UMA resposta. O teto de linhas
+/// morava copiado em cada cliente (`linhas.len() >= teto` no MySQL(R), o
+/// contrario no PostgreSQL(R), um `take` no PhxSql); pendurar o de bytes ao
+/// lado de cada copia seria a terceira, a quarta e a quinta, e a que alguem
+/// esquecesse seria o cliente que volta a guardar o que o par mandar.
+///
+/// # Contado ENQUANTO le
+///
+/// A linha e pesada antes de entrar, e a que passaria do teto e recusada sem
+/// ser guardada: o pico do que se guarda e o teto, e nao o teto mais o resto
+/// do resultado. A linha cortada pelo teto de LINHAS nao conta -- ela e lida
+/// e jogada fora, e um `SELECT *` de tabela grande com `max_linhas` continua
+/// voltando cortado, e nao recusado, como sempre voltou.
+///
+/// # O peso e o da MEMORIA, e nao o do fio
+///
+/// Cada celula custa o texto mais a moldura do `Option<String>` (24 bytes),
+/// e cada linha a do `Vec`. Contar so os bytes do fio deixaria um MySQL(R)
+/// mandar linhas de 4.096 NULOS (um byte cada no fio) e guardar 24 vezes o
+/// que o teto diz.
+#[derive(Debug)]
+pub struct Acumulador {
+    linhas: Vec<Linha>,
+    teto_de_linhas: u64,
+    teto_de_bytes: u64,
+    bytes: u64,
+    truncado: bool,
+}
+
+impl Acumulador {
+    pub fn novo(teto_de_linhas: u64, teto_de_bytes: u64) -> Acumulador {
+        Acumulador {
+            linhas: Vec::new(),
+            teto_de_linhas,
+            teto_de_bytes,
+            bytes: 0,
+            truncado: false,
+        }
+    }
+
+    /// Ainda se guarda linha? O `false` ja marca o corte -- e quem pergunta
+    /// antes de decodificar poupa o trabalho da linha que ninguem guarda.
+    pub fn quer_mais(&mut self) -> bool {
+        let quer = (self.linhas.len() as u64) < self.teto_de_linhas;
+        if !quer {
+            self.truncado = true;
+        }
+        quer
+    }
+
+    /// Guarda a linha, corta-a pelo teto de linhas, ou recusa o resultado
+    /// pelo de bytes.
+    ///
+    /// A recusa e erro, e nao corte calado como o de linhas, de proposito:
+    /// cortar por bytes devolveria um resultado com MENOS linhas do que o
+    /// `max_linhas` promete, e quem o lesse nao saberia se a tabela acaba ali.
+    /// Depois dela a conexao fica no meio do resultado e nao se reaproveita --
+    /// o mesmo contrato do teto de colunas (443/544). Ler o resto so para
+    /// descartar daria ao par que nao para de mandar o prazo total inteiro.
+    pub fn receber(&mut self, linha: Linha) -> Result<()> {
+        if !self.quer_mais() {
+            return Ok(());
+        }
+        let depois = self.bytes.saturating_add(peso_da_linha(&linha));
+        if depois > self.teto_de_bytes {
+            return Err(PhxError::LimiteExcedido(format!(
+                "dblink: o resultado passaria do teto de {} MiB ({} bytes) na \
+                 linha {}, com {} bytes ja guardados -- quem decide o tamanho \
+                 de cada linha e o outro banco, e este lado nao guarda isso na \
+                 memoria. Peca menos linhas ou colunas; se o resultado e \
+                 legitimo, suba \"max_mib\" da ligacao (ate {} MiB)",
+                self.teto_de_bytes / MIB,
+                self.teto_de_bytes,
+                self.linhas.len() + 1,
+                self.bytes,
+                MIB_DO_RESULTADO_MAXIMO
+            )));
+        }
+        self.bytes = depois;
+        self.linhas.push(linha);
+        Ok(())
+    }
+
+    /// Quanto ja se guardou -- e o contador que a prova le, em vez da RAM.
+    pub fn bytes(&self) -> u64 {
+        self.bytes
+    }
+
+    /// As linhas guardadas, e se houve corte.
+    pub fn fim(self) -> (Vec<Linha>, bool) {
+        (self.linhas, self.truncado)
+    }
+}
+
+/// O peso de uma linha na memoria: as molduras e a CAPACIDADE de cada texto,
+/// que e o que o alocador entregou -- e nao o tamanho, que e o que se usa.
+fn peso_da_linha(linha: &Linha) -> u64 {
+    let moldura =
+        std::mem::size_of::<Linha>() + linha.capacity() * std::mem::size_of::<Option<String>>();
+    linha.iter().flatten().fold(moldura as u64, |soma, s| {
+        soma.saturating_add(s.capacity() as u64)
+    })
 }
 
 impl From<mysql::Resultado> for Resultado {
@@ -262,22 +420,8 @@ impl Definicao {
     /// reprovaria nela.
     pub(crate) fn abrir_com(&self, prazo: Prazo) -> Result<Conexao> {
         Ok(match self.motor {
-            Motor::MySql => Conexao::MySql(Box::new(mysql::Conexao::abrir(
-                &self.host,
-                self.porta,
-                &self.usuario,
-                self.senha()?,
-                &self.database,
-                prazo,
-            )?)),
-            Motor::Postgres => Conexao::Postgres(Box::new(pg::Conexao::abrir(
-                &self.host,
-                self.porta,
-                &self.usuario,
-                self.senha()?,
-                &self.database,
-                prazo,
-            )?)),
+            Motor::MySql => Conexao::MySql(Box::new(self.conectar_com(prazo)?)),
+            Motor::Postgres => Conexao::Postgres(Box::new(self.conectar_pg_com(prazo)?)),
             // Este recebe a DEFINICAO inteira, e nao primitivas, porque o fio
             // dele tem cifra e pino: campo do fio que atravessa a fronteira a
             // mao e campo que alguem esquece de passar um dia, e o esquecimento
@@ -407,5 +551,292 @@ mod testes_do_prazo_total {
                 "{motor}: cortou em {durou:?}, antes do total {TOTAL:?}"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod testes_do_teto_de_bytes {
+    //! Pedido 546: o par que anuncia linhas enormes, pelos TRES clientes.
+
+    use super::*;
+    use std::io::{Read, Write};
+    use std::net::{TcpListener, TcpStream};
+
+    /// O teto da prova: 1 MiB, o menor que a ligacao aceita escrever.
+    const MAX_MIB: u64 = 1;
+    /// Cada linha do par: 64 KiB numa celula so.
+    const CELULA: usize = 64 * 1024;
+    /// Quantas linhas o par manda: 4 MiB no total, quatro vezes o teto. Com o
+    /// defeito reposto o cliente guarda as 64; com o conserto para antes da
+    /// decima sexta.
+    const LINHAS: usize = 64;
+
+    type Conversa = fn(TcpStream, usize, usize) -> std::io::Result<()>;
+
+    fn ligacao(motor: &str, porta: u16, extra: &str) -> Definicao {
+        Definicao::de_json(
+            &Json::analisar(&format!(
+                r#"{{"nome":"prova546","motor":"{motor}","host":"127.0.0.1","porta":{porta},
+                    "usuario":"","senha":"s","token_remoto":"t","cifra":false,
+                    "timeout_s":5{extra}}}"#
+            ))
+            .unwrap(),
+        )
+        .unwrap()
+    }
+
+    /// Um par que atende UMA conexao e roda `conversa` nela. Erro de escrita
+    /// encerra a conversa -- e o que acontece quando o cliente recusa e larga
+    /// o soquete no meio do resultado.
+    fn par(conversa: Conversa, linhas: usize, celula: usize) -> u16 {
+        let ouvinte = TcpListener::bind("127.0.0.1:0").unwrap();
+        let porta = ouvinte.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            if let Ok((s, _)) = ouvinte.accept() {
+                let _ = conversa(s, linhas, celula);
+            }
+        });
+        porta
+    }
+
+    // ------------------------------------------------------------ MySQL(R)
+
+    fn quadro(s: &mut TcpStream, seq: u8, carga: &[u8]) -> std::io::Result<()> {
+        let mut cab = (carga.len() as u32).to_le_bytes();
+        cab[3] = seq;
+        s.write_all(&cab)?;
+        s.write_all(carga)
+    }
+
+    fn engolir_quadro(s: &mut TcpStream) -> std::io::Result<()> {
+        let mut cab = [0u8; 4];
+        s.read_exact(&mut cab)?;
+        let n = u32::from_le_bytes([cab[0], cab[1], cab[2], 0]) as usize;
+        s.read_exact(&mut vec![0u8; n])
+    }
+
+    fn mysql(mut s: TcpStream, linhas: usize, celula: usize) -> std::io::Result<()> {
+        // Saudacao de um MySQL(R) 8 com `mysql_native_password`.
+        let mut sauda = vec![10];
+        sauda.extend_from_slice(b"8.0.36\0");
+        sauda.extend_from_slice(&7u32.to_le_bytes());
+        sauda.extend_from_slice(&[1, 2, 3, 4, 5, 6, 7, 8, 0]);
+        sauda.extend_from_slice(&[0xff, 0xf7, 45, 2, 0, 0xff, 0x81, 21]);
+        sauda.extend_from_slice(&[0; 10]);
+        sauda.extend_from_slice(&[9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 0]);
+        sauda.extend_from_slice(b"mysql_native_password\0");
+        quadro(&mut s, 0, &sauda)?;
+        engolir_quadro(&mut s)?;
+        quadro(&mut s, 2, &[0, 0, 0, 2, 0, 0, 0])?;
+        engolir_quadro(&mut s)?;
+        // Uma coluna VARCHAR `a`, o fim das colunas, as linhas, o fim.
+        quadro(&mut s, 1, &[1])?;
+        let mut def = Vec::new();
+        for campo in [&b"def"[..], b"", b"t", b"t", b"a", b"a"] {
+            def.push(campo.len() as u8);
+            def.extend_from_slice(campo);
+        }
+        def.push(0x0c);
+        def.extend_from_slice(&[45, 0]);
+        def.extend_from_slice(&60u32.to_le_bytes());
+        def.push(0xfd);
+        def.extend_from_slice(&[0, 0, 0, 0, 0]);
+        quadro(&mut s, 2, &def)?;
+        let eof = [0xFE, 0, 0, 2, 0];
+        quadro(&mut s, 3, &eof)?;
+        let mut linha = vec![0xFD];
+        linha.extend_from_slice(&(celula as u32).to_le_bytes()[..3]);
+        linha.extend(std::iter::repeat_n(b'x', celula));
+        for k in 0..linhas {
+            quadro(&mut s, 4u8.wrapping_add(k as u8), &linha)?;
+        }
+        quadro(&mut s, 0, &eof)
+    }
+
+    // ------------------------------------------------------- PostgreSQL(R)
+
+    fn mensagem(s: &mut TcpStream, tipo: u8, corpo: &[u8]) -> std::io::Result<()> {
+        s.write_all(&[tipo])?;
+        s.write_all(&((corpo.len() + 4) as i32).to_be_bytes())?;
+        s.write_all(corpo)
+    }
+
+    fn postgres(mut s: TcpStream, linhas: usize, celula: usize) -> std::io::Result<()> {
+        // A abertura nao tem byte de tipo.
+        let mut tam = [0u8; 4];
+        s.read_exact(&mut tam)?;
+        s.read_exact(&mut vec![0u8; i32::from_be_bytes(tam) as usize - 4])?;
+        // `trust`: AuthenticationOk e pronto.
+        mensagem(&mut s, b'R', &0i32.to_be_bytes())?;
+        mensagem(&mut s, b'Z', b"I")?;
+        let mut cab = [0u8; 5];
+        s.read_exact(&mut cab)?;
+        let n = i32::from_be_bytes([cab[1], cab[2], cab[3], cab[4]]) as usize;
+        s.read_exact(&mut vec![0u8; n - 4])?;
+        let mut desc = 1i16.to_be_bytes().to_vec();
+        desc.extend_from_slice(b"a\0");
+        desc.extend_from_slice(&0i32.to_be_bytes());
+        desc.extend_from_slice(&0i16.to_be_bytes());
+        desc.extend_from_slice(&25i32.to_be_bytes());
+        desc.extend_from_slice(&(-1i16).to_be_bytes());
+        desc.extend_from_slice(&(-1i32).to_be_bytes());
+        desc.extend_from_slice(&0i16.to_be_bytes());
+        mensagem(&mut s, b'T', &desc)?;
+        let mut linha = 1i16.to_be_bytes().to_vec();
+        linha.extend_from_slice(&(celula as i32).to_be_bytes());
+        linha.extend(std::iter::repeat_n(b'x', celula));
+        for _ in 0..linhas {
+            mensagem(&mut s, b'D', &linha)?;
+        }
+        mensagem(&mut s, b'C', format!("SELECT {linhas}\0").as_bytes())?;
+        mensagem(&mut s, b'Z', b"I")
+    }
+
+    // ------------------------------------------------------------- PhxSql
+
+    /// Descarta um pedido do cliente, byte a byte ate o `\n`. Sem leitura de
+    /// linha de soquete: o `conferidor_canal` conta toda uma que nao passe
+    /// pelo `Canal`, e o par desta prova nao precisa do conteudo.
+    fn engolir_pedido(s: &mut TcpStream) -> std::io::Result<()> {
+        let mut b = [0u8; 1];
+        loop {
+            s.read_exact(&mut b)?;
+            if b[0] == b'\n' {
+                return Ok(());
+            }
+        }
+    }
+
+    fn phx(mut s: TcpStream, linhas: usize, celula: usize) -> std::io::Result<()> {
+        engolir_pedido(&mut s)?;
+        s.write_all(b"{\"ok\":true,\"resultado\":{\"phxsql\":\"prova\",\"papel\":\"isolado\"}}\n")?;
+        engolir_pedido(&mut s)?;
+        let valor = "x".repeat(celula);
+        let corpo: Vec<String> = (0..linhas)
+            .map(|_| format!("{{\"a\":\"{valor}\"}}"))
+            .collect();
+        let resposta = format!(
+            "{{\"ok\":true,\"resultado\":{{\"colunas\":[\"a\"],\"linhas\":[{}]}}}}\n",
+            corpo.join(",")
+        );
+        s.write_all(resposta.as_bytes())
+    }
+
+    const OS_TRES: [(&str, Conversa); 3] =
+        [("mysql", mysql), ("postgres", postgres), ("phxsql", phx)];
+
+    /// Os bytes guardados que a recusa diz -- o contador do teto, e nao a RAM.
+    fn guardados(m: &str) -> u64 {
+        let (antes, _) = m.split_once(" bytes ja guardados").expect(m);
+        antes.rsplit(' ').next().unwrap().parse().expect(m)
+    }
+
+    /// **546: os TRES clientes recusam o resultado que passa do teto de
+    /// bytes, e recusam ENQUANTO leem.** O par manda 64 linhas de 64 KiB --
+    /// quatro vezes o `max_mib` de 1 -- dentro do `max_linhas`, que e onde o
+    /// teto de linhas nao ajuda. A recusa tem de vir com `LimiteExcedido`,
+    /// nomeando `max_mib`, e com o contador do que ja se guardou abaixo do
+    /// teto: e ele que mede o pico, sem alocar nada perto de gigabytes.
+    ///
+    /// # Prova real
+    ///
+    /// Com o defeito reposto (o `Acumulador` sem a conta de bytes), os tres
+    /// voltam `Ok` com as 64 linhas guardadas, e o vermelho diz qual.
+    #[test]
+    fn o_par_que_anuncia_linhas_enormes_e_recusado_no_teto_de_bytes() {
+        for (motor, conversa) in OS_TRES {
+            let porta = par(conversa, LINHAS, CELULA);
+            let d = ligacao(
+                motor,
+                porta,
+                &format!(r#","max_linhas":100000,"max_mib":{MAX_MIB}"#),
+            );
+            let mut c = d
+                .abrir()
+                .unwrap_or_else(|e| panic!("{motor}: nao abriu: {e}"));
+            match c.consultar_em("", "SELECT a FROM t", d.max_linhas) {
+                Err(PhxError::LimiteExcedido(m)) => {
+                    assert!(m.contains("max_mib"), "{motor}: {m}");
+                    let pico = guardados(&m);
+                    assert!(
+                        pico <= d.teto_de_bytes(),
+                        "{motor}: guardou {pico} bytes, acima do teto {}",
+                        d.teto_de_bytes()
+                    );
+                }
+                Ok(r) => panic!(
+                    "{motor}: guardou as {} linhas (~{} bytes) sem recusar -- sem \
+                     teto de bytes no resultado",
+                    r.linhas.len(),
+                    r.linhas.len() * CELULA
+                ),
+                Err(outro) => panic!("{motor}: esperava o teto de bytes, veio {outro}"),
+            }
+        }
+    }
+
+    /// **O comportamento velho:** a consulta legitima pequena passa inteira
+    /// com o teto de FABRICA, e o resultado grande cortado pelo teto de
+    /// LINHAS continua voltando cortado -- e nao recusado --, porque a linha
+    /// cortada nao entra na conta de bytes.
+    #[test]
+    fn a_consulta_legitima_e_o_corte_por_linhas_continuam() {
+        for (motor, conversa) in OS_TRES {
+            // 64 linhas de 1 KiB, sem `max_mib` escrito: o de fabrica.
+            let porta = par(conversa, LINHAS, 1024);
+            let d = ligacao(motor, porta, "");
+            assert_eq!(d.max_mib, MIB_DO_RESULTADO_DE_FABRICA, "{motor}");
+            assert_eq!(d.teto_de_bytes(), TETO_DE_BYTES_DO_RESULTADO, "{motor}");
+            let r = d
+                .abrir()
+                .and_then(|mut c| c.consultar_em("", "SELECT a FROM t", d.max_linhas))
+                .unwrap_or_else(|e| panic!("{motor}: a consulta legitima recusou: {e}"));
+            assert_eq!((r.linhas.len(), r.truncado), (LINHAS, false), "{motor}");
+            assert_eq!(
+                r.linhas[0][0].as_deref().map(str::len),
+                Some(1024),
+                "{motor}"
+            );
+
+            // 4 MiB no fio e `max_mib` 1, mas so 4 linhas guardadas.
+            let porta = par(conversa, LINHAS, CELULA);
+            let d = ligacao(motor, porta, &format!(r#","max_mib":{MAX_MIB}"#));
+            let r = d
+                .abrir()
+                .and_then(|mut c| c.consultar_em("", "SELECT a FROM t", 4))
+                .unwrap_or_else(|e| panic!("{motor}: o corte por linhas virou recusa: {e}"));
+            assert_eq!((r.linhas.len(), r.truncado), (4, true), "{motor}");
+        }
+    }
+
+    /// O peso conta a MOLDURA de cada celula, e nao so o texto: uma linha de
+    /// NULOS, que custa um byte por celula no fio, nao e de graca.
+    #[test]
+    fn a_celula_nula_tambem_pesa() {
+        let nulos: Linha = vec![None; 4096];
+        assert!(peso_da_linha(&nulos) >= 4096 * 24);
+        let mut a = Acumulador::novo(u64::MAX, 4096 * 24);
+        assert!(matches!(a.receber(nulos), Err(PhxError::LimiteExcedido(_))));
+        assert_eq!(a.bytes(), 0, "a linha recusada nao pode ficar guardada");
+    }
+
+    /// Fora da faixa, o `max_mib` e grampeado -- e nunca vira «sem teto».
+    #[test]
+    fn o_max_mib_e_grampeado() {
+        for (escrito, vale) in [(0i64, 1u64), (-5, 1), (9_000_000, MIB_DO_RESULTADO_MAXIMO)] {
+            let d = ligacao("mysql", 3306, &format!(r#","max_mib":{escrito}"#));
+            assert_eq!(d.max_mib, vale, "{escrito}");
+        }
+        // E viaja para a tela e para o disco -- este, so quando foi escolhido:
+        // o de fabrica gravado mudaria o arquivo de quem nao pediu nada.
+        let d = ligacao("mysql", 3306, r#","max_mib":300"#);
+        assert_eq!(d.para_json().inteiro_ou("max_mib", 0), 300);
+        assert_eq!(d.para_disco(None).unwrap().inteiro_ou("max_mib", 0), 300);
+        let de_fabrica = ligacao("mysql", 3306, "");
+        assert!(de_fabrica
+            .para_disco(None)
+            .unwrap()
+            .campo("max_mib")
+            .is_none());
     }
 }

@@ -18010,6 +18010,60 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         ],
     },
     {
+        "id": "dblink-sem-teto-de-bytes",
+        "titulo": "O resultado do DbLink só tem teto de LINHAS: o par decide quanto pesa cada uma (até 128 MiB no MySQL, 64 MiB no PostgreSQL) e o servidor guarda gigabytes",
+        "porque": (
+            "pedido 546. O corte por linhas morava copiado em cada um dos "
+            "tres clientes (mysql, pg, phx); virou o `Acumulador` de "
+            "`dblink/conexao.rs`, o motor UNICO que decide linhas e bytes, "
+            "pesando cada linha (texto mais a moldura de cada celula) ANTES "
+            "de guardar. Reposta aqui so a conta de linhas, os tres voltam "
+            "`Ok` com as 64 linhas de 64 KiB que o par manda contra o "
+            "`max_mib` 1; com o conserto os tres recusam com `LimiteExcedido` "
+            "e o contador abaixo do teto."
+        ),
+        "arquivo": "crates/phxsql-server/src/dblink/conexao.rs",
+        "trecho": """        if depois > self.teto_de_bytes {""",
+        "troca": """        // DEFEITO REPOSTO (546): so o teto de linhas, sem a conta de bytes.
+        if depois > u64::MAX {""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "dblink::conexao::testes_do_teto_de_bytes::o_par_que_anuncia_linhas_enormes_e_recusado_no_teto_de_bytes",
+            "dblink::conexao::testes_do_teto_de_bytes::a_celula_nula_tambem_pesa",
+        ],
+        "seguem": [
+            "dblink::conexao::testes_do_teto_de_bytes::a_consulta_legitima_e_o_corte_por_linhas_continuam",
+            "dblink::conexao::testes_do_teto_de_bytes::o_max_mib_e_grampeado",
+        ],
+    },
+    {
+        "id": "dblink-max-mib-sem-leitor",
+        "titulo": "O `max_mib` da ligação do DbLink aparece no arquivo e na tela e nenhum cliente o lê: o teto de bytes fica o de fábrica, diga a ligação o que disser",
+        "porque": (
+            "pedido 546, a lei «configuracao que nao e lida mente». O teto "
+            "de bytes sai da ligacao por `Definicao::teto_de_bytes`, o lugar "
+            "unico que os tres clientes leem (`conectar_com`, "
+            "`conectar_pg_com` e o `phx::Conexao::abrir`). Reposto o leitor "
+            "que ignora o campo, a ligacao com `max_mib` 1 guarda os 4 MiB do "
+            "par sem recusar, porque o de fabrica (128 MiB) e o que vale."
+        ),
+        "arquivo": "crates/phxsql-server/src/dblink/mod.rs",
+        "trecho": """        self.max_mib.saturating_mul(1024 * 1024)""",
+        "troca": """        // DEFEITO REPOSTO (546): o campo existe e ninguem o le.
+        conexao::TETO_DE_BYTES_DO_RESULTADO""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "dblink::conexao::testes_do_teto_de_bytes::o_par_que_anuncia_linhas_enormes_e_recusado_no_teto_de_bytes",
+        ],
+        "seguem": [
+            "dblink::conexao::testes_do_teto_de_bytes::a_consulta_legitima_e_o_corte_por_linhas_continuam",
+            "dblink::conexao::testes_do_teto_de_bytes::a_celula_nula_tambem_pesa",
+            "dblink::conexao::testes_do_teto_de_bytes::o_max_mib_e_grampeado",
+        ],
+    },
+    {
         "id": "replica-sem-prazo-total",
         "titulo": "O laço da réplica, a sonda e o console só têm prazo por LEITURA: um par que goteja um byte antes de cada prazo prende a thread para sempre",
         "porque": (
