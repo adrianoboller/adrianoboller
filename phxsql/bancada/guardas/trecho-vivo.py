@@ -586,6 +586,13 @@ dia, nunca no desejado:
   (`carimbo-recente-lembrado`) -- e uma APOSENTADA escrita
   (`alter-com-regra-sem-aviso`: o aviso saiu do produto). 659 - 1 + 1 + 5,
   medido pelo `--numeros` nesta arvore.
+  **SUBIU para 668 em 01/10/2026** (revisao SEC do 245 O2b, achado A1):
+  quatro guardas -- a calculada que copia a marcada em claro
+  (`calculada-copia-a-marcada-em-claro`), a que cita coluna negada aceita na
+  declaracao (`calculada-cita-coluna-negada-na-declaracao`), a derivada de
+  coluna negada lida (`calculada-derivada-de-negada-se-le`) e a recusa que
+  diz a linha sobre a marcada (`recusa-da-calculada-marcada-diz-a-linha`).
+  664 + 4, medido pelo `--numeros` nesta arvore.
 
 # A QUINTA REGUA: a tabela publicada pode ser MENOR que o catalogo
 
@@ -692,7 +699,7 @@ TETO_TESTE_MORTO = 0
 TETO_TRECHO_AMBIGUO = 0
 TETO_TESTE_FORA_DO_BINARIO = 0
 TETO_TESTE_SEM_MODULO = 0
-PISO_DAS_ENTRADAS = 664
+PISO_DAS_ENTRADAS = 668
 
 # ------------------------------------------------------------- APOSENTADAS
 #

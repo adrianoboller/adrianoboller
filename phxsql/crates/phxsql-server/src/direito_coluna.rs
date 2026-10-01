@@ -602,6 +602,66 @@ pub fn mesmo_nome(a: &str, b: &str) -> bool {
     a.trim().eq_ignore_ascii_case(b.trim())
 }
 
+/// A coluna negada que esta expressao CITA, se houver -- a pergunta da
+/// revisao SEC (achado A1 do pedido 245 O2b), respondida UMA vez para os
+/// dois que a fazem: a declaracao que recusa ([`definicao_cita_negada`]) e a
+/// leitura que peneira a calculada derivada ([`derivadas_de_negadas`]).
+pub fn expressao_cita_negada(
+    e: &phxsql_core::expressao::Expressao,
+    negadas: &[String],
+) -> Option<String> {
+    e.colunas()
+        .iter()
+        .find(|c| negadas.iter().any(|n| mesmo_nome(n, c)))
+        .cloned()
+}
+
+/// A coluna negada que alguma expressao desta DEFINICAO de coluna cita --
+/// `calculada`, `check` ou `padrao`. A calculada copia o valor; o CHECK conta
+/// as linhas que o violam («2 das 4») e responde por elas; o padrao avalia
+/// sobre a linha. Os tres sao a coluna negada lida por outro nome.
+pub fn definicao_cita_negada(
+    coluna: &phxsql_core::schema::Column,
+    negadas: &[String],
+) -> Option<String> {
+    if negadas.is_empty() {
+        return None;
+    }
+    [&coluna.calculada, &coluna.check, &coluna.padrao]
+        .into_iter()
+        .flatten()
+        .find_map(|e| expressao_cita_negada(e, negadas))
+}
+
+/// As colunas CALCULADAS do `esquema` que citam coluna negada: elas sao a
+/// coluna negada copiada, e a leitura as nega junto. Uma volta so basta --
+/// calculada nao se apoia em calculada (`conferir_expressoes` do core).
+///
+/// Expressao que nao se analisa nao entra calada: a coluna dela e negada
+/// tambem, porque o que nao se le nao se pode inocentar.
+pub fn derivadas_de_negadas(esquema: &Json, negadas: &[String]) -> Vec<String> {
+    if negadas.is_empty() {
+        return Vec::new();
+    }
+    let Some(colunas) = esquema.campo("colunas").and_then(Json::lista) else {
+        return Vec::new();
+    };
+    colunas
+        .iter()
+        .filter_map(|c| {
+            let nome = c.texto_ou("nome", "");
+            let texto = c.campo("calculada").and_then(Json::texto)?;
+            if texto.trim().is_empty() || negadas.iter().any(|n| mesmo_nome(n, nome)) {
+                return None;
+            }
+            match phxsql_core::expressao::Expressao::analisar(texto) {
+                Ok(e) => expressao_cita_negada(&e, negadas).map(|_| nome.to_string()),
+                Err(_) => Some(nome.to_string()),
+            }
+        })
+        .collect()
+}
+
 /// Tira as colunas negadas de um objeto que E uma linha.
 fn peneirar_linha(linha: Json, negadas: &[String]) -> Json {
     match linha {

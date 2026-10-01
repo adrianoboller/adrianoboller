@@ -606,6 +606,24 @@ pub const FABRICA: &[MensagemFabrica] = &[
             "",
         ],
     },
+    // Revisao SEC do pedido 245 O2b (A1): a definicao de coluna cuja
+    // expressao cita coluna que este usuario nao le. A decisao e do
+    // `direito_coluna::definicao_cita_negada`; daqui sai so a frase.
+    MensagemFabrica {
+        nome: "erro.expressao_cita_coluna_negada",
+        textos: [
+            "a coluna {coluna} cita {citada}, que este usuario nao le em {tabela}: \
+             a expressao copiaria ou contaria o valor dela. Recusado; peca a leitura \
+             de {citada} ou declare a expressao sem ela",
+            "",
+            "column {coluna} cites {citada}, which this user cannot read in {tabela}: \
+             the expression would copy or count its value. Refused; ask to read \
+             {citada} or declare the expression without it",
+            "",
+            "",
+            "",
+        ],
+    },
     // Pedido 245, O2a: a decisao e a contagem sao do motor
     // (`Table::acrescentar_coluna_fase_a_recusando`); daqui sai so a frase.
     MensagemFabrica {

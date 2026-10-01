@@ -1252,6 +1252,43 @@ fn decodificar_com(
     Ok(linha)
 }
 
+/// A recusa da calculada que nao se calcula numa linha que ja existe
+/// (pedido 245, O2b). `motivo` `None` e o nulo numa coluna obrigatoria.
+///
+/// **Coluna marcada nao diz QUAL linha nem POR QUE** (revisao SEC, A1): com
+/// `CASE WHEN cpf LIKE '1%' THEN NULL ELSE 1 END` numa coluna obrigatoria,
+/// o rowid da recusa respondia «o CPF desta linha comeca com 1?», um ALTER
+/// por pergunta. A calculada que cita coluna marcada ja nasceu marcada
+/// (`Column::herdar_marca_das_citadas`), entao a pergunta e uma so.
+fn nao_se_calcula(
+    coluna: &phxsql_core::schema::Column,
+    id: RowId,
+    motivo: Option<PhxError>,
+) -> PhxError {
+    if coluna.dado_pessoal.e_pessoal() {
+        return PhxError::Esquema(format!(
+            "a coluna calculada {} nao se calcula em pelo menos uma das linhas \
+             que ja existem (conta fora do tipo, ou nulo numa coluna \
+             obrigatoria). A coluna e dado pessoal, e por isso a linha e o \
+             valor nao se dizem",
+            coluna.nome
+        ));
+    }
+    match motivo {
+        Some(e) => PhxError::Esquema(format!(
+            "a coluna calculada {} nao se calcula na linha {id}, que ja existe: {}",
+            coluna.nome,
+            coluna.recusa_de_valor(e)
+        )),
+        None => PhxError::Esquema(format!(
+            "a coluna calculada {} e obrigatoria e a expressao da nulo na linha \
+             {id}, que ja existe: deixe a coluna aceitar nulo, ou trate o nulo na \
+             expressao (COALESCE)",
+            coluna.nome
+        )),
+    }
+}
+
 /// O valor da coluna calculada `i` sobre `linha`, ja no tipo dela.
 ///
 /// UM lugar so, e e por isso que existe: a gravacao (`aplicar_regras`) e o
@@ -1862,6 +1899,11 @@ impl Table {
         padrao: Option<Value>,
         recusa: impl FnOnce(&CheckViolado) -> PhxError,
     ) -> Result<crate::reg::TrocaPendente> {
+        // A marca segue o dado (revisao SEC, A1): a calculada que cita coluna
+        // marcada nasce marcada, ANTES de o esquema novo se montar -- e e
+        // isso que poe o valor copiado na faixa selada do slot, e nao em claro.
+        let mut coluna = coluna;
+        coluna.herdar_marca_das_citadas(self.esquema.colunas());
         // Tabela em modo ledger NAO aceita coluna nova, e a recusa e' absoluta
         // -- nem nula, nem com padrao, nem em tabela vazia. O hash de cada bloco
         // cobre o conteudo canonico NA ORDEM do esquema; uma coluna a mais muda
@@ -2016,35 +2058,19 @@ impl Table {
                 linhas += 1;
                 linha.insert(posicao.min(linha.len()), valor_novo.clone());
                 if calculada.is_some() {
-                    let v = valor_calculado(&novo, posicao, &linha).map_err(|e| {
-                        PhxError::Esquema(format!(
-                            "a coluna calculada {} nao se calcula na linha {id}, \
-                             que ja existe: {e}",
-                            coluna.nome
-                        ))
-                    })?;
+                    let v = valor_calculado(&novo, posicao, &linha)
+                        .map_err(|e| nao_se_calcula(&coluna, id, Some(e)))?;
                     // O byte tambem se monta aqui, e nao so no preenchimento:
                     // a coercao confere o tipo, e a faixa do inteiro curto e
                     // conferida na escrita -- a recusa tem de sair ANTES da
                     // reescrita, nunca do meio dela.
                     if !v.e_null() {
                         let mut b = vec![0u8; coluna.ty.largura()];
-                        escrever_inline(&v, &coluna.ty, &mut b).map_err(|e| {
-                            PhxError::Esquema(format!(
-                                "a coluna calculada {} nao se calcula na linha {id}, \
-                                 que ja existe: {}",
-                                coluna.nome,
-                                coluna.recusa_de_valor(e)
-                            ))
-                        })?;
+                        escrever_inline(&v, &coluna.ty, &mut b)
+                            .map_err(|e| nao_se_calcula(&coluna, id, Some(e)))?;
                     }
                     if v.e_null() && !coluna.nullable {
-                        return Err(PhxError::Esquema(format!(
-                            "a coluna calculada {} e obrigatoria e a expressao da \
-                             nulo na linha {id}, que ja existe: deixe a coluna \
-                             aceitar nulo, ou trate o nulo na expressao (COALESCE)",
-                            coluna.nome
-                        )));
+                        return Err(nao_se_calcula(&coluna, id, None));
                     }
                     linha[posicao] = v;
                 }

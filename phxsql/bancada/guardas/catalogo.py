@@ -20160,11 +20160,14 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
 """,
         "pacote": "phxsql-server",
         "alvo": ["--lib"],
+        # O `acrescentar_calculada_preenche_a_linha_velha` CAI junto, e e
+        # certo: ele confere o CHECK julgado com o valor calculado («1 das 3»),
+        # que e esta mesma contagem (provador, 01/10/2026).
         "caem": [
             "servidor::testes_regras_de_esquema::o_check_que_a_linha_velha_viola_recusa_a_coluna_dizendo_quantas",
+            "servidor::testes_regras_de_esquema::acrescentar_calculada_preenche_a_linha_velha",
         ],
         "seguem": [
-            "servidor::testes_regras_de_esquema::acrescentar_calculada_preenche_a_linha_velha",
             "servidor::testes_regras_de_esquema::check_recusa_menos_5_e_aceita_5",
         ],
     },
@@ -21966,5 +21969,98 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         "alvo": ["--lib"],
         "caem": ["irmas::testes::carimbo_recente_nao_e_confiavel_e_velho_e"],
         "seguem": ["irmas::testes::a_segunda_exclusao_nao_rele_o_esquema_das_irmas"],
+    },
+    {
+        "id": "calculada-copia-a-marcada-em-claro",
+        "titulo": "a calculada que cita coluna marcada nasce SEM marca, e o preenchimento grava o texto do cofre em claro no `.reg`",
+        "porque": (
+            "revisao SEC do pedido 245 O2b, achado A1 (2): `copia = obs` sobre o "
+            "`.memo` selado abria o envelope e gravava o segredo numa coluna inline "
+            "em claro -- so a faixa MARCADA do slot se sela. A marca segue o dado: "
+            "a calculada herda o maior grau das citadas."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """        coluna.herdar_marca_das_citadas(self.esquema.colunas());
+""",
+        "troca": """        // DEFEITO REPOSTO (SEC A1): a calculada nasce sem a marca.
+        let _ = self.esquema.colunas();
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "cifra-dos-dados"],
+        "caem": ["calculada_sobre_externo_selado_nasce_marcada_e_nao_vaza_no_reg"],
+        "seguem": [
+            "calculada_acrescentada_abre_o_externo_selado_da_linha_velha",
+            "acrescentar_coluna_em_tabela_cifrada_mantem_a_linha_legivel",
+        ],
+    },
+    {
+        "id": "calculada-cita-coluna-negada-na-declaracao",
+        "titulo": "`acrescentar_coluna` com calculada (ou CHECK) que cita coluna negada ao usuario e aceito, e a coluna negada passa a ser lida por outro nome",
+        "porque": (
+            "revisao SEC do pedido 245 O2b, achado A1 (1): com `administrar` e "
+            "`cpf` negado, `calculada: \"cpf\"` copiava todo CPF para uma coluna "
+            "que o `varrer` devolve; o CHECK que cita `cpf` contaria as linhas por "
+            "ele. Recusa na declaracao, pelo `direito_coluna::definicao_cita_negada`."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """                        if let Some(citada) = dc::definicao_cita_negada(&c, &sem_ler) {
+""",
+        "troca": """                        // DEFEITO REPOSTO (SEC A1): a definicao passa sem conferir.
+                        if let Some(citada) = dc::definicao_cita_negada(&c, &[]) {
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_direito_por_coluna::calculada_que_cita_coluna_negada_e_recusada_na_declaracao",
+        ],
+        "seguem": [
+            "servidor::testes_direito_por_coluna::calculada_derivada_de_coluna_negada_nao_se_le",
+            "servidor::testes_direito_por_coluna::sem_colunas_no_cadastro_nada_muda",
+        ],
+    },
+    {
+        "id": "calculada-derivada-de-negada-se-le",
+        "titulo": "a calculada que o dono declarou sobre coluna negada sai na leitura de quem nao le a coluna",
+        "porque": (
+            "revisao SEC do pedido 245 O2b, achado A1: `x = salario` e o salario "
+            "por outro nome. A peneira que tira `salario` e deixa `x` peneira "
+            "nada. A leitura nega junto toda calculada que cita coluna negada, "
+            "pela mesma `expressao_cita_negada` da declaracao."
+        ),
+        "arquivo": "crates/phxsql-server/src/direito_coluna.rs",
+        "trecho": """    let Some(colunas) = esquema.campo("colunas").and_then(Json::lista) else {
+""",
+        "troca": """    // DEFEITO REPOSTO (SEC A1): nenhuma calculada derivada se nega.
+    let Some(colunas) = esquema.campo("colunas_que_nao_existem").and_then(Json::lista) else {
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_direito_por_coluna::calculada_derivada_de_coluna_negada_nao_se_le",
+        ],
+        "seguem": [
+            "servidor::testes_direito_por_coluna::calculada_que_cita_coluna_negada_e_recusada_na_declaracao",
+            "servidor::testes_direito_por_coluna::sem_colunas_no_cadastro_nada_muda",
+        ],
+    },
+    {
+        "id": "recusa-da-calculada-marcada-diz-a-linha",
+        "titulo": "a recusa da calculada sobre coluna marcada nomeia a linha velha, e vira oraculo por rowid sobre o dado pessoal",
+        "porque": (
+            "revisao SEC do pedido 245 O2b, achado A1 (3): `CASE WHEN cpf LIKE "
+            "'1%' THEN NULL ELSE 1 END` numa coluna obrigatoria fazia a recusa "
+            "«nao se calcula na linha N» responder sobre o CPF da linha N, um "
+            "ALTER por pergunta. Sobre coluna marcada a recusa nao diz a linha."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """    if coluna.dado_pessoal.e_pessoal() {
+""",
+        "troca": """    // DEFEITO REPOSTO (SEC A1): a recusa diz a linha tambem na marcada.
+    if coluna.dado_pessoal.e_pessoal() && false {
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "acrescentar-coluna"],
+        "caem": ["a_recusa_da_calculada_sobre_coluna_marcada_nao_diz_a_linha"],
+        "seguem": ["a_calculada_acrescentada_preenche_a_linha_velha_e_so_ela"],
     },
 ]

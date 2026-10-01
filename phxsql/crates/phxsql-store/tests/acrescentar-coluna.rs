@@ -1159,3 +1159,66 @@ fn a_calculada_acrescentada_preenche_a_linha_velha_e_so_ela() {
     let mut t = Table::abrir(&d.0, "clientes").unwrap();
     assert_eq!(t.ler(1).unwrap().unwrap()[pos], Value::Int(2));
 }
+
+/// **Revisao SEC do 245 O2b, achado A1 (3): a recusa nao vira oraculo por
+/// rowid.** A calculada obrigatoria que da nulo numa linha velha recusa a
+/// coluna -- e, sobre coluna marcada, dizer QUAL linha respondia uma pergunta
+/// sobre o dado dela (`CASE WHEN cpf LIKE '1%' THEN NULL ...`), um ALTER por
+/// pergunta. Sobre coluna marcada a recusa nao diz a linha; sobre coluna
+/// comum continua dizendo (o controle, que e o que ajuda quem modela).
+///
+/// Reponha o defeito tirando o ramo `e_pessoal()` de `nao_se_calcula`: a
+/// recusa sobre `cpf` passa a dizer «linha 2».
+#[test]
+fn a_recusa_da_calculada_sobre_coluna_marcada_nao_diz_a_linha() {
+    use phxsql_core::types::DadoPessoal;
+    let d = DirTemp::novo("calculada-oraculo");
+    let esquema = Schema::new(
+        "pessoas",
+        vec![
+            Column::new("id", ColumnType::Int8).obrigatoria(),
+            Column::new("cpf", ColumnType::Str(14)).com_dado_pessoal(DadoPessoal::Pessoal),
+            Column::new("apelido", ColumnType::Str(14)),
+        ],
+        vec![],
+    )
+    .unwrap();
+    let mut t = Table::criar(&d.0, esquema).unwrap();
+    t.inserir(&[
+        Value::Int(1),
+        Value::Str("111".into()),
+        Value::Str("a".into()),
+    ])
+    .unwrap();
+    t.inserir(&[Value::Int(2), Value::Null, Value::Null])
+        .unwrap();
+
+    let e = t
+        .acrescentar_coluna(
+            Column::new("n", ColumnType::Int8)
+                .obrigatoria()
+                .com_calculada("LENGTH(cpf)")
+                .unwrap(),
+            None,
+        )
+        .unwrap_err()
+        .to_string();
+    assert!(
+        !e.contains("linha 2"),
+        "a recusa sobre coluna marcada disse a linha: {e}"
+    );
+    assert!(e.contains("calculada n"), "{e}");
+
+    // CONTROLE: sobre coluna comum, a linha continua dita.
+    let e = t
+        .acrescentar_coluna(
+            Column::new("m", ColumnType::Int8)
+                .obrigatoria()
+                .com_calculada("LENGTH(apelido)")
+                .unwrap(),
+            None,
+        )
+        .unwrap_err()
+        .to_string();
+    assert!(e.contains("linha 2"), "{e}");
+}

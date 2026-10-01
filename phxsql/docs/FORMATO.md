@@ -489,6 +489,12 @@ não se replica, cada lado roda o próprio, e um preenchimento que obedecesse ao
 `julga_integridade` deixaria a réplica nula e a origem cheia. O que torna os
 dois lados iguais é a gramática não ter função não determinista.
 
+A calculada que cita coluna marcada **nasce marcada** com o maior grau das
+citadas (revisão SEC, `SEGURANCA.md` §40), e por isso o valor preenchido cai
+na faixa selada do slot quando a tabela tem cofre. Só na declaração: a marca
+de coluna já gravada não muda na leitura, porque mudaria a faixa selada do
+slot que já está lá.
+
 **Na réplica nada disso roda**: a imagem que chega já veio com tudo aplicado
 na origem, e reaplicar seria julgar — o mesmo buraco que a chave estrangeira
 já abriu uma vez (pedido 171).

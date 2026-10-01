@@ -8860,7 +8860,26 @@ impl Servidor {
                     let r = self.executar(op, pedido, sessao)?;
                     return self.peneirar_marca_dagua_por_tabela(r, u, &base, sessao);
                 }
-                let sem_ler = u.colunas_negadas(&base, &tabela, Atividade::Ler);
+                let sem_ler = self.negadas_para_ler(u, &base, &tabela, sessao)?;
+                // A DEFINICAO que cita coluna negada (revisao SEC, A1 do 245
+                // O2b): `calculada: "cpf"` copiava todo CPF para uma coluna
+                // que este usuario le, num ALTER so. Recusa na declaracao,
+                // antes de tocar em arquivo.
+                if op == "acrescentar_coluna" && !sem_ler.is_empty() {
+                    let corpo = pedido.campo("coluna").unwrap_or(pedido);
+                    if let Ok(c) = crate::valores::coluna_de_json(corpo, 0, false) {
+                        if let Some(citada) = dc::definicao_cita_negada(&c, &sem_ler) {
+                            return Err(PhxError::Autorizacao(self.msg(
+                                "erro.expressao_cita_coluna_negada",
+                                &[
+                                    ("coluna", &c.nome),
+                                    ("citada", &citada),
+                                    ("tabela", &format!("{base}.{tabela}")),
+                                ],
+                            )));
+                        }
+                    }
+                }
                 let negada = !sem_ler.is_empty()
                     && self
                         .coluna_do_rowid_negada(&base, &tabela, &sem_ler, sessao)?
@@ -8918,7 +8937,7 @@ impl Servidor {
             // conclui que a coluna esta vazia no banco.
             PorColuna::Estrutura => {
                 let r = self.executar(op, pedido, sessao)?;
-                let sem_ler = u.colunas_negadas(&base, &tabela, Atividade::Ler);
+                let sem_ler = self.negadas_para_ler(u, &base, &tabela, sessao)?;
                 let sem_alterar = u.colunas_negadas(&base, &tabela, Atividade::Alterar);
                 // O que conta linha por balde e' agregado do DADO, nao da
                 // estrutura -- sai quando a coluna que o rowid revela esta em
@@ -8949,7 +8968,7 @@ impl Servidor {
             }
 
             PorColuna::Le(onde) => {
-                let negadas = u.colunas_negadas(&base, &tabela, Atividade::Ler);
+                let negadas = self.negadas_para_ler(u, &base, &tabela, sessao)?;
                 if negadas.is_empty() {
                     return self.executar(op, pedido, sessao);
                 }
@@ -9001,6 +9020,38 @@ impl Servidor {
                 Ok(Json::Objeto(pares))
             }
         }
+    }
+
+    /// As colunas que este usuario NAO le nesta tabela: as que o cadastro
+    /// nega e as CALCULADAS que citam alguma delas (revisao SEC, achado A1 do
+    /// pedido 245 O2b). A calculada `x = cpf` e o CPF por outro nome, e a
+    /// peneira que tirasse `cpf` e deixasse `x` peneiraria nada.
+    ///
+    /// O esquema so se pergunta quando ha coluna negada nesta tabela: quem
+    /// nao tem regra nao paga nem a lista. A decisao «esta expressao cita
+    /// coluna negada» e a mesma da declaracao (`direito_coluna`).
+    fn negadas_para_ler(
+        &self,
+        u: &crate::usuarios::Usuario,
+        base: &str,
+        tabela: &str,
+        sessao: &Sessao,
+    ) -> Result<Vec<String>> {
+        let mut negadas = u.colunas_negadas(base, tabela, Atividade::Ler);
+        if negadas.is_empty() || tabela.is_empty() {
+            return Ok(negadas);
+        }
+        let ped = Json::objeto(vec![
+            ("database", Json::texto_de(base)),
+            ("tabela", Json::texto_de(tabela)),
+        ]);
+        // Tabela que nao existe nao tem calculada: o erro e da operacao, que
+        // o devolve com o texto dela logo adiante.
+        if let Ok(e) = self.executar("esquema", &ped, sessao) {
+            let derivadas = crate::direito_coluna::derivadas_de_negadas(&e, &negadas);
+            negadas.extend(derivadas);
+        }
+        Ok(negadas)
     }
 
     /// A resposta que traz UMA LINHA POR TABELA na lista `tabelas` (o
@@ -39155,6 +39206,144 @@ mod testes_direito_por_coluna {
             )
             .unwrap();
         assert!(r.campo("avisos").is_none(), "{}", r.escrever());
+    }
+
+    // ------------------------------------- revisao SEC do 245 O2b, achado A1
+
+    /// **A calculada que cita coluna negada e recusada na declaracao.** Ana
+    /// tem `administrar` na folha e `salario` negado; `acrescentar_coluna`
+    /// com `calculada: "salario"` copiaria todo salario para `x`, que ela le.
+    /// O CHECK que cita `salario` tambem recusa: ele contaria as linhas por
+    /// ele («2 das 4»). A folha fica com as colunas que tinha.
+    ///
+    /// O controle: a MESMA calculada sobre `nome`, que Ana le, entra.
+    ///
+    /// Reponha o defeito tirando a conferencia `definicao_cita_negada` do
+    /// ramo `MarcaDagua`: a coluna entra e o `varrer` devolve 5000 em `x`.
+    #[test]
+    fn calculada_que_cita_coluna_negada_e_recusada_na_declaracao() {
+        let dir = dir_temp("sec-a1-declara");
+        let (s, ses) = servidor(&dir, so_a_folha_tem_regra());
+        let colunas = |s: &Arc<Servidor>| {
+            s.executar(
+                "esquema",
+                &pedido(r#"{"database":"b","tabela":"folha"}"#),
+                &Sessao::default(),
+            )
+            .unwrap()
+            .campo("colunas")
+            .and_then(Json::lista)
+            .map(|l| l.len())
+            .unwrap()
+        };
+        let antes = colunas(&s);
+        for def in [
+            r#"{"nome":"x","tipo":"Int4","calculada":"salario"}"#,
+            r#"{"nome":"x","tipo":"Int4","calculada":"SALARIO + 0"}"#,
+            r#"{"nome":"x","tipo":"Int4","check":"salario > 4000"}"#,
+        ] {
+            let e = pede(
+                &s,
+                &ses,
+                &format!(
+                    r#""op":"acrescentar_coluna","database":"b","tabela":"folha","coluna":{def}"#
+                ),
+            )
+            .expect_err(def)
+            .to_string();
+            assert!(
+                e.to_lowercase().contains("salario") && e.contains("x"),
+                "{def}: {e}"
+            );
+        }
+        assert_eq!(antes, colunas(&s), "uma recusa mexeu na tabela");
+        let r = pede(&s, &ses, r#""op":"varrer","database":"b","tabela":"folha""#).unwrap();
+        assert!(!r.escrever().contains("5000"), "{}", r.escrever());
+
+        // CONTROLE: a calculada sobre o que Ana le entra, e se le.
+        pede(
+            &s,
+            &ses,
+            r#""op":"acrescentar_coluna","database":"b","tabela":"folha",
+               "coluna":{"nome":"y","tipo":"Str(20)","calculada":"UPPER(nome)"}"#,
+        )
+        .unwrap();
+        let r = pede(
+            &s,
+            &ses,
+            r#""op":"ler","database":"b","tabela":"folha","rowid":1"#,
+        )
+        .unwrap();
+        assert_eq!(r.texto_ou("y", ""), "ANA", "{}", r.escrever());
+    }
+
+    /// **A calculada DERIVADA de coluna negada sai da leitura junto.** O dono
+    /// (sem restricao) declara `x = salario`; Ana, que nao le `salario`, nao
+    /// le `x` -- e o salario por outro nome. Pela leitura e pela varredura,
+    /// e o filtro por `x` recusa como o filtro por `salario`.
+    ///
+    /// Reponha o defeito fazendo `derivadas_de_negadas` devolver vazio: o
+    /// `varrer` de Ana devolve 5000.
+    #[test]
+    fn calculada_derivada_de_coluna_negada_nao_se_le() {
+        let dir = dir_temp("sec-a1-le");
+        let (s, ses) = servidor(&dir, so_a_folha_tem_regra());
+        s.executar(
+            "acrescentar_coluna",
+            &pedido(
+                r#"{"database":"b","tabela":"folha",
+                    "coluna":{"nome":"x","tipo":"Int4","calculada":"salario"}}"#,
+            ),
+            &Sessao::default(),
+        )
+        .unwrap();
+        // O dono le o valor preenchido: e isso que Ana NAO pode ver.
+        let dono = s
+            .executar(
+                "ler",
+                &pedido(r#"{"database":"b","tabela":"folha","rowid":1}"#),
+                &Sessao::default(),
+            )
+            .unwrap();
+        assert_eq!(dono.inteiro_ou("x", -1), 5000);
+
+        for corpo in [
+            r#""op":"varrer","database":"b","tabela":"folha""#,
+            r#""op":"ler","database":"b","tabela":"folha","rowid":1"#,
+        ] {
+            let r = pede(&s, &ses, corpo).unwrap();
+            assert!(!r.escrever().contains("5000"), "{corpo}: {}", r.escrever());
+            assert!(r.escrever().contains("ana"), "{corpo}: {}", r.escrever());
+        }
+        // E o `esquema` diz a Ana que `x` nao chega, como diz de `salario`.
+        let e = pede(
+            &s,
+            &ses,
+            r#""op":"esquema","database":"b","tabela":"folha""#,
+        )
+        .unwrap();
+        let sem_ler = e.campo("colunas_sem_leitura").unwrap().escrever();
+        assert!(sem_ler.contains("\"x\""), "{sem_ler}");
+
+        // CONTROLE: sem regra de coluna, Ana le `x` como sempre.
+        let dir2 = dir_temp("sec-a1-le-controle");
+        let (s2, ses2) = servidor(&dir2, sem_regra_de_coluna());
+        s2.executar(
+            "acrescentar_coluna",
+            &pedido(
+                r#"{"database":"b","tabela":"folha",
+                    "coluna":{"nome":"x","tipo":"Int4","calculada":"salario"}}"#,
+            ),
+            &Sessao::default(),
+        )
+        .unwrap();
+        let r = pede(
+            &s2,
+            &ses2,
+            r#""op":"ler","database":"b","tabela":"folha","rowid":1"#,
+        )
+        .unwrap();
+        assert_eq!(r.inteiro_ou("x", -1), 5000);
     }
 }
 

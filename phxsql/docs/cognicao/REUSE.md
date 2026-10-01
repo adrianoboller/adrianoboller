@@ -4,7 +4,12 @@
      `--catraca` reprova se este arquivo nao bater com o que o extrator
      geraria agora; rode o comando sem flag para atualizar. -->
 
-Gerado dos `cognicao_*.md` com `**Estado:** FRUTIFERO` -- 9 hoje, de 385 cognicoes no total.
+Gerado dos `cognicao_*.md` com `**Estado:** FRUTIFERO` -- 10 hoje, de 386 cognicoes no total.
+
+## A calculada é a coluna protegida por outro nome — e o preenchimento em lote promove o vazamento de linha a vazamento de tabela
+
+- Evidencia: `crates/phxsql-store/tests/cifra-dos-dados.rs::calculada_sobre_externo_selado_nasce_marcada_e_nao_vaza_no_reg`; `crate::servidor::testes_direito_por_coluna::calculada_que_cita_coluna_negada_e_recusada_na_declaracao`; `crate::servidor::testes_direito_por_coluna::calculada_derivada_de_coluna_negada_nao_se_le`; `crates/phxsql-store/tests/acrescentar-coluna.rs::a_recusa_da_calculada_sobre_coluna_marcada_nao_diz_a_linha`
+- Arquivo: [cognicao_calculada-e-a-coluna-protegida-por-outro-nome_20261001_1930.md](cognicao_calculada-e-a-coluna-protegida-por-outro-nome_20261001_1930.md)
 
 ## O carimbo do arquivo faz o papel do catálogo reverso sem cobrar de ninguém — e o medidor do diretório recém-criado não o vê
 
