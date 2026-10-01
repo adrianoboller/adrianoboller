@@ -1118,11 +1118,17 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `fts-orfao-reaproveitado-na-redeclaracao` | Redeclarar o índice de texto reaproveitava o .fts órfão, e a busca achava menos que a varredura | 1 | ✅ provada |
 | `fts-orfao-na-lista-vazia` | Redeclarar o índice de texto como lista vazia deixava o .fts órfão no disco | 1 | ✅ provada |
 | `fts-montado-pela-declaracao-velha` | A redeclaração do índice de texto montava o .fts novo pela declaração velha | 1 | ✅ provada |
+| `mapa-de-toques-sem-teto` | O mapa de toques do bidirecional crescia uma entrada por chave distinta, sem teto, o processo inteiro | 1 | ✅ provada |
+| `toque-esquecido-decide-as-cegas` | Chave esquecida pelo teto decidia «vence» abaixo do piso, e a escrita velha de lá apagava a nova daqui calada | 1 | ✅ provada |
+| `master-conta-tabela-negada-ao-cluster` | O master somava na posição do cluster a tabela que o usuário do cluster não pode replicar | 1 | ✅ provada |
+| `replica-grava-filha-sem-mae-calada` | A réplica gravava a filha sem a mãe e nada contava: o invariante «só existe filho se o pai existir» caía calado | 2 | ✅ provada |
+| `bidi-grava-filha-sem-mae-calada` | O bidirecional gravava a filha sem a mãe calado, enquanto a réplica fiel já contava | 1 | ✅ provada |
+| `escrita-local-na-replica-calada` | A réplica aceitava escrita local calada, e a ruptura que ela causava culpava o source | 1 | ✅ provada |
 | `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | — | 🪦 aposentada (18/09/2026) |
 
-**477 das 652 guardas do catálogo: 1 aposentada, 472 provadas, 4 redundantes** — 14616 s de mutação, medido em 2026-09-16 15:25.
+**483 das 658 guardas do catálogo: 1 aposentada, 478 provadas, 4 redundantes** — 14884 s de mutação, medido em 2026-09-16 15:25.
 
-> **Esta rodada NÃO julgou 176 das 652 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 176 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 176 das 658 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 176 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
 - `fk-antes-do-default` — a chave estrangeira confere a linha crua, e o DEFAULT sem mãe grava a filha órfã
 - `fk-antes-do-default-pelo-servidor` — o DEFAULT e a calculada sem mãe gravam a órfã pelo servidor, fora e dentro da transação

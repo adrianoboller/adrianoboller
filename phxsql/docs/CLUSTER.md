@@ -360,12 +360,20 @@ como sempre foi). As consequências práticas, sem eufemismo:
    master anuncia** (pedido 300, 01/10/2026): a réplica aprende na rodada da
    replicação a lista que o `bancos` e o `posicao` do master respondem — a
    mesma que ela alcança — e só soma isso; um database que só mora nela não
-   infla a posição. O master soma o que tem, porque é o que serve. A réplica
+   infla a posição. O master soma o que serve: toda tabela que o **usuário do
+   cluster** (`cluster.usuario`) pode `replicar`, pelo mesmo motor que o
+   `posicao` aplica à sessão da réplica (`replica_alcanca`) — a tabela negada
+   a ele mora só no master e punha o master à frente de toda réplica por dado
+   que não viaja (01/10/2026; sem usuário, ou com usuário que o cadastro não
+   tem, soma tudo, como antes). A réplica
    que nunca ouviu um master soma tudo e publica a posição **incompleta**. O
    anúncio é durável em `cluster.anunciadas.json` (FORMATO §20), para o
    arranque a frio não voltar a contar o que não replica. O que isto **não**
    resolve: a escrita local numa tabela replicada continua contando (pedido
-   300, item 4).
+   300, item 4). Fora de cluster ela já não passa calada: a réplica fiel sem
+   `somente_leitura` conta cada escrita local aceita
+   (`replicacao_estado.escritas_locais`) e a ruptura de continuidade a nomeia
+   (REPLICACAO.md §13); no cluster a réplica nem aceita — redireciona.
 5. **A fresta entre «o master calou» e «os pares envelheceram».** A eleição
    conta quem **pulsou** dentro da janela, e o silêncio do master sai do
    **mesmo relógio**. Os dois prazos não vencem juntos quando os nós caem em

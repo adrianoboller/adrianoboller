@@ -567,6 +567,15 @@ dia, nunca no desejado:
   as quatro provadas pelo soquete -- e o `.fts` montado pela declaracao velha
   (`fts-montado-pela-declaracao-velha`), provada no `store`. 649, medido pelo
   `--numeros` nesta arvore.
+  **SUBIU para 659 em 01/10/2026** (no merge, 653 + 6; pedidos 330 b e 300): seis
+  guardas -- o mapa de toques sem teto (`mapa-de-toques-sem-teto`), a chave
+  esquecida decidindo as cegas (`toque-esquecido-decide-as-cegas`, pelo
+  soquete), o master somando a tabela negada ao usuario do cluster
+  (`master-conta-tabela-negada-ao-cluster`), a filha sem mae calada na replica
+  fiel e no bidirecional (`replica-grava-filha-sem-mae-calada`,
+  `bidi-grava-filha-sem-mae-calada`, pelo soquete) e a escrita local na
+  replica calada (`escrita-local-na-replica-calada`, pelo soquete). 650,
+  medido pelo `--numeros` nesta arvore.
 
 # A QUINTA REGUA: a tabela publicada pode ser MENOR que o catalogo
 
@@ -673,7 +682,7 @@ TETO_TESTE_MORTO = 0
 TETO_TRECHO_AMBIGUO = 0
 TETO_TESTE_FORA_DO_BINARIO = 0
 TETO_TESTE_SEM_MODULO = 0
-PISO_DAS_ENTRADAS = 653
+PISO_DAS_ENTRADAS = 659
 
 # ------------------------------------------------------------- APOSENTADAS
 #

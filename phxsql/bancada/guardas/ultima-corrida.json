@@ -53,9 +53,9 @@
       "id": "posicao-sem-portao",
       "titulo": "`posicao` entrega eventos e o esquema cru de toda tabela",
       "veredito": "PROVADA",
-      "segundos": 34.81,
+      "segundos": 79.86,
       "notas": [],
-      "quando": "2026-09-17 05:00"
+      "quando": "2026-10-01 17:01"
     },
     {
       "id": "duplicar-sem-destino",
@@ -585,9 +585,9 @@
       "id": "replica-julga-fk",
       "titulo": "a replica volta a conferir chave estrangeira no evento que aplica",
       "veredito": "PROVADA",
-      "segundos": 4.44,
+      "segundos": 7.28,
       "notas": [],
-      "quando": "2026-09-24 13:44"
+      "quando": "2026-10-01 17:01"
     },
     {
       "id": "cascata-sem-imagem-no-diario",
@@ -609,9 +609,9 @@
       "id": "marca-de-replica-fica-acesa",
       "titulo": "a marca de replica nao se apaga na volta do `aplicar_evento`",
       "veredito": "PROVADA",
-      "segundos": 8.42,
+      "segundos": 7.25,
       "notas": [],
-      "quando": "2026-10-01 12:14"
+      "quando": "2026-10-01 17:01"
     },
     {
       "id": "fk-nao-pergunta-se-a-mae-esta-viva",
@@ -665,9 +665,9 @@
       "id": "bidirecional-julga-fk",
       "titulo": "o bidirecional volta a conferir a chave do evento que aplica",
       "veredito": "PROVADA",
-      "segundos": 6.89,
+      "segundos": 7.06,
       "notas": [],
-      "quando": "2026-10-01 11:11"
+      "quando": "2026-10-01 17:01"
     },
     {
       "id": "bidirecional-julga-as-filhas",
@@ -1737,9 +1737,9 @@
       "id": "posicao-nao-encolhe-em-silencio",
       "titulo": "tabela que nao abre some da soma do diario sem marcar `incompleta`",
       "veredito": "PROVADA",
-      "segundos": 88.51,
+      "segundos": 83.37,
       "notas": [],
-      "quando": "2026-10-01 13:06"
+      "quando": "2026-10-01 17:01"
     },
     {
       "id": "eleicao-prefere-completa",
@@ -3715,17 +3715,17 @@
       "id": "bidi-absorve-o-diario-sob-a-exclusiva-pelo-soquete",
       "titulo": "A primeira rodada do bidirecional depois do arranque absorvia o diário local inteiro com a trava exclusiva na mão — a prova pelo soquete, com o escritor de cliente gravando",
       "veredito": "PROVADA",
-      "segundos": 32.53,
+      "segundos": 35.78,
       "notas": [],
-      "quando": "2026-10-01 16:40"
+      "quando": "2026-10-01 17:01"
     },
     {
       "id": "pre-absorcao-fura-a-fila-do-escritor",
       "titulo": "A absorção do bidirecional retomava a trava de leitura entre as fatias antes de o escritor acordado entrar, e o escritor esperava dezenas de fatias",
       "veredito": "PROVADA",
-      "segundos": 33.68,
+      "segundos": 33.99,
       "notas": [],
-      "quando": "2026-10-01 16:40"
+      "quando": "2026-10-01 17:01"
     },
     {
       "id": "leitor-que-cede-volta-na-hora",
@@ -3763,9 +3763,9 @@
       "id": "posicao-do-cluster-conta-tabela-que-nao-replica",
       "titulo": "A posição somada do cluster contava tabela que não é replicada, e o nó com dado local ganhava a eleição",
       "veredito": "PROVADA",
-      "segundos": 102.26,
+      "segundos": 80.77,
       "notas": [],
-      "quando": "2026-10-01 13:06"
+      "quando": "2026-10-01 17:01"
     },
     {
       "id": "ledger-marcado-recebido-calado",
@@ -3822,6 +3822,54 @@
       "segundos": 7.91,
       "notas": [],
       "quando": "2026-10-01 14:51"
+    },
+    {
+      "id": "mapa-de-toques-sem-teto",
+      "titulo": "O mapa de toques do bidirecional crescia uma entrada por chave distinta, sem teto, o processo inteiro",
+      "veredito": "PROVADA",
+      "segundos": 81.18,
+      "notas": [],
+      "quando": "2026-10-01 17:01"
+    },
+    {
+      "id": "toque-esquecido-decide-as-cegas",
+      "titulo": "Chave esquecida pelo teto decidia «vence» abaixo do piso, e a escrita velha de lá apagava a nova daqui calada",
+      "veredito": "PROVADA",
+      "segundos": 20.3,
+      "notas": [],
+      "quando": "2026-10-01 17:01"
+    },
+    {
+      "id": "master-conta-tabela-negada-ao-cluster",
+      "titulo": "O master somava na posição do cluster a tabela que o usuário do cluster não pode replicar",
+      "veredito": "PROVADA",
+      "segundos": 77.75,
+      "notas": [],
+      "quando": "2026-10-01 17:01"
+    },
+    {
+      "id": "replica-grava-filha-sem-mae-calada",
+      "titulo": "A réplica gravava a filha sem a mãe e nada contava: o invariante «só existe filho se o pai existir» caía calado",
+      "veredito": "PROVADA",
+      "segundos": 20.56,
+      "notas": [],
+      "quando": "2026-10-01 17:01"
+    },
+    {
+      "id": "bidi-grava-filha-sem-mae-calada",
+      "titulo": "O bidirecional gravava a filha sem a mãe calado, enquanto a réplica fiel já contava",
+      "veredito": "PROVADA",
+      "segundos": 20.86,
+      "notas": [],
+      "quando": "2026-10-01 17:01"
+    },
+    {
+      "id": "escrita-local-na-replica-calada",
+      "titulo": "A réplica aceitava escrita local calada, e a ruptura que ela causava culpava o source",
+      "veredito": "PROVADA",
+      "segundos": 23.29,
+      "notas": [],
+      "quando": "2026-10-01 17:01"
     },
     {
       "id": "cifra-do-fio-imposta",

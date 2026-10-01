@@ -843,6 +843,56 @@ pub struct Table {
     /// ordem de digitacao, e honrar o numero do outro faria as duas fontes de
     /// numeracao colidirem no mesmo `.reg`.
     honrar_rownum: bool,
+    /// A contagem de filhas orfas da escrita replicada -- pedido 300 §2.7.
+    /// `None` = desligada, que e o padrao e custa uma comparacao de `Option`
+    /// no caminho que ja nao julgava. Liga por [`Table::contar_orfas`].
+    orfas: Option<Box<ContagemDeOrfas>>,
+}
+
+/// Quantas linhas replicadas entraram sem a mae -- pedido 300 §2.7.
+///
+/// # Por que contar, e nao recusar
+///
+/// A replica APLICA, nao julga ([`Table::julga_integridade`], com a medida):
+/// a replicacao anda por tabela, a filha chega antes da mae, e recusar e
+/// perder dado. Mas o invariante petreo «so existe filho se o pai existir
+/// primeiro» deixa de valer na replica no intervalo -- e para sempre quando a
+/// mae nem e replicada (fora da lista, ou negada ao usuario). Os tres maduros
+/// convergem em CONTAR a divergencia do aplicador e deixa-la visivel
+/// (`apply_error_count` do PostgreSQL, `LAST_ERROR_*` do MySQL, `Last_Errno`
+/// da MariaDB): aceite automatico, `triagem-das-decisoes-do-dono` §300.
+///
+/// A conferencia e a MESMA de quem julga ([`Table::conferir_fks_com`]): so
+/// muda o que se faz com a resposta. E a mae e aberta UMA vez por handle,
+/// e nao uma por linha -- o servidor abre a tabela por lote, entao e uma
+/// abertura por mae por lote.
+#[derive(Default)]
+pub struct ContagemDeOrfas {
+    diretorio: PathBuf,
+    maes: HashMap<String, Table>,
+    /// Linhas gravadas com alguma chave conferida sem mae neste instante.
+    pub orfas: u64,
+    /// Linhas cuja mae nao deu para conferir por outro motivo (a mae sem
+    /// indice que cubra a chave, por exemplo). Separado porque nao e orfa
+    /// provada -- e nao conta-la seria calar.
+    pub sem_conferir: u64,
+    /// O veredito da linha em curso, que so vira numero quando a escrita
+    /// dela der certo: a escrita recusada adiante (unicidade, disco) volta no
+    /// proximo lote, e contada agora seria contada duas vezes.
+    pendente: Option<bool>,
+}
+
+impl MaesEmProgresso for ContagemDeOrfas {
+    fn mae(&mut self, tabela_ref: &str) -> Option<&mut Table> {
+        if !self.maes.contains_key(tabela_ref) {
+            // Mae que nao abre (nao existe neste banco) fica de fora do
+            // cache: a conferencia cai no caminho de sempre, que abre do
+            // disco e diz que a tabela nao existe -- e isso e orfa.
+            let t = Table::abrir(&self.diretorio, tabela_ref).ok()?;
+            self.maes.insert(tabela_ref.to_string(), t);
+        }
+        self.maes.get_mut(tabela_ref)
+    }
 }
 
 /// A imagem da linha a partir do payload e do CONTEUDO dos externos. Uma so
@@ -1201,6 +1251,7 @@ impl Table {
             sobreposta: None,
             como_replica: false,
             honrar_rownum: false,
+            orfas: None,
         };
         t.gravar_pag()?;
         Ok(t)
@@ -2230,6 +2281,7 @@ impl Table {
             sobreposta: None,
             como_replica: false,
             honrar_rownum: false,
+            orfas: None,
         };
         if refazer {
             aberta.reconstruir_fts()?;
@@ -5586,10 +5638,54 @@ impl Table {
         linha_final: &[Value],
         maes: Option<&mut dyn MaesEmProgresso>,
     ) -> Result<()> {
-        if fks_que_conferem(&self.esquema).next().is_some() && self.julga_integridade() {
+        if fks_que_conferem(&self.esquema).next().is_none() {
+            return Ok(());
+        }
+        if self.julga_integridade() {
             self.conferir_fks_com(linha_final, maes)?;
+        } else if let Some(mut c) = self.orfas.take() {
+            // A replica nao julga -- CONTA (pedido 300 §2.7). A mesma
+            // conferencia, e o veredito vira numero em vez de recusa.
+            c.pendente = match self.conferir_fks_com(linha_final, Some(&mut *c)) {
+                Ok(()) => None,
+                Err(PhxError::Integridade(_)) => Some(true),
+                Err(_) => Some(false),
+            };
+            self.orfas = Some(c);
         }
         Ok(())
+    }
+
+    /// Liga a contagem de orfas neste handle -- pedido 300 §2.7. So a
+    /// escrita REPLICADA conta (a local continua recusando), e so tabela com
+    /// chave conferida: as outras nem guardam a contagem, e o caminho delas
+    /// continua sem um passo a mais.
+    pub fn contar_orfas(&mut self) {
+        if fks_que_conferem(&self.esquema).next().is_some() && self.orfas.is_none() {
+            self.orfas = Some(Box::new(ContagemDeOrfas {
+                diretorio: self.diretorio.clone(),
+                ..ContagemDeOrfas::default()
+            }));
+        }
+    }
+
+    /// `(orfas, sem_conferir)` contadas por este handle desde o
+    /// [`Table::contar_orfas`]. `(0, 0)` com a contagem desligada.
+    pub fn orfas_contadas(&self) -> (u64, u64) {
+        self.orfas
+            .as_ref()
+            .map_or((0, 0), |c| (c.orfas, c.sem_conferir))
+    }
+
+    /// Fecha o veredito da linha replicada: so a escrita que DEU CERTO conta.
+    fn fechar_orfa(&mut self, gravou: bool) {
+        if let Some(c) = self.orfas.as_mut() {
+            match c.pendente.take() {
+                Some(true) if gravou => c.orfas += 1,
+                Some(false) if gravou => c.sem_conferir += 1,
+                _ => {}
+            }
+        }
     }
 
     /// A linha como vai ao disco, e as chaves estrangeiras conferidas SOBRE
@@ -7396,6 +7492,7 @@ impl Table {
         let r = self.aplicar_evento_interno(operacao, rowid, imagem);
         self.honrar_rownum = false;
         self.como_replica = false;
+        self.fechar_orfa(r.is_ok());
         r
     }
 
@@ -7424,6 +7521,7 @@ impl Table {
         self.como_replica = true;
         let r = self.inserir(valores);
         self.como_replica = false;
+        self.fechar_orfa(r.is_ok());
         r
     }
 
@@ -7436,6 +7534,7 @@ impl Table {
         self.como_replica = true;
         let r = self.atualizar(rowid, valores);
         self.como_replica = false;
+        self.fechar_orfa(r.is_ok());
         r
     }
 

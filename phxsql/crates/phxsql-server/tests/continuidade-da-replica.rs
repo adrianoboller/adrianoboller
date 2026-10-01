@@ -75,7 +75,18 @@ fn subir_source(base: &std::path::Path) -> (Arc<Servidor>, u16) {
 /// (`subir_source`), e so entao a replica e' configurada apontando para o
 /// numero que ele realmente abriu. Nenhum numero e' escolhido por fora aqui.
 fn subir_replica(base: &std::path::Path, porta_do_source: u16) -> (Arc<Servidor>, u16) {
+    subir_replica_com(base, porta_do_source, false)
+}
+
+/// [`subir_replica`] escolhendo o `somente_leitura` -- a guarda PEDIDA da
+/// escrita local (pedido 300 (4)).
+fn subir_replica_com(
+    base: &std::path::Path,
+    porta_do_source: u16,
+    somente_leitura: bool,
+) -> (Arc<Servidor>, u16) {
     let mut c = config_base(base);
+    c.somente_leitura = somente_leitura;
     c.replicacao.papel = Papel::Replica;
     c.replicacao.id_servidor = "replica-do-teste".into();
     c.replicacao.origens = vec![Origem {
@@ -334,4 +345,92 @@ fn com_o_source_continuo_a_replica_segue_sem_recusa() {
         carimbos(&daqui),
         "a replica lavou o carimbo do source"
     );
+}
+
+/// As escritas locais que a replica aceitou em `loja/clientes`.
+fn escritas_locais(porta_replica: u16) -> i64 {
+    exigir(porta_replica, r#""op":"replicacao_estado""#)
+        .campo("escritas_locais")
+        .and_then(|e| e.campo("loja/clientes"))
+        .and_then(Json::inteiro)
+        .unwrap_or(0)
+}
+
+/// **Pedido 300 (4), prova real.** A replica SEM `somente_leitura` aceita uma
+/// escrita local: ela toma o lugar do evento seguinte do source no diario
+/// daqui. A conferencia de continuidade para a tabela -- nenhum evento do
+/// source e pulado calado, e os de la nao entram por cima --, e a recusa diz a
+/// causa VERDADEIRA: a escrita local aceita aqui, quantas, e o conserto.
+///
+/// **Defeito reposto** (`anotar_escrita_local` sem contar -- o silencio de
+/// antes): a recusa volta a culpar o source e o `replicacao_estado` nao diz
+/// nada; o teste cai na asercao do numero.
+#[test]
+fn escrita_local_na_replica_rompe_dizendo_a_causa_e_nao_pula_o_source() {
+    let base_s = pasta("source-escrita-local");
+    let base_r = pasta("replica-escrita-local");
+    let (_source, porta_s) = subir_source(&base_s);
+    exigir(porta_s, r#""op":"criar_database","database":"loja""#);
+    criar_clientes(porta_s);
+    inserir(porta_s, 1..=3);
+    let (_replica, porta_r) = subir_replica(&base_r, porta_s);
+    esperar_eventos(porta_r, 3);
+
+    // A aplicacao escreve na replica, e o source segue a vida dele.
+    inserir(porta_r, 99..=99);
+    assert_eq!(
+        escritas_locais(porta_r),
+        1,
+        "a replica aceitou escrita local calada"
+    );
+    inserir(porta_s, 4..=5);
+
+    let ate = Instant::now() + Duration::from_secs(20);
+    let recusa = loop {
+        if let Some(r) = recusa_de_clientes(porta_r) {
+            break r;
+        }
+        assert!(
+            Instant::now() < ate,
+            "a replica nao acusou em 20 s (ids: {:?})",
+            ids_na_replica(porta_r)
+        );
+        std::thread::sleep(Duration::from_millis(100));
+    };
+    assert!(
+        recusa.contains("escrita LOCAL") && recusa.contains("somente_leitura"),
+        "a recusa tem de nomear a escrita local e o conserto: {recusa}"
+    );
+    assert!(
+        !recusa.contains("apagada e recriada"),
+        "a recusa culpou o source pelo que foi escrito aqui: {recusa}"
+    );
+    // Nada do source entrou por cima, e nada foi pulado calado: a tabela
+    // ficou como estava.
+    std::thread::sleep(Duration::from_millis(1500));
+    assert_eq!(ids_na_replica(porta_r), vec![1, 2, 3, 99]);
+}
+
+/// O irmao que trava a convergencia: COM `somente_leitura`, a escrita local
+/// e recusada no portao, nada se conta, e a replica segue o source.
+#[test]
+fn com_somente_leitura_a_escrita_local_e_recusada_e_a_replica_segue() {
+    let base_s = pasta("source-so-leitura");
+    let base_r = pasta("replica-so-leitura");
+    let (_source, porta_s) = subir_source(&base_s);
+    exigir(porta_s, r#""op":"criar_database","database":"loja""#);
+    criar_clientes(porta_s);
+    inserir(porta_s, 1..=3);
+    let (_replica, porta_r) = subir_replica_com(&base_r, porta_s, true);
+    esperar_eventos(porta_r, 3);
+    let r = pedir(
+        porta_r,
+        r#""op":"inserir","database":"loja","tabela":"clientes","linha":{"id":99}"#,
+    );
+    assert!(!r.booleano_ou("ok", true), "{}", r.escrever());
+    assert_eq!(escritas_locais(porta_r), 0);
+    inserir(porta_s, 4..=5);
+    esperar_eventos(porta_r, 5);
+    assert_eq!(ids_na_replica(porta_r), vec![1, 2, 3, 4, 5]);
+    assert_eq!(recusa_de_clientes(porta_r), None);
 }

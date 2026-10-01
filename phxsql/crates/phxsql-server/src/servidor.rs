@@ -567,9 +567,9 @@ pub(crate) const OPS_DE_REPLICACAO: &[&str] = &["posicao", "replicar", "aplicar"
 struct LoteBidi {
     /// Eventos que entraram no `.reg` daqui.
     aplicados: u64,
-    /// O evento que PAROU o par: a posicao dele no diario da origem e o
-    /// conflito ja analisado. `None` = o lote inteiro passou.
-    parou_em: Option<(u64, bidirecional::Conflito)>,
+    /// O evento que PAROU o par: a posicao dele no diario da origem, o motivo
+    /// (em chave) e o detalhe ja redigido. `None` = o lote inteiro passou.
+    parou_em: Option<(u64, &'static str, String)>,
 }
 
 /// De que origem vem UM nome de database, e quem ja ouviu que nao vem dele.
@@ -1503,6 +1503,17 @@ pub struct Servidor {
     /// O ultimo toque por chave, por "database/tabela", para o conflito do
     /// bidirecional. Reconstruido do proprio diario; perder custa varredura.
     toques_bidi: Mutex<HashMap<String, MapaDeToques>>,
+    /// Pedido 300 §2.7: `(orfas, sem_conferir)` por "database/tabela" -- as
+    /// linhas que a replicacao (fiel ou bidirecional) gravou aqui sem a mae.
+    /// So sobe, e e estado de processo, como os contadores irmaos do
+    /// `replicacao_estado`. Ver `phxsql_store::table::ContagemDeOrfas`.
+    orfas_na_replica: Mutex<HashMap<String, (u64, u64)>>,
+    /// Pedido 300 (4): quantos pedidos de escrita LOCAL esta replica fiel
+    /// aceitou, por "database/tabela" (a chave do diario). A escrita local
+    /// toma o lugar do evento seguinte do source no diario daqui; a
+    /// conferencia de continuidade para a tabela, e este numero e o que a
+    /// deixa dizer POR QUE -- em vez de culpar o source.
+    escritas_locais_na_replica: Mutex<HashMap<String, u64>>,
     /// Posicao consumida por "origem|database/tabela" no modo bidirecional.
     /// Persistida em `replicacao-posicoes.json` ao lado dos dados.
     posicoes_bidi: Mutex<HashMap<String, u64>>,
@@ -1826,6 +1837,8 @@ impl Servidor {
             dono_do_database: Mutex::new(HashMap::new()),
             ha_varias_origens: AtomicBool::new(false),
             toques_bidi: Mutex::new(HashMap::new()),
+            orfas_na_replica: Mutex::new(HashMap::new()),
+            escritas_locais_na_replica: Mutex::new(HashMap::new()),
             posicoes_bidi: Mutex::new(posicoes_bidi),
             numeros_bidi: Mutex::new(numeros_bidi),
             ledger_marcado_recebido: AtomicU64::new(0),
@@ -2107,6 +2120,50 @@ impl Servidor {
         ]))
     }
 
+    /// Conta a escrita LOCAL que uma replica fiel aceitou -- pedido 300 (4).
+    ///
+    /// # Contar, e nao recusar
+    ///
+    /// Os tres maduros recusam escrita na replica (`hot_standby` do
+    /// PostgreSQL, `read_only` do MySQL e da MariaDB), e aqui a recusa ja
+    /// existe: e o `somente_leitura`, que este servidor anuncia faltando no
+    /// arranque. Ela continua PEDIDA, e nao imposta (a lei da guarda nova):
+    /// quem escreve numa replica hoje nao para de um dia para o outro. O que
+    /// faltava era o efeito nao ser calado nem mal contado -- a escrita local
+    /// toma o lugar do evento seguinte do source, a conferencia de
+    /// continuidade para a tabela, e a recusa culpava o source («apagada e
+    /// recriada») pelo que foi escrito AQUI.
+    ///
+    /// O portao vem antes do trabalho: fora de uma replica fiel, uma
+    /// comparacao de papel e volta.
+    fn anotar_escrita_local(&self, pedido: &Json) {
+        let papel = self.papel_atual();
+        if !papel.puxa_de_origem() || papel == Papel::Multi {
+            return;
+        }
+        let (Some(db), Some(tab)) = (
+            pedido.campo("database").and_then(Json::texto),
+            pedido.campo("tabela").and_then(Json::texto),
+        ) else {
+            return;
+        };
+        if let Ok(mut m) = self.escritas_locais_na_replica.lock() {
+            *m.entry(Self::chave_do_diario(db, tab)).or_default() += 1;
+        }
+    }
+
+    /// Soma o que um handle de lote contou de orfas -- pedido 300 §2.7.
+    fn anotar_orfas(&self, chave_tab: &str, (orfas, sem_conferir): (u64, u64)) {
+        if orfas + sem_conferir == 0 {
+            return;
+        }
+        if let Ok(mut m) = self.orfas_na_replica.lock() {
+            let c = m.entry(chave_tab.to_string()).or_default();
+            c.0 += orfas;
+            c.1 += sem_conferir;
+        }
+    }
+
     /// Anota algo no estado de uma origem, para `replicacao_estado`.
     fn anotar_estado(&self, origem: &str, f: impl FnOnce(&mut EstadoOrigem)) {
         if let Ok(mut e) = self.estado_replicacao.lock() {
@@ -2135,22 +2192,19 @@ impl Servidor {
         chave_tab: &str,
         chave_pos: &str,
         posicao: u64,
-        conflito: bidirecional::Conflito,
+        motivo: &str,
+        detalhe: String,
     ) {
-        let detalhe = format!(
-            "indice {:?}, valor {:?}; a linha daqui e {}, a de la e {}",
-            conflito.indice, conflito.valor, conflito.linha_daqui, conflito.linha_de_la
-        );
         eprintln!(
             "replicacao [{origem}]: {chave_tab} PAROU na posicao {posicao} -- {detalhe}. \
-             Resolva o conflito e solte o par com \
+             Resolva e solte o par com \
              {{\"op\":\"replicacao_pular\",\"origem\":\"{origem}\",...}}"
         );
         self.anotar_estado(origem, |e| {
             e.paradas.insert(
                 chave_tab.to_string(),
                 bidirecional::ParadaDaTabela {
-                    motivo: "conflito_de_unicidade".to_string(),
+                    motivo: motivo.to_string(),
                     posicao,
                     chave_da_posicao: chave_pos.to_string(),
                     detalhe,
@@ -3819,7 +3873,12 @@ impl Servidor {
             }
             &eventos[1..]
         };
+        // Pedido 300 §2.7: a replica nao julga a chave estrangeira -- CONTA a
+        // filha que entra sem a mae. Liga por lote, no handle deste lote; a
+        // tabela sem chave conferida nem liga.
+        tabela.contar_orfas();
         let mut aplicados = 0u64;
+        let mut falhou = None;
         for e in para_aplicar {
             // O evento daqui nasce com o instante e a origem de LA, como o
             // PITR e o bidirecional ja faziam e a replica fiel nao fazia
@@ -3830,8 +3889,17 @@ impl Servidor {
             // que faz o diario daqui ser A MESMA HISTORIA, comparavel evento a
             // evento com o de la.
             tabela.forcar_proximo_evento(e.carimbo_ms, e.origem);
-            tabela.aplicar_evento(e.operacao, e.rowid, &e.imagem)?;
+            if let Err(erro) = tabela.aplicar_evento(e.operacao, e.rowid, &e.imagem) {
+                falhou = Some(erro);
+                break;
+            }
             aplicados += 1;
+        }
+        // As que entraram ANTES da falha ficam no disco e nao voltam: contadas
+        // aqui, ou nunca.
+        self.anotar_orfas(&format!("{database}/{}", no.nome), tabela.orfas_contadas());
+        if let Some(erro) = falhou {
+            return Err(erro);
         }
         // A posicao LOCAL, e nao `posicao + eventos.len()`: aplicar gera
         // eventos no diario daqui, e e por ele que a proxima rodada se
@@ -3898,10 +3966,9 @@ impl Servidor {
             Some(m) => Err(format!(
                 "o evento {ultimo} do diario do source nao e o mesmo que esta \
                  replica tem ali (la: {} rowid {} versao {} em {}; aqui: {} rowid \
-                 {} versao {} em {}): o diario de la nao continua o daqui -- a \
-                 tabela foi apagada e recriada no source. Esta tabela ficou como \
-                 estava; para segui-la de novo, apague-a nesta replica e ela \
-                 renasce do esquema do source",
+                 {} versao {} em {}): o diario de la nao continua o daqui -- {}. \
+                 Esta tabela ficou como estava; para segui-la de novo, apague-a \
+                 nesta replica e ela renasce do esquema do source",
                 dele.operacao.nome(),
                 dele.rowid,
                 dele.versao,
@@ -3910,12 +3977,48 @@ impl Servidor {
                 m.rowid,
                 m.versao,
                 iso(m.carimbo),
+                self.por_que_nao_continua(chave, ultimo),
             )),
             None => Err(format!(
                 "esta replica conta {posicao} evento(s) e o diario dela nao \
                  entrega o evento {ultimo}: nao ha como saber se o diario do \
                  source continua o daqui. Esta tabela ficou como estava"
             )),
+        }
+    }
+
+    /// A causa que a ruptura de continuidade nomeia -- pedido 300 (4).
+    ///
+    /// Sao DUAS causas com o mesmo sintoma, e o sintoma nao as separa: a
+    /// tabela apagada e recriada no source, e a escrita local nesta replica,
+    /// que tomou o lugar do evento do source. Quando esta replica ACEITOU
+    /// escrita local na tabela, a causa e essa, e a frase diz quantas e o
+    /// conserto. Sem o numero (outro processo aceitou, ou a tabela veio de
+    /// SQL sem nome de tabela no pedido) e sem `somente_leitura`, as duas
+    /// ficam NOMEADAS -- escolher uma seria mandar procurar no lugar errado,
+    /// a licao do pedido 473. Com `somente_leitura` a escrita local nao passa
+    /// do portao, e sobra a de sempre.
+    fn por_que_nao_continua(&self, chave: &str, ultimo: u64) -> String {
+        let locais = self
+            .escritas_locais_na_replica
+            .lock()
+            .ok()
+            .and_then(|m| m.get(chave).copied())
+            .unwrap_or(0);
+        if locais > 0 {
+            format!(
+                "esta replica ACEITOU {locais} pedido(s) de escrita LOCAL nesta \
+                 tabela desde o arranque (sem somente_leitura), e a escrita local \
+                 tomou o lugar do evento {ultimo} do source no diario daqui. Ligue \
+                 somente_leitura nesta replica"
+            )
+        } else if self.somente_leitura() {
+            "a tabela foi apagada e recriada no source".to_string()
+        } else {
+            "a tabela foi apagada e recriada no source, ou esta replica (sem \
+             somente_leitura) foi escrita localmente e a escrita tomou o lugar de \
+             um evento do source"
+                .to_string()
         }
     }
 
@@ -4892,9 +4995,22 @@ impl Servidor {
         // a replica conta so o que o master anunciou. A replica que nunca
         // ouviu um master conta tudo E diz que pode estar errada -- nao saber
         // nao vira «sei que e tudo».
+        //
+        // E o master conta so o que a replica ALCANCA: a tabela que o usuario
+        // do cluster nao pode `replicar` mora so nele, e nenhuma replica a
+        // tera nunca -- somada, ela pos o master a frente de toda replica por
+        // um dado que nao viaja. O filtro e o MESMO motor que o `posicao`
+        // aplica a sessao da replica ([`replica_alcanca`]), e nao uma segunda
+        // opiniao sobre o que replica. A ficha e copiada ANTES da trava de
+        // dados: o cadastro tem trava propria, e as duas nunca se aninham aqui.
         let anunciadas = estado.anunciadas();
+        let usuario = (!estado.config.usuario.is_empty())
+            .then(|| self.cadastro().por_login(&estado.config.usuario).cloned())
+            .flatten();
         let escopo = match (estado.papel(), &anunciadas) {
-            (crate::cluster::PapelVivo::Master, _) => EscopoDaPosicao::Tudo,
+            (crate::cluster::PapelVivo::Master, _) => {
+                EscopoDaPosicao::DoQueSeServe(usuario.as_ref())
+            }
             (_, Some(a)) => EscopoDaPosicao::DoMaster(a),
             (_, None) => EscopoDaPosicao::Desconhecido,
         };
@@ -4903,12 +5019,12 @@ impl Servidor {
         estado.definir_posicao(p, incompleta, por_tabela);
     }
 
-    /// A posicao contando tudo -- o master, e quem nao esta em cluster. So os
+    /// A posicao contando tudo, sem usuario no filtro. So os
     /// testes a chamam sem escopo; o arbitro passa sempre pelo
     /// [`Self::contar_posicao_do_cluster`].
     #[cfg(test)]
     fn posicao_do_diario(&self, so_estes: &[String]) -> (u64, bool, Vec<(String, u64)>) {
-        self.posicao_do_diario_em(so_estes, EscopoDaPosicao::Tudo)
+        self.posicao_do_diario_em(so_estes, EscopoDaPosicao::DoQueSeServe(None))
     }
 
     /// A soma dos eventos das tabelas replicadas -- a posicao que o pulso
@@ -4941,7 +5057,7 @@ impl Servidor {
         for b in bases {
             // O alcance deste database: `None` = toda tabela dele.
             let alcance = match escopo {
-                EscopoDaPosicao::Tudo | EscopoDaPosicao::Desconhecido => None,
+                EscopoDaPosicao::Desconhecido | EscopoDaPosicao::DoQueSeServe(_) => None,
                 EscopoDaPosicao::DoMaster(a) => {
                     if !a.databases.contains(&b) {
                         // O master nao anuncia este database: ele so mora
@@ -4970,6 +5086,11 @@ impl Servidor {
             for t in tabelas {
                 if alcance.is_some_and(|ts| !ts.contains(&t)) {
                     continue;
+                }
+                if let EscopoDaPosicao::DoQueSeServe(u) = escopo {
+                    if !replica_alcanca(u, &b, &t) {
+                        continue;
+                    }
                 }
                 match db.abrir_qualificada(&t) {
                     Ok(mut tab) => match tab.eventos() {
@@ -5888,6 +6009,39 @@ impl Servidor {
         // diario herdada do `Database` (`politica_do_diario`, pedido 564).
         let mut tabela = db.abrir_qualificada(&no.nome)?;
         let chave_tab = format!("{database}/{}", no.nome);
+        // O irmao da replica fiel (pedido 300 §2.7): o `inserir_replicado` e o
+        // `atualizar_replicado` tambem nao julgam, e passam pela MESMA
+        // conferencia que conta.
+        tabela.contar_orfas();
+        let saida = self.aplicar_eventos_bidi(
+            &mut tabela,
+            &chave_tab,
+            indice,
+            pos_chave,
+            eventos,
+            meu_hash,
+            hash_dele,
+        );
+        self.anotar_orfas(&chave_tab, tabela.orfas_contadas());
+        saida
+    }
+
+    /// O laco de [`Self::aplicar_lote_bidi`], separado para a contagem de
+    /// orfas ser colhida tambem quando ele sai pelo erro.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "o laco de uma tabela junta as identidades dos dois lados"
+    )]
+    fn aplicar_eventos_bidi(
+        &self,
+        tabela: &mut Table,
+        chave_tab: &str,
+        indice: &str,
+        pos_chave: &[usize],
+        eventos: &[crate::replica::EventoRecebido],
+        meu_hash: u16,
+        hash_dele: u16,
+    ) -> Result<LoteBidi> {
         let mut saida = LoteBidi::default();
         for e in eventos {
             // Cinto e suspensorio: o source ja suprimiu pelo `para`, e
@@ -5896,14 +6050,7 @@ impl Servidor {
             if e.origem == meu_hash {
                 continue;
             }
-            match self.aplicar_por_chave(
-                &mut tabela,
-                &chave_tab,
-                indice,
-                pos_chave,
-                e,
-                hash_dele,
-            )? {
+            match self.aplicar_por_chave(tabela, chave_tab, indice, pos_chave, e, hash_dele)? {
                 bidirecional::Aplicacao::Aplicado => saida.aplicados += 1,
                 bidirecional::Aplicacao::Ignorado => {}
                 // O lote PARA aqui, e os eventos seguintes ficam para depois
@@ -5911,7 +6058,27 @@ impl Servidor {
                 // linha que o conflito deixou de fora, e a divergencia se
                 // espalharia em vez de ficar num ponto que se sabe nomear.
                 bidirecional::Aplicacao::Conflito(c) => {
-                    saida.parou_em = Some((e.posicao, *c));
+                    let detalhe = format!(
+                        "indice {:?}, valor {:?}; a linha daqui e {}, a de la e {}",
+                        c.indice, c.valor, c.linha_daqui, c.linha_de_la
+                    );
+                    saida.parou_em = Some((e.posicao, "conflito_de_unicidade", detalhe));
+                    break;
+                }
+                // Pedido 330 (b): o teto esqueceu o toque e o evento nao passa
+                // do piso. Para pelo mesmo motivo do conflito -- a posicao nao
+                // anda, e nenhum lado e escolhido calado.
+                bidirecional::Aplicacao::Esquecida(chave) => {
+                    let detalhe = format!(
+                        "chave {chave}: o mapa de toques passou do teto \
+                         (replicacao.teto_de_toques = {}) e esqueceu o ultimo toque \
+                         local dela, e o evento nao e mais recente que o mais novo \
+                         esquecido -- aplicar ou descartar seria escolher um lado as \
+                         cegas. Suba o teto e reinicie (o mapa se refaz do diario), \
+                         ou solte o par sabendo que este evento sera pulado",
+                        self.config.replicacao.teto_de_toques
+                    );
+                    saida.parou_em = Some((e.posicao, "toque_esquecido_pelo_teto", detalhe));
                     break;
                 }
             }
@@ -6001,8 +6168,15 @@ impl Servidor {
             // Reaplicar os que entraram antes dele, quando o par for solto, e
             // inofensivo: o casamento e por chave e a regra e "mais recente
             // vence".
-            if let Some((posicao, conflito)) = feito.parou_em {
-                self.parar_o_par(&origem.nome, &chave_tab, &chave_pos, posicao, conflito);
+            if let Some((posicao, motivo, detalhe)) = feito.parou_em {
+                self.parar_o_par(
+                    &origem.nome,
+                    &chave_tab,
+                    &chave_pos,
+                    posicao,
+                    motivo,
+                    detalhe,
+                );
                 break;
             }
             // Aqui a posicao anda so na MEMORIA deste laco. Ela vai ao mapa
@@ -6088,6 +6262,7 @@ impl Servidor {
         sob_a_exclusiva: bool,
     ) -> Result<u64> {
         let total = tabela.eventos()?;
+        let teto = self.config.replicacao.teto_de_toques;
         let mut guarda = self.toques_bidi.tomar("toques_bidi")?;
         let mapa = guarda.entry(chave_tab.to_string()).or_default();
         // A marca da rodada anterior: sem ela, a tabela recem-aberta caminha
@@ -6134,15 +6309,16 @@ impl Servidor {
                 // uma alteracao mais velha do outro lado naquela chave nao
                 // acharia linha aqui e a ressuscitaria como linha nova.
                 if let Some((_, velha)) = antiga {
-                    mapa.toques.insert(
+                    mapa.tocar(
                         velha,
                         Toque {
                             excluido: true,
                             ..toque
                         },
+                        teto,
                     );
                 }
-                mapa.toques.insert(chave, toque);
+                mapa.tocar(chave, toque, teto);
             }
             // Guardada a cada lote, e nao no fim: um erro no meio da rodada
             // deixa `vistos` andado, e a marca tem de andar junto -- ela so
@@ -6317,19 +6493,34 @@ impl Servidor {
         // Ver `bidirecional::colisao_de_criacao`.
         let (vence, colisao, vence_na_antiga) = {
             let guarda = self.toques_bidi.tomar("toques_bidi")?;
-            let toque_de = |c: &str| guarda.get(chave_tab).and_then(|m| m.toques.get(c)).copied();
-            let vence_em = |c: &str| match toque_de(c) {
-                Some(l) => bidirecional::remoto_vence(carimbo, origem_ev, &l),
-                None => true,
+            let mapa = guarda.get(chave_tab);
+            // Pedido 330 (b): a decisao e do MAPA, e nao de um `get` aqui --
+            // so ele sabe se a chave ausente nunca foi tocada ou foi
+            // esquecida pelo teto, e so ele sabe o piso.
+            let decide = |c: &str| match mapa {
+                Some(m) => m.decidir(c, carimbo, origem_ev),
+                None => bidirecional::Decisao::Vence,
             };
-            let local = toque_de(&chave);
+            let local = mapa.and_then(|m| m.toque(&chave));
             let colisao = bidirecional::colisao_de_criacao(e.operacao, origem_ev, local.as_ref());
             // A chave ANTIGA disputa pelo mesmo «mais recente vence»: uma
             // escrita daqui na chave velha, mais nova que a troca de la, nao
             // pode ser apagada por ela.
-            let vence_na_antiga = antiga.as_ref().is_some_and(|(_, c)| vence_em(c));
-            (vence_em(&chave), colisao, vence_na_antiga)
+            let na_antiga = antiga.as_ref().map(|(_, c)| decide(c));
+            (decide(&chave), colisao, na_antiga)
         };
+        // A chave esquecida sem resposta PARA o par -- inclusive a antiga da
+        // troca de chave, que decide se a linha velha sai. Ver
+        // `bidirecional::Decisao::NaoSei`.
+        if vence == bidirecional::Decisao::NaoSei
+            || vence_na_antiga == Some(bidirecional::Decisao::NaoSei)
+        {
+            return Ok(bidirecional::Aplicacao::Esquecida(Self::chave_dita(
+                tabela, pos_chave, &valores,
+            )));
+        }
+        let vence = vence == bidirecional::Decisao::Vence;
+        let vence_na_antiga = vence_na_antiga == Some(bidirecional::Decisao::Vence);
         if colisao {
             // Nao para o laco (isso travaria o par para sempre -- ver
             // `Table::inserir_replicado`); torna o defeito VISIVEL. O contador
@@ -6478,7 +6669,8 @@ impl Servidor {
         escrita?;
 
         if let Ok(mut guarda) = self.toques_bidi.lock() {
-            let toques = &mut guarda.entry(chave_tab.to_string()).or_default().toques;
+            let teto = self.config.replicacao.teto_de_toques;
+            let mapa = guarda.entry(chave_tab.to_string()).or_default();
             let toque = Toque {
                 carimbo,
                 origem: origem_ev,
@@ -6488,15 +6680,16 @@ impl Servidor {
             // `absorver_diario_local`: uma alteracao mais velha nela nao pode
             // ressuscitar a linha que a troca levou embora.
             if let Some((_, velha)) = antiga.filter(|_| vence_na_antiga) {
-                toques.insert(
+                mapa.tocar(
                     velha,
                     Toque {
                         excluido: true,
                         ..toque
                     },
+                    teto,
                 );
             }
-            toques.insert(chave, toque);
+            mapa.tocar(chave, toque, teto);
         }
         Ok(bidirecional::Aplicacao::Aplicado)
     }
@@ -12531,6 +12724,8 @@ impl Servidor {
                 // Le o valor VIVO, que dois caminhos escrevem: a promocao de um
                 // spare e a gravacao pela tela de configuracao.
                 return Err(PhxError::Autorizacao(self.msg("erro.somente_leitura", &[])));
+            } else {
+                self.anotar_escrita_local(pedido);
             }
         }
 
@@ -29351,10 +29546,8 @@ impl Servidor {
             // Sem regra de tabela nada muda: a replica de sempre tem
             // `replicar` na base e nenhuma regra por tabela, e continua vendo
             // todas -- e uma sessao interna (sem usuario) tambem.
-            if let Some(u) = &sessao.usuario {
-                if !u.pode_em(&database, &nome, Atividade::Replicar) {
-                    continue;
-                }
+            if !replica_alcanca(sessao.usuario.as_ref(), &database, &nome) {
+                continue;
             }
             let mut t = db.abrir_qualificada(&nome)?;
             let identidade: Option<Vec<String>> =
@@ -29956,12 +30149,21 @@ impl Servidor {
             ("colisoes_de_sequencia", colisoes),
             ("carimbos_do_futuro", carimbos_do_futuro),
             ("recusas_por_unicidade", recusas_por_unicidade),
-            // Pedido 330: o mapa de toques nao tem teto e vive o processo
-            // inteiro -- uma entrada por chave DISTINTA do diario local, 88-114
-            // bytes cada (medido pelo J, 01/10/2026). Sem teto, o minimo e o
-            // numero nao ser calado: chaves por tabela, e o que ja passou com
-            // a trava exclusiva na mao.
+            // Pedido 330: uma entrada por chave DISTINTA do diario local,
+            // 86-118 bytes cada (medido, 01/10/2026), ate o teto por tabela
+            // (`replicacao.teto_de_toques`, parte b). O numero nao e calado:
+            // chaves, teto, esquecidas, e o que ja passou com a trava
+            // exclusiva na mao.
             ("toques_no_mapa", self.toques_no_mapa()),
+            // Pedido 300 §2.7: as linhas que a replicacao gravou aqui sem a
+            // mae. So a tabela com contagem aparece, como os irmaos acima: o
+            // campo vazio no caso comum, e o numero que tira o silencio do
+            // invariante «so existe filho se o pai existir primeiro».
+            ("orfas_na_replica", self.orfas_na_replica()),
+            // Pedido 300 (4): os pedidos de escrita LOCAL que esta replica
+            // fiel aceitou, por tabela. Vazio no caso comum (e sempre, com
+            // `somente_leitura`).
+            ("escritas_locais", self.escritas_locais_na_replica()),
             (
                 "ledger_marcado_recebido",
                 Json::de_u64(self.ledger_marcado_recebido.load(Ordering::Relaxed)),
@@ -29969,8 +30171,43 @@ impl Servidor {
         ]))
     }
 
+    /// `{"db/tabela": N}` -- pedido 300 (4).
+    fn escritas_locais_na_replica(&self) -> Json {
+        let Ok(m) = self.escritas_locais_na_replica.lock() else {
+            return Json::Objeto(vec![]);
+        };
+        let mut pares: Vec<(String, Json)> = m
+            .iter()
+            .map(|(k, n)| (k.clone(), Json::de_u64(*n)))
+            .collect();
+        pares.sort_by(|a, b| a.0.cmp(&b.0));
+        Json::Objeto(pares)
+    }
+
+    /// `{"db/tabela": {"orfas": N, "sem_conferir": N}}` -- pedido 300 §2.7.
+    fn orfas_na_replica(&self) -> Json {
+        let Ok(m) = self.orfas_na_replica.lock() else {
+            return Json::Objeto(vec![]);
+        };
+        let mut pares: Vec<(String, Json)> = m
+            .iter()
+            .map(|(k, (o, s))| {
+                (
+                    k.clone(),
+                    Json::objeto(vec![
+                        ("orfas", Json::de_u64(*o)),
+                        ("sem_conferir", Json::de_u64(*s)),
+                    ]),
+                )
+            })
+            .collect();
+        pares.sort_by(|a, b| a.0.cmp(&b.0));
+        Json::Objeto(pares)
+    }
+
     /// `{"db/tabela": {"chaves": N, "vistos": N, "sob_a_exclusiva": N,
-    /// "escritores_entre_fatias": N, "fatias_que_furaram_a_fila": N}}` de
+    /// "escritores_entre_fatias": N, "fatias_que_furaram_a_fila": N, "teto": N,
+    /// "esquecidas": N, "esquecido_ate": N}}` de
     /// toda tabela com mapa de toques -- pedido 330. Trava envenenada vira
     /// objeto vazio, como os contadores irmaos acima.
     fn toques_no_mapa(&self) -> Json {
@@ -29984,6 +30221,14 @@ impl Servidor {
                     k.clone(),
                     Json::objeto(vec![
                         ("chaves", Json::de_u64(m.toques.len() as u64)),
+                        // Pedido 330 (b): o teto, quantas o teto ja esqueceu e
+                        // ate onde -- o mapa que esquece diz que esqueceu.
+                        ("teto", Json::de_u64(self.config.replicacao.teto_de_toques)),
+                        ("esquecidas", Json::de_u64(m.esquecidas)),
+                        (
+                            "esquecido_ate",
+                            m.piso.map_or(Json::Nulo, |(c, _)| Json::de_i64(c)),
+                        ),
                         ("vistos", Json::de_u64(m.vistos)),
                         (
                             "sob_a_exclusiva",
@@ -31884,14 +32129,29 @@ fn origem_da_sonda(p: &Json, host: String) -> crate::config::Origem {
 /// O que a posicao do diario soma -- pedido 300.
 #[derive(Clone, Copy)]
 enum EscopoDaPosicao<'a> {
-    /// Toda tabela dos databases pedidos: o master (o que ele tem e o que ele
-    /// serve) e quem nao esta em cluster.
-    Tudo,
+    /// O master: o que ele tem E serve -- toda tabela que o usuario do
+    /// cluster pode `replicar` ([`replica_alcanca`]). `None` = cluster sem
+    /// usuario (a replica entra pelo token e alcanca tudo), ou usuario que o
+    /// cadastro nao tem -- e ai nenhuma replica entra, e contar tudo e o
+    /// comportamento de antes.
+    DoQueSeServe(Option<&'a Usuario>),
     /// So o que o master anunciou: a replica que ja o ouviu.
     DoMaster(&'a crate::cluster::Anunciadas),
     /// A replica que nunca ouviu um master: conta tudo e sai INCOMPLETA,
     /// porque o numero pode carregar tabela que so mora aqui.
     Desconhecido,
+}
+
+/// A replica que entra com esta ficha alcanca esta tabela?
+///
+/// UM motor para as duas perguntas que tem a mesma resposta: o `posicao` (que
+/// tabelas o source mostra a replica) e a posicao do master no cluster (o que
+/// ele serve, pedido 300). Duas contas divergiriam no dia em que o portao
+/// aprendesse uma regra nova -- e a divergencia apareceria como eleicao
+/// perdida, nao como erro. Sem usuario (sessao interna, ou o token) alcanca
+/// tudo, que e o comportamento de sempre.
+fn replica_alcanca(usuario: Option<&Usuario>, database: &str, tabela: &str) -> bool {
+    usuario.map_or(true, |u| u.pode_em(database, tabela, Atividade::Replicar))
 }
 
 /// O prefixo do nome da origem do cluster (`cluster:<id>`). Um so, porque e
@@ -44033,7 +44293,17 @@ mod testes_config_gravar {
     /// Duas tabelas com cinco eventos cada em `b`, e um database `rascunho`
     /// com tres -- o que so mora neste no.
     fn com_tabela_local(nome: &str) -> (Arc<Servidor>, DirTemp) {
-        let (s, _caminho, guarda) = servidor_em_cluster(nome, Cadastro::default());
+        com_tabela_local_com(nome, Cadastro::default(), |_| {})
+    }
+
+    /// [`com_tabela_local`] com cadastro e um ajuste na `Config` -- para dar
+    /// usuario ao cluster.
+    fn com_tabela_local_com(
+        nome: &str,
+        cadastro: Cadastro,
+        ajuste: impl FnOnce(&mut Config),
+    ) -> (Arc<Servidor>, DirTemp) {
+        let (s, _caminho, guarda) = servidor_em_cluster_com(nome, cadastro, ajuste);
         let sessao = Sessao::default();
         for (db, t, n) in [("b", "uma", 5), ("b", "outra", 5), ("rascunho", "notas", 3)] {
             let _ = s.executar(
@@ -44103,6 +44373,81 @@ mod testes_config_gravar {
     /// tudo o que tem (13 -- e o que ele serve), e a replica que NUNCA ouviu
     /// um master soma tudo e sai INCOMPLETA, em vez de se declarar completa
     /// com um numero que pode carregar tabela local.
+    /// O usuario do cluster: replica tudo, menos `b/outra` -- a folha que o
+    /// dono do master guardou para si.
+    fn replicador_sem_a_outra() -> Usuario {
+        let mut u = leitor();
+        u.id = 11;
+        u.login = "clu".into();
+        u.bases = vec![(
+            "*".into(),
+            Permissoes {
+                ler: true,
+                replicar: true,
+                ..Permissoes::default()
+            },
+        )];
+        u.tabelas = vec![("b".into(), vec![("outra".into(), Permissoes::default())])];
+        u
+    }
+
+    /// **Pedido 300, o resto do (3): o master conta so o que a replica
+    /// ALCANCA.** O usuario do cluster nao pode `replicar` `b/outra`: nenhuma
+    /// replica a tera nunca, e somada ela punha o master 5 eventos a frente
+    /// de toda replica por um dado que nao viaja. Posicao 8 (`b/uma` 5 +
+    /// `rascunho/notas` 3), e `b/outra` fora do vetor.
+    ///
+    /// O vermelho: com o master somando tudo (`DoQueSeServe(None)` no lugar da
+    /// ficha do usuario), a posicao sai 13.
+    #[test]
+    fn o_master_nao_conta_a_tabela_negada_ao_usuario_do_cluster() {
+        let mut cadastro = Cadastro::default();
+        cadastro.usuarios.push(replicador_sem_a_outra());
+        let (s, _guarda) = com_tabela_local_com("negada", cadastro, |c| {
+            c.cluster.as_mut().unwrap().usuario = "clu".into();
+        });
+        let estado = s.cluster.clone().expect("cluster");
+        s.contar_posicao_do_cluster(&estado);
+        assert_eq!(
+            estado.posicao(),
+            8,
+            "a tabela negada ao cluster entrou na soma"
+        );
+        assert!(!estado.posicao_incompleta());
+        assert!(
+            !estado.por_tabela().iter().any(|(t, _)| t == "b/outra"),
+            "{:?}",
+            estado.por_tabela()
+        );
+        // O MESMO motor responde o `posicao` que a replica pergunta: a soma
+        // do master e o que a replica ve batem, tabela a tabela.
+        let r = s
+            .op_posicao(
+                &pedido(r#"{"database":"b"}"#),
+                &Sessao {
+                    usuario: Some(replicador_sem_a_outra()),
+                    ..Sessao::default()
+                },
+            )
+            .unwrap();
+        let tabelas = r.campo("tabelas").expect("tabelas");
+        assert!(tabelas.campo("uma").is_some(), "{}", r.escrever());
+        assert!(tabelas.campo("outra").is_none(), "{}", r.escrever());
+    }
+
+    /// O comportamento velho, pelo outro lado: usuario do cluster que o
+    /// cadastro NAO tem (nenhuma replica entra com ele) nao inventa filtro --
+    /// o master soma tudo, como antes.
+    #[test]
+    fn usuario_do_cluster_fora_do_cadastro_soma_como_antes() {
+        let (s, _guarda) = com_tabela_local_com("sem-ficha", Cadastro::default(), |c| {
+            c.cluster.as_mut().unwrap().usuario = "ninguem".into();
+        });
+        let estado = s.cluster.clone().expect("cluster");
+        s.contar_posicao_do_cluster(&estado);
+        assert_eq!(estado.posicao(), 13);
+    }
+
     #[test]
     fn o_master_soma_tudo_e_a_replica_sem_anuncio_diz_que_nao_sabe() {
         let (s, _guarda) = com_tabela_local("sem-anuncio");
@@ -62173,12 +62518,10 @@ mod testes_do_pular_manual {
             "loja/clientes",
             "parceiro|loja/clientes",
             posicao,
-            bidirecional::Conflito {
-                indice: "porEmail".into(),
-                valor: "a@x".into(),
-                linha_daqui: "(id=1, email=a@x)".into(),
-                linha_de_la: "(id=2, email=a@x)".into(),
-            },
+            "conflito_de_unicidade",
+            "indice \"porEmail\", valor \"a@x\"; a linha daqui e (id=1, email=a@x), \
+             a de la e (id=2, email=a@x)"
+                .into(),
         );
     }
 

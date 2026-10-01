@@ -3,6 +3,7 @@
 //!
 //! ```bash
 //! cargo run --release --example custo-da-absorcao-do-bidi -p phxsql-store -- [eventos]
+//! cargo run --release --example custo-da-absorcao-do-bidi -p phxsql-store -- --teto [chaves]
 //! ```
 //!
 //! A receita e a do servidor (`absorver_diario_local`): lotes de 500, teto de
@@ -16,6 +17,13 @@
 //!    diario -- ela caminha do comeco do volume ate `vistos`, cabecalho por
 //!    cabecalho, para ler um evento;
 //! 3. **a mesma rodada com a marca guardada** de uma rodada para a outra.
+//!
+//! E uma quarta, a do teto (pedido 330 b): **quantos bytes de RAM custa cada
+//! chave distinta do mapa**, pelo RSS do processo antes e depois de montar um
+//! mapa com a mesma forma do servidor (`String` canonica -> 16 bytes de
+//! toque). O RSS, e nao a conta de `size_of`: a conta esquece o cabecalho do
+//! `malloc` de cada `String` e a folga de capacidade da tabela de espalhamento,
+//! e as duas juntas sao mais da metade do custo.
 //!
 //! O servidor faz as tres com a trava EXCLUSIVA de dados na mao: o tempo
 //! medido aqui e o tempo de servidor parado, para escrita e para leitura.
@@ -56,7 +64,63 @@ fn absorver(t: &mut Table, vistos: &mut u64, mapa: &mut HashMap<String, (i64, bo
     *vistos - antes
 }
 
+/// O RSS do processo agora, em bytes -- `VmRSS` do `/proc/self/status`.
+/// Fora do Linux devolve 0, e a linha do teto diz que nao mediu.
+fn rss() -> u64 {
+    std::fs::read_to_string("/proc/self/status")
+        .ok()
+        .and_then(|s| {
+            s.lines()
+                .find(|l| l.starts_with("VmRSS:"))
+                .and_then(|l| l.split_whitespace().nth(1))
+                .and_then(|k| k.parse::<u64>().ok())
+        })
+        .map(|k| k * 1024)
+        .unwrap_or(0)
+}
+
+/// A forma do `Toque` do servidor: carimbo, origem, lapide -- 16 bytes.
+#[allow(dead_code, reason = "so o tamanho importa aqui")]
+#[derive(Clone, Copy)]
+struct ToqueDeMedida {
+    carimbo: i64,
+    origem: u16,
+    excluido: bool,
+}
+
+/// Bytes de RSS por chave distinta, num mapa montado do zero com `n` chaves
+/// inteiras -- o texto canonico de um `Int` e o `to_string` dele.
+fn bytes_por_chave(n: i64) -> (f64, usize) {
+    let antes = rss();
+    let mut mapa: HashMap<String, ToqueDeMedida> = HashMap::new();
+    for i in 1..=n {
+        mapa.insert(
+            i.to_string(),
+            ToqueDeMedida {
+                carimbo: i,
+                origem: 7,
+                excluido: false,
+            },
+        );
+    }
+    let depois = rss();
+    let cap = mapa.capacity();
+    std::hint::black_box(&mapa);
+    (depois.saturating_sub(antes) as f64 / n.max(1) as f64, cap)
+}
+
 fn main() {
+    // Um tamanho por PROCESSO: o `malloc` nao devolve ao sistema o que o mapa
+    // anterior soltou, e o segundo mapa do mesmo processo mediria menos.
+    if std::env::args().nth(1).as_deref() == Some("--teto") {
+        let n: i64 = std::env::args()
+            .nth(2)
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(1_000_000);
+        let (b, cap) = bytes_por_chave(n);
+        println!("{n:>9} chaves: {b:>7.1} B/chave (RSS; capacidade da tabela {cap})");
+        return;
+    }
     let n: i64 = std::env::args()
         .nth(1)
         .and_then(|s| s.parse().ok())

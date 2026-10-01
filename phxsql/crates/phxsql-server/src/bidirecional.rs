@@ -455,6 +455,121 @@ pub struct MapaDeToques {
     /// e nao so que houve. Ele sobe **uma vez por parada**, porque a rodada
     /// seguinte nem chega ao evento.
     pub recusas_por_unicidade: u64,
+    /// Quantas chaves o teto ja ESQUECEU nesta tabela -- pedido 330 (b). So
+    /// sobe; publicado em `replicacao_estado` como `esquecidas`.
+    pub esquecidas: u64,
+    /// O maior toque `(carimbo, origem)` que o teto ja esqueceu. Nenhuma
+    /// chave fora do mapa tem toque local acima dele -- e e isso que deixa o
+    /// mapa esquecer sem perder a decisao. `None` = nunca esqueceu nada.
+    pub piso: Option<(i64, u16)>,
+}
+
+/// Quantas chaves distintas o mapa de toques de UMA tabela guarda, no padrao
+/// -- pedido 330 (b). `replicacao.teto_de_toques` muda.
+///
+/// # O numero, medido
+///
+/// `--example custo-da-absorcao-do-bidi -p phxsql-store -- --teto N`, release,
+/// um tamanho por processo, 01/10/2026: **86-118 bytes de RSS por chave**
+/// (100 k: 86-87; 300 k: 104; 1 M: 118; 3 M: 89 -- a variacao e a folga da
+/// tabela de espalhamento logo depois de dobrar). Chave curta (inteiro); a
+/// chave de texto soma o proprio tamanho. Um milhao de chaves e, no pior
+/// medido, **~113 MiB por tabela**: cabe num caixa e num central, e o mapa
+/// oscila entre 750 mil e um milhao (ver [`MapaDeToques::tocar`]).
+///
+/// Sem teto, 10 M chaves eram ~1 GiB vivo o processo inteiro, e nada dizia.
+pub const TETO_DE_TOQUES_PADRAO: u64 = 1_000_000;
+
+/// O que o mapa sabe dizer de um evento remoto numa chave.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Decisao {
+    /// O remoto e mais recente que o ultimo toque local (ou nao ha toque).
+    Vence,
+    /// O toque local e mais recente: o remoto se descarta.
+    Perde,
+    /// A chave foi ESQUECIDA pelo teto e o remoto nao passa do [`MapaDeToques::piso`]:
+    /// o toque local que decidiria pode ser mais novo ou mais velho, e o
+    /// mapa nao sabe. Quem chama PARA o par nesta tabela, dizendo -- nunca
+    /// escolhe um lado calado.
+    NaoSei,
+}
+
+impl MapaDeToques {
+    /// O ultimo toque local CONHECIDO numa chave.
+    pub fn toque(&self, chave: &str) -> Option<Toque> {
+        self.toques.get(chave).copied()
+    }
+
+    /// Decide um evento remoto `(carimbo, origem)` contra a chave.
+    ///
+    /// # Por que esquecer NAO perde decisao
+    ///
+    /// O teto esquece os toques MAIS VELHOS e guarda o maior deles no
+    /// [`Self::piso`]. Para uma chave fora do mapa, o toque local que
+    /// existiu -- se existiu -- e `<= piso`. Entao o remoto ACIMA do piso
+    /// vence com certeza, que e exatamente a resposta que o mapa inteiro
+    /// daria. So o remoto que nao passa do piso fica sem resposta, e ele vira
+    /// [`Decisao::NaoSei`] em vez de um palpite: «vence» podia apagar uma
+    /// escrita daqui mais nova, «perde» podia jogar fora uma escrita de la
+    /// mais nova -- os dois calados.
+    pub fn decidir(&self, chave: &str, carimbo: i64, origem: u16) -> Decisao {
+        let Some(local) = self.toques.get(chave) else {
+            // O piso faz o papel do toque esquecido: o mais novo que ele
+            // poderia ter sido.
+            let esquecido = self.piso.map(|(c, o)| Toque {
+                carimbo: c,
+                origem: o,
+                excluido: false,
+            });
+            return match esquecido {
+                Some(p) if !remoto_vence(carimbo, origem, &p) => Decisao::NaoSei,
+                _ => Decisao::Vence,
+            };
+        };
+        if remoto_vence(carimbo, origem, local) {
+            Decisao::Vence
+        } else {
+            Decisao::Perde
+        }
+    }
+
+    /// Grava o ultimo toque de uma chave e, passando do `teto`, esquece os
+    /// mais velhos.
+    ///
+    /// # Esquecer de uma vez um quarto, e nao uma chave por vez
+    ///
+    /// Achar o toque mais velho custa uma passada no mapa inteiro. Uma por
+    /// insercao seria O(N) no laco quente da absorcao; um quarto de uma vez
+    /// paga a passada (e um vetor de 16 bytes por chave, so durante ela) a
+    /// cada `teto / 4` insercoes -- quatro toques de memoria por chave
+    /// gravada, no amortizado. O mapa oscila entre 3/4 do teto e o teto.
+    ///
+    /// No limite: o mapa com EXATAMENTE `teto` chaves nao esquece nada; a
+    /// chave `teto + 1` e que dispara.
+    pub fn tocar(&mut self, chave: String, toque: Toque, teto: u64) {
+        self.toques.insert(chave, toque);
+        let teto = teto.max(1) as usize;
+        if self.toques.len() <= teto {
+            return;
+        }
+        let manter = (teto - teto / 4).max(1);
+        let esquecer = self.toques.len() - manter;
+        let mut ordem: Vec<(i64, u16)> = self
+            .toques
+            .values()
+            .map(|t| (t.carimbo, t.origem))
+            .collect();
+        let (_, limiar, _) = ordem.select_nth_unstable(esquecer - 1);
+        let limiar = *limiar;
+        drop(ordem);
+        let antes = self.toques.len();
+        // `<=`, e nao so os `esquecer` primeiros: dois toques IGUAIS ao
+        // limiar nao se distinguem pelo piso, e manter um deles faria o piso
+        // mentir sobre o outro.
+        self.toques.retain(|_, t| (t.carimbo, t.origem) > limiar);
+        self.esquecidas += (antes - self.toques.len()) as u64;
+        self.piso = Some(self.piso.map_or(limiar, |p| p.max(limiar)));
+    }
 }
 
 /// Por que a replicacao de UMA tabela naquele par PAROU, e onde ela parou.
@@ -552,6 +667,10 @@ pub enum Aplicacao {
     Ignorado,
     /// Chave duplicada num indice unico: o par PARA nesta tabela.
     Conflito(Box<Conflito>),
+    /// O teto do mapa esqueceu o toque desta chave e o evento nao passa do
+    /// piso ([`Decisao::NaoSei`]): o par PARA nesta tabela. Leva a chave ja
+    /// redigida, para o grito.
+    Esquecida(String),
 }
 
 impl Aplicacao {
@@ -1019,6 +1138,96 @@ mod testes {
             beta,
             Some(&lapide_alfa)
         ));
+    }
+
+    // ------------------------------------------- o teto do mapa (330 b)
+
+    fn toque(carimbo: i64) -> Toque {
+        Toque {
+            carimbo,
+            origem: 7,
+            excluido: false,
+        }
+    }
+
+    /// No limite: EXATAMENTE `teto` chaves nao esquecem nada, e a chave
+    /// `teto + 1` dispara o esquecimento de um quarto, os mais velhos.
+    ///
+    /// Repondo o defeito (o `tocar` sem o teto, que era o `insert` de antes),
+    /// a segunda metade cai: o mapa cresce ate 9 e `esquecidas` fica zero.
+    #[test]
+    fn o_teto_vale_no_limite_e_esquece_os_mais_velhos() {
+        let mut m = MapaDeToques::default();
+        for i in 1..=8 {
+            m.tocar(format!("k{i}"), toque(i * 10), 8);
+        }
+        assert_eq!(m.toques.len(), 8, "no teto, nada se esquece");
+        assert_eq!((m.esquecidas, m.piso), (0, None));
+
+        m.tocar("k9".into(), toque(90), 8);
+        // Fica 3/4 do teto (6), e os tres mais velhos sairam.
+        assert_eq!(m.toques.len(), 6);
+        assert_eq!(m.esquecidas, 3);
+        assert_eq!(m.piso, Some((30, 7)));
+        for i in 1..=3 {
+            assert!(m.toque(&format!("k{i}")).is_none(), "k{i} devia ter saido");
+        }
+        assert!(m.toque("k9").is_some(), "o toque mais novo nunca sai");
+    }
+
+    /// **A garantia.** Chave esquecida: o remoto acima do piso VENCE (e a
+    /// resposta que o mapa inteiro daria), e o que nao passa do piso e
+    /// `NaoSei` -- nunca `Vence` calado, que apagaria a escrita daqui mais
+    /// nova que ele.
+    ///
+    /// Repondo o defeito (chave ausente = `Vence`, o `None => true` de
+    /// antes), a asercao do `NaoSei` cai.
+    #[test]
+    fn chave_esquecida_abaixo_do_piso_nao_se_decide() {
+        let mut m = MapaDeToques::default();
+        for i in 1..=5 {
+            m.tocar(format!("k{i}"), toque(i * 10), 4);
+        }
+        // Teto 4 -> sobram 3; k1 e k2 sairam, piso (20, 7).
+        assert_eq!(m.piso, Some((20, 7)));
+        // k2 foi tocada aqui em 20; o remoto de 15 PERDERIA com o mapa
+        // inteiro. Sem o toque, o mapa nao sabe -- e diz.
+        assert_eq!(m.decidir("k2", 15, 3), Decisao::NaoSei);
+        // Empate com o piso tambem nao se decide: pode ser o proprio toque.
+        assert_eq!(m.decidir("k2", 20, 7), Decisao::NaoSei);
+        // Acima do piso, o remoto vence com certeza.
+        assert_eq!(m.decidir("k2", 21, 3), Decisao::Vence);
+        // Chave presente decide como sempre, nos dois sentidos.
+        assert_eq!(m.decidir("k5", 49, 3), Decisao::Perde);
+        assert_eq!(m.decidir("k5", 51, 3), Decisao::Vence);
+    }
+
+    /// O comportamento VELHO: o mapa que nunca passou do teto decide como
+    /// sempre decidiu -- chave nunca vista vence, qualquer que seja o carimbo.
+    #[test]
+    fn sem_passar_do_teto_nada_muda() {
+        let mut m = MapaDeToques::default();
+        m.tocar("k1".into(), toque(100), TETO_DE_TOQUES_PADRAO);
+        assert_eq!(m.decidir("nunca", i64::MIN + 1, 1), Decisao::Vence);
+        assert_eq!(m.decidir("k1", 99, 1), Decisao::Perde);
+        assert_eq!((m.esquecidas, m.piso), (0, None));
+    }
+
+    /// O piso so sobe: um segundo esquecimento nunca o puxa para tras, senao
+    /// uma chave esquecida na primeira rodada voltaria a «vencer» calada.
+    #[test]
+    fn o_piso_so_sobe() {
+        let mut m = MapaDeToques::default();
+        for i in 1..=5 {
+            m.tocar(format!("k{i}"), toque(i * 10), 4);
+        }
+        let primeiro = m.piso.unwrap();
+        // Toques VELHOS chegando depois (eventos forcados com o carimbo do
+        // nascimento): eles sao os esquecidos da proxima vez.
+        for i in 1..=3 {
+            m.tocar(format!("v{i}"), toque(i), 4);
+        }
+        assert!(m.piso.unwrap() >= primeiro, "{:?} < {primeiro:?}", m.piso);
     }
 
     // ------------------------------------------------------------ a chave
