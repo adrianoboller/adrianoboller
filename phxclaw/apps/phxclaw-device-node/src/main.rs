@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
-//! No de dispositivo: pareia (uma vez, com token), abre sessao e bate o coracao.
+//! No de dispositivo: pareia (uma vez, com token), abre sessao, bate o coracao e atende
+//! `device.command` (hoje: `device.system.info`), respondendo `device.result` assinado.
 //!
 //! Ambiente:
 //! - PHXCLAW_DEVICE_WSS_URL   wss://servidor:porta/
@@ -9,14 +10,14 @@
 //! - PHXCLAW_DEVICE_CA_PEM    caminho da CA do servidor; sem ela valem as raizes publicas
 //! - PHXCLAW_DEVICE_KEYSTORE  "arquivo:/pasta" guarda a chave em arquivo 0600 (maquina
 //!   sem chaveiro do sistema); sem isso vale o chaveiro, e chaveiro que nao persiste recusa
-use phxclaw_device_transport::servidor::Boasvindas;
+use phxclaw_device_nodes::DeviceCommand;
+use phxclaw_device_transport::servidor::ResultadoDeComando;
 use phxclaw_device_transport::{
     DevicePlatform, DeviceTransportError, EnrollmentRequest, NodeHello, NodeIdentity,
     WssDeviceClient, parear, platform_default_capabilities,
 };
 use phxclaw_key_provider::{ArquivoKeyProvider, KeyProvider, OsKeyringProvider};
 use std::env;
-use std::time::Duration;
 use uuid::Uuid;
 
 #[tokio::main]
@@ -86,34 +87,44 @@ PHXCLAW_DEVICE_KEYSTORE=arquivo:/pasta"
         agent_version: env!("CARGO_PKG_VERSION").into(),
         capabilities: platform_default_capabilities(platform),
     };
-    let body = serde_json::to_vec(&hello)?;
-    client
-        .send(&identity.sign_envelope(Uuid::nil(), seq, "device.hello", &body)?)
-        .await?;
-    let b: Boasvindas = serde_json::from_slice(&esperar(&mut client, "device.welcome").await?)?;
-    println!("sessao {} cerca {}", b.session_uuid, b.fencing_token);
-    let mut n = 0u64;
-    loop {
-        n += 1;
-        client
-            .send(&identity.sign_envelope(b.session_uuid, n, "device.heartbeat", b"{}")?)
-            .await?;
-        esperar(&mut client, "device.ack").await?;
-        tokio::time::sleep(Duration::from_secs(30)).await;
-    }
+    // O laco da sessao (hello, coracao, cerca e capacidade declarada) e o MESMO do agente
+    // ligado a uma ponte; aqui so muda o que o no sabe executar.
+    phxclaw_device_transport::no::atender(
+        client,
+        &identity,
+        &hello,
+        seq,
+        |b| println!("sessao {} cerca {}", b.session_uuid, b.fencing_token),
+        |cmd| async move { executar(&cmd) },
+    )
+    .await?;
+    Ok(())
 }
 
-/// Le a resposta; recusa do servidor vira erro com o motivo.
-async fn esperar(
-    client: &mut WssDeviceClient,
-    tipo: &str,
-) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-    let r = client.receive().await?;
-    let corpo = r.decode_and_verify_body()?;
-    if r.kind != tipo {
-        return Err(format!("{}: {}", r.kind, String::from_utf8_lossy(&corpo)).into());
+/// O que este no sabe fazer. Cerca e capacidade declarada ja vieram conferidas pelo laco
+/// de `no::atender`.
+fn executar(cmd: &DeviceCommand) -> ResultadoDeComando {
+    let falha = |m: String| ResultadoDeComando {
+        command_uuid: cmd.command_uuid,
+        ok: false,
+        saida: serde_json::Value::Null,
+        erro: Some(m),
+    };
+    match cmd.capability.as_str() {
+        "device.system.info" => ResultadoDeComando {
+            command_uuid: cmd.command_uuid,
+            ok: true,
+            saida: serde_json::json!({
+                "hostname": env::var("HOSTNAME").or_else(|_| env::var("COMPUTERNAME")).ok()
+                    .or_else(|| std::fs::read_to_string("/etc/hostname").ok().map(|h| h.trim().to_string())),
+                "os": std::env::consts::OS,
+                "arch": std::env::consts::ARCH,
+                "versao": env!("CARGO_PKG_VERSION"),
+            }),
+            erro: None,
+        },
+        outra => falha(format!("{outra} declarada mas nao implementada neste no")),
     }
-    Ok(corpo)
 }
 
 fn current_platform() -> Result<DevicePlatform, Box<dyn std::error::Error>> {

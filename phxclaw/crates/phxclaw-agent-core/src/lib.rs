@@ -216,6 +216,12 @@ pub trait Tool: Send + Sync {
     fn finish<'a>(&'a self, _task_id: &'a str) -> BoxFut<'a, ()> {
         Box::pin(async {})
     }
+    /// A linha de shell que esta chamada executaria, para as regras por comando
+    /// (`permitir/negar/perguntar`) a conferirem no portao do motor ANTES de rodar. Toda
+    /// ferramenta que executa texto do modelo num shell responde aqui; as outras, `None`.
+    fn comando_de_shell(&self, _args: &Value) -> Option<String> {
+        None
+    }
 }
 
 /// Trunca texto para devolver ao modelo sem estourar o contexto, cortando em fronteira

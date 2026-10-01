@@ -55,10 +55,11 @@ pub enum Erro {
     },
 }
 
-/// Estados em que a tarefa nao anda mais sozinha. `AwaitingApproval` entra porque esperar
-/// por ele e esperar por uma pessoa: o `aguardar` devolve e quem chama decide.
+/// Estados em que a tarefa nao anda mais sozinha. `AwaitingApproval` e `AwaitingInput`
+/// entram porque esperar por eles e esperar por uma pessoa: o `aguardar` devolve e quem
+/// chama decide.
 pub fn parada(s: TaskStatus) -> bool {
-    s.is_final() || s == TaskStatus::AwaitingApproval
+    s.is_final() || matches!(s, TaskStatus::AwaitingApproval | TaskStatus::AwaitingInput)
 }
 
 #[derive(Clone)]

@@ -38,64 +38,64 @@
    "evidencia": "phxclaw mcp-serve: as ferramentas que a politica concede, pela mesma montagem e o mesmo portao"
   },
   "lsp": {
-   "estado": "parcial",
-   "evidencia": "crates/phxclaw-mcp-lsp-runtime, fora do agente"
+   "estado": "agente",
+   "evidencia": "lsp.rs: rust-analyzer e pyright reais no bwrap; diagnostico anexado a write_file/edit_file"
   },
   "canal_telegram": {
    "estado": "agente",
    "evidencia": "crates/phxclaw-agent/src/canal.rs: phxclaw canal telegram (entrada e saida), channel_send; provado contra Telegram falso, real espera o token"
   },
   "canal_whatsapp": {
-   "estado": "parcial",
-   "evidencia": "phxclaw-channel-providers, fora do agente"
+   "estado": "agente",
+   "evidencia": "canais/whatsapp.rs pelo laco unico Canal::rodada (provado contra servidor falso; falta credencial real)"
   },
   "canal_discord": {
-   "estado": "parcial",
-   "evidencia": "phxclaw-channel-providers, fora do agente"
+   "estado": "agente",
+   "evidencia": "canais/discord.rs pelo laco unico Canal::rodada (provado contra servidor falso; falta credencial real)"
   },
   "canal_slack": {
-   "estado": "parcial",
-   "evidencia": "phxclaw-channel-providers, fora do agente"
+   "estado": "agente",
+   "evidencia": "canais/slack.rs pelo laco unico Canal::rodada (provado contra servidor falso; falta credencial real)"
   },
   "canal_teams": {
    "estado": "parcial",
-   "evidencia": "phxclaw-channel-providers, fora do agente"
+   "evidencia": "canais/teams.rs: sem conferir o JWT RS256 do Bot Framework (falta RSA)"
   },
   "canais_push": {
    "estado": "agente",
    "evidencia": "phxclaw canal telegram: mensagem do canal vira tarefa"
   },
   "canal_signal": {
-   "estado": "nao",
-   "evidencia": ""
+   "estado": "agente",
+   "evidencia": "canais/signal.rs pelo laco unico Canal::rodada (provado contra servidor falso; falta credencial real)"
   },
   "canal_imessage": {
    "estado": "nao",
    "evidencia": ""
   },
   "canal_googlechat": {
-   "estado": "nao",
-   "evidencia": ""
+   "estado": "parcial",
+   "evidencia": "sem conferir o JWT (falta RSA)"
   },
   "canal_matrix": {
-   "estado": "nao",
-   "evidencia": ""
+   "estado": "agente",
+   "evidencia": "canais/matrix.rs pelo laco unico Canal::rodada (provado contra servidor falso; falta credencial real)"
   },
   "canal_sms": {
-   "estado": "nao",
-   "evidencia": ""
+   "estado": "agente",
+   "evidencia": "canais/sms.rs pelo laco unico Canal::rodada (provado contra servidor falso; falta credencial real)"
   },
   "canal_email": {
    "estado": "parcial",
-   "evidencia": "email.rs envia (SMTP); nao recebe como canal"
+   "evidencia": "IMAP sem TLS (so loopback/tunel); SMTP com TLS e senha no broker"
   },
   "webchat": {
-   "estado": "nao",
-   "evidencia": ""
+   "estado": "agente",
+   "evidencia": "phxclaw servir --canal webchat, na porta da API"
   },
   "webhooks": {
-   "estado": "parcial",
-   "evidencia": "API HTTP aceita tarefa por POST (phxclaw servir); nao e webhook generico"
+   "estado": "agente",
+   "evidencia": "canais/: entrada HMAC-SHA256 com carimbo de 5 min nos dois sentidos"
   },
   "api_servidor": {
    "estado": "agente",
@@ -110,8 +110,8 @@
    "evidencia": "crates/phxclaw-agent/src/agenda.rs"
   },
   "heartbeat": {
-   "estado": "parcial",
-   "evidencia": "agenda periodica cobre parte; sem auto-despertar do agente"
+   "estado": "agente",
+   "evidencia": "gatilhos.rs: HEARTBEAT.md periodico, cria tarefa por criar_tarefa_com"
   },
   "subagentes": {
    "estado": "agente",
@@ -122,28 +122,28 @@
    "evidencia": "crates/phxclaw-agent/src/equipe.rs: 110 papeis, team_list e team_delegate; o filho recebe so a intersecao das capacidades"
   },
   "workflows": {
-   "estado": "parcial",
-   "evidencia": "crates/phxclaw-task-graph e mission-runtime, fora do agente"
+   "estado": "agente",
+   "evidencia": "fluxos.rs: DAG do phxclaw-task-graph, retomavel; phxclaw fluxo rodar/retomar"
   },
   "memoria": {
    "estado": "agente",
    "evidencia": "crates/phxclaw-agent/src/memoria.rs memory_save/memory_search; injecao no inicio da tarefa"
   },
   "busca_sessoes": {
-   "estado": "nao",
-   "evidencia": ""
+   "estado": "agente",
+   "evidencia": "sessoes.rs: session_search e phxclaw sessoes pelo mesmo motor"
   },
   "skills": {
    "estado": "agente",
    "evidencia": "crates/phxclaw-agent/src/skills.rs skill_load; nome e descricao no prompt"
   },
   "hooks": {
-   "estado": "nao",
-   "evidencia": "so ganchos de ciclo de vida de plugin (plugin-sdk)"
+   "estado": "agente",
+   "evidencia": "crates/phxclaw-agent/src/hooks.rs: PreToolUse/PostToolUse/TaskStart/TaskEnd/Stop no bwrap; saida 2 bloqueia (tests/interacao.rs)"
   },
   "plugins": {
    "estado": "parcial",
-   "evidencia": "crates/phxclaw-plugin-registry (Ed25519 V2), fora do agente"
+   "evidencia": "plugin assinado vira ferramenta no bwrap; dos pacotes .claude-plugin/.codex-plugin so os servidores MCP entram"
   },
   "sandbox": {
    "estado": "agente",
@@ -154,48 +154,48 @@
    "evidencia": "motor.rs: capacidades concedidas por politica"
   },
   "plan_mode": {
-   "estado": "nao",
-   "evidencia": ""
+   "estado": "agente",
+   "evidencia": "Agent::plan: mesmo laco so com capacidades de leitura, termina em AwaitingApproval"
   },
   "execucao_codigo": {
    "estado": "agente",
    "evidencia": "shell no bubblewrap e python_project (pytest, ruff, mypy, run)"
   },
   "checkpoints": {
-   "estado": "parcial",
-   "evidencia": "crates/phxclaw-checkpoint, fora do agente"
+   "estado": "agente",
+   "evidencia": "ponto no portao do motor para fs.write/doc.write/git.write; checkpoint_list/restore"
   },
   "dispositivos": {
-   "estado": "parcial",
-   "evidencia": "servidor WSS e no pareado (phxclaw dispositivos); o agente nao manda comando ao no"
+   "estado": "agente",
+   "evidencia": "dispositivos.rs: node_list/node_invoke com tripla lista; provado contra o phxclaw-device-node real"
   },
   "celular": {
-   "estado": "nao",
-   "evidencia": ""
+   "estado": "agente",
+   "evidencia": "mesmo PWA com layout de celular, conferido em Chromium emulando Pixel 7"
   },
   "app_desktop": {
    "estado": "agente",
    "evidencia": "desktop Tauri (portao native_tauri_e2e)"
   },
   "web_nuvem": {
-   "estado": "nao",
-   "evidencia": ""
+   "estado": "agente",
+   "evidencia": "PWA instalavel (manifest + sw.js) servido pelo servir; Chromium sem erro de instalabilidade"
   },
   "remote_control": {
-   "estado": "nao",
-   "evidencia": ""
+   "estado": "agente",
+   "evidencia": "phxclaw ponte + servir --ponte --sem-porta: so conexao de saida, 0 sockets em LISTEN"
   },
   "stt": {
    "estado": "agente",
    "evidencia": "visao.rs TranscribeTool (media.stt, whisper.cpp local com SHA-256 do modelo)"
   },
   "tts": {
-   "estado": "nao",
-   "evidencia": ""
+   "estado": "agente",
+   "evidencia": "voz.rs: speak por comando externo com SHA-256 do modelo; WAV transcrito de volta (flite, BSD)"
   },
   "voz_wake": {
-   "estado": "nao",
-   "evidencia": ""
+   "estado": "parcial",
+   "evidencia": "sherpa-onnx KWS sobre arquivo WAV; sem microfone ao vivo, so ingles"
   },
   "ocr_imagem": {
    "estado": "agente",
@@ -206,52 +206,52 @@
    "evidencia": "arquivos.rs pdf e read_document (pdftotext no bubblewrap)"
   },
   "geracao_midia": {
-   "estado": "nao",
-   "evidencia": ""
+   "estado": "agente",
+   "evidencia": "midia.rs: API de imagens OpenAI e ComfyUI (provado contra servidor falso; falta credencial real); SVG local desenhado pelo Chromium"
   },
   "canvas": {
-   "estado": "nao",
-   "evidencia": ""
+   "estado": "agente",
+   "evidencia": "canvas.rs: widget em iframe com CSP sandbox, JS conferido por tree-sitter; isolamento provado no Chromium"
   },
   "github": {
-   "estado": "nao",
-   "evidencia": ""
+   "estado": "agente",
+   "evidencia": "forja.rs: github/github_write, token pelo SecretBroker; provado contra falso"
   },
   "git": {
-   "estado": "nao",
-   "evidencia": "so pelo shell, sem ferramenta"
+   "estado": "agente",
+   "evidencia": "git.rs: git (git.read) e git_write no bwrap; provado contra git real"
   },
   "worktrees": {
-   "estado": "nao",
-   "evidencia": ""
+   "estado": "agente",
+   "evidencia": "git_worktree: uma arvore por tarefa"
   },
   "ide_acp": {
-   "estado": "nao",
-   "evidencia": ""
+   "estado": "agente",
+   "evidencia": "acp.rs: phxclaw acp provado contra o cliente acpx 0.19.4"
   },
   "ide": {
    "estado": "agente",
    "evidencia": "Helix 25.07.1 (a05c151b) no motor de terminal Rust da janela (crates/phxclaw-terminal), com rust-analyzer; grade conferida em 01/10"
   },
   "busca_x": {
-   "estado": "nao",
-   "evidencia": ""
+   "estado": "agente",
+   "evidencia": "xai.rs: x_search pela API Responses da xAI, chave no SecretBroker (provado contra servidor falso; falta credencial real)"
   },
   "busca_arquivos": {
-   "estado": "parcial",
-   "evidencia": "list_files; busca por conteudo so pelo shell"
+   "estado": "agente",
+   "evidencia": "busca.rs: glob e grep respeitando .gitignore"
   },
   "notebook": {
-   "estado": "nao",
-   "evidencia": ""
+   "estado": "agente",
+   "evidencia": "notebook.rs: notebook_read e notebook_edit"
   },
   "output_styles": {
-   "estado": "nao",
-   "evidencia": ""
+   "estado": "agente",
+   "evidencia": "crates/phxclaw-agent/src/estilos.rs: estilos embutidos e do projeto no prompt de sistema"
   },
   "perguntas_usuario": {
-   "estado": "nao",
-   "evidencia": ""
+   "estado": "agente",
+   "evidencia": "ask_user + TaskStatus::AwaitingInput + POST /v1/tasks/{id}/answer"
   },
   "tarefas": {
    "estado": "agente",
@@ -266,20 +266,20 @@
    "evidencia": "skills e memoria cobrem parte; nao le AGENTS.md do projeto"
   },
   "regras_comando": {
-   "estado": "parcial",
-   "evidencia": "politica por ferramenta (capability), nao por comando"
+   "estado": "agente",
+   "evidencia": "regras.rs: permitir/negar/perguntar por pedaco do comando (molde execpolicy)"
   },
   "gatilhos_evento": {
-   "estado": "nao",
-   "evidencia": ""
+   "estado": "agente",
+   "evidencia": "gatilhos.rs: pasta observada (arquivo estavel) e webhook POST /v1/triggers/{nome}"
   },
   "revisao_codigo": {
-   "estado": "nao",
-   "evidencia": ""
+   "estado": "agente",
+   "evidencia": "revisao.rs: code_review e phxclaw revisar pelo mesmo motor"
   },
   "gitlab": {
-   "estado": "nao",
-   "evidencia": ""
+   "estado": "agente",
+   "evidencia": "forja.rs: gitlab/gitlab_write; provado contra falso"
   },
   "linear": {
    "estado": "nao",
@@ -290,12 +290,12 @@
    "evidencia": ""
   },
   "tarefas_nuvem_paralelas": {
-   "estado": "parcial",
-   "evidencia": "phxclaw servir roda tarefas em segundo plano no proprio servidor; nao ha ambiente isolado por tarefa na nuvem"
+   "estado": "agente",
+   "evidencia": "nuvem.rs: parallel_tasks, uma worktree + bwrap por tarefa, best-of-N"
   },
   "ambientes_nuvem": {
-   "estado": "nao",
-   "evidencia": ""
+   "estado": "parcial",
+   "evidencia": "isolamento local por worktree + bwrap; VM na nuvem e decisao de produto"
   },
   "modelo_local": {
    "estado": "agente",
@@ -306,16 +306,16 @@
    "evidencia": "crates/phxclaw-terminal + comandos Tauri: terminal Rust na janela do desktop"
   },
   "voz_conversa": {
-   "estado": "nao",
-   "evidencia": ""
+   "estado": "agente",
+   "evidencia": "phxclaw voz: whisper -> agente -> speak, provado com Ollama real"
   },
   "gravar_repetir": {
    "estado": "nao",
    "evidencia": ""
   },
   "repl_python": {
-   "estado": "nao",
-   "evidencia": "o shell roda python, sem estado entre chamadas"
+   "estado": "agente",
+   "evidencia": "repl.rs: python_repl persistente por tarefa no bwrap do python_project"
   },
   "leitura_arquivos": {
    "estado": "agente",
@@ -350,72 +350,72 @@
    "evidencia": ""
   },
   "resumo_diario": {
-   "estado": "nao",
-   "evidencia": ""
+   "estado": "agente",
+   "evidencia": "daily_summary e phxclaw resumo pelo mesmo resumo_do_dia"
   },
   "conectores_google": {
    "estado": "nao",
    "evidencia": ""
   },
   "calculadora": {
-   "estado": "nao",
-   "evidencia": ""
+   "estado": "agente",
+   "evidencia": "calculadora.rs: analisador proprio, sem eval"
   },
   "clima": {
    "estado": "nao",
    "evidencia": ""
   },
   "canal_irc": {
-   "estado": "nao",
-   "evidencia": ""
+   "estado": "parcial",
+   "evidencia": "sem TLS (rustls entra na SP000013)"
   },
   "canal_mattermost": {
-   "estado": "nao",
-   "evidencia": ""
+   "estado": "agente",
+   "evidencia": "canais/mattermost.rs pelo laco unico Canal::rodada (provado contra servidor falso; falta credencial real)"
   },
   "canal_feishu": {
-   "estado": "nao",
-   "evidencia": ""
+   "estado": "agente",
+   "evidencia": "canais/feishu.rs pelo laco unico Canal::rodada (provado contra servidor falso; falta credencial real)"
   },
   "canal_line": {
-   "estado": "nao",
-   "evidencia": ""
+   "estado": "agente",
+   "evidencia": "canais/line.rs pelo laco unico Canal::rodada (provado contra servidor falso; falta credencial real)"
   },
   "canal_viber": {
-   "estado": "nao",
-   "evidencia": ""
+   "estado": "agente",
+   "evidencia": "canais/viber.rs pelo laco unico Canal::rodada (provado contra servidor falso; falta credencial real)"
   },
   "canal_messenger": {
-   "estado": "nao",
-   "evidencia": ""
+   "estado": "agente",
+   "evidencia": "canais/messenger.rs pelo laco unico Canal::rodada (provado contra servidor falso; falta credencial real)"
   },
   "canal_reddit": {
-   "estado": "nao",
-   "evidencia": ""
+   "estado": "agente",
+   "evidencia": "canais/reddit.rs pelo laco unico Canal::rodada (provado contra servidor falso; falta credencial real)"
   },
   "canal_mastodon": {
-   "estado": "nao",
-   "evidencia": ""
+   "estado": "agente",
+   "evidencia": "canais/mastodon.rs pelo laco unico Canal::rodada (provado contra servidor falso; falta credencial real)"
   },
   "canal_xmpp": {
-   "estado": "nao",
-   "evidencia": ""
+   "estado": "parcial",
+   "evidencia": "sem STARTTLS e sem sala multiusuario"
   },
   "canal_rocketchat": {
-   "estado": "nao",
-   "evidencia": ""
+   "estado": "agente",
+   "evidencia": "canais/rocketchat.rs pelo laco unico Canal::rodada (provado contra servidor falso; falta credencial real)"
   },
   "canal_zulip": {
-   "estado": "nao",
-   "evidencia": ""
+   "estado": "agente",
+   "evidencia": "canais/zulip.rs pelo laco unico Canal::rodada (provado contra servidor falso; falta credencial real)"
   },
   "canal_twitch": {
-   "estado": "nao",
-   "evidencia": ""
+   "estado": "parcial",
+   "evidencia": "IRC sem TLS"
   },
   "canal_nostr": {
-   "estado": "nao",
-   "evidencia": ""
+   "estado": "parcial",
+   "evidencia": "so nota publica; sem mensagem direta cifrada"
   }
  }
 }

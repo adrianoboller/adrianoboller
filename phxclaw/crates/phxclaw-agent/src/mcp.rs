@@ -389,6 +389,16 @@ pub fn carregar(caminho: &Path) -> (Vec<Arc<dyn Tool>>, Vec<String>) {
         .map(Path::to_path_buf)
         .unwrap_or_else(|| PathBuf::from("."));
     let base = std::fs::canonicalize(&base).unwrap_or(base);
+    let (tools, mais) = carregar_config(&cfg, &base);
+    avisos.extend(mais);
+    (tools, avisos)
+}
+
+/// A mesma subida para uma configuracao ja lida (o `.mcp.json` de um pacote de plugin,
+/// traduzido): um caminho so do declarado ate a ferramenta.
+pub fn carregar_config(cfg: &ConfigMcp, base: &Path) -> (Vec<Arc<dyn Tool>>, Vec<String>) {
+    let mut avisos = Vec::new();
+    let base = base.to_path_buf();
     let mut servidores = Vec::new();
     let mut vistos = BTreeSet::new();
     for d in &cfg.servidores {
@@ -518,25 +528,15 @@ where
     };
     let mut r = Ok(());
     loop {
-        let mut linha = Vec::new();
-        let lidos = (&mut entrada)
-            .take(DEFAULT_MAX_FRAME_BYTES as u64 + 1)
-            .read_until(b'\n', &mut linha)
-            .await?;
-        if lidos == 0 {
-            break;
-        }
-        if linha.len() > DEFAULT_MAX_FRAME_BYTES {
-            // Sem o fim da linha nao ha como achar o comeco da proxima: responde e fecha.
-            let e = jsonrpc_error(
-                Value::Null,
-                JSONRPC_INVALID_REQUEST,
-                "mensagem grande demais",
-            );
-            let _ = saida.write_all(&encode_mcp_line(&e)).await;
-            r = Err(std::io::Error::other("mensagem MCP acima do teto"));
-            break;
-        }
+        let linha = match ler_linha(&mut entrada).await? {
+            Linha::Fim => break,
+            Linha::Grande(e) => {
+                let _ = saida.write_all(&encode_mcp_line(&e)).await;
+                r = Err(std::io::Error::other("mensagem MCP acima do teto"));
+                break;
+            }
+            Linha::Bytes(b) => b,
+        };
         if linha.iter().all(u8::is_ascii_whitespace) {
             continue;
         }
@@ -557,6 +557,35 @@ where
         t.finish(&task_id).await;
     }
     r
+}
+
+/// Uma linha de JSON-RPC lida com teto: o `mcp-serve` e o `acp` leem o fio pela MESMA
+/// funcao, para o teto e a resposta ao estouro nunca divergirem entre os dois.
+pub(crate) enum Linha {
+    Fim,
+    /// Passou do teto; carrega o erro JSON-RPC a mandar antes de fechar. Sem o fim da
+    /// linha nao ha como achar o comeco da proxima: quem le responde e fecha.
+    Grande(Value),
+    Bytes(Vec<u8>),
+}
+
+pub(crate) async fn ler_linha<R: AsyncBufRead + Unpin>(entrada: &mut R) -> std::io::Result<Linha> {
+    let mut linha = Vec::new();
+    let lidos = (&mut *entrada)
+        .take(DEFAULT_MAX_FRAME_BYTES as u64 + 1)
+        .read_until(b'\n', &mut linha)
+        .await?;
+    if lidos == 0 {
+        return Ok(Linha::Fim);
+    }
+    if linha.len() > DEFAULT_MAX_FRAME_BYTES {
+        return Ok(Linha::Grande(jsonrpc_error(
+            Value::Null,
+            JSONRPC_INVALID_REQUEST,
+            "mensagem grande demais",
+        )));
+    }
+    Ok(Linha::Bytes(linha))
 }
 
 async fn responder(

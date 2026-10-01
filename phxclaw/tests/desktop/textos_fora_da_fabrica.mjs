@@ -126,7 +126,28 @@ function registrar(estado, lista) {
   }
 }
 
-async function abrir(browser, { modo = 'host', semEquipe = false, url = '?screen=dashboard', real = false, relogio = false } = {}) {
+// A API de tarefas falsa: uma tarefa em cada estado, com plano, pergunta, passos, erro e
+// artefato -- texto que so aparece com a tarefa num estado tambem e texto. Todo campo e
+// DADO (vem do servidor), entao vai como "§".
+const ESTADOS_DE_TAREFA = ['pending', 'awaiting_approval', 'awaiting_input', 'running', 'completed', 'failed', 'cancelled'];
+const tarefaFalsa = (s, i) => ({
+  id: `t${i}`, objective: '§', status: s, model: '§', created_at: `2026-10-01T00:00:0${i}Z`, updated_at: '§',
+  plan: ['§'], steps: [{ n: 1, kind: '§', tool: null, outcome: 'ok', summary: '§' }, { n: 2, kind: '§', tool: '§', outcome: 'erro', summary: '§' }],
+  answer: s === 'completed' ? '§' : null, error: s === 'failed' ? '§' : null,
+  question: s === 'awaiting_input' ? '§' : null, artifacts: [{ path: '§' }],
+});
+async function armarApiDeTarefas(page) {
+  await page.route(`${ORIGEM}/v1/**`, route => {
+    const p = new URL(route.request().url()).pathname;
+    const m = p.match(/^\/v1\/tasks\/(t\d)$/);
+    const corpo = m ? tarefaFalsa(ESTADOS_DE_TAREFA[+m[1].slice(1)], +m[1].slice(1))
+      : p === '/v1/tasks' ? ESTADOS_DE_TAREFA.map(tarefaFalsa) : null;
+    return corpo ? route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(corpo) })
+      : route.fulfill({ status: 401, contentType: 'application/json', body: '{"error":"§"}' });
+  });
+}
+
+async function abrir(browser, { modo = 'host', semEquipe = false, url = '?screen=dashboard', real = false, relogio = false, api = false } = {}) {
   const page = await browser.newPage({ viewport: { width: 1560, height: 960 } });
   await page.route(`${ORIGEM}/**`, route => {
     const caminho = decodeURIComponent(new URL(route.request().url()).pathname);
@@ -137,6 +158,7 @@ async function abrir(browser, { modo = 'host', semEquipe = false, url = '?screen
     if (!real && nome === 'textos.json') return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(pseudoFabrica()) });
     return route.fulfill({ status: 200, body: readFileSync(arq), contentType: TIPOS[extname(arq)] || 'application/octet-stream' });
   });
+  if (api) await armarApiDeTarefas(page);
   await page.addInitScript(stubTauri, modo);
   // Relogio parado: os timers da pagina so andam quando o roteiro manda (clock.runFor).
   if (relogio) { await page.clock.install({ time: 0 }); await page.clock.pauseAt(1000); }
@@ -149,7 +171,7 @@ async function abrir(browser, { modo = 'host', semEquipe = false, url = '?screen
 }
 
 async function percorrer(page, estado) {
-  for (const tela of ['geral', 'agentes', 'ide', 'ferramentas', 'absorcao']) {
+  for (const tela of ['geral', 'agentes', 'ide', 'ferramentas', 'absorcao', 'tarefas']) {
     await page.click(`.nav[data-tela="${tela}"]`);
     await page.waitForTimeout(250);
     registrar(estado, await coletar(page));
@@ -188,6 +210,39 @@ try {
 
   p = await abrir(browser, { semEquipe: true });
   await percorrer(p, 'sem-equipe');
+  await p.close();
+
+  // Tarefas sem token, com token e a API respondendo, e cada tarefa aberta no detalhe.
+  p = await abrir(browser, { api: true });
+  await p.click('.nav[data-tela="tarefas"]');
+  await p.waitForTimeout(200);
+  registrar('tarefas-sem-token', await coletar(p));
+  await p.fill('#tarefasTokenCampo', 'x'.repeat(24));
+  await p.click('#tarefasToken button');
+  await p.waitForTimeout(400);
+  registrar('tarefas-lista', await coletar(p));
+  for (let i = 0; i < ESTADOS_DE_TAREFA.length; i++) {
+    await p.click(`.tarefa-item[data-id="t${i}"]`);
+    await p.waitForTimeout(250);
+    registrar(`tarefa-${ESTADOS_DE_TAREFA[i]}`, await coletar(p));
+  }
+  await p.evaluate(() => localStorage.setItem('phxclaw.token', 'recusado'));
+  await p.route(`${ORIGEM}/v1/**`, route => route.fulfill({ status: 401, contentType: 'application/json', body: '{"error":"§"}' }));
+  await p.click('#tarefasNova button');
+  await p.fill('#tarefasObjetivo', '§');
+  await p.click('#tarefasNova button');
+  await p.waitForTimeout(300);
+  registrar('tarefas-recusado', await coletar(p));
+  await p.route(`${ORIGEM}/v1/**`, route => route.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"§"}' }));
+  await p.click('#tarefasNova button');
+  await p.fill('#tarefasObjetivo', '§');
+  await p.click('#tarefasNova button');
+  await p.waitForTimeout(300);
+  registrar('tarefas-erro', await coletar(p));
+  await p.route(`${ORIGEM}/v1/**`, route => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+  await p.evaluate(() => mostrarTela('tarefas'));
+  await p.waitForTimeout(300);
+  registrar('tarefas-vazia', await coletar(p));
   await p.close();
 
   // Splash: o rotulo do boot troca a cada 190 ms. Amostrar pelo relogio de parede oscilava
@@ -231,7 +286,10 @@ async function page_evento(p) {
 
 // Laco nos dois sentidos, lido do fonte: o que a tela pede e o que a fabrica tem.
 const html = readFileSync(join(UI, 'index.html'), 'utf8');
-const js = readFileSync(join(UI, 'assets/app.js'), 'utf8');
+// Os scripts que a tela carrega saem do proprio index.html: uma lista digitada aqui
+// deixaria de ver o arquivo novo (e deixou: o tarefas.js nasceu com 21 chaves "mortas").
+const js = [...html.matchAll(/<script src="\.\/([^"]+)"/g)]
+  .map(m => readFileSync(join(UI, m[1]), 'utf8')).join('\n');
 const pedidas = new Set([
   ...[...html.matchAll(/data-txt(?:-ph|-al|-tt)?="([^"]+)"/g)].map(m => m[1]),
   ...[...js.matchAll(/\btxt\(\s*'([^']+)'/g)].map(m => m[1]),

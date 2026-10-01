@@ -43,6 +43,11 @@ Returns exit code, stdout and stderr."
     fn capability(&self) -> &'static str {
         "shell.exec"
     }
+    fn comando_de_shell(&self, args: &Value) -> Option<String> {
+        args.get("command")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    }
     fn run<'a>(
         &'a self,
         args: Value,
@@ -148,6 +153,16 @@ action=stop with 'id' kills it; action=list shows all. Use for servers or long j
     }
     fn capability(&self) -> &'static str {
         "shell.exec"
+    }
+    /// So o `start` executa texto do modelo; `status`, `stop` e `list` nao rodam comando.
+    fn comando_de_shell(&self, args: &Value) -> Option<String> {
+        (args.get("action").and_then(Value::as_str) == Some("start"))
+            .then(|| {
+                args.get("command")
+                    .and_then(Value::as_str)
+                    .map(str::to_string)
+            })
+            .flatten()
     }
     fn run<'a>(
         &'a self,
@@ -556,9 +571,27 @@ answer. Use for research over many items (compare products, gather facts about s
 
 /// Configuracao de um subagente a partir da do pai: menos passos, o resto herdado. Um
 /// lugar so, para o `parallel_research` e o `team_delegate` nao divergirem no teto.
+/// Capacidades que um subagente nunca recebe, mesmo que o pai as tenha: delegar ou abrir
+/// subagente de dentro de um subagente abriria recursao sem teto. O corte e por
+/// CAPACIDADE, no `config_de_subagente` que o `parallel_research` e o `team_delegate`
+/// usam: antes, o filho do `parallel_research` so nao via `team_*` porque a montagem
+/// empilhava as ferramentas numa certa ordem -- e ordem de `push` nao e politica.
+pub const NUNCA_NO_SUBAGENTE: &[&str] = &[
+    "agent.spawn",
+    "agent.parallel",
+    "team.delegate",
+    "team.read",
+];
+
 pub fn config_de_subagente(pai: &AgentConfig) -> AgentConfig {
+    let mut capabilities = pai.capabilities.clone();
+    capabilities.retain(|c| !NUNCA_NO_SUBAGENTE.contains(&c.as_str()));
     AgentConfig {
+        capabilities,
         max_steps: pai.max_steps.min(8),
+        // Subagente roda em paralelo e ninguem acompanha a tarefa filha: pergunta dele
+        // ficaria sem dono. Sem prazo, `ask_user` some e a regra `perguntar` nega.
+        prazo_de_resposta: None,
         ..pai.clone()
     }
 }
@@ -568,9 +601,22 @@ pub fn config_de_subagente(pai: &AgentConfig) -> AgentConfig {
 /// aqui; um segundo laco ao lado seria um segundo lugar para esquecer o `parent` ou o
 /// `finish` das ferramentas.
 pub async fn rodar_subagentes(sub: &Agent, objetivos: &[String], pai: Option<&str>) -> Vec<Task> {
-    let futuros = objetivos.iter().map(|obj| {
-        let mut t = Task::new(obj.clone(), sub.llm.id());
-        t.parent = pai.map(str::to_string);
+    let tarefas = objetivos
+        .iter()
+        .map(|obj| {
+            let mut t = Task::new(obj.clone(), sub.llm.id());
+            t.parent = pai.map(str::to_string);
+            t
+        })
+        .collect();
+    rodar_filhas(sub, tarefas).await
+}
+
+/// O mesmo laco, para quem precisa preparar a tarefa filha antes (id conhecido para montar
+/// a pasta dela, como as tarefas paralelas em worktree, ou o passo de um fluxo). O
+/// `rodar_subagentes` passa por aqui: continua sendo UM laco.
+pub async fn rodar_filhas(sub: &Agent, tarefas: Vec<Task>) -> Vec<Task> {
+    let futuros = tarefas.into_iter().map(|t| {
         let sub = sub.clone();
         async move {
             let cancel = CancelFlag::default();

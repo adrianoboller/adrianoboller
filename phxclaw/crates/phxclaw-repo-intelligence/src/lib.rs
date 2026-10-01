@@ -543,6 +543,66 @@ fn walk_stats(node: Node<'_>, s: &mut (usize, usize)) {
         walk_stats(ch, s)
     }
 }
+/// Erro de sintaxe achado num trecho: linha e coluna contadas de 1, como um editor mostra.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ErroDeSintaxe {
+    pub linha: usize,
+    pub coluna: usize,
+    /// `ERROR` (trecho que nao casa) ou `MISSING <token>` (o parser inventou o que faltava).
+    pub tipo: String,
+}
+
+/// O primeiro erro de sintaxe de um trecho, na ordem do texto. Existe para quem recebe
+/// codigo de fora (o canvas do agente) recusar dizendo ONDE, pelo mesmo parser e pela
+/// mesma deteccao (`is_error`/`is_missing`) com que o `analyze` conta os erros: dois
+/// detectores dariam duas respostas para o mesmo arquivo.
+pub fn primeiro_erro_de_sintaxe(
+    language: &str,
+    src: &str,
+) -> Result<Option<ErroDeSintaxe>, String> {
+    let lang = language_for(Path::new(""), language)
+        .ok_or_else(|| format!("linguagem sem parser: {language}"))?;
+    let mut parser = Parser::new();
+    parser.set_language(&lang).map_err(|e| e.to_string())?;
+    let tree = parser
+        .parse(src.as_bytes(), None)
+        .ok_or_else(|| "o parser desistiu do trecho".to_string())?;
+    // So desce por quem `has_error`: a busca custa o caminho ate o erro, nao a arvore.
+    fn achar(n: Node<'_>) -> Option<Node<'_>> {
+        if n.is_error() || n.is_missing() {
+            return Some(n);
+        }
+        let mut c = n.walk();
+        let filhos: Vec<Node<'_>> = n.children(&mut c).collect();
+        filhos
+            .into_iter()
+            .filter(|f| f.has_error() || f.is_missing())
+            .find_map(achar)
+    }
+    let raiz = tree.root_node();
+    if !raiz.has_error() {
+        return Ok(None);
+    }
+    Ok(achar(raiz).map(|n| {
+        let p = n.start_position();
+        // O tree-sitter conta a coluna em bytes; quem le a mensagem conta caracteres.
+        let coluna = src
+            .split('\n')
+            .nth(p.row)
+            .and_then(|l| l.get(..p.column.min(l.len())))
+            .map_or(p.column, |l| l.chars().count());
+        ErroDeSintaxe {
+            linha: p.row + 1,
+            coluna: coluna + 1,
+            tipo: if n.is_missing() {
+                format!("MISSING {}", n.kind())
+            } else {
+                "ERROR".into()
+            },
+        }
+    }))
+}
+
 fn range(n: Node<'_>) -> SourceRange {
     let a = n.start_position();
     let b = n.end_position();

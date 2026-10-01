@@ -22,7 +22,7 @@ use thiserror::Error;
 use uuid::Uuid;
 
 pub const PRODUCT_NAME: &str = "PhxClaw";
-pub const PRODUCT_CLI: &str = "phx";
+pub const PRODUCT_CLI: &str = "phxclaw";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(rename_all = "snake_case")]

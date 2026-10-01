@@ -89,6 +89,40 @@ impl SmtpConfig {
     }
 }
 
+impl SmtpConfig {
+    /// O unico caminho de saida por SMTP: a ferramenta `send_email` e o canal de e-mail
+    /// passam por aqui, para a regra "sem TLS so em loopback" nao existir em duas copias.
+    pub async fn mandar(
+        &self,
+        msg: Message,
+    ) -> Result<lettre::transport::smtp::response::Response, ToolError> {
+        let c = self;
+        let loopback = matches!(c.host.as_str(), "127.0.0.1" | "localhost" | "::1");
+        let mut t = match c.security {
+            SmtpSecurity::Tls => AsyncSmtpTransport::<Tokio1Executor>::relay(&c.host),
+            SmtpSecurity::StartTls => AsyncSmtpTransport::<Tokio1Executor>::starttls_relay(&c.host),
+            // Sem TLS so em loopback: senha em texto claro na rede seria vazamento.
+            SmtpSecurity::Plain if loopback => Ok(
+                AsyncSmtpTransport::<Tokio1Executor>::builder_dangerous(&c.host),
+            ),
+            SmtpSecurity::Plain => {
+                return Err(ToolError::Denied("SMTP sem TLS so em loopback".into()));
+            }
+        }
+        .map_err(|e| ToolError::Failed(format!("smtp: {e}")))?
+        .port(c.port)
+        .timeout(Some(std::time::Duration::from_secs(30)));
+        if let (Some(u), Some(p)) = (&c.username, &c.password) {
+            t = t.credentials(Credentials::new(u.clone(), p.clone()));
+        }
+        t.build()
+            .send(msg)
+            .await
+            // o erro do lettre nao carrega a senha; mesmo assim so o texto do servidor volta
+            .map_err(|e| ToolError::Failed(format!("smtp: {e}")))
+    }
+}
+
 pub struct EmailTool {
     pub config: SmtpConfig,
 }
@@ -167,33 +201,7 @@ impl Tool for EmailTool {
             let msg = b
                 .multipart(partes)
                 .map_err(|e| ToolError::Failed(e.to_string()))?;
-            let c = &self.config;
-            let loopback = matches!(c.host.as_str(), "127.0.0.1" | "localhost" | "::1");
-            let mut t = match c.security {
-                SmtpSecurity::Tls => AsyncSmtpTransport::<Tokio1Executor>::relay(&c.host),
-                SmtpSecurity::StartTls => {
-                    AsyncSmtpTransport::<Tokio1Executor>::starttls_relay(&c.host)
-                }
-                // Sem TLS so em loopback: senha em texto claro na rede seria vazamento.
-                SmtpSecurity::Plain if loopback => Ok(
-                    AsyncSmtpTransport::<Tokio1Executor>::builder_dangerous(&c.host),
-                ),
-                SmtpSecurity::Plain => {
-                    return Err(ToolError::Denied("SMTP sem TLS so em loopback".into()));
-                }
-            }
-            .map_err(|e| ToolError::Failed(format!("smtp: {e}")))?
-            .port(c.port)
-            .timeout(Some(std::time::Duration::from_secs(30)));
-            if let (Some(u), Some(p)) = (&c.username, &c.password) {
-                t = t.credentials(Credentials::new(u.clone(), p.clone()));
-            }
-            let r = t
-                .build()
-                .send(msg)
-                .await
-                // o erro do lettre nao carrega a senha; mesmo assim so o texto do servidor volta
-                .map_err(|e| ToolError::Failed(format!("smtp: {e}")))?;
+            let r = self.config.mandar(msg).await?;
             Ok(ToolOutput::text(format!(
                 "enviado para {} (codigo {}){}",
                 to.join(", "),

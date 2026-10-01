@@ -174,7 +174,7 @@ impl PythonProjectTool {
         }
     }
 
-    fn extras(&self, pythonpath: Option<String>) -> SandboxExtras {
+    pub(crate) fn extras(&self, pythonpath: Option<String>) -> SandboxExtras {
         let i = &self.interpretador;
         let mut binds: Vec<(PathBuf, String)> = Vec::new();
         for p in [&i.prefixo, &i.prefixo_base] {
@@ -566,6 +566,19 @@ line, column, level, message, code (for pytest the code is the failing test id).
     }
     fn capability(&self) -> &'static str {
         "shell.exec"
+    }
+    /// O que roda de verdade em cada acao: regra sobre `python`, `uv`, `ruff` alcanca esta
+    /// ferramenta como alcanca o `shell`.
+    fn comando_de_shell(&self, args: &Value) -> Option<String> {
+        let s = |k: &str| args.get(k).and_then(Value::as_str).unwrap_or("");
+        Some(match s("action") {
+            "setup" => "uv pip install".to_string(),
+            "test" => "python -m pytest".to_string(),
+            "lint" => "ruff check".to_string(),
+            "typecheck" => "python -m mypy".to_string(),
+            "run" => format!("python {}", aspas(s("script"))),
+            outra => format!("python_project {}", aspas(outra)),
+        })
     }
     fn run<'a>(
         &'a self,

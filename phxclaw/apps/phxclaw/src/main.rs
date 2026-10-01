@@ -1,5 +1,7 @@
 #![forbid(unsafe_code)]
 
+mod interacao;
+
 use anyhow::{Context, Result, bail};
 use phxclaw_agent::api::{AgentFactory, ApiState, disparar_agenda, router};
 use phxclaw_agent::montagem::Montagem;
@@ -31,9 +33,30 @@ fn main() -> Result<()> {
         "servir" | "serve" => runtime()?.block_on(servir(&args[1..]))?,
         "canal" | "channel" => runtime()?.block_on(canal(&args[1..]))?,
         "mcp-serve" => runtime()?.block_on(mcp_serve(&args[1..]))?,
+        "acp" => runtime()?.block_on(acp(&args[1..]))?,
+        "ponte" | "bridge" => runtime()?.block_on(ponte(&args[1..]))?,
+        "xai" => {
+            // `phxclaw xai chave`: PHXCLAW_XAI_API_KEY vai para o broker da pasta.
+            let id = phxclaw_agent::xai::guardar_do_ambiente(&pasta(&args[1..]))
+                .map_err(anyhow::Error::msg)?;
+            println!("chave da xAI guardada (segredo {id}); x_search pede a capacidade x.search");
+        }
         "dispositivos" | "devices" => runtime()?.block_on(dispositivos(&args[1..]))?,
+        "fluxo" | "workflow" => runtime()?.block_on(fluxo(&args[1..]))?,
         "equipe" | "team" => runtime()?.block_on(equipe(&args[1..]))?,
         "ferramentas" | "tools" => runtime()?.block_on(ferramentas())?,
+        "revisar" | "review" => runtime()?.block_on(revisar(&args[1..]))?,
+        "forja" | "forge" => forja(&args[1..])?,
+        "sessoes" | "sessions" => interacao::sessoes(
+            &TaskStore::new(pasta(&args[1..]).join("tasks"))?,
+            &args[1..],
+        )?,
+        "resumo" | "summary" => interacao::resumo(
+            &TaskStore::new(pasta(&args[1..]).join("tasks"))?,
+            &args[1..],
+        )?,
+        "estilos" | "styles" => interacao::estilos(),
+        "voz" | "voice" => runtime()?.block_on(voz(&args[1..]))?,
         other => bail!("unknown command: {other}. Run `{PRODUCT_CLI} --help`."),
     }
     Ok(())
@@ -82,17 +105,26 @@ impl Observer for Terminal {
             }
         }
         *visto = t.steps.len();
+        interacao::ao_atualizar(t);
     }
 }
 
 async fn agente(args: &[String]) -> Result<()> {
     let objetivo = args
         .iter()
-        .find(|a| !a.starts_with("--") && Some(*a) != opcao(args, "--modelo").as_ref() && Some(*a) != opcao(args, "--pasta").as_ref())
+        .find(|a| {
+            !a.starts_with("--")
+                && ["--modelo", "--pasta", "--estilo"]
+                    .iter()
+                    .all(|o| Some(*a) != opcao(args, o).as_ref())
+        })
         .context("uso: phxclaw agente \"objetivo\" [--modelo ollama:qwen2.5:1.5b] [--plano] [--pasta DIR]")?;
     let modelo = opcao(args, "--modelo").unwrap_or_else(|| MODELO_PADRAO.into());
     let store = TaskStore::new(pasta(args).join("tasks"))?;
-    let m = Montagem::new(store.clone());
+    let mut m = Montagem::new(store.clone());
+    if let Some(e) = opcao(args, "--estilo") {
+        m.estilo = Some(e);
+    }
     let agente = m.agent(&modelo).map_err(anyhow::Error::msg)?;
     let mut t = Task::new(objetivo.clone(), modelo.clone());
     println!(
@@ -107,10 +139,14 @@ async fn agente(args: &[String]) -> Result<()> {
             .join(", ")
     );
     if args.iter().any(|a| a == "--plano") {
+        // Plan Mode: so ferramentas de leitura ate aqui; executar pede o sim.
         agente.plan(&mut t).await.map_err(anyhow::Error::msg)?;
-        println!("plano:");
-        for (i, p) in t.plan.iter().enumerate() {
-            println!("  {}. {p}", i + 1);
+        if !interacao::aprovar_plano(&t, args.iter().any(|a| a == "--sim")) {
+            println!(
+                "plano nao aprovado; tarefa {} fica esperando aprovacao",
+                t.id
+            );
+            return Ok(());
         }
     }
     println!("executando...");
@@ -142,6 +178,60 @@ async fn agente(args: &[String]) -> Result<()> {
     Ok(())
 }
 
+/// Conversa por voz, um turno por WAV: whisper -> agente -> fala, pelo mesmo motor das
+/// ferramentas `transcribe` e `speak`.
+async fn voz(args: &[String]) -> Result<()> {
+    let wavs: Vec<PathBuf> = args
+        .iter()
+        .filter(|a| {
+            !a.starts_with("--")
+                && ["--modelo", "--pasta"]
+                    .iter()
+                    .all(|o| Some(*a) != opcao(args, o).as_ref())
+        })
+        .map(PathBuf::from)
+        .collect();
+    if wavs.is_empty() {
+        bail!(
+            "uso: phxclaw voz ARQ.wav [ARQ2.wav ...] [--modelo ollama:qwen2.5:1.5b] [--pasta DIR]"
+        );
+    }
+    let modelo = opcao(args, "--modelo").unwrap_or_else(|| MODELO_PADRAO.into());
+    let store = TaskStore::new(pasta(args).join("tasks"))?;
+    let agente = phxclaw_agent::voz::agente_de_conversa(
+        Montagem::new(store)
+            .agent(&modelo)
+            .map_err(anyhow::Error::msg)?,
+    );
+    let turnos = phxclaw_agent::voz::conversar(
+        &agente,
+        &modelo,
+        &wavs,
+        &phxclaw_agent::visao::TranscribeTool::from_env(),
+        &phxclaw_agent::voz::SpeakTool::from_env(),
+        || Terminal(Mutex::new(0)),
+    )
+    .await;
+    let mut falhou = false;
+    for (w, t) in wavs.iter().zip(&turnos) {
+        println!("\nturno {} (tarefa {})", w.display(), t.tarefa);
+        println!("  ouvido: {}", t.ouvido);
+        println!("  resposta: {}", t.resposta);
+        match (&t.wav, &t.erro) {
+            (Some(p), _) => println!("  fala: {}", p.display()),
+            (None, Some(e)) => {
+                falhou = true;
+                println!("  erro: {e}")
+            }
+            (None, None) => {}
+        }
+    }
+    if falhou {
+        std::process::exit(2);
+    }
+    Ok(())
+}
+
 async fn servir(args: &[String]) -> Result<()> {
     let porta: u16 = opcao(args, "--porta")
         .map(|p| p.parse())
@@ -149,25 +239,42 @@ async fn servir(args: &[String]) -> Result<()> {
         .unwrap_or(8787);
     let raiz = pasta(args);
     let store = TaskStore::new(raiz.join("tasks"))?;
-    // Token: variavel de ambiente ou arquivo 0600 gerado na primeira vez.
-    let token = match env::var("PHXCLAW_API_TOKEN") {
-        Ok(t) if t.len() >= 24 => t,
-        Ok(_) => bail!("PHXCLAW_API_TOKEN precisa de pelo menos 24 caracteres"),
-        Err(_) => {
-            let arq = raiz.join("api.token");
-            match std::fs::read_to_string(&arq) {
-                Ok(t) if !t.trim().is_empty() => t.trim().to_string(),
-                _ => {
-                    let t = phxclaw_api_gateway::generate_bearer_token();
-                    phxclaw_secret_broker::write_private_file(&arq, t.as_bytes())?;
-                    t
-                }
-            }
+    let token = token_de(&raiz.join("api.token"), "PHXCLAW_API_TOKEN")?;
+    let mut m = Montagem::new(store.clone());
+    // Nos de dispositivo no MESMO processo: e assim que `node_list`/`node_invoke`
+    // alcancam as sessoes vivas.
+    if args.iter().any(|a| a == "--dispositivos") {
+        let p: u16 = opcao(args, "--porta-dispositivos")
+            .map(|p| p.parse())
+            .transpose()?
+            .unwrap_or(8788);
+        m.dispositivos = Some(subir_dispositivos(args, p).await?);
+    }
+    // `--canal <nome>`: o canal roda no MESMO processo da API, pelo mesmo motor do
+    // `phxclaw canal`, e a entrada HTTP dele (webchat, webhook) sai pela porta da API.
+    let ligado = match opcao(args, "--canal") {
+        Some(nome) => {
+            let log: phxclaw_agent::canal::Registro = Arc::new(|l: &str| eprintln!("{l}"));
+            let l = phxclaw_agent::canais::ligar::ligar(
+                &nome,
+                &raiz.join("canal"),
+                &|k: &str| env::var(k).ok(),
+                log,
+            )
+            .await
+            .map_err(anyhow::Error::msg)?;
+            m.canal = Some(l.canal.clone());
+            Some(l)
         }
+        None => None,
     };
-    let m = Montagem::new(store.clone());
     let factory: AgentFactory = Arc::new(move |modelo: &str| m.agent(modelo));
     let state = estado_api(&raiz, store, factory, token)?;
+    let mut rotas_do_canal = None;
+    if let Some(l) = ligado {
+        rotas_do_canal = l.rotas;
+        tokio::spawn(l.canal.laco(state.clone()));
+    }
     let agenda_state = state.clone();
     tokio::spawn(async move {
         loop {
@@ -178,6 +285,21 @@ async fn servir(args: &[String]) -> Result<()> {
             }
         }
     });
+    let gatilhos = armar_gatilhos(&raiz, &state)?;
+    // `--ponte wss://...`: controle remoto por conexao de SAIDA ate a ponte; o pedido do
+    // celular roda no MESMO router desta API, em processo.
+    if let Some(url) = opcao(args, "--ponte") {
+        let cfg = ponte_do_agente(args, &raiz, url)?;
+        tokio::spawn(phxclaw_agent::remoto::ligar_a_ponte(
+            cfg,
+            router(state.clone()),
+            state.token.clone(),
+        ));
+        if args.iter().any(|a| a == "--sem-porta") {
+            println!("sem porta local: o agente so e alcancado pela ponte");
+            std::future::pending::<()>().await;
+        }
+    }
     // Loopback por padrao: expor a API na rede e decisao explicita do operador.
     let host = env::var("PHXCLAW_API_HOST").unwrap_or_else(|_| "127.0.0.1".into());
     let l = tokio::net::TcpListener::bind((host.as_str(), porta)).await?;
@@ -186,8 +308,55 @@ async fn servir(args: &[String]) -> Result<()> {
         l.local_addr()?,
         raiz.join("api.token").display()
     );
-    axum::serve(l, router(state)).await?;
+    let mut app = router(state).merge(gatilhos);
+    if let Some(r) = rotas_do_canal {
+        app = app.merge(r);
+    }
+    axum::serve(l, app).await?;
     Ok(())
+}
+
+/// Heartbeat e gatilhos de arquivo num laco proprio (a pasta observada e varrida a cada
+/// 5 s), e as rotas de webhook para o `merge` do router. Tudo cria tarefa pela mesma
+/// `criar_tarefa_com` da API.
+fn armar_gatilhos(raiz: &std::path::Path, state: &ApiState) -> Result<axum::Router> {
+    use phxclaw_agent::gatilhos;
+    let projeto = phxclaw_agent::montagem::pasta_do_projeto();
+    let g = match &projeto {
+        Some(p) => gatilhos::Gatilhos::carregar(p).map_err(anyhow::Error::msg)?,
+        None => gatilhos::Gatilhos::default(),
+    };
+    let mut hb = gatilhos::Heartbeat::do_ambiente(projeto.as_deref(), raiz);
+    let armados = gatilhos::descrever(&g, hb.as_ref());
+    if !armados.is_empty() {
+        println!("gatilhos: {armados}");
+    }
+    let mut obs: Vec<gatilhos::Observador> = g
+        .arquivos
+        .iter()
+        .cloned()
+        .map(gatilhos::Observador::new)
+        .collect();
+    let st = state.clone();
+    tokio::spawn(async move {
+        loop {
+            for r in gatilhos::disparar_arquivos(&st, &mut obs) {
+                match r {
+                    Ok(c) => println!("gatilho de arquivo: tarefa {}", c.id),
+                    Err(e) => eprintln!("gatilho de arquivo recusado: {}", e.erro),
+                }
+            }
+            if let Some(h) = hb.as_mut() {
+                match gatilhos::disparar_heartbeat(&st, h, std::time::Instant::now()) {
+                    Some(Ok(c)) => println!("heartbeat: tarefa {}", c.id),
+                    Some(Err(e)) => eprintln!("heartbeat recusado: {}", e.erro),
+                    None => {}
+                }
+            }
+            tokio::time::sleep(Duration::from_secs(5)).await;
+        }
+    });
+    Ok(gatilhos::router(state.clone(), Arc::new(g)))
 }
 
 /// Ferramentas do agente como servidor MCP por stdio. A MESMA montagem do `agente` e do
@@ -207,6 +376,21 @@ async fn mcp_serve(args: &[String]) -> Result<()> {
         .map_err(anyhow::Error::msg)?;
     let entrada = tokio::io::BufReader::new(tokio::io::stdin());
     phxclaw_agent::mcp::servir(&agente, trabalho, entrada, tokio::io::stdout()).await?;
+    Ok(())
+}
+
+/// Agent Client Protocol pela entrada padrao: o editor (Zed, acpx...) lanca o processo e
+/// fala JSON-RPC em linhas. O stdout e o fio; aviso so no stderr.
+async fn acp(args: &[String]) -> Result<()> {
+    let store = TaskStore::new(pasta(args).join("tasks"))?;
+    let modelo = opcao(args, "--modelo")
+        .or_else(|| env::var("PHXCLAW_MODELO").ok())
+        .unwrap_or_else(|| MODELO_PADRAO.into());
+    let agente = Montagem::new(store)
+        .agent(&modelo)
+        .map_err(anyhow::Error::msg)?;
+    let entrada = tokio::io::BufReader::new(tokio::io::stdin());
+    phxclaw_agent::acp::servir(agente, entrada, tokio::io::stdout()).await?;
     Ok(())
 }
 
@@ -242,38 +426,47 @@ fn estado_api(
     })
 }
 
-/// `phxclaw canal telegram`: o token sai do ambiente direto para o SecretBroker (envelope
-/// cifrado na pasta) e nunca e impresso; so os chats de `PHXCLAW_TELEGRAM_CHATS` falam com
-/// o agente, e cada mensagem vira tarefa pela mesma `criar_tarefa` da API.
+/// `phxclaw canal <nome>`: o mesmo motor para todos os canais (`canais::ligar`). Segredo
+/// sai do ambiente direto para o SecretBroker (envelope cifrado na pasta) e nunca e
+/// impresso; so as conversas de `PHXCLAW_<NOME>_PERMITIDOS` (no Telegram,
+/// `PHXCLAW_TELEGRAM_CHATS`) falam com o agente, e cada mensagem vira tarefa pela mesma
+/// `criar_tarefa` da API. Canal de webhook escuta em `--escuta` (padrao 127.0.0.1:8790;
+/// a exposicao publica fica para o proxy com TLS na frente).
 async fn canal(args: &[String]) -> Result<()> {
-    if args.first().map(String::as_str) != Some("telegram") {
+    let Some(nome) = args.first().filter(|a| !a.starts_with('-')) else {
         bail!(
-            "uso: phxclaw canal telegram [--pasta DIR]  (PHXCLAW_TELEGRAM_BOT_TOKEN, PHXCLAW_TELEGRAM_CHATS)"
+            "uso: phxclaw canal <{}> [--pasta DIR] [--escuta ENDERECO]",
+            phxclaw_agent::canais::ligar::CANAIS.join("|")
         );
-    }
+    };
     let raiz = pasta(args);
-    let token = env::var("PHXCLAW_TELEGRAM_BOT_TOKEN")
-        .ok()
-        .filter(|t| !t.trim().is_empty())
-        .context("falta PHXCLAW_TELEGRAM_BOT_TOKEN")?;
-    let chats = phxclaw_agent::canal::chats_da_lista(
-        &env::var("PHXCLAW_TELEGRAM_CHATS").unwrap_or_default(),
-    )
-    .map_err(anyhow::Error::msg)?;
     let log: phxclaw_agent::canal::Registro = Arc::new(|l: &str| eprintln!("{l}"));
-    let canal = phxclaw_agent::canal::ligar_telegram(
+    let ligado = phxclaw_agent::canais::ligar::ligar(
+        nome,
         &raiz.join("canal"),
-        phxclaw_secret_broker::SecretValue::new(token),
-        chats,
+        &|k: &str| env::var(k).ok(),
         log,
     )
     .await
     .map_err(anyhow::Error::msg)?;
+    let canal = ligado.canal;
+    if let Some(rotas) = ligado.rotas {
+        let escuta = opcao(args, "--escuta").unwrap_or_else(|| "127.0.0.1:8790".into());
+        let l = tokio::net::TcpListener::bind(&escuta)
+            .await
+            .with_context(|| format!("escutar em {escuta}"))?;
+        eprintln!("{nome}: entrada HTTP em http://{escuta}");
+        tokio::spawn(async move {
+            if let Err(e) = axum::serve(l, rotas).await {
+                eprintln!("entrada HTTP caiu: {e}");
+            }
+        });
+    }
     let store = TaskStore::new(raiz.join("tasks"))?;
     let mut m = Montagem::new(store.clone());
     m.canal = Some(canal.clone());
     let factory: AgentFactory = Arc::new(move |modelo: &str| m.agent(modelo));
-    // O canal nao abre porta HTTP: o Bearer da API nao serve a ninguem aqui, e nasce
+    // O canal nao abre a API de tarefas: o Bearer dela nao serve a ninguem aqui, e nasce
     // aleatorio para nao existir um token fixo esquecido no estado.
     let state = estado_api(
         &raiz,
@@ -286,14 +479,111 @@ async fn canal(args: &[String]) -> Result<()> {
 }
 
 /// Servidor WSS de dispositivos. Os tokens de pareamento vem de um arquivo (uma linha
-/// "tenant_uuid token" por token); o registro dos nos fica em memoria enquanto o
+/// "tenant_uuid token [capacidades,aprovadas]" por token); o registro dos nos fica em memoria enquanto o
 /// processo vive -- a verdade duravel e o PostgreSQL, ligado por outro adaptador.
+/// Token de variavel de ambiente, ou arquivo 0600 gerado na primeira vez. O da API e o
+/// da ponte saem daqui: a mesma regra de tamanho e de arquivo privado para os dois.
+fn token_de(arq: &std::path::Path, var: &str) -> Result<String> {
+    Ok(match env::var(var) {
+        Ok(t) if t.len() >= 24 => t,
+        Ok(_) => bail!("{var} precisa de pelo menos 24 caracteres"),
+        Err(_) => match std::fs::read_to_string(arq) {
+            Ok(t) if !t.trim().is_empty() => t.trim().to_string(),
+            _ => {
+                let t = phxclaw_api_gateway::generate_bearer_token();
+                phxclaw_secret_broker::write_private_file(arq, t.as_bytes())?;
+                t
+            }
+        },
+    })
+}
+
+/// Como o agente se liga a ponte. O token de pareamento vem so do ambiente (segredo em
+/// argumento aparece no `ps`); o no ganha um UUID na primeira vez, guardado na pasta.
+fn ponte_do_agente(
+    args: &[String],
+    raiz: &std::path::Path,
+    url: String,
+) -> Result<phxclaw_agent::remoto::ConfigDaPonte> {
+    let uuid = |op: &str, var: &str| -> Result<Option<phxclaw_agent::remoto::Uuid>> {
+        Ok(opcao(args, op)
+            .or_else(|| env::var(var).ok())
+            .map(|v| v.parse())
+            .transpose()?)
+    };
+    let tenant = uuid("--ponte-tenant", "PHXCLAW_TENANT_UUID")?
+        .context("falta --ponte-tenant (ou PHXCLAW_TENANT_UUID)")?;
+    let no = match uuid("--ponte-no", "PHXCLAW_NODE_UUID")? {
+        Some(n) => n,
+        None => {
+            let arq = raiz.join("ponte-no");
+            match std::fs::read_to_string(&arq)
+                .ok()
+                .and_then(|t| t.trim().parse().ok())
+            {
+                Some(n) => n,
+                None => {
+                    let n = phxclaw_agent::remoto::Uuid::now_v7();
+                    std::fs::create_dir_all(raiz)?;
+                    std::fs::write(&arq, n.to_string())?;
+                    n
+                }
+            }
+        }
+    };
+    Ok(phxclaw_agent::remoto::ConfigDaPonte {
+        url,
+        ca_pem: opcao(args, "--ponte-ca").map(std::fs::read).transpose()?,
+        tenant,
+        no,
+        token_pareamento: env::var("PHXCLAW_ENROLLMENT_TOKEN").ok(),
+        pasta_da_chave: raiz.join("ponte-chave"),
+    })
+}
+
+/// A ponte do controle remoto: o servidor WSS de dispositivos (onde o agente se liga, de
+/// saida) e o HTTP do cliente (a tela instalavel e o rele das rotas de tarefa).
+async fn ponte(args: &[String]) -> Result<()> {
+    let raiz = pasta(args);
+    std::fs::create_dir_all(&raiz)?;
+    let porta_wss: u16 = opcao(args, "--porta-wss")
+        .map(|p| p.parse())
+        .transpose()?
+        .unwrap_or(8791);
+    let porta: u16 = opcao(args, "--porta")
+        .map(|p| p.parse())
+        .transpose()?
+        .unwrap_or(8790);
+    let srv = subir_dispositivos(args, porta_wss).await?;
+    let token = token_de(&raiz.join("ponte.token"), "PHXCLAW_PONTE_TOKEN")?;
+    let host = env::var("PHXCLAW_PONTE_HOST").unwrap_or_else(|_| "127.0.0.1".into());
+    let l = tokio::net::TcpListener::bind((host.as_str(), porta)).await?;
+    println!(
+        "ponte em http://{}  (token do cliente em {})",
+        l.local_addr()?,
+        raiz.join("ponte.token").display()
+    );
+    axum::serve(l, phxclaw_agent::remoto::rotas_da_ponte(srv, token)).await?;
+    Ok(())
+}
+
 async fn dispositivos(args: &[String]) -> Result<()> {
-    use phxclaw_device_transport::servidor::{RegistroMemoria, ServidorDispositivos, tls_de_pem};
     let porta: u16 = opcao(args, "--porta")
         .map(|p| p.parse())
         .transpose()?
         .unwrap_or(8788);
+    subir_dispositivos(args, porta).await?;
+    std::future::pending::<()>().await;
+    Ok(())
+}
+
+/// Sobe o servidor WSS de dispositivos numa tarefa e devolve o servidor: o `dispositivos`
+/// so espera, o `servir --dispositivos` o entrega ao agente.
+async fn subir_dispositivos(
+    args: &[String],
+    porta: u16,
+) -> Result<Arc<phxclaw_device_transport::servidor::ServidorDispositivos>> {
+    use phxclaw_device_transport::servidor::{RegistroMemoria, ServidorDispositivos, tls_de_pem};
     let cert = std::fs::read(opcao(args, "--cert").context("falta --cert (PEM)")?)?;
     let chave = std::fs::read(opcao(args, "--chave").context("falta --chave (PEM)")?)?;
     let tokens = std::fs::read_to_string(
@@ -306,13 +596,20 @@ async fn dispositivos(args: &[String]) -> Result<()> {
         .map(str::trim)
         .filter(|l| !l.is_empty() && !l.starts_with('#'))
     {
-        let (t, tok) = l
-            .split_once(char::is_whitespace)
-            .context("linha de token sem espaco")?;
-        if tok.trim().len() < 24 {
+        // "tenant token [cap,cap]": a terceira coluna e o que o operador APROVA para
+        // comando no no pareado por este token; sem ela, o no so da presenca.
+        let mut col = l.split_whitespace();
+        let (Some(t), Some(tok)) = (col.next(), col.next()) else {
+            bail!("linha de token sem espaco");
+        };
+        if tok.len() < 24 {
             bail!("token com menos de 24 caracteres");
         }
-        reg.emitir_token(t.parse()?, tok.trim());
+        let aprovadas: Vec<&str> = col
+            .next()
+            .map(|c| c.split(',').filter(|x| !x.is_empty()).collect())
+            .unwrap_or_default();
+        reg.emitir_token_aprovando(t.parse()?, tok, &aprovadas);
         n += 1;
     }
     let srv = Arc::new(
@@ -325,7 +622,57 @@ async fn dispositivos(args: &[String]) -> Result<()> {
         "dispositivos em wss://{} ({n} token(s) de pareamento)",
         l.local_addr()?
     );
-    srv.servir(l, tls).await;
+    tokio::spawn(srv.clone().servir(l, tls));
+    Ok(srv)
+}
+
+/// `phxclaw fluxo rodar ARQ`: o fluxo declarativo pelo motor do agente
+/// (`phxclaw_agent::fluxos`), o mesmo que qualquer outra entrada usaria.
+async fn fluxo(args: &[String]) -> Result<()> {
+    const USO: &str =
+        "uso: phxclaw fluxo rodar ARQ.json | retomar TAREFA ARQ.json [--modelo M] [--pasta DIR]";
+    let (arq, retomada) = match (args.first().map(String::as_str), args.get(1), args.get(2)) {
+        (Some("rodar" | "run"), Some(arq), _) => (arq, None),
+        (Some("retomar" | "resume"), Some(t), Some(arq)) => (arq, Some(t.clone())),
+        _ => bail!("{USO}"),
+    };
+    let f =
+        phxclaw_agent::fluxos::ler(&std::fs::read_to_string(arq)?).map_err(anyhow::Error::msg)?;
+    let modelo = opcao(args, "--modelo").unwrap_or_else(|| MODELO_PADRAO.into());
+    let store = TaskStore::new(pasta(args).join("tasks"))?;
+    let agente = Montagem::new(store)
+        .agent(&modelo)
+        .map_err(anyhow::Error::msg)?;
+    println!(
+        "fluxo {} ({} passos), modelo {modelo}",
+        f.nome,
+        f.passos.len()
+    );
+    let r = match &retomada {
+        None => phxclaw_agent::fluxos::rodar(&agente, &f).await,
+        Some(t) => phxclaw_agent::fluxos::retomar(&agente, &f, t).await,
+    }
+    .map_err(anyhow::Error::msg)?;
+    for p in &r.passos {
+        let resumo: String = p.saida.lines().take(2).collect::<Vec<_>>().join(" | ");
+        println!(
+            "  {:<8} {}  {}",
+            if p.reaproveitado {
+                "retomado"
+            } else {
+                p.estado.as_str()
+            },
+            p.id,
+            resumo.chars().take(140).collect::<String>()
+        );
+    }
+    println!(
+        "tarefa do fluxo: {} (retome com: fluxo retomar {} ARQ)",
+        r.tarefa, r.tarefa
+    );
+    if !r.sucesso {
+        std::process::exit(2);
+    }
     Ok(())
 }
 
@@ -508,6 +855,64 @@ async fn ferramentas() -> Result<()> {
     Ok(())
 }
 
+/// `phxclaw revisar`: so le as opcoes; diff e revisao sao os do `code_review`
+/// (`revisao::revisar_da_fonte`), para a CLI e a ferramenta nao divergirem.
+async fn revisar(args: &[String]) -> Result<()> {
+    use phxclaw_agent::revisao::{FonteDoDiff, SEVERIDADES, analisar_pr, modelo, revisar_da_fonte};
+    let fonte = if let Some(pr) = opcao(args, "--pr") {
+        let (forja, repo, numero) = analisar_pr(&pr).map_err(anyhow::Error::msg)?;
+        FonteDoDiff::Pr {
+            raiz_do_agente: pasta(args),
+            forja,
+            repo,
+            numero,
+        }
+    } else if let Some(d) = opcao(args, "--diff") {
+        FonteDoDiff::Arquivo(PathBuf::from(d))
+    } else {
+        FonteDoDiff::Repo {
+            pasta: PathBuf::from(opcao(args, "--repo").unwrap_or_else(|| ".".into())),
+            rev: opcao(args, "--rev"),
+            cached: args.iter().any(|a| a == "--cached"),
+        }
+    };
+    let falhar = opcao(args, "--falhar-em");
+    if let Some(f) = &falhar
+        && !SEVERIDADES.contains(&f.as_str())
+    {
+        bail!("--falhar-em {f}: use {}", SEVERIDADES.join(", "));
+    }
+    let llm = modelo(&opcao(args, "--modelo").unwrap_or_else(|| MODELO_PADRAO.into()))
+        .map_err(anyhow::Error::msg)?;
+    let r = revisar_da_fonte(llm.as_ref(), fonte, opcao(args, "--foco").as_deref())
+        .await
+        .map_err(anyhow::Error::msg)?;
+    println!("{}", serde_json::to_string_pretty(&r)?);
+    if falhar.is_some_and(|f| r.tem_ao_menos(&f)) {
+        std::process::exit(1);
+    }
+    Ok(())
+}
+
+/// `phxclaw forja token github|gitlab`: token do ambiente para o broker da pasta.
+fn forja(args: &[String]) -> Result<()> {
+    use phxclaw_agent::forja::{Forja, guardar_do_ambiente, pasta_da_forja};
+    let (Some("token"), Some(f)) = (
+        args.first().map(String::as_str),
+        args.get(1).and_then(|n| Forja::de_nome(n)),
+    ) else {
+        bail!("uso: phxclaw forja token github|gitlab [--pasta DIR]");
+    };
+    let raiz = pasta(args);
+    let id = guardar_do_ambiente(&raiz, f).map_err(anyhow::Error::msg)?;
+    println!(
+        "token de {} guardado no broker de {} (segredo {id})",
+        f.nome(),
+        pasta_da_forja(&raiz).display()
+    );
+    Ok(())
+}
+
 fn print_help() {
     println!(
         "{PRODUCT_NAME} {VERSION}
@@ -518,18 +923,55 @@ USAGE:
 COMMANDS:
   mcp-serve [--trabalho DIR] [--modelo M] [--pasta DIR]
                      Agent tools as an MCP server over stdio (same PHXCLAW_CAPACIDADES)
-  agente \"objetivo\" [--modelo M] [--plano] [--pasta DIR]
-                     Run the autonomous agent now, showing each step
-  canal telegram [--pasta DIR]
-                     Telegram as agent channel (PHXCLAW_TELEGRAM_BOT_TOKEN, PHXCLAW_TELEGRAM_CHATS=id,id)
-  servir [--porta 8787] [--pasta DIR]
-                     Task API (create, follow, plan approval, cancel, artifacts, schedules)
+  acp [--modelo M] [--pasta DIR]
+                     Agent Client Protocol over stdio for editors (same agent, project = cwd)
+  xai chave [--pasta DIR]
+                     Store PHXCLAW_XAI_API_KEY in the secret broker: enables x_search
+                     (capability x.search, not granted by default)
+  ponte --cert PEM --chave PEM --tokens ARQ [--porta 8790] [--porta-wss 8791] [--pasta DIR]
+                     Remote-control bridge: the installable web UI for the client, and the
+                     WSS where an agent connects OUT with `servir --ponte wss://...`
+  agente \"objetivo\" [--modelo M] [--plano [--sim]] [--estilo NOME] [--pasta DIR]
+                     Run the autonomous agent now, showing each step; --plano = read-only
+                     Plan Mode, executes only after approval; questions are answered here
+  sessoes \"termo\" [--limite N]   Search previous tasks (same search as session_search)
+  resumo [--data AAAA-MM-DD|hoje|ontem]   Summary of the day's tasks (same as daily_summary)
+  estilos            Output styles (built-in and .phxclaw/estilos/*.md)
+  voz ARQ.wav [ARQ2.wav ...] [--modelo M] [--pasta DIR]
+                     Voice conversation, one turn per WAV: whisper -> agent -> speech WAV
+                     (PHXCLAW_WHISPER_* and PHXCLAW_TTS_*)
+  canal <name> [--pasta DIR] [--escuta ADDR]
+                     Messaging channel as agent input: telegram, discord, slack, whatsapp, teams,
+                     matrix, email, webhook, webchat, signal, googlechat, sms, mattermost,
+                     rocketchat, zulip, irc, xmpp, mastodon, line, viber, messenger, feishu,
+                     reddit, twitch, nostr (PHXCLAW_<NAME>_PERMITIDOS=id,id; Telegram keeps
+                     PHXCLAW_TELEGRAM_BOT_TOKEN and PHXCLAW_TELEGRAM_CHATS)
+  servir [--porta 8787] [--pasta DIR] [--canal NAME] [--dispositivos --cert C --chave K --tokens F
+         [--porta-dispositivos 8788]] [--ponte wss://H:P/ [--ponte-ca PEM] [--ponte-tenant U]
+         [--sem-porta]]
+                     Task API (create, follow, plan approval, answer, cancel, artifacts,
+                     schedules); heartbeat (HEARTBEAT.md), file and webhook triggers
+                     (.phxclaw/gatilhos.json); hooks and command rules from .phxclaw/
+                     and the installable web UI (PWA) at /; --ponte connects OUT to a
+                     `phxclaw ponte` for remote control (PHXCLAW_ENROLLMENT_TOKEN once)
   dispositivos --cert C --chave K --tokens F [--porta 8788]
-                     Device WSS server (TLS, one-time pairing tokens, signed envelopes)
+                     Device WSS server (TLS, one-time pairing tokens, signed envelopes);
+                     with `servir --dispositivos` the agent gets node_list/node_invoke
+  fluxo rodar ARQ.json | retomar TAREFA ARQ.json [--modelo M] [--pasta DIR]
+                     Declarative workflow: steps with dependencies (DAG), each an agent task
+                     or a tool call, through the same engine and policy gate; progress
+                     is saved every wave, and `retomar` skips the steps that succeeded
   equipe [listar [--macroarea X] [--texto Y] | mostrar ID | delegar ID \"tarefa\" [--modelo M]]
                      The 110 team roles of config/agents (PHXCLAW_AGENTES_DIR); delegate runs one
                      as a sub-agent (PHXCLAW_MODELO_LOCAL for roles routed to Ollama)
   ferramentas        Agent tools assembled on this machine, as JSON (desktop Tools screen)
+  revisar [--repo DIR] [--rev R] [--cached] [--diff ARQ|-] [--pr github:dono/proj#7]
+          [--foco TEXTO] [--modelo M] [--falhar-em alta] [--pasta DIR]
+                     Code review of a diff by the agent's model (same engine as code_review),
+                     JSON findings; --falhar-em exits 1 at that severity or worse (CI)
+  forja token github|gitlab [--pasta DIR]
+                     Store PHXCLAW_GITHUB_TOKEN / PHXCLAW_GITLAB_TOKEN in the agent's
+                     SecretBroker; the github/gitlab tools exist only after this
   core status        Probed runtime state (sandbox, browser, model server)
   db plan [platform] Show PostgreSQL managed-install plan
   version            Show version

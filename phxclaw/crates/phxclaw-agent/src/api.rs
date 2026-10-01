@@ -87,9 +87,13 @@ pub fn router(state: ApiState) -> Router {
         .route("/v1/tasks/{id}/plan", post(editar_plano))
         .route("/v1/tasks/{id}/approve", post(aprovar))
         .route("/v1/tasks/{id}/cancel", post(cancelar))
+        .route("/v1/tasks/{id}/answer", post(responder))
         .route("/v1/tasks/{id}/artifacts/{*path}", get(artefato))
         .route("/v1/schedules", post(agendar).get(agenda))
         .route("/sites/{id}/{*path}", get(site))
+        .merge(crate::canvas::rotas())
+        // A tela instalavel (PWA): a mesma interface no navegador, no celular e na ponte.
+        .merge(crate::pwa::rotas())
         .with_state(state)
 }
 
@@ -155,6 +159,17 @@ async fn criar(State(s): State<ApiState>, h: HeaderMap, Json(n): Json<NovaTarefa
 /// O UNICO caminho de criar tarefa: a rota HTTP e os canais de mensagem passam por aqui,
 /// para a validacao, o modelo padrao e o balde de fichas nao divergirem entre as portas.
 pub fn criar_tarefa(s: &ApiState, n: NovaTarefa) -> Result<Criada, Recusa> {
+    criar_tarefa_com(s, n, |_| Ok(()))
+}
+
+/// `criar_tarefa` com um `preparo` da pasta de trabalho, rodado depois de a tarefa ser
+/// gravada e ANTES de a execucao comecar: o gatilho de arquivo copia o arquivo mudado para
+/// la, e o agente o encontra no primeiro passo em vez de correr contra a copia.
+pub fn criar_tarefa_com(
+    s: &ApiState,
+    n: NovaTarefa,
+    preparo: impl FnOnce(&std::path::Path) -> std::io::Result<()>,
+) -> Result<Criada, Recusa> {
     let recusa = |status, e: String| Recusa {
         status,
         erro: e,
@@ -185,6 +200,16 @@ pub fn criar_tarefa(s: &ApiState, n: NovaTarefa) -> Result<Criada, Recusa> {
     s.store
         .save(&t)
         .map_err(|e| recusa(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    if let Err(e) = preparo(&s.store.workdir(&t.id)) {
+        // A tarefa ja esta no disco: fica FALHA, dizendo por que, e nao `pending` para sempre.
+        t.status = TaskStatus::Failed;
+        t.error = Some(format!("preparo da pasta: {e}"));
+        let _ = s.store.save(&t);
+        return Err(recusa(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("preparo da pasta: {e}"),
+        ));
+    }
     let id = t.id.clone();
     let st = s.clone();
     let fim = if n.plan_first {
@@ -320,6 +345,35 @@ async fn aprovar(State(s): State<ApiState>, h: HeaderMap, Path(id): Path<String>
     Ok((
         StatusCode::ACCEPTED,
         Json(json!({"id": id, "status": "running"})),
+    )
+        .into_response())
+}
+
+#[derive(Deserialize)]
+struct RespostaDoUsuario {
+    answer: String,
+}
+
+/// Resposta a uma pergunta da tarefa (`ask_user` ou comando que a regra manda perguntar).
+/// A CLI entrega pela mesma `perguntas::responder`.
+async fn responder(
+    State(s): State<ApiState>,
+    h: HeaderMap,
+    Path(id): Path<String>,
+    Json(r): Json<RespostaDoUsuario>,
+) -> Resp {
+    auth(&s, &h)?;
+    let t = carregar(&s, &id)?;
+    if t.status != TaskStatus::AwaitingInput {
+        return Err(erro(
+            StatusCode::CONFLICT,
+            "tarefa nao esta esperando resposta",
+        ));
+    }
+    crate::perguntas::responder(&t.id, &r.answer).map_err(|e| erro(StatusCode::CONFLICT, e))?;
+    Ok((
+        StatusCode::ACCEPTED,
+        Json(json!({"id": t.id, "status": "running"})),
     )
         .into_response())
 }

@@ -26,10 +26,8 @@ pub const VAR_PASTA: &str = "PHXCLAW_AGENTES_DIR";
 /// Modelo local para os papeis que a planilha roteia para o Ollama.
 pub const VAR_MODELO_LOCAL: &str = "PHXCLAW_MODELO_LOCAL";
 
-/// Capacidades que um subagente de papel nunca recebe, mesmo que o pai as tenha: delegar
-/// de dentro de uma delegacao abriria recursao sem teto, a mesma razao de o
-/// `parallel_research` nao se passar aos proprios filhos.
-const NUNCA_NO_SUBAGENTE: &[&str] = &["agent.spawn", "team.delegate", "team.read"];
+// O mesmo corte do `parallel_research`, de um lugar so (`config_de_subagente`).
+use crate::ferramentas::NUNCA_NO_SUBAGENTE;
 
 /// O catalogo carregado e a frequencia de cada capability nele. A frequencia e o que diz
 /// qual capability DISTINGUE um papel: as que vem dos modulos (F15, F18, F22...) aparecem

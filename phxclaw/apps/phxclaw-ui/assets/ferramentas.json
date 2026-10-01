@@ -127,6 +127,27 @@
       "nome": "transcribe"
     },
     {
+      "capacidade": "media.tts",
+      "concedida": false,
+      "descricao": "Text to speech: synthesize 'text' into a .wav file in the task folder (default fala.wav) with the configured local voice.",
+      "grupo": "media",
+      "nome": "speak"
+    },
+    {
+      "capacidade": "media.wake",
+      "concedida": false,
+      "descricao": "Detect wake words / keywords (English) in a mono 16-bit .wav of the task folder, streamed through a local keyword spotter. 'keywords': up to 32 phrases of up to 64 characters (letters, space, apostrophe, hyphen). Returns each detection with its time.",
+      "grupo": "media",
+      "nome": "wake_word"
+    },
+    {
+      "capacidade": "media.generate",
+      "concedida": false,
+      "descricao": "Generate a .png image in the task folder. From 'prompt' via no image server configured: pass 'svg' markup; or, always available, from 'svg' markup you write, drawn by headless Chromium.",
+      "grupo": "media",
+      "nome": "image_generate"
+    },
+    {
       "capacidade": "desktop.control",
       "concedida": false,
       "descricao": "Control the real desktop session (mouse, keyboard, screen). action=move {x,y}; click {x?,y?,button?=left,double?}; scroll {dx?,dy}; key {key,state?=click} (enter, tab, esc, f1.., or one character); hotkey {keys:[\"ctrl\",\"s\"]}; type {text}; position; screenshot {path?=tela.png} saves a PNG in the task folder.",
@@ -206,6 +227,13 @@
     {
       "capacidade": "site.publish",
       "concedida": true,
+      "descricao": "Create or replace an interactive HTML widget shown to the user in an isolated frame, and get its URL. 'html' is the body markup, 'css' the styles, 'script' the JavaScript (checked for syntax errors; only this script runs, inline handlers like onclick= and <script> tags inside 'html' are blocked; no network access, no cookies).",
+      "grupo": "site",
+      "nome": "canvas"
+    },
+    {
+      "capacidade": "site.publish",
+      "concedida": true,
       "descricao": "Publish a folder of the task directory that contains index.html as a website and get its URL. Write the files first (write_file), e.g. site/index.html and site/style.css.",
       "grupo": "site",
       "nome": "publish_site"
@@ -248,9 +276,37 @@
     {
       "capacidade": "shell.exec",
       "concedida": true,
+      "descricao": "Persistent Python interpreter for this task (isolated sandbox, offline, cwd /work = task directory). Variables, functions and imports survive between calls, like a notebook. Returns stdout, stderr, the repr of the last expression and the traceback if any. reset=true starts a fresh interpreter.",
+      "grupo": "shell",
+      "nome": "python_repl"
+    },
+    {
+      "capacidade": "shell.exec",
+      "concedida": true,
       "descricao": "Work on a Python project inside the task directory (isolated sandbox, offline). Creates/uses <path>/.venv with uv and installs the dependencies of requirements.txt / pyproject.toml from the local cache. action=setup|test|lint|typecheck|run: test=pytest, lint=ruff check (fix=true applies safe fixes), typecheck=mypy, run=execute `script` with `args`. path is the project directory relative to the task directory (default '.'); target narrows test/lint/typecheck to a file, directory or pytest node id. Returns structured diagnostics: file, line, column, level, message, code (for pytest the code is the failing test id).",
       "grupo": "shell",
       "nome": "python_project"
+    },
+    {
+      "capacidade": "calc",
+      "concedida": true,
+      "descricao": "Evaluate an arithmetic expression exactly as written: + - * / % ^ (or **), parentheses, pi, e, and sqrt abs ln log log2 exp sin cos tan asin acos atan floor ceil round trunc min max pow. Use it instead of doing arithmetic in your head.",
+      "grupo": "calc",
+      "nome": "calculator"
+    },
+    {
+      "capacidade": "session.read",
+      "concedida": true,
+      "descricao": "Full-text search over previous tasks of this agent (objective, plan, answer and step summaries). Returns the best matches with id, date, status and a snippet. Use it to recall what was done or found before.",
+      "grupo": "session",
+      "nome": "session_search"
+    },
+    {
+      "capacidade": "session.read",
+      "concedida": true,
+      "descricao": "Summary of all tasks created on a day (UTC): counts by status, tokens, and one line per task with its outcome and files. date: YYYY-MM-DD, 'today' (default) or 'yesterday'.",
+      "grupo": "session",
+      "nome": "daily_summary"
     },
     {
       "capacidade": "memory.write",
@@ -274,6 +330,83 @@
       "nome": "skill_load"
     },
     {
+      "capacidade": "fs.read",
+      "concedida": true,
+      "descricao": "Find files by name pattern in the task directory, skipping what .gitignore ignores. pattern: '*.rs' (any folder), 'src/**/*.{ts,tsx}' (path). Newest first. Optional path (subfolder), limit, include_ignored.",
+      "grupo": "fs",
+      "nome": "glob"
+    },
+    {
+      "capacidade": "fs.read",
+      "concedida": true,
+      "descricao": "Search file contents with a regex in the task directory, skipping .gitignore'd and binary files. output_mode: content (default; file, line, text, with 'context' lines around), files (only names), count. Optional glob ('*.rs'), path, case_insensitive, limit.",
+      "grupo": "fs",
+      "nome": "grep"
+    },
+    {
+      "capacidade": "fs.read",
+      "concedida": true,
+      "descricao": "Read a Jupyter notebook (.ipynb) of the task directory as cells: index, id, type, source and a summary of the outputs (text, errors, image types).",
+      "grupo": "fs",
+      "nome": "notebook_read"
+    },
+    {
+      "capacidade": "fs.write",
+      "concedida": true,
+      "descricao": "Edit a Jupyter notebook (.ipynb) by cell. action=replace {index or cell_id, source, cell_type?} (code cells lose stale outputs); insert {index (position, = cell count appends), source, cell_type: code|markdown|raw}; delete {index or cell_id}.",
+      "grupo": "fs",
+      "nome": "notebook_edit"
+    },
+    {
+      "capacidade": "fs.read",
+      "concedida": true,
+      "descricao": "List the restore points of the task working directory (taken before each file write), newest last, with what changed since each one.",
+      "grupo": "fs",
+      "nome": "checkpoint_list"
+    },
+    {
+      "capacidade": "fs.write",
+      "concedida": true,
+      "descricao": "Restore the task working directory to a checkpoint (one is taken automatically before every file write). Give 'id' from checkpoint_list. Files created after the checkpoint are kept unless remove_new=true. The restore itself is checkpointed, so it can be undone.",
+      "grupo": "fs",
+      "nome": "checkpoint_restore"
+    },
+    {
+      "capacidade": "code.review",
+      "concedida": true,
+      "descricao": "Review a code diff and return structured findings (file, line, severity critica|alta|media|baixa|info, finding, suggestion). Either 'diff' (unified diff text, e.g. from github/gitlab pr_diff) or a git repo in the task directory: path?, rev? (e.g. main..HEAD), cached?. Findings outside the diff are discarded and counted. Optional focus.",
+      "grupo": "code",
+      "nome": "code_review"
+    },
+    {
+      "capacidade": "git.read",
+      "concedida": true,
+      "descricao": "Read a git repository in the task directory, structured JSON. action: status; diff {rev?, cached?, paths?} (files and hunks); log {rev?, limit?, paths?}; show {rev}; blame {file, start_line?, end_line?, rev?}; branches. 'path' selects the repo folder (default: task root).",
+      "grupo": "git",
+      "nome": "git"
+    },
+    {
+      "capacidade": "git.write",
+      "concedida": true,
+      "descricao": "Change a git repository in the task directory (sandboxed, no network). action: init {branch?}; add {paths}; commit {message, all?}; checkout {branch, create?, base?}; branch_create {branch, base?}; branch_delete {branch, force?}; stash {op: push|pop|apply|drop|list, message?, include_untracked?, index?}. 'path' selects the repo folder (default: task root).",
+      "grupo": "git",
+      "nome": "git_write"
+    },
+    {
+      "capacidade": "git.write",
+      "concedida": true,
+      "descricao": "Isolated git worktrees for parallel tasks. action=add {name, branch?, base?} creates <repo>/.worktrees/<name> on branch phxclaw/<name> (returns its path, usable as 'path' in git/git_write and file tools); action=list; action=remove {name, force?}. 'path' selects the main repo.",
+      "grupo": "git",
+      "nome": "git_worktree"
+    },
+    {
+      "capacidade": "fs.read",
+      "concedida": true,
+      "descricao": "Read-only language server queries on files in the task directory (rust (.rs), python (.py, .pyi)). action=definition|references|hover need path, line and column (1-based); action=symbols with path lists the file's symbols, with query searches the workspace; action=diagnostics returns the file's errors and warnings. Never edits files.",
+      "grupo": "fs",
+      "nome": "lsp"
+    },
+    {
       "capacidade": "team.read",
       "concedida": true,
       "descricao": "List the 110 PhxClaw team roles (id | name | macro-area | type | criticality | main capability | when to call). Filter with 'macroarea' and/or 'text'; pass 'id' (number or name) to get one role in full. Use before team_delegate to pick the right role.",
@@ -288,6 +421,13 @@
       "nome": "team_delegate"
     },
     {
+      "capacidade": "agent.parallel",
+      "concedida": true,
+      "descricao": "Run up to 6 coding tasks in parallel over a git repo in the working directory. Each task gets its own git worktree (branch phxclaw/<name>) as an isolated sandboxed workspace and a sub-agent; when all finish, each worktree's changes are committed on its branch. Returns per task: answer, branch, commit and changed files. 'attempts' (best-of-N, up to 4) runs the same objective N times in separate worktrees (<name>-1..N) so you can compare and keep the best. Review/merge the branches afterwards with git/git_write.",
+      "grupo": "agent",
+      "nome": "parallel_tasks"
+    },
+    {
       "capacidade": "agent.spawn",
       "concedida": true,
       "descricao": "Run up to 6 independent sub-agents in parallel, one per sub-task, and return each answer. Use for research over many items (compare products, gather facts about several topics).",
@@ -295,8 +435,8 @@
       "nome": "parallel_research"
     }
   ],
-  "gerado_por": "phx ferramentas",
+  "gerado_por": "phxclaw ferramentas",
   "observacao": "montadas nesta maquina: shell exige bwrap, navegador exige Chromium, e-mail e banco exigem configuracao",
-  "total": 42,
+  "total": 62,
   "versao": "0.70.0"
 }

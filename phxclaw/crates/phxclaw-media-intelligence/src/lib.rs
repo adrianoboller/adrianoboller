@@ -155,6 +155,44 @@ fn path_text(path: Option<&Path>) -> String {
         .unwrap_or_default()
 }
 
+/// Confere o SHA-256 declarado de um modelo antes de ele rodar. Um so conferidor para todo
+/// motor de midia (whisper, voz, palavra-chave): dois diriam coisas diferentes sobre o mesmo
+/// arquivo. Le em blocos, porque um modelo de voz passa de centenas de MB.
+pub fn verify_sha256(path: &Path, expected: &str) -> Result<(), MediaError> {
+    if expected.len() != 64 || !expected.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Err(MediaError::Invalid(
+            "model sha256 must be 64 hex chars".into(),
+        ));
+    }
+    let actual_hex = sha256_file_hex(path)?;
+    if !actual_hex.eq_ignore_ascii_case(expected) {
+        return Err(MediaError::Invalid(format!(
+            "model sha256 mismatch: {} is {actual_hex}",
+            path.file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default()
+        )));
+    }
+    Ok(())
+}
+
+/// SHA-256 de um arquivo em hexadecimal minusculo, lido em blocos de 1 MiB.
+pub fn sha256_file_hex(path: &Path) -> Result<String, MediaError> {
+    use sha2::{Digest, Sha256};
+    use std::io::Read;
+    let mut f = fs::File::open(path)?;
+    let mut h = Sha256::new();
+    let mut buf = vec![0u8; 1 << 20];
+    loop {
+        let n = f.read(&mut buf)?;
+        if n == 0 {
+            break;
+        }
+        h.update(&buf[..n]);
+    }
+    Ok(h.finalize().iter().map(|b| format!("{b:02x}")).collect())
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WhisperCppProvider {
     pub program: PathBuf,
@@ -167,7 +205,6 @@ pub struct WhisperCppProvider {
 
 impl WhisperCppProvider {
     pub fn validate(&self) -> Result<(), MediaError> {
-        use sha2::{Digest, Sha256};
         if !self.program.is_file() {
             return Err(MediaError::Invalid(
                 "whisper.cpp executable not found".into(),
@@ -176,23 +213,8 @@ impl WhisperCppProvider {
         if !self.model.is_file() {
             return Err(MediaError::Invalid("whisper.cpp model not found".into()));
         }
-        if self.model_sha256.len() != 64
-            || !self.model_sha256.bytes().all(|b| b.is_ascii_hexdigit())
-        {
-            return Err(MediaError::Invalid(
-                "model sha256 must be 64 hex chars".into(),
-            ));
-        }
-        let actual = Sha256::digest(fs::read(&self.model)?);
-        let actual_hex = actual
-            .iter()
-            .map(|b| format!("{b:02x}"))
-            .collect::<String>();
-        if !actual_hex.eq_ignore_ascii_case(&self.model_sha256) {
-            return Err(MediaError::Invalid(
-                "whisper.cpp model sha256 mismatch".into(),
-            ));
-        }
+        verify_sha256(&self.model, &self.model_sha256)
+            .map_err(|e| MediaError::Invalid(format!("whisper.cpp {e}")))?;
         if self.timeout_seconds == 0 || self.timeout_seconds > 7200 {
             return Err(MediaError::Invalid("whisper timeout outside policy".into()));
         }

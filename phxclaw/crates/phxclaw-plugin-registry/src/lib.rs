@@ -1,5 +1,6 @@
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 pub mod assinatura;
+pub mod pasta;
 
 use chrono::{DateTime, Utc};
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
@@ -490,26 +491,11 @@ impl PluginRegistry {
     }
 
     fn verify_integrity(&self, manifest: &PluginManifest) -> Result<(), RegistryError> {
-        let plugin = manifest.name.clone();
-        let signer = self
-            .trust_store
-            .signer(&manifest.integrity.signer)
-            .ok_or_else(|| RegistryError::UntrustedSigner {
-                plugin: plugin.clone(),
-                signer: manifest.integrity.signer.clone(),
-            })?;
-
-        if signer.algorithm != "ed25519"
-            || !signer
-                .allowed_name_prefixes
-                .iter()
-                .any(|prefix| manifest.name.starts_with(prefix))
-        {
-            return Err(RegistryError::UntrustedSigner {
-                plugin,
-                signer: signer.id.clone(),
-            });
-        }
+        let signer = signatario_para(
+            &self.trust_store,
+            &manifest.integrity.signer,
+            &manifest.name,
+        )?;
 
         let root = fs::canonicalize(&self.package_root)?;
         let artifact = fs::canonicalize(self.package_root.join(&manifest.integrity.artifact))?;
@@ -532,48 +518,70 @@ impl PluginRegistry {
             });
         }
 
-        let public_key =
-            BASE64
-                .decode(&signer.public_key_base64)
-                .map_err(|error| RegistryError::Integrity {
-                    plugin: manifest.name.clone(),
-                    reason: format!("invalid trusted public key encoding: {error}"),
-                })?;
-        let public_key: [u8; 32] = public_key
-            .try_into()
-            .map_err(|_| RegistryError::Integrity {
-                plugin: manifest.name.clone(),
-                reason: "trusted public key must be exactly 32 bytes".into(),
-            })?;
-        let verifying_key =
-            VerifyingKey::from_bytes(&public_key).map_err(|error| RegistryError::Integrity {
-                plugin: manifest.name.clone(),
-                reason: format!("invalid Ed25519 public key: {error}"),
-            })?;
-
-        let signature = BASE64
-            .decode(&manifest.integrity.signature)
-            .map_err(|error| RegistryError::Integrity {
-                plugin: manifest.name.clone(),
-                reason: format!("invalid signature encoding: {error}"),
-            })?;
-        let signature =
-            Signature::from_slice(&signature).map_err(|error| RegistryError::Integrity {
-                plugin: manifest.name.clone(),
-                reason: format!("invalid Ed25519 signature: {error}"),
-            })?;
-
-        verifying_key
-            .verify(
-                mensagem_do_formato(manifest, signer.signature_format).as_bytes(),
-                &signature,
-            )
-            .map_err(|error| RegistryError::Integrity {
-                plugin: manifest.name.clone(),
-                reason: format!("Ed25519 verification failed: {error}"),
-            })?;
-        Ok(())
+        verificar_ed25519(
+            signer,
+            &manifest.name,
+            mensagem_do_formato(manifest, signer.signature_format).as_bytes(),
+            &manifest.integrity.signature,
+        )
     }
+}
+
+/// O signatario ativo, Ed25519, autorizado para o prefixo do nome: a mesma regra para o
+/// manifesto e para a pasta assinada.
+pub(crate) fn signatario_para<'a>(
+    trust: &'a TrustStore,
+    signer_id: &str,
+    nome: &str,
+) -> Result<&'a TrustedSigner, RegistryError> {
+    let signer = trust
+        .signer(signer_id)
+        .ok_or_else(|| RegistryError::UntrustedSigner {
+            plugin: nome.to_string(),
+            signer: signer_id.to_string(),
+        })?;
+    if signer.algorithm != "ed25519"
+        || !signer
+            .allowed_name_prefixes
+            .iter()
+            .any(|prefix| nome.starts_with(prefix))
+    {
+        return Err(RegistryError::UntrustedSigner {
+            plugin: nome.to_string(),
+            signer: signer.id.clone(),
+        });
+    }
+    Ok(signer)
+}
+
+/// A conferencia Ed25519 contra um signatario do trust store, num lugar so: o manifesto
+/// e a pasta assinada (pacote de plugin Claude/Codex) passam por aqui.
+pub(crate) fn verificar_ed25519(
+    signer: &TrustedSigner,
+    plugin: &str,
+    mensagem: &[u8],
+    assinatura_b64: &str,
+) -> Result<(), RegistryError> {
+    let erro = |reason: String| RegistryError::Integrity {
+        plugin: plugin.to_string(),
+        reason,
+    };
+    let public_key = BASE64
+        .decode(&signer.public_key_base64)
+        .map_err(|error| erro(format!("invalid trusted public key encoding: {error}")))?;
+    let public_key: [u8; 32] = public_key
+        .try_into()
+        .map_err(|_| erro("trusted public key must be exactly 32 bytes".into()))?;
+    let verifying_key = VerifyingKey::from_bytes(&public_key)
+        .map_err(|error| erro(format!("invalid Ed25519 public key: {error}")))?;
+    let signature = BASE64
+        .decode(assinatura_b64)
+        .map_err(|error| erro(format!("invalid signature encoding: {error}")))?;
+    let signature = Signature::from_slice(&signature)
+        .map_err(|error| erro(format!("invalid Ed25519 signature: {error}")))?;
+    verifying_key
+        .verify(mensagem, &signature)
+        .map_err(|error| erro(format!("Ed25519 verification failed: {error}")))
 }
 
 /// A mensagem assinada no formato do signatario: um lugar so para o assinador e para a

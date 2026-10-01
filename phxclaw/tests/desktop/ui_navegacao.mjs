@@ -91,7 +91,7 @@ const browser = await chromium.launch();
 try {
   const { page, erros } = await abrirPagina(browser);
   const botoes = await page.$$eval('.nav[data-tela]', bs => bs.map(b => b.dataset.tela));
-  check('menu tem as cinco telas', JSON.stringify(botoes) === JSON.stringify(['geral', 'agentes', 'ide', 'ferramentas', 'absorcao']), botoes.join(','));
+  check('menu tem as seis telas', JSON.stringify(botoes) === JSON.stringify(['geral', 'agentes', 'ide', 'ferramentas', 'absorcao', 'tarefas']), botoes.join(','));
 
   for (const tela of botoes) {
     await page.click(`.nav[data-tela="${tela}"]`);

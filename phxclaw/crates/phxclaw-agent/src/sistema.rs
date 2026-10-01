@@ -1796,10 +1796,22 @@ impl RustProjectTool {
                 .map(|c| c.join("bin/rustc"))
                 .filter(|p| p.is_file())
         })?;
-        let s = Command::new(rustc)
-            .args(["--print", "sysroot"])
-            .output()
-            .ok()?;
+        // Ambiente limpo, como todo processo do agente no hospedeiro: so o que o proxy do
+        // rustup precisa para achar o toolchain.
+        let mut c = Command::new(rustc);
+        c.args(["--print", "sysroot"]).env_clear();
+        for k in [
+            "PATH",
+            "HOME",
+            "RUSTUP_HOME",
+            "RUSTUP_TOOLCHAIN",
+            "CARGO_HOME",
+        ] {
+            if let Some(v) = std::env::var_os(k) {
+                c.env(k, v);
+            }
+        }
+        let s = c.output().ok()?;
         let sysroot = PathBuf::from(String::from_utf8_lossy(&s.stdout).trim());
         if !s.status.success() || !sysroot.join("bin/cargo").is_file() {
             return None;
@@ -1814,7 +1826,7 @@ impl RustProjectTool {
         })
     }
 
-    fn extras(&self) -> SandboxExtras {
+    pub(crate) fn extras(&self) -> SandboxExtras {
         let raiz = self.sysroot.display().to_string();
         let mut e = SandboxExtras {
             ro_binds: vec![(self.sysroot.clone(), raiz.clone())],
@@ -1964,6 +1976,11 @@ diagnostics: file, line, column, level, message, code."
     }
     fn capability(&self) -> &'static str {
         "shell.exec"
+    }
+    /// O binario que roda de verdade: regra sobre `cargo` alcanca esta ferramenta.
+    fn comando_de_shell(&self, args: &Value) -> Option<String> {
+        let a = args.get("action").and_then(Value::as_str).unwrap_or("");
+        Some(format!("cargo {}", crate::python::aspas(a)))
     }
     fn run<'a>(
         &'a self,

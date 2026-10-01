@@ -464,7 +464,9 @@ function barraTresEstados(p) {
     const s = el('i', `seg ${classe}`);
     s.dataset.estado = classe;
     s.dataset.n = String(n);
-    s.style.flexGrow = String(n);
+    // Base zero: com a base automatica o rotulo somava largura e o segmento pequeno
+    // saia maior que a parte dele (3 em 41 aparecia como ~9%).
+    s.style.flex = `${n} 1 0`;
     s.title = `${n} ${rotulo()}`;
     s.append(el('em', null, n));
     b.append(s);

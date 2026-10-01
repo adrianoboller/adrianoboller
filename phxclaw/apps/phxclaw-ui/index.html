@@ -7,6 +7,10 @@
   <title>PhxClaw • Command Center</title>
   <link rel="icon" href="./assets/phoenix-mark.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="./assets/app.css" />
+  <link rel="stylesheet" href="./assets/tarefas.css" />
+  <!-- Aplicativo instalavel (PWA): o mesmo cliente no navegador, no celular e na ponte. -->
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="./assets/icone-192.png" />
 </head>
 <body>
   <div class="noise"></div>
@@ -63,6 +67,7 @@
         <button class="nav" data-tela="ide"><span>⌨</span><em>IDE</em><b id="seloIde"></b></button>
         <button class="nav" data-tela="ferramentas"><span>⚒</span><em data-txt="menu.ferramentas">Ferramentas</em><b id="seloFerramentas"></b></button>
         <button class="nav" data-tela="absorcao"><span>◈</span><em data-txt="menu.absorcao">Absorção</em></button>
+        <button class="nav" data-tela="tarefas"><span>☰</span><em data-txt="menu.tarefas">Tarefas</em></button>
       </nav>
       <div class="sidebar-bottom">
         <div class="security-card"><span>◈</span><div><b>ZERO TRUST</b><small>Deny-by-default</small></div></div>
@@ -169,10 +174,31 @@
       <div id="absorcaoConteudo" class="absorcao"></div>
      </section>
 
+     <section class="tela" id="tela-tarefas" data-tela="tarefas" aria-label="Tarefas" data-txt-al="menu.tarefas" hidden>
+      <header class="tela-head">
+        <div><span class="eyebrow" data-txt="tarefas.sobretitulo">TAREFAS / API DO AGENTE</span><h1 data-txt="menu.tarefas">Tarefas</h1>
+          <p id="tarefasStatus" class="tela-sub"></p></div>
+        <form id="tarefasToken" class="tarefas-linha">
+          <input id="tarefasTokenCampo" class="filtro" type="password" autocomplete="off" placeholder="Token de acesso" data-txt-ph="tarefas.token" aria-label="Token de acesso" data-txt-al="tarefas.token" />
+          <button class="acao altera" data-txt="tarefas.guardar">GUARDAR TOKEN</button>
+        </form>
+      </header>
+      <form id="tarefasNova" class="tarefas-linha">
+        <textarea id="tarefasObjetivo" rows="2" placeholder="Objetivo da nova tarefa" data-txt-ph="tarefas.objetivo" aria-label="Objetivo da nova tarefa" data-txt-al="tarefas.objetivo"></textarea>
+        <label class="marcar"><input id="tarefasPlano" type="checkbox" /><span data-txt="tarefas.planejar">Planejar e esperar aprovação</span></label>
+        <button class="acao inclui" data-txt="tarefas.criar">+ CRIAR TAREFA</button>
+      </form>
+      <div class="tarefas-grade">
+        <ul id="tarefasLista" class="tarefas-lista" aria-label="Tarefas" data-txt-al="menu.tarefas"></ul>
+        <article id="tarefasDetalhe" class="tarefas-detalhe" hidden></article>
+      </div>
+     </section>
+
       <footer class="footerbar"><span>DISCIPLINA</span><i>•</i><span>SEGURANÇA</span><i>•</i><span>QUALIDADE</span><i>•</i><span>EVOLUÇÃO</span><i>•</i><span>LIBERDADE</span><b>“Juntos somos infinitos.”</b></footer>
     </main>
   </div>
   <script src="./assets/idiomas.js"></script>
   <script src="./assets/app.js"></script>
+  <script src="./assets/tarefas.js"></script>
 </body>
 </html>

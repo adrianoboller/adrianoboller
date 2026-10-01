@@ -15,11 +15,23 @@ phxclaw-web-search = { path = "../phxclaw-web-search" }
 phxclaw-evidence-ledger = { path = "../phxclaw-evidence-ledger" }
 phxclaw-rustclaw-native = { path = "../phxclaw-rustclaw-native" }
 phxclaw-sandbox = { path = "../phxclaw-sandbox" }
+# Ponto de restauracao antes de cada escrita (objetos por hash, ver checkpoint.rs).
+phxclaw-checkpoint = { path = "../phxclaw-checkpoint" }
+# Orquestracao: o DAG dos fluxos, os plugins assinados como ferramenta e os nos de
+# dispositivo. Todas ja sao crates do workspace (nada novo no Cargo.lock).
+phxclaw-task-graph = { path = "../phxclaw-task-graph" }
+phxclaw-plugin-registry = { path = "../phxclaw-plugin-registry" }
+phxclaw-device-nodes = { path = "../phxclaw-device-nodes" }
+phxclaw-device-transport = { path = "../phxclaw-device-transport" }
+# Grep da busca_arquivos: ja estava no Cargo.lock (dependencia de outras crates).
+regex = "1"
 phxclaw-ui-ir = { path = "../phxclaw-ui-ir" }
 phxclaw-memory-context = { path = "../phxclaw-memory-context" }
 phxclaw-skill-runtime = { path = "../phxclaw-skill-runtime" }
 phxclaw-secret-broker = { path = "../phxclaw-secret-broker" }
 phxclaw-media-intelligence = { path = "../phxclaw-media-intelligence" }
+# Conferencia de sintaxe do script do canvas: o mesmo tree-sitter que ja analisa repositorios.
+phxclaw-repo-intelligence = { path = "../phxclaw-repo-intelligence" }
 phxclaw-mcp-lsp-runtime = { path = "../phxclaw-mcp-lsp-runtime" }
 # Atras da feature `desktop`: o xcap liga libgbm, libdrm, libwayland-client e libxcb no
 # binario, e o agente de servidor nao deve passar a exigir biblioteca de sessao grafica.
@@ -41,8 +53,19 @@ phxclaw-http-client = { path = "../phxclaw-http-client" }
 phxclaw-channel-gateway = { path = "../phxclaw-channel-gateway" }
 phxclaw-channel-providers = { path = "../phxclaw-channel-providers" }
 phxclaw-live-bus = { path = "../phxclaw-live-bus" }
+# Canais alem do Telegram: o mesmo cliente bloqueante do phxclaw-channel-providers e o
+# base64 das assinaturas (LINE, Twilio). Os dois ja sao dependencias do workspace.
+reqwest.workspace = true
+base64.workspace = true
+# Relay do Nostr (WebSocket com TLS): dependencia do workspace, ja usada pelo navegador.
+tokio-tungstenite.workspace = true
 uuid.workspace = true
 postgres.workspace = true
+# Controle remoto pela ponte: o agente chama o PROPRIO router em processo (`oneshot`, do
+# tower que o axum ja traz) e guarda a chave Ed25519 do no em arquivo 0600. Nada novo no
+# Cargo.lock.
+tower = { version = "0.5", default-features = false, features = ["util"] }
+phxclaw-key-provider = { path = "../phxclaw-key-provider", features = ["arquivo"] }
 
 [features]
 desktop = [
@@ -53,3 +76,4 @@ desktop = [
 
 [dev-dependencies]
 reqwest.workspace = true
+ed25519-dalek.workspace = true

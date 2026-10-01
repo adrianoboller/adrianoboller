@@ -116,7 +116,7 @@ body.force-dashboard .splash{display:none}body.force-dashboard .app-shell{opacit
 /* TRES ESTADOS (absorcao): a forma carrega o estado, a cor so reforca.
    no agente = cheio; pela metade = hachurado; nao = so contorno tracejado. */
 .tri{display:flex;gap:2px;height:20px;margin:6px 0 4px}
-.tri .seg{position:relative;display:flex;align-items:center;justify-content:center;min-width:18px;border-radius:3px;font-style:normal}
+.tri .seg{position:relative;display:flex;align-items:center;justify-content:center;min-width:0;border-radius:3px;font-style:normal;overflow:visible;white-space:nowrap}
 .tri .seg em{font-style:normal;font-size:10px;font-weight:700;line-height:1;padding:1px 3px;border-radius:2px}
 .seg.agente,.amostra.agente{background:#57e6a8;border:1px solid #57e6a8}
 .seg.agente em{color:#010418}

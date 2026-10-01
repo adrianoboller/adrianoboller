@@ -6,8 +6,14 @@ license.workspace = true
 publish = false
 
 [dependencies]
+phxclaw-device-nodes = { path = "../../crates/phxclaw-device-nodes" }
 phxclaw-device-transport = { path = "../../crates/phxclaw-device-transport" }
 phxclaw-key-provider = { path = "../../crates/phxclaw-key-provider", features = ["os-keyring", "arquivo"] }
 serde_json.workspace = true
 tokio.workspace = true
 uuid.workspace = true
+
+[dev-dependencies]
+# Prova de ponta a ponta: o binario deste no contra o servidor e a ferramenta do agente.
+phxclaw-agent = { path = "../../crates/phxclaw-agent" }
+phxclaw-agent-core = { path = "../../crates/phxclaw-agent-core" }

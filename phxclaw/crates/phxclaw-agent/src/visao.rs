@@ -60,10 +60,10 @@ fn arquivo_da_tarefa(ctx: &ToolContext, rel: &str) -> Result<PathBuf, ToolError>
 
 /// Pasta temporaria que se apaga ao sair do escopo, inclusive no erro e no estouro do
 /// prazo: as paginas renderizadas de um PDF grande somam centenas de MB.
-struct PastaTemp(PathBuf);
+pub(crate) struct PastaTemp(pub(crate) PathBuf);
 
 impl PastaTemp {
-    fn nova(prefixo: &str) -> Result<Self, ToolError> {
+    pub(crate) fn nova(prefixo: &str) -> Result<Self, ToolError> {
         let d = std::env::temp_dir().join(format!("{prefixo}-{}", phxclaw_types::new_uuid_v7()));
         std::fs::create_dir_all(&d).map_err(falha)?;
         Ok(Self(d))
@@ -87,27 +87,104 @@ pub async fn tesseract(
     psm: Option<u8>,
     prazo: Duration,
 ) -> Result<String, ToolError> {
-    let mut cmd = tokio::process::Command::new("tesseract");
-    cmd.arg(imagem).args(["-", "-l", idiomas]);
+    let vazia = PastaTemp::nova("phx-tess")?;
+    let mut argv = vec![
+        "tesseract".to_string(),
+        entrada_isolada(imagem)?,
+        "-".into(),
+        "-l".into(),
+        idiomas.into(),
+    ];
     if let Some(p) = psm {
-        cmd.arg("--psm").arg(p.to_string());
+        argv.extend(["--psm".into(), p.to_string()]);
     }
-    cmd.stdin(Stdio::null()).kill_on_drop(true);
-    let saida = tokio::time::timeout(prazo, cmd.output())
-        .await
-        .map_err(|_| ToolError::Timeout(prazo.as_millis() as u64))?
-        .map_err(|e| {
-            ToolError::Failed(format!(
-                "tesseract nao executou ({e}); instale tesseract-ocr e tesseract-ocr-por"
-            ))
-        })?;
-    if !saida.status.success() {
+    let saida = isolado(&argv, imagem, &vazia.0, prazo).await?;
+    if saida.exit_code == Some(127) {
+        return Err(ToolError::Failed(
+            "tesseract nao executou; instale tesseract-ocr e tesseract-ocr-por".into(),
+        ));
+    }
+    if saida.exit_code != Some(0) {
         return Err(ToolError::Failed(format!(
             "tesseract falhou: {}",
-            String::from_utf8_lossy(&saida.stderr).trim()
+            saida.stderr.trim()
         )));
     }
-    Ok(String::from_utf8_lossy(&saida.stdout).into_owned())
+    Ok(saida.stdout)
+}
+
+/// Onde o arquivo de entrada aparece dentro do sandbox: a pasta dele montada em `/in`, so
+/// leitura.
+fn entrada_isolada(arquivo: &Path) -> Result<String, ToolError> {
+    let nome = arquivo
+        .file_name()
+        .ok_or_else(|| ToolError::InvalidArguments("entrada sem nome de arquivo".into()))?;
+    Ok(format!("/in/{}", nome.to_string_lossy()))
+}
+
+/// Programa de terceiro (tesseract, pdftoppm) sobre arquivo que veio de fora, no MESMO
+/// bwrap do `shell`: sem rede, ambiente limpo, so `/usr` e afins, a pasta da entrada em
+/// `/in` so leitura e `saida` como `/work`. Um decodificador de imagem ou de PDF e
+/// justamente a superficie que um arquivo hostil ataca; rodado no hospedeiro, com o
+/// ambiente do agente (chaves de provedor), o estrago de uma falha nele seria o do agente
+/// inteiro. Sem bwrap, recusa: a pétrea e o sandbox, nao a conveniencia.
+async fn isolado(
+    argv: &[String],
+    entrada: &Path,
+    saida: &Path,
+    prazo: Duration,
+) -> Result<phxclaw_sandbox::WorkdirOutput, ToolError> {
+    let pasta = entrada
+        .parent()
+        .ok_or_else(|| ToolError::InvalidArguments("entrada sem pasta".into()))?;
+    isolado_com(
+        argv,
+        vec![(pasta.to_path_buf(), "/in".into())],
+        vec![],
+        saida,
+        prazo,
+    )
+    .await
+}
+
+/// O `isolado` com o que o programa precisa a mais: pastas so leitura (o binario e o
+/// modelo de um motor de voz) e variaveis de ambiente. Um caminho so para todo programa de
+/// terceiro que o agente lanca: a voz e o detector de palavra entram por aqui, e nao por
+/// um segundo `Command::new`.
+pub(crate) async fn isolado_com(
+    argv: &[String],
+    ro_binds: Vec<(PathBuf, String)>,
+    env: Vec<(String, String)>,
+    saida: &Path,
+    prazo: Duration,
+) -> Result<phxclaw_sandbox::WorkdirOutput, ToolError> {
+    let bwrap = crate::arquivos::achar_bwrap().ok_or_else(|| {
+        ToolError::Failed(format!(
+            "sem bwrap: {} so roda no sandbox (instale bubblewrap)",
+            argv.first().map(String::as_str).unwrap_or("o programa")
+        ))
+    })?;
+    let cmd = phxclaw_sandbox::WorkdirCommand {
+        workdir: saida.to_path_buf(),
+        script: argv
+            .iter()
+            .map(|a| crate::python::aspas(a))
+            .collect::<Vec<_>>()
+            .join(" "),
+        timeout: prazo,
+        network: false,
+        max_output_bytes: 16 * 1024 * 1024,
+    };
+    let extras = phxclaw_sandbox::SandboxExtras { ro_binds, env };
+    tokio::task::spawn_blocking(move || phxclaw_sandbox::run_in_workdir_com(&bwrap, &cmd, &extras))
+        .await
+        .map_err(falha)?
+        .map_err(|e| match e {
+            phxclaw_sandbox::SandboxError::Timeout(_) => {
+                ToolError::Timeout(prazo.as_millis() as u64)
+            }
+            outro => falha(outro),
+        })
 }
 
 /// Idiomas do tesseract no formato dele ("por+eng"). So letras, digitos e `_`: o valor vai
@@ -185,30 +262,28 @@ in the task folder by OCR (tesseract; PDF pages rendered at 200 dpi). Default la
                     .clamp(1, 100);
                 let ultima = primeira + max - 1;
                 let tmp = PastaTemp::nova("phx-ocr")?;
-                let r = tokio::time::timeout(
-                    prazo,
-                    tokio::process::Command::new("pdftoppm")
-                        .args(["-r", "200", "-png", "-f"])
-                        .arg(primeira.to_string())
-                        .arg("-l")
-                        .arg(ultima.to_string())
-                        .arg(&arq)
-                        .arg(tmp.0.join("p"))
-                        .stdin(Stdio::null())
-                        .kill_on_drop(true)
-                        .output(),
-                )
-                .await
-                .map_err(|_| ToolError::Timeout(prazo.as_millis() as u64))?
-                .map_err(|e| {
-                    ToolError::Failed(format!(
-                        "pdftoppm nao executou ({e}); instale poppler-utils"
-                    ))
-                })?;
-                if !r.status.success() {
+                let argv: Vec<String> = vec![
+                    "pdftoppm".into(),
+                    "-r".into(),
+                    "200".into(),
+                    "-png".into(),
+                    "-f".into(),
+                    primeira.to_string(),
+                    "-l".into(),
+                    ultima.to_string(),
+                    entrada_isolada(&arq)?,
+                    "/work/p".into(),
+                ];
+                let r = isolado(&argv, &arq, &tmp.0, prazo).await?;
+                if r.exit_code == Some(127) {
+                    return Err(ToolError::Failed(
+                        "pdftoppm nao executou; instale poppler-utils".into(),
+                    ));
+                }
+                if r.exit_code != Some(0) {
                     return Err(ToolError::Failed(format!(
                         "pdftoppm falhou: {}",
-                        String::from_utf8_lossy(&r.stderr).trim()
+                        r.stderr.trim()
                     )));
                 }
                 // O pdftoppm completa o numero com zeros conforme o total de paginas, entao a
@@ -725,6 +800,12 @@ the SVG's own width/height or viewBox, 1280x800 for HTML."
             let servidor = ServidorDaPasta::subir(ctx.workdir.clone()).await?;
             let perfil = PastaTemp::nova("phx-render")?;
             let mut cmd = tokio::process::Command::new(&chromium);
+            // Ambiente limpo: as chaves de provedor do agente nao vao para um navegador que
+            // renderiza HTML gerado pelo modelo.
+            cmd.env_clear()
+                .env("PATH", "/usr/local/bin:/usr/bin:/bin")
+                .env("HOME", &perfil.0)
+                .env("LANG", "C.UTF-8");
             cmd.args([
                 "--headless",
                 "--disable-gpu",
@@ -843,21 +924,9 @@ impl Tool for TranscribeTool {
         ctx: &'a ToolContext,
     ) -> BoxFut<'a, Result<ToolOutput, ToolError>> {
         Box::pin(async move {
-            let faltam: Vec<&str> = [
-                ("PHXCLAW_WHISPER_BIN", self.bin.is_none()),
-                ("PHXCLAW_WHISPER_MODEL", self.model.is_none()),
-                ("PHXCLAW_WHISPER_MODEL_SHA256", self.model_sha256.is_none()),
-            ]
-            .into_iter()
-            .filter(|(_, falta)| *falta)
-            .map(|(n, _)| n)
-            .collect();
-            if !faltam.is_empty() {
-                return Err(ToolError::Denied(format!(
-                    "fala para texto nao configurada: faltam {}",
-                    faltam.join(", ")
-                )));
-            }
+            // A falta de configuracao vem antes de qualquer conferencia do pedido: e o que o
+            // operador tem de consertar, e nenhum pedido bem formado a contornaria.
+            self.configurado()?;
             let rel = texto(&args, "path")
                 .ok_or_else(|| ToolError::InvalidArguments("falta 'path'".into()))?;
             if extensao(rel) != "wav" {
@@ -880,31 +949,7 @@ impl Tool for TranscribeTool {
                     "arquivo nao encontrado na pasta da tarefa: {rel}"
                 )));
             }
-            let tmp = PastaTemp::nova("phx-stt")?;
-            let provedor = phxclaw_media_intelligence::WhisperCppProvider {
-                program: self.bin.clone().unwrap_or_default(),
-                model: self.model.clone().unwrap_or_default(),
-                model_sha256: self.model_sha256.clone().unwrap_or_default(),
-                threads: None,
-                // O provedor mata o filho ao estourar: o prazo da chamada vira o dele.
-                timeout_seconds: ctx.timeout.as_secs().clamp(1, 7200),
-                max_audio_bytes: 512 * 1024 * 1024,
-            };
-            let pedido = phxclaw_media_intelligence::SpeechToTextRequest {
-                input_audio: audio,
-                language: idioma,
-                output_txt: Some(tmp.0.join("fala.txt")),
-            };
-            let r = tokio::task::spawn_blocking(move || provedor.transcribe_verified(&pedido))
-                .await
-                .map_err(falha)?;
-            let fala = match r {
-                Ok(t) => t,
-                Err(e) if e.to_string().contains("timed out") => {
-                    return Err(ToolError::Timeout(ctx.timeout.as_millis() as u64));
-                }
-                Err(e) => return Err(ToolError::Failed(format!("whisper.cpp: {e}"))),
-            };
+            let fala = self.transcrever(audio, idioma, ctx.timeout).await?;
             let fala = fala.trim();
             Ok(ToolOutput::text(if fala.is_empty() {
                 format!("transcricao de {rel}: nenhuma fala reconhecida")
@@ -916,6 +961,65 @@ impl Tool for TranscribeTool {
                 )
             }))
         })
+    }
+}
+
+impl TranscribeTool {
+    /// O texto cru de um WAV. A ferramenta e a conversa por voz passam por aqui: a conversa
+    /// precisa do texto, e reler a frase montada para o modelo quebraria no dia em que a
+    /// redacao mudasse.
+    pub async fn transcrever(
+        &self,
+        audio: PathBuf,
+        idioma: Option<String>,
+        prazo: Duration,
+    ) -> Result<String, ToolError> {
+        self.configurado()?;
+        let tmp = PastaTemp::nova("phx-stt")?;
+        let provedor = phxclaw_media_intelligence::WhisperCppProvider {
+            program: self.bin.clone().unwrap_or_default(),
+            model: self.model.clone().unwrap_or_default(),
+            model_sha256: self.model_sha256.clone().unwrap_or_default(),
+            threads: None,
+            // O provedor mata o filho ao estourar: o prazo da chamada vira o dele.
+            timeout_seconds: prazo.as_secs().clamp(1, 7200),
+            max_audio_bytes: 512 * 1024 * 1024,
+        };
+        let pedido = phxclaw_media_intelligence::SpeechToTextRequest {
+            input_audio: audio,
+            language: idioma,
+            output_txt: Some(tmp.0.join("fala.txt")),
+        };
+        let r = tokio::task::spawn_blocking(move || provedor.transcribe_verified(&pedido))
+            .await
+            .map_err(falha)?;
+        match r {
+            Ok(t) => Ok(t),
+            Err(e) if e.to_string().contains("timed out") => {
+                Err(ToolError::Timeout(prazo.as_millis() as u64))
+            }
+            Err(e) => Err(ToolError::Failed(format!("whisper.cpp: {e}"))),
+        }
+    }
+
+    /// Recusa nomeando cada variavel que falta.
+    fn configurado(&self) -> Result<(), ToolError> {
+        let faltam: Vec<&str> = [
+            ("PHXCLAW_WHISPER_BIN", self.bin.is_none()),
+            ("PHXCLAW_WHISPER_MODEL", self.model.is_none()),
+            ("PHXCLAW_WHISPER_MODEL_SHA256", self.model_sha256.is_none()),
+        ]
+        .into_iter()
+        .filter(|(_, falta)| *falta)
+        .map(|(n, _)| n)
+        .collect();
+        if !faltam.is_empty() {
+            return Err(ToolError::Denied(format!(
+                "fala para texto nao configurada: faltam {}",
+                faltam.join(", ")
+            )));
+        }
+        Ok(())
     }
 }
 

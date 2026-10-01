@@ -18,6 +18,9 @@ pub enum TaskStatus {
     Pending,
     /// Plano pronto e esperando alguem aprovar ou editar (o "Plan Mode").
     AwaitingApproval,
+    /// A tarefa perguntou ao usuario (`ask_user`, ou um comando que a regra manda
+    /// perguntar) e espera a resposta pela API ou pela CLI; a pergunta esta em `question`.
+    AwaitingInput,
     Running,
     Completed,
     Failed,
@@ -72,6 +75,9 @@ pub struct Task {
     /// URL chamada quando a tarefa termina (opcional).
     #[serde(default)]
     pub webhook: Option<String>,
+    /// Pergunta pendente enquanto o estado e `AwaitingInput`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub question: Option<String>,
 }
 
 impl Task {
@@ -92,6 +98,7 @@ impl Task {
             error: None,
             parent: None,
             webhook: None,
+            question: None,
         }
     }
 }

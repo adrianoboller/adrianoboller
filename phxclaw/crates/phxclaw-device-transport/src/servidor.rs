@@ -6,7 +6,13 @@
 //!   vem no proprio pedido (prova de posse), e o token de pareamento e consumido UMA vez;
 //! - `device.hello` (corpo `NodeHello`): so de no pareado; abre a sessao e devolve o
 //!   token de cerca (fencing) -- o que impede um no antigo de agir depois de outro assumir;
-//! - `device.heartbeat`: so dentro da sessao aberta, com sequencia crescente.
+//! - `device.heartbeat`: so dentro da sessao aberta, com sequencia crescente;
+//! - `device.command` (servidor -> no, corpo `DeviceCommand`): sai por `comandar`, so
+//!   depois de `authorize_command` (capacidade declarada pelo no, janela, TTL, aprovacao
+//!   para capacidade protegida, nenhum segredo cru nos argumentos), com o token de cerca
+//!   da sessao viva;
+//! - `device.result` (no -> servidor, corpo `ResultadoDeComando`): so dentro da sessao,
+//!   assinado, e so para comando que esta conexao mandou e ainda espera resposta.
 //!
 //! Toda verificacao passa por `phxclaw_device_nodes::verify_envelope`, a mesma do dominio:
 //! uma segunda conferencia de assinatura escrita aqui seria a que alguem esqueceria de
@@ -19,10 +25,11 @@ use crate::{
 use chrono::{DateTime, Duration, Utc};
 use futures_util::{SinkExt, StreamExt};
 use phxclaw_device_nodes::{
-    DeviceError, DeviceNode, DeviceRepository, DeviceState, ReplayGuard, verify_envelope,
+    CommandPolicy, DeviceCommand, DeviceError, DeviceNode, DeviceRepository, DeviceState,
+    ReplayGuard, RiskLevel, authorize_command, verify_envelope,
 };
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 use tokio::net::TcpListener;
 use tokio_rustls::TlsAcceptor;
@@ -87,19 +94,59 @@ impl ReplayGuard for ReplayMemoria {
 /// (ver o dominio); este serve ao servidor local e aos testes, com as mesmas regras.
 #[derive(Default)]
 pub struct RegistroMemoria {
-    /// sha256(token) -> tenant; sai daqui ao ser consumido (uso unico).
-    tokens: Mutex<HashMap<String, Uuid>>,
+    /// sha256(token) -> (tenant, capacidades de comando aprovadas pelo operador); sai
+    /// daqui ao ser consumido (uso unico).
+    tokens: Mutex<HashMap<String, (Uuid, BTreeSet<String>)>>,
     nos: Mutex<HashMap<(Uuid, Uuid), DeviceNode>>,
+    /// O que o operador aprovou para cada no AO PAREAR: a segunda das tres listas que um
+    /// comando atravessa (a primeira e o que o no declarou; a terceira, a capacidade de
+    /// quem manda). Fica fora do `DeviceNode` porque e decisao do operador, nao do no.
+    aprovadas: Mutex<HashMap<(Uuid, Uuid), BTreeSet<String>>>,
     cerca: Mutex<HashMap<(Uuid, Uuid), i64>>,
 }
 
 impl RegistroMemoria {
-    /// Emite um token de pareamento; guarda so o hash.
+    /// Emite um token de pareamento que NAO aprova comando nenhum (so presenca e
+    /// heartbeat); guarda so o hash.
     pub fn emitir_token(&self, tenant_uuid: Uuid, token: &str) {
+        self.emitir_token_aprovando(tenant_uuid, token, &[]);
+    }
+
+    /// Emite um token cujo no, ao parear, fica com estas capacidades de comando aprovadas.
+    pub fn emitir_token_aprovando(&self, tenant_uuid: Uuid, token: &str, aprovadas: &[&str]) {
         self.tokens
             .lock()
             .unwrap_or_else(|p| p.into_inner())
-            .insert(crate::enrollment_token_sha256_hex(token), tenant_uuid);
+            .insert(
+                crate::enrollment_token_sha256_hex(token),
+                (
+                    tenant_uuid,
+                    aprovadas.iter().map(|s| s.to_string()).collect(),
+                ),
+            );
+    }
+
+    /// As capacidades de comando aprovadas no pareamento deste no (vazio: nenhuma).
+    pub fn aprovadas(&self, tenant_uuid: Uuid, node_uuid: Uuid) -> BTreeSet<String> {
+        self.aprovadas
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .get(&(tenant_uuid, node_uuid))
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    /// Todos os nos pareados, de todos os tenants.
+    pub fn todos(&self) -> Vec<DeviceNode> {
+        let mut v: Vec<DeviceNode> = self
+            .nos
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .values()
+            .cloned()
+            .collect();
+        v.sort_by_key(|n| n.node_uuid);
+        v
     }
 
     pub fn no(&self, tenant_uuid: Uuid, node_uuid: Uuid) -> Option<DeviceNode> {
@@ -125,14 +172,14 @@ impl EnrollmentRepository for RegistroMemoria {
             .lock()
             .unwrap_or_else(|p| p.into_inner())
             .remove(&r.token_sha256_hex);
-        match dono {
-            Some(t) if t == r.tenant_uuid => {}
+        let aprovadas = match dono {
+            Some((t, a)) if t == r.tenant_uuid => a,
             _ => {
                 return Err(DeviceTransportError::PairingRejected(
                     "token de pareamento invalido ou ja usado".into(),
                 ));
             }
-        }
+        };
         let mut nos = self.nos.lock().unwrap_or_else(|p| p.into_inner());
         if nos.contains_key(&(r.tenant_uuid, r.node_uuid)) {
             return Err(DeviceTransportError::PairingRejected(
@@ -152,6 +199,10 @@ impl EnrollmentRepository for RegistroMemoria {
             },
         );
         drop(nos);
+        self.aprovadas
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .insert((r.tenant_uuid, r.node_uuid), aprovadas);
         Ok(EnrollmentAcceptance {
             session_uuid: Uuid::now_v7(),
             fencing_token: self.proxima_cerca(r.tenant_uuid, r.node_uuid),
@@ -202,11 +253,67 @@ pub struct Recusa {
     pub motivo: String,
 }
 
+/// Por que um comando nao chegou ao resultado: negado pela politica (nao saiu) ou falha
+/// de caminho (no fora, conexao caiu, prazo).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FalhaDeComando {
+    Negado(String),
+    Falhou(String),
+}
+
+impl std::fmt::Display for FalhaDeComando {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Negado(m) => write!(f, "negado: {m}"),
+            Self::Falhou(m) => write!(f, "{m}"),
+        }
+    }
+}
+
+/// O que o no devolve a um `device.command`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ResultadoDeComando {
+    pub command_uuid: Uuid,
+    pub ok: bool,
+    #[serde(default)]
+    pub saida: serde_json::Value,
+    #[serde(default)]
+    pub erro: Option<String>,
+}
+
+type Resposta = tokio::sync::oneshot::Sender<ResultadoDeComando>;
+
+/// Comando a caminho de uma conexao, com quem espera a resposta.
+pub struct ComandoPendente {
+    comando: DeviceCommand,
+    resposta: Resposta,
+}
+
+/// Um no como a lista o mostra: o registro, se tem sessao agora e o que o operador
+/// aprovou no pareamento.
+#[derive(Debug, Clone)]
+pub struct NoVisto {
+    pub no: DeviceNode,
+    pub conectado: bool,
+    pub aprovadas: BTreeSet<String>,
+}
+
+/// A sessao viva de um no: por onde mandar comando e a cerca que ele tem de apresentar.
+#[derive(Clone)]
+struct SessaoViva {
+    sessao: Uuid,
+    cerca: i64,
+    saida: tokio::sync::mpsc::UnboundedSender<ComandoPendente>,
+}
+
 pub struct ServidorDispositivos {
     pub registro: Arc<Mutex<RegistroMemoria>>,
     pub replay: Arc<Mutex<ReplayMemoria>>,
     pub identidade: NodeIdentity,
     pub max_desvio_relogio: Duration,
+    /// A politica de `authorize_command`: capacidades protegidas pedem aprovacao.
+    pub politica: CommandPolicy,
+    sessoes: Mutex<HashMap<(Uuid, Uuid), SessaoViva>>,
 }
 
 impl ServidorDispositivos {
@@ -216,7 +323,94 @@ impl ServidorDispositivos {
             replay: Arc::default(),
             identidade: NodeIdentity::efemera(Uuid::nil())?,
             max_desvio_relogio: Duration::seconds(60),
+            politica: CommandPolicy::default(),
+            sessoes: Mutex::default(),
         })
+    }
+
+    /// Os nos pareados e se cada um tem sessao aberta agora.
+    pub fn nos(&self) -> Vec<NoVisto> {
+        let reg = self.registro.lock().unwrap_or_else(|p| p.into_inner());
+        let s = self.sessoes.lock().unwrap_or_else(|p| p.into_inner());
+        reg.todos()
+            .into_iter()
+            .map(|n| NoVisto {
+                conectado: s.contains_key(&(n.tenant_uuid, n.node_uuid)),
+                aprovadas: reg.aprovadas(n.tenant_uuid, n.node_uuid),
+                no: n,
+            })
+            .collect()
+    }
+
+    /// Manda um comando ao no e espera o resultado. Passa so o que estiver aprovado no
+    /// PAREAMENTO (`emitir_token_aprovando`) e, depois, na autorizacao do dominio
+    /// (`authorize_command`), a mesma que um orquestrador duravel usaria: capacidade
+    /// protegida sem aprovacao NAO sai, e quem chama daqui (o agente) nao tem como
+    /// aprovar a si mesmo.
+    pub async fn comandar(
+        &self,
+        tenant_uuid: Uuid,
+        node_uuid: Uuid,
+        capability: &str,
+        arguments: serde_json::Value,
+        prazo: std::time::Duration,
+    ) -> Result<ResultadoDeComando, FalhaDeComando> {
+        use FalhaDeComando::{Falhou, Negado};
+        let (no, aprovadas) = {
+            let reg = self.registro.lock().unwrap_or_else(|p| p.into_inner());
+            let no = reg
+                .get_node(tenant_uuid, node_uuid)
+                .map_err(|e| Negado(e.to_string()))?;
+            (no, reg.aprovadas(tenant_uuid, node_uuid))
+        };
+        if !aprovadas.contains(capability) {
+            return Err(Negado(format!(
+                "capacidade {capability} nao aprovada no pareamento deste no"
+            )));
+        }
+        let viva = self
+            .sessoes
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .get(&(tenant_uuid, node_uuid))
+            .cloned()
+            .ok_or_else(|| Falhou("no sem sessao aberta (desconectado)".into()))?;
+        let agora = Utc::now();
+        let ttl = Duration::from_std(prazo)
+            .unwrap_or(self.politica.max_ttl)
+            .min(self.politica.max_ttl);
+        let comando = DeviceCommand {
+            command_uuid: Uuid::now_v7(),
+            tenant_uuid,
+            node_uuid,
+            capability: capability.to_string(),
+            arguments,
+            secret_handles: vec![],
+            idempotency_key: Uuid::now_v7().to_string(),
+            risk: RiskLevel::Low,
+            approval: None,
+            submitted_at: agora,
+            not_before: agora,
+            expires_at: agora + ttl,
+            fencing_token: viva.cerca,
+        };
+        authorize_command(&no, &comando, &self.politica, agora)
+            .map_err(|e| Negado(e.to_string()))?;
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        viva.saida
+            .send(ComandoPendente {
+                comando,
+                resposta: tx,
+            })
+            .map_err(|_| Falhou("a conexao do no caiu".into()))?;
+        match tokio::time::timeout(prazo, rx).await {
+            Ok(Ok(r)) => Ok(r),
+            Ok(Err(_)) => Err(Falhou("a conexao do no caiu antes do resultado".into())),
+            Err(_) => Err(Falhou(format!(
+                "o no nao respondeu em {} ms",
+                prazo.as_millis()
+            ))),
+        }
     }
 
     /// Aceita conexoes para sempre; cada uma numa tarefa propria.
@@ -244,7 +438,29 @@ impl ServidorDispositivos {
         // (tenant, no, sessao) depois do hello
         let mut sessao: Option<(Uuid, Uuid, Uuid)> = None;
         let mut seq_saida = 0u64;
-        while let Some(Ok(m)) = ws.next().await {
+        let (saida, mut entrada) = tokio::sync::mpsc::unbounded_channel::<ComandoPendente>();
+        // comandos que esta conexao mandou e ainda esperam o `device.result`
+        let mut pendentes: HashMap<Uuid, Resposta> = HashMap::new();
+        loop {
+            let m = tokio::select! {
+                m = ws.next() => m,
+                Some(p) = entrada.recv() => {
+                    let s = sessao.map(|s| s.2).unwrap_or_default();
+                    let Ok(corpo) = serde_json::to_vec(&p.comando) else { continue };
+                    seq_saida += 1;
+                    let Ok(env) = self.identidade.sign_envelope(s, seq_saida, "device.command", &corpo)
+                    else {
+                        break;
+                    };
+                    let Ok(txt) = serde_json::to_string(&env) else { break };
+                    if ws.send(Message::Text(txt.into())).await.is_err() {
+                        break;
+                    }
+                    pendentes.insert(p.comando.command_uuid, p.resposta);
+                    continue;
+                }
+            };
+            let Some(Ok(m)) = m else { break };
             let texto = match m {
                 Message::Text(t) => t.to_string(),
                 Message::Binary(b) => String::from_utf8_lossy(&b).into_owned(),
@@ -252,11 +468,12 @@ impl ServidorDispositivos {
                 _ => continue,
             };
             let resposta = match serde_json::from_str(&texto) {
-                Ok(env) => self.tratar(&env, &mut sessao),
+                Ok(env) => self.tratar(&env, &mut sessao, &saida, &mut pendentes),
                 Err(e) => Err(format!("envelope invalido: {e}")),
             };
             let (tipo, corpo, fim) = match resposta {
-                Ok((t, c)) => (t, c, false),
+                Ok(None) => continue,
+                Ok(Some((t, c))) => (t, c, false),
                 Err(motivo) => (
                     "device.rejected",
                     serde_json::to_vec(&Recusa { motivo }).unwrap_or_default(),
@@ -278,6 +495,15 @@ impl ServidorDispositivos {
                 break;
             }
         }
+        // A sessao sai do mapa so se ainda for ESTA: um no que reconectou ja registrou a
+        // nova, e apaga-la deixaria o no vivo sem caminho para comando.
+        if let Some((t, n, s)) = sessao {
+            let mut m = self.sessoes.lock().unwrap_or_else(|p| p.into_inner());
+            if m.get(&(t, n)).is_some_and(|v| v.sessao == s) {
+                m.remove(&(t, n));
+            }
+        }
+        // `pendentes` cai aqui: quem esperava resultado recebe "a conexao caiu".
         let _ = ws.close(None).await;
     }
 
@@ -285,7 +511,9 @@ impl ServidorDispositivos {
         &self,
         env: &phxclaw_device_nodes::DeviceEnvelope,
         sessao: &mut Option<(Uuid, Uuid, Uuid)>,
-    ) -> Result<(&'static str, Vec<u8>), String> {
+        saida: &tokio::sync::mpsc::UnboundedSender<ComandoPendente>,
+        pendentes: &mut HashMap<Uuid, Resposta>,
+    ) -> Result<Option<(&'static str, Vec<u8>)>, String> {
         let agora = Utc::now();
         let mut replay = self.replay.lock().unwrap_or_else(|p| p.into_inner());
         match env.kind.as_str() {
@@ -317,10 +545,10 @@ impl ServidorDispositivos {
                 .map_err(|e| e.to_string())?;
                 let reg = self.registro.lock().unwrap_or_else(|p| p.into_inner());
                 let aceite = consume_enrollment(&*reg, pedido).map_err(|e| e.to_string())?;
-                Ok((
+                Ok(Some((
                     "device.enrolled",
                     serde_json::to_vec(&aceite).map_err(|e| e.to_string())?,
-                ))
+                )))
             }
             "device.hello" => {
                 let corpo = env.decode_and_verify_body().map_err(|e| e.to_string())?;
@@ -337,14 +565,25 @@ impl ServidorDispositivos {
                     .map_err(|e| e.to_string())?;
                 let s = Uuid::now_v7();
                 *sessao = Some((ola.tenant_uuid, env.node_uuid, s));
-                Ok((
+                self.sessoes
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner())
+                    .insert(
+                        (ola.tenant_uuid, env.node_uuid),
+                        SessaoViva {
+                            sessao: s,
+                            cerca,
+                            saida: saida.clone(),
+                        },
+                    );
+                Ok(Some((
                     "device.welcome",
                     serde_json::to_vec(&Boasvindas {
                         session_uuid: s,
                         fencing_token: cerca,
                     })
                     .map_err(|e| e.to_string())?,
-                ))
+                )))
             }
             "device.heartbeat" => {
                 let (tenant, no_id, s) = sessao.ok_or("heartbeat antes do hello")?;
@@ -357,7 +596,28 @@ impl ServidorDispositivos {
                     .map_err(|e| e.to_string())?;
                 reg.persist_heartbeat(tenant, no_id, agora)
                     .map_err(|e| e.to_string())?;
-                Ok(("device.ack", b"{}".to_vec()))
+                Ok(Some(("device.ack", b"{}".to_vec())))
+            }
+            "device.result" => {
+                let (tenant, no_id, s) = sessao.ok_or("resultado antes do hello")?;
+                if env.node_uuid != no_id || env.session_uuid != s {
+                    return Err("resultado fora da sessao aberta".into());
+                }
+                let no = self
+                    .registro
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner())
+                    .get_node(tenant, no_id)
+                    .map_err(|e| e.to_string())?;
+                let corpo = verify_envelope(&no, env, &mut *replay, agora, self.max_desvio_relogio)
+                    .map_err(|e| e.to_string())?;
+                let r: ResultadoDeComando =
+                    serde_json::from_slice(&corpo).map_err(|e| format!("resultado: {e}"))?;
+                let espera = pendentes
+                    .remove(&r.command_uuid)
+                    .ok_or("resultado de comando que esta conexao nao mandou")?;
+                let _ = espera.send(r);
+                Ok(None)
             }
             outro => Err(format!("tipo de mensagem desconhecido: {outro}")),
         }
