@@ -454,6 +454,19 @@ fn ler_descricao(corpo: &[u8]) -> Result<Vec<Coluna>> {
 fn ler_linha(corpo: &[u8], colunas: &[Coluna]) -> Result<Vec<Option<String>>> {
     let mut l = Leitor::novo(corpo);
     let n = quantos_campos(&mut l)?;
+    // A `DataRow` tem de ter os campos que a `RowDescription` anunciou --
+    // pedido 608. E a mesma pergunta do 544 («quantos campos?»), so que do
+    // lado de dentro do teto: uma linha MAIS CURTA que o cabecalho passava
+    // daqui e entrava em panico no `remota[de]` da sincronia, com a trava de
+    // dados na mao, quando o par quisesse. Sem cabecalho (`colunas` vazia) nao
+    // ha com o que comparar, e quem consome confere por `get`.
+    if !colunas.is_empty() && n != colunas.len() {
+        return Err(erro(format!(
+            "mensagem do PostgreSQL malformada: DataRow com {n} campos, a \
+             RowDescription anunciou {}",
+            colunas.len()
+        )));
+    }
     let mut linha = Vec::with_capacity(n);
     for k in 0..n {
         let tam = l.i32()?;
@@ -947,6 +960,56 @@ mod testes {
                 "{rotulo}: {erro}"
             );
         }
+    }
+
+    /// **608: a `DataRow` com MENOS (ou mais) campos que a `RowDescription` e
+    /// recusa com as duas contagens.** A mais curta saia daqui inteira e
+    /// entrava em panico no `remota[de]` da sincronia, com a trava de dados
+    /// na mao. O texto diz os dois numeros, que e o que se confere no par.
+    #[test]
+    fn datarow_com_campos_diferentes_do_cabecalho_e_recusada() {
+        let mut duas = Vec::new();
+        duas.extend_from_slice(&2i16.to_be_bytes());
+        for nome in ["id", "nome"] {
+            cadeia_nula(&mut duas, nome);
+            duas.extend_from_slice(&0i32.to_be_bytes());
+            duas.extend_from_slice(&0i16.to_be_bytes());
+            duas.extend_from_slice(&25i32.to_be_bytes());
+            duas.extend_from_slice(&(-1i16).to_be_bytes());
+            duas.extend_from_slice(&(-1i32).to_be_bytes());
+            duas.extend_from_slice(&0i16.to_be_bytes());
+        }
+        let campos = |n: i16| {
+            let mut d = n.to_be_bytes().to_vec();
+            for _ in 0..n {
+                d.extend_from_slice(&1i32.to_be_bytes());
+                d.push(b'1');
+            }
+            d
+        };
+        for (n, esperado) in [(1i16, "DataRow com 1 campos"), (3, "DataRow com 3 campos")] {
+            let porta = servidor_falso(vec![
+                (b'T', duas.clone()),
+                (b'D', campos(n)),
+                (b'C', b"SELECT 1\0".to_vec()),
+                (b'Z', vec![b'I']),
+            ]);
+            let e = conexao_com(porta)
+                .consultar("SELECT 1", 100)
+                .err()
+                .unwrap_or_else(|| panic!("{n} campos contra 2: devia recusar"))
+                .to_string();
+            assert!(e.contains(esperado) && e.contains("anunciou 2"), "{n}: {e}");
+        }
+        // E a linha certa continua passando pelo mesmo caminho.
+        let porta = servidor_falso(vec![
+            (b'T', duas),
+            (b'D', campos(2)),
+            (b'C', b"SELECT 1\0".to_vec()),
+            (b'Z', vec![b'I']),
+        ]);
+        let r = conexao_com(porta).consultar("SELECT 1", 100).unwrap();
+        assert_eq!(r.linhas, vec![vec![Some("1".into()), Some("1".into())]]);
     }
 
     /// O que ja funcionava continua: descricao, duas linhas (texto e NULL), o

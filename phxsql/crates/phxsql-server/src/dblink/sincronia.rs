@@ -401,7 +401,23 @@ pub fn linha_remota_para_negocio(
             )));
         };
         let col = &esquema.colunas()[*pos];
-        linha.push(match (&remota[de], &col.ty) {
+        // `get`, e nao `remota[de]` -- pedido 608. O `de` sai do CABECALHO
+        // que o par mandou, e a linha tambem vem do par: quem confere que as
+        // duas batem e o leitor de cada motor (o PostgreSQL passou a recusar
+        // na `DataRow`), mas esta funcao e a dos tres motores, e um leitor
+        // novo que esquecesse a conferencia traria de volta o panico com a
+        // trava de dados na mao. Aqui a falta vira recusa com a contagem.
+        let Some(celula) = remota.get(de) else {
+            return Err(PhxError::Esquema(format!(
+                "a linha remota veio com {} campos e o cabecalho dela tem a \
+                 coluna {:?} na posicao {}: o outro banco mandou uma linha \
+                 mais curta que o proprio cabecalho",
+                remota.len(),
+                col.nome,
+                de + 1
+            )));
+        };
+        linha.push(match (celula, &col.ty) {
             (None, _) => Value::Null,
             // Texto chega como veio, sem o `trim` nem o «vazio vira nulo» da
             // carga colada (pedido 556): aqui o fio ja distingue NULL de '', e
@@ -1018,6 +1034,25 @@ mod testes {
         )
         .unwrap();
         assert_eq!(l[2], Value::Str(" Ana ".into()));
+    }
+
+    /// Pedido 608, a segunda tranca: a linha remota mais curta que o
+    /// cabecalho e recusa com a contagem, venha de que leitor vier -- e nao o
+    /// panico de indice que o par escolhia quando disparar.
+    #[test]
+    fn linha_remota_mais_curta_que_o_cabecalho_e_recusa_e_nao_panico() {
+        let colunas = vec![
+            col("id", "INT", 11, 0, true),
+            col("nome", "VARCHAR", 40, 0, false),
+        ];
+        let (esq, _) = esquema_local_de(Motor::MySql, "c", &colunas).unwrap();
+        let negocio = posicoes_de_negocio(&esq);
+        let mapa = mapa_de_colunas(&esq, &colunas).unwrap();
+        let e = linha_remota_para_negocio(&esq, &negocio, &mapa, &[Some("1".into())])
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("1 campos") && e.contains("\"nome\""), "{e}");
+        assert!(linha_remota_para_negocio(&esq, &negocio, &mapa, &[]).is_err());
     }
 
     #[test]

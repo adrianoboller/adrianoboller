@@ -454,7 +454,7 @@ conjunto de escrita. Ver `docs/ACID.md` §2.4/§3.3.
 
 | prazo | o que limita | padrão |
 |---|---|---|
-| `TIMEOUT` | a transação **inteira** | `recursos.transacao_prazo_min`, 5 min |
+| `TIMEOUT` | a transação **inteira** | `recursos.transacao_prazo_min`, 5 min — e é também o **teto**: pedir mais vale o teto (pedido 607) |
 | `LOCK TIMEOUT` | quanto se aceita **esperar por outro** | `recursos.transacao_lock_timeout_ms`, 500 ms |
 | `STATEMENT TIMEOUT` | quanto **uma operação** pode levar | `recursos.transacao_statement_ms`, 0 = sem prazo |
 | `ISOLATION LEVEL` *(não é prazo — vai na mesma cláusula)* | qual nível a transação pede, desde 16/09/2026 | `READ COMMITTED`, sem pedir nada; `REPEATABLE READ` quando pedido (§11.1). `SERIALIZABLE` recusa |

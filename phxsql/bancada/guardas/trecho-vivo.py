@@ -457,6 +457,15 @@ dia, nunca no desejado:
   (`trilha-ativo-vazio-em-claro`) e o no que deixa de provar calado
   (`pulso-deixa-de-provar-calado`). Contado pelo `--catraca`; no merge com
   as frentes que levaram o piso a 584: 584 + 4 = 588.
+  **SUBIU para 594 em 01/10/2026** (pedidos 607, 608 e 609, a revisao SEC
+  independente): seis guardas -- o `begin` com escopo sem login
+  (`escopo-do-begin-sem-login`), o escopo sem conferir direito
+  (`escopo-do-begin-sem-direito`), o prazo da transacao sem teto
+  (`prazo-da-transacao-sem-teto`), a `DataRow` curta do PostgreSQL
+  (`datarow-curta-do-postgres`), a linha remota curta na sincronia
+  (`linha-remota-curta-na-sincronia`) e o `dblink_ligar` que gravava a copia
+  velha (`dblink-ligar-grava-copia-velha`). 588 + 6 = 594, medido pelo
+  `--numeros`.
 
 # A QUINTA REGUA: a tabela publicada pode ser MENOR que o catalogo
 
@@ -563,7 +572,7 @@ TETO_TESTE_MORTO = 0
 TETO_TRECHO_AMBIGUO = 0
 TETO_TESTE_FORA_DO_BINARIO = 0
 TETO_TESTE_SEM_MODULO = 0
-PISO_DAS_ENTRADAS = 588
+PISO_DAS_ENTRADAS = 594
 
 # ------------------------------------------------------------- APOSENTADAS
 #
