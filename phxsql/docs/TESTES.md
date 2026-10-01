@@ -1018,11 +1018,17 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `cadastro-apagado-sem-fsync-da-pasta` | o último gatilho, procedimento ou visão que saía apagava o arquivo sem `fsync` da pasta: numa queda o excluído voltava | 1 | ✅ provada |
 | `gatilho-orfao-na-queda-do-excluir-tabela` | `excluir_tabela` levava ao disco o sumiço da tabela ANTES do `gatilhos.json`: a queda entre os dois deixava o gatilho de uma tabela que não existe mais | 1 | ✅ provada |
 | `erro-no-meio-da-exclusao-sem-fsync` | o erro no meio do `excluir_tabela` esquecia os nomes que já tinham saído sem `fsync` da pasta: numa queda a tabela voltava pela metade | 1 | ✅ provada |
+| `prova-do-gravar-privado-dentro-do-processo` | a prova do `gravar_privado` rodava no mesmo processo de um `Servidor::novo`: o gancho do 509 virava a recusa armada em SIGABRT, e ela só passava pela ordem alfabética | 1 | ✅ provada |
+| `pular-engole-a-posicao` | o `replicacao_pular` respondia «pulou» por uma posição que não foi ao disco: um reinício devolvia o par ao evento descartado | 1 | ✅ provada |
+| `registrar-engole-a-epoca-espelhada` | o `registrar` do cluster engolia a falha de gravar a época espelhada: o pulso respondia como se ela estivesse no disco | 1 | ✅ provada |
+| `blacklist-regravada-no-lugar` | o `blacklist.json` era regravado no lugar e sem `fsync`: a queda no meio deixava JSON pela metade, e o arranque o recusa | 1 | ✅ provada |
+| `esvaziar-esquece-no-erro` | o erro no meio do `esvaziar_lixeira` esquecia os volumes do `.trash` que já tinham saído sem `fsync` da pasta | 1 | ✅ provada |
+| `expurgo-esquece-no-erro` | o erro no meio da fase 3 do expurgo da trilha esquecia os volumes do `.lgpd` que já tinham saído sem `fsync` da pasta | 1 | ✅ provada |
 | `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | — | 🪦 aposentada (18/09/2026) |
 
-**377 das 553 guardas do catálogo: 1 aposentada, 372 provadas, 4 redundantes** — 10334 s de mutação, medido em 2026-09-16 15:25.
+**383 das 559 guardas do catálogo: 1 aposentada, 378 provadas, 4 redundantes** — 10621 s de mutação, medido em 2026-09-16 15:25.
 
-> **Esta rodada NÃO julgou 177 das 553 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 177 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 177 das 559 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 177 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
 - `fk-antes-do-default` — a chave estrangeira confere a linha crua, e o DEFAULT sem mãe grava a filha órfã
 - `fk-antes-do-default-pelo-servidor` — o DEFAULT e a calculada sem mãe gravam a órfã pelo servidor, fora e dentro da transação
@@ -1214,6 +1220,7 @@ As notas que a rodada deixou:
 - `ffi-panico-atravessa` — o binario abortou, que e como esta guarda pega
 - `rest-fecha-sem-escoar` — confirmado: nenhum teste de unidade sente isto, e nao poderia -- o RST e do sistema operacional, e so aparece com um soquete de verdade. Quem pega e o passo 13 de `bancada/rest/provar.py`, e esta entrada existe para dizer, com o numero da rodada, que a cobertura mora la e nao aqui
 - `recuperar-sem-reindexar` — confirmado: nenhum teste de unidade pega este defeito. O indice so fica para tras quando o PROCESSO morre no meio da passada, e isso so acontece de verdade em `bancada/transacoes/provar.py` -- que e por isso que a prova por soquete existe.
+- `prova-do-gravar-privado-dentro-do-processo` — o binario abortou, que e como esta guarda pega
 <!-- guardas:fim -->
 
 ### As duas metades, e a terceira que ninguém pede

@@ -4400,7 +4400,16 @@ impl Servidor {
                     transcricao.as_ref().map(|t| &t[..]),
                     || self.estatica_do_fio(),
                 ) {
-                    Ok(_) => estado.registrar(&id, pulso),
+                    Ok(_) => {
+                        // Pedido 597: o estado que nao foi ao disco se diz --
+                        // aqui nao ha resposta a quem dizer, entao e o log.
+                        if let Err(e) = estado.registrar(&id, pulso) {
+                            eprintln!(
+                                "cluster: a epoca espelhada do pulso de {id:?} NAO foi \
+                                 ao disco ({e}); um reinicio volta com a anterior"
+                            );
+                        }
+                    }
                     Err(e) => eprintln!("cluster: resposta do pulso de {id:?} recusada: {e}"),
                 }
             }
@@ -4892,7 +4901,9 @@ impl Servidor {
             }
             Err(crate::cluster::RecusaDoPulso::Outra(e)) => return Err(e),
         };
-        estado.registrar(&id, pulso);
+        // Pedido 597: era um `let _ =` dentro do `registrar`, e o pulso
+        // respondia como se a epoca espelhada estivesse no disco.
+        let nao_gravou = estado.registrar(&id, pulso).err();
         let mut resposta = vec![
             ("id", Json::texto_de(&estado.config.id)),
             ("papel", Json::texto_de(estado.papel().nome())),
@@ -4916,6 +4927,18 @@ impl Servidor {
             ) {
                 resposta.extend(extras);
             }
+        }
+        // Fora da prova, de proposito: o aviso e sobre o DISCO deste no, e
+        // nao muda nada do que o pulso afirma sobre papel e epoca.
+        if let Some(e) = nao_gravou {
+            eprintln!("cluster: a epoca espelhada do pulso de {id:?} NAO foi ao disco ({e})");
+            resposta.push((
+                "aviso",
+                Json::texto_de(format!(
+                    "a epoca espelhada NAO foi ao disco ({e}); um reinicio deste no \
+                     volta com a anterior ate o proximo pulso do master"
+                )),
+            ));
         }
         Ok(Json::objeto(resposta))
     }
@@ -23319,13 +23342,17 @@ impl Servidor {
         }
         let trava = self.travar_dados()?;
         let mut t = self.abrir_travada(&trava, p, sessao)?;
-        let (apagadas, pendente) = t.esvaziar_lixeira_adiando_o_fsync(&motivo)?;
-        t.sincronizar()?;
+        let (apagadas, pendente) = t.esvaziar_lixeira_adiando_o_fsync(&motivo);
+        let apagadas = apagadas.and_then(|a| t.sincronizar().map(|()| a));
         // Pedido 591: o `fsync` da pasta do `.trash` fora da trava e antes da
-        // resposta -- sem ele o dado apagado de vez volta numa queda.
+        // resposta -- sem ele o dado apagado de vez volta numa queda. E nos
+        // DOIS casos (pedido 598): o erro no meio do esvaziar deixa volumes
+        // que ja sairam, e eles devem o mesmo `fsync`. A recusa do disco, se
+        // vier, fala mais alto que o erro de antes.
         drop(t);
         drop(trava);
         pendente.levar_ao_disco()?;
+        let apagadas = apagadas?;
         Ok(Json::objeto(vec![
             ("database", Json::texto_de(p.texto_ou("database", ""))),
             ("tabela", Json::texto_de(p.texto_ou("tabela", ""))),
@@ -23499,13 +23526,15 @@ impl Servidor {
         let (restam, pendente) = {
             let dados = self.travar_dados()?;
             let mut t = self.abrir_travada(&dados, p, sessao)?;
-            let (_, pendente) = t.concluir_expurgo_da_trilha_adiando_o_fsync(&selado)?;
-            (t.total_da_trilha()?, pendente)
+            let (saiu, pendente) = t.concluir_expurgo_da_trilha_adiando_o_fsync(&selado);
+            (saiu.and_then(|_| t.total_da_trilha()), pendente)
         };
         // Fase 4, SEM a trava (pedido 591): o `fsync` da pasta, onde moravam
         // os volumes que sairam. Sem ele o volume vencido volta numa queda,
-        // com o rastro selado dizendo que saiu.
+        // com o rastro selado dizendo que saiu. Tambem no erro da fase 3
+        // (pedido 598): os volumes apagados antes dele devem o mesmo `fsync`.
         pendente.levar_ao_disco()?;
+        let restam = restam?;
         Ok(ExpurgoDaTabela {
             expurgo: selado.em_expurgo(),
             restam,
@@ -28801,17 +28830,44 @@ impl Servidor {
             )));
         }
         let nova = parada.posicao + 1;
-        estado.paradas.remove(&chave_tab);
-        estado.posicoes.insert(chave_tab.clone(), nova);
         drop(estados);
 
-        if let Ok(mut pos) = self.posicoes_bidi.lock() {
-            pos.insert(parada.chave_da_posicao.clone(), nova);
-            let _ = bidirecional::gravar_posicoes(
+        // Pedido 597: a posicao vai ao DISCO antes de a parada sair, e a falha
+        // de grava-la vira a resposta. Era um `let _ =` depois de a parada ja
+        // ter saido da memoria: o cliente ouvia «pulou» por uma posicao que um
+        // reinicio devolvia ao evento descartado -- e o par parava de novo no
+        // mesmo conflito sem ninguem saber por que. Enquanto a parada esta de
+        // pe o laco nem chega a ler a posicao (`esta_parada` e o portao dele),
+        // entao grava-la antes nao corre com ninguem.
+        {
+            let mut pos = self
+                .posicoes_bidi
+                .lock()
+                .map_err(|_| PhxError::Io(std::io::Error::other("posicoes_bidi envenenado")))?;
+            let anterior = pos.insert(parada.chave_da_posicao.clone(), nova);
+            if let Err(e) = bidirecional::gravar_posicoes(
                 &self.config.base.join("replicacao-posicoes.json"),
                 &pos,
-            );
+            ) {
+                // O mapa volta ao que estava: ele e gravado INTEIRO pelo
+                // proximo alcance de qualquer origem, que levaria ao disco o
+                // pulo que esta resposta diz que nao aconteceu.
+                match anterior {
+                    Some(v) => pos.insert(parada.chave_da_posicao.clone(), v),
+                    None => pos.remove(&parada.chave_da_posicao),
+                };
+                return Err(PhxError::Io(std::io::Error::other(format!(
+                    "o evento {} de {chave_tab:?} NAO foi pulado: a posicao nova \
+                     ({nova}) nao foi ao disco ({e}). A parada continua de pe; \
+                     pule de novo depois de resolver o disco",
+                    parada.posicao
+                ))));
+            }
         }
+        self.anotar_estado(&nome, |est| {
+            est.paradas.remove(&chave_tab);
+            est.posicoes.insert(chave_tab.clone(), nova);
+        });
         eprintln!(
             "replicacao [{nome}]: {chave_tab} SOLTA por replicacao_pular -- o evento \
              {} foi descartado e a posicao foi para {nova}. O que ele trazia: {}",
@@ -59593,6 +59649,49 @@ mod testes_do_pular_manual {
         );
     }
 
+    /// **Pedido 597: a posicao que nao foi ao disco nao vira «pulou».**
+    ///
+    /// A falha de gravar e forjada sem `fsync` nenhum -- um DIRETORIO no nome
+    /// do temporario do `gravar_privado`, que o `remove_file` dele recusa --,
+    /// porque uma recusa de `fsync` armada derrubaria este binario pelo gancho
+    /// do 509 que o `Servidor::novo` registra.
+    ///
+    /// **Defeito reposto** (o `let _ =` de antes, com a parada saindo antes da
+    /// gravacao): a operacao responde Ok, e as tres asercoes caem.
+    #[test]
+    fn pular_que_nao_grava_a_posicao_diz_que_nao_pulou() {
+        let dir = DirTemp::novo("pular-sem-disco");
+        let s = servidor(&dir, Cadastro::default());
+        com_parada(&s, 7);
+        let caminho = dir.join("replicacao-posicoes.json");
+        std::fs::create_dir_all(crate::config::temporario_de(&caminho)).unwrap();
+
+        let erro = pular(
+            &s,
+            r#"{"origem":"parceiro","database":"loja","tabela":"clientes"}"#,
+        )
+        .expect_err("a posicao nao foi ao disco, e a resposta disse que pulou");
+        assert!(
+            erro.to_string().contains("NAO foi pulado"),
+            "a recusa nao diz o que nao aconteceu: {erro}"
+        );
+        // A parada fica, para o operador pular de novo depois do disco.
+        assert!(
+            s.esta_parada("parceiro", "loja/clientes"),
+            "a parada saiu por um pulo que nao foi ao disco"
+        );
+        // E o mapa volta: ele e gravado INTEIRO pelo proximo alcance, que
+        // levaria ao disco o pulo que a resposta negou.
+        assert!(
+            s.posicoes_bidi.lock().unwrap().is_empty(),
+            "o mapa ficou com a posicao que nao foi ao disco"
+        );
+        assert!(
+            !caminho.exists(),
+            "o arquivo de posicoes nasceu assim mesmo"
+        );
+    }
+
     /// **O teste do comportamento VELHO.** Par SAO nao se anda pela mao: a
     /// operacao recusa nomeando o que esta parado, em vez de descartar um
     /// evento que ninguem leu. E a diferenca deliberada para o
@@ -67269,17 +67368,19 @@ mod testes_do_recuo_no_cluster {
     }
 
     fn declarar_master(estado: &crate::cluster::EstadoCluster, id: &str, epoca: u64) {
-        estado.registrar(
-            id,
-            crate::cluster::PulsoDeNo {
-                papel: crate::cluster::PapelVivo::Master,
-                epoca,
-                posicao: 0,
-                incompleta: false,
-                prioridade: 0,
-                quando_ms: crate::agora_ms(),
-            },
-        );
+        estado
+            .registrar(
+                id,
+                crate::cluster::PulsoDeNo {
+                    papel: crate::cluster::PapelVivo::Master,
+                    epoca,
+                    posicao: 0,
+                    incompleta: false,
+                    prioridade: 0,
+                    quando_ms: crate::agora_ms(),
+                },
+            )
+            .unwrap();
     }
 
     fn intervalos(vindas: &Vindas) -> Vec<Duration> {

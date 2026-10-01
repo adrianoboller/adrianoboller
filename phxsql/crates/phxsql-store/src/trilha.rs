@@ -1635,6 +1635,23 @@ impl TrilhaFile {
     /// Volume planejado que ja nao existe e pulado: o estado pedido -- ele fora
     /// do disco -- ja vale.
     pub fn apagar_expurgados(&mut self, selado: &ExpurgoSelado) -> Result<Vec<u32>> {
+        let mut tocados = Vec::new();
+        self.apagar_expurgados_juntando(selado, &mut tocados)
+            .map(|()| tocados)
+    }
+
+    /// O corpo do [`Self::apagar_expurgados`]: cada volume entra em `tocados`
+    /// ANTES do `unlink` dele, e la fica no erro (pedido 598). Antes, o `?` da
+    /// tabela esquecia os que ja tinham saido, e eles ficavam sem o `fsync` da
+    /// pasta -- o volume vencido voltava numa queda, com o rastro selado
+    /// dizendo que saiu. Antes, e nao depois: o `apagar_volume` pode falhar no
+    /// espelho DEPOIS de o nome principal ja ter saido, e um `fsync` de pasta
+    /// sem nada a levar nao custa nada de errado.
+    pub(crate) fn apagar_expurgados_juntando(
+        &mut self,
+        selado: &ExpurgoSelado,
+        tocados: &mut Vec<u32>,
+    ) -> Result<()> {
         let e = selado.expurgo();
         let existentes = self.volumes_vivos()?;
         let ativo = self.volume_ativo()?;
@@ -1661,13 +1678,14 @@ impl TrilhaFile {
             }
             alvos.push(v.volume);
         }
-        let mut saiu = Vec::with_capacity(alvos.len());
         for v in &alvos {
+            tocados.push(*v);
             // O erro no meio devolve a lista PARCIAL: o rastro ja selado diz o
             // que foi pedido, e so o diretorio diz o que saiu -- quem recebe o
             // erro precisa das duas coisas para nao afirmar um expurgo que nao
             // aconteceu inteiro.
             if let Err(e) = self.volumes.apagar_volume(*v) {
+                let saiu = &tocados[..tocados.len() - 1];
                 let frase = format!(
                     "o expurgo da trilha de {} parou no volume {v} ({e}); ja tinham \
                      saido {saiu:?}. O rastro no .reason diz o que foi pedido; o que \
@@ -1680,9 +1698,8 @@ impl TrilhaFile {
                 });
             }
             self.cabs.remove(v);
-            saiu.push(*v);
         }
-        Ok(saiu)
+        Ok(())
     }
 
     /// O nome de um volume, para quem precisa do `fsync` da pasta dele depois

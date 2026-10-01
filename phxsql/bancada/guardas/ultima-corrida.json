@@ -1825,9 +1825,9 @@
       "id": "pulso-sem-prova-de-identidade",
       "titulo": "o pulso do cluster aceitando identidade auto-declarada",
       "veredito": "PROVADA",
-      "segundos": 19.19,
+      "segundos": 25.69,
       "notas": [],
-      "quando": "2026-09-24 00:51"
+      "quando": "2026-10-01 02:47"
     },
     {
       "id": "aperto-de-mao-sem-teto",
@@ -2873,9 +2873,9 @@
       "id": "esvaziar-lixeira-sem-fsync-da-pasta",
       "titulo": "`esvaziar_lixeira` apagava os volumes do `.trash` sem `fsync` da pasta: numa queda o dado apagado de vez voltava, com o `.reason` dizendo que saiu",
       "veredito": "PROVADA",
-      "segundos": 8.78,
+      "segundos": 10.75,
       "notas": [],
-      "quando": "2026-09-30 23:45"
+      "quando": "2026-10-01 02:47"
     },
     {
       "id": "expurgo-da-trilha-sem-fsync-da-pasta",
@@ -3020,6 +3020,56 @@
       "segundos": 7.04,
       "notas": [],
       "quando": "2026-10-01 01:11"
+    },
+    {
+      "id": "prova-do-gravar-privado-dentro-do-processo",
+      "titulo": "a prova do `gravar_privado` rodava no mesmo processo de um `Servidor::novo`: o gancho do 509 virava a recusa armada em SIGABRT, e ela só passava pela ordem alfabética",
+      "veredito": "PROVADA",
+      "segundos": 37.41,
+      "notas": [
+        "o binario abortou, que e como esta guarda pega"
+      ],
+      "quando": "2026-10-01 02:37"
+    },
+    {
+      "id": "pular-engole-a-posicao",
+      "titulo": "o `replicacao_pular` respondia «pulou» por uma posição que não foi ao disco: um reinício devolvia o par ao evento descartado",
+      "veredito": "PROVADA",
+      "segundos": 68.75,
+      "notas": [],
+      "quando": "2026-10-01 02:40"
+    },
+    {
+      "id": "registrar-engole-a-epoca-espelhada",
+      "titulo": "o `registrar` do cluster engolia a falha de gravar a época espelhada: o pulso respondia como se ela estivesse no disco",
+      "veredito": "PROVADA",
+      "segundos": 76.69,
+      "notas": [],
+      "quando": "2026-10-01 02:43"
+    },
+    {
+      "id": "blacklist-regravada-no-lugar",
+      "titulo": "o `blacklist.json` era regravado no lugar e sem `fsync`: a queda no meio deixava JSON pela metade, e o arranque o recusa",
+      "veredito": "PROVADA",
+      "segundos": 74.15,
+      "notas": [],
+      "quando": "2026-10-01 02:45"
+    },
+    {
+      "id": "esvaziar-esquece-no-erro",
+      "titulo": "o erro no meio do `esvaziar_lixeira` esquecia os volumes do `.trash` que já tinham saído sem `fsync` da pasta",
+      "veredito": "PROVADA",
+      "segundos": 10.39,
+      "notas": [],
+      "quando": "2026-10-01 02:46"
+    },
+    {
+      "id": "expurgo-esquece-no-erro",
+      "titulo": "o erro no meio da fase 3 do expurgo da trilha esquecia os volumes do `.lgpd` que já tinham saído sem `fsync` da pasta",
+      "veredito": "PROVADA",
+      "segundos": 10.78,
+      "notas": [],
+      "quando": "2026-10-01 02:46"
     },
     {
       "id": "cifra-do-fio-imposta",
