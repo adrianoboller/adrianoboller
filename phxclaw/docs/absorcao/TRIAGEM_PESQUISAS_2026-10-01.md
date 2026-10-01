@@ -95,3 +95,35 @@ inspiração ou recusa.**
 - Máquina ou VM Windows com WinDev (SP000025).
 - Chave do context7 (o serviço recebe o nome das bibliotecas consultadas).
 - Modelo de código forte só por API paga (o mesmo bloqueio da SP000015).
+
+
+---
+
+# Acréscimo: os 10 repositórios de agentes (01/10/2026, tarde)
+
+LangGraph, PydanticAI, Browser Use (MIT); Agno, Cognee, Graphiti, E2B, DeepEval (Apache-2.0);
+Mastra (Apache-2.0 menos `ee/`); Langfuse (parte `ee`). Fonte lido em clone raso, já apagado.
+
+**O dado que decidiu:** das 1.556 tarefas gravadas no disco, só 2 usaram modelo real (qwen2.5:3b).
+Numa delas, 4 de 9 chamadas falharam por argumento inválido; o erro do serde não dava o caminho do
+campo, o modelo repetiu o mesmo erro duas vezes e a tarefa fechou `completed` sem resolver.
+Amostra de 1 tarefa: raciocinado, não medido como taxa — a bancada antes/depois decide.
+
+| repo | mecanismo | decisão |
+|---|---|---|
+| LangGraph | estado por passo com ponteiro ao anterior; retomar de um passo antigo bifurca; interrupt | ADOTAR nativo pela gravação que já existe (SP000029) — nós desfazemos também os arquivos |
+| PydanticAI | valida antes de rodar, devolve todos os erros com caminho, orçamento de tentativas, saída tipada | ADOTAR nativo (SP000028): validador próprio das 7 palavras-chave usadas nos 66 esquemas, orçamento 2 |
+| Mastra | suspender/retomar passo com esquema; checagem de conclusão 0/1 | INSPIRAR → passo humano no fluxo (SP000029) e comando de verificação (SP000028) |
+| Agno | quatro modos de time | RECUSAR: três já existem |
+| Graphiti / Cognee | arestas bitemporais; grafo extraído pelo modelo | INSPIRAR → memória com substituição explícita e `invalid_at` (SP000030) |
+| Browser Use | índice nos elementos, `*` no novo, filtro por ordem de pintura | INSPIRAR → somar à SP000024 |
+| E2B | pausa/bifurca microVM | RECUSAR a VM; bifurcar cai na SP000029 |
+| Langfuse | prompt por (nome, versão) | ADOTAR mínimo: SHA do prompt e das skills na tarefa (SP000030) |
+| DeepEval | ToolCorrectness determinístico (LCS/conjunto); G-Eval com juiz | ADOTAR a nota parcial (SP000030); RECUSAR juiz de 3B |
+| laço avaliação → retry | — | já existe no motor; falta comando de verificação e recusar fim com falha (SP000028) |
+
+**Hipóteses que morreram:** checkpointer próprio (duplica a gravação); crate `jsonschema` (árvore
+grande para 7 palavras-chave); orçamento 1 (mataria a tarefa num 3B); contradição de memória pelo
+modelo (uma chamada por gravação num 3B, Kuzu sem manutenção); CRIU (não há processo vivo, GPL-2.0);
+autocrítica pelo próprio modelo (ganho fraco sem sinal externo); modos do Agno como frente; G-Eval por
+logprobs (juiz de 3B, suporte do Ollama não medido).
