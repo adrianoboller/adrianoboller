@@ -411,6 +411,57 @@ fn escrita_local_na_replica_rompe_dizendo_a_causa_e_nao_pula_o_source() {
     assert_eq!(ids_na_replica(porta_r), vec![1, 2, 3, 99]);
 }
 
+/// **Pedido 626, o ramo da CONTAGEM, sem depender da rodada.** A escrita
+/// local na replica e o source PARADO: a replica passa a contar mais eventos
+/// que o source, e so o ramo `no.eventos < posicao` de `alcancar_tabela` a
+/// alcanca -- nenhuma escrita do source chega para o lote comparar evento a
+/// evento. E o ramo que o teste de cima so pegava quando a rodada de 1 s
+/// caia entre a escrita local e o `inserir` no source, e por isso ele flocava.
+///
+/// **Defeito reposto** (a frase fixa «apagada e recriada no source» no ramo
+/// da contagem, sem `por_que_nao_continua`): a recusa culpa o source pelo que
+/// foi escrito aqui e o teste cai na asercao da causa.
+#[test]
+fn escrita_local_sem_o_source_andar_rompe_pela_contagem_dizendo_a_causa() {
+    let base_s = pasta("source-contagem");
+    let base_r = pasta("replica-contagem");
+    let (_source, porta_s) = subir_source(&base_s);
+    exigir(porta_s, r#""op":"criar_database","database":"loja""#);
+    criar_clientes(porta_s);
+    inserir(porta_s, 1..=3);
+    let (_replica, porta_r) = subir_replica(&base_r, porta_s);
+    esperar_eventos(porta_r, 3);
+
+    inserir(porta_r, 99..=99);
+    assert_eq!(escritas_locais(porta_r), 1);
+
+    let ate = Instant::now() + Duration::from_secs(20);
+    let recusa = loop {
+        if let Some(r) = recusa_de_clientes(porta_r) {
+            break r;
+        }
+        assert!(
+            Instant::now() < ate,
+            "a replica nao acusou em 20 s (ids: {:?})",
+            ids_na_replica(porta_r)
+        );
+        std::thread::sleep(Duration::from_millis(100));
+    };
+    assert!(
+        recusa.contains("tem 3 evento(s) e esta replica tem 4"),
+        "a recusa nao veio do ramo da contagem: {recusa}"
+    );
+    assert!(
+        recusa.contains("escrita LOCAL") && recusa.contains("somente_leitura"),
+        "a recusa tem de nomear a escrita local e o conserto: {recusa}"
+    );
+    assert!(
+        !recusa.contains("apagada e recriada"),
+        "a recusa culpou o source pelo que foi escrito aqui: {recusa}"
+    );
+    assert_eq!(ids_na_replica(porta_r), vec![1, 2, 3, 99]);
+}
+
 /// O irmao que trava a convergencia: COM `somente_leitura`, a escrita local
 /// e recusada no portao, nada se conta, e a replica segue o source.
 #[test]

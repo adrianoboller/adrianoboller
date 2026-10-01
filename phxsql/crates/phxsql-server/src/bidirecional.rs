@@ -455,6 +455,10 @@ pub struct MapaDeToques {
     /// e nao so que houve. Ele sobe **uma vez por parada**, porque a rodada
     /// seguinte nem chega ao evento.
     pub recusas_por_unicidade: u64,
+    /// Quantas vezes o mapa desta tabela recomecou porque o diario daqui era
+    /// de outra vida -- apagada e recriada, ou restaurada (pedido 620). So
+    /// sobe; publicado em `replicacao_estado` como `vidas_novas`.
+    pub vidas_novas: u64,
     /// Quantas chaves o teto ja ESQUECEU nesta tabela -- pedido 330 (b). So
     /// sobe; publicado em `replicacao_estado` como `esquecidas`.
     pub esquecidas: u64,
@@ -495,6 +499,21 @@ pub enum Decisao {
 }
 
 impl MapaDeToques {
+    /// Esquece o que veio do diario de OUTRA vida da tabela -- pedido 620.
+    ///
+    /// Sai o que se derivou daquele `.log`: `vistos`, a marca, os toques e o
+    /// piso (o piso e o toque esquecido de la, e decidiria contra uma chave
+    /// que nesta vida nunca foi tocada). Os contadores FICAM: eles contam o
+    /// que aconteceu neste processo, e uma tabela recriada nao desfaz o que
+    /// ja aconteceu.
+    pub fn recomecar_a_vida(&mut self) {
+        self.vistos = 0;
+        self.marca = None;
+        self.toques.clear();
+        self.piso = None;
+        self.vidas_novas += 1;
+    }
+
     /// O ultimo toque local CONHECIDO numa chave.
     pub fn toque(&self, chave: &str) -> Option<Toque> {
         self.toques.get(chave).copied()

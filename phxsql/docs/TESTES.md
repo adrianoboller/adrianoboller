@@ -1132,11 +1132,14 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `abrir-nao-espera-a-tabela-que-nasce-605` | Abrir uma tabela não esperava a que ainda nascia — só o campo «tabela» do servidor esperava | 1 | ✅ provada |
 | `copia-nasce-sem-reserva-605` | A cópia de tabela, irmã da criação, nascia sem reserva e atendia um terceiro antes do fsync | 1 | ✅ provada |
 | `terceiro-espera-dentro-da-trava-605` | Quem achava a tabela nascendo esperava com a trava global na mão e parava o servidor inteiro | 1 | ✅ provada |
+| `marca-do-diario-de-outra-vida-620` | A marca do diário de outra vida da tabela era aceita e a varredura pulava os eventos da vida nova | 1 | ✅ provada |
+| `mapa-de-toques-de-outra-vida-620` | O mapa de toques do bidirecional não zerava com a tabela recriada ou restaurada: o remoto mais velho sobrescrevia a escrita local nova | 3 | ✅ provada |
+| `replica-culpa-o-source-pela-contagem-626` | A réplica fiel culpava o source («apagada e recriada») pelo ramo da contagem mesmo quando a causa era escrita local | 1 | ✅ provada |
 | `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | — | 🪦 aposentada (18/09/2026) |
 
-**491 das 665 guardas do catálogo: 1 aposentada, 486 provadas, 4 redundantes** — 15113 s de mutação, medido de 2026-09-16 15:25 a 2026-10-01 18:04, em 6 datas (2026-09-16: 113, 2026-09-17: 8, 2026-09-18: 3, 2026-09-24: 177, 2026-09-30: 37, 2026-10-01: 153).
+**494 das 668 guardas do catálogo: 1 aposentada, 489 provadas, 4 redundantes** — 15161 s de mutação, medido de 2026-09-16 15:25 a 2026-10-01 18:41, em 6 datas (2026-09-16: 113, 2026-09-17: 8, 2026-09-18: 3, 2026-09-24: 177, 2026-09-30: 37, 2026-10-01: 156).
 
-> **Esta rodada NÃO julgou 175 das 665 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 175 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 175 das 668 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 175 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
 - `fk-antes-do-default` — a chave estrangeira confere a linha crua, e o DEFAULT sem mãe grava a filha órfã
 - `fk-antes-do-default-pelo-servidor` — o DEFAULT e a calculada sem mãe gravam a órfã pelo servidor, fora e dentro da transação

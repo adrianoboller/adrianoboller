@@ -22029,4 +22029,70 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         ],
         "prazo": 1800,
     },
+    {
+        "id": "marca-do-diario-de-outra-vida-620",
+        "titulo": "A marca do diário de outra vida da tabela era aceita e a varredura pulava os eventos da vida nova",
+        "porque": (
+            "pedido 620. A tabela apagada e recriada tem outro `.log` no mesmo "
+            "caminho; o `offset` da marca velha cai alem do `fim` do novo e a "
+            "varredura devolvia VAZIO -- quem le em sequencia pulava eventos "
+            "calado. A marca leva a ancora (o evento antes dela, por CRC-32 "
+            "dos 44 bytes) e so e usada se ela confere. Reposto, a leitura "
+            "com a marca velha devolve 0 eventos em vez de 50."
+        ),
+        "arquivo": "crates/phxsql-store/src/log.rs",
+        "trecho": """            Some(m) if self.marca_confere(&m) => Some(m),""",
+        "troca": """            // DEFEITO REPOSTO (620): a marca de outra vida e aceita.
+            Some(m) => Some(m),""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "replicacao"],
+        "caem": ["a_marca_de_outra_vida_da_tabela_nao_pula_os_eventos_da_nova"],
+        "seguem": ["a_marca_desta_vida_continua_valendo_depois_de_o_diario_crescer"],
+        "prazo": 1200,
+    },
+    {
+        "id": "mapa-de-toques-de-outra-vida-620",
+        "titulo": "O mapa de toques do bidirecional não zerava com a tabela recriada ou restaurada: o remoto mais velho sobrescrevia a escrita local nova",
+        "porque": (
+            "pedido 620. O mapa guardava `vistos` e a marca da vida velha; com "
+            "a tabela apagada e recriada (ou restaurada por cima) a escrita "
+            "local nova nao entrava no mapa e o «mais recente vence» deixava o "
+            "evento remoto MAIS VELHO vencer. Provado pelo soquete com uma "
+            "comporta TCP que fixa a ordem. Reposto, a chave 1 de B termina "
+            "com o nome de A nos tres cenarios (menor, maior, restaurada)."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """            if !mesma_vida {""",
+        "troca": """            // DEFEITO REPOSTO (620): o mapa nunca recomeca.
+            if !mesma_vida && false {""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "toques-de-outra-vida"],
+        "caem": [
+            "recriada_a_escrita_local_nova_vence_o_evento_remoto_mais_velho",
+            "recriada_e_crescida_a_escrita_local_nova_vence_o_evento_remoto_mais_velho",
+            "restaurada_a_escrita_local_nova_vence_o_evento_remoto_mais_velho",
+        ],
+        "seguem": ["na_mesma_vida_o_mapa_nao_recomeca_e_decide_como_sempre"],
+        "prazo": 1800,
+    },
+    {
+        "id": "replica-culpa-o-source-pela-contagem-626",
+        "titulo": "A réplica fiel culpava o source («apagada e recriada») pelo ramo da contagem mesmo quando a causa era escrita local",
+        "porque": (
+            "pedido 626, o irmao do 300 (4): o ramo `no.eventos < posicao` de "
+            "`alcancar_tabela` fixava a frase e nao chamava "
+            "`por_que_nao_continua`, e o teste da escrita local flocava quando "
+            "a rodada de 1 s caia entre a escrita local e a do source. Reposto, "
+            "a escrita local com o source parado sai culpando o source."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """                        self.por_que_nao_continua(&chave, no.eventos),""",
+        "troca": """                        // DEFEITO REPOSTO (626): a frase fixa culpa o source.
+                        String::from("a tabela foi apagada e recriada no source"),""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "continuidade-da-replica"],
+        "caem": ["escrita_local_sem_o_source_andar_rompe_pela_contagem_dizendo_a_causa"],
+        "seguem": ["tabela_apagada_e_recriada_no_source_e_acusada_e_nao_aplicada"],
+        "prazo": 1800,
+    },
 ]

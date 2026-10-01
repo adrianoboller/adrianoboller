@@ -590,6 +590,13 @@ dia, nunca no desejado:
   (`copia-nasce-sem-reserva-605`) e a espera do terceiro com a trava global
   na mao (`terceiro-espera-dentro-da-trava-605`). 663, medido pelo
   `--numeros` nesta arvore.
+  **SUBIU para 669 em 01/10/2026** (no merge, 666 + 3; pedidos 620 e 626): tres
+  guardas -- a marca do diario de outra vida da tabela pulando os eventos da
+  nova (`marca-do-diario-de-outra-vida-620`), o mapa de toques que nao
+  recomeca quando a tabela e recriada ou restaurada
+  (`mapa-de-toques-de-outra-vida-620`) e a replica que culpa o source pela
+  contagem (`replica-culpa-o-source-pela-contagem-626`). Medido pelo
+  `--numeros`.
 
 # A QUINTA REGUA: a tabela publicada pode ser MENOR que o catalogo
 
@@ -696,7 +703,7 @@ TETO_TESTE_MORTO = 0
 TETO_TRECHO_AMBIGUO = 0
 TETO_TESTE_FORA_DO_BINARIO = 0
 TETO_TESTE_SEM_MODULO = 0
-PISO_DAS_ENTRADAS = 666
+PISO_DAS_ENTRADAS = 669
 
 # ------------------------------------------------------------- APOSENTADAS
 #

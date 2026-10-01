@@ -3723,9 +3723,9 @@
       "id": "bidi-absorve-o-diario-sob-a-exclusiva-pelo-soquete",
       "titulo": "A primeira rodada do bidirecional depois do arranque absorvia o diário local inteiro com a trava exclusiva na mão — a prova pelo soquete, com o escritor de cliente gravando",
       "veredito": "PROVADA",
-      "segundos": 35.78,
+      "segundos": 33.36,
       "notas": [],
-      "quando": "2026-10-01 17:01"
+      "quando": "2026-10-01 18:41"
     },
     {
       "id": "pre-absorcao-fura-a-fila-do-escritor",
@@ -3875,9 +3875,9 @@
       "id": "escrita-local-na-replica-calada",
       "titulo": "A réplica aceitava escrita local calada, e a ruptura que ela causava culpava o source",
       "veredito": "PROVADA",
-      "segundos": 23.29,
+      "segundos": 21.9,
       "notas": [],
-      "quando": "2026-10-01 17:01"
+      "quando": "2026-10-01 18:41"
     },
     {
       "id": "novo-orfao-sobrevive-ao-excluir-tabela",
@@ -3934,6 +3934,30 @@
       "segundos": 83.68,
       "notas": [],
       "quando": "2026-10-01 18:04"
+    },
+    {
+      "id": "marca-do-diario-de-outra-vida-620",
+      "titulo": "A marca do diário de outra vida da tabela era aceita e a varredura pulava os eventos da vida nova",
+      "veredito": "PROVADA",
+      "segundos": 7.03,
+      "notas": [],
+      "quando": "2026-10-01 18:41"
+    },
+    {
+      "id": "mapa-de-toques-de-outra-vida-620",
+      "titulo": "O mapa de toques do bidirecional não zerava com a tabela recriada ou restaurada: o remoto mais velho sobrescrevia a escrita local nova",
+      "veredito": "PROVADA",
+      "segundos": 22.76,
+      "notas": [],
+      "quando": "2026-10-01 18:41"
+    },
+    {
+      "id": "replica-culpa-o-source-pela-contagem-626",
+      "titulo": "A réplica fiel culpava o source («apagada e recriada») pelo ramo da contagem mesmo quando a causa era escrita local",
+      "veredito": "PROVADA",
+      "segundos": 22.6,
+      "notas": [],
+      "quando": "2026-10-01 18:41"
     },
     {
       "id": "cifra-do-fio-imposta",

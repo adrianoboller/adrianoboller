@@ -4326,17 +4326,24 @@ impl Servidor {
                 return Ok(0);
             }
             if no.eventos < posicao {
+                // A causa sai do MESMO motor da conferencia evento a evento
+                // (pedido 626): este ramo fixava «apagada e recriada no
+                // source», e a escrita local aceita aqui chega nele sempre que
+                // a rodada cai entre ela e a escrita seguinte do source -- a
+                // replica culpava o source pelo que foi escrito nela. O evento
+                // que a vida daqui tomou e o primeiro que o source ainda nao
+                // tem, `no.eventos`.
                 self.romper_continuidade(
                     origem,
                     &chave,
                     posicao,
                     format!(
                         "o diario do source tem {} evento(s) e esta replica tem \
-                         {posicao}: ele nao continua o daqui -- a tabela foi \
-                         apagada e recriada no source. Esta tabela ficou como \
-                         estava; para segui-la de novo, apague-a nesta replica e \
-                         ela renasce do esquema do source",
-                        no.eventos
+                         {posicao}: ele nao continua o daqui -- {}. Esta tabela \
+                         ficou como estava; para segui-la de novo, apague-a nesta \
+                         replica e ela renasce do esquema do source",
+                        no.eventos,
+                        self.por_que_nao_continua(&chave, no.eventos),
                     ),
                 );
                 return Ok(0);
@@ -6272,6 +6279,24 @@ impl Servidor {
         let teto = self.config.replicacao.teto_de_toques;
         let mut guarda = self.toques_bidi.tomar("toques_bidi")?;
         let mapa = guarda.entry(chave_tab.to_string()).or_default();
+        // O mapa e da VIDA da tabela, e nao do nome (pedido 620). Apagada e
+        // recriada, ou restaurada de um backup, ela tem outro `.log` no mesmo
+        // caminho: com o `vistos` velho, os eventos locais novos ate ele nunca
+        // entravam no mapa, e o «mais recente vence» deixava um evento remoto
+        // MAIS VELHO sobrescrever a escrita local nova. A prova de que e a
+        // mesma vida e a ancora da marca, conferida no `.log` de agora; sem
+        // ela, ou com o diario menor que o `vistos`, o mapa recomeca -- custa
+        // uma varredura, e reconstruir do diario daqui e sempre certo.
+        if mapa.vistos > 0 {
+            let vistos = mapa.vistos;
+            let mesma_vida = vistos <= total
+                && mapa
+                    .marca
+                    .is_some_and(|m| m.evento == vistos && tabela.marca_do_diario_confere(&m));
+            if !mesma_vida {
+                mapa.recomecar_a_vida();
+            }
+        }
         // A marca da rodada anterior: sem ela, a tabela recem-aberta caminha
         // do comeco do volume ate `vistos` para ler um evento so -- 507-517
         // ms por rodada num diario de 1 M, com a trava na mao (ver
@@ -30240,7 +30265,7 @@ impl Servidor {
 
     /// `{"db/tabela": {"chaves": N, "vistos": N, "sob_a_exclusiva": N,
     /// "escritores_entre_fatias": N, "fatias_que_furaram_a_fila": N, "teto": N,
-    /// "esquecidas": N, "esquecido_ate": N}}` de
+    /// "esquecidas": N, "esquecido_ate": N, "vidas_novas": N}}` de
     /// toda tabela com mapa de toques -- pedido 330. Trava envenenada vira
     /// objeto vazio, como os contadores irmaos acima.
     fn toques_no_mapa(&self) -> Json {
@@ -30263,6 +30288,9 @@ impl Servidor {
                             m.piso.map_or(Json::Nulo, |(c, _)| Json::de_i64(c)),
                         ),
                         ("vistos", Json::de_u64(m.vistos)),
+                        // Pedido 620: quantas vezes o mapa recomecou porque
+                        // a tabela daqui era de outra vida.
+                        ("vidas_novas", Json::de_u64(m.vidas_novas)),
                         (
                             "sob_a_exclusiva",
                             Json::de_u64(m.absorvidos_sob_a_exclusiva),

@@ -298,14 +298,42 @@ fn tempero_novo(cab: &Cabecalho) -> [u8; 4] {
 /// serve** -- e era isso, e nao o que a replica aplica, que fazia a replicacao
 /// parecer lenta.
 ///
-/// A marca e uma **dica**, e nao uma verdade: uma errada faz ler menos, nunca
-/// ler lixo, porque o evento continua sendo conferido pelo CRC dele.
+/// A marca e uma **dica**, e nao uma verdade -- mas so enquanto ela e do
+/// MESMO diario. Pedido 620: a tabela apagada e recriada (ou restaurada) tem
+/// OUTRO `.log` no mesmo caminho, e o `offset` da marca velha cai no meio de
+/// um evento da vida nova (erro de CRC) ou depois do `fim` dela (a varredura
+/// devolve vazio e PULA os eventos novos -- e pular e dado errado, nao dica
+/// ruim). Por isso a marca leva a [`AncoraDaMarca`]: o evento logo antes dela,
+/// conferido byte a byte antes de a marca ser usada.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MarcaDoDiario {
     /// Numero do evento que comeca aqui, contando de zero.
     pub evento: u64,
     pub volume: u32,
     pub offset: u64,
+    /// O evento que a varredura leu logo antes desta posicao.
+    pub ancora: AncoraDaMarca,
+}
+
+/// O ultimo evento lido antes de uma [`MarcaDoDiario`], para provar que o
+/// diario em que ela vai ser usada e o mesmo em que ela nasceu -- pedido 620.
+///
+/// # Por que o cabecalho do evento, e nao um numero do arquivo
+///
+/// O cabecalho do `.log` nao tem identidade nenhuma (o sal so existe cifrado),
+/// e inventar uma seria mudar o formato para responder uma pergunta que o
+/// proprio diario ja responde: os 44 bytes de um evento levam o carimbo em
+/// milissegundos, o rowid, a versao, o tempero e o CRC da imagem. Outra vida
+/// da tabela no mesmo `offset` com os mesmos 44 bytes nao acontece -- e a
+/// restauracao de um backup da MESMA vida, cujo diario e um prefixo
+/// byte a byte deste, passa na conferencia e esta certa em passar: ate ali o
+/// que a marca resume continua verdade.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AncoraDaMarca {
+    pub volume: u32,
+    pub offset: u64,
+    /// CRC-32 dos 44 bytes do cabecalho do evento.
+    pub selo: u32,
 }
 
 /// O evento que o `.log` ficou devendo a uma linha que ja esta no `.reg` --
@@ -1013,11 +1041,20 @@ impl LogFile {
         let mut somados = 0usize;
 
         // De onde comecar. A marca so serve para uma posicao que esteja DEPOIS
-        // dela: caminhar para tras nao da, o evento nao tem largura fixa.
-        let (mut vistos, comeco) = match self.marca {
-            Some(m) if m.evento <= pular => (m.evento, Some(m)),
-            _ => (0, None),
+        // dela: caminhar para tras nao da, o evento nao tem largura fixa. E so
+        // se ela for DESTE diario (pedido 620): a de outra vida da tabela
+        // custa a varredura do comeco, nunca um evento pulado.
+        let marca = self.marca.filter(|m| m.evento <= pular);
+        let marca = match marca {
+            Some(m) if self.marca_confere(&m) => Some(m),
+            _ => None,
         };
+        let (mut vistos, comeco) = match marca {
+            Some(m) => (m.evento, Some(m)),
+            None => (0, None),
+        };
+        // O ultimo evento entregue, que vira a ancora da marca seguinte.
+        let mut ultimo: Option<AncoraDaMarca> = None;
 
         for volume in self.volumes.existentes() {
             if let Some(m) = comeco {
@@ -1049,11 +1086,14 @@ impl LogFile {
                     let ocupa = evento.tam_imagem as usize;
                     if com_imagem && !saida.is_empty() && somados.saturating_add(ocupa) > teto_bytes
                     {
-                        self.marca = Some(MarcaDoDiario {
-                            evento: vistos,
-                            volume,
-                            offset,
-                        });
+                        if let Some(ancora) = ultimo {
+                            self.marca = Some(MarcaDoDiario {
+                                evento: vistos,
+                                volume,
+                                offset,
+                                ancora,
+                            });
+                        }
                         return Ok(saida);
                     }
                     somados = somados.saturating_add(ocupa);
@@ -1079,6 +1119,12 @@ impl LogFile {
                         }
                     }
                     saida.push((evento, imagem));
+                    let ancora = AncoraDaMarca {
+                        volume,
+                        offset,
+                        selo: crc32(&buf),
+                    };
+                    ultimo = Some(ancora);
                     if limite > 0 && saida.len() as u64 >= limite {
                         // A marca aponta para o PROXIMO, que e o que o leitor
                         // sequencial vai pedir na chamada seguinte.
@@ -1086,6 +1132,7 @@ impl LogFile {
                             evento: vistos + 1,
                             volume,
                             offset: offset + evento.ocupa(),
+                            ancora,
                         });
                         return Ok(saida);
                     }
@@ -1094,7 +1141,61 @@ impl LogFile {
                 offset += evento.ocupa();
             }
         }
+        // Leu ate o fim: a marca fica logo depois do ultimo entregue. Sem
+        // isto, quem le o diario inteiro em lotes curtos saia sem marca nenhuma
+        // da ultima chamada, e a dica guardada era a de um lote atras -- ou
+        // nenhuma, e ai nao havia ancora para provar de que vida ela era.
+        if let Some(ancora) = ultimo {
+            let (ultimo_ev, _) = saida.last().expect("ha ancora, ha evento");
+            self.marca = Some(MarcaDoDiario {
+                evento: vistos,
+                volume: ancora.volume,
+                offset: ancora.offset + ultimo_ev.ocupa(),
+                ancora,
+            });
+        }
         Ok(saida)
+    }
+
+    /// A marca e DESTE diario? -- pedido 620.
+    ///
+    /// Confere os 44 bytes do evento ancora contra o selo que a marca levou.
+    /// Volume que nao existe, ancora depois do `fim` ou leitura que falha
+    /// respondem `false`: a pergunta e «posso confiar nela», e na duvida a
+    /// resposta custa uma varredura, nunca um evento.
+    pub fn marca_confere(&mut self, m: &MarcaDoDiario) -> bool {
+        let a = m.ancora;
+        if !self.volumes.existe(a.volume) {
+            return false;
+        }
+        let Ok(cab) = self.cab(a.volume) else {
+            return false;
+        };
+        if a.offset < cab.cab_len as u64 || a.offset + EVENTO_CAB as u64 > cab.fim {
+            return false;
+        }
+        let mut buf = [0u8; EVENTO_CAB];
+        if self.volumes.ler(a.volume, a.offset, &mut buf).is_err() {
+            return false;
+        }
+        if crc32(&buf) != a.selo {
+            return false;
+        }
+        // A posicao da marca tem de ser o fim do evento ancora (mesmo volume)
+        // ou o comeco do volume seguinte -- senao a marca foi montada a mao.
+        let Ok(ev) = Evento::ler(&buf) else {
+            return false;
+        };
+        let depois = a.offset + ev.ocupa();
+        if m.volume == a.volume {
+            m.offset == depois
+        } else {
+            m.volume > a.volume
+                && depois == cab.fim
+                && self
+                    .cab(m.volume)
+                    .is_ok_and(|c| m.offset == c.cab_len as u64)
+        }
     }
 
     /// Onde a ultima varredura parou. Ver [`MarcaDoDiario`].
@@ -1110,10 +1211,13 @@ impl LogFile {
 
     /// Aceita uma dica de onde comecar. Ver [`MarcaDoDiario`].
     ///
-    /// Nao ha o que validar aqui, e de proposito: uma marca errada faz a
-    /// varredura comecar no lugar errado e o evento lido nao passar no CRC, ou
-    /// o offset cair depois do `fim` e a leitura devolver vazio. Nenhum dos
-    /// dois entrega dado errado -- e por isso ela e uma dica.
+    /// Nao se valida aqui, e de proposito: a conferencia custa uma leitura de
+    /// disco e mora onde a marca e USADA ([`LogFile::marca_confere`], chamada
+    /// pela varredura). Ate o pedido 620 este comentario dizia que a marca
+    /// errada «nao entrega dado errado» -- e entregava: o offset depois do
+    /// `fim` de um diario recriado fazia a varredura devolver vazio, e quem le
+    /// em sequencia (o mapa de toques do bidirecional) pulava os eventos
+    /// novos calado.
     pub fn definir_marca(&mut self, marca: Option<MarcaDoDiario>) {
         self.marca = marca;
     }

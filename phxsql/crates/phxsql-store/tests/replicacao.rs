@@ -345,6 +345,93 @@ fn a_marca_e_so_uma_dica_e_a_de_tras_ainda_serve() {
     }
 }
 
+/// **Pedido 620.** A marca guardada de uma VIDA da tabela nao serve para a
+/// seguinte: apagada e recriada no mesmo caminho, a tabela tem outro `.log`,
+/// e o `offset` da marca velha cai depois do `fim` do novo -- a varredura
+/// devolvia VAZIO, e quem le em sequencia (o mapa de toques do bidirecional,
+/// as marcas da replicacao no servidor) pulava os eventos novos calado.
+///
+/// A primeira vida grava linhas gordas (memo e binario) e a segunda magras,
+/// para o offset velho ficar alem do fim novo mesmo com MAIS eventos.
+///
+/// **Defeito reposto** (`percorrer` usando a marca sem `marca_confere`): a
+/// leitura com a marca velha devolve 0 eventos e o `assert_eq!` do tamanho
+/// cai.
+#[test]
+fn a_marca_de_outra_vida_da_tabela_nao_pula_os_eventos_da_nova() {
+    let dir = DirTemp::novo("marca-outra-vida");
+    let pasta = dir.0.join("vida");
+    std::fs::create_dir_all(&pasta).unwrap();
+    let mut t = Table::criar(pasta.join("s"), esquema()).unwrap();
+    t.ligar_imagem_no_diario(true);
+    for i in 1..=100 {
+        t.inserir(&linha(i)).unwrap();
+    }
+    t.sincronizar().unwrap();
+    t.definir_marca_do_diario(None);
+    assert_eq!(t.diario_com_imagem(0, 0).unwrap().len(), 100);
+    let velha = t
+        .marca_do_diario()
+        .expect("ler ate o fim deixa a marca no fim");
+    assert_eq!(velha.evento, 100);
+    assert!(t.marca_do_diario_confere(&velha));
+    drop(t);
+
+    // A outra vida: mesmo caminho, linhas magras, e MAIS eventos que a velha.
+    std::fs::remove_dir_all(&pasta).unwrap();
+    std::fs::create_dir_all(&pasta).unwrap();
+    let mut t = Table::criar(pasta.join("s"), esquema()).unwrap();
+    t.ligar_imagem_no_diario(true);
+    for i in 1..=150 {
+        let mut l = linha(i);
+        l[3] = Value::Null;
+        l[4] = Value::Null;
+        t.inserir(&l).unwrap();
+    }
+    t.sincronizar().unwrap();
+
+    assert!(
+        !t.marca_do_diario_confere(&velha),
+        "a marca da vida velha passou por marca desta"
+    );
+    t.definir_marca_do_diario(Some(velha));
+    let com_a_velha = t.diario_com_imagem(100, 0).unwrap();
+    t.definir_marca_do_diario(None);
+    let sem_marca = t.diario_com_imagem(100, 0).unwrap();
+    assert_eq!(
+        com_a_velha.len(),
+        50,
+        "a marca de outra vida pulou eventos da nova"
+    );
+    for (a, b) in com_a_velha.iter().zip(sem_marca.iter()) {
+        assert_eq!(a.0, b.0);
+        assert_eq!(a.1, b.1);
+    }
+}
+
+/// O comportamento velho: a marca DESTA vida continua confirmada e usada --
+/// inclusive depois de o diario crescer, que e o caso de toda rodada.
+#[test]
+fn a_marca_desta_vida_continua_valendo_depois_de_o_diario_crescer() {
+    let dir = DirTemp::novo("marca-mesma-vida");
+    let mut t = Table::criar(dir.0.join("s"), esquema()).unwrap();
+    t.ligar_imagem_no_diario(true);
+    for i in 1..=40 {
+        t.inserir(&linha(i)).unwrap();
+    }
+    let _ = t.diario_com_imagem(0, 0).unwrap();
+    let marca = t.marca_do_diario().unwrap();
+    for i in 41..=60 {
+        t.inserir(&linha(i)).unwrap();
+    }
+    t.sincronizar().unwrap();
+    assert!(t.marca_do_diario_confere(&marca));
+    t.definir_marca_do_diario(Some(marca));
+    let lote = t.diario_com_imagem(40, 0).unwrap();
+    assert_eq!(lote.len(), 20);
+    assert_eq!(lote[0].0.rowid, 41);
+}
+
 #[test]
 fn a_marca_atravessa_a_troca_de_volume() {
     // Volumes pequenos: a marca tem de continuar valendo quando a leitura
