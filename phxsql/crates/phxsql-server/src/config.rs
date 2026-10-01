@@ -427,6 +427,15 @@ pub struct Replicacao {
     /// colide em metade dos pares com `passo = 2`, e colidir e o defeito que a
     /// faixa existe para consertar (ver `phxsql_store::no`).
     pub inicio_da_sequencia: u64,
+    /// Quantas chaves distintas o mapa de toques do bidirecional guarda POR
+    /// TABELA -- pedido 330 (b). Passando dele, o mapa esquece os toques mais
+    /// velhos e guarda o mais novo esquecido como piso; o evento remoto que
+    /// cai numa chave esquecida e nao passa do piso PARA o par naquela tabela
+    /// (`toque_esquecido_pelo_teto`), em vez de escolher um lado calado.
+    ///
+    /// Padrao [`crate::bidirecional::TETO_DE_TOQUES_PADRAO`], medido. Vale no
+    /// arranque: o mapa e estado de processo, e se refaz do diario.
+    pub teto_de_toques: u64,
 }
 
 impl Replicacao {
@@ -488,6 +497,7 @@ impl Default for Replicacao {
             origens: Vec::new(),
             imagem_da_linha: false,
             inicio_da_sequencia: 0,
+            teto_de_toques: crate::bidirecional::TETO_DE_TOQUES_PADRAO,
         }
     }
 }
@@ -4975,6 +4985,23 @@ impl Config {
                     Papel::de_texto(r.texto_ou("papel", "isolado"))?.exige_imagem(),
                 ),
                 inicio_da_sequencia: inicio_da_sequencia(r)?,
+                teto_de_toques: {
+                    // Zero ou negativo e ERRO na subida: um teto de zero
+                    // esqueceria tudo e pararia todo par na primeira
+                    // alteracao, e corrigir calado para 1 seria pior.
+                    let n = r.inteiro_ou(
+                        "teto_de_toques",
+                        crate::bidirecional::TETO_DE_TOQUES_PADRAO as i64,
+                    );
+                    if n < 1 {
+                        return Err(PhxError::Esquema(format!(
+                            "replicacao.teto_de_toques {n} invalido: use 1 em diante \
+                             (chaves por tabela; ausente = {})",
+                            crate::bidirecional::TETO_DE_TOQUES_PADRAO
+                        )));
+                    }
+                    n as u64
+                },
             },
         };
         let mut rep = rep;
@@ -5677,6 +5704,10 @@ impl Config {
                     (
                         "numero_servidor",
                         Json::de_u64(self.replicacao.numero_servidor as u64),
+                    ),
+                    (
+                        "teto_de_toques",
+                        Json::de_u64(self.replicacao.teto_de_toques),
                     ),
                     // O que a tela da replicacao precisa para dizer a verdade:
                     // sem a imagem no diario o servidor tem papel de source e

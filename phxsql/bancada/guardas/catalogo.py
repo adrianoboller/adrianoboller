@@ -592,10 +592,8 @@ GUARDAS = [
             "a operacao."
         ),
         "arquivo": "crates/phxsql-server/src/servidor.rs",
-        "trecho": """            if let Some(u) = &sessao.usuario {
-                if !u.pode_em(&database, &nome, Atividade::Replicar) {
-                    continue;
-                }
+        "trecho": """            if !replica_alcanca(sessao.usuario.as_ref(), &database, &nome) {
+                continue;
             }
             let mut t = db.abrir_qualificada(&nome)?;
 """,
@@ -3131,15 +3129,13 @@ pub fn limpar() {
         # depois do DEFAULT e da calculada, e a aridade saiu dela para a porta
         # de cada caminho. O portao continua o `&& self.julga_integridade()` da
         # mesma linha; a amarra agora e o nome do argumento, que so ela tem.
-        "trecho": """        if fks_que_conferem(&self.esquema).next().is_some() && self.julga_integridade() {
+        "trecho": """        if self.julga_integridade() {
             self.conferir_fks_com(linha_final, maes)?;
-        }
-        Ok(())""",
+        } else if let Some(mut c) = self.orfas.take() {""",
         "troca": """        // DEFEITO REPOSTO: a replica volta a julgar o que a origem ja julgou.
         if fks_que_conferem(&self.esquema).next().is_some() {
             self.conferir_fks_com(linha_final, maes)?;
-        }
-        Ok(())""",
+        } else if let Some(mut c) = self.orfas.take() {""",
         "pacote": "phxsql-store",
         "alvo": ["--test", "replicacao-integridade"],
         "caem": [
@@ -3242,6 +3238,7 @@ pub fn limpar() {
         "trecho": """        let r = self.aplicar_evento_interno(operacao, rowid, imagem);
         self.honrar_rownum = false;
         self.como_replica = false;
+        self.fechar_orfa(r.is_ok());
         r""",
         "troca": """        // DEFEITO REPOSTO: a marca fica acesa depois do evento.
         self.aplicar_evento_interno(operacao, rowid, imagem)""",
@@ -3497,6 +3494,7 @@ pub fn limpar() {
         self.como_replica = true;
         let r = self.inserir(valores);
         self.como_replica = false;
+        self.fechar_orfa(r.is_ok());
         r
     }""",
         "troca": """    pub fn inserir_replicado(&mut self, valores: &[Value]) -> Result<RowId> {
@@ -8669,6 +8667,11 @@ pub fn limpar() {
                 if alcance.is_some_and(|ts| !ts.contains(&t)) {
                     continue;
                 }
+                if let EscopoDaPosicao::DoQueSeServe(u) = escopo {
+                    if !replica_alcanca(u, &b, &t) {
+                        continue;
+                    }
+                }
                 match db.abrir_qualificada(&t) {
                     Ok(mut tab) => match tab.eventos() {
                         Ok(n) => {
@@ -8688,6 +8691,11 @@ pub fn limpar() {
             for t in tabelas {
                 if alcance.is_some_and(|ts| !ts.contains(&t)) {
                     continue;
+                }
+                if let EscopoDaPosicao::DoQueSeServe(u) = escopo {
+                    if !replica_alcanca(u, &b, &t) {
+                        continue;
+                    }
                 }
                 if let Ok(mut tab) = db.abrir_qualificada(&t) {
                     if let Ok(n) = tab.eventos() {
@@ -21441,9 +21449,11 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "replica que tem 5 eventos replicados e 8 locais publica 13."
         ),
         "arquivo": "crates/phxsql-server/src/servidor.rs",
-        "trecho": """            (crate::cluster::PapelVivo::Master, _) => EscopoDaPosicao::Tudo,""",
+        "trecho": """            (crate::cluster::PapelVivo::Master, _) => {
+                EscopoDaPosicao::DoQueSeServe(usuario.as_ref())
+            }""",
         "troca": """            // DEFEITO REPOSTO (300): todo mundo soma tudo.
-            _ => EscopoDaPosicao::Tudo,""",
+            _ => EscopoDaPosicao::DoQueSeServe(None),""",
         "pacote": "phxsql-server",
         "alvo": ["--lib"],
         "caem": [
@@ -21498,5 +21508,139 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "ledger::testes::cadeia_marcada_gravada_antes_da_guarda_abre_le_e_grava",
         ],
         "prazo": 1200,
+    },
+    {
+        "id": "mapa-de-toques-sem-teto",
+        "titulo": "O mapa de toques do bidirecional crescia uma entrada por chave distinta, sem teto, o processo inteiro",
+        "porque": (
+            "pedido 330 (b). 86-118 bytes de RSS por chave (`--example "
+            "custo-da-absorcao-do-bidi -- --teto N`, 01/10/2026): 10 M chaves "
+            "eram ~1 GiB vivo e calado. Reposto, o mapa passa do teto e nada "
+            "se esquece."
+        ),
+        "arquivo": "crates/phxsql-server/src/bidirecional.rs",
+        "trecho": """        if self.toques.len() <= teto {
+            return;
+        }""",
+        "troca": """        // DEFEITO REPOSTO (330 b): sem teto.
+        if self.toques.len() <= usize::MAX {
+            return;
+        }""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "bidirecional::testes::o_teto_vale_no_limite_e_esquece_os_mais_velhos",
+        ],
+        "seguem": [
+            "bidirecional::testes::sem_passar_do_teto_nada_muda",
+        ],
+        "prazo": 1800,
+    },
+    {
+        "id": "toque-esquecido-decide-as-cegas",
+        "titulo": "Chave esquecida pelo teto decidia «vence» abaixo do piso, e a escrita velha de lá apagava a nova daqui calada",
+        "porque": (
+            "pedido 330 (b), a garantia do teto: esquecer so nao perde decisao "
+            "se a chave esquecida abaixo do piso PARAR o par. Reposto, a "
+            "escrita mais velha de A sobrescreve a mais nova de B pelo soquete."
+        ),
+        "arquivo": "crates/phxsql-server/src/bidirecional.rs",
+        "trecho": """                Some(p) if !remoto_vence(carimbo, origem, &p) => Decisao::NaoSei,""",
+        "troca": """                // DEFEITO REPOSTO (330 b): ausente = vence, como antes do teto.
+                Some(p) if p.carimbo == i64::MIN && !remoto_vence(carimbo, origem, &p) => {
+                    Decisao::NaoSei
+                }""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "teto-dos-toques"],
+        "caem": ["chave_esquecida_para_o_par_em_vez_de_perder_a_escrita"],
+        "seguem": ["sem_passar_do_teto_o_par_decide_como_sempre"],
+        "prazo": 1800,
+    },
+    {
+        "id": "master-conta-tabela-negada-ao-cluster",
+        "titulo": "O master somava na posição do cluster a tabela que o usuário do cluster não pode replicar",
+        "porque": (
+            "pedido 300, o resto do (3). Nenhuma replica tera a tabela negada, "
+            "e somada ela punha o master 5 eventos a frente de toda replica por "
+            "dado que nao viaja. Reposto, a posicao sai 13 em vez de 8."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """                EscopoDaPosicao::DoQueSeServe(usuario.as_ref())""",
+        "troca": """                // DEFEITO REPOSTO (300): o master soma o que nao serve.
+                EscopoDaPosicao::DoQueSeServe(None)""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_config_gravar::o_master_nao_conta_a_tabela_negada_ao_usuario_do_cluster",
+        ],
+        "seguem": [
+            "servidor::testes_config_gravar::usuario_do_cluster_fora_do_cadastro_soma_como_antes",
+            "servidor::testes_config_gravar::o_master_soma_tudo_e_a_replica_sem_anuncio_diz_que_nao_sabe",
+        ],
+        "prazo": 1800,
+    },
+    {
+        "id": "replica-grava-filha-sem-mae-calada",
+        "titulo": "A réplica gravava a filha sem a mãe e nada contava: o invariante «só existe filho se o pai existir» caía calado",
+        "porque": (
+            "pedido 300 §2.7. A replica aplica e nao julga (medido), e os tres "
+            "maduros CONTAM a divergencia do aplicador. Reposto, as tres filhas "
+            "que chegam antes da mae entram e `orfas_na_replica` fica vazio."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """                Err(PhxError::Integridade(_)) => Some(true),""",
+        "troca": """                // DEFEITO REPOSTO (300 §2.7): o veredito se perde.
+                Err(PhxError::Integridade(_)) => None,""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "orfas-na-replica"],
+        "caem": [
+            "a_filha_que_chega_antes_da_mae_e_contada",
+            "no_bidirecional_a_filha_antes_da_mae_tambem_e_contada",
+        ],
+        "seguem": ["com_a_mae_primeiro_nada_e_contado"],
+        "prazo": 1800,
+    },
+    {
+        "id": "bidi-grava-filha-sem-mae-calada",
+        "titulo": "O bidirecional gravava a filha sem a mãe calado, enquanto a réplica fiel já contava",
+        "porque": (
+            "pedido 300 §2.7, o caminho irmao: `inserir_replicado` tambem nao "
+            "julga. Reposto, a replica fiel conta e o bidirecional publica zero."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        // conferencia que conta.
+        tabela.contar_orfas();""",
+        "troca": """        // conferencia que conta.
+        // DEFEITO REPOSTO (300 §2.7): o irmao nao liga a contagem.""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "orfas-na-replica"],
+        "caem": ["no_bidirecional_a_filha_antes_da_mae_tambem_e_contada"],
+        "seguem": [
+            "a_filha_que_chega_antes_da_mae_e_contada",
+            "com_a_mae_primeiro_nada_e_contado",
+        ],
+        "prazo": 1800,
+    },
+    {
+        "id": "escrita-local-na-replica-calada",
+        "titulo": "A réplica aceitava escrita local calada, e a ruptura que ela causava culpava o source",
+        "porque": (
+            "pedido 300 (4). A escrita local toma o lugar do evento seguinte do "
+            "source; a continuidade para a tabela, mas dizia «apagada e "
+            "recriada no source». Reposto, nada se conta e a recusa volta a "
+            "culpar o source."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """            *m.entry(Self::chave_do_diario(db, tab)).or_default() += 1;""",
+        "troca": """            // DEFEITO REPOSTO (300 (4)): a escrita local passa calada.
+            let _ = (&mut m, db, tab);""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "continuidade-da-replica"],
+        "caem": ["escrita_local_na_replica_rompe_dizendo_a_causa_e_nao_pula_o_source"],
+        "seguem": [
+            "com_somente_leitura_a_escrita_local_e_recusada_e_a_replica_segue",
+            "tabela_apagada_e_recriada_no_source_e_acusada_e_nao_aplicada",
+        ],
+        "prazo": 1800,
     },
 ]

@@ -1113,6 +1113,48 @@ mapa é gravado inteiro e o alcance de outra origem o levaria ao disco no meio
 deste. Prova contra o SO: `a_posicao_do_bidirecional_vai_ao_disco_depois_do_dado`
 (`strace -ff -y`).
 
+### O mapa de toques tem teto — e esquecer não perde decisão (pedido 330 b)
+
+O «mais recente vence» lembra o último toque local de cada chave distinta, num
+mapa em memória refeito do diário. Ele não tinha teto: medido
+(`--example custo-da-absorcao-do-bidi -p phxsql-store -- --teto N`, release,
+um tamanho por processo, 01/10/2026), **86–118 bytes de RSS por chave** (100 k:
+86–87; 300 k: 104; 1 M: 118; 3 M: 89 — a variação é a folga da tabela de
+espalhamento logo depois de dobrar). Dez milhões de chaves eram ~1 GiB vivo o
+processo inteiro, e nada dizia.
+
+**`replicacao.teto_de_toques`** (chaves por tabela; padrão **1.000.000**, ~113 MiB
+no pior medido; zero ou negativo recusa a subida). Passando dele, o mapa
+esquece **um quarto, os toques mais velhos**, de uma vez (uma passada a cada
+`teto/4` inserções, e não uma por inserção), e guarda o mais novo esquecido como
+**piso**. Para uma chave fora do mapa, o toque local que existiu é `<= piso`;
+então:
+
+- evento remoto **acima** do piso **vence** com certeza — a mesma resposta que o
+  mapa inteiro daria;
+- evento remoto que **não passa** do piso numa chave esquecida **não tem
+  resposta**, e o par **PARA** naquela tabela com `toque_esquecido_pelo_teto`
+  (o mesmo mecanismo da parada por unicidade: a posição não anda, e o grito
+  nomeia a chave e o caminho de volta). «Vence» podia apagar uma escrita daqui
+  mais nova; «perde» podia jogar fora uma de lá mais nova — os dois calados.
+
+O caminho de volta é **subir o teto e reiniciar** (o mapa se refaz do diário com
+o teto novo) ou `replicacao_pular`, sabendo que o evento será pulado.
+`replicacao_estado.toques_no_mapa["db/tabela"]` publica `chaves`, `teto`,
+`esquecidas` e `esquecido_ate` (o carimbo do piso). Provas:
+`teto-dos-toques.rs` pelo soquete (a escrita mais velha de A sobre a chave que B
+esqueceu para o par em vez de sobrescrever; sem passar do teto, nada muda) e os
+testes de `bidirecional.rs` no limite (exatamente `teto` chaves não esquecem;
+`teto + 1` dispara). **Limite dito:** a contagem de colisão de criação
+(`colisoes_de_sequencia`) não enxerga a chave esquecida — a decisão continua
+certa, a contagem pode sair menor.
+
+**Por que não tirar o mapa da RAM:** a decisão do J (01/10/2026, §330 b) era pôr
+o último toque na linha (coluna de sistema, mudança de formato, papel C). O
+teto resolve o crescimento **sem** formato novo e sem perder decisão; a coluna
+de sistema continua sendo o caminho se o `NaoSei` aparecer em produção — e o
+número que diria isso é o `esquecidas` publicado.
+
 ### O que o bidirecional NÃO é
 
 - **Não é para mais de dois ainda.** O desenho (origem por evento) suporta
@@ -1168,6 +1210,55 @@ Para isso valer, cada evento aplicado tem de gerar **exatamente um** evento
 local. É por isso que uma exclusão que não acha o que excluir é tratada como
 divergência e para: se passasse batido, o evento não geraria evento, a posição
 não andaria, e a replicação giraria em falso puxando o mesmo para sempre.
+
+### A escrita local na réplica não pula evento do source — e a recusa diz por quê (pedido 300 (4))
+
+A posição é a contagem do diário daqui, então uma escrita LOCAL na réplica toma
+o lugar do evento seguinte do source. Ela não passa calada: a conferência de
+continuidade compara o evento `posição-1` dos dois lados e **para a tabela**
+(nada do source entra por cima, nada é pulado). O que faltava era a causa: a
+recusa dizia «a tabela foi apagada e recriada no source» — culpava o source pelo
+que foi escrito aqui.
+
+Os três maduros recusam escrita na réplica (`hot_standby` do PostgreSQL,
+`read_only` do MySQL e da MariaDB); aqui a recusa é o **`somente_leitura`**, que
+continua **pedida, não imposta** (quem escreve numa réplica hoje não para de um
+dia para o outro), e o arranque avisa quando falta. Sem ele, a réplica fiel
+**conta** cada pedido de escrita local aceito, por tabela
+(`replicacao_estado.escritas_locais`), e a ruptura **nomeia** a escrita local,
+quantas, e o conserto. Sem o número (outro processo aceitou) e sem
+`somente_leitura`, a recusa nomeia **as duas** causas possíveis em vez de escolher
+uma. Prova pelo soquete em `continuidade-da-replica.rs`.
+
+**Por que não a «coordenada da origem por tabela»** (o meio que a triagem citava):
+com o rowid como identidade, a escrita local diverge a réplica de qualquer
+jeito — a inclusão seguinte do source não acha o rowid dela e para. Trocar o
+contador pela coordenada mudaria o lugar da parada, não o fato; o comportamento
+convergente (não pular calado) já vale pela continuidade.
+
+### Filhas sem mãe na réplica são CONTADAS (pedido 300 §2.7)
+
+A réplica aplica e não julga a chave estrangeira (`Table::julga_integridade`,
+medido: julgar perdia 2 de 2 eventos). A filha chega antes da mãe, e o
+invariante «só existe filho se o pai existir primeiro» não vale na réplica no
+intervalo — e para sempre quando a mãe não é replicada. Os três maduros contam a
+divergência do aplicador (`apply_error_count`, `LAST_ERROR_*`, `Last_Errno`):
+aceite automático. `replicacao_estado.orfas_na_replica["db/tabela"]` traz
+`orfas` (linhas gravadas sem a mãe naquele instante) e `sem_conferir` (mãe que
+não deu para conferir por outro motivo). Vale para a réplica fiel e para o
+bidirecional, pelo mesmo motor (`Table::conferir_as_maes`): a conferência é a
+de quem julga, só muda o que se faz com a resposta. Conta o que **aconteceu**,
+como o contador do PostgreSQL — a mãe que chega depois cura o dado, não o
+número.
+
+**Custo medido** (`--example custo-das-orfas -p phxsql-store`, release, 50.000
+eventos, três corridas): só em tabela com chave conferida, **6,6–6,8 µs/evento**
+sem contar contra **8,5–9,3 µs** contando com a mãe presente (+1,9–2,7 µs, uma
+busca no índice da mãe e a leitura da linha dela por evento). A triagem dizia «da
+ordem de um incremento» — era raciocínio, e estava errado. Tabela sem chave
+conferida não paga nada: o portão vem antes do trabalho. **Limite dito:** conta o
+lado da filha; a mãe excluída antes da filha na réplica (ordem entre tabelas)
+não é contada, porque perguntar às irmãs é a varredura que o `excluir` paga.
 
 ### Cascata
 
