@@ -1712,6 +1712,16 @@ externos vai junto, não os ponteiros: os offsets do `.bin` e do `.memo` são
 desta máquina e apontariam para qualquer coisa na outra. É a mesma razão pela
 qual o `.trash` guarda conteúdo.
 
+**O bit alto da `coluna` de um externo (`0x8000`, `EXTERNO_SELADO`) diz que o
+conteúdo vai selado** com a chave do `.reg` que o gravou — `[nonce 24][cifrado]
+[etiqueta 16]`, como no `.memo`/`.bin` de coluna marcada. Desde o pedido 344
+(01/10/2026): é a **origem** quem sabe se selou, e não quem recebe, que antes
+decidia pelo próprio estado e gravava o selado como dado numa réplica sem
+cofre. No `.log` o bit vem aceso para coluna marcada de tabela cifrada; a
+imagem que sai pelo `replicar` vem **aberta** e com o bit apagado. Coluna
+real nunca passa de 32.767, então o bit estava livre; imagem gravada antes
+desta versão não tem o bit e é lida como aberta (sem dado em produção ainda).
+
 Exclusão não leva imagem: o rowid basta.
 
 O CRC cobrir a imagem, e não só o cabeçalho, é o detalhe que importa: a imagem é

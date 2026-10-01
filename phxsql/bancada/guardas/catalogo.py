@@ -19362,4 +19362,91 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "servidor::testes_recusa_sem_dado_pessoal::a_coluna_sem_marca_continua_citando_o_valor",
         ],
     },
+    {
+        "id": "externo-selado-gravado-como-anexo",
+        "titulo": "A réplica decidia pelo PRÓPRIO cofre se o externo marcado da imagem vinha selado: sem cofre gravava o texto cifrado como o anexo, calada; com a mesma senha acusava adulteração que não houve",
+        "porque": (
+            "pedido 344. `abrir_externo` perguntava `!self.material.cifrado()` "
+            "ao arquivo DAQUI: sem cofre devolvia os 68 bytes "
+            "[nonce][cifrado][etiqueta] como se fossem o anexo de 28, e o "
+            "`aplicar_evento` respondia ok. Com cofre, o sal e por arquivo e "
+            "a etiqueta nao conferia -- «ou o dado foi alterado». So a origem "
+            "sabe se selou, e o bit EXTERNO_SELADO da imagem leva a resposta."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """                    let bytes = if *selado {
+                        self.abrir_externo_alheio(i, bytes)?
+                    } else {
+                        bytes.clone()
+                    };
+""",
+        "troca": """                    // DEFEITO REPOSTO (344): decide pelo estado deste arquivo.
+                    let _ = selado;
+                    let bytes = self.reg.abrir_externo(i as u16, bytes)?;
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "imagem-de-replicacao-com-coluna-marcada"],
+        "caem": [
+            "imagem_selada_recusa_nomeando_e_nunca_grava_o_selado",
+            "imagem_aberta_para_o_fio_replica_com_e_sem_cofre",
+        ],
+        "seguem": [
+            "a_imagem_leva_o_inline_em_claro_e_o_externo_selado",
+            "sem_coluna_marcada_a_imagem_e_a_de_sempre",
+        ],
+    },
+    {
+        "id": "replicar-manda-o-externo-selado",
+        "titulo": "O `replicar` mandava ao fio o externo marcado selado com a chave do `.reg` da origem: nenhuma réplica o abria, nem com a mesma senha, porque o sal é por arquivo",
+        "porque": (
+            "pedido 344, a metade da origem. A imagem do diario guarda o "
+            "externo selado, e o `.log` deve continuar assim; quem abre e a "
+            "RESPOSTA do `replicar`, pelo fio que o 342 ja exige cifrado. "
+            "Medido pelo soquete, origem `phxsqld` com cofre: replica sem "
+            "cofre gravava 68 bytes de lixo; com a mesma senha parava com "
+            "«a etiqueta nao confere»."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """            let imagem = t.imagem_para_o_fio(&imagem)?;
+""",
+        "troca": """            // DEFEITO REPOSTO (344): a imagem do diario vai selada ao fio.
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "coluna-externa-marcada-na-replica"],
+        "caem": [
+            "replica_sem_cofre_nao_grava_o_selado_como_anexo",
+            "mesma_senha_replica_a_coluna_externa_marcada",
+        ],
+        "seguem": ["sem_coluna_marcada_o_anexo_replica_como_sempre"],
+        "prazo": 600,
+    },
+    {
+        "id": "visoes-entrega-o-literal",
+        "titulo": "A op `visoes` pede só `ler` e devolvia o SQL da visão verbatim: o literal do `WHERE` e o comentário saíam para quem tinha a coluna negada",
+        "porque": (
+            "pedido 359. A premissa «o texto de um SELECT diz que tabelas "
+            "existem, e nao o que ha nelas» vale para a FORMA, nao para o "
+            "literal. Quem nao administra nem escreveu a visao recebe o SQL "
+            "reserializado pelo analisador (`usuario::normalizado`, o motor "
+            "do Profiler): literal vira `?`, comentario some, o que nao se "
+            "analisa vira o tamanho em bytes."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """                            if administra || autor {
+                                x.para_json()
+                            } else {
+                                x.para_json_redigida()
+                            }
+""",
+        "troca": """                            // DEFEITO REPOSTO (359): verbatim para todos.
+                            let _ = (administra, autor);
+                            x.para_json()
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_visoes::visoes_nao_entrega_literal_a_quem_tem_a_coluna_negada",
+        ],
+        "seguem": ["servidor::testes_visoes::listar_substituir_e_excluir"],
+    },
 ]

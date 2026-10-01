@@ -625,6 +625,20 @@ pub trait MaesEmProgresso {
 /// origem.
 pub type ImagemAberta = (Vec<u8>, Vec<(u16, Vec<u8>)>);
 
+/// Bit alto da coluna de um externo na imagem: «este conteudo vai SELADO com a
+/// chave do arquivo que o gravou» (pedido 344).
+///
+/// # Por que a imagem tem de dizer, e nao quem a recebe deduzir
+///
+/// Ate o 344 quem recebia decidia pelo PROPRIO estado: `abrir_externo` abria
+/// se o `.reg` DAQUI fosse cifrado. As duas respostas erravam -- a replica sem
+/// cofre devolvia o texto cifrado como se fosse o memo, calada (344-1); a com
+/// cofre tentava a chave dela sobre bytes selados com a de la, e o sal e por
+/// arquivo, entao nem a mesma senha abre (344-2). So a origem sabe se selou, e
+/// a resposta dela viaja aqui. Coluna acima de 32767 nao existe (o esquema e
+/// u16 de indice e muito menor), entao o bit esta livre.
+pub const EXTERNO_SELADO: u16 = 0x8000;
+
 /// Como a pagina por posicao chegou ao inicio dela.
 ///
 /// Sai na resposta do protocolo porque a diferenca entre os dois nao e de
@@ -776,6 +790,9 @@ pub struct Table {
 /// montagem para a linha viva ([`Table::imagem_da_linha`]) e para a que ja
 /// saiu do `.reg` e mora na lixeira (o evento devido do pedido 498): a
 /// replica le as duas com o mesmo [`Table::abrir_imagem`].
+///
+/// A coluna de cada externo pode vir com [`EXTERNO_SELADO`] aceso: quem monta
+/// e quem sabe se selou (ver [`Table::externos_da_imagem`]).
 fn montar_imagem(payload: &[u8], externos: &[(u16, Vec<u8>)]) -> Vec<u8> {
     let mut out = Vec::with_capacity(payload.len() + 64);
     out.extend_from_slice(&(payload.len() as u32).to_le_bytes());
@@ -6553,9 +6570,64 @@ impl Table {
     /// conteudo dos externos vai junto porque os ponteiros do payload sao
     /// offsets do `.bin` e do `.memo` DAQUI: na outra maquina eles apontariam
     /// para qualquer coisa. E a mesma razao de o `.trash` guardar conteudo.
+    ///
+    /// No diario o externo marcado continua SELADO, e a coluna dele leva
+    /// [`EXTERNO_SELADO`]: o `.log` e arquivo deste servidor e guarda o que o
+    /// `.memo` guarda. Quem abre para mandar a outro servidor e o
+    /// [`Table::imagem_para_o_fio`].
     pub fn imagem_da_linha(&mut self, payload: &[u8]) -> Result<Vec<u8>> {
         let externos = self.conteudo_externo(payload)?;
-        Ok(montar_imagem(payload, &externos))
+        Ok(montar_imagem(payload, &self.externos_da_imagem(externos)))
+    }
+
+    /// Acende [`EXTERNO_SELADO`] em quem este arquivo selou. Uma decisao so,
+    /// a mesma do `selar_externo` (`RegFile::externo_selado`), para a linha
+    /// viva e para a que mora na lixeira.
+    fn externos_da_imagem(&self, externos: Vec<(u16, Vec<u8>)>) -> Vec<(u16, Vec<u8>)> {
+        externos
+            .into_iter()
+            .map(|(c, b)| {
+                let c = if self.reg.externo_selado(c, &b) {
+                    c | EXTERNO_SELADO
+                } else {
+                    c
+                };
+                (c, b)
+            })
+            .collect()
+    }
+
+    /// A imagem DO DIARIO DAQUI, com os externos marcados ABERTOS, para ir ao
+    /// fio da replicacao (pedido 344).
+    ///
+    /// # Por que abrir na origem, e nao mandar a chave
+    ///
+    /// Porque a chave nao e transportavel: o sal e por arquivo
+    /// (`dois_reg_novos_nascem_com_sais_diferentes`), entao a replica deriva
+    /// outra chave da mesma senha e a etiqueta nao confere. Abrir aqui deixa a
+    /// replica selar com a chave DELA no `inserir`, como ja faz com a faixa
+    /// inline -- que sempre viajou aberta. E o fio que leva isto ja e
+    /// obrigatoriamente cifrado para tabela com coluna marcada (pedido 342,
+    /// `op_replicar`), entao abrir aqui nao poe nada em claro no cano.
+    ///
+    /// O `.log` e a lixeira continuam selados: so a resposta sai aberta.
+    pub fn imagem_para_o_fio(&self, imagem: &[u8]) -> Result<Vec<u8>> {
+        // Arquivo sem cifra nao selou nada: devolve sem desmontar, e a tabela
+        // sem coluna marcada (a que nasce em claro) nao paga o passo.
+        if imagem.is_empty() || !self.reg.cifrada() {
+            return Ok(imagem.to_vec());
+        }
+        let (payload, externos) = Table::abrir_imagem_com_selo(imagem)?;
+        let mut abertos = Vec::with_capacity(externos.len());
+        for (coluna, selado, bytes) in externos {
+            let bytes = if selado {
+                self.reg.abrir_selado(coluna, &bytes)?
+            } else {
+                bytes
+            };
+            abertos.push((coluna, bytes));
+        }
+        Ok(montar_imagem(&payload, &abertos))
     }
 
     /// Completa o evento que o `.log` ficou devendo -- pedido 498.
@@ -6578,7 +6650,9 @@ impl Table {
                         n => self.lixeira.ler(n - 1, 1, true)?.pop(),
                     };
                     match ultima {
-                        Some(u) if u.rowid == d.rowid => montar_imagem(&u.payload, &u.externos),
+                        Some(u) if u.rowid == d.rowid => {
+                            montar_imagem(&u.payload, &self.externos_da_imagem(u.externos))
+                        }
                         _ => {
                             return Err(PhxError::Corrompido(format!(
                                 "{}: o diario deve a exclusao da linha {} com imagem, \
@@ -6624,7 +6698,21 @@ impl Table {
     }
 
     /// Desmonta a imagem. Inversa exata de [`Table::imagem_da_linha`].
+    ///
+    /// Devolve a coluna LIMPA, sem [`EXTERNO_SELADO`]; quem precisa saber se
+    /// o externo veio selado usa [`Table::abrir_imagem_com_selo`].
     pub fn abrir_imagem(imagem: &[u8]) -> Result<ImagemAberta> {
+        let (payload, externos) = Table::abrir_imagem_com_selo(imagem)?;
+        Ok((
+            payload,
+            externos.into_iter().map(|(c, _, b)| (c, b)).collect(),
+        ))
+    }
+
+    /// [`Table::abrir_imagem`] com o selo de cada externo: `(coluna, selado,
+    /// conteudo)`.
+    #[allow(clippy::type_complexity)]
+    pub fn abrir_imagem_com_selo(imagem: &[u8]) -> Result<(Vec<u8>, Vec<(u16, bool, Vec<u8>)>)> {
         let curta = || PhxError::Corrompido("imagem de linha truncada".into());
         let ler_u32 = |i: usize| -> Result<u32> {
             imagem
@@ -6649,7 +6737,11 @@ impl Table {
             let coluna = ler_u16(i)?;
             let n = ler_u32(i + 2)? as usize;
             i += 6;
-            externos.push((coluna, imagem.get(i..i + n).ok_or_else(curta)?.to_vec()));
+            externos.push((
+                coluna & !EXTERNO_SELADO,
+                coluna & EXTERNO_SELADO != 0,
+                imagem.get(i..i + n).ok_or_else(curta)?.to_vec(),
+            ));
             i += n;
         }
         Ok((payload, externos))
@@ -6661,7 +6753,7 @@ impl Table {
     /// bidirecional usa para ler a CHAVE e os campos de um evento que chegou
     /// de outro servidor, sem nunca seguir os ponteiros alheios do payload.
     pub fn valores_da_imagem(&mut self, imagem: &[u8]) -> Result<Vec<Value>> {
-        let (payload, externos) = Table::abrir_imagem(imagem)?;
+        let (payload, externos) = Table::abrir_imagem_com_selo(imagem)?;
         self.decodificar_com_externos(&payload, &externos)
     }
 
@@ -6778,7 +6870,7 @@ impl Table {
                         operacao.nome()
                     )));
                 }
-                let (payload, externos) = Table::abrir_imagem(imagem)?;
+                let (payload, externos) = Table::abrir_imagem_com_selo(imagem)?;
                 let valores = self.decodificar_com_externos(&payload, &externos)?;
                 if operacao == Operacao::Inclusao {
                     let meu = self.inserir(&valores)?;
@@ -6873,7 +6965,7 @@ impl Table {
     fn decodificar_com_externos(
         &mut self,
         payload: &[u8],
-        externos: &[(u16, Vec<u8>)],
+        externos: &[(u16, bool, Vec<u8>)],
     ) -> Result<Vec<Value>> {
         // Sem carregar externos: o que voltar nas colunas externas e ponteiro
         // alheio, e vai ser substituido logo abaixo.
@@ -6884,14 +6976,20 @@ impl Table {
                 continue;
             }
             let nulo = payload[i / 8] & (1 << (i % 8)) != 0;
-            valores[i] = match externos.iter().find(|(c, _)| *c as usize == i) {
-                Some((_, bytes)) => {
-                    // A imagem carrega o conteudo COMO ESTA no bloco, e numa
-                    // coluna marcada isso e texto cifrado. Abrir aqui exige a
-                    // chave -- e e por isso que replicar tabela com coluna
-                    // cifrada so funciona entre servidores que dividem a
-                    // senha. Esta escrito em SEGURANCA.md §11.
-                    let bytes = self.reg.abrir_externo(i as u16, bytes)?;
+            valores[i] = match externos.iter().find(|(c, _, _)| *c as usize == i) {
+                Some((_, selado, bytes)) => {
+                    // Quem diz se o conteudo veio selado e a ORIGEM, pelo bit
+                    // da imagem -- e nao o estado deste arquivo (pedido 344).
+                    // A imagem que vem pelo `replicar` chega ABERTA
+                    // (`imagem_para_o_fio`); SELADA so chega a do diario
+                    // deste mesmo arquivo, ou a de uma origem que nao abre --
+                    // e essa, dividir a senha NAO abre, porque o sal e por
+                    // arquivo. Ver SEGURANCA.md §11.
+                    let bytes = if *selado {
+                        self.abrir_externo_alheio(i, bytes)?
+                    } else {
+                        bytes.clone()
+                    };
                     match ty {
                         ColumnType::Bin => Value::Bin(bytes),
                         ColumnType::Memo => Value::Memo(
@@ -6908,6 +7006,36 @@ impl Table {
             };
         }
         Ok(valores)
+    }
+
+    /// Abre um externo que a imagem diz SELADO, ou recusa dizendo por que.
+    ///
+    /// As duas recusas SUBSTITUEM a do cofre, e nao a envolvem: a dele diz
+    /// «ou o dado foi alterado», e aqui nada foi alterado -- a chave e outra
+    /// por construcao. Acusar adulteracao inexistente gasta a resposta a
+    /// incidente no lugar errado.
+    fn abrir_externo_alheio(&self, i: usize, bytes: &[u8]) -> Result<Vec<u8>> {
+        let coluna = &self.esquema.colunas()[i].nome;
+        if !self.reg.cifrada() {
+            // 344-1: sem cofre, gravar os bytes seria guardar o texto cifrado
+            // como se fosse o conteudo, sem erro nenhum.
+            return Err(PhxError::Esquema(format!(
+                "{}: a coluna marcada {coluna} veio SELADA pela origem e esta tabela nao \
+                 tem cofre para guardar dado marcado -- ligue a cifra aqui, e a origem \
+                 tem de mandar a imagem pelo `replicar`, que a abre para o fio cifrado",
+                self.nome
+            )));
+        }
+        self.reg.abrir_selado(i as u16, bytes).map_err(|_| {
+            PhxError::Esquema(format!(
+                "{}: a coluna marcada {coluna} veio SELADA com a chave do arquivo da \
+                 origem, e esta chave nao e a dela -- o sal e por arquivo, entao a \
+                 mesma senha nao basta. Se a imagem veio de outro servidor, nada foi \
+                 alterado: a origem tem de manda-la pelo `replicar`, que a abre para o \
+                 fio cifrado",
+                self.nome
+            ))
+        })
     }
 
     // ------------------------------------------------------------ leitura

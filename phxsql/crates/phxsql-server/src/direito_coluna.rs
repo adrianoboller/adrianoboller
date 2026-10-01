@@ -132,9 +132,12 @@ pub const CLASSES: &[(&str, PorColuna)] = &[
     // veio cada campo -- e depois de uma junção a linha tem campos de duas.
     ("consultar", PorColuna::Nenhum),
     // A visao guarda TEXTO, e nao linha: criar, listar e excluir nao devolvem
-    // dado de tabela nenhuma. Quem le POR uma visao entra pela op `sql`, que
-    // vira um `consultar`, e paga a peneira no sub-pedido -- que e onde a
-    // tabela tem nome.
+    // linha de tabela nenhuma. O LITERAL dentro do texto pode ser dado (um
+    // `WHERE cpf='...'`), e quem o tapa e a redacao da `op_visoes` (pedido
+    // 359), por quem administra ou escreveu -- nao esta peneira, que pergunta
+    // por coluna e o literal nao diz de qual coluna e. Quem le POR uma visao
+    // entra pela op `sql`, que vira um `consultar`, e paga a peneira no
+    // sub-pedido -- que e onde a tabela tem nome.
     ("criar_visao", PorColuna::Nenhum),
     ("visoes", PorColuna::Nenhum),
     ("excluir_visao", PorColuna::Nenhum),

@@ -1028,11 +1028,14 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `trilha-pagina-por-contagem` | A exportação da trilha paginava só por `pular`: um expurgo entre duas páginas fazia o auditor pular registro vivo sem aviso | 1 | ✅ provada |
 | `rowid-revela-coluna-negada` | Com a coluna que particiona negada pelo direito, a primeira letra (ou o período) de cada linha saía pelo rowid, pelos baldes, pelo `slots` e pelo catálogo | 2 | ✅ provada |
 | `conta-cita-numero-de-coluna-marcada` | A recusa da expressão citava número e booleano, e a conta que parte de coluna marcada e cai em coluna sem marca saía com o valor | 1 | ✅ provada |
+| `externo-selado-gravado-como-anexo` | A réplica decidia pelo PRÓPRIO cofre se o externo marcado da imagem vinha selado: sem cofre gravava o texto cifrado como o anexo, calada; com a mesma senha acusava adulteração que não houve | 2 | ✅ provada |
+| `replicar-manda-o-externo-selado` | O `replicar` mandava ao fio o externo marcado selado com a chave do `.reg` da origem: nenhuma réplica o abria, nem com a mesma senha, porque o sal é por arquivo | 2 | ✅ provada |
+| `visoes-entrega-o-literal` | A op `visoes` pede só `ler` e devolvia o SQL da visão verbatim: o literal do `WHERE` e o comentário saíam para quem tinha a coluna negada | 1 | ✅ provada |
 | `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | — | 🪦 aposentada (18/09/2026) |
 
-**387 das 562 guardas do catálogo: 1 aposentada, 382 provadas, 4 redundantes** — 10899 s de mutação, medido em 2026-09-16 15:25.
+**390 das 565 guardas do catálogo: 1 aposentada, 385 provadas, 4 redundantes** — 11040 s de mutação, medido em 2026-09-16 15:25.
 
-> **Esta rodada NÃO julgou 176 das 562 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 176 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 176 das 565 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 176 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
 - `fk-antes-do-default` — a chave estrangeira confere a linha crua, e o DEFAULT sem mãe grava a filha órfã
 - `fk-antes-do-default-pelo-servidor` — o DEFAULT e a calculada sem mãe gravam a órfã pelo servidor, fora e dentro da transação

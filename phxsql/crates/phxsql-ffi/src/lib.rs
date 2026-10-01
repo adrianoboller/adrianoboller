@@ -1479,7 +1479,17 @@ pub unsafe extern "C" fn phx_diario_evento_com_imagem(
 ) -> i32 {
     com(p, ETIQ_TABELA, |x| {
         saida(saida_img, std::ptr::null_mut());
-        resultado(x.t.diario_com_imagem(pular, 1), |mut lista| {
+        // A imagem sai deste punho para outra ponta: o externo marcado vai
+        // ABERTO, como no `replicar` do servidor (pedido 344) -- selado com a
+        // chave deste `.reg`, nenhum outro arquivo o abriria, porque o sal e
+        // por arquivo.
+        let lido = x.t.diario_com_imagem(pular, 1).and_then(|lista| {
+            lista
+                .into_iter()
+                .map(|(e, img)| x.t.imagem_para_o_fio(&img).map(|i| (e, i)))
+                .collect::<PhxResult<Vec<_>>>()
+        });
+        resultado(lido, |mut lista| {
             if lista.is_empty() {
                 return PHX_NAO_HA;
             }

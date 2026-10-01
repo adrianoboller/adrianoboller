@@ -2118,18 +2118,40 @@ desfaz tudo o que está nesta seção, e desfaz em silêncio.
 
 ### 11.8 A replicação de uma coluna cifrada
 
-O conteúdo externo viaja **cifrado** na imagem, então a réplica só o abre se
-tiver a **mesma chave** — e a chave sai da senha **mais o sal do arquivo**, que
-é sorteado por arquivo. Consequência, dita em vez de descoberta:
+**Desde o pedido 344 (01/10/2026): o diário sela, o fio abre.** O conteúdo
+externo marcado continua **selado** no `.log` e no `.trash` — com a chave do
+`.reg` que o gravou —, e a imagem diz que selou, pelo bit alto da coluna
+(`EXTERNO_SELADO`, `docs/FORMATO.md`). O `replicar` abre esse conteúdo **só na
+resposta** (`Table::imagem_para_o_fio`), pelo fio que o 342 já exige cifrado
+para tabela com coluna marcada, e a réplica sela com a chave **dela** no
+`inserir` — como sempre fez com a faixa inline. O PITR (`diario_vivo` →
+restaurado) e o `phx_diario_evento_com_imagem` da FFI abrem pelo mesmo motor.
 
-> **Replicar uma tabela com coluna `Memo`/`Bin` marcada só funciona entre
-> servidores que compartilham a senha da cifra E o sal do arquivo de origem.**
-> Sem isso, a réplica recebe bytes que não abre.
+O que havia antes, e por que caiu — os dois defeitos medidos pelo soquete
+(`tests/coluna-externa-marcada-na-replica.rs`, origem `phxsqld` com cofre e
+réplica em outro processo):
 
-É o mesmo limite que o envelope da §10.5 resolveria: com a chave da tabela
-sorteada e envelopada, ela pode ser entregue à réplica sem entregar a senha
-mestra. Enquanto o envelope não existe, a recomendação é **não replicar tabela
-com coluna externa marcada**.
+- **344-1, réplica SEM cofre:** `abrir_externo` decidia pelo estado do
+  arquivo **daqui** (`!cifrado() || ... → devolve como está`), e a réplica
+  gravava os **68 bytes** `[nonce 24][cifrado][etiqueta 16]` como se fossem o
+  anexo de 28, respondendo `ok`. Dado errado, calado.
+- **344-2, MESMA senha:** a chave sai da senha **mais o sal do arquivo**, e o
+  sal é por `.reg`; a réplica derivava outra chave e parava com «a etiqueta
+  não confere — ou o dado foi alterado…». Nada fora alterado. O comentário de
+  `decodificar_com_externos` prometia que «dividir a senha basta», e não
+  bastava.
+
+**Quem recebe imagem selada** (de um diário lido direto, de uma origem
+antiga, de um `aplicar` manual) **recusa nomeando**: sem cofre, «veio SELADA
+pela origem e esta tabela não tem cofre»; com cofre, «o sal é por arquivo,
+então a mesma senha não basta» — e a frase **substitui** a do cofre em vez de
+envolvê-la, porque acusar adulteração inexistente gasta a resposta a
+incidente no lugar errado.
+
+**O preço, declarado:** uma réplica **sem cofre** passa a guardar o externo
+marcado em claro no disco dela — exatamente como já guardava a faixa inline.
+Proteger o disco da réplica é ligar o cofre **nela**; o fio já está coberto
+pelo 342.
 
 #### A assimetria, e o que ela custou (pedido 342, fechado em 23/09/2026)
 
@@ -2201,6 +2223,11 @@ consertado, foi **cercado**. A prova está travada nos dois sentidos em
 exige o inline presente e o externo ausente — se um dia a imagem passar a
 levar a faixa selada, aquele teste cai, e cair é o aviso para reescrever esta
 seção e reabrir o 344.
+
+E a assimetria **fechou pelo lado do fio** no 344: a imagem do **diário**
+continua com o externo selado (o teste acima segue valendo para ela), e a
+imagem que sai pelo `replicar` leva as duas metades abertas, pelo canal
+cifrado. As duas metades agora erram para o mesmo lado — nenhum.
 
 ### 11.9 O que os testes provam, e a prova real
 
@@ -6492,3 +6519,38 @@ escrever.
 **O irmão que fica:** o `rename` final do ZIP (`trocar_duravel_sem_abortar`)
 ainda sincroniza a pasta pelo nome, dentro do motor do 467 — é o motor da troca
 durável da raiz de dados, e mudá-lo alcança todo chamador.
+
+## 34. O texto da visão entregava o literal a quem só lê (pedido 359)
+
+A op `visoes` pede só `ler` (`usuarios.rs`) e é `PorColuna::Nenhum`
+(`direito_coluna.rs`), e as duas decisões se apoiavam na mesma premissa: «o
+texto de um `SELECT` diz que tabelas existem, e não o que há nelas». Vale para
+a **forma**; não vale para o **literal**. O administrador cria
+`v AS SELECT id, cidade FROM clientes WHERE nome = 'caio' -- senha: hunter2`,
+e um usuário com `ler`, a coluna `nome` negada e nenhum outro direito pedia
+`{"op":"visoes"}` e lia o nome e o comentário.
+
+**O conserto analisa, não recorta.** Quem administra o database, quem
+escreveu a visão (`criado_por`) e o token de serviço continuam recebendo o
+texto inteiro — é o comportamento velho, e o teste o trava. Os outros recebem
+o SQL **reserializado pelo analisador**, com `"redigido": true`, pelo **mesmo
+motor do `perfil.txt` do Profiler** (`phxsql_sql::usuario::normalizado`): todo
+literal vira `?`, o nome entre aspas duplas vira `"***"` (no MySQL® e no
+MariaDB aspas duplas são texto), o comentário some porque o léxico o descarta,
+e o que não se analisa vira `<comando invalido, N bytes>`. Uma redação
+própria aqui seria a mesma decisão escrita duas vezes.
+
+Por que não a peneira por coluna: o literal não diz de **qual** coluna é, e
+peneirar «se alguma coluna negada aparece» deixaria passar inteiro o literal
+comparado com uma coluna permitida.
+
+| prova (`servidor::testes_visoes`) | com o conserto | com o defeito reposto |
+|---|---|---|
+| `visoes_nao_entrega_literal_a_quem_tem_a_coluna_negada` | a ana recebe `SELECT id , cidade FROM clientes WHERE nome = ?`; o dono, o `adm` do database e o autor recebem o texto inteiro | `caio` e `hunter2` na resposta da ana |
+
+Guarda: `visoes-entrega-o-literal`.
+
+**O irmão que fica (⏸, 359-c):** o `jobs.json` guarda o `onde` do pedido com
+o literal. O arquivo é 0600 e a resposta passa pela peneira `PedidoSalvo`;
+recusar o literal pede que `colunas_do_onde` desça aos sub-pedidos, e isso não
+entra nesta rodada.

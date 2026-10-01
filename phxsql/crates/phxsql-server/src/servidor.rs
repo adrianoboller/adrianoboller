@@ -12289,7 +12289,7 @@ impl Servidor {
             "agrupar" | "group_by" => self.op_agrupar(p, sessao),
             "consultar" => self.op_consultar(p, sessao),
             "criar_visao" => self.op_criar_visao(p, sessao),
-            "visoes" => self.op_visoes(p),
+            "visoes" => self.op_visoes(p, sessao),
             "excluir_visao" => self.op_excluir_visao(p),
             "pivotar" | "pivot" => self.op_pivotar(p, sessao),
             "juntar" | "join" => self.op_juntar(p, sessao),
@@ -13466,9 +13466,20 @@ impl Servidor {
         ]))
     }
 
-    /// `visoes`: o que ha, com o texto verbatim.
-    fn op_visoes(&self, p: &Json) -> Result<Json> {
+    /// `visoes`: o que ha. O texto vai verbatim a quem administra o database
+    /// ou escreveu a visao; aos outros, REDIGIDO pelo analisador (pedido 359).
+    ///
+    /// A op pede so `ler` (`usuarios.rs`), e a premissa que a sustentava --
+    /// «o texto de um SELECT diz que tabelas existem, e nao o que ha nelas» --
+    /// vale para a FORMA e nao para o literal: um `WHERE cpf='...'` guardado
+    /// entregava o CPF a quem tinha a coluna negada. Sem usuario (token de
+    /// servico) e o dono do servidor, como no `exigir_administrar_rotina`.
+    fn op_visoes(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
         let base = p.texto_ou("database", "").trim().to_string();
+        let administra = sessao
+            .usuario
+            .as_ref()
+            .map_or(true, |u| u.pode_em(&base, "", Atividade::Administrar));
         let v = self.visoes.tomar("visoes")?;
         Ok(Json::objeto(vec![
             ("database", Json::texto_de(&base)),
@@ -13477,7 +13488,14 @@ impl Servidor {
                 Json::Lista(
                     v.do_db(&base)
                         .iter()
-                        .map(crate::visoes::Visao::para_json)
+                        .map(|x| {
+                            let autor = !x.criado_por.is_empty() && x.criado_por == sessao.login();
+                            if administra || autor {
+                                x.para_json()
+                            } else {
+                                x.para_json_redigida()
+                            }
+                        })
                         .collect(),
                 ),
             ),
@@ -24612,7 +24630,16 @@ impl Servidor {
                             // que jurasse que tudo aconteceu agora destruiria
                             // justamente o que se foi buscar nele.
                             td.forcar_proximo_evento(e.carimbo, e.origem);
-                            if let Err(erro) = td.aplicar_evento(e.operacao, e.rowid, imagem) {
+                            // O irmao do `replicar` (pedido 344): a imagem do
+                            // diario vivo leva o externo marcado selado com a
+                            // chave do `.reg` VIVO, e quem tem essa chave e o
+                            // `tv`. Abrir por ele deixa o restaurado selar com
+                            // a dele, em vez de depender de os dois arquivos
+                            // ainda dividirem o sal.
+                            let aplicado = tv
+                                .imagem_para_o_fio(imagem)
+                                .and_then(|i| td.aplicar_evento(e.operacao, e.rowid, &i));
+                            if let Err(erro) = aplicado {
                                 parou = Some(format!(
                                     "no evento {pos} do diario ({}): {erro}",
                                     phxsql_core::datahora::instante_iso(e.carimbo)
@@ -28434,7 +28461,10 @@ impl Servidor {
         // A outra saida -- a imagem levar a faixa marcada SELADA -- esta
         // bloqueada com numero: a replica nao tem chave compativel, porque o
         // sal e por arquivo (pedido 344, medido com a MESMA senha nos dois
-        // lados). Entao o que fecha o furo e o CANAL, e nao a imagem.
+        // lados). Entao o que fecha o furo e o CANAL, e nao a imagem -- e
+        // desde o 344 a metade EXTERNA tambem passou a viajar aberta por este
+        // mesmo canal (`imagem_para_o_fio`, logo abaixo), porque selada ela
+        // nao replicava.
         //
         // **E esta guarda e IMPOSTA, nao pedida -- e isso e escolha.** A lei
         // da casa manda guarda nova nascer pedida, e o motivo dela e nao
@@ -28495,31 +28525,35 @@ impl Servidor {
             }
         };
 
-        let lista: Vec<Json> = eventos
-            .into_iter()
-            .enumerate()
-            .filter_map(|(i, (e, imagem))| {
-                let origem = if e.origem == 0 { meu_hash } else { e.origem };
-                if hash_para.is_some_and(|h| origem != 0 && origem == h) {
-                    return None;
-                }
-                Some(Json::objeto(vec![
-                    ("operacao", Json::texto_de(e.operacao.nome())),
-                    // ONDE este evento mora no diario DAQUI. So o source sabe
-                    // dizer: quem puxa nao consegue contar, porque a supressao
-                    // logo acima tira eventos da lista e a posicao anda por
-                    // cima deles. E a posicao que `replicacao_pular` recebe --
-                    // o nosso equivalente do LSN do `SKIP` do PostgreSQL.
-                    ("posicao", Json::de_u64(desde + i as u64)),
-                    ("rowid", Json::de_u64(e.rowid)),
-                    ("versao", Json::de_u64(e.versao)),
-                    ("carimbo_ms", Json::Numero(e.carimbo as f64)),
-                    ("usuario", Json::de_u64(e.usuario as u64)),
-                    ("origem", Json::de_u64(origem as u64)),
-                    ("imagem", Json::texto_de(bytes_para_hex(&imagem))),
-                ]))
-            })
-            .collect();
+        let mut lista: Vec<Json> = Vec::with_capacity(eventos.len());
+        for (i, (e, imagem)) in eventos.into_iter().enumerate() {
+            let origem = if e.origem == 0 { meu_hash } else { e.origem };
+            if hash_para.is_some_and(|h| origem != 0 && origem == h) {
+                continue;
+            }
+            // O externo marcado sai do diario SELADO com a chave deste
+            // arquivo, e a replica nao tem como abri-lo: o sal e por arquivo
+            // (pedido 344). Abre-se AQUI, na resposta, e so nela -- o portao
+            // de cima ja garantiu o fio cifrado para tabela com coluna
+            // marcada, e o `.log` continua selado. Tabela sem coluna externa
+            // marcada devolve a mesma imagem, sem custo de cifra.
+            let imagem = t.imagem_para_o_fio(&imagem)?;
+            lista.push(Json::objeto(vec![
+                ("operacao", Json::texto_de(e.operacao.nome())),
+                // ONDE este evento mora no diario DAQUI. So o source sabe
+                // dizer: quem puxa nao consegue contar, porque a supressao
+                // logo acima tira eventos da lista e a posicao anda por
+                // cima deles. E a posicao que `replicacao_pular` recebe --
+                // o nosso equivalente do LSN do `SKIP` do PostgreSQL.
+                ("posicao", Json::de_u64(desde + i as u64)),
+                ("rowid", Json::de_u64(e.rowid)),
+                ("versao", Json::de_u64(e.versao)),
+                ("carimbo_ms", Json::Numero(e.carimbo as f64)),
+                ("usuario", Json::de_u64(e.usuario as u64)),
+                ("origem", Json::de_u64(origem as u64)),
+                ("imagem", Json::texto_de(bytes_para_hex(&imagem))),
+            ]));
+        }
 
         // A trilha de dado pessoal, UM registro por lote (revisao SEC de
         // 17/09/2026, A8): a imagem viaja com o valor da coluna marcada
@@ -54445,6 +54479,104 @@ mod testes_visoes {
         let e = pede("SELECT * FROM v_folha").expect_err("a visao leu a tabela negada");
         assert_eq!(e.nome(), "ACESSO_NEGADO", "{e}");
         assert!(format!("{e}").contains("folha"), "{e}");
+
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// **Pedido 359.** A op `visoes` pede so `ler`, e devolvia o SQL da visao
+    /// verbatim: quem tinha a coluna `nome` negada lia o literal do `WHERE`
+    /// -- e o comentario -- que o dono escreveu.
+    ///
+    /// # O vermelho
+    ///
+    /// Com `x.para_json()` para todos, a resposta da ana trazia
+    /// `WHERE nome = 'caio' -- senha: hunter2`. O teste mede o TEXTO da
+    /// resposta, nao um veredito: o literal e o comentario ausentes, e a FORMA
+    /// presente (sem ela, «redigir» poderia ser apagar tudo).
+    #[test]
+    fn visoes_nao_entrega_literal_a_quem_tem_a_coluna_negada() {
+        const LITERAL: &str = "caio";
+        const COMENTARIO: &str = "hunter2";
+        let d = dir("literal-359");
+        let cadastro = Cadastro::de_json(&pedido(
+            r#"{"usuarios":[
+                {"login":"ana","id":9,"senha_hash":"pbkdf2-sha256$1000$00$00",
+                 "bases":{"*":{"ler":true,"tabelas":{"clientes":{"ler":true,
+                     "colunas":{"nome":{"ler":false}}}}}}},
+                {"login":"rui","id":10,"senha_hash":"pbkdf2-sha256$1000$00$00",
+                 "bases":{"*":{"ler":true,"criar":true}}},
+                {"login":"adm","id":11,"senha_hash":"pbkdf2-sha256$1000$00$00",
+                 "bases":{"b":{"ler":true,"administrar":true}}}]}"#,
+        ))
+        .unwrap();
+        let (s, _) = servidor(&d, cadastro.clone());
+        let sql_do_dono = "SELECT id, cidade FROM clientes WHERE nome = 'caio' \
+                           -- senha: hunter2\n";
+        // Sem login e o dono do servidor, pelo mesmo `executar` que os outros
+        // testes do modulo usam; com login, o caminho inteiro do soquete.
+        let pede = |login: Option<&str>, op: &str, resto: &str| -> Result<Json> {
+            if login.is_none() {
+                return dono(&s, op, &format!(r#"{{"database":"b"{resto}}}"#));
+            }
+            let mut sessao = Sessao {
+                usuario: login.and_then(|l| cadastro.por_login(l).cloned()),
+                ..Sessao::default()
+            };
+            let (_, _, r) = s.despachar(
+                &format!(r#"{{"token":"t","op":"{op}","database":"b"{resto}}}"#),
+                &mut sessao,
+                "127.0.0.1",
+            );
+            r
+        };
+        // O dono do servidor (token, sem usuario) cria; o rui cria a dele.
+        pede(
+            None,
+            "criar_visao",
+            &format!(
+                r#","nome":"v_um","sql":{}"#,
+                Json::texto_de(sql_do_dono).escrever()
+            ),
+        )
+        .unwrap();
+        pede(
+            Some("rui"),
+            "criar_visao",
+            r#","nome":"v_rui","sql":"SELECT id FROM clientes WHERE cidade = 'Itajai'""#,
+        )
+        .unwrap();
+        let sql_de = |login: Option<&str>, visao: &str| -> String {
+            let r = pede(login, "visoes", "").unwrap();
+            r.campo("visoes")
+                .and_then(Json::lista)
+                .unwrap()
+                .iter()
+                .find(|v| v.texto_ou("nome", "") == visao)
+                .map(|v| v.texto_ou("sql", "").to_string())
+                .unwrap()
+        };
+
+        // A ana, so `ler` e a coluna negada: a forma sim, o literal nao.
+        let da_ana = pede(Some("ana"), "visoes", "").unwrap().escrever();
+        assert!(!da_ana.contains(LITERAL), "o literal vazou: {da_ana}");
+        assert!(!da_ana.contains(COMENTARIO), "o comentario vazou: {da_ana}");
+        assert!(
+            !da_ana.contains("Itajai"),
+            "o literal da outra vazou: {da_ana}"
+        );
+        let forma = sql_de(Some("ana"), "v_um");
+        assert!(
+            forma.contains("clientes") && forma.contains("nome") && forma.contains('?'),
+            "a redacao apagou a forma: {forma}"
+        );
+
+        // O comportamento VELHO onde ele vale: o dono, quem administra o
+        // database e o autor continuam vendo o texto inteiro.
+        assert_eq!(sql_de(None, "v_um"), sql_do_dono.trim());
+        assert_eq!(sql_de(Some("adm"), "v_um"), sql_do_dono.trim());
+        assert!(sql_de(Some("rui"), "v_rui").contains("'Itajai'"));
+        // E o autor de UMA nao ve a de outro inteira.
+        assert!(!sql_de(Some("rui"), "v_um").contains(LITERAL));
 
         let _ = std::fs::remove_dir_all(&d);
     }

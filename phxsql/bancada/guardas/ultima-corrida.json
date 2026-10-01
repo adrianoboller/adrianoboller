@@ -3104,6 +3104,30 @@
       "quando": "2026-10-01 03:01"
     },
     {
+      "id": "externo-selado-gravado-como-anexo",
+      "titulo": "A réplica decidia pelo PRÓPRIO cofre se o externo marcado da imagem vinha selado: sem cofre gravava o texto cifrado como o anexo, calada; com a mesma senha acusava adulteração que não houve",
+      "veredito": "PROVADA",
+      "segundos": 8.25,
+      "notas": [],
+      "quando": "2026-10-01 03:14"
+    },
+    {
+      "id": "replicar-manda-o-externo-selado",
+      "titulo": "O `replicar` mandava ao fio o externo marcado selado com a chave do `.reg` da origem: nenhuma réplica o abria, nem com a mesma senha, porque o sal é por arquivo",
+      "veredito": "PROVADA",
+      "segundos": 59.5,
+      "notas": [],
+      "quando": "2026-10-01 03:16"
+    },
+    {
+      "id": "visoes-entrega-o-literal",
+      "titulo": "A op `visoes` pede só `ler` e devolvia o SQL da visão verbatim: o literal do `WHERE` e o comentário saíam para quem tinha a coluna negada",
+      "veredito": "PROVADA",
+      "segundos": 73.55,
+      "notas": [],
+      "quando": "2026-10-01 03:18"
+    },
+    {
       "id": "cifra-do-fio-imposta",
       "titulo": "a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho",
       "veredito": "PROVADA",

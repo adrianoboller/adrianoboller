@@ -147,8 +147,11 @@ impl Atividade {
             // so pode apertar, e `ler` e o piso certo: quem nao pode ler nada
             // nao tem o que compor.
             "consultar" => Atividade::Ler,
-            // Listar as visoes e LER o catalogo do banco: o texto de um
-            // `SELECT` diz que tabelas existem, e nao o que ha nelas. Ja
+            // Listar as visoes e LER o catalogo do banco: a FORMA de um
+            // `SELECT` diz que tabelas existem, e nao o que ha nelas -- e e so
+            // a forma que sai para quem nao administra nem escreveu a visao:
+            // o literal (`WHERE cpf='...'`) e o comentario saem redigidos pelo
+            // analisador, em `op_visoes` (pedido 359). Ja
             // CRIAR uma exige `criar`, o mesmo poder de criar tabela, e
             // EXCLUIR exige `excluir`: quem apaga uma visao apaga a consulta
             // de todo mundo que a usa.
