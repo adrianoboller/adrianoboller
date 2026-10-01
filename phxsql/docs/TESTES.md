@@ -1124,11 +1124,14 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `replica-grava-filha-sem-mae-calada` | A réplica gravava a filha sem a mãe e nada contava: o invariante «só existe filho se o pai existir» caía calado | 2 | ✅ provada |
 | `bidi-grava-filha-sem-mae-calada` | O bidirecional gravava a filha sem a mãe calado, enquanto a réplica fiel já contava | 1 | ✅ provada |
 | `escrita-local-na-replica-calada` | A réplica aceitava escrita local calada, e a ruptura que ela causava culpava o source | 1 | ✅ provada |
+| `novo-orfao-sobrevive-ao-excluir-tabela` | Excluir e renomear a tabela deixavam para trás os *.novo de uma reescrita interrompida | 3 | ✅ provada |
+| `fts-ao-lado-sobrevive-a-abertura` | O .fts.novo de uma redeclaração morta ficava no disco até a próxima redeclaração | 1 | ✅ provada |
+| `redeclarar-texto-com-so-criar` | Redeclarar o índice de texto pedia só criar, e copia o .reg inteiro como o acrescentar_coluna | 1 | ✅ provada |
 | `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | — | 🪦 aposentada (18/09/2026) |
 
-**483 das 658 guardas do catálogo: 1 aposentada, 478 provadas, 4 redundantes** — 14884 s de mutação, medido em 2026-09-16 15:25.
+**486 das 661 guardas do catálogo: 1 aposentada, 481 provadas, 4 redundantes** — 14920 s de mutação, medido em 2026-09-16 15:25.
 
-> **Esta rodada NÃO julgou 176 das 658 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 176 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 176 das 661 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 176 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
 - `fk-antes-do-default` — a chave estrangeira confere a linha crua, e o DEFAULT sem mãe grava a filha órfã
 - `fk-antes-do-default-pelo-servidor` — o DEFAULT e a calculada sem mãe gravam a órfã pelo servidor, fora e dentro da transação

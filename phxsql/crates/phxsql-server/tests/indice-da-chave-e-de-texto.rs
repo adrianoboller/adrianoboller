@@ -37,9 +37,16 @@ use phxsql_server::{Config, Servidor};
 const TOKEN: &str = "indice-da-chave-e-de-texto";
 
 fn subir(base: &Path) -> (Arc<Servidor>, u16) {
+    subir_com_usuarios(base, "")
+}
+
+/// O [`subir`] com cadastro de usuarios (pedido 619). `usuarios` vazio e o
+/// servidor sem cadastro de sempre.
+fn subir_com_usuarios(base: &Path, usuarios: &str) -> (Arc<Servidor>, u16) {
     let texto = format!(
         r#"{{ "bind": "127.0.0.1:0", "base": {base:?}, "token": "{TOKEN}",
               "log_acessos": {log:?}, "blacklist": {bl:?}, "dblink": {dbl:?},
+              {usuarios}
               "cifra_fio": {{ "exigir": false }},
               "recursos": {{ "durabilidade": "sistema" }},
               "web": {{ "ligado": false }} }}"#,
@@ -380,4 +387,81 @@ fn o_fts_orfao_e_reconstruido_e_nao_reaproveitado() {
         "a linha gravada enquanto o .fts estava orfao ficou fora da busca"
     );
     assert_eq!(r.inteiro_ou("linhas_indexadas", -1), 4, "{}", r.escrever());
+}
+
+// ------------------------------------------------ pedido 619: o portao
+
+const SENHA: &str = "segredo-de-teste";
+
+impl Ligacao {
+    fn entrar(porta: u16, login: &str) -> Ligacao {
+        let mut c = Ligacao::nova(porta);
+        let r = c.pedir(&format!(
+            r#""op":"login","usuario":"{login}","senha":"{SENHA}""#
+        ));
+        assert!(
+            r.booleano_ou("ok", false),
+            "login de {login}: {}",
+            r.escrever()
+        );
+        c
+    }
+}
+
+/// **Pedido 619:** redeclarar o indice de texto copia o `.reg` INTEIRO (a
+/// FASE A do 422) e congela a tabela para escrita enquanto copia -- o mesmo
+/// custo do `acrescentar_coluna`, que pede `administrar`. Quem so CRIA
+/// tabela nao redeclara a de outro; quem administra continua podendo.
+///
+/// # Prova real
+///
+/// Com `"redeclarar_indices_texto"` de volta ao braco do `Atividade::Criar`
+/// (`usuarios.rs`), o `so_cria` declara o indice (medido: `linhas_indexadas`
+/// 3) e o teste reprova no veredito; o DANO -- o `.fts` nascido -- e
+/// conferido logo depois, para a recusa nao passar com o disco mexido.
+#[test]
+fn redeclarar_o_indice_de_texto_exige_administrar() {
+    let d = DirTemp::novo("619-portao");
+    // Uma iteracao so: a senha real nao interessa aqui.
+    let h = phxsql_core::senha::cifrar_com(SENHA, 1);
+    let usuarios = format!(
+        r#""root": {{ "login": "root", "senha_hash": "{h}" }},
+           "usuarios": [
+             {{ "id": 2, "login": "so_cria", "nome": "So Cria", "senha_hash": "{h}",
+                "ativo": true,
+                "bases": {{ "loja": {{ "ler": true, "inserir": true, "criar": true }} }} }},
+             {{ "id": 3, "login": "administra", "nome": "Administra",
+                "senha_hash": "{h}", "ativo": true,
+                "bases": {{ "loja": {{ "ler": true, "administrar": true }} }} }} ],"#
+    );
+    let (_s, porta) = subir_com_usuarios(&d, &usuarios);
+    let mut dono = Ligacao::entrar(porta, "root");
+    produtos(&mut dono);
+    let fts = d.join("loja").join("produtos.fts");
+
+    // O comportamento adverso: so criar nao basta, e nada muda no disco.
+    let mut cria = Ligacao::entrar(porta, "so_cria");
+    let r = recusou(&cria.pedir(DECLARA));
+    assert!(
+        r.contains("administrar"),
+        "a recusa nao diz o que falta: {r}"
+    );
+    assert!(
+        !fts.exists(),
+        "quem so cria redeclarou o indice de texto: o .fts nasceu"
+    );
+    assert!(achados(&mut dono, "fenix").is_err(), "a declaracao entrou");
+    // E o que ele ja podia, continua podendo: declarar chave e desenhar o
+    // MODELO, que nao copia a tabela.
+    ok(cria.pedir(
+        r#""op":"criar_tabela","database":"loja","tabela":"notas",
+           "colunas":[{"nome":"id","tipo":"Int4","obrigatoria":true}],
+           "indices":[{"nome":"porId","colunas":["id"],"unico":true,"primario":true}]"#,
+    ));
+
+    // O comportamento velho: quem administra redeclara como antes.
+    let mut adm = Ligacao::entrar(porta, "administra");
+    let r = ok(adm.pedir(DECLARA));
+    assert_eq!(r.inteiro_ou("linhas_indexadas", -1), 3, "{}", r.escrever());
+    assert_eq!(achados(&mut adm, "fenix"), Ok(1));
 }

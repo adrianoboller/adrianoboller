@@ -604,3 +604,157 @@ fn queda_entre_apagar_o_fts_e_trocar_o_reg_reabre_pelo_esquema_velho() {
         vec![a]
     );
 }
+
+// ------------------------------------------------ pedido 618: o orfao ao lado
+
+/// Uma base com a tabela `clientes`, uma linha, e o `.fts` velho ja no disco.
+fn base_de_clientes(rotulo: &str) -> (phxsql_store::catalogo::Database, comum::DirTemp) {
+    let base = comum::DirTemp::novo(&format!("fts-618-{rotulo}"));
+    let cat = phxsql_store::catalogo::Instancia::nova(&base).unwrap();
+    let db = cat.criar_database("loja").unwrap();
+    let mut esq = esquema();
+    esq.renomear("clientes");
+    let mut t = db.criar_tabela(None, esq).unwrap();
+    t.inserir(&linha(1, "ana souza", "mora na rua fenix"))
+        .unwrap();
+    t.sincronizar().unwrap();
+    drop(t);
+    (db, base)
+}
+
+/// Os arquivos que ainda levam o nome da tabela, `.novo` inclusive.
+fn sobras(dir: &std::path::Path, tabela: &str) -> Vec<String> {
+    let mut v: Vec<String> = std::fs::read_dir(dir)
+        .unwrap()
+        .flatten()
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|f| f.starts_with(&format!("{tabela}.")) || f.starts_with(&format!("{tabela}#")))
+        .collect();
+    v.sort();
+    v
+}
+
+/// Mata a redeclaracao no ponto do pedido 618: o `.fts` novo montado e
+/// sincronizado ao lado, e nada mais.
+fn morrer_depois_de_montar_ao_lado(t: &mut Table) {
+    use phxsql_store::ndx::panico_de_teste::{armar, desarmar, Ponto};
+    armar(Ponto::FtsAoLadoDepoisDoSincronizar);
+    let morreu = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _ = t.preparar_indices_de_texto(vec![IndiceDeTexto::new("porTitulo", 1)]);
+    }));
+    desarmar();
+    assert!(
+        morreu.is_err(),
+        "o panico armado depois do sincronizar nao aconteceu"
+    );
+}
+
+/// **Pedido 618 (LGPD):** a redeclaracao que morre depois de montar o `.fts`
+/// ao lado deixa o `clientes.fts.novo` -- o VOCABULARIO da coluna indexada --,
+/// e o `excluir_tabela` o deixava para tras sob um nome que nao existe mais.
+///
+/// # Prova real
+///
+/// Com o `excluir_tabela` de volta ao `pertence` seco (sem o `.novo`), a
+/// sobra e `["clientes.fts.novo"]` e este teste reprova nomeando-a.
+#[test]
+fn excluir_a_tabela_leva_o_fts_ao_lado_de_uma_redeclaracao_morta() {
+    let (db, base) = base_de_clientes("excluir");
+    let dir = base.join("loja");
+    let mut t = Table::abrir(&dir, "clientes").unwrap();
+    morrer_depois_de_montar_ao_lado(&mut t);
+    drop(t);
+    assert!(
+        dir.join("clientes.fts.novo").exists(),
+        "o ponto do panico nao deixou o orfao que a prova diz"
+    );
+    db.excluir_tabela("clientes").unwrap();
+    assert_eq!(
+        sobras(&dir, "clientes"),
+        Vec::<String>::new(),
+        "a tabela foi excluida e o vocabulario dela ficou no disco"
+    );
+}
+
+/// O caminho IRMAO do de cima: a FASE A inteira (o `.fts` ao lado E os
+/// `*.novo` do `.reg`, que sao copia do `.reg` inteiro) e a queda antes da
+/// FASE B. O excluir leva os dois.
+///
+/// # Prova real
+///
+/// Sem o `.novo` no `excluir_tabela`, sobram `clientes.fts.novo` e
+/// `clientes.reg.novo`.
+#[test]
+fn excluir_a_tabela_leva_os_novos_do_reg_de_uma_fase_a_sem_fase_b() {
+    let (db, base) = base_de_clientes("fase-a");
+    let dir = base.join("loja");
+    let mut t = Table::abrir(&dir, "clientes").unwrap();
+    let troca = t
+        .preparar_indices_de_texto(vec![IndiceDeTexto::new("porTitulo", 1)])
+        .unwrap();
+    // A queda: nem FASE B, nem descartar.
+    drop(troca);
+    drop(t);
+    assert!(dir.join("clientes.reg.novo").exists());
+    assert!(dir.join("clientes.fts.novo").exists());
+    db.excluir_tabela("clientes").unwrap();
+    assert_eq!(sobras(&dir, "clientes"), Vec::<String>::new());
+}
+
+/// O renomear leva a tabela INTEIRA, e o `.novo` e dela: deixa-lo no nome
+/// velho e o mesmo orfao do excluir, sob um nome que nao existe mais.
+///
+/// # Prova real
+///
+/// Sem o `.novo` no `renomear_tabela`, sobram os dois `.novo` em `clientes.`.
+#[test]
+fn renomear_a_tabela_nao_deixa_o_novo_no_nome_velho() {
+    let (db, base) = base_de_clientes("renomear");
+    let dir = base.join("loja");
+    let mut t = Table::abrir(&dir, "clientes").unwrap();
+    let troca = t
+        .preparar_indices_de_texto(vec![IndiceDeTexto::new("porTitulo", 1)])
+        .unwrap();
+    drop(troca);
+    drop(t);
+    db.renomear_tabela("clientes", "pessoas").unwrap();
+    assert_eq!(sobras(&dir, "clientes"), Vec::<String>::new());
+    let mut t = Table::abrir(&dir, "pessoas").unwrap();
+    assert_eq!(
+        t.procurar_texto("porCorpo", "fenix").unwrap().rowids.len(),
+        1,
+        "a tabela renomeada nao abriu com o esquema que tinha"
+    );
+}
+
+/// A abertura com a ficha exclusiva recolhe o `.fts.novo` orfao -- sem
+/// esperar alguem excluir a tabela -- e a tabela continua com a declaracao
+/// e o `.fts` de antes da redeclaracao morta.
+///
+/// # Prova real
+///
+/// Sem o `recolher_fts_ao_lado` no `abrir_com`, o `clientes.fts.novo`
+/// continua no disco depois da abertura.
+#[test]
+fn a_abertura_recolhe_o_fts_ao_lado_de_uma_redeclaracao_morta() {
+    let (_db, base) = base_de_clientes("abrir");
+    let dir = base.join("loja");
+    let mut t = Table::abrir(&dir, "clientes").unwrap();
+    morrer_depois_de_montar_ao_lado(&mut t);
+    drop(t);
+    assert!(dir.join("clientes.fts.novo").exists());
+    let mut t = Table::abrir(&dir, "clientes").unwrap();
+    assert!(
+        !dir.join("clientes.fts.novo").exists(),
+        "a abertura nao recolheu o vocabulario orfao"
+    );
+    assert_eq!(
+        t.esquema().indices_de_texto().len(),
+        2,
+        "o esquema velho ficou"
+    );
+    assert_eq!(
+        t.procurar_texto("porCorpo", "fenix").unwrap().rowids.len(),
+        1
+    );
+}

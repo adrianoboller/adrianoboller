@@ -3872,6 +3872,30 @@
       "quando": "2026-10-01 17:01"
     },
     {
+      "id": "novo-orfao-sobrevive-ao-excluir-tabela",
+      "titulo": "Excluir e renomear a tabela deixavam para trás os *.novo de uma reescrita interrompida",
+      "veredito": "PROVADA",
+      "segundos": 7.78,
+      "notas": [],
+      "quando": "2026-10-01 17:19"
+    },
+    {
+      "id": "fts-ao-lado-sobrevive-a-abertura",
+      "titulo": "O .fts.novo de uma redeclaração morta ficava no disco até a próxima redeclaração",
+      "veredito": "PROVADA",
+      "segundos": 7.22,
+      "notas": [],
+      "quando": "2026-10-01 17:19"
+    },
+    {
+      "id": "redeclarar-texto-com-so-criar",
+      "titulo": "Redeclarar o índice de texto pedia só criar, e copia o .reg inteiro como o acrescentar_coluna",
+      "veredito": "PROVADA",
+      "segundos": 20.79,
+      "notas": [],
+      "quando": "2026-10-01 17:19"
+    },
+    {
       "id": "cifra-do-fio-imposta",
       "titulo": "a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho",
       "veredito": "PROVADA",

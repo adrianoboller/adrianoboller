@@ -2704,6 +2704,11 @@ pub mod panico_de_teste {
         /// Com a pausa na segunda passagem, o primeiro volume ja mudou de
         /// nome e o resto nao.
         EntreRenomesDoSeparador,
+        /// `Table::preparar_indices_de_texto` (pedido 618): o `.fts` montado
+        /// ao lado ja sincronizado no `<tabela>.fts.novo`, e nada mais -- nem
+        /// os `*.novo` do `.reg`, nem a FASE B. E a queda que deixava o
+        /// vocabulario da coluna orfao no disco.
+        FtsAoLadoDepoisDoSincronizar,
     }
 
     #[cfg(debug_assertions)]

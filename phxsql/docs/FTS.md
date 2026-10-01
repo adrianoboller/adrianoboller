@@ -430,8 +430,23 @@ Devolve `indices_texto` e `linhas_indexadas`. Três decisões:
   porque o cliente errou o nome do campo seria «campo aceito e ignorado» com o
   sinal trocado.
 
-Pede o poder de **criar**, como a `declarar_fk`: o `criar_tabela` sempre pôde
-declarar o índice, e redeclarar não pode pedir mais que nascer.
+Pede o poder de **administrar**, como o `acrescentar_coluna` (pedido 619). Até
+01/10/2026 pedia só **criar**, com o argumento «o `criar_tabela` sempre pôde
+declarar o índice, e redeclarar não pode pedir mais que nascer» — que só vale
+para tabela **vazia**: a FASE A copia o `.reg` inteiro e congela a tabela para
+escrita enquanto copia, e quem só cria podia fazer isso em laço na tabela
+grande de outro. Prova pelo soquete:
+`redeclarar_o_indice_de_texto_exige_administrar`.
+
+**O `.fts.novo` de uma redeclaração interrompida não fica órfão** (pedido 618,
+LGPD): ele guarda o vocabulário da coluna indexada, que pode ser pessoal. A
+abertura com a ficha exclusiva o recolhe (congelada a tabela não abre para
+escrever, então ali ele é sempre órfão), e o `excluir_tabela` e o
+`renomear_tabela` levam junto **todo** `*.novo` da tabela — o `.fts.novo` e os
+`*.novo` do `.reg` da FASE A, que são cópia do `.reg` inteiro. A cópia
+(`duplicar_tabela`) e o inventário da tela não os veem: arquivo pela metade não
+é tabela. Prova: `excluir_a_tabela_leva_o_fts_ao_lado_de_uma_redeclaracao_morta`
+e as três irmãs em `phxsql-store/tests/indice-de-texto.rs`.
 
 **O O(linhas) roda fora da trava global**, no padrão do `acrescentar_coluna`:
 a tabela congela, a trava sai, e a FASE A monta o `.fts` novo **ao lado**

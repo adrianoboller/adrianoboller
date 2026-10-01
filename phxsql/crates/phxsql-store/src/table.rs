@@ -960,6 +960,34 @@ fn caminho(diretorio: &Path, nome: &str, ext: &str) -> PathBuf {
     diretorio.join(format!("{nome}.{ext}"))
 }
 
+/// O `<tabela>.fts.novo` da FASE A da redeclaracao do indice de texto (pedido
+/// 364). UM lugar que monta o nome: quem o escreve e quem o recolhe na
+/// abertura (pedido 618) tem de nomear o mesmo arquivo.
+fn caminho_fts_ao_lado(diretorio: &Path, nome: &str) -> PathBuf {
+    caminho(diretorio, nome, &format!("{EXT_FTS}.novo"))
+}
+
+/// Recolhe o `.fts.novo` que uma redeclaracao interrompida deixou (pedido
+/// 618).
+///
+/// Ele so tem dono entre a FASE A e a FASE B, com a tabela CONGELADA -- e
+/// congelada ela nao abre para escrever, entao quem chega aqui com a ficha
+/// exclusiva acha um orfao, nunca um arquivo em uso. E orfao que guarda o
+/// VOCABULARIO da coluna indexada, que pode ser pessoal: deixa-lo para a
+/// proxima redeclaracao sobrescrever (o julgamento do `*.novo` do `.reg`, que
+/// so ocupa espaco) e deixar dado pessoal sem dono no disco ate la. Perde-lo
+/// custa nada: o `.fts` vivo se refaz do `.reg` quando falta.
+///
+/// So no caminho que ESCREVE: sob a ficha compartilhada leitura nao apaga, e
+/// o proximo a abrir com a exclusiva recolhe.
+fn recolher_fts_ao_lado(diretorio: &Path, nome: &str) -> Result<()> {
+    match std::fs::remove_file(caminho_fts_ao_lado(diretorio, nome)) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(PhxError::from(e)),
+    }
+}
+
 /// `(coluna, dobrar)` de cada indice de TEXTO do esquema, na ordem dele.
 ///
 /// A ordem importa e e contrato: ela e a mesma dos indices internos do `.fts`,
@@ -1581,7 +1609,7 @@ impl Table {
         textos: Vec<IndiceDeTexto>,
     ) -> Result<TrocaDosTextos> {
         let novo = self.reg.esquema_com_indices_de_texto(textos)?;
-        let ao_lado = caminho(&self.diretorio, &self.nome, &format!("{EXT_FTS}.novo"));
+        let ao_lado = caminho_fts_ao_lado(&self.diretorio, &self.nome);
         let linhas = if novo.indices_de_texto().is_empty() {
             0
         } else {
@@ -1679,6 +1707,7 @@ impl Table {
             if let Some(f) = self.fts.as_mut() {
                 f.sincronizar()?;
             }
+            panico_de_teste::passar(panico_de_teste::Ponto::FtsAoLadoDepoisDoSincronizar);
             Ok(n)
         });
         if let Some(mut montado) = self.fts.take() {
@@ -2148,6 +2177,9 @@ impl Table {
                 "o .reg tem uma troca de volume interrompida por terminar",
             ));
         };
+        if escrever {
+            recolher_fts_ao_lado(&diretorio, nome)?;
+        }
         let paginacao = reg.esquema().paginacao();
         let ndx = NdxFile::abrir(caminho(&diretorio, nome, EXT_NDX))?;
         let externos = paginacao.para_externos();

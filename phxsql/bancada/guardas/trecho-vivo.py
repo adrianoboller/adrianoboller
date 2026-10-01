@@ -576,6 +576,13 @@ dia, nunca no desejado:
   `bidi-grava-filha-sem-mae-calada`, pelo soquete) e a escrita local na
   replica calada (`escrita-local-na-replica-calada`, pelo soquete). 650,
   medido pelo `--numeros` nesta arvore.
+  **SUBIU para 662 em 01/10/2026** (no merge, 659 + 3; pedidos 618 e 619): o `*.novo`
+  de uma reescrita interrompida que o `excluir_tabela` e o `renomear_tabela`
+  deixavam para tras (`novo-orfao-sobrevive-ao-excluir-tabela`), o
+  `.fts.novo` que a abertura nao recolhia (`fts-ao-lado-sobrevive-a-abertura`),
+  as duas provadas no `store`, e a redeclaracao do indice de texto pedindo so
+  criar (`redeclarar-texto-com-so-criar`), provada pelo soquete. 656, medido
+  pelo `--numeros` nesta arvore; o integrador resolve o numero no merge.
 
 # A QUINTA REGUA: a tabela publicada pode ser MENOR que o catalogo
 
@@ -682,7 +689,7 @@ TETO_TESTE_MORTO = 0
 TETO_TRECHO_AMBIGUO = 0
 TETO_TESTE_FORA_DO_BINARIO = 0
 TETO_TESTE_SEM_MODULO = 0
-PISO_DAS_ENTRADAS = 659
+PISO_DAS_ENTRADAS = 662
 
 # ------------------------------------------------------------- APOSENTADAS
 #
