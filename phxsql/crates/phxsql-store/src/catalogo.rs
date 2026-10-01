@@ -104,6 +104,9 @@ fn pertence(arquivo: &str, tabela: &str, ext: &str) -> bool {
 ///
 /// A copia e o inventario da tela continuam no [`pertence`]: copiar um
 /// arquivo pela metade nao e copiar a tabela, e um `.novo` nao e extensao.
+/// A copia so PERGUNTA por ele (pedido 624): havendo `*.novo` do `.reg`, a
+/// troca decidida se termina antes de copiar -- ver
+/// `RegFile::terminar_troca_antes_de_copiar`.
 fn pertence_ou_sobra(arquivo: &str, tabela: &str, ext: &str) -> bool {
     pertence(arquivo, tabela, ext)
         || arquivo
@@ -1535,6 +1538,19 @@ impl Database {
         dir_d: &Path,
         nome_d: &str,
     ) -> Result<PorSincronizar> {
+        // Pedido 624: a troca DECIDIDA e nao terminada se termina antes da
+        // copia, pela mesma decisao da abertura -- senao a copia levaria o
+        // volume 1 numa largura e o resto na outra, sem o `*.novo` que
+        // terminaria. O portao vem antes do trabalho: sem `*.novo` do `.reg`
+        // ao lado, nao se abre nada e a copia e a de sempre.
+        let ha_novo_do_reg = std::fs::read_dir(dir_o)?.flatten().any(|a| {
+            let f = a.file_name();
+            let f = f.to_string_lossy();
+            pertence_ou_sobra(&f, nome_o, EXT_REG) && !pertence(&f, nome_o, EXT_REG)
+        });
+        if ha_novo_do_reg {
+            crate::reg::RegFile::terminar_troca_antes_de_copiar(dir_o, nome_o)?;
+        }
         // Pedido 605: a copia e uma tabela que NASCE, e o irmao do
         // `criar_tabela` -- a mesma reserva, antes do primeiro arquivo.
         crate::nascendo::esperar(dir_d, nome_d);

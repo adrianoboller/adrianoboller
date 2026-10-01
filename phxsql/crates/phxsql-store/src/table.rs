@@ -974,9 +974,10 @@ fn caminho_fts_ao_lado(diretorio: &Path, nome: &str) -> PathBuf {
 /// congelada ela nao abre para escrever, entao quem chega aqui com a ficha
 /// exclusiva acha um orfao, nunca um arquivo em uso. E orfao que guarda o
 /// VOCABULARIO da coluna indexada, que pode ser pessoal: deixa-lo para a
-/// proxima redeclaracao sobrescrever (o julgamento do `*.novo` do `.reg`, que
-/// so ocupa espaco) e deixar dado pessoal sem dono no disco ate la. Perde-lo
-/// custa nada: o `.fts` vivo se refaz do `.reg` quando falta.
+/// proxima redeclaracao sobrescrever e deixar dado pessoal sem dono no disco
+/// ate la. Perde-lo custa nada: o `.fts` vivo se refaz do `.reg` quando falta.
+/// O `*.novo` do `.reg` tinha o mesmo julgamento velho («so ocupa espaco») e
+/// saiu dele no pedido 625: ver `RegFile::recolher_sobras_da_fase_a`.
 ///
 /// So no caminho que ESCREVE: sob a ficha compartilhada leitura nao apaga, e
 /// o proximo a abrir com a exclusiva recolhe.
@@ -2178,13 +2179,17 @@ impl Table {
         } else {
             RegFile::abrir_sem_escrever(&diretorio, nome)?
         };
-        let Some(reg) = reg else {
+        let Some(mut reg) = reg else {
             return Ok(SemEscrever::PrecisaEscrever(
                 "o .reg tem uma troca de volume interrompida por terminar",
             ));
         };
         if escrever {
             recolher_fts_ao_lado(&diretorio, nome)?;
+            // O irmao do de cima para o `.reg` (pedido 625): a copia inteira
+            // que uma FASE A morta deixou ao lado. Aqui, e nao no
+            // `RegFile::abrir`, porque aquele tambem serve quem so le.
+            reg.recolher_sobras_da_fase_a()?;
         }
         let paginacao = reg.esquema().paginacao();
         let ndx = NdxFile::abrir(caminho(&diretorio, nome, EXT_NDX))?;

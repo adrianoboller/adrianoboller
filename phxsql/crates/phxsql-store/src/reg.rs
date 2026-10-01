@@ -235,6 +235,11 @@ pub struct RegFile {
     /// Indice do vetor = volume - 1. Vazio quando a particao e por quantidade,
     /// porque ali o volume sai de uma divisao e nao ha o que guardar.
     fronteiras: Vec<Fronteira>,
+    /// Os `*.novo` que a ultima abertura achou ao lado dos volumes e que NAO
+    /// eram troca decidida -- o lixo de uma FASE A que nunca chegou a FASE B
+    /// (pedido 625). So se anotam aqui: quem apaga e o
+    /// [`RegFile::recolher_sobras_da_fase_a`], e so pela abertura gravavel.
+    sobras_da_fase_a: Vec<PathBuf>,
     /// Slots ja usados em cada balde da particao alfanumerica.
     ///
     /// Indice do vetor = balde - 1, com 37 posicoes fixas. Vazio nos outros
@@ -397,6 +402,7 @@ impl RegFile {
             baldes: Vec::new(),
             recuperados: 0,
             fronteiras: Vec::new(),
+            sobras_da_fase_a: Vec::new(),
         };
         if r.esquema.paginacao().modo.periodo().is_some() {
             r.fronteiras.push(Fronteira {
@@ -709,6 +715,7 @@ impl RegFile {
             baldes: Vec::new(),
             recuperados: 0,
             fronteiras: Vec::new(),
+            sobras_da_fase_a: Vec::new(),
         };
         // O contador do processo volta do DADO, e nao do relogio: sem isto um
         // no que reinicie emitiria carimbo menor que o de linha ja gravada.
@@ -726,9 +733,12 @@ impl RegFile {
     /// sozinho em que estado o conjunto esta:
     ///
     /// * volume 1 ainda **velho** -> a troca nem comecou. Os `*.novo` que
-    ///   houver sao lixo de uma fase que nunca decidiu nada, e nao se toca em
-    ///   nada. (A proxima alteracao os sobrescreve; apaga-los aqui seria
-    ///   apagar arquivo no caminho de LEITURA, e leitura nao apaga.)
+    ///   houver sao lixo de uma fase que nunca decidiu nada, e AQUI nao se
+    ///   apaga nenhum: esta funcao roda em toda abertura do `.reg`, inclusive
+    ///   nas que so leem (o `quem_aponta_para` do catalogo, a copia de
+    ///   tabela), e leitura nao apaga. Eles se ANOTAM em `sobras_da_fase_a`, e
+    ///   quem os recolhe e a abertura gravavel ([`Self::recolher_sobras_da_fase_a`],
+    ///   pedido 625).
     /// * volume 1 ja **novo** e algum volume n com a largura velha -> a
     ///   alteracao esta decidida e faltou terminar. O `*.novo` daquele volume
     ///   e um arquivo completo e sincronizado: o `rename` que faltava acontece
@@ -737,11 +747,16 @@ impl RegFile {
     /// So termina para a frente, e so quando o `*.novo` **se declara** com a
     /// mesma largura de slot e o mesmo CRC de esquema do volume 1. Um arquivo
     /// que nao se declara assim nao entra no lugar de nada.
+    ///
+    /// E a UNICA copia desta decisao: a abertura gravavel e a copia de tabela
+    /// (pedido 624, [`Self::terminar_troca_antes_de_copiar`]) passam por aqui.
     fn terminar_troca_interrompida(&mut self) -> Result<()> {
-        for (novo, alvo) in self.trocas_por_terminar() {
+        let (trocas, sobras) = self.separar_novos_ao_lado();
+        for (novo, alvo) in trocas {
             self.volumes.fechar_todos();
             crate::sincronia::trocar_duravel(&novo, &alvo)?;
         }
+        self.sobras_da_fase_a = sobras;
         Ok(())
     }
 
@@ -758,35 +773,120 @@ impl RegFile {
     /// dia em que o formato mudasse, e divergiria calada: um conjunto meio
     /// trocado passaria a abrir como se estivesse inteiro.
     fn trocas_por_terminar(&self) -> Vec<(PathBuf, PathBuf)> {
-        let mut saida = Vec::new();
-        if !self.esquema.paginacao().ligada() {
-            return saida;
-        }
+        self.separar_novos_ao_lado().0
+    }
+
+    /// Os `*.novo` ao lado dos volumes (e dos espelhos), separados em
+    /// `(trocas decididas, sobras)`, numa passada so.
+    ///
+    /// # Por que a tabela sem paginacao tambem e varrida
+    ///
+    /// Porque ela tambem tem FASE A (o `acrescentar_coluna`, a redeclaracao do
+    /// indice de texto) e o `*.novo` dela tambem fica quando a fase morre. O
+    /// que ela nao tem e troca DECIDIDA pela metade: e um volume so, e um
+    /// `rename` e atomico. Entao o `*.novo` dela e sempre sobra. O preco e um
+    /// `stat` por abertura, onde antes a funcao saia sem olhar o disco; a
+    /// paginada ja pagava um por volume e continua pagando o mesmo.
+    fn separar_novos_ao_lado(&self) -> (Vec<(PathBuf, PathBuf)>, Vec<PathBuf>) {
+        let mut trocas = Vec::new();
+        let mut sobras = Vec::new();
+        let paginada = self.esquema.paginacao().ligada();
+        let esperado = Some((self.slot_size, self.data_offset, self.esquema_crc));
         for v in self.volumes.existentes() {
             let caminho = self.volumes.caminho(v);
             for alvo in [Some(caminho), self.volumes.caminho_do_espelho(v)]
                 .into_iter()
                 .flatten()
             {
-                let novo = alvo.with_file_name(format!(
-                    "{}.{SUFIXO_NOVO}",
-                    alvo.file_name().unwrap_or_default().to_string_lossy()
-                ));
-                if !novo.exists() || !alvo.exists() {
+                let novo = caminho_do_novo(&alvo);
+                if !novo.exists() {
                     continue;
                 }
-                let atual = geometria_do_volume(&alvo);
-                if atual == Some((self.slot_size, self.data_offset, self.esquema_crc)) {
-                    continue; // ja trocado
-                }
-                if geometria_do_volume(&novo)
-                    == Some((self.slot_size, self.data_offset, self.esquema_crc))
-                {
-                    saida.push((novo, alvo));
+                let decidida = paginada
+                    && alvo.exists()
+                    && geometria_do_volume(&alvo) != esperado
+                    && geometria_do_volume(&novo) == esperado;
+                if decidida {
+                    trocas.push((novo, alvo));
+                } else {
+                    sobras.push(novo);
                 }
             }
         }
-        saida
+        (trocas, sobras)
+    }
+
+    /// **Pedido 624: a copia de tabela termina a troca decidida ANTES de
+    /// copiar** -- ou recusa dizendo por que.
+    ///
+    /// A copia leva os volumes byte a byte e deixa os `*.novo` de fora (copiar
+    /// um arquivo pela metade nao e copiar a tabela). Numa troca decidida e
+    /// nao terminada isso levava o volume 1 na largura NOVA e o volume n na
+    /// VELHA sem o `*.novo` que a abertura usaria para terminar: uma copia que
+    /// nunca abre, ou pior, lida com a largura errada por quem nao confere.
+    ///
+    /// A decisao e a do [`Self::terminar_troca_interrompida`], chamada aqui, e
+    /// nao uma segunda copia dela. Dois portoes antes:
+    ///
+    /// * **sem `*.novo` do `.reg` ao lado, nao se abre nada** -- quem chama ja
+    ///   olhou a pasta. E o caso de sempre, e abrir o `.reg` nele mudaria a
+    ///   copia: a tabela cifrada copia hoje sem a chave, e o `montar` a pede.
+    /// * **terminar e escrever na tabela de origem**, entao a tabela
+    ///   CONGELADA recusa, pelo mesmo [`crate::congelamento::conferir`] da
+    ///   abertura gravavel. Congelada e sem troca decidida (a FASE A correndo,
+    ///   volume 1 ainda velho) nao recusa: os volumes vivos sao os velhos e
+    ///   inteiros, e a copia de sempre os leva.
+    ///
+    /// As sobras nao se apagam aqui: a copia e leitura da origem, e o lixo tem
+    /// dono proprio (a abertura gravavel, pedido 625).
+    pub(crate) fn terminar_troca_antes_de_copiar(diretorio: &Path, nome: &str) -> Result<()> {
+        let mut r = RegFile::montar(diretorio, nome)?;
+        if !r.trocas_por_terminar().is_empty() {
+            crate::congelamento::conferir(diretorio, nome)?;
+            r.terminar_troca_interrompida()?;
+        }
+        r.conferir_volumes_uniformes()
+    }
+
+    /// **Pedido 625: recolhe os `*.novo` que a abertura achou e que nao sao
+    /// troca decidida** -- a copia inteira da tabela que uma FASE A morta
+    /// deixou ao lado, com o dado pessoal que houver nela.
+    ///
+    /// # Quem recolhe, e quando
+    ///
+    /// A abertura GRAVAVEL ([`crate::table::Table`] com a ficha exclusiva), e
+    /// so ela, pelo mesmo motivo do `.fts.novo` do pedido 618:
+    ///
+    /// * **leitura nao apaga.** A ficha compartilhada tem N leitores nos
+    ///   mesmos arquivos, e o `RegFile::abrir` serve tambem quem so le o
+    ///   esquema. Nenhum deles chama isto.
+    /// * **a FASE A viva nao e sobra.** Fora da trava ela corre com a tabela
+    ///   congelada, e congelada a abertura gravavel nem chega aqui. O que
+    ///   sobra e a FASE A sem congelamento (a de uma fase so, ou a de quem
+    ///   escapou do congelamento): o `*.novo` dela tem DONO enquanto a
+    ///   [`TrocaPendente`] vive, e o dono esta anotado em
+    ///   [`novos_com_dono`]. O que tem dono fica. E se um dia sumir assim
+    ///   mesmo, a FASE B recusa antes do primeiro `rename` em vez de trocar
+    ///   meio conjunto.
+    ///
+    /// Esperar a proxima reescrita sobrescrever (o julgamento de antes) era
+    /// deixar o `.reg` inteiro -- coluna marcada inclusive -- sem dono no disco
+    /// por tempo indefinido, porque reescrita e rara e a tabela vive.
+    ///
+    /// Devolve quantos apagou.
+    pub(crate) fn recolher_sobras_da_fase_a(&mut self) -> Result<usize> {
+        let mut apagados = 0;
+        for novo in std::mem::take(&mut self.sobras_da_fase_a) {
+            if novos_com_dono::tem_dono(&novo) {
+                continue;
+            }
+            match std::fs::remove_file(&novo) {
+                Ok(()) => apagados += 1,
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(e) => return Err(PhxError::from(e)),
+            }
+        }
+        Ok(apagados)
     }
 
     /// Todo volume tem de declarar a MESMA largura de slot e o mesmo esquema.
@@ -1562,6 +1662,7 @@ impl RegFile {
         self.data_offset = velho.3;
 
         let a_trocar = TrocaPendente {
+            _dono: novos_com_dono::Dono::tomar(&primeiros),
             slots: 0,
             trocas: primeiros
                 .iter()
@@ -1865,6 +1966,9 @@ impl RegFile {
         // ele que a FASE B confere que ninguem escreveu no volume vivo
         // enquanto o `*.novo` era montado. Ver `conferir_retrato`.
         let retrato = retratar(&primeiros);
+        // O dono dos `*.novo` nasce ANTES do primeiro byte (pedido 625): um
+        // `*.novo` pela metade tambem nao e sobra enquanto esta fase vive.
+        let dono = novos_com_dono::Dono::tomar(&primeiros);
 
         // FASE A -- escrever. Nenhum `rename` acontece aqui: cada volume vira
         // um `*.novo` completo e sincronizado ao lado do seu. Enquanto esta
@@ -1908,6 +2012,7 @@ impl RegFile {
 
         Ok(TrocaPendente {
             slots,
+            _dono: dono,
             trocas: primeiros
                 .into_iter()
                 .map(|(_, _, caminho, espelho)| (caminho, espelho))
@@ -1927,12 +2032,40 @@ impl RegFile {
     /// Quem soltou a trava entre as duas fases tem de tomar a trava de novo
     /// **antes** desta e conferir o retrato ([`TrocaPendente::conferir_retrato`]).
     pub fn alargar_fase_b(&mut self, pendente: TrocaPendente) -> Result<u64> {
+        // Todo `*.novo` do conjunto antes do PRIMEIRO `rename` (pedido 625).
+        // O `trocar_pelo_novo` pula o que nao acha, e era o certo enquanto
+        // ninguem apagava `*.novo`; agora a abertura gravavel recolhe as
+        // sobras, e um volume sem o dele no meio da troca deixaria o conjunto
+        // misturado e sem a peca que o terminaria. Recusar aqui nao custa
+        // nada: nada foi trocado ainda.
+        for (caminho, _) in &pendente.trocas {
+            if !caminho_do_novo(caminho).exists() {
+                let arquivo = caminho
+                    .file_name()
+                    .map(|f| f.to_string_lossy().into_owned())
+                    .unwrap_or_default();
+                return Err(PhxError::Conflito(format!(
+                    "o arquivo novo de {arquivo} sumiu antes da troca: a \
+                     alteracao foi ABORTADA e a tabela continua inteira e como \
+                     estava. Nada foi perdido -- rode a operacao de novo"
+                )));
+            }
+        }
+        crate::ndx::panico_de_teste::passar(
+            crate::ndx::panico_de_teste::Ponto::FaseBAntesDaPrimeiraTroca,
+        );
+        let mut no_volume_1 = true;
         for (caminho, espelho) in &pendente.trocas {
             trocar_pelo_novo(caminho)?;
             if let Some(espelho) = espelho {
                 if espelho.exists() {
                     trocar_pelo_novo(espelho)?;
                 }
+            }
+            if std::mem::take(&mut no_volume_1) {
+                crate::ndx::panico_de_teste::passar(
+                    crate::ndx::panico_de_teste::Ponto::FaseBDepoisDoVolume1,
+                );
             }
         }
         self.volumes.fechar_todos();
@@ -3079,6 +3212,10 @@ pub struct TrocaPendente {
     /// `(volume, espelho)` na ordem da troca. O volume 1 vem primeiro.
     trocas: Vec<(PathBuf, Option<PathBuf>)>,
     retrato: Vec<RetratoDoVolume>,
+    /// Os `*.novo` desta troca tem dono enquanto ela vive (pedido 625). Sai
+    /// no `Drop` -- na FASE B, no `descartar` e no desenrolar de um panico --,
+    /// e dai em diante o que sobrou e lixo que a abertura gravavel recolhe.
+    _dono: novos_com_dono::Dono,
 }
 
 impl TrocaPendente {
@@ -3168,6 +3305,80 @@ impl TrocaDoEsquema {
     /// Joga fora os `*.novo`, quando a FASE B nao vai acontecer.
     pub fn descartar(self) -> usize {
         self.troca.descartar()
+    }
+}
+
+/// **Pedido 625: os `*.novo` que tem dono neste processo** -- os de uma
+/// [`TrocaPendente`] viva.
+///
+/// # Por que um registro, e nao so o congelamento
+///
+/// O congelamento impede a abertura gravavel da tabela em reescrita fora da
+/// trava, e por isso, em servico, a abertura que recolhe sobras nunca acha
+/// `*.novo` de FASE A viva. Mas ele e o portao de quem SEGUE a regra; a FASE A
+/// de uma fase so (`acrescentar_coluna` dentro da trava) nao congela, e um
+/// caminho que escapasse do congelamento passaria a APAGAR o palco da troca
+/// de outro -- e a FASE B renomearia meio conjunto. O registro troca «nao deve
+/// acontecer» por «se acontecer, nao apaga», do mesmo jeito que o retrato da
+/// FASE B ja faz para a escrita.
+///
+/// Custo zero onde importa: a abertura so pergunta quando ACHOU uma sobra, que
+/// e caminho de recuperacao; e quem registra e a FASE A, que e rara e cara.
+pub(crate) mod novos_com_dono {
+    use std::path::{Path, PathBuf};
+    use std::sync::Mutex;
+
+    static COM_DONO: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
+
+    /// A mesma chave para quem registra e quem pergunta: absoluta, porque a
+    /// abertura resolve o diretorio e a FASE A pode ter vindo de um relativo.
+    fn chave(p: &Path) -> PathBuf {
+        crate::volume::absoluto_lexico(p).unwrap_or_else(|| p.to_path_buf())
+    }
+
+    fn lista() -> std::sync::MutexGuard<'static, Vec<PathBuf>> {
+        COM_DONO.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// O dono dos `*.novo` de uma troca. Registra ao nascer, solta no `Drop`.
+    pub(crate) struct Dono {
+        novos: Vec<PathBuf>,
+    }
+
+    impl Dono {
+        /// Registra o `*.novo` de cada volume e de cada espelho da troca. O
+        /// espelho entra mesmo que ainda nao exista: o registro e de NOME, e
+        /// nome que nunca nasceu nao atrapalha ninguem.
+        pub(crate) fn tomar<T>(volumes: &[(u32, T, PathBuf, Option<PathBuf>)]) -> Dono {
+            let novos: Vec<PathBuf> = volumes
+                .iter()
+                .flat_map(|(_, _, c, e)| [Some(c), e.as_ref()])
+                .flatten()
+                .map(|alvo| chave(&super::caminho_do_novo(alvo)))
+                .collect();
+            lista().extend(novos.iter().cloned());
+            Dono { novos }
+        }
+    }
+
+    impl Drop for Dono {
+        fn drop(&mut self) {
+            let mut l = lista();
+            for n in &self.novos {
+                // Uma ocorrencia por registro: dois donos do mesmo nome so
+                // existem num teste que escapa do congelamento de proposito, e
+                // soltar um nao pode soltar o outro.
+                if let Some(i) = l.iter().position(|x| x == n) {
+                    l.swap_remove(i);
+                }
+            }
+        }
+    }
+
+    /// Este `*.novo` pertence a uma troca viva neste processo?
+    pub(crate) fn tem_dono(novo: &Path) -> bool {
+        let k = chave(novo);
+        lista().contains(&k)
     }
 }
 

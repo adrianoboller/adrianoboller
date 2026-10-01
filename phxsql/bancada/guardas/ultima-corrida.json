@@ -371,9 +371,9 @@
       "id": "alter-espelho-para-tras",
       "titulo": "o espelho `.bkp` fica com a largura velha depois de acrescentar coluna",
       "veredito": "PROVADA",
-      "segundos": 1.86,
+      "segundos": 7.76,
       "notas": [],
-      "quando": "2026-09-16 15:25"
+      "quando": "2026-10-01 19:03"
     },
     {
       "id": "alter-queda-no-meio",
@@ -3883,9 +3883,9 @@
       "id": "novo-orfao-sobrevive-ao-excluir-tabela",
       "titulo": "Excluir e renomear a tabela deixavam para trás os *.novo de uma reescrita interrompida",
       "veredito": "PROVADA",
-      "segundos": 7.19,
+      "segundos": 7.45,
       "notas": [],
-      "quando": "2026-10-01 18:04"
+      "quando": "2026-10-01 19:03"
     },
     {
       "id": "fts-ao-lado-sobrevive-a-abertura",
@@ -3958,6 +3958,46 @@
       "segundos": 22.6,
       "notas": [],
       "quando": "2026-10-01 18:41"
+    },
+    {
+      "id": "copia-leva-volumes-de-duas-versoes",
+      "titulo": "A cópia de tabela no meio de uma troca decidida levava volumes de duas versões",
+      "veredito": "PROVADA",
+      "segundos": 7.48,
+      "notas": [],
+      "quando": "2026-10-01 19:03"
+    },
+    {
+      "id": "sobra-da-fase-a-fica-sem-dono",
+      "titulo": "Os *.novo do .reg de uma fase A morta ficavam no disco enquanto a tabela vivesse",
+      "veredito": "PROVADA",
+      "segundos": 7.71,
+      "notas": [],
+      "quando": "2026-10-01 19:03"
+    },
+    {
+      "id": "sobra-sem-paginacao-nao-se-varre",
+      "titulo": "A tabela sem paginação não tinha os *.novo varridos, e a sobra dela ficava",
+      "veredito": "PROVADA",
+      "segundos": 7.65,
+      "notas": [],
+      "quando": "2026-10-01 19:03"
+    },
+    {
+      "id": "novo-com-dono-apagado-pelo-vizinho",
+      "titulo": "A abertura gravável apagaria o *.novo de uma troca ainda viva",
+      "veredito": "PROVADA",
+      "segundos": 7.52,
+      "notas": [],
+      "quando": "2026-10-01 19:03"
+    },
+    {
+      "id": "fase-b-troca-meio-conjunto",
+      "titulo": "A fase B trocava o conjunto pela metade quando um *.novo tinha sumido",
+      "veredito": "PROVADA",
+      "segundos": 7.25,
+      "notas": [],
+      "quando": "2026-10-01 19:03"
     },
     {
       "id": "cifra-do-fio-imposta",
