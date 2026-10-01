@@ -293,25 +293,72 @@ mod testes {
         assert!(matches!(e, PhxError::EmMigracao(_)), "{e:?}");
     }
 
-    /// O interruptor VOLTA, senao o portao barato deixa de ser barato para
-    /// sempre depois da primeira reescrita do processo.
+    /// O interruptor bate com o registro? Lido SOB a trava do registro: o
+    /// `congelar` e o `Drop` mexem nos dois dentro dela, entao o par lido
+    /// aqui e um retrato so, e nenhum teste vizinho o desalinha.
+    fn interruptor_bate_com_o_registro() -> bool {
+        let c = CONGELADAS.lock().unwrap();
+        c.len() == QUANTAS.load(Ordering::SeqCst)
+    }
+
+    /// O corpo de `o_contador_volta_ao_que_era`, com um gancho para o
+    /// vizinho agir NO MEIO -- que e onde a suite em paralelo age.
     ///
-    /// A conta e relativa e nao absoluta de proposito: o registro e do
-    /// PROCESSO, e a suite roda em paralelo -- um zero cravado aqui mediria
-    /// o teste vizinho.
-    #[test]
-    fn o_contador_volta_ao_que_era() {
-        let d = std::path::Path::new("/tmp/phxsql-congelamento-contador");
+    /// # Por que a conta nao e mais relativa (pedido 599, medido)
+    ///
+    /// A versao de antes lia `antes = quantas()` e exigia `quantas() >=
+    /// antes + 2` com as duas congeladas. O contador e do PROCESSO: quando um
+    /// vizinho (`congelada_recusa_e_nomeia_a_tabela`,
+    /// `duas_reescritas_da_mesma_tabela_nao_comecam_juntas`) estava congelado
+    /// na leitura de `antes` e soltava antes da conferencia, a conta dava
+    /// `antes + 1` e o teste caia sem defeito nenhum -- a montagem
+    /// deterministica disso e `o_vizinho_que_solta_no_meio_nao_derruba_a_conta`.
+    /// Agora so se cobra o que o vizinho nao estraga: o piso absoluto (as
+    /// duas daqui contam, o vizinho so soma), o portao recusando as duas, e o
+    /// contador igual ao tamanho do registro -- que e a garantia de verdade:
+    /// um `Drop` que tira do registro e esquece o contador deixa o portao
+    /// barato caro para sempre, e a versao velha nao via isso.
+    fn conferir_que_o_contador_volta(d: &Path, vizinho_age: impl FnOnce()) {
         let antes = quantas();
         {
             let _a = congelar(d, "a", "x").unwrap();
             let _b = congelar(d, "b", "x").unwrap();
+            vizinho_age();
             assert!(
-                quantas() >= antes + 2,
-                "duas congeladas e o contador nao subiu dois"
+                quantas() >= 2,
+                "duas congeladas e o contador nao as conta (antes {antes}, agora {})",
+                quantas()
+            );
+            assert!(conferir(d, "a").is_err() && conferir(d, "b").is_err());
+            assert!(
+                interruptor_bate_com_o_registro(),
+                "com as duas congeladas o contador nao bate com o registro"
             );
         }
         assert!(conferir(d, "a").is_ok(), "o Drop de `a` nao descongelou");
         assert!(conferir(d, "b").is_ok(), "o Drop de `b` nao descongelou");
+        assert!(
+            interruptor_bate_com_o_registro(),
+            "o Drop tirou do registro e o contador nao voltou"
+        );
+    }
+
+    /// O interruptor VOLTA, senao o portao barato deixa de ser barato para
+    /// sempre depois da primeira reescrita do processo.
+    #[test]
+    fn o_contador_volta_ao_que_era() {
+        let d = std::path::Path::new("/tmp/phxsql-congelamento-contador");
+        conferir_que_o_contador_volta(d, || {});
+    }
+
+    /// **Prova real do pedido 599 (b).** O vizinho congelado na leitura de
+    /// `antes` solta NO MEIO da conferencia -- o que a suite em paralelo faz
+    /// quando quer. Com a conta relativa de antes reposta (guarda
+    /// `contador-do-congelamento-relativo`), este teste cai toda vez.
+    #[test]
+    fn o_vizinho_que_solta_no_meio_nao_derruba_a_conta() {
+        let d = std::path::Path::new("/tmp/phxsql-congelamento-vizinho-solta");
+        let vizinho = congelar(d, "vizinho", "teste ao lado").unwrap();
+        conferir_que_o_contador_volta(d, move || drop(vizinho));
     }
 }

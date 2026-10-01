@@ -33,7 +33,7 @@ use comum::DirTemp;
 
 use std::io::{BufRead, BufReader, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
-use std::sync::atomic::{AtomicU16, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -52,21 +52,6 @@ const PRIV_B: &str = "bb";
 /// A privada de um terceiro que tem a credencial do cluster e quer se passar
 /// pelo `noB`.
 const PRIV_INTRUSO: &str = "cc";
-
-/// Faixa PROPRIA (7400-7449): dois binarios de teste rodando juntos nao podem
-/// disputar porta.
-static PROXIMA: AtomicU16 = AtomicU16::new(7400);
-
-fn porta_livre() -> u16 {
-    loop {
-        let porta = PROXIMA.fetch_add(1, Ordering::SeqCst);
-        assert!(porta < 7449, "acabaram as portas entre 7400 e 7448");
-        if let Ok(l) = TcpListener::bind(("127.0.0.1", porta)) {
-            drop(l);
-            return porta;
-        }
-    }
-}
 
 fn privada(semente: &str) -> [u8; 32] {
     let bytes = phxsql_core::hash::de_hex(&semente.repeat(32)).unwrap();
@@ -461,11 +446,12 @@ fn subir_par(
     este: &str,
     papel: &str,
     priv_este: &str,
-    porta_este: u16,
+    ouvinte_este: TcpListener,
     outro: &str,
     porta_outro: u16,
     pino_outro: &str,
 ) -> Arc<Servidor> {
+    let porta_este = ouvinte_este.local_addr().unwrap().port();
     std::fs::create_dir_all(base.join("base")).unwrap();
     let caminho = base.join("config.json");
     let bar = |p: std::path::PathBuf| p.display().to_string().replace('\\', "/");
@@ -506,13 +492,13 @@ fn subir_par(
         ),
     )
     .unwrap();
-    // Excecao nomeada do pedido 401: os DOIS nos precisam saber a porta um
-    // do OUTRO antes de qualquer um deles ligar (`cluster.nos` e simetrico),
-    // entao nenhum dos dois pode nascer com porta 0 -- nao ha como ler de
-    // volta uma porta que o par ainda nao escolheu. `no_ar` devolve a porta
-    // REAL so para conferencia; aqui ela e sempre igual a `porta_este`,
-    // porque so ela foi escrita no `bind`.
-    let (s, _) = no_ar(Servidor::novo(Config::ler(&caminho).unwrap()).unwrap());
+    // Os DOIS nos precisam da porta um do OUTRO antes de qualquer um ligar
+    // (`cluster.nos` e simetrico), entao a porta nao pode nascer 0 e ser
+    // lida de volta. Ela vem de `comum::ouvinte_reservado()`, PRESA desde o
+    // sorteio ate este no recebe-la -- pedidos 352 e 401: o padrao de antes
+    // (faixa fixa com `bind`/`drop`) soltava o numero e deixava a janela.
+    let s = Servidor::novo(Config::ler(&caminho).unwrap()).unwrap();
+    comum::no_ar_no_ouvinte(&s, ouvinte_este);
     s
 }
 
@@ -535,16 +521,16 @@ fn subir_par(
 fn dois_nos_cifrados_com_exigencia_ligada_continuam_se_enxergando() {
     let base_a = DirTemp::novo("identidade-par-a");
     let base_b = DirTemp::novo("identidade-par-b");
-    let porta_a = porta_livre();
-    let porta_b = porta_livre();
+    let (ouvinte_a, porta_a) = comum::ouvinte_reservado();
+    let (ouvinte_b, porta_b) = comum::ouvinte_reservado();
     let pino_a = para_hex(&publica(PRIV_A));
     let pino_b = para_hex(&publica(PRIV_B));
 
     let _a = subir_par(
-        &base_a, "noA", "source", PRIV_A, porta_a, "noB", porta_b, &pino_b,
+        &base_a, "noA", "source", PRIV_A, ouvinte_a, "noB", porta_b, &pino_b,
     );
     let _b = subir_par(
-        &base_b, "noB", "replica", PRIV_B, porta_b, "noA", porta_a, &pino_a,
+        &base_b, "noB", "replica", PRIV_B, ouvinte_b, "noA", porta_a, &pino_a,
     );
 
     let ate = Instant::now() + Duration::from_secs(20);
@@ -762,10 +748,6 @@ fn o_pulso_nao_diz_quais_nos_tem_pino() {
 #[test]
 #[ignore = "sonda: roda so reexecutada por aceitar_pulso_sem_prova_deixa_rastro"]
 fn sonda_pulso_sem_prova() {
-    // Do alto da faixa: a sonda roda num processo FILHO, com o contador de
-    // portas zerado, ao mesmo tempo que a bateria do pai sobe nos de 7400 em
-    // diante. Comecar embaixo disputaria a mesma porta com um deles.
-    PROXIMA.store(7440, Ordering::SeqCst);
     let base = DirTemp::novo("identidade-pulso-sonda-inerte");
     let (_a, porta) = subir_no_a(&base, false, &para_hex(&publica(PRIV_B)));
     for id in ["noB", "noB", "noB", "noC"] {
@@ -849,7 +831,6 @@ const TORTOS: usize = 25;
 #[test]
 #[ignore = "sonda: roda so reexecutada por o_pulso_torto_nao_afoga_o_log"]
 fn sonda_pulso_torto_em_rajada() {
-    PROXIMA.store(7445, Ordering::SeqCst);
     let base = DirTemp::novo("identidade-pulso-sonda-rajada");
     let (_a, porta) = subir_no_a(&base, false, &para_hex(&publica(PRIV_B)));
     for _ in 0..TORTOS {

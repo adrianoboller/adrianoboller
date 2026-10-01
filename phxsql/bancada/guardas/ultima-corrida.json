@@ -1217,9 +1217,9 @@
       "id": "threads-do-so-pela-diferenca",
       "titulo": "a prova de que o SO viu a thread subida é a diferença entre duas leituras do total do processo",
       "veredito": "PROVADA",
-      "segundos": 38.21,
+      "segundos": 81.31,
       "notas": [],
-      "quando": "2026-09-16 15:25"
+      "quando": "2026-10-01 04:20"
     },
     {
       "id": "varredura-sem-o-elo",
@@ -3171,17 +3171,17 @@
       "id": "pulso-torto-uma-linha-por-envio",
       "titulo": "cada pulso torto escrevia uma linha no stderr, que é o journal: quem tem a credencial do cluster afogava o «REBAIXANDO» no limite de taxa",
       "veredito": "PROVADA",
-      "segundos": 27.59,
+      "segundos": 24.65,
       "notas": [],
-      "quando": "2026-10-01 03:36"
+      "quando": "2026-10-01 04:25"
     },
     {
       "id": "pulso-com-o-id-deste-no-uma-linha-por-envio",
       "titulo": "o pulso com o id DESTE nó escrevia uma linha no stderr por envio — o irmão do B2 no `op_cluster_pulso`",
       "veredito": "PROVADA",
-      "segundos": 34.95,
+      "segundos": 24.21,
       "notas": [],
-      "quando": "2026-10-01 03:37"
+      "quando": "2026-10-01 04:30"
     },
     {
       "id": "web-acima-do-teto-sem-rastro",
@@ -3230,6 +3230,46 @@
       "segundos": 40.04,
       "notas": [],
       "quando": "2026-10-01 03:54"
+    },
+    {
+      "id": "apoio-engole-a-falha-do-bind",
+      "titulo": "o apoio dos testes subia o servidor com `let _ = escutar()` e esperava a porta ATENDER: com a porta tomada por um vizinho do mesmo binário, o teste conversava com o servidor do vizinho («database loja já existe»)",
+      "veredito": "PROVADA",
+      "segundos": 19.09,
+      "notas": [],
+      "quando": "2026-10-01 04:07"
+    },
+    {
+      "id": "tarefa-pela-listagem-do-proc",
+      "titulo": "o teste das threads do SO procurava a thread listando `/proc/self/task`: a listagem pula a thread viva quando a tarefa listada logo antes dela morre",
+      "veredito": "PROVADA",
+      "segundos": 111.27,
+      "notas": [],
+      "quando": "2026-10-01 04:10"
+    },
+    {
+      "id": "contador-do-congelamento-relativo",
+      "titulo": "o teste do contador do congelamento exigia `antes + 2`: o vizinho congelado na leitura de `antes` que soltava no meio derrubava o teste sem defeito nenhum",
+      "veredito": "PROVADA",
+      "segundos": 10.32,
+      "notas": [],
+      "quando": "2026-10-01 04:15"
+    },
+    {
+      "id": "drop-do-congelamento-esquece-o-contador",
+      "titulo": "o `Drop` do congelamento tirava a tabela do registro e esquecia o contador: o portão barato ficava caro para sempre, e o teste antigo não via",
+      "veredito": "PROVADA",
+      "segundos": 10.07,
+      "notas": [],
+      "quando": "2026-10-01 04:15"
+    },
+    {
+      "id": "arbitro-engole-o-rebaixar",
+      "titulo": "o árbitro do cluster engolia a falha de gravar o rebaixamento (`let _ = estado.rebaixar(...)`): o nó voltava mandando num reinício, sem pista nenhuma",
+      "veredito": "PROVADA",
+      "segundos": 75.64,
+      "notas": [],
+      "quando": "2026-10-01 04:18"
     },
     {
       "id": "cifra-do-fio-imposta",
