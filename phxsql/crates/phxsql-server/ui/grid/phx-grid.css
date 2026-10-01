@@ -166,3 +166,13 @@ tbody tr:hover td[data-fx]{background:#eef1f4}
   font-weight:700;background:rgba(127,127,127,.13);
   border-top:2px solid currentColor;
 }
+
+/* Dedo grosso (revisao medida de 01/10/2026): em 390px com ponteiro de toque
+   a grade era a maior fonte de alvo abaixo de 32px -- o filtro do cabecalho
+   tinha 11x9, a paginacao 26x26 e o rodape inteiro 26 de altura. So no
+   `pointer:coarse`: no mouse a grade continua densa, que e o molde. */
+@media (pointer:coarse){
+  .phx-fbtn{min-width:32px;min-height:32px}
+  .phx-th-agg{min-height:32px;min-width:32px}
+  .phx-pg,.phx-colsel-btn,.phx-exp-btn{min-height:36px;min-width:36px}
+}

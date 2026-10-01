@@ -2,6 +2,14 @@
 
 Formato baseado em *Keep a Changelog*. Versionamento semântico.
 
+## [Não lançado] — 2026-10-01 · **ALVO DE TOQUE NO DEDO GROSSO**
+
+Só no `@media (pointer:coarse)`: o botão do filtro do cabeçalho (`.phx-fbtn`,
+medido 11×9 px), o agregador (`.phx-th-agg`, 29×13) e os botões do rodapé
+(paginação, colunas, exportar, 26 px de altura) ganham piso de 32–36 px. No
+mouse a grade não muda. Medido pela revisão da interface em 390 px com
+ponteiro de toque (`testes-web/revisao-da-interface.mjs`).
+
 ## [0.9.3] — 2026-09-04 · **A FONTE LOCAL SAI PARA FORA, PARA O FILTRO PODER DESCER**
 
 `PhxGrid._fonteLocal` passa a ser exposto. Ele já existia e já fazia tudo —
