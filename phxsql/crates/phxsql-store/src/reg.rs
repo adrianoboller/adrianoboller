@@ -2243,20 +2243,31 @@ impl RegFile {
         )
     }
 
-    /// A primeira coluna externa marcada que este arquivo guardaria em CLARO
-    /// -- pedido 613.
+    /// A primeira coluna marcada como dado pessoal que este arquivo guardaria
+    /// em CLARO -- pedidos 613 e 616.
     ///
-    /// E o avesso exato de [`RegFile::externo_selado`], pelas mesmas duas
-    /// perguntas (o arquivo tem cofre? a coluna e externa marcada?): onde la
-    /// a resposta e «selo», aqui e «nao ha com que selar». Quem a usa e a
-    /// replica, que por decisao do dono (01/10/2026) RECUSA a tabela nesse
-    /// caso: dado pessoal marcado nunca fica em claro fora da origem. Escrita
-    /// ao lado da outra para as duas nunca divergirem sobre o que e «marcada».
-    pub fn externa_marcada_sem_cofre(&self) -> Option<u16> {
+    /// Inline OU externa. O 613 nasceu so para a externa, pelo avesso do
+    /// [`RegFile::externo_selado`]; mas a inline marcada tambem chega aberta
+    /// na imagem de replicacao (`imagem_da_linha` decifra as faixas) e tambem
+    /// pousaria em claro no slot de um arquivo sem cofre -- o mesmo dado
+    /// pessoal pelo caminho irmao (pedido 616). A pergunta e uma so, «este
+    /// arquivo tem com que selar o que e marcado?», e por isso a resposta
+    /// mora aqui, uma vez: quem replica (o `aplicar_evento`) e quem casa por
+    /// chave (o bidirecional) a fazem pelo mesmo `Table::recusar_marcada_sem_cofre`.
+    ///
+    /// `cifrado()` basta para as duas: arquivo que nasceu com cofre e com
+    /// coluna marcada sela as faixas inline E o externo marcado (ver o
+    /// `criar`, onde o material nasce por `tem_dado_pessoal`, inline ou
+    /// externa -- pedido 210).
+    pub fn marcada_sem_cofre(&self) -> Option<u16> {
         if self.material.cifrado() {
             return None;
         }
-        (0..self.esquema.colunas().len() as u16).find(|&c| self.externa_marcada(c))
+        self.esquema
+            .colunas()
+            .iter()
+            .position(|c| c.dado_pessoal.e_pessoal())
+            .map(|c| c as u16)
     }
 
     /// A coluna e externa (`Bin`/`Memo`) E esta marcada como dado pessoal?

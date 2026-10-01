@@ -375,3 +375,172 @@ fn o_fio_cifrado_leva_o_antes_da_troca_de_chave() {
     drop(t);
     cofre::desligar();
 }
+
+/// O esquema do caso 616: a marcada e INLINE (`Str`), e nao ha externa
+/// nenhuma -- a recusa do 613 nao tinha por onde pega-la.
+fn esquema_inline() -> Schema {
+    Schema::new(
+        "pacientes",
+        vec![
+            Column::new("id", ColumnType::Int8).obrigatoria(),
+            Column::new("nome", ColumnType::Str(40))
+                .obrigatoria()
+                .com_dado_pessoal(DadoPessoal::Pessoal),
+        ],
+        vec![IndexDef::new("porId", vec![IndexColumn::asc(0)])
+            .unico()
+            .primaria()],
+    )
+    .unwrap()
+}
+
+/// O primeiro arquivo debaixo de `raiz` que contem `agulha`. Desce as
+/// subpastas: o que conta e o disco inteiro de quem recebeu, nao so o `.reg`.
+fn arquivo_que_contem(raiz: &std::path::Path, agulha: &[u8]) -> Option<std::path::PathBuf> {
+    let mut pilha = vec![raiz.to_path_buf()];
+    // Teto de voltas: uma tabela de teste tem dezenas de arquivos, nao mil.
+    for _ in 0..1_000 {
+        let p = pilha.pop()?;
+        if p.is_dir() {
+            pilha.extend(std::fs::read_dir(&p).unwrap().flatten().map(|i| i.path()));
+        } else if contem(&std::fs::read(&p).unwrap_or_default(), agulha) {
+            return Some(p);
+        }
+    }
+    panic!("mais de mil entradas debaixo de {}", raiz.display());
+}
+
+/// **616, a metade INLINE.** A imagem aberta para o fio de uma origem com
+/// cofre leva a coluna inline marcada em CLARO (o `imagem_da_linha` decifra a
+/// faixa -- e o que o primeiro teste deste arquivo mede). O 613 so recusava a
+/// tabela com coluna EXTERNA marcada; a inline passava e pousava em claro no
+/// slot do `.reg` da replica sem cofre. Com cofre, replica e fica selada.
+///
+/// # O vermelho
+///
+/// Com o defeito reposto (a pergunta de volta a «externa marcada»), o
+/// `aplicar_evento` sem cofre responde `Ok` e o nome esta no `.reg` da
+/// replica: cai no `panic!` do `Ok`.
+#[test]
+fn replica_sem_cofre_recusa_a_coluna_inline_marcada() {
+    let _t = UM_DE_CADA_VEZ.lock().unwrap_or_else(|e| e.into_inner());
+    cofre::desligar();
+    let d_o = comum::DirTemp::novo("616-inline-origem");
+    cofre::definir(SENHA, RAPIDO).unwrap();
+    let mut o = Table::criar(&d_o, esquema_inline()).unwrap();
+    let rowid = o
+        .inserir(&[Value::Int(1), Value::Str(NOME.into())])
+        .unwrap();
+    let do_diario = o.imagem_da_linha_do_rowid(rowid).unwrap();
+    let do_fio = o.imagem_para_o_fio(&do_diario).unwrap();
+    drop(o);
+    assert!(
+        contem(&do_fio, NOME.as_bytes()),
+        "controle: a imagem do fio tinha de levar o inline aberto"
+    );
+
+    // Replica SEM cofre: recusa, nenhuma linha, o nome em arquivo nenhum.
+    cofre::desligar();
+    let d_r = comum::DirTemp::novo("616-inline-sem-cofre");
+    let mut r = Table::criar(&d_r, esquema_inline()).unwrap();
+    let e = match r.aplicar_evento(Operacao::Inclusao, 1, &do_fio) {
+        Ok(_) => panic!(
+            "a replica sem cofre gravou a coluna inline marcada: {:?}",
+            r.ler(1).unwrap()
+        ),
+        Err(e) => e.to_string(),
+    };
+    assert!(e.contains("Falta o cofre") && e.contains("nome"), "{e}");
+    assert!(
+        r.ler(1).map(|l| l.is_none()).unwrap_or(true),
+        "gravou a linha mesmo recusando"
+    );
+    drop(r);
+    if let Some(p) = arquivo_que_contem(&d_r, NOME.as_bytes()) {
+        panic!("o nome marcado ficou em claro em {}", p.display());
+    }
+
+    // O controle: COM cofre a mesma imagem replica, e o nome fica selado.
+    cofre::definir(SENHA, RAPIDO).unwrap();
+    let d_c = comum::DirTemp::novo("616-inline-com-cofre");
+    let mut c = Table::criar(&d_c, esquema_inline()).unwrap();
+    c.aplicar_evento(Operacao::Inclusao, 1, &do_fio).unwrap();
+    assert_eq!(c.ler(1).unwrap().unwrap()[1], Value::Str(NOME.into()));
+    drop(c);
+    if let Some(p) = arquivo_que_contem(&d_c, NOME.as_bytes()) {
+        panic!("com cofre o nome ficou em claro em {}", p.display());
+    }
+
+    cofre::desligar();
+    for d in [&d_o, &d_r, &d_c] {
+        let _ = std::fs::remove_dir_all(d);
+    }
+}
+
+/// **616, o caminho BIDIRECIONAL.** O bidirecional casa por chave e grava
+/// pelos tres `*_replicado`, e nao pelo `aplicar_evento`, onde o 613 pos a
+/// recusa: o mesmo dado de outro servidor pousava em claro pelo caminho
+/// irmao. Os tres recusam pela MESMA conferencia (a tabela inteira, como no
+/// 613), e a escrita LOCAL -- este servidor como origem -- segue.
+///
+/// # O vermelho
+///
+/// Com a recusa tirada de um dos tres, aquele responde `Ok` e cai no
+/// `panic!` dele: o `inserir` e o `atualizar` deixariam o nome no `.reg`
+/// daqui, o `excluir` apagaria a linha.
+#[test]
+fn bidirecional_sem_cofre_recusa_a_coluna_marcada() {
+    let _t = UM_DE_CADA_VEZ.lock().unwrap_or_else(|e| e.into_inner());
+    cofre::desligar();
+    let d = comum::DirTemp::novo("616-bidi-sem-cofre");
+    let mut t = Table::criar(&d, esquema_inline()).unwrap();
+    // A escrita local continua: aqui este servidor e a ORIGEM do dado.
+    let local = t
+        .inserir(&[Value::Int(7), Value::Str("escrito aqui".into())])
+        .unwrap();
+
+    let e = match t.inserir_replicado(&[Value::Int(1), Value::Str(NOME.into())]) {
+        Ok(_) => panic!("o inserir_replicado sem cofre gravou a coluna marcada"),
+        Err(e) => e.to_string(),
+    };
+    assert!(e.contains("Falta o cofre") && e.contains("nome"), "{e}");
+
+    let e = match t.atualizar_replicado(local, &[Value::Int(7), Value::Str(NOME.into())]) {
+        Ok(_) => panic!("o atualizar_replicado sem cofre gravou a coluna marcada"),
+        Err(e) => e.to_string(),
+    };
+    assert!(e.contains("Falta o cofre"), "{e}");
+
+    let e = match t.excluir_de_vez_replicado(local, "616") {
+        Ok(_) => panic!("o excluir_de_vez_replicado sem cofre passou pela recusa"),
+        Err(e) => e.to_string(),
+    };
+    assert!(e.contains("Falta o cofre"), "{e}");
+    assert_eq!(
+        t.ler(local).unwrap().unwrap()[1],
+        Value::Str("escrito aqui".into()),
+        "a linha local mudou mesmo recusando"
+    );
+    drop(t);
+    if let Some(p) = arquivo_que_contem(&d, NOME.as_bytes()) {
+        panic!("o nome marcado ficou em claro em {}", p.display());
+    }
+
+    // O controle: COM cofre o bidirecional grava, e o nome fica selado.
+    cofre::definir(SENHA, RAPIDO).unwrap();
+    let d_c = comum::DirTemp::novo("616-bidi-com-cofre");
+    let mut c = Table::criar(&d_c, esquema_inline()).unwrap();
+    let r = c
+        .inserir_replicado(&[Value::Int(1), Value::Str(NOME.into())])
+        .unwrap();
+    assert_eq!(c.ler(r).unwrap().unwrap()[1], Value::Str(NOME.into()));
+    drop(c);
+    if let Some(p) = arquivo_que_contem(&d_c, NOME.as_bytes()) {
+        panic!("com cofre o nome ficou em claro em {}", p.display());
+    }
+
+    cofre::desligar();
+    for d in [&d, &d_c] {
+        let _ = std::fs::remove_dir_all(d);
+    }
+}
