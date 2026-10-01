@@ -1129,7 +1129,7 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `redeclarar-texto-com-so-criar` | Redeclarar o índice de texto pedia só criar, e copia o .reg inteiro como o acrescentar_coluna | 1 | ✅ provada |
 | `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | — | 🪦 aposentada (18/09/2026) |
 
-**486 das 661 guardas do catálogo: 1 aposentada, 481 provadas, 4 redundantes** — 14920 s de mutação, medido em 2026-09-16 15:25.
+**486 das 661 guardas do catálogo: 1 aposentada, 481 provadas, 4 redundantes** — 14920 s de mutação, medido de 2026-09-16 15:25 a 2026-10-01 17:19, em 6 datas (2026-09-16: 113, 2026-09-17: 8, 2026-09-18: 3, 2026-09-24: 177, 2026-09-30: 37, 2026-10-01: 148).
 
 > **Esta rodada NÃO julgou 176 das 661 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 176 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 

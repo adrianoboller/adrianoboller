@@ -108,6 +108,16 @@ def guardas():
     return len(lista), None
 
 
+def datas_da_corrida_das_guardas(dados):
+    """`datas_da_corrida` do `bancada/guardas/tabela-no-testes.py`, importada."""
+    import importlib.util  # noqa: PLC0415
+    caminho = RAIZ / "bancada" / "guardas" / "tabela-no-testes.py"
+    spec = importlib.util.spec_from_file_location("tabela_no_testes", caminho)
+    modulo = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(modulo)
+    return modulo.datas_da_corrida(dados)
+
+
 def provas_das_guardas():
     """As PROVAS de cada guarda do catalogo, cruzadas com a ultima corrida.
 
@@ -136,6 +146,11 @@ def provas_das_guardas():
     cat_ids = [g["id"] for g in catalogo_lista]
     quando, do_mtime = quando_de(p, dados)
     r["quando"], r["quando_mtime"] = quando, do_mtime
+    # Pedido 621: o `quando` do topo e' so a MAIS ANTIGA de uma mescla de
+    # `--so`; a frase sai do mesmo motor do `tabela-no-testes.py` e do
+    # `trecho-vivo.py --catraca`, para as tres nunca divergirem.
+    r["quando"] = ("em " + quando if do_mtime
+                   else datas_da_corrida_das_guardas(dados))
 
     contagem = {"PROVADA": 0, "REDUNDANTE": 0, "QUEBRADA": 0,
                 "SEM PROVA REGISTRADA": 0}
@@ -197,26 +212,208 @@ def guardas_vermelhas():
     return achadas
 
 
-def catracas():
-    """As catracas do repositorio, lidas do fonte.
+# Pedido 621: o leitor antigo era `=\s*([0-9_]+)` e parava no primeiro
+# caractere que nao fosse digito decimal -- `0x7FFF` publicava 0, `16 << 20`
+# publicava 16, `128 * 1024 * 1024` publicava 128. Numero errado SEM erro.
+_SUFIXO = r"(?:u8|u16|u32|u64|u128|usize|i8|i16|i32|i64|i128|isize)?"
+_LIT = r"(?:0x[0-9A-Fa-f_]+|0o[0-7_]+|0b[01_]+|[0-9][0-9_]*)"
+_LITERAL = re.compile(f"({_LIT}){_SUFIXO}")
+_TOKEN = re.compile(
+    rf"\s*(?:(?P<lit>{_LIT}{_SUFIXO})"
+    r"|(?P<nome>[A-Za-z_][A-Za-z_0-9]*(?:::[A-Za-z_][A-Za-z_0-9]*)*)"
+    r"|(?P<op><<|>>|[-+*/%()]))")
+_DURACAO = re.compile(
+    r"^(?:std::time::)?Duration::from_(secs|millis|micros|nanos)\((.*)\)$", re.S)
+_UNIDADE = {"secs": "s", "millis": "ms", "micros": "µs", "nanos": "ns"}
+_CONST = re.compile(
+    r"\bconst\s+([A-Z][A-Z_0-9]*)\s*:\s*([^=;]+?)\s*=\s*([^;]+);", re.S)
 
-    A lista NAO se digita aqui: uma catraca nova que ninguem lembrasse de
-    acrescentar sumiria da pagina, e a pagina passaria a dizer que ha menos
-    trava do que ha. E' o mesmo motivo pelo qual a receita do KiB de
-    interface passou a sair do `http.rs`.
+
+def literal_rust(texto):
+    """`0x7FFF` -> 32767; `1_000u64` -> 1000. None se nao for literal inteiro."""
+    m = _LITERAL.fullmatch(texto.strip())
+    if not m:
+        return None
+    s = m.group(1).replace("_", "")
+    base = {"0x": 16, "0o": 8, "0b": 2}.get(s[:2], 10)
+    return int(s[2:] if base != 10 else s, base)
+
+
+def avaliar_rust(expr, resolver=lambda nome: None):
+    """Avalia a expressao constante inteira de um `const` do Rust.
+
+    Aceita literal (decimal, hex, octal, binario), `* / % + - << >>`,
+    parenteses e nome de outra constante, que `resolver` traduz. Devolve
+    None para o que nao entende -- e quem chama tem de DIZER que nao avaliou,
+    nunca publicar um pedaco do numero.
     """
-    achadas = []
-    padrao = re.compile(r"const (TETO[A-Z_0-9]*)\s*:\s*\w+\s*=\s*([0-9_]+)")
+    toks = []
+    pos, expr = 0, expr.strip()
+    while pos < len(expr):
+        m = _TOKEN.match(expr, pos)
+        if not m or m.end() == pos:
+            return None
+        pos = m.end()
+        if m.group("lit"):
+            toks.append(("n", literal_rust(m.group("lit"))))
+        elif m.group("nome"):
+            v = resolver(m.group("nome"))
+            if v is None:
+                return None
+            toks.append(("n", v))
+        else:
+            toks.append(("o", m.group("op")))
+    i = 0
+
+    def ver():
+        return toks[i] if i < len(toks) else (None, None)
+
+    def primario():
+        nonlocal i
+        t, v = ver()
+        if t == "n":
+            i += 1
+            return v
+        if (t, v) == ("o", "("):
+            i += 1
+            r = desloc()
+            if ver() != ("o", ")"):
+                raise ValueError
+            i += 1
+            return r
+        if (t, v) == ("o", "-"):
+            i += 1
+            return -primario()
+        raise ValueError
+
+    def nivel(baixo, ops):
+        def f():
+            nonlocal i
+            r = baixo()
+            while ver()[0] == "o" and ver()[1] in ops:
+                op = ver()[1]
+                i += 1
+                r = ops[op](r, baixo())
+            return r
+        return f
+
+    mult = nivel(primario, {"*": lambda a, b: a * b,
+                            "/": lambda a, b: a // b,
+                            "%": lambda a, b: a % b})
+    soma = nivel(mult, {"+": lambda a, b: a + b, "-": lambda a, b: a - b})
+    desloc = nivel(soma, {"<<": lambda a, b: a << b, ">>": lambda a, b: a >> b})
+    try:
+        r = desloc()
+    except (ValueError, ZeroDivisionError):
+        return None
+    return r if i == len(toks) else None
+
+
+def _milhar(n):
+    return f"{n:,}".replace(",", ".")
+
+
+def catracas_detalhadas():
+    """Cada `const TETO*` do fonte, com o valor AVALIADO e de onde veio.
+
+    Pedido 621. Tres defeitos do leitor antigo, todos calados:
+    - so lia digito decimal: `0x7FFF` publicava 0, `16 << 20` publicava 16;
+    - a que nao era literal (`Duration::from_secs(60)`, outra constante)
+      SUMIA da tabela -- a pagina dizia que havia menos trava do que ha;
+    - tres `TETO_DE_COLUNAS` de arquivos diferentes saiam so pelo nome.
+    Agora cada uma traz `arquivo:linha`, o nome repetido e' marcado, e a que
+    a expressao nao avalia aparece com a expressao crua e `avaliada: False`.
+    """
+    defs = []      # (nome, tipo, expr, arquivo, linha)
     for rs in sorted((RAIZ / "crates").glob("*/src/**/*.rs")):
         try:
             texto = rs.read_text(encoding="utf-8")
         except UnicodeDecodeError:
             continue
-        for m in padrao.finditer(texto):
-            achadas.append((m.group(1), int(m.group(2).replace("_", "")),
-                            str(rs.relative_to(RAIZ))))
-    achadas.sort()
-    return achadas
+        for m in _CONST.finditer(texto):
+            linha = texto.count("\n", 0, m.start()) + 1
+            defs.append((m.group(1), m.group(2).strip(),
+                         " ".join(m.group(3).split()),
+                         str(rs.relative_to(RAIZ)), linha))
+    por_nome = {}
+    for d in defs:
+        por_nome.setdefault(d[0], []).append(d)
+
+    def valor_de(d, pilha=()):
+        nome, _tipo, expr, arq, _ln = d
+        if (nome, arq) in pilha:
+            return None
+
+        def resolver(ref):
+            # Nome repetido se resolve pelo MESMO arquivo; fora dele, so se
+            # houver um unico -- adivinhar entre tres `TETO_DE_COLUNAS` seria
+            # exatamente o erro que este pedido conserta.
+            cands = por_nome.get(ref.split("::")[-1], [])
+            mesmo = [c for c in cands if c[3] == arq]
+            escolha = mesmo if len(mesmo) == 1 else (cands if len(cands) == 1 else [])
+            if not escolha:
+                return None
+            return valor_de(escolha[0], pilha + ((nome, arq),))
+        return avaliar_rust(expr, resolver)
+
+    saida = []
+    for d in defs:
+        nome, tipo, expr, arq, ln = d
+        if not nome.startswith("TETO"):
+            continue
+        md = _DURACAO.match(expr) if "Duration" in tipo else None
+        if md:
+            n = avaliar_rust(md.group(2))
+            texto = f"{_milhar(n)} {_UNIDADE[md.group(1)]}" if n is not None else None
+        else:
+            n = valor_de(d)
+            texto = _milhar(n) if n is not None else None
+        saida.append({"nome": nome, "valor": n, "avaliada": texto is not None,
+                      "texto": texto if texto is not None else expr,
+                      "expr": expr, "arquivo": arq, "linha": ln,
+                      "mesmo_nome": len(por_nome[nome])})
+    saida.sort(key=lambda c: (c["nome"], c["arquivo"]))
+    return saida
+
+
+def catracas():
+    """(nome, valor em texto, `arquivo:linha`) de cada `const TETO*`.
+
+    A lista NAO se digita aqui: uma catraca nova que ninguem lembrasse de
+    acrescentar sumiria da pagina, e a pagina passaria a dizer que ha menos
+    trava do que ha. E' o mesmo motivo pelo qual a receita do KiB de
+    interface passou a sair do `http.rs`. O valor vem em TEXTO porque nem
+    todo teto e' contagem (`60 s`), e o que nao se avalia sai cru, marcado.
+    """
+    r = []
+    for c in catracas_detalhadas():
+        valor = c["texto"] if c["avaliada"] else f"{c['texto']} (não avaliada)"
+        nome = c["nome"]
+        if c["mesmo_nome"] > 1:
+            nome = f"{nome} ({c['mesmo_nome']} com este nome)"
+        r.append((nome, valor, f"{c['arquivo']}:{c['linha']}"))
+    return r
+
+
+def autoteste_tetos():
+    """Os dois sentidos: o leitor novo acerta, e o antigo erra nos mesmos casos."""
+    antigo = re.compile(r"=\s*([0-9_]+)")
+    casos = [("0x7FFF", 32767), ("0b1010", 10), ("0o17", 15), ("1_000u64", 1000),
+             ("16 << 20", 16 << 20), ("128 * 1024 * 1024", 128 * 1024 * 1024),
+             ("(2 + 3) * 4", 20), ("64 * 1024", 65536), ("4096", 4096)]
+    for expr, esperado in casos:
+        assert avaliar_rust(expr) == esperado, (expr, avaliar_rust(expr))
+    def pelo_antigo(e):
+        m = antigo.search("= " + e)
+        return int(m.group(1).replace("_", "")) if m else None  # None: sumia
+    erra_o_antigo = [e for e, v in casos if pelo_antigo(e) != v]
+    assert len(erra_o_antigo) == 7, erra_o_antigo
+    assert avaliar_rust("ALGO * 2", {"ALGO": 21}.get) == 42
+    assert avaliar_rust("ALGO * 2") is None
+    assert avaliar_rust("1.5") is None
+    assert avaliar_rust("Duration::from_secs(5)") is None
+    print(f"autoteste dos tetos: {len(casos)} casos certos; o leitor antigo "
+          f"erra {len(erra_o_antigo)}: {', '.join(erra_o_antigo)}")
 
 
 def casos_de_tela():
@@ -634,7 +831,7 @@ def bloco_provas_de_guardas(pg):
     linhas = "\n      ".join(linha_guarda_tabela(it) for it in pg["tabela"]) \
         or '<tr><td colspan="4" class="v">todas as guardas do catálogo estão PROVADAS.</td></tr>'
     return f"""<div class="nota">
-  Corrida de <b>{esc(pg["quando"])}</b>{marca}, do arquivo
+  Vereditos medidos <b>{esc(pg["quando"])}</b>{marca}, do arquivo
   <code>{esc(pg["arquivo"])}</code>.
 </div>
 <div class="placar">
@@ -786,8 +983,8 @@ def montar():
 
     linhas_bancadas = "\n      ".join(linha_bancada(b) for b in BANCADAS)
     linhas_tetos = "\n      ".join(
-        f'<tr><td class="mono">{esc(n)}</td><td class="n mono">{v:,}</td>'
-        f'<td class="mono peq">{esc(a)}</td></tr>'.replace(",", ".")
+        f'<tr><td class="mono">{esc(n)}</td><td class="n mono">{esc(v)}</td>'
+        f'<td class="mono peq">{esc(a)}</td></tr>'
         for n, v, a in tetos)
     lista_casos = "".join(f"<li><code>{esc(x)}</code></li>" for x in casos)
 
@@ -1043,11 +1240,20 @@ diz onde não confiar.</p>
 
 
 def principal():
+    if sys.argv[1:] == ["--autoteste"]:
+        autoteste_tetos()
+        return
+    autoteste_tetos()
     saida = Path(sys.argv[1]) if len(sys.argv) > 1 else SAIDA_PADRAO
     html = montar()
     saida.write_text(html, encoding="utf-8")
     n = len(html.encode("utf-8"))
     print(f"pagina gravada: {saida} ({n:,} bytes)".replace(",", "."))
+    sem_valor = [c for c in catracas_detalhadas() if not c["avaliada"]]
+    if sem_valor:
+        print("catracas cujo valor NAO se avaliou (saem com a expressao crua):")
+        for c in sem_valor:
+            print(f"   · {c['nome']} = {c['expr']}  ({c['arquivo']}:{c['linha']})")
     faltando = [b["nome"] for b in BANCADAS if not (RAIZ / b["json"]).exists()]
     if faltando:
         print("bancadas sem resultado (aparecem como NAO MEDIDAS na pagina):")

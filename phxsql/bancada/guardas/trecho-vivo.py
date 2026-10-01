@@ -1089,7 +1089,8 @@ def escondidas():
     # da tabela e na do aviso. Procurar o id solto casaria um id DENTRO de
     # outro, e a regua daria por nomeada uma entrada que ninguem nomeou.
     _ESCONDIDAS = {
-        "quando": corrida.get("quando", "?"),
+        # Pedido 621: o `quando` do topo e' so a MAIS ANTIGA de uma mescla.
+        "quando": ferramenta.datas_da_corrida(corrida),
         "julgadas": len(corrida.get("guardas") or []),
         "nao_julgadas": faltam,
         "escondidas": [i for i in faltam if ("`%s`" % i) not in bloco],
@@ -1212,8 +1213,8 @@ def catraca():
     # zerar honestamente vira inventario, como o «o provador continua dono
     # de:» la de baixo -- nunca catraca.
     p = escondidas()
-    print(f"   a ultima corrida ({p['quando']}) julgou {p['julgadas']} das "
-          f"{len(catalogo())} entradas")
+    print(f"   a ultima corrida julgou {p['julgadas']} das "
+          f"{len(catalogo())} entradas, medidas {p['quando']}")
     if p["nao_julgadas"]:
         print(f"   -- {len(p['nao_julgadas'])} sem veredito nessa corrida: "
               f"{len(p['nao_julgadas']) - len(p['escondidas'])} nomeadas na "
