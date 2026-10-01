@@ -4,7 +4,7 @@
      `--catraca` reprova se este arquivo nao bater com o que o extrator
      geraria agora; rode o comando sem flag para atualizar. -->
 
-Gerado dos `cognicao_*.md` com `**Estado:** INFRUTIFERO` -- 9 hoje, de 389 cognicoes no total.
+Gerado dos `cognicao_*.md` com `**Estado:** INFRUTIFERO` -- 10 hoje, de 390 cognicoes no total.
 
 ## «O branch da frente é ancestral do HEAD» não prova que o trabalho dela foi integrado
 
@@ -35,6 +35,12 @@ Gerado dos `cognicao_*.md` com `**Estado:** INFRUTIFERO` -- 9 hoje, de 389 cogni
 - Causa: a hipótese «dono diferente do processo e do parceiro = terceiro» tomou o sinal que não se FORJA pelo sinal que IDENTIFICA o intruso. O root também é outro dono, e é o administrador: na instalação do MANUAL (§7.4), `sudo 7z x` para trocar um token vazado deixa o `.json` do root ao lado do `.phz` do serviço, e o serviço subia do `.phz` VELHO com o token revogado valendo — a revisão SEC provou pelo sistema operacional, e o teste `crates/phxsql-server/tests/config-phz.rs::o_json_do_root_ao_lado_do_phz_do_servico_recusa_o_arranque` cai com esta regra reposta («ainda rodava depois de 20 s: subiu como servidor», o servidor como uid 65534). O sticky bit, que é o que torna um nome alheio «plantado», nem era conferido. E a régua citada media outra coisa: MySQL e MariaDB ignoram por MODO (gravável por todos); medido, o `mysqld` 8.0.46 LÊ um `my.cnf` de outro dono com 0644.
 - Prevencao: antes de usar um metadado como prova de intruso, liste QUEM MAIS produz o mesmo sinal legitimamente (o root, o dono da pasta, o próprio serviço) e exija a condição do sistema operacional que torna o sinal exclusivo do intruso (aqui: sticky bit E pasta gravável por outros, com o root e o dono da pasta fora da conta de terceiro); e ao citar outro motor na régua, cite o CRITÉRIO dele medido pelo binário, não só o comportamento.
 - Arquivo: [cognicao_dono-de-arquivo-e-sinal-forte-nao-palpite_20260924_1024.md](cognicao_dono-de-arquivo-e-sinal-forte-nao-palpite_20260924_1024.md)
+
+## «Mesmo julgamento do `conferir_filhas`» copiado espalha a falha aberta
+
+- Causa: a decisão «irmã que não abre fica de fora, para uma tabela quebrada não trancar o banco» respondia «ninguém aponta para mim» pela irmã que não responde; ela estava escrita em quatro lugares (`irmas.rs`, `planejar_ao_alterar_com`, `quem_aponta_para`, e o comentário do `fks_que_apontam_para_mim`), três deles justificados pelo comentário «mesmo julgamento do `conferir_filhas`» — e a falha aberta viajou junto com a cópia. Medido: com o `.reg` da filha truncado a 16 bytes, a mãe com filha saiu de vez, suave, pelo `excluir_tabela` e pela troca de chave.
+- Prevencao: a decisão mora numa função só (`irmas::abrir_irma`), que recusa nomeando a irmã e a causa; as três buscas passam por ela, e cada uma tem guarda própria no catálogo (`irma-que-nao-abre-some-do-*`). A saída da recusa é o `excluir_tabela` da própria irmã, que pula a si mesma; a irmã em troca interrompida abre pelo `RegFile::abrir` (guarda `irma-em-troca-vira-recusa-eterna`).
+- Arquivo: [cognicao_mesmo-julgamento-copiado-espalha-a-falha-aberta_20261001_1910.md](cognicao_mesmo-julgamento-copiado-espalha-a-falha-aberta_20261001_1910.md)
 
 ## Rodada de mutantes com a base vermelha: onze «vermelhos» que não provavam nada
 

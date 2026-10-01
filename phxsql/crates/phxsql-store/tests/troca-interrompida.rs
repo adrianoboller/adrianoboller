@@ -290,3 +290,55 @@ fn a_fase_b_recusa_quando_um_novo_sumiu() {
     drop(t);
     conferir_inteira(&dir, "clientes", false);
 }
+
+// ------------------------- pedido 631: a irma em troca na busca reversa
+
+/// Uma tabela qualquer no mesmo diretorio, com duas linhas, para excluir.
+fn vizinha(dir: &std::path::Path) -> Table {
+    let e = Schema::new(
+        "vizinha",
+        vec![Column::new("id", ColumnType::Int8).obrigatoria()],
+        vec![IndexDef::new("porId", vec![IndexColumn::asc(0)]).unico()],
+    )
+    .unwrap();
+    let mut t = Table::criar(dir, e).unwrap();
+    t.inserir(&[Value::Int(1)]).unwrap();
+    t.inserir(&[Value::Int(2)]).unwrap();
+    t.sincronizar().unwrap();
+    t
+}
+
+/// **Pedido 631, o irmao que nao pode virar recusa eterna:** desde que a
+/// irma que nao abre RECUSA a exclusao, a irma em troca interrompida tem de
+/// ABRIR -- e abre, pelo `terminar_troca_interrompida` do `RegFile::abrir`.
+/// Nas duas mortes: a troca decidida (termina para a frente) e a sobra da
+/// FASE A (fica, e nao atrapalha).
+///
+/// # Prova real
+///
+/// Troque o `RegFile::abrir` do `irmas::abrir_irma` por uma abertura que nao
+/// cura (`RegFile::abrir_sem_escrever`, com o `None` virando erro): a troca
+/// decidida «nao abre», e a exclusao da vizinha recusa -- medido, o teste
+/// cai no `unwrap_or_else` do `excluir_de_vez`.
+#[test]
+fn a_irma_em_troca_interrompida_nao_tranca_a_exclusao_da_vizinha() {
+    for (rotulo, ponto, com_coluna) in [
+        ("irma-decidida", Ponto::FaseBDepoisDoVolume1, true),
+        ("irma-sobra", Ponto::FaseBAntesDaPrimeiraTroca, false),
+    ] {
+        let (_cat, _db, d) = base(rotulo, true);
+        let dir = d.join("loja");
+        let mut v = vizinha(&dir);
+        morrer_na_fase_b(&dir, ponto);
+        assert!(
+            !novos_do_reg(&dir, "clientes").is_empty(),
+            "{rotulo}: o panico nao deixou `*.novo`"
+        );
+        let saiu = v
+            .excluir_de_vez(1, "t")
+            .unwrap_or_else(|e| panic!("{rotulo}: a irma em troca trancou: {e}"));
+        assert!(saiu, "{rotulo}");
+        assert!(v.excluir_suave(2, "t").unwrap(), "{rotulo}");
+        conferir_inteira(&dir, "clientes", com_coluna);
+    }
+}

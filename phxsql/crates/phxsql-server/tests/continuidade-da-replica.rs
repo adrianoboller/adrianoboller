@@ -85,6 +85,14 @@ fn subir_replica_com(
     porta_do_source: u16,
     somente_leitura: bool,
 ) -> (Arc<Servidor>, u16) {
+    subir(config_da_replica(base, porta_do_source, somente_leitura))
+}
+
+fn config_da_replica(
+    base: &std::path::Path,
+    porta_do_source: u16,
+    somente_leitura: bool,
+) -> Config {
     let mut c = config_base(base);
     c.somente_leitura = somente_leitura;
     c.replicacao.papel = Papel::Replica;
@@ -104,7 +112,7 @@ fn subir_replica_com(
         cifra: false,
         chave_do_fio: String::new(),
     }];
-    subir(c)
+    c
 }
 
 fn esperar_porta(porta: u16) {
@@ -484,4 +492,173 @@ fn com_somente_leitura_a_escrita_local_e_recusada_e_a_replica_segue() {
     esperar_eventos(porta_r, 5);
     assert_eq!(ids_na_replica(porta_r), vec![1, 2, 3, 4, 5]);
     assert_eq!(recusa_de_clientes(porta_r), None);
+}
+
+// ------------------------------------------- pedido 630: a conta no lugar
+
+const SENHA: &str = "senha-da-bateria";
+
+/// Uma conexao que FICA aberta e entra com login -- com cadastro, o pedido
+/// anonimo nem chega aos portoes.
+struct Ligacao {
+    escrita: TcpStream,
+    leitor: BufReader<TcpStream>,
+}
+
+impl Ligacao {
+    fn entrar(porta: u16, login: &str) -> Ligacao {
+        let alvo: SocketAddr = format!("127.0.0.1:{porta}").parse().unwrap();
+        let f = TcpStream::connect_timeout(&alvo, Duration::from_secs(2)).unwrap();
+        f.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
+        f.set_nodelay(true).unwrap();
+        let mut c = Ligacao {
+            escrita: f.try_clone().unwrap(),
+            leitor: BufReader::new(f),
+        };
+        let r = c.pedir(&format!(
+            r#""op":"login","usuario":"{login}","senha":"{SENHA}""#
+        ));
+        assert!(
+            r.booleano_ou("ok", false),
+            "login de {login}: {}",
+            r.escrever()
+        );
+        c
+    }
+
+    fn pedir(&mut self, corpo: &str) -> Json {
+        // Uma escrita so por pedido, e sem Nagle: o `writeln!` em pedacos
+        // esperava o ACK atrasado do outro lado, ~40 ms por pedido.
+        let linha = format!("{{\"token\":\"{TOKEN}\",{corpo}}}\n");
+        self.escrita.write_all(linha.as_bytes()).unwrap();
+        let mut resposta = String::new();
+        self.leitor.read_line(&mut resposta).unwrap();
+        Json::analisar(&resposta)
+            .unwrap_or_else(|e| panic!("{corpo}: resposta ilegivel ({e}): {resposta}"))
+    }
+
+    /// O mapa `escritas_locais` inteiro do `replicacao_estado`.
+    fn escritas_locais(&mut self) -> Json {
+        let r = self.pedir(r#""op":"replicacao_estado""#);
+        assert!(r.booleano_ou("ok", false), "{}", r.escrever());
+        r.campo("resultado")
+            .and_then(|e| e.campo("escritas_locais"))
+            .cloned()
+            .unwrap_or(Json::Nulo)
+    }
+}
+
+/// **Pedido 630, prova real pelo soquete.** Numa replica fiel SEM
+/// `somente_leitura`, quem so le manda 10.000 `inserir` -- metade em nomes
+/// aleatorios, metade na tabela real --, e o root manda 100 em tabelas que
+/// nao existem. Tudo recusado, e o `escritas_locais` continua VAZIO: nem
+/// memoria por nome inventado, nem a tabela real marcada como escrita aqui.
+///
+/// E o comportamento velho na mesma replica, para o teste nao passar com um
+/// contador que nunca conta: a escrita local ACEITA do root conta 1.
+///
+/// **Defeito reposto** (a conta de volta no portao 2b, antes do portao 3):
+/// o mapa sai com 5.101 chaves e a asercao do vazio cai.
+#[test]
+fn escrita_recusada_na_replica_nao_conta_nem_ocupa_memoria() {
+    let base_s = pasta("source-630");
+    let base_r = pasta("replica-630");
+    let (_source, porta_s) = subir_source(&base_s);
+    exigir(porta_s, r#""op":"criar_database","database":"loja""#);
+    criar_clientes(porta_s);
+    inserir(porta_s, 1..=3);
+
+    let h = |s: &str| phxsql_core::senha::cifrar_com(s, 1);
+    let mut c = config_da_replica(&base_r, porta_s, false);
+    c.cadastro = phxsql_server::Cadastro::de_json(
+        &Json::analisar(&format!(
+            r#"{{ "root": {{ "login": "root", "senha_hash": "{}" }},
+                 "usuarios": [ {{ "login": "leitor", "senha_hash": "{}",
+                                  "bases": {{ "loja": {{ "ler": true }} }} }} ] }}"#,
+            h(SENHA),
+            h(SENHA)
+        ))
+        .unwrap(),
+    )
+    .unwrap();
+    let (_replica, porta_r) = subir(c);
+    let mut root = Ligacao::entrar(porta_r, "root");
+    // A tabela real tem de estar AQUI antes do laco: e ela que o pedido
+    // recusado nao pode marcar.
+    let ate = Instant::now() + Duration::from_secs(20);
+    loop {
+        let r = root.pedir(r#""op":"posicao","database":"loja""#);
+        let n = r
+            .campo("resultado")
+            .and_then(|j| j.campo("tabelas"))
+            .and_then(|t| t.campo("clientes"))
+            .map_or(-1, |c| c.inteiro_ou("eventos", -1));
+        if n == 3 {
+            break;
+        }
+        assert!(
+            Instant::now() < ate,
+            "a replica nao alcancou: {}",
+            r.escrever()
+        );
+        std::thread::sleep(Duration::from_millis(50));
+    }
+
+    let mut leitor = Ligacao::entrar(porta_r, "leitor");
+    for i in 0..10_000u32 {
+        let tabela = if i % 2 == 0 {
+            format!("t{:08x}", i.wrapping_mul(2_654_435_761))
+        } else {
+            "clientes".to_string()
+        };
+        let r = leitor.pedir(&format!(
+            r#""op":"inserir","database":"loja","tabela":"{tabela}","linha":{{"id":{}}}"#,
+            1_000 + i
+        ));
+        assert!(
+            !r.booleano_ou("ok", true),
+            "o leitor gravou: {}",
+            r.escrever()
+        );
+    }
+    for i in 0..100 {
+        let r = root.pedir(&format!(
+            r#""op":"inserir","database":"loja","tabela":"fantasma{i}","linha":{{"id":1}}"#
+        ));
+        assert!(!r.booleano_ou("ok", true), "{}", r.escrever());
+    }
+    let mapa = root.escritas_locais();
+    let chaves = match &mapa {
+        Json::Objeto(pares) => pares.len(),
+        _ => 0,
+    };
+    assert_eq!(
+        chaves, 0,
+        "pedido recusado entrou na conta da escrita local: {} chave(s)",
+        chaves
+    );
+
+    // O comportamento velho: a escrita ACEITA conta.
+    let r = root.pedir(r#""op":"inserir","database":"loja","tabela":"clientes","linha":{"id":99}"#);
+    assert!(r.booleano_ou("ok", false), "{}", r.escrever());
+    let mapa = root.escritas_locais();
+    assert_eq!(
+        mapa.campo("loja/clientes").and_then(Json::inteiro),
+        Some(1),
+        "a escrita local aceita nao contou: {}",
+        mapa.escrever()
+    );
+    // O IRMAO do `despachar`: o `INSERT` pelo SQL chega como `inserir`
+    // derivado, pelo `executar_derivado`, e conta pela MESMA funcao. Sem a
+    // conta nele, a escrita local por SQL voltaria a ser calada.
+    let r = root
+        .pedir(r#""op":"sql","database":"loja","texto":"INSERT INTO clientes (id) VALUES (98)""#);
+    assert!(r.booleano_ou("ok", false), "{}", r.escrever());
+    assert_eq!(
+        root.escritas_locais()
+            .campo("loja/clientes")
+            .and_then(Json::inteiro),
+        Some(2),
+        "o INSERT pelo SQL nao contou como escrita local"
+    );
 }

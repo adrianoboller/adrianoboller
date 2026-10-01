@@ -4080,6 +4080,54 @@
       "quando": "2026-10-01 20:21"
     },
     {
+      "id": "irma-que-nao-abre-some-do-excluir",
+      "titulo": "na busca reversa do `excluir`, a irma cujo `.reg` nao abre fica de fora, e a mae com filha ilegivel morre",
+      "veredito": "PROVADA",
+      "segundos": 7.44,
+      "notas": [],
+      "quando": "2026-10-01 20:30"
+    },
+    {
+      "id": "irma-que-nao-abre-some-do-excluir-tabela",
+      "titulo": "o `excluir_tabela` (e o renomear) pula a irma que nao abre, e a tabela mae some com a filha ilegivel apontando para ela",
+      "veredito": "PROVADA",
+      "segundos": 7.26,
+      "notas": [],
+      "quando": "2026-10-01 20:30"
+    },
+    {
+      "id": "irma-que-nao-abre-some-do-ao-alterar",
+      "titulo": "a cascata do `ao_alterar` pula a irma que nao abre, e a mae muda a chave deixando a filha ilegivel apontando para a chave velha",
+      "veredito": "PROVADA",
+      "segundos": 7.32,
+      "notas": [],
+      "quando": "2026-10-01 20:30"
+    },
+    {
+      "id": "irma-em-troca-vira-recusa-eterna",
+      "titulo": "a busca reversa abre a irma sem curar, e a irma em troca interrompida passa a trancar toda exclusao do diretorio",
+      "veredito": "PROVADA",
+      "segundos": 7.18,
+      "notas": [],
+      "quando": "2026-10-01 20:30"
+    },
+    {
+      "id": "escrita-local-contada-antes-do-portao-3",
+      "titulo": "a escrita local na replica fiel se conta no portao 2b, antes da permissao e da abertura da tabela: memoria sem teto e diagnostico envenenado",
+      "veredito": "PROVADA",
+      "segundos": 22.78,
+      "notas": [],
+      "quando": "2026-10-01 20:30"
+    },
+    {
+      "id": "escrita-local-pelo-sql-nao-conta",
+      "titulo": "o `executar_derivado` chama o direito por coluna sem a conta da escrita local, e o `INSERT` pelo SQL numa replica fiel volta a ser calado",
+      "veredito": "PROVADA",
+      "segundos": 23.03,
+      "notas": [],
+      "quando": "2026-10-01 20:30"
+    },
+    {
       "id": "alter-com-regra-sem-aviso",
       "titulo": "`acrescentar_coluna` com `check` ou `calculada` numa tabela com linha é aceito SEM AVISO, e a linha velha fica fora da regra",
       "veredito": "PROVADA",

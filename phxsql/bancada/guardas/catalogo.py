@@ -22451,4 +22451,136 @@ pub const PRAZO_SOB_A_TRAVA: Duration = Duration::from_secs(3600);""",
         ],
         "prazo": 1800,
     },
+    {
+        "id": "irma-que-nao-abre-some-do-excluir",
+        "titulo": "na busca reversa do `excluir`, a irma cujo `.reg` nao abre fica de fora, e a mae com filha ilegivel morre",
+        "porque": (
+            "pedido 631, revisao SEC de 01/10/2026 (M3): `Err(_) => continue` "
+            "respondia «ninguem aponta» pela irma que nao responde. Com o "
+            "cabecalho da filha truncado, a mae excluia -- de vez e suave -- a "
+            "linha que tinha filha. Falha aberta na regra primordial."
+        ),
+        "arquivo": "crates/phxsql-store/src/irmas.rs",
+        "trecho": """        let chaves: Vec<ForeignKey> = abrir_irma(diretorio, irma, eu)?
+""",
+        "troca": """        // DEFEITO REPOSTO (631): a irma que nao abre fica de fora.
+        let Ok(rr) = abrir_irma(diretorio, irma, eu) else { continue };
+        let chaves: Vec<ForeignKey> = rr
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "irma-que-nao-abre"],
+        "caem": ["a_filha_que_nao_abre_tranca_o_excluir_de_vez_e_o_suave"],
+        "seguem": ["irma_legivel_sem_chave_nao_muda_nada"],
+    },
+    {
+        "id": "irma-que-nao-abre-some-do-excluir-tabela",
+        "titulo": "o `excluir_tabela` (e o renomear) pula a irma que nao abre, e a tabela mae some com a filha ilegivel apontando para ela",
+        "porque": (
+            "pedido 631, o irmao no catalogo: `quem_aponta_para` fazia "
+            "`let Ok(reg) = .. else { continue }`, o mesmo julgamento da busca "
+            "do `excluir`, e a mesma falha aberta."
+        ),
+        "arquivo": "crates/phxsql-store/src/catalogo.rs",
+        "trecho": """            let reg = crate::irmas::abrir_irma(dir, &irma, nome)?;
+""",
+        "troca": """            // DEFEITO REPOSTO (631): a irma que nao abre fica de fora.
+            let Ok(reg) = crate::irmas::abrir_irma(dir, &irma, nome) else { continue };
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "irma-que-nao-abre"],
+        "caem": ["a_filha_que_nao_abre_tranca_o_excluir_tabela_da_mae"],
+        "seguem": ["irma_legivel_sem_chave_nao_muda_nada"],
+    },
+    {
+        "id": "irma-que-nao-abre-some-do-ao-alterar",
+        "titulo": "a cascata do `ao_alterar` pula a irma que nao abre, e a mae muda a chave deixando a filha ilegivel apontando para a chave velha",
+        "porque": (
+            "pedido 631, o irmao em `table.rs`: `planejar_ao_alterar_com` fazia "
+            "`Err(_) => continue` sobre a irma -- a filha que a cascata tinha "
+            "de levar ficava orfa calada."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """            let esquema = crate::irmas::abrir_irma(&self.diretorio, &irma, &eu)?
+""",
+        "troca": """            // DEFEITO REPOSTO (631): a irma que nao abre fica de fora.
+            let Ok(rr) = crate::irmas::abrir_irma(&self.diretorio, &irma, &eu) else { continue };
+            let esquema = rr
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "irma-que-nao-abre"],
+        "caem": ["a_filha_que_nao_abre_tranca_a_alteracao_da_chave_da_mae"],
+        "seguem": ["irma_legivel_sem_chave_nao_muda_nada"],
+    },
+    {
+        "id": "irma-em-troca-vira-recusa-eterna",
+        "titulo": "a busca reversa abre a irma sem curar, e a irma em troca interrompida passa a trancar toda exclusao do diretorio",
+        "porque": (
+            "pedido 631, o risco do conserto: desde que a irma que nao abre "
+            "RECUSA, abrir a irma por um caminho que nao termina a troca "
+            "decidida (pedido 625) tornaria a recusa eterna. O `RegFile::abrir` "
+            "termina a troca pelo `terminar_troca_interrompida`."
+        ),
+        "arquivo": "crates/phxsql-store/src/irmas.rs",
+        "trecho": """    crate::reg::RegFile::abrir(diretorio, irma).map_err(|e| recusa_da_irma(irma, eu, &e))
+""",
+        "troca": """    // DEFEITO REPOSTO (631): abre a irma sem curar.
+    crate::reg::RegFile::abrir_sem_escrever(diretorio, irma)
+        .and_then(|r| r.ok_or_else(|| PhxError::Corrompido("troca".into())))
+        .map_err(|e| recusa_da_irma(irma, eu, &e))
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "troca-interrompida"],
+        "caem": ["a_irma_em_troca_interrompida_nao_tranca_a_exclusao_da_vizinha"],
+        "seguem": ["duplicar_no_meio_da_troca_decidida_leva_uma_versao_so"],
+    },
+    {
+        "id": "escrita-local-contada-antes-do-portao-3",
+        "titulo": "a escrita local na replica fiel se conta no portao 2b, antes da permissao e da abertura da tabela: memoria sem teto e diagnostico envenenado",
+        "porque": (
+            "pedido 630, revisao SEC de 01/10/2026 (M2): quem so le mandava "
+            "`inserir` em laco com nomes aleatorios, tudo recusado, e cada nome "
+            "virava chave do mapa -- medido pelo soquete, 10.000 pedidos "
+            "recusados deixaram 5.101 chaves. E o pedido recusado numa tabela "
+            "real fazia o `por_que_nao_continua` culpar a escrita local."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """            }
+            // A escrita local que passou daqui NAO se conta aqui (pedido 630):
+""",
+        "troca": """            } else {
+                // DEFEITO REPOSTO (630): conta antes do portao 3.
+                self.anotar_escrita_local(pedido);
+            }
+            // A escrita local que passou daqui NAO se conta aqui (pedido 630):
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "continuidade-da-replica"],
+        "caem": ["escrita_recusada_na_replica_nao_conta_nem_ocupa_memoria"],
+        "seguem": ["com_somente_leitura_a_escrita_local_e_recusada_e_a_replica_segue"],
+        "prazo": 1800,
+    },
+    {
+        "id": "escrita-local-pelo-sql-nao-conta",
+        "titulo": "o `executar_derivado` chama o direito por coluna sem a conta da escrita local, e o `INSERT` pelo SQL numa replica fiel volta a ser calado",
+        "porque": (
+            "pedido 630, o irmao: a conta saiu do portao 2b para depois do "
+            "`executar`, e sao TRES os que chamam portoes e executar na mesma "
+            "ordem -- `despachar`, `executar_derivado` e o job. O que esquecesse "
+            "a conta deixaria a escrita local por ele tomar o lugar do evento "
+            "do source sem ninguem nomear a causa."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        // nula. Ver `aplicar_direito_por_coluna`.
+        self.executar_e_contar_escrita_local(op, pedido, sessao)
+""",
+        "troca": """        // nula. Ver `aplicar_direito_por_coluna`.
+        // DEFEITO REPOSTO (630): o irmao do SQL sem a conta.
+        self.aplicar_direito_por_coluna(op, pedido, sessao)
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "continuidade-da-replica"],
+        "caem": ["escrita_recusada_na_replica_nao_conta_nem_ocupa_memoria"],
+        "seguem": ["com_somente_leitura_a_escrita_local_e_recusada_e_a_replica_segue"],
+        "prazo": 1800,
+    },
 ]

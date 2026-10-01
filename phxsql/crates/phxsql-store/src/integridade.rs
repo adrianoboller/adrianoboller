@@ -308,7 +308,9 @@ pub fn conferir_diretorio(diretorio: &Path) -> Result<Relatorio> {
     for nome in crate::catalogo::tabelas_em(diretorio)? {
         // Tabela que nao abre nao trava a varredura: o defeito dela e dela, e
         // misturar os dois faria uma tabela quebrada esconder as orfas das
-        // outras. Mesmo julgamento do `conferir_filhas`.
+        // outras. E aqui pode, ao contrario da busca reversa do `excluir`
+        // (pedido 631, que RECUSA): isto e relatorio, e a tabela que nao abriu
+        // nao some -- vai nomeada em `nao_abriram`.
         let mut t = match Table::abrir(diretorio, &nome) {
             Ok(t) => t,
             Err(e) => {
