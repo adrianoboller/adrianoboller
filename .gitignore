@@ -20,6 +20,9 @@
 # historia.
 *.bundle
 phxsql-completo-*.tar.gz
+# As partes de 29 MiB do pacote completo, para caber no limite de entrega de
+# arquivo ao dono (30 MiB) -- derivadas do .tar.gz acima, pelo mesmo motivo.
+backup-partes/
 
 # Cache do Python que os testes do plugin geram ao rodar. Nao e fonte:
 # some e volta a cada corrida, e entrou por engano no commit 9d1f4b8.
