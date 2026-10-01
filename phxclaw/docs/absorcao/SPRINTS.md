@@ -45,6 +45,10 @@ abaixo aparece em exatamente uma sprint.
 | SP000028 | 7 | Portão que valida e confere o fim: validador de esquema com caminho e todos os erros, 2 tentativas por ferramenta, final_answer tipado, comando de verificação, fim com falha sem resolver recusado | — | PLANEJADA |
 | SP000029 | 7 | Retomar e bifurcar pela gravação: `retomar --do-passo N`, passo humano no fluxo, pergunta pendente que sobrevive a reinício | — | PLANEJADA |
 | SP000030 | 7 | Medir melhor: nota parcial (LCS, conjunto) no avaliar, duração/tokens/passo-pai por passo, SHA do prompt, memória com invalid_at | — | PLANEJADA |
+| UI-R01 | 8 | Phx Responsive UI — contratos e layout: intenção responsiva no UI-IR (janela e contêiner), breakpoints num JSON único, motor que compila para Grid/Flexbox/container queries, sem perder estado ao redimensionar | — | EM EXECUÇÃO |
+| UI-R02 | 8 | Adaptador Bootstrap substituível: componentes semânticos → Bootstrap 5.3, tokens do PhxClaw nas variáveis do Bootstrap, arquivo local com versão fixada, sem o JS do Bootstrap mexer no DOM controlado | — | EM EXECUÇÃO (núcleo) |
+| UI-R03 | 8 | Studio e templates: editor visual, prévia por largura, inspetor que explica a regra aplicada, template com UUIDv7 e propagação versionada sem apagar sobrescritas | — | PLANEJADA |
+| UI-R04 | 8 | Skill phx-responsive-ui e qualidade: propõe mudança no IR, não HTML; regressão visual, teclado, reflow a 320 px e WebViews reais do Tauri | — | PLANEJADA |
 | | | **Total de chaves** | **54** | |
 
 ```mermaid
@@ -287,3 +291,15 @@ Troca «contra falso» por «real». Depende do dono:
 - Achado da triagem que muda o plano: a conversão de tela em UI-IR por visão **já existe**
   (`screenshot_to_erp_ui`, qwen2.5vl:3b + confirmação por OCR, ~92 s por tela). O que falta é layout e
   prova de fidelidade, e é isso que a onda 6 faz.
+
+
+---
+
+## Phx Responsive UI (decisão do dono, 01/10/2026)
+
+A interface é descrita pela INTENÇÃO no UI-IR (quantas colunas por espaço disponível, com base
+na janela ou no contêiner); um motor responsivo compila isso para CSS nativo; um adaptador visual
+veste os componentes. O adaptador «phoenix» (nativo, tokens do Style Phoenix Padrão) é o da
+interface do próprio PhxClaw; o adaptador Bootstrap é um plugin substituível para os sistemas
+gerados. Bootstrap nunca decide layout (nada de `col-*` como contrato) e não é dependência do
+núcleo. As sprints usam o nome que o dono deu (UI-R01..R04), sem renumerar as SP.
