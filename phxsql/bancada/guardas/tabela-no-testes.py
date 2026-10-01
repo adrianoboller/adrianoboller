@@ -141,6 +141,35 @@ def nao_julgadas(guardas, dados):
     return [g["id"] for g in guardas if g.get("id") not in julgados]
 
 
+def datas_da_corrida(dados):
+    """Quando os vereditos foram medidos: o INTERVALO, e quantos por data.
+
+    Pedido 621. O `ultima-corrida.json` e' uma MESCLA -- cada `--so` preserva
+    os vereditos antigos com a data deles, e o `quando` do topo e' a MAIS
+    ANTIGA (`provar-guardas.py`, `topo = min(quandos)`). Publicar so ele
+    dizia «medido em 2026-09-16 15:25» sobre 483 vereditos de seis datas, 145
+    deles do dia da auditoria: um retrato que nunca existiu, o erro que a
+    pagina dos testes existe para nao cometer.
+
+    Receita UNICA: o `trecho-vivo.py --catraca` imprime a mesma frase por
+    esta funcao, para as duas nunca divergirem."""
+    quandos = [r["quando"] for r in dados.get("guardas") or [] if r.get("quando")]
+    sem_data = len(dados.get("guardas") or []) - len(quandos)
+    if not quandos:
+        return "em %s (nenhum veredito traz a propria data)" % dados.get("quando", "?")
+    por_dia = {}
+    for q in quandos:
+        por_dia[q[:10]] = por_dia.get(q[:10], 0) + 1
+    if len(por_dia) == 1 and not sem_data:
+        return "em %s" % max(quandos)
+    texto = "de %s a %s, em %d datas (%s)" % (
+        min(quandos), max(quandos), len(por_dia),
+        ", ".join("%s: %d" % (d, n) for d, n in sorted(por_dia.items())))
+    if sem_data:
+        texto += ", e %d sem data" % sem_data
+    return texto
+
+
 def tabela(dados, guardas=None, aposentadas=None):
     guardas = GUARDAS if guardas is None else guardas
     aposentadas = (aposentadas_do_trecho_vivo() if aposentadas is None
@@ -195,8 +224,8 @@ def tabela(dados, guardas=None, aposentadas=None):
                if faltam else "%d guardas" % total)
     linhas += [
         "",
-        "**%s: %s** — %d s de mutação, medido em %s."
-        % (quantas, resumo, round(segundos), dados.get("quando", "?")),
+        "**%s: %s** — %d s de mutação, medido %s."
+        % (quantas, resumo, round(segundos), datas_da_corrida(dados)),
     ]
     if faltam:
         por_id_cat = {g["id"]: g for g in guardas}
@@ -412,6 +441,27 @@ def autoteste():
         conferir("o resumo conta 1 aposentada e 2 provadas -- nao 3 provadas",
                  "2 provadas" in resumo6 and "1 aposentada" in resumo6,
                  resumo6)
+
+        # 7. A DATA DA MESCLA (pedido 621): vereditos de duas datas nao podem
+        #    sair como «medido em <a mais antiga>». Os dois sentidos: a mescla
+        #    diz o intervalo e a contagem; a corrida de uma data so continua
+        #    dizendo a data, sem inventar intervalo.
+        mescla = _falso(["g00", "g01", "g02"], "2026-09-16 15:25")
+        mescla["guardas"][0]["quando"] = "2026-09-16 15:25"
+        mescla["guardas"][1]["quando"] = "2026-10-01 09:00"
+        mescla["guardas"][2]["quando"] = "2026-10-01 09:10"
+        frase = datas_da_corrida(mescla)
+        conferir("a mescla diz o intervalo e quantos por data",
+                 frase == "de 2026-09-16 15:25 a 2026-10-01 09:10, em 2 datas "
+                          "(2026-09-16: 1, 2026-10-01: 2)", frase)
+        conferir("e a tabela publica a frase, nao o topo sozinho",
+                 "medido em 2026-09-16 15:25." not in tabela(mescla, cat6)
+                 and frase in tabela(mescla, cat6))
+        so_uma = _falso(["g00"])
+        so_uma["guardas"][0]["quando"] = "2026-01-01 00:00"
+        conferir("a corrida de uma data so continua «em <data>»",
+                 datas_da_corrida(so_uma) == "em 2026-01-01 00:00",
+                 datas_da_corrida(so_uma))
 
     print("   %s" % ("todos passaram" if not falhas
                      else "FALHOU: " + ", ".join(falhas)))

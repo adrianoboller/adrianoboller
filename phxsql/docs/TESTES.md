@@ -1126,7 +1126,7 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `escrita-local-na-replica-calada` | A réplica aceitava escrita local calada, e a ruptura que ela causava culpava o source | 1 | ✅ provada |
 | `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | — | 🪦 aposentada (18/09/2026) |
 
-**483 das 658 guardas do catálogo: 1 aposentada, 478 provadas, 4 redundantes** — 14884 s de mutação, medido em 2026-09-16 15:25.
+**483 das 658 guardas do catálogo: 1 aposentada, 478 provadas, 4 redundantes** — 14884 s de mutação, medido de 2026-09-16 15:25 a 2026-10-01 17:01, em 6 datas (2026-09-16: 113, 2026-09-17: 8, 2026-09-18: 3, 2026-09-24: 177, 2026-09-30: 37, 2026-10-01: 145).
 
 > **Esta rodada NÃO julgou 176 das 658 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 176 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 

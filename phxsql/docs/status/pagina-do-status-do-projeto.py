@@ -1043,13 +1043,24 @@ def secao_guardas(ctx):
         linhas.append(kpi(milhar(ctx["n_guardas"]), "guardas no catálogo", ctx["hoje"]))
     corrida = ctx["corrida_guardas"]
     if corrida and "guardas" in corrida:
-        vereditos = {}
+        vereditos, quandos = {}, {}
         for g in corrida["guardas"]:
             v = g.get("veredito", "?")
             vereditos[v] = vereditos.get(v, 0) + 1
-        q = str(corrida.get("quando", ""))[:16]
+            if g.get("quando"):
+                quandos.setdefault(v, []).append(str(g["quando"]))
+        topo = str(corrida.get("quando", ""))[:16]
         for v in sorted(vereditos):
             classe = {"PROVADA": "feito", "REDUNDANTE": "parcial"}.get(v, "falta")
+            # Pedido 621: o `quando` do topo e' so a MAIS ANTIGA de uma mescla
+            # de `--so`; cada contador diz o intervalo dos vereditos dele.
+            qs = quandos.get(v)
+            if not qs:
+                q = topo
+            elif min(qs)[:10] == max(qs)[:10]:
+                q = max(qs)[:16]
+            else:
+                q = f"{min(qs)[:10]} a {max(qs)[:10]}"
             linhas.append(kpi(milhar(vereditos[v]), esc(v.lower()), q, classe=classe))
     linhas.append(kpi(milhar(len(ctx["vermelhas"])), "guardas VERMELHAS no fonte",
                       ctx["hoje"], classe="falta"))
@@ -1091,7 +1102,7 @@ def secao_catracas(ctx):
               '<th class="num">teto</th><th>fonte</th></tr></thead><tbody>']
     for nome, valor, onde in tetos:
         linhas.append(f'<tr><td class="mono">{esc(nome)}</td>'
-                      f'<td class="num">{milhar(valor)}</td>'
+                      f'<td class="num">{esc(valor)}</td>'
                       f'<td class="mono">{esc(onde)}</td></tr>')
     linhas.append("</tbody></table></div>")
     linhas.append(fonte(
