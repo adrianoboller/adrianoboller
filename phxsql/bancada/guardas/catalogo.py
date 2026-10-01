@@ -19401,7 +19401,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         "alvo": ["--test", "imagem-de-replicacao-com-coluna-marcada"],
         "caem": [
             "imagem_selada_recusa_nomeando_e_nunca_grava_o_selado",
-            "imagem_aberta_para_o_fio_replica_com_e_sem_cofre",
+            "imagem_aberta_para_o_fio_replica_com_cofre_e_sem_cofre_recusa",
         ],
         "seguem": [
             "a_imagem_leva_o_inline_em_claro_e_o_externo_selado",
@@ -19426,11 +19426,14 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
 """,
         "pacote": "phxsql-server",
         "alvo": ["--test", "coluna-externa-marcada-na-replica"],
-        "caem": [
-            "replica_sem_cofre_nao_grava_o_selado_como_anexo",
-            "mesma_senha_replica_a_coluna_externa_marcada",
+        "caem": ["mesma_senha_replica_a_coluna_externa_marcada"],
+        # Desde o pedido 613 a replica sem cofre recusa a tabela ANTES de
+        # olhar a imagem: o selado ou o aberto, ela nao grava nada -- entao o
+        # teste dela segue com o defeito do 344 reposto.
+        "seguem": [
+            "sem_coluna_marcada_o_anexo_replica_como_sempre",
+            "replica_sem_cofre_recusa_a_coluna_externa_marcada",
         ],
-        "seguem": ["sem_coluna_marcada_o_anexo_replica_como_sempre"],
         "prazo": 600,
     },
     {
@@ -20209,6 +20212,111 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         ],
         "seguem": [
             "retrato::testes::o_retrato_espera_quem_esta_dentro_e_barra_quem_chega",
+        ],
+        "prazo": 600,
+    },
+    {
+        "id": "dblink-phx-analisa-antes-de-pesar",
+        "titulo": "O teto de bytes do DbLink não valia para o motor `phxsql`: a linha de até 128 MiB do `Canal` virava árvore `Json` antes de ser pesada, e o `max_mib` só limitava a cópia",
+        "porque": (
+            "pedido 610 (S4 da revisao SEC de 01/10/2026). O resultado do "
+            "outro PhxSql chega numa linha so, e `Json::analisar` monta a "
+            "arvore inteira (16 a 32 vezes a linha) antes do `Acumulador`. O "
+            "conserto le com o que ainda CABE no teto (`Acumulador::cabe`) e "
+            "pesa a linha crua no mesmo contador da copia. Medido pelo "
+            "soquete, linha de 64 MiB contra `max_mib` 1: o par entrega "
+            "4,0-4,8 MiB (memorias de soquete) e o cliente recusa; reposto, "
+            "o cliente le os 64 MiB inteiros antes de recusar."
+        ),
+        "arquivo": "crates/phxsql-server/src/dblink/phx.rs",
+        "trecho": """            .pedir_cru(campos, guardado.cabe())?""",
+        "troca": """            // DEFEITO REPOSTO (610): le com o teto do Canal e analisa antes de pesar.
+            .pedir_cru(campos, phxsql_core::fio::TETO_DO_REGISTRO)?""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "dblink::conexao::testes_do_teto_de_bytes::o_phxsql_pesa_a_linha_antes_de_analisar",
+        ],
+        "seguem": [
+            "dblink::conexao::testes_do_teto_de_bytes::o_par_que_anuncia_linhas_enormes_e_recusado_no_teto_de_bytes",
+            "dblink::conexao::testes_do_teto_de_bytes::a_consulta_legitima_e_o_corte_por_linhas_continuam",
+        ],
+    },
+    {
+        "id": "pg-autenticado-sem-scram",
+        "titulo": "O cliente PostgreSQL do DbLink aceitava `AuthenticationOk` sem SCRAM, com senha na ligação: quem respondesse no endereço dizia «pode entrar» sem conhecer a senha",
+        "porque": (
+            "pedido 612 (S8 da revisao SEC de 01/10/2026). `0 => Ok(true)` "
+            "valia em qualquer momento, inclusive como PRIMEIRA resposta, e a "
+            "autenticacao mutua que `conferir_servidor` promete nao valia "
+            "para quem simplesmente nao pedia o SCRAM. Com senha escrita, o "
+            "`R 0` so vale depois do SCRAM conferido (o `require_auth="
+            "scram-sha-256` do libpq 16). Reposto, o par `trust` recebe o "
+            "`ping`; com o conserto, a recusa nomeia o `pg_hba.conf` e o par "
+            "nao ve consulta nenhuma."
+        ),
+        "arquivo": "crates/phxsql-server/src/pg/mod.rs",
+        "trecho": """            0 if !senha.is_empty() && !*scram_conferido => Err(PhxError::Autorizacao(""",
+        "troca": """            // DEFEITO REPOSTO (612): o `R 0` vale sem SCRAM.
+            0 if false && !*scram_conferido => Err(PhxError::Autorizacao(""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "dblink-postgres-no-fio"],
+        "caem": ["o_autenticado_sem_scram_e_recusado_quando_ha_senha"],
+        "seguem": [
+            "sem_senha_o_trust_continua_entrando",
+            "o_aperto_de_mao_e_a_consulta_chegam_como_o_protocolo_manda",
+        ],
+    },
+    {
+        "id": "replica-sem-cofre-grava-externo-marcado-em-claro",
+        "titulo": "A réplica SEM cofre gravava a coluna externa marcada em claro no disco: o 344 trocou o selado (lixo) pelo dado aberto, sem a palavra do dono",
+        "porque": (
+            "pedido 613 (S5 da revisao SEC de 01/10/2026), decisao do dono "
+            "de 01/10/2026: dado pessoal marcado nunca fica em claro fora da "
+            "origem. O `aplicar_evento` recusa a TABELA pelo "
+            "`RegFile::externa_marcada_sem_cofre`, o avesso do "
+            "`externo_selado`, dizendo que falta o cofre. Reposto, a replica "
+            "`phxsqld`-alimentada grava a linha e o anexo aparece no "
+            "`varrer`; com o conserto, nenhuma linha e o texto em arquivo "
+            "nenhum. A restauracao do proprio diario passa por "
+            "`reaplicar_evento_do_proprio_diario`, sem a recusa."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """        if let Some(c) = self.reg.externa_marcada_sem_cofre() {""",
+        "troca": """        // DEFEITO REPOSTO (613): a replica sem cofre grava o externo aberto.
+        if let Some(c) = self.reg.externa_marcada_sem_cofre().filter(|_| false) {""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "coluna-externa-marcada-na-replica"],
+        "caem": ["replica_sem_cofre_recusa_a_coluna_externa_marcada"],
+        "seguem": [
+            "mesma_senha_replica_a_coluna_externa_marcada",
+            "sem_coluna_marcada_o_anexo_replica_como_sempre",
+        ],
+        "prazo": 600,
+    },
+    {
+        "id": "restauracao-recusa-como-replica-sem-cofre",
+        "titulo": "A restauração do PRÓPRIO diário passaria pela recusa da réplica sem cofre: o servidor sem cofre deixaria de restaurar toda tabela com anexo marcado, sem proteger um byte",
+        "porque": (
+            "pedido 613, a excecao. A recusa da replica sem cofre protege o "
+            "dado que SAI da origem; a restauracao reaplica o diario do "
+            "proprio servidor numa copia no mesmo disco. Ela passa por "
+            "`reaplicar_evento_do_proprio_diario`, um nome a parte e nao um "
+            "interruptor. Reposto o `aplicar_evento`, a tabela para no "
+            "instante da copia com «Falta o cofre» e a linha de depois nao "
+            "volta."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """                                td.reaplicar_evento_do_proprio_diario(e.operacao, e.rowid, &i)""",
+        "troca": """                                // DEFEITO REPOSTO (613): a restauracao recusa como replica.
+                                td.aplicar_evento(e.operacao, e.rowid, &i)""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_pitr::restaurar_sem_cofre_reaplica_o_anexo_marcado",
+        ],
+        "seguem": [
+            "servidor::testes_pitr::restaura_ate_um_instante_no_meio_do_diario",
         ],
         "prazo": 600,
     },

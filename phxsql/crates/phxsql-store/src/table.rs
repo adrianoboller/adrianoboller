@@ -6837,6 +6837,44 @@ impl Table {
         rowid: RowId,
         imagem: &[u8],
     ) -> Result<RowId> {
+        // Antes de tudo, a recusa do pedido 613 (decisao do dono, 01/10/2026):
+        // a imagem chega com o externo marcado ABERTO (`imagem_para_o_fio`),
+        // e este arquivo sem cofre o gravaria em claro no disco da replica.
+        // Antes do 344 a replica guardava o selado -- lixo, mas nao o dado; o
+        // 344 consertou o lixo e, sem a palavra do dono, passou a guardar o
+        // dado. A recusa vale para a TABELA, e nao so para o evento que traz
+        // conteudo: replicar as linhas de anexo nulo e parar na primeira com
+        // anexo deixaria uma copia pela metade que parece inteira.
+        if let Some(c) = self.reg.externa_marcada_sem_cofre() {
+            let coluna = &self.esquema.colunas()[c as usize].nome;
+            return Err(PhxError::Esquema(format!(
+                "{}: a coluna {coluna} e externa e marcada como dado pessoal, e esta \
+                 tabela nao tem cofre nesta replica -- o conteudo chegaria aberto e \
+                 ficaria em claro no disco, e dado pessoal marcado nunca fica em claro \
+                 fora da origem. Falta o cofre: ligue a cifra nesta replica e recrie \
+                 a tabela aqui para ela voltar a replicar",
+                self.nome
+            )));
+        }
+        self.reaplicar_evento_do_proprio_diario(operacao, rowid, imagem)
+    }
+
+    /// O `aplicar_evento` SEM a recusa do pedido 613 -- so para a
+    /// restauracao, que reaplica o diario do PROPRIO servidor numa copia
+    /// local.
+    ///
+    /// Ali o dado nao sai da origem: o arquivo vivo e o restaurado moram no
+    /// mesmo disco, com o mesmo cofre (ou a falta dele). Recusar faria a
+    /// restauracao de um servidor sem cofre parar em toda tabela com anexo
+    /// marcado, sem proteger byte nenhum. A excecao e um nome a parte, e nao
+    /// um interruptor no `aplicar_evento`, para quem replica nao poder pula-la
+    /// por engano.
+    pub fn reaplicar_evento_do_proprio_diario(
+        &mut self,
+        operacao: Operacao,
+        rowid: RowId,
+        imagem: &[u8],
+    ) -> Result<RowId> {
         // A marca liga e desliga AQUI, num par so, e o trabalho fica num
         // interno: cada `return` la dentro deixaria a marca acesa, e um handle
         // que continuasse "sendo replica" depois do evento pararia de conferir

@@ -469,6 +469,15 @@ dia, nunca no desejado:
   e a ficha compartilhada sem o portao do retrato, que o `RwLock` que
   prefere o escritor deixava parar a leitura (`backup-sem-portao-do-retrato`).
   584 + 2 = 586, contado pelo `--catraca` (585 entradas mais 1 aposentada).
+  **SUBIU para 598 em 01/10/2026** (pedidos 610, 612 e 613): quatro guardas --
+  a linha do motor `phxsql` analisada antes de pesar
+  (`dblink-phx-analisa-antes-de-pesar`), o `AuthenticationOk` sem SCRAM com
+  senha na ligacao (`pg-autenticado-sem-scram`), a replica sem cofre que
+  grava o externo marcado em claro
+  (`replica-sem-cofre-grava-externo-marcado-em-claro`) e a restauracao do
+  proprio diario que recusaria como replica
+  (`restauracao-recusa-como-replica-sem-cofre`). 594 + 4 = 598, medido pelo
+  `--numeros` nesta arvore.
 
 # A QUINTA REGUA: a tabela publicada pode ser MENOR que o catalogo
 
@@ -575,7 +584,7 @@ TETO_TESTE_MORTO = 0
 TETO_TRECHO_AMBIGUO = 0
 TETO_TESTE_FORA_DO_BINARIO = 0
 TETO_TESTE_SEM_MODULO = 0
-PISO_DAS_ENTRADAS = 594
+PISO_DAS_ENTRADAS = 598
 
 # ------------------------------------------------------------- APOSENTADAS
 #

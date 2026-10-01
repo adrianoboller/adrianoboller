@@ -2167,10 +2167,36 @@ então a mesma senha não basta» — e a frase **substitui** a do cofre em vez 
 envolvê-la, porque acusar adulteração inexistente gasta a resposta a
 incidente no lugar errado.
 
-**O preço, declarado:** uma réplica **sem cofre** passa a guardar o externo
-marcado em claro no disco dela — exatamente como já guardava a faixa inline.
-Proteger o disco da réplica é ligar o cofre **nela**; o fio já está coberto
-pelo 342.
+**O preço que o 344 declarou, e que o dono recusou (pedido 613, 01/10/2026).**
+O 344 escrevia aqui que «uma réplica sem cofre passa a guardar o externo
+marcado em claro no disco dela». Antes dele ela guardava o selado — lixo, mas
+não o dado —, e a troca entrou sem a palavra do dono; a revisão SEC
+independente (S5) a levou à mesa. **Decisão do dono: dado pessoal marcado
+nunca fica em claro fora da origem.** Desde então o `Table::aplicar_evento`
+recusa a **tabela** inteira quando ela tem coluna externa marcada e o `.reg`
+daqui não tem cofre — pelo `RegFile::externa_marcada_sem_cofre`, escrito ao
+lado do `externo_selado` e com as mesmas duas perguntas —, dizendo «Falta o
+cofre: ligue a cifra nesta réplica e recrie a tabela aqui». A recusa é da
+tabela, e não do evento que traz conteúdo, porque replicar as linhas de anexo
+nulo e parar na primeira com anexo deixaria uma cópia pela metade que parece
+inteira. Com cofre, nada muda (`mesma_senha_replica_a_coluna_externa_marcada`).
+A **restauração** do próprio diário (PITR) não é «fora da origem» e passa por
+`reaplicar_evento_do_proprio_diario`, sem a recusa — um nome à parte, e não um
+interruptor, para quem replica não poder pulá-la por engano
+(`restaurar_sem_cofre_reaplica_o_anexo_marcado`, guarda
+`restauracao-recusa-como-replica-sem-cofre`, PROVADA).
+
+Prova pelo soquete (`replica_sem_cofre_recusa_a_coluna_externa_marcada`,
+origem `phxsqld` com cofre): com o conserto, nenhuma linha e o texto do anexo
+em arquivo nenhum da réplica; com a recusa removida, o `varrer` da réplica
+devolve o anexo. Guarda `replica-sem-cofre-grava-externo-marcado-em-claro`,
+PROVADA.
+
+**O que a decisão não alcançou, dito:** a faixa **inline** marcada (o
+`Texto` marcado, por exemplo) continua em claro no disco da réplica sem
+cofre, como sempre esteve, e o bidirecional (`inserir_replicado`) não passa
+pelo `aplicar_evento`. A decisão do dono falou da coluna externa; estender a
+regra às duas é pergunta para ele, e não conserto calado.
 
 #### A assimetria, e o que ela custou (pedido 342, fechado em 23/09/2026)
 
@@ -6650,3 +6676,31 @@ lista negra atrás de proxy barra todos de uma vez). As guardas de tela não
 cabem no catálogo (`provar-guardas.py` repõe defeito e roda `cargo test`); a
 prova delas é o roteiro versionado acima, que reprova 4 de 5 com o binário de
 antes.
+
+## 37. O DbLink: o teto que não valia no `phxsql`, o «autenticado» sem SCRAM e a réplica sem cofre (pedidos 610, 612 e 613, 01/10/2026)
+
+Três achados da revisão SEC independente de 01/10/2026
+(`docs/propostas/sec-revisao-independente-01-10-2026.md`, S4, S8 e S5), cada
+um com a prova nos dois sentidos e pelo soquete.
+
+| achado | o defeito | o conserto | prova (vermelho com o defeito → verde) |
+|---|---|---|---|
+| **610** (S4) | o teto de bytes do 546 pesava a **cópia** do resultado; no motor `phxsql` o resultado é UMA linha do `Canal` (até 128 MiB), e `Json::analisar` montava a árvore inteira (16–32× a linha) antes do `Acumulador`. `max_mib: 1` não mudava o pico | o `phx::Conexao::pedir_pesado` lê com o que ainda **cabe** no teto (`Acumulador::cabe`, via `replica::Cliente::pedir_cru`) e pesa a linha crua no **mesmo** contador da cópia (`pesar_crua`); a que passa é recusada com a frase do `max_mib`, antes de ser analisada. `consultar` e `ler`, os dois caminhos que guardam resultado, passam por ele | `o_phxsql_pesa_a_linha_antes_de_analisar`: linha de 64 MiB contra `max_mib` 1 — o par entregou **67.108.864** bytes com o defeito e **4,0–4,8 MiB** com o conserto (três corridas: 4.194.360, 4.325.432, 5.046.328; o resto são as memórias de soquete do laço local, e o cliente lê no máximo 1 MiB + 1). Guarda `dblink-phx-analisa-antes-de-pesar` |
+| **612** (S8) | o cliente PostgreSQL aceitava `AuthenticationOk` (`R 0`) a qualquer momento, inclusive como **primeira** resposta: a autenticação mútua que `conferir_servidor` promete não valia para quem não pedia o SCRAM — quem respondesse no endereço recebia as consultas, e com `sentido: empurrar` as linhas | com senha na ligação, o `R 0` só vale **depois** do SCRAM concluído com a assinatura do servidor conferida; antes, recusa nomeando o `pg_hba.conf` e `scram-sha-256`, sem citar a senha. Sem senha escrita, o `trust` é escolha de quem cadastrou e continua entrando | `tests/dblink-postgres-no-fio.rs`: `o_autenticado_sem_scram_e_recusado_quando_ha_senha` (com o defeito o `abrir` voltava `Ok` e o `ping` chegava ao par; agora zero consultas) e o comportamento velho `sem_senha_o_trust_continua_entrando`. Guarda `pg-autenticado-sem-scram` |
+| **613** (S5) | a réplica sem cofre gravava a coluna externa marcada em claro | decisão do dono: recusa da tabela — §11.8 | §11.8. Guarda `replica-sem-cofre-grava-externo-marcado-em-claro` |
+
+**A régua do 612.** O libpq de fábrica aceita `trust`; o
+`require_auth=scram-sha-256` do libpq 16 é a opção que recusa. Aqui a recusa
+é o padrão **quando a ligação tem senha**, porque senha escrita é a
+declaração de que a credencial importa — aceitar quem não a pede é aceitar
+qualquer um no endereço. É a saída conservadora que o S8 propôs, e não muda
+nada para a ligação sem senha.
+
+**O que fica, dito.** No 610, com o `max_mib` **de fábrica** (128 MiB, o
+próprio `TETO_DO_REGISTRO`) a linha de 128 MiB ainda vira a árvore inteira
+antes de qualquer recusa — é o pico de uma mensagem que o 596 (⏸) registra
+para os três motores; pesar a linha crua pelo fator da árvore recusaria
+respostas legítimas que hoje passam. O que o 610 entrega é que o `max_mib`
+**escrito** passa a valer no pico. E no motor `phxsql` o corte por linhas não
+salva uma resposta cuja linha crua não cabe: o resultado é uma mensagem só, e
+não há como lê-la em parte.

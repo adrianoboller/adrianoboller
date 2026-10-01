@@ -268,11 +268,14 @@ fn imagem_selada_recusa_nomeando_e_nunca_grava_o_selado() {
     }
 }
 
-/// **344, o caminho que replica.** A imagem aberta para o fio entra na
-/// replica sem cofre E na com a mesma senha, com o anexo IGUAL -- o conteudo,
-/// nao o veredito.
+/// **344, o caminho que replica -- e o 613.** A imagem aberta para o fio
+/// entra na replica com a mesma senha com o anexo IGUAL -- o conteudo, nao o
+/// veredito. Na replica SEM cofre ela e RECUSADA (decisao do dono,
+/// 01/10/2026): o anexo marcado chegaria aberto e ficaria em claro no disco
+/// dela. A prova ali e a do disco: nenhuma linha, e o texto em arquivo
+/// nenhum.
 #[test]
-fn imagem_aberta_para_o_fio_replica_com_e_sem_cofre() {
+fn imagem_aberta_para_o_fio_replica_com_cofre_e_sem_cofre_recusa() {
     let _t = UM_DE_CADA_VEZ.lock().unwrap_or_else(|e| e.into_inner());
     cofre::desligar();
     let (_, do_fio, d_o) = imagens_da_origem("344-fio-origem");
@@ -288,7 +291,30 @@ fn imagem_aberta_para_o_fio_replica_com_e_sem_cofre() {
             "344-fio-sem-cofre"
         });
         let mut r = Table::criar(&d, esquema_bin()).unwrap();
-        r.aplicar_evento(Operacao::Inclusao, 1, &do_fio).unwrap();
+        let aplicado = r.aplicar_evento(Operacao::Inclusao, 1, &do_fio);
+        if !com_cofre {
+            let e = match aplicado {
+                Ok(_) => panic!("a replica sem cofre gravou o anexo marcado"),
+                Err(e) => e.to_string(),
+            };
+            assert!(e.contains("Falta o cofre") && e.contains("anexo"), "{e}");
+            assert!(
+                r.ler(1).map(|l| l.is_none()).unwrap_or(true),
+                "gravou a linha mesmo recusando"
+            );
+            drop(r);
+            for arquivo in std::fs::read_dir(&d).unwrap().flatten() {
+                let bytes = std::fs::read(arquivo.path()).unwrap_or_default();
+                assert!(
+                    !contem(&bytes, FICHA.as_bytes()),
+                    "o anexo ficou em claro em {}",
+                    arquivo.path().display()
+                );
+            }
+            dirs.push(d);
+            continue;
+        }
+        aplicado.unwrap();
         let linha = r.ler(1).unwrap().unwrap();
         assert_eq!(
             linha[1],

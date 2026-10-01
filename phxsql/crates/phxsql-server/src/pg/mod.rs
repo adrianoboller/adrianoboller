@@ -163,11 +163,15 @@ impl Conexao {
         p.push(0);
         self.escrever_sem_tipo(&p)?;
 
+        // So vira `true` depois de o SCRAM terminar com a assinatura do
+        // servidor conferida -- e e ele que decide se o `AuthenticationOk`
+        // vale (pedido 612).
+        let mut scram_conferido = false;
         loop {
             let m = self.ler_mensagem()?;
             match m.tipo {
                 b'R' => {
-                    if self.autenticar(&m.corpo, usuario, senha)? {
+                    if self.autenticar(&m.corpo, usuario, senha, &mut scram_conferido)? {
                         continue;
                     }
                 }
@@ -193,7 +197,13 @@ impl Conexao {
     }
 
     /// Trata uma mensagem `R`. Devolve `true` quando a conversa continua.
-    fn autenticar(&mut self, corpo: &[u8], usuario: &str, senha: &str) -> Result<bool> {
+    fn autenticar(
+        &mut self,
+        corpo: &[u8],
+        usuario: &str,
+        senha: &str,
+        scram_conferido: &mut bool,
+    ) -> Result<bool> {
         let codigo = i32::from_be_bytes(
             corpo
                 .get(..4)
@@ -202,6 +212,25 @@ impl Conexao {
         );
         match codigo {
             // AuthenticationOk. O `Z` ainda vem depois.
+            //
+            // Com senha na ligacao, so vale DEPOIS do SCRAM conferido --
+            // pedido 612. Antes, o `R 0` como primeira resposta (o `trust`)
+            // era aceito, e a autenticacao mutua que `conferir_servidor`
+            // promete nao valia: quem respondesse no endereco dizia «pode
+            // entrar» sem conhecer a senha, e recebia as consultas -- e, com
+            // `sentido: empurrar`, as linhas locais. E o
+            // `require_auth=scram-sha-256` do libpq 16; o libpq de fabrica
+            // aceita, e aqui vence a saida conservadora. Sem senha escrita, o
+            // `trust` e a escolha de quem cadastrou e continua entrando.
+            0 if !senha.is_empty() && !*scram_conferido => Err(PhxError::Autorizacao(
+                "o servidor PostgreSQL(R) disse «autenticado» sem o SCRAM (metodo \
+                 `trust`), e esta ligacao tem senha: sem a troca ele nao provou \
+                 conhecer a credencial, e quem responde neste endereco pode ser \
+                 qualquer um. Troque a linha deste usuario no `pg_hba.conf` para \
+                 `scram-sha-256`; se o `trust` e de proposito, tire a senha da \
+                 ligacao."
+                    .into(),
+            )),
             0 => Ok(true),
             3 => Err(PhxError::Autorizacao(
                 "o servidor pediu a senha em TEXTO PURO (metodo `password`), e este \
@@ -226,6 +255,7 @@ impl Conexao {
                     )));
                 }
                 self.negociar_scram(usuario, senha)?;
+                *scram_conferido = true;
                 Ok(true)
             }
             outro => Err(PhxError::Autorizacao(format!(

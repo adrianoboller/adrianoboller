@@ -12,10 +12,10 @@
 //! # O que se mede: o CONTEUDO, nunca o veredito
 //!
 //! O defeito do 344-1 e justamente responder `ok`: a replica gravava os bytes
-//! selados pela origem como se fossem o anexo. Entao a prova le o `Bin` na
-//! replica e compara byte a byte com o que a origem recebeu. E o 344-2 mede a
-//! mesma coisa com a MESMA senha dos dois lados, que antes parava a replicacao
-//! acusando adulteracao que nao houve.
+//! selados pela origem como se fossem o anexo. Desde o pedido 613 (decisao do
+//! dono) a replica sem cofre RECUSA a tabela, e a prova procura o anexo nos
+//! arquivos dela. O 344-2 le o `Bin` com a MESMA senha dos dois lados, que
+//! antes parava a replicacao acusando adulteracao que nao houve.
 #![cfg(unix)]
 
 mod comum;
@@ -222,30 +222,52 @@ fn algum_arquivo_contem(raiz: &Path, agulha: &[u8]) -> bool {
     false
 }
 
-/// **344-1.** Replica SEM cofre: o anexo chega IGUAL, ou nao chega.
+/// **613 (era o 344-1).** Replica SEM cofre: a tabela com coluna externa
+/// marcada e RECUSADA, dizendo que falta o cofre -- e o anexo nao aparece em
+/// arquivo nenhum da replica. Decisao do dono, 01/10/2026: dado pessoal
+/// marcado nunca fica em claro fora da origem.
+///
+/// O 344-1 pedia «chega IGUAL, ou nao chega», e o conserto dele fez chegar
+/// igual -- em CLARO no disco de quem nao tem cofre. Agora a pergunta e a do
+/// disco, e o conteudo lido pela replica tem de ser nenhum.
 ///
 /// # O vermelho
 ///
-/// Com o defeito reposto (a origem mandando o externo selado e a replica
-/// decidindo pelo proprio estado), a replica respondia `ok` e o `varrer`
-/// devolvia 68 bytes que nao sao o anexo: `[nonce 24][cifrado][etiqueta 16]`.
-/// Dado errado, calado, e o `spare_promover` promoveria esse banco.
+/// Com o defeito reposto (sem a recusa no `aplicar_evento`), a replica
+/// grava a linha, o `varrer` devolve o anexo e o texto dele esta no `.mmo`
+/// da replica: o vermelho diz qual das tres.
 #[test]
-fn replica_sem_cofre_nao_grava_o_selado_como_anexo() {
+fn replica_sem_cofre_recusa_a_coluna_externa_marcada() {
     let _t = UM_DE_CADA_VEZ.lock().unwrap_or_else(|e| e.into_inner());
     cofre::desligar();
-    let dir_o = DirTemp::novo("344-sem-cofre-origem");
-    let dir_r = DirTemp::novo("344-sem-cofre-replica");
+    let dir_o = DirTemp::novo("613-sem-cofre-origem");
+    let dir_r = DirTemp::novo("613-sem-cofre-replica");
     let (_origem, porta_o) = subir_origem(&dir_o);
     encher_origem(porta_o);
 
     let (_replica, porta_r) = subir_replica(&dir_r, porta_o);
-    let lidos = esperar_a_linha(porta_r);
-    assert_eq!(
-        lidos,
-        vec![ANEXO.to_string()],
-        "a replica sem cofre gravou outra coisa no lugar do anexo (estado: {})",
-        estado(porta_r)
+    // Teto de voltas: 20 s de 100 ms. A recusa aparece no estado da
+    // replicacao; sem ela, a linha aparece no `varrer`.
+    let ate = Instant::now() + Duration::from_secs(20);
+    let (est, lidos) = loop {
+        let est = estado(porta_r);
+        let lidos = anexos(porta_r);
+        if est.contains("Falta o cofre") || !lidos.is_empty() || Instant::now() > ate {
+            break (est, lidos);
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    };
+    assert!(
+        lidos.is_empty(),
+        "a replica sem cofre gravou a linha da tabela marcada: {lidos:?}"
+    );
+    assert!(
+        est.contains("Falta o cofre") && est.contains("anexo"),
+        "a recusa nao diz que falta o cofre nem nomeia a coluna: {est}"
+    );
+    assert!(
+        !algum_arquivo_contem(&dir_r, ANEXO_TEXTO.as_bytes()),
+        "o anexo marcado ficou em claro num arquivo da replica sem cofre"
     );
 }
 

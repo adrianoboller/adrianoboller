@@ -2180,6 +2180,22 @@ impl RegFile {
         )
     }
 
+    /// A primeira coluna externa marcada que este arquivo guardaria em CLARO
+    /// -- pedido 613.
+    ///
+    /// E o avesso exato de [`RegFile::externo_selado`], pelas mesmas duas
+    /// perguntas (o arquivo tem cofre? a coluna e externa marcada?): onde la
+    /// a resposta e «selo», aqui e «nao ha com que selar». Quem a usa e a
+    /// replica, que por decisao do dono (01/10/2026) RECUSA a tabela nesse
+    /// caso: dado pessoal marcado nunca fica em claro fora da origem. Escrita
+    /// ao lado da outra para as duas nunca divergirem sobre o que e «marcada».
+    pub fn externa_marcada_sem_cofre(&self) -> Option<u16> {
+        if self.material.cifrado() {
+            return None;
+        }
+        (0..self.esquema.colunas().len() as u16).find(|&c| self.externa_marcada(c))
+    }
+
     /// A coluna e externa (`Bin`/`Memo`) E esta marcada como dado pessoal?
     fn externa_marcada(&self, coluna: u16) -> bool {
         self.esquema

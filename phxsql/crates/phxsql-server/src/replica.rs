@@ -237,7 +237,40 @@ impl Cliente {
     }
 
     /// Manda um pedido e devolve o `resultado`, ou o erro que o source disse.
-    pub fn pedir(&mut self, mut campos: Vec<(&str, Json)>) -> Result<Json> {
+    pub fn pedir(&mut self, campos: Vec<(&str, Json)>) -> Result<Json> {
+        let resposta = self.trocar(campos, phxsql_core::fio::TETO_DO_REGISTRO, &mut false)?;
+        Cliente::desembrulhar(&resposta)
+    }
+
+    /// Manda um pedido e devolve a linha CRUA da resposta, lida com o teto de
+    /// quem chama -- pedido 610. `None` quer dizer que a linha passou do teto,
+    /// e a conexao ficou no meio dela: nao se reaproveita.
+    ///
+    /// Existe porque o teto de bytes do DbLink (546) pesava a COPIA, e a copia
+    /// so nasce depois de `Json::analisar` montar a arvore inteira -- que custa
+    /// de 16 a 32 vezes a linha. Quem tem orcamento proprio precisa pesar a
+    /// linha ANTES de analisa-la, e para isso precisa dela crua. O `None`, e
+    /// nao um erro, e o que deixa quem chama dizer a recusa com o teto DELE
+    /// (`max_mib`) sem comparar frase: o `LimiteExcedido` do outro lado so
+    /// aparece depois da analise, entao aqui ele nunca se confunde com este.
+    pub fn pedir_cru(&mut self, campos: Vec<(&str, Json)>, teto: u64) -> Result<Option<String>> {
+        let mut estourou = false;
+        match self.trocar(campos, teto, &mut estourou) {
+            Ok(l) => Ok(Some(l)),
+            Err(_) if estourou => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
+    /// Escreve o pedido e le a linha da resposta, com `teto`. `estourou` vira
+    /// `true` quando a linha passou dele -- pela pergunta do proprio `Canal`,
+    /// que so a faz nesse caso.
+    fn trocar(
+        &mut self,
+        mut campos: Vec<(&str, Json)>,
+        teto: u64,
+        estourou: &mut bool,
+    ) -> Result<String> {
         if !self.token.is_empty() {
             campos.push(("token", Json::texto_de(self.token.clone())));
         }
@@ -247,19 +280,24 @@ impl Cliente {
             .escrever(&mut self.fluxo, &linha)
             .map_err(prazo::reclassificar)?;
 
-        let resposta = match self
+        match self
             .canal
-            .ler(&mut self.leitor)
+            .ler_decidindo(&mut self.leitor, teto, &mut || {
+                *estourou = true;
+                teto
+            })
             .map_err(prazo::reclassificar)?
         {
-            Recebido::Linha(l) => l,
-            Recebido::Fim => {
-                return Err(PhxError::Io(std::io::Error::other(
-                    "o source fechou a conexao",
-                )))
-            }
-        };
-        let j = Json::analisar(&resposta)?;
+            Recebido::Linha(l) => Ok(l),
+            Recebido::Fim => Err(PhxError::Io(std::io::Error::other(
+                "o source fechou a conexao",
+            ))),
+        }
+    }
+
+    /// A resposta analisada: o `resultado`, ou o erro que o source disse.
+    pub fn desembrulhar(resposta: &str) -> Result<Json> {
+        let j = Json::analisar(resposta)?;
         if !j.booleano_ou("ok", false) {
             // O erro do outro lado ja vem classificado -- `nome` e `classe`
             // fazem parte da resposta. Reembalar tudo como "acesso negado"
