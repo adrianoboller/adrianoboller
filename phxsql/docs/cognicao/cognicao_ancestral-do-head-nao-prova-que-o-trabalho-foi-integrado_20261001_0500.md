@@ -49,3 +49,12 @@ de novo.
 
 4 frentes apagadas, 0 bytes recuperáveis do disco (nada estava em objeto do
 git), 4 retomadas possíveis pela recriação do caminho.
+
+## O alcance, medido no mesmo dia (quarta prova)
+
+As tres provas nao bastam para copia RECEM-CRIADA: ela esta limpa, a ponta e
+o proprio HEAD, e o agente pode ainda nao ter entrado nela. Em 01/10/2026 o
+`limpar-frentes.sh` chegou ao `git worktree remove` em tres copias de agentes
+lancados segundos antes; quem segurou foi a tranca que o harness poe
+(`git worktree lock`). Agora a tranca e a quarta prova, conferida pelo script
+antes de tentar -- e nao mais uma recusa do git da qual se depende por sorte.
