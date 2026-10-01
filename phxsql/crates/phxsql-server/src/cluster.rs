@@ -226,6 +226,12 @@ const PAPEL_REPLICA: u8 = 0;
 /// barra e o salto para perto de `u64::MAX` de uma vez so.
 pub const FOLGA_DE_EPOCA: u64 = 1_000_000;
 
+/// A janela do silencio de [`EstadoCluster::diagnosticar_contido`]. Um minuto:
+/// o par legitimo com o relogio torto aparece no log a cada minuto, que e o
+/// ritmo de quem le; quem manda mil pulsos tortos por segundo escreve as mesmas
+/// uma linha por minuto, e o «REBAIXANDO» nao disputa o limite do journald.
+pub const SILENCIO_DO_DIAGNOSTICO_MS: i64 = 60_000;
+
 /// O estado compartilhado entre as threads do cluster e o portao de escrita.
 ///
 /// # Por que atomos no caminho quente
@@ -315,6 +321,17 @@ pub struct EstadoCluster {
     /// guardar qualquer um seria a memoria de quem confere escolhida por quem
     /// manda.
     sem_prova_anunciados: TravaDaGuarda<std::collections::HashSet<String>>,
+    /// O silencio dos diagnosticos que quem MANDA o pulso escolhe quando
+    /// escrever -- pedido 445 (SEC B2). Chave `motivo:id` -> (ultimo aviso,
+    /// quantos se calaram desde ele).
+    ///
+    /// O stderr deste processo e o journal da unidade (MANUAL §7.4) e o
+    /// `docker logs`, e o journald DESCARTA linhas acima do limite de taxa da
+    /// unidade. Uma linha por pulso recusado deixava quem tem a credencial
+    /// do cluster afogar o log ate o «REBAIXANDO», que e a linha que o
+    /// operador precisa ver, cair no descarte. Cresce so ate a lista: todo
+    /// `id` que chega aqui ja passou pelo crivo do pedido 441.
+    avisos_contidos: TravaDaGuarda<(HashMap<String, i64>, HashMap<String, u64>)>,
     caminho_estado: PathBuf,
     /// Quando este estado nasceu. O arbitro da UMA janela de graca a partir
     /// daqui: no arranque o primeiro tique roda antes do primeiro pulso, e
@@ -467,6 +484,10 @@ impl EstadoCluster {
                 "dos avisos de pulso sem prova",
                 std::collections::HashSet::new(),
             ),
+            avisos_contidos: TravaDaGuarda::nova(
+                "do silencio dos diagnosticos do pulso",
+                (HashMap::new(), HashMap::new()),
+            ),
             caminho_estado,
             nascido_ms: agora,
         }
@@ -561,19 +582,25 @@ impl EstadoCluster {
     pub fn registrar(&self, id: &str, pulso: PulsoDeNo) -> Result<()> {
         let teto = self.maior_epoca_vista().saturating_add(FOLGA_DE_EPOCA);
         if pulso.epoca > teto {
-            eprintln!(
-                "cluster: pulso de {id:?} com epoca {} acima do teto sadio {teto} \
-                 (maior vista + {FOLGA_DE_EPOCA}): ignorado",
-                pulso.epoca
-            );
+            self.diagnosticar_contido("epoca", id, || {
+                format!(
+                    "cluster: pulso de {id:?} com epoca {} acima do teto sadio {teto} \
+                     (maior vista + {FOLGA_DE_EPOCA}): ignorado",
+                    pulso.epoca
+                )
+            });
             return Ok(());
         }
         if pulso.posicao >= phxsql_core::json::INTEIRO_EXATO_MAX {
-            eprintln!(
-                "cluster: pulso de {id:?} com posicao {} que nem cabe num numero \
-                 exato de JSON: ignorado",
-                pulso.posicao
-            );
+            // A sonda do A2 da revisao SEC e EXATAMENTE este pulso: nao mexe no
+            // mapa, nao conta violacao -- e escrevia uma linha por envio.
+            self.diagnosticar_contido("posicao", id, || {
+                format!(
+                    "cluster: pulso de {id:?} com posicao {} que nem cabe num numero \
+                     exato de JSON: ignorado",
+                    pulso.posicao
+                )
+            });
             return Ok(());
         }
         let agora = pulso.quando_ms;
@@ -710,6 +737,40 @@ impl EstadoCluster {
         );
     }
 
+    /// Escreve no stderr um diagnostico que quem MANDA o pulso dispara --
+    /// no maximo um por `motivo` e por par a cada [`SILENCIO_DO_DIAGNOSTICO_MS`],
+    /// e o seguinte diz quantos se calaram (pedido 445, SEC B2).
+    ///
+    /// O silencio e o do motor que ja existe para isso (`jobs::pode_avisar`,
+    /// o mesmo do vigia de disco), e nao um segundo relogio escrito aqui. O
+    /// texto so se monta quando sai: calado, nao se paga nem o `format!`.
+    pub fn diagnosticar_contido(&self, motivo: &str, id: &str, texto: impl FnOnce() -> String) {
+        let chave = format!("{motivo}:{id}");
+        let calados = {
+            let mut g = self.avisos_contidos.travar();
+            let (avisados, contados) = &mut *g;
+            if !crate::jobs::pode_avisar(
+                avisados,
+                &chave,
+                crate::agora_ms(),
+                SILENCIO_DO_DIAGNOSTICO_MS,
+            ) {
+                *contados.entry(chave).or_insert(0) += 1;
+                return;
+            }
+            contados.remove(&chave).unwrap_or(0)
+        };
+        if calados == 0 {
+            eprintln!("{}", texto());
+        } else {
+            eprintln!(
+                "{} ({calados} iguais deste par calados nos ultimos {} s)",
+                texto(),
+                SILENCIO_DO_DIAGNOSTICO_MS / 1000
+            );
+        }
+    }
+
     /// A UNICA recusa que o fio ve quando a prova de um pulso nao e aceita --
     /// pedido 435 (SEC A2 de 23/09/2026).
     ///
@@ -736,7 +797,9 @@ impl EstadoCluster {
     /// dele -- zero bit sobre o estado deste no. Tirar custaria ao operador
     /// legitimo saber de QUAL par e a recusa que o cliente dele mostrou.
     fn recusa_da_prova(&self, id: &str, detalhe: &str) -> RecusaDoPulso {
-        eprintln!("cluster: a prova do pulso de {id:?} nao foi aceita -- {detalhe}");
+        self.diagnosticar_contido("prova", id, || {
+            format!("cluster: a prova do pulso de {id:?} nao foi aceita -- {detalhe}")
+        });
         RecusaDoPulso::Outra(PhxError::Autorizacao(format!(
             "a prova do pulso de {id:?} nao foi aceita por este no; o motivo \
              esta no log deste processo"

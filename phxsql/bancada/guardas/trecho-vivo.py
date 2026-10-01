@@ -427,6 +427,13 @@ dia, nunca no desejado:
   entregava o literal a quem so le (`visoes-entrega-o-literal`). 551 + 3 =
   554, contado pelo `--catraca`.
   No merge com as frentes que levaram o piso a 563: 563 + 3 = 566.
+  **SUBIU para 575 em 01/10/2026** (pedidos 428, 444 e 445): nove guardas --
+  a chave do congelamento sensivel a caixa, `excluir_tabela` e
+  `renomear_tabela` furando o congelamento, o caminho absoluto na recusa da
+  FASE B, o `acessos.log` nascendo sem rodizio, o pulso torto uma linha por
+  envio e o irmao dele (o id deste no), a web acima do teto sem rastro e o
+  inventario das operacoes anonimas. 551 + 9 = 560, contado pelo `--numeros`.
+  No merge com as frentes que levaram o piso a 566: 566 + 9 = 575.
   impedir. Ele e a unica coisa nesta regua que reprova o APAGAMENTO; tudo o
   mais aqui reprova o envelhecimento.
 
@@ -535,7 +542,7 @@ TETO_TESTE_MORTO = 0
 TETO_TRECHO_AMBIGUO = 0
 TETO_TESTE_FORA_DO_BINARIO = 0
 TETO_TESTE_SEM_MODULO = 0
-PISO_DAS_ENTRADAS = 566
+PISO_DAS_ENTRADAS = 575
 
 # ------------------------------------------------------------- APOSENTADAS
 #

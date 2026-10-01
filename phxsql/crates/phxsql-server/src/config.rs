@@ -794,9 +794,18 @@ impl Cluster {
             // nao, e a que envelhece e sempre a que ninguem compila.
             ("quorum_imposto", Json::Bool(false)),
             // O estado da cifra do cluster e um BOOLEANO informativo, como o
-            // `email` acima -- o pino de cada no NAO sai daqui: a resposta de
-            // protocolo nunca carrega o pino, e "cifra_do_no" por no diria
-            // quem tem pino e quem nao, que e mapa para o atacante.
+            // `email` acima -- o PINO de cada no NAO sai daqui: a resposta de
+            // protocolo nunca carrega material de chave.
+            //
+            // O MAPA de quem tem pino sai, sim -- no `tem_pino` de cada no,
+            // logo abaixo --, e esta linha dizia o contrario (revisao SEC,
+            // B4, pedido 445). A fronteira que vale e a de QUEM pergunta: este
+            // `para_json` so sai pela op `config`, que pede `Administrar`
+            // (`Atividade::da_operacao`), e quem administra le e escreve o
+            // proprio `cluster.nos[].chave_do_fio` pelo `config_gravar`. O
+            // mapa que nao pode sair e o do FIO DO CLUSTER, para quem tem so
+            // a credencial de replicar -- e esse o pedido 435 fechou nas
+            // respostas do pulso (`cluster::recusa_da_prova`).
             ("cifra", Json::Bool(self.cifra)),
             // Booleano informativo pelo mesmo motivo do `cifra`: dizer QUAL no
             // ja provou identidade seria entregar, a quem pergunta, o mapa de
@@ -3791,11 +3800,16 @@ impl PerfilEmDisco {
 
     /// A mesma leitura (`arquivo_mib`/`arquivos`), generalizada por SECAO e
     /// por PADRAO -- pedido 228: `acessos.log` e `diretivas.log` reaproveitam
-    /// este tipo para o rodizio deles, e nao inventam outro. O padrao muda
-    /// por chamador porque a regra da casa exige: o Profiler NASCE ligado
-    /// (decisao propria, documentada acima), mas `acessos`/`diretivas` tem
-    /// de nascer com `arquivo_mib: 0` -- guarda nova entra pedida, e um
-    /// arquivo que ja existe em producao nao pode passar a girar sozinho.
+    /// este tipo para o rodizio deles, e nao inventam outro.
+    ///
+    /// Os tres nascem LIGADOS, no mesmo padrao, desde o pedido 444 -- decisao
+    /// do dono em 24/09/2026. O 228 tinha posto `acessos`/`diretivas` em
+    /// `arquivo_mib: 0` por «guarda nova entra pedida»; medido depois, um
+    /// anonimo mandando `x\n` escrevia 266 B de `acessos.log` por 2 B
+    /// recebidos, sem credencial e sem teto: encher o disco era de graca. Rodizio
+    /// e padrao de fabrica, nao contrato de cliente -- nenhum cliente para de
+    /// funcionar porque o log gira. Quem escreveu o campo, inclusive `0`,
+    /// fica como escreveu: o padrao so vale para o campo AUSENTE.
     fn de_secao(j: &Json, secao: &str, padrao: PerfilEmDisco) -> PerfilEmDisco {
         let Some(c) = j.campo(secao) else {
             return padrao;
@@ -3806,16 +3820,6 @@ impl PerfilEmDisco {
                 .max(0) as u64,
             arquivos: (c.inteiro_ou("arquivos", padrao.arquivos as i64).max(0) as usize)
                 .min(crate::profiler::MAX_ARQUIVOS_ANTIGOS),
-        }
-    }
-
-    /// O padrao de `acessos` e `diretivas`: sem rodizio, o comportamento de
-    /// sempre -- ver a nota de `de_secao` sobre por que ele NAO e o mesmo
-    /// `Default` do Profiler.
-    fn sem_rodizio() -> PerfilEmDisco {
-        PerfilEmDisco {
-            arquivo_mib: 0,
-            arquivos: 0,
         }
     }
 
@@ -4349,8 +4353,8 @@ pub struct Config {
     pub telemetria: Painel,
     /// O rodizio do `.txt` do Profiler. Ver [`PerfilEmDisco`].
     pub profiler: PerfilEmDisco,
-    /// O rodizio do `acessos.log`. Pedido 228 -- mesmo tipo do Profiler,
-    /// padrao DESLIGADO (ver [`PerfilEmDisco::sem_rodizio`]).
+    /// O rodizio do `acessos.log`. Pedido 228 -- mesmo tipo do Profiler, e
+    /// desde o 444 o mesmo padrao LIGADO (ver `PerfilEmDisco::de_secao`).
     pub acessos: PerfilEmDisco,
     /// O rodizio do `diretivas.log`. Pedido 228, mesma nota de `acessos`.
     pub diretivas: PerfilEmDisco,
@@ -4757,8 +4761,8 @@ impl Default for Config {
             lgpd: Lgpd::default(),
             telemetria: Painel::default(),
             profiler: PerfilEmDisco::default(),
-            acessos: PerfilEmDisco::sem_rodizio(),
-            diretivas: PerfilEmDisco::sem_rodizio(),
+            acessos: PerfilEmDisco::default(),
+            diretivas: PerfilEmDisco::default(),
             idioma: String::new(),
             estranhas: Vec::new(),
             avisos: Vec::new(),
@@ -4975,8 +4979,8 @@ impl Config {
             lgpd: Lgpd::de_json(j)?,
             telemetria: Painel::de_json(j, &mut avisos),
             profiler: PerfilEmDisco::de_json(j),
-            acessos: PerfilEmDisco::de_secao(j, "acessos", PerfilEmDisco::sem_rodizio()),
-            diretivas: PerfilEmDisco::de_secao(j, "diretivas", PerfilEmDisco::sem_rodizio()),
+            acessos: PerfilEmDisco::de_secao(j, "acessos", PerfilEmDisco::default()),
+            diretivas: PerfilEmDisco::de_secao(j, "diretivas", PerfilEmDisco::default()),
             idioma: {
                 // O valor aceito e o NOME de uma coluna da tabela de
                 // mensagens. Desconhecido nao derruba o servidor -- vira
@@ -8232,19 +8236,33 @@ mod tests {
         assert_eq!(c.telemetria.stress_ms, 1);
     }
 
-    /// Pedido 228: sem as secoes `acessos`/`diretivas`, o rodizio nasce
-    /// DESLIGADO -- ao contrario do Profiler, que nasce ligado por decisao
-    /// propria. E o que "guarda nova entra pedida" exige aqui: um
-    /// `config.json` de antes do pedido 228 nao pode passar a girar sozinho.
+    /// Pedido 444, decisao do dono: sem as secoes `acessos`/`diretivas`, o
+    /// rodizio nasce LIGADO, no padrao do Profiler (64 MiB x 4 antigos, 320
+    /// MiB de teto). Este teste mudou de lado de proposito -- era o
+    /// `sem_as_secoes_acessos_e_diretivas_nascem_sem_rodizio` do 228. Sem
+    /// teto, um anonimo enchia o disco a 266 B de log por 2 B recebidos.
     #[test]
-    fn sem_as_secoes_acessos_e_diretivas_nascem_sem_rodizio() {
+    fn sem_as_secoes_acessos_e_diretivas_nascem_com_o_rodizio_do_profiler() {
         let c = Config::de_json(&Json::analisar(r#"{"token":"x"}"#).unwrap()).unwrap();
-        assert_eq!(c.acessos.arquivo_mib, 0);
-        assert_eq!(c.acessos.arquivos, 0);
-        assert_eq!(c.acessos.teto_do_arquivo(), 0);
-        assert_eq!(c.diretivas.arquivo_mib, 0);
-        assert_eq!(c.diretivas.arquivos, 0);
+        let padrao = PerfilEmDisco::default();
+        assert_eq!(c.acessos, padrao);
+        assert_eq!(c.diretivas, padrao);
+        assert_eq!(c.acessos.teto_do_arquivo(), 64 * 1024 * 1024);
+        assert_eq!(c.profiler, padrao, "os tres deixaram de nascer iguais");
+        // O `Config` montado sem arquivo nenhum diz o mesmo que o lido.
+        let d = Config::default();
+        assert_eq!((d.acessos, d.diretivas), (padrao.clone(), padrao));
         assert!(c.estranhas.is_empty(), "{:?}", c.estranhas);
+    }
+
+    /// O comportamento VELHO de quem escreveu: `"arquivo_mib": 0` continua
+    /// desligando. A decisao do 444 vale para o campo ausente, e so para ele.
+    #[test]
+    fn quem_escreveu_zero_continua_sem_rodizio() {
+        let txt = r#"{"token":"x","acessos":{"arquivo_mib":0},"diretivas":{"arquivo_mib":0,"arquivos":0}}"#;
+        let c = Config::de_json(&Json::analisar(txt).unwrap()).unwrap();
+        assert_eq!(c.acessos.teto_do_arquivo(), 0);
+        assert_eq!(c.diretivas.teto_do_arquivo(), 0);
     }
 
     /// Configurados, os dois lem exatamente como o Profiler -- mesmo tipo,
@@ -8500,6 +8518,14 @@ mod tests {
         assert!(!resp.contains(&pino2), "o pino vazou na resposta: {resp}");
         assert!(resp.contains("\"tem_pino\":true"), "{resp}");
         assert!(resp.contains("\"cifra\":true"), "{resp}");
+        // E o MAPA de quem tem pino so sai para quem administra: e a fronteira
+        // que o comentario do `para_json` invoca (SEC B4, pedido 445). Se a
+        // op `config` descer de nivel, o `tem_pino` por no vira o mapa do 435
+        // na mao da credencial de replicar.
+        assert_eq!(
+            crate::usuarios::Atividade::da_operacao("config"),
+            Some(crate::usuarios::Atividade::Administrar)
+        );
     }
 
     /// Pino torto e recusado na DECLARACAO, com o no nomeado -- e nao num

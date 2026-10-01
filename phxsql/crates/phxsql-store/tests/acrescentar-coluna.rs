@@ -985,6 +985,13 @@ fn a_fase_b_aborta_quando_o_volume_mudou_no_meio() {
         texto.contains("ABORTADA") && texto.contains("clientes"),
         "a recusa nao diz o que houve nem em qual arquivo: {texto}"
     );
+    // Pedido 428: a frase vai crua ao cliente, e a pasta de dados do servidor
+    // nao e dele -- so o nome do arquivo.
+    let pasta = d.0.display().to_string();
+    assert!(
+        !texto.contains(&pasta),
+        "a recusa publica o caminho absoluto do servidor ({pasta}): {texto}"
+    );
     // E o palco sai do disco: `*.novo` orfao ocuparia o tamanho da tabela.
     assert!(
         pendente.descartar() > 0,

@@ -9166,11 +9166,17 @@ pub fn limpar() {
             Ok(identidade) => identidade,
             Err(crate::cluster::RecusaDoPulso::ForaDaLista { e_este_no }) => {
                 if e_este_no {
-                    eprintln!(
-                        "cluster: pulso com o id DESTE servidor ({id}) vindo de {:?} -- \\
-                         dois nos com o mesmo id no ar?",
-                        sessao.ip
-                    );
+                    // Pelo silencio do motor, e nao um `eprintln!` por pulso: e
+                    // quem MANDA que escolhe quando esta linha sai, e o stderr
+                    // e o journal (pedido 445, SEC B2 -- o irmao das recusas
+                    // do `cluster.rs`). O id aqui e o DESTE no: chave unica.
+                    estado.diagnosticar_contido("este_no", &id, || {
+                        format!(
+                            "cluster: pulso com o id DESTE servidor ({id}) vindo de {:?} -- \\
+                             dois nos com o mesmo id no ar?",
+                            sessao.ip
+                        )
+                    });
                 }
                 if self.config.politica.contar_pulso_desconhecido && !sessao.ip.is_empty() {
                     self.violacao_leve(
@@ -19448,5 +19454,235 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "servidor::testes_visoes::visoes_nao_entrega_literal_a_quem_tem_a_coluna_negada",
         ],
         "seguem": ["servidor::testes_visoes::listar_substituir_e_excluir"],
+    },
+    {
+        "id": "congelamento-sensivel-a-caixa",
+        "titulo": "a chave do congelamento distinguia caixa: em NTFS e APFS o `inserir` em `\"Clientes\"` gravava no volume vivo durante a FASE A",
+        "porque": (
+            "pedido 428 (1). `clientes` e `Clientes` sao o MESMO arquivo em "
+            "NTFS e APFS e eram DUAS chaves no registro: congelada uma grafia, "
+            "a outra passava pelo portao e gravava no volume que a FASE B vai "
+            "trocar -- escrita confirmada, perdida. Sem Windows nem macOS aqui, "
+            "a prova e a do registro: congelada `clientes`, `Clientes` e "
+            "`/TMP/...CAIXA` tem de recusar."
+        ),
+        "arquivo": "crates/phxsql-store/src/congelamento.rs",
+        "trecho": """    PathBuf::from(dir.join(nome).to_string_lossy().to_lowercase())
+""",
+        "troca": """    // DEFEITO REPOSTO (428): a chave sensivel a caixa.
+    dir.join(nome)
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--lib"],
+        "caem": [
+            "congelamento::testes::a_grafia_com_outra_caixa_tambem_recusa",
+            "catalogo::testes_gestao::apagar_e_renomear_respeitam_o_congelamento",
+        ],
+        "seguem": [
+            "congelamento::testes::congelada_recusa_e_nomeia_a_tabela",
+            "congelamento::testes::o_diretorio_relativo_e_o_absoluto_sao_a_mesma_chave",
+        ],
+    },
+    {
+        "id": "excluir-tabela-fura-o-congelamento",
+        "titulo": "`excluir_tabela` apagava os arquivos de uma tabela em reescrita: mexe no disco SEM abrir a tabela, e o portão do congelamento mora na abertura",
+        "porque": (
+            "pedido 428 (3). O cabecalho do `congelamento.rs` dizia «o ponto "
+            "por onde todos passam, sem excecao» e `excluir_tabela` e "
+            "`renomear_tabela` nunca passaram: apagam e movem pelo nome. Hoje "
+            "quem segurava era o retrato da FASE B; agora os dois perguntam ao "
+            "mesmo registro, e o inventario no cabecalho diz quem nao pergunta."
+        ),
+        "arquivo": "crates/phxsql-store/src/catalogo.rs",
+        "trecho": """        // registro, pela mesma funcao.
+        crate::congelamento::conferir(&dir, nome)?;
+""",
+        "troca": """        // registro, pela mesma funcao.
+        // DEFEITO REPOSTO (428): apagar nao pergunta ao congelamento.
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--lib"],
+        "caem": ["catalogo::testes_gestao::apagar_e_renomear_respeitam_o_congelamento"],
+        "seguem": ["catalogo::testes_gestao::excluir_tabela_leva_os_arquivos_dela_e_so_os_dela"],
+    },
+    {
+        "id": "renomear-tabela-fura-o-congelamento",
+        "titulo": "`renomear_tabela` movia os arquivos de uma tabela em reescrita, o irmão do `excluir_tabela`",
+        "porque": (
+            "pedido 428 (3), o irmao: chama as mesmas funcoes na mesma ordem "
+            "(validar, diretorio, mexer no disco pelo nome) e ficaria de fora "
+            "se o conserto entrasse so no `excluir_tabela`."
+        ),
+        "arquivo": "crates/phxsql-store/src/catalogo.rs",
+        "trecho": """        // reescrita deixaria a FASE B sem o volume que ela troca (pedido 428).
+        crate::congelamento::conferir(&dir_o, nome_o)?;
+""",
+        "troca": """        // reescrita deixaria a FASE B sem o volume que ela troca (pedido 428).
+        // DEFEITO REPOSTO (428): renomear nao pergunta ao congelamento.
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--lib"],
+        "caem": ["catalogo::testes_gestao::apagar_e_renomear_respeitam_o_congelamento"],
+        "seguem": ["catalogo::testes_gestao::excluir_tabela_leva_os_arquivos_dela_e_so_os_dela"],
+    },
+    {
+        "id": "conflito-do-retrato-publica-o-caminho",
+        "titulo": "a recusa da FASE B publicava ao cliente o caminho absoluto da raiz de dados do servidor",
+        "porque": (
+            "pedido 428 (2). `conferir_retrato` interpolava `r.caminho.display()` "
+            "na frase do `Conflito`, que vai crua ao fio: quem administra UMA "
+            "tabela aprendia onde mora a raiz de dados. A mesma classe que o "
+            "`tabela_que_nao_existe` do `catalogo.rs` ja fechou. So o nome do "
+            "arquivo continua na frase -- e ele que diz qual volume mudou."
+        ),
+        "arquivo": "crates/phxsql-store/src/reg.rs",
+        "trecho": """                let arquivo = r
+                    .caminho
+                    .file_name()
+                    .map(|f| f.to_string_lossy().into_owned())
+                    .unwrap_or_default();
+""",
+        "troca": """                // DEFEITO REPOSTO (428): o caminho inteiro na frase.
+                let arquivo = r.caminho.display();
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "acrescentar-coluna"],
+        "caem": ["a_fase_b_aborta_quando_o_volume_mudou_no_meio"],
+        "seguem": ["as_duas_fases_dao_o_mesmo_que_a_porta_de_sempre"],
+    },
+    {
+        "id": "rodizio-do-acessos-nasce-desligado",
+        "titulo": "o `acessos.log` nascia sem rodízio: um anônimo escrevia 266 B de log por 2 B recebidos, sem teto",
+        "porque": (
+            "pedido 444, decisao do dono de 24/09/2026 (a H1 do papel J). "
+            "Medido pelo soquete contra o binario de release: 303.104 linhas "
+            "`x` anonimas = 606.208 B recebidos e 80.625.664 B de "
+            "`acessos.log` num arquivo so com `arquivo_mib: 0`; no padrao "
+            "novo, 13.517.056 + 67.108.608 (o giro aos 64 MiB). Quem escreveu "
+            "`0` continua sem rodizio -- o padrao vale so para o campo ausente."
+        ),
+        "arquivo": "crates/phxsql-server/src/config.rs",
+        "trecho": """            acessos: PerfilEmDisco::de_secao(j, "acessos", PerfilEmDisco::default()),
+""",
+        "troca": """            // DEFEITO REPOSTO (444): o acessos.log nasce sem rodizio.
+            acessos: PerfilEmDisco::de_secao(
+                j,
+                "acessos",
+                PerfilEmDisco {
+                    arquivo_mib: 0,
+                    arquivos: 0,
+                },
+            ),
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": ["config::tests::sem_as_secoes_acessos_e_diretivas_nascem_com_o_rodizio_do_profiler"],
+        "seguem": [
+            "config::tests::quem_escreveu_zero_continua_sem_rodizio",
+            "config::tests::acessos_e_diretivas_configurados_leem_como_o_profiler",
+        ],
+    },
+    {
+        "id": "pulso-torto-uma-linha-por-envio",
+        "titulo": "cada pulso torto escrevia uma linha no stderr, que é o journal: quem tem a credencial do cluster afogava o «REBAIXANDO» no limite de taxa",
+        "porque": (
+            "pedido 445 (SEC B2). O stderr do `phxsqld` e o journal da unidade "
+            "do MANUAL §7.4, e o journald descarta acima do `RateLimitBurst`. "
+            "Prova recusada e posicao fora do inteiro exato sao escolhidas por "
+            "quem MANDA: 25 de cada escreviam 25 linhas de cada. Com o silencio "
+            "do motor (`jobs::pode_avisar`), 1 de cada por minuto e por par."
+        ),
+        "arquivo": "crates/phxsql-server/src/cluster.rs",
+        "trecho": """            ) {
+                *contados.entry(chave).or_insert(0) += 1;
+                return;
+            }
+""",
+        "troca": """            ) {
+                // DEFEITO REPOSTO (445 B2): uma linha por pulso torto.
+                *contados.entry(chave.clone()).or_insert(0) += 1;
+            }
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "identidade-do-pulso"],
+        "caem": ["o_pulso_torto_nao_afoga_o_log"],
+        "seguem": ["aceitar_pulso_sem_prova_deixa_rastro"],
+        "prazo": 300,
+    },
+    {
+        "id": "pulso-com-o-id-deste-no-uma-linha-por-envio",
+        "titulo": "o pulso com o id DESTE nó escrevia uma linha no stderr por envio — o irmão do B2 no `op_cluster_pulso`",
+        "porque": (
+            "pedido 445 (SEC B2), o irmao: o `op_cluster_pulso` recusa o id "
+            "deste no ANTES do motor da prova e tinha o proprio `eprintln!`, "
+            "um por pulso, com quem manda escolhendo quando. Consertar so as "
+            "recusas do `cluster.rs` deixaria esta linha afogando o journal "
+            "pelo mesmo caminho."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """                    estado.diagnosticar_contido("este_no", &id, || {
+                        format!(
+                            "cluster: pulso com o id DESTE servidor ({id}) vindo de {:?} -- \\
+                             dois nos com o mesmo id no ar?",
+                            sessao.ip
+                        )
+                    });
+""",
+        "troca": """                    // DEFEITO REPOSTO (445 B2): uma linha por pulso.
+                    eprintln!(
+                        "cluster: pulso com o id DESTE servidor ({id}) vindo de {:?} -- \\
+                         dois nos com o mesmo id no ar?",
+                        sessao.ip
+                    );
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "identidade-do-pulso"],
+        "caem": ["o_pulso_torto_nao_afoga_o_log"],
+        "seguem": ["aceitar_pulso_sem_prova_deixa_rastro"],
+        "prazo": 300,
+    },
+    {
+        "id": "web-acima-do-teto-sem-rastro",
+        "titulo": "as três portas HTTP recusavam o pedido acima do teto sem linha no `acessos.log` — o irmão do 216 na web",
+        "porque": (
+            "pedido 445 (SEC B6). A porta 5000 anota a linha acima do teto "
+            "desde o 216; `atender_http`, `atender_rest` e `atender_swagger` "
+            "respondiam 400 e saiam calados. O irmao que fica: a conexao vazia "
+            "continua sem linha, senao todo anonimo ganharia uma linha por "
+            "conexao (a amplificacao do 444). Para ganhar uma linha, mais de "
+            "16 KiB."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """            http::PedidoLido::GrandeDemais(m) => Some(m),
+""",
+        "troca": """            // DEFEITO REPOSTO (445 B6): a recusa por tamanho sai calada.
+            http::PedidoLido::GrandeDemais(_) => None,
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "teto-da-linha-http"],
+        "caem": ["o_pedido_acima_do_teto_deixa_rastro_e_a_conexao_vazia_nao"],
+        "seguem": ["a_linha_de_pedido_sem_fim_faz_o_servidor_desistir"],
+        "prazo": 300,
+    },
+    {
+        "id": "operacao-anonima-fora-do-inventario",
+        "titulo": "o inventário das operações anônimas dizia «seis» quando eram dezesseis",
+        "porque": (
+            "pedido 445 (SEC B5). O `teto_da_linha` e a §19.3 do `SEGURANCA.md` "
+            "sustentam os 64 KiB do anonimo numa lista do que ele pode chamar, "
+            "e a lista estava digitada e curta: as dez de controle de "
+            "transacao ficaram de fora. O teste tira a lista do catalogo; uma "
+            "operacao anonima nova o derruba ate alguem conferir se ela cabe."
+        ),
+        "arquivo": "crates/phxsql-server/src/usuarios.rs",
+        "trecho": """            "transacoes" => Atividade::Administrar,
+""",
+        "troca": """            // DEFEITO REPOSTO (445 B5): uma operacao anonima a mais, calada.
+            "transacoes" => return None,
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": ["usuarios::tests::as_operacoes_anonimas_sao_estas_dezesseis"],
+        "seguem": ["config::tests::quem_escreveu_zero_continua_sem_rodizio"],
     },
 ]

@@ -1017,6 +1017,11 @@ impl Database {
         let (schema, nome) = (schema.as_deref(), nome.as_str());
         validar_nome("tabela", nome)?;
         let dir = self.diretorio(schema)?;
+        // Apagar mexe nos arquivos SEM abrir a tabela, entao nao passa pelo
+        // portao do `Table::abrir_com` -- e no meio de uma reescrita apagaria o
+        // volume que a FASE B vai trocar (pedido 428). Pergunta ao mesmo
+        // registro, pela mesma funcao.
+        crate::congelamento::conferir(&dir, nome)?;
         if let Some(filha) = self.quem_aponta_para(&dir, nome)? {
             return Err(PhxError::Integridade(format!(
                 "a tabela {qualificado} nao pode ser apagada: {filha} declara \
@@ -1127,6 +1132,9 @@ impl Database {
         }
         let dir_o = self.diretorio(schema_o)?;
         let dir_d = self.diretorio(schema_d)?;
+        // O irmao do `excluir_tabela`: mover os arquivos de uma tabela em
+        // reescrita deixaria a FASE B sem o volume que ela troca (pedido 428).
+        crate::congelamento::conferir(&dir_o, nome_o)?;
         // Nome que o catalogo NAO leria de volta como ele mesmo faz a tabela
         // sumir -- achado pela propria prova deste renomear, que escolheu
         // `pedidos_2025` sem pensar. A pergunta e a mesma das outras tres
@@ -2009,6 +2017,30 @@ mod testes_gestao {
     // Pedido 150: guarda de Drop, nao `rm` no fim do corpo.
     fn base_temp(rotulo: &str) -> crate::apoio_teste::DirTemp {
         crate::apoio_teste::DirTemp::novo(&format!("cat2-{rotulo}"))
+    }
+
+    /// Pedido 428: apagar e renomear mexem nos arquivos SEM abrir a tabela, e
+    /// por isso nao passavam pelo portao do congelamento. Com a tabela em
+    /// reescrita, os dois tem de recusar com `EmMigracao` -- e soltar quando
+    /// a reescrita acaba (o comportamento velho).
+    #[test]
+    fn apagar_e_renomear_respeitam_o_congelamento() {
+        let base = base_temp("congelada-apagar-renomear");
+        let inst = Instancia::nova(&base).unwrap();
+        let db = inst.criar_database("banco").unwrap();
+        db.criar_tabela(None, esquema_simples("precos")).unwrap();
+        let dir = db.diretorio(None).unwrap();
+        {
+            // Congelada pela OUTRA grafia: a chave nao distingue caixa.
+            let _posse = crate::congelamento::congelar(&dir, "Precos", "teste").unwrap();
+            let e = db.excluir_tabela("precos").unwrap_err();
+            assert!(matches!(e, PhxError::EmMigracao(_)), "excluir: {e:?}");
+            let e = db.renomear_tabela("precos", "tarifas").unwrap_err();
+            assert!(matches!(e, PhxError::EmMigracao(_)), "renomear: {e:?}");
+            assert!(db.existe_tabela(None, "precos").unwrap(), "a tabela saiu");
+        }
+        assert!(db.renomear_tabela("precos", "tarifas").unwrap() > 0);
+        assert!(!db.excluir_tabela("tarifas").unwrap().is_empty());
     }
 
     /// O comportamento VELHO da varredura, travado antes de ela ficar barata.

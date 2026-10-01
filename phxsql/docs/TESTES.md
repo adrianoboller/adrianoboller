@@ -1031,11 +1031,20 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `externo-selado-gravado-como-anexo` | A réplica decidia pelo PRÓPRIO cofre se o externo marcado da imagem vinha selado: sem cofre gravava o texto cifrado como o anexo, calada; com a mesma senha acusava adulteração que não houve | 2 | ✅ provada |
 | `replicar-manda-o-externo-selado` | O `replicar` mandava ao fio o externo marcado selado com a chave do `.reg` da origem: nenhuma réplica o abria, nem com a mesma senha, porque o sal é por arquivo | 2 | ✅ provada |
 | `visoes-entrega-o-literal` | A op `visoes` pede só `ler` e devolvia o SQL da visão verbatim: o literal do `WHERE` e o comentário saíam para quem tinha a coluna negada | 1 | ✅ provada |
+| `congelamento-sensivel-a-caixa` | a chave do congelamento distinguia caixa: em NTFS e APFS o `inserir` em `"Clientes"` gravava no volume vivo durante a FASE A | 2 | ✅ provada |
+| `excluir-tabela-fura-o-congelamento` | `excluir_tabela` apagava os arquivos de uma tabela em reescrita: mexe no disco SEM abrir a tabela, e o portão do congelamento mora na abertura | 1 | ✅ provada |
+| `renomear-tabela-fura-o-congelamento` | `renomear_tabela` movia os arquivos de uma tabela em reescrita, o irmão do `excluir_tabela` | 1 | ✅ provada |
+| `conflito-do-retrato-publica-o-caminho` | a recusa da FASE B publicava ao cliente o caminho absoluto da raiz de dados do servidor | 1 | ✅ provada |
+| `rodizio-do-acessos-nasce-desligado` | o `acessos.log` nascia sem rodízio: um anônimo escrevia 266 B de log por 2 B recebidos, sem teto | 1 | ✅ provada |
+| `pulso-torto-uma-linha-por-envio` | cada pulso torto escrevia uma linha no stderr, que é o journal: quem tem a credencial do cluster afogava o «REBAIXANDO» no limite de taxa | 1 | ✅ provada |
+| `pulso-com-o-id-deste-no-uma-linha-por-envio` | o pulso com o id DESTE nó escrevia uma linha no stderr por envio — o irmão do B2 no `op_cluster_pulso` | 1 | ✅ provada |
+| `web-acima-do-teto-sem-rastro` | as três portas HTTP recusavam o pedido acima do teto sem linha no `acessos.log` — o irmão do 216 na web | 1 | ✅ provada |
+| `operacao-anonima-fora-do-inventario` | o inventário das operações anônimas dizia «seis» quando eram dezesseis | 1 | ✅ provada |
 | `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | — | 🪦 aposentada (18/09/2026) |
 
-**390 das 565 guardas do catálogo: 1 aposentada, 385 provadas, 4 redundantes** — 11040 s de mutação, medido em 2026-09-16 15:25.
+**399 das 574 guardas do catálogo: 1 aposentada, 394 provadas, 4 redundantes** — 11330 s de mutação, medido em 2026-09-16 15:25.
 
-> **Esta rodada NÃO julgou 176 das 565 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 176 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 176 das 574 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 176 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
 - `fk-antes-do-default` — a chave estrangeira confere a linha crua, e o DEFAULT sem mãe grava a filha órfã
 - `fk-antes-do-default-pelo-servidor` — o DEFAULT e a calculada sem mãe gravam a órfã pelo servidor, fora e dentro da transação

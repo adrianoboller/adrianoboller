@@ -262,28 +262,72 @@ impl Pedido {
 /// laco abaixo, quando o `lidos` dela somava a linha em branco do fim. O que
 /// muda e so QUANDO a recusa acontece -- antes de reservar a memoria, em vez
 /// de depois.
+///
+/// # Por que a recusa por TAMANHO volta separada -- pedido 445 (SEC B6)
+///
+/// As tres portas HTTP respondiam 400 e saiam sem linha no `acessos.log`
+/// para todo `None` daqui: a sondagem acima do teto nao deixava rastro, a
+/// metade «visibilidade» do pedido 216 que a porta 5000 tem e a web nao. Mas
+/// `None` tambem e a conexao que abre e fecha sem dizer nada -- o teste de
+/// vida de um balanceador --, e anotar ESSA seria dar a qualquer anonimo uma
+/// linha de log por conexao vazia, a amplificacao do pedido 444. Entao so a
+/// recusa por tamanho volta com o motivo ([`PedidoLido::GrandeDemais`]):
+/// para ganhar uma linha de log, o outro lado precisa mandar mais de 16 KiB.
 pub fn ler_pedido<R: Read>(fluxo: R) -> Option<Pedido> {
+    match ler_pedido_medindo(fluxo) {
+        PedidoLido::Pedido(p) => Some(p),
+        PedidoLido::Nada | PedidoLido::GrandeDemais(_) => None,
+    }
+}
+
+/// O que a leitura de um pedido HTTP deu. Ver [`ler_pedido`].
+#[derive(Debug)]
+pub enum PedidoLido {
+    Pedido(Pedido),
+    /// Conexao fechada, prazo vencido, linha torta: 400 sem rastro, como
+    /// sempre foi.
+    Nada,
+    /// Passou de um teto -- da linha, do cabecalho acumulado ou do corpo. O
+    /// texto e o motivo, com o teto em bytes, para o `acessos.log`.
+    GrandeDemais(String),
+}
+
+/// O [`ler_pedido`] que diz POR QUE nao leu -- e o que as tres portas chamam.
+pub fn ler_pedido_medindo<R: Read>(fluxo: R) -> PedidoLido {
     let mut leitor = BufReader::new(fluxo);
     let mut canal = Canal::Claro;
+    let grande = |o_que: &str, teto: usize| {
+        PedidoLido::GrandeDemais(format!(
+            "pedido HTTP grande demais: {o_que} passou de {teto} bytes"
+        ))
+    };
 
     let linha = match canal.ler_ate(&mut leitor, MAX_CABECALHO as u64) {
         Ok(Recebido::Linha(l)) => l,
-        _ => return None,
+        Err(phxsql_core::error::PhxError::LimiteExcedido(_)) => {
+            return grande("a linha do pedido", MAX_CABECALHO)
+        }
+        _ => return PedidoLido::Nada,
     };
     let mut partes = linha.split_whitespace();
-    let metodo = partes.next()?.to_string();
-    let caminho = partes.next()?.to_string();
+    let (Some(metodo), Some(caminho)) = (partes.next(), partes.next()) else {
+        return PedidoLido::Nada;
+    };
+    let (metodo, caminho) = (metodo.to_string(), caminho.to_string());
 
     let mut cabecalhos = HashMap::new();
     let mut lidos = linha.len();
     loop {
         let l = match canal.ler_ate(&mut leitor, MAX_CABECALHO as u64) {
             Ok(Recebido::Linha(l)) => l,
-            _ => return None,
+            Err(phxsql_core::error::PhxError::LimiteExcedido(_)) => {
+                return grande("uma linha de cabecalho", MAX_CABECALHO)
+            }
+            _ => return PedidoLido::Nada,
         };
         lidos += l.len();
         if lidos > MAX_CABECALHO {
-            return None;
+            return grande("o cabecalho", MAX_CABECALHO);
         }
         let t = l.trim_end();
         if t.is_empty() {
@@ -299,18 +343,18 @@ pub fn ler_pedido<R: Read>(fluxo: R) -> Option<Pedido> {
         .and_then(|v| v.parse().ok())
         .unwrap_or(0);
     if tamanho > MAX_CORPO {
-        return None;
+        return grande("o Content-Length", MAX_CORPO);
     }
     let mut corpo = vec![0u8; tamanho];
     if tamanho > 0 && leitor.read_exact(&mut corpo).is_err() {
-        return None;
+        return PedidoLido::Nada;
     }
 
     let (so_caminho, consulta) = match caminho.split_once('?') {
         Some((c, q)) => (c.to_string(), q.to_string()),
         None => (caminho.clone(), String::new()),
     };
-    Some(Pedido {
+    PedidoLido::Pedido(Pedido {
         metodo,
         caminho: so_caminho,
         consulta,

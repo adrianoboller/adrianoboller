@@ -712,9 +712,12 @@ fn o_pulso_nao_diz_quais_nos_tem_pino() {
     // O RELOGIO, que e o canal para onde o mapa se mudou quando a frase
     // fechou. Nao se afirma igualdade de uma amostra -- isso cairia por carga
     // da maquina. Afirma-se que a separacao SUMIU: com o defeito, 40/40
-    // separavam; um classificador que ainda acerte 34 das 40 nao e ruido.
-    let mut separadas = 0;
-    for _ in 0..40 {
+    // separavam; com o conserto, 0 e 1 em 40. O teto era 34 -- e a revisao
+    // SEC (B3, pedido 445) mostrou que uma volta PARCIAL a 30/40, 75% de
+    // acerto por amostra, ja classifica com tres sondas e passava verde.
+    // Agora e o mesmo teto do ramo sem prova, sobre o VIES (ver
+    // `vies_do_relogio`), que separa mapa de ruido.
+    let (separadas, vies) = vies_do_relogio(|| {
         let b = falar(
             porta,
             &pulso_de("noB", "master", 9, Some(PRIV_INTRUSO), &pulso::nonce()),
@@ -723,14 +726,13 @@ fn o_pulso_nao_diz_quais_nos_tem_pino() {
             porta,
             &pulso_de("noC", "master", 9, Some(PRIV_INTRUSO), &pulso::nonce()),
         );
-        if b.inteiro_ou("ms", -1) != c.inteiro_ou("ms", -2) {
-            separadas += 1;
-        }
-    }
+        (b.inteiro_ou("ms", -1), c.inteiro_ou("ms", -1))
+    });
     assert!(
-        separadas <= 34,
-        "o `ms` da resposta separa o no com pino do sem pino em {separadas} de \
-         40: a frase fechou e o relogio reabriu o mesmo mapa"
+        vies <= LIMITE_DO_RELOGIO_SEM_PROVA,
+        "o `ms` da resposta separa o no com pino do sem pino com vies de \
+         {vies} em 40 ({separadas} diferentes): a frase fechou e o relogio \
+         reabriu o mesmo mapa"
     );
 
     // O que o mapa VALIA: o `noC`, sem pino, continua sendo aceito sem prova
@@ -828,6 +830,102 @@ fn aceitar_pulso_sem_prova_deixa_rastro() {
     // E o diagnostico aponta o lado certo: o noB TEM pino aqui, o noC nao.
     assert!(b[0].contains("do lado de la"), "noB: {}", b[0]);
     assert!(c[0].contains("vazio NESTE no"), "noC: {}", c[0]);
+}
+
+// ---------------------------------------------------------------------------
+// O diagnostico que o remetente dispara nao afoga o log -- pedido 445 (SEC B2)
+// ---------------------------------------------------------------------------
+
+/// Quantos pulsos tortos a sonda manda por motivo.
+const TORTOS: usize = 25;
+
+/// A sonda do `o_pulso_torto_nao_afoga_o_log`. Processo FILHO pelo mesmo
+/// motivo da sonda do 436: o que se mede e o stderr do servidor.
+///
+/// Dois motivos que quem MANDA escolhe quando disparar: a prova que nao
+/// fecha (o `noB` assinado pelo intruso, recusado) e a sonda do A2 da
+/// revisao, posicao acima do inteiro exato (aceita e descartada pelo
+/// `registrar`, sem contar violacao).
+#[test]
+#[ignore = "sonda: roda so reexecutada por o_pulso_torto_nao_afoga_o_log"]
+fn sonda_pulso_torto_em_rajada() {
+    PROXIMA.store(7445, Ordering::SeqCst);
+    let base = DirTemp::novo("identidade-pulso-sonda-rajada");
+    let (_a, porta) = subir_no_a(&base, false, &para_hex(&publica(PRIV_B)));
+    for _ in 0..TORTOS {
+        let r = falar(
+            porta,
+            &pulso_de("noB", "master", 9, Some(PRIV_INTRUSO), &pulso::nonce()),
+        );
+        assert!(
+            !r.booleano_ou("ok", true),
+            "a forja passou: {}",
+            r.escrever()
+        );
+        let r = falar(porta, &sonda_sem_prova("noC"));
+        assert!(
+            r.booleano_ou("ok", false),
+            "a sonda do A2 recusou: {}",
+            r.escrever()
+        );
+        // O irmao no `op_cluster_pulso`: o id DESTE no, recusado antes do
+        // motor da prova, com o mesmo `eprintln!` por envio.
+        let r = falar(porta, &pulso_de("noA", "replica", 0, None, ""));
+        assert!(
+            !r.booleano_ou("ok", true),
+            "o id deste no passou: {}",
+            r.escrever()
+        );
+    }
+}
+
+/// **Prova real do pedido 445, B2.** O stderr do servidor e o journal da
+/// unidade, e o journald descarta acima do limite de taxa: uma linha por
+/// pulso torto deixava quem tem a credencial do cluster afogar o log ate o
+/// «REBAIXANDO» cair no descarte.
+///
+/// O vermelho: `TORTOS` linhas por motivo, uma por envio. O verde: UMA por
+/// motivo e por par dentro da janela de silencio -- e nao zero, porque o
+/// diagnostico existe para o operador ler (o comportamento velho que fica).
+#[test]
+fn o_pulso_torto_nao_afoga_o_log() {
+    let saida = std::process::Command::new(std::env::current_exe().unwrap())
+        .args([
+            "sonda_pulso_torto_em_rajada",
+            "--exact",
+            "--ignored",
+            "--nocapture",
+            "--test-threads=1",
+        ])
+        .output()
+        .expect("reexecutar o proprio binario de teste");
+    let erro = String::from_utf8_lossy(&saida.stderr);
+    assert!(
+        saida.status.success(),
+        "a sonda nao terminou limpa:\n{erro}"
+    );
+    let conta = |marca: &str, id: &str| {
+        let id = format!("{id:?}");
+        erro.lines()
+            .filter(|l| l.contains(marca) && l.contains(&id))
+            .count()
+    };
+    let (prova, posicao) = (
+        conta("nao foi aceita --", "noB"),
+        conta("que nem cabe num numero", "noC"),
+    );
+    let este_no = erro
+        .lines()
+        .filter(|l| l.contains("id DESTE servidor"))
+        .count();
+    assert_eq!(
+        (prova, posicao, este_no),
+        (1, 1, 1),
+        "{TORTOS} pulsos tortos de cada motivo escreveram {prova} linha(s) de \
+         prova recusada, {posicao} de posicao descartada e {este_no} de id \
+         deste no -- o certo e uma por motivo e por par na janela. stderr da \
+         sonda:\n{erro}"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -945,7 +1043,43 @@ fn a_resposta_com_o_id_deste_no_nao_rebaixa_o_master() {
 /// do catalogo repoe), **40, 40 e 40**. Dez fica dez vezes acima do pior
 /// ruido visto e trinta abaixo do defeito -- e nao os 34 do teste do 435, que
 /// a revisao SEC chamou de frouxos (B3).
+///
+/// Vale tambem para o ramo COM prova (`o_pulso_nao_diz_quais_nos_tem_pino`),
+/// desde o pedido 445: la o medido com o conserto era o mesmo 0 e 1 de 40, e
+/// os 34 que sobraram la eram a catraca frouxa que o B3 apontou.
+///
+/// E o que se compara com ele e o VIES, e nao a contagem de pares diferentes
+/// (`vies_do_relogio`): apertado de 34 para 10, o teste do ramo com prova
+/// caiu em 11 de 40 numa corrida da bateria inteira -- o `ms` arredondado
+/// vira de um lado para o outro quando o trabalho fica perto da fronteira do
+/// milissegundo, e vira para OS DOIS lados. Isso e ruido, e nao mapa: mapa e
+/// um lado mais lento SEMPRE.
 const LIMITE_DO_RELOGIO_SEM_PROVA: usize = 10;
+
+/// Quarenta sondas pares (`noB`, `noC`), e o que o relogio delas entrega:
+/// quantas deram `ms` diferente e o VIES -- `|noB mais lento - noC mais
+/// lento|`.
+///
+/// O vies e o que um classificador usa. O defeito do 435 da 40 (o lado com
+/// pino sempre um milissegundo acima); uma volta parcial a 30 de 40, que o B3
+/// da revisao SEC chamou de suficiente para classificar com tres sondas, da
+/// 30; o arredondamento sob carga, que vira para os dois lados, fica perto de
+/// zero mesmo com onze pares diferentes.
+fn vies_do_relogio(mut par: impl FnMut() -> (i64, i64)) -> (usize, usize) {
+    let (mut b_mais_lento, mut c_mais_lento) = (0usize, 0usize);
+    for _ in 0..40 {
+        let (b, c) = par();
+        if b > c {
+            b_mais_lento += 1;
+        } else if c > b {
+            c_mais_lento += 1;
+        }
+    }
+    (
+        b_mais_lento + c_mais_lento,
+        b_mais_lento.abs_diff(c_mais_lento),
+    )
+}
 
 /// A sonda do A2, como a revisao a mandou: pulso SEM prova com uma posicao
 /// que o `registrar` descarta (>= 2^53). O veredito e a resposta voltam
@@ -999,17 +1133,14 @@ fn o_pulso_sem_prova_nao_diz_quais_nos_tem_pino() {
 
     // O RELOGIO. Com as respostas iguais em forma, o que sobraria e o custo de
     // assinar uma e nao a outra.
-    let mut separadas = 0;
-    for _ in 0..40 {
+    let (separadas, vies) = vies_do_relogio(|| {
         let b = falar(porta, &sonda_sem_prova("noB"));
         let c = falar(porta, &sonda_sem_prova("noC"));
-        if b.inteiro_ou("ms", -1) != c.inteiro_ou("ms", -2) {
-            separadas += 1;
-        }
-    }
+        (b.inteiro_ou("ms", -1), c.inteiro_ou("ms", -1))
+    });
     assert!(
-        separadas <= LIMITE_DO_RELOGIO_SEM_PROVA,
-        "o `ms` da resposta sem prova separa o no com pino do sem pino em \
-         {separadas} de 40"
+        vies <= LIMITE_DO_RELOGIO_SEM_PROVA,
+        "o `ms` da resposta sem prova separa o no com pino do sem pino com \
+         vies de {vies} em 40 ({separadas} diferentes)"
     );
 }

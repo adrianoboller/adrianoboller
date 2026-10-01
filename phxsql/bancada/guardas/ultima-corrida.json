@@ -1825,9 +1825,9 @@
       "id": "pulso-sem-prova-de-identidade",
       "titulo": "o pulso do cluster aceitando identidade auto-declarada",
       "veredito": "PROVADA",
-      "segundos": 25.69,
+      "segundos": 25.02,
       "notas": [],
-      "quando": "2026-10-01 02:47"
+      "quando": "2026-10-01 03:27"
     },
     {
       "id": "aperto-de-mao-sem-teto",
@@ -3126,6 +3126,78 @@
       "segundos": 73.55,
       "notas": [],
       "quando": "2026-10-01 03:18"
+    },
+    {
+      "id": "congelamento-sensivel-a-caixa",
+      "titulo": "a chave do congelamento distinguia caixa: em NTFS e APFS o `inserir` em `\"Clientes\"` gravava no volume vivo durante a FASE A",
+      "veredito": "PROVADA",
+      "segundos": 9.49,
+      "notas": [],
+      "quando": "2026-10-01 03:27"
+    },
+    {
+      "id": "excluir-tabela-fura-o-congelamento",
+      "titulo": "`excluir_tabela` apagava os arquivos de uma tabela em reescrita: mexe no disco SEM abrir a tabela, e o portão do congelamento mora na abertura",
+      "veredito": "PROVADA",
+      "segundos": 9.02,
+      "notas": [],
+      "quando": "2026-10-01 03:27"
+    },
+    {
+      "id": "renomear-tabela-fura-o-congelamento",
+      "titulo": "`renomear_tabela` movia os arquivos de uma tabela em reescrita, o irmão do `excluir_tabela`",
+      "veredito": "PROVADA",
+      "segundos": 9.41,
+      "notas": [],
+      "quando": "2026-10-01 03:28"
+    },
+    {
+      "id": "conflito-do-retrato-publica-o-caminho",
+      "titulo": "a recusa da FASE B publicava ao cliente o caminho absoluto da raiz de dados do servidor",
+      "veredito": "PROVADA",
+      "segundos": 6.87,
+      "notas": [],
+      "quando": "2026-10-01 03:28"
+    },
+    {
+      "id": "rodizio-do-acessos-nasce-desligado",
+      "titulo": "o `acessos.log` nascia sem rodízio: um anônimo escrevia 266 B de log por 2 B recebidos, sem teto",
+      "veredito": "PROVADA",
+      "segundos": 86.02,
+      "notas": [],
+      "quando": "2026-10-01 03:31"
+    },
+    {
+      "id": "pulso-torto-uma-linha-por-envio",
+      "titulo": "cada pulso torto escrevia uma linha no stderr, que é o journal: quem tem a credencial do cluster afogava o «REBAIXANDO» no limite de taxa",
+      "veredito": "PROVADA",
+      "segundos": 27.59,
+      "notas": [],
+      "quando": "2026-10-01 03:36"
+    },
+    {
+      "id": "pulso-com-o-id-deste-no-uma-linha-por-envio",
+      "titulo": "o pulso com o id DESTE nó escrevia uma linha no stderr por envio — o irmão do B2 no `op_cluster_pulso`",
+      "veredito": "PROVADA",
+      "segundos": 34.95,
+      "notas": [],
+      "quando": "2026-10-01 03:37"
+    },
+    {
+      "id": "web-acima-do-teto-sem-rastro",
+      "titulo": "as três portas HTTP recusavam o pedido acima do teto sem linha no `acessos.log` — o irmão do 216 na web",
+      "veredito": "PROVADA",
+      "segundos": 27.96,
+      "notas": [],
+      "quando": "2026-10-01 03:38"
+    },
+    {
+      "id": "operacao-anonima-fora-do-inventario",
+      "titulo": "o inventário das operações anônimas dizia «seis» quando eram dezesseis",
+      "veredito": "PROVADA",
+      "segundos": 79.49,
+      "notas": [],
+      "quando": "2026-10-01 03:41"
     },
     {
       "id": "cifra-do-fio-imposta",
