@@ -52,6 +52,17 @@ fn put32(v: &mut Vec<u8>, x: u32) {
 /// Monta um ZIP com as entradas na ordem dada (a ordem faz parte do
 /// determinismo; o `[Content_Types].xml` vai primeiro por convencao).
 pub fn write_store(entries: &[(String, Vec<u8>)]) -> Result<Vec<u8>, OfficeError> {
+    // Os contadores do fim de diretorio e o tamanho do nome tem 16 bits: passar
+    // disso sem ZIP64 truncava o numero calado e gerava um pacote que ninguem le.
+    if entries.len() > 0xFFFF {
+        return Err(OfficeError::Invalid("mais de 65535 entradas".into()));
+    }
+    if let Some((n, _)) = entries.iter().find(|(n, _)| n.len() > 0xFFFF) {
+        return Err(OfficeError::Invalid(format!(
+            "nome de entrada longo demais ({} bytes)",
+            n.len()
+        )));
+    }
     let mut out = Vec::new();
     let mut central = Vec::new();
     for (name, data) in entries {
@@ -95,6 +106,9 @@ pub fn write_store(entries: &[(String, Vec<u8>)]) -> Result<Vec<u8>, OfficeError
         put32(&mut central, 0);
         put32(&mut central, offset);
         central.extend_from_slice(nb);
+    }
+    if out.len() + central.len() > u32::MAX as usize {
+        return Err(OfficeError::Invalid("pacote maior que 4 GiB".into()));
     }
     let cd_offset = out.len() as u32;
     let cd_size = central.len() as u32;
@@ -142,11 +156,37 @@ impl Archive {
     pub fn names(&self) -> impl Iterator<Item = &str> {
         self.entries.iter().map(|(n, _)| n.as_str())
     }
+
+    /// Entradas na ordem do diretorio central, com o conteudo.
+    pub fn entries(&self) -> impl Iterator<Item = (&str, &[u8])> {
+        self.entries.iter().map(|(n, d)| (n.as_str(), d.as_slice()))
+    }
 }
 
-/// Le o diretorio central (e nao os cabecalhos locais em sequencia), porque
-/// e ele que vale quando o produtor usou descritor de dados no fim da entrada.
-pub fn read(bytes: &[u8]) -> Result<Archive, OfficeError> {
+/// Entrada como o diretorio central a declara, sem descomprimir nada: e o que
+/// permite recusar um pacote hostil (nome com `..`, link, tamanho absurdo)
+/// antes de gastar memoria com ele.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EntryInfo {
+    pub name: String,
+    /// Tamanho descomprimido declarado.
+    pub size: u64,
+    pub compressed: u64,
+    pub method: u16,
+    pub is_dir: bool,
+    /// Link simbolico Unix (modo 0o120000 nos atributos externos): extrair
+    /// um link e a forma classica de escrever fora da pasta de destino.
+    pub is_symlink: bool,
+    pub encrypted: bool,
+}
+
+struct Central {
+    info: EntryInfo,
+    crc: u32,
+    local: usize,
+}
+
+fn central(bytes: &[u8]) -> Result<Vec<Central>, OfficeError> {
     if bytes.len() < 22 {
         return Err(corrupt("arquivo pequeno demais para ser zip"));
     }
@@ -169,32 +209,84 @@ pub fn read(bytes: &[u8]) -> Result<Archive, OfficeError> {
     if count == 0xFFFF || cd_offset == 0xFFFF_FFFF {
         return Err(corrupt("zip64 nao suportado"));
     }
-    let mut entries = Vec::with_capacity(count);
+    let mut out = Vec::with_capacity(count);
     let mut p = cd_offset;
     for _ in 0..count {
         if rd32(bytes, p)? != 0x0201_4b50 {
             return Err(corrupt("entrada do diretorio central invalida"));
         }
+        let made_by = rd16(bytes, p + 4)?;
         let flags = rd16(bytes, p + 8)?;
         let method = rd16(bytes, p + 10)?;
         let crc = rd32(bytes, p + 16)?;
-        let csize = rd32(bytes, p + 20)? as usize;
-        let usize_ = rd32(bytes, p + 24)? as usize;
+        let csize = rd32(bytes, p + 20)?;
+        let usize_ = rd32(bytes, p + 24)?;
         let nlen = rd16(bytes, p + 28)? as usize;
         let elen = rd16(bytes, p + 30)? as usize;
         let clen = rd16(bytes, p + 32)? as usize;
+        let ext_attr = rd32(bytes, p + 38)?;
         let local = rd32(bytes, p + 42)? as usize;
         let name_bytes = bytes
             .get(p + 46..p + 46 + nlen)
             .ok_or_else(|| corrupt("nome truncado"))?;
         let name = String::from_utf8_lossy(name_bytes).into_owned();
         p += 46 + nlen + elen + clen;
-        if flags & 1 != 0 {
-            return Err(corrupt("entrada cifrada nao suportada"));
-        }
-        if name.ends_with('/') {
+        // Host 3 = Unix: so ali os 16 bits altos dos atributos sao o modo.
+        let is_symlink = made_by >> 8 == 3 && (ext_attr >> 16) & 0o170000 == 0o120000;
+        out.push(Central {
+            info: EntryInfo {
+                is_dir: name.ends_with('/'),
+                name,
+                size: usize_ as u64,
+                compressed: csize as u64,
+                method,
+                is_symlink,
+                encrypted: flags & 1 != 0,
+            },
+            crc,
+            local,
+        });
+    }
+    Ok(out)
+}
+
+/// Lista as entradas (pastas inclusive) sem descomprimir.
+pub fn list(bytes: &[u8]) -> Result<Vec<EntryInfo>, OfficeError> {
+    Ok(central(bytes)?.into_iter().map(|c| c.info).collect())
+}
+
+/// Le o diretorio central (e nao os cabecalhos locais em sequencia), porque
+/// e ele que vale quando o produtor usou descritor de dados no fim da entrada.
+pub fn read(bytes: &[u8]) -> Result<Archive, OfficeError> {
+    read_limited(bytes, usize::MAX)
+}
+
+/// Como `read`, com teto na SOMA dos tamanhos declarados. O teto por entrada
+/// sozinho nao segura mil entradas de 200 MiB; a soma e conferida antes de
+/// descomprimir a primeira, e o `inflate` para no tamanho declarado, entao o
+/// declarado e o que de fato se gasta.
+pub fn read_limited(bytes: &[u8], max_total: usize) -> Result<Archive, OfficeError> {
+    let cds = central(bytes)?;
+    let mut total = 0usize;
+    for c in &cds {
+        if c.info.is_dir {
             continue;
         }
+        total = total.saturating_add(c.info.size as usize);
+        if total > max_total {
+            return Err(corrupt("soma das entradas acima do teto de descompressao"));
+        }
+    }
+    let mut entries = Vec::with_capacity(cds.len());
+    for c in cds {
+        let Central { info, crc, local } = c;
+        if info.encrypted {
+            return Err(corrupt("entrada cifrada nao suportada"));
+        }
+        if info.is_dir {
+            continue;
+        }
+        let (csize, usize_) = (info.compressed as usize, info.size as usize);
         if usize_ > MAX_ENTRY_BYTES {
             return Err(corrupt("entrada acima do teto de descompressao"));
         }
@@ -207,7 +299,7 @@ pub fn read(bytes: &[u8]) -> Result<Archive, OfficeError> {
         let raw = bytes
             .get(start..start + csize)
             .ok_or_else(|| corrupt("dados da entrada truncados"))?;
-        let data = match method {
+        let data = match info.method {
             0 => raw.to_vec(),
             8 => inflate(raw, usize_)?,
             m => {
@@ -218,10 +310,11 @@ pub fn read(bytes: &[u8]) -> Result<Archive, OfficeError> {
         };
         if data.len() != usize_ || crc32(&data) != crc {
             return Err(OfficeError::Corrupt(format!(
-                "crc ou tamanho divergente em {name}"
+                "crc ou tamanho divergente em {}",
+                info.name
             )));
         }
-        entries.push((name, data));
+        entries.push((info.name, data));
     }
     Ok(Archive { entries })
 }
@@ -515,6 +608,56 @@ mod tests {
             0xcb, 0x48, 0xcd, 0xc9, 0xc9, 0x57, 0x28, 0xcf, 0x2f, 0xca, 0x49, 0x01, 0x00,
         ];
         assert!(inflate(&z, 5).is_err());
+    }
+
+    /// Marca a entrada `idx` do diretorio central como link Unix, como o
+    /// `zip -y` grava: host 3 no byte alto da versao e modo 0o120777.
+    fn marcar_link(z: &mut [u8], idx: usize) {
+        let mut p = z
+            .windows(4)
+            .position(|w| w == [0x50, 0x4b, 0x01, 0x02])
+            .unwrap();
+        for _ in 0..idx {
+            let n = u16::from_le_bytes([z[p + 28], z[p + 29]]) as usize;
+            p += 46 + n;
+        }
+        z[p + 5] = 3;
+        z[p + 38..p + 42].copy_from_slice(&(0o120777u32 << 16).to_le_bytes());
+    }
+
+    #[test]
+    fn lista_sem_descomprimir_e_ve_o_link() {
+        let mut z = write_store(&[
+            ("pasta/a.txt".to_string(), b"abc".to_vec()),
+            ("ln".to_string(), b"/etc/passwd".to_vec()),
+        ])
+        .unwrap();
+        marcar_link(&mut z, 1);
+        let l = list(&z).unwrap();
+        assert_eq!(l.len(), 2);
+        assert_eq!(l[0].name, "pasta/a.txt");
+        assert_eq!((l[0].size, l[0].method, l[0].is_symlink), (3, 0, false));
+        assert!(l[1].is_symlink);
+    }
+
+    #[test]
+    fn teto_da_soma_vale_antes_de_descomprimir() {
+        let z = write_store(&[
+            ("a".to_string(), vec![0u8; 600]),
+            ("b".to_string(), vec![0u8; 600]),
+        ])
+        .unwrap();
+        assert!(read_limited(&z, 1200).is_ok());
+        let e = read_limited(&z, 1199).err().unwrap().to_string();
+        assert!(e.contains("soma"), "{e}");
+    }
+
+    #[test]
+    fn escrita_recusa_contador_que_nao_cabe_em_16_bits() {
+        let muitas: Vec<(String, Vec<u8>)> =
+            (0..0x1_0000).map(|i| (format!("{i}"), vec![])).collect();
+        assert!(matches!(write_store(&muitas), Err(OfficeError::Invalid(_))));
+        assert!(write_store(&muitas[..0xFFFF]).is_ok());
     }
 
     #[test]

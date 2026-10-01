@@ -16,3 +16,10 @@ phxclaw-browser = { path = "../../crates/phxclaw-browser" }
 phxclaw-core-runtime = { path = "../../crates/phxclaw-core-runtime" }
 phxclaw-postgres-bootstrap = { path = "../../crates/phxclaw-postgres-bootstrap" }
 phxclaw-secret-broker = { path = "../../crates/phxclaw-secret-broker" }
+
+[features]
+# O alvo da versao e o Linux de mesa (decisao do dono, 01/10): mouse, teclado e captura
+# entram no binario. Servidor sem sessao grafica compila com --no-default-features, porque
+# a feature liga libgbm, libdrm, libwayland-client e libxcb no executavel.
+default = ["desktop"]
+desktop = ["phxclaw-agent/desktop"]

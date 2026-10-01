@@ -338,6 +338,13 @@ fn le_arquivos_comprimidos_de_outro_produtor() {
     );
     assert_eq!(wb.sheets[1].name, "Segunda");
     assert_eq!(wb.sheets[1].rows[1], vec![Cell::Empty, 7.0.into()]);
+    // O python-pptx comprime, nomeia as partes do jeito dele e poe numero de
+    // slide em campo (`a:fld`) nas anotacoes, que nao pode vazar como texto.
+    let t = read_pptx_text(dir.join("py.pptx")).unwrap();
+    assert_eq!(
+        t,
+        "--- slide 1 ---\nAgenda & ação\nprimeiro ponto\n[notas] lembrar do prazo\n\n--- slide 2 ---\nFim"
+    );
     // So apaga no sucesso: na falha a pasta fica para inspecao.
     let _ = std::fs::remove_dir_all(&dir);
 }

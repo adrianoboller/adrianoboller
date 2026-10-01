@@ -1,6 +1,7 @@
 //! Pecas comuns do pacote OPC: tipos de conteudo, relacoes e propriedades.
 
-use crate::xml::{DECL, esc};
+use crate::xml::{self, DECL, Event, esc};
+use crate::{OfficeError, Result, zip};
 
 pub const REL_OFFICE_DOC: &str =
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument";
@@ -107,6 +108,54 @@ pub fn resolve(base_dir: &str, target: &str) -> String {
         }
     }
     parts.join("/")
+}
+
+/// Parte de relacoes de uma parte: `ppt/presentation.xml` tem as suas em
+/// `ppt/_rels/presentation.xml.rels`.
+pub fn rels_part(part: &str) -> String {
+    match part.rsplit_once('/') {
+        Some((dir, file)) => format!("{dir}/_rels/{file}.rels"),
+        None => format!("_rels/{part}.rels"),
+    }
+}
+
+/// Relacoes de uma parte como (Id, Type, alvo ja resolvido contra a pasta da
+/// parte). Parte sem relacoes devolve lista vazia, que e o caso normal.
+pub fn read_rels(ar: &zip::Archive, part: &str) -> Result<Vec<(String, String, String)>> {
+    let rp = rels_part(part);
+    let Some(b) = ar.get(&rp) else {
+        return Ok(vec![]);
+    };
+    let base = part.rsplit_once('/').map(|(d, _)| d).unwrap_or("");
+    let ev = xml::events(&String::from_utf8_lossy(b))
+        .map_err(|e| OfficeError::Corrupt(format!("{rp}: {e}")))?;
+    let mut out = Vec::new();
+    for e in ev {
+        if let Event::Start { name, attrs, .. } = e
+            && xml::local(&name) == "Relationship"
+        {
+            // Alvo externo (hiperlink) nao e parte do pacote.
+            if xml::attr(&attrs, "TargetMode") == Some("External") {
+                continue;
+            }
+            out.push((
+                xml::attr(&attrs, "Id").unwrap_or_default().to_string(),
+                xml::attr(&attrs, "Type").unwrap_or_default().to_string(),
+                resolve(base, xml::attr(&attrs, "Target").unwrap_or_default()),
+            ));
+        }
+    }
+    Ok(out)
+}
+
+/// A parte principal sai da relacao `officeDocument` do pacote, nao de um
+/// nome fixo: produtores podem chamar a parte de outro jeito.
+pub fn main_part(ar: &zip::Archive, fallback: &str) -> Result<String> {
+    Ok(read_rels(ar, "")?
+        .into_iter()
+        .find(|(_, t, _)| t == REL_OFFICE_DOC)
+        .map(|(_, _, alvo)| alvo)
+        .unwrap_or_else(|| fallback.to_string()))
 }
 
 #[cfg(test)]

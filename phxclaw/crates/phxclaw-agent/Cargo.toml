@@ -14,6 +14,11 @@ phxclaw-evidence-ledger = { path = "../phxclaw-evidence-ledger" }
 phxclaw-rustclaw-native = { path = "../phxclaw-rustclaw-native" }
 phxclaw-sandbox = { path = "../phxclaw-sandbox" }
 phxclaw-ui-ir = { path = "../phxclaw-ui-ir" }
+phxclaw-media-intelligence = { path = "../phxclaw-media-intelligence" }
+# Atras da feature `desktop`: o xcap liga libgbm, libdrm, libwayland-client e libxcb no
+# binario, e o agente de servidor nao deve passar a exigir biblioteca de sessao grafica.
+phxclaw-system-automation = { path = "../phxclaw-system-automation", optional = true }
+quick-xml.workspace = true
 phxclaw-types = { path = "../phxclaw-types" }
 chrono.workspace = true
 futures-util.workspace = true
@@ -26,6 +31,14 @@ lettre = { version = "0.11", default-features = false, features = ["builder", "s
 phxclaw-api-gateway = { path = "../phxclaw-api-gateway" }
 phxclaw-egress-broker = { path = "../phxclaw-egress-broker" }
 phxclaw-http-client = { path = "../phxclaw-http-client" }
+postgres.workspace = true
+
+[features]
+desktop = [
+    "dep:phxclaw-system-automation",
+    "phxclaw-system-automation/desktop-input",
+    "phxclaw-system-automation/screen-capture",
+]
 
 [dev-dependencies]
 reqwest.workspace = true

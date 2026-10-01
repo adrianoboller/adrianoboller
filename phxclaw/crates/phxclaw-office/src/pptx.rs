@@ -2,8 +2,8 @@
 //! conteudo), um tema, e o master de anotacoes so quando ha anotacao.
 
 use crate::opc::{self, NS_A, NS_P, NS_R, rel};
-use crate::xml::{DECL, esc};
-use crate::{Deck, Result, zip};
+use crate::xml::{self, DECL, Event, esc};
+use crate::{Deck, OfficeError, Result, zip};
 use std::path::Path;
 
 const PML: &str = "application/vnd.openxmlformats-officedocument.presentationml";
@@ -458,6 +458,102 @@ pub fn write_pptx(deck: &Deck, path: impl AsRef<Path>) -> Result<()> {
     crate::write_file(path.as_ref(), &pptx_bytes(deck)?)
 }
 
+pub fn read_pptx_text(path: impl AsRef<Path>) -> Result<String> {
+    read_pptx_text_bytes(&std::fs::read(path)?)
+}
+
+/// Texto de uma parte DrawingML: um `a:p` por linha. O texto de `a:fld`
+/// (numero do slide, data) fica de fora: e campo calculado pelo leitor, nao
+/// conteudo que alguem escreveu.
+fn drawing_text(src: &[u8], part: &str) -> Result<String> {
+    let ev = xml::events(&String::from_utf8_lossy(src))
+        .map_err(|e| OfficeError::Corrupt(format!("{part}: {e}")))?;
+    let mut out = String::new();
+    let (mut in_t, mut in_fld, mut linha) = (false, 0usize, String::new());
+    for e in ev {
+        match e {
+            Event::Start { name, empty, .. } => match xml::local(&name) {
+                "t" if !empty => in_t = true,
+                "fld" if !empty => in_fld += 1,
+                "br" => linha.push('\n'),
+                _ => {}
+            },
+            Event::End(name) => match xml::local(&name) {
+                "t" => in_t = false,
+                "fld" => in_fld = in_fld.saturating_sub(1),
+                "p" => {
+                    // Paragrafo vazio (placeholder sem texto) nao vira linha em branco.
+                    if !linha.trim().is_empty() {
+                        out.push_str(linha.trim_end());
+                        out.push('\n');
+                    }
+                    linha.clear();
+                }
+                _ => {}
+            },
+            Event::Text(t) if in_t && in_fld == 0 => linha.push_str(&t),
+            Event::Text(_) => {}
+        }
+    }
+    Ok(out.trim_end().to_string())
+}
+
+/// Texto dos slides na ordem da apresentacao (`p:sldIdLst`, nao a ordem dos
+/// nomes no zip: `slide10.xml` vem antes de `slide2.xml` por nome), cada um
+/// com as anotacoes do orador quando houver.
+pub fn read_pptx_text_bytes(bytes: &[u8]) -> Result<String> {
+    let ar = zip::read(bytes)?;
+    let main = opc::main_part(&ar, "ppt/presentation.xml")?;
+    let src = ar
+        .get(&main)
+        .ok_or_else(|| OfficeError::Corrupt(format!("parte {main} ausente")))?;
+    let rels = opc::read_rels(&ar, &main)?;
+    let ev = xml::events(&String::from_utf8_lossy(src))
+        .map_err(|e| OfficeError::Corrupt(format!("{main}: {e}")))?;
+    let mut slides = Vec::new();
+    for e in ev {
+        if let Event::Start { name, attrs, .. } = e
+            && xml::local(&name) == "sldId"
+        {
+            let rid = attrs
+                .iter()
+                .find(|(k, _)| k.ends_with(":id"))
+                .map(|(_, v)| v.as_str())
+                .unwrap_or_default();
+            let part = rels
+                .iter()
+                .find(|(id, _, _)| id == rid)
+                .map(|(_, _, alvo)| alvo.clone())
+                .ok_or_else(|| OfficeError::Corrupt(format!("slide {rid:?} sem relacao")))?;
+            slides.push(part);
+        }
+    }
+    let mut out = String::new();
+    for (i, part) in slides.iter().enumerate() {
+        let src = ar
+            .get(part)
+            .ok_or_else(|| OfficeError::Corrupt(format!("parte {part} ausente")))?;
+        if i > 0 {
+            out.push_str("\n\n");
+        }
+        out.push_str(&format!("--- slide {} ---\n", i + 1));
+        out.push_str(&drawing_text(src, part)?);
+        let notas = opc::read_rels(&ar, part)?
+            .into_iter()
+            .find(|(_, t, _)| t.ends_with("/notesSlide"));
+        if let Some((_, _, np)) = notas
+            && let Some(nsrc) = ar.get(&np)
+        {
+            let t = drawing_text(nsrc, &np)?;
+            if !t.is_empty() {
+                out.push_str("\n[notas] ");
+                out.push_str(&t);
+            }
+        }
+    }
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -487,5 +583,25 @@ mod tests {
             }
             assert_eq!(ar.get("ppt/notesMasters/notesMaster1.xml").is_some(), n);
         }
+    }
+
+    #[test]
+    fn leitura_segue_a_ordem_da_apresentacao_e_traz_notas() {
+        // Onze slides de conteudo: com doze partes, a ordem por nome poria
+        // slide10.xml antes de slide2.xml; a leitura tem de seguir o sldIdLst.
+        let mut d = exemplo(true);
+        for i in 2..=11 {
+            d.slides.push(Slide {
+                title: format!("Titulo {i}"),
+                bullets: vec![format!("item {i}")],
+                notes: None,
+            });
+        }
+        let t = read_pptx_text_bytes(&pptx_bytes(&d).unwrap()).unwrap();
+        assert!(t.starts_with("--- slide 1 ---\nPlano & Metas\nSão Paulo\n\n--- slide 2 ---\nAções <já>\num\ndois\n[notas] falar devagar"), "{t}");
+        let p3 = t.find("Titulo 2\n").unwrap();
+        let p12 = t.find("Titulo 11\n").unwrap();
+        assert!(p3 < p12);
+        assert!(t.ends_with("--- slide 12 ---\nTitulo 11\nitem 11"), "{t}");
     }
 }

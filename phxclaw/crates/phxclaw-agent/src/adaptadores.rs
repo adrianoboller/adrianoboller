@@ -383,7 +383,7 @@ impl Tool for OfficeTool {
             },
             OfficeKind::Read => ToolSpec {
                 name: "read_document".into(),
-                description: "Read the text of a .docx or the cell values of a .xlsx in the task directory.".into(),
+                description: "Read a document of the task directory as text: .docx, .pptx (slides and notes), .pdf, .xlsx (cell values), and plain text (.txt .md .csv .html .css .js .json .xml .svg; .html also comes without markup). Long output is truncated.".into(),
                 parameters: json!({"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}),
             },
         }
@@ -479,16 +479,9 @@ impl Tool for OfficeTool {
                     rel
                 }
                 OfficeKind::Read => {
-                    let rel = arg(&args, "path")?;
-                    let alvo = confine(&ctx.workdir, rel).map_err(ToolError::Denied)?;
-                    let texto = if rel.to_ascii_lowercase().ends_with(".docx") {
-                        phxclaw_office::read_docx_text(&alvo).map_err(of)?
-                    } else if rel.to_ascii_lowercase().ends_with(".xlsx") {
-                        let wb = phxclaw_office::read_xlsx_values(&alvo).map_err(of)?;
-                        serde_json::to_string_pretty(&wb).unwrap_or_default()
-                    } else {
-                        return Err(ToolError::InvalidArguments("so .docx ou .xlsx".into()));
-                    };
+                    // O formato decide-se num lugar so (`arquivos::ler_documento`), que a
+                    // ferramenta `pdf` tambem usa para ler PDF.
+                    let texto = crate::arquivos::ler_documento(ctx, arg(&args, "path")?).await?;
                     return Ok(ToolOutput::text(texto));
                 }
             };

@@ -77,17 +77,15 @@ impl Montagem {
             Arc::new(crate::ui::DesignErpUiTool),
             Arc::new(crate::ui::ScreenshotToErpUiTool),
         ];
-        if let Some(bwrap) = ["/usr/bin/bwrap", "/bin/bwrap", "/usr/local/bin/bwrap"]
-            .iter()
-            .find(|p| std::path::Path::new(p).exists())
-        {
+        // O mesmo achador dos conversores de `arquivos`: shell e conversor no MESMO bwrap.
+        if let Some(bwrap) = crate::arquivos::achar_bwrap() {
             tools.push(Arc::new(ShellTool {
-                bwrap: bwrap.into(),
+                bwrap: bwrap.clone(),
                 network: self.shell_network,
                 timeout: Duration::from_secs(120),
             }));
             tools.push(Arc::new(crate::ferramentas::BackgroundShellTool::new(
-                bwrap.into(),
+                bwrap,
                 self.shell_network,
             )));
         }
@@ -96,8 +94,18 @@ impl Montagem {
         }
         if phxclaw_browser::find_chromium().is_some() {
             tools.extend(browser_tools(self.browser.clone()));
+            tools.push(Arc::new(crate::visao::ImageRenderTool));
         }
+        // Visao e voz: o ocr e o image so leem a pasta. O transcribe pede `media.stt` e o
+        // desktop `desktop.control`, nenhuma das duas no padrao; o desktop so existe com a
+        // feature `desktop`, que liga as bibliotecas de sessao grafica no binario.
+        tools.push(Arc::new(crate::visao::OcrTool));
+        tools.push(Arc::new(crate::visao::ImageInfoTool));
+        tools.push(Arc::new(crate::visao::TranscribeTool::from_env()));
+        #[cfg(feature = "desktop")]
+        tools.push(Arc::new(crate::visao::DesktopTool));
         tools.extend(office_tools());
+        tools.extend(crate::arquivos::arquivos_tools());
         tools.push(Arc::new(crate::site::PublishSiteTool {
             base_url: std::env::var("PHXCLAW_PUBLIC_URL")
                 .unwrap_or_else(|_| "http://127.0.0.1:8787".into()),
@@ -106,6 +114,24 @@ impl Montagem {
         // concedida explicitamente: nao esta no padrao.
         if let Some(c) = crate::email::SmtpConfig::from_env() {
             tools.push(Arc::new(crate::email::EmailTool { config: c }));
+        }
+        // Maquina Linux: cada par leitura/mudanca e a mesma ferramenta registrada duas
+        // vezes, uma por capacidade, para o portao do motor continuar sendo o unico.
+        // Nenhuma destas capacidades esta no padrao.
+        tools.push(Arc::new(crate::sistema::LinuxSystemTool::leitura()));
+        tools.push(Arc::new(crate::sistema::LinuxSystemTool::admin()));
+        tools.push(Arc::new(crate::sistema::NetworkTool::do_ambiente(false)));
+        tools.push(Arc::new(crate::sistema::NetworkTool::do_ambiente(true)));
+        // Banco so existe se o operador deu a URL; o modelo nunca a escolhe.
+        for write in [false, true] {
+            if let Some(pg) = crate::sistema::PostgresTool::do_ambiente(write) {
+                tools.push(Arc::new(pg));
+            }
+        }
+        if let Some(rust) =
+            crate::arquivos::achar_bwrap().and_then(crate::sistema::RustProjectTool::detectar)
+        {
+            tools.push(Arc::new(rust));
         }
         let caps: Vec<&str> = self.capabilities.iter().map(String::as_str).collect();
         let config = AgentConfig {

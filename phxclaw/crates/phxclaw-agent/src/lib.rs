@@ -7,13 +7,16 @@
 pub mod adaptadores;
 pub mod agenda;
 pub mod api;
+pub mod arquivos;
 pub mod email;
 pub mod ferramentas;
 pub mod montagem;
 pub mod motor;
+pub mod sistema;
 pub mod site;
 pub mod tarefa;
 pub mod ui;
+pub mod visao;
 
 pub use agenda::{Agenda, Schedule};
 pub use ferramentas::{

@@ -105,8 +105,9 @@ fn resolve_executable(explicit: Option<&Path>) -> Result<PathBuf> {
 }
 
 /// Le o UID efetivo em /proc para decidir o `--no-sandbox`. Sem libc e sem
-/// `unsafe`: o /proc ja responde, e fora do Linux assume-se nao-root.
-fn running_as_root() -> bool {
+/// `unsafe`: o /proc ja responde, e fora do Linux assume-se nao-root. Publica porque quem
+/// lanca o Chromium por outro caminho (o `--screenshot` do agente) decide igual.
+pub fn running_as_root() -> bool {
     std::fs::read_to_string("/proc/self/status")
         .ok()
         .and_then(|s| {

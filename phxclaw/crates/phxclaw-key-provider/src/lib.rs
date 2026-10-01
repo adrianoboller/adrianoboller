@@ -1,6 +1,9 @@
 //! PhxClaw production key-provider boundary.
 //! Key bytes never implement Debug/Display and are zeroized on drop.
 
+// So os backends com armazenamento usam base64 e a validacao do id: sem nenhum deles
+// ligado, o crate compilava com avisos no binario que nao liga feature nenhuma.
+#[cfg(any(feature = "os-keyring", feature = "arquivo", feature = "dev-env"))]
 use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
 use std::fmt;
 use thiserror::Error;
@@ -83,6 +86,7 @@ pub fn validate_provider_for_release(
     Ok(())
 }
 
+#[cfg(any(feature = "os-keyring", feature = "arquivo", feature = "dev-env"))]
 fn validate_key_id(key_id: &str) -> Result<(), KeyProviderError> {
     let ok = !key_id.is_empty()
         && key_id.len() <= 160

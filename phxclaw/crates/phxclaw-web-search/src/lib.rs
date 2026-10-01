@@ -9,7 +9,7 @@
 
 mod html;
 
-pub use html::{PageLink, decode_entities, inline_text};
+pub use html::{PageLink, Readable, decode_entities, inline_text, readable};
 
 use phxclaw_agent_core::BoxFut;
 use phxclaw_egress_broker::{EgressBroker, EgressError};

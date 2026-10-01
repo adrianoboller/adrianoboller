@@ -22,12 +22,12 @@
    "evidencia": "adaptadores.rs browser_tools (Chromium real)"
   },
   "desktop_mouse_teclado": {
-   "estado": "parcial",
-   "evidencia": "crates/phxclaw-system-automation, fora do agente"
+   "estado": "agente",
+   "evidencia": "crates/phxclaw-agent/src/visao.rs DesktopTool (desktop.control), ligada no binario phxclaw"
   },
   "captura_tela": {
-   "estado": "parcial",
-   "evidencia": "phxclaw-system-automation capturar_monitor_principal, fora do agente"
+   "estado": "agente",
+   "evidencia": "visao.rs DesktopTool screenshot"
   },
   "mcp_cliente": {
    "estado": "parcial",
@@ -186,8 +186,8 @@
    "evidencia": ""
   },
   "stt": {
-   "estado": "parcial",
-   "evidencia": "crates/phxclaw-media-intelligence (whisper.cpp local), fora do agente"
+   "estado": "agente",
+   "evidencia": "visao.rs TranscribeTool (media.stt, whisper.cpp local com SHA-256 do modelo)"
   },
   "tts": {
    "estado": "nao",
@@ -198,12 +198,12 @@
    "evidencia": ""
   },
   "ocr_imagem": {
-   "estado": "parcial",
-   "evidencia": "ui.rs ScreenshotToErpUiTool usa OCR so para tela de ERP"
+   "estado": "agente",
+   "evidencia": "visao.rs OcrTool: png, jpg, tif e pdf"
   },
   "pdf": {
-   "estado": "nao",
-   "evidencia": "read_document le so docx e xlsx"
+   "estado": "agente",
+   "evidencia": "arquivos.rs pdf e read_document (pdftotext no bubblewrap)"
   },
   "geracao_midia": {
    "estado": "nao",

@@ -192,6 +192,17 @@ def gerar(pasta):
     wb.create_sheet("Segunda")["B2"] = 7
     wb.save(f"{pasta}/py.xlsx")
 
+    import pptx
+
+    p = pptx.Presentation()
+    s = p.slides.add_slide(p.slide_layouts[1])
+    s.shapes.title.text = "Agenda & ação"
+    s.placeholders[1].text_frame.text = "primeiro ponto"
+    s.notes_slide.notes_text_frame.text = "lembrar do prazo"
+    s2 = p.slides.add_slide(p.slide_layouts[5])
+    s2.shapes.title.text = "Fim"
+    p.save(f"{pasta}/py.pptx")
+
 
 def main():
     if len(sys.argv) == 3 and sys.argv[1] == "gerar":

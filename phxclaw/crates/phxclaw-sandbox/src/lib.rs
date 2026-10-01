@@ -230,6 +230,27 @@ pub fn workdir_sandbox_command(
     bwrap: &Path,
     cmd: &WorkdirCommand,
 ) -> Result<Command, SandboxError> {
+    workdir_sandbox_command_com(bwrap, cmd, &SandboxExtras::default())
+}
+
+/// O que uma ferramenta especializada acrescenta ao MESMO sandbox do shell: caminhos do
+/// hospedeiro montados so leitura e variaveis de ambiente fixas. Existe para que o
+/// `rust_project` monte o toolchain sem copiar a lista de binds -- uma segunda montagem
+/// divergiria da primeira no dia em que alguem endurecesse so uma delas.
+#[derive(Debug, Clone, Default)]
+pub struct SandboxExtras {
+    /// (caminho no hospedeiro, caminho dentro do sandbox), so leitura. Entram DEPOIS do
+    /// `/tmp` em tmpfs, entao podem cair dentro dele.
+    pub ro_binds: Vec<(PathBuf, String)>,
+    /// Aplicadas depois do ambiente limpo; repetir `PATH` aqui o substitui.
+    pub env: Vec<(String, String)>,
+}
+
+pub fn workdir_sandbox_command_com(
+    bwrap: &Path,
+    cmd: &WorkdirCommand,
+    extras: &SandboxExtras,
+) -> Result<Command, SandboxError> {
     fs::create_dir_all(&cmd.workdir)?;
     let workdir = fs::canonicalize(&cmd.workdir)?;
     let mut args: Vec<String> = vec![
@@ -275,6 +296,15 @@ pub fn workdir_sandbox_command(
         "/work".into(),
         "--chdir".into(),
         "/work".into(),
+    ]);
+    for (host, guest) in &extras.ro_binds {
+        args.extend([
+            "--ro-bind".into(),
+            host.display().to_string(),
+            guest.clone(),
+        ]);
+    }
+    args.extend([
         "--".into(),
         "/bin/sh".into(),
         "-c".into(),
@@ -287,13 +317,24 @@ pub fn workdir_sandbox_command(
         .env("PATH", "/usr/local/bin:/usr/bin:/bin")
         .env("HOME", "/work")
         .env("LANG", "C.UTF-8");
+    for (k, v) in &extras.env {
+        c.env(k, v);
+    }
     Ok(c)
 }
 
 pub fn run_in_workdir(bwrap: &Path, cmd: &WorkdirCommand) -> Result<WorkdirOutput, SandboxError> {
+    run_in_workdir_com(bwrap, cmd, &SandboxExtras::default())
+}
+
+pub fn run_in_workdir_com(
+    bwrap: &Path,
+    cmd: &WorkdirCommand,
+    extras: &SandboxExtras,
+) -> Result<WorkdirOutput, SandboxError> {
     use std::io::Read;
     use std::process::Stdio;
-    let mut child = workdir_sandbox_command(bwrap, cmd)?
+    let mut child = workdir_sandbox_command_com(bwrap, cmd, extras)?
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

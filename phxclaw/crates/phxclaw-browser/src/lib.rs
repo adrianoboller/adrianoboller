@@ -9,7 +9,9 @@ mod error;
 mod page;
 mod policy;
 
-pub use browser::{Browser, CHROMIUM_ENV, LaunchOptions, find_chromium, idioma_do_sistema};
+pub use browser::{
+    Browser, CHROMIUM_ENV, LaunchOptions, find_chromium, idioma_do_sistema, running_as_root,
+};
 pub use cdp::BlockedRequest;
 pub use error::{BrowserError, Result};
 pub use page::{Link, Page};

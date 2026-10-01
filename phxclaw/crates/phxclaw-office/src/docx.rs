@@ -233,7 +233,7 @@ pub fn read_docx_text(path: impl AsRef<Path>) -> Result<String> {
 /// dele e definicao de parada de tabulacao, nao texto.
 pub fn read_docx_text_bytes(bytes: &[u8]) -> Result<String> {
     let ar = zip::read(bytes)?;
-    let main = main_part(&ar)?;
+    let main = opc::main_part(&ar, "word/document.xml")?;
     let src = ar
         .get(&main)
         .ok_or_else(|| OfficeError::Corrupt(format!("parte {main} ausente")))?;
@@ -267,24 +267,6 @@ pub fn read_docx_text_bytes(bytes: &[u8]) -> Result<String> {
         out.pop();
     }
     Ok(out)
-}
-
-/// A parte principal sai da relacao `officeDocument` do pacote, nao de um
-/// nome fixo: produtores podem chamar a parte de outro jeito.
-fn main_part(ar: &zip::Archive) -> Result<String> {
-    if let Some(r) = ar.get("_rels/.rels") {
-        let ev = xml::events(&String::from_utf8_lossy(r)).map_err(OfficeError::Corrupt)?;
-        for e in ev {
-            if let Event::Start { name, attrs, .. } = e
-                && xml::local(&name) == "Relationship"
-                && xml::attr(&attrs, "Type") == Some(opc::REL_OFFICE_DOC)
-                && let Some(t) = xml::attr(&attrs, "Target")
-            {
-                return Ok(opc::resolve("", t));
-            }
-        }
-    }
-    Ok("word/document.xml".into())
 }
 
 #[cfg(test)]

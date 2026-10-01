@@ -169,28 +169,9 @@ const PERGUNTA_LISTAS: &str = "List the labels of the dropdown (select) fields i
 const PERGUNTA_GRADE: &str = "What are the column headers of the items table in this screenshot? Answer only a JSON array of strings.";
 
 async fn ocr(png: &std::path::Path, prazo: std::time::Duration) -> Result<Vec<String>, ToolError> {
-    let saida = tokio::time::timeout(
-        prazo,
-        tokio::process::Command::new("tesseract")
-            .arg(png)
-            .args(["-", "-l", "por+eng", "--psm", "11"])
-            .kill_on_drop(true)
-            .output(),
-    )
-    .await
-    .map_err(|_| ToolError::Timeout(prazo.as_millis() as u64))?
-    .map_err(|e| {
-        ToolError::Failed(format!(
-            "tesseract nao executou ({e}); instale tesseract-ocr e tesseract-ocr-por"
-        ))
-    })?;
-    if !saida.status.success() {
-        return Err(ToolError::Failed(format!(
-            "tesseract falhou: {}",
-            String::from_utf8_lossy(&saida.stderr)
-        )));
-    }
-    Ok(String::from_utf8_lossy(&saida.stdout)
+    // psm 11 (texto esparso): rotulo de tela nao e paragrafo
+    Ok(crate::visao::tesseract(png, "por+eng", Some(11), prazo)
+        .await?
         .lines()
         .map(str::trim)
         .filter(|l| !l.is_empty())

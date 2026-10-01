@@ -16,7 +16,7 @@ pub mod xml;
 pub mod zip;
 
 pub use docx::{docx_bytes, read_docx_text, read_docx_text_bytes, write_docx};
-pub use pptx::{pptx_bytes, write_pptx};
+pub use pptx::{pptx_bytes, read_pptx_text, read_pptx_text_bytes, write_pptx};
 pub use xlsx::{read_xlsx_values, read_xlsx_values_bytes, write_xlsx, xlsx_bytes};
 
 #[derive(Debug, thiserror::Error)]

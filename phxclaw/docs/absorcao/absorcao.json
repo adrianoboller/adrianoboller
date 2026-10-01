@@ -1,11 +1,11 @@
 {
  "openclaw": {
   "total": 39,
-  "no_agente": 9,
-  "parcial": 16,
+  "no_agente": 13,
+  "parcial": 12,
   "nao": 14,
-  "pct_agente": 23.1,
-  "pct_com_bibliotecas": 43.6,
+  "pct_agente": 33.3,
+  "pct_com_bibliotecas": 48.7,
   "falta": [
    "mcp_servidor",
    "canal_signal",
@@ -23,7 +23,6 @@
    "ide_acp"
   ],
   "pela_metade": [
-   "desktop_mouse_teclado",
    "mcp_cliente",
    "canal_telegram",
    "canal_whatsapp",
@@ -35,20 +34,17 @@
    "memoria",
    "skills",
    "plugins",
-   "dispositivos",
-   "captura_tela",
-   "stt",
-   "ocr_imagem"
+   "dispositivos"
   ],
   "lido_em": "01/10/2026"
  },
  "hermes": {
   "total": 40,
-  "no_agente": 9,
-  "parcial": 15,
-  "nao": 16,
-  "pct_agente": 22.5,
-  "pct_com_bibliotecas": 41.2,
+  "no_agente": 13,
+  "parcial": 12,
+  "nao": 15,
+  "pct_agente": 32.5,
+  "pct_com_bibliotecas": 47.5,
   "falta": [
    "busca_x",
    "canal_signal",
@@ -61,14 +57,12 @@
    "tts",
    "voz_wake",
    "geracao_midia",
-   "pdf",
    "github",
    "ide_acp",
    "celular",
    "worktrees"
   ],
   "pela_metade": [
-   "desktop_mouse_teclado",
    "mcp_cliente",
    "canal_telegram",
    "canal_whatsapp",
@@ -80,22 +74,19 @@
    "memoria",
    "skills",
    "plugins",
-   "checkpoints",
-   "stt",
-   "ocr_imagem"
+   "checkpoints"
   ],
   "lido_em": "01/10/2026"
  },
  "claude_code": {
   "total": 41,
-  "no_agente": 12,
-  "parcial": 15,
-  "nao": 14,
-  "pct_agente": 29.3,
-  "pct_com_bibliotecas": 47.6,
+  "no_agente": 17,
+  "parcial": 11,
+  "nao": 13,
+  "pct_agente": 41.5,
+  "pct_com_bibliotecas": 54.9,
   "falta": [
    "notebook",
-   "pdf",
    "mcp_servidor",
    "hooks",
    "plan_mode",
@@ -111,9 +102,6 @@
   ],
   "pela_metade": [
    "busca_arquivos",
-   "ocr_imagem",
-   "desktop_mouse_teclado",
-   "captura_tela",
    "mcp_cliente",
    "canais_push",
    "canal_slack",
@@ -123,7 +111,6 @@
    "skills",
    "plugins",
    "checkpoints",
-   "stt",
    "lsp"
   ],
   "lido_em": "01/10/2026"
