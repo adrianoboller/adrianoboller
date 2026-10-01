@@ -16,21 +16,30 @@ abaixo aparece em exatamente uma sprint.
 
 | Sprint | Onda | Foco | Chaves | Estado |
 |---|---|---|---:|---|
-| SP000002 | 3 | Integração da onda 3 (git, interação, canais) e commit | — | EM EXECUÇÃO |
-| SP000003 | 3 | Canais A: laço único + 8 canais principais | 8 | EM EXECUÇÃO |
-| SP000004 | 3 | Canais B: 16 canais restantes | 16 | EM EXECUÇÃO |
-| SP000005 | 4 | Orquestração e plugins | 5 | EM EXECUÇÃO |
-| SP000006 | 4 | Editor e remoto | 7 | EM EXECUÇÃO |
-| SP000007 | 4 | Voz e mídia | 5 | EM EXECUÇÃO |
-| SP000008 | 4 | Integração da onda 4 e commit | — | PLANEJADA |
-| SP000009 | 5 | Contexto e dados | 5 | PLANEJADA |
-| SP000010 | 5 | Credencial e CI | 4 | PLANEJADA |
-| SP000011 | 5 | Medição | 4 | PLANEJADA |
+| SP000002 | 3 | Integração da onda 3 (git, interação, canais) e commit | — | CONCLUÍDA (4670bc20) |
+| SP000003 | 3 | Canais A: laço único + 8 canais principais | 8 | CONCLUÍDA (4670bc20) |
+| SP000004 | 3 | Canais B: 16 canais restantes | 16 | CONCLUÍDA (4670bc20) |
+| SP000005 | 4 | Orquestração e plugins | 5 | CONCLUÍDA (4670bc20) |
+| SP000006 | 4 | Editor e remoto | 7 | CONCLUÍDA (4670bc20) |
+| SP000007 | 4 | Voz e mídia | 5 | CONCLUÍDA (4670bc20) |
+| SP000008 | 4 | Integração da onda 4 e commit | — | CONCLUÍDA (4670bc20) |
+| SP000009 | 5 | Contexto e dados | 5 | EM EXECUÇÃO |
+| SP000010 | 5 | Credencial e CI | 4 | EM EXECUÇÃO |
+| SP000011 | 5 | Medição | 4 | EM EXECUÇÃO |
 | SP000012 | 5 | Integração da onda 5 e commit | — | PLANEJADA |
 | SP000013 | — | Endurecimento (achados ⏸ das revisões) | — | PLANEJADA |
 | SP000014 | — | Prova real com credenciais | — | BLOQUEADA (dono) |
 | SP000015 | — | Ciclo de auto-evolução | — | BLOQUEADA (dono) |
 | SP000016 | — | Entrega v0.71 | — | PLANEJADA |
+| SP000017 | — | Provedores ElevenLabs (fala e transcrição) e Nano Banana (gerar e editar imagem) | — | EM EXECUÇÃO |
+| SP000018 | — | config.json central, fase 1: catálogo, precedência, recusa de segredo, `phxclaw config`, catraca | — | EM EXECUÇÃO |
+| SP000019 | — | Tela de configuração do config.json (GET/PUT /v1/config) e phx-grid nas listagens | — | EM EXECUÇÃO |
+| SP000020 | — | config.json, fase 2: leitores migrados ao ponto único (catraca até 0); os 103 JSON de config/ | — | PLANEJADA |
+| SP000021 | 6 | Tela→UI-IR com layout pelas caixas do OCR; troca medida para qwen3-vl | — | PLANEJADA |
+| SP000022 | 6 | Prova de fidelidade da conversão de tela (ida e volta + bloco/texto/posição) | — | PLANEJADA |
+| SP000023 | 6 | Segredo no commit: gitleaks num hook do git_write | — | PLANEJADA |
+| SP000024 | 7 | Navegador pela árvore de acessibilidade (refs); MCPs por configuração (context7, dbhub); embedding de código se o recall pedir | — | PLANEJADA |
+| SP000025 | 7 | pywinauto pelo device-node num Windows com WinDev | — | BLOQUEADA (dono: máquina Windows) |
 | | | **Total de chaves** | **54** | |
 
 ```mermaid
@@ -260,3 +269,16 @@ Troca «contra falso» por «real». Depende do dono:
 
 > Números de chaves contados do `phxclaw.json` em 01/10/2026. Nenhuma sprint desta lista está
 > concluída além da SP000001.
+
+
+---
+
+## Acréscimos de 01/10/2026 (pedidos do dono depois do plano)
+
+- **SP000017–SP000020** saíram de pedidos diretos: ElevenLabs e Nano Banana, config.json central e a tela dele, phx-grid nas listagens.
+- **SP000021–SP000025** saíram da triagem do papel J sobre as duas pesquisas de 01/10 (visão e redes
+  neurais; repositórios do GitHub): dos 49 itens, 6 entram, 7 já existiam ou estão na onda 5, 36 ficam
+  como inspiração ou recusa. Decisões e hipóteses que morreram em `TRIAGEM_PESQUISAS_2026-10-01.md`.
+- Achado da triagem que muda o plano: a conversão de tela em UI-IR por visão **já existe**
+  (`screenshot_to_erp_ui`, qwen2.5vl:3b + confirmação por OCR, ~92 s por tela). O que falta é layout e
+  prova de fidelidade, e é isso que a onda 6 faz.
