@@ -192,6 +192,12 @@ fn gravar_contador_cru(dir: &std::path::Path, nome: &str, valor: u64) {
 /// e a tabela continua sem saida.
 #[test]
 fn a_tabela_com_o_contador_defeituoso_volta_a_abrir_pelo_maior_gravado() {
+    // O no DECLARA a faixa 0, como o servidor declara sempre: desde o pedido
+    // 615 quem nao declarou abre a tabela de qualquer faixa para ler, e a
+    // recusa da abertura -- o caso deste teste -- so existe para quem
+    // declarou. Os vizinhos deste arquivo numeram na faixa 0 de qualquer
+    // jeito, entao o global do processo nao muda nada para eles.
+    phxsql_store::no::definir_inicio_da_sequencia(0);
     let d = comum::DirTemp::novo("faixa-sem-saida");
     {
         let mut t = Table::criar(&d, esquema_com_faixa()).unwrap();

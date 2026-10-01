@@ -390,7 +390,18 @@ impl RegFile {
     /// tabela gravada pelo defeito do contador `v + 1` do pedido 290, que
     /// sai da propria faixa na primeira insercao. A saida dela e o
     /// realinhamento pelo maior valor gravado, que e o dado e nao um palpite.
+    ///
+    /// # Quem nao declarou a faixa nao confere aqui (pedido 615)
+    ///
+    /// A conferencia compara a faixa da tabela com a DECLARADA. A CLI e a FFI
+    /// sem declaracao nao tem com o que comparar, e recusar a abertura
+    /// trancava a tabela de outra faixa ate para ler. A guarda nao some: ela
+    /// muda de lugar para onde o dano acontece, a numeracao
+    /// ([`RegFile::exigir_faixa_para_numerar`]).
     fn conferir_faixa_da_sequencia(&self, nome: &str) -> Result<()> {
+        if !crate::no::faixa_declarada() {
+            return Ok(());
+        }
         let passo = self.esquema.passo_da_sequencia();
         let inicio = crate::no::inicio_da_sequencia();
         let proxima = self.proxima_sequencia;
@@ -408,6 +419,37 @@ impl RegFile {
             )));
         }
         Ok(())
+    }
+
+    /// Recusa numerar quando este processo NAO declarou a faixa e a tabela
+    /// ja numera fora da faixa zero (pedido 615).
+    ///
+    /// E o par da conferencia da abertura, que o nao declarado pula: ali a
+    /// tabela abre para ler; aqui, onde um numero sairia, o nao declarado
+    /// numeraria como zero -- na faixa de outro no. Quem chama sao as quatro
+    /// portas que poem o contador numa faixa: a numeracao da insercao, a
+    /// anotacao do numero escrito a mao que empurra o contador, o
+    /// `ajustar_sequencia` e o realinhamento.
+    ///
+    /// Tabela sem faixa (`passo <= 1`) ou nunca numerada sai no primeiro
+    /// teste: e o laco quente, e ali o nao declarado numera como sempre.
+    pub(crate) fn exigir_faixa_para_numerar(&self) -> Result<()> {
+        let passo = self.esquema.passo_da_sequencia();
+        let proxima = self.proxima_sequencia;
+        if passo <= 1 || proxima == 0 || crate::no::faixa_declarada() || proxima % passo == 0 {
+            return Ok(());
+        }
+        Err(PhxError::Esquema(format!(
+            "a tabela {} numera na faixa {} de {passo} (o contador esta em {proxima}), \
+             e este processo nao declarou a faixa deste no: numerar daqui poria o \
+             numero na faixa 0, que e a de outro no. Ler, conferir e reindexar nao \
+             precisam dela; para gravar, declare a faixa do no dono destes arquivos \
+             -- `phxsql --inicio-da-sequencia N` na linha de comando, \
+             `phx_definir_inicio_da_sequencia(N)` na biblioteca, o mesmo valor do \
+             `replicacao.inicio_da_sequencia` do config.json do servidor",
+            self.esquema.nome(),
+            proxima % passo
+        )))
     }
 
     /// Abre SEM escrever nada, e devolve `None` quando abrir exigiria escrever.
@@ -962,6 +1004,7 @@ impl RegFile {
         // A UNICA porta dos fundos do contador, e por isso a faixa se confere
         // aqui na hora, e nao na abertura seguinte: recusar depois
         // transformaria uma ordem de manutencao numa tabela que nao abre mais.
+        self.exigir_faixa_para_numerar()?;
         let passo = self.esquema.passo_da_sequencia();
         let inicio = crate::no::inicio_da_sequencia();
         if passo > 1 && proxima != 0 && proxima % passo != inicio % passo {
@@ -987,6 +1030,7 @@ impl RegFile {
     /// faixa (o `v + 1` do defeito) entra na conta como piso e sai na faixa:
     /// `na_faixa(v + 1)` e `v + passo`, o numero que o motor daria.
     pub fn realinhar_sequencia(&mut self, maior: u64) -> Result<u64> {
+        self.exigir_faixa_para_numerar()?;
         let piso = self.proxima_sequencia.max(maior.saturating_add(1)).max(1);
         let novo = self.na_faixa(piso);
         if novo != self.proxima_sequencia {

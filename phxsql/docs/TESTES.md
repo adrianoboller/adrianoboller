@@ -1061,6 +1061,10 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `backup-sem-portao-do-retrato` | A cópia do backup com a ficha COMPARTILHADA e sem o portão do retrato: o primeiro escritor na fila do `RwLock` fazia toda leitura nova esperar a cópia inteira | 1 | ✅ provada |
 | `faixa-do-config-nao-lida` | o `inicio` da faixa da `Sequence` não tinha porta de produção: todo servidor numerava na faixa 0 e vinte caixas com passo 20 colidiam 100% | 3 | ✅ provada |
 | `faixa-sai-da-classe` | o contador da `Sequence` com faixa saía da própria classe na primeira inserção (`v + 1`), e a abertura seguinte recusava a tabela como se fosse de outro nó | 1 | ✅ provada |
+| `faixa-nao-declarada-tranca-a-leitura` | a CLI e a FFI sem a faixa declarada recusavam ABRIR a tabela que outro nó numerou: nem `info`, nem `listar`, nem `verificar` por ferramenta oficial | 2 | ✅ provada |
+| `faixa-nao-declarada-numera-na-zero` | com a leitura liberada, o processo sem faixa declarada numerava a tabela de outro nó na faixa 0 -- a colisão que a faixa existe para impedir, calada | 1 | ✅ provada |
+| `faixa-da-cli-nao-chega-ao-motor` | a `--inicio-da-sequencia` da CLI era lida e não chegava ao motor: a ferramenta gravava como quem não declarou | 1 | ✅ provada |
+| `faixa-da-ffi-nao-chega-ao-motor` | a `phx_definir_inicio_da_sequencia` devolvia PHX_OK sem declarar nada: o aplicativo achava que numerava na faixa dele | 1 | ✅ provada |
 | `vetor-do-pulso-ignorado` | a posição POR TABELA do pulso não chegava ao painel: a soma escondia o nó em dia na tabela grande e cego na pequena | 1 | ✅ provada |
 | `faixa-sem-saida` | a tabela gravada pelo contador `v + 1` não abria (a faixa recusa) e o remédio exigia abrir: ficava sem saída | 1 | ✅ provada |
 | `reconciliar-fora-da-faixa` | o `reparar` reconciliava a `Sequence` com `maior + 1` cru: numa tabela com faixa o valor caía fora dela e o reparo virava erro | 2 | ✅ provada |
@@ -1091,9 +1095,9 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `bidirecional-sem-cofre-excluir_de_vez-marcado-em-claro` | O bidirecional sem cofre passava pelo `excluir_de_vez_replicado` com o dado marcado de OUTRO servidor: a recusa do 613 morava só no `aplicar_evento` | 1 | ✅ provada |
 | `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | — | 🪦 aposentada (18/09/2026) |
 
-**448 das 623 guardas do catálogo: 1 aposentada, 443 provadas, 4 redundantes** — 13568 s de mutação, medido em 2026-09-16 15:25.
+**452 das 627 guardas do catálogo: 1 aposentada, 447 provadas, 4 redundantes** — 13596 s de mutação, medido em 2026-09-16 15:25.
 
-> **Esta rodada NÃO julgou 176 das 623 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 176 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 176 das 627 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 176 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
 - `fk-antes-do-default` — a chave estrangeira confere a linha crua, e o DEFAULT sem mãe grava a filha órfã
 - `fk-antes-do-default-pelo-servidor` — o DEFAULT e a calculada sem mãe gravam a órfã pelo servidor, fora e dentro da transação

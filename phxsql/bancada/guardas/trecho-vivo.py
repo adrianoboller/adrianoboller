@@ -523,6 +523,13 @@ dia, nunca no desejado:
   do bidirecional sem a recusa
   (`bidirecional-sem-cofre-{inserir,atualizar,excluir_de_vez}-marcado-em-claro`).
   Medido pelo `--numeros` nesta arvore: 624.
+  **SUBIU para 628 em 01/10/2026** (no merge, 624 + 4; pedido 615): quatro guardas -- a
+  abertura que trancava a leitura de quem nao declarou a faixa
+  (`faixa-nao-declarada-tranca-a-leitura`), a numeracao na faixa 0 por quem
+  nao declarou (`faixa-nao-declarada-numera-na-zero`), e a faixa da CLI e da
+  FFI que nao chegava ao motor (`faixa-da-cli-nao-chega-ao-motor`,
+  `faixa-da-ffi-nao-chega-ao-motor`). 624, medido pelo `--numeros` nesta
+  arvore.
 
 # A QUINTA REGUA: a tabela publicada pode ser MENOR que o catalogo
 
@@ -629,7 +636,7 @@ TETO_TESTE_MORTO = 0
 TETO_TRECHO_AMBIGUO = 0
 TETO_TESTE_FORA_DO_BINARIO = 0
 TETO_TESTE_SEM_MODULO = 0
-PISO_DAS_ENTRADAS = 624
+PISO_DAS_ENTRADAS = 628
 
 # ------------------------------------------------------------- APOSENTADAS
 #

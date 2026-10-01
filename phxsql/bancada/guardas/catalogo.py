@@ -20278,6 +20278,111 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         ],
     },
     {
+        "id": "faixa-nao-declarada-tranca-a-leitura",
+        "titulo": "a CLI e a FFI sem a faixa declarada recusavam ABRIR a tabela que outro nó numerou: nem `info`, nem `listar`, nem `verificar` por ferramenta oficial",
+        "porque": (
+            "pedido 615, irmao do 290: o servidor declara a faixa do "
+            "config.json; a CLI e a FFI recebem so a pasta e abriam com o zero "
+            "implicito, e a conferencia da abertura trancava a tabela da "
+            "faixa 1. Quem nao declarou nao tem com o que comparar: a guarda "
+            "muda de lugar para a numeracao, onde o dano acontece."
+        ),
+        "arquivo": "crates/phxsql-store/src/reg.rs",
+        "trecho": """    fn conferir_faixa_da_sequencia(&self, nome: &str) -> Result<()> {
+        if !crate::no::faixa_declarada() {
+            return Ok(());
+        }
+""",
+        "troca": """    fn conferir_faixa_da_sequencia(&self, nome: &str) -> Result<()> {
+        // DEFEITO REPOSTO (615): o nao declarado confere como faixa 0.
+""",
+        "pacote": "phxsql-cli",
+        "alvo": ["--test", "faixa-da-sequencia"],
+        "caem": [
+            "sem_declarar_a_tabela_de_outra_faixa_abre_para_ler",
+            "sem_declarar_gravar_na_tabela_de_outra_faixa_recusa_e_diz_como",
+        ],
+        "seguem": [
+            "a_bandeira_declara_a_faixa_pelo_mesmo_motor_do_servidor",
+        ],
+    },
+    {
+        "id": "faixa-nao-declarada-numera-na-zero",
+        "titulo": "com a leitura liberada, o processo sem faixa declarada numerava a tabela de outro nó na faixa 0 -- a colisão que a faixa existe para impedir, calada",
+        "porque": (
+            "pedido 615: a conferencia da abertura nao vale para quem nao "
+            "declarou, entao a guarda tem de estar na numeracao -- a insercao, "
+            "a anotacao que empurra o contador, o ajustar e o realinhar. Sem "
+            "ela a carga da CLI na tabela da faixa 1 gravava o 6."
+        ),
+        "arquivo": "crates/phxsql-store/src/reg.rs",
+        "trecho": """        if passo <= 1 || proxima == 0 || crate::no::faixa_declarada() || proxima % passo == 0 {
+""",
+        "troca": """        // DEFEITO REPOSTO (615): o nao declarado numera como faixa 0.
+        if passo <= 1 || proxima == 0 || crate::no::faixa_declarada() || proxima % passo < passo {
+""",
+        "pacote": "phxsql-cli",
+        "alvo": ["--test", "faixa-da-sequencia"],
+        "caem": [
+            "sem_declarar_gravar_na_tabela_de_outra_faixa_recusa_e_diz_como",
+        ],
+        "seguem": [
+            "sem_declarar_a_tabela_de_outra_faixa_abre_para_ler",
+            "a_bandeira_declara_a_faixa_pelo_mesmo_motor_do_servidor",
+        ],
+    },
+    {
+        "id": "faixa-da-cli-nao-chega-ao-motor",
+        "titulo": "a `--inicio-da-sequencia` da CLI era lida e não chegava ao motor: a ferramenta gravava como quem não declarou",
+        "porque": (
+            "pedido 615: a CLI nao tem config.json, e quem sabe a faixa diz "
+            "pela bandeira -- o desenho da `--imagem-no-diario` do 601. O "
+            "valor entra pelo mesmo `no::definir_inicio_da_sequencia` do "
+            "servidor, e nao por uma segunda leitura do config."
+        ),
+        "arquivo": "crates/phxsql-cli/src/main.rs",
+        "trecho": """    phxsql_store::no::definir_inicio_da_sequencia(inicio);
+    args.drain(i..i + 2);
+""",
+        "troca": """    let _ = inicio; // DEFEITO REPOSTO (615)
+    args.drain(i..i + 2);
+""",
+        "pacote": "phxsql-cli",
+        "alvo": ["--test", "faixa-da-sequencia"],
+        "caem": [
+            "a_bandeira_declara_a_faixa_pelo_mesmo_motor_do_servidor",
+        ],
+        "seguem": [
+            "sem_declarar_a_tabela_de_outra_faixa_abre_para_ler",
+            "sem_declarar_gravar_na_tabela_de_outra_faixa_recusa_e_diz_como",
+        ],
+    },
+    {
+        "id": "faixa-da-ffi-nao-chega-ao-motor",
+        "titulo": "a `phx_definir_inicio_da_sequencia` devolvia PHX_OK sem declarar nada: o aplicativo achava que numerava na faixa dele",
+        "porque": (
+            "pedido 615: a biblioteca recebe so a pasta, e o aplicativo e "
+            "quem sabe a faixa do aparelho. A chamada entra no mesmo "
+            "`no::definir_inicio_da_sequencia` do servidor; sem ela, a faixa "
+            "0 declarada abria a tabela da faixa 1."
+        ),
+        "arquivo": "crates/phxsql-ffi/src/lib.rs",
+        "trecho": """        phxsql_store::no::definir_inicio_da_sequencia(inicio);
+        PHX_OK
+""",
+        "troca": """        let _ = inicio; // DEFEITO REPOSTO (615)
+        PHX_OK
+""",
+        "pacote": "phxsql-ffi",
+        "alvo": ["--lib"],
+        "caem": [
+            "testes::a_faixa_declarada_pela_abi_chega_ao_motor",
+        ],
+        "seguem": [
+            "testes::ciclo_basico_grava_le_e_varre",
+        ],
+    },
+    {
         "id": "vetor-do-pulso-ignorado",
         "titulo": "a posição POR TABELA do pulso não chegava ao painel: a soma escondia o nó em dia na tabela grande e cego na pequena",
         "porque": (

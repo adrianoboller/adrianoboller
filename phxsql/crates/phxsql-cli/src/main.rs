@@ -22,6 +22,9 @@
 //! phxsql conferir-backup <destino>             le a copia de volta e confere
 //! phxsql conferir-pacote [<dir>]               confere um pacote de download
 //! phxsql reparar   <dir> <tabela>              confere .reg contra .bkp e conserta
+//!
+//! Em qualquer comando:
+//!     --inicio-da-sequencia <n>  a faixa da Sequence do no dono destes arquivos
 //! ```
 
 use std::collections::BTreeMap;
@@ -72,6 +75,12 @@ USO:
   phxsql reparar   <dir> <tabela>
   phxsql importar  <dir> <tabela> <arquivo> [--formato csv|txt|json|xml|html]
                                             [--seguir] [--conferir]
+
+  Em qualquer comando: --inicio-da-sequencia <n>
+    a faixa da Sequence do no dono destes arquivos (o mesmo valor do
+    replicacao.inicio_da_sequencia do config.json do servidor). Sem ela, ler
+    e conferir funcionam em qualquer tabela; gravar numa tabela que ja numera
+    fora da faixa 0 recusa, em vez de numerar na faixa de outro no.
 ";
 
 fn main() -> ExitCode {
@@ -88,6 +97,18 @@ fn main() -> ExitCode {
     if args.is_empty() || args[0] == "-h" || args[0] == "--help" {
         diga!("{USO}");
         return ExitCode::SUCCESS;
+    }
+
+    let args = match declarar_a_faixa(args) {
+        Ok(a) => a,
+        Err(e) => {
+            eprintln!("erro: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    if args.is_empty() {
+        diga!("{USO}");
+        return ExitCode::FAILURE;
     }
 
     let resultado = match args[0].as_str() {
@@ -127,6 +148,39 @@ fn main() -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+/// Tira dos argumentos a `--inicio-da-sequencia <n>` e a entrega ao motor
+/// (pedido 615).
+///
+/// # Por que bandeira, e nao a leitura do config.json
+///
+/// A ferramenta recebe so uma pasta: nao sabe onde mora o `config.json` do
+/// servidor, nem se ha um (a pasta pode ter vindo de um backup). Ler um
+/// config aqui seria a SEGUNDA leitura do mesmo campo, fora do leitor do
+/// servidor. Quem sabe a faixa e quem chama, e diz pela bandeira -- o mesmo
+/// desenho da `--imagem-no-diario` do pedido 601. E o valor entra pelo mesmo
+/// motor do servidor, `no::definir_inicio_da_sequencia`: e ele que todo
+/// `Table::abrir` desta ferramenta consulta.
+///
+/// Sai dos argumentos antes do despacho, e por isso vale em qualquer comando
+/// e em qualquer posicao -- os comandos com opcoes proprias recusam o que
+/// nao conhecem.
+fn declarar_a_faixa(mut args: Vec<String>) -> Result<Vec<String>> {
+    let Some(i) = args.iter().position(|a| a == "--inicio-da-sequencia") else {
+        return Ok(args);
+    };
+    let inicio = args
+        .get(i + 1)
+        .and_then(|v| v.parse::<u64>().ok())
+        .ok_or_else(|| {
+            phxsql_core::PhxError::Esquema(
+                "--inicio-da-sequencia pede um inteiro de 0 em diante".to_string(),
+            )
+        })?;
+    phxsql_store::no::definir_inicio_da_sequencia(inicio);
+    args.drain(i..i + 2);
+    Ok(args)
 }
 
 fn exigir(args: &[String], n: usize) -> Result<()> {

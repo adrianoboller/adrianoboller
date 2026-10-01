@@ -319,6 +319,7 @@ não se desfaz.
 | `phx_versao` | a versão do motor, em texto |
 | `phx_ultimo_erro` | a mensagem do último erro **desta thread** |
 | `phx_erro_nome` | o nome simbólico de um código (`"DUPLICADO"`) — `const char*` estático, nunca liberado |
+| `phx_definir_inicio_da_sequencia` | a faixa da `Sequence` deste aparelho — o mesmo `replicacao.inicio_da_sequencia` do servidor, pelo mesmo motor (pedido 615). Vale para o processo; chame antes do `phx_base_abrir`. Sem ela, a tabela que já numera fora da faixa 0 abre para ler e recusa gravar número novo, em vez de numerá-lo na faixa de outro nó |
 
 ### 4.2 Base
 

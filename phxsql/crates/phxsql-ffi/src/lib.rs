@@ -334,6 +334,26 @@ pub unsafe extern "C" fn phx_versao(destino: *mut u8, cap: usize, precisa: *mut 
     blindado(|| texto::escrever(destino, cap, precisa, env!("CARGO_PKG_VERSION")))
 }
 
+/// Declara em que faixa da `Sequence` este aparelho numera (pedido 615).
+///
+/// O servidor a le do `replicacao.inicio_da_sequencia`; a biblioteca recebe
+/// so a pasta e nao tem `config.json`, entao quem sabe e o aplicativo, e diz
+/// aqui. Vai para o mesmo motor do servidor (`no::definir_inicio_da_sequencia`),
+/// e vale para o PROCESSO inteiro -- a faixa e a identidade do no, nao de uma
+/// base --, para toda tabela aberta DEPOIS: chame antes do `phx_base_abrir`.
+///
+/// Sem esta chamada, o comportamento de sempre de quem nunca declarou: a
+/// tabela sem faixa ou que numera na faixa 0 numera como sempre, e a tabela
+/// que ja numera em outra faixa abre para ler, mas recusa gravar um numero
+/// novo em vez de numera-lo na faixa de outro no.
+#[no_mangle]
+pub extern "C" fn phx_definir_inicio_da_sequencia(inicio: u64) -> i32 {
+    blindado(|| {
+        phxsql_store::no::definir_inicio_da_sequencia(inicio);
+        PHX_OK
+    })
+}
+
 /// A mensagem do ultimo erro **desta thread**. Vazia quando nada falhou.
 ///
 /// # Safety
