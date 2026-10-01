@@ -71,10 +71,13 @@ def esteira() -> list[dict]:
             continue
         cols = [c.strip() for c in m.group(3).split("|")]
         ultima = cols[-1]
+        # ⏸ e «depois da versao» (decisao do dono, 24/09): visivel, fora da porcentagem
         estado = "feito" if "✓" in ultima or "☑" in ultima else (
+            "depois" if "⏸" in ultima else
             "bloqueado" if "bloqueado" in ultima else "aberto")
         itens.append({"id": m.group(1), "texto": m.group(2), "estado": estado,
-                      "nota": ultima.replace("☐", "").strip() if estado != "aberto" else ""})
+                      "nota": ultima.replace("☐", "").replace("⏸", "").strip()
+                      if estado != "aberto" else ""})
     return itens
 
 
@@ -89,7 +92,9 @@ NOMES = {
     "provider_local_ollama_e2e": "Modelo local (Ollama)",
     "channel_provider_credentialed_e2e": "Canais com credencial real",
     "desktop_os_automation_e2e": "Automação de desktop físico",
-    "device_pairing_wss_keyring_multiplatform_e2e": "Pareamento de dispositivos",
+    "device_pairing_wss_keyring_multiplatform_e2e": "Pareamento de dispositivos (Windows, macOS, Android, iOS)",
+    "device_pairing_wss_keyring_linux_e2e": "Pareamento de dispositivos no Linux (chaveiro nativo)",
+    "desktop_os_automation_xvfb": "Automação de desktop no Xvfb (evidência, não vale o físico)",
     "native_tauri_e2e": "Desktop Tauri (WebDriver)",
     "real_stt_model_e2e": "Voz para texto (modelo real)",
     "builtin_plugin_signatures": "Assinatura dos plugins nativos",
@@ -114,15 +119,17 @@ def main() -> int:
 
     obrig = [g for g in cert["gates"] if g["required"]]
     ob_ok = [g for g in obrig if g["status"] == "passed"]
-    est_aberto = [i for i in est if i["estado"] != "feito"]
-    total = len(obrig) + len(est)
+    est_conta = [i for i in est if i["estado"] != "depois"]
+    est_aberto = [i for i in est_conta if i["estado"] != "feito"]
+    total = len(obrig) + len(est_conta)
     falta = len(obrig) - len(ob_ok) + len(est_aberto)
     pct = 100 * falta / total if total else 0.0
     agora = datetime.now(timezone.utc).strftime("%d/%m/%Y %H:%M UTC")
 
     def pilula(st):
         rot = {"passed": "passou", "failed": "falhou", "blocked": "bloqueado",
-               "feito": "feito", "aberto": "aberto", "bloqueado": "bloqueado"}[st]
+               "feito": "feito", "aberto": "aberto", "bloqueado": "bloqueado",
+               "depois": "depois da versão"}[st]
         return f'<span class="pl pl-{e(st)}">{rot}</span>'
 
     linhas_portao = []
@@ -197,6 +204,7 @@ td.num {{ font-family:var(--mono); }}
 .pl-failed {{ color:var(--ruim); }}
 .pl-blocked,.pl-bloqueado {{ color:var(--trava); border-style:dashed; }}
 .pl-aberto {{ color:var(--suave); }}
+.pl-depois {{ color:var(--suave); border-style:dotted; }}
 .formula {{ font:400 .82rem var(--mono); color:var(--suave); }}
 ul.git {{ list-style:none; margin:0; padding:0; display:grid; gap:6px; font-size:.92rem; }}
 ul.git li {{ display:grid; grid-template-columns:auto auto 1fr; gap:10px; min-width:0; }}
@@ -231,7 +239,7 @@ footer {{ font-size:.8rem; color:var(--suave); border-top:1px solid var(--linha)
       <div class="tile"><b>{commits}</b><span>commits</span></div>
       <div class="tile"><b>{cogn}</b><span>cognições</span></div>
     </div>
-    <p class="formula">falta = ({len(obrig) - len(ob_ok)} portões obrigatórios não passados + {len(est_aberto)} itens abertos da esteira) / ({len(obrig)} + {len(est)}) = {falta}/{total}</p>
+    <p class="formula">falta = ({len(obrig) - len(ob_ok)} portões obrigatórios não passados + {len(est_aberto)} itens abertos da esteira) / ({len(obrig)} + {len(est_conta)}) = {falta}/{total}; alvo {e(cert.get("target", "todos"))}, e {len(est) - len(est_conta)} item(ns) ⏸ fora da conta</p>
   </div>
 </div>
 
@@ -264,7 +272,8 @@ footer {{ font-size:.8rem; color:var(--suave); border-top:1px solid var(--linha)
     SAIDA.parent.mkdir(parents=True, exist_ok=True)
     SAIDA.write_text(pagina)
     print(f"gravado {SAIDA.relative_to(RAIZ)}")
-    print(f"falta {pct:.1f}% ({falta}/{total}); certificacao {len(ob_ok)}/{len(obrig)}; "
+    print(f"falta {pct:.1f}% ({falta}/{total}); alvo {cert.get('target', 'todos')}; "
+          f"certificacao {len(ob_ok)}/{len(obrig)}; "
           f"suite {placar['passam']}/{placar['falham']}/{placar['ignorados']}")
     return 0
 

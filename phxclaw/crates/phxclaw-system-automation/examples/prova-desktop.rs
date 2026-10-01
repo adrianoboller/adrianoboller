@@ -6,7 +6,9 @@
 //! - captura: a tela primaria vira imagem, e a imagem nao e de uma cor so;
 //! - mouse: o cursor vai ao centro e o SO devolve a mesma posicao;
 //! - teclado + shell (Windows): o Bloco de Notas abre pelo executor governado, recebe um
-//!   codigo aleatorio pelo teclado, salva pelo Ctrl+S e o arquivo gravado traz o codigo.
+//!   codigo aleatorio pelo teclado, salva pelo Ctrl+S e o arquivo gravado traz o codigo;
+//! - teclado + shell (Linux): um xterm abre pelo executor governado com um `read` esperando,
+//!   recebe o codigo pelo teclado e o grava num arquivo, que tem de trazer o codigo.
 //!
 //! Sai 0 so com todas as checagens verdes; imprime `placar: N/M`. Nao mexa no teclado
 //! nem no mouse enquanto roda (uns 15 s).
@@ -75,7 +77,7 @@ fn main() {
         format!("pedido ({x},{y}), SO diz {onde:?}"),
     ));
 
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "linux"))]
     placar.push(teclado_e_shell(&mut entrada));
     fim(placar)
 }
@@ -145,6 +147,67 @@ fn teclado_e_shell(entrada: &mut EnigoInputProvider) -> (&'static str, bool, Str
             "Bloco de Notas pelo executor; {} gravado com o codigo: {}",
             arquivo.display(),
             lido.contains(&codigo)
+        ),
+    )
+}
+
+#[cfg(target_os = "linux")]
+fn teclado_e_shell(entrada: &mut EnigoInputProvider) -> (&'static str, bool, String) {
+    let codigo = uuid::Uuid::now_v7().simple().to_string();
+    let arquivo = std::env::temp_dir().join(format!("phxclaw-prova-{}.txt", &codigo[..12]));
+    let executor = ShellExecutor::new(ExecutionPolicy {
+        enabled: true,
+        denied_programs: vec!["sh".into(), "bash".into()],
+        ..ExecutionPolicy::default()
+    });
+    // o sh roda DENTRO do xterm: o executor lanca so o xterm, que nao esta negado
+    let lancado = executor.launch(&LaunchRequest::new(
+        "xterm",
+        vec![
+            "-geometry".into(),
+            "60x5+40+40".into(),
+            "-e".into(),
+            "sh".into(),
+            "-c".into(),
+            format!("read l; printf %s \"$l\" > '{}'", arquivo.display()),
+        ],
+    ));
+    if let Err(e) = lancado {
+        return ("teclado+shell", false, format!("lancar o xterm: {e}"));
+    }
+    std::thread::sleep(Duration::from_secs(2));
+    // sem gerenciador de janelas o foco segue o ponteiro: o cursor vai para dentro do xterm
+    let passos = [
+        (InputAction::MoveMouse { x: 120, y: 70 }, 300),
+        (
+            InputAction::Text {
+                text: codigo.clone(),
+            },
+            300,
+        ),
+        (
+            InputAction::Key {
+                key: "enter".into(),
+                state: "click".into(),
+            },
+            1500,
+        ),
+    ];
+    for (a, ms) in passos {
+        if let Err(e) = entrada.apply(&a) {
+            return ("teclado+shell", false, format!("entrada: {e}"));
+        }
+        std::thread::sleep(Duration::from_millis(ms));
+    }
+    let lido = std::fs::read_to_string(&arquivo).unwrap_or_default();
+    let _ = std::fs::remove_file(&arquivo);
+    (
+        "teclado+shell",
+        lido == codigo,
+        format!(
+            "xterm pelo executor; {} gravado com o codigo: {}",
+            arquivo.display(),
+            lido == codigo
         ),
     )
 }

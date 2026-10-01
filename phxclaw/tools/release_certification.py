@@ -10,7 +10,12 @@ pode rodar neste ambiente aparece BLOCKED com o motivo, nunca some e nunca vira 
 Cada resultado vai para phxclaw.native_verification_runs com o SHA-256 da saida, e o
 relatorio para reports/RELEASE_CERTIFICATION_v0.70.{json,md}.
 
-Uso: python3 tools/release_certification.py [--sem-caos]
+Uso: python3 tools/release_certification.py [--sem-caos] [--alvo linux|todos]
+--alvo linux (o padrao, decisao do dono em 01/10: «prioridade e o Linux do PhxClaw»):
+o portao multiplataforma de dispositivos sai da conta (fica no relatorio, nao
+obrigatorio) e entra device_pairing_wss_keyring_linux_e2e, medido pelos binarios com o
+chaveiro nativo; o desktop roda a prova num display FISICO (DISPLAY que nao e de um Xvfb)
+e, sem ele, fica BLOCKED com a corrida no Xvfb ao lado como evidencia nao obrigatoria.
 Ambiente: PGHOST/PGPORT (padrao /tmp:55432); PHXCLAW_E2E_OLLAMA_URL para o provider.
 
 Receita completa (sem ela, portoes que passam aparecem BLOCKED ou FAILED -- medido em 30/09:
@@ -71,8 +76,29 @@ def placar_cargo(saida: str) -> dict:
             "ignored": sum(x[2] for x in r)}
 
 
+def display_fisico() -> bool:
+    """DISPLAY de X que nao pertence a um Xvfb: o Xvfb prova o caminho do codigo, nao o
+    teclado e o mouse de uma maquina."""
+    disp = os.environ.get("DISPLAY", "")
+    if not disp:
+        return False
+    for cmd in Path("/proc").glob("[0-9]*/cmdline"):
+        try:
+            args = cmd.read_bytes().split(b"\0")
+        except OSError:
+            continue
+        if args and args[0].endswith(b"Xvfb") and disp.encode() in args:
+            return False
+    return True
+
+
+PROVA_DESKTOP = ("cargo run -q -p phxclaw-system-automation --example prova-desktop "
+                 "--features desktop-input,screen-capture 2>&1")
+
+
 def main() -> int:
     com_caos = "--sem-caos" not in sys.argv[1:]
+    alvo = "todos" if "todos" in sys.argv[1:] else "linux"
     portoes: list[dict] = []
 
     def portao(codigo, obrigatorio, cmd=None, env=None, bloqueio=None, detalhe=None, ok=None):
@@ -133,6 +159,25 @@ def main() -> int:
             portao(codigo, True,
                    "cargo test -q -p phxclaw-channel-providers --test telegram_e2e -- --ignored --nocapture 2>&1",
                    detalhe=lambda o: (re.search(r"entregue: .*", o) or [None])[0])
+        elif alvo == "linux" and codigo == "device_pairing_wss_keyring_multiplatform_e2e":
+            portao(codigo, False, bloqueio="fora do alvo linux (Windows, macOS, Android, iOS): "
+                   "medido pelo kit do dono; ver device_pairing_wss_keyring_linux_e2e")
+            portao("device_pairing_wss_keyring_linux_e2e", True,
+                   "python3 tests/devices/pareamento_linux.py 2>&1",
+                   detalhe=lambda o: (re.search(r"placar: .*", o) or [None])[0])
+        elif alvo == "linux" and codigo == "desktop_os_automation_e2e":
+            if display_fisico():
+                portao(codigo, True, PROVA_DESKTOP,
+                       detalhe=lambda o: (re.search(r"placar: .*", o) or [None])[0])
+            else:
+                portao(codigo, True, bloqueio="sem display fisico (DISPLAY ausente ou de um Xvfb): "
+                       "rode a certificacao numa sessao grafica Linux de verdade")
+            # o mesmo codigo no Xvfb: nao vale o portao, mas diz que o caminho funciona
+            portao("desktop_os_automation_xvfb", False,
+                   "Xvfb :94 -screen 0 1280x800x24 >/dev/null 2>&1 & X=$!; sleep 1; "
+                   "(DISPLAY=:94 timeout 60 xterm -geometry 40x10+600+500 -e 'sleep 55' &); sleep 2; "
+                   f"DISPLAY=:94 {PROVA_DESKTOP}; r=$?; kill $X; exit $r",
+                   detalhe=lambda o: (re.search(r"placar: .*", o) or [None])[0])
         elif codigo == "native_tauri_e2e":
             portao(codigo, True, "cargo build -q -p phxclaw-desktop && python3 tests/desktop/desktop_e2e.py 2>&1",
                    detalhe=lambda o: (re.search(r"placar: .*", o) or [None])[0])
@@ -150,6 +195,7 @@ def main() -> int:
     ambiente = f"{platform.system()} {platform.release()} {platform.machine()}"
     rel = {
         "product": "PhxClaw", "version": "0.70.0", "certified_at": agora, "environment": ambiente,
+        "target": alvo,
         "verdict": "CERTIFIED" if certificada else "NOT_CERTIFIED",
         "required_passed": sum(g["status"] == "passed" for g in obrig), "required_total": len(obrig),
         "gates": portoes,
@@ -180,13 +226,13 @@ def main() -> int:
     (out / "RELEASE_CERTIFICATION_v0.70.json").write_text(json.dumps(rel, indent=2, ensure_ascii=False) + "\n")
     md = [f"# Certificacao de release PhxClaw 0.70.0 -- {rel['verdict']}", "",
           f"Gerado por `tools/release_certification.py` em {agora} ({ambiente}). Nao se edita.", "",
-          f"Obrigatorios: **{rel['required_passed']}/{rel['required_total']}** passaram.", "",
+          f"Alvo: **{alvo}**. Obrigatorios: **{rel['required_passed']}/{rel['required_total']}** passaram.", "",
           "| Gate | Obrigatorio | Estado | Medido / motivo |", "|---|---|---|---|"]
     for g in portoes:
         info = g.get("reason") or json.dumps(g.get("measured"), ensure_ascii=False) if g.get("reason") or g.get("measured") else ""
         md.append(f"| `{g['gate']}` | {'sim' if g['required'] else 'nao'} | {g['status'].upper()} | {info} |")
     (out / "RELEASE_CERTIFICATION_v0.70.md").write_text("\n".join(md) + "\n")
-    print(f"\nveredito: {rel['verdict']} ({rel['required_passed']}/{rel['required_total']} obrigatorios)")
+    print(f"\nveredito: {rel['verdict']} ({rel['required_passed']}/{rel['required_total']} obrigatorios, alvo {alvo})")
     return 0 if certificada else 1
 
 

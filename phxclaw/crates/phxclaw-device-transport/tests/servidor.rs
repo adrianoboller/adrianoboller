@@ -369,3 +369,65 @@ async fn pareamento_recusado_nao_apaga_a_identidade_que_ja_vale() {
         "identidade perdida no pareamento recusado"
     );
 }
+
+/// Chaveiro que nao grava, como o Linux sem sessao DBus (medido em 01/10: "Unable to
+/// autolaunch a dbus-daemon").
+struct ChaveiroQuebrado;
+impl KeyProvider for ChaveiroQuebrado {
+    fn provider_id(&self) -> &str {
+        "quebrado"
+    }
+    fn is_release_safe(&self) -> bool {
+        false
+    }
+    fn load(&self, _: &str) -> Result<KeyMaterial, KeyProviderError> {
+        Err(KeyProviderError::NotFound)
+    }
+    fn store(&self, _: &str, _: &KeyMaterial) -> Result<(), KeyProviderError> {
+        Err(KeyProviderError::Provider("sem dbus".into()))
+    }
+    fn delete(&self, _: &str) -> Result<(), KeyProviderError> {
+        Ok(())
+    }
+}
+
+/// Se o chaveiro nao grava, o pareamento para ANTES de gastar o token de uso unico: o
+/// mesmo token ainda pareia quando o chaveiro volta. E nada provisorio fica para tras.
+#[tokio::test]
+async fn chaveiro_que_nao_grava_nao_gasta_o_token() {
+    let Some((url, ca, _, tenant)) = subir().await else {
+        return;
+    };
+    let no = Uuid::now_v7();
+    let pedido_do_no = || EnrollmentRequest {
+        tenant_uuid: tenant,
+        node_uuid: no,
+        display_name: "servidor sem dbus".into(),
+        platform: DevicePlatform::Linux,
+        agent_version: "0.70.0".into(),
+        public_key_ed25519_b64: String::new(),
+        enrollment_token: TOKEN.into(),
+        capabilities: platform_default_capabilities(DevicePlatform::Linux),
+    };
+    let mut c = WssDeviceClient::connect_with_ca(&url, &ca).await.unwrap();
+    let Err(erro) = parear(&mut c, &ChaveiroQuebrado, pedido_do_no()).await else {
+        panic!("pareou sem ter onde guardar a chave");
+    };
+    assert!(
+        matches!(erro, DeviceTransportError::KeyProvider(_)),
+        "{erro}"
+    );
+
+    let ch = Chaveiro::default();
+    let mut c = WssDeviceClient::connect_with_ca(&url, &ca).await.unwrap();
+    assert!(
+        parear(&mut c, &ch, pedido_do_no()).await.is_ok(),
+        "o token se gastou na tentativa em que o chaveiro falhou"
+    );
+    let chaves: Vec<String> = ch.0.lock().unwrap().keys().cloned().collect();
+    assert_eq!(
+        chaves,
+        vec![format!("device/{no}/ed25519")],
+        "sobrou provisorio"
+    );
+}

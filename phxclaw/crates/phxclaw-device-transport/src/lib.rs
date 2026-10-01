@@ -132,10 +132,18 @@ impl NodeIdentity {
 
     /// Grava a semente no chaveiro, por cima da que houver para este no.
     pub fn guardar(&self, provider: &dyn KeyProvider) -> Result<(), DeviceTransportError> {
+        self.guardar_como(provider, &key_id(self.node_uuid))
+    }
+
+    fn guardar_como(
+        &self,
+        provider: &dyn KeyProvider,
+        id: &str,
+    ) -> Result<(), DeviceTransportError> {
         let mut seed = self.signing_key.to_bytes();
         let material = KeyMaterial::new(seed.to_vec());
         seed.fill(0);
-        provider.store(&key_id(self.node_uuid), &material?)?;
+        provider.store(id, &material?)?;
         Ok(())
     }
 
@@ -206,10 +214,18 @@ fn hex_lower(bytes: &[u8]) -> String {
 pub struct WssDeviceClient {
     socket: WebSocketStream<MaybeTlsStream<TcpStream>>,
 }
-/// Pareamento do lado do no. A chave nasce em memoria e so vai para o chaveiro depois do
-/// `device.enrolled`: gravada antes, um pareamento RECUSADO (token ja gasto, ou alguem
-/// repetindo o token) sobrescrevia a identidade que o servidor conhece, e o no nunca mais
-/// religava -- medido em 01/10 com o binario Windows ("invalid signature" no hello).
+/// Pareamento do lado do no. Os dois jeitos ingenuos de guardar a chave perdem algo, e os
+/// dois foram medidos em 01/10:
+/// - gravar no lugar definitivo ANTES do envio: um pareamento recusado (token ja gasto, ou
+///   alguem repetindo o token) sobrescrevia a identidade que o servidor conhece, e o no
+///   nunca mais religava ("invalid signature" no hello, binario Windows);
+/// - gravar so DEPOIS do `device.enrolled`: num Linux sem sessao DBus o servidor aceitava,
+///   o token de uso unico se gastava, e so entao o chaveiro falhava -- no sem identidade e
+///   sem token.
+///
+/// Por isso a chave vai primeiro para um nome PROVISORIO: se o chaveiro nao grava, nada
+/// sai pelo fio; se o servidor recusa, o provisorio some e a identidade antiga fica; se
+/// aceita, a chave passa ao nome definitivo.
 /// A chave publica do pedido e preenchida aqui, com a da chave que sera guardada.
 pub async fn parear(
     cliente: &mut WssDeviceClient,
@@ -217,22 +233,29 @@ pub async fn parear(
     mut pedido: EnrollmentRequest,
 ) -> Result<NodeIdentity, DeviceTransportError> {
     let id = NodeIdentity::efemera(pedido.node_uuid)?;
+    let provisoria = format!("{}-pendente", key_id(pedido.node_uuid));
+    id.guardar_como(chaveiro, &provisoria)?;
     pedido.public_key_ed25519_b64 = id.public_key_ed25519_b64.clone();
-    let corpo = serde_json::to_vec(&pedido)
-        .map_err(|e| DeviceTransportError::Serialization(e.to_string()))?;
-    cliente
-        .send(&id.sign_envelope(Uuid::nil(), 0, "device.enroll", &corpo)?)
-        .await?;
-    let r = cliente.receive().await?;
-    if r.kind != "device.enrolled" {
-        let motivo = r
-            .decode_and_verify_body()
-            .map(|b| String::from_utf8_lossy(&b).into_owned())
-            .unwrap_or_else(|_| r.kind.clone());
-        return Err(DeviceTransportError::PairingRejected(motivo));
+    let resultado = async {
+        let corpo = serde_json::to_vec(&pedido)
+            .map_err(|e| DeviceTransportError::Serialization(e.to_string()))?;
+        cliente
+            .send(&id.sign_envelope(Uuid::nil(), 0, "device.enroll", &corpo)?)
+            .await?;
+        let r = cliente.receive().await?;
+        if r.kind != "device.enrolled" {
+            let motivo = r
+                .decode_and_verify_body()
+                .map(|b| String::from_utf8_lossy(&b).into_owned())
+                .unwrap_or_else(|_| r.kind.clone());
+            return Err(DeviceTransportError::PairingRejected(motivo));
+        }
+        id.guardar(chaveiro)
     }
-    id.guardar(chaveiro)?;
-    Ok(id)
+    .await;
+    // aceito ou nao, o provisorio sai: a chave ja esta no nome definitivo, ou nao serve
+    let _ = chaveiro.delete(&provisoria);
+    resultado.map(|()| id)
 }
 
 impl WssDeviceClient {

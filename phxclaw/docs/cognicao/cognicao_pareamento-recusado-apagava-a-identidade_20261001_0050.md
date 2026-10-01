@@ -36,3 +36,19 @@ nó legítimo.
 A chave nasce em memória e só vai para o chaveiro depois do `device.enrolled`. O fluxo
 saiu do `main.rs` do nó para `parear()` na biblioteca, e o nó e o teste chamam a mesma
 função: o teste prova o caminho que o binário usa.
+
+## Alcance, medido na mesma madrugada (01/10, 01:40)
+
+O conserto acima, gravar só depois do `device.enrolled`, trocou um risco pelo outro. No
+Linux sem sessão DBus o servidor aceitava, o token de uso único se gastava, e só então o
+Secret Service falhava: o nó ficava sem identidade e sem token. As duas ordens ingênuas
+perdem alguma coisa. O que resolve as duas é gravar primeiro sob um nome provisório: se o
+chaveiro não grava, nada sai pelo fio; se o servidor recusa, o provisório some; se aceita,
+a chave passa ao nome definitivo.
+
+Evidência: `chaveiro_que_nao_grava_nao_gasta_o_token` reprova sem a gravação provisória e
+passa com ela; `tests/devices/pareamento_linux.py` (binários + gnome-keyring) dá 4/4 e,
+sem apagar o provisório, 3/4 com duas chaves no Secret Service.
+
+**O que fica:** quando um conserto muda a **ordem** entre um efeito local e um efeito
+remoto irreversível (gastar um token), testar as duas falhas: a do remoto e a do local.

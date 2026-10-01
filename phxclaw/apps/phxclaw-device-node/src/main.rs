@@ -11,8 +11,8 @@
 //!   sem chaveiro do sistema); sem isso vale o chaveiro, e chaveiro que nao persiste recusa
 use phxclaw_device_transport::servidor::Boasvindas;
 use phxclaw_device_transport::{
-    DevicePlatform, EnrollmentRequest, NodeHello, NodeIdentity, WssDeviceClient, parear,
-    platform_default_capabilities,
+    DevicePlatform, DeviceTransportError, EnrollmentRequest, NodeHello, NodeIdentity,
+    WssDeviceClient, parear, platform_default_capabilities,
 };
 use phxclaw_key_provider::{ArquivoKeyProvider, KeyProvider, OsKeyringProvider};
 use std::env;
@@ -62,7 +62,18 @@ use PHXCLAW_DEVICE_KEYSTORE=arquivo:/pasta"
                 enrollment_token: token,
                 capabilities: platform_default_capabilities(platform),
             };
-            let id = parear(&mut client, keyring.as_ref(), pedido).await?;
+            let id = parear(&mut client, keyring.as_ref(), pedido)
+                .await
+                .map_err(|e| match e {
+                    // o erro cru ("Secret Service: no result found") manda procurar o banco
+                    // de chaves, e o que falta e a sessao do chaveiro; o token nao se gastou
+                    DeviceTransportError::KeyProvider(_) => format!(
+                        "{e}. O chaveiro do sistema nao gravou (sem sessao DBus/Secret \
+Service?). O token NAO foi gasto: rode de novo numa sessao com chaveiro, ou use \
+PHXCLAW_DEVICE_KEYSTORE=arquivo:/pasta"
+                    ),
+                    e => e.to_string(),
+                })?;
             seq += 1;
             println!("pareado");
             id
