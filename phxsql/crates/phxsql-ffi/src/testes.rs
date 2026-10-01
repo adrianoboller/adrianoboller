@@ -1963,3 +1963,84 @@ fn panico_no_meio_da_cascata_completa_na_abertura_sem_punho_vivo() {
     assert_eq!((em_cinco, em_seis), (0, 2));
     assert!(phxsql_store::marca::marcas_em(&dir).is_empty());
 }
+
+// ================================================ 615: a faixa pela biblioteca
+
+/// **A faixa declarada pela ABI chega ao motor** -- o mesmo
+/// `no::definir_inicio_da_sequencia` do servidor (pedido 615).
+///
+/// A tabela tem `passo = 2` e foi numerada pelo no da faixa 1 (1, 3). Com a
+/// faixa 0 declarada ela recusa abrir, como no servidor; com a 1, abre e o
+/// numero novo e o 5.
+///
+/// # O vermelho
+///
+/// `phx_definir_inicio_da_sequencia` sem a chamada ao motor: a faixa do
+/// processo continua a 1 da criacao, a tabela abre com a 0 declarada, e o
+/// primeiro `assert` cai.
+///
+/// O «nao declarado» (le, e recusa so a numeracao) se prova pelo binario da
+/// CLI, `crates/phxsql-cli/tests/faixa-da-sequencia.rs`: e global do
+/// PROCESSO, e um teste daqui nao tem processo novo para provar o estado de
+/// partida.
+#[test]
+fn a_faixa_declarada_pela_abi_chega_ao_motor() {
+    use phxsql_core::types::ColumnType;
+    unsafe {
+        let area = Area::nova("faixa-615");
+        let caminho = area.txt();
+        let (p, t) = par(&caminho);
+        let (n, nt) = par("app");
+        let mut base: *mut Punho<BaseFFI> = std::ptr::null_mut();
+        assert_eq!(phx_base_abrir(p, t, n, nt, PHX_CRIAR, &mut base), PHX_OK);
+        assert_eq!(phx_base_fechar(base), PHX_OK);
+
+        assert_eq!(phx_definir_inicio_da_sequencia(1), PHX_OK);
+        let dir = area.0.join("app");
+        let esq = Schema::new(
+            "numerada",
+            vec![
+                Column::new("id", ColumnType::Sequence),
+                Column::new("nome", ColumnType::Str(20)),
+            ],
+            vec![IndexDef::new("porId", vec![IndexColumn::asc(0)]).unico()],
+        )
+        .unwrap()
+        .com_passo_da_sequencia(2)
+        .unwrap();
+        let mut tb = Table::criar(&dir, esq).unwrap();
+        for _ in 0..2 {
+            tb.inserir(&[Value::Null, Value::Str("x".into())]).unwrap();
+        }
+        tb.sincronizar().unwrap();
+        drop(tb);
+
+        let mut base: *mut Punho<BaseFFI> = std::ptr::null_mut();
+        assert_eq!(phx_base_abrir(p, t, n, nt, 0, &mut base), PHX_OK);
+        let (tn, tt) = par("numerada");
+        let mut tab: *mut Punho<TabelaFFI> = std::ptr::null_mut();
+
+        assert_eq!(phx_definir_inicio_da_sequencia(0), PHX_OK);
+        let r = phx_tabela_abrir(base, tn, tt, &mut tab);
+        let erro = erro_agora();
+        assert_ne!(r, PHX_OK, "a faixa 0 abriu a tabela da faixa 1");
+        assert!(erro.contains("fora da faixa"), "{erro}");
+
+        assert_eq!(phx_definir_inicio_da_sequencia(1), PHX_OK);
+        let r = phx_tabela_abrir(base, tn, tt, &mut tab);
+        assert_eq!(r, PHX_OK, "a faixa 1 nao abriu: {}", erro_agora());
+        let linha = [v_nulo(), v_bytes(PHX_TEXTO, b"y")];
+        let mut rowid = 0u64;
+        let r = phx_inserir(tab, linha.as_ptr(), linha.len(), &mut rowid);
+        assert_eq!(r, PHX_OK, "inserir: {}", erro_agora());
+        assert_eq!(phx_tabela_fechar(tab), PHX_OK);
+        assert_eq!(phx_base_fechar(base), PHX_OK);
+
+        let mut tb = Table::abrir(&dir, "numerada").unwrap();
+        let id = tb.ler(rowid).unwrap().unwrap()[0].clone();
+        // Devolve o processo a faixa de partida dos vizinhos: nenhum deles
+        // usa tabela com faixa, mas a identidade do no e do processo.
+        phxsql_store::no::definir_inicio_da_sequencia(0);
+        assert_eq!(id, Value::UInt(5), "o numero novo nao saiu na faixa 1");
+    }
+}

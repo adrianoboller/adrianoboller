@@ -232,6 +232,12 @@ int32_t phx_ultimo_erro(uint8_t *destino, size_t cap, size_t *precisa);
  * NUL-terminado, nunca se libera. */
 const char *phx_erro_nome(int32_t codigo);
 
+/* A faixa da Sequence deste aparelho -- o mesmo replicacao.inicio_da_sequencia
+ * do config.json do servidor. Vale para o PROCESSO; chame antes de abrir a
+ * base. Sem ela, a tabela que ja numera fora da faixa 0 abre para ler e
+ * recusa gravar numero novo, em vez de numera-lo na faixa de outro no. */
+int32_t phx_definir_inicio_da_sequencia(uint64_t inicio);
+
 /* ----------------------------------------------------------------- base */
 
 int32_t phx_base_abrir(const uint8_t *caminho, size_t caminho_tam,

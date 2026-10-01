@@ -488,17 +488,28 @@ impl Clone for Sobreposicao {
 }
 
 /// Os contadores que a numeracao consome: o `.reg` de verdade, ou a previsao.
+///
+/// As duas portas passam pelo `exigir_faixa_para_numerar` (pedido 615), e nas
+/// DUAS implementacoes: a previsao e a gravacao fazem a mesma conta, e a que
+/// esquecesse a conferencia preveria um numero que a outra recusa.
 trait Contadores {
-    fn proxima_sequencia(&mut self) -> u64;
-    fn anotar_sequencia(&mut self, usado: u64);
+    fn proxima_sequencia(&mut self) -> Result<u64>;
+    fn anotar_sequencia(&mut self, usado: u64) -> Result<()>;
 }
 
 impl Contadores for RegFile {
-    fn proxima_sequencia(&mut self) -> u64 {
-        self.proxima_da_sequencia()
+    fn proxima_sequencia(&mut self) -> Result<u64> {
+        self.exigir_faixa_para_numerar()?;
+        Ok(self.proxima_da_sequencia())
     }
-    fn anotar_sequencia(&mut self, usado: u64) {
-        RegFile::anotar_sequencia(self, usado)
+    fn anotar_sequencia(&mut self, usado: u64) -> Result<()> {
+        // So quando o contador vai ANDAR: abaixo dele a anotacao nao mexe em
+        // nada, e recusar ali barraria todo `atualizar` que reenvia o numero.
+        if usado >= self.sequencia_atual() {
+            self.exigir_faixa_para_numerar()?;
+        }
+        RegFile::anotar_sequencia(self, usado);
+        Ok(())
     }
 }
 
@@ -510,13 +521,18 @@ struct ContadorPrevisto<'a> {
 }
 
 impl Contadores for ContadorPrevisto<'_> {
-    fn proxima_sequencia(&mut self) -> u64 {
+    fn proxima_sequencia(&mut self) -> Result<u64> {
+        self.reg.exigir_faixa_para_numerar()?;
         let (valor, seguinte) = self.reg.proxima_sem_andar(*self.proxima);
         *self.proxima = seguinte;
-        valor
+        Ok(valor)
     }
-    fn anotar_sequencia(&mut self, usado: u64) {
+    fn anotar_sequencia(&mut self, usado: u64) -> Result<()> {
+        if usado >= *self.proxima {
+            self.reg.exigir_faixa_para_numerar()?;
+        }
         *self.proxima = self.reg.anotada(*self.proxima, usado);
+        Ok(())
     }
 }
 
@@ -4497,12 +4513,12 @@ impl Table {
                 Value::Null => {
                     let v = match anterior {
                         Some(linha) => linha[i].clone(),
-                        None => Value::UInt(contador.proxima_sequencia()),
+                        None => Value::UInt(contador.proxima_sequencia()?),
                     };
                     novos.get_or_insert_with(|| valores.to_vec())[i] = v;
                 }
-                Value::UInt(n) => contador.anotar_sequencia(*n),
-                Value::Int(n) if *n >= 0 => contador.anotar_sequencia(*n as u64),
+                Value::UInt(n) => contador.anotar_sequencia(*n)?,
+                Value::Int(n) if *n >= 0 => contador.anotar_sequencia(*n as u64)?,
                 outro => {
                     return Err(PhxError::Tipo(format!(
                         "coluna de sequencia espera numero inteiro, recebeu {outro:?}"

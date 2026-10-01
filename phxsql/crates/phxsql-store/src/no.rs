@@ -25,13 +25,16 @@
 //!
 //! [`COLUNA_ROWSTAMP`]: phxsql_core::schema::COLUNA_ROWSTAMP
 
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 /// Ultimo carimbo de criacao emitido por este processo. 0 = nenhum ainda.
 static ULTIMO_CARIMBO: AtomicU64 = AtomicU64::new(0);
 
 /// Inicio da faixa da `Sequence` deste no. Ver [`definir_inicio_da_sequencia`].
 static INICIO_DA_SEQUENCIA: AtomicU64 = AtomicU64::new(0);
+
+/// Alguem deste processo ja DECLAROU a faixa? Ver [`faixa_declarada`].
+static FAIXA_DECLARADA: AtomicBool = AtomicBool::new(false);
 
 /// O proximo carimbo de criacao. Estritamente maior que todos os anteriores.
 ///
@@ -105,6 +108,30 @@ pub fn ultimo_carimbo() -> u64 {
 /// pelo conserto e em silencio. Aniversario nao particiona espaco de chave.
 pub fn definir_inicio_da_sequencia(inicio: u64) {
     INICIO_DA_SEQUENCIA.store(inicio, Ordering::SeqCst);
+    FAIXA_DECLARADA.store(true, Ordering::SeqCst);
+}
+
+/// Este processo declarou em que faixa numera? (pedido 615)
+///
+/// O servidor declara SEMPRE, no `Servidor::novo`, do
+/// `replicacao.inicio_da_sequencia` -- inclusive o zero de quem nao escreveu
+/// o campo. A CLI e a FFI recebem so uma pasta e nao tem `config.json`:
+/// declaram pela bandeira `--inicio-da-sequencia` e pela
+/// `phx_definir_inicio_da_sequencia`, as duas chamando
+/// [`definir_inicio_da_sequencia`] -- o mesmo motor do servidor.
+///
+/// # Por que o «nao declarado» existe, e nao e so o zero
+///
+/// Porque o zero e uma faixa de verdade, a de um no. Quem nao declarou nao
+/// sabe a qual faixa pertence, e as duas respostas erradas custam caro:
+/// recusar ABRIR (o comportamento de ate 01/10/2026) deixava a tabela de
+/// outra faixa sem `info`, `listar` nem `verificar` por ferramenta oficial;
+/// numerar como zero poria o numero na faixa de outro no, calado. Entao a
+/// leitura passa e so a NUMERACAO pede a declaracao -- e so na tabela cujo
+/// contador ja esta fora da faixa zero. Nas outras o nao declarado numera
+/// como zero, que e o comportamento de sempre de quem nunca declarou.
+pub fn faixa_declarada() -> bool {
+    FAIXA_DECLARADA.load(Ordering::SeqCst)
 }
 
 /// Em que faixa este no numera. Ver [`definir_inicio_da_sequencia`].
