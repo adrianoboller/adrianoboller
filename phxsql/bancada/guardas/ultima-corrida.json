@@ -2841,9 +2841,9 @@
       "id": "excluir-tabela-sem-fsync-da-pasta",
       "titulo": "`excluir_tabela` respondia «excluída» com os `unlink` só no cache do núcleo: numa queda a tabela voltava, inteira ou pela metade",
       "veredito": "PROVADA",
-      "segundos": 8.76,
+      "segundos": 6.51,
       "notas": [],
-      "quando": "2026-09-30 23:45"
+      "quando": "2026-10-01 01:12"
     },
     {
       "id": "esvaziar-lixeira-sem-fsync-da-pasta",
@@ -2964,6 +2964,38 @@
       "segundos": 19.01,
       "notas": [],
       "quando": "2026-10-01 01:00"
+    },
+    {
+      "id": "cadastro-regravado-sem-fsync",
+      "titulo": "`gatilhos.json`, `procedimentos.json` e `visoes.json` eram regravados no lugar e sem `fsync`: a queda no meio deixava JSON pela metade, e o arranque caía",
+      "veredito": "PROVADA",
+      "segundos": 54.96,
+      "notas": [],
+      "quando": "2026-10-01 01:07"
+    },
+    {
+      "id": "cadastro-apagado-sem-fsync-da-pasta",
+      "titulo": "o último gatilho, procedimento ou visão que saía apagava o arquivo sem `fsync` da pasta: numa queda o excluído voltava",
+      "veredito": "PROVADA",
+      "segundos": 55.16,
+      "notas": [],
+      "quando": "2026-10-01 01:09"
+    },
+    {
+      "id": "gatilho-orfao-na-queda-do-excluir-tabela",
+      "titulo": "`excluir_tabela` levava ao disco o sumiço da tabela ANTES do `gatilhos.json`: a queda entre os dois deixava o gatilho de uma tabela que não existe mais",
+      "veredito": "PROVADA",
+      "segundos": 53.41,
+      "notas": [],
+      "quando": "2026-10-01 01:11"
+    },
+    {
+      "id": "erro-no-meio-da-exclusao-sem-fsync",
+      "titulo": "o erro no meio do `excluir_tabela` esquecia os nomes que já tinham saído sem `fsync` da pasta: numa queda a tabela voltava pela metade",
+      "veredito": "PROVADA",
+      "segundos": 7.04,
+      "notas": [],
+      "quando": "2026-10-01 01:11"
     },
     {
       "id": "cifra-do-fio-imposta",

@@ -407,6 +407,14 @@ dia, nunca no desejado:
   do dia (539 entradas mais 1 aposentada): duas guardas -- o resultado do
   DbLink so com teto de linhas (`dblink-sem-teto-de-bytes`) e o `max_mib`
   que ninguem le (`dblink-max-mib-sem-leitor`). Contado pelo `--catraca`.
+  **SUBIU para 551 em 01/10/2026** (pedido 595): quatro guardas -- o cadastro
+  por database regravado sem `fsync` (`cadastro-regravado-sem-fsync`), o
+  ultimo que sai sem `fsync` da pasta (`cadastro-apagado-sem-fsync-da-pasta`),
+  o `gatilhos.json` depois do sumico da tabela
+  (`gatilho-orfao-na-queda-do-excluir-tabela`) e o erro no meio da exclusao
+  (`erro-no-meio-da-exclusao-sem-fsync`). 540 + 4 = 544, contado pelo
+  `--catraca`.
+  No merge com o 546 e o 534/535 (que levaram o piso a 547): 547 + 4 = 551.
   impedir. Ele e a unica coisa nesta regua que reprova o APAGAMENTO; tudo o
   mais aqui reprova o envelhecimento.
 
@@ -515,7 +523,7 @@ TETO_TESTE_MORTO = 0
 TETO_TRECHO_AMBIGUO = 0
 TETO_TESTE_FORA_DO_BINARIO = 0
 TETO_TESTE_SEM_MODULO = 0
-PISO_DAS_ENTRADAS = 547
+PISO_DAS_ENTRADAS = 551
 
 # ------------------------------------------------------------- APOSENTADAS
 #

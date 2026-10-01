@@ -1229,6 +1229,11 @@ pub struct Servidor {
     ha_gatilhos: AtomicBool,
     /// As visoes (`CREATE VIEW`), por database, guardadas como TEXTO.
     visoes: Mutex<crate::visoes::Visoes>,
+    /// A vez de gravar o cadastro por database (`gatilhos.json`,
+    /// `procedimentos.json`, `visoes.json`) -- pedido 595. Separada das
+    /// travas dos registros para o `fsync` nao segurar quem so le; ver
+    /// `gravar_rotinas`.
+    cadastro_no_disco: Mutex<()>,
     /// Espelho de "existe alguma visao?", pelo mesmo motivo do `ha_gatilhos`:
     /// a op `sql` pergunta isto ANTES de olhar o nome do `FROM`, e num
     /// servidor sem visao nenhuma -- que e o de hoje -- ela paga um load
@@ -1868,6 +1873,7 @@ impl Servidor {
             rotinas: Mutex::new(rotinas),
             ha_gatilhos,
             visoes: Mutex::new(visoes),
+            cadastro_no_disco: Mutex::new(()),
             ha_visoes,
             max_linhas_vivo: AtomicU64::new(max_linhas),
             espelho_vivo: AtomicBool::new(espelho),
@@ -13301,15 +13307,19 @@ impl Servidor {
                 }
             }
         }
-        let mut v = self.visoes.tomar("visoes")?;
-        let criada = v.criar(
-            &base,
-            &nome,
-            &sql,
-            sessao.login(),
-            p.booleano_ou("substituir", false),
-        )?;
-        self.ha_visoes.store(v.ha_visoes(), Ordering::Relaxed);
+        let (criada, devido) = {
+            let mut v = self.visoes.tomar("visoes")?;
+            let feito = v.criar(
+                &base,
+                &nome,
+                &sql,
+                sessao.login(),
+                p.booleano_ou("substituir", false),
+            )?;
+            self.ha_visoes.store(v.ha_visoes(), Ordering::Relaxed);
+            feito
+        };
+        self.gravar_visoes(Some(devido))?;
         Ok(Json::objeto(vec![
             ("database", Json::texto_de(&base)),
             ("visao", criada.para_json()),
@@ -13340,9 +13350,14 @@ impl Servidor {
     fn op_excluir_visao(&self, p: &Json) -> Result<Json> {
         let base = p.texto_ou("database", "").trim().to_string();
         let nome = p.texto_ou("nome", "").trim().to_string();
-        let mut v = self.visoes.tomar("visoes")?;
-        let saiu = v.excluir(&base, &nome)?;
-        self.ha_visoes.store(v.ha_visoes(), Ordering::Relaxed);
+        let devido = {
+            let mut v = self.visoes.tomar("visoes")?;
+            let devido = v.excluir(&base, &nome);
+            self.ha_visoes.store(v.ha_visoes(), Ordering::Relaxed);
+            devido
+        };
+        let saiu = devido.is_some();
+        self.gravar_visoes(devido)?;
         Ok(Json::objeto(vec![
             ("database", Json::texto_de(&base)),
             ("nome", Json::texto_de(&nome)),
@@ -20039,23 +20054,50 @@ impl Servidor {
         }
         let dados = self.travar_dados()?;
         let db = dados.abrir_database(database)?;
-        let (apagados, pendente) = db.excluir_tabela_adiando_o_fsync(tabela)?;
+        let (apagados, pendente) = db.excluir_tabela_adiando_o_fsync(tabela);
+        let apagados = match apagados {
+            Ok(a) => a,
+            Err(e) => {
+                // Pedido 595: o erro no meio deixa nomes que JA sairam, e eles
+                // devem o `fsync` da pasta como no caminho feliz -- fora da
+                // trava tambem. A recusa do disco, se vier, fala mais alto.
+                drop(db);
+                drop(dados);
+                pendente.levar_ao_disco()?;
+                return Err(e);
+            }
+        };
         self.renomear_nas_sujas(database, tabela, None);
         self.esquecer_diario(database, tabela);
         // Os gatilhos da tabela saem junto, como no MySQL(R): um orfao
-        // dispararia contra uma homonima futura que nao tem nada com ele.
+        // dispararia contra uma homonima futura que nao tem nada com ele. Sob
+        // a trava sai so da MEMORIA; o `gatilhos.json` vai ao disco depois.
         let mut gatilhos_apagados = 0usize;
-        if self.ha_gatilhos.load(Ordering::Relaxed) {
-            let mut r = self.rotinas.tomar("rotinas")?;
-            gatilhos_apagados = r.excluir_gatilhos_da_tabela(database, tabela)?;
-            self.ha_gatilhos.store(r.ha_gatilhos(), Ordering::Relaxed);
-        }
-        // Pedido 591: o `fsync` da pasta, onde moravam os nomes que sairam,
-        // fora da trava e antes da resposta -- sem ele a tabela «excluida»
-        // volta numa queda, inteira ou pela metade.
+        let mut gatilhos_por_gravar = None;
+        let rotinas = if self.ha_gatilhos.load(Ordering::Relaxed) {
+            self.rotinas.tomar("rotinas").map(|mut r| {
+                (gatilhos_apagados, gatilhos_por_gravar) =
+                    r.excluir_gatilhos_da_tabela(database, tabela);
+                self.ha_gatilhos.store(r.ha_gatilhos(), Ordering::Relaxed);
+            })
+        } else {
+            Ok(())
+        };
         drop(db);
         drop(dados);
+        // Pedido 595, e nesta ORDEM: primeiro o `gatilhos.json` sem os
+        // gatilhos dela, duravel; depois o `fsync` da pasta onde moravam os
+        // nomes que sairam (591). Ao contrario, uma queda entre os dois
+        // deixava a tabela fora do disco e o gatilho DENTRO -- e ele
+        // dispararia sobre a homonima que alguem criasse depois, que e
+        // escrever no dado de outro. Nesta ordem a queda entre os dois pode,
+        // no maximo, devolver a tabela sem os gatilhos de uma exclusao que o
+        // cliente nunca ouviu terminar, e que ele repete.
+        let gravou = rotinas.and_then(|()| self.gravar_rotinas(gatilhos_por_gravar));
+        // O `fsync` da pasta vem mesmo se o cadastro falhou: os nomes ja
+        // sairam do disco, e devolve-los numa queda e o defeito do 591.
         pendente.levar_ao_disco()?;
+        gravou?;
         Ok(Json::objeto(vec![
             ("database", Json::texto_de(database)),
             ("tabela", Json::texto_de(tabela)),
@@ -20728,12 +20770,13 @@ impl Servidor {
                 // O database ja e o dono do arquivo; guardado dentro dele,
                 // o campo seria redundancia que um dia discorda.
                 def.database = String::new();
-                let g = {
+                let (g, devido) = {
                     let mut r = self.rotinas.tomar("rotinas")?;
-                    let g = r.criar_gatilho(&base, def, sessao.login())?;
+                    let feito = r.criar_gatilho(&base, def, sessao.login())?;
                     self.ha_gatilhos.store(r.ha_gatilhos(), Ordering::Relaxed);
-                    g
+                    feito
                 };
+                self.gravar_rotinas(Some(devido))?;
                 Ok(Json::objeto(vec![
                     ("gatilho", Json::texto_de(&g.nome)),
                     ("tabela", Json::texto_de(&g.tabela)),
@@ -20746,12 +20789,14 @@ impl Servidor {
                 exigir_base(&base_do_pedido)?;
                 self.exigir_administrar_rotina(sessao, &base_do_pedido, "")?;
                 self.recusar_somente_leitura("excluir gatilho")?;
-                let saiu = {
+                let devido = {
                     let mut r = self.rotinas.tomar("rotinas")?;
-                    let saiu = r.excluir_gatilho(&base_do_pedido, &nome)?;
+                    let devido = r.excluir_gatilho(&base_do_pedido, &nome);
                     self.ha_gatilhos.store(r.ha_gatilhos(), Ordering::Relaxed);
-                    saiu
+                    devido
                 };
+                let saiu = devido.is_some();
+                self.gravar_rotinas(devido)?;
                 if !saiu && !se_existe {
                     return Err(PhxError::NaoEncontrado(format!(
                         "gatilho {nome:?} nao existe em {base_do_pedido}"
@@ -20780,12 +20825,12 @@ impl Servidor {
                 self.exigir_administrar_rotina(sessao, &base_do_pedido, "")?;
                 self.recusar_somente_leitura("criar procedimento")?;
                 let quantos = def.parametros.len();
-                let nome = {
+                let (criado, devido) = {
                     let mut r = self.rotinas.tomar("rotinas")?;
                     r.criar_procedimento(&base_do_pedido, def, sessao.login())?
-                        .nome
-                        .clone()
                 };
+                self.gravar_rotinas(Some(devido))?;
+                let nome = criado.nome.clone();
                 Ok(Json::objeto(vec![
                     ("procedimento", Json::texto_de(nome)),
                     ("parametros", Json::de_u64(quantos as u64)),
@@ -20796,10 +20841,12 @@ impl Servidor {
                 exigir_base(&base_do_pedido)?;
                 self.exigir_administrar_rotina(sessao, &base_do_pedido, "")?;
                 self.recusar_somente_leitura("excluir procedimento")?;
-                let saiu = {
+                let devido = {
                     let mut r = self.rotinas.tomar("rotinas")?;
-                    r.excluir_procedimento(&base_do_pedido, &nome)?
+                    r.excluir_procedimento(&base_do_pedido, &nome)
                 };
+                let saiu = devido.is_some();
+                self.gravar_rotinas(devido)?;
                 if !saiu && !se_existe {
                     return Err(PhxError::NaoEncontrado(format!(
                         "procedimento {nome:?} nao existe em {base_do_pedido}"
@@ -20946,6 +20993,36 @@ impl Servidor {
             )));
         }
         Ok(())
+    }
+
+    /// Leva ao disco o arquivo de rotinas que uma mudanca deixou devendo --
+    /// pedido 595. O retrato sai sob a trava do registro (barato) e o
+    /// `fsync` acontece FORA dela e fora da trava global: a escrita com
+    /// gatilho, que le o registro a cada linha, nao espera o disco de um
+    /// `CREATE TRIGGER`.
+    ///
+    /// `cadastro_no_disco` serializa tirar-e-gravar: sem ele, dois `CREATE`
+    /// concorrentes podiam tirar o retrato numa ordem e gravar na outra, e o
+    /// disco ficaria com o mais VELHO -- sem o gatilho de quem ja ouviu
+    /// «criado».
+    fn gravar_rotinas(&self, devido: Option<crate::rotinas::PorGravar>) -> Result<()> {
+        let Some(devido) = devido else {
+            return Ok(());
+        };
+        let _vez = self.cadastro_no_disco.tomar("cadastro_no_disco")?;
+        let retrato = self.rotinas.tomar("rotinas")?.retrato(&devido);
+        retrato.gravar()
+    }
+
+    /// O [`Self::gravar_rotinas`] do `visoes.json`, pela mesma vez e pelo
+    /// mesmo motor de disco.
+    fn gravar_visoes(&self, devido: Option<crate::visoes::PorGravar>) -> Result<()> {
+        let Some(devido) = devido else {
+            return Ok(());
+        };
+        let _vez = self.cadastro_no_disco.tomar("cadastro_no_disco")?;
+        let retrato = self.visoes.tomar("visoes")?.retrato(&devido);
+        retrato.gravar()
     }
 
     /// O portao dos gatilhos de uma escrita.
@@ -39672,6 +39749,220 @@ mod testes_gatilhos {
             "o BEFORE UPDATE nao viu a linha mesclada: {}",
             l.escrever()
         );
+    }
+
+    /// **Pedido 595, contra o sistema operacional:** o cadastro por database
+    /// (`gatilhos.json`, `procedimentos.json`, `visoes.json`) vai ao disco
+    /// antes da resposta. Era `escrever_do_banco` NO LUGAR e `remove_file`,
+    /// sem `fsync` nenhum: uma queda devolvia o gatilho excluido -- e, no
+    /// `excluir_tabela`, o gatilho de uma tabela que nao existe mais, pronto
+    /// para disparar sobre a homonima que alguem criasse depois.
+    mod cadastro_vai_ao_disco_595 {
+        use super::*;
+
+        /// A marca que separa, no traco, o que cada pedido fez: um `openat`
+        /// de um nome que nao existe (a mesma do 589/591).
+        fn passo(base: &std::path::Path, n: u32) {
+            let _ = std::fs::File::open(base.join(format!("passo-{n}")));
+        }
+
+        /// Os oito pedidos, cada um entre dois [`passo`]s.
+        #[test]
+        #[ignore = "roda so dentro de o_cadastro_vai_ao_disco_antes_da_resposta"]
+        fn filho_do_cadastro() {
+            let base = std::path::PathBuf::from(std::env::var("PHX_595_DIR").unwrap());
+            let s = servidor(&base);
+            let dono = Sessao::default();
+            s.executar(
+                "criar_tabela",
+                &pedido(
+                    r#"{"database":"b","tabela":"sai",
+                        "colunas":[{"nome":"id","tipo":"Int4"}]}"#,
+                ),
+                &dono,
+            )
+            .unwrap();
+            let corpo = "FOR EACH ROW SET NEW.id = NEW.id";
+            passo(&base, 0);
+            sql(
+                &s,
+                &format!("CREATE TRIGGER g1 BEFORE INSERT ON clientes {corpo}"),
+            )
+            .unwrap();
+            passo(&base, 1);
+            sql(
+                &s,
+                &format!("CREATE TRIGGER g2 BEFORE INSERT ON sai {corpo}"),
+            )
+            .unwrap();
+            passo(&base, 2);
+            sql(&s, "DROP TRIGGER g1").unwrap();
+            passo(&base, 3);
+            let r = s
+                .executar(
+                    "excluir_tabela",
+                    &pedido(r#"{"database":"b","tabela":"sai","confirmar":"sai"}"#),
+                    &dono,
+                )
+                .unwrap();
+            assert_eq!(r.inteiro_ou("gatilhos_apagados", -1), 1);
+            passo(&base, 4);
+            sql(&s, "CREATE PROCEDURE p(IN x INT, OUT y INT) SET y = x").unwrap();
+            passo(&base, 5);
+            sql(&s, "DROP PROCEDURE p").unwrap();
+            passo(&base, 6);
+            s.executar(
+                "criar_visao",
+                &pedido(r#"{"database":"b","nome":"v","sql":"SELECT * FROM clientes"}"#),
+                &dono,
+            )
+            .unwrap();
+            passo(&base, 7);
+            let r = s
+                .executar(
+                    "excluir_visao",
+                    &pedido(r#"{"database":"b","nome":"v"}"#),
+                    &dono,
+                )
+                .unwrap();
+            assert_eq!(r.campo("excluida"), Some(&Json::Bool(true)));
+            passo(&base, 8);
+        }
+
+        /// Em cada pedido, antes de o seguinte comecar: a regravacao e
+        /// `fsync` do temporario, `rename` sobre o nome e `fsync` da pasta; a
+        /// exclusao e `unlink` e `fsync` da pasta. E no `excluir_tabela`, o
+        /// `gatilhos.json` sai ANTES do primeiro `fsync` da pasta que leva o
+        /// sumico da tabela -- ao contrario, a queda entre os dois deixava o
+        /// gatilho orfao.
+        ///
+        /// **Nao medido:** a queda em si (pede derrubar a maquina). O que se
+        /// prova e o DESCRITOR e a ORDEM das chamadas, que e o que o conserto
+        /// muda.
+        #[test]
+        fn o_cadastro_vai_ao_disco_antes_da_resposta() {
+            if std::process::Command::new("strace")
+                .arg("-V")
+                .output()
+                .is_err()
+            {
+                eprintln!("sem strace nesta maquina: a prova do 595 NAO MEDIDA");
+                return;
+            }
+            let t = dir_temp("595-strace");
+            let base = std::fs::canonicalize(&t.0).unwrap();
+            let traco = t.0.join("traco.txt");
+            let saida = std::process::Command::new("strace")
+                .args([
+                    "-f",
+                    "-y",
+                    "-e",
+                    "trace=openat,fsync,unlink,unlinkat,rename,renameat,renameat2",
+                    "-o",
+                ])
+                .arg(&traco)
+                .arg(std::env::current_exe().unwrap())
+                .args([
+                    "--ignored",
+                    "--exact",
+                    "servidor::testes_gatilhos::cadastro_vai_ao_disco_595::filho_do_cadastro",
+                ])
+                .env("PHX_595_DIR", &base)
+                .output()
+                .unwrap();
+            assert!(
+                saida.status.success(),
+                "{}",
+                String::from_utf8_lossy(&saida.stderr)
+            );
+            let texto = std::fs::read_to_string(&traco).unwrap();
+            let linhas: Vec<&str> = texto.lines().filter(|l| l.contains(" = ")).collect();
+            let marca = |n: u32| {
+                let alvo = format!("\"{}\"", base.join(format!("passo-{n}")).display());
+                linhas
+                    .iter()
+                    .position(|l| l.contains("openat(") && l.contains(&alvo))
+                    .unwrap_or_else(|| panic!("a premissa: o passo {n} no traco:\n{texto}"))
+            };
+            let ok = |l: &str| l.trim_end().ends_with("= 0");
+            let pasta = base.join("b");
+            let aspas = |nome: &str| format!("\"{}\"", pasta.join(nome).display());
+            let fsync_de = |nome: &str| format!("<{}>)", pasta.join(nome).display());
+            let fsync_da_pasta = format!("<{}>)", pasta.display());
+            let mut erros = Vec::new();
+            // (passo, arquivo, true = regrava, false = sai)
+            let casos = [
+                (1, crate::rotinas::ARQUIVO_GATILHOS, true),
+                (2, crate::rotinas::ARQUIVO_GATILHOS, true),
+                (3, crate::rotinas::ARQUIVO_GATILHOS, true),
+                (4, crate::rotinas::ARQUIVO_GATILHOS, false),
+                (5, crate::rotinas::ARQUIVO_PROCEDIMENTOS, true),
+                (6, crate::rotinas::ARQUIVO_PROCEDIMENTOS, false),
+                (7, crate::visoes::ARQUIVO, true),
+                (8, crate::visoes::ARQUIVO, false),
+            ];
+            for (n, arquivo, regrava) in casos {
+                let janela = &linhas[marca(n - 1) + 1..marca(n)];
+                let novo = format!("{arquivo}.novo");
+                let evento = janela.iter().position(|l| {
+                    ok(l)
+                        && if regrava {
+                            l.contains("rename")
+                                && l.contains(&aspas(&novo))
+                                && l.contains(&aspas(arquivo))
+                        } else {
+                            l.contains("unlink") && l.contains(&aspas(arquivo))
+                        }
+                });
+                let Some(evento) = evento else {
+                    erros.push(format!(
+                        "passo {n}: {arquivo} nao foi {} pela troca/unlink",
+                        if regrava { "regravado" } else { "apagado" }
+                    ));
+                    continue;
+                };
+                if regrava
+                    && !janela[..evento]
+                        .iter()
+                        .any(|l| l.contains("fsync(") && l.contains(&fsync_de(&novo)) && ok(l))
+                {
+                    erros.push(format!("passo {n}: o {novo} trocou de nome sem fsync"));
+                }
+                if !janela[evento + 1..]
+                    .iter()
+                    .any(|l| l.contains("fsync(") && l.contains(&fsync_da_pasta) && ok(l))
+                {
+                    erros.push(format!(
+                        "passo {n}: {arquivo} mudou e a pasta ficou sem fsync"
+                    ));
+                }
+                if n == 4 {
+                    // A ordem: nenhum `fsync` da pasta entre o ultimo nome da
+                    // tabela que saiu e o `gatilhos.json` saindo.
+                    let ultimo_da_tabela = janela[..evento].iter().rposition(|l| {
+                        l.contains("unlink")
+                            && ok(l)
+                            && l.contains(&format!("\"{}", pasta.join("sai.").display()))
+                    });
+                    match ultimo_da_tabela {
+                        None => erros.push("passo 4: a premissa: a tabela sai nao saiu".into()),
+                        Some(u) => {
+                            if janela[u + 1..evento]
+                                .iter()
+                                .any(|l| l.contains("fsync(") && l.contains(&fsync_da_pasta))
+                            {
+                                erros.push(
+                                    "passo 4: o sumico da tabela foi ao disco ANTES do \
+                                     gatilhos.json: a queda no meio deixa o gatilho orfao"
+                                        .into(),
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+            assert!(erros.is_empty(), "{erros:#?}\n{texto}");
+        }
     }
 }
 

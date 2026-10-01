@@ -2735,7 +2735,11 @@ apaga os arquivos e faz o `fsync` da pasta deles antes do «ok»; o mesmo vale
 para os dois outros apagamentos de arquivo inteiro da tabela: o
 `esvaziar_lixeira` (os volumes do `.trash`, §5) e a fase 3 do expurgo
 da trilha (os volumes fechados do `.lgpd`, §7). No servidor, também fora da trava
-global. Não existe excluir de schema nem de database.
+global. Não existe excluir de schema nem de database. E o erro no meio
+(um `remove_file` que falha depois de outros já terem saído) também faz o
+`fsync` da pasta dos que saíram (pedido 595): a tabela pela metade é o
+mesmo defeito, por outro caminho. Os gatilhos da tabela excluída vão ao
+disco **antes** dela — a ordem está no §15.
 
 ### 11.1 `_database.json` — o tipo do database
 
@@ -2963,6 +2967,23 @@ Quatro regras do arquivo:
 
 Excluir a tabela apaga os gatilhos dela do arquivo, no mesmo comando: um órfão
 dispararia contra uma homônima futura que não tem nada com ele.
+
+**Só responde depois do disco** (pedido 595) — os dois daqui e o
+`visoes.json`, que segue o mesmo molde. Regravar é pelo temporário
+`<nome>.novo`, `fsync` dele, `rename` sobre o nome e `fsync` da pasta do
+database; o último que sai apaga o arquivo e faz o `fsync` da pasta. Antes,
+gravavam **no lugar e sem `fsync` nenhum**: uma queda podia devolver o gatilho
+excluído, sumir com o criado, ou deixar o JSON pela metade — e JSON inválido
+derruba a subida. Um `<nome>.novo` que sobrar de uma queda não é lido por
+ninguém, e a próxima gravação o reescreve. O `fsync` acontece fora da trava
+global e fora da trava do registro, que toda escrita com gatilho lê.
+
+No `excluir_tabela` a ordem é decisão: primeiro o `gatilhos.json` sem os
+gatilhos dela, durável; **depois** o `fsync` da pasta que leva o sumiço da
+tabela (§11). Ao contrário, uma queda entre os dois deixaria o gatilho no
+disco e a tabela fora — o órfão de cima. Nesta ordem, a queda devolve no
+máximo a tabela sem os gatilhos de uma exclusão que o cliente nunca ouviu
+terminar, e que ele repete.
 
 A linguagem, o portão de permissão e a semântica de disparo estão em
 `docs/TRIGGERS.md`.

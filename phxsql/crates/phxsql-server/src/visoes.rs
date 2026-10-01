@@ -75,6 +75,16 @@ impl Visao {
     }
 }
 
+/// O `visoes.json` de um database que uma mudanca deixou devendo ao disco --
+/// pedido 595, o mesmo molde do [`crate::rotinas::PorGravar`]: a mudanca mexe
+/// na memoria sob a trava do registro, que a op `sql` toma a cada consulta
+/// quando ha visao, e o disco vem fora dela.
+#[must_use = "a mudanca so vale no disco depois de Retrato::gravar"]
+#[derive(Debug)]
+pub struct PorGravar {
+    db: String,
+}
+
 /// O registro inteiro, uma lista por database que tem alguma visao.
 #[derive(Debug)]
 pub struct Visoes {
@@ -156,7 +166,7 @@ impl Visoes {
         sql: &str,
         criado_por: &str,
         substituir: bool,
-    ) -> Result<Visao> {
+    ) -> Result<(Visao, PorGravar)> {
         self.conferir_nome_do_db(db)?;
         let nome = nome.trim();
         if nome.is_empty() {
@@ -188,22 +198,15 @@ impl Visoes {
             criado_por: criado_por.to_string(),
         };
         lista.push(v.clone());
-        self.gravar(db)?;
-        Ok(v)
+        Ok((v, PorGravar { db: db.to_string() }))
     }
 
-    /// Devolve `false` quando a visao nao existia.
-    pub fn excluir(&mut self, db: &str, nome: &str) -> Result<bool> {
-        let Some(lista) = self.dbs.get_mut(db) else {
-            return Ok(false);
-        };
+    /// Devolve `None` quando a visao nao existia -- e nada a gravar.
+    pub fn excluir(&mut self, db: &str, nome: &str) -> Option<PorGravar> {
+        let lista = self.dbs.get_mut(db)?;
         let antes = lista.len();
         lista.retain(|v| !v.nome.eq_ignore_ascii_case(nome));
-        if lista.len() == antes {
-            return Ok(false);
-        }
-        self.gravar(db)?;
-        Ok(true)
+        (lista.len() != antes).then(|| PorGravar { db: db.to_string() })
     }
 
     fn conferir_nome_do_db(&self, db: &str) -> Result<()> {
@@ -218,24 +221,28 @@ impl Visoes {
         Ok(())
     }
 
-    fn gravar(&self, db: &str) -> Result<()> {
-        let arquivo = self.base.join(db).join(ARQUIVO);
-        let lista = self.dbs.get(db).map(Vec::as_slice).unwrap_or(&[]);
+    /// O que o `visoes.json` devido deve conter AGORA -- ver
+    /// [`crate::rotinas::Retrato`], o mesmo motor de disco das rotinas.
+    pub fn retrato(&self, devido: &PorGravar) -> crate::rotinas::Retrato {
+        let arquivo = self.base.join(&devido.db).join(ARQUIVO);
+        let lista = self.dbs.get(&devido.db).map(Vec::as_slice).unwrap_or(&[]);
         // Zero visoes apaga o arquivo, para «ausente» continuar querendo dizer
         // «nenhuma» -- um `{"visoes":[]}` no disco seria um terceiro estado
         // que nada le.
-        if lista.is_empty() {
-            if arquivo.is_file() {
-                std::fs::remove_file(&arquivo)?;
-            }
-            return Ok(());
-        }
-        let corpo = Json::objeto(vec![(
-            "visoes",
-            Json::Lista(lista.iter().map(Visao::para_json).collect()),
-        )]);
-        phxsql_store::permissao::escrever_do_banco(&arquivo, corpo.escrever_identado())?;
-        Ok(())
+        let corpo = (!lista.is_empty()).then(|| {
+            Json::objeto(vec![(
+                "visoes",
+                Json::Lista(lista.iter().map(Visao::para_json).collect()),
+            )])
+            .escrever_identado()
+        });
+        crate::rotinas::Retrato::novo(arquivo, corpo)
+    }
+
+    /// O retrato tirado e gravado na mesma chamada -- para quem nao divide o
+    /// registro com ninguem; o servidor grava fora da trava.
+    pub fn gravar(&self, devido: PorGravar) -> Result<()> {
+        self.retrato(&devido).gravar()
     }
 }
 
@@ -255,8 +262,10 @@ mod testes {
         let d = base("disco");
         let mut v = Visoes::carregar(&d).unwrap();
         assert!(!v.ha_visoes(), "nasceu com visao que ninguem criou");
-        v.criar("b", "v_c", "SELECT * FROM c", "ana", false)
+        let (_, devido) = v
+            .criar("b", "v_c", "SELECT * FROM c", "ana", false)
             .unwrap();
+        v.gravar(devido).unwrap();
 
         let outra = Visoes::carregar(&d).unwrap();
         assert!(outra.ha_visoes());
@@ -273,12 +282,13 @@ mod testes {
     fn nome_repetido_recusa_e_substituir_troca() {
         let d = base("repetido");
         let mut v = Visoes::carregar(&d).unwrap();
-        v.criar("b", "v", "SELECT * FROM c", "ana", false).unwrap();
+        let _ = v.criar("b", "v", "SELECT * FROM c", "ana", false).unwrap();
         let e = v
             .criar("b", "V", "SELECT * FROM outra", "ana", false)
             .expect_err("o nome repetido passou");
         assert!(e.to_string().contains("substituir"), "{e}");
-        v.criar("b", "v", "SELECT * FROM outra", "ana", true)
+        let _ = v
+            .criar("b", "v", "SELECT * FROM outra", "ana", true)
             .unwrap();
         assert_eq!(v.do_db("b").len(), 1);
         assert_eq!(v.por_nome("b", "v").unwrap().sql, "SELECT * FROM outra");
@@ -293,11 +303,13 @@ mod testes {
     fn a_ultima_visao_leva_o_arquivo() {
         let d = base("ultima");
         let mut v = Visoes::carregar(&d).unwrap();
-        v.criar("b", "v", "SELECT * FROM c", "ana", false).unwrap();
+        let (_, devido) = v.criar("b", "v", "SELECT * FROM c", "ana", false).unwrap();
+        v.gravar(devido).unwrap();
         assert!(d.join("b").join(ARQUIVO).is_file());
-        assert!(v.excluir("b", "v").unwrap());
+        let devido = v.excluir("b", "v").expect("existia");
+        v.gravar(devido).unwrap();
         assert!(!d.join("b").join(ARQUIVO).exists(), "o arquivo vazio ficou");
-        assert!(!v.excluir("b", "v").unwrap(), "excluiu o que nao existia");
+        assert!(v.excluir("b", "v").is_none(), "excluiu o que nao existia");
         let _ = std::fs::remove_dir_all(&d);
     }
 

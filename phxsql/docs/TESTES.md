@@ -1013,11 +1013,15 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `promover-libera-antes-de-gravar` | O `promover` liberava a escrita ANTES de gravar o papel: a gravação que falhava deixava um master escrevendo que o disco não conhecia | 1 | ✅ provada |
 | `posicao-bidi-antes-do-dado` | A posição do bidirecional ia ao disco a cada lote, antes do `fsync` do dado: numa queda, os eventos entre o dado perdido e a posição gravada nunca mais eram pedidos | 1 | ✅ provada |
 | `posicao-bidi-sem-troca-duravel` | A posição do bidirecional gravava por `write` no lugar: mesmo depois do dado, a queda podia devolver o arquivo antigo ou nenhum | 1 | ✅ provada |
+| `cadastro-regravado-sem-fsync` | `gatilhos.json`, `procedimentos.json` e `visoes.json` eram regravados no lugar e sem `fsync`: a queda no meio deixava JSON pela metade, e o arranque caía | 1 | ✅ provada |
+| `cadastro-apagado-sem-fsync-da-pasta` | o último gatilho, procedimento ou visão que saía apagava o arquivo sem `fsync` da pasta: numa queda o excluído voltava | 1 | ✅ provada |
+| `gatilho-orfao-na-queda-do-excluir-tabela` | `excluir_tabela` levava ao disco o sumiço da tabela ANTES do `gatilhos.json`: a queda entre os dois deixava o gatilho de uma tabela que não existe mais | 1 | ✅ provada |
+| `erro-no-meio-da-exclusao-sem-fsync` | o erro no meio do `excluir_tabela` esquecia os nomes que já tinham saído sem `fsync` da pasta: numa queda a tabela voltava pela metade | 1 | ✅ provada |
 | `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | — | 🪦 aposentada (18/09/2026) |
 
-**370 das 546 guardas do catálogo: 1 aposentada, 365 provadas, 4 redundantes** — 10005 s de mutação, medido em 2026-09-16 15:25.
+**374 das 550 guardas do catálogo: 1 aposentada, 369 provadas, 4 redundantes** — 10173 s de mutação, medido em 2026-09-16 15:25.
 
-> **Esta rodada NÃO julgou 177 das 546 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 177 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 177 das 550 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 177 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
 - `fk-antes-do-default` — a chave estrangeira confere a linha crua, e o DEFAULT sem mãe grava a filha órfã
 - `fk-antes-do-default-pelo-servidor` — o DEFAULT e a calculada sem mãe gravam a órfã pelo servidor, fora e dentro da transação

@@ -223,6 +223,33 @@ pub fn trocar_duravel(de: &Path, para: &Path) -> Result<()> {
     sincronizar_os_diretorios(de, para, true)
 }
 
+/// Regrava um arquivo PEQUENO do banco inteiro e de forma duravel: o
+/// temporario `<nome>.novo` pelo motor da permissao, o `fsync` dele NO
+/// DESCRITOR QUE O ESCREVEU, e a [`trocar_duravel`]. Pedido 595.
+///
+/// Existe porque a sequencia ja vivia escrita duas vezes no repositorio (a
+/// marca de formato do `separador` e, fora do banco, o `gravar_privado` do
+/// config) e o cadastro por database -- `gatilhos.json`, `procedimentos.json`,
+/// `visoes.json` -- ia ser a terceira. Os tres do cadastro escreviam NO
+/// LUGAR, sem `fsync` nenhum: uma queda no meio deixava um JSON pela metade,
+/// e JSON invalido derruba o arranque (de proposito -- subir sem as regras
+/// do dono seria pior). Com o temporario, a queda deixa o antigo inteiro.
+///
+/// O `.novo` que uma gravacao interrompida deixou e truncado e reescrito pelo
+/// [`crate::util::recriar_do_banco`], que e o motor de sempre para o nome que
+/// ja e nosso.
+pub fn gravar_duravel(caminho: &Path, corpo: &[u8]) -> Result<()> {
+    use std::io::Write as _;
+    let mut nome = caminho.file_name().unwrap_or_default().to_os_string();
+    nome.push(".novo");
+    let temporario = caminho.with_file_name(nome);
+    let mut arquivo = crate::util::recriar_do_banco(&temporario, false)?;
+    arquivo.write_all(corpo)?;
+    sync_all(&arquivo, &temporario)?;
+    drop(arquivo);
+    trocar_duravel(&temporario, caminho)
+}
+
 /// A mesma troca para um destino que NAO e o disco do banco -- hoje so o
 /// [`crate::backup`]: a recusa vira `Err` em vez de chamar o gancho (a mesma
 /// razao do [`sync_all_sem_abortar`]).
