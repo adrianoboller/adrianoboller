@@ -2717,21 +2717,34 @@ pub mod panico_de_teste {
         /// alteracao DECIDIDA -- e os outros ainda velhos, com o `*.novo` ao
         /// lado. E o estado que a copia de tabela levava misturado.
         FaseBDepoisDoVolume1,
+        /// `reescrever_volume` (pedido 632): o `*.novo` de UM volume com o
+        /// cabecalho e o bloco de esquema ja escritos, e nenhum slot. E o
+        /// arquivo pela metade que se declara com a geometria nova -- o que a
+        /// abertura nao pode confundir com um volume pronto.
+        NoMeioDoNovoDoVolume,
     }
 
     #[cfg(debug_assertions)]
     thread_local! {
-        static ARMADO: std::cell::Cell<Option<Ponto>> = const { std::cell::Cell::new(None) };
+        static ARMADO: std::cell::Cell<Option<(Ponto, u32)>> = const { std::cell::Cell::new(None) };
         static PAUSA: std::cell::RefCell<Option<(Ponto, u32, String)>> =
             const { std::cell::RefCell::new(None) };
     }
 
     /// Arma o ponto NESTA thread. Dispara uma vez so, e desarma sozinho.
     pub fn armar(p: Ponto) {
+        armar_na(p, 1);
+    }
+
+    /// Arma o panico na `n`-esima passagem por `p`, NESTA thread (pedido
+    /// 632). Existe porque o ponto do meio de um `*.novo` e o mesmo para
+    /// todo volume, e o estado que importa e o do volume 2 -- com o volume 1
+    /// ja escrito, e no caminho de uma fase so, ja trocado.
+    pub fn armar_na(p: Ponto, n: u32) {
         #[cfg(debug_assertions)]
-        ARMADO.with(|a| a.set(Some(p)));
+        ARMADO.with(|a| a.set(Some((p, n.max(1)))));
         #[cfg(not(debug_assertions))]
-        let _ = p;
+        let _ = (p, n);
     }
 
     /// Arma uma PAUSA SEM FIM na `n`-esima passagem por `p`, NESTA thread
@@ -2772,9 +2785,13 @@ pub mod panico_de_teste {
     pub(crate) fn passar(p: Ponto) {
         #[cfg(debug_assertions)]
         {
-            if ARMADO.with(|a| a.get()) == Some(p) {
-                ARMADO.with(|a| a.set(None));
-                panic!("panico de teste em {p:?}");
+            match ARMADO.with(|a| a.get()) {
+                Some((q, n)) if q == p && n > 1 => ARMADO.with(|a| a.set(Some((q, n - 1)))),
+                Some((q, _)) if q == p => {
+                    ARMADO.with(|a| a.set(None));
+                    panic!("panico de teste em {p:?}");
+                }
+                _ => {}
             }
             let parar = PAUSA.with(|a| {
                 let mut a = a.borrow_mut();

@@ -635,6 +635,11 @@ dia, nunca no desejado:
   do portao 3 (`escrita-local-contada-antes-do-portao-3`) e o irmao do SQL
   sem a conta (`escrita-local-pelo-sql-nao-conta`). 691, medido pelo
   `--numeros` na arvore do merge.
+  **SUBIU para 693 em 01/10/2026** (691 + 2; pedido 632): a regravacao de
+  esquema de uma fase so que escrevia e trocava volume a volume
+  (`regravar-esquema-troca-volume-a-volume-632`) e o cinto da abertura que
+  renomeava `*.novo` incompleto (`troca-decidida-renomeia-novo-incompleto-632`).
+  693, medido pelo `--numeros`.
 
 # A QUINTA REGUA: a tabela publicada pode ser MENOR que o catalogo
 
@@ -741,7 +746,7 @@ TETO_TESTE_MORTO = 0
 TETO_TRECHO_AMBIGUO = 0
 TETO_TESTE_FORA_DO_BINARIO = 0
 TETO_TESTE_SEM_MODULO = 0
-PISO_DAS_ENTRADAS = 691
+PISO_DAS_ENTRADAS = 693
 
 # ------------------------------------------------------------- APOSENTADAS
 #

@@ -322,6 +322,23 @@ que estado o conjunto está:
   completo e sincronizado: o `rename` que faltava acontece na abertura, e a
   tabela abre inteira.
 
+**Toda reescrita de volumes segue as duas fases — inclusive a de uma fase
+só** (pedido 632). A regravação de esquema que não cabe antes do slot 1
+(`acrescentar_indices`, chave e marca sem troca preparada) escrevia **e
+trocava** volume a volume: com o volume 1 já trocado, uma queda no meio do
+`*.novo` do volume 2 deixava um arquivo de cabeçalho válido e sem slot, que a
+abertura tomava pela troca decidida. Medido: 1.088 bytes renomeados por cima
+de 3.900, as 30 linhas do volume 2 destruídas e a tabela sem abrir. Hoje o
+caminho de uma fase é a fase A inteira e depois a fase B.
+
+E a abertura não confia só na geometria do cabeçalho, que é a primeira coisa
+escrita no `*.novo`: ela só termina a troca de um volume cujo `*.novo` tem
+**o mesmo número de slots** do volume velho (contado pelo tamanho do arquivo,
+`(tamanho − data_offset) / slot_size`). O incompleto não entra no lugar de
+nada **nem se apaga como sobra** — é a única pista do que a alteração
+escreveu —, e a abertura recusa o conjunto dizendo que o `*.novo` está
+incompleto, sem mandar repô-lo.
+
 A **cópia de tabela** (`duplicar_tabela`, `copiar_tabela_para`) não leva os
 `*.novo`, e por isso termina a troca decidida pela mesma decisão **antes** de
 copiar (pedido 624) — senão levaria o volume 1 numa largura e o resto na outra,

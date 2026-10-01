@@ -22583,4 +22583,61 @@ pub const PRAZO_SOB_A_TRAVA: Duration = Duration::from_secs(3600);""",
         "seguem": ["com_somente_leitura_a_escrita_local_e_recusada_e_a_replica_segue"],
         "prazo": 1800,
     },
+    {
+        "id": "regravar-esquema-troca-volume-a-volume-632",
+        "titulo": "a regravacao de esquema de uma fase so escreve e troca volume a volume, e a queda no meio do *.novo do volume 2 destroi o volume",
+        "porque": (
+            "pedido 632: com o volume 1 ja trocado (a alteracao DECIDIDA), o "
+            "`*.novo` do volume 2 cortado depois do cabecalho se declara com a "
+            "geometria nova, e a abertura o renomeava por cima do velho. "
+            "Medido: 1.088 bytes por cima de 3.900, as 30 linhas do volume 2 "
+            "destruidas e a tabela sem abrir. A FASE A inteira antes do "
+            "primeiro `rename` e o conserto."
+        ),
+        "arquivo": "crates/phxsql-store/src/reg.rs",
+        "trecho": """        let troca = self.regravar_esquema_fase_a(novo)?;
+        self.regravar_esquema_fase_b(troca)?;
+""",
+        "troca": """        // DEFEITO REPOSTO (632): escreve e troca volume a volume.
+        let bytes = novo.serializar();
+        let origem = self.data_offset;
+        let destino = alinhar(self.cab_len as u64 + bytes.len() as u64, ALINHAMENTO);
+        self.esquema_crc = crc32(&bytes);
+        self.esquema = novo;
+        self.esquema_bytes = bytes;
+        self.data_offset = destino;
+        self.volumes.fechar_todos();
+        for v in self.volumes.existentes() {
+            let cab = self.montar_cabecalho(v);
+            let c = self.volumes.caminho(v);
+            reescrever_volume(&c, &cab, &self.esquema_bytes, origem, destino)?;
+            trocar_pelo_novo(&c)?;
+        }
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "troca-interrompida"],
+        "caem": ["a_queda_no_meio_do_novo_do_volume_2_nao_perde_linha"],
+        "seguem": ["o_novo_de_uma_troca_viva_nao_e_sobra"],
+        "prazo": 1200,
+    },
+    {
+        "id": "troca-decidida-renomeia-novo-incompleto-632",
+        "titulo": "a abertura termina a troca decidida com um *.novo que nao tem todos os slots do volume velho",
+        "porque": (
+            "pedido 632, o cinto na abertura: o cabecalho e a primeira coisa "
+            "escrita no `*.novo`, entao a geometria sozinha nao prova que ele "
+            "esta inteiro. Reposto, o `*.novo` encurtado entra por cima do "
+            "volume velho, a tabela abre e a varredura morre em «failed to "
+            "fill whole buffer» -- o volume ja perdido no disco."
+        ),
+        "arquivo": "crates/phxsql-store/src/reg.rs",
+        "trecho": """                } else if novo_completo(&novo, &alvo) {""",
+        "troca": """                // DEFEITO REPOSTO (632): a geometria basta.
+                } else if true || novo_completo(&novo, &alvo) {""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "troca-interrompida"],
+        "caem": ["a_troca_decidida_nao_renomeia_novo_incompleto"],
+        "seguem": ["duplicar_no_meio_da_troca_decidida_leva_uma_versao_so"],
+        "prazo": 1200,
+    },
 ]
