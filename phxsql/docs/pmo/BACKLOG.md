@@ -1,7 +1,7 @@
 # Board de controle — backlog aberto por pilar e por escalão
 
 <!-- ROLLUP:inicio -->
-*Gerado por `docs/pmo/rollup.py` em 01/10/2026 01:52 UTC — não conte à mão; o estado sai da última coluna de cada tabela abaixo, e o escalão da coluna `escalão`.*
+*Gerado por `docs/pmo/rollup.py` em 01/10/2026 13:48 UTC — não conte à mão; o estado sai da última coluna de cada tabela abaixo, e o escalão da coluna `escalão`.*
 
 | pilar | aberto | entregue/fechado | parado | total |
 |---|---|---|---|---|

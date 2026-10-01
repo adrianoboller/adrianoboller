@@ -34,20 +34,20 @@ foi estimado no lugar de uma medição que faltou.
 <!-- GERADO: bloco_linguagens_rust() -->
 | crate | arquivos .rs | codigo | teste | comentario | vazias | total |
 |---|---:|---:|---:|---:|---:|---:|
-| `phxsql-cli` | 1 | 827 | 104 | 124 | 78 | 1133 |
+| `phxsql-cli` | 1 | 866 | 104 | 148 | 81 | 1199 |
 | `phxsql-cmd` | 2 | 621 | 110 | 210 | 65 | 1006 |
-| `phxsql-core` | 40 | 14947 | 5861 | 4701 | 1964 | 27473 |
-| `phxsql-ffi` | 7 | 1509 | 1589 | 908 | 282 | 4288 |
+| `phxsql-core` | 40 | 15286 | 5934 | 4764 | 1989 | 27973 |
+| `phxsql-ffi` | 7 | 1524 | 1786 | 930 | 297 | 4537 |
 | `phxsql-odbc` | 7 | 3164 | 1258 | 1108 | 279 | 5809 |
-| `phxsql-server` | 63 | 54849 | 46053 | 32907 | 6790 | 140599 |
+| `phxsql-server` | 64 | 56415 | 48427 | 34618 | 7014 | 146474 |
 | `phxsql-sql` | 10 | 7337 | 4124 | 2858 | 843 | 15162 |
-| `phxsql-store` | 29 | 22199 | 5097 | 9658 | 2239 | 39193 |
+| `phxsql-store` | 29 | 23084 | 5544 | 10542 | 2338 | 41508 |
 | `phxzip` | 9 | 3074 | 501 | 804 | 284 | 4663 |
-| **total** | **168** | **108527** | **64697** | **53278** | **12824** | **239326** |
+| **total** | **169** | **111371** | **67788** | **55982** | **13190** | **248331** |
 
-Proporcao teste/codigo (so `src/`, sem comentario nem linha vazia): **64697/108527 = 0.60×**.
+Proporcao teste/codigo (so `src/`, sem comentario nem linha vazia): **67788/111371 = 0.61×**.
 
-Alem do `src/`: **92** programas de medicao em `examples/` (22615 linhas — bancada em Rust, nao produto nem teste) e **113** arquivos em `tests/` de integracao fora de `src/` (40268 linhas).
+Alem do `src/`: **94** programas de medicao em `examples/` (22821 linhas — bancada em Rust, nao produto nem teste) e **126** arquivos em `tests/` de integracao fora de `src/` (45237 linhas).
 <!-- /GERADO -->
 
 A proporção teste/código sai medida no bloco acima, não digitada aqui. O
@@ -74,7 +74,7 @@ Lista extraida de `crates/phxsql-server/src/http.rs` (todo `include_str!`/`inclu
 
 | arquivo embutido | linhas | KiB |
 |---|---:|---:|
-| `ui/index.html` | 15755 | 894.7 |
+| `ui/index.html` | 15774 | 896.0 |
 | `ui/grid/phx-grid.css` | 168 | 12.3 |
 | `ui/grid/phx-grid.js` | 1860 | 90.1 |
 | `ui/diagrama-er.js` | 712 | 29.1 |
@@ -82,9 +82,9 @@ Lista extraida de `crates/phxsql-server/src/http.rs` (todo `include_str!`/`inclu
 | `ui/telemetria.js` | 1820 | 89.2 |
 | `ui/multitela.css` | 156 | 8.6 |
 | `ui/multitela.js` | 1588 | 69.0 |
-| `ui/claude.js` | 1508 | 75.8 |
+| `ui/claude.js` | 1533 | 77.8 |
 | `ui/grid/CHANGELOG-phx-grid.md` | 224 | 29.7 |
-| **total (10 arquivos)** | **24238** | **1318.4** |
+| **total (10 arquivos)** | **24282** | **1321.6** |
 
 Em `ui/` mas **fora** do `include_str!`/`include_bytes!` (4 arquivos, não embutidos no binário):
 - `crates/phxsql-server/ui/explorador.css`
@@ -108,11 +108,11 @@ mesmo motivo que o rodapé já errou uma vez.
 <!-- GERADO: bloco_outras_linguagens() -->
 | o que | onde | arquivos | linhas |
 |---|---|---:|---:|
-| JavaScript (prova ponta a ponta) | `testes-web/` | 58 | 12991 |
-| Python (bancada de medicao) | `bancada/` | 140 | 69283 |
-| Shell (empacotar, zelador, provas) | todo o repositorio | 24 | 3838 |
-| Markdown (documentacao tecnica) | `docs/`, **recursivo** (inclui `cognicao/`, `dossie/`, `propostas/`, `pmo/`) | 594 | 132734 |
-| Python (geradores de documentacao) | `docs/`, **recursivo** (`dossie/`, `pmo/`, `status/`, `planilha/`, `tecnologias/`, `geradores/`) | 38 | 17934 |
+| JavaScript (prova ponta a ponta) | `testes-web/` | 59 | 13151 |
+| Python (bancada de medicao) | `bancada/` | 140 | 72203 |
+| Shell (empacotar, zelador, provas) | todo o repositorio | 26 | 3883 |
+| Markdown (documentacao tecnica) | `docs/`, **recursivo** (inclui `cognicao/`, `dossie/`, `propostas/`, `pmo/`) | 619 | 135899 |
+| Python (geradores de documentacao) | `docs/`, **recursivo** (`dossie/`, `pmo/`, `status/`, `planilha/`, `tecnologias/`, `geradores/`) | 39 | 18389 |
 
 A linha «Markdown (documentacao tecnica)» acima **exclui o proprio `docs/TECNOLOGIAS.md`** da contagem — ele e a SAIDA deste extrator, e contar a saida como entrada faz cada gravacao mudar o numero que a gravacao seguinte vai ler (pedido 404: tres corridas seguidas sem edicao nenhuma publicaram 106.750 -> 106.752 -> 106.753 linhas, nunca um ponto fixo). Mesmo molde da §17 da setima pagina de status, que escreve «— (esta pagina)» em vez de medir a si mesma.
 <!-- /GERADO -->
@@ -313,6 +313,8 @@ Conferidores em `crates/phxsql-server/src/`: `conferidor.rs`, `conferidor_botoes
 |---|---:|---|
 | `TETO_DE_COLUNAS` | 12 | `crates/phxsql-server/src/bidirecional.rs` |
 | `TETO_DO_VALOR` | phxsql_core::error::TETO_DA_CITACAO | `crates/phxsql-server/src/bidirecional.rs` |
+| `TETO_DE_TABELAS_NO_PULSO` | 512 | `crates/phxsql-server/src/cluster.rs` |
+| `TETO_DO_NOME_NO_PULSO` | 256 | `crates/phxsql-server/src/cluster.rs` |
 | `TETO_COLADO` | 0 | `crates/phxsql-server/src/conferidor.rs` |
 | `TETO_FRASE_REPETIDA` | 0 | `crates/phxsql-server/src/conferidor.rs` |
 | `TETO_ROTULOS_E_CRASE` | 880 | `crates/phxsql-server/src/conferidor.rs` |
@@ -341,9 +343,9 @@ Conferidores em `crates/phxsql-server/src/`: `conferidor.rs`, `conferidor_botoes
 | `TETO_COLETA_ROWIDS` | 1_000_000 | `crates/phxsql-server/src/servidor.rs` |
 | `TETO_ANINHAMENTO` | 8 | `crates/phxsql-server/src/servidor.rs` |
 
-**29** catracas (`TETO*`) encontradas em `crates/phxsql-server/src/`.
+**31** catracas (`TETO*`) encontradas em `crates/phxsql-server/src/`.
 
-`bancada/guardas/catalogo.py` cataloga **550** defeitos repostos, contados de `len(GUARDAS)` depois de importar o modulo (nao por regex no texto -- entradas com `trocas` tem mais de um `{` cada, e uma contagem de chaves as conta em dobro ou mais). Linhas do arquivo: 18984. Refazer a prova: `python3 bancada/guardas/provar-guardas.py`.
+`bancada/guardas/catalogo.py` cataloga **643** defeitos repostos, contados de `len(GUARDAS)` depois de importar o modulo (nao por regex no texto -- entradas com `trocas` tem mais de um `{` cada, e uma contagem de chaves as conta em dobro ou mais). Linhas do arquivo: 21502. Refazer a prova: `python3 bancada/guardas/provar-guardas.py`.
 <!-- /GERADO -->
 
 - **Ponta a ponta, pelo navegador**: os arquivos `.mjs` de `testes-web/` —
@@ -618,7 +620,7 @@ proposta de voltar sem medição nova.
 ### 5.1 Pedidos recusados, do próprio `PENDENCIAS.md`
 
 <!-- GERADO: bloco_recusados() -->
-`docs/PENDENCIAS.md` tem **598** pedidos numerados; **109** trazem a palavra RECUSADO no proprio texto:
+`docs/PENDENCIAS.md` tem **617** pedidos numerados; **111** trazem a palavra RECUSADO no proprio texto:
 
 | # | pedido |
 |---:|---|
@@ -723,6 +725,7 @@ proposta de voltar sem medição nova.
 | 523 | **A recusa do 509 na biblioteca é por GRAFIA do caminho: pelo symlink ou por `dir/../dir` o mesmo diretório sincroniza Ok depois de um `fsync` recusado** |
 | 525 | **A `Sequence` gasta numero na linha recusada (FK desde o 514, CHECK e unicidade desde sempre): reservar e consumir depois da ultima guarda, como o `rownum` do 291** |
 | 529 | **Com cadastro grande, o `por_login` linear diz pelo relógio quem existe no `desafio` e na prova** |
+| 554 | **A recusa do `fsync` no destino do backup marca o diretorio PAI; destino ancestral da raiz faz todo COMMIT errar ate reiniciar** |
 | 556 | **O DbLink, ao empurrar para o outro banco, confere todo texto pela regua de nome de objeto: aspa, quebra de linha ou mais de 128 bytes fazem a recusa citar o valor INTEIRO, sem teto** |
 | 559 | **O prazo da transacao varre tambem a que esta em COMMIT: solta as travas de um COMMIT em curso, e o `devolver_a_lista` a devolve ATIVA, desfazendo o ABORT_ONLY** |
 | 560 | **A diretiva `ALTER … SET <campo sigiloso> = <palavra sem aspas>` sai crua no perfil e no anel — e o irmão pelo JSON (`diretiva_gravar` «valor», `config_gravar` «campos» com `alertas.email.senha`) também** |
@@ -731,6 +734,7 @@ proposta de voltar sem medição nova.
 | 573 | **O `fsync` recusado nao chega mais a saude do disco: o aviso por e-mail sumiu** |
 | 574 | **A cascata do `Table::atualizar` embutido não passa pela pré-conferência do 567: uma FK da filha para OUTRA mãe recusa um elo depois da mãe gravada** |
 | 583 | **A sincronia do DbLink contra PostgreSQL nao roda: o valor ja sai no dialeto certo, o resto da instrucao ainda e de MySQL** |
+| 598 | **`blacklist.json` e `replicacao-posicoes.json` regravados no lugar sem `fsync`; e o esvaziar da lixeira e o expurgo da trilha esquecem no erro os nomes ja apagados** |
 <!-- /GERADO -->
 
 Os dois mais relevantes para este documento —

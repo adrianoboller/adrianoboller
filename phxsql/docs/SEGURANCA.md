@@ -3595,7 +3595,7 @@ Medido em 142 operações do catálogo (`crates/phxsql-server/src/catalogo.rs`),
 | `Escreve` | 3 | recebe colunas para gravar |
 | `Estrutura` | 1 | descreve a estrutura |
 | `Recusa` | 20 | devolve ou grava linha por caminho que a peneira não alcança |
-| `Nenhum` | 111 | não toca em dado de linha |
+| `Nenhum` | 106 | não toca em dado de linha |
 
 As listas que decidem alguma coisa:
 
@@ -3604,7 +3604,7 @@ As listas que decidem alguma coisa:
 - **Descreve a estrutura, que continua inteira** (1): `esquema`.
 - **Recusam a tabela restrita, para não vazar** (20): `diferencas`, `agrupar`, `pivotar`, `juntar`, `unir`, `checksum`, `exportar`, `importar_conferir`, `lixeira`, `motivos`, `trilha`, `duplicar_tabela`, `renomear_tabela`, `copiar_tabela`, `diario`, `replicar`, `aplicar`, `backup`, `profiler`, `dblink_sincronizar`.
 
-As outras 111 não devolvem nem recebem dado de linha, e por isso passam sem custo nenhum.
+As outras 106 não devolvem nem recebem dado de linha, e por isso passam sem custo nenhum.
 
 <!-- fim direito-por-coluna -->
 
