@@ -1079,6 +1079,8 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `composta-casa-pela-primeira-coluna` | A chave composta do bidirecional casando só pela primeira coluna: (1,2) e (1,3) caem na identidade de (1,1) | 1 | ✅ provada |
 | `numero-de-origem-conferido-so-no-par` | O número de origem do bidirecional conferido só contra o próprio: dois caixas com o mesmo número entre si não eram vistos, e o central suprimia os eventos de um ao servir o outro | 1 | ✅ provada |
 | `numero-de-origem-atribuido-ignorado` | O `numero_servidor` lido do config e ignorado na conta do número de origem: o caixa inocente continua no hash que colide | 1 | ✅ provada |
+| `replica-renumera-o-buraco-do-source` | A réplica fiel e o PITR geravam o `rownum` deles: o buraco histórico do source (1,2,4) virava 1,2,3 na cópia, para sempre | 2 | ✅ provada |
+| `bidirecional-honra-o-rownum-do-outro` | O bidirecional honrando o `rownum` do outro servidor: as duas fontes de numeração colidem no mesmo `.reg` | 1 | ✅ provada |
 | `imagem-com-sobra-ignorada` | O decodificador da imagem ignorava calado os bytes que sobravam depois dos externos: um campo novo passaria despercebido por todo binário anterior | 1 | ✅ provada |
 | `registro-de-numeros-ilegivel-vira-vazio` | O `replicacao-numeros.json` ilegível lido como vazio: a colisão que ele existe para recusar passaria e iria para dentro dos `.log` | 2 | ✅ provada |
 | `numero-aceito-antes-do-disco` | O par novo de número de origem entrava na memória antes de o registro ir ao disco: com o disco recusando, a chamada seguinte o aceitava sem nunca ter gravado | 1 | ✅ provada |
@@ -1102,9 +1104,9 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `evento-pre-344-ao-fio-sem-abrir` | o evento do diario gravado antes do 344 (externo selado, sem o bit) sai para o fio como veio: a replica grava o cifrado como se fosse o anexo | 1 | ✅ provada |
 | `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | — | 🪦 aposentada (18/09/2026) |
 
-**459 das 634 guardas do catálogo: 1 aposentada, 454 provadas, 4 redundantes** — 13758 s de mutação, medido em 2026-09-16 15:25.
+**461 das 636 guardas do catálogo: 1 aposentada, 456 provadas, 4 redundantes** — 13857 s de mutação, medido em 2026-09-16 15:25.
 
-> **Esta rodada NÃO julgou 176 das 634 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 176 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 176 das 636 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 176 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
 - `fk-antes-do-default` — a chave estrangeira confere a linha crua, e o DEFAULT sem mãe grava a filha órfã
 - `fk-antes-do-default-pelo-servidor` — o DEFAULT e a calculada sem mãe gravam a órfã pelo servidor, fora e dentro da transação

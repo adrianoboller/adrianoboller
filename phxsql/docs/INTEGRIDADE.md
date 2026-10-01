@@ -153,6 +153,31 @@ guarda**. A garantia de integridade é da **origem**, que a impôs quando aceito
 a escrita; a garantia da réplica é de **fidelidade**, conferida por SHA-256 de
 cada linha. Conferir duas vezes não soma as duas: troca a segunda pela primeira.
 
+**O alcance da fidelidade, e o que fica fora dela (pedido 297).** A fidelidade
+é a do **dado vivo** — o `.reg`, os anexos e as colunas de sistema que viajam na
+imagem: o `rowstamp`/`rowtime` e, na réplica fiel e no PITR, o `rownum`
+(pedido 309, que deixou de renumerar buraco histórico do source). A **lixeira
+não entra**: o `.trash` e o `.reason` são **do nó**. A exclusão viaja como
+evento, mas motivo, uuid da entrada e carimbo do descarte não são campos dele,
+então a réplica guarda a linha no `.trash` **dela**:
+
+| campo | no source | na réplica |
+|---|---|---|
+| linha guardada no `.trash` | a linha inteira | **a mesma** |
+| motivo no `.reason` | o que o operador escreveu | `"replicacao"` (`"replicacao bidirecional"` no bidirecional) |
+| uuid da entrada | sorteado lá | sorteado aqui |
+| carimbo do descarte | relógio de lá | relógio daqui, na hora em que aplicou |
+| usuário | o da sessão que excluiu | o da sessão do aplicador |
+
+Quem pergunta «por que esta linha foi apagada?» pergunta **ao source** — a
+réplica responde de onde a exclusão veio, não por quê. As consequências para
+o expurgo (cada nó se esvazia, a promoção herda a lixeira da réplica) estão no
+`LGPD.md`. Medido pelo soquete, com source e réplica de verdade:
+`tests/lixeira-da-replica.rs`, `a_lixeira_da_replica_e_do_no_e_o_motivo_do_source_nao_viaja`
+— e é ele que cai, mandando reescrever esta tabela, no dia em que o motivo
+passar a viajar (seria mudança de formato do evento de exclusão no `.log`, não
+decidida).
+
 Três coisas mudaram, e a terceira não era uma decisão — era um defeito:
 
 1. a réplica **não confere** chave estrangeira;

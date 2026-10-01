@@ -833,6 +833,17 @@ meio. Nada no arquivo mudou: é o mesmo `proximo_rownum` nos mesmos bytes
 conserto não é retroativo — um buraco já gravado antes desta data continua no
 disco como estava.
 
+**Na réplica fiel e no PITR, o número vem da imagem — desde 01/10/2026
+(pedido 309), sem mudar o formato.** A inclusão aplicada pelo rowid
+(`aplicar_evento`, e o `reaplicar_evento_do_proprio_diario` que ele e a
+restauração chamam) grava o `rownum` que o source gravou, e o contador vai
+para `max(atual, veio + 1)` — nunca recua, no espelho do carimbo de criação.
+É a única exceção ao «não se escreve à mão», e não é escolha de ninguém: é a
+ordem de chegada **do source**, e numerar aqui fechava um buraco histórico
+dele (`1,2,4` virava `1,2,3`). Imagem com zero (source anterior à coluna)
+continua numerando localmente. O **bidirecional** não honra: lá cada servidor
+tem a sua ordem de digitação, e o `rownum` é dele.
+
 **Por que ela existe, se já há o `rowid`.** O `rowid` é a *posição física*.
 Enquanto o volume sai de divisão, posição e ordem de chegada são a mesma coisa
 e o rowid serve de cursor sozinho. Na **partição alfanumérica** não são: a

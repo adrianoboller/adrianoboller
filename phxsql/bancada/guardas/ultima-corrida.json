@@ -609,9 +609,9 @@
       "id": "marca-de-replica-fica-acesa",
       "titulo": "a marca de replica nao se apaga na volta do `aplicar_evento`",
       "veredito": "PROVADA",
-      "segundos": 1.54,
+      "segundos": 8.42,
       "notas": [],
-      "quando": "2026-09-16 15:25"
+      "quando": "2026-10-01 12:14"
     },
     {
       "id": "fk-nao-pergunta-se-a-mae-esta-viva",
@@ -3512,6 +3512,22 @@
       "quando": "2026-10-01 06:50"
     },
     {
+      "id": "replica-renumera-o-buraco-do-source",
+      "titulo": "A réplica fiel e o PITR geravam o `rownum` deles: o buraco histórico do source (1,2,4) virava 1,2,3 na cópia, para sempre",
+      "veredito": "PROVADA",
+      "segundos": 24.96,
+      "notas": [],
+      "quando": "2026-10-01 12:14"
+    },
+    {
+      "id": "bidirecional-honra-o-rownum-do-outro",
+      "titulo": "O bidirecional honrando o `rownum` do outro servidor: as duas fontes de numeração colidem no mesmo `.reg`",
+      "veredito": "PROVADA",
+      "segundos": 25.75,
+      "notas": [],
+      "quando": "2026-10-01 12:14"
+    },
+    {
       "id": "imagem-com-sobra-ignorada",
       "titulo": "O decodificador da imagem ignorava calado os bytes que sobravam depois dos externos: um campo novo passaria despercebido por todo binário anterior",
       "veredito": "PROVADA",
@@ -3587,9 +3603,9 @@
       "id": "restauracao-recusa-como-replica-sem-cofre",
       "titulo": "A restauração do PRÓPRIO diário passaria pela recusa da réplica sem cofre: o servidor sem cofre deixaria de restaurar toda tabela com anexo marcado, sem proteger um byte",
       "veredito": "PROVADA",
-      "segundos": 78.99,
+      "segundos": 103.67,
       "notas": [],
-      "quando": "2026-10-01 11:11"
+      "quando": "2026-10-01 12:14"
     },
     {
       "id": "replica-sem-cofre-grava-inline-marcado-em-claro",
@@ -3651,9 +3667,9 @@
       "id": "replica-fiel-sem-conferir-a-linhagem",
       "titulo": "a replica fiel abre a tabela daqui sem conferir a linhagem do source: tabela de outra historia recebe os eventos no rowid de outra linha",
       "veredito": "PROVADA",
-      "segundos": 82.68,
+      "segundos": 99.34,
       "notas": [],
-      "quando": "2026-10-01 11:35"
+      "quando": "2026-10-01 12:14"
     },
     {
       "id": "aplicar-sem-conferir-a-linhagem",

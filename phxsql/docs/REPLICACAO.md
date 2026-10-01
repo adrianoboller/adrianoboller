@@ -2364,9 +2364,9 @@ posição do cluster. As que **não valem**, com o pedido que as carrega:
 
 | garantia | vale? | pedido |
 |---|---|---:|
-| mesmo `rownum` | **NÃO**, silencioso | 291 (decisão do dono, 3/6) |
+| mesmo `rownum` | **SIM** na réplica fiel e no PITR desde o 309 (honra o da imagem); local no bidirecional, por desenho | 291 via (a), 309 via (b) |
 | mesma `versao` | por construção, nunca conferida | 296 |
-| mesmo `.trash`/`.reason` | NÃO, por desenho — sem ressalva escrita | 297 |
+| mesmo `.trash`/`.reason` | NÃO, por desenho — ressalva escrita no `INTEGRIDADE.md` §3 e medida pelo soquete | 297 |
 | mesmo carimbo/origem no `.log` | NÃO, unidirecional — o PITR já faz certo | 298 |
 | integridade referencial na réplica | NÃO, decisão **já** registrada | pedido 171/`INTEGRIDADE.md` §3 |
 | unicidade na réplica | SIM, mas trava o par no bidirecional | 292 (decisão do dono, 4/6) |

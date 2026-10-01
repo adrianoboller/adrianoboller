@@ -539,6 +539,12 @@ dia, nunca no desejado:
   (`teto-de-colunas-sem-o-bit-do-selo`) e o evento pre-344 ao fio sem abrir
   (`evento-pre-344-ao-fio-sem-abrir`). 627 medido pelo `--numeros` nesta
   arvore.
+  **SUBIU para 637 em 01/10/2026** (no merge, 635 + 2; pedido 309): a replica fiel e o
+  PITR que renumeravam o buraco historico do source
+  (`replica-renumera-o-buraco-do-source`) e o irmao que trava o velho, o
+  bidirecional honrando o `rownum` do outro
+  (`bidirecional-honra-o-rownum-do-outro`). 630, medido pelo `--numeros`
+  nesta arvore.
 
 # A QUINTA REGUA: a tabela publicada pode ser MENOR que o catalogo
 
@@ -645,7 +651,7 @@ TETO_TESTE_MORTO = 0
 TETO_TRECHO_AMBIGUO = 0
 TETO_TESTE_FORA_DO_BINARIO = 0
 TETO_TESTE_SEM_MODULO = 0
-PISO_DAS_ENTRADAS = 635
+PISO_DAS_ENTRADAS = 637
 
 # ------------------------------------------------------------- APOSENTADAS
 #

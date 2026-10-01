@@ -4,7 +4,7 @@
      `--catraca` reprova se este arquivo nao bater com o que o extrator
      geraria agora; rode o comando sem flag para atualizar. -->
 
-Gerado dos `cognicao_*.md` com `**Estado:** FRUTIFERO` -- 8 hoje, de 379 cognicoes no total.
+Gerado dos `cognicao_*.md` com `**Estado:** FRUTIFERO` -- 8 hoje, de 380 cognicoes no total.
 
 ## Chave por caminho não segue o `rename`: mudar o nome nas sujas não bastava
 
