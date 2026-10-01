@@ -180,20 +180,130 @@ fn destrinchar(guardado: &str) -> Result<(u32, Vec<u8>, Vec<u8>)> {
     Ok((iteracoes, sal, hash))
 }
 
-/// Bytes aleatorios, para sal e para nonce.
+/// Bytes aleatorios -- sal, nonce e MATERIAL DE CHAVE (a efemera do TLS e do
+/// Noise, a privada do autoassinado, a semente de [`crate::cifra::sortear`]).
 ///
-/// Tenta `/dev/urandom`; onde ele nao existe, cai na mistura descrita em
-/// [`sal_novo`].
+/// Tenta `/dev/urandom`, que e o caminho de Linux e macOS, como sempre foi.
+/// Onde ele nao existe (Windows), vem de [`bytes_sem_urandom`] -- o gerador
+/// do sistema pela propria `std` (pedido 606). NUNCA da mistura de relogio,
+/// PID e endereco: essa e boa para sal, que pede so unicidade, e ruim para
+/// chave, que pede segredo -- quem estima o instante do arranque e o PID
+/// refazia a chave efemera e decifrava o trafego gravado.
 pub fn bytes_aleatorios(quantos: usize) -> Vec<u8> {
+    match ler_urandom(quantos) {
+        Some(b) => b,
+        None => bytes_sem_urandom(quantos),
+    }
+}
+
+/// `quantos` bytes do `/dev/urandom`, ou `None` onde ele nao existe.
+///
+/// ATENCAO: o dispositivo e INFINITO -- ler "o arquivo inteiro" nunca
+/// termina; e exatamente `quantos`.
+fn ler_urandom(quantos: usize) -> Option<Vec<u8>> {
+    use std::io::Read;
+    let mut arquivo = std::fs::File::open("/dev/urandom").ok()?;
+    let mut saida = vec![0u8; quantos];
+    arquivo.read_exact(&mut saida).ok()?;
+    Some(saida)
+}
+
+/// O caminho de [`bytes_aleatorios`] onde nao ha `/dev/urandom` -- pedido
+/// 606. Separado para a prova rodar no Linux, onde o `/dev/urandom` existe e
+/// esconderia este caminho.
+///
+/// Fonte morta (a `std` devolvendo a mesma semente a threads diferentes)
+/// DERRUBA a chamada em vez de cair na mistura: chave adivinhavel servida
+/// calada e pior que pedido recusado -- e e o mesmo que a `std` faz quando o
+/// gerador do sistema falha ao semear um `HashMap` (`assert!` no
+/// `RtlGenRandom`; o `ProcessPrng` e documentado como sempre `TRUE`).
+fn bytes_sem_urandom(quantos: usize) -> Vec<u8> {
     let mut saida = Vec::with_capacity(quantos);
     while saida.len() < quantos {
-        match sal_do_urandom() {
-            Some(b) => saida.extend_from_slice(&b),
-            None => saida.extend_from_slice(&sal_por_mistura()),
-        }
+        let semente = colher_da_std().unwrap_or_else(|| {
+            panic!(
+                "sem /dev/urandom e sem gerador do sistema pela std (pedido 606): \
+                 o PhxSql recusa gerar chave de relogio e PID"
+            )
+        });
+        saida.extend_from_slice(&semente);
     }
     saida.truncate(quantos);
     saida
+}
+
+/// Threads novas por colheita. Cada uma traz os 128 bits que a `std` pediu ao
+/// sistema para ela; quatro dao 512 bits de entrada para os 256 da saida --
+/// folga para a parte que o SipHash nao deixa passar.
+const THREADS_DA_COLHEITA: usize = 4;
+
+/// 32 bytes do gerador do SISTEMA, so com a `std` e sem `unsafe` -- pedido
+/// 606.
+///
+/// # O que a `std` garante, e o que e detalhe dela
+///
+/// **Garantido (documentado):** o `RandomState` e semeado de «a high quality,
+/// secure source of randomness provided by the host» -- e o que protege o
+/// `HashMap` contra quem escolhe chaves para colidir.
+///
+/// **Detalhe de implementacao (lido no fonte da 1.94.1, nao contrato):**
+/// `library/std/src/hash/random.rs` guarda as chaves num `thread_local!`
+/// iniciado por `hashmap_random_keys()` -- uma vez POR THREAD, so somando 1
+/// ao `k0` a cada `RandomState` seguinte da mesma thread. No Windows,
+/// `sys/random/mod.rs` faz dela 16 bytes do `fill_bytes`, que e o
+/// `ProcessPrng` (`RtlGenRandom` no alvo `win7`) -- a mesma chamada que um
+/// FFI faria, sem o FFI que a petrea «so a `std`» nao deixa escrever. No
+/// Linux e o `getrandom`.
+///
+/// Entao: cada thread NOVA traz 128 bits do sistema, e o hash de entradas
+/// fixas com eles e funcao so desses bits. O SHA-256 dos hashes de
+/// [`THREADS_DA_COLHEITA`] threads e a semente.
+///
+/// **O risco nomeado:** se a `std` passar a semear uma vez por PROCESSO, as
+/// threads viram a mesma semente com o `k0` somado -- ainda do sistema, ainda
+/// sem relogio, so com 128 bits em vez de 512 -- e nenhum teste ve isso (o
+/// SipHash esconde a relacao entre as chaves). Se passar a nao semear do
+/// sistema (o `unsupported.rs` dela usa enderecos), a conferencia de fonte
+/// morta abaixo tambem nao pega: o caminho so vale onde a `std` tem gerador
+/// (Windows aqui; Unix tem o `/dev/urandom` antes).
+fn colher_da_std() -> Option<[u8; 32]> {
+    use std::hash::{BuildHasher, Hasher, RandomState};
+    let mut fios = Vec::with_capacity(THREADS_DA_COLHEITA);
+    for _ in 0..THREADS_DA_COLHEITA {
+        // `Builder::spawn`, e nao `thread::spawn`: sem thread, a colheita
+        // falha como fonte morta, em vez de derrubar com outra mensagem.
+        let fio = std::thread::Builder::new()
+            .spawn(|| {
+                let estado = RandomState::new();
+                let mut colhido = [0u64; 4];
+                for (i, c) in colhido.iter_mut().enumerate() {
+                    let mut h = estado.build_hasher();
+                    h.write_u64(i as u64);
+                    *c = h.finish();
+                }
+                colhido
+            })
+            .ok()?;
+        fios.push(fio);
+    }
+    let mut colheitas = Vec::with_capacity(THREADS_DA_COLHEITA);
+    for fio in fios {
+        colheitas.push(fio.join().ok()?);
+    }
+    // Fonte morta: duas threads novas com a mesma colheita -- a semente nao
+    // veio do sistema, e o que sairia daqui seria previsivel.
+    for (i, a) in colheitas.iter().enumerate() {
+        if colheitas[i + 1..].contains(a) {
+            return None;
+        }
+    }
+    let mut entrada = Vec::with_capacity(THREADS_DA_COLHEITA * 32);
+    for c in &colheitas {
+        for x in c {
+            entrada.extend_from_slice(&x.to_le_bytes());
+        }
+    }
+    Some(sha256(&entrada))
 }
 
 /// O material derivado que esta guardado dentro de um hash de senha.
@@ -228,28 +338,16 @@ fn sal_novo() -> [u8; SAL_LEN] {
 }
 
 fn sal_do_urandom() -> Option<[u8; SAL_LEN]> {
-    use std::io::Read;
-    let mut arquivo = std::fs::File::open("/dev/urandom").ok()?;
     let mut sal = [0u8; SAL_LEN];
-    arquivo.read_exact(&mut sal).ok()?;
+    sal.copy_from_slice(&ler_urandom(SAL_LEN)?);
     Some(sal)
 }
 
+/// Relogio, contador, PID e endereco: SO para sal (unicidade), nunca para
+/// chave -- ver [`bytes_aleatorios`]. Previsivel por construcao: dados os
+/// quatro, sai sempre o mesmo, e e isso que a prova do 606 mostra.
 fn sal_por_mistura() -> [u8; SAL_LEN] {
-    use std::sync::atomic::{AtomicU64, Ordering};
-    use std::time::{SystemTime, UNIX_EPOCH};
-    static CONTADOR: AtomicU64 = AtomicU64::new(0);
-
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_nanos() as u64)
-        .unwrap_or(0);
-    let sequencia = CONTADOR.fetch_add(1, Ordering::SeqCst);
-    let pid = std::process::id() as u64;
-    // Endereco de uma alocacao: varia por execucao por causa do ASLR.
-    let caixa = Box::new(0u8);
-    let endereco = (&*caixa as *const u8) as u64;
-
+    let (nanos, sequencia, pid, endereco) = ambiente_da_mistura();
     let mut entrada = Vec::with_capacity(32);
     entrada.extend_from_slice(&nanos.to_le_bytes());
     entrada.extend_from_slice(&sequencia.to_le_bytes());
@@ -260,6 +358,30 @@ fn sal_por_mistura() -> [u8; SAL_LEN] {
     let mut sal = [0u8; SAL_LEN];
     sal.copy_from_slice(&resumo[..SAL_LEN]);
     sal
+}
+
+/// O que a mistura do sal le do ambiente: nanossegundos do relogio, um
+/// contador do processo, o PID e o endereco de uma alocacao (que o ASLR muda
+/// a cada execucao). Nos testes, uma thread pode fixa-los -- e o retrato de
+/// quem ADIVINHA o instante e o PID, que e o ataque do 606.
+fn ambiente_da_mistura() -> (u64, u64, u64, u64) {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::time::{SystemTime, UNIX_EPOCH};
+    static CONTADOR: AtomicU64 = AtomicU64::new(0);
+
+    #[cfg(test)]
+    if let Some(fixo) = tests::AMBIENTE_FIXO.with(|a| a.get()) {
+        return fixo;
+    }
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos() as u64)
+        .unwrap_or(0);
+    let sequencia = CONTADOR.fetch_add(1, Ordering::SeqCst);
+    let pid = std::process::id() as u64;
+    let caixa = Box::new(0u8);
+    let endereco = (&*caixa as *const u8) as u64;
+    (nanos, sequencia, pid, endereco)
 }
 
 #[cfg(test)]
@@ -369,6 +491,141 @@ mod tests {
         crate::hash::pbkdf2_sha256(b"segredo", &sal, it, &mut refeito);
         assert_eq!(refeito, dk);
         assert!(derivado_do_hash("nao-e-hash").is_err());
+    }
+
+    thread_local! {
+        /// Relogio, contador, PID e endereco fixados NESTA thread -- ver
+        /// [`ambiente_da_mistura`].
+        pub(super) static AMBIENTE_FIXO: std::cell::Cell<Option<(u64, u64, u64, u64)>> =
+            const { std::cell::Cell::new(None) };
+    }
+
+    /// Relogio e PID de um arranque que o atacante estimou -- os mesmos nos
+    /// dois processos da prova.
+    const AMBIENTE_ADIVINHADO: (u64, u64, u64, u64) =
+        (1_790_000_000_000_000_000, 0, 4242, 0x5555_0000_1000);
+
+    /// **Pedido 606: sem `/dev/urandom`, a chave nao sai do relogio nem do
+    /// PID.** Com relogio, contador, PID e endereco FIXOS -- o que quem
+    /// estima o arranque tem na mao --, duas chamadas tem de dar bytes
+    /// diferentes. Com o defeito reposto (`bytes_sem_urandom` pela mistura),
+    /// as duas saem iguais, e iguais a mistura refeita por fora.
+    #[test]
+    fn sem_urandom_a_chave_nao_sai_do_relogio_nem_do_pid() {
+        AMBIENTE_FIXO.with(|a| a.set(Some(AMBIENTE_ADIVINHADO)));
+        let refeita = sal_por_mistura();
+        let a = bytes_sem_urandom(32);
+        let b = bytes_sem_urandom(32);
+        AMBIENTE_FIXO.with(|a| a.set(None));
+        assert_eq!(
+            refeita,
+            sal_por_mistura_fixa(),
+            "a premissa: a mistura e funcao so do ambiente"
+        );
+        assert_ne!(
+            a, b,
+            "com relogio e PID fixos a chave repetiu: ela sai do relogio e do PID"
+        );
+        assert_ne!(&a[..SAL_LEN], &refeita[..], "a chave E a mistura refeita");
+    }
+
+    fn sal_por_mistura_fixa() -> [u8; SAL_LEN] {
+        AMBIENTE_FIXO.with(|a| a.set(Some(AMBIENTE_ADIVINHADO)));
+        let s = sal_por_mistura();
+        AMBIENTE_FIXO.with(|a| a.set(None));
+        s
+    }
+
+    const FILHO_606: &str = "PHX_606_FILHO";
+
+    /// O corpo do filho de [`dois_processos_no_mesmo_instante_dao_chaves_diferentes`]:
+    /// fora dele, nao faz nada.
+    #[test]
+    fn filho_606_imprime_a_chave_e_a_mistura() {
+        if std::env::var_os(FILHO_606).is_none() {
+            return;
+        }
+        AMBIENTE_FIXO.with(|a| a.set(Some(AMBIENTE_ADIVINHADO)));
+        let chave = para_hex(&bytes_sem_urandom(32));
+        let mistura = para_hex(&sal_por_mistura());
+        AMBIENTE_FIXO.with(|a| a.set(None));
+        println!("606-chave={chave}");
+        println!("606-mistura={mistura}");
+    }
+
+    /// **Pedido 606, contra o SO: dois PROCESSOS no mesmo instante e com o
+    /// mesmo PID dao chaves diferentes.** Os dois filhos sobem juntos, com
+    /// relogio, contador, PID e endereco fixados iguais. A mistura velha da o
+    /// MESMO nos dois -- e e o que um atacante refaz --; a chave tem de dar
+    /// diferente, porque vem do gerador do sistema. O caminho e o generico da
+    /// `std` (o `RandomState` de threads novas), o mesmo do Windows; no
+    /// Windows mesmo, NAO MEDIDO (sem Windows nem `wine` no conteiner).
+    #[test]
+    fn dois_processos_no_mesmo_instante_dao_chaves_diferentes() {
+        if std::env::var_os(FILHO_606).is_some() {
+            return;
+        }
+        let eu = std::env::current_exe().unwrap();
+        let subir = || {
+            std::process::Command::new(&eu)
+                .args([
+                    "--exact",
+                    "senha::tests::filho_606_imprime_a_chave_e_a_mistura",
+                    "--nocapture",
+                    "--test-threads=1",
+                ])
+                .env(FILHO_606, "1")
+                .stdout(std::process::Stdio::piped())
+                .spawn()
+                .unwrap()
+        };
+        let (a, b) = (subir(), subir());
+        let ler = |f: std::process::Child| {
+            let saida = f.wait_with_output().unwrap();
+            assert!(saida.status.success());
+            let texto = String::from_utf8_lossy(&saida.stdout).into_owned();
+            let campo = |nome: &str| {
+                texto
+                    .lines()
+                    .find_map(|l| l.split_once(nome).map(|(_, v)| v.trim()))
+                    .unwrap_or_else(|| panic!("o filho nao imprimiu {nome}:\n{texto}"))
+                    .to_string()
+            };
+            (campo("606-chave="), campo("606-mistura="))
+        };
+        let ((chave_a, mistura_a), (chave_b, mistura_b)) = (ler(a), ler(b));
+        assert_eq!(
+            mistura_a, mistura_b,
+            "a premissa: com relogio e PID iguais a mistura velha repete"
+        );
+        assert_ne!(
+            chave_a, chave_b,
+            "dois processos com o mesmo relogio e o mesmo PID deram a MESMA \
+             chave: ela sai da mistura, e quem adivinha o arranque a refaz"
+        );
+    }
+
+    /// **Pedido 606: threads novas colhem sementes diferentes, e duas
+    /// colheitas nunca coincidem.** E o que a conferencia de fonte morta de
+    /// [`colher_da_std`] supoe. O que este teste NAO ve, dito: se a `std`
+    /// passar a semear uma vez por processo e so somar 1 ao `k0` por
+    /// `RandomState`, os hashes continuam diferentes (o SipHash nao deixa ver
+    /// a relacao entre as chaves) -- a entrada cai de 512 para 128 bits do
+    /// sistema, ainda sem relogio. Esse risco fica nomeado no comentario de
+    /// [`colher_da_std`], nao vigiado.
+    #[test]
+    fn duas_threads_novas_colhem_diferente() {
+        use std::hash::{BuildHasher, RandomState};
+        let semente_da_thread = || {
+            std::thread::spawn(|| RandomState::new().hash_one(0u64))
+                .join()
+                .unwrap()
+        };
+        let vistos: std::collections::HashSet<_> = (0..16).map(|_| semente_da_thread()).collect();
+        assert_eq!(vistos.len(), 16, "threads novas repetiram a semente da std");
+        let a = colher_da_std().expect("a std tem gerador neste alvo");
+        let b = colher_da_std().expect("a std tem gerador neste alvo");
+        assert_ne!(a, b);
     }
 
     #[test]

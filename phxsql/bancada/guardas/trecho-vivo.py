@@ -502,6 +502,12 @@ dia, nunca no desejado:
   vazio (`registro-de-numeros-ilegivel-vira-vazio`) e o par aceito antes de
   o registro ir ao disco (`numero-aceito-antes-do-disco`). 589 + 3 = 592,
   medido pelo `--catraca`.
+  **SUBIU para 616 em 01/10/2026** (no merge, 613 + 3; pedidos 611 e 606): tres guardas -- o
+  manifesto velho apagado pelo nome do destino (`manifesto-velho-apagado-pelo-nome`),
+  o destino conferido so pelo nome e aberto depois pelo descritor
+  (`destino-do-backup-conferido-so-pelo-nome`) e a chave sem `/dev/urandom`
+  saindo da mistura de relogio e PID (`chave-sem-urandom-pela-mistura`).
+  594 + 3 = 597, contado pelo `--catraca` (596 entradas mais 1 aposentada).
 
 # A QUINTA REGUA: a tabela publicada pode ser MENOR que o catalogo
 
@@ -608,7 +614,7 @@ TETO_TESTE_MORTO = 0
 TETO_TRECHO_AMBIGUO = 0
 TETO_TESTE_FORA_DO_BINARIO = 0
 TETO_TESTE_SEM_MODULO = 0
-PISO_DAS_ENTRADAS = 613
+PISO_DAS_ENTRADAS = 616
 
 # ------------------------------------------------------------- APOSENTADAS
 #

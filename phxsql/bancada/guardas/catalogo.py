@@ -17819,7 +17819,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "prova derruba a copia de verdade (`ulimit -f`, `EFBIG`)."
         ),
         "arquivo": "crates/phxsql-store/src/backup.rs",
-        "trecho": """    invalidar_manifesto_velho(destino)?;
+        "trecho": """    invalidar_manifesto_velho(copias)?;
 """,
         "troca": """    // DEFEITO REPOSTO (577): o manifesto velho fica no lugar.
 """,
@@ -20690,6 +20690,81 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         ],
         "seguem": [
             "servidor::testes_dos_numeros_de_origem::o_numero_nao_e_reatribuido_a_outro_id_nem_depois_do_reinicio",
+        ],
+    },
+    {
+        "id": "manifesto-velho-apagado-pelo-nome",
+        "titulo": "o backup apaga o manifesto velho pelo NOME do destino: um link trocado no meio da corrida apaga o backup.json de OUTRO backup",
+        "porque": (
+            "pedido 611 (S6 da revisao SEC de 01/10/2026): `invalidar_manifesto_velho` "
+            "fazia `remove_file(destino.join(MANIFESTO))` depois de o `Pasta::abrir` "
+            "ja ter aberto o destino. Com um link do caminho virando entre as duas "
+            "linhas, as copias iam para a pasta aberta e o `backup.json` apagado era "
+            "o do outro, que o `restaurar` passava a recusar. Agora sai pela pasta "
+            "aberta (`no_destino`), o motor do 593."
+        ),
+        "arquivo": "crates/phxsql-store/src/backup.rs",
+        "trecho": """fn invalidar_manifesto_velho(copias: &Copias) -> Result<()> {
+    let manifesto = no_destino(copias, MANIFESTO);
+""",
+        "troca": """fn invalidar_manifesto_velho(copias: &Copias) -> Result<()> {
+    // DEFEITO REPOSTO (611/S6): pelo nome do destino, nao pela pasta aberta.
+    let manifesto = copias.destino.join(MANIFESTO);
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "destino-trocado-na-janela"],
+        "caem": ["o_manifesto_apagado_e_o_da_pasta_aberta"],
+        "seguem": ["copias_nunca_caem_dentro_da_raiz_pela_troca_na_janela"],
+        "prazo": 600,
+    },
+    {
+        "id": "destino-do-backup-conferido-so-pelo-nome",
+        "titulo": "o destino do backup é conferido pelo NOME e aberto depois pelo descritor: a troca de um link no meio põe as cópias dentro do database vivo",
+        "porque": (
+            "pedido 611 (S7 da revisao SEC de 01/10/2026): `conferir_destino` le o "
+            "nome e o `Pasta::abrir` o segue de novo depois. Com um link do caminho "
+            "virando entre os dois, medido contra o SO, as copias caiam em "
+            "`dados/loja/rh/` -- o schema `rh` dentro do database `loja`. Agora o "
+            "dev/inode da pasta ABERTA e dos ancestrais dela se confere contra o da "
+            "raiz (`conferir_destino_aberto`)."
+        ),
+        "arquivo": "crates/phxsql-store/src/backup.rs",
+        "trecho": """    conferir_destino_aberto(raiz, destino, &aberto, true)?;
+""",
+        "troca": """    // DEFEITO REPOSTO (611/S7): so a conferencia pelo nome, la em cima.
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "destino-trocado-na-janela"],
+        "caem": ["copias_nunca_caem_dentro_da_raiz_pela_troca_na_janela"],
+        "seguem": ["o_manifesto_apagado_e_o_da_pasta_aberta"],
+        "prazo": 600,
+    },
+    {
+        "id": "chave-sem-urandom-pela-mistura",
+        "titulo": "sem /dev/urandom (Windows), a chave efêmera do TLS e do Noise e a do autoassinado saem de SHA-256 de relógio, PID e endereço",
+        "porque": (
+            "pedido 606 (A3 da auditoria de setembro; plano do 572, T0): "
+            "`bytes_aleatorios` caia na mistura do sal onde nao ha `/dev/urandom`. "
+            "Mistura serve a sal (unicidade), nao a chave (segredo): quem estima o "
+            "arranque e o PID refaz a efemera e decifra o trafego gravado. Agora "
+            "vem do gerador do sistema pela propria `std` (o `RandomState` de "
+            "threads novas), e fonte morta derruba em vez de misturar."
+        ),
+        "arquivo": "crates/phxsql-core/src/senha.rs",
+        "trecho": """        let semente = colher_da_std().unwrap_or_else(|| {
+""",
+        "troca": """        // DEFEITO REPOSTO (606): a mistura de relogio e PID como chave.
+        let semente = Some(sal_por_mistura()).unwrap_or_else(|| {
+""",
+        "pacote": "phxsql-core",
+        "alvo": ["--lib"],
+        "caem": [
+            "senha::tests::sem_urandom_a_chave_nao_sai_do_relogio_nem_do_pid",
+            "senha::tests::dois_processos_no_mesmo_instante_dao_chaves_diferentes",
+        ],
+        "seguem": [
+            "senha::tests::bytes_aleatorios_no_tamanho_pedido",
+            "senha::tests::duas_threads_novas_colhem_diferente",
         ],
     },
 ]

@@ -2793,9 +2793,9 @@
       "id": "backup-reaproveitado-que-falha-deixa-o-manifesto-velho",
       "titulo": "o backup em pasta REAPROVEITADA que falha deixa o `backup.json` velho descrevendo cópias que já mudaram",
       "veredito": "PROVADA",
-      "segundos": 5.08,
+      "segundos": 8.12,
       "notas": [],
-      "quando": "2026-09-30 23:05"
+      "quando": "2026-10-01 06:59"
     },
     {
       "id": "backup-fsync-reabre-a-copia",
@@ -3502,6 +3502,30 @@
       "segundos": 78.15,
       "notas": [],
       "quando": "2026-10-01 06:50"
+    },
+    {
+      "id": "manifesto-velho-apagado-pelo-nome",
+      "titulo": "o backup apaga o manifesto velho pelo NOME do destino: um link trocado no meio da corrida apaga o backup.json de OUTRO backup",
+      "veredito": "PROVADA",
+      "segundos": 8.55,
+      "notas": [],
+      "quando": "2026-10-01 06:59"
+    },
+    {
+      "id": "destino-do-backup-conferido-so-pelo-nome",
+      "titulo": "o destino do backup é conferido pelo NOME e aberto depois pelo descritor: a troca de um link no meio põe as cópias dentro do database vivo",
+      "veredito": "PROVADA",
+      "segundos": 10.68,
+      "notas": [],
+      "quando": "2026-10-01 06:59"
+    },
+    {
+      "id": "chave-sem-urandom-pela-mistura",
+      "titulo": "sem /dev/urandom (Windows), a chave efêmera do TLS e do Noise e a do autoassinado saem de SHA-256 de relógio, PID e endereço",
+      "veredito": "PROVADA",
+      "segundos": 9.94,
+      "notas": [],
+      "quando": "2026-10-01 06:59"
     },
     {
       "id": "cifra-do-fio-imposta",

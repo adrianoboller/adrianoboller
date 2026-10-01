@@ -165,6 +165,15 @@ CATALOGO = [
                 "as threads morrem no fim do `scope`, entao o teto e' o numero "
                 "delas, e ele ja era lido do config antes do pedido 248.",
     },
+    {
+        "arquivo": "crates/phxsql-core/src/senha.rs",
+        "agulha": "`Builder::spawn`, e nao `thread::spawn`",
+        "nome": "senha::colher_da_std (semente sem /dev/urandom)",
+        "teto": "`THREADS_DA_COLHEITA` (4) por colheita, todas com `join` antes "
+                "de `colher_da_std` voltar: nenhuma sobrevive a chamada. So "
+                "roda onde nao ha `/dev/urandom` (Windows); no Linux o "
+                "`bytes_aleatorios` nem chega aqui. Pedido 606.",
+    },
     # ------------------------------------------------ servicos, um de cada
     {
         "arquivo": "crates/phxsql-server/src/servidor.rs",

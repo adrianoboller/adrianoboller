@@ -1070,11 +1070,22 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `datarow-curta-do-postgres` | a `DataRow` do PostgreSQL com menos campos que a `RowDescription` passava pelo leitor e entrava em pânico na sincronia, com a trava de dados na mão | 1 | ✅ provada |
 | `linha-remota-curta-na-sincronia` | `linha_remota_para_negocio` indexava a linha do par pela posição do cabeçalho (`remota[de]`): linha curta de qualquer motor era pânico, não recusa | 1 | ✅ provada |
 | `dblink-ligar-grava-copia-velha` | o `dblink_ligar` gravava no fim a cópia da ligação lida antes da rede: a excluída no meio voltava com a senha antiga, e a troca de senha feita no meio era desfeita | 1 | ✅ provada |
+| `troca-de-chave-vira-linha-nova` | No bidirecional, a alteração que troca a chave virava inserção nova do outro lado e a linha antiga ficava: a imagem só dizia o «depois» | 1 | ✅ provada |
+| `fio-cifrado-perde-o-antes` | A imagem aberta para o fio numa tabela cifrada era remontada só até os externos, e a troca de chave perdia o «antes» só ali | 1 | ✅ provada |
+| `composta-casa-pela-primeira-coluna` | A chave composta do bidirecional casando só pela primeira coluna: (1,2) e (1,3) caem na identidade de (1,1) | 1 | ✅ provada |
+| `numero-de-origem-conferido-so-no-par` | O número de origem do bidirecional conferido só contra o próprio: dois caixas com o mesmo número entre si não eram vistos, e o central suprimia os eventos de um ao servir o outro | 1 | ✅ provada |
+| `numero-de-origem-atribuido-ignorado` | O `numero_servidor` lido do config e ignorado na conta do número de origem: o caixa inocente continua no hash que colide | 1 | ✅ provada |
+| `imagem-com-sobra-ignorada` | O decodificador da imagem ignorava calado os bytes que sobravam depois dos externos: um campo novo passaria despercebido por todo binário anterior | 1 | ✅ provada |
+| `registro-de-numeros-ilegivel-vira-vazio` | O `replicacao-numeros.json` ilegível lido como vazio: a colisão que ele existe para recusar passaria e iria para dentro dos `.log` | 2 | ✅ provada |
+| `numero-aceito-antes-do-disco` | O par novo de número de origem entrava na memória antes de o registro ir ao disco: com o disco recusando, a chamada seguinte o aceitava sem nunca ter gravado | 1 | ✅ provada |
+| `manifesto-velho-apagado-pelo-nome` | o backup apaga o manifesto velho pelo NOME do destino: um link trocado no meio da corrida apaga o backup.json de OUTRO backup | 1 | ✅ provada |
+| `destino-do-backup-conferido-so-pelo-nome` | o destino do backup é conferido pelo NOME e aberto depois pelo descritor: a troca de um link no meio põe as cópias dentro do database vivo | 1 | ✅ provada |
+| `chave-sem-urandom-pela-mistura` | sem /dev/urandom (Windows), a chave efêmera do TLS e do Noise e a do autoassinado saem de SHA-256 de relógio, PID e endereço | 2 | ✅ provada |
 | `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | — | 🪦 aposentada (18/09/2026) |
 
-**429 das 604 guardas do catálogo: 1 aposentada, 424 provadas, 4 redundantes** — 12881 s de mutação, medido em 2026-09-16 15:25.
+**440 das 615 guardas do catálogo: 1 aposentada, 435 provadas, 4 redundantes** — 13254 s de mutação, medido em 2026-09-16 15:25.
 
-> **Esta rodada NÃO julgou 176 das 604 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 176 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 176 das 615 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 176 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
 - `fk-antes-do-default` — a chave estrangeira confere a linha crua, e o DEFAULT sem mãe grava a filha órfã
 - `fk-antes-do-default-pelo-servidor` — o DEFAULT e a calculada sem mãe gravam a órfã pelo servidor, fora e dentro da transação
