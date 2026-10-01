@@ -92,6 +92,8 @@ pub fn router(state: ApiState) -> Router {
         .route("/v1/schedules", post(agendar).get(agenda))
         .route("/sites/{id}/{*path}", get(site))
         .merge(crate::canvas::rotas())
+        // O config.json (leitura e gravacao com If-Match), com o mesmo Bearer.
+        .merge(crate::config::rotas())
         // A tela instalavel (PWA): a mesma interface no navegador, no celular e na ponte.
         .merge(crate::pwa::rotas())
         .with_state(state)
@@ -107,7 +109,7 @@ fn erro(code: StatusCode, msg: impl Into<String>) -> (StatusCode, Json<Value>) {
     (code, Json(json!(corpo)))
 }
 
-fn auth(s: &ApiState, h: &HeaderMap) -> Result<(), (StatusCode, Json<Value>)> {
+pub(crate) fn auth(s: &ApiState, h: &HeaderMap) -> Result<(), (StatusCode, Json<Value>)> {
     if phxclaw_api_gateway::authorized(h, &s.token) {
         Ok(())
     } else {
@@ -117,6 +119,9 @@ fn auth(s: &ApiState, h: &HeaderMap) -> Result<(), (StatusCode, Json<Value>)> {
 
 // Os corpos de fio sao os do contrato comum: o SDK serializa o mesmo tipo que a rota le.
 pub use phxclaw_agent_core::tarefa::{ErroDaApi, NovaTarefa, TarefaCriada, TaskSummary};
+
+/// Nome da gravacao dentro da pasta da tarefa (ao lado do `evidence.jsonl`).
+pub const ARQUIVO_DE_GRAVACAO: &str = "gravacao.jsonl";
 
 /// Recusa de criacao, com o codigo HTTP que a rota devolve. O canal de mensagens recebe a
 /// mesma recusa e a traduz em resposta ao chat.
@@ -185,6 +190,14 @@ pub fn criar_tarefa_com(
     if let Some(w) = &n.webhook {
         webhook_permitido(s, w).map_err(|e| recusa(StatusCode::BAD_REQUEST, e))?;
     }
+    // Imagens se conferem antes da cota e antes do disco, como o resto do pedido.
+    let imagens = n
+        .images
+        .iter()
+        .map(|i| crate::imagens::de_base64(i))
+        .collect::<Result<Vec<_>, _>>()
+        .and_then(|v| crate::imagens::validar(&v).map(|_| v))
+        .map_err(|e| recusa(StatusCode::BAD_REQUEST, format!("images: {e}")))?;
     let modelo = n.model.unwrap_or_else(|| s.default_model.clone());
     let agente = (s.factory)(&modelo).map_err(|e| recusa(StatusCode::BAD_REQUEST, e))?;
     // Depois da validacao: pedido invalido nao gasta a cota de quem errou o campo.
@@ -200,7 +213,21 @@ pub fn criar_tarefa_com(
     s.store
         .save(&t)
         .map_err(|e| recusa(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    if let Err(e) = preparo(&s.store.workdir(&t.id)) {
+    // As imagens entram no mesmo passo do preparo: antes de a execucao comecar, e a
+    // falha deixa a tarefa FALHA dizendo por que.
+    let work = s.store.workdir(&t.id);
+    let pronto = crate::imagens::gravar(&work, &imagens)
+        .map_err(std::io::Error::other)
+        .and_then(|rels| {
+            t.images = rels;
+            if t.images.is_empty() {
+                Ok(())
+            } else {
+                s.store.save(&t)
+            }
+        })
+        .and_then(|_| preparo(&work));
+    if let Err(e) = pronto {
         // A tarefa ja esta no disco: fica FALHA, dizendo por que, e nao `pending` para sempre.
         t.status = TaskStatus::Failed;
         t.error = Some(format!("preparo da pasta: {e}"));
@@ -210,6 +237,27 @@ pub fn criar_tarefa_com(
             format!("preparo da pasta: {e}"),
         ));
     }
+    // A gravacao mora fora de `work/`: a pasta que as ferramentas tocam nao pode reescrever
+    // o registro do que elas fizeram. Com plano, so o cabecalho nasce aqui; a execucao se
+    // grava a partir do sim (`aprovar` acha o arquivo e continua).
+    let agente = if n.gravar {
+        let arq = s.store.dir(&t.id).join(ARQUIVO_DE_GRAVACAO);
+        match crate::gravacao::Gravador::criar(&arq, &t.objective, &t.model) {
+            Ok(g) if !n.plan_first => crate::gravacao::gravando(agente, &g),
+            Ok(_) => agente,
+            Err(e) => {
+                t.status = TaskStatus::Failed;
+                t.error = Some(format!("gravacao: {e}"));
+                let _ = s.store.save(&t);
+                return Err(recusa(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("gravacao: {e}"),
+                ));
+            }
+        }
+    } else {
+        agente
+    };
     let id = t.id.clone();
     let st = s.clone();
     let fim = if n.plan_first {
@@ -341,6 +389,16 @@ async fn aprovar(State(s): State<ApiState>, h: HeaderMap, Path(id): Path<String>
         ));
     }
     let agente = (s.factory)(&t.model).map_err(|e| erro(StatusCode::BAD_REQUEST, e))?;
+    // Caminho irmao do `criar_tarefa_com`: tarefa criada com `gravar` e plano tem o
+    // cabecalho no disco, e e aqui que a execucao comeca.
+    let arq = s.store.dir(&id).join(ARQUIVO_DE_GRAVACAO);
+    let agente = if arq.exists() {
+        let g = crate::gravacao::Gravador::continuar(&arq)
+            .map_err(|e| erro(StatusCode::INTERNAL_SERVER_ERROR, format!("gravacao: {e}")))?;
+        crate::gravacao::gravando(agente, &g)
+    } else {
+        agente
+    };
     executar(s.clone(), agente, t);
     Ok((
         StatusCode::ACCEPTED,

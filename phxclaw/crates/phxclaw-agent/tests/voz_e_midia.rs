@@ -106,6 +106,7 @@ fn flite() -> Option<SpeakTool> {
         modelo: Some(voz),
         modelo_sha256: Some(SHA_SLT.into()),
         pastas: vec![d.join("flite/usr")],
+        elevenlabs: None,
     })
 }
 
@@ -120,6 +121,7 @@ fn whisper() -> Option<TranscribeTool> {
         bin: Some(bin),
         model: Some(modelo),
         model_sha256: Some(SHA_TINY_EN.into()),
+        elevenlabs: None,
     })
 }
 
@@ -420,6 +422,7 @@ async fn speak_recusa_sem_configuracao_sem_marcador_e_com_modelo_adulterado() {
         modelo: None,
         modelo_sha256: None,
         pastas: vec![],
+        elevenlabs: None,
     };
     let e = nada.run(json!({"text":"oi"}), &c).await.unwrap_err();
     let m = e.to_string();
@@ -438,6 +441,7 @@ async fn speak_recusa_sem_configuracao_sem_marcador_e_com_modelo_adulterado() {
         modelo: Some(modelo.clone()),
         modelo_sha256: Some("0".repeat(64)),
         pastas: vec![],
+        elevenlabs: None,
     };
     let m = sem_saida
         .run(json!({"text":"oi"}), &c)
@@ -483,6 +487,7 @@ async fn speak_recusa_wav_invalido_do_motor_e_nao_o_entrega() {
         modelo: Some(modelo),
         modelo_sha256: Some(sha),
         pastas: vec![],
+        elevenlabs: None,
     };
     let m = t
         .run(json!({"text":"oi","output":"saida.wav"}), &c)
@@ -957,4 +962,732 @@ async fn image_generate_svg_local_desenhado_pelo_chromium() {
         .unwrap_err()
         .to_string();
     assert!(m.contains("svg:"), "{m}");
+}
+
+// ------------------------------------------------------------------ ElevenLabs e Nano Banana
+//
+// Provedores pagos contra servidores FALSOS locais: nao ha chave real aqui. O que se prova e o
+// fio (cabecalho da chave, consulta, corpo, imagem de entrada enviada), o que se faz com a
+// resposta (WAV conferido, PNG conferido, arquivo na pasta) e que a chave nao escapa por erro,
+// redirecionamento nem disco.
+
+mod pagos {
+    use super::*;
+    use axum::body::Bytes;
+    use axum::extract::State;
+    use axum::http::{HeaderMap, Method, Uri};
+    use base64::Engine;
+    use phxclaw_agent::elevenlabs::{
+        ElevenLabs, FalaElevenLabs, Formato, OuvidoElevenLabs, VoiceListTool, wav_de_pcm,
+    };
+    use phxclaw_agent::nanobanana::NanoBanana;
+
+    const CHAVE_EL: &str = "xi-CHAVE-ELEVENLABS-QUE-NAO-PODE-VAZAR";
+    const CHAVE_G: &str = "AIza-CHAVE-GEMINI-QUE-NAO-PODE-VAZAR";
+
+    #[derive(Debug, Clone)]
+    pub struct Req {
+        pub metodo: String,
+        pub caminho: String,
+        pub consulta: String,
+        pub cab: Vec<(String, String)>,
+        pub corpo: Vec<u8>,
+    }
+
+    impl Req {
+        pub fn cab(&self, k: &str) -> Option<&str> {
+            self.cab
+                .iter()
+                .find(|(c, _)| c == k)
+                .map(|(_, v)| v.as_str())
+        }
+        pub fn json(&self) -> Value {
+            serde_json::from_slice(&self.corpo).unwrap_or(Value::Null)
+        }
+    }
+
+    type Roteiro = Arc<dyn Fn(&Req) -> (u16, Vec<(&'static str, String)>, Vec<u8>) + Send + Sync>;
+    type Estado = (Roteiro, Arc<Mutex<Vec<Req>>>);
+
+    async fn atender(
+        State((r, log)): State<Estado>,
+        m: Method,
+        u: Uri,
+        h: HeaderMap,
+        corpo: Bytes,
+    ) -> axum::response::Response {
+        let req = Req {
+            metodo: m.to_string(),
+            caminho: u.path().to_string(),
+            consulta: u.query().unwrap_or("").to_string(),
+            cab: h
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
+                .collect(),
+            corpo: corpo.to_vec(),
+        };
+        log.lock().unwrap().push(req.clone());
+        // O roteiro pode rodar o flite: fora do runtime.
+        let (st, cab, b) = tokio::task::spawn_blocking(move || r(&req)).await.unwrap();
+        let mut resp = axum::response::Response::new(axum::body::Body::from(b));
+        *resp.status_mut() = axum::http::StatusCode::from_u16(st).unwrap();
+        for (k, v) in cab {
+            resp.headers_mut().insert(k, v.parse().unwrap());
+        }
+        resp
+    }
+
+    pub async fn falso(
+        r: impl Fn(&Req) -> (u16, Vec<(&'static str, String)>, Vec<u8>) + Send + Sync + 'static,
+    ) -> (String, Arc<Mutex<Vec<Req>>>) {
+        let log = Arc::new(Mutex::new(Vec::new()));
+        let app = axum::Router::new()
+            .fallback(atender)
+            .with_state((Arc::new(r) as Roteiro, log.clone()));
+        (servir(app).await, log)
+    }
+
+    /// Meio segundo de 440 Hz, 16 kHz mono: audio que nao depende de motor nenhum.
+    fn pcm_sintetico() -> Vec<u8> {
+        (0..8000)
+            .flat_map(|i| {
+                let x = (i as f64 * 440.0 * std::f64::consts::TAU / 16000.0).sin();
+                ((x * 8000.0) as i16).to_le_bytes()
+            })
+            .collect()
+    }
+
+    /// O WAV que o flite fala para `texto`, rodado direto (o servidor falso nao e o codigo
+    /// sob prova). `None` sem flite.
+    fn flite_wav(texto: &str) -> Option<Vec<u8>> {
+        let d = Path::new(VOZ_DIR);
+        let bin = d.join("flite/usr/bin/flite");
+        if !bin.is_file() {
+            return None;
+        }
+        let saida =
+            std::env::temp_dir().join(format!("phx-voz-el-{}.wav", phxclaw_types::new_uuid_v7()));
+        let ok = std::process::Command::new(&bin)
+            .env("LD_LIBRARY_PATH", d.join("flite/usr/lib/x86_64-linux-gnu"))
+            .arg("-voice")
+            .arg(d.join("cmu_us_slt.flitevox"))
+            .arg("-t")
+            .arg(texto)
+            .arg("-o")
+            .arg(&saida)
+            .status()
+            .ok()?
+            .success();
+        let b = std::fs::read(&saida).ok();
+        let _ = std::fs::remove_file(&saida);
+        b.filter(|_| ok)
+    }
+
+    /// Servidor que so ecoa o pedido inteiro num 401, e o que so redireciona para `destino`.
+    async fn eco_e_redirecionador(destino: String) -> (String, String) {
+        let (eco, _) = falso(|r| {
+            (
+                401,
+                vec![],
+                format!(
+                    "eco: {:?} {} {}",
+                    r.cab,
+                    r.consulta,
+                    String::from_utf8_lossy(&r.corpo)
+                )
+                .into_bytes(),
+            )
+        })
+        .await;
+        let (redir, _) = falso(move |_| (302, vec![("location", destino.clone())], vec![])).await;
+        (eco, redir)
+    }
+
+    /// Raiz de agente com a chave guardada no broker do servico.
+    fn raiz_com(servico: &phxclaw_agent::chaves::Servico, chave: &str) -> PathBuf {
+        let raiz = tmp("pagos-raiz");
+        servico.guardar(&raiz, chave).unwrap();
+        raiz
+    }
+
+    fn fala(cliente: ElevenLabs, formato: Formato, ajustes: Option<Value>) -> SpeakTool {
+        SpeakTool {
+            comando: None,
+            modelo: None,
+            modelo_sha256: None,
+            pastas: vec![],
+            elevenlabs: Some(Ok(FalaElevenLabs {
+                cliente: Arc::new(cliente),
+                voz: "vozPadrao1".into(),
+                modelo: "eleven_multilingual_v2".into(),
+                formato,
+                ajustes,
+            })),
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn elevenlabs_fala_transcreve_e_lista_vozes_contra_servidor_falso() {
+        let raiz = raiz_com(&phxclaw_agent::elevenlabs::SERVICO, CHAVE_EL);
+        let (base, log) = falso(|r| {
+            let pcm = pcm_sintetico();
+            if r.caminho.starts_with("/v1/text-to-speech/") {
+                let pcm_cru = r.consulta.contains("output_format=pcm_");
+                let corpo = if pcm_cru {
+                    pcm
+                } else {
+                    wav_de_pcm(&pcm, 16000)
+                };
+                return (200, vec![("content-type", "audio/wav".into())], corpo);
+            }
+            if r.caminho == "/v1/speech-to-text" {
+                return (
+                    200,
+                    vec![],
+                    br#"{"text":"ouvido pela elevenlabs falsa"}"#.to_vec(),
+                );
+            }
+            if r.caminho == "/v2/voices" {
+                let v = json!({"voices":[
+                    {"voice_id":"abc123","name":"Ana","category":"premade"},
+                    {"voice_id":"def456","name":"Bia","category":"cloned"}
+                ],"has_more":false,"total_count":2});
+                return (200, vec![], v.to_string().into_bytes());
+            }
+            (404, vec![], b"nao".to_vec())
+        })
+        .await;
+        let cred = || {
+            phxclaw_agent::elevenlabs::SERVICO
+                .credencial(&raiz)
+                .unwrap()
+        };
+        let c = ctx("el-fala");
+
+        // Fala em WAV, com voice_settings do operador.
+        let t = fala(
+            ElevenLabs::novo(&base, cred()).unwrap(),
+            Formato::Wav(16000),
+            Some(json!({"stability": 0.4})),
+        );
+        let r = t
+            .run(json!({"text":"Ola, mundo.","output":"voz/el.wav"}), &c)
+            .await
+            .unwrap();
+        assert!(r.content.contains("voz/el.wav"), "{}", r.content);
+        assert!(!r.content.contains(CHAVE_EL));
+        let w = info_wav(&std::fs::read(c.workdir.join("voz/el.wav")).unwrap()).unwrap();
+        assert_eq!((w.taxa, w.canais, w.bits), (16000, 1, 16), "{w:?}");
+        {
+            let l = log.lock().unwrap();
+            let p = l.last().unwrap();
+            assert_eq!(p.metodo, "POST");
+            assert_eq!(p.caminho, "/v1/text-to-speech/vozPadrao1");
+            assert_eq!(p.cab("xi-api-key"), Some(CHAVE_EL));
+            assert!(p.cab("authorization").is_none(), "a chave so no xi-api-key");
+            assert_eq!(p.consulta, "output_format=wav_16000");
+            let j = p.json();
+            assert_eq!(j["text"], "Ola, mundo.");
+            assert_eq!(j["model_id"], "eleven_multilingual_v2");
+            assert_eq!(j["voice_settings"]["stability"], 0.4);
+        }
+        // A voz por chamada vai no caminho; voz que mudaria o caminho nem sai.
+        t.run(json!({"text":"oi","voice":"abc123"}), &c)
+            .await
+            .unwrap();
+        assert_eq!(
+            log.lock().unwrap().last().unwrap().caminho,
+            "/v1/text-to-speech/abc123"
+        );
+        let antes = log.lock().unwrap().len();
+        let m = t
+            .run(json!({"text":"oi","voice":"../v2/voices"}), &c)
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(m.contains("voice invalida"), "{m}");
+        assert_eq!(
+            log.lock().unwrap().len(),
+            antes,
+            "pedido saiu com voz invalida"
+        );
+        // Sem ajuste do operador, voice_settings nao vai (sobrescreveria o da voz).
+        let t2 = fala(
+            ElevenLabs::novo(&base, cred()).unwrap(),
+            Formato::Wav(16000),
+            None,
+        );
+        t2.run(json!({"text":"oi"}), &c).await.unwrap();
+        assert!(
+            log.lock()
+                .unwrap()
+                .last()
+                .unwrap()
+                .json()
+                .get("voice_settings")
+                .is_none()
+        );
+        // PCM cru vira WAV com o cabecalho certo.
+        let t3 = fala(
+            ElevenLabs::novo(&base, cred()).unwrap(),
+            Formato::Pcm(16000),
+            None,
+        );
+        t3.run(json!({"text":"oi","output":"pcm.wav"}), &c)
+            .await
+            .unwrap();
+        let w = info_wav(&std::fs::read(c.workdir.join("pcm.wav")).unwrap()).unwrap();
+        assert!((w.segundos - 0.5).abs() < 0.01, "{w:?}");
+        assert!(
+            log.lock()
+                .unwrap()
+                .last()
+                .unwrap()
+                .consulta
+                .contains("pcm_16000")
+        );
+        // As conferencias de sempre do speak valem para o provedor novo.
+        for (a, motivo) in [
+            (json!({"text":"   "}), "texto vazio"),
+            (json!({"text":"oi","output":"x.mp3"}), ".wav"),
+            (json!({"text":"oi","output":"../x.wav"}), "fora da pasta"),
+        ] {
+            let m = t.run(a.clone(), &c).await.unwrap_err().to_string();
+            assert!(m.contains(motivo), "{a}: {m}");
+        }
+
+        // Transcricao: o audio da pasta vai inteiro, no multipart, com o modelo.
+        let ouvir = TranscribeTool {
+            bin: None,
+            model: None,
+            model_sha256: None,
+            elevenlabs: Some(Ok(OuvidoElevenLabs {
+                cliente: Arc::new(ElevenLabs::novo(&base, cred()).unwrap()),
+                modelo: "scribe_v2".into(),
+            })),
+        };
+        let r = ouvir
+            .run(json!({"path":"voz/el.wav","language":"pt"}), &c)
+            .await
+            .unwrap();
+        assert!(
+            r.content.contains("ouvido pela elevenlabs falsa"),
+            "{}",
+            r.content
+        );
+        {
+            let l = log.lock().unwrap();
+            let p = l.last().unwrap();
+            assert_eq!(p.caminho, "/v1/speech-to-text");
+            assert_eq!(p.cab("xi-api-key"), Some(CHAVE_EL));
+            let enviado = std::fs::read(c.workdir.join("voz/el.wav")).unwrap();
+            assert!(
+                p.corpo.windows(enviado.len()).any(|w| w == enviado),
+                "o WAV nao foi enviado inteiro"
+            );
+            let txt = String::from_utf8_lossy(&p.corpo);
+            assert!(txt.contains("name=\"model_id\"") && txt.contains("scribe_v2"));
+            assert!(txt.contains("name=\"language_code\"") && txt.contains("\r\npt\r\n"));
+        }
+
+        // Vozes.
+        let vl = VoiceListTool {
+            cliente: Arc::new(ElevenLabs::novo(&base, cred()).unwrap()),
+        };
+        let r = vl.run(json!({"search":"ana"}), &c).await.unwrap();
+        assert!(r.content.contains("abc123  Ana (premade)"), "{}", r.content);
+        let q = log.lock().unwrap().last().unwrap().consulta.clone();
+        assert!(
+            q.contains("page_size=100") && q.contains("search=ana"),
+            "{q}"
+        );
+
+        assert!(
+            sem_segredo_no_disco(&raiz, CHAVE_EL),
+            "chave em texto puro no disco"
+        );
+        let _ = std::fs::remove_dir_all(&raiz);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn sem_chave_o_provedor_pago_recusa_dizendo_o_comando_e_nao_cria_cofre() {
+        let vazia = tmp("pagos-sem-chave");
+        let e = ElevenLabs::da_pasta(&vazia).err().unwrap();
+        assert!(e.contains("phxclaw elevenlabs chave"), "{e}");
+        let e = NanoBanana::da_pasta(&vazia).err().unwrap();
+        assert!(e.contains("phxclaw gemini chave"), "{e}");
+        assert!(
+            std::fs::read_dir(&vazia).unwrap().next().is_none(),
+            "perguntar pela chave criou cofre"
+        );
+        assert!(
+            VoiceListTool::da_pasta(&vazia).is_none(),
+            "voice_list sem chave"
+        );
+        let c = ctx("pagos-sem-chave");
+        let falar = SpeakTool {
+            comando: None,
+            modelo: None,
+            modelo_sha256: None,
+            pastas: vec![],
+            elevenlabs: Some(Err(ElevenLabs::da_pasta(&vazia).err().unwrap())),
+        };
+        let e = falar.run(json!({"text":"oi"}), &c).await.unwrap_err();
+        assert!(
+            matches!(e, ToolError::Denied(_)) && e.to_string().contains("elevenlabs chave"),
+            "{e}"
+        );
+        let ouvir = TranscribeTool {
+            bin: None,
+            model: None,
+            model_sha256: None,
+            elevenlabs: Some(Err(ElevenLabs::da_pasta(&vazia).err().unwrap())),
+        };
+        let e = ouvir.run(json!({"path":"a.wav"}), &c).await.unwrap_err();
+        assert!(
+            matches!(e, ToolError::Denied(_)) && e.to_string().contains("elevenlabs chave"),
+            "{e}"
+        );
+        let img = ImageGenerateTool {
+            provedor: Some(Provedor::NanoBanana(
+                NanoBanana::da_pasta(&vazia).map(Arc::new),
+            )),
+        };
+        let e = img.run(json!({"prompt":"x"}), &c).await.unwrap_err();
+        assert!(
+            matches!(e, ToolError::Denied(_)) && e.to_string().contains("gemini chave"),
+            "{e}"
+        );
+        let _ = std::fs::remove_dir_all(&vazia);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn nano_banana_gera_e_edita_contra_servidor_falso() {
+        let raiz = raiz_com(&phxclaw_agent::nanobanana::SERVICO, CHAVE_G);
+        let (base, log) = falso(|r| {
+            let j = r.json();
+            let partes = j["contents"][0]["parts"]
+                .as_array()
+                .cloned()
+                .unwrap_or_default();
+            let prompt = partes[0]["text"].as_str().unwrap_or("").to_string();
+            let editando = partes.iter().any(|p| p.get("inline_data").is_some());
+            let (tipo, bytes) = match prompt.as_str() {
+                "jpeg" => ("image/jpeg", vec![0xFF, 0xD8, 0xFF, 0xE0, 0, 0]),
+                "bloqueia" => {
+                    let v = json!({"promptFeedback":{"blockReason":"SAFETY"}});
+                    return (200, vec![], v.to_string().into_bytes());
+                }
+                _ if editando => ("image/png", png(300, 200)),
+                _ => ("image/png", png(64, 64)),
+            };
+            let v = json!({"candidates":[{"content":{"parts":[
+                {"text":"aqui esta"},
+                {"inlineData":{"mimeType": tipo,
+                    "data": base64::engine::general_purpose::STANDARD.encode(bytes)}}
+            ]},"finishReason":"STOP"}]});
+            (200, vec![], v.to_string().into_bytes())
+        })
+        .await;
+        let cred = phxclaw_agent::nanobanana::SERVICO
+            .credencial(&raiz)
+            .unwrap();
+        let t = ImageGenerateTool {
+            provedor: Some(Provedor::NanoBanana(Ok(Arc::new(
+                NanoBanana::novo(&base, "gemini-2.5-flash-image", cred).unwrap(),
+            )))),
+        };
+        let c = ctx("nano");
+        // Gerar.
+        let r = t
+            .run(json!({"prompt":"uma banana","output":"g.png"}), &c)
+            .await
+            .unwrap();
+        assert!(r.content.contains("64x64"), "{}", r.content);
+        assert_eq!(std::fs::read(c.workdir.join("g.png")).unwrap(), png(64, 64));
+        {
+            let l = log.lock().unwrap();
+            let p = l.last().unwrap();
+            assert_eq!(
+                p.caminho,
+                "/v1beta/models/gemini-2.5-flash-image:generateContent"
+            );
+            assert_eq!(p.cab("x-goog-api-key"), Some(CHAVE_G));
+            assert!(p.consulta.is_empty(), "chave na URL: {}", p.consulta);
+            let j = p.json();
+            assert_eq!(j["contents"][0]["parts"][0]["text"], "uma banana");
+            assert!(j["generationConfig"].get("imageConfig").is_none());
+        }
+        // Tamanho pedido vira proporcao; proporcao que o modelo nao tem recusa antes do pedido.
+        t.run(json!({"prompt":"x","size":"1024x576","output":"w.png"}), &c)
+            .await
+            .unwrap();
+        assert_eq!(
+            log.lock().unwrap().last().unwrap().json()["generationConfig"]["imageConfig"]["aspectRatio"],
+            "16:9"
+        );
+        let antes = log.lock().unwrap().len();
+        let m = t
+            .run(json!({"prompt":"x","size":"512x256"}), &c)
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(m.contains("2:1") && m.contains("16:9"), "{m}");
+        assert_eq!(log.lock().unwrap().len(), antes);
+        // Editar: a imagem de entrada vai inteira, em base64, com o tipo lido dos bytes.
+        let mut entrada = png(10, 10);
+        entrada.extend_from_slice(b"resto-da-imagem");
+        std::fs::create_dir_all(c.workdir.join("fotos")).unwrap();
+        std::fs::write(c.workdir.join("fotos/gato.png"), &entrada).unwrap();
+        let r = t
+            .run(
+                json!({"prompt":"deixe o gato azul","input_image":"fotos/gato.png","output":"e.png"}),
+                &c,
+            )
+            .await
+            .unwrap();
+        assert!(r.content.contains("300x200"), "{}", r.content);
+        let saida = std::fs::read(c.workdir.join("e.png")).unwrap();
+        assert_eq!(phxclaw_agent::visao::info_png(&saida).unwrap().0, 300);
+        {
+            let l = log.lock().unwrap();
+            let j = l.last().unwrap().json();
+            let d = &j["contents"][0]["parts"][1]["inline_data"];
+            assert_eq!(d["mime_type"], "image/png");
+            assert_eq!(
+                d["data"],
+                base64::engine::general_purpose::STANDARD.encode(&entrada)
+            );
+            assert_eq!(j["contents"][0]["parts"][0]["text"], "deixe o gato azul");
+        }
+        // Entrada fora da pasta, inexistente ou que nao e imagem: recusa sem pedido.
+        let fora = tmp("nano-fora").join("segredo.png");
+        std::fs::write(&fora, png(1, 1)).unwrap();
+        std::fs::write(c.workdir.join("nota.txt"), b"texto").unwrap();
+        let antes = log.lock().unwrap().len();
+        for (img, motivo) in [
+            ("../../segredo.png", "fora da pasta"),
+            (fora.to_str().unwrap(), "fora da pasta"),
+            ("nao-existe.png", "nao encontrada"),
+            ("nota.txt", "nao e PNG, JPEG nem WebP"),
+        ] {
+            let m = t
+                .run(json!({"prompt":"x","input_image": img}), &c)
+                .await
+                .unwrap_err()
+                .to_string();
+            assert!(m.contains(motivo), "{img}: {m}");
+        }
+        assert_eq!(
+            log.lock().unwrap().len(),
+            antes,
+            "entrada recusada saiu na rede"
+        );
+        // JPEG nao vira .png; bloqueio diz o motivo.
+        let m = t
+            .run(json!({"prompt":"jpeg","output":"j.png"}), &c)
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(m.contains("image/jpeg") && m.contains("nao PNG"), "{m}");
+        assert!(!c.workdir.join("j.png").exists());
+        let m = t
+            .run(json!({"prompt":"bloqueia"}), &c)
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(m.contains("SAFETY"), "{m}");
+        // Edicao com outro provedor e recusa, nao geracao calada sem a imagem.
+        let outro = ImageGenerateTool { provedor: None };
+        let m = outro
+            .run(json!({"prompt":"x","input_image":"fotos/gato.png"}), &c)
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(m.contains("nanobanana"), "{m}");
+        assert!(sem_segredo_no_disco(&raiz, CHAVE_G));
+        let _ = std::fs::remove_dir_all(&raiz);
+        let _ = std::fs::remove_dir_all(fora.parent().unwrap());
+    }
+
+    /// O laco de eco dos provedores pagos: cada chamada contra um servidor que ECOA o pedido
+    /// inteiro num 401, e contra um que REDIRECIONA para um terceiro. Nenhum erro traz a
+    /// chave, todo 3xx e erro, e o terceiro nao recebe pedido nenhum.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn nenhum_provedor_pago_devolve_a_chave_no_erro_nem_segue_redirecionamento() {
+        let raiz_el = raiz_com(&phxclaw_agent::elevenlabs::SERVICO, CHAVE_EL);
+        let raiz_g = raiz_com(&phxclaw_agent::nanobanana::SERVICO, CHAVE_G);
+        let (terceiro, roubado) = falso(|_| (200, vec![], b"{}".to_vec())).await;
+        let (eco, redir) = eco_e_redirecionador(format!("{terceiro}/roubo")).await;
+        let wav =
+            std::env::temp_dir().join(format!("phx-voz-eco-{}.wav", phxclaw_types::new_uuid_v7()));
+        std::fs::write(&wav, wav_de_pcm(&pcm_sintetico(), 16000)).unwrap();
+        let prazo = Duration::from_secs(20);
+        let mut n = 0;
+        for (base, esperado) in [(eco.as_str(), "401"), (redir.as_str(), "302")] {
+            let el = |b: &str| {
+                ElevenLabs::novo(
+                    b,
+                    phxclaw_agent::elevenlabs::SERVICO
+                        .credencial(&raiz_el)
+                        .unwrap(),
+                )
+                .unwrap()
+            };
+            let (e1, e2, e3) = (el(base), el(base), el(base));
+            let nb = NanoBanana::novo(
+                base,
+                "gemini-2.5-flash-image",
+                phxclaw_agent::nanobanana::SERVICO
+                    .credencial(&raiz_g)
+                    .unwrap(),
+            )
+            .unwrap();
+            let w = wav.clone();
+            let erros: Vec<(&str, String)> = tokio::task::spawn_blocking(move || {
+                vec![
+                    (
+                        "tts",
+                        e1.sintetizar("voz1", &json!({"text":"oi"}), "wav_16000", prazo)
+                            .unwrap_err(),
+                    ),
+                    (
+                        "stt",
+                        e2.transcrever(
+                            std::fs::read(&w).unwrap(),
+                            "a.wav",
+                            "scribe_v2",
+                            None,
+                            prazo,
+                        )
+                        .unwrap_err(),
+                    ),
+                    ("vozes", e3.vozes(Some("a"), prazo).unwrap_err()),
+                    (
+                        "nanobanana",
+                        nb.gerar("x", Some(("image/png", &png(2, 2))), None, prazo)
+                            .unwrap_err(),
+                    ),
+                ]
+            })
+            .await
+            .unwrap();
+            for (quem, e) in erros {
+                n += 1;
+                assert!(e.contains(esperado), "{quem} em {base}: {e}");
+                assert!(
+                    !e.contains(CHAVE_EL) && !e.contains(CHAVE_G),
+                    "{quem}: chave no erro: {e}"
+                );
+            }
+        }
+        assert_eq!(n, 8, "todo provedor pago entra no laco");
+        assert!(
+            roubado.lock().unwrap().is_empty(),
+            "o redirecionamento foi seguido: {:?}",
+            roubado.lock().unwrap()
+        );
+        let _ = std::fs::remove_file(&wav);
+        let _ = std::fs::remove_dir_all(&raiz_el);
+        let _ = std::fs::remove_dir_all(&raiz_g);
+    }
+
+    /// A cadeia de `phxclaw voz` (`conversar`, o mesmo motor que o comando chama) com a fala
+    /// pela ElevenLabs FALSA -- que devolve o que o flite fala para o texto pedido -- e a
+    /// escuta pelo whisper REAL: a resposta do agente vira fala e volta a texto.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn conversa_por_voz_com_elevenlabs_falsa_e_whisper_real() {
+        let (Some(flite_local), Some(ouvir)) = (flite(), whisper()) else {
+            return;
+        };
+        let raiz = raiz_com(&phxclaw_agent::elevenlabs::SERVICO, CHAVE_EL);
+        let (base, log) = falso(
+            |r| match flite_wav(r.json()["text"].as_str().unwrap_or("")) {
+                Some(w) => (200, vec![("content-type", "audio/wav".into())], w),
+                None => (500, vec![], b"sem flite".to_vec()),
+            },
+        )
+        .await;
+        let falar = fala(
+            ElevenLabs::novo(
+                &base,
+                phxclaw_agent::elevenlabs::SERVICO
+                    .credencial(&raiz)
+                    .unwrap(),
+            )
+            .unwrap(),
+            Formato::Wav(16000),
+            None,
+        );
+        let entrada = raiz.join("entrada");
+        std::fs::create_dir_all(&entrada).unwrap();
+        flite_local
+            .falar(
+                "What is the capital of France?",
+                &entrada,
+                "t1.wav",
+                Duration::from_secs(60),
+            )
+            .await
+            .unwrap();
+        let store = TaskStore::new(raiz.join("tasks")).unwrap();
+        let llm = Arc::new(ScriptedLlm::new(vec![ScriptedLlm::text(
+            "The capital of France is Paris.",
+        )]));
+        let mut agente = phxclaw_agent::voz::agente_de_conversa(
+            montagem::Montagem::new(store.clone()).agent_with(llm),
+        );
+        agente.config.tool_timeout = Duration::from_secs(180);
+        let turnos = conversar(
+            &agente,
+            "roteiro",
+            &[entrada.join("t1.wav")],
+            &ouvir,
+            &falar,
+            || NoObserver,
+        )
+        .await;
+        assert!(turnos[0].erro.is_none(), "{:?}", turnos[0]);
+        assert!(
+            turnos[0]
+                .ouvido
+                .to_lowercase()
+                .contains("capital of france")
+        );
+        {
+            let l = log.lock().unwrap();
+            assert_eq!(l.len(), 1);
+            assert_eq!(l[0].json()["text"], "The capital of France is Paris.");
+            assert_eq!(l[0].cab("xi-api-key"), Some(CHAVE_EL));
+        }
+        let wav = turnos[0].wav.clone().unwrap();
+        assert!(wav.starts_with(store.workdir(&turnos[0].tarefa)));
+        let volta = ouvir
+            .transcrever(wav, None, Duration::from_secs(180))
+            .await
+            .unwrap()
+            .to_lowercase();
+        assert!(volta.contains("paris"), "a fala da resposta virou: {volta}");
+        let _ = std::fs::remove_dir_all(&raiz);
+    }
+}
+
+/// Nenhum arquivo sob `dir` com `segredo` em texto puro.
+fn sem_segredo_no_disco(dir: &Path, segredo: &str) -> bool {
+    let mut pilha = vec![dir.to_path_buf()];
+    while let Some(d) = pilha.pop() {
+        for e in std::fs::read_dir(&d).into_iter().flatten().flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                pilha.push(p);
+            } else if std::fs::read(&p)
+                .unwrap_or_default()
+                .windows(segredo.len())
+                .any(|w| w == segredo.as_bytes())
+            {
+                return false;
+            }
+        }
+    }
+    true
 }

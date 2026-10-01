@@ -8,6 +8,9 @@
   <link rel="icon" href="./assets/phoenix-mark.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="./assets/app.css" />
   <link rel="stylesheet" href="./assets/tarefas.css" />
+  <!-- phx-grid (do dono, JS puro, sem dependencia): versao e origem em assets/vendor/phx-grid/VERSAO -->
+  <link rel="stylesheet" href="./assets/vendor/phx-grid/phx-grid.css" />
+  <link rel="stylesheet" href="./assets/grades.css" />
   <!-- Aplicativo instalavel (PWA): o mesmo cliente no navegador, no celular e na ponte. -->
   <link rel="manifest" href="./manifest.webmanifest" />
   <link rel="apple-touch-icon" href="./assets/icone-192.png" />
@@ -68,6 +71,7 @@
         <button class="nav" data-tela="ferramentas"><span>⚒</span><em data-txt="menu.ferramentas">Ferramentas</em><b id="seloFerramentas"></b></button>
         <button class="nav" data-tela="absorcao"><span>◈</span><em data-txt="menu.absorcao">Absorção</em></button>
         <button class="nav" data-tela="tarefas"><span>☰</span><em data-txt="menu.tarefas">Tarefas</em></button>
+        <button class="nav" data-tela="config"><span>⚙</span><em data-txt="menu.config">Configuração</em></button>
       </nav>
       <div class="sidebar-bottom">
         <div class="security-card"><span>◈</span><div><b>ZERO TRUST</b><small>Deny-by-default</small></div></div>
@@ -134,10 +138,14 @@
      <section class="tela" id="tela-agentes" data-tela="agentes" aria-label="Agentes" data-txt-al="menu.agentes" hidden>
       <header class="tela-head">
         <div><span class="eyebrow" data-txt="agentes.sobretitulo">EQUIPE / MACROÁREAS</span><h1 data-txt="menu.agentes">Agentes</h1>
-          <p id="agentesResumo" class="tela-sub"><span data-txt="agentes.lendo">Lendo assets/equipe.json…</span></p></div>
+          <p id="agentesResumo" class="tela-sub" data-fonte="equipe.json"><span data-txt="agentes.lendo">Lendo assets/equipe.json…</span></p></div>
         <input id="agentesFiltro" class="filtro" type="search" placeholder="Filtrar por nome, missão ou capacidade" data-txt-ph="agentes.filtro" aria-label="Filtrar agentes" data-txt-al="agentes.filtro_rotulo" />
       </header>
-      <div id="agentesConteudo" class="grupos"></div>
+      <div class="grade-barra">
+        <button class="acao consulta" data-grade-exporta="agentes:csv" data-txt="grade.exportar_csv">EXPORTAR CSV</button>
+        <button class="acao consulta" data-grade-exporta="agentes:xlsx" data-txt="grade.exportar_xlsx">EXPORTAR XLSX</button>
+      </div>
+      <div id="agentesConteudo" class="grade-alvo" data-uma-pagina data-fonte="equipe.json"></div>
      </section>
 
      <section class="tela tela-ide" id="tela-ide" data-tela="ide" aria-label="IDE" hidden>
@@ -160,18 +168,34 @@
      <section class="tela" id="tela-ferramentas" data-tela="ferramentas" aria-label="Ferramentas" data-txt-al="menu.ferramentas" hidden>
       <header class="tela-head">
         <div><span class="eyebrow" data-txt="ferramentas.sobretitulo">AGENTE / FERRAMENTAS POR CAPACIDADE</span><h1 data-txt="menu.ferramentas">Ferramentas</h1>
-          <p id="ferramentasResumo" class="tela-sub"><span data-txt="geral.lendo">Lendo…</span></p></div>
+          <p id="ferramentasResumo" class="tela-sub" data-fonte="ferramentas.json"><span data-txt="geral.lendo">Lendo…</span></p></div>
+        <input id="ferramentasFiltro" class="filtro" type="search" placeholder="Buscar em todas as colunas" data-txt-ph="grade.buscar_tudo" aria-label="Buscar ferramentas" data-txt-al="ferramentas.buscar_rotulo" />
       </header>
-      <div id="ferramentasConteudo" class="grupos"></div>
+      <div class="grade-barra">
+        <button class="acao consulta" data-grade-exporta="ferramentas:csv" data-txt="grade.exportar_csv">EXPORTAR CSV</button>
+        <button class="acao consulta" data-grade-exporta="ferramentas:xlsx" data-txt="grade.exportar_xlsx">EXPORTAR XLSX</button>
+      </div>
+      <div id="ferramentasConteudo" class="grade-alvo" data-uma-pagina data-fonte="ferramentas.json"></div>
      </section>
 
      <section class="tela" id="tela-absorcao" data-tela="absorcao" aria-label="Absorção" data-txt-al="menu.absorcao" hidden>
       <header class="tela-head">
         <div><span class="eyebrow" data-txt="absorcao.sobretitulo">ABSORÇÃO / CAPACIDADE POR CAPACIDADE</span><h1 data-txt="menu.absorcao">Absorção</h1>
-          <p id="absorcaoResumo" class="tela-sub"><span data-txt="geral.lendo">Lendo…</span></p>
+          <p id="absorcaoResumo" class="tela-sub" data-fonte="absorcao.json"><span data-txt="geral.lendo">Lendo…</span></p>
           <div id="absorcaoLegenda"></div></div>
+        <input id="absorcaoFiltro" class="filtro" type="search" placeholder="Buscar em todas as colunas" data-txt-ph="grade.buscar_tudo" aria-label="Buscar capacidades" data-txt-al="absorcao.buscar_rotulo" />
       </header>
-      <div id="absorcaoConteudo" class="absorcao"></div>
+      <div class="grade-barra">
+        <button class="acao consulta" id="absorcaoPorProduto" data-txt="absorcao.por_produto">AGRUPAR POR PRODUTO</button>
+        <button class="acao consulta" id="absorcaoPorEstado" data-txt="absorcao.por_estado">AGRUPAR POR ESTADO</button>
+        <button class="acao consulta" id="absorcaoVerCubo" aria-pressed="false" data-txt="absorcao.ver_cubo">VISÃO CUBO</button>
+        <button class="acao consulta" id="absorcaoTranspor" hidden data-txt="absorcao.transpor">TRANSPOR</button>
+        <span class="espaco"></span>
+        <button class="acao consulta" data-grade-exporta="absorcao:csv" data-txt="grade.exportar_csv">EXPORTAR CSV</button>
+        <button class="acao consulta" data-grade-exporta="absorcao:xlsx" data-txt="grade.exportar_xlsx">EXPORTAR XLSX</button>
+      </div>
+      <div id="absorcaoConteudo" class="grade-alvo" data-uma-pagina data-fonte="absorcao.json"></div>
+      <div id="absorcaoCubo" class="grade-alvo" data-fonte="absorcao.json" hidden></div>
      </section>
 
      <section class="tela" id="tela-tarefas" data-tela="tarefas" aria-label="Tarefas" data-txt-al="menu.tarefas" hidden>
@@ -189,16 +213,41 @@
         <button class="acao inclui" data-txt="tarefas.criar">+ CRIAR TAREFA</button>
       </form>
       <div class="tarefas-grade">
-        <ul id="tarefasLista" class="tarefas-lista" aria-label="Tarefas" data-txt-al="menu.tarefas"></ul>
+        <div id="tarefasLista" class="tarefas-lista grade-alvo" aria-label="Tarefas" data-txt-al="menu.tarefas"></div>
         <article id="tarefasDetalhe" class="tarefas-detalhe" hidden></article>
       </div>
+     </section>
+
+     <section class="tela" id="tela-config" data-tela="config" aria-label="Configuração" data-txt-al="menu.config" hidden>
+      <header class="tela-head">
+        <div><span class="eyebrow" data-txt="config.sobretitulo">CONFIGURAÇÃO / CONFIG.JSON</span><h1 data-txt="menu.config">Configuração</h1>
+          <p id="configStatus" class="tela-sub" data-fonte="api /v1/config"><span data-txt="geral.lendo">Lendo…</span></p></div>
+        <input id="configBusca" class="filtro" type="search" placeholder="Buscar chave, seção ou descrição" data-txt-ph="config.busca" aria-label="Buscar na configuração" data-txt-al="config.busca" />
+      </header>
+      <div class="grade-barra">
+        <label class="marcar"><input id="configSoAlterados" type="checkbox" /><span data-txt="config.so_alterados">Só alterados</span></label>
+        <span class="espaco"></span>
+        <label class="marcar"><span data-txt="config.escopo">Gravar em</span>
+          <select id="configEscopo" class="filtro-sel" aria-label="Arquivo onde gravar" data-txt-al="config.escopo_rotulo">
+            <option value="pasta" data-txt="config.escopo.pasta">pasta do agente</option>
+            <option value="projeto" data-txt="config.escopo.projeto">projeto</option>
+          </select></label>
+        <button id="configSalvar" class="acao altera" data-txt="config.salvar">SALVAR ALTERAÇÕES</button>
+        <button id="configRecarregar" class="acao consulta" data-txt="config.recarregar">RECARREGAR</button>
+      </div>
+      <section id="configConflito" class="cfg-painel cfg-conflito" hidden></section>
+      <section id="configDiff" class="cfg-painel" hidden></section>
+      <div id="configConteudo" class="grade-alvo" data-uma-pagina data-fonte="api /v1/config"></div>
      </section>
 
       <footer class="footerbar"><span>DISCIPLINA</span><i>•</i><span>SEGURANÇA</span><i>•</i><span>QUALIDADE</span><i>•</i><span>EVOLUÇÃO</span><i>•</i><span>LIBERDADE</span><b>“Juntos somos infinitos.”</b></footer>
     </main>
   </div>
   <script src="./assets/idiomas.js"></script>
+  <script src="./assets/vendor/phx-grid/phx-grid.js"></script>
+  <script src="./assets/grades.js"></script>
   <script src="./assets/app.js"></script>
   <script src="./assets/tarefas.js"></script>
+  <script src="./assets/config.js"></script>
 </body>
 </html>

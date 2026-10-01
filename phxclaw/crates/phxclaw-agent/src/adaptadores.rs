@@ -107,6 +107,35 @@ impl BrowserSessions {
         f(page).await
     }
 
+    /// Abre `url` na sessao da tarefa e devolve (url final, titulo, texto legivel), o MESMO
+    /// texto que o `browser_open` mostra ao modelo. A pesquisa profunda confere citacao
+    /// contra este texto: conferir contra outro leitor aprovaria trecho que o modelo nunca
+    /// viu, ou recusaria o que ele viu.
+    pub async fn ler_pagina(
+        &self,
+        task: &str,
+        url: &str,
+    ) -> Result<(String, String, String), ToolError> {
+        let url = url.to_string();
+        self.with_page(task, move |p| {
+            Box::pin(async move {
+                let f = |e: phxclaw_browser::BrowserError| match e {
+                    phxclaw_browser::BrowserError::PolicyDenied { .. } => {
+                        ToolError::Denied(e.to_string())
+                    }
+                    outro => ToolError::Failed(outro.to_string()),
+                };
+                p.goto(&url).await.map_err(f)?;
+                Ok((
+                    p.url().await.map_err(f)?,
+                    p.title().await.map_err(f)?,
+                    p.markdown_like().await.map_err(f)?,
+                ))
+            })
+        })
+        .await
+    }
+
     pub async fn close(&self, task: &str) {
         if let Some((b, p)) = self.sessions.lock().await.remove(task) {
             let _ = p.close().await;

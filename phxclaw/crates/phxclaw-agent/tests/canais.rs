@@ -2153,6 +2153,7 @@ async fn irc_registra_responde_ping_e_manda_uma_linha_por_privmsg() {
                 nick: "bot".into(),
                 senha: Some(cred(&b, nome, "irc-senha", &format!("oauth:{TOKEN}"))),
                 salas: vec!["#sala".into()],
+                tls: None,
             },
             Caixa::abrir(dir.join("irc.caixa.jsonl")).unwrap(),
         ));
@@ -2253,6 +2254,7 @@ async fn xmpp_autentica_faz_bind_responde_ping_e_escapa_a_resposta() {
             endereco: end,
             jid: "agente@x.org".into(),
             senha: cred(&b, "xmpp", "xmpp-senha", TOKEN),
+            tls: None,
         },
         Caixa::abrir(dir.join("xmpp.caixa.jsonl")).unwrap(),
     ));
@@ -2410,6 +2412,7 @@ async fn email_imap_comeca_do_agora_so_aceita_remetente_atestado_e_responde_por_
             )),
             pasta: "INBOX".into(),
             exigir_dmarc: true,
+            tls: None,
         },
         SmtpConfig {
             host: "127.0.0.1".into(),

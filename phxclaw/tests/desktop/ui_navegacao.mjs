@@ -28,6 +28,17 @@ const TIPOS = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/cs
 const lerAsset = nome => JSON.parse(readFileSync(join(RAIZ, 'apps/phxclaw-ui/assets', nome), 'utf8'));
 const grade = JSON.parse(readFileSync(join(AQUI, 'dados/grade_bash.json'), 'utf8'));
 
+// A API de tarefas falsa: um estado de cada, com a data FORA de ordem, para a grade provar
+// que ordena pela data (mais nova primeiro) e nao pela ordem em que a API entregou.
+const ESTADOS_T = ['pending', 'awaiting_approval', 'awaiting_input', 'running', 'completed', 'failed', 'cancelled'];
+const TAREFAS = ESTADOS_T.map((status, i) => ({
+  id: `t${i}`, objective: `objetivo da tarefa ${i}`, status, model: 'falso', plan: [], steps: [], artifacts: [],
+  created_at: `2026-10-01T0${(i * 3) % 7}:00:00Z`, updated_at: '2026-10-01T09:00:00Z',
+}));
+
+// A tela Configuracao le a vista que saiu do motor real (a prova dela e o ui_config.mjs).
+const VISTA_CONFIG = JSON.parse(readFileSync(join(AQUI, 'dados/config_vista.json'), 'utf8'));
+
 const checagens = [];
 function check(nome, ok, detalhe = '') {
   checagens.push(!!ok);
@@ -67,20 +78,30 @@ function stubTauri(grade) {
   };
 }
 
-async function abrirPagina(browser, { semEquipe = false, sem = [] } = {}) {
+// A CSP do aplicativo de mesa sai do proprio tauri.conf.json: uma copia aqui envelheceria.
+const CSP_TAURI = JSON.parse(readFileSync(join(RAIZ, 'apps/phxclaw-desktop/src-tauri/tauri.conf.json'), 'utf8')).app.security.csp;
+
+async function abrirPagina(browser, { semEquipe = false, sem = [], csp = null } = {}) {
   const page = await browser.newPage({ viewport: { width: 1560, height: 960 } });
   const erros = [];
   page.on('pageerror', e => erros.push(String(e)));
   page.on('console', m => { if (m.type() === 'error') erros.push(`${m.text()} @ ${m.location()?.url ?? ''}`); });
   await page.route(`${ORIGEM}/**`, route => {
     const caminho = decodeURIComponent(new URL(route.request().url()).pathname);
+    if (caminho.startsWith('/v1/')) {
+      const m = caminho.match(/^\/v1\/tasks\/(t\d)$/);
+      const corpo = m ? TAREFAS.find(t => t.id === m[1]) : caminho === '/v1/tasks' ? TAREFAS : caminho === '/v1/config' ? VISTA_CONFIG : null;
+      return route.fulfill({ status: corpo ? 200 : 404, contentType: 'application/json', body: JSON.stringify(corpo ?? { error: 'nao existe' }) });
+    }
     const arq = join(UI, caminho === '/' ? 'index.html' : caminho);
     if ((semEquipe && caminho.endsWith('/equipe.json')) || sem.some(n => caminho.endsWith(`/${n}`)) || !arq.startsWith(UI) || !existsSync(arq)) {
       return route.fulfill({ status: 404, body: 'nao existe' });
     }
-    return route.fulfill({ status: 200, body: readFileSync(arq), contentType: TIPOS[extname(arq)] || 'application/octet-stream' });
+    return route.fulfill({ status: 200, body: readFileSync(arq), contentType: TIPOS[extname(arq)] || 'application/octet-stream',
+      headers: csp && extname(arq) === '.html' ? { 'content-security-policy': csp } : {} });
   });
   await page.addInitScript(stubTauri, grade);
+  await page.addInitScript(() => { try { localStorage.setItem('phxclaw.token', 'token-de-teste'); } catch { /* sem armazenamento */ } });
   await page.goto(`${ORIGEM}/index.html?screen=dashboard`);
   return { page, erros };
 }
@@ -91,7 +112,7 @@ const browser = await chromium.launch();
 try {
   const { page, erros } = await abrirPagina(browser);
   const botoes = await page.$$eval('.nav[data-tela]', bs => bs.map(b => b.dataset.tela));
-  check('menu tem as seis telas', JSON.stringify(botoes) === JSON.stringify(['geral', 'agentes', 'ide', 'ferramentas', 'absorcao', 'tarefas']), botoes.join(','));
+  check('menu tem as sete telas', JSON.stringify(botoes) === JSON.stringify(['geral', 'agentes', 'ide', 'ferramentas', 'absorcao', 'tarefas', 'config']), botoes.join(','));
 
   for (const tela of botoes) {
     await page.click(`.nav[data-tela="${tela}"]`);
@@ -156,43 +177,12 @@ try {
   const acoesCheias = await page.$$eval('.acao', bs => bs.filter(b => { const c = getComputedStyle(b).backgroundColor; return c !== 'rgba(0, 0, 0, 0)' && c !== 'transparent'; }).map(b => b.textContent));
   check('acoes so contorno (fundo transparente fora do hover)', acoesCheias.length === 0, acoesCheias.join(','));
 
-  await page.click('.nav[data-tela="agentes"]');
-  await page.waitForTimeout(200);
-  const fichasAgentes = await page.$$eval('#agentesConteudo .ficha', f => f.length);
-  const gruposAgentes = await page.$$eval('#agentesConteudo .grupo', g => g.length);
-  check('Agentes: uma ficha por papel do equipe.json', fichasAgentes === equipe.total, `${fichasAgentes} / ${equipe.total}`);
-  check('Agentes: um grupo por macroarea', gruposAgentes === equipe.macroareas.length, `${gruposAgentes} / ${equipe.macroareas.length}`);
-  await page.fill('#agentesFiltro', 'humano');
-  const filtradas = await page.$$eval('#agentesConteudo .ficha', f => f.length);
-  check('Agentes: o filtro reduz as fichas', filtradas > 0 && filtradas < equipe.total, `${filtradas}`);
-  await page.fill('#agentesFiltro', '');
-
-  await page.click('.nav[data-tela="ferramentas"]');
-  await page.waitForTimeout(200);
-  const fichasF = await page.$$eval('#ferramentasConteudo .ficha', f => f.length);
-  const gruposF = await page.$$eval('#ferramentasConteudo .grupo', g => g.length);
-  const nGrupos = new Set(ferramentas.ferramentas.map(f => f.capacidade)).size;
-  check('Ferramentas: uma ficha por ferramenta montada', fichasF === ferramentas.total, `${fichasF} / ${ferramentas.total}`);
-  check('Ferramentas: um grupo por capability exata', gruposF === nGrupos, `${gruposF} / ${nGrupos}`);
-  // Cada ficha mostra a capability que exige, e ela e a do grupo onde esta (nada de ficha no
-  // grupo errado por um find() que parou na primeira).
-  const exigencias = await page.$$eval('#ferramentasConteudo .grupo', gs => gs.map(g => ({
-    cap: g.dataset.capacidade,
-    titulo: g.querySelector('header code.cap')?.textContent,
-    fichas: [...g.querySelectorAll('.ficha')].map(f => [f.querySelector('b').textContent, f.querySelector('.exige code')?.textContent]),
-  })));
-  const esperado = new Map(ferramentas.ferramentas.map(f => [f.nome, f.capacidade]));
-  const erradas = exigencias.flatMap(g => g.fichas.filter(([n, c]) => c !== g.cap || c !== esperado.get(n) || g.titulo !== g.cap).map(([n, c]) => `${n}:${c}@${g.cap}`));
-  check('Ferramentas: cada ficha mostra a capability exigida, igual a do JSON e a do grupo', erradas.length === 0 && exigencias.length === nGrupos, erradas.join(' ').slice(0, 200));
-
-  await page.click('.nav[data-tela="absorcao"]');
-  await page.waitForTimeout(200);
-  const produtos = await page.$$eval('#absorcaoConteudo .produto', p => p.length);
-  check('Absorcao: um cartao por produto do absorcao.json', produtos === Object.keys(absorcao).length, `${produtos}`);
-  // Barra de tres estados: a soma dos segmentos e o total do JSON, e cada estado tem FORMA
+  await page.click('.nav[data-tela="geral"]');
+  await page.waitForTimeout(300);
+  // Barra de tres estados (agora so na Visao geral, que e o resumo; a Absorcao virou grade): a soma dos segmentos e o total do JSON, e cada estado tem FORMA
   // propria (cheio / hachurado / so contorno tracejado), conferida pelo estilo computado --
   // o que sobra em escala de cinza.
-  const tri = await page.$$eval('#absorcaoConteudo .produto', ps => ps.map(p => ({
+  const tri = await page.$$eval('#geralAbsorcaoLista .mini', ps => ps.map(p => ({
     k: p.dataset.produto,
     segs: [...p.querySelectorAll('.tri .seg')].map(s => {
       const cs = getComputedStyle(s);
@@ -205,21 +195,247 @@ try {
     const de = e => t.segs.find(s => s.e === e)?.n || 0;
     return de('agente') !== p.no_agente || de('parcial') !== p.parcial || de('nao') !== p.nao;
   }).map(t => t.k);
-  check('Absorcao: segmentos agente/parcial/nao batem com o absorcao.json', tri.length && somaErrada.length === 0, somaErrada.join(','));
+  check('Visao geral: segmentos agente/parcial/nao batem com o absorcao.json', tri.length && somaErrada.length === 0, somaErrada.join(','));
   const todos = tri.flatMap(t => t.segs);
   const formaOk = todos.every(s => (s.e === 'agente' && s.cheio && !s.img && s.borda === 'solid')
     || (s.e === 'parcial' && s.img && s.borda === 'solid')
     || (s.e === 'nao' && !s.cheio && !s.img && s.borda === 'dashed'));
-  check('Absorcao: os tres estados diferem por forma (cheio / hachurado / tracejado), nao so cor', formaOk && new Set(todos.map(s => s.e)).size === 3, JSON.stringify(todos.slice(0, 3)));
+  check('Visao geral: os tres estados diferem por forma (cheio / hachurado / tracejado), nao so cor', formaOk && new Set(todos.map(s => s.e)).size === 3, JSON.stringify(todos.slice(0, 3)));
   const proporcional = tri.every(t => {
     const tot = t.segs.reduce((a, s) => a + s.n, 0), largura = t.segs.reduce((a, s) => a + s.w, 0);
     return t.segs.every(s => Math.abs(s.w / largura - s.n / tot) < 0.06);
   });
-  check('Absorcao: largura de cada segmento proporcional a contagem', proporcional);
+  check('Visao geral: largura de cada segmento proporcional a contagem', proporcional);
   const legenda = await page.$$eval('#tela-absorcao .tela-head .tri-legenda .amostra', a => a.map(x => x.className));
   check('Absorcao: legenda unica com as tres amostras de forma', legenda.length === 3, legenda.join(','));
+  // ===== GRADES (phx-grid): as listagens viraram table view; cada checagem exercita a grade
+  // de verdade (agrupa, filtra, ordena, troca o idioma, exporta) e confere contra o JSON.
+  const gradeInfo = sel => page.$eval(sel, raiz => {
+    const trs = [...raiz.querySelectorAll('.phx-tabela > tbody > tr')];
+    const num = t => Number(String(t).replace(/\D/g, '')) || 0;
+    const grupos = trs.filter(tr => tr.classList.contains('phx-grupo')).map(tr => ({
+      rotulo: tr.querySelector('.phx-grupo-rotulo')?.textContent ?? '',
+      valor: tr.querySelector('.grade-valor-grupo')?.textContent ?? null,
+      n: num(tr.querySelector('.phx-grupo-conta')?.textContent),
+    }));
+    const dados = trs.filter(tr => !/(^|\s)phx-(grupo|grupo-rodape|detalhe|tr-vazia|preview)(\s|$)/.test(tr.className));
+    const cel = (tr, tag) => tr.querySelector(`td[data-tag="${tag}"]`)?.textContent ?? null;
+    // As celulas se acham pela tag da coluna (data-tag, que o phx-grid poe no <th> e no <td>).
+    const tags = [...raiz.querySelectorAll('.phx-tabela > thead th[data-tag]:not(.phx-frow-cel)')].map(th => th.dataset.tag);
+    return {
+      grupos, n: dados.length,
+      linhas: dados.map(tr => Object.fromEntries(tags.map(t => [t, cel(tr, t)]))),
+      rodapes: trs.filter(tr => tr.classList.contains('phx-grupo-rodape')).map(tr => [...tr.querySelectorAll('td.phx-grupo-rod-cel')].map(td => td.textContent.trim())),
+      cabecalhos: [...raiz.querySelectorAll('.phx-tabela > thead th[data-campo]:not(.phx-frow-cel) .phx-th-titulo')].map(e => e.firstChild?.textContent ?? ''),
+      canto: raiz.querySelector('.phx-tfoot-canto')?.textContent ?? '',
+    };
+  });
+  const fabTextos = lerAsset('textos.json').textos;
+  // Os nomes de produto saem da propria tela (NOMES_PRODUTO do app.js): uma copia aqui seria
+  // mais um lugar para divergir.
+  const NOMES = await page.evaluate(() => NOMES_PRODUTO);
+
+  await page.click('.nav[data-tela="agentes"]');
+  await page.waitForTimeout(400);
+  let ga = await gradeInfo('#agentesConteudo');
+  const porMacro = Object.fromEntries(equipe.macroareas.map(m => [m.nome, m.total]));
+  const somaGrupos = ga.grupos.reduce((a, g) => a + g.n, 0);
+  const gruposBatem = ga.grupos.every(g => Object.entries(porMacro).some(([nome, n]) => g.rotulo.endsWith(nome) && g.n === n));
+  check('Agentes: agrupado por macroarea da 11 grupos e a soma e 110, cada grupo com o total do equipe.json',
+    ga.grupos.length === equipe.macroareas.length && somaGrupos === equipe.total && ga.n === equipe.total && gruposBatem,
+    `${ga.grupos.length} grupos, soma ${somaGrupos}, ${ga.n} linhas, batem=${gruposBatem}`);
+  check('Agentes: caixa de agrupamento mostra o chip da macroarea (arraste uma coluna)',
+    (await page.$$eval('#agentesConteudo .phx-groupbox .phx-gpill', ps => ps.map(p => p.dataset.campo))).join() === 'macroarea');
+  // Ordenacao: clicar o titulo de «Papel» ordena; a ordem dentro do primeiro grupo muda e fica crescente.
+  const nomesAntes = ga.linhas.map(l => l.nome);
+  await page.click('#agentesConteudo th[data-campo="nome"] .phx-th-titulo');
+  await page.waitForTimeout(300);
+  ga = await gradeInfo('#agentesConteudo');
+  const nomesDepois = ga.linhas.map(l => l.nome);
+  const primeiro = ga.grupos[0]?.n || 0;
+  const g1 = nomesDepois.slice(0, primeiro);
+  const crescente = g1.every((v, i) => i === 0 || g1[i - 1].localeCompare(v, 'pt', { sensitivity: 'base' }) <= 0);
+  check('Agentes: clicar o cabecalho ordena (a ordem muda e o grupo fica crescente)', JSON.stringify(nomesAntes) !== JSON.stringify(nomesDepois) && crescente && ga.n === equipe.total,
+    `${nomesDepois.slice(0, 3).join(' | ')}`);
+  // Filtro: a busca global e a linha de filtro (auto filter row) reduzem as linhas.
+  await page.fill('#agentesFiltro', 'humano');
+  await page.waitForTimeout(500);
+  const nBusca = (await gradeInfo('#agentesConteudo')).n;
+  await page.fill('#agentesFiltro', '');
+  await page.waitForTimeout(500);
+  await page.fill('#agentesConteudo th.phx-frow-cel[data-campo="nucleo"] input', 'UX');
+  await page.waitForTimeout(600);
+  const nLinhaFiltro = (await gradeInfo('#agentesConteudo')).n;
+  check('Agentes: a busca e a linha de filtro reduzem as linhas', nBusca > 0 && nBusca < equipe.total && nLinhaFiltro > 0 && nLinhaFiltro < equipe.total,
+    `busca=${nBusca} linha-de-filtro=${nLinhaFiltro} de ${equipe.total}`);
+  await page.screenshot({ path: join(OUT, 'ui_agentes_filtro.png') });
+  await page.fill('#agentesConteudo th.phx-frow-cel[data-campo="nucleo"] input', '');
+  await page.waitForTimeout(600);
+  // Colunas escolhiveis: o seletor do rodape esconde e mostra.
+  const visAntes = (await gradeInfo('#agentesConteudo')).cabecalhos.length;
+  // Clique de gente (o Playwright confere que o alvo esta visivel e nao coberto): menu
+  // cortado pela borda da grade reprova aqui, e nao derruba o roteiro.
+  const clicar = sel => page.click(sel, { timeout: 3000 }).then(() => true, () => false);
+  await clicar('#agentesConteudo .phx-colsel-btn');
+  const escondeu = await clicar('#agentesConteudo .phx-colsel input[data-campo="missao"]');
+  await page.waitForTimeout(300);
+  const visDepois = (await gradeInfo('#agentesConteudo')).cabecalhos.length;
+  const mostrou = escondeu && await clicar('#agentesConteudo .phx-colsel input[data-campo="missao"]');
+  if (!mostrou) await page.evaluate(() => gradesDaTela.agentes.g.mostrarColuna('missao', true));
+  await clicar('#agentesConteudo .phx-colsel-btn');
+  await page.waitForTimeout(300);
+  check('Agentes: o seletor de colunas esconde e mostra uma coluna', escondeu && mostrou && visDepois === visAntes - 1 && (await gradeInfo('#agentesConteudo')).cabecalhos.length === visAntes, `${visAntes} -> ${visDepois}`);
+  // Exportar: gera arquivo de verdade, com uma linha por papel.
+  // Download que nao vem em 5 s e reprovacao desta checagem, nao queda do roteiro.
+  const baixar = sel => Promise.all([page.waitForEvent('download', { timeout: 5000 }).catch(() => null), page.click(sel)]).then(([d]) => d);
+  const csv = await baixar('[data-grade-exporta="agentes:csv"]');
+  const csvLinhas = csv ? readFileSync(await csv.path(), 'utf8').replace(/^\uFEFF/, '').trim().split(/\r?\n/) : [];
+  const xlsx = await baixar('[data-grade-exporta="agentes:xlsx"]');
+  const xlsxBytes = xlsx ? readFileSync(await xlsx.path()) : Buffer.alloc(0);
+  check('Agentes: EXPORTAR gera CSV (cabecalho + 110 linhas) e XLSX (zip PK)',
+    csv?.suggestedFilename() === 'phxclaw-agentes.csv' && csvLinhas.length === equipe.total + 1 && xlsx?.suggestedFilename() === 'phxclaw-agentes.xlsx' && xlsxBytes[0] === 0x50 && xlsxBytes[1] === 0x4b,
+    `${csv?.suggestedFilename()} ${csvLinhas.length} linhas; ${xlsx?.suggestedFilename()} ${xlsxBytes.length} bytes`);
+  // Idioma: PT -> EN muda os cabecalhos (pela chave) e nao muda o dado; o agrupamento sobrevive.
+  const ptA = await gradeInfo('#agentesConteudo');
+  await page.click('#trocarIdioma');
+  await page.waitForTimeout(500);
+  const enA = await gradeInfo('#agentesConteudo');
+  await page.screenshot({ path: join(OUT, 'ui_agentes_en.png') });
+  await page.click('#trocarIdioma');
+  await page.waitForTimeout(500);
+  const pt2A = await gradeInfo('#agentesConteudo');
+  const cabEn = ['agentes.col.nome', 'agentes.col.nucleo', 'agentes.col.tipo'].map(k => fabTextos[k].en);
+  const tiposEn = new Set(enA.linhas.map(l => l.tipo));
+  const dadoA = l => l.map(x => [x.nome, x.cap, x.missao].join('|')).join('\n');
+  check('Agentes: trocar o idioma muda os cabecalhos e o rotulo HUMANO/AGENTE, e nao muda nenhum dado',
+    cabEn.every(c => enA.cabecalhos.includes(c)) && JSON.stringify(ptA.cabecalhos) === JSON.stringify(pt2A.cabecalhos) && ptA.cabecalhos.join() !== enA.cabecalhos.join()
+    && [...tiposEn].every(t => [fabTextos['agentes.humano'].en, fabTextos['agentes.agente'].en].includes(t))
+    && dadoA(ptA.linhas) === dadoA(enA.linhas) && dadoA(enA.linhas) === dadoA(pt2A.linhas) && enA.grupos.length === equipe.macroareas.length,
+    `${enA.cabecalhos.slice(0, 4).join(',')} / ${[...tiposEn].join(',')}`);
+  await page.screenshot({ path: join(OUT, 'ui_agentes.png') });
+
+  await page.click('.nav[data-tela="ferramentas"]');
+  await page.waitForTimeout(400);
+  const gf = await gradeInfo('#ferramentasConteudo');
+  const nCaps = new Set(ferramentas.ferramentas.map(f => f.capacidade)).size;
+  check('Ferramentas: uma linha por ferramenta, agrupadas por capability exata', gf.n === ferramentas.total && gf.grupos.length === nCaps && gf.grupos.reduce((a, g) => a + g.n, 0) === ferramentas.total,
+    `${gf.n} linhas / ${gf.grupos.length} grupos de ${nCaps}`);
+  // A coluna «exige» de cada linha e a do JSON e a do grupo onde a linha esta (nada de linha no
+  // grupo errado por um find() que parou na primeira).
+  const exigeErrado = await page.$eval('#ferramentasConteudo', (raiz, esperado) => {
+    const erros = [];
+    let grupo = null;
+    for (const tr of raiz.querySelectorAll('.phx-tabela > tbody > tr')) {
+      if (tr.classList.contains('phx-grupo')) { grupo = tr.querySelector('.phx-grupo-rotulo').textContent.split(': ').pop(); continue; }
+      const nome = tr.querySelector('td[data-tag="nome"]')?.textContent;
+      const exige = tr.querySelector('td[data-tag="exige"]')?.textContent;
+      if (!nome) continue;
+      if (exige !== esperado[nome] || exige !== grupo) erros.push(`${nome}:${exige}@${grupo}`);
+    }
+    return erros;
+  }, Object.fromEntries(ferramentas.ferramentas.map(f => [f.nome, f.capacidade])));
+  const temExige = await page.$$eval('#ferramentasConteudo th[data-campo="exige"]', t => t.length);
+  check('Ferramentas: a coluna «exige» mostra a capability de cada ferramenta, igual a do JSON e a do grupo', exigeErrado.length === 0 && temExige === 1, exigeErrado.slice(0, 4).join(' '));
+
+  await page.click('.nav[data-tela="absorcao"]');
+  await page.waitForTimeout(400);
+  let gb = await gradeInfo('#absorcaoConteudo');
+  const totalCaps = Object.values(absorcao).reduce((a, p) => a + p.total, 0);
+  const rodapesOk = gb.grupos.length === Object.keys(absorcao).length && gb.grupos.every((g, i) => {
+    const k = Object.keys(NOMES).find(x => NOMES[x] === g.valor);
+    const p = absorcao[k];
+    return p && g.n === p.total && JSON.stringify((gb.rodapes[i] || []).slice(-3)) === JSON.stringify([String(p.no_agente), String(p.parcial), String(p.nao)]);
+  });
+  check('Absorcao: agrupada por produto, rodape de cada grupo soma no agente/pela metade/nao igual ao absorcao.json',
+    gb.n === totalCaps && rodapesOk, `${gb.n} linhas, ${gb.grupos.length} grupos, rodapes ${JSON.stringify(gb.rodapes).slice(0, 120)}`);
+  const estadoErrado = gb.linhas.filter(l => ![fabTextos['absorcao.no_agente'].pt, fabTextos['absorcao.parcial'].pt, fabTextos['absorcao.nao'].pt].includes(l.estado));
+  check('Absorcao: o estado aparece pelo rotulo da fabrica (valor substituido), nunca o codigo', estadoErrado.length === 0, estadoErrado.slice(0, 3).map(l => l.estado).join(','));
   await page.screenshot({ path: join(OUT, 'ui_absorcao.png') });
+  await page.click('#absorcaoPorEstado');
+  await page.waitForTimeout(400);
+  gb = await gradeInfo('#absorcaoConteudo');
+  const porEstado = { agente: 0, parcial: 0, nao: 0 };
+  for (const p of Object.values(absorcao)) { porEstado.agente += p.no_agente; porEstado.parcial += p.parcial; porEstado.nao += p.nao; }
+  const rotEstado = { [fabTextos['absorcao.no_agente'].pt]: 'agente', [fabTextos['absorcao.parcial'].pt]: 'parcial', [fabTextos['absorcao.nao'].pt]: 'nao' };
+  check('Absorcao: AGRUPAR POR ESTADO da 3 grupos com as contagens do JSON', gb.grupos.length === 3 && gb.grupos.every(g => porEstado[rotEstado[g.valor]] === g.n),
+    gb.grupos.map(g => `${g.valor}=${g.n}`).join(' '));
+  await page.screenshot({ path: join(OUT, 'ui_absorcao_por_estado.png') });
+  await page.click('#absorcaoPorProduto');
+  await page.click('#absorcaoVerCubo');
+  await page.waitForTimeout(500);
+  const cuboT = await page.$eval('#absorcaoCubo', raiz => ({
+    visivel: !raiz.hidden,
+    linhas: [...raiz.querySelectorAll('table tbody tr')].map(tr => [...tr.children].map(td => td.textContent.trim())),
+    cab: [...raiz.querySelectorAll('table thead th')].map(th => th.textContent.trim()),
+  }));
+  const totaisCubo = Object.fromEntries(cuboT.linhas.filter(l => l.length > 1).map(l => [l[0], l[l.length - 1]]));
+  const cuboOk = cuboT.visivel && Object.entries(absorcao).every(([k, p]) => totaisCubo[NOMES[k]] === String(p.total)) && Object.values(totaisCubo).includes(String(totalCaps));
+  check('Absorcao: VISAO CUBO produto x estado, total de cada produto e o geral iguais ao JSON', cuboOk, JSON.stringify(totaisCubo).slice(0, 200));
+  await page.screenshot({ path: join(OUT, 'ui_absorcao_cubo.png') });
+  await page.click('#absorcaoTranspor');
+  await page.waitForTimeout(300);
+  const cabT = await page.$$eval('#absorcaoCubo table thead th', t => t.map(x => x.textContent.trim()));
+  check('Absorcao: TRANSPOR troca os eixos do cubo (produtos viram colunas)', Object.values(NOMES).every(n => cabT.includes(n)), cabT.join(','));
+  await page.click('#absorcaoVerCubo');
+  await page.waitForTimeout(200);
+
+  // Numero so de JSON gerado, tambem nas grades: todo texto com numero das tres telas de
+  // listagem mora dentro de um [data-fonte] (a grade inteira e o resumo dizem de onde vieram).
+  for (const tela of ['agentes', 'ferramentas', 'absorcao']) {
+    await page.click(`.nav[data-tela="${tela}"]`);
+    await page.waitForTimeout(300);
+    const r = await page.evaluate(t => {
+      const raiz = document.getElementById(`tela-${t}`);
+      const num = /\d/;
+      const fora = [];
+      let dentro = 0;
+      const w = document.createTreeWalker(raiz, NodeFilter.SHOW_TEXT);
+      for (let n = w.nextNode(); n; n = w.nextNode()) {
+        const tx = n.textContent.trim();
+        if (!tx || !num.test(tx)) continue;
+        if (n.parentElement.closest('[data-fonte]')) dentro++; else fora.push(tx);
+      }
+      return { fora, dentro };
+    }, tela);
+    check(`${tela}: nenhum numero fora de [data-fonte] (${r.dentro} dentro)`, r.fora.length === 0 && r.dentro > 0, r.fora.join(' | ').slice(0, 200));
+  }
+
+  // Tarefas: a lista e grade -- status pelo rotulo da fabrica (valores), mais nova primeiro
+  // (ordem pela data, que a API entrega fora de ordem aqui de proposito) e o navegador de
+  // registros abrindo o detalhe.
+  await page.click('.nav[data-tela="tarefas"]');
+  await page.waitForTimeout(800);
+  const gt = await gradeInfo('#tarefasLista');
+  const esperadoT = TAREFAS.slice().sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
+  const statusOk = gt.n === TAREFAS.length && gt.linhas.every((l, i) => l.status === fabTextos[`tarefas.estado.${esperadoT[i].status}`].pt);
+  const ordemOk = JSON.stringify(gt.linhas.map(l => l.objetivo)) === JSON.stringify(esperadoT.map(t => t.objective));
+  check('Tarefas: o status aparece pelo rotulo da fabrica (nunca o codigo) e a mais nova vem primeiro', statusOk && ordemOk,
+    gt.linhas.slice(0, 3).map(l => `${l.status}/${l.objetivo}`).join(' | '));
+  const formas = await page.$$eval('#tarefasLista td[data-tag="status"]', tds => tds.map(td => [...td.classList].find(c => c.startsWith('phx-est-st-')) || ''));
+  check('Tarefas: cada status tem a forma da sua familia (ok, espera, erro, anda)', formas.length === TAREFAS.length && formas.every(Boolean), formas.join(','));
+  const proximo = await page.$('#tarefasLista .phx-nav-b[data-nav="prox"]');
+  if (proximo) {
+    await proximo.click();
+    await page.waitForTimeout(600);
+    await page.click('#tarefasLista .phx-nav-b[data-nav="prox"]');
+    await page.waitForTimeout(800);
+  }
+  const titulo = await page.textContent('#tarefasDetalhe .tarefa-titulo').catch(() => null);
+  const marcada = await page.$$eval('#tarefasLista tbody tr.selecionada', trs => trs.map(t => t.dataset.id));
+  check('Tarefas: o navegador de registros anda e abre o detalhe da tarefa do registro', titulo === esperadoT[1].objective && marcada.join() === esperadoT[1].id,
+    `${titulo} / ${marcada}`);
+  await page.screenshot({ path: join(OUT, 'ui_tarefas.png') });
+  await page.click('#trocarIdioma');
+  await page.waitForTimeout(800);
+  const gtEn = await gradeInfo('#tarefasLista');
+  await page.click('#trocarIdioma');
+  await page.waitForTimeout(600);
+  check('Tarefas: trocar o idioma troca o rotulo do status e o cabecalho, e nao o objetivo',
+    gtEn.linhas.every((l, i) => l.status === fabTextos[`tarefas.estado.${esperadoT[i].status}`].en) && gtEn.cabecalhos[0] === fabTextos['tarefas.col.estado'].en
+    && JSON.stringify(gtEn.linhas.map(l => l.objetivo)) === JSON.stringify(esperadoT.map(t => t.objective)), gtEn.linhas.slice(0, 2).map(l => l.status).join(','));
   // Troca de idioma com a tela aberta: o que o JS desenhou se redesenha pela CHAVE, e volta.
+  await page.click('.nav[data-tela="absorcao"]');
+  await page.waitForTimeout(300);
   const textos = lerAsset('textos.json').textos;
   const lerRotulos = () => page.evaluate(() => ({
     legenda: [...document.querySelectorAll('#absorcaoLegenda .tri-legenda > span > span')].map(s => s.textContent),
@@ -241,29 +457,31 @@ try {
   const fab = lerAsset('textos.json').textos;
   const DADO = {
     geral: '#kernelVersion, #hostSession, #liveReceivers, #geralAgentes, #geralFerramentas, #geralAbsorcao, #geralMacro .macro > span, #geralMacro .macro b, #geralCapacidades code, #geralCapacidades em, #geralAbsorcaoLista .mini > span, #geralAbsorcaoLista .seg em, #geralAbsorcaoLista .mini b',
-    ferramentas: '#ferramentasConteudo header code.cap, #ferramentasConteudo .ficha b, #ferramentasConteudo .ficha p, #ferramentasConteudo .exige code',
-    absorcao: '#absorcaoConteudo h2, #absorcaoConteudo .seg em, #absorcaoConteudo li',
+    agentes: '#agentesConteudo td[data-tag="nome"], #agentesConteudo td[data-tag="cap"], #agentesConteudo td[data-tag="missao"], #agentesConteudo .phx-grupo-conta',
+    ferramentas: '#ferramentasConteudo td[data-tag="nome"], #ferramentasConteudo td[data-tag="exige"], #ferramentasConteudo td[data-tag="descricao"], #ferramentasConteudo .phx-grupo-conta',
+    absorcao: '#absorcaoConteudo td[data-tag="capacidade"], #absorcaoConteudo .grade-valor-grupo, #absorcaoConteudo .phx-grupo-conta, #absorcaoConteudo td.phx-grupo-rod-cel',
   };
   const ROTULO_JS = {
     geral: '#geralAgentesNota, #geralFerramentasNota, #geralAbsorcaoNota, #geralAbsorcaoLista .tri-legenda, #apiEndpoint, #evidenceState, #hostPolicy',
-    ferramentas: '#ferramentasResumo, #ferramentasConteudo .rotulo-cap, #ferramentasConteudo .exige > span, #ferramentasConteudo .marcas span',
-    absorcao: '#absorcaoResumo, #absorcaoLegenda, #absorcaoConteudo .tri-legenda, #absorcaoConteudo small, #absorcaoConteudo summary',
+    agentes: '#agentesResumo, #agentesConteudo .phx-th-titulo, #agentesConteudo td[data-tag="tipo"]',
+    ferramentas: '#ferramentasResumo, #ferramentasConteudo .phx-th-titulo, #ferramentasConteudo td[data-tag="concessao"]',
+    absorcao: '#absorcaoResumo, #absorcaoLegenda, #absorcaoConteudo .phx-th-titulo, #absorcaoConteudo td[data-tag="estado"]',
   };
   const foto = tela => page.evaluate(([tela, dado, rot]) => {
     const sec = document.getElementById(`tela-${tela}`);
     const textos = sel => [...sec.querySelectorAll(sel)].map(e => e.textContent);
     return { chaves: [...sec.querySelectorAll('[data-txt]')].map(e => [e.dataset.txt, e.textContent]), dado: textos(dado), rotulo: textos(rot) };
   }, [tela, DADO[tela], ROTULO_JS[tela]]);
-  for (const tela of ['geral', 'ferramentas', 'absorcao']) {
+  for (const tela of ['geral', 'agentes', 'ferramentas', 'absorcao']) {
     await page.click(`.nav[data-tela="${tela}"]`);
-    await page.waitForTimeout(250);
+    await page.waitForTimeout(300);
     const pt1 = await foto(tela);
     await page.click('#trocarIdioma');
-    await page.waitForTimeout(250);
+    await page.waitForTimeout(400);
     const en = await foto(tela);
     if (tela === 'ferramentas') await page.screenshot({ path: join(OUT, 'ui_ferramentas_en.png') });
     await page.click('#trocarIdioma');
-    await page.waitForTimeout(250);
+    await page.waitForTimeout(400);
     const pt2 = await foto(tela);
     const chavesOk = en.chaves.length > 0 && en.chaves.every(([k, t]) => t === fab[k].en) && pt2.chaves.every(([k, t]) => t === fab[k].pt);
     const dadoOk = pt1.dado.length > 0 && JSON.stringify(pt1.dado) === JSON.stringify(en.dado) && JSON.stringify(en.dado) === JSON.stringify(pt2.dado);
@@ -333,6 +551,27 @@ try {
   }));
   check('sem os tres JSON: Visao geral mostra travessao e tres avisos, sem barra', vazio.nums.every(n => n === '—') && vazio.avisos === 3 && vazio.barra, JSON.stringify(vazio));
   await p3.screenshot({ path: join(OUT, 'ui_geral_sem_json.png') });
+
+  // Sob a CSP do Tauri (script-src 'self', style-src 'self', sem 'unsafe-inline'): a grade
+  // tem de funcionar inteira. O phx-grid poe alguns style="" no HTML que monta (recuo de
+  // grupo aninhado, recuo de linha do cubo); a CSP os descarta, e isso e cosmetico -- o
+  // numero de violacoes vai no detalhe. Script bloqueado e que seria defeito.
+  const { page: p4, erros: e4 } = await abrirPagina(browser, { csp: CSP_TAURI });
+  await p4.evaluate(() => { window.__csp = []; document.addEventListener('securitypolicyviolation', e => window.__csp.push(e.effectiveDirective)); });
+  await p4.click('.nav[data-tela="agentes"]');
+  await p4.waitForTimeout(500);
+  await p4.click('.nav[data-tela="absorcao"]');
+  await p4.click('#absorcaoVerCubo');
+  await p4.waitForTimeout(500);
+  const sobCsp = await p4.evaluate(() => ({
+    agentes: [...document.querySelectorAll('#agentesConteudo .phx-tabela > tbody > tr')].filter(tr => !tr.className).length,
+    cubo: document.querySelectorAll('#absorcaoCubo table tbody tr').length,
+    violacoes: window.__csp,
+  }));
+  const scripts = sobCsp.violacoes.filter(v => v.startsWith('script'));
+  check('sob a CSP do Tauri: a grade de agentes e o cubo desenham, sem script bloqueado',
+    sobCsp.agentes === equipe.total && sobCsp.cubo > Object.keys(absorcao).length && scripts.length === 0 && !e4.some(x => /Refused to (execute|load) script/.test(x)),
+    `${sobCsp.agentes} linhas, cubo ${sobCsp.cubo} linhas, violacoes: ${JSON.stringify(sobCsp.violacoes.reduce((a, v) => ({ ...a, [v]: (a[v] || 0) + 1 }), {}))}`);
 } catch (e) {
   check('roteiro', false, String(e).slice(0, 300));
 } finally {

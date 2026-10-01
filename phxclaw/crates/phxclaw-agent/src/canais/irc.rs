@@ -5,11 +5,10 @@
 //! e responde PING na hora -- se a resposta esperasse a volta do laco, o servidor derrubaria
 //! a conexao durante uma tarefa longa.
 //!
-//! TLS: o agente nao tem TLS de soquete sem acrescentar crate (`rustls` esta no Cargo.lock
-//! do workspace, mas nao nas dependencias declaradas dele). Sem TLS, a senha (o token
-//! `oauth:` da Twitch, a do NickServ) andaria em texto claro, entao a conexao sem TLS so e
-//! aceita em loopback -- o caminho de producao hoje e um tunel local (stunnel, socat) ate a
-//! porta TLS do servidor. Por isso o canal conta como PARCIAL.
+//! TLS: por padrao a conexao e TLS desde o primeiro byte (porta 6697; Twitch:
+//! `irc.chat.twitch.tv:6697`), pelo `canais::tls`. Sem TLS (`PHXCLAW_IRC_TLS=false`) a senha
+//! (o token `oauth:` da Twitch, a do NickServ) andaria em texto claro, entao a conexao sem
+//! TLS continua aceita so em loopback (um tunel local).
 //!
 //! Quem fala: num canal (`#sala`) a conversa e o canal, e todo mundo nele fala com o
 //! agente, como num grupo do Telegram; em mensagem direta a conversa e o nick. Nick de IRC
@@ -17,9 +16,10 @@
 
 use super::caixa::Caixa;
 use super::http::Credencial;
+use super::tls::{Fio, Tls, conectar, ler_em_fundo};
 use super::{Entrada, Mensagem, Provedor, Unidade};
 use serde_json::Value;
-use std::io::{BufRead, BufReader, Write};
+use std::io::Write;
 use std::net::{TcpStream, ToSocketAddrs};
 use std::sync::mpsc::{Receiver, RecvTimeoutError, channel};
 use std::sync::{Arc, Mutex};
@@ -51,10 +51,12 @@ pub struct Config {
     pub senha: Option<Credencial>,
     /// Canais (`#sala`) para entrar; nicks da lista nao precisam de JOIN.
     pub salas: Vec<String>,
+    /// `None` = texto claro, so em loopback.
+    pub tls: Option<Tls>,
 }
 
 struct Conexao {
-    escrita: Arc<Mutex<TcpStream>>,
+    escrita: Arc<Mutex<Fio>>,
     /// So o `receber` le; o Mutex e para a conexao poder ser compartilhada com o `enviar`.
     linhas: Mutex<Receiver<String>>,
 }
@@ -93,7 +95,7 @@ impl Irc {
         }
     }
 
-    fn escrever(s: &Mutex<TcpStream>, linha: &str) -> Result<(), String> {
+    fn escrever(s: &Mutex<Fio>, linha: &str) -> Result<(), String> {
         // CR ou LF no meio viraria um comando IRC novo: injecao.
         let limpa: String = linha.chars().filter(|c| *c != '\r' && *c != '\n').collect();
         let mut g = s.lock().map_err(|_| "soquete envenenado".to_string())?;
@@ -102,8 +104,10 @@ impl Irc {
     }
 
     fn abrir(&self) -> Result<Conexao, String> {
-        let s = conectar_sem_tls(&self.cfg.endereco)?;
-        let escrita = Arc::new(Mutex::new(s.try_clone().map_err(|e| e.to_string())?));
+        let escrita = Arc::new(Mutex::new(conectar(
+            &self.cfg.endereco,
+            self.cfg.tls.as_ref(),
+        )?));
         if let Some(c) = &self.cfg.senha {
             c.com("receive", |p| {
                 Self::escrever(&escrita, &format!("PASS {p}"))
@@ -112,18 +116,29 @@ impl Irc {
         Self::escrever(&escrita, &format!("NICK {}", self.cfg.nick))?;
         Self::escrever(&escrita, &format!("USER {} 0 * :PhxClaw", self.cfg.nick))?;
         let (tx, rx) = channel();
-        let pong = escrita.clone();
-        std::thread::spawn(move || {
-            let mut r = BufReader::new(s);
-            let mut linha = String::new();
-            while r.read_line(&mut linha).unwrap_or(0) > 0 {
+        // O leitor nao segura um clone forte do fio: so o fraco, para o PONG. Quando a
+        // conexao cai do lado do canal, o fio fica sem dono e a leitura em fundo para.
+        let pong = Arc::downgrade(&escrita);
+        let mut pendente: Vec<u8> = Vec::new();
+        ler_em_fundo(escrita.clone(), move |bytes| {
+            pendente.extend_from_slice(bytes);
+            while let Some(i) = pendente.iter().position(|b| *b == b'\n') {
+                let linha: Vec<u8> = pendente.drain(..=i).collect();
+                let linha = String::from_utf8_lossy(&linha).into_owned();
                 if let Some(arg) = linha.strip_prefix("PING") {
-                    let _ = Self::escrever(&pong, &format!("PONG{}", arg.trim_end()));
-                } else if tx.send(linha.clone()).is_err() {
-                    break;
+                    if let Some(p) = pong.upgrade() {
+                        let _ = Self::escrever(&p, &format!("PONG{}", arg.trim_end()));
+                    }
+                } else if tx.send(linha).is_err() {
+                    return false;
                 }
-                linha.clear();
             }
+            // Linha sem fim acima do teto do protocolo (512 bytes, 8 KiB com tags IRCv3):
+            // servidor quebrado ou hostil; descarta em vez de crescer sem limite.
+            if pendente.len() > 64 * 1024 {
+                pendente.clear();
+            }
+            true
         });
         // Espera o 001 (boas-vindas) antes de entrar nas salas: JOIN antes do registro e
         // ignorado pelo servidor, calado.

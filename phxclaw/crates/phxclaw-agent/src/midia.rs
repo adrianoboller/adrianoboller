@@ -8,15 +8,20 @@
 //!   no cabecalho) para outro lugar;
 //! - **o fluxo do ComfyUI se preenche na arvore JSON, nao no texto**: o prompt com aspas
 //!   viraria JSON quebrado -- ou um no novo no fluxo -- se fosse colado no arquivo;
-//! - **o caminho local nao duplica o desenho**: o SVG vai para o `image_render` de sempre.
+//! - **o caminho local nao duplica o desenho**: o SVG vai para o `image_render` de sempre;
+//! - **o Nano Banana e mais um provedor, nao outra ferramenta** (`nanobanana.rs`): a chave
+//!   so no SecretBroker, e a EDICAO (`input_image`) le a imagem da pasta da tarefa,
+//!   confinada -- caminho fora dela nem chega a ser lido.
 
 use crate::motor::artifact_for;
+use crate::nanobanana::{NanoBanana, proporcao, tipo_da_imagem};
 use crate::tarefa::confine;
 use crate::visao::{ImageRenderTool, info_png, info_svg};
 use base64::Engine;
 use phxclaw_agent_core::{BoxFut, Tool, ToolContext, ToolError, ToolOutput, ToolSpec};
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 /// Imagem maior que isto nao se aceita do servidor: a resposta vai inteira para a memoria.
@@ -34,6 +39,10 @@ pub enum Provedor {
     },
     /// `POST {url}/prompt`, `GET {url}/history/<id>`, `GET {url}/view`.
     ComfyUi { url: String, fluxo: PathBuf },
+    /// `POST {url}/v1beta/models/{modelo}:generateContent`. `Err`: o operador escolheu o
+    /// Nano Banana e ele nao esta disponivel (sem chave); a ferramenta recusa dizendo isso,
+    /// em vez de cair calada no SVG.
+    NanoBanana(Result<Arc<NanoBanana>, String>),
 }
 
 pub struct ImageGenerateTool {
@@ -50,11 +59,16 @@ fn falha(e: impl std::fmt::Display) -> ToolError {
 
 impl ImageGenerateTool {
     /// `PHXCLAW_IMAGEM_PROVEDOR` = `openai` (com `PHXCLAW_IMAGEM_URL`, `PHXCLAW_IMAGEM_CHAVE`,
-    /// `PHXCLAW_IMAGEM_MODELO`) ou `comfyui` (com `PHXCLAW_IMAGEM_URL` e
-    /// `PHXCLAW_COMFY_WORKFLOW`). Sem nada: so o SVG local.
-    pub fn from_env() -> Result<Self, String> {
+    /// `PHXCLAW_IMAGEM_MODELO`), `comfyui` (com `PHXCLAW_IMAGEM_URL` e
+    /// `PHXCLAW_COMFY_WORKFLOW`) ou `nanobanana` (chave de `phxclaw gemini chave` no broker
+    /// de `raiz_do_agente`; `PHXCLAW_IMAGEM_URL` e `PHXCLAW_IMAGEM_MODELO` opcionais). Sem
+    /// nada: so o SVG local.
+    pub fn do_ambiente(raiz_do_agente: &Path) -> Result<Self, String> {
         let provedor = match var("PHXCLAW_IMAGEM_PROVEDOR").as_deref() {
             None => None,
+            Some("nanobanana") => Some(Provedor::NanoBanana(
+                NanoBanana::da_pasta(raiz_do_agente).map(Arc::new),
+            )),
             Some("openai") => Some(Provedor::OpenAi {
                 url: var("PHXCLAW_IMAGEM_URL").unwrap_or_else(|| "https://api.openai.com".into()),
                 chave: var("PHXCLAW_IMAGEM_CHAVE"),
@@ -281,6 +295,26 @@ async fn gerar_comfy(
     bytes_com_teto(conferir_status(r, "comfyui /view").await?).await
 }
 
+/// A imagem a editar: confinada a pasta da tarefa, com teto, e o tipo pelos bytes.
+fn ler_entrada(workdir: &Path, rel: &str) -> Result<(&'static str, Vec<u8>), ToolError> {
+    let p = confine(workdir, rel).map_err(ToolError::Denied)?;
+    let tam = std::fs::metadata(&p)
+        .map_err(|_| {
+            ToolError::InvalidArguments(format!("imagem nao encontrada na pasta da tarefa: {rel}"))
+        })?
+        .len();
+    if tam > crate::nanobanana::MAX_ENTRADA {
+        return Err(ToolError::InvalidArguments(format!(
+            "{rel} tem {tam} bytes, acima do teto de {}",
+            crate::nanobanana::MAX_ENTRADA
+        )));
+    }
+    let b = std::fs::read(&p).map_err(falha)?;
+    let tipo = tipo_da_imagem(&b)
+        .ok_or_else(|| ToolError::InvalidArguments(format!("{rel} nao e PNG, JPEG nem WebP")))?;
+    Ok((tipo, b))
+}
+
 fn tamanho(args: &Value) -> Result<(u32, u32), ToolError> {
     let s = args
         .get("size")
@@ -308,6 +342,10 @@ impl Tool for ImageGenerateTool {
         let modo = match &self.provedor {
             Some(Provedor::OpenAi { .. }) => "an OpenAI-compatible image API",
             Some(Provedor::ComfyUi { .. }) => "a ComfyUI server",
+            Some(Provedor::NanoBanana(_)) => {
+                "Nano Banana (Gemini image); it can also EDIT: pass 'input_image' (a .png, .jpg \
+or .webp of the task folder) and say in 'prompt' what to change"
+            }
             None => "no image server configured: pass 'svg' markup",
         };
         ToolSpec {
@@ -320,7 +358,8 @@ always available, from 'svg' markup you write, drawn by headless Chromium."
                 "prompt":{"type":"string"},
                 "svg":{"type":"string","description":"complete <svg> document; drawn locally"},
                 "output":{"type":"string","description":".png path, default imagem.png"},
-                "size":{"type":"string","description":"WxH, default 1024x1024"}
+                "size":{"type":"string","description":"WxH, default 1024x1024"},
+                "input_image":{"type":"string","description":"image of the task folder to edit (Nano Banana only)"}
             }}),
         }
     }
@@ -382,6 +421,16 @@ always available, from 'svg' markup you write, drawn by headless Chromium."
                     "prompt acima de {MAX_PROMPT} caracteres"
                 )));
             }
+            let entrada = args
+                .get("input_image")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|s| !s.is_empty());
+            if entrada.is_some() && !matches!(self.provedor, Some(Provedor::NanoBanana(_))) {
+                return Err(ToolError::InvalidArguments(
+                    "'input_image' (edicao) so com PHXCLAW_IMAGEM_PROVEDOR=nanobanana".into(),
+                ));
+            }
             let bytes = match &self.provedor {
                 None => {
                     return Err(ToolError::Denied(
@@ -403,6 +452,37 @@ desenhe com 'svg'"
                 }
                 Some(Provedor::ComfyUi { url, fluxo }) => {
                     gerar_comfy(url, fluxo, prompt, (w, h), ctx.timeout).await?
+                }
+                Some(Provedor::NanoBanana(nb)) => {
+                    let nb = nb.clone().map_err(ToolError::Denied)?;
+                    let entrada = match entrada {
+                        Some(rel) => Some(ler_entrada(&ctx.workdir, rel)?),
+                        None => None,
+                    };
+                    // Sem 'size' a proporcao e a do modelo -- na edicao, a da imagem de
+                    // entrada; mandar 1:1 por padrao quadraria toda foto editada.
+                    let prop = match args.get("size") {
+                        Some(_) => Some(proporcao(w, h).map_err(ToolError::InvalidArguments)?),
+                        None => None,
+                    };
+                    let (prompt, prazo) = (prompt.to_string(), ctx.timeout);
+                    let (tipo, b) = tokio::task::spawn_blocking(move || {
+                        nb.gerar(
+                            &prompt,
+                            entrada.as_ref().map(|(t, b)| (*t, b.as_slice())),
+                            prop.as_deref(),
+                            prazo,
+                        )
+                    })
+                    .await
+                    .map_err(falha)?
+                    .map_err(|e| ToolError::Failed(format!("nano banana: {e}")))?;
+                    if tipo_da_imagem(&b) != Some("image/png") {
+                        return Err(ToolError::Failed(format!(
+                            "o Nano Banana devolveu {tipo:?}, nao PNG; so PNG entra na pasta"
+                        )));
+                    }
+                    b
                 }
             };
             // So PNG entra na pasta: o que o servidor mandou e conferido pelo cabecalho, e

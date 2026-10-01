@@ -86,8 +86,8 @@
    "evidencia": "canais/sms.rs pelo laco unico Canal::rodada (provado contra servidor falso; falta credencial real)"
   },
   "canal_email": {
-   "estado": "parcial",
-   "evidencia": "IMAP sem TLS (so loopback/tunel); SMTP com TLS e senha no broker"
+   "estado": "agente",
+   "evidencia": "IMAP com TLS na 993 e SMTP com TLS, senhas no broker (provado contra servidor falso; falta credencial real)"
   },
   "webchat": {
    "estado": "agente",
@@ -258,12 +258,12 @@
    "evidencia": "TaskStore e shell_bg (segundo plano)"
   },
   "entrada_imagem": {
-   "estado": "parcial",
-   "evidencia": "o agente le imagem por OCR (visao.rs), mas o modelo nao recebe a imagem"
+   "estado": "agente",
+   "evidencia": "imagens.rs + Message.images nos 4 provedores; real: qwen2.5vl:3b leu o texto de um PNG pelo motor inteiro"
   },
   "instrucoes_projeto": {
-   "estado": "parcial",
-   "evidencia": "skills e memoria cobrem parte; nao le AGENTS.md do projeto"
+   "estado": "agente",
+   "evidencia": "instrucoes.rs: AGENTS.md da raiz ao cwd, override, CLAUDE.md reserva, teto 32 KiB, varredura anti-injecao, so projeto confiado"
   },
   "regras_comando": {
    "estado": "agente",
@@ -282,12 +282,12 @@
    "evidencia": "forja.rs: gitlab/gitlab_write; provado contra falso"
   },
   "linear": {
-   "estado": "nao",
-   "evidencia": ""
+   "estado": "agente",
+   "evidencia": "preset MCP do Linear com Bearer no broker (provado contra servidor falso; falta credencial real)"
   },
   "github_action": {
-   "estado": "nao",
-   "evidencia": ""
+   "estado": "agente",
+   "evidencia": ".github/actions/phxclaw/action.yml: PR aberto vira revisao comentada (provado contra servidor falso; falta credencial real)"
   },
   "tarefas_nuvem_paralelas": {
    "estado": "agente",
@@ -310,8 +310,8 @@
    "evidencia": "phxclaw voz: whisper -> agente -> speak, provado com Ollama real"
   },
   "gravar_repetir": {
-   "estado": "nao",
-   "evidencia": ""
+   "estado": "agente",
+   "evidencia": "gravacao.rs: gravar com Ollama real e repetir sem modelo deu a mesma sequencia"
   },
   "repl_python": {
    "estado": "agente",
@@ -322,52 +322,52 @@
    "evidencia": "read_file, read_document, data_file"
   },
   "indexacao_documentos": {
-   "estado": "nao",
-   "evidencia": "memoria guarda notas; nao indexa pasta de documentos"
+   "estado": "agente",
+   "evidencia": "bm25.rs no memory-context, doc_search e phxclaw indexar; medido em docs/: BM25 6/8 no 1o lugar"
   },
   "importar_skills": {
-   "estado": "nao",
-   "evidencia": ""
+   "estado": "agente",
+   "evidencia": "importar_skills.rs: 350 SKILL.md reais importados, scripts desligados, origem com SHA-256"
   },
   "otimizacao_skills": {
-   "estado": "nao",
-   "evidencia": ""
+   "estado": "agente",
+   "evidencia": "otimizacao.rs: variante so e promovida sem cruzar faixas; prova deterministica"
   },
   "acesso_sistema": {
    "estado": "agente",
    "evidencia": "sistema.rs linux_system e linux_system_admin"
   },
   "pesquisa_profunda": {
-   "estado": "parcial",
-   "evidencia": "web_search, navegador e parallel_research; sem citacoes encadeadas"
+   "estado": "agente",
+   "evidencia": "pesquisa.rs: deep_research, citacao conferida como trecho literal; contra servidor web falso"
   },
   "avaliacao_modelos": {
-   "estado": "parcial",
-   "evidencia": "crates phxclaw-model-arena e phxclaw-ai-benchmark, fora do agente"
+   "estado": "agente",
+   "evidencia": "avaliacao.rs: phxclaw avaliar com faixa min-max, N e data; real com qwen2.5:1.5b e smollm2"
   },
   "telemetria_energia": {
-   "estado": "nao",
-   "evidencia": ""
+   "estado": "parcial",
+   "evidencia": "RAPL/NVIDIA implementados; aqui sai 'nao medida (sem RAPL)', conta provada com /sys falso"
   },
   "resumo_diario": {
    "estado": "agente",
    "evidencia": "daily_summary e phxclaw resumo pelo mesmo resumo_do_dia"
   },
   "conectores_google": {
-   "estado": "nao",
-   "evidencia": ""
+   "estado": "agente",
+   "evidencia": "presets Gmail/Drive/Calendar + OAuth PKCE S256 com refresh (provado contra servidor falso; falta credencial real)"
   },
   "calculadora": {
    "estado": "agente",
    "evidencia": "calculadora.rs: analisador proprio, sem eval"
   },
   "clima": {
-   "estado": "nao",
-   "evidencia": ""
+   "estado": "agente",
+   "evidencia": "clima.rs: weather pelo MET Norway, provado real em 01/10 (Blumenau)"
   },
   "canal_irc": {
-   "estado": "parcial",
-   "evidencia": "sem TLS (rustls entra na SP000013)"
+   "estado": "agente",
+   "evidencia": "canais/irc.rs com TLS (rustls) (provado contra servidor falso; falta credencial real)"
   },
   "canal_mattermost": {
    "estado": "agente",
@@ -399,7 +399,7 @@
   },
   "canal_xmpp": {
    "estado": "parcial",
-   "evidencia": "sem STARTTLS e sem sala multiusuario"
+   "evidencia": "STARTTLS feito; sem sala multiusuario"
   },
   "canal_rocketchat": {
    "estado": "agente",
@@ -410,8 +410,8 @@
    "evidencia": "canais/zulip.rs pelo laco unico Canal::rodada (provado contra servidor falso; falta credencial real)"
   },
   "canal_twitch": {
-   "estado": "parcial",
-   "evidencia": "IRC sem TLS"
+   "estado": "agente",
+   "evidencia": "IRC com TLS (provado contra servidor falso; falta credencial real)"
   },
   "canal_nostr": {
    "estado": "parcial",

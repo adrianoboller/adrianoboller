@@ -1,0 +1,2338 @@
+{
+  "$id": "phxclaw/config.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Gerado do catalogo (phxclaw-config-runtime/src/agente/catalogo.rs). Precedencia: ambiente > .phxclaw/config.json do projeto confiado > <pasta>/config.json > padrao. Segredo nunca entra aqui: vai para o SecretBroker.",
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "//": {
+      "items": {
+        "type": "string"
+      },
+      "type": [
+        "string",
+        "array"
+      ]
+    },
+    "agente": {
+      "additionalProperties": false,
+      "properties": {
+        "//": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "string",
+            "array"
+          ]
+        },
+        "agentes_dir": {
+          "description": "Pasta dos manifestos dos papeis da equipe (config/agents) (ambiente: PHXCLAW_AGENTES_DIR)",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "capacidades": {
+          "description": "Capacidades liberadas (web.search, fs.read...); vazio = CAPACIDADES_PADRAO (ambiente: PHXCLAW_CAPACIDADES)",
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "estilo": {
+          "description": "Estilo de saida padrao (embutido ou .phxclaw/estilos/<nome>.md) (ambiente: PHXCLAW_ESTILO)",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "heartbeat_arquivo": {
+          "description": "Arquivo do heartbeat; vazio = HEARTBEAT.md do projeto ou da pasta (ambiente: PHXCLAW_HEARTBEAT)",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "heartbeat_min": {
+          "default": 30,
+          "description": "Intervalo do heartbeat em minutos; 0 desliga (ambiente: PHXCLAW_HEARTBEAT_MIN)",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "lsp": {
+          "default": true,
+          "description": "Servidores de linguagem (LSP) nas ferramentas de codigo; 0 desliga (ambiente: PHXCLAW_LSP)",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "memoria_escopo": {
+          "default": "padrao",
+          "description": "Escopo da memoria persistente (<pasta>/tasks/_memoria/<escopo>.json) (ambiente: PHXCLAW_MEMORIA_ESCOPO)",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "skills_dir": {
+          "description": "Pasta das skills; vazio = <pasta>/tasks/_skills (ambiente: PHXCLAW_SKILLS_DIR)",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "api": {
+      "additionalProperties": false,
+      "properties": {
+        "//": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "string",
+            "array"
+          ]
+        },
+        "host": {
+          "default": "127.0.0.1",
+          "description": "Endereco em que a API escuta; expor e decisao do operador (ambiente: PHXCLAW_API_HOST)",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "porta": {
+          "description": "Porta da API do app de mesa (ambiente: PHXCLAW_API_PORT)",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "tarefas_por_minuto": {
+          "default": 10,
+          "description": "Teto de criacao de tarefas pela API (balde de fichas) (ambiente: PHXCLAW_API_TAREFAS_POR_MINUTO)",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "url_cliente": {
+          "default": "http://127.0.0.1:8787",
+          "description": "Servidor que o SDK e o exemplo do SDK chamam (ambiente: PHXCLAW_URL)",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "url_publica": {
+          "default": "http://127.0.0.1:8787",
+          "description": "URL publica do agente (links de site e de artefato) (ambiente: PHXCLAW_PUBLIC_URL)",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "webhook_origens": {
+          "description": "Origens para onde o webhook de fim de tarefa pode ir; vazio = recusado (ambiente: PHXCLAW_WEBHOOK_ORIGINS)",
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "busca": {
+      "additionalProperties": false,
+      "properties": {
+        "//": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "string",
+            "array"
+          ]
+        },
+        "searxng_url": {
+          "description": "SearXNG da busca na web (ambiente: PHXCLAW_SEARXNG_URL)",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "canais": {
+      "additionalProperties": false,
+      "properties": {
+        "//": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "string",
+            "array"
+          ]
+        },
+        "discord": {
+          "additionalProperties": false,
+          "properties": {
+            "//": {
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "string",
+                "array"
+              ]
+            },
+            "base": {
+              "description": "Base do servico; vazio = a oficial (ambiente: PHXCLAW_DISCORD_BASE)",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "permitidos": {
+              "description": "Conversas de discord que podem falar com o agente (obrigatoria) (ambiente: PHXCLAW_DISCORD_PERMITIDOS)",
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            }
+          },
+          "type": "object"
+        },
+        "email": {
+          "additionalProperties": false,
+          "properties": {
+            "//": {
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "string",
+                "array"
+              ]
+            },
+            "ca": {
+              "description": "Autoridade (PEM) no lugar das raizes publicas (ambiente: PHXCLAW_EMAIL_CANAL_CA)",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "exigir_dmarc": {
+              "default": true,
+              "description": "Exige DMARC do remetente; nao desliga (ambiente: PHXCLAW_EMAIL_CANAL_EXIGIR_DMARC)",
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "imap": {
+              "description": "Servidor IMAP host:porta (ambiente: PHXCLAW_EMAIL_CANAL_IMAP)",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "pasta": {
+              "default": "INBOX",
+              "description": "Pasta lida (ambiente: PHXCLAW_EMAIL_CANAL_PASTA)",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "permitidos": {
+              "description": "Conversas de email que podem falar com o agente (obrigatoria) (ambiente: PHXCLAW_EMAIL_CANAL_PERMITIDOS)",
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "tls": {
+              "default": true,
+              "description": "TLS no soquete; desligado so vale para loopback (ambiente: PHXCLAW_EMAIL_CANAL_TLS)",
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "usuario": {
+              "description": "Usuario do IMAP (ambiente: PHXCLAW_EMAIL_CANAL_USUARIO)",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "type": "object"
+        },
+        "feishu": {
+          "additionalProperties": false,
+          "properties": {
+            "//": {
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "string",
+                "array"
+              ]
+            },
+            "app_id": {
+              "description": "ID do app (ambiente: PHXCLAW_FEISHU_APP_ID)",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "base": {
+              "description": "Base do servico; vazio = a oficial (ambiente: PHXCLAW_FEISHU_BASE)",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "permitidos": {
+              "description": "Conversas de feishu que podem falar com o agente (obrigatoria) (ambiente: PHXCLAW_FEISHU_PERMITIDOS)",
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            }
+          },
+          "type": "object"
+        },
+        "googlechat": {
+          "additionalProperties": false,
+          "properties": {
+            "//": {
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "string",
+                "array"
+              ]
+            },
+            "base": {
+              "description": "Base do servico; vazio = a oficial (ambiente: PHXCLAW_GOOGLECHAT_BASE)",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "espaco": {
+              "description": "Espaco do Google Chat (ambiente: PHXCLAW_GOOGLECHAT_ESPACO)",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "permitidos": {
+              "description": "Conversas de googlechat que podem falar com o agente (obrigatoria) (ambiente: PHXCLAW_GOOGLECHAT_PERMITIDOS)",
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            }
+          },
+          "type": "object"
+        },
+        "irc": {
+          "additionalProperties": false,
+          "properties": {
+            "//": {
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "string",
+                "array"
+              ]
+            },
+            "ca": {
+              "description": "Autoridade (PEM) no lugar das raizes publicas (ambiente: PHXCLAW_IRC_CA)",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "endereco": {
+              "description": "Servidor host:porta (ambiente: PHXCLAW_IRC_ENDERECO)",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "nick": {
+              "description": "Apelido do bot (ambiente: PHXCLAW_IRC_NICK)",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "permitidos": {
+              "description": "Conversas de irc que podem falar com o agente (obrigatoria) (ambiente: PHXCLAW_IRC_PERMITIDOS)",
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "tls": {
+              "default": true,
+              "description": "TLS no soquete; desligado so vale para loopback (ambiente: PHXCLAW_IRC_TLS)",
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          },
+          "type": "object"
+        },
+        "line": {
+          "additionalProperties": false,
+          "properties": {
+            "//": {
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "string",
+                "array"
+              ]
+            },
+            "base": {
+              "description": "Base do servico; vazio = a oficial (ambiente: PHXCLAW_LINE_BASE)",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "permitidos": {
+              "description": "Conversas de line que podem falar com o agente (obrigatoria) (ambiente: PHXCLAW_LINE_PERMITIDOS)",
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            }
+          },
+          "type": "object"
+        },
+        "mastodon": {
+          "additionalProperties": false,
+          "properties": {
+            "//": {
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "string",
+                "array"
+              ]
+            },
+            "base": {
+              "description": "Base do servico (obrigatoria) (ambiente: PHXCLAW_MASTODON_BASE)",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "permitidos": {
+              "description": "Conversas de mastodon que podem falar com o agente (obrigatoria) (ambiente: PHXCLAW_MASTODON_PERMITIDOS)",
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            }
+          },
+          "type": "object"
+        },
+        "matrix": {
+          "additionalProperties": false,
+          "properties": {
+            "//": {
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "string",
+                "array"
+              ]
+            },
+            "base": {
+              "description": "Base do servico (obrigatoria) (ambiente: PHXCLAW_MATRIX_BASE)",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "permitidos": {
+              "description": "Conversas de matrix que podem falar com o agente (obrigatoria) (ambiente: PHXCLAW_MATRIX_PERMITIDOS)",
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "usuario": {
+              "description": "Usuario do bot (ambiente: PHXCLAW_MATRIX_USUARIO)",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "type": "object"
+        },
+        "mattermost": {
+          "additionalProperties": false,
+          "properties": {
+            "//": {
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "string",
+                "array"
+              ]
+            },
+            "base": {
+              "description": "Base do servico (obrigatoria) (ambiente: PHXCLAW_MATTERMOST_BASE)",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "bot_id": {
+              "description": "ID do bot (ambiente: PHXCLAW_MATTERMOST_BOT_ID)",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "permitidos": {
+              "description": "Conversas de mattermost que podem falar com o agente (obrigatoria) (ambiente: PHXCLAW_MATTERMOST_PERMITIDOS)",
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            }
+          },
+          "type": "object"
+        },
+        "messenger": {
+          "additionalProperties": false,
+          "properties": {
+            "//": {
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "string",
+                "array"
+              ]
+            },
+            "base": {
+              "description": "Base do servico; vazio = a oficial (ambiente: PHXCLAW_MESSENGER_BASE)",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "permitidos": {
+              "description": "Conversas de messenger que podem falar com o agente (obrigatoria) (ambiente: PHXCLAW_MESSENGER_PERMITIDOS)",
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            }
+          },
+          "type": "object"
+        },
+        "nostr": {
+          "additionalProperties": false,
+          "properties": {
+            "//": {
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "string",
+                "array"
+              ]
+            },
+            "permitidos": {
+              "description": "Conversas de nostr que podem falar com o agente (obrigatoria) (ambiente: PHXCLAW_NOSTR_PERMITIDOS)",
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "relay": {
+              "description": "Relay wss:// (ambiente: PHXCLAW_NOSTR_RELAY)",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "type": "object"
+        },
+        "reddit": {
+          "additionalProperties": false,
+          "properties": {
+            "//": {
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "string",
+                "array"
+              ]
+            },
+            "app_id": {
+              "description": "ID do app (ambiente: PHXCLAW_REDDIT_APP_ID)",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "oauth": {
+              "description": "Base oauth; vazio = a oficial (ambiente: PHXCLAW_REDDIT_OAUTH)",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "permitidos": {
+              "description": "Conversas de reddit que podem falar com o agente (obrigatoria) (ambiente: PHXCLAW_REDDIT_PERMITIDOS)",
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "usuario": {
+              "description": "Usuario (ambiente: PHXCLAW_REDDIT_USUARIO)",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "www": {
+              "description": "Base www; vazio = a oficial (ambiente: PHXCLAW_REDDIT_WWW)",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "type": "object"
+        },
+        "rocketchat": {
+          "additionalProperties": false,
+          "properties": {
+            "//": {
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "string",
+                "array"
+              ]
+            },
+            "base": {
+              "description": "Base do servico (obrigatoria) (ambiente: PHXCLAW_ROCKETCHAT_BASE)",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "permitidos": {
+              "description": "Conversas de rocketchat que podem falar com o agente (obrigatoria) (ambiente: PHXCLAW_ROCKETCHAT_PERMITIDOS)",
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "tipo": {
+              "default": "channels",
+              "description": "Tipo de sala (ambiente: PHXCLAW_ROCKETCHAT_TIPO)",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "usuario_id": {
+              "description": "ID do usuario do bot (ambiente: PHXCLAW_ROCKETCHAT_USUARIO_ID)",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "type": "object"
+        },
+        "signal": {
+          "additionalProperties": false,
+          "properties": {
+            "//": {
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "string",
+                "array"
+              ]
+            },
+            "base": {
+              "default": "http://127.0.0.1:8080",
+              "description": "Base do servico (ambiente: PHXCLAW_SIGNAL_BASE)",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "numero": {
+              "description": "Numero do bot (ambiente: PHXCLAW_SIGNAL_NUMERO)",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "permitidos": {
+              "description": "Conversas de signal que podem falar com o agente (obrigatoria) (ambiente: PHXCLAW_SIGNAL_PERMITIDOS)",
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            }
+          },
+          "type": "object"
+        },
+        "slack": {
+          "additionalProperties": false,
+          "properties": {
+            "//": {
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "string",
+                "array"
+              ]
+            },
+            "base": {
+              "description": "Base do servico; vazio = a oficial (ambiente: PHXCLAW_SLACK_BASE)",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "permitidos": {
+              "description": "Conversas de slack que podem falar com o agente (obrigatoria) (ambiente: PHXCLAW_SLACK_PERMITIDOS)",
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            }
+          },
+          "type": "object"
+        },
+        "sms": {
+          "additionalProperties": false,
+          "properties": {
+            "//": {
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "string",
+                "array"
+              ]
+            },
+            "base": {
+              "description": "Base do servico; vazio = a oficial (ambiente: PHXCLAW_SMS_BASE)",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "conta": {
+              "description": "Conta do provedor (ambiente: PHXCLAW_SMS_CONTA)",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "numero": {
+              "description": "Numero de envio (ambiente: PHXCLAW_SMS_NUMERO)",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "permitidos": {
+              "description": "Conversas de sms que podem falar com o agente (obrigatoria) (ambiente: PHXCLAW_SMS_PERMITIDOS)",
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "url_publica": {
+              "description": "URL publica do webhook (ambiente: PHXCLAW_SMS_URL_PUBLICA)",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "type": "object"
+        },
+        "teams": {
+          "additionalProperties": false,
+          "properties": {
+            "//": {
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "string",
+                "array"
+              ]
+            },
+            "app_id": {
+              "description": "ID do app (ambiente: PHXCLAW_TEAMS_APP_ID)",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "login": {
+              "description": "Endpoint de login; vazio = o oficial (ambiente: PHXCLAW_TEAMS_LOGIN)",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "permitidos": {
+              "description": "Conversas de teams que podem falar com o agente (obrigatoria) (ambiente: PHXCLAW_TEAMS_PERMITIDOS)",
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "servicos": {
+              "description": "Origens de servico aceitas; vazio = a oficial (ambiente: PHXCLAW_TEAMS_SERVICOS)",
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            }
+          },
+          "type": "object"
+        },
+        "telegram": {
+          "additionalProperties": false,
+          "properties": {
+            "//": {
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "string",
+                "array"
+              ]
+            },
+            "chats": {
+              "description": "Chats que podem falar com o agente (obrigatorio) (ambiente: PHXCLAW_TELEGRAM_CHATS)",
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            }
+          },
+          "type": "object"
+        },
+        "twitch": {
+          "additionalProperties": false,
+          "properties": {
+            "//": {
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "string",
+                "array"
+              ]
+            },
+            "ca": {
+              "description": "Autoridade (PEM) no lugar das raizes publicas (ambiente: PHXCLAW_TWITCH_CA)",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "endereco": {
+              "description": "Servidor host:porta (ambiente: PHXCLAW_TWITCH_ENDERECO)",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "nick": {
+              "description": "Apelido do bot (ambiente: PHXCLAW_TWITCH_NICK)",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "permitidos": {
+              "description": "Conversas de twitch que podem falar com o agente (obrigatoria) (ambiente: PHXCLAW_TWITCH_PERMITIDOS)",
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "tls": {
+              "default": true,
+              "description": "TLS no soquete; desligado so vale para loopback (ambiente: PHXCLAW_TWITCH_TLS)",
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          },
+          "type": "object"
+        },
+        "viber": {
+          "additionalProperties": false,
+          "properties": {
+            "//": {
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "string",
+                "array"
+              ]
+            },
+            "base": {
+              "description": "Base do servico; vazio = a oficial (ambiente: PHXCLAW_VIBER_BASE)",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "permitidos": {
+              "description": "Conversas de viber que podem falar com o agente (obrigatoria) (ambiente: PHXCLAW_VIBER_PERMITIDOS)",
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "remetente": {
+              "default": "PhxClaw",
+              "description": "Nome do remetente (ambiente: PHXCLAW_VIBER_REMETENTE)",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "type": "object"
+        },
+        "webchat": {
+          "additionalProperties": false,
+          "properties": {
+            "//": {
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "string",
+                "array"
+              ]
+            },
+            "permitidos": {
+              "description": "Conversas de webchat que podem falar com o agente (obrigatoria) (ambiente: PHXCLAW_WEBCHAT_PERMITIDOS)",
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            }
+          },
+          "type": "object"
+        },
+        "webhook": {
+          "additionalProperties": false,
+          "properties": {
+            "//": {
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "string",
+                "array"
+              ]
+            },
+            "permitidos": {
+              "description": "Conversas de webhook que podem falar com o agente (obrigatoria) (ambiente: PHXCLAW_WEBHOOK_PERMITIDOS)",
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "saida_url": {
+              "description": "URL de saida (ambiente: PHXCLAW_WEBHOOK_SAIDA_URL)",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "type": "object"
+        },
+        "whatsapp": {
+          "additionalProperties": false,
+          "properties": {
+            "//": {
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "string",
+                "array"
+              ]
+            },
+            "base": {
+              "description": "Base do servico; vazio = a oficial (ambiente: PHXCLAW_WHATSAPP_BASE)",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "permitidos": {
+              "description": "Conversas de whatsapp que podem falar com o agente (obrigatoria) (ambiente: PHXCLAW_WHATSAPP_PERMITIDOS)",
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "phone_id": {
+              "description": "phone_number_id (ambiente: PHXCLAW_WHATSAPP_PHONE_ID)",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "type": "object"
+        },
+        "xmpp": {
+          "additionalProperties": false,
+          "properties": {
+            "//": {
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "string",
+                "array"
+              ]
+            },
+            "ca": {
+              "description": "Autoridade (PEM) no lugar das raizes publicas (ambiente: PHXCLAW_XMPP_CA)",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "endereco": {
+              "description": "Servidor host:porta (ambiente: PHXCLAW_XMPP_ENDERECO)",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "jid": {
+              "description": "JID do bot (ambiente: PHXCLAW_XMPP_JID)",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "permitidos": {
+              "description": "Conversas de xmpp que podem falar com o agente (obrigatoria) (ambiente: PHXCLAW_XMPP_PERMITIDOS)",
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "tls": {
+              "default": true,
+              "description": "TLS no soquete; desligado so vale para loopback (ambiente: PHXCLAW_XMPP_TLS)",
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          },
+          "type": "object"
+        },
+        "zulip": {
+          "additionalProperties": false,
+          "properties": {
+            "//": {
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "string",
+                "array"
+              ]
+            },
+            "base": {
+              "description": "Base do servico (obrigatoria) (ambiente: PHXCLAW_ZULIP_BASE)",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "email": {
+              "description": "E-mail do bot (ambiente: PHXCLAW_ZULIP_EMAIL)",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "permitidos": {
+              "description": "Conversas de zulip que podem falar com o agente (obrigatoria) (ambiente: PHXCLAW_ZULIP_PERMITIDOS)",
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            }
+          },
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
+    "clima": {
+      "additionalProperties": false,
+      "properties": {
+        "//": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "string",
+            "array"
+          ]
+        },
+        "api": {
+          "description": "Base da API de clima (MET Norway) (ambiente: PHXCLAW_MET_API)",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "contato": {
+          "description": "Contato no User-Agent pedido pelo MET Norway (ambiente: PHXCLAW_MET_CONTATO)",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "desktop": {
+      "additionalProperties": false,
+      "properties": {
+        "//": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "string",
+            "array"
+          ]
+        },
+        "captura_tela": {
+          "default": false,
+          "description": "App de mesa: captura de tela (ambiente: PHXCLAW_ENABLE_SCREEN_CAPTURE)",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "controle_api_host": {
+          "default": false,
+          "description": "App de mesa: a API controla o host (ambiente: PHXCLAW_API_HOST_CONTROL)",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "controle_webview": {
+          "default": false,
+          "description": "App de mesa: controlar webview (ambiente: PHXCLAW_ENABLE_WEBVIEW_CONTROL)",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "entrada": {
+          "default": false,
+          "description": "App de mesa: mouse e teclado (ambiente: PHXCLAW_ENABLE_INPUT)",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "exec_host": {
+          "default": false,
+          "description": "App de mesa: executar comando no host (ambiente: PHXCLAW_ENABLE_HOST_EXEC)",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "hx": {
+          "description": "App de mesa: executavel do Helix (ambiente: PHXCLAW_HX)",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "shells": {
+          "default": false,
+          "description": "App de mesa: shells (ambiente: PHXCLAW_ENABLE_SHELLS)",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "webview_origens": {
+          "description": "App de mesa: origens permitidas na webview (ambiente: PHXCLAW_WEBVIEW_ALLOWED_ORIGINS)",
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "webviews_externas": {
+          "default": false,
+          "description": "App de mesa: webviews externas (ambiente: PHXCLAW_ENABLE_EXTERNAL_WEBVIEWS)",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "dispositivos": {
+      "additionalProperties": false,
+      "properties": {
+        "//": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "string",
+            "array"
+          ]
+        },
+        "ca_pem": {
+          "description": "Autoridade (PEM) que o no aceita no TLS (ambiente: PHXCLAW_DEVICE_CA_PEM)",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "host": {
+          "default": "127.0.0.1",
+          "description": "Endereco do servidor de dispositivos (ambiente: PHXCLAW_DEVICE_HOST)",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "keystore": {
+          "description": "Arquivo da chave do no de dispositivo (ambiente: PHXCLAW_DEVICE_KEYSTORE)",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "no_uuid": {
+          "description": "UUID do no de dispositivo (ambiente: PHXCLAW_NODE_UUID)",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tenant_uuid": {
+          "description": "Inquilino (UUID) do no de dispositivo e da ponte (ambiente: PHXCLAW_TENANT_UUID)",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "wss_url": {
+          "description": "Endereco WSS do servidor para o no de dispositivo (ambiente: PHXCLAW_DEVICE_WSS_URL)",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "documentos": {
+      "additionalProperties": false,
+      "properties": {
+        "//": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "string",
+            "array"
+          ]
+        },
+        "embed": {
+          "description": "Modelo de embedding da reordenacao (so ollama:) (ambiente: PHXCLAW_DOCS_EMBED)",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "elevenlabs": {
+      "additionalProperties": false,
+      "properties": {
+        "//": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "string",
+            "array"
+          ]
+        },
+        "api": {
+          "default": "https://api.elevenlabs.io",
+          "description": "Base da API da ElevenLabs (ambiente: PHXCLAW_ELEVENLABS_API)",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "estabilidade": {
+          "description": "stability da voz (0 a 1) (ambiente: PHXCLAW_ELEVENLABS_ESTABILIDADE)",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "formato": {
+          "default": "wav_16000",
+          "description": "Formato de saida da fala (wav_16000, pcm_22050...) (ambiente: PHXCLAW_ELEVENLABS_FORMATO)",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "modelo": {
+          "description": "Modelo de fala da ElevenLabs (ambiente: PHXCLAW_ELEVENLABS_MODELO)",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "similaridade": {
+          "description": "similarity_boost da voz (0 a 1) (ambiente: PHXCLAW_ELEVENLABS_SIMILARIDADE)",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "stt_modelo": {
+          "default": "scribe_v2",
+          "description": "Modelo de transcricao da ElevenLabs (ambiente: PHXCLAW_ELEVENLABS_STT_MODELO)",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "voz": {
+          "description": "voice_id da ElevenLabs (obrigatorio com voz.tts.provedor=elevenlabs) (ambiente: PHXCLAW_ELEVENLABS_VOZ)",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "email": {
+      "additionalProperties": false,
+      "properties": {
+        "//": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "string",
+            "array"
+          ]
+        },
+        "permitidos": {
+          "description": "Destinatarios permitidos do send_email (ambiente: PHXCLAW_EMAIL_PERMITIDOS)",
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "remetente": {
+          "description": "Remetente do e-mail (ambiente: PHXCLAW_EMAIL_FROM)",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "smtp": {
+          "additionalProperties": false,
+          "properties": {
+            "//": {
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "string",
+                "array"
+              ]
+            },
+            "host": {
+              "description": "Servidor SMTP (ambiente: PHXCLAW_SMTP_HOST)",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "porta": {
+              "description": "Porta SMTP; vazio = 465 (tls), 587 (starttls) ou 25 (plain) (ambiente: PHXCLAW_SMTP_PORT)",
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "seguranca": {
+              "default": "tls",
+              "description": "Seguranca do SMTP (ambiente: PHXCLAW_SMTP_SECURITY)",
+              "enum": [
+                "tls",
+                "starttls",
+                "plain",
+                null
+              ]
+            },
+            "usuario": {
+              "description": "Usuario do SMTP (ambiente: PHXCLAW_SMTP_USER)",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
+    "forja": {
+      "additionalProperties": false,
+      "properties": {
+        "//": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "string",
+            "array"
+          ]
+        },
+        "github": {
+          "additionalProperties": false,
+          "properties": {
+            "//": {
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "string",
+                "array"
+              ]
+            },
+            "api": {
+              "default": "https://api.github.com",
+              "description": "Base da API do GitHub (ambiente: PHXCLAW_GITHUB_API)",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "type": "object"
+        },
+        "gitlab": {
+          "additionalProperties": false,
+          "properties": {
+            "//": {
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "string",
+                "array"
+              ]
+            },
+            "api": {
+              "default": "https://gitlab.com/api/v4",
+              "description": "Base da API do GitLab (ambiente: PHXCLAW_GITLAB_API)",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
+    "imagem": {
+      "additionalProperties": false,
+      "properties": {
+        "//": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "string",
+            "array"
+          ]
+        },
+        "comfy_fluxo": {
+          "description": "Fluxo do ComfyUI (obrigatorio com imagem.provedor=comfyui) (ambiente: PHXCLAW_COMFY_WORKFLOW)",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "modelo": {
+          "description": "Modelo do gerador de imagem (openai: gpt-image-1) (ambiente: PHXCLAW_IMAGEM_MODELO)",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "provedor": {
+          "description": "Gerador de imagem; vazio = so o SVG local (ambiente: PHXCLAW_IMAGEM_PROVEDOR)",
+          "enum": [
+            "openai",
+            "comfyui",
+            "nanobanana",
+            null
+          ]
+        },
+        "url": {
+          "description": "Base do gerador de imagem (openai: https://api.openai.com) (ambiente: PHXCLAW_IMAGEM_URL)",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "mcp": {
+      "additionalProperties": false,
+      "properties": {
+        "//": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "string",
+            "array"
+          ]
+        },
+        "config": {
+          "description": "Arquivo dos servidores MCP do operador (ambiente: PHXCLAW_MCP_CONFIG)",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "missao": {
+      "additionalProperties": false,
+      "properties": {
+        "//": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "string",
+            "array"
+          ]
+        },
+        "estado_dir": {
+          "description": "Pasta de estado da CLI de missao (ambiente: PHXCLAW_STATE_DIR)",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "modelo": {
+      "additionalProperties": false,
+      "properties": {
+        "//": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "string",
+            "array"
+          ]
+        },
+        "local": {
+          "description": "Modelo local dos papeis da equipe que a planilha roteia para o Ollama (ambiente: PHXCLAW_MODELO_LOCAL)",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "padrao": {
+          "default": "ollama:qwen2.5:1.5b",
+          "description": "Modelo padrao do agente e da API (provedor:modelo) (ambiente: PHXCLAW_MODELO)",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "visao": {
+          "default": "qwen2.5vl:3b",
+          "description": "Modelo de visao da leitura de tela (ambiente: PHXCLAW_MODELO_VISAO)",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "navegador": {
+      "additionalProperties": false,
+      "properties": {
+        "//": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "string",
+            "array"
+          ]
+        },
+        "chromium": {
+          "description": "Executavel do Chromium (ambiente: PHXCLAW_CHROMIUM)",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "pacotes": {
+      "additionalProperties": false,
+      "properties": {
+        "//": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "string",
+            "array"
+          ]
+        },
+        "dir": {
+          "description": "Pasta dos pacotes assinados (Claude/Codex) (ambiente: PHXCLAW_PACOTES_DIR)",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "plugins": {
+      "additionalProperties": false,
+      "properties": {
+        "//": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "string",
+            "array"
+          ]
+        },
+        "assinantes": {
+          "description": "Trust store dos assinantes; vazio = <raiz>/config/trust/plugin-signers.json (ambiente: PHXCLAW_PLUGIN_SIGNERS)",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "chave_assinatura_arquivo": {
+          "description": "Arquivo da semente de assinatura (exemplo assinar) (ambiente: PHXCLAW_PLUGIN_SIGNING_KEY_FILE)",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "dir": {
+          "description": "Pasta dos manifestos; vazio = <raiz>/plugins (ambiente: PHXCLAW_PLUGINS_DIR)",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "raiz": {
+          "description": "Raiz dos plugins; vazio = nenhum plugin (ambiente: PHXCLAW_PLUGINS_RAIZ)",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "ponte": {
+      "additionalProperties": false,
+      "properties": {
+        "//": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "string",
+            "array"
+          ]
+        },
+        "host": {
+          "default": "127.0.0.1",
+          "description": "Endereco em que a ponte de controle remoto escuta (ambiente: PHXCLAW_PONTE_HOST)",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "pontes": {
+      "additionalProperties": false,
+      "properties": {
+        "//": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "string",
+            "array"
+          ]
+        },
+        "claw": {
+          "additionalProperties": false,
+          "properties": {
+            "//": {
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "string",
+                "array"
+              ]
+            },
+            "bin": {
+              "default": "claw",
+              "description": "Executavel do claw-code (ambiente: PHXCLAW_CLAW_BIN)",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "timeout_ms": {
+              "default": 120000,
+              "description": "Prazo do claw-code em ms (ambiente: PHXCLAW_CLAW_TIMEOUT_MS)",
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "workspace": {
+              "default": ".",
+              "description": "Pasta de trabalho do claw-code (ambiente: PHXCLAW_CLAW_WORKSPACE)",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "type": "object"
+        },
+        "octopus": {
+          "additionalProperties": false,
+          "properties": {
+            "//": {
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "string",
+                "array"
+              ]
+            },
+            "bin": {
+              "default": "octopus-console",
+              "description": "Executavel do Octopus (ambiente: PHXCLAW_OCTOPUS_BIN)",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "workspace": {
+              "default": ".",
+              "description": "Pasta de trabalho do Octopus (ambiente: PHXCLAW_OCTOPUS_WORKSPACE)",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "type": "object"
+        },
+        "openclaw_rs": {
+          "additionalProperties": false,
+          "properties": {
+            "//": {
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "string",
+                "array"
+              ]
+            },
+            "bin": {
+              "description": "Executavel do openclaw-rs (ambiente: PHXCLAW_OPENCLAW_RS_BIN)",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "timeout_ms": {
+              "description": "Prazo do openclaw-rs em ms (ambiente: PHXCLAW_OPENCLAW_RS_TIMEOUT_MS)",
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "workspace": {
+              "default": ".",
+              "description": "Pasta de trabalho do openclaw-rs (ambiente: PHXCLAW_OPENCLAW_RS_WORKSPACE)",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "type": "object"
+        },
+        "rustclaw": {
+          "additionalProperties": false,
+          "properties": {
+            "//": {
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "string",
+                "array"
+              ]
+            },
+            "bin": {
+              "default": "rustclaw",
+              "description": "Executavel do rustclaw (ambiente: PHXCLAW_RUSTCLAW_BIN)",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "prompt_no_argv": {
+              "default": false,
+              "description": "Permite o prompt na linha de comando do rustclaw (fica visivel no ps) (ambiente: PHXCLAW_RUSTCLAW_ALLOW_PROMPT_ARGV)",
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "timeout_ms": {
+              "default": 60000,
+              "description": "Prazo do rustclaw em ms (ambiente: PHXCLAW_RUSTCLAW_TIMEOUT_MS)",
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "workspace": {
+              "default": ".",
+              "description": "Pasta de trabalho do rustclaw (ambiente: PHXCLAW_RUSTCLAW_WORKSPACE)",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
+    "postgres": {
+      "additionalProperties": false,
+      "properties": {
+        "//": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "string",
+            "array"
+          ]
+        },
+        "database_url": {
+          "description": "PostgreSQL da CLI antiga (phxclaw-cli) (ambiente: PHXCLAW_DATABASE_URL)",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "url": {
+          "description": "PostgreSQL das ferramentas db (sem senha na URL: senha vai pelo .pgpass) (ambiente: PHXCLAW_PG_URL)",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "python": {
+      "additionalProperties": false,
+      "properties": {
+        "//": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "string",
+            "array"
+          ]
+        },
+        "bin": {
+          "description": "Interpretador Python das ferramentas (ambiente: PHXCLAW_PYTHON)",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "uv": {
+          "description": "Executavel do uv (ambiente: PHXCLAW_UV)",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "rede": {
+      "additionalProperties": false,
+      "properties": {
+        "//": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "string",
+            "array"
+          ]
+        },
+        "destinos": {
+          "description": "Destinos host:porta que a sonda de rede pode tocar (ambiente: PHXCLAW_NET_DESTINOS)",
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "revisao": {
+      "description": "Revisao do arquivo (a gravacao sobe de um)",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "ui": {
+      "additionalProperties": false,
+      "properties": {
+        "//": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "string",
+            "array"
+          ]
+        },
+        "dir": {
+          "description": "Pasta da interface (PWA) (ambiente: PHXCLAW_UI_DIR)",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "voz": {
+      "additionalProperties": false,
+      "properties": {
+        "//": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "string",
+            "array"
+          ]
+        },
+        "kws": {
+          "additionalProperties": false,
+          "properties": {
+            "//": {
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "string",
+                "array"
+              ]
+            },
+            "bin": {
+              "description": "Executavel da palavra de ativacao (ambiente: PHXCLAW_KWS_BIN)",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "modelo_dir": {
+              "description": "Pasta do modelo da palavra de ativacao (ambiente: PHXCLAW_KWS_MODEL_DIR)",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "modelo_sha256": {
+              "description": "SHA-256 esperado do modelo da palavra de ativacao (ambiente: PHXCLAW_KWS_MODEL_SHA256)",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "type": "object"
+        },
+        "stt": {
+          "additionalProperties": false,
+          "properties": {
+            "//": {
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "string",
+                "array"
+              ]
+            },
+            "provedor": {
+              "default": "whisper",
+              "description": "Quem transcreve: o whisper.cpp local ou a ElevenLabs (ambiente: PHXCLAW_STT_PROVEDOR)",
+              "enum": [
+                "whisper",
+                "elevenlabs",
+                null
+              ]
+            }
+          },
+          "type": "object"
+        },
+        "tts": {
+          "additionalProperties": false,
+          "properties": {
+            "//": {
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "string",
+                "array"
+              ]
+            },
+            "comando": {
+              "description": "Comando de fala local (piper ou equivalente) (ambiente: PHXCLAW_TTS_COMMAND)",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "modelo": {
+              "description": "Modelo do comando de fala (ambiente: PHXCLAW_TTS_MODEL)",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "modelo_sha256": {
+              "description": "SHA-256 esperado do modelo de fala (ambiente: PHXCLAW_TTS_MODEL_SHA256)",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "pastas": {
+              "description": "Pastas em que a fala pode gravar (separadas por : no ambiente) (ambiente: PHXCLAW_TTS_DIRS)",
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "provedor": {
+              "default": "comando",
+              "description": "Quem fala: o comando local ou a ElevenLabs (ambiente: PHXCLAW_TTS_PROVEDOR)",
+              "enum": [
+                "comando",
+                "elevenlabs",
+                null
+              ]
+            }
+          },
+          "type": "object"
+        },
+        "whisper": {
+          "additionalProperties": false,
+          "properties": {
+            "//": {
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "string",
+                "array"
+              ]
+            },
+            "bin": {
+              "description": "Executavel do whisper.cpp (ambiente: PHXCLAW_WHISPER_BIN)",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "modelo": {
+              "description": "Modelo do whisper.cpp (ambiente: PHXCLAW_WHISPER_MODEL)",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "modelo_sha256": {
+              "description": "SHA-256 esperado do modelo do whisper (ambiente: PHXCLAW_WHISPER_MODEL_SHA256)",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
+    "xai": {
+      "additionalProperties": false,
+      "properties": {
+        "//": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "string",
+            "array"
+          ]
+        },
+        "api": {
+          "default": "https://api.x.ai/v1",
+          "description": "Base da API da xAI (ambiente: PHXCLAW_XAI_API)",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "modelo": {
+          "default": "grok-4",
+          "description": "Modelo da busca da xAI (ambiente: PHXCLAW_XAI_MODELO)",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    }
+  },
+  "title": "PhxClaw: config.json do agente",
+  "type": "object"
+}

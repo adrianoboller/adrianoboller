@@ -129,6 +129,8 @@ fn catraca_das_capacidades_padrao_e_da_classificacao() {
         "memory.read",
         "memory.write",
         "skill.read",
+        "doc.read",
+        "web.research",
         "team.read",
         "team.delegate",
         "git.read",
@@ -329,6 +331,13 @@ env_clear.",
         "transcribe_verified(",
         "whisper.cpp nasce na crate phxclaw-media-intelligence, com o modelo conferido por \
 SHA-256 antes de rodar; capacidade media.stt fora do padrao. DIVIDA: levar ao bwrap.",
+    ),
+    (
+        "avaliacao.rs",
+        "Command::new(nvidia)",
+        "leitura do contador de energia da GPU (`nvidia-smi --query-gpu=total_energy_consumption`) \
+pelo `phxclaw avaliar`: precisa do /dev/nvidia* do hospedeiro, que o bwrap nao expoe. Argumentos \
+fixos, sem entrada do modelo, env_clear; so roda se o binario existir no PATH.",
     ),
 ];
 

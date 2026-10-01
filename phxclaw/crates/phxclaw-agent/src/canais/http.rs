@@ -14,21 +14,69 @@ use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 use uuid::Uuid;
 
-/// Um segredo do canal no broker. Nao guarda o valor: cada uso pede uma concessao de
-/// 30 s, usa, e devolve.
+/// Um segredo no broker: o de um canal, o token de uma forja, o de um servidor MCP. Nao
+/// guarda o valor: cada uso pede uma concessao de 30 s, usa, e devolve. A MESMA peca serve
+/// aos tres porque a concessao e a limpeza do erro sao uma decisao so -- a forja chegou a
+/// repetir as duas a mao, e a copia e o lugar onde um dia uma delas esquece a revogacao.
 #[derive(Clone)]
 pub struct Credencial {
     broker: Arc<SecretBroker>,
     id: Uuid,
-    canal: String,
+    /// Quem consome, no registro do broker (`channel.provider.telegram`, `phxclaw.agent.forja`).
+    consumidor: String,
+    /// Comeco do escopo; o uso completa (`channel:slack` + `send`).
+    prefixo: String,
+}
+
+/// O segredo enquanto a concessao vale. Revogada no `drop`: quem segura a concessao atraves
+/// de um `await` (a forja, o MCP) nao tem como esquecer de devolve-la num `?` do meio.
+pub struct Concessao {
+    broker: Arc<SecretBroker>,
+    lease: Uuid,
+    valor: SecretValue,
+}
+
+impl Concessao {
+    pub fn expor(&self) -> &str {
+        self.valor.expose()
+    }
+
+    /// Todo erro devolvido por quem usou o segredo passa por aqui antes de sair.
+    pub fn limpar<T>(&self, r: Result<T, String>) -> Result<T, String> {
+        limpar(self.valor.expose(), r)
+    }
+}
+
+impl Drop for Concessao {
+    fn drop(&mut self) {
+        let _ = self.broker.revoke_lease(self.lease);
+    }
 }
 
 impl Credencial {
     pub fn nova(broker: Arc<SecretBroker>, id: Uuid, canal: impl Into<String>) -> Self {
+        let canal = canal.into();
         Self {
             broker,
             id,
-            canal: canal.into(),
+            consumidor: format!("channel.provider.{canal}"),
+            prefixo: format!("channel:{canal}"),
+        }
+    }
+
+    /// Credencial fora dos canais: o escopo pedido e `<prefixo>:<uso>`, e o envelope tem de
+    /// ter sido gravado com esse escopo (ver `guardar_segredo`).
+    pub fn de_escopo(
+        broker: Arc<SecretBroker>,
+        id: Uuid,
+        consumidor: impl Into<String>,
+        prefixo: impl Into<String>,
+    ) -> Self {
+        Self {
+            broker,
+            id,
+            consumidor: consumidor.into(),
+            prefixo: prefixo.into(),
         }
     }
 
@@ -42,6 +90,27 @@ impl Credencial {
         self.id
     }
 
+    /// Abre a concessao; ela se revoga quando sai de escopo. O erro daqui nao carrega o
+    /// segredo (ele nem foi resolvido).
+    pub fn abrir(&self, uso: &str) -> Result<Concessao, String> {
+        let escopo = format!("{}:{uso}", self.prefixo);
+        let lease = self
+            .broker
+            .issue_lease(self.id, self.consumidor.clone(), &escopo, 30)
+            .map_err(|e| e.to_string())?;
+        match self.broker.resolve(lease.uuid, &escopo) {
+            Ok(valor) => Ok(Concessao {
+                broker: self.broker.clone(),
+                lease: lease.uuid,
+                valor,
+            }),
+            Err(e) => {
+                let _ = self.broker.revoke_lease(lease.uuid);
+                Err(e.to_string())
+            }
+        }
+    }
+
     /// Roda `f` com o segredo. `uso` e send, receive, probe ou verify (ver
     /// `canais::escopos`). Todo erro que sai daqui passou pelo scrub do segredo.
     pub fn com<T>(
@@ -49,23 +118,8 @@ impl Credencial {
         uso: &str,
         f: impl FnOnce(&str) -> Result<T, String>,
     ) -> Result<T, String> {
-        let escopo = format!("channel:{}:{uso}", self.canal);
-        let concessao = self
-            .broker
-            .issue_lease(
-                self.id,
-                format!("channel.provider.{}", self.canal),
-                &escopo,
-                30,
-            )
-            .map_err(|e| e.to_string())?;
-        let valor = self
-            .broker
-            .resolve(concessao.uuid, &escopo)
-            .map_err(|e| e.to_string());
-        let r = valor.and_then(|v| limpar(v.expose(), f(v.expose())));
-        let _ = self.broker.revoke_lease(concessao.uuid);
-        r
+        let c = self.abrir(uso)?;
+        c.limpar(f(c.expor()))
     }
 
     /// Segredo -> token derivado (o login de client credentials do Teams, o
@@ -176,6 +230,30 @@ impl Http {
             return Ok(Value::Null);
         }
         serde_json::from_str(&corpo).map_err(|e| format!("resposta nao e JSON: {e}"))
+    }
+
+    /// Corpo em bytes (audio, imagem em JSON grande) com teto, e o mesmo julgamento do
+    /// `json`: fora de 2xx -- 3xx inclusive -- e erro com o codigo e o comeco do corpo. O
+    /// teto vem antes da leitura: a resposta inteira vai para a memoria.
+    pub fn binario(&self, pedido: RequestBuilder, teto: usize) -> Result<Vec<u8>, String> {
+        use std::io::Read;
+        let r = pedido.send().map_err(|e| e.without_url().to_string())?;
+        let status = r.status().as_u16();
+        if !(200..300).contains(&status) {
+            let corpo = r.text().map_err(|e| e.without_url().to_string())?;
+            return Err(format!("HTTP {status}: {}", cortar(&corpo, 300)));
+        }
+        if r.content_length().is_some_and(|n| n > teto as u64) {
+            return Err(format!("resposta acima do teto de {teto} bytes"));
+        }
+        let mut v = Vec::new();
+        r.take(teto as u64 + 1)
+            .read_to_end(&mut v)
+            .map_err(|e| e.to_string())?;
+        if v.len() > teto {
+            return Err(format!("resposta acima do teto de {teto} bytes"));
+        }
+        Ok(v)
     }
 
     /// Status e corpo, sem julgar o status.

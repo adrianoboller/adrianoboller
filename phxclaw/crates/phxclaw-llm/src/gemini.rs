@@ -77,7 +77,16 @@ impl GeminiLlm {
         for m in mensagens {
             match m.role {
                 Role::System => sistema.push(json!({"text": m.content})),
-                Role::User => empilhar(&mut conteudos, "user", json!({"text": m.content})),
+                Role::User => {
+                    empilhar(&mut conteudos, "user", json!({"text": m.content}));
+                    for i in &m.images {
+                        empilhar(
+                            &mut conteudos,
+                            "user",
+                            json!({"inline_data": {"mime_type": i.media_type, "data": i.base64}}),
+                        );
+                    }
+                }
                 Role::Assistant => {
                     if !m.content.is_empty() {
                         empilhar(&mut conteudos, "model", json!({"text": m.content}));
@@ -166,6 +175,7 @@ impl GeminiLlm {
                 output_tokens: v["usageMetadata"]["candidatesTokenCount"]
                     .as_u64()
                     .unwrap_or(0),
+                duracao_geracao_ns: None,
             },
             model: v["modelVersion"]
                 .as_str()

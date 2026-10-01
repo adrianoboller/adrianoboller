@@ -70,6 +70,22 @@ impl Ctx<'_> {
         (self.var)(&self.chave(k)).filter(|v| !v.trim().is_empty())
     }
 
+    /// TLS do canal de soquete: ligado por padrao (`<CANAL>_TLS=false` desliga, e ai so
+    /// loopback); `<CANAL>_CA` troca as raizes publicas por SO a autoridade do PEM.
+    fn tls(&self) -> Result<Option<super::tls::Tls>, String> {
+        // O catalogo declara `TLS` booleano: o `false` do config.json chega aqui como texto,
+        // e so «nao» deixaria o `false` ligar o TLS calado.
+        if self.cfg("TLS").is_some_and(|v| {
+            matches!(
+                v.trim().to_ascii_lowercase().as_str(),
+                "nao" | "false" | "0" | "no" | "off"
+            )
+        }) {
+            return Ok(None);
+        }
+        super::tls::Tls::da_config(self.cfg("CA").as_deref()).map(Some)
+    }
+
     fn exigir(&self, k: &str) -> Result<String, String> {
         self.cfg(k)
             .ok_or_else(|| format!("falta {}", self.chave(k)))
@@ -245,6 +261,7 @@ pub async fn ligar(
                 senha: ctx.segredo("SENHA")?,
                 pasta: ctx.cfg("PASTA").unwrap_or_else(|| "INBOX".into()),
                 exigir_dmarc: ctx.cfg("EXIGIR_DMARC").as_deref() != Some("nao"),
+                tls: ctx.tls()?,
             };
             (Arc::new(super::email::Email::novo(cfg, smtp)), None)
         }
@@ -341,6 +358,7 @@ pub async fn ligar(
                     .filter(|c| c.starts_with('#'))
                     .cloned()
                     .collect(),
+                tls: ctx.tls()?,
             };
             (Arc::new(super::irc::Irc::novo(cfg, ctx.caixa("")?)), None)
         }
@@ -349,6 +367,7 @@ pub async fn ligar(
                 endereco: ctx.exigir("ENDERECO")?,
                 jid: ctx.exigir("JID")?,
                 senha: ctx.segredo("SENHA")?,
+                tls: ctx.tls()?,
             };
             (Arc::new(super::xmpp::Xmpp::novo(cfg, ctx.caixa("")?)), None)
         }

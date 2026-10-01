@@ -3,9 +3,10 @@
 //!
 //! Mesmo desenho do IRC: a conexao fica aberta, uma thread le o fluxo XML, responde ao ping
 //! do servidor (XEP-0199) na hora e poe as mensagens numa fila; o que chega vai para a
-//! `Caixa` em disco antes de virar tarefa. E a mesma limitacao: sem TLS de soquete no
-//! agente, so loopback (`irc::conectar_sem_tls`), e servidor de verdade exige STARTTLS --
-//! hoje so por tunel local. PARCIAL. Sala multiusuario (MUC, `groupchat`) fica de fora.
+//! `Caixa` em disco antes de virar tarefa. TLS por STARTTLS (RFC 6120 §5) pelo
+//! `canais::tls`, com o certificado conferido contra o DOMINIO do JID; servidor que nao
+//! oferece `<starttls/>` e recusado (nunca se cai para texto claro calado). Sem TLS
+//! (`PHXCLAW_XMPP_TLS=false`), so loopback. Sala multiusuario (MUC, `groupchat`) fica de fora.
 //!
 //! O fluxo XML e lido por recorte de estrofe (`<message ...>...</message>`) e nao por um
 //! analisador de fluxo: as estrofes que importam nao se aninham, e o analisador do
@@ -14,11 +15,10 @@
 use super::caixa::Caixa;
 use super::cripto::base64;
 use super::http::Credencial;
-use super::irc::conectar_sem_tls;
+use super::tls::{Fio, Tls, conectar, conectar_para_starttls, ler_em_fundo};
 use super::{Entrada, Mensagem, Provedor, Unidade};
 use serde_json::Value;
 use std::io::{Read, Write};
-use std::net::TcpStream;
 use std::sync::mpsc::{Receiver, RecvTimeoutError, channel};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -28,10 +28,12 @@ pub struct Config {
     /// `agente@dominio`.
     pub jid: String,
     pub senha: Credencial,
+    /// `None` = texto claro, so em loopback; com TLS, STARTTLS obrigatorio.
+    pub tls: Option<Tls>,
 }
 
 struct Conexao {
-    escrita: Arc<Mutex<TcpStream>>,
+    escrita: Arc<Mutex<Fio>>,
     estrofes: Mutex<Receiver<String>>,
 }
 
@@ -157,14 +159,19 @@ fn recortar(buf: &mut String) -> Vec<String> {
     }
 }
 
-fn escrever(s: &Mutex<TcpStream>, x: &str) -> Result<(), String> {
+fn escrever(s: &Mutex<Fio>, x: &str) -> Result<(), String> {
     let mut g = s.lock().map_err(|_| "soquete envenenado".to_string())?;
-    g.write_all(x.as_bytes())
+    escrever_em(&mut g, x)
+}
+
+fn escrever_em(s: &mut Fio, x: &str) -> Result<(), String> {
+    s.write_all(x.as_bytes())
+        .and_then(|_| s.flush())
         .map_err(|e| format!("xmpp: escrita: {e}"))
 }
 
 /// Le ate o buffer conter um dos marcadores, ou o prazo vencer.
-fn ler_ate(s: &mut TcpStream, buf: &mut String, marcas: &[&str]) -> Result<String, String> {
+fn ler_ate(s: &mut Fio, buf: &mut String, marcas: &[&str]) -> Result<String, String> {
     let fim = Instant::now() + Duration::from_secs(15);
     let mut bloco = [0u8; 4096];
     loop {
@@ -210,20 +217,43 @@ xmlns:stream='http://etherx.jabber.org/streams' version='1.0'>",
     }
 
     fn abrir(&self) -> Result<Conexao, String> {
-        let mut s = conectar_sem_tls(&self.cfg.endereco)?;
-        let escrita = Arc::new(Mutex::new(s.try_clone().map_err(|e| e.to_string())?));
+        let dominio = self.cfg.jid.split('@').nth(1).ok_or("jid sem dominio")?;
+        let mut s = match &self.cfg.tls {
+            None => conectar(&self.cfg.endereco, None)?,
+            Some(_) => conectar_para_starttls(&self.cfg.endereco)?,
+        };
         let usuario = self.cfg.jid.split('@').next().unwrap_or("").to_string();
         let mut buf = String::new();
-        escrever(&escrita, &self.cabecalho()?)?;
+        escrever_em(&mut s, &self.cabecalho()?)?;
         ler_ate(&mut s, &mut buf, &["</stream:features>"])?;
+        if let Some(tls) = &self.cfg.tls {
+            // RFC 6120 §5.4: o servidor anuncia, o cliente pede, o servidor diz `proceed`, e
+            // dali em diante o fluxo recomeca por dentro do TLS. Sem o anuncio, recusa: seguir
+            // em texto claro mandaria a senha do SASL aberta.
+            if !buf.contains("urn:ietf:params:xml:ns:xmpp-tls") {
+                return Err("xmpp: o servidor nao oferece STARTTLS".into());
+            }
+            buf.clear();
+            escrever_em(
+                &mut s,
+                "<starttls xmlns='urn:ietf:params:xml:ns:xmpp-tls'/>",
+            )?;
+            if ler_ate(&mut s, &mut buf, &["<proceed", "<failure"])? == "<failure" {
+                return Err("xmpp: o servidor recusou o STARTTLS".into());
+            }
+            buf.clear();
+            s = s.subir(dominio, tls)?;
+            escrever_em(&mut s, &self.cabecalho()?)?;
+            ler_ate(&mut s, &mut buf, &["</stream:features>"])?;
+        }
         if !buf.contains("PLAIN") {
             return Err("xmpp: o servidor nao oferece SASL PLAIN".into());
         }
         buf.clear();
         self.cfg.senha.com("receive", |senha| {
             let credencial = base64(format!("\0{usuario}\0{senha}").as_bytes());
-            escrever(
-                &escrita,
+            escrever_em(
+                &mut s,
                 &format!("<auth xmlns='urn:ietf:params:xml:ns:xmpp-sasl' mechanism='PLAIN'>{credencial}</auth>"),
             )
         })?;
@@ -232,11 +262,11 @@ xmlns:stream='http://etherx.jabber.org/streams' version='1.0'>",
         }
         buf.clear();
         // Depois do SASL o fluxo recomeca do zero (RFC 6120 §6.4.6).
-        escrever(&escrita, &self.cabecalho()?)?;
+        escrever_em(&mut s, &self.cabecalho()?)?;
         ler_ate(&mut s, &mut buf, &["</stream:features>"])?;
         buf.clear();
-        escrever(
-            &escrita,
+        escrever_em(
+            &mut s,
             "<iq type='set' id='bind1'><bind xmlns='urn:ietf:params:xml:ns:xmpp-bind'><resource>phxclaw</resource></bind></iq>",
         )?;
         ler_ate(&mut s, &mut buf, &["</iq>", "/>"])?;
@@ -244,35 +274,30 @@ xmlns:stream='http://etherx.jabber.org/streams' version='1.0'>",
             return Err("xmpp: o servidor recusou o bind".into());
         }
         buf.clear();
-        escrever(&escrita, "<presence/>")?;
+        escrever_em(&mut s, "<presence/>")?;
         s.set_read_timeout(None).ok();
+        let escrita = Arc::new(Mutex::new(s));
         let (tx, rx) = channel();
-        let pong = escrita.clone();
-        std::thread::spawn(move || {
-            let mut bloco = [0u8; 8192];
-            let mut buf = String::new();
-            loop {
-                match s.read(&mut bloco) {
-                    Ok(0) | Err(_) => break,
-                    Ok(n) => buf.push_str(&String::from_utf8_lossy(&bloco[..n])),
-                }
-                for e in recortar(&mut buf) {
-                    if e.starts_with("<iq") {
-                        if e.contains("urn:xmpp:ping")
-                            && atributo(&e, "type").as_deref() == Some("get")
-                        {
-                            let id = escapar(&atributo(&e, "id").unwrap_or_default());
-                            let para = escapar(&atributo(&e, "from").unwrap_or_default());
-                            let _ = escrever(
-                                &pong,
-                                &format!("<iq type='result' id='{id}' to='{para}'/>"),
-                            );
-                        }
-                    } else if tx.send(e).is_err() {
-                        return;
+        // Fraco, como no IRC: a leitura em fundo nao pode manter o fio vivo sozinha.
+        let pong = Arc::downgrade(&escrita);
+        let mut buf = String::new();
+        ler_em_fundo(escrita.clone(), move |bytes| {
+            buf.push_str(&String::from_utf8_lossy(bytes));
+            for e in recortar(&mut buf) {
+                if e.starts_with("<iq") {
+                    if e.contains("urn:xmpp:ping")
+                        && atributo(&e, "type").as_deref() == Some("get")
+                        && let Some(p) = pong.upgrade()
+                    {
+                        let id = escapar(&atributo(&e, "id").unwrap_or_default());
+                        let para = escapar(&atributo(&e, "from").unwrap_or_default());
+                        let _ = escrever(&p, &format!("<iq type='result' id='{id}' to='{para}'/>"));
                     }
+                } else if tx.send(e).is_err() {
+                    return false;
                 }
             }
+            true
         });
         Ok(Conexao {
             escrita,

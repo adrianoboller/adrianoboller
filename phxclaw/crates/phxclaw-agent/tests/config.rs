@@ -1,0 +1,237 @@
+//! `GET`/`PUT /v1/config` pelo fio HTTP de verdade: o contrato da tela de configuracao.
+//!
+//! Um teste so, de proposito: ele fixa variaveis de ambiente (o projeto e uma chave que
+//! «vem do ambiente»), e outro teste no mesmo binario lendo o ambiente ao mesmo tempo
+//! seria corrida.
+
+use phxclaw_agent::agenda::Agenda;
+use phxclaw_agent::api::{AgentFactory, ApiState, Limite, router};
+use phxclaw_agent::tarefa::TaskStore;
+use serde_json::{Value, json};
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+
+const TOKEN: &str = "token-de-teste-com-tamanho-suficiente";
+
+#[tokio::test]
+async fn get_e_put_do_config_com_if_match_conflito_e_recusas() {
+    let dir = std::env::temp_dir().join(format!("phx-config-api-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let proj = dir.join("proj");
+    std::fs::create_dir_all(&proj).unwrap();
+    // SAFETY: unico teste deste binario, antes de qualquer outra thread ler o ambiente.
+    // O teste tira TODA variavel PHXCLAW_* herdada antes de comecar: o integrador roda a suite
+    // com PHXCLAW_WHISPER_BIN definida (exigida pelos testes de voz), e a chave voz.whisper.bin
+    // voltava "vem do ambiente", nao editavel. Remover uma por uma deixaria a proxima de fora.
+    unsafe {
+        for (k, _) in std::env::vars() {
+            if k.starts_with("PHXCLAW_") {
+                std::env::remove_var(k);
+            }
+        }
+        std::env::set_var("PHXCLAW_PROJETO", &proj);
+        std::env::set_var("PHXCLAW_MODELO_VISAO", "visao-do-ambiente");
+    }
+    phxclaw_agent::instrucoes::confiar(&dir, &proj).unwrap();
+    // Um segredo guardado no broker: a vista diz que existe, sem nunca trazer o valor.
+    let segredo = "xai-valor-que-nao-pode-vazar-0123456789";
+    let broker = phxclaw_agent::canais::broker_em(&dir.join("xai")).unwrap();
+    phxclaw_agent::canais::guardar_segredo(
+        &broker,
+        "xai-chave",
+        "xai",
+        &["channel:xai:send"],
+        phxclaw_secret_broker::SecretValue::new(segredo.into()),
+    )
+    .unwrap();
+
+    let store = TaskStore::new(dir.join("tasks")).unwrap();
+    let factory: AgentFactory = Arc::new(|_: &str| Err("sem modelo".to_string()));
+    let state = ApiState {
+        store,
+        factory,
+        default_model: "padrao".into(),
+        token: TOKEN.into(),
+        running: Arc::new(Mutex::new(HashMap::new())),
+        agenda: Arc::new(Mutex::new(Agenda::open(dir.join("agenda.json")).unwrap())),
+        webhook_origins: vec![],
+        limite: Arc::new(Limite::por_minuto(100)),
+    };
+    let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}/v1/config", l.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(l, router(state)).await.unwrap() });
+    let c = reqwest::Client::new();
+    let get = || async {
+        let r = c.get(&base).bearer_auth(TOKEN).send().await.unwrap();
+        assert_eq!(r.status(), 200);
+        let texto = r.text().await.unwrap();
+        assert!(!texto.contains(segredo), "segredo vazou no GET");
+        serde_json::from_str::<Value>(&texto).unwrap()
+    };
+    let chave = |v: &Value, k: &str| -> Value {
+        v["chaves"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|c| c["chave"] == k)
+            .cloned()
+            .unwrap_or_else(|| panic!("{k} fora da vista"))
+    };
+    let put = |if_match: Option<&str>, corpo: Value| {
+        let mut r = c.put(&base).bearer_auth(TOKEN).json(&corpo);
+        if let Some(m) = if_match {
+            r = r.header("If-Match", m);
+        }
+        async move {
+            let r = r.send().await.unwrap();
+            (r.status().as_u16(), r.json::<Value>().await.unwrap())
+        }
+    };
+
+    // Sem Bearer: o mesmo 401 das outras rotas.
+    assert_eq!(c.get(&base).send().await.unwrap().status(), 401);
+    assert_eq!(
+        c.put(&base).json(&json!({})).send().await.unwrap().status(),
+        401
+    );
+
+    let v = get().await;
+    assert_eq!(v["revisao"], 0);
+    assert!(
+        v["arquivos"]["pasta"]
+            .as_str()
+            .unwrap()
+            .ends_with("config.json")
+    );
+    assert!(
+        v["arquivos"]["projeto"]
+            .as_str()
+            .unwrap()
+            .ends_with(".phxclaw/config.json")
+    );
+    let w = chave(&v, "voz.whisper.bin");
+    for campo in [
+        "chave",
+        "secao",
+        "tipo",
+        "opcoes",
+        "descricao",
+        "padrao",
+        "valor",
+        "origem",
+        "variavel",
+        "segredo",
+        "segredo_presente",
+        "editavel",
+        "motivo_nao_editavel",
+    ] {
+        assert!(w.get(campo).is_some(), "falta {campo} em {w}");
+    }
+    assert_eq!(w["secao"], "voz");
+    assert_eq!(w["tipo"], "caminho");
+    assert_eq!(w["variavel"], "PHXCLAW_WHISPER_BIN");
+    assert_eq!(w["editavel"], true);
+    let p = chave(&v, "voz.tts.provedor");
+    assert_eq!(p["tipo"], "enum");
+    assert_eq!(p["opcoes"], json!(["comando", "elevenlabs"]));
+    let x = chave(&v, "xai.chave");
+    assert_eq!(x["segredo"], true);
+    assert_eq!(x["segredo_presente"], true);
+    assert_eq!(x["valor"], Value::Null);
+    assert_eq!(x["editavel"], false);
+    assert!(
+        x["motivo_nao_editavel"]
+            .as_str()
+            .unwrap()
+            .contains("phxclaw xai chave")
+    );
+    assert_eq!(chave(&v, "forja.github.token")["segredo_presente"], false);
+    let amb = chave(&v, "modelo.visao");
+    assert_eq!(amb["origem"], "ambiente");
+    assert_eq!(amb["valor"], "visao-do-ambiente");
+    assert_eq!(amb["motivo_nao_editavel"], "vem do ambiente");
+
+    // Sem If-Match: 428.
+    let (s, _) = put(None, json!({"escopo": "pasta", "valores": {}})).await;
+    assert_eq!(s, 428);
+
+    // Grava na pasta.
+    let (s, r) = put(
+        Some("0"),
+        json!({"escopo": "pasta", "valores": {"modelo.padrao": "da-pasta", "api.tarefas_por_minuto": 5}}),
+    )
+    .await;
+    assert_eq!((s, &r), (200, &json!({"revisao": 1})));
+    // A mesma revisao de novo: 409 com a atual.
+    let (s, r) = put(
+        Some("0"),
+        json!({"escopo": "pasta", "valores": {"modelo.padrao": "x"}}),
+    )
+    .await;
+    assert_eq!((s, &r), (409, &json!({"revisao_atual": 1})));
+    // Projeto (confiado) ganha da pasta.
+    let (s, r) = put(
+        Some("\"1\""),
+        json!({"escopo": "projeto", "valores": {"modelo.padrao": "do-projeto"}}),
+    )
+    .await;
+    assert_eq!((s, &r), (200, &json!({"revisao": 2})));
+    let v = get().await;
+    assert_eq!(v["revisao"], 2);
+    let m = chave(&v, "modelo.padrao");
+    assert_eq!(
+        (&m["valor"], &m["origem"]),
+        (&json!("do-projeto"), &json!("projeto"))
+    );
+    let t = chave(&v, "api.tarefas_por_minuto");
+    assert_eq!((&t["valor"], &t["origem"]), (&json!(5), &json!("pasta")));
+    assert!(proj.join(".phxclaw/config.json").is_file());
+
+    // 422: segredo, chave do ambiente, desconhecida, tipo errado -- todas de uma vez.
+    let (s, r) = put(
+        Some("2"),
+        json!({"escopo": "pasta", "valores": {
+            "xai.chave": "xai-qualquer", "modelo.visao": "y", "voz.whisper.binn": "/x",
+            "api.tarefas_por_minuto": "dez"
+        }}),
+    )
+    .await;
+    assert_eq!(s, 422, "{r}");
+    let erros: HashMap<String, String> = r["erros"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| {
+            (
+                e["chave"].as_str().unwrap().into(),
+                e["motivo"].as_str().unwrap().into(),
+            )
+        })
+        .collect();
+    assert!(erros["xai.chave"].contains("phxclaw xai chave"), "{r}");
+    assert!(erros["modelo.visao"].contains("vem do ambiente"), "{r}");
+    assert!(
+        erros["voz.whisper.binn"].contains("`voz.whisper.bin`"),
+        "{r}"
+    );
+    assert!(erros["api.tarefas_por_minuto"].contains("inteiro"), "{r}");
+    let (s, _) = put(Some("2"), json!({"escopo": "nenhum", "valores": {}})).await;
+    assert_eq!(s, 422);
+
+    // null remove a chave do arquivo da pasta.
+    let (s, r) = put(
+        Some("2"),
+        json!({"escopo": "pasta", "valores": {"api.tarefas_por_minuto": null}}),
+    )
+    .await;
+    assert_eq!((s, &r), (200, &json!({"revisao": 3})));
+    let t = chave(&get().await, "api.tarefas_por_minuto");
+    assert_eq!((&t["valor"], &t["origem"]), (&json!(10), &json!("padrao")));
+    let disco = std::fs::read_to_string(dir.join("config.json")).unwrap();
+    assert!(
+        !disco.contains("tarefas_por_minuto") && !disco.contains(segredo),
+        "{disco}"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}

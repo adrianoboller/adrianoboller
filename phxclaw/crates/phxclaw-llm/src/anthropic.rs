@@ -49,6 +49,17 @@ impl AnthropicLlm {
                 // A API nao tem papel system nas mensagens: o texto vai no campo proprio.
                 Role::System => sistema.push(&m.content),
                 Role::User => {
+                    // Imagem antes do texto: e a ordem que a documentacao da Messages API
+                    // recomenda, o texto pergunta sobre o que ja foi visto.
+                    for i in &m.images {
+                        empilhar(
+                            &mut fio,
+                            "user",
+                            json!({"type": "image", "source": {
+                                "type": "base64", "media_type": i.media_type, "data": i.base64,
+                            }}),
+                        );
+                    }
                     empilhar(&mut fio, "user", json!({"type": "text", "text": m.content}))
                 }
                 Role::Assistant => {
@@ -146,6 +157,7 @@ fn resposta(v: &Value, modelo: &str) -> Result<LlmReply, LlmError> {
         usage: Usage {
             input_tokens: v["usage"]["input_tokens"].as_u64().unwrap_or(0),
             output_tokens: v["usage"]["output_tokens"].as_u64().unwrap_or(0),
+            duracao_geracao_ns: None,
         },
         model: v["model"].as_str().unwrap_or(modelo).to_owned(),
     })

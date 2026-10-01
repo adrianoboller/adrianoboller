@@ -51,6 +51,21 @@ pub struct Message {
     /// So em mensagens `Tool`: o nome da ferramenta (alguns provedores exigem).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_name: Option<String>,
+    /// Imagens que o modelo VE junto do texto (so em mensagens `User`). Cada provedor as
+    /// traduz para o bloco de imagem dele; o OCR continua existindo, mas texto extraido
+    /// nao e a imagem -- grafico, layout e foto se perdem nele.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub images: Vec<ImagemAnexa>,
+}
+
+/// Uma imagem anexada a mensagem: o tipo e os bytes em base64, que e o que os quatro
+/// provedores pedem no fio. Guardar base64 e nao bytes poupa recodificar a cada passo,
+/// porque o historico inteiro viaja de novo em toda volta do laco.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ImagemAnexa {
+    /// `image/png`, `image/jpeg`, `image/gif` ou `image/webp`.
+    pub media_type: String,
+    pub base64: String,
 }
 
 impl Message {
@@ -59,6 +74,12 @@ impl Message {
     }
     pub fn user(t: impl Into<String>) -> Self {
         Self::plain(Role::User, t)
+    }
+    pub fn user_com_imagens(t: impl Into<String>, images: Vec<ImagemAnexa>) -> Self {
+        Self {
+            images,
+            ..Self::plain(Role::User, t)
+        }
     }
     pub fn assistant(t: impl Into<String>, tool_calls: Vec<ToolCall>) -> Self {
         Self {
@@ -80,6 +101,7 @@ impl Message {
             tool_calls: vec![],
             tool_call_id: None,
             tool_name: None,
+            images: vec![],
         }
     }
 }
@@ -97,6 +119,11 @@ pub struct ToolSpec {
 pub struct Usage {
     pub input_tokens: u64,
     pub output_tokens: u64,
+    /// Tempo que o provedor diz ter gastado GERANDO os `output_tokens`, em ns (o
+    /// `eval_duration` do Ollama). So existe onde o provedor mede: tokens/s calculado pelo
+    /// relogio de parede misturaria rede e fila com geracao, e os de nuvem nao informam.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub duracao_geracao_ns: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

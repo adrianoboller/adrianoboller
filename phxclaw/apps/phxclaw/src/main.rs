@@ -1,6 +1,10 @@
 #![forbid(unsafe_code)]
 
+mod ajuda;
+mod config;
+mod contexto;
 mod interacao;
+mod medicao;
 
 use anyhow::{Context, Result, bail};
 use phxclaw_agent::api::{AgentFactory, ApiState, disparar_agenda, router};
@@ -21,8 +25,19 @@ const MODELO_PADRAO: &str = "ollama:qwen2.5:1.5b";
 
 fn main() -> Result<()> {
     let args = env::args().skip(1).collect::<Vec<_>>();
-    if args.is_empty() || matches!(args[0].as_str(), "-h" | "--help" | "help") {
-        print_help();
+    if args.is_empty() || matches!(args[0].as_str(), "-h" | "--help" | "help" | "ajuda") {
+        match args.get(1).and_then(|n| ajuda::achar(n)) {
+            Some(c) => print!("{}", ajuda::de(c, PRODUCT_CLI)),
+            None => print_help(),
+        }
+        return Ok(());
+    }
+    // `phxclaw COMANDO --help` mostra a ajuda daquele comando, pela mesma tabela.
+    if args.len() == 2
+        && matches!(args[1].as_str(), "-h" | "--help")
+        && let Some(c) = ajuda::achar(&args[0])
+    {
+        print!("{}", ajuda::de(c, PRODUCT_CLI));
         return Ok(());
     }
     match args[0].as_str() {
@@ -33,6 +48,13 @@ fn main() -> Result<()> {
         "servir" | "serve" => runtime()?.block_on(servir(&args[1..]))?,
         "canal" | "channel" => runtime()?.block_on(canal(&args[1..]))?,
         "mcp-serve" => runtime()?.block_on(mcp_serve(&args[1..]))?,
+        // `phxclaw mcp token|login NOME`: credencial dos MCP remotos para o broker da pasta.
+        "mcp" => println!(
+            "{}",
+            runtime()?
+                .block_on(phxclaw_agent::oauth::cli(&pasta(&args[1..]), &args[1..]))
+                .map_err(anyhow::Error::msg)?
+        ),
         "acp" => runtime()?.block_on(acp(&args[1..]))?,
         "ponte" | "bridge" => runtime()?.block_on(ponte(&args[1..]))?,
         "xai" => {
@@ -40,6 +62,18 @@ fn main() -> Result<()> {
             let id = phxclaw_agent::xai::guardar_do_ambiente(&pasta(&args[1..]))
                 .map_err(anyhow::Error::msg)?;
             println!("chave da xAI guardada (segredo {id}); x_search pede a capacidade x.search");
+        }
+        "elevenlabs" => runtime()?.block_on(elevenlabs(&args[1..]))?,
+        "gemini" => {
+            // `phxclaw gemini chave`: a chave do Nano Banana vai para o broker da pasta.
+            let s = &phxclaw_agent::nanobanana::SERVICO;
+            let id = s
+                .guardar_do_ambiente(&pasta(&args[1..]))
+                .map_err(anyhow::Error::msg)?;
+            println!(
+                "chave da Gemini API guardada (segredo {id}); image_generate usa o Nano Banana \
+com PHXCLAW_IMAGEM_PROVEDOR=nanobanana (capacidade media.generate)"
+            );
         }
         "dispositivos" | "devices" => runtime()?.block_on(dispositivos(&args[1..]))?,
         "fluxo" | "workflow" => runtime()?.block_on(fluxo(&args[1..]))?,
@@ -57,7 +91,17 @@ fn main() -> Result<()> {
         )?,
         "estilos" | "styles" => interacao::estilos(),
         "voz" | "voice" => runtime()?.block_on(voz(&args[1..]))?,
-        other => bail!("unknown command: {other}. Run `{PRODUCT_CLI} --help`."),
+        "repetir" | "replay" => runtime()?.block_on(medicao::repetir(&args[1..]))?,
+        "avaliar" | "eval" => runtime()?.block_on(medicao::avaliar(&args[1..]))?,
+        "skill" => runtime()?.block_on(medicao::skill(&args[1..]))?,
+        "skills" => contexto::skills(&args[1..])?,
+        "indexar" | "index" => contexto::indexar(&args[1..])?,
+        "projeto" | "project" => contexto::projeto(&args[1..])?,
+        "config" => config::comando(&args[1..])?,
+        other => match ajuda::sugestao(other) {
+            Some(s) => bail!("comando desconhecido: {other}. Quis dizer `{PRODUCT_CLI} {s}`?"),
+            None => bail!("comando desconhecido: {other}. Rode `{PRODUCT_CLI} ajuda`."),
+        },
     }
     Ok(())
 }
@@ -74,6 +118,14 @@ fn opcao(args: &[String], nome: &str) -> Option<String> {
         .position(|a| a == nome)
         .and_then(|i| args.get(i + 1))
         .cloned()
+}
+
+/// Todos os valores de uma opcao que se repete (`--imagem a.png --imagem b.png`).
+fn opcoes(args: &[String], nome: &str) -> Vec<String> {
+    args.windows(2)
+        .filter(|w| w[0] == nome)
+        .map(|w| w[1].clone())
+        .collect()
 }
 
 fn pasta(args: &[String]) -> PathBuf {
@@ -110,15 +162,23 @@ impl Observer for Terminal {
 }
 
 async fn agente(args: &[String]) -> Result<()> {
+    // `--imagem` se repete: o objetivo e a primeira palavra solta que nao e valor de opcao.
     let objetivo = args
         .iter()
-        .find(|a| {
+        .enumerate()
+        .find(|(i, a)| {
             !a.starts_with("--")
-                && ["--modelo", "--pasta", "--estilo"]
-                    .iter()
-                    .all(|o| Some(*a) != opcao(args, o).as_ref())
+                && !(*i > 0
+                    && ["--modelo", "--pasta", "--estilo", "--imagem", "--gravar"]
+                        .contains(&args[i - 1].as_str()))
         })
-        .context("uso: phxclaw agente \"objetivo\" [--modelo ollama:qwen2.5:1.5b] [--plano] [--pasta DIR]")?;
+        .map(|(_, a)| a)
+        .context("uso: phxclaw agente \"objetivo\" [--modelo ollama:qwen2.5:1.5b] [--plano] [--imagem ARQ]... [--pasta DIR]")?;
+    let imagens = opcoes(args, "--imagem")
+        .iter()
+        .map(|p| std::fs::read(p).with_context(|| format!("--imagem {p}")))
+        .collect::<Result<Vec<_>>>()?;
+    phxclaw_agent::imagens::validar(&imagens).map_err(anyhow::Error::msg)?;
     let modelo = opcao(args, "--modelo").unwrap_or_else(|| MODELO_PADRAO.into());
     let store = TaskStore::new(pasta(args).join("tasks"))?;
     let mut m = Montagem::new(store.clone());
@@ -127,6 +187,12 @@ async fn agente(args: &[String]) -> Result<()> {
     }
     let agente = m.agent(&modelo).map_err(anyhow::Error::msg)?;
     let mut t = Task::new(objetivo.clone(), modelo.clone());
+    // As mesmas funcoes da rota `POST /v1/tasks`: gravar em `work/entrada/` e anexar.
+    if !imagens.is_empty() {
+        store.save(&t)?;
+        t.images = phxclaw_agent::imagens::gravar(&store.workdir(&t.id), &imagens)
+            .map_err(anyhow::Error::msg)?;
+    }
     println!(
         "tarefa {}\nmodelo {modelo}\nferramentas: {}",
         t.id,
@@ -149,10 +215,32 @@ async fn agente(args: &[String]) -> Result<()> {
             return Ok(());
         }
     }
+    // A gravacao comeca na execucao: o plano so vale com o sim de quem aprovou, e a
+    // repeticao roda a tarefa direto.
+    let gravador = opcao(args, "--gravar")
+        .map(|arq| {
+            phxclaw_agent::gravacao::Gravador::criar(
+                std::path::Path::new(&arq),
+                &t.objective,
+                &modelo,
+            )
+        })
+        .transpose()
+        .context("--gravar")?;
+    let agente = match &gravador {
+        Some(g) => phxclaw_agent::gravacao::gravando(agente, g),
+        None => agente,
+    };
     println!("executando...");
     let fim = agente
         .run(t, &CancelFlag::default(), &Terminal(Mutex::new(0)))
         .await;
+    if let (Some(g), Some(arq)) = (&gravador, opcao(args, "--gravar")) {
+        match g.resultado() {
+            Ok(n) => println!("gravacao: {arq} ({n} linhas)"),
+            Err(e) => println!("gravacao INCOMPLETA: {arq}: {e}"),
+        }
+    }
     println!("\nestado: {:?}", fim.status);
     if let Some(r) = &fim.answer {
         println!("resposta:\n{r}");
@@ -207,8 +295,8 @@ async fn voz(args: &[String]) -> Result<()> {
         &agente,
         &modelo,
         &wavs,
-        &phxclaw_agent::visao::TranscribeTool::from_env(),
-        &phxclaw_agent::voz::SpeakTool::from_env(),
+        &phxclaw_agent::visao::TranscribeTool::do_ambiente(&pasta(args)),
+        &phxclaw_agent::voz::SpeakTool::do_ambiente(&pasta(args)),
         || Terminal(Mutex::new(0)),
     )
     .await;
@@ -676,7 +764,7 @@ async fn fluxo(args: &[String]) -> Result<()> {
     Ok(())
 }
 
-/// `phxclaw equipe`: os 110 papeis pelas MESMAS funcoes do `team_list` e do
+/// `phxclaw equipe`: os papeis pelas MESMAS funcoes do `team_list` e do
 /// `team_delegate` (modulo `equipe` do agente) -- a CLI nao tem lista nem delegacao propria.
 async fn equipe(args: &[String]) -> Result<()> {
     use phxclaw_agent::equipe as eq;
@@ -859,23 +947,15 @@ async fn ferramentas() -> Result<()> {
 /// (`revisao::revisar_da_fonte`), para a CLI e a ferramenta nao divergirem.
 async fn revisar(args: &[String]) -> Result<()> {
     use phxclaw_agent::revisao::{FonteDoDiff, SEVERIDADES, analisar_pr, modelo, revisar_da_fonte};
-    let fonte = if let Some(pr) = opcao(args, "--pr") {
-        let (forja, repo, numero) = analisar_pr(&pr).map_err(anyhow::Error::msg)?;
-        FonteDoDiff::Pr {
-            raiz_do_agente: pasta(args),
-            forja,
-            repo,
-            numero,
-        }
-    } else if let Some(d) = opcao(args, "--diff") {
-        FonteDoDiff::Arquivo(PathBuf::from(d))
-    } else {
-        FonteDoDiff::Repo {
-            pasta: PathBuf::from(opcao(args, "--repo").unwrap_or_else(|| ".".into())),
-            rev: opcao(args, "--rev"),
-            cached: args.iter().any(|a| a == "--cached"),
-        }
-    };
+    let comentar = args.iter().any(|a| a == "--comentar");
+    let evento = opcao(args, "--evento");
+    let pr = opcao(args, "--pr")
+        .map(|p| analisar_pr(&p).map_err(anyhow::Error::msg))
+        .transpose()?;
+    // Recusa antes de gastar o modelo: so ha onde comentar quando ha um PR.
+    if comentar && evento.is_none() && pr.is_none() {
+        bail!("--comentar so com --pr ou --evento");
+    }
     let falhar = opcao(args, "--falhar-em");
     if let Some(f) = &falhar
         && !SEVERIDADES.contains(&f.as_str())
@@ -884,9 +964,52 @@ async fn revisar(args: &[String]) -> Result<()> {
     }
     let llm = modelo(&opcao(args, "--modelo").unwrap_or_else(|| MODELO_PADRAO.into()))
         .map_err(anyhow::Error::msg)?;
-    let r = revisar_da_fonte(llm.as_ref(), fonte, opcao(args, "--foco").as_deref())
+    let foco = opcao(args, "--foco");
+    let r = if let Some(ev) = evento {
+        // GitHub Action: o PR sai do `GITHUB_EVENT_PATH`, pelo mesmo `revisar_da_fonte`.
+        let nome = env::var("GITHUB_EVENT_NAME").ok();
+        let r = phxclaw_agent::acao_github::rodar(
+            &pasta(args),
+            std::path::Path::new(&ev),
+            nome.as_deref(),
+            llm.as_ref(),
+            foco.as_deref(),
+            comentar,
+        )
         .await
         .map_err(anyhow::Error::msg)?;
+        let Some(r) = r else {
+            println!("{{\"revisado\": false, \"motivo\": \"o evento nao pede revisao\"}}");
+            return Ok(());
+        };
+        r
+    } else {
+        let fonte = if let Some((forja, repo, numero)) = pr.clone() {
+            FonteDoDiff::Pr {
+                raiz_do_agente: pasta(args),
+                forja,
+                repo,
+                numero,
+            }
+        } else if let Some(d) = opcao(args, "--diff") {
+            FonteDoDiff::Arquivo(PathBuf::from(d))
+        } else {
+            FonteDoDiff::Repo {
+                pasta: PathBuf::from(opcao(args, "--repo").unwrap_or_else(|| ".".into())),
+                rev: opcao(args, "--rev"),
+                cached: args.iter().any(|a| a == "--cached"),
+            }
+        };
+        let r = revisar_da_fonte(llm.as_ref(), fonte, foco.as_deref())
+            .await
+            .map_err(anyhow::Error::msg)?;
+        if let (true, Some((forja, repo, numero))) = (comentar, pr) {
+            phxclaw_agent::acao_github::comentar(&pasta(args), forja, &repo, numero, &r)
+                .await
+                .map_err(anyhow::Error::msg)?;
+        }
+        r
+    };
     println!("{}", serde_json::to_string_pretty(&r)?);
     if falhar.is_some_and(|f| r.tem_ao_menos(&f)) {
         std::process::exit(1);
@@ -913,71 +1036,37 @@ fn forja(args: &[String]) -> Result<()> {
     Ok(())
 }
 
+/// `phxclaw elevenlabs chave|vozes`: guardar a chave no broker, ou listar as vozes da conta
+/// pelo mesmo cliente do `speak` e do `voice_list`.
+async fn elevenlabs(args: &[String]) -> Result<()> {
+    use phxclaw_agent::elevenlabs::{ElevenLabs, SERVICO, listar};
+    let raiz = pasta(args);
+    match args.first().map(String::as_str) {
+        Some("chave" | "key") => {
+            let id = SERVICO
+                .guardar_do_ambiente(&raiz)
+                .map_err(anyhow::Error::msg)?;
+            println!(
+                "chave da ElevenLabs guardada (segredo {id}); speak e transcribe a usam com \
+PHXCLAW_TTS_PROVEDOR=elevenlabs / PHXCLAW_STT_PROVEDOR=elevenlabs"
+            );
+        }
+        Some("vozes" | "voices") => {
+            let c = ElevenLabs::da_pasta(&raiz).map_err(anyhow::Error::msg)?;
+            let busca = opcao(args, "--busca");
+            let v = tokio::task::spawn_blocking(move || {
+                c.vozes(busca.as_deref(), std::time::Duration::from_secs(30))
+            })
+            .await?
+            .map_err(anyhow::Error::msg)?;
+            println!("{}", listar(&v));
+        }
+        _ => bail!("uso: phxclaw elevenlabs chave|vozes [--busca TEXTO] [--pasta DIR]"),
+    }
+    Ok(())
+}
+
 fn print_help() {
-    println!(
-        "{PRODUCT_NAME} {VERSION}
-
-USAGE:
-  {PRODUCT_CLI} <COMMAND>
-
-COMMANDS:
-  mcp-serve [--trabalho DIR] [--modelo M] [--pasta DIR]
-                     Agent tools as an MCP server over stdio (same PHXCLAW_CAPACIDADES)
-  acp [--modelo M] [--pasta DIR]
-                     Agent Client Protocol over stdio for editors (same agent, project = cwd)
-  xai chave [--pasta DIR]
-                     Store PHXCLAW_XAI_API_KEY in the secret broker: enables x_search
-                     (capability x.search, not granted by default)
-  ponte --cert PEM --chave PEM --tokens ARQ [--porta 8790] [--porta-wss 8791] [--pasta DIR]
-                     Remote-control bridge: the installable web UI for the client, and the
-                     WSS where an agent connects OUT with `servir --ponte wss://...`
-  agente \"objetivo\" [--modelo M] [--plano [--sim]] [--estilo NOME] [--pasta DIR]
-                     Run the autonomous agent now, showing each step; --plano = read-only
-                     Plan Mode, executes only after approval; questions are answered here
-  sessoes \"termo\" [--limite N]   Search previous tasks (same search as session_search)
-  resumo [--data AAAA-MM-DD|hoje|ontem]   Summary of the day's tasks (same as daily_summary)
-  estilos            Output styles (built-in and .phxclaw/estilos/*.md)
-  voz ARQ.wav [ARQ2.wav ...] [--modelo M] [--pasta DIR]
-                     Voice conversation, one turn per WAV: whisper -> agent -> speech WAV
-                     (PHXCLAW_WHISPER_* and PHXCLAW_TTS_*)
-  canal <name> [--pasta DIR] [--escuta ADDR]
-                     Messaging channel as agent input: telegram, discord, slack, whatsapp, teams,
-                     matrix, email, webhook, webchat, signal, googlechat, sms, mattermost,
-                     rocketchat, zulip, irc, xmpp, mastodon, line, viber, messenger, feishu,
-                     reddit, twitch, nostr (PHXCLAW_<NAME>_PERMITIDOS=id,id; Telegram keeps
-                     PHXCLAW_TELEGRAM_BOT_TOKEN and PHXCLAW_TELEGRAM_CHATS)
-  servir [--porta 8787] [--pasta DIR] [--canal NAME] [--dispositivos --cert C --chave K --tokens F
-         [--porta-dispositivos 8788]] [--ponte wss://H:P/ [--ponte-ca PEM] [--ponte-tenant U]
-         [--sem-porta]]
-                     Task API (create, follow, plan approval, answer, cancel, artifacts,
-                     schedules); heartbeat (HEARTBEAT.md), file and webhook triggers
-                     (.phxclaw/gatilhos.json); hooks and command rules from .phxclaw/
-                     and the installable web UI (PWA) at /; --ponte connects OUT to a
-                     `phxclaw ponte` for remote control (PHXCLAW_ENROLLMENT_TOKEN once)
-  dispositivos --cert C --chave K --tokens F [--porta 8788]
-                     Device WSS server (TLS, one-time pairing tokens, signed envelopes);
-                     with `servir --dispositivos` the agent gets node_list/node_invoke
-  fluxo rodar ARQ.json | retomar TAREFA ARQ.json [--modelo M] [--pasta DIR]
-                     Declarative workflow: steps with dependencies (DAG), each an agent task
-                     or a tool call, through the same engine and policy gate; progress
-                     is saved every wave, and `retomar` skips the steps that succeeded
-  equipe [listar [--macroarea X] [--texto Y] | mostrar ID | delegar ID \"tarefa\" [--modelo M]]
-                     The 110 team roles of config/agents (PHXCLAW_AGENTES_DIR); delegate runs one
-                     as a sub-agent (PHXCLAW_MODELO_LOCAL for roles routed to Ollama)
-  ferramentas        Agent tools assembled on this machine, as JSON (desktop Tools screen)
-  revisar [--repo DIR] [--rev R] [--cached] [--diff ARQ|-] [--pr github:dono/proj#7]
-          [--foco TEXTO] [--modelo M] [--falhar-em alta] [--pasta DIR]
-                     Code review of a diff by the agent's model (same engine as code_review),
-                     JSON findings; --falhar-em exits 1 at that severity or worse (CI)
-  forja token github|gitlab [--pasta DIR]
-                     Store PHXCLAW_GITHUB_TOKEN / PHXCLAW_GITLAB_TOKEN in the agent's
-                     SecretBroker; the github/gitlab tools exist only after this
-  core status        Probed runtime state (sandbox, browser, model server)
-  db plan [platform] Show PostgreSQL managed-install plan
-  version            Show version
-
-MODELS: ollama:<model> (local), openai:<model>, anthropic:<model>, gemini:<model>
-        (keys from OPENAI_API_KEY / ANTHROPIC_API_KEY / GEMINI_API_KEY)
-POLICY: PHXCLAW_CAPACIDADES=web.search,web.browse,fs.read,fs.write,doc.write,shell.exec,agent.spawn"
-    );
+    // A ajuda sai da tabela de ajuda.rs; nenhum texto de comando mora aqui.
+    print!("{}", ajuda::texto(PRODUCT_NAME, VERSION, PRODUCT_CLI));
 }

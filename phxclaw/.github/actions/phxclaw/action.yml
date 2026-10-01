@@ -1,0 +1,76 @@
+# PhxClaw sem interface num evento de PR: revisa o diff pelo modelo do agente e comenta no PR.
+#
+# Acao COMPOSTA e nao Docker (pesquisa das ondas 4 e 5): roda o mesmo binario do operador, no
+# runner que ele ja escolheu, sem imagem para manter. Toda logica mora no `phxclaw revisar
+# --evento ... --comentar` (o mesmo motor do `code_review`); aqui so se guarda o token no
+# SecretBroker e se chama o binario. Entradas chegam aos scripts por `env`, nunca por
+# `${{ }}` dentro do `run`: texto de entrada interpolado no script e injecao de comando.
+#
+# Uso, num workflow do repositorio revisado:
+#
+#   on: pull_request
+#   permissions: { contents: read, pull-requests: write }
+#   jobs:
+#     revisar:
+#       runs-on: ubuntu-latest
+#       steps:
+#         - uses: adrianoboller/adrianoboller/phxclaw/.github/actions/phxclaw@<ref>
+#           with:
+#             modelo: anthropic:<modelo>
+#           env:
+#             ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+name: PhxClaw revisar PR
+description: Revisa o PR pelo modelo do PhxClaw e publica a revisao como comentario.
+inputs:
+  github-token:
+    description: Token com pull-requests:write (vai para o SecretBroker, nunca para arquivo).
+    default: ${{ github.token }}
+  modelo:
+    description: Modelo do agente (ollama:..., openai:..., anthropic:..., gemini:...).
+    required: true
+  foco:
+    description: Foco pedido a revisao (opcional).
+    default: ""
+  falhar-em:
+    description: Severidade que reprova o passo (critica, alta, media, baixa, info); vazio nao reprova.
+    default: ""
+  phxclaw-bin:
+    description: Caminho de um binario phxclaw ja instalado; vazio compila deste repositorio.
+    default: ""
+runs:
+  using: composite
+  steps:
+    - name: Binario do PhxClaw
+      shell: bash
+      env:
+        PHXCLAW_BIN_ENTRADA: ${{ inputs.phxclaw-bin }}
+      run: |
+        set -euo pipefail
+        if [ -n "$PHXCLAW_BIN_ENTRADA" ]; then
+          bin="$PHXCLAW_BIN_ENTRADA"
+        else
+          cargo build --release --locked -p phxclaw --manifest-path "$GITHUB_ACTION_PATH/../../../Cargo.toml"
+          bin="$GITHUB_ACTION_PATH/../../../target/release/phxclaw"
+        fi
+        echo "PHXCLAW_BIN=$bin" >> "$GITHUB_ENV"
+    - name: Token no SecretBroker
+      shell: bash
+      env:
+        PHXCLAW_GITHUB_TOKEN: ${{ inputs.github-token }}
+      run: |
+        set -euo pipefail
+        "$PHXCLAW_BIN" forja token github --pasta "$RUNNER_TEMP/phxclaw"
+    - name: Revisar e comentar
+      shell: bash
+      env:
+        PHXCLAW_GITHUB_API: ${{ github.api_url }}
+        PHXCLAW_MODELO: ${{ inputs.modelo }}
+        PHXCLAW_FOCO: ${{ inputs.foco }}
+        PHXCLAW_FALHAR_EM: ${{ inputs.falhar-em }}
+      run: |
+        set -euo pipefail
+        extra=()
+        if [ -n "$PHXCLAW_FOCO" ]; then extra+=(--foco "$PHXCLAW_FOCO"); fi
+        if [ -n "$PHXCLAW_FALHAR_EM" ]; then extra+=(--falhar-em "$PHXCLAW_FALHAR_EM"); fi
+        "$PHXCLAW_BIN" revisar --evento "$GITHUB_EVENT_PATH" --comentar \
+          --modelo "$PHXCLAW_MODELO" --pasta "$RUNNER_TEMP/phxclaw" "${extra[@]}"

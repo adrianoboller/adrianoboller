@@ -9,17 +9,16 @@
 //!   se o servidor que recebeu atesta o remetente, entao por padrao so entra mensagem com
 //!   `Authentication-Results: ... dmarc=pass` (desligavel com
 //!   `PHXCLAW_EMAIL_CANAL_EXIGIR_DMARC=nao`, para servidor que nao confere);
-//! - IMAP sem TLS so em loopback (`irc::conectar_sem_tls`): o agente nao tem TLS de soquete
-//!   sem crate nova, e a porta 993 de verdade fica para um tunel local. PARCIAL por isso.
-//!   A saida SMTP tem TLS (lettre), e a senha dela tambem mora no broker.
+//! - IMAP com TLS desde o primeiro byte (porta 993) pelo `canais::tls`; sem TLS
+//!   (`PHXCLAW_EMAIL_CANAL_TLS=false`), so loopback. A saida SMTP tem TLS (lettre), e a senha
+//!   dela tambem mora no broker.
 
 use super::http::Credencial;
-use super::irc::conectar_sem_tls;
+use super::tls::{Fio, Tls, conectar};
 use super::{Entrada, Mensagem, Provedor, Unidade, pausa_se_vazio};
 use crate::email::SmtpConfig;
 use base64::Engine;
 use std::io::{BufRead, BufReader, Read, Write};
-use std::net::TcpStream;
 
 pub struct Config {
     pub endereco: String,
@@ -31,6 +30,8 @@ pub struct Config {
     pub smtp_senha: Option<Credencial>,
     pub pasta: String,
     pub exigir_dmarc: bool,
+    /// `None` = texto claro, so em loopback.
+    pub tls: Option<Tls>,
 }
 
 pub struct Email {
@@ -39,8 +40,8 @@ pub struct Email {
 }
 
 struct Sessao {
-    r: BufReader<TcpStream>,
-    w: TcpStream,
+    /// Leitura e escrita no mesmo fio: o IMAP e pedido-resposta, nao ha thread lendo.
+    r: BufReader<Fio>,
     n: u32,
 }
 
@@ -61,14 +62,12 @@ fn citar(s: &str) -> Result<String, String> {
 }
 
 impl Sessao {
-    fn abrir(endereco: &str) -> Result<Self, String> {
-        let s = conectar_sem_tls(endereco)?;
+    fn abrir(endereco: &str, tls: Option<&Tls>) -> Result<Self, String> {
+        let s = conectar(endereco, tls)?;
         s.set_read_timeout(Some(std::time::Duration::from_secs(30)))
             .ok();
-        let w = s.try_clone().map_err(|e| e.to_string())?;
         let mut x = Self {
             r: BufReader::new(s),
-            w,
             n: 0,
         };
         let mut l = String::new();
@@ -82,8 +81,9 @@ impl Sessao {
     fn comando(&mut self, cmd: &str) -> Result<Resposta, String> {
         self.n += 1;
         let tag = format!("a{}", self.n);
-        self.w
-            .write_all(format!("{tag} {cmd}\r\n").as_bytes())
+        let w = self.r.get_mut();
+        w.write_all(format!("{tag} {cmd}\r\n").as_bytes())
+            .and_then(|_| w.flush())
             .map_err(|e| format!("imap: {e}"))?;
         let mut r = Resposta {
             linhas: vec![],
@@ -277,7 +277,7 @@ impl Provedor for Email {
     }
 
     fn receber(&self, cursor: Option<&str>, espera_seg: u64) -> Result<Vec<Entrada>, String> {
-        let mut s = Sessao::abrir(&self.cfg.endereco)?;
+        let mut s = Sessao::abrir(&self.cfg.endereco, self.cfg.tls.as_ref())?;
         self.cfg.senha.com("receive", |senha| {
             s.comando(&format!(
                 "LOGIN {} {}",

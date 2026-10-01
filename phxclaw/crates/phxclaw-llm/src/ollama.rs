@@ -68,6 +68,38 @@ impl OllamaLlm {
             .ok_or_else(|| LlmError::Parse("resposta sem message.content".into()))
     }
 
+    /// Vetores de embedding (`POST /api/embed`, ex.: all-minilm), um por texto, na ordem.
+    /// Mesmo transporte e mesma base do chat: a origem ja foi conferida no `new`.
+    pub async fn incorporar(&self, textos: &[String]) -> Result<Vec<Vec<f32>>, LlmError> {
+        let url = format!("{}/api/embed", self.url.trim_end_matches("/api/chat"));
+        let corpo = json!({"model": self.modelo, "input": textos});
+        let r = self.transporte.post_json(&url, &[], None, &corpo).await?;
+        let v: Vec<Vec<f32>> = r
+            .get("embeddings")
+            .and_then(Value::as_array)
+            .ok_or_else(|| LlmError::Parse("resposta sem 'embeddings'".into()))?
+            .iter()
+            .map(|e| {
+                e.as_array()
+                    .map(|xs| {
+                        xs.iter()
+                            .filter_map(Value::as_f64)
+                            .map(|x| x as f32)
+                            .collect()
+                    })
+                    .unwrap_or_default()
+            })
+            .collect();
+        if v.len() != textos.len() {
+            return Err(LlmError::Parse(format!(
+                "{} embeddings para {} textos",
+                v.len(),
+                textos.len()
+            )));
+        }
+        Ok(v)
+    }
+
     fn corpo(&self, mensagens: &[Message], tools: &[ToolSpec], o: &LlmOptions) -> Value {
         let mut corpo = json!({
             "model": self.modelo,
@@ -92,7 +124,14 @@ impl OllamaLlm {
 fn mensagem(m: &Message) -> Value {
     match m.role {
         Role::System => json!({"role": "system", "content": m.content}),
-        Role::User => json!({"role": "user", "content": m.content}),
+        Role::User => {
+            let mut v = json!({"role": "user", "content": m.content});
+            // O Ollama nao leva o tipo: o servidor reconhece png/jpeg pelos bytes.
+            if !m.images.is_empty() {
+                v["images"] = m.images.iter().map(|i| json!(i.base64)).collect();
+            }
+            v
+        }
         Role::Assistant => {
             let mut v = json!({"role": "assistant", "content": m.content});
             if !m.tool_calls.is_empty() {
@@ -148,6 +187,7 @@ fn resposta(v: &Value, modelo: &str) -> Result<LlmReply, LlmError> {
         usage: Usage {
             input_tokens: v["prompt_eval_count"].as_u64().unwrap_or(0),
             output_tokens: v["eval_count"].as_u64().unwrap_or(0),
+            duracao_geracao_ns: v["eval_duration"].as_u64().filter(|d| *d > 0),
         },
         model: v["model"].as_str().unwrap_or(modelo).to_owned(),
     })

@@ -129,6 +129,8 @@ fn traduzir_mcp(v: &Value, raiz: &Path) -> Result<ConfigMcp, String> {
             cwd: Some(raiz.to_path_buf()),
             url: txt("url"),
             prazo_inicio_ms: None,
+            auth: None,
+            preset: None,
         });
     }
     Ok(ConfigMcp { servidores })

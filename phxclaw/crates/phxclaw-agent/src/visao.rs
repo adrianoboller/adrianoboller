@@ -889,15 +889,30 @@ pub struct TranscribeTool {
     pub bin: Option<PathBuf>,
     pub model: Option<PathBuf>,
     pub model_sha256: Option<String>,
+    /// Provedor ElevenLabs (scribe) no lugar do whisper, no MESMO `transcrever` -- que e o
+    /// que a conversa `phxclaw voz` chama. `Err`: escolhido e indisponivel (sem chave).
+    pub elevenlabs: Option<Result<crate::elevenlabs::OuvidoElevenLabs, String>>,
 }
 
 impl TranscribeTool {
-    pub fn from_env() -> Self {
+    /// `PHXCLAW_STT_PROVEDOR` = `whisper` (padrao, `PHXCLAW_WHISPER_*`) ou `elevenlabs`
+    /// (chave de `phxclaw elevenlabs chave` no broker de `raiz_do_agente`).
+    pub fn do_ambiente(raiz_do_agente: &Path) -> Self {
         let var = |n: &str| std::env::var(n).ok().filter(|v| !v.trim().is_empty());
+        let elevenlabs = match var("PHXCLAW_STT_PROVEDOR").as_deref() {
+            None | Some("whisper") => None,
+            Some("elevenlabs") => Some(crate::elevenlabs::OuvidoElevenLabs::do_ambiente(
+                raiz_do_agente,
+            )),
+            Some(o) => Some(Err(format!(
+                "PHXCLAW_STT_PROVEDOR desconhecido: {o} (whisper ou elevenlabs)"
+            ))),
+        };
         Self {
             bin: var("PHXCLAW_WHISPER_BIN").map(PathBuf::from),
             model: var("PHXCLAW_WHISPER_MODEL").map(PathBuf::from),
             model_sha256: var("PHXCLAW_WHISPER_MODEL_SHA256"),
+            elevenlabs,
         }
     }
 }
@@ -906,9 +921,15 @@ impl Tool for TranscribeTool {
     fn spec(&self) -> ToolSpec {
         ToolSpec {
             name: "transcribe".into(),
-            description: "Speech to text (whisper.cpp) of a .wav audio file in the task folder \
-(16 kHz mono works best). Optional 'language' (e.g. en, pt, auto)."
-                .into(),
+            description: format!(
+                "Speech to text ({}) of a .wav audio file in the task folder (16 kHz mono \
+works best). Optional 'language' (e.g. en, pt, auto).",
+                if self.elevenlabs.is_some() {
+                    "ElevenLabs"
+                } else {
+                    "whisper.cpp"
+                }
+            ),
             parameters: json!({"type":"object","properties":{
                 "path":{"type":"string"},
                 "language":{"type":"string"}
@@ -975,6 +996,15 @@ impl TranscribeTool {
         prazo: Duration,
     ) -> Result<String, ToolError> {
         self.configurado()?;
+        if let Some(Ok(el)) = &self.elevenlabs {
+            let el = el.clone();
+            return tokio::task::spawn_blocking(move || {
+                el.transcrever(&audio, idioma.as_deref(), prazo)
+            })
+            .await
+            .map_err(falha)?
+            .map_err(|e| ToolError::Failed(format!("elevenlabs: {e}")));
+        }
         let tmp = PastaTemp::nova("phx-stt")?;
         let provedor = phxclaw_media_intelligence::WhisperCppProvider {
             program: self.bin.clone().unwrap_or_default(),
@@ -1002,8 +1032,17 @@ impl TranscribeTool {
         }
     }
 
-    /// Recusa nomeando cada variavel que falta.
+    /// Recusa nomeando cada variavel que falta (ou o motivo de o provedor nao estar pronto).
     fn configurado(&self) -> Result<(), ToolError> {
+        match &self.elevenlabs {
+            Some(Ok(_)) => return Ok(()),
+            Some(Err(e)) => {
+                return Err(ToolError::Denied(format!(
+                    "fala para texto indisponivel: {e}"
+                )));
+            }
+            None => {}
+        }
         let faltam: Vec<&str> = [
             ("PHXCLAW_WHISPER_BIN", self.bin.is_none()),
             ("PHXCLAW_WHISPER_MODEL", self.model.is_none()),

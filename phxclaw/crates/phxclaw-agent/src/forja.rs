@@ -16,6 +16,7 @@
 //! - Capacidades `github.read`/`github.write`/`gitlab.read`/`gitlab.write` fora do padrao:
 //!   e rede para fora em nome do operador, ele concede.
 
+use crate::canais::http::Credencial;
 use crate::git::{analisar_diff, limitar_diff};
 use phxclaw_agent_core::{BoxFut, Tool, ToolContext, ToolError, ToolOutput, ToolSpec};
 use phxclaw_http_client::{HttpRequestSpec, HttpResult, http_request};
@@ -75,48 +76,35 @@ pub fn pasta_da_forja(raiz_do_agente: &Path) -> std::path::PathBuf {
 }
 
 /// Guarda o token da forja e devolve o id do segredo: mesmo valor reaproveita o envelope,
-/// valor novo rotaciona. A regra e a de `canais::guardar_segredo`, que ainda grava so no
-/// espaco e nos escopos de canal; unificar as duas pede mexer no `canais` (outra frente).
+/// valor novo rotaciona. A regra e a de `canais::guardar_segredo`, a mesma dos canais e do
+/// MCP; aqui so se diz o nome, o espaco e o escopo da forja.
 pub fn guardar_token(
     broker: &SecretBroker,
     forja: Forja,
     token: SecretValue,
 ) -> Result<Uuid, String> {
-    use sha2::{Digest, Sha256};
-    let hash: String = Sha256::digest(token.expose().as_bytes())
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect();
-    match token_guardado(broker, forja)? {
-        Some(d) if d.sha256 == hash => Ok(d.uuid),
-        Some(d) => broker
-            .rotate(d.uuid, token)
-            .map(|d| d.uuid)
-            .map_err(|e| e.to_string()),
-        None => broker
-            .store(forja.segredo(), NAMESPACE, vec![forja.escopo()], token)
-            .map(|d| d.uuid)
-            .map_err(|e| e.to_string()),
-    }
+    crate::canais::guardar_segredo(
+        broker,
+        &forja.segredo(),
+        NAMESPACE,
+        &[&forja.escopo()],
+        token,
+    )
 }
 
 fn token_guardado(
     broker: &SecretBroker,
     forja: Forja,
 ) -> Result<Option<phxclaw_secret_broker::SecretDescriptor>, String> {
-    Ok(broker
-        .descriptors()
-        .map_err(|e| e.to_string())?
-        .into_iter()
-        .find(|d| d.name == forja.segredo() && d.namespace == NAMESPACE && d.revoked_at.is_none()))
+    crate::canais::segredo_guardado(broker, &forja.segredo(), NAMESPACE)
 }
 
 /// Cliente REST de uma forja. Guarda o broker e o id do segredo, nunca o token.
 pub struct ForjaCliente {
     pub forja: Forja,
     pub base: String,
-    broker: Arc<SecretBroker>,
-    segredo: Uuid,
+    /// A mesma `Credencial` dos canais: concessao de 30 s por chamada e limpeza do erro.
+    token: Credencial,
 }
 
 fn falha(m: impl Into<String>) -> ToolError {
@@ -156,8 +144,12 @@ impl ForjaCliente {
         Self {
             forja,
             base: base.trim_end_matches('/').to_string(),
-            broker,
-            segredo,
+            token: Credencial::de_escopo(
+                broker,
+                segredo,
+                "phxclaw.agent.forja",
+                format!("forge:{}", forja.nome()),
+            ),
         }
     }
 
@@ -191,27 +183,13 @@ impl ForjaCliente {
         corpo: Option<Value>,
         aceitar: &str,
     ) -> Result<HttpResult, ToolError> {
-        let escopo = self.forja.escopo();
-        let concessao = self
-            .broker
-            .issue_lease(self.segredo, "phxclaw.agent.forja", &escopo, 30)
-            .map_err(|e| {
-                falha(format!(
-                    "{}: sem concessao do token: {e}",
-                    self.forja.nome()
-                ))
-            })?;
-        let token = self
-            .broker
-            .resolve(concessao.uuid, &escopo)
-            .map_err(|e| falha(format!("{}: token: {e}", self.forja.nome())));
-        let token = match token {
-            Ok(t) => t,
-            Err(e) => {
-                let _ = self.broker.revoke_lease(concessao.uuid);
-                return Err(e);
-            }
-        };
+        // A concessao se revoga no `drop`, inclusive num `?` no meio do caminho.
+        let token = self.token.abrir("api").map_err(|e| {
+            falha(format!(
+                "{}: sem concessao do token: {e}",
+                self.forja.nome()
+            ))
+        })?;
         let mut spec = HttpRequestSpec::get(format!("{}{rota}", self.base));
         spec.method = metodo.into();
         spec.query = query;
@@ -223,22 +201,19 @@ impl ForjaCliente {
             Forja::Github => {
                 spec.headers
                     .insert("X-GitHub-Api-Version".into(), "2022-11-28".into());
-                spec.auth.bearer = Some(token.expose().to_string());
+                spec.auth.bearer = Some(token.expor().to_string());
             }
             Forja::Gitlab => {
                 spec.headers
-                    .insert("PRIVATE-TOKEN".into(), token.expose().to_string());
+                    .insert("PRIVATE-TOKEN".into(), token.expor().to_string());
             }
         }
         let r = http_request(&spec).await;
         drop(spec);
-        let _ = self.broker.revoke_lease(concessao.uuid);
         // Todo texto que sai daqui para o modelo, a evidencia ou o JSON passa pela MESMA
         // limpeza do canal (`canais::http::limpar`): servidor que ecoa o cabecalho num erro
         // nao pode devolver o token ao modelo.
-        let limpo = |m: String| -> ToolError {
-            falha(crate::canais::http::limpar::<()>(token.expose(), Err(m)).unwrap_err())
-        };
+        let limpo = |m: String| -> ToolError { falha(token.limpar::<()>(Err(m)).unwrap_err()) };
         let r = r.map_err(|e| limpo(format!("{}: {e}", self.forja.nome())))?;
         // 3xx e erro: o redirecionamento nao e seguido (o token iria junto), e aceita-lo
         // como sucesso devolvia corpo vazio -- o `pr_diff` de repositorio renomeado (o GitHub
@@ -264,7 +239,7 @@ impl ForjaCliente {
                 .unwrap_or(corpo);
             // Limpa ANTES de cortar: o corte poderia partir o token e deixar meio segredo
             // que a limpeza ja nao reconhece.
-            let msg = crate::canais::http::limpar::<()>(token.expose(), Err(msg)).unwrap_err();
+            let msg = token.limpar::<()>(Err(msg)).unwrap_err();
             return Err(falha(format!(
                 "{} respondeu {}: {}",
                 self.forja.nome(),
@@ -275,7 +250,7 @@ impl ForjaCliente {
         // Resposta de sucesso que traz o token de volta nao vai inteira ao modelo: limpar
         // um JSON por dentro mudaria o dado; recusar diz o que houve.
         let corpo = r.bytes().unwrap_or_default();
-        let t = token.expose().as_bytes();
+        let t = token.expor().as_bytes();
         if !t.is_empty() && corpo.windows(t.len()).any(|j| j == t) {
             return Err(limpo(format!(
                 "{} devolveu a credencial no corpo da resposta; resposta descartada",

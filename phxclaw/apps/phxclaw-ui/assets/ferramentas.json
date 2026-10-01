@@ -106,6 +106,13 @@
       "nome": "image_render"
     },
     {
+      "capacidade": "web.research",
+      "concedida": true,
+      "descricao": "Research a question on the web: plans queries, searches, reads the pages and answers with citations. Each citation is checked as a LITERAL passage of a page actually read; invented citations are rejected and reported.",
+      "grupo": "web",
+      "nome": "deep_research"
+    },
+    {
       "capacidade": "fs.read",
       "concedida": true,
       "descricao": "Extract the text of an image (.png .jpg .jpeg .tif .tiff) or of a .pdf in the task folder by OCR (tesseract; PDF pages rendered at 200 dpi). Default language por+eng.",
@@ -295,6 +302,13 @@
       "nome": "calculator"
     },
     {
+      "capacidade": "weather.read",
+      "concedida": false,
+      "descricao": "Previsao do tempo para uma coordenada (MET Norway, CC BY 4.0): temperatura, vento, umidade, chuva e simbolo hora a hora. Cite a atribuicao que vem na resposta.",
+      "grupo": "weather",
+      "nome": "weather"
+    },
+    {
       "capacidade": "session.read",
       "concedida": true,
       "descricao": "Full-text search over previous tasks of this agent (objective, plan, answer and step summaries). Returns the best matches with id, date, status and a snippet. Use it to recall what was done or found before.",
@@ -409,7 +423,7 @@
     {
       "capacidade": "team.read",
       "concedida": true,
-      "descricao": "List the 110 PhxClaw team roles (id | name | macro-area | type | criticality | main capability | when to call). Filter with 'macroarea' and/or 'text'; pass 'id' (number or name) to get one role in full. Use before team_delegate to pick the right role.",
+      "descricao": "List the 111 PhxClaw team roles (id | name | macro-area | type | criticality | main capability | when to call). Filter with 'macroarea' and/or 'text'; pass 'id' (number or name) to get one role in full. Use before team_delegate to pick the right role.",
       "grupo": "team",
       "nome": "team_list"
     },
@@ -437,6 +451,6 @@
   ],
   "gerado_por": "phxclaw ferramentas",
   "observacao": "montadas nesta maquina: shell exige bwrap, navegador exige Chromium, e-mail e banco exigem configuracao",
-  "total": 62,
+  "total": 64,
   "versao": "0.70.0"
 }

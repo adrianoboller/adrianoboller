@@ -45,6 +45,9 @@ pub struct AgentConfig {
     pub regras: Option<Arc<crate::regras::RegrasDeComando>>,
     /// Estilo de saida somado ao prompt de sistema.
     pub estilo: Option<crate::estilos::EstiloDeSaida>,
+    /// Os `AGENTS.md` do projeto confiado, ja varridos e cercados como dado do projeto
+    /// (`instrucoes::do_projeto`). Lidos uma vez na montagem, nao a cada tarefa.
+    pub instrucoes_projeto: Option<String>,
     /// Com prazo, o modelo ganha o `ask_user` e a regra `perguntar` tem a quem perguntar.
     /// Sem prazo (subagente, `mcp-serve`), ninguem acompanha a tarefa: `perguntar` nega.
     pub prazo_de_resposta: Option<Duration>,
@@ -65,6 +68,7 @@ impl Default for AgentConfig {
             hooks: None,
             regras: None,
             estilo: None,
+            instrucoes_projeto: None,
             prazo_de_resposta: None,
         }
     }
@@ -123,6 +127,8 @@ pub const CAPACIDADES_DE_LEITURA: &[&str] = &[
     "web.search",
     "memory.read",
     "skill.read",
+    // Indice de documentos da pasta do agente: so le.
+    "doc.read",
     "team.read",
     "session.read",
     "db.read",
@@ -139,6 +145,10 @@ pub const CAPACIDADES_DE_LEITURA: &[&str] = &[
     "device.read",
     // Busca no X pela xAI: so le (conta do operador, fora do padrao).
     "x.search",
+    // Previsao do tempo do MET Norway: servico publico sem conta, so le (fora do padrao).
+    "weather.read",
+    // Lista de vozes da ElevenLabs: so le a conta do operador (fora do padrao).
+    "media.voices",
 ];
 
 /// O resto: toda capacidade que muda algo (disco, rede, processo, conta de terceiro). Cada
@@ -155,6 +165,8 @@ pub const CAPACIDADES_QUE_ESCREVEM: &[&str] = &[
     "memory.write",
     "team.delegate",
     "web.browse",
+    // Pesquisa profunda abre paginas como o `web.browse`: GET com dado na URL tambem sai.
+    "web.research",
     "git.write",
     "system.admin",
     "net.lan",
@@ -387,6 +399,10 @@ proceed without a decision or information that only the user has; do not ask wha
             sistema.push_str("\n\n");
             sistema.push_str(&crate::estilos::bloco_para_o_prompt(e));
         }
+        if let Some(i) = &self.config.instrucoes_projeto {
+            sistema.push_str("\n\n");
+            sistema.push_str(i);
+        }
         for c in &inicio.contexto {
             sistema.push_str("\n\nContext from the project's TaskStart hook:\n");
             sistema.push_str(c);
@@ -412,9 +428,22 @@ proceed without a decision or information that only the user has; do not ask wha
             sistema.push_str("\n\n");
             sistema.push_str(&bloco);
         }
+        // Imagem anexada que nao se le derruba a tarefa: seguir so com o texto faria o
+        // modelo responder sobre uma imagem que nunca viu.
+        let imagens = match crate::imagens::carregar(&ctx.workdir, &task.images) {
+            Ok(v) => v,
+            Err(e) => {
+                return self.finish(
+                    task,
+                    TaskStatus::Failed,
+                    Some(format!("imagem anexada: {e}")),
+                    obs,
+                );
+            }
+        };
         let mut msgs = vec![
             Message::system(sistema),
-            Message::user(task.objective.clone()),
+            Message::user_com_imagens(task.objective.clone(), imagens),
         ];
         let mut chamadas: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
 

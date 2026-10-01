@@ -40,6 +40,7 @@ pub mod signal;
 pub mod slack;
 pub mod sms;
 pub mod teams;
+pub mod tls;
 pub mod viber;
 pub mod webchat;
 pub mod webhook;
@@ -195,7 +196,32 @@ pub fn pausa_se_vazio(lote: &[Entrada], espera_seg: u64) {
 }
 
 /// Broker de segredos da pasta do agente; a chave mestra nasce 0600 na primeira vez.
+///
+/// UM broker por pasta no processo: dois `SecretBroker` vivos sobre o mesmo
+/// `evidence.jsonl` encadeiam cada um a partir do seu ultimo registro, e a corrente se
+/// parte -- medido com o `speak`, o `transcribe` e o `voice_list` pedindo a mesma chave da
+/// ElevenLabs: a abertura seguinte recusou o livro («invalid record at line 4»). A forja, o
+/// MCP e os canais abrem a pasta deles a cada montagem de agente, e o servidor monta um
+/// agente por tarefa: pelo mesmo mecanismo (nao medido ali), duas tarefas ao mesmo tempo
+/// seriam dois brokers.
 pub fn broker_em(pasta: &Path) -> Result<Arc<SecretBroker>, String> {
+    static ABERTOS: std::sync::OnceLock<
+        std::sync::Mutex<std::collections::HashMap<PathBuf, Arc<SecretBroker>>>,
+    > = std::sync::OnceLock::new();
+    let pasta = std::path::absolute(pasta).map_err(|e| e.to_string())?;
+    let mut abertos = ABERTOS
+        .get_or_init(Default::default)
+        .lock()
+        .map_err(|e| e.to_string())?;
+    if let Some(b) = abertos.get(&pasta) {
+        return Ok(b.clone());
+    }
+    let b = abrir_broker(&pasta)?;
+    abertos.insert(pasta, b.clone());
+    Ok(b)
+}
+
+fn abrir_broker(pasta: &Path) -> Result<Arc<SecretBroker>, String> {
     let dir = pasta.join("segredos");
     let chave = Arc::new(FileMasterKeyProvider::new(dir.join("master.key")));
     chave.ensure().map_err(|e| e.to_string())?;

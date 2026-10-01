@@ -45,7 +45,19 @@ impl OpenAiLlm {
         for m in mensagens {
             match m.role {
                 Role::System => entrada.push(json!({"role": "system", "content": m.content})),
-                Role::User => entrada.push(json!({"role": "user", "content": m.content})),
+                Role::User if m.images.is_empty() => {
+                    entrada.push(json!({"role": "user", "content": m.content}))
+                }
+                // Com imagem o conteudo vira lista de partes (`input_text` + `input_image`
+                // com URL `data:`): a Responses API nao aceita imagem em texto simples.
+                Role::User => {
+                    let mut partes = vec![json!({"type": "input_text", "text": m.content})];
+                    partes.extend(m.images.iter().map(|i| {
+                        json!({"type": "input_image",
+                               "image_url": format!("data:{};base64,{}", i.media_type, i.base64)})
+                    }));
+                    entrada.push(json!({"role": "user", "content": partes}));
+                }
                 Role::Assistant => {
                     if !m.content.is_empty() {
                         entrada.push(json!({"role": "assistant", "content": m.content}));
@@ -148,6 +160,7 @@ fn resposta(v: &Value, modelo: &str) -> Result<LlmReply, LlmError> {
         usage: Usage {
             input_tokens: v["usage"]["input_tokens"].as_u64().unwrap_or(0),
             output_tokens: v["usage"]["output_tokens"].as_u64().unwrap_or(0),
+            duracao_geracao_ns: None,
         },
         model: v["model"].as_str().unwrap_or(modelo).to_owned(),
     })

@@ -332,32 +332,32 @@ function avisoAusente(resumo, conteudo, arquivo, comando) {
   conteudo.replaceChildren();
 }
 
-function grupoDeFichas(titulo, contagem, fichas) {
-  const g = el('article', 'grupo');
-  const h = el('header');
-  h.append(el('h2', null, titulo), el('span', null, contagem));
-  const lista = el('div', 'fichas');
-  lista.append(...fichas);
-  g.append(h, lista);
-  return g;
-}
-
-function marcas(lista) {
-  const m = el('div', 'marcas');
-  for (const [texto, classe] of lista) if (texto) m.append(el('span', classe || '', texto));
-  return m;
-}
-
 const seloAgentes = document.getElementById('seloAgentes');
 const seloFerramentas = document.getElementById('seloFerramentas');
 const seloIde = document.getElementById('seloIde');
 lerJson('equipe.json').then(d => { seloAgentes.textContent = String(d.total); }).catch(() => {});
 lerJson('ferramentas.json').then(d => { seloFerramentas.textContent = String(d.total); }).catch(() => {});
 
+// As listagens sao grades (grades.js, phx-grid): criadas UMA vez por tela. Reabrir a tela
+// nao refaz a grade, que perderia o agrupamento, o filtro e a ordem de quem estava olhando;
+// a troca de idioma a grade refaz sozinha, guardando o layout.
+const gradesDaTela = {};
+document.querySelectorAll('[data-grade-exporta]').forEach(b => b.addEventListener('click', () => {
+  const [tela, formato] = b.dataset.gradeExporta.split(':');
+  const gr = gradesDaTela[tela];
+  if (gr) grades.exportar(gr.g, `phxclaw-${tela}`, formato);
+}));
+function buscaDaGrade(campo, tela) {
+  let espera = null;
+  campo.oninput = () => {
+    clearTimeout(espera);
+    espera = setTimeout(() => gradesDaTela[tela]?.g.buscar(campo.value.trim()), 120);
+  };
+}
+
 carregadores.agentes = async () => {
   const resumo = document.getElementById('agentesResumo');
   const conteudo = document.getElementById('agentesConteudo');
-  const filtro = document.getElementById('agentesFiltro');
   let d;
   try { d = await lerJson('equipe.json'); } catch {
     avisoAusente(resumo, conteudo, 'equipe.json', 'cargo run -p phxclaw-agent --example equipe_json');
@@ -366,29 +366,33 @@ carregadores.agentes = async () => {
   resumo.classList.remove('aviso');
   resumo.textContent = txt('agentes.resumo', '{total} papéis em {macroareas} macroáreas • fonte: {fonte}',
     { total: d.total, macroareas: d.macroareas.length, fonte: d.fonte });
-  const desenhar = () => {
-    const q = filtro.value.trim().toLowerCase();
-    const casa = p => !q || [p.nome, p.missao, p.capability_principal, p.nucleo]
-      .some(v => String(v ?? '').toLowerCase().includes(q));
-    const grupos = [];
-    for (const m of d.macroareas) {
-      const papeis = m.papeis.filter(casa);
-      if (!papeis.length) continue;
-      grupos.push(grupoDeFichas(m.nome, q ? txt('agentes.filtrados', '{n} de {total}', { n: papeis.length, total: m.total }) : `${m.total}`, papeis.map(p => {
-        const f = el('div', 'ficha');
-        f.append(el('b', null, p.nome), el('p', null, p.missao), el('code', null, p.capability_principal),
-          marcas([[p.humano ? txt('agentes.humano', 'HUMANO') : txt('agentes.agente', 'AGENTE'), p.humano ? 'nao' : 'sim'], [p.criticidade], [p.execucao],
-            [(p.modelos || []).join(' • ')]]));
-        return f;
-      })));
-    }
-    conteudo.replaceChildren(...grupos);
-  };
-  filtro.oninput = desenhar;
-  desenhar();
+  if (gradesDaTela.agentes) return;
+  // A macroarea da linha e a do grupo do JSON (a que da o total de cada uma); os modelos,
+  // uma lista, viram um texto so para a celula, o filtro e a exportacao.
+  const linhas = d.macroareas.flatMap(m => m.papeis.map(p => ({ ...p, macroarea: m.nome, modelos: (p.modelos || []).join(' • ') })));
+  gradesDaTela.agentes = grades.criar(conteudo, {
+    nome: 'agentes',
+    cfg: () => ({
+      chave: 'id', dados: linhas, filterRow: true, pagina: { tamanho: 1000, opcoes: [1000] },
+      colunas: [
+        { campo: 'nome', titulo: txt('agentes.col.nome', 'Papel'), tag: 'nome' },
+        { campo: 'macroarea', titulo: txt('agentes.col.macroarea', 'Macroárea'), tag: 'macroarea' },
+        { campo: 'nucleo', titulo: txt('agentes.col.nucleo', 'Núcleo') },
+        { campo: 'humano', titulo: txt('agentes.col.tipo', 'Tipo'), tag: 'tipo',
+          valores: { true: txt('agentes.humano', 'HUMANO'), false: txt('agentes.agente', 'AGENTE') } },
+        { campo: 'capability_principal', titulo: txt('agentes.col.capacidade', 'Capacidade principal'), tag: 'cap' },
+        { campo: 'criticidade', titulo: txt('agentes.col.criticidade', 'Criticidade') },
+        { campo: 'execucao', titulo: txt('agentes.col.execucao', 'Execução') },
+        { campo: 'missao', titulo: txt('agentes.col.missao', 'Missão'), quebraLinha: true, tag: 'missao' },
+        { campo: 'modelos', titulo: txt('agentes.col.modelos', 'Modelos') },
+        { campo: 'quando_acionar', titulo: txt('agentes.col.quando', 'Quando acionar'), quebraLinha: true },
+      ],
+    }),
+    inicial: g => { g.agrupar(['macroarea']); g.mostrarColuna('quando_acionar', false); },
+  });
+  buscaDaGrade(document.getElementById('agentesFiltro'), 'agentes');
 };
-// O que o JS escreveu nao tem data-txt: trocar o idioma redesenha a tela, que relê o JSON do cache.
-idiomas.aoTrocar(() => { if (document.body.dataset.tela === 'agentes') carregadores.agentes(); });
+
 
 // Uma ferramenta exige UMA capability (`capacidade`, ex. fs.read); a familia (`grupo`) e o
 // prefixo dela. A tela agrupa pela capability exata -- e o que o portao confere --, na ordem
@@ -418,28 +422,28 @@ carregadores.ferramentas = async () => {
   resumo.classList.remove('aviso');
   resumo.textContent = txt('ferramentas.resumo', '{total} ferramentas em {capabilities} capacidades, montadas por `{gerado_por}` v{versao} • {concedidas} concedidas por padrão • {observacao}',
     { total: d.total, capabilities: caps.length, gerado_por: d.gerado_por, versao: d.versao, concedidas, observacao: d.observacao });
-  conteudo.replaceChildren(...caps.map(c => {
-    const g = el('article', 'grupo');
-    g.dataset.capacidade = c.capacidade;
-    const h = el('header');
-    const t = el('h2');
-    t.append(el('span', 'rotulo-cap', txt('ferramentas.capability', 'capacidade')), el('code', 'cap', c.capacidade));
-    const conc = c.lista.filter(f => f.concedida).length;
-    h.append(t, el('span', null, txt('ferramentas.grupo', '{n} • família {grupo} • {concedidas} de {n} concedidas', { n: c.lista.length, grupo: c.grupo, concedidas: conc })));
-    const lista = el('div', 'fichas');
-    lista.append(...c.lista.map(f => {
-      const fi = el('div', 'ficha');
-      fi.dataset.capacidade = f.capacidade;
-      const desc = f.descricao.length > 240 ? `${f.descricao.slice(0, 240)}…` : f.descricao;
-      const exige = el('div', 'exige');
-      exige.append(el('span', null, txt('ferramentas.exige', 'exige')), el('code', null, f.capacidade));
-      fi.append(el('b', null, f.nome), el('p', null, desc), exige,
-        marcas([[f.concedida ? txt('ferramentas.concedida', 'CONCEDIDA POR PADRÃO') : txt('ferramentas.exige_concessao', 'EXIGE CONCESSÃO'), f.concedida ? 'sim' : 'nao']]));
-      return fi;
-    }));
-    g.append(h, lista);
-    return g;
-  }));
+  if (gradesDaTela.ferramentas) return;
+  // Agrupada pela capability exata -- a que o portao confere --, e a coluna «exige» repete
+  // a de cada ferramenta: nada de linha no grupo errado por um find() que parou na primeira.
+  gradesDaTela.ferramentas = grades.criar(conteudo, {
+    nome: 'ferramentas',
+    cfg: () => ({
+      // `exige` repete a capacidade numa coluna propria: o phx-grid esconde a coluna pela qual
+      // agrupa (como o Janus), e a exigencia de cada ferramenta tem de continuar a vista.
+      chave: 'nome', dados: d.ferramentas.map(f => ({ ...f, exige: f.capacidade })), pagina: { tamanho: 1000, opcoes: [1000] },
+      colunas: [
+        { campo: 'nome', titulo: txt('ferramentas.col.nome', 'Ferramenta'), tag: 'nome' },
+        { campo: 'capacidade', titulo: txt('ferramentas.col.capacidade', 'Capacidade'), tag: 'capacidade' },
+        { campo: 'exige', titulo: txt('ferramentas.exige', 'exige'), tag: 'exige' },
+        { campo: 'grupo', titulo: txt('ferramentas.col.familia', 'Família'), tag: 'familia' },
+        { campo: 'concedida', titulo: txt('ferramentas.col.concessao', 'Concessão'), tag: 'concessao',
+          valores: { true: txt('ferramentas.concedida', 'CONCEDIDA POR PADRÃO'), false: txt('ferramentas.exige_concessao', 'EXIGE CONCESSÃO') } },
+        { campo: 'descricao', titulo: txt('ferramentas.col.descricao', 'Descrição'), quebraLinha: true, tag: 'descricao' },
+      ],
+    }),
+    inicial: g => { g.agrupar(['capacidade']); g.mostrarColuna('capacidade', false); },
+  });
+  buscaDaGrade(document.getElementById('ferramentasFiltro'), 'ferramentas');
 };
 
 const NOMES_PRODUTO = { openclaw: 'OpenClaw', hermes: 'Hermes', claude_code: 'Claude Code', codex: 'Codex', openjarvis: 'OpenJarvis' };
@@ -484,9 +488,20 @@ function legendaTresEstados(p) {
   return l;
 }
 
+// Uma linha por capacidade de cada produto (absorcao.json, campo `capacidades`). As tres
+// colunas 1/vazio existem para o rodape de grupo SOMAR: agrupado por produto, o rodape repete as
+// contagens do painel; agrupado por estado, diz quantas de cada produto.
+const ESTADO_ABS = {
+  agente: () => txt('absorcao.no_agente', 'no agente'),
+  parcial: () => txt('absorcao.parcial', 'pela metade'),
+  nao: () => txt('absorcao.nao', 'não'),
+};
+const rotulosEstado = () => Object.fromEntries(Object.entries(ESTADO_ABS).map(([k, f]) => [k, f()]));
+
 carregadores.absorcao = async () => {
   const resumo = document.getElementById('absorcaoResumo');
   const conteudo = document.getElementById('absorcaoConteudo');
+  const caixaCubo = document.getElementById('absorcaoCubo');
   let d;
   try { d = await lerJson('absorcao.json'); } catch {
     avisoAusente(resumo, conteudo, 'absorcao.json', 'tools/gerar_assets_ui.sh');
@@ -496,27 +511,59 @@ carregadores.absorcao = async () => {
   resumo.classList.remove('aviso');
   resumo.textContent = txt('absorcao.resumo', '{n} produtos medidos capacidade por capacidade ({gerador}).', { n: chaves.length, gerador: 'docs/absorcao/gerar_absorcao.py' });
   document.getElementById('absorcaoLegenda').replaceChildren(legendaTresEstados(null));
-  conteudo.replaceChildren(...chaves.map(k => {
-    const p = d[k];
-    const c = el('article', 'produto');
-    c.dataset.produto = k;
-    c.append(el('h2', null, NOMES_PRODUTO[k] || k), barraTresEstados(p), legendaTresEstados(p),
-      el('small', null, txt('absorcao.rodape', '{pct_agente}% no agente • {pct_lib}% contando bibliotecas • {total} capacidades • lido em {lido_em}',
-        { pct_agente: p.pct_agente, pct_lib: p.pct_com_bibliotecas, total: p.total, lido_em: p.lido_em })));
-    for (const [rotulo, lista] of [
-      [n => txt('absorcao.falta', 'Falta ({n})', { n }), p.falta],
-      [n => txt('absorcao.pela_metade', 'Pela metade ({n})', { n }), p.pela_metade],
-    ]) {
-      if (!lista?.length) continue;
-      const det = el('details');
-      det.append(el('summary', null, rotulo(lista.length)));
-      const ul = el('ul');
-      ul.append(...lista.map(x => el('li', null, x)));
-      det.append(ul);
-      c.append(det);
+  if (gradesDaTela.absorcao) return;
+  const linhas = chaves.flatMap(k => (d[k].capacidades || []).map(c => ({
+    linha: `${k}/${c.id}`, produto: k, capacidade: c.id, estado: c.estado,
+    // 1 onde a capacidade esta naquele estado e vazio (null) onde nao: a celula fica limpa
+    // e a soma do grupo conta so os 1.
+    agente: c.estado === 'agente' ? 1 : null, parcial: c.estado === 'parcial' ? 1 : null, nao: c.estado === 'nao' ? 1 : null,
+  })));
+  const contagem = (campo, titulo) => ({ campo, titulo, tag: campo, tipo: 'numero', agregador: 'sum', filtravel: false });
+  gradesDaTela.absorcao = grades.criar(conteudo, {
+    nome: 'absorcao',
+    cfg: () => ({
+      chave: 'linha', dados: linhas, rodapeGrupo: true, pagina: { tamanho: 1000, opcoes: [1000] },
+      condicoes: Object.keys(ESTADO_ABS).map(e => ({ campo: 'estado', op: '=', valor: e, estilo: `abs-${e}` })),
+      colunas: [
+        { campo: 'produto', titulo: txt('absorcao.col.produto', 'Produto'), tag: 'produto', valores: NOMES_PRODUTO, formatoGrupo: grades.valorDeGrupo(NOMES_PRODUTO) },
+        { campo: 'capacidade', titulo: txt('absorcao.col.capacidade', 'Capacidade'), tag: 'capacidade' },
+        { campo: 'estado', titulo: txt('absorcao.col.estado', 'Estado'), tag: 'estado', valores: rotulosEstado(), formatoGrupo: grades.valorDeGrupo(rotulosEstado()) },
+        contagem('agente', txt('absorcao.no_agente', 'no agente')),
+        contagem('parcial', txt('absorcao.parcial', 'pela metade')),
+        contagem('nao', txt('absorcao.nao', 'não')),
+      ],
+    }),
+    inicial: g => g.agrupar(['produto']),
+  });
+  buscaDaGrade(document.getElementById('absorcaoFiltro'), 'absorcao');
+  document.getElementById('absorcaoPorProduto').onclick = () => gradesDaTela.absorcao.g.agrupar(['produto']);
+  document.getElementById('absorcaoPorEstado').onclick = () => gradesDaTela.absorcao.g.agrupar(['estado']);
+  // Visao cubo: produto x estado, contagem de capacidades, com os totais do proprio cubo.
+  let cubo = null;
+  const botaoCubo = document.getElementById('absorcaoVerCubo');
+  const botaoTranspor = document.getElementById('absorcaoTranspor');
+  botaoCubo.onclick = () => {
+    const ver = caixaCubo.hidden;
+    caixaCubo.hidden = !ver;
+    conteudo.hidden = ver;
+    botaoTranspor.hidden = !ver;
+    botaoCubo.setAttribute('aria-pressed', String(ver));
+    if (ver && !cubo) {
+      cubo = grades.cubo(caixaCubo, {
+        cfg: () => ({
+          dados: linhas,
+          campos: [
+            { campo: 'produto', titulo: txt('absorcao.col.produto', 'Produto'), valores: NOMES_PRODUTO },
+            { campo: 'estado', titulo: txt('absorcao.col.estado', 'Estado'), valores: rotulosEstado() },
+            { campo: 'capacidade', titulo: txt('absorcao.col.capacidade', 'Capacidade'), dimensao: false },
+          ],
+          linhas: ['produto'], colunas: ['estado'], valores: [{ campo: 'capacidade', agregador: 'count' }],
+        }),
+      });
+      gradesDaTela.absorcaoCubo = cubo;
     }
-    return c;
-  }));
+  };
+  botaoTranspor.onclick = () => cubo?.c.transpor();
 };
 
 /* ===================== VISAO GERAL ===================== */
@@ -589,6 +636,7 @@ carregadores.geral = async () => {
     $('geralAbsorcaoNota').textContent = txt('geral.absorcao_nota', 'no agente • faixa de {n} produtos', { n: pcts.length });
     const lista = Object.entries(d).map(([k, p]) => {
       const r = el('div', 'mini');
+      r.dataset.produto = k;
       r.append(el('span', null, NOMES_PRODUTO[k] || k), barraTresEstados(p), el('b', null, `${p.pct_agente}%`));
       return r;
     });
@@ -602,7 +650,7 @@ carregadores.geral = async () => {
 // Trocar o idioma redesenha a tela aberta que escreveu texto pelo JS (o JSON vem do cache).
 idiomas.aoTrocar(() => {
   const t = document.body.dataset.tela;
-  if (['geral', 'ferramentas', 'absorcao'].includes(t)) carregadores[t]();
+  if (['geral', 'agentes', 'ferramentas', 'absorcao'].includes(t)) carregadores[t]();
 });
 
 /* ===================== IDE: cliente do motor de terminal ===================== */

@@ -1535,8 +1535,19 @@ pub mod managed_runtime {
         }
     }
 
+    /// Fonte do cabecalho `Authorization` de um servidor MCP remoto (Bearer fixo, OAuth com
+    /// renovacao). Consultada a CADA pedido, e nao uma vez na criacao: o valor nao fica
+    /// guardado no cliente durante a sessao, e o token renovado no meio dela vale no pedido
+    /// seguinte sem recriar o cliente. O erro devolvido ja tem de vir sem segredo.
+    pub trait AuthorizationSource: Send + Sync {
+        fn authorization(
+            &self,
+        ) -> std::pin::Pin<Box<dyn Future<Output = Result<String, String>> + Send + '_>>;
+    }
+
     pub struct McpStreamableHttpClient {
         pub session_uuid: Uuid,
+        authorization: Option<std::sync::Arc<dyn AuthorizationSource>>,
         endpoint: Url,
         client: reqwest::Client,
         policy: SessionPolicy,
@@ -1562,6 +1573,7 @@ pub mod managed_runtime {
                 .build()?;
             Ok(Self {
                 session_uuid: new_uuid_v7(),
+                authorization: None,
                 endpoint,
                 client,
                 policy,
@@ -1570,6 +1582,35 @@ pub mod managed_runtime {
                 audit,
                 mcp_session_id: std::sync::Mutex::new(None),
             })
+        }
+
+        /// Liga a fonte do `Authorization`. Sem ela, nenhum pedido leva o cabecalho.
+        pub fn with_authorization(
+            mut self,
+            source: std::sync::Arc<dyn AuthorizationSource>,
+        ) -> Self {
+            self.authorization = Some(source);
+            self
+        }
+
+        /// Poe o `Authorization` no pedido, marcado como sensivel: o `Debug` do reqwest nao o
+        /// imprime, e um log de pedido nao vira vazamento.
+        async fn authorize(
+            &self,
+            builder: reqwest::RequestBuilder,
+        ) -> Result<reqwest::RequestBuilder, RuntimeError> {
+            let Some(source) = &self.authorization else {
+                return Ok(builder);
+            };
+            let value = source
+                .authorization()
+                .await
+                .map_err(RuntimeError::Authorization)?;
+            let mut header = reqwest::header::HeaderValue::from_str(&value).map_err(|_| {
+                RuntimeError::Authorization("valor de Authorization invalido".into())
+            })?;
+            header.set_sensitive(true);
+            Ok(builder.header(reqwest::header::AUTHORIZATION, header))
         }
 
         fn session_header(&self) -> Option<String> {
@@ -1609,6 +1650,7 @@ pub mod managed_runtime {
             if let Some(id) = self.session_header() {
                 builder = builder.header("Mcp-Session-Id", id);
             }
+            let builder = self.authorize(builder).await?;
             let response = controlled(
                 async { Ok(builder.send().await?) },
                 Duration::from_millis(self.policy.request_timeout_ms),
@@ -1731,6 +1773,7 @@ pub mod managed_runtime {
                     builder = builder.header("Mcp-Name", name);
                 }
             }
+            let builder = self.authorize(builder).await?;
             let response = controlled(
                 async { Ok(builder.send().await?) },
                 Duration::from_millis(self.policy.request_timeout_ms),
@@ -1889,6 +1932,8 @@ pub mod managed_runtime {
         ResponseIdMismatch,
         #[error("HTTP status {0}")]
         HttpStatus(u16),
+        #[error("authorization: {0}")]
+        Authorization(String),
         #[error("reconnect attempts exhausted")]
         ReconnectExhausted,
         #[error("protocol error: {0}")]

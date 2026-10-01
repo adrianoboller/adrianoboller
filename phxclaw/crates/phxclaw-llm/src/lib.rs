@@ -38,10 +38,7 @@ pub fn from_env(spec: &str) -> Result<Arc<dyn Llm>, LlmError> {
         std::env::var(var).map_err(|_| LlmError::Credential(format!("variavel {var} ausente")))
     };
     Ok(match provedor {
-        "ollama" => {
-            let host = std::env::var("OLLAMA_HOST").unwrap_or_else(|_| OLLAMA_PADRAO.into());
-            Arc::new(OllamaLlm::new(&normalizar_host_ollama(&host), modelo)?)
-        }
+        "ollama" => Arc::new(ollama_do_ambiente(modelo)?),
         "openai" => Arc::new(OpenAiLlm::new(
             chave("OPENAI_API_KEY")?,
             modelo,
@@ -59,6 +56,13 @@ pub fn from_env(spec: &str) -> Result<Arc<dyn Llm>, LlmError> {
         )?),
         outro => return Err(LlmError::Denied(format!("provedor desconhecido: {outro}"))),
     })
+}
+
+/// O Ollama de `OLLAMA_HOST` com o tipo concreto: quem precisa do que so ele tem (os
+/// embeddings) passa pela MESMA leitura do ambiente que o `from_env`.
+pub fn ollama_do_ambiente(modelo: &str) -> Result<OllamaLlm, LlmError> {
+    let host = std::env::var("OLLAMA_HOST").unwrap_or_else(|_| OLLAMA_PADRAO.into());
+    OllamaLlm::new(&normalizar_host_ollama(&host), modelo)
 }
 
 /// O proprio Ollama aceita `OLLAMA_HOST=127.0.0.1:11434`, sem esquema; sem este ajuste o

@@ -7,6 +7,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use thiserror::Error;
 use uuid::Uuid;
 
+pub mod bm25;
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(rename_all = "snake_case")]
 pub enum DataClassification {
@@ -327,11 +329,17 @@ fn term_score(record: &MemoryRecord, query_terms: &BTreeSet<String>) -> i64 {
 }
 
 fn tokenize(value: &str) -> BTreeSet<String> {
+    palavras(value)
+        .map(|part| part.to_ascii_lowercase())
+        .collect()
+}
+
+/// As palavras de um texto, UM corte so para a memoria e o indice de documentos (`bm25`):
+/// dois tokenizadores fariam a mesma pergunta casar num e nao no outro.
+pub(crate) fn palavras(value: &str) -> impl Iterator<Item = &str> {
     value
         .split(|ch: char| !ch.is_alphanumeric() && ch != '_' && ch != '-')
         .filter(|part| part.len() >= 2)
-        .map(|part| part.to_ascii_lowercase())
-        .collect()
 }
 
 /// Uma memoria achada pela busca, com a pontuacao que a pos ali.

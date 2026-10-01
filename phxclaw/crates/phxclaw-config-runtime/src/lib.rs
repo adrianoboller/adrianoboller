@@ -10,6 +10,9 @@ use std::{
 use thiserror::Error;
 use uuid::Uuid;
 
+/// O `config.json` do agente: catalogo das chaves, carga com origem e geradores.
+pub mod agente;
+
 #[derive(Debug, Error)]
 pub enum ConfigError {
     #[error("io: {0}")]
@@ -156,39 +159,92 @@ impl ConfigStore {
             value,
         })
     }
-    pub fn save(
-        &self,
-        mut next: Value,
-        expected_revision: u64,
-    ) -> Result<ConfigSnapshot, ConfigError> {
+    pub fn save(&self, next: Value, expected_revision: u64) -> Result<ConfigSnapshot, ConfigError> {
         let current = self.load()?;
-        if current.revision != expected_revision {
-            return Err(ConfigError::RevisionConflict {
-                expected: expected_revision,
-                actual: current.revision,
-            });
-        }
-        let obj = next
-            .as_object_mut()
-            .ok_or_else(|| ConfigError::Invalid("root must be object".into()))?;
-        obj.insert("revision".into(), Value::from(expected_revision + 1));
-        validate(&next)?;
-        fs::create_dir_all(&self.history_dir)?;
-        fs::write(
-            self.history_dir.join(format!(
-                "revision-{:08}-{}.json",
-                current.revision, current.sha256
-            )),
-            serde_json::to_vec_pretty(&current.value)?,
+        gravar_revisado(
+            &self.path,
+            &self.history_dir,
+            Some((current.revision, &current.value)),
+            expected_revision,
+            next,
+            "revision",
+            &|v| validate(v).map(|_| ()),
         )?;
-        let tmp = self.path.with_extension("json.tmp");
-        {
-            let mut f = fs::File::create(&tmp)?;
-            f.write_all(&serde_json::to_vec_pretty(&next)?)?;
-            f.write_all(b"\n")?;
-            f.sync_all()?;
-        }
-        fs::rename(tmp, &self.path)?;
         self.load()
     }
+}
+
+/// A gravacao com revisao, UMA so para o `ConfigStore` e para o `config.json` do agente
+/// (`agente::carga`): conferir a revisao esperada, carimbar a seguinte, validar, guardar a
+/// anterior no historico e trocar o arquivo por renomeacao. Duas copias desta sequencia
+/// divergiriam justamente no ponto que importa -- uma esqueceria o `sync_all` ou o
+/// historico, e o conflito de revisao deixaria de valer num dos caminhos.
+///
+/// `atual` e a revisao e o documento em disco (`None`: arquivo ainda nao existe, revisao 0).
+/// Devolve a revisao gravada.
+pub fn gravar_revisado(
+    caminho: &Path,
+    historico: &Path,
+    atual: Option<(u64, &Value)>,
+    esperada: u64,
+    mut proximo: Value,
+    campo_revisao: &str,
+    validar: &dyn Fn(&Value) -> Result<(), ConfigError>,
+) -> Result<u64, ConfigError> {
+    let revisao_atual = atual.map(|(r, _)| r).unwrap_or(0);
+    if revisao_atual != esperada {
+        return Err(ConfigError::RevisionConflict {
+            expected: esperada,
+            actual: revisao_atual,
+        });
+    }
+    let obj = proximo
+        .as_object_mut()
+        .ok_or_else(|| ConfigError::Invalid("root must be object".into()))?;
+    let nova = esperada + 1;
+    obj.insert(campo_revisao.into(), Value::from(nova));
+    validar(&proximo)?;
+    if let Some((r, valor)) = atual {
+        fs::create_dir_all(historico)?;
+        fs::write(
+            historico.join(format!(
+                "revision-{:08}-{}.json",
+                r,
+                canonical_sha256(valor)?
+            )),
+            serde_json::to_vec_pretty(valor)?,
+        )?;
+    }
+    if let Some(pai) = caminho.parent() {
+        fs::create_dir_all(pai)?;
+    }
+    let tmp = caminho.with_extension("json.tmp");
+    {
+        let mut f = fs::File::create(&tmp)?;
+        f.write_all(&serde_json::to_vec_pretty(&proximo)?)?;
+        f.write_all(b"\n")?;
+        f.sync_all()?;
+    }
+    fs::rename(tmp, caminho)?;
+    Ok(nova)
+}
+
+/// Distancia de edicao (Levenshtein), para sugerir o nome proximo de comando ou de chave
+/// digitada errado. Uma so na base: a ajuda da CLI e a carga do `config.json` perguntam a
+/// mesma coisa.
+pub fn distancia(a: &str, b: &str) -> usize {
+    let b: Vec<char> = b.chars().collect();
+    let mut linha: Vec<usize> = (0..=b.len()).collect();
+    for (i, ca) in a.chars().enumerate() {
+        let mut ant = linha[0];
+        linha[0] = i + 1;
+        for (j, cb) in b.iter().enumerate() {
+            let atual = linha[j + 1];
+            linha[j + 1] = (ant + usize::from(ca != *cb))
+                .min(linha[j] + 1)
+                .min(atual + 1);
+            ant = atual;
+        }
+    }
+    linha[b.len()]
 }

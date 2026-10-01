@@ -12,7 +12,10 @@
 //!   binario e o modelo so leitura, e a saida numa pasta temporaria que so vira arquivo da
 //!   tarefa depois de o cabecalho WAV ser conferido -- WAV truncado nao chega ao usuario;
 //! - **os marcadores se trocam numa passada so**: o texto vem do modelo, e uma troca em
-//!   sequencia deixaria um `{{OutputPath}}` escrito NO texto escolher onde gravar.
+//!   sequencia deixaria um `{{OutputPath}}` escrito NO texto escolher onde gravar;
+//! - **a ElevenLabs e outro PROVEDOR do mesmo `falar`** (`PHXCLAW_TTS_PROVEDOR=elevenlabs`,
+//!   ver `elevenlabs.rs`): a limpeza do texto, o teto, a saida confinada e a conferencia do
+//!   WAV antes de entregar sao as mesmas -- so muda quem produz os bytes.
 
 use crate::motor::{Agent, CancelFlag, Observer, artifact_for};
 use crate::tarefa::{Task, TaskStatus, confine};
@@ -184,6 +187,9 @@ pub struct SpeakTool {
     pub modelo_sha256: Option<String>,
     /// Pastas extras (binario, bibliotecas) montadas so leitura no mesmo caminho.
     pub pastas: Vec<PathBuf>,
+    /// Provedor ElevenLabs no lugar do comando. `Err`: escolhido e indisponivel (sem chave,
+    /// sem voz); a ferramenta recusa com o motivo.
+    pub elevenlabs: Option<Result<crate::elevenlabs::FalaElevenLabs, String>>,
 }
 
 /// Fala gravada e conferida.
@@ -194,12 +200,35 @@ pub struct Fala {
 }
 
 impl SpeakTool {
-    pub fn from_env() -> Self {
+    /// `PHXCLAW_TTS_PROVEDOR` = `comando` (padrao: `PHXCLAW_TTS_COMMAND` e companhia) ou
+    /// `elevenlabs` (chave de `phxclaw elevenlabs chave` no broker de `raiz_do_agente`).
+    pub fn do_ambiente(raiz_do_agente: &Path) -> Self {
+        let elevenlabs = match var("PHXCLAW_TTS_PROVEDOR").as_deref() {
+            None | Some("comando") => None,
+            Some("elevenlabs") => Some(crate::elevenlabs::FalaElevenLabs::do_ambiente(
+                raiz_do_agente,
+            )),
+            Some(o) => Some(Err(format!(
+                "PHXCLAW_TTS_PROVEDOR desconhecido: {o} (comando ou elevenlabs)"
+            ))),
+        };
         Self {
             comando: var("PHXCLAW_TTS_COMMAND"),
             modelo: var("PHXCLAW_TTS_MODEL").map(PathBuf::from),
             modelo_sha256: var("PHXCLAW_TTS_MODEL_SHA256"),
             pastas: lista_de_pastas(var("PHXCLAW_TTS_DIRS")),
+            elevenlabs,
+        }
+    }
+
+    /// Pronto para falar, pelo provedor escolhido; senao, a recusa que o operador conserta.
+    fn pronto(&self) -> Result<(), ToolError> {
+        match &self.elevenlabs {
+            Some(Ok(_)) => Ok(()),
+            Some(Err(e)) => Err(ToolError::Denied(format!(
+                "texto para fala indisponivel: {e}"
+            ))),
+            None => self.configurado().map(|_| ()),
         }
     }
 
@@ -249,7 +278,20 @@ impl SpeakTool {
         saida: &str,
         prazo: Duration,
     ) -> Result<Fala, ToolError> {
-        let (modelo_cmd, modelo, sha) = self.configurado()?;
+        self.falar_com_voz(texto, None, workdir, saida, prazo).await
+    }
+
+    /// `falar` com a voz trocada por uma chamada (so a ElevenLabs tem voz por nome; o
+    /// comando local tem o modelo do operador, e `voz` ali e recusa, nao silencio).
+    pub async fn falar_com_voz(
+        &self,
+        texto: &str,
+        voz: Option<&str>,
+        workdir: &Path,
+        saida: &str,
+        prazo: Duration,
+    ) -> Result<Fala, ToolError> {
+        self.pronto()?;
         // Controle vira espaco: quebra de linha e tabulacao nao mudam o que se fala, e um
         // NUL no meio do argumento o cortaria.
         let mut limpo: String = texto
@@ -266,16 +308,64 @@ impl SpeakTool {
                 "texto com {n} caracteres, acima do teto de {MAX_FALA}"
             )));
         }
-        // Um motor que recebe o texto como argumento solto leria "-x" como opcao dele.
-        if limpo.starts_with('-') {
-            limpo.insert(0, ' ');
-        }
         if !saida.to_ascii_lowercase().ends_with(".wav") {
             return Err(ToolError::InvalidArguments(format!(
                 "a saida tem de terminar em .wav: {saida}"
             )));
         }
         let alvo = confine(workdir, saida).map_err(ToolError::Denied)?;
+        let bytes = match &self.elevenlabs {
+            Some(Ok(el)) => {
+                if let Some(v) = voz
+                    && !crate::elevenlabs::voz_valida(v)
+                {
+                    return Err(ToolError::InvalidArguments(format!(
+                        "voice invalida: {v:?} (o voice_id do voice_list)"
+                    )));
+                }
+                let (el, voz) = (el.clone(), voz.map(String::from));
+                tokio::task::spawn_blocking(move || el.falar(&limpo, voz.as_deref(), prazo))
+                    .await
+                    .map_err(falha)?
+                    .map_err(|e| ToolError::Failed(format!("elevenlabs: {e}")))?
+            }
+            _ => {
+                if voz.is_some() {
+                    return Err(ToolError::InvalidArguments(
+                        "'voice' so com PHXCLAW_TTS_PROVEDOR=elevenlabs".into(),
+                    ));
+                }
+                // Um motor que recebe o texto como argumento solto leria "-x" como opcao.
+                if limpo.starts_with('-') {
+                    limpo.insert(0, ' ');
+                }
+                self.falar_por_comando(&limpo, prazo).await?
+            }
+        };
+        if bytes.len() as u64 > MAX_WAV {
+            return Err(ToolError::Failed(format!(
+                "o motor de voz gravou {} bytes, acima do teto de {MAX_WAV}",
+                bytes.len()
+            )));
+        }
+        let wav = info_wav(&bytes).map_err(|e| {
+            ToolError::Failed(format!("o motor de voz gravou um WAV invalido: {e}"))
+        })?;
+        if wav.segundos <= 0.0 {
+            return Err(ToolError::Failed(
+                "o motor de voz gravou um WAV sem amostras".into(),
+            ));
+        }
+        if let Some(d) = alvo.parent() {
+            std::fs::create_dir_all(d).map_err(falha)?;
+        }
+        std::fs::write(&alvo, &bytes).map_err(falha)?;
+        Ok(Fala { caminho: alvo, wav })
+    }
+
+    /// Os bytes do WAV pelo comando local, no bwrap, com o modelo conferido.
+    async fn falar_por_comando(&self, limpo: &str, prazo: Duration) -> Result<Vec<u8>, ToolError> {
+        let (modelo_cmd, modelo, sha) = self.configurado()?;
         if !modelo.is_file() {
             return Err(ToolError::Denied(format!(
                 "modelo de voz nao encontrado: {}",
@@ -294,7 +384,7 @@ impl SpeakTool {
                 preencher(
                     a,
                     &[
-                        ("{{Text}}", limpo.as_str()),
+                        ("{{Text}}", limpo),
                         ("{{OutputPath}}", "/work/fala.wav"),
                         ("{{Model}}", modelo_txt.as_str()),
                     ],
@@ -320,20 +410,7 @@ impl SpeakTool {
                 "o motor de voz gravou {tam} bytes, acima do teto de {MAX_WAV}"
             )));
         }
-        let bytes = std::fs::read(&gerado).map_err(falha)?;
-        let wav = info_wav(&bytes).map_err(|e| {
-            ToolError::Failed(format!("o motor de voz gravou um WAV invalido: {e}"))
-        })?;
-        if wav.segundos <= 0.0 {
-            return Err(ToolError::Failed(
-                "o motor de voz gravou um WAV sem amostras".into(),
-            ));
-        }
-        if let Some(d) = alvo.parent() {
-            std::fs::create_dir_all(d).map_err(falha)?;
-        }
-        std::fs::write(&alvo, &bytes).map_err(falha)?;
-        Ok(Fala { caminho: alvo, wav })
+        std::fs::read(&gerado).map_err(falha)
     }
 }
 
@@ -341,12 +418,18 @@ impl Tool for SpeakTool {
     fn spec(&self) -> ToolSpec {
         ToolSpec {
             name: "speak".into(),
-            description: "Text to speech: synthesize 'text' into a .wav file in the task folder \
+            description: match &self.elevenlabs {
+                Some(_) => "Text to speech: synthesize 'text' into a .wav file in the task \
+folder (default fala.wav) with ElevenLabs. Optional 'voice': a voice_id from voice_list."
+                    .into(),
+                None => "Text to speech: synthesize 'text' into a .wav file in the task folder \
 (default fala.wav) with the configured local voice."
-                .into(),
+                    .into(),
+            },
             parameters: json!({"type":"object","properties":{
                 "text":{"type":"string"},
-                "output":{"type":"string","description":".wav path in the task folder"}
+                "output":{"type":"string","description":".wav path in the task folder"},
+                "voice":{"type":"string","description":"ElevenLabs voice_id (ElevenLabs only)"}
             },"required":["text"]}),
         }
     }
@@ -359,7 +442,7 @@ impl Tool for SpeakTool {
         ctx: &'a ToolContext,
     ) -> BoxFut<'a, Result<ToolOutput, ToolError>> {
         Box::pin(async move {
-            self.configurado()?;
+            self.pronto()?;
             let texto = args
                 .get("text")
                 .and_then(Value::as_str)
@@ -370,7 +453,14 @@ impl Tool for SpeakTool {
                 .map(str::trim)
                 .filter(|s| !s.is_empty())
                 .unwrap_or("fala.wav");
-            let f = self.falar(texto, &ctx.workdir, saida, ctx.timeout).await?;
+            let voz = args
+                .get("voice")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|s| !s.is_empty());
+            let f = self
+                .falar_com_voz(texto, voz, &ctx.workdir, saida, ctx.timeout)
+                .await?;
             Ok(ToolOutput {
                 content: format!(
                     "fala gravada em {saida}: {:.2} s, {} Hz, {} canal(is)",

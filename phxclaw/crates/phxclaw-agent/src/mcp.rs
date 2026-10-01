@@ -12,6 +12,7 @@
 //! `phxclaw-mcp-lsp-runtime`; aqui so se decide politica e ciclo de vida.
 
 use crate::motor::Agent;
+use crate::oauth::{AutorizacaoMcp, ConfigOauth};
 use phxclaw_agent_core::{
     BoxFut, Tool, ToolCall, ToolContext, ToolError, ToolOutput, ToolSpec, truncate_for_model,
 };
@@ -69,6 +70,100 @@ pub struct ServidorDeclarado {
     pub url: Option<String>,
     #[serde(default)]
     pub prazo_inicio_ms: Option<u64>,
+    /// Credencial do servidor remoto. O valor nunca mora aqui: so o TIPO, e os endpoints do
+    /// OAuth; o segredo vai para o broker pelo `phxclaw mcp token|login`.
+    #[serde(default)]
+    pub auth: Option<AuthDeclarada>,
+    /// Servidor oficial conhecido (`linear`, `gmail`, `drive`, `calendar`): preenche a URL, o
+    /// tipo de credencial e os endpoints que faltarem. O que a declaracao trouxer vale mais.
+    #[serde(default)]
+    pub preset: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(tag = "tipo", rename_all = "lowercase")]
+pub enum AuthDeclarada {
+    /// `Authorization: Bearer <segredo>` fixo (a chave de API do Linear).
+    Bearer,
+    /// OAuth 2.0 com PKCE; o refresh token fica no broker.
+    Oauth(ConfigOauth),
+}
+
+/// Os MCP oficiais que o agente conhece pelo nome. Linear: `mcp.linear.app/mcp` aceita a
+/// chave de API como Bearer. Google Workspace: os endpoints de developers.google.com
+/// (lidos em 01/10/2026), cliente OAuth do operador, escopos so de leitura por padrao --
+/// escrever (gmail.compose, drive.file) e o operador que acrescenta, sabendo.
+fn preset(nome: &str) -> Option<(&'static str, AuthDeclarada)> {
+    let google = |escopos: &[&str]| {
+        AuthDeclarada::Oauth(ConfigOauth {
+            autorizacao: "https://accounts.google.com/o/oauth2/v2/auth".into(),
+            token: "https://oauth2.googleapis.com/token".into(),
+            escopos: escopos.iter().map(|s| s.to_string()).collect(),
+            segredo_cliente: true,
+            // Sem `access_type=offline` o Google nao devolve refresh token; sem
+            // `prompt=consent` ele so o devolve na PRIMEIRA autorizacao da conta.
+            parametros: [("access_type", "offline"), ("prompt", "consent")]
+                .into_iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect(),
+            ..ConfigOauth::default()
+        })
+    };
+    Some(match nome {
+        "linear" => ("https://mcp.linear.app/mcp", AuthDeclarada::Bearer),
+        "gmail" => (
+            "https://gmailmcp.googleapis.com/mcp/v1",
+            google(&["https://www.googleapis.com/auth/gmail.readonly"]),
+        ),
+        "drive" => (
+            "https://drivemcp.googleapis.com/mcp/v1",
+            google(&["https://www.googleapis.com/auth/drive.readonly"]),
+        ),
+        "calendar" => (
+            "https://calendarmcp.googleapis.com/mcp/v1",
+            google(&[
+                "https://www.googleapis.com/auth/calendar.calendarlist.readonly",
+                "https://www.googleapis.com/auth/calendar.events.readonly",
+            ]),
+        ),
+        _ => return None,
+    })
+}
+
+impl ServidorDeclarado {
+    /// A declaracao com o preset aplicado: URL e credencial que faltam vem dele; campo do
+    /// OAuth em branco vem dele; o `cliente_id` e sempre do operador.
+    pub fn resolvida(&self) -> Result<ServidorDeclarado, String> {
+        let mut d = self.clone();
+        let Some(p) = &self.preset else {
+            return Ok(d);
+        };
+        let (url, auth) = preset(p).ok_or_else(|| format!("preset desconhecido: {p}"))?;
+        if d.comando.is_none() && d.url.is_none() {
+            d.url = Some(url.to_string());
+        }
+        d.auth = Some(match (d.auth.take(), auth) {
+            (None, a) => a,
+            (Some(AuthDeclarada::Oauth(mut o)), AuthDeclarada::Oauth(base)) => {
+                if o.autorizacao.is_empty() {
+                    o.autorizacao = base.autorizacao;
+                }
+                if o.token.is_empty() {
+                    o.token = base.token;
+                }
+                if o.escopos.is_empty() {
+                    o.escopos = base.escopos;
+                }
+                for (k, v) in base.parametros {
+                    o.parametros.entry(k).or_insert(v);
+                }
+                o.segredo_cliente |= base.segredo_cliente;
+                AuthDeclarada::Oauth(o)
+            }
+            (Some(a), _) => a,
+        });
+        Ok(d)
+    }
 }
 
 enum Transporte {
@@ -79,6 +174,7 @@ enum Transporte {
     Http {
         url: Url,
         origem: HttpEndpointPolicy,
+        auth: Option<Arc<AutorizacaoMcp>>,
     },
 }
 
@@ -119,12 +215,20 @@ fn resolver_comando(comando: &str, base: &Path) -> Result<PathBuf, String> {
 }
 
 impl ServidorMcp {
-    fn de_declarado(d: &ServidorDeclarado, base: &Path) -> Result<Self, String> {
+    fn de_declarado(
+        d: &ServidorDeclarado,
+        base: &Path,
+        raiz_do_agente: Option<&Path>,
+    ) -> Result<Self, String> {
+        let d = &d.resolvida()?;
         let nome = normalize_mcp_name(d.nome.trim());
         if nome.is_empty() {
             return Err("servidor sem nome".into());
         }
         let transporte = match (&d.comando, &d.url) {
+            (Some(_), None) if d.auth.is_some() => {
+                return Err("'auth' so vale para servidor por 'url'".into());
+            }
             (Some(c), None) => {
                 let cwd = match &d.cwd {
                     Some(c) if c.is_absolute() => c.clone(),
@@ -162,7 +266,19 @@ impl ServidorMcp {
                     allowed_origins: BTreeSet::from([url.origin().ascii_serialization()]),
                     ..HttpEndpointPolicy::default()
                 };
-                Transporte::Http { url, origem }
+                let auth = match &d.auth {
+                    None => None,
+                    Some(a) => {
+                        let raiz = raiz_do_agente
+                            .ok_or("credencial MCP so na configuracao do operador")?;
+                        let oauth = match a {
+                            AuthDeclarada::Bearer => None,
+                            AuthDeclarada::Oauth(o) => Some(o),
+                        };
+                        Some(Arc::new(AutorizacaoMcp::da_pasta(raiz, &nome, oauth)?))
+                    }
+                };
+                Transporte::Http { url, origem, auth }
             }
             (Some(_), Some(_)) => return Err("declare 'comando' OU 'url', nao os dois".into()),
             (None, None) => return Err("falta 'comando' ou 'url'".into()),
@@ -220,14 +336,17 @@ impl ServidorMcp {
                 s.initialize_negotiated(CLIENTE, VERSAO).await?;
                 Ok(Conexao::Stdio(s))
             }
-            Transporte::Http { url, origem } => {
-                let cliente = McpStreamableHttpClient::new(
+            Transporte::Http { url, origem, auth } => {
+                let mut cliente = McpStreamableHttpClient::new(
                     url.clone(),
                     sessao,
                     origem.clone(),
                     self.politica_de_metodos(),
                     auditoria,
                 )?;
+                if let Some(a) = auth {
+                    cliente = cliente.with_authorization(a.clone());
+                }
                 let versao = cliente
                     .initialize_negotiated(CLIENTE, VERSAO, Cancellation::default())
                     .await?;
@@ -283,20 +402,58 @@ impl ServidorMcp {
                 guarda: vaga.lock_owned().await,
                 inteira: false,
             };
-            if vigia.guarda.is_none() {
-                *vigia.guarda = Some(self.conectar(ctx.timeout).await?);
+            let mut tentativa = 0;
+            loop {
+                // O 401 pode vir ja no `initialize` de uma conexao nova (acesso revogado entre
+                // duas tarefas): ele tambem passa pela renovacao abaixo, nao so o da chamada.
+                let r = match vigia.guarda.as_mut() {
+                    Some(c) => Self::chamar(c, original, args.clone()).await,
+                    None => match self.conectar(ctx.timeout).await {
+                        Ok(c) => {
+                            let c = vigia.guarda.insert(c);
+                            Self::chamar(c, original, args.clone()).await
+                        }
+                        Err(e) => Err(e),
+                    },
+                };
+                // Erro JSON-RPC e resposta inteira: a sessao continua boa. Qualquer outro
+                // erro (fio fechado, quadro grande demais) deixa o fio em estado desconhecido.
+                vigia.inteira = matches!(r, Ok(_) | Err(RuntimeError::Rpc { .. }));
+                // 401 com OAuth: o acesso venceu antes do que o servidor disse (revogado,
+                // relogio). Renova UMA vez e repete; o segundo 401 e resposta.
+                if tentativa == 0
+                    && matches!(r, Err(RuntimeError::HttpStatus(401)))
+                    && let Some(a) = self.autorizacao()
+                    && a.invalidar().await
+                {
+                    tentativa += 1;
+                    *vigia.guarda = None;
+                    continue;
+                }
+                return r;
             }
-            let conexao = vigia.guarda.as_mut().expect("conexao acabou de ser posta");
-            let r = Self::chamar(conexao, original, args).await;
-            // Erro JSON-RPC e resposta inteira: a sessao continua boa. Qualquer outro erro
-            // (fio fechado, quadro grande demais) deixa o fio em estado desconhecido.
-            vigia.inteira = matches!(r, Ok(_) | Err(RuntimeError::Rpc { .. }));
-            r
         };
         match tokio::time::timeout(ctx.timeout, trabalho).await {
             Err(_) => Err(ToolError::Timeout(ctx.timeout.as_millis() as u64)),
-            Ok(Err(e)) => Err(ToolError::Failed(format!("mcp {}: {e}", self.nome))),
+            Ok(Err(e)) => Err(ToolError::Failed(
+                self.limpar(format!("mcp {}: {e}", self.nome)),
+            )),
             Ok(Ok(v)) => Ok(v),
+        }
+    }
+
+    fn autorizacao(&self) -> Option<&Arc<AutorizacaoMcp>> {
+        match &self.transporte {
+            Transporte::Http { auth, .. } => auth.as_ref(),
+            Transporte::Stdio { .. } => None,
+        }
+    }
+
+    /// Todo texto deste servidor que vai ao modelo, a evidencia ou ao aviso passa aqui.
+    fn limpar(&self, texto: String) -> String {
+        match self.autorizacao() {
+            Some(a) => a.limpar(texto),
+            None => texto,
         }
     }
 
@@ -353,7 +510,8 @@ impl Tool for McpTool {
         Box::pin(async move {
             let args = if args.is_null() { json!({}) } else { args };
             let r = self.servidor.executar(&self.original, args, ctx).await?;
-            let texto = truncate_for_model(&tool_result_text(&r), TEXTO_MAX);
+            // Limpa ANTES de cortar: o corte poderia partir o token e deixar meio segredo.
+            let texto = truncate_for_model(&self.servidor.limpar(tool_result_text(&r)), TEXTO_MAX);
             if tool_result_is_error(&r) {
                 return Err(ToolError::Failed(texto));
             }
@@ -373,6 +531,15 @@ impl Tool for McpTool {
 /// fecha os processos que subiu. As chamadas de verdade sobem os seus no runtime de quem
 /// chama -- processo e conexao do tokio ficam presos ao runtime que os criou.
 pub fn carregar(caminho: &Path) -> (Vec<Arc<dyn Tool>>, Vec<String>) {
+    carregar_em(caminho, None)
+}
+
+/// `carregar` com a pasta do agente, onde mora o broker das credenciais (`mcp/`). Sem ela,
+/// servidor que declara `auth` vira aviso: credencial nao se le de outro lugar.
+pub fn carregar_em(
+    caminho: &Path,
+    raiz_do_agente: Option<&Path>,
+) -> (Vec<Arc<dyn Tool>>, Vec<String>) {
     let mut avisos = Vec::new();
     let cfg: ConfigMcp = match std::fs::read(caminho)
         .map_err(|e| e.to_string())
@@ -389,7 +556,7 @@ pub fn carregar(caminho: &Path) -> (Vec<Arc<dyn Tool>>, Vec<String>) {
         .map(Path::to_path_buf)
         .unwrap_or_else(|| PathBuf::from("."));
     let base = std::fs::canonicalize(&base).unwrap_or(base);
-    let (tools, mais) = carregar_config(&cfg, &base);
+    let (tools, mais) = carregar_config_em(&cfg, &base, raiz_do_agente);
     avisos.extend(mais);
     (tools, avisos)
 }
@@ -397,12 +564,20 @@ pub fn carregar(caminho: &Path) -> (Vec<Arc<dyn Tool>>, Vec<String>) {
 /// A mesma subida para uma configuracao ja lida (o `.mcp.json` de um pacote de plugin,
 /// traduzido): um caminho so do declarado ate a ferramenta.
 pub fn carregar_config(cfg: &ConfigMcp, base: &Path) -> (Vec<Arc<dyn Tool>>, Vec<String>) {
+    carregar_config_em(cfg, base, None)
+}
+
+fn carregar_config_em(
+    cfg: &ConfigMcp,
+    base: &Path,
+    raiz_do_agente: Option<&Path>,
+) -> (Vec<Arc<dyn Tool>>, Vec<String>) {
     let mut avisos = Vec::new();
     let base = base.to_path_buf();
     let mut servidores = Vec::new();
     let mut vistos = BTreeSet::new();
     for d in &cfg.servidores {
-        match ServidorMcp::de_declarado(d, &base) {
+        match ServidorMcp::de_declarado(d, &base, raiz_do_agente) {
             Ok(s) if !vistos.insert(s.nome.clone()) => {
                 avisos.push(format!("servidor '{}' declarado duas vezes", s.nome))
             }
@@ -429,7 +604,7 @@ pub fn carregar_config(cfg: &ConfigMcp, base: &Path) -> (Vec<Arc<dyn Tool>>, Vec
                 })
                 .await;
                 let r = match r {
-                    Ok(r) => r.map_err(|e| e.to_string()),
+                    Ok(r) => r.map_err(|e| s.limpar(e.to_string())),
                     Err(_) => Err(format!("sem resposta em {:?}", s.prazo_inicio)),
                 };
                 out.push((s, r));
@@ -488,13 +663,30 @@ pub fn carregar_config(cfg: &ConfigMcp, base: &Path) -> (Vec<Arc<dyn Tool>>, Vec
     (tools, avisos)
 }
 
+/// A declaracao de `nome` no arquivo de `PHXCLAW_MCP_CONFIG`, com o preset aplicado: o que
+/// o `phxclaw mcp login` usa, pela mesma leitura da montagem.
+pub fn declarado_no_ambiente(nome: &str) -> Result<ServidorDeclarado, String> {
+    let caminho = std::env::var_os(VARIAVEL_CONFIG).ok_or(format!("falta {VARIAVEL_CONFIG}"))?;
+    let cfg: ConfigMcp = std::fs::read(&caminho)
+        .map_err(|e| e.to_string())
+        .and_then(|b| serde_json::from_slice(&b).map_err(|e| e.to_string()))?;
+    let alvo = normalize_mcp_name(nome.trim());
+    cfg.servidores
+        .iter()
+        .find(|d| normalize_mcp_name(d.nome.trim()) == alvo)
+        .ok_or(format!(
+            "servidor '{nome}' nao declarado em {VARIAVEL_CONFIG}"
+        ))?
+        .resolvida()
+}
+
 /// O que a montagem chama: le `PHXCLAW_MCP_CONFIG`, escreve os avisos no stderr (o
 /// stdout do `mcp-serve` e o fio do protocolo) e devolve as ferramentas.
-pub fn carregar_do_ambiente() -> Vec<Arc<dyn Tool>> {
+pub fn carregar_do_ambiente(raiz_do_agente: &Path) -> Vec<Arc<dyn Tool>> {
     let Some(caminho) = std::env::var_os(VARIAVEL_CONFIG) else {
         return vec![];
     };
-    let (tools, avisos) = carregar(Path::new(&caminho));
+    let (tools, avisos) = carregar_em(Path::new(&caminho), Some(raiz_do_agente));
     for a in avisos {
         eprintln!("aviso: MCP: {a}");
     }

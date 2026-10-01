@@ -78,6 +78,11 @@ pub struct Task {
     /// Pergunta pendente enquanto o estado e `AwaitingInput`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub question: Option<String>,
+    /// Imagens anexadas ao objetivo, como caminhos relativos a pasta de trabalho
+    /// (`entrada/imagem-1.png`). Os bytes ficam no disco e nao no `task.json`: a tarefa
+    /// se grava a cada passo, e reescrever megabytes de base64 por passo nao compra nada.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub images: Vec<String>,
 }
 
 impl Task {
@@ -99,6 +104,7 @@ impl Task {
             parent: None,
             webhook: None,
             question: None,
+            images: vec![],
         }
     }
 }
@@ -151,6 +157,15 @@ pub struct NovaTarefa {
     pub plan_first: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub webhook: Option<String>,
+    /// Imagens que o modelo ve junto do objetivo, em base64 (`png`, `jpeg`, `gif`,
+    /// `webp`). O tipo se confere pelos bytes, nunca pelo que o cliente declara.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub images: Vec<String>,
+    /// Grava cada pedido e resposta do modelo e cada ferramenta em
+    /// `<tarefa>/gravacao.jsonl`, com segredo redigido. O caminho e do servidor, nunca do
+    /// pedido: quem chama pela rede nao escolhe onde o servidor escreve.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub gravar: bool,
 }
 
 /// Resposta 202 de `POST /v1/tasks`.

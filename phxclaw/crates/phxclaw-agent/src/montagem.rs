@@ -34,6 +34,12 @@ pub const CAPACIDADES_PADRAO: &[&str] = &[
     "memory.read",
     "memory.write",
     "skill.read",
+    // Documentos indexados pelo operador (`phxclaw indexar`): so le o indice da pasta do
+    // agente, sem rede e sem processo -- o mesmo naipe da memoria.
+    "doc.read",
+    // Pesquisa profunda: busca + leitura de pagina, as duas ja no padrao (`web.search` e
+    // `web.browse`); a ferramenta nao pode mais que as duas juntas.
+    "web.research",
     // Equipe: ler o catalogo e delegar a um papel. Delegar nao amplia poder -- o
     // subagente fica na interseccao do papel com o pai, sem rede nova nem recursao.
     "team.read",
@@ -96,6 +102,9 @@ impl Montagem {
         };
         let forjas =
             crate::forja::ferramentas_da_pasta(store.root().parent().unwrap_or(store.root()));
+        // A credencial dos MCP remotos mora no broker `mcp/` da mesma raiz das forjas.
+        let mcp_do_operador =
+            crate::mcp::carregar_do_ambiente(store.root().parent().unwrap_or(store.root()));
         Self {
             store,
             capabilities,
@@ -110,7 +119,7 @@ impl Montagem {
             // Os servidores MCP dos pacotes assinados (Claude/Codex) entram na MESMA lista:
             // passam pela mesma regra de nome livre da montagem.
             mcp: {
-                let mut v = crate::mcp::carregar_do_ambiente();
+                let mut v = mcp_do_operador;
                 v.extend(crate::pacotes::do_ambiente());
                 v
             },
@@ -169,19 +178,38 @@ impl Montagem {
         if phxclaw_browser::find_chromium().is_some() {
             tools.extend(browser_tools(self.browser.clone()));
             tools.push(Arc::new(crate::visao::ImageRenderTool));
+            // Pesquisa profunda: o MESMO buscador e a MESMA sessao de navegador das
+            // ferramentas acima, com a citacao conferida como trecho literal.
+            if let Some(b) = &self.search {
+                tools.push(Arc::new(crate::pesquisa::DeepResearchTool {
+                    llm: llm.clone(),
+                    busca: b.clone(),
+                    leitor: Arc::new(crate::pesquisa::LeitorNavegador {
+                        sessions: self.browser.clone(),
+                    }),
+                }));
+            }
         }
         // Visao e voz: o ocr e o image so leem a pasta. O transcribe pede `media.stt` e o
         // desktop `desktop.control`, nenhuma das duas no padrao; o desktop so existe com a
         // feature `desktop`, que liga as bibliotecas de sessao grafica no binario.
         tools.push(Arc::new(crate::visao::OcrTool));
         tools.push(Arc::new(crate::visao::ImageInfoTool));
-        tools.push(Arc::new(crate::visao::TranscribeTool::from_env()));
+        // A raiz do agente e onde moram os brokers das chaves pagas (ElevenLabs, Gemini).
+        let raiz_do_agente = self.store.root().parent().unwrap_or(self.store.root());
+        tools.push(Arc::new(crate::visao::TranscribeTool::do_ambiente(
+            raiz_do_agente,
+        )));
         // Fala, gatilho e imagem: capacidades fora do padrao (`media.tts`, `media.wake`,
         // `media.generate`); sem configuracao, cada uma recusa dizendo a variavel que falta.
-        tools.push(Arc::new(crate::voz::SpeakTool::from_env()));
+        tools.push(Arc::new(crate::voz::SpeakTool::do_ambiente(raiz_do_agente)));
         tools.push(Arc::new(crate::voz::WakeWordTool::from_env()));
+        // `voice_list` so com a chave da ElevenLabs guardada; `media.voices` fora do padrao.
+        if let Some(v) = crate::elevenlabs::VoiceListTool::da_pasta(raiz_do_agente) {
+            tools.push(Arc::new(v));
+        }
         tools.push(Arc::new(
-            crate::midia::ImageGenerateTool::from_env().unwrap_or_else(|e| {
+            crate::midia::ImageGenerateTool::do_ambiente(raiz_do_agente).unwrap_or_else(|e| {
                 eprintln!("aviso: geracao de imagem so local (svg): {e}");
                 crate::midia::ImageGenerateTool { provedor: None }
             }),
@@ -235,6 +263,11 @@ impl Montagem {
             tools.push(py);
         }
         tools.push(Arc::new(crate::calculadora::CalculatorTool));
+        // `weather` (MET Norway): sem chave; `weather.read` fora do padrao, e rede para fora.
+        match crate::clima::WeatherTool::do_ambiente() {
+            Ok(t) => tools.push(Arc::new(t)),
+            Err(e) => eprintln!("aviso: weather: {e}"),
+        }
         tools.push(Arc::new(crate::sessoes::SessionSearchTool {
             store: self.store.clone(),
         }));
@@ -254,6 +287,13 @@ impl Montagem {
         tools.push(Arc::new(crate::skills::SkillLoadTool {
             pasta: skills.clone(),
         }));
+        // Busca nos documentos so existe depois de `phxclaw indexar`: o indice fica na
+        // pasta do agente, ao lado das tarefas, e o mesmo arquivo serve a CLI e a ferramenta.
+        if let Some(d) = crate::documentos::DocSearchTool::da_pasta(
+            self.store.root().parent().unwrap_or(self.store.root()),
+        ) {
+            tools.push(Arc::new(d));
+        }
         tools.extend(crate::git::ferramentas_de_codigo(&self.store, llm.clone()));
         tools.extend(self.forjas.iter().cloned());
         // `x_search` so com chave da xAI guardada (`phxclaw xai chave`); `x.search` fora do
@@ -297,6 +337,7 @@ impl Montagem {
             hooks: self.hooks(),
             regras: self.regras(),
             estilo: self.estilo_de_saida(),
+            instrucoes_projeto: self.instrucoes_do_projeto(),
             prazo_de_resposta: Some(PRAZO_DE_RESPOSTA),
             ..AgentConfig::default()
         }
@@ -371,10 +412,16 @@ pub const PRAZO_DE_RESPOSTA: Duration = Duration::from_secs(6 * 3600);
 /// pasta corrente. Fica FORA do `work/` das tarefas: o que esta aqui manda no agente
 /// (hooks, regras), e o shell do modelo nao pode reescreve-lo.
 pub fn pasta_do_projeto() -> Option<std::path::PathBuf> {
-    let raiz = std::env::var_os("PHXCLAW_PROJETO")
+    Some(raiz_do_projeto()?.join(".phxclaw")).filter(|p| p.is_dir())
+}
+
+/// A pasta do projeto em que o agente trabalha: `$PHXCLAW_PROJETO`, ou a pasta corrente.
+/// A mesma para a configuracao (`.phxclaw`) e para os `AGENTS.md`: duas nocoes de «o
+/// projeto» leriam hooks de um lugar e instrucoes de outro.
+pub fn raiz_do_projeto() -> Option<std::path::PathBuf> {
+    std::env::var_os("PHXCLAW_PROJETO")
         .map(std::path::PathBuf::from)
-        .or_else(|| std::env::current_dir().ok())?;
-    Some(raiz.join(".phxclaw")).filter(|p| p.is_dir())
+        .or_else(|| std::env::current_dir().ok())
 }
 
 impl Montagem {
@@ -398,6 +445,13 @@ impl Montagem {
                 Some(Arc::new(crate::regras::RegrasDeComando::negar_tudo(&e)))
             }
         }
+    }
+
+    /// Os `AGENTS.md` da raiz do repositorio ate a pasta do projeto, se a raiz esta na
+    /// lista de confiados da pasta do agente (a mae do `TaskStore`).
+    fn instrucoes_do_projeto(&self) -> Option<String> {
+        let agente = self.store.root().parent().unwrap_or(self.store.root());
+        crate::instrucoes::do_projeto(agente, &raiz_do_projeto()?).map(|i| i.bloco)
     }
 
     /// Estilo pedido e inexistente vira aviso e nenhum estilo: a tarefa nao deixa de

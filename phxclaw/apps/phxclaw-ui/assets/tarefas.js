@@ -83,22 +83,73 @@
     return b;
   }
 
+  // A lista e uma grade (phx-grid, grades.js): o status aparece pelo rotulo da fabrica
+  // (valores, o ReplaceValues do Janus) com a forma da condicao, a ordem padrao e a da data
+  // (mais nova primeiro) e o navegador de registros anda pela lista. Linha clicada ou
+  // registro escolhido no navegador abrem o detalhe.
+  const ROTULOS_ESTADO = () => Object.fromEntries(Object.keys(ESTADOS).map(k => [k, estado(k)]));
+  const FORMA_ESTADO = {
+    completed: 'st-ok', failed: 'st-erro', cancelled: 'st-erro',
+    awaiting_input: 'st-espera', awaiting_approval: 'st-espera', running: 'st-anda', pending: 'st-anda',
+  };
+  const vazio = el('p', 'vazio');
+  const alvoGrade = el('div', 'grade-alvo');
+  lista.append(vazio, alvoGrade);
+  let grade = null;
+  let assinaturaLista = '';
+
+  // O registro do navegador e o numero da linha na lista inteira; a pagina tem as linhas.
+  function linhaDoRegistro(g, n) {
+    const tam = g.estado().tamanho || 1;
+    return g.linhas()[(n - 1) % tam] || null;
+  }
+  // Cada render refaz o <tbody>: o id e a selecao voltam para a linha pela ordem da pagina.
+  function marcarLinhas(raiz, g) {
+    if (!g) return;
+    const ls = g.linhas();
+    const trs = [...raiz.querySelectorAll('tbody tr')].filter(tr => !/phx-grupo|phx-detalhe|phx-tr-vazia|phx-preview/.test(tr.className));
+    trs.forEach((tr, i) => {
+      const id = ls[i]?.id;
+      if (id === undefined) return;
+      if (tr.dataset.id !== id) tr.dataset.id = id;
+      tr.classList.toggle('selecionada', id === selecionada);
+    });
+  }
+
+  function montarGrade(linhas) {
+    grade = grades.criar(alvoGrade, {
+      nome: 'tarefas',
+      cfg: () => ({
+        chave: 'id', dados: linhas, navegador: true, agrupavel: false, pagina: { tamanho: 10, opcoes: [10, 25, 50] },
+        condicoes: Object.entries(FORMA_ESTADO).map(([valor, forma]) => ({ campo: 'status', op: '=', valor, estilo: forma })),
+        colunas: [
+          { campo: 'status', titulo: txt('tarefas.col.estado', 'Estado'), tag: 'status', valores: ROTULOS_ESTADO() },
+          { campo: 'objective', titulo: txt('tarefas.col.objetivo', 'Objetivo'), tag: 'objetivo', quebraLinha: true },
+          { campo: 'created_at', titulo: txt('tarefas.col.criada', 'Criada em'), tag: 'criada', tipo: 'dataHora' },
+        ],
+      }),
+      inicial: g => g.ordenar('created_at', 'desc'),
+      aoLog: (ev, g) => {
+        if (!g || ev.ev !== 'phx.grid.registro' || !ev.n) return;
+        const l = linhaDoRegistro(g, ev.n);
+        if (l && l.id !== selecionada) { selecionada = l.id; atualizar(); }
+      },
+      depois: marcarLinhas,
+    });
+  }
+
   async function carregarLista() {
     const ts = await api('GET', 'tasks');
-    ts.sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
-    lista.replaceChildren();
-    if (!ts.length) lista.append(el('li', 'vazio', txt('tarefas.nenhuma', 'Nenhuma tarefa ainda.')));
-    for (const t of ts.slice(0, 50)) {
-      const li = el('li', `tarefa-item estado-${t.status}`);
-      li.dataset.id = t.id;
-      li.tabIndex = 0;
-      li.append(el('span', 'tarefa-estado', estado(t.status)), el('span', 'tarefa-objetivo', t.objective));
-      li.classList.toggle('selecionada', t.id === selecionada);
-      const abrir = () => { selecionada = t.id; atualizar(); };
-      li.addEventListener('click', abrir);
-      li.addEventListener('keydown', e => { if (e.key === 'Enter') abrir(); });
-      lista.append(li);
-    }
+    const linhas = ts.map(t => ({ id: t.id, status: t.status, objective: t.objective, created_at: t.created_at }));
+    vazio.textContent = txt('tarefas.nenhuma', 'Nenhuma tarefa ainda.');
+    vazio.hidden = ts.length > 0;
+    // Sem mudanca, a grade nao se refaz: refazer a cada sondagem desfaria a ordem, o filtro
+    // e a pagina de quem esta olhando.
+    const assinatura = JSON.stringify([linhas, idiomas.atual]);
+    if (!grade) montarGrade(linhas);
+    else if (assinatura !== assinaturaLista) grade.g.substituirDados(linhas);
+    else grade.aplicar();
+    assinaturaLista = assinatura;
     aviso(txt('tarefas.resumo', '{n} tarefa(s) • atualizado agora', { n: ts.length }));
   }
 

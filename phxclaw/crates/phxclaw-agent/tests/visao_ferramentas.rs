@@ -397,6 +397,7 @@ async fn transcribe_ouve_o_jfk() {
         bin: Some(bin),
         model: Some(modelo),
         model_sha256: Some(sha),
+        elevenlabs: None,
     };
     let r = t.run(json!({"path":"audio/fala.wav"}), &c).await.unwrap();
     assert!(
@@ -415,6 +416,7 @@ async fn transcribe_recusa_sem_configuracao_e_com_modelo_adulterado() {
         bin: None,
         model: None,
         model_sha256: None,
+        elevenlabs: None,
     };
     let e = nada.run(json!({"path":"a.wav"}), &c).await.unwrap_err();
     let m = e.to_string();
@@ -430,6 +432,7 @@ async fn transcribe_recusa_sem_configuracao_e_com_modelo_adulterado() {
         bin: Some("/bin/true".into()),
         model: None,
         model_sha256: Some(SHA_TINY_EN.into()),
+        elevenlabs: None,
     };
     let m = so_bin
         .run(json!({"path":"a.wav"}), &c)
@@ -448,6 +451,7 @@ async fn transcribe_recusa_sem_configuracao_e_com_modelo_adulterado() {
         bin: Some(bin),
         model: Some(modelo),
         model_sha256: Some("0".repeat(64)),
+        elevenlabs: None,
     };
     let m = t
         .run(json!({"path":"a.wav"}), &c)

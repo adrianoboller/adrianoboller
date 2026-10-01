@@ -160,6 +160,12 @@ sha2 = "0.10"
 thiserror = "2"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "process", "fs", "io-util", "sync", "net"] }
 url = "2"
+# TLS de soquete dos canais (IRC, Twitch, XMPP, IMAP): o mesmo rustls/aws-lc do
+# phxclaw-device-transport, e as raizes publicas que o tokio-tungstenite ja trazia. Nada
+# novo no Cargo.lock.
+rustls = { version = "0.23", default-features = false, features = ["aws_lc_rs", "std", "tls12"] }
+rustls-pki-types = { version = "1", features = ["std"] }
+webpki-roots = "1"
 tokio-tungstenite = { version = "0.29", default-features = false, features = ["connect", "rustls-tls-webpki-roots"] }
 uuid = { version = "1", features = ["v7", "serde"] }
 xcap = "0.9.8"

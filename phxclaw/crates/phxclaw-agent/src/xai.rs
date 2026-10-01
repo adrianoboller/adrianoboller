@@ -2,8 +2,8 @@
 //! lado deles). A API v2 do X e paga por leitura; a da xAI cobra so o modelo.
 //!
 //! O que se reaproveita, para nao haver um segundo jeito de guardar e usar chave: a
-//! chave mora no SecretBroker da pasta `xai/` (`canais::broker_em`), e guardada pela
-//! `canais::guardar_segredo` e usada por concessao curta pela `Credencial::com` -- que
+//! chave mora no SecretBroker da pasta `xai/` pela regra de `chaves::Servico` (a mesma da
+//! ElevenLabs e da Gemini), e usada por concessao curta pela `Credencial::com` -- que
 //! tira a chave de todo erro --, e o pedido sai pelo `canais::http::Http`, com politica de
 //! destino e sem seguir redirecionamento.
 //!
@@ -14,37 +14,28 @@
 use crate::canais::http::{Credencial, Http, politica_para};
 use chrono::NaiveDate;
 use phxclaw_agent_core::{BoxFut, Tool, ToolContext, ToolError, ToolOutput, ToolSpec};
-use phxclaw_secret_broker::SecretValue;
 use serde_json::{Value, json};
 use std::path::Path;
 use std::sync::Arc;
 
-const NOME_DO_SEGREDO: &str = "xai-chave";
-const ESPACO: &str = "xai";
+pub const SERVICO: crate::chaves::Servico = crate::chaves::Servico {
+    espaco: "xai",
+    nome_do_segredo: "xai-chave",
+    variaveis: &["PHXCLAW_XAI_API_KEY"],
+    rotulo: "a chave da xAI",
+    comando: "xai chave",
+};
 /// Teto de perfis por lista, o da API da xAI.
 const MAX_PERFIS: usize = 10;
 const MAX_FONTES: usize = 20;
 
 pub fn pasta_da_xai(raiz_do_agente: &Path) -> std::path::PathBuf {
-    raiz_do_agente.join("xai")
+    SERVICO.pasta(raiz_do_agente)
 }
 
 /// `phxclaw xai chave`: a chave sai de `PHXCLAW_XAI_API_KEY` direto para o broker.
 pub fn guardar_do_ambiente(raiz_do_agente: &Path) -> Result<uuid::Uuid, String> {
-    let chave = std::env::var("PHXCLAW_XAI_API_KEY")
-        .ok()
-        .filter(|t| !t.trim().is_empty())
-        .ok_or("defina PHXCLAW_XAI_API_KEY com a chave da xAI")?;
-    let broker = crate::canais::broker_em(&pasta_da_xai(raiz_do_agente))?;
-    let escopos = crate::canais::escopos(ESPACO);
-    let escopos: Vec<&str> = escopos.iter().map(String::as_str).collect();
-    crate::canais::guardar_segredo(
-        &broker,
-        NOME_DO_SEGREDO,
-        ESPACO,
-        &escopos,
-        SecretValue::new(chave.trim().to_string()),
-    )
+    SERVICO.guardar_do_ambiente(raiz_do_agente)
 }
 
 /// As datas do pedido, conferidas. `hoje` vem de fora para o teste fixar o dia.
@@ -184,18 +175,11 @@ impl XSearchTool {
     /// Sem chave guardada, a ferramenta nem existe (como as forjas). Base e modelo so o
     /// operador escolhe, pelo ambiente.
     pub fn da_pasta(raiz_do_agente: &Path) -> Option<Self> {
-        let pasta = pasta_da_xai(raiz_do_agente);
-        if !pasta.join("segredos/master.key").exists() {
-            return None;
-        }
-        let broker = crate::canais::broker_em(&pasta).ok()?;
-        let id = crate::canais::segredo_guardado(&broker, NOME_DO_SEGREDO, ESPACO)
-            .ok()??
-            .uuid;
+        let credencial = SERVICO.credencial(raiz_do_agente).ok()?;
         let base =
             std::env::var("PHXCLAW_XAI_API").unwrap_or_else(|_| "https://api.x.ai/v1".into());
         let modelo = std::env::var("PHXCLAW_XAI_MODELO").unwrap_or_else(|_| "grok-4".into());
-        Self::novo(&base, &modelo, Credencial::nova(broker, id, ESPACO))
+        Self::novo(&base, &modelo, credencial)
             .map_err(|e| eprintln!("aviso: x_search: {e}"))
             .ok()
     }

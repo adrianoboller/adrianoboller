@@ -15,26 +15,345 @@
    "plugins",
    "voz_wake"
   ],
-  "lido_em": "01/10/2026"
+  "lido_em": "01/10/2026",
+  "capacidades": [
+   {
+    "id": "shell",
+    "estado": "agente"
+   },
+   {
+    "id": "edicao_patch",
+    "estado": "agente"
+   },
+   {
+    "id": "busca_web",
+    "estado": "agente"
+   },
+   {
+    "id": "web_fetch",
+    "estado": "agente"
+   },
+   {
+    "id": "navegador",
+    "estado": "agente"
+   },
+   {
+    "id": "desktop_mouse_teclado",
+    "estado": "agente"
+   },
+   {
+    "id": "mcp_cliente",
+    "estado": "agente"
+   },
+   {
+    "id": "mcp_servidor",
+    "estado": "agente"
+   },
+   {
+    "id": "canal_telegram",
+    "estado": "agente"
+   },
+   {
+    "id": "canal_whatsapp",
+    "estado": "agente"
+   },
+   {
+    "id": "canal_discord",
+    "estado": "agente"
+   },
+   {
+    "id": "canal_slack",
+    "estado": "agente"
+   },
+   {
+    "id": "canal_signal",
+    "estado": "agente"
+   },
+   {
+    "id": "canal_imessage",
+    "estado": "nao"
+   },
+   {
+    "id": "canal_teams",
+    "estado": "parcial"
+   },
+   {
+    "id": "canal_googlechat",
+    "estado": "parcial"
+   },
+   {
+    "id": "canal_matrix",
+    "estado": "agente"
+   },
+   {
+    "id": "webchat",
+    "estado": "agente"
+   },
+   {
+    "id": "cron",
+    "estado": "agente"
+   },
+   {
+    "id": "heartbeat",
+    "estado": "agente"
+   },
+   {
+    "id": "subagentes",
+    "estado": "agente"
+   },
+   {
+    "id": "multiagente",
+    "estado": "agente"
+   },
+   {
+    "id": "memoria",
+    "estado": "agente"
+   },
+   {
+    "id": "skills",
+    "estado": "agente"
+   },
+   {
+    "id": "hooks",
+    "estado": "agente"
+   },
+   {
+    "id": "plugins",
+    "estado": "parcial"
+   },
+   {
+    "id": "sandbox",
+    "estado": "agente"
+   },
+   {
+    "id": "dispositivos",
+    "estado": "agente"
+   },
+   {
+    "id": "celular",
+    "estado": "agente"
+   },
+   {
+    "id": "app_desktop",
+    "estado": "agente"
+   },
+   {
+    "id": "captura_tela",
+    "estado": "agente"
+   },
+   {
+    "id": "stt",
+    "estado": "agente"
+   },
+   {
+    "id": "tts",
+    "estado": "agente"
+   },
+   {
+    "id": "voz_wake",
+    "estado": "parcial"
+   },
+   {
+    "id": "ocr_imagem",
+    "estado": "agente"
+   },
+   {
+    "id": "geracao_midia",
+    "estado": "agente"
+   },
+   {
+    "id": "canvas",
+    "estado": "agente"
+   },
+   {
+    "id": "github",
+    "estado": "agente"
+   },
+   {
+    "id": "ide_acp",
+    "estado": "agente"
+   }
+  ]
  },
  "hermes": {
   "total": 40,
-  "no_agente": 34,
-  "parcial": 5,
+  "no_agente": 35,
+  "parcial": 4,
   "nao": 1,
-  "pct_agente": 85.0,
-  "pct_com_bibliotecas": 91.2,
+  "pct_agente": 87.5,
+  "pct_com_bibliotecas": 92.5,
   "falta": [
    "canal_imessage"
   ],
   "pela_metade": [
    "canal_teams",
    "canal_googlechat",
-   "canal_email",
    "plugins",
    "voz_wake"
   ],
-  "lido_em": "01/10/2026"
+  "lido_em": "01/10/2026",
+  "capacidades": [
+   {
+    "id": "shell",
+    "estado": "agente"
+   },
+   {
+    "id": "edicao_patch",
+    "estado": "agente"
+   },
+   {
+    "id": "busca_web",
+    "estado": "agente"
+   },
+   {
+    "id": "busca_x",
+    "estado": "agente"
+   },
+   {
+    "id": "navegador",
+    "estado": "agente"
+   },
+   {
+    "id": "desktop_mouse_teclado",
+    "estado": "agente"
+   },
+   {
+    "id": "mcp_cliente",
+    "estado": "agente"
+   },
+   {
+    "id": "canal_telegram",
+    "estado": "agente"
+   },
+   {
+    "id": "canal_whatsapp",
+    "estado": "agente"
+   },
+   {
+    "id": "canal_discord",
+    "estado": "agente"
+   },
+   {
+    "id": "canal_slack",
+    "estado": "agente"
+   },
+   {
+    "id": "canal_signal",
+    "estado": "agente"
+   },
+   {
+    "id": "canal_imessage",
+    "estado": "nao"
+   },
+   {
+    "id": "canal_teams",
+    "estado": "parcial"
+   },
+   {
+    "id": "canal_googlechat",
+    "estado": "parcial"
+   },
+   {
+    "id": "canal_matrix",
+    "estado": "agente"
+   },
+   {
+    "id": "canal_email",
+    "estado": "agente"
+   },
+   {
+    "id": "canal_sms",
+    "estado": "agente"
+   },
+   {
+    "id": "webhooks",
+    "estado": "agente"
+   },
+   {
+    "id": "cron",
+    "estado": "agente"
+   },
+   {
+    "id": "subagentes",
+    "estado": "agente"
+   },
+   {
+    "id": "memoria",
+    "estado": "agente"
+   },
+   {
+    "id": "busca_sessoes",
+    "estado": "agente"
+   },
+   {
+    "id": "skills",
+    "estado": "agente"
+   },
+   {
+    "id": "hooks",
+    "estado": "agente"
+   },
+   {
+    "id": "plugins",
+    "estado": "parcial"
+   },
+   {
+    "id": "sandbox",
+    "estado": "agente"
+   },
+   {
+    "id": "execucao_codigo",
+    "estado": "agente"
+   },
+   {
+    "id": "checkpoints",
+    "estado": "agente"
+   },
+   {
+    "id": "stt",
+    "estado": "agente"
+   },
+   {
+    "id": "tts",
+    "estado": "agente"
+   },
+   {
+    "id": "voz_wake",
+    "estado": "parcial"
+   },
+   {
+    "id": "ocr_imagem",
+    "estado": "agente"
+   },
+   {
+    "id": "geracao_midia",
+    "estado": "agente"
+   },
+   {
+    "id": "pdf",
+    "estado": "agente"
+   },
+   {
+    "id": "github",
+    "estado": "agente"
+   },
+   {
+    "id": "ide_acp",
+    "estado": "agente"
+   },
+   {
+    "id": "api_servidor",
+    "estado": "agente"
+   },
+   {
+    "id": "celular",
+    "estado": "agente"
+   },
+   {
+    "id": "worktrees",
+    "estado": "agente"
+   }
+  ]
  },
  "claude_code": {
   "total": 41,
@@ -47,55 +366,601 @@
   "pela_metade": [
    "plugins"
   ],
-  "lido_em": "01/10/2026"
+  "lido_em": "01/10/2026",
+  "capacidades": [
+   {
+    "id": "shell",
+    "estado": "agente"
+   },
+   {
+    "id": "edicao_patch",
+    "estado": "agente"
+   },
+   {
+    "id": "busca_arquivos",
+    "estado": "agente"
+   },
+   {
+    "id": "notebook",
+    "estado": "agente"
+   },
+   {
+    "id": "busca_web",
+    "estado": "agente"
+   },
+   {
+    "id": "web_fetch",
+    "estado": "agente"
+   },
+   {
+    "id": "pdf",
+    "estado": "agente"
+   },
+   {
+    "id": "ocr_imagem",
+    "estado": "agente"
+   },
+   {
+    "id": "navegador",
+    "estado": "agente"
+   },
+   {
+    "id": "desktop_mouse_teclado",
+    "estado": "agente"
+   },
+   {
+    "id": "captura_tela",
+    "estado": "agente"
+   },
+   {
+    "id": "mcp_cliente",
+    "estado": "agente"
+   },
+   {
+    "id": "mcp_servidor",
+    "estado": "agente"
+   },
+   {
+    "id": "canais_push",
+    "estado": "agente"
+   },
+   {
+    "id": "canal_slack",
+    "estado": "agente"
+   },
+   {
+    "id": "cron",
+    "estado": "agente"
+   },
+   {
+    "id": "subagentes",
+    "estado": "agente"
+   },
+   {
+    "id": "multiagente",
+    "estado": "agente"
+   },
+   {
+    "id": "workflows",
+    "estado": "agente"
+   },
+   {
+    "id": "memoria",
+    "estado": "agente"
+   },
+   {
+    "id": "skills",
+    "estado": "agente"
+   },
+   {
+    "id": "hooks",
+    "estado": "agente"
+   },
+   {
+    "id": "plugins",
+    "estado": "parcial"
+   },
+   {
+    "id": "sandbox",
+    "estado": "agente"
+   },
+   {
+    "id": "permissoes",
+    "estado": "agente"
+   },
+   {
+    "id": "plan_mode",
+    "estado": "agente"
+   },
+   {
+    "id": "checkpoints",
+    "estado": "agente"
+   },
+   {
+    "id": "worktrees",
+    "estado": "agente"
+   },
+   {
+    "id": "github",
+    "estado": "agente"
+   },
+   {
+    "id": "git",
+    "estado": "agente"
+   },
+   {
+    "id": "stt",
+    "estado": "agente"
+   },
+   {
+    "id": "ide",
+    "estado": "agente"
+   },
+   {
+    "id": "lsp",
+    "estado": "agente"
+   },
+   {
+    "id": "app_desktop",
+    "estado": "agente"
+   },
+   {
+    "id": "web_nuvem",
+    "estado": "agente"
+   },
+   {
+    "id": "celular",
+    "estado": "agente"
+   },
+   {
+    "id": "remote_control",
+    "estado": "agente"
+   },
+   {
+    "id": "headless_sdk",
+    "estado": "agente"
+   },
+   {
+    "id": "output_styles",
+    "estado": "agente"
+   },
+   {
+    "id": "perguntas_usuario",
+    "estado": "agente"
+   },
+   {
+    "id": "tarefas",
+    "estado": "agente"
+   }
+  ]
  },
  "codex": {
   "total": 43,
-  "no_agente": 36,
-  "parcial": 4,
-  "nao": 3,
-  "pct_agente": 83.7,
-  "pct_com_bibliotecas": 88.4,
-  "falta": [
-   "linear",
-   "github_action",
-   "gravar_repetir"
-  ],
+  "no_agente": 41,
+  "parcial": 2,
+  "nao": 0,
+  "pct_agente": 95.3,
+  "pct_com_bibliotecas": 97.7,
+  "falta": [],
   "pela_metade": [
-   "entrada_imagem",
    "plugins",
-   "instrucoes_projeto",
    "ambientes_nuvem"
   ],
-  "lido_em": "01/10/2026"
+  "lido_em": "01/10/2026",
+  "capacidades": [
+   {
+    "id": "shell",
+    "estado": "agente"
+   },
+   {
+    "id": "edicao_patch",
+    "estado": "agente"
+   },
+   {
+    "id": "busca_web",
+    "estado": "agente"
+   },
+   {
+    "id": "navegador",
+    "estado": "agente"
+   },
+   {
+    "id": "desktop_mouse_teclado",
+    "estado": "agente"
+   },
+   {
+    "id": "captura_tela",
+    "estado": "agente"
+   },
+   {
+    "id": "entrada_imagem",
+    "estado": "agente"
+   },
+   {
+    "id": "geracao_midia",
+    "estado": "agente"
+   },
+   {
+    "id": "mcp_cliente",
+    "estado": "agente"
+   },
+   {
+    "id": "skills",
+    "estado": "agente"
+   },
+   {
+    "id": "plugins",
+    "estado": "parcial"
+   },
+   {
+    "id": "hooks",
+    "estado": "agente"
+   },
+   {
+    "id": "memoria",
+    "estado": "agente"
+   },
+   {
+    "id": "instrucoes_projeto",
+    "estado": "agente"
+   },
+   {
+    "id": "regras_comando",
+    "estado": "agente"
+   },
+   {
+    "id": "sandbox",
+    "estado": "agente"
+   },
+   {
+    "id": "permissoes",
+    "estado": "agente"
+   },
+   {
+    "id": "subagentes",
+    "estado": "agente"
+   },
+   {
+    "id": "worktrees",
+    "estado": "agente"
+   },
+   {
+    "id": "tarefas",
+    "estado": "agente"
+   },
+   {
+    "id": "cron",
+    "estado": "agente"
+   },
+   {
+    "id": "gatilhos_evento",
+    "estado": "agente"
+   },
+   {
+    "id": "revisao_codigo",
+    "estado": "agente"
+   },
+   {
+    "id": "github",
+    "estado": "agente"
+   },
+   {
+    "id": "gitlab",
+    "estado": "agente"
+   },
+   {
+    "id": "linear",
+    "estado": "agente"
+   },
+   {
+    "id": "canal_slack",
+    "estado": "agente"
+   },
+   {
+    "id": "github_action",
+    "estado": "agente"
+   },
+   {
+    "id": "headless_sdk",
+    "estado": "agente"
+   },
+   {
+    "id": "api_servidor",
+    "estado": "agente"
+   },
+   {
+    "id": "tarefas_nuvem_paralelas",
+    "estado": "agente"
+   },
+   {
+    "id": "ambientes_nuvem",
+    "estado": "parcial"
+   },
+   {
+    "id": "busca_sessoes",
+    "estado": "agente"
+   },
+   {
+    "id": "modelo_local",
+    "estado": "agente"
+   },
+   {
+    "id": "ide",
+    "estado": "agente"
+   },
+   {
+    "id": "app_desktop",
+    "estado": "agente"
+   },
+   {
+    "id": "terminal_integrado",
+    "estado": "agente"
+   },
+   {
+    "id": "web_nuvem",
+    "estado": "agente"
+   },
+   {
+    "id": "celular",
+    "estado": "agente"
+   },
+   {
+    "id": "remote_control",
+    "estado": "agente"
+   },
+   {
+    "id": "stt",
+    "estado": "agente"
+   },
+   {
+    "id": "voz_conversa",
+    "estado": "agente"
+   },
+   {
+    "id": "gravar_repetir",
+    "estado": "agente"
+   }
+  ]
  },
  "openjarvis": {
   "total": 55,
-  "no_agente": 39,
-  "parcial": 9,
-  "nao": 7,
-  "pct_agente": 70.9,
-  "pct_com_bibliotecas": 79.1,
+  "no_agente": 49,
+  "parcial": 5,
+  "nao": 1,
+  "pct_agente": 89.1,
+  "pct_com_bibliotecas": 93.6,
   "falta": [
-   "indexacao_documentos",
-   "importar_skills",
-   "otimizacao_skills",
-   "telemetria_energia",
-   "conectores_google",
-   "clima",
    "canal_imessage"
   ],
   "pela_metade": [
-   "pesquisa_profunda",
-   "avaliacao_modelos",
-   "canal_email",
+   "telemetria_energia",
    "canal_googlechat",
    "canal_teams",
-   "canal_irc",
    "canal_xmpp",
-   "canal_twitch",
    "canal_nostr"
   ],
-  "lido_em": "01/10/2026"
+  "lido_em": "01/10/2026",
+  "capacidades": [
+   {
+    "id": "shell",
+    "estado": "agente"
+   },
+   {
+    "id": "execucao_codigo",
+    "estado": "agente"
+   },
+   {
+    "id": "repl_python",
+    "estado": "agente"
+   },
+   {
+    "id": "leitura_arquivos",
+    "estado": "agente"
+   },
+   {
+    "id": "busca_web",
+    "estado": "agente"
+   },
+   {
+    "id": "web_fetch",
+    "estado": "agente"
+   },
+   {
+    "id": "memoria",
+    "estado": "agente"
+   },
+   {
+    "id": "indexacao_documentos",
+    "estado": "agente"
+   },
+   {
+    "id": "skills",
+    "estado": "agente"
+   },
+   {
+    "id": "importar_skills",
+    "estado": "agente"
+   },
+   {
+    "id": "otimizacao_skills",
+    "estado": "agente"
+   },
+   {
+    "id": "multiagente",
+    "estado": "agente"
+   },
+   {
+    "id": "subagentes",
+    "estado": "agente"
+   },
+   {
+    "id": "cron",
+    "estado": "agente"
+   },
+   {
+    "id": "mcp_cliente",
+    "estado": "agente"
+   },
+   {
+    "id": "modelo_local",
+    "estado": "agente"
+   },
+   {
+    "id": "tts",
+    "estado": "agente"
+   },
+   {
+    "id": "app_desktop",
+    "estado": "agente"
+   },
+   {
+    "id": "webchat",
+    "estado": "agente"
+   },
+   {
+    "id": "api_servidor",
+    "estado": "agente"
+   },
+   {
+    "id": "headless_sdk",
+    "estado": "agente"
+   },
+   {
+    "id": "sandbox",
+    "estado": "agente"
+   },
+   {
+    "id": "acesso_sistema",
+    "estado": "agente"
+   },
+   {
+    "id": "pesquisa_profunda",
+    "estado": "agente"
+   },
+   {
+    "id": "avaliacao_modelos",
+    "estado": "agente"
+   },
+   {
+    "id": "telemetria_energia",
+    "estado": "parcial"
+   },
+   {
+    "id": "resumo_diario",
+    "estado": "agente"
+   },
+   {
+    "id": "conectores_google",
+    "estado": "agente"
+   },
+   {
+    "id": "calculadora",
+    "estado": "agente"
+   },
+   {
+    "id": "clima",
+    "estado": "agente"
+   },
+   {
+    "id": "webhooks",
+    "estado": "agente"
+   },
+   {
+    "id": "canal_telegram",
+    "estado": "agente"
+   },
+   {
+    "id": "canal_discord",
+    "estado": "agente"
+   },
+   {
+    "id": "canal_slack",
+    "estado": "agente"
+   },
+   {
+    "id": "canal_whatsapp",
+    "estado": "agente"
+   },
+   {
+    "id": "canal_email",
+    "estado": "agente"
+   },
+   {
+    "id": "canal_signal",
+    "estado": "agente"
+   },
+   {
+    "id": "canal_googlechat",
+    "estado": "parcial"
+   },
+   {
+    "id": "canal_teams",
+    "estado": "parcial"
+   },
+   {
+    "id": "canal_matrix",
+    "estado": "agente"
+   },
+   {
+    "id": "canal_imessage",
+    "estado": "nao"
+   },
+   {
+    "id": "canal_sms",
+    "estado": "agente"
+   },
+   {
+    "id": "canal_irc",
+    "estado": "agente"
+   },
+   {
+    "id": "canal_mattermost",
+    "estado": "agente"
+   },
+   {
+    "id": "canal_feishu",
+    "estado": "agente"
+   },
+   {
+    "id": "canal_line",
+    "estado": "agente"
+   },
+   {
+    "id": "canal_viber",
+    "estado": "agente"
+   },
+   {
+    "id": "canal_messenger",
+    "estado": "agente"
+   },
+   {
+    "id": "canal_reddit",
+    "estado": "agente"
+   },
+   {
+    "id": "canal_mastodon",
+    "estado": "agente"
+   },
+   {
+    "id": "canal_xmpp",
+    "estado": "parcial"
+   },
+   {
+    "id": "canal_rocketchat",
+    "estado": "agente"
+   },
+   {
+    "id": "canal_zulip",
+    "estado": "agente"
+   },
+   {
+    "id": "canal_twitch",
+    "estado": "agente"
+   },
+   {
+    "id": "canal_nostr",
+    "estado": "parcial"
+   }
+  ]
  }
 }

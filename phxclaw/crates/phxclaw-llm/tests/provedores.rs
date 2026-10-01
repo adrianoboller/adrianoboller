@@ -443,3 +443,86 @@ async fn ollama_real_pede_web_search() {
     assert!(c.arguments["query"].as_str().is_some_and(|q| !q.is_empty()));
     assert!(!c.id.is_empty());
 }
+
+// ---------------------------------------------------------------- imagem na mensagem
+
+/// A mesma mensagem com imagem sai no bloco de imagem de CADA provedor: o motor anexa uma
+/// vez, e quatro traducoes esquecidas fariam o modelo receber so o texto, calado.
+#[tokio::test]
+async fn imagem_da_mensagem_vai_no_bloco_de_cada_provedor() {
+    use phxclaw_agent_core::ImagemAnexa;
+    let img = ImagemAnexa {
+        media_type: "image/png".into(),
+        base64: "iVBORw0KGgo=".into(),
+    };
+    let msgs = vec![Message::user_com_imagens("o que diz?", vec![img])];
+    let o = LlmOptions::default();
+
+    let (base, rx) = comum::subir(
+        200,
+        json!({"model": "m", "message": {"role": "assistant", "content": "ok"}}).to_string(),
+    );
+    OllamaLlm::new(&base, MODELO)
+        .unwrap()
+        .chat(&msgs, &[], &o)
+        .await
+        .unwrap();
+    let c = rx.recv().unwrap().corpo;
+    assert_eq!(c["messages"][0]["images"], json!(["iVBORw0KGgo="]), "{c}");
+
+    let (base, rx) = comum::subir(
+        200,
+        json!({"model": "m", "content": [{"type": "text", "text": "ok"}],
+               "usage": {"input_tokens": 1, "output_tokens": 1}})
+        .to_string(),
+    );
+    AnthropicLlm::new(CHAVE.into(), MODELO, local(&base))
+        .unwrap()
+        .chat(&msgs, &[], &o)
+        .await
+        .unwrap();
+    let c = rx.recv().unwrap().corpo;
+    assert_eq!(
+        c["messages"][0]["content"][0],
+        json!({"type": "image", "source": {"type": "base64", "media_type": "image/png",
+                                           "data": "iVBORw0KGgo="}}),
+        "{c}"
+    );
+    assert_eq!(c["messages"][0]["content"][1]["text"], "o que diz?");
+
+    let (base, rx) = comum::subir(
+        200,
+        json!({"model": "m", "output": [], "usage": {"input_tokens": 1, "output_tokens": 1}})
+            .to_string(),
+    );
+    OpenAiLlm::new(CHAVE.into(), MODELO, local(&base))
+        .unwrap()
+        .chat(&msgs, &[], &o)
+        .await
+        .unwrap();
+    let c = rx.recv().unwrap().corpo;
+    assert_eq!(
+        c["input"][0]["content"],
+        json!([{"type": "input_text", "text": "o que diz?"},
+               {"type": "input_image", "image_url": "data:image/png;base64,iVBORw0KGgo="}]),
+        "{c}"
+    );
+
+    let (base, rx) = comum::subir(
+        200,
+        json!({"candidates": [{"content": {"role": "model", "parts": [{"text": "ok"}]}}],
+               "usageMetadata": {"promptTokenCount": 1, "candidatesTokenCount": 1}})
+        .to_string(),
+    );
+    GeminiLlm::new(CHAVE.into(), MODELO, local(&base))
+        .unwrap()
+        .chat(&msgs, &[], &o)
+        .await
+        .unwrap();
+    let c = rx.recv().unwrap().corpo;
+    assert_eq!(
+        c["contents"][0]["parts"][1],
+        json!({"inline_data": {"mime_type": "image/png", "data": "iVBORw0KGgo="}}),
+        "{c}"
+    );
+}

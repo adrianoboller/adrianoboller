@@ -4,10 +4,14 @@
 //
 // A casca e servida da rede primeiro e do cache so quando a rede falha: assim a versao
 // nova chega na primeira visita com rede, sem esperar um segundo carregamento.
-const CACHE = 'phxclaw-casca-1';
+// O nome do cache muda quando a casca ganha arquivo: o `activate` apaga o anterior, e o
+// celular instalado nao fica com uma casca sem a grade.
+const CACHE = 'phxclaw-casca-2';
 const CASCA = [
   './', './index.html', './manifest.webmanifest',
-  './assets/app.css', './assets/app.js', './assets/idiomas.js', './assets/tarefas.js',
+  './assets/app.css', './assets/app.js', './assets/idiomas.js', './assets/tarefas.js', './assets/tarefas.css',
+  './assets/grades.js', './assets/grades.css', './assets/config.js', './assets/config-catalogo.json',
+  './assets/vendor/phx-grid/phx-grid.js', './assets/vendor/phx-grid/phx-grid.css',
   './assets/textos.json', './assets/phoenix-mark.svg',
   './assets/icone-192.png', './assets/icone-512.png',
 ];

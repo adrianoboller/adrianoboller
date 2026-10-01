@@ -34,6 +34,9 @@ for nome, f in fontes.items():
         "pct_agente": round(100 * len(agente) / len(ids), 1),
         "pct_com_bibliotecas": round(100 * sum(PESO[phx[i]["estado"]] for i in ids) / len(ids), 1),
         "falta": nao, "pela_metade": parcial, "lido_em": f["lido_em"],
+        # Uma linha por capacidade, na ordem da fonte: e o que a grade da tela agrupa por
+        # produto e por estado. As contagens acima continuam sendo as do painel.
+        "capacidades": [{"id": i, "estado": phx[i]["estado"]} for i in ids],
     }
     s = saida[nome]
     print(f"{nome:12} {s['pct_agente']:5.1f}% no agente | {s['pct_com_bibliotecas']:5.1f}% com bibliotecas"

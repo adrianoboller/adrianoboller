@@ -26,7 +26,7 @@ sem SMTP não há `send_email`, sem token não há `github` — e por isso há d
 montou aqui e o que existe no código mas não montou.
 
 <!-- gerado:ferramentas:inicio -->
-Medido em 2026-10-01 por `python3 tools/gerar_doc_agente.py`, de `phxclaw ferramentas` (versao 0.70.0, binario de 2026-10-01 06:23), com `PHXCLAW_CAPACIDADES` no padrao. **62 ferramentas montadas nesta maquina**, 53 concedidas por padrao.
+Medido em 2026-10-01 por `python3 tools/gerar_doc_agente.py`, de `phxclaw ferramentas` (versao 0.70.0, binario de 2026-10-01 12:25), com `PHXCLAW_CAPACIDADES` no padrao. **64 ferramentas montadas nesta maquina**, 54 concedidas por padrao.
 
 | Capacidade | Padrao | Ferramentas |
 |---|---|---|
@@ -56,7 +56,9 @@ Medido em 2026-10-01 por `python3 tools/gerar_doc_agente.py`, de `phxclaw ferram
 | `system.read` | **nao** | `linux_system` |
 | `team.delegate` | sim | `team_delegate` |
 | `team.read` | sim | `team_list` |
+| `weather.read` | **nao** | `weather` |
 | `web.browse` | sim | `browser_open`, `browser_read`, `browser_click`, `browser_type`, `browser_screenshot` |
+| `web.research` | sim | `deep_research` |
 | `web.search` | sim | `web_search` |
 
 <details><summary>Descricao de cada uma (a que o modelo le)</summary>
@@ -78,6 +80,7 @@ Medido em 2026-10-01 por `python3 tools/gerar_doc_agente.py`, de `phxclaw ferram
 | `browser_type` | `web.browse` | Type text into the input matching a CSS selector; optionally press Enter to submit. |
 | `browser_screenshot` | `web.browse` | Save a PNG screenshot of the current page into the task directory. |
 | `image_render` | `fs.write` | Render an .svg or .html file of the task folder to a PNG with headless Chromium. The page sees only the task folder (no network, no other local files). Default size: the SVG's own width/height or viewBox, 1280x800 for HTML. |
+| `deep_research` | `web.research` | Research a question on the web: plans queries, searches, reads the pages and answers with citations. Each citation is checked as a LITERAL passage of a page actually read; invented citations are rejected and reported. |
 | `ocr` | `fs.read` | Extract the text of an image (.png .jpg .jpeg .tif .tiff) or of a .pdf in the task folder by OCR (tesseract; PDF pages rendered at 200 dpi). Default language por+eng. |
 | `image` | `fs.read` | Information about an image in the task folder: width, height and color of a .png/.jpg/.jpeg, or validate an .svg (well-formed XML with an <svg> root) and read its width/height/viewBox. To convert SVG or HTML to PNG use image_render. |
 | `transcribe` | `media.stt` | Speech to text (whisper.cpp) of a .wav audio file in the task folder (16 kHz mono works best). Optional 'language' (e.g. en, pt, auto). |
@@ -105,6 +108,7 @@ Medido em 2026-10-01 por `python3 tools/gerar_doc_agente.py`, de `phxclaw ferram
 | `python_repl` | `shell.exec` | Persistent Python interpreter for this task (isolated sandbox, offline, cwd /work = task directory). Variables, functions and imports survive between calls, like a notebook. Returns stdout, stderr, the repr of the last expression and the traceback if any. reset=true starts a fresh interpreter. |
 | `python_project` | `shell.exec` | Work on a Python project inside the task directory (isolated sandbox, offline). Creates/uses <path>/.venv with uv and installs the dependencies of requirements.txt / pyproject.toml from the local cache. action=setup\|test\|lint\|typecheck\|run: test=pytest, lint=ruff check (fix=true applies safe fixes), typecheck=mypy, run=execute `script` with `args`. path is the project directory relative to the task directory (default '.'); target narrows test/lint/typecheck to a file, directory or pytest node id. Returns structured diagnostics: file, line, column, level, message, code (for pytest the code is the failing test id). |
 | `calculator` | `calc` | Evaluate an arithmetic expression exactly as written: + - * / % ^ (or **), parentheses, pi, e, and sqrt abs ln log log2 exp sin cos tan asin acos atan floor ceil round trunc min max pow. Use it instead of doing arithmetic in your head. |
+| `weather` | `weather.read` | Previsao do tempo para uma coordenada (MET Norway, CC BY 4.0): temperatura, vento, umidade, chuva e simbolo hora a hora. Cite a atribuicao que vem na resposta. |
 | `session_search` | `session.read` | Full-text search over previous tasks of this agent (objective, plan, answer and step summaries). Returns the best matches with id, date, status and a snippet. Use it to recall what was done or found before. |
 | `daily_summary` | `session.read` | Summary of all tasks created on a day (UTC): counts by status, tokens, and one line per task with its outcome and files. date: YYYY-MM-DD, 'today' (default) or 'yesterday'. |
 | `memory_save` | `memory.write` | Save a short note that future tasks should know (a user preference, a fact learned, where something is). Future tasks receive the most relevant notes automatically. Never save passwords or keys: they are redacted. |
@@ -121,7 +125,7 @@ Medido em 2026-10-01 por `python3 tools/gerar_doc_agente.py`, de `phxclaw ferram
 | `git_write` | `git.write` | Change a git repository in the task directory (sandboxed, no network). action: init {branch?}; add {paths}; commit {message, all?}; checkout {branch, create?, base?}; branch_create {branch, base?}; branch_delete {branch, force?}; stash {op: push\|pop\|apply\|drop\|list, message?, include_untracked?, index?}. 'path' selects the repo folder (default: task root). |
 | `git_worktree` | `git.write` | Isolated git worktrees for parallel tasks. action=add {name, branch?, base?} creates <repo>/.worktrees/<name> on branch phxclaw/<name> (returns its path, usable as 'path' in git/git_write and file tools); action=list; action=remove {name, force?}. 'path' selects the main repo. |
 | `lsp` | `fs.read` | Read-only language server queries on files in the task directory (rust (.rs), python (.py, .pyi)). action=definition\|references\|hover need path, line and column (1-based); action=symbols with path lists the file's symbols, with query searches the workspace; action=diagnostics returns the file's errors and warnings. Never edits files. |
-| `team_list` | `team.read` | List the 110 PhxClaw team roles (id \| name \| macro-area \| type \| criticality \| main capability \| when to call). Filter with 'macroarea' and/or 'text'; pass 'id' (number or name) to get one role in full. Use before team_delegate to pick the right role. |
+| `team_list` | `team.read` | List the 111 PhxClaw team roles (id \| name \| macro-area \| type \| criticality \| main capability \| when to call). Filter with 'macroarea' and/or 'text'; pass 'id' (number or name) to get one role in full. Use before team_delegate to pick the right role. |
 | `team_delegate` | `team.delegate` | Delegate one self-contained sub-task to a PhxClaw team role (by id or name, see team_list). The role runs as a sub-agent with its own mission and limits and only the tools both it and you are allowed; returns its answer. Human roles do not run: they come back asking for a human decision. |
 | `parallel_tasks` | `agent.parallel` | Run up to 6 coding tasks in parallel over a git repo in the working directory. Each task gets its own git worktree (branch phxclaw/<name>) as an isolated sandboxed workspace and a sub-agent; when all finish, each worktree's changes are committed on its branch. Returns per task: answer, branch, commit and changed files. 'attempts' (best-of-N, up to 4) runs the same objective N times in separate worktrees (<name>-1..N) so you can compare and keep the best. Review/merge the branches afterwards with git/git_write. |
 | `parallel_research` | `agent.spawn` | Run up to 6 independent sub-agents in parallel, one per sub-task, and return each answer. Use for research over many items (compare products, gather facts about several topics). |
@@ -132,11 +136,12 @@ Medido em 2026-10-01 por `python3 tools/gerar_doc_agente.py`, de `phxclaw ferram
 ### Existem no fonte, não montadas nesta máquina
 
 <!-- gerado:condicionais:inicio -->
-Medido em 2026-10-01: **11 ferramentas existem no fonte e nao montaram nesta maquina** (dependem de configuracao, token, canal ou feature de compilacao; a condicao de cada uma esta em `crates/phxclaw-agent/src/montagem.rs`).
+Medido em 2026-10-01: **13 ferramentas existem no fonte e nao montaram nesta maquina** (dependem de configuracao, token, canal ou feature de compilacao; a condicao de cada uma esta em `crates/phxclaw-agent/src/montagem.rs`).
 
 | Ferramenta | Definida em |
 |---|---|
 | `channel_send` | `crates/phxclaw-agent/src/canais/mod.rs` |
+| `doc_search` | `crates/phxclaw-agent/src/documentos.rs` |
 | `github` | `crates/phxclaw-agent/src/forja.rs` |
 | `github_write` | `crates/phxclaw-agent/src/forja.rs` |
 | `gitlab` | `crates/phxclaw-agent/src/forja.rs` |
@@ -146,6 +151,7 @@ Medido em 2026-10-01: **11 ferramentas existem no fonte e nao montaram nesta maq
 | `postgres` | `crates/phxclaw-agent/src/sistema.rs` |
 | `postgres_write` | `crates/phxclaw-agent/src/sistema.rs` |
 | `send_email` | `crates/phxclaw-agent/src/email.rs` |
+| `voice_list` | `crates/phxclaw-agent/src/elevenlabs.rs` |
 | `x_search` | `crates/phxclaw-agent/src/xai.rs` |
 
 Montadas sem nome literal no fonte (MCP externo ou nome dinamico): `browser_click`, `browser_open`, `browser_read`, `browser_screenshot`, `browser_type`.
@@ -165,68 +171,57 @@ Saida de `phxclaw --help`, gerada em 2026-10-01:
 ```text
 PhxClaw 0.70.0
 
-USAGE:
-  phxclaw <COMMAND>
+USO:
+  phxclaw <COMANDO> [opcoes]
+  phxclaw ajuda <COMANDO>
 
-COMMANDS:
-  mcp-serve [--trabalho DIR] [--modelo M] [--pasta DIR]
-                     Agent tools as an MCP server over stdio (same PHXCLAW_CAPACIDADES)
-  acp [--modelo M] [--pasta DIR]
-                     Agent Client Protocol over stdio for editors (same agent, project = cwd)
-  xai chave [--pasta DIR]
-                     Store PHXCLAW_XAI_API_KEY in the secret broker: enables x_search
-                     (capability x.search, not granted by default)
-  ponte --cert PEM --chave PEM --tokens ARQ [--porta 8790] [--porta-wss 8791] [--pasta DIR]
-                     Remote-control bridge: the installable web UI for the client, and the
-                     WSS where an agent connects OUT with `servir --ponte wss://...`
-  agente "objetivo" [--modelo M] [--plano [--sim]] [--estilo NOME] [--pasta DIR]
-                     Run the autonomous agent now, showing each step; --plano = read-only
-                     Plan Mode, executes only after approval; questions are answered here
-  sessoes "termo" [--limite N]   Search previous tasks (same search as session_search)
-  resumo [--data AAAA-MM-DD|hoje|ontem]   Summary of the day's tasks (same as daily_summary)
-  estilos            Output styles (built-in and .phxclaw/estilos/*.md)
-  voz ARQ.wav [ARQ2.wav ...] [--modelo M] [--pasta DIR]
-                     Voice conversation, one turn per WAV: whisper -> agent -> speech WAV
-                     (PHXCLAW_WHISPER_* and PHXCLAW_TTS_*)
-  canal <name> [--pasta DIR] [--escuta ADDR]
-                     Messaging channel as agent input: telegram, discord, slack, whatsapp, teams,
-                     matrix, email, webhook, webchat, signal, googlechat, sms, mattermost,
-                     rocketchat, zulip, irc, xmpp, mastodon, line, viber, messenger, feishu,
-                     reddit, twitch, nostr (PHXCLAW_<NAME>_PERMITIDOS=id,id; Telegram keeps
-                     PHXCLAW_TELEGRAM_BOT_TOKEN and PHXCLAW_TELEGRAM_CHATS)
-  servir [--porta 8787] [--pasta DIR] [--canal NAME] [--dispositivos --cert C --chave K --tokens F
-         [--porta-dispositivos 8788]] [--ponte wss://H:P/ [--ponte-ca PEM] [--ponte-tenant U]
-         [--sem-porta]]
-                     Task API (create, follow, plan approval, answer, cancel, artifacts,
-                     schedules); heartbeat (HEARTBEAT.md), file and webhook triggers
-                     (.phxclaw/gatilhos.json); hooks and command rules from .phxclaw/
-                     and the installable web UI (PWA) at /; --ponte connects OUT to a
-                     `phxclaw ponte` for remote control (PHXCLAW_ENROLLMENT_TOKEN once)
-  dispositivos --cert C --chave K --tokens F [--porta 8788]
-                     Device WSS server (TLS, one-time pairing tokens, signed envelopes);
-                     with `servir --dispositivos` the agent gets node_list/node_invoke
-  fluxo rodar ARQ.json | retomar TAREFA ARQ.json [--modelo M] [--pasta DIR]
-                     Declarative workflow: steps with dependencies (DAG), each an agent task
-                     or a tool call, through the same engine and policy gate; progress
-                     is saved every wave, and `retomar` skips the steps that succeeded
-  equipe [listar [--macroarea X] [--texto Y] | mostrar ID | delegar ID "tarefa" [--modelo M]]
-                     The 110 team roles of config/agents (PHXCLAW_AGENTES_DIR); delegate runs one
-                     as a sub-agent (PHXCLAW_MODELO_LOCAL for roles routed to Ollama)
-  ferramentas        Agent tools assembled on this machine, as JSON (desktop Tools screen)
-  revisar [--repo DIR] [--rev R] [--cached] [--diff ARQ|-] [--pr github:dono/proj#7]
-          [--foco TEXTO] [--modelo M] [--falhar-em alta] [--pasta DIR]
-                     Code review of a diff by the agent's model (same engine as code_review),
-                     JSON findings; --falhar-em exits 1 at that severity or worse (CI)
-  forja token github|gitlab [--pasta DIR]
-                     Store PHXCLAW_GITHUB_TOKEN / PHXCLAW_GITLAB_TOKEN in the agent's
-                     SecretBroker; the github/gitlab tools exist only after this
-  core status        Probed runtime state (sandbox, browser, model server)
-  db plan [platform] Show PostgreSQL managed-install plan
-  version            Show version
+AGENTE:
+  agente        Roda o agente agora, mostrando cada passo
+  voz           Conversa por voz, um turno por arquivo WAV
+  sessoes       Busca nas tarefas anteriores
+  resumo        Resumo das tarefas do dia
+  estilos       Lista os estilos de saida
+  skills        Importa SKILL.md de outros agentes (scripts desligados, origem com SHA-256)
+  indexar       Indexa uma pasta de documentos para o doc_search (BM25)
+  projeto       Confia num projeto: os AGENTS.md dele entram no prompt
 
-MODELS: ollama:<model> (local), openai:<model>, anthropic:<model>, gemini:<model>
-        (keys from OPENAI_API_KEY / ANTHROPIC_API_KEY / GEMINI_API_KEY)
-POLICY: PHXCLAW_CAPACIDADES=web.search,web.browse,fs.read,fs.write,doc.write,shell.exec,agent.spawn
+EQUIPE E FLUXOS:
+  equipe        Os papeis da equipe: listar, mostrar, delegar
+  fluxo         Fluxo em DAG: rodar e retomar
+
+CODIGO:
+  revisar       Revisao de codigo de um diff ou PR (serve para CI)
+
+SERVICOS (API, CANAIS, EDITORES, DISPOSITIVOS):
+  servir        API de tarefas, UI web (PWA), gatilhos e heartbeat
+  canal         Canal de mensagens como entrada do agente (25 canais)
+  mcp-serve     Ferramentas do agente como servidor MCP (stdio)
+  acp           Agent Client Protocol para editores (stdio)
+  dispositivos  Servidor WSS de dispositivos pareados
+  ponte         Ponte de controle remoto (o agente se liga para fora)
+
+CREDENCIAIS (vao para o SecretBroker, nunca para arquivo):
+  forja         Guarda o token do GitHub ou do GitLab
+  mcp           Credencial de um servidor MCP remoto (Bearer ou OAuth)
+  elevenlabs    Guarda a chave da ElevenLabs ou lista as vozes da conta
+  gemini        Guarda a chave da Gemini API (Nano Banana no image_generate)
+  xai           Guarda a chave da xAI (habilita x_search)
+
+MEDICAO (so numero medido, com faixa min-max, N e data):
+  repetir       Repete uma gravacao sem modelo e acusa a divergencia com o passo
+  avaliar       Compara modelos pelo agente: p50/p95, tokens/s, CPU, energia e acerto
+  skill         Otimiza uma skill por A/B medido; so promove sem cruzar faixas
+
+DIAGNOSTICO:
+  ferramentas   Ferramentas montadas nesta maquina, em JSON
+  core          Estado medido do runtime
+  db            Plano de instalacao do PostgreSQL
+  config        O config.json: valor efetivo e origem de cada chave, validar, definir
+  version       Versao
+
+MODELOS: ollama:<modelo> (local), openai:<modelo>, anthropic:<modelo>, gemini:<modelo>
+         (chaves de OPENAI_API_KEY / ANTHROPIC_API_KEY / GEMINI_API_KEY)
+POLITICA: PHXCLAW_CAPACIDADES=web.search,web.browse,fs.read,fs.write,... (padrao: CAPACIDADES_PADRAO)
 ```
 <!-- gerado:cli:fim -->
 
@@ -263,7 +258,7 @@ POLICY: PHXCLAW_CAPACIDADES=web.search,web.browse,fs.read,fs.write,doc.write,she
 ## Equipe de papéis
 
 <!-- gerado:equipe:inicio -->
-**110 papeis** carregados de `config/agents` (medido em 2026-10-01 por `phxclaw equipe listar`).
+**111 papeis** carregados de `config/agents` (medido em 2026-10-01 por `phxclaw equipe listar`).
 <!-- gerado:equipe:fim -->
 
 - **`team_list`** (`team.read`) lista os papéis (id, nome, macroárea, tipo, criticidade,

@@ -1,0 +1,17 @@
+phx-grid 0.78.1 (PhxGrid.versao no proprio fonte)
+
+Origem: o build unico do phx-grid (src/phx-grid.js + src/phx-grid.css), gerado pelo build.py
+do projeto a partir de src/modulos/. Copiado SEM alteracao: nenhum byte editado aqui. O que a
+tela do PhxClaw precisa de diferente mora em assets/grades.js e assets/grades.css.
+
+Autoria: Phoenix / WX Solucoes (cabecalho do fonte e LEIAME.md) -- componente do proprio dono
+do PhxClaw. O pacote recebido NAO traz arquivo de licenca; por ser do mesmo dono, nao entra
+no THIRD_PARTY_NOTICES.md. Se um dia vier de terceiro, a nota passa a ser obrigatoria.
+
+Conferencia (sha256 dos arquivos copiados):
+4169bba416e6f47eb31cd2f7322734497651b7f053b7cdde5d10cd91466b59a1  phx-grid.js
+d30c634929b20217475828e9b68913371e65b8263fa0e27cb3ff1111136c8cd5  phx-grid.css
+
+Atualizar: copie os dois arquivos do build novo, troque a versao e os sha256 acima, e rode
+tests/desktop/ui_navegacao.mjs e tests/desktop/textos_fora_da_fabrica.mjs -- texto cru novo
+do phx-grid aparece na catraca, e entra por definirTextos ou por grades.js (LOCAIS).

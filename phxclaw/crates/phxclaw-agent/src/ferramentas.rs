@@ -656,6 +656,7 @@ impl ScriptedLlm {
             usage: Usage {
                 input_tokens: 10,
                 output_tokens: 5,
+                duracao_geracao_ns: None,
             },
             model: "roteiro".into(),
         }
@@ -671,6 +672,7 @@ impl ScriptedLlm {
             usage: Usage {
                 input_tokens: 10,
                 output_tokens: 5,
+                duracao_geracao_ns: None,
             },
             model: "roteiro".into(),
         }
