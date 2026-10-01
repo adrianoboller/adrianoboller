@@ -5604,6 +5604,7 @@ impl Servidor {
         if desde >= no.eventos {
             return Ok(0);
         }
+        let inicio = desde;
 
         let mut aplicados = 0u64;
         loop {
@@ -5633,20 +5634,10 @@ impl Servidor {
                 self.parar_o_par(&origem.nome, &chave_tab, &chave_pos, posicao, conflito);
                 break;
             }
-            // A posicao consumida so anda DEPOIS de o lote estar gravado: uma
-            // queda entre a leitura e a aplicacao deixa a posicao onde estava,
-            // e o mesmo lote volta na proxima rodada. Repetir e inofensivo
-            // aqui -- o casamento e por chave e a regra e "mais recente
-            // vence", entao aplicar duas vezes o mesmo evento da no mesmo.
-            // Andar antes seria o contrario: perderia o lote em silencio.
+            // Aqui a posicao anda so na MEMORIA deste laco. Ela vai ao mapa
+            // compartilhado e ao disco no fim do alcance, depois do `fsync`
+            // do dado -- ver a nota abaixo.
             desde = lote.ate;
-            if let Ok(mut p) = self.posicoes_bidi.lock() {
-                p.insert(chave_pos.clone(), desde);
-                let _ = bidirecional::gravar_posicoes(
-                    &self.config.base.join("replicacao-posicoes.json"),
-                    &p,
-                );
-            }
             self.anotar_estado(&origem.nome, |est| {
                 est.posicoes.insert(chave_tab.clone(), desde);
             });
@@ -5654,8 +5645,47 @@ impl Servidor {
                 break;
             }
         }
-        if aplicados > 0 {
+        // Pedido 535: DADO DURAVEL PRIMEIRO, POSICAO DEPOIS.
+        //
+        // A posicao ia ao disco a cada lote, num `write` sem `fsync`, e o dado
+        // so no `fsync` do fim do alcance: nada ordenava os dois, e a posicao
+        // podia chegar primeiro (escrita de fundo, ou o diario do ext4 puxado
+        // pelo `fsync` de outro arquivo). Na queda, os eventos entre o dado
+        // perdido e a posicao gravada nunca mais eram pedidos.
+        //
+        // Os tres maduros convergem no COMPORTAMENTO -- a posicao consumida
+        // nunca fica a frente do dado duravel --, e o fazem pelo MEIO da
+        // transacao: a origem de replicacao do PostgreSQL avanca no registro
+        // de commit, o `mysql.slave_relay_log_info` do MySQL e o
+        // `gtid_slave_pos` da MariaDB sao tabelas InnoDB gravadas no mesmo
+        // commit. Aceite do comportamento, e nao do meio: aqui a aplicacao e
+        // por chave com «mais recente vence», entao reaplicar e inofensivo, e
+        // basta que a posicao nunca passe o dado. Gravar a posicao DENTRO da
+        // tabela seria mudar o formato do `.reg` para comprar uma atomicidade
+        // de que a idempotencia ja nos dispensa.
+        //
+        // O mapa compartilhado so recebe a posicao DEPOIS do `fsync`, e nao a
+        // cada lote: ele e gravado INTEIRO, e um alcance de outra origem que o
+        // gravasse no meio deste levaria ao disco a posicao desta tabela a
+        // frente do dado dela -- o mesmo defeito, por um irmao.
+        //
+        // Sincroniza tambem quando nada se aplicou mas a posicao andou: um
+        // alcance anterior que caiu no meio (erro de rede depois de aplicar)
+        // deixou dado sem `fsync`, e o lote repetido agora chega todo
+        // «ignorado» -- gravar a posicao sem o `fsync` passaria por cima dele.
+        if aplicados > 0 || desde > inicio {
             self.sincronizar_replicada(database, &no.nome)?;
+        }
+        if desde > inicio {
+            // A troca duravel (temporario, `fsync`, `rename`, `fsync` da
+            // pasta) roda FORA da trava global de dados -- so com a do mapa
+            // de posicoes, que nenhuma escrita de cliente toma.
+            let mut p = self
+                .posicoes_bidi
+                .lock()
+                .map_err(|_| PhxError::Io(std::io::Error::other("posicoes_bidi envenenado")))?;
+            p.insert(chave_pos.clone(), desde);
+            bidirecional::gravar_posicoes(&self.config.base.join("replicacao-posicoes.json"), &p)?;
         }
         Ok(aplicados)
     }

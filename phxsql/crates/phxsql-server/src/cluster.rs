@@ -390,16 +390,45 @@ impl EstadoCluster {
             _ => PapelVivo::Replica,
         };
         let mut epoca = 0u64;
-        if let Ok(texto) = std::fs::read_to_string(&caminho_estado) {
-            if let Ok(j) = Json::analisar(&texto) {
-                if let Some(p) = PapelVivo::de_texto(j.texto_ou("papel", "")) {
-                    papel = p;
-                    epoca = j.inteiro_ou("epoca", 0).max(0) as u64;
-                    eprintln!(
-                        "cluster: estado retomado de {}: papel {}, epoca {epoca}",
-                        caminho_estado.display(),
-                        papel.nome()
-                    );
+        // Pedido 534: AUSENTE e PRESENTE-E-ILEGIVEL sao coisas diferentes, e
+        // tratar as duas como «primeiro arranque» devolvia o papel do config
+        // ao no que o arquivo dizia ter sido rebaixado -- master na epoca 0,
+        // escrevendo ate o primeiro pulso ver a epoca de verdade (o «dois
+        // lideres» do 338). Ausente continua sendo o primeiro arranque; o
+        // ilegivel nasce replica SEM escrita: quem nao sabe o que foi nao
+        // pode se declarar lider, e a replica se corrige sozinha pelo pulso
+        // do master corrente -- o caminho inverso nao se corrige sem perder
+        // escrita de alguem.
+        match std::fs::read_to_string(&caminho_estado) {
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            lido => {
+                let legivel = lido.ok().and_then(|texto| {
+                    let j = Json::analisar(&texto).ok()?;
+                    let p = PapelVivo::de_texto(j.texto_ou("papel", ""))?;
+                    Some((p, j.inteiro_ou("epoca", 0).max(0) as u64))
+                });
+                match legivel {
+                    Some((p, ep)) => {
+                        papel = p;
+                        epoca = ep;
+                        eprintln!(
+                            "cluster: estado retomado de {}: papel {}, epoca {epoca}",
+                            caminho_estado.display(),
+                            papel.nome()
+                        );
+                    }
+                    None => {
+                        papel = PapelVivo::Replica;
+                        eprintln!(
+                            "cluster: {} existe e nao se le (truncado ou corrompido); \
+                             este no nasce REPLICA e sem escrita, seja qual for o \
+                             papel do config -- se ele foi rebaixado, voltar master \
+                             seriam dois lideres escrevendo. O pulso do master \
+                             corrente o alcanca; para forcar o papel, apague o \
+                             arquivo sabendo que nenhum outro no e master",
+                            caminho_estado.display()
+                        );
+                    }
                 }
             }
         }
@@ -1074,18 +1103,29 @@ impl EstadoCluster {
     /// liberada. E o UNICO caminho de promocao -- a eleicao automatica passa
     /// por aqui, e uma promocao manual deve chamar o mesmo lugar, senao os
     /// dois caminhos divergem no primeiro esquecimento.
+    ///
+    /// Pedido 534: o estado novo vai ao DISCO antes de a escrita se liberar
+    /// e antes de o pulso poder anunciar o papel. Na ordem antiga, uma queda
+    /// logo depois de liberar devolvia um no que ja escreveu como master e
+    /// renasce sem saber disso; e um erro de gravacao deixa o no como
+    /// estava, porque promocao que nao se lembra de si nao e promocao.
     pub fn promover(&self, epoca_nova: u64) -> Result<u64> {
+        self.persistir_estado(PapelVivo::Master, epoca_nova)?;
         self.epoca.store(epoca_nova, Ordering::SeqCst);
         self.papel.store(PAPEL_MASTER, Ordering::SeqCst);
         self.escrita_liberada.store(true, Ordering::SeqCst);
         *self.master_id.travar() = Some(self.config.id.clone());
         self.master_visto_ms
             .store(crate::agora_ms(), Ordering::SeqCst);
-        self.persistir()?;
         Ok(epoca_nova)
     }
 
     /// REBAIXA este no a replica -- o destronado que viu epoca maior.
+    ///
+    /// A ordem aqui e a INVERSA da do [`Self::promover`], e pelo mesmo
+    /// motivo: parar de escrever e o lado seguro e nao espera o disco. Se a
+    /// gravacao falhar, o no ja e replica na memoria; o que sobra e o
+    /// arranque seguinte, e esse o pulso do master corrente corrige.
     pub fn rebaixar(&self, epoca_do_novo: u64) -> Result<()> {
         self.papel.store(PAPEL_REPLICA, Ordering::SeqCst);
         self.escrita_liberada.store(false, Ordering::SeqCst);
@@ -1094,13 +1134,25 @@ impl EstadoCluster {
     }
 
     fn persistir(&self) -> Result<()> {
+        self.persistir_estado(self.papel(), self.epoca())
+    }
+
+    /// Grava papel e epoca pelo motor que ja existe para arquivo que nao pode
+    /// voltar pela metade nem voltar ANTIGO: `config::gravar_privado` --
+    /// temporario 0600, `fsync`, `rename`, `fsync` da pasta (pedido 467).
+    ///
+    /// Pedido 534: era um `write` no lugar, sem `fsync`. A queda entre o
+    /// truncar e o escrever deixava o arquivo vazio, e a queda depois dele
+    /// podia devolver o antigo -- nos dois casos o master rebaixado voltava
+    /// mandando. Os `fsync` nao rodam sob a trava global de dados: quem
+    /// chama e o arbitro e o pulso, que nao a tomam.
+    fn persistir_estado(&self, papel: PapelVivo, epoca: u64) -> Result<()> {
         let texto = Json::objeto(vec![
-            ("papel", Json::texto_de(self.papel().nome())),
-            ("epoca", Json::de_u64(self.epoca())),
+            ("papel", Json::texto_de(papel.nome())),
+            ("epoca", Json::de_u64(epoca)),
         ])
         .escrever();
-        // 0600 pelo motor da permissao do banco (pedido 542).
-        phxsql_store::permissao::escrever_do_banco(&self.caminho_estado, texto).map_err(|e| {
+        crate::config::gravar_privado(&self.caminho_estado, texto.as_bytes()).map_err(|e| {
             PhxError::Io(std::io::Error::other(format!(
                 "{}: {e}",
                 self.caminho_estado.display()
@@ -1316,6 +1368,175 @@ mod testes {
         assert_eq!(e3.epoca(), 9);
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Pedido 534, a prova que o pedido pediu: o `source` rebaixado cujo
+    /// arquivo ficou TRUNCADO a zero (a queda entre o truncar e o escrever
+    /// da gravacao antiga) nao sobe aceitando escrita. Com o defeito reposto
+    /// -- ilegivel tratado como ausente -- ele nasce master na epoca 0.
+    #[test]
+    fn estado_ilegivel_nasce_replica_sem_escrita() {
+        let dir = DirTemp::novo("cluster-estado-truncado");
+        let e = EstadoCluster::novo(config_de_teste(), &dir, crate::config::Papel::Source);
+        e.rebaixar(5).unwrap();
+        let caminho = dir.join("cluster.estado.json");
+        for corpo in ["", "{\"papel\":\"mas", "{\"papel\":\"rei\",\"epoca\":9}"] {
+            std::fs::write(&caminho, corpo).unwrap();
+            let e2 = EstadoCluster::novo(config_de_teste(), &dir, crate::config::Papel::Source);
+            assert_eq!(e2.papel(), PapelVivo::Replica, "corpo {corpo:?}");
+            assert!(!e2.escrita_liberada(), "corpo {corpo:?}");
+            assert!(e2.recusa_de_escrita().is_some(), "corpo {corpo:?}");
+        }
+    }
+
+    /// O filho que o teste de baixo roda debaixo do `strace`.
+    #[test]
+    #[ignore = "roda so dentro de o_estado_vai_ao_disco_pela_troca_duravel"]
+    fn filho_do_estado_duravel() {
+        let d = PathBuf::from(std::env::var("PHX_534_DIR").unwrap());
+        let e = EstadoCluster::novo(config_de_teste(), &d, crate::config::Papel::Replica);
+        e.promover(3).unwrap();
+        e.rebaixar(4).unwrap();
+    }
+
+    /// **Pedido 534, contra o sistema operacional:** cada gravacao do estado
+    /// do cluster -- a do `promover` e a do `rebaixar` -- e temporario com
+    /// `fsync` no descritor que o escreveu, `rename` para o nome final e
+    /// `fsync` da pasta, NESTA ordem (`strace -y`).
+    ///
+    /// **Defeito reposto:** o `escrever_do_banco` de antes (write no lugar)
+    /// -- nao ha `rename` nenhum, e a premissa cai.
+    ///
+    /// **Nao medido:** a queda em si (pede derrubar a maquina ou um
+    /// `dm-flakey`); o que se prova e a ordem e o descritor das chamadas.
+    #[cfg(unix)]
+    #[test]
+    fn o_estado_vai_ao_disco_pela_troca_duravel() {
+        use std::process::Command;
+        if Command::new("strace").arg("-V").output().is_err() {
+            eprintln!("sem strace nesta maquina: a prova do 534 NAO MEDIDA");
+            return;
+        }
+        let t = DirTemp::novo("534-strace");
+        let d = std::fs::canonicalize(&*t).unwrap();
+        let traco = d.join("traco.txt");
+        let saida = Command::new("strace")
+            .args([
+                "-f",
+                "-qq",
+                "-y",
+                "-e",
+                "trace=openat,write,fsync,close,rename,renameat,renameat2",
+                "-o",
+            ])
+            .arg(&traco)
+            .arg(std::env::current_exe().unwrap())
+            .args([
+                "--ignored",
+                "--exact",
+                "cluster::testes::filho_do_estado_duravel",
+                "--test-threads=1",
+            ])
+            .env("PHX_534_DIR", &d)
+            .output()
+            .unwrap();
+        assert!(
+            saida.status.success(),
+            "{}",
+            String::from_utf8_lossy(&saida.stderr)
+        );
+        let texto = std::fs::read_to_string(&traco).unwrap();
+        let linhas: Vec<&str> = texto
+            .lines()
+            .filter(|l| l.contains(" = ") && !l.contains("= -1"))
+            .collect();
+        let final_ = d.join("cluster.estado.json").display().to_string();
+        let tmp = format!("{final_}.tmp");
+        let pasta = d.display().to_string();
+        let trocas: Vec<usize> = linhas
+            .iter()
+            .enumerate()
+            .filter(|(_, l)| {
+                l.contains("rename")
+                    && l.contains(&format!("\"{tmp}\", "))
+                    && l.contains(&format!("\"{final_}\""))
+            })
+            .map(|(i, _)| i)
+            .collect();
+        assert_eq!(
+            trocas.len(),
+            2,
+            "a premissa: promover e rebaixar trocam o arquivo por rename:\n{texto}"
+        );
+        let mut desde = 0;
+        for i in trocas {
+            let antes = &linhas[desde..i];
+            let fd = antes
+                .iter()
+                .rev()
+                .find(|l| l.contains("openat(") && l.contains(&format!("\"{tmp}\"")))
+                .and_then(|l| l.rsplit("= ").next())
+                // O `-y` imprime o retorno como `3</caminho>`: so o numero.
+                .map(|s| s.split('<').next().unwrap_or("").trim().to_string())
+                .unwrap_or_else(|| panic!("o temporario nao nasceu por openat:\n{texto}"));
+            let escreveu = antes
+                .iter()
+                .position(|l| l.contains(&format!("write({fd}<{tmp}>")))
+                .unwrap_or_else(|| panic!("nada escrito no temporario:\n{texto}"));
+            assert!(
+                antes[escreveu..]
+                    .iter()
+                    .any(|l| l.contains(&format!("fsync({fd}<{tmp}>)"))),
+                "rename sem fsync do temporario no descritor que escreveu:\n{texto}"
+            );
+            let depois = &linhas[i + 1..];
+            let fim = depois
+                .iter()
+                .position(|l| l.contains("rename"))
+                .unwrap_or(depois.len());
+            assert!(
+                depois[..fim]
+                    .iter()
+                    .any(|l| l.contains("fsync(") && l.contains(&format!("<{pasta}>)"))),
+                "rename sem fsync da pasta depois:\n{texto}"
+            );
+            desde = i + 1;
+        }
+    }
+
+    /// O comportamento VELHO que o 534 nao pode quebrar: arquivo AUSENTE e
+    /// o primeiro arranque, e o `source` do config nasce master com escrita.
+    #[test]
+    fn estado_ausente_continua_sendo_o_primeiro_arranque() {
+        let dir = DirTemp::novo("cluster-estado-ausente");
+        let e = EstadoCluster::novo(config_de_teste(), &dir, crate::config::Papel::Source);
+        assert_eq!(e.papel(), PapelVivo::Master);
+        assert!(e.escrita_liberada());
+        assert!(e.recusa_de_escrita().is_none());
+    }
+
+    /// Pedido 534: promover grava ANTES de liberar a escrita, e pelo motor
+    /// da troca duravel -- a gravacao que falha faz a promocao falhar, e o
+    /// no continua replica e sem escrita. Com o defeito reposto (liberar e
+    /// depois gravar, ou gravar no lugar sem temporario) o no fica master
+    /// escrevendo sem o disco saber disso.
+    ///
+    /// A falha vem de uma PASTA no nome do temporario, e nao do
+    /// `falha_de_teste` no `fsync`: neste binario de teste outro teste pode
+    /// ja ter registrado o gancho do 509, e um `fsync` recusado abortaria o
+    /// processo inteiro. A ordem `fsync` -> `rename` -> `fsync` da pasta se
+    /// prova contra o SO, pelo `strace` da guarda do catalogo.
+    #[test]
+    fn promover_que_nao_chega_ao_disco_nao_libera_escrita() {
+        let dir = DirTemp::novo("cluster-promover-sem-disco");
+        let e = EstadoCluster::novo(config_de_teste(), &dir, crate::config::Papel::Replica);
+        let tmp = crate::config::temporario_de(&dir.join("cluster.estado.json"));
+        std::fs::create_dir_all(tmp.join("ocupado")).unwrap();
+        let r = e.promover(4);
+        assert!(r.is_err(), "promoveu sem o estado chegar ao disco");
+        assert_eq!(e.papel(), PapelVivo::Replica);
+        assert!(!e.escrita_liberada());
+        assert_eq!(e.epoca(), 0);
     }
 
     /// A replica redireciona para o master que conhece -- com o pedaco

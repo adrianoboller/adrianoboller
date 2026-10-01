@@ -1007,9 +1007,9 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `faxina-do-backup-sem-conferir-o-inode` | a faxina do backup remove pelo descritor da mãe mas não confere o inode: a pasta vazia de outro que entrou no nome da nossa sai | 1 | ✅ provada |
 | `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | — | 🪦 aposentada (18/09/2026) |
 
-**362 das 539 guardas do catálogo: 1 aposentada, 357 provadas, 4 redundantes** — 9592 s de mutação, medido em 2026-09-16 15:25.
+**362 das 544 guardas do catálogo: 1 aposentada, 357 provadas, 4 redundantes** — 9592 s de mutação, medido em 2026-09-16 15:25.
 
-> **Esta rodada NÃO julgou 178 das 539 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 178 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 183 das 544 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 183 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
 - `fk-antes-do-default` — a chave estrangeira confere a linha crua, e o DEFAULT sem mãe grava a filha órfã
 - `fk-antes-do-default-pelo-servidor` — o DEFAULT e a calculada sem mãe gravam a órfã pelo servidor, fora e dentro da transação
@@ -1189,6 +1189,11 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 - `garantir-schema-sem-fsync-do-database` — `criar_schema` e `criar_tabela` num schema novo criavam a pasta sem `fsync` do database: o schema que o cliente ouviu criar podia sumir numa queda
 - `criar-database-sem-fsync-da-base` — `criar_database` criava a pasta sem `fsync` da base: o database que o cliente ouviu criar podia sumir numa queda
 - `marca-do-database-sem-fsync` — O marcador `_database.json` nascia sem `fsync`: numa queda uma colmeia voltava como database padrão, calada
+- `estado-do-cluster-sem-troca-duravel` — O estado do cluster gravava por `write` no lugar, sem `fsync`: o arquivo perdido ou vazio numa queda fazia o master rebaixado voltar mandando
+- `estado-do-cluster-ilegivel-vira-config` — O estado do cluster presente e ilegível valia como ausente: o `source` rebaixado com o arquivo truncado subia master na época 0, aceitando escrita
+- `promover-libera-antes-de-gravar` — O `promover` liberava a escrita ANTES de gravar o papel: a gravação que falhava deixava um master escrevendo que o disco não conhecia
+- `posicao-bidi-antes-do-dado` — A posição do bidirecional ia ao disco a cada lote, antes do `fsync` do dado: numa queda, os eventos entre o dado perdido e a posição gravada nunca mais eram pedidos
+- `posicao-bidi-sem-troca-duravel` — A posição do bidirecional gravava por `write` no lugar: mesmo depois do dado, a queda podia devolver o arquivo antigo ou nenhum
 
 As guardas que esta corrida ainda cita, hoje aposentadas:
 

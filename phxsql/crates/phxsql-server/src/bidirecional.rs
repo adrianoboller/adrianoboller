@@ -575,6 +575,10 @@ pub fn ms_ate_a_janela(agora_ms: i64, cada_minutos: u64, hora: &str) -> i64 {
 /// Perder o arquivo recomeca do zero, e recomecar e INOFENSIVO: a aplicacao e
 /// por chave com "mais recente vence", e reaplicar um evento ja visto perde
 /// para o toque igual que ja esta no mapa. Custa releitura, nunca dado.
+///
+/// O que E grave e o contrario: a posicao A FRENTE do dado duravel. Por isso
+/// a ordem e uma so (pedido 535): o `fsync` da tabela, e so depois a troca
+/// duravel deste arquivo -- ver `alcancar_tabela_bidi` no servidor.
 pub fn ler_posicoes(caminho: &Path) -> HashMap<String, u64> {
     let Ok(texto) = std::fs::read_to_string(caminho) else {
         return HashMap::new();
@@ -597,8 +601,14 @@ pub fn gravar_posicoes(caminho: &Path, posicoes: &HashMap<String, u64>) -> Resul
         .map(|(k, v)| (k.clone(), Json::de_u64(*v)))
         .collect();
     pares.sort_by(|a, b| a.0.cmp(&b.0));
-    // 0600 pelo motor da permissao do banco (pedido 542).
-    phxsql_store::permissao::escrever_do_banco(caminho, Json::Objeto(pares).escrever())?;
+    // Pedido 535: pela troca duravel (`gravar_privado`: temporario 0600,
+    // `fsync`, `rename`, `fsync` da pasta), e nao por `write` no lugar. Quem
+    // chama ja levou o dado ao disco ANTES; sem o `fsync` aqui a ordem
+    // «dado, depois posicao» valeria so ate a proxima queda, que podia
+    // devolver o arquivo antigo ou -- truncado no meio -- nenhum, e nenhum
+    // recomeca do zero (inofensivo, mas reler tudo e o custo que o arquivo
+    // existe para poupar).
+    crate::config::gravar_privado(caminho, Json::Objeto(pares).escrever().as_bytes())?;
     Ok(())
 }
 

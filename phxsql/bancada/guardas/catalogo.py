@@ -18695,4 +18695,128 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         "caem": ["a_faxina_nao_remove_a_pasta_vazia_trocada_no_nome"],
         "seguem": ["a_faxina_nao_atravessa_link_na_pasta_do_meio"],
     },
+    {
+        "id": "estado-do-cluster-sem-troca-duravel",
+        "titulo": "O estado do cluster gravava por `write` no lugar, sem `fsync`: o arquivo perdido ou vazio numa queda fazia o master rebaixado voltar mandando",
+        "porque": (
+            "pedido 534. `persistir` truncava e escrevia sem temporario e "
+            "sem `fsync`. Pelo `strace -y`, com o conserto cada gravacao e "
+            "`openat` do `.tmp`, `write`, `fsync` no mesmo descritor, "
+            "`rename` e `fsync` da pasta; com o defeito nao ha `rename`."
+        ),
+        "arquivo": "crates/phxsql-server/src/cluster.rs",
+        "trecho": """        crate::config::gravar_privado(&self.caminho_estado, texto.as_bytes()).map_err(|e| {""",
+        "troca": """        // DEFEITO REPOSTO (534): write no lugar, sem temporario e sem fsync.
+        phxsql_store::permissao::escrever_do_banco(&self.caminho_estado, texto).map_err(|e| {""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "cluster::testes::o_estado_vai_ao_disco_pela_troca_duravel",
+            "cluster::testes::promover_que_nao_chega_ao_disco_nao_libera_escrita",
+        ],
+        "seguem": [
+            "cluster::testes::o_estado_persiste_e_o_arquivo_ganha_do_config",
+            "cluster::testes::estado_ausente_continua_sendo_o_primeiro_arranque",
+        ],
+    },
+    {
+        "id": "estado-do-cluster-ilegivel-vira-config",
+        "titulo": "O estado do cluster presente e ilegível valia como ausente: o `source` rebaixado com o arquivo truncado subia master na época 0, aceitando escrita",
+        "porque": (
+            "pedido 534, o arranque. Ausente e o primeiro arranque; presente "
+            "e ilegivel e um no que JA teve papel e nao sabe qual -- e "
+            "voltar master seriam dois lideres escrevendo (o 338). Nasce "
+            "replica sem escrita, e o pulso do master corrente o alcanca."
+        ),
+        "arquivo": "crates/phxsql-server/src/cluster.rs",
+        "trecho": """            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+""",
+        "troca": """            // DEFEITO REPOSTO (534): ilegivel tratado como ausente.
+            Err(_) => {}
+            Ok(t) if Json::analisar(&t).is_err() => {}
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": ["cluster::testes::estado_ilegivel_nasce_replica_sem_escrita"],
+        "seguem": [
+            "cluster::testes::estado_ausente_continua_sendo_o_primeiro_arranque",
+            "cluster::testes::o_estado_persiste_e_o_arquivo_ganha_do_config",
+        ],
+    },
+    {
+        "id": "promover-libera-antes-de-gravar",
+        "titulo": "O `promover` liberava a escrita ANTES de gravar o papel: a gravação que falhava deixava um master escrevendo que o disco não conhecia",
+        "porque": (
+            "pedido 534. A ordem certa e a do lado perigoso: o estado novo "
+            "vai ao disco antes de a escrita se liberar e antes de o pulso "
+            "anunciar; a gravacao que falha deixa o no como estava."
+        ),
+        "arquivo": "crates/phxsql-server/src/cluster.rs",
+        "trecho": """        self.persistir_estado(PapelVivo::Master, epoca_nova)?;
+        self.epoca.store(epoca_nova, Ordering::SeqCst);
+        self.papel.store(PAPEL_MASTER, Ordering::SeqCst);
+        self.escrita_liberada.store(true, Ordering::SeqCst);
+""",
+        "troca": """        // DEFEITO REPOSTO (534): libera antes de gravar.
+        self.epoca.store(epoca_nova, Ordering::SeqCst);
+        self.papel.store(PAPEL_MASTER, Ordering::SeqCst);
+        self.escrita_liberada.store(true, Ordering::SeqCst);
+        self.persistir_estado(PapelVivo::Master, epoca_nova)?;
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": ["cluster::testes::promover_que_nao_chega_ao_disco_nao_libera_escrita"],
+        "seguem": [
+            "cluster::testes::o_estado_persiste_e_o_arquivo_ganha_do_config",
+            "cluster::testes::o_estado_vai_ao_disco_pela_troca_duravel",
+        ],
+    },
+    {
+        "id": "posicao-bidi-antes-do-dado",
+        "titulo": "A posição do bidirecional ia ao disco a cada lote, antes do `fsync` do dado: numa queda, os eventos entre o dado perdido e a posição gravada nunca mais eram pedidos",
+        "porque": (
+            "pedido 535. Pelo `strace -ff -y` da thread que aplica: com o "
+            "defeito, a posicao vai ao disco com `clientes.reg`, `.log` e "
+            "`.ndx` escritos e sem `fsync`; com o conserto, o `fsync` da "
+            "tabela vem antes e a posicao so entra no mapa compartilhado "
+            "depois dele (o mapa e gravado inteiro, e outra origem o "
+            "levaria ao disco)."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """            desde = lote.ate;
+            self.anotar_estado(&origem.nome, |est| {
+""",
+        "troca": """            desde = lote.ate;
+            // DEFEITO REPOSTO (535): a posicao a cada lote, antes do fsync do dado.
+            if let Ok(mut p) = self.posicoes_bidi.lock() {
+                p.insert(chave_pos.clone(), desde);
+                let _ = bidirecional::gravar_posicoes(
+                    &self.config.base.join("replicacao-posicoes.json"),
+                    &p,
+                );
+            }
+            self.anotar_estado(&origem.nome, |est| {
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "laco-do-unico-secundario"],
+        "caem": ["a_posicao_do_bidirecional_vai_ao_disco_depois_do_dado"],
+        "seguem": ["sem_colisao_o_laco_replica_como_sempre_e_nada_e_contado"],
+    },
+    {
+        "id": "posicao-bidi-sem-troca-duravel",
+        "titulo": "A posição do bidirecional gravava por `write` no lugar: mesmo depois do dado, a queda podia devolver o arquivo antigo ou nenhum",
+        "porque": (
+            "pedido 535, a outra metade. A ordem «dado, depois posicao» so "
+            "vale se a posicao tambem for duravel: `gravar_privado` "
+            "(temporario, `fsync`, `rename`, `fsync` da pasta)."
+        ),
+        "arquivo": "crates/phxsql-server/src/bidirecional.rs",
+        "trecho": """    crate::config::gravar_privado(caminho, Json::Objeto(pares).escrever().as_bytes())?;""",
+        "troca": """    // DEFEITO REPOSTO (535): write no lugar.
+    phxsql_store::permissao::escrever_do_banco(caminho, Json::Objeto(pares).escrever())?;""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "laco-do-unico-secundario"],
+        "caem": ["a_posicao_do_bidirecional_vai_ao_disco_depois_do_dado"],
+        "seguem": ["sem_colisao_o_laco_replica_como_sempre_e_nada_e_contado"],
+    },
 ]

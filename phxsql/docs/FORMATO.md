@@ -3774,8 +3774,8 @@ decide o que o `.phz` custaria:
 | `dblink.json` | `dblink/mod.rs`, `Registro::abrir_ou_trancar` | desde o pedido 466, cadastro **TRANCADO**: o motor sobe, toda operação do DbLink recusa nomeando o arquivo, e nada o regrava. O binário anterior o lia VAZIO, e a primeira ligação salva regravava por cima das outras. E a senha e o token de fora já vão selados com chave **externa** (§19), cifra de verdade |
 | `blacklist.json` | `blacklist.rs:494-497` | nenhum bloqueio e nenhuma whitelist; a gravação seguinte perde os dois |
 | `jobs.json` | `jobs.rs`, `Registro::abrir_ou_trancar` | desde o irmão do pedido 466, cadastro **TRANCADO**: o motor sobe sem relógio de jobs, as operações de job recusam nomeando o arquivo, e nada o regrava. O binário anterior não subia com o arquivo torto e lia VAZIO o que não se lia |
-| `replicacao-posicoes.json` | `bidirecional.rs:579-584` | posições do zero: custa releitura, não dado |
-| `cluster.estado.json` | `cluster.rs:321` | o papel volta ao do `config.json` — um master destronado volta **mandando** (o comentário de `cluster.rs:308-310` diz) |
+| `replicacao-posicoes.json` | `bidirecional::ler_posicoes` | posições do zero: custa releitura, não dado. Desde o pedido 535 grava pela troca durável (`gravar_privado`) e **só depois** do `fsync` do dado que ela conta |
+| `cluster.estado.json` | `EstadoCluster::novo` | desde o pedido 534, **réplica sem escrita**, dizendo por quê — só o arquivo **ausente** cai no papel do `config.json` (primeiro arranque). Antes, o ilegível também caía, e um master destronado voltava **mandando**. Grava pela troca durável, e o `promover` grava **antes** de liberar a escrita |
 
 Os de catálogo e dado (`gatilhos.json`, `procedimentos.json`, `visoes.json`,
 `_database.json`, `.pag`, `backup.json`) não são configuração do servidor.
