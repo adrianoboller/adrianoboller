@@ -22,7 +22,8 @@ import { resolve } from 'node:path';
 const args = process.argv.slice(2);
 let tema = null;
 if (args[0] === '--tema') { tema = args[1]; args.splice(0, 2); }
-const [comNumero, semNumero, saida = '.'] = args;
+// no modo loja nao ha segundo HTML: o que vem depois da URL e a pasta
+const [comNumero, semNumero, saida = '.'] = tema ? [args[0], null, args[1] || '.'] : args;
 if (!comNumero || (!tema && !semNumero)) {
   console.error('uso: prova-estoque.mjs <com-numero.html> <sem-numero.html> [pasta]\n     prova-estoque.mjs --tema <id> <url-do-produto> [pasta]');
   process.exit(2);
