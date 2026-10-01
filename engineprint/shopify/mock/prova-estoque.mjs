@@ -56,6 +56,9 @@ for (const [w, h] of [[390, 844], [1280, 900]]) {
       abaixoDoBotao: r.top >= b.bottom, dentroDoCartao: r.left >= c.left && r.right <= c.right,
       centro: Math.abs((r.left + r.right) / 2 - (b.left + b.right) / 2),
       cor: getComputedStyle(a).color, sublinhado: getComputedStyle(a).textDecorationLine,
+      bolinha: (() => { const d = a.querySelector('.pp__dot'); return d ? getComputedStyle(d).backgroundColor : null; })(),
+      icone: !!a.querySelector('svg'),
+      transicao: getComputedStyle(a).transitionProperty + ' ' + getComputedStyle(a).transitionDuration + ' ' + getComputedStyle(a).transitionTimingFunction,
     } : null;
   });
   let m = await le();
@@ -68,6 +71,42 @@ for (const [w, h] of [[390, 844], [1280, 900]]) {
   confere(m.abaixoDoBotao && m.dentroDoCartao, `${w}px: abaixo do botao e dentro do cartao`);
   confere(m.centro <= 2, `${w}px: centrado sob o botao (desvio ${m.centro.toFixed(1)} px)`);
   confere(m.sublinhado.includes('underline'), `${w}px: sublinhado, para parecer link (${m.sublinhado})`);
+  confere(m.bolinha === 'rgb(29, 122, 58)' && !m.icone, `${w}px: a bolinha verde de antes, sem icone (${m.bolinha}, icone ${m.icone})`);
+
+  /* Passar o mouse: a cor nao muda, o link cresce ~5% e a transicao e
+     suave — medido contando quantas larguras DISTINTAS aparecem em 20
+     quadros seguidos. Um salto seco da 2 valores; "2 FPS" daria 3 ou 4;
+     uma transicao de 220 ms a 60 Hz da uma dezena. */
+  const link = page.locator('[data-pp-wa]');
+  // no celular a linha fica abaixo da dobra: sem rolar, o mouse "passa" fora da janela e nada acontece
+  await link.scrollIntoViewIfNeeded();
+  await page.waitForTimeout(100);
+  const caixa = await link.boundingBox();
+  await page.mouse.move(caixa.x + caixa.width / 2, caixa.y + caixa.height / 2);
+  const quadros = await page.evaluate(() => new Promise((res) => {
+    const a = document.querySelector('[data-pp-wa]'); const larguras = []; let n = 0;
+    const tick = () => { larguras.push(+a.getBoundingClientRect().width.toFixed(1)); if (++n < 20) requestAnimationFrame(tick); else res(larguras); };
+    requestAnimationFrame(tick);
+  }));
+  await page.waitForTimeout(300);
+  const hover = await le();
+  const distintas = new Set(quadros).size;
+  const cresceu = (await link.boundingBox()).width / caixa.width;
+  confere(hover.cor === m.cor, `${w}px hover: cor igual a de repouso (${hover.cor})`);
+  confere(cresceu > 1.03 && cresceu < 1.07, `${w}px hover: cresce de leve (${(cresceu * 100 - 100).toFixed(1)}%)`);
+  confere(distintas >= 5, `${w}px hover: transicao suave — ${distintas} larguras distintas em 20 quadros (${quadros[0]} → ${quadros[quadros.length - 1]})`);
+  confere(!/steps|step-start|step-end/.test(m.transicao) && /transform/.test(m.transicao), `${w}px hover: transicao so no transform, sem steps (${m.transicao})`);
+
+  // clicar (mouse pressionado) nao pode virar laranja; soltar fora para nao navegar
+  await page.mouse.down();
+  await page.waitForTimeout(80);
+  const ativo = await le();
+  await page.mouse.move(5, 5);
+  await page.mouse.up();
+  confere(ativo.cor === m.cor, `${w}px clique: cor igual a de repouso (${ativo.cor})`);
+  await page.waitForTimeout(300);
+  const solto = await link.boundingBox();
+  confere(Math.abs(solto.width - caixa.width) < 0.6, `${w}px: volta ao tamanho de repouso (${solto.width.toFixed(1)} vs ${caixa.width.toFixed(1)})`);
 
   // troca de variante: a mensagem segue a escolha, o resto do link fica
   const combo = page.locator('[data-pp-radio][value="Combo"]');
@@ -92,6 +131,9 @@ for (const [w, h] of [[390, 844], [1280, 900]]) {
     await page.goto(alvo(semNumero), { waitUntil: 'load' });
     const s = await page.evaluate(() => ({ link: !!document.querySelector('[data-pp-wa]'), texto: document.querySelector('[data-pp-stock]').innerText.trim() }));
     confere(!s.link && s.texto === 'Em estoque', `${w}px sem numero: volta "${s.texto}" sem link`);
+    // e o estado sem estoque da bolinha: cinza, sem anel — a mesma regra de antes
+    const cinza = await page.evaluate(() => { const d = document.querySelector('[data-pp-stock] .pp__dot'); d.classList.add('pp__dot--out'); const c = getComputedStyle(d); return c.backgroundColor + ' / ' + c.boxShadow; });
+    confere(cinza === 'rgb(154, 154, 154) / none', `${w}px sem estoque: bolinha cinza estatica (${cinza})`);
   }
   await page.context().close();
 }

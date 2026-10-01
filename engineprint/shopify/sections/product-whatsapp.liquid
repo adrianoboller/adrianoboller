@@ -351,8 +351,13 @@
             endunless
             assign pp_wa_texto = pp_wa_msg | replace: '{produto}', pp_wa_item
           -%}
-          <p class="pp__stock{% if pp_wa_num != blank %} pp__stock--wa{% endif %}" data-pp-stock data-dispatch="{{ section.settings.dispatch_text | escape }}">
+          <p class="pp__stock{% if pp_wa_num != blank %} pp__stock--wa{% unless product_var.available %} pp__stock--out{% endunless %}{% endif %}" data-pp-stock data-dispatch="{{ section.settings.dispatch_text | escape }}">
             {%- if pp_wa_num != blank -%}
+              {%- comment -%}
+                A bolinha de sempre fica: verde com estoque, cinza sem. O que
+                muda e so o texto, que vira o link. Dentro do <a> para a area
+                de toque incluir a bolinha.
+              {%- endcomment -%}
               <a
                 class="pp__stock-link"
                 href="https://wa.me/{{ pp_wa_num }}?text={{ pp_wa_texto | url_encode }}"
@@ -363,7 +368,7 @@
                 data-pp-wa-msg="{{ pp_wa_msg | escape }}"
                 data-pp-wa-title="{{ product.title | escape }}"
               >
-                <svg class="pp__stock-ic" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2Zm0 1.8a8.2 8.2 0 1 1-4.2 15.3l-.3-.2-3 .8.8-2.9-.2-.3A8.2 8.2 0 0 1 12 3.8Zm-3.3 4.4c-.2 0-.5 0-.7.3-.3.3-1 1-1 2.4s1 2.8 1.2 3c.1.2 2 3.2 5 4.4 2.5 1 3 .8 3.5.7.6-.1 1.8-.7 2-1.4.2-.7.2-1.3.2-1.4-.1-.1-.3-.2-.6-.3l-2-1c-.3-.1-.5-.1-.7.1l-.9 1.1c-.2.2-.3.2-.6.1-.3-.2-1.3-.5-2.4-1.5-.9-.8-1.5-1.8-1.7-2.1-.2-.3 0-.5.1-.6l.5-.5.3-.5c.1-.2 0-.4 0-.5l-.9-2.2c-.2-.5-.4-.5-.6-.5h-.7Z"/></svg>Verificar estoque
+                <i class="pp__dot{% unless product_var.available %} pp__dot--out{% endunless %}"></i>Verificar estoque
               </a>
             {%- elsif product_var.available -%}
               {%- if product_var.inventory_management == 'shopify' and product_var.inventory_quantity > 0 and product_var.inventory_quantity <= 5 -%}
@@ -747,12 +752,20 @@
   .pp__add[disabled] { opacity: .5; cursor: not-allowed; }
 
   .pp__stock { margin: -.35rem 0 0; display: flex; align-items: center; justify-content: center; gap: .45rem; font-size: .86rem; font-weight: 600; color: #1d7a3a; }
-  /* "Verificar estoque": link sublinhado, verde do WhatsApp, com o icone
-     dele — a pessoa tem de ver que e clicavel e para onde vai */
+  /* "Verificar estoque": a bolinha de antes fica (verde com estoque, cinza
+     sem) e o texto e sublinhado para parecer link. Ao passar o mouse, focar
+     ou clicar, NADA muda de cor — o link so cresce 5%, numa transicao de
+     220 ms so no transform, que o navegador anima no compositor sem
+     engasgar. Pedido do dono (01/10/2026). O laranja que aparecia vinha do
+     base.css do tema: `p > a:hover { --button-color: var(--color-primary-hover) }`
+     — este link e filho direto do <p> da linha; a regra abaixo, com tres
+     classes, ganha dela e fixa a cor herdada em todos os estados. */
   .pp__stock--wa { color: #1d7a3a; }
-  .pp__stock-link { display: inline-flex; align-items: center; gap: .4rem; color: inherit; text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; }
-  .pp__stock-link:hover { color: #0f5c2a; }
-  .pp__stock-ic { flex: 0 0 auto; }
+  .pp__stock--wa.pp__stock--out { color: #6e6e73; }
+  .pp__stock-link { display: inline-flex; align-items: center; gap: .45rem; color: inherit; text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; transform-origin: 50% 50%; transition: transform .22s cubic-bezier(.22, 1, .36, 1); }
+  .pp__stock .pp__stock-link:is(:hover, :focus, :focus-visible, :active, :visited) { color: inherit; }
+  .pp__stock .pp__stock-link:is(:hover, :focus-visible, :active) { transform: scale(1.05); }
+  @media (prefers-reduced-motion: reduce) { .pp__stock-link { transition: none; } }
   .pp__stock-prazo { font-weight: 500; color: #6e6e73; }
   .pp__dot { width: 8px; height: 8px; border-radius: 999px; background: #1d7a3a; box-shadow: 0 0 0 3px rgba(29,122,58,.15); }
   .pp__stock--low, .pp__dot--low { color: #b45309; }
@@ -1029,6 +1042,10 @@
             // "Verificar estoque": o link fica, so a mensagem muda com a variante escolhida
             const item = v.title && v.title !== 'Default Title' ? waLink.dataset.ppWaTitle + ' (' + v.title + ')' : waLink.dataset.ppWaTitle;
             waLink.href = 'https://wa.me/' + waLink.dataset.ppWaNum + '?text=' + encodeURIComponent((waLink.dataset.ppWaMsg || '').replace('{produto}', item));
+            // a bolinha segue a variante: verde com estoque, cinza sem
+            const dot = stockEl.querySelector('.pp__dot');
+            if (dot) dot.className = 'pp__dot' + (v.available ? '' : ' pp__dot--out');
+            stockEl.className = 'pp__stock pp__stock--wa' + (v.available ? '' : ' pp__stock--out');
             const prazoEl = stockEl.querySelector('.pp__stock-prazo');
             if (prazoEl) prazoEl.remove();
             if (prazo) stockEl.insertAdjacentHTML('beforeend', prazo);
