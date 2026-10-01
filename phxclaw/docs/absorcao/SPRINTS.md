@@ -303,3 +303,51 @@ veste os componentes. O adaptador «phoenix» (nativo, tokens do Style Phoenix P
 interface do próprio PhxClaw; o adaptador Bootstrap é um plugin substituível para os sistemas
 gerados. Bootstrap nunca decide layout (nada de `col-*` como contrato) e não é dependência do
 núcleo. As sprints usam o nome que o dono deu (UI-R01..R04), sem renumerar as SP.
+
+## Achados de segurança de 01/10/2026 que entram na SP000013 (endurecimento)
+
+Da revisão adversária de f27402e5 e dbdb4dc1 (os ALTOS A1–A3 e M1, M2, B1 voltaram à frente de
+git/gonogo e se consertam antes de qualquer outro Go):
+- M3 renovação OAuth não serializada (oauth.rs:583-589) — duas tarefas renovam com o mesmo refresh token.
+- M4 segredo do broker preso só ao nome do servidor MCP, não ao endpoint (oauth.rs:312-345, mcp.rs:269-279).
+- M5 confiança do projeto vale para a raiz do .git mas a leitura parte do cwd; AGENTS.md por symlink (config.rs:75-88, instrucoes.rs:50-73).
+- M6 detecção de credencial no config.json por lista curta de prefixos, e o erro ecoa o valor (carga.rs:158-314).
+- B2 If-Match do config só dentro do processo; .json.tmp com nome fixo.
+- B3 importar_skills segue symlink em scripts e trava em laço de symlinks; corpo da skill sem varredura anti-injeção.
+- B4 imagens: dimensões não conferidas (bomba de descompressão).
+- B5 cerca do AGENTS.md fecha com maiúsculas; lista negra fraca.
+- B6 pesquisa profunda: answer não conferido, [n] de citação recusada fica, páginas sem cerca.
+- Da documentação: comandos de credencial leem do ambiente e a ajuda não diz; 6 segredos sem comando de broker.
+
+## Parecer do DBA de 01/10/2026 (formatos em disco) — defeitos ATIVOS, na conta
+
+1. **Caixa dos canais perde mensagem que já respondeu 200** (canais/caixa.rs:57-126): linha cortada
+   no fim não é truncada e a próxima gravação nasce colada nela; falha no meio de um lote duplica `seq`.
+   Conserto: `set_len` até o último `\n` no abrir e na falha.
+2. **config.json sem trava entre processos** (config-runtime/lib.rs:185-230, agente/carga.rs:564-631):
+   temporário de nome fixo, CLI e servidor juntos escrevem dentro do arquivo vivo; conferência de
+   revisão tautológica no `definir`; revisão da API como soma tem ABA (3+1 = 2+2). Conserto: padrão do
+   gonogo (trava, temporário por pid, fsync de arquivo e pasta) e token de revisão como par ou SHA.
+3. **Gravação não tolera cauda cortada** (gravacao.rs:157-233, 381-438), embora prometa.
+4. **BM25 entra em pânico com índice incoerente** (memory-context/bm25.rs:249-272).
+Entram agora por custo zero: `"v": 1` por linha da caixa; `"formato": 1` no ORIGEM.json; simetria e
+leitura de versão antes do serde no UI-IR (junto da v3). Achado sistêmico: sete lugares com
+temporário + rename em três níveis de garantia — um helper só (o do gonogo, aprovado).
+Provas executadas pelo DBA: 0 de 6 (disco cheio durante a revisão).
+
+## Inventário do QA de 01/10/2026 — guardas que faltam (na conta da SP000013)
+
+Nenhuma catraca subiu (config 135/135, idiomas 0/0, CAPACIDADES_PADRAO 21 → 23 com motivo escrito).
+Pétreas sem guarda provada:
+1. Ferramenta que cria processo e não está em CAPACIDADES_QUE_EXECUTAM: ocr, screenshot_to_erp_ui,
+   image_render, lsp, web.browse — a regra de comando «negar» não as alcança.
+2. Portas indiretas fora da varredura do bwrap: `Browser::launch` (adaptadores.rs, fidelidade_ui.rs e
+   responsivo_ui.rs em curso) e `McpStdioSession::spawn` (comando do operador fora do bwrap).
+3. Segredo de LLM fora do broker: phxclaw-llm/src/lib.rs lê OPENAI/ANTHROPIC/GEMINI_API_KEY do
+   ambiente; a GEMINI_API_KEY vive em dois regimes desde a onda 6.
+4. Laço de eco dos provedores pagos com contagem digitada (8) e sem o xAI; deve sair da lista de `Servico`.
+5. Teste que pula calado conta como verde (segredos, voz_e_midia, sistema, visao) — os placares
+   «407/410 verdes» incluem pulos; nenhum portão reprova PULADO.
+6. ferramentas.json e AGENTE_AUTONOMO.md sem teste de «arquivo velho».
+7. Paridade CLI × ferramenta do gonogo sem guarda; isento «EN» sem uso na catraca de idiomas.
+Nenhuma guarda de guardas.rs tem prova de que falha com o defeito reposto.

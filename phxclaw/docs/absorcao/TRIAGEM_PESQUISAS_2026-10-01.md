@@ -79,7 +79,8 @@ inspiração ou recusa.**
 - **Fidelidade:** LPIPS ou CLIP — morreu: mede aparência, e a tela gerada difere da original de
   propósito. Ficou: ida e volta determinística SQL → tela → PNG → screenshot_to_erp_ui → SQL.
 - **Segredos:** reescrever as ~200 regras do gitleaks em Rust — morreu: manutenção nossa. Ficou: o
-  binário com SHA-256 no bwrap, padrão da casa (whisper, tesseract, sherpa).
+  binário com SHA-256 no bwrap, padrão da casa (tesseract e sherpa rodam no bwrap; o whisper confere
+  o SHA-256 mas ainda roda FORA do bwrap — dívida declarada em tests/guardas.rs, corrigido pelo QA em 01/10).
 - **Navegador:** embutir playwright-mcp — morreu: traz Node e duplica o phxclaw-browser. Ficou: retrato
   da árvore de acessibilidade pelo CDP próprio.
 
