@@ -5101,7 +5101,7 @@ não o abre **apagar em vez de recusar** (parecer do DBA de 24/09/2026):
 | `blacklist.json` | `blacklist.rs:494-497` | nenhum bloqueio, nenhuma whitelist |
 | `jobs.json` | `jobs.rs:434` | nenhum job |
 | `replicacao-posicoes.json` | `bidirecional.rs:579-584` | posições do zero (custa releitura) |
-| `cluster.estado.json` | `cluster.rs:321` | o papel do `config.json`: um master destronado volta **mandando** |
+| `cluster.estado.json` | `cluster.rs:321` | o papel do `config.json`: um master destronado volta **mandando** — **consertado no pedido 534**: hoje nasce réplica sem escrita (ver `FORMATO.md` §20) |
 
 A tela de Configurações não mudou: ela grava pelo servidor, e o servidor grava
 na forma de onde leu.

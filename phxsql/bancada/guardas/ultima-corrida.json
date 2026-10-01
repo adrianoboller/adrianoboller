@@ -2926,6 +2926,46 @@
       "quando": "2026-09-30 23:39"
     },
     {
+      "id": "estado-do-cluster-sem-troca-duravel",
+      "titulo": "O estado do cluster gravava por `write` no lugar, sem `fsync`: o arquivo perdido ou vazio numa queda fazia o master rebaixado voltar mandando",
+      "veredito": "PROVADA",
+      "segundos": 62.97,
+      "notas": [],
+      "quando": "2026-10-01 00:55"
+    },
+    {
+      "id": "estado-do-cluster-ilegivel-vira-config",
+      "titulo": "O estado do cluster presente e ilegível valia como ausente: o `source` rebaixado com o arquivo truncado subia master na época 0, aceitando escrita",
+      "veredito": "PROVADA",
+      "segundos": 59.69,
+      "notas": [],
+      "quando": "2026-10-01 00:57"
+    },
+    {
+      "id": "promover-libera-antes-de-gravar",
+      "titulo": "O `promover` liberava a escrita ANTES de gravar o papel: a gravação que falhava deixava um master escrevendo que o disco não conhecia",
+      "veredito": "PROVADA",
+      "segundos": 56.32,
+      "notas": [],
+      "quando": "2026-10-01 00:59"
+    },
+    {
+      "id": "posicao-bidi-antes-do-dado",
+      "titulo": "A posição do bidirecional ia ao disco a cada lote, antes do `fsync` do dado: numa queda, os eventos entre o dado perdido e a posição gravada nunca mais eram pedidos",
+      "veredito": "PROVADA",
+      "segundos": 18.8,
+      "notas": [],
+      "quando": "2026-10-01 00:59"
+    },
+    {
+      "id": "posicao-bidi-sem-troca-duravel",
+      "titulo": "A posição do bidirecional gravava por `write` no lugar: mesmo depois do dado, a queda podia devolver o arquivo antigo ou nenhum",
+      "veredito": "PROVADA",
+      "segundos": 19.01,
+      "notas": [],
+      "quando": "2026-10-01 01:00"
+    },
+    {
       "id": "cifra-do-fio-imposta",
       "titulo": "a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho",
       "veredito": "PROVADA",

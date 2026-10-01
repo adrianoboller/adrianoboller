@@ -197,7 +197,11 @@ aviso): a origem passa a ser o master **corrente**, descoberto pelo pulso.
 - **Papel vivo e época.** O papel do `config.json` é só o inicial. O vivo
   mora em `base/cluster.estado.json` junto com a **época** — um contador que
   cresce a cada eleição. O arquivo ganha do config no arranque: um master
-  destronado que reiniciasse pelo config voltaria mandando.
+  destronado que reiniciasse pelo config voltaria mandando. Desde o pedido
+  534 ele grava pela troca durável (temporário, `fsync`, `rename`, `fsync` da
+  pasta); o `promover` grava **antes** de liberar a escrita; e o arquivo
+  presente e ilegível faz o nó nascer **réplica sem escrita**, dizendo por
+  quê — só o ausente é primeiro arranque.
 - **Detecção.** Master sem pulso além de `janela_inatividade_s` abre
   eleição nos nós vivos. Há uma graça de uma janela no arranque, senão todo
   cluster nasceria "degradado" antes do primeiro pulso.

@@ -1008,11 +1008,16 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `fsync-da-pasta-do-backup-pelo-nome` | o `fsync` da pasta do backup reabre pelo NOME fora da trava: trocada por um link, sincroniza a pasta do outro lado e a nossa nunca | 1 | ✅ provada |
 | `faxina-do-backup-remove-pasta-pelo-nome` | a faxina do backup que falhou remove a pasta criada pelo NOME real: um link numa pasta do meio faz apagar a pasta vazia de outro | 2 | ✅ provada |
 | `faxina-do-backup-sem-conferir-o-inode` | a faxina do backup remove pelo descritor da mãe mas não confere o inode: a pasta vazia de outro que entrou no nome da nossa sai | 1 | ✅ provada |
+| `estado-do-cluster-sem-troca-duravel` | O estado do cluster gravava por `write` no lugar, sem `fsync`: o arquivo perdido ou vazio numa queda fazia o master rebaixado voltar mandando | 2 | ✅ provada |
+| `estado-do-cluster-ilegivel-vira-config` | O estado do cluster presente e ilegível valia como ausente: o `source` rebaixado com o arquivo truncado subia master na época 0, aceitando escrita | 1 | ✅ provada |
+| `promover-libera-antes-de-gravar` | O `promover` liberava a escrita ANTES de gravar o papel: a gravação que falhava deixava um master escrevendo que o disco não conhecia | 1 | ✅ provada |
+| `posicao-bidi-antes-do-dado` | A posição do bidirecional ia ao disco a cada lote, antes do `fsync` do dado: numa queda, os eventos entre o dado perdido e a posição gravada nunca mais eram pedidos | 1 | ✅ provada |
+| `posicao-bidi-sem-troca-duravel` | A posição do bidirecional gravava por `write` no lugar: mesmo depois do dado, a queda podia devolver o arquivo antigo ou nenhum | 1 | ✅ provada |
 | `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | — | 🪦 aposentada (18/09/2026) |
 
-**365 das 541 guardas do catálogo: 1 aposentada, 360 provadas, 4 redundantes** — 9788 s de mutação, medido em 2026-09-16 15:25.
+**370 das 546 guardas do catálogo: 1 aposentada, 365 provadas, 4 redundantes** — 10005 s de mutação, medido em 2026-09-16 15:25.
 
-> **Esta rodada NÃO julgou 177 das 541 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 177 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 177 das 546 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 177 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
 - `fk-antes-do-default` — a chave estrangeira confere a linha crua, e o DEFAULT sem mãe grava a filha órfã
 - `fk-antes-do-default-pelo-servidor` — o DEFAULT e a calculada sem mãe gravam a órfã pelo servidor, fora e dentro da transação

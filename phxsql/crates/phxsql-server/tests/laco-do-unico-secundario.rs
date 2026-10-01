@@ -474,3 +474,169 @@ fn a_coluna_marcada_nao_vaza_no_grito_do_conflito() {
         "as duas linhas sumiram junto com o e-mail: {detalhe}"
     );
 }
+
+/* ------------------------------------------- pedido 535: dado antes da posicao
+
+A posicao consumida ia ao disco a cada lote, num `write` no lugar, e o dado
+do lote so no `fsync` do fim do alcance. Nada ordenava os dois. O que se prova
+aqui e a ORDEM contra o sistema operacional, pelo `strace`: na thread que
+aplica, todo arquivo da tabela escrito antes de a posicao ir ao disco recebe
+`fsync` DEPOIS da ultima escrita e ANTES da posicao; e a posicao entra pela
+troca duravel (temporario com `fsync`, `rename`, `fsync` da pasta).
+
+**Nao medido:** a queda em si. Um SIGKILL entre os dois nao a simula -- o
+cache do nucleo sobrevive a morte do processo, e o dado sem `fsync` chega ao
+disco igual, com ou sem o defeito. Distinguir pede derrubar a maquina (ou um
+`dm-flakey` com `CAP_SYS_ADMIN`). */
+
+/// O filho que o teste de baixo roda debaixo do `strace`: o par sobe, o
+/// parceiro escreve duas linhas, e o filho espera a posicao 2 NO DISCO.
+#[test]
+#[ignore = "roda so dentro de a_posicao_do_bidirecional_vai_ao_disco_depois_do_dado"]
+fn filho_da_posicao_depois_do_dado() {
+    let saida = std::path::PathBuf::from(std::env::var("PHX_535_DIR").unwrap());
+    let (_a, _b, porta_a, porta_b, da, _db) = terreno("535");
+    // O caminho resolvido: e o que o `-y` do `strace` imprime.
+    let real = std::fs::canonicalize(&da.0).unwrap();
+    std::fs::write(saida.join("dir_a"), real.display().to_string()).unwrap();
+    inserir(porta_b, 2, "b@x");
+    inserir(porta_b, 3, "c@x");
+    esperar("as duas linhas do parceiro", || linhas(porta_a).len() == 3);
+    let arquivo = da.join("replicacao-posicoes.json");
+    esperar("a posicao 2 no disco", || {
+        std::fs::read_to_string(&arquivo)
+            .ok()
+            .and_then(|t| Json::analisar(&t).ok())
+            .and_then(|j| j.campo("parceiro|loja/clientes").and_then(Json::inteiro))
+            == Some(2)
+    });
+}
+
+/// **Pedido 535, contra o sistema operacional.** Ver a nota acima.
+///
+/// **Defeito reposto (1):** a posicao gravada a cada lote, antes do
+/// `sincronizar_replicada` -- o `write` da posicao aparece com o `.reg` da
+/// tabela escrito e sem `fsync`. **(2):** a posicao pelo `write` no lugar
+/// (`escrever_do_banco`), mesmo na ordem certa -- nao ha `rename` nem
+/// `fsync` dela.
+#[cfg(unix)]
+#[test]
+fn a_posicao_do_bidirecional_vai_ao_disco_depois_do_dado() {
+    use std::process::Command;
+    if Command::new("strace").arg("-V").output().is_err() {
+        eprintln!("sem strace nesta maquina: a prova do 535 NAO MEDIDA");
+        return;
+    }
+    let d = DirTemp::novo("535-strace");
+    let prefixo = d.join("traco");
+    let saida = Command::new("strace")
+        .args([
+            "-ff",
+            "-qq",
+            "-y",
+            "-e",
+            "trace=openat,write,pwrite64,writev,pwritev,fsync,fdatasync,rename,renameat,renameat2",
+            "-o",
+        ])
+        .arg(&prefixo)
+        .arg(std::env::current_exe().unwrap())
+        .args([
+            "--ignored",
+            "--exact",
+            "filho_da_posicao_depois_do_dado",
+            "--test-threads=1",
+        ])
+        .env("PHX_535_DIR", &d.0)
+        .output()
+        .unwrap();
+    assert!(
+        saida.status.success(),
+        "{}",
+        String::from_utf8_lossy(&saida.stderr)
+    );
+    let dir_a = std::fs::read_to_string(d.join("dir_a")).unwrap();
+    let posicoes = format!("{dir_a}/replicacao-posicoes.json");
+    let temporario = format!("{posicoes}.tmp");
+    let dados = format!("{dir_a}/loja/");
+    // O caminho do descritor que o `-y` imprime no primeiro argumento.
+    let alvo = |l: &str| -> Option<String> {
+        let a = l.find('<')?;
+        let b = l[a..].find(">,").or_else(|| l[a..].find(">)"))?;
+        Some(l[a + 1..a + b].to_string())
+    };
+    let chamada = |l: &str, nome: &str| l.starts_with(&format!("{nome}("));
+    let mut threads_com_posicao = 0;
+    let mut erros = Vec::new();
+    for entrada in std::fs::read_dir(&d.0).unwrap() {
+        let caminho = entrada.unwrap().path();
+        let nome = caminho.file_name().unwrap().to_string_lossy().to_string();
+        if !nome.starts_with("traco.") {
+            continue;
+        }
+        let texto = std::fs::read_to_string(&caminho).unwrap();
+        // So as chamadas que deram certo.
+        let linhas: Vec<&str> = texto.lines().filter(|l| !l.contains("= -1")).collect();
+        // A posicao vai ao disco: o `rename` para o nome final, ou -- o
+        // defeito -- um `write` direto no descritor dele.
+        let marcos: Vec<(usize, bool)> = linhas
+            .iter()
+            .enumerate()
+            .filter_map(|(i, l)| {
+                let renomeia = l.starts_with("rename") && l.contains(&format!("\"{posicoes}\""));
+                let escreve = chamada(l, "write") && alvo(l).as_deref() == Some(&posicoes);
+                (renomeia || escreve).then_some((i, renomeia))
+            })
+            .collect();
+        if marcos.is_empty() {
+            continue;
+        }
+        threads_com_posicao += 1;
+        for (i, renomeia) in marcos {
+            if !renomeia {
+                erros.push(format!(
+                    "{nome}:{i}: a posicao foi escrita no lugar, sem troca duravel"
+                ));
+                continue;
+            }
+            if !linhas[..i]
+                .iter()
+                .any(|l| chamada(l, "fsync") && alvo(l).as_deref() == Some(&temporario))
+            {
+                erros.push(format!("{nome}:{i}: rename sem fsync do temporario antes"));
+            }
+            if !linhas[i + 1..]
+                .iter()
+                .any(|l| chamada(l, "fsync") && alvo(l).as_deref() == Some(&dir_a))
+            {
+                erros.push(format!("{nome}:{i}: rename sem fsync da pasta depois"));
+            }
+            // Todo arquivo da tabela escrito antes da posicao: `fsync` depois
+            // da ultima escrita, e antes da posicao.
+            let mut sem_fsync: std::collections::HashMap<String, usize> = Default::default();
+            for (j, l) in linhas[..i].iter().enumerate() {
+                let Some(p) = alvo(l) else { continue };
+                // O `.pag` e descritor gerado do `.reg`, e o motor nunca o le
+                // para decidir nada (`pag.rs`): ele troca por `rename` sem
+                // `fsync` de proposito, e nao e o dado que a posicao conta.
+                if !p.starts_with(&dados) || p.ends_with(".pag") || p.ends_with(".pag.novo") {
+                    continue;
+                }
+                if chamada(l, "write") || l.starts_with("pwrite") || l.starts_with("writev") {
+                    sem_fsync.insert(p, j);
+                } else if chamada(l, "fsync") || chamada(l, "fdatasync") {
+                    sem_fsync.remove(&p);
+                }
+            }
+            for (p, j) in sem_fsync {
+                erros.push(format!(
+                    "{nome}:{i}: a posicao foi ao disco com {p} escrito (linha {j}) e sem fsync"
+                ));
+            }
+        }
+    }
+    assert!(
+        threads_com_posicao > 0,
+        "a premissa: alguma thread gravou a posicao em {posicoes}"
+    );
+    assert!(erros.is_empty(), "{}", erros.join("\n"));
+}

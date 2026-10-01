@@ -903,6 +903,23 @@ Perder o arquivo recomeça do zero e é **inofensivo**: a aplicação é por cha
 com «mais recente vence», e reaplicar um evento já visto perde para o toque
 igual que já está registrado — custa releitura, nunca dado.
 
+**Grave é o contrário: a posição à frente do dado** (pedido 535). Ela ia ao
+disco a cada lote, num `write` sem `fsync`, e o dado do lote só no `fsync` do
+fim do alcance — nada ordenava os dois, e numa queda os eventos entre o dado
+perdido e a posição gravada nunca mais eram pedidos. A ordem agora é uma só:
+**o `fsync` da tabela, e depois a posição**, pela troca durável (temporário,
+`fsync`, `rename`, `fsync` da pasta), uma vez por alcance e fora da trava
+global. Os três maduros convergem no comportamento — a posição nunca à frente
+do dado durável — e o fazem pela transação (a origem de replicação do
+PostgreSQL avança no registro de commit; `mysql.slave_relay_log_info` e
+`gtid_slave_pos` são tabelas InnoDB gravadas no mesmo commit). O aceite é do
+comportamento, não do meio: aqui a aplicação é idempotente, então basta a
+posição nunca passar o dado, sem mudar o formato do `.reg` para guardá-la ali.
+A posição também só entra no mapa compartilhado depois do `fsync`, porque o
+mapa é gravado inteiro e o alcance de outra origem o levaria ao disco no meio
+deste. Prova contra o SO: `a_posicao_do_bidirecional_vai_ao_disco_depois_do_dado`
+(`strace -ff -y`).
+
 ### O que o bidirecional NÃO é
 
 - **Não é para mais de dois ainda.** O desenho (origem por evento) suporta
