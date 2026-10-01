@@ -1103,3 +1103,122 @@ fn as_duas_fases_dao_o_mesmo_que_a_porta_de_sempre() {
         "a divisao em duas fases mudou o resultado"
     );
 }
+
+/// **Pedido 245, O2b: a calculada acrescentada preenche a linha velha** --
+/// inclusive a marcada (volta pelo `restaurar`), e so ela: o slot excluido de
+/// vez continua LIVRE e a ordem de digitacao nao muda. A linha nova grava o
+/// MESMO valor, pelo mesmo `valor_calculado`.
+///
+/// Reponha o defeito passando `None` no `preencher` da FASE A: a linha velha
+/// le nulo e a primeira igualdade cai.
+#[test]
+fn a_calculada_acrescentada_preenche_a_linha_velha_e_so_ela() {
+    let d = DirTemp::novo("calculada-velha");
+    let mut t = Table::criar(&d.0, esquema()).unwrap();
+    for i in 1..=30 {
+        t.inserir(&cliente(i)).unwrap();
+    }
+    t.excluir_de_vez(10, "teste").unwrap();
+    t.excluir_suave(11, "teste").unwrap();
+    let (slots, registros) = (t.slots(), t.registros());
+
+    let n = t
+        .acrescentar_coluna(
+            Column::new("dobro", ColumnType::Int8)
+                .com_calculada("id * 2")
+                .unwrap(),
+            None,
+        )
+        .unwrap();
+    assert_eq!(n, slots);
+    assert_eq!((t.slots(), t.registros()), (slots, registros));
+    let pos = t.esquema().coluna_por_nome("dobro").unwrap();
+
+    let todas = retrato(&mut t);
+    assert!(
+        todas.iter().all(|(r, _)| *r != 10),
+        "o slot excluido de vez voltou a ter linha"
+    );
+    assert_eq!(todas.len() as u64, 29);
+    for (rowid, valores) in &todas {
+        assert_eq!(
+            valores[pos],
+            Value::Int(*rowid as i64 * 2),
+            "a linha {rowid} (marcada inclusive) nao ganhou o valor calculado"
+        );
+    }
+
+    // A linha nova, pelo `aplicar_regras`: o mesmo valor que a velha ganhou.
+    let mut nova = cliente(31);
+    nova.insert(pos, Value::Null);
+    let r = t.inserir(&nova).unwrap();
+    assert_eq!(t.ler(r).unwrap().unwrap()[pos], Value::Int(62));
+
+    // E reaberta, do disco.
+    drop(t);
+    let mut t = Table::abrir(&d.0, "clientes").unwrap();
+    assert_eq!(t.ler(1).unwrap().unwrap()[pos], Value::Int(2));
+}
+
+/// **Revisao SEC do 245 O2b, achado A1 (3): a recusa nao vira oraculo por
+/// rowid.** A calculada obrigatoria que da nulo numa linha velha recusa a
+/// coluna -- e, sobre coluna marcada, dizer QUAL linha respondia uma pergunta
+/// sobre o dado dela (`CASE WHEN cpf LIKE '1%' THEN NULL ...`), um ALTER por
+/// pergunta. Sobre coluna marcada a recusa nao diz a linha; sobre coluna
+/// comum continua dizendo (o controle, que e o que ajuda quem modela).
+///
+/// Reponha o defeito tirando o ramo `e_pessoal()` de `nao_se_calcula`: a
+/// recusa sobre `cpf` passa a dizer «linha 2».
+#[test]
+fn a_recusa_da_calculada_sobre_coluna_marcada_nao_diz_a_linha() {
+    use phxsql_core::types::DadoPessoal;
+    let d = DirTemp::novo("calculada-oraculo");
+    let esquema = Schema::new(
+        "pessoas",
+        vec![
+            Column::new("id", ColumnType::Int8).obrigatoria(),
+            Column::new("cpf", ColumnType::Str(14)).com_dado_pessoal(DadoPessoal::Pessoal),
+            Column::new("apelido", ColumnType::Str(14)),
+        ],
+        vec![],
+    )
+    .unwrap();
+    let mut t = Table::criar(&d.0, esquema).unwrap();
+    t.inserir(&[
+        Value::Int(1),
+        Value::Str("111".into()),
+        Value::Str("a".into()),
+    ])
+    .unwrap();
+    t.inserir(&[Value::Int(2), Value::Null, Value::Null])
+        .unwrap();
+
+    let e = t
+        .acrescentar_coluna(
+            Column::new("n", ColumnType::Int8)
+                .obrigatoria()
+                .com_calculada("LENGTH(cpf)")
+                .unwrap(),
+            None,
+        )
+        .unwrap_err()
+        .to_string();
+    assert!(
+        !e.contains("linha 2"),
+        "a recusa sobre coluna marcada disse a linha: {e}"
+    );
+    assert!(e.contains("calculada n"), "{e}");
+
+    // CONTROLE: sobre coluna comum, a linha continua dita.
+    let e = t
+        .acrescentar_coluna(
+            Column::new("m", ColumnType::Int8)
+                .obrigatoria()
+                .com_calculada("LENGTH(apelido)")
+                .unwrap(),
+            None,
+        )
+        .unwrap_err()
+        .to_string();
+    assert!(e.contains("linha 2"), "{e}");
+}

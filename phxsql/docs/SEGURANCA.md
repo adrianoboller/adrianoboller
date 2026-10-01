@@ -6865,3 +6865,43 @@ respostas legítimas que hoje passam. O que o 610 entrega é que o `max_mib`
 **escrito** passa a valer no pico. E no motor `phxsql` o corte por linhas não
 salva uma resposta cuja linha crua não cabe: o resultado é uma mensagem só, e
 não há como lê-la em parte.
+
+## 40. A calculada como segundo nome da coluna protegida (revisão SEC do 245 O2b, achado A1, 01/10/2026)
+
+O preenchimento da calculada na linha velha (pedido 245, O2b) transformou um
+vazamento por linha num vazamento de tabela inteira, num `ALTER` só. Três
+caminhos, os três fechados no motor que já decidia cada pergunta:
+
+- **Coluna marcada copiada em claro.** `copia = obs` sobre o `.memo` selado
+  gravava o texto do cofre numa coluna inline em claro: só a faixa MARCADA
+  do slot se sela. **A marca segue o dado**: a calculada que cita coluna
+  marcada nasce marcada com o maior grau das citadas
+  (`Column::herdar_marca_das_citadas`, na declaração — `Schema::new` e
+  `Table::acrescentar_coluna` —, nunca na leitura do disco). Herdar e não
+  recusar porque recusar tiraria `UPPER(nome)` de quem modela dado pessoal
+  sem substituto, e a cópia marcada recebe a proteção exata da origem:
+  selada onde a origem é selada, em claro onde a tabela não tem cofre (e aí
+  a origem também está).
+- **Coluna negada lida por outro nome.** Quem tem `administrar` e `cpf`
+  negado declarava `calculada: "cpf"` e lia o CPF em `x`. A definição cuja
+  `calculada`, `check` ou `padrao` cita coluna negada é **recusada na
+  declaração** (`erro.expressao_cita_coluna_negada`); e a calculada que o
+  dono declarou sobre coluna negada **sai da leitura** de quem não a lê
+  (`Servidor::negadas_para_ler`, usado pela leitura, pelo `esquema` e pela
+  marca d'água). As duas pelo mesmo `direito_coluna::expressao_cita_negada`.
+  A escrita não precisou de porta nova: a calculada não se grava por quem
+  escreve, e o que ela devolve só sai pela leitura, que já nega.
+- **Recusa como oráculo.** «não se calcula na linha N» sobre `CASE WHEN cpf
+  LIKE '1%' THEN NULL …` respondia sobre o CPF da linha N, um `ALTER` por
+  pergunta. Sobre coluna marcada a recusa não diz a linha nem o valor.
+
+Fora deste conserto, nomeado: a `tapar_pedidos_salvos` continua peneirando
+só pela lista do cadastro, sem as derivadas; o CHECK sobre coluna marcada mas
+LIDA pelo usuário continua contando «2 das 4», porque quem lê a coluna não
+ganha nada com a contagem.
+
+Prova real: `calculada_sobre_externo_selado_nasce_marcada_e_nao_vaza_no_reg`,
+`calculada_que_cita_coluna_negada_e_recusada_na_declaracao`,
+`calculada_derivada_de_coluna_negada_nao_se_le` e
+`a_recusa_da_calculada_sobre_coluna_marcada_nao_diz_a_linha`, cada uma com
+guarda no catálogo.

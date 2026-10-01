@@ -487,6 +487,26 @@ protocolo — ele não distingue coluna ausente de presente, e o merge do
 `UPDATE` devolve o valor velho da calculada junto com a linha. Recusar esse
 valor quebraria todo `UPDATE`.
 
+**A calculada acrescentada a tabela com linha é preenchida na reescrita**
+(pedido 245, O2b, 01/10/2026 — parecer do papel C). O formato **não muda**:
+o lugar da coluna no slot já existia e recebia o bit de nulo; agora recebe o
+valor que o `aplicar_regras` gravaria, calculado na mesma passada da FASE A
+do `acrescentar_coluna`, slot ativo a slot ativo (inclusive o marcado, que
+volta pelo `restaurar`), e o livre continua zerado. A linha que não se calcula
+(conta fora do tipo, nulo em coluna obrigatória) recusa a coluna **antes** do
+primeiro byte escrito, nomeando o rowid. O `padrao` numa calculada é recusado
+na declaração, e a calculada `Memo` sobre tabela com linha também — o valor
+dela moraria fora do slot. Isto **roda na réplica**: o `acrescentar_coluna`
+não se replica, cada lado roda o próprio, e um preenchimento que obedecesse ao
+`julga_integridade` deixaria a réplica nula e a origem cheia. O que torna os
+dois lados iguais é a gramática não ter função não determinista.
+
+A calculada que cita coluna marcada **nasce marcada** com o maior grau das
+citadas (revisão SEC, `SEGURANCA.md` §40), e por isso o valor preenchido cai
+na faixa selada do slot quando a tabela tem cofre. Só na declaração: a marca
+de coluna já gravada não muda na leitura, porque mudaria a faixa selada do
+slot que já está lá.
+
 **Na réplica nada disso roda**: a imagem que chega já veio com tudo aplicado
 na origem, e reaplicar seria julgar — o mesmo buraco que a chave estrangeira
 já abriu uma vez (pedido 171).

@@ -8892,7 +8892,26 @@ impl Servidor {
                     let r = self.executar(op, pedido, sessao)?;
                     return self.peneirar_marca_dagua_por_tabela(r, u, &base, sessao);
                 }
-                let sem_ler = u.colunas_negadas(&base, &tabela, Atividade::Ler);
+                let sem_ler = self.negadas_para_ler(u, &base, &tabela, sessao)?;
+                // A DEFINICAO que cita coluna negada (revisao SEC, A1 do 245
+                // O2b): `calculada: "cpf"` copiava todo CPF para uma coluna
+                // que este usuario le, num ALTER so. Recusa na declaracao,
+                // antes de tocar em arquivo.
+                if op == "acrescentar_coluna" && !sem_ler.is_empty() {
+                    let corpo = pedido.campo("coluna").unwrap_or(pedido);
+                    if let Ok(c) = crate::valores::coluna_de_json(corpo, 0, false) {
+                        if let Some(citada) = dc::definicao_cita_negada(&c, &sem_ler) {
+                            return Err(PhxError::Autorizacao(self.msg(
+                                "erro.expressao_cita_coluna_negada",
+                                &[
+                                    ("coluna", &c.nome),
+                                    ("citada", &citada),
+                                    ("tabela", &format!("{base}.{tabela}")),
+                                ],
+                            )));
+                        }
+                    }
+                }
                 let negada = !sem_ler.is_empty()
                     && self
                         .coluna_do_rowid_negada(&base, &tabela, &sem_ler, sessao)?
@@ -8950,7 +8969,7 @@ impl Servidor {
             // conclui que a coluna esta vazia no banco.
             PorColuna::Estrutura => {
                 let r = self.executar(op, pedido, sessao)?;
-                let sem_ler = u.colunas_negadas(&base, &tabela, Atividade::Ler);
+                let sem_ler = self.negadas_para_ler(u, &base, &tabela, sessao)?;
                 let sem_alterar = u.colunas_negadas(&base, &tabela, Atividade::Alterar);
                 // O que conta linha por balde e' agregado do DADO, nao da
                 // estrutura -- sai quando a coluna que o rowid revela esta em
@@ -8981,7 +9000,7 @@ impl Servidor {
             }
 
             PorColuna::Le(onde) => {
-                let negadas = u.colunas_negadas(&base, &tabela, Atividade::Ler);
+                let negadas = self.negadas_para_ler(u, &base, &tabela, sessao)?;
                 if negadas.is_empty() {
                     return self.executar(op, pedido, sessao);
                 }
@@ -9033,6 +9052,38 @@ impl Servidor {
                 Ok(Json::Objeto(pares))
             }
         }
+    }
+
+    /// As colunas que este usuario NAO le nesta tabela: as que o cadastro
+    /// nega e as CALCULADAS que citam alguma delas (revisao SEC, achado A1 do
+    /// pedido 245 O2b). A calculada `x = cpf` e o CPF por outro nome, e a
+    /// peneira que tirasse `cpf` e deixasse `x` peneiraria nada.
+    ///
+    /// O esquema so se pergunta quando ha coluna negada nesta tabela: quem
+    /// nao tem regra nao paga nem a lista. A decisao «esta expressao cita
+    /// coluna negada» e a mesma da declaracao (`direito_coluna`).
+    fn negadas_para_ler(
+        &self,
+        u: &crate::usuarios::Usuario,
+        base: &str,
+        tabela: &str,
+        sessao: &Sessao,
+    ) -> Result<Vec<String>> {
+        let mut negadas = u.colunas_negadas(base, tabela, Atividade::Ler);
+        if negadas.is_empty() || tabela.is_empty() {
+            return Ok(negadas);
+        }
+        let ped = Json::objeto(vec![
+            ("database", Json::texto_de(base)),
+            ("tabela", Json::texto_de(tabela)),
+        ]);
+        // Tabela que nao existe nao tem calculada: o erro e da operacao, que
+        // o devolve com o texto dela logo adiante.
+        if let Ok(e) = self.executar("esquema", &ped, sessao) {
+            let derivadas = crate::direito_coluna::derivadas_de_negadas(&e, &negadas);
+            negadas.extend(derivadas);
+        }
+        Ok(negadas)
     }
 
     /// A resposta que traz UMA LINHA POR TABELA na lista `tabelas` (o
@@ -21018,26 +21069,7 @@ impl Servidor {
         drop(congelada);
         let ms = inicio.elapsed().as_secs_f64() * 1e3;
 
-        // O que a linha VELHA nao ganhou, dito na resposta (pedido 245, O2).
-        //
-        // So a `calculada`: o CHECK passou a ser conferido contra as linhas
-        // velhas na fase A (245, O2a), e quem chega aqui com CHECK e porque
-        // nenhuma o viola -- avisar que «nao foi conferido» seria mentira. A
-        // `calculada` que nasce NULA na linha velha continua sendo o que a
-        // resposta precisa dizer. O portao vem antes do trabalho: um
-        // `is_some()` de campo ja carregado.
-        let mut avisos: Vec<String> = Vec::new();
-        if let (true, Some(calc)) = (registros > 0, &coluna.calculada) {
-            avisos.push(format!(
-                "a coluna calculada {} ({:?}) ficou NULA nas {registros} linha(s) que \
-                 ja existiam: cada uma so recebe o valor calculado no proximo \
-                 `atualizar` dela",
-                coluna.nome,
-                calc.texto()
-            ));
-        }
-
-        let mut pares = vec![
+        let pares = vec![
             ("database", Json::texto_de(p.texto_ou("database", ""))),
             ("tabela", Json::texto_de(p.texto_ou("tabela", ""))),
             ("coluna", Json::texto_de(coluna.nome.clone())),
@@ -21053,14 +21085,9 @@ impl Servidor {
             // foi refeito porque nao precisou.
             ("indices_refeitos", Json::Bool(false)),
         ];
-        // So quando ha, como no `criar_tabela`: a resposta de sempre nao ganha
-        // campo vazio.
-        if !avisos.is_empty() {
-            pares.push((
-                "avisos",
-                Json::Lista(avisos.iter().map(Json::texto_de).collect()),
-            ));
-        }
+        // Sem `avisos`: o CHECK e conferido contra a linha velha (245, O2a)
+        // e a calculada e preenchida nela (245, O2b) -- nao sobrou o que a
+        // linha velha deixe de ganhar, e aviso que diz o contrario mente.
         Ok(Json::objeto(pares))
     }
 
@@ -39240,6 +39267,144 @@ mod testes_direito_por_coluna {
             )
             .unwrap();
         assert!(r.campo("avisos").is_none(), "{}", r.escrever());
+    }
+
+    // ------------------------------------- revisao SEC do 245 O2b, achado A1
+
+    /// **A calculada que cita coluna negada e recusada na declaracao.** Ana
+    /// tem `administrar` na folha e `salario` negado; `acrescentar_coluna`
+    /// com `calculada: "salario"` copiaria todo salario para `x`, que ela le.
+    /// O CHECK que cita `salario` tambem recusa: ele contaria as linhas por
+    /// ele («2 das 4»). A folha fica com as colunas que tinha.
+    ///
+    /// O controle: a MESMA calculada sobre `nome`, que Ana le, entra.
+    ///
+    /// Reponha o defeito tirando a conferencia `definicao_cita_negada` do
+    /// ramo `MarcaDagua`: a coluna entra e o `varrer` devolve 5000 em `x`.
+    #[test]
+    fn calculada_que_cita_coluna_negada_e_recusada_na_declaracao() {
+        let dir = dir_temp("sec-a1-declara");
+        let (s, ses) = servidor(&dir, so_a_folha_tem_regra());
+        let colunas = |s: &Arc<Servidor>| {
+            s.executar(
+                "esquema",
+                &pedido(r#"{"database":"b","tabela":"folha"}"#),
+                &Sessao::default(),
+            )
+            .unwrap()
+            .campo("colunas")
+            .and_then(Json::lista)
+            .map(|l| l.len())
+            .unwrap()
+        };
+        let antes = colunas(&s);
+        for def in [
+            r#"{"nome":"x","tipo":"Int4","calculada":"salario"}"#,
+            r#"{"nome":"x","tipo":"Int4","calculada":"SALARIO + 0"}"#,
+            r#"{"nome":"x","tipo":"Int4","check":"salario > 4000"}"#,
+        ] {
+            let e = pede(
+                &s,
+                &ses,
+                &format!(
+                    r#""op":"acrescentar_coluna","database":"b","tabela":"folha","coluna":{def}"#
+                ),
+            )
+            .expect_err(def)
+            .to_string();
+            assert!(
+                e.to_lowercase().contains("salario") && e.contains("x"),
+                "{def}: {e}"
+            );
+        }
+        assert_eq!(antes, colunas(&s), "uma recusa mexeu na tabela");
+        let r = pede(&s, &ses, r#""op":"varrer","database":"b","tabela":"folha""#).unwrap();
+        assert!(!r.escrever().contains("5000"), "{}", r.escrever());
+
+        // CONTROLE: a calculada sobre o que Ana le entra, e se le.
+        pede(
+            &s,
+            &ses,
+            r#""op":"acrescentar_coluna","database":"b","tabela":"folha",
+               "coluna":{"nome":"y","tipo":"Str(20)","calculada":"UPPER(nome)"}"#,
+        )
+        .unwrap();
+        let r = pede(
+            &s,
+            &ses,
+            r#""op":"ler","database":"b","tabela":"folha","rowid":1"#,
+        )
+        .unwrap();
+        assert_eq!(r.texto_ou("y", ""), "ANA", "{}", r.escrever());
+    }
+
+    /// **A calculada DERIVADA de coluna negada sai da leitura junto.** O dono
+    /// (sem restricao) declara `x = salario`; Ana, que nao le `salario`, nao
+    /// le `x` -- e o salario por outro nome. Pela leitura e pela varredura,
+    /// e o filtro por `x` recusa como o filtro por `salario`.
+    ///
+    /// Reponha o defeito fazendo `derivadas_de_negadas` devolver vazio: o
+    /// `varrer` de Ana devolve 5000.
+    #[test]
+    fn calculada_derivada_de_coluna_negada_nao_se_le() {
+        let dir = dir_temp("sec-a1-le");
+        let (s, ses) = servidor(&dir, so_a_folha_tem_regra());
+        s.executar(
+            "acrescentar_coluna",
+            &pedido(
+                r#"{"database":"b","tabela":"folha",
+                    "coluna":{"nome":"x","tipo":"Int4","calculada":"salario"}}"#,
+            ),
+            &Sessao::default(),
+        )
+        .unwrap();
+        // O dono le o valor preenchido: e isso que Ana NAO pode ver.
+        let dono = s
+            .executar(
+                "ler",
+                &pedido(r#"{"database":"b","tabela":"folha","rowid":1}"#),
+                &Sessao::default(),
+            )
+            .unwrap();
+        assert_eq!(dono.inteiro_ou("x", -1), 5000);
+
+        for corpo in [
+            r#""op":"varrer","database":"b","tabela":"folha""#,
+            r#""op":"ler","database":"b","tabela":"folha","rowid":1"#,
+        ] {
+            let r = pede(&s, &ses, corpo).unwrap();
+            assert!(!r.escrever().contains("5000"), "{corpo}: {}", r.escrever());
+            assert!(r.escrever().contains("ana"), "{corpo}: {}", r.escrever());
+        }
+        // E o `esquema` diz a Ana que `x` nao chega, como diz de `salario`.
+        let e = pede(
+            &s,
+            &ses,
+            r#""op":"esquema","database":"b","tabela":"folha""#,
+        )
+        .unwrap();
+        let sem_ler = e.campo("colunas_sem_leitura").unwrap().escrever();
+        assert!(sem_ler.contains("\"x\""), "{sem_ler}");
+
+        // CONTROLE: sem regra de coluna, Ana le `x` como sempre.
+        let dir2 = dir_temp("sec-a1-le-controle");
+        let (s2, ses2) = servidor(&dir2, sem_regra_de_coluna());
+        s2.executar(
+            "acrescentar_coluna",
+            &pedido(
+                r#"{"database":"b","tabela":"folha",
+                    "coluna":{"nome":"x","tipo":"Int4","calculada":"salario"}}"#,
+            ),
+            &Sessao::default(),
+        )
+        .unwrap();
+        let r = pede(
+            &s2,
+            &ses2,
+            r#""op":"ler","database":"b","tabela":"folha","rowid":1"#,
+        )
+        .unwrap();
+        assert_eq!(r.inteiro_ou("x", -1), 5000);
     }
 }
 
@@ -59531,20 +59696,25 @@ mod testes_regras_de_esquema {
         assert!(e.contains("check de v") && e.contains("\"w\""), "{e}");
     }
 
-    /// **O que a linha VELHA nao ganhou, dito na resposta** -- pedido 245, O2.
+    /// **Pedido 245, O2b: a calculada acrescentada PREENCHE a linha velha** --
+    /// parecer do papel C (`docs/propostas/parecer-dba-check-e-calculada-contra-linha-velha-2026-09.md`
+    /// §4.2 e §9): os quatro motores convergem em que a linha velha nunca le
+    /// nulo numa calculada computavel, e o preenchimento acontece no ALTER.
     ///
-    /// Medido em 16/09/2026: `acrescentar_coluna` com `calculada` era aceito
-    /// SEM AVISO NENHUM -- e so aparecia numa leitura que mostrava NULO onde
-    /// o esquema promete uma conta. O CHECK que a linha velha viola deixou de
-    /// ser aviso e virou RECUSA (O2a, decisao do dono de 17/09/2026 -- ver
-    /// `o_check_que_a_linha_velha_viola_recusa_a_coluna_dizendo_quantas`); o
-    /// que sobra aqui e o CHECK que as linhas cumprem, que entra calado.
+    /// Medido antes do conserto (16/09/2026): `b = a*2` sobre a = 3 e 7 lia
+    /// NULO nas duas, e `SUM(b)` devolvia 10 sobre uma tabela cuja soma e 24
+    /// depois que UMA delas era tocada. Aqui: as duas linhas leem 6 e 14, a
+    /// excluida suave tambem ganha o valor (volta pelo `restaurar`), a
+    /// resposta nao traz mais o aviso de NULA, e tres recusas da declaracao
+    /// deixam a tabela como estava -- padrao numa calculada, a conta que nao
+    /// cabe no tipo (nomeando o rowid) e o CHECK julgado com o valor
+    /// CALCULADO.
     ///
-    /// Reponha o defeito tirando o bloco `let mut avisos` de
-    /// `op_acrescentar_coluna`: a busca por `avisos` da calculada cai.
+    /// Reponha o defeito passando `None` no lugar do `preencher` do
+    /// `acrescentar_coluna_fase_a_recusando`: as leituras de 6 e 14 caem.
     #[test]
-    fn acrescentar_coluna_com_regra_avisa_o_que_a_linha_velha_nao_ganhou() {
-        let d = DirTemp::novo("regras-aviso");
+    fn acrescentar_calculada_preenche_a_linha_velha() {
+        let d = DirTemp::novo("regras-o2b");
         let s = servidor(&d.0);
         roda(
             &s,
@@ -59555,26 +59725,70 @@ mod testes_regras_de_esquema {
             "indices":[{"nome":"pk","colunas":["id"],"unico":true}]}"#,
         )
         .unwrap();
-        roda(
+        for (id, a) in [(1, 3), (2, 7), (3, 100)] {
+            roda(
+                &s,
+                "inserir",
+                &format!(r#"{{"database":"cmp","tabela":"t_av","linha":{{"id":{id},"a":{a}}}}}"#),
+            )
+            .unwrap();
+        }
+        let x = roda(
             &s,
-            "inserir",
-            r#"{"database":"cmp","tabela":"t_av","linha":{"id":1,"a":3}}"#,
+            "excluir",
+            r#"{"database":"cmp","tabela":"t_av","rowid":3,"motivo":"teste"}"#,
         )
         .unwrap();
+        assert_eq!(x.texto_ou("modo", ""), "suave", "{}", x.escrever());
+        let colunas = |s: &Arc<Servidor>| {
+            roda(s, "esquema", r#"{"database":"cmp","tabela":"t_av"}"#)
+                .unwrap()
+                .campo("colunas")
+                .and_then(Json::lista)
+                .map(|l| l.len())
+                .unwrap()
+        };
+        let antes = colunas(&s);
 
-        // (a) CHECK que fala de coluna velha e que a linha CUMPRE: entra, e
-        //     sem aviso -- foi conferido contra ela (O2a).
-        let r = roda(
+        // RECUSA 1: padrao numa calculada e um valor que a proxima gravacao
+        // apaga (o `default 999` sobre `a*3` do parecer, §3).
+        let e = roda(
             &s,
             "acrescentar_coluna",
             r#"{"database":"cmp","tabela":"t_av",
-                "coluna":{"nome":"nota","tipo":"Int8","check":"a > 0"}}"#,
+                "coluna":{"nome":"c","tipo":"Int8","calculada":"a*3"},"default":999}"#,
         )
-        .unwrap();
-        assert!(r.campo("avisos").is_none(), "{}", r.escrever());
+        .unwrap_err()
+        .to_string();
+        assert!(e.contains("calculada") && e.contains("padrao"), "{e}");
 
-        // (b) calculada: entra, e diz que a linha velha ficou NULA -- que e o
-        //     que a leitura mostra logo abaixo.
+        // RECUSA 2: a conta que nao cabe no tipo, na linha que ja existe --
+        // 100 * 2 = 200 nao cabe num Int1 -- nomeia o rowid, e recusa ANTES
+        // de reescrever: a excluida suave conta.
+        let e = roda(
+            &s,
+            "acrescentar_coluna",
+            r#"{"database":"cmp","tabela":"t_av",
+                "coluna":{"nome":"c","tipo":"Int1","calculada":"a*2"}}"#,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(e.contains("linha 3") && e.contains("calculada c"), "{e}");
+
+        // RECUSA 3: o CHECK da propria calculada e julgado com o valor que a
+        // linha VAI ter. a*2 > 10 falha em a = 3 (6) -- e so em a = 3.
+        let e = roda(
+            &s,
+            "acrescentar_coluna",
+            r#"{"database":"cmp","tabela":"t_av",
+                "coluna":{"nome":"c","tipo":"Int8","calculada":"a*2","check":"c > 10"}}"#,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(e.contains("1 das 3"), "{e}");
+        assert_eq!(antes, colunas(&s), "uma recusa tocou no esquema");
+
+        // O caso: entra, sem aviso, e a linha velha le o valor calculado.
         let r = roda(
             &s,
             "acrescentar_coluna",
@@ -59582,15 +59796,29 @@ mod testes_regras_de_esquema {
                 "coluna":{"nome":"b","tipo":"Int8","calculada":"a*2"}}"#,
         )
         .unwrap();
-        let texto = r.campo("avisos").and_then(Json::lista).unwrap()[0]
-            .texto()
-            .unwrap();
-        assert!(texto.contains("NULA"), "{texto}");
-        assert!(linha(&s, "t_av", 1).campo("b").unwrap().e_nulo());
+        assert!(r.campo("avisos").is_none(), "{}", r.escrever());
+        assert_eq!(
+            linha(&s, "t_av", 1).campo("b").and_then(Json::inteiro),
+            Some(6)
+        );
+        assert_eq!(
+            linha(&s, "t_av", 2).campo("b").and_then(Json::inteiro),
+            Some(14)
+        );
+        roda(
+            &s,
+            "restaurar",
+            r#"{"database":"cmp","tabela":"t_av","rowid":3}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            linha(&s, "t_av", 3).campo("b").and_then(Json::inteiro),
+            Some(200),
+            "a excluida suave volta pelo `restaurar` sem passar pela calculada"
+        );
 
-        // **O CONTROLE, e ele e o que importa:** coluna SEM regra nenhuma nao
-        // ganha campo novo na resposta. Aviso que aparece sempre e ruido, e
-        // ruido e o que faz ninguem ler o aviso que importa.
+        // CONTROLE (o comportamento velho): coluna SEM regra nenhuma continua
+        // nascendo nula e sem campo novo na resposta.
         let r = roda(
             &s,
             "acrescentar_coluna",
@@ -59598,24 +59826,7 @@ mod testes_regras_de_esquema {
         )
         .unwrap();
         assert!(r.campo("avisos").is_none(), "{}", r.escrever());
-
-        // E numa tabela VAZIA nao ha linha velha, entao nao ha o que avisar.
-        roda(
-            &s,
-            "criar_tabela",
-            r#"{"database":"cmp","tabela":"t_vz",
-            "colunas":[{"nome":"id","tipo":"Int8","obrigatoria":true},
-                       {"nome":"a","tipo":"Int8"}]}"#,
-        )
-        .unwrap();
-        let r = roda(
-            &s,
-            "acrescentar_coluna",
-            r#"{"database":"cmp","tabela":"t_vz",
-                "coluna":{"nome":"b","tipo":"Int8","calculada":"a*2"}}"#,
-        )
-        .unwrap();
-        assert!(r.campo("avisos").is_none(), "{}", r.escrever());
+        assert!(linha(&s, "t_av", 1).campo("c").unwrap().e_nulo());
     }
 
     /// **Pedido 245, O2a: o CHECK que linha velha viola recusa a coluna,

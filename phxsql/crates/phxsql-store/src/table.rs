@@ -1194,6 +1194,154 @@ fn resolver(diretorio: &Path) -> PathBuf {
     crate::volume::absoluto_lexico(diretorio).unwrap_or_else(|| diretorio.to_path_buf())
 }
 
+/// O que decodificar uma coluna externa pede: os dois arquivos de bloco e o
+/// abridor do `.reg` que os selou. Separado do `Table` para o preenchimento
+/// da calculada (pedido 245, O2b) ler a linha velha enquanto o `.reg` esta
+/// emprestado a reescrita -- pelo MESMO decodificador, e nao por um segundo.
+struct Externos<'a> {
+    esquema: &'a Schema,
+    nome: &'a str,
+    bin: &'a mut BlobFile,
+    memo: &'a mut BlobFile,
+    abrir: &'a crate::reg::AbridorDeExterno<'a>,
+}
+
+/// O bit de nulo e conferido aqui, e nao so no `decodificar_com` (que ja o
+/// trata antes de chegar): quem pergunta pelo valor de uma coluna sozinha
+/// tem de receber `Null` quando ela e nula, em vez de tentar ler um ponteiro
+/// vazio.
+fn ler_externo(x: &mut Externos, payload: &[u8], i: usize) -> Result<Value> {
+    if payload[i / 8] & (1 << (i % 8)) != 0 {
+        return Ok(Value::Null);
+    }
+    let ty = x.esquema.colunas()[i].ty;
+    let off = x.esquema.offset_coluna(i)?;
+    let p = Ponteiro::ler(&payload[off..off + ty.largura()])?;
+    match ty {
+        ColumnType::Bin => {
+            let bytes = x.bin.ler(&p)?;
+            Ok(Value::Bin((x.abrir)(i as u16, &bytes)?))
+        }
+        ColumnType::Memo => {
+            let bytes = x.memo.ler(&p)?;
+            let bytes = (x.abrir)(i as u16, &bytes)?;
+            Ok(Value::Memo(String::from_utf8(bytes).map_err(|e| {
+                PhxError::Corrompido(format!("memo nao e UTF-8 valido: {e}"))
+            })?))
+        }
+        outro => Err(PhxError::Tipo(format!(
+            "a coluna {} de {} e {outro:?} e nao mora fora do .reg",
+            x.esquema.colunas()[i].nome,
+            x.nome
+        ))),
+    }
+}
+
+/// A linha de um payload em claro, pelo esquema dado. Sem `externos`, as
+/// colunas `Bin`/`Memo` saem nulas.
+fn decodificar_com(
+    esquema: &Schema,
+    nome: &str,
+    payload: &[u8],
+    mut externos: Option<Externos>,
+) -> Result<Linha> {
+    // O payload tem de ter a largura do esquema ATUAL. Sem esta linha, um
+    // payload guardado antes de um `acrescentar_coluna` -- a imagem de um
+    // evento do diario, a linha de uma lixeira, o que chega de uma replica
+    // que ainda nao alterou -- seria lido com os offsets errados, e o
+    // curto sairia por indice fora da faixa em vez de por mensagem.
+    if payload.len() != esquema.payload_len() {
+        return Err(PhxError::Esquema(format!(
+            "a linha tem {} bytes de payload e o esquema atual de {} espera {}: \
+             a estrutura da tabela mudou depois que ela foi gravada",
+            payload.len(),
+            nome,
+            esquema.payload_len()
+        )));
+    }
+    let mut linha = Vec::with_capacity(esquema.colunas().len());
+
+    for i in 0..esquema.colunas().len() {
+        if payload[i / 8] & (1 << (i % 8)) != 0 {
+            linha.push(Value::Null);
+            continue;
+        }
+        let ty = esquema.colunas()[i].ty;
+        let valor = if ty.externo() {
+            match externos.as_mut() {
+                Some(x) => ler_externo(x, payload, i)?,
+                None => Value::Null,
+            }
+        } else {
+            let off = esquema.offset_coluna(i)?;
+            ler_inline(&ty, &payload[off..off + ty.largura()])?
+        };
+        linha.push(valor);
+    }
+    Ok(linha)
+}
+
+/// A recusa da calculada que nao se calcula numa linha que ja existe
+/// (pedido 245, O2b). `motivo` `None` e o nulo numa coluna obrigatoria.
+///
+/// **Coluna marcada nao diz QUAL linha nem POR QUE** (revisao SEC, A1): com
+/// `CASE WHEN cpf LIKE '1%' THEN NULL ELSE 1 END` numa coluna obrigatoria,
+/// o rowid da recusa respondia «o CPF desta linha comeca com 1?», um ALTER
+/// por pergunta. A calculada que cita coluna marcada ja nasceu marcada
+/// (`Column::herdar_marca_das_citadas`), entao a pergunta e uma so.
+fn nao_se_calcula(
+    coluna: &phxsql_core::schema::Column,
+    id: RowId,
+    motivo: Option<PhxError>,
+) -> PhxError {
+    if coluna.dado_pessoal.e_pessoal() {
+        return PhxError::Esquema(format!(
+            "a coluna calculada {} nao se calcula em pelo menos uma das linhas \
+             que ja existem (conta fora do tipo, ou nulo numa coluna \
+             obrigatoria). A coluna e dado pessoal, e por isso a linha e o \
+             valor nao se dizem",
+            coluna.nome
+        ));
+    }
+    match motivo {
+        Some(e) => PhxError::Esquema(format!(
+            "a coluna calculada {} nao se calcula na linha {id}, que ja existe: {}",
+            coluna.nome,
+            coluna.recusa_de_valor(e)
+        )),
+        None => PhxError::Esquema(format!(
+            "a coluna calculada {} e obrigatoria e a expressao da nulo na linha \
+             {id}, que ja existe: deixe a coluna aceitar nulo, ou trate o nulo na \
+             expressao (COALESCE)",
+            coluna.nome
+        )),
+    }
+}
+
+/// O valor da coluna calculada `i` sobre `linha`, ja no tipo dela.
+///
+/// UM lugar so, e e por isso que existe: a gravacao (`aplicar_regras`) e o
+/// preenchimento da linha velha no `acrescentar_coluna` (pedido 245, O2b)
+/// tem de chegar ao MESMO byte. Duas contas da mesma calculada divergiriam
+/// na coercao, e a linha velha passaria a ler um valor que nenhuma gravacao
+/// produziria.
+fn valor_calculado(esquema: &Schema, i: usize, linha: &[Value]) -> Result<Value> {
+    let col = &esquema.colunas()[i];
+    let Some(calc) = &col.calculada else {
+        return Ok(linha.get(i).cloned().unwrap_or(Value::Null));
+    };
+    let resolver = |nome: &str| -> Option<(&Value, &ColumnType)> {
+        let j = esquema.posicao_sem_caixa(nome)?;
+        Some((linha.get(j)?, &esquema.colunas()[j].ty))
+    };
+    let v = calc.avaliar(&resolver)?;
+    // A conta pode partir de coluna marcada, e o numero que ela
+    // devolve e o dado -- a recusa passa pela coluna (pedido 464).
+    expressao::coagir(&v, &col.ty)
+        .map_err(|e| col.recusa_de_valor(e))
+        .map_err(|e| PhxError::Tipo(format!("coluna calculada {}: {e}", col.nome)))
+}
+
 /// O recibo de que as chaves que nascem conferidas FORAM varridas contra o
 /// dado (pedido 422). So [`Table::conferir_chaves_que_nascem`] o constroi.
 #[derive(Debug)]
@@ -1781,6 +1929,11 @@ impl Table {
         padrao: Option<Value>,
         recusa: impl FnOnce(&CheckViolado) -> PhxError,
     ) -> Result<crate::reg::TrocaPendente> {
+        // A marca segue o dado (revisao SEC, A1): a calculada que cita coluna
+        // marcada nasce marcada, ANTES de o esquema novo se montar -- e e
+        // isso que poe o valor copiado na faixa selada do slot, e nao em claro.
+        let mut coluna = coluna;
+        coluna.herdar_marca_das_citadas(self.esquema.colunas());
         // Tabela em modo ledger NAO aceita coluna nova, e a recusa e' absoluta
         // -- nem nula, nem com padrao, nem em tabela vazia. O hash de cada bloco
         // cobre o conteudo canonico NA ORDEM do esquema; uma coluna a mais muda
@@ -1825,7 +1978,45 @@ impl Table {
                 coluna.nome, coluna.ty
             )));
         }
-        if padrao.is_none() && !coluna.nullable && tem_linha {
+        // A coluna CALCULADA tira o valor da linha, e nao de um padrao
+        // (pedido 245, O2b -- parecer do papel C, §9). Duas recusas vem com
+        // ela, e as duas sao a mesma mentira vista de lados diferentes:
+        //
+        // * padrao numa calculada e um valor que a proxima gravacao apaga --
+        //   medido, `default 999` numa calculada `a * 3` gravava 999, um
+        //   numero que a expressao nunca produz. PostgreSQL e MySQL recusam
+        //   o par DEFAULT + GENERATED na declaracao;
+        // * calculada `Memo` mora fora do slot, e preencher a linha velha
+        //   seria escrever um bloco no `.memo` vivo por linha, fora da troca
+        //   em duas fases. E a mesma razao da recusa do padrao em coluna
+        //   externa, logo acima.
+        let calculada = coluna.calculada.clone();
+        if let Some(calc) = &calculada {
+            if padrao.is_some() {
+                return Err(PhxError::Esquema(format!(
+                    "a coluna {} e calculada ({}) e nao aceita valor padrao: \
+                     o valor dela sai da expressao, inclusive nas linhas que \
+                     ja existem, e um padrao seria apagado na proxima gravacao",
+                    coluna.nome,
+                    calc.texto()
+                )));
+            }
+            if coluna.ty.externo() && tem_linha {
+                return Err(PhxError::Esquema(format!(
+                    "a coluna calculada {} e {:?} e o valor dela mora fora do \
+                     slot: a tabela ja tem {} linha(s) e cada uma teria de \
+                     ganhar um bloco proprio. Declare-a Str(n), ou acrescente-a \
+                     com a tabela vazia",
+                    coluna.nome,
+                    coluna.ty,
+                    self.reg.slots()
+                )));
+            }
+        }
+        // Obrigatoria sem padrao recusa porque a linha velha ficaria sem
+        // valor; a calculada TEM valor para ela, e quem recusa e a varredura
+        // abaixo, na linha em que a expressao der nulo.
+        if padrao.is_none() && !coluna.nullable && tem_linha && calculada.is_none() {
             return Err(PhxError::Esquema(format!(
                 "a coluna {} e obrigatoria e a tabela ja tem {} linha(s): \
                  declare um valor padrao, ou deixe a coluna aceitar nulo. \
@@ -1867,44 +2058,118 @@ impl Table {
         // trabalho: sem CHECK na coluna, ou sem linha, nao se le nada; e a
         // varredura custa uma leitura do arquivo que a fase A logo abaixo
         // reescreve inteiro de qualquer jeito.
-        if tem_linha && self.julga_integridade() {
-            if let Some(check) = novo.colunas()[posicao].check.clone() {
-                let valor_novo = padrao.clone().unwrap_or(Value::Null);
-                let mut violam = 0u64;
-                let mut linhas = 0u64;
-                let mut rowid = 1;
-                while let Some((id, payload)) = self.reg.proximo_ativo(rowid)? {
-                    rowid = id + 1;
-                    let mut linha = match self.troca_de(id) {
-                        None => self.decodificar(&payload, true)?,
-                        Some(_) => match self.resolver(id)? {
-                            Some(l) => l,
-                            None => continue,
-                        },
-                    };
-                    linhas += 1;
-                    linha.insert(posicao.min(linha.len()), valor_novo.clone());
-                    let resolver = |nome: &str| -> Option<(&Value, &ColumnType)> {
-                        let i = novo.posicao_sem_caixa(nome)?;
-                        Some((linha.get(i)?, &novo.colunas()[i].ty))
-                    };
-                    if check.avaliar_bool(&resolver)? == Some(false) {
-                        violam += 1;
+        //
+        // A mesma varredura confere a CALCULADA (245, O2b): cada linha velha
+        // tem de se calcular -- conta que estoura o tipo da coluna, ou nulo
+        // numa coluna obrigatoria, recusa AQUI, antes de byte nenhum ser
+        // escrito, nomeando o rowid. E o CHECK julga a linha com o valor
+        // CALCULADO, que e o que ela vai ter. Esta parte NAO passa pelo
+        // `julga_integridade`: a replica roda o proprio ALTER e preenche
+        // por si, e conferir antes e o que impede o preenchimento de falhar
+        // no meio da reescrita.
+        let check = novo.colunas()[posicao]
+            .check
+            .clone()
+            .filter(|_| self.julga_integridade());
+        if tem_linha && (check.is_some() || calculada.is_some()) {
+            let valor_novo = padrao.clone().unwrap_or(Value::Null);
+            let mut violam = 0u64;
+            let mut linhas = 0u64;
+            let mut rowid = 1;
+            while let Some((id, payload)) = self.reg.proximo_ativo(rowid)? {
+                rowid = id + 1;
+                let mut linha = match self.troca_de(id) {
+                    None => self.decodificar(&payload, true)?,
+                    Some(_) => match self.resolver(id)? {
+                        Some(l) => l,
+                        None => continue,
+                    },
+                };
+                linhas += 1;
+                linha.insert(posicao.min(linha.len()), valor_novo.clone());
+                if calculada.is_some() {
+                    let v = valor_calculado(&novo, posicao, &linha)
+                        .map_err(|e| nao_se_calcula(&coluna, id, Some(e)))?;
+                    // O byte tambem se monta aqui, e nao so no preenchimento:
+                    // a coercao confere o tipo, e a faixa do inteiro curto e
+                    // conferida na escrita -- a recusa tem de sair ANTES da
+                    // reescrita, nunca do meio dela.
+                    if !v.e_null() {
+                        let mut b = vec![0u8; coluna.ty.largura()];
+                        escrever_inline(&v, &coluna.ty, &mut b)
+                            .map_err(|e| nao_se_calcula(&coluna, id, Some(e)))?;
                     }
+                    if v.e_null() && !coluna.nullable {
+                        return Err(nao_se_calcula(&coluna, id, None));
+                    }
+                    linha[posicao] = v;
                 }
-                if violam > 0 {
-                    return Err(recusa(&CheckViolado {
-                        coluna: coluna.nome.clone(),
-                        check: check.texto().to_string(),
-                        violam,
-                        linhas,
-                    }));
+                let Some(check) = &check else { continue };
+                let resolver = |nome: &str| -> Option<(&Value, &ColumnType)> {
+                    let i = novo.posicao_sem_caixa(nome)?;
+                    Some((linha.get(i)?, &novo.colunas()[i].ty))
+                };
+                if check.avaliar_bool(&resolver)? == Some(false) {
+                    violam += 1;
                 }
+            }
+            if let (true, Some(check)) = (violam > 0, &check) {
+                return Err(recusa(&CheckViolado {
+                    coluna: coluna.nome.clone(),
+                    check: check.texto().to_string(),
+                    violam,
+                    linhas,
+                }));
             }
         }
 
+        // O PREENCHIMENTO da calculada, dentro da passada que a FASE A ja faz
+        // (parecer do papel C, §8-9): cada slot ativo e decodificado pelo
+        // esquema velho e ganha o valor que o `aplicar_regras` gravaria --
+        // pelo mesmo `valor_calculado`. Os externos so se leem quando a
+        // expressao fala de um deles: o portao vem antes do trabalho.
+        let mut calcular;
+        let preencher: Option<crate::reg::Preenchedor> = match &calculada {
+            Some(calc) if tem_linha => {
+                let velho = self.esquema.clone();
+                let nome = self.nome.clone();
+                let precisa_externos = calc.colunas().iter().any(|c| {
+                    velho
+                        .posicao_sem_caixa(c)
+                        .is_some_and(|i| velho.colunas()[i].ty.externo())
+                });
+                let novo = novo.clone();
+                let col = coluna.clone();
+                let bin = &mut self.bin;
+                let memo = &mut self.memo;
+                calcular = move |_: RowId,
+                                 claro: &[u8],
+                                 abrir: &crate::reg::AbridorDeExterno<'_>|
+                      -> Result<Option<Vec<u8>>> {
+                    let externos = precisa_externos.then_some(Externos {
+                        esquema: &velho,
+                        nome: &nome,
+                        bin: &mut *bin,
+                        memo: &mut *memo,
+                        abrir,
+                    });
+                    let mut linha = decodificar_com(&velho, &nome, claro, externos)?;
+                    linha.insert(posicao.min(linha.len()), Value::Null);
+                    let v = valor_calculado(&novo, posicao, &linha)?;
+                    if v.e_null() {
+                        return Ok(None);
+                    }
+                    let mut b = vec![0u8; col.ty.largura()];
+                    escrever_inline(&v, &col.ty, &mut b).map_err(|e| col.recusa_de_valor(e))?;
+                    Ok(Some(b))
+                };
+                Some(&mut calcular)
+            }
+            _ => None,
+        };
+
         self.reg
-            .alargar_fase_a(novo, posicao, &bytes, padrao.is_none())
+            .alargar_fase_a(novo, posicao, &bytes, padrao.is_none(), preencher)
     }
 
     /// A FASE B de [`Table::acrescentar_coluna`]: so os `rename`, mais os
@@ -2032,7 +2297,7 @@ impl Table {
         // de um medido.
         let bytes = vec![0u8; ty.largura()];
         self.reg
-            .alargar_fase_a(novo, posicao, &bytes, false)
+            .alargar_fase_a(novo, posicao, &bytes, false, None)
             .map(Some)
     }
 
@@ -2868,6 +3133,13 @@ impl Table {
     /// O que e de graca e o resto do trabalho: sem irma apontando para esta
     /// tabela, nem a linha se le -- ver [`Table::conferir_filhas_com`].
     /// Numero em `DESEMPENHO.md` §24.6.
+    ///
+    /// Desde o pedido 259 (01/10/2026) o esquema de cada irma se LEMBRA
+    /// junto do carimbo do arquivo (`crate::irmas`), e com o diretorio parado
+    /// a busca nao abre arquivo nenhum: 30,39 -> 21,88 us com a tabela
+    /// sozinha, 441,12 -> 51,51 us com 30 irmas (`DESEMPENHO.md` §24.7). A
+    /// busca continua INTEIRA quando ha filha declarada -- o que se poupa e
+    /// reler o esquema que nao mudou, nunca a pergunta a filha.
     ///
     /// # O que conta como filha
     ///
@@ -5044,41 +5316,16 @@ impl Table {
     /// `Bin`/`Memo` voltam como `Value::Null` -- util quando so precisamos
     /// dos valores que entram em indice.
     fn decodificar(&mut self, payload: &[u8], carregar_externos: bool) -> Result<Linha> {
-        // O payload tem de ter a largura do esquema ATUAL. Sem esta linha, um
-        // payload guardado antes de um `acrescentar_coluna` -- a imagem de um
-        // evento do diario, a linha de uma lixeira, o que chega de uma replica
-        // que ainda nao alterou -- seria lido com os offsets errados, e o
-        // curto sairia por indice fora da faixa em vez de por mensagem.
-        if payload.len() != self.esquema.payload_len() {
-            return Err(PhxError::Esquema(format!(
-                "a linha tem {} bytes de payload e o esquema atual de {} espera {}: \
-                 a estrutura da tabela mudou depois que ela foi gravada",
-                payload.len(),
-                self.nome,
-                self.esquema.payload_len()
-            )));
-        }
-        let mut linha = Vec::with_capacity(self.esquema.colunas().len());
-
-        for i in 0..self.esquema.colunas().len() {
-            if payload[i / 8] & (1 << (i % 8)) != 0 {
-                linha.push(Value::Null);
-                continue;
-            }
-            let ty = self.esquema.colunas()[i].ty;
-            let valor = if ty.externo() {
-                if carregar_externos {
-                    self.externo(payload, i)?
-                } else {
-                    Value::Null
-                }
-            } else {
-                let off = self.esquema.offset_coluna(i)?;
-                ler_inline(&ty, &payload[off..off + ty.largura()])?
-            };
-            linha.push(valor);
-        }
-        Ok(linha)
+        let reg = &self.reg;
+        let abrir = |c: u16, g: &[u8]| reg.abrir_externo(c, g);
+        let externos = carregar_externos.then_some(Externos {
+            esquema: &self.esquema,
+            nome: &self.nome,
+            bin: &mut self.bin,
+            memo: &mut self.memo,
+            abrir: &abrir,
+        });
+        decodificar_com(&self.esquema, &self.nome, payload, externos)
     }
 
     /// O valor de UMA coluna externa (`Bin`/`Memo`), lido do bloco dela.
@@ -5089,37 +5336,22 @@ impl Table {
     /// precisa do valor velho de uma coluna marcada sem carregar a linha
     /// inteira. Dois decodificadores de externo divergiriam calados -- e o
     /// sintoma seria a trilha dizer que o laudo mudou porque o outro caminho
-    /// abriu o bloco de outro jeito.
-    ///
-    /// O bit de nulo e conferido aqui, e nao so no `decodificar` (que ja o
-    /// trata antes de chegar): quem pergunta pelo valor de uma coluna sozinha
-    /// tem de receber `Null` quando ela e nula, em vez de tentar ler um
-    /// ponteiro vazio.
+    /// abriu o bloco de outro jeito. (O terceiro chamador, o preenchimento da
+    /// calculada no `acrescentar_coluna`, passa pelo mesmo [`ler_externo`].)
     fn externo(&mut self, payload: &[u8], i: usize) -> Result<Value> {
-        if payload[i / 8] & (1 << (i % 8)) != 0 {
-            return Ok(Value::Null);
-        }
-        let ty = self.esquema.colunas()[i].ty;
-        let off = self.esquema.offset_coluna(i)?;
-        let p = Ponteiro::ler(&payload[off..off + ty.largura()])?;
-        match ty {
-            ColumnType::Bin => {
-                let bytes = self.bin.ler(&p)?;
-                Ok(Value::Bin(self.reg.abrir_externo(i as u16, &bytes)?))
-            }
-            ColumnType::Memo => {
-                let bytes = self.memo.ler(&p)?;
-                let bytes = self.reg.abrir_externo(i as u16, &bytes)?;
-                Ok(Value::Memo(String::from_utf8(bytes).map_err(|e| {
-                    PhxError::Corrompido(format!("memo nao e UTF-8 valido: {e}"))
-                })?))
-            }
-            outro => Err(PhxError::Tipo(format!(
-                "a coluna {} de {} e {outro:?} e nao mora fora do .reg",
-                self.esquema.colunas()[i].nome,
-                self.nome
-            ))),
-        }
+        let reg = &self.reg;
+        let abrir = |c: u16, g: &[u8]| reg.abrir_externo(c, g);
+        ler_externo(
+            &mut Externos {
+                esquema: &self.esquema,
+                nome: &self.nome,
+                bin: &mut self.bin,
+                memo: &mut self.memo,
+                abrir: &abrir,
+            },
+            payload,
+            i,
+        )
     }
 
     /// Ponteiros externos guardados num payload, para poder liberar depois.
@@ -5410,13 +5642,8 @@ impl Table {
             }
         }
         for (i, col) in colunas.iter().enumerate() {
-            if let Some(calc) = &col.calculada {
-                let v = calc.avaliar(&self.resolvedor(&linha))?;
-                // A conta pode partir de coluna marcada, e o numero que ela
-                // devolve e o dado -- a recusa passa pela coluna (pedido 464).
-                linha[i] = expressao::coagir(&v, &col.ty)
-                    .map_err(|e| col.recusa_de_valor(e))
-                    .map_err(|e| PhxError::Tipo(format!("coluna calculada {}: {e}", col.nome)))?;
+            if col.calculada.is_some() {
+                linha[i] = valor_calculado(&self.esquema, i, &linha)?;
             }
         }
         for col in colunas {
@@ -9062,21 +9289,21 @@ impl Table {
     /// mistura-lo aqui faria uma tabela quebrada trancar exclusoes no banco
     /// inteiro.
     fn fks_que_apontam_para_mim(&self) -> Result<Vec<(String, ForeignKey)>> {
-        let irmas = crate::catalogo::tabelas_em(&self.diretorio)?;
         let eu = &self.nome;
+        // As irmas pelo `crate::irmas`, que lembra o esquema de cada uma
+        // enquanto o carimbo do arquivo nao muda (pedido 259): a pergunta e
+        // a mesma, e a resposta tambem -- so nao se rele a cada exclusao o
+        // que nao mudou. A propria tabela sai do esquema na mao, como sempre.
+        let mut todas = crate::irmas::chaves_das_irmas(&self.diretorio, eu)?;
+        todas.push((eu.clone(), self.esquema.chaves_estrangeiras().to_vec()));
+        // A ordem de antes (a da lista do diretorio, por nome): e ela que
+        // decide QUAL filha a recusa nomeia quando ha mais de uma.
+        todas.sort_by(|a, b| a.0.cmp(&b.0));
         let mut achadas = Vec::new();
-        for irma in irmas {
-            let esquema = if &irma == eu {
-                self.esquema.clone()
-            } else {
-                match crate::reg::RegFile::abrir(&self.diretorio, &irma) {
-                    Ok(r) => r.esquema().clone(),
-                    Err(_) => continue,
-                }
-            };
-            for fk in esquema.chaves_estrangeiras() {
+        for (irma, chaves) in todas {
+            for fk in chaves {
                 if fk.verificar && nome_simples(&fk.tabela_ref) == eu {
-                    achadas.push((irma.clone(), fk.clone()));
+                    achadas.push((irma.clone(), fk));
                 }
             }
         }

@@ -1802,7 +1802,7 @@ impl RegFile {
         padrao: &[u8],
         nulo: bool,
     ) -> Result<u64> {
-        let pendente = self.alargar_fase_a(novo, posicao, padrao, nulo)?;
+        let pendente = self.alargar_fase_a(novo, posicao, padrao, nulo, None)?;
         self.alargar_fase_b(pendente)
     }
 
@@ -1825,12 +1825,24 @@ impl RegFile {
     /// O cinto de seguranca vem junto: a [`TrocaPendente`] carrega o retrato
     /// do que estava no disco, e [`TrocaPendente::conferir_retrato`] recusa a
     /// FASE B se alguem escreveu no meio.
+    ///
+    /// # `preencher`: o valor da coluna nova saindo da LINHA (pedido 245, O2b)
+    ///
+    /// Sem ele, todo slot recebe o mesmo `padrao` (ou nulo). Com ele, cada
+    /// slot ATIVO recebe o que ele devolve para aquela linha -- e o caminho da
+    /// coluna calculada, que os tres maduros preenchem no ALTER. Ele mora
+    /// AQUI, dentro da passada que ja abre cada payload, e nao numa segunda
+    /// passada por `atualizar`, que escreveria um evento de diario por linha.
+    /// Esta camada nao sabe avaliar expressao: quem chama sabe, e recebe o
+    /// payload VELHO em claro e um abridor de externo (`.bin`/`.memo` selado
+    /// por este arquivo) para decodificar a linha pelo esquema velho.
     pub fn alargar_fase_a(
         &mut self,
         novo: Schema,
         posicao: usize,
         padrao: &[u8],
         nulo: bool,
+        mut preencher: Option<Preenchedor>,
     ) -> Result<TrocaPendente> {
         let velho = self.esquema.clone();
         let n_velho = velho.colunas().len();
@@ -1886,7 +1898,8 @@ impl RegFile {
         // `material` para que isso nao fique invisivel.
         let material = self.material;
 
-        let refazer_payload = |antigo: &[u8]| -> Vec<u8> {
+        // `valor` e o conteudo da coluna nova neste slot; `None` e nulo.
+        let refazer_payload = |antigo: &[u8], valor: Option<&[u8]>| -> Vec<u8> {
             let mut p = vec![0u8; pn];
             for i in 0..n_velho {
                 if antigo[i / 8] & (1 << (i % 8)) != 0 {
@@ -1894,15 +1907,28 @@ impl RegFile {
                     p[j / 8] |= 1 << (j % 8);
                 }
             }
-            if nulo {
-                p[posicao / 8] |= 1 << (posicao % 8);
-            }
             p[bn..bn + (corte - bv)].copy_from_slice(&antigo[bv..corte]);
-            if !nulo {
-                p[off_novo..off_novo + largura].copy_from_slice(padrao);
+            match valor {
+                None => p[posicao / 8] |= 1 << (posicao % 8),
+                Some(v) => p[off_novo..off_novo + largura].copy_from_slice(v),
             }
             p[off_novo + largura..].copy_from_slice(&antigo[corte..pv]);
             p
+        };
+        // O abridor de externo do preenchimento le pelo esquema VELHO: e com
+        // ele que o payload que chega foi gravado. As colunas externas sao do
+        // usuario e vem antes de `posicao`, entao o numero delas (que entra
+        // no dado associado da cifra) e o mesmo nos dois esquemas.
+        let nome_do_arquivo = self.volumes.nome().to_string();
+        let esquema_velho = velho.clone();
+        let abrir = |coluna: u16, guardado: &[u8]| -> Result<Vec<u8>> {
+            abrir_externo_com(
+                &material,
+                &esquema_velho,
+                &nome_do_arquivo,
+                coluna,
+                guardado,
+            )
         };
 
         let mut transformar = |volume: u32,
@@ -1927,6 +1953,25 @@ impl RegFile {
                         vec![0u8; pv]
                     }
                 };
+            // So o slot ATIVO e preenchido: o livre nunca guardou linha viva
+            // (ou o corpo dela ja foi para a lixeira), e calcular sobre o
+            // payload zerado inventaria um valor para linha nenhuma.
+            let calculado: Option<Vec<u8>>;
+            let valor: Option<&[u8]> = match preencher.as_deref_mut() {
+                Some(p) if status == STATUS_ATIVO => {
+                    calculado = p(rowid, &claro, &abrir)?;
+                    if let Some(b) = calculado.as_ref().filter(|b| b.len() != largura) {
+                        return Err(PhxError::Esquema(format!(
+                            "o preenchimento da coluna nova devolveu {} bytes, e ela tem {largura}",
+                            b.len()
+                        )));
+                    }
+                    calculado.as_deref()
+                }
+                Some(_) => None,
+                None if nulo => None,
+                None => Some(padrao),
+            };
             let mut fora = montar_slot_com(
                 &material,
                 &faixas_novas,
@@ -1934,7 +1979,7 @@ impl RegFile {
                 volume,
                 rowid,
                 versao,
-                &refazer_payload(&claro),
+                &refazer_payload(&claro, valor),
             );
             // Depois do `montar_slot_com`, e nao antes: o CRC cobre de
             // SLOT_CAB para a frente e nao inclui o status, entao repo-lo aqui
@@ -2507,13 +2552,72 @@ fn espalhar_faixas(faixas: &[(usize, usize)], payload: &mut [u8], junto: &[u8]) 
     }
 }
 
+/// O [`RegFile::abrir_externo`] sem o `RegFile` -- para quem precisa abrir
+/// externo enquanto o arquivo esta emprestado a uma reescrita (o
+/// preenchimento da coluna calculada na FASE A do `alargar_fase_a`, pedido
+/// 245 O2b). A decisao «selado?» e a abertura continuam UMA so: o metodo do
+/// `RegFile` chama esta, e nao uma copia dela.
+fn abrir_externo_com(
+    material: &cofre::Material,
+    esquema: &Schema,
+    nome: &str,
+    coluna: u16,
+    guardado: &[u8],
+) -> Result<Vec<u8>> {
+    if !externo_selado_com(material, esquema, coluna, guardado) {
+        return Ok(guardado.to_vec());
+    }
+    abrir_selado_com(material, nome, coluna, guardado)
+}
+
+/// A coluna e externa (`Bin`/`Memo`) E marcada como dado pessoal, num
+/// arquivo com cofre, e o conteudo nao e vazio?
+fn externo_selado_com(
+    material: &cofre::Material,
+    esquema: &Schema,
+    coluna: u16,
+    guardado: &[u8],
+) -> bool {
+    material.cifrado()
+        && esquema
+            .colunas()
+            .get(coluna as usize)
+            .is_some_and(|c| c.ty.externo() && c.dado_pessoal.e_pessoal())
+        && !guardado.is_empty()
+}
+
+fn abrir_selado_com(
+    material: &cofre::Material,
+    nome: &str,
+    coluna: u16,
+    guardado: &[u8],
+) -> Result<Vec<u8>> {
+    if guardado.len() < cifra::XNONCE_LEN {
+        return Err(PhxError::Corrompido(format!(
+            "conteudo cifrado da coluna {coluna} sem os {} bytes de nonce",
+            cifra::XNONCE_LEN
+        )));
+    }
+    let mut nonce = [0u8; cifra::XNONCE_LEN];
+    nonce.copy_from_slice(&guardado[..cifra::XNONCE_LEN]);
+    material.abrir(
+        &nonce,
+        &coluna.to_le_bytes(),
+        &guardado[cifra::XNONCE_LEN..],
+        nome,
+    )
+}
+
 impl RegFile {
     /// Abre o conteudo selado por [`RegFile::selar_externo`].
     pub fn abrir_externo(&self, coluna: u16, guardado: &[u8]) -> Result<Vec<u8>> {
-        if !self.externo_selado(coluna, guardado) {
-            return Ok(guardado.to_vec());
-        }
-        self.abrir_selado(coluna, guardado)
+        abrir_externo_com(
+            &self.material,
+            &self.esquema,
+            self.volumes.nome(),
+            coluna,
+            guardado,
+        )
     }
 
     /// Este conteudo, guardado por ESTE arquivo, esta selado?
@@ -2526,7 +2630,7 @@ impl RegFile {
     /// replicacao carrega a resposta da ORIGEM junto de cada externo (ver
     /// `Table::imagem_da_linha`).
     pub fn externo_selado(&self, coluna: u16, guardado: &[u8]) -> bool {
-        self.material.cifrado() && self.externa_marcada(coluna) && !guardado.is_empty()
+        externo_selado_com(&self.material, &self.esquema, coluna, guardado)
     }
 
     /// Abre um conteudo que SE SABE selado, sem perguntar ao estado deste
@@ -2536,20 +2640,7 @@ impl RegFile {
     /// passar pelo [`RegFile::abrir_externo`] num arquivo sem cifra devolveria
     /// o texto cifrado como se fosse o conteudo, sem erro (pedido 344-1).
     pub fn abrir_selado(&self, coluna: u16, guardado: &[u8]) -> Result<Vec<u8>> {
-        if guardado.len() < cifra::XNONCE_LEN {
-            return Err(PhxError::Corrompido(format!(
-                "conteudo cifrado da coluna {coluna} sem os {} bytes de nonce",
-                cifra::XNONCE_LEN
-            )));
-        }
-        let mut nonce = [0u8; cifra::XNONCE_LEN];
-        nonce.copy_from_slice(&guardado[..cifra::XNONCE_LEN]);
-        self.material.abrir(
-            &nonce,
-            &coluna.to_le_bytes(),
-            &guardado[cifra::XNONCE_LEN..],
-            self.volumes.nome(),
-        )
+        abrir_selado_com(&self.material, self.volumes.nome(), coluna, guardado)
     }
 
     /// A primeira coluna marcada como dado pessoal que este arquivo guardaria
@@ -2577,14 +2668,6 @@ impl RegFile {
             .iter()
             .position(|c| c.dado_pessoal.e_pessoal())
             .map(|c| c as u16)
-    }
-
-    /// A coluna e externa (`Bin`/`Memo`) E esta marcada como dado pessoal?
-    fn externa_marcada(&self, coluna: u16) -> bool {
-        self.esquema
-            .colunas()
-            .get(coluna as usize)
-            .is_some_and(|c| c.ty.externo() && c.dado_pessoal.e_pessoal())
     }
 
     fn escrever_slot(
@@ -3113,6 +3196,17 @@ fn reescrever_volume(
 /// devolve o slot novo. Os quatro sao necessarios: o par volume/rowid entra no
 /// nonce e no dado associado da cifra, e o nome so aparece na mensagem de erro.
 type Transformador<'a> = &'a mut dyn FnMut(u32, RowId, &[u8], &str) -> Result<Vec<u8>>;
+
+/// Quem diz, linha a linha, o conteudo da coluna nova no
+/// [`RegFile::alargar_fase_a`] (pedido 245, O2b): recebe o rowid, o payload
+/// VELHO em claro e o abridor de externo deste arquivo, e devolve os bytes da
+/// coluna (`None` = nulo).
+pub type Preenchedor<'a> =
+    &'a mut dyn FnMut(RowId, &[u8], &AbridorDeExterno<'_>) -> Result<Option<Vec<u8>>>;
+
+/// Abre o conteudo de um externo (`.bin`/`.memo`) guardado por um `.reg`:
+/// recebe o numero da coluna e o guardado, devolve o conteudo em claro.
+pub type AbridorDeExterno<'a> = dyn Fn(u16, &[u8]) -> Result<Vec<u8>> + 'a;
 
 /// O numero do volume (bytes 12..16) e a paginacao que um `.reg` DECLARA no
 /// proprio cabecalho e bloco de esquema -- a pergunta da migracao do pedido

@@ -605,6 +605,23 @@ dia, nunca no desejado:
   apagaria (`novo-com-dono-apagado-pelo-vizinho`) e a FASE B que trocava meio
   conjunto (`fase-b-troca-meio-conjunto`), as cinco provadas no `store`. 671,
   medido pelo `--numeros` nesta arvore; o integrador resolve o numero no merge.
+  **SUBIU para 679 em 01/10/2026** (no merge, 674 + 5; pedidos 245 O2b e 259): cinco guardas
+  novas -- a calculada acrescentada nula na linha velha
+  (`calculada-acrescentada-nula-na-linha-velha`), o envelope selado lido
+  como texto pelo preenchimento (`calculada-le-o-envelope-do-externo-selado`),
+  a busca reversa relendo as irmas a cada exclusao
+  (`busca-reversa-rele-as-irmas-a-cada-exclusao`), o carimbo sem os tempos
+  (`carimbo-da-irma-sem-os-tempos`) e o carimbo recente lembrado
+  (`carimbo-recente-lembrado`) -- e uma APOSENTADA escrita
+  (`alter-com-regra-sem-aviso`: o aviso saiu do produto). 674 - 1 + 1 + 5,
+  medido pelo `--numeros` na arvore combinada.
+  **SUBIU para 683 em 01/10/2026** (no merge, 679 + 4; revisao SEC do 245 O2b, achado A1):
+  quatro guardas -- a calculada que copia a marcada em claro
+  (`calculada-copia-a-marcada-em-claro`), a que cita coluna negada aceita na
+  declaracao (`calculada-cita-coluna-negada-na-declaracao`), a derivada de
+  coluna negada lida (`calculada-derivada-de-negada-se-le`) e a recusa que
+  diz a linha sobre a marcada (`recusa-da-calculada-marcada-diz-a-linha`).
+  664 + 4, medido pelo `--numeros` nesta arvore.
 
 # A QUINTA REGUA: a tabela publicada pode ser MENOR que o catalogo
 
@@ -711,7 +728,7 @@ TETO_TESTE_MORTO = 0
 TETO_TRECHO_AMBIGUO = 0
 TETO_TESTE_FORA_DO_BINARIO = 0
 TETO_TESTE_SEM_MODULO = 0
-PISO_DAS_ENTRADAS = 674
+PISO_DAS_ENTRADAS = 683
 
 # ------------------------------------------------------------- APOSENTADAS
 #
@@ -747,6 +764,20 @@ APOSENTADAS = [
             "(`o_cliente_velho_sem_o_escape_escrito_e_recusado_com_o_motivo`). "
             "O que a petrea *guarda nova entra pedida* continua protegendo "
             "ficou com o escape escrito, e ele esta no `seguem` da nova."
+        ),
+    },
+    {
+        "id": "alter-com-regra-sem-aviso",
+        "data": "01/10/2026",
+        "motivo": (
+            "o aviso que ela repunha saiu do produto. Ele dizia que a "
+            "`calculada` acrescentada ficava NULA na linha velha; desde o "
+            "pedido 245 O2b (parecer do papel C) a linha velha e PREENCHIDA "
+            "na reescrita, e o aviso passou a mentir. O CHECK ja tinha deixado "
+            "de ser aviso no O2a. Nasceu no lugar dela a "
+            "`calculada-acrescentada-nula-na-linha-velha`, que repoe o defeito "
+            "que o aviso so descrevia; a resposta sem `avisos` esta conferida "
+            "no `acrescentar_calculada_preenche_a_linha_velha`."
         ),
     },
 ]

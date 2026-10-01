@@ -510,6 +510,31 @@ impl Column {
         Ok(self)
     }
 
+    /// **A marca segue o dado** (revisao SEC, achado A1 do pedido 245 O2b):
+    /// a calculada que CITA coluna marcada nasce marcada com o maior grau das
+    /// citadas, se ja nao vier com grau maior.
+    ///
+    /// Sem isto, `x = cpf` copiava o CPF para uma coluna em claro: fora da
+    /// faixa selada do slot (so a coluna MARCADA se sela), fora da redacao da
+    /// trilha e com o valor citado nas recusas -- e o preenchimento da linha
+    /// velha fazia disso um ALTER so. **Herdar, e nao recusar**: recusar
+    /// tiraria `UPPER(nome)` ou `LENGTH(obs)` de quem modela dado pessoal sem
+    /// substituto, e a calculada marcada recebe exatamente a protecao da
+    /// origem -- selada onde a origem e selada, em claro onde a tabela nao tem
+    /// cofre (e ai a origem tambem esta em claro).
+    ///
+    /// So na DECLARACAO (`Schema::new` e `Table::acrescentar_coluna`), nunca
+    /// na leitura do disco: mudar a marca de uma coluna ja gravada mudaria a
+    /// faixa selada do slot que ja esta la.
+    pub fn herdar_marca_das_citadas(&mut self, colunas: &[Column]) {
+        if let Some(e) = &self.calculada {
+            let grau = grau_das_citadas(colunas, e);
+            if grau > self.dado_pessoal {
+                self.dado_pessoal = grau;
+            }
+        }
+    }
+
     /// A expressao da coluna calculada. Texto vazio a torna coluna comum.
     pub fn com_calculada(mut self, texto: &str) -> Result<Self> {
         self.calculada = expressao_ou_nada(texto, "calculada", &self.nome)?;
@@ -1053,6 +1078,14 @@ impl Schema {
                          a coluna de ordem de criacao.",
                     ),
             );
+        }
+        // A marca segue o dado: ver `Column::herdar_marca_das_citadas`.
+        for i in 0..colunas.len() {
+            if colunas[i].calculada.is_some() {
+                let mut c = colunas[i].clone();
+                c.herdar_marca_das_citadas(&colunas);
+                colunas[i] = c;
+            }
         }
         let nome = nome.into();
         conferir_ids_repetidos(&nome, &colunas)?;
@@ -2495,6 +2528,17 @@ impl Schema {
                 e
             })
     }
+}
+
+/// O maior grau de dado pessoal entre as colunas que `e` cita -- `Nao` quando
+/// nao cita nenhuma marcada. Ver [`Column::herdar_marca_das_citadas`].
+pub fn grau_das_citadas(colunas: &[Column], e: &Expressao) -> DadoPessoal {
+    e.colunas()
+        .iter()
+        .filter_map(|n| posicao_sem_caixa(colunas, n))
+        .map(|i| colunas[i].dado_pessoal)
+        .max()
+        .unwrap_or_default()
 }
 
 /// Toda expressao do esquema so pode falar de coluna que existe -- e a

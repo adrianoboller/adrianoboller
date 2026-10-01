@@ -798,7 +798,6 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `teto-de-64-bits-satura` | número cru fora da faixa do `Int8` é GRAVADO saturado, e `1e21`, `1e30` e `1e300` viram todos o mesmo número | 2 | ✅ provada |
 | `saida-do-direito-por-coluna` | a recusa do direito por coluna manda «peça as colunas por varrer» também para o `agrupar` e para o `backup` | 1 | ✅ provada |
 | `check-que-se-contradiz-no-alter` | `acrescentar_coluna` aceita um `padrao` que viola o `check` declarado no MESMO comando, e todo `atualizar` da linha velha passa a recusar | 1 | ✅ provada |
-| `alter-com-regra-sem-aviso` | `acrescentar_coluna` com `check` ou `calculada` numa tabela com linha é aceito SEM AVISO, e a linha velha fica fora da regra | 1 | ✅ provada |
 | `upsert-parcial-vira-mescla` | o upsert sem o campo `atualizar` passa a MESCLAR, e a sincronia do DbLink perde a única forma de gravar NULO num destino | 1 | ✅ provada |
 | `direcao-do-indice-sem-saida` | a recusa por direção do índice explica bem por que não dá, e não diz o que fazer | 1 | ✅ provada |
 | `sha256-sem-somar-o-estado` | SHA-256 sem a realimentação do estado: a compressão vira permutação reversível | 4 | ✅ provada |
@@ -1057,7 +1056,7 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `marca-dagua-da-particao-negada` | com a coluna que particiona negada pelo direito, `verificar`, `migrar_esquema`, `acrescentar_coluna` e `memoria_carregar` devolviam a marca d'agua da tabela | 1 | ✅ provada |
 | `recuperacao-do-embutido-sem-politica` | o embutido que replica completa a marca da queda com a politica do diario PADRAO, e o evento recuperado sai sem imagem | 2 | ✅ provada |
 | `recuperacao-do-schema-sem-politica` | a recuperacao das marcas abre a pasta de cada schema como um `Database` novo, com a politica do diario padrao: o COMMIT completado ali sai sem imagem | 1 | ✅ provada |
-| `check-novo-contra-a-linha-velha` | `acrescentar_coluna` com CHECK que linhas que ja existem violam e aceito, e a tabela fica com duas verdades | 1 | ✅ provada |
+| `check-novo-contra-a-linha-velha` | `acrescentar_coluna` com CHECK que linhas que ja existem violam e aceito, e a tabela fica com duas verdades | 2 | ✅ provada |
 | `backup-copia-sob-a-exclusiva` | O backup copiava com a ficha EXCLUSIVA da trava de dados: a leitura parava a cópia inteira (100 GB = 50 a 64 min sem ler nada) | 1 | ✅ provada |
 | `backup-sem-portao-do-retrato` | A cópia do backup com a ficha COMPARTILHADA e sem o portão do retrato: o primeiro escritor na fila do `RwLock` fazia toda leitura nova esperar a cópia inteira | 1 | ✅ provada |
 | `faixa-do-config-nao-lida` | o `inicio` da faixa da `Sequence` não tinha porta de produção: todo servidor numerava na faixa 0 e vinte caixas com passo 20 colidiam 100% | 3 | ✅ provada |
@@ -1140,11 +1139,21 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `sobra-sem-paginacao-nao-se-varre` | A tabela sem paginação não tinha os *.novo varridos, e a sobra dela ficava | 1 | ✅ provada |
 | `novo-com-dono-apagado-pelo-vizinho` | A abertura gravável apagaria o *.novo de uma troca ainda viva | 1 | ✅ provada |
 | `fase-b-troca-meio-conjunto` | A fase B trocava o conjunto pela metade quando um *.novo tinha sumido | 1 | ✅ provada |
+| `calculada-acrescentada-nula-na-linha-velha` | `acrescentar_coluna` com `calculada` deixa a linha velha NULA, e `SUM` conta metade da tabela sem dizer | 1 | ✅ provada |
+| `calculada-le-o-envelope-do-externo-selado` | a calculada acrescentada que fala de um `.memo` selado calcula sobre o ENVELOPE cifrado, e nao sobre o texto | 1 | ✅ provada |
+| `busca-reversa-rele-as-irmas-a-cada-exclusao` | a busca reversa da integridade relia o `.reg` de cada irma a cada exclusao, mesmo sem nada ter mudado | 1 | ✅ provada |
+| `carimbo-da-irma-sem-os-tempos` | o carimbo que valida o esquema lembrado de uma irma ignora `mtime`/`ctime`, e a chave declarada no lugar passa despercebida: o pai com filha sai | 1 | ✅ provada |
+| `carimbo-recente-lembrado` | o esquema da irma se lembra com carimbo RECENTE, e duas mudancas no mesmo tique grosso do nucleo deixam o mesmo carimbo | 1 | ✅ provada |
+| `calculada-copia-a-marcada-em-claro` | a calculada que cita coluna marcada nasce SEM marca, e o preenchimento grava o texto do cofre em claro no `.reg` | 1 | ✅ provada |
+| `calculada-cita-coluna-negada-na-declaracao` | `acrescentar_coluna` com calculada (ou CHECK) que cita coluna negada ao usuario e aceito, e a coluna negada passa a ser lida por outro nome | 1 | ✅ provada |
+| `calculada-derivada-de-negada-se-le` | a calculada que o dono declarou sobre coluna negada sai na leitura de quem nao le a coluna | 1 | ✅ provada |
+| `recusa-da-calculada-marcada-diz-a-linha` | a recusa da calculada sobre coluna marcada nomeia a linha velha, e vira oraculo por rowid sobre o dado pessoal | 1 | ✅ provada |
+| `alter-com-regra-sem-aviso` | `acrescentar_coluna` com `check` ou `calculada` numa tabela com linha é aceito SEM AVISO, e a linha velha fica fora da regra | — | 🪦 aposentada (01/10/2026) |
 | `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | — | 🪦 aposentada (18/09/2026) |
 
-**499 das 673 guardas do catálogo: 1 aposentada, 494 provadas, 4 redundantes** — 15205 s de mutação, medido de 2026-09-16 15:25 a 2026-10-01 19:03, em 6 datas (2026-09-16: 112, 2026-09-17: 8, 2026-09-18: 3, 2026-09-24: 177, 2026-09-30: 37, 2026-10-01: 162).
+**508 das 681 guardas do catálogo: 2 aposentadas, 502 provadas, 4 redundantes** — 15448 s de mutação, medido de 2026-09-16 15:25 a 2026-10-01 19:19, em 6 datas (2026-09-16: 112, 2026-09-17: 8, 2026-09-18: 3, 2026-09-24: 177, 2026-09-30: 37, 2026-10-01: 171).
 
-> **Esta rodada NÃO julgou 175 das 673 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 175 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 175 das 681 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 175 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
 - `fk-antes-do-default` — a chave estrangeira confere a linha crua, e o DEFAULT sem mãe grava a filha órfã
 - `fk-antes-do-default-pelo-servidor` — o DEFAULT e a calculada sem mãe gravam a órfã pelo servidor, fora e dentro da transação
@@ -1324,6 +1333,7 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 
 As guardas que esta corrida ainda cita, hoje aposentadas:
 
+- `alter-com-regra-sem-aviso` (01/10/2026) — o aviso que ela repunha saiu do produto. Ele dizia que a `calculada` acrescentada ficava NULA na linha velha; desde o pedido 245 O2b (parecer do papel C) a linha velha e PREENCHIDA na reescrita, e o aviso passou a mentir. O CHECK ja tinha deixado de ser aviso no O2a. Nasceu no lugar dela a `calculada-acrescentada-nula-na-linha-velha`, que repoe o defeito que o aviso so descrevia; a resposta sem `avisos` esta conferida no `acrescentar_calculada_preenche_a_linha_velha`.
 - `cifra-do-fio-imposta` (18/09/2026) — o defeito que ela repunha -- `cifra_fio.exigir: true` de fabrica -- virou o PRODUTO, por ordem do dono (*a comunicacao deve obrigatoriamente ser cifrada*, pedido 370). Guarda cujo defeito deixou de existir nao tem o que repor. Ela nao foi remendada para o numero fechar: nasceu no lugar dela a `cifra-do-fio-rebaixada`, que repoe o defeito CONTRARIO (a cifra voltar a ser opcional) e cuja prova e o mesmo teste, tambem trocado de lado (`o_cliente_velho_sem_o_escape_escrito_e_recusado_com_o_motivo`). O que a petrea *guarda nova entra pedida* continua protegendo ficou com o escape escrito, e ele esta no `seguem` da nova.
 
 As notas que a rodada deixou:

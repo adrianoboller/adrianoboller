@@ -186,7 +186,18 @@ fn laco_de_excluir(t: &mut Table, n: i64, m: i64, lote: i64) -> (f64, u64) {
     (s, feitas)
 }
 
+/// Quanto esperar para o diretorio ficar PARADO: a margem do
+/// `phxsql_store::irmas` (3 s) e meio segundo de folga. Antes disso o carimbo
+/// de quem acabou de nascer nao se lembra, e a busca reversa e a de sempre.
+const ESPERA_DO_PARADO: std::time::Duration = std::time::Duration::from_millis(3_500);
+
 /// Microssegundos por exclusao numa tabela montada do zero com estas pecas.
+///
+/// `parado`: espera [`ESPERA_DO_PARADO`] entre montar e excluir. E o regime
+/// do servidor em producao -- tabelas criadas ha muito -- e o unico em que o
+/// pedido 259 lembra o esquema das irmas. Sem ele, a medida e a do diretorio
+/// recem-criado, que continua sendo a regua de antes.
+#[allow(clippy::too_many_arguments)]
 fn medir(
     rotulo: &str,
     base: &Path,
@@ -195,6 +206,7 @@ fn medir(
     na_janela: bool,
     n: i64,
     m: i64,
+    parado: bool,
 ) -> f64 {
     let dir = base.join(rotulo.replace(' ', "-"));
     if irmas {
@@ -213,11 +225,22 @@ fn medir(
         montar(&dir, indices, n)
     };
     phxsql_store::lixeira::definir_na_janela(na_janela);
+    if parado {
+        std::thread::sleep(ESPERA_DO_PARADO);
+    }
+    let lidos = phxsql_store::irmas::esquemas_lidos_do_disco();
     let (s, feitas) = laco_de_excluir(&mut t, n, m, 0);
+    let lidos = phxsql_store::irmas::esquemas_lidos_do_disco() - lidos;
     drop(t);
     let _ = std::fs::remove_dir_all(&dir);
     let us = s * 1e6 / feitas.max(1) as f64;
     println!("  {rotulo:<34} {us:>8.2} us por exclusao");
+    if irmas {
+        println!(
+            "    (esquemas de irma lidos do disco: {:.2} por exclusao)",
+            lidos as f64 / feitas.max(1) as f64
+        );
+    }
     us
 }
 
@@ -454,7 +477,12 @@ fn balde(alvo: &str, dir: &Path) -> String {
 
 /// Chamadas de sistema por exclusao, `(syscall, arquivo) -> quantas`, por
 /// diferenca entre 1.000 e 200 exclusoes -- a abertura da tabela cancela.
-fn contar_syscalls(base: &Path, n: i64, irmas: bool) -> Option<BTreeMap<(String, String), f64>> {
+fn contar_syscalls(
+    base: &Path,
+    n: i64,
+    irmas: bool,
+    parado: bool,
+) -> Option<BTreeMap<(String, String), f64>> {
     let eu = std::env::current_exe().ok()?;
     let mut por_m = Vec::new();
     for m in [200i64, 1_000] {
@@ -468,6 +496,9 @@ fn contar_syscalls(base: &Path, n: i64, irmas: bool) -> Option<BTreeMap<(String,
         drop(montar(&dir, dois_indices(), n));
         if irmas {
             criar_irmas(&dir, irmas_no_diretorio());
+        }
+        if parado {
+            std::thread::sleep(ESPERA_DO_PARADO);
         }
         let log = base.join(format!("strace-{m}.log"));
         let args = [
@@ -591,8 +622,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         true,
         n,
         m,
+        false,
     );
-    let sem_indice = medir("sem indice nenhum", &base, vec![], false, true, n, m);
+    let sem_indice = medir("sem indice nenhum", &base, vec![], false, true, n, m, false);
     let com_irmas = medir(
         &format!("com {} irmas no diretorio", irmas_no_diretorio()),
         &base,
@@ -601,6 +633,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         true,
         n,
         m,
+        false,
     );
     let com_fsync = medir(
         "com o fsync da lixeira (fabrica)",
@@ -610,8 +643,46 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         false,
         n,
         m,
+        false,
     );
     phxsql_store::lixeira::definir_na_janela(true);
+
+    // ------------------------------------------------ 1b. o diretorio parado
+    // Pedido 259, o conserto: a busca reversa lembra o esquema de cada irma
+    // enquanto o carimbo do arquivo nao muda (`phxsql_store::irmas`), e so
+    // confia em carimbo com mais de 3 s. As medidas de cima sao do diretorio
+    // recem-criado, onde nada se lembra; estas sao do diretorio parado, que e
+    // o do servidor em producao.
+    println!(
+        "\n--- o diretorio PARADO (espera {:.1} s antes de excluir: o regime do servidor) ---",
+        ESPERA_DO_PARADO.as_secs_f64()
+    );
+    let direto_parado = medir(
+        "direto, diretorio parado",
+        &base,
+        dois_indices(),
+        false,
+        true,
+        n,
+        m,
+        true,
+    );
+    let irmas_parado = medir(
+        &format!("com {} irmas, parado", irmas_no_diretorio()),
+        &base,
+        dois_indices(),
+        true,
+        true,
+        n,
+        m,
+        true,
+    );
+    println!(
+        "  as {} irmas custam {:+.2} us por exclusao parado, contra {:+.2} recem-criado",
+        irmas_no_diretorio(),
+        irmas_parado - direto_parado,
+        com_irmas - direto
+    );
 
     // ------------------------------------------------ 2. por chamada isolada
     println!("\n--- por chamada isolada: cada arquivo fazendo so' o que o excluir lhe pede ---");
@@ -777,13 +848,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // ------------------------------------------------ 4. as chamadas de sistema
     println!("\n=== chamadas de sistema por exclusao (strace -f -y no filho, 1.000 - 200 exclusoes, N = {n}) ===");
-    match contar_syscalls(&base, n, false) {
+    match contar_syscalls(&base, n, false, false) {
         Some(c) => imprimir_syscalls("tabela sozinha no diretorio", &c),
         None => println!("  sem `strace` nesta maquina -- a contagem nao se substitui."),
     }
-    if let Some(c) = contar_syscalls(&base, n, true) {
+    if let Some(c) = contar_syscalls(&base, n, true, false) {
         imprimir_syscalls(
             &format!("com {} irmas no diretorio", irmas_no_diretorio()),
+            &c,
+        );
+    }
+    if let Some(c) = contar_syscalls(&base, n, false, true) {
+        imprimir_syscalls("tabela sozinha, diretorio PARADO", &c);
+    }
+    if let Some(c) = contar_syscalls(&base, n, true, true) {
+        imprimir_syscalls(
+            &format!("com {} irmas, diretorio PARADO", irmas_no_diretorio()),
             &c,
         );
     }

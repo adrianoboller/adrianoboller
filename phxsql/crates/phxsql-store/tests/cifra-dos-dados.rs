@@ -1226,3 +1226,131 @@ fn dois_reg_novos_nascem_com_sais_diferentes() {
     cofre::desligar();
     let _ = std::fs::remove_dir_all(&d);
 }
+
+/// **Pedido 245, O2b, pelo lado da cifra:** a calculada acrescentada que fala
+/// de uma coluna EXTERNA marcada (`LENGTH(obs)`, o `.memo` selado) e
+/// preenchida na linha velha com o comprimento do TEXTO, e nao do envelope.
+///
+/// O preenchimento roda dentro da reescrita do `.reg`, com o arquivo
+/// emprestado a ela, e abre o externo pelo abridor que a reescrita lhe passa.
+/// Reponha o defeito trocando esse abridor por um que devolve o guardado como
+/// veio (o envelope selado): o comprimento sai o do nonce mais o texto
+/// cifrado, e a igualdade abaixo cai.
+#[test]
+fn calculada_acrescentada_abre_o_externo_selado_da_linha_velha() {
+    let _t = UM_DE_CADA_VEZ.lock().unwrap_or_else(|e| e.into_inner());
+    cofre::desligar();
+    let d = dir("calculada-externa");
+    cofre::definir(SENHA, RAPIDO).unwrap();
+    {
+        let mut t = Table::criar(&d, esquema_so_externas("fichas")).unwrap();
+        assert!(t.cifrada());
+        for i in 1..=12 {
+            t.inserir(&ficha(i)).unwrap();
+        }
+        t.sincronizar().unwrap();
+    }
+    {
+        let mut t = Table::abrir(&d, "fichas").unwrap();
+        let n = t
+            .acrescentar_coluna(
+                Column::new("tamanho", ColumnType::Int8)
+                    .com_calculada("LENGTH(obs)")
+                    .unwrap(),
+                None,
+            )
+            .unwrap();
+        assert_eq!(n, 12);
+    }
+    let mut t = Table::abrir(&d, "fichas").unwrap();
+    let pos = t.esquema().coluna_por_nome("tamanho").unwrap();
+    for i in 1..=12i64 {
+        let l = t.ler(i as u64).unwrap().unwrap();
+        let esperado = format!("{MEMO_SECRETO} numero {i}").chars().count() as i64;
+        assert_eq!(l[pos], Value::Int(esperado), "linha {i}: {l:?}");
+    }
+    drop(t);
+    cofre::desligar();
+}
+
+/// **Revisao SEC do 245 O2b, achado A1: a marca segue o dado.** A calculada
+/// `copia = obs` sobre o `.memo` SELADO copiava o texto do cofre para uma
+/// coluna inline em claro -- o preenchimento abria o envelope e gravava o
+/// segredo no `.reg`. Agora ela nasce marcada com o grau de `obs` e entra na
+/// faixa selada do slot: o segredo nao aparece nos bytes do `.reg`, e a
+/// leitura devolve o texto.
+///
+/// Reponha o defeito tirando o `herdar_marca_das_citadas` do
+/// `acrescentar_coluna`: o segredo aparece no `.reg`.
+#[test]
+fn calculada_sobre_externo_selado_nasce_marcada_e_nao_vaza_no_reg() {
+    let _t = UM_DE_CADA_VEZ.lock().unwrap_or_else(|e| e.into_inner());
+    cofre::desligar();
+    let d = dir("calculada-copia-selada");
+    cofre::definir(SENHA, RAPIDO).unwrap();
+    {
+        let mut t = Table::criar(&d, esquema_so_externas("fichas")).unwrap();
+        for i in 1..=6 {
+            t.inserir(&ficha(i)).unwrap();
+        }
+        t.sincronizar().unwrap();
+    }
+    assert!(!contem(
+        &bytes_com_extensao(&d, "reg"),
+        MEMO_SECRETO.as_bytes()
+    ));
+    {
+        let mut t = Table::abrir(&d, "fichas").unwrap();
+        t.acrescentar_coluna(
+            Column::new("copia", ColumnType::Str(120))
+                .com_calculada("obs")
+                .unwrap(),
+            None,
+        )
+        .unwrap();
+        let pos = t.esquema().coluna_por_nome("copia").unwrap();
+        assert_eq!(
+            t.esquema().colunas()[pos].dado_pessoal,
+            DadoPessoal::Sensivel,
+            "a calculada que copia coluna sensivel nasceu sem a marca"
+        );
+        t.sincronizar().unwrap();
+    }
+    assert!(
+        !contem(&bytes_com_extensao(&d, "reg"), MEMO_SECRETO.as_bytes()),
+        "o preenchimento gravou o texto do cofre em claro no .reg"
+    );
+    let mut t = Table::abrir(&d, "fichas").unwrap();
+    let pos = t.esquema().coluna_por_nome("copia").unwrap();
+    assert_eq!(
+        t.ler(3).unwrap().unwrap()[pos],
+        Value::Str(format!("{MEMO_SECRETO} numero 3"))
+    );
+    drop(t);
+    cofre::desligar();
+}
+
+/// O irmao na CRIACAO (`Schema::new`): a calculada declarada junto da coluna
+/// marcada tambem nasce marcada -- e uma calculada que nao cita marcada nao
+/// ganha marca nenhuma (o controle).
+#[test]
+fn calculada_declarada_na_criacao_herda_a_marca_e_so_a_que_cita() {
+    let e = Schema::new(
+        "p",
+        vec![
+            Column::new("id", ColumnType::Int8).obrigatoria(),
+            Column::new("cpf", ColumnType::Str(14)).com_dado_pessoal(DadoPessoal::Pessoal),
+            Column::new("c", ColumnType::Str(14))
+                .com_calculada("cpf")
+                .unwrap(),
+            Column::new("d", ColumnType::Int8)
+                .com_calculada("id * 2")
+                .unwrap(),
+        ],
+        vec![],
+    )
+    .unwrap();
+    let grau = |n: &str| e.colunas()[e.coluna_por_nome(n).unwrap()].dado_pessoal;
+    assert_eq!(grau("c"), DadoPessoal::Pessoal);
+    assert_eq!(grau("d"), DadoPessoal::Nao);
+}

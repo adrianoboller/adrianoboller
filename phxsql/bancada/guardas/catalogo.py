@@ -6182,10 +6182,13 @@ pub fn limpar() {
         "arquivo": "crates/phxsql-store/src/table.rs",
         # ATUALIZADO em 01/10/2026 (pedido 245, O2a): o crivo passou a avaliar
         # cada linha VELHA, e o trecho desceu um nivel, para dentro do laco.
-        "trecho": "                    if check.avaliar_bool(&resolver)? == Some(false) {\n",
+        # ATUALIZADO de novo em 01/10/2026 (pedido 245, O2b): a mesma
+        # varredura passou a conferir tambem a calculada, o `if let` do CHECK
+        # virou um `let ... else` e o trecho subiu um nivel.
+        "trecho": "                if check.avaliar_bool(&resolver)? == Some(false) {\n",
         "troca": (
-            "                    // DEFEITO REPOSTO (pedido 245, O2): a contradicao passa.\n"
-            "                    if false {\n"
+            "                // DEFEITO REPOSTO (pedido 245, O2): a contradicao passa.\n"
+            "                if false {\n"
         ),
         "pacote": "phxsql-store",
         "alvo": ["--test", "acrescentar-coluna"],
@@ -6194,36 +6197,6 @@ pub fn limpar() {
             "o_crivo_do_check_so_pega_a_linha_que_o_viola",
             "obrigatoria_sem_padrao_com_linha_e_recusada",
             "sem_padrao_a_linha_antiga_recebe_nulo",
-        ],
-    },
-    {
-        "id": "alter-com-regra-sem-aviso",
-        "titulo": "`acrescentar_coluna` com `check` ou `calculada` numa tabela com linha é aceito SEM AVISO, e a linha velha fica fora da regra",
-        "porque": (
-            "«Aceito sem aviso» foi o defeito nomeado pelo pedido 245, O2. O CHECK "
-            "novo nao e conferido contra as linhas que ja existem, e a `calculada` "
-            "acrescentada as deixa NULAS -- duas verdades na mesma coluna, sem erro "
-            "nenhum no caminho. O aviso nao resolve o O2 (o que fazer com a linha "
-            "velha e decisao de garantia de dado, subida para o dono): ele tira a "
-            "parte que era «sem aviso». O portao vem ANTES do trabalho, e coluna "
-            "sem regra nao ganha campo novo na resposta."
-        ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
-        # ATUALIZADO em 01/10/2026 (pedido 245, O2a): o CHECK deixou de ser
-        # aviso e virou recusa; o aviso que sobra e o da `calculada`.
-        "trecho": "        if let (true, Some(calc)) = (registros > 0, &coluna.calculada) {\n",
-        "troca": (
-            "        // DEFEITO REPOSTO (pedido 245, O2): nenhum aviso sai.\n"
-            "        if let (true, Some(calc)) = (false, &coluna.calculada) {\n"
-        ),
-        "pacote": "phxsql-server",
-        "alvo": ["--lib"],
-        "caem": [
-            "servidor::testes_regras_de_esquema::acrescentar_coluna_com_regra_avisa_o_que_a_linha_velha_nao_ganhou",
-        ],
-        "seguem": [
-            "servidor::testes_regras_de_esquema::calculada_b_sai_6",
-            "servidor::testes_regras_de_esquema::check_recusa_menos_5_e_aceita_5",
         ],
     },
     {
@@ -20183,18 +20156,23 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "conferem as linhas existentes e recusam o ALTER."
         ),
         "arquivo": "crates/phxsql-store/src/table.rs",
-        "trecho": """                if violam > 0 {
+        # ATUALIZADO em 01/10/2026 (pedido 245, O2b): a varredura passou a
+        # servir tambem a calculada, e a recusa do CHECK virou um `if let`.
+        "trecho": """            if let (true, Some(check)) = (violam > 0, &check) {
 """,
-        "troca": """                // DEFEITO REPOSTO (245, O2a): a linha velha que viola passa.
-                if violam > 0 && false {
+        "troca": """            // DEFEITO REPOSTO (245, O2a): a linha velha que viola passa.
+            if let (true, Some(check)) = (violam > 0 && false, &check) {
 """,
         "pacote": "phxsql-server",
         "alvo": ["--lib"],
+        # O `acrescentar_calculada_preenche_a_linha_velha` CAI junto, e e
+        # certo: ele confere o CHECK julgado com o valor calculado («1 das 3»),
+        # que e esta mesma contagem (provador, 01/10/2026).
         "caem": [
             "servidor::testes_regras_de_esquema::o_check_que_a_linha_velha_viola_recusa_a_coluna_dizendo_quantas",
+            "servidor::testes_regras_de_esquema::acrescentar_calculada_preenche_a_linha_velha",
         ],
         "seguem": [
-            "servidor::testes_regras_de_esquema::acrescentar_coluna_com_regra_avisa_o_que_a_linha_velha_nao_ganhou",
             "servidor::testes_regras_de_esquema::check_recusa_menos_5_e_aceita_5",
         ],
     },
@@ -22204,5 +22182,220 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         "caem": ["a_fase_b_recusa_quando_um_novo_sumiu"],
         "seguem": ["o_novo_de_uma_troca_viva_nao_e_sobra"],
         "prazo": 1200,
+    },
+    {
+        "id": "calculada-acrescentada-nula-na-linha-velha",
+        "titulo": "`acrescentar_coluna` com `calculada` deixa a linha velha NULA, e `SUM` conta metade da tabela sem dizer",
+        "porque": (
+            "pedido 245, O2b -- parecer do papel C (§4.2 e §9 do "
+            "`parecer-dba-check-e-calculada-contra-linha-velha-2026-09.md`): os "
+            "quatro motores convergem em que a linha velha nunca le nulo numa "
+            "calculada computavel, e PG/MySQL/MariaDB preenchem no ALTER. Medido "
+            "em 16/09/2026: `b = a*2` sobre a = 5 e 7 lia nulo nas duas, e "
+            "`SUM(b)` dava 10 sobre uma tabela cuja soma e 24 depois que UMA "
+            "linha era tocada. O preenchimento entra na passada da FASE A, pelo "
+            "mesmo `valor_calculado` da gravacao."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """                Some(&mut calcular)
+""",
+        "troca": """                // DEFEITO REPOSTO (245, O2b): a linha velha fica nula.
+                let _ = &mut calcular;
+                None
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "acrescentar-coluna"],
+        "caem": ["a_calculada_acrescentada_preenche_a_linha_velha_e_so_ela"],
+        "seguem": [
+            "sem_padrao_a_linha_antiga_recebe_nulo",
+            "a_coluna_entra_e_o_rowid_de_cada_linha_continua_o_mesmo",
+        ],
+    },
+    {
+        "id": "calculada-le-o-envelope-do-externo-selado",
+        "titulo": "a calculada acrescentada que fala de um `.memo` selado calcula sobre o ENVELOPE cifrado, e nao sobre o texto",
+        "porque": (
+            "pedido 245, O2b. O preenchimento roda com o `.reg` emprestado a "
+            "reescrita, e o externo se abre pelo abridor que a FASE A lhe "
+            "passa -- o mesmo `abrir_externo_com` do `RegFile::abrir_externo`. "
+            "Um abridor que devolvesse o guardado como veio calcularia "
+            "`LENGTH(obs)` sobre o nonce mais o texto cifrado."
+        ),
+        "arquivo": "crates/phxsql-store/src/reg.rs",
+        "trecho": """        let abrir = |coluna: u16, guardado: &[u8]| -> Result<Vec<u8>> {
+            abrir_externo_com(
+""",
+        "troca": """        let abrir = |coluna: u16, guardado: &[u8]| -> Result<Vec<u8>> {
+            // DEFEITO REPOSTO (245, O2b): o envelope selado passa como texto.
+            if coluna < u16::MAX {
+                return Ok(guardado.to_vec());
+            }
+            abrir_externo_com(
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "cifra-dos-dados"],
+        "caem": ["calculada_acrescentada_abre_o_externo_selado_da_linha_velha"],
+        "seguem": [
+            "acrescentar_coluna_em_tabela_cifrada_mantem_a_linha_legivel",
+            "coluna_externa_marcada_sozinha_nao_pode_ir_em_claro",
+        ],
+    },
+    {
+        "id": "busca-reversa-rele-as-irmas-a-cada-exclusao",
+        "titulo": "a busca reversa da integridade relia o `.reg` de cada irma a cada exclusao, mesmo sem nada ter mudado",
+        "porque": (
+            "pedido 259 -- decisao do dono de 17/09/2026. Medido em 01/10/2026 "
+            "(`--example custo-do-excluir 200000 20000`): com 30 irmas sem chave "
+            "nenhuma, abrir o `.reg` de cada uma custava 418,98 us por exclusao "
+            "(14,7x o excluir) e 30 `openat` + 60 `read`. O esquema de cada irma "
+            "agora se lembra junto do carimbo do arquivo e se revalida por um "
+            "`statx`."
+        ),
+        "arquivo": "crates/phxsql-store/src/irmas.rs",
+        "trecho": """            if let Some(v) = e.vistas.get(irma).filter(|v| v.carimbo == c) {
+""",
+        "troca": """            // DEFEITO REPOSTO (259): toda exclusao rele o esquema das irmas.
+            if let Some(v) = e.vistas.get(irma).filter(|v| v.carimbo == c && v.chaves.len() > usize::MAX - 1) {
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--lib"],
+        "caem": ["irmas::testes::a_segunda_exclusao_nao_rele_o_esquema_das_irmas"],
+        "seguem": ["irmas::testes::a_chave_declarada_depois_tranca_o_pai"],
+    },
+    {
+        "id": "carimbo-da-irma-sem-os-tempos",
+        "titulo": "o carimbo que valida o esquema lembrado de uma irma ignora `mtime`/`ctime`, e a chave declarada no lugar passa despercebida: o pai com filha sai",
+        "porque": (
+            "pedido 259, o risco do conserto: a declaracao de chave regrava o "
+            "esquema NO LUGAR -- mesmo inode, mesmo tamanho --, e so os tempos "
+            "andam. Carimbo sem eles lembraria «ninguem aponta para a mae», e o "
+            "excluir mataria o pai que tem filho: a regra primordial da "
+            "integridade."
+        ),
+        "arquivo": "crates/phxsql-store/src/irmas.rs",
+        "trecho": """            mtime: (m.mtime(), m.mtime_nsec()),
+            ctime: (m.ctime(), m.ctime_nsec()),
+""",
+        "troca": """            // DEFEITO REPOSTO (259): o carimbo sem os tempos.
+            mtime: (0, 0),
+            ctime: (0, 0),
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--lib"],
+        "caem": ["irmas::testes::a_chave_declarada_depois_tranca_o_pai"],
+        "seguem": ["irmas::testes::a_segunda_exclusao_nao_rele_o_esquema_das_irmas"],
+    },
+    {
+        "id": "carimbo-recente-lembrado",
+        "titulo": "o esquema da irma se lembra com carimbo RECENTE, e duas mudancas no mesmo tique grosso do nucleo deixam o mesmo carimbo",
+        "porque": (
+            "pedido 259. O relogio dos tempos de arquivo e grosso (milissegundos; "
+            "2 s no FAT): uma regravacao no mesmo tique da leitura deixa o mesmo "
+            "carimbo, e a lembranca mente. So se confia em carimbo com mais de "
+            "3 s -- o «racy» do indice do git, pelo mesmo motivo."
+        ),
+        "arquivo": "crates/phxsql-store/src/irmas.rs",
+        "trecho": """        let limite = agora.saturating_sub(margem);
+""",
+        "troca": """        // DEFEITO REPOSTO (259): confia no carimbo de agora.
+        let limite = agora + margem - margem;
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--lib"],
+        "caem": ["irmas::testes::carimbo_recente_nao_e_confiavel_e_velho_e"],
+        "seguem": ["irmas::testes::a_segunda_exclusao_nao_rele_o_esquema_das_irmas"],
+    },
+    {
+        "id": "calculada-copia-a-marcada-em-claro",
+        "titulo": "a calculada que cita coluna marcada nasce SEM marca, e o preenchimento grava o texto do cofre em claro no `.reg`",
+        "porque": (
+            "revisao SEC do pedido 245 O2b, achado A1 (2): `copia = obs` sobre o "
+            "`.memo` selado abria o envelope e gravava o segredo numa coluna inline "
+            "em claro -- so a faixa MARCADA do slot se sela. A marca segue o dado: "
+            "a calculada herda o maior grau das citadas."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """        coluna.herdar_marca_das_citadas(self.esquema.colunas());
+""",
+        "troca": """        // DEFEITO REPOSTO (SEC A1): a calculada nasce sem a marca.
+        let _ = self.esquema.colunas();
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "cifra-dos-dados"],
+        "caem": ["calculada_sobre_externo_selado_nasce_marcada_e_nao_vaza_no_reg"],
+        "seguem": [
+            "calculada_acrescentada_abre_o_externo_selado_da_linha_velha",
+            "acrescentar_coluna_em_tabela_cifrada_mantem_a_linha_legivel",
+        ],
+    },
+    {
+        "id": "calculada-cita-coluna-negada-na-declaracao",
+        "titulo": "`acrescentar_coluna` com calculada (ou CHECK) que cita coluna negada ao usuario e aceito, e a coluna negada passa a ser lida por outro nome",
+        "porque": (
+            "revisao SEC do pedido 245 O2b, achado A1 (1): com `administrar` e "
+            "`cpf` negado, `calculada: \"cpf\"` copiava todo CPF para uma coluna "
+            "que o `varrer` devolve; o CHECK que cita `cpf` contaria as linhas por "
+            "ele. Recusa na declaracao, pelo `direito_coluna::definicao_cita_negada`."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """                        if let Some(citada) = dc::definicao_cita_negada(&c, &sem_ler) {
+""",
+        "troca": """                        // DEFEITO REPOSTO (SEC A1): a definicao passa sem conferir.
+                        if let Some(citada) = dc::definicao_cita_negada(&c, &[]) {
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_direito_por_coluna::calculada_que_cita_coluna_negada_e_recusada_na_declaracao",
+        ],
+        "seguem": [
+            "servidor::testes_direito_por_coluna::calculada_derivada_de_coluna_negada_nao_se_le",
+            "servidor::testes_direito_por_coluna::sem_colunas_no_cadastro_nada_muda",
+        ],
+    },
+    {
+        "id": "calculada-derivada-de-negada-se-le",
+        "titulo": "a calculada que o dono declarou sobre coluna negada sai na leitura de quem nao le a coluna",
+        "porque": (
+            "revisao SEC do pedido 245 O2b, achado A1: `x = salario` e o salario "
+            "por outro nome. A peneira que tira `salario` e deixa `x` peneira "
+            "nada. A leitura nega junto toda calculada que cita coluna negada, "
+            "pela mesma `expressao_cita_negada` da declaracao."
+        ),
+        "arquivo": "crates/phxsql-server/src/direito_coluna.rs",
+        "trecho": """    let Some(colunas) = esquema.campo("colunas").and_then(Json::lista) else {
+""",
+        "troca": """    // DEFEITO REPOSTO (SEC A1): nenhuma calculada derivada se nega.
+    let Some(colunas) = esquema.campo("colunas_que_nao_existem").and_then(Json::lista) else {
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_direito_por_coluna::calculada_derivada_de_coluna_negada_nao_se_le",
+        ],
+        "seguem": [
+            "servidor::testes_direito_por_coluna::calculada_que_cita_coluna_negada_e_recusada_na_declaracao",
+            "servidor::testes_direito_por_coluna::sem_colunas_no_cadastro_nada_muda",
+        ],
+    },
+    {
+        "id": "recusa-da-calculada-marcada-diz-a-linha",
+        "titulo": "a recusa da calculada sobre coluna marcada nomeia a linha velha, e vira oraculo por rowid sobre o dado pessoal",
+        "porque": (
+            "revisao SEC do pedido 245 O2b, achado A1 (3): `CASE WHEN cpf LIKE "
+            "'1%' THEN NULL ELSE 1 END` numa coluna obrigatoria fazia a recusa "
+            "«nao se calcula na linha N» responder sobre o CPF da linha N, um "
+            "ALTER por pergunta. Sobre coluna marcada a recusa nao diz a linha."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """    if coluna.dado_pessoal.e_pessoal() {
+""",
+        "troca": """    // DEFEITO REPOSTO (SEC A1): a recusa diz a linha tambem na marcada.
+    if coluna.dado_pessoal.e_pessoal() && false {
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "acrescentar-coluna"],
+        "caem": ["a_recusa_da_calculada_sobre_coluna_marcada_nao_diz_a_linha"],
+        "seguem": ["a_calculada_acrescentada_preenche_a_linha_velha_e_so_ela"],
     },
 ]

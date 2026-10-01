@@ -1257,17 +1257,9 @@
       "id": "check-que-se-contradiz-no-alter",
       "titulo": "`acrescentar_coluna` aceita um `padrao` que viola o `check` declarado no MESMO comando, e todo `atualizar` da linha velha passa a recusar",
       "veredito": "PROVADA",
-      "segundos": 7.9,
+      "segundos": 8.28,
       "notas": [],
-      "quando": "2026-10-01 05:32"
-    },
-    {
-      "id": "alter-com-regra-sem-aviso",
-      "titulo": "`acrescentar_coluna` com `check` ou `calculada` numa tabela com linha é aceito SEM AVISO, e a linha velha fica fora da regra",
-      "veredito": "PROVADA",
-      "segundos": 75.25,
-      "notas": [],
-      "quando": "2026-10-01 05:35"
+      "quando": "2026-10-01 19:19"
     },
     {
       "id": "upsert-parcial-vira-mescla",
@@ -3339,9 +3331,9 @@
       "id": "check-novo-contra-a-linha-velha",
       "titulo": "`acrescentar_coluna` com CHECK que linhas que ja existem violam e aceito, e a tabela fica com duas verdades",
       "veredito": "PROVADA",
-      "segundos": 73.17,
+      "segundos": 78.18,
       "notas": [],
-      "quando": "2026-10-01 05:23"
+      "quando": "2026-10-01 19:19"
     },
     {
       "id": "backup-copia-sob-a-exclusiva",
@@ -3998,6 +3990,86 @@
       "segundos": 7.25,
       "notas": [],
       "quando": "2026-10-01 19:03"
+    },
+    {
+      "id": "calculada-acrescentada-nula-na-linha-velha",
+      "titulo": "`acrescentar_coluna` com `calculada` deixa a linha velha NULA, e `SUM` conta metade da tabela sem dizer",
+      "veredito": "PROVADA",
+      "segundos": 7.54,
+      "notas": [],
+      "quando": "2026-10-01 19:19"
+    },
+    {
+      "id": "calculada-le-o-envelope-do-externo-selado",
+      "titulo": "a calculada acrescentada que fala de um `.memo` selado calcula sobre o ENVELOPE cifrado, e nao sobre o texto",
+      "veredito": "PROVADA",
+      "segundos": 14.12,
+      "notas": [],
+      "quando": "2026-10-01 19:19"
+    },
+    {
+      "id": "busca-reversa-rele-as-irmas-a-cada-exclusao",
+      "titulo": "a busca reversa da integridade relia o `.reg` de cada irma a cada exclusao, mesmo sem nada ter mudado",
+      "veredito": "PROVADA",
+      "segundos": 11.13,
+      "notas": [],
+      "quando": "2026-10-01 19:19"
+    },
+    {
+      "id": "carimbo-da-irma-sem-os-tempos",
+      "titulo": "o carimbo que valida o esquema lembrado de uma irma ignora `mtime`/`ctime`, e a chave declarada no lugar passa despercebida: o pai com filha sai",
+      "veredito": "PROVADA",
+      "segundos": 10.51,
+      "notas": [],
+      "quando": "2026-10-01 19:19"
+    },
+    {
+      "id": "carimbo-recente-lembrado",
+      "titulo": "o esquema da irma se lembra com carimbo RECENTE, e duas mudancas no mesmo tique grosso do nucleo deixam o mesmo carimbo",
+      "veredito": "PROVADA",
+      "segundos": 10.44,
+      "notas": [],
+      "quando": "2026-10-01 19:19"
+    },
+    {
+      "id": "calculada-copia-a-marcada-em-claro",
+      "titulo": "a calculada que cita coluna marcada nasce SEM marca, e o preenchimento grava o texto do cofre em claro no `.reg`",
+      "veredito": "PROVADA",
+      "segundos": 14.83,
+      "notas": [],
+      "quando": "2026-10-01 19:19"
+    },
+    {
+      "id": "calculada-cita-coluna-negada-na-declaracao",
+      "titulo": "`acrescentar_coluna` com calculada (ou CHECK) que cita coluna negada ao usuario e aceito, e a coluna negada passa a ser lida por outro nome",
+      "veredito": "PROVADA",
+      "segundos": 80.98,
+      "notas": [],
+      "quando": "2026-10-01 19:19"
+    },
+    {
+      "id": "calculada-derivada-de-negada-se-le",
+      "titulo": "a calculada que o dono declarou sobre coluna negada sai na leitura de quem nao le a coluna",
+      "veredito": "PROVADA",
+      "segundos": 79.9,
+      "notas": [],
+      "quando": "2026-10-01 19:19"
+    },
+    {
+      "id": "recusa-da-calculada-marcada-diz-a-linha",
+      "titulo": "a recusa da calculada sobre coluna marcada nomeia a linha velha, e vira oraculo por rowid sobre o dado pessoal",
+      "veredito": "PROVADA",
+      "segundos": 7.74,
+      "notas": [],
+      "quando": "2026-10-01 19:19"
+    },
+    {
+      "id": "alter-com-regra-sem-aviso",
+      "titulo": "`acrescentar_coluna` com `check` ou `calculada` numa tabela com linha é aceito SEM AVISO, e a linha velha fica fora da regra",
+      "veredito": "PROVADA",
+      "segundos": 75.25,
+      "notas": [],
+      "quando": "2026-10-01 05:35"
     },
     {
       "id": "cifra-do-fio-imposta",
