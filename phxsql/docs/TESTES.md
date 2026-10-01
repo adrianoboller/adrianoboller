@@ -1007,9 +1007,9 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `faxina-do-backup-sem-conferir-o-inode` | a faxina do backup remove pelo descritor da mãe mas não confere o inode: a pasta vazia de outro que entrou no nome da nossa sai | 1 | ✅ provada |
 | `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | — | 🪦 aposentada (18/09/2026) |
 
-**362 das 539 guardas do catálogo: 1 aposentada, 357 provadas, 4 redundantes** — 9592 s de mutação, medido em 2026-09-16 15:25.
+**362 das 543 guardas do catálogo: 1 aposentada, 357 provadas, 4 redundantes** — 9592 s de mutação, medido em 2026-09-16 15:25.
 
-> **Esta rodada NÃO julgou 178 das 539 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 178 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 182 das 543 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 182 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
 - `fk-antes-do-default` — a chave estrangeira confere a linha crua, e o DEFAULT sem mãe grava a filha órfã
 - `fk-antes-do-default-pelo-servidor` — o DEFAULT e a calculada sem mãe gravam a órfã pelo servidor, fora e dentro da transação
@@ -1189,6 +1189,10 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 - `garantir-schema-sem-fsync-do-database` — `criar_schema` e `criar_tabela` num schema novo criavam a pasta sem `fsync` do database: o schema que o cliente ouviu criar podia sumir numa queda
 - `criar-database-sem-fsync-da-base` — `criar_database` criava a pasta sem `fsync` da base: o database que o cliente ouviu criar podia sumir numa queda
 - `marca-do-database-sem-fsync` — O marcador `_database.json` nascia sem `fsync`: numa queda uma colmeia voltava como database padrão, calada
+- `cadastro-regravado-sem-fsync` — `gatilhos.json`, `procedimentos.json` e `visoes.json` eram regravados no lugar e sem `fsync`: a queda no meio deixava JSON pela metade, e o arranque caía
+- `cadastro-apagado-sem-fsync-da-pasta` — o último gatilho, procedimento ou visão que saía apagava o arquivo sem `fsync` da pasta: numa queda o excluído voltava
+- `gatilho-orfao-na-queda-do-excluir-tabela` — `excluir_tabela` levava ao disco o sumiço da tabela ANTES do `gatilhos.json`: a queda entre os dois deixava o gatilho de uma tabela que não existe mais
+- `erro-no-meio-da-exclusao-sem-fsync` — o erro no meio do `excluir_tabela` esquecia os nomes que já tinham saído sem `fsync` da pasta: numa queda a tabela voltava pela metade
 
 As guardas que esta corrida ainda cita, hoje aposentadas:
 

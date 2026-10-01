@@ -274,18 +274,13 @@ pub(crate) fn marcar_novo(diretorio: &Path) -> Result<()> {
 }
 
 /// Temporario, `fsync` dele, `rename` e `fsync` do diretorio -- pelo motor
-/// de troca duravel que a casa ja tem, e nao por um segundo.
+/// de regravacao duravel que a casa ja tem, e nao por um segundo (a
+/// sequencia que morava aqui virou o motor no pedido 595).
 fn gravar_marca(diretorio: &Path) -> Result<()> {
-    let marca = diretorio.join(MARCA_FORMATO_VOLUMES);
-    let temporario = diretorio.join(format!("{MARCA_FORMATO_VOLUMES}.novo"));
-    let arquivo = crate::util::recriar_do_banco(&temporario, false)?;
-    {
-        use std::io::Write;
-        (&arquivo).write_all(TEXTO_DA_MARCA.as_bytes())?;
-    }
-    crate::sincronia::sync_all(&arquivo, &temporario)?;
-    drop(arquivo);
-    crate::sincronia::trocar_duravel(&temporario, &marca)
+    crate::sincronia::gravar_duravel(
+        &diretorio.join(MARCA_FORMATO_VOLUMES),
+        TEXTO_DA_MARCA.as_bytes(),
+    )
 }
 
 /// Tira a extensao de tabela (e o `.novo` da troca do `acrescentar_coluna`,

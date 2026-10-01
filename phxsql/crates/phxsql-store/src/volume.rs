@@ -1582,6 +1582,12 @@ mod tests {
         // conta 1 no `util.rs`; o outro e o `open` de diretorio da `Pasta`
         // (`O_DIRECTORY | O_NOFOLLOW`), que so le: e o descritor pelo qual o
         // backup chega ao nome sem atravessar link numa pasta do meio.
+        // Pedido 595: `separador.rs` 3 -> 2 e `sincronia.rs` 2 -> 3 -- o
+        // temporario da marca do separador virou o motor
+        // `sincronia::gravar_duravel` (o mesmo `recriar_do_banco`, mudado de
+        // casa), que regrava tambem o cadastro do servidor (`gatilhos.json`,
+        // `procedimentos.json`, `visoes.json`). Caminho novo nenhum: o mesmo
+        // abridor, agora UM para os quatro arquivos.
         const HOJE: &[(&str, usize)] = &[
             ("backup.rs", 2),
             ("catalogo.rs", 4),
@@ -1590,8 +1596,8 @@ mod tests {
             ("pag.rs", 2),
             ("reg.rs", 2),
             ("restaurar.rs", 3),
-            ("separador.rs", 3),
-            ("sincronia.rs", 2),
+            ("separador.rs", 2),
+            ("sincronia.rs", 3),
             ("util.rs", 11),
             ("volume.rs", 2),
         ];

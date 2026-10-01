@@ -403,6 +403,13 @@ dia, nunca no desejado:
   do expurgo da trilha idem (`expurgo-da-trilha-sem-fsync-da-pasta`) e o
   motor que esquece a pasta do que saiu (`levar-ao-disco-esquece-o-que-saiu`).
   No merge com o 593 (534): 534 + 4 = 538.
+  **SUBIU para 544 em 01/10/2026** (pedido 595): quatro guardas -- o cadastro
+  por database regravado sem `fsync` (`cadastro-regravado-sem-fsync`), o
+  ultimo que sai sem `fsync` da pasta (`cadastro-apagado-sem-fsync-da-pasta`),
+  o `gatilhos.json` depois do sumico da tabela
+  (`gatilho-orfao-na-queda-do-excluir-tabela`) e o erro no meio da exclusao
+  (`erro-no-meio-da-exclusao-sem-fsync`). 540 + 4 = 544, contado pelo
+  `--catraca`.
   impedir. Ele e a unica coisa nesta regua que reprova o APAGAMENTO; tudo o
   mais aqui reprova o envelhecimento.
 
@@ -511,7 +518,7 @@ TETO_TESTE_MORTO = 0
 TETO_TRECHO_AMBIGUO = 0
 TETO_TESTE_FORA_DO_BINARIO = 0
 TETO_TESTE_SEM_MODULO = 0
-PISO_DAS_ENTRADAS = 540
+PISO_DAS_ENTRADAS = 544
 
 # ------------------------------------------------------------- APOSENTADAS
 #

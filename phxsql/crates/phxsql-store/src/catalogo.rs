@@ -979,18 +979,39 @@ impl Database {
     /// conferido um estado que a queda desfaz. Quem segura a trava global usa
     /// [`Self::excluir_tabela_adiando_o_fsync`] e leva ao disco depois.
     pub fn excluir_tabela(&self, qualificado: &str) -> Result<Vec<String>> {
-        let (apagados, pendente) = self.excluir_tabela_adiando_o_fsync(qualificado)?;
+        let (apagados, pendente) = self.excluir_tabela_adiando_o_fsync(qualificado);
+        // Mesmo no erro (pedido 595): o que ja saiu saiu, e sem o `fsync` da
+        // pasta volta numa queda -- a tabela pela metade que o 591 fechou no
+        // caminho feliz. A recusa do disco, se vier, fala mais alto.
         pendente.levar_ao_disco()?;
-        Ok(apagados)
+        apagados
     }
 
     /// O [`Self::excluir_tabela`] sem o `fsync` da pasta: ele volta em
     /// [`PorSincronizar`], para o servidor soltar a trava global antes de
     /// esperar o disco (a catraca `alcancam-fsync-2`, como no 589).
+    ///
+    /// O [`PorSincronizar`] volta FORA do `Result`, e e a razao do formato:
+    /// um `remove_file` que falha no terceiro de cinco arquivos deixa dois
+    /// nomes ja apagados, e um `?` aqui os esquecia sem `fsync` (pedido 595).
+    /// Quem chama leva ao disco nos dois casos.
     pub fn excluir_tabela_adiando_o_fsync(
         &self,
         qualificado: &str,
-    ) -> Result<(Vec<String>, PorSincronizar)> {
+    ) -> (Result<Vec<String>>, PorSincronizar) {
+        let mut sairam = Vec::new();
+        let apagados = self.excluir_tabela_juntando(qualificado, &mut sairam);
+        (apagados, PorSincronizar::entradas_que_sairam(sairam))
+    }
+
+    /// O corpo do [`Self::excluir_tabela_adiando_o_fsync`]: cada nome apagado
+    /// entra em `sairam` NO INSTANTE do `unlink`, antes de qualquer `?` que
+    /// venha depois.
+    fn excluir_tabela_juntando(
+        &self,
+        qualificado: &str,
+        sairam: &mut Vec<PathBuf>,
+    ) -> Result<Vec<String>> {
         self.exigir_motor_padrao()?;
         let (schema, nome) = separar_qualificado(qualificado);
         let (schema, nome) = (schema.as_deref(), nome.as_str());
@@ -1003,9 +1024,8 @@ impl Database {
                  filhos -- apague {filha} primeiro, ou tire a chave dela"
             )));
         }
-        // Os caminhos inteiros, para o `fsync` da pasta; `apagados` e so o
-        // nome, que e o que a resposta mostra.
-        let mut sairam = Vec::new();
+        // Os caminhos inteiros vao para `sairam`, para o `fsync` da pasta;
+        // `apagados` e so o nome, que e o que a resposta mostra.
         let mut apagados = Vec::new();
         for ext in Self::EXTENSOES_TODAS {
             // Uma tabela paginada tem varios volumes por extensao.
@@ -1028,8 +1048,7 @@ impl Database {
         // O que ela devia ao disco foi apagado junto (536).
         crate::volume::mudar_pendentes_de_nome(&dir, nome, None);
         apagados.sort();
-        let pendente = PorSincronizar::entradas_que_sairam(sairam);
-        Ok((apagados, pendente))
+        Ok(apagados)
     }
 
     /// Os arquivos que esta tabela TEM em disco, com extensao e sem o nome.
@@ -1416,7 +1435,11 @@ impl PorSincronizar {
     /// Os nomes que uma exclusao apagou -- pedido 591. Quem apaga numa pasta
     /// so precisa dar UM nome dela: o `fsync` e da pasta, e o
     /// [`Self::levar_ao_disco`] faz um por pasta, por mais nomes que saiam.
-    pub(crate) fn entradas_que_sairam(nomes: Vec<PathBuf>) -> PorSincronizar {
+    ///
+    /// Publico desde o 595: o cadastro do servidor (`gatilhos.json`,
+    /// `procedimentos.json`, `visoes.json`) apaga o arquivo quando a ultima
+    /// rotina sai, e o `fsync` da pasta dele e este mesmo -- nao um segundo.
+    pub fn entradas_que_sairam(nomes: Vec<PathBuf>) -> PorSincronizar {
         PorSincronizar {
             entradas_que_sairam: nomes,
             ..PorSincronizar::default()
@@ -3420,5 +3443,85 @@ mod testes_excluir_vai_ao_disco {
             }
         }
         assert!(erros.is_empty(), "{erros:#?}\n{texto}");
+    }
+
+    /// O filho do erro no meio: a tabela `sai` com um DIRETORIO no lugar do
+    /// `.bkp` -- o `remove_file` dele falha (EISDIR) depois de o `.reg` e o
+    /// `.ndx` ja terem saido.
+    #[test]
+    #[ignore = "roda so dentro de o_erro_no_meio_leva_ao_disco_o_que_saiu"]
+    fn filho_do_erro_no_meio() {
+        let base = PathBuf::from(std::env::var("PHX_595_DIR").unwrap());
+        let inst = Instancia::nova(&base).unwrap();
+        let d = inst.criar_database("d").unwrap();
+        drop(d.criar_tabela(None, esquema("sai")).unwrap());
+        let tranca = base.join("d").join("sai.bkp");
+        std::fs::create_dir(&tranca).unwrap();
+        std::fs::write(tranca.join("dentro"), b"x").unwrap();
+        passo(&base, 0);
+        assert!(
+            d.excluir_tabela("sai").is_err(),
+            "a premissa: o erro no meio"
+        );
+        passo(&base, 1);
+    }
+
+    /// **Pedido 595, o menor: o erro no meio da exclusao.** Os nomes que ja
+    /// sairam antes do erro devem o `fsync` da pasta tanto quanto no caminho
+    /// feliz -- com o `?` que havia, eles ficavam sem, e a tabela voltava
+    /// pela metade numa queda.
+    #[test]
+    fn o_erro_no_meio_leva_ao_disco_o_que_saiu() {
+        if std::process::Command::new("strace")
+            .arg("-V")
+            .output()
+            .is_err()
+        {
+            eprintln!("sem strace nesta maquina: a prova do 595 NAO MEDIDA");
+            return;
+        }
+        let t = crate::apoio_teste::DirTemp::novo("cat-595-strace");
+        let base = std::fs::canonicalize(&t.0).unwrap();
+        let traco = t.0.join("traco.txt");
+        let saida = std::process::Command::new("strace")
+            .args(["-f", "-y", "-e", "trace=openat,fsync,unlink,unlinkat", "-o"])
+            .arg(&traco)
+            .arg(std::env::current_exe().unwrap())
+            .args([
+                "--ignored",
+                "--exact",
+                "catalogo::testes_excluir_vai_ao_disco::filho_do_erro_no_meio",
+            ])
+            .env("PHX_595_DIR", &base)
+            .output()
+            .unwrap();
+        assert!(
+            saida.status.success(),
+            "{}",
+            String::from_utf8_lossy(&saida.stderr)
+        );
+        let texto = std::fs::read_to_string(&traco).unwrap();
+        let linhas: Vec<&str> = texto.lines().filter(|l| l.contains(" = ")).collect();
+        let marca = |n: u32| {
+            let alvo = format!("\"{}\"", base.join(format!("passo-{n}")).display());
+            linhas
+                .iter()
+                .position(|l| l.contains("openat(") && l.contains(&alvo))
+                .unwrap_or_else(|| panic!("a premissa: o passo {n} no traco:\n{texto}"))
+        };
+        let janela = &linhas[marca(0) + 1..marca(1)];
+        let pasta = base.join("d");
+        let reg = format!("\"{}\"", pasta.join("sai.reg").display());
+        let saiu = janela
+            .iter()
+            .position(|l| l.contains("unlink") && l.contains(&reg) && l.trim_end().ends_with("= 0"))
+            .unwrap_or_else(|| panic!("a premissa: o .reg saiu antes do erro\n{texto}"));
+        let fsync_da_pasta = format!("<{}>)", pasta.display());
+        assert!(
+            janela[saiu + 1..].iter().any(|l| l.contains("fsync(")
+                && l.contains(&fsync_da_pasta)
+                && l.trim_end().ends_with("= 0")),
+            "o erro no meio deixou os nomes que sairam sem fsync da pasta\n{texto}"
+        );
     }
 }

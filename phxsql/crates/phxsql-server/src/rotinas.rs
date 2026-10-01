@@ -35,6 +35,77 @@ use phxsql_sql::rotina::{
 pub const ARQUIVO_GATILHOS: &str = "gatilhos.json";
 pub const ARQUIVO_PROCEDIMENTOS: &str = "procedimentos.json";
 
+/// Qual dos dois arquivos de um database uma mudanca deixou devendo.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Arquivo {
+    Gatilhos,
+    Procedimentos,
+}
+
+/// O que uma mudanca no registro deixou devendo ao disco -- pedido 595.
+///
+/// As mudancas mexem so na MEMORIA, sob a trava do registro, e devolvem isto;
+/// o disco vem depois, por [`Rotinas::retrato`] e [`Retrato::gravar`]. A
+/// razao e a trava: o registro e lido em toda escrita de tabela com gatilho,
+/// e o `excluir_tabela` o toma com a trava GLOBAL na mao. Gravar ali dentro
+/// poria dois `fsync` sob a trava global (a catraca `alcancam-fsync-2`) e
+/// pararia toda escrita com gatilho enquanto o disco responde.
+#[must_use = "a mudanca so vale no disco depois de Retrato::gravar"]
+#[derive(Debug)]
+pub struct PorGravar {
+    db: String,
+    arquivo: Arquivo,
+}
+
+/// O conteudo que um arquivo de cadastro deve ter AGORA, tirado sob a trava
+/// do registro e gravado fora dela. `None` e «nao deve existir»: ausente
+/// quer dizer zero rotinas (ou zero visoes), e um `[]` no disco seria um
+/// terceiro estado que nada le.
+///
+/// O retrato e do estado INTEIRO no instante em que se tira, e nao da
+/// mudanca que o pediu: quem grava por ultimo grava o mais novo, e uma
+/// mudanca alheia que entrou no meio vai junto em vez de ser desfeita. Quem
+/// serializa os retratos e o servidor (`cadastro_no_disco`), para dois nao
+/// trocarem de ordem entre tirar e gravar.
+#[must_use = "o retrato so vale depois de gravar"]
+#[derive(Debug)]
+pub struct Retrato {
+    arquivo: PathBuf,
+    corpo: Option<String>,
+}
+
+impl Retrato {
+    pub(crate) fn novo(arquivo: PathBuf, corpo: Option<String>) -> Retrato {
+        Retrato { arquivo, corpo }
+    }
+
+    /// Leva o retrato ao disco, de forma duravel -- pedido 595.
+    ///
+    /// Regravar e pelo motor da casa (`sincronia::gravar_duravel`):
+    /// temporario, `fsync`, troca e `fsync` da pasta. Era `escrever_do_banco`
+    /// NO LUGAR e sem `fsync` nenhum: uma queda no meio deixava o JSON pela
+    /// metade, e JSON invalido derruba o arranque. Apagar e o `unlink` mais o
+    /// `fsync` da pasta, pelo mesmo `PorSincronizar` do `excluir_tabela`
+    /// (591): sem ele, o gatilho excluido volta numa queda.
+    pub fn gravar(self) -> Result<()> {
+        match self.corpo {
+            Some(corpo) => phxsql_store::sincronia::gravar_duravel(&self.arquivo, corpo.as_bytes()),
+            None => {
+                match std::fs::remove_file(&self.arquivo) {
+                    Ok(()) => {}
+                    // Ja ausente e o estado pedido; um retrato anterior o
+                    // apagou e ja levou a pasta ao disco.
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+                    Err(e) => return Err(e.into()),
+                }
+                phxsql_store::catalogo::PorSincronizar::entradas_que_sairam(vec![self.arquivo])
+                    .levar_ao_disco()?;
+                Ok(())
+            }
+        }
+    }
+}
+
 /// Os gatilhos de uma escrita, ja separados: os que rodam ANTES e os DEPOIS.
 ///
 /// Tem nome proprio porque o par viaja junto por todo o caminho de escrita e
@@ -340,7 +411,7 @@ impl Rotinas {
         db: &str,
         def: GatilhoDef,
         criado_por: &str,
-    ) -> Result<Arc<Gatilho>> {
+    ) -> Result<(Arc<Gatilho>, PorGravar)> {
         self.conferir_nome_do_db(db)?;
         let d = self.dbs.entry(db.to_string()).or_default();
         if d.gatilhos
@@ -367,38 +438,35 @@ impl Rotinas {
             programa,
         });
         d.gatilhos.push(Arc::clone(&g));
-        self.gravar_gatilhos(db)?;
-        Ok(g)
+        Ok((g, PorGravar::de(db, Arquivo::Gatilhos)))
     }
 
-    /// Devolve `false` quando o gatilho nao existia.
-    pub fn excluir_gatilho(&mut self, db: &str, nome: &str) -> Result<bool> {
-        let Some(d) = self.dbs.get_mut(db) else {
-            return Ok(false);
-        };
+    /// Devolve `None` quando o gatilho nao existia -- e nada a gravar.
+    pub fn excluir_gatilho(&mut self, db: &str, nome: &str) -> Option<PorGravar> {
+        let d = self.dbs.get_mut(db)?;
         let antes = d.gatilhos.len();
         d.gatilhos.retain(|g| !g.nome.eq_ignore_ascii_case(nome));
-        if d.gatilhos.len() == antes {
-            return Ok(false);
-        }
-        self.gravar_gatilhos(db)?;
-        Ok(true)
+        (d.gatilhos.len() != antes).then(|| PorGravar::de(db, Arquivo::Gatilhos))
     }
 
     /// Tira todos os gatilhos de uma tabela — chamada quando a tabela e
     /// excluida, como o MySQL(R) faz: gatilho orfao dispararia contra uma
     /// homonima futura que nao tem nada a ver com ele.
-    pub fn excluir_gatilhos_da_tabela(&mut self, db: &str, tabela: &str) -> Result<usize> {
+    pub fn excluir_gatilhos_da_tabela(
+        &mut self,
+        db: &str,
+        tabela: &str,
+    ) -> (usize, Option<PorGravar>) {
         let Some(d) = self.dbs.get_mut(db) else {
-            return Ok(0);
+            return (0, None);
         };
         let antes = d.gatilhos.len();
         d.gatilhos.retain(|g| g.tabela != tabela);
         let saiu = antes - d.gatilhos.len();
-        if saiu > 0 {
-            self.gravar_gatilhos(db)?;
-        }
-        Ok(saiu)
+        (
+            saiu,
+            (saiu > 0).then(|| PorGravar::de(db, Arquivo::Gatilhos)),
+        )
     }
 
     pub fn criar_procedimento(
@@ -406,7 +474,7 @@ impl Rotinas {
         db: &str,
         def: ProcedimentoDef,
         criado_por: &str,
-    ) -> Result<Arc<Procedimento>> {
+    ) -> Result<(Arc<Procedimento>, PorGravar)> {
         self.conferir_nome_do_db(db)?;
         let d = self.dbs.entry(db.to_string()).or_default();
         if d.procedimentos
@@ -429,22 +497,16 @@ impl Rotinas {
             programa,
         });
         d.procedimentos.push(Arc::clone(&p));
-        self.gravar_procedimentos(db)?;
-        Ok(p)
+        Ok((p, PorGravar::de(db, Arquivo::Procedimentos)))
     }
 
-    pub fn excluir_procedimento(&mut self, db: &str, nome: &str) -> Result<bool> {
-        let Some(d) = self.dbs.get_mut(db) else {
-            return Ok(false);
-        };
+    /// Devolve `None` quando o procedimento nao existia -- e nada a gravar.
+    pub fn excluir_procedimento(&mut self, db: &str, nome: &str) -> Option<PorGravar> {
+        let d = self.dbs.get_mut(db)?;
         let antes = d.procedimentos.len();
         d.procedimentos
             .retain(|p| !p.nome.eq_ignore_ascii_case(nome));
-        if d.procedimentos.len() == antes {
-            return Ok(false);
-        }
-        self.gravar_procedimentos(db)?;
-        Ok(true)
+        (d.procedimentos.len() != antes).then(|| PorGravar::de(db, Arquivo::Procedimentos))
     }
 
     /// O nome do db vira caminho de arquivo logo abaixo; a sonda de
@@ -462,48 +524,50 @@ impl Rotinas {
         Ok(())
     }
 
-    fn gravar_gatilhos(&self, db: &str) -> Result<()> {
-        let arquivo = self.base.join(db).join(ARQUIVO_GATILHOS);
-        let lista = self
-            .dbs
-            .get(db)
-            .map(|d| d.gatilhos.as_slice())
-            .unwrap_or(&[]);
-        if lista.is_empty() {
-            // Arquivo ausente = zero gatilhos; um vazio diria o mesmo com
-            // mais um arquivo para alguem estranhar no backup.
-            if arquivo.exists() {
-                std::fs::remove_file(&arquivo)?;
-            }
-            return Ok(());
-        }
-        let j = Json::objeto(vec![(
-            "gatilhos",
-            Json::Lista(lista.iter().map(|g| g.para_disco()).collect()),
-        )]);
-        phxsql_store::permissao::escrever_do_banco(&arquivo, j.escrever_identado())?;
-        Ok(())
+    /// O que o arquivo devido deve conter AGORA -- ver [`Retrato`]. Barato
+    /// de proposito (serializar algumas dezenas de rotinas), porque roda com
+    /// a trava do registro na mao; o disco fica para [`Retrato::gravar`].
+    pub fn retrato(&self, devido: &PorGravar) -> Retrato {
+        let (nome_do_arquivo, chave, lista): (&str, &str, Vec<Json>) = match devido.arquivo {
+            Arquivo::Gatilhos => (
+                ARQUIVO_GATILHOS,
+                "gatilhos",
+                self.dbs
+                    .get(&devido.db)
+                    .map(|d| d.gatilhos.iter().map(|g| g.para_disco()).collect())
+                    .unwrap_or_default(),
+            ),
+            Arquivo::Procedimentos => (
+                ARQUIVO_PROCEDIMENTOS,
+                "procedimentos",
+                self.dbs
+                    .get(&devido.db)
+                    .map(|d| d.procedimentos.iter().map(|p| p.para_disco()).collect())
+                    .unwrap_or_default(),
+            ),
+        };
+        let arquivo = self.base.join(&devido.db).join(nome_do_arquivo);
+        // Lista vazia = arquivo ausente; um vazio diria o mesmo com mais um
+        // arquivo para alguem estranhar no backup.
+        let corpo = (!lista.is_empty())
+            .then(|| Json::objeto(vec![(chave, Json::Lista(lista))]).escrever_identado());
+        Retrato::novo(arquivo, corpo)
     }
 
-    fn gravar_procedimentos(&self, db: &str) -> Result<()> {
-        let arquivo = self.base.join(db).join(ARQUIVO_PROCEDIMENTOS);
-        let lista = self
-            .dbs
-            .get(db)
-            .map(|d| d.procedimentos.as_slice())
-            .unwrap_or(&[]);
-        if lista.is_empty() {
-            if arquivo.exists() {
-                std::fs::remove_file(&arquivo)?;
-            }
-            return Ok(());
+    /// O retrato tirado e gravado na mesma chamada, com o registro na mao.
+    /// Para quem nao divide o registro com ninguem (os testes, uma
+    /// ferramenta); o servidor tira sob a trava e grava fora dela.
+    pub fn gravar(&self, devido: PorGravar) -> Result<()> {
+        self.retrato(&devido).gravar()
+    }
+}
+
+impl PorGravar {
+    fn de(db: &str, arquivo: Arquivo) -> PorGravar {
+        PorGravar {
+            db: db.to_string(),
+            arquivo,
         }
-        let j = Json::objeto(vec![(
-            "procedimentos",
-            Json::Lista(lista.iter().map(|p| p.para_disco()).collect()),
-        )]);
-        phxsql_store::permissao::escrever_do_banco(&arquivo, j.escrever_identado())?;
-        Ok(())
     }
 }
 
@@ -535,8 +599,10 @@ mod testes {
         let base = dir_temp("volta");
         let mut r = Rotinas::carregar(&base).unwrap();
         assert!(!r.ha_gatilhos());
-        r.criar_gatilho("loja", gatilho_def("normaliza", "clientes"), "root")
+        let (_, devido) = r
+            .criar_gatilho("loja", gatilho_def("normaliza", "clientes"), "root")
             .unwrap();
+        r.gravar(devido).unwrap();
         assert!(base.join("loja").join(ARQUIVO_GATILHOS).is_file());
 
         let r2 = Rotinas::carregar(&base).unwrap();
@@ -552,20 +618,24 @@ mod testes {
     fn o_ultimo_que_sai_apaga_o_arquivo() {
         let base = dir_temp("apaga");
         let mut r = Rotinas::carregar(&base).unwrap();
-        r.criar_gatilho("loja", gatilho_def("g", "t"), "root")
+        let (_, devido) = r
+            .criar_gatilho("loja", gatilho_def("g", "t"), "root")
             .unwrap();
+        r.gravar(devido).unwrap();
         let arquivo = base.join("loja").join(ARQUIVO_GATILHOS);
         assert!(arquivo.is_file());
-        assert!(r.excluir_gatilho("loja", "g").unwrap());
+        let devido = r.excluir_gatilho("loja", "g").expect("existia");
+        r.gravar(devido).unwrap();
         assert!(!arquivo.exists(), "arquivo vazio devia sumir");
-        assert!(!r.excluir_gatilho("loja", "g").unwrap());
+        assert!(r.excluir_gatilho("loja", "g").is_none());
     }
 
     #[test]
     fn nome_duplicado_recusa() {
         let base = dir_temp("dup");
         let mut r = Rotinas::carregar(&base).unwrap();
-        r.criar_gatilho("loja", gatilho_def("g", "t"), "root")
+        let _ = r
+            .criar_gatilho("loja", gatilho_def("g", "t"), "root")
             .unwrap();
         let e = r
             .criar_gatilho("loja", gatilho_def("G", "outra"), "root")
@@ -618,13 +688,15 @@ mod testes {
     fn excluir_da_tabela_leva_so_os_dela() {
         let base = dir_temp("portabela");
         let mut r = Rotinas::carregar(&base).unwrap();
-        r.criar_gatilho("loja", gatilho_def("a", "clientes"), "root")
-            .unwrap();
-        r.criar_gatilho("loja", gatilho_def("b", "clientes"), "root")
-            .unwrap();
-        r.criar_gatilho("loja", gatilho_def("c", "vendas"), "root")
-            .unwrap();
-        assert_eq!(r.excluir_gatilhos_da_tabela("loja", "clientes").unwrap(), 2);
+        for (g, tabela) in [("a", "clientes"), ("b", "clientes"), ("c", "vendas")] {
+            let (_, devido) = r
+                .criar_gatilho("loja", gatilho_def(g, tabela), "root")
+                .unwrap();
+            r.gravar(devido).unwrap();
+        }
+        let (saiu, devido) = r.excluir_gatilhos_da_tabela("loja", "clientes");
+        assert_eq!(saiu, 2);
+        r.gravar(devido.expect("dois sairam")).unwrap();
         assert!(r.ha_gatilhos());
         let (antes, _) = r.gatilhos_de("loja", "vendas", Evento::Inserir);
         assert_eq!(antes.len(), 1);
@@ -652,7 +724,8 @@ mod testes {
             ],
             corpo: "SET total = ate * 1.00".into(),
         };
-        r.criar_procedimento("loja", def, "root").unwrap();
+        let (_, devido) = r.criar_procedimento("loja", def, "root").unwrap();
+        r.gravar(devido).unwrap();
         let r2 = Rotinas::carregar(&base).unwrap();
         let p = r2.procedimento("loja", "SOMAR").expect("procura sem caixa");
         assert_eq!(p.parametros[1].tipo_escrito, "DECIMAL(15,2)");

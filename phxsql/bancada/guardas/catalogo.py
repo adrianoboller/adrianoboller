@@ -18431,10 +18431,12 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "`levar_ao_disco` sincroniza a pasta -- no servidor, fora da trava."
         ),
         "arquivo": "crates/phxsql-store/src/catalogo.rs",
-        "trecho": """        let pendente = PorSincronizar::entradas_que_sairam(sairam);""",
+        # Re-apontada no 595: o `PorSincronizar` passou a voltar FORA do
+        # `Result`, para o erro no meio tambem levar ao disco o que saiu.
+        "trecho": """        (apagados, PorSincronizar::entradas_que_sairam(sairam))""",
         "troca": """        // DEFEITO REPOSTO (591): os nomes apagados sem fsync da pasta.
         let _ = sairam;
-        let pendente = PorSincronizar::default();""",
+        (apagados, PorSincronizar::default())""",
         "pacote": "phxsql-store",
         "alvo": ["--lib"],
         "caem": ["catalogo::testes_excluir_vai_ao_disco::excluir_esvaziar_e_expurgar_vao_ao_disco"],
@@ -18694,5 +18696,111 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         "alvo": ["--test", "destino-do-backup-sem-atalho"],
         "caem": ["a_faxina_nao_remove_a_pasta_vazia_trocada_no_nome"],
         "seguem": ["a_faxina_nao_atravessa_link_na_pasta_do_meio"],
+    },
+    {
+        "id": "cadastro-regravado-sem-fsync",
+        "titulo": "`gatilhos.json`, `procedimentos.json` e `visoes.json` eram regravados no lugar e sem `fsync`: a queda no meio deixava JSON pela metade, e o arranque caía",
+        "porque": (
+            "pedido 595, irmao do 591. O cadastro por database era "
+            "`escrever_do_banco` NO LUGAR, sem `fsync` nenhum: numa queda o "
+            "gatilho criado sumia depois do «criado», ou o arquivo ficava pela "
+            "metade -- e JSON invalido derruba o arranque de proposito. O "
+            "`Retrato::gravar` regrava pelo motor `sincronia::gravar_duravel`: "
+            "temporario, `fsync`, `rename` e `fsync` da pasta, fora das travas."
+        ),
+        "arquivo": "crates/phxsql-server/src/rotinas.rs",
+        "trecho": """            Some(corpo) => phxsql_store::sincronia::gravar_duravel(&self.arquivo, corpo.as_bytes()),
+""",
+        "troca": """            // DEFEITO REPOSTO (595): no lugar, sem fsync.
+            Some(corpo) => Ok(phxsql_store::permissao::escrever_do_banco(&self.arquivo, corpo)?),
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": ["servidor::testes_gatilhos::cadastro_vai_ao_disco_595::o_cadastro_vai_ao_disco_antes_da_resposta"],
+        "seguem": [
+            "rotinas::testes::cria_grava_e_recarrega",
+            "visoes::testes::a_visao_sobrevive_ao_disco",
+        ],
+    },
+    {
+        "id": "cadastro-apagado-sem-fsync-da-pasta",
+        "titulo": "o último gatilho, procedimento ou visão que saía apagava o arquivo sem `fsync` da pasta: numa queda o excluído voltava",
+        "porque": (
+            "pedido 595. Quando a ultima rotina (ou visao) de um database sai, "
+            "o arquivo sai junto -- e o `unlink` e dado da PASTA. Sem o "
+            "`fsync` dela, o `DROP TRIGGER` que o cliente ouviu terminar volta "
+            "numa queda. Pelo mesmo `PorSincronizar::entradas_que_sairam` do "
+            "`excluir_tabela` (591), e nao por um segundo motor."
+        ),
+        "arquivo": "crates/phxsql-server/src/rotinas.rs",
+        "trecho": """                phxsql_store::catalogo::PorSincronizar::entradas_que_sairam(vec![self.arquivo])
+                    .levar_ao_disco()?;
+""",
+        "troca": """                // DEFEITO REPOSTO (595): o unlink sem fsync da pasta.
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": ["servidor::testes_gatilhos::cadastro_vai_ao_disco_595::o_cadastro_vai_ao_disco_antes_da_resposta"],
+        "seguem": [
+            "rotinas::testes::o_ultimo_que_sai_apaga_o_arquivo",
+            "visoes::testes::a_ultima_visao_leva_o_arquivo",
+        ],
+    },
+    {
+        "id": "gatilho-orfao-na-queda-do-excluir-tabela",
+        "titulo": "`excluir_tabela` levava ao disco o sumiço da tabela ANTES do `gatilhos.json`: a queda entre os dois deixava o gatilho de uma tabela que não existe mais",
+        "porque": (
+            "pedido 595. Os gatilhos da tabela saem junto dela, como no "
+            "MySQL(R). Se o `fsync` da pasta (os `unlink` da tabela) vier "
+            "antes do `gatilhos.json` duravel, uma queda entre os dois deixa "
+            "o gatilho no disco e a tabela fora -- e ele dispara sobre a "
+            "homonima que alguem criar depois, escrevendo no dado de outro. "
+            "Na ordem certa a queda devolve, no maximo, a tabela sem os "
+            "gatilhos de uma exclusao que o cliente nunca ouviu terminar."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        let gravou = rotinas.and_then(|()| self.gravar_rotinas(gatilhos_por_gravar));
+        // O `fsync` da pasta vem mesmo se o cadastro falhou: os nomes ja
+        // sairam do disco, e devolve-los numa queda e o defeito do 591.
+        pendente.levar_ao_disco()?;
+        gravou?;
+""",
+        "troca": """        // DEFEITO REPOSTO (595): a pasta da tabela antes do gatilhos.json.
+        pendente.levar_ao_disco()?;
+        rotinas.and_then(|()| self.gravar_rotinas(gatilhos_por_gravar))?;
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": ["servidor::testes_gatilhos::cadastro_vai_ao_disco_595::o_cadastro_vai_ao_disco_antes_da_resposta"],
+        "seguem": ["rotinas::testes::excluir_da_tabela_leva_so_os_dela"],
+    },
+    {
+        "id": "erro-no-meio-da-exclusao-sem-fsync",
+        "titulo": "o erro no meio do `excluir_tabela` esquecia os nomes que já tinham saído sem `fsync` da pasta: numa queda a tabela voltava pela metade",
+        "porque": (
+            "pedido 595, o menor. Um `remove_file` que falha no terceiro de "
+            "cinco arquivos deixa dois ja apagados; o `?` que havia descartava "
+            "o `PorSincronizar` e eles ficavam so no cache do nucleo. O "
+            "`excluir_tabela_adiando_o_fsync` devolve o pendente FORA do "
+            "`Result`, e quem chama leva ao disco nos dois casos."
+        ),
+        "arquivo": "crates/phxsql-store/src/catalogo.rs",
+        "trecho": """        pendente.levar_ao_disco()?;
+        apagados
+    }
+""",
+        "troca": """        // DEFEITO REPOSTO (595): o erro sai antes do fsync da pasta.
+        let apagados = apagados?;
+        pendente.levar_ao_disco()?;
+        Ok(apagados)
+    }
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--lib"],
+        "caem": ["catalogo::testes_excluir_vai_ao_disco::o_erro_no_meio_leva_ao_disco_o_que_saiu"],
+        "seguem": [
+            "catalogo::testes_excluir_vai_ao_disco::excluir_esvaziar_e_expurgar_vao_ao_disco",
+            "catalogo::testes_gestao::excluir_tabela_leva_os_arquivos_dela_e_so_os_dela",
+        ],
     },
 ]
