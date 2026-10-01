@@ -54,10 +54,22 @@ echo "== 1/6 a historia: o bundle provado do backup.sh"
 BUNDLE=$(ls -t "$DESTINO"/phxsql-*.bundle | head -1)
 
 echo "== 2/6 a lei: os dois CLAUDE.md, com o SHA-256 de cada um"
-[ -f "$LEI_GLOBAL" ] || { echo "REPROVOU: $LEI_GLOBAL nao existe" >&2; exit 1; }
-cp "$LEI_GLOBAL" "$PROVA/monta/lei/CLAUDE-global.md"
+# A lei global mora fora do repositorio, no disco do conteiner -- e em
+# 01/10/2026 um conteiner recriado nao a trazia, e nao havia copia em lugar
+# nenhum. Decisao do dono: o pacote sai assim mesmo, e diz que ela FALTOU (na
+# saida e no manifesto), em vez de reprovar o backup inteiro por um arquivo
+# que o proprio conteiner perdeu. Presente, ela entra e se prova byte a byte.
+if [ -f "$LEI_GLOBAL" ]; then
+    TEM_LEI_GLOBAL=1
+    cp "$LEI_GLOBAL" "$PROVA/monta/lei/CLAUDE-global.md"
+    LEIS="CLAUDE-global.md CLAUDE-projeto.md"
+else
+    TEM_LEI_GLOBAL=0
+    echo "   AUSENTE: $LEI_GLOBAL nao existe neste conteiner -- o pacote sai SEM a lei global"
+    LEIS="CLAUDE-projeto.md"
+fi
 cp "$RAIZ/CLAUDE.md" "$PROVA/monta/lei/CLAUDE-projeto.md"
-( cd "$PROVA/monta/lei" && sha256sum CLAUDE-global.md CLAUDE-projeto.md > SHA256SUMS )
+( cd "$PROVA/monta/lei" && sha256sum $LEIS > SHA256SUMS )
 
 echo "== 3/6 a arvore: arquivos, diretorios e subdiretorios"
 # Diretorios entram explicitamente (sem recursao) para que o VAZIO sobreviva.
@@ -88,7 +100,11 @@ echo "== 4/6 o manifesto"
     echo "branch:     $(git rev-parse --abbrev-ref HEAD)"
     echo "commit:     $(git rev-parse HEAD)"
     echo "historia:   $(basename "$BUNDLE") ($(du -h "$BUNDLE" | cut -f1), provado restaurando pelo backup.sh)"
-    echo "lei:        lei/CLAUDE-global.md  <- $LEI_GLOBAL"
+    if [ "$TEM_LEI_GLOBAL" = 1 ]; then
+        echo "lei:        lei/CLAUDE-global.md  <- $LEI_GLOBAL"
+    else
+        echo "lei:        lei/CLAUDE-global.md  AUSENTE -- $LEI_GLOBAL nao existia neste conteiner"
+    fi
     echo "            lei/CLAUDE-projeto.md <- $RAIZ/CLAUDE.md"
     echo "arvore:     $N_ARQ arquivos, $N_DIRS diretorios (com os vazios)"
     echo
@@ -96,6 +112,7 @@ echo "== 4/6 o manifesto"
     echo "  phxsql/target/        $(du -sh phxsql/target 2>/dev/null | cut -f1)  compilado, o cargo refaz"
     echo "  .git/                 $(du -sh .git | cut -f1)  a historia esta no bundle acima"
     echo "  __pycache__/, .claude/worktrees/   derivados"
+    [ "$TEM_LEI_GLOBAL" = 1 ] || echo "  a lei global ($LEI_GLOBAL)   AUSENTE no conteiner, sem copia"
     if [ "$N_GRANDES" -gt 0 ]; then
         echo "  $N_GRANDES arquivo(s) acima do teto $TETO -- dado de bancada gerado por script:"
         awk -F'\t' '{printf "    %6.0f MiB  %s\n", $1/1048576, $2}' "$PROVA/grandes"
@@ -107,7 +124,7 @@ echo "== 4/6 o manifesto"
     echo "COMO RESTAURAR:"
     echo "  tar -xzf $(basename "$PACOTE")          # a arvore e a lei/"
     echo "  git clone --branch <branch> $(basename "$BUNDLE") phxsql-restaurado   # a historia"
-    echo "  cp lei/CLAUDE-global.md ~/.claude/CLAUDE.md"
+    [ "$TEM_LEI_GLOBAL" = 1 ] && echo "  cp lei/CLAUDE-global.md ~/.claude/CLAUDE.md"
     echo "  sha256sum -c lei/SHA256SUMS"
 } > "$PROVA/monta/MANIFESTO.txt"
 
@@ -128,7 +145,9 @@ if ! ( cd "$PROVA/extraido" && sha256sum -c --quiet "$PROVA/somas" ); then
 fi
 # A lei: os dois CLAUDE.md batem com os originais, byte a byte.
 ( cd "$PROVA/extraido/lei" && sha256sum -c --quiet SHA256SUMS )
-cmp -s "$LEI_GLOBAL" "$PROVA/extraido/lei/CLAUDE-global.md" || { echo "REPROVOU: CLAUDE-global.md difere" >&2; rm -f "$PACOTE"; exit 1; }
+if [ "$TEM_LEI_GLOBAL" = 1 ]; then
+    cmp -s "$LEI_GLOBAL" "$PROVA/extraido/lei/CLAUDE-global.md" || { echo "REPROVOU: CLAUDE-global.md difere" >&2; rm -f "$PACOTE"; exit 1; }
+fi
 cmp -s "$RAIZ/CLAUDE.md" "$PROVA/extraido/lei/CLAUDE-projeto.md" || { echo "REPROVOU: CLAUDE-projeto.md difere" >&2; rm -f "$PACOTE"; exit 1; }
 # Os diretorios, inclusive os vazios.
 FALTA=0
@@ -138,7 +157,8 @@ while IFS= read -r d; do [ -d "$PROVA/extraido/$d" ] || { echo "  diretorio falt
 echo
 echo "PACOTE PROVADO: $PACOTE"
 echo "  $(du -h "$PACOTE" | cut -f1), $N_ARQ arquivos e $N_DIRS diretorios conferidos por SHA-256, a lei byte a byte"
-echo "  dentro: $(basename "$BUNDLE") (a historia), lei/ (os dois CLAUDE.md), MANIFESTO.txt"
+echo "  dentro: $(basename "$BUNDLE") (a historia), lei/ ($LEIS), MANIFESTO.txt"
+[ "$TEM_LEI_GLOBAL" = 1 ] || echo "  FALTOU: a lei global ($LEI_GLOBAL) -- nao existia neste conteiner"
 if [ "$N_GRANDES" -gt 0 ]; then
     echo
     echo "FICARAM DE FORA $N_GRANDES arquivo(s) acima de $TETO -- nomeados no MANIFESTO.txt:"
