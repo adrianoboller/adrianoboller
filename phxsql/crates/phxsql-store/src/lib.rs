@@ -58,7 +58,9 @@ pub mod permissao {
 }
 
 pub use blob::{BlobFile, EstatisticaBlob, MAGIC_BIN, MAGIC_MEMO};
-pub use catalogo::{qualificar, separar_qualificado, Aberta, Database, Instancia, Raiz};
+pub use catalogo::{
+    qualificar, separar_qualificado, Aberta, Database, Instancia, PoliticaDoDiario, Raiz,
+};
 pub use ledger::{
     hash_do_bloco, preparar_bloco, topo_da_cadeia, verificar_cadeia, Prova, Verificacao,
 };

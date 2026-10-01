@@ -1609,6 +1609,9 @@ impl Servidor {
         let (max_linhas, somente_leitura, espelho) =
             (config.max_linhas, config.somente_leitura, config.espelho);
         let mut raiz = Raiz::nova(&config.base)?;
+        // A imagem no diario e decisao do servidor, e entra AQUI, antes da
+        // recuperacao logo abaixo -- que era quem a esquecia (pedido 564).
+        raiz.definir_politica_do_diario(politica_do_diario(&config));
         // O separador de volume do binario anterior (`_`) vira `#` AQUI, uma
         // vez, antes da primeira operacao e fora de qualquer trava: a abertura
         // de database, que roda dentro das secoes, so confere a marca (pedido
@@ -3645,14 +3648,11 @@ impl Servidor {
     ) -> Result<Lote> {
         let trava = self.travar_dados()?;
         let db = trava.abrir_database(database)?;
+        // O diario DESTA replica tambem carrega a imagem quando configurado:
+        // sem ela, a replica que puxa DESTA nao tem o que aplicar, e a cascata
+        // Master -> Slave01 -> Slave02 morre no segundo salto. Quem liga e a
+        // politica do diario, herdada do `Database` (pedido 564).
         let mut tabela = db.abrir_qualificada(&no.nome)?;
-        // O diario DESTA replica tambem carrega a imagem quando configurado.
-        // Sem isto, uma replica intermediaria grava eventos sem linha dentro, e
-        // a replica que puxa DELA nao tem o que aplicar -- a cascata
-        // Master -> Slave01 -> Slave02 morre no segundo salto. Este caminho
-        // abre a tabela direto, sem passar pelo `abrir_travada` que liga a
-        // imagem para os pedidos que vem pela porta.
-        tabela.ligar_imagem_no_diario(self.config.replicacao.imagem_da_linha);
 
         // A posicao e RELIDA com a trava na mao. Entre a leitura do soquete e
         // este instante a trava esteve solta, e alguem pode ter escrito aqui;
@@ -5509,13 +5509,10 @@ impl Servidor {
         let Some((indice, pos_chave)) = bidirecional::chave_unica(tabela.esquema()) else {
             // A recusa com o motivo escrito: sem chave unica nao ha
             // identidade entre servidores, e adivinhar pela posicao ou pelo
-            // rowid gravaria a linha de alguem por cima da de outro.
-            let motivo = format!(
-                "sem chave unica de uma coluna: o bidirecional casa as linhas \
-                 pela chave, e {} nao tem uma (crie um indice unico, ou uma \
-                 chave primaria)",
-                no.nome
-            );
+            // rowid gravaria a linha de alguem por cima da de outro. A chave
+            // que aceita nulo tambem nao serve (pedido 517), e a frase diz
+            // qual coluna tornar obrigatoria.
+            let motivo = bidirecional::por_que_sem_chave(tabela.esquema(), &no.nome);
             self.anotar_estado(&origem.nome, |e| {
                 e.recusas.insert(chave_tab.clone(), motivo.clone());
             });
@@ -5550,12 +5547,10 @@ impl Servidor {
     ) -> Result<LoteBidi> {
         let trava = self.travar_dados()?;
         let db = trava.abrir_database(database)?;
+        // No multi as duas imagens sao obrigatorias -- a chave mora nela, e
+        // exclusao tambem viaja por chave --, e quem as liga e a politica do
+        // diario herdada do `Database` (`politica_do_diario`, pedido 564).
         let mut tabela = db.abrir_qualificada(&no.nome)?;
-        // No multi as duas imagens sao obrigatorias: a da linha porque a
-        // chave mora nela, e a da exclusao porque exclusao tambem viaja por
-        // chave. Este caminho abre a tabela direto, fora do `abrir_travada`.
-        tabela.ligar_imagem_no_diario(true);
-        tabela.ligar_imagem_na_exclusao(true);
         let chave_tab = format!("{database}/{}", no.nome);
         let mut saida = LoteBidi::default();
         for e in eventos {
@@ -5883,11 +5878,14 @@ impl Servidor {
             match e.operacao {
                 Operacao::Inclusao | Operacao::Alteracao => {
                     let achadas = tabela.buscar(indice, &[valor_chave])?;
+                    let achada = Self::uma_linha_so(
+                        tabela, chave_tab, indice, pos_chave, &valores, achadas,
+                    )?;
                     // O evento local nasce com o carimbo e a origem do
                     // NASCIMENTO da escrita -- e o que faz o conflito ser justo
                     // e o evento nao voltar para de onde veio.
                     tabela.forcar_proximo_evento(carimbo, origem_ev);
-                    match achadas.first() {
+                    match achada {
                         // O rowid e o rownum sao LOCAIS: `atualizar` mantem os
                         // daqui, `inserir` numera na ordem de chegada daqui. A
                         // ordem de digitacao de cada servidor e sagrada NELE.
@@ -5897,7 +5895,7 @@ impl Servidor {
                         // posicao nunca andava, e o mesmo lote voltava para
                         // sempre: o par de servidores PARADO. Ver
                         // `Table::inserir_replicado`.
-                        Some(rowid) => tabela.atualizar_replicado(*rowid, &valores)?,
+                        Some(rowid) => tabela.atualizar_replicado(rowid, &valores)?,
                         None => {
                             tabela.inserir_replicado(&valores)?;
                         }
@@ -5905,13 +5903,16 @@ impl Servidor {
                 }
                 Operacao::Exclusao => {
                     let achadas = tabela.buscar(indice, &[valor_chave])?;
+                    let achada = Self::uma_linha_so(
+                        tabela, chave_tab, indice, pos_chave, &valores, achadas,
+                    )?;
                     // Sem linha nao ha o que excluir: ela ja saiu daqui, ou
                     // nunca chegou. O toque gravado abaixo vira a lapide em
                     // memoria que impede uma alteracao MAIS VELHA de
                     // ressuscita-la.
-                    if let Some(rowid) = achadas.first() {
+                    if let Some(rowid) = achada {
                         tabela.forcar_proximo_evento(carimbo, origem_ev);
-                        tabela.excluir_de_vez_replicado(*rowid, "replicacao bidirecional")?;
+                        tabela.excluir_de_vez_replicado(rowid, "replicacao bidirecional")?;
                     }
                 }
             }
@@ -5975,6 +5976,34 @@ impl Servidor {
                 );
         }
         Ok(bidirecional::Aplicacao::Aplicado)
+    }
+
+    /// A linha que a chave do casamento achou -- uma ou nenhuma, nunca «a
+    /// primeira de varias».
+    ///
+    /// Cinto e suspensorio do pedido 517: a chave e unica e obrigatoria
+    /// (`bidirecional::chave_unica`), entao a busca acha uma linha ou nenhuma.
+    /// Se achar duas, a identidade nao identifica -- e escolher a primeira
+    /// apagaria ou sobrescreveria a de outro servidor, que era o `first()` de
+    /// antes. Para, nomeando, em vez de escolher.
+    fn uma_linha_so(
+        tabela: &Table,
+        chave_tab: &str,
+        indice: &str,
+        pos_chave: usize,
+        valores: &[Value],
+        achadas: Vec<u64>,
+    ) -> Result<Option<u64>> {
+        if achadas.len() > 1 {
+            return Err(PhxError::Corrompido(format!(
+                "a chave {} do indice {indice} casa {} linhas em {chave_tab}: o \
+                 bidirecional nao escolhe uma por ordem, porque a escolhida seria a de \
+                 outro servidor -- ver docs/REPLICACAO.md, pedido 517",
+                Self::chave_dita(tabela, pos_chave, valores),
+                achadas.len()
+            )));
+        }
+        Ok(achadas.first().copied())
     }
 
     /// A chave do casamento pronta para IR A LOG -- redigida pelo esquema.
@@ -12510,9 +12539,10 @@ impl Servidor {
         // que precisa saber disso -- pelo mesmo motivo de o usuario ser
         // definido aqui e nao em cada operacao.
         t.definir_origem(&sessao.ip);
-        // A imagem da linha no diario e decisao do servidor, como o espelho:
-        // um source grava, um servidor isolado nao paga por ela.
-        t.ligar_imagem_no_diario(self.config.replicacao.imagem_da_linha);
+        // A imagem da linha no diario NAO se liga aqui: ela ja veio da
+        // politica do diario, herdada do `Database` (pedido 564). Ligar aqui
+        // so a da linha era o que deixava a exclusao fisica do multi sem
+        // imagem, e o par parado.
         // E o READ-YOUR-OWN-WRITES. Aqui, e nao em cada operacao de leitura,
         // pelo mesmo motivo do portao de permissao ser um so: espalhado por
         // vinte operacoes, a que alguem esquecer mostra o disco enquanto as
@@ -24633,6 +24663,10 @@ impl Servidor {
             }
         };
         let mut raiz_do_palco = Raiz::nova(&pai)?;
+        // O restaurado tambem grava imagem no diario dele, pelo mesmo motivo
+        // da replica intermediaria: sem isso, um backup TIRADO do restaurado
+        // nasce sem o que reaplicar. A mesma politica do servidor vivo.
+        raiz_do_palco.definir_politica_do_diario(politica_do_diario(&self.config));
         let db_destino = raiz_do_palco.exclusiva().abrir_database(&nome_no_palco)?;
         // O catalogo de verdade, e nao a vitrine dos nomes de arquivo: depois
         // de extraida quem responde "que tabelas ha aqui" e o diretorio.
@@ -24655,10 +24689,6 @@ impl Servidor {
             }
             let mut td = db_destino.abrir_qualificada(nome)?;
             let mut tv = db_vivo.abrir_qualificada(nome)?;
-            // O restaurado tambem grava imagem no diario dele, pelo mesmo
-            // motivo da replica intermediaria: sem isso, um backup TIRADO do
-            // restaurado nasce sem o que reaplicar.
-            td.ligar_imagem_no_diario(self.config.replicacao.imagem_da_linha);
 
             let posicao = td.eventos()?;
             let vivos = tv.eventos()?;
@@ -26866,7 +26896,6 @@ impl Servidor {
                 ))
             })?;
             t.definir_usuario(sessao.id());
-            t.ligar_imagem_no_diario(self.config.replicacao.imagem_da_linha);
             let esquema = t.esquema().clone();
 
             let negocio = sincronia::posicoes_de_negocio(&esquema);
@@ -28863,9 +28892,10 @@ impl Servidor {
         }
         if !sem_chave.is_empty() {
             impedimentos.push(Json::texto_de(format!(
-                "{} tabela(s) sem chave unica de uma coluna: elas replicam nos \
-                 modos A, C e D, e o bidirecional as recusa, porque la a \
-                 identidade entre servidores e a chave",
+                "{} tabela(s) sem chave unica de uma coluna obrigatoria: elas \
+                 replicam nos modos A, C e D, e o bidirecional as recusa, porque \
+                 la a identidade entre servidores e a chave -- e chave que aceita \
+                 nulo nao identifica ninguem",
                 sem_chave.len()
             )));
         }
@@ -29727,6 +29757,18 @@ fn projetar(linha: &Json, colunas: &[(String, String)]) -> Json {
 ///
 /// O par de funcoes mora junto para nao divergir; um valor desconhecido na
 /// volta cai em `Isolado`, que e o papel que nao promete nada.
+/// A politica do diario deste servidor, decidida UMA vez a partir do config
+/// (pedidos 564 e 416). Ver `phxsql_store::catalogo::PoliticaDoDiario`.
+///
+/// O multi entra ligado mesmo que alguem o monte sem `imagem_da_linha` (o
+/// `validar` do config ja recusa, mas um `Config` montado em codigo nao passa
+/// por ele): no multi a chave mora na imagem, e sem ela o par para.
+fn politica_do_diario(config: &Config) -> phxsql_store::catalogo::PoliticaDoDiario {
+    phxsql_store::catalogo::PoliticaDoDiario::com_imagem(
+        config.replicacao.imagem_da_linha || config.replicacao.papel == Papel::Multi,
+    )
+}
+
 fn papel_para_u8(p: Papel) -> u8 {
     match p {
         Papel::Isolado => 0,

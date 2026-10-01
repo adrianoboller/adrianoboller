@@ -265,9 +265,59 @@ pub(crate) fn subdiretorios(diretorio: &Path) -> Result<Vec<String>> {
     Ok(nomes)
 }
 
+/// O que o diario de TODA tabela aberta para escrita carrega -- decisao do
+/// servidor, tomada uma vez no arranque (pedidos 564 e 416).
+///
+/// # Por que mora aqui, e nao em quem abre a tabela
+///
+/// Porque quem abre a tabela sao muitos, e a decisao e uma so. Ate o pedido
+/// 564 ela estava escrita em CINCO lugares do servidor (a porta, a replica, o
+/// bidirecional, o PITR e o DbLink), cada um chamando `ligar_imagem_*` na
+/// tabela que acabou de abrir -- e a recuperacao do arranque foi o sexto que
+/// esqueceu: o `COMMIT` completado ia para o diario sem imagem, e a replica
+/// parava em «veio sem imagem». Os tres maduros convergem nisto: a politica do
+/// log de replicacao e do SERVIDOR (`wal_level` no PostgreSQL,
+/// `binlog_row_image` no MySQL e no MariaDB), aplicada no ponto unico de
+/// escrita do log, e nao de quem abriu a tabela.
+///
+/// Entao ela entra na [`Raiz`] (ou na [`Instancia`] do embutido), o
+/// [`Database`] a herda, e [`Database::abrir_tabela`] e
+/// [`Database::criar_tabela`] a aplicam. Quem abre por eles -- a porta, a
+/// replica, a recuperacao, o PITR, a marca do embutido -- ja sai com ela, sem
+/// lembrar de nada. O padrao e tudo desligado: o embutido e o servidor
+/// isolado nao pagam pela imagem.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct PoliticaDoDiario {
+    /// Ver [`Table::ligar_imagem_no_diario`].
+    pub imagem_no_diario: bool,
+    /// Ver [`Table::ligar_imagem_na_exclusao`]. So vale com a de cima.
+    pub imagem_na_exclusao: bool,
+}
+
+impl PoliticaDoDiario {
+    /// A politica de um servidor que replica com `imagem_da_linha`: as duas
+    /// ligadas juntas, ou as duas desligadas. A exclusao leva a imagem de
+    /// antes nos quatro motores (PG com a chave ou a linha, MySQL e MariaDB
+    /// `binlog_row_image=full`, SQLite session) -- pedido 416.
+    pub fn com_imagem(ligada: bool) -> PoliticaDoDiario {
+        PoliticaDoDiario {
+            imagem_no_diario: ligada,
+            imagem_na_exclusao: ligada,
+        }
+    }
+
+    /// Aplica a politica numa tabela recem-aberta. UM lugar so.
+    fn aplicar(self, t: &mut Table) {
+        t.ligar_imagem_no_diario(self.imagem_no_diario);
+        t.ligar_imagem_na_exclusao(self.imagem_na_exclusao);
+    }
+}
+
 /// A raiz que contem varios databases.
 pub struct Instancia {
     base: PathBuf,
+    /// Ver [`PoliticaDoDiario`]. Copiada para cada [`Database`] aberto aqui.
+    politica: PoliticaDoDiario,
     /// O INVARIANTE DA TRAVA, escrito de um jeito que o compilador entende.
     ///
     /// # O que a trava global protege, e o que ela NAO protege
@@ -318,12 +368,24 @@ impl Instancia {
         let _ = crate::separador::migrar_base(&base);
         Ok(Instancia {
             base,
+            politica: PoliticaDoDiario::default(),
             _so_com_a_ficha: PhantomData,
         })
     }
 
     pub fn base(&self) -> &Path {
         &self.base
+    }
+
+    /// Troca a politica do diario desta instancia -- o embutido que replica.
+    /// O servidor passa pela [`Raiz::definir_politica_do_diario`].
+    pub fn com_politica_do_diario(mut self, politica: PoliticaDoDiario) -> Instancia {
+        self.politica = politica;
+        self
+    }
+
+    pub fn politica_do_diario(&self) -> PoliticaDoDiario {
+        self.politica
     }
 
     /// Cria um database do tipo **padrao** -- o caminho que sempre existiu.
@@ -365,6 +427,7 @@ impl Instancia {
                 nome: nome.to_string(),
                 caminho,
                 tipo,
+                politica: self.politica,
             },
             pendente,
         ))
@@ -391,6 +454,7 @@ impl Instancia {
             nome: nome.to_string(),
             caminho,
             tipo,
+            politica: self.politica,
         })
     }
 
@@ -446,6 +510,9 @@ impl Instancia {
 /// exclusiva e continuar usando-a depois de soltar a trava.
 pub struct Raiz {
     base: PathBuf,
+    /// Ver [`PoliticaDoDiario`]. Vai para cada [`Instancia`] que a ficha
+    /// exclusiva entrega -- e por ela, para cada tabela aberta para escrita.
+    politica: PoliticaDoDiario,
 }
 
 /// A ficha EXCLUSIVA, presa a vida do guard que a entregou.
@@ -512,11 +579,21 @@ impl Raiz {
     pub fn nova(base: impl AsRef<Path>) -> Result<Raiz> {
         let base = base.as_ref().to_path_buf();
         crate::util::criar_diretorio_do_banco(&base)?;
-        Ok(Raiz { base })
+        Ok(Raiz {
+            base,
+            politica: PoliticaDoDiario::default(),
+        })
     }
 
     pub fn base(&self) -> &Path {
         &self.base
+    }
+
+    /// A politica do diario do servidor, definida UMA vez, antes da primeira
+    /// abertura -- inclusive antes da recuperacao do arranque, que e quem a
+    /// esquecia (pedido 564).
+    pub fn definir_politica_do_diario(&mut self, politica: PoliticaDoDiario) {
+        self.politica = politica;
     }
 
     /// A ficha exclusiva. Exige `&mut self`, e so o guard de ESCRITA o da.
@@ -529,6 +606,7 @@ impl Raiz {
         Exclusiva {
             instancia: Instancia {
                 base: self.base.clone(),
+                politica: self.politica,
                 _so_com_a_ficha: PhantomData,
             },
             _guarda: PhantomData,
@@ -549,8 +627,10 @@ impl Raiz {
     /// [`TabelaLeitura`](crate::leitura::TabelaLeitura), aberta por
     /// [`Table::abrir_para_ler`], que recusa quando abrir escreveria.
     pub fn abrir_para_ler(&self, database: &str, qualificado: &str) -> Result<Aberta> {
+        // A politica nao importa aqui: o que sai e uma tabela de LEITURA.
         let so_para_achar_o_caminho = Instancia {
             base: self.base.clone(),
+            politica: self.politica,
             _so_com_a_ficha: PhantomData,
         };
         // O database que ainda nao tem a marca do formato de nome (pedido
@@ -585,6 +665,9 @@ pub struct Database {
     nome: String,
     caminho: PathBuf,
     tipo: TipoDatabase,
+    /// Herdada da [`Instancia`] que abriu este database. Ver
+    /// [`PoliticaDoDiario`].
+    politica: PoliticaDoDiario,
 }
 
 impl Database {
@@ -600,6 +683,9 @@ impl Database {
                 .unwrap_or_default(),
             caminho: caminho.to_path_buf(),
             tipo: ler_marca(caminho),
+            // O palco da restauracao nao e servidor de ninguem: quem reaplica
+            // nele e o proprio `restaurar`, que nao replica dali.
+            politica: PoliticaDoDiario::default(),
         }
     }
 
@@ -826,7 +912,8 @@ impl Database {
             Some(s) => self.garantir_schema_adiando_o_fsync(s)?,
         };
         exigir_nome_que_volta(&dir, esquema.nome())?;
-        let t = Table::criar(dir, esquema)?;
+        let mut t = Table::criar(dir, esquema)?;
+        self.politica.aplicar(&mut t);
         pendente.arquivos.extend(t.descritores_da_criacao()?);
         Ok((t, pendente))
     }
@@ -834,8 +921,10 @@ impl Database {
     pub fn abrir_tabela(&self, schema: Option<&str>, nome: &str) -> Result<Table> {
         self.exigir_motor_padrao()?;
         validar_nome("tabela", nome)?;
-        Table::abrir(self.diretorio(schema)?, nome)
-            .map_err(|e| self.tabela_que_nao_existe(e, schema, nome))
+        let mut t = Table::abrir(self.diretorio(schema)?, nome)
+            .map_err(|e| self.tabela_que_nao_existe(e, schema, nome))?;
+        self.politica.aplicar(&mut t);
+        Ok(t)
     }
 
     /// Troca o erro cru de «nenhum volume de x.reg em /tmp/.../base» por «a
@@ -3124,11 +3213,12 @@ mod testes_do_invariante {
         );
 
         // E o custo, MEDIDO em vez de afirmado: o marcador e de tamanho zero,
-        // entao a `Instancia` continua sendo exatamente o `PathBuf` que ela
-        // sempre foi. Garantia que custasse memoria seria outra conversa.
+        // entao a `Instancia` continua sendo exatamente os campos de dado que
+        // ela carrega -- o `PathBuf` e, desde o pedido 564, a politica do
+        // diario. Garantia que custasse memoria seria outra conversa.
         assert_eq!(
             std::mem::size_of::<Instancia>(),
-            std::mem::size_of::<PathBuf>(),
+            std::mem::size_of::<(PathBuf, PoliticaDoDiario)>(),
             "o marcador da trava passou a ocupar espaco"
         );
     }

@@ -124,7 +124,33 @@ Ao aplicar, a réplica grava os blobs no **seu** `.bin`/`.memo`, recebe os
 ponteiros locais, remenda o payload e só então grava o registro. A linha sai
 idêntica, com ponteiros válidos naquela máquina.
 
-Operações que **não** precisam de imagem: a exclusão. O rowid basta.
+A exclusão física também leva a imagem — a de **antes** — desde 01/10/2026
+(pedido 416): com `imagem_da_linha` ligada, o servidor grava a linha apagada
+dentro do evento de exclusão, no mesmo `.log` v2 que já a sabia gravar (era o
+papel `multi` quem a ligava, e só ele). **Sem mudança de formato.** Os quatro
+motores mandam a imagem de antes no DELETE — o PostgreSQL a chave antiga
+(`REPLICA IDENTITY DEFAULT`) ou a linha inteira (`FULL`), MySQL e MariaDB com
+`binlog_row_image=full` por padrão, o SQLite session com todas as colunas — e
+o custo é o da imagem num evento raro: exclusão é a operação rara desta casa.
+
+**Quem decide gravar a imagem é o servidor, num lugar só** (pedido 564). Até
+01/10/2026 a decisão estava escrita em **cinco** pontos do `servidor.rs` — a
+porta, a réplica, o bidirecional, o PITR e o DbLink, cada um chamando
+`ligar_imagem_*` na tabela que acabara de abrir —, e a **recuperação do
+arranque** foi o sexto que esqueceu: o `COMMIT` completado ia ao diário sem
+imagem, e a réplica parava em «veio sem imagem». Hoje a política
+(`PoliticaDoDiario`, em `phxsql-store/src/catalogo.rs`) entra na `Raiz` uma vez
+no arranque, antes da recuperação; o `Database` a herda; e `abrir_tabela` e
+`criar_tabela` a aplicam. Quem abre por eles já sai com ela, sem lembrar de
+nada. É a convergência dos três maduros: a política do log de replicação é do
+**servidor** (`wal_level`, `binlog_row_image`), não de quem abre a tabela. O
+embutido e o servidor isolado continuam sem imagem (44 B por evento).
+
+Guardas no catálogo (`bancada/guardas/catalogo.py`), provadas em 01/10/2026:
+`politica-do-diario-fora-da-abertura` (564), `exclusao-fora-da-politica-do-diario`
+(416 e a exclusão do multi), `exclusao-replicada-sem-conferir-o-carimbo` (416) e
+`chave-anulavel-como-identidade-do-bidirecional` (517) — PROVADA 1/1 cada,
+todas pelo soquete, em `tests/imagem-pela-politica-do-servidor.rs`.
 
 ### Custo
 
@@ -226,11 +252,21 @@ sai de cena, em vez de recusar a replicação de uma tabela migrada. É por isso
 que a guarda da declaração (pedido 406, §8.1) continua sendo o que sustenta o
 arranjo: esta aqui é a rede embaixo, não a porta.
 
-**O que ela NÃO alcança, e está medido:** a **exclusão** replicada. O evento
-de exclusão não leva imagem — o rowid basta —, então não há carimbo para
-comparar, e uma exclusão de outra origem continua apagando a linha errada em
-silêncio. Sem mudar o formato do evento, esse caminho não tem conferência
-possível.
+**E a exclusão confere o mesmo carimbo desde 01/10/2026** (pedido 416). A
+frase que estava aqui dizia que a exclusão não tinha conferência possível sem
+mudar o formato — **a premissa estava errada**: o `.log` v2 já gravava a
+exclusão com imagem, só que só o `multi` a ligava. Ligada pela política do
+servidor (§3), a exclusão traz a imagem de **antes**, e a réplica compara o
+carimbo dela com o da linha que mora no rowid pela **mesma**
+`conferir_identidade` da alteração — uma função para os dois braços, porque a
+decisão é uma só. Divergiu, para nomeando os dois carimbos; evento sem imagem
+(source anterior, ou sem `imagem_da_linha`) segue como sempre, pelo rowid.
+Medido pelo soquete, com duas origens empurrando pelo `aplicar` para o mesmo
+destino: antes, a exclusão da origem B apagava a linha da origem A com
+`aplicados: 1`; agora volta `aplicados: 0` com «replica divergiu … carimbo».
+O alcance é o mesmo da alteração — o carimbo é contador do processo, e dois
+`phxsqld` recém-nascidos emitem os mesmos números: pega divergência, não prova
+acordo. Prova: `tests/imagem-pela-politica-do-servidor.rs`.
 
 **Custo:** zero mensurável. A conferência acontece **dentro** do `atualizar`,
 onde o payload antigo já está lido; feita de fora custaria uma segunda leitura
@@ -835,6 +871,17 @@ digitação de cada servidor intacta. A coluna de **sequência**, ao contrário,
 com ele (`anotar_sequencia`), de modo que nenhum dos dois servidores reemite um
 número que o outro já usou.
 
+**E a coluna da chave tem de ser obrigatória** (pedido 517, 01/10/2026). NULL
+não colide com NULL num índice único, então cada nó pode ter a sua linha de
+chave nula — e casar por ela fazia a exclusão de um **apagar** a do outro (o
+aplicador escolhia `achadas.first()`). PostgreSQL, MySQL e InnoDB só aceitam
+como identidade o único de colunas `NOT NULL`: três convergem, aceite
+automático. A tabela cujo único índice de uma coluna aceita nulo é **recusada**
+dizendo qual coluna tornar obrigatória, e o aplicador que achar duas linhas
+pela mesma chave **para nomeando**, em vez de escolher a primeira. Um par que
+já replicava uma tabela assim passa a recusá-la, com o motivo escrito: é
+defeito ativo (dado errado), não guarda nova.
+
 Consequência honesta: **o modo bidirecional exige tabela com chave única** —
 o HFSQL(R) também impõe identificador adequado para replicar. Tabela sem
 chave (ou só com chave composta, que fica para quando alguém precisar) é
@@ -885,7 +932,13 @@ semântica nova de conflito e tem pedido próprio.
 O evento de exclusão existe no diário, então **viaja**. Só que a exclusão
 clássica vai sem imagem (o rowid basta entre réplicas fiéis), e no
 bidirecional o rowid não identifica nada do outro lado. No papel `multi` a
-exclusão física passa a **carregar a imagem da linha** — a chave mora nela. O
+exclusão física passa a **carregar a imagem da linha** — a chave mora nela.
+**Até 01/10/2026 isso só valia para quem o aplicador abria**: a exclusão física
+feita **pela porta** saía sem imagem, porque o `abrir_travada` ligava só a
+imagem da linha; o outro lado recebia exclusão sem chave, o `aplicar_por_chave`
+devolvia erro e o par parava naquela tabela. Medido pelo soquete antes do
+conserto: a linha excluída nunca saiu do parceiro em 20 s. Hoje a imagem da
+exclusão vem da mesma política do servidor (§3) para toda abertura. O
 conflito exclusão×alteração se resolve pela **mesma regra do mais recente**:
 excluir é a última modificação como qualquer outra. Alteração mais nova que a
 exclusão vence (a linha reaparece re-inserida); exclusão mais nova vence (a

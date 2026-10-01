@@ -1065,9 +1065,9 @@
       "id": "tabela-inexistente-vaza-o-caminho",
       "titulo": "a tabela que não existe respondia «nenhum volume de x.reg em /tmp/…» — o caminho absoluto do disco do servidor, a todo cliente que erra uma letra",
       "veredito": "PROVADA",
-      "segundos": 2.18,
+      "segundos": 9.78,
       "notas": [],
-      "quando": "2026-09-16 15:25"
+      "quando": "2026-10-01 03:59"
     },
     {
       "id": "permissao-sem-devolver-a-vaga",
@@ -3198,6 +3198,38 @@
       "segundos": 79.49,
       "notas": [],
       "quando": "2026-10-01 03:41"
+    },
+    {
+      "id": "politica-do-diario-fora-da-abertura",
+      "titulo": "a tabela aberta pelo `Database` volta a nascer sem a politica do diario: a recuperacao grava o COMMIT completado sem imagem",
+      "veredito": "PROVADA",
+      "segundos": 41.54,
+      "notas": [],
+      "quando": "2026-10-01 03:51"
+    },
+    {
+      "id": "exclusao-fora-da-politica-do-diario",
+      "titulo": "a politica do diario volta a ligar so a imagem da linha: a exclusao fisica sai sem imagem, e no multi o par para",
+      "veredito": "PROVADA",
+      "segundos": 41.14,
+      "notas": [],
+      "quando": "2026-10-01 03:52"
+    },
+    {
+      "id": "exclusao-replicada-sem-conferir-o-carimbo",
+      "titulo": "a exclusao replicada volta a apagar o rowid sem perguntar de quem e a linha: a de outra origem some com `Ok`",
+      "veredito": "PROVADA",
+      "segundos": 23.81,
+      "notas": [],
+      "quando": "2026-10-01 03:53"
+    },
+    {
+      "id": "chave-anulavel-como-identidade-do-bidirecional",
+      "titulo": "o bidirecional volta a aceitar indice unico sobre coluna que aceita nulo como identidade: a linha de chave nula de um no apaga a do outro",
+      "veredito": "PROVADA",
+      "segundos": 40.04,
+      "notas": [],
+      "quando": "2026-10-01 03:54"
     },
     {
       "id": "cifra-do-fio-imposta",

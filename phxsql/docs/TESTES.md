@@ -1040,11 +1040,15 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `pulso-com-o-id-deste-no-uma-linha-por-envio` | o pulso com o id DESTE nó escrevia uma linha no stderr por envio — o irmão do B2 no `op_cluster_pulso` | 1 | ✅ provada |
 | `web-acima-do-teto-sem-rastro` | as três portas HTTP recusavam o pedido acima do teto sem linha no `acessos.log` — o irmão do 216 na web | 1 | ✅ provada |
 | `operacao-anonima-fora-do-inventario` | o inventário das operações anônimas dizia «seis» quando eram dezesseis | 1 | ✅ provada |
+| `politica-do-diario-fora-da-abertura` | a tabela aberta pelo `Database` volta a nascer sem a politica do diario: a recuperacao grava o COMMIT completado sem imagem | 2 | ✅ provada |
+| `exclusao-fora-da-politica-do-diario` | a politica do diario volta a ligar so a imagem da linha: a exclusao fisica sai sem imagem, e no multi o par para | 3 | ✅ provada |
+| `exclusao-replicada-sem-conferir-o-carimbo` | a exclusao replicada volta a apagar o rowid sem perguntar de quem e a linha: a de outra origem some com `Ok` | 1 | ✅ provada |
+| `chave-anulavel-como-identidade-do-bidirecional` | o bidirecional volta a aceitar indice unico sobre coluna que aceita nulo como identidade: a linha de chave nula de um no apaga a do outro | 1 | ✅ provada |
 | `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | — | 🪦 aposentada (18/09/2026) |
 
-**399 das 574 guardas do catálogo: 1 aposentada, 394 provadas, 4 redundantes** — 11330 s de mutação, medido em 2026-09-16 15:25.
+**403 das 578 guardas do catálogo: 1 aposentada, 398 provadas, 4 redundantes** — 11485 s de mutação, medido em 2026-09-16 15:25.
 
-> **Esta rodada NÃO julgou 176 das 574 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 176 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 176 das 578 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 176 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
 - `fk-antes-do-default` — a chave estrangeira confere a linha crua, e o DEFAULT sem mãe grava a filha órfã
 - `fk-antes-do-default-pelo-servidor` — o DEFAULT e a calculada sem mãe gravam a órfã pelo servidor, fora e dentro da transação

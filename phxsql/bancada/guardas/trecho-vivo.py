@@ -155,6 +155,8 @@ dia, nunca no desejado:
   contradiz no `acrescentar_coluna`, o ALTER com regra sem aviso e o upsert
   parcial que viraria mescla. Piso parado com catalogo que cresceu volta a
   aceitar o apagamento das entradas novas, que e o que ele existe para
+  impedir. Ele e a unica coisa nesta regua que reprova o APAGAMENTO; tudo o
+  mais aqui reprova o envelhecimento.
   **SUBIU de novo para 160 em 16/09/2026**, na frente G-CRIPTO: nove guardas
   novas -- cinco da petrea «criptografia se confere contra vetor oficial»,
   que ate aqui nao tinha entrada NENHUMA neste catalogo, e tres da petrea do
@@ -434,8 +436,11 @@ dia, nunca no desejado:
   envio e o irmao dele (o id deste no), a web acima do teto sem rastro e o
   inventario das operacoes anonimas. 551 + 9 = 560, contado pelo `--numeros`.
   No merge com as frentes que levaram o piso a 566: 566 + 9 = 575.
-  impedir. Ele e a unica coisa nesta regua que reprova o APAGAMENTO; tudo o
-  mais aqui reprova o envelhecimento.
+  **SUBIU para 579 em 01/10/2026** (pedidos 416, 517 e 564, e a exclusao
+  fisica no modo multi): quatro guardas -- a politica do diario fora da
+  abertura, a exclusao fora dela, a exclusao replicada sem conferir o
+  carimbo e a chave anulavel como identidade do bidirecional. 575 + 4 = 579,
+  medido pelo `--numeros` na arvore combinada.
 
 # A QUINTA REGUA: a tabela publicada pode ser MENOR que o catalogo
 
@@ -542,7 +547,7 @@ TETO_TESTE_MORTO = 0
 TETO_TRECHO_AMBIGUO = 0
 TETO_TESTE_FORA_DO_BINARIO = 0
 TETO_TESTE_SEM_MODULO = 0
-PISO_DAS_ENTRADAS = 575
+PISO_DAS_ENTRADAS = 579
 
 # ------------------------------------------------------------- APOSENTADAS
 #

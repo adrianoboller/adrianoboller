@@ -5090,11 +5090,15 @@ pub fn limpar() {
             "Achado A13 da revisao do motor (09/09/2026, p12_existe_sql_e_mensagens.py). A mesma correcao que a chave conferida ja pagou em `table.rs`: nomear a tabela em vez de vazar o caminho, e so quando ela nao existe mesmo. Repor o defeito e abrir sem traduzir."
         ),
         "arquivo": "crates/phxsql-store/src/catalogo.rs",
-        "trecho": """        Table::abrir(self.diretorio(schema)?, nome)
-            .map_err(|e| self.tabela_que_nao_existe(e, schema, nome))
+        # ATUALIZADO em 01/10/2026 (pedido 564): a abertura passou a guardar a
+        # tabela num `let mut t` para aplicar a politica do diario logo
+        # abaixo; o defeito reposto continua sendo o mesmo -- abrir sem
+        # traduzir o erro.
+        "trecho": """        let mut t = Table::abrir(self.diretorio(schema)?, nome)
+            .map_err(|e| self.tabela_que_nao_existe(e, schema, nome))?;
 """,
         "troca": """        // DEFEITO REPOSTO: o erro cru do store, com o caminho, sai como esta.
-        Table::abrir(self.diretorio(schema)?, nome)
+        let mut t = Table::abrir(self.diretorio(schema)?, nome)?;
 """,
         "pacote": "phxsql-store",
         "alvo": ['--lib'],
@@ -19684,5 +19688,111 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         "alvo": ["--lib"],
         "caem": ["usuarios::tests::as_operacoes_anonimas_sao_estas_dezesseis"],
         "seguem": ["config::tests::quem_escreveu_zero_continua_sem_rodizio"],
+    },
+    {
+        "id": "politica-do-diario-fora-da-abertura",
+        "titulo": "a tabela aberta pelo `Database` volta a nascer sem a politica do diario: a recuperacao grava o COMMIT completado sem imagem",
+        "porque": (
+            "pedido 564. A decisao «gravar imagem» estava escrita em cinco "
+            "lugares do servidor, cada um ligando a imagem na tabela que acabou "
+            "de abrir, e a recuperacao do arranque foi o sexto que esqueceu: o "
+            "evento completado ia sem imagem e a replica parava em «veio sem "
+            "imagem». Agora a politica mora na `Raiz`, o `Database` a herda e o "
+            "`abrir_tabela` a aplica -- e repor o defeito e esquecer de aplicar."
+        ),
+        "arquivo": "crates/phxsql-store/src/catalogo.rs",
+        "trecho": """            .map_err(|e| self.tabela_que_nao_existe(e, schema, nome))?;
+        self.politica.aplicar(&mut t);
+        Ok(t)
+""",
+        "troca": """            .map_err(|e| self.tabela_que_nao_existe(e, schema, nome))?;
+        // DEFEITO REPOSTO (564): a abertura nao aplica a politica do diario.
+        Ok(t)
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "imagem-pela-politica-do-servidor"],
+        "caem": [
+            "a_recuperacao_grava_com_imagem_e_a_replica_aplica",
+            "a_replica_fiel_aplica_a_exclusao_com_imagem",
+        ],
+        "seguem": ["a_chave_unica_anulavel_nao_vale_como_identidade"],
+    },
+    {
+        "id": "exclusao-fora-da-politica-do-diario",
+        "titulo": "a politica do diario volta a ligar so a imagem da linha: a exclusao fisica sai sem imagem, e no multi o par para",
+        "porque": (
+            "pedido 416 e o defeito novo do multi. O `.log` v2 ja gravava a "
+            "exclusao com imagem, mas so o aplicador do bidirecional a ligava: "
+            "a exclusao fisica pela porta, no multi, ia sem chave e o outro lado "
+            "parava o par; fora do multi a replica nao tinha o que conferir. Os "
+            "quatro motores mandam a imagem de antes no DELETE."
+        ),
+        "arquivo": "crates/phxsql-store/src/catalogo.rs",
+        "trecho": """            imagem_no_diario: ligada,
+            imagem_na_exclusao: ligada,
+""",
+        "troca": """            imagem_no_diario: ligada,
+            // DEFEITO REPOSTO (416): a exclusao fica sem imagem.
+            imagem_na_exclusao: false,
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "imagem-pela-politica-do-servidor"],
+        "caem": [
+            "no_multi_a_exclusao_fisica_pela_porta_chega_ao_parceiro",
+            "a_exclusao_de_outra_origem_para_em_vez_de_apagar_a_linha_errada",
+            "a_replica_fiel_aplica_a_exclusao_com_imagem",
+        ],
+        "seguem": ["a_recuperacao_grava_com_imagem_e_a_replica_aplica"],
+    },
+    {
+        "id": "exclusao-replicada-sem-conferir-o-carimbo",
+        "titulo": "a exclusao replicada volta a apagar o rowid sem perguntar de quem e a linha: a de outra origem some com `Ok`",
+        "porque": (
+            "pedido 416, a irma do 405. A alteracao ja conferia o carimbo de "
+            "criacao contra o disco; a exclusao apagava pelo rowid, e com duas "
+            "origens no mesmo database a exclusao de uma caia na linha da outra "
+            "e a apagava calada. Com a imagem de antes no evento, a mesma "
+            "`conferir_identidade` serve os dois bracos."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """                        if let Some(daqui) = self.reg.ler(rowid)? {
+                            self.conferir_identidade(
+                                Operacao::Exclusao,
+                                rowid,
+                                Some(do_source),
+                                &daqui,
+                            )?;
+                        }
+""",
+        "troca": """                        // DEFEITO REPOSTO (416): a exclusao nao confere o carimbo.
+                        let _ = do_source;
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "imagem-pela-politica-do-servidor"],
+        "caem": ["a_exclusao_de_outra_origem_para_em_vez_de_apagar_a_linha_errada"],
+        "seguem": [
+            "a_replica_fiel_aplica_a_exclusao_com_imagem",
+            "no_multi_a_exclusao_fisica_pela_porta_chega_ao_parceiro",
+        ],
+    },
+    {
+        "id": "chave-anulavel-como-identidade-do-bidirecional",
+        "titulo": "o bidirecional volta a aceitar indice unico sobre coluna que aceita nulo como identidade: a linha de chave nula de um no apaga a do outro",
+        "porque": (
+            "pedido 517. NULL nao colide com NULL no indice unico, entao cada no "
+            "tem a sua linha de chave nula, e o casamento por essa chave "
+            "escolhia `first()`. PG, MySQL e InnoDB so aceitam como identidade "
+            "o unico de colunas NOT NULL: tres convergem, aceite automatico."
+        ),
+        "arquivo": "crates/phxsql-server/src/bidirecional.rs",
+        "trecho": """        unico_de_uma_coluna(esquema, i) && !esquema.colunas()[i.colunas[0].coluna].nullable
+""",
+        "troca": """        // DEFEITO REPOSTO (517): a coluna da chave pode aceitar nulo.
+        unico_de_uma_coluna(esquema, i)
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "imagem-pela-politica-do-servidor"],
+        "caem": ["a_chave_unica_anulavel_nao_vale_como_identidade"],
+        "seguem": ["no_multi_a_exclusao_fisica_pela_porta_chega_ao_parceiro"],
     },
 ]

@@ -5717,7 +5717,7 @@ impl Table {
     /// O `atualizar` com o carimbo que o chamador exige encontrar na linha.
     ///
     /// `conferir_identidade` so vem ligado pela replicacao -- ver
-    /// [`Table::conferir_identidade_da_alteracao`], que explica o que se
+    /// [`Table::conferir_identidade`], que explica o que se
     /// compara e por que. A conferencia acontece AQUI DENTRO, e nao antes da
     /// chamada, porque ela precisa do payload antigo: feita de fora custaria
     /// uma segunda leitura do mesmo slot, medida em **+14,7%** no laco da
@@ -5768,7 +5768,14 @@ impl Table {
         // Antes de qualquer escrita, e antes mesmo de decodificar: se o rowid
         // guarda outra linha, nada do que vem abaixo deve acontecer.
         if conferir_identidade {
-            self.conferir_identidade_da_alteracao(rowid, valores, &antigo)?;
+            let do_source = self
+                .esquema
+                .coluna_rowstamp()
+                .and_then(|i| match valores.get(i) {
+                    Some(Value::UInt(v)) => Some(*v),
+                    _ => None,
+                });
+            self.conferir_identidade(Operacao::Alteracao, rowid, do_source, &antigo)?;
         }
 
         let valores_antigos = self.decodificar(&antigo, false)?;
@@ -6845,9 +6852,30 @@ impl Table {
     ) -> Result<RowId> {
         match operacao {
             Operacao::Exclusao => {
-                // A exclusao nao leva imagem: o rowid basta. E ela e FISICA,
-                // porque foi fisica no source -- a suave chega como alteracao,
-                // que e o que ela e no `.reg`.
+                // A exclusao e FISICA, porque foi fisica no source -- a suave
+                // chega como alteracao, que e o que ela e no `.reg`.
+                //
+                // Com a imagem de antes no evento (pedido 416), a linha que
+                // mora neste rowid tem de ser a MESMA que o source apagou --
+                // a irma exata da conferencia da alteracao (pedido 405). Sem
+                // ela, uma exclusao de outra origem apagava com `Ok` a linha
+                // de alguem. Evento sem imagem (source anterior, ou sem
+                // `imagem_da_linha`) segue como sempre: o rowid basta.
+                if !imagem.is_empty() {
+                    if let Some(i) = self.esquema.coluna_rowstamp() {
+                        let (payload_de_la, _) = Table::abrir_imagem(imagem)?;
+                        let do_source = self.rowstamp_do_payload(&payload_de_la, i)?;
+                        // Slot vazio cai na divergencia de baixo, que ja o diz.
+                        if let Some(daqui) = self.reg.ler(rowid)? {
+                            self.conferir_identidade(
+                                Operacao::Exclusao,
+                                rowid,
+                                Some(do_source),
+                                &daqui,
+                            )?;
+                        }
+                    }
+                }
                 //
                 // Nao ter o que excluir e divergencia, e nao um caso benigno:
                 // numa replica fiel a linha existe, porque a inclusao dela
@@ -6884,7 +6912,7 @@ impl Table {
                 } else {
                     // A conferencia desce para dentro do `atualizar` porque e
                     // la que o payload de ca ja esta lido. Ver
-                    // `conferir_identidade_da_alteracao`.
+                    // `conferir_identidade`.
                     self.atualizar_com_maes_opt_conferindo(rowid, &valores, None, true, true)?;
                     Ok(rowid)
                 }
@@ -6928,10 +6956,19 @@ impl Table {
     /// da inclusao. E quando qualquer um dos lados traz zero («nasceu antes da
     /// coluna») nao ha identidade para comparar: a conferencia sai de cena em
     /// vez de recusar a replicacao de uma tabela migrada.
-    fn conferir_identidade_da_alteracao(
+    ///
+    /// # A exclusao, que e a irma (pedido 416)
+    ///
+    /// A mesma pergunta vale para a exclusao, com a imagem de ANTES que o
+    /// evento passou a carregar: a exclusao de outra origem num rowid que
+    /// guarda outra linha apagaria a linha de alguem com `Ok`. Uma funcao so
+    /// para as duas, porque a decisao -- o que se compara, quando se sai de
+    /// cena e o que se diz -- e uma so.
+    fn conferir_identidade(
         &self,
+        operacao: Operacao,
         rowid: RowId,
-        da_imagem: &[Value],
+        do_source: Option<u64>,
         payload_daqui: &[u8],
     ) -> Result<()> {
         // Tabela anterior ao v10 nao tem a coluna: nao ha identidade, e a
@@ -6939,20 +6976,23 @@ impl Table {
         let Some(i) = self.esquema.coluna_rowstamp() else {
             return Ok(());
         };
-        let Some(Value::UInt(do_source)) = da_imagem.get(i) else {
+        let Some(do_source) = do_source else {
             return Ok(());
         };
         let daqui = self.rowstamp_do_payload(payload_daqui, i)?;
         // Zero e «nasceu antes da coluna», dos dois lados: sem identidade nao
         // ha o que comparar, e recusar pararia replicacao de tabela migrada.
-        let do_source = *do_source;
         if do_source == 0 || daqui == 0 || daqui == do_source {
             return Ok(());
         }
+        let (o_que, em_vez) = match operacao {
+            Operacao::Exclusao => ("a exclusao", "apagar uma no lugar da outra"),
+            _ => ("a alteracao", "gravar uma por cima da outra"),
+        };
         Err(PhxError::Corrompido(format!(
-            "replica divergiu em {}: a alteracao do rowid {rowid} traz a linha de carimbo de \
+            "replica divergiu em {}: {o_que} do rowid {rowid} traz a linha de carimbo de \
              criacao {do_source} e aqui o rowid {rowid} guarda a de carimbo {daqui}. Sao duas \
-             linhas diferentes -- a replicacao para aqui em vez de gravar uma por cima da outra",
+             linhas diferentes -- a replicacao para aqui em vez de {em_vez}",
             self.nome
         )))
     }

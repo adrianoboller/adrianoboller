@@ -152,20 +152,26 @@ pub fn colisao_de_criacao(operacao: Operacao, origem_ev: u16, local: Option<&Toq
 ///
 /// Na ordem: a chave primaria, senao o primeiro indice unico de uma coluna.
 /// `None` = a tabela nao tem identidade replicavel, e o modo bidirecional a
-/// recusa com o motivo escrito. Chave COMPOSTA tambem fica de fora por
-/// enquanto -- mesma regra da sincronia do DbLink, ate alguem precisar dela
-/// com o pedido na mesa.
+/// recusa com o motivo escrito ([`por_que_sem_chave`]). Chave COMPOSTA tambem
+/// fica de fora por enquanto -- mesma regra da sincronia do DbLink, ate alguem
+/// precisar dela com o pedido na mesa.
+///
+/// # A coluna da chave tem de ser obrigatoria (pedido 517)
+///
+/// NULL nao colide com NULL num indice unico, entao cada no pode ter a sua
+/// linha de chave nula -- e casar por essa chave faria a alteracao de um
+/// gravar por cima da linha do outro, e a exclusao de um APAGAR a do outro.
+/// Os tres maduros convergem: o PostgreSQL so aceita como `REPLICA IDENTITY
+/// USING INDEX` o indice unico de colunas `NOT NULL`; o MySQL so identifica
+/// por chave unica de colunas todas `NOT NULL`; o InnoDB so promove a indice
+/// agrupado o unico sem NULL. Aceite automatico.
 pub fn chave_unica(esquema: &Schema) -> Option<(String, usize)> {
     // O `e_coluna_de_sistema`, e nao dois literais crus: um indice unico
     // sobre uma coluna de sistema nova viraria a IDENTIDADE replicavel da
     // tabela, e o casamento entre servidores passaria a ser por um carimbo que
     // e local de cada no. Silencioso, e so aparecendo como linha duplicada.
     let serve = |i: &phxsql_core::schema::IndexDef| {
-        i.unico
-            && i.colunas.len() == 1
-            && !phxsql_core::schema::e_coluna_de_sistema(
-                &esquema.colunas()[i.colunas[0].coluna].nome,
-            )
+        unico_de_uma_coluna(esquema, i) && !esquema.colunas()[i.colunas[0].coluna].nullable
     };
     esquema
         .indices()
@@ -173,6 +179,40 @@ pub fn chave_unica(esquema: &Schema) -> Option<(String, usize)> {
         .find(|i| i.primario && serve(i))
         .or_else(|| esquema.indices().iter().find(|i| serve(i)))
         .map(|i| (i.nome.clone(), i.colunas[0].coluna))
+}
+
+/// O indice e unico, de UMA coluna, e ela nao e de sistema? A metade da
+/// pergunta do [`chave_unica`] que o [`por_que_sem_chave`] tambem faz -- uma
+/// vez so, para as duas nunca discordarem sobre qual indice «quase servia».
+fn unico_de_uma_coluna(esquema: &Schema, i: &phxsql_core::schema::IndexDef) -> bool {
+    i.unico
+        && i.colunas.len() == 1
+        && !phxsql_core::schema::e_coluna_de_sistema(&esquema.colunas()[i.colunas[0].coluna].nome)
+}
+
+/// Por que [`chave_unica`] nao achou identidade em `tabela` -- a frase da
+/// recusa, dizendo o que fazer.
+///
+/// Quando o que falta e so a coluna ser obrigatoria, a frase nomeia o indice e
+/// a coluna: «crie um indice unico» mandaria criar o que ja existe.
+pub fn por_que_sem_chave(esquema: &Schema, tabela: &str) -> String {
+    let anulavel = esquema
+        .indices()
+        .iter()
+        .find(|i| unico_de_uma_coluna(esquema, i))
+        .map(|i| (&i.nome, &esquema.colunas()[i.colunas[0].coluna].nome));
+    match anulavel {
+        Some((indice, coluna)) => format!(
+            "a chave unica {indice} de {tabela} esta sobre a coluna {coluna}, que aceita \
+             nulo: NULL nao colide com NULL, e casar por ela faria a linha de chave nula \
+             de um servidor apagar ou sobrescrever a do outro -- torne a coluna {coluna} \
+             obrigatoria"
+        ),
+        None => format!(
+            "sem chave unica de uma coluna: o bidirecional casa as linhas pela chave, e \
+             {tabela} nao tem uma (crie um indice unico, ou uma chave primaria)"
+        ),
+    }
 }
 
 /// O que a replica bidirecional lembra de cada tabela, em memoria.
@@ -792,7 +832,7 @@ mod testes {
             "t",
             vec![
                 Column::new("id", ColumnType::Int8).obrigatoria(),
-                Column::new("cpf", ColumnType::Str(11)),
+                Column::new("cpf", ColumnType::Str(11)).obrigatoria(),
                 Column::new("nome", ColumnType::Str(40)),
             ],
             indices,
@@ -837,6 +877,31 @@ mod testes {
         )
         .unico()]);
         assert!(chave_unica(&composta).is_none());
+    }
+
+    /// Pedido 517: o unico sobre coluna que aceita nulo nao e identidade, e
+    /// a recusa diz qual coluna tornar obrigatoria. O irmao abaixo trava o
+    /// outro sentido: com a coluna obrigatoria, o mesmo indice serve.
+    #[test]
+    fn unico_sobre_coluna_anulavel_nao_e_identidade() {
+        let e = esquema(vec![
+            IndexDef::new("porNome", vec![IndexColumn::asc(2)]).unico()
+        ]);
+        assert!(chave_unica(&e).is_none(), "nome aceita nulo e virou chave");
+        let motivo = por_que_sem_chave(&e, "t");
+        for pedaco in ["porNome", "nome", "nulo", "obrigatoria"] {
+            assert!(motivo.contains(pedaco), "{pedaco:?}: {motivo}");
+        }
+        let sem = esquema(vec![]);
+        assert!(por_que_sem_chave(&sem, "t").contains("sem chave unica"));
+    }
+
+    #[test]
+    fn unico_sobre_coluna_obrigatoria_continua_identidade() {
+        let e = esquema(vec![
+            IndexDef::new("porCpf", vec![IndexColumn::asc(1)]).unico()
+        ]);
+        assert_eq!(chave_unica(&e), Some(("porCpf".to_string(), 1)));
     }
 
     // -------------------------------------------------------- o agendador
