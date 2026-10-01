@@ -622,6 +622,15 @@ dia, nunca no desejado:
   coluna negada lida (`calculada-derivada-de-negada-se-le`) e a recusa que
   diz a linha sobre a marcada (`recusa-da-calculada-marcada-diz-a-linha`).
   664 + 4, medido pelo `--numeros` nesta arvore.
+  **SUBIU para 689 em 01/10/2026** (683 + 6; pedidos 630 e 631, revisao SEC M2/M3): a
+  irma que nao abre fora da busca reversa do `excluir`, do `excluir_tabela` e
+  do `ao_alterar` (`irma-que-nao-abre-some-do-excluir`,
+  `irma-que-nao-abre-some-do-excluir-tabela`,
+  `irma-que-nao-abre-some-do-ao-alterar`), a irma em troca que viraria recusa
+  eterna (`irma-em-troca-vira-recusa-eterna`), a escrita local contada antes
+  do portao 3 (`escrita-local-contada-antes-do-portao-3`) e o irmao do SQL
+  sem a conta (`escrita-local-pelo-sql-nao-conta`). 689, medido pelo
+  `--numeros` nesta arvore; o integrador resolve o numero no merge.
 
 # A QUINTA REGUA: a tabela publicada pode ser MENOR que o catalogo
 
@@ -728,7 +737,7 @@ TETO_TESTE_MORTO = 0
 TETO_TRECHO_AMBIGUO = 0
 TETO_TESTE_FORA_DO_BINARIO = 0
 TETO_TESTE_SEM_MODULO = 0
-PISO_DAS_ENTRADAS = 683
+PISO_DAS_ENTRADAS = 689
 
 # ------------------------------------------------------------- APOSENTADAS
 #

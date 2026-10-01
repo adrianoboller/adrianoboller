@@ -312,6 +312,19 @@ Tabela que não abre **não trava a varredura**: entra em `nao_abriram`, num bal
 próprio. O defeito dela é dela, e somá-lo às violações faria uma tabela
 corrompida esconder as órfãs das outras.
 
+**Na busca reversa é o contrário, e de propósito (pedido 631, revisão SEC M3).**
+O verificador **relata**, e a tabela que não abriu sai nomeada. A busca reversa
+**decide** — «alguém aponta para mim?» —, e a irmã que não abre é justamente a
+que não responde: pulá-la era responder «não» por ela. Medido com o `.reg` da
+filha truncado: a mãe com filha saía de vez, suave, pelo `excluir_tabela` e pela
+troca de chave do `ao_alterar`. Hoje as três buscas passam por
+`irmas::abrir_irma`, que **recusa** nomeando a irmã e a causa. A saída é o
+`excluir_tabela` da própria irmã quebrada (ela pula a si mesma), ou o `reparar`;
+a irmã em troca interrompida (pedido 625) abre, porque o `RegFile::abrir` termina
+a troca. Buraco nomeado: duas irmãs quebradas se trancam uma à outra no
+`excluir_tabela`. Prova em `tests/irma-que-nao-abre.rs` e
+`tests/troca-interrompida.rs`.
+
 ## 6. O que ainda não está fechado
 
 * **Filha em outro schema** não é vista pelo `excluir_tabela` nem pelo

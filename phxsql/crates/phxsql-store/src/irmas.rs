@@ -55,7 +55,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, SystemTime};
 
-use phxsql_core::error::Result;
+use phxsql_core::error::{PhxError, Result};
 use phxsql_core::schema::ForeignKey;
 
 /// Quanto o carimbo tem de ser velho para se confiar nele. Dois tiques do
@@ -150,8 +150,8 @@ pub fn esquemas_lidos_do_disco() -> u64 {
 /// pergunta filtra pelo destino.
 ///
 /// Mesma resposta da varredura antiga -- `catalogo::tabelas_em` e
-/// `RegFile::abrir` de cada irma, irma que nao abre fica de fora --, so que
-/// lembrada enquanto o carimbo do arquivo nao mudar.
+/// `RegFile::abrir` de cada irma --, so que lembrada enquanto o carimbo do
+/// arquivo nao mudar. Irma que nao abre RECUSA: ver [`abrir_irma`].
 pub(crate) fn chaves_das_irmas(
     diretorio: &Path,
     eu: &str,
@@ -191,9 +191,17 @@ pub(crate) fn chaves_das_irmas(
         }
         let caminho = match caminho {
             Some(c) => &*c,
+            // O diretorio listou um `.reg` desta irma e o primeiro volume nao
+            // se acha: e irma que nao abre, e recusa como ela (pedido 631).
             None => match crate::reg::primeiro_volume(diretorio, irma) {
                 Some(c) => &*caminho.insert(c),
-                None => continue,
+                None => {
+                    return Err(recusa_da_irma(
+                        irma,
+                        eu,
+                        &PhxError::NaoEncontrado("o primeiro volume do .reg sumiu".into()),
+                    ))
+                }
             },
         };
         let carimbo = Carimbo::de(caminho);
@@ -204,16 +212,13 @@ pub(crate) fn chaves_das_irmas(
             }
         }
         LIDOS_DO_DISCO.fetch_add(1, Ordering::Relaxed);
-        let chaves: Vec<ForeignKey> = match crate::reg::RegFile::abrir(diretorio, irma) {
-            Ok(r) => r
-                .esquema()
-                .chaves_estrangeiras()
-                .iter()
-                .filter(|fk| fk.verificar)
-                .cloned()
-                .collect(),
-            Err(_) => continue,
-        };
+        let chaves: Vec<ForeignKey> = abrir_irma(diretorio, irma, eu)?
+            .esquema()
+            .chaves_estrangeiras()
+            .iter()
+            .filter(|fk| fk.verificar)
+            .cloned()
+            .collect();
         if let (Some(c), Some(e)) = (carimbo, entrada.as_mut()) {
             if c.confiavel(agora) {
                 e.vistas.insert(
@@ -239,6 +244,47 @@ pub(crate) fn chaves_das_irmas(
         mem.insert(diretorio.to_path_buf(), e);
     }
     Ok(saida)
+}
+
+/// Abre a irma `irma` para a busca reversa de `eu` -- ou RECUSA dizendo qual
+/// e por que (pedido 631).
+///
+/// # Por que a irma que nao abre recusa, e nao fica de fora
+///
+/// Ate 01/10/2026 ela ficava de fora, com o argumento de que «o defeito dela
+/// e dela, e uma tabela quebrada nao pode trancar o banco inteiro». Mas a
+/// pergunta que a busca reversa faz e «alguem aponta para mim?», e a irma
+/// que nao abre e justamente a que nao responde: pula-la e responder «nao»
+/// por ela. Com o `.reg` da filha ilegivel, a mae excluia a linha que tinha
+/// filha -- a regra primordial furada por omissao (revisao SEC, M3). Falha
+/// FECHADA: quem nao sabe se ha filha nao mata o pai.
+///
+/// # Por que isto nao vira recusa eterna
+///
+/// * A tabela em troca interrompida (pedido 625) ABRE: o `RegFile::abrir`
+///   termina a troca decidida pelo `terminar_troca_interrompida`, e a sobra
+///   da FASE A nao atrapalha a abertura.
+/// * A irma quebrada sai pelo `excluir_tabela` DELA, que pula a propria
+///   tabela na busca -- e o recado diz isso.
+///
+/// E a UNICA copia desta decisao: a busca reversa do `excluir` (este
+/// modulo), a do `ao_alterar` (`Table::planejar_ao_alterar_com`) e a do
+/// `excluir_tabela`/renomear (`Database::quem_aponta_para`) passam por aqui.
+pub(crate) fn abrir_irma(diretorio: &Path, irma: &str, eu: &str) -> Result<crate::reg::RegFile> {
+    crate::reg::RegFile::abrir(diretorio, irma).map_err(|e| recusa_da_irma(irma, eu, &e))
+}
+
+/// O recado da irma que nao abre. O erro dela vai junto como CAUSA: e ele
+/// que diz o que consertar nela, e a frase de fora so diz por que a operacao
+/// em `eu` parou.
+fn recusa_da_irma(irma: &str, eu: &str, causa: &PhxError) -> PhxError {
+    PhxError::Integridade(format!(
+        "{eu}: a tabela {irma}, no mesmo diretorio, nao abre ({causa}), e sem o \
+         esquema dela nao ha como saber se ela declara chave estrangeira para \
+         {eu} -- nunca se mata o pai que pode ter filhos, entao a operacao fica \
+         recusada ate {irma} abrir de novo (repare {irma}, ou apague-a se ela \
+         nao tem conserto)"
+    ))
 }
 
 /// Roda `f` com outra margem NESTA thread. So para teste: a margem de

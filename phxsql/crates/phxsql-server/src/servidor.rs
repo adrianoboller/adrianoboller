@@ -2143,6 +2143,23 @@ impl Servidor {
     ///
     /// O portao vem antes do trabalho: fora de uma replica fiel, uma
     /// comparacao de papel e volta.
+    ///
+    /// # Conta DEPOIS de a escrita acontecer, e nao no portao 2b (pedido 630)
+    ///
+    /// Ate 01/10/2026 a conta ficava no portao 2b, antes do portao 3 de
+    /// permissao e antes de a tabela abrir, com o nome do pedido sem validar.
+    /// Dois estragos (revisao SEC, M2): quem so le mandava `inserir` em laco
+    /// com nomes aleatorios, todos recusados, e cada nome virava uma chave
+    /// deste mapa -- memoria sem teto; e um pedido RECUSADO numa tabela real
+    /// fazia o `por_que_nao_continua` culpar a escrita local que nao houve.
+    ///
+    /// Agora quem chama e o `executar_e_contar_escrita_local`, so com a
+    /// operacao respondida `Ok`: passou por todos os portoes, a tabela abriu
+    /// -- e o nome e o de uma tabela que existe, o que poe o teto do mapa no
+    /// numero de tabelas. O erro que sobra e para o lado certo: a escrita que
+    /// falhou no meio depois de gravar alguma coisa nao conta, e sem a conta
+    /// a recusa da continuidade NOMEIA as duas causas em vez de escolher uma
+    /// (`por_que_nao_continua`). Contar a mais escolheria a errada.
     fn anotar_escrita_local(&self, pedido: &Json) {
         let papel = self.papel_atual();
         if !papel.puxa_de_origem() || papel == Papel::Multi {
@@ -8812,7 +8829,30 @@ impl Servidor {
         // um `ler` e um `atualizar` derivados --, e sem esta linha o `ler`
         // devolveria a linha SEM a coluna negada e o `atualizar` a gravaria
         // nula. Ver `aplicar_direito_por_coluna`.
-        self.aplicar_direito_por_coluna(op, pedido, sessao)
+        self.executar_e_contar_escrita_local(op, pedido, sessao)
+    }
+
+    /// O que vem depois dos portoes, nos TRES irmaos que os chamam -- o
+    /// `despachar`, o `executar_derivado` e o job: o direito por coluna
+    /// embrulhando o `executar`, e a conta da escrita local na replica fiel
+    /// (pedido 630) so quando a operacao respondeu `Ok`.
+    ///
+    /// Mora aqui, e nao em cada irmao, porque a conta tem de ser UMA: no dia
+    /// em que um irmao a esquecesse, a escrita local que entrou por ele (um
+    /// `INSERT` pelo SQL, um job) tomaria o lugar do evento do source calada.
+    /// O portao vem antes do trabalho: fora das escritas que gravam dado
+    /// replicado, uma busca numa lista curta e volta.
+    fn executar_e_contar_escrita_local(
+        &self,
+        op: &str,
+        pedido: &Json,
+        sessao: &Sessao,
+    ) -> Result<Json> {
+        let r = self.aplicar_direito_por_coluna(op, pedido, sessao);
+        if r.is_ok() && grava_dado_replicado(op) {
+            self.anotar_escrita_local(pedido);
+        }
+        r
     }
 
     /// O direito por COLUNA, no unico lugar em que ele existe.
@@ -9860,7 +9900,7 @@ impl Servidor {
         // O TERCEIRO irmao. Um job roda sob o usuario dele, e um job de
         // `exportar` da tabela restrita e exatamente o caminho que ninguem
         // olharia -- ele nao chega nem pelo soquete nem pelo SQL.
-        self.aplicar_direito_por_coluna(op, &job.pedido, &sessao)
+        self.executar_e_contar_escrita_local(op, &job.pedido, &sessao)
     }
 
     /// A sessao sob a qual o job roda.
@@ -12616,8 +12656,10 @@ impl Servidor {
 
         // O direito por COLUNA embrulha o `executar` -- ver
         // `aplicar_direito_por_coluna`, que explica por que ele nao cabe num
-        // portao. Sem regra de coluna no cadastro, e uma leitura de `bool`.
-        let r = self.aplicar_direito_por_coluna(&op, &pedido, sessao);
+        // portao. Sem regra de coluna no cadastro, e uma leitura de `bool`. E
+        // a escrita local na replica se conta so DEPOIS dele, com `Ok`
+        // (pedido 630).
+        let r = self.executar_e_contar_escrita_local(&op, &pedido, sessao);
 
         // Pedido 215 -- a injecao de SQL que ninguem bloqueava.
         //
@@ -12807,9 +12849,10 @@ impl Servidor {
                 // Le o valor VIVO, que dois caminhos escrevem: a promocao de um
                 // spare e a gravacao pela tela de configuracao.
                 return Err(PhxError::Autorizacao(self.msg("erro.somente_leitura", &[])));
-            } else {
-                self.anotar_escrita_local(pedido);
             }
+            // A escrita local que passou daqui NAO se conta aqui (pedido 630):
+            // os portoes 3 a 5 ainda nao julgaram, e a tabela nem abriu. A
+            // conta mora em `executar_e_contar_escrita_local`.
         }
 
         // Portao 2b-bis -- `aplicar` num servidor trancado por ADMINISTRACAO.

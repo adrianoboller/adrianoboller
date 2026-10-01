@@ -3727,12 +3727,13 @@ impl Table {
                 }
                 continue;
             }
-            let esquema = match crate::reg::RegFile::abrir(&self.diretorio, &irma) {
-                Ok(r) => r.esquema().clone(),
-                // Irma que nao abre nao tranca a alteracao da mae: o defeito
-                // dela e dela. Mesmo julgamento do `conferir_filhas`.
-                Err(_) => continue,
-            };
+            // Irma que nao abre RECUSA a alteracao da chave (pedido 631): ela
+            // pode ser a filha que a cascata tinha de levar, e pula-la deixava
+            // a filha apontando para a chave velha. A decisao e a do
+            // `crate::irmas::abrir_irma`, a mesma do `excluir`.
+            let esquema = crate::irmas::abrir_irma(&self.diretorio, &irma, &eu)?
+                .esquema()
+                .clone();
             for fk in esquema.chaves_estrangeiras() {
                 // `NaoFazerNada` sai aqui e nao no fim: e o comportamento de
                 // sempre, e ele nao paga nem a abertura da filha.
@@ -9285,9 +9286,9 @@ impl Table {
     /// ali ela era um `continue` seco, e excluir o chefe que tem subordinado
     /// respondia `Ok` com o subordinado orfao.
     ///
-    /// Irma que nao abre fica de fora: o erro dela e problema dela, e
-    /// mistura-lo aqui faria uma tabela quebrada trancar exclusoes no banco
-    /// inteiro.
+    /// Irma que nao abre RECUSA (pedido 631): ela e justamente a que nao
+    /// responde se aponta para esta tabela, e pula-la era responder «nao» por
+    /// ela. Ver `crate::irmas::abrir_irma`.
     fn fks_que_apontam_para_mim(&self) -> Result<Vec<(String, ForeignKey)>> {
         let eu = &self.nome;
         // As irmas pelo `crate::irmas`, que lembra o esquema de cada uma

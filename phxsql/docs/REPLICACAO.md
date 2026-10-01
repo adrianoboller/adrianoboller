@@ -1230,6 +1230,18 @@ quantas, e o conserto. Sem o número (outro processo aceitou) e sem
 `somente_leitura`, a recusa nomeia **as duas** causas possíveis em vez de escolher
 uma. Prova pelo soquete em `continuidade-da-replica.rs`.
 
+**Conta-se depois da escrita, e não no portão (pedido 630, revisão SEC M2).**
+A conta nasceu no portão 2b, antes do portão 3 de permissão e antes de a tabela
+abrir, com o nome do pedido sem validar: quem só lê mandava `inserir` com nomes
+aleatórios, tudo recusado, e cada nome virava uma chave do mapa — medido pelo
+soquete, **10.000 pedidos recusados deixaram 5.101 chaves**; e o pedido recusado
+numa tabela real fazia a ruptura culpar uma escrita local que não houve. Hoje
+conta só a operação respondida `Ok`, nos três irmãos que passam pelos portões
+(`despachar`, `executar_derivado` — o `INSERT` pelo SQL — e o job), por uma
+função só (`executar_e_contar_escrita_local`). O mesmo laço deixa o mapa vazio.
+O erro que sobra vai para o lado certo: a escrita que falha no meio não conta,
+e sem a conta a recusa nomeia as duas causas em vez de escolher a errada.
+
 **Por que não a «coordenada da origem por tabela»** (o meio que a triagem citava):
 com o rowid como identidade, a escrita local diverge a réplica de qualquer
 jeito — a inclusão seguinte do source não acha o rowid dela e para. Trocar o

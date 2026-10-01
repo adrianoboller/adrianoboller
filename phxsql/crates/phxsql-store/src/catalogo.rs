@@ -1399,12 +1399,11 @@ impl Database {
             if irma == nome {
                 continue;
             }
-            // Irma que nao abre nao tranca o renomear: o defeito dela e dela, e
-            // mistura-lo aqui faria uma tabela quebrada travar o banco inteiro.
-            // E o mesmo julgamento que o `conferir_filhas` ja faz.
-            let Ok(reg) = crate::reg::RegFile::abrir(dir, &irma) else {
-                continue;
-            };
+            // Irma que nao abre RECUSA o apagar e o renomear (pedido 631): ela
+            // pode ser a filha, e pula-la era responder «ninguem aponta» por
+            // ela. A decisao e a do `crate::irmas::abrir_irma`, a mesma da
+            // exclusao de linha.
+            let reg = crate::irmas::abrir_irma(dir, &irma, nome)?;
             for fk in reg.esquema().chaves_estrangeiras() {
                 let alvo = fk
                     .tabela_ref
