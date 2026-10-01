@@ -280,6 +280,8 @@ pub trait DiarioLegivel {
     ) -> Result<Vec<(crate::log::Evento, Vec<u8>)>>;
     fn marca_do_diario(&self) -> Option<crate::log::MarcaDoDiario>;
     fn definir_marca_do_diario(&mut self, marca: Option<crate::log::MarcaDoDiario>);
+    /// So le: confere o evento ancora da marca no `.log` (pedido 620).
+    fn marca_do_diario_confere(&mut self, marca: &crate::log::MarcaDoDiario) -> bool;
     fn valores_da_imagem(&mut self, imagem: &[u8]) -> Result<Vec<phxsql_core::value::Value>>;
     fn valores_antes_da_imagem(
         &mut self,
@@ -307,6 +309,9 @@ impl DiarioLegivel for Table {
     }
     fn definir_marca_do_diario(&mut self, marca: Option<crate::log::MarcaDoDiario>) {
         Table::definir_marca_do_diario(self, marca)
+    }
+    fn marca_do_diario_confere(&mut self, marca: &crate::log::MarcaDoDiario) -> bool {
+        Table::marca_do_diario_confere(self, marca)
     }
     fn valores_da_imagem(&mut self, imagem: &[u8]) -> Result<Vec<phxsql_core::value::Value>> {
         Table::valores_da_imagem(self, imagem)
@@ -339,6 +344,9 @@ impl DiarioLegivel for TabelaLeitura {
     }
     fn definir_marca_do_diario(&mut self, marca: Option<crate::log::MarcaDoDiario>) {
         self.0.definir_marca_do_diario(marca)
+    }
+    fn marca_do_diario_confere(&mut self, marca: &crate::log::MarcaDoDiario) -> bool {
+        self.0.marca_do_diario_confere(marca)
     }
     fn valores_da_imagem(&mut self, imagem: &[u8]) -> Result<Vec<phxsql_core::value::Value>> {
         self.0.valores_da_imagem(imagem)

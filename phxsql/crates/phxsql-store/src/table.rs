@@ -9204,6 +9204,12 @@ impl Table {
         self.log.definir_marca(marca);
     }
 
+    /// A marca e do diario DESTA vida da tabela? Ver
+    /// [`crate::log::LogFile::marca_confere`] -- pedido 620.
+    pub fn marca_do_diario_confere(&mut self, marca: &crate::log::MarcaDoDiario) -> bool {
+        self.log.marca_confere(marca)
+    }
+
     /// Total de eventos registrados no diario.
     pub fn eventos(&mut self) -> Result<u64> {
         self.log.total()
