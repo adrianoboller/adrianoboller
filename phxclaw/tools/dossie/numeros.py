@@ -154,6 +154,27 @@ def absorcao() -> dict:
 ORDEM_ESTADOS = ["CONCLUÍDA", "EM EXECUÇÃO", "PLANEJADA", "BLOQUEADA"]
 
 
+
+def esteira() -> dict:
+    """A esteira de producao (docs/ESTEIRA_ABSORCAO.md): itens E*/U* com o estado na ultima coluna.
+    Era a tabela do dossie anterior; volta pelo mesmo leitor, para a pagina nova nao perder dado."""
+    arq = RAIZ / "docs/ESTEIRA_ABSORCAO.md"
+    itens = []
+    for linha in arq.read_text(encoding="utf-8").splitlines():
+        m = re.match(r"\|\s*([EU]\d+[a-z]?)\s*\|\s*(.+?)\s*\|(.+)\|\s*$", linha)
+        if not m:
+            continue
+        ultima = [c.strip() for c in m.group(3).split("|")][-1]
+        # ⏸ e «depois da versao» (decisao do dono, 24/09): visivel, fora da conta
+        estado = ("feito" if "✓" in ultima or "☑" in ultima else
+                  "depois" if "⏸" in ultima else
+                  "bloqueado" if "bloqueado" in ultima else "aberto")
+        nota = ultima.replace("☐", "").replace("⏸", "").strip() if estado != "aberto" else ""
+        itens.append({"id": m.group(1), "texto": m.group(2), "estado": estado, "nota": nota})
+    if not itens:
+        raise SystemExit(f"esteira: nenhum item lido de {rel(arq)} -- o formato mudou")
+    return {"itens": itens, "fonte": rel(arq), "data": data_de(arq)}
+
 def sprints() -> dict:
     arq = RAIZ / "docs/absorcao/SPRINTS.md"
     texto = arq.read_text(encoding="utf-8")

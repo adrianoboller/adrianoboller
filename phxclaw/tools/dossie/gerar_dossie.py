@@ -118,6 +118,7 @@ h2{{font:700 var(--fs-6)/1.2 var(--sans);margin:8px 0 12px}}
 h3{{font:700 var(--fs-4)/1.25 var(--sans);margin:28px 0 8px}}
 .nota{{font-size:var(--fs-2);color:var(--texto-2)}}
 .dt{{font:400 .92em var(--mono);color:var(--texto-3);white-space:nowrap}}
+code.id{{white-space:nowrap}}
 .mot{{color:var(--texto-2);font-size:var(--fs-2)}}
 .nm{{font:700 var(--fs-1) var(--mono);color:var(--aviso);border:1px dashed var(--aviso);border-radius:4px;padding:1px 6px;white-space:nowrap}}
 .tab{{overflow-x:auto;background:var(--painel);border:1px solid var(--linha);border-radius:8px;margin:10px 0}}
@@ -229,7 +230,9 @@ def barra_um(n: int, maximo: int) -> str:
 
 PILULA = {"passed": ("passou", "ok"), "failed": ("falhou", "ruim"), "blocked": ("bloqueado", "trava"),
           "CONCLUÍDA": ("concluída", "ok"), "EM EXECUÇÃO": ("em execução", "vivo"),
-          "PLANEJADA": ("planejada", "neutro"), "BLOQUEADA": ("bloqueada (dono)", "trava")}
+          "PLANEJADA": ("planejada", "neutro"), "BLOQUEADA": ("bloqueada (dono)", "trava"),
+          "feito": ("feito", "ok"), "aberto": ("aberto", "neutro"), "bloqueado": ("bloqueado", "trava"),
+          "depois": ("depois da versão", "neutro")}
 
 
 def pilula(chave: str) -> str:
@@ -406,6 +409,15 @@ vez de cair numa coluna errada.</p>
         f'O quadro das {sp["total"]} sprints: ' + ", ".join(f'{sp["contagem"][x]} {PILULA[x][0]}' for x in N.ORDEM_ESTADOS) +
         '. A borda do cartão também muda de forma por estado (cheia, tracejada, dupla).')}
 <p class="nota">Portões de toda sprint, lidos do mesmo arquivo: {'; '.join(md(p) for p in ps)}.</p>"""))
+
+    es = N.esteira()
+    lin_es = [[f'<code class="id">{e(i["id"])}</code>', md(i["texto"]), pilula(i["estado"]), f'<span class="mot">{md(i["nota"])}</span>']
+              for i in es["itens"]]
+    secoes[-1] = (secoes[-1][0], secoes[-1][1], secoes[-1][2] + f"""
+<h3>Esteira de produção</h3>
+<p>Os itens de produto (E*, U*) de <code>{e(es['fonte'])}</code> ({quando(es['data'])}), com o estado lido da
+última coluna; ⏸ é «depois da versão», visível e fora da conta.</p>
+{tabela(["#", "item", "estado", "nota"], lin_es)}""")
 
     # ================================================================ 4 organograma
     P = pc["papeis"]
@@ -681,6 +693,7 @@ lido do próprio <code>writeFileSync</code>. Roteiro que só imprime o placar n�
         ("versão, membros do workspace", v["fonte"], v["data"]),
         ("absorção", ab["fonte"], ab["data"]),
         ("sprints, achados, portões de sprint", sp["fonte"], sp["data"]),
+        ("esteira de produção", es["fonte"], es["data"]),
         ("ferramentas", fe["fonte"], fe["data"]),
         ("equipe", eq["fonte"], eq["data"]),
         ("papéis de construção", pc["fonte"], pc["data"]),
