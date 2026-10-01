@@ -3,13 +3,13 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <meta name="theme-color" content="#07111c" />
+  <meta name="theme-color" content="#010418" />
   <title>PhxClaw • Command Center</title>
   <link rel="icon" href="./assets/phoenix-mark.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="./assets/app.css" />
   <link rel="stylesheet" href="./assets/tarefas.css" />
-  <!-- phx-grid (do dono, JS puro, sem dependencia): versao e origem em assets/vendor/phx-grid/VERSAO -->
-  <link rel="stylesheet" href="./assets/vendor/phx-grid/phx-grid.css" />
+  <!-- phx-grid (do dono, JS puro, sem dependencia): versao e origem em assets/vendor/phx-grid/VERSAO.
+       Carrega sob demanda (grades.carregar), na primeira tela com grade. -->
   <link rel="stylesheet" href="./assets/grades.css" />
   <!-- Aplicativo instalavel (PWA): o mesmo cliente no navegador, no celular e na ponte. -->
   <link rel="manifest" href="./manifest.webmanifest" />
@@ -17,7 +17,11 @@
 </head>
 <body>
   <div class="noise"></div>
-  <section id="splash" class="splash" aria-label="PhxClaw splash screen">
+  <!-- Abertura: so enquanto a pagina fica pronta DE VERDADE (fabrica de idiomas, fonte, host
+       nativo); nao ha temporizador. Com ?tela=, #tela, ?screen=dashboard ou o aplicativo
+       instalado, nem aparece. O #app fica inert enquanto ela cobre a tela: o Tab nao cai
+       em controle invisivel (qualificacao de 01/10/2026, G4 e M4). -->
+  <section id="splash" class="splash" aria-label="Abertura do PhxClaw" data-txt-al="splash.rotulo" aria-busy="true">
     <div class="splash-orbit orbit-a"></div>
     <div class="splash-orbit orbit-b"></div>
     <div class="splash-glow"></div>
@@ -27,54 +31,65 @@
         <span class="mark-ring"></span>
       </div>
       <div class="wordmark"><span>PHOENIX</span><b>CLAW</b></div>
-      <div class="strap">BUILDING A BETTER SOFTWARE TOMORROW</div>
+      <div class="strap" data-txt="splash.strap">CONSTRUINDO UM SOFTWARE MELHOR AMANHÃ</div>
       <div class="splash-rule"></div>
       <div class="boot-row">
-        <span id="bootLabel">Inicializando microkernel</span>
+        <span id="bootLabel"></span>
         <span id="bootPct">0%</span>
       </div>
       <div class="progress"><span id="progressBar"></span></div>
       <div class="boot-modules" id="bootModules"></div>
-      <button id="enterButton" class="enter-button">ENTRAR NO COMMAND CENTER <span>↗</span></button>
-      <div class="splash-foot">AGENTES&nbsp;&nbsp;•&nbsp;&nbsp;IA&nbsp;&nbsp;•&nbsp;&nbsp;PESSOAS&nbsp;&nbsp;•&nbsp;&nbsp;TECNOLOGIA</div>
+      <div class="splash-foot" data-txt="splash.rodape">AGENTES • IA • PESSOAS • TECNOLOGIA</div>
     </div>
   </section>
 
-  <div id="app" class="app-shell" aria-hidden="true">
+  <div id="app" class="app-shell" aria-hidden="true" inert>
     <header class="topbar">
       <div class="brand-mini">
         <img src="./assets/phoenix-mark.svg" alt="" />
-        <div><strong>PHOENIX<span>CLAW</span></strong><small>COMMAND CENTER • <span id="brandVersion">—</span></small></div>
+        <div><strong>PHOENIX<span>CLAW</span></strong><small><span>COMMAND CENTER</span> • <span id="brandVersion">—</span></small></div>
       </div>
+      <!-- Estado do topo: so o que o host DISSE (app.js, desenharTopo). Sem host, diz que
+           nao ha host -- o «CORE ONLINE» cravado com o ponto pulsando mentia na previa web
+           (qualificacao de 01/10/2026, G5). -->
       <div class="top-status">
-        <span class="pulse-dot"></span>
-        <span>CORE ONLINE</span>
+        <span id="coreDot" class="pulse-dot" data-estado="espera" aria-hidden="true"></span>
+        <span id="coreStatus"></span>
         <i></i>
-        <span id="nativeBridgeStatus">WEB PREVIEW</span>
+        <span id="nativeBridgeStatus"></span>
         <i></i>
-        <span id="liveEventStatus">EVENT BUS WAIT</span>
+        <span id="liveEventStatus"></span>
       </div>
       <div class="top-actions">
-        <button>⌕</button><button>⌘</button>
+        <button id="abrirPaleta" type="button" class="icone" aria-haspopup="dialog" aria-keyshortcuts="Control+K"
+          aria-label="Buscar e comandos (Ctrl+K)" data-txt-al="paleta.abrir" title="Buscar e comandos (Ctrl+K)" data-txt-tt="paleta.abrir"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5 21 21"/></svg></button>
         <button id="trocarIdioma" title="Trocar o idioma da tela" data-txt-tt="idioma.trocar" aria-label="Trocar o idioma da tela" data-txt-al="idioma.trocar">PT</button>
-        <div class="avatar">PO</div>
       </div>
     </header>
+
+    <!-- Busca e comandos (Ctrl+K): ir para uma tela, trocar o idioma, abrir um terminal, e
+         achar um agente ou uma ferramenta pelo nome (o nome e DADO dos JSON gerados). -->
+    <dialog id="paleta" class="paleta" aria-label="Buscar e comandos" data-txt-al="paleta.titulo">
+      <input id="paletaBusca" type="search" autocomplete="off" role="combobox" aria-expanded="true" aria-controls="paletaLista" aria-autocomplete="list"
+        placeholder="Tela, comando, agente ou ferramenta" data-txt-ph="paleta.busca" aria-label="Tela, comando, agente ou ferramenta" data-txt-al="paleta.busca" />
+      <ul id="paletaLista" role="listbox" aria-label="Resultados" data-txt-al="paleta.resultados"></ul>
+      <p class="paleta-dica" data-txt="paleta.dica">Setas escolhem • Enter abre • Esc fecha</p>
+    </dialog>
 
     <aside class="sidebar">
       <nav>
         <!-- Cada botao nomeia a tela que abre (data-tela); o selo so aparece quando um
              arquivo gerado deu o numero -- vazio, o CSS o esconde. -->
-        <button class="nav active" data-tela="geral" aria-current="page"><span>◫</span><em data-txt="menu.geral">Visão geral</em></button>
-        <button class="nav" data-tela="agentes"><span>◉</span><em data-txt="menu.agentes">Agentes</em><b id="seloAgentes"></b></button>
-        <button class="nav" data-tela="ide"><span>⌨</span><em>IDE</em><b id="seloIde"></b></button>
-        <button class="nav" data-tela="ferramentas"><span>⚒</span><em data-txt="menu.ferramentas">Ferramentas</em><b id="seloFerramentas"></b></button>
-        <button class="nav" data-tela="absorcao"><span>◈</span><em data-txt="menu.absorcao">Absorção</em></button>
-        <button class="nav" data-tela="tarefas"><span>☰</span><em data-txt="menu.tarefas">Tarefas</em></button>
-        <button class="nav" data-tela="config"><span>⚙</span><em data-txt="menu.config">Configuração</em></button>
+        <button class="nav active" data-tela="geral" aria-current="page"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"/></svg></span><em data-txt="menu.geral">Visão geral</em></button>
+        <button class="nav" data-tela="agentes"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.6 3.4-5.5 6.5-5.5s5.7 1.9 6.5 5.5"/><path d="M15.5 4.7a3.5 3.5 0 0 1 0 6.6M18 14.8c1.9.7 3.1 2.4 3.5 5.2"/></svg></span><em data-txt="menu.agentes">Agentes</em><b id="seloAgentes"></b></button>
+        <button class="nav" data-tela="ide"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><rect x="2.5" y="4" width="19" height="16" rx="2"/><path d="m6.5 9 3.5 3-3.5 3M12.5 15h5"/></svg></span><em>IDE</em><b id="seloIde"></b></button>
+        <button class="nav" data-tela="ferramentas"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M4 20l9-9"/><circle cx="16" cy="8" r="4.5"/><path d="M16 8l3.2-3.2"/></svg></span><em data-txt="menu.ferramentas">Ferramentas</em><b id="seloFerramentas"></b></button>
+        <button class="nav" data-tela="absorcao"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M12 3l9 9-9 9-9-9z"/><path d="M12 8l4 4-4 4-4-4z"/></svg></span><em data-txt="menu.absorcao">Absorção</em></button>
+        <button class="nav" data-tela="tarefas"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M10 6h10M10 12h10M10 18h10"/><path d="m3.5 6 1.5 1.5L7.5 5M3.5 12l1.5 1.5 2.5-2.5M3.5 18l1.5 1.5 2.5-2.5"/></svg></span><em data-txt="menu.tarefas">Tarefas</em></button>
+        <button class="nav" data-tela="config"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><circle cx="12" cy="12" r="3.5"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/></svg></span><em data-txt="menu.config">Configuração</em></button>
       </nav>
       <div class="sidebar-bottom">
-        <div class="security-card"><span>◈</span><div><b>ZERO TRUST</b><small>Deny-by-default</small></div></div>
+        <div class="security-card"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M12 3 4.5 6v5.5c0 4.5 3.2 8 7.5 9.5 4.3-1.5 7.5-5 7.5-9.5V6z"/><path d="m8.5 12 2.5 2.5 4.5-5"/></svg></span><div><b>ZERO TRUST</b><small>Deny-by-default</small></div></div>
       </div>
     </aside>
 
@@ -85,6 +100,7 @@
           <div class="eyebrow" data-txt="geral.sobretitulo">PHXCLAW / PROJECT PHOENIX OCTOPUS IA</div>
           <h1 data-txt="geral.titulo">Do objetivo ao resultado.</h1>
           <p data-txt="geral.subtitulo">Microkernel determinístico, agentes plugáveis, evidências rastreáveis e inteligência desacoplada.</p>
+          <button class="acao consulta tentar" type="button" data-tentar hidden data-txt="erro.tentar">TENTAR DE NOVO</button>
         </div>
         <div class="hero-actions">
           <button class="acao consulta" data-ir="agentes" data-txt="geral.ver_agentes">VER AGENTES</button>
@@ -138,7 +154,7 @@
      <section class="tela" id="tela-agentes" data-tela="agentes" aria-label="Agentes" data-txt-al="menu.agentes" hidden>
       <header class="tela-head">
         <div><span class="eyebrow" data-txt="agentes.sobretitulo">EQUIPE / MACROÁREAS</span><h1 data-txt="menu.agentes">Agentes</h1>
-          <p id="agentesResumo" class="tela-sub" data-fonte="equipe.json"><span data-txt="agentes.lendo">Lendo assets/equipe.json…</span></p></div>
+          <p id="agentesResumo" class="tela-sub" data-fonte="equipe.json" role="status"><span data-txt="agentes.lendo">Lendo assets/equipe.json…</span></p><button class="acao consulta tentar" type="button" data-tentar hidden data-txt="erro.tentar">TENTAR DE NOVO</button></div>
         <input id="agentesFiltro" class="filtro" type="search" placeholder="Filtrar por nome, missão ou capacidade" data-txt-ph="agentes.filtro" aria-label="Filtrar agentes" data-txt-al="agentes.filtro_rotulo" />
       </header>
       <div class="grade-barra">
@@ -151,7 +167,8 @@
      <section class="tela tela-ide" id="tela-ide" data-tela="ide" aria-label="IDE" hidden>
       <header class="tela-head">
         <div><span class="eyebrow" data-txt="ide.sobretitulo">IDE / HELIX NO MOTOR DE TERMINAL</span><h1>IDE</h1>
-          <p id="ideStatus" class="tela-sub"><span data-txt="ide.nenhum">Nenhum terminal aberto.</span></p></div>
+          <p id="ideStatus" class="tela-sub"><span data-txt="ide.nenhum">Nenhum terminal aberto.</span></p>
+          <p id="ideAjuda" class="tela-dica" data-txt="ide.ajuda_teclado">No terminal, Tab completa; para sair dele pelo teclado: Esc e depois Tab.</p></div>
         <div class="acoes">
           <button id="ideAbrirHelix" class="acao inclui" data-txt="ide.abrir_helix">+ HELIX NO PROJETO</button>
           <button id="ideAbrirBash" class="acao inclui" data-txt="ide.abrir_bash">+ TERMINAL BASH</button>
@@ -160,7 +177,7 @@
       </header>
       <nav id="ideAbas" class="abas" aria-label="Terminais abertos" data-txt-al="ide.abas"></nav>
       <div id="ideArea" class="term-area">
-        <canvas id="termCanvas" tabindex="0" aria-label="Terminal" data-txt-al="ide.terminal"></canvas>
+        <canvas id="termCanvas" tabindex="0" aria-label="Terminal" data-txt-al="ide.terminal" aria-describedby="ideAjuda"></canvas>
         <div id="ideVazio" class="term-vazio" data-txt="ide.vazio">Abra o Helix na pasta do projeto ou um terminal bash.</div>
       </div>
      </section>
@@ -168,7 +185,7 @@
      <section class="tela" id="tela-ferramentas" data-tela="ferramentas" aria-label="Ferramentas" data-txt-al="menu.ferramentas" hidden>
       <header class="tela-head">
         <div><span class="eyebrow" data-txt="ferramentas.sobretitulo">AGENTE / FERRAMENTAS POR CAPACIDADE</span><h1 data-txt="menu.ferramentas">Ferramentas</h1>
-          <p id="ferramentasResumo" class="tela-sub" data-fonte="ferramentas.json"><span data-txt="geral.lendo">Lendo…</span></p></div>
+          <p id="ferramentasResumo" class="tela-sub" data-fonte="ferramentas.json" role="status"><span data-txt="geral.lendo">Lendo…</span></p><button class="acao consulta tentar" type="button" data-tentar hidden data-txt="erro.tentar">TENTAR DE NOVO</button></div>
         <input id="ferramentasFiltro" class="filtro" type="search" placeholder="Buscar em todas as colunas" data-txt-ph="grade.buscar_tudo" aria-label="Buscar ferramentas" data-txt-al="ferramentas.buscar_rotulo" />
       </header>
       <div class="grade-barra">
@@ -181,7 +198,7 @@
      <section class="tela" id="tela-absorcao" data-tela="absorcao" aria-label="Absorção" data-txt-al="menu.absorcao" hidden>
       <header class="tela-head">
         <div><span class="eyebrow" data-txt="absorcao.sobretitulo">ABSORÇÃO / CAPACIDADE POR CAPACIDADE</span><h1 data-txt="menu.absorcao">Absorção</h1>
-          <p id="absorcaoResumo" class="tela-sub" data-fonte="absorcao.json"><span data-txt="geral.lendo">Lendo…</span></p>
+          <p id="absorcaoResumo" class="tela-sub" data-fonte="absorcao.json" role="status"><span data-txt="geral.lendo">Lendo…</span></p><button class="acao consulta tentar" type="button" data-tentar hidden data-txt="erro.tentar">TENTAR DE NOVO</button>
           <div id="absorcaoLegenda"></div></div>
         <input id="absorcaoFiltro" class="filtro" type="search" placeholder="Buscar em todas as colunas" data-txt-ph="grade.buscar_tudo" aria-label="Buscar capacidades" data-txt-al="absorcao.buscar_rotulo" />
       </header>
@@ -201,7 +218,7 @@
      <section class="tela" id="tela-tarefas" data-tela="tarefas" aria-label="Tarefas" data-txt-al="menu.tarefas" hidden>
       <header class="tela-head">
         <div><span class="eyebrow" data-txt="tarefas.sobretitulo">TAREFAS / API DO AGENTE</span><h1 data-txt="menu.tarefas">Tarefas</h1>
-          <p id="tarefasStatus" class="tela-sub"></p></div>
+          <p id="tarefasStatus" class="tela-sub" role="status" aria-live="polite"></p><button class="acao consulta tentar" type="button" data-tentar hidden data-txt="erro.tentar">TENTAR DE NOVO</button></div>
         <form id="tarefasToken" class="tarefas-linha">
           <input id="tarefasTokenCampo" class="filtro" type="password" autocomplete="off" placeholder="Token de acesso" data-txt-ph="tarefas.token" aria-label="Token de acesso" data-txt-al="tarefas.token" />
           <button class="acao altera" data-txt="tarefas.guardar">GUARDAR TOKEN</button>
@@ -221,7 +238,7 @@
      <section class="tela" id="tela-config" data-tela="config" aria-label="Configuração" data-txt-al="menu.config" hidden>
       <header class="tela-head">
         <div><span class="eyebrow" data-txt="config.sobretitulo">CONFIGURAÇÃO / CONFIG.JSON</span><h1 data-txt="menu.config">Configuração</h1>
-          <p id="configStatus" class="tela-sub" data-fonte="api /v1/config"><span data-txt="geral.lendo">Lendo…</span></p></div>
+          <p id="configStatus" class="tela-sub" data-fonte="api /v1/config" role="status" aria-live="polite"><span data-txt="geral.lendo">Lendo…</span></p><button class="acao consulta tentar" type="button" data-tentar hidden data-txt="erro.tentar">TENTAR DE NOVO</button></div>
         <input id="configBusca" class="filtro" type="search" placeholder="Buscar chave, seção ou descrição" data-txt-ph="config.busca" aria-label="Buscar na configuração" data-txt-al="config.busca" />
       </header>
       <div class="grade-barra">
@@ -239,12 +256,10 @@
       <section id="configDiff" class="cfg-painel" hidden></section>
       <div id="configConteudo" class="grade-alvo" data-uma-pagina data-fonte="api /v1/config"></div>
      </section>
-
-      <footer class="footerbar"><span>DISCIPLINA</span><i>•</i><span>SEGURANÇA</span><i>•</i><span>QUALIDADE</span><i>•</i><span>EVOLUÇÃO</span><i>•</i><span>LIBERDADE</span><b>“Juntos somos infinitos.”</b></footer>
     </main>
+    <footer class="footerbar"><span data-txt="rodape.disciplina">DISCIPLINA</span><i aria-hidden="true">•</i><span data-txt="rodape.seguranca">SEGURANÇA</span><i aria-hidden="true">•</i><span data-txt="rodape.qualidade">QUALIDADE</span><i aria-hidden="true">•</i><span data-txt="rodape.evolucao">EVOLUÇÃO</span><i aria-hidden="true">•</i><span data-txt="rodape.liberdade">LIBERDADE</span><b data-txt="rodape.lema">“Juntos somos infinitos.”</b></footer>
   </div>
   <script src="./assets/idiomas.js"></script>
-  <script src="./assets/vendor/phx-grid/phx-grid.js"></script>
   <script src="./assets/grades.js"></script>
   <script src="./assets/app.js"></script>
   <script src="./assets/tarefas.js"></script>

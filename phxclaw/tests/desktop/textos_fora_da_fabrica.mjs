@@ -27,24 +27,25 @@ import { fileURLToPath } from 'node:url';
 // pagina e coleta as 15 etapas, uma a uma; mede MAIS, entao nasce no numero medido do dia
 // (35, ja com o painel do host traduzido) em vez de subir o teto velho. Historico da regua
 // antiga: 140 antes da fabrica, 119 no primeiro lote, 46 com Visao geral/Ferramentas/Absorcao.
-// Falta: barra do topo, splash, rodape.
-const TETO_SPLASH_POR_ETAPA = 35;
+// Nesta regua: 35 -> 14 quando a abertura deixou de ser um temporizador de 15 etapas
+// cravadas e passou a mostrar as etapas reais pela fabrica (qualificacao de 01/10/2026, lote 5).
+// 14 -> 7 quando o topo passou a dizer o estado do host pela fabrica (lote 6); 7 -> 0 com o
+// rodape pela fabrica e «COMMAND CENTER» isento como marca, igual ao titulo da janela (lote 9).
+const TETO_SPLASH_POR_ETAPA = 0;
 
 // Texto que nao se traduz, com o motivo: nome proprio, marca, sigla tecnica, identificador.
 // Comparado depois de tirar dado e chave, sem espaco nas pontas.
 const ISENTOS = new Map([
   ['PhxClaw • Command Center', 'marca (titulo da janela)'], ['PhxClaw', 'marca'],
-  ['PHOENIX', 'marca'], ['CLAW', 'marca'], ['PO', 'iniciais do avatar'],
+  ['COMMAND CENTER', 'marca (o nome do produto, o mesmo do titulo da janela)'],
+  ['PHOENIX', 'marca'], ['CLAW', 'marca'],
   ['PT', 'codigo do idioma no botao de troca'], ['EN', 'codigo do idioma no botao de troca'],
   ['ZERO TRUST', 'nome da politica de seguranca (config/constitution.json)'],
   ['Deny-by-default', 'nome da politica de seguranca (config/constitution.json)'],
   ['IDE', 'sigla (nome da tela)'], ['bash —', 'nome do programa na aba; o resto e o titulo do terminal (dado)'],
   ['OpenClaw', 'produto'], ['Hermes', 'produto'], ['Claude Code', 'produto'], ['Codex', 'produto'], ['OpenJarvis', 'produto'],
-  // Etapas do boot: nome de modulo do kernel, o mesmo nome do crate e do log.
-  ['Microkernel', 'modulo'], ['Research Core', 'modulo'], ['Hypothesis Core', 'modulo'], ['Installer Core', 'modulo'],
-  ['Plugin Registry', 'modulo'], ['Agent Runtime', 'modulo'], ['Task Graph', 'modulo'],
-  ['Model Gateway', 'modulo'], ['Event Bus', 'modulo'], ['Connectivity', 'modulo'], ['Desktop Host', 'modulo'],
-  ['Evidence Ledger', 'modulo'], ['Desktop Fabric', 'modulo'], ['Media & Documents', 'modulo'], ['Mindset + BPM', 'modulo'],
+  // (As 15 etapas do boot, nomes de modulo do kernel, sairam com o temporizador da abertura:
+  // isento sem uso e porta aberta para o texto voltar cravado sem ninguem ver.)
 ]);
 
 const require = createRequire(import.meta.url);

@@ -10,10 +10,34 @@
 //     nao passa pelo definirTextos e reescrito aqui pela CLASSE do elemento (LOCAIS), que e
 //     a chave estrutural -- nunca comparando a frase portuguesa, que quebraria calada no dia
 //     em que o dono melhorar a redacao.
-//   * A marca manda: o tema sai de VISUAL_MARCA pelo mesmo mapa do configurarVisual
+//   * A marca manda: o tema sai dos tokens da folha (visualMarca) pelo mesmo mapa do configurarVisual
 //     (PhxGrid.visualParaTokens), uma definicao so para a grade e para o cubo.
 const grades = (() => {
-  const PG = window.PhxGrid;
+  // O phx-grid (563 KB, 145 KB em gzip) carrega SOB DEMANDA, na primeira tela com grade:
+  // sincrono no fim do <body> ele levava o DOMContentLoaded do celular de 1,6 s para 4,3 s, e
+  // a Visao geral nem usa grade (qualificacao de 01/10/2026, M5). O CSS dele entra antes do
+  // grades.css, que o sobrepoe; o script, pelo mesmo 'self' da CSP do Tauri.
+  let carga = null;
+  function carregar() {
+    if (window.PhxGrid) return Promise.resolve();
+    if (!carga) {
+      const base = './assets/vendor/phx-grid/';
+      const ler = (el, prop) => new Promise((ok, falha) => {
+        el.onload = ok;
+        el.onerror = () => falha(Object.assign(new Error(`${el[prop]}: sem rede`), { rede: true, arquivo: 'vendor/phx-grid/phx-grid.js' }));
+      });
+      const css = Object.assign(document.createElement('link'), { rel: 'stylesheet', href: `${base}phx-grid.css` });
+      const js = Object.assign(document.createElement('script'), { src: `${base}phx-grid.js` });
+      const pronto = Promise.all([ler(css, 'href'), ler(js, 'src')]);
+      const nosso = document.querySelector('link[href$="grades.css"]');
+      if (nosso) nosso.before(css); else document.head.append(css);
+      document.head.append(js);
+      // Falha (rede caida sem o arquivo no cache) nao fica guardada: a proxima tela tenta de novo.
+      carga = pronto.catch(e => { carga = null; css.remove(); js.remove(); throw e; });
+    }
+    return carga;
+  }
+  const PG = () => window.PhxGrid;
 
   // Os 15 textos que o phx-grid ja le pelo definirTextos. Uma chave literal por texto: o
   // conferidor da fabrica le as chaves pedidas no fonte.
@@ -106,6 +130,46 @@ const grades = (() => {
     } else if (e.getAttribute(onde) !== valor) e.setAttribute(onde, valor);
   }
 
+  // MODO CARTAO (ate 640 px; grades.css): uma linha vira um cartao, e cada celula leva o
+  // rotulo da sua coluna -- o titulo que a grade mostra no cabecalho, ja traduzido -- num
+  // data-rotulo que o CSS escreve antes do valor. O dado continua sendo o texto da celula;
+  // o rotulo e so atributo, e nunca se confunde com ele.
+  // `cartao` diz o papel de cada coluna pelo CAMPO: titulo (a primeira linha do cartao),
+  // campos (sempre a vista), curtos (duas linhas, abre por inteiro no toque); o resto fica
+  // fora do cartao fechado e aparece com o toque -- nada some: o cartao diz quantos faltam.
+  function rotularCelulas(raiz, cartao, rotulos) {
+    // A celula acha a coluna pelo aria-colindex: nem toda coluna tem tag, e todas tem indice
+    // e campo. Com grupo, o indice so esta no <th> da linha de filtro (achado exercitando):
+    // o indice da o campo, e o campo da o titulo do cabecalho.
+    const titulo = {}, campoDe = {};
+    for (const th of raiz.querySelectorAll('.phx-tabela > thead th[data-campo]')) {
+      if (!th.classList.contains('phx-frow-cel')) titulo[th.dataset.campo] = (th.querySelector('.phx-th-titulo')?.firstChild?.textContent ?? '').trim();
+      if (th.hasAttribute('aria-colindex')) campoDe[th.getAttribute('aria-colindex')] = th.dataset.campo;
+    }
+    const colunas = Object.fromEntries(Object.entries(campoDe).map(([i, campo]) => [i, { campo, titulo: titulo[campo] ?? '' }]));
+    const papel = campo => (campo === cartao.titulo ? 'titulo' : cartao.campos?.includes(campo) ? 'campo' : cartao.curtos?.includes(campo) ? 'curto' : 'fora');
+    for (const tr of raiz.querySelectorAll('.phx-tabela > tbody > tr')) {
+      if (/(^|\s)phx-(grupo|grupo-rodape|detalhe|tr-vazia|preview)(\s|$)/.test(tr.className)) continue;
+      let fora = 0;
+      for (const td of tr.querySelectorAll(':scope > td[aria-colindex]')) {
+        const c = colunas[td.getAttribute('aria-colindex')];
+        if (!c) continue;
+        // Coluna de valor substituido (estado, tipo, concessao) mostra ROTULO: fica em Exo 2;
+        // o resto e dado e vai em mono (app.css, «dado em mono»).
+        const ehRotulo = rotulos.has(c.campo);
+        if (td.classList.contains('grade-rotulo') !== ehRotulo) td.classList.toggle('grade-rotulo', ehRotulo);
+        if (!cartao) continue;
+        if (td.dataset.rotulo !== c.titulo) td.dataset.rotulo = c.titulo;
+        const p = papel(c.campo);
+        if (td.dataset.cartao !== p) td.dataset.cartao = p;
+        if (p === 'fora') fora++;
+      }
+      if (!cartao) continue;
+      const mais = fora ? txt('grade.cartao_mais', '+{n} campos (toque para ver)', { n: fora }) : '';
+      if (mais) { if (tr.dataset.mais !== mais) tr.dataset.mais = mais; } else if (tr.dataset.mais) delete tr.dataset.mais;
+    }
+  }
+
   // Reaplica LOCAIS a cada render do phx-grid (ele refaz o DOM por innerHTML). O observador
   // se desliga enquanto escreve: escrever texto e mutacao, e sem isso giraria para sempre.
   function vigiar(raiz, contexto) {
@@ -116,6 +180,7 @@ const grades = (() => {
       for (const [sel, onde, f] of LOCAIS) {
         for (const e of raiz.querySelectorAll(sel)) escreve(e, onde, f(e, contexto));
       }
+      rotularCelulas(raiz, contexto.cartao, contexto.camposRotulo || new Set());
       contexto.depois?.(raiz);
       obs.observe(raiz, { childList: true, subtree: true });
     };
@@ -128,21 +193,29 @@ const grades = (() => {
 
   // A marca (phxclaw/marca e CLAUDE.md): fundo #010418, Exo 2, contorno nas acoes. Chaves do
   // configurarVisual do phx-grid; o cubo recebe os MESMOS tokens por visualParaTokens.
-  const VISUAL_MARCA = {
-    fundo: '#010418', fundoAlt: '#071521', texto: '#eaf4ff', textoSuave: '#9bb3c5',
-    borda: '#1d4053', linha: '#12293a', acento: '#36d7ff', acentoHover: '#5fe0ff', foco: '#36d7ff',
-    ok: '#57e6a8', perigo: '#ff5e6c', aviso: '#ffc43d',
-    fonte: '"Exo 2", Inter, ui-sans-serif, system-ui, sans-serif', tamanho: 13, raio: 8, raioControle: 6,
-    cabecalho: { fundo: '#0b1b2a', texto: '#9fc3d8', negrito: true },
-    corpo: { texto: '#dce9f5', zebra: '#050c1d', hover: '#0b2133', selecao: '#12304a', negativo: '#ff5e6c' },
-    grade: { direcao: 'horizontal', corLinha: '#12293a' },
-    agrupamento: { fundo: '#071521', texto: '#9bb3c5', borda: '#1d4053' },
-    grupos: { fundo: '#0b1b2a', texto: '#f7c24a', hover: '#0f2638' },
-    totais: { fundo: '#0b1b2a', texto: '#eaf4ff' },
-    botoes: { fundo: 'transparent', texto: '#9fc3d8', borda: '#1d4053' },
-    chips: { fundo: '#0b2133', borda: '#36d7ff' },
-  };
-  const tokensDaMarca = () => PG.visualParaTokens(VISUAL_MARCA);
+  // A grade le os TOKENS da folha (app.css, Style Phoenix Padrao) na hora de montar: uma
+  // definicao so de cor para a tela e para a grade, e o tema claro (proxima sprint) chega a
+  // grade sem uma linha aqui. Hex digitado aqui era a segunda copia da paleta.
+  function visualMarca() {
+    const cs = getComputedStyle(document.documentElement);
+    const t = n => cs.getPropertyValue(`--${n}`).trim();
+    return {
+      fundo: t('fundo'), fundoAlt: t('painel'), texto: t('texto'), textoSuave: t('texto-2'),
+      borda: t('linha-forte'), linha: t('linha'), acento: t('laranja'), acentoHover: t('ouro-2'), foco: t('laranja'),
+      ok: t('ok'), perigo: t('vermelho'), aviso: t('aviso'),
+      fonte: t('sans'), tamanho: 13, raio: 8, raioControle: 6,
+      cabecalho: { fundo: t('painel-2'), texto: t('texto-2'), negrito: true },
+      corpo: { texto: t('texto'), zebra: t('painel'), hover: t('realce'), selecao: t('realce'), negativo: t('vermelho') },
+      grade: { direcao: 'horizontal', corLinha: t('linha') },
+      agrupamento: { fundo: t('painel'), texto: t('texto-2'), borda: t('linha-forte') },
+      grupos: { fundo: t('painel-2'), texto: t('ouro'), hover: t('realce') },
+      totais: { fundo: t('painel-2'), texto: t('texto') },
+      botoes: { fundo: 'transparent', texto: t('texto-2'), borda: t('linha-forte') },
+      chips: { fundo: t('realce'), borda: t('laranja') },
+    };
+  }
+
+  const tokensDaMarca = () => PG().visualParaTokens(visualMarca());
 
   // Uma grade com troca de idioma: a troca guarda o layout (ordem, filtro, grupo, colunas
   // escondidas, pagina), refaz a grade com os titulos novos e devolve o layout -- o titulo
@@ -160,15 +233,29 @@ const grades = (() => {
       },
       termoBusca: () => (g ? g.filtros().find(f => f.campo === '*')?.termo ?? '' : ''),
       depois: def.depois ? r => def.depois(r, g) : null,
+      cartao: def.cartao || null,
+      // Campos de rotulo (valor substituido: `valores` ou formato de grupo), da cfg da montagem.
+      camposRotulo: new Set(),
     };
+    if (def.cartao) {
+      alvo.classList.add('grade-cartao');
+      // No cartao, o toque (ou Enter) abre os campos que ficaram fora; a grade de Tarefas,
+      // que abre o detalhe no toque, nao deixa campo fora e nao entra aqui.
+      const celular = window.matchMedia('(max-width: 640px)');
+      const alternar = tr => { if (tr?.dataset.mais !== undefined) tr.classList.toggle('cartao-aberto'); };
+      alvo.addEventListener('click', e => { if (celular.matches) alternar(e.target.closest('tbody tr')); });
+      alvo.addEventListener('keydown', e => { if (celular.matches && e.key === 'Enter') alternar(e.target.closest('tbody tr')); });
+    }
     function montar(layout) {
-      PG.definirTextos(textosDoPhxGrid());
-      g = PG.criar(alvo, {
-        tema: 'escuro', agrupavel: true, totais: true, dicas: false, ...def.cfg(),
+      PG().definirTextos(textosDoPhxGrid());
+      const cfg = def.cfg();
+      contexto.camposRotulo = new Set(cfg.colunas.filter(c => c.valores || c.formatoGrupo).map(c => c.campo));
+      g = PG().criar(alvo, {
+        tema: 'escuro', agrupavel: true, totais: true, dicas: false, ...cfg,
         aoLog: ev => def.aoLog?.(ev, g),
       });
       if (!g || g.ok === false) throw new Error(`phx-grid: ${g?.erro}`);
-      g.configurarVisual(VISUAL_MARCA);
+      g.configurarVisual(visualMarca());
       alvo.dataset.grade = def.nome;
       if (layout) {
         for (const c of layout.colunas) c.titulo = null;
@@ -202,9 +289,9 @@ const grades = (() => {
       termoBusca: () => '',
     };
     function montar(layout) {
-      PG.definirTextos(textosDoPhxGrid());
+      PG().definirTextos(textosDoPhxGrid());
       alvo.replaceChildren();
-      c = PG.cubo(alvo, { tema: 'escuro', painelCampos: false, ...def.cfg() });
+      c = PG().cubo(alvo, { tema: 'escuro', painelCampos: false, ...def.cfg() });
       if (!c || c.ok === false) throw new Error(`phx-grid cubo: ${c?.erro}`);
       const raiz = alvo.querySelector('.phx-cubo');
       for (const [k, v] of Object.entries(tokensDaMarca())) if (k[0] !== '!') raiz.style.setProperty(k, v);
@@ -231,5 +318,5 @@ const grades = (() => {
     else g.baixarCSV(`${nome}.csv`, { separador: ';' });
   }
 
-  return { criar, cubo, exportar, valorDeGrupo, rotuloAgregador, VISUAL_MARCA };
+  return { carregar, criar, cubo, exportar, valorDeGrupo, rotuloAgregador, visualMarca };
 })();

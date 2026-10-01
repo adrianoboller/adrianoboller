@@ -1,41 +1,66 @@
 /* Tela de Tarefas e o modo celular do aplicativo instalavel. Arquivo proprio: as regras
    de celular so valem abaixo de 640px e nao mexem na tela de mesa. */
 .tarefas-linha{display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap}
-.tarefas-linha textarea{flex:1;min-width:220px;background:#071521;border:1px solid #1d4053;color:var(--text);border-radius:6px;padding:9px 12px;font:inherit;font-size:13px;resize:vertical}
-.tarefas-linha .marcar{display:flex;gap:6px;align-items:center;font-size:12px;color:#8aa4b8}
+.tarefas-linha textarea{flex:1;min-width:220px;background:var(--painel);border:1px solid var(--linha-forte);color:var(--texto);border-radius:6px;padding:9px 12px;font:inherit;font-size:var(--fs-2);resize:vertical}
+.tarefas-linha .marcar{display:flex;gap:6px;align-items:center;font-size:var(--fs-1);color:var(--texto-2)}
 .tarefas-linha .marcar input{width:auto}
 .tarefas-grade{display:grid;grid-template-columns:minmax(240px,1fr) 2fr;gap:14px;flex:1;min-height:0}
-.tarefas-lista{list-style:none;margin:0;padding:0;overflow:auto;border:1px solid #17374a;border-radius:8px}
-.tarefa-item{display:flex;flex-direction:column;gap:3px;padding:10px 12px;border-bottom:1px solid #12293a;cursor:pointer}
-.tarefa-item:hover,.tarefa-item.selecionada{background:#0b2133}
-.tarefa-objetivo{font-size:13px;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
-.tarefa-estado{font-size:9px;letter-spacing:.12em;font-weight:700;color:#5ea8ff}
-.estado-completed .tarefa-estado,.tarefa-estado.estado-completed{color:#57e6a8}
-.estado-failed .tarefa-estado,.tarefa-estado.estado-failed,.estado-cancelled .tarefa-estado,.tarefa-estado.estado-cancelled{color:#ff5e6c}
-.estado-awaiting_input .tarefa-estado,.tarefa-estado.estado-awaiting_input,.estado-awaiting_approval .tarefa-estado,.tarefa-estado.estado-awaiting_approval{color:#ffc43d}
-.tarefas-detalhe{overflow:auto;border:1px solid #17374a;border-radius:8px;padding:14px 16px}
-.tarefa-titulo{font-size:17px;margin:6px 0 10px;font-weight:600;white-space:pre-wrap}
-.tarefas-detalhe h3{font-size:11px;letter-spacing:.14em;color:#8aa4b8;margin:14px 0 6px}
-.tarefa-pergunta{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:8px 0;padding:10px;border:1px solid #ffc43d;border-radius:6px}
+.tarefas-lista{list-style:none;margin:0;padding:0;overflow:auto;border:1px solid var(--linha);border-radius:8px}
+.tarefa-item{display:flex;flex-direction:column;gap:3px;padding:10px 12px;border-bottom:1px solid var(--linha);cursor:pointer}
+.tarefa-item:hover,.tarefa-item.selecionada{background:var(--painel-2)}
+.tarefa-objetivo{font-size:var(--fs-2);overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.tarefa-estado{font-size:var(--fs-1);letter-spacing:.12em;font-weight:700;color:var(--info)}
+.estado-completed .tarefa-estado,.tarefa-estado.estado-completed{color:var(--ok)}
+.estado-failed .tarefa-estado,.tarefa-estado.estado-failed,.estado-cancelled .tarefa-estado,.tarefa-estado.estado-cancelled{color:var(--vermelho)}
+.estado-awaiting_input .tarefa-estado,.tarefa-estado.estado-awaiting_input,.estado-awaiting_approval .tarefa-estado,.tarefa-estado.estado-awaiting_approval{color:var(--aviso)}
+.tarefas-detalhe{overflow:auto;border:1px solid var(--linha);border-radius:8px;padding:14px 16px}
+.tarefa-titulo{font-size:var(--fs-4);margin:6px 0 10px;font-weight:600;white-space:pre-wrap}
+.tarefas-detalhe h3{font-size:var(--fs-1);letter-spacing:.14em;color:var(--texto-2);margin:14px 0 6px}
+.tarefa-pergunta{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:8px 0;padding:10px;border:1px solid var(--aviso);border-radius:6px}
 .tarefa-questao{flex-basis:100%;margin:0;white-space:pre-wrap}
 .tarefa-pergunta .filtro{flex:1;width:auto}
-.tarefa-resposta,.tarefa-erro{white-space:pre-wrap;margin:0;font-size:13px}
-.tarefa-erro{color:#ff5e6c}
-.tarefa-passos{margin:0;padding-left:20px;font-size:12px;color:#c4d6e4}
-.tarefa-passos li{margin-bottom:4px}.tarefa-passos b{margin-right:6px;color:var(--text)}
-.passo-erro b,.passo-negado b{color:#ff5e6c}
-.tarefa-artefato{display:inline-block;margin:8px 8px 0 0;color:#5ea8ff;font-size:12px}
+.tarefa-resposta,.tarefa-erro{white-space:pre-wrap;margin:0;font-size:var(--fs-2)}
+.tarefa-erro{color:var(--vermelho)}
+.tarefa-passos{margin:0;padding-left:20px;font-size:var(--fs-1);color:var(--texto)}
+.tarefa-passos li{margin-bottom:4px}.tarefa-passos b{margin-right:6px;color:var(--texto)}
+.passo-erro b,.passo-negado b{color:var(--vermelho)}
+.tarefa-artefato{display:inline-block;margin:8px 8px 0 0;color:var(--info);font-size:var(--fs-1)}
 @media(max-width:640px){
   :root{--sidebar:0px}
   .app-shell{grid-template-columns:1fr;grid-template-rows:56px 1fr 74px}
-  .sidebar{grid-row:3;grid-column:1;flex-direction:row;padding:6px;border-right:0;border-top:1px solid #17374a}
-  .sidebar nav{flex-direction:row;overflow-x:auto;gap:4px;width:100%}
+  .app-shell>.footerbar{display:none}
+  /* Barra inferior: as sete telas CABEM na largura (a 390 o nav media 422 px e a
+     Configuracao ficava fora da tela, com 29 px tocaveis -- qualificacao de 01/10/2026, G1).
+     min-width:0 deixa a coluna do grid encolher; cada botao divide a largura por igual. */
+  .sidebar{grid-row:3/4;grid-column:1;flex-direction:row;padding:4px;border-right:0;border-top:1px solid var(--linha);min-width:0;width:100%}
+  .sidebar nav{flex-direction:row;gap:2px;width:100%;max-width:100vw;min-width:0}
+  .sidebar .nav{flex:1 1 0;min-width:44px;height:64px;padding:0 2px}
+  .sidebar .nav em{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .sidebar-bottom{display:none}
   main,.main{grid-column:1;grid-row:2;padding:12px 12px 0;min-width:0;width:100vw;box-sizing:border-box}
   .tela,.tarefas-grade,.tarefas-lista,.tarefas-detalhe{min-width:0;max-width:100%}
   .tarefas-linha textarea{min-width:0;width:100%;flex-basis:100%}
-  .sidebar .nav em{font-size:9px}
-  .tarefas-grade{grid-template-columns:1fr;grid-template-rows:minmax(120px,35%) 1fr}
+  .sidebar .nav b{top:3px;right:3px}
+  /* Topo do celular: a marca encolhe e o rotulo pequeno sai; nada passa da largura. */
+  .topbar{padding:0 10px;min-width:0}
+  .brand-mini{width:auto;min-width:0}
+  .brand-mini img{width:34px;height:34px;margin-right:8px}
+  .brand-mini strong{font-size:var(--fs-4)}
+  .brand-mini small{display:none}
+  .top-actions{width:auto;margin-left:auto;gap:6px}
+  .top-actions button{width:44px;height:44px}
+  /* Empilhado e rolando com a tela: o detalhe aberto vem ANTES da lista (tarefas.js o traz a
+     vista), e a lista em cartoes tem a altura dela -- presa em 35% da tela, os cartoes
+     vazavam por cima do detalhe e tomavam o toque do RESPONDER (achado pelo pwa_ponte.mjs). */
+  .tarefas-grade{display:flex;flex-direction:column;flex:none}
+  .tarefas-lista{overflow:visible}
+  .tarefas-detalhe{order:-1;overflow:visible}
   .tela-head{flex-direction:column;align-items:stretch}
   .footerbar{display:none}
+}
+/* Abaixo de 480 px o rotulo do menu nao cabe por inteiro: fica so o icone na tela, e o
+   rotulo continua sendo o nome acessivel do botao (escondido so dos olhos, nao do leitor). */
+@media(max-width:480px){
+  .sidebar .nav em{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap}
+  .sidebar .nav span{margin-bottom:0}
 }

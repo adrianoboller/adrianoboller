@@ -30,26 +30,40 @@
 
   // Recebe o texto JA traduzido: a chave fica literal no `txt(...)` de quem chama, onde o
   // conferidor da fabrica a le.
-  function aviso(texto, ehErro) {
-    status.textContent = texto;
+  // O status e regiao viva (role=status no HTML); erro vira role=alert. Texto igual nao se
+  // reescreve: a sondagem de 2,5 s faria o leitor de tela repetir a mesma frase.
+  function aviso(texto, ehErro, comTentar = false) {
+    if (status.textContent !== texto) status.textContent = texto;
     status.classList.toggle('aviso', !!ehErro);
+    status.setAttribute('role', ehErro ? 'alert' : 'status');
+    mostrarTentar('tarefas', comTentar);
   }
 
   async function api(metodo, caminho, corpo) {
-    const r = await fetch(`./v1/${caminho}`, {
-      method: metodo,
-      headers: { Authorization: `Bearer ${token()}`, 'Content-Type': 'application/json' },
-      body: corpo === undefined ? undefined : JSON.stringify(corpo),
-      cache: 'no-store',
-    });
+    let r;
+    try {
+      r = await fetch(`./v1/${caminho}`, {
+        method: metodo,
+        headers: { Authorization: `Bearer ${token()}`, 'Content-Type': 'application/json' },
+        body: corpo === undefined ? undefined : JSON.stringify(corpo),
+        cache: 'no-store',
+      });
+    } catch {
+      // fetch rejeitado e rede (o navegador nao diz mais que isso); o texto cru dele
+      // («Failed to fetch») e em ingles e nao diz o que fazer.
+      throw Object.assign(new Error('sem rede'), { rede: true });
+    }
     const v = await r.json().catch(() => ({}));
     if (!r.ok) throw Object.assign(new Error(v.error || `HTTP ${r.status}`), { status: r.status });
     return v;
   }
 
+  // Erro de rede e erro do agente dizem o que fazer, pela fabrica; o motivo que o agente deu
+  // e DADO e entra pelo marcador.
   function falhou(e) {
     if (e.status === 401) aviso(txt('tarefas.sem_token', 'Token recusado: confira o token de acesso.'), true);
-    else aviso(txt('tarefas.erro', 'Falhou: {erro}', { erro: e.message }), true);
+    else if (e.rede) aviso(txt('erro.sem_rede', 'Sem conexão com o agente — confira a rede e toque em TENTAR DE NOVO.'), true, true);
+    else aviso(txt('erro.servidor', 'O agente respondeu com erro ({status}): {erro}. Toque em TENTAR DE NOVO; se repetir, veja o log do agente.', { status: e.status ?? '—', erro: e.message }), true, true);
   }
 
   // Uma chave literal por estado (e nao `tarefas.estado.${s}`): o conferidor da fabrica
@@ -113,19 +127,41 @@
       if (id === undefined) return;
       if (tr.dataset.id !== id) tr.dataset.id = id;
       tr.classList.toggle('selecionada', id === selecionada);
+      // A linha e o alvo da acao (abre o detalhe): quem usa leitor de tela ouve qual esta aberta.
+      tr.setAttribute('aria-selected', String(id === selecionada));
     });
   }
+
+  // Teclado: Enter ou Espaco na linha abrem o detalhe, como o clique. Sem isto nao havia
+  // como APROVAR, RESPONDER ou CANCELAR sem mouse (relatorio de 01/10/2026, B1). A celula
+  // focada vem do proprio phx-grid (setas); com o foco na grade e nenhuma celula ainda, vale
+  // a celula marcada por ele, ou a primeira linha.
+  lista.addEventListener('keydown', e => {
+    if ((e.key !== 'Enter' && e.key !== ' ') || e.altKey || e.ctrlKey || e.metaKey) return;
+    if (/^(INPUT|TEXTAREA|SELECT|BUTTON|A)$/.test(e.target.tagName)) return;
+    const tr = e.target.closest('tbody tr[data-id]')
+      || lista.querySelector('tbody .phx-cel-foco')?.closest('tr[data-id]')
+      || (e.target.closest('.phx-envoltorio') ? lista.querySelector('tbody tr[data-id]') : null);
+    if (!tr) return;
+    e.preventDefault();
+    if (tr.dataset.id === selecionada && !detalhe.hidden) return;
+    selecionada = tr.dataset.id;
+    atualizar();
+  });
 
   function montarGrade(linhas) {
     grade = grades.criar(alvoGrade, {
       nome: 'tarefas',
+      // Celular: um cartao por tarefa -- o objetivo em cima (duas linhas), estado e data.
+      cartao: { titulo: 'objective', campos: ['status', 'created_at'] },
       cfg: () => ({
         chave: 'id', dados: linhas, navegador: true, agrupavel: false, pagina: { tamanho: 10, opcoes: [10, 25, 50] },
         condicoes: Object.entries(FORMA_ESTADO).map(([valor, forma]) => ({ campo: 'status', op: '=', valor, estilo: forma })),
         colunas: [
           { campo: 'status', titulo: txt('tarefas.col.estado', 'Estado'), tag: 'status', valores: ROTULOS_ESTADO() },
           { campo: 'objective', titulo: txt('tarefas.col.objetivo', 'Objetivo'), tag: 'objetivo', quebraLinha: true },
-          { campo: 'created_at', titulo: txt('tarefas.col.criada', 'Criada em'), tag: 'criada', tipo: 'dataHora' },
+          // A data sai pelo idioma da tela (app.js, dataHora); a grade ordena pelo valor ISO.
+          { campo: 'created_at', titulo: txt('tarefas.col.criada', 'Criada em'), tag: 'criada', tipo: 'dataHora', formato: v => dataHora(v) },
         ],
       }),
       inicial: g => g.ordenar('created_at', 'desc'),
@@ -146,7 +182,7 @@
     // Sem mudanca, a grade nao se refaz: refazer a cada sondagem desfaria a ordem, o filtro
     // e a pagina de quem esta olhando.
     const assinatura = JSON.stringify([linhas, idiomas.atual]);
-    if (!grade) montarGrade(linhas);
+    if (!grade) { await grades.carregar(); if (!grade) montarGrade(linhas); }
     else if (assinatura !== assinaturaLista) grade.g.substituirDados(linhas);
     else grade.aplicar();
     assinaturaLista = assinatura;
@@ -159,7 +195,11 @@
     const assinatura = JSON.stringify([t.id, t.status, t.steps?.length, t.question, t.answer, t.error, idiomas.atual]);
     if (assinatura === desenhado && !detalhe.hidden) return;
     desenhado = assinatura;
+    // No celular o detalhe fica acima da lista: abrir OUTRA tarefa o traz a vista.
+    const outra = detalhe.dataset.id !== t.id;
+    detalhe.dataset.id = t.id;
     detalhe.hidden = false;
+    if (outra && window.matchMedia('(max-width: 640px)').matches) requestAnimationFrame(() => detalhe.scrollIntoView({ block: 'start' }));
     detalhe.replaceChildren();
     const cab = el('header', 'tarefa-cab');
     cab.append(el('span', `tarefa-estado estado-${t.status}`, estado(t.status)), el('h2', 'tarefa-titulo', t.objective));
@@ -222,6 +262,8 @@
   async function atualizar() {
     if (!comHttp) { aviso(txt('tarefas.sem_api', 'A API de tarefas só existe com a tela servida pelo agente (phxclaw servir) ou pela ponte.'), true); return; }
     if (!token()) { aviso(txt('tarefas.pede_token', 'Informe o token de acesso para ver as tarefas.'), true); return; }
+    // Primeira carga: diz que esta lendo em vez de deixar o status vazio (M8).
+    if (!grade && !status.classList.contains('aviso')) aviso(txt('geral.lendo', 'Lendo…'));
     try { await carregarLista(); await carregarDetalhe(); } catch (e) { falhou(e); }
   }
 

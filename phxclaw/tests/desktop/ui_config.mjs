@@ -254,8 +254,11 @@ try {
 
   // Botoes so contorno, nas cores da acao.
   const botoes = await page.$$eval('#tela-config .acao', bs => bs.filter(b => b.offsetParent).map(b => ({ c: b.className, fundo: getComputedStyle(b).backgroundColor })));
-  check('botoes so contorno: salvar amarelo, recarregar azul, voltar ao padrao vermelho',
-    botoes.every(b => b.fundo === 'rgba(0, 0, 0, 0)') && botoes.some(b => /altera/.test(b.c)) && botoes.some(b => /consulta/.test(b.c)) && botoes.some(b => /exclui/.test(b.c)), JSON.stringify(botoes.slice(0, 4)));
+  // VOLTAR AO PADRAO e rosa (marca): e um desfazer que se reverte, nao um excluir de vez
+  // (qualificacao de 01/10/2026, M9). A checagem continua exigindo as tres cores, e agora
+  // tambem que nenhum botao desta tela seja vermelho -- nada aqui apaga de vez.
+  check('botoes so contorno: salvar amarelo, recarregar azul, voltar ao padrao rosa (marca), nenhum vermelho',
+    botoes.every(b => b.fundo === 'rgba(0, 0, 0, 0)') && botoes.some(b => /altera/.test(b.c)) && botoes.some(b => /consulta/.test(b.c)) && botoes.some(b => /\bmarca\b/.test(b.c)) && !botoes.some(b => /exclui/.test(b.c)), JSON.stringify(botoes.slice(0, 4)));
 
   // Idioma: rotulos mudam, chave e descricao (dado) nao.
   const ler = () => page.evaluate(() => ({

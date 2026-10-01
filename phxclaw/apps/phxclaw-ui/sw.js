@@ -6,13 +6,20 @@
 // nova chega na primeira visita com rede, sem esperar um segundo carregamento.
 // O nome do cache muda quando a casca ganha arquivo: o `activate` apaga o anterior, e o
 // celular instalado nao fica com uma casca sem a grade.
-const CACHE = 'phxclaw-casca-2';
+//
+// Casca 3: os tres JSON gerados que as telas leem e a fonte da marca entraram. Sem eles a
+// PRIMEIRA visita sem rede mandava «rodar cargo» (o arquivo existia; quem caiu foi a rede) e
+// a tela caia na fonte do sistema (qualificacao de 01/10/2026, G7).
+// Casca 4: a IBM Plex Mono (dado em mono, Style Phoenix Padrao) entrou, local como a Exo 2.
+const CACHE = 'phxclaw-casca-5';
 const CASCA = [
   './', './index.html', './manifest.webmanifest',
   './assets/app.css', './assets/app.js', './assets/idiomas.js', './assets/tarefas.js', './assets/tarefas.css',
   './assets/grades.js', './assets/grades.css', './assets/config.js', './assets/config-catalogo.json',
   './assets/vendor/phx-grid/phx-grid.js', './assets/vendor/phx-grid/phx-grid.css',
-  './assets/textos.json', './assets/phoenix-mark.svg',
+  './assets/textos.json', './assets/phoenix-mark.svg', './assets/fonte/exo2-latin.woff2',
+  './assets/fonte/ibmplexmono-400.woff2', './assets/fonte/ibmplexmono-700.woff2',
+  './assets/equipe.json', './assets/ferramentas.json', './assets/absorcao.json',
   './assets/icone-192.png', './assets/icone-512.png',
 ];
 
@@ -35,5 +42,11 @@ self.addEventListener('fetch', e => {
       caches.open(CACHE).then(c => c.put(e.request, copia));
     }
     return r;
-  }).catch(() => caches.match(e.request).then(r => r || caches.match('./index.html'))));
+  }).catch(() => caches.match(e.request).then(r => {
+    if (r) return r;
+    // So a NAVEGACAO cai na casca: um JSON ou um script que nao esta no cache sai como falha
+    // de rede, para a tela dizer «sem conexao» -- devolver o index.html no lugar de um JSON
+    // virava «arquivo nao existe» (o JSON nao analisava) e mandava gerar o que ja existe.
+    return e.request.mode === 'navigate' ? caches.match('./index.html') : Response.error();
+  })));
 });

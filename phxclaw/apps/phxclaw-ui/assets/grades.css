@@ -6,14 +6,14 @@
 .grade-barra .espaco{flex:1}
 .grade-alvo{min-width:0}
 .grade-alvo .phx-grid,.grade-alvo .phx-cubo{
-  --phx-chip-bg:#0b2133;--phx-chip-borda:#36d7ff;--phx-fbtn:#7894aa;--phx-inv:#010418;
-  --phx-pivot-total:#0b1b2a;--phx-pivot-geral:#0d2233;--phx-tooltip-bg:#eaf4ff;--phx-tooltip-fg:#010418;
+  --phx-chip-bg:var(--painel-2);--phx-chip-borda:var(--laranja);--phx-fbtn:var(--texto-3);--phx-inv:var(--fundo);
+  --phx-pivot-total:var(--painel-2);--phx-pivot-geral:var(--painel-2);--phx-tooltip-bg:var(--texto);--phx-tooltip-fg:var(--fundo);
   /* badge so contorno: o fundo cheio e reservado ao hover das acoes (CLAUDE.md, cores da acao) */
-  --phx-badge-verde-bg:transparent;--phx-badge-verde-fg:#57e6a8;--phx-badge-verde-bd:#57e6a8;
-  --phx-badge-ambar-bg:transparent;--phx-badge-ambar-fg:#ffc43d;--phx-badge-ambar-bd:#ffc43d;
-  --phx-badge-azul-bg:transparent;--phx-badge-azul-fg:#5ea8ff;--phx-badge-azul-bd:#5ea8ff;
-  --phx-badge-vermelho-bg:transparent;--phx-badge-vermelho-fg:#ff5e6c;--phx-badge-vermelho-bd:#ff5e6c;
-  --phx-badge-cinza-bg:transparent;--phx-badge-cinza-fg:#9bb3c5;--phx-badge-cinza-bd:#3a5a70}
+  --phx-badge-verde-bg:transparent;--phx-badge-verde-fg:var(--ok);--phx-badge-verde-bd:var(--ok);
+  --phx-badge-ambar-bg:transparent;--phx-badge-ambar-fg:var(--aviso);--phx-badge-ambar-bd:var(--aviso);
+  --phx-badge-azul-bg:transparent;--phx-badge-azul-fg:var(--info);--phx-badge-azul-bd:var(--info);
+  --phx-badge-vermelho-bg:transparent;--phx-badge-vermelho-fg:var(--vermelho);--phx-badge-vermelho-bd:var(--vermelho);
+  --phx-badge-cinza-bg:transparent;--phx-badge-cinza-fg:var(--texto-2);--phx-badge-cinza-bd:var(--texto-3)}
 .grade-alvo .phx-envoltorio{max-height:none}
 /* Controles do rodape (ir para, registro, itens por pagina): o navegador os pinta de branco
    por padrao; aqui seguem o tema, sem texto claro sobre fundo claro nem escuro sobre escuro. */
@@ -34,18 +34,18 @@
 /* Menus do cubo com textos crus do phx-grid (duas dezenas): fora; o cubo se reorganiza
    arrastando chips e pelo TRANSPOR. */
 .grade-alvo .phx-cb-filtro,.grade-alvo .phx-cb-medcfg{display:none}
-.grade-alvo .phx-cubo{font-family:"Exo 2",Inter,ui-sans-serif,system-ui,sans-serif}
+.grade-alvo .phx-cubo{font-family:var(--sans)}
 
 /* Status de tarefa e estado de absorcao: rotulo pela fabrica (valores), forma pela classe
    da condicao. Contorno e cor; a forma repete o estado para quem nao ve a cor. */
-.grade-alvo td[class*="phx-est-st-"],.grade-alvo td[class*="phx-est-abs-"]{font-size:10px;letter-spacing:.1em;font-weight:700}
-.grade-alvo td.phx-est-st-ok{color:#57e6a8;box-shadow:inset 3px 0 0 #57e6a8}
-.grade-alvo td.phx-est-st-espera{color:#ffc43d;box-shadow:inset 3px 0 0 #ffc43d}
-.grade-alvo td.phx-est-st-erro{color:#ff5e6c;box-shadow:inset 3px 0 0 #ff5e6c}
-.grade-alvo td.phx-est-st-anda{color:#5ea8ff;box-shadow:inset 3px 0 0 #5ea8ff}
-.grade-alvo td.phx-est-abs-agente{color:#57e6a8;box-shadow:inset 4px 0 0 #57e6a8}
-.grade-alvo td.phx-est-abs-parcial{color:#ffd77a;background-image:linear-gradient(90deg,transparent 0,transparent 0),repeating-linear-gradient(45deg,#ffc43d 0 2px,transparent 2px 5px);background-size:4px 100%,4px 100%;background-repeat:no-repeat}
-.grade-alvo td.phx-est-abs-nao{color:#c5d1de;border-left:1px dashed #8aa4b8}
+.grade-alvo td[class*="phx-est-st-"],.grade-alvo td[class*="phx-est-abs-"]{font-size:var(--fs-1);letter-spacing:.1em;font-weight:700}
+.grade-alvo td.phx-est-st-ok{color:var(--ok);box-shadow:inset 3px 0 0 var(--ok)}
+.grade-alvo td.phx-est-st-espera{color:var(--aviso);box-shadow:inset 3px 0 0 var(--aviso)}
+.grade-alvo td.phx-est-st-erro{color:var(--vermelho);box-shadow:inset 3px 0 0 var(--vermelho)}
+.grade-alvo td.phx-est-st-anda{color:var(--info);box-shadow:inset 3px 0 0 var(--info)}
+.grade-alvo td.phx-est-abs-agente{color:var(--ok);box-shadow:inset 4px 0 0 var(--ok)}
+.grade-alvo td.phx-est-abs-parcial{color:var(--ambar);background-image:linear-gradient(90deg,transparent 0,transparent 0),repeating-linear-gradient(45deg,var(--aviso) 0 2px,transparent 2px 5px);background-size:4px 100%,4px 100%;background-repeat:no-repeat}
+.grade-alvo td.phx-est-abs-nao{color:var(--texto);border-left:1px dashed var(--texto-2)}
 
 .tarefas-lista.grade-alvo{border:0;overflow:visible}
 /* Detalhe fechado: a grade ocupa a largura toda; aberto, divide com ele. So na mesa: no
@@ -57,47 +57,104 @@
 }
 .grade-alvo tbody tr{cursor:default}
 #tarefasLista tbody tr{cursor:pointer}
-#tarefasLista tbody tr.selecionada td{background:#0b2133}
+#tarefasLista tbody tr.selecionada td{background:var(--painel-2)}
 
 /* CONFIGURACAO: grade de propriedades do config.json (config.js). */
-.grade-barra .marcar{display:flex;gap:6px;align-items:center;font-size:12px;color:#8aa4b8}
+.grade-barra .marcar{display:flex;gap:6px;align-items:center;font-size:var(--fs-1);color:var(--texto-2)}
 .grade-barra .marcar input{width:auto}
-.filtro-sel{background:#071521;border:1px solid #1d4053;color:var(--text);border-radius:6px;padding:7px 10px;font:inherit;font-size:12px}
-.filtro-sel option:disabled{color:#5c6b80}
-.cfg-painel{border:1px solid #1d4053;border-radius:8px;padding:12px 14px;margin:0 0 12px;background:rgba(9,25,38,.85)}
+.filtro-sel{background:var(--painel);border:1px solid var(--linha-forte);color:var(--texto);border-radius:6px;padding:7px 10px;font:inherit;font-size:var(--fs-1)}
+.filtro-sel option:disabled{color:var(--texto-3)}
+.cfg-painel{border:1px solid var(--linha-forte);border-radius:8px;padding:12px 14px;margin:0 0 12px;background:rgba(9,25,38,.85)}
 .cfg-painel[hidden]{display:none}
-.cfg-painel h2{font-size:14px;margin:0 0 8px}
-.cfg-conflito{border-color:#ffc43d;color:#ffd77a}
-.cfg-conflito p{margin:0 0 10px;font-size:13px}
-.cfg-diff{border-collapse:collapse;width:100%;margin-bottom:10px;font-size:12px}
-.cfg-diff th{text-align:left;color:#8aa4b8;font-weight:600;padding:4px 8px;border-bottom:1px solid #1d4053}
-.cfg-diff td{padding:4px 8px;border-bottom:1px solid #12293a;color:#dce9f5}
-.cfg-diff td.de{color:#9bb3c5;text-decoration:line-through;text-decoration-color:#ff5e6c}
-.cfg-diff td.para{color:#ffd77a}
+.cfg-painel h2{font-size:var(--fs-3);margin:0 0 8px}
+.cfg-conflito{border-color:var(--aviso);color:var(--ambar)}
+.cfg-conflito p{margin:0 0 10px;font-size:var(--fs-2)}
+.cfg-diff{border-collapse:collapse;width:100%;margin-bottom:10px;font-size:var(--fs-1)}
+.cfg-diff th{text-align:left;color:var(--texto-2);font-weight:600;padding:4px 8px;border-bottom:1px solid var(--linha-forte)}
+.cfg-diff td{padding:4px 8px;border-bottom:1px solid var(--linha);color:var(--texto)}
+.cfg-diff td.de{color:var(--texto-2);text-decoration:line-through;text-decoration-color:var(--vermelho)}
+.cfg-diff td.para{color:var(--ambar)}
 #configConteudo td[data-tag="valor"]{min-width:220px}
 #configConteudo .cfg-ed[type="text"],#configConteudo .cfg-ed[type="number"],#configConteudo select.cfg-ed{width:min(100%,320px);padding:4px 6px}
 #configConteudo .cfg-ed[type="checkbox"]{width:16px;height:16px}
 .cfg-tags{display:flex;flex-wrap:wrap;gap:4px;align-items:center}
-.cfg-tag{display:inline-flex;align-items:center;gap:2px;border:1px solid #36d7ff;color:#bfefff;border-radius:10px;padding:0 4px 0 8px;font-size:11px}
-.cfg-tag button{background:transparent;border:0;color:#ff5e6c;cursor:pointer;font-size:12px;padding:0 3px}
+.cfg-tag{display:inline-flex;align-items:center;gap:2px;border:1px solid var(--laranja);color:var(--texto);border-radius:10px;padding:0 4px 0 8px;font-size:var(--fs-1)}
+.cfg-tag button{background:transparent;border:0;color:var(--vermelho);cursor:pointer;font-size:var(--fs-1);padding:0 3px}
 .cfg-tag-in{width:120px;padding:3px 6px}
-.cfg-volta{padding:4px 8px;font-size:9px}
-.cfg-segredo{display:inline-block;border:1px solid #57e6a8;color:#86f2c0;border-radius:10px;padding:1px 8px;font-size:11px;margin-right:6px}
-.cfg-segredo[data-presente="nao"]{border:1px dashed #8aa4b8;color:#c5d1de}
-.cfg-comando{display:block;margin-top:4px;font-size:10px;color:#9bb3c5;white-space:normal}
-.cfg-travado{color:#c5d1de}
+.cfg-volta{padding:4px 8px;font-size:var(--fs-1)}
+.cfg-segredo{display:inline-block;border:1px solid var(--ok);color:var(--ok);border-radius:10px;padding:1px 8px;font-size:var(--fs-1);margin-right:6px}
+.cfg-segredo[data-presente="nao"]{border:1px dashed var(--texto-2);color:var(--texto)}
+.cfg-comando{display:block;margin-top:4px;font-size:var(--fs-1);color:var(--texto-2);white-space:normal}
+.cfg-travado{color:var(--texto)}
 .cfg-travado::before{content:"🔒 "}
-.cfg-motivo-travado{display:block;color:#7894aa;font-size:10px;margin-top:2px}
-.cfg-motivo{display:block;color:#ff5e6c;font-size:11px;margin-top:3px}
+.cfg-motivo-travado{display:block;color:var(--texto-3);font-size:var(--fs-1);margin-top:2px}
+.cfg-motivo{display:block;color:var(--vermelho);font-size:var(--fs-1);margin-top:3px}
 /* Origem pela forma e pela cor: ambiente travado (cadeado), projeto (borda dupla),
    pasta (borda cheia), padrao (tracejado). */
-.grade-alvo td.phx-est-origem-ambiente,.grade-alvo td.phx-est-origem-projeto,.grade-alvo td.phx-est-origem-pasta,.grade-alvo td.phx-est-origem-padrao{font-size:10px;letter-spacing:.08em;font-weight:700;outline-offset:-6px}
-.grade-alvo td.phx-est-origem-ambiente{color:#ffc43d;outline:1px solid #ffc43d}
+.grade-alvo td.phx-est-origem-ambiente,.grade-alvo td.phx-est-origem-projeto,.grade-alvo td.phx-est-origem-pasta,.grade-alvo td.phx-est-origem-padrao{font-size:var(--fs-1);letter-spacing:.08em;font-weight:700;outline-offset:-6px}
+.grade-alvo td.phx-est-origem-ambiente{color:var(--aviso);outline:1px solid var(--aviso)}
 .grade-alvo td.phx-est-origem-ambiente::before{content:"🔒 "}
-.grade-alvo td.phx-est-origem-projeto{color:#c9a7ff;outline:3px double #a675ff}
-.grade-alvo td.phx-est-origem-pasta{color:#36d7ff;outline:1px solid #36d7ff}
-.grade-alvo td.phx-est-origem-padrao{color:#9bb3c5;outline:1px dashed #7894aa}
+.grade-alvo td.phx-est-origem-projeto{color:var(--texto);outline:3px double var(--violeta)}
+.grade-alvo td.phx-est-origem-pasta{color:var(--laranja);outline:1px solid var(--laranja)}
+.grade-alvo td.phx-est-origem-padrao{color:var(--texto-2);outline:1px dashed var(--texto-3)}
 .grade-alvo td.phx-est-cfg-pendente{background:rgba(255,196,61,.07)}
-.grade-alvo td.phx-est-cfg-pendente:first-child{box-shadow:inset 3px 0 0 #ffc43d}
+.grade-alvo td.phx-est-cfg-pendente:first-child{box-shadow:inset 3px 0 0 var(--aviso)}
 .grade-alvo td.phx-est-cfg-erro{background:rgba(255,94,108,.09)}
-.grade-alvo td.phx-est-cfg-erro:first-child{box-shadow:inset 3px 0 0 #ff5e6c}
+.grade-alvo td.phx-est-cfg-erro:first-child{box-shadow:inset 3px 0 0 var(--vermelho)}
+
+/* MODO CARTAO (ate 640 px): a 390 a linha da grade media 185 px em Tarefas, 203 em Agentes e
+   448 em Ferramentas -- cabiam 2 a 5 linhas por tela (qualificacao de 01/10/2026, B2). Uma
+   linha vira um cartao: o titulo em cima, os campos com o rotulo da coluna (data-rotulo,
+   grades.js) e o texto longo em duas linhas, que abre por inteiro no toque. O cabecalho
+   continua: cada titulo vira um botao de ordenar/filtrar que quebra linha. */
+@media(max-width:640px){
+  .grade-cartao .phx-envoltorio{overflow:visible}
+  .grade-cartao .phx-tabela{display:block;width:100%!important;min-width:0!important}
+  .grade-cartao .phx-tabela>thead{display:block}
+  .grade-cartao .phx-tabela>thead>tr{display:flex;flex-wrap:wrap;gap:6px;padding:6px 0}
+  .grade-cartao .phx-tabela>thead>tr:has(.phx-frow-cel){display:none}
+  .grade-cartao .phx-tabela>thead th{display:inline-flex;align-items:center;gap:4px;width:auto!important;min-width:0!important;border:1px solid var(--phx-borda);border-radius:6px;padding:6px 8px}
+  .grade-cartao .phx-tabela>tbody{display:block}
+  .grade-cartao .phx-tabela>tbody>tr{display:flex;flex-wrap:wrap;column-gap:14px;row-gap:2px;padding:8px 12px;border-bottom:1px solid var(--phx-linha)}
+  .grade-cartao .phx-tabela>tbody>tr>td{display:block;flex:0 1 auto;border:0;padding:1px 0;width:auto!important;min-width:0!important;white-space:normal;line-height:1.35}
+  .grade-cartao .phx-tabela>tbody>tr>td[data-cartao="titulo"],.grade-cartao .phx-tabela>tbody>tr>td[data-cartao="curto"],.grade-cartao .phx-tabela>tbody>tr>td[data-cartao="fora"]{flex-basis:100%}
+  .grade-cartao .phx-tabela>tbody>tr>td[data-rotulo]::before{content:attr(data-rotulo) ": ";color:var(--texto-2);font-family:var(--sans);font-weight:400;font-size:var(--fs-1);letter-spacing:0;text-transform:none}
+  /* No cartao o campo curto vai no menor degrau: rotulo + valor em mono cabem numa linha. */
+  .grade-cartao .phx-tabela>tbody>tr>td[data-cartao="campo"]{font-size:var(--fs-1)}
+  .grade-cartao .phx-tabela>tbody>tr>td[data-cartao="titulo"]{order:-1;font-weight:700;font-size:var(--fs-2);color:var(--texto);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .grade-cartao .phx-tabela>tbody>tr>td[data-cartao="titulo"]::before{content:none}
+  .grade-cartao .phx-tabela>tbody>tr>td[data-cartao="curto"]{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .grade-cartao .phx-tabela>tbody>tr>td[data-cartao="fora"]{display:none}
+  .grade-cartao .phx-tabela>tbody>tr.cartao-aberto>td[data-cartao]{display:block;-webkit-line-clamp:unset}
+  .grade-cartao .phx-tabela>tbody>tr[data-mais]::after{content:attr(data-mais);flex-basis:100%;color:var(--texto-2);font-size:var(--fs-1);line-height:1.3}
+  .grade-cartao .phx-tabela>tbody>tr.cartao-aberto[data-mais]::after{content:none}
+  .grade-cartao .phx-tabela>tbody>tr.phx-grupo{display:block;padding:8px 10px}
+  .grade-cartao .phx-tabela>tbody>tr.phx-grupo>td{display:block}
+  .grade-cartao .phx-tabela>tfoot{display:block}
+  .grade-cartao .phx-tabela>tfoot>tr{display:flex;flex-wrap:wrap;gap:8px}
+  #tarefasLista.grade-alvo .grade-cartao tbody tr.selecionada,#tarefasLista .grade-cartao tbody tr.selecionada{background:var(--painel-2)}
+}
+
+/* ALVOS DE TOQUE no celular: nada tocavel abaixo de 24 px (WCAG 2.5.8). Eram 25 na
+   Configuracao a 390: o ▼ do filtro (12x12), o x da pilula (6x13), as caixas de marcar
+   (13 e 16 px) e o x da etiqueta (qualificacao de 01/10/2026, M16). Aqui, no fim da cascata, para vencer
+   as larguras de mesa acima. */
+@media(max-width:640px){
+  .marcar input[type="checkbox"],#configConteudo .cfg-ed[type="checkbox"]{width:24px;height:24px}
+  .grade-alvo .phx-fbtn,.grade-alvo .phx-gpill-x,.cfg-tag button{min-width:24px;min-height:24px;display:inline-grid;place-items:center}
+}
+
+/* Coluna de texto corrido (missao, descricao, objetivo) com piso de largura na mesa: sem ele o
+   algoritmo de tabela a espremia em ~75 px e quebrava a palavra no meio («infraestrut-ura»),
+   com linhas de 160+ px a 1366 (achado exercitando a Agentes na sprint de qualificacao). O
+   cartao do celular tem as regras dele acima. */
+@media(min-width:641px){
+  .grade-alvo .phx-tabela td.phx-td-quebra{min-width:320px;word-break:normal;overflow-wrap:break-word}
+}
+
+/* ESCALA FIXA dentro da grade: o phx-grid deriva tamanhos do --phx-fs (12,5 / 9,5 / 8 px);
+   aqui cada peca cai num degrau da escala (app.css, --fs-*). O ▼ do filtro e a seta de ordem
+   sao icones de texto e ficam no menor degrau, nao abaixo dele. */
+.grade-alvo .phx-grid .phx-grupo-rotulo,.grade-alvo .phx-grid .phx-grupo-conta,.grade-alvo .phx-grid .phx-grupo-caret,
+.grade-alvo .phx-grid .grade-valor-grupo,.grade-alvo .phx-grid .phx-gpill,.grade-alvo .phx-grid td.phx-td{font-size:var(--fs-2)}
+.grade-alvo .phx-grid .phx-fbtn,.grade-alvo .phx-grid .phx-sort-ind,.grade-alvo .phx-grid .phx-th-agg,.grade-alvo .phx-grid .phx-tfoot-agg{font-size:var(--fs-1)}

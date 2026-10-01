@@ -32,9 +32,22 @@
   // Valor em texto, para a celula travada, o padrao e o diff: dado, sem traducao.
   const texto = v => (v === null || v === undefined ? '—' : Array.isArray(v) ? v.join(', ') : String(v));
 
-  function aviso(t, ehErro) {
-    status.textContent = t;
+  // O aviso guarda COMO se escreve (funcao), nao o texto: a fabrica pode chegar depois do
+  // erro (achado exercitando: o erro de rede saia em portugues numa tela em ingles), e a
+  // troca de idioma reescreve o aviso pela chave.
+  let ultimoAviso = null;
+  function aviso(t, ehErro, comTentar = false) {
+    ultimoAviso = typeof t === 'function' ? [t, ehErro, comTentar] : null;
+    status.textContent = typeof t === 'function' ? t() : t;
     status.classList.toggle('aviso', !!ehErro);
+    status.setAttribute('role', ehErro ? 'alert' : 'status');
+    mostrarTentar('config', comTentar);
+  }
+  // O mesmo par de mensagens da tela de Tarefas, pela mesma chave: rede caida diz o que
+  // fazer; erro do agente traz o motivo dele (dado) e o TENTAR DE NOVO.
+  function falhou(e) {
+    if (e.rede) aviso(() => txt('erro.sem_rede', 'Sem conexão com o agente — confira a rede e toque em TENTAR DE NOVO.'), true, true);
+    else aviso(() => txt('erro.servidor', 'O agente respondeu com erro ({status}): {erro}. Toque em TENTAR DE NOVO; se repetir, veja o log do agente.', { status: e.status ?? '—', erro: e.message }), true, true);
   }
 
   const ORIGENS = {
@@ -57,7 +70,9 @@
   }
   const valorNaTela = c => (pendentes.has(c.chave) ? (pendentes.get(c.chave) ?? c.padrao) : c.valor);
 
-  // O editor de cada linha, pelo tipo. HTML montado aqui, com todo dado escapado.
+  // O editor de cada linha, pelo tipo. HTML montado aqui, com todo dado escapado. O nome
+  // acessivel de cada editor e a CHAVE da linha (acao.bin): eram 143 campos sem nome para o
+  // leitor de tela (qualificacao de 01/10/2026, G9). A chave e dado e entra como esta.
   function editor(c) {
     const ch = esc(c.chave);
     const erro = erros.has(c.chave) ? `<small class="cfg-motivo">${esc(erros.get(c.chave))}</small>` : '';
@@ -74,21 +89,21 @@
     }
     switch (c.tipo) {
       case 'booleano':
-        return `<input type="checkbox" class="cfg-ed" data-cfg="${ch}"${v === true ? ' checked' : ''}>${erro}`;
+        return `<input type="checkbox" class="cfg-ed" data-cfg="${ch}" aria-label="${ch}"${v === true ? ' checked' : ''}>${erro}`;
       case 'enum': {
         const ops = (c.opcoes || []).map(o => `<option value="${esc(o)}"${o === v ? ' selected' : ''}>${esc(o)}</option>`).join('');
         const vazio = `<option value=""${v == null ? ' selected' : ''}>${esc(txt('config.enum_vazio', '(sem valor)'))}</option>`;
-        return `<select class="cfg-ed" data-cfg="${ch}">${vazio}${ops}</select>${erro}`;
+        return `<select class="cfg-ed" data-cfg="${ch}" aria-label="${ch}">${vazio}${ops}</select>${erro}`;
       }
       case 'lista': {
-        const itens = (Array.isArray(v) ? v : []).map((t, i) => `<span class="cfg-tag">${esc(t)}<button type="button" class="cfg-tira" data-cfg-lista="${ch}" data-i="${i}" title="${esc(txt('grade.remover', 'remover'))}">×</button></span>`).join('');
-        return `<span class="cfg-tags">${itens}<input type="text" class="cfg-tag-in" data-cfg-lista="${ch}" placeholder="${esc(txt('config.tag_novo', '+ item (Enter)'))}"></span>${erro}`;
+        const itens = (Array.isArray(v) ? v : []).map((t, i) => `<span class="cfg-tag">${esc(t)}<button type="button" class="cfg-tira" data-cfg-lista="${ch}" data-i="${i}" title="${esc(txt('grade.remover', 'remover'))}" aria-label="${esc(txt('config.tira_item', 'remover {item} de {chave}', { item: t, chave: c.chave }))}">×</button></span>`).join('');
+        return `<span class="cfg-tags">${itens}<input type="text" class="cfg-tag-in" data-cfg-lista="${ch}" aria-label="${esc(txt('config.tag_rotulo', '{chave}: novo item', { chave: c.chave }))}" placeholder="${esc(txt('config.tag_novo', '+ item (Enter)'))}"></span>${erro}`;
       }
       case 'inteiro':
       case 'real':
-        return `<input type="number" class="cfg-ed" data-cfg="${ch}" step="${c.tipo === 'inteiro' ? '1' : 'any'}" value="${v == null ? '' : esc(v)}">${erro}`;
+        return `<input type="number" class="cfg-ed" data-cfg="${ch}" aria-label="${ch}" step="${c.tipo === 'inteiro' ? '1' : 'any'}" value="${v == null ? '' : esc(v)}">${erro}`;
       default:
-        return `<input type="text" class="cfg-ed" data-cfg="${ch}" value="${v == null ? '' : esc(v)}">${erro}`;
+        return `<input type="text" class="cfg-ed" data-cfg="${ch}" aria-label="${ch}" value="${v == null ? '' : esc(v)}">${erro}`;
     }
   }
 
@@ -96,7 +111,9 @@
     const temNoArquivo = c.origem === 'pasta' || c.origem === 'projeto';
     const jaPedido = pendentes.has(c.chave) && pendentes.get(c.chave) === null;
     if (!c.editavel || c.segredo || somenteCatalogo || !temNoArquivo || jaPedido) return '';
-    return `<button type="button" class="acao exclui cfg-volta" data-cfg-volta="${esc(c.chave)}">${esc(txt('config.voltar_padrao', 'VOLTAR AO PADRÃO'))}</button>`;
+    // Rosa (marca): voltar ao padrao e um desfazer que se reverte, nao um excluir de vez
+    // (qualificacao de 01/10/2026, M9) -- o vermelho fica para o que nao volta.
+    return `<button type="button" class="acao marca cfg-volta" data-cfg-volta="${esc(c.chave)}">${esc(txt('config.voltar_padrao', 'VOLTAR AO PADRÃO'))}</button>`;
   }
 
   // «So alterados»: o que nao esta no padrao (veio de arquivo ou do ambiente) ou foi mexido
@@ -141,8 +158,13 @@
     });
   }
 
-  function redesenhar() {
-    if (!grade) { montar(); return; }
+  // A grade so nasce depois de o phx-grid chegar (carrega sob demanda, grades.js).
+  async function redesenhar() {
+    if (!grade) {
+      await grades.carregar();
+      if (!grade) montar();
+      return;
+    }
     grade.g.substituirDados(linhas());
   }
 
@@ -150,7 +172,12 @@
     const headers = { Authorization: `Bearer ${token()}` };
     if (corpo !== undefined) headers['Content-Type'] = 'application/json';
     if (revisao !== undefined) headers['If-Match'] = String(revisao);
-    const r = await fetch('./v1/config', { method: metodo, headers, body: corpo === undefined ? undefined : JSON.stringify(corpo), cache: 'no-store' });
+    let r;
+    try {
+      r = await fetch('./v1/config', { method: metodo, headers, body: corpo === undefined ? undefined : JSON.stringify(corpo), cache: 'no-store' });
+    } catch {
+      throw Object.assign(new Error('sem rede'), { rede: true });
+    }
     const v = await r.json().catch(() => ({}));
     return { status: r.status, ok: r.ok, corpo: v };
   }
@@ -168,30 +195,30 @@
       const c = await fetch('./assets/config-catalogo.json', { cache: 'no-store' }).then(r => (r.ok ? r.json() : Promise.reject(new Error(r.status))));
       somenteCatalogo = true;
       definirVista({ revisao: null, arquivos: {}, chaves: c.chaves.map(k => ({ ...k, valor: null, origem: 'padrao', editavel: false, segredo_presente: false })) });
-      redesenhar();
+      await redesenhar();
     } catch { /* sem catalogo: so o aviso */ }
     aviso(motivo, true);
   }
 
   async function carregar() {
-    if (!comHttp) return catalogo(txt('config.sem_api', 'A configuração só se edita com a tela servida pelo agente (phxclaw servir) ou pela ponte; abaixo, o catálogo.'));
-    if (!token()) return catalogo(txt('config.pede_token', 'Informe o token de acesso (tela Tarefas) para ler e gravar a configuração; abaixo, o catálogo.'));
+    if (!comHttp) return catalogo(() => txt('config.sem_api', 'A configuração só se edita com a tela servida pelo agente (phxclaw servir) ou pela ponte; abaixo, o catálogo.'));
+    if (!token()) return catalogo(() => txt('config.pede_token', 'Informe o token de acesso (tela Tarefas) para ler e gravar a configuração; abaixo, o catálogo.'));
     try {
       const r = await api('GET');
-      if (r.status === 401) return catalogo(txt('tarefas.sem_token', 'Token recusado: confira o token de acesso.'));
+      if (r.status === 401) return catalogo(() => txt('tarefas.sem_token', 'Token recusado: confira o token de acesso.'));
       // Pela ponte (controle remoto) a rota e recusada de proposito: remoto acompanha e
       // decide tarefa, nao administra o agente (crates/phxclaw-agent/src/remoto.rs).
-      if (r.status === 403) return catalogo(txt('config.pela_ponte', 'O controle remoto não administra o agente: a configuração se edita na tela servida pelo próprio agente. Abaixo, o catálogo.'));
-      if (!r.ok) throw new Error(r.corpo.error || `HTTP ${r.status}`);
+      if (r.status === 403) return catalogo(() => txt('config.pela_ponte', 'O controle remoto não administra o agente: a configuração se edita na tela servida pelo próprio agente. Abaixo, o catálogo.'));
+      if (!r.ok) throw Object.assign(new Error(r.corpo.error || `HTTP ${r.status}`), { status: r.status });
       somenteCatalogo = false;
       definirVista(r.corpo);
       // O que foi digitado e continua diferente do gravado fica; o resto sai.
       const m = porChave();
       for (const [k, v] of pendentes) if (!m.has(k) || igual(m.get(k).valor, v)) pendentes.delete(k);
-      redesenhar();
+      await redesenhar();
       resumo();
     } catch (e) {
-      aviso(txt('config.erro', 'Falhou: {erro}', { erro: e.message }), true);
+      falhou(e);
     }
   }
 
@@ -331,9 +358,9 @@
         return;
       }
       if (r.status === 401) { aviso(txt('tarefas.sem_token', 'Token recusado: confira o token de acesso.'), true); return; }
-      throw new Error(r.corpo.error || `HTTP ${r.status}`);
+      throw Object.assign(new Error(r.corpo.error || `HTTP ${r.status}`), { status: r.status });
     } catch (e) {
-      aviso(txt('config.erro', 'Falhou: {erro}', { erro: e.message }), true);
+      falhou(e);
     }
   }
 
@@ -344,7 +371,9 @@
   buscaEl.addEventListener('input', () => { clearTimeout(espera); espera = setTimeout(() => grade?.g.buscar(buscaEl.value.trim()), 120); });
 
   carregadores.config = () => { if (!vista || somenteCatalogo) carregar(); };
+  tentar.config = carregar;
   idiomas.aoTrocar(() => {
+    if (ultimoAviso) aviso(...ultimoAviso);
     if (document.body.dataset.tela !== 'config') return;
     if (vista && !status.classList.contains('aviso')) resumo();
     if (!diffEl.hidden) mostrarDiff();

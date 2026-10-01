@@ -66,3 +66,16 @@ fonte e o instala em /opt/helix com o LICENSE dele ao lado.
 
 Fonte da marca, em `apps/phxclaw-ui/assets/fonte/exo2-latin.woff2`, com a licenca em
 `apps/phxclaw-ui/assets/fonte/OFL.txt` (a mesma copia que o PhxSql ja distribui).
+
+## IBM Plex Mono — SIL Open Font License 1.1
+
+Copyright 2017 IBM Corp., Reserved Font Name "Plex". Fonte dos DADOS na interface (o
+«Style Phoenix Padrao», `docs/ui/STYLE_PHOENIX_PADRAO.md`: dado em mono, rotulo em Exo 2), em
+`apps/phxclaw-ui/assets/fonte/ibmplexmono-400.woff2` e `ibmplexmono-700.woff2`, com a licenca
+em `apps/phxclaw-ui/assets/fonte/OFL-IBMPlexMono.txt`. LOCAL, nunca de CDN: a captura do PhxSql
+mostrou a fonte de CDN caindo em Arial sem rede.
+Os dois WOFF2 sao os PUBLICADOS PELA IBM, sem alteracao: pacote npm `@ibm/plex-mono` 1.1.0,
+`fonts/complete/woff2/IBMPlexMono-Regular.woff2` (sha256 49ce58b4...6d131) e `-Bold.woff2`
+(sha256 5788454f...6a235d). Uma conversao nossa a partir do TTF foi descartada antes do commit:
+o nome «Plex» e reservado pela OFL e a garantia explicita do FAQ sobre conversao de formato
+nao cobre o WOFF2 -- usar o arquivo da propria IBM tira a duvida em vez de interpreta-la.
