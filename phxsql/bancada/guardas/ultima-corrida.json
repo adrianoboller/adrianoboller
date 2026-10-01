@@ -4224,6 +4224,14 @@
       "quando": "2026-10-01 21:28"
     },
     {
+      "id": "retrato-da-fase-a-nao-ve-volume-que-nasce-427",
+      "titulo": "o retrato da FASE A fotografa so os volumes que existem, e o volume que nasce no meio dela fica na geometria velha",
+      "veredito": "PROVADA",
+      "segundos": 7.66,
+      "notas": [],
+      "quando": "2026-10-01 21:56"
+    },
+    {
       "id": "alter-com-regra-sem-aviso",
       "titulo": "`acrescentar_coluna` com `check` ou `calculada` numa tabela com linha é aceito SEM AVISO, e a linha velha fica fora da regra",
       "veredito": "PROVADA",

@@ -767,12 +767,30 @@ impl Volumes {
             v.reverse();
             return v;
         }
-        if !self.paginacao.ligada() {
-            return if self.existe(1) { vec![1] } else { vec![] };
-        }
-        (1..=self.paginacao.max_arquivos)
+        self.candidatos()
+            .into_iter()
             .filter(|v| self.existe(*v))
             .collect()
+    }
+
+    /// Todo numero de volume que este conjunto PODE ter, exista ou nao.
+    ///
+    /// Uma lista so para quem pergunta «quais existem» e para quem pergunta
+    /// «quais ainda podem nascer» (pedido 427): duas faixas escritas em dois
+    /// lugares divergiriam no dia em que o teto mudasse, e o volume entre as
+    /// duas nao seria nem retratado nem vigiado.
+    ///
+    /// Na trilha a pergunta nao tem resposta finita -- ela anda do ativo para
+    /// baixo, sem teto -- e por isso a trilha devolve so os que existem; ela
+    /// nao passa por FASE A, que e quem pergunta pelos ausentes.
+    pub fn candidatos(&self) -> Vec<u32> {
+        if let Nomes::DaTrilha { .. } = self.nomes {
+            return self.existentes();
+        }
+        if !self.paginacao.ligada() {
+            return vec![1];
+        }
+        (1..=self.paginacao.max_arquivos).collect()
     }
 
     fn registrar_uso(&mut self, volume: u32) {

@@ -387,8 +387,31 @@ diferentes:
 
 O retrato é tirado com a trava na mão, e isso é o que o torna exato: nesta
 casa só se abre tabela gravável com a ficha exclusiva (`Raiz::exclusiva`, que
-exige `&mut Raiz`), então com a trava na mão não há escritor em voo — não há
-janela de granularidade de `mtime` para perder.
+exige `&mut Raiz`), então com a trava na mão não há escritor em voo no
+instante do retrato. **Mas isso não fecha a granularidade da conferência**
+(pedido 427, 01/10/2026): uma escrita depois do retrato que caia no mesmo
+tique de `mtime` e não mude o tamanho fica invisível — tique de 2 s no
+FAT/exFAT, 1 s no HFS+ e no NFS; no ext4 desta casa a menor diferença medida
+foi 9.234 ns.
+
+**O retrato inclui os volumes que ainda não existem** (pedido 427). Cada
+número da faixa de volumes (`Volumes::candidatos`, a mesma lista que o
+`existentes()` filtra) que não está na troca entra como **ausente** — por
+definição, sem `stat` —, e um volume que nasça durante a fase A aborta a
+troca dizendo que nasceu. Antes, o nascimento só aparecia no `mtime` do
+volume 1 (os contadores moram no cabeçalho dele, e o tamanho não muda), e com
+o tique grosso a fase B trocava os volumes velhos e deixava o novo na
+geometria antiga: a tabela parava de abrir (`Corrompido`). Existir não depende
+de tique.
+
+**O que continua dependendo do tique:** a atualização no lugar. Ela não muda o
+tamanho de volume nenhum **nem o conteúdo do cabeçalho do volume 1** (medido:
+zero bytes dos 128 mudam num `atualizar`; mudam no `inserir`, no
+`excluir_suave`, no `restaurar` e no `excluir_de_vez`). Com o tique grosso
+simulado, a linha atualizada entre as fases volta ao valor velho depois da
+troca, sem erro. Só acontece se um escritor escapar do congelamento — que é o
+que esta conferência existe para cobrir —, e fechá-lo pede um contador de
+escrita no cabeçalho, que é mudança de formato.
 
 **O que ela não faz:** não troca tipo nem largura de coluna que já existe, não
 tira coluna, não cria índice sobre a coluna nova, e não replica a si mesma —

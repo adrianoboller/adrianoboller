@@ -1630,6 +1630,47 @@ impl RegFile {
         self.cab_len as u64 + novo.serializar().len() as u64 <= self.data_offset
     }
 
+    /// O retrato da FASE A: os volumes que a troca vai copiar **e os que
+    /// ainda nao existem** (pedido 427). UMA porta para as duas FASES A
+    /// ([`RegFile::alargar_fase_a`] e [`RegFile::regravar_esquema_fase_a`]),
+    /// porque o furo era o mesmo nas duas.
+    ///
+    /// # Por que os ausentes
+    ///
+    /// Um volume que nasce durante a FASE A nao esta em `primeiros`, entao
+    /// nao ganha `*.novo` e a FASE B nao o troca -- fica na geometria velha
+    /// ao lado de volumes na nova, e a tabela para de abrir. O que denunciava
+    /// o nascimento era so o `mtime` do volume 1 (os contadores moram no
+    /// cabecalho dele e o tamanho nao muda), e `mtime` anda em tique do
+    /// sistema de arquivos: 2 s no FAT/exFAT, 1 s no HFS+ e no NFS. Existir
+    /// ou nao existir nao depende de tique nenhum.
+    ///
+    /// O ausente entra no retrato como AUSENTE por definicao, e nao por um
+    /// `stat` agora: o que nasce entre o `existentes()` de quem chama e esta
+    /// linha nao esta em `primeiros`, e um `stat` aqui o fotografaria ja
+    /// existindo -- e o conferidor o acharia igual.
+    ///
+    /// O custo e uma passada de `exists` pela faixa de volumes, a mesma que o
+    /// `existentes()` de quem chama ja pagou, numa operacao que copia a
+    /// tabela inteira.
+    fn retratar(
+        &self,
+        primeiros: &[(u32, RowId, PathBuf, Option<PathBuf>)],
+    ) -> Vec<RetratoDoVolume> {
+        let mut saida = retratar_existentes(primeiros);
+        for v in self.volumes.candidatos() {
+            if primeiros.iter().any(|(p, ..)| *p == v) {
+                continue;
+            }
+            saida.push(RetratoDoVolume {
+                caminho: self.volumes.caminho(v),
+                bytes: 0,
+                modificado: None,
+            });
+        }
+        saida
+    }
+
     /// **Pedido 422: a FASE A do caminho caro do [`RegFile::regravar_esquema`]**
     /// -- cada volume (e o espelho dele) vira um `*.novo` completo e
     /// sincronizado, com o primeiro slot mais adiante. Nenhum `rename`; o
@@ -1669,7 +1710,7 @@ impl RegFile {
                 self.volumes.caminho_do_espelho(v),
             ));
         }
-        let retrato = retratar(&primeiros);
+        let retrato = self.retratar(&primeiros);
 
         // Os cabecalhos saem do `montar_cabecalho`, que le o `self`: troca-se
         // o esquema so pelo tempo de monta-los, e o `self` volta a ser a
@@ -1698,6 +1739,9 @@ impl RegFile {
                 .collect(),
             retrato,
         };
+        crate::ndx::panico_de_teste::passar(
+            crate::ndx::panico_de_teste::Ponto::FaseADepoisDoRetrato,
+        );
         for ((_, _, caminho, espelho), cab) in primeiros.iter().zip(&cabs) {
             let escrito = reescrever_volume(caminho, cab, &bytes, origem, destino).and_then(|_| {
                 match espelho {
@@ -2017,10 +2061,13 @@ impl RegFile {
         // O RETRATO, tirado antes de a primeira leitura acontecer: e contra
         // ele que a FASE B confere que ninguem escreveu no volume vivo
         // enquanto o `*.novo` era montado. Ver `conferir_retrato`.
-        let retrato = retratar(&primeiros);
+        let retrato = self.retratar(&primeiros);
         // O dono dos `*.novo` nasce ANTES do primeiro byte (pedido 625): um
         // `*.novo` pela metade tambem nao e sobra enquanto esta fase vive.
         let dono = novos_com_dono::Dono::tomar(&primeiros);
+        crate::ndx::panico_de_teste::passar(
+            crate::ndx::panico_de_teste::Ponto::FaseADepoisDoRetrato,
+        );
 
         // FASE A -- escrever. Nenhum `rename` acontece aqui: cada volume vira
         // um `*.novo` completo e sincronizado ao lado do seu. Enquanto esta
@@ -3325,6 +3372,15 @@ fn geometria_do_volume(caminho: &Path) -> Option<(usize, u64, u32)> {
 /// retrato e um ponto QUIETO por construcao: quem o tira tem a trava global
 /// na mao e nao ha escritor em voo, porque nesta casa so se abre tabela
 /// gravavel com a ficha exclusiva.
+///
+/// **Quieto no instante do retrato nao quer dizer quieto na conferencia**
+/// (pedido 427): o `mtime` anda em tique do sistema de arquivos, e uma
+/// escrita no mesmo tique que nao muda o tamanho passa. Para o volume que
+/// NASCE isso esta fechado -- o ausente entra no retrato e existir nao tem
+/// tique (ver `RegFile::retratar`). Para a atualizacao no lugar NAO esta:
+/// medido com o tique grosso simulado, ela volta ao valor velho depois da
+/// troca, e nem o cabecalho do volume 1 muda com ela. Fechar pede um
+/// contador de escrita no cabecalho, que e formato.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct RetratoDoVolume {
     caminho: PathBuf,
@@ -3383,12 +3439,21 @@ impl TrocaPendente {
                     .file_name()
                     .map(|f| f.to_string_lossy().into_owned())
                     .unwrap_or_default();
+                // O volume que NASCEU diz que nasceu: «0 bytes antes» mandaria
+                // procurar um arquivo que encolheu e voltou.
+                let o_que = if r.modificado.is_none() && agora.modificado.is_some() {
+                    format!("{arquivo} nasceu enquanto a reescrita montava o arquivo novo")
+                } else {
+                    format!(
+                        "{arquivo} mudou enquanto a reescrita montava o arquivo novo \
+                         ({} bytes antes, {} agora)",
+                        r.bytes, agora.bytes
+                    )
+                };
                 return Err(PhxError::Conflito(format!(
-                    "{arquivo} mudou enquanto a reescrita montava o arquivo novo \
-                     ({} bytes antes, {} agora): a troca foi ABORTADA e a tabela \
-                     continua inteira e como estava. Nada foi perdido -- rode a \
-                     operacao de novo quando ninguem estiver gravando nela",
-                    r.bytes, agora.bytes
+                    "{o_que}: a troca foi ABORTADA e a tabela continua inteira e \
+                     como estava. Nada foi perdido -- rode a operacao de novo \
+                     quando ninguem estiver gravando nela"
                 )));
             }
         }
@@ -3534,7 +3599,9 @@ fn retratar_um(caminho: &Path) -> RetratoDoVolume {
     }
 }
 
-fn retratar(primeiros: &[(u32, RowId, PathBuf, Option<PathBuf>)]) -> Vec<RetratoDoVolume> {
+fn retratar_existentes(
+    primeiros: &[(u32, RowId, PathBuf, Option<PathBuf>)],
+) -> Vec<RetratoDoVolume> {
     let mut saida = Vec::new();
     for (_, _, caminho, espelho) in primeiros {
         saida.push(retratar_um(caminho));
