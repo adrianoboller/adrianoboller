@@ -1019,9 +1019,9 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `erro-no-meio-da-exclusao-sem-fsync` | o erro no meio do `excluir_tabela` esquecia os nomes que já tinham saído sem `fsync` da pasta: numa queda a tabela voltava pela metade | 1 | ✅ provada |
 | `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | — | 🪦 aposentada (18/09/2026) |
 
-**374 das 550 guardas do catálogo: 1 aposentada, 369 provadas, 4 redundantes** — 10173 s de mutação, medido em 2026-09-16 15:25.
+**374 das 553 guardas do catálogo: 1 aposentada, 369 provadas, 4 redundantes** — 10173 s de mutação, medido em 2026-09-16 15:25.
 
-> **Esta rodada NÃO julgou 177 das 550 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 177 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 180 das 553 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 180 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
 - `fk-antes-do-default` — a chave estrangeira confere a linha crua, e o DEFAULT sem mãe grava a filha órfã
 - `fk-antes-do-default-pelo-servidor` — o DEFAULT e a calculada sem mãe gravam a órfã pelo servidor, fora e dentro da transação
@@ -1129,6 +1129,9 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 - `fts-nasce-com-permissao-aberta` — o `.fts` nasce `644` -- legivel por todo usuario da maquina
 - `conferir-fk-afirma-indice-sao-quando-marcado` — a conferencia contra a MAE afirma "esta sao" com o indice marcado
 - `procura-das-filhas-afirma-indice-sao-quando-marcado` — a procura pelas filhas afirma "esta sao" com o indice marcado
+- `backup-recusa-envenena-a-raiz` — a recusa do `fsync` no destino do backup marca a raiz de dados, e todo COMMIT seguinte recusa
+- `backup-recusa-para-o-commit` — pelo soquete: depois de um backup com `fsync` recusado no destino, o `inserir` seguinte erra
+- `backup-destino-que-contem-a-raiz` — o backup em arvore aceita destino igual, acima ou (por link) dentro da raiz de dados
 - `diff-null-na-chave-apaga-linha-irma` — o `diff` com NULL repetido no indice some com linhas do relatorio
 - `recusa-de-coluna-marcada-cita-o-valor` — A recusa de conversão cita o valor curto de coluna marcada como dado pessoal
 - `dblink-empurra-valor-pela-regua-de-nome` — O DbLink empurra valor de texto pela régua de NOME de objeto

@@ -514,6 +514,7 @@ pub fn executar_zip(
     // `.part` ja sai pelo `escrever_sem_sync`, e sem isto sobrava a pasta
     // vazia que ninguem pediu. Pelo motor do 576: so' a que NASCEU aqui, e
     // com `remove_dir`, que so' remove vazia e nao segue link.
+    conferir_destino(raiz, pasta, false)?;
     let mut criadas = Copias::default();
     if let Err(e) = criar_pasta_da_corrida(pasta, &mut criadas.pastas) {
         descartar_corrida(&criadas);
@@ -700,6 +701,76 @@ fn mesmo_dono(a: &std::fs::Metadata, b: &std::fs::Metadata) -> bool {
     }
 }
 
+/// Recusa, antes de escrever byte nenhum, o destino que se mistura com a
+/// raiz de dados -- pedido 554.
+///
+/// DENTRO dela (ou igual) sempre: a copia copiaria a copia, e o arquivo de
+/// backup apareceria no meio dos dados. ACIMA dela so na copia em arvore
+/// (`acima_tambem`): a arvore vai para dentro de uma pasta que CONTEM a raiz,
+/// e a faxina de uma corrida que falha (`descartar_corrida`) andaria por
+/// cima do banco vivo. E o mesmo corte do `pg_basebackup`, que recusa `-D`
+/// que nao esteja vazio -- e o ancestral do PGDATA nunca esta. O zip e UM
+/// arquivo com nome proprio: numa pasta acima da raiz ele nao alcanca nada
+/// dela, e a marca de um `fsync` recusado ali nao chega ao banco (a lista do
+/// destino e outra -- ver `sincronia`, pedido 554).
+///
+/// Confere pela grafia E pelo disco: um link ou um `..` no caminho escondia
+/// a raiz do `starts_with` de texto, que era a unica conferencia antes.
+fn conferir_destino(raiz: &Path, destino: &Path, acima_tambem: bool) -> Result<()> {
+    let pares = [
+        (absoluto(destino), absoluto(raiz)),
+        (real_ate_onde_existe(destino), real_ate_onde_existe(raiz)),
+    ];
+    for (d, r) in &pares {
+        let relacao = if d.starts_with(r) {
+            Some("fica dentro da")
+        } else if acima_tambem && r.starts_with(d) {
+            Some("contem a")
+        } else {
+            None
+        };
+        if let Some(relacao) = relacao {
+            return Err(PhxError::Esquema(format!(
+                "o destino do backup {} {relacao} raiz de dados {}: o backup \
+                 iria se misturar com o banco vivo. Escolha uma pasta fora \
+                 da raiz e que nao a contenha",
+                destino.display(),
+                raiz.display()
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// A grafia absoluta, sem tocar no disco.
+fn absoluto(p: &Path) -> PathBuf {
+    crate::volume::absoluto_lexico(p).unwrap_or_else(|| p.to_path_buf())
+}
+
+/// O caminho resolvido no disco ate o ultimo pedaco que existe, com o resto
+/// (o que a corrida ainda vai criar) colado por cima: o destino quase sempre
+/// ainda nao existe, e e o pai dele que pode ser um link para dentro da raiz.
+fn real_ate_onde_existe(p: &Path) -> PathBuf {
+    let lexico = absoluto(p);
+    let mut resto = Vec::new();
+    let mut atual = lexico.as_path();
+    loop {
+        if let Ok(mut real) = std::fs::canonicalize(atual) {
+            for nome in resto.iter().rev() {
+                real.push(nome);
+            }
+            return real;
+        }
+        match (atual.parent(), atual.file_name()) {
+            (Some(pai), Some(nome)) => {
+                resto.push(nome.to_os_string());
+                atual = pai;
+            }
+            _ => return lexico,
+        }
+    }
+}
+
 /// O nome PARCIAL de um zip de backup: `<nome>.part`, no mesmo diretorio.
 ///
 /// `.part` nao bate no filtro `extension() == "zip"` de `op_backups`
@@ -812,12 +883,7 @@ fn executar_com_teto(raiz: &Path, destino: &Path, teto: usize) -> Result<(Relato
             raiz.display()
         )));
     }
-    // Copiar para dentro da propria raiz copiaria a copia, sem parar.
-    if destino.starts_with(raiz) {
-        return Err(PhxError::Esquema(
-            "o destino do backup nao pode ficar dentro da raiz de dados".into(),
-        ));
-    }
+    conferir_destino(raiz, destino, true)?;
     let mut r = Relatorio::default();
     let mut copias = Copias {
         destino: destino.to_path_buf(),
@@ -1218,6 +1284,103 @@ mod tests {
     // Pedido 150: guarda de Drop, nao `rm` no fim do corpo.
     fn temp(nome: &str) -> crate::apoio_teste::DirTemp {
         crate::apoio_teste::DirTemp::novo(&format!("bkp-{nome}"))
+    }
+
+    /// **Pedido 554: a recusa do `fsync` no destino do backup nao alcanca a
+    /// raiz de dados.**
+    ///
+    /// O leiaute de fabrica: raiz em `<base>/dados`, backups em
+    /// `<base>/backups`. O primeiro backup CRIA `backups/`, e o `fsync` da mae
+    /// dela -- `<base>`, ancestral da raiz -- e o que a arma recusa. Antes do
+    /// conserto a marca ia para a lista do banco, conferida por prefixo, e o
+    /// `fsync` seguinte de qualquer arquivo da raiz (o de um COMMIT) recusava
+    /// ate o processo reiniciar. Com o defeito reposto (`recusar` no lugar de
+    /// `recusar_fora` na via `sem_abortar`), este teste FALHA no `sync_all`
+    /// da tabela.
+    ///
+    /// E o comportamento velho fica: a recusa no destino continua virando
+    /// erro do backup, e repetir o `fsync` da MESMA pasta continua recusado
+    /// (o que o 509 compra).
+    #[cfg(unix)]
+    #[test]
+    fn recusa_no_destino_nao_alcanca_a_raiz_de_dados() {
+        let base = temp("fsync-554");
+        let raiz = base.join("dados");
+        let destino = base.join("backups").join("corrida");
+        std::fs::create_dir_all(&raiz).unwrap();
+        dados_de_exemplo(&raiz);
+
+        let (r, copias) = executar(&raiz, &destino, 1_787_000_000_000).unwrap();
+        // A marca de uma pasta e gravada pelo manifesto DENTRO dela: armar
+        // `<base>/backup.json` alcanca so o `fsync` de `<base>`, a mae de
+        // `backups/` -- nem as copias, nem as outras pastas.
+        let mae = base.join(MANIFESTO);
+        crate::sincronia::falha_de_teste::armar(
+            &mae,
+            crate::sincronia::falha_de_teste::Onde::Fsync,
+            1,
+        );
+        let feito = concluir(&destino, 1_787_000_000_000, &r, &copias);
+        crate::sincronia::falha_de_teste::desarmar(&mae);
+        let e = feito.expect_err("a recusa no destino tem de virar erro do backup");
+        assert!(matches!(e, PhxError::Io(_)), "familia errada: {e}");
+
+        // O COMMIT seguinte: o `fsync` de um arquivo da raiz, pelo caminho
+        // do banco (com gancho), tem de passar.
+        let tabela = raiz.join("Z/cadastroClientes.reg");
+        let arquivo = File::options().write(true).open(&tabela).unwrap();
+        crate::sincronia::sync_all(&arquivo, &tabela).unwrap_or_else(|e| {
+            panic!("a recusa no destino do backup parou a escrita do banco: {e}")
+        });
+        assert!(
+            crate::sincronia::recusado_em(&tabela).is_none(),
+            "a raiz herdou a marca do destino"
+        );
+
+        // A repeticao na MESMA pasta continua recusada, sem tocar no disco.
+        let e = crate::sincronia::sincronizar_pasta_sem_abortar(&base, &mae)
+            .expect_err("repetir o fsync da pasta que recusou responderia Ok sem o dado");
+        assert!(e.to_string().contains("554"), "{e}");
+    }
+
+    /// Pedido 554: o destino que se mistura com a raiz e recusado ANTES de
+    /// escrever byte nenhum -- igual, dentro, acima (na arvore) e por um
+    /// link que leva para dentro. O zip numa pasta acima da raiz continua
+    /// valendo: e um arquivo so, que nao alcanca nada dela.
+    #[cfg(unix)]
+    #[test]
+    fn destino_que_se_mistura_com_a_raiz_e_recusado_antes() {
+        let base = temp("destino-554");
+        let raiz = base.join("dados");
+        std::fs::create_dir_all(&raiz).unwrap();
+        dados_de_exemplo(&raiz);
+        let recusa = |destino: &Path, o_que: &str| {
+            let e = executar(&raiz, destino, 1)
+                .map(|_| ())
+                .expect_err(o_que)
+                .to_string();
+            assert!(e.contains("raiz de dados"), "{o_que}: {e}");
+        };
+        recusa(&raiz, "a propria raiz");
+        recusa(&raiz.join("dentro"), "dentro da raiz");
+        recusa(&base, "a pasta que contem a raiz");
+        assert!(
+            !base.join("Z").exists(),
+            "a recusa veio depois de copiar para cima da raiz"
+        );
+        std::os::unix::fs::symlink(&raiz, base.join("atalho")).unwrap();
+        recusa(&base.join("atalho/copia"), "um link para dentro da raiz");
+        recusa(&raiz.join("../dados/x"), "um `..` que volta para a raiz");
+
+        let e = executar_zip(&raiz, &raiz.join("zips"), "", "x", 1)
+            .map(|_| ())
+            .expect_err("zip dentro da raiz");
+        assert!(e.to_string().contains("raiz de dados"), "{e}");
+
+        // Comportamento velho: irma da raiz passa, e o zip acima tambem.
+        backup_pronto(&raiz, &base.join("copia"), 1);
+        let (zip, _) = executar_zip(&raiz, &base, "", "x", 1).unwrap();
+        finalizar_zip(&zip).unwrap();
     }
 
     fn dados_de_exemplo(raiz: &Path) {

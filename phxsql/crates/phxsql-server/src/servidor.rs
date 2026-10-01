@@ -63746,6 +63746,16 @@ mod testes_do_panico_sob_a_trava {
         ))
     }
 
+    /// O destino do cenario `fsync_554`: uma pasta NOVA, irma de `dir` (a
+    /// raiz), para o backup ter de sincronizar a mae dela -- a pasta que
+    /// contem a raiz.
+    fn destino_do_backup_554(dir: &std::path::Path) -> std::path::PathBuf {
+        dir.with_file_name(format!(
+            "{}-backup-554",
+            dir.file_name().unwrap().to_string_lossy()
+        ))
+    }
+
     /// Espera o filho terminar, ate o prazo. `None`: continua de pe.
     fn fim_do_filho(
         filho: &mut std::process::Child,
@@ -64170,6 +64180,67 @@ mod testes_do_panico_sob_a_trava {
         let _ = filho.wait();
         // Irmao de `dir`, entao o `Drop` do `DirTemp` nao o alcanca.
         let _ = std::fs::remove_dir_all(destino_do_backup_c1(&dir));
+    }
+
+    /// **Pedido 554: a recusa do `fsync` no destino do backup nao pode
+    /// parar a escrita do banco.**
+    ///
+    /// O irmao do teste de cima, um passo adiante: la o servidor fica de pe;
+    /// aqui o COMMIT seguinte tem de PASSAR. O destino e uma pasta nova ao
+    /// lado da raiz, e a arma recusa so o `fsync` da MAE dela -- a pasta que
+    /// CONTEM a raiz de dados. A marca dessa recusa ia para a lista do banco,
+    /// conferida por prefixo, e todo `fsync` da raiz recusava dali em diante:
+    /// um backup que falhou uma vez parava toda escrita ate reiniciar. Com o
+    /// defeito reposto (`recusar` no lugar de `recusar_fora` em
+    /// `sincronia::sync_all_interno`), este teste FALHA no `inserir`.
+    #[cfg(unix)]
+    #[test]
+    fn fsync_recusado_no_destino_do_backup_nao_para_o_commit() {
+        let dir = DirTemp::novo("fsync-backup-554");
+        let (mut filho, porta) = subir_filho(&dir, "fsync_554");
+        semear(porta);
+        std::fs::write(dir.join("armar"), "").unwrap();
+        let ate = Instant::now() + Duration::from_secs(20);
+        while !dir.join("armado").exists() {
+            assert!(
+                Instant::now() < ate,
+                "o filho nao armou a recusa: {}",
+                diagnostico(&dir)
+            );
+            std::thread::sleep(Duration::from_millis(20));
+        }
+
+        let destino = destino_do_backup_554(&dir).join("corrida");
+        let resp = pedir(
+            porta,
+            &format!(r#""op":"backup","destino":"{}""#, destino.display()),
+        );
+        let resp = resp.unwrap_or_else(|| {
+            let _ = filho.kill();
+            let _ = filho.wait();
+            panic!("a conexao caiu no backup: {}", diagnostico(&dir))
+        });
+        // O comportamento velho: a recusa no destino e erro do backup.
+        assert!(
+            !resp.booleano_ou("ok", true),
+            "o fsync recusado tinha de virar erro do backup: {}",
+            resp.escrever()
+        );
+
+        let commit = pedir(
+            porta,
+            r#""op":"inserir","database":"loja","tabela":"clientes",
+               "valores":{"id":6,"nome":"C6"}"#,
+        );
+        let _ = filho.kill();
+        let _ = filho.wait();
+        let _ = std::fs::remove_dir_all(destino_do_backup_554(&dir));
+        let commit = commit.expect("a conexao caiu no inserir");
+        assert!(
+            commit.booleano_ou("ok", false),
+            "a recusa no destino do backup parou a escrita do banco: {}",
+            commit.escrever()
+        );
     }
 
     /// **M3: a operacao IMPOSSIVEL depois do `completar` tambem derruba.**
@@ -64894,6 +64965,28 @@ mod testes_do_panico_sob_a_trava {
                     let destino = destino_do_backup_c1(&dir);
                     phxsql_store::sincronia::falha_de_teste::armar(
                         &destino,
+                        phxsql_store::sincronia::falha_de_teste::Onde::Fsync,
+                        1,
+                    );
+                    std::fs::write(dir.join("armado"), "").unwrap();
+                });
+            }
+            // Pedido 554: arma a recusa so no `fsync` da pasta que CONTEM a
+            // raiz -- a mae do destino novo. A marca de uma pasta e gravada
+            // pelo manifesto dentro dela, entao o prefixo e
+            // `<mae>/backup.json`, e nao alcanca nenhum arquivo do banco.
+            "fsync_554" => {
+                let dir = dir.clone();
+                std::thread::spawn(move || {
+                    while !dir.join("armar").exists() {
+                        std::thread::sleep(Duration::from_millis(10));
+                    }
+                    let mae = destino_do_backup_554(&dir)
+                        .parent()
+                        .unwrap()
+                        .join("backup.json");
+                    phxsql_store::sincronia::falha_de_teste::armar(
+                        &mae,
                         phxsql_store::sincronia::falha_de_teste::Onde::Fsync,
                         1,
                     );
