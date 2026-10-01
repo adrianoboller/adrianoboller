@@ -1,0 +1,261 @@
+{
+ "medido_em": "2026-10-01",
+ "estados": {
+  "shell": {
+   "estado": "agente",
+   "evidencia": "crates/phxclaw-agent/src/ferramentas.rs ShellTool (bubblewrap)"
+  },
+  "edicao_patch": {
+   "estado": "agente",
+   "evidencia": "ferramentas.rs EditFileTool (trecho unico)"
+  },
+  "busca_web": {
+   "estado": "agente",
+   "evidencia": "adaptadores.rs WebSearchTool"
+  },
+  "web_fetch": {
+   "estado": "agente",
+   "evidencia": "adaptadores.rs BrowserTool: abre e le pagina"
+  },
+  "navegador": {
+   "estado": "agente",
+   "evidencia": "adaptadores.rs browser_tools (Chromium real)"
+  },
+  "desktop_mouse_teclado": {
+   "estado": "parcial",
+   "evidencia": "crates/phxclaw-system-automation, fora do agente"
+  },
+  "captura_tela": {
+   "estado": "parcial",
+   "evidencia": "phxclaw-system-automation capturar_monitor_principal, fora do agente"
+  },
+  "mcp_cliente": {
+   "estado": "parcial",
+   "evidencia": "crates/phxclaw-mcp-lsp-runtime, fora do agente"
+  },
+  "mcp_servidor": {
+   "estado": "nao",
+   "evidencia": "o runtime MCP e so cliente"
+  },
+  "lsp": {
+   "estado": "parcial",
+   "evidencia": "crates/phxclaw-mcp-lsp-runtime, fora do agente"
+  },
+  "canal_telegram": {
+   "estado": "parcial",
+   "evidencia": "crates/phxclaw-channel-providers, fora do agente; E2E real espera o token"
+  },
+  "canal_whatsapp": {
+   "estado": "parcial",
+   "evidencia": "phxclaw-channel-providers, fora do agente"
+  },
+  "canal_discord": {
+   "estado": "parcial",
+   "evidencia": "phxclaw-channel-providers, fora do agente"
+  },
+  "canal_slack": {
+   "estado": "parcial",
+   "evidencia": "phxclaw-channel-providers, fora do agente"
+  },
+  "canal_teams": {
+   "estado": "parcial",
+   "evidencia": "phxclaw-channel-providers, fora do agente"
+  },
+  "canais_push": {
+   "estado": "parcial",
+   "evidencia": "phxclaw-channel-gateway, fora do agente"
+  },
+  "canal_signal": {
+   "estado": "nao",
+   "evidencia": ""
+  },
+  "canal_imessage": {
+   "estado": "nao",
+   "evidencia": ""
+  },
+  "canal_googlechat": {
+   "estado": "nao",
+   "evidencia": ""
+  },
+  "canal_matrix": {
+   "estado": "nao",
+   "evidencia": ""
+  },
+  "canal_sms": {
+   "estado": "nao",
+   "evidencia": ""
+  },
+  "canal_email": {
+   "estado": "parcial",
+   "evidencia": "email.rs envia (SMTP); nao recebe como canal"
+  },
+  "webchat": {
+   "estado": "nao",
+   "evidencia": ""
+  },
+  "webhooks": {
+   "estado": "parcial",
+   "evidencia": "API HTTP aceita tarefa por POST (phxclaw servir); nao e webhook generico"
+  },
+  "api_servidor": {
+   "estado": "agente",
+   "evidencia": "crates/phxclaw-agent/src/api.rs (phxclaw servir)"
+  },
+  "headless_sdk": {
+   "estado": "agente",
+   "evidencia": "CLI phxclaw nao interativa e API HTTP"
+  },
+  "cron": {
+   "estado": "agente",
+   "evidencia": "crates/phxclaw-agent/src/agenda.rs"
+  },
+  "heartbeat": {
+   "estado": "parcial",
+   "evidencia": "agenda periodica cobre parte; sem auto-despertar do agente"
+  },
+  "subagentes": {
+   "estado": "agente",
+   "evidencia": "ferramentas.rs ParallelAgentsTool"
+  },
+  "multiagente": {
+   "estado": "parcial",
+   "evidencia": "crates/phxclaw-team-runtime e engineering-swarm, fora do agente"
+  },
+  "workflows": {
+   "estado": "parcial",
+   "evidencia": "crates/phxclaw-task-graph e mission-runtime, fora do agente"
+  },
+  "memoria": {
+   "estado": "parcial",
+   "evidencia": "crates/phxclaw-memory-context, fora do agente"
+  },
+  "busca_sessoes": {
+   "estado": "nao",
+   "evidencia": ""
+  },
+  "skills": {
+   "estado": "parcial",
+   "evidencia": "crates/phxclaw-skill-runtime, fora do agente"
+  },
+  "hooks": {
+   "estado": "nao",
+   "evidencia": "so ganchos de ciclo de vida de plugin (plugin-sdk)"
+  },
+  "plugins": {
+   "estado": "parcial",
+   "evidencia": "crates/phxclaw-plugin-registry (Ed25519 V2), fora do agente"
+  },
+  "sandbox": {
+   "estado": "agente",
+   "evidencia": "bubblewrap sem rede; sem ele o agente nao recebe shell"
+  },
+  "permissoes": {
+   "estado": "agente",
+   "evidencia": "motor.rs: capacidades concedidas por politica"
+  },
+  "plan_mode": {
+   "estado": "nao",
+   "evidencia": ""
+  },
+  "execucao_codigo": {
+   "estado": "agente",
+   "evidencia": "shell no bubblewrap"
+  },
+  "checkpoints": {
+   "estado": "parcial",
+   "evidencia": "crates/phxclaw-checkpoint, fora do agente"
+  },
+  "dispositivos": {
+   "estado": "parcial",
+   "evidencia": "servidor WSS e no pareado (phxclaw dispositivos); o agente nao manda comando ao no"
+  },
+  "celular": {
+   "estado": "nao",
+   "evidencia": ""
+  },
+  "app_desktop": {
+   "estado": "agente",
+   "evidencia": "desktop Tauri (portao native_tauri_e2e)"
+  },
+  "web_nuvem": {
+   "estado": "nao",
+   "evidencia": ""
+  },
+  "remote_control": {
+   "estado": "nao",
+   "evidencia": ""
+  },
+  "stt": {
+   "estado": "parcial",
+   "evidencia": "crates/phxclaw-media-intelligence (whisper.cpp local), fora do agente"
+  },
+  "tts": {
+   "estado": "nao",
+   "evidencia": ""
+  },
+  "voz_wake": {
+   "estado": "nao",
+   "evidencia": ""
+  },
+  "ocr_imagem": {
+   "estado": "parcial",
+   "evidencia": "ui.rs ScreenshotToErpUiTool usa OCR so para tela de ERP"
+  },
+  "pdf": {
+   "estado": "nao",
+   "evidencia": "read_document le so docx e xlsx"
+  },
+  "geracao_midia": {
+   "estado": "nao",
+   "evidencia": ""
+  },
+  "canvas": {
+   "estado": "nao",
+   "evidencia": ""
+  },
+  "github": {
+   "estado": "nao",
+   "evidencia": ""
+  },
+  "git": {
+   "estado": "nao",
+   "evidencia": "so pelo shell, sem ferramenta"
+  },
+  "worktrees": {
+   "estado": "nao",
+   "evidencia": ""
+  },
+  "ide_acp": {
+   "estado": "nao",
+   "evidencia": ""
+  },
+  "ide": {
+   "estado": "nao",
+   "evidencia": ""
+  },
+  "busca_x": {
+   "estado": "nao",
+   "evidencia": ""
+  },
+  "busca_arquivos": {
+   "estado": "parcial",
+   "evidencia": "list_files; busca por conteudo so pelo shell"
+  },
+  "notebook": {
+   "estado": "nao",
+   "evidencia": ""
+  },
+  "output_styles": {
+   "estado": "nao",
+   "evidencia": ""
+  },
+  "perguntas_usuario": {
+   "estado": "nao",
+   "evidencia": ""
+  },
+  "tarefas": {
+   "estado": "agente",
+   "evidencia": "TaskStore e shell_bg (segundo plano)"
+  }
+ }
+}
