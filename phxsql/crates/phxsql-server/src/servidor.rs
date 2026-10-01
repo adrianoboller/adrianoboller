@@ -2375,14 +2375,50 @@ impl Servidor {
     /// Sobe o servidor e atende ate o processo ser encerrado.
     pub fn escutar(self: &Arc<Self>) -> Result<()> {
         let endereco = self.config.endereco()?;
-        // Pediu TLS e nao deu: a porta NAO sobe. Cair calada para o claro
-        // seria o rebaixamento que a `docs/CIFRA-DO-FIO.md` §2 recusa.
+        self.preparar_tls_dos_dados()?;
+        let ouvinte = TcpListener::bind(endereco)
+            .map_err(|e| PhxError::Esquema(format!("nao consegui escutar em {endereco}: {e}")))?;
+        self.atender_no_ouvinte(ouvinte)
+    }
+
+    /// O mesmo `escutar`, num ouvinte que QUEM CHAMA ja abriu -- pedidos
+    /// 352 e 401.
+    ///
+    /// Existe para o caso em que o numero da porta precisa ser conhecido
+    /// ANTES de o servidor existir: o par de replicacao e o cluster de dois
+    /// escrevem a porta de um no config do outro. Sem isto a unica saida era
+    /// sortear uma porta, solta-la e torcer para ninguem pega-la antes do
+    /// `bind` -- e quando alguem pegava, o `bind` falhava, o teste engolia a
+    /// falha e passava a conversar com o servidor VIZINHO (medido: «database
+    /// loja ja existe» vindo do servidor de outro teste). Com o ouvinte preso
+    /// desde o sorteio nao ha janela: o numero nunca volta ao sistema.
+    ///
+    /// O TLS e conferido antes de qualquer conexao ser aceita, como no
+    /// `escutar`; o `bind` do config nao e consultado -- a porta e a do
+    /// ouvinte, e e ela que `porta_dos_dados` devolve.
+    pub fn escutar_em(self: &Arc<Self>, ouvinte: TcpListener) -> Result<()> {
+        self.preparar_tls_dos_dados()?;
+        self.atender_no_ouvinte(ouvinte)
+    }
+
+    /// Pediu TLS e nao deu: a porta NAO sobe. Cair calada para o claro seria
+    /// o rebaixamento que a `docs/CIFRA-DO-FIO.md` §2 recusa. Vem ANTES do
+    /// `bind` no `escutar` para a porta nunca abrir em claro nem por um
+    /// instante.
+    fn preparar_tls_dos_dados(&self) -> Result<()> {
         let tls = self.identidade_http("dados", &self.config.tls, &self.config.bind)?;
         if let Ok(mut t) = self.tls_dos_dados.lock() {
             *t = tls;
         }
-        let ouvinte = TcpListener::bind(endereco)
-            .map_err(|e| PhxError::Esquema(format!("nao consegui escutar em {endereco}: {e}")))?;
+        Ok(())
+    }
+
+    /// O corpo comum do `escutar` e do `escutar_em`: um so, para os dois
+    /// arranques nunca divergirem no que sobem junto com a porta.
+    fn atender_no_ouvinte(self: &Arc<Self>, ouvinte: TcpListener) -> Result<()> {
+        let endereco = ouvinte
+            .local_addr()
+            .map_err(|e| PhxError::Esquema(format!("o ouvinte entregue nao tem endereco: {e}")))?;
         anunciar(&format!(
             "PhxSql {VERSAO} escutando em {endereco} | base {} | papel {}",
             self.config.base.display(),
@@ -4453,7 +4489,32 @@ impl Servidor {
         }
     }
 
+    /// Rebaixa este no a replica na `epoca` e, se o papel NAO foi ao disco,
+    /// devolve o motivo que o diz -- pedido 599, o mesmo motor do `registrar`
+    /// consertado no 597.
+    ///
+    /// O `rebaixar` para de escrever ANTES de gravar (o lado seguro, que nao
+    /// espera o disco), entao a memoria ja esta certa quando a gravacao falha.
+    /// O que fica errado e o arranque seguinte: o `cluster.estado.json` ainda
+    /// diz master, e o no volta mandando ate o pulso do master corrente o
+    /// rebaixar de novo -- com escrita liberada na graca do arranque. Engolir
+    /// isso (`let _ =`) era deixar a unica pista sumir; o motivo vai para a
+    /// degradacao e, por ela, para o log do laco do arbitro.
+    fn rebaixar_dizendo(estado: &crate::cluster::EstadoCluster, epoca: u64) -> Option<String> {
+        estado.rebaixar(epoca).err().map(|e| {
+            format!(
+                "o rebaixamento NAO foi ao disco ({e}): um reinicio volta com o \
+                 papel gravado antes, master, ate o pulso do master corrente \
+                 rebaixar de novo"
+            )
+        })
+    }
+
     /// Uma rodada de decisao. Devolve os motivos de degradacao ATUAIS.
+    ///
+    /// Os dois rebaixamentos daqui (epoca maior no ar, desempate perdido)
+    /// passam por [`Self::rebaixar_dizendo`], para a falha de gravar o papel nunca
+    /// ser engolida num e dita no outro.
     fn rodada_do_arbitro(&self, estado: &crate::cluster::EstadoCluster, agora: i64) -> Vec<String> {
         use crate::cluster::{Candidato, PapelVivo};
         let c = &estado.config;
@@ -4490,8 +4551,8 @@ impl Servidor {
                          eleicao enquanto este no esteve fora; REBAIXANDO a replica",
                         estado.epoca()
                     );
-                    let _ = estado.rebaixar(maior);
                     motivos.push("este no foi rebaixado: um master de epoca maior assumiu".into());
+                    motivos.extend(Self::rebaixar_dizendo(estado, maior));
                     return motivos;
                 }
                 // Dois masters na MESMA epoca (dois configs com papel source,
@@ -4522,8 +4583,8 @@ impl Servidor {
                                  o desempate; REBAIXANDO este no a replica",
                                 estado.epoca()
                             );
-                            let _ = estado.rebaixar(estado.epoca());
                             motivos.push(format!("este no perdeu o desempate para {id}"));
+                            motivos.extend(Self::rebaixar_dizendo(estado, estado.epoca()));
                             return motivos;
                         }
                     }
@@ -67492,5 +67553,134 @@ mod testes_do_recuo_no_cluster {
             iv[0] <= Duration::from_millis(1_500),
             "o recuo do no2 atravessou para o no3: {iv:?}"
         );
+    }
+}
+
+/// Pedido 599 (a): o arbitro do cluster que se rebaixa e NAO consegue gravar
+/// o papel diz isso, nos dois caminhos que rebaixam -- e o mesmo motor do
+/// `registrar` do 597.
+///
+/// O disco recusa pelo mesmo truque do `cluster.rs`: um DIRETORIO no lugar do
+/// temporario do `cluster.estado.json`, entao o `gravar_privado` falha sem
+/// mexer em permissao (que o root do conteiner ignoraria).
+#[cfg(test)]
+mod testes_do_rebaixar_sem_disco {
+    use super::*;
+    use crate::cluster::{EstadoCluster, PapelVivo, PulsoDeNo};
+    use crate::usuarios::Cadastro;
+
+    /// Um no MASTER (`papel: source`) de um cluster de tres, sem thread
+    /// nenhuma: o que se prova e a RODADA do arbitro, chamada a mao.
+    fn master(nome: &str) -> (Arc<Servidor>, Arc<EstadoCluster>, DirTemp) {
+        let dir = DirTemp::novo(&format!("rebaixar-sem-disco-{nome}"));
+        let caminho = dir.join("config.json");
+        std::fs::write(
+            &caminho,
+            format!(
+                r#"{{
+  "token": "t",
+  "bind": "127.0.0.1:0",
+  "base": "{}",
+  "replicacao": {{"papel": "source", "id_servidor": "no1", "imagem_da_linha": true}},
+  "cluster": {{
+    "id": "no1",
+    "janela_inatividade_s": 30,
+    "pulso_s": 1,
+    "nos": [
+      {{"id": "no1", "endereco": "127.0.0.1", "porta": 5397}},
+      {{"id": "no2", "endereco": "127.0.0.1", "porta": 5398}},
+      {{"id": "no3", "endereco": "127.0.0.1", "porta": 5399}}
+    ]
+  }}
+}}
+"#,
+                dir.join("dados").display()
+            ),
+        )
+        .unwrap();
+        let mut c = Config::ler(&caminho).unwrap();
+        c.log_acessos = dir.join("acessos.log");
+        c.blacklist = dir.join("blacklist.json");
+        c.dblink = dir.join("dblink.json");
+        c.jobs = dir.join("jobs.json");
+        c.cadastro = Cadastro::default();
+        let s = Servidor::novo(c).unwrap();
+        let estado = s.cluster.clone().expect("cluster");
+        assert_eq!(estado.papel(), PapelVivo::Master);
+        (s, estado, dir)
+    }
+
+    fn pulso_de_master(estado: &EstadoCluster, id: &str, epoca: u64, posicao: u64) {
+        estado
+            .registrar(
+                id,
+                PulsoDeNo {
+                    papel: PapelVivo::Master,
+                    epoca,
+                    posicao,
+                    incompleta: false,
+                    prioridade: 0,
+                    quando_ms: crate::agora_ms(),
+                },
+            )
+            .unwrap();
+    }
+
+    fn quebrar_o_disco(dir: &DirTemp) {
+        let tmp = crate::config::temporario_de(&dir.join("dados").join("cluster.estado.json"));
+        std::fs::create_dir_all(tmp.join("ocupado")).unwrap();
+    }
+
+    fn diz_que_nao_gravou(motivos: &[String]) -> bool {
+        motivos.iter().any(|m| m.contains("NAO foi ao disco"))
+    }
+
+    /// Epoca maior no ar: rebaixa, e o motivo diz que o papel nao foi ao
+    /// disco. Defeito reposto (guarda `arbitro-engole-o-rebaixar`): o
+    /// `rebaixar_dizendo` volta a engolir, e a rodada cala.
+    #[test]
+    fn rebaixar_pela_epoca_maior_sem_disco_se_diz() {
+        let (s, estado, dir) = master("epoca");
+        pulso_de_master(&estado, "no2", estado.epoca() + 1, 0);
+        quebrar_o_disco(&dir);
+        let motivos = s.rodada_do_arbitro(&estado, crate::agora_ms());
+        assert_eq!(
+            estado.papel(),
+            PapelVivo::Replica,
+            "nao rebaixou: {motivos:?}"
+        );
+        assert!(
+            diz_que_nao_gravou(&motivos),
+            "o papel nao foi ao disco e a rodada calou: {motivos:?}"
+        );
+    }
+
+    /// Desempate perdido na mesma epoca: o irmao do de cima, pelo mesmo motor.
+    #[test]
+    fn rebaixar_pelo_desempate_sem_disco_se_diz() {
+        let (s, estado, dir) = master("desempate");
+        // Posicao maior: o `vencedor` escolhe o no2.
+        pulso_de_master(&estado, "no2", estado.epoca(), 1_000);
+        quebrar_o_disco(&dir);
+        let motivos = s.rodada_do_arbitro(&estado, crate::agora_ms());
+        assert_eq!(
+            estado.papel(),
+            PapelVivo::Replica,
+            "nao rebaixou: {motivos:?}"
+        );
+        assert!(
+            diz_que_nao_gravou(&motivos),
+            "o papel nao foi ao disco e a rodada calou: {motivos:?}"
+        );
+    }
+
+    /// O comportamento VELHO: com o disco bom, rebaixar nao inventa aviso.
+    #[test]
+    fn rebaixar_com_disco_nao_inventa_aviso() {
+        let (s, estado, _dir) = master("disco-bom");
+        pulso_de_master(&estado, "no2", estado.epoca() + 1, 0);
+        let motivos = s.rodada_do_arbitro(&estado, crate::agora_ms());
+        assert_eq!(estado.papel(), PapelVivo::Replica);
+        assert!(!diz_que_nao_gravou(&motivos), "{motivos:?}");
     }
 }

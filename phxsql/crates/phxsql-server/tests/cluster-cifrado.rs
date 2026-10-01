@@ -30,7 +30,6 @@ use comum::DirTemp;
 
 use std::io::{BufRead, BufReader, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
-use std::sync::atomic::{AtomicU16, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -43,35 +42,12 @@ use phxsql_server::{Config, Servidor};
 
 const TOKEN: &str = "o token do cluster cifrado deste teste";
 
-/// Faixa PROPRIA (7250-7299), so para nao repetir numero DENTRO deste
-/// arquivo entre corridas -- ver o porque de `porta_livre()` continuar aqui,
-/// logo abaixo.
-static PROXIMA: AtomicU16 = AtomicU16::new(7250);
-
-/// **Excecao nomeada do pedido 401.** Os outros ~26 arquivos de teste que
-/// escolhiam porta assim foram trocados por porta 0 lida de volta do proprio
-/// servidor (`Servidor::porta_dos_dados()`), fechando a corrida por
-/// construcao. Este arquivo NAO pode, e a razao e estrutural: os DOIS nos do
-/// cluster precisam saber a porta um do OUTRO dentro de `cluster.nos` ANTES
-/// de qualquer um dos dois ligar -- nao ha ordem de arranque em que um nasce
-/// primeiro e o outro le a porta real dele depois, porque os dois se
-/// referenciam mutuamente no mesmo config. Ler-de-volta so funciona quando
-/// alguem JA esta ligado; aqui nenhum dos dois esta, no momento em que os
-/// dois configs precisam do numero do outro. Fechar isso por construcao
-/// pediria o servidor aceitar um `TcpListener` ja aberto por fora (ou uma
-/// forma de registrar peer DEPOIS do arranque) -- producao nova que o
-/// produto nao usa, fora do escopo deste pedido.
-fn porta_livre() -> u16 {
-    loop {
-        let porta = PROXIMA.fetch_add(1, Ordering::SeqCst);
-        assert!(porta < 7299, "acabaram as portas entre 7250 e 7298");
-        if let Ok(l) = TcpListener::bind(("127.0.0.1", porta)) {
-            drop(l);
-            return porta;
-        }
-    }
-}
-
+/// A porta de cada no nasce de `comum::ouvinte_reservado()` e fica PRESA ate
+/// o no recebe-la (pedidos 352 e 401). Os DOIS nos precisam da porta um do
+/// OUTRO no `cluster.nos` antes de qualquer um ligar, entao nao da para pedir
+/// porta 0 e ler de volta; o padrao de antes era uma faixa fixa com
+/// `bind`/`drop`, que soltava o numero e deixava a janela aberta para quem
+/// pegasse a porta antes do `bind` do no. Com o ouvinte preso nao ha janela.
 /// O pino de um no: a publica que corresponde a esta privada estatica.
 fn pino_de(privada_hex: &str) -> String {
     let bytes = phxsql_core::hash::de_hex(privada_hex).unwrap();
@@ -90,11 +66,12 @@ fn subir_no(
     este: &str,
     papel: &str,
     privada_este: &str,
-    porta_este: u16,
+    ouvinte_este: TcpListener,
     outro: &str,
     porta_outro: u16,
     pino_outro: &str,
 ) -> Arc<Servidor> {
+    let porta_este = ouvinte_este.local_addr().unwrap().port();
     std::fs::create_dir_all(base.join("base")).unwrap();
     let caminho = base.join("config.json");
     let bar = |p: std::path::PathBuf| p.display().to_string().replace('\\', "/");
@@ -133,28 +110,9 @@ fn subir_no(
         ),
     )
     .unwrap();
-    no_ar(
-        Servidor::novo(Config::ler(&caminho).unwrap()).unwrap(),
-        porta_este,
-    )
-}
-
-/// Poe o servidor no ar e espera a porta atender -- por CONDICAO, nao por
-/// tempo fixo.
-fn no_ar(s: Arc<Servidor>, porta: u16) -> Arc<Servidor> {
-    let copia = Arc::clone(&s);
-    std::thread::spawn(move || {
-        let _ = copia.escutar();
-    });
-    let alvo: SocketAddr = format!("127.0.0.1:{porta}").parse().unwrap();
-    let ate = Instant::now() + Duration::from_secs(5);
-    while Instant::now() < ate {
-        if TcpStream::connect_timeout(&alvo, Duration::from_millis(200)).is_ok() {
-            return s;
-        }
-        std::thread::sleep(Duration::from_millis(20));
-    }
-    panic!("o no nao subiu na porta {porta}");
+    let s = Servidor::novo(Config::ler(&caminho).unwrap()).unwrap();
+    comum::no_ar_no_ouvinte(&s, ouvinte_este);
+    s
 }
 
 /// Pergunta ao no da `porta`, POR DENTRO DO TUNEL (o no exige), se ele enxerga
@@ -235,15 +193,15 @@ fn pulso_do_cluster_cifrado_atravessa_no_que_exige_tunel() {
 
     let base_a = DirTemp::novo("cluster-cif-a");
     let base_b = DirTemp::novo("cluster-cif-b");
-    let porta_a = porta_livre();
-    let porta_b = porta_livre();
+    let (ouvinte_a, porta_a) = comum::ouvinte_reservado();
+    let (ouvinte_b, porta_b) = comum::ouvinte_reservado();
 
     // A = master (source), B = replica; os dois cifram e exigem.
     let _a = subir_no(
-        &base_a, "noA", "source", &priv_a, porta_a, "noB", porta_b, &pino_b,
+        &base_a, "noA", "source", &priv_a, ouvinte_a, "noB", porta_b, &pino_b,
     );
     let _b = subir_no(
-        &base_b, "noB", "replica", &priv_b, porta_b, "noA", porta_a, &pino_a,
+        &base_b, "noB", "replica", &priv_b, ouvinte_b, "noA", porta_a, &pino_a,
     );
 
     // Espera a convergencia: cada no pulsa o outro a cada 1s. Bem dentro do

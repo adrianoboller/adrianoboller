@@ -5960,9 +5960,10 @@ pub fn limpar() {
             "inteira deu `27 -> 25`, ou seja, um vizinho NASCEU no meio)."
         ),
         "arquivo": "crates/phxsql-server/src/telemetria.rs",
-        "trecho": """        assert_eq!(
-            tarefas_chamadas("presa-do-teste"),
-            1,
+        # Pedido 437: a prova pelo NOME passou a ler a tarefa pelo tid, e nao a
+        # listagem de `/proc/self/task` -- o trecho e o assert de hoje.
+        "trecho": """        assert!(
+            tarefa_chamada(&tid_presa, "presa-do-teste"),
             "a thread subida nao apareceu no SO pelo nome (o SO ve {agora} tarefas)"
         );
 """,
@@ -19247,6 +19248,159 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         "seguem": [
             "catalogo::testes_excluir_vai_ao_disco::excluir_esvaziar_e_expurgar_vao_ao_disco",
             "catalogo::testes_excluir_vai_ao_disco::o_erro_no_meio_leva_ao_disco_o_que_saiu",
+        ],
+    },
+    # ------------------------------------- pedidos 352, 401, 437 e 599 (01/10)
+    {
+        "id": "apoio-engole-a-falha-do-bind",
+        "titulo": "o apoio dos testes subia o servidor com `let _ = escutar()` e esperava a porta ATENDER: com a porta tomada por um vizinho do mesmo binário, o teste conversava com o servidor do vizinho («database loja já existe»)",
+        "porque": (
+            "pedidos 352 e 401. Medido por montagem deterministica "
+            "(`tests/porta-tomada-pelo-vizinho.rs`): com o vizinho ja na porta, "
+            "o `bind` do servidor do teste falha, o `let _` engole, o `connect` "
+            "passa na porta do vizinho e o `criar_database loja` responde «ja "
+            "existe». O apoio novo traz o erro do `escutar` por canal e confere "
+            "a porta pelo `porta_dos_dados()` do PROPRIO servidor."
+        ),
+        "arquivo": "crates/phxsql-server/tests/comum/mod.rs",
+        "trecho": """        if let Ok(e) = recebe.try_recv() {
+            return Err(format!("o servidor nao subiu na porta {porta}: {e}"));
+        }
+""",
+        "troca": """        // DEFEITO REPOSTO (352): a falha do `escutar` some, e basta a porta
+        // ATENDER -- de quem for.
+        let _ = &recebe;
+        let alvo: std::net::SocketAddr = format!("127.0.0.1:{porta}").parse().unwrap();
+        if std::net::TcpStream::connect_timeout(&alvo, std::time::Duration::from_millis(200))
+            .is_ok()
+        {
+            return Ok(());
+        }
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "porta-tomada-pelo-vizinho"],
+        "caem": ["o_apoio_recusa_a_porta_que_nao_e_do_servidor"],
+        "seguem": [
+            "o_ouvinte_reservado_e_o_que_o_servidor_escuta",
+            "o_padrao_velho_conversa_com_o_vizinho_e_ouve_loja_ja_existe",
+        ],
+    },
+    {
+        "id": "tarefa-pela-listagem-do-proc",
+        "titulo": "o teste das threads do SO procurava a thread listando `/proc/self/task`: a listagem pula a thread viva quando a tarefa listada logo antes dela morre",
+        "porque": (
+            "pedido 437. Medido em 01/10/2026 com a vizinha que morre criada "
+            "logo antes da presa: 145 e 126 leituras sem a presa em 200.000 "
+            "pela listagem, 0 em 200.000 pelo tid. O nucleo para o `getdents` "
+            "quando a tarefa do cursor morre e retoma pelo indice, que "
+            "encolheu. O conserto le `/proc/self/task/<tid>/comm`, com o tid "
+            "que a propria thread manda (`/proc/thread-self`)."
+        ),
+        "arquivo": "crates/phxsql-server/src/telemetria.rs",
+        "trecho": """        std::fs::read_to_string(format!("/proc/self/task/{tid}/comm"))
+            .map(|c| c.trim().starts_with(comeco))
+            .unwrap_or(false)
+""",
+        "troca": """        // DEFEITO REPOSTO (437): procura a thread listando o diretorio.
+        let _ = tid;
+        std::fs::read_dir("/proc/self/task")
+            .map(|d| {
+                d.flatten().any(|e| {
+                    std::fs::read_to_string(e.path().join("comm"))
+                        .map(|c| c.trim().starts_with(comeco))
+                        .unwrap_or(false)
+                })
+            })
+            .unwrap_or(false)
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "telemetria::testes::a_thread_viva_se_acha_pelo_tid_mesmo_com_a_vizinha_morrendo",
+        ],
+        "seguem": [
+            "telemetria::testes::a_thread_que_termina_deixa_de_ser_viva",
+        ],
+        "prazo": 900,
+    },
+    {
+        "id": "contador-do-congelamento-relativo",
+        "titulo": "o teste do contador do congelamento exigia `antes + 2`: o vizinho congelado na leitura de `antes` que soltava no meio derrubava o teste sem defeito nenhum",
+        "porque": (
+            "pedido 599 (b). O contador e do PROCESSO e os testes do modulo "
+            "congelam e soltam em paralelo. Medido pela montagem "
+            "deterministica `o_vizinho_que_solta_no_meio_nao_derruba_a_conta`: "
+            "com a conta relativa, cai toda vez. Agora se cobra piso absoluto, "
+            "o portao recusando as duas e o contador igual ao registro, lidos "
+            "sob a mesma trava."
+        ),
+        "arquivo": "crates/phxsql-store/src/congelamento.rs",
+        "trecho": """                quantas() >= 2,
+""",
+        "troca": """                // DEFEITO REPOSTO (599): a conta relativa ao vizinho.
+                quantas() >= antes + 2,
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--lib"],
+        "caem": ["congelamento::testes::o_vizinho_que_solta_no_meio_nao_derruba_a_conta"],
+        "seguem": [
+            "congelamento::testes::o_contador_volta_ao_que_era",
+            "congelamento::testes::congelada_recusa_e_nomeia_a_tabela",
+        ],
+    },
+    {
+        "id": "drop-do-congelamento-esquece-o-contador",
+        "titulo": "o `Drop` do congelamento tirava a tabela do registro e esquecia o contador: o portão barato ficava caro para sempre, e o teste antigo não via",
+        "porque": (
+            "pedido 599 (b), o que a conta relativa escondia: ela so olhava o "
+            "contador SUBIR e o `conferir` voltar `Ok` -- e com o contador "
+            "preso acima de zero o `conferir` ainda volta `Ok`, so que pelo "
+            "caminho do mutex. O teste novo confere contador igual ao "
+            "tamanho do registro."
+        ),
+        "arquivo": "crates/phxsql-store/src/congelamento.rs",
+        "trecho": """            if c.remove(&self.chave).is_some() {
+                QUANTAS.fetch_sub(1, Ordering::SeqCst);
+            }
+""",
+        "troca": """            // DEFEITO REPOSTO (599): o contador nao volta.
+            let _ = c.remove(&self.chave);
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--lib"],
+        "caem": [
+            "congelamento::testes::o_contador_volta_ao_que_era",
+            "congelamento::testes::o_vizinho_que_solta_no_meio_nao_derruba_a_conta",
+        ],
+        "seguem": [
+            "congelamento::testes::congelada_recusa_e_nomeia_a_tabela",
+            "congelamento::testes::duas_reescritas_da_mesma_tabela_nao_comecam_juntas",
+        ],
+    },
+    {
+        "id": "arbitro-engole-o-rebaixar",
+        "titulo": "o árbitro do cluster engolia a falha de gravar o rebaixamento (`let _ = estado.rebaixar(...)`): o nó voltava mandando num reinício, sem pista nenhuma",
+        "porque": (
+            "pedido 599 (a), o mesmo motor do `registrar` consertado no 597. "
+            "Os dois caminhos que rebaixam (epoca maior no ar, desempate "
+            "perdido) passam por `rebaixar_dizendo`, e a falha vira motivo de "
+            "degradacao -- e, por ela, linha de log do laco do arbitro."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        estado.rebaixar(epoca).err().map(|e| {
+""",
+        "troca": """        // DEFEITO REPOSTO (599): a falha de gravar o papel e engolida.
+        let _ = estado.rebaixar(epoca);
+        None::<String>.map(|e: String| {
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_do_rebaixar_sem_disco::rebaixar_pela_epoca_maior_sem_disco_se_diz",
+            "servidor::testes_do_rebaixar_sem_disco::rebaixar_pelo_desempate_sem_disco_se_diz",
+        ],
+        "seguem": [
+            "servidor::testes_do_rebaixar_sem_disco::rebaixar_com_disco_nao_inventa_aviso",
         ],
     },
 ]

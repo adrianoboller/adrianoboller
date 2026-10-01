@@ -238,3 +238,90 @@ pub fn pedir(porta: u16, linha: &str) -> String {
     leitor.read_line(&mut resposta).unwrap();
     resposta
 }
+
+/// Um ouvinte que o TESTE abre em porta 0 e SEGURA ate entrega-lo ao
+/// servidor por [`no_ar_no_ouvinte`] -- pedidos 352 e 401.
+///
+/// E a resposta para quem precisa do numero da porta ANTES de o servidor
+/// existir (o par de replicacao e o cluster escrevem a porta de um no config
+/// do outro), e por isso nao pode usar [`porta_real`]. O padrao velho sorteava
+/// e SOLTAVA o numero; aqui ele nunca volta ao sistema, entao nenhum vizinho
+/// o pega -- a garantia do `bind(0)` so vale enquanto o ouvinte vive
+/// (cognicao `bind-zero-nao-e-livre-de-corrida-se-o-ouvinte-cai`).
+#[allow(dead_code)]
+pub fn ouvinte_reservado() -> (std::net::TcpListener, u16) {
+    let ouvinte = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let porta = ouvinte.local_addr().unwrap().port();
+    (ouvinte, porta)
+}
+
+/// Poe `s` no ar e so volta quando ELE escuta na porta esperada; devolve o
+/// motivo quando o arranque falha ou quando a porta escutada e outra.
+///
+/// `ouvinte` `Some` entrega o ouvinte ja aberto (`Servidor::escutar_em`);
+/// `None` deixa o servidor ligar o `bind` do proprio config
+/// (`Servidor::escutar`), e entao `porta` e o numero que o config pediu.
+///
+/// # O defeito que isto fecha (pedido 352, medido)
+///
+/// O padrao velho era `let _ = copia.escutar()` numa thread e, depois, um
+/// `connect` na porta ate ela atender. As duas metades mentiam juntas: a
+/// falha do `bind` sumia no `let _`, e o `connect` passava porque a porta
+/// ESTAVA aberta -- so que por OUTRO servidor do mesmo binario de teste, com
+/// o mesmo token. O teste seguia falando com o vizinho, e a queda aparecia
+/// longe da causa («database loja ja existe»). Aqui a resposta vem do proprio
+/// servidor: o erro do `escutar` volta pelo canal, e a porta conferida e a
+/// que ELE anotou (`porta_dos_dados`), nunca a de quem atende o `connect`.
+#[allow(dead_code)]
+pub fn tentar_no_ar(
+    s: &std::sync::Arc<phxsql_server::Servidor>,
+    ouvinte: Option<std::net::TcpListener>,
+    porta: u16,
+) -> Result<(), String> {
+    let (envia, recebe) = std::sync::mpsc::channel::<String>();
+    let copia = std::sync::Arc::clone(s);
+    std::thread::spawn(move || {
+        let r = match ouvinte {
+            Some(o) => copia.escutar_em(o),
+            None => copia.escutar(),
+        };
+        if let Err(e) = r {
+            let _ = envia.send(e.to_string());
+        }
+    });
+    let ate = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    loop {
+        if let Ok(e) = recebe.try_recv() {
+            return Err(format!("o servidor nao subiu na porta {porta}: {e}"));
+        }
+        match s.porta_dos_dados() {
+            Some(p) if p == porta => return Ok(()),
+            Some(p) => {
+                return Err(format!(
+                    "o servidor escutou em {p}, e nao na porta {porta} que o teste vai usar"
+                ))
+            }
+            None => {}
+        }
+        if std::time::Instant::now() > ate {
+            return Err(format!(
+                "o servidor nao anotou porta nenhuma em 10 s (esperava {porta})"
+            ));
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+}
+
+/// [`tentar_no_ar`] com o ouvinte de [`ouvinte_reservado`], caindo com o
+/// motivo -- a forma que os testes usam.
+#[allow(dead_code)]
+pub fn no_ar_no_ouvinte(
+    s: &std::sync::Arc<phxsql_server::Servidor>,
+    ouvinte: std::net::TcpListener,
+) -> u16 {
+    let porta = ouvinte.local_addr().unwrap().port();
+    if let Err(e) = tentar_no_ar(s, Some(ouvinte), porta) {
+        panic!("{e}");
+    }
+    porta
+}

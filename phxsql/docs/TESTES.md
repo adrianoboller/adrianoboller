@@ -1026,9 +1026,9 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `expurgo-esquece-no-erro` | o erro no meio da fase 3 do expurgo da trilha esquecia os volumes do `.lgpd` que já tinham saído sem `fsync` da pasta | 1 | ✅ provada |
 | `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | — | 🪦 aposentada (18/09/2026) |
 
-**383 das 559 guardas do catálogo: 1 aposentada, 378 provadas, 4 redundantes** — 10621 s de mutação, medido em 2026-09-16 15:25.
+**383 das 564 guardas do catálogo: 1 aposentada, 378 provadas, 4 redundantes** — 10621 s de mutação, medido em 2026-09-16 15:25.
 
-> **Esta rodada NÃO julgou 177 das 559 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 177 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 182 das 564 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 182 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
 - `fk-antes-do-default` — a chave estrangeira confere a linha crua, e o DEFAULT sem mãe grava a filha órfã
 - `fk-antes-do-default-pelo-servidor` — o DEFAULT e a calculada sem mãe gravam a órfã pelo servidor, fora e dentro da transação
@@ -1207,6 +1207,11 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 - `garantir-schema-sem-fsync-do-database` — `criar_schema` e `criar_tabela` num schema novo criavam a pasta sem `fsync` do database: o schema que o cliente ouviu criar podia sumir numa queda
 - `criar-database-sem-fsync-da-base` — `criar_database` criava a pasta sem `fsync` da base: o database que o cliente ouviu criar podia sumir numa queda
 - `marca-do-database-sem-fsync` — O marcador `_database.json` nascia sem `fsync`: numa queda uma colmeia voltava como database padrão, calada
+- `apoio-engole-a-falha-do-bind` — o apoio dos testes subia o servidor com `let _ = escutar()` e esperava a porta ATENDER: com a porta tomada por um vizinho do mesmo binário, o teste conversava com o servidor do vizinho («database loja já existe»)
+- `tarefa-pela-listagem-do-proc` — o teste das threads do SO procurava a thread listando `/proc/self/task`: a listagem pula a thread viva quando a tarefa listada logo antes dela morre
+- `contador-do-congelamento-relativo` — o teste do contador do congelamento exigia `antes + 2`: o vizinho congelado na leitura de `antes` que soltava no meio derrubava o teste sem defeito nenhum
+- `drop-do-congelamento-esquece-o-contador` — o `Drop` do congelamento tirava a tabela do registro e esquecia o contador: o portão barato ficava caro para sempre, e o teste antigo não via
+- `arbitro-engole-o-rebaixar` — o árbitro do cluster engolia a falha de gravar o rebaixamento (`let _ = estado.rebaixar(...)`): o nó voltava mandando num reinício, sem pista nenhuma
 
 As guardas que esta corrida ainda cita, hoje aposentadas:
 

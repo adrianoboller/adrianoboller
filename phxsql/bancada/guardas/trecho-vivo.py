@@ -415,6 +415,13 @@ dia, nunca no desejado:
   (`erro-no-meio-da-exclusao-sem-fsync`). 540 + 4 = 544, contado pelo
   `--catraca`.
   No merge com o 546 e o 534/535 (que levaram o piso a 547): 547 + 4 = 551.
+  **SUBIU para 565 em 01/10/2026** (pedidos 352, 401, 437 e 599), de 560
+  medido pelo `--catraca`: cinco guardas -- o apoio que engolia a falha do
+  `bind` (`apoio-engole-a-falha-do-bind`), a thread procurada pela listagem
+  do `/proc` (`tarefa-pela-listagem-do-proc`), a conta relativa do
+  congelamento (`contador-do-congelamento-relativo`), o `Drop` que esquecia o
+  contador (`drop-do-congelamento-esquece-o-contador`) e o arbitro que
+  engolia o rebaixar (`arbitro-engole-o-rebaixar`). 560 + 5 = 565.
   impedir. Ele e a unica coisa nesta regua que reprova o APAGAMENTO; tudo o
   mais aqui reprova o envelhecimento.
 
@@ -523,7 +530,7 @@ TETO_TESTE_MORTO = 0
 TETO_TRECHO_AMBIGUO = 0
 TETO_TESTE_FORA_DO_BINARIO = 0
 TETO_TESTE_SEM_MODULO = 0
-PISO_DAS_ENTRADAS = 560
+PISO_DAS_ENTRADAS = 565
 
 # ------------------------------------------------------------- APOSENTADAS
 #

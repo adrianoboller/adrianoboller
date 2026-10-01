@@ -47,26 +47,16 @@ const TOKEN: &str = "unico-secundario";
 /// outros testes de replicacao desta pasta.
 const ESPERA: Duration = Duration::from_secs(20);
 
-/// **Excecao nomeada do pedido 401.** A generalidade dos arquivos de teste
-/// deste crate trocou isto por porta 0 lida de volta do proprio servidor
-/// (`Servidor::porta_dos_dados()`), fechando a corrida por construcao. Aqui
-/// nao da: `terreno_com` PRECISA escrever a porta do `parceiro` (`porta_b`)
-/// no `Origem` de `alfa` ANTES de `beta` sequer existir -- e de proposito,
-/// porque o cenario que este arquivo mede e o que acontece EM QUANTO o
-/// parceiro esta fechado (ver o comentario de `terreno_com`). Inverter a
-/// ordem (subir `beta` primeiro, ler a porta real, so entao subir `alfa`)
-/// mudaria o cenario: `alfa` nasceria com o parceiro JA respondendo, e o
-/// teste deixaria de medir "dado local nasce sem corrida com o parceiro
-/// fechado". Fechar isso por construcao pediria uma forma de anunciar a
-/// origem DEPOIS do arranque -- producao nova que o produto nao usa hoje.
-fn porta_livre() -> u16 {
-    TcpListener::bind("127.0.0.1:0")
-        .unwrap()
-        .local_addr()
-        .unwrap()
-        .port()
-}
-
+/// A porta de cada servidor nasce de `comum::ouvinte_reservado()` e fica
+/// PRESA ate o servidor recebe-la (pedidos 352 e 401). `terreno_com` precisa
+/// escrever a porta do parceiro no `Origem` de `alfa` ANTES de `beta` existir
+/// -- e o cenario que este arquivo mede, o dado local nascendo com o parceiro
+/// fechado --, e por isso nao da para pedir porta 0 e ler de volta. O padrao
+/// de antes sorteava e SOLTAVA o numero; quando um vizinho do mesmo binario o
+/// pegava, o `bind` de `beta` falhava calado e o teste conversava com o
+/// servidor do vizinho («database loja ja existe», medido). Com o ouvinte
+/// preso, o parceiro «fechado» continua fechado para o laco de `alfa` no que
+/// importa: ninguem ACEITA a conexao ate `beta` subir.
 fn config_base(base: &std::path::Path, porta: u16, id: &str) -> Config {
     let mut c = Config {
         bind: format!("127.0.0.1:{porta}"),
@@ -102,26 +92,10 @@ fn config_base(base: &std::path::Path, porta: u16, id: &str) -> Config {
     c
 }
 
-fn subir(c: Config, porta: u16) -> Arc<Servidor> {
+fn subir(c: Config, ouvinte: TcpListener) -> Arc<Servidor> {
     let s = Servidor::novo(c).unwrap();
-    let copia = Arc::clone(&s);
-    std::thread::spawn(move || {
-        let _ = copia.escutar();
-    });
-    esperar_porta(porta);
+    comum::no_ar_no_ouvinte(&s, ouvinte);
     s
-}
-
-fn esperar_porta(porta: u16) {
-    let alvo: SocketAddr = format!("127.0.0.1:{porta}").parse().unwrap();
-    let ate = Instant::now() + Duration::from_secs(5);
-    while Instant::now() < ate {
-        if TcpStream::connect_timeout(&alvo, Duration::from_millis(200)).is_ok() {
-            return;
-        }
-        std::thread::sleep(Duration::from_millis(20));
-    }
-    panic!("a porta {porta} nao abriu em 5 s");
 }
 
 /// Um pedido pela porta de dados; devolve o JSON da resposta inteira.
@@ -250,8 +224,8 @@ fn terreno_com(
 ) -> (Arc<Servidor>, Arc<Servidor>, u16, u16, DirTemp, DirTemp) {
     let dir_a = DirTemp::novo(&format!("unico-secundario-puxa-{nome}"));
     let dir_b = DirTemp::novo(&format!("unico-secundario-parceiro-{nome}"));
-    let porta_a = porta_livre();
-    let porta_b = porta_livre();
+    let (ouvinte_a, porta_a) = comum::ouvinte_reservado();
+    let (ouvinte_b, porta_b) = comum::ouvinte_reservado();
 
     let mut c = config_base(&dir_a, porta_a, "alfa");
     c.replicacao.origens = vec![Origem {
@@ -277,11 +251,11 @@ fn terreno_com(
         cifra: marcado,
         chave_do_fio: String::new(),
     }];
-    let a = subir(c, porta_a);
+    let a = subir(c, ouvinte_a);
     criar_clientes(porta_a, marcado);
     inserir(porta_a, 1, "a@x");
 
-    let b = subir(config_base(&dir_b, porta_b, "beta"), porta_b);
+    let b = subir(config_base(&dir_b, porta_b, "beta"), ouvinte_b);
     criar_clientes(porta_b, marcado);
     (a, b, porta_a, porta_b, dir_a, dir_b)
 }

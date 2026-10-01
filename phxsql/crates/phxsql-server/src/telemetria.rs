@@ -2035,23 +2035,87 @@ mod testes {
         );
     }
 
-    /// Quantas tarefas deste processo tem `comm` comecando por `comeco`.
+    /// O tid da thread que chama, lido de `/proc/thread-self`
+    /// (`PID/task/TID`). `None` fora do Linux.
+    fn meu_tid() -> Option<String> {
+        let alvo = std::fs::read_link("/proc/thread-self").ok()?;
+        Some(alvo.file_name()?.to_string_lossy().into_owned())
+    }
+
+    /// A tarefa `tid` deste processo existe e tem `comm` comecando por
+    /// `comeco`?
     ///
-    /// E a grandeza que NAO depende dos vizinhos: nomeia a thread procurada em
-    /// vez de deduzi-la de uma diferenca no total do processo, que sobe e
-    /// desce por conta dos outros testes. A comparacao e por PREFIXO porque o
+    /// # Por que pelo tid, e nao listando `/proc/self/task` (pedido 437)
+    ///
+    /// A listagem PERDE uma thread viva quando a tarefa listada logo antes
+    /// dela morre durante a leitura: o nucleo para o `getdents` (o
+    /// `next_tid` de uma tarefa morta devolve nada) e o seguinte retoma pelo
+    /// INDICE, que encolheu -- a vizinha seguinte fica de fora. Medido em
+    /// 01/10/2026 com a montagem «vizinha que morre, criada logo antes da
+    /// presa»: 145 e 126 leituras sem a presa em 200.000 pela listagem, 0 em
+    /// 200.000 pelo tid. No `libtest` a vizinha que morre e a thread de outro
+    /// teste, e e por isso que o teste so caia na suite cheia. Pelo tid nao ha
+    /// listagem nenhuma para disputar. A comparacao e por PREFIXO porque o
     /// nucleo corta o `comm` em 15 caracteres, como o proprio `subir` faz.
-    fn tarefas_chamadas(comeco: &str) -> usize {
-        let Ok(dir) = std::fs::read_dir("/proc/self/task") else {
-            return 0;
-        };
-        dir.flatten()
-            .filter(|e| {
-                std::fs::read_to_string(e.path().join("comm"))
-                    .map(|c| c.trim().starts_with(comeco))
-                    .unwrap_or(false)
-            })
-            .count()
+    fn tarefa_chamada(tid: &str, comeco: &str) -> bool {
+        std::fs::read_to_string(format!("/proc/self/task/{tid}/comm"))
+            .map(|c| c.trim().starts_with(comeco))
+            .unwrap_or(false)
+    }
+
+    /// A tarefa `tid` ainda aparece no SO? Pelo caminho dela, pelo mesmo
+    /// motivo de [`tarefa_chamada`].
+    fn tarefa_existe(tid: &str) -> bool {
+        std::path::Path::new(&format!("/proc/self/task/{tid}")).exists()
+    }
+
+    /// **Prova real do pedido 437.** A montagem que perde a thread viva na
+    /// listagem de `/proc/self/task`: uma vizinha nasce LOGO ANTES da presa
+    /// e morre enquanto a presa e procurada. Medido pela listagem, ~1 leitura
+    /// em 1.400 nao via a presa (14 em 60.000 neste mesmo laco, em binario de
+    /// depuracao); pelo tid, nenhuma.
+    ///
+    /// Defeito reposto (guarda `tarefa-pela-listagem-do-proc`): `tarefa_chamada`
+    /// volta a listar o diretorio, e este teste cai -- com ~40 perdas
+    /// esperadas em 3.000 voltas, a chance de passar por sorte e da ordem de
+    /// e^-40.
+    #[test]
+    fn a_thread_viva_se_acha_pelo_tid_mesmo_com_a_vizinha_morrendo() {
+        if meu_tid().is_none() {
+            return;
+        }
+        let mut perdidas = 0u32;
+        for volta in 0..3_000u64 {
+            let atraso = (volta * 37) % 400;
+            let vizinha = std::thread::spawn(move || {
+                let ate = std::time::Instant::now() + std::time::Duration::from_micros(atraso);
+                while std::time::Instant::now() < ate {
+                    std::hint::spin_loop();
+                }
+            });
+            let (envia, recebe) = std::sync::mpsc::channel();
+            let (segura, solta) = std::sync::mpsc::channel::<()>();
+            let presa = std::thread::Builder::new()
+                .name("achada-pelo-tid".into())
+                .spawn(move || {
+                    let _ = envia.send(meu_tid());
+                    let _ = solta.recv();
+                })
+                .unwrap();
+            let tid = recebe.recv().unwrap().unwrap();
+            for _ in 0..40 {
+                if !tarefa_chamada(&tid, "achada-pelo-tid") {
+                    perdidas += 1;
+                }
+            }
+            vizinha.join().unwrap();
+            drop(segura);
+            presa.join().unwrap();
+        }
+        assert_eq!(
+            perdidas, 0,
+            "a thread viva sumiu da leitura {perdidas} vezes em 120.000"
+        );
     }
 
     /// O `Threads:` do `/proc/self/status` conta esta thread e as que o teste
@@ -2089,15 +2153,18 @@ mod testes {
                 std::thread::Builder::new()
                     .name(format!("vizinha-{i}"))
                     .spawn(move || {
-                        let _ = chegou.send(());
+                        // O proprio tid, para o teste esperar ESTA tarefa
+                        // sumir pelo caminho dela -- pedido 437.
+                        let _ = chegou.send(meu_tid());
                         let _ = solta.recv();
                     })
                     .unwrap(),
             );
             soltas.push(segura);
         }
+        let mut tids = Vec::new();
         for _ in 0..4 {
-            aviso.recv().unwrap();
+            tids.extend(aviso.recv().unwrap());
         }
         let so = threads_do_so().unwrap();
         assert!(
@@ -2111,12 +2178,11 @@ mod testes {
         // `join` volta quando o corpo acabou, e o nucleo ainda lista a tarefa
         // por um instante: a montagem so vale depois que ela SUMIU.
         let fim = std::time::Instant::now() + std::time::Duration::from_secs(5);
-        while std::time::Instant::now() < fim && tarefas_chamadas("vizinha-") > 0 {
+        while std::time::Instant::now() < fim && tids.iter().any(|t| tarefa_existe(t)) {
             std::thread::sleep(std::time::Duration::from_millis(5));
         }
-        assert_eq!(
-            tarefas_chamadas("vizinha-"),
-            0,
+        assert!(
+            !tids.iter().any(|t| tarefa_existe(t)),
             "as vizinhas nao sairam do SO, e sem isso a montagem nao reproduz o vizinho que morre"
         );
         let t = Arc::new(Telemetria::nova(true));
@@ -2128,20 +2194,19 @@ mod testes {
             "teste",
             0,
             move |_| {
-                let _ = envia.send(());
+                let _ = envia.send(meu_tid());
                 let _ = solta.recv();
             },
         );
-        recebe.recv().unwrap();
+        let tid_presa = recebe.recv().unwrap().unwrap();
         let agora = threads_do_so().unwrap();
         assert!(
             agora >= t.fios_vivos() as u64,
             "o SO ve {agora}, o registro ve {}",
             t.fios_vivos()
         );
-        assert_eq!(
-            tarefas_chamadas("presa-do-teste"),
-            1,
+        assert!(
+            tarefa_chamada(&tid_presa, "presa-do-teste"),
             "a thread subida nao apareceu no SO pelo nome (o SO ve {agora} tarefas)"
         );
         let _ = segura.send(());
