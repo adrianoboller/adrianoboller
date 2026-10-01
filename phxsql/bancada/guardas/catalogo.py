@@ -12534,12 +12534,15 @@ pub const ITERACOES_MINIMAS_DO_CADASTRO: u32 = phxsql_store::cofre::ITERACOES_MI
             "remontar). Os quatro motores nunca repetem (10 x 0). O defeito "
             "reposto e o `sync_all` do motor sem a conferencia da recusa."
         ),
+        # ATUALIZADO em 01/10/2026 (pedido 554): entre a conferencia e a arma
+        # entrou a conferencia da lista do destino de backup; o trecho
+        # acompanha o texto de hoje e a troca continua tirando so a do banco.
         "arquivo": "crates/phxsql-store/src/sincronia.rs",
         "trecho": """    conferir(caminho)?;
-    #[cfg(debug_assertions)]
+    if !do_banco {
 """,
         "troca": """    // DEFEITO REPOSTO (509): repete o fsync recusado.
-    #[cfg(debug_assertions)]
+    if !do_banco {
 """,
         "pacote": "phxsql-store",
         "alvo": ["--test", "disco-que-recusa"],
@@ -15752,6 +15755,104 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         ],
         "seguem": [
             "servidor::testes_do_panico_sob_a_trava::fsync_recusado_derruba_o_processo_e_a_marca_fica",
+        ],
+    },
+    {
+        "id": "backup-recusa-envenena-a-raiz",
+        "titulo": "a recusa do `fsync` no destino do backup marca a raiz de dados, e todo COMMIT seguinte recusa",
+        "porque": (
+            "pedido 554 (papel C, re-checagem de faceis B, N5): a recusa do "
+            "`fsync` no DESTINO de um backup ia para a MESMA lista de "
+            "diretorios recusados do banco, conferida por prefixo, marcando o "
+            "pai do que recusou. No leiaute de fabrica (raiz em `<dir>/dados`, "
+            "backups em `<dir>/backups`) o primeiro backup cria `backups/` e "
+            "sincroniza a mae dela -- `<dir>`, ancestral da raiz: uma recusa "
+            "ali fazia todo `fsync` do banco recusar ate reiniciar, e o "
+            "servidor medido respondia ao `inserir` seguinte que o `.ndx` "
+            "\"ficou para tras numa queda\". Conserto: a via `sem_abortar` "
+            "marca numa lista PROPRIA (`RECUSADOS_FORA`), que o banco nao le, "
+            "e casa so o diretorio exato."
+        ),
+        "arquivo": "crates/phxsql-store/src/sincronia.rs",
+        "trecho": """            recusar_fora(caminho, &e);
+""",
+        "troca": """            // DEFEITO REPOSTO (554): a recusa do destino vai para a lista
+            // do banco, que casa por prefixo -- o ancestral da raiz a alcanca.
+            recusar(caminho, &e);
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--lib"],
+        "caem": [
+            "backup::tests::recusa_no_destino_nao_alcanca_a_raiz_de_dados",
+        ],
+        "seguem": [
+            "backup::tests::fsync_recusado_na_copia_vira_erro",
+            "backup::tests::fsync_recusado_no_zip_vira_erro",
+        ],
+    },
+    {
+        "id": "backup-recusa-para-o-commit",
+        "titulo": "pelo soquete: depois de um backup com `fsync` recusado no destino, o `inserir` seguinte erra",
+        "porque": (
+            "pedido 554 (papel C, re-checagem de faceis B, N5): a recusa do "
+            "`fsync` no DESTINO de um backup ia para a MESMA lista de "
+            "diretorios recusados do banco, conferida por prefixo, marcando o "
+            "pai do que recusou. No leiaute de fabrica (raiz em `<dir>/dados`, "
+            "backups em `<dir>/backups`) o primeiro backup cria `backups/` e "
+            "sincroniza a mae dela -- `<dir>`, ancestral da raiz: uma recusa "
+            "ali fazia todo `fsync` do banco recusar ate reiniciar, e o "
+            "servidor medido respondia ao `inserir` seguinte que o `.ndx` "
+            "\"ficou para tras numa queda\". Conserto: a via `sem_abortar` "
+            "marca numa lista PROPRIA (`RECUSADOS_FORA`), que o banco nao le, "
+            "e casa so o diretorio exato."
+        ),
+        "arquivo": "crates/phxsql-store/src/sincronia.rs",
+        "trecho": """            recusar_fora(caminho, &e);
+""",
+        "troca": """            // DEFEITO REPOSTO (554, pelo servidor): a recusa do destino vai
+            // para a lista do banco.
+            recusar(caminho, &e);
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_do_panico_sob_a_trava::fsync_recusado_no_destino_do_backup_nao_para_o_commit",
+        ],
+        "seguem": [
+            "servidor::testes_do_panico_sob_a_trava::fsync_no_destino_do_backup_nao_derruba_o_servidor",
+        ],
+    },
+    {
+        "id": "backup-destino-que-contem-a-raiz",
+        "titulo": "o backup em arvore aceita destino igual, acima ou (por link) dentro da raiz de dados",
+        "porque": (
+            "pedido 554: a unica conferencia era `destino.starts_with(raiz)`, "
+            "de texto -- um link ou um `..` para dentro passava, e o destino "
+            "ACIMA da raiz (que a contem) passava sempre: a arvore era copiada "
+            "por cima de uma pasta que contem o banco vivo, e a faxina de uma "
+            "corrida que falha andaria por ali. Os maduros recusam o mesmo "
+            "(`pg_basebackup -D` dentro do PGDATA, ou nao vazio). Conserto: "
+            "`conferir_destino`, pela grafia e pelo disco, antes de byte "
+            "nenhum; o zip, um arquivo so, continua podendo ficar acima."
+        ),
+        "arquivo": "crates/phxsql-store/src/backup.rs",
+        "trecho": """    conferir_destino(raiz, destino, true)?;
+""",
+        "troca": """    // DEFEITO REPOSTO (554): so a conferencia de texto de antes.
+    if destino.starts_with(raiz) {
+        return Err(PhxError::Esquema(
+            "o destino do backup nao pode ficar dentro da raiz de dados".into(),
+        ));
+    }
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--lib"],
+        "caem": [
+            "backup::tests::destino_que_se_mistura_com_a_raiz_e_recusado_antes",
+        ],
+        "seguem": [
+            "backup::tests::copia_tudo_e_confere",
+            "backup::tests::nao_copia_para_dentro_de_si_mesmo",
         ],
     },
     {

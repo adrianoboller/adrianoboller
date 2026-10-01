@@ -969,6 +969,9 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `restauracao-nao-reconstroi-o-marcado` | a restauração de backup devolve a tabela com o `.ndx` marcado, e ela recusa toda escrita até alguém mandar `reindexar` | 1 | ✅ provada |
 | `backup-sem-fsync` | o backup responde "concluido" sem `fsync` nenhum | 2 | ✅ provada |
 | `backup-fsync-derruba-o-servidor` | o `fsync` recusado no DESTINO DE UM BACKUP derruba o servidor inteiro | 1 | ✅ provada |
+| `backup-recusa-envenena-a-raiz` | a recusa do `fsync` no destino do backup marca a raiz de dados, e todo COMMIT seguinte recusa | 1 | ✅ provada |
+| `backup-recusa-para-o-commit` | pelo soquete: depois de um backup com `fsync` recusado no destino, o `inserir` seguinte erra | 1 | ✅ provada |
+| `backup-destino-que-contem-a-raiz` | o backup em arvore aceita destino igual, acima ou (por link) dentro da raiz de dados | 1 | ✅ provada |
 | `dblink-puxar-le-blob-cru` | O DbLink, ao puxar, lê o BLOB cru como se fosse hexadecimal | 3 | ✅ provada |
 | `dblink-tela-mostra-blob-com-perda` | O DbLink mostra na tela o BLOB remoto pelo leitor com perda | 2 | ✅ provada |
 | `dblink-colacao-bin-vira-hex` | O DbLink mostra em hexadecimal o texto de uma colação _bin | 2 | ✅ provada |
@@ -1017,9 +1020,9 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `erro-no-meio-da-exclusao-sem-fsync` | o erro no meio do `excluir_tabela` esquecia os nomes que já tinham saído sem `fsync` da pasta: numa queda a tabela voltava pela metade | 1 | ✅ provada |
 | `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | — | 🪦 aposentada (18/09/2026) |
 
-**374 das 550 guardas do catálogo: 1 aposentada, 369 provadas, 4 redundantes** — 10173 s de mutação, medido em 2026-09-16 15:25.
+**377 das 553 guardas do catálogo: 1 aposentada, 372 provadas, 4 redundantes** — 10334 s de mutação, medido em 2026-09-16 15:25.
 
-> **Esta rodada NÃO julgou 177 das 550 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 177 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 177 das 553 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 177 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
 - `fk-antes-do-default` — a chave estrangeira confere a linha crua, e o DEFAULT sem mãe grava a filha órfã
 - `fk-antes-do-default-pelo-servidor` — o DEFAULT e a calculada sem mãe gravam a órfã pelo servidor, fora e dentro da transação

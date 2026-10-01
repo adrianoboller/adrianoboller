@@ -2553,9 +2553,9 @@
       "id": "fsync-recusado-repete-no-diario",
       "titulo": "o `fsync` recusado de um volume é repetido e responde Ok: o `Volumes` devolvia a lista ao registro «para o fecho tentar de novo»",
       "veredito": "PROVADA",
-      "segundos": 4.76,
+      "segundos": 8.41,
       "notas": [],
-      "quando": "2026-09-24 15:15"
+      "quando": "2026-10-01 02:27"
     },
     {
       "id": "fsync-recusado-repete-no-indice",
@@ -2628,6 +2628,30 @@
       "segundos": 57.89,
       "notas": [],
       "quando": "2026-09-30 23:08"
+    },
+    {
+      "id": "backup-recusa-envenena-a-raiz",
+      "titulo": "a recusa do `fsync` no destino do backup marca a raiz de dados, e todo COMMIT seguinte recusa",
+      "veredito": "PROVADA",
+      "segundos": 15.51,
+      "notas": [],
+      "quando": "2026-10-01 02:21"
+    },
+    {
+      "id": "backup-recusa-para-o-commit",
+      "titulo": "pelo soquete: depois de um backup com `fsync` recusado no destino, o `inserir` seguinte erra",
+      "veredito": "PROVADA",
+      "segundos": 124.44,
+      "notas": [],
+      "quando": "2026-10-01 02:26"
+    },
+    {
+      "id": "backup-destino-que-contem-a-raiz",
+      "titulo": "o backup em arvore aceita destino igual, acima ou (por link) dentro da raiz de dados",
+      "veredito": "PROVADA",
+      "segundos": 17.5,
+      "notas": [],
+      "quando": "2026-10-01 02:26"
     },
     {
       "id": "dblink-puxar-le-blob-cru",

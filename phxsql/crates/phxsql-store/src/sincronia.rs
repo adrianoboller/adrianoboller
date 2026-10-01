@@ -90,10 +90,26 @@
 //! a trilha continuam la, intactos. Um `fsync` recusado no destino nao pode
 //! `abort()`ar um servidor que segue servindo o banco de verdade: viraria
 //! produção fora do ar por causa de um disco de backup cheio.
-//! [`sync_all_sem_abortar`] faz a MESMA conta de [`sync_all`] -- inclusive a
-//! marca em [`RECUSADOS`], que continua impedindo uma repeticao de responder
-//! Ok sem o dado -- e so' NAO chama o [`GANCHO`]. `phxsql_store::backup` e o
-//! unico chamador dela hoje.
+//! [`sync_all_sem_abortar`] faz a MESMA conta de [`sync_all`] -- inclusive uma
+//! marca que continua impedindo uma repeticao de responder Ok sem o dado -- e
+//! so' NAO chama o [`GANCHO`]. `phxsql_store::backup` e o unico chamador dela
+//! hoje.
+//!
+//! # E a marca do destino nao alcanca o banco (pedido 554)
+//!
+//! A marca do backup morava na MESMA lista do banco, conferida por prefixo, e
+//! marcava o diretorio pai do que recusou. No leiaute de fabrica (`base` em
+//! `<dir>/dados`, backups em `<dir>/backups`) o primeiro backup cria
+//! `backups/`, e o `fsync` da MAE dela -- `<dir>`, ancestral da raiz -- marca
+//! `<dir>`: dali em diante todo `fsync` do banco recusava, e um disco de
+//! backup que falhou uma vez parava toda escrita ate reiniciar. A recusa no
+//! destino vai agora para [`RECUSADOS_FORA`], que so a via `sem_abortar`
+//! consulta, e casa o DIRETORIO EXATO, nao os de baixo: repetir o `fsync` do
+//! mesmo arquivo ou da mesma pasta continua recusado (o que o 509 compra), e
+//! a pasta de outro backup, ou a raiz de dados debaixo dela, nao herda nada.
+//! O banco nao perde protecao com isso porque o backup nunca escreve na raiz:
+//! destino dentro dela, igual a ela ou acima dela e recusado antes de byte
+//! nenhum (`backup::conferir_destino`).
 
 use std::fs::File;
 use std::io;
@@ -110,6 +126,16 @@ static RECUSADOS: Mutex<Vec<(PathBuf, String)>> = Mutex::new(Vec::new());
 /// `.ndx` pergunta, a abertura do `.ndx` marcado tambem (pedido 522), e quase
 /// nunca ha nada a achar.
 static HA_RECUSADO: AtomicBool = AtomicBool::new(false);
+
+/// Os diretorios de DESTINO DE BACKUP com `fsync` recusado -- pedido 554.
+///
+/// Separada de [`RECUSADOS`] porque o banco nao pode herdar a recusa de um
+/// disco que nao e o dele: o caminho do banco ([`conferir`], [`recusado_em`])
+/// nunca le esta lista. Ver a nota do modulo.
+static RECUSADOS_FORA: Mutex<Vec<(PathBuf, String)>> = Mutex::new(Vec::new());
+
+/// O atomico de [`RECUSADOS_FORA`], pelo mesmo motivo do [`HA_RECUSADO`].
+static HA_RECUSADO_FORA: AtomicBool = AtomicBool::new(false);
 
 /// O que o processo faz no instante da recusa. Ver [`ao_recusar`].
 static GANCHO: OnceLock<Gancho> = OnceLock::new();
@@ -184,9 +210,10 @@ pub fn sync_data(arquivo: &File, caminho: &Path) -> Result<()> {
     sync_all_interno(arquivo, caminho, true, true)
 }
 
-/// A MESMA conta de [`sync_all`] -- inclusive a marca em [`recusar`], que
-/// continua impedindo uma repeticao de responder Ok sem o dado --, so' sem
-/// chamar o [`GANCHO`] do processo na recusa.
+/// A MESMA conta de [`sync_all`] -- inclusive uma marca que continua
+/// impedindo uma repeticao de responder Ok sem o dado --, so' sem chamar o
+/// [`GANCHO`] do processo na recusa, e com a marca em [`RECUSADOS_FORA`], que
+/// o banco nao le (pedido 554).
 ///
 /// Pedido 524, condicao C1: o destino de um backup nao e o disco que o
 /// gancho protege (ver a nota do modulo), e uma recusa ali tem de virar
@@ -261,7 +288,7 @@ pub(crate) fn trocar_duravel_sem_abortar(de: &Path, para: &Path) -> Result<()> {
 /// O `fsync` dos diretorios de uma troca que JA aconteceu -- para quem fez o
 /// `rename` por conta propria porque precisa decidir o que fazer se ele
 /// falhar (a restauracao cai para a copia).
-pub(crate) fn sincronizar_os_diretorios(de: &Path, para: &Path, com_gancho: bool) -> Result<()> {
+pub(crate) fn sincronizar_os_diretorios(de: &Path, para: &Path, do_banco: bool) -> Result<()> {
     let pai = |p: &Path| -> PathBuf {
         match p.parent() {
             Some(d) if !d.as_os_str().is_empty() => d.to_path_buf(),
@@ -269,9 +296,9 @@ pub(crate) fn sincronizar_os_diretorios(de: &Path, para: &Path, com_gancho: bool
         }
     };
     let (d_para, d_de) = (pai(para), pai(de));
-    sincronizar_diretorio(&d_para, para, com_gancho)?;
+    sincronizar_diretorio(&d_para, para, do_banco)?;
     if absoluto(&d_de) != absoluto(&d_para) {
-        sincronizar_diretorio(&d_de, de, com_gancho)?;
+        sincronizar_diretorio(&d_de, de, do_banco)?;
     }
     Ok(())
 }
@@ -282,29 +309,28 @@ pub(crate) fn sincronizar_os_diretorios(de: &Path, para: &Path, com_gancho: bool
 /// pode devolver o nome antigo depois de a resposta ter dito «pronto».
 ///
 /// `de_quem` e um nome DENTRO de `dir`, e nao o proprio `dir`: e por ele que
-/// [`recusar`] grava a marca (o PAI do caminho), e marcar o pai de `dir`
+/// a recusa grava a marca (o PAI do caminho), e marcar o pai de `dir`
 /// envenenaria as pastas vizinhas do destino -- os outros backups agendados.
 pub(crate) fn sincronizar_pasta_sem_abortar(dir: &Path, de_quem: &Path) -> Result<()> {
     sincronizar_diretorio(dir, de_quem, false)
 }
 
 #[cfg(unix)]
-fn sincronizar_diretorio(dir: &Path, de_quem: &Path, com_gancho: bool) -> Result<()> {
+fn sincronizar_diretorio(dir: &Path, de_quem: &Path, do_banco: bool) -> Result<()> {
     let f = File::open(dir)?;
-    sync_all_interno(&f, de_quem, com_gancho, false)
+    sync_all_interno(&f, de_quem, do_banco, false)
 }
 
 #[cfg(not(unix))]
-fn sincronizar_diretorio(_dir: &Path, _de_quem: &Path, _com_gancho: bool) -> Result<()> {
+fn sincronizar_diretorio(_dir: &Path, _de_quem: &Path, _do_banco: bool) -> Result<()> {
     Ok(())
 }
 
-fn sync_all_interno(
-    arquivo: &File,
-    caminho: &Path,
-    com_gancho: bool,
-    so_dados: bool,
-) -> Result<()> {
+/// `do_banco` decide as DUAS coisas juntas -- o gancho e a lista da marca --
+/// porque sao a mesma pergunta: este disco e o do banco? Dois interruptores
+/// deixariam nascer a combinacao que o 554 fecha (sem gancho, mas marcando a
+/// lista que o banco le).
+fn sync_all_interno(arquivo: &File, caminho: &Path, do_banco: bool, so_dados: bool) -> Result<()> {
     let descarregar = || {
         if so_dados {
             arquivo.sync_data()
@@ -313,6 +339,9 @@ fn sync_all_interno(
         }
     };
     conferir(caminho)?;
+    if !do_banco {
+        conferir_fora(caminho)?;
+    }
     #[cfg(debug_assertions)]
     let feito = match falha_de_teste::disparar(caminho, falha_de_teste::Onde::Fsync) {
         Some(e) => Err(e),
@@ -321,11 +350,13 @@ fn sync_all_interno(
     #[cfg(not(debug_assertions))]
     let feito = descarregar();
     if let Err(e) = feito {
-        recusar(caminho, &e);
-        if com_gancho {
+        if do_banco {
+            recusar(caminho, &e);
             if let Some(gancho) = GANCHO.get() {
                 gancho(Queda::FsyncRecusado, caminho, &e);
             }
+        } else {
+            recusar_fora(caminho, &e);
         }
         return Err(PhxError::Io(e));
     }
@@ -347,6 +378,31 @@ pub fn conferir(caminho: &Path) -> Result<()> {
              nucleo pode ter descartado o que nao foi ao disco: um fsync novo \
              responderia Ok sem o dado estar la. Nada neste diretorio se \
              confirma mais ate o processo reiniciar (pedido 509)"
+        )))),
+    }
+}
+
+/// O [`conferir`] do destino de backup: so o MESMO diretorio que recusou, e
+/// nao os de baixo dele -- pedido 554, ver a nota do modulo.
+fn conferir_fora(caminho: &Path) -> Result<()> {
+    if !HA_RECUSADO_FORA.load(Ordering::Acquire) {
+        return Ok(());
+    }
+    let dirs: Vec<PathBuf> = crate::volume::chaves_reais(caminho)
+        .into_iter()
+        .map(|c| c.parent().map(Path::to_path_buf).unwrap_or(c))
+        .collect();
+    let achou = trava(&RECUSADOS_FORA)
+        .iter()
+        .find(|(d, _)| dirs.contains(d))
+        .map(|(_, primeira)| primeira.clone());
+    match achou {
+        None => Ok(()),
+        Some(primeira) => Err(PhxError::Io(io::Error::other(format!(
+            "um fsync anterior nesta pasta de backup foi recusado \
+             ({primeira}), e um fsync novo poderia responder Ok sem o dado \
+             estar la. Use outro destino, ou reinicie o processo depois de \
+             conferir o disco (pedidos 509 e 554)"
         )))),
     }
 }
@@ -381,6 +437,20 @@ fn recusar(caminho: &Path, e: &io::Error) {
         }
     }
     HA_RECUSADO.store(true, Ordering::Release);
+}
+
+/// A marca do destino de backup: o diretorio exato, por todas as grafias, na
+/// lista que o banco nao le -- pedido 554.
+fn recusar_fora(caminho: &Path, e: &io::Error) {
+    let primeira = format!("{}: {e}", caminho.display());
+    let mut r = trava(&RECUSADOS_FORA);
+    for chave in crate::volume::chaves_reais(caminho) {
+        let dir = chave.parent().map(Path::to_path_buf).unwrap_or(chave);
+        if !r.iter().any(|(d, _)| *d == dir) {
+            r.push((dir, primeira.clone()));
+        }
+    }
+    HA_RECUSADO_FORA.store(true, Ordering::Release);
 }
 
 /// A chave lexica das familias do `Volumes`, e so para a ARMA de teste: a
