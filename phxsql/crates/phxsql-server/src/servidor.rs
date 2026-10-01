@@ -66259,10 +66259,15 @@ mod testes_dblink_dialeto_da_sincronia {
             return vec![vec![0x00, 0x01, 0x00, 0x02, 0x00, 0x00, 0x00]];
         }
         let em_hex = |nome: &str| sql.contains(&format!("HEX(`{nome}`)"));
+        // O `CAST(bit AS UNSIGNED)` volta como o MySQL(R) o anuncia: BIGINT
+        // UNSIGNED, conjunto 63, e a celula em digitos decimais -- pedido 592.
+        let em_numero = |nome: &str| sql.contains(&format!("CAST(`{nome}` AS UNSIGNED)"));
         let mut r = vec![vec![cols.len() as u8]];
         for (nome, codigo, bandeiras, tamanho, charset) in cols {
             r.push(if em_hex(nome) {
                 coluna(nome, 0xfd, 0, tamanho * 2)
+            } else if em_numero(nome) {
+                coluna_em(nome, 0x08, 0x00a0, 21, 63)
             } else {
                 coluna_em(nome, *codigo, *bandeiras, *tamanho, *charset)
             });
@@ -66275,6 +66280,10 @@ mod testes_dblink_dialeto_da_sincronia {
                     match cel {
                         None => p.push(0xFB),
                         Some(b) if em_hex(nome) => lenenc(&mut p, hex(b, true).as_bytes()),
+                        Some(b) if em_numero(nome) => {
+                            let n = b.iter().fold(0u64, |a, x| (a << 8) | u64::from(*x));
+                            lenenc(&mut p, n.to_string().as_bytes())
+                        }
                         Some(b) => lenenc(&mut p, b),
                     }
                 }
@@ -66682,6 +66691,80 @@ mod testes_dblink_dialeto_da_sincronia {
         ] {
             let r = pede(&s, pedido).unwrap_or_else(|e| panic!("{op}: {e}"));
             confere_a_grade(op, &r);
+        }
+    }
+
+    // ------------------------------- pedido 592: o espelho decide como a tela
+
+    /// A coluna local, pelo nome, no esquema que o `dblink_ligar` criou.
+    fn tipo_local_de(s: &Arc<Servidor>, coluna: &str) -> String {
+        let r = pede(s, r#""op":"esquema","database":"loja","tabela":"clientes""#)
+            .unwrap()
+            .escrever();
+        let marca = format!("\"nome\":\"{coluna}\"");
+        let i = r
+            .find(&marca)
+            .unwrap_or_else(|| panic!("sem a coluna {coluna:?}: {r}"));
+        let resto = &r[i..];
+        let fim = resto.find('}').unwrap_or(resto.len());
+        resto[..fim].to_string()
+    }
+
+    /// **592:** o `dblink_ligar` decidia binario pela bandeira 0x80, que acende
+    /// tambem num `VARCHAR` em `utf8mb4_bin` (conjunto 46): a tabela local
+    /// nascia com a coluna `Bin` e a leitura pedia `HEX()` -- texto gravado
+    /// como bytes. E o `BIT(16)`, que o leitor do 590 ja entrega em hex, virava
+    /// `Int8` pelo `valor_de_texto`, que le os digitos hex como DECIMAIS: o
+    /// `0x0110` (272) gravava 110, calado.
+    ///
+    /// # Prova real
+    ///
+    /// Com a decisao do `nome_do_tipo` pela bandeira de volta, o `apelido`
+    /// nasce `Bin` e falha; com a leitura do BIT sem o `CAST`, o `bits` grava
+    /// 110 (ou recusa em `00ff`) e falha.
+    #[test]
+    fn o_espelho_do_mysql_decide_binario_pelo_conjunto_e_le_o_bit_inteiro() {
+        let dir = DirTemp::novo("592-dblink-bin");
+        let s = servidor(&dir);
+        let cols: Vec<ColMy> = vec![
+            ("id", 0x03, 0x0003, 11, 63),
+            ("apelido", 0xfd, 0x0080, 160, 46),
+            ("bits", 0x10, 0x00a0, 16, 63),
+        ];
+        let linhas = vec![
+            vec![cel("1"), cel("Blumenau ç"), Some(vec![0x01, 0x10])],
+            vec![cel("2"), cel("cafe"), Some(vec![0x00, 0xff])],
+            vec![cel("3"), cel(""), Some(vec![0x00, 0x00])],
+            vec![cel("4"), None, None],
+        ];
+        let (porta, avisos) = par_my(cols, linhas);
+        salvar(&s, "mysql", porta);
+        ligar(&s, "puxar").unwrap();
+        let apelido = tipo_local_de(&s, "apelido");
+        assert!(
+            apelido.contains("\"tipo\":\"Str(40)\""),
+            "a colacao _bin nasceu binaria aqui: {apelido}"
+        );
+        let r = match pede(&s, r#""op":"dblink_sincronizar","dblink":"erp""#) {
+            Ok(j) => j.escrever(),
+            Err(e) => panic!("o puxar recusou: {e}"),
+        };
+        assert!(r.contains("\"puxadas_novas\":4"), "{r}");
+        let recebidas: Vec<String> = avisos.try_iter().collect();
+        let leitura = recebidas
+            .iter()
+            .find(|q| !q.contains("LIMIT 0") && q.starts_with("SELECT"))
+            .expect("o par nao recebeu a leitura");
+        assert!(!leitura.contains("HEX(`apelido`)"), "{leitura}");
+        let local = varrer(&s);
+        for esperado in [
+            "\"Blumenau ç\"",
+            "\"cafe\"",
+            "\"bits\":272",
+            "\"bits\":255",
+            "\"bits\":0",
+        ] {
+            assert!(local.contains(esperado), "falta {esperado}: {local}");
         }
     }
 }

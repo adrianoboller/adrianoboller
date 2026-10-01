@@ -973,7 +973,9 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `backup-fsync-derruba-o-servidor` | o `fsync` recusado no DESTINO DE UM BACKUP derruba o servidor inteiro | 1 | ✅ provada |
 | `dblink-puxar-le-blob-cru` | O DbLink, ao puxar, lê o BLOB cru como se fosse hexadecimal | 3 | ✅ provada |
 | `dblink-tela-mostra-blob-com-perda` | O DbLink mostra na tela o BLOB remoto pelo leitor com perda | 2 | ✅ provada |
-| `dblink-colacao-bin-vira-hex` | O DbLink mostra em hexadecimal o texto de uma colação _bin | 1 | ✅ provada |
+| `dblink-colacao-bin-vira-hex` | O DbLink mostra em hexadecimal o texto de uma colação _bin | 2 | ✅ provada |
+| `dblink-espelho-bin-pela-bandeira` | O espelho do DbLink cria Bin a coluna de texto em colação _bin | 1 | ✅ provada |
+| `dblink-bit-lido-como-hex-decimal` | O DbLink puxa o BIT do MySQL em hexadecimal e o grava como decimal | 2 | ✅ provada |
 | `arquivo-refeito-herda-o-modo-velho` | o arquivo que o banco REFAZ por cima de um antigo -- o `.ndx` e o `.fts` do `reindexar` -- herda o `644` dele | 1 | ✅ provada |
 | `copia-do-backup-nasce-aberta` | a cópia do backup volta a nascer `644` -- até a do `.lgpd`, que nasceu `600` | 1 | ✅ provada |
 | `backup-atravessa-link-plantado` | o motor da permissão volta a seguir o link simbólico no último nome: um link plantado no destino do backup faz o `.reg` ser gravado NA vítima de fora, e ela vira 0600 | 3 | ✅ provada |
@@ -1005,9 +1007,9 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `faxina-do-backup-sem-conferir-o-inode` | a faxina do backup remove pelo descritor da mãe mas não confere o inode: a pasta vazia de outro que entrou no nome da nossa sai | 1 | ✅ provada |
 | `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | — | 🪦 aposentada (18/09/2026) |
 
-**360 das 537 guardas do catálogo: 1 aposentada, 355 provadas, 4 redundantes** — 9484 s de mutação, medido em 2026-09-16 15:25.
+**362 das 539 guardas do catálogo: 1 aposentada, 357 provadas, 4 redundantes** — 9592 s de mutação, medido em 2026-09-16 15:25.
 
-> **Esta rodada NÃO julgou 178 das 537 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 178 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 178 das 539 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 178 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
 - `fk-antes-do-default` — a chave estrangeira confere a linha crua, e o DEFAULT sem mãe grava a filha órfã
 - `fk-antes-do-default-pelo-servidor` — o DEFAULT e a calculada sem mãe gravam a órfã pelo servidor, fora e dentro da transação
