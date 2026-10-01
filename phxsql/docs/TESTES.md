@@ -966,6 +966,7 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `pagina-despejada-que-o-disco-recusou-some` | a página suja despejada do cache que o disco recusou some: nem no arquivo, nem na RAM | 1 | ✅ provada |
 | `servidor-segue-de-pe-depois-do-fsync-recusado` | o servidor segue de pé depois de um `fsync` recusado, gravando num disco que já se sabe que mente | 1 | ✅ provada |
 | `completar-engole-a-tabela-que-nao-foi-ao-disco` | a recuperação engole o erro do `sincronizar` e apaga a marca de um commit cujo dado não foi ao disco | 1 | ✅ provada |
+| `esquema-vaza-o-histograma-da-particao` | `op_esquema` publica `baldes[].registros` mesmo com a coluna da partição negada ao usuário | 2 | ✅ provada |
 | `restauracao-nao-reconstroi-o-marcado` | a restauração de backup devolve a tabela com o `.ndx` marcado, e ela recusa toda escrita até alguém mandar `reindexar` | 1 | ✅ provada |
 | `backup-sem-fsync` | o backup responde "concluido" sem `fsync` nenhum | 2 | ✅ provada |
 | `backup-fsync-derruba-o-servidor` | o `fsync` recusado no DESTINO DE UM BACKUP derruba o servidor inteiro | 1 | ✅ provada |
@@ -1024,11 +1025,14 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `blacklist-regravada-no-lugar` | o `blacklist.json` era regravado no lugar e sem `fsync`: a queda no meio deixava JSON pela metade, e o arranque o recusa | 1 | ✅ provada |
 | `esvaziar-esquece-no-erro` | o erro no meio do `esvaziar_lixeira` esquecia os volumes do `.trash` que já tinham saído sem `fsync` da pasta | 1 | ✅ provada |
 | `expurgo-esquece-no-erro` | o erro no meio da fase 3 do expurgo da trilha esquecia os volumes do `.lgpd` que já tinham saído sem `fsync` da pasta | 1 | ✅ provada |
+| `trilha-pagina-por-contagem` | A exportação da trilha paginava só por `pular`: um expurgo entre duas páginas fazia o auditor pular registro vivo sem aviso | 1 | ✅ provada |
+| `rowid-revela-coluna-negada` | Com a coluna que particiona negada pelo direito, a primeira letra (ou o período) de cada linha saía pelo rowid, pelos baldes, pelo `slots` e pelo catálogo | 2 | ✅ provada |
+| `conta-cita-numero-de-coluna-marcada` | A recusa da expressão citava número e booleano, e a conta que parte de coluna marcada e cai em coluna sem marca saía com o valor | 1 | ✅ provada |
 | `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | — | 🪦 aposentada (18/09/2026) |
 
-**383 das 559 guardas do catálogo: 1 aposentada, 378 provadas, 4 redundantes** — 10621 s de mutação, medido em 2026-09-16 15:25.
+**387 das 562 guardas do catálogo: 1 aposentada, 382 provadas, 4 redundantes** — 10899 s de mutação, medido em 2026-09-16 15:25.
 
-> **Esta rodada NÃO julgou 177 das 559 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 177 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 176 das 562 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 176 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
 - `fk-antes-do-default` — a chave estrangeira confere a linha crua, e o DEFAULT sem mãe grava a filha órfã
 - `fk-antes-do-default-pelo-servidor` — o DEFAULT e a calculada sem mãe gravam a órfã pelo servidor, fora e dentro da transação
@@ -1074,7 +1078,6 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 - `jobs-ilegivel-derruba-o-motor` — o cadastro de jobs ilegivel derruba o motor inteiro
 - `core-leva-a-senha-do-cofre` — o core do abort leva a senha do cofre para o disco
 - `catalogo-so-declara-token-nao-token-remoto` — o catálogo de `replicacao_testar` não declara `token_remoto`, o campo que a sonda lê primeiro
-- `esquema-vaza-o-histograma-da-particao` — `op_esquema` publica `baldes[].registros` mesmo com a coluna da partição negada ao usuário
 - `dblink-mysql-sem-teto-de-colunas` — o DbLink MySQL(R) reserva `Vec::with_capacity` do número de colunas que o PAR manda, sem teto
 - `dblink-mysql-sem-teto-do-quadro-acumulado` — `ler_quadro` do DbLink MySQL(R) junta continuações de 16 MB sem teto sobre o total
 - `smtp-sem-teto-de-linhas-de-continuacao` — o cliente SMTP aceita QUALQUER número de linhas de continuação (`250-...`), sem teto

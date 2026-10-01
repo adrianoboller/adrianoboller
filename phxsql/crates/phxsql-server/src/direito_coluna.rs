@@ -60,6 +60,11 @@ pub enum PorColuna {
     /// da coluna negada que alguem digitou na definicao sai redigido: vira o
     /// tamanho, como o Profiler faz. Ver [`tapar_pedidos_salvos`].
     PedidoSalvo,
+    /// Descreve a estrutura de VARIAS tabelas de uma vez, uma linha por
+    /// tabela (o `sistabelas`). Nao ha campo `tabela` no pedido para o crivo
+    /// ler, entao ele passa linha a linha: na tabela cujo rowid revela coluna
+    /// negada a este usuario, sai o que conta linha por balde (pedido 543).
+    Catalogo,
 }
 
 /// A classe de cada operacao do protocolo, incluindo os apelidos que o
@@ -84,8 +89,12 @@ pub const CLASSES: &[(&str, PorColuna)] = &[
     // planejar contra um esquema que nao existe. O que a resposta ganha e a
     // lista do que este usuario nao le.
     ("esquema", PorColuna::Estrutura),
-    ("sistabelas", PorColuna::Nenhum),
-    ("systables", PorColuna::Nenhum),
+    // O catalogo NAO e dado -- mas o `slots` dele e, numa tabela particionada
+    // pela coluna negada: a marca d'agua do balde mais alto diz quantas linhas
+    // tem a letra mais alta (pedido 543). Por isso a classe propria, e nao
+    // `Nenhum`: o crivo e o mesmo do `esquema`, aplicado por linha.
+    ("sistabelas", PorColuna::Catalogo),
+    ("systables", PorColuna::Catalogo),
     ("siscolunas", PorColuna::Nenhum),
     ("syscolumns", PorColuna::Nenhum),
     // Mostra QUE a coluna guarda CPF, nunca o CPF -- e catalogo, como o
@@ -733,19 +742,51 @@ pub fn tapar_no_pedido(pedido: Json, negadas: &[String]) -> Json {
     }
 }
 
-/// Tira `registros` de cada balde da particao alfanumerica, quando a coluna
-/// particionada e' uma das `sem_ler` -- pedido 369.
+/// A coluna que o ROWID desta tabela revela, lida da resposta do `esquema`
+/// (`paginacao.coluna_do_rowid`), quando ela e uma das `sem_ler` -- pedido
+/// 543.
+///
+/// A pergunta e UMA, e quem a faz sao tres: a leitura e a escrita, que
+/// recusam (o rowid de cada linha e o balde, e o balde e a primeira letra ou
+/// o periodo da coluna); o `esquema`, que tira o que conta linha por balde; e
+/// o catalogo, que faz o mesmo por tabela. Responder num lugar so e o que
+/// impede as tres de divergirem sobre o que e «a coluna da particao».
+pub fn coluna_do_rowid_negada(esquema: &Json, sem_ler: &[String]) -> Option<String> {
+    if sem_ler.is_empty() {
+        return None;
+    }
+    let coluna = esquema
+        .campo("paginacao")
+        .and_then(|p| p.campo("coluna_do_rowid"))
+        .and_then(Json::texto)?;
+    sem_ler
+        .iter()
+        .find(|n| mesmo_nome(n, coluna))
+        .map(|n| n.to_string())
+}
+
+/// Tira do `esquema` tudo o que conta linha por balde, quando a coluna que o
+/// rowid revela e negada a este usuario -- pedidos 369 e 543.
 ///
 /// `esquema` e classe [`PorColuna::Estrutura`] porque nome, tipo e indice de
-/// uma coluna nao sao dado. Mas `baldes[].registros` e' a CONTAGEM de linhas
-/// por classe do primeiro caractere da coluna -- agregado do dado, viajando
-/// na mesma resposta que a estrutura. So mexe quando a coluna que particiona
-/// a tabela e' negada a este usuario; sem regra de coluna nenhuma o chamador
-/// nem entra aqui (o `bool` da sessao decide antes de qualquer trabalho), e
-/// com regra numa coluna QUE NAO particiona a tabela a lista sai intacta --
-/// o comportamento velho continua valendo para quem nao tem o motivo.
-pub fn peneirar_baldes(resposta: Json, sem_ler: &[String]) -> Json {
-    if sem_ler.is_empty() {
+/// uma coluna nao sao dado. Mas cinco campos dele sao o DADO agregado por
+/// balde, e o balde e a primeira letra (ou o periodo) da coluna:
+///
+/// * `paginacao.baldes[].registros` -- o histograma inteiro (o 369);
+/// * `paginacao.baldes[].existe` -- quais letras tem linha;
+/// * `slots` -- a marca d'agua, que da a conta exata do balde mais alto;
+/// * `volumes[]` -- na particao por periodo, o rotulo do periodo (mes e ano
+///   da coluna `Date`) e o `primeiro_rowid` de cada um, que da a contagem;
+/// * `arquivos` -- os volumes que existem no disco, que e o `existe` de novo
+///   por outro nome.
+///
+/// A estrutura do balde (`letra`, `arquivo`, `primeiro_rowid` do balde) fica:
+/// e conta publica da geometria, igual para toda tabela. Sem regra de coluna
+/// o chamador nem entra aqui (o `bool` da sessao decide antes), e com regra
+/// numa coluna que NAO particiona a resposta sai intacta -- o comportamento
+/// velho continua valendo para quem nao tem o motivo.
+pub fn peneirar_oraculo_do_rowid(resposta: Json, sem_ler: &[String]) -> Json {
+    if coluna_do_rowid_negada(&resposta, sem_ler).is_none() {
         return resposta;
     }
     let Json::Objeto(pares) = resposta else {
@@ -754,9 +795,10 @@ pub fn peneirar_baldes(resposta: Json, sem_ler: &[String]) -> Json {
     Json::Objeto(
         pares
             .into_iter()
+            .filter(|(k, _)| !matches!(k.as_str(), "slots" | "volumes" | "arquivos"))
             .map(|(k, v)| {
                 if k == "paginacao" {
-                    (k, peneirar_baldes_da_paginacao(v, sem_ler))
+                    (k, peneirar_baldes_da_paginacao(v))
                 } else {
                     (k, v)
                 }
@@ -765,24 +807,32 @@ pub fn peneirar_baldes(resposta: Json, sem_ler: &[String]) -> Json {
     )
 }
 
-fn peneirar_baldes_da_paginacao(paginacao: Json, sem_ler: &[String]) -> Json {
+/// A linha de UMA tabela do `sistabelas`, quando o rowid dela revela coluna
+/// negada: saem `slots` (a marca d'agua) e `volumes` (quantos periodos ha) --
+/// pedido 543. Quem decide se a coluna e negada e o chamador, por
+/// [`coluna_do_rowid_negada`]; aqui so se tira.
+pub fn peneirar_linha_do_catalogo(linha: Json) -> Json {
+    let Json::Objeto(pares) = linha else {
+        return linha;
+    };
+    Json::Objeto(
+        pares
+            .into_iter()
+            .filter(|(k, _)| !matches!(k.as_str(), "slots" | "volumes"))
+            .collect(),
+    )
+}
+
+fn peneirar_baldes_da_paginacao(paginacao: Json) -> Json {
     let Json::Objeto(pares) = paginacao else {
         return paginacao;
     };
-    let particiona_coluna_negada = pares
-        .iter()
-        .find(|(k, _)| k == "coluna")
-        .and_then(|(_, v)| v.texto())
-        .is_some_and(|c| sem_ler.iter().any(|n| mesmo_nome(n, c)));
-    if !particiona_coluna_negada {
-        return Json::Objeto(pares);
-    }
     Json::Objeto(
         pares
             .into_iter()
             .map(|(k, v)| {
                 if k == "baldes" {
-                    (k, peneirar_registros_dos_baldes(v))
+                    (k, peneirar_contagem_dos_baldes(v))
                 } else {
                     (k, v)
                 }
@@ -791,7 +841,7 @@ fn peneirar_baldes_da_paginacao(paginacao: Json, sem_ler: &[String]) -> Json {
     )
 }
 
-fn peneirar_registros_dos_baldes(baldes: Json) -> Json {
+fn peneirar_contagem_dos_baldes(baldes: Json) -> Json {
     let Json::Lista(itens) = baldes else {
         return baldes;
     };
@@ -805,7 +855,7 @@ fn peneirar_registros_dos_baldes(baldes: Json) -> Json {
                 Json::Objeto(
                     pares
                         .into_iter()
-                        .filter(|(k, _)| k != "registros")
+                        .filter(|(k, _)| k != "registros" && k != "existe")
                         .collect(),
                 )
             })

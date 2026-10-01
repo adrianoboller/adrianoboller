@@ -2606,6 +2606,14 @@
       "quando": "2026-09-24 15:15"
     },
     {
+      "id": "esquema-vaza-o-histograma-da-particao",
+      "titulo": "`op_esquema` publica `baldes[].registros` mesmo com a coluna da partição negada ao usuário",
+      "veredito": "PROVADA",
+      "segundos": 67.42,
+      "notas": [],
+      "quando": "2026-10-01 03:03"
+    },
+    {
       "id": "restauracao-nao-reconstroi-o-marcado",
       "titulo": "a restauração de backup devolve a tabela com o `.ndx` marcado, e ela recusa toda escrita até alguém mandar `reindexar`",
       "veredito": "PROVADA",
@@ -3070,6 +3078,30 @@
       "segundos": 10.78,
       "notas": [],
       "quando": "2026-10-01 02:46"
+    },
+    {
+      "id": "trilha-pagina-por-contagem",
+      "titulo": "A exportação da trilha paginava só por `pular`: um expurgo entre duas páginas fazia o auditor pular registro vivo sem aviso",
+      "veredito": "PROVADA",
+      "segundos": 74.32,
+      "notas": [],
+      "quando": "2026-10-01 02:57"
+    },
+    {
+      "id": "rowid-revela-coluna-negada",
+      "titulo": "Com a coluna que particiona negada pelo direito, a primeira letra (ou o período) de cada linha saía pelo rowid, pelos baldes, pelo `slots` e pelo catálogo",
+      "veredito": "PROVADA",
+      "segundos": 67.16,
+      "notas": [],
+      "quando": "2026-10-01 02:59"
+    },
+    {
+      "id": "conta-cita-numero-de-coluna-marcada",
+      "titulo": "A recusa da expressão citava número e booleano, e a conta que parte de coluna marcada e cai em coluna sem marca saía com o valor",
+      "veredito": "PROVADA",
+      "segundos": 69.35,
+      "notas": [],
+      "quando": "2026-10-01 03:01"
     },
     {
       "id": "cifra-do-fio-imposta",

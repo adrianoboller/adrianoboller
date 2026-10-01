@@ -8387,6 +8387,16 @@ impl Table {
         self.trilha.ler(pular, limite)
     }
 
+    /// A pagina da trilha que vem logo depois do registro `cursor`, e se o
+    /// cursor foi achado -- pedido 487. Ver [`trilha::TrilhaFile::ler_depois_de`].
+    pub fn trilha_depois_de(
+        &mut self,
+        cursor: &phxsql_core::uuid::Uuid,
+        limite: u64,
+    ) -> Result<(Vec<trilha::Evento>, bool)> {
+        self.trilha.ler_depois_de(cursor, limite)
+    }
+
     /// A trilha de uma linha.
     pub fn trilha_de(&mut self, rowid: RowId) -> Result<Vec<trilha::Evento>> {
         self.trilha.de(rowid)
