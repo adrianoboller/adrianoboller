@@ -287,7 +287,7 @@ fn e_nosso(m: &std::fs::Metadata) -> bool {
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
-        m.nlink() == 1 && uid_do_processo().map_or(true, |u| u == m.uid())
+        m.nlink() == 1 && uid_do_processo().is_none_or(|u| u == m.uid())
     }
     #[cfg(not(unix))]
     {

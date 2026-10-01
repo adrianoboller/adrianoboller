@@ -802,7 +802,7 @@ fn decodificar(
             ID_7ZAES => {
                 let senha16 = ctx.senha16.ok_or(Erro::SenhaAusente)?;
                 let p = chave::ler_props(&coder.props, ctx.teto_ciclos)?;
-                if buf.len() % BLOCO != 0 || alvo > buf.len() {
+                if !buf.len().is_multiple_of(BLOCO) || alvo > buf.len() {
                     return Err(estrutura("fluxo do 7zAES com tamanho que nao fecha bloco"));
                 }
                 let k = ctx.chaves.obter(senha16, &p.sal, p.ciclos)?;

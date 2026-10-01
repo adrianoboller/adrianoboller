@@ -190,7 +190,8 @@ declarado acima, consistência dependente do escopo da cascata.*
 | **N** | **Uma leitura segura a trava 23× mais tempo que uma gravação** no padrão `por_lote`: 3.122 µs contra 137 µs | `CONCORRENCIA.md` §7.1 |
 | **N** | **Mandar parar não para.** São **4 de 76** seções críticas com ponto de cancelamento; nas outras 72 o pedido de cancelamento não é atendido | `CONCORRENCIA.md` §7.2; `bancada/concorrencia/mapa-da-trava.py` |
 | **N** | **Sem MVCC. Sem leitura repetível para quem não pede.** Entre duas leituras da mesma transação, outra pode ter confirmado, a não ser que a transação tenha pedido `"leitura_repetivel": true` — desde 16/09/2026 isso fecha pela trava compartilhada, sem MVCC (§1.3 acima) | `TRANSACOES.md` §11.1; `ACID.md` §4.5 |
-| **N** | **Não há trava de arquivo nem de registro: um processo por diretório**, e **nada impede o segundo**. O caso fácil de acontecer é a CLI `phxsql` num diretório que o `phxsqld` está servindo | `FORMATO.md` §17, e conferido nesta rodada: uma varredura por `flock`, `LOCK_EX`, `libc::open`, `custom_flags` e `create_new(true)` nos oito crates devolve **dois** acertos, e nenhum é trava de instância — a criação de um volume novo (`volume.rs:258`) e a gravação atômica do `config.json` (`config.rs:1219`) |
+| **G** | **Um processo só grava cada pasta de tabelas — o segundo é recusado** (pedido 635, 01/10/2026). Trava do núcleo (`File::try_lock`) no arquivo `.phxsql.trava`, tomada no ponto único da abertura gravável; o segundo gravador (a CLI `phxsql` na pasta que o `phxsqld` serve, um app pela FFI, um segundo `phxsqld`) ouve `4008 INSTANCIA_OCUPADA` com o pid de quem segura. O `phxsqld` ocioso continua segurando entre um pedido e outro; `kill -9` não deixa trava eterna; ler continua livre | `FORMATO.md` §11.2; `crates/phxsql-store/tests/trava-de-instancia.rs`, por processos reais; guardas `segundo-gravador-sem-trava-de-instancia-635` e `raiz-ociosa-solta-a-trava-de-instancia-635` |
+| **N** | **Não há trava de registro**, e a trava de instância não vê quem não usa este motor (um `cp`, um editor). No Windows a recusa não sabe dizer o pid (a trava do núcleo tranca a leitura do arquivo) | `FORMATO.md` §11.2 |
 | **N** | **Transação entre databases não existe** (*two-phase commit*), e a recusa é fundamentada | `TRANSACOES.md` §2.3 e §11.5 |
 
 ### 2.4 Replicação
@@ -493,7 +494,7 @@ não tem por que bater com os valores fixados nesta tabela.
 | catracas 1.720 / 0 / 0 | `crates/phxsql-server/src/conferidor.rs` |
 | versões de arquivo em disco (`.reg` 4/5, `PSCH` 7, `.ndx` 1, `.bin`/`.memo` 2, `.tx` 2/1) | constantes no código: `reg.rs:115` e `:129`, `schema.rs:42`, `ndx.rs:67`, `blob.rs:39`, `transacao.rs:54` e `:57` |
 | 11 corridas do workflow `Portoes`; 22.560 linhas do `servidor.rs` | `ROTEIRO-1.0.md`, SP000002 e SP000005 (medidos lá, e este documento não os remede) |
-| **a ausência de trava de instância** (2 acertos, nenhum deles trava) | medição **desta rodada**: um `grep -rnE` nos oito crates pelas cinco formas de tomar arquivo em exclusivo — `flock`, `LOCK_EX`, `libc::open`, `custom_flags` e `create_new(true)` |
+| **a trava de instância** (pedido 635: um `try_lock`, em `trava_de_instancia.rs`) | antes dela, a medição da rodada anterior achou **dois** acertos e nenhum era trava; hoje a prova é `tests/trava-de-instancia.rs`, por processos reais |
 
 **Um número que este documento se recusou a citar:** quantas das 76 seções
 críticas fazem `fsync`. O `CONCORRENCIA.md` §1.2 diz **24** e o `ROTEIRO-1.0.md`

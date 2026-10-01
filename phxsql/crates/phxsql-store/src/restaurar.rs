@@ -642,6 +642,10 @@ impl Preparada {
             )));
         }
         crate::util::criar_diretorio_do_banco(base)?;
+        // A pasta vai sair do lugar: a trava de instancia sai antes (pedido
+        // 635). No Windows a pasta com o arquivo da trava aberto nem se
+        // renomearia, e no Unix a trava iria junto com o database velho.
+        crate::trava_de_instancia::soltar_sob(&alvo);
 
         // O antigo sai da raiz ANTES de o novo entrar, e vai para fora dela:
         // um "banco.antigo" ao lado seria listado como database e apareceria

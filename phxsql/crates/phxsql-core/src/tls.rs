@@ -198,7 +198,7 @@ impl<'a> Leitor<'a> {
 }
 
 fn lista_u16(b: &[u8]) -> Aperto<Vec<u16>> {
-    if b.len() % 2 != 0 {
+    if !b.len().is_multiple_of(2) {
         return falha(alerta::DECODE_ERROR, "lista de u16 com tamanho impar");
     }
     Ok(b.chunks(2)

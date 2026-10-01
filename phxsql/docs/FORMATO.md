@@ -404,14 +404,30 @@ o tique grosso a fase B trocava os volumes velhos e deixava o novo na
 geometria antiga: a tabela parava de abrir (`Corrompido`). Existir não depende
 de tique.
 
-**O que continua dependendo do tique:** a atualização no lugar. Ela não muda o
-tamanho de volume nenhum **nem o conteúdo do cabeçalho do volume 1** (medido:
-zero bytes dos 128 mudam num `atualizar`; mudam no `inserir`, no
-`excluir_suave`, no `restaurar` e no `excluir_de_vez`). Com o tique grosso
-simulado, a linha atualizada entre as fases volta ao valor velho depois da
-troca, sem erro. Só acontece se um escritor escapar do congelamento — que é o
-que esta conferência existe para cobrir —, e fechá-lo pede um contador de
-escrita no cabeçalho, que é mudança de formato.
+**A atualização no lugar: o selo de `mtime`** (pedido 634, 01/10/2026). Ela
+não muda o tamanho de volume nenhum **nem o conteúdo do cabeçalho do volume 1**
+(medido: zero bytes dos 128 mudam num `atualizar`; mudam no `inserir`, no
+`excluir_suave`, no `restaurar` e no `excluir_de_vez`), e com o tique grosso
+simulado a linha atualizada entre as fases voltava ao valor velho depois da
+troca, sem erro. Fechado **sem mudar o formato**: ao retratar, com a trava na
+mão, cada volume existente (e o espelho `.bkp` que existir) ganha por
+`File::set_modified` o `mtime` **sentinela 1980-01-02 00:00:00 UTC** — uma
+data representável no FAT (que começa em 1980 e guarda segundos pares na hora
+local) e que nenhuma escrita de hoje produz. A fase B confere que o `mtime`
+**ainda é** o que o sistema de arquivos guardou ao selar; qualquer escrita
+depois dele põe «agora», diferente em qualquer tique. Troca que não acontece
+(abortada, ou fase A que falhou no meio) devolve a cada volume o `mtime`
+original — mas só ao volume que ainda tem a sentinela: o que alguém escreveu
+fica com a data da escrita. Troca feita não toca nada: o volume agora é o
+`*.novo` renomeado, com `mtime` próprio. Entre as fases, quem olhar a pasta vê
+os volumes datados de 1980 — é o selo, e dura o tempo da fase A.
+
+Recusados pelo papel C, com o motivo: o **contador de escrita no cabeçalho**
+(o `.reg` v4 não tem byte livre — seria o v6 com migração — e o outro processo
+gravaria o contador da RAM dele, velho por um, e passaria calado) e o **hash
+na fase B** (O(n) sob a trava, desfaz o 421). Os `.ndx` e `.pag` não precisam
+do selo: nenhum dos dois é trocado por um retrato montado fora da trava — o
+`.pag` se regrava na fase B, com a trava, e o `.ndx` não se reescreve.
 
 **O que ela não faz:** não troca tipo nem largura de coluna que já existe, não
 tira coluna, não cria índice sobre a coluna nova, e não replica a si mesma —
@@ -2934,6 +2950,10 @@ devolver lixo.
 
 ## 11. Hierarquia: database, schema e tabela
 
+> **`.phxsql.trava`** (pedido 635) — em cada pasta onde algum processo já
+> gravou aparece este arquivo, com o pid de quem segura a trava. Ele não é
+> tabela nem marcação; ver §11.2.
+
 ```
 base/
 └── Z/                        database Z
@@ -3054,6 +3074,39 @@ Servidor sem o campo `idioma` no `config.json` e sem ninguém clicar em «semear
 não tem `phxsys` nenhum no disco — e responde exatamente como sempre respondeu.
 
 ---
+
+### 11.2 `.phxsql.trava` — a trava de instância (pedido 635)
+
+Um processo só **grava** cada pasta de tabelas (a raiz de um database ou a
+pasta de um schema). Quem abre uma tabela para gravar — `Table::abrir_com` com
+`escrever`, o `Table::criar`, o `excluir_tabela`, o `renomear_tabela` e o
+`terminar_troca_antes_de_copiar` — toma antes a trava do núcleo sobre o
+arquivo `.phxsql.trava` da pasta (`File::try_lock`: `flock` no Unix,
+`LockFileEx` no Windows). O segundo processo ouve **`4008
+INSTANCIA_OCUPADA`**, com `repetir: false` e o pid de quem segura (no Windows
+a trava tranca também a leitura do arquivo, e o pid sai como «outro
+processo»). **Ler não toma nada**: a ficha compartilhada e o `abrir_para_ler`
+continuam livres.
+
+| campo | o que é |
+|---|---|
+| nome | `.phxsql.trava`, na própria pasta das tabelas |
+| conteúdo | o pid de quem segura, em decimal, e `\n` — **só diagnóstico** |
+| permissão | `0600` (motor da permissão, pedido 542) |
+| vida | o arquivo **nunca se apaga**: a trava mora no núcleo, e apagar abriria a corrida de dois processos travando dois arquivos com o mesmo nome |
+
+**Quanto a trava dura:** enquanto o processo segurar uma posse dela. A tabela
+gravável segura a sua; a `Instancia` (e, no servidor, a `Raiz`) **fixa** a de
+cada pasta em que gravou até morrer — é isso que faz o `phxsqld` ocioso,
+entre dois pedidos, continuar recusando a CLI. A CLI e o app embutido soltam
+quando fecham. O núcleo solta a trava quando o processo morre, inclusive por
+`kill -9`: **não existe trava órfã**. A restauração por cima solta a trava da
+pasta antes do `rename` (`soltar_sob`).
+
+**O que ela não é:** trava de registro, ou proteção contra quem não usa este
+motor (um `cp`, um editor). Fica de fora do backup (§10): é estado do processo
+que grava, não dado. A versão mínima do Rust subiu de 1.75 para **1.89** por
+causa dela.
 
 ## 12. Reindex
 
@@ -4067,8 +4120,10 @@ Documentado aqui para não haver surpresa:
   endereço, e uma segunda versão pediria um segundo slot. Ver `TRANSACOES.md`
   §11.1. Transação **existe** desde a 0.19.0 (a marca da §16), mas ela guarda o
   conjunto de escrita em RAM em vez de versionar a linha.
-- **Sem concorrência.** Um processo por tabela; não há travas de arquivo nem de
-  registro.
+- **Sem concorrência entre processos.** Um processo **gravando** por pasta,
+  e desde o pedido 635 isso é imposto: o segundo ouve `4008
+  INSTANCIA_OCUPADA` (§11.2). Não há trava de registro; dentro do processo
+  quem ordena as escritas é a trava global de dados.
 - **Sem compactação implementada.** O formato prevê e mede o espaço morto, mas
   o comando ainda não foi escrito. O reindex já existe e cobre a parte do
   índice.

@@ -513,7 +513,11 @@ impl RegFile {
     pub(crate) fn exigir_faixa_para_numerar(&self) -> Result<()> {
         let passo = self.esquema.passo_da_sequencia();
         let proxima = self.proxima_sequencia;
-        if passo <= 1 || proxima == 0 || crate::no::faixa_declarada() || proxima % passo == 0 {
+        if passo <= 1
+            || proxima == 0
+            || crate::no::faixa_declarada()
+            || proxima.is_multiple_of(passo)
+        {
             return Ok(());
         }
         Err(PhxError::Esquema(format!(
@@ -849,6 +853,8 @@ impl RegFile {
         let mut r = RegFile::montar(diretorio, nome)?;
         if !r.trocas_por_terminar().is_empty() {
             crate::congelamento::conferir(diretorio, nome)?;
+            // Terminar e gravar: a trava de instancia tambem (pedido 635).
+            let _trava = crate::trava_de_instancia::tomar(diretorio)?;
             r.terminar_troca_interrompida()?;
         }
         r.conferir_volumes_uniformes()
@@ -1653,11 +1659,16 @@ impl RegFile {
     /// O custo e uma passada de `exists` pela faixa de volumes, a mesma que o
     /// `existentes()` de quem chama ja pagou, numa operacao que copia a
     /// tabela inteira.
+    ///
+    /// # E por que os existentes saem SELADOS (pedido 634)
+    ///
+    /// Antes de fotografar, cada volume existente ganha um `mtime` sentinela
+    /// ([`sentinela_do_retrato`]); ver [`Selos`].
     fn retratar(
         &self,
         primeiros: &[(u32, RowId, PathBuf, Option<PathBuf>)],
-    ) -> Vec<RetratoDoVolume> {
-        let mut saida = retratar_existentes(primeiros);
+    ) -> Result<(Vec<RetratoDoVolume>, Selos)> {
+        let (mut saida, selos) = retratar_existentes(primeiros)?;
         for v in self.volumes.candidatos() {
             if primeiros.iter().any(|(p, ..)| *p == v) {
                 continue;
@@ -1668,7 +1679,7 @@ impl RegFile {
                 modificado: None,
             });
         }
-        saida
+        Ok((saida, selos))
     }
 
     /// **Pedido 422: a FASE A do caminho caro do [`RegFile::regravar_esquema`]**
@@ -1710,7 +1721,7 @@ impl RegFile {
                 self.volumes.caminho_do_espelho(v),
             ));
         }
-        let retrato = self.retratar(&primeiros);
+        let (retrato, selos) = self.retratar(&primeiros)?;
 
         // Os cabecalhos saem do `montar_cabecalho`, que le o `self`: troca-se
         // o esquema so pelo tempo de monta-los, e o `self` volta a ser a
@@ -1738,6 +1749,7 @@ impl RegFile {
                 .map(|(_, _, caminho, espelho)| (caminho.clone(), espelho.clone()))
                 .collect(),
             retrato,
+            _selos: selos,
         };
         crate::ndx::panico_de_teste::passar(
             crate::ndx::panico_de_teste::Ponto::FaseADepoisDoRetrato,
@@ -2061,7 +2073,7 @@ impl RegFile {
         // O RETRATO, tirado antes de a primeira leitura acontecer: e contra
         // ele que a FASE B confere que ninguem escreveu no volume vivo
         // enquanto o `*.novo` era montado. Ver `conferir_retrato`.
-        let retrato = self.retratar(&primeiros);
+        let (retrato, selos) = self.retratar(&primeiros)?;
         // O dono dos `*.novo` nasce ANTES do primeiro byte (pedido 625): um
         // `*.novo` pela metade tambem nao e sobra enquanto esta fase vive.
         let dono = novos_com_dono::Dono::tomar(&primeiros);
@@ -2117,6 +2129,7 @@ impl RegFile {
                 .map(|(_, _, caminho, espelho)| (caminho, espelho))
                 .collect(),
             retrato,
+            _selos: selos,
         })
     }
 
@@ -3377,10 +3390,12 @@ fn geometria_do_volume(caminho: &Path) -> Option<(usize, u64, u32)> {
 /// (pedido 427): o `mtime` anda em tique do sistema de arquivos, e uma
 /// escrita no mesmo tique que nao muda o tamanho passa. Para o volume que
 /// NASCE isso esta fechado -- o ausente entra no retrato e existir nao tem
-/// tique (ver `RegFile::retratar`). Para a atualizacao no lugar NAO esta:
-/// medido com o tique grosso simulado, ela volta ao valor velho depois da
-/// troca, e nem o cabecalho do volume 1 muda com ela. Fechar pede um
-/// contador de escrita no cabecalho, que e formato.
+/// tique (ver `RegFile::retratar`). Para a atualizacao no lugar quem fecha
+/// e o SELO (pedido 634, ver [`Selos`]): o `mtime` gravado aqui e uma data
+/// que nenhuma escrita de hoje produz, entao qualquer escrita depois dele o
+/// tira do lugar em qualquer tique. O contador de escrita no cabecalho foi
+/// recusado pelo papel C (formato v6 + migracao, e o outro processo gravaria
+/// o contador da RAM dele, velho por um).
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct RetratoDoVolume {
     caminho: PathBuf,
@@ -3400,6 +3415,10 @@ pub struct TrocaPendente {
     /// `(volume, espelho)` na ordem da troca. O volume 1 vem primeiro.
     trocas: Vec<(PathBuf, Option<PathBuf>)>,
     retrato: Vec<RetratoDoVolume>,
+    /// Os `mtime` originais dos volumes selados no retrato (pedido 634). Sai
+    /// no `Drop`, e so devolve o original a quem AINDA tem a sentinela -- ver
+    /// [`Selos`].
+    _selos: Selos,
     /// Os `*.novo` desta troca tem dono enquanto ela vive (pedido 625). Sai
     /// no `Drop` -- na FASE B, no `descartar` e no desenrolar de um panico --,
     /// e dai em diante o que sobrou e lixo que a abertura gravavel recolhe.
@@ -3590,6 +3609,90 @@ fn caminho_do_novo(caminho: &Path) -> PathBuf {
     caminho.with_file_name(format!("{nome}.{SUFIXO_NOVO}"))
 }
 
+/// O `mtime` que o retrato grava em cada volume existente (pedido 634):
+/// 1980-01-02 00:00:00 UTC.
+///
+/// # Por que uma data, e qual
+///
+/// O `mtime` anda em tique do sistema de arquivos -- 2 s no FAT/exFAT, 1 s no
+/// HFS+ e no NFS --, e uma escrita que cai no mesmo tique da anterior nao o
+/// muda. A atualizacao no lugar nao muda tamanho nem cabecalho (medido no
+/// 427: zero bytes), entao o `mtime` era o unico sinal dela, e o tique o
+/// apagava. Com a sentinela no lugar do `mtime` real, a pergunta da FASE B
+/// deixa de ser «andou desde o retrato?» e passa a ser «ainda e a data que
+/// ninguem escreve?» -- e nenhuma escrita de hoje cai no tique de 1980.
+///
+/// Representavel em todo sistema de arquivos que a casa alcanca: o FAT
+/// comeca em 1980-01-01 e guarda segundos PARES na hora LOCAL, e o dia 2 a
+/// meia-noite UTC continua em 1980 e par em qualquer fuso de -12 h a +14 h.
+fn sentinela_do_retrato() -> std::time::SystemTime {
+    std::time::UNIX_EPOCH + std::time::Duration::from_secs(315_619_200)
+}
+
+/// O `mtime` original de um volume selado, para devolver se a troca nao
+/// acontecer (pedido 634).
+struct Selo {
+    caminho: PathBuf,
+    original: std::time::SystemTime,
+    /// O que o sistema de arquivos GUARDOU quando se pediu a sentinela -- e
+    /// contra isto, e nao contra a constante, que o `Drop` pergunta: o FAT
+    /// arredonda, e comparar com o pedido desfaria o selo nunca.
+    selado: std::time::SystemTime,
+}
+
+/// Os selos de um retrato. **Devolver o original e trabalho do `Drop`**, e so
+/// para o volume que ainda tem a sentinela:
+///
+/// * troca ABORTADA ou FASE A que falhou no meio: o volume continua o velho
+///   com a sentinela, e volta ao `mtime` que tinha -- quem faz copia ou
+///   `rsync` por data nao herda 1980;
+/// * troca FEITA: o volume agora e o `*.novo` renomeado, com `mtime` proprio,
+///   e nao se toca;
+/// * troca abortada PORQUE alguem escreveu: o `mtime` e o da escrita, e
+///   devolver o original apagaria a data de uma escrita que aconteceu.
+///
+/// No `Drop`, e nao num `descartar`, porque o `?` da FASE A sai sem chamar
+/// ninguem: um volume selado e esquecido ficaria em 1980 para sempre.
+#[derive(Default)]
+struct Selos(Vec<Selo>);
+
+impl Drop for Selos {
+    fn drop(&mut self) {
+        for s in &self.0 {
+            let agora = std::fs::metadata(&s.caminho)
+                .ok()
+                .and_then(|m| m.modified().ok());
+            if agora != Some(s.selado) {
+                continue;
+            }
+            if let Ok(f) = File::options().write(true).open(&s.caminho) {
+                let _ = f.set_modified(s.original);
+            }
+        }
+    }
+}
+
+/// Grava a sentinela no `mtime` do volume e anota o original.
+///
+/// Erro de E/S RECUSA a FASE A em vez de seguir sem selo: seguir seria
+/// devolver em silencio a garantia que o 634 fechou. O sistema que nao
+/// guarda `mtime` nenhum (`modified()` sem suporte) segue sem selo -- ali a
+/// FASE B ja so tinha o tamanho e a existencia, e continua com os dois.
+fn selar(caminho: &Path, selos: &mut Selos) -> Result<()> {
+    let f = File::options().write(true).open(caminho)?;
+    let Ok(original) = f.metadata()?.modified() else {
+        return Ok(());
+    };
+    f.set_modified(sentinela_do_retrato())?;
+    let selado = f.metadata()?.modified()?;
+    selos.0.push(Selo {
+        caminho: caminho.to_path_buf(),
+        original,
+        selado,
+    });
+    Ok(())
+}
+
 fn retratar_um(caminho: &Path) -> RetratoDoVolume {
     let md = std::fs::metadata(caminho).ok();
     RetratoDoVolume {
@@ -3601,19 +3704,24 @@ fn retratar_um(caminho: &Path) -> RetratoDoVolume {
 
 fn retratar_existentes(
     primeiros: &[(u32, RowId, PathBuf, Option<PathBuf>)],
-) -> Vec<RetratoDoVolume> {
+) -> Result<(Vec<RetratoDoVolume>, Selos)> {
     let mut saida = Vec::new();
+    let mut selos = Selos::default();
     for (_, _, caminho, espelho) in primeiros {
+        // O selo ANTES da foto: a foto guarda a sentinela, e e ela que a
+        // FASE B confere.
+        selar(caminho, &mut selos)?;
         saida.push(retratar_um(caminho));
         // O espelho so entra se JA existir: um criado entre as duas fases nao
         // tem `*.novo` ao lado, e o `trocar_pelo_novo` o deixa em paz.
         if let Some(e) = espelho {
             if e.exists() {
+                selar(e, &mut selos)?;
                 saida.push(retratar_um(e));
             }
         }
     }
-    saida
+    Ok((saida, selos))
 }
 
 /// Troca um volume pelo `*.novo` escrito ao lado dele. So `rename`.

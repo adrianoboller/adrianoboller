@@ -60,3 +60,7 @@ lugar não mexe.
 - **O buraco:** a atualização no lugar com tique grosso **não** está guardada.
   Fechá-la pede um contador de escrita no cabeçalho do volume 1, que é mudança
   de formato (papel C). E o NTFS não foi medido — está fora desta máquina.
+- **Atualização (pedido 634, 01/10/2026):** o buraco fechou **sem** mudar o
+  formato — o papel C recusou o contador, e a FASE B passou a perguntar se o
+  `mtime` ainda é a sentinela plantada no retrato. Ver
+  `cognicao_selo-de-mtime-troca-andou-por-ainda-e-a-sentinela_20261001_2220.md`.

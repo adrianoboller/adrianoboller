@@ -357,7 +357,7 @@ pub fn digito_hex(c: u8) -> Option<u8> {
 /// `None`.
 pub fn de_hex(hex: &str) -> Option<Vec<u8>> {
     let t = hex.trim().as_bytes();
-    if t.len() % 2 != 0 {
+    if !t.len().is_multiple_of(2) {
         return None;
     }
     let mut saida = Vec::with_capacity(t.len() / 2);

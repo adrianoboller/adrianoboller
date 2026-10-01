@@ -642,7 +642,7 @@ pub fn data_de_texto(t: &str) -> Result<i32> {
 /// Quem ajuda e a posicao do primeiro byte que nao e digito.
 pub fn hex_para_bytes(hex: &str) -> Result<Vec<u8>> {
     let t = hex.trim();
-    if t.len() % 2 != 0 {
+    if !t.len().is_multiple_of(2) {
         return Err(PhxError::Tipo(format!(
             "hexadecimal precisa ter quantidade par de digitos (veio com {})",
             t.len()

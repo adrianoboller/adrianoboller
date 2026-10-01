@@ -2170,7 +2170,7 @@ impl NdxFile {
                 "enchimento {enchimento} invalido: use de 1 a 100 por cento"
             )));
         }
-        if chaves.len() % ck_len != 0 {
+        if !chaves.len().is_multiple_of(ck_len) {
             return Err(PhxError::Corrompido(format!(
                 "indice {}: lote de {} bytes nao e multiplo da chave de {ck_len}",
                 d.nome,

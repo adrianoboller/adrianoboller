@@ -16,6 +16,7 @@ mod comum;
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
+use std::time::{Duration, SystemTime};
 
 use comum::DirTemp;
 
@@ -106,15 +107,35 @@ struct Medida {
     mudaram_so_de_mtime: Vec<String>,
 }
 
+/// O relogio do sistema de arquivos que o vizinho enfrenta.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Relogio {
+    /// O ext4 desta casa, sem mexer em nada.
+    Fino,
+    /// O `mtime` NAO anda com a escrita: o vizinho devolve o valor de antes,
+    /// seja ele qual for. E o adversario do 427 -- mais forte que qualquer
+    /// tique, porque apaga ate a escrita que cai longe da anterior -- e por
+    /// isso o que isola o cinto dos AUSENTES: so a existencia denuncia.
+    Parado,
+    /// **O tique grosso de verdade** (pedido 634): a escrita que cai no MESMO
+    /// tique do `mtime` anterior nao o muda; a que cai em outro tique muda.
+    /// O tique simulado e de uma hora para o teste nao depender de em que
+    /// milissegundo ele roda -- o FAT tem 2 s, e o que importa e a regra, nao
+    /// a largura. E SIMULACAO, nao medida num FAT.
+    Grosso,
+}
+
+/// Uma hora: a largura do tique do [`Relogio::Grosso`].
+const TIQUE: Duration = Duration::from_secs(3600);
+
 /// Arma o vizinho: no meio da FASE A ele abre a tabela por fora do
-/// congelamento e grava a linha 91, que faz nascer o volume 4.
-///
-/// Com `tique_grosso`, ele devolve o `mtime` de antes aos volumes velhos
-/// depois de gravar: e o que um sistema de arquivos de tique de 2 s (FAT,
-/// exFAT) ou de 1 s (HFS+, NFS) mostra quando a escrita cai no mesmo tique
-/// do retrato. E SIMULACAO do tique, nao medida num FAT -- o que ela prova e
-/// o que o retrato faz quando o `mtime` nao anda.
-fn armar_vizinho(dir: &Path, tique_grosso: bool) -> Rc<RefCell<Option<Medida>>> {
+/// congelamento e roda `escrever` nela; depois o `relogio` decide o que o
+/// `mtime` dos volumes velhos mostra.
+fn armar(
+    dir: &Path,
+    relogio: Relogio,
+    escrever: impl FnOnce(&mut Table) + 'static,
+) -> Rc<RefCell<Option<Medida>>> {
     let medida = Rc::new(RefCell::new(None));
     let anotar = Rc::clone(&medida);
     let dir: PathBuf = dir.to_path_buf();
@@ -122,7 +143,7 @@ fn armar_vizinho(dir: &Path, tique_grosso: bool) -> Rc<RefCell<Option<Medida>>> 
         let velhos = volumes(&dir);
         let antes = fotografar(&dir, &velhos);
         let mut outro = Table::abrir(&dir, "clientes").unwrap();
-        assert_eq!(outro.inserir(&cliente(LINHAS + 1)).unwrap(), 91);
+        escrever(&mut outro);
         outro.sincronizar().unwrap();
         drop(outro);
         let depois = fotografar(&dir, &velhos);
@@ -134,18 +155,33 @@ fn armar_vizinho(dir: &Path, tique_grosso: bool) -> Rc<RefCell<Option<Medida>>> 
                 m.mudaram_so_de_mtime.push(nome.clone());
             }
         }
-        if tique_grosso {
-            for (nome, a) in velhos.iter().zip(&antes) {
+        for ((nome, a), d) in velhos.iter().zip(&antes).zip(&depois) {
+            let (Some(a), Some(d)) = (a.1, d.1) else {
+                continue;
+            };
+            let mesmo_tique = match relogio {
+                Relogio::Fino => false,
+                Relogio::Parado => true,
+                Relogio::Grosso => d.duration_since(a).is_ok_and(|x| x < TIQUE),
+            };
+            if mesmo_tique {
                 let f = std::fs::File::options()
                     .write(true)
                     .open(dir.join(nome))
                     .unwrap();
-                f.set_modified(a.1.unwrap()).unwrap();
+                f.set_modified(a).unwrap();
             }
         }
         *anotar.borrow_mut() = Some(m);
     });
     medida
+}
+
+/// O vizinho do 427: grava a linha 91, que faz nascer o volume 4.
+fn armar_vizinho(dir: &Path, relogio: Relogio) -> Rc<RefCell<Option<Medida>>> {
+    armar(dir, relogio, |outro| {
+        assert_eq!(outro.inserir(&cliente(LINHAS + 1)).unwrap(), 91);
+    })
 }
 
 /// A medida que matou a hipotese «nascer nao toca os existentes» e o volume
@@ -183,7 +219,7 @@ fn conferir_o_cenario(dir: &Path, medida: &Rc<RefCell<Option<Medida>>>) {
 #[test]
 fn sem_o_cinto_o_volume_que_nasceu_deixa_a_tabela_sem_abrir() {
     let (d, mut t) = base("nasce-sem-cinto");
-    let medida = armar_vizinho(&d.0, true);
+    let medida = armar_vizinho(&d.0, Relogio::Parado);
     let coluna = Column::new("situacao", ColumnType::Str(12));
     let pendente = t.acrescentar_coluna_fase_a(coluna, None).unwrap();
     desarmar();
@@ -209,7 +245,7 @@ fn sem_o_cinto_o_volume_que_nasceu_deixa_a_tabela_sem_abrir() {
 #[test]
 fn o_volume_que_nasce_na_fase_a_do_acrescentar_coluna_aborta_a_troca() {
     let (d, mut t) = base("nasce-alargar");
-    let medida = armar_vizinho(&d.0, true);
+    let medida = armar_vizinho(&d.0, Relogio::Parado);
     let pendente = t
         .acrescentar_coluna_fase_a(Column::new("situacao", ColumnType::Str(12)), None)
         .unwrap();
@@ -247,7 +283,7 @@ fn o_volume_que_nasce_na_fase_a_do_esquema_aborta_a_troca() {
     let (d, mut t) = base("nasce-esquema");
     let fks =
         vec![ForeignKey::new(NOME_COMPRIDO, vec![0], "outra", vec!["id".into()]).conferindo(false)];
-    let medida = armar_vizinho(&d.0, true);
+    let medida = armar_vizinho(&d.0, Relogio::Parado);
     let troca = t
         .preparar_chaves_estrangeiras(&fks)
         .unwrap()
@@ -278,7 +314,7 @@ fn o_volume_que_nasce_na_fase_a_do_esquema_aborta_a_troca() {
 #[test]
 fn com_tique_fino_o_volume_1_ja_denunciava_e_continua() {
     let (d, mut t) = base("nasce-tique-fino");
-    let medida = armar_vizinho(&d.0, false);
+    let medida = armar_vizinho(&d.0, Relogio::Fino);
     let pendente = t
         .acrescentar_coluna_fase_a(Column::new("situacao", ColumnType::Str(12)), None)
         .unwrap();
@@ -289,4 +325,129 @@ fn com_tique_fino_o_volume_1_ja_denunciava_e_continua() {
         .expect_err("o retrato nao viu o volume 1 mudar");
     assert!(matches!(e, PhxError::Conflito(_)), "recusou como {e:?}");
     pendente.descartar();
+}
+
+// ---------------------------------------------------------------------------
+// Pedido 634: a ATUALIZACAO no lugar com tique grosso.
+// ---------------------------------------------------------------------------
+
+/// A linha 45 mora no volume 2. Atualiza-la nao muda tamanho nenhum nem byte
+/// nenhum do cabecalho (medido no 427): o `mtime` e o unico sinal.
+const ALVO: u64 = 45;
+
+fn atualizar_o_alvo(outro: &mut Table) {
+    outro
+        .atualizar(ALVO, &[Value::Int(ALVO as i64), Value::Str("NOVO".into())])
+        .unwrap();
+}
+
+fn nome_do_alvo(dir: &Path) -> Value {
+    let mut t = Table::abrir(dir, "clientes").unwrap();
+    t.ler(ALVO).unwrap().expect("a linha 45 sumiu")[1].clone()
+}
+
+fn mtimes(dir: &Path) -> Vec<SystemTime> {
+    fotografar(dir, &volumes(dir))
+        .into_iter()
+        .map(|(_, m)| m.unwrap())
+        .collect()
+}
+
+/// **O defeito do 634, no caminho do `acrescentar_coluna`.** Sem o selo, o
+/// tique grosso apaga o unico sinal da atualizacao, o retrato bate, e a FASE B
+/// troca o volume 2 pelo `*.novo` copiado ANTES dela: a linha 45 volta de
+/// «NOVO» para «cliente 0045», sem erro.
+///
+/// Reponha o defeito tirando o `selar` do `retratar_existentes`: o
+/// `conferir_retrato` passa e o `expect_err` cai.
+#[test]
+fn a_atualizacao_na_fase_a_com_tique_grosso_aborta_a_troca_634() {
+    let (d, mut t) = base("selo-alargar");
+    let medida = armar(&d.0, Relogio::Grosso, atualizar_o_alvo);
+    let pendente = t
+        .acrescentar_coluna_fase_a(Column::new("situacao", ColumnType::Str(12)), None)
+        .unwrap();
+    desarmar();
+    let m = medida.borrow_mut().take().expect("o vizinho nao rodou");
+    assert!(
+        m.mudaram_de_tamanho.is_empty(),
+        "a atualizacao mudou tamanho -- o retrato a pegaria sem o selo: {m:?}"
+    );
+    assert!(
+        m.mudaram_so_de_mtime
+            .contains(&"clientes#002.reg".to_string()),
+        "a atualizacao da linha 45 nao tocou o volume 2: {m:?}"
+    );
+
+    let e = pendente
+        .conferir_retrato()
+        .expect_err("o retrato nao viu a atualizacao no tique grosso: a troca a desfaria");
+    assert!(matches!(e, PhxError::Conflito(_)), "recusou como {e:?}");
+    assert!(e.to_string().contains("ABORTADA"), "{e}");
+    pendente.descartar();
+    drop(t);
+    assert_eq!(nome_do_alvo(&d.0), Value::Str("NOVO".into()));
+}
+
+/// **O IRMAO**: a regravacao do esquema tira o retrato pela mesma funcao e
+/// confere dentro da propria FASE B.
+#[test]
+fn a_atualizacao_na_fase_a_do_esquema_com_tique_grosso_aborta_a_troca_634() {
+    let (d, mut t) = base("selo-esquema");
+    let fks =
+        vec![ForeignKey::new(NOME_COMPRIDO, vec![0], "outra", vec!["id".into()]).conferindo(false)];
+    let _medida = armar(&d.0, Relogio::Grosso, atualizar_o_alvo);
+    let troca = t
+        .preparar_chaves_estrangeiras(&fks)
+        .unwrap()
+        .expect("o nome nao forcou a reescrita");
+    desarmar();
+    let recibo = t.conferir_chaves_que_nascem(&fks, None).unwrap();
+    let e = t
+        .redeclarar_depois_de_conferir(fks, recibo, Some(troca))
+        .expect_err("a troca renomeou por cima da atualizacao");
+    assert!(matches!(e, PhxError::Conflito(_)), "recusou como {e:?}");
+    drop(t);
+    assert_eq!(nome_do_alvo(&d.0), Value::Str("NOVO".into()));
+}
+
+/// O selo e VISIVEL entre as fases, e a troca abortada devolve a cada volume
+/// o `mtime` que ele tinha -- quem copia por data nao herda 1980.
+#[test]
+fn a_troca_abortada_devolve_o_mtime_original_634() {
+    let (d, mut t) = base("selo-devolve");
+    let originais = mtimes(&d.0);
+    let pendente = t
+        .acrescentar_coluna_fase_a(Column::new("situacao", ColumnType::Str(12)), None)
+        .unwrap();
+    let ano_1980 = SystemTime::UNIX_EPOCH + Duration::from_secs(315_619_200);
+    assert_eq!(
+        mtimes(&d.0),
+        vec![ano_1980; originais.len()],
+        "o retrato nao selou os volumes"
+    );
+    pendente.conferir_retrato().unwrap();
+    pendente.descartar();
+    assert_eq!(mtimes(&d.0), originais, "o mtime original nao voltou");
+}
+
+/// O comportamento VELHO: sem ninguem escrever, a troca acontece e o volume
+/// trocado nao fica com a data de 1980.
+#[test]
+fn sem_vizinho_a_troca_acontece_e_nao_fica_em_1980_634() {
+    let (d, mut t) = base("selo-troca");
+    let pendente = t
+        .acrescentar_coluna_fase_a(Column::new("situacao", ColumnType::Str(12)), None)
+        .unwrap();
+    pendente.conferir_retrato().unwrap();
+    t.acrescentar_coluna_fase_b(pendente).unwrap();
+    let ano_1981 = SystemTime::UNIX_EPOCH + Duration::from_secs(347_155_200);
+    for m in mtimes(&d.0) {
+        assert!(m > ano_1981, "volume trocado ficou com a sentinela: {m:?}");
+    }
+    drop(t);
+    assert_eq!(
+        nome_do_alvo(&d.0),
+        Value::Str(format!("cliente {:04}", ALVO))
+    );
 }

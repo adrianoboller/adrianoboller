@@ -691,8 +691,9 @@ mudanças de cima estivessem feitas, isto tiraria mais um pedaço do que sobrar
 do CRC.
 
 **O que custaria em nós.** Não uma crate: `std::arch::x86_64::_mm_crc32_u64` e
-`std::is_x86_feature_detected!` são **da `std`**, e o projeto exige Rust 1.75
-(`Cargo.toml`), muito acima do 1.27 em que isso estabilizou. Precisa de um
+`std::is_x86_feature_detected!` são **da `std`**, e o projeto exige Rust 1.89
+(`Cargo.toml`; era 1.75 até o pedido 635, que subiu pela trava de instância),
+muito acima do 1.27 em que isso estabilizou. Precisa de um
 caminho de software para quem não tem `sse4.2` — que é o `crc32` de hoje.
 
 **O que quebraria: o formato.** `_mm_crc32_u64` calcula **CRC-32C**

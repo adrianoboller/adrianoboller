@@ -1622,6 +1622,11 @@ mod tests {
         // casa), que regrava tambem o cadastro do servidor (`gatilhos.json`,
         // `procedimentos.json`, `visoes.json`). Caminho novo nenhum: o mesmo
         // abridor, agora UM para os quatro arquivos.
+        // Pedido 635: `trava_de_instancia.rs` entra com 1 -- o arquivo da
+        // trava de instancia, que guarda so o pid de quem segura. Nao e
+        // familia nenhuma das sete: a trava mora no nucleo, e perder o pid
+        // numa queda so tira o numero da recusa. (O selo do 634 abre o volume
+        // por `File::options()` so para o `set_modified`, que e metadado.)
         const HOJE: &[(&str, usize)] = &[
             ("backup.rs", 2),
             ("catalogo.rs", 4),
@@ -1632,6 +1637,7 @@ mod tests {
             ("restaurar.rs", 3),
             ("separador.rs", 2),
             ("sincronia.rs", 3),
+            ("trava_de_instancia.rs", 1),
             ("util.rs", 11),
             ("volume.rs", 2),
         ];
@@ -1650,7 +1656,7 @@ mod tests {
         let mut medido: BTreeMap<String, usize> = BTreeMap::new();
         for item in std::fs::read_dir(&src).unwrap().flatten() {
             let c = item.path();
-            if c.extension().map_or(true, |e| e != "rs") {
+            if c.extension().is_none_or(|e| e != "rs") {
                 continue;
             }
             let texto = std::fs::read_to_string(&c).unwrap();

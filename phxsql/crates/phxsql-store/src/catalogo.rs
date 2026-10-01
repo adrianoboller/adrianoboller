@@ -25,6 +25,7 @@
 
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use phxsql_core::error::{PhxError, Result};
 use phxsql_core::json::Json;
@@ -341,6 +342,11 @@ pub struct Instancia {
     base: PathBuf,
     /// Ver [`PoliticaDoDiario`]. Copiada para cada [`Database`] aberto aqui.
     politica: PoliticaDoDiario,
+    /// As travas de instancia que esta raiz FIXA (pedido 635): uma por pasta
+    /// em que gravou, ate o dono morrer. Do servidor, vem da [`Raiz`] -- a
+    /// `Instancia` dele nasce e morre a cada operacao, e a trava solta entre
+    /// dois pedidos deixaria a CLI gravar com o `phxsqld` de pe.
+    fixadas: Arc<crate::trava_de_instancia::Fixadas>,
     /// O INVARIANTE DA TRAVA, escrito de um jeito que o compilador entende.
     ///
     /// # O que a trava global protege, e o que ela NAO protege
@@ -392,6 +398,7 @@ impl Instancia {
         Ok(Instancia {
             base,
             politica: PoliticaDoDiario::default(),
+            fixadas: Arc::default(),
             _so_com_a_ficha: PhantomData,
         })
     }
@@ -455,6 +462,7 @@ impl Instancia {
                 caminho,
                 tipo,
                 politica: self.politica,
+                fixadas: Some(Arc::clone(&self.fixadas)),
             },
             pendente,
         ))
@@ -482,6 +490,7 @@ impl Instancia {
             caminho,
             tipo,
             politica: self.politica,
+            fixadas: Some(Arc::clone(&self.fixadas)),
         })
     }
 
@@ -540,6 +549,9 @@ pub struct Raiz {
     /// Ver [`PoliticaDoDiario`]. Vai para cada [`Instancia`] que a ficha
     /// exclusiva entrega -- e por ela, para cada tabela aberta para escrita.
     politica: PoliticaDoDiario,
+    /// As travas de instancia do servidor (pedido 635), vivas enquanto a
+    /// `Raiz` viver. Ver [`Instancia`].
+    fixadas: Arc<crate::trava_de_instancia::Fixadas>,
 }
 
 /// A ficha EXCLUSIVA, presa a vida do guard que a entregou.
@@ -609,6 +621,7 @@ impl Raiz {
         Ok(Raiz {
             base,
             politica: PoliticaDoDiario::default(),
+            fixadas: Arc::default(),
         })
     }
 
@@ -634,6 +647,7 @@ impl Raiz {
             instancia: Instancia {
                 base: self.base.clone(),
                 politica: self.politica,
+                fixadas: Arc::clone(&self.fixadas),
                 _so_com_a_ficha: PhantomData,
             },
             _guarda: PhantomData,
@@ -675,6 +689,7 @@ impl Raiz {
         let so_para_achar_o_caminho = Instancia {
             base: self.base.clone(),
             politica: self.politica,
+            fixadas: Arc::clone(&self.fixadas),
             _so_com_a_ficha: PhantomData,
         };
         // O database que ainda nao tem a marca do formato de nome (pedido
@@ -712,6 +727,10 @@ pub struct Database {
     /// Herdada da [`Instancia`] que abriu este database. Ver
     /// [`PoliticaDoDiario`].
     politica: PoliticaDoDiario,
+    /// As travas fixadas da [`Instancia`] que abriu este database (pedido
+    /// 635). `None` no palco da restauracao: ele e de um dono so e sai do
+    /// lugar por `rename`, e trava fixada ali impediria o `rename` no Windows.
+    fixadas: Option<Arc<crate::trava_de_instancia::Fixadas>>,
 }
 
 impl Database {
@@ -747,6 +766,7 @@ impl Database {
             // O palco da restauracao nao e servidor de ninguem: quem reaplica
             // nele e o proprio `restaurar`, que nao replica dali.
             politica: PoliticaDoDiario::default(),
+            fixadas: None,
         }
     }
 
@@ -989,6 +1009,7 @@ impl Database {
             .push(crate::nascendo::reservar(&dir, esquema.nome())?);
         let mut t = Table::criar(dir, esquema)?;
         self.politica.aplicar(&mut t);
+        self.fixar_a_trava(&t);
         pendente.arquivos.extend(t.descritores_da_criacao()?);
         Ok((t, pendente))
     }
@@ -999,7 +1020,29 @@ impl Database {
         let mut t = Table::abrir(self.diretorio(schema)?, nome)
             .map_err(|e| self.tabela_que_nao_existe(e, schema, nome))?;
         self.politica.aplicar(&mut t);
+        self.fixar_a_trava(&t);
         Ok(t)
+    }
+
+    /// Fixa na [`Instancia`] a trava de instancia da pasta desta tabela
+    /// (pedido 635) -- ao lado da politica, pelo mesmo motivo: e a decisao
+    /// da raiz aplicada a TODA tabela que ela abre para gravar. O custo
+    /// depois do primeiro pedido e um mapa e uma comparacao de ponteiro.
+    fn fixar_a_trava(&self, t: &Table) {
+        if let (Some(f), Some(p)) = (&self.fixadas, t.trava_de_instancia()) {
+            f.fixar(p);
+        }
+    }
+
+    /// Toma a trava de instancia da pasta para quem mexe nos arquivos SEM
+    /// abrir a tabela (`excluir_tabela`, `renomear_tabela`) -- os dois do
+    /// inventario do congelamento, que pelo mesmo motivo perguntam a ele.
+    fn tomar_a_trava(&self, dir: &Path) -> Result<Option<crate::trava_de_instancia::Posse>> {
+        let posse = crate::trava_de_instancia::tomar(dir)?;
+        if let (Some(f), Some(p)) = (&self.fixadas, &posse) {
+            f.fixar(p);
+        }
+        Ok(posse)
     }
 
     /// Troca o erro cru de «nenhum volume de x.reg em /tmp/.../base» por «a
@@ -1197,6 +1240,9 @@ impl Database {
         // volume que a FASE B vai trocar (pedido 428). Pergunta ao mesmo
         // registro, pela mesma funcao.
         crate::congelamento::conferir(&dir, nome)?;
+        // E pelo mesmo motivo a trava de instancia (pedido 635): apagar e
+        // gravar, e o outro processo que serve a pasta nao ve.
+        let _trava = self.tomar_a_trava(&dir)?;
         if let Some(filha) = self.quem_aponta_para(&dir, nome)? {
             return Err(PhxError::Integridade(format!(
                 "a tabela {qualificado} nao pode ser apagada: {filha} declara \
@@ -1310,6 +1356,9 @@ impl Database {
         // O irmao do `excluir_tabela`: mover os arquivos de uma tabela em
         // reescrita deixaria a FASE B sem o volume que ela troca (pedido 428).
         crate::congelamento::conferir(&dir_o, nome_o)?;
+        // A trava de instancia das DUAS pastas (pedido 635): mover tira de
+        // uma e poe na outra.
+        let _trava = (self.tomar_a_trava(&dir_o)?, self.tomar_a_trava(&dir_d)?);
         // Nome que o catalogo NAO leria de volta como ele mesmo faz a tabela
         // sumir -- achado pela propria prova deste renomear, que escolheu
         // `pedidos_2025` sem pensar. A pergunta e a mesma das outras tres
@@ -3484,10 +3533,15 @@ mod testes_do_invariante {
         // E o custo, MEDIDO em vez de afirmado: o marcador e de tamanho zero,
         // entao a `Instancia` continua sendo exatamente os campos de dado que
         // ela carrega -- o `PathBuf` e, desde o pedido 564, a politica do
-        // diario. Garantia que custasse memoria seria outra conversa.
+        // diario, e desde o pedido 635 o ponteiro das travas de instancia
+        // fixadas. Garantia que custasse memoria seria outra conversa.
         assert_eq!(
             std::mem::size_of::<Instancia>(),
-            std::mem::size_of::<(PathBuf, PoliticaDoDiario)>(),
+            std::mem::size_of::<(
+                PathBuf,
+                PoliticaDoDiario,
+                Arc<crate::trava_de_instancia::Fixadas>,
+            )>(),
             "o marcador da trava passou a ocupar espaco"
         );
     }

@@ -19716,10 +19716,12 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         "arquivo": "crates/phxsql-store/src/catalogo.rs",
         "trecho": """            .map_err(|e| self.tabela_que_nao_existe(e, schema, nome))?;
         self.politica.aplicar(&mut t);
+        self.fixar_a_trava(&t);
         Ok(t)
 """,
         "troca": """            .map_err(|e| self.tabela_que_nao_existe(e, schema, nome))?;
         // DEFEITO REPOSTO (564): a abertura nao aplica a politica do diario.
+        self.fixar_a_trava(&t);
         Ok(t)
 """,
         "pacote": "phxsql-server",
@@ -20321,10 +20323,10 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "ela a carga da CLI na tabela da faixa 1 gravava o 6."
         ),
         "arquivo": "crates/phxsql-store/src/reg.rs",
-        "trecho": """        if passo <= 1 || proxima == 0 || crate::no::faixa_declarada() || proxima % passo == 0 {
+        "trecho": """            || proxima.is_multiple_of(passo)
 """,
-        "troca": """        // DEFEITO REPOSTO (615): o nao declarado numera como faixa 0.
-        if passo <= 1 || proxima == 0 || crate::no::faixa_declarada() || proxima % passo < passo {
+        "troca": """            // DEFEITO REPOSTO (615): o nao declarado numera como faixa 0.
+            || proxima % passo < passo
 """,
         "pacote": "phxsql-cli",
         "alvo": ["--test", "faixa-da-sequencia"],
@@ -22903,6 +22905,108 @@ pub const PRAZO_SOB_A_TRAVA: Duration = Duration::from_secs(3600);""",
         "seguem": [
             "com_tique_fino_o_volume_1_ja_denunciava_e_continua",
             "sem_o_cinto_o_volume_que_nasceu_deixa_a_tabela_sem_abrir",
+        ],
+        "prazo": 1200,
+    },
+    {
+        "id": "retrato-da-fase-a-sem-selo-634",
+        "titulo": "o retrato da FASE A guarda o `mtime` real, e a atualizacao no mesmo tique passa e e desfeita pela troca",
+        "porque": (
+            "pedido 634: a atualizacao no lugar nao muda tamanho nem byte do "
+            "cabecalho (427), e com o tique grosso (FAT 2 s, HFS+/NFS 1 s) a "
+            "escrita que cai no mesmo tique da anterior nao muda o `mtime`. O "
+            "retrato batia, a FASE B renomeava o `*.novo` copiado antes e a "
+            "linha voltava ao valor velho, sem erro. O selo grava 1980-01-02 "
+            "no `mtime` de cada volume ao retratar; escrita nenhuma de hoje "
+            "cai nesse tique."
+        ),
+        "arquivo": "crates/phxsql-store/src/reg.rs",
+        "trecho": """        selar(caminho, &mut selos)?;""",
+        "troca": """        // DEFEITO REPOSTO (634): sem selo.""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "volume-que-nasce-na-fase-a"],
+        "caem": [
+            "a_atualizacao_na_fase_a_com_tique_grosso_aborta_a_troca_634",
+            "a_atualizacao_na_fase_a_do_esquema_com_tique_grosso_aborta_a_troca_634",
+            "a_troca_abortada_devolve_o_mtime_original_634",
+        ],
+        "seguem": [
+            "sem_vizinho_a_troca_acontece_e_nao_fica_em_1980_634",
+            "com_tique_fino_o_volume_1_ja_denunciava_e_continua",
+        ],
+        "prazo": 1200,
+    },
+    {
+        "id": "selo-do-retrato-nao-devolve-o-mtime-634",
+        "titulo": "a troca abortada deixa o volume com o `mtime` de 1980",
+        "porque": (
+            "pedido 634: o selo e estado da troca, nao do dado. Troca que nao "
+            "acontece tem de devolver a cada volume o `mtime` que ele tinha -- "
+            "quem copia ou sincroniza por data (rsync, backup incremental de "
+            "fora) herdaria 1980 e trataria o volume como antigo."
+        ),
+        "arquivo": "crates/phxsql-store/src/reg.rs",
+        "trecho": """let _ = f.set_modified(s.original);""",
+        "troca": """let _ = (f, s.original); // DEFEITO REPOSTO (634)""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "volume-que-nasce-na-fase-a"],
+        "caem": ["a_troca_abortada_devolve_o_mtime_original_634"],
+        "seguem": [
+            "a_atualizacao_na_fase_a_com_tique_grosso_aborta_a_troca_634",
+            "sem_vizinho_a_troca_acontece_e_nao_fica_em_1980_634",
+        ],
+        "prazo": 1200,
+    },
+    {
+        "id": "segundo-gravador-sem-trava-de-instancia-635",
+        "titulo": "dois processos abrem a mesma pasta para gravar e um sobrescreve os contadores do outro",
+        "porque": (
+            "pedido 635: o congelamento, o registro do que nasce e a trava "
+            "global sao `static` do processo. A CLI, um app pela FFI ou um "
+            "segundo `phxsqld` gravavam na pasta do primeiro sem recusa, e o "
+            "`gravar_contadores` regrava o cabecalho do volume 1 a partir da "
+            "RAM de cada um. A trava do nucleo (`File::try_lock`) no ponto "
+            "unico da abertura gravavel recusa o segundo com 4008 "
+            "INSTANCIA_OCUPADA, e o `kill -9` nao deixa trava eterna. Provado "
+            "por processos reais (o binario do teste se reexecuta)."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """        let instancia = if escrever {""",
+        "troca": """        let instancia = if false && escrever { // DEFEITO REPOSTO (635)""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "trava-de-instancia"],
+        "caem": [
+            "o_segundo_gravador_e_recusado_e_ler_continua_livre",
+            "kill_9_no_gravador_nao_deixa_trava_eterna",
+            "a_raiz_que_gravou_segura_ociosa_e_solta_quando_morre",
+        ],
+        "seguem": ["um_processo_so_abre_quantas_quiser_na_mesma_pasta"],
+        "prazo": 1200,
+    },
+    {
+        "id": "raiz-ociosa-solta-a-trava-de-instancia-635",
+        "titulo": "o servidor ocioso, entre dois pedidos, deixa a CLI gravar a pasta que ele serve",
+        "porque": (
+            "pedido 635: a `Instancia` do servidor nasce e morre a cada "
+            "operacao, e a tabela fecha no fim do pedido. Sem a trava FIXADA "
+            "na raiz (`Raiz`/`Instancia`, pelo `Database`), a trava de "
+            "instancia so valeria durante o pedido -- e o caso facil, a CLI "
+            "num diretorio que o `phxsqld` serve, passaria com o servidor "
+            "parado esperando cliente."
+        ),
+        "arquivo": "crates/phxsql-store/src/catalogo.rs",
+        "trecho": """        self.politica.aplicar(&mut t);
+        self.fixar_a_trava(&t);
+        Ok(t)""",
+        "troca": """        self.politica.aplicar(&mut t);
+        // DEFEITO REPOSTO (635): a raiz nao fixa.
+        Ok(t)""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "trava-de-instancia"],
+        "caem": ["a_raiz_que_gravou_segura_ociosa_e_solta_quando_morre"],
+        "seguem": [
+            "o_segundo_gravador_e_recusado_e_ler_continua_livre",
+            "um_processo_so_abre_quantas_quiser_na_mesma_pasta",
         ],
         "prazo": 1200,
     },

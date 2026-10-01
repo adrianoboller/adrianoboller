@@ -225,7 +225,7 @@ fn desmisturar_colunas(b: &mut [u8; BLOCO]) {
 /// o preenchimento e decisao de quem chama (o 7z completa com zeros e guarda o
 /// tamanho verdadeiro no cabecalho), e nao deste modo.
 pub fn cbc_cifrar(aes: &Aes256, iv: &[u8; BLOCO], dados: &mut [u8]) -> Option<()> {
-    if dados.len() % BLOCO != 0 {
+    if !dados.len().is_multiple_of(BLOCO) {
         return None;
     }
     let mut anterior = *iv;
@@ -244,7 +244,7 @@ pub fn cbc_cifrar(aes: &Aes256, iv: &[u8; BLOCO], dados: &mut [u8]) -> Option<()
 /// Decifra em CBC, no lugar. `None` quando o tamanho nao e multiplo do bloco:
 /// num arquivo que veio de fora isso e estrutura quebrada, e quem chama nomeia.
 pub fn cbc_decifrar(aes: &Aes256, iv: &[u8; BLOCO], dados: &mut [u8]) -> Option<()> {
-    if dados.len() % BLOCO != 0 {
+    if !dados.len().is_multiple_of(BLOCO) {
         return None;
     }
     let mut anterior = *iv;

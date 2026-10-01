@@ -739,6 +739,9 @@ pub struct Relatorio {
 pub struct Table {
     nome: String,
     diretorio: PathBuf,
+    /// A trava de instancia da pasta (pedido 635), enquanto esta tabela pode
+    /// gravar. `None` so quando a tabela nao grava: a de leitura nao toma.
+    instancia: Option<crate::trava_de_instancia::Posse>,
     /// Copia do esquema que mora no `.reg`. Fica aqui para nao ser clonada a
     /// cada linha lida ou gravada.
     esquema: Schema,
@@ -1358,6 +1361,9 @@ impl Table {
         let diretorio = resolver(diretorio.as_ref());
         // 0700 quando nasce aqui, pelo motor da permissao (pedido 542).
         crate::util::criar_diretorio_do_banco(&diretorio)?;
+        // A trava de instancia ANTES do primeiro arquivo (pedido 635): criar
+        // e gravar, e o segundo processo nao cria tabela na pasta do outro.
+        let instancia = crate::trava_de_instancia::tomar(&diretorio)?;
         let nome = esquema.nome().to_string();
 
         let paginacao = esquema.paginacao();
@@ -1408,6 +1414,7 @@ impl Table {
         let mut t = Table {
             nome,
             diretorio,
+            instancia,
             esquema,
             reg,
             ndx,
@@ -2439,6 +2446,17 @@ impl Table {
         if escrever {
             crate::congelamento::conferir(&diretorio, nome)?;
         }
+        // A trava de instancia (pedido 635), no MESMO ponto unico e pelo
+        // mesmo motivo: e aqui que toda tabela gravavel nasce. O congelamento
+        // acima responde «outra thread DESTE processo reescreve a tabela?»;
+        // esta responde «outro PROCESSO grava a pasta?» -- e vem antes do
+        // `RegFile::abrir`, que ja escreve (termina troca interrompida).
+        // Quem le nao toma: ler continua livre.
+        let instancia = if escrever {
+            crate::trava_de_instancia::tomar(&diretorio)?
+        } else {
+            None
+        };
         let reg = if !conferir_faixa {
             Some(RegFile::abrir_para_realinhar(&diretorio, nome)?)
         } else if escrever {
@@ -2571,6 +2589,7 @@ impl Table {
         let mut aberta = Table {
             nome: nome.to_string(),
             diretorio,
+            instancia,
             esquema,
             reg,
             ndx,
@@ -4278,6 +4297,11 @@ impl Table {
 
     pub fn nome(&self) -> &str {
         &self.nome
+    }
+
+    /// A trava de instancia desta tabela (pedido 635), quando ela grava.
+    pub(crate) fn trava_de_instancia(&self) -> Option<&crate::trava_de_instancia::Posse> {
+        self.instancia.as_ref()
     }
 
     pub fn diretorio(&self) -> &Path {

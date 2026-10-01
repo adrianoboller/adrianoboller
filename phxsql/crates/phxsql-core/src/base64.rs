@@ -79,7 +79,7 @@ pub fn decodificar(texto: &str) -> Result<Vec<u8>> {
     };
     // Entrada sem padding e aceita; com padding, ele tem de estar certo.
     let padding = limpo.len() - sem_pad.len();
-    if padding != 0 && (padding != padding_esperado || limpo.len() % 4 != 0) {
+    if padding != 0 && (padding != padding_esperado || !limpo.len().is_multiple_of(4)) {
         return Err(PhxError::Tipo("base64 com padding invalido".into()));
     }
 

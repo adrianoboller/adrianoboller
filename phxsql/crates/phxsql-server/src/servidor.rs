@@ -5709,7 +5709,7 @@ impl Servidor {
         let administra = sessao
             .usuario
             .as_ref()
-            .map_or(true, |u| u.pode_em("", "", Atividade::Administrar));
+            .is_none_or(|u| u.pode_em("", "", Atividade::Administrar));
         let mapa = if administra {
             estado.mapa()
         } else {
@@ -14604,7 +14604,7 @@ impl Servidor {
         let administra = sessao
             .usuario
             .as_ref()
-            .map_or(true, |u| u.pode_em(&base, "", Atividade::Administrar));
+            .is_none_or(|u| u.pode_em(&base, "", Atividade::Administrar));
         let v = self.visoes.tomar("visoes")?;
         Ok(Json::objeto(vec![
             ("database", Json::texto_de(&base)),
@@ -20258,7 +20258,7 @@ impl Servidor {
         let Ok(mut pedido) = self.panico_de_teste_na_op.lock() else {
             return;
         };
-        if !pedido.as_ref().is_some_and(|(o, _)| o == op) {
+        if pedido.as_ref().is_none_or(|(o, _)| o != op) {
             return;
         }
         let armado = pedido.take();
@@ -32294,7 +32294,7 @@ enum EscopoDaPosicao<'a> {
 /// perdida, nao como erro. Sem usuario (sessao interna, ou o token) alcanca
 /// tudo, que e o comportamento de sempre.
 fn replica_alcanca(usuario: Option<&Usuario>, database: &str, tabela: &str) -> bool {
-    usuario.map_or(true, |u| u.pode_em(database, tabela, Atividade::Replicar))
+    usuario.is_none_or(|u| u.pode_em(database, tabela, Atividade::Replicar))
 }
 
 /// O prefixo do nome da origem do cluster (`cluster:<id>`). Um so, porque e

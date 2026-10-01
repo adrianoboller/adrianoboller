@@ -219,7 +219,7 @@ pub fn crivo(nome: &str, conteudo: Option<&[u8]>) -> Option<Motivo> {
         .filter(|c| !c.is_ascii_whitespace())
         .collect();
     if limpo.len() >= MINIMO_DE_HEX
-        && limpo.len() % 2 == 0
+        && limpo.len().is_multiple_of(2)
         && limpo.iter().all(|c| c.is_ascii_hexdigit())
     {
         return Some(Motivo::TudoHex);
