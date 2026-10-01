@@ -78,6 +78,15 @@ pub enum PhxError {
     /// num disco sao -- por isso `adianta_repetir` e verdadeiro. Esperar mais
     /// la dentro faria um `fsync` lento parar o servidor inteiro.
     Nascendo(String),
+    /// A pasta esta aberta para GRAVAR por OUTRO PROCESSO -- pedido 635, a
+    /// trava de instancia (`phxsql_store::trava_de_instancia`).
+    ///
+    /// Familia propria, e nao `EmCarga` nem `Conflito`, pelo motivo de
+    /// sempre: o que a segura nao e uma sessao deste servidor, e repetir nao
+    /// adianta -- o outro processo (um `phxsqld`, a CLI, um app embutido)
+    /// pode ficar de pe por dias. `adianta_repetir` e FALSO: a acao e fechar
+    /// o outro, nao insistir.
+    InstanciaOcupada(String),
     /// Credencial invalida ou poder insuficiente.
     Autorizacao(String),
     /// Valor excede o limite fisico do formato.
@@ -204,6 +213,7 @@ impl PhxError {
             PhxError::EmTransacao(_) => 4005,
             PhxError::EmMigracao(_) => 4006,
             PhxError::Nascendo(_) => 4007,
+            PhxError::InstanciaOcupada(_) => 4008,
             PhxError::Io(_) => 5001,
             // Familia SISTEMA: o problema esta no ESTADO do sistema de
             // arquivos (duas fontes de configuracao presentes), nao no
@@ -237,6 +247,7 @@ impl PhxError {
             PhxError::EmTransacao(_) => "EM_TRANSACAO",
             PhxError::EmMigracao(_) => "EM_MIGRACAO",
             PhxError::Nascendo(_) => "NASCENDO",
+            PhxError::InstanciaOcupada(_) => "INSTANCIA_OCUPADA",
             PhxError::Io(_) => "ERRO_DE_ES",
             PhxError::Cancelado(_) => "CANCELADO",
             PhxError::TransacaoAbortada(_) => "TRANSACAO_ABORTADA",
@@ -329,6 +340,9 @@ impl PhxError {
             // `fsync` da pasta (605): quem mudaria esta recusa e a matriz de
             // falhas, a mesma sprint do `Io` e do `Corrompido`.
             PhxError::Nascendo(_) => "SP000010",
+            // Quem mudaria esta recusa e a sprint que tira o processo unico
+            // do lugar: a da trava global de dados.
+            PhxError::InstanciaOcupada(_) => "SP000011",
             PhxError::TransacaoAbortada(_) => "SP000006",
             PhxError::Io(_) => "SP000010",
             // Cancelamento e literalmente o titulo da SP000012.
@@ -419,6 +433,7 @@ impl PhxError {
             PhxError::EmTransacao(m) => format!("tabela em transacao: {m}"),
             PhxError::EmMigracao(m) => format!("tabela em reescrita: {m}"),
             PhxError::Nascendo(m) => format!("tabela nascendo: {m}"),
+            PhxError::InstanciaOcupada(m) => format!("pasta ocupada por outro processo: {m}"),
             PhxError::LimiteExcedido(m) => format!("limite excedido: {m}"),
             // Sem prefixo de recusa: a mensagem ja comeca com
             // `REDIRECIONA host:porta`, que e o endereco para onde ir.
@@ -559,6 +574,7 @@ mod testes_codigo {
             PhxError::EmTransacao(String::new()),
             PhxError::EmMigracao(String::new()),
             PhxError::Nascendo(String::new()),
+            PhxError::InstanciaOcupada(String::new()),
             PhxError::TransacaoAbortada(String::new()),
             PhxError::Autorizacao(String::new()),
             PhxError::Redireciona(String::new()),
@@ -590,6 +606,7 @@ mod testes_codigo {
             PhxError::EmTransacao(_) => "EmTransacao",
             PhxError::EmMigracao(_) => "EmMigracao",
             PhxError::Nascendo(_) => "Nascendo",
+            PhxError::InstanciaOcupada(_) => "InstanciaOcupada",
             PhxError::Autorizacao(_) => "Autorizacao",
             PhxError::LimiteExcedido(_) => "LimiteExcedido",
             PhxError::SpareEmEspera(_) => "SpareEmEspera",
@@ -622,7 +639,9 @@ mod testes_codigo {
         // config.json/config.phz -- pedido 481.
         // 21 -> 22 em 01/10/2026: a `Nascendo` (4007), a espera da tabela
         // que nasce com a trava na mao, agora com prazo -- pedido 629.
-        assert_eq!(quantas, 22, "entrou ou saiu variante: {nomes:?}");
+        // 22 -> 23 em 01/10/2026: a `InstanciaOcupada` (4008), a pasta que
+        // outro processo grava -- pedido 635.
+        assert_eq!(quantas, 23, "entrou ou saiu variante: {nomes:?}");
     }
 
     /// **A sprint citada tem de EXISTIR no roteiro.**

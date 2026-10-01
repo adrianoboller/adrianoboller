@@ -438,6 +438,10 @@ pub(crate) fn listar(raiz: &Path) -> Result<Vec<PathBuf>> {
             let caminho = entrada.path();
             if caminho.is_dir() {
                 pilha.push(caminho);
+            } else if entrada.file_name() == crate::trava_de_instancia::NOME_DO_ARQUIVO {
+                // A trava de instancia (pedido 635) e estado do processo que
+                // grava, nao dado: copia-la nao serve a ninguem, e no Windows
+                // a trava do nucleo nem deixa le-la.
             } else {
                 achados.push(caminho);
             }

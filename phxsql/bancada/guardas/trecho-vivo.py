@@ -657,6 +657,13 @@ dia, nunca no desejado:
   que so fotografava os volumes existentes, e o volume que nascia no meio dela
   ficava na geometria velha (`retrato-da-fase-a-nao-ve-volume-que-nasce-427`).
   703, medido pelo `--numeros`.
+  **SUBIU para 707 em 01/10/2026** (703 + 4; pedidos 634 e 635): o retrato da
+  FASE A sem o selo de `mtime` (`retrato-da-fase-a-sem-selo-634`), o selo que
+  nao devolve o `mtime` original (`selo-do-retrato-nao-devolve-o-mtime-634`),
+  o segundo processo gravando a mesma pasta
+  (`segundo-gravador-sem-trava-de-instancia-635`) e a raiz ociosa que solta a
+  trava (`raiz-ociosa-solta-a-trava-de-instancia-635`). 707, medido pelo
+  `--numeros`.
 
 # A QUINTA REGUA: a tabela publicada pode ser MENOR que o catalogo
 
@@ -763,7 +770,7 @@ TETO_TESTE_MORTO = 0
 TETO_TRECHO_AMBIGUO = 0
 TETO_TESTE_FORA_DO_BINARIO = 0
 TETO_TESTE_SEM_MODULO = 0
-PISO_DAS_ENTRADAS = 703
+PISO_DAS_ENTRADAS = 707
 
 # ------------------------------------------------------------- APOSENTADAS
 #

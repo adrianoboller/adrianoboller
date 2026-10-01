@@ -246,6 +246,7 @@ pub fn status_do_erro(e: &PhxError) -> u16 {
         PhxError::EmCarga(_)
         | PhxError::EmMigracao(_)
         | PhxError::Nascendo(_)
+        | PhxError::InstanciaOcupada(_)
         | PhxError::SpareEmEspera(_) => 503,
         PhxError::NaoEncontrado(_) => 404,
         PhxError::Duplicado(_) | PhxError::Conflito(_) => 409,

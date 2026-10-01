@@ -55,7 +55,7 @@ use phxsql_core::types::ColumnType;
 use phxsql_core::value::Value;
 use phxsql_core::Result;
 use phxsql_store::catalogo::Instancia;
-use phxsql_store::table::{Salto, Table, Visao};
+use phxsql_store::table::{Salto, SemEscrever, Table, Visao};
 
 const USO: &str = "\
 phxsql -- motor de dados PhxSql (.reg + .ndx + .bin + .memo + .log)
@@ -391,7 +391,7 @@ fn mostrar_log(args: &[String]) -> Result<()> {
         }
     }
 
-    let mut t = Table::abrir(dir, nome)?;
+    let mut t = abrir_para_ler(dir, nome)?;
     let total = t.eventos()?;
     let eventos = match rowid {
         Some(r) => t.historico(r)?,
@@ -434,8 +434,23 @@ fn mostrar_log(args: &[String]) -> Result<()> {
     Ok(())
 }
 
+/// Abre para LER os comandos que so leem (`info`, `verificar`, `listar`,
+/// `log`) -- pedido 635: a abertura gravavel toma a trava de instancia, e a
+/// CLI numa pasta que o `phxsqld` serve seria recusada ate para listar. Ler
+/// continua livre, como nos tres maduros.
+///
+/// Cai na abertura GRAVAVEL so quando abrir exigiria escrever (diario por
+/// curar, troca de volume por terminar): e o que estes comandos sempre
+/// fizeram, e ai a recusa da trava e a resposta certa -- curar e gravar.
+fn abrir_para_ler(dir: &Path, nome: &str) -> Result<Table> {
+    match Table::abrir_para_ler(dir, nome)? {
+        SemEscrever::Aberta(t) => Ok(t),
+        SemEscrever::PrecisaEscrever(_) => Table::abrir(dir, nome),
+    }
+}
+
 fn info(dir: &Path, nome: &str) -> Result<()> {
-    let mut t = Table::abrir(dir, nome)?;
+    let mut t = abrir_para_ler(dir, nome)?;
     let esq = t.esquema().clone();
 
     diga!("tabela : {}", esq.nome());
@@ -549,7 +564,7 @@ fn info(dir: &Path, nome: &str) -> Result<()> {
 }
 
 fn verificar(dir: &Path, nome: &str) -> Result<()> {
-    let mut t = Table::abrir(dir, nome)?;
+    let mut t = abrir_para_ler(dir, nome)?;
     let r = t.verificar()?;
     diga!("tabela {} INTEGRA", r.tabela);
     diga!("  {} registros em {} slots", r.registros, r.slots);
@@ -602,7 +617,7 @@ fn listar(args: &[String]) -> Result<()> {
         }
     }
 
-    let mut t = Table::abrir(dir, nome)?;
+    let mut t = abrir_para_ler(dir, nome)?;
     let colunas: Vec<String> = t
         .esquema()
         .colunas()

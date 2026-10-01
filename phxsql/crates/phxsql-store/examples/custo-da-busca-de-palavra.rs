@@ -90,7 +90,7 @@ fn texto(i: u64, um_em: u64) -> String {
     // grafia sem acento ao lado, e nao por dobrar coisa nenhuma. Era um teste
     // que passava por engano, que e pior que teste que falta. Separadas, a
     // conta so fecha se a busca dobrar de verdade.
-    if i % um_em == 0 {
+    if i.is_multiple_of(um_em) {
         s.push_str(AGULHA);
     } else if i % um_em == 1 {
         s.push_str(AGULHA_ACENTUADA);

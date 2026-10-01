@@ -1567,6 +1567,21 @@ VARIAS INSTANCIAS, DOCKER E CLUSTER
         cd /srv/erp        && phxsqld    # 5000 / 5001
         cd /srv/telemetria && phxsqld    # 5100 / 5101
 
+    UM PROCESSO GRAVANDO CADA PASTA (pedido 635): duas instancias NAO podem
+    servir a mesma base. Quem abre uma pasta de tabelas para gravar toma a
+    trava do sistema operacional sobre o arquivo `.phxsql.trava` dela, e o
+    segundo processo -- outro phxsqld, a CLI `phxsql`, um app pela FFI --
+    ouve o erro 4008 INSTANCIA_OCUPADA, com o pid de quem segura:
+
+        pasta ocupada por outro processo: a pasta loja esta aberta para
+        gravar por o processo 4242. ...
+
+    O phxsqld segura a trava enquanto estiver de pe, mesmo ocioso; a CLI e o
+    app embutido, enquanto a base estiver aberta. LER continua livre. Se o
+    processo cair (ate por kill -9), o sistema solta a trava sozinho -- nao
+    ha arquivo para apagar a mao. O `.phxsql.trava` fica na pasta e nao entra
+    no backup.
+
     DOCKER: sim, e a imagem final e `scratch` -- sem shell, sem gerenciador
     de pacotes, so o binario. So e possivel porque nao ha dependencia externa
     nenhuma. Dockerfile e docker-compose.yml na raiz.

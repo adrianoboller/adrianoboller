@@ -3211,9 +3211,9 @@
       "id": "politica-do-diario-fora-da-abertura",
       "titulo": "a tabela aberta pelo `Database` volta a nascer sem a politica do diario: a recuperacao grava o COMMIT completado sem imagem",
       "veredito": "PROVADA",
-      "segundos": 41.54,
+      "segundos": 43.53,
       "notas": [],
-      "quando": "2026-10-01 03:51"
+      "quando": "2026-10-01 23:32"
     },
     {
       "id": "exclusao-fora-da-politica-do-diario",
@@ -3387,9 +3387,9 @@
       "id": "faixa-nao-declarada-numera-na-zero",
       "titulo": "com a leitura liberada, o processo sem faixa declarada numerava a tabela de outro nó na faixa 0 -- a colisão que a faixa existe para impedir, calada",
       "veredito": "PROVADA",
-      "segundos": 7.29,
+      "segundos": 9.19,
       "notas": [],
-      "quando": "2026-10-01 11:21"
+      "quando": "2026-10-01 23:32"
     },
     {
       "id": "faixa-da-cli-nao-chega-ao-motor",
@@ -4230,6 +4230,38 @@
       "segundos": 7.66,
       "notas": [],
       "quando": "2026-10-01 21:56"
+    },
+    {
+      "id": "retrato-da-fase-a-sem-selo-634",
+      "titulo": "o retrato da FASE A guarda o `mtime` real, e a atualizacao no mesmo tique passa e e desfeita pela troca",
+      "veredito": "PROVADA",
+      "segundos": 9.19,
+      "notas": [],
+      "quando": "2026-10-01 23:32"
+    },
+    {
+      "id": "selo-do-retrato-nao-devolve-o-mtime-634",
+      "titulo": "a troca abortada deixa o volume com o `mtime` de 1980",
+      "veredito": "PROVADA",
+      "segundos": 9.04,
+      "notas": [],
+      "quando": "2026-10-01 23:32"
+    },
+    {
+      "id": "segundo-gravador-sem-trava-de-instancia-635",
+      "titulo": "dois processos abrem a mesma pasta para gravar e um sobrescreve os contadores do outro",
+      "veredito": "PROVADA",
+      "segundos": 8.64,
+      "notas": [],
+      "quando": "2026-10-01 23:32"
+    },
+    {
+      "id": "raiz-ociosa-solta-a-trava-de-instancia-635",
+      "titulo": "o servidor ocioso, entre dois pedidos, deixa a CLI gravar a pasta que ele serve",
+      "veredito": "PROVADA",
+      "segundos": 9.02,
+      "notas": [],
+      "quando": "2026-10-01 23:32"
     },
     {
       "id": "alter-com-regra-sem-aviso",

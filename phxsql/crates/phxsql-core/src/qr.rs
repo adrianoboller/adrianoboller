@@ -437,7 +437,7 @@ fn codificar_dados(dados: &[u8], modo: Modo, versao: u8, nivel: Nivel) -> Result
     let term = 4.min(cap_bits - b.len());
     b.push(0, term as u32);
     // Completa o ultimo byte.
-    while b.0.len() % 8 != 0 {
+    while !b.0.len().is_multiple_of(8) {
         b.0.push(false);
     }
     let mut bytes = bits_para_bytes(&b.0);
@@ -956,7 +956,7 @@ pub fn gerar_versao(dados: &[u8], versao: u8, nivel: Nivel, modo: Modo) -> Resul
 /// conteudo. E o leitor minimo que fecha a prova de ida e volta.
 pub fn ler(qr: &Qr) -> Result<Vec<u8>> {
     let dim = qr.dim;
-    if dim < 21 || (dim - 17) % 4 != 0 {
+    if dim < 21 || !(dim - 17).is_multiple_of(4) {
         return Err(PhxError::Corrompido(format!("QR: dimensao invalida {dim}")));
     }
     let versao = ((dim - 17) / 4) as u8;

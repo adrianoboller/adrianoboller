@@ -307,6 +307,17 @@ pub const FABRICA: &[MensagemFabrica] = &[
         ],
     },
     MensagemFabrica {
+        nome: "erro.instancia_ocupada",
+        textos: [
+            "pasta ocupada por outro processo: {detalhe}",
+            "dossier occupé par un autre processus : {detalhe}",
+            "folder in use by another process: {detalhe}",
+            "cartella occupata da un altro processo: {detalhe}",
+            "Ordner von einem anderen Prozess belegt: {detalhe}",
+            "carpeta ocupada por otro proceso: {detalhe}",
+        ],
+    },
+    MensagemFabrica {
         nome: "erro.transacao_abortada",
         textos: [
             "transacao abortada: {detalhe}",
@@ -879,6 +890,7 @@ pub fn decompor(e: &PhxError) -> (&'static str, String) {
         PhxError::EmTransacao(m) => ("erro.em_transacao", m.clone()),
         PhxError::EmMigracao(m) => ("erro.em_migracao", m.clone()),
         PhxError::Nascendo(m) => ("erro.nascendo", m.clone()),
+        PhxError::InstanciaOcupada(m) => ("erro.instancia_ocupada", m.clone()),
         PhxError::TransacaoAbortada(m) => ("erro.transacao_abortada", m.clone()),
         PhxError::LimiteExcedido(m) => ("erro.limite_excedido", m.clone()),
         PhxError::Cancelado(m) => ("erro.cancelado", m.clone()),
