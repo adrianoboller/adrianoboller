@@ -1822,7 +1822,7 @@ impl Table {
         // escrever: e este o caminho que cria o que falta e termina o que
         // ficou pela metade. Um `None` aqui seria defeito nosso, e o texto
         // diz isso -- um `unwrap` diria «alguem errou» sem dizer quem.
-        match Table::abrir_com(diretorio, nome, true, true)? {
+        match Table::abrir_com(diretorio, nome, true, true, false)? {
             SemEscrever::Aberta(t) => Ok(t),
             SemEscrever::PrecisaEscrever(o) => Err(PhxError::Corrompido(format!(
                 "abrir com a ficha exclusiva recusou por escrita: {o}"
@@ -1844,16 +1844,28 @@ impl Table {
     /// `None` nao e erro nem defeito: e «esta tabela quer a ficha exclusiva».
     /// Quem chama solta a ficha compartilhada e refaz o trabalho por la.
     pub fn abrir_para_ler(diretorio: impl AsRef<Path>, nome: &str) -> Result<SemEscrever> {
-        Table::abrir_com(diretorio, nome, false, true)
+        Table::abrir_com(diretorio, nome, false, true, false)
+    }
+
+    /// O [`Table::abrir_para_ler`] de quem le o DIARIO -- pedido 330.
+    ///
+    /// A unica diferenca: a cauda do `.log` alem do cabecalho (a tabela
+    /// escrita desde o ultimo fecho da janela) entra na conta pela memoria, em
+    /// vez de mandar para a ficha exclusiva. Nao escreve nada a mais que o
+    /// `abrir_para_ler`; ver `LogFile::abrir_sem_escrever_com_a_cauda`.
+    pub fn abrir_para_ler_o_diario(diretorio: impl AsRef<Path>, nome: &str) -> Result<SemEscrever> {
+        Table::abrir_com(diretorio, nome, false, true, true)
     }
 
     /// `conferir_faixa` falso e SO do [`Table::realinhar_sequencia`]: ver
-    /// `RegFile::abrir_para_realinhar`.
+    /// `RegFile::abrir_para_realinhar`. `cauda_do_diario` so vale sem
+    /// `escrever` (ver [`Table::abrir_para_ler_o_diario`]).
     fn abrir_com(
         diretorio: impl AsRef<Path>,
         nome: &str,
         escrever: bool,
         conferir_faixa: bool,
+        cauda_do_diario: bool,
     ) -> Result<SemEscrever> {
         let diretorio = resolver(diretorio.as_ref());
         // O PONTO UNICO do congelamento, e e aqui porque e aqui que TODA
@@ -1889,6 +1901,8 @@ impl Table {
         let memo = BlobFile::abrir(&diretorio, nome, EXT_MEMO, MAGIC_MEMO, externos)?;
         let log = if escrever {
             Some(LogFile::abrir(&diretorio, nome, externos)?)
+        } else if cauda_do_diario {
+            LogFile::abrir_sem_escrever_com_a_cauda(&diretorio, nome, externos)?
         } else {
             LogFile::abrir_sem_escrever(&diretorio, nome, externos)?
         };
@@ -5264,7 +5278,7 @@ impl Table {
     /// acima do maior valor gravado E do contador -- o contador cobre os
     /// numeros de linhas ja excluidas de vez, que a varredura nao ve mais.
     pub fn realinhar_sequencia(diretorio: impl AsRef<Path>, nome: &str) -> Result<(u64, u64, u64)> {
-        let mut t = match Table::abrir_com(diretorio, nome, true, false)? {
+        let mut t = match Table::abrir_com(diretorio, nome, true, false, false)? {
             SemEscrever::Aberta(t) => t,
             SemEscrever::PrecisaEscrever(o) => {
                 return Err(PhxError::Corrompido(format!(

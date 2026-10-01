@@ -35,7 +35,7 @@ use phxsql_core::fio::{Canal, Recebido, TETO_DO_APERTO, TETO_DO_REGISTRO};
 use phxsql_core::json::Json;
 use phxsql_core::semaforo::{Permissao, Semaforo};
 use phxsql_store::catalogo::{Aberta, Instancia, PorSincronizar, Raiz};
-use phxsql_store::leitura::{Legivel, TabelaLeitura};
+use phxsql_store::leitura::{DiarioLegivel, Legivel, TabelaLeitura};
 use phxsql_store::log::Operacao;
 use phxsql_store::memoria::{Consulta, Filtro, Operador, Ordem, TabelaMemoria};
 use phxsql_store::table::{Table, Visao};
@@ -966,6 +966,13 @@ const TETO_DO_LOTE_SERVIDO: usize = 16 * 1024 * 1024;
 /// padrao, que e o lote que a propria replica pede.
 const LOTE_PADRAO_DE_REPLICACAO: u64 = 500;
 
+/// Quanto dura uma fatia da absorcao do diario local sob a trava de LEITURA
+/// (pedido 330, decisao do J de 01/10/2026). E o teto da espera de um
+/// escritor durante a primeira rodada do bidirecional, mais o lote em que a
+/// fatia vence -- um lote de 500 a ~2,4 us por evento (release) sao ~1,2 ms.
+/// Mais curta, a troca de trava passa a pesar; mais longa, o escritor sente.
+const FATIA_DA_PRE_ABSORCAO: Duration = Duration::from_millis(10);
+
 /// O maior lote que um `replicar` serve, pecam o que pedirem.
 ///
 /// Dez vezes o lote da replica: sobra para quem quiser lotes maiores, e nunca
@@ -1493,6 +1500,13 @@ pub struct Servidor {
     /// mesmo, as origens que puxa e os que puxam dele. Persistido em
     /// `replicacao-numeros.json`; ver `bidirecional::conferir_numero`.
     numeros_bidi: Mutex<std::result::Result<bidirecional::Numeros, String>>,
+    /// Pedido 424: quantas tabelas de ledger com coluna marcada esta replica
+    /// CRIOU a partir do esquema de um source. A replica nao recusa -- a
+    /// petrea «guarda nova entra pedida» ganha da regua dos motores --, entao
+    /// o que tira o silencio e este numero no `replicacao_estado`, ao lado da
+    /// linha no log. Conta criacao, e nao abertura: a cadeia ja criada abre a
+    /// cada rodada, e contar a abertura inflaria o numero sem tabela nova.
+    ledger_marcado_recebido: AtomicU64,
     /// Os outros dois ajustes que a tela de configuracao muda A QUENTE.
     ///
     /// O `somente_leitura_vivo` acima serve aos DOIS caminhos que o mudam: a
@@ -1804,6 +1818,7 @@ impl Servidor {
             toques_bidi: Mutex::new(HashMap::new()),
             posicoes_bidi: Mutex::new(posicoes_bidi),
             numeros_bidi: Mutex::new(numeros_bidi),
+            ledger_marcado_recebido: AtomicU64::new(0),
             janela: Janela::nova(&config.recursos),
             sujas: Mutex::new(std::collections::HashSet::new()),
             config,
@@ -3681,10 +3696,26 @@ impl Servidor {
             origem.databases.clone()
         };
         let databases = self.so_os_databases_desta_origem(&origem.nome, anunciados);
+        // Pedido 300: e AQUI que o cluster aprende o que o master replica --
+        // a mesma lista que este laco vai alcancar, e nao uma segunda opiniao
+        // sobre ela. A posicao do arbitro passa a somar so isto.
+        let do_cluster = self
+            .cluster
+            .as_deref()
+            .filter(|_| origem.nome.starts_with(PREFIXO_DA_ORIGEM_DO_CLUSTER));
+        if let Some(e) = do_cluster {
+            e.anunciar_databases(&databases);
+        }
 
         let mut aplicados = 0u64;
         for database in databases {
             let p = crate::replica::posicao(&mut cliente, &database)?;
+            if let Some(e) = do_cluster {
+                e.anunciar_tabelas(
+                    &database,
+                    p.tabelas.iter().map(|n| n.nome.clone()).collect(),
+                );
+            }
             if !p.com_imagem {
                 return Err(PhxError::Esquema(format!(
                     "o source de {} esta com replicacao.imagem_da_linha desligada: \
@@ -3710,7 +3741,8 @@ impl Servidor {
         no: &crate::replica::NoSource,
     ) -> Result<Option<u64>> {
         let trava = self.travar_dados()?;
-        let (tabela, pendente) = garantir_tabela_da_replica(&trava, database, no)?;
+        let (tabela, pendente) =
+            garantir_tabela_da_replica(&trava, database, no, &self.ledger_marcado_recebido)?;
         let Some(mut tabela) = tabela else {
             drop(trava);
             pendente.levar_ao_disco()?;
@@ -4833,8 +4865,27 @@ impl Servidor {
     /// no ritmo do pulso; separado para a prova do pedido 294 contar sem
     /// subir a thread.
     fn contar_posicao_do_cluster(&self, estado: &crate::cluster::EstadoCluster) {
-        let (p, incompleta, por_tabela) = self.posicao_do_diario(&estado.config.databases);
+        // Pedido 300: o master conta tudo o que tem, porque e o que ele serve;
+        // a replica conta so o que o master anunciou. A replica que nunca
+        // ouviu um master conta tudo E diz que pode estar errada -- nao saber
+        // nao vira «sei que e tudo».
+        let anunciadas = estado.anunciadas();
+        let escopo = match (estado.papel(), &anunciadas) {
+            (crate::cluster::PapelVivo::Master, _) => EscopoDaPosicao::Tudo,
+            (_, Some(a)) => EscopoDaPosicao::DoMaster(a),
+            (_, None) => EscopoDaPosicao::Desconhecido,
+        };
+        let (p, incompleta, por_tabela) =
+            self.posicao_do_diario_em(&estado.config.databases, escopo);
         estado.definir_posicao(p, incompleta, por_tabela);
+    }
+
+    /// A posicao contando tudo -- o master, e quem nao esta em cluster. So os
+    /// testes a chamam sem escopo; o arbitro passa sempre pelo
+    /// [`Self::contar_posicao_do_cluster`].
+    #[cfg(test)]
+    fn posicao_do_diario(&self, so_estes: &[String]) -> (u64, bool, Vec<(String, u64)>) {
+        self.posicao_do_diario_em(so_estes, EscopoDaPosicao::Tudo)
     }
 
     /// A soma dos eventos das tabelas replicadas -- a posicao que o pulso
@@ -4846,7 +4897,11 @@ impl Servidor {
     /// uma ordem total que dois nos podem enxergar diferente. Sair da mesma
     /// passada e o que impede a soma publicada e o vetor publicado de
     /// contarem coisas diferentes.
-    fn posicao_do_diario(&self, so_estes: &[String]) -> (u64, bool, Vec<(String, u64)>) {
+    fn posicao_do_diario_em(
+        &self,
+        so_estes: &[String],
+        escopo: EscopoDaPosicao<'_>,
+    ) -> (u64, bool, Vec<(String, u64)>) {
         let Ok(trava) = self.travar_dados() else {
             // Sem a trava nao ha o que somar: posicao zero, e incompleta,
             // porque nao se contou nada do que se devia contar.
@@ -4858,9 +4913,29 @@ impl Servidor {
             so_estes.to_vec()
         };
         let mut total = 0u64;
-        let mut incompleta = false;
+        let mut incompleta = matches!(escopo, EscopoDaPosicao::Desconhecido);
         let mut por_tabela = Vec::new();
         for b in bases {
+            // O alcance deste database: `None` = toda tabela dele.
+            let alcance = match escopo {
+                EscopoDaPosicao::Tudo | EscopoDaPosicao::Desconhecido => None,
+                EscopoDaPosicao::DoMaster(a) => {
+                    if !a.databases.contains(&b) {
+                        // O master nao anuncia este database: ele so mora
+                        // aqui, e nao e posicao de nada que o cluster replica.
+                        continue;
+                    }
+                    match a.tabelas.get(&b) {
+                        Some(ts) => Some(ts),
+                        None => {
+                            // Anunciado e ainda nao perguntado: conta o que ha
+                            // e diz que nao sabe se tudo e replicado.
+                            incompleta = true;
+                            None
+                        }
+                    }
+                }
+            };
             let Ok(db) = trava.abrir_database(&b) else {
                 incompleta = true;
                 continue;
@@ -4870,6 +4945,9 @@ impl Servidor {
                 continue;
             };
             for t in tabelas {
+                if alcance.is_some_and(|ts| !ts.contains(&t)) {
+                    continue;
+                }
                 match db.abrir_qualificada(&t) {
                     Ok(mut tab) => match tab.eventos() {
                         Ok(n) => {
@@ -5710,6 +5788,14 @@ impl Servidor {
         origem: &crate::config::Origem,
         meu_hash: u16,
     ) -> Result<Option<bidirecional::Identidade>> {
+        // Pedido 330: o grosso do diario local entra no mapa ANTES, sob a
+        // trava de leitura e em fatias; a exclusiva de baixo so ve a cauda.
+        self.pre_absorver_sob_leitura(
+            database,
+            &no.nome,
+            &format!("{database}/{}", no.nome),
+            meu_hash,
+        )?;
         // Pedido 589: o que nasceu sob a trava vai ao disco depois de ela
         // soltar -- a trava e da funcao de dentro, e solta ao ela voltar.
         let (saida, pendente) = self.abrir_para_bidi_sob_a_trava(database, no, origem, meu_hash)?;
@@ -5727,7 +5813,8 @@ impl Servidor {
         meu_hash: u16,
     ) -> Result<(Option<bidirecional::Identidade>, PorSincronizar)> {
         let trava = self.travar_dados()?;
-        let (tabela, pendente) = garantir_tabela_da_replica(&trava, database, no)?;
+        let (tabela, pendente) =
+            garantir_tabela_da_replica(&trava, database, no, &self.ledger_marcado_recebido)?;
         let Some(mut tabela) = tabela else {
             return Ok((None, pendente));
         };
@@ -5752,7 +5839,7 @@ impl Servidor {
         });
         // O diario local que ainda nao passou pelo mapa de toques -- inclui a
         // escrita local desde a ultima rodada, que e quem disputa o conflito.
-        self.absorver_diario_local(&mut tabela, &chave_tab, &pos_chave, meu_hash)?;
+        self.absorver_diario_local(&mut tabela, &chave_tab, &pos_chave, meu_hash, None, true)?;
         Ok((Some((indice, pos_chave)), pendente))
     }
 
@@ -5957,16 +6044,36 @@ impl Servidor {
     /// (gravado antes de o modo multi ligar) nao entra no confronto, e isso
     /// esta documentado: o bidirecional comeca a valer do momento em que as
     /// imagens comecam.
-    fn absorver_diario_local(
+    ///
+    /// # Um corpo so, para as duas fichas (pedido 330)
+    ///
+    /// Recebe a tabela aberta por qualquer uma das duas: a COMPARTILHADA, nas
+    /// fatias de [`Self::pre_absorver_sob_leitura`], e a EXCLUSIVA, na cauda
+    /// que sobra para [`Self::abrir_para_bidi_sob_a_trava`]. `prazo` corta a
+    /// fatia depois do lote em que ele vence -- um lote inteiro sempre entra,
+    /// senao uma fatia curta demais nunca andaria. `sob_a_exclusiva` so conta
+    /// onde a absorcao aconteceu, para a prova e para o painel.
+    ///
+    /// Devolve quantos eventos do diario ainda faltam absorver.
+    fn absorver_diario_local<T: DiarioLegivel>(
         &self,
-        tabela: &mut Table,
+        tabela: &mut T,
         chave_tab: &str,
         pos_chave: &[usize],
         meu_hash: u16,
-    ) -> Result<()> {
+        prazo: Option<Instant>,
+        sob_a_exclusiva: bool,
+    ) -> Result<u64> {
         let total = tabela.eventos()?;
         let mut guarda = self.toques_bidi.tomar("toques_bidi")?;
         let mapa = guarda.entry(chave_tab.to_string()).or_default();
+        // A marca da rodada anterior: sem ela, a tabela recem-aberta caminha
+        // do comeco do volume ate `vistos` para ler um evento so -- 507-517
+        // ms por rodada num diario de 1 M, com a trava na mao (ver
+        // `MapaDeToques::marca`).
+        if mapa.vistos < total {
+            tabela.definir_marca_do_diario(mapa.marca);
+        }
         // Em LOTES, com os mesmos dois tetos do `replicar`, e nao o diario
         // inteiro de uma vez: a primeira rodada do bidirecional numa tabela
         // que engordou carregava todo o diario local com imagens para a RAM
@@ -5975,6 +6082,9 @@ impl Servidor {
         // entao a marca do diario faz cada lote continuar de onde o anterior
         // parou, sem recomecar a varredura.
         while mapa.vistos < total {
+            if prazo.is_some_and(|p| Instant::now() >= p) {
+                break;
+            }
             let lote = tabela.diario_com_imagem_ate(
                 mapa.vistos,
                 LOTE_PADRAO_DE_REPLICACAO,
@@ -5982,6 +6092,9 @@ impl Servidor {
             )?;
             if lote.is_empty() {
                 break;
+            }
+            if sob_a_exclusiva {
+                mapa.absorvidos_sob_a_exclusiva += lote.len() as u64;
             }
             for (ev, imagem) in lote {
                 mapa.vistos += 1;
@@ -6011,8 +6124,82 @@ impl Servidor {
                 }
                 mapa.toques.insert(chave, toque);
             }
+            // Guardada a cada lote, e nao no fim: um erro no meio da rodada
+            // deixa `vistos` andado, e a marca tem de andar junto -- ela so
+            // serve para posicao DEPOIS dela, e a de um lote atras ainda vale.
+            mapa.marca = tabela.marca_do_diario();
         }
-        Ok(())
+        Ok(total.saturating_sub(mapa.vistos))
+    }
+
+    /// A primeira rodada depois do arranque, fora da trava EXCLUSIVA -- pedido
+    /// 330.
+    ///
+    /// # O que ela compra
+    ///
+    /// O mapa de toques e estado de processo: processo novo, `vistos = 0`, e o
+    /// diario local inteiro passa pelo mapa na primeira rodada de cada tabela.
+    /// Medido (`--example custo-da-absorcao-do-bidi`, release, 01/10/2026):
+    /// **2,26-2,63 us por evento**, 2,3-2,5 s num diario de 1 M -- e isso
+    /// acontecia sob `travar_dados()`, com o servidor parado para escrita E
+    /// leitura. «Ao subir» (a promessa do pedido 325) e justamente o instante
+    /// em que esse custo e pago por inteiro.
+    ///
+    /// Aqui a absorcao anda sob a trava de LEITURA, em fatias de
+    /// [`FATIA_DA_PRE_ABSORCAO`]: leitor nao espera, e escritor espera no
+    /// maximo uma fatia (mais o lote em que ela vence). Termina quando falta
+    /// menos de um lote -- a cauda vai sob a exclusiva, no mesmo corpo, junto
+    /// do que alguem escreveu entre as fatias -- ou quando uma fatia nao
+    /// encurtou a falta (quem escreve anda mais rapido que quem absorve), e
+    /// ai a exclusiva leva o resto, como antes.
+    ///
+    /// Nada aqui decide o confronto: o mapa so recebe o que o diario daqui ja
+    /// gravou, e a ordem e a do diario. A exclusiva continua sendo a unica que
+    /// aplica evento remoto, e ela absorve a cauda ANTES de aplicar.
+    fn pre_absorver_sob_leitura(
+        &self,
+        database: &str,
+        nome: &str,
+        chave_tab: &str,
+        meu_hash: u16,
+    ) -> Result<()> {
+        let mut falta_antes = u64::MAX;
+        // O teto de voltas e o proprio progresso: cada volta encurta a falta
+        // ou o laco sai. Nenhuma volta repete sem andar.
+        loop {
+            let trava = self.travar_dados_para_ler()?;
+            // `abrir_diario_para_ler`, e nao `abrir_para_ler`: a tabela escrita
+            // desde o ultimo fecho da janela tem o cabecalho do `.log` atras
+            // do arquivo, e a abertura de leitura comum recusa pedindo cura --
+            // medido em 01/10/2026, era a recusa de toda fatia sob carga, e a
+            // absorcao inteira voltava para a exclusiva. A do diario conta com
+            // a cauda na memoria, sem gravar.
+            //
+            // Tabela que ainda nao existe, que precisaria escrever para abrir
+            // por outro motivo, ou sem chave: a exclusiva cria, cura ou recusa
+            // com o motivo.
+            let Ok(Aberta::Pronta(mut t)) = trava.abrir_diario_para_ler(database, nome) else {
+                return Ok(());
+            };
+            let Some((_, pos_chave)) = bidirecional::chave_unica(t.esquema_do_diario()) else {
+                return Ok(());
+            };
+            let prazo = Instant::now() + FATIA_DA_PRE_ABSORCAO;
+            let falta = self.absorver_diario_local(
+                &mut t,
+                chave_tab,
+                &pos_chave,
+                meu_hash,
+                Some(prazo),
+                false,
+            )?;
+            drop(t);
+            drop(trava);
+            if falta < LOTE_PADRAO_DE_REPLICACAO || falta >= falta_antes {
+                return Ok(());
+            }
+            falta_antes = falta;
+        }
     }
 
     /// Aplica UM evento remoto pela chave, com "mais recente vence".
@@ -6317,8 +6504,8 @@ impl Servidor {
     /// local: as duas pontas fazem a mesma pergunta, e duas leituras do rabo
     /// divergiriam no dia em que uma aprendesse um caso.
     #[allow(clippy::type_complexity)]
-    fn identidades_do_evento(
-        tabela: &mut Table,
+    fn identidades_do_evento<T: DiarioLegivel>(
+        tabela: &mut T,
         operacao: Operacao,
         imagem: &[u8],
         pos_chave: &[usize],
@@ -29563,7 +29750,44 @@ impl Servidor {
             ("colisoes_de_sequencia", colisoes),
             ("carimbos_do_futuro", carimbos_do_futuro),
             ("recusas_por_unicidade", recusas_por_unicidade),
+            // Pedido 330: o mapa de toques nao tem teto e vive o processo
+            // inteiro -- uma entrada por chave DISTINTA do diario local, 88-114
+            // bytes cada (medido pelo J, 01/10/2026). Sem teto, o minimo e o
+            // numero nao ser calado: chaves por tabela, e o que ja passou com
+            // a trava exclusiva na mao.
+            ("toques_no_mapa", self.toques_no_mapa()),
+            (
+                "ledger_marcado_recebido",
+                Json::de_u64(self.ledger_marcado_recebido.load(Ordering::Relaxed)),
+            ),
         ]))
+    }
+
+    /// `{"db/tabela": {"chaves": N, "vistos": N, "sob_a_exclusiva": N}}` de
+    /// toda tabela com mapa de toques -- pedido 330. Trava envenenada vira
+    /// objeto vazio, como os contadores irmaos acima.
+    fn toques_no_mapa(&self) -> Json {
+        let Ok(g) = self.toques_bidi.lock() else {
+            return Json::Objeto(vec![]);
+        };
+        let mut pares: Vec<(String, Json)> = g
+            .iter()
+            .map(|(k, m)| {
+                (
+                    k.clone(),
+                    Json::objeto(vec![
+                        ("chaves", Json::de_u64(m.toques.len() as u64)),
+                        ("vistos", Json::de_u64(m.vistos)),
+                        (
+                            "sob_a_exclusiva",
+                            Json::de_u64(m.absorvidos_sob_a_exclusiva),
+                        ),
+                    ]),
+                )
+            })
+            .collect();
+        pares.sort_by(|a, b| a.0.cmp(&b.0));
+        Json::Objeto(pares)
     }
 
     /// A origem esta com o laco estacionado por credencial recusada?
@@ -30666,6 +30890,7 @@ fn garantir_tabela_da_replica(
     dados: &Instancia,
     database: &str,
     no: &crate::replica::NoSource,
+    ledger_marcado_recebido: &AtomicU64,
 ) -> Result<(Option<Table>, PorSincronizar)> {
     let (db, mut pendente) = dados.garantir_database_adiando_o_fsync(database)?;
     let tabela = match db.abrir_qualificada(&no.nome) {
@@ -30674,6 +30899,25 @@ fn garantir_tabela_da_replica(
             Some(e) => {
                 let schema = no.nome.split_once('.').map(|(s, _)| s.to_string());
                 eprintln!("replicacao: criando {database}.{} aqui", no.nome);
+                // Pedido 424: o esquema que chega nao passou pela declaracao,
+                // e sim por `Schema::desserializar`, que nao julga -- entao a
+                // cadeia com coluna marcada nasce aqui igual nasceu la. Nao
+                // se recusa (pararia a replicacao de uma cadeia que nasceu
+                // legitima, e a petrea ganha da regua 7x2); grita e conta,
+                // pelo MESMO motor do censo, para os dois nunca divergirem.
+                let (e_ledger, marcadas) = phxsql_store::ledger::recensear(e);
+                if e_ledger && !marcadas.is_empty() {
+                    ledger_marcado_recebido.fetch_add(1, Ordering::Relaxed);
+                    eprintln!(
+                        "LEDGER MARCADO RECEBIDO em {database}.{}: a cadeia chega do \
+                         source com coluna(s) marcada(s) como dado pessoal ({}) -- o \
+                         hash sem sal do conteudo em claro e oraculo de confirmacao. \
+                         A replica cria, como o source tem; rode o censo-do-ledger \
+                         em todo no (pedido 424)",
+                        no.nome,
+                        marcadas.join(", ")
+                    );
+                }
                 let (t, criada) = db.criar_tabela_adiando_o_fsync(schema.as_deref(), e.clone())?;
                 pendente.juntar(criada);
                 t
@@ -31392,6 +31636,25 @@ fn origem_da_sonda(p: &Json, host: String) -> crate::config::Origem {
     }
 }
 
+/// O que a posicao do diario soma -- pedido 300.
+#[derive(Clone, Copy)]
+enum EscopoDaPosicao<'a> {
+    /// Toda tabela dos databases pedidos: o master (o que ele tem e o que ele
+    /// serve) e quem nao esta em cluster.
+    Tudo,
+    /// So o que o master anunciou: a replica que ja o ouviu.
+    DoMaster(&'a crate::cluster::Anunciadas),
+    /// A replica que nunca ouviu um master: conta tudo e sai INCOMPLETA,
+    /// porque o numero pode carregar tabela que so mora aqui.
+    Desconhecido,
+}
+
+/// O prefixo do nome da origem do cluster (`cluster:<id>`). Um so, porque e
+/// por ele que a rodada da replica sabe que o que o master anuncia e o
+/// conjunto replicado do cluster (pedido 300) -- escrever o texto em dois
+/// lugares deixaria um deles para tras no dia de trocar.
+const PREFIXO_DA_ORIGEM_DO_CLUSTER: &str = "cluster:";
+
 /// A `Origem` com que a replicacao do cluster puxa do master CORRENTE.
 ///
 /// Fora do laco, e pura, para o teste conferir o que a leitura nao pega: que a
@@ -31407,7 +31670,7 @@ fn origem_do_master(
     no: &crate::config::NoCluster,
 ) -> crate::config::Origem {
     crate::config::Origem {
-        nome: format!("cluster:{}", no.id),
+        nome: format!("{PREFIXO_DA_ORIGEM_DO_CLUSTER}{}", no.id),
         host: no.endereco.clone(),
         porta: no.porta,
         token: c.token.clone(),
@@ -43431,6 +43694,103 @@ mod testes_config_gravar {
         assert_eq!(pos, vec![10, 10]);
     }
 
+    /// Duas tabelas com cinco eventos cada em `b`, e um database `rascunho`
+    /// com tres -- o que so mora neste no.
+    fn com_tabela_local(nome: &str) -> (Arc<Servidor>, DirTemp) {
+        let (s, _caminho, guarda) = servidor_em_cluster(nome, Cadastro::default());
+        let sessao = Sessao::default();
+        for (db, t, n) in [("b", "uma", 5), ("b", "outra", 5), ("rascunho", "notas", 3)] {
+            let _ = s.executar(
+                "criar_database",
+                &pedido(&format!(r#"{{"database":"{db}"}}"#)),
+                &sessao,
+            );
+            s.executar(
+                "criar_tabela",
+                &pedido(&format!(
+                    r#"{{"database":"{db}","tabela":"{t}",
+                        "colunas":[{{"nome":"id","tipo":"Int4","obrigatoria":true}}],
+                        "indices":[{{"nome":"porId","colunas":["id"],"unico":true,"primario":true}}]}}"#
+                )),
+                &sessao,
+            )
+            .unwrap();
+            for i in 1..=n {
+                s.executar(
+                    "inserir",
+                    &pedido(&format!(
+                        r#"{{"database":"{db}","tabela":"{t}","linha":{{"id":{i}}}}}"#
+                    )),
+                    &sessao,
+                )
+                .unwrap();
+            }
+        }
+        (s, guarda)
+    }
+
+    /// **Pedido 300 (3): a replica soma SO o que o master anunciou.**
+    ///
+    /// O master anunciou o database `b` com a tabela `uma`. Este no, replica,
+    /// tem ainda `b/outra` (que o master nao serve) e o database `rascunho`
+    /// inteiro (que so mora aqui): 13 eventos no disco, 5 replicados. A
+    /// posicao tem de ser 5, completa, e o vetor so com `b/uma`.
+    ///
+    /// O vermelho: com a soma de antes (`db.todas_as_tabelas()` de todo
+    /// database, sem filtro), a posicao sai 13 e este no ganharia a eleicao de
+    /// quem tem os 5 que importam e mais nada. Medido em 01/10/2026 com o
+    /// filtro tirado: `left: 13, right: 5`.
+    #[test]
+    fn a_replica_soma_so_o_que_o_master_anunciou() {
+        let (s, _guarda) = com_tabela_local("anunciadas");
+        let estado = s.cluster.clone().expect("cluster");
+        estado.rebaixar(1).unwrap();
+        estado.anunciar_databases(&["b".to_string()]);
+        estado.anunciar_tabelas("b", vec!["uma".to_string()]);
+        s.contar_posicao_do_cluster(&estado);
+        assert_eq!(estado.posicao(), 5, "a tabela local entrou na soma");
+        assert!(!estado.posicao_incompleta());
+        assert_eq!(estado.por_tabela(), vec![("b/uma".to_string(), 5)]);
+
+        // E o anuncio e DURAVEL: o no que reinicia sabe o que o master
+        // anunciava, e o arranque a frio nao volta a contar o rascunho.
+        let base = s.config.base.clone();
+        let de_volta = crate::cluster::EstadoCluster::novo(
+            estado.config.clone(),
+            &base,
+            crate::config::Papel::Replica,
+        );
+        assert_eq!(de_volta.anunciadas(), estado.anunciadas());
+    }
+
+    /// Os dois irmaos que travam o comportamento: o MASTER continua somando
+    /// tudo o que tem (13 -- e o que ele serve), e a replica que NUNCA ouviu
+    /// um master soma tudo e sai INCOMPLETA, em vez de se declarar completa
+    /// com um numero que pode carregar tabela local.
+    #[test]
+    fn o_master_soma_tudo_e_a_replica_sem_anuncio_diz_que_nao_sabe() {
+        let (s, _guarda) = com_tabela_local("sem-anuncio");
+        let estado = s.cluster.clone().expect("cluster");
+        s.contar_posicao_do_cluster(&estado);
+        assert_eq!(estado.posicao(), 13, "o master soma o que ele serve");
+        assert!(!estado.posicao_incompleta());
+
+        estado.rebaixar(1).unwrap();
+        s.contar_posicao_do_cluster(&estado);
+        assert_eq!(estado.posicao(), 13);
+        assert!(
+            estado.posicao_incompleta(),
+            "a replica sem anuncio nao sabe o que e replicado, e tem de dizer"
+        );
+
+        // Anunciado o database e ainda nao perguntadas as tabelas: conta o
+        // database inteiro, deixa o rascunho de fora, e continua incompleta.
+        estado.anunciar_databases(&["b".to_string()]);
+        s.contar_posicao_do_cluster(&estado);
+        assert_eq!(estado.posicao(), 10);
+        assert!(estado.posicao_incompleta());
+    }
+
     /// **O comportamento VELHO**: o pulso de um no anterior ao vetor nao traz
     /// `por_tabela`, e o painel diz «nao medido» (nulo) em vez de acusar esse
     /// no de estar atras em TODA tabela.
@@ -46252,7 +46612,7 @@ mod testes_janela_e_cadeia {
         }
     }
 
-    /// A catraca do ALCANCE da ficha compartilhada: **TRES** chamadas a tomam.
+    /// A catraca do ALCANCE da ficha compartilhada: **QUATRO** chamadas a tomam.
     ///
     /// A decisao do dono era «so o `varrer`», e a segunda leva entrou MEDIDA
     /// (15/09/2026): o `coletar_rowids`, o substrato do `UPDATE`/`DELETE` por
@@ -46269,6 +46629,19 @@ mod testes_janela_e_cadeia {
     /// destino, que `backup::executar`/`executar_zip` recusam dentro da raiz
     /// antes do primeiro byte. Quem a acompanha e o portao do retrato, que
     /// tira os escritores da fila (`crate::retrato`).
+    ///
+    /// A quarta entrou MEDIDA em 01/10/2026 (pedido 330): a pre-absorcao do
+    /// diario local no mapa de toques do bidirecional,
+    /// `pre_absorver_sob_leitura`. A medicao que a admitiu e de TIPO, como a
+    /// do `coletar_rowids`: o corpo e `absorver_diario_local<T:
+    /// DiarioLegivel>`, e `DiarioLegivel` **nao tem metodo de escrita** -- le
+    /// eventos do `.log` e decodifica a imagem, e a marca do diario e dica em
+    /// memoria. As tres escritas escondidas que esta catraca procura nao
+    /// alcancam ali: o diario nao registra acesso na trilha (a exclusiva de
+    /// antes tambem nao registrava), o espelho e a `.trash` so nascem pela
+    /// abertura exclusiva, e a abertura compartilhada recusa quando abrir
+    /// escreveria. O que ela compra esta medido: 2,26-2,63 us por evento sob a
+    /// exclusiva em release, 2,3-2,5 s de servidor parado num diario de 1 M.
     ///
     /// Sem esta catraca, a proxima leva entra por distracao: `op_ler`,
     /// `op_buscar` e `op_sistabelas` sao todas leituras e todas parecem obvias
@@ -46289,14 +46662,17 @@ mod testes_janela_e_cadeia {
             .filter(|l| l.contains(&agulha))
             .count();
         assert_eq!(
-            usos, 3,
+            usos, 4,
             "ha {usos} chamadas tomando a ficha compartilhada, e as medidas \
-             sao TRES -- o `varrer` e o `coletar_rowids`, os dois provados \
-             so'-leitura pelo tipo `Legivel`, e a copia do backup \
+             sao QUATRO -- o `varrer` e o `coletar_rowids`, os dois provados \
+             so'-leitura pelo tipo `Legivel`, a copia do backup \
              (`copiar_o_retrato`, pedido 513), que nao abre tabela e escreve \
-             so fora da raiz. Uma quarta entra MEDIDA: cada operacao nova \
-             precisa da propria varredura de escrita escondida (a trilha de \
-             dado pessoal, o espelho, a criacao do .trash) achada antes"
+             so fora da raiz, e a pre-absorcao do bidirecional \
+             (`pre_absorver_sob_leitura`, pedido 330), provada so'-leitura \
+             pelo tipo `DiarioLegivel`. Uma quinta entra MEDIDA: cada \
+             operacao nova precisa da propria varredura de escrita escondida \
+             (a trilha de dado pessoal, o espelho, a criacao do .trash) \
+             achada antes"
         );
     }
 
@@ -70092,5 +70468,177 @@ mod testes_escopo_do_begin_607 {
         .unwrap();
         assert!(r.inteiro_ou("expira_em_s", -1) <= 2, "{}", r.escrever());
         pede(&s, &mut ana, r#""op":"rollback""#).unwrap();
+    }
+}
+
+/// Pedido 330: a primeira rodada do bidirecional depois do arranque absorvia
+/// o diario local INTEIRO com a trava exclusiva na mao; e cada rodada seguinte
+/// com um evento local novo caminhava o volume desde o comeco para le-lo.
+#[cfg(test)]
+mod testes_da_absorcao_do_bidi {
+    use super::*;
+
+    fn pedido(txt: &str) -> Json {
+        Json::analisar(txt).unwrap()
+    }
+
+    /// Um servidor MULTI com `b.c` e `n` linhas locais -- cada uma um evento
+    /// do diario com imagem, que e o que o mapa de toques absorve.
+    fn com_diario(nome: &str, n: i64) -> (Arc<Servidor>, DirTemp) {
+        let dir = DirTemp::novo(&format!("absorcao-{nome}"));
+        let mut c = Config {
+            base: dir.to_path_buf(),
+            log_acessos: dir.join("acessos.log"),
+            blacklist: dir.join("blacklist.json"),
+            dblink: dir.join("dblink.json"),
+            token: "t".into(),
+            ..Config::default()
+        };
+        c.replicacao.papel = crate::config::Papel::Multi;
+        c.replicacao.id_servidor = "no-da-absorcao".into();
+        c.replicacao.imagem_da_linha = true;
+        let s = Servidor::novo(c).unwrap();
+        let dono = Sessao::default();
+        s.executar("criar_database", &pedido(r#"{"database":"b"}"#), &dono)
+            .unwrap();
+        s.executar(
+            "criar_tabela",
+            &pedido(
+                r#"{"database":"b","tabela":"c",
+                    "colunas":[{"nome":"id","tipo":"Int8","obrigatoria":true}],
+                    "indices":[{"nome":"porId","colunas":["id"],"unico":true,"primario":true}]}"#,
+            ),
+            &dono,
+        )
+        .unwrap();
+        for i in 1..=n {
+            s.executar(
+                "inserir",
+                &pedido(&format!(
+                    r#"{{"database":"b","tabela":"c","linha":{{"id":{i}}}}}"#
+                )),
+                &dono,
+            )
+            .unwrap();
+        }
+        (s, dir)
+    }
+
+    fn rodada(s: &Servidor) {
+        let no = crate::replica::NoSource {
+            nome: "c".into(),
+            eventos: 0,
+            esquema: None,
+        };
+        let origem = crate::config::Origem {
+            nome: "outro".into(),
+            host: "127.0.0.1".into(),
+            porta: 1,
+            token: String::new(),
+            databases: vec!["b".into()],
+            reconectar_em: 1,
+            usuario: String::new(),
+            senha_hash: String::new(),
+            senha: String::new(),
+            cada_minutos: 0,
+            hora: String::new(),
+            cifra: false,
+            chave_do_fio: String::new(),
+        };
+        let meu_hash = s.config.replicacao.numero();
+        assert!(s
+            .abrir_para_bidi("b", &no, &origem, meu_hash)
+            .unwrap()
+            .is_some());
+    }
+
+    /// (vistos, chaves, sob_a_exclusiva, marca)
+    fn mapa(s: &Servidor) -> (u64, usize, u64, Option<phxsql_store::log::MarcaDoDiario>) {
+        let g = s.toques_bidi.lock().unwrap();
+        let m = g.get("b/c").expect("mapa de b/c");
+        (
+            m.vistos,
+            m.toques.len(),
+            m.absorvidos_sob_a_exclusiva,
+            m.marca,
+        )
+    }
+
+    /// **Prova real, nos dois sentidos.** 3.000 eventos locais, processo
+    /// recem-nascido (mapa vazio): a primeira rodada absorve os 3.000, e menos
+    /// de UM lote passa com a trava exclusiva na mao -- o grosso foi sob a
+    /// compartilhada, em fatias.
+    ///
+    /// O vermelho: sem a chamada a `pre_absorver_sob_leitura` em
+    /// `abrir_para_bidi`, os 3.000 passam pela exclusiva e a segunda asserção
+    /// cai. Medido em 01/10/2026.
+    #[test]
+    fn a_primeira_rodada_absorve_o_grosso_fora_da_exclusiva() {
+        let (s, _d) = com_diario("primeira", 3_000);
+        rodada(&s);
+        let (vistos, chaves, sob, _) = mapa(&s);
+        assert_eq!(
+            (vistos, chaves),
+            (3_000, 3_000),
+            "o diario inteiro entrou no mapa"
+        );
+        assert!(
+            sob < LOTE_PADRAO_DE_REPLICACAO,
+            "{sob} evento(s) passaram pela trava EXCLUSIVA; so a cauda (< {}) devia",
+            LOTE_PADRAO_DE_REPLICACAO
+        );
+        // E o numero sai pelo `replicacao_estado`, em vez de calado.
+        let e = s
+            .executar("replicacao_estado", &pedido("{}"), &Sessao::default())
+            .unwrap();
+        let t = e.campo("toques_no_mapa").and_then(|m| m.campo("b/c"));
+        assert_eq!(
+            t.map(|t| t.inteiro_ou("chaves", -1)),
+            Some(3_000),
+            "{}",
+            e.escrever()
+        );
+    }
+
+    /// **A rodada SEGUINTE, o irmao que a medicao achou.** O servidor reabre a
+    /// tabela a cada rodada, e a reaberta nao tem marca: ler o evento novo
+    /// caminhava o volume desde o comeco -- 507-517 ms num diario de 1 M
+    /// (`--example custo-da-absorcao-do-bidi`). A marca agora mora no mapa,
+    /// guardada a cada lote, e a rodada seguinte comeca dela.
+    ///
+    /// O vermelho: sem `mapa.marca = tabela.marca_do_diario()`, a marca fica
+    /// `None` e a primeira asserção cai.
+    #[test]
+    fn a_rodada_seguinte_comeca_da_marca_guardada() {
+        let (s, _d) = com_diario("seguinte", 1_200);
+        rodada(&s);
+        let (vistos, _, _, marca) = mapa(&s);
+        let marca = marca.expect("a marca do diario nao ficou guardada no mapa");
+        assert!(
+            marca.evento <= vistos && vistos - marca.evento <= LOTE_PADRAO_DE_REPLICACAO,
+            "a marca ({}) tem de estar a menos de um lote de vistos ({vistos})",
+            marca.evento
+        );
+        s.executar(
+            "inserir",
+            &pedido(r#"{"database":"b","tabela":"c","linha":{"id":99999}}"#),
+            &Sessao::default(),
+        )
+        .unwrap();
+        rodada(&s);
+        let (vistos, chaves, _, _) = mapa(&s);
+        assert_eq!((vistos, chaves), (1_201, 1_201), "o evento novo nao entrou");
+    }
+
+    /// **O comportamento VELHO**: sem nada novo no diario, a rodada nao le
+    /// nada e o mapa fica como estava -- por nenhuma das duas fichas.
+    #[test]
+    fn sem_evento_novo_a_rodada_nao_absorve_nada() {
+        let (s, _d) = com_diario("parado", 10);
+        rodada(&s);
+        let antes = mapa(&s);
+        rodada(&s);
+        assert_eq!(mapa(&s), antes);
+        assert_eq!(antes.0, 10);
     }
 }

@@ -704,6 +704,18 @@ marca como foi gravada, abre, lê e continua gravando bloco novo. Ali o oráculo
 já queimou, e tirar a tabela do ar não o apaga — só tiraria do ar uma tabela que
 está perfeita. Guarda nova entra pedida, não imposta.
 
+**E ela acompanha a réplica** (pedido 424). A réplica não declara: remonta o
+esquema do source por `Schema::desserializar`, o mesmo caminho de leitura, e a
+cadeia marcada nasce igual em todo nó que a replica — a população proibida não
+fica fechada no nó que a criou. Recusar lá pararia a replicação de uma cadeia
+que nasceu legítima, e a pétrea «guarda nova entra pedida» ganha da régua dos
+motores (PG 4 + MariaDB 3 = 7 a favor de «a réplica julga», contra MySQL 2).
+Então a réplica **cria, grita e conta**: linha no log e o contador
+`ledger_marcado_recebido` no `replicacao_estado`. E o censo
+(`phxsql_store::ledger::censo`, `cargo run --example censo-do-ledger -p
+phxsql-store -- <base>`) roda em **todo nó**, lendo o byte de marca pelo
+`Schema`, nunca por texto.
+
 ### A coluna de sistema `softdeleted`
 
 Toda tabela criada a partir da v4 ganha, **no fim da lista**, uma coluna `Bool`
@@ -3870,6 +3882,7 @@ decide o que o `.phz` custaria:
 | `replicacao-posicoes.json` | `bidirecional::ler_posicoes` | posições do zero: custa releitura, não dado. Desde o pedido 535 grava pela troca durável (`gravar_privado`) e **só depois** do `fsync` do dado que ela conta |
 | `replicacao-numeros.json` | `bidirecional::ler_numeros` | desde o pedido 329 (01/10/2026), o dono de cada número de origem já visto (`{"7":"caixa-07"}`); ilegível = registro vazio, e a conferência de colisão recomeça do que se vê dali em diante — sem perder dado, mas sem lembrar quem já teve cada número. Grava pela troca durável, só quando aparece um par novo |
 | `cluster.estado.json` | `EstadoCluster::novo` | desde o pedido 534, **réplica sem escrita**, dizendo por quê — só o arquivo **ausente** cai no papel do `config.json` (primeiro arranque). Antes, o ilegível também caía, e um master destronado voltava **mandando**. Grava pela troca durável, e o `promover` grava **antes** de liberar a escrita |
+| `cluster.anunciadas.json` | `cluster::Anunciadas::ler` | desde o pedido 300 (01/10/2026), o que o master anunciou na última rodada (`{"databases":[…],"tabelas":{"db":[…]}}`) — é o conjunto que a posição de uma réplica soma. Ausente ou ilegível = **não sei**: a posição conta tudo e sai **incompleta**, e a eleição prefere quem está completo (pedido 211); nunca vira «sei que é tudo». Grava pela troca durável, só quando o anúncio muda |
 
 Os de catálogo e dado (`gatilhos.json`, `procedimentos.json`, `visoes.json`,
 `_database.json`, `.pag`, `backup.json`) não são configuração do servidor.

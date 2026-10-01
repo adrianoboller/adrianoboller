@@ -254,6 +254,103 @@ impl Legivel for TabelaLeitura {
     }
 }
 
+/// O que a ABSORCAO do diario local precisa de uma tabela -- e so isso
+/// (pedido 330).
+///
+/// # Por que um segundo trait, e nao metodos a mais no [`Legivel`]
+///
+/// O [`Legivel`] e o contrato da VARREDURA de linhas, e quem o implementa
+/// promete servir a grade. Este e o do diario: ler eventos com a imagem e
+/// decodificar a imagem pela tabela. O servidor absorve o diario local no
+/// mapa de toques do bidirecional pelas DUAS fichas -- a maior parte sob a
+/// compartilhada, em fatias, e so a cauda sob a exclusiva -- e o corpo da
+/// absorcao tem de ser UM so: duas copias divergiriam no dia em que a lapide
+/// da troca de chave mudasse de um lado e nao do outro.
+///
+/// E carrega a mesma garantia do [`Legivel`]: **nenhum metodo aqui escreve**.
+/// A marca do diario e uma dica em memoria, nao o arquivo.
+pub trait DiarioLegivel {
+    fn esquema_do_diario(&self) -> &Schema;
+    fn eventos(&mut self) -> Result<u64>;
+    fn diario_com_imagem_ate(
+        &mut self,
+        pular: u64,
+        limite: u64,
+        teto_bytes: usize,
+    ) -> Result<Vec<(crate::log::Evento, Vec<u8>)>>;
+    fn marca_do_diario(&self) -> Option<crate::log::MarcaDoDiario>;
+    fn definir_marca_do_diario(&mut self, marca: Option<crate::log::MarcaDoDiario>);
+    fn valores_da_imagem(&mut self, imagem: &[u8]) -> Result<Vec<phxsql_core::value::Value>>;
+    fn valores_antes_da_imagem(
+        &mut self,
+        imagem: &[u8],
+    ) -> Result<Option<Vec<phxsql_core::value::Value>>>;
+}
+
+impl DiarioLegivel for Table {
+    fn esquema_do_diario(&self) -> &Schema {
+        Table::esquema(self)
+    }
+    fn eventos(&mut self) -> Result<u64> {
+        Table::eventos(self)
+    }
+    fn diario_com_imagem_ate(
+        &mut self,
+        pular: u64,
+        limite: u64,
+        teto_bytes: usize,
+    ) -> Result<Vec<(crate::log::Evento, Vec<u8>)>> {
+        Table::diario_com_imagem_ate(self, pular, limite, teto_bytes)
+    }
+    fn marca_do_diario(&self) -> Option<crate::log::MarcaDoDiario> {
+        Table::marca_do_diario(self)
+    }
+    fn definir_marca_do_diario(&mut self, marca: Option<crate::log::MarcaDoDiario>) {
+        Table::definir_marca_do_diario(self, marca)
+    }
+    fn valores_da_imagem(&mut self, imagem: &[u8]) -> Result<Vec<phxsql_core::value::Value>> {
+        Table::valores_da_imagem(self, imagem)
+    }
+    fn valores_antes_da_imagem(
+        &mut self,
+        imagem: &[u8],
+    ) -> Result<Option<Vec<phxsql_core::value::Value>>> {
+        Table::valores_antes_da_imagem(self, imagem)
+    }
+}
+
+impl DiarioLegivel for TabelaLeitura {
+    fn esquema_do_diario(&self) -> &Schema {
+        self.0.esquema()
+    }
+    fn eventos(&mut self) -> Result<u64> {
+        self.0.eventos()
+    }
+    fn diario_com_imagem_ate(
+        &mut self,
+        pular: u64,
+        limite: u64,
+        teto_bytes: usize,
+    ) -> Result<Vec<(crate::log::Evento, Vec<u8>)>> {
+        self.0.diario_com_imagem_ate(pular, limite, teto_bytes)
+    }
+    fn marca_do_diario(&self) -> Option<crate::log::MarcaDoDiario> {
+        self.0.marca_do_diario()
+    }
+    fn definir_marca_do_diario(&mut self, marca: Option<crate::log::MarcaDoDiario>) {
+        self.0.definir_marca_do_diario(marca)
+    }
+    fn valores_da_imagem(&mut self, imagem: &[u8]) -> Result<Vec<phxsql_core::value::Value>> {
+        self.0.valores_da_imagem(imagem)
+    }
+    fn valores_antes_da_imagem(
+        &mut self,
+        imagem: &[u8],
+    ) -> Result<Option<Vec<phxsql_core::value::Value>>> {
+        self.0.valores_antes_da_imagem(imagem)
+    }
+}
+
 #[cfg(test)]
 mod testes {
     use super::*;
@@ -356,5 +453,65 @@ mod testes {
             .abrir_qualificada("clientes")
             .unwrap();
         assert!(d.0.join("b/clientes.trash").exists());
+    }
+
+    /// **Pedido 330: a cauda do diario alem do cabecalho, contada na MEMORIA.**
+    ///
+    /// A tabela escrita desde o ultimo `sincronizar` tem eventos no `.log` que
+    /// o cabecalho ainda nao conta (o cabecalho so vai a disco no fecho da
+    /// janela). A abertura de leitura comum recusa -- corrigir o cabecalho e
+    /// escrever. A do diario conta com eles na memoria: ve os 15, e o arquivo
+    /// sai byte a byte igual.
+    ///
+    /// O vermelho: com `abrir_diario_para_ler` caindo no `abrir_sem_escrever`
+    /// de sempre (sem `curar_em_memoria`), ela recusa igual a comum e a
+    /// primeira asserção do diario cai.
+    #[test]
+    fn o_diario_conta_a_cauda_na_memoria_sem_gravar() {
+        let d = dir_temp("cauda-do-diario");
+        let mut raiz = Raiz::nova(&d.0).unwrap();
+        {
+            let inst = raiz.exclusiva();
+            let db = inst.garantir_database("b").unwrap();
+            let mut t = db.criar_tabela(None, esquema()).unwrap();
+            t.ligar_imagem_no_diario(true);
+            for i in 1..=10 {
+                t.inserir(&[Value::Int(i), Value::Str(format!("n{i}"))])
+                    .unwrap();
+            }
+            t.sincronizar().unwrap();
+            // Cinco depois do ultimo fecho: no arquivo, fora do cabecalho.
+            for i in 11..=15 {
+                t.inserir(&[Value::Int(i), Value::Str(format!("n{i}"))])
+                    .unwrap();
+            }
+        }
+        let log = d.0.join("b/clientes.log");
+        let antes = std::fs::read(&log).unwrap();
+        // O controle: a abertura comum continua recusando, com o motivo.
+        match raiz.abrir_para_ler("b", "clientes").unwrap() {
+            Aberta::PrecisaDaFichaExclusiva(porque) => {
+                assert!(porque.contains("diario"), "motivo obscuro: {porque}")
+            }
+            Aberta::Pronta(_) => {
+                panic!("a cauda nao ficou fora do cabecalho -- o teste nao mede nada")
+            }
+        }
+        let Aberta::Pronta(mut t) = raiz.abrir_diario_para_ler("b", "clientes").unwrap() else {
+            panic!("a abertura do diario recusou a cauda que so precisava ser contada");
+        };
+        assert_eq!(DiarioLegivel::eventos(&mut t).unwrap(), 15);
+        let lidos = t.diario_com_imagem_ate(0, 100, usize::MAX).unwrap();
+        assert_eq!(lidos.len(), 15);
+        assert_eq!(
+            t.valores_da_imagem(&lidos[14].1).unwrap()[0],
+            Value::Int(15)
+        );
+        drop(t);
+        assert_eq!(
+            std::fs::read(&log).unwrap(),
+            antes,
+            "abrir o diario para ler GRAVOU no .log"
+        );
     }
 }

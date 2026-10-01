@@ -61,9 +61,14 @@
 //!
 //! A recusa e' na DECLARACAO -- `Schema::new`, `Schema::marcar_dado_pessoal` e
 //! `Schema::com_coluna` --, e nao na gravacao. E ela NAO desfaz cadeia que ja
-//! existe: o esquema que volta do disco nao passa por guarda nenhuma, porque
-//! ali o oraculo ja queimou e recusar a abertura so' tiraria do ar uma tabela
-//! que esta perfeita.
+//! existe, **e acompanha a replica**: o esquema que volta do disco nao passa
+//! por guarda nenhuma, porque ali o oraculo ja queimou e recusar a abertura
+//! so' tiraria do ar uma tabela que esta perfeita -- e a replica remonta o
+//! esquema do source pelo mesmo caminho de leitura (`Schema::desserializar`),
+//! entao a cadeia marcada nasce igual em todo no que a replica (pedido 424).
+//! Recusar la pararia a replicacao de uma cadeia que nasceu legitima; por
+//! isso a replica cria, GRITA e CONTA (`ledger_marcado_recebido` no
+//! `replicacao_estado`), e o [`censo`] roda em todo no.
 //!
 //! # Por que a altura entra no hash, e por que ela e' posta ANTES de gravar
 //!
@@ -439,6 +444,135 @@ pub fn verificar_cadeia(t: &mut Table) -> Result<Verificacao> {
         blocos,
         altura_maxima,
     })
+}
+
+// ------------------------------------------------ o censo (pedido 424)
+
+/// As colunas marcadas como dado pessoal, e se o esquema e' cadeia.
+///
+/// # Por que este e' o MOTOR, e o censo e a replica so o chamam
+///
+/// A pergunta «este esquema e' a combinacao proibida do pedido 355?» tem dois
+/// fregueses: o censo de uma pasta inteira e a replica que acabou de receber
+/// um esquema do source (pedido 424). Escrita duas vezes, a resposta
+/// divergiria no dia em que a marca ganhasse um grau novo -- e a copia que
+/// esquecesse contaria zero calada. Le o byte de marca pelo [`Schema`], nunca
+/// por texto: o `grep` por `porAltura` do parecer C de 23/09 acha a FORMA e
+/// nao a marca, que e' um byte por coluna no fim do bloco `PSCH`.
+pub fn recensear(esquema: &Schema) -> (bool, Vec<String>) {
+    let marcadas = esquema
+        .colunas()
+        .iter()
+        .filter(|c| c.dado_pessoal.e_pessoal())
+        .map(|c| c.nome.clone())
+        .collect();
+    (e_tabela_ledger(esquema), marcadas)
+}
+
+/// Este esquema e' cadeia COM coluna marcada -- a combinacao que a
+/// declaracao recusa e a leitura do disco nao julga?
+pub fn combinacao_proibida(esquema: &Schema) -> bool {
+    let (e_ledger, marcadas) = recensear(esquema);
+    e_ledger && !marcadas.is_empty()
+}
+
+/// O que o censo diz de UMA tabela.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Recenseada {
+    pub database: String,
+    /// Nome qualificado (`schema.tabela` quando ha schema). Vazio quando foi
+    /// o DATABASE que nao se leu -- e ai `nao_lida` diz por que.
+    pub tabela: String,
+    pub e_ledger: bool,
+    pub colunas_marcadas: Vec<String>,
+    /// Linhas do `.reg` (`registros`). Num ledger, os blocos da cadeia.
+    pub blocos: u64,
+    /// O motivo de a tabela nao ter sido lida. Censo que pula calado o que
+    /// nao abre mente pelo numero: a tabela que nao se leu e' justamente a
+    /// que pode esconder a combinacao.
+    pub nao_lida: Option<String>,
+}
+
+impl Recenseada {
+    pub fn proibida(&self) -> bool {
+        self.e_ledger && !self.colunas_marcadas.is_empty()
+    }
+}
+
+/// O censo do par `(e_ledger, colunas marcadas)` de toda tabela sob `base`
+/// -- a raiz de dados de um no (pedido 424, receita F2 do parecer C de
+/// 23/09/2026).
+///
+/// # Por que em TODO no, e nao so no primario
+///
+/// Porque a replica nao declara: ela remonta o esquema por
+/// `Schema::desserializar`, caminho de leitura que nao julga, e a cadeia
+/// marcada do source nasce igual nela. A populacao proibida nao esta fechada
+/// no no que a criou -- ela acompanha a replica.
+///
+/// # Nada aqui escreve
+///
+/// Abre cada tabela pela ficha COMPARTILHADA ([`Raiz::abrir_para_ler`]), que
+/// recusa quando abrir escreveria; a recusa vira `nao_lida` com o motivo, e o
+/// censo segue. Um censo que curasse diario ou criasse `.trash` para contar
+/// mexeria no no que ele so devia olhar.
+///
+/// [`Raiz::abrir_para_ler`]: crate::catalogo::Raiz::abrir_para_ler
+pub fn censo(base: &std::path::Path) -> Result<Vec<Recenseada>> {
+    use crate::catalogo::{Aberta, Raiz};
+    use crate::leitura::Legivel;
+    if !base.is_dir() {
+        return Err(PhxError::NaoEncontrado(format!(
+            "{} nao e uma raiz de dados",
+            base.display()
+        )));
+    }
+    let mut raiz = Raiz::nova(base)?;
+    let mut saida = Vec::new();
+    for database in crate::catalogo::subdiretorios(base)? {
+        let tabelas = raiz
+            .exclusiva()
+            .abrir_database(&database)
+            .and_then(|db| db.todas_as_tabelas());
+        let tabelas = match tabelas {
+            Ok(t) => t,
+            Err(e) => {
+                saida.push(Recenseada {
+                    database,
+                    tabela: String::new(),
+                    e_ledger: false,
+                    colunas_marcadas: Vec::new(),
+                    blocos: 0,
+                    nao_lida: Some(e.to_string()),
+                });
+                continue;
+            }
+        };
+        for tabela in tabelas {
+            let mut linha = Recenseada {
+                database: database.clone(),
+                tabela: tabela.clone(),
+                e_ledger: false,
+                colunas_marcadas: Vec::new(),
+                blocos: 0,
+                nao_lida: None,
+            };
+            match raiz.abrir_para_ler(&database, &tabela) {
+                Ok(Aberta::Pronta(t)) => {
+                    let (e_ledger, marcadas) = recensear(t.esquema());
+                    linha.e_ledger = e_ledger;
+                    linha.colunas_marcadas = marcadas;
+                    linha.blocos = t.registros();
+                }
+                Ok(Aberta::PrecisaDaFichaExclusiva(porque)) => {
+                    linha.nao_lida = Some(porque.to_string());
+                }
+                Err(e) => linha.nao_lida = Some(e.to_string()),
+            }
+            saida.push(linha);
+        }
+    }
+    Ok(saida)
 }
 
 #[cfg(test)]
@@ -1025,5 +1159,63 @@ mod testes {
             "a tabela virou cadeia com a coluna marcada -- a guarda do sentido \
              contrario passou a ser necessaria"
         );
+    }
+
+    /// **Pedido 424: o censo le a MARCA pelo `Schema`, e conta o par.**
+    ///
+    /// Tres tabelas num database: a cadeia legada com `cpf` marcado (a
+    /// combinacao proibida), a cadeia limpa e uma tabela comum COM coluna
+    /// marcada (marca sem cadeia nao e proibida). O censo tem de achar uma
+    /// proibida, duas cadeias, e nao confundir a comum com cadeia.
+    ///
+    /// O vermelho: com `recensear` devolvendo a lista vazia (o defeito de ler
+    /// a forma e nao o byte -- o `grep` por `porAltura` do parecer C), a
+    /// legada sai como cadeia LIMPA e a primeira asserção cai.
+    #[test]
+    fn o_censo_acha_a_cadeia_marcada_e_so_ela() {
+        use crate::catalogo::Instancia;
+        let d = DirTemp::novo("ledger-censo");
+        {
+            let inst = Instancia::nova(&d.0).unwrap();
+            let db = inst.criar_database("b").unwrap();
+            let mut legada = db
+                .criar_tabela(None, esquema_legado_com_cpf_marcado())
+                .unwrap();
+            bloco_com_cpf(&mut legada, "00000000000");
+            let mut limpa_esq = esquema_blocos();
+            limpa_esq.renomear("limpa");
+            let mut limpa = db.criar_tabela(None, limpa_esq).unwrap();
+            cadeia(&mut limpa, 2);
+            limpa.sincronizar().unwrap();
+            let comum = Schema::new(
+                "clientes",
+                vec![
+                    Column::new("id", ColumnType::Int8).obrigatoria(),
+                    Column::new("cpf", ColumnType::Str(11)).com_dado_pessoal(DadoPessoal::Pessoal),
+                ],
+                vec![IndexDef::new("porId", vec![IndexColumn::asc(0)]).unico()],
+            )
+            .unwrap();
+            db.criar_tabela(None, comum).unwrap();
+        }
+        let linhas = censo(&d.0).unwrap();
+        let de = |n: &str| linhas.iter().find(|l| l.tabela == n).unwrap().clone();
+        let legada = de("blocos");
+        assert!(
+            legada.proibida(),
+            "a cadeia legada com cpf marcado tinha de sair PROIBIDA: {legada:?}"
+        );
+        assert_eq!(legada.colunas_marcadas, vec!["cpf".to_string()]);
+        assert_eq!(legada.blocos, 1);
+        assert!(legada.nao_lida.is_none());
+        let limpa = de("limpa");
+        assert!(limpa.e_ledger && !limpa.proibida(), "{limpa:?}");
+        assert_eq!(limpa.blocos, 2);
+        let comum = de("clientes");
+        assert!(!comum.e_ledger && !comum.proibida(), "{comum:?}");
+        assert_eq!(linhas.iter().filter(|l| l.proibida()).count(), 1);
+        // E o motor e o mesmo que a replica chama: um esquema, uma resposta.
+        assert!(combinacao_proibida(&esquema_legado_com_cpf_marcado()));
+        assert!(!combinacao_proibida(&esquema_blocos()));
     }
 }

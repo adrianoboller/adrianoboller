@@ -530,6 +530,16 @@ dia, nunca no desejado:
   FFI que nao chegava ao motor (`faixa-da-cli-nao-chega-ao-motor`,
   `faixa-da-ffi-nao-chega-ao-motor`). 624, medido pelo `--numeros` nesta
   arvore.
+  **SUBIU para 634 em 01/10/2026** (628 + 6; pedidos 330, 300 e 424): seis
+  guardas -- a absorcao do diario local inteira sob a exclusiva
+  (`bidi-absorve-o-diario-sob-a-exclusiva`), a rodada seguinte sem a marca do
+  diario (`bidi-rodada-seguinte-sem-a-marca-do-diario`), a cauda do `.log`
+  recusada sob a compartilhada (`diario-sob-a-compartilhada-recusa-a-cauda`),
+  a posicao do cluster somando tabela que nao replica
+  (`posicao-do-cluster-conta-tabela-que-nao-replica`), a replica que cria a
+  cadeia marcada calada (`ledger-marcado-recebido-calado`) e o censo que le a
+  forma e nao a marca (`censo-do-ledger-le-a-forma-e-nao-a-marca`). 634,
+  medido pelo `--numeros` nesta arvore.
 
 # A QUINTA REGUA: a tabela publicada pode ser MENOR que o catalogo
 
@@ -636,7 +646,7 @@ TETO_TESTE_MORTO = 0
 TETO_TRECHO_AMBIGUO = 0
 TETO_TESTE_FORA_DO_BINARIO = 0
 TETO_TESTE_SEM_MODULO = 0
-PISO_DAS_ENTRADAS = 628
+PISO_DAS_ENTRADAS = 634
 
 # ------------------------------------------------------------- APOSENTADAS
 #

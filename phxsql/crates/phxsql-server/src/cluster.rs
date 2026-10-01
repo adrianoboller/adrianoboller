@@ -342,8 +342,11 @@ pub struct EstadoCluster {
     pub config: Cluster,
     papel: AtomicU8,
     epoca: AtomicU64,
-    /// Posicao local do diario, somada sobre as tabelas replicadas. Cache
-    /// atualizado pelo arbitro para o pulso nao tomar a trava de dados.
+    /// Posicao local do diario, somada sobre as tabelas replicadas -- e,
+    /// desde o pedido 300, so sobre elas: numa replica, as que o master
+    /// ANUNCIOU ([`Self::anunciadas`]); no master, todas as dos databases do
+    /// cluster, porque o que ele tem e o que ele serve. Cache atualizado pelo
+    /// arbitro para o pulso nao tomar a trava de dados.
     posicao: AtomicU64,
     /// A ultima posicao contada saiu INCOMPLETA -- alguma tabela replicada nao
     /// abriu ou nao contou (pedido 211). Anda junto do cache da posicao porque
@@ -449,6 +452,14 @@ pub struct EstadoCluster {
     /// do trabalho.
     assinou_alguma: AtomicBool,
     caminho_estado: PathBuf,
+    /// O que o master corrente ANUNCIOU na ultima rodada da replicacao do
+    /// cluster -- pedido 300. `None` = este no nunca ouviu um master (nem
+    /// nesta vida nem na anterior), e ai a posicao conta tudo e sai marcada
+    /// incompleta. Duravel em `cluster.anunciadas.json`, porque e no arranque
+    /// a frio -- todos os nos de pe ao mesmo tempo, ninguem master ainda -- que
+    /// a eleicao mais depende da posicao.
+    anunciadas: TravaDaGuarda<Option<Anunciadas>>,
+    caminho_anunciadas: PathBuf,
     /// Quando este estado nasceu. O arbitro da UMA janela de graca a partir
     /// daqui: no arranque o primeiro tique roda antes do primeiro pulso, e
     /// sem a graca um cluster perfeitamente sao nasceria "degradado" -- com
@@ -508,6 +519,93 @@ impl std::fmt::Display for RecusaDoPulso {
     }
 }
 
+/// O arquivo do que o master anunciou, ao lado do `cluster.estado.json`.
+pub const ARQUIVO_DAS_ANUNCIADAS: &str = "cluster.anunciadas.json";
+
+/// O que o master anunciou -- a definicao de «tabela replicada» do cluster
+/// (pedido 300).
+///
+/// # Por que sai do master, e nao da lista do config
+///
+/// `cluster.databases` vazio quer dizer «todos os do master», e os do master
+/// nao sao os daqui: um database que este no tinha antes de entrar no
+/// cluster, ou uma tabela que o usuario do cluster nao pode `replicar`, mora
+/// so aqui. Somados, inflavam a posicao e faziam este no ganhar a eleicao
+/// atras no dado que importa. Os tres maduros contam so o que de fato replica
+/// (filtros de `replicate-do-db`, publicacoes do PostgreSQL); aqui o filtro e
+/// a lista que o proprio master responde no `bancos` e no `posicao`, que e a
+/// MESMA que a replica alcanca -- nao uma segunda opiniao sobre o que replica.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Anunciadas {
+    /// Os databases que o master anunciou na ultima rodada.
+    pub databases: Vec<String>,
+    /// As tabelas de cada database ja perguntado. Database na lista e fora
+    /// deste mapa = anunciado e ainda nao perguntado.
+    pub tabelas: HashMap<String, std::collections::BTreeSet<String>>,
+}
+
+impl Anunciadas {
+    fn para_json(&self) -> Json {
+        let mut pares: Vec<(String, Json)> = self
+            .tabelas
+            .iter()
+            .map(|(db, ts)| {
+                (
+                    db.clone(),
+                    Json::Lista(ts.iter().map(Json::texto_de).collect()),
+                )
+            })
+            .collect();
+        pares.sort_by(|a, b| a.0.cmp(&b.0));
+        Json::objeto(vec![
+            (
+                "databases",
+                Json::Lista(self.databases.iter().map(Json::texto_de).collect()),
+            ),
+            ("tabelas", Json::Objeto(pares)),
+        ])
+    }
+
+    /// Ausente ou ilegivel = `None`: o no nao sabe o que o master anuncia, e
+    /// a posicao sai incompleta ate ele ouvir. Ilegivel diz por que no log --
+    /// e o mesmo desenho do `cluster.estado.json` (pedido 534): nao saber nao
+    /// vira «sei que e tudo».
+    fn ler(caminho: &Path) -> Option<Anunciadas> {
+        let texto = match std::fs::read_to_string(caminho) {
+            Ok(t) => t,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return None,
+            Err(e) => {
+                eprintln!("cluster: {} nao se le ({e})", caminho.display());
+                return None;
+            }
+        };
+        let textos = |v: &Json| -> Option<Vec<String>> {
+            v.lista()?
+                .iter()
+                .map(|x| x.texto().map(str::to_string))
+                .collect()
+        };
+        let lido = Json::analisar(&texto).ok().and_then(|j| {
+            let databases = textos(j.campo("databases")?)?;
+            let mut tabelas = HashMap::new();
+            if let Some(Json::Objeto(pares)) = j.campo("tabelas") {
+                for (db, ts) in pares {
+                    tabelas.insert(db.clone(), textos(ts)?.into_iter().collect());
+                }
+            }
+            Some(Anunciadas { databases, tabelas })
+        });
+        if lido.is_none() {
+            eprintln!(
+                "cluster: {} existe e nao se le; a posicao sai incompleta ate o \
+                 master anunciar de novo",
+                caminho.display()
+            );
+        }
+        lido
+    }
+}
+
 impl EstadoCluster {
     /// Levanta o estado: o arquivo persistido ganha do `config.json`, porque
     /// ele conta o que aconteceu DEPOIS do config ser escrito -- um master
@@ -518,6 +616,7 @@ impl EstadoCluster {
         papel_do_config: crate::config::Papel,
     ) -> EstadoCluster {
         let caminho_estado = base.join("cluster.estado.json");
+        let caminho_anunciadas = base.join(ARQUIVO_DAS_ANUNCIADAS);
         let mut papel = match papel_do_config {
             crate::config::Papel::Source => PapelVivo::Master,
             _ => PapelVivo::Replica,
@@ -611,6 +710,11 @@ impl EstadoCluster {
             ),
             assinou_alguma: AtomicBool::new(false),
             caminho_estado,
+            anunciadas: TravaDaGuarda::nova(
+                "das tabelas anunciadas pelo master",
+                Anunciadas::ler(&caminho_anunciadas),
+            ),
+            caminho_anunciadas,
             nascido_ms: agora,
         }
     }
@@ -651,6 +755,54 @@ impl EstadoCluster {
         *self.por_tabela.travar() = por_tabela;
         self.posicao.store(p, Ordering::SeqCst);
         self.posicao_incompleta.store(incompleta, Ordering::SeqCst);
+    }
+
+    /// O que o master anunciou por ultimo -- ver [`Anunciadas`].
+    pub fn anunciadas(&self) -> Option<Anunciadas> {
+        self.anunciadas.travar().clone()
+    }
+
+    /// A lista de databases que o master anuncia nesta rodada. O database que
+    /// saiu da lista leva junto as tabelas dele; o que continua guarda as
+    /// suas ate a pergunta `posicao` de agora responder.
+    pub fn anunciar_databases(&self, databases: &[String]) {
+        let mut guarda = self.anunciadas.travar();
+        let mut nova = guarda.clone().unwrap_or_default();
+        nova.databases = databases.to_vec();
+        nova.tabelas.retain(|db, _| databases.contains(db));
+        self.trocar_anunciadas(&mut guarda, nova);
+    }
+
+    /// As tabelas que o master anunciou num database, pela resposta do
+    /// `posicao` -- a MESMA lista que a replica alcanca.
+    pub fn anunciar_tabelas(&self, database: &str, tabelas: Vec<String>) {
+        let mut guarda = self.anunciadas.travar();
+        let mut nova = guarda.clone().unwrap_or_default();
+        nova.tabelas
+            .insert(database.to_string(), tabelas.into_iter().collect());
+        self.trocar_anunciadas(&mut guarda, nova);
+    }
+
+    /// Grava so quando MUDA: o anuncio se repete a cada pulso e quase nunca
+    /// muda, e um `fsync` por pulso pagaria disco para escrever o mesmo
+    /// arquivo. A falha de gravar NAO desfaz o que esta em memoria: o numero
+    /// desta vida continua certo, e a proxima mudanca tenta de novo.
+    fn trocar_anunciadas(&self, guarda: &mut Option<Anunciadas>, nova: Anunciadas) {
+        if guarda.as_ref() == Some(&nova) {
+            return;
+        }
+        if let Err(e) = crate::config::gravar_privado(
+            &self.caminho_anunciadas,
+            nova.para_json().escrever().as_bytes(),
+        ) {
+            eprintln!(
+                "cluster: nao gravei {} ({e}); o anuncio vale nesta vida e se perde \
+                 no arranque, onde a posicao volta a sair incompleta ate o master \
+                 anunciar de novo",
+                self.caminho_anunciadas.display()
+            );
+        }
+        *guarda = Some(nova);
     }
 
     /// A ultima posicao contada, por tabela (pedido 294). Medida, nunca voto.
