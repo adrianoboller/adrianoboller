@@ -100,7 +100,9 @@ mod com_desktop {
             String::from_utf8_lossy(&out.stderr)
         );
         out.stdout
-            .chunks_exact(3)
+            .as_chunks::<3>()
+            .0
+            .iter()
             .collect::<std::collections::HashSet<_>>()
             .len()
     }

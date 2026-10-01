@@ -1,0 +1,8 @@
+# Toolchain exata do PhxClaw: 1.98.1 (estavel de 2026-09-01), posta pelo plugin de ambiente
+# em 01/10/2026 a pedido do dono («ultimas versoes do Rust»). Pinar e o que faz o build e o
+# clippy darem o mesmo resultado em qualquer maquina: sem isto, o cargo usa o toolchain
+# padrao de quem roda, e um clippy mais novo reprova codigo que ninguem mudou.
+# O PhxSql fixa a dele (1.94.1) no proprio diretorio; as duas convivem no rustup.
+[toolchain]
+channel = "1.98.1"
+components = ["rustfmt", "clippy"]
