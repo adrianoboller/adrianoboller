@@ -479,6 +479,15 @@ dia, nunca no desejado:
   duas guardas -- a tabela do contador defeituoso sem saida
   (`faixa-sem-saida`) e a reconciliacao do `reparar` fora da faixa
   (`reconciliar-fora-da-faixa`). 587 + 2 = 589, medido pelo `--numeros`.
+  **SUBIU para 605 em 01/10/2026** (no merge, 599 + 6; pedidos 607, 608 e 609, a revisao SEC
+  independente): seis guardas -- o `begin` com escopo sem login
+  (`escopo-do-begin-sem-login`), o escopo sem conferir direito
+  (`escopo-do-begin-sem-direito`), o prazo da transacao sem teto
+  (`prazo-da-transacao-sem-teto`), a `DataRow` curta do PostgreSQL
+  (`datarow-curta-do-postgres`), a linha remota curta na sincronia
+  (`linha-remota-curta-na-sincronia`) e o `dblink_ligar` que gravava a copia
+  velha (`dblink-ligar-grava-copia-velha`). 588 + 6 = 594, medido pelo
+  `--numeros`.
 
 # A QUINTA REGUA: a tabela publicada pode ser MENOR que o catalogo
 
@@ -585,7 +594,7 @@ TETO_TESTE_MORTO = 0
 TETO_TRECHO_AMBIGUO = 0
 TETO_TESTE_FORA_DO_BINARIO = 0
 TETO_TESTE_SEM_MODULO = 0
-PISO_DAS_ENTRADAS = 599
+PISO_DAS_ENTRADAS = 605
 
 # ------------------------------------------------------------- APOSENTADAS
 #

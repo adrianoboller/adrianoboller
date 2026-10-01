@@ -11769,6 +11769,36 @@ impl Servidor {
         TETO_DO_REGISTRO
     }
 
+    /// A recusa do portao 3, num lugar so.
+    ///
+    /// Quem confere direito fora do portao -- o `SCOPE` do `begin`, pedido
+    /// 607 -- recusa com ESTA frase, e nao com uma propria: duas redacoes da
+    /// mesma recusa divergiriam no dia em que uma ganhasse traducao, e a
+    /// diferenca entre elas diria a quem pergunta por qual caminho caiu.
+    fn recusa_sem_direito(
+        &self,
+        usuario: &Usuario,
+        atividade: Atividade,
+        base: &str,
+        tabela: &str,
+    ) -> PhxError {
+        PhxError::Autorizacao(self.msg(
+            "erro.sem_direito",
+            &[
+                ("login", usuario.login.as_str()),
+                ("atividade", atividade.nome()),
+                (
+                    "alvo",
+                    &match (base.is_empty(), tabela.is_empty()) {
+                        (true, _) => "(sem base)".to_string(),
+                        (false, true) => base.to_string(),
+                        (false, false) => format!("{base}.{tabela}"),
+                    },
+                ),
+            ],
+        ))
+    }
+
     /// Le o pedido e o leva pelos portoes, nesta ordem: politica (o que ninguem
     /// pode), token (a rede), login (a identidade) e permissao (o poder).
     fn despachar(
@@ -11912,7 +11942,7 @@ impl Servidor {
         // cliente ja sabe tratar -- e nao com um reset de soquete, que a
         // aplicacao do outro lado leria como falha de rede.
         self.refrescar_a_sessao(sessao);
-        if self.ainda_anonima(sessao) && Atividade::da_operacao(&op).is_some() {
+        if self.ainda_anonima(sessao) && pede_identidade(&op, &pedido) {
             return (
                 op,
                 true,
@@ -12196,21 +12226,7 @@ impl Servidor {
         {
             let tabela = pedido.texto_ou("tabela", "").trim().to_string();
             if !usuario.pode_em(&base, &tabela, atividade) {
-                return Err(PhxError::Autorizacao(self.msg(
-                    "erro.sem_direito",
-                    &[
-                        ("login", usuario.login.as_str()),
-                        ("atividade", atividade.nome()),
-                        (
-                            "alvo",
-                            &match (base.is_empty(), tabela.is_empty()) {
-                                (true, _) => "(sem base)".to_string(),
-                                (false, true) => base.clone(),
-                                (false, false) => format!("{base}.{tabela}"),
-                            },
-                        ),
-                    ],
-                )));
+                return Err(self.recusa_sem_direito(usuario, atividade, &base, &tabela));
             }
         }
 
@@ -15818,8 +15834,31 @@ impl Servidor {
             p.texto_ou("scope_mode", p.texto_ou("escopo_modo", "")),
         )
         .ok_or_else(|| PhxError::Esquema("scope_mode aceita DYNAMIC ou STRICT".into()))?;
+        // O TETO do prazo da transacao e o do `config.json` -- pedido 607.
+        //
+        // O cliente pede MENOS e vale; pede mais e vale o teto, calado, como o
+        // `limite` do `dblink_consultar` contra o `max_linhas`. Sem teto, um
+        // `timeout_ms` de 10^12 abria uma transacao de 31 anos, e com `SCOPE
+        // EXCLUSIVE` ela segurava a tabela contra todo mundo ate la.
+        //
+        // A regua, e por que ela nao decide sozinha: nenhum dos tres maduros
+        // poe teto de servidor no prazo que a sessao pede -- o
+        // `innodb_lock_wait_timeout` nasce 50 s e aceita ate 1.073.741.824 s,
+        // o `lock_wait_timeout` do MySQL nasce 1 ano, o `lock_timeout` e o
+        // `transaction_timeout` do PostgreSQL nascem 0 (sem prazo). So que la
+        // a sessao que muda o prazo ja provou quem e e tem direito na tabela;
+        // aqui o prazo vinha de quem so tinha o token. O que decide e a regra
+        // escrita no proprio campo: «transacao sem prazo nenhum e exatamente
+        // a que trava a tabela para sempre», e o `transacao_prazo_min` e o
+        // prazo que o DONO DO SERVIDOR escreveu. Teto: 5 min de fabrica.
+        //
+        // O `LOCK TIMEOUT` nao ganha teto proprio: a espera ja e cortada pelo
+        // prazo da transacao (`esperar_trava`, `estourou_a_transacao`), entao
+        // nunca passa deste. Limita-la aqui de novo seria a mesma decisao
+        // escrita duas vezes.
+        let teto_ms = r.transacao_prazo_min as i64 * 60_000;
         Ok(crate::transacao::Abertura {
-            transacao_ms: duracao_ms(p, "timeout", r.transacao_prazo_min as i64 * 60_000)?,
+            transacao_ms: duracao_ms(p, "timeout", teto_ms)?.min(teto_ms),
             lock_ms: duracao_ms(p, "lock_timeout", r.transacao_lock_timeout_ms as i64)?,
             statement_ms: duracao_ms(p, "statement_timeout", r.transacao_statement_ms as i64)?,
             modo,
@@ -16107,6 +16146,21 @@ impl Servidor {
         if declaradas.is_empty() {
             return Ok(());
         }
+        let modo = self.modo_da_transacao(sessao)?;
+        // O direito em CADA declarada, e ANTES de perguntar se ela existe --
+        // pedido 607. O `SCOPE` nomeia tabela num campo que o portao 3 nao le
+        // (o mesmo furo do `juntar`, do `unir` e do `pivotar`), entao paga a
+        // conferencia propria, com a recusa do portao. E a ordem e a defesa
+        // contra o oraculo: quem nao tem direito ouve a MESMA recusa para a
+        // tabela que existe e para a que nao existe, e nao aprende o catalogo.
+        if let Some(u) = &sessao.usuario {
+            let pede = direitos_da_trava(modo.na_tabela());
+            for nome in declaradas {
+                if !pede.iter().any(|a| u.pode_em(database, nome, *a)) {
+                    return Err(self.recusa_sem_direito(u, pede[0], database, nome));
+                }
+            }
+        }
         // A tabela declarada TEM de existir, e o erro sai aqui em vez de mais
         // tarde. Sem esta conferencia, `SCOPE (pediditens)` escrito com um
         // erro de digitacao era aceito calado: a trava ia para uma chave que
@@ -16139,7 +16193,6 @@ impl Servidor {
         // ORDEM CANONICA, e e ela que mata o ciclo entre tabelas: A e B pedem
         // `estoque` e `pedidos` na MESMA sequencia, entao nunca ha uma
         // segurando o que a outra quer enquanto quer o que a outra segura.
-        let modo = self.modo_da_transacao(sessao)?;
         for chave in &efetivas {
             self.esperar_trava(
                 sessao,
@@ -27083,6 +27136,15 @@ impl Servidor {
         }
         c.encerrar();
 
+        // Pedido 609: a copia `d` foi lida ANTES da rede, e o fio pode ter
+        // levado minutos (10 s x 60 de fabrica). Conferida aqui, antes de
+        // criar tabela local, a ligacao excluida ou trocada no meio nao deixa
+        // nem o espelho para tras; a conferencia que DECIDE e a de baixo, sob
+        // a mesma trava da gravacao -- esta so poupa o trabalho perdido.
+        self.dblink
+            .tomar("dblink")?
+            .conferir_que_nao_mudou(&d, "dblink_ligar")?;
+
         // So agora a trava, e so para o que e local: criar a tabela que falta.
         // Nenhuma ida ao fio acontece daqui ate solta-la.
         let dados = self.travar_dados()?;
@@ -27128,6 +27190,13 @@ impl Servidor {
         drop(dados);
         pendente.levar_ao_disco()?;
         let mut r = self.dblink.tomar("dblink")?;
+        // A conferencia que decide: na MESMA trava do `salvar`, entao entre
+        // ela e a gravacao ninguem mexe. Sem ela, o `salvar` (que substitui
+        // pelo nome) ressuscitava a ligacao excluida com a senha antiga e
+        // desfazia a troca de senha, host, pino ou `somente_leitura` feita
+        // enquanto o fio falava. A tabela local que ja nasceu fica: e um
+        // espelho vazio, e o proximo `dblink_ligar` a reaproveita.
+        r.conferir_que_nao_mudou(&d, "dblink_ligar")?;
         let gravacao = r.salvar(d)?;
         Ok(Json::objeto(vec![
             ("ligadas", Json::Lista(ligadas)),
@@ -30619,6 +30688,44 @@ fn duracao_de_texto(t: &str) -> Option<i64> {
         }
     }
     t.parse::<i64>().ok()
+}
+
+/// Esta operacao exige saber QUEM pede? -- pedido 607.
+///
+/// As dezesseis anonimas (`Atividade::da_operacao` devolve `None`) continuam
+/// dezesseis: `begin` sem `SCOPE` nao toma trava nenhuma na abertura, e a
+/// primeira escrita dele ja pede login. O `begin` COM `SCOPE` e outra
+/// pergunta: ele toma trava de tabela na hora, e a `EXCLUSIVE` barra todo
+/// mundo. Antes daqui, so com o token da porta, uma conexao sem login travava
+/// `rh.salarios` contra o proprio supervisor. A condicao mora junto do
+/// portao do login, e nao dentro do `op_begin`, porque o portao do login e
+/// um so -- uma segunda copia de «quem e anonimo» divergiria da primeira.
+fn pede_identidade(op: &str, pedido: &Json) -> bool {
+    Atividade::da_operacao(op).is_some()
+        || (matches!(op, "begin" | "start_transaction" | "begin_transaction")
+            && !lista_do_escopo(pedido).is_empty())
+}
+
+/// Que direito na tabela a trava do `SCOPE` pede -- pedido 607. Basta um dos
+/// da lista.
+///
+/// A regua dos motores, e o numero: o PostgreSQL (peso 4) pede, no `LOCK
+/// TABLE`, `INSERT`/`UPDATE`/`DELETE`/`TRUNCATE` para o `ROW EXCLUSIVE` (a
+/// nossa intencao, IX) e `UPDATE`/`DELETE`/`TRUNCATE` para os modos que barram
+/// escrita alheia (a nossa X). MySQL (2) e MariaDB (3) pedem `SELECT` MAIS o
+/// privilegio proprio `LOCK TABLES`, que aqui nao existe: tomar so a metade
+/// `SELECT` deixaria a regra mais frouxa que a dos dois, e o leitor de uma
+/// tabela travaria a escrita de todo mundo nela. SQLite (1) nao tem direito
+/// por tabela. Sobra a regra do PostgreSQL, a unica que se escreve inteira no
+/// nosso modelo. A compartilhada (S) da leitura repetivel nao nasce do
+/// `SCOPE`: entra pela leitura, que ja passa pelo portao.
+fn direitos_da_trava(t: crate::travas::Trava) -> &'static [Atividade] {
+    use crate::travas::Trava;
+    match t {
+        Trava::Compartilhada => &[Atividade::Ler],
+        Trava::Intencao => &[Atividade::Inserir, Atividade::Alterar, Atividade::Excluir],
+        Trava::Exclusiva => &[Atividade::Alterar, Atividade::Excluir],
+    }
 }
 
 /// A lista de tabelas do `SCOPE`, venha ela como lista ou como texto.
@@ -67874,6 +67981,97 @@ mod testes_dblink_fora_da_trava {
              DbLink estava no fio com a trava de dados na mao: {presas:?}"
         );
     }
+
+    /// **609: o `dblink_ligar` nao grava por cima do que mudou enquanto ele
+    /// estava no fio.** A copia da ligacao e lida antes da rede e gravada no
+    /// fim; sem a conferencia da versao, a ligacao EXCLUIDA no meio voltava ao
+    /// `dblink.json` com a senha antiga, e a senha TROCADA no meio voltava a
+    /// ser a antiga.
+    ///
+    /// # Prova real
+    ///
+    /// Com a conferencia tirada (o codigo de antes), o `ligar` responde `ok`
+    /// nos dois casos: a lista volta a ter `erp` e o arquivo volta a ter
+    /// `SENHA-ANTIGA`. Com ela, o `ligar` recusa com `Conflito` e o cadastro
+    /// fica como o outro administrador o deixou.
+    #[test]
+    fn o_ligar_nao_ressuscita_nem_desfaz_a_ligacao_mexida_no_meio() {
+        let dir = DirTemp::novo("609-dblink-ligar");
+        let s = servidor(&dir);
+        let (porta, avisos) = par_que_goteja();
+        pede(&s, r#""op":"criar_database","database":"loja""#).unwrap();
+        let salvar = |senha: &str| {
+            pede(
+                &s,
+                &format!(
+                    r#""op":"dblink_salvar","nome":"erp","motor":"mysql","host":"127.0.0.1",
+                       "porta":{porta},"usuario":"u","senha":"{senha}","database":"erp",
+                       "timeout_s":5,"cifra":false"#
+                ),
+            )
+            .unwrap();
+        };
+        let ligar = |s: &Arc<Servidor>| {
+            let s2 = Arc::clone(s);
+            std::thread::spawn(move || {
+                pede(
+                    &s2,
+                    r#""op":"dblink_ligar","dblink":"erp","tabelas":[{"remota":"clientes",
+                       "local_database":"loja","sentido":"puxar","dono":"la"}]"#,
+                )
+            })
+        };
+        let no_fio = || {
+            let sql = avisos
+                .recv_timeout(Duration::from_secs(10))
+                .expect("o par nao recebeu o LIMIT 0 do ligar");
+            assert!(sql.contains("LIMIT 0"), "{sql}");
+        };
+        let arquivo = || std::fs::read_to_string(dir.join("dblink.json")).unwrap_or_default();
+
+        // Caso 1: excluida enquanto o ligar esta no fio.
+        salvar("SENHA-ANTIGA");
+        let t = ligar(&s);
+        no_fio();
+        pede(&s, r#""op":"dblink_excluir","nome":"erp""#).unwrap();
+        let e = t
+            .join()
+            .unwrap()
+            .expect_err("o ligar gravou a ligacao excluida");
+        assert!(
+            matches!(e, PhxError::Conflito(_)) && e.to_string().contains("excluida"),
+            "{e}"
+        );
+        let lista = pede(&s, r#""op":"dblink""#).unwrap().escrever();
+        assert!(!lista.contains("\"erp\""), "a excluida voltou: {lista}");
+        assert!(!arquivo().contains("SENHA-ANTIGA"), "{}", arquivo());
+
+        // Caso 2: senha trocada enquanto o ligar esta no fio.
+        salvar("SENHA-ANTIGA");
+        let t = ligar(&s);
+        no_fio();
+        salvar("SENHA-NOVA");
+        let e = t
+            .join()
+            .unwrap()
+            .expect_err("o ligar desfez a troca de senha");
+        assert!(
+            matches!(e, PhxError::Conflito(_)) && e.to_string().contains("alterada"),
+            "{e}"
+        );
+        let no_disco = arquivo();
+        assert!(
+            no_disco.contains("SENHA-NOVA") && !no_disco.contains("SENHA-ANTIGA"),
+            "{no_disco}"
+        );
+
+        // E o comportamento velho: ninguem mexeu, o ligar grava a sincronia.
+        let t = ligar(&s);
+        no_fio();
+        let r = t.join().unwrap().unwrap().escrever();
+        assert!(r.contains("\"remota\":\"clientes\""), "{r}");
+        assert!(arquivo().contains("SENHA-NOVA"), "{}", arquivo());
+    }
 }
 
 /// Pedidos 556 e 557: o VALOR de uma celula no fio do DbLink, nos dois
@@ -69356,5 +69554,188 @@ mod testes_do_retrato_do_backup {
             "o retrato tem o .reg de outro instante: a escrita entrou no meio \
              da copia"
         );
+    }
+}
+
+/// Pedido 607: o `begin` com `SCOPE` toma trava de tabela NA ABERTURA, e ia ao
+/// ar so com o token -- sem login, sem direito na tabela e com o prazo que o
+/// cliente escolhesse (`timeout_ms` de 10^12 = 31 anos).
+///
+/// # Prova real
+///
+/// Com o defeito reposto (o `pede_identidade` devolvendo so o
+/// `da_operacao`, o `declarar_escopo` sem o laco do `pode_em`, o
+/// `.min(teto_ms)` tirado), cada um dos tres testes abaixo cai no seu: a
+/// conexao anonima recebe `ok`, o leitor de `Z` trava `rh.salarios`, e o
+/// prazo de 10^12 ms volta como `expira_em_s` de 10^9.
+#[cfg(test)]
+mod testes_escopo_do_begin_607 {
+    use super::*;
+
+    const SENHA: &str = "a-senha-forte-do-607";
+
+    fn servidor() -> (Arc<Servidor>, DirTemp) {
+        let dir = DirTemp::novo("607-escopo");
+        let caminho = dir.join("config.json");
+        std::fs::write(
+            &caminho,
+            format!(
+                r#"{{"token":"t","bind":"127.0.0.1:5399","base":"{}",
+                    "usuarios":[{{"id":1,"nome":"Ana","login":"ana","senha_hash":"{}",
+                    "supervisor":true}}]}}"#,
+                dir.join("dados").display(),
+                phxsql_core::senha::cifrar_com(SENHA, 64),
+            ),
+        )
+        .unwrap();
+        let mut c = Config::ler(&caminho).unwrap();
+        c.log_acessos = dir.join("acessos.log");
+        c.blacklist = dir.join("blacklist.json");
+        c.dblink = dir.join("dblink.json");
+        c.jobs = dir.join("jobs.json");
+        let s = Servidor::novo(c).unwrap();
+        let mut ana = sessao(&s, Some("ana"), 1);
+        pede(&s, &mut ana, r#""op":"criar_database","database":"rh""#).unwrap();
+        pede(
+            &s,
+            &mut ana,
+            r#""op":"criar_tabela","database":"rh","tabela":"salarios",
+               "colunas":[{"nome":"id","tipo":"Int8","obrigatoria":true}],
+               "indices":[{"nome":"pk","colunas":["id"],"unico":true,"primario":true}]"#,
+        )
+        .unwrap();
+        for (login, bases) in [
+            ("leitor_z", r#"{"Z":{"ler":true}}"#),
+            ("le_rh", r#"{"rh":{"ler":true}}"#),
+            ("insere_rh", r#"{"rh":{"ler":true,"inserir":true}}"#),
+            ("altera_rh", r#"{"rh":{"ler":true,"alterar":true}}"#),
+        ] {
+            pede(
+                &s,
+                &mut ana,
+                &format!(
+                    r#""op":"usuario_criar","login":"{login}","senha":"{SENHA}",
+                       "nome":"{login}","bases":{bases}"#
+                ),
+            )
+            .unwrap();
+        }
+        (s, dir)
+    }
+
+    fn sessao(s: &Servidor, login: Option<&str>, ligacao: u64) -> Sessao {
+        Sessao {
+            usuario: login.and_then(|l| s.cadastro().por_login(l).cloned()),
+            ligacao,
+            ..Sessao::default()
+        }
+    }
+
+    fn pede(s: &Arc<Servidor>, ses: &mut Sessao, corpo: &str) -> Result<Json> {
+        let (_, _, r) = s.despachar(&format!(r#"{{"token":"t",{corpo}}}"#), ses, "");
+        r
+    }
+
+    const TRAVA_TUDO: &str = r#""op":"begin","database":"rh","scope":["salarios"],
+        "lock_mode":"EXCLUSIVE","timeout_ms":1000000000000"#;
+
+    /// Sem login: o `begin` com escopo cai no «faca login» -- para a tabela
+    /// que existe e para a que nao existe, com a MESMA frase. E o `begin` sem
+    /// escopo, que nao trava nada na abertura, continua anonimo.
+    #[test]
+    fn sem_login_o_escopo_recusa_e_nao_enumera() {
+        let (s, _g) = servidor();
+        let faca_login = s.msg("erro.faca_login", &[]);
+        let mut anonima = sessao(&s, None, 10);
+        let existe = pede(&s, &mut anonima, TRAVA_TUDO).unwrap_err();
+        assert!(matches!(existe, PhxError::Autorizacao(_)), "{existe}");
+        assert!(existe.to_string().contains(&faca_login), "{existe}");
+        let nao_existe = pede(
+            &s,
+            &mut anonima,
+            r#""op":"begin","database":"rh","scope":["nao_existe"]"#,
+        )
+        .unwrap_err();
+        assert_eq!(existe.to_string(), nao_existe.to_string());
+
+        // E nada ficou travado: o supervisor grava.
+        let mut ana = sessao(&s, Some("ana"), 11);
+        pede(
+            &s,
+            &mut ana,
+            r#""op":"inserir","database":"rh","tabela":"salarios","linha":{"id":1}"#,
+        )
+        .unwrap();
+
+        // O comportamento velho: `begin` sem escopo segue anonimo.
+        pede(&s, &mut anonima, r#""op":"begin","database":"rh""#).unwrap();
+        pede(&s, &mut anonima, r#""op":"rollback""#).unwrap();
+    }
+
+    /// Com login e SEM direito: a recusa do portao, nunca a SP000006 de um
+    /// conflito de trava, e a mesma frase para a tabela que existe e para a
+    /// que nao existe. A regua do direito e a do PostgreSQL: `EXCLUSIVE` pede
+    /// alterar (ou excluir); `AUTO` pede inserir, alterar ou excluir.
+    #[test]
+    fn o_escopo_confere_o_direito_de_cada_tabela() {
+        let (s, _g) = servidor();
+        let tentar = |login: &str, ligacao: u64, corpo: &str| {
+            let mut ses = sessao(&s, Some(login), ligacao);
+            let r = pede(&s, &mut ses, corpo);
+            if r.is_ok() {
+                pede(&s, &mut ses, r#""op":"rollback""#).unwrap();
+            }
+            r
+        };
+        let e = tentar("leitor_z", 20, TRAVA_TUDO).unwrap_err();
+        assert!(matches!(e, PhxError::Autorizacao(_)), "{e}");
+        assert!(e.to_string().contains("rh.salarios"), "{e}");
+        let fantasma = tentar(
+            "leitor_z",
+            21,
+            r#""op":"begin","database":"rh","scope":["fantasma"],"lock_mode":"EXCLUSIVE""#,
+        )
+        .unwrap_err();
+        assert_eq!(
+            e.to_string().replace("salarios", "X"),
+            fantasma.to_string().replace("fantasma", "X"),
+            "a recusa distingue a tabela que existe da que nao existe"
+        );
+
+        let auto = r#""op":"begin","database":"rh","scope":["salarios"]"#;
+        // So ler nao trava nem a intencao.
+        assert!(tentar("le_rh", 22, auto).is_err());
+        assert!(tentar("le_rh", 23, TRAVA_TUDO).is_err());
+        // Inserir trava a intencao, e nao a tabela inteira.
+        tentar("insere_rh", 24, auto).unwrap();
+        assert!(tentar("insere_rh", 25, TRAVA_TUDO).is_err());
+        // Alterar trava as duas.
+        tentar("altera_rh", 26, auto).unwrap();
+        tentar("altera_rh", 27, TRAVA_TUDO).unwrap();
+    }
+
+    /// O prazo pedido acima do `transacao_prazo_min` vira o teto; pedido
+    /// abaixo vale como veio.
+    #[test]
+    fn o_prazo_da_transacao_tem_o_teto_do_config() {
+        let (s, _g) = servidor();
+        let teto_s = s.config.recursos.transacao_prazo_min * 60;
+        let mut ana = sessao(&s, Some("ana"), 30);
+        let r = pede(&s, &mut ana, TRAVA_TUDO).unwrap();
+        let expira = r.inteiro_ou("expira_em_s", -1);
+        assert!(
+            (0..=teto_s as i64).contains(&expira),
+            "pediu 10^12 ms e ganhou {expira} s: {}",
+            r.escrever()
+        );
+        pede(&s, &mut ana, r#""op":"rollback""#).unwrap();
+        let r = pede(
+            &s,
+            &mut ana,
+            r#""op":"begin","database":"rh","timeout_ms":2000"#,
+        )
+        .unwrap();
+        assert!(r.inteiro_ou("expira_em_s", -1) <= 2, "{}", r.escrever());
+        pede(&s, &mut ana, r#""op":"rollback""#).unwrap();
     }
 }

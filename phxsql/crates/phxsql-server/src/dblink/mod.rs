@@ -313,7 +313,22 @@ pub struct Definicao {
     /// atrapalharia o diagnostico de pino torto. O que ela NAO faz e sair no
     /// `para_json`: ver o motivo la.
     pub chave_do_fio: String,
+    /// Qual GRAVACAO desta ligacao a memoria guarda -- pedido 609. So em
+    /// memoria: nunca vai ao disco nem ao JSON.
+    ///
+    /// Existe porque o `dblink_ligar` copia a definicao, vai a rede e grava
+    /// no fim, e precisa perguntar «alguem gravou ou apagou esta ligacao
+    /// enquanto eu estava no fio?». Comparar campo a campo pediria comparar a
+    /// senha, que so sai do [`Segredo`] para conectar. Um numero novo a cada
+    /// [`Registro::salvar`] responde a mesma pergunta sem tocar no segredo.
+    /// Zero e «veio do arquivo e ninguem gravou desde».
+    versao: u64,
 }
+
+/// A fonte das versoes de [`Definicao`] -- pedido 609. Global, e nao por
+/// [`Registro`], porque um cadastro relido recomecaria a contar e daria a uma
+/// gravacao nova o numero de uma copia velha ainda na mao de alguem.
+static PROXIMA_VERSAO: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
 /// `Debug` escrito a mao, pelo mesmo motivo do da [`crate::config::Cifra`]: o
 /// derivado imprimiria a senha e o token, e o `Registro` que guarda as
@@ -353,6 +368,7 @@ impl std::fmt::Debug for Definicao {
             sincronias,
             cifra,
             chave_do_fio,
+            versao,
         } = self;
         f.debug_struct("Definicao")
             .field("nome", nome)
@@ -383,6 +399,7 @@ impl std::fmt::Debug for Definicao {
             // que nao existe por um diagnostico cego de pino torto. Mesma
             // escolha do `Debug` da `Origem`.
             .field("chave_do_fio", chave_do_fio)
+            .field("versao", versao)
             .finish()
     }
 }
@@ -412,6 +429,7 @@ impl Default for Definicao {
             // verdade, em vez de herdar «claro», que seria rebaixamento.
             cifra: None,
             chave_do_fio: String::new(),
+            versao: 0,
         }
     }
 }
@@ -493,6 +511,7 @@ impl Definicao {
             },
             cifra,
             chave_do_fio: j.texto_ou("chave_do_fio", "").trim().to_string(),
+            versao: 0,
         };
         // A recusa acontece na DECLARACAO, e nao na conexao: uma ligacao nasce
         // uma vez e conecta mil. Aqui ela alcanca o arquivo e a tela de uma
@@ -1754,7 +1773,11 @@ impl Registro {
     /// A lista nova so entra na memoria se o DISCO a aceitou: a gravacao
     /// recusada (a chave que faltou, o disco cheio) deixaria na memoria uma
     /// ligacao que o proximo arranque nao ve -- e que conecta ate la.
-    pub fn salvar(&mut self, d: Definicao) -> Result<Gravacao> {
+    pub fn salvar(&mut self, mut d: Definicao) -> Result<Gravacao> {
+        // Toda gravacao e uma versao nova -- inclusive a que regrava igual:
+        // quem segurava a copia anterior nao tem como saber que nada mudou, e
+        // recusar uma vez a mais e barato perto de gravar por cima.
+        d.versao = PROXIMA_VERSAO.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let mut novas = self.ligacoes.clone();
         match novas
             .iter()
@@ -1764,6 +1787,35 @@ impl Registro {
             None => novas.push(d),
         }
         self.gravar_estas(novas)
+    }
+
+    /// A copia `lida` ainda e a ligacao do cadastro? -- pedido 609.
+    ///
+    /// Para quem leu a definicao, foi a rede SEM a trava do cadastro (ela nao
+    /// pode cobrir o fio: um host mudo travaria a tela de todo mundo) e vai
+    /// gravar a copia no fim. Sem esta pergunta, a ligacao excluida no meio
+    /// voltava com a senha antiga, e a troca de senha, de host, de pino ou do
+    /// `somente_leitura` feita no meio era desfeita calada -- revogacao que
+    /// nao vale. Mudou ou sumiu: recusa, e quem chamou nao grava nada.
+    pub fn conferir_que_nao_mudou(&self, lida: &Definicao, operacao: &str) -> Result<()> {
+        // Trancado diz o motivo de verdade, e nao «foi excluida».
+        self.exigir_legivel()?;
+        let atual = self.achar(&lida.nome).map_err(|_| {
+            PhxError::Conflito(format!(
+                "a ligacao {:?} foi excluida enquanto o {operacao} falava com o \
+                 outro banco: nada foi gravado no cadastro",
+                lida.nome
+            ))
+        })?;
+        if atual.versao != lida.versao {
+            return Err(PhxError::Conflito(format!(
+                "a ligacao {:?} foi alterada enquanto o {operacao} falava com o \
+                 outro banco: nada foi gravado no cadastro. Repita o {operacao} \
+                 sobre a ligacao como ela esta agora",
+                lida.nome
+            )));
+        }
+        Ok(())
     }
 
     pub fn excluir(&mut self, nome: &str) -> Result<Gravacao> {

@@ -3347,9 +3347,9 @@
       "id": "backup-sem-portao-do-retrato",
       "titulo": "A cópia do backup com a ficha COMPARTILHADA e sem o portão do retrato: o primeiro escritor na fila do `RwLock` fazia toda leitura nova esperar a cópia inteira",
       "veredito": "PROVADA",
-      "segundos": 69.69,
+      "segundos": 78.7,
       "notas": [],
-      "quando": "2026-10-01 05:48"
+      "quando": "2026-10-01 06:32"
     },
     {
       "id": "faixa-do-config-nao-lida",
@@ -3390,6 +3390,54 @@
       "segundos": 6.81,
       "notas": [],
       "quando": "2026-10-01 05:59"
+    },
+    {
+      "id": "escopo-do-begin-sem-login",
+      "titulo": "só com o token, sem login, um `begin` com `scope` e `lock_mode:EXCLUSIVE` travava qualquer tabela, e a recusa «está no SCOPE e não existe» enumerava o catálogo",
+      "veredito": "PROVADA",
+      "segundos": 80.7,
+      "notas": [],
+      "quando": "2026-10-01 06:12"
+    },
+    {
+      "id": "escopo-do-begin-sem-direito",
+      "titulo": "o `SCOPE` do `begin` travava tabela sem conferir o direito de quem pedia (`declarar_escopo` sem `pode_em`): o leitor de outra base travava `rh.salarios`",
+      "veredito": "PROVADA",
+      "segundos": 80.07,
+      "notas": [],
+      "quando": "2026-10-01 06:15"
+    },
+    {
+      "id": "prazo-da-transacao-sem-teto",
+      "titulo": "o `timeout_ms` do `begin` não tinha teto: 10^12 ms abria uma transação de 31 anos",
+      "veredito": "PROVADA",
+      "segundos": 80.7,
+      "notas": [],
+      "quando": "2026-10-01 06:18"
+    },
+    {
+      "id": "datarow-curta-do-postgres",
+      "titulo": "a `DataRow` do PostgreSQL com menos campos que a `RowDescription` passava pelo leitor e entrava em pânico na sincronia, com a trava de dados na mão",
+      "veredito": "PROVADA",
+      "segundos": 78.81,
+      "notas": [],
+      "quando": "2026-10-01 06:21"
+    },
+    {
+      "id": "linha-remota-curta-na-sincronia",
+      "titulo": "`linha_remota_para_negocio` indexava a linha do par pela posição do cabeçalho (`remota[de]`): linha curta de qualquer motor era pânico, não recusa",
+      "veredito": "PROVADA",
+      "segundos": 78.47,
+      "notas": [],
+      "quando": "2026-10-01 06:24"
+    },
+    {
+      "id": "dblink-ligar-grava-copia-velha",
+      "titulo": "o `dblink_ligar` gravava no fim a cópia da ligação lida antes da rede: a excluída no meio voltava com a senha antiga, e a troca de senha feita no meio era desfeita",
+      "veredito": "PROVADA",
+      "segundos": 86.12,
+      "notas": [],
+      "quando": "2026-10-01 06:27"
     },
     {
       "id": "cifra-do-fio-imposta",

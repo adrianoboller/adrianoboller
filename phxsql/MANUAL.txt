@@ -2080,6 +2080,12 @@ TRANSACOES: BEGIN, COMMIT, ROLLBACK E SAVEPOINT
         LOCK TIMEOUT        a espera por outro     transacao_lock_timeout_ms, 500
         STATEMENT TIMEOUT   uma operacao           transacao_statement_ms, 0 = sem
 
+    O TIMEOUT pedido acima de transacao_prazo_min vale o teto (pedido 607):
+    quem pede menos ganha o que pediu; quem pede mais ganha o do config.json.
+    E o BEGIN com SCOPE pede login e o direito de escrever em cada tabela
+    declarada (alterar ou excluir para TABLE/EXCLUSIVE; inserir, alterar ou
+    excluir para AUTO/ROW), porque toma a trava na abertura.
+
     Estourado o TIMEOUT, quem encerra e o gestor e nunca uma thread morta: a
     transacao vai para ABORT_ONLY, solta as travas, joga a lista fora, e a
     proxima operacao recebe 6002 TRANSACAO_ABORTADA com o numero do prazo.

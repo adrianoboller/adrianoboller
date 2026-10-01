@@ -4387,7 +4387,8 @@ servidor com cadastro, só há **dezesseis** operações legais — as que
 `Atividade::da_operacao` devolve `None`; toda outra cai no «faça login». Seis
 de sessão (`ping`, `login`, `desafio`, `quem_sou`, `sair`, `catalogo`) e dez de
 controle de transação (`begin` e os apelidos, `commit`, `rollback`, as de
-`savepoint`, `transacao`). Esta seção dizia «seis» até a revisão SEC (B5,
+`savepoint`, `transacao`) — e o `begin` só **sem** `scope`: com escopo ele
+toma trava de tabela na abertura e pede login (pedido 607, §37). Esta seção dizia «seis» até a revisão SEC (B5,
 pedido 445); a lista viva é o teste `as_operacoes_anonimas_sao_estas_dezesseis`,
 tirada do catálogo e não digitada. A maior delas continua sendo um `login`
 com token e prova, que não chega a mil bytes: **64× de folga**.
@@ -6650,3 +6651,53 @@ lista negra atrás de proxy barra todos de uma vez). As guardas de tela não
 cabem no catálogo (`provar-guardas.py` repõe defeito e roda `cargo test`); a
 prova delas é o roteiro versionado acima, que reprova 4 de 5 com o binário de
 antes.
+
+## 37. O `SCOPE` sem login, a `DataRow` curta e o `ligar` que gravava a cópia velha (pedidos 607, 608 e 609)
+
+Três ativos da revisão SEC independente de 01/10/2026
+(`docs/propostas/sec-revisao-independente-01-10-2026.md`, S1–S3), cada um
+provado pelo soquete contra o `phxsqld` de antes e o de depois, com o mesmo
+roteiro e os mesmos pares falsos (MySQL lento e PostgreSQL de `DataRow` curta).
+
+| achado | o defeito | o conserto | soquete: antes → depois |
+|---|---|---|---|
+| **607** (alto) | `begin` é anônimo; com `scope` ele toma trava de tabela **na abertura**, e o `declarar_escopo` não chamava `pode_em`. Só com o token, `scope:["salarios"]` + `EXCLUSIVE` + `timeout_ms:10^12` travava `rh.salarios` por 31 anos; a recusa «está no SCOPE e não existe» enumerava o catálogo | (a) `pede_identidade`: `begin` **com** escopo cai no portão do login, que continua um só (sem escopo segue anônimo, e as dezesseis anônimas continuam dezesseis); (b) o `declarar_escopo` confere o direito de cada declarada **antes** de perguntar se ela existe, com a recusa do portão 3 (`recusa_sem_direito`, a mesma frase); (c) o prazo da transação tem teto: `recursos.transacao_prazo_min` (5 min de fábrica) | anônimo: `ok, expira_em_s=1000000000` → `faca login`, a mesma frase para `nao_existe`; leitor de `Z`: `SP000006` (conflito de trava) → `leitor nao tem permissao de alterar em rh.salarios`, e a mesma frase para `rh.fantasma`; supervisor `inserir`: `SP000006` → `ok`; `timeout_ms` 10^12: `expira_em_s` 10^9 → **300** |
+| **608** (médio) | a `DataRow` do PostgreSQL com menos campos que a `RowDescription` saía inteira do leitor e entrava em pânico no `remota[de]` da sincronia, com a trava de dados na mão | o leitor recusa `n != colunas.len()` dizendo as duas contagens; e `linha_remota_para_negocio`, que é dos três motores, troca o índice por `get` e recusa | `dblink_sincronizar`: conexão cai sem resposta + `panicked at sincronia.rs:404` → `DataRow com 1 campos, a RowDescription anunciou 2`, **0 pânicos** no log |
+| **609** (médio) | o `dblink_ligar` gravava no fim a cópia da ligação lida antes da rede: a excluída no meio voltava com a senha antiga; a troca de senha, host, pino ou `somente_leitura` feita no meio era desfeita | `Definicao.versao` (só em memória; um número novo a cada `Registro::salvar`, de um contador global); `conferir_que_nao_mudou` antes de criar o espelho e, a que decide, sob a mesma trava do `salvar`. Mudou ou sumiu: `Conflito`, nada gravado | `ligar`: `ok`, lista `['pgx','erp']`, `dblink.json` com `SENHA-ANTIGA` → `Conflito … foi excluida`, lista `['pgx']`, sem `SENHA-ANTIGA` |
+
+**A régua do direito no `SCOPE` (607), com o número.** PostgreSQL (4): `LOCK
+TABLE` em `ROW EXCLUSIVE` pede `INSERT`/`UPDATE`/`DELETE`/`TRUNCATE`, e os
+modos que barram escrita alheia pedem `UPDATE`/`DELETE`/`TRUNCATE`. MySQL (2) e
+MariaDB (3) pedem `SELECT` **mais** o privilégio `LOCK TABLES`, que aqui não
+existe — tomar só a metade `SELECT` deixaria a regra mais frouxa que a dos dois.
+SQLite (1) não tem direito por tabela. Sobra a do PostgreSQL: intenção (`AUTO`,
+`ROW`) pede inserir, alterar ou excluir; tabela inteira (`TABLE`, `EXCLUSIVE`)
+pede alterar ou excluir.
+
+**O teto do prazo (607), com o número.** Nenhum dos três maduros põe teto de
+servidor no prazo que a sessão pede: `innodb_lock_wait_timeout` nasce 50 s e
+aceita até 1.073.741.824 s; `lock_wait_timeout` do MySQL nasce 31.536.000 s (1
+ano); `lock_timeout` e `transaction_timeout` do PostgreSQL nascem 0. Lá, porém,
+quem muda o prazo já provou quem é e tem direito na tabela. O que decide aqui é
+a regra escrita no próprio `transacao_prazo_min` — «transação sem prazo nenhum
+é exatamente a que trava a tabela para sempre» —, e o teto é o que o dono do
+servidor escreveu nele. O `LOCK TIMEOUT` não ganhou teto próprio: a espera já é
+cortada pelo prazo da transação (`esperar_trava`).
+
+**Prova nos dois sentidos.** Testes `servidor::testes_escopo_do_begin_607::*`
+(3), `pg::testes::datarow_com_campos_diferentes_do_cabecalho_e_recusada`,
+`dblink::sincronia::testes::linha_remota_mais_curta_que_o_cabecalho_e_recusa_e_nao_panico`
+e `servidor::testes_dblink_fora_da_trava::o_ligar_nao_ressuscita_nem_desfaz_a_ligacao_mexida_no_meio`;
+guardas `escopo-do-begin-sem-login`, `escopo-do-begin-sem-direito`,
+`prazo-da-transacao-sem-teto`, `datarow-curta-do-postgres`,
+`linha-remota-curta-na-sincronia` e `dblink-ligar-grava-copia-velha`.
+
+**O que NÃO se consertou, e por quê.** Os irmãos de leitura do 608 —
+`dblink/mysql.rs` lê por `colunas.len()` e o `phx` monta pelas colunas —
+**não** têm o defeito: não há como a linha sair mais curta que o cabeçalho
+neles, e a segunda tranca da sincronia os cobre se um dia passarem a ter. No
+609, o `dblink_sincronizar` também lê a cópia antes da rede, mas **não grava**
+o cadastro: a revogação feita durante uma rodada vale a partir da rodada
+seguinte, que é o que o privilégio revogado faz numa instrução já em curso nos
+três maduros. E a tabela local criada por um `ligar` que acabou recusado pela
+conferência final fica — um espelho vazio, que o próximo `ligar` reaproveita.

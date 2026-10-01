@@ -20343,4 +20343,142 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "reconciliar_nunca_recua_o_contador",
         ],
     },
+    {
+        "id": "escopo-do-begin-sem-login",
+        "titulo": "só com o token, sem login, um `begin` com `scope` e `lock_mode:EXCLUSIVE` travava qualquer tabela, e a recusa «está no SCOPE e não existe» enumerava o catálogo",
+        "porque": (
+            "pedido 607, revisao SEC independente S1, provado ao vivo: o "
+            "portao do login so barrava `da_operacao(op).is_some()`, e o "
+            "`begin` e anonimo. Com escopo ele toma trava NA ABERTURA; o "
+            "supervisor recebia SP000006 no `inserir`."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        || (matches!(op, "begin" | "start_transaction" | "begin_transaction")
+""",
+        "troca": """        // DEFEITO REPOSTO (607): o escopo passa sem login.
+        || (false && matches!(op, "begin" | "start_transaction" | "begin_transaction")
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": ["servidor::testes_escopo_do_begin_607::sem_login_o_escopo_recusa_e_nao_enumera"],
+        "seguem": [
+            "servidor::testes_escopo_do_begin_607::o_escopo_confere_o_direito_de_cada_tabela",
+            "servidor::testes_escopo_do_begin_607::o_prazo_da_transacao_tem_o_teto_do_config",
+        ],
+    },
+    {
+        "id": "escopo-do-begin-sem-direito",
+        "titulo": "o `SCOPE` do `begin` travava tabela sem conferir o direito de quem pedia (`declarar_escopo` sem `pode_em`): o leitor de outra base travava `rh.salarios`",
+        "porque": (
+            "pedido 607: o `SCOPE` nomeia tabela num campo que o portao 3 "
+            "nao le -- o furo do `juntar`/`unir`/`pivotar`, um nivel abaixo. "
+            "A conferencia vem ANTES da existencia, para a recusa nao "
+            "distinguir a tabela que existe da que nao existe."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """                if !pede.iter().any(|a| u.pode_em(database, nome, *a)) {
+""",
+        "troca": """                // DEFEITO REPOSTO (607): o escopo nao confere direito.
+                if false && !pede.iter().any(|a| u.pode_em(database, nome, *a)) {
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": ["servidor::testes_escopo_do_begin_607::o_escopo_confere_o_direito_de_cada_tabela"],
+        "seguem": [
+            "servidor::testes_escopo_do_begin_607::sem_login_o_escopo_recusa_e_nao_enumera",
+            "servidor::testes_escopo_do_begin_607::o_prazo_da_transacao_tem_o_teto_do_config",
+        ],
+    },
+    {
+        "id": "prazo-da-transacao-sem-teto",
+        "titulo": "o `timeout_ms` do `begin` não tinha teto: 10^12 ms abria uma transação de 31 anos",
+        "porque": (
+            "pedido 607: com `SCOPE EXCLUSIVE` o prazo e quanto a tabela fica "
+            "presa. O teto e o `recursos.transacao_prazo_min` do config.json "
+            "(5 min de fabrica); pedir menos continua valendo."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """            transacao_ms: duracao_ms(p, "timeout", teto_ms)?.min(teto_ms),
+""",
+        "troca": """            // DEFEITO REPOSTO (607): o prazo que o cliente quiser.
+            transacao_ms: duracao_ms(p, "timeout", teto_ms)?,
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": ["servidor::testes_escopo_do_begin_607::o_prazo_da_transacao_tem_o_teto_do_config"],
+        "seguem": [
+            "servidor::testes_escopo_do_begin_607::sem_login_o_escopo_recusa_e_nao_enumera",
+            "servidor::testes_escopo_do_begin_607::o_escopo_confere_o_direito_de_cada_tabela",
+        ],
+    },
+    {
+        "id": "datarow-curta-do-postgres",
+        "titulo": "a `DataRow` do PostgreSQL com menos campos que a `RowDescription` passava pelo leitor e entrava em pânico na sincronia, com a trava de dados na mão",
+        "porque": (
+            "pedido 608, revisao SEC independente S2, provado ao vivo: o par "
+            "falso mandou T(id, nome) e D com 1 campo; o `dblink_sincronizar` "
+            "derrubou a conexao com `panic_bounds_check` em "
+            "`sincronia.rs:404`. Mesma pergunta do 544, do lado de dentro do teto."
+        ),
+        "arquivo": "crates/phxsql-server/src/pg/mod.rs",
+        "trecho": """    if !colunas.is_empty() && n != colunas.len() {
+""",
+        "troca": """    // DEFEITO REPOSTO (608): a contagem da DataRow nao se confere.
+    if false && !colunas.is_empty() && n != colunas.len() {
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": ["pg::testes::datarow_com_campos_diferentes_do_cabecalho_e_recusada"],
+        "seguem": ["pg::testes::resultado_bem_formado_do_postgres_continua_inteiro"],
+    },
+    {
+        "id": "linha-remota-curta-na-sincronia",
+        "titulo": "`linha_remota_para_negocio` indexava a linha do par pela posição do cabeçalho (`remota[de]`): linha curta de qualquer motor era pânico, não recusa",
+        "porque": (
+            "pedido 608, a segunda tranca: a funcao e dos tres motores, e um "
+            "leitor novo que esquecesse de conferir a contagem traria o "
+            "panico de volta com a trava de dados na mao."
+        ),
+        "arquivo": "crates/phxsql-server/src/dblink/sincronia.rs",
+        "trecho": """        let Some(celula) = remota.get(de) else {
+""",
+        "troca": """        // DEFEITO REPOSTO (608): o indice cru de antes.
+        let Some(celula) = Some(&remota[de]) else {
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": ["dblink::sincronia::testes::linha_remota_mais_curta_que_o_cabecalho_e_recusa_e_nao_panico"],
+        "seguem": ["dblink::sincronia::testes::a_celula_puxada_recusa_sem_valor_e_o_texto_chega_inteiro"],
+    },
+    {
+        "id": "dblink-ligar-grava-copia-velha",
+        "titulo": "o `dblink_ligar` gravava no fim a cópia da ligação lida antes da rede: a excluída no meio voltava com a senha antiga, e a troca de senha feita no meio era desfeita",
+        "porque": (
+            "pedido 609, revisao SEC independente S3, provado ao vivo: "
+            "colateral do 545, que tirou a trava de dados de cima do fio. O "
+            "`salvar` substitui pelo nome e nao conferia versao nem existencia."
+        ),
+        "trocas": [
+            {
+                "arquivo": "crates/phxsql-server/src/servidor.rs",
+                "trecho": """            .conferir_que_nao_mudou(&d, "dblink_ligar")?;
+""",
+                "troca": """            // DEFEITO REPOSTO (609, 1/2): sem conferir antes do espelho.
+            .exigir_legivel()?;
+""",
+            },
+            {
+                "arquivo": "crates/phxsql-server/src/servidor.rs",
+                "trecho": """        r.conferir_que_nao_mudou(&d, "dblink_ligar")?;
+""",
+                "troca": """        // DEFEITO REPOSTO (609, 2/2): grava a copia velha por cima.
+        r.exigir_legivel()?;
+""",
+            },
+        ],
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": ["servidor::testes_dblink_fora_da_trava::o_ligar_nao_ressuscita_nem_desfaz_a_ligacao_mexida_no_meio"],
+        "seguem": ["servidor::testes_dblink_fora_da_trava::o_par_que_goteja_nao_prende_o_banco"],
+    },
 ]

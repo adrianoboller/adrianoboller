@@ -1064,11 +1064,17 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `vetor-do-pulso-ignorado` | a posição POR TABELA do pulso não chegava ao painel: a soma escondia o nó em dia na tabela grande e cego na pequena | 1 | ✅ provada |
 | `faixa-sem-saida` | a tabela gravada pelo contador `v + 1` não abria (a faixa recusa) e o remédio exigia abrir: ficava sem saída | 1 | ✅ provada |
 | `reconciliar-fora-da-faixa` | o `reparar` reconciliava a `Sequence` com `maior + 1` cru: numa tabela com faixa o valor caía fora dela e o reparo virava erro | 2 | ✅ provada |
+| `escopo-do-begin-sem-login` | só com o token, sem login, um `begin` com `scope` e `lock_mode:EXCLUSIVE` travava qualquer tabela, e a recusa «está no SCOPE e não existe» enumerava o catálogo | 1 | ✅ provada |
+| `escopo-do-begin-sem-direito` | o `SCOPE` do `begin` travava tabela sem conferir o direito de quem pedia (`declarar_escopo` sem `pode_em`): o leitor de outra base travava `rh.salarios` | 1 | ✅ provada |
+| `prazo-da-transacao-sem-teto` | o `timeout_ms` do `begin` não tinha teto: 10^12 ms abria uma transação de 31 anos | 1 | ✅ provada |
+| `datarow-curta-do-postgres` | a `DataRow` do PostgreSQL com menos campos que a `RowDescription` passava pelo leitor e entrava em pânico na sincronia, com a trava de dados na mão | 1 | ✅ provada |
+| `linha-remota-curta-na-sincronia` | `linha_remota_para_negocio` indexava a linha do par pela posição do cabeçalho (`remota[de]`): linha curta de qualquer motor era pânico, não recusa | 1 | ✅ provada |
+| `dblink-ligar-grava-copia-velha` | o `dblink_ligar` gravava no fim a cópia da ligação lida antes da rede: a excluída no meio voltava com a senha antiga, e a troca de senha feita no meio era desfeita | 1 | ✅ provada |
 | `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | — | 🪦 aposentada (18/09/2026) |
 
-**423 das 598 guardas do catálogo: 1 aposentada, 418 provadas, 4 redundantes** — 12387 s de mutação, medido em 2026-09-16 15:25.
+**429 das 604 guardas do catálogo: 1 aposentada, 424 provadas, 4 redundantes** — 12881 s de mutação, medido em 2026-09-16 15:25.
 
-> **Esta rodada NÃO julgou 176 das 598 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 176 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 176 das 604 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 176 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
 - `fk-antes-do-default` — a chave estrangeira confere a linha crua, e o DEFAULT sem mãe grava a filha órfã
 - `fk-antes-do-default-pelo-servidor` — o DEFAULT e a calculada sem mãe gravam a órfã pelo servidor, fora e dentro da transação
