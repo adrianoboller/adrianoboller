@@ -1,0 +1,563 @@
+{
+ "commit": "6fc8244e",
+ "capitulos": [
+  {
+   "nome": "Entrar",
+   "sub": "Login, identidade e a primeira visão do servidor",
+   "telas": [
+    {
+     "id": 0,
+     "nome": "Login",
+     "desc": "Entrada com servidor, porta, usuário, senha, token do servidor e o idioma da sessão.",
+     "tambem": null
+    },
+    {
+     "id": 58,
+     "nome": "Administração › Quem sou eu",
+     "desc": "Quem é o usuário da sessão e o que ele pode fazer.",
+     "tambem": null
+    },
+    {
+     "id": 6,
+     "nome": "Arquivo › Painel",
+     "desc": "O painel: estado do servidor, bancos e números de uso de relance.",
+     "tambem": null
+    }
+   ]
+  },
+  {
+   "nome": "Configurar",
+   "sub": "O servidor, o banco, os usuários e a língua da tela",
+   "telas": [
+    {
+     "id": 75,
+     "nome": "Configurações › Gerais do servidor",
+     "desc": "Configurações gerais do servidor.",
+     "tambem": null
+    },
+    {
+     "id": 76,
+     "nome": "Configurações › Do banco atual",
+     "desc": "Configurações do banco aberto.",
+     "tambem": null
+    },
+    {
+     "id": 77,
+     "nome": "Configurações › Dos usuários",
+     "desc": "Configurações por usuário.",
+     "tambem": null
+    },
+    {
+     "id": 78,
+     "nome": "Configurações › Diretivas de acesso",
+     "desc": "Diretivas de acesso: quem pode o quê.",
+     "tambem": null
+    },
+    {
+     "id": 79,
+     "nome": "Configurações › Diretivas do banco",
+     "desc": "Diretivas do banco.",
+     "tambem": null
+    },
+    {
+     "id": 82,
+     "nome": "Configurações › Idiomas da interface…",
+     "desc": "Idiomas da interface: a fábrica de textos da tela.",
+     "tambem": null
+    },
+    {
+     "id": 81,
+     "nome": "Configurações › Mensagens do servidor…",
+     "desc": "Mensagens do servidor, por código e idioma.",
+     "tambem": null
+    }
+   ]
+  },
+  {
+   "nome": "Usuários e acesso",
+   "sub": "Quem entra, de onde, e o que está bloqueado",
+   "telas": [
+    {
+     "id": 49,
+     "nome": "Administração › Usuários",
+     "desc": "Cadastro de usuários.",
+     "tambem": null
+    },
+    {
+     "id": 50,
+     "nome": "Administração › Acessos",
+     "desc": "Acessos registrados.",
+     "tambem": null
+    },
+    {
+     "id": 51,
+     "nome": "Administração › Bloqueios",
+     "desc": "Bloqueios de acesso.",
+     "tambem": null
+    }
+   ]
+  },
+  {
+   "nome": "O banco",
+   "sub": "Gerir o banco e enxergar o catálogo",
+   "telas": [
+    {
+     "id": 13,
+     "nome": "Banco › Gerir este banco",
+     "desc": "Gerir o banco aberto.",
+     "tambem": null
+    },
+    {
+     "id": 8,
+     "nome": "Arquivo › View Database",
+     "desc": "Visão do database.",
+     "tambem": null
+    },
+    {
+     "id": 15,
+     "nome": "Banco › SysTables",
+     "desc": "SysTables: o catálogo das tabelas.",
+     "tambem": null
+    },
+    {
+     "id": 16,
+     "nome": "Banco › SysColumns",
+     "desc": "SysColumns: o catálogo das colunas.",
+     "tambem": null
+    }
+   ]
+  },
+  {
+   "nome": "Criar e estruturar tabelas",
+   "sub": "Da tabela nova aos índices",
+   "telas": [
+    {
+     "id": 27,
+     "nome": "Tabelas › Gerir as tabelas",
+     "desc": "Gerir as tabelas do banco.",
+     "tambem": null
+    },
+    {
+     "id": 28,
+     "nome": "Tabelas › Nova tabela…",
+     "desc": "Criar uma tabela nova.",
+     "tambem": null
+    },
+    {
+     "id": 29,
+     "nome": "Tabelas › Estrutura da tabela",
+     "desc": "Estrutura da tabela: colunas, tipos e chaves.",
+     "tambem": null
+    },
+    {
+     "id": 1,
+     "nome": "Tabela (abas) › Estrutura",
+     "desc": "A mesma estrutura, pela aba da tabela aberta.",
+     "tambem": null
+    },
+    {
+     "id": 32,
+     "nome": "Tabelas › Configurações e diretivas",
+     "desc": "Configurações e diretivas da tabela.",
+     "tambem": null
+    },
+    {
+     "id": 31,
+     "nome": "Tabelas › Partições da tabela",
+     "desc": "Partições da tabela.",
+     "tambem": null
+    },
+    {
+     "id": 33,
+     "nome": "Tabelas › Índices",
+     "desc": "Índices da tabela.",
+     "tambem": null
+    },
+    {
+     "id": 3,
+     "nome": "Tabela (abas) › Índices",
+     "desc": "Os índices, pela aba da tabela aberta.",
+     "tambem": null
+    }
+   ]
+  },
+  {
+   "nome": "Trabalhar com os dados",
+   "sub": "Editar, importar, consultar e combinar",
+   "telas": [
+    {
+     "id": 30,
+     "nome": "Tabelas › Editar conteúdo",
+     "desc": "Editar o conteúdo, linha a linha.",
+     "tambem": null
+    },
+    {
+     "id": 2,
+     "nome": "Tabela (abas) › Conteúdo",
+     "desc": "O conteúdo, pela aba da tabela aberta.",
+     "tambem": null
+    },
+    {
+     "id": 42,
+     "nome": "Tabelas › Importar carga…",
+     "desc": "Importar carga para a tabela.",
+     "tambem": null
+    },
+    {
+     "id": 41,
+     "nome": "Tabelas › Exportar…",
+     "desc": "Exportar a tabela.",
+     "tambem": null
+    },
+    {
+     "id": 60,
+     "nome": "Ferramentas › Consulta SQL",
+     "desc": "Consulta SQL.",
+     "tambem": null
+    },
+    {
+     "id": 17,
+     "nome": "Banco › Tabela dinâmica…",
+     "desc": "Tabela dinâmica (pivô).",
+     "tambem": "também em Ferramentas"
+    },
+    {
+     "id": 61,
+     "nome": "Ferramentas › Tabela dinâmica…",
+     "desc": "A mesma tabela dinâmica, pelo menu Ferramentas.",
+     "tambem": null
+    },
+    {
+     "id": 18,
+     "nome": "Banco › Junção de tabelas…",
+     "desc": "Junção de tabelas.",
+     "tambem": "também em Ferramentas"
+    },
+    {
+     "id": 62,
+     "nome": "Ferramentas › Junção de tabelas…",
+     "desc": "A mesma junção, pelo menu Ferramentas.",
+     "tambem": null
+    },
+    {
+     "id": 19,
+     "nome": "Banco › União de tabelas…",
+     "desc": "União de tabelas.",
+     "tambem": "também em Ferramentas"
+    },
+    {
+     "id": 63,
+     "nome": "Ferramentas › União de tabelas…",
+     "desc": "A mesma união, pelo menu Ferramentas.",
+     "tambem": null
+    },
+    {
+     "id": 20,
+     "nome": "Banco › Sequências",
+     "desc": "Sequências do banco.",
+     "tambem": null
+    },
+    {
+     "id": 21,
+     "nome": "Banco › Diagrama ER…",
+     "desc": "Diagrama entidade-relacionamento.",
+     "tambem": null
+    }
+   ]
+  },
+  {
+   "nome": "Integridade e histórico",
+   "sub": "Chaves, diário, lixeira e conferências",
+   "telas": [
+    {
+     "id": 35,
+     "nome": "Tabelas › Integridade",
+     "desc": "Integridade referencial: mãe com filhas nunca se exclui.",
+     "tambem": null
+    },
+    {
+     "id": 5,
+     "nome": "Tabela (abas) › Integridade",
+     "desc": "A integridade, pela aba da tabela aberta.",
+     "tambem": null
+    },
+    {
+     "id": 34,
+     "nome": "Tabelas › Diário",
+     "desc": "Diário da tabela: o que mudou e quando.",
+     "tambem": null
+    },
+    {
+     "id": 4,
+     "nome": "Tabela (abas) › Diário",
+     "desc": "O diário, pela aba da tabela aberta.",
+     "tambem": null
+    },
+    {
+     "id": 36,
+     "nome": "Tabelas › Lixeira da tabela",
+     "desc": "Lixeira da tabela: o excluído que volta.",
+     "tambem": null
+    },
+    {
+     "id": 37,
+     "nome": "Tabelas › Motivos das exclusões",
+     "desc": "Motivos das exclusões.",
+     "tambem": null
+    },
+    {
+     "id": 39,
+     "nome": "Tabelas › Verificar",
+     "desc": "Verificar a tabela.",
+     "tambem": null
+    },
+    {
+     "id": 40,
+     "nome": "Tabelas › Soma de verificação",
+     "desc": "Soma de verificação da tabela.",
+     "tambem": null
+    }
+   ]
+  },
+  {
+   "nome": "Transações e travas",
+   "sub": "O que está em curso e o que está preso",
+   "telas": [
+    {
+     "id": 26,
+     "nome": "Banco › Transações",
+     "desc": "Transações do banco.",
+     "tambem": null
+    },
+    {
+     "id": 59,
+     "nome": "Ferramentas › Gestão de transações",
+     "desc": "Gestão de transações.",
+     "tambem": null
+    },
+    {
+     "id": 25,
+     "nome": "Banco › Arquivos bloqueados",
+     "desc": "Arquivos bloqueados.",
+     "tambem": null
+    }
+   ]
+  },
+  {
+   "nome": "Memória",
+   "sub": "Tabelas residentes em RAM",
+   "telas": [
+    {
+     "id": 46,
+     "nome": "Memória › Carregar esta tabela na RAM",
+     "desc": "Carregar a tabela na RAM.",
+     "tambem": null
+    },
+    {
+     "id": 47,
+     "nome": "Memória › Tabelas residentes",
+     "desc": "Tabelas residentes.",
+     "tambem": null
+    },
+    {
+     "id": 48,
+     "nome": "Memória › Liberar esta tabela",
+     "desc": "Liberar a tabela da RAM.",
+     "tambem": null
+    }
+   ]
+  },
+  {
+   "nome": "Backup e cópia",
+   "sub": "Guardar, conferir, restaurar e copiar",
+   "telas": [
+    {
+     "id": 9,
+     "nome": "Arquivo › Backup agora…",
+     "desc": "Fazer backup agora.",
+     "tambem": null
+    },
+    {
+     "id": 10,
+     "nome": "Arquivo › Conferir um backup…",
+     "desc": "Conferir um backup.",
+     "tambem": null
+    },
+    {
+     "id": 24,
+     "nome": "Banco › Backup e restauração",
+     "desc": "Backup e restauração do banco.",
+     "tambem": null
+    },
+    {
+     "id": 11,
+     "nome": "Arquivo › Restaurar um backup…",
+     "desc": "Restaurar um backup.",
+     "tambem": null
+    },
+    {
+     "id": 23,
+     "nome": "Banco › Copiar / colar tabela…",
+     "desc": "Copiar e colar tabela entre bancos.",
+     "tambem": null
+    }
+   ]
+  },
+  {
+   "nome": "Replicação e ligações",
+   "sub": "Réplica, cluster e DbLink",
+   "telas": [
+    {
+     "id": 68,
+     "nome": "Ferramentas › Replicação",
+     "desc": "Replicação.",
+     "tambem": null
+    },
+    {
+     "id": 69,
+     "nome": "Ferramentas › Cluster",
+     "desc": "Cluster.",
+     "tambem": null
+    },
+    {
+     "id": 80,
+     "nome": "Configurações › Definições do DbLink…",
+     "desc": "Definições do DbLink.",
+     "tambem": null
+    }
+   ]
+  },
+  {
+   "nome": "Monitorar",
+   "sub": "Sessões, uso, telemetria e serviço",
+   "telas": [
+    {
+     "id": 54,
+     "nome": "Administração › Sessões agora",
+     "desc": "Sessões agora.",
+     "tambem": null
+    },
+    {
+     "id": 66,
+     "nome": "Ferramentas › Sessões e conexões",
+     "desc": "Sessões e conexões.",
+     "tambem": null
+    },
+    {
+     "id": 55,
+     "nome": "Administração › Estatísticas de uso",
+     "desc": "Estatísticas de uso.",
+     "tambem": "também em Ferramentas"
+    },
+    {
+     "id": 67,
+     "nome": "Ferramentas › Estatísticas de uso…",
+     "desc": "As mesmas estatísticas, pelo menu Ferramentas.",
+     "tambem": null
+    },
+    {
+     "id": 56,
+     "nome": "Administração › De onde vêm",
+     "desc": "De onde vêm os acessos.",
+     "tambem": null
+    },
+    {
+     "id": 70,
+     "nome": "Ferramentas › Telemetria ao vivo…",
+     "desc": "Telemetria ao vivo.",
+     "tambem": null
+    },
+    {
+     "id": 71,
+     "nome": "Ferramentas › Profiler…",
+     "desc": "Profiler.",
+     "tambem": null
+    },
+    {
+     "id": 64,
+     "nome": "Ferramentas › Serviço",
+     "desc": "Serviço.",
+     "tambem": null
+    },
+    {
+     "id": 53,
+     "nome": "Administração › Jobs de execução…",
+     "desc": "Jobs de execução.",
+     "tambem": "também em Ferramentas"
+    },
+    {
+     "id": 65,
+     "nome": "Ferramentas › Jobs de execução…",
+     "desc": "Os mesmos jobs, pelo menu Ferramentas.",
+     "tambem": null
+    }
+   ]
+  },
+  {
+   "nome": "Dado pessoal (LGPD)",
+   "sub": "O que é dado pessoal e onde está",
+   "telas": [
+    {
+     "id": 22,
+     "nome": "Banco › Dado pessoal (LGPD)…",
+     "desc": "Dado pessoal no banco.",
+     "tambem": "também em Administração"
+    },
+    {
+     "id": 52,
+     "nome": "Administração › Dado pessoal (LGPD)…",
+     "desc": "O mesmo, pelo menu Administração.",
+     "tambem": null
+    }
+   ]
+  },
+  {
+   "nome": "Avançado e ajuda",
+   "sub": "Integrações, layout e sobre",
+   "telas": [
+    {
+     "id": 57,
+     "nome": "Administração › Configuração",
+     "desc": "Configuração do servidor (Administração).",
+     "tambem": null
+    },
+    {
+     "id": 83,
+     "nome": "Configurações › Integração com a Claude…",
+     "desc": "Integração com a Claude.",
+     "tambem": null
+    },
+    {
+     "id": 84,
+     "nome": "Configurações › Editor de menu…",
+     "desc": "Editor de menu.",
+     "tambem": null
+    },
+    {
+     "id": 92,
+     "nome": "Ver › Quatro regiões",
+     "desc": "Quatro regiões: o modo multitela.",
+     "tambem": null
+    },
+    {
+     "id": 95,
+     "nome": "Ver › Sobre o modo multitela…",
+     "desc": "Sobre o modo multitela.",
+     "tambem": null
+    },
+    {
+     "id": 96,
+     "nome": "Ajuda › Sobre o PhxSql",
+     "desc": "Sobre o PhxSql.",
+     "tambem": null
+    },
+    {
+     "id": 97,
+     "nome": "Ajuda › About",
+     "desc": "Quem fez.",
+     "tambem": null
+    }
+   ]
+  }
+ ]
+}
