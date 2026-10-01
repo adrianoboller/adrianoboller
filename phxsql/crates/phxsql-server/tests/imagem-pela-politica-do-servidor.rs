@@ -25,6 +25,8 @@
 //! 5. **517** -- indice unico sobre coluna que aceita nulo nao vale como
 //!    identidade no bidirecional: a tabela e recusada dizendo por que, e a
 //!    linha de chave nula de um no nao apaga a do outro.
+//! 6. **601** -- duas caixas recem-nascidas empatam o carimbo; a LINHAGEM da
+//!    tabela (`PSCH` v11) recusa a exclusao de outra historia mesmo assim.
 
 #![cfg(unix)]
 
@@ -533,4 +535,101 @@ fn a_chave_unica_anulavel_nao_vale_como_identidade() {
     // Tres voltas do laco: tempo de sobra para a exclusao chegar, se fosse.
     std::thread::sleep(Duration::from_secs(3));
     assert_eq!(nomes(alfa.porta), vec!["do alfa".to_string()]);
+}
+
+// ---------------------------------------------------------------------------
+// 6. Pedido 601 -- a linhagem da tabela fecha o empate do carimbo
+// ---------------------------------------------------------------------------
+
+/// O `replicar` inteiro de `loja.clientes`: os eventos E a linhagem.
+fn replicar_tudo(porta: u16) -> Json {
+    exigir(
+        porta,
+        r#""op":"replicar","database":"loja","tabela":"clientes","desde":0"#,
+    )
+}
+
+/// **Prova real do 601 (segunda parte).** O buraco que o 416 deixou nomeado:
+/// duas caixas RECEM-NASCIDAS, sem historia nenhuma antes, emitem o mesmo
+/// carimbo `1` -- e a conferencia do `rowstamp` ve `1 == 1` e deixa a
+/// exclusao de B apagar a linha de A. Aqui nao ha tabela vizinha andando o
+/// contador de B: e exatamente o empate que a cognicao de 01/10 mediu.
+///
+/// O destino e a replica FIEL de A -- a tabela dele nasceu do bloco de
+/// esquema de A, com a linhagem de A. O evento de B chega pelo `aplicar` com
+/// a linhagem de B, que o `replicar` de B entrega.
+///
+/// **Defeito reposto**: o `aplicar` ignorando o campo `linhagem` (ou o
+/// `Schema::new` sem cunhar) -- a linha de A some com `aplicados: 1`.
+#[test]
+fn a_linhagem_recusa_a_exclusao_de_outra_historia_com_o_carimbo_empatado() {
+    let dir = DirTemp::novo("601-linhagem");
+    let a = subir(&dir, "a", SOURCE);
+    let b = subir(
+        &dir,
+        "b",
+        r#"{"papel":"source","id_servidor":"B","imagem_da_linha":true}"#,
+    );
+    criar_clientes(a.porta);
+    criar_clientes(b.porta);
+    inserir(a.porta, 1, "da caixa A");
+    let destino = subir(
+        &dir,
+        "destino",
+        &format!(
+            r#"{{"papel":"replica","id_servidor":"D","imagem_da_linha":true,
+                "origens":{}}}"#,
+            origem("fonte", a.porta)
+        ),
+    );
+    esperar("a linha de A na replica", || {
+        linhas(destino.porta) == vec![(1, "da caixa A".to_string())]
+    });
+
+    let de_a = replicar_tudo(a.porta).texto_ou("linhagem", "").to_string();
+    let no_destino = replicar_tudo(destino.porta)
+        .texto_ou("linhagem", "")
+        .to_string();
+    assert!(!de_a.is_empty(), "o replicar de A nao entrega a linhagem");
+    assert_eq!(
+        no_destino, de_a,
+        "a replica fiel nasceu com outra linhagem que a do source"
+    );
+
+    inserir(b.porta, 500, "da caixa B");
+    let x = excluir_fisico(b.porta, 1);
+    assert!(x.booleano_ou("ok", false), "{}", x.escrever());
+    let de_b = replicar_tudo(b.porta);
+    let linhagem_b = de_b.texto_ou("linhagem", "").to_string();
+    assert_ne!(
+        linhagem_b, de_a,
+        "duas caixas por conta com a mesma linhagem"
+    );
+    let ev = de_b
+        .campo("eventos")
+        .and_then(Json::lista)
+        .map(<[Json]>::to_vec)
+        .unwrap_or_default();
+    assert_eq!(ev[1].texto_ou("operacao", ""), "exclusao");
+    // A premissa do buraco -- os carimbos EMPATAM -- e o que a prova com o
+    // defeito reposto mede: sem a linhagem, a exclusao de B passa pela
+    // conferencia do carimbo e apaga a linha de A com `aplicados: 1`.
+    let r = exigir(
+        destino.porta,
+        &format!(
+            r#""op":"aplicar","database":"loja","tabela":"clientes",
+               "linhagem":"{linhagem_b}","eventos":[{}]"#,
+            ev[1].escrever()
+        ),
+    );
+    assert_eq!(r.inteiro_ou("aplicados", -1), 0, "{}", r.escrever());
+    let erro = r.texto_ou("erro", "").to_string();
+    for pedaco in ["clientes", "historia", "linhagem"] {
+        assert!(erro.contains(pedaco), "a recusa nao diz {pedaco:?}: {erro}");
+    }
+    assert_eq!(
+        linhas(destino.porta),
+        vec![(1, "da caixa A".to_string())],
+        "a linha de A sumiu"
+    );
 }

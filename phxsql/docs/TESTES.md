@@ -1093,11 +1093,18 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `bidirecional-sem-cofre-inserir-marcado-em-claro` | O bidirecional sem cofre passava pelo `inserir_replicado` com o dado marcado de OUTRO servidor: a recusa do 613 morava só no `aplicar_evento` | 1 | ✅ provada |
 | `bidirecional-sem-cofre-atualizar-marcado-em-claro` | O bidirecional sem cofre passava pelo `atualizar_replicado` com o dado marcado de OUTRO servidor: a recusa do 613 morava só no `aplicar_evento` | 1 | ✅ provada |
 | `bidirecional-sem-cofre-excluir_de_vez-marcado-em-claro` | O bidirecional sem cofre passava pelo `excluir_de_vez_replicado` com o dado marcado de OUTRO servidor: a recusa do 613 morava só no `aplicar_evento` | 1 | ✅ provada |
+| `linhagem-nao-cunhada-na-declaracao` | a tabela declarada nasce sem linhagem: duas origens com historias diferentes ficam indistinguiveis e o carimbo empatado de dois servidores recem-nascidos apaga a linha errada | 1 | ✅ provada |
+| `alter-perde-a-linhagem` | acrescentar coluna devolve o esquema sem linhagem: depois do primeiro ALTER a replica deixa de conferir a historia da tabela | 1 | ✅ provada |
+| `copia-leva-a-linhagem-da-origem` | a copia de tabela (duplicar e colar) leva a linhagem da origem byte a byte: duas tabelas de historias diferentes passam pela conferencia como a mesma | 1 | ✅ provada |
+| `replica-fiel-sem-conferir-a-linhagem` | a replica fiel abre a tabela daqui sem conferir a linhagem do source: tabela de outra historia recebe os eventos no rowid de outra linha | 1 | ✅ provada |
+| `aplicar-sem-conferir-a-linhagem` | o `aplicar` ignora a linhagem que veio no pedido: a exclusao de uma caixa recem-nascida apaga a linha de outra com o carimbo empatado | 1 | ✅ provada |
+| `teto-de-colunas-sem-o-bit-do-selo` | o esquema aceita ate 65.535 colunas: a coluna 32.768 externa e lida na imagem como a 0, selada | 1 | ✅ provada |
+| `evento-pre-344-ao-fio-sem-abrir` | o evento do diario gravado antes do 344 (externo selado, sem o bit) sai para o fio como veio: a replica grava o cifrado como se fosse o anexo | 1 | ✅ provada |
 | `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | — | 🪦 aposentada (18/09/2026) |
 
-**452 das 627 guardas do catálogo: 1 aposentada, 447 provadas, 4 redundantes** — 13596 s de mutação, medido em 2026-09-16 15:25.
+**459 das 634 guardas do catálogo: 1 aposentada, 454 provadas, 4 redundantes** — 13758 s de mutação, medido em 2026-09-16 15:25.
 
-> **Esta rodada NÃO julgou 176 das 627 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 176 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 176 das 634 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 176 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
 - `fk-antes-do-default` — a chave estrangeira confere a linha crua, e o DEFAULT sem mãe grava a filha órfã
 - `fk-antes-do-default-pelo-servidor` — o DEFAULT e a calculada sem mãe gravam a órfã pelo servidor, fora e dentro da transação

@@ -1719,6 +1719,12 @@ pub const OPERACOES: &[Operacao] = &[
                 "`inclusao`, `alteracao` ou `exclusao`, quando é um só",
             ),
             opc("imagem", "string", "a linha em hexadecimal, quando é um só"),
+            opc(
+                "linhagem",
+                "string",
+                "a linhagem da tabela de origem (o `replicar` a entrega); diferente da \
+                 daqui, nada se aplica -- é outra história (pedido 601)",
+            ),
         ],
         exemplo: r#"{"op":"aplicar","database":"loja","tabela":"clientes","rowid":42,"operacao":"inclusao","imagem":"00ff..."}"#,
         ferramenta_mcp: false,

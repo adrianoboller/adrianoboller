@@ -76,8 +76,33 @@ const MAGIC_ESQUEMA: &[u8; 4] = b"PSCH";
 /// Truncado no bloco da v10 e ERRO, no molde da v9 e nao no da v6/v8: um
 /// `passo` que sumisse calado viraria faixa 1 e faria dois nos numerarem a
 /// mesma faixa outra vez.
-const VERSAO_ESQUEMA: u16 = 10;
+///
+/// # v11: a LINHAGEM da tabela (pedido 601, parecer do DBA de 01/10/2026)
+///
+/// Um UUID v7 cunhado no nascimento da tabela, no FIM do bloco:
+/// `[tem u8][uuid 16]`. Zero byte por linha. Responde «este evento e da
+/// mesma HISTORIA desta tabela?», que o `rowstamp` nao responde: ele e
+/// contador do processo, e dois servidores recem-nascidos emitem o mesmo `1`
+/// (cognicao de 01/10/2026 11:00). O bloco viaja byte a byte para a replica,
+/// entao a linhagem chega igual em toda replica e sobrevive ao failover;
+/// duas origens que criaram «clientes» cada uma por conta tem linhagens
+/// diferentes.
+///
+/// Esquema de antes (v <= 10) le como SEM linhagem, e a conferencia fica como
+/// era -- a linhagem de nascimento nao se inventa depois (a adivinhacao
+/// retroativa que o 290 ja recusou). Truncado no bloco da v11 e ERRO, no
+/// molde da v9/v10: linhagem que sumisse calada desligaria a guarda.
+const VERSAO_ESQUEMA: u16 = 11;
 const VERSAO_ESQUEMA_MINIMA: u16 = 2;
+
+/// Quantas colunas uma tabela pode ter: 32.767, e nao 65.535 (pedido 603,
+/// NAO 344-b do DBA). O bit alto do indice de coluna na imagem de replicacao
+/// e o `EXTERNO_SELADO` (`phxsql-store`, `table.rs`); com 65.535 a coluna
+/// 32.768 externa seria lida como a 0, selada. Vale tambem no `do_disco` --
+/// o caminho de LER -- de proposito, e so pode ser assim ANTES de selar a
+/// 0.19.0: nenhuma tabela tem tantas colunas hoje, e depois baixar o teto
+/// seria recusar banco que abria.
+pub const TETO_DE_COLUNAS: usize = 0x7FFF;
 
 /// Nome da coluna de sistema que marca a linha como excluida sem excluir.
 ///
@@ -791,6 +816,9 @@ pub struct Schema {
     /// restaurado noutro servidor precisa continuar sabendo de que faixa e.
     /// O `inicio` NAO mora aqui -- ver a nota em [`VERSAO_ESQUEMA`].
     passo_da_sequencia: u64,
+    /// A historia desta tabela (v11). `None` = gravada antes da v11. Ver a
+    /// nota em [`VERSAO_ESQUEMA`].
+    linhagem: Option<Uuid>,
 }
 
 /// Duas colunas da mesma tabela com o MESMO id, recusado na declaracao.
@@ -1028,7 +1056,11 @@ impl Schema {
         }
         let nome = nome.into();
         conferir_ids_repetidos(&nome, &colunas)?;
-        let esquema = Schema::do_disco(nome, colunas, indices)?;
+        let mut esquema = Schema::do_disco(nome, colunas, indices)?;
+        // A tabela que se DECLARA nasce com historia propria (v11). A que
+        // chega por replicacao nao passa por aqui: vem do bloco do source,
+        // com a linhagem dele.
+        esquema.linhagem = Some(Uuid::v7());
         // Depois do `do_disco` e nao antes: a pergunta e' sobre o esquema
         // MONTADO -- as quatro pecas da cadeia e as marcas juntas --, e montar
         // e' o que o `do_disco` faz. Ali dentro a guarda nao pode entrar: o
@@ -1055,8 +1087,13 @@ impl Schema {
         if colunas.is_empty() {
             return Err(PhxError::Esquema(format!("tabela {nome} sem colunas")));
         }
-        if colunas.len() > u16::MAX as usize {
-            return Err(PhxError::Esquema("colunas demais".into()));
+        if colunas.len() > TETO_DE_COLUNAS {
+            return Err(PhxError::Esquema(format!(
+                "tabela {nome} com {} colunas: o teto e {TETO_DE_COLUNAS} -- o bit \
+                 alto do indice de coluna e o selo do externo na imagem de \
+                 replicacao (pedido 603)",
+                colunas.len()
+            )));
         }
 
         for (i, c) in colunas.iter().enumerate() {
@@ -1265,6 +1302,9 @@ impl Schema {
             // gravada antes da v10 nao tem faixa, e faixa 1 e exatamente o
             // que ela sempre teve.
             passo_da_sequencia: 1,
+            // `do_disco` e o caminho de LER: a linhagem vem do bloco, nunca
+            // daqui. Quem cunha e o `new`, que e o caminho de DECLARAR.
+            linhagem: None,
         })
     }
 
@@ -1301,6 +1341,32 @@ impl Schema {
     }
 
     /// Denominador da faixa da `Sequence`. 1 = sem faixa (o padrao).
+    /// A linhagem da tabela (v11), `None` quando gravada antes.
+    pub fn linhagem(&self) -> Option<Uuid> {
+        self.linhagem
+    }
+
+    /// Troca a linhagem. `Some(Uuid::v7())` e o que a COPIA de tabela faz:
+    /// copia e historia nova, e levar a da origem faria a conferencia da
+    /// replica ver «a mesma tabela» em duas (pedido 601).
+    pub fn com_linhagem(mut self, linhagem: Option<Uuid>) -> Schema {
+        self.linhagem = linhagem;
+        self
+    }
+
+    /// Recusa quando as DUAS linhagens existem e diferem. Ausente de um lado
+    /// = esquema de antes da v11, e a conferencia fica como era (guarda nova
+    /// entra pedida, nao imposta).
+    pub fn conferir_linhagem(&self, outra: Option<Uuid>, onde: &str) -> Result<()> {
+        match (self.linhagem, outra) {
+            (Some(minha), Some(dela)) if minha != dela => Err(PhxError::Esquema(format!(
+                "{onde}: a tabela {} daqui e de OUTRA historia (linhagem {minha}; a                  do evento e {dela}) -- duas tabelas criadas cada uma por conta, ou                  uma copia. Nada foi aplicado: rowid e carimbo de historias                  diferentes coincidem por acaso de arranque, e aplicar apagaria ou                  sobrescreveria a linha de outra origem",
+                self.nome
+            ))),
+            _ => Ok(()),
+        }
+    }
+
     pub fn passo_da_sequencia(&self) -> u64 {
         self.passo_da_sequencia
     }
@@ -1597,6 +1663,10 @@ impl Schema {
         // acrescentar uma coluna poria os dois nos a numerar a mesma faixa
         // outra vez -- calado, e so aparecendo na proxima colisao.
         let novo = novo.com_passo_da_sequencia(self.passo_da_sequencia)?;
+        // A linhagem pelo mesmo motivo: acrescentar coluna nao muda a
+        // historia da tabela, e uma linhagem que virasse `None` (ou nova)
+        // aqui faria a replica recusar o source depois do primeiro ALTER.
+        let novo = novo.com_linhagem(self.linhagem);
         // O TERCEIRO caminho de declarar, e o unico que ve duas tabelas: a
         // guarda do ledger confere o RESULTADO, e so' quando a origem ainda
         // era legitima. Assim a coluna marcada nao entra numa cadeia, e uma
@@ -2047,6 +2117,15 @@ impl Schema {
             }
             None => out.extend_from_slice(&0u16.to_le_bytes()),
         }
+        // v11: a linhagem. Byte de presenca, e nao UUID nulo como «nao tem»:
+        // o UUID nulo e um valor, e o byte deixa a ausencia escrita.
+        match self.linhagem {
+            Some(l) => {
+                out.push(1);
+                out.extend_from_slice(l.bytes());
+            }
+            None => out.push(0),
+        }
         out
     }
 
@@ -2256,6 +2335,28 @@ impl Schema {
             }
         }
 
+        // v11: a linhagem. Truncado e ERRO: ver a nota em `VERSAO_ESQUEMA`.
+        let mut linhagem = None;
+        if versao >= 11 {
+            let truncado = || PhxError::Esquema("bloco da linhagem (v11) truncado".into());
+            match leitor.u8().map_err(|_| truncado())? {
+                0 => {}
+                1 => {
+                    let b: [u8; 16] = leitor
+                        .bytes(16)
+                        .map_err(|_| truncado())?
+                        .try_into()
+                        .map_err(|_| truncado())?;
+                    linhagem = Some(Uuid::de_bytes(b));
+                }
+                outro => {
+                    return Err(PhxError::Esquema(format!(
+                        "bloco da linhagem (v11) com marca {outro}, que nao e 0 nem 1"
+                    )))
+                }
+            }
+        }
+
         // `do_disco`, e nao `new`: a lista de colunas gravada e a verdade
         // inteira. Ver a nota em `VERSAO_ESQUEMA`.
         Schema::do_disco(nome, colunas, indices)?
@@ -2270,6 +2371,7 @@ impl Schema {
             // `Sequence` seria a guarda nova batendo no dado antigo.
             .map(|mut e| {
                 e.passo_da_sequencia = passo;
+                e.linhagem = linhagem;
                 e
             })
     }
@@ -2682,7 +2784,9 @@ mod tests {
     /// abre inteiro, com todas as colunas em `Nao`.
     #[test]
     fn esquema_v5_abre_sem_marca_nenhuma() {
-        let s = esquema_clientes();
+        // Sem linhagem: um v5 nao tem a da v11, e a comparacao do fim e com
+        // o que o arquivo velho de fato tinha.
+        let s = esquema_clientes().com_linhagem(None);
         let v6 = s.serializar();
 
         // Um v5 de verdade: versao 5 e sem o bloco de marcas no fim.
@@ -3135,7 +3239,8 @@ mod testes_das_expressoes_de_esquema {
             cols(),
             vec![IndexDef::new("pk", vec![IndexColumn::asc(0)]).primaria()],
         )
-        .unwrap();
+        .unwrap()
+        .com_linhagem(None);
         let mut v9 = e.serializar();
         let n = e.colunas().len();
         let bloco = 6 * n + 2 * (1 + 1);
@@ -3155,9 +3260,11 @@ mod testes_das_expressoes_de_esquema {
         c[3] = Column::new("v", ColumnType::Int8)
             .com_check("v > 0")
             .unwrap();
-        let e = Schema::new("t", c, vec![]).unwrap();
+        // Sem linhagem, o rabo e `passo` (2) + o byte da v11 (1): cortar 4
+        // tira o ultimo byte das expressoes.
+        let e = Schema::new("t", c, vec![]).unwrap().com_linhagem(None);
         let bytes = e.serializar();
-        let erro = Schema::desserializar(&bytes[..bytes.len() - 3])
+        let erro = Schema::desserializar(&bytes[..bytes.len() - 4])
             .unwrap_err()
             .to_string();
         assert!(erro.contains("v9") && erro.contains("truncado"), "{erro}");
@@ -3721,5 +3828,105 @@ mod testes_oraculo_do_rowid {
         // E por quantidade nunca recusa: o rowid e a ordem de chegada.
         esq.conferir_oraculo_do_rowid(ModoParticao::PorQuantidade)
             .expect("por quantidade nao revela coluna nenhuma");
+    }
+}
+
+/// Pedido 601: a linhagem da tabela no `PSCH` v11.
+#[cfg(test)]
+mod testes_da_linhagem {
+    use super::*;
+
+    fn tabela() -> Schema {
+        Schema::new(
+            "clientes",
+            vec![
+                Column::new("id", ColumnType::Int4).obrigatoria(),
+                Column::new("nome", ColumnType::Str(20)),
+            ],
+            vec![IndexDef::new("pk", vec![IndexColumn::asc(0)]).primaria()],
+        )
+        .unwrap()
+    }
+
+    /// Duas tabelas declaradas cada uma por conta tem historias diferentes,
+    /// e a linhagem atravessa o disco. **Defeito reposto**: o `new` sem
+    /// cunhar (ou o bloco da v11 sem o UUID) -- as duas saem `None` e a
+    /// asercao cai.
+    #[test]
+    fn cada_tabela_nasce_com_historia_propria_e_ela_atravessa_o_disco() {
+        let (a, b) = (tabela(), tabela());
+        let (la, lb) = (a.linhagem().unwrap(), b.linhagem().unwrap());
+        assert_ne!(
+            la, lb,
+            "duas tabelas declaradas por conta empataram a linhagem"
+        );
+        assert_eq!(la.versao(), 7);
+        let volta = Schema::desserializar(&a.serializar()).unwrap();
+        assert_eq!(volta.linhagem(), Some(la));
+        assert_eq!(volta, a);
+        assert!(a.conferir_linhagem(Some(lb), "teste").is_err());
+        assert!(a.conferir_linhagem(Some(la), "teste").is_ok());
+    }
+
+    /// **O comportamento VELHO.** Um bloco v10 -- sem o rabo da v11 -- abre
+    /// inteiro, SEM linhagem, e a conferencia fica como era: nada recusa.
+    #[test]
+    fn esquema_v10_abre_sem_linhagem_e_nao_recusa_nada() {
+        let e = tabela();
+        let mut v10 = e.serializar();
+        v10.truncate(v10.len() - 17);
+        v10[4..6].copy_from_slice(&10u16.to_le_bytes());
+        let lido = Schema::desserializar(&v10).unwrap();
+        assert_eq!(lido.linhagem(), None);
+        assert_eq!(lido, e.clone().com_linhagem(None));
+        assert!(lido.conferir_linhagem(e.linhagem(), "teste").is_ok());
+        assert!(e.conferir_linhagem(None, "teste").is_ok());
+        // E regravado (um ALTER, uma redeclaracao) continua sem: a linhagem
+        // de nascimento nao se inventa depois.
+        let regravado = Schema::desserializar(&lido.serializar()).unwrap();
+        assert_eq!(regravado.linhagem(), None);
+    }
+
+    /// Truncado no bloco da v11 e ERRO: linhagem que sumisse calada
+    /// desligaria a guarda.
+    #[test]
+    fn v11_truncado_na_linhagem_recusa() {
+        let bytes = tabela().serializar();
+        let erro = Schema::desserializar(&bytes[..bytes.len() - 5])
+            .unwrap_err()
+            .to_string();
+        assert!(erro.contains("v11") && erro.contains("truncado"), "{erro}");
+    }
+
+    /// **Pedido 603: o teto de 32.767 colunas vale ao LER**, para o bit alto
+    /// do indice de coluna ser o selo do externo. As duas primeiras colunas
+    /// tem o mesmo nome de proposito: sem o teto o `do_disco` cai na
+    /// duplicata (barata) em vez de varrer 32.768 nomes.
+    ///
+    /// **Defeito reposto**: o teto de volta a `u16::MAX` -- a recusa vira
+    /// «coluna duplicada» e a asercao cai.
+    #[test]
+    fn o_teto_de_colunas_deixa_o_bit_alto_livre() {
+        assert_eq!(TETO_DE_COLUNAS, 32_767);
+        let colunas: Vec<Column> = (0..=TETO_DE_COLUNAS)
+            .map(|i| Column::new(format!("c{}", i.max(1)), ColumnType::Int1))
+            .collect();
+        assert_eq!(colunas.len(), 32_768);
+        let erro = Schema::do_disco("larga", colunas, vec![])
+            .unwrap_err()
+            .to_string();
+        assert!(erro.contains("32767") && erro.contains("603"), "{erro}");
+    }
+
+    /// Acrescentar coluna nao muda a historia. **Defeito reposto**: tirar o
+    /// `com_linhagem` do `com_coluna` -- a linhagem vira `None` e a replica
+    /// passaria sem conferir depois do primeiro ALTER.
+    #[test]
+    fn acrescentar_coluna_preserva_a_linhagem() {
+        let e = tabela();
+        let novo = e
+            .com_coluna(Column::new("cidade", ColumnType::Str(10)), 2)
+            .unwrap();
+        assert_eq!(novo.linhagem(), e.linhagem());
     }
 }

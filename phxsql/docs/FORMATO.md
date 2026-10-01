@@ -361,7 +361,7 @@ tira coluna, não cria índice sobre a coluna nova, e não replica a si mesma �
 eventos depois de receber a mesma alteração. Enquanto os dois lados diferem, a
 réplica **para** em vez de aceitar um payload de outra largura.
 
-### O bloco de esquema (`PSCH`, versão 10)
+### O bloco de esquema (`PSCH`, versão 11)
 
 O bloco começa com `PSCH` e a versão. A **3** acrescentou os metadados de
 coluna, o marcador de chave primária e o modo de partição. A **4** acrescentou
@@ -374,9 +374,11 @@ acrescentou as **expressões de esquema** — `padrao`, `check` e `calculada` po
 coluna, e o filtro `onde` e a expressão por coluna de cada índice —, num bloco
 no fim. A **10** acrescentou as **duas colunas de carimbo de criação** e o
 **`passo` da faixa da `Sequence`** — as colunas na lista de colunas, o passo
-num bloco no fim. A leitura ainda aceita a 2: tabela gravada antes abre
-normalmente, ganha um `id` v7 sorteado na hora, a lista de textos vazia e
-nenhuma regra. **Escrever, só na 10.**
+num bloco no fim. A **11** acrescentou a **linhagem da tabela**, um UUID v7 de
+nascimento, num bloco no fim (pedido 601, ver a seção dela). A leitura ainda
+aceita a 2: tabela gravada antes abre normalmente, ganha um `id` v7 sorteado
+na hora, a lista de textos vazia, nenhuma regra e **nenhuma** linhagem.
+**Escrever, só na 11.**
 
 O bloco é uma contagem `u16` e, por índice de texto:
 
@@ -647,6 +649,75 @@ O custo anunciado sai da **mesma** lista que a migração executa
 (`Table::plano_do_psch_v10`, que o `migrar_para_psch_v10` consome), e a recusa
 da tabela-cadeia acontece **no plano**: marcar uma parada para uma migração que
 vai ser recusada é o defeito que isso impede.
+
+### A linhagem da tabela, v11 (pedido 601)
+
+No **fim** do bloco, depois do `passo` da v10:
+
+| Campo | Tam | O que é |
+|---|---:|---|
+| `tem` | 1 | 1 = há linhagem; 0 = tabela sem linhagem. Outro valor é **erro** |
+| `linhagem` | 16 | só quando `tem = 1`: o **UUID v7 cunhado no nascimento da tabela** |
+
+**16 bytes por tabela, zero por linha.** O `.reg` de dado não muda um byte, e a
+ordem de digitação não é tocada.
+
+**O defeito que ela fecha.** O `rowstamp` é contador do **processo**: dois
+`phxsqld` recém-nascidos emitem o mesmo `1`, e a conferência da exclusão e da
+alteração replicadas (`conferir_identidade`, pedidos 405 e 416) via `1 == 1` e
+apagava a linha de **outra** origem com `aplicados: 1` — medido pela prova do
+soquete em `crates/phxsql-server/tests/imagem-pela-politica-do-servidor.rs`. A
+pergunta certa no modo A (réplica fiel, por rowid) não é «de que nó é esta
+linha?», é **«este evento é da mesma HISTÓRIA desta tabela?»** — e o `PSCH` é
+exatamente o que viaja **byte a byte** para a réplica: a linhagem chega igual
+em toda réplica e **sobrevive ao failover**; duas origens que criaram
+«clientes» cada uma por conta têm linhagens diferentes. É a identidade por
+**par** dos três maduros — `(SID,GNO)`, `(domain_id,server_id,seq_no)`,
+`(roident,LSN)` — levada ao dado: aqui, `(linhagem, rowid)`.
+
+**Quem cunha, quem herda, quem troca:**
+
+- **Cunha**: `Schema::new`, o caminho de **declarar** tabela.
+- **Herda**: a tabela que a réplica cria do bloco do source (vem byte a byte);
+  `acrescentar_coluna` e toda regravação do bloco (chaves, marcas) — mudar o
+  esquema não muda a história; e a **restauração de backup**, que é cópia de
+  arquivo e é a mesma história.
+- **Troca**: a **cópia** de tabela (`duplicar_tabela`, `copiar_tabela_para`)
+  cunha linhagem nova — cópia é história nova, e a da origem faria a
+  conferência ver «a mesma tabela» em duas. A troca é pelo descritor da
+  própria cópia, no mesmo lugar (o UUID novo tem o tamanho do velho), em
+  **todo** volume e no espelho de cada um, com uma linhagem só.
+
+**Quem confere** (recusa só quando as **duas** linhagens existem e diferem):
+
+- a **réplica fiel**, ao abrir a tabela daqui contra o esquema que o `posicao`
+  do source manda — **antes do primeiro evento**, inclusive inserção, que a
+  conferência do carimbo nunca pega;
+- o **`aplicar`**, quando o pedido traz `"linhagem"` — o `replicar` a
+  entrega, para quem empurra eventos por fora. Sem o campo, como sempre foi.
+
+**No bidirecional NÃO se confere**: ali a identidade é a chave (e o par
+`(carimbo, origem)` do `.log`), e os vinte caixas de um central divergem na
+linhagem legitimamente.
+
+**Compatibilidade — o comportamento velho.** Esquema gravado na v2..v10 lê
+como **sem linhagem**, e a conferência fica como era (só o `rowstamp`): guarda
+nova entra pedida. Regravado — por um ALTER, uma redeclaração, a
+`migrar_esquema` — ele sobe para a v11 **com `tem = 0`**: a linhagem de
+nascimento **não se inventa depois**, que seria a adivinhação retroativa que o
+290 já recusou. A cópia de uma tabela sem linhagem continua sem. Binário
+anterior diante de um `PSCH` v11 **recusa** com «versão de esquema 11 não
+suportada»: réplica velha de source novo para dizendo por quê, não diverge.
+
+**Bloco da v11 truncado é ERRO**, no molde da v9/v10: linhagem que sumisse
+calada desligaria a guarda.
+
+**Hipóteses que morreram** (parecer do DBA de 01/10/2026): empacotar o nó nos
+16 bits altos do `rowstamp` (nó ≥ 32 passa de 2⁵³ e o fio JSON arredonda, o
+mesmo motivo que recusou o carimbo em ns); conferir o par `(rowstamp, rowtime)`
+(dois caixas no mesmo ms empatam — 964 de 1.000 aqui); e uma coluna
+`roworigem u16` por linha (+2 B por linha para sempre, para um caso que o modo
+A não tem: rowid de duas origens no mesmo `.reg` já é divergência).
 
 ### A marca de dado pessoal (LGPD / GDPR), v6
 
@@ -1740,9 +1811,21 @@ conteúdo vai selado** com a chave do `.reg` que o gravou — `[nonce 24][cifrad
 (01/10/2026): é a **origem** quem sabe se selou, e não quem recebe, que antes
 decidia pelo próprio estado e gravava o selado como dado numa réplica sem
 cofre. No `.log` o bit vem aceso para coluna marcada de tabela cifrada; a
-imagem que sai pelo `replicar` vem **aberta** e com o bit apagado. Coluna
-real nunca passa de 32.767, então o bit estava livre; imagem gravada antes
-desta versão não tem o bit e é lida como aberta (sem dado em produção ainda).
+imagem que sai pelo `replicar` vem **aberta** e com o bit apagado.
+
+**O bit só é livre porque o esquema recusa mais de 32.767 colunas** — inclusive
+ao **ler** (`TETO_DE_COLUNAS`, pedido 603). Até 01/10/2026 o `do_disco` aceitava
+65.535 e este parágrafo afirmava o contrário: a coluna 32.768 externa seria
+lida como a 0, selada. Baixar o teto ao ler só se faz antes de selar a 0.19.0.
+
+**A imagem gravada antes do 344 não tem o bit e NÃO é lida como aberta sem
+conferir** (pedido 603, NÃO 344-a do DBA): o diário daquela época já guardava o
+externo marcado **selado**. Na origem, bit apagado onde o arquivo selaria
+(`.reg` cifrado, coluna externa marcada, conteúdo não vazio) passa pela
+etiqueta da cifra com a chave do próprio arquivo — que é quem selou: abre, e o
+evento sai aberto como os de hoje; não abre, e o `replicar` **recusa** nomeando
+o evento («evento N do diário: … sem o bit de selado …»), em vez de mandar à
+réplica o cifrado como se fosse o anexo. Zero byte novo; muda só a leitura.
 
 A exclusão leva imagem quando a política do diário pede — no papel `multi`,
 desde os pedidos 416 e 564, porque lá a identidade é a chave; fora dele o rowid
@@ -2950,7 +3033,7 @@ defeito. O esquema recusa na criação.
 
 | Limite | Valor |
 |---|---|
-| Colunas por tabela | 65 535 |
+| Colunas por tabela | 32 767 — o bit alto do índice de coluna é o `EXTERNO_SELADO` da imagem (pedido 603); vale também ao ler |
 | Tamanho de `Str(n)` | 65 535 bytes |
 | Sequência por tabela | 1 (o contador do cabeçalho é único) |
 | Valor máximo de `Sequence` | 2⁶⁴ − 1 |

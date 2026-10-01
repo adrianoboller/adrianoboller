@@ -332,6 +332,19 @@ O `com_esquema` traz o **bloco de esquema cru**, o mesmo que mora dentro do
 partir dos mesmos bytes, e não de uma remontagem coluna a coluna a partir de
 JSON — que é onde um tipo ou uma escala se perderiam sem ninguém notar.
 
+**E o bloco leva a LINHAGEM da tabela** (`PSCH` v11, pedido 601): um UUID v7
+cunhado no nascimento dela, que por isso chega igual na réplica e sobrevive ao
+failover. A réplica fiel confere a da tabela daqui contra a do source **antes
+do primeiro evento**: outra linhagem é tabela apagada e recriada lá, ou criada
+por conta aqui, e a recusa sai pelo mesmo canal (`recusas` do
+`replicacao_estado`) — porque rowid e carimbo de duas histórias coincidem por
+acaso de arranque (dois servidores recém-nascidos carimbam `1`). O `replicar`
+devolve a `linhagem`, e o `aplicar` aceita o campo: vindo e diferente, nada se
+aplica. Sem linhagem de um dos lados (esquema de antes da v11), como sempre
+foi. **No bidirecional não se confere**: lá a identidade é a chave, e os
+caixas de um central divergem na linhagem legitimamente. Formato em
+`docs/FORMATO.md`, «A linhagem da tabela, v11».
+
 **Três permissões diferentes, de propósito.** `posicao` e `replicar` exigem
 `replicar`, que é uma permissão própria: o fluxo é o diário com a linha inteira
 dentro, e dá para concedê-lo a uma réplica sem conceder mais nada. `aplicar`

@@ -529,6 +529,15 @@ dia, nunca no desejado:
   nao declarou (`faixa-nao-declarada-numera-na-zero`), e a faixa da CLI e da
   FFI que nao chegava ao motor (`faixa-da-cli-nao-chega-ao-motor`,
   `faixa-da-ffi-nao-chega-ao-motor`). 624, medido pelo `--numeros` nesta
+  **SUBIU para 635 em 01/10/2026** (no merge, 628 + 7; pedidos 601 e 603, SPR-03): sete
+  guardas -- a tabela declarada sem linhagem
+  (`linhagem-nao-cunhada-na-declaracao`), o ALTER que perde a linhagem
+  (`alter-perde-a-linhagem`), a copia que leva a linhagem da origem
+  (`copia-leva-a-linhagem-da-origem`), a replica fiel e o `aplicar` sem
+  conferir a linhagem (`replica-fiel-sem-conferir-a-linhagem`,
+  `aplicar-sem-conferir-a-linhagem`), o teto de colunas sem o bit do selo
+  (`teto-de-colunas-sem-o-bit-do-selo`) e o evento pre-344 ao fio sem abrir
+  (`evento-pre-344-ao-fio-sem-abrir`). 627 medido pelo `--numeros` nesta
   arvore.
 
 # A QUINTA REGUA: a tabela publicada pode ser MENOR que o catalogo
@@ -636,7 +645,7 @@ TETO_TESTE_MORTO = 0
 TETO_TRECHO_AMBIGUO = 0
 TETO_TESTE_FORA_DO_BINARIO = 0
 TETO_TESTE_SEM_MODULO = 0
-PISO_DAS_ENTRADAS = 628
+PISO_DAS_ENTRADAS = 635
 
 # ------------------------------------------------------------- APOSENTADAS
 #

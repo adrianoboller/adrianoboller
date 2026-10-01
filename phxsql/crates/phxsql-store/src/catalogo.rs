@@ -1481,6 +1481,9 @@ impl Database {
         nome_d: &str,
     ) -> Result<PorSincronizar> {
         let mut arquivos = Vec::new();
+        // Copia e historia NOVA (pedido 601): UMA linhagem para todos os
+        // volumes da copia e o espelho deles, que carregam o mesmo bloco.
+        let linhagem = phxsql_core::uuid::Uuid::v7();
         for ext in Self::EXTENSOES {
             for arq in std::fs::read_dir(dir_o)?.flatten() {
                 let f = arq.file_name();
@@ -1491,7 +1494,10 @@ impl Database {
                     let novo = dir_d.join(format!("{nome_d}{}", &f[nome_o.len()..]));
                     // Pelo motor da permissao (pedido 542): a copia nasce
                     // 0600, sem herdar o modo da origem.
-                    let escrito = crate::util::copiar_do_banco(&arq.path(), &novo)?;
+                    let mut escrito = crate::util::copiar_do_banco(&arq.path(), &novo)?;
+                    if ext == EXT_REG || ext == phxsql_core::EXT_BKP {
+                        crate::reg::cunhar_linhagem_na_copia(&arq.path(), &mut escrito, linhagem)?;
+                    }
                     // O atestado do pedido 522 vale para a copia: ela saiu do
                     // nucleo junto do `.reg` dela. Ver `ndx::levar_atestado`.
                     crate::ndx::levar_atestado(&arq.path(), &novo, false);
@@ -2319,6 +2325,76 @@ mod testes_gestao {
         // E o original continua inteiro.
         let mut o = db.abrir_tabela(None, "precos").unwrap();
         assert_eq!(o.ler(5).unwrap().unwrap()[0], Value::Int(50));
+    }
+
+    /// **Pedido 601, obrigacao 1 do DBA: copia e historia NOVA.** Paginada
+    /// (tres volumes) e espelhada, para provar que TODO volume e o espelho
+    /// de cada um saem com a MESMA linhagem nova -- e que a copia reabre,
+    /// com os rowids de sempre.
+    ///
+    /// **Defeito reposto**: tirar o `cunhar_linhagem_na_copia` do laco da
+    /// copia -- a copia sai com a linhagem da origem e o `assert_ne` cai.
+    #[test]
+    fn a_copia_de_tabela_nasce_com_linhagem_nova_em_todo_volume() {
+        use phxsql_core::paginacao::Paginacao;
+        use phxsql_core::value::Value;
+        let base = base_temp("linhagem-da-copia");
+        let inst = Instancia::nova(&base).unwrap();
+        let db = inst.criar_database("Z").unwrap();
+        let outro = inst.criar_database("W").unwrap();
+        let e = esquema_simples("precos")
+            .com_paginacao(Paginacao::nova(2, 10).unwrap())
+            .unwrap();
+        let mut t = crate::table::Table::criar_espelhada(db.caminho(), e).unwrap();
+        for i in 1..=5i64 {
+            t.inserir(&[Value::Int(i * 10)]).unwrap();
+        }
+        t.sincronizar().unwrap();
+        let da_origem = t.esquema().linhagem().expect("tabela nova sem linhagem");
+        drop(t);
+
+        db.duplicar_tabela("precos", "copia").unwrap();
+        db.copiar_tabela_para("precos", &outro, "colada").unwrap();
+        let mut vistas = Vec::new();
+        for (d, nome) in [(&db, "copia"), (&outro, "colada")] {
+            let mut volumes = 0;
+            for arq in std::fs::read_dir(d.caminho()).unwrap().flatten() {
+                let f = arq.file_name().to_string_lossy().to_string();
+                if f.starts_with(nome) && (f.ends_with(".reg") || f.ends_with(".bkp")) {
+                    let b = std::fs::read(arq.path()).unwrap();
+                    let cab = if u16::from_le_bytes([b[8], b[9]]) == 5 {
+                        192
+                    } else {
+                        128
+                    };
+                    let len = u32::from_le_bytes(b[52..56].try_into().unwrap()) as usize;
+                    let e = Schema::desserializar(&b[cab..cab + len]).unwrap();
+                    vistas.push((nome, f, e.linhagem().unwrap()));
+                    volumes += 1;
+                }
+            }
+            assert!(
+                volumes >= 6,
+                "{nome}: {volumes} volume(s) -- a premissa e 3 + 3 espelhos"
+            );
+            let mut c = d.abrir_tabela(None, nome).unwrap();
+            assert_eq!(c.ler(5).unwrap().unwrap()[0], Value::Int(50));
+        }
+        let copia = vistas.iter().find(|v| v.0 == "copia").unwrap().2;
+        let colada = vistas.iter().find(|v| v.0 == "colada").unwrap().2;
+        assert_ne!(copia, da_origem, "a copia levou a historia da origem");
+        assert_ne!(colada, da_origem, "a colada levou a historia da origem");
+        assert_ne!(copia, colada);
+        for (nome, f, l) in &vistas {
+            let esperada = if *nome == "copia" { copia } else { colada };
+            assert_eq!(
+                *l, esperada,
+                "{f}: volume com linhagem diferente dos irmaos"
+            );
+        }
+        // E a origem nao mudou.
+        let o = db.abrir_tabela(None, "precos").unwrap();
+        assert_eq!(o.esquema().linhagem(), Some(da_origem));
     }
 
     #[test]

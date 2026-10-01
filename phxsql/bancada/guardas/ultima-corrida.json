@@ -3115,9 +3115,9 @@
       "id": "replicar-manda-o-externo-selado",
       "titulo": "O `replicar` mandava ao fio o externo marcado selado com a chave do `.reg` da origem: nenhuma réplica o abria, nem com a mesma senha, porque o sal é por arquivo",
       "veredito": "PROVADA",
-      "segundos": 42.5,
+      "segundos": 41.06,
       "notas": [],
-      "quando": "2026-10-01 07:17"
+      "quando": "2026-10-01 11:35"
     },
     {
       "id": "visoes-entrega-o-literal",
@@ -3579,9 +3579,9 @@
       "id": "replica-sem-cofre-grava-externo-marcado-em-claro",
       "titulo": "A réplica SEM cofre gravava a coluna externa marcada em claro no disco: o 344 trocou o selado (lixo) pelo dado aberto, sem a palavra do dono",
       "veredito": "PROVADA",
-      "segundos": 23.05,
+      "segundos": 23.06,
       "notas": [],
-      "quando": "2026-10-01 11:11"
+      "quando": "2026-10-01 11:35"
     },
     {
       "id": "restauracao-recusa-como-replica-sem-cofre",
@@ -3595,9 +3595,9 @@
       "id": "replica-sem-cofre-grava-inline-marcado-em-claro",
       "titulo": "A réplica SEM cofre recusava só a coluna EXTERNA marcada: a INLINE chegava aberta na imagem e pousava em claro no `.reg`",
       "veredito": "PROVADA",
-      "segundos": 9.94,
+      "segundos": 10.55,
       "notas": [],
-      "quando": "2026-10-01 11:11"
+      "quando": "2026-10-01 11:35"
     },
     {
       "id": "bidirecional-sem-cofre-inserir-marcado-em-claro",
@@ -3622,6 +3622,62 @@
       "segundos": 9.7,
       "notas": [],
       "quando": "2026-10-01 11:11"
+    },
+    {
+      "id": "linhagem-nao-cunhada-na-declaracao",
+      "titulo": "a tabela declarada nasce sem linhagem: duas origens com historias diferentes ficam indistinguiveis e o carimbo empatado de dois servidores recem-nascidos apaga a linha errada",
+      "veredito": "PROVADA",
+      "segundos": 9.38,
+      "notas": [],
+      "quando": "2026-10-01 11:35"
+    },
+    {
+      "id": "alter-perde-a-linhagem",
+      "titulo": "acrescentar coluna devolve o esquema sem linhagem: depois do primeiro ALTER a replica deixa de conferir a historia da tabela",
+      "veredito": "PROVADA",
+      "segundos": 9.91,
+      "notas": [],
+      "quando": "2026-10-01 11:35"
+    },
+    {
+      "id": "copia-leva-a-linhagem-da-origem",
+      "titulo": "a copia de tabela (duplicar e colar) leva a linhagem da origem byte a byte: duas tabelas de historias diferentes passam pela conferencia como a mesma",
+      "veredito": "PROVADA",
+      "segundos": 10.08,
+      "notas": [],
+      "quando": "2026-10-01 11:35"
+    },
+    {
+      "id": "replica-fiel-sem-conferir-a-linhagem",
+      "titulo": "a replica fiel abre a tabela daqui sem conferir a linhagem do source: tabela de outra historia recebe os eventos no rowid de outra linha",
+      "veredito": "PROVADA",
+      "segundos": 82.68,
+      "notas": [],
+      "quando": "2026-10-01 11:35"
+    },
+    {
+      "id": "aplicar-sem-conferir-a-linhagem",
+      "titulo": "o `aplicar` ignora a linhagem que veio no pedido: a exclusao de uma caixa recem-nascida apaga a linha de outra com o carimbo empatado",
+      "veredito": "PROVADA",
+      "segundos": 26.45,
+      "notas": [],
+      "quando": "2026-10-01 11:35"
+    },
+    {
+      "id": "teto-de-colunas-sem-o-bit-do-selo",
+      "titulo": "o esquema aceita ate 65.535 colunas: a coluna 32.768 externa e lida na imagem como a 0, selada",
+      "veredito": "PROVADA",
+      "segundos": 12.27,
+      "notas": [],
+      "quando": "2026-10-01 11:35"
+    },
+    {
+      "id": "evento-pre-344-ao-fio-sem-abrir",
+      "titulo": "o evento do diario gravado antes do 344 (externo selado, sem o bit) sai para o fio como veio: a replica grava o cifrado como se fosse o anexo",
+      "veredito": "PROVADA",
+      "segundos": 12.36,
+      "notas": [],
+      "quando": "2026-10-01 11:35"
     },
     {
       "id": "cifra-do-fio-imposta",
