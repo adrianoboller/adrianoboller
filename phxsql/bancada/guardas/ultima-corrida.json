@@ -665,17 +665,17 @@
       "id": "bidirecional-julga-fk",
       "titulo": "o bidirecional volta a conferir a chave do evento que aplica",
       "veredito": "PROVADA",
-      "segundos": 1.49,
+      "segundos": 6.89,
       "notas": [],
-      "quando": "2026-09-16 15:25"
+      "quando": "2026-10-01 11:11"
     },
     {
       "id": "bidirecional-julga-as-filhas",
       "titulo": "o bidirecional volta a recusar apagar a mae que tem filha",
       "veredito": "PROVADA",
-      "segundos": 1.38,
+      "segundos": 7.08,
       "notas": [],
-      "quando": "2026-09-16 15:25"
+      "quando": "2026-10-01 11:11"
     },
     {
       "id": "recascata-sem-conferir-a-arvore",
@@ -1785,9 +1785,9 @@
       "id": "laco-preso-no-unico-secundario",
       "titulo": "chave duplicada num índice único secundário prende o laço do bidirecional para sempre",
       "veredito": "PROVADA",
-      "segundos": 27.08,
+      "segundos": 61.8,
       "notas": [],
-      "quando": "2026-09-24 04:34"
+      "quando": "2026-10-01 11:11"
     },
     {
       "id": "par-parado-reapresentado-a-cada-rodada",
@@ -1801,9 +1801,9 @@
       "id": "dado-pessoal-no-grito-do-conflito",
       "titulo": "o grito do conflito de unicidade publica a coluna marcada como dado pessoal",
       "veredito": "PROVADA",
-      "segundos": 13.41,
+      "segundos": 29.12,
       "notas": [],
-      "quando": "2026-09-24 04:34"
+      "quando": "2026-10-01 11:11"
     },
     {
       "id": "so-o-disco-vem-da-porta-e-nao-de-desligar-depois",
@@ -3547,17 +3547,49 @@
       "id": "replica-sem-cofre-grava-externo-marcado-em-claro",
       "titulo": "A réplica SEM cofre gravava a coluna externa marcada em claro no disco: o 344 trocou o selado (lixo) pelo dado aberto, sem a palavra do dono",
       "veredito": "PROVADA",
-      "segundos": 21.42,
+      "segundos": 23.05,
       "notas": [],
-      "quando": "2026-10-01 07:17"
+      "quando": "2026-10-01 11:11"
     },
     {
       "id": "restauracao-recusa-como-replica-sem-cofre",
       "titulo": "A restauração do PRÓPRIO diário passaria pela recusa da réplica sem cofre: o servidor sem cofre deixaria de restaurar toda tabela com anexo marcado, sem proteger um byte",
       "veredito": "PROVADA",
-      "segundos": 80.98,
+      "segundos": 78.99,
       "notas": [],
-      "quando": "2026-10-01 07:17"
+      "quando": "2026-10-01 11:11"
+    },
+    {
+      "id": "replica-sem-cofre-grava-inline-marcado-em-claro",
+      "titulo": "A réplica SEM cofre recusava só a coluna EXTERNA marcada: a INLINE chegava aberta na imagem e pousava em claro no `.reg`",
+      "veredito": "PROVADA",
+      "segundos": 9.94,
+      "notas": [],
+      "quando": "2026-10-01 11:11"
+    },
+    {
+      "id": "bidirecional-sem-cofre-inserir-marcado-em-claro",
+      "titulo": "O bidirecional sem cofre passava pelo `inserir_replicado` com o dado marcado de OUTRO servidor: a recusa do 613 morava só no `aplicar_evento`",
+      "veredito": "PROVADA",
+      "segundos": 10.04,
+      "notas": [],
+      "quando": "2026-10-01 11:11"
+    },
+    {
+      "id": "bidirecional-sem-cofre-atualizar-marcado-em-claro",
+      "titulo": "O bidirecional sem cofre passava pelo `atualizar_replicado` com o dado marcado de OUTRO servidor: a recusa do 613 morava só no `aplicar_evento`",
+      "veredito": "PROVADA",
+      "segundos": 9.67,
+      "notas": [],
+      "quando": "2026-10-01 11:11"
+    },
+    {
+      "id": "bidirecional-sem-cofre-excluir_de_vez-marcado-em-claro",
+      "titulo": "O bidirecional sem cofre passava pelo `excluir_de_vez_replicado` com o dado marcado de OUTRO servidor: a recusa do 613 morava só no `aplicar_evento`",
+      "veredito": "PROVADA",
+      "segundos": 9.7,
+      "notas": [],
+      "quando": "2026-10-01 11:11"
     },
     {
       "id": "cifra-do-fio-imposta",

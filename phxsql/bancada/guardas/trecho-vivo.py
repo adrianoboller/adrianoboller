@@ -517,6 +517,12 @@ dia, nunca no desejado:
   proprio diario que recusaria como replica
   (`restauracao-recusa-como-replica-sem-cofre`). 594 + 4 = 598, medido pelo
   `--numeros` nesta arvore.
+  **SUBIU para 624 em 01/10/2026** (620 + 4; pedido 616): quatro guardas -- a
+  coluna INLINE marcada em claro na replica sem cofre
+  (`replica-sem-cofre-grava-inline-marcado-em-claro`) e os tres `*_replicado`
+  do bidirecional sem a recusa
+  (`bidirecional-sem-cofre-{inserir,atualizar,excluir_de_vez}-marcado-em-claro`).
+  Medido pelo `--numeros` nesta arvore: 624.
 
 # A QUINTA REGUA: a tabela publicada pode ser MENOR que o catalogo
 
@@ -623,7 +629,7 @@ TETO_TESTE_MORTO = 0
 TETO_TRECHO_AMBIGUO = 0
 TETO_TESTE_FORA_DO_BINARIO = 0
 TETO_TESTE_SEM_MODULO = 0
-PISO_DAS_ENTRADAS = 620
+PISO_DAS_ENTRADAS = 624
 
 # ------------------------------------------------------------- APOSENTADAS
 #

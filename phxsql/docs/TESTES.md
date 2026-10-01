@@ -1085,11 +1085,15 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `pg-autenticado-sem-scram` | O cliente PostgreSQL do DbLink aceitava `AuthenticationOk` sem SCRAM, com senha na ligação: quem respondesse no endereço dizia «pode entrar» sem conhecer a senha | 1 | ✅ provada |
 | `replica-sem-cofre-grava-externo-marcado-em-claro` | A réplica SEM cofre gravava a coluna externa marcada em claro no disco: o 344 trocou o selado (lixo) pelo dado aberto, sem a palavra do dono | 1 | ✅ provada |
 | `restauracao-recusa-como-replica-sem-cofre` | A restauração do PRÓPRIO diário passaria pela recusa da réplica sem cofre: o servidor sem cofre deixaria de restaurar toda tabela com anexo marcado, sem proteger um byte | 1 | ✅ provada |
+| `replica-sem-cofre-grava-inline-marcado-em-claro` | A réplica SEM cofre recusava só a coluna EXTERNA marcada: a INLINE chegava aberta na imagem e pousava em claro no `.reg` | 2 | ✅ provada |
+| `bidirecional-sem-cofre-inserir-marcado-em-claro` | O bidirecional sem cofre passava pelo `inserir_replicado` com o dado marcado de OUTRO servidor: a recusa do 613 morava só no `aplicar_evento` | 1 | ✅ provada |
+| `bidirecional-sem-cofre-atualizar-marcado-em-claro` | O bidirecional sem cofre passava pelo `atualizar_replicado` com o dado marcado de OUTRO servidor: a recusa do 613 morava só no `aplicar_evento` | 1 | ✅ provada |
+| `bidirecional-sem-cofre-excluir_de_vez-marcado-em-claro` | O bidirecional sem cofre passava pelo `excluir_de_vez_replicado` com o dado marcado de OUTRO servidor: a recusa do 613 morava só no `aplicar_evento` | 1 | ✅ provada |
 | `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | — | 🪦 aposentada (18/09/2026) |
 
-**444 das 619 guardas do catálogo: 1 aposentada, 439 provadas, 4 redundantes** — 13467 s de mutação, medido em 2026-09-16 15:25.
+**448 das 623 guardas do catálogo: 1 aposentada, 443 provadas, 4 redundantes** — 13568 s de mutação, medido em 2026-09-16 15:25.
 
-> **Esta rodada NÃO julgou 176 das 619 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 176 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 176 das 623 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 176 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
 - `fk-antes-do-default` — a chave estrangeira confere a linha crua, e o DEFAULT sem mãe grava a filha órfã
 - `fk-antes-do-default-pelo-servidor` — o DEFAULT e a calculada sem mãe gravam a órfã pelo servidor, fora e dentro da transação

@@ -3492,12 +3492,14 @@ pub fn limpar() {
         ),
         "arquivo": "crates/phxsql-store/src/table.rs",
         "trecho": """    pub fn inserir_replicado(&mut self, valores: &[Value]) -> Result<RowId> {
+        self.recusar_marcada_sem_cofre()?;
         self.como_replica = true;
         let r = self.inserir(valores);
         self.como_replica = false;
         r
     }""",
         "troca": """    pub fn inserir_replicado(&mut self, valores: &[Value]) -> Result<RowId> {
+        self.recusar_marcada_sem_cofre()?;
         // DEFEITO REPOSTO: o bidirecional volta a julgar o que a origem julgou.
         self.inserir(valores)
     }""",
@@ -3525,12 +3527,14 @@ pub fn limpar() {
         ),
         "arquivo": "crates/phxsql-store/src/table.rs",
         "trecho": """    pub fn excluir_de_vez_replicado(&mut self, rowid: RowId, motivo: &str) -> Result<bool> {
+        self.recusar_marcada_sem_cofre()?;
         self.como_replica = true;
         let r = self.excluir_de_vez(rowid, motivo);
         self.como_replica = false;
         r
     }""",
         "troca": """    pub fn excluir_de_vez_replicado(&mut self, rowid: RowId, motivo: &str) -> Result<bool> {
+        self.recusar_marcada_sem_cofre()?;
         // DEFEITO REPOSTO: o bidirecional volta a conferir as filhas.
         self.excluir_de_vez(rowid, motivo)
     }""",
@@ -20829,17 +20833,18 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "pedido 613 (S5 da revisao SEC de 01/10/2026), decisao do dono "
             "de 01/10/2026: dado pessoal marcado nunca fica em claro fora da "
             "origem. O `aplicar_evento` recusa a TABELA pelo "
-            "`RegFile::externa_marcada_sem_cofre`, o avesso do "
-            "`externo_selado`, dizendo que falta o cofre. Reposto, a replica "
+            "`Table::recusar_marcada_sem_cofre` (o `RegFile::marcada_sem_cofre`, "
+            "generalizado no 616), dizendo que falta o cofre. Reposto, a replica "
             "`phxsqld`-alimentada grava a linha e o anexo aparece no "
             "`varrer`; com o conserto, nenhuma linha e o texto em arquivo "
             "nenhum. A restauracao do proprio diario passa por "
             "`reaplicar_evento_do_proprio_diario`, sem a recusa."
         ),
         "arquivo": "crates/phxsql-store/src/table.rs",
-        "trecho": """        if let Some(c) = self.reg.externa_marcada_sem_cofre() {""",
-        "troca": """        // DEFEITO REPOSTO (613): a replica sem cofre grava o externo aberto.
-        if let Some(c) = self.reg.externa_marcada_sem_cofre().filter(|_| false) {""",
+        "trecho": """        // conteudo deixaria uma copia pela metade que parece inteira.
+        self.recusar_marcada_sem_cofre()?;""",
+        "troca": """        // conteudo deixaria uma copia pela metade que parece inteira.
+        // DEFEITO REPOSTO (613): a replica sem cofre grava o externo aberto.""",
         "pacote": "phxsql-server",
         "alvo": ["--test", "coluna-externa-marcada-na-replica"],
         "caem": ["replica_sem_cofre_recusa_a_coluna_externa_marcada"],
@@ -20872,6 +20877,109 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         ],
         "seguem": [
             "servidor::testes_pitr::restaura_ate_um_instante_no_meio_do_diario",
+        ],
+        "prazo": 600,
+    },
+    {
+        "id": "replica-sem-cofre-grava-inline-marcado-em-claro",
+        "titulo": "A réplica SEM cofre recusava só a coluna EXTERNA marcada: a INLINE chegava aberta na imagem e pousava em claro no `.reg`",
+        "porque": (
+            "pedido 616, alcance da decisao do dono do 613 (dado pessoal "
+            "marcado nunca fica em claro fora da origem). A imagem de "
+            "replicacao leva a faixa inline marcada decifrada; o "
+            "`RegFile::externa_marcada_sem_cofre` so olhava `Bin`/`Memo`. "
+            "Generalizado em `marcada_sem_cofre`. Reposto o filtro de "
+            "externa, o `aplicar_evento` e o `inserir_replicado` sem cofre "
+            "respondem `Ok` e o nome fica no `.reg`."
+        ),
+        "arquivo": "crates/phxsql-store/src/reg.rs",
+        "trecho": """            .position(|c| c.dado_pessoal.e_pessoal())""",
+        "troca": """            // DEFEITO REPOSTO (616): so a externa marcada se recusa.
+            .position(|c| c.ty.externo() && c.dado_pessoal.e_pessoal())""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "imagem-de-replicacao-com-coluna-marcada"],
+        "caem": [
+            "replica_sem_cofre_recusa_a_coluna_inline_marcada",
+            "bidirecional_sem_cofre_recusa_a_coluna_marcada",
+        ],
+        "seguem": [
+            "imagem_aberta_para_o_fio_replica_com_cofre_e_sem_cofre_recusa",
+            "imagem_selada_recusa_nomeando_e_nunca_grava_o_selado",
+        ],
+        "prazo": 600,
+    },
+    {
+        "id": "bidirecional-sem-cofre-inserir-marcado-em-claro",
+        "titulo": "O bidirecional sem cofre passava pelo `inserir_replicado` com o dado marcado de OUTRO servidor: a recusa do 613 morava só no `aplicar_evento`",
+        "porque": (
+            "pedido 616, o caminho irmao do 613. O bidirecional casa por chave "
+            "e grava pelos tres `*_replicado`, nao pelo `aplicar_evento`. Os "
+            "tres chamam a MESMA `Table::recusar_marcada_sem_cofre` -- uma "
+            "decisao, nao uma segunda copia. Reposto, a linha de outro servidor entra e o nome fica no `.reg` daqui."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """        self.recusar_marcada_sem_cofre()?;
+        self.como_replica = true;
+        let r = self.inserir(valores);""",
+        "troca": """        // DEFEITO REPOSTO (616): o bidirecional sem a recusa.
+        self.como_replica = true;
+        let r = self.inserir(valores);""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "imagem-de-replicacao-com-coluna-marcada"],
+        "caem": ["bidirecional_sem_cofre_recusa_a_coluna_marcada"],
+        "seguem": [
+            "replica_sem_cofre_recusa_a_coluna_inline_marcada",
+            "imagem_aberta_para_o_fio_replica_com_cofre_e_sem_cofre_recusa",
+        ],
+        "prazo": 600,
+    },
+    {
+        "id": "bidirecional-sem-cofre-atualizar-marcado-em-claro",
+        "titulo": "O bidirecional sem cofre passava pelo `atualizar_replicado` com o dado marcado de OUTRO servidor: a recusa do 613 morava só no `aplicar_evento`",
+        "porque": (
+            "pedido 616, o caminho irmao do 613. O bidirecional casa por chave "
+            "e grava pelos tres `*_replicado`, nao pelo `aplicar_evento`. Os "
+            "tres chamam a MESMA `Table::recusar_marcada_sem_cofre` -- uma "
+            "decisao, nao uma segunda copia. Reposto, a linha local recebe em claro o nome vindo de outro servidor."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """        self.recusar_marcada_sem_cofre()?;
+        self.como_replica = true;
+        let r = self.atualizar(rowid, valores);""",
+        "troca": """        // DEFEITO REPOSTO (616): o bidirecional sem a recusa.
+        self.como_replica = true;
+        let r = self.atualizar(rowid, valores);""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "imagem-de-replicacao-com-coluna-marcada"],
+        "caem": ["bidirecional_sem_cofre_recusa_a_coluna_marcada"],
+        "seguem": [
+            "replica_sem_cofre_recusa_a_coluna_inline_marcada",
+            "imagem_aberta_para_o_fio_replica_com_cofre_e_sem_cofre_recusa",
+        ],
+        "prazo": 600,
+    },
+    {
+        "id": "bidirecional-sem-cofre-excluir_de_vez-marcado-em-claro",
+        "titulo": "O bidirecional sem cofre passava pelo `excluir_de_vez_replicado` com o dado marcado de OUTRO servidor: a recusa do 613 morava só no `aplicar_evento`",
+        "porque": (
+            "pedido 616, o caminho irmao do 613. O bidirecional casa por chave "
+            "e grava pelos tres `*_replicado`, nao pelo `aplicar_evento`. Os "
+            "tres chamam a MESMA `Table::recusar_marcada_sem_cofre` -- uma "
+            "decisao, nao uma segunda copia. Reposto, a exclusao de outro servidor passa numa tabela que recusa as outras duas escritas: copia pela metade que parece inteira, o motivo do 613 recusar a TABELA."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """        self.recusar_marcada_sem_cofre()?;
+        self.como_replica = true;
+        let r = self.excluir_de_vez(rowid, motivo);""",
+        "troca": """        // DEFEITO REPOSTO (616): o bidirecional sem a recusa.
+        self.como_replica = true;
+        let r = self.excluir_de_vez(rowid, motivo);""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "imagem-de-replicacao-com-coluna-marcada"],
+        "caem": ["bidirecional_sem_cofre_recusa_a_coluna_marcada"],
+        "seguem": [
+            "replica_sem_cofre_recusa_a_coluna_inline_marcada",
+            "imagem_aberta_para_o_fio_replica_com_cofre_e_sem_cofre_recusa",
         ],
         "prazo": 600,
     },

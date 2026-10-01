@@ -7042,25 +7042,41 @@ impl Table {
         imagem: &[u8],
     ) -> Result<RowId> {
         // Antes de tudo, a recusa do pedido 613 (decisao do dono, 01/10/2026):
-        // a imagem chega com o externo marcado ABERTO (`imagem_para_o_fio`),
-        // e este arquivo sem cofre o gravaria em claro no disco da replica.
-        // Antes do 344 a replica guardava o selado -- lixo, mas nao o dado; o
-        // 344 consertou o lixo e, sem a palavra do dono, passou a guardar o
-        // dado. A recusa vale para a TABELA, e nao so para o evento que traz
-        // conteudo: replicar as linhas de anexo nulo e parar na primeira com
-        // anexo deixaria uma copia pela metade que parece inteira.
-        if let Some(c) = self.reg.externa_marcada_sem_cofre() {
-            let coluna = &self.esquema.colunas()[c as usize].nome;
-            return Err(PhxError::Esquema(format!(
-                "{}: a coluna {coluna} e externa e marcada como dado pessoal, e esta \
-                 tabela nao tem cofre nesta replica -- o conteudo chegaria aberto e \
-                 ficaria em claro no disco, e dado pessoal marcado nunca fica em claro \
-                 fora da origem. Falta o cofre: ligue a cifra nesta replica e recrie \
-                 a tabela aqui para ela voltar a replicar",
-                self.nome
-            )));
-        }
+        // a imagem chega com o marcado ABERTO (`imagem_para_o_fio` abre o
+        // externo, `imagem_da_linha` decifra a faixa inline), e este arquivo
+        // sem cofre o gravaria em claro no disco da replica. Antes do 344 a
+        // replica guardava o externo selado -- lixo, mas nao o dado; o 344
+        // consertou o lixo e, sem a palavra do dono, passou a guardar o dado.
+        // A recusa vale para a TABELA, e nao so para o evento que traz
+        // conteudo: replicar as linhas de marcado nulo e parar na primeira com
+        // conteudo deixaria uma copia pela metade que parece inteira.
+        self.recusar_marcada_sem_cofre()?;
         self.reaplicar_evento_do_proprio_diario(operacao, rowid, imagem)
+    }
+
+    /// A recusa da replica sem cofre -- pedidos 613 e 616, decisao do dono de
+    /// 01/10/2026: dado pessoal marcado nunca fica em claro fora da origem.
+    ///
+    /// UMA decisao, chamada por quem grava o dado de OUTRO servidor: o
+    /// `aplicar_evento` (a replica, pelo rowid) e os tres `*_replicado` (o
+    /// bidirecional, pela chave). O 613 a pos so no primeiro, e o
+    /// bidirecional -- que chama o `inserir` e o `atualizar` de sempre --
+    /// gravava o mesmo dado aberto pelo caminho irmao (pedido 616). A
+    /// restauracao do proprio diario nao passa por aqui: ali o dado nunca
+    /// saiu da origem (ver [`Table::reaplicar_evento_do_proprio_diario`]).
+    fn recusar_marcada_sem_cofre(&self) -> Result<()> {
+        let Some(c) = self.reg.marcada_sem_cofre() else {
+            return Ok(());
+        };
+        let coluna = &self.esquema.colunas()[c as usize].nome;
+        Err(PhxError::Esquema(format!(
+            "{}: a coluna {coluna} e marcada como dado pessoal, e esta tabela nao \
+             tem cofre neste servidor -- o conteudo vindo de outro servidor chegaria \
+             aberto e ficaria em claro no disco, e dado pessoal marcado nunca fica em \
+             claro fora da origem. Falta o cofre: ligue a cifra neste servidor e \
+             recrie a tabela aqui para ela voltar a replicar",
+            self.nome
+        )))
     }
 
     /// O `aplicar_evento` SEM a recusa do pedido 613 -- so para a
@@ -7110,6 +7126,7 @@ impl Table {
     /// cura quando a mae chega, e a alternativa nao e "consistente" -- e
     /// parado. Ver [`Table::julga_integridade`].
     pub fn inserir_replicado(&mut self, valores: &[Value]) -> Result<RowId> {
+        self.recusar_marcada_sem_cofre()?;
         self.como_replica = true;
         let r = self.inserir(valores);
         self.como_replica = false;
@@ -7121,6 +7138,7 @@ impl Table {
     /// Tambem NAO refaz a cascata: a origem ja cascateou, e o evento que a
     /// cascata dela gerou vem replicado por conta propria.
     pub fn atualizar_replicado(&mut self, rowid: RowId, valores: &[Value]) -> Result<()> {
+        self.recusar_marcada_sem_cofre()?;
         self.como_replica = true;
         let r = self.atualizar(rowid, valores);
         self.como_replica = false;
@@ -7134,6 +7152,7 @@ impl Table {
     /// em qualquer ordem. Recusar o da mae travaria o par de servidores por
     /// causa de uma ordem que se resolve sozinha no lote seguinte.
     pub fn excluir_de_vez_replicado(&mut self, rowid: RowId, motivo: &str) -> Result<bool> {
+        self.recusar_marcada_sem_cofre()?;
         self.como_replica = true;
         let r = self.excluir_de_vez(rowid, motivo);
         self.como_replica = false;

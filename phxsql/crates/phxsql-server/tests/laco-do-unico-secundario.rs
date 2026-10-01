@@ -36,11 +36,29 @@ use comum::DirTemp;
 
 use std::io::{BufRead, BufReader, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 
 use phxsql_core::json::Json;
 use phxsql_server::{Config, Origem, Papel, Servidor};
+use phxsql_store::cofre;
+
+/// O cofre e global ao PROCESSO, e o cenario marcado precisa dele ligado
+/// (pedido 616: o bidirecional sem cofre recusa a tabela com coluna marcada,
+/// e o conflito que se quer medir nem chegaria a acontecer). Os outros
+/// cenarios leem com a trava compartilhada, e o marcado a toma exclusiva:
+/// ligar e desligar o cofre no meio de um vizinho mudaria a marca de
+/// transacao e a trilha dele de claro para cifrado.
+static COFRE: RwLock<()> = RwLock::new(());
+
+/// Desliga o cofre ao sair, inclusive no `panic!` -- o vizinho que entra
+/// depois nao pode herdar o cofre ligado.
+struct CofreLigado;
+impl Drop for CofreLigado {
+    fn drop(&mut self) {
+        cofre::desligar();
+    }
+}
 
 const TOKEN: &str = "unico-secundario";
 /// Quanto esperar por um laco que roda a cada segundo. O mesmo teto dos
@@ -285,6 +303,7 @@ fn parada(porta: u16) -> Option<Json> {
 /// parada nunca aparece, e a asercao da posicao zero cai.
 #[test]
 fn o_conflito_de_unicidade_para_o_par_marcado() {
+    let _c = COFRE.read().unwrap_or_else(|e| e.into_inner());
     let (_a, _b, porta_a, porta_b, _da, _db) = terreno("para");
     inserir(porta_b, 2, "a@x");
 
@@ -344,6 +363,7 @@ fn o_conflito_de_unicidade_para_o_par_marcado() {
 /// tirando a tabela da rodada, a linha 3 nunca chega, e o `esperar` estoura.
 #[test]
 fn o_pular_manual_solta_o_par_e_a_linha_seguinte_chega() {
+    let _c = COFRE.read().unwrap_or_else(|e| e.into_inner());
     let (_a, _b, porta_a, porta_b, _da, _db) = terreno("pula");
     inserir(porta_b, 2, "a@x");
     esperar("a parada do par", || parada(porta_a).is_some());
@@ -385,6 +405,7 @@ fn o_pular_manual_solta_o_par_e_a_linha_seguinte_chega() {
 /// a recusa na declaracao teria tirado do ar.
 #[test]
 fn sem_colisao_o_laco_replica_como_sempre_e_nada_e_contado() {
+    let _c = COFRE.read().unwrap_or_else(|e| e.into_inner());
     let (_a, _b, porta_a, porta_b, _da, _db) = terreno("limpo");
     inserir(porta_b, 2, "b@x");
     inserir(porta_b, 3, "c@x");
@@ -430,6 +451,12 @@ fn sem_colisao_o_laco_replica_como_sempre_e_nada_e_contado() {
 /// primeira asercao cai.
 #[test]
 fn a_coluna_marcada_nao_vaza_no_grito_do_conflito() {
+    let _c = COFRE.write().unwrap_or_else(|e| e.into_inner());
+    // Os dois lados com cofre: sem ele, desde o pedido 616 o bidirecional
+    // recusa a tabela marcada por «Falta o cofre», antes de qualquer
+    // unicidade -- e o grito que esta prova mede nao existiria.
+    cofre::definir("o cofre do grito marcado", cofre::ITERACOES_MINIMAS).unwrap();
+    let _desliga = CofreLigado;
     let (_a, _b, porta_a, porta_b, _da, _db) = terreno_com("marcado", true);
     inserir(porta_b, 2, "a@x");
 

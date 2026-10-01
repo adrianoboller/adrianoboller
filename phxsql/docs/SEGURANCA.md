@@ -2175,8 +2175,9 @@ independente (S5) a levou à mesa. **Decisão do dono: dado pessoal marcado
 nunca fica em claro fora da origem.** Desde então o `Table::aplicar_evento`
 recusa a **tabela** inteira quando ela tem coluna externa marcada e o `.reg`
 daqui não tem cofre — pelo `RegFile::externa_marcada_sem_cofre`, escrito ao
-lado do `externo_selado` e com as mesmas duas perguntas —, dizendo «Falta o
-cofre: ligue a cifra nesta réplica e recrie a tabela aqui». A recusa é da
+lado do `externo_selado` e com as mesmas duas perguntas (generalizado no 616
+para `marcada_sem_cofre`, abaixo) —, dizendo «Falta o cofre: ligue a cifra
+neste servidor e recrie a tabela aqui». A recusa é da
 tabela, e não do evento que traz conteúdo, porque replicar as linhas de anexo
 nulo e parar na primeira com anexo deixaria uma cópia pela metade que parece
 inteira. Com cofre, nada muda (`mesma_senha_replica_a_coluna_externa_marcada`).
@@ -2192,11 +2193,25 @@ em arquivo nenhum da réplica; com a recusa removida, o `varrer` da réplica
 devolve o anexo. Guarda `replica-sem-cofre-grava-externo-marcado-em-claro`,
 PROVADA.
 
-**O que a decisão não alcançou, dito:** a faixa **inline** marcada (o
-`Texto` marcado, por exemplo) continua em claro no disco da réplica sem
-cofre, como sempre esteve, e o bidirecional (`inserir_replicado`) não passa
-pelo `aplicar_evento`. A decisão do dono falou da coluna externa; estender a
-regra às duas é pergunta para ele, e não conserto calado.
+**O caminho irmão, fechado no pedido 616 (01/10/2026).** O 613 deixou de
+fora a faixa **inline** marcada (o `Str` marcado chega aberto na imagem, pelo
+`imagem_da_linha`, e pousava em claro no slot da réplica sem cofre) e o
+**bidirecional**, que grava pelos `*_replicado` e não pelo `aplicar_evento`.
+É o mesmo dado pessoal pelo caminho irmão — alcance da decisão do 613, não
+decisão nova. A pergunta virou `RegFile::marcada_sem_cofre` (qualquer coluna
+marcada, inline ou externa, num `.reg` sem cofre) e a recusa virou **uma**
+função, `Table::recusar_marcada_sem_cofre`, chamada pelo `aplicar_evento` e
+pelos três `*_replicado` (inserir, atualizar e excluir de vez — a tabela
+inteira, pelo mesmo motivo da cópia pela metade). A escrita **local** do
+servidor sem cofre segue: ali ele é a origem do dado. A restauração continua
+por `reaplicar_evento_do_proprio_diario`, sem a recusa. Prova pelo disco em
+`tests/imagem-de-replicacao-com-coluna-marcada.rs`:
+`replica_sem_cofre_recusa_a_coluna_inline_marcada` e
+`bidirecional_sem_cofre_recusa_a_coluna_marcada` — recusa, e o nome em
+arquivo nenhum; com cofre, grava e o nome fica selado. Guardas
+`replica-sem-cofre-grava-inline-marcado-em-claro` e
+`bidirecional-sem-cofre-{inserir,atualizar,excluir_de_vez}-marcado-em-claro`,
+PROVADAS.
 
 #### A assimetria, e o que ela custou (pedido 342, fechado em 23/09/2026)
 
@@ -6833,6 +6848,7 @@ um com a prova nos dois sentidos e pelo soquete.
 | **610** (S4) | o teto de bytes do 546 pesava a **cópia** do resultado; no motor `phxsql` o resultado é UMA linha do `Canal` (até 128 MiB), e `Json::analisar` montava a árvore inteira (16–32× a linha) antes do `Acumulador`. `max_mib: 1` não mudava o pico | o `phx::Conexao::pedir_pesado` lê com o que ainda **cabe** no teto (`Acumulador::cabe`, via `replica::Cliente::pedir_cru`) e pesa a linha crua no **mesmo** contador da cópia (`pesar_crua`); a que passa é recusada com a frase do `max_mib`, antes de ser analisada. `consultar` e `ler`, os dois caminhos que guardam resultado, passam por ele | `o_phxsql_pesa_a_linha_antes_de_analisar`: linha de 64 MiB contra `max_mib` 1 — o par entregou **67.108.864** bytes com o defeito e **4,0–4,8 MiB** com o conserto (três corridas: 4.194.360, 4.325.432, 5.046.328; o resto são as memórias de soquete do laço local, e o cliente lê no máximo 1 MiB + 1). Guarda `dblink-phx-analisa-antes-de-pesar` |
 | **612** (S8) | o cliente PostgreSQL aceitava `AuthenticationOk` (`R 0`) a qualquer momento, inclusive como **primeira** resposta: a autenticação mútua que `conferir_servidor` promete não valia para quem não pedia o SCRAM — quem respondesse no endereço recebia as consultas, e com `sentido: empurrar` as linhas | com senha na ligação, o `R 0` só vale **depois** do SCRAM concluído com a assinatura do servidor conferida; antes, recusa nomeando o `pg_hba.conf` e `scram-sha-256`, sem citar a senha. Sem senha escrita, o `trust` é escolha de quem cadastrou e continua entrando | `tests/dblink-postgres-no-fio.rs`: `o_autenticado_sem_scram_e_recusado_quando_ha_senha` (com o defeito o `abrir` voltava `Ok` e o `ping` chegava ao par; agora zero consultas) e o comportamento velho `sem_senha_o_trust_continua_entrando`. Guarda `pg-autenticado-sem-scram` |
 | **613** (S5) | a réplica sem cofre gravava a coluna externa marcada em claro | decisão do dono: recusa da tabela — §11.8 | §11.8. Guarda `replica-sem-cofre-grava-externo-marcado-em-claro` |
+| **616** (irmão do 613) | a coluna **inline** marcada e o **bidirecional** (`*_replicado`) gravavam em claro na réplica sem cofre | a mesma conferência, generalizada (`marcada_sem_cofre`) e chamada pelos dois caminhos — §11.8 | §11.8. Guardas `replica-sem-cofre-grava-inline-marcado-em-claro` e `bidirecional-sem-cofre-*-marcado-em-claro` |
 
 **A régua do 612.** O libpq de fábrica aceita `trust`; o
 `require_auth=scram-sha-256` do libpq 16 é a opção que recusa. Aqui a recusa

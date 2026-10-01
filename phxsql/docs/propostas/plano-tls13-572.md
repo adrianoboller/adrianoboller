@@ -203,6 +203,8 @@ Ritmo medido: T1→T6a, seis fatias, saíram em **um dia** (30/09). Estimativa a
 | **T6d** | adaptadores: PG (`SSLRequest`; `SCRAM-SHA-256-PLUS` com `tls-server-end-point`, RFC 5929 §4), MySQL (`CLIENT_SSL`; caminho completo do `caching_sha2_password` por dentro), SMTP (`STARTTLS`, RFC 3207; 465 implícito, RFC 8314) | modos `desligado/exigir/verificar` | PG 16 local com `ssl=on`; SMTP contra servidor `python3 ssl`; MySQL 8 **depende de subir um mysqld** | 1,5 |
 | **T6e** | fecho do servidor: 2º `ClientHello` mudando o conjunto após HRR (lacuna declarada no T5), `signature_algorithms_cert`, cadeia com intermediárias no PEM | — | cliente cru do teste; `openssl s_client -showcerts` | 0,5 (paralela à T6b-1) |
 
+**Decisao do dono, 01/10/2026 -- quando o servidor deixa de aceitar o Noise:** na **0.19** o servidor aceita Noise e TLS e registra no log, por conexao, quem ainda chegou por Noise (o par e o iniciador); na **0.20** passa a recusar o Noise. Uma versao inteira de transicao para os nos antigos.
+
 **Ordem:** T0 → T6b-1 (‖ T6e) → T6b-2 → T6c-1 → T6c-2 → T6d. **Total raciocinado: 6–7 rodadas.**
 T0 primeiro porque é defeito ativo e porque toda chave que as fatias seguintes gerarem no Windows
 herdaria a mistura. T6b antes de T6c porque PhxSql↔PhxSql não precisa de RSA nem de cadeia, e já
