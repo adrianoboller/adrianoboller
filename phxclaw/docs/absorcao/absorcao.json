@@ -137,5 +137,56 @@
    "tarefas_nuvem_paralelas"
   ],
   "lido_em": "01/10/2026"
+ },
+ "openjarvis": {
+  "total": 55,
+  "no_agente": 17,
+  "parcial": 9,
+  "nao": 29,
+  "pct_agente": 30.9,
+  "pct_com_bibliotecas": 39.1,
+  "falta": [
+   "repl_python",
+   "indexacao_documentos",
+   "importar_skills",
+   "otimizacao_skills",
+   "tts",
+   "webchat",
+   "telemetria_energia",
+   "resumo_diario",
+   "conectores_google",
+   "calculadora",
+   "clima",
+   "canal_signal",
+   "canal_googlechat",
+   "canal_matrix",
+   "canal_imessage",
+   "canal_sms",
+   "canal_irc",
+   "canal_mattermost",
+   "canal_feishu",
+   "canal_line",
+   "canal_viber",
+   "canal_messenger",
+   "canal_reddit",
+   "canal_mastodon",
+   "canal_xmpp",
+   "canal_rocketchat",
+   "canal_zulip",
+   "canal_twitch",
+   "canal_nostr"
+  ],
+  "pela_metade": [
+   "multiagente",
+   "pesquisa_profunda",
+   "avaliacao_modelos",
+   "webhooks",
+   "canal_discord",
+   "canal_slack",
+   "canal_whatsapp",
+   "canal_email",
+   "canal_teams"
+  ],
+  "lido_em": "01/10/2026"
  }
 }

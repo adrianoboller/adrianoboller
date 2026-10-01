@@ -1,6 +1,6 @@
 # Ondas até 100% de absorção (pedido do dono, 01/10/2026)
 
-Meta: 100% de Hermes, OpenClaw, Claude Code e Codex, contando **só o que o agente usa**.
+Meta: 100% de Hermes, OpenClaw, Claude Code, Codex e OpenJarvis (este acrescentado em 01/10), contando **só o que o agente usa**.
 A conta sai de `gerar_absorcao.py`. Este arquivo é só o plano; o número nunca se digita aqui.
 
 Três frentes por onda, no máximo: o disco tem cerca de 3 GB livres e a máquina 4 CPUs.
@@ -30,7 +30,7 @@ Linux, rede, PostgreSQL e Rust.
 |---|---|
 | git, GitHub e código | git, worktrees, github, busca_arquivos, notebook, checkpoints |
 | interação | hooks, plan_mode, perguntas_usuario, output_styles, heartbeat |
-| canais restantes (na arquitetura do Telegram) | Discord, Slack, WhatsApp, Teams, Signal, Matrix, Google Chat, e-mail de entrada, SMS, webhooks, webchat |
+| canais restantes (na arquitetura do Telegram) | Discord, Slack, WhatsApp, Teams, Signal, Matrix, Google Chat, e-mail de entrada, SMS, webhooks, webchat; e os do OpenJarvis: IRC, Mattermost, Feishu, LINE, Viber, Messenger, Reddit, Mastodon, XMPP, Rocket.Chat, Zulip, Twitch, Nostr |
 
 ## Onda 4
 
@@ -42,7 +42,7 @@ Linux, rede, PostgreSQL e Rust.
 
 ## Onda 5
 
-O que a lista do Codex acrescentar e não couber nas anteriores.
+O que Codex e OpenJarvis acrescentaram: revisão de código, GitLab, Linear, GitHub Action, regras por comando, gatilhos por evento, ambientes isolados por tarefa; REPL Python, indexação de documentos, importar e otimizar skills, avaliação de modelos por energia e latência, resumo diário e conectores Google.
 
 ## O que depende do dono
 

@@ -312,6 +312,110 @@
   "gravar_repetir": {
    "estado": "nao",
    "evidencia": ""
+  },
+  "repl_python": {
+   "estado": "nao",
+   "evidencia": "o shell roda python, sem estado entre chamadas"
+  },
+  "leitura_arquivos": {
+   "estado": "agente",
+   "evidencia": "read_file, read_document, data_file"
+  },
+  "indexacao_documentos": {
+   "estado": "nao",
+   "evidencia": "memoria guarda notas; nao indexa pasta de documentos"
+  },
+  "importar_skills": {
+   "estado": "nao",
+   "evidencia": ""
+  },
+  "otimizacao_skills": {
+   "estado": "nao",
+   "evidencia": ""
+  },
+  "acesso_sistema": {
+   "estado": "agente",
+   "evidencia": "sistema.rs linux_system e linux_system_admin"
+  },
+  "pesquisa_profunda": {
+   "estado": "parcial",
+   "evidencia": "web_search, navegador e parallel_research; sem citacoes encadeadas"
+  },
+  "avaliacao_modelos": {
+   "estado": "parcial",
+   "evidencia": "crates phxclaw-model-arena e phxclaw-ai-benchmark, fora do agente"
+  },
+  "telemetria_energia": {
+   "estado": "nao",
+   "evidencia": ""
+  },
+  "resumo_diario": {
+   "estado": "nao",
+   "evidencia": ""
+  },
+  "conectores_google": {
+   "estado": "nao",
+   "evidencia": ""
+  },
+  "calculadora": {
+   "estado": "nao",
+   "evidencia": ""
+  },
+  "clima": {
+   "estado": "nao",
+   "evidencia": ""
+  },
+  "canal_irc": {
+   "estado": "nao",
+   "evidencia": ""
+  },
+  "canal_mattermost": {
+   "estado": "nao",
+   "evidencia": ""
+  },
+  "canal_feishu": {
+   "estado": "nao",
+   "evidencia": ""
+  },
+  "canal_line": {
+   "estado": "nao",
+   "evidencia": ""
+  },
+  "canal_viber": {
+   "estado": "nao",
+   "evidencia": ""
+  },
+  "canal_messenger": {
+   "estado": "nao",
+   "evidencia": ""
+  },
+  "canal_reddit": {
+   "estado": "nao",
+   "evidencia": ""
+  },
+  "canal_mastodon": {
+   "estado": "nao",
+   "evidencia": ""
+  },
+  "canal_xmpp": {
+   "estado": "nao",
+   "evidencia": ""
+  },
+  "canal_rocketchat": {
+   "estado": "nao",
+   "evidencia": ""
+  },
+  "canal_zulip": {
+   "estado": "nao",
+   "evidencia": ""
+  },
+  "canal_twitch": {
+   "estado": "nao",
+   "evidencia": ""
+  },
+  "canal_nostr": {
+   "estado": "nao",
+   "evidencia": ""
   }
  }
 }
