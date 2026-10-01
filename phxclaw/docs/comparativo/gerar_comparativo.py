@@ -85,7 +85,8 @@ F_XP = "https://learn.chatgpt.com/docs/pricing"
 
 
 def linhas_agentes(m: dict) -> list[tuple[str, dict]]:
-    prov = ", ".join(p.capitalize() for p in m["provedores"])
+    marca = {"openai": "OpenAI", "ollama": "Ollama", "anthropic": "Anthropic", "gemini": "Gemini"}
+    prov = ", ".join(marca.get(p, p) for p in m["provedores"])
     lib = lambda c, t: ("sim", t) if ligado(m, c) else (
         "parcial", t + " Existe como biblioteca testada, mas o agente ainda não a usa.")
     return [
@@ -286,8 +287,11 @@ def graficos() -> tuple[str, str]:
     rodape = (f"{d['rodadas']} rodadas, medido em {e(d['medido_em'])}. Trabalho conferido: os "
               f"{len(conf)} motores saíram de cada etapa com a mesma contagem e as mesmas somas "
               f"({mil(um[-1][0])} linhas no fim).")
+    disco = d.get("disco_bytes", {})
+    disco_txt = " · ".join(f"{NOMES[m]} {disco[m] / 1e6:.0f} MB" for m in ordem if m in disco)
     return ("<div class='fases'>" + "".join(blocos) + "</div>"
             f"<p class='mot'>{rodape}</p>"
+            f"<p><b>Disco ao fim da carga:</b> {e(disco_txt)}.</p>"
             f"<details><summary>Durabilidade de cada motor, lida do servidor</summary><ul>{dur}</ul></details>"
             f"<details><summary>O que estes números não dizem</summary><ul>{ress}</ul></details>"), d["medido_em"]
 
