@@ -67,9 +67,12 @@ um bloco por rótulo (`antes`, `depois`, `sem-teto`), cada um com a data.
 **A catraca do mapa e a unica coisa desta pasta que roda sozinha**, como item 0
 da `bancada/bateria/prova-bateria.py` -- antes de qualquer servidor subir,
 porque e estatica. Ela guarda tres tetos: `codigo-do-dono` (5),
-`alcancam-fsync-2` (23) e `rede-ou-espera-2` (11 -- substitui a `rede-ou-espera`,
-teto 0, aposentada em 01/10/2026 quando a regua aprendeu a ver `Condvar::wait`
-e a chamada `modulo::funcao(`; pedido 627). SO DESCE: medir mais reprova
+`alcancam-fsync-3` (24 -- substitui a `alcancam-fsync-2`, teto 22, aposentada
+em 01/10/2026 quando a durabilidade passou a olhar 6 saltos e as outras classes
+ficaram em 5; pedido 633) e `rede-ou-espera-2` (11 -- substitui a
+`rede-ou-espera`, teto 0, aposentada em 01/10/2026 quando a regua aprendeu a ver
+`Condvar::wait` e a chamada `modulo::funcao(`; pedido 627). Os tetos vivos saem
+da tupla `CATRACAS` do script (`--numeros`), e nao deste texto. SO DESCE: medir mais reprova
 porque alguem acrescentou o que a lei proibe, e medir MENOS tambem reprova,
 porque quem melhorou baixa o teto no mesmo commit.
 
@@ -134,7 +137,7 @@ clientes, o servidor e o amostrador. Recusar sempre não é mais útil que nunca
 recusar; as duas coisas são o mesmo instrumento quebrado.
 
 **3. Medidor estático nunca quebra — passa a responder outra coisa.** É o
-motivo do `--autoteste`, e as seis guardas dele não são hipotéticas: cada uma
+motivo do `--autoteste`, e as nove guardas dele não são hipotéticas: cada uma
 repõe um defeito que o `mapa-da-trava.py` de fato teve, incluindo o dia em que
 ele classificou o `op_juntar` como «atravessa a rede com a trava na mão» com
 confiança 1,0 — por causa de uma **fechadura local** chamada `montar` que o

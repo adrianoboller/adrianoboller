@@ -46,7 +46,9 @@ As tres armadilhas que este medidor ja teve de desarmar
    confere o caminho em vez de acreditar no rotulo.
 3. **Profundidade e escolha, nao acidente.** Com profundidade infinita tudo
    alcanca tudo por um ajudante comum, e o mapa vira uma coluna de «caro».
-   O padrao e 3 saltos, e o caminho impresso deixa ver onde a conta esticou.
+   O padrao e `SALTOS` (5), e `SALTOS_DURABILIDADE` (6) so para a pergunta
+   do `fsync` -- o motivo, medido, esta ao lado das duas constantes. O
+   caminho impresso deixa ver onde a conta esticou.
 """
 import json
 import pathlib
@@ -63,6 +65,23 @@ FONTES = [
 ]
 ALVO = RAIZ / "crates/phxsql-server/src/servidor.rs"
 SALTOS = 5
+# A pergunta do `fsync` olha UM salto mais fundo que as outras, e por medida
+# (pedido 633, 01/10/2026). O `sync_all` mora atras da familia `sincronizar`:
+# 11 definicoes, e 10 delas so DELEGAM (9 para outro `sincronizar`, 1 para
+# `sincronizar_volume`). Chegando a ela no ultimo salto, a fracao sai 1/11 e
+# a secao nunca passa do `CERTO` -- foi assim que a `op_excluir_fk` sumiu
+# da catraca quando o 632 empurrou o `regravar_esquema` um elo para baixo.
+#
+# Por que nao 6 para TODAS as classes, medido contra 5: a durabilidade ganha
+# 2 secoes, as duas conferidas a mao como `fsync` real sob a trava
+# (`op_excluir_fk`, `op_restaurar_backup`); a escrita ganha 20 secoes de
+# leitura pela marca do separador (`abrir_travada -> ... -> abrir_database ->
+# separador::exigir_migrado -> marcar_novo`) -- a porta comum do
+# `abrir_database` entrando por outra porta, que e ruido e nao distingue
+# secao nenhuma. E por que nao 7 so para o `fsync`: entra o
+# `reaplicar_diario_ate` por um caminho de cascata de seis elos que ninguem
+# conferiu, e a guarda e afirmar o que se conferiu.
+SALTOS_DURABILIDADE = 6
 # Acima disto o nome deixa de identificar a funcao: `abrir` tem 23 definicoes
 # nesta arvore, `nome` tem 35. Caminho do TETO que passa por um desses nao e
 # suspeita, e ruido -- e ruido que faz tudo parecer caro esconde o que e caro.
@@ -392,6 +411,25 @@ def alcancaveis(trecho, indice, saltos, memo=None):
     return achados
 
 
+def alcance_da_secao(secao, indice, memo, saltos=None, saltos_fsync=None):
+    """O alcance de UMA secao: todas as classes a `SALTOS`, e a durabilidade
+    a `SALTOS_DURABILIDADE`.
+
+    Duas passadas e nao uma mais funda: aprofundar tudo traria a marca do
+    separador como «escrita» em 20 leituras (ver `SALTOS_DURABILIDADE`). O
+    `memo` e o mesmo -- a chave dele ja carrega os saltos --, e a segunda
+    passada so paga o salto que a primeira nao deu.
+    """
+    saltos = SALTOS if saltos is None else saltos
+    saltos_fsync = SALTOS_DURABILIDADE if saltos_fsync is None else saltos_fsync
+    alc = dict(alcancaveis(secao, indice, saltos, memo))
+    if saltos_fsync != saltos:
+        fundo = alcancaveis(secao, indice, saltos_fsync, memo)
+        if "durabilidade" in fundo:
+            alc["durabilidade"] = fundo["durabilidade"]
+    return alc
+
+
 def melhores(caminhos):
     """Os TOP caminhos distintos, do mais confiavel para o menos.
 
@@ -506,7 +544,7 @@ def mapear(alvo=None):
                 fim = solto
 
         secao = limpo[pos:fim]
-        alc = alcancaveis(secao, indice, SALTOS, memo)
+        alc = alcance_da_secao(secao, indice, memo)
         secoes.append({
             "linha": linha_de(pos),
             "fim": linha_de(fim),
@@ -610,7 +648,7 @@ def autoteste():
     """A prova real, nos dois sentidos: cada guarda FALHA com o defeito reposto.
 
     Medidor estatico e facil de acreditar e dificil de conferir -- ele nunca
-    quebra, so passa a responder outra coisa. Estas oito provas repoem, uma a
+    quebra, so passa a responder outra coisa. Estas nove provas repoem, uma a
     uma, os defeitos que este arquivo ja teve, e cada uma trava o conserto.
     """
     import tempfile
@@ -707,11 +745,37 @@ def autoteste():
             and "espera" not in c_outro,
             "nascendo:: -> 1,0; nu -> 0,5; asn1:: -> nada")
 
+    # 9. O `fsync` atras de uma familia que DELEGA. O defeito real (pedido
+    #    633): `sincronizar` tem 11 definicoes e 10 so chamam outra; chegando
+    #    a ela no ultimo salto, a fracao saia 1/11 e a `op_excluir_fk` -- que
+    #    segura a trava sobre `fsync` -- sumia da catraca sem ninguem mexer
+    #    nela. Com a regua de antes (a durabilidade nos mesmos saltos das
+    #    outras) a primeira metade desta prova FALHA. A segunda trava o lado
+    #    contrario: a escrita comum no mesmo fundo continua de fora.
+    familia = ["{ s.sync_all(); }"] + ["{ sincronizar(); }"] * 10
+    indice = {"a": ["{ b(); }"], "b": ["{ sincronizar(); }"],
+              "sincronizar": familia,
+              "c": ["{ d(); }"], "d": ["{ e(); }"], "e": ["{ g(); }"],
+              "g": ["{ f.write_all(x); }"]}
+
+    def certo(alc, classe):
+        return any(cf >= CERTO for _, cf in alc.get(classe, []))
+    # A folga e a da regua de verdade (`SALTOS_DURABILIDADE - SALTOS`), e nao
+    # um 4 digitado: digitado, esta prova passaria com a regua velha reposta.
+    novo = alcance_da_secao("{ a(); c(); }", indice, {}, 3,
+                            3 + SALTOS_DURABILIDADE - SALTOS)
+    velho = alcance_da_secao("{ a(); c(); }", indice, {}, 3, 3)
+    confere("o fsync atras de familia que delega chega a certo",
+            certo(novo, "durabilidade") and not certo(velho, "durabilidade")
+            and "disco-escrita" not in novo,
+            f"fundo +1 -> {certo(novo, 'durabilidade')}, mesmo fundo -> "
+            f"{certo(velho, 'durabilidade')}")
+
     print()
     if falhas:
         print(f"REPROVADO: {', '.join(falhas)}")
         return 1
-    print("as oito guardas passaram")
+    print("as nove guardas passaram")
     return 0
 
 
@@ -797,12 +861,30 @@ CATRACAS = [
         # `regravar_esquema`). Baixado porque a catraca so desce e o numero e
         # o medido; quem fizer a regua alcanca-la de novo nao sobe o teto --
         # aposenta esta e nasce outra, pela lei de cima.
-        "alcancam-fsync-2",
-        22,
+        #
+        # APOSENTADA em 01/10/2026 (pedido 633), no teto 22, pela
+        # `alcancam-fsync-3` abaixo.
+        #
+        # APOSENTA a `alcancam-fsync-2` (teto 22), em 01/10/2026 (pedido 633),
+        # pela lei de cima: a regua passou a medir MAIS, e nao o codigo a
+        # piorar. A durabilidade passou a olhar `SALTOS_DURABILIDADE` (6)
+        # saltos, e nao `SALTOS` (5) -- o motivo, medido, esta ao lado da
+        # constante. A diagnose do 632 dizia «dois saltos alem do corte» e
+        # era um so: o caminho que voltou e o BARATO do `regravar_esquema`
+        # (`-> sincronizar`), nao a reescrita da FASE A.
+        #
+        # O numero NASCE no medido do dia: 24 = as 22 de antes, a
+        # `op_excluir_fk` de volta, e a `op_restaurar_backup`, que a regua
+        # nunca tinha visto: o `confirmar` troca o database com a trava na
+        # mao e sincroniza (`renomear_ou_copiar`, pedidos 467/582) -- e de
+        # proposito, dito no comentario do `copiar_e_apagar`. Daqui em
+        # diante so desce.
+        "alcancam-fsync-3",
+        24,
         "secoes alcancam `fsync` com a trava na mao. E o que um `RwLock` NAO "
         "conserta -- o escritor continua exclusivo --, e cada uma nova e "
         "1,3 ms de trava presa (§7.1-bis) que a proxima conexao espera. "
-        "SUBSTITUI a `alcancam-fsync` (teto 22), aposentada em 18/09/2026 "
+        "SUBSTITUI a `alcancam-fsync-2` (teto 22), aposentada em 01/10/2026 "
         "porque a regua mudou, nao o codigo.",
         "secoes criticas que alcancam `fsync` com a trava na mao",
     ),
@@ -856,7 +938,7 @@ def medir_para_a_catraca(secoes):
 
     return {
         "codigo-do-dono": sum(1 for s in secoes if "usuario" in certas(s)),
-        "alcancam-fsync-2": sum(1 for s in secoes if "durabilidade" in certas(s)),
+        "alcancam-fsync-3": sum(1 for s in secoes if "durabilidade" in certas(s)),
         "rede-ou-espera-2": sum(1 for s in secoes
                                 if s["classe"] == "rede-ou-espera"),
     }
@@ -941,7 +1023,8 @@ def principal():
     print("=== o mapa da trava global de dados ===")
     print(f"    fonte: {ALVO.relative_to(RAIZ)}")
     print(f"    {len(secoes)} secoes criticas fora da definicao e fora dos testes")
-    print(f"    profundidade: {SALTOS} saltos, resolucao por nome\n")
+    print(f"    profundidade: {SALTOS} saltos ({SALTOS_DURABILIDADE} para o `fsync`), "
+          "resolucao por nome\n")
     print(f"-- as portas mais repetidas, e o corte da PORTA COMUM ({minimo} secoes)")
     print("   herdado = e a melhor prova em tanta secao que nao distingue nenhuma;")
     print("   continua sendo fato, sai da classificacao. Ver PORTA_COMUM.")
