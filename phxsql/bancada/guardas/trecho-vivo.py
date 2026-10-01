@@ -457,6 +457,13 @@ dia, nunca no desejado:
   (`trilha-ativo-vazio-em-claro`) e o no que deixa de provar calado
   (`pulso-deixa-de-provar-calado`). Contado pelo `--catraca`; no merge com
   as frentes que levaram o piso a 584: 584 + 4 = 588.
+  **SUBIU para 592 em 01/10/2026** (pedidos 600, 601 e 245/O2a): quatro
+  guardas -- a marca d'agua da particao negada pela administracao
+  (`marca-dagua-da-particao-negada`), a recuperacao do embutido com a politica
+  padrao (`recuperacao-do-embutido-sem-politica`), o irmao dela na pasta do
+  schema (`recuperacao-do-schema-sem-politica`) e o CHECK novo que a linha
+  velha viola (`check-novo-contra-a-linha-velha`). 588 + 4 = 592, medido pelo
+  `--numeros`.
 
 # A QUINTA REGUA: a tabela publicada pode ser MENOR que o catalogo
 
@@ -563,7 +570,7 @@ TETO_TESTE_MORTO = 0
 TETO_TRECHO_AMBIGUO = 0
 TETO_TESTE_FORA_DO_BINARIO = 0
 TETO_TESTE_SEM_MODULO = 0
-PISO_DAS_ENTRADAS = 588
+PISO_DAS_ENTRADAS = 592
 
 # ------------------------------------------------------------- APOSENTADAS
 #

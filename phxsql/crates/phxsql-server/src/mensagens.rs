@@ -606,6 +606,24 @@ pub const FABRICA: &[MensagemFabrica] = &[
             "",
         ],
     },
+    // Pedido 245, O2a: a decisao e a contagem sao do motor
+    // (`Table::acrescentar_coluna_fase_a_recusando`); daqui sai so a frase.
+    MensagemFabrica {
+        nome: "erro.check_novo_violado",
+        textos: [
+            "a coluna {coluna} declara CHECK {check}, e {violam} das {linhas} \
+             linha(s) que ja existem o violam: recusado, senao a regra valeria so \
+             para a linha nova. Corrija essas linhas, ou declare um CHECK que elas \
+             cumpram",
+            "",
+            "column {coluna} declares CHECK {check}, and {violam} of the {linhas} \
+             existing row(s) violate it: refused, or the rule would hold only for \
+             new rows. Fix those rows, or declare a CHECK they satisfy",
+            "",
+            "",
+            "",
+        ],
+    },
     MensagemFabrica {
         nome: "erro.pulso_de_no_desconhecido",
         textos: [

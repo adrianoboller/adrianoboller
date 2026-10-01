@@ -869,19 +869,17 @@ fn padrao_que_viola_o_proprio_check_recusa_antes_de_tocar_no_reg() {
 
 /// **O crivo e PRECISO, e sao tres controles que provam isso.**
 ///
-/// Ele nao pode virar «CHECK numa tabela com linha recusa»: isso tiraria uma
-/// ordem de modelagem legitima -- «daqui para a frente vale esta regra» -- que
-/// o PostgreSQL(R) atende com `NOT VALID`. O crivo avalia com NULO em todas as
-/// outras colunas, e `NULL` passa no CHECK (e o SQL): entao so cai o que se
-/// contradiz sozinho.
+/// Ele nao pode virar «CHECK numa tabela com linha recusa»: o que cai e a
+/// linha que VIOLA (pedido 245, O2a), e nao a tabela que tem linha. Cada linha
+/// velha e avaliada com o valor que vai receber na coluna nova, e `NULL` passa
+/// no CHECK (e o SQL).
 #[test]
-fn o_crivo_do_check_nao_pega_quem_depende_da_linha_velha() {
+fn o_crivo_do_check_so_pega_a_linha_que_o_viola() {
     let d = DirTemp::novo("check-crivo");
     let mut t = Table::criar(&d.0, esquema()).unwrap();
     t.inserir(&cliente(1)).unwrap();
 
-    // (a) CHECK que fala de coluna VELHA passa -- o dado nao esta aqui, e
-    //     inventar uma recusa seria pior que a falta dela.
+    // (a) CHECK que fala de coluna VELHA e que a linha CUMPRE passa.
     let c = coluna_situacao().com_check("nome <> ''").unwrap();
     t.acrescentar_coluna(c, None).unwrap();
 
@@ -900,6 +898,49 @@ fn o_crivo_do_check_nao_pega_quem_depende_da_linha_velha() {
     let c = coluna_situacao().com_check("situacao <> 'nao'").unwrap();
     v.acrescentar_coluna(c, Some(Value::Str("nao".into())))
         .unwrap();
+}
+
+/// **Pedido 245, O2a: o CHECK que linha velha viola recusa, contando-as.**
+///
+/// Tres linhas; o `CHECK nome <> 'cliente 0002'` numa coluna nova e violado
+/// pela segunda -- um CHECK que fala de coluna VELHA, e que o crivo de antes
+/// (NULO nas outras colunas) deixava entrar. A recusa traz a contagem, e o
+/// `CheckViolado` que o servidor recebe traz os numeros sem frase.
+///
+/// **Defeito reposto** (o `if violam > 0` sem recusar, que e o codigo de
+/// antes do O2a): a coluna entra, e os dois `unwrap_err` caem.
+#[test]
+fn check_que_a_linha_velha_viola_recusa_dizendo_quantas() {
+    let d = DirTemp::novo("check-o2a");
+    let mut t = Table::criar(&d.0, esquema()).unwrap();
+    for i in 0..3 {
+        t.inserir(&cliente(i)).unwrap();
+    }
+    let c = coluna_situacao()
+        .com_check("nome <> 'cliente 0002'")
+        .unwrap();
+    let e = t
+        .acrescentar_coluna(c.clone(), None)
+        .unwrap_err()
+        .to_string();
+    assert!(e.contains("1 das 3"), "{e}");
+    assert_eq!(t.esquema().colunas().len(), 7, "a recusa tocou no esquema");
+
+    let mut visto = None;
+    let r = t.acrescentar_coluna_fase_a_recusando(c, None, |v| {
+        visto = Some(v.clone());
+        phxsql_core::PhxError::Esquema("recusado".into())
+    });
+    assert!(r.is_err());
+    assert_eq!(
+        visto,
+        Some(phxsql_store::CheckViolado {
+            coluna: "situacao".into(),
+            check: "nome <> 'cliente 0002'".into(),
+            violam: 1,
+            linhas: 3,
+        })
+    );
 }
 
 // ---------------------------------------------------------------------------

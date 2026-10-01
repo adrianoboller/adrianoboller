@@ -8143,39 +8143,33 @@ impl Servidor {
             }
 
             // Uma linha por tabela, sem campo `tabela` no pedido: o crivo do
-            // oraculo do rowid passa linha a linha (pedido 543). So pergunta
-            // o esquema das tabelas em que ESTE usuario tem coluna negada --
-            // as outras saem como sempre sairam, sem trabalho nenhum.
+            // oraculo do rowid passa linha a linha (pedido 543).
             PorColuna::Catalogo => {
                 let r = self.executar(op, pedido, sessao)?;
-                let Json::Objeto(pares) = r else {
-                    return Ok(r);
-                };
-                let mut saida = Vec::with_capacity(pares.len());
-                for (k, v) in pares {
-                    let v = match (k.as_str(), v) {
-                        ("tabelas", Json::Lista(linhas)) => {
-                            let mut novas = Vec::with_capacity(linhas.len());
-                            for linha in linhas {
-                                let nome = linha.texto_ou("tabela", "").to_string();
-                                let sem_ler = u.colunas_negadas(&base, &nome, Atividade::Ler);
-                                let negada = !sem_ler.is_empty()
-                                    && self
-                                        .coluna_do_rowid_negada(&base, &nome, &sem_ler, sessao)?
-                                        .is_some();
-                                novas.push(if negada {
-                                    dc::peneirar_linha_do_catalogo(linha)
-                                } else {
-                                    linha
-                                });
-                            }
-                            Json::Lista(novas)
-                        }
-                        (_, v) => v,
-                    };
-                    saida.push((k, v));
+                self.peneirar_marca_dagua_por_tabela(r, u, &base, sessao)
+            }
+
+            // A marca d'agua de UMA tabela, ao lado do que a operacao fez
+            // (pedido 600). A pergunta vem ANTES de executar, e nao depois:
+            // o `acrescentar_coluna` e o `migrar_esquema` mudam a tabela, e o
+            // esquema que decide e o de quem fez o pedido. Sem `tabela` (a
+            // varredura do `migrar_esquema`), linha a linha como o catalogo.
+            PorColuna::MarcaDagua => {
+                if tabela.is_empty() {
+                    let r = self.executar(op, pedido, sessao)?;
+                    return self.peneirar_marca_dagua_por_tabela(r, u, &base, sessao);
                 }
-                Ok(Json::Objeto(saida))
+                let sem_ler = u.colunas_negadas(&base, &tabela, Atividade::Ler);
+                let negada = !sem_ler.is_empty()
+                    && self
+                        .coluna_do_rowid_negada(&base, &tabela, &sem_ler, sessao)?
+                        .is_some();
+                let r = self.executar(op, pedido, sessao)?;
+                Ok(if negada {
+                    dc::peneirar_marca_dagua(r)
+                } else {
+                    r
+                })
             }
 
             // A definicao de um job e dado que alguem digitou (pedido 350): o
@@ -8306,6 +8300,60 @@ impl Servidor {
                 Ok(Json::Objeto(pares))
             }
         }
+    }
+
+    /// A resposta que traz UMA LINHA POR TABELA na lista `tabelas` (o
+    /// `sistabelas`, a varredura do `migrar_esquema`), peneirada linha a
+    /// linha -- pedidos 543 e 600. So pergunta o esquema das tabelas em que
+    /// ESTE usuario tem coluna negada: as outras saem como sempre sairam, sem
+    /// trabalho nenhum.
+    ///
+    /// O TOTAL do topo tambem sai quando alguma linha saiu: a soma dos
+    /// `slots_a_reescrever` com uma tabela pendente so e o numero dela, e
+    /// tirar a parcela deixando a soma e tirar nada.
+    fn peneirar_marca_dagua_por_tabela(
+        &self,
+        r: Json,
+        u: &crate::usuarios::Usuario,
+        base: &str,
+        sessao: &Sessao,
+    ) -> Result<Json> {
+        use crate::direito_coluna as dc;
+        let Json::Objeto(pares) = r else {
+            return Ok(r);
+        };
+        let mut alguma = false;
+        let mut saida = Vec::with_capacity(pares.len());
+        for (k, v) in pares {
+            let v = match (k.as_str(), v) {
+                ("tabelas", Json::Lista(linhas)) => {
+                    let mut novas = Vec::with_capacity(linhas.len());
+                    for linha in linhas {
+                        let nome = linha.texto_ou("tabela", "").to_string();
+                        let sem_ler = u.colunas_negadas(base, &nome, Atividade::Ler);
+                        let negada = !sem_ler.is_empty()
+                            && self
+                                .coluna_do_rowid_negada(base, &nome, &sem_ler, sessao)?
+                                .is_some();
+                        alguma |= negada;
+                        novas.push(if negada {
+                            dc::peneirar_marca_dagua(linha)
+                        } else {
+                            linha
+                        });
+                    }
+                    Json::Lista(novas)
+                }
+                (_, v) => v,
+            };
+            saida.push((k, v));
+        }
+        let r = Json::Objeto(saida);
+        Ok(if alguma {
+            dc::peneirar_marca_dagua(r)
+        } else {
+            r
+        })
     }
 
     /// A coluna negada que o ROWID desta tabela revela, se houver -- pedido
@@ -20040,7 +20088,21 @@ impl Servidor {
         // FASE A, FORA da trava: e a parte cara (0,69-1,03 us por slot,
         // medido em 23/09/2026), e o servidor atende todo o resto enquanto
         // ela corre.
-        let pendente = t.acrescentar_coluna_fase_a(coluna.clone(), padrao)?;
+        //
+        // A recusa do CHECK que linha velha viola (245, O2a) e do motor -- a
+        // decisao e a contagem moram no `Table` --, e daqui sai so a FRASE,
+        // pela fabrica, como toda mensagem que este servidor devolve.
+        let pendente = t.acrescentar_coluna_fase_a_recusando(coluna.clone(), padrao, |v| {
+            PhxError::Esquema(self.msg(
+                "erro.check_novo_violado",
+                &[
+                    ("coluna", &v.coluna),
+                    ("check", &v.check),
+                    ("violam", &v.violam.to_string()),
+                    ("linhas", &v.linhas.to_string()),
+                ],
+            ))
+        })?;
 
         let dados = self.travar_dados()?;
         // A REVALIDACAO, e ela nao e cerimonia: se um caminho novo escapar do
@@ -20061,32 +20123,21 @@ impl Servidor {
 
         // O que a linha VELHA nao ganhou, dito na resposta (pedido 245, O2).
         //
-        // O portao vem antes do trabalho: sao dois `is_some()` de campo ja
-        // carregado, e quem acrescenta coluna sem regra nao paga nem uma
-        // alocacao. As duas frases dizem o que FOI medido, e nenhuma delas
-        // promete conserto: o que fazer com a linha velha que viola um CHECK
-        // novo, e com a `calculada` que nasceu nula nela, e decisao de
-        // garantia de dado e esta com o dono (245, O2).
+        // So a `calculada`: o CHECK passou a ser conferido contra as linhas
+        // velhas na fase A (245, O2a), e quem chega aqui com CHECK e porque
+        // nenhuma o viola -- avisar que «nao foi conferido» seria mentira. A
+        // `calculada` que nasce NULA na linha velha continua sendo o que a
+        // resposta precisa dizer. O portao vem antes do trabalho: um
+        // `is_some()` de campo ja carregado.
         let mut avisos: Vec<String> = Vec::new();
-        if registros > 0 && (coluna.check.is_some() || coluna.calculada.is_some()) {
-            if let Some(check) = &coluna.check {
-                avisos.push(format!(
-                    "o CHECK {:?} da coluna {} NAO foi conferido contra as {registros} \
-                     linha(s) que ja existiam: a que o violar so sera recusada no proximo \
-                     `atualizar` dela",
-                    check.texto(),
-                    coluna.nome
-                ));
-            }
-            if let Some(calc) = &coluna.calculada {
-                avisos.push(format!(
-                    "a coluna calculada {} ({:?}) ficou NULA nas {registros} linha(s) que \
-                     ja existiam: cada uma so recebe o valor calculado no proximo \
-                     `atualizar` dela",
-                    coluna.nome,
-                    calc.texto()
-                ));
-            }
+        if let (true, Some(calc)) = (registros > 0, &coluna.calculada) {
+            avisos.push(format!(
+                "a coluna calculada {} ({:?}) ficou NULA nas {registros} linha(s) que \
+                 ja existiam: cada uma so recebe o valor calculado no proximo \
+                 `atualizar` dela",
+                coluna.nome,
+                calc.texto()
+            ));
         }
 
         let mut pares = vec![
@@ -36497,6 +36548,99 @@ mod testes_direito_por_coluna {
         assert!(e2.campo("slots").is_some(), "{}", e2.escrever());
     }
 
+    /// **Pedido 600: a marca d'agua da tabela particionada pela coluna negada
+    /// nao sai pelas operacoes de administracao.**
+    ///
+    /// O 543 tirou `slots`/`volumes`/`arquivos` do `esquema` e do
+    /// `sistabelas`; estas quatro devolviam o mesmo numero com outro nome:
+    /// `verificar` (`slots` e quantos volumes do `.reg` existem),
+    /// `migrar_esquema` (`slots`, `slots_a_reescrever` e o `aviso` que os
+    /// escreve por extenso), `acrescentar_coluna` (`slots_reescritos`) e
+    /// `memoria_carregar` (a ficha da residente). Pelo `despachar`.
+    ///
+    /// `reindexar` e `estatisticas`, nomeados no pedido, foram MEDIDOS aqui e
+    /// nao carregam slot nenhum -- a conferencia fica, para o dia em que
+    /// passarem a carregar.
+    ///
+    /// O controle e o comportamento velho: a regra numa coluna que NAO
+    /// particiona deixa o `verificar` e o `acrescentar_coluna` como sempre.
+    ///
+    /// **Defeito reposto** (as quatro de volta em `PorColuna::Nenhum`): cai
+    /// uma linha por porta.
+    #[test]
+    fn a_marca_dagua_da_particao_negada_nao_sai_pela_administracao() {
+        let dir = dir_temp("marca-dagua-600");
+        let negando = |coluna: &str| {
+            cadastro(&format!(
+                r#"{{"*":{{"ler":true,"inserir":true,"alterar":true,"excluir":true,
+                     "criar":true,"reindexar":true,"diario":true,"verificar":true,
+                     "replicar":true,"administrar":true,
+                     "tabelas":{{"vip":{{"ler":true,"inserir":true,"alterar":true,
+                       "excluir":true,"criar":true,"diario":true,"administrar":true,
+                       "replicar":true,"verificar":true,"reindexar":true,
+                       "colunas":{{"{coluna}":{{"ler":false,"alterar":false}}}}}}}}}}}}"#
+            ))
+        };
+        let (s, ana) = servidor_com_particao_por_letra(&dir, negando("cidade"));
+
+        let mut vazou = Vec::new();
+        let mut olhar = |porta: &str, corpo: &str| {
+            let r = pede(&s, &ana, corpo).unwrap_or_else(|e| panic!("{porta}: {e}"));
+            for k in crate::direito_coluna::CHAVES_DA_MARCA_DAGUA {
+                if r.campo(k).is_some() {
+                    vazou.push(format!("{porta}.{k}: {}", r.escrever()));
+                }
+            }
+        };
+        olhar(
+            "verificar",
+            r#""op":"verificar","database":"b","tabela":"vip""#,
+        );
+        olhar(
+            "migrar_esquema",
+            r#""op":"migrar_esquema","database":"b","tabela":"vip""#,
+        );
+        olhar(
+            "acrescentar_coluna",
+            r#""op":"acrescentar_coluna","database":"b","tabela":"vip",
+               "coluna":{"nome":"obs","tipo":"Str(10)"}"#,
+        );
+        olhar(
+            "memoria_carregar",
+            r#""op":"memoria_carregar","database":"b","tabela":"vip""#,
+        );
+        // As duas que o pedido nomeou e que a medida absolveu.
+        olhar(
+            "reindexar",
+            r#""op":"reindexar","database":"b","tabela":"vip""#,
+        );
+        olhar("estatisticas", r#""op":"estatisticas""#);
+        assert!(
+            vazou.is_empty(),
+            "a marca d'agua da particao negada ainda sai por:\n  {}",
+            vazou.join("\n  ")
+        );
+
+        // CONTROLE: a regra numa coluna que NAO particiona nao muda nada.
+        let dir2 = dir_temp("marca-dagua-600-controle");
+        let (s2, ana2) = servidor_com_particao_por_letra(&dir2, negando("id"));
+        let v = pede(
+            &s2,
+            &ana2,
+            r#""op":"verificar","database":"b","tabela":"vip""#,
+        )
+        .unwrap();
+        assert!(v.campo("slots").is_some(), "{}", v.escrever());
+        let a = pede(
+            &s2,
+            &ana2,
+            r#""op":"acrescentar_coluna","database":"b","tabela":"vip",
+               "coluna":{"nome":"obs","tipo":"Str(10)"}"#,
+        )
+        .unwrap();
+        assert!(a.campo("slots_reescritos").is_some(), "{}", a.escrever());
+    }
+
     /// O `esquema` diz o material EM DISCO da tabela. Aqui o cofre esta
     /// desligado -- este binario nao pode liga-lo, a chave e do processo --,
     /// entao a resposta certa e `em_claro`, e o campo tem de EXISTIR: um
@@ -46110,6 +46254,95 @@ mod testes_da_ficha_compartilhada {
                 &dono,
             )
             .is_err());
+    }
+
+    /// **Pedido 600 (b), MEDIDO: o `motivos` pagina por `pular` e o expurgo
+    /// entre duas paginas NAO o faz perder registro -- a hipotese morreu.**
+    ///
+    /// As duas hipoteses, escritas antes de medir: (H1) o `.reason` perde a
+    /// frente como o `.lgpd` perdia (487), e o `pular` desliza; (H2) o
+    /// `.reason` so cresce no fim, e o `pular` e estavel. Lido no fonte e
+    /// medido aqui: nenhum caminho apaga registro do `.reason` (o
+    /// `MotivoFile::apagar_tudo` nao tem chamador; so o `excluir_tabela` leva
+    /// o arquivo inteiro). O expurgo da trilha e o esvaziar da lixeira
+    /// ACRESCENTAM o proprio rastro no FIM -- e acrescentar no fim nao mexe
+    /// na posicao de ninguem. H2 se sustenta; o cursor do 487 nao entra aqui,
+    /// porque nao ha o que consertar.
+    ///
+    /// Este teste e a sentinela da premissa: no dia em que alguem der ao
+    /// `.reason` um expurgo pela frente, a segunda pagina desliza e ele cai.
+    #[test]
+    fn os_motivos_paginam_por_pular_sem_perder_registro_no_expurgo() {
+        let (s, _dir) = servidor("motivos-pular", false);
+        let dono = Sessao::default();
+        let motivos = |extra: &str| -> Vec<String> {
+            s.executar(
+                "motivos",
+                &pedido(&format!(r#"{{"database":"b","tabela":"c"{extra}}}"#)),
+                &dono,
+            )
+            .unwrap()
+            .campo("motivos")
+            .and_then(Json::lista)
+            .unwrap_or(&[])
+            .iter()
+            .map(|m| m.texto_ou("uuid", "").to_string())
+            .collect()
+        };
+        for rowid in 1..=4 {
+            s.executar(
+                "excluir",
+                &pedido(&format!(
+                    r#"{{"database":"b","tabela":"c","rowid":{rowid},"motivo":"m{rowid}"}}"#
+                )),
+                &dono,
+            )
+            .unwrap();
+        }
+        let todos = motivos("");
+        assert_eq!(todos.len(), 4, "o cenario nao montou quatro motivos");
+        let p1 = motivos(r#","pular":0,"limite":2"#);
+        assert_eq!(p1, todos[0..2].to_vec());
+
+        // Entre as paginas, os dois expurgos que existem: o da lixeira e o da
+        // trilha (este, com o volume ativo fechado, para derrubar de fato).
+        s.executar(
+            "esvaziar_lixeira",
+            &pedido(r#"{"database":"b","tabela":"c","motivo":"limpeza"}"#),
+            &dono,
+        )
+        .unwrap();
+        s.executar(
+            "marcar_lgpd",
+            &pedido(r#"{"database":"b","tabela":"c","colunas":{"cpf":"pessoal"}}"#),
+            &dono,
+        )
+        .unwrap();
+        varrer(&s, "");
+        std::thread::sleep(std::time::Duration::from_millis(3));
+        s.executar(
+            "expurgar_trilha",
+            &pedido(&format!(
+                r#"{{"database":"b","tabela":"c","motivo":"prazo","ate_ms":{},
+                    "fechar_ativo":true}}"#,
+                crate::agora_ms()
+            )),
+            &dono,
+        )
+        .unwrap();
+
+        let p2 = motivos(r#","pular":2,"limite":2"#);
+        assert_eq!(
+            p2,
+            todos[2..4].to_vec(),
+            "um expurgo entre as paginas fez o `motivos` pular ou repetir registro"
+        );
+        let depois = motivos("");
+        assert!(
+            depois.len() > todos.len() && depois[..4] == todos[..],
+            "os expurgos tinham de ACRESCENTAR o rastro no fim, sem mexer na frente: \
+             antes {todos:?}, depois {depois:?}"
+        );
     }
 
     /// **Prova real do A8 (revisao SEC de 17/09/2026, pedido 285).** O
@@ -57516,17 +57749,15 @@ mod testes_regras_de_esquema {
 
     /// **O que a linha VELHA nao ganhou, dito na resposta** -- pedido 245, O2.
     ///
-    /// Medido em 16/09/2026: `acrescentar_coluna` com `check` que as linhas
-    /// velhas violam, e com `calculada`, era aceito SEM AVISO NENHUM -- e so
-    /// aparecia no `atualizar` seguinte (que passava a recusar) ou numa
-    /// leitura que mostrava NULO onde o esquema promete uma conta.
-    ///
-    /// O aviso nao resolve o O2, e nao e para resolver: o que fazer com a
-    /// linha velha e decisao de garantia de dado, e esta com o dono. Ele tira
-    /// a parte do defeito que era «sem aviso».
+    /// Medido em 16/09/2026: `acrescentar_coluna` com `calculada` era aceito
+    /// SEM AVISO NENHUM -- e so aparecia numa leitura que mostrava NULO onde
+    /// o esquema promete uma conta. O CHECK que a linha velha viola deixou de
+    /// ser aviso e virou RECUSA (O2a, decisao do dono de 17/09/2026 -- ver
+    /// `o_check_que_a_linha_velha_viola_recusa_a_coluna_dizendo_quantas`); o
+    /// que sobra aqui e o CHECK que as linhas cumprem, que entra calado.
     ///
     /// Reponha o defeito tirando o bloco `let mut avisos` de
-    /// `op_acrescentar_coluna`: as duas buscas por `avisos` caem.
+    /// `op_acrescentar_coluna`: a busca por `avisos` da calculada cai.
     #[test]
     fn acrescentar_coluna_com_regra_avisa_o_que_a_linha_velha_nao_ganhou() {
         let d = DirTemp::novo("regras-aviso");
@@ -57547,19 +57778,16 @@ mod testes_regras_de_esquema {
         )
         .unwrap();
 
-        // (a) CHECK que fala de coluna velha: entra, e diz que NAO conferiu.
+        // (a) CHECK que fala de coluna velha e que a linha CUMPRE: entra, e
+        //     sem aviso -- foi conferido contra ela (O2a).
         let r = roda(
             &s,
             "acrescentar_coluna",
             r#"{"database":"cmp","tabela":"t_av",
-                "coluna":{"nome":"nota","tipo":"Int8","check":"a > 18"}}"#,
+                "coluna":{"nome":"nota","tipo":"Int8","check":"a > 0"}}"#,
         )
         .unwrap();
-        let avisos = r.campo("avisos").and_then(Json::lista).unwrap();
-        assert_eq!(avisos.len(), 1, "{}", r.escrever());
-        let texto = avisos[0].texto().unwrap();
-        assert!(texto.contains("NAO foi conferido"), "{texto}");
-        assert!(texto.contains("atualizar"), "{texto}");
+        assert!(r.campo("avisos").is_none(), "{}", r.escrever());
 
         // (b) calculada: entra, e diz que a linha velha ficou NULA -- que e o
         //     que a leitura mostra logo abaixo.
@@ -57601,6 +57829,90 @@ mod testes_regras_de_esquema {
             "acrescentar_coluna",
             r#"{"database":"cmp","tabela":"t_vz",
                 "coluna":{"nome":"b","tipo":"Int8","calculada":"a*2"}}"#,
+        )
+        .unwrap();
+        assert!(r.campo("avisos").is_none(), "{}", r.escrever());
+    }
+
+    /// **Pedido 245, O2a: o CHECK que linha velha viola recusa a coluna,
+    /// dizendo quantas linhas** -- decisao do dono de 17/09/2026 05:41.
+    ///
+    /// Pelo `despachar`. Quatro linhas, `a` = 3, 20, 40 e 1, a ultima
+    /// excluida suave; o `CHECK a > 18` numa coluna nova e violado por DUAS.
+    /// A recusa diz «2 das 4» -- a excluida suave conta, porque volta pelo
+    /// `restaurar` sem passar pelo CHECK -- e a tabela fica com as colunas que
+    /// tinha.
+    ///
+    /// O controle (comportamento velho): o MESMO comando com um CHECK que as
+    /// tres cumprem (`a > 0`) continua entrando.
+    ///
+    /// **Defeito reposto** (a contagem tirada da fase A do `Table`, que era o
+    /// codigo de antes do O2a): a coluna entra, e o `unwrap_err` cai.
+    #[test]
+    fn o_check_que_a_linha_velha_viola_recusa_a_coluna_dizendo_quantas() {
+        let d = DirTemp::novo("regras-o2a");
+        let s = servidor(&d.0);
+        let pede = |corpo: &str| -> Result<Json> {
+            let mut ses = Sessao::default();
+            let (_, _, r) = s.despachar(
+                &format!(r#"{{"token":"t",{corpo}}}"#),
+                &mut ses,
+                "127.0.0.1",
+            );
+            r
+        };
+        pede(
+            r#""op":"criar_tabela","database":"cmp","tabela":"t_o2",
+               "colunas":[{"nome":"id","tipo":"Int8","obrigatoria":true},
+                          {"nome":"a","tipo":"Int8"}],
+               "indices":[{"nome":"pk","colunas":["id"],"unico":true}]"#,
+        )
+        .unwrap();
+        for (id, a) in [(1, 3), (2, 20), (3, 40), (4, 1)] {
+            pede(&format!(
+                r#""op":"inserir","database":"cmp","tabela":"t_o2",
+                   "linha":{{"id":{id},"a":{a}}}"#
+            ))
+            .unwrap();
+        }
+        // A quarta (a = 1) sai pela exclusao SUAVE: continua no `.reg`.
+        let x = pede(
+            r#""op":"excluir","database":"cmp","tabela":"t_o2","rowid":4,
+               "motivo":"teste""#,
+        )
+        .unwrap();
+        assert_eq!(x.texto_ou("modo", ""), "suave", "{}", x.escrever());
+        let antes = pede(r#""op":"esquema","database":"cmp","tabela":"t_o2""#)
+            .unwrap()
+            .campo("colunas")
+            .and_then(Json::lista)
+            .map(|l| l.len())
+            .unwrap();
+
+        let e = pede(
+            r#""op":"acrescentar_coluna","database":"cmp","tabela":"t_o2",
+               "coluna":{"nome":"nota","tipo":"Int8","check":"a > 18"}"#,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(
+            e.contains("2 das 4"),
+            "a recusa tem de dizer QUANTAS linhas violam (2 das 4, a excluida \
+             suave inclusive): {e}"
+        );
+        assert!(e.contains("nota") && e.contains("a > 18"), "{e}");
+        let depois = pede(r#""op":"esquema","database":"cmp","tabela":"t_o2""#)
+            .unwrap()
+            .campo("colunas")
+            .and_then(Json::lista)
+            .map(|l| l.len())
+            .unwrap();
+        assert_eq!(antes, depois, "a recusa tocou no esquema");
+
+        // CONTROLE: a declaracao SEM violacao continua passando.
+        let r = pede(
+            r#""op":"acrescentar_coluna","database":"cmp","tabela":"t_o2",
+               "coluna":{"nome":"nota","tipo":"Int8","check":"a > 0"}"#,
         )
         .unwrap();
         assert!(r.campo("avisos").is_none(), "{}", r.escrever());

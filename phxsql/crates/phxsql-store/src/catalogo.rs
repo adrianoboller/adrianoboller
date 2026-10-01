@@ -671,6 +671,23 @@ pub struct Database {
 }
 
 impl Database {
+    /// A politica do diario que este database aplica a toda tabela que abre.
+    pub fn politica_do_diario(&self) -> PoliticaDoDiario {
+        self.politica
+    }
+
+    /// [`Database::no_diretorio`] com a politica do diario de quem pede --
+    /// a pasta de um schema, na recuperacao, e o diretorio do `reindex` do
+    /// CLI (pedido 601).
+    pub(crate) fn no_diretorio_com_politica(
+        caminho: &Path,
+        politica: PoliticaDoDiario,
+    ) -> Database {
+        let mut db = Database::no_diretorio(caminho);
+        db.politica = politica;
+        db
+    }
+
     /// O database num diretorio que NAO mora debaixo de uma raiz de dados: o
     /// palco da restauracao, cujo nome comeca por ponto e nao passaria no
     /// `validar_nome`. So o crate usa, e so para o que a restauracao faz no

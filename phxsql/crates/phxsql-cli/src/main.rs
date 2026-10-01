@@ -4,7 +4,9 @@
 //! phxsql demo      <dir> [--paginado]          cria um cadastroClientes de exemplo
 //! phxsql info      <dir> <tabela>              esquema, contagens e volumes
 //! phxsql verificar <dir> <tabela>              confere CRC de tudo e a coerencia dos indices
-//! phxsql reindex   <dir> <tabela>              recria o .ndx do zero a partir do .reg
+//! phxsql reindex   <dir> <tabela> [--imagem-no-diario]
+//!                                              recria o .ndx do zero a partir do .reg
+//!     --imagem-no-diario  a base replica: a marca completada antes grava com imagem
 //! phxsql listar    <dir> <tabela> [opcoes]     mostra as linhas
 //!     --indice <nome>   percorre na ordem do indice, em vez da ordem de digitacao
 //!     --max <n>         limita a quantidade de linhas (padrao 20; 0 = todas)
@@ -59,7 +61,7 @@ USO:
   phxsql demo      <dir> [--paginado]
   phxsql info      <dir> <tabela>
   phxsql verificar <dir> <tabela>
-  phxsql reindex   <dir> <tabela>
+  phxsql reindex   <dir> <tabela> [--imagem-no-diario]
   phxsql listar    <dir> <tabela> [--indice <nome>] [--max <n>] [--pular <n>]
   phxsql log       <dir> <tabela> [--rowid <n>] [--max <n>]
   phxsql bancos    <base>
@@ -93,7 +95,13 @@ fn main() -> ExitCode {
             .and_then(|_| demo(Path::new(&args[1]), args.iter().any(|a| a == "--paginado"))),
         "info" => exigir(&args, 3).and_then(|_| info(Path::new(&args[1]), &args[2])),
         "verificar" => exigir(&args, 3).and_then(|_| verificar(Path::new(&args[1]), &args[2])),
-        "reindex" => exigir(&args, 3).and_then(|_| reindex(Path::new(&args[1]), &args[2])),
+        "reindex" => exigir(&args, 3).and_then(|_| {
+            reindex(
+                Path::new(&args[1]),
+                &args[2],
+                args.iter().any(|a| a == "--imagem-no-diario"),
+            )
+        }),
         "listar" => exigir(&args, 3).and_then(|_| listar(&args)),
         "log" => exigir(&args, 3).and_then(|_| mostrar_log(&args)),
         "bancos" => exigir(&args, 2).and_then(|_| bancos(Path::new(&args[1]))),
@@ -275,12 +283,16 @@ fn tabelas(base: &Path, database: &str) -> Result<()> {
     Ok(())
 }
 
-fn reindex(dir: &Path, nome: &str) -> Result<()> {
+fn reindex(dir: &Path, nome: &str, imagem_no_diario: bool) -> Result<()> {
     // Pedido 563: ANTES de reconstruir, a marca `.tx` que uma queda deixou no
     // diretorio. Reindexar primeiro reconstruiria o `.ndx` da filha com a
     // orfa dentro -- a filha na chave velha que a mae ja nao tem -- e a marca
     // que a completaria chegaria depois, sobre um indice que ja a escondeu.
-    let r = phxsql_store::marca::recuperar_no_diretorio(dir);
+    // Pedido 601: o CLI recebe so o diretorio e nao sabe se a base replica --
+    // quem sabe e quem chama, e diz pela bandeira. Sem ela, o desligado de
+    // sempre: a ferramenta de manutencao nao liga imagem que ninguem pediu.
+    let politica = phxsql_store::PoliticaDoDiario::com_imagem(imagem_no_diario);
+    let r = phxsql_store::marca::recuperar_no_diretorio(dir, politica);
     if r.houve() {
         diga!("{}", r.texto(dir));
     }

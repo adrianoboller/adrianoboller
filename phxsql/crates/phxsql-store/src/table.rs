@@ -56,6 +56,36 @@ pub enum SemEscrever {
     PrecisaEscrever(&'static str),
 }
 
+/// O CHECK de uma coluna acrescentada que linhas que JA EXISTEM violam --
+/// pedido 245, O2a. Carrega os numeros, e nao a frase: a frase e de quem
+/// responde ao cliente (o servidor a tira da fabrica de idiomas); a decisao e
+/// a contagem sao do motor.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CheckViolado {
+    /// A coluna que se tentou acrescentar.
+    pub coluna: String,
+    /// O texto do CHECK declarado.
+    pub check: String,
+    /// Quantas linhas o violam.
+    pub violam: u64,
+    /// Quantas linhas a tabela tem no `.reg` (excluidas suaves inclusive).
+    pub linhas: u64,
+}
+
+impl CheckViolado {
+    /// A recusa de quem nao tem fabrica de idiomas -- o embutido, o CLI, o
+    /// teste do motor.
+    pub fn erro(&self) -> PhxError {
+        PhxError::Esquema(format!(
+            "a coluna {} declara CHECK {:?}, e {} das {} linha(s) que ja existem o \
+             violam: recusado, para a regra nao valer so para a linha nova -- \
+             aceito assim, todo `atualizar` dessas linhas passaria a recusar. \
+             Corrija essas linhas antes, ou declare um CHECK que elas cumpram",
+            self.coluna, self.check, self.violam, self.linhas
+        ))
+    }
+}
+
 /// O que a migracao para o `PSCH` v10 ainda tem de fazer nesta tabela, e o
 /// que isso vai custar -- sem tocar em disco.
 ///
@@ -1397,6 +1427,19 @@ impl Table {
         coluna: phxsql_core::schema::Column,
         padrao: Option<Value>,
     ) -> Result<crate::reg::TrocaPendente> {
+        self.acrescentar_coluna_fase_a_recusando(coluna, padrao, CheckViolado::erro)
+    }
+
+    /// [`Table::acrescentar_coluna_fase_a`] com a FRASE da recusa do CHECK
+    /// violado escolhida por quem chama -- o servidor a tira da fabrica de
+    /// idiomas (pedido 245, O2a). A DECISAO e a CONTAGEM continuam aqui, num
+    /// lugar so: quem chama escolhe so as palavras.
+    pub fn acrescentar_coluna_fase_a_recusando(
+        &mut self,
+        coluna: phxsql_core::schema::Column,
+        padrao: Option<Value>,
+        recusa: impl FnOnce(&CheckViolado) -> PhxError,
+    ) -> Result<crate::reg::TrocaPendente> {
         // Tabela em modo ledger NAO aceita coluna nova, e a recusa e' absoluta
         // -- nem nula, nem com padrao, nem em tabela vazia. O hash de cada bloco
         // cobre o conteudo canonico NA ORDEM do esquema; uma coluna a mais muda
@@ -1461,49 +1504,60 @@ impl Table {
             escrever_inline(v, &coluna.ty, &mut bytes).map_err(|e| coluna.recusa_de_valor(e))?;
         }
 
-        // A DECLARACAO que se contradiz recusa na declaracao, nao na gravacao
-        // (pedido 245, O2).
+        // O CHECK novo e conferido contra as linhas que JA EXISTEM, e a
+        // declaracao que alguma viola e RECUSADA, dizendo quantas (pedido 245,
+        // O2a -- decisao do dono de 17/09/2026).
         //
-        // Medido em 16/09/2026: acrescentar `v Int8 check "v > 0"` com
-        // `padrao = -5` a uma tabela com linha era ACEITO, e a linha velha
-        // ficava com -5 -- violando o CHECK que o mesmo comando acabara de
-        // declarar. So aparecia no `atualizar` seguinte, que passava a recusar
-        // para sempre.
+        // Ate aqui so caia a declaracao que se contradizia sozinha (o padrao
+        // violando o CHECK do mesmo comando), avaliada com NULO nas outras
+        // colunas. Um CHECK que falasse de coluna velha (`a > 18`) entrava, e
+        // a linha velha que o violava ficava gravada: todo `atualizar` dela
+        // passava a recusar, e a tabela tinha DUAS verdades -- a regra valia
+        // para a linha nova e nao para a velha, sem ninguem saber quais. Os
+        // tres maduros convergem em conferir as linhas existentes e recusar
+        // o ALTER (PostgreSQL, MySQL 8.0.16+, MariaDB); a saida que dois deles
+        // oferecem (`NOT VALID`, `NOT ENFORCED`) e justamente a tabela de duas
+        // verdades, e nao entra.
         //
-        // O crivo e a propria regra do SQL, e e ela que o torna PRECISO: a
-        // linha de prova tem o valor novo na coluna nova e NULO em todas as
-        // outras, e `NULL` passa no CHECK. Entao um CHECK que fale de coluna
-        // VELHA (`idade > 18`) nunca e recusado aqui -- ele depende de dado
-        // que esta funcao nao le --, e so cai o que se contradiz sozinho,
-        // dentro de um comando so. Tabela VAZIA nao entra: nao ha linha velha
-        // sobre a qual a contradicao exista.
+        // A linha de prova e a linha VELHA com o valor que ela vai receber na
+        // coluna nova (o padrao, ou NULO), e `NULL` passa no CHECK -- e o SQL.
+        // Conta TODA linha do `.reg`, inclusive a excluida suave: ela volta
+        // pelo `restaurar` sem passar pelo CHECK. O portao vem antes do
+        // trabalho: sem CHECK na coluna, ou sem linha, nao se le nada; e a
+        // varredura custa uma leitura do arquivo que a fase A logo abaixo
+        // reescreve inteiro de qualquer jeito.
         if tem_linha && self.julga_integridade() {
-            if let Some(check) = &novo.colunas()[posicao].check {
-                let prova: Vec<Value> = (0..novo.colunas().len())
-                    .map(|i| {
-                        if i == posicao {
-                            padrao.clone().unwrap_or(Value::Null)
-                        } else {
-                            Value::Null
-                        }
-                    })
-                    .collect();
-                let resolver = |nome: &str| -> Option<(&Value, &ColumnType)> {
-                    let i = novo.posicao_sem_caixa(nome)?;
-                    Some((prova.get(i)?, &novo.colunas()[i].ty))
-                };
-                if check.avaliar_bool(&resolver)? == Some(false) {
-                    return Err(PhxError::Esquema(format!(
-                        "a coluna {} declara CHECK {:?} e as {} linha(s) que ja existem \
-                         receberiam {:?}, que o viola -- gravado assim, todo `atualizar` \
-                         dessas linhas passaria a recusar. Corrija o padrao, o CHECK, ou \
-                         acrescente a coluna sem CHECK e declare-o depois de arrumar as \
-                         linhas",
-                        coluna.nome,
-                        check.texto(),
-                        self.reg.slots(),
-                        padrao.clone().unwrap_or(Value::Null),
-                    )));
+            if let Some(check) = novo.colunas()[posicao].check.clone() {
+                let valor_novo = padrao.clone().unwrap_or(Value::Null);
+                let mut violam = 0u64;
+                let mut linhas = 0u64;
+                let mut rowid = 1;
+                while let Some((id, payload)) = self.reg.proximo_ativo(rowid)? {
+                    rowid = id + 1;
+                    let mut linha = match self.troca_de(id) {
+                        None => self.decodificar(&payload, true)?,
+                        Some(_) => match self.resolver(id)? {
+                            Some(l) => l,
+                            None => continue,
+                        },
+                    };
+                    linhas += 1;
+                    linha.insert(posicao.min(linha.len()), valor_novo.clone());
+                    let resolver = |nome: &str| -> Option<(&Value, &ColumnType)> {
+                        let i = novo.posicao_sem_caixa(nome)?;
+                        Some((linha.get(i)?, &novo.colunas()[i].ty))
+                    };
+                    if check.avaliar_bool(&resolver)? == Some(false) {
+                        violam += 1;
+                    }
+                }
+                if violam > 0 {
+                    return Err(recusa(&CheckViolado {
+                        coluna: coluna.nome.clone(),
+                        check: check.texto().to_string(),
+                        violam,
+                        linhas,
+                    }));
                 }
             }
         }

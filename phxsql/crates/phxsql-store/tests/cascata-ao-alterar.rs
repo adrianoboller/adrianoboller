@@ -912,7 +912,7 @@ fn panico_entre_duas_filhas_deixa_a_filha_recusando_ate_a_marca_completar() {
     // E o caminho de volta e o de uma queda: a recuperacao da marca -- a
     // mesma que o `phx_base_abrir` e o `reindex` do CLI chamam --, e nao o
     // `reindexar`, que reconstruiria o indice com a filha 2 na chave 1.
-    let r = phxsql_store::marca::recuperar_no_diretorio(&d);
+    let r = phxsql_store::marca::recuperar_no_diretorio(&d, Default::default());
     assert_eq!(
         (r.completadas, r.impossiveis.len()),
         (1, 0),

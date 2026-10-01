@@ -46,7 +46,7 @@ use phxsql_core::error::Result as PhxResult;
 use phxsql_core::schema::{Column, IndexColumn, IndexDef, Schema};
 use phxsql_core::value::Value;
 use phxsql_core::RowId;
-use phxsql_store::catalogo::{Database, Instancia};
+use phxsql_store::catalogo::{Database, Instancia, PoliticaDoDiario};
 use phxsql_store::log::Operacao;
 use phxsql_store::table::Visao;
 use phxsql_store::Table;
@@ -63,6 +63,14 @@ use valor::PhxValor;
 
 /// `phx_base_abrir`: cria o database se ele ainda nao existir.
 pub const PHX_CRIAR: u32 = 1;
+
+/// `phx_base_abrir`: este aparelho REPLICA -- toda tabela aberta por esta
+/// base grava a imagem da linha no diario (inclusive na exclusao), e a
+/// recuperacao da abertura tambem (pedido 601). A politica e da BASE, e nao
+/// da tabela, pelo mesmo motivo do servidor (pedido 564): a recuperacao
+/// completa a marca ANTES de existir punho de tabela, e o
+/// `phx_imagem_no_diario` chega tarde para ela.
+pub const PHX_IMAGEM_NO_DIARIO: u32 = 2;
 
 /// `phx_esquema_coluna`: a coluna nao aceita nulo.
 pub const PHX_COL_OBRIGATORIA: u32 = 1;
@@ -360,7 +368,9 @@ pub extern "C" fn phx_erro_nome(codigo: i32) -> *const u8 {
 /// Abre a raiz de dados e um database dentro dela.
 ///
 /// Com `PHX_CRIAR` o database nasce se faltar -- que e o caso do primeiro
-/// arranque do aplicativo no aparelho.
+/// arranque do aplicativo no aparelho. Com `PHX_IMAGEM_NO_DIARIO`, toda tabela
+/// desta base -- e a recuperacao de abertura -- grava a imagem da linha no
+/// diario (pedido 601).
 ///
 /// # A recuperacao de abertura (pedido 563)
 ///
@@ -398,8 +408,13 @@ pub unsafe extern "C" fn phx_base_abrir(
             Ok(n) => n,
             Err(e) => return e,
         };
+        // A politica entra na INSTANCIA, antes do `recuperar_marcas`: e ela
+        // que o `Database` herda e que o `abrir_tabela` aplica -- a marca
+        // completada aqui grava com imagem, e nao com o padrao desligado
+        // (pedido 601).
+        let politica = PoliticaDoDiario::com_imagem(sinalizadores & PHX_IMAGEM_NO_DIARIO != 0);
         let inst = match Instancia::nova(caminho) {
-            Ok(i) => i,
+            Ok(i) => i.com_politica_do_diario(politica),
             Err(e) => return do_motor(&e),
         };
         let db = if sinalizadores & PHX_CRIAR != 0 {
