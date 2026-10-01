@@ -4,7 +4,7 @@
      `--catraca` reprova se este arquivo nao bater com o que o extrator
      geraria agora; rode o comando sem flag para atualizar. -->
 
-Gerado dos `cognicao_*.md` com `**Estado:** FRUTIFERO` -- 8 hoje, de 384 cognicoes no total.
+Gerado dos `cognicao_*.md` com `**Estado:** FRUTIFERO` -- 9 hoje, de 385 cognicoes no total.
 
 ## Chave por caminho não segue o `rename`: mudar o nome nas sujas não bastava
 
@@ -25,6 +25,11 @@ Gerado dos `cognicao_*.md` com `**Estado:** FRUTIFERO` -- 8 hoje, de 384 cognico
 
 - Evidencia: `crates/phxsql-server/tests/porta-lida-pela-metade.rs::o_endereco_pela_metade_espera_o_resto`; `crates/phxsql-server/tests/porta-lida-pela-metade.rs::a_porta_pela_metade_nao_vira_outra_porta`
 - Arquivo: [cognicao_eprintln-nao-e-uma-escrita-so-a-linha-so-vale-com-o-fim_20260930_2017.md](cognicao_eprintln-nao-e-uma-escrita-so-a-linha-so-vale-com-o-fim_20260930_2017.md)
+
+## O terceiro da tabela que nasce se mede com `strace`, sem derrubar nada
+
+- Evidencia: `crates/phxsql-server/src/servidor.rs::o_terceiro_so_ouve_ok_depois_do_fsync_da_pasta_e_espera_fora_da_trava`; `crates/phxsql-store/src/catalogo.rs::a_tabela_que_nasce_so_abre_para_outro_depois_do_fsync`; `bancada/durabilidade/terceiro-605.py`
+- Arquivo: [cognicao_o-terceiro-da-tabela-que-nasce-se-mede-com-strace-sem-derrubar-nada_20261001_1720.md](cognicao_o-terceiro-da-tabela-que-nasce-se-mede-com-strace-sem-derrubar-nada_20261001_1720.md)
 
 ## Prova diferencial contra o `HEAD` expira no proprio commit
 

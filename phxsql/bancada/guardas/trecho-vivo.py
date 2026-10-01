@@ -576,6 +576,13 @@ dia, nunca no desejado:
   `bidi-grava-filha-sem-mae-calada`, pelo soquete) e a escrita local na
   replica calada (`escrita-local-na-replica-calada`, pelo soquete). 650,
   medido pelo `--numeros` nesta arvore.
+  **SUBIU para 663 em 01/10/2026** (pedido 605, 659 + 4): a tabela que
+  nasce sem reserva e atende o terceiro antes do `fsync` da pasta
+  (`criacao-sem-reserva-605`), a abertura que nao espera o nome que nasce
+  (`abrir-nao-espera-a-tabela-que-nasce-605`), a copia irma sem reserva
+  (`copia-nasce-sem-reserva-605`) e a espera do terceiro com a trava global
+  na mao (`terceiro-espera-dentro-da-trava-605`). 663, medido pelo
+  `--numeros` nesta arvore.
 
 # A QUINTA REGUA: a tabela publicada pode ser MENOR que o catalogo
 
@@ -682,7 +689,7 @@ TETO_TESTE_MORTO = 0
 TETO_TRECHO_AMBIGUO = 0
 TETO_TESTE_FORA_DO_BINARIO = 0
 TETO_TESTE_SEM_MODULO = 0
-PISO_DAS_ENTRADAS = 659
+PISO_DAS_ENTRADAS = 663
 
 # ------------------------------------------------------------- APOSENTADAS
 #

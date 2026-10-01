@@ -150,3 +150,28 @@ sistema operacional em toda gravação, então uma queda de PROCESSO nunca perde
 o que já tinha sido escrito. O que a queda de energia arriscaria (páginas do
 `.ndx`/`.reg` que só existiam no cache do kernel) está descrito, não medido,
 em `docs/TRANSACOES.md` §5.7.
+
+# O terceiro da tabela que nasce — pedido 605 (M2)
+
+```bash
+cargo build -p phxsql-server --bin phxsqld
+python3 bancada/durabilidade/terceiro-605.py --binario target/debug/phxsqld --rotulo depois
+```
+
+A cria a tabela `nova`; B, outra conexão, insere nela assim que o `.reg`
+aparece. O `strace` anexado ao servidor atrasa **só** o `fsync` da pasta do
+database (`-P <pasta> -e inject=fsync:delay_enter=…`) — conferido antes: o
+`-P` filtra também a injeção, e o `fsync` de um arquivo dentro da pasta não
+atrasa. O veredito compara o fim desse `fsync` (traço `-ttt -T`) com o
+instante do «ok» de B no cliente: antes dele é VERMELHO.
+
+Medido em 01/10/2026, atraso de 1,5 s: código de antes **3/3 VERMELHO** (o
+«ok» de B em 19–40 ms, o `fsync` da pasta de A terminando em ~1.533 ms); com
+a saída (c), «nasce reservada», **0/3** (B responde 6–16 ms depois do fim do
+`fsync`). A base vive num diretório temporário fora da árvore — o servidor
+grava a chave do desafio nela.
+
+**O que NÃO mede:** perda em disco. Prova a ordem das respostas; que a queda
+leva tabela e linha no ext4 sem diário é leitura do fonte do núcleo (M1 do
+`docs/propostas/605-medicao-segura-01-10-2026.md`). Nada aqui derruba sistema
+de arquivos, monta ou usa ioctl.

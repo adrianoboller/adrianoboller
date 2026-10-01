@@ -32,6 +32,7 @@ pub mod log;
 pub mod marca;
 pub mod memoria;
 pub mod motivo;
+pub mod nascendo;
 pub mod ndx;
 pub mod no;
 pub mod pag;
