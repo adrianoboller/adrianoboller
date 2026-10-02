@@ -5,7 +5,7 @@ medir. É curto de propósito: o detalhe de cada comando é a ajuda do próprio 
 aqui pelo gerador.
 
 <!-- gerado:cabecalho:inicio -->
-Trechos marcados gerados em 2026-10-01 por `python3 tools/gerar_guia_operador.py`, do binario `PhxClaw 0.70.0` (compilado em 2026-10-01 19:57).
+Trechos marcados gerados em 2026-10-02 por `python3 tools/gerar_guia_operador.py`, do binario `PhxClaw 0.70.0` (compilado em 2026-10-02 01:02).
 <!-- gerado:cabecalho:fim -->
 
 **Nada entre marcadores `<!-- gerado:… -->` se edita à mão.** Comando, opção, variável de
@@ -104,13 +104,13 @@ A lista completa sai do catálogo, e ela diz também quais segredos **ainda não
 de broker (ficam na variável de ambiente ou num arquivo da pasta):
 
 <!-- gerado:segredos:inicio -->
-De `phxclaw config mostrar --json`: **48 segredos no catalogo**; 42 tem comando que os guarda no SecretBroker, 6 ainda nao.
+De `phxclaw config mostrar --json`: **48 segredos no catalogo**; 48 tem comando que os guarda no SecretBroker, 0 ainda nao.
 
 <details><summary>Os segredos, um por linha</summary>
 
 | Chave | Variavel | Como guardar |
 |---|---|---|
-| `api.token` | `PHXCLAW_API_TOKEN` | arquivo <pasta>/api.token (o servir gera) ou a variavel PHXCLAW_API_TOKEN |
+| `api.token` | `PHXCLAW_API_TOKEN` | `phxclaw api chave` |
 | `canais.discord.token` | `PHXCLAW_DISCORD_TOKEN` | `PHXCLAW_DISCORD_TOKEN=... phxclaw canal discord (vai ao broker na primeira vez)` |
 | `canais.email.senha` | `PHXCLAW_EMAIL_CANAL_SENHA` | `PHXCLAW_EMAIL_CANAL_SENHA=... phxclaw canal email (vai ao broker na primeira vez)` |
 | `canais.email.smtp_senha` | `PHXCLAW_EMAIL_CANAL_SMTP_SENHA` | `PHXCLAW_EMAIL_CANAL_SMTP_SENHA=... phxclaw canal email (vai ao broker na primeira vez)` |
@@ -146,17 +146,17 @@ De `phxclaw config mostrar --json`: **48 segredos no catalogo**; 42 tem comando 
 | `canais.whatsapp.verify_token` | `PHXCLAW_WHATSAPP_VERIFY_TOKEN` | `PHXCLAW_WHATSAPP_VERIFY_TOKEN=... phxclaw canal whatsapp (vai ao broker na primeira vez)` |
 | `canais.xmpp.senha` | `PHXCLAW_XMPP_SENHA` | `PHXCLAW_XMPP_SENHA=... phxclaw canal xmpp (vai ao broker na primeira vez)` |
 | `canais.zulip.chave` | `PHXCLAW_ZULIP_CHAVE` | `PHXCLAW_ZULIP_CHAVE=... phxclaw canal zulip (vai ao broker na primeira vez)` |
-| `dispositivos.token_pareamento` | `PHXCLAW_ENROLLMENT_TOKEN` | variavel PHXCLAW_ENROLLMENT_TOKEN no arranque do pareamento |
+| `dispositivos.token_pareamento` | `PHXCLAW_ENROLLMENT_TOKEN` | `phxclaw dispositivos chave` |
 | `elevenlabs.chave` | `PHXCLAW_ELEVENLABS_API_KEY` | `phxclaw elevenlabs chave` |
-| `email.smtp.senha` | `PHXCLAW_SMTP_PASSWORD` | variavel PHXCLAW_SMTP_PASSWORD (no canal de e-mail vai ao broker como email-smtp_senha) |
+| `email.smtp.senha` | `PHXCLAW_SMTP_PASSWORD` | `phxclaw email chave` |
 | `forja.github.token` | `PHXCLAW_GITHUB_TOKEN` | `phxclaw forja token github` |
 | `forja.gitlab.token` | `PHXCLAW_GITLAB_TOKEN` | `phxclaw forja token gitlab` |
 | `gemini.chave` | `PHXCLAW_GEMINI_API_KEY` | `phxclaw gemini chave` |
-| `imagem.chave` | `PHXCLAW_IMAGEM_CHAVE` | variavel PHXCLAW_IMAGEM_CHAVE (ainda sem comando de broker) |
+| `imagem.chave` | `PHXCLAW_IMAGEM_CHAVE` | `phxclaw imagem chave` |
 | `mcp.segredo_cliente` | `PHXCLAW_MCP_SEGREDO_CLIENTE` | `phxclaw mcp login NOME` |
 | `mcp.token` | `PHXCLAW_MCP_TOKEN` | `phxclaw mcp token NOME` |
-| `plugins.chave_assinatura` | `PHXCLAW_PLUGIN_SIGNING_KEY` | variavel PHXCLAW_PLUGIN_SIGNING_KEY ou o arquivo de plugins.chave_assinatura_arquivo |
-| `ponte.token` | `PHXCLAW_PONTE_TOKEN` | arquivo <pasta>/ponte.token ou a variavel PHXCLAW_PONTE_TOKEN |
+| `plugins.chave_assinatura` | `PHXCLAW_PLUGIN_SIGNING_KEY` | `phxclaw plugins chave` |
+| `ponte.token` | `PHXCLAW_PONTE_TOKEN` | `phxclaw ponte chave` |
 | `xai.chave` | `PHXCLAW_XAI_API_KEY` | `phxclaw xai chave` |
 
 </details>
@@ -176,7 +176,7 @@ Guarda o token do GitHub ou do GitLab
 USO:
   phxclaw forja token github|gitlab [--pasta DIR]
 
-Guarda PHXCLAW_GITHUB_TOKEN / PHXCLAW_GITLAB_TOKEN; as ferramentas github e gitlab so existem depois disto.
+Le PHXCLAW_GITHUB_TOKEN / PHXCLAW_GITLAB_TOKEN do AMBIENTE do comando e guarda no broker de <pasta>/forja; as ferramentas github e gitlab leem SO do broker e so existem depois disto.
 
 Tambem aceito como: forge
 ```
@@ -229,7 +229,7 @@ Credencial de um servidor MCP remoto (Bearer ou OAuth)
 USO:
   phxclaw mcp token|login NOME [--pasta DIR]
 
-Servidor declarado em PHXCLAW_MCP_CONFIG: token guarda PHXCLAW_MCP_TOKEN como Bearer (Linear); login faz OAuth 2.0 + PKCE no navegador local e guarda o refresh token (Google; segredo do cliente em PHXCLAW_MCP_SEGREDO_CLIENTE).
+Servidor declarado em PHXCLAW_MCP_CONFIG: token le PHXCLAW_MCP_TOKEN do AMBIENTE do comando e o guarda como Bearer (Linear); login faz OAuth 2.0 + PKCE no navegador local e guarda o refresh token (Google; segredo do cliente lido de PHXCLAW_MCP_SEGREDO_CLIENTE). O agente le SO do broker de <pasta>/mcp, por (nome, URL): URL nova pede credencial nova.
 ```
 <!-- gerado:ajuda:mcp:fim -->
 
@@ -244,7 +244,7 @@ Guarda a chave da ElevenLabs ou lista as vozes da conta
 USO:
   phxclaw elevenlabs chave|vozes [--busca TEXTO] [--pasta DIR]
 
-chave: guarda PHXCLAW_ELEVENLABS_API_KEY no broker; speak e transcribe a usam com PHXCLAW_TTS_PROVEDOR=elevenlabs (e PHXCLAW_ELEVENLABS_VOZ) e PHXCLAW_STT_PROVEDOR=elevenlabs, e voice_list (media.voices) passa a existir. vozes: lista voice_id, nome e categoria.
+chave: le PHXCLAW_ELEVENLABS_API_KEY do AMBIENTE do comando e guarda no broker de <pasta>/elevenlabs; speak, transcribe e voice_list leem SO do broker (PHXCLAW_TTS_PROVEDOR=elevenlabs, PHXCLAW_ELEVENLABS_VOZ, PHXCLAW_STT_PROVEDOR=elevenlabs). vozes: lista voice_id, nome e categoria.
 ```
 <!-- gerado:ajuda:elevenlabs:fim -->
 
@@ -257,7 +257,7 @@ Guarda a chave da Gemini API (Nano Banana no image_generate)
 USO:
   phxclaw gemini chave [--pasta DIR]
 
-Guarda PHXCLAW_GEMINI_API_KEY (ou GEMINI_API_KEY) no broker; image_generate gera e edita pelo Nano Banana com PHXCLAW_IMAGEM_PROVEDOR=nanobanana.
+Le PHXCLAW_GEMINI_API_KEY (ou GEMINI_API_KEY) do AMBIENTE do comando e guarda no broker de <pasta>/gemini; image_generate le SO do broker, pelo Nano Banana com PHXCLAW_IMAGEM_PROVEDOR=nanobanana.
 ```
 <!-- gerado:ajuda:gemini:fim -->
 
@@ -270,7 +270,7 @@ Guarda a chave da xAI (habilita x_search)
 USO:
   phxclaw xai chave [--pasta DIR]
 
-Guarda PHXCLAW_XAI_API_KEY e habilita x_search (capacidade x.search, fora do padrao).
+Le PHXCLAW_XAI_API_KEY do AMBIENTE do comando e guarda no broker de <pasta>/xai; x_search le SO do broker (capacidade x.search, fora do padrao).
 ```
 <!-- gerado:ajuda:xai:fim -->
 
@@ -386,13 +386,14 @@ De `phxclaw config mostrar --json` (catalogo do binario, pasta vazia): 20 chave(
 <!-- gerado:chaves:voz,elevenlabs:fim -->
 
 <!-- gerado:chaves:imagem,gemini:inicio -->
-De `phxclaw config mostrar --json` (catalogo do binario, pasta vazia): 6 chave(s) em `imagem,gemini`.
+De `phxclaw config mostrar --json` (catalogo do binario, pasta vazia): 7 chave(s) em `imagem,gemini`.
 
 | Chave | Variavel | Tipo | Padrao | Natureza | O que e |
 |---|---|---|---|---|---|
 | `gemini.chave` | `PHXCLAW_GEMINI_API_KEY` | texto | — | segredo: `phxclaw gemini chave` | Chave do Gemini (nanobanana) |
-| `imagem.chave` | `PHXCLAW_IMAGEM_CHAVE` | texto | — | segredo: variavel PHXCLAW_IMAGEM_CHAVE (ainda sem comando de broker) | Chave do gerador de imagem openai |
+| `imagem.chave` | `PHXCLAW_IMAGEM_CHAVE` | texto | — | segredo: `phxclaw imagem chave` | Chave do gerador de imagem openai |
 | `imagem.comfy_fluxo` | `PHXCLAW_COMFY_WORKFLOW` | caminho | — | config | Fluxo do ComfyUI (obrigatório com imagem.provedor=comfyui) |
+| `imagem.entrada_pixels_max` | `PHXCLAW_IMAGEM_ENTRADA_PIXELS_MAX` | inteiro | 40000000 | config | Teto de pixels (largura x altura) de imagem de entrada, lido do cabeçalho antes de decodificar |
 | `imagem.modelo` | `PHXCLAW_IMAGEM_MODELO` | texto | — | config | Modelo do gerador de imagem (openai: gpt-image-1) |
 | `imagem.provedor` | `PHXCLAW_IMAGEM_PROVEDOR` | enum: openai \| comfyui \| nanobanana | — | config | Gerador de imagem; vazio = só o SVG local |
 | `imagem.url` | `PHXCLAW_IMAGEM_URL` | texto | — | config | Base do gerador de imagem (openai: https://api.openai.com) |

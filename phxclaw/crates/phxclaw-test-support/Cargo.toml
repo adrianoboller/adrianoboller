@@ -1,0 +1,11 @@
+[package]
+name = "phxclaw-test-support"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Apoio dos testes do workspace: o pulo visivel (pulado) e a guarda contra pulo calado"
+
+# So std + serde_json (que todo crate do workspace ja traz): entra como dev-dependency de
+# quem tem teste que pula por recurso da maquina, e nada do produto depende daqui.
+[dependencies]
+serde_json.workspace = true

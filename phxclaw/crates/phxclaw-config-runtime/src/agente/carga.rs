@@ -21,6 +21,7 @@
 use super::catalogo::{catalogo, por_chave, Chave, Natureza, Tipo};
 use crate::{distancia, gravar_revisado, ConfigError};
 use serde_json::{Map, Value};
+use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::fmt;
 use std::path::{Path, PathBuf};
@@ -89,7 +90,11 @@ pub struct Efetivo {
 /// Um `config.json` lido e conferido.
 #[derive(Clone, Debug, Default)]
 pub struct Arquivo {
+    pub caminho: PathBuf,
     pub revisao: u64,
+    /// SHA-256 (hex) dos bytes em disco; arquivo ausente e o hash do vazio. E a parte
+    /// deste arquivo no token de concorrencia.
+    pub sha256: String,
     /// Chave do catalogo -> valor (so as definidas; `null` no arquivo nao entra).
     pub valores: BTreeMap<String, Value>,
 }
@@ -147,11 +152,34 @@ impl Configuracao {
         )
     }
 
-    /// A soma das revisoes dos dois arquivos: o token de concorrencia da API. Qualquer
-    /// gravacao, em qualquer dos dois, o faz subir de um.
-    pub fn revisao(&self) -> u64 {
-        self.pasta.revisao + self.projeto.as_ref().map_or(0, |p| p.revisao)
+    /// O token de concorrencia da API: SHA-256 sobre o SHA-256 de cada um dos dois
+    /// arquivos. Era a soma das revisoes, e soma tem ABA: a pasta em 3 com o projeto em 1
+    /// da o mesmo 4 que a pasta em 2 com o projeto em 2, e um `If-Match` velho passaria.
+    pub fn revisao(&self) -> String {
+        token(
+            &self.pasta.sha256,
+            self.projeto.as_ref().map(|p| p.sha256.as_str()),
+        )
     }
+}
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    format!("{:x}", Sha256::digest(bytes))
+}
+
+/// O SHA-256 do que esta no disco AGORA (ausente: o do vazio).
+pub fn sha_em_disco(caminho: &Path) -> Result<String, String> {
+    match std::fs::read(caminho) {
+        Ok(b) => Ok(sha256_hex(&b)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(sha256_hex(b"")),
+        Err(e) => Err(format!("{}: {e}", caminho.display())),
+    }
+}
+
+/// O token de concorrencia a partir dos hashes dos dois arquivos (projeto ausente conta
+/// como ausente, nao como vazio: ligar um projeto sem valor tambem muda o token).
+pub fn token(pasta: &str, projeto: Option<&str>) -> String {
+    sha256_hex(format!("{pasta}\n{}", projeto.unwrap_or("-")).as_bytes())
 }
 
 /// Prefixos de credencial conhecidos. Valor que comeca assim nao e configuracao.
@@ -178,22 +206,105 @@ const PREFIXOS: &[&str] = &[
     "-----BEGIN",
 ];
 
-/// O motivo, se o texto tem cara de credencial: prefixo conhecido, ou URL com senha
-/// (`esquema://usuario:senha@host`).
+/// Tamanho a partir do qual um texto de classe secreta e tratado como chave.
+pub const CHAVE_MINIMA: usize = 20;
+/// Entropia de Shannon (bits por caractere) acima da qual um texto de classe secreta nao
+/// parece nome de modelo nem versao: `gpt-4o-mini-2024-07-18` fica em 3,6; vinte
+/// caracteres aleatorios de uma chave real ficam acima de 4.
+const ENTROPIA_MINIMA: f64 = 3.9;
+
+fn entropia(t: &str) -> f64 {
+    let mut contagem: BTreeMap<char, usize> = BTreeMap::new();
+    for c in t.chars() {
+        *contagem.entry(c).or_default() += 1;
+    }
+    let n = t.chars().count() as f64;
+    contagem
+        .values()
+        .map(|&k| {
+            let p = k as f64 / n;
+            -p * p.log2()
+        })
+        .sum()
+}
+
+/// Texto de classe secreta: so caracteres de token (base64, hex, `-`, `_`), comprido,
+/// com digito e letra dos dois casos (ou hexadecimal longo) e entropia alta. Prefixo
+/// conhecido so pega o provedor que esta na lista; a chave de um provedor novo tem de
+/// cair pela forma.
+fn classe_secreta(t: &str) -> bool {
+    let n = t.chars().count();
+    if n < CHAVE_MINIMA
+        || !t
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '+' | '/' | '='))
+    {
+        return false;
+    }
+    let hexa = n >= 32 && t.chars().all(|c| c.is_ascii_hexdigit());
+    let misto = t.chars().any(|c| c.is_ascii_digit())
+        && t.chars().any(|c| c.is_ascii_lowercase())
+        && t.chars().any(|c| c.is_ascii_uppercase());
+    (hexa || misto) && entropia(t) >= ENTROPIA_MINIMA
+}
+
+/// O nome tem cara de segredo (`*_key`, `*_token`, `*_secret`, `password`, `senha`)?
+/// Olha o ultimo segmento da chave pontuada, inteiro ou pelo sufixo depois de `_`:
+/// `max_tokens` e contagem, `bot_token` e credencial.
+pub fn nome_de_segredo(chave: &str) -> bool {
+    let ultimo = chave
+        .rsplit('.')
+        .next()
+        .unwrap_or(chave)
+        .to_ascii_lowercase();
+    const SUFIXOS: &[&str] = &["key", "token", "secret", "password", "senha", "apikey"];
+    SUFIXOS.iter().any(|s| {
+        ultimo == *s || ultimo.ends_with(&format!("_{s}")) || ultimo.ends_with(&format!("-{s}"))
+    })
+}
+
+/// O motivo, se o texto tem cara de credencial: prefixo conhecido, URL com senha
+/// (`esquema://usuario:senha@host`) ou a forma de uma chave. O motivo NUNCA carrega o
+/// valor, nem um pedaco: o texto do erro vai para a tela, o log e o relatorio da CLI, e
+/// e exatamente ali que a credencial nao pode estar. So o tamanho.
 pub fn credencial_aparente(s: &str) -> Option<String> {
     let t = s.trim();
-    if let Some(p) = PREFIXOS.iter().find(|p| t.starts_with(**p)) {
-        return Some(format!("valor com cara de credencial (comeca com {p})"));
+    let n = t.chars().count();
+    if PREFIXOS.iter().any(|p| t.starts_with(*p)) {
+        return Some(format!(
+            "valor com cara de credencial (prefixo de credencial conhecido, {n} caracteres)"
+        ));
     }
     if let Some((_, resto)) = t.split_once("://") {
         let autoridade = resto.split(['/', '?', '#']).next().unwrap_or("");
         if let Some((info, _)) = autoridade.rsplit_once('@') {
             if info.contains(':') {
-                return Some("URL com senha embutida (usuario:senha@)".into());
+                return Some(format!(
+                    "URL com senha embutida (usuario:senha@, {n} caracteres)"
+                ));
             }
         }
     }
+    if classe_secreta(t) {
+        return Some(format!(
+            "valor com cara de credencial (forma de chave, {n} caracteres)"
+        ));
+    }
     None
+}
+
+/// A descricao de um valor para mensagem de erro: o tipo e o tamanho, nunca o conteudo.
+/// Um segredo colado na chave errada (`api.tarefas_por_minuto: "ghp_..."`) voltaria
+/// inteiro no «esperado inteiro, veio ...».
+fn descricao(v: &Value) -> String {
+    match v {
+        Value::String(s) => format!("texto de {} caracteres", s.chars().count()),
+        Value::Array(a) => format!("lista de {} itens", a.len()),
+        Value::Object(m) => format!("objeto de {} chaves", m.len()),
+        Value::Number(_) => "numero".into(),
+        Value::Bool(_) => "booleano".into(),
+        Value::Null => "null".into(),
+    }
 }
 
 fn eh_falso(s: &str) -> bool {
@@ -204,7 +315,13 @@ fn eh_falso(s: &str) -> bool {
 /// tambem aceita `[...]` em JSON.
 pub fn do_texto(c: &Chave, bruto: &str) -> Result<Value, String> {
     let s = bruto.trim();
-    let esperado = || format!("esperado {}, veio {s:?}", c.tipo.nome());
+    let esperado = || {
+        format!(
+            "esperado {}, veio texto de {} caracteres",
+            c.tipo.nome(),
+            s.chars().count()
+        )
+    };
     match c.tipo {
         Tipo::Texto | Tipo::Caminho => Ok(Value::String(s.to_string())),
         Tipo::Inteiro => s.parse::<i64>().map(Value::from).map_err(|_| esperado()),
@@ -242,7 +359,11 @@ pub fn do_texto(c: &Chave, bruto: &str) -> Result<Value, String> {
             if opcoes.contains(&s) {
                 Ok(Value::String(s.to_string()))
             } else {
-                Err(format!("esperado um de {}, veio {s:?}", opcoes.join("|")))
+                Err(format!(
+                    "esperado um de {}, veio texto de {} caracteres",
+                    opcoes.join("|"),
+                    s.chars().count()
+                ))
             }
         }
     }
@@ -259,7 +380,11 @@ pub fn conferir_tipo(c: &Chave, v: &Value) -> Result<(), String> {
         Tipo::Enum(opcoes) => {
             return match v.as_str() {
                 Some(s) if opcoes.contains(&s) => Ok(()),
-                _ => Err(format!("esperado um de {}, veio {v}", opcoes.join("|"))),
+                _ => Err(format!(
+                    "esperado um de {}, veio {}",
+                    opcoes.join("|"),
+                    descricao(v)
+                )),
             };
         }
     };
@@ -270,7 +395,7 @@ pub fn conferir_tipo(c: &Chave, v: &Value) -> Result<(), String> {
             Tipo::Lista(_) => "lista de textos".to_string(),
             t => t.nome().to_string(),
         };
-        Err(format!("esperado {tipo}, veio {v}"))
+        Err(format!("esperado {tipo}, veio {}", descricao(v)))
     }
 }
 
@@ -354,6 +479,10 @@ fn achatar(
             Value::Object(m) if por_chave(&chave).is_none() => {
                 if eh_prefixo_de_secao(&chave) {
                     achatar(&format!("{chave}."), m, out, erros);
+                } else if let Some(e) = segredo_dentro(&format!("{chave}."), m) {
+                    // Secao desconhecida com um segredo dentro: o aviso que importa e o do
+                    // segredo, nao «secao desconhecida».
+                    erros.push(e);
                 } else {
                     erros.push(desconhecida(&chave));
                 }
@@ -361,6 +490,42 @@ fn achatar(
             _ => out.push((chave, v.clone())),
         }
     }
+}
+
+/// Chave fora do catalogo com nome de segredo e valor preenchido: a recusa diz que e
+/// segredo (e o tamanho), nao «chave desconhecida» com a sugestao -- quem escreveu
+/// `github_token` no arquivo precisa ouvir que segredo mora no broker.
+fn segredo_pelo_nome(chave: &str, v: &Value) -> Option<String> {
+    let preenchido = match v {
+        Value::String(s) => !s.trim().is_empty(),
+        Value::Array(a) => a
+            .iter()
+            .any(|x| x.as_str().is_some_and(|s| !s.trim().is_empty())),
+        _ => false,
+    };
+    if nome_de_segredo(chave) && preenchido && por_chave(chave).is_none_or(|c| !c.segredo()) {
+        return Some(format!(
+            "chave com nome de segredo ({}): segredo mora no SecretBroker, nunca no config.json",
+            descricao(v)
+        ));
+    }
+    None
+}
+
+/// O primeiro valor com nome de segredo dentro de uma secao, em qualquer profundidade.
+fn segredo_dentro(caminho: &str, obj: &Map<String, Value>) -> Option<Erro> {
+    for (k, v) in obj {
+        let chave = format!("{caminho}{k}");
+        if let Some(m) = segredo_pelo_nome(&chave, v) {
+            return Some(Erro::novo(chave, m));
+        }
+        if let Some(m) = v.as_object() {
+            if let Some(e) = segredo_dentro(&format!("{chave}."), m) {
+                return Some(e);
+            }
+        }
+    }
+    None
 }
 
 /// Confere um documento inteiro e devolve a revisao e os valores definidos. Junta TODOS os
@@ -392,6 +557,10 @@ pub fn validar_documento(doc: &Value) -> Result<Arquivo, Vec<Erro>> {
     achatar("", &corpo, &mut pares, &mut erros);
     let mut valores = BTreeMap::new();
     for (chave, v) in pares {
+        if let Some(m) = segredo_pelo_nome(&chave, &v) {
+            erros.push(Erro::novo(chave, m));
+            continue;
+        }
         let Some(c) = por_chave(&chave) else {
             erros.push(desconhecida(&chave));
             continue;
@@ -412,7 +581,11 @@ pub fn validar_documento(doc: &Value) -> Result<Arquivo, Vec<Erro>> {
         }
     }
     if erros.is_empty() {
-        Ok(Arquivo { revisao, valores })
+        Ok(Arquivo {
+            revisao,
+            valores,
+            ..Arquivo::default()
+        })
     } else {
         Err(erros)
     }
@@ -423,16 +596,25 @@ pub fn ler_arquivo(caminho: &Path) -> Result<Arquivo, Vec<Erro>> {
     let rotulo = caminho.display().to_string();
     let bytes = match std::fs::read(caminho) {
         Ok(b) => b,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Arquivo::default()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(Arquivo {
+                caminho: caminho.to_path_buf(),
+                sha256: sha256_hex(b""),
+                ..Arquivo::default()
+            });
+        }
         Err(e) => return Err(vec![Erro::novo(rotulo, e.to_string())]),
     };
     let doc: Value = serde_json::from_slice(&bytes)
         .map_err(|e| vec![Erro::novo(rotulo.clone(), format!("JSON invalido: {e}"))])?;
-    validar_documento(&doc).map_err(|es| {
+    let mut a = validar_documento(&doc).map_err(|es| {
         es.into_iter()
             .map(|e| Erro::novo(e.chave, format!("{} (em {rotulo})", e.motivo)))
-            .collect()
-    })
+            .collect::<Vec<_>>()
+    })?;
+    a.caminho = caminho.to_path_buf();
+    a.sha256 = sha256_hex(&bytes);
+    Ok(a)
 }
 
 /// O documento do arquivo, de volta em secoes (o que se grava).
@@ -534,7 +716,7 @@ pub fn carregar(
 /// Recusa de uma mudanca: conflito de revisao, ou a lista de erros por chave.
 #[derive(Debug)]
 pub enum Recusa {
-    Conflito { atual: u64 },
+    Conflito { atual: String },
     Invalida(Vec<Erro>),
     Falha(String),
 }
@@ -554,80 +736,125 @@ pub struct Alvo<'a> {
     pub arquivo: &'a Path,
     /// A configuracao efetiva de agora: diz se a chave vem do ambiente.
     pub atual: &'a Configuracao,
-    /// Revisao de concorrencia esperada (a soma de `Configuracao::revisao`); `None`: a de
+    /// O token de concorrencia que o cliente viu (`Configuracao::revisao`); `None`: o de
     /// agora (a CLI, que nao tem If-Match).
-    pub esperada: Option<u64>,
+    pub esperada: Option<&'a str>,
 }
 
 /// Aplica `mudancas` (`chave -> valor`, `null` remove) ao arquivo do alvo e grava pela
-/// mesma `gravar_revisado` do config-runtime. Devolve a nova revisao de concorrencia.
-pub fn definir(alvo: Alvo<'_>, mudancas: &Map<String, Value>) -> Result<u64, Recusa> {
-    let total = alvo.atual.revisao();
-    if let Some(e) = alvo.esperada {
-        if e != total {
-            return Err(Recusa::Conflito { atual: total });
-        }
-    }
-    let em_disco = ler_arquivo(alvo.arquivo).map_err(Recusa::Invalida)?;
-    let mut valores = em_disco.valores.clone();
-    let mut erros = Vec::new();
-    for (chave, v) in mudancas {
-        let Some(c) = por_chave(chave) else {
-            erros.push(desconhecida(chave));
-            continue;
-        };
-        if let Some(m) = recusa_fora_do_arquivo(c) {
-            erros.push(Erro::novo(chave, m));
-            continue;
-        }
-        if alvo.atual.origem(chave) == Origem::Ambiente {
-            erros.push(Erro::novo(
-                chave,
-                format!(
-                    "vem do ambiente ({}): o arquivo nao teria efeito enquanto a variavel existir",
-                    c.variavel
-                ),
-            ));
-            continue;
-        }
-        if v.is_null() {
-            valores.remove(chave);
-            continue;
-        }
-        match conferir_valor(c, v) {
-            Ok(()) => {
-                valores.insert(chave.clone(), v.clone());
+/// mesma `gravar_revisado` do config-runtime. Devolve o novo token de concorrencia.
+///
+/// A conferencia do token e a leitura do arquivo acontecem DENTRO da trava e contra o
+/// disco, nao contra o `alvo.atual` que o processo carregou antes: o servidor e a CLI sao
+/// processos diferentes, e um `If-Match` conferido contra o cache do servidor passaria
+/// mesmo depois de a CLI ter gravado.
+pub fn definir(alvo: Alvo<'_>, mudancas: &Map<String, Value>) -> Result<String, Recusa> {
+    // Os outros arquivos que entram no token (o que nao e o alvo), lidos do disco na hora.
+    let outros: Vec<(bool, PathBuf)> = std::iter::once((true, alvo.atual.pasta.caminho.clone()))
+        .chain(
+            alvo.atual
+                .projeto
+                .iter()
+                .map(|p| (false, p.caminho.clone())),
+        )
+        .collect();
+    let token_do_disco = |sha_do_alvo: &str| -> Result<String, Recusa> {
+        let mut pasta = String::new();
+        let mut projeto = None;
+        for (eh_pasta, caminho) in &outros {
+            let sha = if caminho == alvo.arquivo {
+                sha_do_alvo.to_string()
+            } else {
+                sha_em_disco(caminho).map_err(Recusa::Falha)?
+            };
+            if *eh_pasta {
+                pasta = sha;
+            } else {
+                projeto = Some(sha);
             }
-            Err(m) => erros.push(Erro::novo(chave, m)),
         }
-    }
-    if !erros.is_empty() {
-        return Err(Recusa::Invalida(erros));
-    }
-    let atual_doc = std::fs::read(alvo.arquivo)
-        .ok()
-        .and_then(|b| serde_json::from_slice::<Value>(&b).ok());
-    let proximo = documento(em_disco.revisao, &valores);
+        Ok(token(&pasta, projeto.as_deref()))
+    };
     let validar = |v: &Value| {
         validar_documento(v)
             .map(|_| ())
             .map_err(|e| ConfigError::Invalid(em_texto(&e)))
     };
     let historico = historico_de(alvo.arquivo);
-    gravar_revisado(
+    let mut invalida: Option<Vec<Erro>> = None;
+    let mut montar = |em_disco: Option<&Value>| -> Result<Value, ConfigError> {
+        // O hash e dos bytes do arquivo, nao do JSON reserializado: le-se de novo, ja
+        // com a trava tomada.
+        let sha_alvo = sha_em_disco(alvo.arquivo).map_err(ConfigError::Invalid)?;
+        let atual = token_do_disco(&sha_alvo).map_err(|e| ConfigError::Invalid(e.to_string()))?;
+        if let Some(e) = alvo.esperada {
+            if e != atual.as_str() {
+                return Err(ConfigError::ConflitoDeToken { atual });
+            }
+        }
+        let arq = match em_disco {
+            Some(d) => validar_documento(d).map_err(|e| ConfigError::Invalid(em_texto(&e)))?,
+            None => Arquivo::default(),
+        };
+        let mut valores = arq.valores;
+        let mut erros = Vec::new();
+        for (chave, v) in mudancas {
+            if let Some(m) = segredo_pelo_nome(chave, v) {
+                erros.push(Erro::novo(chave, m));
+                continue;
+            }
+            let Some(c) = por_chave(chave) else {
+                erros.push(desconhecida(chave));
+                continue;
+            };
+            if let Some(m) = recusa_fora_do_arquivo(c) {
+                erros.push(Erro::novo(chave, m));
+                continue;
+            }
+            if alvo.atual.origem(chave) == Origem::Ambiente {
+                erros.push(Erro::novo(
+                    chave,
+                    format!(
+                        "vem do ambiente ({}): o arquivo nao teria efeito enquanto a variavel existir",
+                        c.variavel
+                    ),
+                ));
+                continue;
+            }
+            if v.is_null() {
+                valores.remove(chave);
+                continue;
+            }
+            match conferir_valor(c, v) {
+                Ok(()) => {
+                    valores.insert(chave.clone(), v.clone());
+                }
+                Err(m) => erros.push(Erro::novo(chave, m)),
+            }
+        }
+        if !erros.is_empty() {
+            invalida = Some(erros);
+            return Err(ConfigError::Invalid("recusada".into()));
+        }
+        Ok(documento(arq.revisao, &valores))
+    };
+    let r = gravar_revisado(
         alvo.arquivo,
         &historico,
-        atual_doc.as_ref().map(|d| (em_disco.revisao, d)),
-        em_disco.revisao,
-        proximo,
         CAMPO_REVISAO,
         &validar,
-    )
-    .map_err(|e| match e {
-        ConfigError::RevisionConflict { actual, .. } => Recusa::Conflito { atual: actual },
-        outro => Recusa::Falha(outro.to_string()),
-    })?;
-    Ok(total + 1)
+        &mut montar,
+    );
+    match r {
+        Ok(_) => {}
+        Err(ConfigError::ConflitoDeToken { atual }) => return Err(Recusa::Conflito { atual }),
+        Err(ConfigError::Invalid(_)) if invalida.is_some() => {
+            return Err(Recusa::Invalida(invalida.unwrap_or_default()));
+        }
+        Err(outro) => return Err(Recusa::Falha(outro.to_string())),
+    }
+    let sha_alvo = sha_em_disco(alvo.arquivo).map_err(Recusa::Falha)?;
+    token_do_disco(&sha_alvo)
 }
 
 /// O historico das revisoes, ao lado do arquivo.

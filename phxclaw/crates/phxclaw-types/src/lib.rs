@@ -1,3 +1,6 @@
+/// Troca atomica, trava entre processos e cauda cortada: a escrita em disco de toda a base.
+pub mod arquivo;
+
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;

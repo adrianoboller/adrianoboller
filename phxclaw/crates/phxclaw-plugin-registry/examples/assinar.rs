@@ -1,13 +1,14 @@
 //! Reassina os manifestos builtin. A chave NUNCA vem pela linha de comando (fica no
 //! historico do shell e no /proc de qualquer um): vem de PHXCLAW_PLUGIN_SIGNING_KEY ou do
 //! arquivo em PHXCLAW_PLUGIN_SIGNING_KEY_FILE (semente Ed25519 de 32 bytes, base64).
+//! `phxclaw plugins assinar` faz o mesmo com a semente do broker (`phxclaw plugins chave`),
+//! pelo mesmo `reassinar_pasta`.
 //!
 //!   PHXCLAW_PLUGIN_SIGNING_KEY_FILE=~/chave-dev-root.b64 \
 //!     cargo run -p phxclaw-plugin-registry --example assinar -- plugins/builtin/manifests
 //!
 //! Recusa se a chave nao for a do signatario de cada manifesto no trust store.
-use phxclaw_plugin_registry::TrustStore;
-use phxclaw_plugin_registry::assinatura::{chave_do_signatario, reassinar};
+use phxclaw_plugin_registry::assinatura::reassinar_pasta;
 use std::path::PathBuf;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -24,28 +25,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             )?)?
         }
     };
-    let trust = TrustStore::from_json(&std::fs::read_to_string(
-        raiz.join("config/trust/plugin-signers.json"),
-    )?)?;
-    let mut n = 0;
-    for e in std::fs::read_dir(&pasta)? {
-        let p = e?.path();
-        // so manifesto: a pasta de exemplos tem schemas .json ao lado, sem assinatura
-        if !p.to_string_lossy().ends_with(".plugin.json") {
-            continue;
-        }
-        let texto = std::fs::read_to_string(&p)?;
-        let v: serde_json::Value = serde_json::from_str(&texto)?;
-        let signer = v["integrity"]["signer"].as_str().unwrap_or_default();
-        let chave = chave_do_signatario(&semente, signer, &trust)?;
-        let formato = trust
-            .signer(signer)
-            .map(|s| s.signature_format)
-            .unwrap_or(1);
-        std::fs::write(&p, reassinar(&texto, &raiz, &chave, formato)?)?;
+    let feitos = reassinar_pasta(&raiz, &pasta, &semente)?;
+    for p in &feitos {
         println!("reassinado {}", p.display());
-        n += 1;
     }
-    println!("{n} manifesto(s)");
+    println!("{} manifesto(s)", feitos.len());
     Ok(())
 }

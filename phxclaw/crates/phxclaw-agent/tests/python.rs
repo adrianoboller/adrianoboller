@@ -4,6 +4,7 @@
 
 use phxclaw_agent::python::PythonProjectTool;
 use phxclaw_agent_core::{Tool, ToolContext, ToolError};
+use phxclaw_test_support::pulado;
 use serde_json::{Value, json};
 use std::path::Path;
 use std::time::Duration;
@@ -121,7 +122,7 @@ async fn mypy_pytest_e_ruff_devolvem_diagnostico_estruturado() {
 async fn dependencia_do_cache_instala_e_a_de_fora_recusa_dizendo() {
     let Some(t) = ferramenta() else { return };
     if t.uv.is_none() || t.cache_uv.is_none() {
-        eprintln!("uv ou cache ausente: pulado");
+        pulado::pular("uv", "uv ou cache do uv ausente");
         return;
     }
     let c = ctx();

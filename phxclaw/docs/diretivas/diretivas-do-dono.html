@@ -1,0 +1,315 @@
+<title>Diretivas do Dono</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap">
+<style>
+/* Phoenix Papel v1: papel claro de alto contraste por natureza; o escuro e uma preferencia de tela,
+   e a impressao volta sempre ao papel. Tokens primeiro, componentes so pelos tokens. */
+:root{
+  --paper:#FBFAF7; --surface:#FFFFFF; --ink:#17191F; --muted:#596070; --graphite:#15171D;
+  --fire:#E24310; --fire-text:#C23A0E; --green:#0F7A4F; --red:#C0362C; --amber:#B45309; --blue:#1D4ED8;
+  --border:#DED8CF; --code-bg:#F1F3F5; --thead:#F2EEE8; --zebra:#FAF8F4; --bar-ink:#FFFFFF;
+  --sans:"IBM Plex Sans",Arial,Helvetica,sans-serif; --mono:"IBM Plex Mono",Consolas,monospace;
+  --texto-escolhido:var(--ink);
+}
+@media (prefers-color-scheme:dark){ :root:not([data-theme="light"]){
+  --paper:#0B1020; --surface:#121A2B; --ink:#F4F7FB; --muted:#C7D0DF; --graphite:#080C14;
+  --fire:#FF6A2B; --fire-text:#FF8A5B; --green:#5DD187; --red:#FF8A80; --amber:#F2C15D; --blue:#79A6FF;
+  --border:#2C3850; --code-bg:#080C14; --thead:#182238; --zebra:#141C2E; --texto-escolhido:var(--ink);
+  color-scheme:dark; } }
+:root[data-theme="dark"]{
+  --paper:#0B1020; --surface:#121A2B; --ink:#F4F7FB; --muted:#C7D0DF; --graphite:#080C14;
+  --fire:#FF6A2B; --fire-text:#FF8A5B; --green:#5DD187; --red:#FF8A80; --amber:#F2C15D; --blue:#79A6FF;
+  --border:#2C3850; --code-bg:#080C14; --thead:#182238; --zebra:#141C2E; --texto-escolhido:var(--ink);
+  color-scheme:dark; }
+/* Seletor de cor do texto: preferencia semantica, nunca RGB cego. Cada cor tem um tom por tema
+   que passa de 4,5:1 sobre o papel; «branco» no claro e «preto» no escuro caem no tom do papel. */
+:root[data-cor="vermelho"]{--texto-escolhido:#B42318} :root[data-cor="azul"]{--texto-escolhido:#1D4ED8}
+:root[data-cor="amarelo"]{--texto-escolhido:#8A5A00} :root[data-cor="verde"]{--texto-escolhido:#0F7A4F}
+:root[data-cor="preto"]{--texto-escolhido:#17191F} :root[data-cor="branco"]{--texto-escolhido:#17191F}
+@media (prefers-color-scheme:dark){ :root:not([data-theme="light"]){
+  --c-vermelho:#FF8A80; --c-azul:#79A6FF; --c-amarelo:#F2C15D; --c-verde:#5DD187; --c-preto:#F4F7FB; --c-branco:#FFFFFF; } }
+:root[data-theme="dark"]{--c-vermelho:#FF8A80; --c-azul:#79A6FF; --c-amarelo:#F2C15D; --c-verde:#5DD187; --c-preto:#F4F7FB; --c-branco:#FFFFFF;}
+:root[data-theme="dark"][data-cor="vermelho"],:root:not([data-theme="light"])[data-cor="vermelho"]{--texto-escolhido:var(--c-vermelho,#B42318)}
+:root[data-theme="dark"][data-cor="azul"],:root:not([data-theme="light"])[data-cor="azul"]{--texto-escolhido:var(--c-azul,#1D4ED8)}
+:root[data-theme="dark"][data-cor="amarelo"],:root:not([data-theme="light"])[data-cor="amarelo"]{--texto-escolhido:var(--c-amarelo,#8A5A00)}
+:root[data-theme="dark"][data-cor="verde"],:root:not([data-theme="light"])[data-cor="verde"]{--texto-escolhido:var(--c-verde,#0F7A4F)}
+:root[data-theme="dark"][data-cor="preto"],:root:not([data-theme="light"])[data-cor="preto"]{--texto-escolhido:var(--c-preto,#17191F)}
+:root[data-theme="dark"][data-cor="branco"],:root:not([data-theme="light"])[data-cor="branco"]{--texto-escolhido:var(--c-branco,#17191F)}
+
+html,body{background:var(--paper);color:var(--ink);font:16px/1.65 var(--sans);margin:0}
+body p,body li,body td{color:var(--texto-escolhido)}
+.phx-titlebar{position:sticky;top:env(safe-area-inset-top,0px);z-index:3;background:var(--graphite);color:var(--bar-ink);
+  border-bottom:4px solid var(--fire);padding:10px 16px;display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center}
+.phx-titlebar b{font-size:1.1rem;letter-spacing:.01em}
+.phx-titlebar small{font-family:var(--mono);color:#C7D0DF}
+.phx-toolbar{margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.phx-toolbar button,.phx-toolbar select{font:600 .8rem var(--mono);background:transparent;color:#FFF;border:1px solid #C7D0DF;border-radius:6px;padding:5px 9px;cursor:pointer}
+.phx-toolbar button[aria-pressed="true"]{border-color:var(--fire);color:var(--fire)}
+.phx-toolbar select{background:var(--graphite)}
+.wrap{max-width:1040px;margin:0 auto;padding-inline:16px;padding-block:28px 56px;display:grid;gap:28px}
+h1,h2,h3{font-family:var(--sans);text-wrap:balance;margin:0;color:var(--ink)}
+h1{font-size:2rem;line-height:1.15} h2{font-size:1.35rem;padding-top:8px;border-top:3px solid var(--fire)} h3{font-size:1.05rem;color:var(--fire-text)}
+.eyebrow{font:600 .75rem var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--fire-text)}
+.muted{color:var(--muted)}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px 20px;box-shadow:0 3px 14px rgba(0,0,0,.06);min-width:0}
+section{display:grid;gap:14px;min-width:0}
+ul,ol{margin:0;padding-left:1.3em} li{margin:.25em 0}
+code{font-family:var(--mono);font-size:.92em;overflow-wrap:anywhere;background:var(--code-bg);color:var(--ink);padding:1px 5px;border-radius:4px}
+pre{font-family:var(--mono);font-size:.88rem;background:var(--code-bg);color:var(--ink);border:1px solid var(--border);border-radius:10px;padding:14px;overflow-x:auto;margin:0}
+pre code{background:none;padding:0}
+.tab{overflow-x:auto;border:1px solid var(--border);border-radius:10px;background:var(--surface)}
+table{width:100%;border-collapse:collapse;font-size:.93rem}
+th,td{border-bottom:1px solid var(--border);padding:9px 12px;text-align:left;vertical-align:top}
+th{background:var(--thead);font-weight:700;font-size:.8rem;text-transform:uppercase;letter-spacing:.06em;color:var(--ink)}
+tbody tr:nth-child(even){background:var(--zebra)} tr:last-child td{border-bottom:0}
+.indice{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px 18px}
+.indice a{color:var(--blue);text-decoration:none;font-weight:600} .indice a:hover{text-decoration:underline}
+.indice span{display:block;font-size:.85rem;color:var(--muted)}
+.st{display:inline-block;font:600 .75rem var(--mono);border:1px solid;border-radius:4px;padding:1px 7px}
+.ok{color:var(--green)} .warn{color:var(--amber)} .err{color:var(--red)} .info{color:var(--blue)}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px}
+.org{font-family:var(--mono);font-size:.85rem;white-space:pre;overflow-x:auto;background:var(--code-bg);border:1px solid var(--border);border-radius:10px;padding:14px}
+footer{font-size:.85rem;color:var(--muted);border-top:1px solid var(--border);padding-top:12px}
+a{color:var(--blue)}
+:focus-visible{outline:2px solid var(--fire);outline-offset:2px}
+@media print{
+  /* Impressao ignora o tema de tela: os tres seletores cobrem a mesma especificidade dos blocos
+     escuros, senao o escuro do prefers-color-scheme vence e o titulo sai branco no papel branco. */
+  :root,:root:not([data-theme="light"]),:root[data-theme="dark"],:root[data-cor]{--paper:#FFFFFF;--surface:#FFFFFF;--ink:#17191F;--muted:#596070;--border:#DED8CF;--code-bg:#F1F3F5;--thead:#F2EEE8;--zebra:#FAF8F4;--fire-text:#C23A0E;--blue:#1D4ED8;--green:#0F7A4F;--red:#C0362C;--amber:#B45309;--texto-escolhido:#17191F;color-scheme:light}
+  html,body{background:#FFFFFF!important;color:#17191F!important}
+  body p,body li,body td{color:#17191F!important}
+  .phx-toolbar,.no-print{display:none!important}
+  .phx-titlebar{position:static;background:#15171D!important;color:#FFF!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  tr,pre,.org,.no{break-inside:avoid} h2,h3{break-after:avoid} .card{break-inside:auto}
+  a{color:#17191F!important;text-decoration:none}
+}
+</style>
+
+<header class="phx-titlebar">
+  <b>Diretivas do Dono</b>
+  <small>Phoenix Papel v1 · consolidado em 02/10/2026 · Sessão 00001</small>
+  <div class="phx-toolbar" role="group" aria-label="Preferências de leitura">
+    <button type="button" data-theme-set="light" aria-pressed="false">Light</button>
+    <button type="button" data-theme-set="dark" aria-pressed="false">Dark</button>
+    <label><span class="no-print" style="position:absolute;left:-9999px">Cor do texto</span>
+      <select id="cor-texto" aria-label="Cor do texto">
+        <option value="">Texto: padrão</option><option value="preto">Preto</option><option value="branco">Branco</option>
+        <option value="vermelho">Vermelho</option><option value="azul">Azul</option><option value="amarelo">Amarelo</option><option value="verde">Verde</option>
+      </select></label>
+  </div>
+</header>
+
+<div class="wrap">
+<section>
+  <span class="eyebrow">Adriano · WX Soluções · Phoenix</span>
+  <h1>Diretivas do dono, organizadas em sete blocos</h1>
+  <p class="muted">Tudo o que o dono mandou memorizar em 02/10/2026, reordenado por tema, sem redundância, com a
+  precedência entre blocos escrita e os choques com as regras já vigentes registrados em vez de resolvidos em silêncio.
+  Fonte: a mensagem do dono nesta sessão; nenhum item foi acrescentado por conta própria.</p>
+  <div class="card">
+    <h3>Índice</h3>
+    <div class="indice">
+      <a href="#b0">0 · Precedência</a>
+      <a href="#b1">1 · Postura e comunicação</a>
+      <a href="#b2">2 · Processo: sessão, sprint, DoD, gaps</a>
+      <a href="#b3">3 · Documentação: PVS-1 e Phoenix Papel</a>
+      <a href="#b4">4 · Engenharia: SQL Bolleriano e projetos</a>
+      <a href="#b5">5 · WLanguage (WX)</a>
+      <a href="#b6">6 · Raciocínio: Cot-SC Bolleriano</a>
+      <a href="#b7">7 · Choques registrados</a>
+    </div>
+  </div>
+</section>
+
+<section id="b0">
+  <h2>0 · Precedência</h2>
+  <div class="card">
+    <p>Quando uma instrução pontual bate numa diretiva (regra do próprio dono, §1 das Diretivas Pétrias):</p>
+    <ol>
+      <li><b>Segurança, integridade e consistência</b> do projeto vêm primeiro.</li>
+      <li>O choque é <b>informado</b>, nunca resolvido em silêncio.</li>
+      <li>Vale a instrução <b>mais recente</b> do dono quando ela não fere regra estrutural.</li>
+      <li>A decisão fica <b>registrada</b> no resumo da sprint.</li>
+    </ol>
+    <p>Precedência entre padrões visuais: <code>interface de aplicação → PVS</code> ·
+    <code>documentação HTML/PDF → PVS + Phoenix Papel</code> · <code>impressão → Phoenix Papel manda</code>.</p>
+  </div>
+</section>
+
+<section id="b1">
+  <h2>1 · Postura e comunicação</h2>
+  <div class="grid2">
+    <div class="card"><h3>Rigor</h3><ul>
+      <li>Modo bajulador <b>desligado</b>: testar suposições, trazer contrapontos, corrigir com clareza. Verdade acima de concordância.</li>
+      <li>Nunca inventar comando, número ou resultado. Sem saber: <code>NaoSei</code>. Todo número traz o estado:
+        <span class="st ok">VERIFICADO</span> <span class="st info">ESTIMADO</span> <span class="st warn">PLANEJADO</span> <span class="st warn">INFERIDO</span> <span class="st err">NÃO VALIDADO</span>.</li>
+      <li>Antes de afirmar, pesquisar — mesmo que demore.</li>
+    </ul></div>
+    <div class="card"><h3>Forma</h3><ul>
+      <li>Saudação pela hora de Brasília: «Bom dia / Boa tarde / Boa noite, Adriano».</li>
+      <li>Processamento exposto <b>ao vivo</b>; nada de «ok» em série sem solução concreta.</li>
+      <li>Opções sempre <b>enumeradas</b> (a, b, c…). Respostas em português; comandos em inglês.</li>
+      <li>«Fiz uma vez, a próxima já vem sugerida igual»: modelos históricos para o trabalho repetitivo.</li>
+      <li>Em tarefa analisada: sugerir melhorias, prazo e, se couber, orçamento.</li>
+      <li><code>PAUSA PARA REVISÃO</code> em blocos longos, para validar e evitar corte.</li>
+    </ul></div>
+  </div>
+</section>
+
+<section id="b2">
+  <h2>2 · Processo: sessão, sprint, DoD e gaps</h2>
+  <div class="card">
+    <h3>Numeração e cabeçalho</h3>
+    <ul>
+      <li><code>Sessão NNNNN</code> e <code>SPNNNNNN</code>: únicos, sequenciais, <b>nunca reiniciam</b> nem se reutilizam.</li>
+      <li>Toda sprint começa com <code>Sessão NNNNN | Sprint SPNNNNNN | DD/MM/AAAA | HH:MM:SS</code>.</li>
+      <li>Fim de sprint: <code>Sessao_NNNNN_Sprint_SPNNNNNN_AAAAMMDDHHMMSS.md</code> com identificação, solicitação,
+        atividades, arquivos criados/alterados, decisões, testes (teste · resultado · evidência · status), problemas,
+        pendências, gaps, próximas sprints, telemetria e economia RTK (só com medição; senão «não mensurável» com o motivo).
+        Backup <code>.md</code> e <code>.zip</code> cumulativo com link.</li>
+    </ul>
+  </div>
+  <div class="grid2">
+    <div class="card"><h3>Definition of Done</h3>
+      <pre><code>DONE = CODE + BUILD + TEST + VALIDATION + DOC + TELEMETRY + TRACEABILITY</code></pre>
+      <ul><li>Sprint só fecha com: implementação, build, testes críticos verdes, logs, telemetria, documentação, gaps novos registrados, arquivos identificados, resumo gerado. Faltou um → <code>Status: PARCIAL</code>.</li>
+      <li><b>Prova real</b>: artefato gerado se valida em cópia independente (zip extraído, projeto compilado, backup restaurado). Existir não prova estar certo.</li>
+      <li><b>Não regressão</b>: baseline antes, comparação depois (antes · depois · diferença · ganho · perda).</li></ul>
+    </div>
+    <div class="card"><h3>Gaps e rastreabilidade</h3>
+      <ul><li>Classes <code>G0</code> bloqueador · <code>G1</code> crítico · <code>G2</code> alto · <code>G3</code> médio · <code>G4</code> baixo · <code>G5</code> melhoria; cada gap com impacto, correção, sprint sugerida, aceite e teste.</li>
+      <li>Matriz requisito × sprint × implementação × teste × status.</li>
+      <li>Estados de item: ✅ realizado · 🟡 parcial · 🔵 planejado · 🔴 não realizado · ⚠️ com problema.</li>
+      <li>Telemetria pétria: build, runtime, API (P50/P95/P99), banco, testes, produto.</li></ul>
+    </div>
+  </div>
+  <div class="card"><h3>Comandos reservados</h3>
+    <div class="tab"><table><thead><tr><th>Comando</th><th>O que dispara</th></tr></thead><tbody>
+      <tr><td><code>REVISÃO</code></td><td>Revisão global: descrição, justificativa, objetivos, arquitetura, status, realizado/parcial/planejado, gaps, concorrência (com fonte), organograma, fluxogramas, telemetria, testes, antes×depois, gráficos, dossiê, manual, site, próximas sprints.</td></tr>
+      <tr><td><code>REVISAR GAPS</code></td><td>Análise de completude (22 passos) → gaps classificados → sprints novas, ordenadas, com aceite e testes.</td></tr>
+      <tr><td><code>STATUS DO PROJETO</code></td><td>Relatório com os 31 itens (do resumo executivo às próximas sprints).</td></tr>
+      <tr><td><code>APLICAR PVS</code> · <code>PHOENIX PAPEL</code></td><td>Aplica o padrão visual; o segundo também valida contraste, print, PDF e prova real.</td></tr>
+      <tr><td><code>PROVA REAL</code> · <code>TELEMETRIA</code> · <code>DOSSIÊ</code> · <code>MANUAL</code></td><td>Validação independente · métricas · dossiê (25 seções) · manual só do que existe, com status por recurso.</td></tr>
+      <tr><td><code>REFAÇA O HTML E O PDF</code></td><td>PVS + Phoenix Papel + Light/Dark + cores + PDF + prova real.</td></tr>
+      <tr><td><code>salve isso</code> · <code>salve isso em html</code></td><td>Sessão inteira em .txt / .html com link.</td></tr>
+    </tbody></table></div>
+  </div>
+</section>
+
+<section id="b3">
+  <h2>3 · Documentação: PVS-1 e Phoenix Papel</h2>
+  <div class="grid2">
+    <div class="card"><h3>PVS-1 (interfaces e sistemas)</h3><ul>
+      <li>Light e Dark obrigatórios, alternância visível, preferência persistente, responsivo, contraste. Faltar um deles é erro.</li>
+      <li>Cor principal configurável sem perder contraste, legibilidade e os estados de erro/alerta/sucesso.</li>
+      <li>Proibido: claro sobre claro, escuro sobre escuro, cinza-claro ou rosa-claro sobre branco.</li>
+      <li>Tabelas com cabeçalho destacado e rolagem horizontal no celular; código mono com fundo próprio.</li>
+      <li>Checklist de legibilidade (15 itens) antes de dar por concluído.</li>
+    </ul></div>
+    <div class="card"><h3>Phoenix Papel v1 (HTML/PDF)</h3><ul>
+      <li>Papel <code>#FBFAF7</code>, tinta <code>#17191F</code>, secundário <code>#596070</code>, fogo <code>#E24310</code> (como texto: <code>#C23A0E</code>), grafite <code>#15171D</code>. Contraste alvo ≥ 7:1.</li>
+      <li>IBM Plex Sans / Mono com fallback; fogo nunca como cor de corpo de texto.</li>
+      <li>Barra de título escura com filete fogo; botões Light/Dark e seletor de cor (preto, branco, vermelho, azul, amarelo, verde) — cor é preferência <b>semântica</b>: se não tiver contraste, o sistema ajusta o tom.</li>
+      <li>Preferências em <code>localStorage</code>; a impressão <b>ignora</b> preferência perigosa e volta ao papel.</li>
+      <li>PDF do mesmo HTML, <code>printBackground: true</code>, A4, margens 14/12 mm; depois <b>abrir e conferir</b> — texto invisível reprova.</li>
+      <li>Status com cor + ícone + texto (✅ ⚠️ ❌ ℹ️), nunca só cor.</li>
+    </ul></div>
+  </div>
+  <div class="card"><p class="muted">Esta página é um exemplo do padrão: os dois temas, o seletor de cor seguro, a regra de impressão e as fontes IBM Plex estão aplicados nela.</p></div>
+</section>
+
+<section id="b4">
+  <h2>4 · Engenharia: SQL Bolleriano e condução de projetos</h2>
+  <div class="grid2">
+    <div class="card"><h3>SQL / PostgreSQL</h3><ul>
+      <li>Prefixo rígido: 3 letras + 3 números + <code>_</code> (<code>bil601_</code>, <code>fin701_</code>) ou <code>t001_</code>/<code>c001_</code> por módulo; tudo minúsculo; campos herdam o prefixo da tabela; FK herda o da tabela-mãe.</li>
+      <li>Schema por módulo-código (<code>inv301</code>, <code>bil601</code>, <code>fin701</code>, <code>spd901</code>).</li>
+      <li>PK <code>uuid</code> v7 (<code>uuid_generate_v7()</code>, com shim); soft delete <code>*_is_deleted</code>/<code>*_deleted_at</code>; <code>*_created_at</code>/<code>*_updated_at</code> por trigger; <code>*_props jsonb not null default '{}'</code>.</li>
+      <li>Tabelas primeiro; FKs <code>DEFERRABLE INITIALLY DEFERRED</code> ao fim; CHECK em enumerados; UNIQUE onde couber.</li>
+      <li><code>COMMENT ON</code> bilíngue em toda entidade e campo; <code>numeric(18,2|6)</code>; <code>varchar</code> com tamanho; <code>timestamptz</code>; particionamento por tempo e A–Z.</li>
+      <li>Nunca <code>UPDATE</code>/<code>DELETE</code> sem <code>WHERE</code>; sem <code>SELECT *</code>; nota sobre binários no SELECT.</li>
+      <li>DDL inline + arquivo <code>.sql</code>; ordem de carga; log em <code>core.etl_log</code>; views fiscais em <code>spd901</code>.</li>
+    </ul></div>
+    <div class="card"><h3>Projetos complexos</h3><ul>
+      <li>EAP por partes reutilizáveis; organograma ou lista de tópicos antes de começar.</li>
+      <li>Cronograma e orçamento; casos de teste; % por item e subitem.</li>
+      <li>Entregável com tamanho em bytes e «ok» de gravação; pacote consolidado e cumulativo (sempre versão full).</li>
+      <li>Relatório de conformidade com a especificação.</li>
+      <li>Ambiente: Rust/Cargo atualizados; PostgreSQL 19 com as três bases (<code>_desenvolvimento</code>, <code>_homologacao</code>, <code>_producao</code>) e os usuários supervisor, teste, cliente e funcionario; senha do postgres só no cofre.</li>
+      <li>Toda tarefa nova começa pelas seis perguntas: função, tarefa (escopo + organograma), contexto e restrições, raciocínio, formato de saída, condições finais.</li>
+    </ul></div>
+  </div>
+</section>
+
+<section id="b5">
+  <h2>5 · WLanguage (WinDev, WebDev, WinDev Mobile)</h2>
+  <div class="grid2">
+    <div class="card"><h3>Sintaxe obrigatória</h3><ul>
+      <li>Só comando que existe em <a href="https://help.windev.com">help.windev.com</a>; inexistente vai em <b>negrito</b> com nota; sem solução: C# (<code>csharpe_nome</code>) ou Python (<code>python_nome</code>) por integração.</li>
+      <li>Blocos entre <code>//##############################</code>; última linha <code>//Final do Arquivo</code>.</li>
+      <li>Sem <code>Dim</code>, sem <code>;</code>, sem <code>then</code>, sem <code>Local</code>/<code>Global</code> antes de variável (só como comentário); <code>nome  is  string</code>.</li>
+      <li><code>Procedure</code>, nunca <code>function</code>; procedure não fecha com <code>End</code> (só a interna); <code>End//If</code>, <code>End//For</code>, <code>End//Loop</code>, <code>End//While</code>.</li>
+      <li><code>Result</code> valor · <code>Return</code> erro/saída · <code>Break</code> laço · <code>mod</code> resto; <code>real</code> em vez de <code>long</code>; <code>int</code>; <code>GetUUID()</code>.</li>
+      <li>Strings longas entre <code>[ ]</code>; <code>SWITCH</code> com faixas (<code>CASE 10&lt;*&lt;20</code>); comandos sempre em inglês.</li>
+    </ul></div>
+    <div class="card"><h3>Qualidade e segurança (as 20 diretivas)</h3><ul>
+      <li>Toda chamada crítica protegida: <code>WHEN EXCEPTION IN … DO … END</code> ou <code>Try/Catch</code>; <code>H*</code> sempre com <code>HError()</code>/<code>HFound()</code>; arquivo com <code>fFileExist()</code> + <code>fError()</code>; entrada com <code>ValidNumeric/ValidDate/ValidEmailAddress/Length</code>; <code>ISVALID()</code>; <code>ErrorOccurred</code>; <code>Assert</code>; <code>Trace/dbgInfo</code>; <code>VerifyPassword/Crypt*</code>.</li>
+      <li>Retorno padronizado (-1, Null, False, enum); wrappers <code>Safe*</code> reutilizáveis.</li>
+      <li>Técnicas sempre que couber: ternário, indirection <code>{…, indControl}</code>, <code>CONSTANT</code>, <code>EvaluateExpression</code>, threads, <code>Compile</code>, <code>ScreenToFile</code>/<code>FileToScreen</code>, transações <code>HTransaction*</code>.</li>
+      <li>Didática: 3+ exemplos, OOP/MVC, versão 28, comparativo com Python, fonte citada, testes unitários, como usar.</li>
+      <li>Nunca resumir código omitindo validação.</li>
+    </ul></div>
+  </div>
+</section>
+
+<section id="b6">
+  <h2>6 · Raciocínio: Método Cot-SC Bolleriano (A–J)</h2>
+  <div class="card">
+    <p><b>Quando ativar:</b> arquitetura, integração complexa, performance, trade-off relevante, ou pedido explícito («analise», «hipóteses», «compare», «passo a passo»). Dúvida simples → modo leve (uma hipótese + validação rápida).</p>
+    <div class="org">Método Cot-SC Bolleriano
+├── A) Pergunta & contexto · hipóteses com probabilidade (%)
+├── B) Respostas múltiplas, cada uma marcada
+├── C) Autores / linhas de raciocínio, convergências e divergências
+├── D) Cadeia de pensamento: premissas → testes → critérios, sem salto
+├── E) Conflitos & coerência: resolver ou declarar a incerteza
+├── F) Evidência visual só quando prova algo (eixos, unidade, fonte)
+├── G) Objetivos ✅/❌ e % atingido
+├── H) Três consciências: C1 conservadora · C2 criativa · C3 crítica → decisão por critério
+├── I) Esqueleto / organograma do raciocínio, para reuso
+└── J) Inédito → protocolo passo a passo (materiais, riscos, marcos)</div>
+    <p class="muted">Critérios de qualidade: completude, calibração, consistência, rastreabilidade, decisão explícita. Registrar por que a alternativa perdedora caiu.</p>
+  </div>
+</section>
+
+<section id="b7">
+  <h2>7 · Choques com regras já vigentes — registrados, não resolvidos calado</h2>
+  <div class="tab"><table><thead><tr><th>#</th><th>Choque</th><th>Decisão aplicada (o dono pode inverter)</th></tr></thead><tbody>
+    <tr><td>a</td><td>Modo honesto/curto (pétrea de 23/09) × tom empolgante, 3+ exemplos e «quer salvar em HTML?» a cada bloco</td><td>O tom WX vale para código WLanguage e material didático; nos retornos do projeto Rust segue o modo curto.</td></tr>
+    <tr><td>b</td><td>Senha do postgres escrita na diretiva × «senha nunca em texto puro»</td><td>Vai ao SecretBroker/variável de ambiente; não aparece em arquivo versionado nem nesta página.</td></tr>
+    <tr><td>c</td><td>Nomenclatura Bolleriana × formatos em disco já publicados (PhxSql, caixa, gonogo…)</td><td>Vale para SQL novo e para o Phoenix/MinhaLojinhaTurca; formato publicado só muda com migração e parecer do DBA.</td></tr>
+    <tr><td>d</td><td>Sessão/sprint com cabeçalho e .md × backlog SPRINTS.md já numerado (SP000002…SP000032)</td><td>A numeração continua, nunca reinicia; o resumo .md nasce no fecho de cada Go, em <code>docs/sprints/</code>.</td></tr>
+    <tr><td>e</td><td>PostgreSQL 19 exigido × versão instalada e possível beta</td><td>Só com medição; beta nunca em produção; se a 19 ainda for beta, sobe ao dono.</td></tr>
+    <tr><td>f</td><td>«Baixar Rust/Cargo/PostgreSQL»</td><td>Já feito nesta sessão; não se refaz.</td></tr>
+    <tr><td>g</td><td>Pasta <code>/mnt/user-data/outputs/INSTRUCOES_GLOBAIS/</code> citada como fonte das regras de engenharia</td><td><span class="st err">NÃO EXISTE</span> neste contêiner (verificado em 02/10, 01:22 UTC). Falta o conteúdo ou o caminho certo.</td></tr>
+  </tbody></table></div>
+</section>
+
+<footer>Phoenix Papel v1 · Light/Dark e cor do texto guardados no navegador · impressão sempre em papel claro com texto escuro ·
+fonte dos itens: mensagem do dono de 02/10/2026; nada foi acrescentado. //Final do Arquivo</footer>
+</div>
+
+<script>
+(function(){
+  var raiz=document.documentElement, sel=document.getElementById('cor-texto');
+  function ler(k){try{return localStorage.getItem(k)}catch(e){return null}}
+  function gravar(k,v){try{v?localStorage.setItem(k,v):localStorage.removeItem(k)}catch(e){}}
+  function aplicarTema(t){ if(t){raiz.setAttribute('data-theme',t)} else {raiz.removeAttribute('data-theme')}
+    document.querySelectorAll('[data-theme-set]').forEach(function(b){b.setAttribute('aria-pressed', String(b.getAttribute('data-theme-set')===t))}); }
+  function aplicarCor(c){ if(c){raiz.setAttribute('data-cor',c)} else {raiz.removeAttribute('data-cor')} if(sel) sel.value=c||''; }
+  aplicarTema(ler('phoenix-theme')); aplicarCor(ler('phoenix-text-color'));
+  document.querySelectorAll('[data-theme-set]').forEach(function(b){ b.addEventListener('click',function(){
+    var t=b.getAttribute('data-theme-set'); var atual=raiz.getAttribute('data-theme');
+    if(atual===t){aplicarTema(null);gravar('phoenix-theme',null)} else {aplicarTema(t);gravar('phoenix-theme',t)} }); });
+  if(sel) sel.addEventListener('change',function(){ aplicarCor(sel.value||null); gravar('phoenix-text-color', sel.value||null); });
+})();
+</script>

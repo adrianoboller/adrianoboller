@@ -3895,8 +3895,10 @@ dependencies = [
  "phxclaw-config-runtime",
  "phxclaw-core-runtime",
  "phxclaw-device-transport",
+ "phxclaw-plugin-registry",
  "phxclaw-postgres-bootstrap",
  "phxclaw-secret-broker",
+ "phxclaw-test-support",
  "serde_json",
  "tokio",
 ]
@@ -3993,9 +3995,11 @@ dependencies = [
  "phxclaw-skill-runtime",
  "phxclaw-system-automation",
  "phxclaw-task-graph",
+ "phxclaw-test-support",
  "phxclaw-types",
  "phxclaw-ui-ir",
  "phxclaw-web-search",
+ "phxclaw-workspace",
  "postgres",
  "quick-xml 0.42.0",
  "regex",
@@ -4227,6 +4231,7 @@ version = "0.70.0"
 dependencies = [
  "base64 0.22.1",
  "futures-util",
+ "phxclaw-test-support",
  "serde",
  "serde_json",
  "thiserror 2.0.21",
@@ -4348,6 +4353,7 @@ dependencies = [
 name = "phxclaw-config-runtime"
 version = "0.40.0"
 dependencies = [
+ "phxclaw-types",
  "serde",
  "serde_json",
  "sha2 0.10.9",
@@ -4385,6 +4391,7 @@ dependencies = [
  "phxclaw-terminal",
  "phxclaw-types",
  "phxclaw-webview-control",
+ "phxclaw-workspace",
  "serde",
  "serde_json",
  "tauri",
@@ -4416,6 +4423,7 @@ dependencies = [
  "phxclaw-device-nodes",
  "phxclaw-device-transport",
  "phxclaw-key-provider",
+ "phxclaw-test-support",
  "serde_json",
  "tokio",
  "uuid",
@@ -4448,6 +4456,7 @@ dependencies = [
  "getrandom 0.3.4",
  "phxclaw-device-nodes",
  "phxclaw-key-provider",
+ "phxclaw-test-support",
  "rustls",
  "rustls-pki-types",
  "serde",
@@ -4936,6 +4945,7 @@ dependencies = [
 name = "phxclaw-office"
 version = "0.70.0"
 dependencies = [
+ "phxclaw-test-support",
  "serde",
  "serde_json",
  "thiserror 2.0.21",
@@ -5386,6 +5396,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "phxclaw-snippet-ls"
+version = "0.70.0"
+dependencies = [
+ "serde_json",
+]
+
+[[package]]
 name = "phxclaw-software-factory"
 version = "0.40.0"
 dependencies = [
@@ -5473,6 +5490,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "phxclaw-test-support"
+version = "0.70.0"
+dependencies = [
+ "serde_json",
+]
+
+[[package]]
 name = "phxclaw-types"
 version = "0.70.0"
 dependencies = [
@@ -5487,6 +5511,7 @@ name = "phxclaw-ui-ir"
 version = "0.70.0"
 dependencies = [
  "phxclaw-browser",
+ "phxclaw-test-support",
  "serde",
  "serde_json",
  "thiserror 2.0.21",
@@ -5516,6 +5541,13 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.21",
  "uuid",
+]
+
+[[package]]
+name = "phxclaw-workspace"
+version = "0.70.0"
+dependencies = [
+ "serde_json",
 ]
 
 [[package]]

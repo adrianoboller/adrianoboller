@@ -2,13 +2,12 @@
 //! da maquina num repositorio temporario e o binario oficial do gitleaks, conferido por
 //! SHA-256. As credenciais daqui tem o FORMATO real e valor inventado.
 //!
-//! Sem bwrap ou sem o binario, o teste PULA pelo `comum/pulado.rs`: sai `ok`, mas o pulo
+//! Sem bwrap ou sem o binario, o teste PULA pelo `phxclaw_test_support::pulado`: sai `ok`, mas o pulo
 //! vai para `target/tmp/pulados.jsonl`, que o portao conta (e na maquina do integrador,
 //! que tem os dois, pulo e NoGo). Antes ele so dizia PULADO num `eprintln!` que o libtest
 //! captura, e o placar contava o teste como verde.
 
-#[path = "comum/pulado.rs"]
-mod pulado;
+use phxclaw_test_support::pulado;
 
 use phxclaw_agent::git::GitTool;
 use phxclaw_agent::segredos::Varredura;

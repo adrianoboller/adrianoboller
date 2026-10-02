@@ -6,6 +6,7 @@
 use phxclaw_agent::sistema::*;
 use phxclaw_agent::*;
 use phxclaw_agent_core::{Tool, ToolContext, ToolError};
+use phxclaw_test_support::pulado;
 use serde_json::{Value, json};
 use std::os::unix::process::ExitStatusExt;
 use std::sync::Arc;
@@ -63,7 +64,10 @@ async fn sistema_le_painel_processos_e_unidade_validada() {
 #[tokio::test]
 async fn sem_systemd_a_acao_diz_isso_em_vez_de_erro_cru() {
     if systemd_rodando() {
-        eprintln!("systemd rodando aqui: caso do conteiner pulado");
+        pulado::pular(
+            "sem-systemd",
+            "systemd rodando aqui: o caso do conteiner nao se prova",
+        );
         return;
     }
     let s = roda(&LinuxSystemTool::leitura(), json!({"action":"services"}))
@@ -272,7 +276,9 @@ fn pg_url() -> Option<String> {
 #[tokio::test]
 async fn postgres_leitura_recusa_escrita_pelo_banco() {
     let Some(url) = pg_url() else {
-        eprintln!("PostgreSQL em /tmp:55432 parado: pulado");
+        // O recurso e o SERVIDOR, nao o `psql`: a maquina com o binario e sem o servidor nao
+        // TEM o que o teste precisa (o portao conferia o binario e dava NoGo errado).
+        pulado::pular("postgres:/tmp:55432", "PostgreSQL em /tmp:55432 parado");
         return;
     };
     let ler = PostgresTool::new(false, url.clone());
@@ -442,7 +448,7 @@ fn rust_tool() -> Option<RustProjectTool> {
 #[tokio::test]
 async fn cargo_check_devolve_o_erro_de_tipo_na_linha_certa() {
     let Some(t) = rust_tool() else {
-        eprintln!("bwrap ou toolchain ausente: pulado");
+        pulado::pular("cargo", "bwrap ou toolchain ausente");
         return;
     };
     assert_eq!(t.capability(), "shell.exec");
@@ -495,7 +501,7 @@ async fn cargo_check_devolve_o_erro_de_tipo_na_linha_certa() {
 #[tokio::test]
 async fn cargo_recusa_caminho_fora_e_com_shell() {
     let Some(t) = rust_tool() else {
-        eprintln!("bwrap ou toolchain ausente: pulado");
+        pulado::pular("cargo", "bwrap ou toolchain ausente");
         return;
     };
     for (path, esperado) in [

@@ -27,7 +27,7 @@ abaixo aparece em exatamente uma sprint.
 | SP000010 | 5 | Credencial e CI | 4 | CONCLUÍDA (f27402e5) |
 | SP000011 | 5 | Medição | 4 | CONCLUÍDA (f27402e5) |
 | SP000012 | 5 | Integração da onda 5 e commit | — | CONCLUÍDA (f27402e5) |
-| SP000013 | — | Endurecimento (achados ⏸ das revisões) | — | PLANEJADA |
+| SP000013 | — | Endurecimento (achados ⏸ das revisões) | — | EM EXECUÇÃO (A/B/C entregues em 02/10; faltam as guardas do QA 1–4) |
 | SP000014 | — | Prova real com credenciais | — | BLOQUEADA (dono) |
 | SP000015 | — | Ciclo de auto-evolução | — | BLOQUEADA (dono) |
 | SP000016 | — | Entrega v0.71 | — | PLANEJADA |
@@ -45,6 +45,8 @@ abaixo aparece em exatamente uma sprint.
 | SP000028 | 7 | Portão que valida e confere o fim: validador de esquema com caminho e todos os erros, 2 tentativas por ferramenta, final_answer tipado, comando de verificação, fim com falha sem resolver recusado | — | CONCLUÍDA (onda 7) |
 | SP000029 | 7 | Retomar e bifurcar pela gravação: `retomar --do-passo N`, passo humano no fluxo, pergunta pendente que sobrevive a reinício | — | PLANEJADA |
 | SP000030 | 7 | Medir melhor: nota parcial (LCS, conjunto) no avaliar, duração/tokens/passo-pai por passo, SHA do prompt, memória com invalid_at | — | PLANEJADA |
+| SP000031 | 9 | VS Code de 53,8% a ≥ 90% (dono, 02/10): os 21 itens «não»/«pela metade» da fonte vscode, em ondas (git e projeto; editor e LSP; UI e remoto); os de produto sobem ao dono | 24 | EM EXECUÇÃO (onda 1 entregue: 75,0%; onda 2 a seguir) |
+| SP000032 | 9 | Fechar em 100% (dono, 02/10): RSA para Teams/Google Chat, pacotes de plugin completos, XMPP MUC, Nostr DM, VS Code onda 2, minimapa/dobra, SSH local, Live Share; iMessage, voz ao vivo, RAPL e nuvem dependem de recurso do dono | 32 | PLANEJADA |
 | UI-R01 | 8 | Phx Responsive UI — contratos e layout: intenção responsiva no UI-IR (janela e contêiner), breakpoints num JSON único, motor que compila para Grid/Flexbox/container queries, sem perder estado ao redimensionar | — | CONCLUÍDA (onda 7) |
 | UI-R02 | 8 | Adaptador Bootstrap substituível: componentes semânticos → Bootstrap 5.3, tokens do PhxClaw nas variáveis do Bootstrap, arquivo local com versão fixada, sem o JS do Bootstrap mexer no DOM controlado | — | CONCLUÍDA (onda 7) |
 | UI-R03 | 8 | Studio e templates: editor visual, prévia por largura, inspetor que explica a regra aplicada, template com UUIDv7 e propagação versionada sem apagar sobrescritas | — | PLANEJADA |
@@ -357,14 +359,65 @@ Nenhuma guarda de guardas.rs tem prova de que falha com o defeito reposto.
 12 mutantes: 10 sobreviviam à suíte comitada, 1 morria, 1 era defeito real. Os testes novos caem
 com cada mutante e passam sem ele.
 
-- ☐ **Defeito ativo:** `config::iniciar` não é chamado em produção. Depois de um PUT, a leitura volta
+- ☑ (032c24e1) **Defeito ativo:** `config::iniciar` não é chamado em produção. Depois de um PUT, a leitura volta
   à `pasta_padrao()`, e com `--pasta X` o `git.segredos.exigir` gravado não vale. O teste está com
   `#[ignore]` em `tests/config.rs`. Mandado à frente da onda 7.
-- ☐ **PULADO conta como verde:** sem o gitleaks, a suíte dá `ok` igual. Já existe
+- ☐ (parcial: 4 de 50 registram, 032c24e1) **PULADO conta como verde:** sem o gitleaks, a suíte dá `ok` igual. Já existe
   `tests/comum/pulado.rs`, que grava `target/tmp/pulados.jsonl`. Falta o portão ler o registro (pulo
   é NoGo na máquina que tem o recurso), migrar os outros 21 PULADO em 7 arquivos e dar registro a 3
   `return` mudos do `contexto_dados.rs`.
-- ☐ **M10 da ui-ir:** `grupo_rand` fixo em 1.0 sobrevive. Teste proposto e mandado à frente
+- ☑ (032c24e1) **M10 da ui-ir:** `grupo_rand` fixo em 1.0 sobrevive. Teste proposto e mandado à frente
   responsiva.
 - ☐ **Pulo que volta calado:** teste que faz `return` sem imprimir nada não aparece nem nos 46 lugares
   nem no registro. O grep do integrador de 01/10 não achou nenhum, mas o limite é da busca.
+
+## SP000031 — VS Code até ≥ 90% (ordem do dono, 02/10/2026: «completar os itens abaixo de 80%»; alvo fixado por ele em 90%)
+
+Medido em 01/10: 53,8% no agente (28 sim, 10 pela metade, 14 não, de 52). Cada id vale 1,92 pp.
+
+**Onda 1 (código, sem choque com a SP000013):** stage_por_trecho, merge_conflitos, substituir_projeto,
+tarefas_build, timeline_arquivo (frente V1, git/projeto); snippets, emmet, depurador, console_depuracao,
+workspace_multi_raiz, explorador_testes (frente V2, editor/LSP/DAP).
+**Onda 2 (depois do Go da SP000013, porque tocam config-runtime e a UI):** perfis, settings_sync,
+ide_web, acessibilidade, breadcrumbs, tunel_remoto, plugins, marketplace_extensoes, sugestao_inline_ia.
+**Sobem ao dono (produto):** minimapa e dobra_codigo (o Helix 25.07.1 não tem; exigem patch no Helix ou
+outro editor), remoto_ssh_containers (SSH/contêiner/WSL na máquina do dono), live_share (edição
+colaborativa em tempo real).
+
+**Conta:** 28 + 21 = 49 de 52 → 94,2% se todos virarem «agente»; o alvo de 90% (47 ids) tolera 2 ficarem pela metade. Os 3 de produto ficam «não» e fora do alvo.
+
+**Aceite:** cada id muda de estado no `phxclaw.json` com evidência de código e teste RED→GREEN; o
+gerador imprime a nova porcentagem; nada digitado.
+- ☐ **Guarda que passa por engano (integrador, 02/10):** `tests/desktop/qualificacao/qualificar.mjs` deu
+  rc 0 e «12/12 QUALIFICADA» com o Chromium caído (ERR_INSUFFICIENT_RESOURCES, 41 sondas «quebradas»,
+  «sondas 30/71 ok»). Sonda que não rodou tem de reprovar o veredito. Fica com o QA.
+## SP000032 — Fechar em 100% (ordem do dono, 02/10/2026: «Continue para fechar em 100%»)
+
+Medido em 02/10 depois da onda 1 da SP000031: total 88,1% no agente (238 sim, 17 pela metade, 15 não,
+de 270). O que falta, por fonte, sai de `phxclaw.json` (estado ≠ agente):
+
+**Código, sem recurso de fora (frentes):**
+- **R1 criptografia RSA** — conferir o JWT RS256 do Bot Framework (Teams) e do Google Chat: RSA
+  PKCS#1 v1.5 + SHA-256 escritos aqui (zero crate), provados contra vetor oficial (RFC 8017 / NIST
+  CAVP), chave pública lida do JWKS; fecha `canal_teams` e `canal_googlechat` (3 fontes cada).
+- **R2 pacotes de plugin completos** — `.claude-plugin`/`.codex-plugin` com comandos, skills, hooks e
+  agentes, não só os servidores MCP; assinados, no bwrap; fecha `plugins` em 4 fontes.
+- **R3 canais** — `canal_xmpp` sala multiusuário (XEP-0045); `canal_nostr` mensagem direta cifrada
+  (NIP-17 sobre NIP-44, com o secp256k1 do bip340.rs e ChaCha20 escrito aqui, vetores do NIP-44).
+- **R4 VS Code onda 2** — perfis, settings_sync, ide_web, acessibilidade, breadcrumbs, tunel_remoto,
+  plugins (junto com R2), marketplace_extensoes, sugestao_inline_ia.
+- **R5 editor** — minimapa e dobra_codigo: patch próprio no Helix (arquivo `.patch` aplicado pelo
+  `tools/instalar_helix.sh`, com teste de que aplica limpo no commit fixado), ou painel do IDE;
+  o pesquisador decide com número. `remoto_ssh_containers` provado contra um sshd local.
+- **R6 live_share** — edição colaborativa pela ponte: sessão compartilhada do terminal do IDE
+  (um host, N convidados, cursor e edição do host visíveis). Edição simultânea (CRDT) fica declarada
+  como limite se não couber.
+
+**Precisam de recurso do dono (ficam «NÃO MEDIDO» até o recurso existir, e saem da conta só com ele):**
+- `canal_imessage` (3 fontes): exige um Mac com Messages; o código do canal se escreve, a prova não.
+- `voz_wake` (2 fontes): microfone ao vivo e modelo de palavra-chave em português.
+- `telemetria_energia`: máquina com RAPL (`/sys/class/powercap`), que esta não tem.
+- `ambientes_nuvem`: VM na nuvem é decisão de produto e custo.
+
+**Aceite:** cada id muda de estado no `phxclaw.json` com evidência e teste RED→GREEN; o gerador
+imprime 100% por fonte. Nada digitado.

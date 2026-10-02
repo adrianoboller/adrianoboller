@@ -89,9 +89,9 @@ impl Agenda {
         if let Some(p) = self.path.parent() {
             std::fs::create_dir_all(p)?;
         }
-        let tmp = self.path.with_extension("tmp");
-        std::fs::write(&tmp, serde_json::to_vec_pretty(&self.items)?)?;
-        std::fs::rename(tmp, &self.path)
+        // A troca atomica da base: o temporario de nome fixo que havia aqui fazia dois
+        // processos (CLI e servidor) escreverem no mesmo `.tmp`.
+        phxclaw_types::arquivo::gravar_atomico(&self.path, &serde_json::to_vec_pretty(&self.items)?)
     }
 }
 

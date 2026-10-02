@@ -1,0 +1,13 @@
+[package]
+name = "phxclaw-snippet-ls"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Servidor de linguagem minimo: snippets do usuario e Emmet para o Helix do IDE"
+
+[dependencies]
+serde_json.workspace = true
+
+[[bin]]
+name = "phxclaw-snippet-ls"
+path = "src/main.rs"

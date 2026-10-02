@@ -28,7 +28,8 @@ use std::time::Duration;
 pub const SERVICO: Servico = Servico {
     espaco: "gemini",
     nome_do_segredo: "gemini-chave",
-    variaveis: &["PHXCLAW_GEMINI_API_KEY", "GEMINI_API_KEY"],
+    chave: "gemini.chave",
+    aliases: &["GEMINI_API_KEY"],
     rotulo: "a chave da Gemini API",
     comando: "gemini chave",
 };

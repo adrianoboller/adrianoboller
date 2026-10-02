@@ -26,6 +26,7 @@ url.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
+phxclaw-test-support = { path = "../phxclaw-test-support" }
 base64.workspace = true
 
 [lints.rust]

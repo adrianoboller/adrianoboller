@@ -10,6 +10,12 @@ python3 tools/dossie/gerar_dossie.py                 # regrava o dossiê da past
 python3 tools/dossie/gerar_dossie.py --suite ARQ     # com o placar de uma saída guardada do cargo test
 ```
 
+O `ARQ` da suíte sai de `tools/suite.sh` (`-p crate` para rodar só alguns, `-o ARQ` para o
+destino; padrão `target/suite.txt`): ele apaga o registro de pulos, roda o `cargo test
+--no-fail-fast`, anexa o bloco `=== PULADOS (target/tmp/pulados.jsonl)` e imprime «N passam,
+P pulados, F falham». Sai 1 se algum teste falhou e 2 se houve pulo de recurso que a máquina
+tem. Sem o bloco, o dossiê publica os pulos como NÃO MEDIDOS.
+
 O `dossie-phxclaw-*.html` **não se edita**: a página inteira sai do gerador. **Só existe um por
 vez**. O `tools/dossie/dossie_da_pasta.py` acha o dossiê por varredura: zero arquivos para a corrida,
 dois também. Para trocar de versão, apague o velho e rode com `--novo`, que dá o nome pela versão do

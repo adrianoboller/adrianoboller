@@ -295,6 +295,27 @@
       "nome": "python_project"
     },
     {
+      "capacidade": "shell.exec",
+      "concedida": true,
+      "descricao": "List the tests of a project in the task directory as a tree (Rust: crate/module/test from `cargo test -- --list`; Python: file/test from `pytest --collect-only`). path is the project directory (default '.'); language is guessed from Cargo.toml / pyproject.toml. Nodes are what test_run accepts.",
+      "grupo": "shell",
+      "nome": "test_list"
+    },
+    {
+      "capacidade": "shell.exec",
+      "concedida": true,
+      "descricao": "Run ONE node of the test tree (see test_list): Rust `CRATE`, `CRATE/module` or `CRATE/module::test`; Python a pytest node id (`tests/test_x.py` or `tests/test_x.py::test_name`). Same sandbox and same cargo/pytest as rust_project and python_project. Returns passed/failed counts and the result lines.",
+      "grupo": "shell",
+      "nome": "test_run"
+    },
+    {
+      "capacidade": "shell.exec",
+      "concedida": true,
+      "descricao": "Debug a program of the task directory with a real debugger (DAP) inside the sandbox. Adapters on this host: rust; missing: python: debugpy ausente em /opt/phxclaw-python/lib/python3.14/site-packages (uv pip install debugpy no hospedeiro). action=start (program, optional args, language, breakpoints=[{file,line}]; runs until the first breakpoint or the end), breakpoint (file, line: adds one and reports whether it was verified), continue (runs to the next stop), stack (frames of the stopped thread), variables (locals of a frame; frame=0 is the top), evaluate (expression in the frame -- the debug console; console=true sends it to the adapter's own command line instead), stop. Returns JSON with the state (stopped reason, program output).",
+      "grupo": "shell",
+      "nome": "debug"
+    },
+    {
       "capacidade": "calc",
       "concedida": true,
       "descricao": "Evaluate an arithmetic expression exactly as written: + - * / % ^ (or **), parentheses, pi, e, and sqrt abs ln log log2 exp sin cos tan asin acos atan floor ceil round trunc min max pow. Use it instead of doing arithmetic in your head.",
@@ -358,6 +379,27 @@
       "nome": "grep"
     },
     {
+      "capacidade": "fs.write",
+      "concedida": true,
+      "descricao": "Replace a pattern in every matching file of the task directory (skips .gitignore'd and binary files). pattern is literal unless regex=true (then replacement may use $1 groups). Optional glob ('*.rs'), path (subfolder), case_insensitive. confirm=false (default) only previews: files and count per file, nothing is written. confirm=true writes; a checkpoint is taken before.",
+      "grupo": "fs",
+      "nome": "replace_in_project"
+    },
+    {
+      "capacidade": "fs.read",
+      "concedida": true,
+      "descricao": "Local save history of a file in the task directory (every save seen by the IDE poller, newest last). action=list {path} gives the versions (rowstamp, bytes); action=show {path, version} returns that version's text. Restore is file_history_restore.",
+      "grupo": "fs",
+      "nome": "file_history"
+    },
+    {
+      "capacidade": "fs.write",
+      "concedida": true,
+      "descricao": "Restore a file of the task directory to a saved version from its local save history (.phxclaw/historico). {path, version} where version is a rowstamp from file_history list. The current content is saved to the history first, so it can be undone.",
+      "grupo": "fs",
+      "nome": "file_history_restore"
+    },
+    {
       "capacidade": "fs.read",
       "concedida": true,
       "descricao": "Read a Jupyter notebook (.ipynb) of the task directory as cells: index, id, type, source and a summary of the outputs (text, errors, image types).",
@@ -402,9 +444,16 @@
     {
       "capacidade": "git.write",
       "concedida": true,
-      "descricao": "Change a git repository in the task directory (sandboxed, no network). action: init {branch?}; add {paths}; commit {message, all?}; checkout {branch, create?, base?}; branch_create {branch, base?}; branch_delete {branch, force?}; stash {op: push|pop|apply|drop|list, message?, include_untracked?, index?}. 'path' selects the repo folder (default: task root).",
+      "descricao": "Change a git repository in the task directory (sandboxed, no network). action: init {branch?}; add {paths}; add_trecho {file, hunk (index or list from git diff) | start_line, end_line} stages only that part of the file; commit {message, all?}; checkout {branch, create?, base?}; branch_create {branch, base?}; branch_delete {branch, force?}; stash {op: push|pop|apply|drop|list, message?, include_untracked?, index?}; merge {branch} (never rebase/force); conflitos (lists <<<<<<< blocks with both sides); resolver {file, block, choice: nosso|deles|texto, text?}; abort. 'path' selects the repo folder (default: task root).",
       "grupo": "git",
       "nome": "git_write"
+    },
+    {
+      "capacidade": "shell.exec",
+      "concedida": true,
+      "descricao": "Tasks the project declares in .phxclaw/tarefas.json ([{nome, comando, args?, cwd?, grupo: build|test|run}]). action=list shows them; action=run {name} runs one in the task sandbox (no network) and returns exit code, stdout and stderr. Without the file, use rust_project / python_project. 'path' selects the project folder (default: task root).",
+      "grupo": "shell",
+      "nome": "project_task"
     },
     {
       "capacidade": "git.write",
@@ -458,6 +507,6 @@
   ],
   "gerado_por": "phxclaw ferramentas",
   "observacao": "montadas nesta maquina: shell exige bwrap, navegador exige Chromium, e-mail e banco exigem configuracao",
-  "total": 65,
+  "total": 72,
   "versao": "0.70.0"
 }

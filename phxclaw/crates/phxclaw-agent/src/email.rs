@@ -10,7 +10,10 @@ use lettre::message::{Attachment, Mailbox, MultiPart, SinglePart, header::Conten
 use lettre::transport::smtp::authentication::Credentials;
 use lettre::{AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor};
 use phxclaw_agent_core::{BoxFut, Tool, ToolContext, ToolError, ToolOutput, ToolSpec};
+use phxclaw_secret_broker::{SecretBroker, SecretValue};
 use serde_json::{Value, json};
+use std::path::Path;
+use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct SmtpConfig {
@@ -77,6 +80,18 @@ impl SmtpConfig {
         })
     }
 
+    /// `from_env` e, sem `PHXCLAW_SMTP_PASSWORD` no ambiente, a senha guardada por
+    /// `phxclaw email chave` -- o MESMO segredo (`email-smtp_senha`, broker do canal) que o
+    /// canal de e-mail le pelo `segredo_de`. A ferramenta `send_email` da montagem passa
+    /// por aqui; antes so olhava o ambiente, e a ajuda nao dizia.
+    pub fn da_pasta(raiz_do_agente: &Path) -> Option<Self> {
+        let mut c = Self::from_env()?;
+        if c.password.is_none() {
+            c.password = senha_smtp_guardada(raiz_do_agente).ok().flatten();
+        }
+        Some(c)
+    }
+
     fn permitido(&self, to: &str) -> bool {
         let to = to.trim().to_ascii_lowercase();
         self.allowed_recipients.iter().any(|p| {
@@ -86,6 +101,51 @@ impl SmtpConfig {
                 *p == to
             }
         })
+    }
+}
+
+/// O nome e o canal do segredo da senha do SMTP, os mesmos do `ligar.rs` (`SMTP_SENHA` do
+/// canal `email`): uma grafia so, para o comando e o canal nunca gravarem dois segredos.
+const SEGREDO_SMTP: (&str, &str) = ("email-smtp_senha", "email");
+
+fn broker_dos_canais(
+    raiz_do_agente: &Path,
+    criar: bool,
+) -> Result<Option<Arc<SecretBroker>>, String> {
+    let pasta = raiz_do_agente.join("canal");
+    if !criar && !pasta.join("segredos/master.key").exists() {
+        return Ok(None);
+    }
+    crate::canais::broker_em(&pasta).map(Some)
+}
+
+/// `phxclaw email chave`: `PHXCLAW_SMTP_PASSWORD` do ambiente do comando vai para o broker
+/// do canal, com o nome que o canal de e-mail ja le.
+pub fn guardar_senha_smtp(raiz_do_agente: &Path) -> Result<uuid::Uuid, String> {
+    let variavel = crate::config::catalogo_do_config::por_chave("email.smtp.senha")
+        .map(|c| c.variavel.clone())
+        .ok_or("email.smtp.senha fora do catalogo")?;
+    let senha = std::env::var(&variavel)
+        .ok()
+        .filter(|s| !s.trim().is_empty())
+        .ok_or_else(|| format!("defina {variavel} com a senha do SMTP"))?;
+    let broker = broker_dos_canais(raiz_do_agente, true)?.ok_or("sem broker")?;
+    crate::canais::guardar_do_canal(
+        &broker,
+        SEGREDO_SMTP.0,
+        SEGREDO_SMTP.1,
+        SecretValue::new(senha.trim().to_string()),
+    )
+}
+
+fn senha_smtp_guardada(raiz_do_agente: &Path) -> Result<Option<String>, String> {
+    let Some(broker) = broker_dos_canais(raiz_do_agente, false)? else {
+        return Ok(None);
+    };
+    match crate::canais::segredo_guardado(&broker, SEGREDO_SMTP.0, "canais")? {
+        None => Ok(None),
+        Some(d) => crate::canais::http::Credencial::nova(broker, d.uuid, SEGREDO_SMTP.1)
+            .com("send", |s| Ok(Some(s.to_string()))),
     }
 }
 

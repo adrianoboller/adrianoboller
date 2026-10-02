@@ -31,8 +31,11 @@ from pathlib import Path
 # Leituras soltas medidas em 01/10/2026, no inicio da fase 1 da centralizacao: 135 pontos.
 # So desce: cada leva da fase 2 que migra leitores para `config::valor` baixa este numero
 # no mesmo passo, ate 0. 134: o `pasta()` da CLI passou a usar `config::pasta_padrao`
-# (SP000028, conserto da pasta fixada).
-TETO = 134
+# (SP000028, conserto da pasta fixada). 127: as variaveis dos `Servico` (chaves.rs) passaram
+# a sair do catalogo (`por_chave`) em vez de uma segunda lista, e os leitores de
+# PHXCLAW_API_TOKEN, PHXCLAW_PONTE_TOKEN, PHXCLAW_ENROLLMENT_TOKEN e PHXCLAW_IMAGEM_CHAVE
+# leem pelo `Servico` (SP000013, frente C).
+TETO = 127
 
 NOME = re.compile(r"\bPHXCLAW_[A-Z0-9_]*[A-Z0-9]\b")
 LITERAL = re.compile(r'"(PHXCLAW_[A-Z0-9_]*[A-Z0-9])"')

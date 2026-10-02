@@ -10,6 +10,12 @@
 //! O tipo se confere pelos BYTES, nunca pelo que o cliente declara nem pela extensao: um
 //! arquivo qualquer chamado `.png` iria ao provedor como imagem e voltaria como erro opaco
 //! dele, ou pior, seria aceito como outra coisa.
+//!
+//! E as DIMENSOES tambem se leem do cabecalho antes de qualquer decodificacao (B4): o teto
+//! de bytes nao protege de um PNG de 5 MB que declara 100.000 x 100.000 pixels -- quem o
+//! decodificar (o OCR local, o provedor) aloca 40 GB. O teto de pixels e
+//! `imagem.entrada_pixels_max` (`PHXCLAW_IMAGEM_ENTRADA_PIXELS_MAX`) do catalogo, e a
+//! recusa diz o tamanho declarado.
 
 use base64::Engine as _;
 use phxclaw_agent_core::ImagemAnexa;
@@ -22,6 +28,38 @@ pub const IMAGENS_MAX: usize = 4;
 pub const BYTES_MAX: usize = 5 * 1024 * 1024;
 /// Pasta das imagens dentro de `work/`: o modelo pode le-las tambem pelas ferramentas.
 pub const PASTA: &str = "entrada";
+/// A chave do catalogo com o teto de pixels (largura x altura) de uma imagem de entrada.
+pub const CHAVE_PIXELS_MAX: &str = "imagem.entrada_pixels_max";
+
+/// Largura e altura declaradas no cabecalho, sem decodificar nada.
+pub fn dimensoes(b: &[u8]) -> Result<(u32, u32), String> {
+    match tipo_pelos_bytes(b) {
+        Some("image/png") => crate::visao::info_png(b).map(|(w, h, _)| (w, h)),
+        Some("image/jpeg") => crate::visao::info_jpeg(b).map(|(w, h, _)| (w, h)),
+        Some("image/gif") => crate::visao::info_gif(b),
+        Some("image/webp") => crate::visao::info_webp(b),
+        _ => Err("nao e png, jpeg, gif nem webp (conferido pelos bytes)".into()),
+    }
+}
+
+/// O teto de pixels do catalogo (o padrao vem de la; o operador muda no config.json).
+pub fn teto_de_pixels() -> Result<u64, String> {
+    crate::config::valor(CHAVE_PIXELS_MAX)?
+        .and_then(|v| v.as_u64())
+        .ok_or_else(|| format!("{CHAVE_PIXELS_MAX} sem valor inteiro no catalogo"))
+}
+
+/// Recusa a imagem cujo cabecalho declara mais de `teto` pixels, dizendo o tamanho.
+pub fn conferir_pixels(b: &[u8], teto: u64) -> Result<(u32, u32), String> {
+    let (w, h) = dimensoes(b)?;
+    let pixels = u64::from(w) * u64::from(h);
+    if pixels > teto {
+        return Err(format!(
+            "imagem declara {w}x{h} = {pixels} pixels; o teto e {teto} ({CHAVE_PIXELS_MAX})"
+        ));
+    }
+    Ok((w, h))
+}
 
 /// `image/png`, `image/jpeg`, `image/gif` ou `image/webp`, pelos primeiros bytes.
 pub fn tipo_pelos_bytes(b: &[u8]) -> Option<&'static str> {
@@ -48,8 +86,13 @@ fn extensao(tipo: &str) -> &'static str {
 }
 
 /// Confere a lista inteira ANTES de qualquer disco: pedido com uma imagem ruim nao cria
-/// tarefa pela metade.
+/// tarefa pela metade. O teto de pixels vem do catalogo.
 pub fn validar(imagens: &[Vec<u8>]) -> Result<(), String> {
+    validar_com(imagens, teto_de_pixels()?)
+}
+
+/// `validar` com o teto de pixels dado (os testes medem o teto sem config.json).
+pub fn validar_com(imagens: &[Vec<u8>], teto_pixels: u64) -> Result<(), String> {
     if imagens.len() > IMAGENS_MAX {
         return Err(format!(
             "{} imagens; o teto e {IMAGENS_MAX} por tarefa",
@@ -70,6 +113,7 @@ pub fn validar(imagens: &[Vec<u8>]) -> Result<(), String> {
                 i + 1
             ));
         }
+        conferir_pixels(b, teto_pixels).map_err(|e| format!("imagem {}: {e}", i + 1))?;
     }
     Ok(())
 }
@@ -139,9 +183,58 @@ mod tests {
             Some("image/webp")
         );
         assert_eq!(tipo_pelos_bytes(b"%PDF-1.7"), None);
-        assert!(validar(&[b"<svg/>".to_vec()]).is_err());
-        assert!(validar(&vec![b"GIF89a".to_vec(); IMAGENS_MAX + 1]).is_err());
+        assert!(validar_com(&[b"<svg/>".to_vec()], u64::MAX).is_err());
+        assert!(validar_com(&vec![b"GIF89a".to_vec(); IMAGENS_MAX + 1], u64::MAX).is_err());
         assert_eq!(de_base64("data:image/png;base64,QUJD").unwrap(), b"ABC");
         assert!(de_base64("data:image/png,QUJD").is_err());
+    }
+
+    fn png(w: u32, h: u32) -> Vec<u8> {
+        let mut p = vec![0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 13];
+        p.extend_from_slice(b"IHDR");
+        p.extend_from_slice(&w.to_be_bytes());
+        p.extend_from_slice(&h.to_be_bytes());
+        p.extend_from_slice(&[8, 6, 0, 0, 0]);
+        p
+    }
+
+    /// RED medido com o defeito reposto (`validar` so olhava bytes e tipo): a bomba de
+    /// 100.000 x 100.000 em 29 bytes passava, e nos quatro formatos.
+    #[test]
+    fn imagem_acima_do_teto_de_pixels_e_recusada_pelo_cabecalho_com_o_tamanho() {
+        let teto = 40_000_000;
+        assert!(
+            validar_com(&[png(8000, 5000)], teto).is_ok(),
+            "no teto passa"
+        );
+        let e = validar_com(&[png(100_000, 100_000)], teto).unwrap_err();
+        assert!(
+            e.contains("100000x100000 = 10000000000 pixels") && e.contains("40000000"),
+            "{e}"
+        );
+        // GIF: LSD little-endian. WebP VP8X: 24 bits menos um. WebP VP8L: 14 bits menos um.
+        let mut gif = b"GIF89a".to_vec();
+        gif.extend_from_slice(&65535u16.to_le_bytes());
+        gif.extend_from_slice(&65535u16.to_le_bytes());
+        assert_eq!(dimensoes(&gif).unwrap(), (65535, 65535));
+        assert!(validar_com(&[gif], teto).is_err());
+        let mut webp = b"RIFF\0\0\0\0WEBPVP8X\0\0\0\0\0\0\0\0".to_vec();
+        webp.extend_from_slice(&[0xff, 0xff, 0x0f, 0xff, 0xff, 0x0f]);
+        assert_eq!(dimensoes(&webp).unwrap(), (1 << 20, 1 << 20));
+        assert!(conferir_pixels(&webp, teto).is_err());
+        let mut vp8l = b"RIFF\0\0\0\0WEBPVP8L\0\0\0\0\x2f".to_vec();
+        // 14 bits de largura (299) e 14 de altura (199), cada um menos um.
+        let bits: u32 = 299 | (199 << 14);
+        vp8l.extend_from_slice(&bits.to_le_bytes());
+        vp8l.extend_from_slice(&[0; 8]);
+        assert_eq!(dimensoes(&vp8l).unwrap(), (300, 200));
+        // JPEG: o SOF0 declara 65535 x 65535.
+        let mut jpg = vec![0xFF, 0xD8, 0xFF, 0xC0, 0, 17, 8, 0xFF, 0xFF, 0xFF, 0xFF, 3];
+        jpg.extend_from_slice(&[0; 12]);
+        assert!(
+            validar_com(&[jpg], teto)
+                .unwrap_err()
+                .contains("65535x65535")
+        );
     }
 }

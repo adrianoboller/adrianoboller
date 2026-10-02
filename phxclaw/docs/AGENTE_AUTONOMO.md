@@ -29,7 +29,7 @@ sem SMTP não há `send_email`, sem token não há `github` — e por isso há d
 montou aqui e o que existe no código mas não montou.
 
 <!-- gerado:ferramentas:inicio -->
-Medido em 2026-10-01 por `python3 tools/gerar_doc_agente.py`, de `phxclaw ferramentas` (versao 0.70.0, binario de 2026-10-01 17:14), com `PHXCLAW_CAPACIDADES` no padrao. **65 ferramentas montadas nesta maquina**, 54 concedidas por padrao.
+Medido em 2026-10-02 por `python3 tools/gerar_doc_agente.py`, de `phxclaw ferramentas` (versao 0.70.0, binario de 2026-10-02 01:02), com `PHXCLAW_CAPACIDADES` no padrao. **72 ferramentas montadas nesta maquina**, 61 concedidas por padrao.
 
 | Capacidade | Padrao | Ferramentas |
 |---|---|---|
@@ -39,8 +39,8 @@ Medido em 2026-10-01 por `python3 tools/gerar_doc_agente.py`, de `phxclaw ferram
 | `code.review` | sim | `code_review` |
 | `desktop.control` | **nao** | `desktop` |
 | `doc.write` | sim | `design_erp_ui`, `screenshot_to_erp_ui`, `create_document`, `create_spreadsheet`, `create_presentation` |
-| `fs.read` | sim | `read_file`, `list_files`, `ocr`, `image`, `read_document`, `zip_list`, `data_file`, `pdf`, `glob`, `grep`, `notebook_read`, `checkpoint_list`, `lsp` |
-| `fs.write` | sim | `write_file`, `edit_file`, `image_render`, `zip`, `data_file_format`, `pdf_create`, `notebook_edit`, `checkpoint_restore` |
+| `fs.read` | sim | `read_file`, `list_files`, `ocr`, `image`, `read_document`, `zip_list`, `data_file`, `pdf`, `glob`, `grep`, `file_history`, `notebook_read`, `checkpoint_list`, `lsp` |
+| `fs.write` | sim | `write_file`, `edit_file`, `image_render`, `zip`, `data_file_format`, `pdf_create`, `replace_in_project`, `file_history_restore`, `notebook_edit`, `checkpoint_restore` |
 | `git.read` | sim | `git` |
 | `git.write` | sim | `git_write`, `git_worktree` |
 | `gonogo.write` | **nao** | `go_no_go` |
@@ -53,7 +53,7 @@ Medido em 2026-10-01 por `python3 tools/gerar_doc_agente.py`, de `phxclaw ferram
 | `net.diagnose` | **nao** | `network` |
 | `net.lan` | **nao** | `network_lan` |
 | `session.read` | sim | `session_search`, `daily_summary` |
-| `shell.exec` | sim | `shell`, `shell_bg`, `rust_project`, `python_repl`, `python_project` |
+| `shell.exec` | sim | `shell`, `shell_bg`, `rust_project`, `python_repl`, `python_project`, `test_list`, `test_run`, `debug`, `project_task` |
 | `site.publish` | sim | `canvas`, `publish_site` |
 | `skill.read` | sim | `skill_load` |
 | `system.admin` | **nao** | `linux_system_admin` |
@@ -111,6 +111,9 @@ Medido em 2026-10-01 por `python3 tools/gerar_doc_agente.py`, de `phxclaw ferram
 | `rust_project` | `shell.exec` | Run cargo on a Rust project inside the task directory (isolated sandbox, offline). action=check\|build\|test\|clippy\|fmt (fmt only checks unless fix=true); path is the project directory relative to the task directory (default '.'). Returns structured diagnostics: file, line, column, level, message, code. |
 | `python_repl` | `shell.exec` | Persistent Python interpreter for this task (isolated sandbox, offline, cwd /work = task directory). Variables, functions and imports survive between calls, like a notebook. Returns stdout, stderr, the repr of the last expression and the traceback if any. reset=true starts a fresh interpreter. |
 | `python_project` | `shell.exec` | Work on a Python project inside the task directory (isolated sandbox, offline). Creates/uses <path>/.venv with uv and installs the dependencies of requirements.txt / pyproject.toml from the local cache. action=setup\|test\|lint\|typecheck\|run: test=pytest, lint=ruff check (fix=true applies safe fixes), typecheck=mypy, run=execute `script` with `args`. path is the project directory relative to the task directory (default '.'); target narrows test/lint/typecheck to a file, directory or pytest node id. Returns structured diagnostics: file, line, column, level, message, code (for pytest the code is the failing test id). |
+| `test_list` | `shell.exec` | List the tests of a project in the task directory as a tree (Rust: crate/module/test from `cargo test -- --list`; Python: file/test from `pytest --collect-only`). path is the project directory (default '.'); language is guessed from Cargo.toml / pyproject.toml. Nodes are what test_run accepts. |
+| `test_run` | `shell.exec` | Run ONE node of the test tree (see test_list): Rust `CRATE`, `CRATE/module` or `CRATE/module::test`; Python a pytest node id (`tests/test_x.py` or `tests/test_x.py::test_name`). Same sandbox and same cargo/pytest as rust_project and python_project. Returns passed/failed counts and the result lines. |
+| `debug` | `shell.exec` | Debug a program of the task directory with a real debugger (DAP) inside the sandbox. Adapters on this host: rust; missing: python: debugpy ausente em /opt/phxclaw-python/lib/python3.14/site-packages (uv pip install debugpy no hospedeiro). action=start (program, optional args, language, breakpoints=[{file,line}]; runs until the first breakpoint or the end), breakpoint (file, line: adds one and reports whether it was verified), continue (runs to the next stop), stack (frames of the stopped thread), variables (locals of a frame; frame=0 is the top), evaluate (expression in the frame -- the debug console; console=true sends it to the adapter's own command line instead), stop. Returns JSON with the state (stopped reason, program output). |
 | `calculator` | `calc` | Evaluate an arithmetic expression exactly as written: + - * / % ^ (or **), parentheses, pi, e, and sqrt abs ln log log2 exp sin cos tan asin acos atan floor ceil round trunc min max pow. Use it instead of doing arithmetic in your head. |
 | `weather` | `weather.read` | Previsao do tempo para uma coordenada (MET Norway, CC BY 4.0): temperatura, vento, umidade, chuva e simbolo hora a hora. Cite a atribuicao que vem na resposta. |
 | `session_search` | `session.read` | Full-text search over previous tasks of this agent (objective, plan, answer and step summaries). Returns the best matches with id, date, status and a snippet. Use it to recall what was done or found before. |
@@ -120,15 +123,19 @@ Medido em 2026-10-01 por `python3 tools/gerar_doc_agente.py`, de `phxclaw ferram
 | `skill_load` | `skill.read` | Load the full instructions of a skill listed in the system prompt, by name. |
 | `glob` | `fs.read` | Find files by name pattern in the task directory, skipping what .gitignore ignores. pattern: '*.rs' (any folder), 'src/**/*.{ts,tsx}' (path). Newest first. Optional path (subfolder), limit, include_ignored. |
 | `grep` | `fs.read` | Search file contents with a regex in the task directory, skipping .gitignore'd and binary files. output_mode: content (default; file, line, text, with 'context' lines around), files (only names), count. Optional glob ('*.rs'), path, case_insensitive, limit. |
+| `replace_in_project` | `fs.write` | Replace a pattern in every matching file of the task directory (skips .gitignore'd and binary files). pattern is literal unless regex=true (then replacement may use $1 groups). Optional glob ('*.rs'), path (subfolder), case_insensitive. confirm=false (default) only previews: files and count per file, nothing is written. confirm=true writes; a checkpoint is taken before. |
+| `file_history` | `fs.read` | Local save history of a file in the task directory (every save seen by the IDE poller, newest last). action=list {path} gives the versions (rowstamp, bytes); action=show {path, version} returns that version's text. Restore is file_history_restore. |
+| `file_history_restore` | `fs.write` | Restore a file of the task directory to a saved version from its local save history (.phxclaw/historico). {path, version} where version is a rowstamp from file_history list. The current content is saved to the history first, so it can be undone. |
 | `notebook_read` | `fs.read` | Read a Jupyter notebook (.ipynb) of the task directory as cells: index, id, type, source and a summary of the outputs (text, errors, image types). |
 | `notebook_edit` | `fs.write` | Edit a Jupyter notebook (.ipynb) by cell. action=replace {index or cell_id, source, cell_type?} (code cells lose stale outputs); insert {index (position, = cell count appends), source, cell_type: code\|markdown\|raw}; delete {index or cell_id}. |
 | `checkpoint_list` | `fs.read` | List the restore points of the task working directory (taken before each file write), newest last, with what changed since each one. |
 | `checkpoint_restore` | `fs.write` | Restore the task working directory to a checkpoint (one is taken automatically before every file write). Give 'id' from checkpoint_list. Files created after the checkpoint are kept unless remove_new=true. The restore itself is checkpointed, so it can be undone. |
 | `code_review` | `code.review` | Review a code diff and return structured findings (file, line, severity critica\|alta\|media\|baixa\|info, finding, suggestion). Either 'diff' (unified diff text, e.g. from github/gitlab pr_diff) or a git repo in the task directory: path?, rev? (e.g. main..HEAD), cached?. Findings outside the diff are discarded and counted. Optional focus. |
 | `git` | `git.read` | Read a git repository in the task directory, structured JSON. action: status; diff {rev?, cached?, paths?} (files and hunks); log {rev?, limit?, paths?}; show {rev}; blame {file, start_line?, end_line?, rev?}; branches. 'path' selects the repo folder (default: task root). |
-| `git_write` | `git.write` | Change a git repository in the task directory (sandboxed, no network). action: init {branch?}; add {paths}; commit {message, all?}; checkout {branch, create?, base?}; branch_create {branch, base?}; branch_delete {branch, force?}; stash {op: push\|pop\|apply\|drop\|list, message?, include_untracked?, index?}. 'path' selects the repo folder (default: task root). |
+| `git_write` | `git.write` | Change a git repository in the task directory (sandboxed, no network). action: init {branch?}; add {paths}; add_trecho {file, hunk (index or list from git diff) \| start_line, end_line} stages only that part of the file; commit {message, all?}; checkout {branch, create?, base?}; branch_create {branch, base?}; branch_delete {branch, force?}; stash {op: push\|pop\|apply\|drop\|list, message?, include_untracked?, index?}; merge {branch} (never rebase/force); conflitos (lists <<<<<<< blocks with both sides); resolver {file, block, choice: nosso\|deles\|texto, text?}; abort. 'path' selects the repo folder (default: task root). |
+| `project_task` | `shell.exec` | Tasks the project declares in .phxclaw/tarefas.json ([{nome, comando, args?, cwd?, grupo: build\|test\|run}]). action=list shows them; action=run {name} runs one in the task sandbox (no network) and returns exit code, stdout and stderr. Without the file, use rust_project / python_project. 'path' selects the project folder (default: task root). |
 | `git_worktree` | `git.write` | Isolated git worktrees for parallel tasks. action=add {name, branch?, base?} creates <repo>/.worktrees/<name> on branch phxclaw/<name> (returns its path, usable as 'path' in git/git_write and file tools); action=list; action=remove {name, force?}. 'path' selects the main repo. |
-| `go_no_go` | `gonogo.write` | Integrators' council Go/NoGo. action: record {integration, integrator, verdict: OK\|NOGO, errors? (required for NOGO), integrators? (other active integrators)}; status {integration}. Decision: any current NOGO -> NOGO; an active integrator without verdict -> WAIT; all OK -> GO. Only the same integrator can replace own NOGO. |
+| `go_no_go` | `gonogo.write` | Integrators' council Go/NoGo. action: open {integration, integrators} declares the council (fixed afterwards); record {integration, integrator, verdict: OK\|NOGO, errors? (required for NOGO)} -- the integrator must be in the council, and once a name is recorded only the same task can record for it again; status {integration}. Decision: any current NOGO -> NOGO; a council member without verdict -> WAIT; all OK -> GO. |
 | `lsp` | `fs.read` | Read-only language server queries on files in the task directory (rust (.rs), python (.py, .pyi)). action=definition\|references\|hover need path, line and column (1-based); action=symbols with path lists the file's symbols, with query searches the workspace; action=diagnostics returns the file's errors and warnings. Never edits files. |
 | `team_list` | `team.read` | List the 111 PhxClaw team roles (id \| name \| macro-area \| type \| criticality \| main capability \| when to call). Filter with 'macroarea' and/or 'text'; pass 'id' (number or name) to get one role in full. Use before team_delegate to pick the right role. |
 | `team_delegate` | `team.delegate` | Delegate one self-contained sub-task to a PhxClaw team role (by id or name, see team_list). The role runs as a sub-agent with its own mission and limits and only the tools both it and you are allowed; returns its answer. Human roles do not run: they come back asking for a human decision. |
@@ -141,7 +148,7 @@ Medido em 2026-10-01 por `python3 tools/gerar_doc_agente.py`, de `phxclaw ferram
 ### Existem no fonte, não montadas nesta máquina
 
 <!-- gerado:condicionais:inicio -->
-Medido em 2026-10-01: **13 ferramentas existem no fonte e nao montaram nesta maquina** (dependem de configuracao, token, canal ou feature de compilacao; a condicao de cada uma esta em `crates/phxclaw-agent/src/montagem.rs`).
+Medido em 2026-10-02: **13 ferramentas existem no fonte e nao montaram nesta maquina** (dependem de configuracao, token, canal ou feature de compilacao; a condicao de cada uma esta em `crates/phxclaw-agent/src/montagem.rs`).
 
 | Ferramenta | Definida em |
 |---|---|
@@ -171,7 +178,7 @@ A referência é a ajuda do próprio binário, copiada aqui pelo gerador (os `CL
 antigos não cobrem o agente).
 
 <!-- gerado:cli:inicio -->
-Saida de `phxclaw --help`, gerada em 2026-10-01:
+Saida de `phxclaw --help`, gerada em 2026-10-02:
 
 ```text
 PhxClaw 0.70.0
@@ -192,11 +199,13 @@ AGENTE:
 
 EQUIPE E FLUXOS:
   equipe        Os papeis da equipe: listar, mostrar, delegar
-  gonogo        Conselho de integradores: registrar parecer, ver, decidir Go/NoGo
+  gonogo        Conselho de integradores: abrir, registrar parecer, ver, decidir Go/NoGo
   fluxo         Fluxo em DAG: rodar e retomar
 
 CODIGO:
   revisar       Revisao de codigo de um diff ou PR (serve para CI)
+  tarefa        Tarefas do projeto (.phxclaw/tarefas.json): listar e rodar
+  testes        Explorador de testes: a arvore e um no dela (Rust e Python)
 
 SERVICOS (API, CANAIS, EDITORES, DISPOSITIVOS):
   servir        API de tarefas, UI web (PWA), gatilhos e heartbeat
@@ -212,6 +221,10 @@ CREDENCIAIS (vao para o SecretBroker, nunca para arquivo):
   elevenlabs    Guarda a chave da ElevenLabs ou lista as vozes da conta
   gemini        Guarda a chave da Gemini API (Nano Banana no image_generate)
   xai           Guarda a chave da xAI (habilita x_search)
+  api           Guarda o Bearer da API de tarefas
+  imagem        Guarda a chave do gerador de imagem openai
+  email         Guarda a senha do SMTP (send_email e canal de e-mail)
+  plugins       Guarda a semente de assinatura de plugin e reassina manifestos
 
 MEDICAO (so numero medido, com faixa min-max, N e data):
   repetir       Repete uma gravacao sem modelo e acusa a divergencia com o passo
@@ -265,7 +278,7 @@ POLITICA: PHXCLAW_CAPACIDADES=web.search,web.browse,fs.read,fs.write,... (padrao
 ## Equipe de papéis
 
 <!-- gerado:equipe:inicio -->
-**111 papeis** carregados de `config/agents` (medido em 2026-10-01 por `phxclaw equipe listar`).
+**111 papeis** carregados de `config/agents` (medido em 2026-10-02 por `phxclaw equipe listar`).
 <!-- gerado:equipe:fim -->
 
 - **`team_list`** (`team.read`) lista os papéis (id, nome, macroárea, tipo, criticidade,

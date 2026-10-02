@@ -458,8 +458,8 @@
    "evidencia": "Helix 25.07.1 no IDE do desktop (apps/phxclaw-desktop/src-tauri/src/terminal.rs): global_search (espaco /); agente: busca.rs grep respeitando .gitignore"
   },
   "substituir_projeto": {
-   "estado": "parcial",
-   "evidencia": "busca existe; substituir em todos os arquivos nao: o Helix nao tem, e o agente so via edit_file arquivo a arquivo"
+   "estado": "agente",
+   "evidencia": "replace_in_project (busca.rs:541): literal ou regex, glob/path, confirm=false so previa com contagem por arquivo; mesma varredura do grep (percorrer, .gitignore, binario) e gravacao pelo caminho do edit_file (confine + fs::write + artifact_for); fs.write, entao o portao tira o ponto antes. Teste: crates/phxclaw-agent/tests/vscode_v1.rs:376 replace_in_project_previa_nao_altera_confirmar_altera_e_o_ponto_restaura"
   },
   "paleta_comandos": {
    "estado": "agente",
@@ -470,32 +470,34 @@
    "evidencia": "Helix 25.07.1 no IDE do desktop (apps/phxclaw-desktop/src-tauri/src/terminal.rs): [keys] no config.toml do Helix; o PhxClaw nao tem tela de atalhos"
   },
   "depurador": {
-   "estado": "parcial",
-   "evidencia": "Helix tem DAP experimental (dap_toggle_breakpoint, dap_variables), mas hx --health rust: lldb-dap ausente, python: sem adaptador; nada do PhxClaw configura ou prova"
+   "estado": "agente",
+   "evidencia": "crates/phxclaw-agent/src/dap.rs: cliente DAP proprio (stdio, Content-Length pelo decode/encode do mcp-lsp-runtime) com initialize, launch, setBreakpoints, configurationDone, continue, stackTrace, scopes/variables, evaluate, disconnect; ferramenta `debug` (start/breakpoint/continue/stack/variables/evaluate/stop) pelo portao unico, adaptador no MESMO bwrap do shell (ptrace funciona la dentro, sem excecao em FORA_DO_BWRAP); Rust = gdb -i dap, tambem ligado no Helix ([language.debugger] do languages.toml, hx --health rust mostra /usr/bin/gdb); Python = debugpy quando existir no site do interpretador -- AUSENTE nesta maquina (sem rede, fora do cache do uv): o caminho existe e nao foi provado",
+   "teste": "crates/phxclaw-agent/tests/editor_remoto.rs::depurador_real_para_no_breakpoint_e_evaluate_devolve_o_valor: binario Rust compilado pelo rust_project para no breakpoint da linha 4, variables lista x e nome, stack mostra main em dbg/src/main.rs:4, continue termina com a saida 42 phx, finish solta a sessao; RED medido (setBreakpoints vazio derruba o teste)"
   },
   "console_depuracao": {
-   "estado": "nao",
-   "evidencia": "o DAP do Helix nao tem REPL/avaliacao de expressao; PhxClaw nao tem console de depuracao"
+   "estado": "agente",
+   "evidencia": "dap.rs: action=evaluate avalia a expressao no quadro parado (contexto watch) e console=true manda a linha ao proprio adaptador (contexto repl: comando do gdb); resultado e tipo voltam em JSON",
+   "teste": "o mesmo teste do depurador: evaluate x devolve \"42\" parado no breakpoint"
   },
   "tarefas_build": {
-   "estado": "parcial",
-   "evidencia": "rust_project (sistema.rs) e python_project (python.rs: setup/test/lint/typecheck/run) com acoes fixas; sem tarefa definida pelo usuario (tasks.json)"
+   "estado": "agente",
+   "evidencia": ".phxclaw/tarefas.json (nome, comando, args, cwd, grupo build|test|run) lido por projeto_tarefas::carregar (projeto_tarefas.rs:43); project_task list|run (projeto_tarefas.rs:136) roda no bwrap do shell e comando_de_shell (:197) entrega a linha de verdade as regras de comando; CLI phxclaw tarefa listar|rodar pela MESMA carregar/rodar (apps/phxclaw/src/main.rs:1104, ajuda.rs:184); sem arquivo valem rust_project/python_project. Teste: crates/phxclaw-agent/tests/vscode_v1.rs:462 project_task_roda_a_tarefa_definida_e_a_regra_nega_o_comando"
   },
   "diff_git": {
    "estado": "agente",
    "evidencia": "git.rs action diff (analisar_diff) e gutter de diff do Helix"
   },
   "stage_por_trecho": {
-   "estado": "nao",
-   "evidencia": "git_write add so por caminho (git.rs:875); Helix so descarta trecho (:reset-diff-change), nao faz stage"
+   "estado": "agente",
+   "evidencia": "git_write add_trecho (git.rs:1229) por indice do hunk ou faixa de linhas, patch montado por patch_do_trecho (git.rs:453) e aplicado com git apply --cached; a varredura de segredos le o proprio patch (segredos.rs:95 Gravacao::Trecho). Teste: crates/phxclaw-agent/tests/vscode_v1.rs:90 add_trecho_leva_so_o_trecho_pedido_ao_indice (dois trechos, so um vai ao indice) e :196 patch_do_trecho_recorta_por_faixa_e_recalcula_o_inicio"
   },
   "blame": {
    "estado": "agente",
    "evidencia": "git.rs action blame (analisar_blame, --porcelain); sem blame em linha no editor"
   },
   "merge_conflitos": {
-   "estado": "nao",
-   "evidencia": "git.rs nao tem merge/rebase nem resolucao de conflito; sem editor de 3 vias"
+   "estado": "agente",
+   "evidencia": "git_write merge (git.rs:1319, sem rebase/force), conflitos (git.rs:1354, blocos <<<<<<</=======/>>>>>>> com as duas versoes e a base diff3, blocos_de_conflito git.rs:578), resolver nosso|deles|texto (git.rs:1362, resolver_bloco git.rs:628, add pela varredura) e abort (git.rs:1414). Teste: crates/phxclaw-agent/tests/vscode_v1.rs:220 merge_com_conflito_lista_resolve_por_texto_e_comita e :359 blocos_de_conflito_leem_diff3_e_ignoram_marcador_solto"
   },
   "explorador_arquivos": {
    "estado": "agente",
@@ -522,8 +524,9 @@
    "evidencia": "apps/phxclaw-ui/assets/tema.js claro/escuro; 174 temas do Helix em /opt/helix/runtime/themes"
   },
   "workspace_multi_raiz": {
-   "estado": "nao",
-   "evidencia": "IDE abre UMA pasta (PHXCLAW_PROJETO em terminal.rs); lsp.rs manda um workspaceFolder so"
+   "estado": "agente",
+   "evidencia": "crates/phxclaw-workspace (leitor unico de .phxclaw/workspace.json {raizes:[...]}, usado pelo agente e pelo IDE de mesa); tarefa::confine aceita caminho absoluto dentro de uma raiz (lista so lida depois de a pasta da tarefa recusar), entao read/write/edit/glob/grep alcancam qualquer raiz; lsp.rs monta cada raiz so leitura no sandbox e manda todas em workspaceFolders; o terminal do IDE (apps/phxclaw-desktop terminal.rs) abre a primeira e expoe as outras em PHXCLAW_RAIZES (chave ide.raizes do catalogo, tambem lida por config::valor)",
+   "teste": "editor_remoto.rs::workspace_de_duas_raizes_busca_e_lsp_na_segunda: grep acha na segunda raiz, rust-analyzer devolve o simbolo do arquivo da segunda raiz (documentSymbol), caminho absoluto fora das duas e negado; RED medido (confine sem raizes derruba o teste); phxclaw-workspace tem os testes do arquivo"
   },
   "remoto_ssh_containers": {
    "estado": "nao",
@@ -538,12 +541,13 @@
    "evidencia": "sem edicao colaborativa em tempo real"
   },
   "explorador_testes": {
-   "estado": "parcial",
-   "evidencia": "python_project test e rust_project rodam testes pelo agente; sem explorador/arvore de testes na UI"
+   "estado": "agente",
+   "evidencia": "crates/phxclaw-agent/src/testes.rs: test_list devolve a arvore crate/modulo/teste (cargo test --no-run --message-format=json + <binario> --list, no sandbox e com as SandboxExtras do rust_project; Python: pytest --collect-only -q) e test_run roda UM no (CRATE, CRATE/modulo, CRATE/modulo::teste; Python delega ao python_project com target=nodeid); CLI `phxclaw testes listar|rodar NO` pelas mesmas funcoes (ajuda.rs). A tela da UI fica para a onda 2",
+   "teste": "editor_remoto.rs::explorador_de_testes_lista_e_roda_um_no: a arvore tem calc/soma::{dois_mais_dois, zero}, rodar o no devolve passou com 1 ok, no inexistente 0 ok, no com shell recusado; Python (quando ha interpretador) lista e roda tests/test_calc.py::test_ok; RED medido (binarios_de_teste invertido derruba o teste); 4 testes unitarios da arvore e do no"
   },
   "timeline_arquivo": {
-   "estado": "parcial",
-   "evidencia": "git.rs action log aceita paths (historico de commits por arquivo) e checkpoint_list cobre so escrita do agente; falta o historico local das gravacoes do usuario e a vista por arquivo"
+   "estado": "agente",
+   "evidencia": "historico.rs: poller de mtime (std) sobre a raiz do projeto (montagem::raiz_do_projeto, de onde PHXCLAW_PROJETO e lida) copia cada gravacao para .phxclaw/historico/<caminho>/<rowstamp> (Historico::varrer :96, guardar :136), teto por arquivo ide.historico_versoes_max (catalogo.rs, padrao 50); ferramentas file_history list|show e file_history_restore (historico.rs:253); o poller sobe no servir (apps/phxclaw/src/main.rs:435). Teste: crates/phxclaw-agent/tests/vscode_v1.rs:540 historico_guarda_tres_versoes_e_restaura_a_segunda (3 gravacoes, 3 versoes, restore devolve a 2a, teto poda)"
   },
   "outline_simbolos": {
    "estado": "agente",
@@ -554,12 +558,14 @@
    "evidencia": "Helix 25.07.1 nao tem breadcrumbs"
   },
   "snippets": {
-   "estado": "nao",
-   "evidencia": "Helix 25.07.1 so expande snippet vindo do LSP (goto_next_tabstop); snippet do usuario nao existe. Na duvida entre parcial e nao, ficou nao: o que o usuario usa e o snippet proprio"
+   "estado": "agente",
+   "evidencia": "crates/phxclaw-snippet-ls: servidor LSP proprio (stdio, std+serde_json) que serve .phxclaw/snippets.json ({prefixo, corpo, descricao, linguagens}) como CompletionItem com insertTextFormat 2 (o Helix expande os tabstops); tools/instalar_helix.sh o compila, instala em /opt/helix e o escreve no languages.toml como servidor adicional de rust/python/html/css/js/toml/md/sql/json; medido em 02/10: hx --health rust lista phxclaw-snippet-ls",
+   "teste": "crates/phxclaw-snippet-ls/tests/stdio.rs (initialize -> didOpen -> completion devolve o snippet, shutdown/exit) e os testes de lib.rs (prefixo, linguagem, faixa do textEdit); RED medido repondo o defeito do expansor"
   },
   "emmet": {
-   "estado": "nao",
-   "evidencia": "sem Emmet; nenhum emmet-ls configurado"
+   "estado": "agente",
+   "evidencia": "crates/phxclaw-snippet-ls/src/emmet.rs: div>ul>li*3, .cls, #id, +, ^, {texto}, $ de numeracao, p*2>a (html) e a tabela m10/p10-20/w50p/df (css), pelo MESMO servidor; abreviacao lida do texto antes do cursor (didOpen/didChange)",
+   "teste": "8 testes unitarios em emmet.rs (RED medido: '+' quebrado derruba irmao_com_mais) e o teste do servidor que escapa a barra do texto"
   },
   "chat_ia": {
    "estado": "agente",

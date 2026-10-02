@@ -80,6 +80,22 @@ com PHXCLAW_IMAGEM_PROVEDOR=nanobanana (capacidade media.generate)"
             );
         }
         "dispositivos" | "devices" => runtime()?.block_on(dispositivos(&args[1..]))?,
+        // Os segredos que so tinham variavel de ambiente: `phxclaw <servico> chave` guarda
+        // a variavel no broker pelo mesmo `Servico` da ElevenLabs e da Gemini.
+        "api" => chave_de(&phxclaw_agent::chaves::API, &args[1..])?,
+        "imagem" | "image" => chave_de(&phxclaw_agent::chaves::IMAGEM, &args[1..])?,
+        "email" => {
+            if args.get(1).map(String::as_str) != Some("chave") {
+                bail!("uso: phxclaw email chave [--pasta DIR]");
+            }
+            let raiz = pasta(&args[1..]);
+            let id = phxclaw_agent::email::guardar_senha_smtp(&raiz).map_err(anyhow::Error::msg)?;
+            println!(
+                "senha do SMTP guardada no broker do canal (segredo {id}); send_email e o canal \
+de e-mail a leem quando PHXCLAW_SMTP_PASSWORD nao esta no ambiente"
+            );
+        }
+        "plugins" => plugins(&args[1..])?,
         "fluxo" | "workflow" => runtime()?.block_on(fluxo(&args[1..]))?,
         "equipe" | "team" => runtime()?.block_on(equipe(&args[1..]))?,
         "gonogo" | "go-no-go" => {
@@ -96,6 +112,8 @@ com PHXCLAW_IMAGEM_PROVEDOR=nanobanana (capacidade media.generate)"
         }
         "ferramentas" | "tools" => runtime()?.block_on(ferramentas())?,
         "revisar" | "review" => runtime()?.block_on(revisar(&args[1..]))?,
+        "testes" | "tests" => runtime()?.block_on(testes(&args[1..]))?,
+        "tarefa" | "task" => runtime()?.block_on(tarefa(&args[1..]))?,
         "forja" | "forge" => forja(&args[1..])?,
         "sessoes" | "sessions" => interacao::sessoes(
             &TaskStore::new(pasta(&args[1..]).join("tasks"))?,
@@ -366,7 +384,7 @@ async fn servir(args: &[String]) -> Result<()> {
         .unwrap_or(8787);
     let raiz = pasta(args);
     let store = TaskStore::new(raiz.join("tasks"))?;
-    let token = token_de(&raiz.join("api.token"), "PHXCLAW_API_TOKEN")?;
+    let token = token_de(&raiz, &raiz.join("api.token"), &phxclaw_agent::chaves::API)?;
     let mut m = Montagem::new(store.clone());
     // Nos de dispositivo no MESMO processo: e assim que `node_list`/`node_invoke`
     // alcancam as sessoes vivas.
@@ -413,6 +431,13 @@ async fn servir(args: &[String]) -> Result<()> {
         }
     });
     let gatilhos = armar_gatilhos(&raiz, &state)?;
+    // Historico local das gravacoes do projeto do IDE (file_history), um poller so.
+    if let Some(p) = phxclaw_agent::historico::iniciar_do_projeto() {
+        println!(
+            "historico de gravacoes: {}",
+            p.join(phxclaw_agent::historico::PASTA).display()
+        );
+    }
     // `--ponte wss://...`: controle remoto por conexao de SAIDA ate a ponte; o pedido do
     // celular roda no MESMO router desta API, em processo.
     if let Some(url) = opcao(args, "--ponte") {
@@ -610,19 +635,96 @@ async fn canal(args: &[String]) -> Result<()> {
 /// processo vive -- a verdade duravel e o PostgreSQL, ligado por outro adaptador.
 /// Token de variavel de ambiente, ou arquivo 0600 gerado na primeira vez. O da API e o
 /// da ponte saem daqui: a mesma regra de tamanho e de arquivo privado para os dois.
-fn token_de(arq: &std::path::Path, var: &str) -> Result<String> {
-    Ok(match env::var(var) {
-        Ok(t) if t.len() >= 24 => t,
-        Ok(_) => bail!("{var} precisa de pelo menos 24 caracteres"),
-        Err(_) => match std::fs::read_to_string(arq) {
-            Ok(t) if !t.trim().is_empty() => t.trim().to_string(),
-            _ => {
-                let t = phxclaw_api_gateway::generate_bearer_token();
-                phxclaw_secret_broker::write_private_file(arq, t.as_bytes())?;
-                t
-            }
+/// O Bearer de um servidor: a variavel do ambiente, senao o broker (`phxclaw api chave`,
+/// `phxclaw ponte chave`), senao o arquivo da pasta, gerado na primeira vez.
+fn token_de(
+    raiz: &std::path::Path,
+    arq: &std::path::Path,
+    servico: &phxclaw_agent::chaves::Servico,
+) -> Result<String> {
+    Ok(
+        match servico
+            .do_ambiente_ou_broker(raiz)
+            .map_err(anyhow::Error::msg)?
+        {
+            Some(t) if t.len() >= 24 => t,
+            Some(_) => bail!(
+                "{} precisa de pelo menos 24 caracteres",
+                servico.variaveis()[0]
+            ),
+            None => match std::fs::read_to_string(arq) {
+                Ok(t) if !t.trim().is_empty() => t.trim().to_string(),
+                _ => {
+                    let t = phxclaw_api_gateway::generate_bearer_token();
+                    phxclaw_secret_broker::write_private_file(arq, t.as_bytes())?;
+                    t
+                }
+            },
         },
-    })
+    )
+}
+
+/// `phxclaw <servico> chave`: a variavel do ambiente do comando vai para o broker da pasta.
+fn chave_de(servico: &phxclaw_agent::chaves::Servico, args: &[String]) -> Result<()> {
+    if args.first().map(String::as_str) != Some("chave") {
+        bail!("uso: phxclaw {} [--pasta DIR]", servico.comando);
+    }
+    let raiz = pasta(args);
+    let id = servico
+        .guardar_do_ambiente(&raiz)
+        .map_err(anyhow::Error::msg)?;
+    println!(
+        "{} guardad{} no broker de {} (segredo {id}); vale quando {} nao esta no ambiente",
+        servico.rotulo,
+        if servico.rotulo.starts_with("a ") {
+            "a"
+        } else {
+            "o"
+        },
+        servico.pasta(&raiz).display(),
+        servico.variaveis().join(" / ")
+    );
+    Ok(())
+}
+
+/// `phxclaw plugins chave|assinar [DIR] [--raiz DIR]`: a semente de assinatura vai para o
+/// broker; `assinar` reassina os manifestos de DIR com ela (ambiente primeiro, como o
+/// exemplo `assinar` do registro, pelo mesmo `reassinar_pasta`).
+fn plugins(args: &[String]) -> Result<()> {
+    use phxclaw_agent::chaves::ASSINATURA_DE_PLUGIN;
+    match args.first().map(String::as_str) {
+        Some("chave") => chave_de(&ASSINATURA_DE_PLUGIN, args),
+        Some("assinar") => {
+            let raiz_do_agente = pasta(args);
+            let raiz = opcao(args, "--raiz")
+                .map(PathBuf::from)
+                .unwrap_or(env::current_dir()?);
+            let dir = args
+                .get(1)
+                .filter(|a| !a.starts_with("--"))
+                .map(PathBuf::from)
+                .unwrap_or_else(|| raiz.join("plugins/builtin/manifests"));
+            let semente = ASSINATURA_DE_PLUGIN
+                .do_ambiente_ou_broker(&raiz_do_agente)
+                .map_err(anyhow::Error::msg)?
+                .ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "{} nao esta no ambiente nem no broker: rode `phxclaw {}`",
+                        ASSINATURA_DE_PLUGIN.variaveis()[0],
+                        ASSINATURA_DE_PLUGIN.comando
+                    )
+                })?;
+            let feitos =
+                phxclaw_plugin_registry::assinatura::reassinar_pasta(&raiz, &dir, &semente)
+                    .map_err(|e| anyhow::anyhow!("{e}"))?;
+            for p in &feitos {
+                println!("reassinado {}", p.display());
+            }
+            println!("{} manifesto(s)", feitos.len());
+            Ok(())
+        }
+        _ => bail!("uso: phxclaw plugins chave|assinar [DIR] [--raiz DIR] [--pasta DIR]"),
+    }
 }
 
 /// Como o agente se liga a ponte. O token de pareamento vem so do ambiente (segredo em
@@ -663,7 +765,9 @@ fn ponte_do_agente(
         ca_pem: opcao(args, "--ponte-ca").map(std::fs::read).transpose()?,
         tenant,
         no,
-        token_pareamento: env::var("PHXCLAW_ENROLLMENT_TOKEN").ok(),
+        token_pareamento: phxclaw_agent::chaves::PAREAMENTO
+            .do_ambiente_ou_broker(raiz)
+            .map_err(anyhow::Error::msg)?,
         pasta_da_chave: raiz.join("ponte-chave"),
     })
 }
@@ -671,6 +775,9 @@ fn ponte_do_agente(
 /// A ponte do controle remoto: o servidor WSS de dispositivos (onde o agente se liga, de
 /// saida) e o HTTP do cliente (a tela instalavel e o rele das rotas de tarefa).
 async fn ponte(args: &[String]) -> Result<()> {
+    if args.first().map(String::as_str) == Some("chave") {
+        return chave_de(&phxclaw_agent::chaves::PONTE, args);
+    }
     let raiz = pasta(args);
     std::fs::create_dir_all(&raiz)?;
     let porta_wss: u16 = opcao(args, "--porta-wss")
@@ -682,7 +789,11 @@ async fn ponte(args: &[String]) -> Result<()> {
         .transpose()?
         .unwrap_or(8790);
     let srv = subir_dispositivos(args, porta_wss).await?;
-    let token = token_de(&raiz.join("ponte.token"), "PHXCLAW_PONTE_TOKEN")?;
+    let token = token_de(
+        &raiz,
+        &raiz.join("ponte.token"),
+        &phxclaw_agent::chaves::PONTE,
+    )?;
     let host = env::var("PHXCLAW_PONTE_HOST").unwrap_or_else(|_| "127.0.0.1".into());
     let l = tokio::net::TcpListener::bind((host.as_str(), porta)).await?;
     println!(
@@ -695,6 +806,9 @@ async fn ponte(args: &[String]) -> Result<()> {
 }
 
 async fn dispositivos(args: &[String]) -> Result<()> {
+    if args.first().map(String::as_str) == Some("chave") {
+        return chave_de(&phxclaw_agent::chaves::PAREAMENTO, args);
+    }
     let porta: u16 = opcao(args, "--porta")
         .map(|p| p.parse())
         .transpose()?
@@ -984,6 +1098,89 @@ async fn ferramentas() -> Result<()> {
 
 /// `phxclaw revisar`: so le as opcoes; diff e revisao sao os do `code_review`
 /// (`revisao::revisar_da_fonte`), para a CLI e a ferramenta nao divergirem.
+/// `phxclaw tarefa listar | rodar NOME`: as tarefas de `.phxclaw/tarefas.json` do projeto
+/// (`PHXCLAW_PROJETO` ou a pasta corrente), pelo MESMO `carregar`/`rodar` da ferramenta
+/// `project_task`. Sai com o codigo da tarefa.
+async fn tarefa(args: &[String]) -> Result<()> {
+    use phxclaw_agent::projeto_tarefas::{ARQUIVO, carregar, resultado, rodar};
+    let raiz = phxclaw_agent::montagem::raiz_do_projeto()
+        .ok_or_else(|| anyhow::anyhow!("nenhum projeto (PHXCLAW_PROJETO ou a pasta corrente)"))?;
+    let lista = carregar(&raiz).map_err(anyhow::Error::msg)?;
+    match args.first().map(String::as_str) {
+        Some("listar") | Some("list") | None => {
+            if lista.is_empty() {
+                println!(
+                    "sem .phxclaw/{ARQUIVO} em {}: valem rust_project e python_project",
+                    raiz.display()
+                );
+            }
+            for t in &lista {
+                println!(
+                    "{:<6} {:<24} {}",
+                    t.grupo,
+                    t.nome,
+                    phxclaw_agent::projeto_tarefas::linha_de_shell(t)
+                );
+            }
+            Ok(())
+        }
+        Some("rodar") | Some("run") => {
+            let nome = args
+                .get(1)
+                .ok_or_else(|| anyhow::anyhow!("uso: phxclaw tarefa rodar NOME"))?;
+            let t = lista
+                .iter()
+                .find(|t| &t.nome == nome)
+                .ok_or_else(|| anyhow::anyhow!("tarefa {nome:?} nao esta em .phxclaw/{ARQUIVO}"))?;
+            let bwrap = phxclaw_agent::arquivos::achar_bwrap()
+                .ok_or_else(|| anyhow::anyhow!("sem bwrap a tarefa nao roda"))?;
+            let s = rodar(&bwrap, &raiz, t, std::time::Duration::from_secs(600))
+                .await
+                .map_err(|e| anyhow::anyhow!("{e}"))?;
+            println!("{}", resultado(t, &s));
+            if s.exit_code != Some(0) {
+                std::process::exit(s.exit_code.unwrap_or(1));
+            }
+            Ok(())
+        }
+        Some(outra) => bail!("uso: phxclaw tarefa listar|rodar NOME (nao: {outra})"),
+    }
+}
+
+/// `phxclaw testes listar|rodar NO [--projeto DIR] [--caminho REL] [--linguagem L]`: as
+/// MESMAS funcoes das ferramentas `test_list`/`test_run` do agente (um explorador so),
+/// sobre a pasta do projeto (`--projeto`, `PHXCLAW_PROJETO` ou a corrente).
+async fn testes(args: &[String]) -> Result<()> {
+    use phxclaw_agent::testes::ExploradorDeTestes;
+    let uso = "uso: phxclaw testes listar | rodar NO  [--projeto DIR] [--caminho REL] [--linguagem rust|python]";
+    let acao = args.first().map(String::as_str).unwrap_or("");
+    let bwrap =
+        phxclaw_agent::arquivos::achar_bwrap().context("sem bwrap: os testes rodam no sandbox")?;
+    let e = ExploradorDeTestes::detectar(bwrap)
+        .context("nem toolchain Rust nem Python no hospedeiro")?;
+    let projeto = opcao(args, "--projeto")
+        .map(PathBuf::from)
+        .or_else(phxclaw_agent::montagem::raiz_do_projeto)
+        .context("sem pasta de projeto")?;
+    let ctx = phxclaw_agent::testes::contexto_da_cli(projeto, Duration::from_secs(900));
+    let caminho = opcao(args, "--caminho").unwrap_or_else(|| ".".into());
+    let linguagem = opcao(args, "--linguagem");
+    let v = match acao {
+        "listar" | "list" => e.listar(&ctx, &caminho, linguagem.as_deref()).await,
+        "rodar" | "run" => {
+            let no = args.get(1).filter(|n| !n.starts_with("--")).context(uso)?;
+            e.rodar(&ctx, &caminho, no, linguagem.as_deref()).await
+        }
+        _ => bail!("{uso}"),
+    }
+    .map_err(|e| anyhow::anyhow!("{e}"))?;
+    println!("{}", serde_json::to_string_pretty(&v)?);
+    if acao.starts_with('r') && v["passou"] != true {
+        std::process::exit(1);
+    }
+    Ok(())
+}
+
 async fn revisar(args: &[String]) -> Result<()> {
     use phxclaw_agent::revisao::{FonteDoDiff, SEVERIDADES, analisar_pr, modelo, revisar_da_fonte};
     let comentar = args.iter().any(|a| a == "--comentar");

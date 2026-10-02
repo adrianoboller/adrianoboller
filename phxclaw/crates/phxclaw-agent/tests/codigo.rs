@@ -8,6 +8,7 @@ use phxclaw_agent::git::{GitTool, WorktreeTool};
 use phxclaw_agent::montagem::{CAPACIDADES_PADRAO, Montagem};
 use phxclaw_agent::*;
 use phxclaw_agent_core::{Tool, ToolContext, ToolError};
+use phxclaw_test_support::pulado;
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -36,7 +37,7 @@ async fn rodar(t: &dyn Tool, c: &ToolContext, args: Value) -> Value {
 fn bwrap() -> Option<PathBuf> {
     let b = phxclaw_agent::arquivos::achar_bwrap();
     if b.is_none() {
-        eprintln!("sem bwrap: prova do git pulada");
+        pulado::pular("bwrap", "sem bwrap a prova do git nao roda");
     }
     b
 }

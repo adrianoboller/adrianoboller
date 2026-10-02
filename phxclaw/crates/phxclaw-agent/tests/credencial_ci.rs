@@ -318,7 +318,8 @@ async fn linear_pelo_mcp_oficial_com_bearer_do_broker() {
         "sem Bearer: um pedido, sem cabecalho"
     );
 
-    oauth::guardar_bearer(&raiz, "linear", SecretValue::new(BEARER.into())).unwrap();
+    let alvo = oauth::Alvo::novo("linear", &format!("{base}/mcp")).unwrap();
+    oauth::guardar_bearer(&raiz, &alvo, SecretValue::new(BEARER.into())).unwrap();
     let (tools, avisos) = carregar(cfg, raiz.clone()).await;
     assert!(
         tools
@@ -405,9 +406,10 @@ async fn google_workspace_por_oauth_pkce_com_refresh_no_broker() {
     // O navegador: segue o 302 do /authorize ate o loopback do agente.
     let abriu: Arc<Mutex<Option<String>>> = Arc::default();
     let a2 = abriu.clone();
+    let alvo = oauth::Alvo::novo("gmail", &format!("{base}/mcp")).unwrap();
     oauth::login(
         &raiz,
-        "gmail",
+        &alvo,
         &o,
         Some(SecretValue::new(SEGREDO_CLIENTE.into())),
         Duration::from_secs(20),
@@ -438,11 +440,14 @@ async fn google_workspace_por_oauth_pkce_com_refresh_no_broker() {
             .contains(SEGREDO_CLIENTE)
     );
 
-    // A descoberta renova (o processo nao sabe quando o acesso guardado vence) e lista.
+    // A descoberta NAO renova: o vencimento e do (servidor, endpoint) no processo (M3), e o
+    // login que acabou de trocar o codigo ja o deixou escrito. Processo novo, que nao sabe
+    // quando o acesso guardado vence, renova na primeira chamada -- e o que
+    // `renovacao_do_oauth_e_uma_so_entre_duas_instancias_do_mesmo_alvo` prova.
     let (tools, avisos) = carregar(cfg, raiz.clone()).await;
     let lista = ferramenta(&tools, "mcp__gmail__list_issues");
     assert!(avisos.is_empty(), "{avisos:?}");
-    assert_eq!(e.lock().unwrap().renovacoes, 1);
+    assert_eq!(e.lock().unwrap().renovacoes, 0);
     let r = texto(lista, &raiz).await;
     assert_eq!(
         r.as_deref().ok(),
@@ -451,7 +456,7 @@ async fn google_workspace_por_oauth_pkce_com_refresh_no_broker() {
         e.lock().unwrap().vistos,
         e.lock().unwrap().aceito
     );
-    assert_eq!(e.lock().unwrap().renovacoes, 1, "acesso valido nao renova");
+    assert_eq!(e.lock().unwrap().renovacoes, 0, "acesso valido nao renova");
 
     // O servidor revoga o acesso antes do prazo: 401 -> renova UMA vez -> repete.
     e.lock().unwrap().aceito = "Bearer revogado".into();
@@ -459,10 +464,10 @@ async fn google_workspace_por_oauth_pkce_com_refresh_no_broker() {
         t.finish("t1").await;
     }
     assert_eq!(texto(lista, &raiz).await.unwrap(), "LIN-1 aberto");
-    assert_eq!(e.lock().unwrap().renovacoes, 2);
+    assert_eq!(e.lock().unwrap().renovacoes, 1);
     assert_eq!(
         e.lock().unwrap().vistos.last().unwrap().as_deref(),
-        Some("Bearer ya29.ACESSO-2")
+        Some("Bearer ya29.ACESSO-1")
     );
 
     // Eco do acesso no resultado: sai limpo.
@@ -483,9 +488,112 @@ async fn google_workspace_por_oauth_pkce_com_refresh_no_broker() {
     for s in [RENOVACAO, SEGREDO_CLIENTE, "ya29.ACESSO"] {
         assert!(!erro.contains(s), "{s} vazou: {erro}");
     }
-    for s in [RENOVACAO, SEGREDO_CLIENTE, "ya29.ACESSO-2"] {
+    for s in [RENOVACAO, SEGREDO_CLIENTE, "ya29.ACESSO-1"] {
         assert!(arquivos_com(&raiz, s).is_empty(), "{s} em disco");
     }
+}
+
+/// M3: duas instancias do MESMO (servidor, endpoint) no processo, pedindo o cabecalho ao
+/// mesmo tempo com o acesso vencido, renovam UMA vez. Com a trava solta entre a conferencia
+/// e a renovacao (o defeito), as duas viam «vencido» e iam as duas ao /token -- e com
+/// rotacao de refresh token a segunda invalidaria o primeiro.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn renovacao_do_oauth_e_uma_so_entre_duas_instancias_do_mesmo_alvo() {
+    use phxclaw_mcp_lsp_runtime::AuthorizationSource;
+    let (base, e) = servidor_falso().await;
+    let raiz = tmp("oauth-m3");
+    let cfg = oauth::ConfigOauth {
+        autorizacao: format!("{base}/authorize"),
+        token: format!("{base}/token"),
+        cliente_id: "cli-123.apps".into(),
+        segredo_cliente: true,
+        ..Default::default()
+    };
+    let alvo = oauth::Alvo::novo("gmail_m3", &format!("{base}/mcp")).unwrap();
+    oauth::login(
+        &raiz,
+        &alvo,
+        &cfg,
+        Some(SecretValue::new(SEGREDO_CLIENTE.into())),
+        Duration::from_secs(20),
+        |url| {
+            let url = url.to_string();
+            std::thread::spawn(move || {
+                reqwest::blocking::get(url).unwrap();
+            });
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(e.lock().unwrap().renovacoes, 0);
+
+    let a = oauth::AutorizacaoMcp::da_pasta(&raiz, &alvo, Some(&cfg)).unwrap();
+    let b = oauth::AutorizacaoMcp::da_pasta(&raiz, &alvo, Some(&cfg)).unwrap();
+    // O 401 numa instancia vence o acesso para as duas: o vencimento e do alvo, nao da
+    // instancia.
+    assert!(a.invalidar().await);
+    let (ca, cb) = tokio::join!(a.authorization(), b.authorization());
+    assert_eq!(ca.as_deref(), Ok("Bearer ya29.ACESSO-1"));
+    assert_eq!(cb.as_deref(), Ok("Bearer ya29.ACESSO-1"));
+    assert_eq!(
+        e.lock().unwrap().renovacoes,
+        1,
+        "duas instancias do mesmo alvo renovam uma vez so"
+    );
+    // Valido: nenhuma das duas renova de novo.
+    let (ca, cb) = tokio::join!(a.authorization(), b.authorization());
+    assert_eq!(ca, cb);
+    assert_eq!(e.lock().unwrap().renovacoes, 1);
+}
+
+/// M4: o segredo e de (servidor, endpoint). O Bearer guardado quando `linear` apontava
+/// para `/mcp-antigo` nao sobe quando a declaracao passa a apontar para `/mcp`: o servidor
+/// fica sem credencial e o aviso pede o `phxclaw mcp token` de novo. Com so o nome na
+/// chave (o defeito), o token do endpoint antigo ia para o novo.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn bearer_guardado_para_outro_endpoint_nao_sobe_para_o_servidor_renomeado() {
+    let (base, e) = servidor_falso().await;
+    e.lock().unwrap().aceito = format!("Bearer {BEARER}");
+    let raiz = tmp("linear-m4");
+    let antigo = oauth::Alvo::novo("linear", &format!("{base}/mcp-antigo")).unwrap();
+    oauth::guardar_bearer(&raiz, &antigo, SecretValue::new(BEARER.into())).unwrap();
+
+    let cfg = config(
+        &raiz,
+        json!([{"nome": "linear", "preset": "linear", "url": format!("{base}/mcp")}]),
+    );
+    let (tools, avisos) = carregar(cfg.clone(), raiz.clone()).await;
+    assert!(tools.is_empty(), "{avisos:?}");
+    assert!(
+        avisos
+            .iter()
+            .any(|a| a.contains("phxclaw mcp token linear")),
+        "{avisos:?}"
+    );
+    assert!(
+        e.lock().unwrap().vistos.is_empty(),
+        "sem credencial para este endpoint, nenhum pedido sai: {:?}",
+        e.lock().unwrap().vistos
+    );
+
+    // Guardado para o endpoint declarado, sobe. E a forma canonica da URL nao duplica.
+    let novo = oauth::Alvo::novo(
+        "linear",
+        &format!("{}/mcp", base.replacen("http", "HTTP", 1)),
+    )
+    .unwrap();
+    assert_eq!(
+        novo.endpoint,
+        antigo.endpoint.replace("/mcp-antigo", "/mcp")
+    );
+    oauth::guardar_bearer(&raiz, &novo, SecretValue::new(BEARER.into())).unwrap();
+    let (tools, avisos) = carregar(cfg, raiz.clone()).await;
+    assert!(
+        tools
+            .iter()
+            .any(|t| t.spec().name == "mcp__linear__list_issues"),
+        "{avisos:?}"
+    );
 }
 
 #[tokio::test]

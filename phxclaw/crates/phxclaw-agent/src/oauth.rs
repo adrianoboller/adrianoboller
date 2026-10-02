@@ -309,24 +309,64 @@ impl Tipo {
     }
 }
 
-fn nome_do_segredo(servidor: &str, t: Tipo) -> String {
-    format!("mcp-{servidor}-{}", t.uso())
+/// A quem o segredo pertence: o nome declarado E o endpoint do servidor. So o nome prendia
+/// o token a um rotulo que o operador troca a vontade: renomear `linear` para apontar a
+/// outra URL herdava o Bearer do Linear e o mandava para o outro endpoint (achado M4,
+/// 01/10/2026). Com o endpoint na chave, URL nova e credencial nova, pedida de novo.
+#[derive(Clone, Debug)]
+pub struct Alvo {
+    pub servidor: String,
+    pub endpoint: String,
 }
 
-fn prefixo(servidor: &str) -> String {
-    format!("mcp:{servidor}")
+impl Alvo {
+    /// `endpoint` e a URL do servidor MCP como o operador a declarou; a forma canonica do
+    /// `Url` (esquema minusculo, porta padrao omitida, caminho `/` quando vazio) entra na
+    /// chave para `HTTP://X` e `http://x/` nao virarem dois segredos.
+    pub fn novo(servidor: &str, endpoint: &str) -> Result<Self, String> {
+        let u = reqwest::Url::parse(endpoint.trim())
+            .map_err(|e| format!("endpoint do servidor MCP '{servidor}': {e}"))?;
+        Ok(Self {
+            servidor: phxclaw_mcp_lsp_runtime::normalize_mcp_name(servidor.trim()),
+            endpoint: u.to_string(),
+        })
+    }
+
+    /// Marca curta do endpoint para o nome do segredo: o nome no broker e um rotulo, e a
+    /// URL inteira la dentro so dificultaria a listagem. Colisao de 64 bits entre os poucos
+    /// endpoints de um operador nao e um risco que valha o nome ilegivel.
+    fn marca(&self) -> String {
+        Sha256::digest(self.endpoint.as_bytes())[..8]
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect()
+    }
+
+    fn nome_do_segredo(&self, t: Tipo) -> String {
+        format!("mcp-{}-{}-{}", self.servidor, self.marca(), t.uso())
+    }
+
+    fn prefixo(&self) -> String {
+        format!("mcp:{}@{}", self.servidor, self.marca())
+    }
+
+    /// Chave da serializacao da renovacao: duas instancias do MESMO (servidor, endpoint)
+    /// no processo dividem o vencimento, e so uma delas renova.
+    fn chave(&self) -> String {
+        format!("{}@{}", self.servidor, self.endpoint)
+    }
 }
 
 fn guardar(
     broker: &SecretBroker,
-    servidor: &str,
+    alvo: &Alvo,
     t: Tipo,
     valor: SecretValue,
 ) -> Result<uuid::Uuid, String> {
-    let escopo = format!("{}:{}", prefixo(servidor), t.uso());
+    let escopo = format!("{}:{}", alvo.prefixo(), t.uso());
     guardar_segredo(
         broker,
-        &nome_do_segredo(servidor, t),
+        &alvo.nome_do_segredo(t),
         NAMESPACE,
         &[&escopo],
         valor,
@@ -335,13 +375,29 @@ fn guardar(
 
 fn credencial(
     broker: &Arc<SecretBroker>,
-    servidor: &str,
+    alvo: &Alvo,
     t: Tipo,
 ) -> Result<Option<Credencial>, String> {
     Ok(
-        segredo_guardado(broker, &nome_do_segredo(servidor, t), NAMESPACE)?
-            .map(|d| Credencial::de_escopo(broker.clone(), d.uuid, CONSUMIDOR, prefixo(servidor))),
+        segredo_guardado(broker, &alvo.nome_do_segredo(t), NAMESPACE)?
+            .map(|d| Credencial::de_escopo(broker.clone(), d.uuid, CONSUMIDOR, alvo.prefixo())),
     )
+}
+
+/// O vencimento do acesso de cada (servidor, endpoint) do processo. E a trava da
+/// renovacao: quem a segura e o unico que renova, e quem chega depois encontra o
+/// vencimento novo e reusa o token guardado em vez de gastar um segundo refresh (que, com
+/// rotacao do refresh token, invalidaria o primeiro). Achado M3, 01/10/2026.
+type Vencimento = Arc<tokio::sync::Mutex<Option<Instant>>>;
+
+fn vencimento_de(alvo: &Alvo) -> Vencimento {
+    static V: std::sync::OnceLock<std::sync::Mutex<BTreeMap<String, Vencimento>>> =
+        std::sync::OnceLock::new();
+    let mut m = V
+        .get_or_init(Default::default)
+        .lock()
+        .unwrap_or_else(|p| p.into_inner());
+    m.entry(alvo.chave()).or_default().clone()
 }
 
 /// Broker da pasta `mcp/`; so existe depois de um `phxclaw mcp token|login`.
@@ -359,11 +415,11 @@ pub fn broker_da_pasta(
 /// `phxclaw mcp token NOME`: guarda o Bearer fixo (a chave de API do Linear).
 pub fn guardar_bearer(
     raiz_do_agente: &Path,
-    servidor: &str,
+    alvo: &Alvo,
     token: SecretValue,
 ) -> Result<uuid::Uuid, String> {
     let b = broker_da_pasta(raiz_do_agente, true)?.ok_or("sem broker")?;
-    guardar(&b, servidor, Tipo::Bearer, token)
+    guardar(&b, alvo, Tipo::Bearer, token)
 }
 
 /// O fluxo inteiro do `phxclaw mcp login NOME`: PKCE, loopback, troca do codigo com o
@@ -371,7 +427,7 @@ pub fn guardar_bearer(
 /// operador abre no navegador; `segredo_cliente` so quando a configuracao o exige.
 pub async fn login(
     raiz_do_agente: &Path,
-    servidor: &str,
+    alvo: &Alvo,
     cfg: &ConfigOauth,
     segredo_cliente: Option<SecretValue>,
     prazo: Duration,
@@ -410,11 +466,13 @@ pub async fn login(
     let renovacao = r.renovacao.ok_or(
         "o servidor nao devolveu refresh token (no Google: access_type=offline e prompt=consent)",
     )?;
-    guardar(&broker, servidor, Tipo::Renovacao, renovacao)?;
-    guardar(&broker, servidor, Tipo::Acesso, r.acesso)?;
+    guardar(&broker, alvo, Tipo::Renovacao, renovacao)?;
+    guardar(&broker, alvo, Tipo::Acesso, r.acesso)?;
     if let Some(s) = segredo_cliente {
-        guardar(&broker, servidor, Tipo::Cliente, s)?;
+        guardar(&broker, alvo, Tipo::Cliente, s)?;
     }
+    // Acesso recem-trocado: o processo que logou nao precisa renovar na primeira chamada.
+    *vencimento_de(alvo).lock().await = Some(Instant::now() + r.validade);
     Ok(())
 }
 
@@ -428,7 +486,12 @@ pub async fn cli(raiz_do_agente: &Path, args: &[String]) -> Result<String, Strin
         return Err(uso.into());
     };
     let d = crate::mcp::declarado_no_ambiente(nome)?;
-    let servidor = phxclaw_mcp_lsp_runtime::normalize_mcp_name(d.nome.trim());
+    let url = d
+        .url
+        .as_deref()
+        .ok_or("credencial so para servidor por 'url'")?;
+    let alvo = Alvo::novo(&d.nome, url)?;
+    let servidor = alvo.servidor.clone();
     let env = |v: &str| {
         std::env::var(v)
             .ok()
@@ -439,7 +502,7 @@ pub async fn cli(raiz_do_agente: &Path, args: &[String]) -> Result<String, Strin
     match (acao.as_str(), &d.auth) {
         ("token", Some(crate::mcp::AuthDeclarada::Bearer)) => {
             let t = env("PHXCLAW_MCP_TOKEN").ok_or("falta PHXCLAW_MCP_TOKEN no ambiente")?;
-            let id = guardar_bearer(raiz_do_agente, &servidor, t)?;
+            let id = guardar_bearer(raiz_do_agente, &alvo, t)?;
             Ok(format!(
                 "token de {servidor} guardado no broker de {} (segredo {id})",
                 pasta_do_mcp(raiz_do_agente).display()
@@ -448,7 +511,7 @@ pub async fn cli(raiz_do_agente: &Path, args: &[String]) -> Result<String, Strin
         ("login", Some(crate::mcp::AuthDeclarada::Oauth(cfg))) => {
             login(
                 raiz_do_agente,
-                &servidor,
+                &alvo,
                 cfg,
                 env("PHXCLAW_MCP_SEGREDO_CLIENTE"),
                 Duration::from_secs(300),
@@ -476,13 +539,12 @@ pub enum AutorizacaoMcp {
 }
 
 pub struct Oauth {
-    servidor: String,
+    alvo: Alvo,
     cfg: ConfigOauth,
     broker: Arc<SecretBroker>,
     /// Quando o acesso guardado deixa de valer; `None` = nao se sabe (processo novo), e a
-    /// primeira chamada renova. A trava tambem serializa a renovacao: duas tarefas com o
-    /// token vencido nao gastam dois refresh (e, com rotacao, um invalidaria o outro).
-    vence: tokio::sync::Mutex<Option<Instant>>,
+    /// primeira chamada renova. Dividido por (servidor, endpoint) -- ver `vencimento_de`.
+    vence: Vencimento,
 }
 
 impl AutorizacaoMcp {
@@ -490,24 +552,25 @@ impl AutorizacaoMcp {
     /// com erro explicado quando falta: servidor que exige credencial nao sobe sem ela.
     pub fn da_pasta(
         raiz_do_agente: &Path,
-        servidor: &str,
+        alvo: &Alvo,
         oauth: Option<&ConfigOauth>,
     ) -> Result<Self, String> {
+        let servidor = &alvo.servidor;
         let falta = |cmd: &str| format!("sem credencial: rode `phxclaw mcp {cmd} {servidor}`");
         let cmd = if oauth.is_some() { "login" } else { "token" };
         let broker = broker_da_pasta(raiz_do_agente, false)?.ok_or_else(|| falta(cmd))?;
         match oauth {
-            None => credencial(&broker, servidor, Tipo::Bearer)?
+            None => credencial(&broker, alvo, Tipo::Bearer)?
                 .map(AutorizacaoMcp::Bearer)
                 .ok_or_else(|| falta(cmd)),
             Some(cfg) => {
                 cfg.validar()?;
-                credencial(&broker, servidor, Tipo::Renovacao)?.ok_or_else(|| falta(cmd))?;
+                credencial(&broker, alvo, Tipo::Renovacao)?.ok_or_else(|| falta(cmd))?;
                 Ok(AutorizacaoMcp::Oauth(Box::new(Oauth {
-                    servidor: servidor.to_string(),
+                    alvo: alvo.clone(),
                     cfg: cfg.clone(),
                     broker,
-                    vence: tokio::sync::Mutex::new(None),
+                    vence: vencimento_de(alvo),
                 })))
             }
         }
@@ -533,7 +596,7 @@ impl AutorizacaoMcp {
             AutorizacaoMcp::Oauth(o) => [Tipo::Acesso, Tipo::Renovacao, Tipo::Cliente]
                 .into_iter()
                 .filter_map(|t| {
-                    credencial(&o.broker, &o.servidor, t)
+                    credencial(&o.broker, &o.alvo, t)
                         .ok()
                         .flatten()
                         .map(|c| (c, t.uso()))
@@ -551,11 +614,13 @@ impl AutorizacaoMcp {
 }
 
 impl Oauth {
-    async fn renovar(&self) -> Result<(), String> {
-        let renovacao = credencial(&self.broker, &self.servidor, Tipo::Renovacao)?
+    /// Troca o refresh token por um acesso novo e devolve quando ele vence. Quem chama
+    /// SEGURA a trava do vencimento: e isso que faz a renovacao ser uma so.
+    async fn renovar(&self) -> Result<Instant, String> {
+        let renovacao = credencial(&self.broker, &self.alvo, Tipo::Renovacao)?
             .ok_or("refresh token sumiu do broker: rode `phxclaw mcp login` de novo")?
             .abrir("renovacao")?;
-        let cliente = match credencial(&self.broker, &self.servidor, Tipo::Cliente)? {
+        let cliente = match credencial(&self.broker, &self.alvo, Tipo::Cliente)? {
             Some(c) => Some(c.abrir("cliente")?),
             None if self.cfg.segredo_cliente => {
                 return Err("segredo do cliente sumiu do broker".into());
@@ -572,22 +637,23 @@ impl Oauth {
         )
         .await?;
         if let Some(nova) = r.renovacao {
-            guardar(&self.broker, &self.servidor, Tipo::Renovacao, nova)?;
+            guardar(&self.broker, &self.alvo, Tipo::Renovacao, nova)?;
         }
-        guardar(&self.broker, &self.servidor, Tipo::Acesso, r.acesso)?;
-        *self.vence.lock().await = Some(Instant::now() + r.validade);
-        Ok(())
+        guardar(&self.broker, &self.alvo, Tipo::Acesso, r.acesso)?;
+        Ok(Instant::now() + r.validade)
     }
 
     async fn cabecalho(&self) -> Result<String, String> {
-        let vencido = {
-            let v = self.vence.lock().await;
-            v.is_none_or(|v| Instant::now() + FOLGA_DE_VENCIMENTO >= v)
-        };
-        if vencido {
-            self.renovar().await?;
+        // A trava fica tomada da conferencia ate o fim da renovacao: soltar entre as duas
+        // (como era) deixava duas tarefas verem «vencido» e renovarem as duas. A segunda
+        // agora espera a primeira, reconfere e encontra o acesso novo.
+        {
+            let mut v = self.vence.lock().await;
+            if v.is_none_or(|v| Instant::now() + FOLGA_DE_VENCIMENTO >= v) {
+                *v = Some(self.renovar().await?);
+            }
         }
-        let c = credencial(&self.broker, &self.servidor, Tipo::Acesso)?
+        let c = credencial(&self.broker, &self.alvo, Tipo::Acesso)?
             .ok_or("token de acesso sumiu do broker")?;
         let x = c.abrir("acesso")?;
         Ok(format!("Bearer {}", x.expor()))

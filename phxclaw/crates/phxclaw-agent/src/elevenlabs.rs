@@ -36,7 +36,8 @@ use std::time::Duration;
 pub const SERVICO: Servico = Servico {
     espaco: "elevenlabs",
     nome_do_segredo: "elevenlabs-chave",
-    variaveis: &["PHXCLAW_ELEVENLABS_API_KEY", "ELEVENLABS_API_KEY"],
+    chave: "elevenlabs.chave",
+    aliases: &["ELEVENLABS_API_KEY"],
     rotulo: "a chave da ElevenLabs",
     comando: "elevenlabs chave",
 };

@@ -282,6 +282,7 @@ def montar(suite_arq: Path | None) -> tuple[str, list[str], dict]:
     ce = N.certificacao()
     me = N.medidores()
     su = N.suite(suite_arq)
+    fs = N.fechamento_sec(suite_arq)
     pg = N.petreas_gerais()
     ps = N.portoes_de_sprint(sp)
     conferir_raias(pc["papeis"])
@@ -577,14 +578,18 @@ pelo SHA-256 que o operador declara. As decisões do módulo (<code>crates/phxcl
 <ul>{''.join(f"<li>{md(x)}</li>" for x in gl['decisoes'])}</ul>
 <h3>Achados da revisão adversária de 01/10</h3>
 <p>Do <code>{e(sp['fonte'])}</code>: {md(ac['altos_frase'])}</p>
-<p>Os que voltaram à frente dona: <b>{e(', '.join(ac['altos']))}</b>. O conserto está na árvore de
-trabalho (o <code>segredos.rs</code> acima traz a leitura de binário como texto e a varredura do
-<code>stash push</code>), mas <b>sem commit e sem arquivo de resultado</b>:
-{nao_medido('prova do fechamento (testes e mutantes)', 'cargo test -p phxclaw-agent --test segredos --test segredos_shell --test gonogo')}.
-Até haver arquivo, este dossiê não os declara fechados.</p>
+<p>Os que voltaram à frente dona: <b>{e(', '.join(ac['altos']))}</b>. O fechamento de cada um é lido da saída
+guardada da suíte (<code>--suite</code>), pelo teste que o prova — nunca por texto fixo:</p>
+{tabela(['achado', 'teste que prova', 'na suíte', 'estado'],
+        [[f'<code>{e(c)}</code>', '<br>'.join(f'<code>{e(l["teste"])}</code>' for l in fs[c]['testes']),
+          '<br>'.join(e(l['estado']) for l in fs[c]['testes']),
+          pilula('feito') if fs[c]['fechado'] else nao_medido('fechamento', 'tools/suite.sh -p phxclaw-agent -- --test segredos --test segredos_shell --test gonogo')]
+         for c in ac['altos'] if c in fs])}
 <p>Os {len(ac['sec'])} restantes, na conta da SP000013:</p>
 <ul>{sec_lista}</ul>"""))
-    fez_menos.append("achados SEC " + ", ".join(ac["altos"]) + ": fechamento sem arquivo de resultado (NAO MEDIDO)")
+    abertos = [c for c in ac["altos"] if c in fs and not fs[c]["fechado"]]
+    if abertos:
+        fez_menos.append("achados SEC " + ", ".join(abertos) + ": fechamento NAO MEDIDO (teste ausente ou nao ok na suite)")
 
     # ================================================================ 9 testes
     if ce:
@@ -615,8 +620,15 @@ Até haver arquivo, este dossiê não os declara fechados.</p>
                      else 'Os pulos registrados desta corrida não foram anexados ao arquivo: '
                           + nao_medido("registro de pulos", "rm -f target/tmp/pulados.jsonl; cargo test --workspace --no-fail-fast 2>&1 | tee ARQ; "
                                        f"{{ echo '{N.MARCA_PULADOS}'; cat target/tmp/pulados.jsonl; }} >> ARQ"))
-                  + f', e há <b>{len(su["calados"])}</b> lugares no código que ainda pulam sem registrar (só imprimem '
-                  f'«pulado»; migração na SP000013), então o número de provados não se afirma.</p>')
+                  + (f', e há <b>{len(su["calados"])}</b> lugares no código que ainda pulam sem registrar (só imprimem '
+                     f'«pulado»; migração na SP000013), então o número de provados não se afirma.</p>'
+                     if su["calados"] else
+                     # Zero calados (guarda do phxclaw-test-support em 0) e o bloco anexado: o
+                     # pulo e todo visivel, e provado = passou sem pular.
+                     (f', e nenhum lugar no código pula sem registrar (guarda em 0): '
+                      f'<b>{su["passam"] - su["pulados"]}</b> provados.</p>' if su["pulados"] is not None
+                      else ', e nenhum lugar no código pula sem registrar (guarda em 0); sem o bloco do '
+                           'registro, o número de provados não se afirma.</p>')))
         if su["pulados"] is None:
             fez_menos.append("pulos registrados: NAO MEDIDOS (o arquivo da suite nao traz o bloco do registro)")
         if su["calados"]:

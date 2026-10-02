@@ -17,6 +17,9 @@ phxclaw-browser = { path = "../../crates/phxclaw-browser" }
 phxclaw-core-runtime = { path = "../../crates/phxclaw-core-runtime" }
 phxclaw-postgres-bootstrap = { path = "../../crates/phxclaw-postgres-bootstrap" }
 phxclaw-secret-broker = { path = "../../crates/phxclaw-secret-broker" }
+# `phxclaw plugins assinar`: o mesmo `reassinar_pasta` do exemplo `assinar`, com a semente
+# do broker. Ja no workspace (dependencia do agente).
+phxclaw-plugin-registry = { path = "../../crates/phxclaw-plugin-registry" }
 # A distancia de edicao da sugestao de comando e a mesma da sugestao de chave do config.json.
 phxclaw-config-runtime = { path = "../../crates/phxclaw-config-runtime" }
 
@@ -26,3 +29,6 @@ phxclaw-config-runtime = { path = "../../crates/phxclaw-config-runtime" }
 # a feature liga libgbm, libdrm, libwayland-client e libxcb no executavel.
 default = ["desktop"]
 desktop = ["phxclaw-agent/desktop"]
+
+[dev-dependencies]
+phxclaw-test-support = { path = "../../crates/phxclaw-test-support" }

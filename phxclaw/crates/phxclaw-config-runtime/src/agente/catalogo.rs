@@ -191,97 +191,139 @@ const FIXAS: &[L] = &[
         "PHXCLAW_MODELO",
         T,
         Some("ollama:qwen2.5:1.5b"),
-        ("Modelo padrão do agente e da API (provedor:modelo)", "Default model of the agent and the API (provider:model)"),
+        (
+            "Modelo padrão do agente e da API (provedor:modelo)",
+            "Default model of the agent and the API (provider:model)",
+        ),
     ),
     c(
         "modelo.local",
         "PHXCLAW_MODELO_LOCAL",
         T,
         None,
-        ("Modelo local dos papéis da equipe que a planilha roteia para o Ollama", "Local model for the team roles the spreadsheet routes to Ollama"),
+        (
+            "Modelo local dos papéis da equipe que a planilha roteia para o Ollama",
+            "Local model for the team roles the spreadsheet routes to Ollama",
+        ),
     ),
     c(
         "modelo.visao",
         "PHXCLAW_MODELO_VISAO",
         T,
         Some("qwen2.5vl:3b"),
-        ("Modelo de visão da leitura de tela", "Vision model for screen reading"),
+        (
+            "Modelo de visão da leitura de tela",
+            "Vision model for screen reading",
+        ),
     ),
     c(
         "agente.estilo",
         "PHXCLAW_ESTILO",
         T,
         None,
-        ("Estilo de saída padrão (embutido ou .phxclaw/estilos/<nome>.md)", "Default output style (built-in or .phxclaw/estilos/<name>.md)"),
+        (
+            "Estilo de saída padrão (embutido ou .phxclaw/estilos/<nome>.md)",
+            "Default output style (built-in or .phxclaw/estilos/<name>.md)",
+        ),
     ),
     c(
         "agente.capacidades",
         "PHXCLAW_CAPACIDADES",
         V,
         None,
-        ("Capacidades liberadas (web.search, fs.read...); vazio = CAPACIDADES_PADRAO", "Granted capabilities (web.search, fs.read...); empty = CAPACIDADES_PADRAO"),
+        (
+            "Capacidades liberadas (web.search, fs.read...); vazio = CAPACIDADES_PADRAO",
+            "Granted capabilities (web.search, fs.read...); empty = CAPACIDADES_PADRAO",
+        ),
     ),
     c(
         "agente.memoria_escopo",
         "PHXCLAW_MEMORIA_ESCOPO",
         T,
         Some("padrao"),
-        ("Escopo da memória persistente (<pasta>/tasks/_memoria/<escopo>.json)", "Scope of the persistent memory (<folder>/tasks/_memoria/<scope>.json)"),
+        (
+            "Escopo da memória persistente (<pasta>/tasks/_memoria/<escopo>.json)",
+            "Scope of the persistent memory (<folder>/tasks/_memoria/<scope>.json)",
+        ),
     ),
     c(
         "agente.skills_dir",
         "PHXCLAW_SKILLS_DIR",
         P,
         None,
-        ("Pasta das skills; vazio = <pasta>/tasks/_skills", "Skills folder; empty = <folder>/tasks/_skills"),
+        (
+            "Pasta das skills; vazio = <pasta>/tasks/_skills",
+            "Skills folder; empty = <folder>/tasks/_skills",
+        ),
     ),
     c(
         "agente.agentes_dir",
         "PHXCLAW_AGENTES_DIR",
         P,
         None,
-        ("Pasta dos manifestos dos papéis da equipe (config/agents)", "Folder of the team role manifests (config/agents)"),
+        (
+            "Pasta dos manifestos dos papéis da equipe (config/agents)",
+            "Folder of the team role manifests (config/agents)",
+        ),
     ),
     c(
         "agente.lsp",
         "PHXCLAW_LSP",
         B,
         Some("true"),
-        ("Servidores de linguagem (LSP) nas ferramentas de código; 0 desliga", "Language servers (LSP) in the code tools; 0 turns them off"),
+        (
+            "Servidores de linguagem (LSP) nas ferramentas de código; 0 desliga",
+            "Language servers (LSP) in the code tools; 0 turns them off",
+        ),
     ),
     c(
         "agente.tentativas_argumento",
         "PHXCLAW_TENTATIVAS_ARGUMENTO",
         I,
         Some("2"),
-        ("Novas tentativas por ferramenta depois de argumento inválido (seguidas); esgotou, a tarefa falha", "Retries per tool after an invalid argument (consecutive); when exhausted, the task fails"),
+        (
+            "Novas tentativas por ferramenta depois de argumento inválido (seguidas); esgotou, a tarefa falha",
+            "Retries per tool after an invalid argument (consecutive); when exhausted, the task fails",
+        ),
     ),
     c(
         "agente.heartbeat_min",
         "PHXCLAW_HEARTBEAT_MIN",
         I,
         Some("30"),
-        ("Intervalo do heartbeat em minutos; 0 desliga", "Heartbeat interval in minutes; 0 turns it off"),
+        (
+            "Intervalo do heartbeat em minutos; 0 desliga",
+            "Heartbeat interval in minutes; 0 turns it off",
+        ),
     ),
     c(
         "agente.heartbeat_arquivo",
         "PHXCLAW_HEARTBEAT",
         P,
         None,
-        ("Arquivo do heartbeat; vazio = HEARTBEAT.md do projeto ou da pasta", "Heartbeat file; empty = HEARTBEAT.md of the project or of the folder"),
+        (
+            "Arquivo do heartbeat; vazio = HEARTBEAT.md do projeto ou da pasta",
+            "Heartbeat file; empty = HEARTBEAT.md of the project or of the folder",
+        ),
     ),
     a(
         "agente.pasta",
         "PHXCLAW_HOME",
         P,
-        ("Pasta do agente (padrão var/agente); o config.json da pasta mora nela", "Agent folder (default var/agente); the folder's config.json lives in it"),
+        (
+            "Pasta do agente (padrão var/agente); o config.json da pasta mora nela",
+            "Agent folder (default var/agente); the folder's config.json lives in it",
+        ),
         LOCALIZA,
     ),
     a(
         "agente.projeto",
         "PHXCLAW_PROJETO",
         P,
-        ("Raiz do projeto (padrão a pasta corrente); o .phxclaw/config.json mora nela", "Project root (default the current folder); .phxclaw/config.json lives in it"),
+        (
+            "Raiz do projeto (padrão a pasta corrente); o .phxclaw/config.json mora nela",
+            "Project root (default the current folder); .phxclaw/config.json lives in it",
+        ),
         LOCALIZA,
     ),
     // --- API, ponte e dispositivos ---
@@ -290,7 +332,10 @@ const FIXAS: &[L] = &[
         "PHXCLAW_API_HOST",
         T,
         Some("127.0.0.1"),
-        ("Endereço em que a API escuta; expor é decisão do operador", "Address the API listens on; exposing it is the operator's decision"),
+        (
+            "Endereço em que a API escuta; expor é decisão do operador",
+            "Address the API listens on; exposing it is the operator's decision",
+        ),
     ),
     c(
         "api.porta",
@@ -302,65 +347,92 @@ const FIXAS: &[L] = &[
     s(
         "api.token",
         "PHXCLAW_API_TOKEN",
-        ("Bearer da API (24+ caracteres)", "API bearer (24+ characters)"),
-        "arquivo <pasta>/api.token (o servir gera) ou a variavel PHXCLAW_API_TOKEN",
-        None,
+        (
+            "Bearer da API (24+ caracteres)",
+            "API bearer (24+ characters)",
+        ),
+        "phxclaw api chave",
+        Some(("api", "api", "api-token")),
     ),
     c(
         "api.tarefas_por_minuto",
         "PHXCLAW_API_TAREFAS_POR_MINUTO",
         I,
         Some("10"),
-        ("Teto de criação de tarefas pela API (balde de fichas)", "Cap on task creation through the API (token bucket)"),
+        (
+            "Teto de criação de tarefas pela API (balde de fichas)",
+            "Cap on task creation through the API (token bucket)",
+        ),
     ),
     c(
         "api.webhook_origens",
         "PHXCLAW_WEBHOOK_ORIGINS",
         V,
         None,
-        ("Origens para onde o webhook de fim de tarefa pode ir; vazio = recusado", "Origins the end-of-task webhook may go to; empty = refused"),
+        (
+            "Origens para onde o webhook de fim de tarefa pode ir; vazio = recusado",
+            "Origins the end-of-task webhook may go to; empty = refused",
+        ),
     ),
     c(
         "api.url_publica",
         "PHXCLAW_PUBLIC_URL",
         T,
         Some("http://127.0.0.1:8787"),
-        ("URL pública do agente (links de site e de artefato)", "Public URL of the agent (site and artifact links)"),
+        (
+            "URL pública do agente (links de site e de artefato)",
+            "Public URL of the agent (site and artifact links)",
+        ),
     ),
     c(
         "api.url_cliente",
         "PHXCLAW_URL",
         T,
         Some("http://127.0.0.1:8787"),
-        ("Servidor que o SDK e o exemplo do SDK chamam", "Server that the SDK and the SDK example call"),
+        (
+            "Servidor que o SDK e o exemplo do SDK chamam",
+            "Server that the SDK and the SDK example call",
+        ),
     ),
     c(
         "ponte.host",
         "PHXCLAW_PONTE_HOST",
         T,
         Some("127.0.0.1"),
-        ("Endereço em que a ponte de controle remoto escuta", "Address the remote control bridge listens on"),
+        (
+            "Endereço em que a ponte de controle remoto escuta",
+            "Address the remote control bridge listens on",
+        ),
     ),
     s(
         "ponte.token",
         "PHXCLAW_PONTE_TOKEN",
-        ("Bearer da ponte (24+ caracteres)", "Bridge bearer (24+ characters)"),
-        "arquivo <pasta>/ponte.token ou a variavel PHXCLAW_PONTE_TOKEN",
-        None,
+        (
+            "Bearer da ponte (24+ caracteres)",
+            "Bridge bearer (24+ characters)",
+        ),
+        "phxclaw ponte chave",
+        Some(("ponte", "ponte", "ponte-token")),
     ),
     c(
         "dispositivos.host",
         "PHXCLAW_DEVICE_HOST",
         T,
         Some("127.0.0.1"),
-        ("Endereço do servidor de dispositivos", "Device server address"),
+        (
+            "Endereço do servidor de dispositivos",
+            "Device server address",
+        ),
     ),
     c(
         "dispositivos.tenant_uuid",
         "PHXCLAW_TENANT_UUID",
         T,
         None,
-        ("Inquilino (UUID) do nó de dispositivo e da ponte", "Tenant (UUID) of the device node and of the bridge"),
+        (
+            "Inquilino (UUID) do nó de dispositivo e da ponte",
+            "Tenant (UUID) of the device node and of the bridge",
+        ),
     ),
     c(
         "dispositivos.no_uuid",
@@ -374,28 +446,37 @@ const FIXAS: &[L] = &[
         "PHXCLAW_DEVICE_WSS_URL",
         T,
         None,
-        ("Endereço WSS do servidor para o nó de dispositivo", "Server WSS address for the device node"),
+        (
+            "Endereço WSS do servidor para o nó de dispositivo",
+            "Server WSS address for the device node",
+        ),
     ),
     c(
         "dispositivos.keystore",
         "PHXCLAW_DEVICE_KEYSTORE",
         P,
         None,
-        ("Arquivo da chave do nó de dispositivo", "Device node key file"),
+        (
+            "Arquivo da chave do nó de dispositivo",
+            "Device node key file",
+        ),
     ),
     c(
         "dispositivos.ca_pem",
         "PHXCLAW_DEVICE_CA_PEM",
         P,
         None,
-        ("Autoridade (PEM) que o nó aceita no TLS", "Authority (PEM) the node accepts in TLS"),
+        (
+            "Autoridade (PEM) que o nó aceita no TLS",
+            "Authority (PEM) the node accepts in TLS",
+        ),
     ),
     s(
         "dispositivos.token_pareamento",
         "PHXCLAW_ENROLLMENT_TOKEN",
         ("Token de pareamento do nó", "Node pairing token"),
-        "variavel PHXCLAW_ENROLLMENT_TOKEN no arranque do pareamento",
-        None,
+        "phxclaw dispositivos chave",
+        Some(("dispositivos", "dispositivos", "token-pareamento")),
     ),
     // --- voz ---
     c(
@@ -403,14 +484,20 @@ const FIXAS: &[L] = &[
         "PHXCLAW_TTS_PROVEDOR",
         Tipo::Enum(&["comando", "elevenlabs"]),
         Some("comando"),
-        ("Quem fala: o comando local ou a ElevenLabs", "Who speaks: the local command or ElevenLabs"),
+        (
+            "Quem fala: o comando local ou a ElevenLabs",
+            "Who speaks: the local command or ElevenLabs",
+        ),
     ),
     c(
         "voz.tts.comando",
         "PHXCLAW_TTS_COMMAND",
         T,
         None,
-        ("Comando de fala local (piper ou equivalente)", "Local speech command (piper or equivalent)"),
+        (
+            "Comando de fala local (piper ou equivalente)",
+            "Local speech command (piper or equivalent)",
+        ),
     ),
     c(
         "voz.tts.modelo",
@@ -424,21 +511,30 @@ const FIXAS: &[L] = &[
         "PHXCLAW_TTS_MODEL_SHA256",
         T,
         None,
-        ("SHA-256 esperado do modelo de fala", "Expected SHA-256 of the speech model"),
+        (
+            "SHA-256 esperado do modelo de fala",
+            "Expected SHA-256 of the speech model",
+        ),
     ),
     c(
         "voz.tts.pastas",
         "PHXCLAW_TTS_DIRS",
         Tipo::Lista(':'),
         None,
-        ("Pastas em que a fala pode gravar (separadas por : no ambiente)", "Folders the speech may write to (separated by : in the environment)"),
+        (
+            "Pastas em que a fala pode gravar (separadas por : no ambiente)",
+            "Folders the speech may write to (separated by : in the environment)",
+        ),
     ),
     c(
         "voz.stt.provedor",
         "PHXCLAW_STT_PROVEDOR",
         Tipo::Enum(&["whisper", "elevenlabs"]),
         Some("whisper"),
-        ("Quem transcreve: o whisper.cpp local ou a ElevenLabs", "Who transcribes: the local whisper.cpp or ElevenLabs"),
+        (
+            "Quem transcreve: o whisper.cpp local ou a ElevenLabs",
+            "Who transcribes: the local whisper.cpp or ElevenLabs",
+        ),
     ),
     c(
         "voz.whisper.bin",
@@ -459,7 +555,10 @@ const FIXAS: &[L] = &[
         "PHXCLAW_WHISPER_MODEL_SHA256",
         T,
         None,
-        ("SHA-256 esperado do modelo do whisper", "Expected SHA-256 of the whisper model"),
+        (
+            "SHA-256 esperado do modelo do whisper",
+            "Expected SHA-256 of the whisper model",
+        ),
     ),
     c(
         "git.segredos.gitleaks_bin",
@@ -503,14 +602,20 @@ const FIXAS: &[L] = &[
         "PHXCLAW_KWS_MODEL_DIR",
         P,
         None,
-        ("Pasta do modelo da palavra de ativação", "Wake word model folder"),
+        (
+            "Pasta do modelo da palavra de ativação",
+            "Wake word model folder",
+        ),
     ),
     c(
         "voz.kws.modelo_sha256",
         "PHXCLAW_KWS_MODEL_SHA256",
         T,
         None,
-        ("SHA-256 esperado do modelo da palavra de ativação", "Expected SHA-256 of the wake word model"),
+        (
+            "SHA-256 esperado do modelo da palavra de ativação",
+            "Expected SHA-256 of the wake word model",
+        ),
     ),
     c(
         "elevenlabs.api",
@@ -524,7 +629,10 @@ const FIXAS: &[L] = &[
         "PHXCLAW_ELEVENLABS_VOZ",
         T,
         None,
-        ("voice_id da ElevenLabs (obrigatório com voz.tts.provedor=elevenlabs)", "ElevenLabs voice_id (required with voz.tts.provedor=elevenlabs)"),
+        (
+            "voice_id da ElevenLabs (obrigatório com voz.tts.provedor=elevenlabs)",
+            "ElevenLabs voice_id (required with voz.tts.provedor=elevenlabs)",
+        ),
     ),
     c(
         "elevenlabs.modelo",
@@ -538,7 +646,10 @@ const FIXAS: &[L] = &[
         "PHXCLAW_ELEVENLABS_FORMATO",
         T,
         Some("wav_16000"),
-        ("Formato de saída da fala (wav_16000, pcm_22050...)", "Speech output format (wav_16000, pcm_22050...)"),
+        (
+            "Formato de saída da fala (wav_16000, pcm_22050...)",
+            "Speech output format (wav_16000, pcm_22050...)",
+        ),
     ),
     c(
         "elevenlabs.estabilidade",
@@ -552,14 +663,20 @@ const FIXAS: &[L] = &[
         "PHXCLAW_ELEVENLABS_SIMILARIDADE",
         R,
         None,
-        ("similarity_boost da voz (0 a 1)", "Voice similarity_boost (0 to 1)"),
+        (
+            "similarity_boost da voz (0 a 1)",
+            "Voice similarity_boost (0 to 1)",
+        ),
     ),
     c(
         "elevenlabs.stt_modelo",
         "PHXCLAW_ELEVENLABS_STT_MODELO",
         T,
         Some("scribe_v2"),
-        ("Modelo de transcrição da ElevenLabs", "ElevenLabs transcription model"),
+        (
+            "Modelo de transcrição da ElevenLabs",
+            "ElevenLabs transcription model",
+        ),
     ),
     s(
         "elevenlabs.chave",
@@ -574,35 +691,60 @@ const FIXAS: &[L] = &[
         "PHXCLAW_IMAGEM_PROVEDOR",
         Tipo::Enum(&["openai", "comfyui", "nanobanana"]),
         None,
-        ("Gerador de imagem; vazio = só o SVG local", "Image generator; empty = local SVG only"),
+        (
+            "Gerador de imagem; vazio = só o SVG local",
+            "Image generator; empty = local SVG only",
+        ),
     ),
     c(
         "imagem.url",
         "PHXCLAW_IMAGEM_URL",
         T,
         None,
-        ("Base do gerador de imagem (openai: https://api.openai.com)", "Image generator base (openai: https://api.openai.com)"),
+        (
+            "Base do gerador de imagem (openai: https://api.openai.com)",
+            "Image generator base (openai: https://api.openai.com)",
+        ),
     ),
     c(
         "imagem.modelo",
         "PHXCLAW_IMAGEM_MODELO",
         T,
         None,
-        ("Modelo do gerador de imagem (openai: gpt-image-1)", "Image generator model (openai: gpt-image-1)"),
+        (
+            "Modelo do gerador de imagem (openai: gpt-image-1)",
+            "Image generator model (openai: gpt-image-1)",
+        ),
     ),
     c(
         "imagem.comfy_fluxo",
         "PHXCLAW_COMFY_WORKFLOW",
         P,
         None,
-        ("Fluxo do ComfyUI (obrigatório com imagem.provedor=comfyui)", "ComfyUI workflow (required with imagem.provedor=comfyui)"),
+        (
+            "Fluxo do ComfyUI (obrigatório com imagem.provedor=comfyui)",
+            "ComfyUI workflow (required with imagem.provedor=comfyui)",
+        ),
+    ),
+    c(
+        "imagem.entrada_pixels_max",
+        "PHXCLAW_IMAGEM_ENTRADA_PIXELS_MAX",
+        I,
+        Some("40000000"),
+        (
+            "Teto de pixels (largura x altura) de imagem de entrada, lido do cabeçalho antes de decodificar",
+            "Pixel ceiling (width x height) of an input image, read from the header before decoding",
+        ),
     ),
     s(
         "imagem.chave",
         "PHXCLAW_IMAGEM_CHAVE",
-        ("Chave do gerador de imagem openai", "Key of the openai image generator"),
-        "variavel PHXCLAW_IMAGEM_CHAVE (ainda sem comando de broker)",
-        None,
+        (
+            "Chave do gerador de imagem openai",
+            "Key of the openai image generator",
+        ),
+        "phxclaw imagem chave",
+        Some(("imagem", "imagem", "imagem-chave")),
     ),
     s(
         "gemini.chave",
@@ -645,7 +787,10 @@ const FIXAS: &[L] = &[
         "PHXCLAW_SMTP_PORT",
         I,
         None,
-        ("Porta SMTP; vazio = 465 (tls), 587 (starttls) ou 25 (plain)", "SMTP port; empty = 465 (tls), 587 (starttls) or 25 (plain)"),
+        (
+            "Porta SMTP; vazio = 465 (tls), 587 (starttls) ou 25 (plain)",
+            "SMTP port; empty = 465 (tls), 587 (starttls) or 25 (plain)",
+        ),
     ),
     c(
         "email.smtp.seguranca",
@@ -665,8 +810,8 @@ const FIXAS: &[L] = &[
         "email.smtp.senha",
         "PHXCLAW_SMTP_PASSWORD",
         ("Senha do SMTP", "SMTP password"),
-        "variavel PHXCLAW_SMTP_PASSWORD (no canal de e-mail vai ao broker como email-smtp_senha)",
-        None,
+        "phxclaw email chave",
+        Some(("canal", "canais", "email-smtp_senha")),
     ),
     c(
         "email.remetente",
@@ -680,7 +825,10 @@ const FIXAS: &[L] = &[
         "PHXCLAW_EMAIL_PERMITIDOS",
         V,
         None,
-        ("Destinatários permitidos do send_email", "Recipients allowed for send_email"),
+        (
+            "Destinatários permitidos do send_email",
+            "Recipients allowed for send_email",
+        ),
     ),
     // --- forjas e MCP ---
     c(
@@ -716,19 +864,28 @@ const FIXAS: &[L] = &[
         "PHXCLAW_MCP_CONFIG",
         P,
         None,
-        ("Arquivo dos servidores MCP do operador", "Operator's MCP servers file"),
+        (
+            "Arquivo dos servidores MCP do operador",
+            "Operator's MCP servers file",
+        ),
     ),
     s(
         "mcp.token",
         "PHXCLAW_MCP_TOKEN",
-        ("Token de um servidor MCP remoto", "Token of a remote MCP server"),
+        (
+            "Token de um servidor MCP remoto",
+            "Token of a remote MCP server",
+        ),
         "phxclaw mcp token NOME",
         None,
     ),
     s(
         "mcp.segredo_cliente",
         "PHXCLAW_MCP_SEGREDO_CLIENTE",
-        ("Segredo do cliente OAuth de um servidor MCP", "OAuth client secret of an MCP server"),
+        (
+            "Segredo do cliente OAuth de um servidor MCP",
+            "OAuth client secret of an MCP server",
+        ),
         "phxclaw mcp login NOME",
         None,
     ),
@@ -738,42 +895,60 @@ const FIXAS: &[L] = &[
         "PHXCLAW_PLUGINS_RAIZ",
         P,
         None,
-        ("Raiz dos plugins; vazio = nenhum plugin", "Plugins root; empty = no plugins"),
+        (
+            "Raiz dos plugins; vazio = nenhum plugin",
+            "Plugins root; empty = no plugins",
+        ),
     ),
     c(
         "plugins.dir",
         "PHXCLAW_PLUGINS_DIR",
         P,
         None,
-        ("Pasta dos manifestos; vazio = <raiz>/plugins", "Manifests folder; empty = <root>/plugins"),
+        (
+            "Pasta dos manifestos; vazio = <raiz>/plugins",
+            "Manifests folder; empty = <root>/plugins",
+        ),
     ),
     c(
         "plugins.assinantes",
         "PHXCLAW_PLUGIN_SIGNERS",
         P,
         None,
-        ("Trust store dos assinantes; vazio = <raiz>/config/trust/plugin-signers.json", "Signers trust store; empty = <root>/config/trust/plugin-signers.json"),
+        (
+            "Trust store dos assinantes; vazio = <raiz>/config/trust/plugin-signers.json",
+            "Signers trust store; empty = <root>/config/trust/plugin-signers.json",
+        ),
     ),
     c(
         "plugins.chave_assinatura_arquivo",
         "PHXCLAW_PLUGIN_SIGNING_KEY_FILE",
         P,
         None,
-        ("Arquivo da semente de assinatura (exemplo assinar)", "Signing seed file (assinar example)"),
+        (
+            "Arquivo da semente de assinatura (exemplo assinar)",
+            "Signing seed file (assinar example)",
+        ),
     ),
     s(
         "plugins.chave_assinatura",
         "PHXCLAW_PLUGIN_SIGNING_KEY",
-        ("Semente de assinatura de plugin (exemplo assinar)", "Plugin signing seed (assinar example)"),
-        "variavel PHXCLAW_PLUGIN_SIGNING_KEY ou o arquivo de plugins.chave_assinatura_arquivo",
-        None,
+        (
+            "Semente de assinatura de plugin (exemplo assinar)",
+            "Plugin signing seed (assinar example)",
+        ),
+        "phxclaw plugins chave",
+        Some(("plugins", "plugins", "plugins-chave-assinatura")),
     ),
     c(
         "pacotes.dir",
         "PHXCLAW_PACOTES_DIR",
         P,
         None,
-        ("Pasta dos pacotes assinados (Claude/Codex)", "Folder of the signed packages (Claude/Codex)"),
+        (
+            "Pasta dos pacotes assinados (Claude/Codex)",
+            "Folder of the signed packages (Claude/Codex)",
+        ),
     ),
     // --- rede, banco, navegador, ferramentas ---
     c(
@@ -781,21 +956,30 @@ const FIXAS: &[L] = &[
         "PHXCLAW_NET_DESTINOS",
         V,
         None,
-        ("Destinos host:porta que a sonda de rede pode tocar", "host:port destinations the network probe may reach"),
+        (
+            "Destinos host:porta que a sonda de rede pode tocar",
+            "host:port destinations the network probe may reach",
+        ),
     ),
     c(
         "postgres.url",
         "PHXCLAW_PG_URL",
         T,
         None,
-        ("PostgreSQL das ferramentas db (sem senha na URL: senha vai pelo .pgpass)", "PostgreSQL for the db tools (no password in the URL: the password goes through .pgpass)"),
+        (
+            "PostgreSQL das ferramentas db (sem senha na URL: senha vai pelo .pgpass)",
+            "PostgreSQL for the db tools (no password in the URL: the password goes through .pgpass)",
+        ),
     ),
     c(
         "postgres.database_url",
         "PHXCLAW_DATABASE_URL",
         T,
         None,
-        ("PostgreSQL da CLI antiga (phxclaw-cli)", "PostgreSQL of the old CLI (phxclaw-cli)"),
+        (
+            "PostgreSQL da CLI antiga (phxclaw-cli)",
+            "PostgreSQL of the old CLI (phxclaw-cli)",
+        ),
     ),
     c(
         "navegador.chromium",
@@ -816,9 +1000,18 @@ const FIXAS: &[L] = &[
         "PHXCLAW_PYTHON",
         P,
         None,
-        ("Interpretador Python das ferramentas", "Python interpreter for the tools"),
+        (
+            "Interpretador Python das ferramentas",
+            "Python interpreter for the tools",
+        ),
     ),
-    c("python.uv", "PHXCLAW_UV", P, None, ("Executável do uv", "uv executable")),
+    c(
+        "python.uv",
+        "PHXCLAW_UV",
+        P,
+        None,
+        ("Executável do uv", "uv executable"),
+    ),
     c(
         "ui.dir",
         "PHXCLAW_UI_DIR",
@@ -831,35 +1024,50 @@ const FIXAS: &[L] = &[
         "PHXCLAW_UI_BOOTSTRAP_CSS",
         P,
         None,
-        ("Folha LOCAL do Bootstrap 5.3 nas telas geradas (nunca CDN); vazio = vendor/bootstrap-5.3.3/bootstrap.min.css", "LOCAL Bootstrap 5.3 stylesheet for generated screens (never a CDN); empty = vendor/bootstrap-5.3.3/bootstrap.min.css"),
+        (
+            "Folha LOCAL do Bootstrap 5.3 nas telas geradas (nunca CDN); vazio = vendor/bootstrap-5.3.3/bootstrap.min.css",
+            "LOCAL Bootstrap 5.3 stylesheet for generated screens (never a CDN); empty = vendor/bootstrap-5.3.3/bootstrap.min.css",
+        ),
     ),
     c(
         "clima.api",
         "PHXCLAW_MET_API",
         T,
         None,
-        ("Base da API de clima (MET Norway)", "Weather API base (MET Norway)"),
+        (
+            "Base da API de clima (MET Norway)",
+            "Weather API base (MET Norway)",
+        ),
     ),
     c(
         "clima.contato",
         "PHXCLAW_MET_CONTATO",
         T,
         None,
-        ("Contato no User-Agent pedido pelo MET Norway", "Contact in the User-Agent requested by MET Norway"),
+        (
+            "Contato no User-Agent pedido pelo MET Norway",
+            "Contact in the User-Agent requested by MET Norway",
+        ),
     ),
     c(
         "documentos.embed",
         "PHXCLAW_DOCS_EMBED",
         T,
         None,
-        ("Modelo de embedding da reordenação (só ollama:)", "Embedding model for reranking (ollama: only)"),
+        (
+            "Modelo de embedding da reordenação (só ollama:)",
+            "Embedding model for reranking (ollama: only)",
+        ),
     ),
     c(
         "missao.estado_dir",
         "PHXCLAW_STATE_DIR",
         P,
         None,
-        ("Pasta de estado da CLI de missão", "State folder of the mission CLI"),
+        (
+            "Pasta de estado da CLI de missão",
+            "State folder of the mission CLI",
+        ),
     ),
     // --- canal do Telegram (os demais saem de CANAIS) ---
     s(
@@ -874,7 +1082,21 @@ const FIXAS: &[L] = &[
         "PHXCLAW_TELEGRAM_CHATS",
         V,
         None,
-        ("Chats que podem falar com o agente (obrigatório)", "Chats allowed to talk to the agent (required)"),
+        (
+            "Chats que podem falar com o agente (obrigatório)",
+            "Chats allowed to talk to the agent (required)",
+        ),
+    ),
+    // --- IDE (workspace de varias raizes) ---
+    c(
+        "ide.raizes",
+        "PHXCLAW_RAIZES",
+        Tipo::Lista(':'),
+        None,
+        (
+            "Raízes extras do workspace além da pasta do projeto (também em .phxclaw/workspace.json); o IDE as expõe ao terminal",
+            "Extra workspace roots besides the project folder (also in .phxclaw/workspace.json); the IDE exposes them to the terminal",
+        ),
     ),
     // --- app de mesa ---
     c(
@@ -882,14 +1104,20 @@ const FIXAS: &[L] = &[
         "PHXCLAW_ENABLE_HOST_EXEC",
         B,
         Some("false"),
-        ("App de mesa: executar comando no host", "Desktop app: run a command on the host"),
+        (
+            "App de mesa: executar comando no host",
+            "Desktop app: run a command on the host",
+        ),
     ),
     c(
         "desktop.controle_webview",
         "PHXCLAW_ENABLE_WEBVIEW_CONTROL",
         B,
         Some("false"),
-        ("App de mesa: controlar webview", "Desktop app: control the webview"),
+        (
+            "App de mesa: controlar webview",
+            "Desktop app: control the webview",
+        ),
     ),
     c(
         "desktop.shells",
@@ -903,42 +1131,70 @@ const FIXAS: &[L] = &[
         "PHXCLAW_ENABLE_INPUT",
         B,
         Some("false"),
-        ("App de mesa: mouse e teclado", "Desktop app: mouse and keyboard"),
+        (
+            "App de mesa: mouse e teclado",
+            "Desktop app: mouse and keyboard",
+        ),
     ),
     c(
         "desktop.captura_tela",
         "PHXCLAW_ENABLE_SCREEN_CAPTURE",
         B,
         Some("false"),
-        ("App de mesa: captura de tela", "Desktop app: screen capture"),
+        (
+            "App de mesa: captura de tela",
+            "Desktop app: screen capture",
+        ),
     ),
     c(
         "desktop.webviews_externas",
         "PHXCLAW_ENABLE_EXTERNAL_WEBVIEWS",
         B,
         Some("false"),
-        ("App de mesa: webviews externas", "Desktop app: external webviews"),
+        (
+            "App de mesa: webviews externas",
+            "Desktop app: external webviews",
+        ),
     ),
     c(
         "desktop.controle_api_host",
         "PHXCLAW_API_HOST_CONTROL",
         B,
         Some("false"),
-        ("App de mesa: a API controla o host", "Desktop app: the API controls the host"),
+        (
+            "App de mesa: a API controla o host",
+            "Desktop app: the API controls the host",
+        ),
     ),
     c(
         "desktop.webview_origens",
         "PHXCLAW_WEBVIEW_ALLOWED_ORIGINS",
         V,
         None,
-        ("App de mesa: origens permitidas na webview", "Desktop app: origins allowed in the webview"),
+        (
+            "App de mesa: origens permitidas na webview",
+            "Desktop app: origins allowed in the webview",
+        ),
     ),
     c(
         "desktop.hx",
         "PHXCLAW_HX",
         P,
         None,
-        ("App de mesa: executável do Helix", "Desktop app: Helix executable"),
+        (
+            "App de mesa: executável do Helix",
+            "Desktop app: Helix executable",
+        ),
+    ),
+    c(
+        "ide.historico_versoes_max",
+        "PHXCLAW_IDE_HISTORICO_VERSOES_MAX",
+        I,
+        Some("50"),
+        (
+            "IDE: versões guardadas por arquivo no histórico local de gravações (.phxclaw/historico)",
+            "IDE: versions kept per file in the local save history (.phxclaw/historico)",
+        ),
     ),
     // --- pontes para agentes externos ---
     c(
@@ -988,7 +1244,10 @@ const FIXAS: &[L] = &[
         "PHXCLAW_OPENCLAW_RS_WORKSPACE",
         P,
         Some("."),
-        ("Pasta de trabalho do openclaw-rs", "openclaw-rs working folder"),
+        (
+            "Pasta de trabalho do openclaw-rs",
+            "openclaw-rs working folder",
+        ),
     ),
     c(
         "pontes.openclaw_rs.timeout_ms",
@@ -1023,14 +1282,20 @@ const FIXAS: &[L] = &[
         "PHXCLAW_RUSTCLAW_ALLOW_PROMPT_ARGV",
         B,
         Some("false"),
-        ("Permite o prompt na linha de comando do rustclaw (fica visível no ps)", "Allows the prompt on the rustclaw command line (it shows in ps)"),
+        (
+            "Permite o prompt na linha de comando do rustclaw (fica visível no ps)",
+            "Allows the prompt on the rustclaw command line (it shows in ps)",
+        ),
     ),
     // --- exportadas ao processo filho ---
     a(
         "exportadas.hook_entrada",
         "PHXCLAW_HOOK_INPUT",
         T,
-        ("Entrada do hook (JSON do evento)", "Hook input (event JSON)"),
+        (
+            "Entrada do hook (JSON do evento)",
+            "Hook input (event JSON)",
+        ),
         EXPORTADA,
     ),
     a(
@@ -1044,14 +1309,20 @@ const FIXAS: &[L] = &[
         "exportadas.hook_projeto",
         "PHXCLAW_PROJECT_DIR",
         P,
-        ("Pasta do projeto vista pelo hook", "Project folder as seen by the hook"),
+        (
+            "Pasta do projeto vista pelo hook",
+            "Project folder as seen by the hook",
+        ),
         EXPORTADA,
     ),
     a(
         "exportadas.plugin_args",
         "PHXCLAW_ARGS",
         T,
-        ("Argumentos da chamada ao plugin", "Arguments of the plugin call"),
+        (
+            "Argumentos da chamada ao plugin",
+            "Arguments of the plugin call",
+        ),
         EXPORTADA,
     ),
     a(
@@ -1087,22 +1358,37 @@ const FIXAS: &[L] = &[
         "acao.bin",
         "PHXCLAW_BIN",
         P,
-        ("Binário do phxclaw exportado entre passos", "phxclaw binary exported between steps"),
+        (
+            "Binário do phxclaw exportado entre passos",
+            "phxclaw binary exported between steps",
+        ),
         ACAO,
     ),
     a(
         "acao.bin_entrada",
         "PHXCLAW_BIN_ENTRADA",
         P,
-        ("Binário do phxclaw dado à Action", "phxclaw binary given to the Action"),
+        (
+            "Binário do phxclaw dado à Action",
+            "phxclaw binary given to the Action",
+        ),
         ACAO,
     ),
-    a("acao.foco", "PHXCLAW_FOCO", T, ("Foco da revisão", "Review focus"), ACAO),
+    a(
+        "acao.foco",
+        "PHXCLAW_FOCO",
+        T,
+        ("Foco da revisão", "Review focus"),
+        ACAO,
+    ),
     a(
         "acao.falhar_em",
         "PHXCLAW_FALHAR_EM",
         T,
-        ("Severidade que reprova a revisão", "Severity that fails the review"),
+        (
+            "Severidade que reprova a revisão",
+            "Severity that fails the review",
+        ),
         ACAO,
     ),
     // --- provas manuais ---
@@ -1117,14 +1403,20 @@ const FIXAS: &[L] = &[
         "testes.ollama_modelo",
         "PHXCLAW_E2E_OLLAMA_MODEL",
         T,
-        ("Modelo da prova real do Ollama", "Model for the real Ollama test"),
+        (
+            "Modelo da prova real do Ollama",
+            "Model for the real Ollama test",
+        ),
         PROVA,
     ),
     a(
         "testes.ollama_modelo_embed",
         "PHXCLAW_E2E_OLLAMA_EMBED_MODEL",
         T,
-        ("Modelo de embedding da prova real", "Embedding model for the real test"),
+        (
+            "Modelo de embedding da prova real",
+            "Embedding model for the real test",
+        ),
         PROVA,
     ),
     a(
@@ -1145,56 +1437,80 @@ const FIXAS: &[L] = &[
         "testes.whisper_modelo",
         "PHXCLAW_E2E_WHISPER_MODEL",
         P,
-        ("Modelo do whisper da prova real", "whisper model for the real test"),
+        (
+            "Modelo do whisper da prova real",
+            "whisper model for the real test",
+        ),
         PROVA,
     ),
     a(
         "testes.whisper_modelo_sha256",
         "PHXCLAW_E2E_WHISPER_MODEL_SHA256",
         T,
-        ("SHA-256 do modelo da prova real", "SHA-256 of the real test model"),
+        (
+            "SHA-256 do modelo da prova real",
+            "SHA-256 of the real test model",
+        ),
         PROVA,
     ),
     a(
         "testes.whisper_audio",
         "PHXCLAW_E2E_WHISPER_AUDIO",
         P,
-        ("Áudio da prova real do whisper", "Audio for the real whisper test"),
+        (
+            "Áudio da prova real do whisper",
+            "Audio for the real whisper test",
+        ),
         PROVA,
     ),
     a(
         "testes.caos_segundos",
         "PHXCLAW_CHAOS_SECONDS",
         I,
-        ("Duração da prova de caos no PostgreSQL", "Duration of the PostgreSQL chaos test"),
+        (
+            "Duração da prova de caos no PostgreSQL",
+            "Duration of the PostgreSQL chaos test",
+        ),
         PROVA,
     ),
     a(
         "testes.prova_visao",
         "PHXCLAW_PROVA_VISAO",
         T,
-        ("Liga a prova real de visão", "Turns on the real vision test"),
+        (
+            "Liga a prova real de visão",
+            "Turns on the real vision test",
+        ),
         PROVA,
     ),
     a(
         "testes.prova_visao_png",
         "PHXCLAW_PROVA_VISAO_PNG",
         P,
-        ("Imagem da prova real de visão", "Image for the real vision test"),
+        (
+            "Imagem da prova real de visão",
+            "Image for the real vision test",
+        ),
         PROVA,
     ),
     a(
         "testes.prova_visao_texto",
         "PHXCLAW_PROVA_VISAO_TEXTO",
         T,
-        ("Texto esperado na prova real de visão", "Expected text in the real vision test"),
+        (
+            "Texto esperado na prova real de visão",
+            "Expected text in the real vision test",
+        ),
         PROVA,
     ),
     a(
         "testes.office_exigir_prova",
         "PHXCLAW_OFFICE_EXIGIR_PROVA",
         T,
-        ("Exige a prova real do office", "Requires the real office test"),
+        (
+            "Exige a prova real do office",
+            "Requires the real office test",
+        ),
         PROVA,
     ),
     a(
@@ -1208,14 +1524,20 @@ const FIXAS: &[L] = &[
         "testes.prova_docs",
         "PHXCLAW_PROVA_DOCS",
         P,
-        ("Pasta da medição real de documentos", "Folder of the real document measurement"),
+        (
+            "Pasta da medição real de documentos",
+            "Folder of the real document measurement",
+        ),
         PROVA,
     ),
     a(
         "testes.prova_docs_gabarito",
         "PHXCLAW_PROVA_DOCS_GABARITO",
         P,
-        ("Gabarito da medição real de documentos", "Answer key of the real document measurement"),
+        (
+            "Gabarito da medição real de documentos",
+            "Answer key of the real document measurement",
+        ),
         PROVA,
     ),
     a(
@@ -1229,7 +1551,10 @@ const FIXAS: &[L] = &[
         "testes.telegram_chat_id",
         "PHXCLAW_TELEGRAM_CHAT_ID",
         T,
-        ("Chat da prova real do Telegram", "Chat for the real Telegram test"),
+        (
+            "Chat da prova real do Telegram",
+            "Chat for the real Telegram test",
+        ),
         PROVA,
     ),
 ];

@@ -58,8 +58,8 @@ fn falha(e: impl std::fmt::Display) -> ToolError {
 }
 
 impl ImageGenerateTool {
-    /// `PHXCLAW_IMAGEM_PROVEDOR` = `openai` (com `PHXCLAW_IMAGEM_URL`, `PHXCLAW_IMAGEM_CHAVE`,
-    /// `PHXCLAW_IMAGEM_MODELO`), `comfyui` (com `PHXCLAW_IMAGEM_URL` e
+    /// `PHXCLAW_IMAGEM_PROVEDOR` = `openai` (com `PHXCLAW_IMAGEM_URL`, `PHXCLAW_IMAGEM_CHAVE`
+    /// ou a chave de `phxclaw imagem chave` no broker, `PHXCLAW_IMAGEM_MODELO`), `comfyui` (com `PHXCLAW_IMAGEM_URL` e
     /// `PHXCLAW_COMFY_WORKFLOW`) ou `nanobanana` (chave de `phxclaw gemini chave` no broker
     /// de `raiz_do_agente`; `PHXCLAW_IMAGEM_URL` e `PHXCLAW_IMAGEM_MODELO` opcionais). Sem
     /// nada: so o SVG local.
@@ -71,7 +71,8 @@ impl ImageGenerateTool {
             )),
             Some("openai") => Some(Provedor::OpenAi {
                 url: var("PHXCLAW_IMAGEM_URL").unwrap_or_else(|| "https://api.openai.com".into()),
-                chave: var("PHXCLAW_IMAGEM_CHAVE"),
+                // Ambiente, senao o broker de `phxclaw imagem chave`.
+                chave: crate::chaves::IMAGEM.do_ambiente_ou_broker(raiz_do_agente)?,
                 modelo: var("PHXCLAW_IMAGEM_MODELO").unwrap_or_else(|| "gpt-image-1".into()),
             }),
             Some("comfyui") => Some(Provedor::ComfyUi {

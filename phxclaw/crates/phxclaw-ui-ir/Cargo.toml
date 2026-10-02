@@ -10,5 +10,6 @@ serde_json.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
+phxclaw-test-support = { path = "../phxclaw-test-support" }
 phxclaw-browser = { path = "../phxclaw-browser" }
 tokio.workspace = true

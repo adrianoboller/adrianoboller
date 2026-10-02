@@ -1,4 +1,5 @@
 use super::*;
+use phxclaw_test_support::pulado;
 use std::time::{Duration, Instant};
 
 /// Pasta da tarefa DENTRO de uma base propria: a base e o «fora» que os testes de
@@ -19,7 +20,7 @@ fn ambiente(nome: &str) -> (PathBuf, ToolContext) {
 fn sandbox_ok() -> bool {
     let ok = achar_bwrap().is_some();
     if !ok {
-        eprintln!("PULADO: bwrap ausente; conversores nao provados");
+        pulado::pular("bwrap", "bwrap ausente; conversores nao provados");
     }
     ok
 }
@@ -382,7 +383,7 @@ fn pdf_minimo(paginas: &[&str]) -> Vec<u8> {
 #[tokio::test]
 async fn pdf_info_texto_por_faixa_e_read_document() {
     if !sandbox_ok() || exige_programa("pdftotext", "poppler-utils").is_err() {
-        eprintln!("PULADO: poppler ausente");
+        pulado::pular("pdftotext", "poppler ausente");
         return;
     }
     let (base, ctx) = ambiente("pdf");
@@ -489,7 +490,7 @@ async fn pdf_create_converte_txt_e_html_e_recusa_fora_da_pasta() {
     .await;
     assert!(matches!(r, Err(ToolError::InvalidArguments(_))), "{r:?}");
     if !sandbox_ok() || exige_programa("soffice", "libreoffice-writer").is_err() {
-        eprintln!("PULADO: LibreOffice ausente; conversao nao provada");
+        pulado::pular("soffice", "LibreOffice ausente; conversao nao provada");
         let _ = std::fs::remove_dir_all(&base);
         return;
     }

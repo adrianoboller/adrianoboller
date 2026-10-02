@@ -42,7 +42,6 @@ use phxclaw_agent_core::{BoxFut, Tool, ToolContext, ToolError, ToolOutput, ToolS
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
-use std::io::Write;
 use std::path::{Path, PathBuf};
 
 /// Versao do formato em disco. Arquivo de versao diferente e recusado: ler um formato que
@@ -272,38 +271,19 @@ fn sha256_hex(t: &str) -> String {
         .collect()
 }
 
-/// Trava exclusiva entre processos, solta quando o arquivo fecha.
+/// Trava exclusiva entre processos, solta quando o arquivo fecha. O motor e o de toda a
+/// base (`phxclaw_types::arquivo`); aqui so o erro ganha o caminho.
 fn travar(arq: &Path) -> Result<std::fs::File, String> {
-    let f = std::fs::OpenOptions::new()
-        .create(true)
-        .truncate(false)
-        .write(true)
-        .open(arq)
-        .map_err(|e| format!("{}: {e}", arq.display()))?;
-    f.lock().map_err(|e| format!("{}: {e}", arq.display()))?;
-    Ok(f)
+    phxclaw_types::arquivo::travar(arq).map_err(|e| format!("{}: {e}", arq.display()))
 }
 
-/// Troca atomica: temporario, fsync, renomeacao, fsync da pasta.
+/// Troca atomica (temporario por pid, fsync, renomeacao, fsync da pasta) pelo mesmo
+/// motor dos outros seis arquivos que se trocam assim. Este foi o modelo dele.
 fn gravar_atomico(arq: &Path, texto: &str) -> Result<(), String> {
-    let pasta = arq.parent().unwrap_or(Path::new("."));
-    let tmp = pasta.join(format!(
-        ".{}.{}.tmp",
-        arq.file_name().unwrap_or_default().to_string_lossy(),
-        std::process::id()
-    ));
-    let escrever = || -> std::io::Result<()> {
-        let mut f = std::fs::File::create(&tmp)?;
-        f.write_all(texto.as_bytes())?;
-        f.write_all(b"\n")?;
-        f.sync_all()?;
-        std::fs::rename(&tmp, arq)?;
-        std::fs::File::open(pasta)?.sync_all()
-    };
-    escrever().map_err(|e| {
-        let _ = std::fs::remove_file(&tmp);
-        format!("{}: {e}", arq.display())
-    })
+    let mut bytes = texto.as_bytes().to_vec();
+    bytes.push(b'\n');
+    phxclaw_types::arquivo::gravar_atomico(arq, &bytes)
+        .map_err(|e| format!("{}: {e}", arq.display()))
 }
 
 impl Conselho {

@@ -2,6 +2,7 @@
 //! motivo escrito quando nao ha Chromium, para nao virar falso verde calado.
 
 use phxclaw_browser::{Browser, BrowserError, BrowserPolicy, LaunchOptions, find_chromium};
+use phxclaw_test_support::pulado;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::Arc;
@@ -128,8 +129,9 @@ fn cenario() -> (Servidor, Servidor) {
 
 async fn lancar(permitido: &Servidor) -> Option<Browser> {
     if find_chromium().is_none() {
-        eprintln!(
-            "PULADO: Chromium nao encontrado (defina PHXCLAW_CHROMIUM); a prova real nao rodou"
+        pulado::pular(
+            "chromium",
+            "Chromium nao encontrado (defina PHXCLAW_CHROMIUM); a prova real nao rodou",
         );
         return None;
     }
@@ -329,7 +331,7 @@ async fn goto_direto_proibido_recusa_sem_tocar_a_rede() {
 async fn politica_padrao_nega_ate_a_origem_do_teste() {
     let (ok, _proibido) = cenario();
     if find_chromium().is_none() {
-        eprintln!("PULADO: Chromium nao encontrado");
+        pulado::pular("chromium", "Chromium nao encontrado");
         return;
     }
     let b = Browser::launch(LaunchOptions::default()).await.unwrap();

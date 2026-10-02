@@ -104,6 +104,14 @@ fn montar(programa: ProgramaTerminal, cwd: &Path) -> Result<Programa, String> {
             if let Some(r) = runtime {
                 env.push(("HELIX_RUNTIME".into(), r.display().to_string()));
             }
+            // Workspace de varias raizes: o hx abre a PRIMEIRA (a pasta do projeto) e as
+            // outras vao na variavel (`ide.raizes` do catalogo), para o shell e o proprio
+            // usuario as acharem sem segunda janela. Arquivo invalido e erro dito.
+            let raizes = phxclaw_workspace::raizes(&cwd.join(".phxclaw"))?;
+            if !raizes.is_empty() {
+                let lista = phxclaw_workspace::variavel(&raizes);
+                env.push(("PHXCLAW_RAIZES".into(), lista));
+            }
             Ok(Programa {
                 programa: hx.display().to_string(),
                 args: vec![".".into()],

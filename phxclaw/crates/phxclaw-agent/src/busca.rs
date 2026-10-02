@@ -491,6 +491,178 @@ case_insensitive, limit."
     }
 }
 
+/// Teto de arquivos que uma substituicao muda de uma vez: acima disso o pedido e amplo
+/// demais para ter sido lido na previa.
+const MAX_ARQUIVOS_SUBSTITUIR: usize = 500;
+
+/// Os arquivos que um padrao casa e quantas ocorrencias em cada um: a previa e a gravacao
+/// saem DESTA lista, para que o que se grava seja exatamente o que a previa mostrou.
+fn ocorrencias_no_projeto(
+    raiz: &Path,
+    re: &regex::Regex,
+    filtro: Option<&str>,
+    todos: bool,
+) -> (Vec<(String, String, usize)>, bool) {
+    let (arqs, teto) = percorrer(raiz, todos);
+    let mut v = Vec::new();
+    for r in arqs {
+        if filtro.is_some_and(|f| !casa_filtro(f, &r)) {
+            continue;
+        }
+        let p = raiz.join(&r);
+        if std::fs::metadata(&p)
+            .map(|m| m.len() > MAX_BYTES_GREP)
+            .unwrap_or(true)
+        {
+            continue;
+        }
+        let Ok(b) = std::fs::read(&p) else { continue };
+        if b.iter().take(8192).any(|&c| c == 0) {
+            continue;
+        }
+        // So UTF-8 valido se reescreve: `from_utf8_lossy` gravaria `U+FFFD` onde o byte
+        // original estava, mudando o que o padrao nem tocou.
+        let Ok(t) = String::from_utf8(b) else {
+            continue;
+        };
+        let n = re.find_iter(&t).count();
+        if n > 0 {
+            v.push((r, t, n));
+        }
+    }
+    (v, teto)
+}
+
+/// Substituicao em todos os arquivos do projeto, pelo mesmo motor do `grep` (a mesma
+/// varredura, o mesmo `.gitignore`, o mesmo criterio de binario) e gravada pelo mesmo
+/// caminho do `edit_file` (`confine` + `std::fs::write`, artefato com hash). Sem
+/// `confirm: true` e so previa: a contagem por arquivo, e nada muda. A capacidade e
+/// `fs.write`, entao o portao do motor tira o ponto de restauracao antes da gravacao.
+pub struct ReplaceInProjectTool;
+
+impl Tool for ReplaceInProjectTool {
+    fn spec(&self) -> ToolSpec {
+        ToolSpec {
+            name: "replace_in_project".into(),
+            description: "Replace a pattern in every matching file of the task directory \
+(skips .gitignore'd and binary files). pattern is literal unless regex=true (then \
+replacement may use $1 groups). Optional glob ('*.rs'), path (subfolder), \
+case_insensitive. confirm=false (default) only previews: files and count per file, \
+nothing is written. confirm=true writes; a checkpoint is taken before."
+                .into(),
+            parameters: json!({"type":"object","properties":{
+                "pattern":{"type":"string"},
+                "replacement":{"type":"string"},
+                "regex":{"type":"boolean"},
+                "glob":{"type":"string"},
+                "path":{"type":"string"},
+                "case_insensitive":{"type":"boolean"},
+                "confirm":{"type":"boolean"},
+                "include_ignored":{"type":"boolean"}
+            },"required":["pattern","replacement"]}),
+        }
+    }
+    fn capability(&self) -> &'static str {
+        "fs.write"
+    }
+    fn run<'a>(
+        &'a self,
+        args: Value,
+        ctx: &'a ToolContext,
+    ) -> BoxFut<'a, Result<ToolOutput, ToolError>> {
+        Box::pin(async move {
+            let padrao = args
+                .get("pattern")
+                .and_then(Value::as_str)
+                .filter(|p| !p.is_empty())
+                .ok_or_else(|| ToolError::InvalidArguments("falta 'pattern'".into()))?;
+            let troca = args
+                .get("replacement")
+                .and_then(Value::as_str)
+                .ok_or_else(|| ToolError::InvalidArguments("falta 'replacement'".into()))?
+                .to_string();
+            let eh_regex = args.get("regex").and_then(Value::as_bool).unwrap_or(false);
+            let confirmar = args
+                .get("confirm")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            let fonte = if eh_regex {
+                padrao.to_string()
+            } else {
+                regex::escape(padrao)
+            };
+            let re = RegexBuilder::new(&fonte)
+                .case_insensitive(
+                    args.get("case_insensitive")
+                        .and_then(Value::as_bool)
+                        .unwrap_or(false),
+                )
+                .size_limit(10 * 1024 * 1024)
+                .build()
+                .map_err(|e| ToolError::InvalidArguments(format!("regex invalida: {e}")))?;
+            // Literal: o `$` do texto de troca e texto, nao grupo.
+            let troca = if eh_regex {
+                troca
+            } else {
+                troca.replace('$', "$$")
+            };
+            let filtro = args.get("glob").and_then(Value::as_str).map(str::to_string);
+            let todos = args
+                .get("include_ignored")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            let (raiz, prefixo) = raiz_da_busca(ctx, &args)?;
+            let workdir = ctx.workdir.clone();
+            let v = tokio::task::spawn_blocking(move || -> Result<(Value, Vec<phxclaw_agent_core::Artifact>), ToolError> {
+                let (lista, teto) = ocorrencias_no_projeto(&raiz, &re, filtro.as_deref(), todos);
+                let total: usize = lista.iter().map(|(_, _, n)| n).sum();
+                let arquivos: Vec<Value> = lista
+                    .iter()
+                    .map(|(r, _, n)| json!({"arquivo": com_prefixo(&prefixo, r), "ocorrencias": n}))
+                    .collect();
+                if !confirmar {
+                    return Ok((
+                        json!({"previa": true, "arquivos": arquivos, "total": total,
+                               "teto_de_visitas": teto,
+                               "aviso": "nada foi gravado; repita com confirm=true para gravar"}),
+                        vec![],
+                    ));
+                }
+                if lista.len() > MAX_ARQUIVOS_SUBSTITUIR {
+                    return Err(ToolError::InvalidArguments(format!(
+                        "o padrao casa em {} arquivos, acima do teto de {MAX_ARQUIVOS_SUBSTITUIR}; \
+                         restrinja com glob ou path",
+                        lista.len()
+                    )));
+                }
+                let mut artefatos = Vec::new();
+                for (r, texto, _) in &lista {
+                    let rel = com_prefixo(&prefixo, r);
+                    let alvo = confine(&workdir, &rel).map_err(ToolError::Denied)?;
+                    let novo = re.replace_all(texto, troca.as_str());
+                    std::fs::write(&alvo, novo.as_bytes())
+                        .map_err(|e| ToolError::Failed(format!("{rel}: {e}")))?;
+                    artefatos.push(
+                        crate::motor::artifact_for(&workdir, &rel)
+                            .map_err(|e| ToolError::Failed(e.to_string()))?,
+                    );
+                }
+                Ok((
+                    json!({"previa": false, "arquivos": arquivos, "total": total,
+                           "gravados": lista.len(), "teto_de_visitas": teto}),
+                    artefatos,
+                ))
+            })
+            .await
+            .map_err(|e| ToolError::Failed(e.to_string()))??;
+            Ok(ToolOutput {
+                content: v.0.to_string(),
+                artifacts: v.1,
+            })
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

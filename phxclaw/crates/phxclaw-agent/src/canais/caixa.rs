@@ -23,8 +23,19 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
+/// Versao do formato da linha. Cada linha carrega a sua: a caixa e um arquivo que se
+/// acrescenta por anos, e o leitor que encontrar uma versao que nao conhece para em vez
+/// de ler errado. Linha antiga sem `v` e a 1.
+pub const VERSAO_LINHA: u64 = 1;
+
+fn versao_padrao() -> u64 {
+    VERSAO_LINHA
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct Linha {
+    #[serde(default = "versao_padrao")]
+    v: u64,
     seq: u64,
     conversa: String,
     autor: String,
@@ -45,6 +56,10 @@ pub struct Caixa {
     arq: PathBuf,
     estado: Mutex<Estado>,
     chegou: Condvar,
+    /// Falha injetada: grava so N bytes do lote e devolve erro (a queda no meio da escrita,
+    /// que nenhum teste consegue provocar no disco de verdade).
+    #[cfg(test)]
+    falha_apos: Mutex<Option<usize>>,
 }
 
 impl Caixa {
@@ -54,14 +69,29 @@ impl Caixa {
             std::fs::create_dir_all(p).map_err(|e| e.to_string())?;
         }
         let mut linhas = Vec::new();
-        if let Ok(t) = std::fs::read_to_string(&arq) {
-            for l in t.lines().filter(|l| !l.trim().is_empty()) {
-                // Linha cortada no fim (queda no meio da escrita) nunca recebeu 200: o
-                // servico reenvia, e pular a linha e o certo.
-                if let Ok(x) = serde_json::from_str::<Linha>(l) {
-                    linhas.push(x);
-                }
+        // Linha cortada no fim (queda no meio da escrita) nunca recebeu 200: o servico
+        // reenvia. Mas ela tem de SAIR do disco, nao so ser pulada: a proxima gravacao e
+        // `append`, e nasceria colada na metade -- duas mensagens numa linha ilegivel, e a
+        // segunda, que ja respondeu 200, perdida.
+        let bytes = phxclaw_types::arquivo::aparar_cauda_cortada(&arq)
+            .map_err(|e| format!("{}: {e}", arq.display()))?;
+        let texto = String::from_utf8_lossy(&bytes);
+        for (n, l) in texto
+            .lines()
+            .enumerate()
+            .filter(|(_, l)| !l.trim().is_empty())
+        {
+            let x = serde_json::from_str::<Linha>(l)
+                .map_err(|e| format!("{}:{}: linha ilegivel: {e}", arq.display(), n + 1))?;
+            if x.v != VERSAO_LINHA {
+                return Err(format!(
+                    "{}:{}: linha na versao {} da caixa; este leitor e da {VERSAO_LINHA}",
+                    arq.display(),
+                    n + 1,
+                    x.v
+                ));
             }
+            linhas.push(x);
         }
         let ids = linhas
             .iter()
@@ -71,6 +101,8 @@ impl Caixa {
             arq,
             estado: Mutex::new(Estado { linhas, ids }),
             chegou: Condvar::new(),
+            #[cfg(test)]
+            falha_apos: Mutex::new(None),
         }))
     }
 
@@ -100,6 +132,7 @@ impl Caixa {
                 continue;
             }
             novas.push(Linha {
+                v: VERSAO_LINHA,
                 seq,
                 conversa: m.conversa,
                 autor: m.autor,
@@ -121,9 +154,28 @@ impl Caixa {
             buf.push_str(&serde_json::to_string(l).map_err(|e| e.to_string())?);
             buf.push('\n');
         }
-        f.write_all(buf.as_bytes())
-            .and_then(|()| f.sync_data())
-            .map_err(|e| format!("caixa nao gravou: {e}"))?;
+        // O tamanho de antes: se a escrita falha no meio, o arquivo volta a ele. Sem isso
+        // as linhas que chegaram ao disco ficavam com um `seq` que o proximo lote (que
+        // recomeca do ultimo `seq` em memoria) gravaria de novo -- duas mensagens com o
+        // mesmo numero, e o cursor entregando uma delas duas vezes.
+        let antes = f.metadata().map_err(|e| e.to_string())?.len();
+        let gravar = |f: &mut std::fs::File| -> std::io::Result<()> {
+            #[cfg(test)]
+            if let Some(n) = *self.falha_apos.lock().unwrap() {
+                f.write_all(&buf.as_bytes()[..n.min(buf.len())])?;
+                f.sync_data()?;
+                return Err(std::io::Error::other("falha injetada"));
+            }
+            f.write_all(buf.as_bytes())?;
+            f.sync_data()
+        };
+        if let Err(e) = gravar(&mut f) {
+            let desfeito = f.set_len(antes).and_then(|()| f.sync_data());
+            return Err(match desfeito {
+                Ok(()) => format!("caixa nao gravou: {e}"),
+                Err(d) => format!("caixa nao gravou ({e}) e nao desfez a escrita parcial: {d}"),
+            });
+        }
         let n = novas.len();
         for l in novas {
             g.ids.insert((l.conversa.clone(), l.id.clone()));
@@ -440,6 +492,126 @@ mod tests {
         assert_eq!(l[1].cursor.as_deref(), Some("3"));
         let l = c.ler_desde(Some("3"), Duration::from_millis(10)).unwrap();
         assert!(l.is_empty());
+        // Cada linha carrega a versao.
+        for l in std::fs::read_to_string(&arq).unwrap().lines() {
+            assert_eq!(serde_json::from_str::<Value>(l).unwrap()["v"], 1, "{l}");
+        }
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// Parecer do DBA (01/10/2026), defeito 1: a linha cortada no fim era pulada na leitura
+    /// mas ficava no disco, e a proxima gravacao (`append`) nascia colada nela -- a
+    /// mensagem que ja tinha respondido 200 virava meia linha ilegivel. Medido com o
+    /// defeito reposto: depois do reinicio e de uma gravacao nova, `ler_desde` devolvia 1
+    /// (so a antiga) onde devia devolver 2.
+    #[test]
+    fn linha_cortada_no_fim_sai_do_disco_ao_abrir_e_a_proxima_nao_nasce_colada() {
+        let dir = tmp();
+        let arq = dir.join("x.caixa.jsonl");
+        let c = Caixa::abrir(&arq).unwrap();
+        c.anexar(vec![m("a", "1", "inteira")]).unwrap();
+        drop(c);
+        // A queda no meio da escrita: metade de uma linha, sem quebra no fim.
+        let mut f = std::fs::OpenOptions::new().append(true).open(&arq).unwrap();
+        f.write_all(b"{\"v\":1,\"seq\":2,\"conversa\":\"a\",\"au")
+            .unwrap();
+        drop(f);
+        let antes = std::fs::metadata(&arq).unwrap().len();
+        let c = Caixa::abrir(&arq).unwrap();
+        assert!(
+            std::fs::metadata(&arq).unwrap().len() < antes,
+            "a cauda ficou"
+        );
+        assert!(std::fs::read_to_string(&arq).unwrap().ends_with('\n'));
+        assert_eq!(c.anexar(vec![m("a", "2", "nova")]).unwrap(), 1);
+        drop(c);
+        let c = Caixa::abrir(&arq).unwrap();
+        let l = c.ler_desde(None, Duration::ZERO).unwrap();
+        assert_eq!(l.len(), 2, "{l:?}");
+        assert_eq!(
+            l[1].mensagem.as_ref().unwrap().texto.as_deref(),
+            Some("nova")
+        );
+        assert_eq!(l[1].cursor.as_deref(), Some("3"));
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// Defeito 1, segunda metade: falha no meio de um lote deixava no disco as linhas que
+    /// chegaram, com `seq` que o lote seguinte (recomecando do ultimo `seq` em memoria)
+    /// gravava de novo. Reposto: o arquivo ficava com dois `seq` 2.
+    #[test]
+    fn falha_no_meio_do_lote_desfaz_a_escrita_parcial_e_nao_duplica_seq() {
+        let dir = tmp();
+        let arq = dir.join("x.caixa.jsonl");
+        let c = Caixa::abrir(&arq).unwrap();
+        c.anexar(vec![m("a", "1", "um")]).unwrap();
+        let tamanho = std::fs::metadata(&arq).unwrap().len();
+        // Grava so a primeira linha do lote de duas e falha.
+        let primeira = serde_json::to_string(&Linha {
+            v: 1,
+            seq: 2,
+            conversa: "a".into(),
+            autor: "a".into(),
+            id: "2".into(),
+            texto: Some("dois".into()),
+            extra: Value::Null,
+        })
+        .unwrap()
+        .len()
+            + 1;
+        *c.falha_apos.lock().unwrap() = Some(primeira + 5);
+        let e = c
+            .anexar(vec![m("a", "2", "dois"), m("a", "3", "tres")])
+            .unwrap_err();
+        assert!(e.contains("falha injetada"), "{e}");
+        assert_eq!(
+            std::fs::metadata(&arq).unwrap().len(),
+            tamanho,
+            "a parcial ficou"
+        );
+        *c.falha_apos.lock().unwrap() = None;
+        assert_eq!(c.anexar(vec![m("a", "2", "dois")]).unwrap(), 1);
+        drop(c);
+        let c = Caixa::abrir(&arq).unwrap();
+        let seqs: Vec<u64> = std::fs::read_to_string(&arq)
+            .unwrap()
+            .lines()
+            .map(|l| {
+                serde_json::from_str::<Value>(l).unwrap()["seq"]
+                    .as_u64()
+                    .unwrap()
+            })
+            .collect();
+        assert_eq!(seqs, vec![1, 2]);
+        assert_eq!(c.ler_desde(None, Duration::ZERO).unwrap().len(), 2);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// Caixa gravada antes do `v`: continua lendo (e a mesma coisa que a versao 1). Versao
+    /// que o leitor nao conhece para com o motivo, em vez de ler errado.
+    #[test]
+    fn caixa_antiga_sem_versao_le_e_versao_desconhecida_recusa() {
+        let dir = tmp();
+        let arq = dir.join("x.caixa.jsonl");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            &arq,
+            "{\"seq\":1,\"conversa\":\"a\",\"autor\":\"a\",\"id\":\"1\",\"texto\":\"velha\"}\n",
+        )
+        .unwrap();
+        let c = Caixa::abrir(&arq).unwrap();
+        assert_eq!(c.ler_desde(None, Duration::ZERO).unwrap().len(), 1);
+        drop(c);
+        std::fs::write(
+            &arq,
+            "{\"v\":2,\"seq\":1,\"conversa\":\"a\",\"autor\":\"a\",\"id\":\"1\"}\n",
+        )
+        .unwrap();
+        let e = match Caixa::abrir(&arq) {
+            Err(e) => e,
+            Ok(_) => panic!("abriu uma caixa de versao desconhecida"),
+        };
+        assert!(e.contains("versao 2"), "{e}");
         let _ = std::fs::remove_dir_all(dir);
     }
 }

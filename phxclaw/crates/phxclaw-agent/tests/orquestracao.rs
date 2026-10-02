@@ -11,6 +11,7 @@ use phxclaw_agent_core::{
     ToolSpec,
 };
 use phxclaw_evidence_ledger::EvidenceLedger;
+use phxclaw_test_support::pulado;
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -26,7 +27,7 @@ fn tmp(nome: &str) -> PathBuf {
 fn bwrap() -> Option<PathBuf> {
     let b = phxclaw_agent::arquivos::achar_bwrap();
     if b.is_none() {
-        eprintln!("sem bwrap: prova pulada");
+        pulado::pular("bwrap", "sem bwrap a prova nao roda");
     }
     b
 }
@@ -882,7 +883,7 @@ mod no_falso {
 async fn ferramenta_de_dispositivo_lista_e_comanda_so_o_permitido() {
     let d = tmp("disp");
     let Some(m) = no_falso::subir(&d).await else {
-        eprintln!("sem openssl: pulado");
+        pulado::pular("openssl", "sem openssl nao ha no falso");
         return;
     };
     let politica = caps(&[

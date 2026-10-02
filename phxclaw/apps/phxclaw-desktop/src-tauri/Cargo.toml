@@ -29,6 +29,8 @@ phxclaw-live-bus = { path = "../../../crates/phxclaw-live-bus" }
 phxclaw-system-automation = { path = "../../../crates/phxclaw-system-automation", features = ["desktop-input", "screen-capture"] }
 phxclaw-types = { path = "../../../crates/phxclaw-types" }
 phxclaw-terminal = { path = "../../../crates/phxclaw-terminal" }
+# As raizes do workspace (`.phxclaw/workspace.json`): o mesmo leitor do agente.
+phxclaw-workspace = { path = "../../../crates/phxclaw-workspace" }
 phxclaw-webview-control = { path = "../../../crates/phxclaw-webview-control" }
 
 [build-dependencies]

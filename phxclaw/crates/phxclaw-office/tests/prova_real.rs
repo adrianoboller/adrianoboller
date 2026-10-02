@@ -6,6 +6,7 @@
 //! de integracao nao passe verde sem ter provado nada.
 
 use phxclaw_office::*;
+use phxclaw_test_support::pulado;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -28,12 +29,12 @@ fn python_disponivel() -> bool {
         .map(|o| o.status.success())
         .unwrap_or(false);
     if !ok {
-        let msg = "PULADO: python3 com python-docx, openpyxl e python-pptx nao encontrado \
+        let msg = "python3 com python-docx, openpyxl e python-pptx nao encontrado \
                    (pip install python-docx openpyxl python-pptx)";
         if std::env::var("PHXCLAW_OFFICE_EXIGIR_PROVA").as_deref() == Ok("1") {
             panic!("{msg}");
         }
-        eprintln!("{msg}");
+        pulado::pular("python3", msg);
     }
     ok
 }
@@ -68,7 +69,10 @@ fn para_pdf(arquivo: &Path, dir: &Path) -> Option<PathBuf> {
             .unwrap_or(false)
     });
     let Some(soffice) = soffice else {
-        eprintln!("PULADO: LibreOffice nao encontrado; conversao para PDF nao provada");
+        pulado::pular(
+            "soffice",
+            "LibreOffice nao encontrado; conversao para PDF nao provada",
+        );
         return None;
     };
     let perfil = dir.join(format!(

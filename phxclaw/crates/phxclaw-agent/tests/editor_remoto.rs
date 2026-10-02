@@ -5,6 +5,7 @@
 use phxclaw_agent::lsp::{Lsp, ligar_com};
 use phxclaw_agent::{EditFileTool, WriteFileTool};
 use phxclaw_agent_core::{Tool, ToolContext};
+use phxclaw_test_support::pulado;
 use serde_json::json;
 use std::path::Path;
 use std::sync::Arc;
@@ -30,7 +31,10 @@ fn pasta(nome: &str) -> std::path::PathBuf {
 fn lsp_real() -> Option<Arc<Lsp>> {
     let l = Lsp::do_hospedeiro();
     if l.is_none() {
-        eprintln!("PULADO: sem bwrap ou sem servidor de linguagem neste hospedeiro");
+        pulado::pular(
+            "rust-analyzer",
+            "sem bwrap ou sem servidor de linguagem no hospedeiro",
+        );
     }
     l
 }
@@ -42,7 +46,7 @@ const COM_ERRO: &str = "fn dobro(x: i32) -> i32 {\n    x * 2\n}\n\nfn main() {\n
 async fn lsp_rust_real_acusa_erro_plantado_e_responde_consultas() {
     let Some(lsp) = lsp_real() else { return };
     if !lsp.servidores.iter().any(|s| s.linguagem == "rust") {
-        eprintln!("PULADO: sem rust-analyzer");
+        pulado::pular("rust-analyzer", "sem rust-analyzer");
         return;
     }
     let d = pasta("rust");
@@ -152,7 +156,7 @@ async fn lsp_rust_real_acusa_erro_plantado_e_responde_consultas() {
 async fn lsp_python_real_acusa_erro_plantado() {
     let Some(lsp) = lsp_real() else { return };
     if !lsp.servidores.iter().any(|s| s.linguagem == "python") {
-        eprintln!("PULADO: sem pyright");
+        pulado::pular("pyright", "sem pyright");
         return;
     }
     let d = pasta("py");
@@ -532,7 +536,7 @@ async fn ponte_rele_o_cliente_ao_agente_ligado_de_saida_e_o_token_da_api_nao_sai
     const TOKEN_PONTE: &str = "token-do-cliente-na-ponte-com-folga-ok";
     let d = pasta("ponte");
     let Some((cert, chave)) = certificado(&d) else {
-        eprintln!("PULADO: sem openssl");
+        pulado::pular("openssl", "sem openssl");
         return;
     };
     // A ponte: servidor de dispositivos (agente entra de SAIDA) e o HTTP do cliente.
@@ -807,4 +811,285 @@ async fn x_search_contra_servidor_falso_cita_fontes_e_nao_vaza_a_chave() {
     assert!(e.to_string().contains("400"), "{e}");
     assert_eq!(pedidos.load(Ordering::SeqCst), 2);
     let _ = std::fs::remove_dir_all(&d);
+}
+
+// ------------------------------------------------------------------ SP000031, frente V2
+
+/// A ferramenta `rust_project` de verdade, ou o teste diz que pulou.
+fn rust_project() -> Option<phxclaw_agent::sistema::RustProjectTool> {
+    let b = phxclaw_agent::arquivos::achar_bwrap()?;
+    let r = phxclaw_agent::sistema::RustProjectTool::detectar(b);
+    if r.is_none() {
+        pulado::pular("cargo", "sem toolchain Rust no hospedeiro");
+    }
+    r
+}
+
+async fn json_de(t: &dyn Tool, ctx: &ToolContext, args: serde_json::Value) -> serde_json::Value {
+    let r = t
+        .run(args.clone(), ctx)
+        .await
+        .unwrap_or_else(|e| panic!("{} {args}: {e}", t.spec().name));
+    serde_json::from_str(&r.content).unwrap_or_else(|_| panic!("nao e JSON: {}", r.content))
+}
+
+const DBG_MAIN: &str = "fn main() {\n    let x: i32 = 41 + 1;\n    let nome = \"phx\";\n    println!(\"{} {}\", x, nome);\n}\n";
+
+/// O principal do depurador: um binario Rust compilado com informacao de depuracao
+/// (pelo `rust_project`, no mesmo sandbox), o gdb em DAP para no breakpoint da linha 4,
+/// `evaluate x` devolve 42 (o console), `variables` lista `x` e `nome`, `stack` mostra o
+/// main, `continue` corre ate o fim e a saida do programa volta; `finish` solta a sessao.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn depurador_real_para_no_breakpoint_e_evaluate_devolve_o_valor() {
+    let Some(rust) = rust_project() else { return };
+    if !std::path::Path::new("/usr/bin/gdb").is_file() {
+        pulado::pular("gdb", "sem gdb no hospedeiro");
+        return;
+    }
+    let d = pasta("dap");
+    std::fs::create_dir_all(d.join("dbg/src")).unwrap();
+    std::fs::write(
+        d.join("dbg/Cargo.toml"),
+        "[package]\nname = \"dbg\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+    )
+    .unwrap();
+    std::fs::write(d.join("dbg/src/main.rs"), DBG_MAIN).unwrap();
+    let ctx = ctx_em(&d, "t-dap");
+    let v = json_de(&rust, &ctx, json!({"action": "build", "path": "dbg"})).await;
+    assert_eq!(v["sucesso"], true, "{v}");
+
+    let dep = Arc::new(phxclaw_agent::dap::Depurador::do_hospedeiro(
+        phxclaw_agent::arquivos::achar_bwrap().unwrap(),
+    ));
+    assert!(dep.adaptador("rust").is_some(), "faltam: {:?}", dep.faltam);
+    let t = phxclaw_agent::dap::DebugTool {
+        depurador: dep.clone(),
+    };
+    assert_eq!(t.capability(), "shell.exec");
+    let v = json_de(
+        &t,
+        &ctx,
+        json!({"action": "start", "program": "dbg/target/debug/dbg",
+               "breakpoints": [{"file": "dbg/src/main.rs", "line": 4}]}),
+    )
+    .await;
+    assert_eq!(v["parado"]["motivo"], "breakpoint", "{v}");
+    assert_eq!(
+        v["breakpoints"][0]["breakpoints"][0]["verificado"], true,
+        "{v}"
+    );
+    assert_eq!(v["terminado"], false, "{v}");
+
+    // O console: a expressao avaliada no quadro parado.
+    let v = json_de(&t, &ctx, json!({"action": "evaluate", "expression": "x"})).await;
+    assert_eq!(v["resultado"], "42", "{v}");
+    let v = json_de(&t, &ctx, json!({"action": "variables"})).await;
+    let locais = v["escopos"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| e["escopo"] == "Locals")
+        .unwrap_or_else(|| panic!("{v}"));
+    let nomes: Vec<&str> = locais["variaveis"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|x| x["nome"].as_str().unwrap())
+        .collect();
+    assert!(nomes.contains(&"x") && nomes.contains(&"nome"), "{v}");
+    let v = json_de(&t, &ctx, json!({"action": "stack"})).await;
+    assert!(
+        v["quadros"][0]["funcao"]
+            .as_str()
+            .is_some_and(|f| f.contains("main")),
+        "{v}"
+    );
+    assert_eq!(v["quadros"][0]["arquivo"], "dbg/src/main.rs", "{v}");
+    assert_eq!(v["quadros"][0]["linha"], 4, "{v}");
+
+    let v = json_de(&t, &ctx, json!({"action": "continue"})).await;
+    assert_eq!(v["terminado"], true, "{v}");
+    assert!(
+        v["saida"].as_array().unwrap().iter().any(|l| l == "42 phx"),
+        "{v}"
+    );
+    // Arquivo fora da pasta e negado pelo MESMO confine.
+    let e = t
+        .run(
+            json!({"action": "breakpoint", "file": "../fora.rs", "line": 1}),
+            &ctx,
+        )
+        .await;
+    assert!(e.is_err());
+    assert_eq!(dep.vivas().await, 1);
+    t.finish("t-dap").await;
+    assert_eq!(dep.vivas().await, 0);
+    let _ = std::fs::remove_dir_all(&d);
+}
+
+const CALC_LIB: &str = "pub fn soma(a: i32, b: i32) -> i32 {\n    a + b\n}\n\n#[cfg(test)]\nmod soma {\n    #[test]\n    fn dois_mais_dois() {\n        assert_eq!(super::soma(2, 2), 4);\n    }\n    #[test]\n    fn zero() {\n        assert_eq!(super::soma(0, 0), 0);\n    }\n}\n";
+
+/// O explorador de testes: a arvore crate/modulo/teste do `cargo test -- --list` tem o
+/// teste conhecido, e rodar o no `calc/soma::dois_mais_dois` devolve passou com 1 ok.
+/// Python (se ha interpretador): a arvore do `--collect-only` e o no do pytest.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn explorador_de_testes_lista_e_roda_um_no() {
+    let Some(_) = rust_project() else { return };
+    let bwrap = phxclaw_agent::arquivos::achar_bwrap().unwrap();
+    let e = Arc::new(phxclaw_agent::testes::ExploradorDeTestes::detectar(bwrap).unwrap());
+    let d = pasta("testes");
+    std::fs::create_dir_all(d.join("calc/src")).unwrap();
+    std::fs::write(
+        d.join("calc/Cargo.toml"),
+        "[package]\nname = \"calc\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+    )
+    .unwrap();
+    std::fs::write(d.join("calc/src/lib.rs"), CALC_LIB).unwrap();
+    let ctx = ctx_em(&d, "t-testes");
+    let tools = phxclaw_agent::testes::ferramentas(e.clone());
+    let (listar, rodar) = (&tools[0], &tools[1]);
+    assert_eq!(listar.spec().name, "test_list");
+    assert_eq!(rodar.spec().name, "test_run");
+    let v = json_de(listar.as_ref(), &ctx, json!({"path": "calc"})).await;
+    assert_eq!(v["linguagem"], "rust", "{v}");
+    assert_eq!(v["total"], 2, "{v}");
+    assert_eq!(v["crates"][0]["crate"], "calc", "{v}");
+    assert_eq!(v["crates"][0]["modulos"][0]["modulo"], "soma", "{v}");
+    assert_eq!(
+        v["crates"][0]["modulos"][0]["testes"],
+        json!(["dois_mais_dois", "zero"]),
+        "{v}"
+    );
+    let v = json_de(
+        rodar.as_ref(),
+        &ctx,
+        json!({"path": "calc", "node": "calc/soma::dois_mais_dois"}),
+    )
+    .await;
+    assert_eq!(v["passou"], true, "{v}");
+    assert_eq!(v["ok"], 1, "{v}");
+    assert_eq!(v["falhou"], 0, "{v}");
+    // No que nao existe: nada roda e passou e false (o cargo diz 0 testes).
+    let v = json_de(
+        rodar.as_ref(),
+        &ctx,
+        json!({"path": "calc", "node": "calc/soma::nao_existe"}),
+    )
+    .await;
+    assert_eq!(v["ok"], 0, "{v}");
+    let err = rodar
+        .run(json!({"path": "calc", "node": "calc/x; id"}), &ctx)
+        .await;
+    assert!(err.is_err());
+
+    if e.python.is_some() {
+        std::fs::create_dir_all(d.join("py/tests")).unwrap();
+        std::fs::write(d.join("py/calc.py"), "def soma(a, b):\n    return a + b\n").unwrap();
+        std::fs::write(
+            d.join("py/tests/test_calc.py"),
+            "from calc import soma\n\n\ndef test_ok():\n    assert soma(1, 2) == 3\n",
+        )
+        .unwrap();
+        let v = json_de(listar.as_ref(), &ctx, json!({"path": "py"})).await;
+        assert_eq!(v["linguagem"], "python", "{v}");
+        assert_eq!(v["arquivos"][0]["arquivo"], "tests/test_calc.py", "{v}");
+        assert_eq!(v["arquivos"][0]["testes"], json!(["test_ok"]), "{v}");
+        let v = json_de(
+            rodar.as_ref(),
+            &ctx,
+            json!({"path": "py", "node": "tests/test_calc.py::test_ok"}),
+        )
+        .await;
+        assert_eq!(v["passou"], true, "{v}");
+    }
+    let _ = std::fs::remove_dir_all(&d);
+}
+
+/// Workspace de duas raizes: com `.phxclaw/workspace.json` apontando a segunda, o `grep`
+/// acha nela (pelo MESMO confine das ferramentas de arquivo), o LSP resolve o simbolo
+/// do arquivo da segunda raiz, e um caminho absoluto fora das duas continua negado.
+/// A raiz do projeto vem de PHXCLAW_PROJETO, como nos testes de configuracao.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn workspace_de_duas_raizes_busca_e_lsp_na_segunda() {
+    let Some(lsp) = lsp_real() else { return };
+    if !lsp.servidores.iter().any(|s| s.linguagem == "rust") {
+        pulado::pular("rust-analyzer", "sem rust-analyzer");
+        return;
+    }
+    let projeto = pasta("ws-projeto");
+    let segunda = pasta("ws-segunda");
+    let segunda = std::fs::canonicalize(&segunda).unwrap();
+    std::fs::create_dir_all(segunda.join("src")).unwrap();
+    std::fs::write(
+        segunda.join("Cargo.toml"),
+        "[package]\nname = \"segunda\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+    )
+    .unwrap();
+    std::fs::write(
+        segunda.join("src/lib.rs"),
+        "pub fn simbolo_da_segunda_raiz() -> u8 {\n    7\n}\n",
+    )
+    .unwrap();
+    std::fs::create_dir_all(projeto.join(".phxclaw")).unwrap();
+    std::fs::write(
+        projeto.join(".phxclaw/workspace.json"),
+        format!(r#"{{"raizes": ["{}"]}}"#, segunda.display()),
+    )
+    .unwrap();
+    // SAFETY: o mesmo que tests/config.rs faz; nenhuma outra prova deste binario depende
+    // de PHXCLAW_PROJETO, e uma raiz extra valida nao muda o resultado delas.
+    unsafe {
+        std::env::set_var("PHXCLAW_PROJETO", &projeto);
+    }
+    assert_eq!(
+        phxclaw_agent::workspace::raizes().unwrap(),
+        vec![segunda.clone()]
+    );
+    let d = pasta("ws-tarefa");
+    std::fs::write(d.join("Cargo.toml"), CARGO).unwrap();
+    std::fs::create_dir_all(d.join("src")).unwrap();
+    std::fs::write(d.join("src/main.rs"), "fn main() {}\n").unwrap();
+    let ctx = ctx_em(&d, "t-ws");
+
+    let grep = phxclaw_agent::busca::GrepTool;
+    let arq = segunda.join("src/lib.rs").display().to_string();
+    // O grep anda numa PASTA (a segunda raiz inteira), como no projeto da tarefa.
+    let r = grep
+        .run(
+            json!({"pattern": "simbolo_da_segunda_raiz", "path": segunda.display().to_string()}),
+            &ctx,
+        )
+        .await
+        .unwrap();
+    assert!(
+        r.content.contains("simbolo_da_segunda_raiz"),
+        "{}",
+        r.content
+    );
+    let fora = std::env::temp_dir().display().to_string();
+    let e = grep
+        .run(json!({"pattern": "x", "path": fora}), &ctx)
+        .await
+        .unwrap_err();
+    assert!(matches!(e, phxclaw_agent_core::ToolError::Denied(_)), "{e}");
+
+    let mut tools: Vec<Arc<dyn Tool>> = vec![];
+    ligar_com(&mut tools, lsp.clone());
+    let lspt = tools.iter().find(|t| t.spec().name == "lsp").unwrap();
+    let r = lspt
+        .run(json!({"action": "symbols", "path": arq}), &ctx)
+        .await
+        .unwrap();
+    assert!(
+        r.content.contains("funcao simbolo_da_segunda_raiz"),
+        "{}",
+        r.content
+    );
+    lspt.finish("t-ws").await;
+    unsafe {
+        std::env::remove_var("PHXCLAW_PROJETO");
+    }
+    for p in [&projeto, &segunda, &d] {
+        let _ = std::fs::remove_dir_all(p);
+    }
 }

@@ -1,6 +1,7 @@
 //! O prototipo gerado, exercitado no Chromium de verdade: interface so se prova exercitando.
 
 use phxclaw_browser::{Browser, BrowserPolicy, LaunchOptions};
+use phxclaw_test_support::pulado;
 use std::io::{Read, Write};
 use std::net::TcpListener;
 
@@ -21,7 +22,7 @@ fn servir(html: String) -> String {
 #[tokio::test]
 async fn pedido_adiciona_itens_e_recalcula_total_no_chromium() {
     if phxclaw_browser::find_chromium().is_none() {
-        eprintln!("chromium ausente: pulado");
+        pulado::pular("chromium", "chromium ausente");
         return;
     }
     let sql = include_str!("fixtures/pedidos.sql");

@@ -8,6 +8,7 @@ use phxclaw_device_transport::servidor::{
 };
 use phxclaw_device_transport::*;
 use phxclaw_key_provider::{KeyMaterial, KeyProvider, KeyProviderError};
+use phxclaw_test_support::pulado;
 use std::collections::HashMap;
 use std::process::Command;
 use std::sync::{Arc, Mutex};
@@ -152,7 +153,7 @@ fn ola(tenant: Uuid) -> Vec<u8> {
 #[tokio::test]
 async fn pareia_abre_sessao_e_bate_coracao_sob_tls() {
     let Some((url, ca, reg, tenant)) = subir().await else {
-        eprintln!("sem openssl: pulado");
+        pulado::pular("openssl", "sem openssl");
         return;
     };
     let chaveiro = Chaveiro::default();

@@ -2,6 +2,7 @@
 //! real (no bwrap) de um repositorio temporario, a revisao passa pelo motor do
 //! `code_review`, e o modelo e um Ollama FALSO local (sem modelo de verdade aqui).
 
+use phxclaw_test_support::pulado;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
@@ -82,7 +83,7 @@ fn git(dir: &Path, args: &[&str]) {
 #[test]
 fn revisar_le_o_diff_do_git_e_falha_na_severidade_pedida() {
     if phxclaw_bwrap().is_none() {
-        eprintln!("sem bwrap: prova pulada");
+        pulado::pular("bwrap", "sem bwrap a prova da revisao nao roda");
         return;
     }
     let repo = tmp("repo");

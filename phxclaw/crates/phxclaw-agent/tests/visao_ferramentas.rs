@@ -6,6 +6,7 @@ use phxclaw_agent::visao::{
     ImageInfoTool, ImageRenderTool, OcrTool, TranscribeTool, info_jpeg, info_png, info_svg,
 };
 use phxclaw_agent_core::{Tool, ToolContext, ToolError};
+use phxclaw_test_support::pulado;
 use serde_json::json;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -36,7 +37,7 @@ fn faltando(pecas: &[&str]) -> bool {
         })
         .collect();
     if !faltam.is_empty() {
-        eprintln!("PULADO: falta {faltam:?}");
+        pulado::pular(faltam[0], &format!("falta {faltam:?}"));
     }
     !faltam.is_empty()
 }
@@ -380,7 +381,10 @@ fn whisper() -> Option<(PathBuf, PathBuf, String, PathBuf)> {
     if bin.is_file() && modelo.is_file() && audio.is_file() {
         Some((bin, modelo, sha, audio))
     } else {
-        eprintln!("PULADO: falta whisper-cli, modelo ou audio ({bin:?}, {modelo:?}, {audio:?})");
+        pulado::pular(
+            "whisper-cli",
+            &format!("falta whisper-cli, modelo ou audio ({bin:?}, {modelo:?}, {audio:?})"),
+        );
         None
     }
 }

@@ -16,6 +16,13 @@
 //! - **Origem com SHA-256.** `ORIGEM.json` guarda o caminho de origem e o hash do
 //!   `SKILL.md` original: reimportar o mesmo arquivo nao duplica, e quem audita sabe de
 //!   onde veio cada instrucao que o agente segue.
+//! - **Corpo passa pela MESMA varredura anti-injecao do `AGENTS.md`** (`instrucoes::varrer`):
+//!   skill e instrucao que o modelo segue, e um corpus baixado da internet e o lugar mais
+//!   barato para alguem esconder «ignore as instrucoes anteriores». Casou, a skill e
+//!   recusada com o padrao, e nada dela vai ao disco.
+//! - **Symlink em `scripts/` nao se segue, nem para listar.** Seguir um atalho para fora
+//!   da pasta levaria o nome de arquivo alheio ao `ORIGEM.json`, e um laco (`scripts/x ->
+//!   ..`) derrubava o importador por estouro de pilha. Atalho e recusa com o motivo.
 //! - **Nome de ferramenta conhecido se traduz** (`terminal`, `Bash` -> `shell`;
 //!   `web_extract`, `WebFetch` -> `browser_open`...), so onde e nome de ferramenta: entre
 //!   crases no corpo e na lista `allowed-tools`. Trocar a palavra solta «Read» no meio
@@ -236,9 +243,15 @@ pub struct Opcoes {
     pub com_scripts: bool,
 }
 
+/// A versao do `ORIGEM.json` que este codigo escreve. Entra no arquivo desde o comeco
+/// porque custa zero agora e custa uma migracao depois: quem ler uma versao que nao
+/// conhece recusa com o motivo, em vez de interpretar campos novos como se fossem velhos.
+pub const FORMATO_ORIGEM: u32 = 1;
+
 /// O que vai para `ORIGEM.json` e para o relatorio.
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
 pub struct Importada {
+    pub formato: u32,
     pub nome: String,
     pub origem: PathBuf,
     pub sha256: String,
@@ -392,11 +405,17 @@ pub fn importar(origem: &Path, destino: &SkillFolder, op: &Opcoes) -> Relatorio 
     let mut ja: BTreeMap<String, String> = BTreeMap::new();
     if let Ok(rd) = std::fs::read_dir(destino.root()) {
         for e in rd.flatten() {
-            if let Ok(t) = std::fs::read_to_string(e.path().join("ORIGEM.json"))
-                && let Ok(v) = serde_json::from_str::<serde_json::Value>(&t)
-                && let Some(h) = v["sha256"].as_str()
-            {
-                ja.insert(h.to_string(), e.file_name().to_string_lossy().into_owned());
+            let arq = e.path().join("ORIGEM.json");
+            match ler_origem(&arq) {
+                Ok(Some(v)) => {
+                    if let Some(h) = v["sha256"].as_str() {
+                        ja.insert(h.to_string(), e.file_name().to_string_lossy().into_owned());
+                    }
+                }
+                Ok(None) => {}
+                // Versao que este codigo nao conhece: a pasta fica como esta e o relatorio
+                // diz por que -- calado, a skill seria reimportada em duplicata ao lado.
+                Err(m) => rel.recusadas.push((arq, m)),
             }
         }
     }
@@ -422,6 +441,13 @@ fn importar_um(
         return Ok(None);
     }
     let texto = String::from_utf8(bytes).map_err(|_| "SKILL.md nao e UTF-8".to_string())?;
+    let achados = crate::instrucoes::varrer(&texto);
+    if !achados.is_empty() {
+        return Err(format!(
+            "varredura anti-injecao recusou a skill ({})",
+            achados.join(", ")
+        ));
+    }
     let (cab, corpo) = separar(&texto)?;
     let cab = cab.map(ler_cabecalho).unwrap_or_default();
     let texto_de = |k: &str| match cab.get(k) {
@@ -446,6 +472,7 @@ fn importar_um(
     }
 
     let mut imp = Importada {
+        formato: FORMATO_ORIGEM,
         nome: nome.clone(),
         origem: arq.to_path_buf(),
         sha256: sha256.clone(),
@@ -494,7 +521,7 @@ fn importar_um(
     let scripts = pasta_origem.join("scripts");
     if scripts.is_dir() {
         let mut v = Vec::new();
-        listar_relativo(&scripts, &scripts, &mut v);
+        listar_relativo(&scripts, &scripts, &mut v)?;
         imp.scripts_desligados = v.iter().map(|p| format!("scripts/{p}")).collect();
     }
     if !imp.scripts_desligados.is_empty() && !op.com_scripts {
@@ -558,20 +585,58 @@ it was cut at a heading. The full text is ORIGINAL.md in this skill's folder.",
     Ok(Some(imp))
 }
 
-fn listar_relativo(raiz: &Path, d: &Path, v: &mut Vec<String>) {
+/// Le um `ORIGEM.json` conferindo a versao ANTES de olhar o resto: `formato` ausente e o
+/// arquivo de antes do campo (= 1); numero que este codigo nao conhece e recusa com
+/// mensagem. `None` quando o arquivo nao existe ou nao e JSON (pasta que nao e importada).
+pub fn ler_origem(arq: &Path) -> Result<Option<serde_json::Value>, String> {
+    let Ok(t) = std::fs::read_to_string(arq) else {
+        return Ok(None);
+    };
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(&t) else {
+        return Ok(None);
+    };
+    let formato = match v.get("formato") {
+        None => 1,
+        Some(f) => f
+            .as_u64()
+            .ok_or_else(|| format!("{}: 'formato' nao e um numero", arq.display()))?,
+    };
+    if formato != u64::from(FORMATO_ORIGEM) {
+        return Err(format!(
+            "{}: formato {formato} do ORIGEM.json; este phxclaw le o formato {FORMATO_ORIGEM} \
+(atualize o phxclaw ou reimporte a skill)",
+            arq.display()
+        ));
+    }
+    Ok(Some(v))
+}
+
+/// Lista `scripts/` sem seguir symlink (`symlink_metadata`): atalho e erro, nao entrada.
+fn listar_relativo(raiz: &Path, d: &Path, v: &mut Vec<String>) -> Result<(), String> {
     let Ok(rd) = std::fs::read_dir(d) else {
-        return;
+        return Ok(());
     };
     let mut es: Vec<_> = rd.flatten().collect();
     es.sort_by_key(|e| e.file_name());
     for e in es {
         let p = e.path();
-        if p.is_dir() {
-            listar_relativo(raiz, &p, v);
-        } else if let Ok(r) = p.strip_prefix(raiz) {
-            v.push(r.display().to_string());
+        let rel = p
+            .strip_prefix(raiz)
+            .map(|r| r.display().to_string())
+            .unwrap_or_else(|_| p.display().to_string());
+        let m = std::fs::symlink_metadata(&p).map_err(|e| format!("scripts/{rel}: {e}"))?;
+        if m.file_type().is_symlink() {
+            return Err(format!(
+                "scripts/{rel} e symlink: atalho nao se importa (nem se lista)"
+            ));
+        }
+        if m.is_dir() {
+            listar_relativo(raiz, &p, v)?;
+        } else if m.is_file() {
+            v.push(rel);
         }
     }
+    Ok(())
 }
 
 /// Copia sem seguir symlink: script importado nao vira atalho para fora da pasta.
@@ -605,6 +670,38 @@ metadata:\n  hermes:\n    tags: [a]\ntags:\n  - um\n  - 'dois'\nlonga: \"com \\\
         assert_eq!(m["metadata"], Valor::Mapa);
         assert_eq!(m["tags"], Valor::Lista(vec!["um".into(), "dois".into()]));
         assert_eq!(m["longa"], Valor::Texto("com \"aspas\"".into()));
+    }
+
+    /// RED medido com a leitura sem a conferencia: o formato 2 era lido como se fosse 1.
+    #[test]
+    fn origem_json_le_a_versao_antes_do_resto() {
+        let d = std::env::temp_dir().join(format!("phx-origem-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(d.join("velha")).unwrap();
+        std::fs::create_dir_all(d.join("futura")).unwrap();
+        std::fs::write(d.join("velha/ORIGEM.json"), r#"{"sha256": "abc"}"#).unwrap();
+        std::fs::write(
+            d.join("futura/ORIGEM.json"),
+            r#"{"formato": 2, "sha256": "def"}"#,
+        )
+        .unwrap();
+        let v = ler_origem(&d.join("velha/ORIGEM.json")).unwrap().unwrap();
+        assert_eq!(v["sha256"], "abc", "sem o campo e formato 1");
+        let e = ler_origem(&d.join("futura/ORIGEM.json")).unwrap_err();
+        assert!(e.contains("formato 2") && e.contains("formato 1"), "{e}");
+        assert_eq!(ler_origem(&d.join("nao-existe/ORIGEM.json")).unwrap(), None);
+        // O importador inteiro: a pasta futura vira recusa com o motivo, nao duplicata.
+        let destino = phxclaw_skill_runtime::SkillFolder::new(d.clone());
+        let r = importar(&d.join("vazia"), &destino, &Opcoes::default());
+        assert_eq!(r.recusadas.len(), 1, "{:?}", r.recusadas);
+        assert!(r.recusadas[0].0.ends_with("futura/ORIGEM.json"));
+        let gravado = serde_json::to_value(Importada {
+            formato: FORMATO_ORIGEM,
+            ..Default::default()
+        })
+        .unwrap();
+        assert_eq!(gravado["formato"], 1);
+        let _ = std::fs::remove_dir_all(&d);
     }
 
     #[test]

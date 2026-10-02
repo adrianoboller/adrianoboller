@@ -7,6 +7,7 @@
 use phxclaw_agent::dispositivos::DeviceTool;
 use phxclaw_agent_core::{ToolContext, ToolError};
 use phxclaw_device_transport::servidor::{RegistroMemoria, ServidorDispositivos, tls_de_pem};
+use phxclaw_test_support::pulado;
 use serde_json::{Value, json};
 use std::collections::BTreeSet;
 use std::process::Command;
@@ -87,7 +88,7 @@ async fn node_invoke_so_passa_pelas_tres_listas_contra_o_no_real() {
     let d = std::env::temp_dir().join(format!("phx-no-real-{}", Uuid::now_v7()));
     std::fs::create_dir_all(d.join("chaves")).unwrap();
     let Some((cert, chave)) = certificado(&d) else {
-        eprintln!("sem openssl: pulado");
+        pulado::pular("openssl", "sem openssl nao ha certificado para o no");
         return;
     };
     let tenant = Uuid::now_v7();

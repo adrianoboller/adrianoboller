@@ -5,6 +5,7 @@ use phxclaw_agent::api::{AgentFactory, ApiState, Limite, criar_tarefa, router};
 use phxclaw_agent::regras::RegrasDeComando;
 use phxclaw_agent::*;
 use phxclaw_agent_core::{LlmReply, Tool, ToolContext};
+use phxclaw_test_support::pulado;
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -61,7 +62,7 @@ fn script(dir: &Path, nome: &str, corpo: &str) {
 #[tokio::test]
 async fn hooks_reais_bloqueiam_registram_e_dao_contexto() {
     let Some(b) = bwrap() else {
-        eprintln!("bwrap ausente: pulado");
+        pulado::pular("bwrap", "bwrap ausente");
         return;
     };
     let proj = tmp("hooks");
@@ -494,7 +495,7 @@ async fn heartbeat_e_gatilhos_criam_tarefa_pela_mesma_funcao() {
 #[tokio::test]
 async fn regras_negam_perguntam_e_permitem_antes_do_shell_rodar() {
     let Some(b) = bwrap() else {
-        eprintln!("bwrap ausente: pulado");
+        pulado::pular("bwrap", "bwrap ausente");
         return;
     };
     let regras = RegrasDeComando::de_json(
@@ -711,7 +712,7 @@ async fn py(r: &phxclaw_agent::repl::PythonReplTool, c: &ToolContext, code: &str
 #[tokio::test]
 async fn repl_python_guarda_estado_no_sandbox_e_sobrevive_ao_ocio() {
     let Some(r) = repl() else {
-        eprintln!("python ou bwrap ausente: pulado");
+        pulado::pular("python3", "python ou bwrap ausente");
         return;
     };
     let w = tmp("repl");
@@ -755,7 +756,7 @@ async fn repl_python_guarda_estado_no_sandbox_e_sobrevive_ao_ocio() {
 #[tokio::test]
 async fn repl_com_prazo_estourado_mata_a_sessao_e_diz_que_perdeu_o_estado() {
     let Some(mut r) = repl() else {
-        eprintln!("python ou bwrap ausente: pulado");
+        pulado::pular("python3", "python ou bwrap ausente");
         return;
     };
     r.timeout = Duration::from_secs(2);

@@ -10,3 +10,5 @@ serde_json = "1"
 sha2 = "0.10"
 thiserror = "2"
 uuid = { version = "1", features = ["v7", "serde"] }
+# A troca atomica e a trava de arquivo: o mesmo motor de toda a base (crate do workspace).
+phxclaw-types = { path = "../phxclaw-types" }

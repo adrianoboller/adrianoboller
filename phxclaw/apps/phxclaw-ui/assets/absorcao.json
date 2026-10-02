@@ -965,36 +965,25 @@
  },
  "vscode": {
   "total": 52,
-  "no_agente": 28,
-  "parcial": 10,
-  "nao": 14,
-  "pct_agente": 53.8,
-  "pct_com_bibliotecas": 63.5,
+  "no_agente": 39,
+  "parcial": 5,
+  "nao": 8,
+  "pct_agente": 75.0,
+  "pct_com_bibliotecas": 79.8,
   "falta": [
    "minimapa",
    "dobra_codigo",
-   "console_depuracao",
-   "stage_por_trecho",
-   "merge_conflitos",
    "perfis",
-   "workspace_multi_raiz",
    "remoto_ssh_containers",
    "live_share",
    "breadcrumbs",
-   "snippets",
-   "emmet",
    "sugestao_inline_ia",
    "settings_sync"
   ],
   "pela_metade": [
-   "substituir_projeto",
-   "depurador",
-   "tarefas_build",
    "plugins",
    "marketplace_extensoes",
    "tunel_remoto",
-   "explorador_testes",
-   "timeline_arquivo",
    "acessibilidade",
    "ide_web"
   ],
@@ -1050,7 +1039,7 @@
    },
    {
     "id": "substituir_projeto",
-    "estado": "parcial"
+    "estado": "agente"
    },
    {
     "id": "busca_arquivos",
@@ -1070,15 +1059,15 @@
    },
    {
     "id": "depurador",
-    "estado": "parcial"
+    "estado": "agente"
    },
    {
     "id": "console_depuracao",
-    "estado": "nao"
+    "estado": "agente"
    },
    {
     "id": "tarefas_build",
-    "estado": "parcial"
+    "estado": "agente"
    },
    {
     "id": "git",
@@ -1090,7 +1079,7 @@
    },
    {
     "id": "stage_por_trecho",
-    "estado": "nao"
+    "estado": "agente"
    },
    {
     "id": "blame",
@@ -1098,7 +1087,7 @@
    },
    {
     "id": "merge_conflitos",
-    "estado": "nao"
+    "estado": "agente"
    },
    {
     "id": "explorador_arquivos",
@@ -1130,7 +1119,7 @@
    },
    {
     "id": "workspace_multi_raiz",
-    "estado": "nao"
+    "estado": "agente"
    },
    {
     "id": "remoto_ssh_containers",
@@ -1150,11 +1139,11 @@
    },
    {
     "id": "explorador_testes",
-    "estado": "parcial"
+    "estado": "agente"
    },
    {
     "id": "timeline_arquivo",
-    "estado": "parcial"
+    "estado": "agente"
    },
    {
     "id": "outline_simbolos",
@@ -1166,11 +1155,11 @@
    },
    {
     "id": "snippets",
-    "estado": "nao"
+    "estado": "agente"
    },
    {
     "id": "emmet",
-    "estado": "nao"
+    "estado": "agente"
    },
    {
     "id": "chat_ia",

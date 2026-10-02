@@ -199,7 +199,11 @@ impl Gravador {
     /// Reabre uma gravacao que ja tem cabecalho, para acrescentar: a tarefa da API criada
     /// com plano grava a execucao so depois do sim, e a aprovacao chega noutra chamada.
     pub fn continuar(caminho: &Path) -> std::io::Result<Arc<Self>> {
-        let passo = std::fs::read_to_string(caminho)?
+        // A linha que a queda cortou sai do disco antes do `append`: senao o proximo
+        // evento nasceria colado nela, e a gravacao inteira deixaria de ser legivel a
+        // partir dali. E o passo recomeca contando so as linhas inteiras.
+        let bytes = phxclaw_types::arquivo::aparar_cauda_cortada(caminho)?;
+        let passo = String::from_utf8_lossy(&bytes)
             .lines()
             .filter(|l| !l.trim().is_empty())
             .count() as u64;
@@ -383,13 +387,28 @@ impl Gravacao {
         let texto =
             std::fs::read_to_string(caminho).map_err(|e| format!("{}: {e}", caminho.display()))?;
         let mut g: Option<Gravacao> = None;
+        // A ultima linha sem quebra no fim e a que a queda cortou: a gravacao vale ate o
+        // passo anterior, como o `Gravador` promete («tarefa que morre no meio deixa a
+        // gravacao ate o ultimo passo»). Linha ilegivel no MEIO continua sendo erro: ali
+        // nao foi queda, foi outra coisa.
+        let cauda_cortada = !texto.ends_with('\n');
+        let ultima = texto.lines().count();
         for (n, l) in texto
             .lines()
             .enumerate()
             .filter(|(_, l)| !l.trim().is_empty())
         {
-            let v: Value = serde_json::from_str(l)
-                .map_err(|e| format!("{}:{}: linha nao e JSON: {e}", caminho.display(), n + 1))?;
+            let v: Value = match serde_json::from_str(l) {
+                Ok(v) => v,
+                Err(_) if cauda_cortada && n + 1 == ultima => break,
+                Err(e) => {
+                    return Err(format!(
+                        "{}:{}: linha nao e JSON: {e}",
+                        caminho.display(),
+                        n + 1
+                    ));
+                }
+            };
             let passo = v["passo"].as_u64().unwrap_or(n as u64);
             let onde = |o: &str| format!("{}:{}: {o}", caminho.display(), n + 1);
             match (v["tipo"].as_str(), g.as_mut()) {
@@ -680,6 +699,50 @@ impl Tool for RepetidorTool {
 #[cfg(test)]
 mod testes {
     use super::*;
+
+    /// Parecer do DBA (01/10/2026), defeito 3: o cabecalho prometia «tarefa que morre no
+    /// meio deixa a gravacao ate o ultimo passo», e o leitor recusava o arquivo inteiro na
+    /// linha cortada. Reposto: `Gravacao::ler` devolvia Err «linha nao e JSON» e o
+    /// `continuar` colava o evento novo na metade da linha velha.
+    #[test]
+    fn cauda_cortada_e_tolerada_na_leitura_e_sai_do_disco_ao_continuar() {
+        let d = std::env::temp_dir().join(format!("phx-grav-{}", phxclaw_types::new_uuid_v7()));
+        std::fs::create_dir_all(&d).unwrap();
+        let arq = d.join("t.jsonl");
+        let g = Gravador::criar(&arq, "objetivo", "modelo").unwrap();
+        g.linha(
+            json!({"tipo": "ferramenta", "nome": "ls", "argumentos": {}, "saida": {"content": "a"}}),
+        );
+        g.linha(
+            json!({"tipo": "ferramenta", "nome": "cat", "argumentos": {}, "saida": {"content": "b"}}),
+        );
+        drop(g);
+        let inteiro = std::fs::read(&arq).unwrap();
+        // A queda: a terceira ferramenta pela metade, sem quebra no fim.
+        let mut cortado = inteiro.clone();
+        cortado.extend_from_slice(b"{\"tipo\":\"ferramenta\",\"nome\":\"rm\",\"argu");
+        std::fs::write(&arq, &cortado).unwrap();
+        let lida = Gravacao::ler(&arq).unwrap();
+        assert_eq!(lida.sequencia(), ["ls", "cat"]);
+        // Continuar apara a cauda e o proximo evento nasce numa linha limpa, no passo certo.
+        let g = Gravador::continuar(&arq).unwrap();
+        g.linha(
+            json!({"tipo": "ferramenta", "nome": "rm", "argumentos": {}, "saida": {"content": "c"}}),
+        );
+        assert_eq!(g.resultado().unwrap(), 4);
+        drop(g);
+        let lida = Gravacao::ler(&arq).unwrap();
+        assert_eq!(lida.sequencia(), ["ls", "cat", "rm"]);
+        assert_eq!(lida.ferramentas[2].passo, 3);
+        // Linha ilegivel no MEIO nao e queda: continua erro.
+        let mut meio = inteiro.clone();
+        meio.extend_from_slice(b"{isto nao e json}\n");
+        meio.extend_from_slice(b"{\"tipo\":\"ferramenta\",\"nome\":\"x\",\"argumentos\":{},\"saida\":{\"content\":\"\"},\"passo\":4}\n");
+        std::fs::write(&arq, &meio).unwrap();
+        let e = Gravacao::ler(&arq).unwrap_err();
+        assert!(e.contains("linha nao e JSON"), "{e}");
+        let _ = std::fs::remove_dir_all(&d);
+    }
 
     #[test]
     fn segredo_sai_analisando_inclusive_json_dentro_de_texto() {

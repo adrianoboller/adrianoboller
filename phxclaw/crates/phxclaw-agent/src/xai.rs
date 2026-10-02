@@ -21,7 +21,8 @@ use std::sync::Arc;
 pub const SERVICO: crate::chaves::Servico = crate::chaves::Servico {
     espaco: "xai",
     nome_do_segredo: "xai-chave",
-    variaveis: &["PHXCLAW_XAI_API_KEY"],
+    chave: "xai.chave",
+    aliases: &[],
     rotulo: "a chave da xAI",
     comando: "xai chave",
 };

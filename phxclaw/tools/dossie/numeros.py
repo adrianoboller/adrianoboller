@@ -535,6 +535,37 @@ def medidores() -> list[dict]:
 MARCA_PULADOS = "=== PULADOS (target/tmp/pulados.jsonl)"
 
 
+
+# O teste que prova o fechamento de cada achado alto de SEC (01/10). A lista e conferida contra o
+# fonte: nome que nao existir mais PARA a corrida, para a pagina nunca declarar fechado por um
+# teste que foi renomeado.
+PROVAS_SEC = {
+    "A1": ["arquivo_que_o_git_chama_de_binario_nao_escapa"],
+    "A2": ["stash_e_varrido_e_ramo_so_de_nome"],
+    "A3": ["conselho_vazio_no_arquivo_nunca_da_go", "nogo_com_erros_em_branco_e_recusado_sem_gravar"],
+    "M1": ["diff_relative_nao_esconde_arquivo_fora_da_subpasta"],
+    "M2": ["mensagem_do_commit_e_varrida"],
+    "B1": ["add_recusado_nao_deixa_objeto"],
+}
+
+
+def fechamento_sec(suite_arquivo: Path | None) -> dict:
+    """Por achado alto: os testes que o provam e o que a saida GUARDADA da suite diz de cada um
+    (ok, falhou, nao rodou). Sem arquivo da suite, tudo e NAO MEDIDO."""
+    fontes = list((RAIZ / "crates/phxclaw-agent").rglob("*.rs"))
+    codigo = "\n".join(f.read_text(errors="replace") for f in fontes)
+    texto = suite_arquivo.read_text(errors="replace") if suite_arquivo else ""
+    saida = {}
+    for cod, testes in PROVAS_SEC.items():
+        linhas = []
+        for t in testes:
+            if f"fn {t}(" not in codigo:
+                raise SystemExit(f"fechamento SEC {cod}: o teste {t} nao existe mais no fonte -- atualize PROVAS_SEC")
+            m = re.search(rf"^test (?:\S+::)?{re.escape(t)} \.\.\. (ok|FAILED|ignored)$", texto, re.M)
+            linhas.append({"teste": t, "estado": m.group(1) if m else "nao rodou"})
+        saida[cod] = {"testes": linhas, "fechado": all(l["estado"] == "ok" for l in linhas)}
+    return saida
+
 def suite(arquivo: Path | None) -> dict | None:
     """Placar do `cargo test` a partir de uma saida GUARDADA (--suite ARQ); sem ela, None."""
     if arquivo is None:
@@ -568,10 +599,12 @@ def suite(arquivo: Path | None) -> dict | None:
     pulo = re.compile(r'"[^"]*\bpulad[oa]', re.I)
     for arq in sorted(list(REPO.glob("phxclaw/crates/*/tests/*.rs")) + list(REPO.glob("phxclaw/apps/*/tests/*.rs"))
                       + list(REPO.glob("phxclaw/crates/*/src/**/tests.rs"))):
-        if arq.name == "pulado.rs":
+        # O crate de apoio e a casa do modulo e da guarda: os testes dele PLANTAM o texto
+        # que a regra reprova (prova nos dois sentidos), e por isso fica fora da conta.
+        if "phxclaw-test-support" in arq.parts:
             continue
         for n, lin in enumerate(arq.read_text(errors="replace").splitlines(), 1):
-            if lin.lstrip().startswith("//") or "pulado::pular" in lin or "comum/pulado.rs" in lin:
+            if lin.lstrip().startswith("//") or "pulado::pular" in lin:
                 continue
             if pulo.search(lin):
                 calados.append(f"{rel(arq)}:{n}")

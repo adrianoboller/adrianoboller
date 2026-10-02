@@ -4,6 +4,7 @@
 
 use phxclaw_agent::*;
 use phxclaw_agent_core::{Tool, ToolContext, ToolError};
+use phxclaw_test_support::pulado;
 use serde_json::json;
 use std::time::Duration;
 
@@ -37,7 +38,7 @@ fn vivos_com(marca: &str) -> usize {
 #[tokio::test]
 async fn start_status_stop_mata_de_verdade() {
     let Some(b) = bwrap() else {
-        eprintln!("sem bwrap: pulado");
+        pulado::pular("bwrap", "sem bwrap");
         return;
     };
     let t = BackgroundShellTool::new(b, false);

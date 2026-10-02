@@ -117,9 +117,38 @@ fn precedencia_ambiente_projeto_pasta_padrao_e_cada_valor_sabe_a_origem() {
     // Segredo: so a presenca, nunca o valor.
     assert_eq!(c.origem("xai.chave"), Origem::Ambiente);
     assert_eq!(c.valor("xai.chave"), None);
-    assert_eq!(c.revisao(), 6);
-    // Sem projeto (nao confiado), o projeto nao conta.
+    // O token de concorrencia e SHA-256 dos dois arquivos, nao a soma das revisoes: a soma
+    // tinha ABA (pasta 3 + projeto 1 = pasta 2 + projeto 2), e um If-Match velho passava.
+    let t31 = c.revisao();
+    assert_eq!(t31.len(), 64, "{t31}");
+    assert_eq!(
+        t31,
+        carga::token(&c.pasta.sha256, Some(&c.projeto.as_ref().unwrap().sha256))
+    );
+    grava(
+        &pasta,
+        json!({"revisao": 3, "modelo": {"padrao": "da-pasta", "visao": "visao-da-pasta"},
+               "agente": {"estilo": "estilo-da-pasta"}, "api": {"tarefas_por_minuto": 7}}),
+    );
+    grava(
+        &projeto,
+        json!({"revisao": 1, "modelo": {"padrao": "do-projeto", "visao": "visao-do-projeto"}}),
+    );
+    let c31 = carga::carregar(&a, &pasta, Some(&projeto)).unwrap();
+    grava(
+        &pasta,
+        json!({"revisao": 2, "modelo": {"padrao": "da-pasta", "visao": "visao-da-pasta"},
+               "agente": {"estilo": "estilo-da-pasta"}, "api": {"tarefas_por_minuto": 7}}),
+    );
+    grava(
+        &projeto,
+        json!({"revisao": 2, "modelo": {"padrao": "do-projeto", "visao": "visao-do-projeto"}}),
+    );
+    let c22 = carga::carregar(&a, &pasta, Some(&projeto)).unwrap();
+    assert_ne!(c31.revisao(), c22.revisao(), "ABA: 3+1 == 2+2");
+    // Sem projeto (nao confiado), o projeto nao conta -- e o token muda.
     let c = carga::carregar(&a, &pasta, None).unwrap();
+    assert_ne!(c.revisao(), c22.revisao());
     assert_eq!(c.texto("modelo.visao").unwrap(), "visao-da-pasta");
     assert_eq!(c.origem("modelo.visao"), Origem::Pasta);
     // O ambiente e tipado tambem: lista separada, booleano por extenso.
@@ -256,55 +285,61 @@ fn definir_grava_com_revisao_historico_conflito_e_recusa_do_ambiente() {
     let arq = d.join("config.json");
     let nada = amb(&[]);
     let c = carga::carregar(&nada, &arq, None).unwrap();
+    let t0 = c.revisao();
     let mut m = Map::new();
     m.insert("modelo.padrao".into(), json!("um"));
     m.insert("canais.discord.permitidos".into(), json!(["a"]));
-    let n = carga::definir(
+    let t1 = carga::definir(
         Alvo {
             arquivo: &arq,
             atual: &c,
-            esperada: Some(0),
+            esperada: Some(&t0),
         },
         &m,
     )
     .unwrap();
-    assert_eq!(n, 1);
+    assert_ne!(t1, t0);
     let doc: Value = serde_json::from_slice(&std::fs::read(&arq).unwrap()).unwrap();
     assert_eq!(doc["revisao"], 1);
     assert_eq!(doc["modelo"]["padrao"], "um");
     assert_eq!(doc["canais"]["discord"]["permitidos"], json!(["a"]));
-    assert!(!d.join("config.json.tmp").exists());
-    // Revisao velha: conflito com a atual, e nada muda.
+    let sobras: Vec<_> = std::fs::read_dir(&d)
+        .unwrap()
+        .flatten()
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|n| n.ends_with(".tmp"))
+        .collect();
+    assert!(sobras.is_empty(), "{sobras:?}");
+    // Token velho: conflito com o atual, e nada muda.
     let c = carga::carregar(&nada, &arq, None).unwrap();
+    assert_eq!(c.revisao(), t1, "o token devolvido e o da proxima carga");
     let mut m2 = Map::new();
     m2.insert("modelo.padrao".into(), json!("dois"));
     match carga::definir(
         Alvo {
             arquivo: &arq,
             atual: &c,
-            esperada: Some(0),
+            esperada: Some(&t0),
         },
         &m2,
     ) {
-        Err(Recusa::Conflito { atual: 1 }) => {}
+        Err(Recusa::Conflito { atual }) if atual == t1 => {}
         r => panic!("{r:?}"),
     }
     // null remove; a anterior vai para o historico.
     let mut m3 = Map::new();
     m3.insert("canais.discord.permitidos".into(), Value::Null);
     m3.insert("modelo.padrao".into(), json!("dois"));
-    assert_eq!(
-        carga::definir(
-            Alvo {
-                arquivo: &arq,
-                atual: &c,
-                esperada: Some(1)
-            },
-            &m3
-        )
-        .unwrap(),
-        2
-    );
+    let t2 = carga::definir(
+        Alvo {
+            arquivo: &arq,
+            atual: &c,
+            esperada: Some(&t1),
+        },
+        &m3,
+    )
+    .unwrap();
+    assert_ne!(t2, t1);
     let doc: Value = serde_json::from_slice(&std::fs::read(&arq).unwrap()).unwrap();
     assert_eq!(doc["modelo"]["padrao"], "dois");
     assert!(doc.get("canais").is_none(), "{doc}");
@@ -342,6 +377,142 @@ fn definir_grava_com_revisao_historico_conflito_e_recusa_do_ambiente() {
     }
     let doc: Value = serde_json::from_slice(&std::fs::read(&arq).unwrap()).unwrap();
     assert_eq!(doc["revisao"], 2, "recusa nao grava");
+    let _ = std::fs::remove_dir_all(&d);
+}
+
+/// Achado B2 de seguranca (01/10/2026): o `If-Match` era conferido contra a `Configuracao`
+/// que o PROCESSO carregou, nao contra o arquivo. A CLI gravando no mesmo config.json e
+/// outro processo: o cache do servidor continuava dizendo o token velho, e o PUT com o
+/// token velho passava por cima do que a CLI tinha acabado de gravar.
+#[test]
+fn if_match_e_conferido_contra_o_arquivo_e_nao_contra_o_cache_do_processo() {
+    let d = tmp("ifmatch");
+    let arq = d.join("config.json");
+    let nada = amb(&[]);
+    let servidor = carga::carregar(&nada, &arq, None).unwrap();
+    let t0 = servidor.revisao();
+    // «A CLI» grava, com a carga dela.
+    let cli = carga::carregar(&nada, &arq, None).unwrap();
+    let mut m = Map::new();
+    m.insert("modelo.padrao".into(), json!("da-cli"));
+    let t1 = carga::definir(
+        Alvo {
+            arquivo: &arq,
+            atual: &cli,
+            esperada: None,
+        },
+        &m,
+    )
+    .unwrap();
+    assert_ne!(t1, t0);
+    // O servidor, com o cache velho (`servidor.revisao() == t0`) e o If-Match velho:
+    // conferido contra o cache passaria; contra o arquivo, conflito com t1.
+    assert_eq!(servidor.revisao(), t0);
+    let mut m2 = Map::new();
+    m2.insert("modelo.padrao".into(), json!("do-servidor"));
+    match carga::definir(
+        Alvo {
+            arquivo: &arq,
+            atual: &servidor,
+            esperada: Some(&t0),
+        },
+        &m2,
+    ) {
+        Err(Recusa::Conflito { atual }) if atual == t1 => {}
+        r => panic!("{r:?}"),
+    }
+    let doc: Value = serde_json::from_slice(&std::fs::read(&arq).unwrap()).unwrap();
+    assert_eq!(
+        doc["modelo"]["padrao"], "da-cli",
+        "a gravacao da CLI foi perdida"
+    );
+    let _ = std::fs::remove_dir_all(&d);
+}
+
+/// SEC M6: a deteccao de credencial nao pode depender de uma lista de prefixos (a chave de
+/// um provedor novo nao esta nela), e o erro NUNCA ecoa o valor -- so a chave e o tamanho.
+#[test]
+fn credencial_pela_forma_e_pelo_nome_e_a_recusa_nunca_ecoa_o_valor() {
+    // Chave real de forma generica (sem prefixo conhecido): 40 caracteres, misto, aleatoria.
+    let chave = "q7Hf2kLm9ZxPw3Rt8VbN1cYd5GhJ0sKe4UaWi6Oo";
+    assert!(credencial_aparente(chave).is_some(), "{chave}");
+    assert!(credencial_aparente("3f1a9c0e7b2d4f6a8c1e3b5d7f9a2c4e6b8d0f1a").is_some());
+    // Nome de modelo, versao, caminho e frase nao sao chave.
+    for ok in [
+        "gpt-4o-mini-2024-07-18",
+        "ollama:qwen2.5:1.5b",
+        "/opt/modelos/ggml-base.en.bin",
+        "claude-sonnet-4-5-20250929",
+        "uma frase normal de configuracao",
+        "v0.40.0-rc1",
+    ] {
+        assert!(credencial_aparente(ok).is_none(), "{ok}");
+    }
+    for v in [
+        json!({"modelo": {"padrao": chave}}),
+        json!({"modelo": {"padrao": "ghp_abcdefghijklmnop"}}),
+        json!({"api": {"tarefas_por_minuto": "ghp_abcdefghijklmnop"}}),
+        json!({"voz": {"tts": {"provedor": "ghp_abcdefghijklmnop"}}}),
+        json!({"voz": {"tts": {"pastas": "ghp_abcdefghijklmnop"}}}),
+        json!({"forja": {"github_token": "ghp_abcdefghijklmnop"}}),
+        json!({"qualquer": {"api_key": chave}}),
+    ] {
+        let e = validar_documento(&v).unwrap_err();
+        let texto = carga::em_texto(&e);
+        assert!(!texto.contains("ghp_"), "{texto}");
+        assert!(!texto.contains(&chave[..8]), "{texto}");
+        assert!(texto.contains("caracteres"), "{texto}");
+    }
+    let e =
+        validar_documento(&json!({"forja": {"github_token": "ghp_abcdefghijklmnop"}})).unwrap_err();
+    assert!(e[0].motivo.contains("nome de segredo"), "{e:?}");
+    assert!(carga::nome_de_segredo("x.api_key"));
+    assert!(carga::nome_de_segredo("password"));
+    assert!(!carga::nome_de_segredo("modelo.max_tokens"));
+    // O ambiente tipado tambem nao ecoa.
+    let c = por_chave("api.tarefas_por_minuto").unwrap();
+    let e = carga::do_texto(c, "ghp_abcdefghijklmnop").unwrap_err();
+    assert!(!e.contains("ghp_") && e.contains("20 caracteres"), "{e}");
+}
+
+/// Trava entre processos: vinte gravadores ao mesmo tempo, nenhuma gravacao perdida. A
+/// trava e de arquivo (`flock`), e no Linux ela vale entre descritores do mesmo processo
+/// tambem -- fios bastam para prova-la.
+#[test]
+fn gravacao_concorrente_nao_perde_escrita() {
+    let d = tmp("concorrente");
+    let p = d.join("config.json");
+    let doc = json!({
+        "schema_version": "0.40.0",
+        "config_uuid": "01890a5d-ac96-774b-bcce-b302099a8057",
+        "revision": 1,
+        "security": {"deny_by_default": true, "secrets_plaintext_forbidden": true}
+    });
+    std::fs::write(&p, serde_json::to_vec(&doc).unwrap()).unwrap();
+    let fios: Vec<_> = (0..20)
+        .map(|i| {
+            let p = p.clone();
+            std::thread::spawn(move || {
+                let s = ConfigStore::new(&p);
+                loop {
+                    let atual = s.load().unwrap();
+                    let mut v = atual.value.clone();
+                    v["extra"] = json!({ format!("fio{i}"): true });
+                    match s.save(v, atual.revision) {
+                        Ok(_) => return,
+                        Err(phxclaw_config_runtime::ConfigError::RevisionConflict { .. }) => {}
+                        Err(e) => panic!("{e}"),
+                    }
+                }
+            })
+        })
+        .collect();
+    for f in fios {
+        f.join().unwrap();
+    }
+    let fim = ConfigStore::new(&p).load().unwrap();
+    assert_eq!(fim.revision, 21);
+    assert_eq!(std::fs::read_dir(d.join("history")).unwrap().count(), 20);
     let _ = std::fs::remove_dir_all(&d);
 }
 

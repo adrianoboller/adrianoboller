@@ -77,6 +77,8 @@ phxclaw-key-provider = { path = "../phxclaw-key-provider", features = ["arquivo"
 phxclaw-ai-benchmark = { path = "../phxclaw-ai-benchmark" }
 # O config.json: catalogo das chaves, carga com origem e gravacao com revisao. Ja no workspace.
 phxclaw-config-runtime = { path = "../phxclaw-config-runtime" }
+# O workspace de varias raizes (`.phxclaw/workspace.json`), o mesmo leitor do IDE de mesa.
+phxclaw-workspace = { path = "../phxclaw-workspace" }
 
 [features]
 desktop = [
@@ -86,6 +88,7 @@ desktop = [
 ]
 
 [dev-dependencies]
+phxclaw-test-support = { path = "../phxclaw-test-support" }
 reqwest.workspace = true
 ed25519-dalek.workspace = true
 # Servidor TLS falso dos testes dos canais (certificado fixo em tests/dados/tls) e o

@@ -3,6 +3,7 @@
 use phxclaw_agent::adaptadores::{BrowserSessions, browser_tools, office_tools};
 use phxclaw_agent::*;
 use phxclaw_browser::BrowserPolicy;
+use phxclaw_test_support::pulado;
 use serde_json::json;
 use std::io::{Read, Write};
 use std::net::TcpListener;
@@ -49,7 +50,7 @@ fn site() -> String {
 #[tokio::test]
 async fn agente_le_site_real_no_chromium_preenche_formulario_e_gera_planilha() {
     if phxclaw_browser::find_chromium().is_none() {
-        eprintln!("chromium ausente: pulado");
+        pulado::pular("chromium", "chromium ausente");
         return;
     }
     let base = site();

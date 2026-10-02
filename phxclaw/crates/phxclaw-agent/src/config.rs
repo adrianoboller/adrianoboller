@@ -66,10 +66,6 @@ impl Projeto {
     }
 }
 
-fn canonico(p: &Path) -> PathBuf {
-    p.canonicalize().unwrap_or_else(|_| p.to_path_buf())
-}
-
 /// O projeto de agora (`PHXCLAW_PROJETO` ou a pasta corrente, a mesma nocao da montagem),
 /// julgado pela lista de confiados da pasta do agente.
 pub fn projeto(pasta: &Path) -> Projeto {
@@ -77,14 +73,14 @@ pub fn projeto(pasta: &Path) -> Projeto {
         return Projeto::Nenhum;
     };
     let arquivo = raiz.join(".phxclaw").join(ARQUIVO);
-    let repo = canonico(&crate::instrucoes::raiz_do_repositorio(&canonico(&raiz)));
-    if crate::instrucoes::confiados(pasta).contains(&repo) {
-        Projeto::Confiado(arquivo)
-    } else {
-        Projeto::NaoConfiado {
+    // A MESMA conta das instrucoes do projeto (`instrucoes::confiado`): confianca julgada
+    // por uma raiz e leitura feita de outra era o achado M5.
+    match crate::instrucoes::confiado(pasta, &raiz) {
+        Some(_) => Projeto::Confiado(arquivo),
+        None => Projeto::NaoConfiado {
             arquivo,
-            raiz: repo,
-        }
+            raiz: crate::instrucoes::raiz_canonica(&raiz),
+        },
     }
 }
 
@@ -278,8 +274,8 @@ pub fn definir(
     pasta: &Path,
     escopo: Escopo,
     mudancas: &Map<String, Value>,
-    if_match: Option<u64>,
-) -> Result<u64, Recusa> {
+    if_match: Option<&str>,
+) -> Result<String, Recusa> {
     static GRAVANDO: Mutex<()> = Mutex::new(());
     let _g = GRAVANDO.lock().unwrap_or_else(|p| p.into_inner());
     let arquivo = match (escopo, projeto(pasta)) {
@@ -359,7 +355,8 @@ async fn gravar(State(s): State<ApiState>, h: HeaderMap, corpo: Json<Value>) -> 
     let Some(if_match) = h
         .get(axum::http::header::IF_MATCH)
         .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.trim().trim_matches('"').parse::<u64>().ok())
+        .map(|v| v.trim().trim_matches('"').to_string())
+        .filter(|v| !v.is_empty())
     else {
         return (
             StatusCode::PRECONDITION_REQUIRED,
@@ -384,7 +381,7 @@ async fn gravar(State(s): State<ApiState>, h: HeaderMap, corpo: Json<Value>) -> 
         }]));
     };
     let pasta = pasta_da_api(&s);
-    let r = tokio::task::spawn_blocking(move || definir(&pasta, escopo, &valores, Some(if_match)))
+    let r = tokio::task::spawn_blocking(move || definir(&pasta, escopo, &valores, Some(&if_match)))
         .await;
     match r {
         Ok(Ok(n)) => Json(json!({"revisao": n})).into_response(),

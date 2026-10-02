@@ -5,6 +5,7 @@ use phxclaw_agent::motor;
 use phxclaw_agent::*;
 use phxclaw_agent_core::Tool;
 use phxclaw_evidence_ledger::EvidenceLedger;
+use phxclaw_test_support::pulado;
 use serde_json::json;
 use std::sync::Arc;
 use std::time::Duration;
@@ -38,7 +39,7 @@ fn tools_basicas() -> Vec<Arc<dyn Tool>> {
 #[tokio::test]
 async fn ciclo_completo_com_shell_real_arquivo_evidencia_e_resposta() {
     if shell().is_none() {
-        eprintln!("bwrap ausente: pulado");
+        pulado::pular("bwrap", "bwrap ausente");
         return;
     }
     let llm = Arc::new(ScriptedLlm::new(vec![
@@ -624,7 +625,7 @@ async fn orcamento_de_argumento_esgota_e_a_chamada_boa_zera() {
 #[tokio::test]
 async fn verificar_com_codigo_1_recusa_o_fim() {
     if shell().is_none() {
-        eprintln!("bwrap ausente: pulado");
+        pulado::pular("bwrap", "bwrap ausente");
         return;
     }
     let cfg = || AgentConfig {

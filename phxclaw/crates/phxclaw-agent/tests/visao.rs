@@ -4,18 +4,22 @@
 
 use phxclaw_agent::ui::ScreenshotToErpUiTool;
 use phxclaw_agent_core::{Tool, ToolContext};
+use phxclaw_test_support::pulado;
 use serde_json::json;
 use std::time::Duration;
 
 #[tokio::test]
 async fn print_do_pedido_vira_mestre_detalhe() {
     if std::env::var("PHXCLAW_PROVA_VISAO").is_err() {
-        eprintln!("PHXCLAW_PROVA_VISAO nao definida: pulado");
+        pulado::pular("PHXCLAW_PROVA_VISAO", "PHXCLAW_PROVA_VISAO nao definida");
         return;
     }
     let print = concat!(env!("CARGO_MANIFEST_DIR"), "/../../target/ui-ir/pedido.png");
     if !std::path::Path::new(print).is_file() {
-        eprintln!("rode antes o teste navegador do phxclaw-ui-ir (gera o print): pulado");
+        pulado::pular(
+            "target/ui-ir/pedido.png",
+            "rode antes o teste navegador do phxclaw-ui-ir, que gera o print",
+        );
         return;
     }
     let d = std::env::temp_dir().join(format!("phx-visao-{}", phxclaw_types::new_uuid_v7()));

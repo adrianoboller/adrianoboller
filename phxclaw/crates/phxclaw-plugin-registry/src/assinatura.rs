@@ -81,3 +81,36 @@ pub fn reassinar(
     s.push('\n');
     Ok(s)
 }
+
+/// Reassina todo `*.plugin.json` de `pasta` com a semente do signatario de cada um,
+/// conferida contra `config/trust/plugin-signers.json` de `raiz`. Devolve quantos.
+/// E o laco do exemplo `assinar` e do `phxclaw plugins assinar`: um so, para a CLI que le
+/// a semente do broker e o exemplo que a le do ambiente nunca assinarem de jeitos diferentes.
+pub fn reassinar_pasta(
+    raiz: &Path,
+    pasta: &Path,
+    semente_b64: &str,
+) -> Result<Vec<std::path::PathBuf>, Box<dyn std::error::Error>> {
+    let trust = TrustStore::from_json(&std::fs::read_to_string(
+        raiz.join("config/trust/plugin-signers.json"),
+    )?)?;
+    let mut feitos = Vec::new();
+    for e in std::fs::read_dir(pasta)? {
+        let p = e?.path();
+        // so manifesto: a pasta de exemplos tem schemas .json ao lado, sem assinatura
+        if !p.to_string_lossy().ends_with(".plugin.json") {
+            continue;
+        }
+        let texto = std::fs::read_to_string(&p)?;
+        let v: serde_json::Value = serde_json::from_str(&texto)?;
+        let signer = v["integrity"]["signer"].as_str().unwrap_or_default();
+        let chave = chave_do_signatario(semente_b64, signer, &trust)?;
+        let formato = trust
+            .signer(signer)
+            .map(|s| s.signature_format)
+            .unwrap_or(1);
+        std::fs::write(&p, reassinar(&texto, raiz, &chave, formato)?)?;
+        feitos.push(p);
+    }
+    Ok(feitos)
+}

@@ -6,8 +6,7 @@
 //! trocada com outro teste rodando ao lado e corrida.
 
 #[cfg(not(feature = "desktop"))]
-#[path = "comum/pulado.rs"]
-mod pulado;
+use phxclaw_test_support::pulado;
 
 #[cfg(not(feature = "desktop"))]
 #[test]
@@ -22,6 +21,7 @@ fn desktop_desligado() {
 mod com_desktop {
     use phxclaw_agent::visao::DesktopTool;
     use phxclaw_agent_core::{Tool, ToolContext, ToolError};
+    use phxclaw_test_support::pulado;
     use serde_json::json;
     use std::path::Path;
     use std::process::{Child, Command, Stdio};
@@ -130,7 +130,7 @@ mod com_desktop {
             "{e}"
         );
         if !(ha("Xvfb") && ha("xterm") && ha("ffmpeg")) {
-            eprintln!("PULADO: falta Xvfb, xterm ou ffmpeg");
+            pulado::pular("Xvfb", "falta Xvfb, xterm ou ffmpeg");
             return;
         }
         let (_xvfb, display) = subir_xvfb();

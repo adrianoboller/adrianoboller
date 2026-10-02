@@ -6,6 +6,7 @@
 //! ele o teste diz que pulou.
 
 use phxclaw_browser::{Browser, BrowserPolicy, LaunchOptions};
+use phxclaw_test_support::pulado;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -103,7 +104,7 @@ fn servir_pasta(raiz: PathBuf) -> String {
 #[tokio::test]
 async fn projeto_flutter_analisa_testa_compila_e_abre() {
     let Some(f) = flutter() else {
-        eprintln!("SDK Flutter ausente: pulado");
+        pulado::pular("flutter", "SDK Flutter ausente");
         return;
     };
     let (app, _) = phxclaw_ui_ir::from_sql("Vendas", include_str!("fixtures/pedidos.sql"));

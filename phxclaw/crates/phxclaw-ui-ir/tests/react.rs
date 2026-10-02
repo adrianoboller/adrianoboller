@@ -5,6 +5,7 @@
 //! Precisa de `npm` e do registro de pacotes; sem `npm` o teste diz que pulou.
 
 use phxclaw_browser::{Browser, BrowserPolicy, LaunchOptions};
+use phxclaw_test_support::pulado;
 use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
@@ -63,7 +64,7 @@ async fn projeto_react_constroi_e_funciona_no_chromium() {
     if phxclaw_browser::find_chromium().is_none()
         || Command::new("npm").arg("--version").output().is_err()
     {
-        eprintln!("chromium ou npm ausente: pulado");
+        pulado::pular("npm", "chromium ou npm ausente");
         return;
     }
     let sql = include_str!("fixtures/pedidos.sql");

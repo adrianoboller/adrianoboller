@@ -474,10 +474,10 @@ impl FileMemoryStore {
         if let Some(dir) = self.path.parent() {
             std::fs::create_dir_all(dir)?;
         }
-        let mut tmp = self.path.clone().into_os_string();
-        tmp.push(".tmp");
-        std::fs::write(&tmp, serde_json::to_vec_pretty(&self.items)?)?;
-        std::fs::rename(&tmp, &self.path)?;
+        phxclaw_types::arquivo::gravar_atomico(
+            &self.path,
+            &serde_json::to_vec_pretty(&self.items)?,
+        )?;
         Ok(())
     }
 }

@@ -19,6 +19,11 @@ a tabela sai mesmo assim (e o que roda hoje), mas o aviso vai para o documento e
 fora das linhas de exito. Medidor com binario velho mede o passado.
 
 Uso: python3 tools/gerar_doc_agente.py [binario]   (padrao: target/debug/phxclaw)
+     python3 tools/gerar_doc_agente.py --conferir [binario]
+       regera EM MEMORIA e compara com o documento, sem gravar: sai 0 se igual, 3 se o
+       documento esta velho (e imprime o diff). As datas e a hora do binario ficam fora da
+       comparacao: mudam a cada corrida sem o conteudo mudar. E o teste de «arquivo velho»
+       (apps/phxclaw/tests/arquivos_gerados.rs) chama este modo -- o mesmo gerador, sem copia.
 """
 
 import datetime
@@ -86,8 +91,18 @@ def celula(s):
     return s.replace("|", "\\|").replace("\n", " ")
 
 
+# O que muda a cada corrida sem o conteudo mudar: a data da medicao e a hora do binario.
+_VOLATIL = re.compile(r"\d{4}-\d{2}-\d{2}( \d{2}:\d{2})?")
+
+
+def sem_data(texto):
+    return _VOLATIL.sub("<data>", texto)
+
+
 def main():
-    bin_ = Path(sys.argv[1]) if len(sys.argv) > 1 else RAIZ / "target" / "debug" / "phxclaw"
+    args = [a for a in sys.argv[1:] if a != "--conferir"]
+    conferir = "--conferir" in sys.argv[1:]
+    bin_ = Path(args[0]) if args else RAIZ / "target" / "debug" / "phxclaw"
     if not bin_.is_file():
         sys.exit(f"ERRO: {bin_} nao existe; rode `cargo build -p phxclaw` antes")
     env = {k: v for k, v in os.environ.items() if k != "PHXCLAW_CAPACIDADES"}
@@ -164,6 +179,23 @@ def main():
     texto = trocar(texto, "equipe", f"**{m.group(2)} papeis** carregados de `config/agents` "
                    f"(medido em {hoje} por `phxclaw equipe listar`).")
 
+    if conferir:
+        if velho:
+            # Comparar com binario velho mede o passado: diz que fez menos e nao compara.
+            print(f"FEZ MENOS: binario ({m_bin:%H:%M}) mais velho que {novo.relative_to(RAIZ)} "
+                  f"({m_fonte:%H:%M}); recompile antes de conferir", file=sys.stderr)
+            return 2
+        atual = DOC.read_text(encoding="utf-8")
+        if sem_data(atual) != sem_data(texto):
+            import difflib
+            sys.stdout.writelines(difflib.unified_diff(
+                sem_data(atual).splitlines(True), sem_data(texto).splitlines(True),
+                "documento", "regerado"))
+            print(f"VELHO: {DOC.relative_to(RAIZ)} difere do que o gerador produz hoje; "
+                  f"rode python3 tools/gerar_doc_agente.py", file=sys.stderr)
+            return 3
+        print(f"{DOC.relative_to(RAIZ)}: em dia ({f['total']} montadas)")
+        return 0
     DOC.write_text(texto, encoding="utf-8")
     print(f"{DOC.relative_to(RAIZ)}: {f['total']} montadas, {len(ausentes)} so no fonte, "
           f"{m.group(2)} papeis, ajuda da CLI")

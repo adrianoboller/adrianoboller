@@ -432,6 +432,223 @@ pub fn analisar_diff(texto: &str) -> Vec<ArquivoDiff> {
     v
 }
 
+// ---------------------------------------------------------------- trecho (stage parcial)
+
+/// Teto do patch de um trecho: ele viaja dentro da linha de shell do sandbox (heredoc), e
+/// um argumento do `sh -c` nao passa de 128 KiB no Linux.
+pub const TRECHO_MAX_BYTES: usize = 64 * 1024;
+
+/// O que vai ao indice de um arquivo: hunks inteiros (pelo indice do `git diff`) ou uma
+/// faixa de linhas, na numeracao do arquivo NOVO.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Trecho {
+    Hunks(Vec<usize>),
+    Linhas(u64, u64),
+}
+
+/// Monta o patch que leva so o trecho ao indice, a partir do diff do arquivo (arvore
+/// contra indice). Na faixa de linhas, dentro de um hunk: `+` fora da faixa cai, `-` fora
+/// da faixa vira contexto -- e o que o `git add -p` com `e` faz a mao. O inicio do lado
+/// novo de cada hunk e recalculado, porque hunk pulado desloca os seguintes.
+pub fn patch_do_trecho(arq: &ArquivoDiff, trecho: &Trecho) -> Result<String, ToolError> {
+    if arq.binario {
+        return Err(ToolError::InvalidArguments(format!(
+            "{}: arquivo binario nao se prepara por trecho",
+            arq.caminho
+        )));
+    }
+    if let Trecho::Hunks(idx) = trecho
+        && let Some(i) = idx.iter().find(|&&i| i >= arq.hunks.len())
+    {
+        return Err(ToolError::InvalidArguments(format!(
+            "{}: trecho {i} nao existe (o diff tem {} trecho(s), de 0 a {})",
+            arq.caminho,
+            arq.hunks.len(),
+            arq.hunks.len().saturating_sub(1)
+        )));
+    }
+    let mut corpo = String::new();
+    let mut delta: i64 = 0;
+    for (i, h) in arq.hunks.iter().enumerate() {
+        let linhas: Vec<String> = match trecho {
+            Trecho::Hunks(idx) => {
+                if !idx.contains(&i) {
+                    continue;
+                }
+                h.linhas.clone()
+            }
+            Trecho::Linhas(ini, fim) => {
+                let mut novo = h.novo_inicio;
+                let mut saida = Vec::new();
+                // `\ No newline at end of file` pertence a linha anterior: segue o destino dela.
+                let mut anterior_ficou = true;
+                for l in &h.linhas {
+                    match l.chars().next() {
+                        Some('+') => {
+                            let dentro = novo >= *ini && novo <= *fim;
+                            novo += 1;
+                            anterior_ficou = dentro;
+                            if dentro {
+                                saida.push(l.clone());
+                            }
+                        }
+                        Some('-') => {
+                            // A linha apagada «mora» onde ela estaria no arquivo novo.
+                            anterior_ficou = true;
+                            if novo >= *ini && novo <= *fim {
+                                saida.push(l.clone());
+                            } else {
+                                saida.push(format!(" {}", &l[1..]));
+                            }
+                        }
+                        Some('\\') => {
+                            if anterior_ficou {
+                                saida.push(l.clone());
+                            }
+                        }
+                        _ => {
+                            novo += 1;
+                            anterior_ficou = true;
+                            saida.push(l.clone());
+                        }
+                    }
+                }
+                saida
+            }
+        };
+        let al = linhas
+            .iter()
+            .filter(|l| !l.starts_with('+') && !l.starts_with('\\'))
+            .count() as u64;
+        let nl = linhas
+            .iter()
+            .filter(|l| !l.starts_with('-') && !l.starts_with('\\'))
+            .count() as u64;
+        if linhas
+            .iter()
+            .all(|l| !l.starts_with('+') && !l.starts_with('-'))
+        {
+            continue;
+        }
+        let ni = (h.antigo_inicio as i64 + delta).max(0) as u64;
+        delta += nl as i64 - al as i64;
+        corpo.push_str(&format!("@@ -{},{al} +{ni},{nl} @@\n", h.antigo_inicio));
+        for l in &linhas {
+            corpo.push_str(l);
+            corpo.push('\n');
+        }
+    }
+    if corpo.is_empty() {
+        return Err(ToolError::InvalidArguments(format!(
+            "{}: nenhuma mudanca no trecho pedido",
+            arq.caminho
+        )));
+    }
+    let c = &arq.caminho;
+    let patch = format!("diff --git a/{c} b/{c}\n--- a/{c}\n+++ b/{c}\n{corpo}");
+    if patch.len() > TRECHO_MAX_BYTES {
+        return Err(ToolError::InvalidArguments(format!(
+            "o trecho passa de {} KiB; prepare em partes menores",
+            TRECHO_MAX_BYTES / 1024
+        )));
+    }
+    Ok(patch)
+}
+
+// ---------------------------------------------------------------- conflitos de merge
+
+/// Um bloco `<<<<<<<`/`=======`/`>>>>>>>` de um arquivo em conflito, com as duas versoes
+/// (e a base, quando o `merge.conflictStyle` e diff3).
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct Bloco {
+    pub indice: usize,
+    /// Linha (1 em diante) do `<<<<<<<` e do `>>>>>>>`.
+    pub de: usize,
+    pub ate: usize,
+    pub rotulo_nosso: String,
+    pub rotulo_deles: String,
+    pub nosso: Vec<String>,
+    pub deles: Vec<String>,
+    pub base: Option<Vec<String>>,
+}
+
+/// Os blocos de conflito de um texto. Marcador fora de ordem (um `=======` sem `<<<<<<<`,
+/// um `<<<<<<<` sem fim) nao e bloco: o texto fica como esta e o chamador ve zero blocos
+/// ali, em vez de uma resolucao que apagaria linhas que nao eram conflito.
+pub fn blocos_de_conflito(texto: &str) -> Vec<Bloco> {
+    let mut v = Vec::new();
+    let linhas: Vec<&str> = texto.lines().collect();
+    let mut i = 0;
+    while i < linhas.len() {
+        let Some(rn) = linhas[i].strip_prefix("<<<<<<< ") else {
+            i += 1;
+            continue;
+        };
+        let (mut nosso, mut base, mut deles) = (Vec::new(), None::<Vec<String>>, Vec::new());
+        let mut fase = 0u8;
+        let mut fim = None;
+        for (j, l) in linhas.iter().enumerate().skip(i + 1) {
+            if fase < 2 && l.starts_with("||||||| ") {
+                fase = 1;
+                base = Some(Vec::new());
+            } else if fase < 2 && *l == "=======" {
+                fase = 2;
+            } else if fase == 2
+                && let Some(rd) = l.strip_prefix(">>>>>>> ")
+            {
+                v.push(Bloco {
+                    indice: v.len(),
+                    de: i + 1,
+                    ate: j + 1,
+                    rotulo_nosso: rn.to_string(),
+                    rotulo_deles: rd.to_string(),
+                    nosso: std::mem::take(&mut nosso),
+                    deles: std::mem::take(&mut deles),
+                    base: base.take(),
+                });
+                fim = Some(j);
+                break;
+            } else if l.starts_with("<<<<<<< ") {
+                break;
+            } else {
+                match fase {
+                    0 => nosso.push(l.to_string()),
+                    1 => base.get_or_insert_with(Vec::new).push(l.to_string()),
+                    _ => deles.push(l.to_string()),
+                }
+            }
+        }
+        i = fim.map(|f| f + 1).unwrap_or(i + 1);
+    }
+    v
+}
+
+/// O texto com o bloco `indice` trocado por `escolha`. Devolve o texto novo e quantos
+/// blocos sobraram.
+pub fn resolver_bloco(
+    texto: &str,
+    indice: usize,
+    escolha: &[String],
+) -> Result<(String, usize), ToolError> {
+    let blocos = blocos_de_conflito(texto);
+    let Some(b) = blocos.iter().find(|b| b.indice == indice) else {
+        return Err(ToolError::InvalidArguments(format!(
+            "bloco {indice} nao existe (o arquivo tem {} bloco(s) de conflito)",
+            blocos.len()
+        )));
+    };
+    let linhas: Vec<&str> = texto.lines().collect();
+    let mut saida: Vec<&str> = linhas[..b.de - 1].to_vec();
+    saida.extend(escolha.iter().map(String::as_str));
+    saida.extend(linhas[b.ate..].iter().copied());
+    let mut novo = saida.join("\n");
+    if texto.ends_with('\n') || texto.is_empty() {
+        novo.push('\n');
+    }
+    let restantes = blocos_de_conflito(&novo).len();
+    Ok((novo, restantes))
+}
+
 /// Corta o diff em fronteira de arquivo abaixo do teto. Devolve (diff, cortou).
 pub fn limitar_diff(texto: &str, max: usize) -> (String, bool) {
     if texto.len() <= max {
@@ -1009,11 +1226,241 @@ impl GitTool {
                 }
                 Ok(r)
             }
+            "add_trecho" => {
+                let arquivo = exigir(args, "file")?.to_string();
+                let trecho = match (
+                    args.get("hunk"),
+                    args.get("start_line").and_then(Value::as_u64),
+                    args.get("end_line").and_then(Value::as_u64),
+                ) {
+                    (Some(h), _, _) => {
+                        let idx: Vec<usize> = match h {
+                            Value::Array(a) => a
+                                .iter()
+                                .filter_map(|v| v.as_u64())
+                                .map(|v| v as usize)
+                                .collect(),
+                            v => v.as_u64().map(|v| v as usize).into_iter().collect(),
+                        };
+                        if idx.is_empty() {
+                            return Err(ToolError::InvalidArguments(
+                                "'hunk' e um indice (ou lista) do diff do arquivo".into(),
+                            ));
+                        }
+                        Trecho::Hunks(idx)
+                    }
+                    (None, Some(i), f) => Trecho::Linhas(i, f.unwrap_or(i)),
+                    _ => {
+                        return Err(ToolError::InvalidArguments(
+                            "falta 'hunk' (indice do trecho no git diff) ou 'start_line'/'end_line'"
+                                .into(),
+                        ));
+                    }
+                };
+                let t = diff_do_repo(
+                    &self.bwrap,
+                    &ctx.workdir,
+                    repo,
+                    None,
+                    false,
+                    std::slice::from_ref(&arquivo),
+                    self.timeout.min(ctx.timeout),
+                )
+                .await?;
+                let arqs = analisar_diff(&t);
+                let Some(arq) = arqs.into_iter().find(|a| a.caminho == arquivo) else {
+                    return Err(ToolError::InvalidArguments(format!(
+                        "{arquivo}: sem diff contra o indice (arquivo novo ou sem mudanca: use add)"
+                    )));
+                };
+                let patch = patch_do_trecho(&arq, &trecho)?;
+                // O trecho e o que sera gravado: a varredura le o proprio patch.
+                let varredura = self
+                    .varrer(
+                        ctx,
+                        repo,
+                        crate::segredos::Gravacao::Trecho {
+                            patch: patch.clone(),
+                        },
+                    )
+                    .await?;
+                // O patch entra por heredoc com marca unica: quoted, nada se expande.
+                let marca = format!("FIM_DO_TRECHO_{}", phxclaw_types::new_uuid_v7());
+                let s = rodar_roteiro_git(
+                    &self.bwrap,
+                    &ctx.workdir,
+                    repo,
+                    |git| {
+                        format!(
+                            "{git} apply --cached --whitespace=nowarn <<'{marca}'\n{patch}{marca}\n"
+                        )
+                    },
+                    self.timeout.min(ctx.timeout),
+                    DIFF_MAX_BYTES,
+                )
+                .await?;
+                exigir_sucesso("apply --cached", s)?;
+                let no_indice = diff_do_repo(
+                    &self.bwrap,
+                    &ctx.workdir,
+                    repo,
+                    None,
+                    true,
+                    std::slice::from_ref(&arquivo),
+                    self.timeout.min(ctx.timeout),
+                )
+                .await?;
+                Ok(json!({
+                    "arquivo": arquivo,
+                    "no_indice": analisar_diff(&no_indice).into_iter().next(),
+                    "varredura_de_segredos": varredura,
+                }))
+            }
+            "merge" => {
+                // So merge, nunca rebase nem `--force`: o ramo alheio nao se reescreve.
+                let b = nome_de_ramo(exigir(args, "branch")?)?;
+                let r = rodar_git(
+                    &self.bwrap,
+                    &ctx.workdir,
+                    repo,
+                    vec!["merge".into(), "--no-edit".into(), b.clone()],
+                    self.timeout.min(ctx.timeout),
+                )
+                .await?;
+                if r.exit_code == Some(0) {
+                    let o = self
+                        .git(
+                            ctx,
+                            repo,
+                            vec![
+                                "log".into(),
+                                "--max-count=1".into(),
+                                format!("--format={FORMATO_COMMIT}"),
+                            ],
+                        )
+                        .await?;
+                    return Ok(json!({"ramo": b, "concluido": true,
+                                     "commit": analisar_commits(&o).into_iter().next()}));
+                }
+                let em_conflito = self.arquivos_em_conflito(ctx, repo).await?;
+                if em_conflito.is_empty() {
+                    return exigir_sucesso("merge", r).map(|_| Value::Null);
+                }
+                Ok(
+                    json!({"ramo": b, "concluido": false, "conflitos": em_conflito,
+                          "proximo": "git_write conflitos / resolver, depois commit; ou abort"}),
+                )
+            }
+            "conflitos" => {
+                let mut lista = Vec::new();
+                for arquivo in self.arquivos_em_conflito(ctx, repo).await? {
+                    let texto = self.ler_da_arvore(ctx, repo, &arquivo)?;
+                    lista.push(json!({"arquivo": arquivo, "blocos": blocos_de_conflito(&texto)}));
+                }
+                Ok(json!({"arquivos": lista}))
+            }
+            "resolver" => {
+                let arquivo = exigir(args, "file")?.to_string();
+                let bloco = args.get("block").and_then(Value::as_u64).ok_or_else(|| {
+                    ToolError::InvalidArguments("falta 'block' (indice do bloco)".into())
+                })? as usize;
+                let escolha = exigir(args, "choice")?;
+                let texto = self.ler_da_arvore(ctx, repo, &arquivo)?;
+                let linhas: Vec<String> = match escolha {
+                    "nosso" | "deles" => {
+                        let b = blocos_de_conflito(&texto)
+                            .into_iter()
+                            .find(|b| b.indice == bloco)
+                            .ok_or_else(|| {
+                                ToolError::InvalidArguments(format!(
+                                    "bloco {bloco} nao existe em {arquivo}"
+                                ))
+                            })?;
+                        if escolha == "nosso" { b.nosso } else { b.deles }
+                    }
+                    "texto" => exigir(args, "text")?.lines().map(str::to_string).collect(),
+                    outra => {
+                        return Err(ToolError::InvalidArguments(format!(
+                            "choice desconhecida: {outra} (nosso, deles, texto)"
+                        )));
+                    }
+                };
+                let (novo, restantes) = resolver_bloco(&texto, bloco, &linhas)?;
+                let rel = if repo.is_empty() {
+                    arquivo.clone()
+                } else {
+                    format!("{repo}/{arquivo}")
+                };
+                let alvo = crate::tarefa::confine(&ctx.workdir, &rel).map_err(ToolError::Denied)?;
+                std::fs::write(&alvo, novo).map_err(|e| ToolError::Failed(e.to_string()))?;
+                let mut r =
+                    json!({"arquivo": arquivo, "blocos_restantes": restantes, "no_indice": false});
+                if restantes == 0 {
+                    // Resolvido inteiro: vai ao indice pela mesma varredura do `add`.
+                    let varredura = self
+                        .varrer(
+                            ctx,
+                            repo,
+                            crate::segredos::Gravacao::Add(vec![arquivo.clone()]),
+                        )
+                        .await?;
+                    self.git(ctx, repo, vec!["add".into(), "--".into(), arquivo])
+                        .await?;
+                    r["no_indice"] = json!(true);
+                    r["varredura_de_segredos"] = varredura;
+                }
+                Ok(r)
+            }
+            "abort" => {
+                self.git(ctx, repo, s(&["merge", "--abort"])).await?;
+                Ok(self.ler(ctx, repo, "status", args).await?)
+            }
             outra => Err(ToolError::InvalidArguments(format!(
-                "action desconhecida em git_write: {outra} (init, add, commit, checkout, \
-                 branch_create, branch_delete, stash)"
+                "action desconhecida em git_write: {outra} (init, add, add_trecho, commit, \
+                 checkout, branch_create, branch_delete, stash, merge, conflitos, resolver, abort)"
             ))),
         }
+    }
+
+    /// Os caminhos sem resolver (`--diff-filter=U`), na ordem do git.
+    async fn arquivos_em_conflito(
+        &self,
+        ctx: &ToolContext,
+        repo: &str,
+    ) -> Result<Vec<String>, ToolError> {
+        let o = self
+            .git(
+                ctx,
+                repo,
+                vec![
+                    "diff".into(),
+                    "--name-only".into(),
+                    "--diff-filter=U".into(),
+                    "-z".into(),
+                ],
+            )
+            .await?;
+        Ok(o.split('\0')
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+            .collect())
+    }
+
+    /// O arquivo da arvore de trabalho, lido do hospedeiro (o mesmo lugar que o sandbox ve
+    /// como /work), confinado a pasta da tarefa.
+    fn ler_da_arvore(
+        &self,
+        ctx: &ToolContext,
+        repo: &str,
+        arquivo: &str,
+    ) -> Result<String, ToolError> {
+        let rel = if repo.is_empty() {
+            arquivo.to_string()
+        } else {
+            format!("{repo}/{arquivo}")
+        };
+        let p = crate::tarefa::confine(&ctx.workdir, &rel).map_err(ToolError::Denied)?;
+        std::fs::read_to_string(&p).map_err(|e| ToolError::Failed(format!("{rel}: {e}")))
     }
 }
 
@@ -1023,13 +1470,23 @@ impl Tool for GitTool {
             ToolSpec {
                 name: "git_write".into(),
                 description: "Change a git repository in the task directory (sandboxed, no \
-network). action: init {branch?}; add {paths}; commit {message, all?}; checkout {branch, \
-create?, base?}; branch_create {branch, base?}; branch_delete {branch, force?}; stash {op: \
-push|pop|apply|drop|list, message?, include_untracked?, index?}. 'path' selects the repo \
-folder (default: task root)."
+network). action: init {branch?}; add {paths}; add_trecho {file, hunk (index or list from \
+git diff) | start_line, end_line} stages only that part of the file; commit {message, \
+all?}; checkout {branch, create?, base?}; branch_create {branch, base?}; branch_delete \
+{branch, force?}; stash {op: push|pop|apply|drop|list, message?, include_untracked?, \
+index?}; merge {branch} (never rebase/force); conflitos (lists <<<<<<< blocks with both \
+sides); resolver {file, block, choice: nosso|deles|texto, text?}; abort. 'path' selects \
+the repo folder (default: task root)."
                     .into(),
                 parameters: json!({"type":"object","properties":{
-                    "action":{"type":"string","enum":["init","add","commit","checkout","branch_create","branch_delete","stash"]},
+                    "action":{"type":"string","enum":["init","add","add_trecho","commit","checkout","branch_create","branch_delete","stash","merge","conflitos","resolver","abort"]},
+                    "file":{"type":"string"},
+                    "hunk":{"type":["integer","array"],"items":{"type":"integer"}},
+                    "start_line":{"type":"integer"},
+                    "end_line":{"type":"integer"},
+                    "block":{"type":"integer"},
+                    "choice":{"type":"string","enum":["nosso","deles","texto"]},
+                    "text":{"type":"string"},
                     "path":{"type":"string"},
                     "paths":{"type":"array","items":{"type":"string"}},
                     "message":{"type":"string"},
@@ -1255,6 +1712,9 @@ pub fn ferramentas_de_codigo(
     let mut v: Vec<Arc<dyn Tool>> = vec![
         Arc::new(crate::busca::GlobTool),
         Arc::new(crate::busca::GrepTool),
+        Arc::new(crate::busca::ReplaceInProjectTool),
+        Arc::new(crate::historico::FileHistoryTool { escrita: false }),
+        Arc::new(crate::historico::FileHistoryTool { escrita: true }),
         Arc::new(crate::notebook::NotebookReadTool),
         Arc::new(crate::notebook::NotebookEditTool),
         Arc::new(crate::checkpoint::CheckpointTool {
@@ -1273,6 +1733,13 @@ pub fn ferramentas_de_codigo(
     if let Some(b) = bwrap {
         v.push(Arc::new(GitTool::leitura(b.clone())));
         v.push(Arc::new(GitTool::escrita(b.clone())));
+        // Tarefas do projeto no mesmo bwrap do shell; a raiz do projeto e de onde as
+        // regras de comando leem a linha de verdade.
+        v.push(Arc::new(crate::projeto_tarefas::ProjectTaskTool {
+            bwrap: b.clone(),
+            timeout: Duration::from_secs(600),
+            projeto: crate::montagem::raiz_do_projeto(),
+        }));
         v.push(Arc::new(WorktreeTool {
             bwrap: b,
             timeout: Duration::from_secs(60),

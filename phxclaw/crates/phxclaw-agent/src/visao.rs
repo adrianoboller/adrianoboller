@@ -346,6 +346,14 @@ in the task folder by OCR (tesseract; PDF pages rendered at 200 dpi). Default la
                 };
                 (partes.join("\n"), aviso)
             } else {
+                // Dimensoes pelo cabecalho ANTES de o tesseract decodificar: um PNG de 5 MB
+                // que declara 100.000 x 100.000 pixels e uma bomba de descompressao (B4).
+                if matches!(ext.as_str(), "png" | "jpg" | "jpeg") {
+                    let b = std::fs::read(&arq).map_err(falha)?;
+                    let teto = crate::imagens::teto_de_pixels().map_err(falha)?;
+                    crate::imagens::conferir_pixels(&b, teto)
+                        .map_err(|e| ToolError::InvalidArguments(format!("{rel}: {e}")))?;
+                }
                 let t = tesseract(&arq, idiomas, None, prazo)
                     .await
                     .map_err(estouro)?;
@@ -445,6 +453,63 @@ pub fn info_jpeg(b: &[u8]) -> Result<(u32, u32, String), String> {
         }
         i += tam;
     }
+}
+
+/// Largura e altura de um GIF: o Logical Screen Descriptor vem logo apos a assinatura
+/// (GIF89a §18), em little-endian.
+pub fn info_gif(b: &[u8]) -> Result<(u32, u32), String> {
+    if b.len() < 10 || !(b.starts_with(b"GIF87a") || b.starts_with(b"GIF89a")) {
+        return Err("nao e GIF: assinatura ausente".into());
+    }
+    let (w, h) = (
+        u16::from_le_bytes([b[6], b[7]]) as u32,
+        u16::from_le_bytes([b[8], b[9]]) as u32,
+    );
+    if w == 0 || h == 0 {
+        return Err("GIF com dimensao zero".into());
+    }
+    Ok((w, h))
+}
+
+/// Largura e altura de um WebP, pelo primeiro chunk: `VP8X` (estendido, 24 bits cada,
+/// menos um), `VP8L` (sem perda, 14 bits cada, menos um) ou `VP8 ` (com perda, 14 bits no
+/// cabecalho do quadro-chave). Nada e decodificado.
+pub fn info_webp(b: &[u8]) -> Result<(u32, u32), String> {
+    if b.len() < 30 || &b[..4] != b"RIFF" || &b[8..12] != b"WEBP" {
+        return Err("nao e WebP: assinatura ausente".into());
+    }
+    let (w, h) = match &b[12..16] {
+        b"VP8X" => (
+            1 + u32::from_le_bytes([b[24], b[25], b[26], 0]),
+            1 + u32::from_le_bytes([b[27], b[28], b[29], 0]),
+        ),
+        b"VP8L" => {
+            if b[20] != 0x2f {
+                return Err("WebP VP8L sem a assinatura do quadro".into());
+            }
+            let bits = u32::from_le_bytes([b[21], b[22], b[23], b[24]]);
+            (1 + (bits & 0x3fff), 1 + ((bits >> 14) & 0x3fff))
+        }
+        b"VP8 " => {
+            if b[23..26] != [0x9d, 0x01, 0x2a] {
+                return Err("WebP VP8 sem o codigo de inicio do quadro-chave".into());
+            }
+            (
+                (u16::from_le_bytes([b[26], b[27]]) & 0x3fff) as u32,
+                (u16::from_le_bytes([b[28], b[29]]) & 0x3fff) as u32,
+            )
+        }
+        outro => {
+            return Err(format!(
+                "WebP com primeiro chunk desconhecido: {}",
+                String::from_utf8_lossy(outro)
+            ));
+        }
+    };
+    if w == 0 || h == 0 {
+        return Err("WebP com dimensao zero".into());
+    }
+    Ok((w, h))
 }
 
 /// O que o elemento raiz de um SVG declara de tamanho.

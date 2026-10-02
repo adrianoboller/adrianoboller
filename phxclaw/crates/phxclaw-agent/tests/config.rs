@@ -101,7 +101,9 @@ async fn get_e_put_do_config_com_if_match_conflito_e_recusas() {
     );
 
     let v = get().await;
-    assert_eq!(v["revisao"], 0);
+    // O token de concorrencia e um SHA-256 (hex), nunca a soma das revisoes (ABA).
+    let t0 = v["revisao"].as_str().unwrap().to_string();
+    assert_eq!(t0.len(), 64, "{t0}");
     // Perguntar se o segredo existe nao cria cofre: o unico `master.key` e o do xai,
     // guardado acima. O GET passa por todas as chaves-segredo do catalogo.
     assert_eq!(
@@ -169,27 +171,31 @@ async fn get_e_put_do_config_com_if_match_conflito_e_recusas() {
 
     // Grava na pasta.
     let (s, r) = put(
-        Some("0"),
+        Some(&t0),
         json!({"escopo": "pasta", "valores": {"modelo.padrao": "da-pasta", "api.tarefas_por_minuto": 5}}),
     )
     .await;
-    assert_eq!((s, &r), (200, &json!({"revisao": 1})));
-    // A mesma revisao de novo: 409 com a atual.
+    assert_eq!(s, 200, "{r}");
+    let t1 = r["revisao"].as_str().unwrap().to_string();
+    assert_ne!(t1, t0);
+    // O mesmo token de novo: 409 com o atual.
     let (s, r) = put(
-        Some("0"),
+        Some(&t0),
         json!({"escopo": "pasta", "valores": {"modelo.padrao": "x"}}),
     )
     .await;
-    assert_eq!((s, &r), (409, &json!({"revisao_atual": 1})));
-    // Projeto (confiado) ganha da pasta.
+    assert_eq!((s, &r), (409, &json!({"revisao_atual": t1})));
+    // Projeto (confiado) ganha da pasta. O If-Match entre aspas, como o HTTP manda.
     let (s, r) = put(
-        Some("\"1\""),
+        Some(&format!("\"{t1}\"")),
         json!({"escopo": "projeto", "valores": {"modelo.padrao": "do-projeto"}}),
     )
     .await;
-    assert_eq!((s, &r), (200, &json!({"revisao": 2})));
+    assert_eq!(s, 200, "{r}");
+    let t2 = r["revisao"].as_str().unwrap().to_string();
+    assert_ne!(t2, t1);
     let v = get().await;
-    assert_eq!(v["revisao"], 2);
+    assert_eq!(v["revisao"], t2);
     let m = chave(&v, "modelo.padrao");
     assert_eq!(
         (&m["valor"], &m["origem"]),
@@ -201,7 +207,7 @@ async fn get_e_put_do_config_com_if_match_conflito_e_recusas() {
 
     // 422: segredo, chave do ambiente, desconhecida, tipo errado -- todas de uma vez.
     let (s, r) = put(
-        Some("2"),
+        Some(&t2),
         json!({"escopo": "pasta", "valores": {
             "xai.chave": "xai-qualquer", "modelo.visao": "y", "voz.whisper.binn": "/x",
             "api.tarefas_por_minuto": "dez"
@@ -227,16 +233,19 @@ async fn get_e_put_do_config_com_if_match_conflito_e_recusas() {
         "{r}"
     );
     assert!(erros["api.tarefas_por_minuto"].contains("inteiro"), "{r}");
-    let (s, _) = put(Some("2"), json!({"escopo": "nenhum", "valores": {}})).await;
+    let (s, _) = put(Some(&t2), json!({"escopo": "nenhum", "valores": {}})).await;
     assert_eq!(s, 422);
+    // Recusa nao muda o token.
+    assert_eq!(get().await["revisao"], t2);
 
     // null remove a chave do arquivo da pasta.
     let (s, r) = put(
-        Some("2"),
+        Some(&t2),
         json!({"escopo": "pasta", "valores": {"api.tarefas_por_minuto": null}}),
     )
     .await;
-    assert_eq!((s, &r), (200, &json!({"revisao": 3})));
+    assert_eq!(s, 200, "{r}");
+    assert_ne!(r["revisao"].as_str().unwrap(), t2);
     let t = chave(&get().await, "api.tarefas_por_minuto");
     assert_eq!((&t["valor"], &t["origem"]), (&json!(10), &json!("padrao")));
     let disco = std::fs::read_to_string(dir.join("config.json")).unwrap();
@@ -276,7 +285,7 @@ async fn leitura_do_processo_ve_o_que_o_definir_gravou_na_pasta_fixada() {
     iniciar(&dir).unwrap();
     let mut m = serde_json::Map::new();
     m.insert("modelo.padrao".into(), json!("da-pasta"));
-    assert_eq!(definir(&dir, Escopo::Pasta, &m, Some(0)).unwrap(), 1);
+    definir(&dir, Escopo::Pasta, &m, None).unwrap();
     assert_eq!(
         texto("modelo.padrao").unwrap().as_deref(),
         Some("da-pasta"),
@@ -287,7 +296,7 @@ async fn leitura_do_processo_ve_o_que_o_definir_gravou_na_pasta_fixada() {
     std::fs::create_dir_all(&outra).unwrap();
     fixar_pasta(&outra);
     m.insert("modelo.padrao".into(), json!("da-outra"));
-    assert_eq!(definir(&outra, Escopo::Pasta, &m, Some(0)).unwrap(), 1);
+    definir(&outra, Escopo::Pasta, &m, None).unwrap();
     assert_eq!(
         texto("modelo.padrao").unwrap().as_deref(),
         Some("da-outra"),

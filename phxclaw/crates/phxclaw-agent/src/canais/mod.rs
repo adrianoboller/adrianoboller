@@ -392,9 +392,9 @@ impl Canal {
     }
 
     fn gravar_cursor(&self, cursor: &str) -> Result<(), String> {
-        let tmp = self.cursor_arq.with_extension("offset.tmp");
-        std::fs::write(&tmp, cursor)
-            .and_then(|()| std::fs::rename(&tmp, &self.cursor_arq))
+        // O cursor e o que diz «ate aqui ja respondi»: gravado sem `fsync`, uma queda
+        // de energia o devolvia ao anterior e a mensagem era respondida duas vezes.
+        phxclaw_types::arquivo::gravar_atomico(&self.cursor_arq, cursor.as_bytes())
             .map_err(|e| format!("{}: cursor nao gravou: {e}", self.nome()))
     }
 

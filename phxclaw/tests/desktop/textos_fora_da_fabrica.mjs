@@ -39,7 +39,9 @@ const ISENTOS = new Map([
   ['PhxClaw • Command Center', 'marca (titulo da janela)'], ['PhxClaw', 'marca'],
   ['COMMAND CENTER', 'marca (o nome do produto, o mesmo do titulo da janela)'],
   ['Phx', 'marca'], ['Claw', 'marca'],
-  ['PT', 'codigo do idioma no botao de troca'], ['EN', 'codigo do idioma no botao de troca'],
+  // (So «PT» tem uso: a varredura roda em portugues, e o botao mostra o idioma de destino.
+  // «EN» ficou isento sem uso ate 01/10/2026 e saiu: isento sem uso e porta aberta.)
+  ['PT', 'codigo do idioma no botao de troca'],
   ['ZERO TRUST', 'nome da politica de seguranca (config/constitution.json)'],
   ['Deny-by-default', 'nome da politica de seguranca (config/constitution.json)'],
   ['IDE', 'sigla (nome da tela)'], ['bash —', 'nome do programa na aba; o resto e o titulo do terminal (dado)'],

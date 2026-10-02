@@ -235,9 +235,17 @@ impl Lsp {
             network: false,
             max_output_bytes: 0,
         };
+        // As outras raizes do workspace entram no sandbox SO LEITURA, no mesmo caminho do
+        // hospedeiro, e cada uma vira um `workspaceFolder`: o servidor resolve simbolo da
+        // segunda raiz, e o modelo continua sem poder grava-la por aqui.
+        let raizes = crate::workspace::raizes().map_err(ToolError::Failed)?;
+        let mut extras = sv.extras.clone();
+        for r in &raizes {
+            extras.ro_binds.push((r.clone(), r.display().to_string()));
+        }
         // O comando do sandbox vira `ProcessSpec`: a lista de binds sai da funcao do
         // shell, e o runtime so acrescenta a politica (executavel, cwd e ambiente).
-        let c = workdir_sandbox_command_com(&self.bwrap, &cmd, &sv.extras)
+        let c = workdir_sandbox_command_com(&self.bwrap, &cmd, &extras)
             .map_err(|e| ToolError::Failed(e.to_string()))?;
         let env: BTreeMap<String, String> = c
             .get_envs()
@@ -282,6 +290,12 @@ impl Lsp {
         // `initialize` montado aqui, nao o do runtime: ele manda `capabilities: {}`, e sem
         // declarar o pull e o `serverStatus` o diagnostico volta ao empurrado instavel.
         let raiz = uri_de(RAIZ_NO_SANDBOX);
+        let mut pastas = vec![json!({"uri": raiz, "name": "work"})];
+        for r in &raizes {
+            let nome = r.file_name().map(|n| n.to_string_lossy().into_owned());
+            pastas.push(json!({"uri": uri_de(&r.display().to_string()),
+                               "name": nome.unwrap_or_else(|| r.display().to_string())}));
+        }
         let ex = s
             .request(
                 JsonRpcRequest::new(
@@ -289,7 +303,7 @@ impl Lsp {
                     json!({
                         "processId": Value::Null,
                         "rootUri": raiz,
-                        "workspaceFolders": [{"uri": raiz, "name": "work"}],
+                        "workspaceFolders": pastas,
                         "capabilities": {
                             "textDocument": {
                                 "diagnostic": {"dynamicRegistration": false},
@@ -460,15 +474,18 @@ fn sem_servidor(rel: &str, servidores: &[ServidorDeLinguagem]) -> ToolError {
     ))
 }
 
-/// O caminho relativo normalizado pelo MESMO `confine` das ferramentas de arquivo.
+/// O caminho normalizado pelo MESMO `confine` das ferramentas de arquivo: relativo a
+/// pasta da tarefa, ou absoluto quando esta noutra raiz do workspace (la dentro o
+/// caminho e o mesmo do hospedeiro).
 fn relativo(workdir: &Path, rel: &str) -> Result<String, ToolError> {
     let alvo = confine(workdir, rel).map_err(ToolError::Denied)?;
     let base = std::fs::canonicalize(workdir).map_err(|e| ToolError::Failed(e.to_string()))?;
     let alvo = std::fs::canonicalize(&alvo)
         .map_err(|e| ToolError::InvalidArguments(format!("{rel}: {e}")))?;
-    alvo.strip_prefix(&base)
-        .map(|p| p.to_string_lossy().into_owned())
-        .map_err(|_| ToolError::Denied(format!("caminho fora da pasta da tarefa: {rel}")))
+    Ok(match alvo.strip_prefix(&base) {
+        Ok(p) => p.to_string_lossy().into_owned(),
+        Err(_) => alvo.to_string_lossy().into_owned(),
+    })
 }
 
 fn uri_de(caminho: &str) -> String {
@@ -478,6 +495,9 @@ fn uri_de(caminho: &str) -> String {
 }
 
 fn uri_no_sandbox(rel: &str) -> String {
+    if rel.starts_with('/') {
+        return uri_de(rel);
+    }
     uri_de(&format!("{RAIZ_NO_SANDBOX}/{rel}"))
 }
 
@@ -558,12 +578,23 @@ async fn pedir_pronto(
                 s.quiescente = n["params"]["quiescent"].as_bool().unwrap_or(false);
             }
         }
-        match exchange_result(ex) {
-            Ok(v) if pronto => return Ok(Some(v)),
-            Ok(_) => {}
-            Err(RuntimeError::Rpc { code, .. })
-                if code == RPC_CANCELADO_PELO_SERVIDOR || code == RPC_CONTEUDO_MUDOU => {}
-            Err(e) => return Err(ToolError::Failed(format!("lsp {metodo}: {e}"))),
+        // `result: null` e resposta valida do LSP («nada»), e o runtime a le como falta de
+        // result. Medido com duas raizes no rust-analyzer: enquanto o projeto recarrega, o
+        // documentSymbol volta null e depois volta cheio -- null antes do quiescente e
+        // «tente de novo», nao erro; depois dele e a resposta.
+        let nulo = ex.response.error.is_none() && ex.response.result.is_none();
+        if nulo {
+            if pronto {
+                return Ok(Some(Value::Null));
+            }
+        } else {
+            match exchange_result(ex) {
+                Ok(v) if pronto => return Ok(Some(v)),
+                Ok(_) => {}
+                Err(RuntimeError::Rpc { code, .. })
+                    if code == RPC_CANCELADO_PELO_SERVIDOR || code == RPC_CONTEUDO_MUDOU => {}
+                Err(e) => return Err(ToolError::Failed(format!("lsp {metodo}: {e}"))),
+            }
         }
         if Instant::now() >= fim {
             return Ok(None);

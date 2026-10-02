@@ -179,6 +179,26 @@ pub const COMANDOS: &[Comando] = &[
                     achados em JSON; --falhar-em sai 1 nessa severidade ou pior (CI); --evento le \
                     o PR do GITHUB_EVENT_PATH e --comentar publica a revisao no PR (GitHub Action).",
     },
+    Comando {
+        grupo: Grupo::Codigo,
+        nome: "tarefa",
+        resumo: "Tarefas do projeto (.phxclaw/tarefas.json): listar e rodar",
+        apelidos: &["task"],
+        uso: "tarefa listar | rodar NOME",
+        descricao: "As tarefas que o projeto declara em .phxclaw/tarefas.json (nome, comando, \
+                    args, cwd, grupo build|test|run), pelo mesmo motor da ferramenta \
+                    project_task: rodam no sandbox, sem rede, e saem com o codigo da tarefa.",
+    },
+    Comando {
+        grupo: Grupo::Codigo,
+        nome: "testes",
+        resumo: "Explorador de testes: a arvore e um no dela (Rust e Python)",
+        apelidos: &["tests"],
+        uso: "testes listar | rodar NO [--projeto DIR] [--caminho REL] [--linguagem rust|python]",
+        descricao: "A arvore crate/modulo/teste (cargo test -- --list) ou arquivo/teste (pytest \
+                    --collect-only), e a corrida de UM no (CRATE/modulo::teste ou nodeid do \
+                    pytest), pelas mesmas funcoes de test_list/test_run do agente; sai 1 se falhou.",
+    },
     // --- servicos ---
     Comando {
         grupo: Grupo::Servicos,
@@ -225,18 +245,23 @@ pub const COMANDOS: &[Comando] = &[
         nome: "dispositivos",
         resumo: "Servidor WSS de dispositivos pareados",
         apelidos: &["devices"],
-        uso: "dispositivos --cert C --chave K --tokens F [--porta 8788]",
+        uso: "dispositivos --cert C --chave K --tokens F [--porta 8788] | dispositivos chave [--pasta DIR]",
         descricao: "Servidor WSS de dispositivos (TLS, pareamento por token de uso unico, \
-                    envelopes assinados).",
+                    envelopes assinados). chave: le PHXCLAW_ENROLLMENT_TOKEN do AMBIENTE do \
+                    comando e guarda no broker; o `servir --ponte` o le do ambiente, senao do \
+                    broker.",
     },
     Comando {
         grupo: Grupo::Servicos,
         nome: "ponte",
         resumo: "Ponte de controle remoto (o agente se liga para fora)",
         apelidos: &["bridge"],
-        uso: "ponte --cert PEM --chave PEM --tokens ARQ [--porta 8790] [--porta-wss 8791] [--pasta DIR]",
+        uso: "ponte --cert PEM --chave PEM --tokens ARQ [--porta 8790] [--porta-wss 8791] [--pasta DIR] \
+              | ponte chave [--pasta DIR]",
         descricao: "Ponte de controle remoto: serve a UI ao cliente e o WSS onde o agente se liga \
-                    para fora com `servir --ponte`.",
+                    para fora com `servir --ponte`. chave: le PHXCLAW_PONTE_TOKEN do AMBIENTE do \
+                    comando e guarda no broker; a ponte o le do ambiente, senao do broker, senao \
+                    de <pasta>/ponte.token.",
     },
     // --- credenciais ---
     Comando {
@@ -245,8 +270,9 @@ pub const COMANDOS: &[Comando] = &[
         resumo: "Guarda o token do GitHub ou do GitLab",
         apelidos: &["forge"],
         uso: "forja token github|gitlab [--pasta DIR]",
-        descricao: "Guarda PHXCLAW_GITHUB_TOKEN / PHXCLAW_GITLAB_TOKEN; as ferramentas github e \
-                    gitlab so existem depois disto.",
+        descricao: "Le PHXCLAW_GITHUB_TOKEN / PHXCLAW_GITLAB_TOKEN do AMBIENTE do comando e guarda \
+                    no broker de <pasta>/forja; as ferramentas github e gitlab leem SO do broker \
+                    e so existem depois disto.",
     },
     Comando {
         grupo: Grupo::Credenciais,
@@ -254,9 +280,11 @@ pub const COMANDOS: &[Comando] = &[
         resumo: "Credencial de um servidor MCP remoto (Bearer ou OAuth)",
         apelidos: &[],
         uso: "mcp token|login NOME [--pasta DIR]",
-        descricao: "Servidor declarado em PHXCLAW_MCP_CONFIG: token guarda PHXCLAW_MCP_TOKEN como \
-                    Bearer (Linear); login faz OAuth 2.0 + PKCE no navegador local e guarda o \
-                    refresh token (Google; segredo do cliente em PHXCLAW_MCP_SEGREDO_CLIENTE).",
+        descricao: "Servidor declarado em PHXCLAW_MCP_CONFIG: token le PHXCLAW_MCP_TOKEN do \
+                    AMBIENTE do comando e o guarda como Bearer (Linear); login faz OAuth 2.0 + \
+                    PKCE no navegador local e guarda o refresh token (Google; segredo do cliente \
+                    lido de PHXCLAW_MCP_SEGREDO_CLIENTE). O agente le SO do broker de \
+                    <pasta>/mcp, por (nome, URL): URL nova pede credencial nova.",
     },
     Comando {
         grupo: Grupo::Credenciais,
@@ -264,10 +292,10 @@ pub const COMANDOS: &[Comando] = &[
         resumo: "Guarda a chave da ElevenLabs ou lista as vozes da conta",
         apelidos: &[],
         uso: "elevenlabs chave|vozes [--busca TEXTO] [--pasta DIR]",
-        descricao: "chave: guarda PHXCLAW_ELEVENLABS_API_KEY no broker; speak e transcribe a \
-                    usam com PHXCLAW_TTS_PROVEDOR=elevenlabs (e PHXCLAW_ELEVENLABS_VOZ) e \
-                    PHXCLAW_STT_PROVEDOR=elevenlabs, e voice_list (media.voices) passa a existir. \
-                    vozes: lista voice_id, nome e categoria.",
+        descricao: "chave: le PHXCLAW_ELEVENLABS_API_KEY do AMBIENTE do comando e guarda no \
+                    broker de <pasta>/elevenlabs; speak, transcribe e voice_list leem SO do broker \
+                    (PHXCLAW_TTS_PROVEDOR=elevenlabs, PHXCLAW_ELEVENLABS_VOZ, \
+                    PHXCLAW_STT_PROVEDOR=elevenlabs). vozes: lista voice_id, nome e categoria.",
     },
     Comando {
         grupo: Grupo::Credenciais,
@@ -275,8 +303,9 @@ pub const COMANDOS: &[Comando] = &[
         resumo: "Guarda a chave da Gemini API (Nano Banana no image_generate)",
         apelidos: &[],
         uso: "gemini chave [--pasta DIR]",
-        descricao: "Guarda PHXCLAW_GEMINI_API_KEY (ou GEMINI_API_KEY) no broker; image_generate \
-                    gera e edita pelo Nano Banana com PHXCLAW_IMAGEM_PROVEDOR=nanobanana.",
+        descricao: "Le PHXCLAW_GEMINI_API_KEY (ou GEMINI_API_KEY) do AMBIENTE do comando e guarda \
+                    no broker de <pasta>/gemini; image_generate le SO do broker, pelo Nano Banana \
+                    com PHXCLAW_IMAGEM_PROVEDOR=nanobanana.",
     },
     Comando {
         grupo: Grupo::Credenciais,
@@ -284,8 +313,49 @@ pub const COMANDOS: &[Comando] = &[
         resumo: "Guarda a chave da xAI (habilita x_search)",
         apelidos: &[],
         uso: "xai chave [--pasta DIR]",
-        descricao: "Guarda PHXCLAW_XAI_API_KEY e habilita x_search (capacidade x.search, fora do \
-                    padrao).",
+        descricao: "Le PHXCLAW_XAI_API_KEY do AMBIENTE do comando e guarda no broker de \
+                    <pasta>/xai; x_search le SO do broker (capacidade x.search, fora do padrao).",
+    },
+    Comando {
+        grupo: Grupo::Credenciais,
+        nome: "api",
+        resumo: "Guarda o Bearer da API de tarefas",
+        apelidos: &[],
+        uso: "api chave [--pasta DIR]",
+        descricao: "Le PHXCLAW_API_TOKEN (24+ caracteres) do AMBIENTE do comando e guarda no \
+                    broker de <pasta>/api. O servir le do ambiente, senao do broker, senao de \
+                    <pasta>/api.token (gerado na primeira vez).",
+    },
+    Comando {
+        grupo: Grupo::Credenciais,
+        nome: "imagem",
+        resumo: "Guarda a chave do gerador de imagem openai",
+        apelidos: &["image"],
+        uso: "imagem chave [--pasta DIR]",
+        descricao: "Le PHXCLAW_IMAGEM_CHAVE do AMBIENTE do comando e guarda no broker de \
+                    <pasta>/imagem; image_generate com PHXCLAW_IMAGEM_PROVEDOR=openai le do \
+                    ambiente, senao do broker.",
+    },
+    Comando {
+        grupo: Grupo::Credenciais,
+        nome: "email",
+        resumo: "Guarda a senha do SMTP (send_email e canal de e-mail)",
+        apelidos: &[],
+        uso: "email chave [--pasta DIR]",
+        descricao: "Le PHXCLAW_SMTP_PASSWORD do AMBIENTE do comando e guarda no broker do canal \
+                    (<pasta>/canal, o mesmo segredo que o canal de e-mail usa); send_email e o \
+                    canal leem do ambiente, senao do broker.",
+    },
+    Comando {
+        grupo: Grupo::Credenciais,
+        nome: "plugins",
+        resumo: "Guarda a semente de assinatura de plugin e reassina manifestos",
+        apelidos: &[],
+        uso: "plugins chave [--pasta DIR] | plugins assinar [DIR] [--raiz DIR] [--pasta DIR]",
+        descricao: "chave: le PHXCLAW_PLUGIN_SIGNING_KEY do AMBIENTE do comando e guarda no broker \
+                    de <pasta>/plugins. assinar: reassina os *.plugin.json de DIR (padrao \
+                    plugins/builtin/manifests sob --raiz, o repositorio) com a semente do \
+                    ambiente, senao do broker, conferida contra config/trust/plugin-signers.json.",
     },
     // --- medicao ---
     Comando {

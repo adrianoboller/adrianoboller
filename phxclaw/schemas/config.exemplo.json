@@ -426,14 +426,24 @@
       "gitleaks_sha256": null
     }
   },
+  "ide": {
+    "//": [
+      "historico_versoes_max: IDE: versões guardadas por arquivo no histórico local de gravações (.phxclaw/historico) [inteiro; ambiente PHXCLAW_IDE_HISTORICO_VERSOES_MAX]",
+      "raizes: Raízes extras do workspace além da pasta do projeto (também em .phxclaw/workspace.json); o IDE as expõe ao terminal [lista; ambiente PHXCLAW_RAIZES]"
+    ],
+    "historico_versoes_max": 50,
+    "raizes": null
+  },
   "imagem": {
     "//": [
       "comfy_fluxo: Fluxo do ComfyUI (obrigatório com imagem.provedor=comfyui) [caminho; ambiente PHXCLAW_COMFY_WORKFLOW]",
+      "entrada_pixels_max: Teto de pixels (largura x altura) de imagem de entrada, lido do cabeçalho antes de decodificar [inteiro; ambiente PHXCLAW_IMAGEM_ENTRADA_PIXELS_MAX]",
       "modelo: Modelo do gerador de imagem (openai: gpt-image-1) [texto; ambiente PHXCLAW_IMAGEM_MODELO]",
       "provedor: Gerador de imagem; vazio = só o SVG local [enum openai|comfyui|nanobanana; ambiente PHXCLAW_IMAGEM_PROVEDOR]",
       "url: Base do gerador de imagem (openai: https://api.openai.com) [texto; ambiente PHXCLAW_IMAGEM_URL]"
     ],
     "comfy_fluxo": null,
+    "entrada_pixels_max": 40000000,
     "modelo": null,
     "provedor": null,
     "url": null

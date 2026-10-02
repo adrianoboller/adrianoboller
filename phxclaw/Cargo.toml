@@ -126,6 +126,9 @@ members = [
   "crates/phxclaw-ui-ir",
   "crates/phxclaw-sdk",
   "crates/phxclaw-terminal",
+  "crates/phxclaw-workspace",
+  "crates/phxclaw-snippet-ls",
+  "crates/phxclaw-test-support",
 ]
 resolver = "3"
 

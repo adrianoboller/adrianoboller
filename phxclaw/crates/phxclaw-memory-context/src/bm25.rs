@@ -257,18 +257,35 @@ impl IndiceDeDocumentos {
                 i.versao
             ));
         }
+        i.conferir()
+            .map_err(|e| format!("{}: {e}; rode o indexar de novo", arquivo.display()))?;
         Ok(i)
     }
 
-    /// Grava por temporario + rename: indexar que cai no meio deixa o indice anterior.
-    pub fn gravar(&self, arquivo: &Path) -> Result<(), String> {
-        if let Some(d) = arquivo.parent() {
-            std::fs::create_dir_all(d).map_err(|e| e.to_string())?;
+    /// O indice e coerente: todo trecho aponta para um arquivo que existe. Um arquivo
+    /// editado a mao, ou de uma gravacao que nao era a nossa, entrava com `arquivo: 999`
+    /// e o `motor()` entrava em panico na primeira busca -- derrubando o servidor por um
+    /// arquivo de cache.
+    pub fn conferir(&self) -> Result<(), String> {
+        for (n, t) in self.trechos.iter().enumerate() {
+            if t.arquivo >= self.arquivos.len() {
+                return Err(format!(
+                    "indice incoerente: o trecho {n} aponta para o arquivo {} e ha {}",
+                    t.arquivo,
+                    self.arquivos.len()
+                ));
+            }
         }
-        let tmp = arquivo.with_extension("json.tmp");
-        std::fs::write(&tmp, serde_json::to_vec(self).map_err(|e| e.to_string())?)
-            .map_err(|e| e.to_string())?;
-        std::fs::rename(&tmp, arquivo).map_err(|e| e.to_string())
+        Ok(())
+    }
+
+    /// Grava pela troca atomica da base: indexar que cai no meio deixa o indice anterior.
+    pub fn gravar(&self, arquivo: &Path) -> Result<(), String> {
+        phxclaw_types::arquivo::gravar_atomico(
+            arquivo,
+            &serde_json::to_vec(self).map_err(|e| e.to_string())?,
+        )
+        .map_err(|e| format!("{}: {e}", arquivo.display()))
     }
 
     /// Indexa `pasta` (recursivo), SUBSTITUINDO o que o indice ja tinha dela e mantendo as
@@ -292,7 +309,8 @@ impl IndiceDeDocumentos {
                 arquivos.push(a);
             }
         }
-        self.trechos.retain(|t| manter[t.arquivo]);
+        self.trechos
+            .retain(|t| manter.get(t.arquivo).copied().unwrap_or(false));
         for t in &mut self.trechos {
             t.arquivo = novo_indice[t.arquivo];
         }
@@ -346,9 +364,10 @@ impl IndiceDeDocumentos {
         Bm25::novo(self.trechos.iter().map(|t| {
             // O nome do arquivo entra no texto indexado: quem pergunta por «instalacao»
             // quer o INSTALACAO.md mesmo quando o paragrafo nao repete a palavra.
-            let nome = self.arquivos[t.arquivo]
-                .caminho
-                .file_stem()
+            let nome = self
+                .arquivos
+                .get(t.arquivo)
+                .and_then(|a| a.caminho.file_stem())
                 .map(|s| s.to_string_lossy().into_owned())
                 .unwrap_or_default();
             format!("{nome}\n{}", t.texto)
@@ -359,14 +378,14 @@ impl IndiceDeDocumentos {
         motor
             .buscar(consulta, n)
             .into_iter()
-            .map(|(i, pontos)| {
-                let t = &self.trechos[i];
-                AchadoDoc {
-                    caminho: self.arquivos[t.arquivo].caminho.clone(),
+            .filter_map(|(i, pontos)| {
+                let t = self.trechos.get(i)?;
+                Some(AchadoDoc {
+                    caminho: self.arquivos.get(t.arquivo)?.caminho.clone(),
                     linha: t.linha,
                     pontos,
                     texto: t.texto.clone(),
-                }
+                })
             })
             .collect()
     }
@@ -393,6 +412,35 @@ mod tests {
         // Acento dobrado nos dois lados.
         let m = Bm25::novo(["Instalação do serviço", "outra coisa"]);
         assert_eq!(m.buscar("instalacao servico", 1)[0].0, 0);
+    }
+
+    /// Parecer do DBA (01/10/2026), defeito 4: trecho apontando para arquivo que nao existe
+    /// derrubava o processo (`index out of bounds`) no `motor()`. Reposto: panico; agora o
+    /// `carregar` recusa com o motivo, e as buscas sobre um indice montado na mao pulam o
+    /// trecho em vez de cair.
+    #[test]
+    fn indice_incoerente_devolve_erro_e_nunca_panico() {
+        let d = std::env::temp_dir().join(format!("phx-bm25-{}", uuid::Uuid::now_v7()));
+        std::fs::create_dir_all(&d).unwrap();
+        let arq = d.join("indice.json");
+        let mut i = IndiceDeDocumentos {
+            versao: VERSAO_INDICE,
+            arquivos: vec![],
+            trechos: vec![Trecho {
+                arquivo: 7,
+                linha: 1,
+                texto: "orfao".into(),
+            }],
+        };
+        i.gravar(&arq).unwrap();
+        let e = IndiceDeDocumentos::carregar(&arq).unwrap_err();
+        assert!(e.contains("incoerente") && e.contains("indexar"), "{e}");
+        // Mesmo sem passar pelo carregar: busca e reindexacao nao caem.
+        let m = i.motor();
+        assert!(i.buscar(&m, "orfao", 3).is_empty());
+        assert!(i.indexar_pasta(&d).is_ok());
+        assert!(i.conferir().is_ok());
+        let _ = std::fs::remove_dir_all(&d);
     }
 
     #[test]

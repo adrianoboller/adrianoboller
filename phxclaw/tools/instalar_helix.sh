@@ -37,6 +37,66 @@ GRAMATICAS=(rust python toml json markdown sql html css javascript)
 PRECISA_MIB=${PRECISA_MIB:-3072}
 
 livre_mib() { df -Pm "$1" | awk 'NR==2{print $4}'; }
+
+# O languages.toml do IDE: o phxclaw-snippet-ls como servidor adicional (os servidores
+# padrao de cada linguagem continuam), e o `gdb -i dap` como depurador do Rust -- o
+# lldb-dap que o Helix pede por padrao nao existe nesta maquina, o gdb 15 existe e fala
+# DAP. Python fica sem depurador no editor ate haver debugpy no hospedeiro.
+escrever_languages_toml() {
+  cat > "$1" <<EOF_TOML
+# Gerado por tools/instalar_helix.sh (PhxClaw). Mescla-se ao languages.toml padrao do Helix.
+[language-server.phxclaw-snippet-ls]
+command = "$DESTINO/phxclaw-snippet-ls"
+
+[[language]]
+name = "rust"
+language-servers = ["rust-analyzer", "phxclaw-snippet-ls"]
+
+[language.debugger]
+name = "gdb"
+transport = "stdio"
+command = "gdb"
+args = ["-q", "-i", "dap"]
+
+[[language.debugger.templates]]
+name = "binary"
+request = "launch"
+completion = [ { name = "binary", completion = "filename" } ]
+args = { program = "{0}" }
+
+[[language]]
+name = "python"
+language-servers = ["pyright", "phxclaw-snippet-ls"]
+
+[[language]]
+name = "html"
+language-servers = ["vscode-html-language-server", "phxclaw-snippet-ls"]
+
+[[language]]
+name = "css"
+language-servers = ["vscode-css-language-server", "phxclaw-snippet-ls"]
+
+[[language]]
+name = "javascript"
+language-servers = ["typescript-language-server", "phxclaw-snippet-ls"]
+
+[[language]]
+name = "toml"
+language-servers = ["taplo", "phxclaw-snippet-ls"]
+
+[[language]]
+name = "markdown"
+language-servers = ["marksman", "phxclaw-snippet-ls"]
+
+[[language]]
+name = "sql"
+language-servers = ["phxclaw-snippet-ls"]
+
+[[language]]
+name = "json"
+language-servers = ["vscode-json-language-server", "phxclaw-snippet-ls"]
+EOF_TOML
+}
 mkdir -p "$(dirname "$FONTE")"
 echo "== disco antes de comecar"
 df -h "$(dirname "$FONTE")" | tail -1
@@ -85,6 +145,24 @@ rm -rf "$DESTINO/runtime"
 cp -r "$FONTE/runtime" "$DESTINO/runtime"
 cp "$FONTE/LICENSE" "$DESTINO/LICENSE" 2>/dev/null || true
 printf '%s %s\n' "$TAG" "$COMMIT" > "$DESTINO/VERSAO"
+
+# O servidor de snippets e Emmet do PhxClaw (crates/phxclaw-snippet-ls): o Helix so expande
+# snippet que vem por LSP, e o IDE nao arrasta node. Entra no languages.toml como servidor
+# adicional de cada linguagem, ao lado do rust-analyzer e do pyright.
+PHXCLAW_RAIZ=$(cd "$(dirname "$0")/.." && pwd)
+(cd "$PHXCLAW_RAIZ" && CARGO_INCREMENTAL=0 cargo build --release -q -p phxclaw-snippet-ls)
+install -m 0755 "$PHXCLAW_RAIZ/target/release/phxclaw-snippet-ls" "$DESTINO/phxclaw-snippet-ls"
+escrever_languages_toml "$DESTINO/languages.toml"
+# O hx le `$XDG_CONFIG_HOME/helix/languages.toml` (nao ha variavel para apontar outro,
+# e o `.helix/` do projeto so vale por projeto). O do usuario, se ja existe, fica: e
+# dele; o modelo esta em $DESTINO/languages.toml para mesclar a mao.
+CONF="${XDG_CONFIG_HOME:-$HOME/.config}/helix"
+mkdir -p "$CONF"
+if [[ -e "$CONF/languages.toml" ]]; then
+  echo "AVISO: $CONF/languages.toml ja existe e NAO foi tocado; mescle $DESTINO/languages.toml nele"
+else
+  cp "$DESTINO/languages.toml" "$CONF/languages.toml"
+fi
 
 echo "== instalado"
 "$DESTINO/hx" --version

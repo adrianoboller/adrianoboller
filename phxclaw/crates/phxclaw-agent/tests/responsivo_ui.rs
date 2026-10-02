@@ -4,6 +4,7 @@
 //! documento, que cobrem secao, grade de itens, lookup e moeda.
 
 use phxclaw_agent::responsivo_ui::{Alvo, medir, medir_phx};
+use phxclaw_test_support::pulado;
 use serde_json::Value;
 
 const FIX: &str = concat!(
@@ -65,7 +66,7 @@ fn confere_tudo(v: &Value) {
 #[tokio::test]
 async fn telas_do_gabarito_cabem_em_toda_largura_nos_dois_adaptadores() {
     if phxclaw_browser::find_chromium().is_none() {
-        eprintln!("chromium ausente: pulado");
+        pulado::pular("chromium", "chromium ausente");
         return;
     }
     let so = ["cliente", "pedido"];
@@ -84,7 +85,7 @@ async fn telas_do_gabarito_cabem_em_toda_largura_nos_dois_adaptadores() {
 #[tokio::test]
 async fn phx_json_do_dono_passa_nos_dois_adaptadores() {
     if phxclaw_browser::find_chromium().is_none() {
-        eprintln!("chromium ausente: pulado");
+        pulado::pular("chromium", "chromium ausente");
         return;
     }
     let phx = std::fs::read_to_string(format!("{FIX}app.phx.json")).unwrap();

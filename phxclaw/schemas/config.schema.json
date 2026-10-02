@@ -1679,6 +1679,39 @@
       },
       "type": "object"
     },
+    "ide": {
+      "additionalProperties": false,
+      "properties": {
+        "//": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "string",
+            "array"
+          ]
+        },
+        "historico_versoes_max": {
+          "default": 50,
+          "description": "IDE: versões guardadas por arquivo no histórico local de gravações (.phxclaw/historico) (ambiente: PHXCLAW_IDE_HISTORICO_VERSOES_MAX)",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "raizes": {
+          "description": "Raízes extras do workspace além da pasta do projeto (também em .phxclaw/workspace.json); o IDE as expõe ao terminal (ambiente: PHXCLAW_RAIZES)",
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
     "imagem": {
       "additionalProperties": false,
       "properties": {
@@ -1695,6 +1728,14 @@
           "description": "Fluxo do ComfyUI (obrigatório com imagem.provedor=comfyui) (ambiente: PHXCLAW_COMFY_WORKFLOW)",
           "type": [
             "string",
+            "null"
+          ]
+        },
+        "entrada_pixels_max": {
+          "default": 40000000,
+          "description": "Teto de pixels (largura x altura) de imagem de entrada, lido do cabeçalho antes de decodificar (ambiente: PHXCLAW_IMAGEM_ENTRADA_PIXELS_MAX)",
+          "type": [
+            "integer",
             "null"
           ]
         },

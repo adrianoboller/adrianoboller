@@ -39,14 +39,16 @@ impl TaskStore {
         self.dir(id).join("evidence.jsonl")
     }
 
-    /// Grava por arquivo temporario + rename: um processo que cai no meio da gravacao
-    /// deixa o task.json anterior inteiro, nunca um JSON pela metade.
+    /// Grava pela troca atomica da base: um processo que cai no meio da gravacao deixa o
+    /// task.json anterior inteiro, nunca um JSON pela metade -- e com `fsync`, o anterior
+    /// inteiro esta no disco, nao so na memoria do sistema.
     pub fn save(&self, task: &Task) -> std::io::Result<()> {
         let dir = self.dir(&task.id);
         fs::create_dir_all(dir.join("work"))?;
-        let tmp = dir.join(".task.json.tmp");
-        fs::write(&tmp, serde_json::to_vec_pretty(task)?)?;
-        fs::rename(tmp, dir.join("task.json"))
+        phxclaw_types::arquivo::gravar_atomico(
+            &dir.join("task.json"),
+            &serde_json::to_vec_pretty(task)?,
+        )
     }
 
     pub fn load(&self, id: &str) -> std::io::Result<Task> {
@@ -78,8 +80,24 @@ fn safe_id(id: &str) -> String {
 }
 
 /// Caminho dentro da pasta de trabalho da tarefa, ou erro. Recusa absoluto, `..` e
-/// symlink que aponte para fora: e a unica porta de disco das ferramentas.
+/// symlink que aponte para fora: e a unica porta de disco das ferramentas. A excecao e
+/// o caminho ABSOLUTO dentro de uma raiz do workspace (`.phxclaw/workspace.json`,
+/// `ide.raizes`), e so ela -- e a lista das raizes so e lida depois de a pasta da tarefa
+/// recusar, para o caminho comum nao pagar leitura de arquivo nenhuma.
 pub fn confine(workdir: &Path, relative: &str) -> Result<PathBuf, String> {
+    let recusa = match confine_na_tarefa(workdir, relative) {
+        Ok(p) => return Ok(p),
+        Err(e) => e,
+    };
+    if !Path::new(relative).is_absolute() {
+        return Err(recusa);
+    }
+    let raizes = crate::workspace::raizes().map_err(|e| format!("{recusa} (workspace: {e})"))?;
+    confine_nas_raizes(&raizes, relative).ok_or(recusa)
+}
+
+/// So a pasta da tarefa (o `confine` de sempre).
+fn confine_na_tarefa(workdir: &Path, relative: &str) -> Result<PathBuf, String> {
     // O shell ve a pasta da tarefa como /work; o modelo repete esse caminho nas ferramentas
     // de arquivo (medido: 4 negacoes seguidas de read_file("/work/...")). E o mesmo lugar.
     let relative = relative
@@ -97,18 +115,39 @@ pub fn confine(workdir: &Path, relative: &str) -> Result<PathBuf, String> {
     let alvo = workdir.join(rel);
     // Se o arquivo (ou um pai) ja existe, a forma canonica tem de continuar dentro.
     let base = fs::canonicalize(workdir).map_err(|e| e.to_string())?;
-    let mut existente = alvo.clone();
+    let canon = canonico_do_existente(&alvo)?;
+    if !canon.starts_with(&base) {
+        return Err(format!("caminho escapa da pasta da tarefa: {relative}"));
+    }
+    Ok(alvo)
+}
+
+/// Caminho absoluto dentro de uma das raizes, com a mesma regra de `..` e de symlink.
+pub fn confine_nas_raizes(raizes: &[PathBuf], absoluto: &str) -> Option<PathBuf> {
+    let alvo = Path::new(absoluto);
+    if alvo.components().any(|c| {
+        matches!(
+            c,
+            std::path::Component::ParentDir | std::path::Component::CurDir
+        )
+    }) {
+        return None;
+    }
+    let raiz = crate::workspace::raiz_de(raizes, alvo)?;
+    let canon = canonico_do_existente(alvo).ok()?;
+    canon.starts_with(raiz).then(|| alvo.to_path_buf())
+}
+
+/// A forma canonica do caminho, ou do pai mais proximo que ja existe.
+fn canonico_do_existente(alvo: &Path) -> Result<PathBuf, String> {
+    let mut existente = alvo.to_path_buf();
     while !existente.exists() {
         match existente.parent() {
             Some(p) => existente = p.to_path_buf(),
             None => break,
         }
     }
-    let canon = fs::canonicalize(&existente).map_err(|e| e.to_string())?;
-    if !canon.starts_with(&base) {
-        return Err(format!("caminho escapa da pasta da tarefa: {relative}"));
-    }
-    Ok(alvo)
+    fs::canonicalize(&existente).map_err(|e| e.to_string())
 }
 
 #[cfg(test)]

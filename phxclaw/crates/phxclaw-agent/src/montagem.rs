@@ -232,7 +232,7 @@ impl Montagem {
         }
         // E-mail so existe se o operador configurou SMTP, e so roda se `mail.send` for
         // concedida explicitamente: nao esta no padrao.
-        if let Some(c) = crate::email::SmtpConfig::from_env() {
+        if let Some(c) = crate::email::SmtpConfig::da_pasta(raiz_do_agente) {
             tools.push(Arc::new(crate::email::EmailTool { config: c }));
         }
         // Maquina Linux: cada par leitura/mudanca e a mesma ferramenta registrada duas
@@ -248,19 +248,30 @@ impl Montagem {
                 tools.push(Arc::new(pg));
             }
         }
-        if let Some(rust) =
-            crate::arquivos::achar_bwrap().and_then(crate::sistema::RustProjectTool::detectar)
-        {
-            tools.push(Arc::new(rust));
+        let rust = crate::arquivos::achar_bwrap()
+            .and_then(crate::sistema::RustProjectTool::detectar)
+            .map(Arc::new);
+        if let Some(rust) = &rust {
+            tools.push(rust.clone());
         }
         // Python no mesmo bwrap; sem interpretador a ferramenta nao se registra.
-        if let Some(py) = crate::arquivos::achar_bwrap()
+        let py = crate::arquivos::achar_bwrap()
             .and_then(|b| crate::python::PythonProjectTool::detectar(b).ok())
-        {
+            .map(Arc::new);
+        if let Some(py) = &py {
             // O REPL usa as MESMAS extras do `python_project`: um interpretador so.
-            let py = Arc::new(py);
             tools.push(Arc::new(crate::repl::PythonReplTool::new(py.clone())));
-            tools.push(py);
+            tools.push(py.clone());
+        }
+        // Explorador de testes sobre os MESMOS motores (um cargo, um pytest), e o
+        // depurador no mesmo bwrap; os dois pedem `shell.exec`, como o que eles rodam.
+        if rust.is_some() || py.is_some() {
+            tools.extend(crate::testes::ferramentas(Arc::new(
+                crate::testes::ExploradorDeTestes::com(rust, py),
+            )));
+        }
+        if let Some(bwrap) = crate::arquivos::achar_bwrap() {
+            tools.push(crate::dap::ferramenta(bwrap));
         }
         tools.push(Arc::new(crate::calculadora::CalculatorTool));
         // `weather` (MET Norway): sem chave; `weather.read` fora do padrao, e rede para fora.

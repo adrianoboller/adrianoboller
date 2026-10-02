@@ -273,7 +273,7 @@
     },
     {
       "chave": "api.token",
-      "comando_do_segredo": "arquivo <pasta>/api.token (o servir gera) ou a variavel PHXCLAW_API_TOKEN",
+      "comando_do_segredo": "phxclaw api chave",
       "descricao": "Bearer da API (24+ caracteres)",
       "descricao_en": "API bearer (24+ characters)",
       "motivo_so_ambiente": null,
@@ -2341,7 +2341,7 @@
     },
     {
       "chave": "dispositivos.token_pareamento",
-      "comando_do_segredo": "variavel PHXCLAW_ENROLLMENT_TOKEN no arranque do pareamento",
+      "comando_do_segredo": "phxclaw dispositivos chave",
       "descricao": "Token de pareamento do nó",
       "descricao_en": "Node pairing token",
       "motivo_so_ambiente": null,
@@ -2586,7 +2586,7 @@
     },
     {
       "chave": "email.smtp.senha",
-      "comando_do_segredo": "variavel PHXCLAW_SMTP_PASSWORD (no canal de e-mail vai ao broker como email-smtp_senha)",
+      "comando_do_segredo": "phxclaw email chave",
       "descricao": "Senha do SMTP",
       "descricao_en": "SMTP password",
       "motivo_so_ambiente": null,
@@ -2855,8 +2855,39 @@
       "variavel": "PHXCLAW_GITLEAKS_SHA256"
     },
     {
+      "chave": "ide.historico_versoes_max",
+      "comando_do_segredo": null,
+      "descricao": "IDE: versões guardadas por arquivo no histórico local de gravações (.phxclaw/historico)",
+      "descricao_en": "IDE: versions kept per file in the local save history (.phxclaw/historico)",
+      "motivo_so_ambiente": null,
+      "motivo_so_ambiente_en": null,
+      "natureza": "config",
+      "opcoes": null,
+      "padrao": 50,
+      "secao": "ide",
+      "segredo": false,
+      "tipo": "inteiro",
+      "variavel": "PHXCLAW_IDE_HISTORICO_VERSOES_MAX"
+    },
+    {
+      "chave": "ide.raizes",
+      "comando_do_segredo": null,
+      "descricao": "Raízes extras do workspace além da pasta do projeto (também em .phxclaw/workspace.json); o IDE as expõe ao terminal",
+      "descricao_en": "Extra workspace roots besides the project folder (also in .phxclaw/workspace.json); the IDE exposes them to the terminal",
+      "motivo_so_ambiente": null,
+      "motivo_so_ambiente_en": null,
+      "natureza": "config",
+      "opcoes": null,
+      "padrao": null,
+      "secao": "ide",
+      "segredo": false,
+      "separador_no_ambiente": ":",
+      "tipo": "lista",
+      "variavel": "PHXCLAW_RAIZES"
+    },
+    {
       "chave": "imagem.chave",
-      "comando_do_segredo": "variavel PHXCLAW_IMAGEM_CHAVE (ainda sem comando de broker)",
+      "comando_do_segredo": "phxclaw imagem chave",
       "descricao": "Chave do gerador de imagem openai",
       "descricao_en": "Key of the openai image generator",
       "motivo_so_ambiente": null,
@@ -2883,6 +2914,21 @@
       "segredo": false,
       "tipo": "caminho",
       "variavel": "PHXCLAW_COMFY_WORKFLOW"
+    },
+    {
+      "chave": "imagem.entrada_pixels_max",
+      "comando_do_segredo": null,
+      "descricao": "Teto de pixels (largura x altura) de imagem de entrada, lido do cabeçalho antes de decodificar",
+      "descricao_en": "Pixel ceiling (width x height) of an input image, read from the header before decoding",
+      "motivo_so_ambiente": null,
+      "motivo_so_ambiente_en": null,
+      "natureza": "config",
+      "opcoes": null,
+      "padrao": 40000000,
+      "secao": "imagem",
+      "segredo": false,
+      "tipo": "inteiro",
+      "variavel": "PHXCLAW_IMAGEM_ENTRADA_PIXELS_MAX"
     },
     {
       "chave": "imagem.modelo",
@@ -3085,7 +3131,7 @@
     },
     {
       "chave": "plugins.chave_assinatura",
-      "comando_do_segredo": "variavel PHXCLAW_PLUGIN_SIGNING_KEY ou o arquivo de plugins.chave_assinatura_arquivo",
+      "comando_do_segredo": "phxclaw plugins chave",
       "descricao": "Semente de assinatura de plugin (exemplo assinar)",
       "descricao_en": "Plugin signing seed (assinar example)",
       "motivo_so_ambiente": null,
@@ -3160,7 +3206,7 @@
     },
     {
       "chave": "ponte.token",
-      "comando_do_segredo": "arquivo <pasta>/ponte.token ou a variavel PHXCLAW_PONTE_TOKEN",
+      "comando_do_segredo": "phxclaw ponte chave",
       "descricao": "Bearer da ponte (24+ caracteres)",
       "descricao_en": "Bridge bearer (24+ characters)",
       "motivo_so_ambiente": null,

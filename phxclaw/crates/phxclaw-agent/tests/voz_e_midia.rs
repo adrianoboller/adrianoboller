@@ -16,6 +16,7 @@ use phxclaw_agent::visao::TranscribeTool;
 use phxclaw_agent::voz::{SpeakTool, WakeWordTool, conversar, info_wav};
 use phxclaw_agent::*;
 use phxclaw_agent_core::{Tool, ToolContext, ToolError};
+use phxclaw_test_support::pulado;
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -93,7 +94,7 @@ fn flite() -> Option<SpeakTool> {
     let bin = d.join("flite/usr/bin/flite");
     let voz = d.join("cmu_us_slt.flitevox");
     if !bin.is_file() || !voz.is_file() || phxclaw_agent::arquivos::achar_bwrap().is_none() {
-        eprintln!("PULADO: falta flite, voz ou bwrap em {VOZ_DIR}");
+        pulado::pular("flite", &format!("falta flite, voz ou bwrap em {VOZ_DIR}"));
         return None;
     }
     let lib = d.join("flite/usr/lib/x86_64-linux-gnu");
@@ -114,7 +115,7 @@ fn whisper() -> Option<TranscribeTool> {
     let bin = PathBuf::from("/var/tmp/whisper.cpp/build/bin/whisper-cli");
     let modelo = PathBuf::from("/var/tmp/ggml-tiny.en.bin");
     if !bin.is_file() || !modelo.is_file() {
-        eprintln!("PULADO: falta whisper-cli ou ggml-tiny.en.bin");
+        pulado::pular("whisper-cli", "falta whisper-cli ou ggml-tiny.en.bin");
         return None;
     }
     Some(TranscribeTool {
@@ -129,7 +130,10 @@ fn kws() -> Option<WakeWordTool> {
     let bin = PathBuf::from(VOZ_DIR).join("kws/bin/sherpa-onnx-keyword-spotter");
     let pasta = PathBuf::from(VOZ_DIR).join("kws/modelo");
     if !bin.is_file() || !pasta.join("encoder.onnx").is_file() {
-        eprintln!("PULADO: falta o sherpa-onnx-keyword-spotter ou o modelo");
+        pulado::pular(
+            "sherpa-onnx-keyword-spotter",
+            "falta o sherpa-onnx-keyword-spotter ou o modelo",
+        );
         return None;
     }
     Some(WakeWordTool {
@@ -144,7 +148,7 @@ fn chromium_e_node() -> bool {
         && Path::new("/opt/node22/bin/node").is_file()
         && Path::new("/opt/node22/lib/node_modules/playwright").is_dir();
     if !ok {
-        eprintln!("PULADO: falta Chromium, node ou playwright");
+        pulado::pular("chromium", "falta Chromium, node ou playwright");
     }
     ok
 }
@@ -473,7 +477,7 @@ async fn speak_recusa_sem_configuracao_sem_marcador_e_com_modelo_adulterado() {
 #[tokio::test]
 async fn speak_recusa_wav_invalido_do_motor_e_nao_o_entrega() {
     if phxclaw_agent::arquivos::achar_bwrap().is_none() {
-        eprintln!("PULADO: sem bwrap");
+        pulado::pular("bwrap", "sem bwrap");
         return;
     }
     // Motor falso no MESMO sandbox: copia o "modelo" (texto) para a saida e sai 0.
@@ -942,7 +946,7 @@ async fn image_generate_comfyui_contra_servidor_falso() {
 #[tokio::test]
 async fn image_generate_svg_local_desenhado_pelo_chromium() {
     if phxclaw_browser::find_chromium().is_none() {
-        eprintln!("PULADO: sem Chromium");
+        pulado::pular("chromium", "sem Chromium");
         return;
     }
     let c = ctx("img-svg");

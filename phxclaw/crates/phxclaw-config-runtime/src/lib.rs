@@ -4,7 +4,6 @@ use sha2::{Digest, Sha256};
 use std::{
     collections::BTreeMap,
     fs,
-    io::Write,
     path::{Path, PathBuf},
 };
 use thiserror::Error;
@@ -23,6 +22,9 @@ pub enum ConfigError {
     Invalid(String),
     #[error("revision conflict: expected {expected}, actual {actual}")]
     RevisionConflict { expected: u64, actual: u64 },
+    /// O token de revisao (SHA-256 do conteudo) que o cliente viu nao e o do disco.
+    #[error("revision token conflict: actual {atual}")]
+    ConflitoDeToken { atual: String },
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -160,72 +162,79 @@ impl ConfigStore {
         })
     }
     pub fn save(&self, next: Value, expected_revision: u64) -> Result<ConfigSnapshot, ConfigError> {
-        let current = self.load()?;
         gravar_revisado(
             &self.path,
             &self.history_dir,
-            Some((current.revision, &current.value)),
-            expected_revision,
-            next,
             "revision",
             &|v| validate(v).map(|_| ()),
+            &mut |em_disco| {
+                let atual = revisao_de(em_disco, "revision");
+                if atual != expected_revision {
+                    return Err(ConfigError::RevisionConflict {
+                        expected: expected_revision,
+                        actual: atual,
+                    });
+                }
+                Ok(next.clone())
+            },
         )?;
         self.load()
     }
 }
 
+/// A revisao carimbada num documento em disco (`None`: arquivo ausente, revisao 0).
+pub fn revisao_de(doc: Option<&Value>, campo_revisao: &str) -> u64 {
+    doc.and_then(|d| d.get(campo_revisao))
+        .and_then(Value::as_u64)
+        .unwrap_or(0)
+}
+
 /// A gravacao com revisao, UMA so para o `ConfigStore` e para o `config.json` do agente
-/// (`agente::carga`): conferir a revisao esperada, carimbar a seguinte, validar, guardar a
-/// anterior no historico e trocar o arquivo por renomeacao. Duas copias desta sequencia
-/// divergiriam justamente no ponto que importa -- uma esqueceria o `sync_all` ou o
-/// historico, e o conflito de revisao deixaria de valer num dos caminhos.
+/// (`agente::carga`): travar entre processos, ler o que esta em disco, montar o proximo
+/// documento a partir DELE, carimbar a revisao seguinte, validar, guardar a anterior no
+/// historico e trocar o arquivo por renomeacao. Duas copias desta sequencia divergiriam
+/// justamente no ponto que importa -- uma esqueceria o `sync_all` ou o historico, e o
+/// conflito de revisao deixaria de valer num dos caminhos.
 ///
-/// `atual` e a revisao e o documento em disco (`None`: arquivo ainda nao existe, revisao 0).
-/// Devolve a revisao gravada.
+/// `montar` roda COM a trava tomada e recebe o documento que esta no disco agora (`None`:
+/// arquivo ainda nao existe). E nele que quem chama confere a revisao ou o token que o
+/// cliente viu e aplica a mudanca: conferir fora da trava, contra o que o processo leu
+/// antes, deixava a CLI e o servidor gravarem um por cima do outro -- e a conferencia que
+/// existia aqui comparava a revisao lida com ela mesma. Devolve a revisao gravada.
 pub fn gravar_revisado(
     caminho: &Path,
     historico: &Path,
-    atual: Option<(u64, &Value)>,
-    esperada: u64,
-    mut proximo: Value,
     campo_revisao: &str,
     validar: &dyn Fn(&Value) -> Result<(), ConfigError>,
+    montar: &mut dyn FnMut(Option<&Value>) -> Result<Value, ConfigError>,
 ) -> Result<u64, ConfigError> {
-    let revisao_atual = atual.map(|(r, _)| r).unwrap_or(0);
-    if revisao_atual != esperada {
-        return Err(ConfigError::RevisionConflict {
-            expected: esperada,
-            actual: revisao_atual,
-        });
-    }
+    let _trava = phxclaw_types::arquivo::travar(&phxclaw_types::arquivo::trava_de(caminho))?;
+    let em_disco: Option<Value> = match fs::read(caminho) {
+        Ok(b) => Some(serde_json::from_slice(&b)?),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+        Err(e) => return Err(e.into()),
+    };
+    let mut proximo = montar(em_disco.as_ref())?;
     let obj = proximo
         .as_object_mut()
         .ok_or_else(|| ConfigError::Invalid("root must be object".into()))?;
-    let nova = esperada + 1;
+    let nova = revisao_de(em_disco.as_ref(), campo_revisao) + 1;
     obj.insert(campo_revisao.into(), Value::from(nova));
     validar(&proximo)?;
-    if let Some((r, valor)) = atual {
+    if let Some(valor) = &em_disco {
         fs::create_dir_all(historico)?;
         fs::write(
             historico.join(format!(
                 "revision-{:08}-{}.json",
-                r,
+                nova - 1,
                 canonical_sha256(valor)?
             )),
             serde_json::to_vec_pretty(valor)?,
         )?;
     }
-    if let Some(pai) = caminho.parent() {
-        fs::create_dir_all(pai)?;
-    }
-    let tmp = caminho.with_extension("json.tmp");
-    {
-        let mut f = fs::File::create(&tmp)?;
-        f.write_all(&serde_json::to_vec_pretty(&proximo)?)?;
-        f.write_all(b"\n")?;
-        f.sync_all()?;
-    }
-    fs::rename(tmp, caminho)?;
+    let mut bytes = serde_json::to_vec_pretty(&proximo)?;
+    bytes.push(b'\n');
+    phxclaw_types::arquivo::gravar_atomico(caminho, &bytes)?;
     Ok(nova)
 }
 

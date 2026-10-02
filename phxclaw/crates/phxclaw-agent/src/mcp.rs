@@ -275,7 +275,10 @@ impl ServidorMcp {
                             AuthDeclarada::Bearer => None,
                             AuthDeclarada::Oauth(o) => Some(o),
                         };
-                        Some(Arc::new(AutorizacaoMcp::da_pasta(raiz, &nome, oauth)?))
+                        // A chave do segredo e (nome, endpoint): renomear a declaracao
+                        // para outra URL nao herda o token guardado para a antiga.
+                        let alvo = crate::oauth::Alvo::novo(&nome, u)?;
+                        Some(Arc::new(AutorizacaoMcp::da_pasta(raiz, &alvo, oauth)?))
                     }
                 };
                 Transporte::Http { url, origem, auth }

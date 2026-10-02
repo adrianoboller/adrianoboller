@@ -91,6 +91,10 @@ pub enum Gravacao {
         nao_rastreados: bool,
         mensagem: Option<String>,
     },
+    /// `add_trecho`: o patch que vai ao indice JA e o diff do que sera gravado.
+    Trecho {
+        patch: String,
+    },
 }
 
 impl Gravacao {
@@ -99,6 +103,7 @@ impl Gravacao {
             Gravacao::Add(_) => None,
             Gravacao::Commit { mensagem, .. } => Some(mensagem),
             Gravacao::Stash { mensagem, .. } => mensagem.as_deref(),
+            Gravacao::Trecho { .. } => None,
         }
     }
 }
@@ -262,6 +267,8 @@ async fn diff_do_que_sera_gravado(
     timeout: Duration,
 ) -> Result<String, ToolError> {
     let preparar = match g {
+        // O trecho nao passa por indice temporario: o patch e o diff, linha a linha.
+        Gravacao::Trecho { patch } => return Ok(patch.clone()),
         Gravacao::Add(caminhos) => {
             let c: String = caminhos.iter().map(|p| format!(" {}", aspas(p))).collect();
             format!("add --{c}")
