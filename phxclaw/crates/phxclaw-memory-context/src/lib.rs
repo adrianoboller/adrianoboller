@@ -41,6 +41,26 @@ pub struct MemoryRecord {
     pub updated_at: DateTime<Utc>,
     pub expires_at: Option<DateTime<Utc>>,
     pub sha256: String,
+    /// Versao do registro em disco. Registro gravado antes do campo existir le como 1: o
+    /// arquivo antigo continua valendo, e a versao diz o que ele pode carregar.
+    #[serde(default = "versao_antiga")]
+    pub versao: u32,
+    /// Quando esta memoria deixou de valer (substituida por outra, Graphiti `invalid_at`).
+    /// Invalidar nao apaga: a busca comum nao a devolve, mas quem pede ve o que valeu antes
+    /// e por que deixou de valer.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub invalid_at: Option<DateTime<Utc>>,
+    /// A `key` do registro que a substituiu, quando `invalid_at` esta preenchido.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub superseded_by: Option<String>,
+}
+
+/// Versao atual de um registro novo. A 1 e o registro sem `versao`, `invalid_at` e
+/// `superseded_by`.
+pub const VERSAO_REGISTRO: u32 = 2;
+
+fn versao_antiga() -> u32 {
+    1
 }
 
 impl MemoryRecord {
@@ -66,9 +86,17 @@ impl MemoryRecord {
             updated_at: now,
             expires_at: None,
             sha256: String::new(),
+            versao: VERSAO_REGISTRO,
+            invalid_at: None,
+            superseded_by: None,
         };
         record.refresh_hash()?;
         Ok(record)
+    }
+
+    /// Valida agora: nao foi invalidada.
+    pub fn is_valid(&self) -> bool {
+        self.invalid_at.is_none()
     }
 
     pub fn refresh_hash(&mut self) -> Result<(), MemoryError> {
@@ -203,7 +231,7 @@ impl ContextCompiler {
         let mut candidates = Vec::<(&MemoryRecord, i64, usize)>::new();
 
         for record in store.all() {
-            if record.expires_at.is_some_and(|expires| expires <= now) {
+            if record.expires_at.is_some_and(|expires| expires <= now) || !record.is_valid() {
                 continue;
             }
             if record.classification > policy.max_classification {
@@ -358,6 +386,17 @@ pub struct MemoryHit<'a> {
 /// dele): o casamento e por substring, e "de", "do", "em" casam dentro de quase toda
 /// palavra em portugues -- toda memoria voltaria para todo objetivo.
 pub fn search<'a, S: MemoryStore>(store: &'a S, query: &str, limit: usize) -> Vec<MemoryHit<'a>> {
+    search_with(store, query, limit, false)
+}
+
+/// A mesma busca, e com `include_invalid` tambem as memorias invalidadas (substituidas):
+/// quem quer saber o que valia antes pede; quem nao pede nao recebe memoria que ja nao vale.
+pub fn search_with<'a, S: MemoryStore>(
+    store: &'a S,
+    query: &str,
+    limit: usize,
+    include_invalid: bool,
+) -> Vec<MemoryHit<'a>> {
     let terms: BTreeSet<String> = tokenize(query)
         .into_iter()
         .filter(|t| t.chars().count() >= 3)
@@ -367,6 +406,7 @@ pub fn search<'a, S: MemoryStore>(store: &'a S, query: &str, limit: usize) -> Ve
         .all()
         .into_iter()
         .filter(|r| r.expires_at.is_none_or(|e| e > now))
+        .filter(|r| include_invalid || r.is_valid())
         .map(|record| MemoryHit {
             record,
             score: term_score(record, &terms),
@@ -468,6 +508,33 @@ impl FileMemoryStore {
         let saidas: Vec<MemoryRecord> = self.items.drain(..excesso).collect();
         self.save()?;
         Ok(saidas)
+    }
+
+    /// Marca `(namespace, key)` como invalida desde `at`, substituida por `superseded_by`,
+    /// NO LUGAR: a memoria antiga nao muda de posicao nem sai do arquivo, entao o teto de
+    /// entradas continua tirando a mais antiga, e a historia fica legivel. `Ok(false)` quando
+    /// nao existe; registro ja invalido nao se invalida de novo (a primeira substituicao e a
+    /// que conta).
+    pub fn invalidate(
+        &mut self,
+        namespace: &str,
+        key: &str,
+        superseded_by: &str,
+        at: DateTime<Utc>,
+    ) -> Result<bool, MemoryError> {
+        let Some(r) = self
+            .items
+            .iter_mut()
+            .find(|r| r.namespace == namespace && r.key == key && r.is_valid())
+        else {
+            return Ok(false);
+        };
+        r.invalid_at = Some(at);
+        r.superseded_by = Some(superseded_by.to_string());
+        r.updated_at = at;
+        r.refresh_hash()?;
+        self.save()?;
+        Ok(true)
     }
 
     fn save(&self) -> Result<(), MemoryError> {
@@ -668,5 +735,57 @@ mod tests {
         assert_eq!(search(&s, "relatorio", 1).len(), 1);
         // "de" casaria por substring com "toda semana"? Nao: termo curto fica fora.
         assert!(search(&s, "de em do", 5).is_empty());
+    }
+
+    /// SP000030: substituir nao apaga. O registro antigo fica no arquivo, no lugar, com
+    /// `invalid_at` e `superseded_by`; a busca comum nao o devolve e a com `include_invalid`
+    /// devolve. E o arquivo gravado ANTES dos campos existirem continua lendo, como versao 1.
+    #[test]
+    fn substituicao_marca_invalid_at_no_lugar_e_arquivo_antigo_continua_lendo() {
+        let d = std::env::temp_dir().join(format!("phx-mem-inv-{}", new_uuid_v7()));
+        std::fs::create_dir_all(&d).unwrap();
+        let p = d.join("m.json");
+        // Um arquivo da versao anterior: registro sem versao, invalid_at e superseded_by.
+        let antigo = nota("velha", "o relatorio sai toda sexta");
+        let mut v = serde_json::to_value(&antigo).unwrap();
+        v.as_object_mut().unwrap().remove("versao");
+        std::fs::write(&p, serde_json::to_vec_pretty(&vec![v]).unwrap()).unwrap();
+        let mut s = FileMemoryStore::open(&p, MemoryLimits::default()).unwrap();
+        assert_eq!(
+            s.all()[0].versao,
+            1,
+            "registro sem o campo le como versao 1"
+        );
+        assert!(s.all()[0].is_valid());
+
+        s.append(nota("nova", "o relatorio sai toda segunda"))
+            .unwrap();
+        assert_eq!(s.all().last().unwrap().versao, VERSAO_REGISTRO);
+        let quando = Utc::now();
+        assert!(s.invalidate("agent", "velha", "nova", quando).unwrap());
+        assert!(
+            !s.invalidate("agent", "velha", "outra", quando).unwrap(),
+            "so a primeira conta"
+        );
+        assert!(!s.invalidate("agent", "nao-existe", "nova", quando).unwrap());
+
+        // No lugar: a velha continua a primeira do arquivo, marcada, nunca apagada.
+        let s = FileMemoryStore::open(&p, MemoryLimits::default()).unwrap();
+        let todos = s.all();
+        assert_eq!(todos.len(), 2);
+        assert_eq!(todos[0].key, "velha");
+        assert_eq!(todos[0].invalid_at, Some(quando));
+        assert_eq!(todos[0].superseded_by.as_deref(), Some("nova"));
+        let validas: Vec<_> = search(&s, "relatorio", 10)
+            .iter()
+            .map(|h| h.record.key.clone())
+            .collect();
+        assert_eq!(validas, ["nova"]);
+        let todas: Vec<_> = search_with(&s, "relatorio", 10, true)
+            .iter()
+            .map(|h| h.record.key.clone())
+            .collect();
+        assert_eq!(todas.len(), 2);
+        let _ = std::fs::remove_dir_all(&d);
     }
 }

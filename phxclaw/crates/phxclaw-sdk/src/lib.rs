@@ -25,7 +25,7 @@ pub use phxclaw_agent_core::{Artifact, Usage};
 use reqwest::{Method, Url};
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::{Duration, Instant};
 
 #[derive(Debug, thiserror::Error)]
@@ -81,16 +81,13 @@ impl std::fmt::Debug for Cliente {
 /// O mesmo caminho do servidor: `PHXCLAW_API_TOKEN`, senao o `api.token` da pasta
 /// (`PHXCLAW_HOME`, ou `var/agente`) que o `servir` grava na primeira vez.
 pub fn token_do_ambiente(pasta: Option<&Path>) -> Option<String> {
-    if let Ok(t) = std::env::var("PHXCLAW_API_TOKEN")
-        && !t.is_empty()
-    {
+    use phxclaw_config_runtime::agente::carga::{pasta_do_processo, segredo_do_processo};
+    if let Some(t) = segredo_do_processo("api.token").filter(|t| !t.is_empty()) {
         return Some(t);
     }
-    let raiz = pasta.map(Path::to_path_buf).unwrap_or_else(|| {
-        std::env::var_os("PHXCLAW_HOME")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| PathBuf::from("var/agente"))
-    });
+    let raiz = pasta
+        .map(Path::to_path_buf)
+        .unwrap_or_else(pasta_do_processo);
     std::fs::read_to_string(raiz.join("api.token"))
         .ok()
         .map(|t| t.trim().to_string())

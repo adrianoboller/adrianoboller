@@ -374,6 +374,14 @@ citations are rejected and reported."
     fn capability(&self) -> &'static str {
         "web.research"
     }
+    /// Abre o navegador (processo): a regra de comando a alcanca por `deep_research <question>`.
+    fn comando_de_shell(&self, args: &Value) -> Option<String> {
+        Some(crate::motor::linha_sintetica(
+            "deep_research",
+            args,
+            &["question"],
+        ))
+    }
     fn run<'a>(
         &'a self,
         args: Value,

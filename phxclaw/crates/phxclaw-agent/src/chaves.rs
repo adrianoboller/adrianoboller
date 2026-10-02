@@ -33,12 +33,22 @@ pub struct Servico {
 }
 
 impl Servico {
-    /// As variaveis lidas, na ordem: a do catalogo e depois os aliases.
+    /// As variaveis lidas, na ordem: a do catalogo e depois os aliases. Servico ainda sem
+    /// entrada no catalogo (`chave` vazia) le so os aliases.
     pub fn variaveis(&self) -> Vec<String> {
-        let do_catalogo = crate::config::catalogo_do_config::por_chave(self.chave)
-            .map(|c| c.variavel.clone())
-            .unwrap_or_else(|| panic!("{} nao esta no catalogo do config.json", self.chave));
-        std::iter::once(do_catalogo)
+        let do_catalogo = if self.chave.is_empty() {
+            None
+        } else {
+            Some(
+                crate::config::catalogo_do_config::por_chave(self.chave)
+                    .map(|c| c.variavel.clone())
+                    .unwrap_or_else(|| {
+                        panic!("{} nao esta no catalogo do config.json", self.chave)
+                    }),
+            )
+        };
+        do_catalogo
+            .into_iter()
             .chain(self.aliases.iter().map(|a| a.to_string()))
             .collect()
     }
@@ -176,3 +186,71 @@ pub const ASSINATURA_DE_PLUGIN: Servico = Servico {
     rotulo: "a semente de assinatura de plugin",
     comando: "plugins chave",
 };
+
+// Chaves dos modelos de linguagem de nuvem (QA de 01/10/2026, item 3): ate aqui o
+// `phxclaw-llm` lia OPENAI/ANTHROPIC/GEMINI_API_KEY do ambiente do processo, e a chave da
+// Gemini vivia em dois regimes (broker para o Nano Banana, ambiente para o modelo). Agora o
+// provedor recebe a chave do broker por este mesmo `Servico`, a leitura do ambiente fica
+// so no `phxclaw <provedor> chave`, e a Gemini tem UMA chave: a de `nanobanana::SERVICO`.
+
+/// `openai:*`: `openai.chave` do catalogo (PHXCLAW_OPENAI_API_KEY), e `OPENAI_API_KEY` como alias.
+pub const OPENAI: Servico = Servico {
+    espaco: "openai",
+    nome_do_segredo: "openai-chave",
+    chave: "openai.chave",
+    aliases: &["OPENAI_API_KEY"],
+    rotulo: "a chave da OpenAI",
+    comando: "openai chave",
+};
+
+/// `anthropic:*`: `anthropic.chave` do catalogo (PHXCLAW_ANTHROPIC_API_KEY), e `ANTHROPIC_API_KEY` como alias.
+pub const ANTHROPIC: Servico = Servico {
+    espaco: "anthropic",
+    nome_do_segredo: "anthropic-chave",
+    chave: "anthropic.chave",
+    aliases: &["ANTHROPIC_API_KEY"],
+    rotulo: "a chave da Anthropic",
+    comando: "anthropic chave",
+};
+
+/// O servico que guarda a chave de um provedor de modelo (`"openai"`, `"anthropic"`,
+/// `"gemini"`); `None` para quem nao tem chave (Ollama) ou nao existe.
+pub fn de_modelo(provedor: &str) -> Option<&'static Servico> {
+    match provedor {
+        "openai" => Some(&OPENAI),
+        "anthropic" => Some(&ANTHROPIC),
+        "gemini" => Some(&crate::nanobanana::SERVICO),
+        _ => None,
+    }
+}
+
+/// Todo servico pago com chave no broker. E a lista que o laco de eco dos provedores pagos
+/// (`tests/voz_e_midia.rs`) percorre: servico novo aqui sem chamada la reprova o teste --
+/// a contagem sai desta lista, nunca de um numero digitado (o 8 que deixou a xAI de fora).
+pub const PAGOS: &[&Servico] = &[
+    &crate::elevenlabs::SERVICO,
+    &crate::nanobanana::SERVICO,
+    &crate::xai::SERVICO,
+    &OPENAI,
+    &ANTHROPIC,
+];
+
+/// O modelo de `spec` (`"provedor:modelo"`) com a chave do broker da raiz do agente. O
+/// ambiente do processo NAO entra: variavel no ambiente sem chave no broker da o erro que
+/// cita o comando que a guarda. A concessao e curta (`Credencial::com`), e o texto vai
+/// para o `ApiKey` do provedor, que nunca o mostra.
+pub fn modelo(
+    spec: &str,
+    raiz_do_agente: &Path,
+) -> Result<std::sync::Arc<dyn phxclaw_agent_core::Llm>, String> {
+    phxclaw_llm::montar(spec, |provedor| {
+        let servico = de_modelo(provedor).ok_or_else(|| {
+            phxclaw_agent_core::LlmError::Credential(format!("provedor sem chave: {provedor}"))
+        })?;
+        servico
+            .credencial(raiz_do_agente)
+            .and_then(|c| c.com("send", |t| Ok(t.to_string())))
+            .map_err(phxclaw_agent_core::LlmError::Credential)
+    })
+    .map_err(|e| e.to_string())
+}

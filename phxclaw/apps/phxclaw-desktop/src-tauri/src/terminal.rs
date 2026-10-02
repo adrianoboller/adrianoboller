@@ -68,25 +68,6 @@ pub fn pasta_do_projeto() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("."))
 }
 
-/// O hx instalado pelo `tools/instalar_helix.sh` fica em /opt/helix com o runtime ao lado;
-/// `PHXCLAW_HX` aponta outro. Sem nenhum dos dois, o do PATH.
-fn achar_helix() -> Option<(PathBuf, Option<PathBuf>)> {
-    if let Some(p) = std::env::var_os("PHXCLAW_HX").map(PathBuf::from) {
-        return p.is_file().then_some((p, None));
-    }
-    let opt = Path::new("/opt/helix/hx");
-    if opt.is_file() {
-        let runtime = Path::new("/opt/helix/runtime");
-        return Some((opt.into(), runtime.is_dir().then(|| runtime.into())));
-    }
-    std::env::var_os("PATH").and_then(|path| {
-        std::env::split_paths(&path)
-            .map(|d| d.join("hx"))
-            .find(|p| p.is_file())
-            .map(|p| (p, None))
-    })
-}
-
 fn montar(programa: ProgramaTerminal, cwd: &Path) -> Result<Programa, String> {
     match programa {
         ProgramaTerminal::Bash => Ok(Programa {
@@ -96,28 +77,19 @@ fn montar(programa: ProgramaTerminal, cwd: &Path) -> Result<Programa, String> {
             env: vec![],
         }),
         ProgramaTerminal::Helix => {
-            let (hx, runtime) = achar_helix().ok_or(
-                "hx nao encontrado: rode phxclaw/tools/instalar_helix.sh (instala em /opt/helix) \
-                 ou aponte PHXCLAW_HX para o executavel",
-            )?;
-            let mut env = vec![];
-            if let Some(r) = runtime {
-                env.push(("HELIX_RUNTIME".into(), r.display().to_string()));
-            }
             // Workspace de varias raizes: o hx abre a PRIMEIRA (a pasta do projeto) e as
             // outras vao na variavel (`ide.raizes` do catalogo), para o shell e o proprio
             // usuario as acharem sem segunda janela. Arquivo invalido e erro dito.
             let raizes = phxclaw_workspace::raizes(&cwd.join(".phxclaw"))?;
+            let mut env = vec![];
             if !raizes.is_empty() {
                 let lista = phxclaw_workspace::variavel(&raizes);
                 env.push(("PHXCLAW_RAIZES".into(), lista));
             }
-            Ok(Programa {
-                programa: hx.display().to_string(),
-                args: vec![".".into()],
-                cwd: Some(cwd.into()),
-                env,
-            })
+            // Onde o hx esta e como sobe e do motor (phxclaw-terminal::helix): o IDE no
+            // navegador usa a mesma montagem.
+            let pedido = std::env::var_os("PHXCLAW_HX").map(PathBuf::from);
+            phxclaw_terminal::helix::programa(cwd, pedido, env)
         }
     }
 }

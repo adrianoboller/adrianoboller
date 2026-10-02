@@ -49,8 +49,18 @@ pub struct ImageGenerateTool {
     pub provedor: Option<Provedor>,
 }
 
-fn var(n: &str) -> Option<String> {
-    std::env::var(n).ok().filter(|v| !v.trim().is_empty())
+/// A configuracao, pela chave do catalogo (`imagem.*`); a variavel citada na mensagem sai
+/// de `config::variavel`.
+fn var(chave: &str) -> Option<String> {
+    crate::config::texto_de(chave)
+}
+
+fn pede(provedor: &str, chave: &str) -> String {
+    format!(
+        "{}={provedor} pede {}",
+        crate::config::variavel("imagem.provedor"),
+        crate::config::variavel(chave)
+    )
 }
 
 fn falha(e: impl std::fmt::Display) -> ToolError {
@@ -64,25 +74,29 @@ impl ImageGenerateTool {
     /// de `raiz_do_agente`; `PHXCLAW_IMAGEM_URL` e `PHXCLAW_IMAGEM_MODELO` opcionais). Sem
     /// nada: so o SVG local.
     pub fn do_ambiente(raiz_do_agente: &Path) -> Result<Self, String> {
-        let provedor = match var("PHXCLAW_IMAGEM_PROVEDOR").as_deref() {
+        let provedor = match var("imagem.provedor").as_deref() {
             None => None,
             Some("nanobanana") => Some(Provedor::NanoBanana(
                 NanoBanana::da_pasta(raiz_do_agente).map(Arc::new),
             )),
             Some("openai") => Some(Provedor::OpenAi {
-                url: var("PHXCLAW_IMAGEM_URL").unwrap_or_else(|| "https://api.openai.com".into()),
+                url: var("imagem.url").unwrap_or_else(|| "https://api.openai.com".into()),
                 // Ambiente, senao o broker de `phxclaw imagem chave`.
                 chave: crate::chaves::IMAGEM.do_ambiente_ou_broker(raiz_do_agente)?,
-                modelo: var("PHXCLAW_IMAGEM_MODELO").unwrap_or_else(|| "gpt-image-1".into()),
+                modelo: var("imagem.modelo").unwrap_or_else(|| "gpt-image-1".into()),
             }),
             Some("comfyui") => Some(Provedor::ComfyUi {
-                url: var("PHXCLAW_IMAGEM_URL")
-                    .ok_or("PHXCLAW_IMAGEM_PROVEDOR=comfyui pede PHXCLAW_IMAGEM_URL")?,
-                fluxo: var("PHXCLAW_COMFY_WORKFLOW")
+                url: var("imagem.url").ok_or_else(|| pede("comfyui", "imagem.url"))?,
+                fluxo: var("imagem.comfy_fluxo")
                     .map(PathBuf::from)
-                    .ok_or("PHXCLAW_IMAGEM_PROVEDOR=comfyui pede PHXCLAW_COMFY_WORKFLOW")?,
+                    .ok_or_else(|| pede("comfyui", "imagem.comfy_fluxo"))?,
             }),
-            Some(o) => return Err(format!("PHXCLAW_IMAGEM_PROVEDOR desconhecido: {o}")),
+            Some(o) => {
+                return Err(format!(
+                    "{} desconhecido: {o}",
+                    crate::config::variavel("imagem.provedor")
+                ));
+            }
         };
         Ok(Self { provedor })
     }

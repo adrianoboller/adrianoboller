@@ -122,7 +122,10 @@ try {
   await page.waitForSelector('.tarefa-resposta', { timeout: 30000 });
   const resposta = await page.textContent('.tarefa-resposta');
   check('a resposta (rota /answer) volta ao agente e a tarefa conclui', /cor escolhida: .*azul/.test(resposta), resposta);
-  // A lista e uma grade (phx-grid): o status mora na celula da coluna de tag «status».
+  // A lista e uma grade (phx-grid): o status mora na celula da coluna de tag «status». A
+  // grade so se refaz na proxima sondagem da lista, DEPOIS de o detalhe mostrar a resposta:
+  // ler a celula no mesmo instante deu «EM EXECUÇÃO» sob carga (integrador, 02/10/2026).
+  await page.waitForFunction(() => document.querySelector('#tarefasLista td[data-tag="status"]')?.textContent === 'CONCLUÍDA', null, { timeout: 30000 }).catch(() => {});
   const estadoItem = await page.textContent('#tarefasLista td[data-tag="status"]');
   check('a lista mostra o estado pela fabrica de idiomas', estadoItem === 'CONCLUÍDA', estadoItem);
   await page.screenshot({ path: join(OUT, 'pwa_concluida.png') });

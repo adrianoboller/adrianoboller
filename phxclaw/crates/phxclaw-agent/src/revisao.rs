@@ -398,7 +398,8 @@ pub async fn revisar_da_fonte(
     revisar(llm, &diff, foco).await
 }
 
-/// O modelo da CLI, pelo mesmo `phxclaw_llm::from_env` da montagem.
-pub fn modelo(spec: &str) -> Result<Arc<dyn Llm>, String> {
-    phxclaw_llm::from_env(spec).map_err(|e| e.to_string())
+/// O modelo da CLI, pelo mesmo `chaves::modelo` da montagem: a chave sai do broker da
+/// raiz do agente.
+pub fn modelo(spec: &str, raiz_do_agente: &std::path::Path) -> Result<Arc<dyn Llm>, String> {
+    crate::chaves::modelo(spec, raiz_do_agente)
 }

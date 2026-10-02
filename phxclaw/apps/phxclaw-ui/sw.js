@@ -14,11 +14,13 @@
 // Casca 6: o tema.js (tema claro do Style Phoenix Padrao) entrou.
 // Casca 7: a identidade virou as artes do dono (01/10/2026): sai o phoenix-mark.svg, entram
 // a marca do topo, os favicons, a abertura nos dois temas e o icone mascaravel.
-const CACHE = 'phxclaw-casca-7';
+// Casca 8: o paineis.js (explorador de testes, loja de plugins e perfis) e a trilha do IDE
+// entraram (VS Code onda 2, 02/10/2026).
+const CACHE = 'phxclaw-casca-8';
 const CASCA = [
   './', './index.html', './manifest.webmanifest',
   './assets/app.css', './assets/app.js', './assets/tema.js', './assets/idiomas.js', './assets/tarefas.js', './assets/tarefas.css',
-  './assets/grades.js', './assets/grades.css', './assets/config.js', './assets/config-catalogo.json',
+  './assets/grades.js', './assets/grades.css', './assets/config.js', './assets/config-catalogo.json', './assets/ide.js', './assets/paineis.js',
   './assets/vendor/phx-grid/phx-grid.js', './assets/vendor/phx-grid/phx-grid.css',
   './assets/textos.json', './assets/fonte/exo2-latin.woff2',
   './assets/fonte/ibmplexmono-400.woff2', './assets/fonte/ibmplexmono-700.woff2',

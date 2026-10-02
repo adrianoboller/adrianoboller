@@ -6,6 +6,9 @@ license.workspace = true
 description = "SDK Rust do PhxClaw: cliente da API HTTP de tarefas"
 
 [dependencies]
+# O config.json do agente, pelo leitor de processo (SP000020): leitura de PHXCLAW_* fora
+# do ponto unico e reprovada pela catraca de tools/config_catalogo.py.
+phxclaw-config-runtime = { path = "../phxclaw-config-runtime" }
 # Os tipos de fio sao os do servidor (`phxclaw_agent_core::tarefa`), nunca uma copia.
 phxclaw-agent-core = { path = "../phxclaw-agent-core" }
 reqwest.workspace = true

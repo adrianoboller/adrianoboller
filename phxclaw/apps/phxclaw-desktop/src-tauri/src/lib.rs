@@ -29,6 +29,10 @@ use uuid::Uuid;
 
 mod terminal;
 
+use phxclaw_config_runtime::agente::carga::{
+    booleano_do_processo, inteiro_do_processo, lista_do_processo, segredo_do_processo,
+};
+
 #[derive(Debug, Clone, Serialize)]
 pub struct HostPolicy {
     pub command_execution: bool,
@@ -46,19 +50,26 @@ pub struct HostPolicy {
 }
 
 impl HostPolicy {
+    /// `desktop.*` do config.json (ambiente `PHXCLAW_ENABLE_*` por cima); tudo desligado
+    /// por padrao, como antes.
     fn from_env() -> Self {
-        let command_execution = env_flag("PHXCLAW_ENABLE_HOST_EXEC");
-        let webview_control = env_flag("PHXCLAW_ENABLE_WEBVIEW_CONTROL");
+        let command_execution = flag("desktop.exec_host");
+        let webview_control = flag("desktop.controle_webview");
         Self {
             command_execution,
-            shell_execution: env_flag("PHXCLAW_ENABLE_SHELLS"),
-            desktop_input: env_flag("PHXCLAW_ENABLE_INPUT"),
-            screen_capture: env_flag("PHXCLAW_ENABLE_SCREEN_CAPTURE"),
-            external_webviews: env_flag("PHXCLAW_ENABLE_EXTERNAL_WEBVIEWS"),
+            shell_execution: flag("desktop.shells"),
+            desktop_input: flag("desktop.entrada"),
+            screen_capture: flag("desktop.captura_tela"),
+            external_webviews: flag("desktop.webviews_externas"),
             webview_control,
             interactive_terminal: terminal::permitido(command_execution, webview_control),
-            api_host_control: env_flag("PHXCLAW_API_HOST_CONTROL"),
-            webview_allowed_origins: env_csv("PHXCLAW_WEBVIEW_ALLOWED_ORIGINS"),
+            api_host_control: flag("desktop.controle_api_host"),
+            webview_allowed_origins: lista_do_processo("desktop.webview_origens")
+                .unwrap_or_default()
+                .into_iter()
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect(),
         }
     }
 
@@ -380,13 +391,13 @@ pub fn run() {
             };
             let shell = Arc::new(ShellExecutor::new(execution_policy));
 
-            let api_token =
-                std::env::var("PHXCLAW_API_TOKEN").unwrap_or_else(|_| generate_bearer_token());
+            let api_token = segredo_do_processo("api.token")
+                .filter(|t| !t.is_empty())
+                .unwrap_or_else(generate_bearer_token);
             let api_token_path = app_data.join("api/api.token");
             write_secret_file(&api_token_path, &api_token)?;
-            let api_port = std::env::var("PHXCLAW_API_PORT")
-                .ok()
-                .and_then(|v| v.parse().ok())
+            let api_port = inteiro_do_processo("api.porta")
+                .and_then(|v| u16::try_from(v).ok())
                 .unwrap_or(48_187);
             let api_config = ApiGatewayConfig {
                 bind_ip: IpAddr::V4(Ipv4Addr::LOCALHOST),
@@ -1082,25 +1093,8 @@ fn origin_of(url: &Url) -> String {
     url.origin().ascii_serialization()
 }
 
-fn env_flag(name: &str) -> bool {
-    std::env::var(name)
-        .ok()
-        .map(|v| matches!(v.to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on"))
-        .unwrap_or(false)
-}
-
-fn env_csv(name: &str) -> BTreeSet<String> {
-    std::env::var(name)
-        .ok()
-        .into_iter()
-        .flat_map(|v| {
-            v.split(',')
-                .map(str::trim)
-                .filter(|s| !s.is_empty())
-                .map(str::to_string)
-                .collect::<Vec<_>>()
-        })
-        .collect()
+fn flag(chave: &str) -> bool {
+    booleano_do_processo(chave).unwrap_or(false)
 }
 
 fn write_secret_file(path: &Path, value: &str) -> std::io::Result<()> {

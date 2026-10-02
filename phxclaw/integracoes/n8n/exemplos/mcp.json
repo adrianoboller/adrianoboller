@@ -1,0 +1,9 @@
+{
+  "servidores": [
+    {
+      "nome": "n8n",
+      "url": "http://127.0.0.1:5678/mcp/phxclaw",
+      "auth": { "tipo": "bearer" }
+    }
+  ]
+}

@@ -1691,9 +1691,32 @@
             "array"
           ]
         },
+        "api_url": {
+          "description": "URL por onde o editor fala com este agente (padrão: o Host da conexão do IDE) (ambiente: PHXCLAW_IDE_API_URL)",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "historico_versoes_max": {
           "default": 50,
           "description": "IDE: versões guardadas por arquivo no histórico local de gravações (.phxclaw/historico) (ambiente: PHXCLAW_IDE_HISTORICO_VERSOES_MAX)",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "ia_ms": {
+          "default": 6000,
+          "description": "Teto de tempo (ms) de uma completação por IA no editor (ambiente: PHXCLAW_IDE_IA_MS)",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "ia_tokens": {
+          "default": 64,
+          "description": "Teto de tokens de uma completação por IA no editor (o modelo é o do agente) (ambiente: PHXCLAW_IDE_IA_TOKENS)",
           "type": [
             "integer",
             "null"
@@ -1847,6 +1870,28 @@
       },
       "type": "object"
     },
+    "n8n": {
+      "additionalProperties": false,
+      "properties": {
+        "//": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "string",
+            "array"
+          ]
+        },
+        "url": {
+          "description": "Origem do n8n do operador (ex.: http://127.0.0.1:5678); vazio = sem n8n_workflow (ambiente: PHXCLAW_N8N_URL)",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
     "navegador": {
       "additionalProperties": false,
       "properties": {
@@ -1879,6 +1924,13 @@
           "type": [
             "string",
             "array"
+          ]
+        },
+        "catalogo": {
+          "description": "Catálogo da loja de plugins (URL https ou arquivo JSON local); vazio = sem loja (ambiente: PHXCLAW_PACOTES_CATALOGO)",
+          "type": [
+            "string",
+            "null"
           ]
         },
         "dir": {

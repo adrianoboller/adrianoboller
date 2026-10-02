@@ -10,8 +10,15 @@
 //! lista das instrucoes do projeto: o `.phxclaw/config.json` de um repositorio clonado
 //! poderia apontar `voz.whisper.bin` para um executavel do proprio repositorio.
 //!
-//! Fase 1: os modulos ainda leem o ambiente direto; a catraca de `tools/config_catalogo.py`
-//! impede leitura nova fora daqui, e a fase 2 migra os leitores para `valor`.
+//! Fase 2 (SP000020): os modulos leem por aqui -- `texto_de`, `inteiro_de`, `lista_de`,
+//! `caminho_de`, `segredo_do_ambiente` e `por_variavel` --, e a catraca de
+//! `tools/config_catalogo.py` reprova a leitura solta que voltar. O nome da variavel que
+//! uma mensagem cita sai de `variavel(chave)`, do catalogo, nunca digitado no modulo.
+//!
+//! Os perfis (`perfis`/`perfil_ativo` do arquivo da pasta) entram pelo MESMO caminho: a
+//! vista os lista, `perfil_criar`/`perfil_usar` gravam pela `carga::gravar_com`, e a CLI
+//! `config perfil` e as rotas `/v1/config/perfis` chamam estas funcoes -- nao ha uma
+//! segunda regra para o que e um perfil valido.
 
 use crate::api::ApiState;
 use axum::extract::State;
@@ -28,13 +35,12 @@ use std::sync::{Arc, Mutex, OnceLock};
 pub use phxclaw_config_runtime::agente as catalogo_do_config;
 
 /// O nome do arquivo, na pasta do agente e em `.phxclaw/` do projeto.
-pub const ARQUIVO: &str = "config.json";
+pub const ARQUIVO: &str = carga::ARQUIVO;
 
-/// A pasta do agente quando ninguem passa `--pasta`: `PHXCLAW_HOME`, ou `var/agente`.
+/// A pasta do agente quando ninguem passa `--pasta`: `PHXCLAW_HOME`, ou `var/agente` -- a
+/// MESMA conta do leitor de processo do config-runtime, que os crates sem o agente usam.
 pub fn pasta_padrao() -> PathBuf {
-    ambiente("PHXCLAW_HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("var/agente"))
+    carga::pasta_do_processo()
 }
 
 fn ambiente(k: &str) -> Option<String> {
@@ -69,7 +75,7 @@ impl Projeto {
 /// O projeto de agora (`PHXCLAW_PROJETO` ou a pasta corrente, a mesma nocao da montagem),
 /// julgado pela lista de confiados da pasta do agente.
 pub fn projeto(pasta: &Path) -> Projeto {
-    let Some(raiz) = crate::montagem::raiz_do_projeto() else {
+    let Some(raiz) = raiz_do_projeto() else {
         return Projeto::Nenhum;
     };
     let arquivo = raiz.join(".phxclaw").join(ARQUIVO);
@@ -84,7 +90,8 @@ pub fn projeto(pasta: &Path) -> Projeto {
     }
 }
 
-/// A configuracao efetiva da pasta (ambiente > projeto confiado > pasta > padrao).
+/// A configuracao efetiva da pasta (ambiente > projeto confiado > perfil ativo > pasta >
+/// padrao).
 pub fn carregar(pasta: &Path) -> Result<Configuracao, Vec<Erro>> {
     let p = projeto(pasta);
     carga::carregar(&ambiente, &arquivo_da_pasta(pasta), p.arquivo_valido())
@@ -117,6 +124,10 @@ fn estado() -> std::sync::MutexGuard<'static, Estado> {
 /// arquivo invalido continua erro so de quem le (o `phxclaw config` que o conserta nao pode
 /// morrer por ele).
 pub fn fixar_pasta(pasta: &Path) {
+    // Os crates abaixo do agente (navegador, busca, pontes) leem pelo config-runtime: a
+    // pasta fixada tem de ser a mesma, senao `--pasta X` valeria para o agente e nao para
+    // o Chromium que ele lanca.
+    carga::fixar_pasta_do_processo(pasta);
     let mut g = estado();
     if g.carregada.as_ref().is_some_and(|(p, _)| p != pasta) {
         g.carregada = None;
@@ -127,6 +138,7 @@ pub fn fixar_pasta(pasta: &Path) {
 /// Fixa a pasta do processo e carrega. Sem fixar, vale `pasta_padrao()` na leitura.
 pub fn iniciar(pasta: &Path) -> Result<(), String> {
     let c = carregar(pasta).map_err(|e| carga::em_texto(&e))?;
+    carga::fixar_pasta_do_processo(pasta);
     let mut g = estado();
     g.fixada = Some(pasta.to_path_buf());
     g.carregada = Some((pasta.to_path_buf(), Arc::new(c)));
@@ -157,9 +169,95 @@ pub fn texto(chave: &str) -> Result<Option<String>, String> {
     Ok(configuracao()?.texto(chave))
 }
 
+// --- os leitores de quem nao tem como devolver erro -----------------------------------
+
+/// A configuracao para o leitor que nao devolve erro (construtor `-> Self`, campo
+/// `Option`): arquivo invalido vira UM aviso no stderr por processo e a chave vale `None`.
+/// A recusa de verdade acontece na porta -- o `main.rs` carrega antes de despachar
+/// qualquer comando que nao seja `config` --, entao aqui so chega quem usa o crate como
+/// biblioteca. Seguir calado nao e opcao: o aviso diz a chave e o arquivo.
+fn tolerante() -> Option<Arc<Configuracao>> {
+    match configuracao() {
+        Ok(c) => Some(c),
+        Err(e) => {
+            static AVISADO: OnceLock<()> = OnceLock::new();
+            AVISADO.get_or_init(|| eprintln!("aviso: config.json: {e}"));
+            None
+        }
+    }
+}
+
+pub fn texto_de(chave: &str) -> Option<String> {
+    tolerante()?.texto(chave).filter(|v| !v.trim().is_empty())
+}
+
+pub fn caminho_de(chave: &str) -> Option<PathBuf> {
+    texto_de(chave).map(PathBuf::from)
+}
+
+pub fn inteiro_de(chave: &str) -> Option<i64> {
+    tolerante()?.inteiro(chave)
+}
+
+pub fn booleano_de(chave: &str) -> Option<bool> {
+    tolerante()?.booleano(chave)
+}
+
+pub fn lista_de(chave: &str) -> Option<Vec<String>> {
+    tolerante()?.lista(chave)
+}
+
+/// O nome da variavel de ambiente da chave, para a mensagem que diz ao operador o que
+/// definir. Sai do catalogo: chave fora dele e erro de programacao.
+pub fn variavel(chave: &str) -> &'static str {
+    catalogo_do_config::por_chave(chave)
+        .map(|c| c.variavel.as_str())
+        .unwrap_or_else(|| panic!("chave fora do catalogo: {chave}"))
+}
+
+/// Um segredo do catalogo, SO do ambiente (o broker e de quem tem a pasta: `chaves.rs`).
+/// `valor` devolve `None` para segredo de proposito; quem precisa do texto le por aqui,
+/// e a leitura fica no modulo de configuracao, nao espalhada.
+pub fn segredo_do_ambiente(chave: &str) -> Option<String> {
+    let c = catalogo_do_config::por_chave(chave)
+        .unwrap_or_else(|| panic!("chave fora do catalogo: {chave}"));
+    debug_assert!(c.segredo(), "{chave} nao e segredo no catalogo");
+    ambiente(&c.variavel).map(|v| v.trim().to_string())
+}
+
+/// O leitor por NOME DE VARIAVEL, na forma de texto do ambiente, para quem recebe o nome
+/// montado em tempo de execucao (`canais::ligar`, `PHXCLAW_<CANAL>_<CHAVE>`): resolve a
+/// chave pelo catalogo e le pelo ponto unico -- lista volta unida pelo separador dela,
+/// booleano como `true`/`false`. Segredo le o ambiente. Nome fora do catalogo: `None`.
+pub fn por_variavel(var: &str) -> Option<String> {
+    use phxclaw_config_runtime::agente::Tipo;
+    let c = catalogo_do_config::por_variavel(var)?;
+    if c.segredo() {
+        return ambiente(&c.variavel);
+    }
+    let cfg = tolerante()?;
+    match c.tipo {
+        Tipo::Lista(sep) => cfg
+            .lista(&c.chave)
+            .filter(|l| !l.is_empty())
+            .map(|l| l.join(&sep.to_string())),
+        _ => cfg.texto(&c.chave).filter(|v| !v.trim().is_empty()),
+    }
+}
+
+/// A pasta do projeto em que o agente trabalha: `PHXCLAW_PROJETO` (`agente.projeto`, so
+/// ambiente), ou a pasta corrente. Le o ambiente direto porque e ela que LOCALIZA o
+/// `.phxclaw/config.json` do projeto: passar pelo `valor` carregaria a configuracao para
+/// saber onde carregar a configuracao.
+pub fn raiz_do_projeto() -> Option<PathBuf> {
+    ambiente("PHXCLAW_PROJETO")
+        .map(PathBuf::from)
+        .or_else(|| std::env::current_dir().ok())
+}
+
 /// Esquece a configuracao carregada (depois de gravar, a proxima leitura rele). A pasta
 /// fixada FICA: e ela que a proxima leitura rele.
-fn esquecer(pasta: &Path) {
+pub(crate) fn esquecer(pasta: &Path) {
     let mut g = estado();
     if g.carregada.as_ref().is_some_and(|(p, _)| p == pasta) {
         g.carregada = None;
@@ -257,14 +355,74 @@ pub fn vista(pasta: &Path) -> Result<Value, Vec<Erro>> {
             "projeto": arq_projeto,
             "projeto_ignorado": ignorado,
         },
+        "perfis": perfis_de(&cfg),
         "chaves": chaves,
     }))
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// O bloco dos perfis da vista: o ativo (e de onde veio) e cada perfil com as chaves que
+/// ele sobrepoe. Segredo nunca entra num perfil (a carga recusa), entao os valores podem
+/// aparecer.
+fn perfis_de(cfg: &Configuracao) -> Value {
+    let lista: Vec<Value> = cfg
+        .pasta
+        .perfis
+        .iter()
+        .map(|(nome, chaves)| {
+            json!({
+                "nome": nome,
+                "chaves": chaves,
+                "ativo": cfg.perfil_ativo.as_ref().is_some_and(|(a, _)| a == nome),
+            })
+        })
+        .collect();
+    json!({
+        "ativo": cfg.perfil_ativo.as_ref().map(|(n, _)| n.clone()),
+        "origem_do_ativo": cfg.perfil_ativo.as_ref().map(|(_, o)| o.nome()),
+        "lista": lista,
+    })
+}
+
+/// `GET /v1/config/perfis` e `config perfil listar`: so o bloco dos perfis.
+pub fn perfis(pasta: &Path) -> Result<Value, Vec<Erro>> {
+    Ok(perfis_de(&carregar(pasta)?))
+}
+
+/// O que se faz com um perfil, pela CLI ou pela API.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum AcaoDePerfil {
+    /// Cria vazio, ou copiando as chaves da base.
+    Criar { nome: String, copiar_base: bool },
+    /// Ativa (`None` desativa).
+    Usar(Option<String>),
+}
+
+/// Cria ou ativa um perfil no arquivo da PASTA (perfil e da maquina, nunca do projeto).
+pub fn perfil(pasta: &Path, acao: AcaoDePerfil, if_match: Option<&str>) -> Result<String, Recusa> {
+    static GRAVANDO: Mutex<()> = Mutex::new(());
+    let _g = GRAVANDO.lock().unwrap_or_else(|p| p.into_inner());
+    let arquivo = arquivo_da_pasta(pasta);
+    let cfg = carregar(pasta).map_err(Recusa::Invalida)?;
+    let alvo = Alvo {
+        arquivo: &arquivo,
+        atual: &cfg,
+        esperada: if_match,
+        perfil: None,
+    };
+    let r = match acao {
+        AcaoDePerfil::Criar { nome, copiar_base } => carga::perfil_criar(alvo, &nome, copiar_base),
+        AcaoDePerfil::Usar(nome) => carga::perfil_usar(alvo, nome.as_deref()),
+    };
+    esquecer(pasta);
+    r
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Escopo {
     Pasta,
     Projeto,
+    /// Um perfil do arquivo da pasta.
+    Perfil(String),
 }
 
 /// Grava `mudancas` (`null` remove) no arquivo do escopo. `if_match`: a revisao que o
@@ -278,8 +436,8 @@ pub fn definir(
 ) -> Result<String, Recusa> {
     static GRAVANDO: Mutex<()> = Mutex::new(());
     let _g = GRAVANDO.lock().unwrap_or_else(|p| p.into_inner());
-    let arquivo = match (escopo, projeto(pasta)) {
-        (Escopo::Pasta, _) => arquivo_da_pasta(pasta),
+    let arquivo = match (&escopo, projeto(pasta)) {
+        (Escopo::Pasta | Escopo::Perfil(_), _) => arquivo_da_pasta(pasta),
         (Escopo::Projeto, Projeto::Confiado(a)) => a,
         (Escopo::Projeto, Projeto::NaoConfiado { raiz, .. }) => {
             return Err(Recusa::Invalida(vec![Erro {
@@ -304,6 +462,10 @@ pub fn definir(
             arquivo: &arquivo,
             atual: &cfg,
             esperada: if_match,
+            perfil: match &escopo {
+                Escopo::Perfil(n) => Some(n.as_str()),
+                _ => None,
+            },
         },
         mudancas,
     );
@@ -352,25 +514,25 @@ async fn gravar(State(s): State<ApiState>, h: HeaderMap, corpo: Json<Value>) -> 
     if let Err(e) = crate::api::auth(&s, &h) {
         return e.into_response();
     }
-    let Some(if_match) = h
-        .get(axum::http::header::IF_MATCH)
-        .and_then(|v| v.to_str().ok())
-        .map(|v| v.trim().trim_matches('"').to_string())
-        .filter(|v| !v.is_empty())
-    else {
+    let Some(if_match) = if_match_de(&h) else {
         return (
             StatusCode::PRECONDITION_REQUIRED,
             Json(json!({"error": "falta If-Match com a revisao lida no GET /v1/config"})),
         )
             .into_response();
     };
-    let escopo = match corpo.get("escopo").and_then(Value::as_str) {
-        Some("pasta") => Escopo::Pasta,
-        Some("projeto") => Escopo::Projeto,
+    let escopo = match (
+        corpo.get("escopo").and_then(Value::as_str),
+        corpo.get("perfil").and_then(Value::as_str),
+    ) {
+        (Some("pasta"), None) => Escopo::Pasta,
+        (Some("projeto"), None) => Escopo::Projeto,
+        (Some("perfil") | None, Some(n)) => Escopo::Perfil(n.to_string()),
         _ => {
             return recusa_http(Recusa::Invalida(vec![Erro {
                 chave: "escopo".into(),
-                motivo: "esperado \"pasta\" ou \"projeto\"".into(),
+                motivo: "esperado \"pasta\", \"projeto\" ou \"perfil\" (com \"perfil\": nome)"
+                    .into(),
             }]));
         }
     };
@@ -390,7 +552,68 @@ async fn gravar(State(s): State<ApiState>, h: HeaderMap, corpo: Json<Value>) -> 
     }
 }
 
-/// `GET /v1/config` e `PUT /v1/config`, com o mesmo Bearer das outras rotas.
+fn if_match_de(h: &HeaderMap) -> Option<String> {
+    h.get(axum::http::header::IF_MATCH)
+        .and_then(|v| v.to_str().ok())
+        .map(|v| v.trim().trim_matches('"').to_string())
+        .filter(|v| !v.is_empty())
+}
+
+async fn obter_perfis(State(s): State<ApiState>, h: HeaderMap) -> Response {
+    if let Err(e) = crate::api::auth(&s, &h) {
+        return e.into_response();
+    }
+    let pasta = pasta_da_api(&s);
+    match tokio::task::spawn_blocking(move || perfis(&pasta)).await {
+        Ok(Ok(v)) => Json(v).into_response(),
+        Ok(Err(e)) => (StatusCode::UNPROCESSABLE_ENTITY, Json(erros_json(&e))).into_response(),
+        Err(e) => recusa_http(Recusa::Falha(e.to_string())),
+    }
+}
+
+/// `PUT /v1/config/perfis` com `{"criar": nome, "copiar_base": bool}` ou `{"usar": nome|null}`,
+/// e o mesmo If-Match do `PUT /v1/config`.
+async fn gravar_perfil(State(s): State<ApiState>, h: HeaderMap, corpo: Json<Value>) -> Response {
+    if let Err(e) = crate::api::auth(&s, &h) {
+        return e.into_response();
+    }
+    let Some(if_match) = if_match_de(&h) else {
+        return (
+            StatusCode::PRECONDITION_REQUIRED,
+            Json(json!({"error": "falta If-Match com a revisao lida no GET /v1/config"})),
+        )
+            .into_response();
+    };
+    let acao = match (corpo.get("criar"), corpo.get("usar")) {
+        (Some(Value::String(n)), None) => AcaoDePerfil::Criar {
+            nome: n.clone(),
+            copiar_base: corpo
+                .get("copiar_base")
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
+        },
+        (None, Some(Value::String(n))) => AcaoDePerfil::Usar(Some(n.clone())),
+        (None, Some(Value::Null)) => AcaoDePerfil::Usar(None),
+        _ => {
+            return recusa_http(Recusa::Invalida(vec![Erro {
+                chave: "perfil".into(),
+                motivo: "esperado {\"criar\": nome} ou {\"usar\": nome|null}".into(),
+            }]));
+        }
+    };
+    let pasta = pasta_da_api(&s);
+    match tokio::task::spawn_blocking(move || perfil(&pasta, acao, Some(&if_match))).await {
+        Ok(Ok(n)) => Json(json!({"revisao": n})).into_response(),
+        Ok(Err(r)) => recusa_http(r),
+        Err(e) => recusa_http(Recusa::Falha(e.to_string())),
+    }
+}
+
+/// `GET`/`PUT /v1/config`, `GET`/`PUT /v1/config/perfis` e a sincronizacao
+/// (`sincronizar.rs`), com o mesmo Bearer das outras rotas.
 pub fn rotas() -> Router<ApiState> {
-    Router::new().route("/v1/config", get(obter).put(gravar))
+    Router::new()
+        .route("/v1/config", get(obter).put(gravar))
+        .route("/v1/config/perfis", get(obter_perfis).put(gravar_perfil))
+        .merge(crate::sincronizar::rotas())
 }

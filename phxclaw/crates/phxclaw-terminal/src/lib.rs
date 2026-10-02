@@ -10,6 +10,7 @@
 //! espera o filho sem prazo, e um filho surdo travaria quem soltou.
 
 pub mod cores;
+pub mod helix;
 pub mod teclas;
 
 use alacritty_terminal::event::{Event, EventListener, WindowSize};

@@ -196,18 +196,16 @@ fn ferramenta_de(
 /// `PHXCLAW_PLUGIN_SIGNERS` (padrao `<raiz>/config/trust/plugin-signers.json`). Sem raiz,
 /// nenhum plugin; recusa vira aviso, nunca derruba o agente.
 pub fn do_ambiente(caps: &BTreeSet<String>) -> Vec<std::sync::Arc<dyn Tool>> {
-    let Some(raiz) = std::env::var_os("PHXCLAW_PLUGINS_RAIZ").map(PathBuf::from) else {
+    let Some(raiz) = crate::config::caminho_de("plugins.raiz") else {
         return vec![];
     };
     let Some(bwrap) = crate::arquivos::achar_bwrap() else {
         eprintln!("aviso: plugins sem bwrap nao rodam");
         return vec![];
     };
-    let manifestos = std::env::var_os("PHXCLAW_PLUGINS_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| raiz.join("plugins"));
-    let signers = std::env::var_os("PHXCLAW_PLUGIN_SIGNERS")
-        .map(PathBuf::from)
+    let manifestos =
+        crate::config::caminho_de("plugins.dir").unwrap_or_else(|| raiz.join("plugins"));
+    let signers = crate::config::caminho_de("plugins.assinantes")
         .unwrap_or_else(|| raiz.join("config/trust/plugin-signers.json"));
     let r = (|| -> Result<Carga, String> {
         let trust = TrustStore::from_json(

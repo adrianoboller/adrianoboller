@@ -10,6 +10,16 @@
 //!   Ollama), nunca do relogio de parede; energia sai do RAPL ou do contador da NVIDIA, e
 //!   sem eles o campo diz «não medida (sem RAPL)» -- nunca uma estimativa.
 //!
+//! Alem do acerto (tudo ou nada), a **nota parcial de ferramentas** (SP000030, a
+//! `ToolCorrectness` do DeepEval, deterministica): `conjunto` e quantas das esperadas foram
+//! chamadas, `sequencia` e a maior subsequencia comum na ordem, as duas de 0 a 1 sobre o
+//! gabarito. Nunca juiz por modelo: nota que sai de outro modelo e opiniao com casa
+//! decimal, e a faixa dela mediria o juiz, nao o avaliado.
+//!
+//! As execucoes saem agrupadas pelo `prompt_sha256` e pelo sha das skills que a gravacao
+//! registrou no primeiro pedido: antes/depois de mexer no prompt se compara o MESMO prompt,
+//! e nao duas corridas que mudaram duas coisas.
+//!
 //! A observacao e o perfil (acerto ponderado, p95) sao os do `phxclaw-ai-benchmark`; esta
 //! camada acrescenta o que ele nao guarda (p50, faixas, CPU, energia). O
 //! `phxclaw-model-arena` NAO entra: ele decide por diferenca de MEDIA entre campeao e
@@ -486,6 +496,48 @@ pub fn acertou(g: &Gabarito, t: &Task, sequencia: &[String]) -> bool {
         && g.sequencia.as_deref().is_none_or(|s| s == sequencia)
 }
 
+/// A nota parcial de ferramentas, de 0 a 1, as duas sobre o tamanho do gabarito.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct NotaFerramentas {
+    /// |esperadas ∩ chamadas| / |esperadas|, como conjuntos (repeticao nao conta duas vezes).
+    pub conjunto: f64,
+    /// LCS(esperadas, chamadas) / |esperadas|: o quanto da ORDEM esperada foi seguida.
+    pub sequencia: f64,
+}
+
+/// Comprimento da maior subsequencia comum, O(|a|·|b|) -- sequencias de ferramenta tem
+/// dezenas de itens, nao milhares.
+pub fn lcs(a: &[String], b: &[String]) -> usize {
+    let mut prev = vec![0usize; b.len() + 1];
+    let mut cur = vec![0usize; b.len() + 1];
+    for x in a {
+        for (j, y) in b.iter().enumerate() {
+            cur[j + 1] = if x == y {
+                prev[j] + 1
+            } else {
+                prev[j + 1].max(cur[j])
+            };
+        }
+        std::mem::swap(&mut prev, &mut cur);
+    }
+    prev[b.len()]
+}
+
+/// `None` sem gabarito de sequencia: nota sobre zero esperadas nao e nota. Chamada a mais
+/// nao desconta de proposito -- e o mesmo denominador do DeepEval, e descontar misturaria
+/// «fez o que devia» com «fez so o que devia», que o acerto exato ja cobra.
+pub fn nota_ferramentas(esperadas: &[String], chamadas: &[String]) -> Option<NotaFerramentas> {
+    if esperadas.is_empty() {
+        return None;
+    }
+    let e: std::collections::BTreeSet<&String> = esperadas.iter().collect();
+    let c: std::collections::BTreeSet<&String> = chamadas.iter().collect();
+    Some(NotaFerramentas {
+        conjunto: e.intersection(&c).count() as f64 / e.len() as f64,
+        sequencia: lcs(esperadas, chamadas) as f64 / esperadas.len() as f64,
+    })
+}
+
 // ------------------------------------------------------------------ avaliacao
 
 /// Uma execucao (modelo x caso x rodada), com tudo que se mediu nela.
@@ -495,6 +547,15 @@ pub struct Execucao {
     pub caso: String,
     pub rodada: usize,
     pub acerto: bool,
+    /// A nota parcial de ferramentas; ausente quando o caso nao tem gabarito de sequencia.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub nota_ferramentas: Option<NotaFerramentas>,
+    /// O que a gravacao registrou no primeiro pedido: o prompt e as skills sob os quais
+    /// esta execucao correu.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prompt_sha256: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub skills_sha256: Option<String>,
     pub estado: String,
     /// O erro da tarefa que nao concluiu (modelo que recusa ferramenta, prazo...).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -551,9 +612,67 @@ pub struct ResultadoModelo {
     /// Taxa de acerto POR RODADA (0..1): a faixa e entre rodadas, cada uma com todos os
     /// casos -- e a unidade que se repete.
     pub acerto_por_rodada: Faixa,
+    /// Mediana, por rodada, da nota de conjunto dos casos; a faixa e entre rodadas. Nao
+    /// medida quando algum caso nao tem gabarito de sequencia.
+    #[serde(default = "nao_medida_sem_sequencia")]
+    pub nota_conjunto_por_rodada: Medida,
+    #[serde(default = "nao_medida_sem_sequencia")]
+    pub nota_sequencia_por_rodada: Medida,
     /// Acerto ponderado de todas as execucoes, em pontos-base, do perfil do ai-benchmark.
     pub acerto_bp: u16,
     pub perfil_sha256: String,
+}
+
+fn nao_medida_sem_sequencia() -> Medida {
+    Medida::NaoMedida("caso sem gabarito de sequencia".into())
+}
+
+/// As execucoes de um modelo sob o MESMO prompt e as mesmas skills: a unidade que se
+/// compara antes/depois de mexer num deles.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ResultadoPorPrompt {
+    pub modelo: String,
+    pub prompt_sha256: Option<String>,
+    pub skills_sha256: Option<String>,
+    pub execucoes: usize,
+    pub acertos: usize,
+    /// Faixa das notas de sequencia das execucoes do grupo.
+    pub nota_sequencia: Medida,
+}
+
+/// Agrupa por (modelo, prompt, skills), na ordem em que aparecem. Vale sobre um
+/// `resultado.json` ja gravado tanto quanto sobre a avaliacao que acabou de rodar.
+pub fn agrupar_por_prompt(ex: &[Execucao]) -> Vec<ResultadoPorPrompt> {
+    let mut grupos: Vec<ResultadoPorPrompt> = Vec::new();
+    let mut notas: Vec<Vec<Option<f64>>> = Vec::new();
+    for e in ex {
+        let chave = (&e.modelo, &e.prompt_sha256, &e.skills_sha256);
+        let i = match grupos
+            .iter()
+            .position(|g| (&g.modelo, &g.prompt_sha256, &g.skills_sha256) == chave)
+        {
+            Some(i) => i,
+            None => {
+                grupos.push(ResultadoPorPrompt {
+                    modelo: e.modelo.clone(),
+                    prompt_sha256: e.prompt_sha256.clone(),
+                    skills_sha256: e.skills_sha256.clone(),
+                    execucoes: 0,
+                    acertos: 0,
+                    nota_sequencia: nao_medida_sem_sequencia(),
+                });
+                notas.push(vec![]);
+                grupos.len() - 1
+            }
+        };
+        grupos[i].execucoes += 1;
+        grupos[i].acertos += usize::from(e.acerto);
+        notas[i].push(e.nota_ferramentas.map(|n| n.sequencia));
+    }
+    for (g, n) in grupos.iter_mut().zip(&notas) {
+        g.nota_sequencia = Medida::de(n, "caso sem gabarito de sequencia");
+    }
+    grupos
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -571,6 +690,8 @@ pub struct Avaliacao {
     pub casos: usize,
     pub modelos: Vec<ResultadoModelo>,
     pub vencedores: Vec<Vencedor>,
+    #[serde(default)]
+    pub por_prompt: Vec<ResultadoPorPrompt>,
     pub execucoes: Vec<Execucao>,
 }
 
@@ -618,6 +739,8 @@ pub async fn avaliar(
                 ));
                 let g = Gravador::criar(&arq, &caso.objetivo, modelo)
                     .map_err(|e| format!("{}: {e}", arq.display()))?;
+                let tarefa = Task::new(caso.objetivo.clone(), modelo.clone());
+                g.tarefa(&tarefa.id);
                 let agente = gravando(agente, &g);
                 let ollama = modelo.starts_with("ollama:");
                 let proc_raiz = Path::new("/proc");
@@ -628,25 +751,30 @@ pub async fn avaliar(
                 let e0 = energia.amostra();
                 let t0 = Instant::now();
                 let t = agente
-                    .run(
-                        Task::new(caso.objetivo.clone(), modelo.clone()),
-                        &CancelFlag::default(),
-                        &NoObserver,
-                    )
+                    .run(tarefa, &CancelFlag::default(), &NoObserver)
                     .await;
                 let ms = t0.elapsed().as_secs_f64() * 1e3;
                 let e1 = energia.amostra();
                 let cpu_a1 = cpu_s(&proc_raiz.join("self"), true);
                 let cpu_m1 = cpu_da_arvore(proc_raiz, "ollama");
                 g.resultado()?;
-                let seq = Gravacao::ler(&arq)?.sequencia();
+                let gravada = Gravacao::ler(&arq)?;
+                let seq = gravada.sequencia();
                 let ok = acertou(&caso.gabarito, &t, &seq);
+                let nota = caso
+                    .gabarito
+                    .sequencia
+                    .as_deref()
+                    .and_then(|e| nota_ferramentas(e, &seq));
                 let geracoes = visto.lock().unwrap().clone();
                 let ex = Execucao {
                     modelo: modelo.clone(),
                     caso: caso.id.clone(),
                     rodada: rodada + 1,
                     acerto: ok,
+                    nota_ferramentas: nota,
+                    prompt_sha256: gravada.prompt_sha256.clone(),
+                    skills_sha256: gravada.skills_sha256_junto(),
                     estado: format!("{:?}", t.status),
                     erro: (t.status != TaskStatus::Completed)
                         .then(|| t.error.clone().unwrap_or_default()),
@@ -671,7 +799,8 @@ pub async fn avaliar(
                     environment_sha256: suite.environment_sha256.clone(),
                     success: ok,
                     quality_basis_points: if ok { 10_000 } else { 0 },
-                    tool_accuracy_basis_points: None,
+                    tool_accuracy_basis_points: nota
+                        .map(|n| (n.sequencia * 10_000.0).round() as u16),
                     structured_validity_basis_points: None,
                     latency_ms: ms.round() as u64,
                     input_tokens: t.usage.input_tokens,
@@ -703,6 +832,7 @@ pub async fn avaliar(
         casos: casos.len(),
         modelos: resultados,
         vencedores,
+        por_prompt: agrupar_por_prompt(&execucoes),
         execucoes,
     })
 }
@@ -732,7 +862,9 @@ fn suite_de(casos: &[Caso]) -> BenchmarkSuite {
         // perfil de fixture, e e o certo -- avaliar mede, nao troca o modelo de ninguem.
         evidence_class: EvidenceClass::Fixture,
         dataset_sha256: sha(&json!(casos)),
-        scorer_sha256: sha(&json!("gabarito: contem (sem caixa) + sequencia exata; v1")),
+        scorer_sha256: sha(&json!(
+            "gabarito: contem (sem caixa) + sequencia exata; nota de ferramentas conjunto/LCS; v2"
+        )),
         environment_sha256: sha(&json!([std::env::consts::OS, std::env::consts::ARCH])),
         cases: casos
             .iter()
@@ -762,6 +894,20 @@ fn resumir(
             da.iter().filter(|e| e.acerto).count() as f64 / da.len().max(1) as f64
         })
         .collect();
+    // Mediana dos casos dentro da rodada; `None` na rodada em que algum caso nao tem nota,
+    // para a faixa nao misturar rodadas de populacoes diferentes.
+    let nota_por_rodada = |pega: fn(&NotaFerramentas) -> f64| -> Vec<Option<f64>> {
+        (1..=rodadas)
+            .map(|r| {
+                let da: Option<Vec<f64>> = ex
+                    .iter()
+                    .filter(|e| e.rodada == r)
+                    .map(|e| e.nota_ferramentas.as_ref().map(pega))
+                    .collect();
+                da.and_then(|v| Faixa::de(&v)).map(|f| f.mediana)
+            })
+            .collect()
+    };
     let energia: Vec<Option<f64>> = ex
         .iter()
         .map(|e| match &e.energia {
@@ -807,6 +953,14 @@ fn resumir(
         ),
         energia_j: Medida::de(&energia, &motivo_energia),
         acerto_por_rodada: Faixa::de(&por_rodada).unwrap(),
+        nota_conjunto_por_rodada: Medida::de(
+            &nota_por_rodada(|n| n.conjunto),
+            "caso sem gabarito de sequencia",
+        ),
+        nota_sequencia_por_rodada: Medida::de(
+            &nota_por_rodada(|n| n.sequencia),
+            "caso sem gabarito de sequencia",
+        ),
         acerto_bp: perfil.success_basis_points,
         perfil_sha256: perfil.profile_sha256.clone(),
     }
@@ -817,8 +971,11 @@ fn resumir(
 /// de desempenho, so quem concluiu tudo.
 fn decidir(r: &[ResultadoModelo]) -> Vec<Vencedor> {
     type Pega = fn(&ResultadoModelo) -> Option<Faixa>;
-    let metricas: [(&str, bool, Pega); 4] = [
+    let metricas: [(&str, bool, Pega); 5] = [
         ("acerto_por_rodada", true, |m| Some(m.acerto_por_rodada)),
+        ("nota_sequencia", true, |m| {
+            m.nota_sequencia_por_rodada.faixa().copied()
+        }),
         ("latencia_ms", false, |m| Some(m.latencia_ms)),
         ("tokens_por_s", true, |m| m.tokens_por_s.faixa().copied()),
         ("cpu_s_modelo", false, |m| m.cpu_s_modelo.faixa().copied()),
@@ -831,7 +988,9 @@ fn decidir(r: &[ResultadoModelo]) -> Vec<Vencedor> {
         .map(|(nome, maior, pega)| {
             let elegiveis: Vec<&ResultadoModelo> = r
                 .iter()
-                .filter(|m| *nome == "acerto_por_rodada" || m.falhas == 0)
+                .filter(|m| {
+                    matches!(*nome, "acerto_por_rodada" | "nota_sequencia") || m.falhas == 0
+                })
                 .collect();
             let fora = r.len() - elegiveis.len();
             let com_falha = if fora > 0 {
@@ -910,12 +1069,36 @@ pub fn tabela(a: &Avaliacao) -> String {
             m.acerto_por_rodada.n,
             m.acerto_bp as f64 / 100.0,
         ));
+        s.push_str(&format!(
+            "  ferramentas : conjunto {} | sequencia {} (nota 0–1, mediana dos casos por rodada)\n",
+            f(&m.nota_conjunto_por_rodada, 2),
+            f(&m.nota_sequencia_por_rodada, 2),
+        ));
         if m.falhas > 0 {
             s.push_str(&format!(
                 "  FALHAS      : {}/{} execucoes; primeira: {}\n",
                 m.falhas,
                 m.execucoes,
                 m.primeira_falha.as_deref().unwrap_or_default()
+            ));
+        }
+    }
+    if !a.por_prompt.is_empty() {
+        s.push_str("\npor prompt (sha256 do sistema / das skills; compare antes/depois so dentro do mesmo):\n");
+        for g in &a.por_prompt {
+            let curto = |x: &Option<String>| {
+                x.as_deref()
+                    .map(|h| h.chars().take(12).collect::<String>())
+                    .unwrap_or_else(|| "sem gravacao".into())
+            };
+            s.push_str(&format!(
+                "  {:<24} prompt {} skills {}  acerto {}/{}  sequencia {}\n",
+                g.modelo,
+                curto(&g.prompt_sha256),
+                curto(&g.skills_sha256),
+                g.acertos,
+                g.execucoes,
+                f(&g.nota_sequencia, 2),
             ));
         }
     }
@@ -1016,6 +1199,29 @@ mod testes {
         assert_eq!(somar_nvidia("1000\n2500\n"), Some(3500));
         assert_eq!(somar_nvidia("1000\n[N/A]\n"), None);
         assert_eq!(somar_nvidia(""), None);
+    }
+
+    /// SP000030: a nota parcial e deterministica e distingue «chamou as certas fora de
+    /// ordem» (conjunto 1, sequencia < 1) de «faltou uma» (as duas < 1). Reposta a nota
+    /// so por acerto exato, os tres casos abaixo dariam o mesmo 0.
+    #[test]
+    fn nota_de_ferramentas_conjunto_e_lcs() {
+        let v = |xs: &[&str]| xs.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+        let esp = v(&["ler", "editar", "testar"]);
+        let n = nota_ferramentas(&esp, &esp).unwrap();
+        assert_eq!((n.conjunto, n.sequencia), (1.0, 1.0));
+        // Mesmo conjunto, ordem trocada: conjunto inteiro, sequencia 2/3.
+        let n = nota_ferramentas(&esp, &v(&["editar", "ler", "testar"])).unwrap();
+        assert_eq!((n.conjunto, n.sequencia), (1.0, 2.0 / 3.0));
+        // Faltou uma, e uma a mais no meio: 2/3 nas duas.
+        let n = nota_ferramentas(&esp, &v(&["ler", "listar", "testar"])).unwrap();
+        assert_eq!((n.conjunto, n.sequencia), (2.0 / 3.0, 2.0 / 3.0));
+        // Repeticao nao conta duas vezes; nada chamado e 0; sem gabarito nao ha nota.
+        let n = nota_ferramentas(&esp, &v(&["ler", "ler", "ler"])).unwrap();
+        assert_eq!((n.conjunto, n.sequencia), (1.0 / 3.0, 1.0 / 3.0));
+        assert_eq!(nota_ferramentas(&esp, &[]).unwrap().sequencia, 0.0);
+        assert_eq!(nota_ferramentas(&[], &esp), None);
+        assert_eq!(lcs(&v(&["a", "b", "c", "d"]), &v(&["b", "d", "a", "c"])), 2);
     }
 
     #[test]

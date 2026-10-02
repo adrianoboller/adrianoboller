@@ -1,0 +1,9 @@
+{
+  "webhooks": [
+    {
+      "nome": "n8n-resultado",
+      "objetivo": "Um fluxo do n8n terminou e devolveu o resultado abaixo. Resuma o que aconteceu e, se houver erro, diga o que o operador precisa fazer. {corpo}",
+      "segredo": "TROQUE-pelo-mesmo-valor-de-PHXCLAW_N8N_WEBHOOK_SEGREDO"
+    }
+  ]
+}

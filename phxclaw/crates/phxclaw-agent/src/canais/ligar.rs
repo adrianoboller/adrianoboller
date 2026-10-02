@@ -147,11 +147,15 @@ pub async fn ligar(
     log: Registro,
 ) -> Result<Ligado, String> {
     if nome == "telegram" {
-        let token = var("PHXCLAW_TELEGRAM_BOT_TOKEN")
+        // Os nomes saem do catalogo; o `var` injetado (a CLI passa `config::por_variavel`)
+        // continua sendo o leitor, por nome de variavel como nos outros canais.
+        let var_token = crate::config::variavel("canais.telegram.bot_token");
+        let token = var(var_token)
             .filter(|t| !t.trim().is_empty())
-            .ok_or("falta PHXCLAW_TELEGRAM_BOT_TOKEN")?;
-        let chats =
-            crate::canal::chats_da_lista(&var("PHXCLAW_TELEGRAM_CHATS").unwrap_or_default())?;
+            .ok_or_else(|| format!("falta {var_token}"))?;
+        let chats = crate::canal::chats_da_lista(
+            &var(crate::config::variavel("canais.telegram.chats")).unwrap_or_default(),
+        )?;
         let canal =
             crate::canal::ligar_telegram(pasta, SecretValue::new(token), chats, log).await?;
         return Ok(Ligado { canal, rotas: None });

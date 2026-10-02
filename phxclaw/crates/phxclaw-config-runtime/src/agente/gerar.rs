@@ -143,7 +143,7 @@ pub fn exemplo() -> Value {
         CAMPO_COMENTARIO.into(),
         json!([
             "config.json do PhxClaw, gerado do catálogo (phxclaw config exemplo).",
-            "Precedência: ambiente > .phxclaw/config.json do projeto confiado > <pasta>/config.json > padrão.",
+            format!("Precedência: {}.", super::carga::precedencia_texto()),
             "null = não definido aqui. Segredo nunca entra: vai para o SecretBroker (phxclaw config mostrar diz o comando)."
         ]),
     );

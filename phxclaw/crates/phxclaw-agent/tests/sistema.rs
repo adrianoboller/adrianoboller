@@ -225,7 +225,10 @@ async fn sonda_publica_recusa_interno_e_passa_pelo_broker() {
     )
     .await;
     match r {
-        Err(ToolError::Denied(m)) => assert!(m.contains(NET_DESTINOS_ENV), "{m}"),
+        Err(ToolError::Denied(m)) => assert!(
+            m.contains(phxclaw_agent::config::variavel(CHAVE_NET_DESTINOS)),
+            "{m}"
+        ),
         outro => panic!("{outro:?}"),
     }
     // Na lista: a sonda roda (o resultado depende da rede desta maquina, a decisao nao).

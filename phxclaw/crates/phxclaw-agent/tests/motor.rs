@@ -250,6 +250,7 @@ async fn subagentes_rodam_em_paralelo_e_ficam_ligados_a_mae() {
 #[tokio::test]
 async fn ferramenta_lenta_vira_timeout_e_o_agente_segue() {
     if shell().is_none() {
+        pulado::pular("bwrap", "bwrap ausente");
         return;
     }
     let llm = Arc::new(ScriptedLlm::new(vec![

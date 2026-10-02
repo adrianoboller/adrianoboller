@@ -1,4 +1,4 @@
-//! Comandos de medicao: `repetir`, `avaliar` e `skill otimizar`. A logica mora em
+//! Comandos de medicao: `repetir`, `medir`, `avaliar` e `skill otimizar`. A logica mora em
 //! `phxclaw_agent::{gravacao, avaliacao, otimizacao}`; aqui so se le a linha de comando e
 //! se imprime, para a API e a CLI nao terem dois motores de medicao.
 
@@ -88,6 +88,61 @@ pub async fn repetir(args: &[String]) -> Result<()> {
         }
         std::process::exit(3);
     }
+}
+
+/// `phxclaw medir ARQ.jsonl`: as somas por tarefa de uma gravacao (SP000030). Tokens so
+/// somam quando toda chamada ao modelo os informou; gravacao da versao 1 diz «nao medido».
+pub fn medir(args: &[String]) -> Result<()> {
+    let arq = solto(args, &[]).context("uso: phxclaw medir ARQ.jsonl [--json]")?;
+    let g = Gravacao::ler(Path::new(arq)).map_err(anyhow::Error::msg)?;
+    let somas = g.somas();
+    if args.iter().any(|a| a == "--json") {
+        println!("{}", serde_json::to_string_pretty(&somas)?);
+        return Ok(());
+    }
+    println!("{}", texto_de_medir(&g, &somas));
+    Ok(())
+}
+
+/// A tabela do `medir`, separada para a prova ler o mesmo texto que o terminal.
+pub fn texto_de_medir(g: &Gravacao, somas: &[phxclaw_agent::gravacao::SomaDaTarefa]) -> String {
+    let ms = |x: Option<f64>| match x {
+        Some(v) => format!("{v:.0} ms"),
+        None => "não medido (gravação v1)".to_string(),
+    };
+    let mut s = format!(
+        "gravacao v{} de {} | modelo {} | prompt {} | {} skill(s)\n",
+        g.versao,
+        g.data,
+        g.modelo,
+        g.prompt_sha256
+            .as_deref()
+            .map(|h| h.chars().take(12).collect::<String>())
+            .unwrap_or_else(|| "não gravado".into()),
+        g.skills_sha256.len()
+    );
+    for t in somas {
+        let tokens = match (t.tokens_entrada, t.tokens_saida) {
+            (Some(e), Some(sa)) => format!("{e} entrada / {sa} saida"),
+            _ => format!(
+                "não informados pelo provedor ({} de {} chamada(s) sem contagem)",
+                t.modelo_sem_tokens, t.chamadas_modelo
+            ),
+        };
+        s.push_str(&format!(
+            "\ntarefa {}{}\n  modelo      : {} chamada(s), {}\n  ferramentas : {} chamada(s), {}\n  tokens      : {}\n",
+            t.tarefa.as_deref().unwrap_or("(sem id na gravacao)"),
+            t.passo_pai
+                .map(|p| format!("  (subagente dentro do passo {p})"))
+                .unwrap_or_default(),
+            t.chamadas_modelo,
+            ms(t.duracao_modelo_ms),
+            t.chamadas_ferramenta,
+            ms(t.duracao_ferramentas_ms),
+            tokens
+        ));
+    }
+    s
 }
 
 pub async fn avaliar(args: &[String]) -> Result<()> {

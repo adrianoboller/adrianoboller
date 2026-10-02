@@ -1536,83 +1536,147 @@ mod pagos {
     /// O laco de eco dos provedores pagos: cada chamada contra um servidor que ECOA o pedido
     /// inteiro num 401, e contra um que REDIRECIONA para um terceiro. Nenhum erro traz a
     /// chave, todo 3xx e erro, e o terceiro nao recebe pedido nenhum.
+    ///
+    /// Quem entra no laco sai de `chaves::PAGOS`, nao de uma contagem digitada: servico
+    /// pago novo sem chamada aqui reprova (o 8 digitado deixou a xAI de fora por semanas).
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn nenhum_provedor_pago_devolve_a_chave_no_erro_nem_segue_redirecionamento() {
-        let raiz_el = raiz_com(&phxclaw_agent::elevenlabs::SERVICO, CHAVE_EL);
-        let raiz_g = raiz_com(&phxclaw_agent::nanobanana::SERVICO, CHAVE_G);
+        use phxclaw_agent::chaves::PAGOS;
+        use phxclaw_agent_core::{Llm, LlmOptions, Message};
+        let chave_de = |s: &phxclaw_agent::chaves::Servico| {
+            format!("CHAVE-{}-QUE-NAO-PODE-VAZAR", s.espaco.to_uppercase())
+        };
+        let raizes: Vec<PathBuf> = PAGOS.iter().map(|s| raiz_com(s, &chave_de(s))).collect();
         let (terceiro, roubado) = falso(|_| (200, vec![], b"{}".to_vec())).await;
         let (eco, redir) = eco_e_redirecionador(format!("{terceiro}/roubo")).await;
         let wav =
             std::env::temp_dir().join(format!("phx-voz-eco-{}.wav", phxclaw_types::new_uuid_v7()));
         std::fs::write(&wav, wav_de_pcm(&pcm_sintetico(), 16000)).unwrap();
         let prazo = Duration::from_secs(20);
-        let mut n = 0;
+        let c = ctx("pagos-eco");
+        let mut cobertos: std::collections::BTreeSet<&str> = Default::default();
+        let mut erros: Vec<(String, &str, String)> = vec![];
         for (base, esperado) in [(eco.as_str(), "401"), (redir.as_str(), "302")] {
-            let el = |b: &str| {
-                ElevenLabs::novo(
-                    b,
-                    phxclaw_agent::elevenlabs::SERVICO
-                        .credencial(&raiz_el)
-                        .unwrap(),
-                )
-                .unwrap()
-            };
-            let (e1, e2, e3) = (el(base), el(base), el(base));
-            let nb = NanoBanana::novo(
-                base,
-                "gemini-2.5-flash-image",
-                phxclaw_agent::nanobanana::SERVICO
-                    .credencial(&raiz_g)
-                    .unwrap(),
-            )
-            .unwrap();
-            let w = wav.clone();
-            let erros: Vec<(&str, String)> = tokio::task::spawn_blocking(move || {
-                vec![
-                    (
-                        "tts",
-                        e1.sintetizar("voz1", &json!({"text":"oi"}), "wav_16000", prazo)
-                            .unwrap_err(),
-                    ),
-                    (
-                        "stt",
-                        e2.transcrever(
-                            std::fs::read(&w).unwrap(),
-                            "a.wav",
-                            "scribe_v2",
-                            None,
-                            prazo,
+            for (s, raiz) in PAGOS.iter().zip(&raizes) {
+                let cred = || s.credencial(raiz).unwrap();
+                let mut quem = |nome: &str, e: String| {
+                    erros.push((format!("{} {nome}", s.espaco), esperado, e))
+                };
+                match s.espaco {
+                    "elevenlabs" => {
+                        let el = || ElevenLabs::novo(base, cred()).unwrap();
+                        let (e1, e2, e3) = (el(), el(), el());
+                        let w = wav.clone();
+                        let v = tokio::task::spawn_blocking(move || {
+                            vec![
+                                (
+                                    "tts",
+                                    e1.sintetizar(
+                                        "voz1",
+                                        &json!({"text":"oi"}),
+                                        "wav_16000",
+                                        prazo,
+                                    )
+                                    .unwrap_err(),
+                                ),
+                                (
+                                    "stt",
+                                    e2.transcrever(
+                                        std::fs::read(&w).unwrap(),
+                                        "a.wav",
+                                        "scribe_v2",
+                                        None,
+                                        prazo,
+                                    )
+                                    .unwrap_err(),
+                                ),
+                                ("vozes", e3.vozes(Some("a"), prazo).unwrap_err()),
+                            ]
+                        })
+                        .await
+                        .unwrap();
+                        for (n, e) in v {
+                            quem(n, e);
+                        }
+                    }
+                    "gemini" => {
+                        // Uma chave, dois clientes: o Nano Banana e o modelo Gemini.
+                        let nb = NanoBanana::novo(base, "gemini-2.5-flash-image", cred()).unwrap();
+                        let e = tokio::task::spawn_blocking(move || {
+                            nb.gerar("x", Some(("image/png", &png(2, 2))), None, prazo)
+                                .unwrap_err()
+                        })
+                        .await
+                        .unwrap();
+                        quem("nanobanana", e);
+                        let llm = phxclaw_llm::GeminiLlm::new(
+                            chave_de(s),
+                            "gemini-x",
+                            phxclaw_llm::Endpoint::custom(base, &[base]).permitir_http_loopback(),
                         )
-                        .unwrap_err(),
-                    ),
-                    ("vozes", e3.vozes(Some("a"), prazo).unwrap_err()),
-                    (
-                        "nanobanana",
-                        nb.gerar("x", Some(("image/png", &png(2, 2))), None, prazo)
-                            .unwrap_err(),
-                    ),
-                ]
-            })
-            .await
-            .unwrap();
-            for (quem, e) in erros {
-                n += 1;
-                assert!(e.contains(esperado), "{quem} em {base}: {e}");
-                assert!(
-                    !e.contains(CHAVE_EL) && !e.contains(CHAVE_G),
-                    "{quem}: chave no erro: {e}"
-                );
+                        .unwrap();
+                        let e = llm
+                            .chat(&[Message::user("oi")], &[], &LlmOptions::default())
+                            .await
+                            .unwrap_err();
+                        quem("gemini-llm", format!("{e} / {e:?}"));
+                    }
+                    "xai" => {
+                        let x =
+                            phxclaw_agent::xai::XSearchTool::novo(base, "grok-4", cred()).unwrap();
+                        let e = x.run(json!({"query": "q"}), &c).await.unwrap_err();
+                        quem("x_search", e.to_string());
+                    }
+                    "openai" => {
+                        let llm = phxclaw_llm::OpenAiLlm::new(
+                            chave_de(s),
+                            "gpt-x",
+                            phxclaw_llm::Endpoint::custom(base, &[base]).permitir_http_loopback(),
+                        )
+                        .unwrap();
+                        let e = llm
+                            .chat(&[Message::user("oi")], &[], &LlmOptions::default())
+                            .await
+                            .unwrap_err();
+                        quem("openai-llm", format!("{e} / {e:?}"));
+                    }
+                    "anthropic" => {
+                        let llm = phxclaw_llm::AnthropicLlm::new(
+                            chave_de(s),
+                            "claude-x",
+                            phxclaw_llm::Endpoint::custom(base, &[base]).permitir_http_loopback(),
+                        )
+                        .unwrap();
+                        let e = llm
+                            .chat(&[Message::user("oi")], &[], &LlmOptions::default())
+                            .await
+                            .unwrap_err();
+                        quem("anthropic-llm", format!("{e} / {e:?}"));
+                    }
+                    outro => panic!("servico pago sem chamada no laco de eco: {outro}"),
+                }
+                cobertos.insert(s.espaco);
             }
         }
-        assert_eq!(n, 8, "todo provedor pago entra no laco");
+        let todos: std::collections::BTreeSet<&str> = PAGOS.iter().map(|s| s.espaco).collect();
+        assert_eq!(cobertos, todos, "todo servico de PAGOS entra no laco");
+        // Uma chamada por cliente por base: 3 (ElevenLabs) + 2 (Gemini) + 1 + 1 + 1, vezes 2.
+        assert_eq!(erros.len(), 2 * (PAGOS.len() + 3), "{erros:?}");
+        for (quem, esperado, e) in &erros {
+            assert!(e.contains(esperado), "{quem}: esperava {esperado}: {e}");
+            for s in PAGOS {
+                assert!(!e.contains(&chave_de(s)), "{quem}: chave no erro: {e}");
+            }
+        }
         assert!(
             roubado.lock().unwrap().is_empty(),
             "o redirecionamento foi seguido: {:?}",
             roubado.lock().unwrap()
         );
         let _ = std::fs::remove_file(&wav);
-        let _ = std::fs::remove_dir_all(&raiz_el);
-        let _ = std::fs::remove_dir_all(&raiz_g);
+        for r in raizes {
+            let _ = std::fs::remove_dir_all(r);
+        }
     }
 
     /// A cadeia de `phxclaw voz` (`conversar`, o mesmo motor que o comando chama) com a fala

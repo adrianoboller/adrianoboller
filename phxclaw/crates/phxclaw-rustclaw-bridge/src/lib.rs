@@ -21,21 +21,21 @@ pub struct RustClawBridgeConfig {
 }
 
 impl RustClawBridgeConfig {
+    /// `pontes.rustclaw.*` do config.json (ambiente `PHXCLAW_RUSTCLAW_*` por cima).
     pub fn from_env() -> Self {
+        use phxclaw_config_runtime::agente::carga::{
+            booleano_do_processo, caminho_do_processo, inteiro_do_processo,
+        };
         Self {
-            executable: env::var_os("PHXCLAW_RUSTCLAW_BIN")
-                .map(PathBuf::from)
+            executable: caminho_do_processo("pontes.rustclaw.bin")
                 .unwrap_or_else(|| PathBuf::from("rustclaw")),
-            workspace_root: env::var_os("PHXCLAW_RUSTCLAW_WORKSPACE")
-                .map(PathBuf::from)
+            workspace_root: caminho_do_processo("pontes.rustclaw.workspace")
                 .unwrap_or_else(|| PathBuf::from(".")),
-            timeout_ms: env::var("PHXCLAW_RUSTCLAW_TIMEOUT_MS")
-                .ok()
-                .and_then(|value| value.parse().ok())
+            timeout_ms: inteiro_do_processo("pontes.rustclaw.timeout_ms")
+                .and_then(|v| u64::try_from(v).ok())
                 .unwrap_or(60_000),
             max_output_bytes: 8 * 1024 * 1024,
-            allow_prompt_in_argv: env::var("PHXCLAW_RUSTCLAW_ALLOW_PROMPT_ARGV")
-                .map(|v| matches!(v.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
+            allow_prompt_in_argv: booleano_do_processo("pontes.rustclaw.prompt_no_argv")
                 .unwrap_or(false),
         }
     }

@@ -11,18 +11,43 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::oneshot;
 
-/// Variavel que aponta o executavel do Chromium, acima dos caminhos padrao.
-pub const CHROMIUM_ENV: &str = "PHXCLAW_CHROMIUM";
+/// Chave do executavel do Chromium (`PHXCLAW_CHROMIUM`), acima dos caminhos padrao.
+pub const CHAVE_CHROMIUM: &str = "navegador.chromium";
+
+/// A variavel de ambiente de `CHAVE_CHROMIUM`, para as mensagens ao operador.
+pub fn variavel_do_chromium() -> &'static str {
+    phxclaw_config_runtime::agente::carga::variavel(CHAVE_CHROMIUM)
+}
 
 const DEFAULT_PATHS: &[&str] = &[
     "/opt/pw-browsers/chromium_headless_shell-1194/chrome-linux/headless_shell",
     "/opt/pw-browsers/chromium-1194/chrome-linux/chrome",
 ];
 
+/// Quem monta o processo do Chromium a partir do argv completo (`[exe, args...]`) e da
+/// pasta do perfil: existe para o agente lancar o navegador DENTRO do bwrap do shell sem
+/// esta crate conhecer o sandbox. O contrato: a pasta do perfil e a pasta de trabalho do
+/// processo (quem envolve a monta como quiser), e o `DevToolsActivePort` continua sendo
+/// lido nela pelo lado de fora.
+pub type MontaProcesso =
+    dyn Fn(&Path, Vec<String>) -> std::result::Result<Command, String> + Send + Sync;
+
+#[derive(Clone)]
+pub struct Envoltorio(pub Arc<MontaProcesso>);
+
+impl std::fmt::Debug for Envoltorio {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Envoltorio(..)")
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct LaunchOptions {
     /// Executavel explicito; `None` consulta `PHXCLAW_CHROMIUM` e os padroes.
     pub executable: Option<PathBuf>,
+    /// Sem envoltorio o processo nasce direto (`Command::new(exe)`): e o caminho dos testes
+    /// desta crate. O agente passa o bwrap aqui.
+    pub envoltorio: Option<Envoltorio>,
     pub policy: BrowserPolicy,
     pub launch_timeout: Duration,
     pub command_timeout: Duration,
@@ -66,6 +91,7 @@ impl Default for LaunchOptions {
             window_size: (1280, 800),
             extra_args: Vec::new(),
             idioma: None,
+            envoltorio: None,
         }
     }
 }
@@ -90,8 +116,9 @@ fn resolve_executable(explicit: Option<&Path>) -> Result<PathBuf> {
     if let Some(p) = explicit {
         candidatos.push(p.to_path_buf());
     } else {
-        if let Some(p) = std::env::var_os(CHROMIUM_ENV).filter(|p| !p.is_empty()) {
-            candidatos.push(PathBuf::from(p));
+        if let Some(p) = phxclaw_config_runtime::agente::carga::caminho_do_processo(CHAVE_CHROMIUM)
+        {
+            candidatos.push(p);
         }
         candidatos.extend(DEFAULT_PATHS.iter().map(PathBuf::from));
     }
@@ -161,26 +188,27 @@ impl Browser {
             std::env::temp_dir().join(format!("phxclaw-browser-{}", uuid::Uuid::now_v7()));
         std::fs::create_dir_all(&profile_dir)?;
 
-        let mut cmd = Command::new(&exe);
-        cmd.arg("--headless=new")
-            .arg("--remote-debugging-port=0")
-            .arg(format!("--user-data-dir={}", profile_dir.display()))
-            .arg("--no-first-run")
-            .arg("--no-default-browser-check")
+        let mut args: Vec<String> = vec![
+            "--headless=new".into(),
+            "--remote-debugging-port=0".into(),
+            format!("--user-data-dir={}", profile_dir.display()),
+            "--no-first-run".into(),
+            "--no-default-browser-check".into(),
             // Trafego proprio do Chromium (atualizacao, sincronia) nao passa
             // pela interceptacao da pagina; desligado, o que sai e so o que
             // o agente pediu.
-            .arg("--disable-background-networking")
-            .arg("--disable-component-update")
-            .arg("--disable-sync")
-            .arg("--disable-default-apps")
-            .arg("--disable-dev-shm-usage")
-            .arg("--mute-audio")
-            .arg("--hide-scrollbars")
-            .arg(format!(
+            "--disable-background-networking".into(),
+            "--disable-component-update".into(),
+            "--disable-sync".into(),
+            "--disable-default-apps".into(),
+            "--disable-dev-shm-usage".into(),
+            "--mute-audio".into(),
+            "--hide-scrollbars".into(),
+            format!(
                 "--window-size={},{}",
                 opts.window_size.0, opts.window_size.1
-            ));
+            ),
+        ];
         let idioma = opts
             .idioma
             .clone()
@@ -193,17 +221,29 @@ impl Browser {
                 )
             })
             .unwrap_or_else(|| "pt-BR".into());
-        cmd.arg(format!("--lang={idioma}"))
-            .arg(format!("--accept-lang={idioma}"));
+        args.push(format!("--lang={idioma}"));
+        args.push(format!("--accept-lang={idioma}"));
         if running_as_root() {
             // O sandbox do Chromium recusa subir como root (conteiner, CI) e
             // o processo morre na largada. So nesse caso ele sai; fora dele o
             // sandbox e a segunda linha de defesa e fica ligado.
-            cmd.arg("--no-sandbox");
+            args.push("--no-sandbox".into());
         }
-        cmd.args(&opts.extra_args)
-            .arg("about:blank")
-            .stdin(Stdio::null())
+        args.extend(opts.extra_args.iter().cloned());
+        args.push("about:blank".into());
+        let mut cmd = match &opts.envoltorio {
+            Some(e) => {
+                let mut argv = vec![exe.display().to_string()];
+                argv.extend(args);
+                (e.0)(&profile_dir, argv).map_err(BrowserError::Launch)?
+            }
+            None => {
+                let mut c = Command::new(&exe);
+                c.args(&args);
+                c
+            }
+        };
+        cmd.stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::piped());
 

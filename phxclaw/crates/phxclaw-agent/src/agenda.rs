@@ -4,7 +4,8 @@
 //! A agenda persiste em JSON; quem a roda chama `due(agora)` periodicamente.
 
 use chrono::{DateTime, Utc};
-use phxclaw_rustclaw_native::{ScheduleSpec, next_fire, validate_schedule};
+pub use phxclaw_rustclaw_native::ScheduleSpec;
+use phxclaw_rustclaw_native::{next_fire, validate_schedule};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -62,6 +63,16 @@ impl Agenda {
         self.items.push(s.clone());
         self.save().map_err(|e| e.to_string())?;
         Ok(s)
+    }
+
+    /// `add` com o relogio de agora: a porta da CLI, que nao carrega o chrono.
+    pub fn adicionar_agora(
+        &mut self,
+        name: &str,
+        objective: &str,
+        spec: ScheduleSpec,
+    ) -> Result<Schedule, String> {
+        self.add(name, objective, spec, Utc::now())
     }
 
     /// Agendamentos vencidos em `now`; cada um ja avanca para a proxima execucao. Disparo

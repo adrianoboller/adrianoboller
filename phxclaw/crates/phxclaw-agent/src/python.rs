@@ -117,7 +117,7 @@ sys.base_prefix,sysconfig.get_paths()['purelib'],'%d.%d.%d'%sys.version_info[:3]
 /// `uv` em lugares fixos, como os outros binarios do agente: o `PATH` herdado e
 /// configuracao de quem lancou o processo.
 fn achar_uv() -> Option<PathBuf> {
-    if let Some(p) = std::env::var_os("PHXCLAW_UV").map(PathBuf::from) {
+    if let Some(p) = crate::config::caminho_de("python.uv") {
         return p.is_file().then_some(p);
     }
     let home = std::env::var_os("HOME").map(PathBuf::from);
@@ -153,12 +153,17 @@ impl PythonProjectTool {
     /// Interpretador de `PHXCLAW_PYTHON`, ou o padrao, ou o `python3` do sistema. O erro
     /// diz por que a ferramenta nao se registrou, em vez de ela sumir calada.
     pub fn detectar(bwrap: PathBuf) -> Result<Self, String> {
-        let caminho = match std::env::var_os("PHXCLAW_PYTHON") {
-            Some(p) => PathBuf::from(p),
+        let caminho = match crate::config::caminho_de("python.bin") {
+            Some(p) => p,
             None => Some(PathBuf::from(PYTHON_PADRAO))
                 .filter(|p| p.is_file())
                 .or_else(|| binario("python3"))
-                .ok_or("nenhum interpretador: nem PHXCLAW_PYTHON, nem o padrao, nem python3")?,
+                .ok_or_else(|| {
+                    format!(
+                        "nenhum interpretador: nem {}, nem o padrao, nem python3",
+                        crate::config::variavel("python.bin")
+                    )
+                })?,
         };
         Ok(Self::com(bwrap, Interpretador::sondar(&caminho)?))
     }

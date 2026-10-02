@@ -1,0 +1,51 @@
+{
+  "name": "PhxClaw: criar tarefa e esperar (no da comunidade)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "phxclaw-tarefa",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "name": "Pedido",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "operation": "createTask",
+        "objective": "={{ $json.body.objetivo }}",
+        "wait": true,
+        "timeout": 300,
+        "interval": 2
+      },
+      "name": "PhxClaw",
+      "type": "n8n-nodes-phxclaw.phxClaw",
+      "typeVersion": 1,
+      "position": [260, 0],
+      "credentials": {
+        "phxClawApi": { "id": "PREENCHER", "name": "PhxClaw API" }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { id: $json.id, status: $json.status, answer: $json.answer, error: $json.error } }}"
+      },
+      "name": "Resposta",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [520, 0]
+    }
+  ],
+  "connections": {
+    "Pedido": { "main": [[{ "node": "PhxClaw", "type": "main", "index": 0 }]] },
+    "PhxClaw": { "main": [[{ "node": "Resposta", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" },
+  "meta": {
+    "phxclaw": "Escrito a mao em 02/10/2026 a partir da documentacao dos nos; NAO foi importado num n8n de verdade (ver docs/N8N.md)."
+  }
+}

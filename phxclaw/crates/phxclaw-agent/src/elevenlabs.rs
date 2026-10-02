@@ -51,8 +51,9 @@ pub const MAX_AUDIO_ENVIADO: u64 = 200 * 1024 * 1024;
 const MAX_JSON: usize = 8 * 1024 * 1024;
 const TAXAS: [u32; 7] = [8000, 16000, 22050, 24000, 32000, 44100, 48000];
 
-fn var(n: &str) -> Option<String> {
-    std::env::var(n).ok().filter(|v| !v.trim().is_empty())
+/// A configuracao, pela chave do catalogo (`elevenlabs.*`).
+fn var(chave: &str) -> Option<String> {
+    crate::config::texto_de(chave)
 }
 
 /// Cliente da API: a base passa pela politica de destinos (HTTP sem TLS so em loopback).
@@ -84,7 +85,7 @@ impl ElevenLabs {
 
     /// Da chave guardada na pasta do agente e da base em `PHXCLAW_ELEVENLABS_API`.
     pub fn da_pasta(raiz_do_agente: &Path) -> Result<Self, String> {
-        let base = var("PHXCLAW_ELEVENLABS_API").unwrap_or_else(|| BASE_PADRAO.into());
+        let base = var("elevenlabs.api").unwrap_or_else(|| BASE_PADRAO.into());
         Self::novo(&base, SERVICO.credencial(raiz_do_agente)?)
     }
 
@@ -255,21 +256,26 @@ impl FalaElevenLabs {
     /// `PHXCLAW_ELEVENLABS_VOZ` (obrigatoria), `_MODELO`, `_FORMATO`, `_ESTABILIDADE` e
     /// `_SIMILARIDADE`. Erro diz o que falta.
     pub fn do_ambiente(raiz_do_agente: &Path) -> Result<Self, String> {
-        let voz = var("PHXCLAW_ELEVENLABS_VOZ").ok_or(
-            "PHXCLAW_TTS_PROVEDOR=elevenlabs pede PHXCLAW_ELEVENLABS_VOZ (o voice_id; \
-`phxclaw elevenlabs vozes` lista os da conta)",
-        )?;
+        let var_voz = crate::config::variavel("elevenlabs.voz");
+        let voz = var("elevenlabs.voz").ok_or_else(|| {
+            format!(
+                "{}=elevenlabs pede {var_voz} (o voice_id; `phxclaw elevenlabs vozes` lista \
+os da conta)",
+                crate::config::variavel("voz.tts.provedor")
+            )
+        })?;
         if !voz_valida(&voz) {
-            return Err(format!("PHXCLAW_ELEVENLABS_VOZ invalida: {voz:?}"));
+            return Err(format!("{var_voz} invalida: {voz:?}"));
         }
         let formato =
-            Formato::ler(&var("PHXCLAW_ELEVENLABS_FORMATO").unwrap_or_else(|| "wav_16000".into()))?;
+            Formato::ler(&var("elevenlabs.formato").unwrap_or_else(|| "wav_16000".into()))?;
         let mut ajustes = serde_json::Map::new();
-        for (v, campo) in [
-            ("PHXCLAW_ELEVENLABS_ESTABILIDADE", "stability"),
-            ("PHXCLAW_ELEVENLABS_SIMILARIDADE", "similarity_boost"),
+        for (chave, campo) in [
+            ("elevenlabs.estabilidade", "stability"),
+            ("elevenlabs.similaridade", "similarity_boost"),
         ] {
-            if let Some(s) = var(v) {
+            let v = crate::config::variavel(chave);
+            if let Some(s) = var(chave) {
                 let x: f64 = s
                     .trim()
                     .parse()
@@ -282,8 +288,7 @@ impl FalaElevenLabs {
         Ok(Self {
             cliente: Arc::new(ElevenLabs::da_pasta(raiz_do_agente)?),
             voz,
-            modelo: var("PHXCLAW_ELEVENLABS_MODELO")
-                .unwrap_or_else(|| "eleven_multilingual_v2".into()),
+            modelo: var("elevenlabs.modelo").unwrap_or_else(|| "eleven_multilingual_v2".into()),
             formato,
             ajustes: (!ajustes.is_empty()).then_some(Value::Object(ajustes)),
         })
@@ -327,7 +332,7 @@ impl OuvidoElevenLabs {
     pub fn do_ambiente(raiz_do_agente: &Path) -> Result<Self, String> {
         Ok(Self {
             cliente: Arc::new(ElevenLabs::da_pasta(raiz_do_agente)?),
-            modelo: var("PHXCLAW_ELEVENLABS_STT_MODELO").unwrap_or_else(|| "scribe_v2".into()),
+            modelo: var("elevenlabs.stt_modelo").unwrap_or_else(|| "scribe_v2".into()),
         })
     }
 

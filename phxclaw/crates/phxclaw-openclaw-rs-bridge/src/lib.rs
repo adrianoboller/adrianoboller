@@ -20,17 +20,16 @@ pub struct OpenClawRsBridgeConfig {
 }
 
 impl OpenClawRsBridgeConfig {
+    /// `pontes.openclaw_rs.*` do config.json (ambiente `PHXCLAW_OPENCLAW_RS_*` por cima).
     pub fn from_env() -> Self {
+        use phxclaw_config_runtime::agente::carga::{caminho_do_processo, inteiro_do_processo};
         Self {
-            executable: env::var_os("PHXCLAW_OPENCLAW_RS_BIN")
-                .map(PathBuf::from)
+            executable: caminho_do_processo("pontes.openclaw_rs.bin")
                 .unwrap_or_else(|| PathBuf::from("openclaw")),
-            workspace_root: env::var_os("PHXCLAW_OPENCLAW_RS_WORKSPACE")
-                .map(PathBuf::from)
+            workspace_root: caminho_do_processo("pontes.openclaw_rs.workspace")
                 .unwrap_or_else(|| PathBuf::from(".")),
-            timeout_ms: env::var("PHXCLAW_OPENCLAW_RS_TIMEOUT_MS")
-                .ok()
-                .and_then(|value| value.parse().ok())
+            timeout_ms: inteiro_do_processo("pontes.openclaw_rs.timeout_ms")
+                .and_then(|v| u64::try_from(v).ok())
                 .unwrap_or(60_000),
             max_output_bytes: 8 * 1024 * 1024,
         }

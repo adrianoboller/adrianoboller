@@ -16,9 +16,9 @@ pub const SKILLS_NO_PROMPT: usize = 50;
 /// `PHXCLAW_SKILLS_DIR`, ou `<raiz do TaskStore>/_skills`. O `_` tira a pasta da lista de
 /// tarefas, do mesmo jeito que a da memoria.
 pub fn pasta_do_ambiente(raiz: &Path) -> SkillFolder {
-    match std::env::var("PHXCLAW_SKILLS_DIR") {
-        Ok(p) if !p.trim().is_empty() => SkillFolder::new(p.trim()),
-        _ => SkillFolder::new(raiz.join("_skills")),
+    match crate::config::texto_de("agente.skills_dir") {
+        Some(p) => SkillFolder::new(p.trim()),
+        None => SkillFolder::new(raiz.join("_skills")),
     }
 }
 

@@ -22,35 +22,45 @@ use uuid::Uuid;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let endpoint = env::var("PHXCLAW_DEVICE_WSS_URL")?;
-    let tenant_uuid: Uuid = env::var("PHXCLAW_TENANT_UUID")?.parse()?;
-    let node_uuid: Uuid = env::var("PHXCLAW_NODE_UUID")?.parse()?;
+    // `dispositivos.*` do config.json (ambiente `PHXCLAW_DEVICE_*` por cima), pelo leitor
+    // de processo do config-runtime: este binario nao e o agente. O que falta e erro que
+    // cita a variavel.
+    use phxclaw_config_runtime::agente::carga::{
+        segredo_do_processo as segredo_do_ambiente, texto_do_processo as texto_de, variavel,
+    };
+    let exigir = |chave: &str| texto_de(chave).ok_or_else(|| format!("falta {}", variavel(chave)));
+    let endpoint = exigir("dispositivos.wss_url")?;
+    let tenant_uuid: Uuid = exigir("dispositivos.tenant_uuid")?.parse()?;
+    let node_uuid: Uuid = exigir("dispositivos.no_uuid")?.parse()?;
     let platform = current_platform()?;
-    let keyring: Box<dyn KeyProvider> = match env::var("PHXCLAW_DEVICE_KEYSTORE") {
-        Ok(v) if v.starts_with("arquivo:") => {
+    let keyring: Box<dyn KeyProvider> = match texto_de("dispositivos.keystore") {
+        Some(v) if v.starts_with("arquivo:") => {
             Box::new(ArquivoKeyProvider::new(&v["arquivo:".len()..])?)
         }
-        Ok(v) => return Err(format!("PHXCLAW_DEVICE_KEYSTORE desconhecido: {v}").into()),
-        Err(_) => {
+        Some(v) => {
+            return Err(format!("{} desconhecido: {v}", variavel("dispositivos.keystore")).into());
+        }
+        None => {
             // identidade que some ao reiniciar faria o no parear de novo a cada boot,
             // gastando token -- melhor recusar dizendo o que fazer
             if !OsKeyringProvider::persistente() {
-                return Err(
+                return Err(format!(
                     "o chaveiro desta plataforma nao guarda chave entre execucoes; \
-use PHXCLAW_DEVICE_KEYSTORE=arquivo:/pasta"
-                        .into(),
-                );
+use {}=arquivo:/pasta",
+                    variavel("dispositivos.keystore")
+                )
+                .into());
             }
             Box::new(OsKeyringProvider::new("PhxClaw", "device-node"))
         }
     };
-    let mut client = match env::var("PHXCLAW_DEVICE_CA_PEM") {
-        Ok(p) => WssDeviceClient::connect_with_ca(&endpoint, &std::fs::read(p)?).await?,
-        Err(_) => WssDeviceClient::connect(&endpoint).await?,
+    let mut client = match texto_de("dispositivos.ca_pem") {
+        Some(p) => WssDeviceClient::connect_with_ca(&endpoint, &std::fs::read(p)?).await?,
+        None => WssDeviceClient::connect(&endpoint).await?,
     };
     let mut seq = 0u64;
-    let identity = match env::var("PHXCLAW_ENROLLMENT_TOKEN") {
-        Ok(token) => {
+    let identity = match segredo_do_ambiente("dispositivos.token_pareamento") {
+        Some(token) => {
             let pedido = EnrollmentRequest {
                 tenant_uuid,
                 node_uuid,
@@ -79,7 +89,7 @@ PHXCLAW_DEVICE_KEYSTORE=arquivo:/pasta"
             println!("pareado");
             id
         }
-        Err(_) => NodeIdentity::load(keyring.as_ref(), node_uuid)?,
+        None => NodeIdentity::load(keyring.as_ref(), node_uuid)?,
     };
     let hello = NodeHello {
         tenant_uuid,

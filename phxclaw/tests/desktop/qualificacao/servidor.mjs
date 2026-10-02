@@ -14,6 +14,12 @@ export function subir(raiz, dados) {
     question: status === 'awaiting_input' ? 'Qual cor?' : undefined,
     steps: [], artifacts: [], created_at: `2026-10-01T0${(i * 3) % 7}:00:00Z`, updated_at: '2026-10-01T09:00:00Z',
   }));
+  const perfis = { ativo: null, lista: [{ nome: 'trabalho', chaves: { 'agente.modelo': 'ollama:qwen2.5:7b' } }] };
+  const PERFIS = () => ({ ativo: perfis.ativo, origem_do_ativo: perfis.ativo ? 'arquivo' : null, lista: perfis.lista.map(x => ({ ...x, ativo: x.nome === perfis.ativo })) });
+  // A ficha de loja.rs::ficha (nome, versao, publicador, categorias, capacidades, instalado).
+  const plugins = [{ nome: 'phx-tema', versao: '1.0.0', publicador: 'phoenix', categorias: ['tema'], capacidades: [], instalado: false },
+    { nome: 'phx-sql', versao: '0.18.0', publicador: 'phoenix', categorias: ['dados'], capacidades: ['sql.query'], instalado: true },
+    { nome: 'x-rascunho', versao: '0.1.0', publicador: 'alguem', categorias: [], capacidades: [], instalado: false, assinado: false }];
   const srv = createServer(async (req, res) => {
     const u = new URL(req.url, 'http://x');
     const p = decodeURIComponent(u.pathname);
@@ -34,8 +40,27 @@ export function subir(raiz, dados) {
       if (p === '/v1/config') {
         if (modo.config === 'erro') return json(500, { error: 'falha interna simulada' });
         if (modo.config === 'lento') await new Promise(r => setTimeout(r, 6000));
-        return json(200, dados.config);
+        return json(200, { ...dados.config, perfis: PERFIS() });
       }
+      // Os paineis da onda 2 do VS Code (testes, plugins, perfis), com o contrato do motor.
+      if (p === '/v1/config/perfis') {
+        if (req.method === 'PUT') {
+          let corpo = '';
+          for await (const c of req) corpo += c;
+          const b = JSON.parse(corpo || '{}');
+          if (req.headers['if-match'] !== String(dados.config.revisao)) return json(409, { revisao_atual: dados.config.revisao });
+          if (b.criar) perfis.lista.push({ nome: b.criar, chaves: b.copiar_base ? { 'agente.modelo': 'ollama:x' } : {} });
+          if ('usar' in b) perfis.ativo = b.usar;
+          dados.config.revisao += 1;
+          return json(200, { revisao: dados.config.revisao });
+        }
+        return json(200, PERFIS());
+      }
+      if (p === '/v1/ide/testes') return json(200, { linguagem: 'rust', projeto: '.', total: 3, crates: [{ crate: 'calc', modulos: [{ modulo: 'soma', testes: ['dois_mais_dois', 'zero'] }, { modulo: 'raiz', testes: ['raiz'] }] }] });
+      if (p === '/v1/ide/testes/rodar') { let c = ''; for await (const x of req) c += x; const no = JSON.parse(c || '{}').no; return json(200, { linguagem: 'rust', projeto: '.', no, passou: !/zero/.test(no), ok: /zero/.test(no) ? 0 : 1, falhou: /zero/.test(no) ? 1 : 0, resultados: [`test ${no} ... ${/zero/.test(no) ? 'FAILED' : 'ok'}`], stderr_cauda: '' }); }
+      if (p === '/v1/plugins/catalogo') return json(200, { plugins: plugins });
+      if (p === '/v1/plugins/instalar') { let c = ''; for await (const x of req) c += x; const nome = JSON.parse(c || '{}').nome; const pl = plugins.find(x => x.nome === nome); if (!pl) return json(422, { error: 'plugin inexistente' }); pl.instalado = true; return json(200, { nome, versao: pl.versao, caminho: `/plugins/${nome}` }); }
+      if (p === '/v1/ide/simbolos') return json(200, { arquivo: u.searchParams.get('arquivo'), simbolos: [{ nome: 'main', tipo: 'funcao', linha: 1, filhos: [] }, { nome: 'Config', tipo: 'struct', linha: 7, filhos: [{ nome: 'porta', tipo: 'campo', linha: 8, filhos: [] }] }] });
       return json(404, { error: 'nao existe' });
     }
     const arq = join(raiz, p === '/' ? 'index.html' : p);

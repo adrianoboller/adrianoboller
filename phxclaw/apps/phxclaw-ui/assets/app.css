@@ -160,6 +160,38 @@ body.force-dashboard .splash{display:none}body.force-dashboard .app-shell{opacit
 .tela-dica{margin:6px 0 0;color:var(--texto-2);font-size:var(--fs-1)}
 .term-vazio{position:absolute;inset:0;display:grid;place-items:center;color:var(--texto-2);font-size:var(--fs-2)}
 .term-vazio[hidden]{display:none}
+/* So para o leitor de tela: fora da pintura, dentro da arvore de acessibilidade. */
+.sr-only{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0;font-size:var(--fs-1)}
+/* Trilha acima do editor: caminho (botoes por pasta) e simbolos (botoes por simbolo). */
+.trilha{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;margin:0 0 8px;padding:6px 10px;border:1px solid var(--linha);border-radius:6px;background:var(--painel);font-size:var(--fs-1);flex-shrink:0}
+.trilha[hidden]{display:none}
+.trilha ol,.trilha ul{display:flex;flex-wrap:wrap;align-items:center;gap:2px;margin:0;padding:0;list-style:none}
+.trilha ol li+li::before{content:"/";color:var(--texto-3);margin:0 2px}
+.trilha ul{border-left:1px solid var(--linha-forte);padding-left:10px;gap:4px}
+.trilha button{background:transparent;border:1px solid transparent;border-radius:4px;color:var(--texto-2);padding:2px 6px;font:inherit;font-size:var(--fs-1);cursor:pointer}
+.trilha button:hover{border-color:var(--linha-forte);color:var(--texto)}
+.trilha button:focus-visible{outline:2px solid var(--laranja);outline-offset:1px}
+.trilha .trilha-arq{color:var(--texto);font-weight:700;padding:2px 4px}
+.trilha .trilha-sim[data-tipo]::before{content:attr(data-tipo);color:var(--info);margin-right:4px;font-size:.85em;letter-spacing:.04em}
+.trilha .trilha-sim[data-nivel="1"]{margin-left:8px}.trilha .trilha-sim[data-nivel="2"]{margin-left:16px}
+.trilha .trilha-nota,.trilha .trilha-vazia{color:var(--texto-3)}.trilha .trilha-nota.aviso{color:var(--acao-excluir)}
+/* O corpo do IDE: o terminal e, ao lado, o explorador de testes dobravel. */
+.ide-corpo{display:flex;gap:10px;flex:1;min-height:0}
+.painel-lateral{flex:0 0 auto;max-width:360px;border:1px solid var(--linha);border-radius:8px;background:var(--painel);padding:8px 10px;overflow:auto}
+.painel-lateral[open]{flex-basis:320px}
+.painel-dobra{border:1px solid var(--linha);border-radius:8px;background:var(--painel);padding:8px 12px;margin:10px 0}
+.painel-lateral>summary,.painel-dobra>summary{cursor:pointer;color:var(--texto-2);font-size:var(--fs-1);letter-spacing:.12em;text-transform:uppercase}
+.painel-lateral>summary:focus-visible,.painel-dobra>summary:focus-visible{outline:2px solid var(--laranja);outline-offset:2px}
+.painel-acoes{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:10px 0;font-size:var(--fs-1)}
+.painel-status{color:var(--texto-2);font-size:var(--fs-1)}.painel-status.aviso{color:var(--acao-excluir)}
+.testes-arvore ul{list-style:none;margin:0;padding-left:14px}.testes-arvore>ul{padding-left:0}
+.testes-arvore li{margin:2px 0;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.testes-arvore .no{color:var(--texto);font-size:var(--fs-1)}.testes-arvore .no[data-tipo="crate"]{font-weight:700}
+.testes-arvore button{background:transparent;border:1px solid var(--linha-forte);border-radius:4px;color:var(--acao-consultar);padding:1px 6px;font:inherit;font-size:var(--fs-1);cursor:pointer}
+.testes-arvore button:focus-visible{outline:2px solid var(--laranja);outline-offset:1px}
+.testes-arvore .ok{color:var(--ok)}.testes-arvore .erro{color:var(--acao-excluir)}
+.painel-saida{max-height:200px;overflow:auto;font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:var(--fs-1);color:var(--texto-2);background:var(--fundo);border:1px solid var(--linha);border-radius:6px;padding:8px;white-space:pre-wrap}
+@media(max-width:900px){.ide-corpo{flex-direction:column}.painel-lateral{max-width:none}.painel-lateral[open]{flex-basis:auto;max-height:40%}}
 
 /* ABSORCAO */
 .absorcao{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:12px}

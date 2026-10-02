@@ -83,18 +83,16 @@ pub struct Montagem {
     /// Servidor de nos de dispositivo no mesmo processo (`phxclaw servir --dispositivos`);
     /// sem ele, `node_list`/`node_invoke` nem existem.
     pub dispositivos: Option<Arc<phxclaw_device_transport::servidor::ServidorDispositivos>>,
+    /// O que os pacotes assinados (Claude/Codex) trazem alem do MCP: comandos de barra,
+    /// hooks e subagentes, cada um somado ao subsistema dono na montagem.
+    pub pacotes: Vec<crate::pacotes::Componentes>,
 }
 
 impl Montagem {
     pub fn new(store: TaskStore) -> Self {
-        let capabilities = std::env::var("PHXCLAW_CAPACIDADES")
-            .map(|v| {
-                v.split(',')
-                    .map(|s| s.trim().to_string())
-                    .filter(|s| !s.is_empty())
-                    .collect()
-            })
-            .unwrap_or_else(|_| CAPACIDADES_PADRAO.iter().map(|s| s.to_string()).collect());
+        let capabilities = crate::config::lista_de("agente.capacidades")
+            .filter(|v| !v.is_empty())
+            .unwrap_or_else(|| CAPACIDADES_PADRAO.iter().map(|s| s.to_string()).collect());
         let policy = BrowserPolicy {
             allowed_origins: vec![],
             allow_any_public: true,
@@ -105,14 +103,35 @@ impl Montagem {
         // A credencial dos MCP remotos mora no broker `mcp/` da mesma raiz das forjas.
         let mcp_do_operador =
             crate::mcp::carregar_do_ambiente(store.root().parent().unwrap_or(store.root()));
+        // Os pacotes assinados: as skills deles entram na MESMA pasta de skills do agente
+        // (pelo importador), e os outros componentes ficam para a montagem.
+        let (mcp_dos_pacotes, pacotes) = crate::pacotes::do_ambiente_completo(
+            Some(&crate::skills::pasta_do_ambiente(store.root())),
+            crate::arquivos::achar_bwrap(),
+        );
+        // Os subagentes dos pacotes viram papeis da equipe; sem catalogo, a equipe nasce
+        // deles. Papel recusado (nome repetido) e aviso, nunca sobreposicao.
+        let mut equipe = crate::equipe::Equipe::do_ambiente();
+        let papeis_de_pacote: Vec<_> = pacotes
+            .iter()
+            .flat_map(|c| c.agentes.iter().cloned())
+            .collect();
+        if !papeis_de_pacote.is_empty() && equipe.is_err() {
+            equipe = Ok(crate::equipe::Equipe::nova(crate::equipe::pasta_padrao()));
+        }
+        if let Ok(e) = &mut equipe {
+            for m in papeis_de_pacote {
+                if let Err(x) = e.somar(m) {
+                    eprintln!("aviso: {x}");
+                }
+            }
+        }
         Self {
             store,
             capabilities,
             max_steps: 16,
             shell_network: false,
-            estilo: std::env::var("PHXCLAW_ESTILO")
-                .ok()
-                .filter(|e| !e.trim().is_empty()),
+            estilo: crate::config::texto_de("agente.estilo"),
             browser: BrowserSessions::new(policy),
             search: search_backend().ok().map(Arc::from),
             canal: None,
@@ -120,27 +139,40 @@ impl Montagem {
             // passam pela mesma regra de nome livre da montagem.
             mcp: {
                 let mut v = mcp_do_operador;
-                v.extend(crate::pacotes::do_ambiente());
+                v.extend(mcp_dos_pacotes);
                 v
             },
-            equipe: carregar_equipe(crate::equipe::Equipe::do_ambiente()),
+            equipe: carregar_equipe(equipe),
             forjas,
             dispositivos: None,
+            pacotes,
         }
     }
 
     /// Modelo local dos papeis que a planilha roteia para o Ollama
     /// (`PHXCLAW_MODELO_LOCAL`); spec invalida vira aviso, e o papel cai no modelo do pai.
     pub fn modelo_local(&self) -> Option<Arc<dyn Llm>> {
-        let spec = std::env::var(crate::equipe::VAR_MODELO_LOCAL).ok()?;
-        phxclaw_llm::from_env(&spec)
-            .map_err(|e| eprintln!("aviso: {}={spec}: {e}", crate::equipe::VAR_MODELO_LOCAL))
+        let spec = crate::config::texto_de(crate::equipe::CHAVE_MODELO_LOCAL)?;
+        crate::chaves::modelo(&spec, self.raiz_do_agente())
+            .map_err(|e| {
+                eprintln!(
+                    "aviso: {}={spec}: {e}",
+                    crate::config::variavel(crate::equipe::CHAVE_MODELO_LOCAL)
+                )
+            })
             .ok()
     }
 
-    /// Agente para um modelo ("ollama:qwen2.5:1.5b", "openai:...", ...).
+    /// A raiz do agente: onde moram os brokers das chaves pagas (ElevenLabs, Gemini, os
+    /// modelos de nuvem).
+    pub fn raiz_do_agente(&self) -> &std::path::Path {
+        self.store.root().parent().unwrap_or(self.store.root())
+    }
+
+    /// Agente para um modelo ("ollama:qwen2.5:1.5b", "openai:...", ...). A chave do
+    /// provedor de nuvem sai do broker da raiz do agente, nunca do ambiente.
     pub fn agent(&self, model_spec: &str) -> Result<Agent, String> {
-        let llm = phxclaw_llm::from_env(model_spec).map_err(|e| e.to_string())?;
+        let llm = crate::chaves::modelo(model_spec, self.raiz_do_agente())?;
         self.montar(llm)
     }
 
@@ -195,8 +227,7 @@ impl Montagem {
         // feature `desktop`, que liga as bibliotecas de sessao grafica no binario.
         tools.push(Arc::new(crate::visao::OcrTool));
         tools.push(Arc::new(crate::visao::ImageInfoTool));
-        // A raiz do agente e onde moram os brokers das chaves pagas (ElevenLabs, Gemini).
-        let raiz_do_agente = self.store.root().parent().unwrap_or(self.store.root());
+        let raiz_do_agente = self.raiz_do_agente();
         tools.push(Arc::new(crate::visao::TranscribeTool::do_ambiente(
             raiz_do_agente,
         )));
@@ -218,8 +249,8 @@ impl Montagem {
         tools.push(Arc::new(crate::visao::DesktopTool));
         tools.extend(office_tools());
         tools.extend(crate::arquivos::arquivos_tools());
-        let base_url =
-            std::env::var("PHXCLAW_PUBLIC_URL").unwrap_or_else(|_| "http://127.0.0.1:8787".into());
+        let base_url = crate::config::texto_de("api.url_publica")
+            .unwrap_or_else(|| "http://127.0.0.1:8787".into());
         // O canvas e o site publicado sao o mesmo risco (conteudo do agente servido em
         // origem opaca), com a mesma base e a mesma capacidade.
         tools.push(Arc::new(crate::canvas::CanvasTool {
@@ -321,11 +352,19 @@ impl Montagem {
         ) {
             tools.push(Arc::new(x));
         }
+        // `n8n_workflow` so com `n8n.url` configurado; `automacao.n8n` fora do padrao: dispara
+        // fluxos no n8n do operador (docs/N8N.md).
+        if let Some(n) = crate::n8n::N8nTool::da_configuracao(self.raiz_do_agente()) {
+            tools.push(Arc::new(n));
+        }
         // Plugins assinados com o ponto `agent.tool` (`PHXCLAW_PLUGINS_RAIZ`); a capacidade
         // primaria de cada um passa pelo mesmo portao do motor.
         tools.extend(crate::plugins::do_ambiente(
             &self.capabilities.iter().cloned().collect(),
         ));
+        // A loja de plugins (`pacotes.catalogo`): listar, buscar e instalar pacotes
+        // assinados; `plugin.catalog` fica fora do padrao.
+        tools.extend(crate::loja::ferramenta_da_configuracao());
         if let Some(d) = &self.dispositivos {
             tools.extend(crate::dispositivos::DeviceTool::par(
                 d.clone(),
@@ -356,6 +395,7 @@ impl Montagem {
             regras: self.regras(),
             estilo: self.estilo_de_saida(),
             instrucoes_projeto: self.instrucoes_do_projeto(),
+            comandos: self.comandos(),
             prazo_de_resposta: Some(PRAZO_DE_RESPOSTA),
             tentativas_de_argumento: tentativas_de_argumento()?,
             ..AgentConfig::default()
@@ -448,19 +488,48 @@ pub fn pasta_do_projeto() -> Option<std::path::PathBuf> {
 /// A mesma para a configuracao (`.phxclaw`) e para os `AGENTS.md`: duas nocoes de «o
 /// projeto» leriam hooks de um lugar e instrucoes de outro.
 pub fn raiz_do_projeto() -> Option<std::path::PathBuf> {
-    std::env::var_os("PHXCLAW_PROJETO")
-        .map(std::path::PathBuf::from)
-        .or_else(|| std::env::current_dir().ok())
+    crate::config::raiz_do_projeto()
 }
 
 impl Montagem {
+    /// Os hooks do projeto e, atras deles, os dos pacotes assinados (`hooks::somar`).
     fn hooks(&self) -> Option<Arc<crate::hooks::Hooks>> {
-        let p = pasta_do_projeto()?;
-        let h = crate::hooks::Hooks::carregar(&p, crate::arquivos::achar_bwrap())?;
+        let bwrap = crate::arquivos::achar_bwrap();
+        let mut h = match pasta_do_projeto() {
+            Some(p) => crate::hooks::Hooks::carregar(&p, bwrap.clone())
+                .unwrap_or_else(|| crate::hooks::Hooks::vazio(p, bwrap)),
+            None => crate::hooks::Hooks::vazio(std::path::PathBuf::from("."), bwrap),
+        };
         if let Some(e) = &h.erro {
             eprintln!("aviso: {e}: PreToolUse fechado ate o arquivo se ler");
         }
+        for c in &self.pacotes {
+            if let Some(ph) = &c.hooks {
+                h.somar(ph.clone());
+            }
+        }
+        if h.is_empty() {
+            return None;
+        }
         Some(Arc::new(h))
+    }
+
+    /// Os comandos de barra: os do projeto primeiro, depois os dos pacotes.
+    fn comandos(&self) -> Option<Arc<crate::comandos::ComandosDeBarra>> {
+        let mut c = crate::comandos::ComandosDeBarra::default();
+        let (do_projeto, avisos) = crate::comandos::do_projeto();
+        let mut avisos = avisos;
+        avisos.extend(c.somar_todos(do_projeto));
+        for p in &self.pacotes {
+            avisos.extend(c.somar_todos(p.comandos.clone()));
+        }
+        for a in avisos {
+            eprintln!("aviso: {a}");
+        }
+        if c.is_empty() {
+            return None;
+        }
+        Some(Arc::new(c))
     }
 
     /// Arquivo de regras ilegivel nega todo comando: o operador escreveu regra para

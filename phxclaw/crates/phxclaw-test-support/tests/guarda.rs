@@ -120,6 +120,39 @@ fn pulo_calado_plantado_reprova() {
     let _ = std::fs::remove_dir_all(&r);
 }
 
+/// RED da regra 3 (SP000020): o `return;` dentro de um bloco condicionado a recurso --
+/// `is_none()` de uma sonda, `which`, `Path::exists` -- sem `pular(` reprova; com o
+/// `pular(` no bloco passa; o `is_err()` que nao e recurso passa SO declarado com o motivo.
+#[test]
+fn retorno_condicionado_sem_registro_reprova() {
+    let r = copia("red3");
+    planta(
+        &r,
+        "crates/x/tests/a.rs",
+        "#[test]\nfn t() {\n    if phxclaw_browser::find_chromium().is_none() {\n        return;\n    }\n    if !std::path::Path::new(\"/x\").exists() {\n        eprintln!(\"sem\");\n        return Ok(());\n    }\n    if which(\"hx\").is_err() {\n        return;\n    }\n}\n",
+    );
+    let achados = pulos_calados(&r);
+    let linhas: Vec<(usize, &str)> = achados.iter().map(|a| (a.linha, a.regra)).collect();
+    assert_eq!(
+        linhas,
+        vec![
+            (4, "retorno-condicionado-sem-registro"),
+            (8, "retorno-condicionado-sem-registro"),
+            (11, "retorno-condicionado-sem-registro"),
+        ],
+        "{achados:#?}"
+    );
+    let _ = std::fs::remove_dir_all(&r);
+    // GREEN: registrado (mesmo com o `pular(` a quatro linhas, quebrado pelo rustfmt), ou
+    // declarado como nao-pulo.
+    let g = "fn t() {\n    if !p.is_file() {\n        pulado::pular(\n            \"print\",\n            \"rode antes o navegador\",\n        );\n        return;\n    }\n    if s.send(x).await.is_err() {\n        // nao e pulo: o cliente fechou o soquete do servidor falso.\n        return;\n    }\n    if r.is_err() {\n        return Err(e);\n    }\n}\n";
+    assert!(
+        pulos_calados_no_texto("g.rs", g).is_empty(),
+        "{:#?}",
+        pulos_calados_no_texto("g.rs", g)
+    );
+}
+
 /// GREEN: o mesmo pulo pelo `pulado::pular` passa -- inclusive com o `pular(` quebrado em
 /// linhas pelo rustfmt, e com a string «pulado» a ate tres linhas dele.
 #[test]

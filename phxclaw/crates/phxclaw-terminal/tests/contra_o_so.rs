@@ -214,3 +214,45 @@ fn saida_do_filho_chega_na_atualizacao_e_escrever_depois_falha() {
     assert_eq!(saida.codigo, Some(7));
     assert!(t.escrever(b"x").is_err());
 }
+
+/// O Helix sobe no PTY do motor e desenha a linha de estado (`NOR`) -- a prova de que o
+/// `helix::programa` monta um hx que roda, e nao so um caminho que existe. Sem hx no
+/// hospedeiro, nada a provar. Medido aqui porque `hx .` sob um pty de 0x0 (o `script` sem
+/// tamanho) estoura no picker; o motor abre com tamanho real.
+#[test]
+fn o_helix_sobe_no_pty_e_desenha_a_linha_de_estado() {
+    if phxclaw_terminal::helix::achar(None).is_none() {
+        phxclaw_test_support::pulado::pular("hx", "hx ausente neste hospedeiro");
+        return;
+    }
+    let dir = std::env::temp_dir().join(format!("phx-term-hx-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("a.rs"), "fn main() {}\n").unwrap();
+    let p = phxclaw_terminal::helix::programa(&dir, None, vec![]).unwrap();
+    let t = phxclaw_terminal::Terminal::abrir(
+        p,
+        phxclaw_terminal::Tamanho {
+            colunas: 100,
+            linhas: 30,
+        },
+        |_| {},
+    )
+    .unwrap();
+    let fim = std::time::Instant::now() + std::time::Duration::from_secs(20);
+    let mut texto = String::new();
+    while std::time::Instant::now() < fim {
+        texto = t.texto();
+        if phxclaw_terminal::helix::arquivo_corrente(&texto).is_some() || texto.contains("NOR") {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(200));
+    }
+    assert!(
+        texto.contains("NOR"),
+        "o Helix nao desenhou: encerrado={:?}\n{texto}",
+        t.encerrado()
+    );
+    drop(t);
+    let _ = std::fs::remove_dir_all(&dir);
+}

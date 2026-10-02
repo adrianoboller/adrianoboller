@@ -90,6 +90,9 @@ pub struct Comando {
     pub matcher: Option<String>,
     pub linha: String,
     pub prazo: Duration,
+    /// A pasta montada em `/hooks` para ESTE comando (`None`: a do `Hooks`). Um hook de
+    /// pacote assinado roda com a raiz do pacote em `/hooks`, nao com a do projeto.
+    pub pasta: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone)]
@@ -137,6 +140,7 @@ impl Hooks {
                         matcher: g.matcher.clone().filter(|m| !m.trim().is_empty()),
                         linha: c.command,
                         prazo: Duration::from_secs(c.timeout.unwrap_or(60).clamp(1, 600)),
+                        pasta: None,
                     });
                 }
             }
@@ -168,6 +172,37 @@ impl Hooks {
                 comandos: BTreeMap::new(),
                 erro: Some(format!("{}: {e}", arquivo.display())),
             }),
+        }
+    }
+
+    /// Hooks sem comando nenhum (a base em que os de pacote se somam).
+    pub fn vazio(pasta: PathBuf, bwrap: Option<PathBuf>) -> Self {
+        Self {
+            pasta,
+            bwrap,
+            comandos: BTreeMap::new(),
+            erro: None,
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.comandos.values().all(Vec::is_empty) && self.erro.is_none()
+    }
+
+    /// Soma os comandos de `outro` (um pacote assinado), cada um amarrado a pasta de
+    /// origem dele: o `/hooks` que o comando ve e o do pacote. Os do projeto, que ja
+    /// estavam aqui, continuam na frente -- o operador dispara antes do pacote.
+    pub fn somar(&mut self, outro: Hooks) {
+        for (ev, lista) in outro.comandos {
+            for mut c in lista {
+                if c.pasta.is_none() {
+                    c.pasta = Some(outro.pasta.clone());
+                }
+                self.comandos.entry(ev).or_default().push(c);
+            }
+        }
+        if self.erro.is_none() {
+            self.erro = outro.erro;
         }
     }
 
@@ -224,7 +259,10 @@ impl Hooks {
                 max_output_bytes: 16 * 1024,
             };
             let extras = SandboxExtras {
-                ro_binds: vec![(self.pasta.clone(), "/hooks".into())],
+                ro_binds: vec![(
+                    c.pasta.clone().unwrap_or_else(|| self.pasta.clone()),
+                    "/hooks".into(),
+                )],
                 env: vec![
                     ("PHXCLAW_HOOK_INPUT".into(), texto.clone()),
                     ("PHXCLAW_HOOK_EVENT".into(), ev.nome().into()),

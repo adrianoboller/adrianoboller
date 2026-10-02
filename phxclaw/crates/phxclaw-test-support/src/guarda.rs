@@ -8,7 +8,17 @@
 //!    `pular(` ao lado -- o `eprintln!` de teste que passa e capturado, entao nem a linha
 //!    aparece;
 //! 2. `let Ok(..) = std::env::var(..) else { return }` (ou `if env::var(..).is_err() {
-//!    return }`) sem `pular(` dentro do bloco -- o pulo que nem imprime.
+//!    return }`) sem `pular(` dentro do bloco -- o pulo que nem imprime;
+//! 3. (SP000020, 02/10/2026) o `return;`/`return Ok(())` dentro de QUALQUER bloco
+//!    condicionado a um recurso -- `which`, `Path::exists`/`is_file`/`is_dir`, `is_ok()`/
+//!    `is_err()`/`is_none()` de uma sonda, `env::var` fora da forma da regra 2 -- sem
+//!    `pular(` entre a abertura do bloco e o `return`. E a forma que a regra 2 nao via:
+//!    `if find_chromium().is_none() { return; }` sai `ok` e entra no placar como passou.
+//!    O pedido dizia «a ate tres linhas»; medido no repositorio, o `pular(` com dois
+//!    argumentos quebrado pelo rustfmt fica a QUATRO linhas do `return` (visao.rs:19-23),
+//!    entao a janela e o bloco, que e onde quem registra registra. O `is_err()` que nao e
+//!    sonda de recurso (um `send` de teste que falha) se declara com `// nao e pulo:` e o
+//!    motivo, na linha do `return` ou na de cima.
 //!
 //! Por que em Rust, e nao so no `numeros.py` do dossie: o dossie CONTA (e publica a lista);
 //! esta guarda REPROVA, na suite, no mesmo `cargo test` que o pulo tentaria enganar. Os dois
@@ -23,7 +33,8 @@ pub struct Achado {
     /// Caminho relativo a raiz varrida.
     pub arquivo: String,
     pub linha: usize,
-    /// `texto-de-pulo-sem-registro` ou `recurso-ausente-sem-registro`.
+    /// `texto-de-pulo-sem-registro`, `recurso-ausente-sem-registro` ou
+    /// `retorno-condicionado-sem-registro`.
     pub regra: &'static str,
     pub trecho: String,
 }
@@ -132,11 +143,87 @@ fn abre_bloco_de_ambiente(linha: &str) -> bool {
         || (t.starts_with("if ") && t.contains(".is_err()") && t.ends_with('{'))
 }
 
+/// As sondas de recurso que a regra 3 reconhece numa condicao. A lista e curta e literal
+/// de proposito: e o que um teste pergunta a maquina antes de desistir.
+const SONDAS: &[&str] = &[
+    "env::var",
+    "which(",
+    "which::",
+    ".exists()",
+    ".is_file()",
+    ".is_dir()",
+    ".is_ok()",
+    ".is_err()",
+    ".is_none()",
+];
+
+/// A regra 3 olha todo bloco `if ... {` / `let ... else {` cuja condicao sonda um recurso.
+fn abre_bloco_condicionado(linha: &str) -> bool {
+    let t = linha.trim();
+    if t.starts_with("//") || !t.ends_with('{') {
+        return false;
+    }
+    let abre = t.starts_with("if ")
+        || t.starts_with("} else if ")
+        || t.starts_with("else if ")
+        || (t.starts_with("let ") && t.ends_with("else {"));
+    abre && SONDAS.iter().any(|s| t.contains(s))
+}
+
+/// O `return` que sai calado: `return;` ou `return Ok(());` -- o que devolve valor nao e
+/// pulo, e decisao do teste.
+fn retorno_calado(linha: &str) -> bool {
+    matches!(linha.trim(), "return;" | "return Ok(());")
+}
+
+/// O indice da linha que fecha o bloco aberto em `i` (chaves contadas por caractere).
+fn fim_do_bloco(linhas: &[&str], i: usize) -> usize {
+    let mut nivel = 0i32;
+    for (j, l) in linhas.iter().enumerate().skip(i) {
+        for c in l.chars() {
+            match c {
+                '{' => nivel += 1,
+                '}' => {
+                    nivel -= 1;
+                    if nivel == 0 {
+                        return j;
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    i
+}
+
 /// Os lugares calados de UM arquivo (o nome so entra no achado).
 pub fn pulos_calados_no_texto(arquivo: &str, texto: &str) -> Vec<Achado> {
     let linhas: Vec<&str> = texto.lines().collect();
     let mut saida = vec![];
     for (i, lin) in linhas.iter().enumerate() {
+        // Regra 3: o retorno calado num bloco condicionado a recurso. Quando a regra 2 ja
+        // acusa o mesmo bloco (a forma classica do `env::var`), ela fala sozinha -- um
+        // achado por bloco, no lugar onde quem corrige vai olhar.
+        if abre_bloco_condicionado(lin) && !abre_bloco_de_ambiente(lin) {
+            let fim = fim_do_bloco(&linhas, i);
+            for j in i..=fim {
+                if !retorno_calado(linhas[j]) {
+                    continue;
+                }
+                let registra = linhas[i..=j].iter().any(|l| l.contains("pular("));
+                let declarado = linhas[j.saturating_sub(1)..=j]
+                    .iter()
+                    .any(|l| l.contains("// nao e pulo:"));
+                if !registra && !declarado {
+                    saida.push(Achado {
+                        arquivo: arquivo.into(),
+                        linha: j + 1,
+                        regra: "retorno-condicionado-sem-registro",
+                        trecho: format!("{} ... {}", lin.trim(), linhas[j].trim()),
+                    });
+                }
+            }
+        }
         if texto_de_pulo(lin) {
             // «ao lado» = ate tres linhas para cada lado: o `pular(` com os argumentos
             // quebrados pelo rustfmt fica a uma ou duas linhas da string.

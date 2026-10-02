@@ -7,6 +7,9 @@
 //! - **Servidor**: `servir` expoe por stdio as ferramentas de um `Agent` ja montado. A
 //!   lista e a do `Agent::visible_specs` e a chamada e a do `Agent::call_tool`: o mesmo
 //!   portao de capacidade e a mesma evidencia do laco do modelo, e nao uma copia deles.
+//!   `rotas` expoe o MESMO `responder` por streamable HTTP (`POST /mcp` do `servir`, com
+//!   o Bearer da API), que e o transporte que o MCP Client Tool do n8n e os clientes
+//!   remotos aceitam; stdio continua para o Claude Desktop e os editores.
 //!
 //! O fio (JSON-RPC, `initialize`, `tools/list`, `tools/call`) mora no
 //! `phxclaw-mcp-lsp-runtime`; aqui so se decide politica e ciclo de vida.
@@ -20,10 +23,10 @@ use phxclaw_evidence_ledger::EvidenceLedger;
 use phxclaw_mcp_lsp_runtime::{
     Cancellation, CapabilityPolicy, DEFAULT_MAX_FRAME_BYTES, HttpEndpointPolicy,
     JSONRPC_INVALID_PARAMS, JSONRPC_INVALID_REQUEST, JSONRPC_METHOD_NOT_FOUND, JSONRPC_PARSE_ERROR,
-    McpStdioSession, McpStreamableHttpClient, McpToolDescriptor, ProcessSecurityPolicy,
-    ProcessSpec, RuntimeAudit, RuntimeError, SessionPolicy, Url, encode_mcp_line, jsonrpc_error,
-    jsonrpc_result, negotiate_server_version, normalize_mcp_name, qualified_tool_name,
-    tool_call_result, tool_result_is_error, tool_result_text, tools_list_result,
+    McpStdioSession, McpStreamableHttpClient, McpToolDescriptor, ProcessSpec, RuntimeAudit,
+    RuntimeError, SessionPolicy, Url, encode_mcp_line, jsonrpc_error, jsonrpc_result,
+    negotiate_server_version, normalize_mcp_name, qualified_tool_name, tool_call_result,
+    tool_result_is_error, tool_result_text, tools_list_result,
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -33,7 +36,8 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
-pub const VARIAVEL_CONFIG: &str = "PHXCLAW_MCP_CONFIG";
+/// Chave do arquivo de declaracao dos servidores MCP (`PHXCLAW_MCP_CONFIG`).
+pub const CHAVE_CONFIG: &str = "mcp.config";
 const CLIENTE: &str = "phxclaw";
 const VERSAO: &str = env!("CARGO_PKG_VERSION");
 /// Teto do texto devolvido ao modelo por chamada; o motor corta de novo no proprio teto.
@@ -167,10 +171,9 @@ impl ServidorDeclarado {
 }
 
 enum Transporte {
-    Stdio {
-        spec: ProcessSpec,
-        seguranca: ProcessSecurityPolicy,
-    },
+    /// A politica de processo nasce na hora do spawn, em `processo::servidor_no_bwrap`: o
+    /// executavel permitido e o bwrap, e o comando do operador vai no argv dele.
+    Stdio { spec: ProcessSpec },
     Http {
         url: Url,
         origem: HttpEndpointPolicy,
@@ -242,14 +245,6 @@ impl ServidorMcp {
                 {
                     env.insert("PATH".into(), p);
                 }
-                // A politica de processo do runtime nega tudo por padrao; a declaracao do
-                // operador e exatamente o que ela libera, e nada alem.
-                let seguranca = ProcessSecurityPolicy {
-                    allowed_executables: BTreeSet::from([executable.clone()]),
-                    allowed_cwd_roots: vec![cwd.clone()],
-                    allowed_env_keys: env.keys().cloned().collect(),
-                    ..ProcessSecurityPolicy::default()
-                };
                 Transporte::Stdio {
                     spec: ProcessSpec {
                         executable,
@@ -257,7 +252,6 @@ impl ServidorMcp {
                         cwd,
                         env,
                     },
-                    seguranca,
                 }
             }
             (None, Some(u)) => {
@@ -327,10 +321,14 @@ impl ServidorMcp {
         };
         let auditoria = RuntimeAudit::new("phxclaw-agent", None);
         match &self.transporte {
-            Transporte::Stdio { spec, seguranca } => {
+            Transporte::Stdio { spec, .. } => {
+                // O comando do operador nasce no bwrap do shell, nao no hospedeiro: a
+                // politica do runtime passa a liberar o bwrap, e o resto vai no argv dele.
+                let (spec, seguranca) =
+                    crate::processo::servidor_no_bwrap(spec).map_err(RuntimeError::ProcessSpec)?;
                 let mut s = McpStdioSession::spawn(
-                    spec,
-                    seguranca,
+                    &spec,
+                    &seguranca,
                     sessao,
                     self.politica_de_metodos(),
                     auditoria,
@@ -505,6 +503,15 @@ impl Tool for McpTool {
     fn capability(&self) -> &'static str {
         self.servidor.capacidade
     }
+    /// Servidor por stdio nasce como processo na primeira chamada: a regra de comando do
+    /// operador o alcanca pelo nome da ferramenta (`mcp__servidor__ferramenta`). O de
+    /// `url` nao cria processo e fica so com a capacidade.
+    fn comando_de_shell(&self, _args: &Value) -> Option<String> {
+        match self.servidor.transporte {
+            Transporte::Stdio { .. } => Some(self.spec.name.clone()),
+            Transporte::Http { .. } => None,
+        }
+    }
     fn run<'a>(
         &'a self,
         args: Value,
@@ -669,7 +676,8 @@ fn carregar_config_em(
 /// A declaracao de `nome` no arquivo de `PHXCLAW_MCP_CONFIG`, com o preset aplicado: o que
 /// o `phxclaw mcp login` usa, pela mesma leitura da montagem.
 pub fn declarado_no_ambiente(nome: &str) -> Result<ServidorDeclarado, String> {
-    let caminho = std::env::var_os(VARIAVEL_CONFIG).ok_or(format!("falta {VARIAVEL_CONFIG}"))?;
+    let var = crate::config::variavel(CHAVE_CONFIG);
+    let caminho = crate::config::caminho_de(CHAVE_CONFIG).ok_or(format!("falta {var}"))?;
     let cfg: ConfigMcp = std::fs::read(&caminho)
         .map_err(|e| e.to_string())
         .and_then(|b| serde_json::from_slice(&b).map_err(|e| e.to_string()))?;
@@ -677,19 +685,17 @@ pub fn declarado_no_ambiente(nome: &str) -> Result<ServidorDeclarado, String> {
     cfg.servidores
         .iter()
         .find(|d| normalize_mcp_name(d.nome.trim()) == alvo)
-        .ok_or(format!(
-            "servidor '{nome}' nao declarado em {VARIAVEL_CONFIG}"
-        ))?
+        .ok_or(format!("servidor '{nome}' nao declarado em {var}"))?
         .resolvida()
 }
 
 /// O que a montagem chama: le `PHXCLAW_MCP_CONFIG`, escreve os avisos no stderr (o
 /// stdout do `mcp-serve` e o fio do protocolo) e devolve as ferramentas.
 pub fn carregar_do_ambiente(raiz_do_agente: &Path) -> Vec<Arc<dyn Tool>> {
-    let Some(caminho) = std::env::var_os(VARIAVEL_CONFIG) else {
+    let Some(caminho) = crate::config::caminho_de(CHAVE_CONFIG) else {
         return vec![];
     };
-    let (tools, avisos) = carregar_em(Path::new(&caminho), Some(raiz_do_agente));
+    let (tools, avisos) = carregar_em(&caminho, Some(raiz_do_agente));
     for a in avisos {
         eprintln!("aviso: MCP: {a}");
     }
@@ -752,6 +758,133 @@ where
         t.finish(&task_id).await;
     }
     r
+}
+
+// ------------------------------------------------------------------ streamable HTTP
+
+/// Cabecalho de sessao do streamable HTTP (MCP 2025-03-26). Aqui a sessao e so a pasta de
+/// trabalho e a evidencia: o cliente propoe o id, o servidor confina a forma dele.
+const SESSAO: &str = "mcp-session-id";
+
+/// `POST /mcp` no router da API (`servir`): o mesmo `responder` do stdio, uma mensagem por
+/// pedido, resposta em JSON (o streamable HTTP aceita `application/json` no lugar do SSE
+/// quando a resposta e uma so). GET e 405 porque o servidor nao inicia fluxo nenhum, e
+/// DELETE e 204: a sessao nao segura nada alem da pasta.
+///
+/// O agente nasce por pedido pela `factory` da API, com o modelo padrao: e a mesma
+/// montagem de uma tarefa, e o portao de capacidade e o dela. Custa a montagem por
+/// chamada -- medido como aceitavel para o laco do n8n, que chama uma ferramenta por no.
+pub fn rotas() -> axum::Router<crate::api::ApiState> {
+    axum::Router::new().route(
+        "/mcp",
+        axum::routing::post(mcp_http)
+            .get(|| async { axum::http::StatusCode::METHOD_NOT_ALLOWED })
+            .delete(|| async { axum::http::StatusCode::NO_CONTENT }),
+    )
+}
+
+/// O id de sessao: o cliente repete o que o `initialize` devolveu. So vale a forma de
+/// UUID (hex e `-`, ate 64), porque ele vira nome de pasta sob `tasks/` pelo mesmo
+/// `safe_id` das tarefas; qualquer outra coisa ganha um id novo, devolvido no cabecalho.
+fn sessao_de(h: &axum::http::HeaderMap) -> String {
+    h.get(SESSAO)
+        .and_then(|v| v.to_str().ok())
+        .map(str::trim)
+        .filter(|s| {
+            (1..=64).contains(&s.len()) && s.chars().all(|c| c.is_ascii_hexdigit() || c == '-')
+        })
+        .map(str::to_string)
+        .unwrap_or_else(|| phxclaw_types::new_uuid_v7().to_string())
+}
+
+async fn mcp_http(
+    axum::extract::State(s): axum::extract::State<crate::api::ApiState>,
+    h: axum::http::HeaderMap,
+    corpo: axum::body::Bytes,
+) -> axum::response::Response {
+    use axum::http::StatusCode;
+    use axum::response::IntoResponse;
+    if let Err(e) = crate::api::auth(&s, &h) {
+        return e.into_response();
+    }
+    if corpo.len() > DEFAULT_MAX_FRAME_BYTES {
+        return (
+            StatusCode::PAYLOAD_TOO_LARGE,
+            axum::Json(jsonrpc_error(
+                Value::Null,
+                JSONRPC_INVALID_REQUEST,
+                "mensagem grande demais",
+            )),
+        )
+            .into_response();
+    }
+    let v: Value = match serde_json::from_slice(&corpo) {
+        Ok(v) => v,
+        Err(e) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                axum::Json(jsonrpc_error(
+                    Value::Null,
+                    JSONRPC_PARSE_ERROR,
+                    &e.to_string(),
+                )),
+            )
+                .into_response();
+        }
+    };
+    // Notificacao e resposta do cliente nao tem resposta: 202 sem corpo, como o transporte manda.
+    if v.get("id").is_none() && v.get("method").is_some() {
+        return StatusCode::ACCEPTED.into_response();
+    }
+    let sessao = sessao_de(&h);
+    let agente = match (s.factory)(&s.default_model) {
+        Ok(a) => a,
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                axum::Json(jsonrpc_error(
+                    v.get("id").cloned().unwrap_or(Value::Null),
+                    JSONRPC_INVALID_REQUEST,
+                    &e,
+                )),
+            )
+                .into_response();
+        }
+    };
+    let workdir = s.store.workdir(&sessao);
+    let ledger = match std::fs::create_dir_all(&workdir)
+        .map_err(|e| e.to_string())
+        .and_then(|_| {
+            EvidenceLedger::open(s.store.evidence_path(&sessao)).map_err(|e| e.to_string())
+        }) {
+        Ok(l) => l,
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                axum::Json(json!({"error": e})),
+            )
+                .into_response();
+        }
+    };
+    let ctx = ToolContext {
+        task_id: sessao.clone(),
+        workdir,
+        timeout: agente.config.tool_timeout,
+    };
+    let resposta = responder(&agente, &ctx, &ledger, v).await;
+    // O que a ferramenta segurou para a chamada (sessao de navegador, processo MCP filho)
+    // se solta aqui: nao ha fim de fio para solta-lo depois.
+    for t in &agente.tools {
+        t.finish(&sessao).await;
+    }
+    let corpo = resposta
+        .unwrap_or_else(|| jsonrpc_error(Value::Null, JSONRPC_INVALID_REQUEST, "nao e JSON-RPC"));
+    (
+        StatusCode::OK,
+        [(SESSAO, sessao.clone())],
+        axum::Json(corpo),
+    )
+        .into_response()
 }
 
 /// Uma linha de JSON-RPC lida com teto: o `mcp-serve` e o `acp` leem o fio pela MESMA

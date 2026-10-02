@@ -18,13 +18,13 @@ pub struct OctopusBridgeConfig {
 }
 
 impl OctopusBridgeConfig {
+    /// `pontes.octopus.*` do config.json (ambiente `PHXCLAW_OCTOPUS_*` por cima).
     pub fn from_env() -> Self {
+        use phxclaw_config_runtime::agente::carga::caminho_do_processo;
         Self {
-            executable: std::env::var_os("PHXCLAW_OCTOPUS_BIN")
-                .map(PathBuf::from)
+            executable: caminho_do_processo("pontes.octopus.bin")
                 .unwrap_or_else(|| PathBuf::from("octopus-console")),
-            workspace_root: std::env::var_os("PHXCLAW_OCTOPUS_WORKSPACE")
-                .map(PathBuf::from)
+            workspace_root: caminho_do_processo("pontes.octopus.workspace")
                 .unwrap_or_else(|| PathBuf::from(".")),
             timeout_ms: 120_000,
             max_output_bytes: 8 * 1024 * 1024,

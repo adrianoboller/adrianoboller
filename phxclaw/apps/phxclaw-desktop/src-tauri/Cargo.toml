@@ -13,6 +13,9 @@ name = "phxclaw-desktop"
 path = "src/main.rs"
 
 [dependencies]
+# O config.json do agente, pelo leitor de processo (SP000020): leitura de PHXCLAW_* fora
+# do ponto unico e reprovada pela catraca de tools/config_catalogo.py.
+phxclaw-config-runtime = { path = "../../../crates/phxclaw-config-runtime" }
 phxclaw-secret-broker = { path = "../../../crates/phxclaw-secret-broker" }
 chrono.workspace = true
 serde.workspace = true

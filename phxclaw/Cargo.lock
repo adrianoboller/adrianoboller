@@ -3974,6 +3974,7 @@ dependencies = [
  "phxclaw-channel-gateway",
  "phxclaw-channel-providers",
  "phxclaw-checkpoint",
+ "phxclaw-community-registry",
  "phxclaw-config-runtime",
  "phxclaw-device-nodes",
  "phxclaw-device-transport",
@@ -3995,6 +3996,7 @@ dependencies = [
  "phxclaw-skill-runtime",
  "phxclaw-system-automation",
  "phxclaw-task-graph",
+ "phxclaw-terminal",
  "phxclaw-test-support",
  "phxclaw-types",
  "phxclaw-ui-ir",
@@ -4231,6 +4233,7 @@ version = "0.70.0"
 dependencies = [
  "base64 0.22.1",
  "futures-util",
+ "phxclaw-config-runtime",
  "phxclaw-test-support",
  "serde",
  "serde_json",
@@ -4303,6 +4306,7 @@ dependencies = [
 name = "phxclaw-claw-code-bridge"
 version = "0.70.0"
 dependencies = [
+ "phxclaw-config-runtime",
  "serde",
  "serde_json",
  "thiserror 2.0.21",
@@ -4382,6 +4386,7 @@ version = "0.70.0"
 dependencies = [
  "chrono",
  "phxclaw-api-gateway",
+ "phxclaw-config-runtime",
  "phxclaw-desktop-protocol",
  "phxclaw-event-bus",
  "phxclaw-evidence-ledger",
@@ -4420,6 +4425,7 @@ version = "0.70.0"
 dependencies = [
  "phxclaw-agent",
  "phxclaw-agent-core",
+ "phxclaw-config-runtime",
  "phxclaw-device-nodes",
  "phxclaw-device-transport",
  "phxclaw-key-provider",
@@ -4827,6 +4833,7 @@ dependencies = [
  "anyhow",
  "phxclaw-agent-catalog",
  "phxclaw-code-workspace",
+ "phxclaw-config-runtime",
  "phxclaw-evidence-ledger",
  "phxclaw-live-bus",
  "phxclaw-mission-runtime",
@@ -4924,6 +4931,7 @@ dependencies = [
 name = "phxclaw-octopus-bridge"
 version = "0.70.0"
 dependencies = [
+ "phxclaw-config-runtime",
  "serde",
  "serde_json",
  "thiserror 2.0.21",
@@ -4988,6 +4996,7 @@ dependencies = [
 name = "phxclaw-openclaw-rs-bridge"
 version = "0.70.0"
 dependencies = [
+ "phxclaw-config-runtime",
  "serde",
  "serde_json",
  "thiserror 2.0.21",
@@ -5244,6 +5253,7 @@ dependencies = [
 name = "phxclaw-rustclaw-bridge"
 version = "0.70.0"
 dependencies = [
+ "phxclaw-config-runtime",
  "serde",
  "serde_json",
  "thiserror 2.0.21",
@@ -5319,6 +5329,7 @@ dependencies = [
  "axum",
  "phxclaw-agent",
  "phxclaw-agent-core",
+ "phxclaw-config-runtime",
  "phxclaw-types",
  "reqwest",
  "serde",
@@ -5399,6 +5410,7 @@ dependencies = [
 name = "phxclaw-snippet-ls"
 version = "0.70.0"
 dependencies = [
+ "phxclaw-config-runtime",
  "serde_json",
 ]
 
@@ -5485,6 +5497,7 @@ version = "0.70.0"
 dependencies = [
  "alacritty_terminal",
  "libc",
+ "phxclaw-test-support",
  "serde",
  "serde_json",
 ]
@@ -5523,6 +5536,7 @@ name = "phxclaw-web-search"
 version = "0.70.0"
 dependencies = [
  "phxclaw-agent-core",
+ "phxclaw-config-runtime",
  "phxclaw-egress-broker",
  "phxclaw-http-client",
  "serde",

@@ -326,6 +326,20 @@ const FIXAS: &[L] = &[
         ),
         LOCALIZA,
     ),
+    // --- perfil (uma camada por cima da pasta, como o perfil do VS Code) ---
+    a(
+        "perfil.ativo",
+        "PHXCLAW_PERFIL",
+        T,
+        (
+            "Perfil de configuração desta execução (um nome de `perfis` do config.json da pasta)",
+            "Configuration profile for this run (a name from `perfis` in the folder's config.json)",
+        ),
+        (
+            "escolhe o perfil de UMA execução; o persistente é o campo perfil_ativo do config.json da pasta",
+            "picks the profile for ONE run; the persistent one is the perfil_ativo field of the folder's config.json",
+        ),
+    ),
     // --- API, ponte e dispositivos ---
     c(
         "api.host",
@@ -747,6 +761,20 @@ const FIXAS: &[L] = &[
         Some(("imagem", "imagem", "imagem-chave")),
     ),
     s(
+        "openai.chave",
+        "PHXCLAW_OPENAI_API_KEY",
+        ("Chave da OpenAI (modelos openai:*)", "OpenAI key (openai:* models)"),
+        "phxclaw openai chave",
+        Some(("openai", "openai", "openai-chave")),
+    ),
+    s(
+        "anthropic.chave",
+        "PHXCLAW_ANTHROPIC_API_KEY",
+        ("Chave da Anthropic (modelos anthropic:*)", "Anthropic key (anthropic:* models)"),
+        "phxclaw anthropic chave",
+        Some(("anthropic", "anthropic", "anthropic-chave")),
+    ),
+    s(
         "gemini.chave",
         "PHXCLAW_GEMINI_API_KEY",
         ("Chave do Gemini (nanobanana)", "Gemini key (nanobanana)"),
@@ -773,6 +801,34 @@ const FIXAS: &[L] = &[
         ("Chave da xAI", "xAI key"),
         "phxclaw xai chave",
         Some(("xai", "xai", "xai-chave")),
+    ),
+    // --- n8n (ferramenta n8n_workflow e gatilhos; docs/N8N.md) ---
+    c(
+        "n8n.url",
+        "PHXCLAW_N8N_URL",
+        T,
+        None,
+        (
+            "Origem do n8n do operador (ex.: http://127.0.0.1:5678); vazio = sem n8n_workflow",
+            "Operator's n8n origin (e.g. http://127.0.0.1:5678); empty = no n8n_workflow",
+        ),
+    ),
+    s(
+        "n8n.chave",
+        "PHXCLAW_N8N_API_KEY",
+        ("Chave da API pública do n8n (list/status)", "n8n public API key (list/status)"),
+        "phxclaw n8n chave",
+        Some(("n8n", "n8n", "n8n-chave")),
+    ),
+    s(
+        "n8n.webhook_segredo",
+        "PHXCLAW_N8N_WEBHOOK_SEGREDO",
+        (
+            "Segredo que assina o run do n8n_workflow (HMAC ou Header Auth)",
+            "Secret signing n8n_workflow run (HMAC or Header Auth)",
+        ),
+        "phxclaw n8n segredo",
+        Some(("n8n", "n8n", "n8n-webhook-segredo")),
     ),
     // --- e-mail (ferramenta send_email) ---
     c(
@@ -950,6 +1006,16 @@ const FIXAS: &[L] = &[
             "Folder of the signed packages (Claude/Codex)",
         ),
     ),
+    c(
+        "pacotes.catalogo",
+        "PHXCLAW_PACOTES_CATALOGO",
+        T,
+        None,
+        (
+            "Catálogo da loja de plugins (URL https ou arquivo JSON local); vazio = sem loja",
+            "Plugin store catalog (https URL or local JSON file); empty = no store",
+        ),
+    ),
     // --- rede, banco, navegador, ferramentas ---
     c(
         "rede.destinos",
@@ -1096,6 +1162,37 @@ const FIXAS: &[L] = &[
         (
             "Raízes extras do workspace além da pasta do projeto (também em .phxclaw/workspace.json); o IDE as expõe ao terminal",
             "Extra workspace roots besides the project folder (also in .phxclaw/workspace.json); the IDE exposes them to the terminal",
+        ),
+    ),
+    // --- IDE no navegador: completacao por IA (snippet-ls -> /v1/ide/completar) ---
+    c(
+        "ide.ia_tokens",
+        "PHXCLAW_IDE_IA_TOKENS",
+        I,
+        Some("64"),
+        (
+            "Teto de tokens de uma completação por IA no editor (o modelo é o do agente)",
+            "Token cap of one AI completion in the editor (the model is the agent's)",
+        ),
+    ),
+    c(
+        "ide.ia_ms",
+        "PHXCLAW_IDE_IA_MS",
+        I,
+        Some("6000"),
+        (
+            "Teto de tempo (ms) de uma completação por IA no editor",
+            "Time cap (ms) of one AI completion in the editor",
+        ),
+    ),
+    c(
+        "ide.api_url",
+        "PHXCLAW_IDE_API_URL",
+        T,
+        None,
+        (
+            "URL por onde o editor fala com este agente (padrão: o Host da conexão do IDE)",
+            "URL the editor uses to reach this agent (default: the Host of the IDE connection)",
         ),
     ),
     // --- app de mesa ---
@@ -1288,6 +1385,16 @@ const FIXAS: &[L] = &[
         ),
     ),
     // --- exportadas ao processo filho ---
+    a(
+        "exportadas.ia_completar",
+        "PHXCLAW_IA_COMPLETAR",
+        T,
+        (
+            "URL da completação por IA que o agente dá ao Helix (lida pelo phxclaw-snippet-ls)",
+            "AI completion URL the agent hands to Helix (read by phxclaw-snippet-ls)",
+        ),
+        EXPORTADA,
+    ),
     a(
         "exportadas.hook_entrada",
         "PHXCLAW_HOOK_INPUT",

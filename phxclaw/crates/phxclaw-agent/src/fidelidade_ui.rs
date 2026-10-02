@@ -266,12 +266,13 @@ pub async fn medir(
     if phxclaw_browser::find_chromium().is_none() {
         return Err(format!(
             "Chromium nao encontrado; defina {}",
-            phxclaw_browser::CHROMIUM_ENV
+            phxclaw_browser::variavel_do_chromium()
         ));
     }
     let pagina = Pagina::subir()?;
     let navegador = Browser::launch(LaunchOptions {
         window_size: JANELA,
+        envoltorio: Some(crate::processo::envoltorio_do_navegador()?),
         ..LaunchOptions::with_policy(BrowserPolicy::only([pagina.base.clone()]))
     })
     .await

@@ -79,6 +79,11 @@ phxclaw-ai-benchmark = { path = "../phxclaw-ai-benchmark" }
 phxclaw-config-runtime = { path = "../phxclaw-config-runtime" }
 # O workspace de varias raizes (`.phxclaw/workspace.json`), o mesmo leitor do IDE de mesa.
 phxclaw-workspace = { path = "../phxclaw-workspace" }
+# A loja de plugins (`plugin_catalog`, `phxclaw plugins catalogo|instalar`): o indice da
+# comunidade dentro do agente. Ja no workspace.
+phxclaw-community-registry = { path = "../phxclaw-community-registry" }
+# O terminal do IDE no navegador: o MESMO PTY + emulador do aplicativo de mesa. Ja no workspace.
+phxclaw-terminal = { path = "../phxclaw-terminal" }
 
 [features]
 desktop = [

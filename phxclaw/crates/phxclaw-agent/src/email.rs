@@ -50,28 +50,29 @@ impl SmtpConfig {
     /// PHXCLAW_SMTP_HOST, _PORT, _SECURITY (tls|starttls|plain), _USER, _PASSWORD,
     /// PHXCLAW_EMAIL_FROM e PHXCLAW_EMAIL_PERMITIDOS (lista separada por virgula).
     pub fn from_env() -> Option<Self> {
-        let v = |k: &str| std::env::var(k).ok().filter(|s| !s.trim().is_empty());
-        let security = match v("PHXCLAW_SMTP_SECURITY").as_deref() {
+        let v = crate::config::texto_de;
+        let security = match v("email.smtp.seguranca").as_deref() {
             Some("plain") => SmtpSecurity::Plain,
             Some("starttls") => SmtpSecurity::StartTls,
             _ => SmtpSecurity::Tls,
         };
         Some(Self {
-            host: v("PHXCLAW_SMTP_HOST")?,
-            port: v("PHXCLAW_SMTP_PORT")
-                .and_then(|p| p.parse().ok())
+            host: v("email.smtp.host")?,
+            port: crate::config::inteiro_de("email.smtp.porta")
+                .and_then(|p| u16::try_from(p).ok())
                 .unwrap_or(match security {
                     SmtpSecurity::Tls => 465,
                     SmtpSecurity::StartTls => 587,
                     SmtpSecurity::Plain => 25,
                 }),
             security,
-            username: v("PHXCLAW_SMTP_USER"),
-            password: v("PHXCLAW_SMTP_PASSWORD"),
-            from: v("PHXCLAW_EMAIL_FROM")?,
-            allowed_recipients: v("PHXCLAW_EMAIL_PERMITIDOS")
-                .map(|s| {
-                    s.split(',')
+            username: v("email.smtp.usuario"),
+            password: crate::config::segredo_do_ambiente("email.smtp.senha")
+                .filter(|s| !s.is_empty()),
+            from: v("email.remetente")?,
+            allowed_recipients: crate::config::lista_de("email.permitidos")
+                .map(|l| {
+                    l.iter()
                         .map(|x| x.trim().to_ascii_lowercase())
                         .filter(|x| !x.is_empty())
                         .collect()

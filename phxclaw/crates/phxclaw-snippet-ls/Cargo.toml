@@ -7,6 +7,9 @@ description = "Servidor de linguagem minimo: snippets do usuario e Emmet para o 
 
 [dependencies]
 serde_json.workspace = true
+# O NOME das variaveis que o agente exporta ao Helix sai do catalogo (ponto unico), nunca de
+# um literal aqui: variavel lida fora do catalogo e configuracao que mente. Crate do workspace.
+phxclaw-config-runtime = { path = "../phxclaw-config-runtime" }
 
 [[bin]]
 name = "phxclaw-snippet-ls"

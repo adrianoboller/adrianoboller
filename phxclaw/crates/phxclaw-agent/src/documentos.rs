@@ -21,8 +21,9 @@ use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-/// Variavel do modelo de embedding da reordenacao; so `ollama:` e aceito.
-pub const VAR_EMBED: &str = "PHXCLAW_DOCS_EMBED";
+/// Chave do modelo de embedding da reordenacao (`PHXCLAW_DOCS_EMBED`); so `ollama:` e
+/// aceito.
+pub const CHAVE_EMBED: &str = "documentos.embed";
 /// Candidatos do BM25 que a reordenacao olha.
 pub const CANDIDATOS: usize = 20;
 /// Caracteres de cada trecho devolvidos ao modelo.
@@ -142,15 +143,14 @@ impl DocSearchTool {
 }
 
 fn embed_do_ambiente() -> Option<Arc<phxclaw_llm::OllamaLlm>> {
-    let spec = std::env::var(VAR_EMBED)
-        .ok()
-        .filter(|s| !s.trim().is_empty())?;
+    let spec = crate::config::texto_de(CHAVE_EMBED)?;
+    let var = crate::config::variavel(CHAVE_EMBED);
     let Some(modelo) = spec.trim().strip_prefix("ollama:") else {
-        eprintln!("aviso: {VAR_EMBED}={spec}: so ollama:<modelo> e aceito");
+        eprintln!("aviso: {var}={spec}: so ollama:<modelo> e aceito");
         return None;
     };
     phxclaw_llm::ollama_do_ambiente(modelo)
-        .map_err(|e| eprintln!("aviso: {VAR_EMBED}: {e}"))
+        .map_err(|e| eprintln!("aviso: {var}: {e}"))
         .ok()
         .map(Arc::new)
 }

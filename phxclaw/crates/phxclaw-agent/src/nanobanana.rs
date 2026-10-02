@@ -194,10 +194,10 @@ impl NanoBanana {
     /// Base em `PHXCLAW_IMAGEM_URL` (a mesma variavel dos outros provedores de imagem) e
     /// modelo em `PHXCLAW_IMAGEM_MODELO`.
     pub fn da_pasta(raiz_do_agente: &Path) -> Result<Self, String> {
-        let var = |n: &str| std::env::var(n).ok().filter(|v| !v.trim().is_empty());
+        let var = crate::config::texto_de;
         Self::novo(
-            &var("PHXCLAW_IMAGEM_URL").unwrap_or_else(|| BASE_PADRAO.into()),
-            &var("PHXCLAW_IMAGEM_MODELO").unwrap_or_else(|| MODELO_PADRAO.into()),
+            &var("imagem.url").unwrap_or_else(|| BASE_PADRAO.into()),
+            &var("imagem.modelo").unwrap_or_else(|| MODELO_PADRAO.into()),
             SERVICO.credencial(raiz_do_agente)?,
         )
     }

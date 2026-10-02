@@ -94,9 +94,14 @@ impl BrowserSessions {
     ) -> Result<T, ToolError> {
         let mut g = self.sessions.lock().await;
         if !g.contains_key(task) {
-            let b = Browser::launch(LaunchOptions::with_policy(self.policy.clone()))
-                .await
-                .map_err(|e| ToolError::Failed(format!("navegador: {e}")))?;
+            let b = Browser::launch(LaunchOptions {
+                envoltorio: Some(
+                    crate::processo::envoltorio_do_navegador().map_err(ToolError::Failed)?,
+                ),
+                ..LaunchOptions::with_policy(self.policy.clone())
+            })
+            .await
+            .map_err(|e| ToolError::Failed(format!("navegador: {e}")))?;
             let p = b
                 .new_page()
                 .await
@@ -231,6 +236,15 @@ impl Tool for BrowserTool {
     }
     fn capability(&self) -> &'static str {
         "web.browse"
+    }
+    /// Lanca o Chromium (processo) na primeira chamada da tarefa: a regra de comando a
+    /// alcanca por `browser_open <url>`, `browser_click <selector>`, etc.
+    fn comando_de_shell(&self, args: &Value) -> Option<String> {
+        Some(crate::motor::linha_sintetica(
+            &self.spec().name,
+            args,
+            &["url", "selector", "path"],
+        ))
     }
     fn run<'a>(
         &'a self,

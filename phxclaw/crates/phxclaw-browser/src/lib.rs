@@ -10,7 +10,8 @@ mod page;
 mod policy;
 
 pub use browser::{
-    Browser, CHROMIUM_ENV, LaunchOptions, find_chromium, idioma_do_sistema, running_as_root,
+    Browser, CHAVE_CHROMIUM, Envoltorio, LaunchOptions, find_chromium, idioma_do_sistema,
+    running_as_root, variavel_do_chromium,
 };
 pub use cdp::BlockedRequest;
 pub use error::{BrowserError, Result};

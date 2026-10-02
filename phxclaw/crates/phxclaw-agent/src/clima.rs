@@ -70,10 +70,8 @@ pub struct WeatherTool {
 
 impl WeatherTool {
     pub fn novo(base: &str) -> Result<Self, String> {
-        let contato = std::env::var("PHXCLAW_MET_CONTATO")
-            .ok()
-            .filter(|c| !c.trim().is_empty())
-            .unwrap_or_else(|| CONTATO_PADRAO.into());
+        let contato =
+            crate::config::texto_de("clima.contato").unwrap_or_else(|| CONTATO_PADRAO.into());
         Ok(Self {
             http: Arc::new(Http::novo(base, politica_para(base)?)?),
             agente: format!("PhxClaw/{} {}", env!("CARGO_PKG_VERSION"), contato.trim()),
@@ -83,10 +81,7 @@ impl WeatherTool {
     /// A base sai de `PHXCLAW_MET_API` (o servidor falso dos testes, um espelho do
     /// operador); o modelo nunca escolhe para onde o pedido vai.
     pub fn do_ambiente() -> Result<Self, String> {
-        let base = std::env::var("PHXCLAW_MET_API")
-            .ok()
-            .filter(|b| !b.trim().is_empty())
-            .unwrap_or_else(|| BASE_PADRAO.into());
+        let base = crate::config::texto_de("clima.api").unwrap_or_else(|| BASE_PADRAO.into());
         Self::novo(&base)
     }
 

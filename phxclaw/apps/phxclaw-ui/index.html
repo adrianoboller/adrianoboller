@@ -183,7 +183,7 @@
       <header class="tela-head">
         <div><span class="eyebrow" data-txt="ide.sobretitulo">IDE / HELIX NO MOTOR DE TERMINAL</span><h1>IDE</h1>
           <p id="ideStatus" class="tela-sub"><span data-txt="ide.nenhum">Nenhum terminal aberto.</span></p>
-          <p id="ideAjuda" class="tela-dica" data-txt="ide.ajuda_teclado">No terminal, Tab completa; para sair dele pelo teclado: Esc e depois Tab.</p></div>
+          <p id="ideAjuda" class="tela-dica" data-txt="ide.ajuda_teclado">No terminal, Tab completa; para sair dele pelo teclado: Esc e depois Tab. Ctrl+Shift+C copia, Ctrl+Shift+V cola.</p></div>
         <div class="acoes">
           <button id="ideAbrirHelix" class="acao inclui" data-txt="ide.abrir_helix">+ HELIX NO PROJETO</button>
           <button id="ideAbrirBash" class="acao inclui" data-txt="ide.abrir_bash">+ TERMINAL BASH</button>
@@ -191,9 +191,26 @@
         </div>
       </header>
       <nav id="ideAbas" class="abas" aria-label="Terminais abertos" data-txt-al="ide.abas"></nav>
+      <!-- Trilha: o arquivo aberto no Helix (lido da linha de estado dele) e os simbolos
+           (documentSymbol pelo agente). Clique leva o Helix la (:open / :goto). -->
+      <nav id="ideTrilha" class="trilha" aria-label="Caminho e símbolos do arquivo aberto" data-txt-al="ide.trilha" hidden></nav>
+      <div class="ide-corpo">
       <div id="ideArea" class="term-area">
-        <canvas id="termCanvas" tabindex="0" aria-label="Terminal" data-txt-al="ide.terminal" aria-describedby="ideAjuda"></canvas>
+        <canvas id="termCanvas" tabindex="0" aria-label="Terminal" data-txt-al="ide.terminal" aria-describedby="ideAjuda" aria-keyshortcuts="Escape Tab"></canvas>
+        <!-- O espelho do canvas para o leitor de tela: a linha do cursor e a de estado. -->
+        <div id="termEspelho" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
         <div id="ideVazio" class="term-vazio" data-txt="ide.vazio">Abra o Helix na pasta do projeto ou um terminal bash.</div>
+      </div>
+      <!-- Explorador de testes: a arvore do test_list e o rodar de UM no (test_run), pela API. -->
+      <details id="ideTestes" class="painel-lateral">
+        <summary data-txt="testes.titulo">Explorador de testes</summary>
+        <div class="painel-acoes">
+          <button id="testesListar" class="acao consulta" type="button" data-txt="testes.listar">LISTAR TESTES</button>
+          <span id="testesStatus" class="painel-status" role="status" aria-live="polite"></span>
+        </div>
+        <div id="testesArvore" class="testes-arvore" data-fonte="api /v1/ide/testes"></div>
+        <pre id="testesResultado" class="painel-saida" hidden></pre>
+      </details>
       </div>
      </section>
 
@@ -208,6 +225,16 @@
         <button class="acao consulta" data-grade-exporta="ferramentas:xlsx" data-txt="grade.exportar_xlsx">EXPORTAR XLSX</button>
       </div>
       <div id="ferramentasConteudo" class="grade-alvo" data-uma-pagina data-fonte="ferramentas.json"></div>
+      <!-- Loja de plugins: o catalogo assinado (plugin_catalog) e o instalar, pela API. -->
+      <details id="ferramentasPlugins" class="painel-dobra">
+        <summary data-txt="plugins.titulo">Loja de plugins</summary>
+        <div class="painel-acoes">
+          <button id="pluginsCarregar" class="acao consulta" type="button" data-txt="plugins.carregar">CARREGAR CATÁLOGO</button>
+          <button id="pluginsInstalar" class="acao inclui" type="button" disabled data-txt="plugins.instalar">INSTALAR SELECIONADO</button>
+          <span id="pluginsStatus" class="painel-status" role="status" aria-live="polite"></span>
+        </div>
+        <div id="pluginsConteudo" class="grade-alvo" data-fonte="api /v1/plugins/catalogo"></div>
+      </details>
      </section>
 
      <section class="tela" id="tela-absorcao" data-tela="absorcao" aria-label="Absorção" data-txt-al="menu.absorcao" hidden>
@@ -267,6 +294,19 @@
         <button id="configSalvar" class="acao altera" data-txt="config.salvar">SALVAR ALTERAÇÕES</button>
         <button id="configRecarregar" class="acao consulta" data-txt="config.recarregar">RECARREGAR</button>
       </div>
+      <!-- Perfis: listar, usar e criar (GET/PUT /v1/config/perfis, o mesmo If-Match do config). -->
+      <details id="configPerfis" class="painel-dobra">
+        <summary data-txt="perfis.titulo">Perfis</summary>
+        <div class="painel-acoes">
+          <button id="perfisUsar" class="acao altera" type="button" disabled data-txt="perfis.usar">USAR SELECIONADO</button>
+          <button id="perfisDesativar" class="acao marca" type="button" disabled data-txt="perfis.desativar">DESATIVAR</button>
+          <input id="perfisNome" class="filtro" type="text" placeholder="Nome do novo perfil" data-txt-ph="perfis.nome_ph" aria-label="Nome do novo perfil" data-txt-al="perfis.nome_ph" />
+          <label class="marcar"><input id="perfisCopiar" type="checkbox" /><span data-txt="perfis.copiar">Copiar as chaves da pasta</span></label>
+          <button id="perfisCriar" class="acao inclui" type="button" data-txt="perfis.criar">CRIAR PERFIL</button>
+          <span id="perfisStatus" class="painel-status" role="status" aria-live="polite"></span>
+        </div>
+        <div id="perfisConteudo" class="grade-alvo" data-fonte="api /v1/config/perfis"></div>
+      </details>
       <section id="configConflito" class="cfg-painel cfg-conflito" hidden></section>
       <section id="configDiff" class="cfg-painel" hidden></section>
       <div id="configConteudo" class="grade-alvo" data-uma-pagina data-fonte="api /v1/config"></div>
@@ -279,5 +319,8 @@
   <script src="./assets/app.js"></script>
   <script src="./assets/tarefas.js"></script>
   <script src="./assets/config.js"></script>
+  <!-- async: o IDE e os paineis ficam fora do caminho do DOMContentLoaded do celular. -->
+  <script src="./assets/ide.js" async></script>
+  <script src="./assets/paineis.js" async></script>
 </body>
 </html>

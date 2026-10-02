@@ -26,31 +26,34 @@ use std::sync::Arc;
 /// Host padrao do Ollama quando `OLLAMA_HOST` nao existe.
 pub const OLLAMA_PADRAO: &str = "http://127.0.0.1:11434";
 
-/// Monta um provedor a partir de `"provedor:modelo"`, lendo a chave do ambiente.
+/// Monta um provedor a partir de `"provedor:modelo"`. A chave dos de nuvem vem de `chave`,
+/// chamada com o nome do provedor (`openai`, `anthropic`, `gemini`): esta crate NAO le
+/// chave do ambiente -- o agente a traz do SecretBroker, e so o comando `phxclaw <provedor>
+/// chave` le a variavel, para grava-la la. O Ollama nao tem chave e nao chama `chave`.
 ///
 /// Os de nuvem usam SEMPRE a origem oficial: nenhuma variavel de ambiente desvia a chave
 /// para outro servidor. Origem customizada so por codigo, com `Endpoint::custom`.
-pub fn from_env(spec: &str) -> Result<Arc<dyn Llm>, LlmError> {
+pub fn montar(
+    spec: &str,
+    chave: impl FnOnce(&str) -> Result<String, LlmError>,
+) -> Result<Arc<dyn Llm>, LlmError> {
     let (provedor, modelo) = spec
         .split_once(':')
         .ok_or_else(|| LlmError::Denied(format!("spec sem provedor: {spec:?}")))?;
-    let chave = |var: &str| -> Result<String, LlmError> {
-        std::env::var(var).map_err(|_| LlmError::Credential(format!("variavel {var} ausente")))
-    };
     Ok(match provedor {
         "ollama" => Arc::new(ollama_do_ambiente(modelo)?),
         "openai" => Arc::new(OpenAiLlm::new(
-            chave("OPENAI_API_KEY")?,
+            chave("openai")?,
             modelo,
             Endpoint::official(),
         )?),
         "anthropic" => Arc::new(AnthropicLlm::new(
-            chave("ANTHROPIC_API_KEY")?,
+            chave("anthropic")?,
             modelo,
             Endpoint::official(),
         )?),
         "gemini" => Arc::new(GeminiLlm::new(
-            chave("GEMINI_API_KEY")?,
+            chave("gemini")?,
             modelo,
             Endpoint::official(),
         )?),
@@ -102,11 +105,24 @@ mod testes {
     use super::*;
 
     #[test]
-    fn spec_desconhecida_e_recusada() {
-        assert!(matches!(from_env("xpto:m"), Err(LlmError::Denied(_))));
+    fn spec_desconhecida_e_recusada_e_nuvem_pede_a_chave_pelo_nome() {
+        let sem = |_: &str| Err(LlmError::Credential("nenhuma".into()));
+        assert!(matches!(montar("xpto:m", sem), Err(LlmError::Denied(_))));
         assert!(matches!(
-            from_env("semdoispontos"),
+            montar("semdoispontos", sem),
             Err(LlmError::Denied(_))
+        ));
+        let mut pedido = String::new();
+        let r = montar("anthropic:m", |p| {
+            pedido = p.to_string();
+            Ok("chave-de-teste".into())
+        });
+        assert!(r.is_ok());
+        assert_eq!(pedido, "anthropic");
+        // Sem chave, nenhum provedor de nuvem nasce; o erro e o de credencial.
+        assert!(matches!(
+            montar("openai:m", sem),
+            Err(LlmError::Credential(_))
         ));
     }
 

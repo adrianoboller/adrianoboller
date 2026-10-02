@@ -5,7 +5,7 @@ medir. É curto de propósito: o detalhe de cada comando é a ajuda do próprio 
 aqui pelo gerador.
 
 <!-- gerado:cabecalho:inicio -->
-Trechos marcados gerados em 2026-10-02 por `python3 tools/gerar_guia_operador.py`, do binario `PhxClaw 0.70.0` (compilado em 2026-10-02 01:02).
+Trechos marcados gerados em 2026-10-02 por `python3 tools/gerar_guia_operador.py`, do binario `PhxClaw 0.70.0` (compilado em 2026-10-02 05:22).
 <!-- gerado:cabecalho:fim -->
 
 **Nada entre marcadores `<!-- gerado:… -->` se edita à mão.** Comando, opção, variável de
@@ -29,7 +29,7 @@ mesmas funções (`crates/phxclaw-agent/src/config.rs`). Quatro camadas, nesta o
 Cabecalho de `phxclaw config exemplo`:
 
 > config.json do PhxClaw, gerado do catálogo (phxclaw config exemplo).
-> Precedência: ambiente > .phxclaw/config.json do projeto confiado > <pasta>/config.json > padrão.
+> Precedência: ambiente > .phxclaw/config.json do projeto confiado > perfil ativo > <pasta>/config.json > padrão.
 > null = não definido aqui. Segredo nunca entra: vai para o SecretBroker (phxclaw config mostrar diz o comando).
 <!-- gerado:precedencia:fim -->
 
@@ -51,9 +51,9 @@ Saida de `phxclaw ajuda config`:
 O config.json: valor efetivo e origem de cada chave, validar, definir
 
 USO:
-  phxclaw config mostrar [--json] | validar ARQ | exemplo | definir CHAVE VALOR|--remover [--projeto] [--pasta DIR]
+  phxclaw config mostrar [--json] | validar ARQ | exemplo | definir CHAVE VALOR|--remover [--projeto|--perfil NOME] | perfil listar|usar NOME|nenhum|criar NOME [--copiar-base] | sincronizar enviar|receber --ponte URL [--forcar] [--pasta DIR]
 
-Precedencia: ambiente > .phxclaw/config.json do projeto confiado > <pasta>/config.json > padrao do catalogo. mostrar: valor e origem de cada chave (segredo so aparece como no broker/ausente). definir grava atomico, com revisao. Segredo nunca vai ao arquivo: o comando que o guarda no broker vem na recusa. Chave desconhecida e tipo errado sao erro.
+Precedencia: ambiente > .phxclaw/config.json do projeto confiado > perfil ativo > <pasta>/config.json > padrão (a do catalogo). mostrar: valor e origem de cada chave (segredo so aparece como no broker/ausente). definir grava atomico, com revisao. perfil: camadas nomeadas no config.json da pasta (`perfis`, `perfil_ativo`; PHXCLAW_PERFIL escolhe por uma execucao). sincronizar: o config.json vai e vem pela ponte, sem a revisao e sem segredo; os dois lados mudados e conflito com as duas revisoes. Segredo nunca vai ao arquivo: o comando que o guarda no broker vem na recusa. Chave desconhecida e tipo errado sao erro.
 ```
 <!-- gerado:ajuda:config:fim -->
 
@@ -104,12 +104,13 @@ A lista completa sai do catálogo, e ela diz também quais segredos **ainda não
 de broker (ficam na variável de ambiente ou num arquivo da pasta):
 
 <!-- gerado:segredos:inicio -->
-De `phxclaw config mostrar --json`: **48 segredos no catalogo**; 48 tem comando que os guarda no SecretBroker, 0 ainda nao.
+De `phxclaw config mostrar --json`: **52 segredos no catalogo**; 52 tem comando que os guarda no SecretBroker, 0 ainda nao.
 
 <details><summary>Os segredos, um por linha</summary>
 
 | Chave | Variavel | Como guardar |
 |---|---|---|
+| `anthropic.chave` | `PHXCLAW_ANTHROPIC_API_KEY` | `phxclaw anthropic chave` |
 | `api.token` | `PHXCLAW_API_TOKEN` | `phxclaw api chave` |
 | `canais.discord.token` | `PHXCLAW_DISCORD_TOKEN` | `PHXCLAW_DISCORD_TOKEN=... phxclaw canal discord (vai ao broker na primeira vez)` |
 | `canais.email.senha` | `PHXCLAW_EMAIL_CANAL_SENHA` | `PHXCLAW_EMAIL_CANAL_SENHA=... phxclaw canal email (vai ao broker na primeira vez)` |
@@ -155,6 +156,9 @@ De `phxclaw config mostrar --json`: **48 segredos no catalogo**; 48 tem comando 
 | `imagem.chave` | `PHXCLAW_IMAGEM_CHAVE` | `phxclaw imagem chave` |
 | `mcp.segredo_cliente` | `PHXCLAW_MCP_SEGREDO_CLIENTE` | `phxclaw mcp login NOME` |
 | `mcp.token` | `PHXCLAW_MCP_TOKEN` | `phxclaw mcp token NOME` |
+| `n8n.chave` | `PHXCLAW_N8N_API_KEY` | `phxclaw n8n chave` |
+| `n8n.webhook_segredo` | `PHXCLAW_N8N_WEBHOOK_SEGREDO` | `phxclaw n8n segredo` |
+| `openai.chave` | `PHXCLAW_OPENAI_API_KEY` | `phxclaw openai chave` |
 | `plugins.chave_assinatura` | `PHXCLAW_PLUGIN_SIGNING_KEY` | `phxclaw plugins chave` |
 | `ponte.token` | `PHXCLAW_PONTE_TOKEN` | `phxclaw ponte chave` |
 | `xai.chave` | `PHXCLAW_XAI_API_KEY` | `phxclaw xai chave` |
@@ -449,10 +453,46 @@ De `phxclaw config mostrar --json` (catalogo do binario, pasta vazia): 3 chave(s
 | achado | **recusada**, com arquivo:linha (regra) de cada achado |
 | diff acima do teto (`DIFF_MAX_BYTES`) | **recusada**: varrer só o começo e dizer «limpo» seria a pior resposta |
 
-## 7. Medir: gravar, repetir, avaliar, otimizar skill
+## 7. Medir: gravar, repetir, medir, avaliar, otimizar skill
 
 Todo número sai com faixa min–max, N e data; vencedor e promoção só quando as faixas não se
 cruzam. Energia só de RAPL ou NVIDIA — sem eles, «não medida», nunca estimada.
+
+O que a gravação carrega por passo desde a versão 2 do formato (SP000030, `gravacao.rs`):
+`duracao_ms` de cada pedido ao modelo e de cada ferramenta; `tokens_entrada`/`tokens_saida`
+**só quando o provedor os devolveu** (roteiro e repetição não devolvem, e o campo fica ausente —
+nunca um número estimado com cara de medido); `tarefa` e `passo_pai` na chamada que roda dentro
+da chamada de outra tarefa (subagente); e, antes do primeiro pedido, uma linha `prompt` com o
+`prompt_sha256` do sistema (base + instruções do projeto + memória + skills listadas) e o
+`skills_sha256` de cada `SKILL.md` da pasta. Gravação da versão 1 continua lendo, com as medidas
+ausentes. `phxclaw medir ARQ.jsonl` soma por tarefa; `--json` dá a soma crua.
+
+O `avaliar`, além do acerto (tudo ou nada), dá a **nota parcial de ferramentas** quando o caso
+tem gabarito de sequência: `conjunto` = esperadas chamadas / esperadas, `sequencia` = maior
+subsequência comum na ordem / esperadas (a *ToolCorrectness* do DeepEval, determinística — nunca
+um modelo julgando outro). Por caso no `resultado.json`, mediana dos casos por rodada com a
+faixa entre rodadas na tabela, e `nota_sequencia` entra no vencedor pela mesma regra das faixas.
+As execuções saem ainda **agrupadas por `prompt_sha256` e `skills_sha256`** (`por_prompt`):
+antes/depois de mexer no prompt ou numa skill, compare só dentro do mesmo sha.
+
+Memória que contradiz outra não se apaga: `memory_save` com `substitui: id` grava a nova e marca
+a antiga com `invalid_at` e `substituida_por` (ver `memory_search`, que devolve o id de cada
+nota e só mostra as inválidas com `include_invalid`). O prompt injeta só o que vale.
+
+<!-- gerado:ajuda:medir:inicio -->
+Saida de `phxclaw ajuda medir`:
+
+```text
+Soma uma gravacao por tarefa: chamadas, duracao e tokens de cada passo
+
+USO:
+  phxclaw medir ARQ.jsonl [--json]
+
+Le uma gravacao (agente --gravar, avaliar, gravar:true na API) e soma por tarefa -- a raiz e cada subagente pelo passo_pai -- as chamadas ao modelo e as ferramentas, a duracao de cada lado e os tokens. Tokens so somam quando o provedor os informou em toda chamada; senao diz quantas ficaram sem. Gravacao da versao 1 (sem medidas) sai como «não medido», nunca estimada.
+
+Tambem aceito como: measure
+```
+<!-- gerado:ajuda:medir:fim -->
 
 <!-- gerado:ajuda:agente:inicio -->
 Saida de `phxclaw ajuda agente`:
@@ -488,12 +528,12 @@ Tambem aceito como: replay
 Saida de `phxclaw ajuda avaliar`:
 
 ```text
-Compara modelos pelo agente: p50/p95, tokens/s, CPU, energia e acerto
+Compara modelos pelo agente: p50/p95, tokens/s, CPU, energia, acerto e nota
 
 USO:
   phxclaw avaliar --modelos A,B --tarefas DIR [--rodadas N] [--saida DIR] [--pasta DIR]
 
-Roda cada caso de DIR (*.json com gabarito, ou *.jsonl gravado) N vezes por modelo, pelo agente inteiro. Cada numero sai com faixa min-max, N e data; vencedor so quando as faixas nao se cruzam. Energia so de RAPL ou NVIDIA: sem eles, «não medida». Cada execucao fica gravada em SAIDA/gravacoes.
+Roda cada caso de DIR (*.json com gabarito, ou *.jsonl gravado) N vezes por modelo, pelo agente inteiro. Cada numero sai com faixa min-max, N e data; vencedor so quando as faixas nao se cruzam. Alem do acerto, a nota parcial de ferramentas (conjunto e sequencia por LCS, 0 a 1, deterministica, nunca por juiz) e o agrupamento pelo sha256 do prompt e das skills de cada execucao. Energia so de RAPL ou NVIDIA: sem eles, «não medida». Cada execucao fica gravada em SAIDA/gravacoes.
 
 Tambem aceito como: eval
 ```

@@ -34,8 +34,22 @@ from pathlib import Path
 # (SP000028, conserto da pasta fixada). 127: as variaveis dos `Servico` (chaves.rs) passaram
 # a sair do catalogo (`por_chave`) em vez de uma segunda lista, e os leitores de
 # PHXCLAW_API_TOKEN, PHXCLAW_PONTE_TOKEN, PHXCLAW_ENROLLMENT_TOKEN e PHXCLAW_IMAGEM_CHAVE
-# leem pelo `Servico` (SP000013, frente C).
-TETO = 127
+# leem pelo `Servico` (SP000013, frente C). 5: SP000020 (fase 2) migrou os 122 leitores
+# restantes -- o agente le por `config::texto_de`/`inteiro_de`/`lista_de`/`caminho_de`/
+# `segredo_do_ambiente`, o nome citado ao operador sai de `config::variavel(chave)`, e os
+# crates sem o agente (pontes, navegador, busca, SDK, missao, no de dispositivo, desktop)
+# leem pelo leitor de processo do config-runtime (`carga::*_do_processo`). Os 5 que ficam,
+# cada um com o motivo:
+#   - canais/ligar.rs:66 `format!("PHXCLAW_{}_{k}")`: o nome e MONTADO por canal e lido por
+#     um leitor injetado (a CLI passa `config::por_variavel`, que resolve pelo catalogo);
+#     o braco dividido (whatsapp|messenger) faz a chave nao ser 1:1 com a variavel, entao
+#     trocar a chave do leitor pelo nome do catalogo e a fase 3, nao um `replace`;
+#   - lsp.rs:199 e pwa.rs:21: arquivos da frente W2 (VS Code, em curso em 02/10/2026) -- nao
+#     se toca em arvore alheia; migram quando a frente fechar (`config::booleano_de("agente.lsp")`
+#     e `config::caminho_de("ui.dir")`, respectivamente);
+#   - apps/phxclaw-desktop/src-tauri/src/terminal.rs:65 e :91: idem (frente W1/W2, Tauri);
+#     a leitura e `carga::caminho_do_processo("agente.projeto")` e `("desktop.hx")`.
+TETO = 5
 
 NOME = re.compile(r"\bPHXCLAW_[A-Z0-9_]*[A-Z0-9]\b")
 LITERAL = re.compile(r'"(PHXCLAW_[A-Z0-9_]*[A-Z0-9])"')

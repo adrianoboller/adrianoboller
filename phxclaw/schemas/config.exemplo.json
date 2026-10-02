@@ -1,7 +1,7 @@
 {
   "//": [
     "config.json do PhxClaw, gerado do catálogo (phxclaw config exemplo).",
-    "Precedência: ambiente > .phxclaw/config.json do projeto confiado > <pasta>/config.json > padrão.",
+    "Precedência: ambiente > .phxclaw/config.json do projeto confiado > perfil ativo > <pasta>/config.json > padrão.",
     "null = não definido aqui. Segredo nunca entra: vai para o SecretBroker (phxclaw config mostrar diz o comando)."
   ],
   "agente": {
@@ -428,10 +428,16 @@
   },
   "ide": {
     "//": [
+      "api_url: URL por onde o editor fala com este agente (padrão: o Host da conexão do IDE) [texto; ambiente PHXCLAW_IDE_API_URL]",
       "historico_versoes_max: IDE: versões guardadas por arquivo no histórico local de gravações (.phxclaw/historico) [inteiro; ambiente PHXCLAW_IDE_HISTORICO_VERSOES_MAX]",
+      "ia_ms: Teto de tempo (ms) de uma completação por IA no editor [inteiro; ambiente PHXCLAW_IDE_IA_MS]",
+      "ia_tokens: Teto de tokens de uma completação por IA no editor (o modelo é o do agente) [inteiro; ambiente PHXCLAW_IDE_IA_TOKENS]",
       "raizes: Raízes extras do workspace além da pasta do projeto (também em .phxclaw/workspace.json); o IDE as expõe ao terminal [lista; ambiente PHXCLAW_RAIZES]"
     ],
+    "api_url": null,
     "historico_versoes_max": 50,
+    "ia_ms": 6000,
+    "ia_tokens": 64,
     "raizes": null
   },
   "imagem": {
@@ -470,6 +476,12 @@
     "padrao": "ollama:qwen2.5:1.5b",
     "visao": "qwen2.5vl:3b"
   },
+  "n8n": {
+    "//": [
+      "url: Origem do n8n do operador (ex.: http://127.0.0.1:5678); vazio = sem n8n_workflow [texto; ambiente PHXCLAW_N8N_URL]"
+    ],
+    "url": null
+  },
   "navegador": {
     "//": [
       "chromium: Executável do Chromium [caminho; ambiente PHXCLAW_CHROMIUM]"
@@ -478,8 +490,10 @@
   },
   "pacotes": {
     "//": [
+      "catalogo: Catálogo da loja de plugins (URL https ou arquivo JSON local); vazio = sem loja [texto; ambiente PHXCLAW_PACOTES_CATALOGO]",
       "dir: Pasta dos pacotes assinados (Claude/Codex) [caminho; ambiente PHXCLAW_PACOTES_DIR]"
     ],
+    "catalogo": null,
     "dir": null
   },
   "plugins": {

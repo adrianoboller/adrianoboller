@@ -346,14 +346,14 @@
     {
       "capacidade": "memory.write",
       "concedida": true,
-      "descricao": "Save a short note that future tasks should know (a user preference, a fact learned, where something is). Future tasks receive the most relevant notes automatically. Never save passwords or keys: they are redacted.",
+      "descricao": "Save a short note that future tasks should know (a user preference, a fact learned, where something is). Future tasks receive the most relevant notes automatically. Never save passwords or keys: they are redacted. If the note contradicts an existing one, pass its id in `substitui`: the old note is kept but marked invalid, never deleted.",
       "grupo": "memory",
       "nome": "memory_save"
     },
     {
       "capacidade": "memory.read",
       "concedida": true,
-      "descricao": "Search notes saved by previous tasks, by words.",
+      "descricao": "Search notes saved by previous tasks, by words. Each hit comes with its id (for memory_save `substitui`). Notes replaced by newer ones are hidden unless include_invalid is true.",
       "grupo": "memory",
       "nome": "memory_search"
     },

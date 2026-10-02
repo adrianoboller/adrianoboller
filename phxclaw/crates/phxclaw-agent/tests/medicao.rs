@@ -64,8 +64,8 @@ async fn gravar(raiz: &Path) -> (PathBuf, Task) {
         .await;
     assert_eq!(
         g.resultado().unwrap(),
-        8,
-        "cabecalho + 4 modelo + 3 ferramentas"
+        9,
+        "cabecalho + prompt + 4 modelo + 3 ferramentas"
     );
     (arq, t)
 }
@@ -125,10 +125,10 @@ async fn divergencia_e_acusada_com_o_passo() {
     let rel = r.relatorio();
     assert!(!rel.igual());
     assert_eq!(rel.repetida, ["write_file", "read_file"]);
-    // A calculadora gravada e o passo 6 (cabecalho 0, modelo 1, write 2, modelo 3, read 4,
-    // modelo 5, calculadora 6).
+    // A calculadora gravada e o passo 7 (cabecalho 0, prompt 1, modelo 2, write 3, modelo
+    // 4, read 5, modelo 6, calculadora 7).
     assert!(
-        rel.divergencias[0].starts_with("passo 6: a gravacao chamou calculator"),
+        rel.divergencias[0].starts_with("passo 7: a gravacao chamou calculator"),
         "{:?}",
         rel.divergencias
     );
@@ -158,7 +158,7 @@ async fn divergencia_e_acusada_com_o_passo() {
         .await;
     let rel = r.relatorio();
     assert!(
-        rel.divergencias[0].starts_with("passo 4: gravado read_file"),
+        rel.divergencias[0].starts_with("passo 5: gravado read_file"),
         "{:?}",
         rel.divergencias
     );
@@ -376,6 +376,107 @@ async fn avaliar_mede_com_faixa_e_so_declara_vencedor_sem_cruzar() {
     assert_eq!(
         Gravacao::ler(&a.execucoes[0].gravacao).unwrap().sequencia(),
         ["calculator"]
+    );
+}
+
+/// SP000030: a nota parcial de ferramentas e o agrupamento por prompt saem do `avaliar`
+/// inteiro. «meio» chama as mesmas ferramentas fora de ordem (acerto 0, mas conjunto 1 e
+/// sequencia 2/3); «certo» acerta tudo. Reposto o defeito (nota so por acerto), os dois
+/// modelos se distinguiriam so pelo acerto e a nota de «meio» nao existiria.
+#[tokio::test]
+async fn avaliar_da_nota_parcial_de_ferramentas_e_agrupa_por_prompt() {
+    let raiz = tmp("nota");
+    let m = Montagem::new(TaskStore::new(raiz.join("tasks")).unwrap());
+    let fabrica = move |modelo: &str| -> Result<Agent, String> {
+        let ordem: Vec<(&str, serde_json::Value)> = if modelo == "certo" {
+            vec![
+                ("write_file", json!({"path": "a.md", "content": "x"})),
+                ("read_file", json!({"path": "a.md"})),
+                ("calculator", json!({"expression": "6*7"})),
+            ]
+        } else {
+            vec![
+                ("read_file", json!({"path": "a.md"})),
+                ("write_file", json!({"path": "a.md", "content": "x"})),
+                ("calculator", json!({"expression": "6*7"})),
+            ]
+        };
+        let mut r: Vec<LlmReply> = ordem
+            .into_iter()
+            .enumerate()
+            .map(|(i, (n, a))| ScriptedLlm::call(&format!("c{i}"), n, a))
+            .collect();
+        r.push(fim("42"));
+        Ok(m.agent_with(Arc::new(ScriptedLlm::new(r))))
+    };
+    let caso = Caso {
+        id: "tres".into(),
+        objetivo: "anote, leia e calcule".into(),
+        gabarito: Gabarito {
+            contem: vec!["42".into()],
+            sequencia: Some(vec![
+                "write_file".into(),
+                "read_file".into(),
+                "calculator".into(),
+            ]),
+        },
+    };
+    let a = avaliar(
+        &fabrica,
+        &["certo".into(), "meio".into()],
+        &[caso],
+        2,
+        &raiz.join("saida"),
+        &LeitorEnergia::de_raiz(&tmp("sys-vazio"), None),
+    )
+    .await
+    .unwrap();
+    let (certo, meio) = (&a.modelos[0], &a.modelos[1]);
+    assert_eq!(certo.acerto_por_rodada.min, 1.0);
+    assert_eq!(
+        meio.acerto_por_rodada.max, 0.0,
+        "fora de ordem nao e acerto"
+    );
+    let f = |x: &Medida| x.faixa().copied().unwrap();
+    assert_eq!(f(&certo.nota_sequencia_por_rodada).min, 1.0);
+    assert_eq!(f(&meio.nota_conjunto_por_rodada).min, 1.0, "chamou as tres");
+    let seq = f(&meio.nota_sequencia_por_rodada);
+    assert!((seq.min - 2.0 / 3.0).abs() < 1e-9 && seq.n == 2, "{seq:?}");
+    // Por execucao, e no resultado gravado.
+    let e_meio = a.execucoes.iter().find(|e| e.modelo == "meio").unwrap();
+    assert!((e_meio.nota_ferramentas.unwrap().sequencia - 2.0 / 3.0).abs() < 1e-9);
+    // O vencedor da nota segue a mesma regra das faixas; aqui separadas.
+    let v = a
+        .vencedores
+        .iter()
+        .find(|v| v.metrica == "nota_sequencia")
+        .unwrap();
+    assert_eq!(v.modelo.as_deref(), Some("certo"));
+    // Agrupado por prompt: a mesma montagem da o mesmo sha para os dois modelos, e o sha
+    // vem da gravacao (linha `prompt`), nao de um palpite.
+    assert_eq!(a.por_prompt.len(), 2);
+    let sha = a.por_prompt[0]
+        .prompt_sha256
+        .clone()
+        .expect("prompt_sha256 na gravacao");
+    assert_eq!(a.por_prompt[1].prompt_sha256.as_deref(), Some(sha.as_str()));
+    assert_eq!(a.por_prompt[0].skills_sha256, a.por_prompt[1].skills_sha256);
+    assert_eq!((a.por_prompt[0].acertos, a.por_prompt[0].execucoes), (2, 2));
+    assert_eq!((a.por_prompt[1].acertos, a.por_prompt[1].execucoes), (0, 2));
+    assert_eq!(
+        Gravacao::ler(&e_meio.gravacao)
+            .unwrap()
+            .prompt_sha256
+            .as_deref(),
+        Some(sha.as_str())
+    );
+    let json = serde_json::to_value(&a).unwrap();
+    assert!(json["por_prompt"][0]["prompt_sha256"].is_string());
+    assert!(json["modelos"][1]["nota_sequencia_por_rodada"]["Faixa"].is_object());
+    let tabela = phxclaw_agent::avaliacao::tabela(&a);
+    assert!(
+        tabela.contains("ferramentas : conjunto 1.00") && tabela.contains("por prompt"),
+        "{tabela}"
     );
 }
 

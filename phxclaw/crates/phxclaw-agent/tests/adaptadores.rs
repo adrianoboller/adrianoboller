@@ -113,6 +113,7 @@ async fn agente_le_site_real_no_chromium_preenche_formulario_e_gera_planilha() {
 #[tokio::test]
 async fn navegador_do_agente_nao_alcanca_rede_interna() {
     if phxclaw_browser::find_chromium().is_none() {
+        pulado::pular("chromium", "chromium ausente");
         return;
     }
     let interno = site();

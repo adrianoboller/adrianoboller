@@ -115,33 +115,23 @@ fn broker_com(origens: &[&str]) -> Arc<EgressBroker> {
 #[test]
 fn escolha_do_backend_pelas_variaveis() {
     let b = broker_com(&[]);
-    let so = |pares: &'static [(&'static str, &'static str)]| {
-        move |k: &str| {
-            pares
-                .iter()
-                .find(|(n, _)| *n == k)
-                .map(|(_, v)| v.to_string())
-        }
-    };
-    let s = from_vars(
-        so(&[
-            ("PHXCLAW_SEARXNG_URL", "https://searx.local/sub"),
-            ("BRAVE_API_KEY", "k"),
-        ]),
+    let s = escolher(
+        Some("https://searx.local/sub".into()),
+        Some("k".into()),
         b.clone(),
     )
     .unwrap();
     assert_eq!(s.name(), "searxng");
     assert_eq!(s.origins(), ["https://searx.local"]);
-    let s = from_vars(so(&[("BRAVE_API_KEY", "k")]), b.clone()).unwrap();
+    let s = escolher(None, Some("k".into()), b.clone()).unwrap();
     assert_eq!(s.name(), "brave");
-    let s = from_vars(so(&[]), b.clone()).unwrap();
+    let s = escolher(None, None, b.clone()).unwrap();
     assert_eq!(s.name(), "duckduckgo");
     assert_eq!(
         s.origins(),
         ["https://html.duckduckgo.com", "https://lite.duckduckgo.com"]
     );
-    assert!(from_vars(so(&[("PHXCLAW_SEARXNG_URL", "nao e url")]), b).is_err());
+    assert!(escolher(Some("nao e url".into()), None, b).is_err());
 }
 
 #[test]

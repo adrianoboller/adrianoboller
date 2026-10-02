@@ -55,15 +55,17 @@ impl Forja {
     fn escopo(self) -> String {
         format!("forge:{}:api", self.nome())
     }
-    /// Base da API: so o operador escolhe, pelo ambiente.
+    /// A chave do catalogo de `campo` desta forja (`forja.github.api`, `forja.gitlab.token`).
+    fn chave(self, campo: &str) -> String {
+        format!("forja.{}.{campo}", self.nome())
+    }
+    /// Base da API: so o operador escolhe, pela configuracao.
     pub fn base_do_ambiente(self) -> String {
-        let (var, padrao) = match self {
-            Forja::Github => ("PHXCLAW_GITHUB_API", "https://api.github.com"),
-            Forja::Gitlab => ("PHXCLAW_GITLAB_API", "https://gitlab.com/api/v4"),
+        let padrao = match self {
+            Forja::Github => "https://api.github.com",
+            Forja::Gitlab => "https://gitlab.com/api/v4",
         };
-        std::env::var(var)
-            .ok()
-            .filter(|s| !s.trim().is_empty())
+        crate::config::texto_de(&self.chave("api"))
             .unwrap_or_else(|| padrao.into())
             .trim_end_matches('/')
             .to_string()
@@ -705,11 +707,16 @@ pub fn ferramentas_da_pasta(raiz_do_agente: &Path) -> Vec<Arc<dyn Tool>> {
 /// `PHXCLAW_GITLAB_TOKEN` direto para o broker da pasta. Variavel propria, e nao o
 /// `GITHUB_TOKEN` que outras ferramentas deixam no ambiente: guardar e escolha do operador.
 pub fn guardar_do_ambiente(raiz_do_agente: &Path, forja: Forja) -> Result<Uuid, String> {
-    let var = format!("PHXCLAW_{}_TOKEN", forja.nome().to_uppercase());
-    let token = std::env::var(&var)
-        .ok()
-        .filter(|t| !t.trim().is_empty())
-        .ok_or(format!("defina {var} com o token de {}", forja.nome()))?;
+    let chave = forja.chave("token");
+    let token = crate::config::segredo_do_ambiente(&chave)
+        .filter(|t| !t.is_empty())
+        .ok_or_else(|| {
+            format!(
+                "defina {} com o token de {}",
+                crate::config::variavel(&chave),
+                forja.nome()
+            )
+        })?;
     let broker = crate::canais::broker_em(&pasta_da_forja(raiz_do_agente))?;
     guardar_token(&broker, forja, SecretValue::new(token.trim().to_string()))
 }

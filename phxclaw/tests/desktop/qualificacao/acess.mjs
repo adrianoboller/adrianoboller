@@ -132,3 +132,22 @@ writeFileSync(join(OUT, 'acess.json'), JSON.stringify(out, null, 1));
 console.log('fontes', JSON.stringify(out.fontes, null, 1), JSON.stringify(out.documentFonts));
 console.log('splash', JSON.stringify(out.splash.seq), JSON.stringify(out.splash.depois));
 await browser.close(); srv.close();
+
+// VEREDITO da tela IDE (SP000031, acessibilidade): o editor em canvas so e acessivel se o
+// espelho aria-live existe (>= 1 regiao viva com texto do terminal), nenhum controle fica
+// sem nome ou so com simbolo, todo focavel tem indicador e o Tab nao fica preso no canvas.
+// Zero violacoes nas duas larguras, senao sai 1. (As outras telas continuam so medidas.)
+const violacoes = [];
+for (const w of [1366, 390]) {
+  const r = out.telas[`ide@${w}`];
+  if (!r) { violacoes.push(`${w}: tela IDE nao medida`); continue; }
+  if (r.ax.semNome.length) violacoes.push(`${w}: ${r.ax.semNome.length} controle(s) sem nome`);
+  if (r.ax.soSimbolo.length) violacoes.push(`${w}: so simbolo ${r.ax.soSimbolo.join(',')}`);
+  if (!r.ax.vivos.some(v => /^status/.test(v))) violacoes.push(`${w}: sem regiao aria-live de status (o espelho do terminal)`);
+  const semInd = r.tab.seq.filter(d => d && !d.temInd);
+  if (semInd.length) violacoes.push(`${w}: ${semInd.length} focavel(is) sem indicador de foco`);
+  if (r.tab.preso > 2) violacoes.push(`${w}: Tab preso ${r.tab.preso} vezes`);
+  if (r.tabNoTerminal !== 'termCanvas') violacoes.push(`${w}: Tab dentro do terminal saiu do canvas (${r.tabNoTerminal})`);
+}
+console.log(`IDE: ${violacoes.length} violacao(oes) de acessibilidade${violacoes.length ? ' -- ' + violacoes.join('; ') : ''}`);
+process.exit(violacoes.length ? 1 : 0);

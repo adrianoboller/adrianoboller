@@ -27,14 +27,14 @@ abaixo aparece em exatamente uma sprint.
 | SP000010 | 5 | Credencial e CI | 4 | CONCLUÍDA (f27402e5) |
 | SP000011 | 5 | Medição | 4 | CONCLUÍDA (f27402e5) |
 | SP000012 | 5 | Integração da onda 5 e commit | — | CONCLUÍDA (f27402e5) |
-| SP000013 | — | Endurecimento (achados ⏸ das revisões) | — | EM EXECUÇÃO (A/B/C entregues em 02/10; faltam as guardas do QA 1–4) |
+| SP000013 | — | Endurecimento (achados ⏸ das revisões) | — | CONCLUÍDA (02/10: A/B/C + D; o que sobrou está nas pendências avulsas) |
 | SP000014 | — | Prova real com credenciais | — | BLOQUEADA (dono) |
 | SP000015 | — | Ciclo de auto-evolução | — | BLOQUEADA (dono) |
 | SP000016 | — | Entrega v0.71 | — | PLANEJADA |
 | SP000017 | — | Provedores ElevenLabs (fala e transcrição) e Nano Banana (gerar e editar imagem) | — | CONCLUÍDA (f27402e5) |
 | SP000018 | — | config.json central, fase 1: catálogo, precedência, recusa de segredo, `phxclaw config`, catraca | — | CONCLUÍDA (f27402e5) |
 | SP000019 | — | Tela de configuração do config.json (GET/PUT /v1/config) e phx-grid nas listagens | — | CONCLUÍDA (f27402e5) |
-| SP000020 | — | config.json, fase 2: leitores migrados ao ponto único (catraca até 0); os 103 JSON de config/ | — | PLANEJADA |
+| SP000020 | — | config.json, fase 2: leitores migrados ao ponto único (catraca 127 → 5, os 5 com motivo no script); os 245 JSON de config/ inventariados (`tools/config_inventario.py`) e provados sem segredo (`config_json.rs`); guarda de pulos acusa `return` calado em bloco condicionado a recurso | — | CONCLUÍDA (02/10, frente B; faltam os 5 restantes: 1 nome montado em `canais/ligar.rs`, 4 em arquivos das frentes W1/W2) |
 | SP000021 | 6 | Tela→UI-IR com layout pelas caixas do OCR; troca medida para qwen3-vl | — | CONCLUÍDA (onda 6) |
 | SP000022 | 6 | Prova de fidelidade da conversão de tela (ida e volta + bloco/texto/posição) | — | CONCLUÍDA (onda 6) |
 | SP000023 | 6 | Segredo no commit: gitleaks num hook do git_write | — | CONCLUÍDA (onda 6) |
@@ -44,9 +44,13 @@ abaixo aparece em exatamente uma sprint.
 | SP000027 | — | Qualificação da UI (12/12 telas, Style Phoenix Padrão) | — | CONCLUÍDA (cd48386e) |
 | SP000028 | 7 | Portão que valida e confere o fim: validador de esquema com caminho e todos os erros, 2 tentativas por ferramenta, final_answer tipado, comando de verificação, fim com falha sem resolver recusado | — | CONCLUÍDA (onda 7) |
 | SP000029 | 7 | Retomar e bifurcar pela gravação: `retomar --do-passo N`, passo humano no fluxo, pergunta pendente que sobrevive a reinício | — | PLANEJADA |
-| SP000030 | 7 | Medir melhor: nota parcial (LCS, conjunto) no avaliar, duração/tokens/passo-pai por passo, SHA do prompt, memória com invalid_at | — | PLANEJADA |
-| SP000031 | 9 | VS Code de 53,8% a ≥ 90% (dono, 02/10): os 21 itens «não»/«pela metade» da fonte vscode, em ondas (git e projeto; editor e LSP; UI e remoto); os de produto sobem ao dono | 24 | EM EXECUÇÃO (onda 1 entregue: 75,0%; onda 2 a seguir) |
+| SP000030 | 7 | Medir melhor: nota parcial (LCS, conjunto) no avaliar, duração/tokens/passo-pai por passo, SHA do prompt, memória com invalid_at | — | CONCLUÍDA (02/10) |
+| SP000031 | 9 | VS Code de 53,8% a ≥ 90% (dono, 02/10): os 21 itens «não»/«pela metade» da fonte vscode, em ondas (git e projeto; editor e LSP; UI e remoto); os de produto sobem ao dono | 24 | CONCLUÍDA (02/10: VS Code 92,3%; os 4 «não» são de produto) |
 | SP000032 | 9 | Fechar em 100% (dono, 02/10): RSA para Teams/Google Chat, pacotes de plugin completos, XMPP MUC, Nostr DM, VS Code onda 2, minimapa/dobra, SSH local, Live Share; iMessage, voz ao vivo, RAPL e nuvem dependem de recurso do dono | 32 | PLANEJADA |
+| SP000033 | 9 | Integração total com o n8n (dono, 02/10): PhxClaw chama fluxos do n8n (webhook/REST, chave no broker) e o n8n chama o PhxClaw (nó da comunidade + MCP nos dois sentidos); prova real com n8n de verdade | — | EM EXECUÇÃO (código entregue 02/10; prova com n8n real NÃO VALIDADA: depende da máquina do dono) |
+| SP000034 | 9 | Prova de uso fora de desenvolvimento (dono, 02/10): monitor de passagens aéreas para a China — fluxo agendado, navegador/API, memória, aviso por canal; medido de verdade | — | EM EXECUÇÃO (prova no Google Flights VERIFICADA 02/10; aviso real depende da credencial do dono) |
+| SP000035 | 9 | PHX Flow Engine (dono, 02/10): o fluxos.rs vira motor de nós (ferramenta, agente, skill, MCP, comando, comportamento) com itens, condição, laço, espera e erro tratado — n8n como 7ª fonte, medido em 40,7%; editor visual é onda à parte | 35 | PLANEJADA |
+| SP000036 | 9 | Painel no molde do mockup do dono (02/10): paleta de comandos, menu por áreas, cartões de ação, projetos, modelos (só medido), skills, execuções, agenda, notificações, assistente; tokens da marca; nenhum número digitado | — | EM EXECUÇÃO (fase 1 entregue; fase 2 em lotes) |
 | UI-R01 | 8 | Phx Responsive UI — contratos e layout: intenção responsiva no UI-IR (janela e contêiner), breakpoints num JSON único, motor que compila para Grid/Flexbox/container queries, sem perder estado ao redimensionar | — | CONCLUÍDA (onda 7) |
 | UI-R02 | 8 | Adaptador Bootstrap substituível: componentes semânticos → Bootstrap 5.3, tokens do PhxClaw nas variáveis do Bootstrap, arquivo local com versão fixada, sem o JS do Bootstrap mexer no DOM controlado | — | CONCLUÍDA (onda 7) |
 | UI-R03 | 8 | Studio e templates: editor visual, prévia por largura, inspetor que explica a regra aplicada, template com UUIDv7 e propagação versionada sem apagar sobrescritas | — | PLANEJADA |
@@ -371,6 +375,40 @@ com cada mutante e passam sem ele.
 - ☐ **Pulo que volta calado:** teste que faz `return` sem imprimir nada não aparece nem nos 46 lugares
   nem no registro. O grep do integrador de 01/10 não achou nenhum, mas o limite é da busca.
 
+## SP000030 — Medir melhor (triagem de 01/10: DeepEval, Langfuse, Graphiti)
+
+Quatro entregas, cada uma com teste que falha com o defeito reposto:
+
+- ☑ **Nota parcial no `avaliar`** (`avaliacao.rs`: `nota_ferramentas`, `lcs`): `conjunto` e
+  `sequencia` (LCS) de 0 a 1 sobre o gabarito, por caso no `resultado.json`, mediana dos casos por
+  rodada com faixa na tabela, `nota_sequencia` no vencedor pela regra das faixas. Determinística;
+  o juiz por modelo (G-Eval) foi **recusado**: a faixa dele mediria o juiz. Prova:
+  `tests/medicao.rs::avaliar_da_nota_parcial_de_ferramentas_e_agrupa_por_prompt` e
+  `avaliacao::testes::nota_de_ferramentas_conjunto_e_lcs`.
+- ☑ **Duração, tokens e passo-pai por passo** (`gravacao.rs`, formato **v2**, toda linha nova com
+  `versao`): `duracao_ms`; `tokens_entrada`/`tokens_saida` só quando o provedor devolveu (0/0 do
+  roteiro fica ausente); `tarefa` e `passo_pai` (o passo é reservado ANTES da chamada, para a
+  filha apontar para ele). `phxclaw medir ARQ.jsonl` soma por tarefa e diz «não informados (k de
+  N)» em vez de somar parcial. Gravação v1 continua lendo. Prova:
+  `gravacao::testes::{cada_passo_leva_duracao_tokens_e_passo_pai_e_as_somas_saem_por_tarefa,
+  gravacao_da_versao_1_continua_lendo_sem_medidas}` e `apps/phxclaw/tests/medir.rs`.
+  **Limite medido:** o `parallel_research` e o `team_delegate` guardam cópia das ferramentas e do
+  modelo de ANTES do gravador (decisão de desenho da gravação: subagente é UMA chamada), então os
+  passos internos de um subagente real não chegam à gravação hoje; o `passo_pai` está provado com
+  uma ferramenta aninhada de outra tarefa, que é o mesmo caminho.
+- ☑ **SHA do prompt e das skills** (`gravacao.rs`: linha `prompt` antes do primeiro pedido,
+  `prompt_sha256` das mensagens `system`, `skills_sha256` nome→sha do `SKILL.md`); o `avaliar`
+  agrupa em `por_prompt` (modelo, prompt, skills). Prova: o mesmo teste do item 1.
+- ☑ **Memória com substituição explícita** (`phxclaw-memory-context`: `invalid_at`,
+  `superseded_by`, `versao` no registro, `search_with(.., include_invalid)`, `invalidate` NO
+  LUGAR; `memoria.rs`: `gravar_substituindo`, `buscar_com`; `memory_save` ganha `substitui: id`
+  e `memory_search` devolve o id e aceita `include_invalid`). Arquivo antigo lê como versão 1.
+  Prova: `memoria::tests::substituir_marca_a_antiga_invalida_sem_apagar_e_a_busca_padrao_so_ve_a_valida`
+  e `phxclaw_memory_context::tests::substituicao_marca_invalid_at_no_lugar_e_arquivo_antigo_continua_lendo`.
+
+Fora: juiz por modelo (recusado), medição de passos internos de subagente real (limite acima),
+`phxclaw medir` sobre o `task.json` (as medidas vivem na gravação, um motor só).
+
 ## SP000031 — VS Code até ≥ 90% (ordem do dono, 02/10/2026: «completar os itens abaixo de 80%»; alvo fixado por ele em 90%)
 
 Medido em 01/10: 53,8% no agente (28 sim, 10 pela metade, 14 não, de 52). Cada id vale 1,92 pp.
@@ -421,3 +459,106 @@ de 270). O que falta, por fonte, sai de `phxclaw.json` (estado ≠ agente):
 
 **Aceite:** cada id muda de estado no `phxclaw.json` com evidência e teste RED→GREEN; o gerador
 imprime 100% por fonte. Nada digitado.
+
+
+## SP000035 — PHX Flow Engine (ordem do dono, 02/10/2026) — PLANEJADA
+
+**Fonte primária.** `git clone --depth 1 --filter=blob:none --sparse` de `github.com/n8n-io/n8n`
+funcionou de primeira pelo proxy (commit `56aa3d8`, `packages/workflow` 2.42.0, 23 MB) e o mesmo para
+`n8n-io/n8n-docs` (`49668e5`, 52 MB); nenhum arquivo precisou do `raw.githubusercontent.com`. A pasta
+`docs/` do repositório principal só tem o molde de ADR — a documentação vive no `n8n-docs`. Os dois
+clones foram apagados ao fim (disco em 1,3 GB livres).
+
+**Licença.** `LICENSE.md`: Sustainable Use License 1.0 (fair-code), e os arquivos `.ee.` são Enterprise
+(`LICENSE_EE.md`). Esta sprint usa **arquitetura e documentação, nenhuma linha de código** — a regra que a
+triagem de 01/10 já tinha (R12: recusar embutir). Para os nós da comunidade a regra do n8n é explícita:
+`connect/create-nodes/build-your-node/reference/verification-guidelines.md:51` — *«Make sure your package
+license is MIT»* — e o `n8n-nodes-starter` é MIT (`package.json` `"license": "MIT"`). Ou seja, um nó da
+comunidade escrito por nós (SP000033) nasce MIT por exigência deles, e isso não contamina o motor.
+
+**Medido (gerar_absorcao.py, 02/10):** n8n **40,7% no agente | 55,1% com bibliotecas** (24 sim, 17
+pela metade, 18 não, de 59). Cada id vale 1,69 pp.
+
+### O que o `fluxos.rs` já é (470 linhas, lido)
+
+DAG declarativo em JSON (`passos[]` com `depende`, `tarefa` OU `ferramenta`, `tentativas`), validado na
+leitura (id, ciclo, `{{x}}` só de dependência declarada), executado por ondas pelo
+`phxclaw-task-graph` (`claim_ready`, `RetryPolicy`), passo de agente pelo `rodar_filhas` e passo de
+ferramenta pelo `Agent::call_tool` — **o portão único**. Progresso gravado no `task.json` a cada onda;
+`retomar` confere o SHA-256 da definição e reaproveita as saídas ok. Teto de 64 passos. É um motor de
+**dependências**, não de **dados**: a saída de um passo é uma string, não uma lista de itens.
+
+### Correspondência (n8n → PHX Flow Engine)
+
+| n8n (`packages/…`) | Hoje no PhxClaw | Vira |
+|---|---|---|
+| `INode` + `IConnections` (`workflow/src/interfaces.ts:1740`, `:518`) | `Passo` com `depende` | **Nó** = ferramenta \| agente \| skill \| MCP \| comando \| comportamento; conexão com porta nomeada |
+| `INodeExecutionData[]` por item, `pairedItem` (`:1854`, `:1873`) | string | lista de itens JSON; `pairedItem` só se a prova pedir |
+| `If`/`Switch`, `Merge` (append/combine/chooseBranch), `SplitInBatches` | — | nós de controle **do motor**, não ferramentas |
+| `Wait` (timeInterval/specificTime/webhook/form, `Wait.node.ts:315`) | `AwaitingInput` só em tarefa | passo que descarrega para o disco e retoma (SP000029 é o alicerce) |
+| `retryOnFail/maxTries/waitBetweenTries`, `onError` (`:1739`) | `tentativas` | `continuar`, `saida_de_erro`, `sempre_sair` |
+| `errorWorkflow`, `executionTimeout` (`IWorkflowSettings :4041`) | `tool_timeout` por chamada | fluxo de erro e teto por passo/fluxo |
+| `runPartialWorkflow2` (`core/src/execution-engine/workflow-execute.ts:221`) | — | `rodar --ate PASSO` com saídas gravadas |
+| `pinData` (`workflow-execute.ts:101`) | `anteriores` da retomada (`fluxos.rs:298`) | pin escolhido e editável |
+| `ExecuteWorkflow` (`once`/`each`) | — | ferramenta `fluxo` (sub-fluxo) pelo mesmo portão |
+| Webhook/Schedule/Chat/MCP Trigger | gatilhos criam **tarefa** | gatilho aponta para **fluxo** |
+| `credentials.ts` + `encryption/aes-256-cbc.ts` | broker AES-256-GCM | fica; o nó pede ao broker, nunca recebe o segredo cru |
+| queue mode (main + workers, Redis) | `PostgresTaskJournal`, `PostgresOutbox` (bibliotecas) | onda 4, só se a bancada pedir |
+| editor-ui (canvas Vue + xyflow) | — | onda à parte; xyflow recusado (R20) |
+
+### Ondas
+
+1. **Dados e controle (motor):** itens em vez de string; nós `se`, `juntar`, `lote`, `parar_com_erro`;
+   `continuar_em_erro`/`saida_de_erro`; teto por passo e por fluxo; expressões `{{passo.campo}}` por
+   caminho JSON (sem JS). Fecha: nos_e_conexoes, execucao_por_item, ramificacao_if_switch, juncao_merge,
+   laco_lotes, continuar_em_erro, timeout_execucao, expressoes, fluxo_de_erro (9 ids → +15,3 pp).
+2. **Nós que são o que o dono descreveu:** `skill` (skills.rs), `mcp` (mcp.rs), `comando` (comandos.rs),
+   `comportamento` (estilos.rs/equipe.rs papel) viram tipos de passo pelo MESMO `call_tool`; ferramenta
+   `fluxo` (sub-fluxo) e `rodar --ate`; gatilho (agenda, webhook, pasta) apontando para fluxo. Fecha:
+   subfluxo, execucao_parcial, gatilho_dispara_fluxo, assistente_construtor_ia, variaveis_globais (5 ids).
+3. **Espera, humano e dados pinados:** passo `esperar` (tempo, webhook, resposta) que descarrega para o
+   disco — depende da SP000029; pin escolhido; poda de tarefas por idade/contagem; formulário servido.
+   Fecha: espera_wait, dados_pinados, poda_execucoes, gatilho_formulario, dados_binarios (5 ids).
+4. **Escala e gestão (só com número da bancada):** fila com workers pelas bibliotecas que já existem;
+   limite global; etiquetas/pastas; export/import; `/metrics`. Fecha: fila_workers, concorrencia_limite,
+   etiquetas_pastas, cli_importar_exportar, observabilidade_insights.
+5. **Editor visual — onda à parte, declarada e não iniciada:** xyflow recusado (R20); a opção é canvas
+   próprio em SVG como o UI-IR já faz, lendo o mesmo JSON do fluxo e mostrando o relatório da execução
+   (passo ok/falhou/bloqueado/reaproveitado). Entra depois da onda 1, porque desenhar um motor de
+   string seria desenhar o que vai mudar.
+
+**Sobem ao dono (produto):** projetos_rbac (usuários/papéis), segredos_externos (Vault/AWS), instalacao_docker_k8s,
+modelos_fluxo (galeria pública) — 4 ids ficam fora do alvo até ele decidir.
+
+### Hipóteses que morreram, com o número
+
+- **«O fluxos.rs já é um motor de workflow; falta só editor.»** Lido: 18 de 59 capacidades do n8n são
+  «não» e 13 delas são do **motor** (item, condição, laço, espera, erro). Editor sobre este motor
+  desenharia caixas que só sabem string → o editor é a onda 5, não a 1.
+- **«Agendar um fluxo já existe (cron = agente).»** `agenda.rs:67` e `gatilhos.rs:365` criam tarefa com
+  objetivo; **nenhuma** das 72 ferramentas roda fluxo → `gatilho_dispara_fluxo` nasceu parcial e
+  `subfluxo` não.
+- **«Queue mode pede Redis, como no n8n.»** As peças de claim já existem em Postgres (`task-graph`
+  `PostgresTaskJournal`, `event-bus` `claim_batch`, `bpm` `claim_ready_token`) e nenhuma é usada pelo
+  agente (`phxclaw-bpm` não é dependência de ninguém além do workspace). Raciocinado, não medido: a
+  bancada decide se um processo basta (hoje `max_paralelo` 4 por fluxo).
+- **«Copiar o pairedItem.»** O n8n precisa dele porque o nó reordena e filtra itens dentro do mesmo
+  nó; aqui cada passo é uma chamada pelo portão com evidência própria no ledger — a ligação item→origem
+  já é o registro de evidência. Entra só se um nó de junção por campo precisar.
+
+### Inspiração, não cópia — onde diverge e por qual restrição nossa
+
+| Divergência | Restrição |
+|---|---|
+| Nó **não** recebe credencial decifrada (`ICredentialsDecrypted` no n8n) | segredo pelo broker: o nó recebe um lease e o canal cifra na saída |
+| Código do nó roda no **bwrap** sem rede, não num task runner Node.js/Python | sandbox é pétrea do agente; sem ele não há shell |
+| Expressão por **caminho JSON**, sem avaliar JS (`expression.ts` usa tournament/JS) | nenhuma crate nova de motor: grafo e fila são o `phxclaw-task-graph` que já existe; avaliar JS seria segunda sandbox |
+| Progresso gravado por onda e `fluxo_sha256` conferido na retomada | ordem de digitação / evidência: saída velha nunca se aplica a definição nova (n8n permite editar e retomar) |
+| Todo nó passa pelo `Agent::call_tool` (política, regras, hooks, ledger) | portão único: um fluxo com portão próprio seria a segunda cópia da política |
+| Loop por **DAG desdobrado em lotes** (nó `lote` gera N passos), não por ciclo no grafo | `TaskGraphError::Cycle` fica; ciclo é o que impede retomar com prova |
+
+**Aceite:** cada id muda de estado no `phxclaw.json` com evidência e teste RED→GREEN; o gerador imprime a
+porcentagem; o teste central da onda 1 é um fluxo com `se` + `lote` + `continuar_em_erro` cujo relatório
+falha com o motor atual (string) e passa com itens.
+- ⏸ **Roteiros da UI sem arquivo de resultado (integrador, 02/10):** os 7 roteiros de tests/desktop (fora
+  qualificacao/) passam a gravar o placar em json, para o dossiê parar de depender da saída de quem rodou. QA.

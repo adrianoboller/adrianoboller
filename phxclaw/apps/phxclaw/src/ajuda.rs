@@ -167,6 +167,16 @@ pub const COMANDOS: &[Comando] = &[
         descricao: "Fluxo declarativo em DAG; cada passo e uma tarefa do agente ou uma ferramenta, \
                     pelo mesmo portao. retomar pula os passos que deram certo.",
     },
+    Comando {
+        grupo: Grupo::EquipeEFluxos,
+        nome: "agenda",
+        resumo: "Agenda: listar, adicionar (modelo ou fluxo) e disparar o que venceu",
+        apelidos: &["schedule"],
+        uso: "agenda listar | adicionar NOME \"OBJETIVO\" (--cada SEG | --cron EXPR) | disparar [--pasta DIR]",
+        descricao: "A mesma agenda do servidor (agenda.json da pasta) e o mesmo disparo da API. \
+                    Objetivo `fluxo: ARQ.json` roda o fluxo em DAG sem modelo; qualquer outro \
+                    texto vira tarefa do modelo.",
+    },
     // --- codigo ---
     Comando {
         grupo: Grupo::Codigo,
@@ -318,6 +328,18 @@ pub const COMANDOS: &[Comando] = &[
     },
     Comando {
         grupo: Grupo::Credenciais,
+        nome: "n8n",
+        resumo: "Guarda a chave da API e o segredo do webhook do n8n (habilita n8n_workflow)",
+        apelidos: &[],
+        uso: "n8n chave|segredo [--pasta DIR]",
+        descricao: "`chave` le PHXCLAW_N8N_API_KEY e `segredo` le PHXCLAW_N8N_WEBHOOK_SEGREDO do \
+                    AMBIENTE do comando e guarda no broker de <pasta>/n8n. A ferramenta n8n_workflow \
+                    existe com PHXCLAW_N8N_URL (capacidade automacao.n8n, fora do padrao): run \
+                    dispara o webhook de um fluxo assinando com o segredo; list/status leem a API \
+                    publica com a chave. Ver docs/N8N.md.",
+    },
+    Comando {
+        grupo: Grupo::Credenciais,
         nome: "api",
         resumo: "Guarda o Bearer da API de tarefas",
         apelidos: &[],
@@ -325,6 +347,26 @@ pub const COMANDOS: &[Comando] = &[
         descricao: "Le PHXCLAW_API_TOKEN (24+ caracteres) do AMBIENTE do comando e guarda no \
                     broker de <pasta>/api. O servir le do ambiente, senao do broker, senao de \
                     <pasta>/api.token (gerado na primeira vez).",
+    },
+    Comando {
+        grupo: Grupo::Credenciais,
+        nome: "openai",
+        resumo: "Guarda a chave da OpenAI (modelos openai:*)",
+        apelidos: &[],
+        uso: "openai chave [--pasta DIR]",
+        descricao: "Le OPENAI_API_KEY do AMBIENTE do comando e guarda no broker de \
+                    <pasta>/openai. O agente com openai:* le SO do broker: variavel no \
+                    ambiente sem chave guardada nao vale, e o erro cita este comando.",
+    },
+    Comando {
+        grupo: Grupo::Credenciais,
+        nome: "anthropic",
+        resumo: "Guarda a chave da Anthropic (modelos anthropic:*)",
+        apelidos: &[],
+        uso: "anthropic chave [--pasta DIR]",
+        descricao: "Le ANTHROPIC_API_KEY do AMBIENTE do comando e guarda no broker de \
+                    <pasta>/anthropic. O agente com anthropic:* le SO do broker; a chave da \
+                    Gemini (gemini:*) e a mesma de `gemini chave`.",
     },
     Comando {
         grupo: Grupo::Credenciais,
@@ -349,13 +391,17 @@ pub const COMANDOS: &[Comando] = &[
     Comando {
         grupo: Grupo::Credenciais,
         nome: "plugins",
-        resumo: "Guarda a semente de assinatura de plugin e reassina manifestos",
+        resumo: "Semente de assinatura, reassinar manifestos, loja: catalogo, instalar, empacotar",
         apelidos: &[],
-        uso: "plugins chave [--pasta DIR] | plugins assinar [DIR] [--raiz DIR] [--pasta DIR]",
+        uso: "plugins chave [--pasta DIR] | plugins assinar [DIR] [--raiz DIR] [--pasta DIR] | \
+              plugins catalogo [BUSCA] | plugins instalar NOME | plugins empacotar DIR SAIDA.tar",
         descricao: "chave: le PHXCLAW_PLUGIN_SIGNING_KEY do AMBIENTE do comando e guarda no broker \
                     de <pasta>/plugins. assinar: reassina os *.plugin.json de DIR (padrao \
                     plugins/builtin/manifests sob --raiz, o repositorio) com a semente do \
-                    ambiente, senao do broker, conferida contra config/trust/plugin-signers.json.",
+                    ambiente, senao do broker, conferida contra config/trust/plugin-signers.json. \
+                    catalogo/instalar: a loja de pacotes.catalogo (so pacote assinado, sha256 do \
+                    catalogo conferido antes de abrir), pela mesma Loja da ferramenta \
+                    plugin_catalog. empacotar: a pasta assinada num .tar para publicar.",
     },
     // --- medicao ---
     Comando {
@@ -371,14 +417,29 @@ pub const COMANDOS: &[Comando] = &[
     },
     Comando {
         grupo: Grupo::Medicao,
+        nome: "medir",
+        resumo: "Soma uma gravacao por tarefa: chamadas, duracao e tokens de cada passo",
+        apelidos: &["measure"],
+        uso: "medir ARQ.jsonl [--json]",
+        descricao: "Le uma gravacao (agente --gravar, avaliar, gravar:true na API) e soma por \
+                    tarefa -- a raiz e cada subagente pelo passo_pai -- as chamadas ao modelo e \
+                    as ferramentas, a duracao de cada lado e os tokens. Tokens so somam quando \
+                    o provedor os informou em toda chamada; senao diz quantas ficaram sem. \
+                    Gravacao da versao 1 (sem medidas) sai como «não medido», nunca estimada.",
+    },
+    Comando {
+        grupo: Grupo::Medicao,
         nome: "avaliar",
-        resumo: "Compara modelos pelo agente: p50/p95, tokens/s, CPU, energia e acerto",
+        resumo: "Compara modelos pelo agente: p50/p95, tokens/s, CPU, energia, acerto e nota",
         apelidos: &["eval"],
         uso: "avaliar --modelos A,B --tarefas DIR [--rodadas N] [--saida DIR] [--pasta DIR]",
         descricao: "Roda cada caso de DIR (*.json com gabarito, ou *.jsonl gravado) N vezes por \
                     modelo, pelo agente inteiro. Cada numero sai com faixa min-max, N e data; \
-                    vencedor so quando as faixas nao se cruzam. Energia so de RAPL ou NVIDIA: \
-                    sem eles, «não medida». Cada execucao fica gravada em SAIDA/gravacoes.",
+                    vencedor so quando as faixas nao se cruzam. Alem do acerto, a nota parcial \
+                    de ferramentas (conjunto e sequencia por LCS, 0 a 1, deterministica, nunca \
+                    por juiz) e o agrupamento pelo sha256 do prompt e das skills de cada \
+                    execucao. Energia so de RAPL ou NVIDIA: sem eles, «não medida». Cada \
+                    execucao fica gravada em SAIDA/gravacoes.",
     },
     Comando {
         grupo: Grupo::Medicao,
@@ -450,12 +511,16 @@ pub const COMANDOS: &[Comando] = &[
         resumo: "O config.json: valor efetivo e origem de cada chave, validar, definir",
         apelidos: &[],
         uso: "config mostrar [--json] | validar ARQ | exemplo | definir CHAVE VALOR|--remover \
-              [--projeto] [--pasta DIR]",
-        descricao: "Precedencia: ambiente > .phxclaw/config.json do projeto confiado > \
-                    <pasta>/config.json > padrao do catalogo. mostrar: valor e origem de cada \
-                    chave (segredo so aparece como no broker/ausente). definir grava atomico, com \
-                    revisao. Segredo nunca vai ao arquivo: o comando que o guarda no broker vem \
-                    na recusa. Chave desconhecida e tipo errado sao erro.",
+              [--projeto|--perfil NOME] | perfil listar|usar NOME|nenhum|criar NOME [--copiar-base] \
+              | sincronizar enviar|receber --ponte URL [--forcar] [--pasta DIR]",
+        descricao: "Precedencia: {PRECEDENCIA} (a do catalogo). mostrar: valor e origem de \
+                    cada chave (segredo so aparece como no broker/ausente). definir grava atomico, \
+                    com revisao. perfil: camadas nomeadas no config.json da pasta (`perfis`, \
+                    `perfil_ativo`; PHXCLAW_PERFIL escolhe por uma execucao). sincronizar: o \
+                    config.json vai e vem pela ponte, sem a revisao e sem segredo; os dois lados \
+                    mudados e conflito com as duas revisoes. Segredo nunca vai ao arquivo: o \
+                    comando que o guarda no broker vem na recusa. Chave desconhecida e tipo \
+                    errado sao erro.",
     },
     Comando {
         grupo: Grupo::Diagnostico,
@@ -501,10 +566,12 @@ pub fn texto(produto: &str, versao: &str, cli: &str) -> String {
 
 /// Ajuda de um comando: uso completo, apelidos e a descricao inteira.
 pub fn de(c: &Comando, cli: &str) -> String {
-    let mut s = format!(
-        "{}\n\nUSO:\n  {cli} {}\n\n{}\n",
-        c.resumo, c.uso, c.descricao
+    // `{PRECEDENCIA}` sai do motor (carga::precedencia_texto), nunca digitada aqui.
+    let descricao = c.descricao.replace(
+        "{PRECEDENCIA}",
+        &phxclaw_config_runtime::agente::carga::precedencia_texto(),
     );
+    let mut s = format!("{}\n\nUSO:\n  {cli} {}\n\n{}\n", c.resumo, c.uso, descricao);
     if !c.apelidos.is_empty() {
         s.push_str(&format!(
             "\nTambem aceito como: {}\n",
@@ -581,6 +648,15 @@ mod testes {
             sem_despacho.is_empty(),
             "na ajuda sem despacho: {sem_despacho:?}"
         );
+    }
+
+    /// A precedencia da ajuda e a que o motor aplica (uma constante, um texto).
+    #[test]
+    fn a_ajuda_do_config_cita_a_precedencia_do_motor() {
+        let t = de(achar("config").unwrap(), "phxclaw");
+        let frase = phxclaw_config_runtime::agente::carga::precedencia_texto();
+        assert!(t.contains(&frase), "{t}");
+        assert!(!t.contains("{PRECEDENCIA}"));
     }
 
     #[test]

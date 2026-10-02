@@ -653,8 +653,8 @@ async fn prova_real_de_visao_quando_apontada() {
         return;
     };
     let esperado = std::env::var("PHXCLAW_PROVA_VISAO_TEXTO").unwrap_or_else(|_| "4271".into());
-    let llm = phxclaw_llm::from_env(&spec).unwrap();
     let store = TaskStore::new(tmp("visao")).unwrap();
+    let llm = phxclaw_agent::chaves::modelo(&spec, store.root()).unwrap();
     let ag = Agent::new(
         llm,
         vec![],

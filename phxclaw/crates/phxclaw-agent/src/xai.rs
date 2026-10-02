@@ -178,8 +178,8 @@ impl XSearchTool {
     pub fn da_pasta(raiz_do_agente: &Path) -> Option<Self> {
         let credencial = SERVICO.credencial(raiz_do_agente).ok()?;
         let base =
-            std::env::var("PHXCLAW_XAI_API").unwrap_or_else(|_| "https://api.x.ai/v1".into());
-        let modelo = std::env::var("PHXCLAW_XAI_MODELO").unwrap_or_else(|_| "grok-4".into());
+            crate::config::texto_de("xai.api").unwrap_or_else(|| "https://api.x.ai/v1".into());
+        let modelo = crate::config::texto_de("xai.modelo").unwrap_or_else(|| "grok-4".into());
         Self::novo(&base, &modelo, credencial)
             .map_err(|e| eprintln!("aviso: x_search: {e}"))
             .ok()

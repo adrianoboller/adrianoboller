@@ -5,6 +5,9 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+# O config.json do agente, pelo leitor de processo (SP000020): leitura de PHXCLAW_* fora
+# do ponto unico e reprovada pela catraca de tools/config_catalogo.py.
+phxclaw-config-runtime = { path = "../../crates/phxclaw-config-runtime" }
 anyhow.workspace = true
 phxclaw-agent-catalog = { path = "../../crates/phxclaw-agent-catalog" }
 phxclaw-code-workspace = { path = "../../crates/phxclaw-code-workspace" }

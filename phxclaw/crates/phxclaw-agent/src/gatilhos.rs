@@ -18,6 +18,12 @@
 //!   o caminho do hospedeiro sem copiar daria ao modelo um arquivo que ele nao alcanca.
 //! - **Webhook e DADO, nunca ordem.** O corpo entra cercado e rotulado: quem posta no
 //!   webhook nao escreve o objetivo, so preenche o lugar que o operador reservou.
+//! - **O segredo do gatilho vale de dois jeitos, e e um so.** Em claro no
+//!   `X-PhxClaw-Segredo` (o Header Auth nativo do n8n e de quem nao calcula HMAC), ou
+//!   como `X-PhxClaw-Carimbo` + `X-PhxClaw-Assinatura` sobre `carimbo.corpo` -- a MESMA
+//!   assinatura do canal de webhook (`canais::webhook::assinar`) e do `n8n_workflow run`,
+//!   para um no de codigo do n8n servir aos dois sentidos. Fora da janela de 5 minutos a
+//!   assinatura nao vale: um pedido capturado nao dispara o gatilho para sempre.
 
 use crate::api::{ApiState, Criada, Recusa, criar_tarefa_com};
 use axum::extract::{Path as Caminho, State};
@@ -65,15 +71,13 @@ impl Heartbeat {
     /// `PHXCLAW_HEARTBEAT_MIN` (padrao 30; 0 desliga) e o arquivo de `PHXCLAW_HEARTBEAT`,
     /// ou `HEARTBEAT.md` na pasta do projeto, ou na raiz do agente. Sem arquivo, `None`.
     pub fn do_ambiente(projeto: Option<&Path>, raiz: &Path) -> Option<Self> {
-        let min: u64 = std::env::var("PHXCLAW_HEARTBEAT_MIN")
-            .ok()
-            .and_then(|v| v.trim().parse().ok())
+        let min: u64 = crate::config::inteiro_de("agente.heartbeat_min")
+            .and_then(|v| u64::try_from(v).ok())
             .unwrap_or(30);
         if min == 0 {
             return None;
         }
-        let arquivo = std::env::var_os("PHXCLAW_HEARTBEAT")
-            .map(PathBuf::from)
+        let arquivo = crate::config::caminho_de("agente.heartbeat_arquivo")
             .or_else(|| {
                 projeto
                     .map(|p| p.join("HEARTBEAT.md"))
@@ -389,7 +393,11 @@ async fn webhook(
             .map(|v| falso.insert(header::AUTHORIZATION, v));
         phxclaw_api_gateway::authorized(&falso, seg)
     });
-    if !pelo_segredo && !phxclaw_api_gateway::authorized(&h, &e.api.token) {
+    let pela_assinatura = g
+        .segredo
+        .as_deref()
+        .is_some_and(|seg| assinatura_confere(seg, &h, corpo.as_bytes()));
+    if !pelo_segredo && !pela_assinatura && !phxclaw_api_gateway::authorized(&h, &e.api.token) {
         return resp(
             StatusCode::UNAUTHORIZED,
             "token ou segredo ausente ou invalido",
@@ -431,6 +439,27 @@ async fn webhook(
             .into_response(),
         Err(r) => resp(r.status, &r.erro),
     }
+}
+
+/// `X-PhxClaw-Carimbo` + `X-PhxClaw-Assinatura` sobre o corpo cru, com a assinatura do
+/// canal de webhook e a janela dele; a comparacao e em tempo constante. Cabecalho ausente
+/// e simplesmente «nao conferiu»: quem manda o segredo em claro nao passa por aqui.
+fn assinatura_confere(segredo: &str, h: &HeaderMap, corpo: &[u8]) -> bool {
+    let carimbo: Option<i64> = h
+        .get("x-phxclaw-carimbo")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|c| c.trim().parse().ok());
+    let dada = h.get("x-phxclaw-assinatura").and_then(|v| v.to_str().ok());
+    let (Some(carimbo), Some(dada)) = (carimbo, dada) else {
+        return false;
+    };
+    if (chrono::Utc::now().timestamp() - carimbo).abs() > crate::canais::webhook::JANELA_SEG {
+        return false;
+    }
+    crate::canais::cripto::iguais(
+        dada.trim().as_bytes(),
+        crate::canais::webhook::assinar(segredo, carimbo, corpo).as_bytes(),
+    )
 }
 
 /// Uma linha para o `servir` dizer o que esta armado: gatilho que ninguem ve ligado e

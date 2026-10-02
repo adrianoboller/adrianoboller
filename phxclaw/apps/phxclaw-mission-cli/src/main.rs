@@ -34,9 +34,9 @@ fn main() -> Result<()> {
         command_timeout_ms: 300_000,
         max_output_bytes: 4 * 1024 * 1024,
     };
-    let state_root = env::var_os("PHXCLAW_STATE_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| env::temp_dir().join("phxclaw-state"));
+    let state_root =
+        phxclaw_config_runtime::agente::carga::caminho_do_processo("missao.estado_dir")
+            .unwrap_or_else(|| env::temp_dir().join("phxclaw-state"));
     let workspace = CodeWorkspace::open(&mission.project_root, state_root, policy)?;
     let report = runtime.run(&workspace, &mission)?;
     println!("{}", serde_json::to_string_pretty(&report)?);

@@ -20,11 +20,12 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-/// Variavel que aponta a pasta dos manifestos. Quando dada, manda: pasta errada vira aviso
-/// em vez de cair calada noutra pasta que o operador nao escolheu.
-pub const VAR_PASTA: &str = "PHXCLAW_AGENTES_DIR";
-/// Modelo local para os papeis que a planilha roteia para o Ollama.
-pub const VAR_MODELO_LOCAL: &str = "PHXCLAW_MODELO_LOCAL";
+/// Chave da pasta dos manifestos (`PHXCLAW_AGENTES_DIR`). Quando dada, manda: pasta errada
+/// vira aviso em vez de cair calada noutra pasta que o operador nao escolheu.
+pub const CHAVE_PASTA: &str = "agente.agentes_dir";
+/// Chave do modelo local para os papeis que a planilha roteia para o Ollama
+/// (`PHXCLAW_MODELO_LOCAL`).
+pub const CHAVE_MODELO_LOCAL: &str = "modelo.local";
 
 // O mesmo corte do `parallel_research`, de um lugar so (`config_de_subagente`).
 use crate::ferramentas::NUNCA_NO_SUBAGENTE;
@@ -77,6 +78,28 @@ impl Equipe {
             catalogo,
             frequencia,
         })
+    }
+
+    /// Equipe sem papel nenhum, para receber os de pacote quando nao ha catalogo.
+    pub fn nova(pasta: PathBuf) -> Self {
+        Self {
+            pasta,
+            catalogo: AgentCatalog::default(),
+            frequencia: BTreeMap::new(),
+        }
+    }
+
+    /// Soma um papel vindo de fora (um subagente de pacote assinado). Nome ou UUID
+    /// repetido e recusa: um pacote nao sobrepoe um papel da planilha.
+    pub fn somar(&mut self, m: AgentManifest) -> Result<(), String> {
+        let caps = m.capabilities.clone();
+        self.catalogo
+            .register(m)
+            .map_err(|e| format!("papel de pacote recusado: {e}"))?;
+        for c in caps {
+            *self.frequencia.entry(c).or_insert(0) += 1;
+        }
+        Ok(())
     }
 
     /// A pasta de `PHXCLAW_AGENTES_DIR`, ou a primeira `config/agents` que existir: na
@@ -244,8 +267,8 @@ pub const ARQUIVO_DA_INTERFACE: &str = "apps/phxclaw-ui/assets/equipe.json";
 
 /// Pasta dos manifestos: a variavel, ou a primeira candidata que existir.
 pub fn pasta_padrao() -> PathBuf {
-    if let Ok(p) = std::env::var(VAR_PASTA) {
-        return PathBuf::from(p);
+    if let Some(p) = crate::config::caminho_de(CHAVE_PASTA) {
+        return p;
     }
     let mut candidatas = vec![PathBuf::from("config/agents")];
     if let Ok(exe) = std::env::current_exe() {
@@ -395,7 +418,10 @@ pub fn escolher_modelo(
     match local {
         Some(l) => (
             l.clone(),
-            format!("modelo local de {VAR_MODELO_LOCAL} (a planilha roteia para Ollama)"),
+            format!(
+                "modelo local de {} (a planilha roteia para Ollama)",
+                crate::config::variavel(CHAVE_MODELO_LOCAL)
+            ),
         ),
         None if pai.id().starts_with("ollama:") => (
             pai.clone(),
@@ -404,7 +430,8 @@ pub fn escolher_modelo(
         None => (
             pai.clone(),
             format!(
-                "modelo do agente pai: a planilha roteia para Ollama, mas {VAR_MODELO_LOCAL} nao esta configurado"
+                "modelo do agente pai: a planilha roteia para Ollama, mas {} nao esta configurado",
+                crate::config::variavel(CHAVE_MODELO_LOCAL)
             ),
         ),
     }

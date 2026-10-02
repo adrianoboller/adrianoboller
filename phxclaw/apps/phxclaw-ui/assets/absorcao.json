@@ -1,18 +1,17 @@
 {
  "openclaw": {
   "total": 39,
-  "no_agente": 34,
-  "parcial": 4,
+  "no_agente": 35,
+  "parcial": 3,
   "nao": 1,
-  "pct_agente": 87.2,
-  "pct_com_bibliotecas": 92.3,
+  "pct_agente": 89.7,
+  "pct_com_bibliotecas": 93.6,
   "falta": [
    "canal_imessage"
   ],
   "pela_metade": [
    "canal_teams",
    "canal_googlechat",
-   "plugins",
    "voz_wake"
   ],
   "lido_em": "01/10/2026",
@@ -119,7 +118,7 @@
    },
    {
     "id": "plugins",
-    "estado": "parcial"
+    "estado": "agente"
    },
    {
     "id": "sandbox",
@@ -177,18 +176,17 @@
  },
  "hermes": {
   "total": 40,
-  "no_agente": 35,
-  "parcial": 4,
+  "no_agente": 36,
+  "parcial": 3,
   "nao": 1,
-  "pct_agente": 87.5,
-  "pct_com_bibliotecas": 92.5,
+  "pct_agente": 90.0,
+  "pct_com_bibliotecas": 93.8,
   "falta": [
    "canal_imessage"
   ],
   "pela_metade": [
    "canal_teams",
    "canal_googlechat",
-   "plugins",
    "voz_wake"
   ],
   "lido_em": "01/10/2026",
@@ -295,7 +293,7 @@
    },
    {
     "id": "plugins",
-    "estado": "parcial"
+    "estado": "agente"
    },
    {
     "id": "sandbox",
@@ -357,15 +355,13 @@
  },
  "claude_code": {
   "total": 41,
-  "no_agente": 40,
-  "parcial": 1,
+  "no_agente": 41,
+  "parcial": 0,
   "nao": 0,
-  "pct_agente": 97.6,
-  "pct_com_bibliotecas": 98.8,
+  "pct_agente": 100.0,
+  "pct_com_bibliotecas": 100.0,
   "falta": [],
-  "pela_metade": [
-   "plugins"
-  ],
+  "pela_metade": [],
   "lido_em": "01/10/2026",
   "capacidades": [
    {
@@ -458,7 +454,7 @@
    },
    {
     "id": "plugins",
-    "estado": "parcial"
+    "estado": "agente"
    },
    {
     "id": "sandbox",
@@ -536,14 +532,13 @@
  },
  "codex": {
   "total": 43,
-  "no_agente": 41,
-  "parcial": 2,
+  "no_agente": 42,
+  "parcial": 1,
   "nao": 0,
-  "pct_agente": 95.3,
-  "pct_com_bibliotecas": 97.7,
+  "pct_agente": 97.7,
+  "pct_com_bibliotecas": 98.8,
   "falta": [],
   "pela_metade": [
-   "plugins",
    "ambientes_nuvem"
   ],
   "lido_em": "01/10/2026",
@@ -590,7 +585,7 @@
    },
    {
     "id": "plugins",
-    "estado": "parcial"
+    "estado": "agente"
    },
    {
     "id": "hooks",
@@ -965,28 +960,18 @@
  },
  "vscode": {
   "total": 52,
-  "no_agente": 39,
-  "parcial": 5,
-  "nao": 8,
-  "pct_agente": 75.0,
-  "pct_com_bibliotecas": 79.8,
+  "no_agente": 48,
+  "parcial": 0,
+  "nao": 4,
+  "pct_agente": 92.3,
+  "pct_com_bibliotecas": 92.3,
   "falta": [
    "minimapa",
    "dobra_codigo",
-   "perfis",
    "remoto_ssh_containers",
-   "live_share",
-   "breadcrumbs",
-   "sugestao_inline_ia",
-   "settings_sync"
+   "live_share"
   ],
-  "pela_metade": [
-   "plugins",
-   "marketplace_extensoes",
-   "tunel_remoto",
-   "acessibilidade",
-   "ide_web"
-  ],
+  "pela_metade": [],
   "lido_em": "01/10/2026",
   "capacidades": [
    {
@@ -1099,11 +1084,11 @@
    },
    {
     "id": "plugins",
-    "estado": "parcial"
+    "estado": "agente"
    },
    {
     "id": "marketplace_extensoes",
-    "estado": "parcial"
+    "estado": "agente"
    },
    {
     "id": "configuracoes_json_tela",
@@ -1111,7 +1096,7 @@
    },
    {
     "id": "perfis",
-    "estado": "nao"
+    "estado": "agente"
    },
    {
     "id": "temas",
@@ -1127,7 +1112,7 @@
    },
    {
     "id": "tunel_remoto",
-    "estado": "parcial"
+    "estado": "agente"
    },
    {
     "id": "live_share",
@@ -1151,7 +1136,7 @@
    },
    {
     "id": "breadcrumbs",
-    "estado": "nao"
+    "estado": "agente"
    },
    {
     "id": "snippets",
@@ -1171,7 +1156,7 @@
    },
    {
     "id": "sugestao_inline_ia",
-    "estado": "nao"
+    "estado": "agente"
    },
    {
     "id": "mcp_cliente",
@@ -1183,11 +1168,11 @@
    },
    {
     "id": "settings_sync",
-    "estado": "nao"
+    "estado": "agente"
    },
    {
     "id": "acessibilidade",
-    "estado": "parcial"
+    "estado": "agente"
    },
    {
     "id": "idiomas_interface",
@@ -1195,7 +1180,293 @@
    },
    {
     "id": "ide_web",
+    "estado": "agente"
+   }
+  ]
+ },
+ "n8n": {
+  "total": 59,
+  "no_agente": 24,
+  "parcial": 17,
+  "nao": 18,
+  "pct_agente": 40.7,
+  "pct_com_bibliotecas": 55.1,
+  "falta": [
+   "execucao_por_item",
+   "variaveis_globais",
+   "ramificacao_if_switch",
+   "laco_lotes",
+   "espera_wait",
+   "continuar_em_erro",
+   "fluxo_de_erro",
+   "execucao_parcial",
+   "subfluxo",
+   "gatilho_formulario",
+   "segredos_externos",
+   "poda_execucoes",
+   "editor_canvas",
+   "modelos_fluxo",
+   "etiquetas_pastas",
+   "projetos_rbac",
+   "assistente_construtor_ia",
+   "instalacao_docker_k8s"
+  ],
+  "pela_metade": [
+   "nos_e_conexoes",
+   "expressoes",
+   "juncao_merge",
+   "timeout_execucao",
+   "dados_pinados",
+   "versionamento_fluxo",
+   "gatilho_poll",
+   "gatilho_dispara_fluxo",
+   "oauth2_generico",
+   "dados_binarios",
+   "fila_workers",
+   "concorrencia_limite",
+   "controle_versao_git_fluxos",
+   "guardrails",
+   "requisicao_http",
+   "observabilidade_insights",
+   "cli_importar_exportar"
+  ],
+  "lido_em": "02/10/2026",
+  "capacidades": [
+   {
+    "id": "workflows",
+    "estado": "agente"
+   },
+   {
+    "id": "nos_e_conexoes",
     "estado": "parcial"
+   },
+   {
+    "id": "execucao_por_item",
+    "estado": "nao"
+   },
+   {
+    "id": "expressoes",
+    "estado": "parcial"
+   },
+   {
+    "id": "variaveis_globais",
+    "estado": "nao"
+   },
+   {
+    "id": "ramificacao_if_switch",
+    "estado": "nao"
+   },
+   {
+    "id": "juncao_merge",
+    "estado": "parcial"
+   },
+   {
+    "id": "laco_lotes",
+    "estado": "nao"
+   },
+   {
+    "id": "espera_wait",
+    "estado": "nao"
+   },
+   {
+    "id": "tentativas_por_no",
+    "estado": "agente"
+   },
+   {
+    "id": "timeout_execucao",
+    "estado": "parcial"
+   },
+   {
+    "id": "continuar_em_erro",
+    "estado": "nao"
+   },
+   {
+    "id": "fluxo_de_erro",
+    "estado": "nao"
+   },
+   {
+    "id": "execucao_parcial",
+    "estado": "nao"
+   },
+   {
+    "id": "retomar_execucao",
+    "estado": "agente"
+   },
+   {
+    "id": "dados_pinados",
+    "estado": "parcial"
+   },
+   {
+    "id": "subfluxo",
+    "estado": "nao"
+   },
+   {
+    "id": "execucao_codigo",
+    "estado": "agente"
+   },
+   {
+    "id": "versionamento_fluxo",
+    "estado": "parcial"
+   },
+   {
+    "id": "gatilho_manual",
+    "estado": "agente"
+   },
+   {
+    "id": "cron",
+    "estado": "agente"
+   },
+   {
+    "id": "gatilhos_evento",
+    "estado": "agente"
+   },
+   {
+    "id": "gatilho_poll",
+    "estado": "parcial"
+   },
+   {
+    "id": "webchat",
+    "estado": "agente"
+   },
+   {
+    "id": "gatilho_formulario",
+    "estado": "nao"
+   },
+   {
+    "id": "mcp_servidor",
+    "estado": "agente"
+   },
+   {
+    "id": "gatilho_dispara_fluxo",
+    "estado": "parcial"
+   },
+   {
+    "id": "credenciais_cifradas",
+    "estado": "agente"
+   },
+   {
+    "id": "oauth2_generico",
+    "estado": "parcial"
+   },
+   {
+    "id": "segredos_externos",
+    "estado": "nao"
+   },
+   {
+    "id": "redacao_dados_execucao",
+    "estado": "agente"
+   },
+   {
+    "id": "historico_execucoes",
+    "estado": "agente"
+   },
+   {
+    "id": "dados_binarios",
+    "estado": "parcial"
+   },
+   {
+    "id": "poda_execucoes",
+    "estado": "nao"
+   },
+   {
+    "id": "fila_workers",
+    "estado": "parcial"
+   },
+   {
+    "id": "concorrencia_limite",
+    "estado": "parcial"
+   },
+   {
+    "id": "sandbox",
+    "estado": "agente"
+   },
+   {
+    "id": "editor_canvas",
+    "estado": "nao"
+   },
+   {
+    "id": "modelos_fluxo",
+    "estado": "nao"
+   },
+   {
+    "id": "etiquetas_pastas",
+    "estado": "nao"
+   },
+   {
+    "id": "projetos_rbac",
+    "estado": "nao"
+   },
+   {
+    "id": "controle_versao_git_fluxos",
+    "estado": "parcial"
+   },
+   {
+    "id": "assistente_construtor_ia",
+    "estado": "nao"
+   },
+   {
+    "id": "plugins",
+    "estado": "agente"
+   },
+   {
+    "id": "marketplace_extensoes",
+    "estado": "agente"
+   },
+   {
+    "id": "modo_agente",
+    "estado": "agente"
+   },
+   {
+    "id": "memoria",
+    "estado": "agente"
+   },
+   {
+    "id": "ferramentas_do_agente",
+    "estado": "agente"
+   },
+   {
+    "id": "mcp_cliente",
+    "estado": "agente"
+   },
+   {
+    "id": "aprovacao_humana",
+    "estado": "agente"
+   },
+   {
+    "id": "guardrails",
+    "estado": "parcial"
+   },
+   {
+    "id": "avaliacao_modelos",
+    "estado": "agente"
+   },
+   {
+    "id": "requisicao_http",
+    "estado": "parcial"
+   },
+   {
+    "id": "banco_postgres",
+    "estado": "agente"
+   },
+   {
+    "id": "shell",
+    "estado": "agente"
+   },
+   {
+    "id": "observabilidade_insights",
+    "estado": "parcial"
+   },
+   {
+    "id": "api_servidor",
+    "estado": "agente"
+   },
+   {
+    "id": "cli_importar_exportar",
+    "estado": "parcial"
+   },
+   {
+    "id": "instalacao_docker_k8s",
+    "estado": "nao"
    }
   ]
  }

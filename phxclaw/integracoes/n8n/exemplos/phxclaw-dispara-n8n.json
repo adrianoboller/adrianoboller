@@ -1,0 +1,54 @@
+{
+  "name": "PhxClaw -> n8n -> PhxClaw: fluxo disparado pelo n8n_workflow run, resultado de volta pelo gatilho",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "pedido",
+        "responseMode": "lastNode",
+        "options": { "rawBody": true }
+      },
+      "name": "Webhook do fluxo",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Confere a assinatura do PhxClaw: sha256=HMAC(segredo, carimbo + '.' + corpo cru),\n// a MESMA do canal de webhook e do gatilho /v1/triggers. Janela de 5 minutos.\nconst crypto = require('crypto');\nconst segredo = $env.PHXCLAW_N8N_WEBHOOK_SEGREDO;\nconst h = $input.first().json.headers;\nconst carimbo = Number(h['x-phxclaw-carimbo']);\nconst dada = String(h['x-phxclaw-assinatura'] || '');\nconst corpo = Buffer.from($input.first().binary.data.data, 'base64');\nif (!segredo || !Number.isFinite(carimbo) || Math.abs(Date.now() / 1000 - carimbo) > 300) {\n  throw new Error('carimbo ausente ou fora da janela');\n}\nconst esperada = 'sha256=' + crypto.createHmac('sha256', segredo).update(carimbo + '.').update(corpo).digest('hex');\nif (dada.length !== esperada.length || !crypto.timingSafeEqual(Buffer.from(dada), Buffer.from(esperada))) {\n  throw new Error('assinatura nao confere');\n}\nreturn [{ json: JSON.parse(corpo.toString('utf8')) }];"
+      },
+      "name": "Conferir HMAC",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [260, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.PHXCLAW_URL }}/v1/triggers/n8n-resultado",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "X-PhxClaw-Segredo", "value": "={{ $env.PHXCLAW_N8N_WEBHOOK_SEGREDO }}" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { pedido: $json, processado_em: $now.toISO(), execucao: $execution.id } }}",
+        "options": {}
+      },
+      "name": "Devolver ao PhxClaw",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [520, 0]
+    }
+  ],
+  "connections": {
+    "Webhook do fluxo": { "main": [[{ "node": "Conferir HMAC", "type": "main", "index": 0 }]] },
+    "Conferir HMAC": { "main": [[{ "node": "Devolver ao PhxClaw", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" },
+  "meta": {
+    "phxclaw": "O PhxClaw dispara com n8n_workflow {action: run, path: pedido}; o resultado volta por POST /v1/triggers/n8n-resultado (gatilho 'n8n-resultado' em gatilhos.json). Escrito a mao em 02/10/2026; NAO importado num n8n de verdade (ver docs/N8N.md)."
+  }
+}

@@ -21,17 +21,16 @@ pub struct ClawCodeBridgeConfig {
 }
 
 impl ClawCodeBridgeConfig {
+    /// `pontes.claw.*` do config.json (ambiente `PHXCLAW_CLAW_*` por cima).
     pub fn from_env() -> Self {
+        use phxclaw_config_runtime::agente::carga::{caminho_do_processo, inteiro_do_processo};
         Self {
-            executable: std::env::var_os("PHXCLAW_CLAW_BIN")
-                .map(PathBuf::from)
+            executable: caminho_do_processo("pontes.claw.bin")
                 .unwrap_or_else(|| PathBuf::from("claw")),
-            workspace_root: std::env::var_os("PHXCLAW_CLAW_WORKSPACE")
-                .map(PathBuf::from)
+            workspace_root: caminho_do_processo("pontes.claw.workspace")
                 .unwrap_or_else(|| PathBuf::from(".")),
-            timeout_ms: std::env::var("PHXCLAW_CLAW_TIMEOUT_MS")
-                .ok()
-                .and_then(|value| value.parse().ok())
+            timeout_ms: inteiro_do_processo("pontes.claw.timeout_ms")
+                .and_then(|v| u64::try_from(v).ok())
                 .unwrap_or(120_000),
             max_output_bytes: 8 * 1024 * 1024,
         }

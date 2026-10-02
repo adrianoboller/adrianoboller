@@ -96,6 +96,12 @@ pub fn router(state: ApiState) -> Router {
         .merge(crate::config::rotas())
         // A tela instalavel (PWA): a mesma interface no navegador, no celular e na ponte.
         .merge(crate::pwa::rotas())
+        // O tunel remoto do editor (terminal e LSP do projeto), que a ponte deixa passar.
+        .merge(crate::tunel::rotas())
+        // O IDE no navegador: terminal do Helix por websocket, simbolos e completacao por IA.
+        .merge(crate::ide::rotas())
+        // MCP por streamable HTTP (`POST /mcp`), para o MCP Client Tool do n8n e afins.
+        .merge(crate::mcp::rotas())
         .with_state(state)
 }
 
@@ -272,7 +278,10 @@ pub fn criar_tarefa_com(
     let agente = if n.gravar {
         let arq = s.store.dir(&t.id).join(ARQUIVO_DE_GRAVACAO);
         match crate::gravacao::Gravador::criar(&arq, &t.objective, &t.model) {
-            Ok(g) if !n.plan_first => crate::gravacao::gravando(agente, &g),
+            Ok(g) if !n.plan_first => {
+                g.tarefa(&t.id);
+                crate::gravacao::gravando(agente, &g)
+            }
             Ok(_) => agente,
             Err(e) => {
                 t.status = TaskStatus::Failed;
@@ -558,29 +567,82 @@ async fn agenda(State(s): State<ApiState>, h: HeaderMap) -> Resp {
     Ok(Json(s.agenda.lock().unwrap().items.clone()).into_response())
 }
 
+/// Prefixo do objetivo que agenda um FLUXO (`fluxos.rs`) em vez de uma tarefa de modelo:
+/// `fluxo: caminho/do/arquivo.json`. O fluxo roda pelo mesmo `fluxos::rodar` da CLI, sem
+/// modelo quando so tem passos de ferramenta -- e o que deixa um monitor deterministico
+/// (consultar, extrair, avisar) entrar pela agenda numa maquina sem Ollama.
+pub const PREFIXO_FLUXO: &str = "fluxo:";
+
+/// Caminho do fluxo de um objetivo `fluxo: ARQ`, ou `None` se e objetivo de modelo.
+pub fn fluxo_do_objetivo(objetivo: &str) -> Option<&str> {
+    objetivo
+        .trim_start()
+        .strip_prefix(PREFIXO_FLUXO)
+        .map(str::trim)
+        .filter(|c| !c.is_empty())
+}
+
 /// Dispara o que venceu na agenda; o servidor chama isto periodicamente.
 pub fn disparar_agenda(s: &ApiState) -> usize {
+    disparar_agenda_com_handles(s).len()
+}
+
+/// Como `disparar_agenda`, devolvendo o handle de cada disparo: a CLI `agenda disparar`
+/// espera por eles antes de sair, e o teste espera o fluxo terminar sem dormir no escuro.
+pub fn disparar_agenda_com_handles(s: &ApiState) -> Vec<tokio::task::JoinHandle<()>> {
     let vencidos = s.agenda.lock().unwrap().due(Utc::now());
-    let mut n = 0;
+    let mut handles = Vec::new();
     for v in vencidos {
-        if let Ok(agente) = (s.factory)(&s.default_model) {
-            let t = Task::new(v.objective.clone(), s.default_model.clone());
-            if let Some(item) = s
-                .agenda
-                .lock()
-                .unwrap()
-                .items
-                .iter_mut()
-                .find(|x| x.id == v.id)
-            {
-                item.last_task = Some(t.id.clone());
+        let Ok(agente) = (s.factory)(&s.default_model) else {
+            continue;
+        };
+        let anotar = {
+            let s = s.clone();
+            let id = v.id.clone();
+            move |tarefa: String| {
+                if let Some(item) = s
+                    .agenda
+                    .lock()
+                    .unwrap()
+                    .items
+                    .iter_mut()
+                    .find(|x| x.id == id)
+                {
+                    item.last_task = Some(tarefa);
+                }
+                let _ = s.agenda.lock().unwrap().save();
             }
-            let _ = s.agenda.lock().unwrap().save();
-            executar(s.clone(), agente, t);
-            n += 1;
+        };
+        if let Some(arq) = fluxo_do_objetivo(&v.objective) {
+            // O fluxo e lido NO disparo: editar o arquivo entre dois disparos vale na
+            // proxima vez, sem reagendar. Arquivo invalido e registrado e nao derruba o laco.
+            let arq = arq.to_string();
+            handles.push(tokio::spawn(async move {
+                let f = match std::fs::read_to_string(&arq)
+                    .map_err(|e| format!("{arq}: {e}"))
+                    .and_then(|t| crate::fluxos::ler(&t))
+                {
+                    Ok(f) => f,
+                    Err(e) => {
+                        eprintln!("agenda: fluxo {arq} nao disparado: {e}");
+                        return;
+                    }
+                };
+                match crate::fluxos::rodar(&agente, &f).await {
+                    Ok(r) => anotar(r.tarefa),
+                    Err(e) => eprintln!("agenda: fluxo {}: {e}", f.nome),
+                }
+            }));
+        } else {
+            let t = Task::new(v.objective.clone(), s.default_model.clone());
+            anotar(t.id.clone());
+            let h = executar(s.clone(), agente, t);
+            handles.push(tokio::spawn(async move {
+                let _ = h.await;
+            }));
         }
     }
-    n
+    handles
 }
 
 /// Site publicado pelo agente. Sem Bearer: e para abrir no navegador. So serve pasta que a

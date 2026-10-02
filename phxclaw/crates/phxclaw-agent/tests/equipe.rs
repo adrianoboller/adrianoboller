@@ -219,7 +219,7 @@ async fn papel_roteado_para_ollama_usa_o_local_e_os_outros_o_do_pai() {
         panic!("papel 18 nao e humano")
     };
     assert_eq!(tarefa.answer.as_deref(), Some("do local"));
-    assert!(motivo_modelo.contains(equipe::VAR_MODELO_LOCAL));
+    assert!(motivo_modelo.contains(phxclaw_agent::config::variavel(equipe::CHAVE_MODELO_LOCAL)));
     assert_eq!(local.seen.lock().unwrap().len(), 1);
     assert!(pai.seen.lock().unwrap().is_empty());
 

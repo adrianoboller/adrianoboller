@@ -563,7 +563,7 @@ pub async fn medir(
     if phxclaw_browser::find_chromium().is_none() {
         return Err(format!(
             "Chromium nao encontrado; defina {}",
-            phxclaw_browser::CHROMIUM_ENV
+            phxclaw_browser::variavel_do_chromium()
         ));
     }
     let pagina = Pagina::subir()?;
@@ -576,6 +576,7 @@ pub async fn medir(
     }
     let navegador = Browser::launch(LaunchOptions {
         window_size: crate::fidelidade_ui::JANELA,
+        envoltorio: Some(crate::processo::envoltorio_do_navegador()?),
         ..LaunchOptions::with_policy(BrowserPolicy::only([pagina.base.clone()]))
     })
     .await
@@ -843,7 +844,7 @@ pub async fn medir_phx(
     if phxclaw_browser::find_chromium().is_none() {
         return Err(format!(
             "Chromium nao encontrado; defina {}",
-            phxclaw_browser::CHROMIUM_ENV
+            phxclaw_browser::variavel_do_chromium()
         ));
     }
     let (env, app) = phxclaw_ui_ir::phx_json::ler(phx)?;
@@ -869,6 +870,7 @@ pub async fn medir_phx(
     }
     let navegador = Browser::launch(LaunchOptions {
         window_size: crate::fidelidade_ui::JANELA,
+        envoltorio: Some(crate::processo::envoltorio_do_navegador()?),
         ..LaunchOptions::with_policy(BrowserPolicy::only([pagina.base.clone()]))
     })
     .await

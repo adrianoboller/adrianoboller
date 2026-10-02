@@ -29,7 +29,7 @@ sem SMTP não há `send_email`, sem token não há `github` — e por isso há d
 montou aqui e o que existe no código mas não montou.
 
 <!-- gerado:ferramentas:inicio -->
-Medido em 2026-10-02 por `python3 tools/gerar_doc_agente.py`, de `phxclaw ferramentas` (versao 0.70.0, binario de 2026-10-02 01:02), com `PHXCLAW_CAPACIDADES` no padrao. **72 ferramentas montadas nesta maquina**, 61 concedidas por padrao.
+Medido em 2026-10-02 por `python3 tools/gerar_doc_agente.py`, de `phxclaw ferramentas` (versao 0.70.0, binario de 2026-10-02 04:48), com `PHXCLAW_CAPACIDADES` no padrao. **72 ferramentas montadas nesta maquina**, 61 concedidas por padrao.
 
 | Capacidade | Padrao | Ferramentas |
 |---|---|---|
@@ -118,8 +118,8 @@ Medido em 2026-10-02 por `python3 tools/gerar_doc_agente.py`, de `phxclaw ferram
 | `weather` | `weather.read` | Previsao do tempo para uma coordenada (MET Norway, CC BY 4.0): temperatura, vento, umidade, chuva e simbolo hora a hora. Cite a atribuicao que vem na resposta. |
 | `session_search` | `session.read` | Full-text search over previous tasks of this agent (objective, plan, answer and step summaries). Returns the best matches with id, date, status and a snippet. Use it to recall what was done or found before. |
 | `daily_summary` | `session.read` | Summary of all tasks created on a day (UTC): counts by status, tokens, and one line per task with its outcome and files. date: YYYY-MM-DD, 'today' (default) or 'yesterday'. |
-| `memory_save` | `memory.write` | Save a short note that future tasks should know (a user preference, a fact learned, where something is). Future tasks receive the most relevant notes automatically. Never save passwords or keys: they are redacted. |
-| `memory_search` | `memory.read` | Search notes saved by previous tasks, by words. |
+| `memory_save` | `memory.write` | Save a short note that future tasks should know (a user preference, a fact learned, where something is). Future tasks receive the most relevant notes automatically. Never save passwords or keys: they are redacted. If the note contradicts an existing one, pass its id in `substitui`: the old note is kept but marked invalid, never deleted. |
+| `memory_search` | `memory.read` | Search notes saved by previous tasks, by words. Each hit comes with its id (for memory_save `substitui`). Notes replaced by newer ones are hidden unless include_invalid is true. |
 | `skill_load` | `skill.read` | Load the full instructions of a skill listed in the system prompt, by name. |
 | `glob` | `fs.read` | Find files by name pattern in the task directory, skipping what .gitignore ignores. pattern: '*.rs' (any folder), 'src/**/*.{ts,tsx}' (path). Newest first. Optional path (subfolder), limit, include_ignored. |
 | `grep` | `fs.read` | Search file contents with a regex in the task directory, skipping .gitignore'd and binary files. output_mode: content (default; file, line, text, with 'context' lines around), files (only names), count. Optional glob ('*.rs'), path, case_insensitive, limit. |
@@ -148,7 +148,7 @@ Medido em 2026-10-02 por `python3 tools/gerar_doc_agente.py`, de `phxclaw ferram
 ### Existem no fonte, não montadas nesta máquina
 
 <!-- gerado:condicionais:inicio -->
-Medido em 2026-10-02: **13 ferramentas existem no fonte e nao montaram nesta maquina** (dependem de configuracao, token, canal ou feature de compilacao; a condicao de cada uma esta em `crates/phxclaw-agent/src/montagem.rs`).
+Medido em 2026-10-02: **15 ferramentas existem no fonte e nao montaram nesta maquina** (dependem de configuracao, token, canal ou feature de compilacao; a condicao de cada uma esta em `crates/phxclaw-agent/src/montagem.rs`).
 
 | Ferramenta | Definida em |
 |---|---|
@@ -158,8 +158,10 @@ Medido em 2026-10-02: **13 ferramentas existem no fonte e nao montaram nesta maq
 | `github_write` | `crates/phxclaw-agent/src/forja.rs` |
 | `gitlab` | `crates/phxclaw-agent/src/forja.rs` |
 | `gitlab_write` | `crates/phxclaw-agent/src/forja.rs` |
+| `n8n_workflow` | `crates/phxclaw-agent/src/n8n.rs` |
 | `node_invoke` | `crates/phxclaw-agent/src/dispositivos.rs` |
 | `node_list` | `crates/phxclaw-agent/src/dispositivos.rs` |
+| `plugin_catalog` | `crates/phxclaw-agent/src/loja.rs` |
 | `postgres` | `crates/phxclaw-agent/src/sistema.rs` |
 | `postgres_write` | `crates/phxclaw-agent/src/sistema.rs` |
 | `send_email` | `crates/phxclaw-agent/src/email.rs` |
@@ -201,6 +203,7 @@ EQUIPE E FLUXOS:
   equipe        Os papeis da equipe: listar, mostrar, delegar
   gonogo        Conselho de integradores: abrir, registrar parecer, ver, decidir Go/NoGo
   fluxo         Fluxo em DAG: rodar e retomar
+  agenda        Agenda: listar, adicionar (modelo ou fluxo) e disparar o que venceu
 
 CODIGO:
   revisar       Revisao de codigo de um diff ou PR (serve para CI)
@@ -221,14 +224,18 @@ CREDENCIAIS (vao para o SecretBroker, nunca para arquivo):
   elevenlabs    Guarda a chave da ElevenLabs ou lista as vozes da conta
   gemini        Guarda a chave da Gemini API (Nano Banana no image_generate)
   xai           Guarda a chave da xAI (habilita x_search)
+  n8n           Guarda a chave da API e o segredo do webhook do n8n (habilita n8n_workflow)
   api           Guarda o Bearer da API de tarefas
+  openai        Guarda a chave da OpenAI (modelos openai:*)
+  anthropic     Guarda a chave da Anthropic (modelos anthropic:*)
   imagem        Guarda a chave do gerador de imagem openai
   email         Guarda a senha do SMTP (send_email e canal de e-mail)
-  plugins       Guarda a semente de assinatura de plugin e reassina manifestos
+  plugins       Semente de assinatura, reassinar manifestos, loja: catalogo, instalar, empacotar
 
 MEDICAO (so numero medido, com faixa min-max, N e data):
   repetir       Repete uma gravacao sem modelo e acusa a divergencia com o passo
-  avaliar       Compara modelos pelo agente: p50/p95, tokens/s, CPU, energia e acerto
+  medir         Soma uma gravacao por tarefa: chamadas, duracao e tokens de cada passo
+  avaliar       Compara modelos pelo agente: p50/p95, tokens/s, CPU, energia, acerto e nota
   ui            Prova as telas geradas: ida e volta (fidelidade) e larguras (responsivo)
   skill         Otimiza uma skill por A/B medido; so promove sem cruzar faixas
 

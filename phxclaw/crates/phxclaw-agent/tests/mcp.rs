@@ -10,8 +10,9 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 /// Servidor MCP minimo. Responde 2025-06-18 ao initialize (a versao combinada nao e a que
-/// o cliente pediu), pagina o tools/list em duas folhas e grava o PID numa linha de
-/// `pids.txt`, para o teste conferir pelo sistema operacional quem morreu.
+/// o cliente pediu), pagina o tools/list em duas folhas e grava uma linha em `pids.txt`
+/// por processo que subiu (o PID que ele ve e o do namespace do bwrap, entao a linha so
+/// CONTA); quem morreu se confere pelo /proc do hospedeiro, pela marca no argv.
 const SERVIDOR: &str = r#"
 import json, os, sys, time
 with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "pids.txt"), "a") as f:
@@ -57,7 +58,11 @@ fn pasta(prefixo: &str) -> PathBuf {
 fn configurar(extra: serde_json::Value) -> PathBuf {
     let d = pasta("phx-mcp-cli");
     std::fs::write(d.join("calc.py"), SERVIDOR).unwrap();
-    let mut servidores = vec![json!({"nome": "calc", "comando": "python3", "args": ["calc.py"]})];
+    // A marca (nome unico da pasta) vai no argv para o teste achar o processo no /proc do
+    // hospedeiro: dentro do bwrap o servidor nao sabe o proprio PID de fora.
+    let marca = d.file_name().unwrap().to_string_lossy().into_owned();
+    let mut servidores =
+        vec![json!({"nome": "calc", "comando": "python3", "args": ["calc.py", marca]})];
     if let Some(a) = extra.as_array() {
         servidores.extend(a.iter().cloned());
     }
@@ -74,20 +79,47 @@ fn pids(cfg: &Path) -> Vec<u32> {
         .collect()
 }
 
-/// Morto = sem entrada no /proc, ou zumbi esperando a colheita.
-fn morto(pid: u32) -> bool {
-    match std::fs::read_to_string(format!("/proc/{pid}/stat")) {
-        Err(_) => true,
-        Ok(s) => s
-            .rsplit_once(')')
-            .is_some_and(|(_, r)| r.trim_start().starts_with('Z')),
+/// PIDs do hospedeiro dos servidores vivos desta configuracao: processos cujo argv traz a
+/// marca da pasta e que nao sao zumbis esperando a colheita.
+fn vivos(cfg: &Path) -> Vec<u32> {
+    let marca = cfg
+        .parent()
+        .unwrap()
+        .file_name()
+        .unwrap()
+        .to_string_lossy()
+        .into_owned();
+    let mut v = Vec::new();
+    for e in std::fs::read_dir("/proc").unwrap().flatten() {
+        let Ok(pid) = e.file_name().to_string_lossy().parse::<u32>() else {
+            continue;
+        };
+        let Ok(cmd) = std::fs::read(e.path().join("cmdline")) else {
+            continue;
+        };
+        let cmd = String::from_utf8_lossy(&cmd);
+        // So o python: o bwrap que o envolve tambem carrega a marca no argv.
+        if !cmd.contains(&marca) || !cmd.starts_with("python3") && !cmd.contains("/python3") {
+            continue;
+        }
+        let zumbi = std::fs::read_to_string(e.path().join("stat"))
+            .ok()
+            .and_then(|s| {
+                s.rsplit_once(')')
+                    .map(|(_, r)| r.trim_start().starts_with('Z'))
+            })
+            .unwrap_or(true);
+        if !zumbi {
+            v.push(pid);
+        }
     }
+    v
 }
 
-async fn espera_morrer(pid: u32) -> bool {
+async fn espera_morrer(cfg: &Path) -> bool {
     let fim = Instant::now() + Duration::from_secs(5);
     while Instant::now() < fim {
-        if morto(pid) {
+        if vivos(cfg).is_empty() {
             return true;
         }
         tokio::time::sleep(Duration::from_millis(50)).await;
@@ -114,10 +146,9 @@ async fn agente_lista_e_chama_somar_de_um_servidor_mcp() {
     );
     assert!(tools.iter().all(|t| t.capability() == "mcp.calc"));
     // A descoberta fechou o processo que subiu.
-    let descoberta = pids(&cfg);
-    assert_eq!(descoberta.len(), 1);
+    assert_eq!(pids(&cfg).len(), 1);
     assert!(
-        espera_morrer(descoberta[0]).await,
+        espera_morrer(&cfg).await,
         "descoberta deixou o servidor vivo"
     );
 
@@ -144,10 +175,9 @@ async fn agente_lista_e_chama_somar_de_um_servidor_mcp() {
         assert_eq!(r.trim(), "5", "resultado da ferramenta MCP: {r}");
     }
     // Um processo para a chamada, e morto pelo `finish` do fim da tarefa.
-    let todos = pids(&cfg);
-    assert_eq!(todos.len(), 2, "{todos:?}");
+    assert_eq!(pids(&cfg).len(), 2);
     assert!(
-        espera_morrer(todos[1]).await,
+        espera_morrer(&cfg).await,
         "o fim da tarefa deixou o servidor vivo"
     );
 }
@@ -204,9 +234,8 @@ async fn estouro_mata_o_filho_e_a_proxima_chamada_sobe_outro() {
     let c = ctx(Duration::from_millis(800));
     let r = achar(&tools, "mcp__calc__dorme").run(json!({}), &c).await;
     assert!(matches!(r, Err(ToolError::Timeout(800))), "{r:?}");
-    let p = pids(&cfg);
-    assert_eq!(p.len(), 2);
-    assert!(espera_morrer(p[1]).await, "estouro deixou o servidor vivo");
+    assert_eq!(pids(&cfg).len(), 2);
+    assert!(espera_morrer(&cfg).await, "estouro deixou o servidor vivo");
 
     let r = achar(&tools, "mcp__calc__somar")
         .run(json!({"a": 40, "b": 2}), &c)
@@ -223,7 +252,7 @@ async fn estouro_mata_o_filho_e_a_proxima_chamada_sobe_outro() {
     for t in &tools {
         t.finish(&c.task_id).await;
     }
-    assert!(espera_morrer(pids(&cfg)[2]).await);
+    assert!(espera_morrer(&cfg).await);
 }
 
 /// Servidor que nao sobe vira aviso e some; o que sobe continua.

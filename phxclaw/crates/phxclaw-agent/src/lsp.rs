@@ -23,12 +23,12 @@
 use crate::tarefa::confine;
 use phxclaw_agent_core::{BoxFut, Tool, ToolContext, ToolError, ToolOutput, ToolSpec};
 use phxclaw_mcp_lsp_runtime::{
-    Cancellation, CapabilityPolicy, JsonRpcRequest, LspStdioSession, ProcessSecurityPolicy,
-    ProcessSpec, RuntimeAudit, RuntimeError, SessionPolicy, Url, exchange_result,
+    Cancellation, CapabilityPolicy, JsonRpcRequest, LspStdioSession, RuntimeAudit, RuntimeError,
+    SessionPolicy, Url, exchange_result,
 };
-use phxclaw_sandbox::{SandboxExtras, WorkdirCommand, workdir_sandbox_command_com};
+use phxclaw_sandbox::{SandboxExtras, WorkdirCommand};
 use serde_json::{Value, json};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
@@ -182,27 +182,26 @@ struct Sessao {
 /// padrao ao subir (segundos), e subir de novo a cada pergunta pagaria isso toda vez.
 pub struct Lsp {
     pub servidores: Vec<ServidorDeLinguagem>,
-    bwrap: PathBuf,
     sessoes: Mutex<HashMap<ChaveDeSessao, Arc<Mutex<Sessao>>>>,
 }
 
 impl Lsp {
-    pub fn new(bwrap: PathBuf, servidores: Vec<ServidorDeLinguagem>) -> Self {
+    pub fn new(servidores: Vec<ServidorDeLinguagem>) -> Self {
         Self {
             servidores,
-            bwrap,
             sessoes: Mutex::new(HashMap::new()),
         }
     }
 
-    /// `None` sem bwrap, sem servidor nenhum, ou com `PHXCLAW_LSP=0`.
+    /// `None` sem bwrap, sem servidor nenhum, ou com `PHXCLAW_LSP=0`. O bwrap em si e
+    /// achado por `processo::espec_no_bwrap` na hora de subir cada servidor.
     pub fn do_hospedeiro() -> Option<Arc<Self>> {
         if std::env::var("PHXCLAW_LSP").as_deref() == Ok("0") {
             return None;
         }
-        let bwrap = crate::arquivos::achar_bwrap()?;
+        crate::arquivos::achar_bwrap()?;
         let s = servidores_do_hospedeiro();
-        (!s.is_empty()).then(|| Arc::new(Self::new(bwrap, s)))
+        (!s.is_empty()).then(|| Arc::new(Self::new(s)))
     }
 
     pub fn servidor_de(&self, rel: &str) -> Option<&ServidorDeLinguagem> {
@@ -243,30 +242,10 @@ impl Lsp {
         for r in &raizes {
             extras.ro_binds.push((r.clone(), r.display().to_string()));
         }
-        // O comando do sandbox vira `ProcessSpec`: a lista de binds sai da funcao do
-        // shell, e o runtime so acrescenta a politica (executavel, cwd e ambiente).
-        let c = workdir_sandbox_command_com(&self.bwrap, &cmd, &extras)
-            .map_err(|e| ToolError::Failed(e.to_string()))?;
-        let env: BTreeMap<String, String> = c
-            .get_envs()
-            .filter_map(|(k, v)| Some((k.to_str()?.to_string(), v?.to_str()?.to_string())))
-            .collect();
-        let spec = ProcessSpec {
-            executable: PathBuf::from(c.get_program()),
-            args: c
-                .get_args()
-                .map(|a| a.to_string_lossy().into_owned())
-                .collect(),
-            cwd: workdir.to_path_buf(),
-            env: env.clone(),
-        };
-        let seguranca = ProcessSecurityPolicy {
-            allowed_executables: [self.bwrap.clone()].into(),
-            allowed_cwd_roots: vec![workdir.to_path_buf()],
-            allowed_env_keys: env.keys().cloned().collect(),
-            max_args: 512,
-            ..ProcessSecurityPolicy::default()
-        };
+        // O comando do sandbox vira `ProcessSpec` + politica pelo MESMO motor dos servidores
+        // MCP (processo.rs): a lista de binds e o ambiente limpo nao se montam duas vezes.
+        let (spec, seguranca) =
+            crate::processo::espec_no_bwrap(&cmd, &extras).map_err(ToolError::Failed)?;
         let politica = SessionPolicy {
             request_timeout_ms: 60_000,
             startup_timeout_ms: 30_000,
@@ -384,6 +363,34 @@ impl Lsp {
             .cloned()
             .unwrap_or_default();
         Ok(Some(formatar_diagnosticos(&ctx.workdir, &rel, &itens)))
+    }
+
+    /// Os simbolos de um arquivo do projeto (`textDocument/documentSymbol`, JSON cru do
+    /// servidor), para a barra de caminho do IDE. `Ok(None)` quando o prazo acaba antes de o
+    /// servidor ficar quiescente -- lista vazia dita por um servidor que ainda indexa seria
+    /// mentira. A sessao e a da chave `ide`, uma por linguagem, compartilhada por todas as
+    /// consultas da tela: cada arquivo aberto no Helix nao pode custar um rust-analyzer.
+    pub async fn simbolos_do_arquivo(
+        &self,
+        workdir: &Path,
+        rel: &str,
+        prazo: Duration,
+    ) -> Result<Option<Value>, ToolError> {
+        let sv = self
+            .servidor_de(rel)
+            .cloned()
+            .ok_or_else(|| sem_servidor(rel, &self.servidores))?;
+        let rel = relativo(workdir, rel)?;
+        let sessao = self.sessao("ide", workdir, &sv).await?;
+        let mut s = sessao.lock().await;
+        sincronizar(&mut s, workdir, &rel).await?;
+        pedir_pronto(
+            &mut s,
+            "textDocument/documentSymbol",
+            json!({"textDocument": {"uri": uri_no_sandbox(&rel)}}),
+            prazo,
+        )
+        .await
     }
 
     async fn consultar(
@@ -713,7 +720,7 @@ fn formatar_hover(r: &Value) -> String {
 }
 
 /// O numero de `SymbolKind` do protocolo em palavra (so os que aparecem em codigo).
-fn tipo_de_simbolo(k: u64) -> &'static str {
+pub(crate) fn tipo_de_simbolo(k: u64) -> &'static str {
     match k {
         2 => "modulo",
         5 => "classe",
@@ -843,6 +850,14 @@ the file's errors and warnings. Never edits files.",
     }
     fn capability(&self) -> &'static str {
         "fs.read"
+    }
+    /// Sobe o servidor de linguagem (processo): a regra de comando a alcanca por `lsp <action>`.
+    fn comando_de_shell(&self, args: &Value) -> Option<String> {
+        Some(crate::motor::linha_sintetica(
+            "lsp",
+            args,
+            &["action", "path"],
+        ))
     }
     fn run<'a>(
         &'a self,

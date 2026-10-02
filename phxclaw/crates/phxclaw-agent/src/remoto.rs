@@ -13,8 +13,11 @@
 //!   DELA; a ponte tira o cabecalho e o agente poe o proprio token ao executar. Alem de
 //!   nao expor o segredo, e o que a regra dos comandos exige: segredo cru em argumento de
 //!   comando e recusado pela autorizacao do dominio.
-//! - **So as rotas de tarefa passam** (`permitido`), conferidas nos DOIS lados pela mesma
-//!   funcao: na ponte para recusar cedo, no agente porque e ele quem obedece.
+//! - **So as rotas de tarefa, do tunel e da sincronizacao passam** (`permitido`),
+//!   conferidas nos DOIS lados pela mesma funcao: na ponte para recusar cedo, no agente
+//!   porque e ele quem obedece. O tunel (`tunel.rs`: terminal e LSP do projeto) e a
+//!   sincronizacao do `config.json` (`sincronizar.rs`) viajam no MESMO canal multiplexado
+//!   das tarefas, um `device.command` por pedido, com a mesma autenticacao.
 
 use crate::pwa;
 use axum::Router;
@@ -49,8 +52,10 @@ pub const PRAZO_DO_PEDIDO: Duration = Duration::from_secs(60);
 pub const TETO_DO_CORPO: usize = 8 * 1024 * 1024;
 
 /// As rotas da API que o controle remoto alcanca: criar, listar e acompanhar tarefa,
-/// aprovar plano, responder pergunta, cancelar e baixar artefato. Agenda, sites e o resto
-/// ficam de fora: controle remoto e acompanhar e decidir, nao administrar o agente.
+/// aprovar plano, responder pergunta, cancelar e baixar artefato; o terminal e o LSP do
+/// projeto (`tunel.rs`); e o retrato/gravacao do `config.json` para a sincronizacao
+/// (`sincronizar.rs`). Agenda, sites e o resto ficam de fora: controle remoto e
+/// acompanhar, decidir e editar, nao administrar o agente.
 pub fn permitido(metodo: &str, caminho: &str) -> bool {
     if caminho.contains('?') || caminho.contains("//") {
         return false;
@@ -68,6 +73,8 @@ pub fn permitido(metodo: &str, caminho: &str) -> bool {
                 ["v1", "tasks", _, "approve" | "cancel" | "answer" | "plan"]
             )
             | ("GET", ["v1", "tasks", _, "artifacts", _, ..])
+            | ("POST", ["v1", "tunel", "terminal" | "lsp"])
+            | ("GET" | "PUT", ["v1", "config", "sincronizar"])
     )
 }
 

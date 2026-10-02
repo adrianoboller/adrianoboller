@@ -85,26 +85,30 @@ pub trait SearchBackend: Send + Sync {
     fn search<'a>(&'a self, query: &'a str, max: usize) -> BoxFut<'a, Result<Vec<SearchHit>>>;
 }
 
-/// Escolhe o buscador pelas variaveis de ambiente: `PHXCLAW_SEARXNG_URL` (instancia
+/// Escolhe o buscador pela configuracao: `busca.searxng_url` (`PHXCLAW_SEARXNG_URL`; instancia
 /// propria, sem chave e sem cota) vence; depois Brave se houver `BRAVE_API_KEY`; e o
 /// DuckDuckGo HTML fica por ultimo porque nao tem contrato — o layout muda sem aviso.
 pub fn from_env(broker: Arc<EgressBroker>) -> Result<Box<dyn SearchBackend>> {
-    from_vars(
-        |k| std::env::var(k).ok().filter(|v| !v.trim().is_empty()),
+    escolher(
+        phxclaw_config_runtime::agente::carga::texto_do_processo("busca.searxng_url"),
+        std::env::var("BRAVE_API_KEY")
+            .ok()
+            .filter(|v| !v.trim().is_empty()),
         broker,
     )
 }
 
-/// O mesmo que `from_env`, com a leitura das variaveis injetada — testavel sem mexer no
-/// ambiente do processo (que no Rust 2024 exige `unsafe`).
-pub fn from_vars(
-    var: impl Fn(&str) -> Option<String>,
+/// O mesmo que `from_env`, com os valores ja lidos — testavel sem mexer no ambiente do
+/// processo (que no Rust 2024 exige `unsafe`).
+pub fn escolher(
+    searxng_url: Option<String>,
+    brave_api_key: Option<String>,
     broker: Arc<EgressBroker>,
 ) -> Result<Box<dyn SearchBackend>> {
-    if let Some(base) = var("PHXCLAW_SEARXNG_URL") {
+    if let Some(base) = searxng_url {
         return Ok(Box::new(SearxngBackend::new(broker, &base)?));
     }
-    if let Some(chave) = var("BRAVE_API_KEY") {
+    if let Some(chave) = brave_api_key {
         return Ok(Box::new(BraveBackend::new(broker, chave)));
     }
     Ok(Box::new(DuckDuckGoHtmlBackend::new(broker)))

@@ -48,6 +48,9 @@ pub struct AgentConfig {
     /// Os `AGENTS.md` do projeto confiado, ja varridos e cercados como dado do projeto
     /// (`instrucoes::do_projeto`). Lidos uma vez na montagem, nao a cada tarefa.
     pub instrucoes_projeto: Option<String>,
+    /// Comandos de barra (`/nome args`) do projeto e dos pacotes: o objetivo que comeca
+    /// por um deles vira o corpo do comando na mensagem do usuario.
+    pub comandos: Option<Arc<crate::comandos::ComandosDeBarra>>,
     /// Com prazo, o modelo ganha o `ask_user` e a regra `perguntar` tem a quem perguntar.
     /// Sem prazo (subagente, `mcp-serve`), ninguem acompanha a tarefa: `perguntar` nega.
     pub prazo_de_resposta: Option<Duration>,
@@ -73,6 +76,7 @@ impl Default for AgentConfig {
             regras: None,
             estilo: None,
             instrucoes_projeto: None,
+            comandos: None,
             prazo_de_resposta: None,
             tentativas_de_argumento: 2,
         }
@@ -187,6 +191,8 @@ pub const CAPACIDADES_QUE_ESCREVEM: &[&str] = &[
     "media.generate",
     // Parecer Go/NoGo do conselho de integradores: grava na pasta do agente.
     "gonogo.write",
+    // Fluxos do n8n do operador: `run` dispara trabalho em outro sistema (fora do padrao).
+    "automacao.n8n",
 ];
 
 /// Capacidades cujas ferramentas criam processo. Para elas a regra de comando vale MESMO
@@ -455,6 +461,15 @@ proceed without a decision or information that only the user has; do not ask wha
             sistema.push_str("\n\n");
             sistema.push_str(i);
         }
+        if let Some(b) = self
+            .config
+            .comandos
+            .as_ref()
+            .and_then(|c| c.bloco_para_o_prompt())
+        {
+            sistema.push_str("\n\n");
+            sistema.push_str(&b);
+        }
         for c in &inicio.contexto {
             sistema.push_str("\n\nContext from the project's TaskStart hook:\n");
             sistema.push_str(c);
@@ -493,9 +508,16 @@ proceed without a decision or information that only the user has; do not ask wha
                 );
             }
         };
+        // `/nome args` vira o corpo do comando; o objetivo gravado continua o digitado.
+        let objetivo = self
+            .config
+            .comandos
+            .as_ref()
+            .and_then(|c| c.expandir(&task.objective))
+            .unwrap_or_else(|| task.objective.clone());
         let mut msgs = vec![
             Message::system(sistema),
-            Message::user_com_imagens(task.objective.clone(), imagens),
+            Message::user_com_imagens(objetivo, imagens),
         ];
         let mut chamadas: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
 
@@ -1403,12 +1425,23 @@ pub fn linha_para_as_regras(t: &dyn Tool, args: &Value) -> Option<String> {
     if !CAPACIDADES_QUE_EXECUTAM.contains(&t.capability()) {
         return None;
     }
-    let mut l = t.spec().name;
-    if let Some(a) = args.get("action").and_then(Value::as_str) {
+    Some(linha_sintetica(&t.spec().name, args, &["action"]))
+}
+
+/// `<nome> <valor>`: a linha sintetica que as regras de comando conferem para ferramenta
+/// que cria processo sem ter uma linha de shell de verdade. O valor e o primeiro dos
+/// `campos` presente nos argumentos, entre aspas de shell. Um lugar so: a ferramenta que
+/// declara `comando_de_shell` e o portao montam a linha do mesmo jeito.
+pub fn linha_sintetica(nome: &str, args: &Value, campos: &[&str]) -> String {
+    let mut l = nome.to_string();
+    if let Some(v) = campos
+        .iter()
+        .find_map(|c| args.get(c).and_then(Value::as_str))
+    {
         l.push(' ');
-        l.push_str(&crate::python::aspas(a));
+        l.push_str(&crate::python::aspas(v));
     }
-    Some(l)
+    l
 }
 
 /// Nomes de arquivo que o objetivo pede explicitamente ("crie rust.xlsx"): a conclusao

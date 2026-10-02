@@ -1,6 +1,7 @@
 use chrono::{DateTime, Utc};
 use phxclaw_types::is_uuid_v7;
-use semver::{Version, VersionReq};
+pub use semver::Version;
+use semver::VersionReq;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use thiserror::Error;

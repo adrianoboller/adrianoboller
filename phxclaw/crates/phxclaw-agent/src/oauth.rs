@@ -492,16 +492,16 @@ pub async fn cli(raiz_do_agente: &Path, args: &[String]) -> Result<String, Strin
         .ok_or("credencial so para servidor por 'url'")?;
     let alvo = Alvo::novo(&d.nome, url)?;
     let servidor = alvo.servidor.clone();
-    let env = |v: &str| {
-        std::env::var(v)
-            .ok()
-            .map(|t| t.trim().to_string())
+    let env = |chave: &str| {
+        crate::config::segredo_do_ambiente(chave)
             .filter(|t| !t.is_empty())
             .map(SecretValue::new)
     };
     match (acao.as_str(), &d.auth) {
         ("token", Some(crate::mcp::AuthDeclarada::Bearer)) => {
-            let t = env("PHXCLAW_MCP_TOKEN").ok_or("falta PHXCLAW_MCP_TOKEN no ambiente")?;
+            let t = env("mcp.token").ok_or_else(|| {
+                format!("falta {} no ambiente", crate::config::variavel("mcp.token"))
+            })?;
             let id = guardar_bearer(raiz_do_agente, &alvo, t)?;
             Ok(format!(
                 "token de {servidor} guardado no broker de {} (segredo {id})",
@@ -513,7 +513,7 @@ pub async fn cli(raiz_do_agente: &Path, args: &[String]) -> Result<String, Strin
                 raiz_do_agente,
                 &alvo,
                 cfg,
-                env("PHXCLAW_MCP_SEGREDO_CLIENTE"),
+                env("mcp.segredo_cliente"),
                 Duration::from_secs(300),
                 |url| eprintln!("Abra no navegador para autorizar {servidor}:\n\n  {url}\n"),
             )

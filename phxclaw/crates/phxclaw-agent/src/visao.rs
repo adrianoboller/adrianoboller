@@ -240,6 +240,10 @@ in the task folder by OCR (tesseract; PDF pages rendered at 200 dpi). Default la
     fn capability(&self) -> &'static str {
         "fs.read"
     }
+    /// Cria processo (tesseract no bwrap): a regra de comando do operador a alcanca por `ocr <path>`.
+    fn comando_de_shell(&self, args: &Value) -> Option<String> {
+        Some(crate::motor::linha_sintetica("ocr", args, &["path"]))
+    }
     fn run<'a>(
         &'a self,
         args: Value,
@@ -825,6 +829,14 @@ the SVG's own width/height or viewBox, 1280x800 for HTML."
     fn capability(&self) -> &'static str {
         "fs.write"
     }
+    /// Cria processo (Chromium): a regra de comando a alcanca por `image_render <source>`.
+    fn comando_de_shell(&self, args: &Value) -> Option<String> {
+        Some(crate::motor::linha_sintetica(
+            "image_render",
+            args,
+            &["source"],
+        ))
+    }
     fn run<'a>(
         &'a self,
         args: Value,
@@ -872,7 +884,7 @@ the SVG's own width/height or viewBox, 1280x800 for HTML."
             let chromium = phxclaw_browser::find_chromium().ok_or_else(|| {
                 ToolError::Failed(format!(
                     "Chromium nao encontrado; defina {}",
-                    phxclaw_browser::CHROMIUM_ENV
+                    phxclaw_browser::variavel_do_chromium()
                 ))
             })?;
             if let Some(d) = alvo.parent() {
@@ -887,48 +899,44 @@ the SVG's own width/height or viewBox, 1280x800 for HTML."
                 .into_owned();
             let servidor = ServidorDaPasta::subir(ctx.workdir.clone()).await?;
             let perfil = PastaTemp::nova("phx-render")?;
-            let mut cmd = tokio::process::Command::new(&chromium);
-            // Ambiente limpo: as chaves de provedor do agente nao vao para um navegador que
-            // renderiza HTML gerado pelo modelo.
-            cmd.env_clear()
-                .env("PATH", "/usr/local/bin:/usr/bin:/bin")
-                .env("HOME", &perfil.0)
-                .env("LANG", "C.UTF-8");
-            cmd.args([
-                "--headless",
-                "--disable-gpu",
-                "--hide-scrollbars",
-                "--mute-audio",
-                "--no-first-run",
-                "--no-default-browser-check",
-                "--disable-background-networking",
-                "--disable-component-update",
-                "--proxy-bypass-list=<-loopback>",
-                "--force-webrtc-ip-handling-policy=disable_non_proxied_udp",
-                "--virtual-time-budget=3000",
-            ])
-            .arg(format!(
-                "--proxy-server=http://127.0.0.1:{}",
-                servidor.porta
-            ))
-            .arg(format!("--user-data-dir={}", perfil.0.display()))
-            .arg(format!("--window-size={w},{h}"))
-            .arg(format!("--screenshot={}", alvo.display()));
-            if phxclaw_browser::running_as_root() {
-                // mesma decisao do lancador do navegador: o sandbox do Chromium nao sobe
-                // como root (conteiner), e so nesse caso sai
-                cmd.arg("--no-sandbox");
-            }
-            cmd.arg(format!(
+            // O Chromium nasce no bwrap pelo MESMO envoltorio do navegador do agente
+            // (`processo::envoltorio_do_navegador`): ambiente limpo, so o perfil
+            // gravavel, e a pagina alcanca a pasta pelo proxy loopback. A captura sai
+            // em `/work` (o perfil) e so depois vai para a pasta da tarefa.
+            let mut argv: Vec<String> = vec![
+                chromium.display().to_string(),
+                "--headless".into(),
+                "--disable-gpu".into(),
+                "--disable-dev-shm-usage".into(),
+                "--hide-scrollbars".into(),
+                "--mute-audio".into(),
+                "--no-first-run".into(),
+                "--no-default-browser-check".into(),
+                "--disable-background-networking".into(),
+                "--disable-component-update".into(),
+                "--proxy-bypass-list=<-loopback>".into(),
+                "--force-webrtc-ip-handling-policy=disable_non_proxied_udp".into(),
+                "--virtual-time-budget=3000".into(),
+                format!("--proxy-server=http://127.0.0.1:{}", servidor.porta),
+                format!("--user-data-dir={}", perfil.0.display()),
+                format!("--window-size={w},{h}"),
+                "--screenshot=/work/captura.png".into(),
+            ];
+            argv.push(format!(
                 "http://{HOST_DA_PASTA}/{}",
                 codificar_caminho(&rel)
-            ))
-            .stdin(Stdio::null())
-            .kill_on_drop(true);
+            ));
+            let envoltorio =
+                crate::processo::envoltorio_do_navegador().map_err(ToolError::Failed)?;
+            let mut cmd = tokio::process::Command::from(
+                (envoltorio.0)(&perfil.0, argv).map_err(ToolError::Failed)?,
+            );
+            cmd.stdin(Stdio::null()).kill_on_drop(true);
             let r = tokio::time::timeout(ctx.timeout, cmd.output())
                 .await
                 .map_err(|_| ToolError::Timeout(ctx.timeout.as_millis() as u64))?
                 .map_err(|e| ToolError::Failed(format!("{}: {e}", chromium.display())))?;
+            let _ = std::fs::rename(perfil.0.join("captura.png"), &alvo);
             let png = std::fs::read(&alvo).unwrap_or_default();
             let Ok((pw, ph, _)) = info_png(&png) else {
                 return Err(ToolError::Failed(format!(
@@ -986,20 +994,21 @@ impl TranscribeTool {
     /// `PHXCLAW_STT_PROVEDOR` = `whisper` (padrao, `PHXCLAW_WHISPER_*`) ou `elevenlabs`
     /// (chave de `phxclaw elevenlabs chave` no broker de `raiz_do_agente`).
     pub fn do_ambiente(raiz_do_agente: &Path) -> Self {
-        let var = |n: &str| std::env::var(n).ok().filter(|v| !v.trim().is_empty());
-        let elevenlabs = match var("PHXCLAW_STT_PROVEDOR").as_deref() {
+        let var = crate::config::texto_de;
+        let elevenlabs = match var("voz.stt.provedor").as_deref() {
             None | Some("whisper") => None,
             Some("elevenlabs") => Some(crate::elevenlabs::OuvidoElevenLabs::do_ambiente(
                 raiz_do_agente,
             )),
             Some(o) => Some(Err(format!(
-                "PHXCLAW_STT_PROVEDOR desconhecido: {o} (whisper ou elevenlabs)"
+                "{} desconhecido: {o} (whisper ou elevenlabs)",
+                crate::config::variavel("voz.stt.provedor")
             ))),
         };
         Self {
-            bin: var("PHXCLAW_WHISPER_BIN").map(PathBuf::from),
-            model: var("PHXCLAW_WHISPER_MODEL").map(PathBuf::from),
-            model_sha256: var("PHXCLAW_WHISPER_MODEL_SHA256"),
+            bin: var("voz.whisper.bin").map(PathBuf::from),
+            model: var("voz.whisper.modelo").map(PathBuf::from),
+            model_sha256: var("voz.whisper.modelo_sha256"),
             elevenlabs,
         }
     }
@@ -1132,13 +1141,13 @@ impl TranscribeTool {
             None => {}
         }
         let faltam: Vec<&str> = [
-            ("PHXCLAW_WHISPER_BIN", self.bin.is_none()),
-            ("PHXCLAW_WHISPER_MODEL", self.model.is_none()),
-            ("PHXCLAW_WHISPER_MODEL_SHA256", self.model_sha256.is_none()),
+            ("voz.whisper.bin", self.bin.is_none()),
+            ("voz.whisper.modelo", self.model.is_none()),
+            ("voz.whisper.modelo_sha256", self.model_sha256.is_none()),
         ]
         .into_iter()
         .filter(|(_, falta)| *falta)
-        .map(|(n, _)| n)
+        .map(|(chave, _)| crate::config::variavel(chave))
         .collect();
         if !faltam.is_empty() {
             return Err(ToolError::Denied(format!(

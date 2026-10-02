@@ -5,6 +5,10 @@
 //   COM RESSALVAS    os graves (ou bloqueios) que sobram sao so a 390 numa tela de mesa, ou
 //                    fora do caminho principal;
 //   QUALIFICADA      nenhum dos dois.
+//   NAO MEDIDA       alguma sonda do tema nao rodou ate o fim (navegador caiu, pagina quebrou):
+//                    sem a medida nao ha veredito, e o rc e 1. Antes, a sonda quebrada ia para a
+//                    tela «?» e nenhuma tela a via -- o Chromium caiu com ERR_INSUFFICIENT_RESOURCES,
+//                    41 sondas quebraram e a corrida saiu rc 0 com «12/12 QUALIFICADA» (02/10/2026).
 //
 // Cada achado do relatorio vira uma SONDA que mede o defeito exercitando a pagina num
 // Chromium (interface so se prova exercitando): nenhuma sonda le o fonte para decidir. Os
@@ -92,9 +96,12 @@ async function abrirTela(page, tela, espera = 900) {
   await page.waitForTimeout(espera);
 }
 // Uma sonda pode medir varios achados de uma vez («M4|M5»): roda se algum deles foi pedido.
+// Sonda que quebra entra como QUEBRADA (tela «?», que nenhuma tela do veredito contem): o
+// veredito do tema inteiro vira NAO MEDIDA, porque nao se sabe quais telas ela mediria.
+const QUEBRADA = '?';
 const sonda = async (id, f) => {
   if (!id.split('|').some(quer)) return;
-  try { await f(); } catch (e) { achado(id.split('|')[0], 'grave', ['?'], false, `sonda quebrou: ${String(e).split('\n')[0]}`); }
+  try { await f(); } catch (e) { achado(id.split('|')[0], 'grave', [QUEBRADA], false, `sonda quebrou: ${String(e).split('\n')[0]}`); }
 };
 // Altura das linhas de DADO de uma grade (sem grupo, rodape, detalhe), so as visiveis.
 const linhasDaGrade = (page, sel) => page.$$eval(`${sel} .phx-tabela > tbody > tr`, trs => trs
@@ -953,7 +960,8 @@ for (const t of TEMAS) {
   await rodar();
 }
 
-await browser.close();
+// O navegador pode ja ter caido (e e esse o caso que o veredito abaixo tem de acusar).
+await browser.close().catch(() => {});
 srv.close();
 
 /* ============================ VEREDITO ============================ */
@@ -969,6 +977,10 @@ for (const tm of TEMAS) {
     const veredito = nao.length ? 'NAO QUALIFICADA' : fortes.length ? 'QUALIFICADA COM RESSALVAS' : 'QUALIFICADA';
     VER[tm][k] = { nome: t.nome, veredito, fortes: [...new Set(fortes.map(a => a.id))], outros: [...new Set(falhos.filter(a => !fortes.includes(a)).map(a => a.id))] };
   }
+  // Sonda que nao rodou ate o fim: ninguem sabe o que ela mediria, entao tela nenhuma do
+  // tema tem veredito. QUALIFICADA so se MEDIDA.
+  const quebradas = [...new Set(achados.filter(a => a.tema === tm && a.telas.includes(QUEBRADA)).map(a => a.id))];
+  if (quebradas.length) for (const v of Object.values(VER[tm])) { v.veredito = 'NAO MEDIDA'; v.quebradas = quebradas; }
 }
 if (SO) {
   console.log(`sondas pedidas: ${achados.filter(a => a.ok).length}/${achados.length} ok (temas: ${TEMAS.join(', ')})`);
@@ -977,10 +989,11 @@ if (SO) {
 }
 for (const tm of TEMAS) {
   console.log(`\nVEREDITO POR TELA, TEMA ${tm.toUpperCase()} (criterio do relatorio de 01/10/2026)`);
-  for (const v of Object.values(VER[tm])) console.log(`  ${v.nome.padEnd(26)} ${v.veredito.padEnd(26)} ${v.fortes.length ? `[${v.fortes.join(' ')}]` : ''}${v.outros.length ? ` medios/cosmeticos: ${v.outros.join(' ')}` : ''}`);
+  for (const v of Object.values(VER[tm])) console.log(`  ${v.nome.padEnd(26)} ${v.veredito.padEnd(26)} ${v.fortes.length ? `[${v.fortes.join(' ')}]` : ''}${v.outros.length ? ` medios/cosmeticos: ${v.outros.join(' ')}` : ''}${v.quebradas ? ` sondas que nao rodaram: ${v.quebradas.join(' ')}` : ''}`);
 }
 const nFalhas = achados.filter(a => !a.ok).length;
+const nQuebradas = achados.filter(a => a.telas.includes(QUEBRADA)).length;
 const qual = tm => Object.values(VER[tm]).filter(v => v.veredito === 'QUALIFICADA').length;
-console.log(`sondas: ${achados.length - nFalhas}/${achados.length} ok • telas QUALIFICADAS: ${TEMAS.map(tm => `${tm} ${qual(tm)}/${Object.keys(QTELAS).length}`).join(' • ')}`);
+console.log(`sondas: ${achados.length - nFalhas}/${achados.length} ok (${nQuebradas} nao rodaram) • telas QUALIFICADAS: ${TEMAS.map(tm => `${tm} ${qual(tm)}/${Object.keys(QTELAS).length}`).join(' • ')}`);
 writeFileSync(join(OUT, 'qualificar.json'), JSON.stringify({ ui: UI, temas: TEMAS, achados, veredito: VER }, null, 1));
 process.exit(TEMAS.every(tm => Object.values(VER[tm]).every(v => v.veredito === 'QUALIFICADA')) ? 0 : 1);

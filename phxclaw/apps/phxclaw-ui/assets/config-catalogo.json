@@ -227,6 +227,21 @@
       "variavel": "PHXCLAW_TENTATIVAS_ARGUMENTO"
     },
     {
+      "chave": "anthropic.chave",
+      "comando_do_segredo": "phxclaw anthropic chave",
+      "descricao": "Chave da Anthropic (modelos anthropic:*)",
+      "descricao_en": "Anthropic key (anthropic:* models)",
+      "motivo_so_ambiente": null,
+      "motivo_so_ambiente_en": null,
+      "natureza": "segredo",
+      "opcoes": null,
+      "padrao": null,
+      "secao": "anthropic",
+      "segredo": true,
+      "tipo": "texto",
+      "variavel": "PHXCLAW_ANTHROPIC_API_KEY"
+    },
+    {
       "chave": "api.host",
       "comando_do_segredo": null,
       "descricao": "Endereço em que a API escuta; expor é decisão do operador",
@@ -2660,6 +2675,21 @@
       "variavel": "PHXCLAW_PROJECT_DIR"
     },
     {
+      "chave": "exportadas.ia_completar",
+      "comando_do_segredo": null,
+      "descricao": "URL da completação por IA que o agente dá ao Helix (lida pelo phxclaw-snippet-ls)",
+      "descricao_en": "AI completion URL the agent hands to Helix (read by phxclaw-snippet-ls)",
+      "motivo_so_ambiente": "exportada pelo agente ao processo filho, não lida como configuração",
+      "motivo_so_ambiente_en": "exported by the agent to the child process, not read as configuration",
+      "natureza": "ambiente",
+      "opcoes": null,
+      "padrao": null,
+      "secao": "exportadas",
+      "segredo": false,
+      "tipo": "texto",
+      "variavel": "PHXCLAW_IA_COMPLETAR"
+    },
+    {
       "chave": "exportadas.plugin",
       "comando_do_segredo": null,
       "descricao": "Nome do plugin chamado",
@@ -2855,6 +2885,21 @@
       "variavel": "PHXCLAW_GITLEAKS_SHA256"
     },
     {
+      "chave": "ide.api_url",
+      "comando_do_segredo": null,
+      "descricao": "URL por onde o editor fala com este agente (padrão: o Host da conexão do IDE)",
+      "descricao_en": "URL the editor uses to reach this agent (default: the Host of the IDE connection)",
+      "motivo_so_ambiente": null,
+      "motivo_so_ambiente_en": null,
+      "natureza": "config",
+      "opcoes": null,
+      "padrao": null,
+      "secao": "ide",
+      "segredo": false,
+      "tipo": "texto",
+      "variavel": "PHXCLAW_IDE_API_URL"
+    },
+    {
       "chave": "ide.historico_versoes_max",
       "comando_do_segredo": null,
       "descricao": "IDE: versões guardadas por arquivo no histórico local de gravações (.phxclaw/historico)",
@@ -2868,6 +2913,36 @@
       "segredo": false,
       "tipo": "inteiro",
       "variavel": "PHXCLAW_IDE_HISTORICO_VERSOES_MAX"
+    },
+    {
+      "chave": "ide.ia_ms",
+      "comando_do_segredo": null,
+      "descricao": "Teto de tempo (ms) de uma completação por IA no editor",
+      "descricao_en": "Time cap (ms) of one AI completion in the editor",
+      "motivo_so_ambiente": null,
+      "motivo_so_ambiente_en": null,
+      "natureza": "config",
+      "opcoes": null,
+      "padrao": 6000,
+      "secao": "ide",
+      "segredo": false,
+      "tipo": "inteiro",
+      "variavel": "PHXCLAW_IDE_IA_MS"
+    },
+    {
+      "chave": "ide.ia_tokens",
+      "comando_do_segredo": null,
+      "descricao": "Teto de tokens de uma completação por IA no editor (o modelo é o do agente)",
+      "descricao_en": "Token cap of one AI completion in the editor (the model is the agent's)",
+      "motivo_so_ambiente": null,
+      "motivo_so_ambiente_en": null,
+      "natureza": "config",
+      "opcoes": null,
+      "padrao": 64,
+      "secao": "ide",
+      "segredo": false,
+      "tipo": "inteiro",
+      "variavel": "PHXCLAW_IDE_IA_TOKENS"
     },
     {
       "chave": "ide.raizes",
@@ -3085,6 +3160,51 @@
       "variavel": "PHXCLAW_MODELO_VISAO"
     },
     {
+      "chave": "n8n.chave",
+      "comando_do_segredo": "phxclaw n8n chave",
+      "descricao": "Chave da API pública do n8n (list/status)",
+      "descricao_en": "n8n public API key (list/status)",
+      "motivo_so_ambiente": null,
+      "motivo_so_ambiente_en": null,
+      "natureza": "segredo",
+      "opcoes": null,
+      "padrao": null,
+      "secao": "n8n",
+      "segredo": true,
+      "tipo": "texto",
+      "variavel": "PHXCLAW_N8N_API_KEY"
+    },
+    {
+      "chave": "n8n.url",
+      "comando_do_segredo": null,
+      "descricao": "Origem do n8n do operador (ex.: http://127.0.0.1:5678); vazio = sem n8n_workflow",
+      "descricao_en": "Operator's n8n origin (e.g. http://127.0.0.1:5678); empty = no n8n_workflow",
+      "motivo_so_ambiente": null,
+      "motivo_so_ambiente_en": null,
+      "natureza": "config",
+      "opcoes": null,
+      "padrao": null,
+      "secao": "n8n",
+      "segredo": false,
+      "tipo": "texto",
+      "variavel": "PHXCLAW_N8N_URL"
+    },
+    {
+      "chave": "n8n.webhook_segredo",
+      "comando_do_segredo": "phxclaw n8n segredo",
+      "descricao": "Segredo que assina o run do n8n_workflow (HMAC ou Header Auth)",
+      "descricao_en": "Secret signing n8n_workflow run (HMAC or Header Auth)",
+      "motivo_so_ambiente": null,
+      "motivo_so_ambiente_en": null,
+      "natureza": "segredo",
+      "opcoes": null,
+      "padrao": null,
+      "secao": "n8n",
+      "segredo": true,
+      "tipo": "texto",
+      "variavel": "PHXCLAW_N8N_WEBHOOK_SEGREDO"
+    },
+    {
       "chave": "navegador.chromium",
       "comando_do_segredo": null,
       "descricao": "Executável do Chromium",
@@ -3100,6 +3220,36 @@
       "variavel": "PHXCLAW_CHROMIUM"
     },
     {
+      "chave": "openai.chave",
+      "comando_do_segredo": "phxclaw openai chave",
+      "descricao": "Chave da OpenAI (modelos openai:*)",
+      "descricao_en": "OpenAI key (openai:* models)",
+      "motivo_so_ambiente": null,
+      "motivo_so_ambiente_en": null,
+      "natureza": "segredo",
+      "opcoes": null,
+      "padrao": null,
+      "secao": "openai",
+      "segredo": true,
+      "tipo": "texto",
+      "variavel": "PHXCLAW_OPENAI_API_KEY"
+    },
+    {
+      "chave": "pacotes.catalogo",
+      "comando_do_segredo": null,
+      "descricao": "Catálogo da loja de plugins (URL https ou arquivo JSON local); vazio = sem loja",
+      "descricao_en": "Plugin store catalog (https URL or local JSON file); empty = no store",
+      "motivo_so_ambiente": null,
+      "motivo_so_ambiente_en": null,
+      "natureza": "config",
+      "opcoes": null,
+      "padrao": null,
+      "secao": "pacotes",
+      "segredo": false,
+      "tipo": "texto",
+      "variavel": "PHXCLAW_PACOTES_CATALOGO"
+    },
+    {
       "chave": "pacotes.dir",
       "comando_do_segredo": null,
       "descricao": "Pasta dos pacotes assinados (Claude/Codex)",
@@ -3113,6 +3263,21 @@
       "segredo": false,
       "tipo": "caminho",
       "variavel": "PHXCLAW_PACOTES_DIR"
+    },
+    {
+      "chave": "perfil.ativo",
+      "comando_do_segredo": null,
+      "descricao": "Perfil de configuração desta execução (um nome de `perfis` do config.json da pasta)",
+      "descricao_en": "Configuration profile for this run (a name from `perfis` in the folder's config.json)",
+      "motivo_so_ambiente": "escolhe o perfil de UMA execução; o persistente é o campo perfil_ativo do config.json da pasta",
+      "motivo_so_ambiente_en": "picks the profile for ONE run; the persistent one is the perfil_ativo field of the folder's config.json",
+      "natureza": "ambiente",
+      "opcoes": null,
+      "padrao": null,
+      "secao": "perfil",
+      "segredo": false,
+      "tipo": "texto",
+      "variavel": "PHXCLAW_PERFIL"
     },
     {
       "chave": "plugins.assinantes",

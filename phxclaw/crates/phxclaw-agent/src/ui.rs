@@ -219,7 +219,7 @@ pub struct LeituraDeTela {
 /// Servidor e modelo de visao configurados: a UNICA leitura deles, para a ferramenta e a
 /// prova de fidelidade perguntarem ao mesmo modelo.
 pub fn modelo_de_visao() -> (String, String) {
-    let modelo = std::env::var("PHXCLAW_MODELO_VISAO").unwrap_or_else(|_| "qwen2.5vl:3b".into());
+    let modelo = crate::config::texto_de("modelo.visao").unwrap_or_else(|| "qwen2.5vl:3b".into());
     let base = std::env::var("OLLAMA_HOST").unwrap_or_else(|_| "http://127.0.0.1:11434".into());
     let base = if base.starts_with("http") {
         base
@@ -357,6 +357,14 @@ outputs as design_erp_ui. Labels not actually written on the screenshot are disc
     }
     fn capability(&self) -> &'static str {
         "doc.write"
+    }
+    /// Cria processo (tesseract, pelo `ler_tela`): a regra de comando a alcanca pela imagem.
+    fn comando_de_shell(&self, args: &Value) -> Option<String> {
+        Some(crate::motor::linha_sintetica(
+            "screenshot_to_erp_ui",
+            args,
+            &["image"],
+        ))
     }
     fn run<'a>(
         &'a self,

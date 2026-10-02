@@ -1,5 +1,5 @@
 {
- "medido_em": "2026-10-01",
+ "medido_em": "2026-10-02",
  "estados": {
   "shell": {
    "estado": "agente",
@@ -142,8 +142,8 @@
    "evidencia": "crates/phxclaw-agent/src/hooks.rs: PreToolUse/PostToolUse/TaskStart/TaskEnd/Stop no bwrap; saida 2 bloqueia (tests/interacao.rs)"
   },
   "plugins": {
-   "estado": "parcial",
-   "evidencia": "plugin assinado vira ferramenta no bwrap; dos pacotes .claude-plugin/.codex-plugin so os servidores MCP entram"
+   "estado": "agente",
+   "evidencia": "pacotes.rs:346 integrar: alem dos servidores MCP, comandos (commands/*.md viram comandos de barra, comandos.rs:78 expandir, motor.rs:510 troca o objetivo na mensagem do modelo), skills (pelo importador de skills com a varredura anti-injecao e ORIGEM.json, licenca do plugin.json ao lado), hooks (hooks::somar :195, raiz do pacote em /hooks, so sob a assinatura da pasta inteira) e subagentes (papel_de :284 -> equipe::somar :93, capacidades declaradas em capabilities:/tools:, sem declaracao recusa); montagem.rs:113 liga tudo (hooks :489, comandos :511). Teste: crates/phxclaw-agent/tests/vscode_w1.rs:273 pacote_com_os_quatro_tipos_importa_e_hook_nao_assinado_e_recusado (hooks.json mexido depois de assinado e pacote sem assinatura nao carregam) e :350 comando_de_barra_expande_na_mensagem_do_modelo"
   },
   "sandbox": {
    "estado": "agente",
@@ -508,16 +508,16 @@
    "evidencia": "Helix 25.07.1 no IDE do desktop (apps/phxclaw-desktop/src-tauri/src/terminal.rs): diagnostics picker; agente: lsp.rs anexa diagnostico a write_file/edit_file"
   },
   "marketplace_extensoes": {
-   "estado": "parcial",
-   "evidencia": "crates/phxclaw-community-registry so como biblioteca: nenhum uso em phxclaw-agent nem na UI"
+   "estado": "agente",
+   "evidencia": "loja.rs: Loja (indice do phxclaw-community-registry validado, da_configuracao :61 por pacotes.catalogo/pacotes.dir/plugins.assinantes), listar :123, instalar :160 (sha256 do catalogo conferido ANTES de abrir, .tar ustar lido aqui :328 recusando link e caminho fora, pasta assinada conferida por pacotes::ler contra o trust store; o que falha e apagado); ferramenta plugin_catalog (:393, capacidade plugin.catalog fora do padrao, install passa pelas regras de comando) e CLI phxclaw plugins catalogo|instalar|empacotar (apps/phxclaw/src/main.rs:726) pela mesma Loja; a tela da loja e da W2. Teste: crates/phxclaw-agent/tests/vscode_w1.rs:415 loja_lista_busca_e_so_instala_pacote_assinado_com_hash_do_catalogo (hash errado recusa sem abrir; assinatura fora do trust store recusa e apaga; o bom instala e a ferramenta ve instalado)"
   },
   "configuracoes_json_tela": {
    "estado": "agente",
    "evidencia": "apps/phxclaw-ui/assets/config.js: grade do config.json com diff e If-Match; phxclaw config e /v1/config pelo mesmo motor"
   },
   "perfis": {
-   "estado": "nao",
-   "evidencia": "nenhum perfil de configuracao/extensoes no config nem na UI"
+   "estado": "agente",
+   "evidencia": "config.json da pasta ganha `perfis: {nome: {secoes}}` e `perfil_ativo`; precedencia ambiente > projeto confiado > perfil ativo > pasta > padrao no MESMO ponto de leitura (config-runtime carga.rs:782 carregar, Origem::Perfil :89), PHXCLAW_PERFIL (catalogo perfil.ativo) escolhe por uma execucao; perfil_criar (carga.rs:987) e perfil_usar (:1009) gravam pela mesma gravar_com (:1061) de definir; agente config.rs:295 perfis, :309 perfil, Escopo::Perfil (:374); CLI phxclaw config perfil listar|usar|nenhum|criar e definir --perfil (apps/phxclaw/src/config.rs:121) e GET/PUT /v1/config/perfis (config.rs:522) pela mesma funcao; a tela e da frente W2. Testes: config-runtime tests/agente.rs:734 perfil_ativo_vence_a_pasta_perde_para_o_projeto_e_inexistente_e_erro, :800 perfil_criar_usar_e_definir_no_perfil_gravam_com_revisao; crates/phxclaw-agent/tests/vscode_w1.rs:77 perfis_pela_api_criar_usar_definir_e_a_precedencia_na_vista"
   },
   "temas": {
    "estado": "agente",
@@ -533,8 +533,8 @@
    "evidencia": "sem desenvolvimento remoto por SSH, container ou WSL"
   },
   "tunel_remoto": {
-   "estado": "parcial",
-   "evidencia": "remoto.rs: ponte por conexao de saida, mas so as rotas de tarefa passam; editor e terminal nao atravessam"
+   "estado": "agente",
+   "evidencia": "tunel.rs: POST /v1/tunel/terminal (executar :84, uma linha no bwrap do shell com a raiz do projeto em /work, regras de comando do projeto valem :64) e POST /v1/tunel/lsp (consultar :146, a MESMA LspTool); as duas passam pela ponte no mesmo canal multiplexado das rotas de tarefa (remoto.rs:76 permitido) com a mesma autenticacao (Bearer da ponte no cliente, da API no agente); rotas no router (api.rs). Pedido-resposta, nao fluxo: o websocket do ide.rs (W2) nao atravessa a ponte. Teste: crates/phxclaw-agent/tests/vscode_w1.rs:605 tunel_e_sincronizacao_atravessam_uma_ponte_local (echo pela ponte devolve a saida e /work; sem a credencial da ponte 401; token da API nao vale na ponte; rm negado pela regra 403) e :578 a_ponte_deixa_passar_tunel_e_sincronizacao_e_nada_mais_de_novo"
   },
   "live_share": {
    "estado": "nao",
@@ -554,8 +554,9 @@
    "evidencia": "Helix 25.07.1 no IDE do desktop (apps/phxclaw-desktop/src-tauri/src/terminal.rs): symbol_picker e workspace_symbol_picker via LSP"
   },
   "breadcrumbs": {
-   "estado": "nao",
-   "evidencia": "Helix 25.07.1 nao tem breadcrumbs"
+   "estado": "agente",
+   "evidencia": "apps/phxclaw-ui: #ideTrilha acima do editor -- o caminho do arquivo aberto (segmentos clicaveis: :open PASTA) e os simbolos (documentSymbol pelo lsp.rs, rota GET /v1/ide/simbolos?arquivo= em ide.rs; clique manda :goto LINHA). O arquivo corrente vem da LINHA DE ESTADO do Helix lida da grade (helix::arquivo_corrente no motor e arquivoDaGrade em ide.js, a mesma regra; pula o spinner do LSP): medido no fonte do Helix 25.07.1, ele nao expoe o documento aberto por titulo nem variavel -- a statusline e o unico canal, e vale com a statusline padrao",
+   "teste": "tests/desktop/ide_web.mjs: abrir src/main.rs no Helix real -> caminho src/main.rs e 4 simbolos do rust-analyzer (struct Config, campo porta, funcao soma, funcao main); tests/desktop/ui_paineis.mjs: trilha, simbolos aninhados e os comandos :goto/:open, RED medido; phxclaw-terminal helix.rs: 2 unitarios da statusline"
   },
   "snippets": {
    "estado": "agente",
@@ -576,24 +577,203 @@
    "evidencia": "o proprio agente: edita, roda shell no bwrap e testa (ferramentas.rs, motor.rs)"
   },
   "sugestao_inline_ia": {
-   "estado": "nao",
-   "evidencia": "sem sugestao de codigo fantasma no editor; o Helix nao tem e o PhxClaw nao injeta"
+   "estado": "agente",
+   "evidencia": "crates/phxclaw-snippet-ls/src/ia.rs: item «IA» na completion do Helix, vindo de POST /v1/ide/completar do agente (ide.rs: o MESMO provedor das tarefas, `factory(default_model).llm.chat`, com tetos ide.ia_tokens=64 e ide.ia_ms=6000 no catalogo pt/en), por HTTP/1.1 de loopback escrito aqui (zero crate); preselect=false, ultimo na ordem, texto plano -- o Helix so insere o que a pessoa aceitar; sem configuracao (o agente exporta exportadas.ia_completar + api.token ao abrir o Helix) nao ha item nem erro. Nao e «fantasma» no buffer: o Helix 25.07 nao tem inline/ghost text; a sugestao entra pela lista de completion",
+   "teste": "crates/phxclaw-snippet-ls: com um agente falso (TcpListener do teste) a completion chega com o rotulo IA (lib.rs::a_completion_traz_o_item_ia_so_quando_o_agente_esta_configurado, RED medido), sem configuracao nao ha item nem erro; ia.rs: 5 unitarios (URL so loopback, recorte no cursor, 503/vazio sem item); crates/phxclaw-agent/tests/ide_web.rs: /v1/ide/completar exige Bearer, tira a cerca e usa o teto"
   },
   "settings_sync": {
-   "estado": "nao",
-   "evidencia": "sem sincronizacao de configuracao entre maquinas"
+   "estado": "agente",
+   "evidencia": "sincronizar.rs: GET/PUT /v1/config/sincronizar (:135) no agente, pela ponte (remoto.rs:77 permitido); o documento sai SEM revisao e cada valor passa de novo pela varredura de credencial (carga.rs:745 exportar); receber grava por carga::importar (:1041) sob a trava, conferindo o SHA do disco (409 com o SHA atual); direcao pela marca config-sincronia.json (sincronizar.rs:188 decidir: os dois lados mudados = conflito com as duas revisoes, --forcar e escolha escrita); CLI phxclaw config sincronizar enviar|receber --ponte URL (apps/phxclaw/src/config.rs:164) pelas mesmas enviar/receber (:262/:316). Testes: config-runtime tests/agente.rs:855 exportar_recusa_segredo_e_importar_confere_a_base_antes_de_gravar; crates/phxclaw-agent/tests/vscode_w1.rs:605 tunel_e_sincronizacao_atravessam_uma_ponte_local (ida A->B, volta B->A, conflito, segredo plantado nunca atravessa)"
   },
   "acessibilidade": {
-   "estado": "parcial",
-   "evidencia": "UI com aria e prova AX (tests/desktop/qualificacao/acess.mjs); o editor e um canvas (#termCanvas), invisivel a leitor de tela"
+   "estado": "agente",
+   "evidencia": "apps/phxclaw-ui/index.html + ide.js: espelho #termEspelho (aria-live=polite, role=status) com a linha do cursor e a linha de estado do programa (a do modo NOR/INS/SEL no Helix), com freio de 300 ms; canvas com aria-keyshortcuts e ajuda que anuncia os atalhos (Esc+Tab, Ctrl+Shift+C/V); foco visivel (outline 2 px da marca) na trilha, nos paineis e no canvas",
+   "teste": "tests/desktop/qualificacao/acess.mjs: veredito da tela IDE (0 violacoes nas duas larguras: nenhum controle sem nome ou so simbolo, regiao viva presente, foco com indicador, Tab nao preso); RED medido (copia sem o espelho: 2 violacoes, rc 1); tests/desktop/ui_paineis.mjs confere o texto do espelho; ide_web.mjs le o NOR do Helix real pelo espelho"
   },
   "idiomas_interface": {
    "estado": "agente",
    "evidencia": "apps/phxclaw-ui/assets/textos.json: 266 chaves em pt e en; idiomas.js troca pela tela. O Helix so em ingles"
   },
   "ide_web": {
+   "estado": "agente",
+   "evidencia": "crates/phxclaw-agent/src/ide.rs: websocket GET /v1/ide/terminal (token na primeira mensagem, conferido pela mesma auth da API; uma sessao por usuario, a nova fecha a anterior; SO o Helix abre -- bash recusado com motivo) sobre o MESMO phxclaw-terminal do desktop (helix::programa, um motor para os dois); apps/phxclaw-ui/assets/ide.js (o modulo do IDE saiu do app.js para um <script async>, fora do DOMContentLoaded do celular): o canvas ganhou um adaptador de transporte (Tauri quando existe, websocket senao); sw.js casca-8",
+   "teste": "tests/desktop/ide_web.mjs (agente REAL `phxclaw servir`, Chromium sem Tauri): 10/10 -- token errado recusado, bash recusado, o Helix sobe no PTY e o NOR chega ao canvas, :q encerra; RED medido (copia da UI com o adaptador websocket desligado derruba); crates/phxclaw-agent/tests/ide_web.rs: websocket em processo (2 testes); 4 unitarios em ide.rs"
+  },
+  "nos_e_conexoes": {
    "estado": "parcial",
-   "evidencia": "o PWA serve a UI, mas o IDE so abre no desktop: terminal_abrir e invoke do Tauri (app.js:950)"
+   "evidencia": "fluxos.rs Passo: um passo e tarefa OU ferramenta, com `depende`; saida unica em texto, sem portas de saida multiplas nem tipo de conexao (o n8n tem main/ai_tool/ai_memory e N saidas por no)"
+  },
+  "execucao_por_item": {
+   "estado": "nao",
+   "evidencia": "fluxos.rs substituir(): a saida de um passo e UMA string; nao ha lista de itens, nem rodar o passo uma vez por item, nem pairedItem"
+  },
+  "expressoes": {
+   "estado": "parcial",
+   "evidencia": "fluxos.rs referencias()/substituir(): so `{{id}}` de passo declarado em `depende`; sem linguagem de expressao ($json, $node, funcoes de data/texto)"
+  },
+  "variaveis_globais": {
+   "estado": "nao",
+   "evidencia": "nenhum `$vars`: o fluxo so enxerga saidas de passos; o config.json nao e lido pelo fluxo"
+  },
+  "ramificacao_if_switch": {
+   "estado": "nao",
+   "evidencia": "fluxos.rs nao tem passo de condicao: toda dependencia e incondicional; a unica bifurcacao e falha -> bloqueado"
+  },
+  "juncao_merge": {
+   "estado": "parcial",
+   "evidencia": "fluxos.rs: passo com varias `depende` recebe todas as saidas por `{{a}}`/`{{b}}` (equivale ao combine por posicao); sem append, combine por campo nem chooseBranch"
+  },
+  "laco_lotes": {
+   "estado": "nao",
+   "evidencia": "fluxos.rs: DAG sem laco (TaskGraphError::Cycle recusa); nao ha SplitInBatches nem loop sobre itens"
+  },
+  "espera_wait": {
+   "estado": "nao",
+   "evidencia": "fluxos.rs: passo de agente roda pelo config_de_subagente (sem perguntar) e nao ha passo de espera por tempo, webhook ou formulario; o passo humano e a SP000029 (PLANEJADA)"
+  },
+  "tentativas_por_no": {
+   "estado": "agente",
+   "evidencia": "fluxos.rs Passo.tentativas -> phxclaw_task_graph::RetryPolicy (base 50 ms, teto 2 s); teste orquestracao.rs fluxo_que_falha_no_meio_retoma_de_onde_parou conta as tentativas"
+  },
+  "timeout_execucao": {
+   "estado": "parcial",
+   "evidencia": "motor.rs AgentConfig.tool_timeout (120 s) vale por chamada de ferramenta via ToolContext; sem teto por passo de agente nem do fluxo inteiro (EXECUTIONS_TIMEOUT do n8n)"
+  },
+  "continuar_em_erro": {
+   "estado": "nao",
+   "evidencia": "fluxos.rs executar(): passo que falha vira `falhou` e os dependentes `bloqueado`; nao ha continueOnFail, saida de erro nem alwaysOutputData"
+  },
+  "fluxo_de_erro": {
+   "estado": "nao",
+   "evidencia": "nenhum fluxo de erro: hooks.rs TaskEnd roda um comando no fim da tarefa, nao dispara outro fluxo com os dados do erro"
+  },
+  "execucao_parcial": {
+   "estado": "nao",
+   "evidencia": "phxclaw fluxo rodar roda o DAG inteiro; nao ha rodar ate o passo N nem rodar so um passo com entrada gravada"
+  },
+  "retomar_execucao": {
+   "estado": "agente",
+   "evidencia": "fluxos.rs retomar(): progresso gravado no task.json a cada onda, sha256 da definicao conferido, passos ok reaproveitados; teste orquestracao.rs:264"
+  },
+  "dados_pinados": {
+   "estado": "parcial",
+   "evidencia": "fluxos.rs:298 anteriores: a saida gravada de um passo ok substitui a execucao na retomada (e o mecanismo do pin); falta escolher e editar o dado pinado"
+  },
+  "subfluxo": {
+   "estado": "nao",
+   "evidencia": "nao existe ferramenta nem passo que rode outro fluxo (nenhum `fluxo` entre as 72 de ferramentas.json); fluxo so entra pela CLI"
+  },
+  "versionamento_fluxo": {
+   "estado": "parcial",
+   "evidencia": "fluxos.rs Relatorio.fluxo_sha256 prende a execucao a definicao; historico.rs guarda cada gravacao do arquivo no projeto; sem versao publicada x rascunho nem diff entre versoes"
+  },
+  "gatilho_manual": {
+   "estado": "agente",
+   "evidencia": "apps/phxclaw/src/main.rs:918 `phxclaw fluxo rodar ARQ.json`"
+  },
+  "gatilho_poll": {
+   "estado": "parcial",
+   "evidencia": "gatilhos.rs Observador: pasta observada por mtime (arquivo estavel); canais/ IMAP por laco; sem poll generico de API ou banco (RSS, Postgres Trigger)"
+  },
+  "gatilho_formulario": {
+   "estado": "nao",
+   "evidencia": "nenhum formulario servido pelo agente que vire tarefa ou retome fluxo; a UI tem so o formulario de nova tarefa"
+  },
+  "gatilho_dispara_fluxo": {
+   "estado": "parcial",
+   "evidencia": "agenda.rs e gatilhos.rs criam TAREFA com objetivo (criar_tarefa_com); nenhum deles dispara um fluxo, porque nao ha ferramenta nem rota de fluxo"
+  },
+  "credenciais_cifradas": {
+   "estado": "agente",
+   "evidencia": "crates/phxclaw-secret-broker: AES-256-GCM em repouso (lib.rs:442), chave-mestra em arquivo, store/rotate/revoke/lease; canais e MCP leem do broker"
+  },
+  "oauth2_generico": {
+   "estado": "parcial",
+   "evidencia": "oauth.rs: PKCE S256 com refresh para servidores MCP e presets (Google, Linear); nao se aplica a uma requisicao HTTP qualquer"
+  },
+  "segredos_externos": {
+   "estado": "nao",
+   "evidencia": "so o broker local em arquivo; sem Vault, AWS Secrets Manager, Azure Key Vault ou GCP"
+  },
+  "redacao_dados_execucao": {
+   "estado": "agente",
+   "evidencia": "gravacao.rs redigir()/redigir_texto() antes de gravar; oauth.rs limpar() tira o segredo do erro; teste de vazamento roda por todos os canais"
+  },
+  "historico_execucoes": {
+   "estado": "agente",
+   "evidencia": "o fluxo e uma Task com task.json, pasta e EvidenceLedger (fluxos.rs:310); GET /v1/tasks e /v1/tasks/{id}/artifacts; tela de tarefas da UI"
+  },
+  "dados_binarios": {
+   "estado": "parcial",
+   "evidencia": "passos de ferramenta rodam na pasta da tarefa (ToolContext.workdir) e os artefatos saem por /v1/tasks/{id}/artifacts; sem binario tipado entre passos nem modo filesystem/S3"
+  },
+  "poda_execucoes": {
+   "estado": "nao",
+   "evidencia": "TaskStore nao poda tarefas por idade ou contagem; historico.rs poda so o historico de arquivos"
+  },
+  "fila_workers": {
+   "estado": "parcial",
+   "evidencia": "bibliotecas fora do agente: phxclaw-task-graph PostgresTaskJournal, phxclaw-event-bus PostgresOutbox.claim_batch, phxclaw-bpm BpmStore.claim_ready_token; o agente roda tudo em um processo"
+  },
+  "concorrencia_limite": {
+   "estado": "parcial",
+   "evidencia": "fluxos.rs max_paralelo por fluxo e ferramentas.rs max_parallel por lote de subagentes; sem limite global de execucoes da instancia"
+  },
+  "editor_canvas": {
+   "estado": "nao",
+   "evidencia": "nenhuma tela de fluxo na UI (telas: geral, agentes, ide, ferramentas, absorcao, tarefas, config); xyflow recusado R20 (TRIAGEM 01/10)"
+  },
+  "modelos_fluxo": {
+   "estado": "nao",
+   "evidencia": "sem galeria de fluxos prontos; importar_skills.rs importa SKILL.md, nao fluxos"
+  },
+  "etiquetas_pastas": {
+   "estado": "nao",
+   "evidencia": "Task nao tem tags, pastas nem favoritos; a listagem /v1/tasks e plana"
+  },
+  "projetos_rbac": {
+   "estado": "nao",
+   "evidencia": "api.rs: um Bearer unico; sem usuarios, projetos nem papeis (owner/admin/member)"
+  },
+  "controle_versao_git_fluxos": {
+   "estado": "parcial",
+   "evidencia": "o fluxo e um JSON no projeto e git.rs/git_write o versionam como qualquer arquivo; sem push/pull de fluxos como entidade nem ambientes dev/prod"
+  },
+  "assistente_construtor_ia": {
+   "estado": "nao",
+   "evidencia": "o agente escreve JSON com write_file, mas nao ha ferramenta que valide (fluxos::ler) nem rode o fluxo gerado"
+  },
+  "ferramentas_do_agente": {
+   "estado": "agente",
+   "evidencia": "ferramentas.json: 72 ferramentas nativas + mcp.rs (mcp__servidor__ferramenta) + plugins.rs assinados, todas pelo mesmo portao Agent::call_tool"
+  },
+  "aprovacao_humana": {
+   "estado": "agente",
+   "evidencia": "regras.rs `perguntar` por pedaco de comando para a tarefa em AwaitingInput antes de rodar a ferramenta (perguntas.rs); plan_mode AwaitingApproval; gonogo.rs conselho de integradores"
+  },
+  "guardrails": {
+   "estado": "parcial",
+   "evidencia": "segredos.rs varredura gitleaks no git_write, instrucoes.rs/importar_skills.rs varredura anti-injecao, gravacao.rs redigir; sem no generico de politica sobre texto (PII, jailbreak, topico)"
+  },
+  "requisicao_http": {
+   "estado": "parcial",
+   "evidencia": "adaptadores.rs BrowserTool abre e le pagina (GET); sem no HTTP generico com metodo, corpo, autenticacao por credencial, paginacao e lotes; `network` (sistema.rs:929) e diagnostico, nao requisicao"
+  },
+  "banco_postgres": {
+   "estado": "agente",
+   "evidencia": "sistema.rs:1342 PostgresTool (do_ambiente, leitura e escrita separadas), ligada em montagem.rs:278"
+  },
+  "observabilidade_insights": {
+   "estado": "parcial",
+   "evidencia": "EvidenceLedger por tarefa, avaliacao.rs p50/p95 e tokens, gravacao.rs MedidasDoPasso; sem /metrics Prometheus, OTel nem painel de insights"
+  },
+  "cli_importar_exportar": {
+   "estado": "parcial",
+   "evidencia": "`phxclaw fluxo rodar|retomar ARQ.json`: o fluxo ja e arquivo, mas nao ha export/import de execucoes, credenciais nem pacote de fluxo"
+  },
+  "instalacao_docker_k8s": {
+   "estado": "nao",
+   "evidencia": "nenhum Dockerfile, compose ou manifesto k8s na arvore; phxclaw-installer e backup/restore local"
   }
  }
 }

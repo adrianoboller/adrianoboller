@@ -1,0 +1,502 @@
+{
+ "nome": "passagens-china",
+ "max_paralelo": 4,
+ "passos": [
+  {
+   "id": "preparar",
+   "ferramenta": "python_repl",
+   "args": {
+    "code": "# ---- PARAMETROS DO MONITOR (edite aqui) ----\nORIGEM = \"GRU\"\nDESTINOS = [\"PEK\", \"PVG\", \"CAN\"]      # exatamente 3: o fluxo tem 3 consultas\nDIAS_A_FRENTE = 30                    # data de ida = hoje + N dias\nJANELA_DIAS = 60                      # teto de N: os proximos 60 dias\nMOEDA = \"BRL\"\n# --------------------------------------------\nimport datetime, json, pathlib, urllib.parse\nhoje = datetime.date.today()\nida = hoje + datetime.timedelta(days=max(1, min(DIAS_A_FRENTE, JANELA_DIAS)))\np = pathlib.Path(\"param\"); p.mkdir(exist_ok=True)\nfor i, d in enumerate(DESTINOS[:3], 1):\n    q = f\"Flights from {ORIGEM} to {d} on {ida.isoformat()} one way\"\n    url = \"https://www.google.com/travel/flights?q=\" + urllib.parse.quote(q) + f\"&curr={MOEDA}&hl=pt-BR\"\n    (p / f\"url_{i}.txt\").write_text(url)\n(p / \"parametros.json\").write_text(json.dumps({\"origem\": ORIGEM, \"destinos\": DESTINOS[:3], \"data_ida\": ida.isoformat(), \"moeda\": MOEDA, \"fonte\": \"Google Flights\"}))\nprint(\"ida\", ida.isoformat())"
+   }
+  },
+  {
+   "id": "memoria",
+   "ferramenta": "memory_search",
+   "args": {
+    "query": "passagens-china GRU",
+    "limit": 10
+   }
+  },
+  {
+   "id": "memoria_txt",
+   "depende": [
+    "memoria"
+   ],
+   "ferramenta": "write_file",
+   "args": {
+    "path": "memoria.txt",
+    "content": "{{memoria}}"
+   }
+  },
+  {
+   "id": "url_1",
+   "depende": [
+    "preparar"
+   ],
+   "ferramenta": "read_file",
+   "args": {
+    "path": "param/url_1.txt"
+   }
+  },
+  {
+   "id": "consultar_1",
+   "depende": [
+    "url_1"
+   ],
+   "ferramenta": "browser_open",
+   "args": {
+    "url": "{{url_1}}"
+   },
+   "tentativas": 2
+  },
+  {
+   "id": "captura_1",
+   "depende": [
+    "consultar_1"
+   ],
+   "ferramenta": "browser_screenshot",
+   "args": {
+    "path": "captura_1.png"
+   }
+  },
+  {
+   "id": "pagina_1",
+   "depende": [
+    "consultar_1"
+   ],
+   "ferramenta": "write_file",
+   "args": {
+    "path": "pagina_1.txt",
+    "content": "{{consultar_1}}"
+   }
+  },
+  {
+   "id": "url_2",
+   "depende": [
+    "preparar"
+   ],
+   "ferramenta": "read_file",
+   "args": {
+    "path": "param/url_2.txt"
+   }
+  },
+  {
+   "id": "consultar_2",
+   "depende": [
+    "url_2",
+    "captura_1"
+   ],
+   "ferramenta": "browser_open",
+   "args": {
+    "url": "{{url_2}}"
+   },
+   "tentativas": 2
+  },
+  {
+   "id": "captura_2",
+   "depende": [
+    "consultar_2"
+   ],
+   "ferramenta": "browser_screenshot",
+   "args": {
+    "path": "captura_2.png"
+   }
+  },
+  {
+   "id": "pagina_2",
+   "depende": [
+    "consultar_2"
+   ],
+   "ferramenta": "write_file",
+   "args": {
+    "path": "pagina_2.txt",
+    "content": "{{consultar_2}}"
+   }
+  },
+  {
+   "id": "url_3",
+   "depende": [
+    "preparar"
+   ],
+   "ferramenta": "read_file",
+   "args": {
+    "path": "param/url_3.txt"
+   }
+  },
+  {
+   "id": "consultar_3",
+   "depende": [
+    "url_3",
+    "captura_2"
+   ],
+   "ferramenta": "browser_open",
+   "args": {
+    "url": "{{url_3}}"
+   },
+   "tentativas": 2
+  },
+  {
+   "id": "captura_3",
+   "depende": [
+    "consultar_3"
+   ],
+   "ferramenta": "browser_screenshot",
+   "args": {
+    "path": "captura_3.png"
+   }
+  },
+  {
+   "id": "pagina_3",
+   "depende": [
+    "consultar_3"
+   ],
+   "ferramenta": "write_file",
+   "args": {
+    "path": "pagina_3.txt",
+    "content": "{{consultar_3}}"
+   }
+  },
+  {
+   "id": "extrair",
+   "depende": [
+    "pagina_1",
+    "pagina_2",
+    "pagina_3",
+    "memoria_txt"
+   ],
+   "ferramenta": "python_repl",
+   "args": {
+    "code": "# ---- PARAMETROS DO ALERTA (edite aqui) ----\nTETO_BRL = 6000                       # avisa com ALERTA quando o minimo fica neste valor ou abaixo\n# --------------------------------------------\nimport re, json, datetime, pathlib\npar = json.loads(pathlib.Path(\"param/parametros.json\").read_text())\norigem, destinos, data_ida, moeda, fonte = par[\"origem\"], par[\"destinos\"], par[\"data_ida\"], par[\"moeda\"], par[\"fonte\"]\nagora = datetime.datetime.now(datetime.timezone.utc)\nmem = pathlib.Path(\"memoria.txt\").read_text() if pathlib.Path(\"memoria.txt\").exists() else \"\"\nLINHA = re.compile(r\"(\\d\\d:\\d\\d) \\u2013 (\\d\\d:\\d\\d)(?:\\s*\\+\\d)?\\s+(.+?)\\s+(\\d+h(?:\\s*\\d+\\s*min)?|\\d+\\s*min)\\s+([A-Z]{3}) \\u2013 ([A-Z]{3})(.*?)R\\$\\s*([\\d\\.]+)\")\ndef ler_pagina(txt, destino):\n    r = {\"destino\": destino, \"estado\": \"ok\", \"preco\": None, \"companhia\": \"\", \"data_ida\": data_ida, \"voos\": 0}\n    if re.search(r\"bots?\\.html|O que \\u00e9 um bot|captcha|unusual traffic|sorry/index\", txt, re.I):\n        r[\"estado\"] = \"barrado\"; return r\n    voos = []\n    for h1, h2, cia, dur, o, d, _, preco in LINHA.findall(txt):\n        if d != destino: continue\n        cia = re.split(r\"\\s+Operado por\", cia)[0].strip()\n        voos.append((int(preco.replace(\".\", \"\")), cia))\n    m = re.search(r\"a partir de(?:\\s*Buscando resultados)?\\s*R\\$\\s*([\\d\\.]+)\", txt)\n    r[\"voos\"] = len(voos)\n    if voos:\n        r[\"preco\"], r[\"companhia\"] = min(voos)\n    elif m:\n        r[\"preco\"] = int(m.group(1).replace(\".\", \"\"))\n    else:\n        r[\"estado\"] = \"sem_preco\"\n    d = re.search(r\"(?:partida em|no dia) (\\d{4}-\\d{2}-\\d{2})\", txt)\n    if d: r[\"data_ida\"] = d.group(1)\n    return r\ndef historico(destino):\n    achados = re.findall(rf\"{origem}-{destino} ida (\\S+) {moeda} (\\d+) (.*?) em (\\S+)\", mem)\n    if not achados: return None, None\n    ultimo = max(achados, key=lambda a: a[3])\n    return int(ultimo[1]), min(int(a[1]) for a in achados)\nres, segs, linhas, alerta_geral = [], [], [], False\nfor i, destino in enumerate(destinos, 1):\n    r = ler_pagina(pathlib.Path(f\"pagina_{i}.txt\").read_text(), destino)\n    ultimo, minimo = historico(destino)\n    r[\"ultimo\"], r[\"minimo_historico\"] = ultimo, minimo\n    r[\"alerta\"] = r[\"preco\"] is not None and (r[\"preco\"] <= TETO_BRL or (minimo is not None and r[\"preco\"] < minimo))\n    alerta_geral = alerta_geral or r[\"alerta\"]\n    if r[\"preco\"] is None:\n        linhas.append(f\"{destino} {r['data_ida']}: {r['estado'].upper()} (sem preco na pagina)\")\n    else:\n        extra = f\"; ultimo {ultimo}\" if ultimo else \"\"; extra += f\"; minimo historico {minimo}\" if minimo else \"\"\n        linhas.append(f\"{destino} {r['data_ida']}: {moeda} {r['preco']} {r['companhia']}\" + (\" ALERTA\" if r[\"alerta\"] else \"\") + f\" (teto {TETO_BRL}{extra})\")\n        segs.append(f\"{origem}-{destino} ida {r['data_ida']} {moeda} {r['preco']} {r['companhia'] or '-'} em {agora.strftime('%Y-%m-%dT%H:%MZ')}\")\n    res.append(r)\ns = pathlib.Path(\"saida\"); s.mkdir(exist_ok=True)\nw = lambda nome, v: (s / f\"{nome}.txt\").write_text(str(v))\nw(\"consulta\", agora.strftime(\"%Y-%m-%d %H:%M UTC\")); w(\"carimbo\", agora.strftime(\"%Y%m%d-%H%M\")); w(\"origem\", origem)\nw(\"mensagem\", (\"ALERTA\" if alerta_geral else \"INFO\") + f\" passagens {origem} -> China ({agora.strftime('%d/%m %H:%M')} UTC)\\n\" + \"\\n\".join(linhas) + f\"\\nFonte: {fonte}\")\nw(\"nota\", \"passagens-china \" + \"; \".join(segs) if segs else f\"passagens-china {agora.strftime('%Y-%m-%dT%H:%MZ')} sem preco em nenhuma consulta\")\nfor i, r in enumerate(res, 1):\n    w(f\"destino_{i}\", r[\"destino\"]); w(f\"data_ida_{i}\", r[\"data_ida\"]); w(f\"preco_{i}\", r[\"preco\"] if r[\"preco\"] is not None else \"\")\n    w(f\"companhia_{i}\", r[\"companhia\"]); w(f\"fonte_{i}\", fonte); w(f\"alerta_{i}\", \"ALERTA\" if r[\"alerta\"] else r[\"estado\"])\n(s / \"resultado.json\").write_text(json.dumps({\"consulta\": agora.isoformat(), \"teto\": TETO_BRL, \"resultados\": res}, ensure_ascii=False, indent=1))\nprint(json.dumps(res, ensure_ascii=False))"
+   }
+  },
+  {
+   "id": "mensagem",
+   "depende": [
+    "extrair"
+   ],
+   "ferramenta": "read_file",
+   "args": {
+    "path": "saida/mensagem.txt"
+   }
+  },
+  {
+   "id": "avisar",
+   "depende": [
+    "mensagem"
+   ],
+   "ferramenta": "channel_send",
+   "args": {
+    "to": "DONO",
+    "text": "{{mensagem}}"
+   }
+  },
+  {
+   "id": "nota",
+   "depende": [
+    "extrair"
+   ],
+   "ferramenta": "read_file",
+   "args": {
+    "path": "saida/nota.txt"
+   }
+  },
+  {
+   "id": "lembrar",
+   "depende": [
+    "nota"
+   ],
+   "ferramenta": "memory_save",
+   "args": {
+    "text": "{{nota}}"
+   }
+  },
+  {
+   "id": "c_consulta",
+   "depende": [
+    "extrair"
+   ],
+   "ferramenta": "read_file",
+   "args": {
+    "path": "saida/consulta.txt"
+   }
+  },
+  {
+   "id": "c_carimbo",
+   "depende": [
+    "extrair"
+   ],
+   "ferramenta": "read_file",
+   "args": {
+    "path": "saida/carimbo.txt"
+   }
+  },
+  {
+   "id": "c_origem",
+   "depende": [
+    "extrair"
+   ],
+   "ferramenta": "read_file",
+   "args": {
+    "path": "saida/origem.txt"
+   }
+  },
+  {
+   "id": "c_destino_1",
+   "depende": [
+    "extrair"
+   ],
+   "ferramenta": "read_file",
+   "args": {
+    "path": "saida/destino_1.txt"
+   }
+  },
+  {
+   "id": "c_data_ida_1",
+   "depende": [
+    "extrair"
+   ],
+   "ferramenta": "read_file",
+   "args": {
+    "path": "saida/data_ida_1.txt"
+   }
+  },
+  {
+   "id": "c_preco_1",
+   "depende": [
+    "extrair"
+   ],
+   "ferramenta": "read_file",
+   "args": {
+    "path": "saida/preco_1.txt"
+   }
+  },
+  {
+   "id": "c_companhia_1",
+   "depende": [
+    "extrair"
+   ],
+   "ferramenta": "read_file",
+   "args": {
+    "path": "saida/companhia_1.txt"
+   }
+  },
+  {
+   "id": "c_fonte_1",
+   "depende": [
+    "extrair"
+   ],
+   "ferramenta": "read_file",
+   "args": {
+    "path": "saida/fonte_1.txt"
+   }
+  },
+  {
+   "id": "c_alerta_1",
+   "depende": [
+    "extrair"
+   ],
+   "ferramenta": "read_file",
+   "args": {
+    "path": "saida/alerta_1.txt"
+   }
+  },
+  {
+   "id": "c_destino_2",
+   "depende": [
+    "extrair"
+   ],
+   "ferramenta": "read_file",
+   "args": {
+    "path": "saida/destino_2.txt"
+   }
+  },
+  {
+   "id": "c_data_ida_2",
+   "depende": [
+    "extrair"
+   ],
+   "ferramenta": "read_file",
+   "args": {
+    "path": "saida/data_ida_2.txt"
+   }
+  },
+  {
+   "id": "c_preco_2",
+   "depende": [
+    "extrair"
+   ],
+   "ferramenta": "read_file",
+   "args": {
+    "path": "saida/preco_2.txt"
+   }
+  },
+  {
+   "id": "c_companhia_2",
+   "depende": [
+    "extrair"
+   ],
+   "ferramenta": "read_file",
+   "args": {
+    "path": "saida/companhia_2.txt"
+   }
+  },
+  {
+   "id": "c_fonte_2",
+   "depende": [
+    "extrair"
+   ],
+   "ferramenta": "read_file",
+   "args": {
+    "path": "saida/fonte_2.txt"
+   }
+  },
+  {
+   "id": "c_alerta_2",
+   "depende": [
+    "extrair"
+   ],
+   "ferramenta": "read_file",
+   "args": {
+    "path": "saida/alerta_2.txt"
+   }
+  },
+  {
+   "id": "c_destino_3",
+   "depende": [
+    "extrair"
+   ],
+   "ferramenta": "read_file",
+   "args": {
+    "path": "saida/destino_3.txt"
+   }
+  },
+  {
+   "id": "c_data_ida_3",
+   "depende": [
+    "extrair"
+   ],
+   "ferramenta": "read_file",
+   "args": {
+    "path": "saida/data_ida_3.txt"
+   }
+  },
+  {
+   "id": "c_preco_3",
+   "depende": [
+    "extrair"
+   ],
+   "ferramenta": "read_file",
+   "args": {
+    "path": "saida/preco_3.txt"
+   }
+  },
+  {
+   "id": "c_companhia_3",
+   "depende": [
+    "extrair"
+   ],
+   "ferramenta": "read_file",
+   "args": {
+    "path": "saida/companhia_3.txt"
+   }
+  },
+  {
+   "id": "c_fonte_3",
+   "depende": [
+    "extrair"
+   ],
+   "ferramenta": "read_file",
+   "args": {
+    "path": "saida/fonte_3.txt"
+   }
+  },
+  {
+   "id": "c_alerta_3",
+   "depende": [
+    "extrair"
+   ],
+   "ferramenta": "read_file",
+   "args": {
+    "path": "saida/alerta_3.txt"
+   }
+  },
+  {
+   "id": "planilha",
+   "depende": [
+    "c_consulta",
+    "c_carimbo",
+    "c_origem",
+    "c_destino_1",
+    "c_data_ida_1",
+    "c_preco_1",
+    "c_companhia_1",
+    "c_fonte_1",
+    "c_alerta_1",
+    "c_destino_2",
+    "c_data_ida_2",
+    "c_preco_2",
+    "c_companhia_2",
+    "c_fonte_2",
+    "c_alerta_2",
+    "c_destino_3",
+    "c_data_ida_3",
+    "c_preco_3",
+    "c_companhia_3",
+    "c_fonte_3",
+    "c_alerta_3"
+   ],
+   "ferramenta": "create_spreadsheet",
+   "args": {
+    "path": "saida/passagens-{{c_carimbo}}.xlsx",
+    "sheets": [
+     {
+      "name": "consultas",
+      "bold_header": true,
+      "rows": [
+       [
+        "consulta_utc",
+        "origem",
+        "destino",
+        "data_ida",
+        "preco_brl",
+        "companhia",
+        "fonte",
+        "alerta"
+       ],
+       [
+        "{{c_consulta}}",
+        "{{c_origem}}",
+        "{{c_destino_1}}",
+        "{{c_data_ida_1}}",
+        "{{c_preco_1}}",
+        "{{c_companhia_1}}",
+        "{{c_fonte_1}}",
+        "{{c_alerta_1}}"
+       ],
+       [
+        "{{c_consulta}}",
+        "{{c_origem}}",
+        "{{c_destino_2}}",
+        "{{c_data_ida_2}}",
+        "{{c_preco_2}}",
+        "{{c_companhia_2}}",
+        "{{c_fonte_2}}",
+        "{{c_alerta_2}}"
+       ],
+       [
+        "{{c_consulta}}",
+        "{{c_origem}}",
+        "{{c_destino_3}}",
+        "{{c_data_ida_3}}",
+        "{{c_preco_3}}",
+        "{{c_companhia_3}}",
+        "{{c_fonte_3}}",
+        "{{c_alerta_3}}"
+       ]
+      ]
+     }
+    ]
+   }
+  }
+ ]
+}

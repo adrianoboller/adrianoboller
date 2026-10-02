@@ -8,6 +8,7 @@ mod medicao;
 
 use anyhow::{Context, Result, bail};
 use phxclaw_agent::api::{AgentFactory, ApiState, disparar_agenda, router};
+use phxclaw_agent::loja::Loja;
 use phxclaw_agent::montagem::Montagem;
 use phxclaw_agent::{Agenda, CancelFlag, Observer, Task, TaskStatus, TaskStore};
 use phxclaw_core_runtime::{
@@ -16,7 +17,7 @@ use phxclaw_core_runtime::{
 use phxclaw_postgres_bootstrap::{HostPlatform, PostgreSqlBootstrapConfig, build_install_plan};
 use std::collections::HashMap;
 use std::env;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -44,6 +45,13 @@ fn main() -> Result<()> {
     // se recarrega depois de um `PUT /v1/config`: sem fixar, `config::valor` lia
     // `var/agente` enquanto o comando gravava em `--pasta` (prova F, 01/10).
     phxclaw_agent::config::fixar_pasta(&pasta(&args[1..]));
+    // Arquivo invalido e ERRO na porta, nao «vale o padrao» calado la dentro: todo comando
+    // le pelo ponto unico, e seguir com o padrao faria uma restricao escrita no arquivo
+    // deixar de valer sem ninguem ver. So o `config` entra com arquivo invalido -- e ele
+    // que o conserta.
+    if args[0] != "config" {
+        phxclaw_agent::config::configuracao().map_err(anyhow::Error::msg)?;
+    }
     match args[0].as_str() {
         "version" | "--version" | "-V" => println!("{PRODUCT_NAME} {VERSION}"),
         "core" => core_command(&args[1..])?,
@@ -68,6 +76,22 @@ fn main() -> Result<()> {
             println!("chave da xAI guardada (segredo {id}); x_search pede a capacidade x.search");
         }
         "elevenlabs" => runtime()?.block_on(elevenlabs(&args[1..]))?,
+        // `phxclaw n8n chave|segredo`: a chave da API e o segredo do webhook vao para o
+        // broker da pasta `n8n/`, pelo mesmo `Servico` dos outros (docs/N8N.md).
+        "n8n" => match args.get(1).map(String::as_str) {
+            Some("chave") => chave_de(&phxclaw_agent::n8n::SERVICO, &args[1..])?,
+            Some("segredo") => {
+                let raiz = pasta(&args[2..]);
+                let s = &phxclaw_agent::n8n::SEGREDO_WEBHOOK;
+                let id = s.guardar_do_ambiente(&raiz).map_err(anyhow::Error::msg)?;
+                println!(
+                    "{} guardado no broker de {} (segredo {id}); n8n_workflow run assina com ele",
+                    s.rotulo,
+                    s.pasta(&raiz).display()
+                );
+            }
+            _ => bail!("uso: phxclaw n8n chave|segredo [--pasta DIR]"),
+        },
         "gemini" => {
             // `phxclaw gemini chave`: a chave do Nano Banana vai para o broker da pasta.
             let s = &phxclaw_agent::nanobanana::SERVICO;
@@ -83,6 +107,8 @@ com PHXCLAW_IMAGEM_PROVEDOR=nanobanana (capacidade media.generate)"
         // Os segredos que so tinham variavel de ambiente: `phxclaw <servico> chave` guarda
         // a variavel no broker pelo mesmo `Servico` da ElevenLabs e da Gemini.
         "api" => chave_de(&phxclaw_agent::chaves::API, &args[1..])?,
+        "openai" => chave_de(&phxclaw_agent::chaves::OPENAI, &args[1..])?,
+        "anthropic" => chave_de(&phxclaw_agent::chaves::ANTHROPIC, &args[1..])?,
         "imagem" | "image" => chave_de(&phxclaw_agent::chaves::IMAGEM, &args[1..])?,
         "email" => {
             if args.get(1).map(String::as_str) != Some("chave") {
@@ -97,6 +123,7 @@ de e-mail a leem quando PHXCLAW_SMTP_PASSWORD nao esta no ambiente"
         }
         "plugins" => plugins(&args[1..])?,
         "fluxo" | "workflow" => runtime()?.block_on(fluxo(&args[1..]))?,
+        "agenda" | "schedule" => runtime()?.block_on(agenda(&args[1..]))?,
         "equipe" | "team" => runtime()?.block_on(equipe(&args[1..]))?,
         "gonogo" | "go-no-go" => {
             let (texto, codigo) = phxclaw_agent::gonogo::cli(
@@ -126,6 +153,7 @@ de e-mail a leem quando PHXCLAW_SMTP_PASSWORD nao esta no ambiente"
         "estilos" | "styles" => interacao::estilos(),
         "voz" | "voice" => runtime()?.block_on(voz(&args[1..]))?,
         "repetir" | "replay" => runtime()?.block_on(medicao::repetir(&args[1..]))?,
+        "medir" | "measure" => medicao::medir(&args[1..])?,
         "avaliar" | "eval" => runtime()?.block_on(medicao::avaliar(&args[1..]))?,
         "ui" => runtime()?.block_on(medicao::ui(&args[1..]))?,
         "skill" => runtime()?.block_on(medicao::skill(&args[1..]))?,
@@ -285,7 +313,10 @@ async fn agente(args: &[String]) -> Result<()> {
         .transpose()
         .context("--gravar")?;
     let agente = match &gravador {
-        Some(g) => phxclaw_agent::gravacao::gravando(agente, g),
+        Some(g) => {
+            g.tarefa(&t.id);
+            phxclaw_agent::gravacao::gravando(agente, g)
+        }
         None => agente,
     };
     println!("executando...");
@@ -403,7 +434,7 @@ async fn servir(args: &[String]) -> Result<()> {
             let l = phxclaw_agent::canais::ligar::ligar(
                 &nome,
                 &raiz.join("canal"),
-                &|k: &str| env::var(k).ok(),
+                &phxclaw_agent::config::por_variavel,
                 log,
             )
             .await
@@ -453,7 +484,7 @@ async fn servir(args: &[String]) -> Result<()> {
         }
     }
     // Loopback por padrao: expor a API na rede e decisao explicita do operador.
-    let host = env::var("PHXCLAW_API_HOST").unwrap_or_else(|_| "127.0.0.1".into());
+    let host = phxclaw_agent::config::texto_de("api.host").unwrap_or_else(|| "127.0.0.1".into());
     let l = tokio::net::TcpListener::bind((host.as_str(), porta)).await?;
     println!(
         "API de tarefas em http://{}  (token em {})",
@@ -521,7 +552,7 @@ async fn mcp_serve(args: &[String]) -> Result<()> {
         None => env::current_dir()?,
     };
     let modelo = opcao(args, "--modelo")
-        .or_else(|| env::var("PHXCLAW_MODELO").ok())
+        .or_else(|| phxclaw_agent::config::texto_de("modelo.padrao"))
         .unwrap_or_else(|| MODELO_PADRAO.into());
     let agente = Montagem::new(store)
         .agent(&modelo)
@@ -536,7 +567,7 @@ async fn mcp_serve(args: &[String]) -> Result<()> {
 async fn acp(args: &[String]) -> Result<()> {
     let store = TaskStore::new(pasta(args).join("tasks"))?;
     let modelo = opcao(args, "--modelo")
-        .or_else(|| env::var("PHXCLAW_MODELO").ok())
+        .or_else(|| phxclaw_agent::config::texto_de("modelo.padrao"))
         .unwrap_or_else(|| MODELO_PADRAO.into());
     let agente = Montagem::new(store)
         .agent(&modelo)
@@ -557,22 +588,15 @@ fn estado_api(
     Ok(ApiState {
         store,
         factory,
-        default_model: env::var("PHXCLAW_MODELO").unwrap_or_else(|_| MODELO_PADRAO.into()),
+        default_model: phxclaw_agent::config::texto_de("modelo.padrao")
+            .unwrap_or_else(|| MODELO_PADRAO.into()),
         token,
         running: Arc::new(Mutex::new(HashMap::new())),
         agenda: Arc::new(Mutex::new(Agenda::open(raiz.join("agenda.json"))?)),
-        webhook_origins: env::var("PHXCLAW_WEBHOOK_ORIGINS")
-            .map(|v| {
-                v.split(',')
-                    .map(|s| s.trim().to_string())
-                    .filter(|s| !s.is_empty())
-                    .collect()
-            })
-            .unwrap_or_default(),
+        webhook_origins: phxclaw_agent::config::lista_de("api.webhook_origens").unwrap_or_default(),
         limite: Arc::new(phxclaw_agent::api::Limite::por_minuto(
-            env::var("PHXCLAW_API_TAREFAS_POR_MINUTO")
-                .ok()
-                .and_then(|v| v.parse().ok())
+            phxclaw_agent::config::inteiro_de("api.tarefas_por_minuto")
+                .and_then(|v| u32::try_from(v).ok())
                 .unwrap_or(10),
         )),
     })
@@ -596,7 +620,7 @@ async fn canal(args: &[String]) -> Result<()> {
     let ligado = phxclaw_agent::canais::ligar::ligar(
         nome,
         &raiz.join("canal"),
-        &|k: &str| env::var(k).ok(),
+        &phxclaw_agent::config::por_variavel,
         log,
     )
     .await
@@ -723,8 +747,62 @@ fn plugins(args: &[String]) -> Result<()> {
             println!("{} manifesto(s)", feitos.len());
             Ok(())
         }
-        _ => bail!("uso: phxclaw plugins chave|assinar [DIR] [--raiz DIR] [--pasta DIR]"),
+        // A loja: a MESMA `Loja` da ferramenta `plugin_catalog`, para o terminal e o modelo
+        // nao terem duas regras sobre o que e um pacote instalavel.
+        Some("catalogo" | "catalog") => {
+            let loja = loja()?;
+            let busca = args
+                .get(1)
+                .filter(|a| !a.starts_with("--"))
+                .map(String::as_str);
+            runtime()?.block_on(async {
+                let idx = loja.indice().await.map_err(anyhow::Error::msg)?;
+                for r in loja.listar(&idx, busca) {
+                    println!("{}", serde_json::to_string(&Loja::ficha(r))?);
+                }
+                Ok::<(), anyhow::Error>(())
+            })
+        }
+        Some("instalar" | "install") => {
+            let nome = args.get(1).context(USO_PLUGINS)?;
+            let i = runtime()?
+                .block_on(loja()?.instalar(nome))
+                .map_err(anyhow::Error::msg)?;
+            println!(
+                "{} {} instalado em {}",
+                i.nome,
+                i.versao,
+                i.caminho.display()
+            );
+            Ok(())
+        }
+        Some("empacotar" | "pack") => {
+            let (dir, saida) = (
+                args.get(1).context(USO_PLUGINS)?,
+                args.get(2).context(USO_PLUGINS)?,
+            );
+            let bytes =
+                phxclaw_agent::loja::empacotar(Path::new(dir)).map_err(anyhow::Error::msg)?;
+            std::fs::write(saida, &bytes)?;
+            println!(
+                "{saida}: {} bytes (sha256 {})",
+                bytes.len(),
+                phxclaw_agent::loja::sha256_hex(&bytes)
+            );
+            Ok(())
+        }
+        _ => bail!("{USO_PLUGINS}"),
     }
+}
+
+const USO_PLUGINS: &str = "uso: phxclaw plugins chave|assinar [DIR] [--raiz DIR] [--pasta DIR] | \
+                           catalogo [BUSCA] | instalar NOME | empacotar DIR SAIDA.tar";
+
+/// A loja de `pacotes.catalogo`; sem catalogo configurado, o erro diz a chave.
+fn loja() -> Result<Loja> {
+    Loja::da_configuracao()
+        .map_err(anyhow::Error::msg)?
+        .context("pacotes.catalogo (PHXCLAW_PACOTES_CATALOGO) nao definido: nao ha loja")
 }
 
 /// Como o agente se liga a ponte. O token de pareamento vem so do ambiente (segredo em
@@ -734,15 +812,19 @@ fn ponte_do_agente(
     raiz: &std::path::Path,
     url: String,
 ) -> Result<phxclaw_agent::remoto::ConfigDaPonte> {
-    let uuid = |op: &str, var: &str| -> Result<Option<phxclaw_agent::remoto::Uuid>> {
+    let uuid = |op: &str, chave: &str| -> Result<Option<phxclaw_agent::remoto::Uuid>> {
         Ok(opcao(args, op)
-            .or_else(|| env::var(var).ok())
+            .or_else(|| phxclaw_agent::config::texto_de(chave))
             .map(|v| v.parse())
             .transpose()?)
     };
-    let tenant = uuid("--ponte-tenant", "PHXCLAW_TENANT_UUID")?
-        .context("falta --ponte-tenant (ou PHXCLAW_TENANT_UUID)")?;
-    let no = match uuid("--ponte-no", "PHXCLAW_NODE_UUID")? {
+    let tenant = uuid("--ponte-tenant", "dispositivos.tenant_uuid")?.with_context(|| {
+        format!(
+            "falta --ponte-tenant (ou {})",
+            phxclaw_agent::config::variavel("dispositivos.tenant_uuid")
+        )
+    })?;
+    let no = match uuid("--ponte-no", "dispositivos.no_uuid")? {
         Some(n) => n,
         None => {
             let arq = raiz.join("ponte-no");
@@ -794,7 +876,7 @@ async fn ponte(args: &[String]) -> Result<()> {
         &raiz.join("ponte.token"),
         &phxclaw_agent::chaves::PONTE,
     )?;
-    let host = env::var("PHXCLAW_PONTE_HOST").unwrap_or_else(|_| "127.0.0.1".into());
+    let host = phxclaw_agent::config::texto_de("ponte.host").unwrap_or_else(|| "127.0.0.1".into());
     let l = tokio::net::TcpListener::bind((host.as_str(), porta)).await?;
     println!(
         "ponte em http://{}  (token do cliente em {})",
@@ -857,7 +939,8 @@ async fn subir_dispositivos(
         ServidorDispositivos::novo(Arc::new(Mutex::new(reg))).map_err(anyhow::Error::msg)?,
     );
     let tls = tls_de_pem(&cert, &chave).map_err(anyhow::Error::msg)?;
-    let host = env::var("PHXCLAW_DEVICE_HOST").unwrap_or_else(|_| "127.0.0.1".into());
+    let host =
+        phxclaw_agent::config::texto_de("dispositivos.host").unwrap_or_else(|| "127.0.0.1".into());
     let l = tokio::net::TcpListener::bind((host.as_str(), porta)).await?;
     println!(
         "dispositivos em wss://{} ({n} token(s) de pareamento)",
@@ -917,6 +1000,89 @@ async fn fluxo(args: &[String]) -> Result<()> {
     Ok(())
 }
 
+/// `phxclaw agenda`: a MESMA agenda do servidor (`agenda.json` da pasta) e o MESMO
+/// `disparar_agenda` da API -- a CLI nao tem fila propria. `adicionar` aceita objetivo de
+/// modelo ou `fluxo: ARQ.json`; `disparar` roda o que venceu e espera terminar.
+async fn agenda(args: &[String]) -> Result<()> {
+    const USO: &str = "uso: phxclaw agenda listar | adicionar NOME \"OBJETIVO\" (--cada SEGUNDOS | --cron \"m h d M w\") | disparar [--modelo M] [--pasta DIR]";
+    let raiz = pasta(args);
+    let sub = args.first().map(String::as_str).unwrap_or("listar");
+    match sub {
+        "listar" | "list" => {
+            let a = Agenda::open(raiz.join("agenda.json"))?;
+            if a.items.is_empty() {
+                println!("agenda vazia ({})", a.path().display());
+            }
+            for s in &a.items {
+                println!(
+                    "{}  {}  proxima {}  {}  {}\n    {}",
+                    s.id,
+                    if s.enabled { "ligado " } else { "parado " },
+                    s.next_run.format("%Y-%m-%d %H:%M:%SZ"),
+                    s.name,
+                    s.last_task
+                        .as_deref()
+                        .map(|t| format!("ultima tarefa {t}"))
+                        .unwrap_or_default(),
+                    s.objective
+                );
+            }
+        }
+        "adicionar" | "add" => {
+            let (nome, objetivo) = (args.get(1).context(USO)?, args.get(2).context(USO)?);
+            let spec = match (opcao(args, "--cada"), opcao(args, "--cron")) {
+                (Some(seg), None) => phxclaw_agent::agenda::ScheduleSpec::EverySeconds(
+                    seg.parse().context("--cada pede um numero de segundos")?,
+                ),
+                (None, Some(c)) => phxclaw_agent::agenda::ScheduleSpec::CronExpression(c),
+                _ => bail!("{USO}"),
+            };
+            if let Some(arq) = phxclaw_agent::api::fluxo_do_objetivo(objetivo) {
+                // Fluxo invalido para aqui, na mao de quem agenda, e nao no disparo das 3h.
+                phxclaw_agent::fluxos::ler(&std::fs::read_to_string(arq)?)
+                    .map_err(anyhow::Error::msg)?;
+            }
+            let mut a = Agenda::open(raiz.join("agenda.json"))?;
+            let s = a
+                .adicionar_agora(nome, objetivo, spec)
+                .map_err(anyhow::Error::msg)?;
+            println!(
+                "agendado {} ({}): proxima execucao {}",
+                s.id,
+                s.name,
+                s.next_run.format("%Y-%m-%d %H:%M:%SZ")
+            );
+        }
+        "disparar" | "fire" => {
+            let modelo = opcao(args, "--modelo")
+                .or_else(|| phxclaw_agent::config::texto_de("modelo.padrao"))
+                .unwrap_or_else(|| MODELO_PADRAO.into());
+            let store = TaskStore::new(raiz.join("tasks"))?;
+            let m = Montagem::new(store.clone());
+            let factory: AgentFactory = Arc::new(move |modelo: &str| m.agent(modelo));
+            let mut state = estado_api(
+                &raiz,
+                store,
+                factory,
+                phxclaw_api_gateway::generate_bearer_token(),
+            )?;
+            state.default_model = modelo;
+            let handles = phxclaw_agent::api::disparar_agenda_com_handles(&state);
+            println!("agenda: {} disparo(s)", handles.len());
+            for h in handles {
+                let _ = h.await;
+            }
+            for s in &state.agenda.lock().unwrap().items {
+                if let Some(t) = &s.last_task {
+                    println!("  {}  ultima tarefa {t}", s.name);
+                }
+            }
+        }
+        _ => bail!("{USO}"),
+    }
+    Ok(())
+}
+
 /// `phxclaw equipe`: os papeis pelas MESMAS funcoes do `team_list` e do
 /// `team_delegate` (modulo `equipe` do agente) -- a CLI nao tem lista nem delegacao propria.
 async fn equipe(args: &[String]) -> Result<()> {
@@ -941,7 +1107,7 @@ async fn equipe(args: &[String]) -> Result<()> {
         "delegar" | "delegate" => {
             let (id, tarefa) = (args.get(1).context(USO)?, args.get(2).context(USO)?);
             let modelo = opcao(args, "--modelo")
-                .or_else(|| env::var("PHXCLAW_MODELO").ok())
+                .or_else(|| phxclaw_agent::config::texto_de("modelo.padrao"))
                 .unwrap_or_else(|| MODELO_PADRAO.into());
             let store = TaskStore::new(pasta(args).join("tasks"))?;
             let m = Montagem::new(store);
@@ -1198,8 +1364,11 @@ async fn revisar(args: &[String]) -> Result<()> {
     {
         bail!("--falhar-em {f}: use {}", SEVERIDADES.join(", "));
     }
-    let llm = modelo(&opcao(args, "--modelo").unwrap_or_else(|| MODELO_PADRAO.into()))
-        .map_err(anyhow::Error::msg)?;
+    let llm = modelo(
+        &opcao(args, "--modelo").unwrap_or_else(|| MODELO_PADRAO.into()),
+        &pasta(args),
+    )
+    .map_err(anyhow::Error::msg)?;
     let foco = opcao(args, "--foco");
     let r = if let Some(ev) = evento {
         // GitHub Action: o PR sai do `GITHUB_EVENT_PATH`, pelo mesmo `revisar_da_fonte`.

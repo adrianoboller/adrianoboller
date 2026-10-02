@@ -743,9 +743,9 @@ pub struct NetworkTool {
     pub egress: EgressBroker,
 }
 
-/// Variavel com os destinos publicos liberados para a sonda TCP, `host:porta` separados
-/// por virgula. Nega por padrao, como o broker.
-pub const NET_DESTINOS_ENV: &str = "PHXCLAW_NET_DESTINOS";
+/// Chave dos destinos publicos liberados para a sonda TCP (`PHXCLAW_NET_DESTINOS`,
+/// `host:porta` separados por virgula). Nega por padrao, como o broker.
+pub const CHAVE_NET_DESTINOS: &str = "rede.destinos";
 
 /// Origem da sonda TCP na lingua do broker. O broker conhece origem por URL; a sonda se
 /// escreve como `https://host:porta` para usar a MESMA lista e o MESMO validador, em vez
@@ -784,12 +784,7 @@ impl NetworkTool {
         }
     }
     pub fn do_ambiente(lan: bool) -> Self {
-        let destinos: Vec<String> = std::env::var(NET_DESTINOS_ENV)
-            .unwrap_or_default()
-            .split(',')
-            .map(str::to_string)
-            .filter(|s| !s.trim().is_empty())
-            .collect();
+        let destinos = crate::config::lista_de(CHAVE_NET_DESTINOS).unwrap_or_default();
         Self::new(lan, &destinos)
     }
 
@@ -832,7 +827,8 @@ capacidade net.lan (ferramenta network_lan)"
                 .map_err(|e| {
                     ToolError::Denied(format!(
                         "politica de egresso recusou {host}:{p} ({e}); o operador libera em \
-{NET_DESTINOS_ENV}=host:porta"
+{}=host:porta",
+                        crate::config::variavel(CHAVE_NET_DESTINOS)
                     ))
                 })?;
         }
@@ -1333,9 +1329,9 @@ pub fn portas_em_escuta() -> String {
 // postgres
 // ---------------------------------------------------------------------------------------
 
-/// Variavel com a URL do banco. Vem do operador, nunca do modelo: um modelo que escolhe a
-/// URL escolhe o servidor, e com ele para onde vai o que ele le.
-pub const PG_URL_ENV: &str = "PHXCLAW_PG_URL";
+/// Chave da URL do banco (`PHXCLAW_PG_URL`). Vem do operador, nunca do modelo: um modelo
+/// que escolhe a URL escolhe o servidor, e com ele para onde vai o que ele le.
+pub const CHAVE_PG_URL: &str = "postgres.url";
 
 /// PostgreSQL. `write = false` e a `postgres` (`db.read`): esquemas, tabelas, descricao,
 /// SELECT e EXPLAIN, tudo dentro de `BEGIN READ ONLY` -- quem recusa a escrita e o
@@ -1359,8 +1355,8 @@ impl PostgresTool {
     }
     /// So existe se o operador configurou a URL, como o e-mail com o SMTP.
     pub fn do_ambiente(write: bool) -> Option<Self> {
-        let u = std::env::var(PG_URL_ENV).ok()?;
-        (!u.trim().is_empty()).then(|| Self::new(write, u))
+        let u = crate::config::texto_de(CHAVE_PG_URL)?;
+        Some(Self::new(write, u))
     }
 }
 
@@ -1628,7 +1624,8 @@ fn pg_rodar(
         // O erro de parse pode citar o pedaco da URL que falhou -- e o pedaco pode ser a
         // senha. Diz so que esta mal formada.
         ToolError::Failed(format!(
-            "{PG_URL_ENV} mal formada (postgresql://usuario@host:porta/banco ou host=... port=...)"
+            "{} mal formada (postgresql://usuario@host:porta/banco ou host=... port=...)",
+            crate::config::variavel(CHAVE_PG_URL)
         ))
     })?;
     let senha = cfg

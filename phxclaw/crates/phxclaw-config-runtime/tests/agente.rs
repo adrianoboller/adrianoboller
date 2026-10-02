@@ -294,6 +294,7 @@ fn definir_grava_com_revisao_historico_conflito_e_recusa_do_ambiente() {
             arquivo: &arq,
             atual: &c,
             esperada: Some(&t0),
+            perfil: None,
         },
         &m,
     )
@@ -320,6 +321,7 @@ fn definir_grava_com_revisao_historico_conflito_e_recusa_do_ambiente() {
             arquivo: &arq,
             atual: &c,
             esperada: Some(&t0),
+            perfil: None,
         },
         &m2,
     ) {
@@ -335,6 +337,7 @@ fn definir_grava_com_revisao_historico_conflito_e_recusa_do_ambiente() {
             arquivo: &arq,
             atual: &c,
             esperada: Some(&t1),
+            perfil: None,
         },
         &m3,
     )
@@ -360,6 +363,7 @@ fn definir_grava_com_revisao_historico_conflito_e_recusa_do_ambiente() {
             arquivo: &arq,
             atual: &c,
             esperada: None,
+            perfil: None,
         },
         &m4,
     ) {
@@ -400,6 +404,7 @@ fn if_match_e_conferido_contra_o_arquivo_e_nao_contra_o_cache_do_processo() {
             arquivo: &arq,
             atual: &cli,
             esperada: None,
+            perfil: None,
         },
         &m,
     )
@@ -415,6 +420,7 @@ fn if_match_e_conferido_contra_o_arquivo_e_nao_contra_o_cache_do_processo() {
             arquivo: &arq,
             atual: &servidor,
             esperada: Some(&t0),
+            perfil: None,
         },
         &m2,
     ) {
@@ -717,4 +723,242 @@ fn a_entrada_do_catalogo_leva_os_dois_idiomas() {
         .is_some_and(|m| m.contains("GitHub Action")));
     let d = gerar::entrada(por_chave("canais.discord.token").unwrap());
     assert_eq!(d["descricao_en"], json!("Bot token (discord)"));
+}
+
+// ------------------------------------------------------------------ perfis (SP000031 W1)
+
+/// O perfil ativo e uma camada por cima da base da pasta: vence a base (senao ativar nao
+/// mudaria o que a base define) e perde para o projeto confiado e para o ambiente.
+/// `PHXCLAW_PERFIL` escolhe o perfil de uma execucao; perfil que nao existe e erro.
+#[test]
+fn perfil_ativo_vence_a_pasta_perde_para_o_projeto_e_inexistente_e_erro() {
+    let d = tmp("perfil");
+    let pasta = d.join("agente/config.json");
+    let projeto = d.join("proj/.phxclaw/config.json");
+    grava(
+        &pasta,
+        json!({"revisao": 1,
+               "modelo": {"padrao": "da-pasta", "visao": "visao-da-pasta"},
+               "agente": {"estilo": "estilo-da-pasta"},
+               "perfis": {
+                   "trabalho": {"modelo": {"padrao": "do-perfil", "visao": "visao-do-perfil"}},
+                   "casa": {"agente": {"estilo": "estilo-de-casa"}}
+               },
+               "perfil_ativo": "trabalho"}),
+    );
+    grava(
+        &projeto,
+        json!({"revisao": 1, "modelo": {"visao": "visao-do-projeto"}}),
+    );
+    let nada = amb(&[]);
+    let c = carga::carregar(&nada, &pasta, Some(&projeto)).unwrap();
+    assert_eq!(c.texto("modelo.padrao").unwrap(), "do-perfil");
+    assert_eq!(c.origem("modelo.padrao"), Origem::Perfil);
+    assert_eq!(c.texto("modelo.visao").unwrap(), "visao-do-projeto");
+    assert_eq!(c.origem("modelo.visao"), Origem::Projeto);
+    assert_eq!(c.texto("agente.estilo").unwrap(), "estilo-da-pasta");
+    assert_eq!(c.origem("agente.estilo"), Origem::Pasta);
+    assert_eq!(
+        c.perfil_ativo,
+        Some(("trabalho".to_string(), Origem::Pasta))
+    );
+    // A variavel escolhe outro perfil sem tocar o arquivo.
+    let a = amb(&[("PHXCLAW_PERFIL", "casa")]);
+    let c = carga::carregar(&a, &pasta, Some(&projeto)).unwrap();
+    assert_eq!(c.texto("modelo.padrao").unwrap(), "da-pasta");
+    assert_eq!(c.texto("agente.estilo").unwrap(), "estilo-de-casa");
+    assert_eq!(c.origem("agente.estilo"), Origem::Perfil);
+    assert_eq!(c.perfil_ativo, Some(("casa".to_string(), Origem::Ambiente)));
+    // Perfil que nao existe (pela variavel) e erro com o nome, nao «vale a base».
+    let a = amb(&[("PHXCLAW_PERFIL", "ferias")]);
+    let e = carga::carregar(&a, &pasta, Some(&projeto)).unwrap_err();
+    assert!(
+        e.iter()
+            .any(|x| x.chave == "perfil.ativo" && x.motivo.contains("ferias")),
+        "{e:?}"
+    );
+    // ...e tambem no arquivo: perfil_ativo apontando para perfil ausente nao se le.
+    grava(
+        &pasta,
+        json!({"revisao": 2, "perfis": {"a": {}}, "perfil_ativo": "b"}),
+    );
+    let e = carga::ler_arquivo(&pasta).unwrap_err();
+    assert!(e.iter().any(|x| x.chave == "perfil_ativo"), "{e:?}");
+    // Segredo dentro de um perfil e recusado como na base.
+    grava(
+        &pasta,
+        json!({"revisao": 3, "perfis": {"a": {"github": {"token": "ghp_0123456789abcdefghijklmnop"}}}}), // gitleaks:allow (credencial falsa: prova que o segredo e RECUSADO)
+    );
+    let e = carga::ler_arquivo(&pasta).unwrap_err();
+    assert!(e.iter().any(|x| x.motivo.contains("SecretBroker")), "{e:?}");
+    let _ = std::fs::remove_dir_all(&d);
+}
+
+/// `perfil criar|usar` e `definir --perfil` gravam pela mesma `gravar_com`: usar perfil
+/// inexistente recusa com a lista, e o arquivo devolve os perfis em secoes.
+#[test]
+fn perfil_criar_usar_e_definir_no_perfil_gravam_com_revisao() {
+    let d = tmp("perfil-gravar");
+    let pasta = d.join("agente/config.json");
+    grava(&pasta, json!({"revisao": 1, "modelo": {"padrao": "base"}}));
+    let nada = amb(&[]);
+    let cfg = carga::carregar(&nada, &pasta, None).unwrap();
+    let alvo = || Alvo {
+        arquivo: &pasta,
+        atual: &cfg,
+        esperada: None,
+        perfil: None,
+    };
+    let e = carga::perfil_usar(alvo(), Some("trabalho")).unwrap_err();
+    assert!(
+        matches!(&e, Recusa::Invalida(v) if v[0].motivo.contains("nao existe")),
+        "{e}"
+    );
+    carga::perfil_criar(alvo(), "trabalho", false).unwrap();
+    let e = carga::perfil_criar(alvo(), "trabalho", false).unwrap_err();
+    assert!(matches!(&e, Recusa::Invalida(v) if v[0].motivo.contains("ja existe")));
+    let e = carga::perfil_criar(alvo(), "nome com espaco", false).unwrap_err();
+    assert!(matches!(e, Recusa::Invalida(_)));
+    let mut m = Map::new();
+    m.insert("modelo.padrao".into(), json!("do-perfil"));
+    carga::definir(
+        Alvo {
+            perfil: Some("trabalho"),
+            ..alvo()
+        },
+        &m,
+    )
+    .unwrap();
+    // Perfil criado mas nao ativo: a base continua valendo.
+    let c = carga::carregar(&nada, &pasta, None).unwrap();
+    assert_eq!(c.texto("modelo.padrao").unwrap(), "base");
+    carga::perfil_usar(alvo(), Some("trabalho")).unwrap();
+    let c = carga::carregar(&nada, &pasta, None).unwrap();
+    assert_eq!(c.texto("modelo.padrao").unwrap(), "do-perfil");
+    assert_eq!(c.origem("modelo.padrao"), Origem::Perfil);
+    assert_eq!(c.pasta.revisao, 4, "criar, definir e usar: tres gravacoes");
+    let doc: Value = serde_json::from_slice(&std::fs::read(&pasta).unwrap()).unwrap();
+    assert_eq!(doc["perfis"]["trabalho"]["modelo"]["padrao"], "do-perfil");
+    assert_eq!(doc["perfil_ativo"], "trabalho");
+    // Desativar: nenhum perfil.
+    carga::perfil_usar(alvo(), None).unwrap();
+    let c = carga::carregar(&nada, &pasta, None).unwrap();
+    assert_eq!(c.perfil_ativo, None);
+    assert_eq!(c.texto("modelo.padrao").unwrap(), "base");
+    let _ = std::fs::remove_dir_all(&d);
+}
+
+/// A sincronizacao: `exportar` sai sem a revisao e passa cada valor pela varredura de
+/// credencial de novo; `importar` confere o SHA do disco sob a trava e recusa com o SHA
+/// de agora quando o destino mudou.
+#[test]
+fn exportar_recusa_segredo_e_importar_confere_a_base_antes_de_gravar() {
+    let d = tmp("sync");
+    let origem = d.join("a/config.json");
+    let destino = d.join("b/config.json");
+    grava(
+        &origem,
+        json!({"revisao": 7, "modelo": {"padrao": "sincronizado"},
+               "perfis": {"x": {"agente": {"estilo": "e"}}}, "perfil_ativo": "x"}),
+    );
+    let arq = carga::ler_arquivo(&origem).unwrap();
+    let doc = carga::exportar(&arq).unwrap();
+    assert!(
+        doc.get("revisao").is_none(),
+        "a revisao e da maquina: {doc}"
+    );
+    assert_eq!(doc["modelo"]["padrao"], "sincronizado");
+    assert_eq!(doc["perfil_ativo"], "x");
+    // Segredo plantado DEPOIS da leitura (o arquivo ja recusaria): a saida recusa sozinha.
+    let mut com_segredo = arq.clone();
+    com_segredo.valores.insert(
+        "modelo.padrao".into(),
+        json!("ghp_0123456789abcdefghijklmnopqrstuv"),
+    );
+    let e = carga::exportar(&com_segredo).unwrap_err();
+    assert!(e[0].motivo.contains("credencial"), "{e:?}");
+    assert!(
+        !e[0].motivo.contains("ghp_0123"),
+        "o motivo nunca carrega o valor: {e:?}"
+    );
+    // Importar no destino vazio: base e o SHA do vazio.
+    let nada = amb(&[]);
+    let cfg = carga::carregar(&nada, &destino, None).unwrap();
+    let alvo = || Alvo {
+        arquivo: &destino,
+        atual: &cfg,
+        esperada: None,
+        perfil: None,
+    };
+    let sha_vazio = carga::sha_em_disco(&destino).unwrap();
+    carga::importar(alvo(), &doc, &sha_vazio).unwrap();
+    let c = carga::carregar(&nada, &destino, None).unwrap();
+    assert_eq!(c.texto("modelo.padrao").unwrap(), "sincronizado");
+    assert_eq!(c.texto("agente.estilo").unwrap(), "e");
+    assert_eq!(c.pasta.revisao, 1, "a revisao e do destino, nao da origem");
+    // Base velha: o destino mudou desde que a origem o viu -- conflito com o SHA de agora.
+    let e = carga::importar(alvo(), &doc, &sha_vazio).unwrap_err();
+    let agora = carga::sha_em_disco(&destino).unwrap();
+    assert!(
+        matches!(&e, Recusa::Conflito { atual } if *atual == agora),
+        "{e}"
+    );
+    // Documento com segredo nao entra, mesmo com a base certa.
+    let e = carga::importar(
+        alvo(),
+        &json!({"github": {"token": "ghp_0123456789abcdefghijklmnopqrstuv"}}), // gitleaks:allow (credencial falsa: prova que o segredo e RECUSADO)
+        &agora,
+    )
+    .unwrap_err();
+    assert!(matches!(e, Recusa::Invalida(_)), "{e}");
+    let _ = std::fs::remove_dir_all(&d);
+}
+
+/// A frase da precedencia (exemplo gerado, ajuda, guia) sai da MESMA constante que o
+/// `carregar` percorre: a ordem lida do texto e a ordem em que os valores vencem.
+#[test]
+fn o_texto_da_precedencia_e_a_ordem_que_o_carregar_aplica() {
+    use phxclaw_config_runtime::agente::carga::{precedencia_texto, PRECEDENCIA};
+    let frase = precedencia_texto();
+    let cabecalho = gerar::exemplo()["//"][1].as_str().unwrap().to_string();
+    assert!(cabecalho.contains(&frase), "{cabecalho}");
+    // A ordem no texto e a da constante.
+    let mut pos = 0;
+    for o in PRECEDENCIA {
+        let i = frase[pos..]
+            .find(o.rotulo())
+            .unwrap_or_else(|| panic!("{} fora da frase", o.rotulo()));
+        pos += i + o.rotulo().len();
+    }
+    assert_eq!(PRECEDENCIA[0], Origem::Ambiente);
+    assert_eq!(PRECEDENCIA[4], Origem::Padrao);
+    // E a ordem que o carregar aplica: uma chave definida em todas as fontes de arquivo
+    // vence na ordem da constante, fonte a fonte.
+    let d = tmp("prec-const");
+    let pasta = d.join("agente/config.json");
+    let projeto = d.join("proj/.phxclaw/config.json");
+    grava(
+        &pasta,
+        json!({"revisao": 1, "modelo": {"padrao": "pasta"},
+               "perfis": {"p": {"modelo": {"padrao": "perfil"}}}, "perfil_ativo": "p"}),
+    );
+    grava(
+        &projeto,
+        json!({"revisao": 1, "modelo": {"padrao": "projeto"}}),
+    );
+    let a = amb(&[("PHXCLAW_MODELO", "ambiente")]);
+    let c = carga::carregar(&a, &pasta, Some(&projeto)).unwrap();
+    assert_eq!(c.origem("modelo.padrao"), PRECEDENCIA[0]);
+    let nada = amb(&[]);
+    let c = carga::carregar(&nada, &pasta, Some(&projeto)).unwrap();
+    assert_eq!(c.origem("modelo.padrao"), PRECEDENCIA[1]);
+    let c = carga::carregar(&nada, &pasta, None).unwrap();
+    assert_eq!(c.origem("modelo.padrao"), PRECEDENCIA[2]);
+    grava(&pasta, json!({"revisao": 2, "modelo": {"padrao": "pasta"}}));
+    let c = carga::carregar(&nada, &pasta, None).unwrap();
+    assert_eq!(c.origem("modelo.padrao"), PRECEDENCIA[3]);
+    grava(&pasta, json!({"revisao": 3}));
+    let c = carga::carregar(&nada, &pasta, None).unwrap();
+    assert_eq!(c.origem("api.host"), PRECEDENCIA[4]);
+    let _ = std::fs::remove_dir_all(&d);
 }

@@ -38,8 +38,19 @@ fn falha(e: impl std::fmt::Display) -> ToolError {
     ToolError::Failed(e.to_string())
 }
 
-fn var(n: &str) -> Option<String> {
-    std::env::var(n).ok().filter(|v| !v.trim().is_empty())
+/// A configuracao, pela chave do catalogo (`voz.*`); a variavel citada ao operador sai de
+/// `config::variavel`.
+fn var(chave: &str) -> Option<String> {
+    crate::config::texto_de(chave)
+}
+
+/// As variaveis (nome do catalogo) das chaves que faltam.
+fn faltam(chaves: &[(&'static str, bool)]) -> Vec<&'static str> {
+    chaves
+        .iter()
+        .filter(|(_, falta)| *falta)
+        .map(|(chave, _)| crate::config::variavel(chave))
+        .collect()
 }
 
 // ---------------------------------------------------------------- WAV
@@ -146,14 +157,12 @@ fn pastas_no_mesmo_lugar(pastas: &[PathBuf]) -> Result<Vec<(PathBuf, String)>, T
     Ok(v)
 }
 
-fn lista_de_pastas(v: Option<String>) -> Vec<PathBuf> {
-    v.map(|s| {
-        s.split(':')
-            .filter(|p| !p.trim().is_empty())
-            .map(|p| PathBuf::from(p.trim()))
-            .collect()
-    })
-    .unwrap_or_default()
+fn lista_de_pastas(v: Option<Vec<String>>) -> Vec<PathBuf> {
+    v.unwrap_or_default()
+        .iter()
+        .filter(|p| !p.trim().is_empty())
+        .map(|p| PathBuf::from(p.trim()))
+        .collect()
 }
 
 /// Recusa de saida diferente de zero, com o fim do stderr. O 127 e o shell do sandbox
@@ -203,20 +212,21 @@ impl SpeakTool {
     /// `PHXCLAW_TTS_PROVEDOR` = `comando` (padrao: `PHXCLAW_TTS_COMMAND` e companhia) ou
     /// `elevenlabs` (chave de `phxclaw elevenlabs chave` no broker de `raiz_do_agente`).
     pub fn do_ambiente(raiz_do_agente: &Path) -> Self {
-        let elevenlabs = match var("PHXCLAW_TTS_PROVEDOR").as_deref() {
+        let elevenlabs = match var("voz.tts.provedor").as_deref() {
             None | Some("comando") => None,
             Some("elevenlabs") => Some(crate::elevenlabs::FalaElevenLabs::do_ambiente(
                 raiz_do_agente,
             )),
             Some(o) => Some(Err(format!(
-                "PHXCLAW_TTS_PROVEDOR desconhecido: {o} (comando ou elevenlabs)"
+                "{} desconhecido: {o} (comando ou elevenlabs)",
+                crate::config::variavel("voz.tts.provedor")
             ))),
         };
         Self {
-            comando: var("PHXCLAW_TTS_COMMAND"),
-            modelo: var("PHXCLAW_TTS_MODEL").map(PathBuf::from),
-            modelo_sha256: var("PHXCLAW_TTS_MODEL_SHA256"),
-            pastas: lista_de_pastas(var("PHXCLAW_TTS_DIRS")),
+            comando: var("voz.tts.comando"),
+            modelo: var("voz.tts.modelo").map(PathBuf::from),
+            modelo_sha256: var("voz.tts.modelo_sha256"),
+            pastas: lista_de_pastas(crate::config::lista_de("voz.tts.pastas")),
             elevenlabs,
         }
     }
@@ -233,15 +243,11 @@ impl SpeakTool {
     }
 
     fn configurado(&self) -> Result<(Vec<String>, PathBuf, String), ToolError> {
-        let faltam: Vec<&str> = [
-            ("PHXCLAW_TTS_COMMAND", self.comando.is_none()),
-            ("PHXCLAW_TTS_MODEL", self.modelo.is_none()),
-            ("PHXCLAW_TTS_MODEL_SHA256", self.modelo_sha256.is_none()),
-        ]
-        .into_iter()
-        .filter(|(_, f)| *f)
-        .map(|(n, _)| n)
-        .collect();
+        let faltam = faltam(&[
+            ("voz.tts.comando", self.comando.is_none()),
+            ("voz.tts.modelo", self.modelo.is_none()),
+            ("voz.tts.modelo_sha256", self.modelo_sha256.is_none()),
+        ]);
         if !faltam.is_empty() {
             return Err(ToolError::Denied(format!(
                 "texto para fala nao configurado: faltam {}",
@@ -399,7 +405,11 @@ impl SpeakTool {
         let tmp = PastaTemp::nova("phx-tts")?;
         let r = isolado_com(&argv, binds, vec![], &tmp.0, prazo).await?;
         if r.exit_code != Some(0) {
-            return Err(recusa_de_saida("o motor de voz", "PHXCLAW_TTS_DIRS", &r));
+            return Err(recusa_de_saida(
+                "o motor de voz",
+                crate::config::variavel("voz.tts.pastas"),
+                &r,
+            ));
         }
         let gerado = tmp.0.join("fala.wav");
         let tam = std::fs::metadata(&gerado)
@@ -585,22 +595,18 @@ pub struct WakeWordTool {
 impl WakeWordTool {
     pub fn from_env() -> Self {
         Self {
-            bin: var("PHXCLAW_KWS_BIN").map(PathBuf::from),
-            pasta_modelo: var("PHXCLAW_KWS_MODEL_DIR").map(PathBuf::from),
-            modelo_sha256: var("PHXCLAW_KWS_MODEL_SHA256"),
+            bin: var("voz.kws.bin").map(PathBuf::from),
+            pasta_modelo: var("voz.kws.modelo_dir").map(PathBuf::from),
+            modelo_sha256: var("voz.kws.modelo_sha256"),
         }
     }
 
     fn configurado(&self) -> Result<(PathBuf, PathBuf, String), ToolError> {
-        let faltam: Vec<&str> = [
-            ("PHXCLAW_KWS_BIN", self.bin.is_none()),
-            ("PHXCLAW_KWS_MODEL_DIR", self.pasta_modelo.is_none()),
-            ("PHXCLAW_KWS_MODEL_SHA256", self.modelo_sha256.is_none()),
-        ]
-        .into_iter()
-        .filter(|(_, f)| *f)
-        .map(|(n, _)| n)
-        .collect();
+        let faltam = faltam(&[
+            ("voz.kws.bin", self.bin.is_none()),
+            ("voz.kws.modelo_dir", self.pasta_modelo.is_none()),
+            ("voz.kws.modelo_sha256", self.modelo_sha256.is_none()),
+        ]);
         if !faltam.is_empty() {
             return Err(ToolError::Denied(format!(
                 "deteccao de gatilho nao configurada: faltam {}",
@@ -709,7 +715,7 @@ impl WakeWordTool {
         if r.exit_code != Some(0) {
             return Err(recusa_de_saida(
                 "o detector de gatilho",
-                "PHXCLAW_KWS_BIN",
+                crate::config::variavel("voz.kws.bin"),
                 &r,
             ));
         }

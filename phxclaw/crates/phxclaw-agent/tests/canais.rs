@@ -853,6 +853,7 @@ async fn relay_ws(
             };
             for r in respostas {
                 if s.send(M::Text(r.to_string().into())).await.is_err() {
+                    // nao e pulo: o cliente fechou o soquete do servidor falso.
                     return;
                 }
             }

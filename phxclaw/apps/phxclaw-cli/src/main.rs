@@ -224,9 +224,11 @@ fn main() -> Result<()> {
         .prepare(&research_memory, &rust_task)
         .context("F15/F16 research pipeline preparation failed")?;
 
-    if let Ok(database_url) = env::var("PHXCLAW_DATABASE_URL") {
+    if let Some(database_url) =
+        phxclaw_config_runtime::agente::carga::texto_do_processo("postgres.database_url")
+    {
         let mut client = Client::connect(&database_url, NoTls)
-            .context("could not connect to PHXCLAW_DATABASE_URL")?;
+            .context("could not connect to postgres.database_url (PHXCLAW_DATABASE_URL)")?;
         registry
             .persist_postgres(&mut client)
             .context("could not persist plugin registry")?;

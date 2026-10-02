@@ -7,6 +7,13 @@
 //! Subagentes (`parallel_research`, equipe) ficam com o modelo de antes e aparecem como UMA
 //! chamada de ferramenta com a saida delas -- e e isso que a repeticao precisa devolver.
 //!
+//! Cada passo leva o que se mediu nele (SP000030): `duracao_ms` pelo relogio de quem
+//! chamou; `tokens_entrada`/`tokens_saida` SO quando o provedor os devolveu (o roteiro e o
+//! repetidor nao devolvem, e o campo fica ausente -- nunca estimado); `tarefa` e `passo_pai`
+//! para a chamada que roda dentro da chamada de outra tarefa (subagente). O primeiro pedido
+//! ao modelo grava tambem o `prompt_sha256` do sistema e o sha de cada skill da pasta, para
+//! o `avaliar` agrupar execucoes do MESMO prompt.
+//!
 //! Segredo se tira ANALISANDO: o JSON (argumentos, saida, texto de mensagem que seja JSON) e
 //! lido, a chave secreta perde o valor e o resto e reserializado; texto que nao e JSON passa
 //! pelo `scrub_secret_like` do broker, o mesmo de toda a base. Recortar texto dependeria de
@@ -23,8 +30,12 @@ use std::io::Write;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
-/// Versao do formato da linha. Leitor que ve outra recusa, em vez de repetir errado.
-pub const VERSAO_GRAVACAO: u64 = 1;
+/// Versao do formato da linha, em toda linha nova. A 2 (SP000030) acrescenta campos
+/// opcionais (`duracao_ms`, tokens, `tarefa`, `passo_pai`, a linha `prompt`); o leitor
+/// aceita a 1, que so nao os tem. Versao fora de `VERSOES_LIDAS` recusa, em vez de
+/// repetir errado.
+pub const VERSAO_GRAVACAO: u64 = 2;
+pub const VERSOES_LIDAS: [u64; 2] = [1, 2];
 
 const TARJA: &str = "[REDACTED]";
 
@@ -152,6 +163,17 @@ struct Saida {
     /// Quantas mensagens o pedido anterior tinha: grava-se so o que entrou depois, senao a
     /// gravacao cresceria com o quadrado dos passos (cada pedido leva o historico inteiro).
     vistas: usize,
+    /// Chamadas de ferramenta em curso: (tarefa, passo reservado), na ordem em que
+    /// comecaram. E o que diz o `passo_pai` de uma chamada de outra tarefa.
+    em_curso: Vec<(String, u64)>,
+    /// A tarefa de quem grava, dita por `tarefa()` ou vista na primeira ferramenta.
+    raiz: Option<String>,
+    prompt_gravado: bool,
+}
+
+/// O que se mede num passo, pela mesma regua para modelo e ferramenta.
+fn com_medidas(linha: &mut Value, t0: std::time::Instant) {
+    linha["duracao_ms"] = json!(t0.elapsed().as_secs_f64() * 1e3);
 }
 
 /// Escreve a gravacao, uma linha por evento, com `flush` a cada linha: tarefa que morre no
@@ -181,6 +203,9 @@ impl Gravador {
                 passo: 0,
                 erro: None,
                 vistas: 0,
+                em_curso: vec![],
+                raiz: None,
+                prompt_gravado: false,
             }),
         });
         g.linha(json!({
@@ -214,17 +239,41 @@ impl Gravador {
                 passo,
                 erro: None,
                 vistas: 0,
+                em_curso: vec![],
+                raiz: None,
+                // A gravacao continuada ja teve o primeiro pedido; o prompt de la vale.
+                prompt_gravado: true,
             }),
         }))
     }
 
-    fn linha(&self, mut v: Value) {
+    /// A tarefa de quem grava. Sem isto, a raiz e a tarefa da primeira ferramenta chamada
+    /// -- e as linhas de modelo antes dela saem sem `tarefa`.
+    pub fn tarefa(&self, id: &str) {
+        self.saida.lock().unwrap().raiz = Some(id.to_string());
+    }
+
+    /// Reserva o numero do passo ANTES da chamada: a linha so se escreve depois dela, e
+    /// uma chamada de outra tarefa que rode no meio precisa apontar para este numero.
+    fn reservar(&self) -> u64 {
+        let mut s = self.saida.lock().unwrap();
+        let p = s.passo;
+        s.passo += 1;
+        p
+    }
+
+    fn linha(&self, v: Value) {
+        let p = self.reservar();
+        self.linha_no_passo(v, p);
+    }
+
+    fn linha_no_passo(&self, mut v: Value, passo: u64) {
         let mut s = self.saida.lock().unwrap();
         if s.erro.is_some() {
             return;
         }
-        v["passo"] = json!(s.passo);
-        s.passo += 1;
+        v["passo"] = json!(passo);
+        v["versao"] = json!(VERSAO_GRAVACAO);
         let mut texto = v.to_string();
         texto.push('\n');
         if let Err(e) = s
@@ -232,7 +281,7 @@ impl Gravador {
             .write_all(texto.as_bytes())
             .and_then(|_| s.arq.flush())
         {
-            s.erro = Some(format!("gravacao parou no passo {}: {e}", s.passo - 1));
+            s.erro = Some(format!("gravacao parou no passo {passo}: {e}"));
         }
     }
 
@@ -250,6 +299,35 @@ impl Gravador {
 struct GravadorLlm {
     interno: Arc<dyn Llm>,
     g: Arc<Gravador>,
+    skills: Option<phxclaw_skill_runtime::SkillFolder>,
+}
+
+/// sha256 do prompt de sistema: todas as mensagens `system` do pedido, na ordem, com
+/// `\n` entre elas. E o que o motor montou (base + instrucoes do projeto + memoria +
+/// skills listadas), tal como foi ao modelo.
+pub fn prompt_sha256(messages: &[Message]) -> String {
+    let sistema: Vec<&str> = messages
+        .iter()
+        .filter(|m| m.role == phxclaw_agent_core::Role::System)
+        .map(|m| m.content.as_str())
+        .collect();
+    crate::motor::sha256_hex(sistema.join("\n").as_bytes())
+}
+
+/// nome -> sha256 do `SKILL.md` de cada skill valida da pasta, na ordem do nome. So as
+/// validas: e o que o prompt lista e o que o `skill_load` carrega.
+pub fn skills_sha256(
+    pasta: &phxclaw_skill_runtime::SkillFolder,
+) -> std::collections::BTreeMap<String, String> {
+    pasta
+        .scan()
+        .skills
+        .iter()
+        .filter_map(|k| {
+            let bytes = std::fs::read(pasta.root().join(&k.name).join("SKILL.md")).ok()?;
+            Some((k.name.clone(), crate::motor::sha256_hex(&bytes)))
+        })
+        .collect()
 }
 
 impl Llm for GravadorLlm {
@@ -263,6 +341,31 @@ impl Llm for GravadorLlm {
         options: &'a LlmOptions,
     ) -> BoxFut<'a, Result<LlmReply, LlmError>> {
         Box::pin(async move {
+            // O prompt vai ANTES do primeiro pedido: quem le a gravacao sabe sob qual
+            // sistema e quais skills ela correu antes de ver qualquer resposta.
+            let primeiro = {
+                let mut s = self.g.saida.lock().unwrap();
+                !std::mem::replace(&mut s.prompt_gravado, true)
+            };
+            if primeiro {
+                self.g.linha(json!({
+                    "tipo": "prompt",
+                    "prompt_sha256": prompt_sha256(messages),
+                    "skills_sha256": self.skills.as_ref().map(skills_sha256).unwrap_or_default(),
+                }));
+            }
+            let (passo, tarefa, passo_pai) = {
+                let mut s = self.g.saida.lock().unwrap();
+                let p = s.passo;
+                s.passo += 1;
+                // Pedido ao modelo feito enquanto uma ferramenta esta em curso e de uma
+                // tarefa filha (o motor da propria tarefa espera a ferramenta acabar).
+                match s.em_curso.first() {
+                    Some((_, pai)) => (p, None, Some(*pai)),
+                    None => (p, s.raiz.clone(), None),
+                }
+            };
+            let t0 = std::time::Instant::now();
             let r = self.interno.chat(messages, tools, options).await;
             let desde = {
                 let mut s = self.g.saida.lock().unwrap();
@@ -283,13 +386,26 @@ impl Llm for GravadorLlm {
                     "opcoes": options,
                 },
             });
+            com_medidas(&mut linha, t0);
+            if let Some(t) = tarefa {
+                linha["tarefa"] = json!(t);
+            }
+            if let Some(p) = passo_pai {
+                linha["passo_pai"] = json!(p);
+            }
             match &r {
                 Ok(resp) => {
+                    // Provedor que nao conta tokens devolve 0/0 (roteiro, repeticao): o
+                    // campo fica ausente, e a soma de quem le diz «nao informados».
+                    if resp.usage.input_tokens + resp.usage.output_tokens > 0 {
+                        linha["tokens_entrada"] = json!(resp.usage.input_tokens);
+                        linha["tokens_saida"] = json!(resp.usage.output_tokens);
+                    }
                     linha["resposta"] = redigir(&serde_json::to_value(resp).unwrap_or(Value::Null))
                 }
                 Err(e) => linha["erro"] = erro_de_modelo(e),
             }
-            self.g.linha(linha);
+            self.g.linha_no_passo(linha, passo);
             r
         })
     }
@@ -314,17 +430,48 @@ impl Tool for GravadorTool {
     ) -> BoxFut<'a, Result<ToolOutput, ToolError>> {
         Box::pin(async move {
             let entrada = redigir(&args);
+            let (passo, passo_pai) = {
+                let mut s = self.g.saida.lock().unwrap();
+                let p = s.passo;
+                s.passo += 1;
+                if s.raiz.is_none() {
+                    s.raiz = Some(ctx.task_id.clone());
+                }
+                // O pai e a chamada em curso MAIS ANTIGA de outra tarefa: subagente nao
+                // gera subagente (`agent.spawn` nunca entra no filho), entao a filha so
+                // pode estar dentro de uma chamada da raiz -- e as irmas em paralelo
+                // apontam todas para ela, nao uma para a outra.
+                let pai = s
+                    .em_curso
+                    .iter()
+                    .find(|(t, _)| *t != ctx.task_id)
+                    .map(|(_, p)| *p);
+                s.em_curso.push((ctx.task_id.clone(), p));
+                (p, pai)
+            };
+            let t0 = std::time::Instant::now();
             let r = self.interno.run(args, ctx).await;
+            self.g
+                .saida
+                .lock()
+                .unwrap()
+                .em_curso
+                .retain(|(_, p)| *p != passo);
             let mut linha = json!({
                 "tipo": "ferramenta",
                 "nome": self.interno.spec().name,
                 "argumentos": entrada,
+                "tarefa": ctx.task_id,
             });
+            com_medidas(&mut linha, t0);
+            if let Some(p) = passo_pai {
+                linha["passo_pai"] = json!(p);
+            }
             match &r {
                 Ok(o) => linha["saida"] = redigir(&serde_json::to_value(o).unwrap_or(Value::Null)),
                 Err(e) => linha["erro"] = erro_de_ferramenta(e),
             }
-            self.g.linha(linha);
+            self.g.linha_no_passo(linha, passo);
             r
         })
     }
@@ -343,6 +490,7 @@ pub fn gravando(mut a: Agent, g: &Arc<Gravador>) -> Agent {
     a.llm = Arc::new(GravadorLlm {
         interno: a.llm,
         g: g.clone(),
+        skills: a.config.skills.clone(),
     });
     a.tools = a
         .tools
@@ -359,10 +507,33 @@ pub fn gravando(mut a: Agent, g: &Arc<Gravador>) -> Agent {
 
 // ------------------------------------------------------------------ leitura
 
+/// O que se mediu num passo. Gravacao da versao 1 nao tem nada disto: tudo `None`.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct MedidasDoPasso {
+    pub duracao_ms: Option<f64>,
+    pub tokens_entrada: Option<u64>,
+    pub tokens_saida: Option<u64>,
+    pub tarefa: Option<String>,
+    pub passo_pai: Option<u64>,
+}
+
+impl MedidasDoPasso {
+    fn de(v: &Value) -> Self {
+        Self {
+            duracao_ms: v["duracao_ms"].as_f64(),
+            tokens_entrada: v["tokens_entrada"].as_u64(),
+            tokens_saida: v["tokens_saida"].as_u64(),
+            tarefa: v["tarefa"].as_str().map(str::to_string),
+            passo_pai: v["passo_pai"].as_u64(),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct RespostaGravada {
     pub passo: u64,
     pub resposta: Result<LlmReply, Value>,
+    pub medidas: MedidasDoPasso,
 }
 
 #[derive(Debug, Clone)]
@@ -371,15 +542,41 @@ pub struct ChamadaGravada {
     pub nome: String,
     pub argumentos: Value,
     pub saida: Result<ToolOutput, Value>,
+    pub medidas: MedidasDoPasso,
 }
 
 #[derive(Debug, Clone)]
 pub struct Gravacao {
+    pub versao: u64,
     pub objetivo: String,
     pub modelo: String,
     pub data: String,
+    /// sha256 do prompt de sistema do primeiro pedido; ausente na versao 1.
+    pub prompt_sha256: Option<String>,
+    /// nome -> sha256 do SKILL.md, no primeiro pedido.
+    pub skills_sha256: std::collections::BTreeMap<String, String>,
     pub modelo_respostas: Vec<RespostaGravada>,
     pub ferramentas: Vec<ChamadaGravada>,
+}
+
+/// A soma de uma tarefa dentro da gravacao (`phxclaw medir`). Tokens so somam quando TODA
+/// chamada ao modelo os informou: somar as que informaram diria menos do que a tarefa
+/// gastou, com cara de total.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct SomaDaTarefa {
+    /// `None` e a linha sem tarefa (versao 1, ou modelo antes da primeira ferramenta).
+    pub tarefa: Option<String>,
+    /// O passo da raiz dentro do qual esta tarefa rodou (subagente); `None` na raiz.
+    pub passo_pai: Option<u64>,
+    pub chamadas_modelo: usize,
+    pub chamadas_ferramenta: usize,
+    /// Soma das duracoes; `None` se algum passo nao a tem (versao 1).
+    pub duracao_modelo_ms: Option<f64>,
+    pub duracao_ferramentas_ms: Option<f64>,
+    pub tokens_entrada: Option<u64>,
+    pub tokens_saida: Option<u64>,
+    /// Chamadas ao modelo sem contagem de tokens, de `chamadas_modelo`.
+    pub modelo_sem_tokens: usize,
 }
 
 impl Gravacao {
@@ -413,19 +610,34 @@ impl Gravacao {
             let onde = |o: &str| format!("{}:{}: {o}", caminho.display(), n + 1);
             match (v["tipo"].as_str(), g.as_mut()) {
                 (Some("cabecalho"), None) => {
-                    if v["versao"].as_u64() != Some(VERSAO_GRAVACAO) {
+                    let versao = v["versao"].as_u64().unwrap_or(0);
+                    if !VERSOES_LIDAS.contains(&versao) {
                         return Err(onde(&format!(
-                            "versao {} da gravacao; este leitor e da {VERSAO_GRAVACAO}",
+                            "versao {} da gravacao; este leitor le as {VERSOES_LIDAS:?}",
                             v["versao"]
                         )));
                     }
                     g = Some(Gravacao {
+                        versao,
                         objetivo: v["objetivo"].as_str().unwrap_or_default().into(),
                         modelo: v["modelo"].as_str().unwrap_or_default().into(),
                         data: v["data"].as_str().unwrap_or_default().into(),
+                        prompt_sha256: None,
+                        skills_sha256: Default::default(),
                         modelo_respostas: vec![],
                         ferramentas: vec![],
                     });
+                }
+                (Some("prompt"), Some(g)) => {
+                    g.prompt_sha256 = v["prompt_sha256"].as_str().map(str::to_string);
+                    g.skills_sha256 = v["skills_sha256"]
+                        .as_object()
+                        .map(|m| {
+                            m.iter()
+                                .filter_map(|(k, x)| Some((k.clone(), x.as_str()?.to_string())))
+                                .collect()
+                        })
+                        .unwrap_or_default();
                 }
                 (Some("modelo"), Some(g)) => {
                     let resposta = match v.get("resposta") {
@@ -433,7 +645,11 @@ impl Gravacao {
                             .map_err(|e| onde(&format!("resposta ilegivel: {e}")))?),
                         None => Err(v["erro"].clone()),
                     };
-                    g.modelo_respostas.push(RespostaGravada { passo, resposta });
+                    g.modelo_respostas.push(RespostaGravada {
+                        passo,
+                        resposta,
+                        medidas: MedidasDoPasso::de(&v),
+                    });
                 }
                 (Some("ferramenta"), Some(g)) => {
                     let saida = match v.get("saida") {
@@ -446,6 +662,7 @@ impl Gravacao {
                         nome: v["nome"].as_str().unwrap_or_default().into(),
                         argumentos: v["argumentos"].clone(),
                         saida,
+                        medidas: MedidasDoPasso::de(&v),
                     });
                 }
                 (Some("cabecalho"), Some(_)) => return Err(onde("segundo cabecalho")),
@@ -459,6 +676,74 @@ impl Gravacao {
     /// Os nomes das ferramentas, na ordem em que o motor as chamou.
     pub fn sequencia(&self) -> Vec<String> {
         self.ferramentas.iter().map(|c| c.nome.clone()).collect()
+    }
+
+    /// Um sha so para a lista de skills (nome -> sha), para agrupar por ela.
+    pub fn skills_sha256_junto(&self) -> Option<String> {
+        // Sem a linha de prompt (versao 1) nao ha lista: o sha de um mapa vazio mentiria.
+        self.prompt_sha256.as_ref()?;
+        Some(crate::motor::sha256_hex(
+            serde_json::to_string(&self.skills_sha256)
+                .unwrap_or_default()
+                .as_bytes(),
+        ))
+    }
+
+    /// As somas por tarefa, a raiz primeiro e as filhas na ordem do `passo_pai`. A linha
+    /// de modelo sem tarefa e sem pai conta na raiz (e dela: o motor da raiz e o unico que
+    /// pede ao modelo fora de uma ferramenta em curso).
+    pub fn somas(&self) -> Vec<SomaDaTarefa> {
+        use std::collections::BTreeMap;
+        let raiz = self
+            .ferramentas
+            .iter()
+            .find(|c| c.medidas.passo_pai.is_none())
+            .and_then(|c| c.medidas.tarefa.clone());
+        // Chave: (passo_pai, tarefa). A raiz e (None, raiz).
+        let mut somas: BTreeMap<(Option<u64>, Option<String>), SomaDaTarefa> = BTreeMap::new();
+        let mut soma = |m: &MedidasDoPasso, modelo: bool| {
+            let tarefa = match (&m.tarefa, m.passo_pai) {
+                (Some(t), _) => Some(t.clone()),
+                (None, None) => raiz.clone(),
+                (None, Some(_)) => None,
+            };
+            let s = somas
+                .entry((m.passo_pai, tarefa.clone()))
+                .or_insert_with(|| SomaDaTarefa {
+                    tarefa,
+                    passo_pai: m.passo_pai,
+                    chamadas_modelo: 0,
+                    chamadas_ferramenta: 0,
+                    duracao_modelo_ms: Some(0.0),
+                    duracao_ferramentas_ms: Some(0.0),
+                    tokens_entrada: Some(0),
+                    tokens_saida: Some(0),
+                    modelo_sem_tokens: 0,
+                });
+            let dur = if modelo {
+                &mut s.duracao_modelo_ms
+            } else {
+                &mut s.duracao_ferramentas_ms
+            };
+            *dur = dur.zip(m.duracao_ms).map(|(a, b)| a + b);
+            if modelo {
+                s.chamadas_modelo += 1;
+                s.tokens_entrada = s.tokens_entrada.zip(m.tokens_entrada).map(|(a, b)| a + b);
+                s.tokens_saida = s.tokens_saida.zip(m.tokens_saida).map(|(a, b)| a + b);
+                if m.tokens_entrada.is_none() {
+                    s.modelo_sem_tokens += 1;
+                }
+            } else {
+                s.chamadas_ferramenta += 1;
+            }
+        };
+        for r in &self.modelo_respostas {
+            soma(&r.medidas, true);
+        }
+        for c in &self.ferramentas {
+            soma(&c.medidas, false);
+        }
+        somas.into_values().collect()
     }
 }
 
@@ -773,5 +1058,238 @@ mod testes {
         let t = "{ \"cfg\" : { \"Password\"\n :\t \"segredo-sem-forma\" } }";
         let r = redigir_texto(t);
         assert!(!r.contains("segredo-sem-forma"), "{r}");
+    }
+
+    /// SP000030: a gravacao da versao 1 (sem medidas, sem linha de prompt) continua lendo,
+    /// com as medidas ausentes -- e nao inventadas. Reposto o defeito (leitor so da versao
+    /// atual), `ler` recusava o arquivo inteiro.
+    #[test]
+    fn gravacao_da_versao_1_continua_lendo_sem_medidas() {
+        let d = std::env::temp_dir().join(format!("phx-grav-v1-{}", phxclaw_types::new_uuid_v7()));
+        std::fs::create_dir_all(&d).unwrap();
+        let arq = d.join("v1.jsonl");
+        std::fs::write(
+            &arq,
+            concat!(
+                "{\"tipo\":\"cabecalho\",\"versao\":1,\"objetivo\":\"o\",\"modelo\":\"m\",\"data\":\"d\",\"passo\":0}\n",
+                "{\"tipo\":\"ferramenta\",\"nome\":\"ls\",\"argumentos\":{},\"saida\":{\"content\":\"a\"},\"passo\":1}\n",
+            ),
+        )
+        .unwrap();
+        let g = Gravacao::ler(&arq).unwrap();
+        assert_eq!(g.versao, 1);
+        assert_eq!(g.sequencia(), ["ls"]);
+        assert_eq!(g.prompt_sha256, None);
+        assert_eq!(g.ferramentas[0].medidas, MedidasDoPasso::default());
+        let somas = g.somas();
+        assert_eq!(somas.len(), 1);
+        assert_eq!(
+            somas[0].duracao_ferramentas_ms, None,
+            "versao 1 nao mediu: nao se soma"
+        );
+        // Versao fora das lidas continua recusa.
+        std::fs::write(&arq, "{\"tipo\":\"cabecalho\",\"versao\":9,\"passo\":0}\n").unwrap();
+        assert!(Gravacao::ler(&arq).unwrap_err().contains("versao 9"));
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    struct Soma;
+    impl Tool for Soma {
+        fn spec(&self) -> ToolSpec {
+            ToolSpec {
+                name: String::from("soma"),
+                description: String::new(),
+                parameters: json!({"type":"object"}),
+            }
+        }
+        fn capability(&self) -> &'static str {
+            "x"
+        }
+        fn run<'a>(
+            &'a self,
+            _: Value,
+            _: &'a ToolContext,
+        ) -> BoxFut<'a, Result<ToolOutput, ToolError>> {
+            Box::pin(async { Ok(ToolOutput::text("3")) })
+        }
+    }
+
+    /// Uma ferramenta que, como o `parallel_research`, roda outra ferramenta numa tarefa
+    /// filha enquanto esta em curso.
+    struct Pai(Arc<dyn Tool>);
+    impl Tool for Pai {
+        fn spec(&self) -> ToolSpec {
+            ToolSpec {
+                name: String::from("pai"),
+                description: String::new(),
+                parameters: json!({"type":"object"}),
+            }
+        }
+        fn capability(&self) -> &'static str {
+            "x"
+        }
+        fn run<'a>(
+            &'a self,
+            _: Value,
+            ctx: &'a ToolContext,
+        ) -> BoxFut<'a, Result<ToolOutput, ToolError>> {
+            Box::pin(async move {
+                let filha = ToolContext {
+                    task_id: "filha".into(),
+                    workdir: ctx.workdir.clone(),
+                    timeout: ctx.timeout,
+                };
+                self.0.run(json!({}), &filha).await?;
+                self.0.run(json!({}), &filha).await?;
+                Ok(ToolOutput::text("ok"))
+            })
+        }
+    }
+
+    struct ModeloContado;
+    impl Llm for ModeloContado {
+        fn id(&self) -> String {
+            "contado".into()
+        }
+        fn chat<'a>(
+            &'a self,
+            _: &'a [Message],
+            _: &'a [ToolSpec],
+            _: &'a LlmOptions,
+        ) -> BoxFut<'a, Result<LlmReply, LlmError>> {
+            Box::pin(async {
+                Ok(LlmReply {
+                    content: "oi".into(),
+                    tool_calls: vec![],
+                    usage: phxclaw_agent_core::Usage {
+                        input_tokens: 10,
+                        output_tokens: 5,
+                        duracao_geracao_ns: None,
+                    },
+                    model: "contado".into(),
+                })
+            })
+        }
+    }
+
+    /// SP000030: cada passo leva duracao, tokens (so os que o provedor devolveu) e o
+    /// `passo_pai` da chamada de outra tarefa; a linha `prompt` vem antes do primeiro
+    /// pedido; e as somas saem por tarefa. Reposto o defeito (linha sem medidas), as somas
+    /// davam `None` e o `passo_pai` nao existia.
+    #[tokio::test]
+    async fn cada_passo_leva_duracao_tokens_e_passo_pai_e_as_somas_saem_por_tarefa() {
+        let d = std::env::temp_dir().join(format!("phx-grav-med-{}", phxclaw_types::new_uuid_v7()));
+        std::fs::create_dir_all(&d).unwrap();
+        // Uma skill na pasta, para o sha dela ir na linha de prompt.
+        let skills = d.join("skills");
+        std::fs::create_dir_all(skills.join("relatorio")).unwrap();
+        std::fs::write(
+            skills.join("relatorio/SKILL.md"),
+            "---\nname: relatorio\ndescription: faz relatorio\n---\npasso 1\n",
+        )
+        .unwrap();
+        let arq = d.join("t.jsonl");
+        let g = Gravador::criar(&arq, "objetivo", "contado").unwrap();
+        g.tarefa("raiz");
+        let soma: Arc<dyn Tool> = Arc::new(GravadorTool {
+            interno: Arc::new(Soma),
+            g: g.clone(),
+        });
+        let pai = GravadorTool {
+            interno: Arc::new(Pai(soma)),
+            g: g.clone(),
+        };
+        let llm_sem = GravadorLlm {
+            interno: Arc::new(crate::ScriptedLlm::new(vec![LlmReply {
+                content: "x".into(),
+                tool_calls: vec![],
+                usage: Default::default(),
+                model: "roteiro".into(),
+            }])),
+            g: g.clone(),
+            skills: Some(phxclaw_skill_runtime::SkillFolder::new(&skills)),
+        };
+        let llm_com = GravadorLlm {
+            interno: Arc::new(ModeloContado),
+            g: g.clone(),
+            skills: None,
+        };
+        let msgs = [Message::system("sistema"), Message::user("oi")];
+        llm_sem
+            .chat(&msgs, &[], &LlmOptions::default())
+            .await
+            .unwrap();
+        let ctx = ToolContext {
+            task_id: "raiz".into(),
+            workdir: d.clone(),
+            timeout: std::time::Duration::from_secs(1),
+        };
+        pai.run(json!({}), &ctx).await.unwrap();
+        llm_com
+            .chat(&msgs, &[], &LlmOptions::default())
+            .await
+            .unwrap();
+        drop((pai, llm_sem, llm_com));
+        assert_eq!(
+            g.resultado().unwrap(),
+            7,
+            "cabecalho, prompt, 2 modelo, pai e 2 filhas"
+        );
+
+        let lida = Gravacao::ler(&arq).unwrap();
+        assert_eq!(lida.versao, VERSAO_GRAVACAO);
+        assert_eq!(
+            lida.prompt_sha256.as_deref(),
+            Some(prompt_sha256(&msgs).as_str())
+        );
+        assert_eq!(lida.skills_sha256.len(), 1);
+        assert!(lida.skills_sha256.contains_key("relatorio"));
+        // Toda linha nova leva a versao.
+        let texto = std::fs::read_to_string(&arq).unwrap();
+        assert!(texto.lines().all(|l| l.contains("\"versao\":2")), "{texto}");
+
+        // Modelo sem contagem: tokens ausentes, duracao presente.
+        let m0 = &lida.modelo_respostas[0].medidas;
+        assert!(m0.duracao_ms.is_some() && m0.tokens_entrada.is_none());
+        assert_eq!(m0.tarefa.as_deref(), Some("raiz"));
+        let m1 = &lida.modelo_respostas[1].medidas;
+        assert_eq!((m1.tokens_entrada, m1.tokens_saida), (Some(10), Some(5)));
+
+        // A chamada `pai` reservou o passo 3 antes de rodar; as filhas (4 e 5) apontam
+        // para ele, e a linha dele sai depois delas no arquivo.
+        let por_nome = |n: &str| {
+            lida.ferramentas
+                .iter()
+                .filter(|c| c.nome == n)
+                .collect::<Vec<_>>()
+        };
+        let p = por_nome("pai")[0];
+        assert_eq!(p.passo, 3);
+        assert_eq!(p.medidas.passo_pai, None);
+        assert_eq!(p.medidas.tarefa.as_deref(), Some("raiz"));
+        let filhas = por_nome("soma");
+        assert_eq!(filhas.len(), 2);
+        for f in &filhas {
+            assert_eq!(f.medidas.passo_pai, Some(3));
+            assert_eq!(f.medidas.tarefa.as_deref(), Some("filha"));
+            assert!(f.medidas.duracao_ms.is_some());
+        }
+        assert!(p.medidas.duracao_ms.unwrap() >= filhas[0].medidas.duracao_ms.unwrap());
+
+        let somas = lida.somas();
+        assert_eq!(somas.len(), 2);
+        let raiz = somas.iter().find(|s| s.passo_pai.is_none()).unwrap();
+        assert_eq!(raiz.tarefa.as_deref(), Some("raiz"));
+        assert_eq!((raiz.chamadas_modelo, raiz.chamadas_ferramenta), (2, 1));
+        assert_eq!(raiz.modelo_sem_tokens, 1);
+        assert_eq!(
+            raiz.tokens_entrada, None,
+            "uma chamada sem contagem: nao se soma como total"
+        );
+        assert!(raiz.duracao_modelo_ms.is_some());
+        let filha = somas.iter().find(|s| s.passo_pai == Some(3)).unwrap();
+        assert_eq!(filha.tarefa.as_deref(), Some("filha"));
+        assert_eq!(filha.chamadas_ferramenta, 2);
+        let _ = std::fs::remove_dir_all(&d);
     }
 }

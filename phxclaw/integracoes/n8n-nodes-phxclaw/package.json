@@ -1,0 +1,50 @@
+{
+  "name": "n8n-nodes-phxclaw",
+  "version": "0.70.0",
+  "description": "n8n community node for PhxClaw: create agent tasks, wait for the result, answer questions, approve plans and run tools through the PhxClaw task API and MCP endpoint.",
+  "keywords": [
+    "n8n-community-node-package",
+    "phxclaw",
+    "agent",
+    "mcp"
+  ],
+  "license": "Apache-2.0",
+  "homepage": "https://github.com/adrianoboller/adrianoboller/tree/main/phxclaw/integracoes/n8n-nodes-phxclaw",
+  "author": {
+    "name": "PhxClaw Team"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/adrianoboller/adrianoboller.git",
+    "directory": "phxclaw/integracoes/n8n-nodes-phxclaw"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "main": "index.js",
+  "scripts": {
+    "build": "tsc && node copiar-icones.js",
+    "clean": "rm -rf dist",
+    "lint": "tsc --noEmit"
+  },
+  "files": [
+    "dist"
+  ],
+  "n8n": {
+    "n8nNodesApiVersion": 1,
+    "credentials": [
+      "dist/credentials/PhxClawApi.credentials.js"
+    ],
+    "nodes": [
+      "dist/nodes/PhxClaw/PhxClaw.node.js"
+    ]
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "n8n-workflow": "^2.16.0",
+    "typescript": "^5.6.0"
+  },
+  "peerDependencies": {
+    "n8n-workflow": "*"
+  }
+}

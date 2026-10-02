@@ -1021,6 +1021,14 @@ impl Tool for PdfTool {
     fn capability(&self) -> &'static str {
         "fs.read"
     }
+    /// Conversor no bwrap (processo): a regra de comando a alcanca por `pdf <action>`.
+    fn comando_de_shell(&self, args: &Value) -> Option<String> {
+        Some(crate::motor::linha_sintetica(
+            "pdf",
+            args,
+            &["action", "path"],
+        ))
+    }
     fn run<'a>(
         &'a self,
         args: Value,
@@ -1096,6 +1104,14 @@ impl Tool for PdfCreateTool {
     }
     fn capability(&self) -> &'static str {
         "fs.write"
+    }
+    /// Conversor no bwrap (processo): a regra de comando a alcanca por `pdf_create <source>`.
+    fn comando_de_shell(&self, args: &Value) -> Option<String> {
+        Some(crate::motor::linha_sintetica(
+            "pdf_create",
+            args,
+            &["source"],
+        ))
     }
     fn run<'a>(
         &'a self,
