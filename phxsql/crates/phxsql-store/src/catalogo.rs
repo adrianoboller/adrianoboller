@@ -887,6 +887,115 @@ impl Database {
         subdiretorios(&self.caminho)
     }
 
+    // ------------------------------------------------- sequencias nomeadas
+    //
+    // O `.seq` do pedido 229 (`crate::sequencia`). Moram na pasta do
+    // database ou do schema, ao lado das tabelas, e dividem o espaco de
+    // nomes com elas -- os dois motores que tem `CREATE SEQUENCE` (PostgreSQL
+    // e MariaDB) fazem assim. A escrita passa pela trava de instancia
+    // (pedido 635) como toda escrita de pasta do banco.
+
+    /// Cria a sequencia nomeada, com o `fsync` por fazer (pedido 589: o
+    /// `fsync` do arquivo e da pasta ficam para fora da trava global).
+    pub fn criar_sequencia_adiando_o_fsync(
+        &self,
+        schema: Option<&str>,
+        nome: &str,
+        definicao: crate::sequencia::Definicao,
+    ) -> Result<(crate::sequencia::Sequencia, PorSincronizar)> {
+        self.exigir_motor_padrao()?;
+        // O schema tem de EXISTIR -- `CREATE SEQUENCE filial.nf` sem o schema
+        // `filial` e erro no PostgreSQL e no MariaDB, que convergem. E nao
+        // passar pelo `garantir_schema` mantem esta secao fora da espera do
+        // `nascendo` (a catraca `rede-ou-espera-2`): criar sequencia nao
+        // precisa esperar pasta nenhuma nascer.
+        let dir = self.diretorio(schema)?;
+        if !dir.is_dir() {
+            return Err(PhxError::NaoEncontrado(format!(
+                "schema {} nao existe em {}: crie-o antes da sequencia",
+                schema.unwrap_or(""),
+                self.nome
+            )));
+        }
+        let mut pendente = PorSincronizar::default();
+        if tabelas_em(&dir)?.iter().any(|t| t == nome) {
+            return Err(PhxError::Duplicado(format!(
+                "ja existe uma tabela chamada {nome}: tabela e sequencia dividem o \
+                 mesmo espaco de nomes"
+            )));
+        }
+        let _trava = self.tomar_a_trava(&dir)?;
+        let (s, arquivo) =
+            crate::sequencia::Sequencia::criar_adiando_o_fsync(&dir, nome, definicao)?;
+        pendente.arquivos.push((arquivo, s.caminho().to_path_buf()));
+        Ok((s, pendente))
+    }
+
+    /// [`Self::criar_sequencia_adiando_o_fsync`] respondendo depois do disco.
+    pub fn criar_sequencia(
+        &self,
+        schema: Option<&str>,
+        nome: &str,
+        definicao: crate::sequencia::Definicao,
+    ) -> Result<crate::sequencia::Sequencia> {
+        let (s, pendente) = self.criar_sequencia_adiando_o_fsync(schema, nome, definicao)?;
+        pendente.levar_ao_disco()?;
+        Ok(s)
+    }
+
+    /// Abre a sequencia nomeada. Quem vai pedir numero segura a trava de
+    /// instancia pela [`Posse`] devolvida -- o `proximo` grava.
+    pub fn abrir_sequencia(
+        &self,
+        schema: Option<&str>,
+        nome: &str,
+    ) -> Result<(
+        crate::sequencia::Sequencia,
+        Option<crate::trava_de_instancia::Posse>,
+    )> {
+        self.exigir_motor_padrao()?;
+        let dir = self.diretorio(schema)?;
+        let posse = self.tomar_a_trava(&dir)?;
+        Ok((crate::sequencia::Sequencia::abrir(&dir, nome)?, posse))
+    }
+
+    /// Apaga a sequencia nomeada, com o `fsync` da pasta por fazer.
+    pub fn excluir_sequencia_adiando_o_fsync(
+        &self,
+        schema: Option<&str>,
+        nome: &str,
+    ) -> Result<PorSincronizar> {
+        self.exigir_motor_padrao()?;
+        let dir = self.diretorio(schema)?;
+        let _trava = self.tomar_a_trava(&dir)?;
+        let saiu = crate::sequencia::Sequencia::excluir(&dir, nome)?;
+        Ok(PorSincronizar::entradas_que_sairam(vec![saiu]))
+    }
+
+    /// [`Self::excluir_sequencia_adiando_o_fsync`] respondendo depois do disco.
+    pub fn excluir_sequencia(&self, schema: Option<&str>, nome: &str) -> Result<()> {
+        self.excluir_sequencia_adiando_o_fsync(schema, nome)?
+            .levar_ao_disco()?;
+        Ok(())
+    }
+
+    /// As sequencias nomeadas de um schema, ou da raiz quando `None`.
+    pub fn sequencias_nomeadas(&self, schema: Option<&str>) -> Result<Vec<String>> {
+        crate::sequencia::listar(&self.diretorio(schema)?)
+    }
+
+    /// Toda sequencia nomeada do database, qualificada quando mora num schema.
+    pub fn todas_as_sequencias_nomeadas(&self) -> Result<Vec<String>> {
+        let mut saida = self.sequencias_nomeadas(None)?;
+        for s in self.schemas()? {
+            for n in self.sequencias_nomeadas(Some(&s))? {
+                saida.push(format!("{s}.{n}"));
+            }
+        }
+        saida.sort();
+        Ok(saida)
+    }
+
     /// Tabelas de um schema, ou da raiz quando `schema` e `None`.
     pub fn tabelas(&self, schema: Option<&str>) -> Result<Vec<String>> {
         tabelas_em(&self.diretorio(schema)?)
@@ -998,6 +1107,17 @@ impl Database {
             Some(s) => self.garantir_schema_adiando_o_fsync(s)?,
         };
         exigir_nome_que_volta(&dir, esquema.nome())?;
+        // Tabela e sequencia nomeada dividem o espaco de nomes, como no
+        // PostgreSQL e no MariaDB (la a sequencia E uma relacao). Os dois
+        // arquivos coexistiriam no disco; o que nao coexiste e o nome na
+        // cabeca de quem le `nf` num erro.
+        if crate::sequencia::existe(&dir, esquema.nome()) {
+            return Err(PhxError::Duplicado(format!(
+                "ja existe uma sequencia chamada {}: tabela e sequencia dividem o \
+                 mesmo espaco de nomes",
+                esquema.nome()
+            )));
+        }
         // Pedido 605: o nome entra RESERVADO antes do primeiro arquivo, e sai
         // so quando o `levar_ao_disco` terminar -- ate la, quem abre espera
         // (`crate::nascendo`). A pasta acima que ainda nasce por outra
@@ -2303,6 +2423,66 @@ mod testes_gestao {
     // Pedido 150: guarda de Drop, nao `rm` no fim do corpo.
     fn base_temp(rotulo: &str) -> crate::apoio_teste::DirTemp {
         crate::apoio_teste::DirTemp::novo(&format!("cat2-{rotulo}"))
+    }
+
+    /// Pedido 229: a sequencia nomeada mora na pasta do database (ou do
+    /// schema), o `fsync` dela sai pelo `PorSincronizar` como o da tabela,
+    /// e o nome e dividido com a tabela nos dois sentidos.
+    #[test]
+    fn sequencia_nomeada_mora_ao_lado_das_tabelas_e_divide_o_nome() {
+        use crate::sequencia::Definicao;
+        let base = base_temp("seq-nomeada");
+        let inst = Instancia::nova(&base).unwrap();
+        let db = inst.criar_database("banco").unwrap();
+        db.criar_tabela(None, esquema_simples("precos")).unwrap();
+
+        let mut s = db
+            .criar_sequencia(None, "nf", Definicao::default())
+            .unwrap();
+        assert!(base.join("banco/nf.seq").is_file());
+        assert_eq!(s.proximo().unwrap(), 1);
+        drop(s);
+        let (mut s, _posse) = db.abrir_sequencia(None, "nf").unwrap();
+        assert_eq!(s.proximo().unwrap(), 2);
+
+        // No schema, pela mesma porta -- e o schema tem de existir antes,
+        // como no PostgreSQL e no MariaDB.
+        assert!(matches!(
+            db.criar_sequencia(Some("filial"), "nf", Definicao::default())
+                .unwrap_err(),
+            PhxError::NaoEncontrado(_)
+        ));
+        db.criar_schema("filial").unwrap();
+        db.criar_sequencia(Some("filial"), "nf", Definicao::default())
+            .unwrap();
+        assert!(base.join("banco/filial/nf.seq").is_file());
+        assert_eq!(
+            db.todas_as_sequencias_nomeadas().unwrap(),
+            vec!["filial.nf", "nf"]
+        );
+
+        // O nome e um so: tabela nao nasce com nome de sequencia, nem o
+        // contrario. E a tabela `precos` continua sendo so tabela.
+        let e = match db.criar_tabela(None, esquema_simples("nf")) {
+            Ok(_) => panic!("a tabela nasceu com o nome da sequencia"),
+            Err(e) => e,
+        };
+        assert!(matches!(e, PhxError::Duplicado(_)), "{e}");
+        let e = db
+            .criar_sequencia(None, "precos", Definicao::default())
+            .unwrap_err();
+        assert!(matches!(e, PhxError::Duplicado(_)), "{e}");
+        assert_eq!(db.tabelas(None).unwrap(), vec!["precos"]);
+
+        // Apagar a tabela homonima de outro schema nao leva a sequencia, e
+        // apagar a sequencia nao leva tabela nenhuma.
+        db.excluir_sequencia(None, "nf").unwrap();
+        assert!(!base.join("banco/nf.seq").exists());
+        assert_eq!(db.tabelas(None).unwrap(), vec!["precos"]);
+        assert!(matches!(
+            db.abrir_sequencia(None, "nf").unwrap_err(),
+            PhxError::NaoEncontrado(_)
+        ));
     }
 
     /// Pedido 428: apagar e renomear mexem nos arquivos SEM abrir a tabela, e

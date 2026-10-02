@@ -1627,6 +1627,14 @@ mod tests {
         // familia nenhuma das sete: a trava mora no nucleo, e perder o pid
         // numa queda so tira o numero da recusa. (O selo do 634 abre o volume
         // por `File::options()` so para o `set_modified`, que e metadado.)
+        // Pedido 229: `sequencia.rs` entra com 2 -- o `.seq` da sequencia
+        // nomeada nasce por `recriar_do_banco` (sincronizado pelo
+        // `PorSincronizar` do catalogo, ou pelo proprio `criar`, antes de
+        // responder) e reabre por `opcoes_do_banco` para a gravacao NO LUGAR
+        // de cada `proximo`, com `fdatasync` no mesmo descritor antes de
+        // devolver o numero. Nao e familia do `Volumes`: sao dois slots de
+        // 128 bytes com CRC, e a escrita rasgada e sobrevivida pelo slot
+        // vigente, nao pela marca.
         const HOJE: &[(&str, usize)] = &[
             ("backup.rs", 2),
             ("catalogo.rs", 4),
@@ -1636,6 +1644,7 @@ mod tests {
             ("reg.rs", 2),
             ("restaurar.rs", 3),
             ("separador.rs", 2),
+            ("sequencia.rs", 2),
             ("sincronia.rs", 3),
             ("trava_de_instancia.rs", 1),
             ("util.rs", 11),

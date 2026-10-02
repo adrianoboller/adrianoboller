@@ -669,6 +669,13 @@ dia, nunca no desejado:
   master sem `fsync` local, a anotacao fora do ponto unico do diario, contar
   o master, esperar quem nao existe e voltar sem recuo. 717, medido pelo
   `--numeros`.
+  **SUBIU para 720 em 02/10/2026** (pedido 229, o que faltava do auto number):
+  tres guardas novas -- o `Int8`/`UInt8` que gravava o vizinho de 2^53
+  calado (`faixa-imprecisa-no-int8`, decidido pela matriz dos quatro
+  motores), o `proximo` da sequencia nomeada que devolvia antes de durar
+  (`sequencia-nomeada-proximo-sem-durar`) e a tabela que nascia com o nome
+  de uma sequencia (`tabela-com-nome-de-sequencia`). 720, medido pelo
+  `--numeros`.
 
 # A QUINTA REGUA: a tabela publicada pode ser MENOR que o catalogo
 
@@ -775,7 +782,7 @@ TETO_TESTE_MORTO = 0
 TETO_TRECHO_AMBIGUO = 0
 TETO_TESTE_FORA_DO_BINARIO = 0
 TETO_TESTE_SEM_MODULO = 0
-PISO_DAS_ENTRADAS = 717
+PISO_DAS_ENTRADAS = 720
 
 # ------------------------------------------------------------- APOSENTADAS
 #

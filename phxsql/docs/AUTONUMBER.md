@@ -707,12 +707,13 @@ resolve.
 ## C.4 O que a G2 recusou fazer sozinha (é papel C / próximo passo)
 
 - **Alargar a recusa de 2⁵³ ao `Int8`/`UInt8`** — muda o comportamento de
-  cliente que já manda número grande; decisão de projeto. **Continua aberta**,
-  e agora tem guarda: `a_faixa_imprecisa_continua_passando_por_decisao_registrada`
-  (`valores.rs`) prova que a faixa passa, e cai no dia em que papel C decidir —
-  apontando para este parágrafo. A frente 245 (16/09/2026) chegou a alargá-la e
-  **desfez**: dispensa que uma frente registrou não se revoga em silêncio por
-  outra.
+  cliente que já manda número grande; decisão de projeto. Ficou aberta com a
+  guarda `a_faixa_imprecisa_continua_passando_por_decisao_registrada`
+  (`valores.rs`), que provava que a faixa passava; a frente 245 (16/09/2026)
+  chegou a alargá-la e **desfez**: dispensa que uma frente registrou não se
+  revoga em silêncio por outra. **DECIDIDA em 02/10/2026 pela matriz dos
+  quatro motores — §C.5.1, recusar 9 × 1 — e FECHADA**; a guarda antiga foi
+  aposentada por escrito e a nova prova o contrário.
 - **O que a 245 FECHOU ao lado, e não é este item:** o número cru *fora da
   faixa do tipo* era **fabricado**, não arredondado — o `as i64` do Rust satura,
   e `1e21`, `1e30` e `1e300` viravam todos `9223372036854775807` no `.reg`,
@@ -733,11 +734,85 @@ resolve.
   valor gravado exato lê-se arredondado — a faixa agora é gravável e continua
   não sendo legível sem perda. É a mesma decisão adiada do primeiro item.
 - **`início`/`passo` no `PSCH`** — muda formato; é o conserto pleno do bloco 24.
+  **FEITO** no `PSCH` v10 (17/09/2026): o `passo` no esquema, o `inicio` na
+  identidade do nó (`docs/FORMATO.md`, «O carimbo de criação e a faixa da
+  `Sequence`, v10»).
 - **Contador durável propagado / faixa por nó na promoção** — o conserto pleno
   do bloco 23.
 - **Reescrever o `Json` com uma variante `Inteiro(i64)`** (§B.2.6, item 1) —
   787 chamadas atravessam o tipo; não é item desta frente, e o item 2 (recusar
   cedo) não a impede depois.
+
+## C.5 O que faltava do 229, decidido pela matriz dos quatro motores (02/10/2026)
+
+A linha do pedido 229 dizia o que faltava depois do `PSCH` v10: o teto de 2⁵³
+alargado ao `Int8`/`UInt8`, o `IDENTITY ALWAYS` e a sequência nomeada. Pela
+pétrea de 23/09/2026 (o pesquisador decide; o dono é o impasse), os três foram
+ao help dos quatro — e nenhum subiu ao dono, porque nenhum choca com pétrea
+nossa nem empata. Os pesos: PostgreSQL 4, MariaDB 3, MySQL 2, SQLite 1.
+
+### C.5.1 O teto de 2⁵³ no `Int8`/`UInt8` — **entrou, 9 × 1**
+
+A pergunta certa não é «o motor devolve o inteiro grande como número ou como
+texto?» (isso é meio, e nenhum deles tem um `f64` no fio); é **«o motor grava
+um vizinho calado quando o inteiro não cabe?»**.
+
+| motor | peso | o que faz com um inteiro de 64 bits que não cabe no carregador |
+|---|---:|---|
+| PostgreSQL | 4 | erro `out of range for type bigint`; `9007199254740993::bigint` é exato |
+| MariaDB | 3 | erro em modo estrito (padrão); nunca grava o vizinho |
+| MySQL | 2 | idem, `STRICT_TRANS_TABLES` por padrão |
+| SQLite | 1 | guarda exato até 2⁶³; **acima disso cai para REAL calado** |
+
+Recusar **9**, arredondar calado **1**. O `Int8`/`UInt8` daqui gravava
+`9007199254740992` quando o cliente mandava `9007199254740993` — era o lado
+do 1. Entrou pelo mesmo motor da `Sequence`, agora um só para os três
+carregadores (`valores.rs::recusar_impreciso`), com a saída na mensagem (texto)
+e o valor gravado acima de 2⁵³ saindo como texto. A guarda
+`a_faixa_imprecisa_continua_passando_por_decisao_registrada` foi
+**aposentada por escrito** e deu lugar a
+`a_faixa_imprecisa_e_recusada_no_int8_e_no_uint8` (RED medido: 1/1 cai com o
+`recusar_impreciso` tirado); guarda `faixa-imprecisa-no-int8` no catálogo,
+provada.
+
+### C.5.2 `IDENTITY … GENERATED ALWAYS` — **morreu, 4 × 6**
+
+A §B.2.3 o propunha como guarda pedida. A matriz:
+
+| motor | peso | recusa valor explícito numa coluna auto-numerada, se pedido? |
+|---|---:|---|
+| PostgreSQL | 4 | sim — `GENERATED ALWAYS AS IDENTITY` (e `OVERRIDING SYSTEM VALUE` para furar) |
+| MariaDB | 3 | não — `AUTO_INCREMENT` sempre aceita o valor |
+| MySQL | 2 | não — idem |
+| SQLite | 1 | não — `AUTOINCREMENT` aceita o valor |
+
+Oferecer o modo **4**, não existir **6**. O comportamento daqui — aceitar o
+valor e empurrar o contador — é o dos três que não oferecem, e é também o
+`BY DEFAULT` do único que oferece. Não entra, e não entra **um byte no
+`PSCH`** por ele: a hipótese que morre vale tanto quanto a que vence, e esta
+poupa uma versão de formato.
+
+### C.5.3 Sequência nomeada — **entrou, 7 × 3**, e cada escolha com o número
+
+| pergunta | PG (4) | MariaDB (3) | MySQL (2) | SQLite (1) | decisão |
+|---|---|---|---|---|---|
+| existe `CREATE SEQUENCE`? | sim | sim | não | não | **entra**, 7 × 3 |
+| padrões (passo 1, min 1, max 2⁶³−1, início no min, sem ciclo) | sim | sim | — | — | **convergem**, entram |
+| esgotar sem ciclo | erro | erro (4084) | — | — | **erro** |
+| cache por padrão | 1 | 1 000 | — | — | **1** (sem cache), 4 × 3 — e é o caso de uso do dono |
+| replica? | não (replicação lógica) | sim (binlog) | — | — | **não replica**, 4 × 3 |
+| nome divide o espaço com a tabela? | sim (é relação) | sim | — | — | **divide**, converge |
+| schema tem de existir? | sim | sim | — | — | **sim**, converge |
+| `setval` / `RESTART WITH` dentro da faixa, inclusive para trás | sim | sim | — | — | `ajustar_sequencia` com `sequencia` |
+
+O que **não** entrou junto, e por quê: o SQL (`CREATE SEQUENCE`, `NEXTVAL`) —
+a gramática daqui não tem `CREATE` de objeto nenhum, nem `CREATE TABLE`, e o
+`NEXT VALUE FOR` em expressão já estava recusado na §B.2.4; vai pelo
+protocolo, como a tabela. O formato está em `docs/FORMATO.md` §24: 256 bytes,
+dois slots, `fdatasync` por número — **147 a 230 µs** medidos contra **771 µs**
+da troca atômica, 5,2×, e a escrita rasgada sobrevivida pelo slot vigente.
+Guardas `sequencia-nomeada-proximo-sem-durar` (2/2 caem) e
+`tabela-com-nome-de-sequencia` (1/1 cai), provadas.
 
 ---
 

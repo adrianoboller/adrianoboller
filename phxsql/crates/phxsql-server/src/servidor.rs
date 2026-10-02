@@ -324,6 +324,11 @@ pub(crate) const OPS_ESCRITA: &[&str] = &[
     "copiar_tabela",
     "renomear_tabela",
     "ajustar_sequencia",
+    // A sequencia nomeada: criar e apagar mexem na pasta, e pedir o proximo
+    // numero GRAVA -- e o que faz o numero valer.
+    "criar_sequencia",
+    "excluir_sequencia",
+    "proximo_da_sequencia",
     "inserir_lote",
     // Reservar a tabela para carga e declarar intencao de gravar. Num servidor
     // somente-leitura ninguem vai carregar nada, e deixar reservar seria
@@ -1120,6 +1125,12 @@ pub struct Servidor {
     /// outras tocadas na janela ficariam sem sincronizar. Este conjunto e a
     /// lista do que ainda deve ao disco.
     sujas: Mutex<std::collections::HashSet<String>>,
+    /// Serializa os `proximo` das sequencias NOMEADAS (pedido 229). Nao e a
+    /// trava global de dados de proposito: o `proximo` faz um `fdatasync`
+    /// por numero, e isso nao pode acontecer com a trava global na mao (a
+    /// catraca `alcancam-fsync-3`). A trava global entra so para ACHAR o
+    /// arquivo; o disco se espera aqui.
+    trava_das_sequencias: Mutex<()>,
     log: Mutex<LogAcessos>,
     lista_negra: Mutex<Blacklist>,
     /// Sessoes do navegador. Vazio enquanto a interface web estiver desligada.
@@ -1867,6 +1878,7 @@ impl Servidor {
             ledger_marcado_recebido: AtomicU64::new(0),
             janela: Janela::nova(&config.recursos),
             sujas: Mutex::new(std::collections::HashSet::new()),
+            trava_das_sequencias: Mutex::new(()),
             config,
             dados: RwLock::new(raiz),
             retrato: crate::retrato::PortaoDoRetrato::default(),
@@ -13523,6 +13535,10 @@ impl Servidor {
             "dados_pessoais" | "lgpd" => self.op_dados_pessoais(p, sessao),
             "sequencias" | "sequences" => self.op_sequencias(p, sessao),
             "ajustar_sequencia" => self.op_ajustar_sequencia(p, sessao),
+            "criar_sequencia" => self.op_criar_sequencia(p),
+            "proximo_da_sequencia" => self.op_proximo_da_sequencia(p),
+            "sequencia" => self.op_sequencia(p),
+            "excluir_sequencia" => self.op_excluir_sequencia(p),
             "agrupar" | "group_by" => self.op_agrupar(p, sessao),
             "consultar" => self.op_consultar(p, sessao),
             "criar_visao" => self.op_criar_visao(p, sessao),
@@ -20630,10 +20646,176 @@ impl Servidor {
                 ("tem_sequencia", Json::Bool(col.is_some())),
             ]));
         }
+        // As NOMEADAS (pedido 229) vem na mesma resposta, em lista propria:
+        // nao sao tabela e nao tem coluna, e misturar as duas listas faria o
+        // `total` de cima mentir sobre quantas tabelas existem.
+        let mut nomeadas = Vec::new();
+        for nome in db.todas_as_sequencias_nomeadas()? {
+            let (schema, curto) = phxsql_store::catalogo::separar_qualificado(&nome);
+            let Ok((s, _posse)) = db.abrir_sequencia(schema.as_deref(), &curto) else {
+                continue;
+            };
+            let mut ficha = Self::ficha_da_sequencia(s.estado());
+            ficha.insert(0, ("sequencia", Json::texto_de(&nome)));
+            nomeadas.push(Json::objeto(ficha));
+        }
         Ok(Json::objeto(vec![
             ("database", Json::texto_de(database)),
             ("total", Json::de_u64(linhas.len() as u64)),
             ("sequencias", Json::Lista(linhas)),
+            ("nomeadas", Json::Lista(nomeadas)),
+        ]))
+    }
+
+    // ------------------------------------------------- sequencia nomeada
+    //
+    // O `.seq` do pedido 229 (`phxsql_store::sequencia`): um contador com
+    // nome, fora de qualquer tabela, durado em disco a cada numero. Entrou
+    // pela matriz dos quatro motores (`docs/AUTONUMBER.md` §C.5): PostgreSQL
+    // (4) e MariaDB (3) tem `CREATE SEQUENCE`, MySQL (2) e SQLite (1) nao --
+    // 7 x 3. So pelo protocolo: a gramatica SQL daqui nao tem `CREATE` de
+    // objeto nenhum (nem `CREATE TABLE`), e o `NEXT VALUE FOR` dentro de
+    // expressao e recusado na §B.2.4.
+
+    /// `database`, `schema` e nome da sequencia nomeada no pedido. O campo e
+    /// `sequencia`, qualificavel como a tabela (`filial.nf`).
+    fn sequencia_do_pedido(p: &Json) -> Result<(String, Option<String>, String)> {
+        let database = p.texto_ou("database", "").trim().to_string();
+        let qualificado = p.texto_ou("sequencia", "").trim().to_string();
+        if database.is_empty() || qualificado.is_empty() {
+            return Err(PhxError::Esquema(
+                "informe \"database\" e \"sequencia\" (o nome, ou schema.nome)".into(),
+            ));
+        }
+        let (schema, nome) = phxsql_store::catalogo::separar_qualificado(&qualificado);
+        Ok((database, schema, nome))
+    }
+
+    /// O estado de uma sequencia nomeada como a resposta mostra. Os numeros
+    /// saem pelo `valor_para_json` de uma `Int8`: acima de 2^53 viram texto,
+    /// pela mesma regra de toda coluna inteira.
+    fn ficha_da_sequencia(e: &phxsql_store::sequencia::Estado) -> Vec<(&'static str, Json)> {
+        let n = |v: i64| crate::valores::valor_para_json(&Value::Int(v), &ColumnType::Int8);
+        vec![
+            ("proximo", n(e.proximo)),
+            ("inicio", n(e.inicio)),
+            ("passo", n(e.passo)),
+            ("minimo", n(e.minimo)),
+            ("maximo", n(e.maximo)),
+            ("ciclo", Json::Bool(e.ciclo)),
+            ("esgotada", Json::Bool(e.esgotada)),
+            ("entregues", Json::de_u64(e.entregues)),
+        ]
+    }
+
+    /// Cria uma sequencia nomeada. O `fsync` do arquivo e da pasta ficam
+    /// fora da trava, como no `criar_schema` (pedido 589).
+    fn op_criar_sequencia(&self, p: &Json) -> Result<Json> {
+        let (database, schema, nome) = Self::sequencia_do_pedido(p)?;
+        let definicao = phxsql_store::sequencia::Definicao {
+            inicio: crate::valores::inteiro_opcional(p, "inicio")?,
+            passo: crate::valores::inteiro_opcional(p, "passo")?,
+            minimo: crate::valores::inteiro_opcional(p, "minimo")?,
+            maximo: crate::valores::inteiro_opcional(p, "maximo")?,
+            ciclo: p.booleano_ou("ciclo", false),
+        };
+        let dados = self.travar_dados()?;
+        let (s, pendente) = dados
+            .abrir_database(&database)?
+            .criar_sequencia_adiando_o_fsync(schema.as_deref(), &nome, definicao)?;
+        let estado = *s.estado();
+        drop(s);
+        drop(dados);
+        pendente.levar_ao_disco()?;
+        let mut ficha = Self::ficha_da_sequencia(&estado);
+        ficha.insert(
+            0,
+            (
+                "sequencia",
+                Json::texto_de(p.texto_ou("sequencia", "").trim()),
+            ),
+        );
+        ficha.insert(0, ("database", Json::texto_de(&database)));
+        Ok(Json::objeto(ficha))
+    }
+
+    /// O proximo numero de uma sequencia nomeada.
+    ///
+    /// # As duas travas, e a ordem delas
+    ///
+    /// Primeiro a [`Self::trava_das_sequencias`], depois a global -- e a
+    /// global SOLTA antes do disco. A global so acha e abre o arquivo (nomes
+    /// conferidos num lugar so, trava de instancia tomada); o `proximo`, que
+    /// grava e espera o `fdatasync`, roda com a global ja devolvida. Abrir
+    /// DENTRO da trava das sequencias e o que impede dois pedidos de lerem o
+    /// mesmo estado e devolverem o mesmo numero. Quem cria ou apaga toma so a
+    /// global, e por isso a ordem nunca se inverte.
+    fn op_proximo_da_sequencia(&self, p: &Json) -> Result<Json> {
+        let (database, schema, nome) = Self::sequencia_do_pedido(p)?;
+        let _fila = self
+            .trava_das_sequencias
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let (mut s, _posse) = {
+            let dados = self.travar_dados()?;
+            dados
+                .abrir_database(&database)?
+                .abrir_sequencia(schema.as_deref(), &nome)?
+        };
+        let valor = s.proximo()?;
+        Ok(Json::objeto(vec![
+            ("database", Json::texto_de(&database)),
+            (
+                "sequencia",
+                Json::texto_de(p.texto_ou("sequencia", "").trim()),
+            ),
+            (
+                "valor",
+                crate::valores::valor_para_json(&Value::Int(valor), &ColumnType::Int8),
+            ),
+        ]))
+    }
+
+    /// O estado de uma sequencia nomeada, sem mexer nela.
+    fn op_sequencia(&self, p: &Json) -> Result<Json> {
+        let (database, schema, nome) = Self::sequencia_do_pedido(p)?;
+        let dados = self.travar_dados()?;
+        let (s, _posse) = dados
+            .abrir_database(&database)?
+            .abrir_sequencia(schema.as_deref(), &nome)?;
+        let mut ficha = Self::ficha_da_sequencia(s.estado());
+        ficha.insert(
+            0,
+            (
+                "sequencia",
+                Json::texto_de(p.texto_ou("sequencia", "").trim()),
+            ),
+        );
+        ficha.insert(0, ("database", Json::texto_de(&database)));
+        Ok(Json::objeto(ficha))
+    }
+
+    /// Apaga uma sequencia nomeada. Pede o nome repetido em `confirmar`, como
+    /// o `excluir_tabela`: nao ha desfazer, e o proximo numero some junto.
+    fn op_excluir_sequencia(&self, p: &Json) -> Result<Json> {
+        let (database, schema, nome) = Self::sequencia_do_pedido(p)?;
+        let qualificado = p.texto_ou("sequencia", "").trim().to_string();
+        if p.texto_ou("confirmar", "") != qualificado {
+            return Err(PhxError::Esquema(format!(
+                "para excluir, repita o nome da sequencia no campo \"confirmar\": \
+                 esperado {qualificado:?}"
+            )));
+        }
+        let dados = self.travar_dados()?;
+        let pendente = dados
+            .abrir_database(&database)?
+            .excluir_sequencia_adiando_o_fsync(schema.as_deref(), &nome)?;
+        drop(dados);
+        pendente.levar_ao_disco()?;
+        Ok(Json::objeto(vec![
+            ("database", Json::texto_de(&database)),
+            ("sequencia", Json::texto_de(&qualificado)),
+            ("excluida", Json::Bool(true)),
         ]))
     }
 
@@ -20649,6 +20831,14 @@ impl Servidor {
         // trava propria: uma secao a mais alcancando `fsync` sob a trava sobe
         // a catraca `alcancam-fsync-2` (`bancada/concorrencia/mapa-da-trava.py`).
         let pelo_maior = p.booleano_ou("pelo_maior", false);
+        // A sequencia NOMEADA (pedido 229) entra pela mesma porta, com o
+        // campo `sequencia` no lugar de `tabela`: e a mesma ordem de
+        // administrador (o `setval` do PostgreSQL, o `ALTER SEQUENCE ...
+        // RESTART` do MariaDB), e duas operacoes para a mesma decisao seriam
+        // a decisao escrita duas vezes.
+        if !p.texto_ou("sequencia", "").trim().is_empty() {
+            return self.ajustar_sequencia_nomeada(p);
+        }
         // Um "proxima" cru acima de 2^53 ja chegou arredondado -- ajustar o
         // contador para um valor que nao foi o pedido e o mesmo estrago do
         // bloco 19, so que no contador em vez de na linha. Recusa cedo, com a
@@ -20722,6 +20912,50 @@ impl Servidor {
                 }),
             ),
         ]))
+    }
+
+    /// O braco nomeado do [`Self::op_ajustar_sequencia`]: `proxima` dentro
+    /// da faixa, inclusive para tras, e o `esgotada` cai. O `fdatasync` do
+    /// ajuste roda fora da trava global, como o `proximo`.
+    fn ajustar_sequencia_nomeada(&self, p: &Json) -> Result<Json> {
+        let (database, schema, nome) = Self::sequencia_do_pedido(p)?;
+        let Some(proxima) = crate::valores::inteiro_opcional(p, "proxima")? else {
+            return Err(PhxError::Esquema(
+                "informe \"proxima\" com o numero que a sequencia deve dar em seguida".into(),
+            ));
+        };
+        let _fila = self
+            .trava_das_sequencias
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let (mut s, _posse) = {
+            let dados = self.travar_dados()?;
+            dados
+                .abrir_database(&database)?
+                .abrir_sequencia(schema.as_deref(), &nome)?
+        };
+        let antes = s.estado().proximo;
+        s.ajustar(proxima)?;
+        let mut ficha = Self::ficha_da_sequencia(s.estado());
+        ficha.insert(0, ("antes", Json::de_i64(antes)));
+        ficha.insert(
+            0,
+            (
+                "sequencia",
+                Json::texto_de(p.texto_ou("sequencia", "").trim()),
+            ),
+        );
+        ficha.insert(0, ("database", Json::texto_de(&database)));
+        if proxima < antes {
+            ficha.push((
+                "aviso",
+                Json::texto_de(
+                    "o contador andou para TRAS: numeros ja entregues nessa faixa vao sair \
+                     de novo",
+                ),
+            ));
+        }
+        Ok(Json::objeto(ficha))
     }
 
     /// Cria um schema -- uma pasta dentro do database.
@@ -33738,6 +33972,9 @@ mod testes_politica {
             "duplicar_tabela",
             "copiar_tabela",
             "ajustar_sequencia",
+            "criar_sequencia",
+            "excluir_sequencia",
+            "proximo_da_sequencia",
             "dblink_salvar",
             "dblink_excluir",
             // Derrubar conexao alheia nao e leitura: um servidor somente
@@ -36998,6 +37235,385 @@ mod testes_conflito {
 /// 2. a regra da tabela **da** a quem nao le a base nenhuma;
 /// 3. `juntar` e `unir` **nao sao a porta dos fundos** -- as tabelas delas nao
 ///    passam pelo campo que o portao geral olha;
+/* =========================================================== pedido 229
+A SEQUENCIA NOMEADA pelo protocolo.
+
+O `.seq` vive em `phxsql_store::sequencia`, e os testes de formato moram la.
+Aqui se prova o que so o servidor decide: as quatro operacoes, o braco
+nomeado do `ajustar_sequencia`, o espaco de nomes dividido com a tabela, o
+portao de permissao por atividade, e o numero grande saindo como texto. */
+#[cfg(test)]
+mod testes_sequencia_nomeada {
+    use super::*;
+    use crate::usuarios::Cadastro;
+
+    fn pedido(txt: &str) -> Json {
+        Json::analisar(txt).unwrap()
+    }
+
+    fn cadastro(bases: &str) -> Cadastro {
+        Cadastro::de_json(&pedido(&format!(
+            r#"{{"usuarios":[{{"login":"ana","id":9,
+                 "senha_hash":"pbkdf2-sha256$1000$00$00","bases":{bases}}}]}}"#
+        )))
+        .unwrap()
+    }
+
+    /// Um servidor com a base `b` e a tabela `clientes`.
+    fn servidor(dir: &std::path::Path, cadastro: Cadastro) -> (Arc<Servidor>, Sessao) {
+        let c = Config {
+            base: dir.to_path_buf(),
+            log_acessos: dir.join("acessos.log"),
+            blacklist: dir.join("blacklist.json"),
+            dblink: dir.join("dblink.json"),
+            token: "t".into(),
+            cadastro: cadastro.clone(),
+            ..Config::default()
+        };
+        let s = Servidor::novo(c).unwrap();
+        let dono = Sessao::default();
+        s.executar("criar_database", &pedido(r#"{"database":"b"}"#), &dono)
+            .unwrap();
+        s.executar(
+            "criar_tabela",
+            &pedido(
+                r#"{"database":"b","tabela":"clientes",
+                    "colunas":[{"nome":"id","tipo":"Int4","obrigatoria":true}],
+                    "indices":[{"nome":"porId","colunas":["id"],"unico":true,"primario":true}]}"#,
+            ),
+            &dono,
+        )
+        .unwrap();
+        let sessao = Sessao {
+            usuario: cadastro.por_login("ana").cloned(),
+            ..Sessao::default()
+        };
+        (s, sessao)
+    }
+
+    /// Pelo `despachar`, que e onde mora o portao de permissao.
+    fn pede(s: &Arc<Servidor>, sessao: &Sessao, corpo: &str) -> Result<Json> {
+        let mut ses = Sessao {
+            usuario: sessao.usuario.clone(),
+            ..Sessao::default()
+        };
+        let (_, _, r) = s.despachar(
+            &format!(r#"{{"token":"t",{corpo}}}"#),
+            &mut ses,
+            "127.0.0.1",
+        );
+        r
+    }
+
+    fn dono(s: &Arc<Servidor>, op: &str, corpo: &str) -> Result<Json> {
+        s.executar(op, &pedido(corpo), &Sessao::default())
+    }
+
+    /// O ciclo inteiro: nasce, numera, mostra, ajusta, lista, morre.
+    #[test]
+    fn nasce_numera_ajusta_lista_e_morre() {
+        let dir = DirTemp::novo("seqn-ciclo");
+        let (s, _) = servidor(&dir, cadastro("{}"));
+        let r = dono(
+            &s,
+            "criar_sequencia",
+            r#"{"database":"b","sequencia":"nf","inicio":"1000","passo":10}"#,
+        )
+        .unwrap();
+        assert_eq!(r.inteiro_ou("proximo", -1), 1000);
+        assert_eq!(r.inteiro_ou("passo", -1), 10);
+        for esperado in [1000, 1010, 1020] {
+            let r = dono(
+                &s,
+                "proximo_da_sequencia",
+                r#"{"database":"b","sequencia":"nf"}"#,
+            )
+            .unwrap();
+            assert_eq!(r.inteiro_ou("valor", -1), esperado);
+        }
+        let r = dono(&s, "sequencia", r#"{"database":"b","sequencia":"nf"}"#).unwrap();
+        assert_eq!(r.inteiro_ou("proximo", -1), 1030);
+        assert_eq!(r.inteiro_ou("entregues", -1), 3);
+
+        // O ajuste entra pela MESMA porta da coluna Sequence, com o campo
+        // `sequencia` no lugar de `tabela`.
+        let r = dono(
+            &s,
+            "ajustar_sequencia",
+            r#"{"database":"b","sequencia":"nf","proxima":5}"#,
+        )
+        .unwrap();
+        assert_eq!(r.inteiro_ou("antes", -1), 1030);
+        assert!(
+            !r.texto_ou("aviso", "").is_empty(),
+            "andou para tras: avisa"
+        );
+        assert_eq!(
+            dono(
+                &s,
+                "proximo_da_sequencia",
+                r#"{"database":"b","sequencia":"nf"}"#
+            )
+            .unwrap()
+            .inteiro_ou("valor", -1),
+            5
+        );
+
+        // Aparece no `sequencias` do banco, em lista propria.
+        let r = dono(&s, "sequencias", r#"{"database":"b"}"#).unwrap();
+        let nomeadas = r.campo("nomeadas").and_then(Json::lista).unwrap();
+        assert_eq!(nomeadas.len(), 1);
+        assert_eq!(nomeadas[0].texto_ou("sequencia", ""), "nf");
+        assert_eq!(
+            r.inteiro_ou("total", -1),
+            1,
+            "o total continua sendo o das tabelas"
+        );
+
+        // Excluir pede o nome repetido, e depois nao ha mais numero.
+        assert!(dono(
+            &s,
+            "excluir_sequencia",
+            r#"{"database":"b","sequencia":"nf"}"#
+        )
+        .is_err());
+        dono(
+            &s,
+            "excluir_sequencia",
+            r#"{"database":"b","sequencia":"nf","confirmar":"nf"}"#,
+        )
+        .unwrap();
+        let e = dono(
+            &s,
+            "proximo_da_sequencia",
+            r#"{"database":"b","sequencia":"nf"}"#,
+        )
+        .unwrap_err();
+        assert!(matches!(e, PhxError::NaoEncontrado(_)), "{e}");
+        assert!(!dir.0.join("b").join("nf.seq").exists());
+    }
+
+    /// `filial.nf` mora na pasta do schema, como a tabela -- e o schema tem
+    /// de existir antes (PostgreSQL e MariaDB convergem).
+    #[test]
+    fn o_nome_qualificado_vai_para_o_schema() {
+        let dir = DirTemp::novo("seqn-schema");
+        let (s, _) = servidor(&dir, cadastro("{}"));
+        let e = dono(
+            &s,
+            "criar_sequencia",
+            r#"{"database":"b","sequencia":"filial.nf"}"#,
+        )
+        .unwrap_err();
+        assert!(matches!(e, PhxError::NaoEncontrado(_)), "{e}");
+        dono(&s, "criar_schema", r#"{"database":"b","schema":"filial"}"#).unwrap();
+        dono(
+            &s,
+            "criar_sequencia",
+            r#"{"database":"b","sequencia":"filial.nf"}"#,
+        )
+        .unwrap();
+        assert!(dir.0.join("b").join("filial").join("nf.seq").is_file());
+        assert_eq!(
+            dono(
+                &s,
+                "proximo_da_sequencia",
+                r#"{"database":"b","sequencia":"filial.nf"}"#
+            )
+            .unwrap()
+            .inteiro_ou("valor", -1),
+            1
+        );
+        let r = dono(&s, "sequencias", r#"{"database":"b"}"#).unwrap();
+        let nomeadas = r.campo("nomeadas").and_then(Json::lista).unwrap();
+        assert_eq!(nomeadas[0].texto_ou("sequencia", ""), "filial.nf");
+    }
+
+    /// **Tabela e sequencia dividem o espaco de nomes**, nos dois sentidos --
+    /// como no PostgreSQL e no MariaDB, onde a sequencia E uma relacao.
+    ///
+    /// Reponha o defeito tirando o `crate::sequencia::existe` do
+    /// `criar_tabela_adiando_o_fsync` (catalogo.rs): a tabela `nf` nasce ao
+    /// lado da sequencia `nf`, e a primeira assercao cai.
+    #[test]
+    fn tabela_e_sequencia_nao_dividem_o_nome() {
+        let dir = DirTemp::novo("seqn-nomes");
+        let (s, _) = servidor(&dir, cadastro("{}"));
+        dono(
+            &s,
+            "criar_sequencia",
+            r#"{"database":"b","sequencia":"nf"}"#,
+        )
+        .unwrap();
+        let e = dono(
+            &s,
+            "criar_tabela",
+            r#"{"database":"b","tabela":"nf",
+                "colunas":[{"nome":"id","tipo":"Int4","obrigatoria":true}],
+                "indices":[{"nome":"porId","colunas":["id"],"unico":true,"primario":true}]}"#,
+        )
+        .unwrap_err();
+        assert!(matches!(e, PhxError::Duplicado(_)), "{e}");
+        assert!(e.to_string().contains("sequencia"), "{e}");
+        let e = dono(
+            &s,
+            "criar_sequencia",
+            r#"{"database":"b","sequencia":"clientes"}"#,
+        )
+        .unwrap_err();
+        assert!(matches!(e, PhxError::Duplicado(_)), "{e}");
+        assert!(e.to_string().contains("tabela"), "{e}");
+    }
+
+    /// O portao por atividade: quem so insere numera e nao cria; quem so le
+    /// ve o estado e nao numera; apagar exige administrar.
+    #[test]
+    fn o_portao_de_cada_operacao() {
+        let dir = DirTemp::novo("seqn-portao");
+        let (s, insere) = servidor(&dir, cadastro(r#"{"b":{"inserir":true}}"#));
+        dono(
+            &s,
+            "criar_sequencia",
+            r#"{"database":"b","sequencia":"nf"}"#,
+        )
+        .unwrap();
+        assert!(pede(
+            &s,
+            &insere,
+            r#""op":"criar_sequencia","database":"b","sequencia":"x""#
+        )
+        .is_err());
+        assert_eq!(
+            pede(
+                &s,
+                &insere,
+                r#""op":"proximo_da_sequencia","database":"b","sequencia":"nf""#
+            )
+            .unwrap()
+            .inteiro_ou("valor", -1),
+            1
+        );
+        assert!(pede(
+            &s,
+            &insere,
+            r#""op":"sequencia","database":"b","sequencia":"nf""#
+        )
+        .is_err());
+        assert!(pede(
+            &s,
+            &insere,
+            r#""op":"excluir_sequencia","database":"b","sequencia":"nf","confirmar":"nf""#
+        )
+        .is_err());
+
+        let dir = DirTemp::novo("seqn-portao-le");
+        let (s, le) = servidor(&dir, cadastro(r#"{"b":{"ler":true}}"#));
+        dono(
+            &s,
+            "criar_sequencia",
+            r#"{"database":"b","sequencia":"nf"}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            pede(
+                &s,
+                &le,
+                r#""op":"sequencia","database":"b","sequencia":"nf""#
+            )
+            .unwrap()
+            .inteiro_ou("proximo", -1),
+            1
+        );
+        assert!(pede(
+            &s,
+            &le,
+            r#""op":"proximo_da_sequencia","database":"b","sequencia":"nf""#
+        )
+        .is_err());
+    }
+
+    /// O numero acima de 2^53 sai como TEXTO, pela mesma regra do `Int8`, e
+    /// entra como texto no `inicio`.
+    #[test]
+    fn o_numero_grande_atravessa_como_texto() {
+        let dir = DirTemp::novo("seqn-grande");
+        let (s, _) = servidor(&dir, cadastro("{}"));
+        dono(
+            &s,
+            "criar_sequencia",
+            r#"{"database":"b","sequencia":"nf","inicio":"9007199254740993"}"#,
+        )
+        .unwrap();
+        let r = dono(
+            &s,
+            "proximo_da_sequencia",
+            r#"{"database":"b","sequencia":"nf"}"#,
+        )
+        .unwrap();
+        assert_eq!(r.campo("valor"), Some(&Json::texto_de("9007199254740993")));
+        // E o numero cru nessa faixa e recusado na entrada, dizendo o campo.
+        let e = dono(
+            &s,
+            "criar_sequencia",
+            r#"{"database":"b","sequencia":"g","inicio":9007199254740993}"#,
+        )
+        .unwrap_err();
+        assert!(e.to_string().contains("inicio"), "{e}");
+        assert!(e.to_string().contains("perde precisao"), "{e}");
+    }
+
+    /// Esgotada sem ciclo e erro lido; com ciclo, volta.
+    #[test]
+    fn esgotar_e_erro_e_o_ciclo_volta() {
+        let dir = DirTemp::novo("seqn-esgota");
+        let (s, _) = servidor(&dir, cadastro("{}"));
+        dono(
+            &s,
+            "criar_sequencia",
+            r#"{"database":"b","sequencia":"nf","maximo":2}"#,
+        )
+        .unwrap();
+        for _ in 0..2 {
+            dono(
+                &s,
+                "proximo_da_sequencia",
+                r#"{"database":"b","sequencia":"nf"}"#,
+            )
+            .unwrap();
+        }
+        let e = dono(
+            &s,
+            "proximo_da_sequencia",
+            r#"{"database":"b","sequencia":"nf"}"#,
+        )
+        .unwrap_err();
+        assert!(matches!(e, PhxError::LimiteExcedido(_)), "{e}");
+        assert!(
+            dono(&s, "sequencia", r#"{"database":"b","sequencia":"nf"}"#)
+                .unwrap()
+                .booleano_ou("esgotada", false)
+        );
+        dono(
+            &s,
+            "criar_sequencia",
+            r#"{"database":"b","sequencia":"c","maximo":2,"ciclo":true}"#,
+        )
+        .unwrap();
+        let valores: Vec<i64> = (0..3)
+            .map(|_| {
+                dono(
+                    &s,
+                    "proximo_da_sequencia",
+                    r#"{"database":"b","sequencia":"c"}"#,
+                )
+                .unwrap()
+                .inteiro_ou("valor", -1)
+            })
+            .collect();
+        assert_eq!(valores, vec![1, 2, 1]);
+    }
+}
+
 /// 4. a arvore e o catalogo **escondem** o que nao da para abrir;
 /// 5. um `config.json` sem regra de tabela continua se comportando igual.
 #[cfg(test)]

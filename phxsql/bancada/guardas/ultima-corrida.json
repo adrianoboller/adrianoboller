@@ -921,17 +921,17 @@
       "id": "sequencia-numero-cru-perde-precisao",
       "titulo": "id acima de 2⁵³ mandado como número cru é gravado trocado, calado",
       "veredito": "PROVADA",
-      "segundos": 32.52,
+      "segundos": 92.69,
       "notas": [],
-      "quando": "2026-09-16 15:25"
+      "quando": "2026-10-02 01:16"
     },
     {
       "id": "sequencia-grande-sai-numero-mentiroso",
       "titulo": "id acima de 2⁵³ já gravado sai do servidor como número f64 trocado",
       "veredito": "PROVADA",
-      "segundos": 27.85,
+      "segundos": 93.69,
       "notas": [],
-      "quando": "2026-09-16 15:25"
+      "quando": "2026-10-02 01:12"
     },
     {
       "id": "colisao-de-sequence-calada",
@@ -1241,9 +1241,9 @@
       "id": "teto-de-64-bits-satura",
       "titulo": "número cru fora da faixa do `Int8` é GRAVADO saturado, e `1e21`, `1e30` e `1e300` viram todos o mesmo número",
       "veredito": "PROVADA",
-      "segundos": 44.48,
+      "segundos": 96.67,
       "notas": [],
-      "quando": "2026-09-24 04:34"
+      "quando": "2026-10-02 01:12"
     },
     {
       "id": "saida-do-direito-por-coluna",
@@ -4342,6 +4342,30 @@
       "segundos": 90.19,
       "notas": [],
       "quando": "2026-10-02 00:00"
+    },
+    {
+      "id": "faixa-imprecisa-no-int8",
+      "titulo": "número cru entre 2⁵³ e o teto do `Int8`/`UInt8` era gravado como o VIZINHO, calado — `9007199254740993` virava `9007199254740992`",
+      "veredito": "PROVADA",
+      "segundos": 96.43,
+      "notas": [],
+      "quando": "2026-10-02 01:12"
+    },
+    {
+      "id": "sequencia-nomeada-proximo-sem-durar",
+      "titulo": "o `proximo` da sequência nomeada devolvia o número ANTES de durá-lo: reabrir repetia o que já tinha saído",
+      "veredito": "PROVADA",
+      "segundos": 12.39,
+      "notas": [],
+      "quando": "2026-10-02 01:12"
+    },
+    {
+      "id": "tabela-com-nome-de-sequencia",
+      "titulo": "`criar_tabela` aceitava o nome de uma sequência nomeada que já existe: dois objetos com um nome só",
+      "veredito": "PROVADA",
+      "segundos": 12.2,
+      "notas": [],
+      "quando": "2026-10-02 01:12"
     },
     {
       "id": "alter-com-regra-sem-aviso",

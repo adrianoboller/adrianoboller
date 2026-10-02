@@ -1287,6 +1287,30 @@ SEQUENCIAS
     "ajustar_sequencia" -- para zerar depois de esvaziar a tabela, ou para
     pular uma faixa reservada a outra origem.
 
+    A SEQUENCIA NOMEADA (pedido 229). Um contador com nome proprio, fora de
+    qualquer tabela -- o CREATE SEQUENCE do PostgreSQL e do MariaDB --, para
+    numerar o que atravessa tabelas (documento fiscal). Mora na pasta do
+    banco ou do schema como <nome>.seq, divide o espaco de nomes com a
+    tabela, e cada numero vai ao disco (fdatasync) ANTES de sair: a queda
+    custa um buraco, nunca um numero repetido. Sem cache, de proposito.
+
+        criar_sequencia    database, sequencia, [inicio], [passo], [minimo],
+                           [maximo], [ciclo]    o schema de "schema.nome" tem
+                                                de existir antes
+        proximo_da_sequencia database, sequencia   o proximo numero, durado
+        sequencia          database, sequencia   o estado, sem mexer
+        ajustar_sequencia  database, sequencia, proxima   o setval
+        excluir_sequencia  database, sequencia, confirmar
+
+    Padroes: passo 1; subindo, minimo 1 e maximo 2^63-1, inicio no minimo;
+    descendo (passo negativo), minimo -2^63 e maximo -1, inicio no maximo.
+    Esgotar sem "ciclo" e erro LIMITE_EXCEDIDO ate um ajuste. Numero acima
+    de 2^53 entra e sai como TEXTO, como todo inteiro de 64 bits pelo
+    protocolo. A lista do banco sai no "sequencias", em "nomeadas". NAO
+    replica (a replicacao logica do PostgreSQL tambem nao): num cluster,
+    cada no tem o seu .seq, e faixas disjuntas se declaram no inicio/passo.
+    Formato em docs/FORMATO.md, secao 24.
+
     ONDE O NUMERO MORA. Cada tabela guarda o proprio contador no cabecalho do
     .reg dela, e continua assim. A operacao JUNTA os contadores para mostrar;
     nao existe um arquivo "sequences" com uma segunda copia.
@@ -1964,8 +1988,15 @@ OPERACOES
     duplicar_tabela database, tabela, destino
     copiar_tabela   database, tabela, destino_database, destino
     excluir_tabela  database, tabela, confirmar   confirmar repete o nome
-    sequencias      database                 o contador de cada tabela
-    ajustar_sequencia database, tabela, proxima   zera ou muda o contador
+    sequencias      database                 o contador de cada tabela, e as
+                                             sequencias nomeadas em "nomeadas"
+    ajustar_sequencia database, tabela|sequencia, proxima   zera ou muda o
+                                             contador (coluna ou nomeada)
+    criar_sequencia database, sequencia, [inicio], [passo], [minimo],
+                    [maximo], [ciclo]        a sequencia nomeada (.seq)
+    proximo_da_sequencia database, sequencia   o proximo numero, durado
+    sequencia       database, sequencia      o estado da nomeada
+    excluir_sequencia database, sequencia, confirmar   confirmar repete o nome
     sistabelas      database                 o catalogo de tabelas
     siscolunas      database, [tabela]       o dicionario de dados
     pivotar         database, tabela, linhas, [colunas], [valor],
@@ -3874,17 +3905,17 @@ telefone, supervisor e o poder sobre cada base. A SENHA E GUARDADA COMO HASH.
 14.3 As dez atividades
 
     ler          bancos, tabelas, esquema, ler, varrer, buscar,
-                 sistabelas, siscolunas, pivotar, sequencias
-    inserir      inserir
+                 sistabelas, siscolunas, pivotar, sequencias, sequencia
+    inserir      inserir, proximo_da_sequencia
     alterar      atualizar
     excluir      excluir
     criar        criar_database, criar_schema, criar_tabela, duplicar_tabela,
-                 copiar_tabela, declarar_fk, excluir_fk
+                 copiar_tabela, declarar_fk, excluir_fk, criar_sequencia
     reindexar    reindexar
     diario       diario
     verificar    verificar
     administrar  acessos, ips, config, usuarios, excluir_tabela,
-                 ajustar_sequencia
+                 ajustar_sequencia, excluir_sequencia
     replicar     posicao, replicar
 
     NEGA POR OMISSAO: atividade que nao aparece vale false. Base listada

@@ -40,6 +40,7 @@ pub mod pag;
 pub mod reg;
 pub mod restaurar;
 pub mod separador;
+pub mod sequencia;
 pub mod sincronia;
 pub mod table;
 pub mod trava_de_instancia;

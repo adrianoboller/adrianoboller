@@ -207,6 +207,9 @@ const ESCRITAS: &[&str] = &[
     "copiar_tabela",
     "reindexar",
     "ajustar_sequencia",
+    "criar_sequencia",
+    "excluir_sequencia",
+    "proximo_da_sequencia",
 ];
 
 /// O que observar. Campo vazio = nao filtra por ele.
