@@ -1597,7 +1597,8 @@ VARIAS INSTANCIAS, DOCKER E CLUSTER
           "janela_inatividade_s": 10,     // master calado alem disto = caido
           "pulso_s": 3,                   // omitido = um terco da janela
           "avisar_cada_min": 5,           // aceita fracao: 0.1 = 6 s
-          "quorum_minimo": 0,             // GUARDADO e ainda NAO imposto
+          "quorum_minimo": 0,             // replicas que confirmam; 0 = desliga
+          "quorum_prazo_ms": 10000,       // 100..600000; vencido = grava e avisa
           "token": "...", "usuario": "replicador",
           "senha_hash": "pbkdf2-sha256$...",
           "databases": [],                // vazio = todos os do master
@@ -1663,11 +1664,26 @@ VARIAS INSTANCIAS, DOCKER E CLUSTER
     master, a epoca, e os botoes de acrescentar, remover e gravar o quorum
     minimo. Servidor sem o bloco "cluster" mostra so a nota, sem botao.
 
-    O QUE NAO E: nao e Raft. A replicacao continua assincrona -- o master
-    confirma sem esperar replica. NAO HA QUORUM DE ESCRITA: o campo
-    cluster.quorum_minimo e guardado e a op config o devolve ao lado de
-    "quorum_imposto": false, mas nada o le -- o parecer medido do que falta
-    esta em docs/propostas/quorum-de-escrita.md. Master que morre pode levar
+    QUORUM DE ESCRITA (pedido 207). Com cluster.quorum_minimo N > 0, cada
+    gravacao no master espera N REPLICAS (o master nao conta) aplicarem e
+    gravarem em disco antes de responder, e a linha fica invisivel ate la.
+    A resposta traz "quorum": {pedido, confirmado, alcancado, ms}. Passou de
+    cluster.quorum_prazo_ms (padrao 10000, aceito 100..600000) sem as
+    confirmacoes: a gravacao FICA, a resposta diz alcancado:false e
+    degradado:true com o campo aviso_quorum, e o servidor deixa de esperar
+    ate as replicas alcancarem (e nunca antes do recuo: pulso_s, dobrando,
+    teto 60 s). quorum_minimo maior que o numero de replicas e recusado no
+    arranque. Os dois campos valem A QUENTE (config_gravar); ligado a
+    quente, espere tres pulsos antes de confiar no primeiro commit. Ponha o
+    MESMO valor em todos os nos: a replica so abre o canal do quorum
+    (replicar_aguardar, permissao "replicar") com o dela ligado. Custo
+    medido (bancada/quorum/quorum-real.py, loopback): 4,0 ms por commit com
+    1 de 2 contra 0,3 ms sem -- ~237 commits/s de teto do servidor inteiro
+    neste disco, porque a espera segura a trava de dados. Estado em
+    replicacao_estado.quorum.
+
+    O QUE NAO E: nao e Raft. Sem quorum_minimo, a replicacao continua
+    assincrona -- o master confirma sem esperar replica. Master que morre pode levar
     junto a cauda que ninguem puxou; o no que volta com diario a frente do
     master fica degradado avisando e se ressemeia a partir do master.
     Cluster de DOIS nos nunca se promove sozinho (metade nao e maioria):

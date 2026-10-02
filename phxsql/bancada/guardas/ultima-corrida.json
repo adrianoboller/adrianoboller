@@ -4264,6 +4264,86 @@
       "quando": "2026-10-01 23:32"
     },
     {
+      "id": "quorum-espera-sem-degradar",
+      "titulo": "o commit com quórum esperando o prazo inteiro a cada gravação, sem o modo degradado: uma réplica caída para o servidor 10 s por commit",
+      "veredito": "PROVADA",
+      "segundos": 27.61,
+      "notas": [],
+      "quando": "2026-10-02 00:00"
+    },
+    {
+      "id": "quorum-espera-fora-da-trava",
+      "titulo": "a espera do quórum depois de soltar a trava de dados: a linha fica visível antes de qualquer réplica ter confirmado",
+      "veredito": "PROVADA",
+      "segundos": 26.88,
+      "notas": [],
+      "quando": "2026-10-02 00:00"
+    },
+    {
+      "id": "quorum-ack-pede-a-trava",
+      "titulo": "o `replicar_aguardar` tomando a trava de dados do master: a réplica espera o commit que espera por ela, e todo commit estoura o prazo",
+      "veredito": "PROVADA",
+      "segundos": 39.36,
+      "notas": [],
+      "quando": "2026-10-02 00:00"
+    },
+    {
+      "id": "quorum-ack-antes-do-fsync",
+      "titulo": "a réplica confirmando o lote do quórum sem levá-lo ao disco: o «ok» vira «recebi», a garantia que o Cassandra chama de QUORUM",
+      "veredito": "PROVADA",
+      "segundos": 26.4,
+      "notas": [],
+      "quando": "2026-10-02 00:00"
+    },
+    {
+      "id": "quorum-de-epoca-velha",
+      "titulo": "a réplica aceitando lote de master com época menor que a que ela conhece: o master rebaixado continuaria obtendo confirmação",
+      "veredito": "PROVADA",
+      "segundos": 87.91,
+      "notas": [],
+      "quando": "2026-10-02 00:00"
+    },
+    {
+      "id": "quorum-sem-fsync-local",
+      "titulo": "o master esperando o quórum sem ter sincronizado a própria gravação: volta como master atrás das réplicas que confirmaram",
+      "veredito": "PROVADA",
+      "segundos": 25.76,
+      "notas": [],
+      "quando": "2026-10-02 00:00"
+    },
+    {
+      "id": "quorum-escritor-sem-espera",
+      "titulo": "a anotação das tabelas tocadas fora do ponto único onde o diário cresce: a família de escrita esquecida responde «gravei» sem quórum",
+      "veredito": "PROVADA",
+      "segundos": 24.43,
+      "notas": [],
+      "quando": "2026-10-02 00:00"
+    },
+    {
+      "id": "quorum-conta-o-master",
+      "titulo": "o `quorum_minimo` contando o master: `quorum_minimo:2` com três nós fecharia com uma réplica só",
+      "veredito": "PROVADA",
+      "segundos": 24.47,
+      "notas": [],
+      "quando": "2026-10-02 00:00"
+    },
+    {
+      "id": "quorum-espera-quem-nao-existe",
+      "titulo": "o commit com quórum esperando o prazo inteiro sem nenhuma réplica no canal: o arranque do master para o servidor 10 s por nada",
+      "veredito": "PROVADA",
+      "segundos": 89.92,
+      "notas": [],
+      "quando": "2026-10-02 00:00"
+    },
+    {
+      "id": "quorum-volta-sem-recuo",
+      "titulo": "o degradado voltando ao síncrono no primeiro ack, sem o recuo: uma réplica que pisca para o servidor inteiro a cada pulso",
+      "veredito": "PROVADA",
+      "segundos": 90.19,
+      "notas": [],
+      "quando": "2026-10-02 00:00"
+    },
+    {
       "id": "alter-com-regra-sem-aviso",
       "titulo": "`acrescentar_coluna` com `check` ou `calculada` numa tabela com linha é aceito SEM AVISO, e a linha velha fica fora da regra",
       "veredito": "PROVADA",

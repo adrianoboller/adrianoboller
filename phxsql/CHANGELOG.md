@@ -12,6 +12,31 @@ Os números são **medidos**, nunca estimados.
 
 ## Não lançado
 
+### 207 — a escrita com quórum: o commit espera N réplicas gravarem em disco
+
+**Adicionado**
+
+- **207** — `cluster.quorum_minimo: N` passa a valer: cada gravação no master
+  espera N **réplicas** (o master não conta) aplicarem e gravarem em disco
+  antes de responder, e a linha fica invisível até lá. A réplica leva os
+  eventos por uma conexão que **ela** abre e mantém (`replicar_aguardar`), e o
+  caminho da confirmação não toca a trava de dados do master. Espera vencida
+  (`cluster.quorum_prazo_ms`, padrão 10.000) **não desfaz a gravação**: a
+  resposta diz `alcancado:false` e o servidor fica degradado, sem esperar, até
+  as réplicas alcançarem. Os dois campos valem a quente; mais réplicas do que a
+  lista tem é recusado no arranque. Medido em loopback, release
+  (`bancada/quorum/quorum-real.py`): **4,010 ms** por commit com 1 de 2 contra
+  **0,305 ms** sem (13,15×, faixas sem cruzar), ~237 commits/s; `SIGKILL` nas
+  duas réplicas: primeiro commit no prazo com `alcancado:false`, o segundo em
+  3,35 ms com `degradado:true`, volta ao síncrono em 2,02 s.
+
+**Sabido**
+
+- A espera segura a trava de dados global: ~237 commits/s é o teto do servidor
+  inteiro com o quórum ligado, neste disco. Ligar a quente com a réplica no
+  meio de um pull pode degradar o primeiro commit. A recusa da época velha tem
+  prova só da regra pura.
+
 ### 533, 542 — a subida do byte 52 vai ao disco, e o banco nasce 0600/0700
 
 **Corrigido**

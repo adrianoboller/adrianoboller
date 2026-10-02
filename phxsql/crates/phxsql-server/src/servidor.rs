@@ -560,7 +560,13 @@ pub(crate) const OPS_EMPILHAVEIS: &[&str] = &["inserir", "atualizar", "excluir",
 /// ausencia e deliberada: sao operacoes de administracao, exigem
 /// `administrar`, e quem administra nao e uma replica remota. Trancar essas
 /// pela lista de replicas faria a lista significar duas coisas.
-pub(crate) const OPS_DE_REPLICACAO: &[&str] = &["posicao", "replicar", "aplicar", "cluster_pulso"];
+pub(crate) const OPS_DE_REPLICACAO: &[&str] = &[
+    "posicao",
+    "replicar",
+    "aplicar",
+    "cluster_pulso",
+    "replicar_aguardar",
+];
 
 /// O que a fase 3 de um alcance de tabela BIDIRECIONAL devolveu.
 #[derive(Default)]
@@ -1456,6 +1462,10 @@ pub struct Servidor {
     /// O estado vivo do cluster -- `None` quando o `config.json` nao traz o
     /// bloco `cluster`, e ai NADA disto existe: nenhuma thread, nenhum portao.
     cluster: Option<Arc<crate::cluster::EstadoCluster>>,
+    /// O cubo do quorum de escrita (pedido 207). Existe com o bloco
+    /// `cluster`, e com `quorum_minimo` zero nao faz nada: o portao da
+    /// `travar_dados` le o minimo antes de ligar qualquer anotacao.
+    quorum: Option<Arc<crate::quorum::Cubo>>,
     /// As mensagens que o servidor devolve, resolvidas pela tabela
     /// `phxsys.mensagens` quando ela existe. Ver `mensagens.rs`.
     mensagens: Mensagens,
@@ -1777,6 +1787,13 @@ impl Servidor {
                 config.replicacao.papel,
             ))
         });
+        let quorum = config.cluster.as_ref().map(|c| {
+            Arc::new(crate::quorum::Cubo::novo(
+                c.quorum_minimo,
+                c.quorum_prazo_ms,
+                Duration::from_secs(c.pulso_s),
+            ))
+        });
         let rotinas = crate::rotinas::Rotinas::carregar(&config.base)?;
         let ha_gatilhos = AtomicBool::new(rotinas.ha_gatilhos());
         let visoes = crate::visoes::Visoes::carregar(&config.base)?;
@@ -1832,6 +1849,7 @@ impl Servidor {
         };
         let servidor = Arc::new(Servidor {
             cluster,
+            quorum,
             mensagens,
             papel_vivo: AtomicU8::new(papel_para_u8(papel)),
             somente_leitura_vivo: AtomicBool::new(somente_leitura),
@@ -2337,6 +2355,12 @@ impl Servidor {
         // quando cede a vez (pedido 623, `PortaoDoRetrato::ceder`).
         passagem.entrou();
         COM_A_TRAVA.with(|c| c.set(true));
+        // O quorum de escrita (pedido 207): o portao e uma leitura atomica e
+        // vem ANTES de qualquer trabalho. Desligado, nenhum evento do diario
+        // paga mais que a leitura de uma `Cell` de thread.
+        if self.quorum_vale_aqui() {
+            phxsql_store::log::anotar_tocadas();
+        }
         // A ficha sai da vida do emprestimo e passa a viver ao lado do guard,
         // no mesmo `struct` -- ver `Exclusiva::sem_amarra`. Os dois morrem
         // juntos, no `Drop` daqui.
@@ -4274,9 +4298,18 @@ impl Servidor {
 
     /// Leva ao disco o que o alcance aplicou. Uma vez por alcance, com a trava.
     fn sincronizar_replicada(&self, database: &str, tabela: &str) -> Result<()> {
+        self.sincronizar_replicada_contando(database, tabela)
+            .map(|_| ())
+    }
+
+    /// O mesmo, dizendo quantos arquivos foram ao disco -- o lote do quorum
+    /// (pedido 207) conta isso antes de confirmar.
+    fn sincronizar_replicada_contando(&self, database: &str, tabela: &str) -> Result<u64> {
         let trava = self.travar_dados()?;
         let db = trava.abrir_database(database)?;
-        db.abrir_qualificada(tabela)?.sincronizar()
+        let mut t = db.abrir_qualificada(tabela)?;
+        t.sincronizar()?;
+        Ok(t.arquivos_sincronizados())
     }
 
     /// Traz UMA tabela ate a posicao do source.
@@ -5153,6 +5186,11 @@ impl Servidor {
         let mut ritmo = crate::replica::Ritmo::novo(espera);
         // De qual master e o recuo corrente (ver o `ritmo.sucesso` abaixo).
         let mut recuo_de: Option<String> = None;
+        // O canal aberto do quorum (pedido 207) e as confirmacoes que ainda
+        // nao chegaram ao master -- vivem entre as voltas, porque um pull no
+        // meio nao pode perder o que ja foi aplicado e gravado.
+        let mut canal_do_quorum: Option<(String, crate::replica::Cliente)> = None;
+        let mut confirmar: Vec<crate::quorum::Exigencia> = Vec::new();
         loop {
             let c = &estado.config;
             if estado.papel() == crate::cluster::PapelVivo::Master {
@@ -5199,8 +5237,22 @@ impl Servidor {
                         });
                     }
                     if n == 0 {
-                        // Nada novo: espera o pulso seguinte.
-                        std::thread::sleep(espera);
+                        // Nada novo. Com o quorum ligado, a espera vira o
+                        // canal aberto (pedido 207): a replica fica numa
+                        // conversa com o master e so volta ao pull quando
+                        // ficou para tras. Sem ele, o sono de sempre.
+                        if self.quorum.as_ref().is_some_and(|q| q.minimo() > 0) {
+                            self.esperar_pelo_master(
+                                &estado,
+                                &origem,
+                                &no.id,
+                                espera,
+                                &mut canal_do_quorum,
+                                &mut confirmar,
+                            );
+                        } else {
+                            std::thread::sleep(espera);
+                        }
                     } else {
                         eprintln!("cluster: {n} evento(s) aplicado(s) do master {}", no.id);
                     }
@@ -7287,6 +7339,14 @@ impl Servidor {
         // sem esta linha ele apareceria dizendo o cluster de ontem.
         if let (Some(estado), Some(Json::Objeto(pares))) = (&self.cluster, j.campo("cluster")) {
             let mut cl = Json::Objeto(pares.clone());
+            // O quorum tambem e A QUENTE (pedido 207): o que vale e o do cubo.
+            if let Some(cubo) = &self.quorum {
+                cl.definir("quorum_minimo", Json::de_u64(cubo.minimo()));
+                cl.definir(
+                    "quorum_prazo_ms",
+                    Json::de_u64(cubo.prazo().as_millis() as u64),
+                );
+            }
             cl.definir(
                 "nos",
                 Json::Lista(
@@ -7453,6 +7513,12 @@ impl Servidor {
         self.somente_leitura_vivo
             .store(novo.somente_leitura, Ordering::Relaxed);
         self.espelho_vivo.store(novo.espelho, Ordering::Relaxed);
+        // O quorum vale A QUENTE (pedido 207, D-quente): o commit seguinte ja
+        // espera -- ou deixa de esperar. O `gravar_campos` releu o arquivo
+        // pelo `validar`, entao o que chega aqui ja passou pelas recusas.
+        if let (Some(cubo), Some(c)) = (&self.quorum, &novo.cluster) {
+            cubo.definir(c.quorum_minimo, c.quorum_prazo_ms);
+        }
 
         // Quem mexeu, e no que. Um campo que muda o comportamento do servidor
         // inteiro nao pode mudar sem deixar rastro.
@@ -12507,6 +12573,53 @@ impl Servidor {
         sessao: &mut Sessao,
         ip: &str,
     ) -> (String, bool, Result<Json>) {
+        // O quorum do pedido (207) nasce limpo: o de um pedido anterior desta
+        // thread nao pode vazar para a resposta deste.
+        QUORUM_DO_PEDIDO.with(|q| q.borrow_mut().take());
+        let (op, autenticado, mut resultado) = self.despachar_o_pedido(linha, sessao, ip);
+        // A espera aconteceu no `Drop` da trava, la dentro; a resposta sai
+        // daqui. Sem quorum ligado nada foi guardado, e a resposta e byte a
+        // byte a de sempre (teste 9 do contrato, o comportamento velho).
+        if let Some(q) = QUORUM_DO_PEDIDO.with(|q| q.borrow_mut().take()) {
+            if let Ok(j) = &mut resultado {
+                self.por_o_quorum_na_resposta(j, &q);
+            }
+        }
+        (op, autenticado, resultado)
+    }
+
+    /// O campo `quorum` da resposta, e o aviso quando ele NAO foi alcancado
+    /// -- o gesto do `syncrep.c:321` do PostgreSQL: a gravacao ficou, e quem
+    /// pediu fica sabendo que ela pode nao ter chegado a replica nenhuma.
+    fn por_o_quorum_na_resposta(&self, j: &mut Json, q: &crate::quorum::Resultado) {
+        // Resposta que nao e objeto (uma lista, um numero) nao ganha campo:
+        // embrulha-la mudaria a forma que o cliente de hoje le. Toda escrita
+        // do protocolo responde objeto -- a guarda `quorum-escritor-sem-espera`
+        // confere as familias.
+        if !matches!(j, Json::Objeto(_)) {
+            return;
+        }
+        j.definir("quorum", q.para_json());
+        if !q.alcancado {
+            j.definir(
+                "aviso_quorum",
+                Json::texto_de(self.msg(
+                    "erro.quorum_nao_alcancado",
+                    &[
+                        ("pedido", &q.pedido.to_string()),
+                        ("confirmado", &q.confirmado.to_string()),
+                    ],
+                )),
+            );
+        }
+    }
+
+    fn despachar_o_pedido(
+        &self,
+        linha: &str,
+        sessao: &mut Sessao,
+        ip: &str,
+    ) -> (String, bool, Result<Json>) {
         let pedido = match Json::analisar(linha) {
             Ok(p) => p,
             Err(e) => return ("?".into(), false, Err(e)),
@@ -13445,6 +13558,7 @@ impl Servidor {
             "replicar" => self.op_replicar(p, sessao),
             "aplicar" => self.op_aplicar(p, sessao),
             "cluster_pulso" => self.op_cluster_pulso(p, sessao),
+            "replicar_aguardar" => self.op_replicar_aguardar(p, sessao),
             "cluster_estado" => self.op_cluster_estado(sessao),
             "cluster_no_acrescentar" => self.op_cluster_no_acrescentar(p, sessao),
             "cluster_no_remover" => self.op_cluster_no_remover(p, sessao),
@@ -29794,6 +29908,89 @@ impl Servidor {
         }
     }
 
+    /// Os eventos do diario de `t` a partir de `desde`, prontos para o fio --
+    /// e quantos foram LIDOS (a posicao anda por todos, inclusive os que a
+    /// supressao de origem tira da lista).
+    ///
+    /// UM motor para os dois caminhos que entregam o diario: o `replicar` de
+    /// sempre (a replica puxa) e o lote do quorum (pedido 207, o commit
+    /// materializa com a trava na mao e a replica leva pelo
+    /// `replicar_aguardar`). Duas copias da marca do diario, do teto de bytes
+    /// e da `imagem_para_o_fio` divergiriam no primeiro conserto -- a doenca
+    /// do pedido 434. Os portoes que dependem de QUEM pede (a cifra do 342, o
+    /// alcance do usuario) ficam com cada chamador, que e quem sabe.
+    fn eventos_para_o_fio(
+        &self,
+        t: &mut Table,
+        chave: &str,
+        desde: u64,
+        max: u64,
+        hash_para: Option<u16>,
+    ) -> Result<(Vec<Json>, u64)> {
+        // A dica de onde a leitura anterior desta tabela parou. Sem ela, o
+        // `desde` faz o diario ser varrido desde o comeco a cada lote -- ver
+        // `marcas_do_diario`. A maior que ainda cabe: a marca so serve para
+        // uma posicao depois dela.
+        t.definir_marca_do_diario(self.marca_do_diario_para(chave, desde));
+        // O corte por BYTES acontece DENTRO da leitura, no store, que e quem
+        // sabe o tamanho antes de alocar -- ver `TETO_DO_LOTE_SERVIDO`. Ate
+        // 17/09/2026 ele era um `truncate` aqui, depois de o lote inteiro ja
+        // estar na memoria com a trava na mao: o teto cortava a resposta e
+        // nao a leitura, que e a licao do Profiler aplicada a teto em vez de
+        // a interruptor (revisao SEC, A2).
+        let eventos = t.diario_com_imagem_ate(desde, max, TETO_DO_LOTE_SERVIDO)?;
+        if let Some(nova) = t.marca_do_diario() {
+            self.guardar_marca_do_diario(chave.to_string(), desde, nova);
+        }
+        // A posicao anda por TODOS os lidos, inclusive os que a supressao de
+        // origem vai tirar da lista: suprimir e nao mandar de volta, e nao
+        // fingir que o evento nao existe -- a contagem do diario e uma so.
+        let lidos = eventos.len() as u64;
+
+        // `para` diz QUEM pede. Eventos cuja origem e o proprio destino nao
+        // viajam: e a alteracao que ele mesmo mandou, e devolve-la fecharia o
+        // laco infinito do bidirecional. A origem zero (escrita local) sai
+        // traduzida para o hash DESTE servidor, para o outro lado guardar de
+        // quem veio sem tabela de traducao nenhuma.
+        let meu_hash = self.config.replicacao.numero();
+
+        let mut lista: Vec<Json> = Vec::with_capacity(eventos.len());
+        for (i, (e, imagem)) in eventos.into_iter().enumerate() {
+            let origem = if e.origem == 0 { meu_hash } else { e.origem };
+            if hash_para.is_some_and(|h| origem != 0 && origem == h) {
+                continue;
+            }
+            // O externo marcado sai do diario SELADO com a chave deste
+            // arquivo, e a replica nao tem como abri-lo: o sal e por arquivo
+            // (pedido 344). Abre-se AQUI, na resposta, e so nela -- o portao
+            // de cima ja garantiu o fio cifrado para tabela com coluna
+            // marcada, e o `.log` continua selado. Tabela sem coluna externa
+            // marcada devolve a mesma imagem, sem custo de cifra.
+            // A recusa do evento pre-344 (pedido 603) diz QUAL evento: e a
+            // posicao que o operador pula com `replicacao_pular`.
+            let imagem = t.imagem_para_o_fio(&imagem).map_err(|e| {
+                PhxError::Corrompido(format!("evento {} do diario: {e}", desde + i as u64))
+            })?;
+            lista.push(Json::objeto(vec![
+                ("operacao", Json::texto_de(e.operacao.nome())),
+                // ONDE este evento mora no diario DAQUI. So o source sabe
+                // dizer: quem puxa nao consegue contar, porque a supressao
+                // logo acima tira eventos da lista e a posicao anda por
+                // cima deles. E a posicao que `replicacao_pular` recebe --
+                // o nosso equivalente do LSN do `SKIP` do PostgreSQL.
+                ("posicao", Json::de_u64(desde + i as u64)),
+                ("rowid", Json::de_u64(e.rowid)),
+                ("versao", Json::de_u64(e.versao)),
+                ("carimbo_ms", Json::Numero(e.carimbo as f64)),
+                ("usuario", Json::de_u64(e.usuario as u64)),
+                ("origem", Json::de_u64(origem as u64)),
+                ("imagem", Json::texto_de(bytes_para_hex(&imagem))),
+            ]));
+        }
+
+        Ok((lista, lidos))
+    }
+
     fn op_replicar(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
         let desde = p.inteiro_ou("desde", 0).max(0) as u64;
         let max = lote_de_replicacao(p);
@@ -29848,68 +30045,8 @@ impl Servidor {
             )));
         }
         let total = t.eventos()?;
-
-        // A dica de onde a leitura anterior desta tabela parou. Sem ela, o
-        // `desde` faz o diario ser varrido desde o comeco a cada lote -- ver
-        // `marcas_do_diario`. A maior que ainda cabe: a marca so serve para
-        // uma posicao depois dela.
         let chave = Self::chave_do_diario(p.texto_ou("database", ""), p.texto_ou("tabela", ""));
-        t.definir_marca_do_diario(self.marca_do_diario_para(&chave, desde));
-        // O corte por BYTES acontece DENTRO da leitura, no store, que e quem
-        // sabe o tamanho antes de alocar -- ver `TETO_DO_LOTE_SERVIDO`. Ate
-        // 17/09/2026 ele era um `truncate` aqui, depois de o lote inteiro ja
-        // estar na memoria com a trava na mao: o teto cortava a resposta e
-        // nao a leitura, que e a licao do Profiler aplicada a teto em vez de
-        // a interruptor (revisao SEC, A2).
-        let eventos = t.diario_com_imagem_ate(desde, max, TETO_DO_LOTE_SERVIDO)?;
-        if let Some(nova) = t.marca_do_diario() {
-            self.guardar_marca_do_diario(chave, desde, nova);
-        }
-        // A posicao anda por TODOS os lidos, inclusive os que a supressao de
-        // origem vai tirar da lista: suprimir e nao mandar de volta, e nao
-        // fingir que o evento nao existe -- a contagem do diario e uma so.
-        let lidos = eventos.len() as u64;
-
-        // `para` diz QUEM pede. Eventos cuja origem e o proprio destino nao
-        // viajam: e a alteracao que ele mesmo mandou, e devolve-la fecharia o
-        // laco infinito do bidirecional. A origem zero (escrita local) sai
-        // traduzida para o hash DESTE servidor, para o outro lado guardar de
-        // quem veio sem tabela de traducao nenhuma.
-        let meu_hash = self.config.replicacao.numero();
-
-        let mut lista: Vec<Json> = Vec::with_capacity(eventos.len());
-        for (i, (e, imagem)) in eventos.into_iter().enumerate() {
-            let origem = if e.origem == 0 { meu_hash } else { e.origem };
-            if hash_para.is_some_and(|h| origem != 0 && origem == h) {
-                continue;
-            }
-            // O externo marcado sai do diario SELADO com a chave deste
-            // arquivo, e a replica nao tem como abri-lo: o sal e por arquivo
-            // (pedido 344). Abre-se AQUI, na resposta, e so nela -- o portao
-            // de cima ja garantiu o fio cifrado para tabela com coluna
-            // marcada, e o `.log` continua selado. Tabela sem coluna externa
-            // marcada devolve a mesma imagem, sem custo de cifra.
-            // A recusa do evento pre-344 (pedido 603) diz QUAL evento: e a
-            // posicao que o operador pula com `replicacao_pular`.
-            let imagem = t.imagem_para_o_fio(&imagem).map_err(|e| {
-                PhxError::Corrompido(format!("evento {} do diario: {e}", desde + i as u64))
-            })?;
-            lista.push(Json::objeto(vec![
-                ("operacao", Json::texto_de(e.operacao.nome())),
-                // ONDE este evento mora no diario DAQUI. So o source sabe
-                // dizer: quem puxa nao consegue contar, porque a supressao
-                // logo acima tira eventos da lista e a posicao anda por
-                // cima deles. E a posicao que `replicacao_pular` recebe --
-                // o nosso equivalente do LSN do `SKIP` do PostgreSQL.
-                ("posicao", Json::de_u64(desde + i as u64)),
-                ("rowid", Json::de_u64(e.rowid)),
-                ("versao", Json::de_u64(e.versao)),
-                ("carimbo_ms", Json::Numero(e.carimbo as f64)),
-                ("usuario", Json::de_u64(e.usuario as u64)),
-                ("origem", Json::de_u64(origem as u64)),
-                ("imagem", Json::texto_de(bytes_para_hex(&imagem))),
-            ]));
-        }
+        let (lista, lidos) = self.eventos_para_o_fio(&mut t, &chave, desde, max, hash_para)?;
 
         // A trilha de dado pessoal, UM registro por lote (revisao SEC de
         // 17/09/2026, A8): a imagem viaja com o valor da coluna marcada
@@ -29942,6 +30079,433 @@ impl Servidor {
             ),
             ("eventos", Json::Lista(lista)),
         ]))
+    }
+
+    // ------------------------------------------- o quorum de escrita (207)
+
+    /// As escritas desta tomada esperam quorum? So no MASTER vivo do cluster
+    /// e com `quorum_minimo > 0`: duas leituras atomicas, e e o portao que
+    /// decide se a anotacao das tocadas liga -- antes de qualquer trabalho.
+    fn quorum_vale_aqui(&self) -> bool {
+        match (&self.quorum, &self.cluster) {
+            (Some(q), Some(c)) => q.minimo() > 0 && c.papel() == crate::cluster::PapelVivo::Master,
+            _ => false,
+        }
+    }
+
+    /// A espera do commit, chamada do `Drop` da `TravaMedida` com a trava de
+    /// escrita AINDA na mao -- a linha so fica visivel depois do ok ou do
+    /// prazo (o `xact.c:1541` do PostgreSQL, «continue to hold locks»).
+    ///
+    /// Ordem, e cada passo e uma decisao do contrato (§207.5):
+    ///
+    /// 1. as tabelas que nenhuma replica recebe saem da conta -- fora de
+    ///    `cluster.databases`, ou que o usuario do cluster nao pode
+    ///    `replicar`. Esperar por elas seria degradar por desenho;
+    /// 2. degradado: anota a posicao e responde na hora, DIZENDO;
+    /// 3. `sincronizar` local (D-local): o master que cai sem `fsync` e volta
+    ///    como master ficaria ATRAS das replicas que confirmaram;
+    /// 4. os eventos saem pelo MESMO motor do `replicar`
+    ///    ([`Self::eventos_para_o_fio`]) e vao ao cubo, que espera.
+    fn esperar_o_quorum(&self, dados: &Instancia, tocadas: Vec<phxsql_store::log::Tocada>) {
+        let (Some(cubo), Some(estado)) = (&self.quorum, &self.cluster) else {
+            return;
+        };
+        let comeco = Instant::now();
+        let ficha = cubo.ficha();
+        let replicados = &estado.config.databases;
+        let mut alvos: Vec<(crate::quorum::Exigencia, u64)> = Vec::new();
+        let mut incerta = false;
+        for t in tocadas {
+            let Some((database, tabela)) = nome_da_tocada(dados.base(), &t) else {
+                continue;
+            };
+            if !replicados.is_empty() && !replicados.iter().any(|d| d == &database) {
+                continue;
+            }
+            if !replica_alcanca(ficha.as_ref(), &database, &tabela) {
+                continue;
+            }
+            if t.depois <= t.antes {
+                // O diario cresceu e o total nao se leu: nao ha posicao para
+                // exigir. A gravacao fica e a resposta diz que nao se sabe.
+                incerta = true;
+                continue;
+            }
+            alvos.push((
+                crate::quorum::Exigencia {
+                    database,
+                    tabela,
+                    posicao: t.depois,
+                },
+                t.antes,
+            ));
+        }
+        if alvos.is_empty() && !incerta {
+            return;
+        }
+        let pedido = cubo.minimo();
+        let exigencias: Vec<crate::quorum::Exigencia> =
+            alvos.iter().map(|(x, _)| x.clone()).collect();
+        if cubo.modo() == crate::quorum::Modo::Degradado {
+            cubo.anotar_mestre(&exigencias);
+            guardar_quorum_do_pedido(crate::quorum::Resultado {
+                pedido,
+                confirmado: 0,
+                alcancado: false,
+                degradado: true,
+                ms: comeco.elapsed().as_secs_f64() * 1000.0,
+            });
+            return;
+        }
+        let mut lotes = Vec::new();
+        let mut esperar_por = Vec::new();
+        for (x, antes) in &alvos {
+            match self.materializar_para_o_quorum(dados, cubo, x, *antes) {
+                Ok(mut l) => {
+                    lotes.append(&mut l);
+                    esperar_por.push(x.clone());
+                }
+                Err(e) => {
+                    eprintln!(
+                        "quorum: {}/{}: os eventos do commit nao se materializaram ({e}); \
+                         a gravacao fica, e a resposta diz alcancado:false",
+                        x.database, x.tabela
+                    );
+                    incerta = true;
+                }
+            }
+        }
+        cubo.anotar_mestre(&exigencias);
+        let mut r = if esperar_por.is_empty() {
+            crate::quorum::Resultado {
+                pedido,
+                confirmado: 0,
+                alcancado: false,
+                degradado: false,
+                ms: 0.0,
+            }
+        } else {
+            cubo.esperar(lotes, &esperar_por)
+        };
+        if incerta {
+            r.alcancado = false;
+        }
+        r.ms = comeco.elapsed().as_secs_f64() * 1000.0;
+        guardar_quorum_do_pedido(r);
+    }
+
+    /// Sincroniza a tabela e materializa os eventos `[antes, depois)` em
+    /// lotes que cabem no fio -- com o evento `antes - 1` na frente de cada
+    /// um, a conferencia de continuidade que o pull ja faz.
+    fn materializar_para_o_quorum(
+        &self,
+        dados: &Instancia,
+        cubo: &crate::quorum::Cubo,
+        x: &crate::quorum::Exigencia,
+        antes: u64,
+    ) -> Result<Vec<crate::quorum::LoteDoQuorum>> {
+        let db = dados.abrir_database(&x.database)?;
+        let mut t = db.abrir_qualificada(&x.tabela)?;
+        // D-local (L1): PG 4 + MySQL 2 = 6 contra MariaDB 3.
+        let ja = t.arquivos_sincronizados();
+        t.sincronizar()?;
+        cubo.contar_fsync_local(t.arquivos_sincronizados().saturating_sub(ja));
+        let chave = Self::chave_do_diario(&x.database, &x.tabela);
+        let dado_pessoal = t.tem_dado_pessoal();
+        let linhagem = match t.esquema().linhagem() {
+            Some(l) => Json::texto_de(l.to_string()),
+            None => Json::Nulo,
+        };
+        let esquema = bytes_para_hex(&t.esquema().serializar());
+        let mut lotes = Vec::new();
+        let mut ini = antes;
+        while ini < x.posicao {
+            let desde = ini.saturating_sub(1);
+            let max = (x.posicao - desde).min(TETO_DE_EVENTOS_POR_LOTE);
+            let (eventos, lidos) = self.eventos_para_o_fio(&mut t, &chave, desde, max, None)?;
+            let fim = desde + lidos;
+            if fim <= ini {
+                return Err(PhxError::LimiteExcedido(format!(
+                    "o evento {ini} do diario de {}/{} nao coube no lote do quorum",
+                    x.database, x.tabela
+                )));
+            }
+            // A trilha de dado pessoal, como no `replicar` (A8): a imagem
+            // viaja com a coluna marcada dentro.
+            Self::trilhar_acesso(&mut t, 0, eventos.len() as u64, || {
+                format!("replicar_aguardar desde={desde} ate={fim}")
+            })?;
+            let bytes = eventos
+                .iter()
+                .map(|e| e.texto_ou("imagem", "").len() + 200)
+                .sum::<usize>()
+                + esquema.len();
+            lotes.push(crate::quorum::LoteDoQuorum {
+                database: x.database.clone(),
+                tabela: x.tabela.clone(),
+                dado_pessoal,
+                eventos_do_master: x.posicao,
+                posicao: ini,
+                eventos,
+                linhagem: linhagem.clone(),
+                esquema: esquema.clone(),
+                bytes,
+            });
+            ini = fim;
+        }
+        Ok(lotes)
+    }
+
+    /// `replicar_aguardar`: o canal aberto do quorum, do lado do master.
+    ///
+    /// A replica abre a conexao e FICA (rota (b), decisao do dono de
+    /// 07/09/2026: o firewall do master continua com uma porta de entrada so).
+    /// Cada pedido confirma o que ela aplicou e gravou, e espera ate
+    /// `esperar_ms` por lotes novos. **Nunca chama `travar_dados()`** -- o
+    /// commit que espera esta confirmacao segura a trava, e e isso que a
+    /// guarda `quorum-ack-pede-a-trava` repoe.
+    fn op_replicar_aguardar(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
+        let Some(estado) = &self.cluster else {
+            return Err(Self::sem_cluster());
+        };
+        let Some(cubo) = &self.quorum else {
+            return Err(Self::sem_cluster());
+        };
+        let epoca = estado.epoca();
+        if cubo.minimo() == 0 || estado.papel() != crate::cluster::PapelVivo::Master {
+            return Ok(Json::objeto(vec![
+                ("epoca", Json::de_u64(epoca)),
+                ("desligado", Json::Bool(true)),
+                ("papel", Json::texto_de(estado.papel().nome())),
+            ]));
+        }
+        let id = p.texto_ou("id", "").trim().to_string();
+        if id == estado.config.id || estado.no(&id).is_none() {
+            return Err(PhxError::Autorizacao(
+                self.msg("erro.pulso_de_no_desconhecido", &[("id", &id)]),
+            ));
+        }
+        let confirmados = crate::quorum::Exigencia::da_lista(p.campo("confirmado"));
+        // A espera cabe no pulso: a replica tem de voltar a conversar antes
+        // de o silencio dela parecer queda.
+        let teto = estado.config.pulso_s.saturating_mul(1_000).max(100);
+        let esperar =
+            Duration::from_millis(p.inteiro_ou("esperar_ms", 0).clamp(0, teto as i64) as u64);
+        let entrega = cubo.aguardar(&id, sessao.usuario.as_ref(), &confirmados, esperar);
+        let cifrado = self.fio_cifrado(sessao);
+        let mut lotes = Vec::with_capacity(entrega.lotes.len());
+        for l in &entrega.lotes {
+            // Os portoes que dependem de QUEM leva, conferidos na entrega:
+            // o alcance do usuario e a cifra do 342. Lote barrado nao vai, a
+            // replica nao confirma, e o commit degrada DIZENDO.
+            if !replica_alcanca(sessao.usuario.as_ref(), &l.database, &l.tabela) {
+                continue;
+            }
+            if l.dado_pessoal && !cifrado {
+                continue;
+            }
+            lotes.push(l.para_json());
+        }
+        Ok(Json::objeto(vec![
+            ("epoca", Json::de_u64(epoca)),
+            ("modo", Json::texto_de(entrega.modo.nome())),
+            ("lotes", Json::Lista(lotes)),
+            (
+                "alcance",
+                Json::Lista(entrega.alcance.iter().map(|x| x.para_json()).collect()),
+            ),
+        ]))
+    }
+
+    /// O canal aberto do quorum, do lado da REPLICA -- pedido 207.
+    ///
+    /// Fica numa conversa so com o master corrente enquanto ele estiver
+    /// sincrono: leva o lote, aplica, grava em disco, e so entao confirma, no
+    /// pedido seguinte. **Nao puxa pelo `replicar` enquanto o master esta
+    /// sincrono**: o `replicar` pede a trava de dados do master, e um commit
+    /// esperando esta replica a segura -- o pull ficaria parado ate o prazo.
+    /// Volta ao pull quando ficou para tras: um lote que nao se aplicou, ou o
+    /// degradado anunciando um alcance que ela nao tem.
+    fn esperar_pelo_master(
+        &self,
+        estado: &crate::cluster::EstadoCluster,
+        origem: &crate::config::Origem,
+        master: &str,
+        espera: Duration,
+        canal: &mut Option<(String, crate::replica::Cliente)>,
+        confirmar: &mut Vec<crate::quorum::Exigencia>,
+    ) {
+        loop {
+            if estado.papel() == crate::cluster::PapelVivo::Master
+                || estado.master_atual().map(|(id, _)| id).as_deref() != Some(master)
+            {
+                return;
+            }
+            if canal.as_ref().map(|(m, _)| m.as_str()) != Some(master) {
+                *canal = None;
+                match crate::replica::ligar_classificado(origem) {
+                    Ok(c) => *canal = Some((master.to_string(), c)),
+                    Err((_, e)) => {
+                        eprintln!("cluster: o canal do quorum com {master} nao abriu: {e}");
+                        std::thread::sleep(espera);
+                        return;
+                    }
+                }
+            }
+            let Some((_, cliente)) = canal.as_mut() else {
+                return;
+            };
+            let pedido = vec![
+                ("op", Json::texto_de("replicar_aguardar")),
+                ("id", Json::texto_de(&estado.config.id)),
+                ("epoca", Json::de_u64(estado.epoca())),
+                (
+                    "confirmado",
+                    Json::Lista(confirmar.iter().map(|x| x.para_json()).collect()),
+                ),
+                ("esperar_ms", Json::de_u64(espera.as_millis() as u64)),
+            ];
+            let r = match cliente.pedir(pedido) {
+                Ok(r) => r,
+                Err(e) => {
+                    // Master de versao anterior (op desconhecida) ou conexao
+                    // caida: o canal fecha e o pull de sempre segue.
+                    eprintln!("cluster: canal do quorum com {master}: {e}");
+                    *canal = None;
+                    std::thread::sleep(espera);
+                    return;
+                }
+            };
+            // Mandadas: a confirmacao chegou ao master.
+            confirmar.clear();
+            if r.booleano_ou("desligado", false) {
+                std::thread::sleep(espera);
+                return;
+            }
+            let dele = r.inteiro_ou("epoca", 0).max(0) as u64;
+            if !crate::quorum::aceita_a_epoca(estado.epoca(), dele) {
+                eprintln!(
+                    "cluster: {master} mandou lote da epoca {dele}, e esta replica ja \
+                     conhece a {}: nada se aplica nem se confirma (master rebaixado)",
+                    estado.epoca()
+                );
+                *canal = None;
+                std::thread::sleep(espera);
+                return;
+            }
+            let lotes = r.campo("lotes").and_then(Json::lista).unwrap_or(&[]);
+            let mut atras = false;
+            for l in lotes {
+                match self.aplicar_lote_do_quorum(&origem.nome, l) {
+                    Ok(Some(x)) => {
+                        confirmar.retain(|c| c.chave() != x.chave());
+                        confirmar.push(x);
+                    }
+                    Ok(None) => atras = true,
+                    Err(e) => {
+                        eprintln!("cluster: lote do quorum de {master}: {e}");
+                        atras = true;
+                    }
+                }
+            }
+            if atras {
+                return;
+            }
+            if lotes.is_empty() {
+                // Degradado: o master diz o que conhece, e esta replica diz
+                // se esta em dia. Em dia, confirma -- e e assim que o master
+                // volta ao sincrono depois do recuo. Atras, puxa: o commit
+                // degradado nao segura a trava.
+                for x in crate::quorum::Exigencia::da_lista(r.campo("alcance")) {
+                    match self.posicao_local(&x.database, &x.tabela) {
+                        Ok(p) if p >= x.posicao => {
+                            confirmar.push(crate::quorum::Exigencia { posicao: p, ..x })
+                        }
+                        _ => return,
+                    }
+                }
+            }
+        }
+    }
+
+    /// Aplica UM lote do quorum: o mesmo motor do pull -- abrir (criando pelo
+    /// esquema, se preciso), aplicar com a conferencia de continuidade, e
+    /// sincronizar -- e devolve a confirmacao, ou `None` quando esta replica
+    /// nao esta onde o lote comeca.
+    fn aplicar_lote_do_quorum(
+        &self,
+        origem: &str,
+        l: &Json,
+    ) -> Result<Option<crate::quorum::Exigencia>> {
+        let database = l.texto_ou("database", "").to_string();
+        let tabela = l.texto_ou("tabela", "").to_string();
+        let posicao = l.inteiro_ou("posicao", 0).max(0) as u64;
+        let eventos = crate::replica::eventos_do_fio(l.campo("eventos"))?;
+        let esquema = match l.texto_ou("esquema", "") {
+            "" => None,
+            hex => Some(phxsql_core::schema::Schema::desserializar(
+                &hex_para_bytes(hex)?,
+            )?),
+        };
+        let no = crate::replica::NoSource {
+            nome: tabela.clone(),
+            eventos: l.inteiro_ou("eventos_do_master", 0).max(0) as u64,
+            esquema,
+        };
+        let Some((local, outra_historia)) = self.abrir_para_replicar(&database, &no)? else {
+            return Ok(None);
+        };
+        if let Some(motivo) = outra_historia {
+            eprintln!("cluster: {database}/{tabela}: {motivo}");
+            return Ok(None);
+        }
+        if local != posicao {
+            return Ok(None);
+        }
+        // Onde o lote termina: o primeiro evento e o de conferencia quando
+        // `posicao > 0`.
+        let fim = if posicao == 0 {
+            eventos.len() as u64
+        } else {
+            posicao + (eventos.len() as u64).saturating_sub(1)
+        };
+        match self.aplicar_lote_da_replica(&database, &no, posicao, &eventos)? {
+            Lote::Rompido(motivo) => {
+                let chave = Self::chave_do_diario(&database, &tabela);
+                self.romper_continuidade(origem, &chave, posicao, motivo);
+                Ok(None)
+            }
+            Lote::Aplicado { nova, .. } if nova >= fim => {
+                // O «ok» e APLICOU E GRAVOU EM DISCO (dono, 17/09/2026): o
+                // `fsync` vem antes de a confirmacao existir.
+                let arquivos = self.sincronizar_replicada_contando(&database, &tabela)?;
+                if let Some(cubo) = &self.quorum {
+                    cubo.contar_ack(arquivos);
+                }
+                let chave = Self::chave_do_diario(&database, &tabela);
+                self.confirmar_continuidade(origem, &chave, nova);
+                Ok(Some(crate::quorum::Exigencia {
+                    database,
+                    tabela,
+                    posicao: nova,
+                }))
+            }
+            Lote::Aplicado { .. } => Ok(None),
+        }
+    }
+
+    /// Quantos eventos o diario LOCAL desta tabela tem -- zero se ela nao
+    /// existe aqui.
+    fn posicao_local(&self, database: &str, tabela: &str) -> Result<u64> {
+        let trava = self.travar_dados()?;
+        let Ok(db) = trava.abrir_database(database) else {
+            return Ok(0);
+        };
+        match db.abrir_qualificada(tabela) {
+            Ok(mut t) => t.eventos(),
+            Err(_) => Ok(0),
+        }
     }
 
     /// `aplicar`: grava na tabela LOCAL os eventos que vieram do source.
@@ -30307,6 +30871,11 @@ impl Servidor {
             (
                 "ledger_marcado_recebido",
                 Json::de_u64(self.ledger_marcado_recebido.load(Ordering::Relaxed)),
+            ),
+            // Pedido 207: o estado do quorum de escrita. `Nulo` sem cluster.
+            (
+                "quorum",
+                self.quorum.as_ref().map_or(Json::Nulo, |q| q.para_json()),
             ),
         ]))
     }
@@ -31654,6 +32223,23 @@ thread_local! {
     /// a trava e o funcionamento normal -- ela espera e recebe. Quem nao pode
     /// esperar e quem ja a tem.
     static COM_A_TRAVA: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+
+    /// O quorum das esperas deste pedido (pedido 207), que o `despachar` le
+    /// e poe na resposta. Por thread pelo molde da `COM_A_TRAVA`: quem espera
+    /// e o `Drop` da trava, que nao tem a resposta na mao.
+    static QUORUM_DO_PEDIDO: std::cell::RefCell<Option<crate::quorum::Resultado>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Guarda o resultado de uma espera do quorum para a resposta deste pedido.
+fn guardar_quorum_do_pedido(r: crate::quorum::Resultado) {
+    QUORUM_DO_PEDIDO.with(|q| {
+        let mut q = q.borrow_mut();
+        *q = Some(match q.take() {
+            Some(antes) => antes.juntar(r),
+            None => r,
+        });
+    });
 }
 
 /// O abraco mortal com a propria trava, transformado em erro.
@@ -32161,6 +32747,18 @@ impl Drop for TravaMedida<'_> {
             self.servidor
                 .reparar_a_trava(&self.instancia, self.marca_em_voo.as_ref());
         }
+        // A ESPERA DO QUORUM -- pedido 207. Aqui, e so aqui, pelo mesmo motivo
+        // do reparo acima: e o unico lugar que solta a trava de escrita, e os
+        // ~90 `travar_dados()` nao sabem que a espera existe. Com o guard
+        // ainda na mao, a linha gravada continua INVISIVEL ate o ok (ou o
+        // prazo) -- o `xact.c` do PostgreSQL segura as travas pelo mesmo
+        // motivo. O portao e a `Cell` da anotacao, ligada so com o quorum.
+        if phxsql_store::log::anotando_tocadas() {
+            let tocadas = phxsql_store::log::tomar_tocadas();
+            if !std::thread::panicking() && !tocadas.is_empty() {
+                self.servidor.esperar_o_quorum(&self.instancia, tocadas);
+            }
+        }
         // Fora do `if`: a marca de reentrancia nao depende da telemetria, e
         // solta-la so com ela ligada trancaria a thread no modo comum -- que e
         // o modo em que os tres abracos mortais aconteceram.
@@ -32295,6 +32893,23 @@ enum EscopoDaPosicao<'a> {
 /// tudo, que e o comportamento de sempre.
 fn replica_alcanca(usuario: Option<&Usuario>, database: &str, tabela: &str) -> bool {
     usuario.is_none_or(|u| u.pode_em(database, tabela, Atividade::Replicar))
+}
+
+/// `(database, tabela qualificada)` de uma tabela tocada, pelo caminho do
+/// diario dela: `base/<database>/<tabela>` ou `base/<database>/<schema>/<tabela>`
+/// -- o mesmo arranjo do `Database::diretorio`. Fora da base (um palco de
+/// restauracao, por exemplo) nao e tabela do cluster: `None`.
+fn nome_da_tocada(base: &Path, t: &phxsql_store::log::Tocada) -> Option<(String, String)> {
+    let rel = t.diretorio.strip_prefix(base).ok()?;
+    let partes: Vec<String> = rel
+        .components()
+        .map(|c| c.as_os_str().to_string_lossy().into_owned())
+        .collect();
+    match partes.as_slice() {
+        [db] => Some((db.clone(), t.nome.clone())),
+        [db, schema] => Some((db.clone(), format!("{schema}.{}", t.nome))),
+        _ => None,
+    }
 }
 
 /// O prefixo do nome da origem do cluster (`cluster:<id>`). Um so, porque e

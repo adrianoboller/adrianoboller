@@ -429,6 +429,49 @@ fn sem_cabecalho(volumes: &mut Volumes, existentes: &[u32]) -> Result<Option<u32
     Ok(None)
 }
 
+/// Uma tabela cujo diario cresceu durante a tomada corrente da trava -- pedido
+/// 207, a escrita com quorum.
+///
+/// `antes` e o total de eventos ANTES do primeiro evento desta tomada, e
+/// `depois` o total depois do ultimo: o quorum manda `[antes, depois)` as
+/// replicas e espera cada uma confirmar `depois`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Tocada {
+    pub diretorio: PathBuf,
+    pub nome: String,
+    pub antes: u64,
+    pub depois: u64,
+}
+
+thread_local! {
+    /// A anotacao esta ligada NESTA thread? Por thread porque quem liga e a
+    /// tomada da trava de dados, e a tomada e de uma thread so: a lista que
+    /// ela drena no fim tem de ser a das escritas DELA.
+    static ANOTANDO: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    static TOCADAS: std::cell::RefCell<Vec<Tocada>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Liga a anotacao das tabelas tocadas nesta thread, comecando de lista vazia.
+///
+/// Quem liga e a tomada da trava de dados do servidor, e so com o quorum de
+/// escrita ligado: desligada, o custo no laco quente e a leitura de uma
+/// `Cell` de thread por evento -- o portao vem antes do trabalho.
+pub fn anotar_tocadas() {
+    TOCADAS.with(|t| t.borrow_mut().clear());
+    ANOTANDO.with(|a| a.set(true));
+}
+
+/// Desliga a anotacao e devolve o que ela juntou.
+pub fn tomar_tocadas() -> Vec<Tocada> {
+    ANOTANDO.with(|a| a.set(false));
+    TOCADAS.with(|t| std::mem::take(&mut *t.borrow_mut()))
+}
+
+/// A anotacao esta ligada nesta thread? So para a prova de que ela desliga.
+pub fn anotando_tocadas() -> bool {
+    ANOTANDO.with(std::cell::Cell::get)
+}
+
 pub struct LogFile {
     volumes: Volumes,
     cabs: HashMap<u32, Cabecalho>,
@@ -644,7 +687,47 @@ impl LogFile {
             tam_imagem: atual.ocupa(imagem.len()) as u32,
         };
         self.anexar(evento, imagem)?;
+        // O PONTO UNICO onde o diario cresce (pedido 207): e aqui, e nao em
+        // cada familia de escrita do servidor, que a tabela tocada se anota --
+        // uma familia esquecida seria um commit que responde «gravei» sem
+        // esperar quorum nenhum (guarda `quorum-escritor-sem-espera`).
+        if ANOTANDO.with(std::cell::Cell::get) {
+            self.anotar_tocada();
+        }
         Ok(evento)
+    }
+
+    /// Anota este diario na lista da tomada corrente. O total vem dos
+    /// cabecalhos ja em memoria (o do volume corrente acabou de ser escrito),
+    /// e o erro de leitura de um volume antigo NAO derruba a escrita: a
+    /// tabela entra com `antes == depois`, que o quorum trata como «nao sei
+    /// confirmar» e diz `alcancado:false` -- calar seria pior.
+    fn anotar_tocada(&mut self) {
+        let total = self.total().ok();
+        let diretorio = self.volumes.diretorio().to_path_buf();
+        let nome = self.volumes.nome().to_string();
+        TOCADAS.with(|t| {
+            let mut t = t.borrow_mut();
+            if let Some(x) = t
+                .iter_mut()
+                .find(|x| x.nome == nome && x.diretorio == diretorio)
+            {
+                x.depois = total.unwrap_or(x.antes);
+                return;
+            }
+            let depois = total.unwrap_or(0);
+            let antes = if total.is_some() {
+                depois.saturating_sub(1)
+            } else {
+                0
+            };
+            t.push(Tocada {
+                diretorio,
+                nome,
+                antes,
+                depois,
+            });
+        });
     }
 
     /// O volume onde um evento de `ocupa` bytes vai entrar, e se ele vira de
@@ -1300,6 +1383,29 @@ mod tests {
     // Pedido 150: guarda de Drop, nao `rm` no fim do corpo.
     fn dir_temp(rotulo: &str) -> crate::apoio_teste::DirTemp {
         crate::apoio_teste::DirTemp::novo(&format!("log-{rotulo}"))
+    }
+
+    /// Pedido 207: a anotacao das tabelas tocadas guarda a faixa `[antes,
+    /// depois)` do diario por tabela, e desligada nao anota nada -- e o que
+    /// mantem o laco quente sem custo quando o quorum nao foi pedido.
+    #[test]
+    fn a_anotacao_das_tocadas_guarda_a_faixa_e_desligada_nao_anota() {
+        let d = dir_temp("tocadas");
+        let mut l = LogFile::criar(&d, "t", Paginacao::DESLIGADA).unwrap();
+        l.registrar(Operacao::Inclusao, 1, 1).unwrap();
+        assert!(tomar_tocadas().is_empty(), "desligada, nada se anota");
+        anotar_tocadas();
+        l.registrar(Operacao::Inclusao, 2, 1).unwrap();
+        l.registrar(Operacao::Inclusao, 3, 1).unwrap();
+        let mut l2 = LogFile::criar(&d, "u", Paginacao::DESLIGADA).unwrap();
+        l2.registrar(Operacao::Inclusao, 1, 1).unwrap();
+        let t = tomar_tocadas();
+        assert!(!anotando_tocadas(), "tomar desliga");
+        assert_eq!(t.len(), 2);
+        assert_eq!((t[0].nome.as_str(), t[0].antes, t[0].depois), ("t", 1, 3));
+        assert_eq!((t[1].nome.as_str(), t[1].antes, t[1].depois), ("u", 0, 1));
+        l.registrar(Operacao::Inclusao, 4, 1).unwrap();
+        assert!(tomar_tocadas().is_empty(), "depois de tomar, desligada");
     }
 
     /* --------------------------------------- o cabecalho preguicoso e a cura

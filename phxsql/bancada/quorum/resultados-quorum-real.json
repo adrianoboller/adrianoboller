@@ -1,0 +1,61 @@
+{
+ "voltas": 200,
+ "prazo_ms": 2000,
+ "sem_quorum": {
+  "mediana_ms": 0.305,
+  "faixa_ms": [
+   0.188,
+   4.17
+  ],
+  "commits_por_s": 2732.6
+ },
+ "quorum_1_de_2": {
+  "mediana_ms": 4.01,
+  "faixa_ms": [
+   3.438,
+   9.152
+  ],
+  "commits_por_s": 237.3,
+  "espera_no_servidor_mediana_ms": 3.364
+ },
+ "quorum_2_de_2": {
+  "mediana_ms": 4.345,
+  "faixa_ms": [
+   3.593,
+   9.741
+  ],
+  "commits_por_s": 219.9,
+  "espera_no_servidor_mediana_ms": 3.695
+ },
+ "vezes_1_de_2": 13.15,
+ "vezes_2_de_2": 14.25,
+ "arquivos_sincronizados_antes_de_esperar": 803,
+ "sigkill_primeiro_ms": 2005.724,
+ "sigkill_primeiro": {
+  "pedido": 1,
+  "confirmado": 0,
+  "alcancado": false,
+  "ms": 2001.624,
+  "degradado": true
+ },
+ "sigkill_aviso": "gravado neste servidor, mas so 0 de 1 replica(s) confirmaram a tempo: o dado pode nao estar em outro disco",
+ "degradado_segundo_ms": 3.352,
+ "degradado_segundo": {
+  "pedido": 1,
+  "confirmado": 0,
+  "alcancado": false,
+  "ms": 0.007,
+  "degradado": true
+ },
+ "volta_ao_sincrono_s": 2.02,
+ "depois_da_volta": {
+  "pedido": 1,
+  "confirmado": 1,
+  "alcancado": true,
+  "ms": 5.37
+ },
+ "degradacoes": 1,
+ "maquina": "tres phxsqld (release) em 127.0.0.1, no mesmo conteiner, ext4 em /dev/vda",
+ "aviso_da_maquina": "TUDO em localhost e no mesmo disco: a rede real e o fsync de outro disco custam mais",
+ "medido_em": "2026-10-01 22:42"
+}

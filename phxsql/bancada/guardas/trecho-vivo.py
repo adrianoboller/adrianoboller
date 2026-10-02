@@ -663,6 +663,11 @@ dia, nunca no desejado:
   o segundo processo gravando a mesma pasta
   (`segundo-gravador-sem-trava-de-instancia-635`) e a raiz ociosa que solta a
   trava (`raiz-ociosa-solta-a-trava-de-instancia-635`). 707, medido pelo
+  **SUBIU para 717 em 01/10/2026** (no merge, 707 + 10; pedido 207, a escrita com quorum): dez
+  guardas novas, todas `quorum-*` -- esperar sem degradar, esperar fora da
+  trava, o ack pedindo a trava, o ack antes do `fsync`, a epoca velha, o
+  master sem `fsync` local, a anotacao fora do ponto unico do diario, contar
+  o master, esperar quem nao existe e voltar sem recuo. 717, medido pelo
   `--numeros`.
 
 # A QUINTA REGUA: a tabela publicada pode ser MENOR que o catalogo
@@ -770,7 +775,7 @@ TETO_TESTE_MORTO = 0
 TETO_TRECHO_AMBIGUO = 0
 TETO_TESTE_FORA_DO_BINARIO = 0
 TETO_TESTE_SEM_MODULO = 0
-PISO_DAS_ENTRADAS = 707
+PISO_DAS_ENTRADAS = 717
 
 # ------------------------------------------------------------- APOSENTADAS
 #
