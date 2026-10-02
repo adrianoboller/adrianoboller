@@ -5,8 +5,11 @@
 > Built to store. Engineered to scale.
 
 Motor de dados em Rust no modelo de arquivos separados por tabela: cada tabela
-lógica é a soma de sete arquivos físicos — mais um oitavo, o espelho `.bkp`,
-quando ele está ligado.
+lógica é a soma de **sete arquivos sempre presentes** e de até **onze tipos** no
+total: a trilha `.lgpd` (tabela com coluna de dado pessoal), o índice de texto
+`.fts` (tabela que declara um), o espelho `.bkp` (quando ligado) e o descritor
+`.pag`. A lista completa, com assinatura e quem lê cada um, está em
+[`docs/FORMATO.md`](docs/FORMATO.md).
 
 ```
 cadastroClientes.reg    registros, na ordem de digitação

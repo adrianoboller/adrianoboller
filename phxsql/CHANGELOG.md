@@ -12,6 +12,131 @@ Os números são **medidos**, nunca estimados.
 
 ## Não lançado
 
+### 0.19.0, rodada de 01–02/10/2026 — NÃO SELADA
+
+Resumo por tema do que esta rodada fechou, **só com o que tem prova** (cada
+item traz o pedido; o detalhe, o defeito reposto e a data estão nas seções
+`###` abaixo e no `PENDENCIAS.md`). Os números saíram dos pedidos fechados, não
+de memória. O selo é do dono: enquanto não houver commit de selagem esta
+entrada fica «não selada» (`docs/versao/portao-da-versao.py` mede a distância).
+
+**Replicação e cluster**
+
+- **207** — escrita com quórum: `cluster.quorum_minimo` espera N réplicas
+  **gravarem em disco** antes do «ok». Loopback, release: **4,010 ms** por
+  commit com 1 de 2 contra **0,305 ms** sem (13,15×, faixas sem cruzar); espera
+  vencida não desfaz a gravação, devolve `alcancado:false` e degrada. Teto
+  dito: ~237 commits/s no servidor inteiro, porque a espera segura a trava de dados.
+- **229** — auto number: o contador agora viaja pelo fio, e a réplica promovida
+  não reemite número já entregue. Medido pelo soquete (source com 5, réplica
+  com 2): **antes a promovida deu 3, depois deu 6**. Mais: teto 2^53 no
+  `Int8`/`UInt8` (matriz 9×1) e **sequência nomeada** (`.seq`, `FORMATO.md`
+  §24; 147–230 µs por número contra 771 µs do `gravar_duravel`, 5,2×; matriz
+  7×3). `IDENTITY ALWAYS` morreu medido (4×6). Continua parcial: ver abaixo.
+
+**Backup e durabilidade**
+
+- **513** — o backup copia em **duas passadas** e não segura a trava global
+  durante a cópia. Banco de **1.123 MiB** (20 tabelas, 526.334 linhas): espera
+  máxima de escrita com escritor em tabelas pequenas **1.076 ms**; com escritor
+  na maior tabela **3.961 ms**, fase 2 = **27,6%** da cópia, abaixo do gatilho
+  de 50% (o rastro físico, 2b, não foi implementado). A 561 MiB a espera caiu
+  de **7.202 ms para 665 ms**. Retrato restaurado abre íntegro. O `fsync` do
+  grosso antes da trava custa picos de ~0,4 s às escritas durante a cópia e não
+  comprou nada medível a 1 GB (H2 morreu); fica por decisão de desenho.
+- **524** — `fsync` na mãe de cada pasta que o backup criou (a cadeia
+  `novo/zips` podia sumir depois do «concluído»); provado pela ordem das
+  chamadas sob `strace`, **a queda real não foi medida**.
+- **632** — queda no meio do `*.novo` do volume n deixava o volume velho
+  sobrescrito por arquivo cortado: **1.088 bytes sobre 3.900, 30 linhas
+  destruídas** (medido pela queda real). Toda reescrita escreve todos os
+  `*.novo` antes de trocar.
+- **427** — o retrato da fase A passa a ver o volume que nasce durante ela. A
+  dúvida «tamanho e `mtime` bastam?» foi medida no ext4 (**0 de 2.000** passaram
+  invisíveis); o tique grosso de FAT/HFS+/NFS foi **simulado**, não medido.
+
+**Trava de instância e versão mínima**
+
+- **635** — um só processo grava cada pasta: `File::try_lock` em
+  `.phxsql.trava`; o segundo (CLI, FFI ou outro `phxsqld`) recebe
+  `4008 INSTANCIA_OCUPADA`. Ler continua livre; `kill -9` não deixa trava
+  eterna. Prova por processos reais, `bancada/instancia/provar.py` 4/4; corrida
+  do `fork`: 19/150 falhas só fechando o arquivo, 0/150 com `unlock` antes.
+- **Mudado: a versão mínima do Rust passa de 1.75 para 1.89** (`rust-version`
+  no `Cargo.toml`), custo direto do 635 — `File::try_lock` é da `std` 1.89. 19
+  avisos novos do clippy consertados.
+
+**Cifra**
+
+- **268** — `criptografar`/`descriptografar` (SQL `ALTER TABLE t ENCRYPT|DECRYPT`)
+  levam ao disco o que `cifra.tabelas` só declara. ~1,0 µs/slot (1.000.000 de
+  linhas em ~1,1 s), 32 `SIGKILL` pelo soquete sem tabela pela metade. **Limites
+  ditos:** recusa coluna `Memo`/`Bin` marcada; o histórico (`.log`, `.trash`,
+  `.reason`) e o `.ndx` ficam em claro; a migração é local e não replica.
+
+**Alertas e segurança**
+
+- **249** — saúde do disco com gancho de alerta (sonda canário, EROFS, erro de
+  E/S, e-mail e SMS por e-mail-para-SMS); revisão SEC: nenhum caminho remoto
+  vira execução de código, e a injeção por campo editável tem teste. O que o
+  PhxSql promete como «aviso por SMS» é decisão de produto e fica com o dono.
+- **638** — o firewall da lista negra rodava comando sem prazo, com ambiente
+  herdado e **sob o mutex da lista negra**: três tokens errados paravam o
+  servidor inteiro. Agora usa o MESMO motor do gancho, fora do mutex;
+  `firewall.timeout_s` (padrão 10, teto 120). Defeito reposto: o `ping` de outro
+  cliente ficou **2,01 s** sem resposta.
+
+**ODBC**
+
+- **238** — `SQL_C_WCHAR` e parâmetro `OUT`/`INOUT` provados pela **sonda viva**
+  (unixODBC 2.3.12, pyodbc 5.3.0, N=20). Ela achou **quatro defeitos** que
+  nenhum teste de unidade via: erro sem SQLSTATE nem texto, `DELETE` anunciando
+  colunas, `SQL_DESC_UNSIGNED` recusado e o `CALL` tratado antes de resolver
+  `parametros`. `{? = call ...}` segue sem substrato.
+
+**Interface**
+
+- **190** — botões sem prova: **90 → 0** nesta rodada; `TETO_BOTAO_SEM_PROVA`
+  virou `is_empty()`. `prova-real-botoes.mjs`: 13 controles e **67/67 defeitos
+  pegos**. Achou, entre outros, o «Declarar chave» dizendo o contrário da
+  decisão do dono. Cinco dispensas registradas com o motivo.
+- **636** — pintura tardia: a tela que chega depois de um `await` não cobre
+  mais a que a pessoa abriu. **59 funções** irmãs examinadas, 56 consertadas;
+  caso web novo cai nos dois temas sem o conserto; bateria web **73/73**.
+
+**Integridade**
+
+- **630** — `escritas_locais` só conta depois do portão 3: 10.100 escritas
+  recusadas deixam o mapa vazio (com o defeito, 5.101 chaves). Reaberto e
+  refeito em 02/10 por um teste que falhou uma vez: era defeito do código.
+- **631** — irmã cujo `.reg` não abre recusa a exclusão do pai, nomeando a
+  irmã (eram **três** cópias da falha aberta). Fica: duas irmãs quebradas na
+  mesma pasta se trancam no `excluir_tabela`; a saída é `reparar`.
+- **632**, **427**, **524** — acima, em «Backup e durabilidade».
+
+### O que NÃO está nesta versão
+
+- **Windows (637, ⏸):** o `mtime` do NTFS (resolução, «racily clean») só se
+  mede numa máquina Windows; a prova do backup em duas passadas é Linux/ext4
+  com tique simulado. A recusa da trava de instância no Windows não diz o pid.
+- **`Memo`/`Bin` na migração de cifra (268):** não são migrados; coluna
+  marcada recusa a migração. Histórico e `.ndx` ficam em claro.
+- **«ACID compliant» não é afirmado** (pedidos 189, 246, 337): falta a prova de
+  cada letra no nível declarado, e a atomicidade de um commit entre tabelas não
+  atravessa o fio da réplica (299). `SERIALIZABLE` não é reivindicado.
+- **TLS:** o PhxSql não termina TLS (a saída é proxy reverso, `MANUAL.txt`) e o
+  cliente SMTP dos alertas fala sem TLS (pedido 89), servindo a relé interno.
+- **Sequência nomeada e contador:** a nomeada não replica (decisão da §C.5.3) e
+  a promovida recusa pedir o `proximo`; `Inteiro(i64)` no `Json` não foi feito.
+- **Produtos que seguem planejados ☐/◐:** **325** (20 caixas sem servidor:
+  fila local e reconexão não existem), **333** (chat e robô no PhxMail),
+  **454** e **455** (servidor web e `PhxZipCmd`; a interface do PhxZip entrou,
+  o resto e o pacote não), **495** e **496** (IA que analisa ataque e prevê
+  catástrofe: decidido o desenho, nada implementado).
+- **Não medidos, ditos:** a queda real do `fsync` do 524; o FAT/HFS+/NFS reais
+  do 427; a sonda ODBC não roda no `./portoes.sh` (exige `unixodbc-dev` e `pyodbc`).
+
+
 ### 268 — `criptografar`/`descriptografar`: cifrar o que já está gravado, pedido
 
 **Adicionado**

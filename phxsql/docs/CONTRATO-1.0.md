@@ -337,7 +337,7 @@ candidatos, e por isso são perguntas — a coluna da direita diz qual.
 
 | | candidato | teste | pergunta |
 |---|---|---|---|
-| **P** | **Trava de diretório**: recusar subir quando outro processo já serve aquele caminho | (1) | [P4](#54-as-perguntas-que-este-documento-acrescenta) |
+| **R** | **Trava de diretório** — respondida em 01/10/2026 (pedido 635): o segundo gravador é recusado (`4008`) | (1) | [P4](#54-as-perguntas-que-este-documento-acrescenta) |
 | **P** | **A transação chega parcelada na réplica** (§2.4) — medir antes de decidir | (1) | P5 |
 | **P** | **A cascata escreve fora do escopo declarado da transação** — é o que falta do **C** | (1) | P6 |
 | **P** | **`replica.rs` sem teste no portão** — o laço que faz a replicação andar | (1) | P7 |
@@ -417,12 +417,14 @@ descreve?**
 
 Não estavam no roteiro, e cada uma passa no critério da §4.1.
 
-**P4 — A trava de diretório.** Não há trava de arquivo nem de registro
-(`FORMATO.md` §17), e conferido no código não há arquivo de trava: **nada impede
-dois processos de abrirem o mesmo diretório de dados.** O caso fácil de acontecer
-não é exótico — é a CLI `phxsql reindex` rodando num diretório que o `phxsqld`
-está servindo. **Entra na 1.0 uma trava de diretório que faz o segundo processo
-recusar subir dizendo quem já está lá?**
+**P4 — A trava de diretório. RESPONDIDA em 01/10/2026 (pedido 635).** A
+pergunta nasceu quando não havia trava de arquivo e nada impedia dois processos
+de abrirem o mesmo diretório de dados (o caso fácil era a CLI `phxsql reindex`
+rodando numa pasta que o `phxsqld` servia). Hoje há: `File::try_lock` no arquivo
+`.phxsql.trava`, tomado no ponto único da abertura gravável; o segundo gravador
+é recusado com `4008 INSTANCIA_OCUPADA`. O que continua sem resposta está na
+§2.3: a trava não vê quem não usa este motor (`cp`, editor) e no Windows não
+sabe dizer o pid. O custo foi a versão mínima do Rust, de 1.75 para 1.89.
 
 **P5 — A transação parcelada na réplica.** A posição de replicação é por tabela
 e não existe ordem global entre tabelas (`INTEGRIDADE.md` §3); um `COMMIT` que

@@ -7,7 +7,9 @@ Built to store. Engineered to scale.                      |   versao 0.19.0
 
 1. O QUE E
 --------------------------------------------------------------------------------
-O PhxSql guarda cada tabela logica em sete arquivos fisicos:
+O PhxSql guarda cada tabela logica em sete arquivos fisicos sempre presentes
+(ate onze tipos no total: .lgpd, .fts, .bkp e .pag aparecem so quando a tabela
+ou o config os pedem; ver docs/FORMATO.md):
 
     cadastroClientes.reg    registros, na ordem de digitacao
     cadastroClientes.ndx    indices (B+tree)
