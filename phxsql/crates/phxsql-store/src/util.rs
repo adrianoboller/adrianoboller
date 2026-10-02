@@ -572,6 +572,12 @@ impl Nascida {
         &self.mae
     }
 
+    /// O caminho real da nascida (o da mae mais o nome): so' para decidir a
+    /// quem ela pertence, nunca para remove-la -- isso e' pelo descritor.
+    pub fn real(&self) -> std::path::PathBuf {
+        self.mae.real().join(&self.nome)
+    }
+
     /// Remove a pasta se ela ainda e a que nasceu: pelo descritor da mae,
     /// conferindo dev/inode com `lstat` antes, e com `remove_dir` -- que so
     /// remove VAZIA e, no ultimo nome, nao segue link (`rmdir` de link da

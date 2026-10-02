@@ -15856,11 +15856,22 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "`conferir_destino`, pela grafia e pelo disco, antes de byte "
             "nenhum; o zip, um arquivo so, continua podendo ficar acima."
         ),
+        "espera": "nada muda",
+        "nota_da_redundancia": (
+            "medido em 02/10/2026 (frente do 513 passo 2), e nao deduzido: "
+            "desde o pedido 611 (S7, `conferir_destino_aberto`, commit "
+            "940e0e31 de 01/10 06:57) a mesma pergunta e feita ao DESCRITOR "
+            "da pasta aberta, antes da primeira copia -- entao repor so' a "
+            "conferencia de texto no `conferir_destino` nao e sentido por "
+            "teste nenhum: os quatro destinos do teste recusam no descritor. "
+            "A guarda que pega o par e `destino-do-backup-conferido-so-pelo-nome`. "
+            "A ultima PROVADA desta entrada e de 01/10 02:26, ANTES do 611."
+        ),
         "arquivo": "crates/phxsql-store/src/backup.rs",
-        "trecho": """    conferir_destino(raiz, destino, true)?;
+        "trecho": """    conferir_destino(origem, arvore, true)?;
 """,
         "troca": """    // DEFEITO REPOSTO (554): so a conferencia de texto de antes.
-    if destino.starts_with(raiz) {
+    if arvore.starts_with(origem) {
         return Err(PhxError::Esquema(
             "o destino do backup nao pode ficar dentro da raiz de dados".into(),
         ));
@@ -17815,7 +17826,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "prova derruba a copia de verdade (`ulimit -f`, `EFBIG`)."
         ),
         "arquivo": "crates/phxsql-store/src/backup.rs",
-        "trecho": """    invalidar_manifesto_velho(copias)?;
+        "trecho": """        invalidar_manifesto_velho(&self.copias)?;
 """,
         "troca": """    // DEFEITO REPOSTO (577): o manifesto velho fica no lugar.
 """,
@@ -17884,12 +17895,14 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "`executar` (sob a trava) e `concluir` (fora dela)."
         ),
         "arquivo": "crates/phxsql-store/src/backup.rs",
-        "trecho": """        copias.abertos.push((seguras < teto).then_some(arquivo));
+        "trecho": """                self.copias
+                    .abertos
+                    .push((seguras < self.teto).then_some(arquivo));
 """,
-        "troca": """        // DEFEITO REPOSTO (552): o descritor fecha na escrita.
-        let _ = (seguras, teto);
-        drop(arquivo);
-        copias.abertos.push(None);
+        "troca": """                // DEFEITO REPOSTO (552): o descritor fecha na escrita.
+                let _ = seguras;
+                drop(arquivo);
+                self.copias.abertos.push(None);
 """,
         "pacote": "phxsql-store",
         "alvo": ["--test", "fsync-no-descritor-que-escreveu"],
@@ -18708,11 +18721,11 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "defeito reposto e o `create_dir_all` e o caminho por nome."
         ),
         "arquivo": "crates/phxsql-store/src/backup.rs",
-        "trecho": """        let pasta = entrar_na_pasta(copias, &mut ancora_de, rel_p.parent())?;
-        let por_dentro = copias.ancoras[pasta].por_dentro(nome);
+        "trecho": """        let pasta = entrar_na_pasta(&mut self.copias, &mut self.ancora_de, rel_p.parent())?;
+        let por_dentro = self.copias.ancoras[pasta].por_dentro(nome);
 """,
         "troca": """        // DEFEITO REPOSTO (568): a pasta do meio se cria e se atravessa pelo nome.
-        let _ = (nome, entrar_na_pasta, &mut ancora_de);
+        let _ = (nome, entrar_na_pasta);
         crate::util::criar_diretorio_do_banco(alvo.parent().unwrap())?;
         let por_dentro = alvo.clone();
         // O fsync da pasta (593) cai no destino: a pasta do meio nem abriu.
@@ -20898,7 +20911,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "raiz (`conferir_destino_aberto`)."
         ),
         "arquivo": "crates/phxsql-store/src/backup.rs",
-        "trecho": """    conferir_destino_aberto(raiz, destino, &aberto, true)?;
+        "trecho": """        conferir_destino_aberto(&self.origem, &self.arvore, &aberto, true)?;
 """,
         "troca": """    // DEFEITO REPOSTO (611/S7): so a conferencia pelo nome, la em cima.
 """,
@@ -23276,6 +23289,187 @@ fn anotar(""",
         "alvo": ["--lib"],
         "caem": ["quorum::testes::o_degradado_volta_so_depois_do_recuo_e_do_alcance"],
         "seguem": ["quorum::testes::o_recuo_dobra_a_cada_degradacao"],
+        "prazo": 1200,
+    },
+    # ------------------------------------------------ 513, passo 2 (02/10/2026)
+    {
+        "id": "backup-fase-1-sob-a-trava",
+        "titulo": "A fase 1 do backup (a cópia inteira) sob a ficha de leitura: a escrita esperava a cópia inteira, como no passo 1",
+        "porque": (
+            "pedido 513, passo 2. A fase 1 corre SEM trava e so' a fase 2 (o "
+            "`stat` de tudo e a recopia do que mudou) exclui o escritor. Com a "
+            "trava reposta na fase 1, o `inserir` feito durante a pausa da fase "
+            "1 espera a pausa inteira (medido: 1.500 ms contra ~1 ms), e e' "
+            "isso que o aceite da bancada `bancada/backup/retrato-com-escritor.py` "
+            "mede num banco de verdade."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        let em_curso = phxsql_store::congelamento::comecar_retrato(&self.config.base)?;
+        let pronto = fase_1()?;
+        #[cfg(test)]
+        self.armar_panico_de_teste("backup_fase_1");
+        let _retrato = self.retrato.tirar_retrato();
+        let _trava = self.travar_dados_para_ler()?;
+""",
+        "troca": """        // DEFEITO REPOSTO (513/2): a fase 1 inteira sob a trava.
+        let em_curso = phxsql_store::congelamento::comecar_retrato(&self.config.base)?;
+        let _retrato = self.retrato.tirar_retrato();
+        let _trava = self.travar_dados_para_ler()?;
+        let pronto = fase_1()?;
+        #[cfg(test)]
+        self.armar_panico_de_teste("backup_fase_1");
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_do_retrato_do_backup::a_escrita_nao_espera_a_fase_1_e_o_retrato_e_o_do_fim",
+        ],
+        # A prova da manutencao NAO esta nos `seguem` de proposito: com a
+        # trava reposta na fase 1, o `acrescentar_coluna` espera no portao e
+        # entra depois do backup -- cai pelo defeito reposto, nao por estrago.
+        "seguem": [
+            "servidor::testes_do_retrato_do_backup::a_leitura_nao_espera_o_backup_e_a_escrita_espera",
+        ],
+        "prazo": 1200,
+    },
+    {
+        "id": "backup-sem-fase-2",
+        "titulo": "O backup em duas passadas SEM a fase 2: a cópia sai da fase 1, e a escrita feita durante ela não está no backup -- e o `conferir` aprova o retrato errado",
+        "porque": (
+            "pedido 513, passo 2 (contrato §513.6, teste 1). O manifesto e' "
+            "tirado da copia, entao o `conferir` aprova o que quer que a "
+            "fase 1 tenha deixado. A prova compara o tamanho do `.reg` VIVO "
+            "depois da escrita com o copiado: sem a fase 2, o copiado e' o de "
+            "antes da escrita."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """                    Pronto::Arvore(mut fase) => {
+                        let acerto = phxsql_store::backup::acertar_fase_2(&mut fase, eventos)?;
+                        (Pronto::Arvore(fase), Some(acerto))
+                    }
+""",
+        "troca": """                    // DEFEITO REPOSTO (513/2): a arvore sai sem a fase 2.
+                    Pronto::Arvore(fase) => (Pronto::Arvore(fase), Some(Default::default())),
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_do_retrato_do_backup::a_escrita_nao_espera_a_fase_1_e_o_retrato_e_o_do_fim",
+        ],
+        "seguem": [
+            "servidor::testes_do_retrato_do_backup::a_leitura_nao_espera_o_backup_e_a_escrita_espera",
+        ],
+        "prazo": 1200,
+    },
+    {
+        "id": "backup-fase-2-nao-acerta",
+        "titulo": "A fase 2 do armazém devolvendo um acerto vazio sem conferir nada: o alterado, o novo e o sumido entre as fases ficam como estavam na fase 1",
+        "porque": (
+            "pedido 513, passo 2, o mesmo defeito do `backup-sem-fase-2` visto "
+            "do armazem: `acertar_fase_2` e' o unico lugar que compara a arvore "
+            "da origem com o inventario da fase 1 e acerta o destino."
+        ),
+        "arquivo": "crates/phxsql-store/src/backup.rs",
+        "trecho": """    let feito = fase.acertar(eventos);
+""",
+        "troca": """    // DEFEITO REPOSTO (513/2): a fase 2 nao confere nada.
+    let _ = eventos;
+    let feito: Result<Acerto> = Ok(Acerto::default());
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--lib"],
+        "caem": [
+            "backup::tests::a_fase_2_acerta_o_alterado_o_novo_e_o_sumido",
+            "backup::tests::a_fase_2_recopia_os_arquivos_da_tabela_tocada",
+            "backup::tests::o_zip_em_duas_passadas_comprime_a_arvore_e_a_apaga",
+            "backup::tests::sem_mudanca_a_fase_2_so_confere",
+        ],
+        "seguem": [
+            "backup::tests::copia_tudo_e_confere",
+            "backup::tests::o_manifesto_e_estavel",
+        ],
+        "prazo": 900,
+    },
+    {
+        "id": "backup-fase-2-sem-racy",
+        "titulo": "A fase 2 decidindo só pelo `stat`: o arquivo escrito no mesmo tique do relógio (mtime e tamanho iguais) não é recopiado",
+        "porque": (
+            "pedido 513, passo 2 (contrato §513.4, a regra do `mtime` recente). "
+            "Kernel 6.18 com carimbo fino deu 0 repeticoes em 20.000 escritas; "
+            "kernels sem carimbo fino usam relogio grosso, e e' para eles que "
+            "a janela de 2 s existe -- o «racily clean» do git."
+        ),
+        "arquivo": "crates/phxsql-store/src/backup.rs",
+        "trecho": """    antes.lido_em_ns.saturating_sub(antes.mtime_ns) < JANELA_RACY_NS
+}
+""",
+        "troca": """    // DEFEITO REPOSTO (513/2): so' o `stat` decide.
+    let _ = JANELA_RACY_NS;
+    false
+}
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--lib"],
+        "caem": ["backup::tests::o_arquivo_racy_e_recopiado_mesmo_com_o_stat_igual"],
+        "seguem": [
+            "backup::tests::a_fase_2_so_recopia_o_que_o_stat_acusa",
+            "backup::tests::sem_mudanca_a_fase_2_so_confere",
+        ],
+        "prazo": 900,
+    },
+    {
+        "id": "backup-fase-2-sem-eventos",
+        "titulo": "A fase 2 sem a rede dos eventos: a tabela que andou com o relógio recuado (stat igual) não é recopiada",
+        "porque": (
+            "pedido 513, passo 2 (contrato §513.4, a terceira rede). `mtime` e "
+            "tamanho iguais depois de uma escrita so' acontecem com relogio que "
+            "recua ou tique grosso; o contador de eventos da tabela (a `Tocada` "
+            "do 207, somada no registro do retrato) nao depende do relogio."
+        ),
+        "arquivo": "crates/phxsql-store/src/backup.rs",
+        "trecho": """    if eventos_agora != eventos_antes {
+        return true;
+    }
+""",
+        "troca": """    // DEFEITO REPOSTO (513/2): sem a rede dos eventos.
+    let _ = (eventos_agora, eventos_antes);
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--lib"],
+        "caem": [
+            "backup::tests::a_tabela_que_andou_e_recopiada_mesmo_com_o_stat_igual",
+            "backup::tests::a_fase_2_recopia_os_arquivos_da_tabela_tocada",
+        ],
+        "seguem": ["backup::tests::a_fase_2_so_recopia_o_que_o_stat_acusa"],
+        "prazo": 900,
+    },
+    {
+        "id": "manutencao-durante-o-retrato",
+        "titulo": "`congelar` sem perguntar pelo retrato: a reescrita inteira de uma tabela entra no meio da fase 1 do backup",
+        "porque": (
+            "pedido 513, passo 2 (contrato §513.5, o bloqueio de manutencao). "
+            "MySQL 2 + MariaDB 3 bloqueiam DDL durante o backup, PG 4 nao: "
+            "bloqueia. Nao e' correcao (a fase 2 compara a arvore inteira), e' "
+            "custo: um `.reg` reescrito inteiro vai para a fase 2, que roda "
+            "sem escritor. A recusa e' 4006 com `repetir: true`."
+        ),
+        "arquivo": "crates/phxsql-store/src/congelamento.rs",
+        "trecho": """    if em_retrato_de(diretorio) {
+        return Err(recusa_de_manutencao_no_retrato(&format!(
+            "a reescrita da tabela {nome}"
+        )));
+    }
+""",
+        "troca": """    // DEFEITO REPOSTO (513/2): a reescrita entra durante o retrato.
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_do_retrato_do_backup::a_manutencao_espera_o_backup_e_o_dado_nao",
+        ],
+        "seguem": [
+            "servidor::testes_do_retrato_do_backup::sem_backup_a_manutencao_passa_e_o_zip_sai_em_duas_passadas",
+        ],
         "prazo": 1200,
     },
 ]

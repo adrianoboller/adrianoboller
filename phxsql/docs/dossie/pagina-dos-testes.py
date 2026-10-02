@@ -593,6 +593,41 @@ BANCADAS = [
                    ("vezes_3de3", "commit esperando 3 de 3", "×")],
     },
     {
+        "nome": "Backup com escritor concorrente — o passo 2 do 513, pelo soquete",
+        "json": "bancada/backup/resultados.json",
+        "roda": "python3 bancada/backup/retrato-com-escritor.py --mb 512",
+        "prova": "um phxsqld próprio, banco de N MB em 20 tabelas, uma thread "
+                 "gravando sem parar durante o backup em árvore; o escritor em "
+                 "duas tabelas pequenas (A) e na maior (B); a espera máxima de "
+                 "uma escrita no passo 1 (binário de antes) contra as duas "
+                 "passadas; o retrato restaurado com outro nome e aberto. Faixas "
+                 "min-max em 3 voltas (pedido 155)",
+        # Um bloco por rotulo (duas_passadas / passo_1): a projecao poe lado a
+        # lado a espera maxima de uma escrita no cenario A dos dois, a fase 2 e
+        # o tamanho medido, com a data do rotulo das duas passadas.
+        "ver": lambda d: {
+            "quando": d.get("duas_passadas", {}).get("quando"),
+            "mib": round((d.get("duas_passadas", {}).get("bytes_em_disco") or 0) / 1048576),
+            "escrita_max_A_duas_passadas": (d.get("duas_passadas", {}).get("cenarios", {})
+                                            .get("A", {}).get("escrita_max_ms", {})
+                                            .get("mediana")),
+            "escrita_max_A_passo_1": (d.get("passo_1", {}).get("cenarios", {})
+                                      .get("A", {}).get("escrita_max_ms", {}).get("mediana")),
+            "fase_2_A": (d.get("duas_passadas", {}).get("cenarios", {}).get("A", {})
+                         .get("fase_2_ms", {}).get("mediana")),
+            "fase_2_B": (d.get("duas_passadas", {}).get("cenarios", {}).get("B", {})
+                         .get("fase_2_ms", {}).get("mediana")),
+            "integro": (d.get("duas_passadas", {}).get("cenarios", {}).get("A", {})
+                        .get("restaurado_integro")),
+        },
+        "campos": [("mib", "banco", "MiB"),
+                   ("escrita_max_A_passo_1", "escrita espera (passo 1, A)", "ms"),
+                   ("escrita_max_A_duas_passadas", "escrita espera (duas passadas, A)", "ms"),
+                   ("fase_2_A", "fase 2 (A)", "ms"),
+                   ("fase_2_B", "fase 2 (B, maior tabela)", "ms"),
+                   ("integro", "restaurado íntegro", "")],
+    },
+    {
         "nome": "ACID — as quatro letras",
         "json": "bancada/acid/resultado.json",
         "roda": "python3 bancada/acid/prova.py",

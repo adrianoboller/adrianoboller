@@ -2879,6 +2879,7 @@ torna a cópia **conferível** e restaurável.
   "phxsql": "0.18.0",
   "quando": "2026-08-29 03:00:04,132",
   "quando_ms": 1787972404132,
+  "retrato_ms": 1787972404901,
   "arquivos": 9,
   "bytes": 1048576,
   "escopo": "database",
@@ -2898,6 +2899,7 @@ torna a cópia **conferível** e restaurável.
 | `escopo` | **v2** | `raiz` (cada diretório de primeiro nível é um database) ou `database` |
 | `database` | **v2** | o nome do banco, quando o escopo é `database` |
 | `quando_ms` | **v3** | o mesmo instante em milissegundos desde a época |
+| `retrato_ms` | **v4** | o instante do **retrato** — quando o conteúdo é consistente (pedido 513, passo 2); `null` só na conferência |
 
 Os campos novos são **acréscimos**: manifesto antigo não os tem e continua
 válido — a restauração deduz o escopo pelos caminhos e diz que deduziu. Um
@@ -2925,6 +2927,20 @@ quem escreveu aquele texto foi o `instante_iso` desta casa, e o
 instante legível (um escrito à mão, com `"agora"`) faz o PITR **recusar
 nomeando o campo**, enquanto a restauração simples do mesmo arquivo continua
 funcionando.
+
+### `retrato_ms` — o backup em duas passadas (pedido 513, passo 2)
+
+`quando_ms` é quando o backup **começou**; `retrato_ms` é o instante em que o
+conteúdo da cópia é o da raiz, byte a byte. Os dois diferem pela duração da
+**fase 1**: desde 02/10/2026 o servidor copia a raiz inteira *sem* a trava de
+dados (a escrita continua), e só então, sob a ficha de leitura e com o
+escritor parado no portão do retrato, faz a **fase 2** — o `stat` de cada
+arquivo contra a ficha anotada na fase 1, recopiando o que mudou, o que
+nasceu, e tirando o que sumiu. O retrato é o instante da fase 2, como o
+`BLOCK_COMMIT` do `mariabackup`. Na cópia em uma passada (a CLI, com o
+servidor parado) o retrato é a cópia inteira, e o campo traz o começo dela.
+Manifesto anterior não tem o campo e continua restaurando; o PITR continua
+usando `quando_ms`.
 
 **O manifesto existir quer dizer «pronto no disco», e a ordem é o que garante
 isso.** Numa pasta reaproveitada, o `backup.json` da corrida anterior sai antes

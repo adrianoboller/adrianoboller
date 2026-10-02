@@ -2405,6 +2405,80 @@ e essa primeira leitura espera a cópia. Cognição:
 
 ---
 
+### 16.11 O backup em duas passadas: a escrita espera só a fase 2 (02/10, pedido 513 passo 2)
+
+A cópia (`Servidor::copiar_o_retrato`, a MESMA para o protocolo e o agendado,
+agora por `fazer_backup`) deixou de segurar ficha nenhuma durante a cópia
+inteira. São duas fases, decididas num lugar só:
+
+- **fase 1** — `backup::copiar_fase_1`: sem trava, com o `stat` de cada arquivo
+  **antes** de lê-lo (tamanho, `mtime` em ns, dev/inode, o instante do `stat`),
+  e o `fsync` de tudo ainda fora da trava (`sincronizar_fase_1`);
+- **fase 2** — `backup::acertar_fase_2`: o caminho do passo 1 (portão do
+  retrato + ficha de leitura, só o escritor espera): refaz o `stat` de tudo e
+  recopia o que [`precisa_recopiar`](../crates/phxsql-store/src/backup.rs)
+  manda — o `stat` mudou; **ou** o diário da tabela andou desde a fase 1 (a
+  `Tocada` do 207, somada por tabela no registro do retrato do
+  `congelamento.rs`, para relógio que recua); **ou** o `mtime` da fase 1 estava
+  a menos de 2 s do próprio `stat` (o «racily clean» do git). Copia o que
+  nasceu, tira do destino o que sumiu, e o `concluir` de depois só sincroniza o
+  que a fase 2 reescreveu.
+
+O retrato é o instante da fase 2 (`retrato_ms`, no manifesto e na resposta),
+como o `BLOCK_COMMIT` do `mariabackup`; o caso que se aplica a nós é o do
+MariaDB para tabela **sem redo** — copiar por fora, recopiar sob o bloqueio
+curto o que estava em uso —, porque o `.log` é lógico e o replay físico do
+PostgreSQL não existe aqui (contrato
+`docs/propostas/207-e-513p2-contrato-01-10-2026.md` §513).
+
+**O que espera, de propósito:** a manutenção. `congelamento::congelar` recusa
+enquanto há retrato da raiz (4006, `repetir: true`), e o despachar recusa
+`OPS_DE_MANUTENCAO` (criar/apagar/renomear/duplicar/copiar tabela, criar
+database e schema, `reindexar`, `restaurar_backup`) pela mesma pergunta. Não é
+correção — a fase 2 compara a árvore inteira e conta `fora_do_bloqueio` — é
+custo: MySQL (`LOCK INSTANCE FOR BACKUP`) 2 + MariaDB (`BLOCK_DDL`) 3 = 5
+contra PostgreSQL 4. O registro do retrato é **por raiz de dados**, e solta
+**antes** da trava e do portão: quem esperou a fase 2 no portão não pode ver um
+retrato que já acabou (achado pelo provador de guardas, não por leitura).
+
+**Medido pelo soquete** (`bancada/backup/retrato-com-escritor.py`, 02/10/2026,
+`resultados.json` com a data): banco de **561 MiB** em 20 tabelas (263.166
+linhas de ~2 KB), uma thread gravando `inserir`/`atualizar`/`excluir` sem parar
+e uma lendo, backup em árvore, 3 voltas, mediana e faixa min–max (pedido 155):
+
+| | escrita espera, máximo | fase 2 | backup inteiro |
+|---|---|---|---|
+| **passo 1**, escritor em 2 tabelas pequenas (A) | **7.202 ms** [6.052–7.919] | — | 7.786 ms |
+| **duas passadas**, A | **665 ms** [585–699] | 631 ms [532–670], 69–88 MB | 8.303 ms |
+| **passo 1**, escritor na maior tabela (B) | **5.737 ms** [5.556–7.521] | — | 6.275 ms |
+| **duas passadas**, B | **2.517 ms** [2.514–2.703] | 2.316 ms [2.312–2.485], 302–324 MB | 9.134 ms |
+
+Aceite do contrato (§513.6): no A, a espera máxima de uma escrita é **≤ fase 2
++ 10 %** (665 ≤ 694) e **≤ 1/10 do passo 1** (665 ≤ 720), faixas sem se
+cruzar — **o 2a entra**. No B a fase 2 é **25,4 %** da cópia inteira, abaixo
+dos 50 % que disparariam o 2b (rastro físico, H-C): **não dispara**, e fica
+dito que o escritor na maior tabela paga a recopia dela inteira (~300 MB). O
+retrato restaurado com outro nome abre e confere nos dois cenários.
+
+**Dois achados da medição, nenhum dos dois por leitura:**
+
+- a primeira versão da bancada media só o `inserir`, e a espera da fase 2 cai
+  na operação que estiver na vez — numa volta o máximo deu 2.490 ms, na
+  seguinte 44 ms, com a mesma fase 2. Hoje mede toda escrita e o `inserir` ao
+  lado;
+- com o `fsync` das copias da fase 1 **depois** da fase 2, o escritor que
+  esperou no portão voltava para um disco ocupado sincronizando meio gigabyte:
+  ~100 ms a mais que a fase 2 (555/646/716 contra 477/545/581). Com o `fsync`
+  da fase 1 antes da trava, ~30 ms (585/699/665 contra 532/670/631). O
+  diagnóstico foi hipótese escrita e medida nos dois sentidos.
+
+**O que fica:** a leitura máxima (~190–375 ms nos dois binários) não é do
+backup — é a mesma com e sem ele — e fica como número, não como causa; o zip
+monta o arquivo em RAM como antes, e sem espaço para a árvore temporária cai
+na passada única **dizendo** (`modo: retrato_inteiro`); a disputa de E/S da
+fase 1 com o escritor não foi isolada (a bancada mede o escritor durante o
+backup inteiro, e o p99 do `inserir` ficou em 1,4–7,1 ms); Windows não foi
+provado (`mtime` do NTFS por caminho, contrato §513.7).
 ## 17. O mapa das threads — semáforo e teto (16/09/2026, pedido 248)
 
 Pedido do dono, literal: *«Multi threads devem ter um controle altamente
