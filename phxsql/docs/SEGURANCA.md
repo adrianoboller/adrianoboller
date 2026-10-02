@@ -352,10 +352,13 @@ fica só o que é segurança, revisto com o chapéu trocado em 16/09/2026:
 ### O gancho do operador: um programa que o servidor executa para avisar (pedido 249, 02/10/2026)
 
 Aqui o servidor passa a **executar um programa** por conta de um evento de
-disco. Precedente a dizer: a regra de firewall (§5) já executa um argv do
-`config.json` (`blacklist.rs`), mas reage a um IP e roda com `.output()` — sem
-prazo e com o ambiente herdado; o gancho é o primeiro com `env_clear`, prazo
-duro e saída descartada. Lente e o que cada decisão fecha (provas e guardas
+disco. Precedente a dizer: a regra de firewall (§5) já executava um argv do
+`config.json` (`blacklist.rs`), mas com `.output()` — **sem prazo, com o
+ambiente herdado e sob o mutex da lista negra** (pedido 638, ALTA: um comando
+pendurado parava o servidor inteiro, a pedido de um cliente sem credencial).
+Desde o 638 o firewall passa pelo **mesmo motor** do gancho (`gancho::rodar`:
+`env_clear`, prazo duro com `kill`+`wait`, saída descartada) e roda **fora do
+mutex** — ver §5. Lente e o que cada decisão fecha (provas e guardas
 `gancho-*`):
 
 1. **Sem shell, sem substituição.** `comando` é um vetor `argv` entregue ao
@@ -365,18 +368,39 @@ duro e saída descartada. Lente e o que cada decisão fecha (provas e guardas
    `CAMPOS_EDITAVEIS`: com ele, `administrar` pela API (ou `ALTER SERVER SET`)
    viraria execução de código no servidor. O teste tenta o campo, a seção
    inteira e o `ALTER`, e o arquivo sai igual.
-3. **O programa é validado no arranque**: caminho absoluto (o `PATH` de quem
-   subiu o servidor não vale), existente, arquivo comum, executável e **não
-   gravável por «outros»** — programa que qualquer conta da máquina reescreve
-   é execução de código oferecida a essa conta. Elemento do `comando` que não
-   é texto é recusado, não descartado (descartar deslocaria os argumentos).
+3. **O programa é validado no arranque** (pedido 639, o `StrictModes` do ssh
+   e a checagem de permissão da chave do PostgreSQL): caminho absoluto (o
+   `PATH` de quem subiu o servidor não vale), existente, arquivo comum,
+   executável, **não gravável por «grupo» nem por «outros»**, **dono root ou o
+   usuário do servidor**, e **cada diretório da cadeia (já resolvida) sem
+   escrita por grupo/outros — exceto com o bit sticky (`/tmp`) — e de dono
+   confiável**: quem escreve no diretório troca o programa por `rename` sem
+   tocar no arquivo conferido. **Link simbólico não é recusado por ser link**
+   (`/bin/sh` e `/usr/bin/python3` são links, e recusá-los reprovaria o caso
+   comum — foi o primeiro desenho, e o teste do `alertas.gancho` com
+   `/bin/sh` o desmentiu): cada elo entra na conta — dono do link, diretório
+   onde mora — e o *alvo* é julgado pelo modo e pelo dono. Elemento do `comando`
+   que não é texto é recusado, não descartado (descartar deslocaria os
+   argumentos). `Gancho::validar` roda também em toda gravação de config:
+   com o script removido depois do boot, **qualquer edição de config pela
+   tela falha** (fail-closed, de propósito). **Limites, ditos:** a conferência
+   é do arranque, não do `exec` — quem ganhar escrita *depois* vence a corrida
+   (a `std` não tem `fexecve`); e **no Windows não há checagem de dono nem de
+   ACL** (só existência): o operador protege o programa pelas ACLs do sistema.
 4. **Ambiente limpo.** `env_clear` + `PATH` fixo + três variáveis do evento.
    A senha do relé, o token e a chave do fio moram no ambiente do servidor e
    não atravessam (teste: nenhuma `CARGO_*` chega ao filho).
 5. **O que entra é pouco**: tipo, origem (só `[A-Za-z0-9._-]`, até 64 — vem
    de fora do módulo e variável com quebra de linha é o que um script
    desatento interpola) e hora; no stdin, a linha de ≤160 caracteres do SMS,
-   sem caminho. **Nunca o pedido.**
+   sem caminho. **Nunca o pedido.** **Mas a linha carrega texto do usuário**:
+   `database` e `tabela` vêm do pedido de um usuário autenticado e entram nela
+   (pedido 643: todo caractere de controle — CR, LF, ESC, NUL, DEL, os C1,
+   U+2028/2029 — vira espaço, num ajudante só, o mesmo do SMS por e-mail).
+   Higiene não é confiança: **o script do operador NUNCA faz `eval`, `sh -c`
+   nem interpolação da linha em comando** — trate-a como dado (`read -r`,
+   aspas, `printf '%s'`). Nome hostil que chegue até um erro de E/S ainda
+   pode trazer `;`, `$()` e crase *impressos*, só não controles.
 6. **O que sai é descartado.** stdout e stderr do filho vão para `/dev/null`,
    e não são capturados nem truncados: texto de programa externo no log ou no
    painel seria o caminho do segredo do gateway (um `curl -v`) até o
@@ -392,11 +416,34 @@ duro e saída descartada. Lente e o que cada decisão fecha (provas e guardas
 9. **A tela e a op `config` mostram o programa e a quantidade de argumentos,
    nunca os argumentos**; o `Debug` da `Config` idem.
 
+10. **Texto de campo editável não vira seção (B1a do 249).** O campo
+    `alertas.gancho` não é editável, mas o *valor* de um campo editável poderia
+    carregar `x","alertas":{"gancho":{...}}` e, se a gravação emendasse texto
+    cru, abrir a seção. O teste grava essa carga em **cada** campo Texto de
+    `CAMPOS_EDITAVEIS` (pelas duas rotas: troca cirúrgica e reserialização) e
+    pelo cadastro (`login`, `nome`, `email`), e o arquivo relido continua sem
+    `gancho`; o valor fica **literal**. Prova com o defeito reposto: o
+    escritor de JSON sem escapar a aspa derruba o teste (guarda
+    `json-texto-sem-escapar-a-aspa`). O «cinto» de `gravar_a_arvore` passou de
+    lido a provado.
+11. **A execução única solta a reserva por `Drop`** (pedido 640): um `panic`
+    com a reserva na mão não deixa o gancho morrer calado.
+12. **O filho não herda descritores** (pedido 642): a `std` abre arquivos e
+    soquetes com `CLOEXEC`; provado contra o SO — o script lista
+    `/proc/$$/fd` e só aparecem 0, 1, 2 (e o do próprio script), com um
+    arquivo e um listener abertos no processo. Controle: um descritor aberto
+    *sem* `CLOEXEC` por um shell pai aparece na mesma listagem. Residual: fds
+    não-`CLOEXEC` herdados do lançador (socket activation do systemd)
+    passariam.
+
 **Risco residual, dito:** o `kill` alcança o filho direto, não os netos (a
 `std` não tem `killpg`; `unsafe`/FFI não entra). **Quem escreve o
 `config.json` já executa código como o servidor** (pode trocar o `comando`),
 o que é a mesma fronteira de confiança do arquivo desde sempre — por isso o
-campo não sai dele. O segredo do gateway fica no script do operador.
+campo não sai dele. **Corolário: um script do mesmo uid do servidor + qualquer
+primitiva de escrita no `config.json` ou no próprio script = execução de
+código** (RCE); nenhuma checagem de permissão fecha isso, só a fronteira de
+confiança. O segredo do gateway fica no script do operador.
 
 ---
 
@@ -449,9 +496,12 @@ lista. Custa um `stat` por conexão.
 "firewall": {
   "ligado": false,
   "bloquear":    ["/usr/sbin/iptables", "-I", "INPUT", "-s", "{ip}", "-j", "DROP"],
-  "desbloquear": ["/usr/sbin/iptables", "-D", "INPUT", "-s", "{ip}", "-j", "DROP"]
+  "desbloquear": ["/usr/sbin/iptables", "-D", "INPUT", "-s", "{ip}", "-j", "DROP"],
+  "timeout_s": 10
 }
 ```
+
+`timeout_s` é o prazo duro de cada execução (padrão 10, de 1 a 120).
 
 **O bloqueio nunca depende disto.** Um IP na lista é recusado dentro do
 servidor, sem firewall, sem root, sem poder falhar. A regra é um extra que
@@ -468,6 +518,34 @@ Três cuidados, e eles não são decorativos:
 
 Se o comando falhar, o bloqueio **continua valendo** dentro do servidor e a
 falha vira aviso no log. Firewall quebrado não vira porta aberta.
+
+**Como o comando roda (pedido 638, ALTA).** Antes, `Command::output()` — sem
+prazo, com o ambiente herdado e o `stderr` do filho dentro do erro — rodava
+**dentro do mutex da lista negra**, que `barrado()` pega em **toda** conexão:
+um `iptables` sem `-w` sob a trava do xtables, ou um `nft` travado, parava o
+servidor inteiro, e o gatilho era um cliente *sem credencial* errando o token.
+Medido pelo soquete (`tests/firewall-que-pendura.rs`, firewall
+`["/bin/sleep","60"]`, política de 3 tentativas): com o defeito, o `ping` de
+outro cliente ficou **2,01 s sem resposta** (prazo do teste); consertado,
+responde na hora. O conserto tem duas partes:
+
+* **Mesmo motor do gancho** (`gancho::rodar`; um só, porque dois envelheceriam
+  separados): `env_clear` com `PATH` fixo (inclui `sbin`), prazo duro com
+  `kill`+`wait` (`firewall.timeout_s`, padrão 10, teto 120), stdout/stderr
+  descartados — o erro diz «saiu com código N» ou «passou de N s e foi morto»,
+  nunca o que o programa imprimiu.
+* **Fora do mutex.** `Blacklist` não executa nada: grava o bloqueio e devolve;
+  quem chamou aplica a regra *depois* de soltar a lista
+  (`blacklist::aplicar_no_firewall`, que pede o `&Mutex` e não um guarda, para a
+  assinatura não deixar chamar com a lista na mão). O IP já é barrado desde a
+  gravação; o fim do comando só anota `firewall: true`. O mesmo vale para
+  desbloquear (`op_desbloquear`) e para os vencidos (`barrado()`, a cada
+  conexão).
+
+**Limite dito:** o `kill` alcança o filho direto (como no gancho), e o prazo
+vale para *cada* execução — quem provoca o bloqueio espera até `timeout_s` pela
+própria resposta, e a conexão que encontra bloqueios vencidos para soltá-los
+espera o mesmo; ninguém mais espera.
 
 Para o `iptables` funcionar, o `phxsqld` precisa rodar como root ou ter
 `CAP_NET_ADMIN` — o que é um aumento de privilégio real. Pense se compensa:

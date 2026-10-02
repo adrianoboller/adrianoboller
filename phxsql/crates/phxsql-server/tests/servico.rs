@@ -396,9 +396,8 @@ fn ip_bloqueado_tem_a_proxima_conexao_recusada_e_soltar_devolve() {
     // Soltar por OUTRO processo (o caminho do phxsqld --desbloquear): mexe no
     // arquivo, e o servidor rele sozinho.
     {
-        let politica = phxsql_server::Politica::default();
         let mut bl = phxsql_server::Blacklist::abrir(base.join("blacklist.json")).unwrap();
-        assert!(bl.desbloquear("127.0.0.1", &politica).unwrap());
+        assert!(bl.desbloquear("127.0.0.1").unwrap());
     }
     let r = pedir(porta, &format!("{{\"token\":\"{TOKEN}\",\"op\":\"ping\"}}"));
     assert!(

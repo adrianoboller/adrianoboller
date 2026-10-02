@@ -90,6 +90,31 @@ pub fn origem_limpa(origem: &str) -> String {
         .collect()
 }
 
+/// Soltura da reserva por `Drop` (pedido 640): um `panic` entre pegar a
+/// reserva e devolve-la deixava `em_voo=true` para sempre, e o gancho morria
+/// calado. Com o `Drop` a reserva volta tambem durante o desenrolamento.
+struct Reserva<'a>(&'a AtomicBool);
+
+impl Drop for Reserva<'_> {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::Release);
+    }
+}
+
+/// Pega a reserva da execucao unica e roda `f`; quem a perde e descartado. E o
+/// UNICO ponto que toca em `em_voo`, e por isso o teste do panic o chama
+/// direto: provar a guarda aqui e provar a do `executar`.
+fn com_reserva<T>(em_voo: &AtomicBool, f: impl FnOnce() -> T) -> Result<T, String> {
+    if em_voo
+        .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+        .is_err()
+    {
+        return Err("gancho descartado: a execucao anterior ainda esta em andamento".into());
+    }
+    let _reserva = Reserva(em_voo);
+    Ok(f())
+}
+
 /// Executa o gancho UMA vez, com prazo duro. `Ok(())` quando o programa saiu
 /// com codigo zero; o erro e uma frase curta que NUNCA carrega o que o
 /// programa imprimiu.
@@ -100,41 +125,78 @@ pub fn origem_limpa(origem: &str) -> String {
 ///
 /// `em_voo` e a reserva da execucao unica: quem a perde e descartado.
 pub fn executar(g: &Gancho, c: &Chamada, em_voo: &AtomicBool) -> Result<(), String> {
-    let Some(programa) = g.comando.first() else {
+    if g.comando.is_empty() {
         return Err("gancho ligado sem comando".into());
-    };
-    if em_voo
-        .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-        .is_err()
-    {
-        return Err("gancho descartado: a execucao anterior ainda esta em andamento".into());
     }
-    let r = executar_reservado(g, programa, c);
-    em_voo.store(false, Ordering::Release);
-    r
+    let origem = origem_limpa(c.origem);
+    let ambiente = [
+        ("PHXSQL_TIPO", c.tipo),
+        ("PHXSQL_ORIGEM", origem.as_str()),
+        ("PHXSQL_QUANDO", c.quando),
+    ];
+    com_reserva(em_voo, || {
+        rodar(&Execucao {
+            rotulo: "gancho",
+            argv: &g.comando,
+            path: PATH_DO_FILHO,
+            ambiente: &ambiente,
+            entrada: Some(c.linha),
+            prazo_s: g.timeout_s,
+        })
+    })?
 }
 
-fn executar_reservado(g: &Gancho, programa: &str, c: &Chamada) -> Result<(), String> {
+/// O que o motor de execucao precisa saber. O gancho do operador e o comando
+/// de firewall da lista negra (pedido 638) sao DUAS maneiras de pedir a mesma
+/// coisa -- rodar um programa de fora, sem shell, sem ambiente herdado, com
+/// prazo e sem capturar o que ele imprime --, e por isso passam por aqui: um
+/// segundo motor envelheceria sem o outro, e o firewall ja tinha envelhecido
+/// (`output()` sem prazo, ambiente herdado, `stderr` dentro do erro).
+pub struct Execucao<'a> {
+    /// Como o erro chama o programa («gancho», «comando de firewall»).
+    pub rotulo: &'a str,
+    /// O argv inteiro; o `[0]` e o programa.
+    pub argv: &'a [String],
+    /// O `PATH` do filho. Fixo: o do servidor nao atravessa.
+    pub path: &'a str,
+    /// As variaveis do evento, alem do `PATH`.
+    pub ambiente: &'a [(&'a str, &'a str)],
+    /// O que vai no stdin; `None` fecha o stdin (`/dev/null`).
+    pub entrada: Option<&'a str>,
+    /// O prazo duro, em segundos (no minimo 1).
+    pub prazo_s: u64,
+}
+
+/// Roda o programa UMA vez, com prazo duro, e devolve uma frase que nunca
+/// carrega o que ele imprimiu nem o caminho dele.
+pub fn rodar(e: &Execucao) -> Result<(), String> {
+    let Some(programa) = e.argv.first() else {
+        return Err(format!("{} sem comando", e.rotulo));
+    };
+    let rotulo = e.rotulo;
     let mut cmd = Command::new(programa);
-    cmd.args(&g.comando[1..])
-        .env_clear()
-        .env("PATH", PATH_DO_FILHO)
-        .env("PHXSQL_TIPO", c.tipo)
-        .env("PHXSQL_ORIGEM", origem_limpa(c.origem))
-        .env("PHXSQL_QUANDO", c.quando)
-        .current_dir(diretorio_neutro())
-        .stdin(Stdio::piped())
+    cmd.args(&e.argv[1..]).env_clear().env("PATH", e.path);
+    for (k, v) in e.ambiente {
+        cmd.env(k, v);
+    }
+    cmd.current_dir(diretorio_neutro())
+        .stdin(if e.entrada.is_some() {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        })
         .stdout(Stdio::null())
         .stderr(Stdio::null());
-    let mut filho = iniciar(&mut cmd)?;
-    if let Some(mut entrada) = filho.stdin.take() {
+    let mut filho = iniciar(&mut cmd, rotulo)?;
+    if let (Some(linha), Some(mut entrada)) = (e.entrada, filho.stdin.take()) {
         // 160 caracteres cabem no pipe sem bloquear. Um programa que nao
         // le o stdin faz o `write` falhar com EPIPE, e isso nao e erro.
-        let _ = entrada.write_all(c.linha.as_bytes());
+        let _ = entrada.write_all(linha.as_bytes());
         let _ = entrada.write_all(b"\n");
         // `entrada` cai aqui: o filho ve o fim do stdin.
     }
-    let limite = Instant::now() + Duration::from_secs(g.timeout_s.max(1));
+    let prazo = e.prazo_s.max(1);
+    let limite = Instant::now() + Duration::from_secs(prazo);
     loop {
         match filho.try_wait() {
             Ok(Some(estado)) => {
@@ -142,23 +204,23 @@ fn executar_reservado(g: &Gancho, programa: &str, c: &Chamada) -> Result<(), Str
                     Ok(())
                 } else {
                     Err(match estado.code() {
-                        Some(n) => format!("o gancho saiu com codigo {n}"),
-                        None => "o gancho foi encerrado por um sinal".into(),
+                        Some(n) => format!("o {rotulo} saiu com codigo {n}"),
+                        None => format!("o {rotulo} foi encerrado por um sinal"),
                     })
                 };
             }
             Ok(None) => {}
-            Err(e) => {
+            Err(er) => {
                 matar_e_colher(&mut filho);
-                return Err(format!("nao foi possivel vigiar o gancho ({:?})", e.kind()));
+                return Err(format!(
+                    "nao foi possivel vigiar o {rotulo} ({:?})",
+                    er.kind()
+                ));
             }
         }
         if Instant::now() >= limite {
             matar_e_colher(&mut filho);
-            return Err(format!(
-                "o gancho passou de {} s e foi morto",
-                g.timeout_s.max(1)
-            ));
+            return Err(format!("o {rotulo} passou de {prazo} s e foi morto"));
         }
         std::thread::sleep(PASSO_DA_VIGIA);
     }
@@ -174,7 +236,7 @@ fn matar_e_colher(filho: &mut std::process::Child) {
 /// Inicia o filho. Um script recem-escrito pode dar `ETXTBSY` (26) se outra
 /// thread estava com o arquivo aberto para escrita no instante do `fork`; e
 /// transiente, e repetir poucas vezes e a resposta documentada.
-fn iniciar(cmd: &mut Command) -> Result<std::process::Child, String> {
+fn iniciar(cmd: &mut Command, rotulo: &str) -> Result<std::process::Child, String> {
     let mut tentativas = 0;
     loop {
         match cmd.spawn() {
@@ -187,7 +249,7 @@ fn iniciar(cmd: &mut Command) -> Result<std::process::Child, String> {
             // programa, e este texto vai ao painel.
             Err(e) => {
                 return Err(format!(
-                    "nao foi possivel iniciar o gancho ({:?})",
+                    "nao foi possivel iniciar o {rotulo} ({:?})",
                     e.kind()
                 ))
             }
@@ -205,12 +267,75 @@ fn diretorio_neutro() -> &'static Path {
     }
 }
 
+/// Troca por espaco tudo o que e controle (CR, LF, ESC, NUL, DEL, os C1) e
+/// corta em `limite` caracteres. E o ajudante UNICO das linhas de aviso que
+/// saem do servidor para fora -- o SMS por e-mail e o stdin do gancho --, e
+/// existe porque a linha leva `database`/`tabela` vindos do pedido (pedido
+/// 643): so CR/LF eram trocados, e um nome com `ESC[` chegava ao terminal do
+/// operador, ou a um `eval` descuidado do script dele. Duas copias desta
+/// decisao seriam a que alguem esquece de atualizar.
+pub fn linha_limpa(texto: &str, limite: usize) -> String {
+    texto
+        .chars()
+        .map(|c| {
+            if c.is_control() || c == '\u{2028}' || c == '\u{2029}' {
+                ' '
+            } else {
+                c
+            }
+        })
+        .take(limite)
+        .collect()
+}
+
+/// O uid com que o servidor roda. `/proc/self` pertence a quem executa o
+/// processo; fora do Linux nao ha como saber sem FFI, e `None` faz so o root
+/// valer como dono.
+#[cfg(unix)]
+fn uid_do_servidor() -> Option<u32> {
+    use std::os::unix::fs::MetadataExt;
+    std::fs::metadata("/proc/self").ok().map(|m| m.uid())
+}
+
+/// Este dono pode ter escrito o programa (ou o diretorio dele)? Root ou o
+/// proprio usuario do servidor: qualquer outro que possa reescrever o arquivo
+/// ganha execucao de codigo com os privilegios do servidor.
+#[cfg(unix)]
+fn dono_confiavel(uid: u32, servidor: Option<u32>) -> bool {
+    uid == 0 || Some(uid) == servidor
+}
+
 /// O programa e um caminho absoluto, existe, e um arquivo comum, executavel e
-/// que ninguem alem do dono pode trocar? Devolve a frase da recusa.
+/// que ninguem alem de um dono confiavel pode trocar? Devolve a frase da
+/// recusa.
 ///
 /// Roda no arranque (`Gancho::validar`), pela mesma razao do `Sms::validar`:
 /// o erro certo e o lido ao subir o servidor, e nao o que o carteiro descobre
-/// as tres da manha com o disco morrendo.
+/// as tres da manha com o disco morrendo. Tambem roda em `gravar_a_arvore`:
+/// com o script removido depois do boot, qualquer edicao de config pela tela
+/// falha -- de proposito (fail-closed), porque config que aponta para um
+/// programa que nao existe mais nao deve ser regravada em silencio.
+///
+/// # O que a conferencia cobre (pedido 639)
+///
+/// E o equivalente ao `StrictModes` do ssh e a checagem de permissao da chave
+/// do PostgreSQL: o arquivo (ja resolvido, com todos os links seguidos) nao
+/// pode ser gravavel por grupo nem por outros, tem de ser de root ou do
+/// usuario do servidor, e cada diretorio da cadeia ate a raiz idem -- ou, se
+/// gravavel por outros, ter o bit sticky (`/tmp`), que impede quem nao e dono
+/// de renomear a entrada.
+///
+/// Link simbolico NAO e recusado por ser link (`/bin/sh` e `/usr/bin/python3`
+/// sao links e sao o caso comum), mas cada elo da cadeia entra na conta: o
+/// dono do link e os diretorios onde ele mora. Quem escreve no diretorio do
+/// link o repontar para outro programa sem tocar no arquivo conferido.
+///
+/// # O limite, dito
+///
+/// Conferencia no arranque nao e conferencia no `exec`: quem ganhar escrita
+/// DEPOIS do boot vence a corrida (TOCTOU), e a `std` nao tem `fexecve`.
+/// No Windows nao ha checagem de dono nem de ACL (so existencia): o bloco e
+/// `cfg(unix)`, e o operador la protege o programa pelas ACLs do sistema.
 pub fn conferir_programa(programa: &str) -> Result<(), String> {
     let caminho = Path::new(programa);
     if !caminho.is_absolute() {
@@ -232,22 +357,104 @@ pub fn conferir_programa(programa: &str) -> Result<(), String> {
     }
     #[cfg(unix)]
     {
-        use std::os::unix::fs::PermissionsExt;
-        let modo = meta.permissions().mode();
-        if modo & 0o111 == 0 {
+        use std::os::unix::fs::{MetadataExt, PermissionsExt};
+        if meta.permissions().mode() & 0o111 == 0 {
             return Err(format!(
                 "alertas.gancho.comando[0]: {programa:?} nao e executavel"
             ));
         }
-        // Programa que qualquer usuario pode reescrever e execucao de codigo
-        // oferecida a quem tem uma conta na maquina.
-        if modo & 0o002 != 0 {
-            return Err(format!(
-                "alertas.gancho.comando[0]: {programa:?} e gravavel por qualquer usuario \
-                 (tire a permissao de escrita de \"outros\")"
-            ));
+        let servidor = uid_do_servidor();
+        // Cada ELO da cadeia (o caminho dado, os links que ele atravessa e o
+        // arquivo final) e uma entrada que alguem pode ter trocado: o dono dela
+        // e os diretorios onde ela mora entram na conta. Um link num diretorio
+        // sadio apontando para um arquivo sadio passa (`/bin/sh`,
+        // `/usr/bin/python3`); o que se recusa e o elo que um terceiro
+        // consegue repontar.
+        let mut atual = caminho.to_path_buf();
+        for _ in 0..16 {
+            let m = std::fs::symlink_metadata(&atual).map_err(|e| {
+                format!(
+                    "alertas.gancho.comando[0]: {programa:?} nao se resolve ({:?})",
+                    e.kind()
+                )
+            })?;
+            if !dono_confiavel(m.uid(), servidor) {
+                return Err(format!(
+                    "alertas.gancho.comando[0]: {programa:?} pertence a outro usuario \
+                     (uid {}); so root ou o usuario do servidor podem ser donos",
+                    m.uid()
+                ));
+            }
+            // Os diretorios onde a entrada mora, ja com os links deles
+            // resolvidos: e neles que mora quem pode trocar o programa.
+            let pai = atual.parent().unwrap_or(Path::new("/"));
+            let pai_real = std::fs::canonicalize(pai).map_err(|e| {
+                format!(
+                    "alertas.gancho.comando[0]: o diretorio de {programa:?} nao se resolve ({:?})",
+                    e.kind()
+                )
+            })?;
+            for dir in pai_real.ancestors() {
+                let d = std::fs::metadata(dir).map_err(|e| {
+                    format!(
+                        "alertas.gancho.comando[0]: o diretorio de {programa:?} nao se le ({:?})",
+                        e.kind()
+                    )
+                })?;
+                let modo = d.permissions().mode();
+                let sticky = modo & 0o1000 != 0;
+                if modo & 0o022 != 0 && !sticky {
+                    return Err(format!(
+                        "alertas.gancho.comando[0]: um diretorio de {programa:?} e gravavel \
+                         por grupo ou outros e sem o bit sticky; quem escreve nele troca o \
+                         programa por `rename`"
+                    ));
+                }
+                if !dono_confiavel(d.uid(), servidor) {
+                    return Err(format!(
+                        "alertas.gancho.comando[0]: um diretorio de {programa:?} pertence a \
+                         outro usuario (uid {})",
+                        d.uid()
+                    ));
+                }
+            }
+            if m.file_type().is_symlink() {
+                let alvo = std::fs::read_link(&atual).map_err(|e| {
+                    format!(
+                        "alertas.gancho.comando[0]: o link de {programa:?} nao se le ({:?})",
+                        e.kind()
+                    )
+                })?;
+                atual = if alvo.is_absolute() {
+                    alvo
+                } else {
+                    pai_real.join(alvo)
+                };
+                continue;
+            }
+            // O arquivo final. Programa que qualquer usuario -- ou o grupo dele
+            // -- pode reescrever e execucao de codigo oferecida a quem tem uma
+            // conta na maquina.
+            let modo = m.permissions().mode();
+            if modo & 0o002 != 0 {
+                return Err(format!(
+                    "alertas.gancho.comando[0]: {programa:?} e gravavel por qualquer usuario \
+                     (tire a permissao de escrita de \"outros\")"
+                ));
+            }
+            if modo & 0o020 != 0 {
+                return Err(format!(
+                    "alertas.gancho.comando[0]: {programa:?} e gravavel pelo grupo \
+                     (tire a permissao de escrita do \"grupo\")"
+                ));
+            }
+            return Ok(());
         }
+        Err(format!(
+            "alertas.gancho.comando[0]: {programa:?} atravessa links demais"
+        ))
     }
+    #[cfg(not(unix))]
     Ok(())
 }
 
@@ -440,5 +647,215 @@ mod testes {
         assert!(conferir_programa(&aberto.display().to_string())
             .unwrap_err()
             .contains("qualquer usuario"));
+    }
+
+    // ------------------------------------------------ pedido 639
+
+    /// Script de grupo 0775: antes passava (so `0o002` era conferido).
+    #[test]
+    fn programa_gravavel_pelo_grupo_e_recusado() {
+        let d = dir("grupo");
+        let s = script(&d, "g.sh", "exit 0");
+        std::fs::set_permissions(&s, std::fs::Permissions::from_mode(0o775)).unwrap();
+        let e = conferir_programa(&s).unwrap_err();
+        assert!(e.contains("grupo"), "{e}");
+        // O irmao que impede um portao que recusaria tudo: 0755 passa.
+        std::fs::set_permissions(&s, std::fs::Permissions::from_mode(0o755)).unwrap();
+        conferir_programa(&s).unwrap();
+    }
+
+    /// Script 0755 em diretorio 0777 sem sticky: trocavel por `rename`.
+    /// Com o sticky (o caso do `/tmp`) a troca por quem nao e dono nao passa,
+    /// e o diretorio e aceito.
+    #[test]
+    fn programa_em_diretorio_gravavel_sem_sticky_e_recusado() {
+        let d = dir("dirabto");
+        let sub = d.join("sub");
+        std::fs::create_dir(&sub).unwrap();
+        let s = script(&sub, "g.sh", "exit 0");
+        std::fs::set_permissions(&sub, std::fs::Permissions::from_mode(0o777)).unwrap();
+        let e = conferir_programa(&s).unwrap_err();
+        assert!(e.contains("sticky"), "{e}");
+        std::fs::set_permissions(&sub, std::fs::Permissions::from_mode(0o1777)).unwrap();
+        conferir_programa(&s).unwrap();
+        std::fs::set_permissions(&sub, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    /// O link entra na conta, nao sai dela. Tres casos:
+    /// 1. link para um script 0777: o ALVO e que reprova (o `metadata` antigo
+    ///    ja seguia o link, mas so uma vez e so o modo);
+    /// 2. link num diretorio 0777 sem sticky, apontando para um script
+    ///    perfeito: quem escreve no diretorio repontar o link troca o
+    ///    programa sem tocar no arquivo conferido -- recusa;
+    /// 3. link num diretorio sadio para um script sadio (o caso de
+    ///    `/bin/sh` e `/usr/bin/python3`): passa. Sem este, o portao
+    ///    recusaria tudo que o mundo real tem por link.
+    #[test]
+    fn link_simbolico_entra_na_conta() {
+        let d = dir("link");
+        // 1
+        let aberto = script(&d, "aberto.sh", "exit 0");
+        std::fs::set_permissions(&aberto, std::fs::Permissions::from_mode(0o777)).unwrap();
+        let elo1 = d.join("elo1.sh");
+        std::os::unix::fs::symlink(&aberto, &elo1).unwrap();
+        let e = conferir_programa(&elo1.display().to_string()).unwrap_err();
+        assert!(e.contains("qualquer usuario"), "{e}");
+        // 2
+        let real = script(&d, "real.sh", "exit 0");
+        let sub = d.join("sub");
+        std::fs::create_dir(&sub).unwrap();
+        let elo2 = sub.join("elo2.sh");
+        std::os::unix::fs::symlink(&real, &elo2).unwrap();
+        std::fs::set_permissions(&sub, std::fs::Permissions::from_mode(0o777)).unwrap();
+        let e = conferir_programa(&elo2.display().to_string()).unwrap_err();
+        assert!(e.contains("sticky"), "{e}");
+        std::fs::set_permissions(&sub, std::fs::Permissions::from_mode(0o755)).unwrap();
+        // 3
+        conferir_programa(&elo2.display().to_string()).unwrap();
+        conferir_programa(&real).unwrap();
+    }
+
+    /// Dono que nao e root nem o usuario do servidor: reescreve o programa
+    /// quando quiser, mesmo com 0755. So da para plantar o dono sendo root
+    /// (o contêiner e); fora disso o teste diz que pulou.
+    #[test]
+    fn programa_de_outro_usuario_e_recusado() {
+        if uid_do_servidor() != Some(0) {
+            eprintln!("pulado: plantar o dono exige root");
+            return;
+        }
+        let d = dir("dono");
+        let s = script(&d, "g.sh", "exit 0");
+        std::os::unix::fs::chown(&s, Some(54321), None).unwrap();
+        let e = conferir_programa(&s).unwrap_err();
+        assert!(e.contains("outro usuario"), "{e}");
+        // E o diretorio de outro usuario tambem (o dono dele troca o arquivo).
+        let sub = d.join("sub");
+        std::fs::create_dir(&sub).unwrap();
+        let s2 = script(&sub, "h.sh", "exit 0");
+        conferir_programa(&s2).unwrap();
+        std::os::unix::fs::chown(&sub, Some(54321), None).unwrap();
+        let e = conferir_programa(&s2).unwrap_err();
+        assert!(
+            e.contains("diretorio") && e.contains("outro usuario"),
+            "{e}"
+        );
+    }
+
+    // ------------------------------------------------ pedido 640
+
+    /// Um `panic` com a reserva na mao nao pode deixar `em_voo` preso. A
+    /// proxima execucao tem de rodar.
+    #[test]
+    fn panico_com_a_reserva_na_mao_nao_a_prende() {
+        let em_voo = AtomicBool::new(false);
+        let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _ = com_reserva(&em_voo, || -> () { panic!("panico de teste") });
+        }));
+        assert!(r.is_err(), "o panico nao aconteceu");
+        assert!(!em_voo.load(Ordering::SeqCst), "a reserva ficou presa");
+        let d = dir("panico");
+        let marca = d.join("rodou");
+        let s = script(&d, "g.sh", &format!("echo x >> {}", marca.display()));
+        executar(&gancho(vec![s], 5), &chamada(), &em_voo).unwrap();
+        assert!(marca.exists(), "a execucao seguinte nao rodou");
+    }
+
+    // ------------------------------------------------ pedido 642
+
+    /// Lista os descritores do script (`/proc/$$/fd`) com `ls -l`: `$$` e o
+    /// `sh` do script, e o `ls` e filho dele, entao a lista e a DO SCRIPT
+    /// (uma substituicao de comando abriria um `pipe` proprio no meio dela).
+    fn lista_fds(saida: &Path) -> String {
+        format!("ls -l /proc/$$/fd > {}", saida.display())
+    }
+
+    /// `(fd, alvo)` de cada linha do `ls -l`.
+    fn fds_listados(t: &str) -> Vec<(String, String)> {
+        t.lines()
+            .filter_map(|l| l.split_once(" -> "))
+            .map(|(esq, alvo)| {
+                (
+                    esq.rsplit(' ').next().unwrap_or("").to_string(),
+                    alvo.to_string(),
+                )
+            })
+            .collect()
+    }
+
+    /// So 0, 1 e 2 (mais o do proprio script, que o `sh` segura). O servidor
+    /// do teste tem arquivo aberto, soquete escutando e uma trava: nada
+    /// disso pode atravessar o `exec`.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn o_filho_nao_herda_descritores_do_servidor() {
+        let d = dir("fds");
+        let sentinela = d.join("sentinela-aberta.dat");
+        std::fs::write(&sentinela, "x").unwrap();
+        let _aberto = std::fs::File::open(&sentinela).unwrap();
+        let _ouvinte = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let saida = d.join("fds.txt");
+        let s = script(&d, "g.sh", &lista_fds(&saida));
+        executar(
+            &gancho(vec![s.clone()], 5),
+            &chamada(),
+            &AtomicBool::new(false),
+        )
+        .unwrap();
+        let t = std::fs::read_to_string(&saida).unwrap();
+        let estranhos: Vec<(String, String)> = fds_listados(&t)
+            .into_iter()
+            // O `sh` guarda copias do stdout/stderr originais (`/dev/null`,
+            // descartados de proposito) acima do fd 10, ao redirecionar.
+            .filter(|(n, alvo)| {
+                !matches!(n.as_str(), "0" | "1" | "2") && *alvo != s && alvo != "/dev/null"
+            })
+            .collect();
+        assert!(!fds_listados(&t).is_empty(), "a listagem veio vazia: {t:?}");
+        assert!(
+            estranhos.is_empty(),
+            "descritores herdados: {estranhos:?}\n{t}"
+        );
+        assert!(!t.contains("sentinela-aberta"), "{t}");
+        assert!(!t.contains("socket:"), "o soquete atravessou: {t}");
+    }
+
+    /// Controle do detector: um descritor que NAO e CLOEXEC (aberto por um
+    /// shell pai com `exec 7<`) aparece na mesma listagem. Sem isto o teste
+    /// de cima passaria por engano com um detector cego.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn o_detector_de_descritores_ve_o_que_vaza() {
+        let d = dir("fds-controle");
+        let alvo = d.join("vazado.dat");
+        std::fs::write(&alvo, "x").unwrap();
+        let saida = d.join("fds.txt");
+        let s = script(&d, "g.sh", &lista_fds(&saida));
+        let st = Command::new("/bin/sh")
+            .arg("-c")
+            .arg(format!("exec 7< {}; {s}", alvo.display()))
+            .status()
+            .unwrap();
+        assert!(st.success());
+        let t = std::fs::read_to_string(&saida).unwrap();
+        assert!(
+            fds_listados(&t)
+                .iter()
+                .any(|(n, alvo)| n == "7" && alvo.ends_with("vazado.dat")),
+            "{t}"
+        );
+    }
+
+    // ------------------------------------------------ pedido 643
+
+    #[test]
+    fn a_linha_perde_controles_e_respeita_o_corte() {
+        let l = linha_limpa("a\x1b[31mb\r\nc\u{0}d\x7fe\u{85}f\u{2028}g\th", 160);
+        assert!(!l.chars().any(char::is_control), "{l:?}");
+        assert!(!l.contains('\u{2028}'), "{l:?}");
+        assert!(l.starts_with("a [31mb") && l.contains('g'), "{l:?}");
+        assert_eq!(linha_limpa(&"a".repeat(500), 160).chars().count(), 160);
+        // Acento e texto comum passam intactos.
+        assert_eq!(linha_limpa("coração ok", 160), "coração ok");
     }
 }

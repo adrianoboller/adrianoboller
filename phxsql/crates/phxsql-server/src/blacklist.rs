@@ -30,6 +30,7 @@ use crate::apoio_teste::DirTemp;
 use std::collections::HashMap;
 use std::net::IpAddr;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 use std::time::SystemTime;
 
 use phxsql_core::datahora::instante_iso;
@@ -335,7 +336,20 @@ pub struct Firewall {
     pub ligado: bool,
     pub bloquear: Vec<String>,
     pub desbloquear: Vec<String>,
+    /// Prazo duro de CADA execucao, em segundos. Passou, o filho leva `kill`.
+    pub timeout_s: u64,
 }
+
+/// O prazo de fabrica do comando de firewall, e o maior que a configuracao
+/// aceita. `iptables` sem `-w` sob a trava do xtables ou um `nft` travado
+/// penduram sem limite; o prazo e o que impede o comando de segurar a
+/// conexao de quem o provocou para sempre.
+pub const PRAZO_DO_FIREWALL_S: u64 = 10;
+pub const TETO_DO_PRAZO_DO_FIREWALL_S: u64 = 120;
+
+/// O `PATH` do comando de firewall: o do gancho nao basta, porque `iptables`
+/// e `nft` moram em `sbin`.
+const PATH_DO_FIREWALL: &str = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
 
 impl Firewall {
     fn de_json(j: &Json) -> Option<Firewall> {
@@ -343,6 +357,8 @@ impl Firewall {
             ligado: j.booleano_ou("ligado", false),
             bloquear: j.textos("bloquear"),
             desbloquear: j.textos("desbloquear"),
+            timeout_s: (j.inteiro_ou("timeout_s", PRAZO_DO_FIREWALL_S as i64).max(1) as u64)
+                .min(TETO_DO_PRAZO_DO_FIREWALL_S),
         };
         if f.bloquear.is_empty() {
             None
@@ -356,6 +372,18 @@ impl Firewall {
     /// Devolve `Ok(false)` quando o firewall esta desligado. Sem shell: cada
     /// argumento vai inteiro, e o IP so entra depois de ser validado como
     /// endereco de verdade.
+    ///
+    /// # Quem chama NAO pode estar segurando a `lista_negra`
+    ///
+    /// Pode demorar ate `timeout_s`. Foi rodando sob o mutex da lista que o
+    /// comando pendurado parava o servidor inteiro (pedido 638): `barrado()`
+    /// pega esse mutex em TODA conexao. Por isso a `Blacklist` nao executa
+    /// nada -- so devolve o que fazer -- e as funcoes `*_no_firewall` abaixo
+    /// pedem o `&Mutex`, e nao um guarda.
+    ///
+    /// A execucao e a do gancho do operador (`gancho::rodar`): prazo com
+    /// `kill`+`wait`, ambiente limpo, saida descartada. O erro nunca leva o
+    /// que o programa imprimiu.
     pub fn aplicar(&self, argumentos: &[String], ip: &str) -> Result<bool> {
         if !self.ligado || argumentos.is_empty() {
             return Ok(false);
@@ -366,15 +394,17 @@ impl Firewall {
             )));
         }
         let trocado: Vec<String> = argumentos.iter().map(|a| a.replace("{ip}", ip)).collect();
-        let saida = std::process::Command::new(&trocado[0])
-            .args(&trocado[1..])
-            .output()?;
-        if !saida.status.success() {
-            return Err(phxsql_core::error::PhxError::Corrompido(format!(
-                "o comando de firewall falhou: {}",
-                String::from_utf8_lossy(&saida.stderr).trim()
-            )));
-        }
+        crate::gancho::rodar(&crate::gancho::Execucao {
+            rotulo: "comando de firewall",
+            argv: &trocado,
+            path: PATH_DO_FIREWALL,
+            ambiente: &[],
+            entrada: None,
+            prazo_s: self.timeout_s,
+        })
+        .map_err(|e| {
+            phxsql_core::error::PhxError::Corrompido(format!("o comando de firewall falhou: {e}"))
+        })?;
         Ok(true)
     }
 
@@ -457,6 +487,60 @@ pub enum Grave {
     Contada { tentativas: u32, limite: u32 },
     /// Bloqueou. O aviso e a falha nao-fatal do firewall, quando houver.
     Bloqueado(Bloqueio, Option<String>),
+}
+
+/// Aplica no firewall a regra de um bloqueio que ACABOU de ser gravado, e
+/// anota na lista que ela valeu. Pede o `&Mutex` e nao um guarda de
+/// proposito: o comando pode demorar ate `timeout_s`, e quem o chamasse com a
+/// lista na mao parava `barrado()` -- ou seja, toda conexao -- ate ele voltar
+/// (pedido 638). O servidor ja barra o IP desde o `bloquear`; a falha do
+/// firewall **nao** cancela nada, so vira aviso.
+pub fn aplicar_no_firewall(
+    lista: &Mutex<Blacklist>,
+    politica: &Politica,
+    b: &mut Bloqueio,
+    aviso: &mut Option<String>,
+) {
+    let Some(fw) = &politica.firewall else {
+        return;
+    };
+    match fw.bloquear_ip(&b.ip) {
+        Ok(true) => {
+            b.firewall = true;
+            let marcado = match lista.lock() {
+                Ok(mut l) => l.marcar_firewall(&b.ip, b.desde_ms),
+                Err(_) => Ok(()),
+            };
+            if let Err(e) = marcado {
+                junta_aviso(aviso, format!("nao consegui gravar a blacklist: {e}"));
+            }
+        }
+        Ok(false) => {}
+        Err(e) => junta_aviso(aviso, format!("firewall: {e}")),
+    }
+}
+
+fn junta_aviso(aviso: &mut Option<String>, novo: String) {
+    *aviso = Some(match aviso.take() {
+        Some(antes) => format!("{antes}; {novo}"),
+        None => novo,
+    });
+}
+
+/// Solta no firewall a regra de cada IP. Melhor esforco, como sempre foi: o
+/// IP ja saiu da lista e o servidor ja o aceita. Fora do mutex, pelo mesmo
+/// motivo de `aplicar_no_firewall`. Devolve o primeiro erro.
+pub fn soltar_no_firewall(politica: &Politica, ips: &[String]) -> Result<()> {
+    let Some(fw) = &politica.firewall else {
+        return Ok(());
+    };
+    let mut primeiro = None;
+    for ip in ips {
+        if let Err(e) = fw.desbloquear_ip(ip) {
+            primeiro.get_or_insert(e);
+        }
+    }
+    primeiro.map_or(Ok(()), Err)
 }
 
 /// A lista de bloqueio, com o contador de tentativas recentes.
@@ -631,10 +715,12 @@ impl Blacklist {
         Ok(())
     }
 
-    /// Bloqueia um IP e grava. Tenta a regra de firewall, se houver.
+    /// Bloqueia um IP e grava. NAO toca no firewall: quem chama aplica a regra
+    /// DEPOIS de soltar o mutex (`aplicar_no_firewall`), porque o comando pode
+    /// demorar ate o prazo e `barrado()` pega este mutex em toda conexao
+    /// (pedido 638). O bloqueio ja vale no servidor desde aqui.
     ///
-    /// A falha do firewall **nao** cancela o bloqueio: o servidor barra o IP de
-    /// qualquer jeito. O erro sai no retorno para virar aviso no log.
+    /// O aviso devolvido e so o da gravacao da lista.
     pub fn bloquear(
         &mut self,
         ip: &str,
@@ -651,14 +737,6 @@ impl Blacklist {
         };
 
         let mut aviso = None;
-        let mut no_firewall = false;
-        if let Some(fw) = &politica.firewall {
-            match fw.bloquear_ip(ip) {
-                Ok(aplicou) => no_firewall = aplicou,
-                Err(e) => aviso = Some(format!("firewall: {e}")),
-            }
-        }
-
         let bloqueio = Bloqueio {
             ip: ip.to_string(),
             desde_ms: agora_ms,
@@ -666,7 +744,7 @@ impl Blacklist {
             motivo: motivo.to_string(),
             comando: comando.to_string(),
             tentativas,
-            firewall: no_firewall,
+            firewall: false,
         };
 
         self.bloqueios.retain(|b| b.ip != ip);
@@ -679,8 +757,25 @@ impl Blacklist {
         (bloqueio, aviso)
     }
 
-    /// Tira o IP da lista. Devolve `true` se ele estava la.
-    pub fn desbloquear(&mut self, ip: &str, politica: &Politica) -> Result<bool> {
+    /// Anota que a regra de firewall do bloqueio `(ip, desde_ms)` foi aplicada.
+    /// O `desde_ms` e a identidade: se o IP foi solto e bloqueado de novo no
+    /// meio do comando, o bloqueio novo e outro e nao ganha a marca.
+    pub fn marcar_firewall(&mut self, ip: &str, desde_ms: i64) -> Result<()> {
+        let Some(b) = self
+            .bloqueios
+            .iter_mut()
+            .find(|b| b.ip == ip && b.desde_ms == desde_ms)
+        else {
+            return Ok(());
+        };
+        b.firewall = true;
+        self.gravar_e_marcar()
+    }
+
+    /// Tira o IP da lista. Devolve `true` se ele estava la. Como o `bloquear`,
+    /// NAO toca no firewall: a regra sai por `soltar_no_firewall`, fora do
+    /// mutex.
+    pub fn desbloquear(&mut self, ip: &str) -> Result<bool> {
         let tinha = self.bloqueios.iter().any(|b| b.ip == ip);
         if !tinha {
             return Ok(false);
@@ -689,9 +784,6 @@ impl Blacklist {
         self.tentativas.remove(ip);
         self.tentativas_graves.remove(ip);
         self.gravar_e_marcar()?;
-        if let Some(fw) = &politica.firewall {
-            fw.desbloquear_ip(ip)?;
-        }
         Ok(true)
     }
 
@@ -765,9 +857,10 @@ impl Blacklist {
         self.tentativas.get(ip).map(Vec::len).unwrap_or(0)
     }
 
-    /// Tira da lista os bloqueios ja vencidos. Devolve quantos saíram.
-    pub fn limpar_vencidos(&mut self, agora_ms: i64, politica: &Politica) -> Result<usize> {
-        let antes = self.bloqueios.len();
+    /// Tira da lista os bloqueios ja vencidos. Devolve os IPs que saíram, para
+    /// o chamador soltar a regra no firewall FORA do mutex (pedido 638: este
+    /// metodo roda em `barrado()`, em toda conexao).
+    pub fn limpar_vencidos(&mut self, agora_ms: i64) -> Result<Vec<String>> {
         let vencidos: Vec<String> = self
             .bloqueios
             .iter()
@@ -775,16 +868,11 @@ impl Blacklist {
             .map(|b| b.ip.clone())
             .collect();
         if vencidos.is_empty() {
-            return Ok(0);
+            return Ok(vencidos);
         }
         self.bloqueios.retain(|b| b.ativo_em(agora_ms));
-        if let Some(fw) = &politica.firewall {
-            for ip in &vencidos {
-                let _ = fw.desbloquear_ip(ip);
-            }
-        }
         self.gravar_e_marcar()?;
-        Ok(antes - self.bloqueios.len())
+        Ok(vencidos)
     }
 
     /// A blacklist num formato que um firewall de verdade consome.
@@ -965,7 +1053,7 @@ mod tests {
         let (_, aviso) =
             bloqueou(bl.violacao_grave("203.0.113.9", "excluir", "comando proibido", &p, T0));
         assert!(aviso.is_none(), "{aviso:?}");
-        assert!(bl.desbloquear("203.0.113.9", &p).unwrap());
+        assert!(bl.desbloquear("203.0.113.9").unwrap());
     }
 
     /// **Pedido 598, contra o sistema operacional:** cada gravacao do
@@ -1330,7 +1418,7 @@ mod tests {
         // Outro processo -- o `phxsqld --desbloquear` -- tira o IP da lista.
         {
             let mut cli = Blacklist::abrir(&caminho).unwrap();
-            assert!(cli.desbloquear("10.0.0.7", &p).unwrap());
+            assert!(cli.desbloquear("10.0.0.7").unwrap());
         }
         // Sem reler, o servidor continuaria barrando.
         assert!(
@@ -1362,9 +1450,9 @@ mod tests {
         let mut bl = Blacklist::abrir(d.join("blacklist.json")).unwrap();
         let p = politica();
         bl.violacao_grave("10.0.0.9", "excluir", "comando proibido", &p, T0);
-        assert!(bl.desbloquear("10.0.0.9", &p).unwrap());
+        assert!(bl.desbloquear("10.0.0.9").unwrap());
         assert!(bl.bloqueado("10.0.0.9", T0).is_none());
-        assert!(!bl.desbloquear("10.0.0.9", &p).unwrap(), "ja nao estava la");
+        assert!(!bl.desbloquear("10.0.0.9").unwrap(), "ja nao estava la");
         std::fs::remove_dir_all(&d).unwrap();
     }
 
@@ -1375,8 +1463,8 @@ mod tests {
         let p = politica();
         bl.violacao_grave("10.0.0.1", "excluir", "x", &p, T0);
         bl.violacao_grave("10.0.0.2", "excluir", "x", &p, T0);
-        assert_eq!(bl.limpar_vencidos(T0 + 1_000, &p).unwrap(), 0);
-        assert_eq!(bl.limpar_vencidos(T0 + 61 * 60_000, &p).unwrap(), 2);
+        assert!(bl.limpar_vencidos(T0 + 1_000).unwrap().is_empty());
+        assert_eq!(bl.limpar_vencidos(T0 + 61 * 60_000).unwrap().len(), 2);
         assert!(bl.lista().is_empty());
         std::fs::remove_dir_all(&d).unwrap();
     }
@@ -1393,12 +1481,28 @@ mod tests {
         assert!(!p.base_proibida(""));
     }
 
+    /// Config que nao e lida mente: o `timeout_s` do firewall tem leitor,
+    /// padrao e teto.
+    #[test]
+    fn o_prazo_do_firewall_vem_do_config_com_padrao_e_teto() {
+        let f = |t: &str| {
+            Firewall::de_json(&Json::analisar(&format!(r#"{{"bloquear":["x"]{t}}}"#)).unwrap())
+                .unwrap()
+                .timeout_s
+        };
+        assert_eq!(f(""), PRAZO_DO_FIREWALL_S);
+        assert_eq!(f(r#","timeout_s":3"#), 3);
+        assert_eq!(f(r#","timeout_s":99999"#), TETO_DO_PRAZO_DO_FIREWALL_S);
+        assert_eq!(f(r#","timeout_s":0"#), 1);
+    }
+
     #[test]
     fn firewall_desligado_nao_roda_nada() {
         let fw = Firewall {
             ligado: false,
             bloquear: vec!["/bin/false".into(), "{ip}".into()],
             desbloquear: vec![],
+            timeout_s: 5,
         };
         assert!(!fw.bloquear_ip("10.0.0.1").unwrap());
     }
@@ -1409,6 +1513,7 @@ mod tests {
             ligado: true,
             bloquear: vec!["/bin/true".into(), "{ip}".into()],
             desbloquear: vec![],
+            timeout_s: 5,
         };
         // Endereco de verdade passa.
         assert!(fw.bloquear_ip("192.0.2.1").unwrap());
@@ -1425,26 +1530,183 @@ mod tests {
         }
     }
 
+    fn politica_com_firewall(bloquear: Vec<String>, desbloquear: Vec<String>) -> Politica {
+        Politica {
+            firewall: Some(Firewall {
+                ligado: true,
+                bloquear,
+                desbloquear,
+                timeout_s: 1,
+            }),
+            ..politica()
+        }
+    }
+
     #[test]
     fn falha_do_firewall_nao_cancela_o_bloqueio() {
         let d = dir_temp("fw-falha");
-        let mut bl = Blacklist::abrir(d.join("blacklist.json")).unwrap();
-        let p = Politica {
-            firewall: Some(Firewall {
-                ligado: true,
-                bloquear: vec!["/comando/que/nao/existe".into(), "{ip}".into()],
-                desbloquear: vec![],
-            }),
-            ..politica()
-        };
-        let (b, aviso) =
-            bloqueou(bl.violacao_grave("10.0.0.3", "excluir", "comando proibido", &p, T0));
+        let bl = Blacklist::abrir(d.join("blacklist.json")).unwrap();
+        let p = politica_com_firewall(
+            vec!["/comando/que/nao/existe".into(), "{ip}".into()],
+            vec![],
+        );
+        let lista = Mutex::new(bl);
+        let (mut b, mut aviso) = bloqueou(lista.lock().unwrap().violacao_grave(
+            "10.0.0.3",
+            "excluir",
+            "comando proibido",
+            &p,
+            T0,
+        ));
+        // A `Blacklist` nao executa nada: o bloqueio vale antes do firewall.
+        assert!(aviso.is_none());
+        assert!(lista.lock().unwrap().bloqueado("10.0.0.3", T0).is_some());
+        aplicar_no_firewall(&lista, &p, &mut b, &mut aviso);
         assert!(aviso.is_some(), "a falha do firewall vira aviso");
         assert!(!b.firewall, "a regra nao chegou a ser aplicada");
         assert!(
-            bl.bloqueado("10.0.0.3", T0).is_some(),
+            lista.lock().unwrap().bloqueado("10.0.0.3", T0).is_some(),
             "o servidor barra o IP mesmo sem o firewall"
         );
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    /// Caminho feliz: a regra vale e a marca `firewall` vai ao ARQUIVO, que e
+    /// o que o painel le.
+    #[cfg(unix)]
+    #[test]
+    fn firewall_que_funciona_marca_o_bloqueio_no_arquivo() {
+        let d = dir_temp("fw-ok");
+        let caminho = d.join("blacklist.json");
+        let p = politica_com_firewall(vec!["/bin/true".into(), "{ip}".into()], vec![]);
+        let lista = Mutex::new(Blacklist::abrir(&caminho).unwrap());
+        let (mut b, mut aviso) = bloqueou(lista.lock().unwrap().violacao_grave(
+            "10.0.0.4",
+            "excluir",
+            "comando proibido",
+            &p,
+            T0,
+        ));
+        assert!(!b.firewall, "a Blacklist sozinha nunca diz que aplicou");
+        aplicar_no_firewall(&lista, &p, &mut b, &mut aviso);
+        assert!(b.firewall && aviso.is_none(), "{aviso:?}");
+        let relida = Blacklist::abrir(&caminho).unwrap();
+        assert!(relida.lista()[0].firewall, "a marca nao foi ao arquivo");
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    /// **Pedido 638.** O texto que o programa imprime no `stderr` e no
+    /// `stdout` nao entra no erro (que vai a log e a tela), o prazo mata o que
+    /// pendura e o ambiente do servidor nao atravessa.
+    ///
+    /// Defeito reposto (`Command::output()` e `stderr` dentro do erro): a
+    /// sentinela aparece no aviso, o `sleep` segura o teste por 30 s e o
+    /// `CARGO_*` chega ao filho.
+    #[cfg(unix)]
+    #[test]
+    fn o_firewall_roda_pelo_motor_do_gancho() {
+        use crate::gancho::apoio_de_teste::{dir, script};
+        let apoio = dir("fw");
+        let ip = "192.0.2.7";
+
+        // 1. Saida do filho nao volta no erro.
+        let ruim = script(
+            &apoio,
+            "ruim.sh",
+            "echo SEGREDO-NO-STDOUT; echo SEGREDO-NO-STDERR >&2; exit 3",
+        );
+        let fw = Firewall {
+            ligado: true,
+            bloquear: vec![ruim, "{ip}".into()],
+            desbloquear: vec![],
+            timeout_s: 5,
+        };
+        let e = fw.bloquear_ip(ip).unwrap_err().to_string();
+        assert!(e.contains("codigo 3"), "{e}");
+        assert!(!e.contains("SEGREDO"), "a saida do filho vazou: {e}");
+
+        // 2. Ambiente limpo e o IP chegando LITERAL como argumento.
+        assert!(std::env::vars().any(|(k, _)| k.starts_with("CARGO")));
+        let saida = apoio.join("saida.txt");
+        let bom = script(
+            &apoio,
+            "bom.sh",
+            &format!("{{ echo \"$1\"; env | sort; }} > {}", saida.display()),
+        );
+        let fw = Firewall {
+            ligado: true,
+            bloquear: vec![bom, "{ip}".into()],
+            desbloquear: vec![],
+            timeout_s: 5,
+        };
+        assert!(fw.bloquear_ip(ip).unwrap());
+        let t = std::fs::read_to_string(&saida).unwrap();
+        assert!(t.starts_with("192.0.2.7\n"), "{t}");
+        assert!(!t.contains("CARGO"), "o ambiente do servidor vazou: {t}");
+        assert!(t.contains("PATH=/usr/local/sbin"), "{t}");
+
+        // 3. O que pendura leva kill no prazo (e e colhido).
+        let pidfile = apoio.join("pid");
+        let pendura = script(
+            &apoio,
+            "pendura.sh",
+            &format!("echo $$ > {}; exec sleep 30", pidfile.display()),
+        );
+        let fw = Firewall {
+            ligado: true,
+            bloquear: vec![pendura],
+            desbloquear: vec![],
+            timeout_s: 1,
+        };
+        let t0 = std::time::Instant::now();
+        let e = fw.bloquear_ip(ip).unwrap_err().to_string();
+        assert!(
+            t0.elapsed() < std::time::Duration::from_secs(5),
+            "{:?}",
+            t0.elapsed()
+        );
+        assert!(e.contains("foi morto"), "{e}");
+        let pid = std::fs::read_to_string(&pidfile)
+            .unwrap()
+            .trim()
+            .to_string();
+        assert!(
+            !Path::new(&format!("/proc/{pid}")).exists(),
+            "o filho {pid} continua na tabela de processos"
+        );
+    }
+
+    /// O mutex nao fica preso durante o comando: com um firewall que dorme,
+    /// outro fio toma a lista em milissegundos enquanto `aplicar_no_firewall`
+    /// ainda roda. Defeito reposto (exec dentro do `bloquear`): o `lock` do
+    /// observador espera o prazo inteiro.
+    #[cfg(unix)]
+    #[test]
+    fn a_lista_fica_livre_enquanto_o_firewall_roda() {
+        let d = dir_temp("fw-livre");
+        let p = politica_com_firewall(vec!["/bin/sleep".into(), "30".into()], vec![]);
+        let lista = std::sync::Arc::new(Mutex::new(
+            Blacklist::abrir(d.join("blacklist.json")).unwrap(),
+        ));
+        let (mut b, mut aviso) = bloqueou(lista.lock().unwrap().violacao_grave(
+            "10.0.0.5",
+            "excluir",
+            "comando proibido",
+            &p,
+            T0,
+        ));
+        let l2 = std::sync::Arc::clone(&lista);
+        let p2 = p.clone();
+        let fio = std::thread::spawn(move || aplicar_no_firewall(&l2, &p2, &mut b, &mut aviso));
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        let t0 = std::time::Instant::now();
+        assert!(lista.lock().unwrap().bloqueado("10.0.0.5", T0).is_some());
+        assert!(
+            t0.elapsed() < std::time::Duration::from_millis(500),
+            "a lista ficou presa pelo firewall: {:?}",
+            t0.elapsed()
+        );
+        fio.join().unwrap();
         std::fs::remove_dir_all(&d).unwrap();
     }
 }
