@@ -2210,6 +2210,62 @@ encerrar/derrubar e ficam na fila.
 **O que falta, 90** (medido por `--example botoes-sem-prova`): os 7 e 6 dos dois
 assistentes (§13.9) e a cauda de 1 a 3 botões por tela em `index.html`.
 
+### 13.11 A pintura tardia (pedido 636): o diagrama cobria a tela que a pessoa já tinha aberto
+
+**O defeito, reproduzido no navegador.** O «Criar» do cartão de nova tabela
+terminava com `await montarArvore(); telaDiagramaER(db)`. Com a resposta de
+`criar_tabela` segura no fio (`page.route`), a pessoa abre a Telemetria; ao
+soltar, o diagrama ER pintava **por cima** dela — título «Diagrama ER», corpo do
+diagrama, e a Telemetria sumida. A bateria inteira reprovou duas vezes assim
+(o caso 34 isolado, nunca) e o 34 passou a esperar `ER.esquemas` ter a tabela:
+**a espera escondia o defeito sem consertá-lo**, e foi retirada.
+
+**A causa não era o «Criar».** A guarda do pedido 170 (`tomarPainel` /
+`aindaNoPainel`) já existia, mas só `abrirAdmin`, `desenharAba` e a *tomada* em
+`folha()` a usavam. A `folha()` que chega depois de um `await` é indistinguível
+de uma tela nova pedida agora, então **a conferência não pode morar no motor**:
+tem de estar em quem pinta depois do `await`. Medido no fonte: **83 chamadas a
+`folha()` vinham depois de um `await`, em 59 funções**; 3 funções eram falso
+positivo (comentário e um clique), e as demais — mais as quatro telas que
+escrevem direto no `#painel` (grade de conteúdo, lixeira, motivos, mensagens) —
+passaram a conferir a posse, **pelo mesmo contador**, em quatro formas fixas
+(documentadas junto de `vezDoPainel()` no `index.html`). Quem chama de fora da
+tela (o «Criar», a chave declarada, o excluir de chave, o acrescentar coluna)
+guarda `vezDoPainel()` **antes** de ir ao servidor e a passa a
+`telaDiagramaER(db, vez)`.
+
+**O caso `38-pintura-tardia.mjs`** não torce por timing: segura a op no fio até
+a segunda tela estar pintada (como o 18) e só então solta. Três cenas — o
+«Criar», o «Redesenhar» e seis irmãs (duas fases, uma fase, escrita direta) — e
+um veredito sobre o **par** título/corpo, medido depois de o dano ter tido
+chance de acontecer.
+
+| corrida | resultado |
+|---|---|
+| caso 38 sobre o `index.html` sem o conserto | **FALHOU** nos dois temas: `esperava "Telemetria", achei "Diagrama ER"` |
+| caso 38 com o conserto | **2 de 2** (escuro e claro) |
+| caso 34 (sem a espera), 5 corridas isoladas | **10 de 10** casos verdes |
+| `prova-real-botoes.mjs --so pintura` | controle verde e **8 de 8** defeitos pegos (RED) |
+
+Os oito defeitos tiram **uma** conferência cada: o «Criar», o corpo final do
+diagrama, `verSequencias`, `verSessoes`, o ramo «nenhuma ligação» do
+`telaDbLink`, a grade de conteúdo, `verQuemSou` e `telaMensagens`. O total da
+prova real passou de 13 para **21 defeitos** e de 4 para 5 controles. **O
+primeiro `telaDbLink` PASSOU:** o patch tirava a guarda do ramo «com ligações»,
+e a base do caso não tem ligação nenhuma — o caminho exercitado era o outro. Foi
+a prova real desta prova que o achou; o patch passou a mirar o ramo vivo.
+
+**O que não se alcança, nomeado:** a conferência é por convenção em cada tela
+nova — uma tela que pinte depois de um `await` e esqueça a posse volta a
+cobrir a seguinte. Um conferidor estático (função com `await` antes de
+`folha(` sem `aindaNoPainel`) cabe como catraca do papel G; não entrou aqui
+porque o catálogo de guardas prova testes Rust, e a prova desta frente é de
+navegador. Hoje `testes-web/varrer-pintura-tardia.py` (varredura de texto, não prova a
+tela) acha **0** funções nessa forma fora os 3 falsos positivos. Um relógio de atualização (sessões, cluster…) que dispare
+enquanto a pessoa espera outra tela passa a tomar a posse dela: o clique
+pendente é descartado e a pessoa clica de novo — janela de milissegundos a cada
+3 s, contra a tela errada por cima.
+
 ## 14. Os portões de MEDIDOR, e por que eles ficam fora do catálogo de guardas
 
 Nesta rodada nasceu uma camada de prova que este documento ainda não descrevia:

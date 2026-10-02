@@ -93,14 +93,13 @@ export const caso = {
     const nomes = e.colunas.map(c => c.nome).filter(n => !['rowstamp', 'rowtime', 'rownum', 'softdeleted'].includes(n));
     igual(nomes.join(','), 'id,nome', 'as colunas que o cartao criou');
     verdade(e.indices.some(i => i.primario), 'a chave primaria marcada no cartao devia virar indice primario');
-    // E a tela voltou ao diagrama, com a tabela nova desenhada. ESPERA O
-    // DIAGRAMA TER A TABELA, e nao so o botao: o «Criar» termina com
-    // `await montarArvore(); telaDiagramaER(db)`, e o botao ja existia na tela
-    // de antes. Seguir adiante com o repintar ainda a caminho deixava o
-    // diagrama pintar POR CIMA da tela cheia aberta no passo seguinte -- a
-    // corrida inteira reprovou duas vezes assim, e o caso isolado nunca (e a
-    // mesma familia do pedido 170: pintura tardia sobre a tela da vez).
-    await page.waitForFunction(t => ER.esquemas.some(e => e.tabela === t), 'ViaCartao', { timeout: 15000 });
+    // E a tela voltou ao diagrama. Este caso JA ESPEROU `ER.esquemas` ter a
+    // tabela, para o repintar do «Criar» nao pintar POR CIMA da tela cheia
+    // aberta no passo seguinte -- e a espera ESCONDIA o defeito em vez de
+    // consertar (pedido 636, familia do 170). O conserto e do produto: o
+    // repintar confere a posse do painel e, se a pessoa ja abriu outra tela,
+    // nao pinta. Quem prova isso e o caso `pintura-tardia`; aqui nao ha espera
+    // nenhuma, e o passo seguinte abre a tela cheia COM o repintar a caminho.
     await esperar(page, '#btErNova');
 
     // ------------------------------------- «Cadastro completo…» leva o rascunho
