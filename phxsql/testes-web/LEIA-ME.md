@@ -63,6 +63,22 @@ Um por arquivo em `casos/`, na ordem do nome. A lista abaixo é o que cada um
 | `botoes-do-dblink` | a tela de DbLink vazia e cheia, as definições, a edição, a consulta e os dois primeiros passos do assistente. Achou os **dois botões mortos** da tela vazia — um `return folha(...)` deixava as duas linhas de `onclick` inalcançáveis, e a primeira tela de quem ainda não tem ligação não tinha saída. A afirmação nomeia o gancho de propósito: com o defeito reposto a reprova diz `#btDef`, e não «timeout esperando um seletor» |
 | `botoes-do-pivot` | a trilha de passos e os três passos da tabela dinâmica — a junção sugerida pela chave estrangeira, o tirar, o juntar à mão, o × do chip, o limpar, o montar, o CSV e o «ver o pedido». Achou o `const txt` que **sombreava a função `txt()`** da fábrica de idiomas: a cópia acontecia e os três recados morriam em «txt is not a function» |
 | `botoes-dos-idiomas-e-do-backup` | os quatro botões da tela de idiomas (carga, exportar, importar pelo seletor de arquivo do sistema, carga padrão) e os da tela de backup e restauração. Achou o **«Backup agora» parado em «rodando…» para sempre** — o pedido saía sem `destino`, a exceção subia sem dono, e não havia nem cópia nem erro; e as fichas das duas folhas mostrando «—» onde havia número medido |
+| `botoes-de-nova-tabela` | o cartão de criar tabela do diagrama ER e a tela cheia: «+ campo», cancelar, a recusa de nome vazio, criar de verdade (provado pela op `esquema`), o «Cadastro completo…» que leva o rascunho, «+ índice», criar e voltar. Achou o **«Cadastro completo…» largando a pessoa numa tela em branco** (`r.indices_texto.map` sobre `undefined`) e a caixa de marcar ~7 px fora do centro da linha |
+| `botoes-do-job` | a ficha do job: criar (nasce desligado), gravar alterações, rodar agora (soma UMA corrida), excluir recusando e aceitando o `confirm`. A prova é a op `jobs`, não a frase da tela |
+| `botoes-da-telemetria` | a barra e a legenda do painel vivo: a pausa deixa o relógio mudo, o Agora pede com a tela pausada, ligar/desligar muda a coleta no servidor, a legenda some e volta. Os rótulos esperados vêm da fábrica de idiomas |
+| `botoes-da-claude` | os doze botões da integração com a Claude **sem chave real**: a rota `https://api.anthropic.com/v1/messages` é interceptada (`page.route`) e responde o SSE do contrato; a chave é fabricada. Confere que a chave repousa na aba, nunca no disco, nunca num pedido ao `phxsqld`, e que o painel «o que vai subir» a mascara |
+
+## A prova real dos casos de botão: `prova-real-botoes.mjs`
+
+```bash
+node phxsql/testes-web/prova-real-botoes.mjs [--so <pedaço>]
+```
+
+Serve a página por um proxy reverso que **repõe um defeito** (botão morto,
+`confirm` ignorado, chave inteira no painel…) e exige que o caso reprove; o
+controle sem defeito exige que passe. Não recompila o `phxsqld`. Cada reposição
+confere que o trecho existe — se a tela mudar de forma, a prova grita em vez de
+passar sem repor nada.
 
 ## O que a bateria GRAVOU: `botoes-exercitados.txt`
 
