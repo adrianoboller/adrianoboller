@@ -4084,6 +4084,34 @@ let painelGeracao = 0;
 function tomarPainel() { return ++painelGeracao; }
 /** A posse ainda e minha, ou alguem pintou outra tela durante o meu `await`? */
 function aindaNoPainel(v) { return v === painelGeracao; }
+/** A posse de AGORA, sem tomar: o que um pedido guarda antes de ir ao servidor
+ *  para conferir, na volta, se a pessoa ainda esta na tela que o pediu.
+ *
+ * PEDIDO 636 -- a guarda tambem tem de valer para quem NAO pinta por `folha`
+ * de imediato. O «Criar» do cartao de nova tabela fazia `await api(...);
+ * await montarArvore(); telaDiagramaER(db)`: o diagrama chegava depois e
+ * cobria a tela que a pessoa tinha aberto no meio-tempo. A posse certa e a de
+ * ANTES do primeiro `await`, e e por isso que existe esta leitura: `folha`
+ * devolve a posse que tomou, e quem pede algo ao servidor guarda a de agora.
+ * Mesmo contador, mesma pergunta -- nenhuma segunda guarda ao lado.
+ *
+ * O ALCANCE, DE NOVO: a TOMADA mora em `folha()` (uma linha cobre todas), mas
+ * a CONFERENCIA nao pode morar la. A `folha()` que chega depois do `await` e
+ * indistinguivel de uma tela nova que a pessoa pediu agora -- nao ha como o
+ * motor saber de qual pedido ela veio. Por isso quem pinta depois de um
+ * `await` confere, e a forma e uma so em todo o arquivo:
+ *   - tela de DUAS fases (anuncia «carregando»): `const vez = folha(...)` e,
+ *     antes de cada pintura do fim, `if (!aindaNoPainel(vez)) return;`;
+ *   - tela de UMA fase: `const vez = tomarPainel();` na primeira linha;
+ *   - quem escreve direto no `#painel` (a grade de conteudo, a lixeira, as
+ *     mensagens): a mesma conferencia, ao lado da escrita;
+ *   - chamada de FORA da tela (o «Criar» do cartao, a chave declarada):
+ *     guarda `vezDoPainel()` ANTES de ir ao servidor e a passa adiante --
+ *     `telaDiagramaER(db, vez)`.
+ * Medido em 02/10/2026: 83 chamadas a `folha()` vinham depois de um `await`, em
+ * 59 funcoes; 3 eram falso positivo (comentario e clique) e as demais passaram
+ * a conferir. Prova: `testes-web/casos/38-pintura-tardia.mjs`. */
+function vezDoPainel() { return painelGeracao; }
 
 async function abrirAdmin(qual) {
   const minhaVez = tomarPainel();
@@ -4431,6 +4459,7 @@ async function abrirFichaUsuario(login) {
  * base ou tabela que entra ou sai da lista (o mesmo `refazer` da tela de Nova
  * Tabela). */
 async function desenharFichaUsuario() {
+  const vez = tomarPainel();
   const r = est.rascUsuario;
 
   // Os bancos disponiveis para "adicionar base" -- uma vez por ficha aberta.
@@ -4482,6 +4511,7 @@ async function desenharFichaUsuario() {
   const titulo = r.novo ? txt("tela.tt_novo_usuario","Novo usuário")
     : preencher(txt("tela.tt_editar_usuario","Editar {login}"), {login: r.login});
 
+  if (!aindaNoPainel(vez)) return;
   folha(titulo, txt("tela.usuarios_sub","cadastro do config.json · a senha nunca sai daqui"),
     `<form class="criar" id="fichaUsuario" autocomplete="off">
        <div class="bloco">
@@ -4716,7 +4746,7 @@ function viewDatabaseAtual() {
 
 async function verDatabase(db) {
   est.database = db;
-  folha(db, txt("tela.st_tabelas_db_clique_editar","as tabelas deste database · clique numa para ver e editar"),
+  const vez = folha(db, txt("tela.st_tabelas_db_clique_editar","as tabelas deste database · clique numa para ver e editar"),
         `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
 
   const t = await api("tabelas", { database: db });
@@ -4734,6 +4764,7 @@ async function verDatabase(db) {
     }
   }));
 
+  if (!aindaNoPainel(vez)) return;
   folha(db, preencher(txt("tela.st_n_tabelas_clique_editar","{n} tabela(s) · clique numa linha para ver e editar"), {n: nomes.length}),
     nomes.length ? `<div id="gradeDb"></div>`
       : `<div class="vazio">${esc(txt("tela.db_nenhuma_tabela","nenhuma tabela neste database"))}</div>`);
@@ -4864,7 +4895,7 @@ async function telaProcurarTexto(db, tab, indices) {
 
 async function verConteudoEditavel(db, tab, verExcluidos = false, cursor = null) {
   est.atual = { db, tab };
-  folha(`${tab}`, preencher(txt("tela.st_clique_linha_editar","{db} · clique numa linha para editar"), {db}),
+  const vez = folha(`${tab}`, preencher(txt("tela.st_clique_linha_editar","{db} · clique numa linha para editar"), {db}),
         `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
 
   // `cursor` é o rowid da última linha da página anterior — o servidor
@@ -4880,6 +4911,9 @@ async function verConteudoEditavel(db, tab, verExcluidos = false, cursor = null)
     api("esquema", { database: db, tabela: tab }),
     api("varrer", pedido),
   ]);
+  // Escreve direto no `#painel` mais abaixo, e nao por `folha()`: por isso a
+  // conferencia da posse mora aqui, e nao no motor (pedido 636).
+  if (!aindaNoPainel(vez)) return;
   est.esquemaAtual = e;
   // As colunas de sistema não viram colunas da grade: quem lê a marca é o
   // estilo da linha e o botão de restaurar, e o número de ordem tem coluna
@@ -5123,6 +5157,7 @@ function campoDaColuna(c, valor, soLeitura = false, novo = false) {
 
 /** A ficha: le um registro (ou nasce vazia), grava e exclui. */
 async function abrirFicha(db, tab, rowid) {
+  const vez = tomarPainel();
   const e = est.esquemaAtual
     || (est.esquemaAtual = await api("esquema", { database: db, tabela: tab }));
   const novo = rowid === null;
@@ -5171,6 +5206,7 @@ async function abrirFicha(db, tab, rowid) {
                               : c.calculada ? "calculada"
                               : false;
 
+  if (!aindaNoPainel(vez)) return;
   folha(novo ? preencher(txt("tela.tt_nova_linha_em","Nova linha em {tab}"), {tab})
              : preencher(txt("tela.tt_tab_registro","{tab} · registro {rowid}"), {tab, rowid}),
     novo ? preencher(txt("tela.st_em_branco_nulo","{db} · em branco significa nulo"), {db})
@@ -5343,7 +5379,7 @@ function gerirTabelasAtual() {
 /** A grade de gestao: uma linha por tabela, com o que ela pesa. */
 async function gerirTabelas(db) {
   est.database = db;
-  folha(preencher(txt("tela.tt_tabelas_de","Tabelas de {db}"), {db}), txt("tela.carregando","carregando…"), `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
+  const vez = folha(preencher(txt("tela.tt_tabelas_de","Tabelas de {db}"), {db}), txt("tela.carregando","carregando…"), `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
 
   const t = await api("tabelas", { database: db });
   const nomes = t.tabelas || [];
@@ -5357,6 +5393,7 @@ async function gerirTabelas(db) {
     } catch (err) { return { nome, erro:String(err) }; }
   }));
 
+  if (!aindaNoPainel(vez)) return;
   folha(preencher(txt("tela.tt_tabelas_de","Tabelas de {db}"), {db}),
     preencher(txt("tela.st_n_tabelas_clique_gerir","{n} tabela(s) · clique numa linha para gerir"), {n: nomes.length}),
     `<div class="acoes">
@@ -5412,7 +5449,7 @@ async function gerirTabelas(db) {
 async function gerirTabela(db, tab) {
   est.atual = { db, tab };
   est.esquemaAtual = null;
-  folha(preencher(txt("tela.tt_gestao_de","Gestão de {tab}"), {tab}), preencher(txt("tela.st_db_carregando","{db} · carregando…"), {db}), `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
+  const vez = folha(preencher(txt("tela.tt_gestao_de","Gestão de {tab}"), {tab}), preencher(txt("tela.st_db_carregando","{db} · carregando…"), {db}), `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
 
   let e = null, erro = "";
   try { e = await api("esquema", { database: db, tabela: tab }); }
@@ -5478,6 +5515,7 @@ async function gerirTabela(db, tab) {
      () => excluirTabelaDe(db, tab)],
   ];
 
+  if (!aindaNoPainel(vez)) return;
   folha(preencher(txt("tela.tt_gestao_de","Gestão de {tab}"), {tab}), preencher(txt("tela.st_o_que_se_faz_tabela","{db} · o que se faz com esta tabela"), {db}),
     resumo +
     `<div class="ops">${OPS.map(([k, ico, rot, diz], i) =>
@@ -5557,10 +5595,12 @@ function volumesDe(e) {
 }
 
 async function verParticoes(db, tab) {
+  const vez = tomarPainel();
   const e = await api("esquema", { database: db, tabela: tab });
   const pag = e.paginacao;
 
   if (!pag) {
+    if (!aindaNoPainel(vez)) return;
     folha(preencher(txt("tela.tt_particoes_de","Partições de {tab}"), {tab}), preencher(txt("tela.st_tabela_nao_paginada","{db} · esta tabela não é paginada"), {db}),
       `<div class="nota">
          <p>${marcado(preencher(txt("tela.pt_arquivo_unico","**Arquivo único.** Tudo mora em `{arq}`, sem sufixo numérico."), {arq: esc(tab) + ".reg"}))}</p>
@@ -5579,6 +5619,7 @@ async function verParticoes(db, tab) {
   const porPeriodo = pag.modo && pag.modo !== "quantidade" && !porLetra;
   const gb = n => (n / (1024 * 1024 * 1024)).toFixed(2);
   const comLinhas = vols.filter(v => v.usados > 0).length;
+  if (!aindaNoPainel(vez)) return;
   folha(preencher(txt("tela.tt_particoes_de","Partições de {tab}"), {tab}),
     `${db} · ${porLetra
         ? esc(preencher(txt("tela.pt_baldes_com_linha","{com} de {total} baldes com linha · pela primeira letra de {coluna}"), {com: comLinhas, total: vols.length, coluna: pag.coluna}))
@@ -5686,8 +5727,10 @@ async function duplicarTabelaPara(db, tab) {
 }
 
 async function repararTabelaDe(db, tab) {
+  const vez = tomarPainel();
   if (!confirm(preencher(txt("tela.g_confirmar_reparar_bkp","Reparar {tab} pelo espelho .bkp?\n\nCada slot é conferido nos dois lados."), {tab}))) return;
   const r = await api("reparar", { database: db, tabela: tab });
+  if (!aindaNoPainel(vez)) return;
   folha(preencher(txt("tela.tt_reparo_de","Reparo de {tab}"), {tab}),
     preencher(txt("tela.st_cada_slot_reg_bkp","{db} · cada slot conferido no .reg e no .bkp"), {db}),
     fichasDe(r, [["conferidos","conferidos"],["reparados","reparados"],
@@ -5701,9 +5744,11 @@ async function repararTabelaDe(db, tab) {
 }
 
 async function reindexarTabelaDe(db, tab) {
+  const vez = tomarPainel();
   if (!confirm(preencher(txt("tela.g_confirmar_reparar_indice","Reparar o índice de {tab}?\n\nO .ndx é jogado fora e refeito do zero a partir do .reg."), {tab}))) return;
   const r = await api("reindexar", { database: db, tabela: tab });
   avisar(preencher(txt("tela.g_indices_refeitos","índices de {tab} refeitos"), {tab}));
+  if (!aindaNoPainel(vez)) return;
   folha(preencher(txt("tela.tt_indice_refeito","Índice de {tab} refeito"), {tab}),
     preencher(txt("tela.st_arvore_reconstruida","{db} · a árvore foi reconstruída lendo o .reg"), {db}),
     `<pre class="dado">${esc(JSON.stringify(r, null, 1))}</pre>
@@ -6171,12 +6216,13 @@ function ligarNovaTabela(db) {
 async function verSequencias(db) {
   db = db || databaseCorrente();
   if (!db) return avisar(txt("tela.g_sem_database_escolhido","nenhum database escolhido"), true);
-  folha(preencher(txt("tela.tt_sequencias_de","Sequências de {db}"), {db}), txt("tela.carregando","carregando…"), `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
+  const vez = folha(preencher(txt("tela.tt_sequencias_de","Sequências de {db}"), {db}), txt("tela.carregando","carregando…"), `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
 
   const r = await api("sequencias", { database: db });
   const linhas = r.sequencias || [];
   const com = linhas.filter(x => x.tem_sequencia);
 
+  if (!aindaNoPainel(vez)) return;
   folha(preencher(txt("tela.tt_sequencias_de","Sequências de {db}"), {db}),
     preencher(txt("tela.st_com_seq_de_total","{com} de {total} tabela(s) têm coluna Sequence"), {com: com.length, total: linhas.length}),
     `<div class="fichas">
@@ -6672,15 +6718,19 @@ async function pivotPasso3() {
       () => avisar(txt("tela.g_sem_copiar","o navegador não deixou copiar"), true));
     else avisar(txt("tela.g_sem_area_transferencia","o navegador não tem área de transferência"), true);
   };
-  $("#pv_json").onclick = () => folha(txt("tela.tt_pivot_pedido","Tabela dinâmica · o pedido"),
+  // Sem `folha(...) || (...)`: `folha()` devolve a posse (numero, sempre
+  // verdadeiro), e o `||` antigo contava com o `undefined` de antes -- o
+  // «← Resultado» nascia sem `onclick` (achado pela bateria, pedido 636).
+  $("#pv_json").onclick = () => { folha(txt("tela.tt_pivot_pedido","Tabela dinâmica · o pedido"),
     txt("tela.st_mesmo_cruzamento_5000","o mesmo cruzamento pela porta 5000"),
     `<pre class="dado">${esc(JSON.stringify({
       op: "pivotar", database: w.db, tabela: w.tabela,
       juntar: w.juncoes, linhas: w.linhas, colunas: w.colunas,
       valor: w.valor ? w.valor.campo : undefined, agregador: w.agregador,
     }, null, 2))}</pre>
-    <div class="acoes"><button class="botao secundario" id="pv_volta3">← Resultado</button></div>`)
-    || ($("#pv_volta3").onclick = () => desenharPivot());
+    <div class="acoes"><button class="botao secundario" id="pv_volta3">← Resultado</button></div>`);
+    $("#pv_volta3").onclick = () => desenharPivot();
+  };
 }
 
 /* ==================================== Configurações e diretivas da tabela
@@ -6693,7 +6743,7 @@ async function pivotPasso3() {
    tamanho do volume desta tabela" precisa saber que a resposta e "recriando". */
 
 async function verConfigTabela(db, tab) {
-  folha(preencher(txt("tela.tt_config_de","Configurações de {tab}"), {tab}), preencher(txt("tela.st_db_carregando","{db} · carregando…"), {db}), `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
+  const vez = folha(preencher(txt("tela.tt_config_de","Configurações de {tab}"), {tab}), preencher(txt("tela.st_db_carregando","{db} · carregando…"), {db}), `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
 
   const [e, c, mem, quem] = await Promise.all([
     api("esquema", { database: db, tabela: tab }),
@@ -6708,6 +6758,7 @@ async function verConfigTabela(db, tab) {
   const seg = c.seguranca || {};
   const proibida = (seg.bases_proibidas || []).includes(db);
 
+  if (!aindaNoPainel(vez)) return;
   folha(preencher(txt("tela.tt_config_de","Configurações de {tab}"), {tab}), preencher(txt("tela.st_o_que_vale_tabela","{db} · o que vale para esta tabela"), {db}),
     `<div class="fichas">
        ${ficha(e.registros, txt("tela.fc_registros","registros"))}
@@ -6974,7 +7025,7 @@ async function gerirDatabase(db) {
   if (!db) return avisar(txt("tela.g_sem_database","nenhum database — crie um pelo [+] da árvore"), true);
   est.database = db;
 
-  folha(preencher(txt("tela.tt_gerir_db","Gerir {db}"), {db}), txt("tela.carregando","carregando…"), `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
+  const vez = folha(preencher(txt("tela.tt_gerir_db","Gerir {db}"), {db}), txt("tela.carregando","carregando…"), `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
   let resumo = "";
   try {
     const st = await api("sistabelas", { database: db });
@@ -6991,6 +7042,7 @@ async function gerirDatabase(db) {
   } catch (e) { resumo = `<div class="aviso mal">${esc(String(e))}</div>`; }
 
   const itens = itensDoDatabase(db);
+  if (!aindaNoPainel(vez)) return;
   folha(preencher(txt("tela.tt_gerir_db","Gerir {db}"), {db}), txt("tela.st_tudo_sobre_banco","tudo que se faz sobre este banco"),
     resumo + GRUPOS_DB.map(([g, titulo, tituloTxt]) => {
       const doGrupo = itens.map((it, i) => [it, i]).filter(([it]) => it.g === g);
@@ -7095,6 +7147,7 @@ function telaCopiarColar(db) {
 /* --------------------------------------------- diretivas de acesso ao banco */
 
 async function verDiretivasDoBanco(db) {
+  const vez = tomarPainel();
   db = db || databaseCorrente();
   const [c, u, eu] = await Promise.all([
     api("config"), api("usuarios").catch(() => []), api("quem_sou").catch(() => ({})),
@@ -7114,6 +7167,7 @@ async function verDiretivasDoBanco(db) {
     return { itens: ativos, vazio: !ativos.length, curinga: bases[db] === undefined };
   };
 
+  if (!aindaNoPainel(vez)) return;
   folha(preencher(txt("tela.tt_diretivas_acesso_db","Diretivas de acesso · {db}"), {db}), txt("tela.st_quem_alcanca_banco","quem alcança este banco, e o que o servidor recusa antes de olhar"),
     `${proibida ? `<div class="nota mal"><p><strong>Este banco está em
        <code>seguranca.bases_proibidas</code>.</strong> Nenhum usuário o alcança,
@@ -7199,8 +7253,10 @@ async function verDiretivasDoBanco(db) {
 /* ------------------------------------------------------ backup e restauração */
 
 async function verBackupRestaure(db) {
+  const vez = tomarPainel();
   const c = await api("config");
   const bkp = c.backup || {};
+  if (!aindaNoPainel(vez)) return;
   folha(txt("tela.mi_backup_restauracao","Backup e restauração"), `${db} · cópia com manifesto SHA-256`,
     `<div class="fichas">
        ${ficha(bkp.destino || "—", txt("tela.fc_destino","destino"))}
@@ -7252,9 +7308,11 @@ async function verBackupRestaure(db) {
    contorno, com o preenchimento só no hover. */
 
 async function telaRestaurarBackup(pasta) {
+  const vez = tomarPainel();
   const c = await api("config").catch(() => ({}));
   const inicial = pasta || (c.backup || {}).destino || "backups";
 
+  if (!aindaNoPainel(vez)) return;
   folha(txt("tela.tt_restaurar_backup","Restaurar um backup"),
     txt("tela.st_backup_volta_outro_nome","a cópia volta com outro nome, ou por cima — e o SHA-256 é conferido antes"),
     `<form class="criar" id="formRst" autocomplete="off" onsubmit="return false">
@@ -7454,6 +7512,7 @@ async function verDentroDoBackup(origem, de) {
 }
 
 async function restaurarAgora(origem, de, destino, porCima) {
+  const vez = tomarPainel();
   if (!destino) return avisar(txt("tela.g_de_nome_database_restaurado","dê um nome ao database restaurado"), true);
   $("#rstRecado").textContent = "conferindo o SHA-256 e restaurando…";
   try {
@@ -7465,6 +7524,7 @@ async function restaurarAgora(origem, de, destino, porCima) {
     avisar(preencher(txt("tela.g_database_restaurado","{database} restaurado · {arquivos} arquivo(s), {bytes}, {tabelas} tabela(s)"),
       {database: r.database, arquivos: fmt(r.arquivos), bytes: fmtBytes(r.bytes), tabelas: r.tabelas.length}));
     await montarArvore(false);
+    if (!aindaNoPainel(vez)) return;
     folha(preencher(txt("tela.tt_restaurado_db","Restaurado: {database}"), {database: r.database}),
       preencher(txt("tela.st_de_em_ms","de {de}, em {ms} ms"), {de: r.de, ms: fmt(r.ms)}),
       `<div class="fichas">
@@ -8050,6 +8110,7 @@ function ligarCoresDaTelemetria() {
 }
 
 async function verConfigServidor() {
+  const vez = tomarPainel();
   const [c, p] = await Promise.all([api("config"), api("ping")]);
   const seg = c.seguranca || {};
   const rep = c.replicacao || {};
@@ -8082,6 +8143,7 @@ async function verConfigServidor() {
       <div class="form-dbl">${itens}</div>` : "";
   };
 
+  if (!aindaNoPainel(vez)) return;
   folha(txt("tela.cfg_titulo", "Configurações gerais do servidor"),
     txt("tela.cfg_sub", "o que está valendo agora · edita e grava no config.json"),
     `<div class="acoes idi-escolha">
@@ -8284,6 +8346,7 @@ function grupoDeAjustes(titulo, linhas) {
 
 /** As configuracoes que valem para UM database. */
 async function verConfigBanco(db) {
+  const vez = tomarPainel();
   db = db || databaseCorrente();
   if (!db) return avisar(txt("tela.g_sem_database_escolhido","nenhum database escolhido"), true);
 
@@ -8297,6 +8360,7 @@ async function verConfigBanco(db) {
   const tabelas = st.tabelas || [];
   const soma = (f) => tabelas.reduce((a, x) => a + (+x[f] || 0), 0);
 
+  if (!aindaNoPainel(vez)) return;
   folha(preencher(txt("tela.tt_config_do_banco","Configurações do banco {db}"), {db}), txt("tela.st_vale_para_database","o que vale para este database"),
     `<div class="fichas">
        ${ficha(tabelas.length, txt("tela.fc_tabelas","tabelas"))}
@@ -8338,8 +8402,10 @@ async function verConfigBanco(db) {
 
 /** Quem pode o que, com o poder de cada um sobre cada base. */
 async function verConfigUsuarios() {
+  const vez = tomarPainel();
   const u = await api("usuarios");
   const lista = u.usuarios || u || [];
+  if (!aindaNoPainel(vez)) return;
   folha(txt("tela.tt_config_usuarios","Configurações dos usuários"), `${lista.length} cadastrado(s) · o hash da senha nunca sai daqui`,
     `<div class="fichas">
        ${ficha(lista.length, txt("tela.fc_usuarios","usuários"))}
@@ -8428,10 +8494,11 @@ async function verConfigUsuarios() {
 async function verSysTables(db) {
   db = db || databaseCorrente();
   if (!db) return avisar(txt("tela.g_sem_database_escolhido","nenhum database escolhido"), true);
-  folha("SysTables" + " · " + db, txt("tela.carregando","carregando…"), `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
+  const vez = folha("SysTables" + " · " + db, txt("tela.carregando","carregando…"), `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
   const r = await api("sistabelas", { database: db });
   const linhas = r.tabelas || [];
 
+  if (!aindaNoPainel(vez)) return;
   folha("SysTables" + " · " + db, preencher(txt("tela.st_n_tabelas_catalogo","{n} tabela(s) · o catálogo em forma de dado"), {n: linhas.length}),
     `<div class="acoes">
        <button class="botao secundario" id="btSysCols">SysColumns →</button>
@@ -8496,10 +8563,11 @@ async function verSysTables(db) {
 async function verSysColumns(db, tabela_) {
   db = db || databaseCorrente();
   if (!db) return avisar(txt("tela.g_sem_database_escolhido","nenhum database escolhido"), true);
-  folha("SysColumns · " + db, txt("tela.carregando","carregando…"), `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
+  const vez = folha("SysColumns · " + db, txt("tela.carregando","carregando…"), `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
   const r = await api("siscolunas", tabela_ ? { database: db, tabela: tabela_ } : { database: db });
   const linhas = r.colunas || [];
 
+  if (!aindaNoPainel(vez)) return;
   folha("SysColumns" + " · " + db + (tabela_ ? " · " + tabela_ : ""),
     preencher(txt("tela.st_n_colunas_dicionario","{n} coluna(s) · o dicionário de dados"), {n: linhas.length}),
     `<div class="acoes">
@@ -8574,6 +8642,7 @@ function chaveEmPino(c) {
    no mesmo commit. */
 
 async function verTransacoes() {
+  const vez = tomarPainel();
   let dados = null, erro = "";
   try {
     dados = await api("transacoes");
@@ -8586,6 +8655,7 @@ async function verTransacoes() {
   let minha = null;
   try { minha = await api("transacao"); } catch (_) { /* sem sessão */ }
 
+  if (!aindaNoPainel(vez)) return;
   folha(txt("tela.mi_gestao_transacoes", "Gestão de transações"),
         txt("tela.tx_sub", "o que existe, quem segura o quê, e o que não existe"),
     `<div class="fichas">
@@ -9496,12 +9566,13 @@ async function telaLixeira(db, tab) {
   tab = tab || (est.atual || {}).tab;
   if (!db || !tab) return avisar(txt("tela.g_escolha_tabela_primeiro","escolha uma tabela primeiro"), true);
 
-  folha(preencher(txt("tela.tt_lixeira_de","Lixeira de {tab}"), {tab}), preencher(txt("tela.st_db_carregando","{db} · carregando…"), {db: esc(db)}),
+  const vez = folha(preencher(txt("tela.tt_lixeira_de","Lixeira de {tab}"), {tab}), preencher(txt("tela.st_db_carregando","{db} · carregando…"), {db: esc(db)}),
     `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
   let d;
   try {
     d = await api("lixeira", { database: db, tabela: tab, limite: 300 });
   } catch (e) {
+    if (!aindaNoPainel(vez)) return;
     folha(preencher(txt("tela.tt_lixeira_de","Lixeira de {tab}"), {tab}), esc(db),
       `<div class="aviso mal">${esc(String(e))}</div>
        <p class="leg">O <code>.trash</code> guarda o dado que alguém mandou
@@ -9515,6 +9586,7 @@ async function telaLixeira(db, tab) {
     return;
   }
 
+  if (!aindaNoPainel(vez)) return;
   const cols = (d.colunas || []).filter(c => !c.sistema);
   const itens = d.descartadas || [];
   $("#subtitulo").textContent =
@@ -9608,6 +9680,7 @@ function ligarLixeira(db, tab, d, cols, itens) {
 
 /** Uma linha da lixeira, inteira, com os anexos. */
 async function verLinhaDescartada(db, tab, uuid) {
+  const vez = tomarPainel();
   let d;
   try {
     d = await api("lixeira", { database: db, tabela: tab, uuid });
@@ -9616,6 +9689,7 @@ async function verLinhaDescartada(db, tab, uuid) {
   if (!item) return avisar(txt("tela.g_linha_nao_esta_lixeira","essa linha não está mais na lixeira"), true);
   const cols = (d.colunas || []).filter(c => !c.sistema);
 
+  if (!aindaNoPainel(vez)) return;
   folha(txt("tela.tt_linha_descartada","Linha descartada"), `${esc(db)} · ${esc(tab)} · rowid ${item.rowid}`,
     `<div class="fichas">
        <div class="ficha"><div class="v">${esc(item.quando)}</div><div class="r">quando</div></div>
@@ -9654,12 +9728,13 @@ async function telaMotivos(db, tab) {
   tab = tab || (est.atual || {}).tab;
   if (!db || !tab) return avisar(txt("tela.g_escolha_tabela_primeiro","escolha uma tabela primeiro"), true);
 
-  folha(preencher(txt("tela.tt_motivos_de","Motivos de {tab}"), {tab}), preencher(txt("tela.st_db_carregando","{db} · carregando…"), {db: esc(db)}),
+  const vez = folha(preencher(txt("tela.tt_motivos_de","Motivos de {tab}"), {tab}), preencher(txt("tela.st_db_carregando","{db} · carregando…"), {db: esc(db)}),
     `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
   let d;
   try {
     d = await api("motivos", { database: db, tabela: tab, limite: 500 });
   } catch (e) {
+    if (!aindaNoPainel(vez)) return;
     folha(preencher(txt("tela.tt_motivos_de","Motivos de {tab}"), {tab}), esc(db),
       `<div class="aviso mal">${esc(String(e))}</div>
        <p class="leg">O <code>.reason</code> costuma ser mais revelador que o
@@ -9672,6 +9747,7 @@ async function telaMotivos(db, tab) {
     return;
   }
 
+  if (!aindaNoPainel(vez)) return;
   const regs = d.motivos || [];
   $("#subtitulo").textContent = `${esc(db)} · ${fmt(d.total)} registro(s)`;
   $("#painel").innerHTML =
@@ -9730,16 +9806,17 @@ function ligarMotivos(regs) {
    quem responde «está rápido?» é o p95, não a média. */
 
 async function verSessoes() {
-  folha(txt("tela.se_titulo", "Sessões"), txt("tela.carregando", "carregando…"), `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
+  const vez = folha(txt("tela.se_titulo", "Sessões"), txt("tela.carregando", "carregando…"), `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
   let d;
   try { d = await api("sessoes"); }
-  catch (e) { return folha(txt("tela.se_titulo", "Sessões"), "", `<div class="aviso mal">${esc(String(e))}</div>`); }
+  catch (e) { if (!aindaNoPainel(vez)) return; return folha(txt("tela.se_titulo", "Sessões"), "", `<div class="aviso mal">${esc(String(e))}</div>`); }
 
   const dur = ms => ms == null ? "—"
     : ms < 1000 ? `${fmt(ms)} ms`
     : ms < 60000 ? `${(ms/1000).toFixed(1).replace(".", ",")} s`
     : `${Math.floor(ms/60000)} min ${Math.round((ms%60000)/1000)} s`;
 
+  if (!aindaNoPainel(vez)) return;
   folha(txt("tela.se_titulo", "Sessões"), txt("tela.se_sub", "quem está falando com o servidor agora · atualiza a cada 3 s"),
     `<div class="fichas">
        ${ficha(d.quantas, txt("tela.se_fic_porta", "na porta de dados"))}
@@ -9878,10 +9955,10 @@ function histograma(faixas) {
 }
 
 async function verEstatisticas(horas) {
-  folha(txt("tela.mi_estatisticas", "Estatísticas de uso"), txt("tela.carregando", "carregando…"), `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
+  const vez = folha(txt("tela.mi_estatisticas", "Estatísticas de uso"), txt("tela.carregando", "carregando…"), `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
   let d;
   try { d = await api("estatisticas", horas ? { horas } : {}); }
-  catch (e) { return folha(txt("tela.mi_estatisticas", "Estatísticas de uso"), "", `<div class="aviso mal">${esc(String(e))}</div>`); }
+  catch (e) { if (!aindaNoPainel(vez)) return; return folha(txt("tela.mi_estatisticas", "Estatísticas de uso"), "", `<div class="aviso mal">${esc(String(e))}</div>`); }
 
   const lat = d.latencia || {};
   const carta = (titulo, legenda, corpo, larga) =>
@@ -9898,6 +9975,7 @@ async function verEstatisticas(horas) {
     return `<div id="${id}"></div>`;
   };
 
+  if (!aindaNoPainel(vez)) return;
   folha(txt("tela.mi_estatisticas", "Estatísticas de uso"),
     marcado(txt("tela.st_sub", "desde {desde} · {acessos} acessos"),
       { desde: d.desde, acessos: fmt(d.acessos) }),
@@ -10055,11 +10133,12 @@ const JN = { db:"", a:"", b:"", chaveA:"", chaveB:"", tipo:"interna", grade:null
 async function telaJuncao(db) {
   JN.db = db || JN.db || databaseCorrente();
   if (!JN.db) return avisar(txt("tela.g_escolha_banco_primeiro","escolha um banco primeiro"), true);
-  folha(txt("tela.tt_juncao","Junção de tabelas"), txt("tela.carregando","carregando…"), `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
+  const vez = folha(txt("tela.tt_juncao","Junção de tabelas"), txt("tela.carregando","carregando…"), `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
 
   const t = await api("tabelas", { database: JN.db });
   const tabs = t.tabelas || [];
   if (tabs.length < 2) {
+    if (!aindaNoPainel(vez)) return;
     return folha(txt("tela.tt_juncao","Junção de tabelas"), esc(JN.db),
       `<div class="aviso mal">O banco <b>${esc(JN.db)}</b> tem
         ${tabs.length} tabela(s). Uma junção precisa de duas.</div>`);
@@ -10070,6 +10149,7 @@ async function telaJuncao(db) {
   const opc = (lista, sel) => lista.map(x =>
     `<option ${x === sel ? "selected" : ""}>${esc(x)}</option>`).join("");
 
+  if (!aindaNoPainel(vez)) return;
   folha(txt("tela.tt_juncao","Junção de tabelas"), `${esc(JN.db)} · escolha o formato clicando no desenho`,
     `<div class="form-dbl">
        <label class="cmp"><span>Tabela A</span>
@@ -10198,11 +10278,12 @@ const UN = { db:"", escolhidas:[], modo:"distinta" };
 async function telaUniao(db) {
   UN.db = db || UN.db || databaseCorrente();
   if (!UN.db) return avisar(txt("tela.g_escolha_banco_primeiro","escolha um banco primeiro"), true);
-  folha(txt("tela.tt_uniao","União de tabelas"), txt("tela.carregando","carregando…"), `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
+  const vez = folha(txt("tela.tt_uniao","União de tabelas"), txt("tela.carregando","carregando…"), `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
   const t = await api("tabelas", { database: UN.db });
   const tabs = t.tabelas || [];
   UN.escolhidas = UN.escolhidas.filter(x => tabs.includes(x));
 
+  if (!aindaNoPainel(vez)) return;
   folha(txt("tela.tt_uniao","União de tabelas"),
     `${esc(UN.db)} · empilha duas ou mais tabelas, posição a posição`,
     `<div class="un-lista">
@@ -10321,10 +10402,10 @@ function linhasParaObjetos(r) {
 }
 
 async function telaDbLink(nome) {
-  folha("DbLink", txt("tela.carregando","carregando…"), `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
+  const vez = folha("DbLink", txt("tela.carregando","carregando…"), `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
   let d;
   try { d = await api("dblink"); }
-  catch (e) { return folha("DbLink", txt("tela.st_nao_deu","não deu"), `<div class="aviso mal">${esc(String(e))}</div>`); }
+  catch (e) { if (!aindaNoPainel(vez)) return; return folha("DbLink", txt("tela.st_nao_deu","não deu"), `<div class="aviso mal">${esc(String(e))}</div>`); }
 
   const ligacoes = d.ligacoes || [];
   DBL.ligacao = nome || DBL.ligacao ||
@@ -10337,6 +10418,7 @@ async function telaDbLink(nome) {
     // `onclick` nulo, clique sem efeito. Era a primeira tela de quem ainda
     // não tem ligação nenhuma, e as duas saídas dela não saíam. Achado
     // clicando (pedido 190); ler o código não o achou em nenhuma revisão.
+    if (!aindaNoPainel(vez)) return;
     folha("DbLink", txt("tela.st_nenhuma_ligacao","nenhuma ligação cadastrada ainda"),
       `<div class="aviso">
          <p><strong>Um DbLink guarda um apelido, um endereço e uma
@@ -10360,6 +10442,7 @@ async function telaDbLink(nome) {
       ${l.conecta ? "" : "disabled"}>${esc(l.nome)} — ${esc(l.motor)}${
         l.conecta ? "" : " (sem cliente)"}</option>`).join("");
 
+  if (!aindaNoPainel(vez)) return;
   folha("DbLink",
     atual ? `${esc(atual.usuario)}@${esc(atual.host)}:${atual.porta}${
       atual.somente_leitura ? " · somente leitura" : " · PODE ESCREVER"}` : "",
@@ -10479,6 +10562,7 @@ async function abrirTabelaDbl(tabela, salto = 0) {
 }
 
 async function estruturaDbl(tabela) {
+  const vez = tomarPainel();
   let e;
   try { e = await api("dblink_estrutura", { dblink: DBL.ligacao, database: DBL.database, tabela }); }
   catch (er) { return avisar(String(er), true); }
@@ -10508,6 +10592,7 @@ async function estruturaDbl(tabela) {
   });
   const linhasCol = emObjetos(col), linhasIdx = emObjetos(idx);
 
+  if (!aindaNoPainel(vez)) return;
   folha(preencher(txt("tela.tt_estrutura_de","Estrutura de {db}.{tab}"), {db: DBL.database, tab: tabela}),
     preencher(txt("tela.st_colunas_indices_como_reporta","colunas e índices como o {ligacao} os reporta"), {ligacao: DBL.ligacao}),
     `<div id="gradeDblCol"></div>
@@ -10825,8 +10910,10 @@ async function assistenteDbLink() {
 }
 
 async function telaDbLinkSql(nome) {
+  const vez = tomarPainel();
   const d = await api("dblink");
   const l = (d.ligacoes || []).find(x => x.nome === nome) || {};
+  if (!aindaNoPainel(vez)) return;
   folha(preencher(txt("tela.tt_consulta_no_dblink","Consulta no DbLink {nome}"), {nome}),
     l.somente_leitura ? txt("tela.st_dblink_so_consulta","esta ligação só consulta — SELECT, SHOW, DESCRIBE e EXPLAIN")
                       : txt("tela.st_dblink_pode_escrever","ATENÇÃO: esta ligação pode escrever no banco do outro lado"),
@@ -10874,9 +10961,10 @@ async function telaDbLinkSql(nome) {
 /* ------------------------------------------------ o cadastro das ligações */
 
 async function telaDbLinkDefinicoes() {
-  folha(txt("tela.tt_dblink_def","Definições do DbLink"), txt("tela.carregando","carregando…"), `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
+  const vez = folha(txt("tela.tt_dblink_def","Definições do DbLink"), txt("tela.carregando","carregando…"), `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
   const d = await api("dblink");
   const ls = d.ligacoes || [];
+  if (!aindaNoPainel(vez)) return;
   folha(txt("tela.tt_dblink_def","Definições do DbLink"),
     `${ls.length} ligação(ões) · guardadas em ${esc(d.arquivo)}`,
     `<div id="gradeDbl"></div>` +
@@ -10944,6 +11032,7 @@ async function telaDbLinkDefinicoes() {
 }
 
 async function editarDbLink(nome) {
+  const vez = tomarPainel();
   const d = await api("dblink");
   const l = nome ? (d.ligacoes || []).find(x => x.nome === nome) : null;
   const motores = d.motores || [];
@@ -10959,6 +11048,7 @@ async function editarDbLink(nome) {
   const ePhx = l ? l.motor === "phxsql" : false;
   const soPhx = `data-so-phx ${ePhx ? "" : "hidden"}`;
 
+  if (!aindaNoPainel(vez)) return;
   folha(l ? `Ligação ${l.nome}` : "Nova ligação",
     l ? "o apelido não muda — para renomear, crie outra e apague esta"
       : "letras, números, _ e - no apelido",
@@ -11287,11 +11377,13 @@ function aindaNao(f) {
  * continua no ar na porta dela, e é por ela que a porta de dados volta.
  */
 async function verServico() {
+  const vez = tomarPainel();
   const [p, s] = await Promise.all([api("ping"), api("servico")]);
   const noAr = !!s.no_ar;
   // Uma chave por FRASE, com a ênfase virada marca: o corte em <b>/<code>
   // acontece DEPOIS da tradução, no marcado(). O `<em>` de antes virou
   // negrito — a marca só tem negrito e crase.
+  if (!aindaNoPainel(vez)) return;
   folha(txt("tela.mi_servico","Serviço"),
     noAr ? txt("tela.sv_sub_no_ar","a porta de dados está aceitando conexão")
          : txt("tela.sv_sub_parada","a porta de dados está PARADA — a interface web continua no ar"),
@@ -11393,6 +11485,7 @@ const PINO_DO_ESTADO = {
 };
 
 async function telaJobs() {
+  const vez = tomarPainel();
   const j = await api("jobs", { historico: 40 });
   const jobs = j.jobs || [];
   const hist = j.historico || [];
@@ -11452,6 +11545,7 @@ async function telaJobs() {
 
   // O subtítulo vai para textContent: sem esc(), senão um `&` no caminho do
   // arquivo apareceria como `&amp;`.
+  if (!aindaNoPainel(vez)) return;
   folha(txt("tela.tt_jobs","Jobs de execução"),
     preencher(txt("tela.jb_sub","{n} job(s) · cadastro em {arquivo} · corridas em {log}"),
       {n: jobs.length, arquivo: j.arquivo, log: j.log})
@@ -11598,11 +11692,13 @@ const JOBS_MODELO = [
 ];
 
 async function editarJob(nome) {
+  const vez = tomarPainel();
   const [j, us] = await Promise.all([api("jobs"), api("usuarios").catch(() => [])]);
   const x = nome ? (j.jobs || []).find(a => a.nome === nome) : null;
   const porHora = !!(x && x.hora);
   const logins = (Array.isArray(us) ? us : []).filter(u => u.ativo).map(u => u.login);
 
+  if (!aindaNoPainel(vez)) return;
   folha(x ? preencher(txt("tela.jb_tt_job","Job {nome}"), {nome: x.nome}) : txt("tela.jb_tt_novo","Novo job"),
     x ? txt("tela.jb_sub_editar","o nome não muda — para renomear, crie outro e apague este")
       : txt("tela.jb_sub_novo","letras, números, _ e - no nome · ele nasce desligado, de propósito"),
@@ -11734,14 +11830,23 @@ function erGuardar(db, pos) {
   catch { /* modo privado: o arrasto vale ate recarregar, e so */ }
 }
 
-async function telaDiagramaER(db) {
+/** `vez` e a posse do painel que o PEDIDO tinha quando saiu (pedido 636). Quem
+ *  chama depois de um `await` -- o «Criar» do cartao, a chave declarada -- passa
+ *  a que guardou ANTES dele; quem chama de um clique deixa o padrao, que e a de
+ *  agora. Se a pessoa ja abriu outra tela, o diagrama nao pinta por cima. */
+async function telaDiagramaER(db, vez = vezDoPainel()) {
   db = db || databaseCorrente();
+  if (!aindaNoPainel(vez)) return;
   const bancos = est.bancos || await api("bancos");
+  if (!aindaNoPainel(vez)) return;
   if (!db) db = bancos[0];
   if (!db) return folha(txt("tela.fer_diagrama","Diagrama ER"), txt("tela.st_sem_database_ainda","não há database ainda"),
     `<div class="vazio">crie um database primeiro</div>`);
 
-  folha(txt("tela.fer_diagrama","Diagrama ER"), `${esc(db)} · lendo o esquema…`,
+  // A posse que ESTA tela tomou ao anunciar «lendo»: o laco de `esquema` abaixo
+  // e o `dblink` sao `await`s, e a pintura final so vale se ninguem pintou
+  // outra coisa enquanto eles voltavam.
+  const minha = folha(txt("tela.fer_diagrama","Diagrama ER"), `${esc(db)} · lendo o esquema…`,
     `<div class="centro">lendo o esquema de cada tabela…</div>`);
   const t = await api("tabelas", { database: db });
   const esquemas = [];
@@ -11771,6 +11876,7 @@ async function telaDiagramaER(db) {
     }
   } catch (e) { semDbl = String(e); }
 
+  if (!aindaNoPainel(minha)) return;
   ER.db = db; ER.esquemas = esquemas; ER.dblink = sincronias; ER.semDbl = semDbl;
   const r = PhxER.resumo(esquemas);
 
@@ -11932,6 +12038,7 @@ function cartaoDeclararFk(db, de, para) {
     const nomeFk = c.corpo.querySelector("#fkNome").value.trim();
     if (!nomeFk) return c.corpo.querySelector("#fkRecado").innerHTML =
       `<div class="aviso mal">dê um nome à chave</div>`;
+    const vez = vezDoPainel();
     try {
       await api("declarar_fk", {
         database: db, tabela: de.tabela, nome: nomeFk,
@@ -11943,7 +12050,7 @@ function cartaoDeclararFk(db, de, para) {
       avisar(preencher(txt("tela.fk_declarada_ok",
         "chave {nome} declarada em {tabela} — e já conferida na gravação"),
         { nome: nomeFk, tabela: de.tabela }));
-      telaDiagramaER(db);
+      telaDiagramaER(db, vez);
     } catch (e) {
       c.corpo.querySelector("#fkRecado").innerHTML =
         `<div class="aviso mal">${esc(String(e))}</div>`;
@@ -12008,11 +12115,12 @@ function cartaoTabelaER(db, nome) {
   c.corpo.querySelector("#tabEstrutura").onclick = () => { c.fechar(); est.aba = "estrutura"; abrirTabela(db, nome); };
   c.corpo.querySelector("#tabGerir").onclick = () => { c.fechar(); gerirTabela(db, nome); };
   c.corpo.querySelectorAll(".er-rm-fk").forEach(b => b.onclick = async () => {
+    const vez = vezDoPainel();
     try {
       await api("excluir_fk", { database: db, tabela: nome, nome: b.dataset.fk });
       c.fechar();
       avisar(preencher(txt("tela.g_fk_excluida_sem_toque","declaração {fk} excluída de {tabela} — nenhuma linha foi tocada"), {fk: b.dataset.fk, tabela: nome}));
-      telaDiagramaER(db);
+      telaDiagramaER(db, vez);
     } catch (er) {
       c.corpo.querySelector("#tabRecado").innerHTML =
         `<div class="aviso mal">${esc(String(er))}</div>`;
@@ -12079,12 +12187,14 @@ async function cartaoAcrescentarColuna(db, tabela) {
       if (padrao !== "") pedido.padrao = padrao;
       const botao = c.corpo.querySelector("#acFazer");
       botao.disabled = true;
+      const vez = vezDoPainel();
       try {
         const r = await api("acrescentar_coluna", pedido);
         c.fechar();
         avisar(preencher(txt("tela.g_coluna_slots_reescritos","{coluna}: {n} {slots} · {ms} ms"), {coluna: r.coluna, n: r.slots_reescritos, slots: txt("tela.slots_reescritos", "slot(s) reescrito(s)"), ms: Math.round(r.ms)}));
         // As duas telas de onde este cartão abre se redesenham sozinhas.
-        if (typeof ER === "object" && ER.db === db) telaDiagramaER(db);
+        if (!aindaNoPainel(vez)) { /* a pessoa ja foi para outra tela */ }
+        else if (typeof ER === "object" && ER.db === db) telaDiagramaER(db, vez);
         else if (est.atual && est.atual.tab === tabela) abrirTabela(db, tabela);
       } catch (er) {
         botao.disabled = false;
@@ -12201,6 +12311,9 @@ function cartaoNovaTabelaER(db) {
       if (!cols.length) return recado.innerHTML =
         `<div class="aviso mal">a tabela precisa de ao menos um campo</div>`;
       const pk = cols.find(l => l.pk);
+      // A posse de ANTES de ir ao servidor (pedido 636): o repintar do fim so
+      // vale se a pessoa ainda estiver nesta tela.
+      const vez = vezDoPainel();
       const pedido = {
         database: db, tabela: nome,
         colunas: cols.map(l => ({ nome: l.nome, tipo: l.tipo, obrigatoria: l.obrig })),
@@ -12213,7 +12326,7 @@ function cartaoNovaTabelaER(db) {
         avisar(preencher(txt("tela.g_tabela_criada_simples","tabela {tabela} criada · {colunas} coluna(s){semchave}"),
           {tabela: feito.tabela, colunas: feito.colunas, semchave: pk ? "" : txt("tela.g_sem_chave_primaria"," · SEM chave primária — as outras tabelas não têm o que apontar")}));
         await montarArvore(false);
-        telaDiagramaER(db);
+        telaDiagramaER(db, vez);
       } catch (e) {
         recado.innerHTML = `<div class="aviso mal">${esc(String(e))}</div>`;
       }
@@ -12261,7 +12374,7 @@ function cartaoNovaTabelaER(db) {
 async function telaDadosPessoais(db) {
   const bancos = est.bancos || await api("bancos");
   const alvos = db ? [db] : bancos;
-  folha(txt("tela.tt_dado_pessoal","Dado pessoal"), txt("tela.st_varrendo_esquema","varrendo o esquema…"),
+  const vez = folha(txt("tela.tt_dado_pessoal","Dado pessoal"), txt("tela.st_varrendo_esquema","varrendo o esquema…"),
     `<div class="centro">lendo o esquema de cada tabela…</div>`);
 
   const achados = [];
@@ -12283,6 +12396,7 @@ async function telaDadosPessoais(db) {
   const bases = new Set(achados.map(a => a.base)).size;
   const tabelasComDado = new Set(achados.map(a => `${a.base}.${a.tabela}`)).size;
 
+  if (!aindaNoPainel(vez)) return;
   folha(txt("tela.tt_dado_pessoal","Dado pessoal"),
     db ? `${esc(db)} · onde estão as marcas de LGPD/GDPR`
        : "todas as bases · onde estão as marcas de LGPD/GDPR",
@@ -12411,13 +12525,14 @@ async function telaDadosPessoais(db) {
  * respostas muito diferentes para quem audita.
  */
 async function telaTrilhaLgpd(db, tab, tipo) {
-  folha(txt("tela.tt_trilha_lgpd","Trilha de LGPD"), `${esc(db)}.${esc(tab)} · lendo…`,
+  const vez = folha(txt("tela.tt_trilha_lgpd","Trilha de LGPD"), `${esc(db)}.${esc(tab)} · lendo…`,
     `<div class="centro">lendo o <code>.lgpd</code>…</div>`);
   let t;
   try {
     t = await api("trilha", { database: db, tabela: tab, limite: 500,
                               tipo: tipo || undefined });
   } catch (e) {
+    if (!aindaNoPainel(vez)) return;
     return folha(txt("tela.tt_trilha_lgpd","Trilha de LGPD"), `${esc(db)}.${esc(tab)}`,
       `<div class="aviso mal"><p><strong>Não deu para ler a trilha.</strong>
        ${esc(e.message || String(e))}</p>
@@ -12440,6 +12555,7 @@ async function telaTrilhaLgpd(db, tab, tipo) {
     ? `<span class="pino mal" title="senha ou hash: o valor nunca entra na trilha">⛨ ${esc(txt("tela.pino_redigido","redigido"))}</span>`
     : (bruto === "" ? `<span class="leg">${esc(txt("tela.pino_vazio","(vazio)"))}</span>` : `<span class="dado">${esc(bruto)}</span>`);
 
+  if (!aindaNoPainel(vez)) return;
   folha(txt("tela.tt_trilha_lgpd","Trilha de LGPD"), `${esc(db)}.${esc(tab)} · quem mexeu e quem viu`,
     `<div class="fichas">
        <div class="ficha"><div class="v">${fmt(t.total || 0)}</div>
@@ -12534,6 +12650,7 @@ function ligarTrilha(regs, valor) {
 }
 
 async function verDiretivas() {
+  const vez = tomarPainel();
   const c = await api("config");
   // A politica mora em `seguranca`, como no arquivo. Enquanto a resposta a
   // trazia achatada no topo, esta tela lia dois campos e a de baixo lia
@@ -12542,6 +12659,7 @@ async function verDiretivas() {
   const lista = (arr, vazio) => Array.isArray(arr) && arr.length
     ? `<ul>${arr.map(x => `<li><code>${esc(String(x))}</code></li>`).join("")}</ul>`
     : `<p class="leg">${esc(vazio)}</p>`;
+  if (!aindaNoPainel(vez)) return;
   folha(txt("tela.fer_diretivas","Diretivas"), txt("tela.st_politica_servidor","a política deste servidor · vale antes de qualquer coisa sair daqui"),
     `<div class="fichas">
        <div class="ficha"><div class="v">${c.somente_leitura ? "sim" : "não"}</div>
@@ -12562,6 +12680,7 @@ async function verDiretivas() {
 }
 
 async function verBancos() {
+  const vez = tomarPainel();
   const bancos = await api("bancos");
   // Gerir Banco e View DB moram AQUI, e nao mais na barra geral: as duas agem
   // sobre um database, e esta e a tela dos databases. Na barra elas
@@ -12576,6 +12695,7 @@ async function verBancos() {
   // template literal FECHA o literal. Um comentario explicativo derrubou a
   // pagina inteira, e a bateria pegou em 200 ms -- ler o codigo nao pegaria,
   // porque o texto do comentario esta certo; o que quebra e onde ele esta.
+  if (!aindaNoPainel(vez)) return;
   folha(txt("tela.bancos_de_dados","Bancos de dados"), txt("tela.st_o_que_existe_disco","o que existe em disco, sob a raiz do servidor"),
     `<div class="acoes">
        <button class="botao secundario" id="btGerirBancoLista">${
@@ -12628,12 +12748,14 @@ async function verBancos() {
      saem da `bancada/cluster/escalonar.py`, medidos, e estão na fábrica de
      idiomas como texto -- não são calculados aqui. */
 async function verCluster() {
+  const vez = tomarPainel();
   let cfg, est = null, erroEstado = "";
   try { cfg = await api("config"); }
   catch (e) { return avisar(String(e), true); }
   const bloco = cfg.cluster || null;
 
   if (!bloco) {
+    if (!aindaNoPainel(vez)) return;
     folha(txt("tela.mi_cluster", "Cluster"), "",
       `<div class="nota"><p>${marcado(txt("tela.cl_sem_cluster",
         "**Este servidor não está em cluster.**"))}</p>
@@ -12746,6 +12868,7 @@ async function verCluster() {
        <p>${marcado(txt("tela.cl_quorum_imposto2",
        "Espera vencida **não desfaz a gravação**: a resposta diz `alcancado:false`."))}</p></div>`;
 
+  if (!aindaNoPainel(vez)) return;
   folha(txt("tela.mi_cluster", "Cluster"),
     `${bloco.id} · ${(est && est.papel) || "—"}`, corpo);
 
@@ -12812,6 +12935,7 @@ async function verCluster() {
 }
 
 async function verReplicacao() {
+  const vez = tomarPainel();
   const c = await api("config");
   const rep = c.replicacao || {};
   const papel = rep.papel || "isolado";
@@ -12899,6 +13023,7 @@ async function verReplicacao() {
          : ""}
      </div>`;
 
+  if (!aindaNoPainel(vez)) return;
   folha(txt("tela.mi_replicacao","Replicação"), `papel ${papel}`, fichas + acoes + aviso + deOrigens + posicoes);
   $("#btAssistRep").onclick = () => assistenteReplicacao();
   const ac = $("#btAcompRep");
@@ -13854,12 +13979,14 @@ function telaTelemetria() {
 }
 
 async function verProfiler() {
+  const vez = tomarPainel();
   clearInterval(profTimer);
   profVisto = 0; profLinhas.length = 0; profGrade = null;
   const bancos = await api("bancos").catch(() => []);
   const e = await api("profiler", { max: 200 }).catch(() => ({ ligado:false, filtro:{} }));
   const f = e.filtro || {};
 
+  if (!aindaNoPainel(vez)) return;
   folha(txt("tela.fer_profiler","Profiler"), txt("tela.st_profiler_o_que_chega","o que chega pela porta 5000, antes de virar dado"),
     `<div class="acoes prof-topo">
        <label class="mini-campo">Database
@@ -14146,6 +14273,7 @@ async function abrirConsulta() {
    tela só diz o estado (idioma em uso, o que falta semear) e leva até lá;
    `id` e `TextName` ficam travados na ficha via COLUNAS_FIXAS. */
 async function telaMensagens() {
+  const vez = tomarPainel();
   est.atual = null;
   $("#abas").innerHTML = "";
   pararMonitor();
@@ -14156,6 +14284,7 @@ async function telaMensagens() {
   p.innerHTML = `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`;
   try {
     const m = await api("mensagens");
+    if (!aindaNoPainel(vez)) return;
     const cabec = `<div class="aviso">
         Idioma em uso: <b>${esc(m.idioma)}</b> — é o campo <code>idioma</code> do
         <code>config.json</code>; trocar o <i>idioma</i> exige reinício, editar os
@@ -14192,6 +14321,7 @@ async function telaMensagens() {
       } catch (e) { avisar(String(e), true); }
     };
   } catch (e) {
+    if (!aindaNoPainel(vez)) return;
     p.innerHTML = `<div class="aviso mal">${esc(e.message)}</div>`;
   }
 }
@@ -14823,7 +14953,10 @@ function atualizarVista() {
  * folha esquecia a tabela, e a ferramenta de consulta abria com o database
  * vazio -- o erro saia com uma barra solta, `/naoexiste`. Quem escolhe uma
  * tabela na arvore continua com ela escolhida; o que muda e o que esta na
- * tela. */
+ * tela.
+ *
+ * DEVOLVE a posse que tomou (pedido 636): quem anuncia «carregando» e pinta o
+ * corpo depois de um `await` guarda o numero e confere com `aindaNoPainel`. */
 function folha(titulo, subtitulo, corpoHtml) {
   // A POSSE DO PAINEL. Esta linha e o que faz a guarda do `abrirAdmin` valer
   // para as ~50 telas que pintam por aqui: sem ela, um `abrirAdmin` que ainda
@@ -14831,7 +14964,7 @@ function folha(titulo, subtitulo, corpoHtml) {
   // fica com o titulo de uma e o corpo da outra. Uma linha aqui cobre todas;
   // espalhar a conferencia por cinquenta funcoes deixaria a esquecida virar a
   // porta dos fundos.
-  tomarPainel();
+  const vez = tomarPainel();
   $("#abas").innerHTML = "";
   // Toda folha comeca sem saber se repintar. Quem sabe (a tela de
   // Configurações) guarda DEPOIS de chamar esta funcao; quem nao sabe fica
@@ -14859,6 +14992,7 @@ function folha(titulo, subtitulo, corpoHtml) {
   // dizer «folha avulsa». Dentro de `PhxTelas.abrir(...)` isto e ignorado --
   // la a chave acabou de ser posta de proposito.
   if (window.PhxTelas) { PhxTelas.marcar(null); PhxTelas.renomear(); }
+  return vez;
 }
 
 function fichasDe(obj, rotulos) {
@@ -14885,7 +15019,7 @@ async function backupAgora() {
     textoOk: txt("tela.fer_backup","Backup"),
   });
   if (alvo === null) return;
-  folha(txt("tela.fer_backup","Backup"), txt("tela.st_copiando_conferindo","copiando e conferindo…"), `<div class="centro">rodando…</div>`);
+  const vez = folha(txt("tela.fer_backup","Backup"), txt("tela.st_copiando_conferindo","copiando e conferindo…"), `<div class="centro">rodando…</div>`);
   // O `destino` e OBRIGATORIO no protocolo e a tela nao o mandava: o pedido
   // voltava «informe "destino"», a excecao subia sem dono, e a folha ficava em
   // «rodando…» PARA SEMPRE -- sem backup e sem erro, que e a pior das duas
@@ -14902,9 +15036,11 @@ async function backupAgora() {
   } catch (e) {
     // Erro que nao aparece e pior que erro: quem clicou tem de saber que nao
     // houve copia. O irmao `conferirBackup` ganhou o mesmo tratamento.
+    if (!aindaNoPainel(vez)) return;
     return folha(txt("tela.fer_backup","Backup"), "",
       `<div class="aviso mal">${esc(String(e))}</div>`);
   }
+  if (!aindaNoPainel(vez)) return;
   folha(txt("tela.fer_backup","Backup"), r.zip ? "em zip, com manifesto SHA-256" : "com manifesto SHA-256",
     // `ms`, e nao `segundos`: a resposta do `backup` traz `ms`, e a quarta
     // ficha vinha «—». Medido clicando em 17/09/2026 -- «segundos = —» com o
@@ -14924,17 +15060,19 @@ async function conferirBackup() {
     textoOk: txt("tela.bt_conferir","Conferir"),
   });
   if (!caminho || !caminho.trim()) return;
-  folha(txt("tela.tt_conferencia_backup","Conferência do backup"), txt("tela.st_recalculando_sha","recalculando o SHA-256 de cada arquivo…"),
+  const vez = folha(txt("tela.tt_conferencia_backup","Conferência do backup"), txt("tela.st_recalculando_sha","recalculando o SHA-256 de cada arquivo…"),
         `<div class="centro">conferindo…</div>`);
   // O IRMAO do `backupAgora`: pasta que nao existe deixava a folha em
   // «conferindo…» para sempre, pela mesma falta de dono na excecao.
   let r;
   try { r = await api("conferir_backup", { destino: caminho.trim() }); }
   catch (e) {
+    if (!aindaNoPainel(vez)) return;
     return folha(txt("tela.tt_conferencia_backup","Conferência do backup"), "",
       `<div class="aviso mal">${esc(String(e))}</div>`);
   }
   const ok = r.integro !== false;
+  if (!aindaNoPainel(vez)) return;
   folha(txt("tela.tt_conferencia_backup","Conferência do backup"),
         ok ? "confere com o manifesto" : "NÃO confere com o manifesto",
         // As tres fichas pediam `conferidos`, `diferentes` e `faltando`; a
@@ -14952,8 +15090,10 @@ async function conferirBackup() {
 }
 
 async function verificarTabela() {
+  const vez = tomarPainel();
   const { db, tab } = est.atual;
   const r = await api("verificar", { database: db, tabela: tab });
+  if (!aindaNoPainel(vez)) return;
   folha(preencher(txt("tela.tt_integridade_de","Integridade de {tab}"), {tab}), txt("tela.st_crc_registro_pagina","CRC de cada registro e de cada página do índice"),
         `<pre class="dado">${esc(JSON.stringify(r, null, 1))}</pre>`);
 }
@@ -14966,10 +15106,11 @@ async function checksumTabela(db, tab) {
   db = db || (est.atual || {}).db;
   tab = tab || (est.atual || {}).tab;
   if (!db || !tab) return avisar(txt("tela.g_escolha_tabela_primeiro","escolha uma tabela primeiro"), true);
-  folha(preencher(txt("tela.tt_soma_verificacao_de","Soma de verificação de {tab}"), {tab}), txt("tela.st_lendo","lendo…"), `<div class="centro">${esc(txt("tela.st_lendo","lendo…"))}</div>`);
+  const vez = folha(preencher(txt("tela.tt_soma_verificacao_de","Soma de verificação de {tab}"), {tab}), txt("tela.st_lendo","lendo…"), `<div class="centro">${esc(txt("tela.st_lendo","lendo…"))}</div>`);
   let r;
   try { r = await api("checksum", { database: db, tabela: tab }); }
-  catch (e) { return folha(preencher(txt("tela.tt_soma_verificacao_de","Soma de verificação de {tab}"), {tab}), "", `<div class="aviso mal">${esc(String(e))}</div>`); }
+  catch (e) { if (!aindaNoPainel(vez)) return; return folha(preencher(txt("tela.tt_soma_verificacao_de","Soma de verificação de {tab}"), {tab}), "", `<div class="aviso mal">${esc(String(e))}</div>`); }
+  if (!aindaNoPainel(vez)) return;
   folha(preencher(txt("tela.tt_soma_verificacao_de","Soma de verificação de {tab}"), {tab: esc(db) + "." + esc(tab)}),
     txt("tela.st_comparar_copias","para comparar duas cópias sem transportar as duas"),
     `<div class="fichas">
@@ -14996,18 +15137,22 @@ async function checksumTabela(db, tab) {
 }
 
 async function reindexarTabela() {
+  const vez = tomarPainel();
   const { db, tab } = est.atual;
   if (!confirm(preencher(txt("tela.g_confirmar_recriar_indices","Recriar os índices de {tab} a partir do .reg?\n\nO .ndx é refeito do zero."), {tab}))) return;
   const r = await api("reindexar", { database: db, tabela: tab });
   avisar(preencher(txt("tela.g_indices_refeitos","índices de {tab} refeitos"), {tab}));
+  if (!aindaNoPainel(vez)) return;
   folha(preencher(txt("tela.tt_reindex_de","Reindex de {tab}"), {tab}), txt("tela.st_ndx_recriado","o .ndx foi recriado a partir do .reg"),
         `<pre class="dado">${esc(JSON.stringify(r, null, 1))}</pre>`);
 }
 
 async function repararTabela() {
+  const vez = tomarPainel();
   const { db, tab } = est.atual;
   if (!confirm(preencher(txt("tela.g_confirmar_reparar_bkp","Reparar {tab} pelo espelho .bkp?\n\nCada slot é conferido nos dois lados."), {tab}))) return;
   const r = await api("reparar", { database: db, tabela: tab });
+  if (!aindaNoPainel(vez)) return;
   folha(preencher(txt("tela.tt_reparo_de","Reparo de {tab}"), {tab}), txt("tela.st_cada_slot_conferido","cada slot conferido no .reg e no .bkp"),
         fichasDe(r, [["conferidos","conferidos"],["reparados","reparados"],
                      ["perdidos","perdidos"]]) +
@@ -15015,9 +15160,11 @@ async function repararTabela() {
 }
 
 async function carregarNaMemoria() {
+  const vez = tomarPainel();
   const { db, tab } = est.atual;
   const r = await api("memoria_carregar", { database: db, tabela: tab });
   avisar(preencher(txt("tela.g_tabela_esta_na_ram","{tab} está na RAM"), {tab}));
+  if (!aindaNoPainel(vez)) return;
   folha(preencher(txt("tela.tt_tab_em_memoria","{tab} em memória"), {tab}), txt("tela.st_consulta_sem_disco","a consulta deixa de tocar o disco"),
         `<pre class="dado">${esc(JSON.stringify(r, null, 1))}</pre>`);
 }
@@ -15031,6 +15178,7 @@ async function liberarDaMemoria() {
 }
 
 async function verResidentes() {
+  const vez = tomarPainel();
   const r = await api("memoria");
   // Achado exercitando esta tela para a prova da PhxGrid: a op `memoria`
   // devolve `residentes`, e nao `tabelas` -- a tela sempre leu o campo
@@ -15039,6 +15187,7 @@ async function verResidentes() {
   // aqui porque sem ele a conversao nao tinha como ser exercitada de verdade.
   const linhas = r.residentes || r.tabelas || r || [];
   const tem = Array.isArray(linhas) && linhas.length;
+  if (!aindaNoPainel(vez)) return;
   folha(txt("tela.tt_tabelas_memoria","Tabelas em memória"), txt("tela.st_carregadas_ram","carregadas na RAM · a consulta não toca o disco"),
     tem ? `<div id="gradeResidentes"></div>` : `<div class="centro">nenhuma tabela na RAM</div>`);
 
@@ -15061,8 +15210,10 @@ async function verResidentes() {
 }
 
 async function verIps() {
+  const vez = tomarPainel();
   const r = await api("ips");
   const linhas = Array.isArray(r) ? r : (r.ips || []);
+  if (!aindaNoPainel(vez)) return;
   folha(txt("tela.mi_de_onde_vem","De onde vêm"), txt("tela.st_resumo_acessos_log","resumo do acessos.log por IP"),
     linhas.length ? `<div id="gradeIps"></div>` : `<div class="centro">nenhum acesso registrado</div>`);
 
@@ -15128,6 +15279,7 @@ function semMetadados(c) {
 }
 
 async function verConfig() {
+  const vez = tomarPainel();
   const c = await api("config");
   const r = c.recursos || {};
 
@@ -15143,6 +15295,7 @@ async function verConfig() {
   const linhasRec = Object.entries(r).map(([k, v]) => ({ campo: k, valor: v }));
   const linhasCargas = (cargas && cargas.cargas) || [];
 
+  if (!aindaNoPainel(vez)) return;
   folha(txt("tela.mi_configuracao","Configuração"), txt("tela.st_config_como_entendeu","o config.json como o servidor o entendeu · o token nunca sai"),
     `<div class="acoes">
        <button class="botao alterar" id="cfIrGerais">Editar em Gerais do servidor</button>
@@ -15211,14 +15364,18 @@ async function verConfig() {
 }
 
 async function verQuemSou() {
+  const vez = tomarPainel();
   const q = await api("quem_sou");
+  if (!aindaNoPainel(vez)) return;
   folha(txt("tela.mi_quem_sou","Quem sou eu"), txt("tela.st_sessao_console","a sessão deste console"),
         `<pre class="dado">${esc(JSON.stringify(q, null, 1))}</pre>`);
 }
 
 async function verSobre() {
+  const vez = tomarPainel();
   let v = "—";
   try { v = (await api("ping")).versao || "—"; } catch (e) { /* offline: segue */ }
+  if (!aindaNoPainel(vez)) return;
   folha(txt("tela.mi_sobre","Sobre o PhxSql"), "Built to store. Engineered to scale.",
     `<div class="fichas">
        <div class="ficha"><div class="v">${esc(v)}</div><div class="r">versão</div></div>
