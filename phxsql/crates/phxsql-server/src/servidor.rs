@@ -2988,7 +2988,7 @@ impl Servidor {
         // A trava sai de cena antes do e-mail: falar com um rele com a lista
         // negra na mao pararia toda conexao que precisasse consultar um
         // bloqueio, e o rele e quem manda no tempo dessa conversa.
-        let resultado = {
+        let mut resultado = {
             let Ok(mut lista) = self.lista_negra.lock() else {
                 return crate::blacklist::Grave::Protegido;
             };
@@ -3000,7 +3000,16 @@ impl Servidor {
                 crate::agora_ms(),
             )
         };
-        if let crate::blacklist::Grave::Bloqueado(b, aviso) = &resultado {
+        if let crate::blacklist::Grave::Bloqueado(b, aviso) = &mut resultado {
+            // O firewall DEPOIS de soltar a lista (pedido 638): o comando tem
+            // prazo, mas ate ele voltar a lista tem de estar livre para o
+            // `barrado()` de toda outra conexao. O bloqueio ja vale.
+            crate::blacklist::aplicar_no_firewall(
+                &self.lista_negra,
+                &self.config.politica,
+                b,
+                aviso,
+            );
             eprintln!(
                 "BLOQUEADO {ip} ate {} -- {} ({})",
                 b.ate(),
@@ -3114,23 +3123,33 @@ impl Servidor {
 
     /// Tentativa leve: conta, e bloqueia se passar do limite na janela.
     fn violacao_leve(&self, ip: &str, comando: &str, motivo: &str) {
-        if let Ok(mut lista) = self.lista_negra.lock() {
-            if let Some((b, aviso)) = lista.tentativa_leve(
+        // A lista sai de cena ANTES do firewall (pedido 638): so o resultado
+        // atravessa o fim do bloco.
+        let bloqueou = match self.lista_negra.lock() {
+            Ok(mut lista) => lista.tentativa_leve(
                 ip,
                 comando,
                 motivo,
                 &self.config.politica,
                 crate::agora_ms(),
-            ) {
-                eprintln!(
-                    "BLOQUEADO {ip} ate {} -- {} apos {} tentativas",
-                    b.ate(),
-                    b.motivo,
-                    b.tentativas
-                );
-                if let Some(a) = aviso {
-                    eprintln!("AVISO: {a}");
-                }
+            ),
+            Err(_) => None,
+        };
+        if let Some((mut b, mut aviso)) = bloqueou {
+            crate::blacklist::aplicar_no_firewall(
+                &self.lista_negra,
+                &self.config.politica,
+                &mut b,
+                &mut aviso,
+            );
+            eprintln!(
+                "BLOQUEADO {ip} ate {} -- {} apos {} tentativas",
+                b.ate(),
+                b.motivo,
+                b.tentativas
+            );
+            if let Some(a) = aviso {
+                eprintln!("AVISO: {a}");
             }
         }
     }
@@ -3205,17 +3224,29 @@ impl Servidor {
     /// Reaproveitado pelas duas portas: a de dados e a da interface web. Um IP
     /// bloqueado e bloqueado no servidor inteiro, nao numa porta so.
     fn barrado(&self, ip: &str, agora: i64) -> Option<crate::blacklist::Bloqueio> {
-        let mut lista = self.lista_negra.lock().ok()?;
-        // Outro processo pode ter mexido no arquivo (phxsqld --desbloquear).
-        let _ = lista.recarregar_se_mudou();
-        let _ = lista.limpar_vencidos(agora, &self.config.politica);
-        // Whitelist vence SEMPRE -- inclusive sobre um bloqueio gravado antes
-        // de a regra entrar. E o que impede o operador de se trancar fora: a
-        // regra nova vale na proxima conexao, sem esperar o bloqueio vencer.
-        if lista.protegido(&self.config.politica, ip) {
-            return None;
+        let (vencidos, barrou) = {
+            let mut lista = self.lista_negra.lock().ok()?;
+            // Outro processo pode ter mexido no arquivo (phxsqld --desbloquear).
+            let _ = lista.recarregar_se_mudou();
+            let vencidos = lista.limpar_vencidos(agora).unwrap_or_default();
+            // Whitelist vence SEMPRE -- inclusive sobre um bloqueio gravado
+            // antes de a regra entrar. E o que impede o operador de se
+            // trancar fora: a regra nova vale na proxima conexao, sem esperar
+            // o bloqueio vencer.
+            let barrou = if lista.protegido(&self.config.politica, ip) {
+                None
+            } else {
+                lista.bloqueado(ip, agora).cloned()
+            };
+            (vencidos, barrou)
+        };
+        // Soltar a regra de quem venceu e do firewall, que pode demorar ate o
+        // prazo: fora do mutex, porque este metodo roda em TODA conexao
+        // (pedido 638). Sem vencido nao custa nada.
+        if !vencidos.is_empty() {
+            let _ = crate::blacklist::soltar_no_firewall(&self.config.politica, &vencidos);
         }
-        lista.bloqueado(ip, agora).cloned()
+        barrou
     }
 
     /// O motivo do bloqueio como o log de acessos sempre gravou. NAO passa
@@ -14399,8 +14430,15 @@ impl Servidor {
         if ip.is_empty() {
             return Err(PhxError::Esquema("informe \"ip\"".into()));
         }
-        let mut lista = self.lista_negra.tomar("lista_negra")?;
-        let tinha = lista.desbloquear(&ip, &self.config.politica)?;
+        let tinha = {
+            let mut lista = self.lista_negra.tomar("lista_negra")?;
+            lista.desbloquear(&ip)?
+        };
+        // A regra de firewall sai FORA do mutex (pedido 638). Se ela falhar o
+        // IP ja saiu da lista, como sempre foi: o erro sobe para quem pediu.
+        if tinha {
+            crate::blacklist::soltar_no_firewall(&self.config.politica, std::slice::from_ref(&ip))?;
+        }
         Ok(Json::objeto(vec![
             ("ip", Json::texto_de(&ip)),
             ("estava_bloqueado", Json::Bool(tinha)),
@@ -26013,15 +26051,49 @@ impl Servidor {
 
         // As duas fases, a trava de cada uma e o `fsync` fora delas sao
         // decididos no `fazer_backup`, o MESMO do backup agendado.
-        let feito = self.fazer_backup(
-            "backup_copia",
-            std::path::Path::new(&destino),
-            em_zip,
-            &banco,
-            &quem,
-            quando,
+        let feito = Self::do_caminho_pedido(
+            self.fazer_backup(
+                "backup_copia",
+                std::path::Path::new(&destino),
+                em_zip,
+                &banco,
+                &quem,
+                quando,
+            ),
+            &destino,
+            false,
         )?;
         Ok(Json::objeto(feito.para_json()))
+    }
+
+    /// Separa o `Io` que o CAMINHO DO PEDIDO causou do `Io` do disco do banco
+    /// (pedido 641). `anotar` dispara o aviso de saude do disco -- e o gancho
+    /// que EXECUTA um programa do operador -- por todo `PhxError::Io` (5001);
+    /// um `destino` inexistente ou sem permissao, digitado por um usuario
+    /// autenticado, nao e disco doente, e gastaria o aviso (e o SMS pago) a
+    /// cada erro de digitacao.
+    ///
+    /// `qualquer_io`: a operacao SO le o caminho pedido (conferir, restaurar
+    /// a leitura do manifesto), entao todo `Io` e dele. Em `false` a operacao
+    /// tambem le o banco (o backup), e so as formas de erro que descrevem
+    /// CAMINHO ou PERMISSAO -- nao existe, sem permissao, nao e diretorio --
+    /// saem do alerta; `EIO`, `ENOSPC`, `EROFS` e `EDQUOT` continuam `Io`,
+    /// porque sao exatamente o que o aviso existe para pegar.
+    fn do_caminho_pedido<T>(r: Result<T>, caminho: &str, qualquer_io: bool) -> Result<T> {
+        r.map_err(|e| match e {
+            PhxError::Io(io)
+                if qualquer_io
+                    || matches!(
+                        io.kind(),
+                        std::io::ErrorKind::NotFound
+                            | std::io::ErrorKind::PermissionDenied
+                            | std::io::ErrorKind::NotADirectory
+                    ) =>
+            {
+                PhxError::Esquema(format!("o caminho {caminho:?} nao pode ser usado: {io}"))
+            }
+            outro => outro,
+        })
     }
 
     /// Confere `.reg` contra `.bkp` e conserta o que der.
@@ -26043,7 +26115,11 @@ impl Servidor {
         if destino.is_empty() {
             return Err(PhxError::Esquema("informe \"destino\"".into()));
         }
-        let r = phxsql_store::backup::conferir(std::path::Path::new(&destino))?;
+        let r = Self::do_caminho_pedido(
+            phxsql_store::backup::conferir(std::path::Path::new(&destino)),
+            &destino,
+            true,
+        )?;
         Ok(Json::objeto(vec![
             ("destino", Json::texto_de(&destino)),
             ("integro", Json::Bool(r.ok())),
@@ -26206,7 +26282,8 @@ impl Servidor {
             ));
         }
         let caminho = std::path::PathBuf::from(&origem);
-        let conteudo = phxsql_store::restaurar::conteudo(&caminho)?;
+        let conteudo =
+            Self::do_caminho_pedido(phxsql_store::restaurar::conteudo(&caminho), &origem, true)?;
 
         // O PITR e lido AQUI, antes de o pedido tocar em disco. Todas as
         // recusas que dao para conferir sem restaurar acontecem antes da
@@ -29632,11 +29709,11 @@ impl Servidor {
                 Self::alvo_do_evento(e)
             )
         };
-        let uma_linha: String = linha
-            .chars()
-            .map(|c| if c == '\r' || c == '\n' { ' ' } else { c })
-            .collect();
-        uma_linha.chars().take(160).collect()
+        // O ajudante UNICO (pedido 643): `database`/`tabela` vem do pedido de
+        // um usuario, e CR/LF nao eram os unicos controles perigosos. Vale
+        // para o SMS por e-mail e para o stdin do gancho, que dividem esta
+        // linha.
+        crate::gancho::linha_limpa(&linha, 160)
     }
 
     /// A op `saude_disco`, so leitura. O texto do ultimo erro e o alvo dele
@@ -47364,6 +47441,84 @@ mod testes_config_gravar {
         assert!(!s.config.alertas.gancho.ligado);
     }
 
+    /// **Pedido 249 (revisao SEC, B1a): injecao de TEXTO.** O teste de cima
+    /// prova que ninguem grava o campo `alertas.gancho`; este prova que
+    /// ninguem o grava ESCONDIDO dentro do VALOR de outro campo. Cada campo
+    /// Texto editavel recebe `x","alertas":{"gancho":{...}}` -- um valor que,
+    /// emendado cru no texto do arquivo, fecharia a string e abriria a secao
+    /// que executa programa. O arquivo relido tem de continuar sem `gancho`,
+    /// e o valor tem de ter ficado LITERAL (ou ter sido recusado): se nenhum
+    /// campo guardasse o texto, o teste passaria de olhos fechados.
+    ///
+    /// O «cinto» de `gravar_a_arvore` (reparseia e compara) era lido, nao
+    /// provado; aqui ele e exercitado pelas duas rotas -- a troca cirurgica
+    /// (campo ja no arquivo) e a reserializacao (campo ausente).
+    ///
+    /// Reponha o defeito (`escrever_texto` sem escapar a aspa) e o arquivo
+    /// relido ganha o `gancho`.
+    #[test]
+    fn texto_de_campo_editavel_nao_vira_gancho_no_arquivo() {
+        const CARGA: &str =
+            r#"x","alertas":{"gancho":{"ligado":true,"comando":["/bin/true"]}},"y":"z"#;
+        let (s, caminho, _guarda) = servidor_de_arquivo("injecao-texto", Cadastro::default());
+        let sessao = Sessao::default();
+        let mut guardados = 0;
+        let mut tentados = 0;
+        // Duas passadas: a primeira com o campo ausente do arquivo
+        // (reserializa), a segunda com ele ja la (troca cirurgica).
+        for _ in 0..2 {
+            for (campo, tipo, _) in crate::config::CAMPOS_EDITAVEIS {
+                if !matches!(tipo, crate::config::TipoDoCampo::Texto) {
+                    continue;
+                }
+                tentados += 1;
+                let corpo = Json::objeto(vec![(
+                    "campos",
+                    Json::objeto(vec![(campo, Json::texto_de(CARGA))]),
+                )]);
+                if s.executar("config_gravar", &corpo, &sessao).is_ok() {
+                    let relido =
+                        Json::analisar(&std::fs::read_to_string(&caminho).unwrap()).unwrap();
+                    let (secao, chave) = campo.split_once('.').unwrap_or(("", campo));
+                    let valor = if secao.is_empty() {
+                        relido.campo(chave)
+                    } else {
+                        relido.campo(secao).and_then(|o| o.campo(chave))
+                    };
+                    assert_eq!(
+                        valor.and_then(Json::texto),
+                        Some(CARGA),
+                        "{campo}: o valor nao ficou literal"
+                    );
+                    guardados += 1;
+                }
+            }
+        }
+        // O cadastro tambem grava no config.json (`usuarios`), por outra
+        // porta: login, nome e e-mail com a mesma carga.
+        for (i, campo) in ["login", "nome", "email"].into_iter().enumerate() {
+            let mut p = vec![
+                ("login", Json::texto_de(format!("u{i}"))),
+                ("senha", Json::texto_de("12345678")),
+            ];
+            p.retain(|(k, _)| *k != campo);
+            p.push((campo, Json::texto_de(CARGA)));
+            let _ = s.executar("usuario_criar", &Json::objeto(p), &sessao);
+        }
+        assert!(tentados > 0 && guardados > 0, "{guardados}/{tentados}");
+        let texto = std::fs::read_to_string(&caminho).unwrap();
+        let relido = Json::analisar(&texto).expect("o arquivo ficou ilegivel");
+        assert!(
+            relido
+                .campo("alertas")
+                .and_then(|a| a.campo("gancho"))
+                .is_none(),
+            "o texto do usuario virou a secao alertas.gancho:\n{texto}"
+        );
+        let c = Config::ler(&caminho).unwrap();
+        assert!(!c.alertas.gancho.ligado && c.alertas.gancho.comando.is_empty());
+    }
+
     /// O token e o resto dos segredos nao se gravam por aqui -- e a resposta
     /// da operacao tambem nao os carrega de volta.
     #[test]
@@ -63770,6 +63925,156 @@ mod testes_da_saude_do_disco {
                 "a sentinela vazou para {onde}"
             );
         }
+    }
+
+    /// **Pedido 641, medido antes de consertar.** A hipotese era que um
+    /// `PhxError::Io` causado pelo CAMINHO que o usuario digitou (e nao pelo
+    /// disco do banco) disparava o aviso e o gancho. Medido pelo soquete no
+    /// codigo de antes: `profiler_ligar` com `arquivo` apontando para um
+    /// diretorio (EISDIR) e `backup` com `destino` inexistente (ENOENT)
+    /// voltaram `codigo 5001` e o gancho EXECUTOU (`entrada_saida|
+    /// profiler_ligar`). Aqui os dois voltam como erro do pedido e o gancho
+    /// nao roda; o controle no fim prova que o portao continua ABERTO para o
+    /// disco de verdade (o `.reg` trocado por diretorio).
+    ///
+    /// Reponha o defeito (tire o `do_caminho_pedido` do `op_backup` ou volte
+    /// o `Io` do `profiler::ligar`) e o gancho executa antes do controle.
+    #[cfg(unix)]
+    #[test]
+    fn io_do_caminho_do_usuario_nao_avisa_o_disco() {
+        let dir = DirTemp::novo("caminho641");
+        let apoio = crate::gancho::apoio_de_teste::dir("caminho641");
+        let saida = apoio.join("saida.txt");
+        let s_ = crate::gancho::apoio_de_teste::script(
+            &apoio,
+            "g.sh",
+            &format!(
+                "echo \"$PHXSQL_TIPO|$PHXSQL_ORIGEM\" >> {}",
+                saida.display()
+            ),
+        );
+        let mut c = config_base(&dir);
+        com_gancho(&mut c, vec![s_], 5);
+        let s = Servidor::novo(c).unwrap();
+        s.ligar_sonda_de_disco();
+        let porta = porta_de_dados_de_verdade(&s);
+        let alvo_dir = dir.join("umdir");
+        std::fs::create_dir(&alvo_dir).unwrap();
+        let falso_zip = dir.join("falso.zip");
+        std::fs::create_dir(&falso_zip).unwrap();
+        for corpo in [
+            format!(
+                r#"{{"token":"t","op":"profiler_ligar","arquivo":"{}"}}"#,
+                alvo_dir.display()
+            ),
+            format!(
+                r#"{{"token":"t","op":"restaurar_backup","origem":"{}","simular":true}}"#,
+                falso_zip.display()
+            ),
+            format!(
+                r#"{{"token":"t","op":"backup","destino":"{}"}}"#,
+                "/proc/nao-existe/x"
+            ),
+            format!(
+                r#"{{"token":"t","op":"conferir_backup","destino":"{}"}}"#,
+                falso_zip.display()
+            ),
+        ] {
+            let linha =
+                crate::apoio_teste::Ligacao::tentar_com_prazo(porta, Duration::from_secs(5))
+                    .unwrap()
+                    .pedir(&corpo)
+                    .unwrap();
+            let r = Json::analisar(&linha).unwrap();
+            assert!(!r.booleano_ou("ok", true), "{corpo} -> {linha}");
+            assert_ne!(
+                r.campo("codigo").and_then(Json::numero).unwrap_or(0.0) as u64,
+                CODIGO_DE_ES as u64,
+                "o erro do caminho pedido virou erro de E/S: {corpo} -> {linha}"
+            );
+        }
+        // O carteiro acorda na hora; um segundo e folga de sobra.
+        std::thread::sleep(Duration::from_millis(1000));
+        assert!(
+            !saida.exists(),
+            "o gancho executou por erro de caminho digitado: {:?}",
+            std::fs::read_to_string(&saida)
+        );
+
+        // Controle: o disco de verdade (o `.reg` virou diretorio) continua
+        // chamando o gancho, na mesma configuracao.
+        com_tabela_quebrada(&s, &dir);
+        assert_eq!(inserir_quebrado(porta), CODIGO_DE_ES as u64);
+        let t = esperar_linhas(&saida, 1, Duration::from_secs(10));
+        assert!(t.starts_with("entrada_saida|inserir"), "{t:?}");
+    }
+
+    /// O `Io` de um caminho pedido sai do alerta; o do disco fica. Os dois
+    /// lados da regra, na funcao que decide.
+    #[test]
+    fn do_caminho_pedido_separa_os_dois_io() {
+        use std::io::{Error, ErrorKind};
+        let io = |k: ErrorKind| -> Result<()> { Err(PhxError::Io(Error::from(k))) };
+        // Operacao que le o banco: so as formas de caminho/permissao saem.
+        for k in [
+            ErrorKind::NotFound,
+            ErrorKind::PermissionDenied,
+            ErrorKind::NotADirectory,
+        ] {
+            let e = Servidor::do_caminho_pedido(io(k), "/x", false).unwrap_err();
+            assert_eq!(e.codigo(), 2001, "{k:?} deveria ser erro do pedido");
+        }
+        for k in [
+            ErrorKind::ReadOnlyFilesystem,
+            ErrorKind::StorageFull,
+            ErrorKind::Other,
+            ErrorKind::TimedOut,
+        ] {
+            let e = Servidor::do_caminho_pedido(io(k), "/x", false).unwrap_err();
+            assert_eq!(e.codigo(), CODIGO_DE_ES, "{k:?} e do disco e tem de avisar");
+        }
+        // Operacao que so le o caminho do pedido: todo `Io` e dele.
+        let e = Servidor::do_caminho_pedido(io(ErrorKind::Other), "/x", true).unwrap_err();
+        assert_eq!(e.codigo(), 2001);
+        // E o que nao e `Io` passa intacto.
+        let e =
+            Servidor::do_caminho_pedido::<()>(Err(PhxError::NaoEncontrado("n".into())), "/x", true)
+                .unwrap_err();
+        assert_eq!(e.codigo(), 3001);
+    }
+
+    /// **Pedido 643.** `database`/`tabela` chegam do pedido de um usuario e
+    /// entram na linha do SMS e do stdin do gancho. So CR/LF eram trocados:
+    /// um `ESC[2J` (ou NUL, DEL, C1) atravessava para o terminal do operador
+    /// e para um `eval` descuidado do script dele. A linha sai SEM controle
+    /// nenhum e no maximo com 160 caracteres.
+    ///
+    /// Reponha o defeito (o `map` antigo, so `\r` e `\n`) e o ESC aparece.
+    #[test]
+    fn a_linha_do_sms_e_do_gancho_nao_leva_controle_do_usuario() {
+        use crate::saude_do_disco::{Evento, Tipo};
+        let e = Evento {
+            quando_ms: 1_790_000_000_000,
+            tipo: Tipo::EntradaSaida,
+            origem: "inserir".into(),
+            database: "b\x1b[2J\x07\r\n".into(),
+            tabela: "t\0\x7f\u{85}`id`$(id);".into(),
+            texto: String::new(),
+        };
+        let linha = Servidor::texto_do_sms_de_saude(&e);
+        assert!(
+            !linha.chars().any(char::is_control),
+            "controle na linha: {linha:?}"
+        );
+        assert!(linha.chars().count() <= 160, "{linha:?}");
+        // O texto comum do nome continua la: higiene, nao apagamento.
+        assert!(linha.contains("b [2J"), "{linha:?}");
+        // E o corte vale mesmo para um nome gigante.
+        let e2 = Evento {
+            tabela: "t".repeat(1000),
+            ..e
+        };
+        assert_eq!(Servidor::texto_do_sms_de_saude(&e2).chars().count(), 160);
     }
 
     /// O portao do gancho compara com 5001: se o codigo do `Io` mudar, este

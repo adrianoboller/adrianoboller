@@ -24160,12 +24160,12 @@ fn anotar(""",
         ),
         "arquivo": "crates/phxsql-server/src/gancho.rs",
         "trecho": """    let mut cmd = Command::new(programa);
-    cmd.args(&g.comando[1..])
+    cmd.args(&e.argv[1..]).env_clear().env("PATH", e.path);
 """,
         "troca": """    // DEFEITO REPOSTO (pedido 249): a linha inteira vai ao shell.
+    let _ = programa;
     let mut cmd = Command::new("/bin/sh");
-    cmd.arg("-c")
-        .arg(g.comando.join(" "))
+    cmd.arg("-c").arg(e.argv.join(" ")).env_clear().env("PATH", e.path);
 """,
         "pacote": "phxsql-server",
         "alvo": ["--lib"],
@@ -24185,14 +24185,16 @@ fn anotar(""",
             "variaveis do evento e tudo o que o script do operador recebe."
         ),
         "arquivo": "crates/phxsql-server/src/gancho.rs",
-        "trecho": """        .env_clear()
+        "trecho": """    cmd.args(&e.argv[1..]).env_clear().env("PATH", e.path);
 """,
-        "troca": """        // DEFEITO REPOSTO (pedido 249): o ambiente do servidor atravessa.
+        "troca": """    // DEFEITO REPOSTO (pedido 249): o ambiente do servidor atravessa.
+    cmd.args(&e.argv[1..]).env("PATH", e.path);
 """,
         "pacote": "phxsql-server",
         "alvo": ["--lib"],
         "caem": [
             "gancho::testes::o_filho_recebe_as_variaveis_e_a_linha_e_nada_mais",
+            "blacklist::tests::o_firewall_roda_pelo_motor_do_gancho",
         ],
         "seguem": [
             "gancho::testes::argumento_com_metacaractere_chega_literal",
@@ -24220,6 +24222,7 @@ fn anotar(""",
         "caem": [
             "gancho::testes::programa_que_estoura_o_prazo_e_morto_e_colhido",
             "servidor::testes_da_saude_do_disco::gancho_que_estoura_o_prazo_e_morto_e_o_carteiro_segue",
+            "blacklist::tests::o_firewall_roda_pelo_motor_do_gancho",
         ],
         "seguem": [
             "gancho::testes::saida_do_filho_nao_volta_no_erro",
@@ -24348,6 +24351,287 @@ fn anotar(""",
         ],
         "seguem": [
             "config::testes_recursos::o_gancho_recusa_no_arranque_o_que_nao_executaria",
+        ],
+    },
+    {
+        "id": "firewall-sob-o-mutex-da-lista-negra",
+        "titulo": "o comando de firewall roda com a lista negra na mao (pedido 638)",
+        "porque": (
+            "`barrado()` pega o mutex da lista negra em TODA conexao. Um comando de firewall que pendura, rodando com esse mutex preso, para o servidor inteiro -- e quem o dispara e um cliente SEM credencial (tres tokens errados). A prova e pelo soquete: outro cliente tem de ser atendido em menos de 2 s."
+        ),
+        "arquivo": "crates/phxsql-server/src/blacklist.rs",
+        "trecho": """    match fw.bloquear_ip(&b.ip) {
+        Ok(true) => {
+""",
+        "troca": """    // DEFEITO REPOSTO (pedido 638): o comando roda com a lista na mao.
+    let _preso = lista.lock().ok();
+    match fw.bloquear_ip(&b.ip) {
+        Ok(true) => {
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "firewall-que-pendura"],
+        "caem": [
+            "firewall_que_pendura_nao_para_o_servidor",
+        ],
+        "seguem": [
+        ],
+    },
+    {
+        "id": "firewall-output-sem-prazo-e-com-stderr",
+        "titulo": "o firewall volta a `Command::output()`: sem prazo, ambiente herdado, stderr no erro (pedido 638)",
+        "porque": (
+            "o firewall tem de passar pelo MESMO motor do gancho (prazo com kill e wait, env_clear, saida descartada). `output()` e o motor velho: pendura sem limite, herda o ambiente do servidor e devolve o stderr do filho dentro de um erro que vai a log e a tela."
+        ),
+        "arquivo": "crates/phxsql-server/src/blacklist.rs",
+        "trecho": """        crate::gancho::rodar(&crate::gancho::Execucao {
+            rotulo: "comando de firewall",
+            argv: &trocado,
+            path: PATH_DO_FIREWALL,
+            ambiente: &[],
+            entrada: None,
+            prazo_s: self.timeout_s,
+        })
+        .map_err(|e| {
+            phxsql_core::error::PhxError::Corrompido(format!("o comando de firewall falhou: {e}"))
+        })?;
+""",
+        "troca": """        // DEFEITO REPOSTO (pedido 638): o motor velho.
+        let saida = std::process::Command::new(&trocado[0])
+            .args(&trocado[1..])
+            .output()?;
+        if !saida.status.success() {
+            return Err(phxsql_core::error::PhxError::Corrompido(format!(
+                "o comando de firewall falhou: {}",
+                String::from_utf8_lossy(&saida.stderr).trim()
+            )));
+        }
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "blacklist::tests::o_firewall_roda_pelo_motor_do_gancho",
+        ],
+        "seguem": [
+            "blacklist::tests::falha_do_firewall_nao_cancela_o_bloqueio",
+        ],
+    },
+    {
+        "id": "gancho-reserva-sem-raii",
+        "titulo": "a reserva da execucao unica do gancho nao e solta por `Drop` (pedido 640)",
+        "porque": (
+            "um panic entre pegar a reserva e devolve-la deixava `em_voo=true` para sempre e o gancho morria calado. O `Drop` solta a reserva tambem no desenrolamento."
+        ),
+        "arquivo": "crates/phxsql-server/src/gancho.rs",
+        "trecho": """    let _reserva = Reserva(em_voo);
+    Ok(f())
+""",
+        "troca": """    // DEFEITO REPOSTO (pedido 640): sem guarda, so solta se nao houver panic.
+    let r = f();
+    em_voo.store(false, Ordering::Release);
+    Ok(r)
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "gancho::testes::panico_com_a_reserva_na_mao_nao_a_prende",
+        ],
+        "seguem": [
+            "gancho::testes::com_uma_execucao_em_voo_a_segunda_e_descartada",
+        ],
+    },
+    {
+        "id": "gancho-programa-gravavel-pelo-grupo",
+        "titulo": "o programa do gancho 0775 (gravavel pelo grupo) passa na conferencia (pedido 639)",
+        "porque": (
+            "so `mode & 0o002` era conferido: um script 0775 de grupo comum passava, e qualquer membro do grupo reescreve o que o servidor executa."
+        ),
+        "arquivo": "crates/phxsql-server/src/gancho.rs",
+        "trecho": """            if modo & 0o020 != 0 {
+""",
+        "troca": """            // DEFEITO REPOSTO (pedido 639): o grupo nao e conferido.
+            if false {
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "gancho::testes::programa_gravavel_pelo_grupo_e_recusado",
+        ],
+        "seguem": [
+            "gancho::testes::a_conferencia_do_programa_recusa_o_que_nao_executaria",
+        ],
+    },
+    {
+        "id": "gancho-programa-em-diretorio-gravavel",
+        "titulo": "o programa do gancho em diretorio 0777 sem sticky passa na conferencia (pedido 639)",
+        "porque": (
+            "quem escreve no diretorio troca o programa por `rename` sem tocar no arquivo que foi conferido. O bit sticky (o caso do /tmp) impede isso e por isso o diretorio sticky continua aceito."
+        ),
+        "arquivo": "crates/phxsql-server/src/gancho.rs",
+        "trecho": """                if modo & 0o022 != 0 && !sticky {
+""",
+        "troca": """                // DEFEITO REPOSTO (pedido 639): o diretorio nao e conferido.
+                if false && modo & 0o022 != 0 && !sticky {
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "gancho::testes::programa_em_diretorio_gravavel_sem_sticky_e_recusado",
+        ],
+        "seguem": [
+            "gancho::testes::a_conferencia_do_programa_recusa_o_que_nao_executaria",
+        ],
+    },
+    {
+        "id": "gancho-programa-por-link-simbolico",
+        "titulo": "o link do programa do gancho nao e seguido: julga-se o modo do proprio link (pedido 639)",
+        "porque": (
+            "`/bin/sh` e `/usr/bin/python3` sao links e sao o caso comum; cada elo da cadeia entra na conta (dono e diretorios onde mora) e o ALVO e julgado pelo modo. Sem seguir o link, o modo do proprio link (sempre 0777) reprova tudo, ou o alvo 0777 passa."
+        ),
+        "arquivo": "crates/phxsql-server/src/gancho.rs",
+        "trecho": """            if m.file_type().is_symlink() {
+                let alvo""",
+        "troca": """            // DEFEITO REPOSTO (pedido 639): o link nao e seguido.
+            if false && m.file_type().is_symlink() {
+                let alvo""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "gancho::testes::link_simbolico_entra_na_conta",
+        ],
+        "seguem": [
+            "gancho::testes::programa_gravavel_pelo_grupo_e_recusado",
+        ],
+    },
+    {
+        "id": "gancho-programa-de-outro-dono",
+        "titulo": "o programa do gancho pertence a outro usuario e passa (pedido 639)",
+        "porque": (
+            "0755 de um usuario que nao e root nem o do servidor: o dono reescreve o programa quando quiser. A prova planta o dono com chown (o conteiner e root)."
+        ),
+        "arquivo": "crates/phxsql-server/src/gancho.rs",
+        "trecho": """            if !dono_confiavel(m.uid(), servidor) {
+""",
+        "troca": """            // DEFEITO REPOSTO (pedido 639): o dono da entrada nao e conferido.
+            if false && !dono_confiavel(m.uid(), servidor) {
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "gancho::testes::programa_de_outro_usuario_e_recusado",
+        ],
+        "seguem": [
+            "gancho::testes::a_conferencia_do_programa_recusa_o_que_nao_executaria",
+        ],
+    },
+    {
+        "id": "gancho-diretorio-de-outro-dono",
+        "titulo": "o diretorio do programa do gancho pertence a outro usuario e passa (pedido 639)",
+        "porque": (
+            "o dono do diretorio renomeia o que esta dentro dele, mesmo com o arquivo 0755 de root."
+        ),
+        "arquivo": "crates/phxsql-server/src/gancho.rs",
+        "trecho": """                if !dono_confiavel(d.uid(), servidor) {
+""",
+        "troca": """                // DEFEITO REPOSTO (pedido 639): o dono do diretorio nao e conferido.
+                if false && !dono_confiavel(d.uid(), servidor) {
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "gancho::testes::programa_de_outro_usuario_e_recusado",
+        ],
+        "seguem": [
+            "gancho::testes::a_conferencia_do_programa_recusa_o_que_nao_executaria",
+        ],
+    },
+    {
+        "id": "gancho-linha-so-troca-crlf",
+        "titulo": "a linha do SMS e do stdin do gancho so troca CR e LF (pedido 643)",
+        "porque": (
+            "database e tabela chegam do pedido de um usuario: ESC, NUL, DEL e os C1 atravessavam para o terminal do operador e para um eval descuidado do script dele. O ajudante unico troca todo controle por espaco."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        crate::gancho::linha_limpa(&linha, 160)
+""",
+        "troca": """        // DEFEITO REPOSTO (pedido 643): so CR e LF.
+        let uma_linha: String = linha
+            .chars()
+            .map(|c| if c == '\\r' || c == '\\n' { ' ' } else { c })
+            .collect();
+        uma_linha.chars().take(160).collect()
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_da_saude_do_disco::a_linha_do_sms_e_do_gancho_nao_leva_controle_do_usuario",
+        ],
+        "seguem": [
+            "servidor::testes_da_saude_do_disco::erro_de_es_numa_gravacao_chama_o_gancho_uma_vez_so",
+        ],
+    },
+    {
+        "id": "json-texto-sem-escapar-a-aspa",
+        "titulo": "o escritor de JSON deixa a aspa do valor sem escapar: texto vira campo (pedido 249, B1a)",
+        "porque": (
+            "a gravacao do config.json troca o valor no TEXTO. Se a aspa do valor passa crua, um valor que traga aspa, virgula e a chave `alertas` fecha a string e abre a secao `alertas.gancho`, que EXECUTA um programa. O cinto de gravar_a_arvore era lido, nao provado."
+        ),
+        "arquivo": "crates/phxsql-core/src/json.rs",
+        "trecho": """            '"' => saida.push_str("\\\\\\""),
+""",
+        "troca": """            // DEFEITO REPOSTO (pedido 249): a aspa passa crua.
+            '"' => saida.push('"'),
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_config_gravar::texto_de_campo_editavel_nao_vira_gancho_no_arquivo",
+        ],
+        "seguem": [
+            "servidor::testes_config_gravar::o_gancho_do_operador_nao_se_grava_pela_api",
+        ],
+    },
+    {
+        "id": "io-do-caminho-pedido-avisa-o-disco",
+        "titulo": "o Io de um caminho digitado pelo usuario dispara o aviso de saude do disco (pedido 641)",
+        "porque": (
+            "`anotar` dispara o aviso e o gancho por todo `PhxError::Io` (5001). Um `destino` inexistente ou sem permissao, de um usuario autenticado, nao e disco doente e gastaria o aviso (e o SMS pago) a cada erro de digitacao. EIO, ENOSPC, EROFS e EDQUOT continuam avisando."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """            PhxError::Io(io)
+                if qualquer_io
+""",
+        "troca": """            // DEFEITO REPOSTO (pedido 641): o Io do caminho pedido continua Io.
+            PhxError::Io(io)
+                if false && qualquer_io
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_da_saude_do_disco::do_caminho_pedido_separa_os_dois_io",
+        ],
+        "seguem": [
+            "servidor::testes_da_saude_do_disco::erro_de_es_numa_gravacao_chama_o_gancho_uma_vez_so",
+        ],
+    },
+    {
+        "id": "profiler-caminho-pedido-como-io",
+        "titulo": "o `arquivo` do profiler que nao abre volta como erro de E/S (pedido 641)",
+        "porque": (
+            "o caminho veio do PEDIDO. Como Io (5001), um diretorio ou arquivo sem permissao dispararia o aviso de saude do disco e o gancho por culpa de quem digitou."
+        ),
+        "arquivo": "crates/phxsql-server/src/profiler.rs",
+        "trecho": """                    PhxError::Esquema(format!("nao consegui abrir {}: {e}", caminho.display()))
+""",
+        "troca": """                    // DEFEITO REPOSTO (pedido 641): o caminho do pedido como Io.
+                    PhxError::Io(std::io::Error::other(format!("nao consegui abrir {}: {e}", caminho.display())))
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_da_saude_do_disco::io_do_caminho_do_usuario_nao_avisa_o_disco",
+        ],
+        "seguem": [
+            "servidor::testes_da_saude_do_disco::erro_de_es_numa_gravacao_chama_o_gancho_uma_vez_so",
         ],
     },
 ]

@@ -663,9 +663,18 @@ fn main() -> ExitCode {
                 return ExitCode::FAILURE;
             }
         };
-        return match phxsql_server::Blacklist::abrir(&config.blacklist)
-            .and_then(|mut bl| bl.desbloquear(&ip, &config.politica))
-        {
+        return match phxsql_server::Blacklist::abrir(&config.blacklist).and_then(|mut bl| {
+            // Processo de uma linha, sem mutex nem conexao: aqui o
+            // firewall pode rodar em sequencia (pedido 638).
+            let tinha = bl.desbloquear(&ip)?;
+            if tinha {
+                phxsql_server::blacklist::soltar_no_firewall(
+                    &config.politica,
+                    std::slice::from_ref(&ip),
+                )?;
+            }
+            Ok(tinha)
+        }) {
             Ok(true) => {
                 println!("{ip} desbloqueado");
                 ExitCode::SUCCESS

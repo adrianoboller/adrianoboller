@@ -241,7 +241,7 @@ MySQL e SQLite por memória, não reverificados).
 | campo | padrão | o que faz |
 |---|---|---|
 | `gancho.ligado` | **false** | sem ele nada executa (guarda nova entra pedida) |
-| `gancho.comando` | `[]` | **vetor argv**; `[0]` é caminho absoluto, existente, executável e não gravável por «outros» — conferido no **arranque** |
+| `gancho.comando` | `[]` | **vetor argv**; `[0]` é caminho absoluto, existente, arquivo comum (link aceito: o elo e o alvo são conferidos), executável, não gravável por «grupo» nem «outros», de dono root ou do usuário do servidor, em diretórios que só eles (ou o sticky) alteram — conferido no **arranque** e em toda gravação de config (pedido 639; no Windows só a existência) |
 | `gancho.timeout_s` | 10 (1 a 120) | prazo duro; ao estourar, `kill` e `wait` |
 
 O que o programa recebe: as variáveis `PHXSQL_TIPO`, `PHXSQL_ORIGEM` (só
@@ -378,6 +378,19 @@ agenda. Tentar antes é decisão de política que o pedido não pediu.
 - **Latência do dispositivo fora da própria escrita** — `canario_ms` é o
   tempo da sonda inteira (abrir + escrever + `fsync` + reler + apagar), num
   arquivo pequeno; não é `iostat`.
+- **`Io` causado pelo caminho que o usuário digitou** (pedido 641) — medido
+  pelo soquete: `profiler_ligar` com `arquivo` apontando para um diretório
+  (EISDIR) e `backup` com `destino` inexistente (ENOENT) voltavam `5001` e
+  **executavam o gancho** (hipótese 1 confirmada; a 2, «já estava barrado
+  antes», morreu: nenhum filtro existia). Agora o `Io` do caminho pedido sai
+  como erro do pedido (`Esquema`): sempre no `profiler_ligar`, no
+  `conferir_backup` e na leitura do `restaurar_backup`; no `backup`, que
+  também lê o banco, só as formas de *caminho/permissão* (ENOENT, EACCES,
+  ENOTDIR) — EIO, ENOSPC, EROFS e EDQUOT continuam avisando. **Residuais,
+  ditos:** destino cheio no meio da cópia ainda é `Io` (ENOSPC), e
+  ENOENT/EACCES de um arquivo do *banco* durante o backup deixa de avisar
+  (é permissão ou corrida, não disco doente). O EACCES de um `.zip`
+  ilegível não se reproduz como root; a função que decide tem teste direto.
 - **Erros dentro das threads de réplica e de cluster** que não passem por
   `anotar` — não foram mapeados nesta rodada; se algum `Io` morre num
   `eprintln!` por lá, ele ainda não conta aqui.

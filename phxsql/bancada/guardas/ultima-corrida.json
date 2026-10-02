@@ -4613,25 +4613,25 @@
       "id": "gancho-por-shell",
       "titulo": "o comando do gancho passa por `sh -c`: `;` e `$()` viram execução",
       "veredito": "PROVADA",
-      "segundos": 80.81,
+      "segundos": 84.05,
       "notas": [],
-      "quando": "2026-10-02 06:32"
+      "quando": "2026-10-02 08:27"
     },
     {
       "id": "gancho-ambiente-herdado",
       "titulo": "o filho do gancho herda o ambiente do servidor",
       "veredito": "PROVADA",
-      "segundos": 76.31,
+      "segundos": 78.99,
       "notas": [],
-      "quando": "2026-10-02 06:32"
+      "quando": "2026-10-02 08:27"
     },
     {
       "id": "gancho-sem-kill-no-prazo",
       "titulo": "o gancho que passa de `timeout_s` continua vivo",
       "veredito": "PROVADA",
-      "segundos": 79.33,
+      "segundos": 79.85,
       "notas": [],
-      "quando": "2026-10-02 06:32"
+      "quando": "2026-10-02 08:27"
     },
     {
       "id": "gancho-zumbi",
@@ -4672,6 +4672,102 @@
       "segundos": 73.73,
       "notas": [],
       "quando": "2026-10-02 06:32"
+    },
+    {
+      "id": "firewall-sob-o-mutex-da-lista-negra",
+      "titulo": "o comando de firewall roda com a lista negra na mao (pedido 638)",
+      "veredito": "PROVADA",
+      "segundos": 19.65,
+      "notas": [],
+      "quando": "2026-10-02 08:27"
+    },
+    {
+      "id": "firewall-output-sem-prazo-e-com-stderr",
+      "titulo": "o firewall volta a `Command::output()`: sem prazo, ambiente herdado, stderr no erro (pedido 638)",
+      "veredito": "PROVADA",
+      "segundos": 84.99,
+      "notas": [],
+      "quando": "2026-10-02 08:27"
+    },
+    {
+      "id": "gancho-reserva-sem-raii",
+      "titulo": "a reserva da execucao unica do gancho nao e solta por `Drop` (pedido 640)",
+      "veredito": "PROVADA",
+      "segundos": 79.75,
+      "notas": [],
+      "quando": "2026-10-02 08:27"
+    },
+    {
+      "id": "gancho-programa-gravavel-pelo-grupo",
+      "titulo": "o programa do gancho 0775 (gravavel pelo grupo) passa na conferencia (pedido 639)",
+      "veredito": "PROVADA",
+      "segundos": 80.16,
+      "notas": [],
+      "quando": "2026-10-02 08:27"
+    },
+    {
+      "id": "gancho-programa-em-diretorio-gravavel",
+      "titulo": "o programa do gancho em diretorio 0777 sem sticky passa na conferencia (pedido 639)",
+      "veredito": "PROVADA",
+      "segundos": 79.64,
+      "notas": [],
+      "quando": "2026-10-02 08:27"
+    },
+    {
+      "id": "gancho-programa-por-link-simbolico",
+      "titulo": "o link do programa do gancho nao e seguido: julga-se o modo do proprio link (pedido 639)",
+      "veredito": "PROVADA",
+      "segundos": 79.44,
+      "notas": [],
+      "quando": "2026-10-02 08:27"
+    },
+    {
+      "id": "gancho-programa-de-outro-dono",
+      "titulo": "o programa do gancho pertence a outro usuario e passa (pedido 639)",
+      "veredito": "PROVADA",
+      "segundos": 77.39,
+      "notas": [],
+      "quando": "2026-10-02 08:27"
+    },
+    {
+      "id": "gancho-diretorio-de-outro-dono",
+      "titulo": "o diretorio do programa do gancho pertence a outro usuario e passa (pedido 639)",
+      "veredito": "PROVADA",
+      "segundos": 79.41,
+      "notas": [],
+      "quando": "2026-10-02 08:27"
+    },
+    {
+      "id": "gancho-linha-so-troca-crlf",
+      "titulo": "a linha do SMS e do stdin do gancho so troca CR e LF (pedido 643)",
+      "veredito": "PROVADA",
+      "segundos": 76.26,
+      "notas": [],
+      "quando": "2026-10-02 08:27"
+    },
+    {
+      "id": "json-texto-sem-escapar-a-aspa",
+      "titulo": "o escritor de JSON deixa a aspa do valor sem escapar: texto vira campo (pedido 249, B1a)",
+      "veredito": "PROVADA",
+      "segundos": 81.67,
+      "notas": [],
+      "quando": "2026-10-02 08:27"
+    },
+    {
+      "id": "io-do-caminho-pedido-avisa-o-disco",
+      "titulo": "o Io de um caminho digitado pelo usuario dispara o aviso de saude do disco (pedido 641)",
+      "veredito": "PROVADA",
+      "segundos": 75.99,
+      "notas": [],
+      "quando": "2026-10-02 08:27"
+    },
+    {
+      "id": "profiler-caminho-pedido-como-io",
+      "titulo": "o `arquivo` do profiler que nao abre volta como erro de E/S (pedido 641)",
+      "veredito": "PROVADA",
+      "segundos": 78.49,
+      "notas": [],
+      "quando": "2026-10-02 08:27"
     },
     {
       "id": "alter-com-regra-sem-aviso",

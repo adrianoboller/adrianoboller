@@ -695,10 +695,12 @@ impl Profiler {
                 .append(true)
                 .open(&caminho)
                 .map_err(|e| {
-                    PhxError::Io(std::io::Error::other(format!(
-                        "nao consegui abrir {}: {e}",
-                        caminho.display()
-                    )))
+                    // `Esquema`, e nao `Io` (pedido 641): o caminho veio do
+                    // PEDIDO. Como `Io` (5001), um diretorio ou um arquivo
+                    // sem permissao dispararia o aviso de saude do disco --
+                    // e o gancho do operador -- por culpa de quem digitou o
+                    // caminho, nao do disco do banco.
+                    PhxError::Esquema(format!("nao consegui abrir {}: {e}", caminho.display()))
                 })?;
             writeln!(
                 f,

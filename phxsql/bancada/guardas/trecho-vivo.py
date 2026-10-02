@@ -822,7 +822,18 @@ TETO_TESTE_SEM_MODULO = 0
 # por `--numeros` (758) na arvore do merge; as dez + a `disco-silencio-furado`
 # estendida foram provadas uma a uma (`--so <id> --json`), todas PROVADA. Se
 # outra frente somar entradas no mesmo passo o integrador reconta.
-PISO_DAS_ENTRADAS = 758
+# 758 -> 770 (638/639/640/641/643 + 249 B1a, 02/10/2026; na arvore desta frente,
+# 758 + 12): firewall sob o mutex da lista negra (638), firewall pelo motor
+# velho `output()` (638), reserva do gancho sem `Drop` (640), cinco da
+# conferencia do programa (grupo, diretorio sem sticky, link simbolico, dono do
+# arquivo, dono do diretorio -- 639), linha do SMS/gancho so com CR/LF (643),
+# aspa do JSON sem escapar (249 B1a) e as duas do `Io` do caminho pedido (641,
+# `do_caminho_pedido` e o `arquivo` do profiler). Medido por `--numeros` (770);
+# provadas uma a uma (`--so <id> --json`). O 642 (descritores do filho) NAO tem
+# entrada: o `std` abre tudo com CLOEXEC, entao nao ha trecho nosso para
+# repor -- a prova la e o controle do detector (`o_detector_de_descritores_ve_o_que_vaza`).
+# Se outra frente somar entradas no mesmo passo o integrador reconta.
+PISO_DAS_ENTRADAS = 770
 
 # ------------------------------------------------------------- APOSENTADAS
 #
