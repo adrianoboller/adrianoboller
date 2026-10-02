@@ -1988,7 +1988,7 @@ evidência parcial é pior que evidência faltando.
 para 119 em 17/09/2026 — 62 botões pelo clique, 13 por dispensa nova, cada
 dispensa dizendo o que a tira), em
 `crates/phxsql-server/src/conferidor_botoes.rs`. **Só desce.** O §13.9 conta a
-rodada de 17/09/2026.
+rodada de 17/09/2026, e o §13.10 a de 02/10/2026 (119 → **90**).
 
 ### 13.5 O que exercitar achou — e o que ler o código não acharia
 
@@ -2149,6 +2149,66 @@ assistentes (tabela acima) e **12** em `ui/claude.js`, que pedem chave de API.
 **Pergunta em aberto**: os 12 do `claude.js` resolvem por interceptar a rota
 (há precedente em `testes-web/claude-interceptar.mjs`) ou por dispensa
 registrada — decisão de quem manda na catraca (papel G), não decidida aqui.
+
+### 13.10 A cauda fechou em 02/10/2026 (pedido 190), e a pergunta do `claude.js` foi respondida: interceptar a rota
+
+Quatro casos novos, um por tema: `34-botoes-de-nova-tabela.mjs`,
+`35-botoes-do-job.mjs`, `36-botoes-da-telemetria.mjs`,
+`37-botoes-da-claude.mjs`. Clicados de 182 para **211**, sem prova de 119 para
+**90**, `TETO_BOTAO_SEM_PROVA = 90` no mesmo commit, bateria **71 de 71** (era
+63 de 63) e evidência de 276 para **313 ganchos**.
+
+**A pergunta em aberto da §13.9 — interceptar a rota ou dispensar? —
+respondeu-se interceptando, e nenhuma dispensa nova entrou.** O `claude.js` fala
+com `https://api.anthropic.com/v1/messages` direto do navegador, e o
+`page.route` do Playwright responde por essa URL com o fluxo SSE do contrato.
+Sem chave real, sem rede, e com o `phxsqld` de verdade por trás (a chave é
+fabricada e só existe no caso). Diferente da `claude-bateria.mjs` — servidor
+falso, ponta a ponta, rodada à parte —, este caso roda **dentro** da bateria e
+por isso é o que alimenta `botoes-exercitados.txt`. Os 12 botões saem dele, e o
+caso confere o que a bateria à parte não conferia como botão: a chave repousa na
+aba e nunca no `localStorage`, o painel «o que vai subir» mascara a chave, a
+chave chega à «Anthropic» e **nunca** a um pedido ao `phxsqld`.
+
+| caso | botões | o que confere (o efeito, nunca o estado) |
+|---|---|---|
+| `botoes-de-nova-tabela` | `cartaoNovaTabelaER` 4, `desenharNovaTabela` 4 | o nome sobrevive ao «+ campo»; o Cancelar não cria; a recusa de nome vazio fica no cartão; a tabela criada tem o esquema pedido (`esquema`); o rascunho do «Cadastro completo…» chega à tela cheia; o «Voltar» não cria |
+| `botoes-do-job` | `editarJob` 4 | a ficha nova não oferece Rodar/Excluir; JSON inválido não grava; o job nasce desligado; «Rodar agora» soma UMA corrida ao histórico; recusar o `confirm` não exclui |
+| `botoes-da-telemetria` | `telemetria.js` 4 | a pausa deixa o relógio **mudo** (zero pedidos em 5 s); o Agora pede com a tela pausada; Ligar/Desligar muda a coleta **no servidor** e devolve como achou; a legenda some e volta com `aria-expanded` |
+| `botoes-da-claude` | `claude.js` 12 | salvar/testar (verde e 401)/remover; receitas; ver o envio; perguntar sem executar; executar traz as linhas do motor; criar → dicionário, ER, desfazer só a rodada |
+
+**Prova real nos dois sentidos, sem recompilar:** `testes-web/prova-real-botoes.mjs`
+serve a página por um proxy reverso que repõe **13 defeitos** (botão morto,
+`confirm` ignorado, chave inteira no painel, pausa que não para o relógio…) e
+exige que cada caso reprove; o controle sem defeito exige que passe. Medido: 4
+controles verdes e 13 de 13 defeitos pegos. A primeira rodada pegou 12 de 13 —
+**o «Atualizar agora» morto passava**, porque o relógio de 2 s caía na janela de
+espera (cognição `cognicao_botao-de-relogio-testado-com-o-relogio-andando-passa-por-engano_20261002_0300.md`);
+o caso passou a pausar antes de clicar.
+
+**Exercitar achou dois defeitos que ler o código não acharia:**
+
+| defeito | onde | o que quebrava | acusado por |
+|---|---|---|---|
+| tela em branco | «Cadastro completo…» do cartão | o rascunho nascia sem `indices_texto` e `desenharNovaTabela` estourava em `r.indices_texto.map` — a pessoa saía do cartão e caía numa folha vazia | `botoes-de-nova-tabela` (`PAGEERR … reading 'map'`) |
+| caixa de marcar fora do centro | cartão de nova tabela e `table.montar` | o `td{vertical-align:top}` global punha a caixa e o rádio ~7 px acima do centro dos campos ao lado; achado olhando a captura | conferido na captura (`--capturas`) |
+
+**Quatro textos cravados saíram da tela da telemetria** (`Retomar`, o aviso de
+pausa e os dois avisos de coleta ligada/desligada) e entraram pela fábrica, nos
+seis idiomas: `tela.tl_retomar`, `tela.tl_pausado_congela`, `tela.tl_coleta_on`
+(e o `tela.tl_coleta_off`, que já existia). O caso lê o rótulo esperado **da
+fábrica**, não da frase.
+
+**Nomeado e NÃO consertado:** (1) o «Criar» do cartão termina com
+`await montarArvore(); telaDiagramaER(db)`, então o diagrama pode pintar por
+cima de uma tela aberta logo depois — a pintura tardia do pedido 170, que o
+caso contorna esperando o diagrama ter a tabela; (2) restam 3 botões de
+`desenharCartao` (`#tlmEncerrar`, `#tlmDerrubar`, `#tlmEstacao`) e o
+`[data-nivel]` da trilha na telemetria, que pedem uma conexão viva para
+encerrar/derrubar e ficam na fila.
+
+**O que falta, 90** (medido por `--example botoes-sem-prova`): os 7 e 6 dos dois
+assistentes (§13.9) e a cauda de 1 a 3 botões por tela em `index.html`.
 
 ## 14. Os portões de MEDIDOR, e por que eles ficam fora do catálogo de guardas
 

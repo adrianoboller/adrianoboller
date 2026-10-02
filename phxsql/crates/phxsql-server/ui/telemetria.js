@@ -765,7 +765,8 @@ window.PhxTelemetria = (function () {
 
     $("#tlmPausar").onclick = () => {
       estado.pausado = !estado.pausado;
-      $("#tlmPausar").textContent = estado.pausado ? "Retomar" : "Pausar";
+      $("#tlmPausar").textContent = estado.pausado
+        ? txt("tela.tl_retomar", "Retomar") : txt("tela.tl_pausar", "Pausar");
       // A classe diz o mesmo que a palavra, para quem lê o botão pela cor.
       $("#tlmPausar").className = "botao " + (estado.pausado ? "incluir" : "consultar");
       // Pausa também congela a tela — e congelado por vontade de alguém tem
@@ -775,7 +776,7 @@ window.PhxTelemetria = (function () {
       if (estado.pausado) {
         const p = document.createElement("span");
         p.className = "tlm-pastilha pausa";
-        p.textContent = "pausado por você — a tela não se atualiza";
+        p.textContent = txt("tela.tl_pausado_congela", "pausado por você — a tela não se atualiza");
         $("#tlmEstado").prepend(p);
       } else {
         volta();
@@ -785,7 +786,9 @@ window.PhxTelemetria = (function () {
     $("#tlmLigar").onclick = async () => {
       try {
         const r = await estado.api(estado.ligada ? "telemetria_desligar" : "telemetria_ligar");
-        estado.aoAvisar(r.aviso || (estado.ligada ? "coleta desligada" : "coleta ligada"));
+        estado.aoAvisar(r.aviso || (estado.ligada
+          ? txt("tela.tl_coleta_off", "coleta desligada")
+          : txt("tela.tl_coleta_on", "coleta ligada")));
         volta();
       } catch (e) { estado.aoAvisar(String(e), true); }
     };

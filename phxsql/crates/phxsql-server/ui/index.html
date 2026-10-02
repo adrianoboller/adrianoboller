@@ -740,7 +740,7 @@ table.montar input[type=text],table.montar input:not([type]),table.montar select
   padding:5px 7px;font-family:inherit;font-size:11.5px;color:var(--texto);width:100%;
 }
 table.montar th em{font-style:normal;font-weight:400;text-transform:none}
-table.montar td{padding:5px 7px}
+table.montar td{padding:5px 7px;vertical-align:middle}
 
 /* --------------------------------------------------------------- creditos */
 .creditos{max-width:70ch}
@@ -1624,7 +1624,10 @@ svg.er.editor text{user-select:none;-webkit-user-select:none}
 .er-campos{width:100%;border-collapse:collapse;font-size:12px}
 .er-campos th{font-size:9.5px;letter-spacing:.09em;text-transform:uppercase;
   color:var(--texto-3);text-align:left;padding:3px 6px;font-weight:500}
-.er-campos td{padding:3px 6px}
+.er-campos td{padding:3px 6px;
+  /* o `td{vertical-align:top}` global punha a caixa de marcar e o radio ~7px
+     acima do centro dos campos ao lado (visto na captura do cartao). */
+  vertical-align:middle}
 .er-campos input[type=text],.er-campos input:not([type]),.er-campos select{
   width:100%;padding:6px 8px;font-size:12px;background:var(--painel-2);
   border:1px solid var(--linha);border-radius:4px}
@@ -12180,6 +12183,11 @@ function cartaoNovaTabelaER(db) {
           caption: "", descricao: "", mascara: "" })),
         indices: linhas.filter(l => l.pk && l.nome).map(l => ({
           nome: `pk_${l.nome}`, colunas: l.nome, unico: true, primario: true })),
+        // O rascunho do cadastro completo tem TRES listas, e a tela cheia le
+        // as tres: sem esta, `desenharNovaTabela` estourava em
+        // `r.indices_texto.map` e o botao «Cadastro completo…» largava a
+        // pessoa numa tela em branco (achado clicando, pedido 190).
+        indices_texto: [],
       };
       c.fechar();
       telaNovaTabela(db);

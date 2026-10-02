@@ -842,7 +842,12 @@ pub fn sem_prova() -> Vec<Botao> {
 /// 62 botoes que passaram a receber clique (120 → 182), e 132 → 119 pelas 13
 /// dispensas novas, cada uma com o motivo MEDIDO no lugar do «pede outro
 /// servidor» generico que o pedido 190 carregava.
-pub const TETO_BOTAO_SEM_PROVA: usize = 119;
+///
+/// Desceu para **90** no pedido 190 (02/10/2026): 119 → 90 pelos 29 botoes que
+/// passaram a receber clique (182 → 211) nos quatro casos 34-37 — o cartao e a
+/// tela cheia de nova tabela, a ficha do job, a barra da telemetria e a tela da
+/// Claude, esta ultima por INTERCEPTACAO da rota da Anthropic (sem chave real).
+pub const TETO_BOTAO_SEM_PROVA: usize = 90;
 
 #[cfg(test)]
 mod testes {
