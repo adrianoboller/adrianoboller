@@ -323,6 +323,52 @@ pub const DISPENSADOS: &[(&str, &str, &str)] = &[
         "#azFim",
         "irmao do `#azFim0`, no mesmo passo 5",
     ),
+    // ------------------------------------------ a tela de uma tabela de fora
+    //
+    // Medida de 02/10/2026 (pedido 190): o que sobrava do DbLink depois do
+    // assistente. As quatro abaixo moram em `abrirTabelaDbl`/`estruturaDbl`,
+    // que so existem depois de `dblink_ler` devolver uma tabela DE UM MySQL(R)
+    // OU MariaDB(R) de verdade -- o mesmo bloqueio dos seis do assistente. O
+    // `[data-t]` da lista de tabelas de la (`carregarTabelasDbl`) NAO entra
+    // aqui: a chave e a mesma dos botoes de Venn da juncao e da lista de
+    // sequencias, e esses recebem clique de verdade.
+    (
+        "ui/index.html",
+        "#btAnt",
+        "a pagina «anteriores» do que veio de um MySQL(R)/MariaDB(R) de fora: \
+         a tela da tabela remota so abre com `dblink_ler` respondendo, e nao \
+         ha banco de fora nesta maquina (subir um seria uma dependencia \
+         externa dentro da bateria). A tela inteira esta no ramo «Nao \
+         conectou» do `botoes-do-dblink`",
+    ),
+    (
+        "ui/index.html",
+        "#btProx",
+        "irmao do `#btAnt`: «proximas» so nasce quando o banco de fora diz \
+         `tem_mais`",
+    ),
+    (
+        "ui/index.html",
+        "#btEstr",
+        "irmao do `#btAnt`: a estrutura da tabela de fora vem do `dblink_ler`",
+    ),
+    (
+        "ui/index.html",
+        "#btVoltaEstr",
+        "irmao do `#btEstr`: so existe dentro da estrutura da tabela de fora",
+    ),
+    // ------------------------------------------- acompanhar uma replica viva
+    (
+        "ui/index.html",
+        "#btAcompRep",
+        "so nasce quando o servidor tem uma ORIGEM de replicacao configurada \
+         (`origens.length`), e o da bateria e isolado. E clicado de verdade \
+         em `testes-web/religar-na-tela.mjs`, que a bancada \
+         `bancada/replicacao/credencial-recusada.py --tela` roda contra um \
+         master e uma replica reais. O `#acFim` do dialogo que ele abre tem \
+         clique proprio no caso `botoes-de-telas-avulsas`, abrindo o dialogo \
+         pela funcao que o monta",
+    ),
     (
         "ui/index.html",
         "#azFechar",
@@ -847,7 +893,17 @@ pub fn sem_prova() -> Vec<Botao> {
 /// passaram a receber clique (182 → 211) nos quatro casos 34-37 — o cartao e a
 /// tela cheia de nova tabela, a ficha do job, a barra da telemetria e a tela da
 /// Claude, esta ultima por INTERCEPTACAO da rota da Anthropic (sem chave real).
-pub const TETO_BOTAO_SEM_PROVA: usize = 90;
+///
+/// Desceu para **0** no pedido 190 (02/10/2026): 90 → 0 pelos 90 botões (80
+/// chaves distintas) dos casos 39–46 -- gestão de tabela, sessões/serviço/
+/// profiler, telemetria viva, LGPD e bloqueios, configuração, restaurar
+/// backup, modelo e conflito, e as telas avulsas --, clicados 211 → 296, e
+/// pelas 5 dispensas novas (DbLink de fora e o acompanhar de réplica viva),
+/// 22 → 27. **Zero é por CHAVE, e não por sítio**: ver a cognição
+/// `chave-de-botao-compartilhada-esconde-o-sitio-nao-exercitado` -- o
+/// `[data-t]` da lista de tabelas do DbLink e o `#btVoltarGer` do reparo
+/// dividem chave com sítios clicados e não têm clique próprio.
+pub const TETO_BOTAO_SEM_PROVA: usize = 0;
 
 #[cfg(test)]
 mod testes {
@@ -860,8 +916,13 @@ mod testes {
     #[test]
     fn nenhum_botao_novo_sem_prova() {
         let faltam = sem_prova();
+        // `is_empty()` e nao `len() <= TETO`: com a catraca em ZERO os dois
+        // dizem a mesma coisa, e o clippy reprova o segundo (comparacao com o
+        // minimo do tipo). O TETO continua existindo porque e ele que a
+        // mensagem cita, que o relatorio imprime e que a lei da casa proibe de
+        // subir -- a mesma forma de `TETO_TABELA_NA_MAO`.
         assert!(
-            faltam.len() <= TETO_BOTAO_SEM_PROVA,
+            faltam.is_empty(),
             "{} botoes sem prova, e a catraca esta em {TETO_BOTAO_SEM_PROVA}.\n\
              Botao novo entra na bateria (`testes-web/casos/`) -- e se ele nao \
              se exercita, entra em DISPENSADOS com o motivo.\n\
@@ -874,15 +935,12 @@ mod testes {
                 .map(|b| format!("{}:{} {:?}", b.arquivo, b.linha, b.chave))
                 .collect::<Vec<_>>()
         );
-        // O PISO, que e o que obriga a catraca a descer junto da conversao.
-        // Sem ele quem escreve dez casos deixa o teto onde estava, e a catraca
-        // volta a nao segurar nada.
-        assert!(
-            faltam.len() + 15 >= TETO_BOTAO_SEM_PROVA,
-            "sobraram {} botoes sem prova e a catraca esta em \
-             {TETO_BOTAO_SEM_PROVA}: baixe o teto no mesmo commit",
-            faltam.len()
-        );
+        // A guarda de PISO que existia aqui -- «sobraram muito menos que a
+        // catraca, baixe-a no mesmo commit» -- foi APOSENTADA com a catraca em
+        // zero, e nao esquecida: `+ 15 >= 0` e sempre verdadeiro. Ela existia
+        // para forcar o teto a descer junto da conversao, e em zero nao ha
+        // para onde descer. Quem guarda contra o zero POR ENGANO -- a regua
+        // quebrada medindo nada -- e `o_conferidor_acha_o_que_promete`.
     }
 
     /// A prova de que o conferidor PEGA. Sem ela ele pode estar medindo zero

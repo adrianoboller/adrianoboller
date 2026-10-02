@@ -38,7 +38,12 @@ export const caso = {
     // fechar: depois da carga nao pode faltar texto nenhum.
     await page.click('#btIdiCarga');
     await esperar(page, '#btIdiCarga');
-    await page.waitForTimeout(600);
+    // ESPERA PELO EFEITO, nao por 600 ms: semear ~1.900 mensagens leva mais que
+    // isso com a maquina ocupada (flocou na corrida inteira de 02/10/2026, com
+    // as fichas ainda em «0/1894»), e o relogio do teste nao e o da carga.
+    await page.waitForFunction(() => /nada a semear/i.test(
+      [...document.querySelectorAll('#painel .ficha')].map(f => f.textContent).join(' ')),
+      undefined, { timeout: 30000 }).catch(() => {});
     const semeados = await page.$$eval('#painel .ficha', fs =>
       fs.map(f => `${f.querySelector('.v')?.textContent} ${f.querySelector('.u')?.textContent}`).join(' | '));
     verdade(/nada a semear/i.test(semeados),
