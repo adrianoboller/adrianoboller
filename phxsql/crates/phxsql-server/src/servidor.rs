@@ -22409,7 +22409,12 @@ impl Servidor {
 
         // CREATE TRIGGER/PROCEDURE, DROP, CALL e SHOW entram pela MESMA op:
         // sao SQL, e um driver os manda pelo mesmo campo.
-        if let Some(comando) = phxsql_sql::rotina::comando(&texto)? {
+        let parametros: Vec<Json> = p
+            .campo("parametros")
+            .and_then(Json::lista)
+            .map(<[Json]>::to_vec)
+            .unwrap_or_default();
+        if let Some(comando) = phxsql_sql::rotina::comando_com(&texto, &parametros)? {
             return self.executar_rotina(comando, p, sessao);
         }
 
@@ -22420,11 +22425,6 @@ impl Servidor {
         // literal de texto e sai como um literal de texto. Substituir no texto
         // antes de analisar seria a definicao de injecao de SQL, e por isso
         // nao existe caminho nenhum por aqui que faca isso.
-        let parametros: Vec<Json> = p
-            .campo("parametros")
-            .and_then(Json::lista)
-            .map(<[Json]>::to_vec)
-            .unwrap_or_default();
         // O erro de sintaxe ja vem com a coluna: «SQL, coluna 14: esperava
         // FROM». Reembalar aqui perderia a posicao, que e a unica parte da
         // mensagem que diz ONDE consertar.
@@ -42911,6 +42911,38 @@ mod testes_gatilhos {
         let r = sql(&s, "CALL somar(100)").unwrap();
         assert_eq!(r.texto_ou("procedimento", ""), "somar");
         assert_eq!(r.campo("saida").unwrap().inteiro_ou("total", -1), 5050);
+    }
+
+    /// Pedido 238, sonda viva: o `{call p(?, ?)}` do ODBC chega como `CALL
+    /// p(?, ?)` com `parametros` (o `OUT` puro manda NULL). O driver ligava o
+    /// `OUT` e o servidor nunca resolvia o `?` do `CALL` -- o erro era
+    /// «esperava um valor e veio ?». Agora o `OUT` volta em `saida`.
+    #[test]
+    fn call_com_interrogacao_do_odbc_devolve_a_saida() {
+        let guarda = dir_temp("call-odbc");
+        let s = servidor(&guarda);
+        sql(
+            &s,
+            "CREATE PROCEDURE dobro(IN x INT, OUT y INT) SET y = x * 2",
+        )
+        .unwrap();
+        let mut ses = Sessao::default();
+        let corpo = Json::objeto(vec![
+            ("token", Json::texto_de("t")),
+            ("op", Json::texto_de("sql")),
+            ("database", Json::texto_de("b")),
+            ("texto", Json::texto_de("CALL dobro(?, ?)")),
+            (
+                "parametros",
+                Json::Lista(vec![Json::de_u64(21), Json::Nulo]),
+            ),
+        ])
+        .escrever();
+        let (_, _, r) = s.despachar(&corpo, &mut ses, "127.0.0.1");
+        let r = r.unwrap();
+        assert_eq!(r.campo("saida").unwrap().inteiro_ou("y", -1), 42);
+        // O comportamento velho: sem `parametros` o `?` segue recusado.
+        assert!(sql(&s, "CALL dobro(?, ?)").is_err());
     }
 
     /// Procedimento le o motor: SELECT … INTO com COUNT(*) e com coluna.

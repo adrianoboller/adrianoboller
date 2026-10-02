@@ -1,0 +1,58 @@
+{
+  "data": "2026-10-02T03:11:32+00:00",
+  "n": 20,
+  "gerenciador": "unixODBC 2.3.12 (libodbc.so.2) + pyodbc 5.3.0",
+  "texto": "São João 😀 ok",
+  "casos": {
+    "wchar_ida_e_volta": {
+      "n": 20,
+      "ok": 20,
+      "ms_min": 131.69,
+      "ms_mediana": 132.01,
+      "ms_max": 332.29,
+      "motivos": []
+    },
+    "dml_sem_colunas": {
+      "n": 20,
+      "ok": 20,
+      "ms_min": 41.43,
+      "ms_mediana": 44.24,
+      "ms_max": 44.64,
+      "motivos": []
+    },
+    "erro_chega_pelo_gerenciador": {
+      "n": 20,
+      "ok": 20,
+      "ms_min": 43.43,
+      "ms_mediana": 43.7,
+      "ms_max": 48.63,
+      "motivos": []
+    },
+    "saida_inteiro": {
+      "n": 20,
+      "ok": 20,
+      "ms_min": 42.3,
+      "ms_mediana": 44.01,
+      "ms_max": 48.74,
+      "motivos": []
+    },
+    "saida_wchar": {
+      "n": 20,
+      "ok": 20,
+      "ms_min": 43.24,
+      "ms_mediana": 43.97,
+      "ms_max": 45.73,
+      "motivos": []
+    },
+    "saida_inout": {
+      "n": 20,
+      "ok": 20,
+      "ms_min": 41.77,
+      "ms_mediana": 43.95,
+      "ms_max": 45.75,
+      "motivos": []
+    }
+  },
+  "ausentes": [],
+  "tudo_ok": true
+}

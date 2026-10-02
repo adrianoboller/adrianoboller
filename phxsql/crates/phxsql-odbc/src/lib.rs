@@ -27,7 +27,9 @@ mod tipos;
 use conexao::{analisar_receita, receita_mascarada, Canal, Falha, Receita};
 use phxsql_core::json::Json;
 use registro::{Amarra, Comando, Diag, Ligacao, Punho};
-use resultado::{alvo_do_from, desescapar_call, fichas_do_esquema, montar, saidas_do_call, Ficha};
+use resultado::{
+    alvo_do_from, desescapar_call, fichas_do_esquema, montar, saidas_do_call, sem_grade, Ficha,
+};
 use std::sync::{Arc, Mutex};
 use texto::{bytes_utf16, escrever_texto, escrever_utf16, ler_texto};
 use tipos::*;
@@ -660,7 +662,10 @@ fn executar_sql(id: usize, sql: String) -> SqlReturn {
             // esquema responder. Falha aqui NAO derruba a consulta: a
             // resposta ja veio, e texto sem tipo e melhor que nada.
             let mut fichas = Vec::new();
-            if resposta.campo("contagem").is_none() {
+            // O portao vem ANTES do trabalho: comando sem grade (DELETE, UPDATE)
+            // nem pergunta o esquema -- seria uma ida ao servidor para tipar
+            // colunas que nao vao existir.
+            if resposta.campo("contagem").is_none() && !sem_grade(&resposta) {
                 if let Some((db_from, tabela)) = alvo_do_from(&sql) {
                     let db = if db_from.is_empty() {
                         database
@@ -681,7 +686,9 @@ fn executar_sql(id: usize, sql: String) -> SqlReturn {
 
         match conversa {
             Ok((resposta, fichas)) => {
-                let sem_tipos = fichas.is_empty() && resposta.campo("contagem").is_none();
+                let sem_tipos = fichas.is_empty()
+                    && resposta.campo("contagem").is_none()
+                    && !sem_grade(&resposta);
                 // O `"truncado"` da resposta (pedido 419/438): algum sub-pedido da
                 // composicao -- ou a propria consulta -- parou no teto de
                 // `recursos.max_linhas` do servidor, e quem so olha o `SQL_SUCCESS`
@@ -1061,8 +1068,11 @@ pub unsafe extern "system" fn SQLNumParams(stmt: SqlHandle, saida: *mut SqlSmall
 /// coluna e o servidor, na gravacao.
 ///
 /// O tamanho volta ZERO, que aqui quer dizer "nao sei" -- e nao ha risco de
-/// buffer nisso: o driver nunca ESCREVE num buffer de parametro, porque
-/// parametro de saida e recusado na ligacao.
+/// buffer nisso: o driver so ESCREVE num buffer de parametro de SAIDA, e o
+/// limite dele e a capacidade que o aplicativo passou ao `SQLBindParameter`,
+/// nunca o tamanho que este `SQLDescribeParam` devolve. (Ate o pedido 238 a
+/// frase era «parametro de saida e recusado na ligacao» -- verdade ate o OUT
+/// passar a ser ligado, e comentario que fica para tras mente sobre o limite.)
 ///
 /// # Safety
 ///
@@ -1275,6 +1285,21 @@ pub unsafe extern "system" fn SQLColAttribute(
                 }
                 SQL_COLUMN_LENGTH | SQL_DESC_LENGTH | SQL_DESC_DISPLAY_SIZE => {
                     escrever_num(numero_saida, c.tamanho as SqlLen);
+                    SQL_SUCCESS
+                }
+                SQL_DESC_PRECISION => {
+                    escrever_num(numero_saida, c.tamanho as SqlLen);
+                    SQL_SUCCESS
+                }
+                SQL_DESC_SCALE => {
+                    escrever_num(numero_saida, SqlLen::from(c.decimais));
+                    SQL_SUCCESS
+                }
+                // O pyodbc pergunta isto para TODA coluna logo depois de executar;
+                // recusar (HYC00) derrubava ate o `DELETE`. O driver nao anuncia
+                // tipo sem sinal: o inteiro vira SQL_INTEGER/BIGINT, que e com sinal.
+                SQL_DESC_UNSIGNED => {
+                    escrever_num(numero_saida, 0);
                     SQL_SUCCESS
                 }
                 SQL_COLUMN_NULLABLE | SQL_DESC_NULLABLE => {
@@ -1577,6 +1602,168 @@ pub unsafe extern "system" fn SQLGetDiagRec(
                     SQL_SUCCESS
                 }
             }
+        }
+    })
+}
+
+/// Os numeros (`SQL_API_SQL*` do `sql.h`) das funcoes que este driver exporta.
+/// A lista TEM de acompanhar os `#[no_mangle]` deste arquivo: o gerenciador de
+/// driver decide o que chamar por ela, e funcao exportada que nao consta aqui
+/// e funcao que ele finge nao existir.
+const FUNCOES_EXPORTADAS: &[u16] = &[
+    1001, // SQLAllocHandle
+    4,    // SQLBindCol
+    72,   // SQLBindParameter
+    6,    // SQLColAttribute
+    7,    // SQLConnect
+    8,    // SQLDescribeCol
+    58,   // SQLDescribeParam
+    9,    // SQLDisconnect
+    41,   // SQLDriverConnect
+    11,   // SQLExecDirect
+    12,   // SQLExecute
+    13,   // SQLFetch
+    1006, // SQLFreeHandle
+    16,   // SQLFreeStmt
+    43,   // SQLGetData
+    1010, // SQLGetDiagField
+    1011, // SQLGetDiagRec
+    44,   // SQLGetFunctions
+    45,   // SQLGetInfo
+    63,   // SQLNumParams
+    18,   // SQLNumResultCols
+    19,   // SQLPrepare
+    20,   // SQLRowCount
+    1016, // SQLSetConnectAttr
+    1019, // SQLSetEnvAttr
+    1020, // SQLSetStmtAttr
+];
+
+/// Responde ao gerenciador de driver QUAIS funcoes existem. Exigida pela
+/// conformidade Core do ODBC 3.x; a sonda viva do pedido 238 TESTOU a hipotese
+/// de que a falta dela escondia os erros do driver, e ela morreu (a causa era
+/// o `SQLGetDiagField`, ver abaixo) -- fica porque a especificacao a manda.
+///
+/// # Safety
+///
+/// Contrato da ABI do ODBC: `existe` aponta para um `SQLUSMALLINT` (id
+/// individual), para 100 (`SQL_API_ALL_FUNCTIONS`, id 0) ou para 250
+/// (`SQL_API_ODBC3_ALL_FUNCTIONS`, id 999) `SQLUSMALLINT`s.
+#[no_mangle]
+pub unsafe extern "system" fn SQLGetFunctions(
+    _dbc: SqlHandle,
+    id: SqlUSmallint,
+    existe: *mut SqlUSmallint,
+) -> SqlReturn {
+    blindado(|| {
+        if existe.is_null() {
+            return SQL_ERROR;
+        }
+        match id {
+            // Bitmap do ODBC 3: 250 palavras de 16 bits, bit (id % 16) da palavra (id / 16).
+            999 => {
+                for i in 0..250usize {
+                    *existe.add(i) = 0;
+                }
+                for f in FUNCOES_EXPORTADAS {
+                    *existe.add(usize::from(*f) / 16) |= 1 << (f % 16);
+                }
+            }
+            // Vetor do ODBC 2: 100 posicoes, uma por funcao ate 99.
+            0 => {
+                for i in 0..100usize {
+                    *existe.add(i) = 0;
+                }
+                for f in FUNCOES_EXPORTADAS.iter().filter(|f| **f < 100) {
+                    *existe.add(usize::from(*f)) = 1;
+                }
+            }
+            individual => {
+                *existe = SqlUSmallint::from(FUNCOES_EXPORTADAS.contains(&individual));
+            }
+        }
+        SQL_SUCCESS
+    })
+}
+
+/// Campos de diagnostico (`sqlext.h`/`sql.h`) que `SQLGetDiagField` entende.
+const SQL_DIAG_NUMBER: SqlSmallint = 2;
+const SQL_DIAG_SQLSTATE: SqlSmallint = 4;
+const SQL_DIAG_NATIVE: SqlSmallint = 5;
+const SQL_DIAG_MESSAGE_TEXT: SqlSmallint = 6;
+const SQL_DIAG_CLASS_ORIGIN: SqlSmallint = 8;
+const SQL_DIAG_SUBCLASS_ORIGIN: SqlSmallint = 9;
+
+/// O outro lado do diagnostico: o campo, e nao o registro inteiro.
+///
+/// Existe por causa do GERENCIADOR DE DRIVER, nao de nenhum aplicativo: o
+/// unixODBC so extrai o erro de um driver ODBC 3 quando exporta os DOIS,
+/// `SQLGetDiagRec` E `SQLGetDiagField` (`CHECK_SQLGETDIAGFIELD &&
+/// CHECK_SQLGETDIAGREC`, `DriverManager/SQLExecDirect.c`). Sem este, todo
+/// erro do driver chegava ao aplicativo como «Driver returned SQL_ERROR ...
+/// but no error reporting API found» -- sem SQLSTATE, sem texto --, e
+/// `SQLGetDiagRec` nem era chamado. Achado pela sonda viva (pedido 238); a
+/// prova de ABI nao via, porque chama as funcoes do driver DIRETO.
+///
+/// # Safety
+///
+/// Contrato da ABI do ODBC: `info` aponta para `capacidade` bytes (texto) ou
+/// para um `SQLINTEGER` (campos numericos).
+#[no_mangle]
+pub unsafe extern "system" fn SQLGetDiagField(
+    _tipo: SqlSmallint,
+    h: SqlHandle,
+    registro_n: SqlSmallint,
+    campo: SqlSmallint,
+    info: SqlPointer,
+    capacidade: SqlSmallint,
+    tamanho: *mut SqlSmallint,
+) -> SqlReturn {
+    blindado(|| {
+        let id = registro::id_de(h);
+        // Cabecalho: quantos registros ha. Vale para registro_n == 0.
+        if campo == SQL_DIAG_NUMBER {
+            let n = registro::com(id, |p| diag_de(p).len());
+            return match n {
+                None => SQL_INVALID_HANDLE,
+                Some(n) => {
+                    escrever_num(info as *mut SqlInteger, n as SqlInteger);
+                    SQL_SUCCESS
+                }
+            };
+        }
+        if registro_n < 1 {
+            return SQL_ERROR;
+        }
+        let diag = registro::com(id, |p| diag_de(p).get((registro_n as usize) - 1).cloned());
+        let d = match diag {
+            None => return SQL_INVALID_HANDLE,
+            Some(None) => return SQL_NO_DATA,
+            Some(Some(d)) => d,
+        };
+        let texto = |valor: &str| -> SqlReturn {
+            let (n, truncou) =
+                escrever_texto(valor.as_bytes(), info as *mut SqlChar, capacidade as SqlLen);
+            escrever_num(tamanho, n as SqlSmallint);
+            if truncou {
+                SQL_SUCCESS_WITH_INFO
+            } else {
+                SQL_SUCCESS
+            }
+        };
+        match campo {
+            SQL_DIAG_SQLSTATE => texto(&d.estado),
+            SQL_DIAG_MESSAGE_TEXT => texto(&d.mensagem),
+            SQL_DIAG_CLASS_ORIGIN | SQL_DIAG_SUBCLASS_ORIGIN => {
+                // Os SQLSTATE `IM`/`HY` de driver tem origem ODBC 3.0; o resto, ISO.
+                let odbc = d.estado.starts_with("IM") || d.estado.starts_with("HY");
+                texto(if odbc { "ODBC 3.0" } else { "ISO 9075" })
+            }
+            SQL_DIAG_NATIVE => {
+                escrever_num(info as *mut SqlInteger, d.nativo);
+                SQL_SUCCESS
+            }
+            _ => SQL_ERROR,
         }
     })
 }
@@ -2606,6 +2793,230 @@ mod testes {
             SQLDisconnect(dbc);
             SQLFreeHandle(SQL_HANDLE_DBC, dbc);
             SQLFreeHandle(SQL_HANDLE_ENV, env);
+        }
+    }
+
+    // --- Pedido 238, sonda viva: o que um gerenciador de driver REAL pediu ---
+
+    /// Conecta no servidor falso e devolve `(env, dbc, stmt)`.
+    unsafe fn conectar_no_falso(porta: u16) -> (SqlHandle, SqlHandle, SqlHandle) {
+        let mut env: SqlHandle = std::ptr::null_mut();
+        assert_eq!(
+            SQLAllocHandle(SQL_HANDLE_ENV, std::ptr::null_mut(), &mut env),
+            SQL_SUCCESS
+        );
+        let mut dbc: SqlHandle = std::ptr::null_mut();
+        assert_eq!(SQLAllocHandle(SQL_HANDLE_DBC, env, &mut dbc), SQL_SUCCESS);
+        let receita = receita_do_eco(porta);
+        assert_eq!(
+            SQLDriverConnect(
+                dbc,
+                std::ptr::null_mut(),
+                receita.as_ptr(),
+                SQL_NTS as SqlSmallint,
+                std::ptr::null_mut(),
+                0,
+                std::ptr::null_mut(),
+                0
+            ),
+            SQL_SUCCESS
+        );
+        let mut stmt: SqlHandle = std::ptr::null_mut();
+        assert_eq!(SQLAllocHandle(SQL_HANDLE_STMT, dbc, &mut stmt), SQL_SUCCESS);
+        (env, dbc, stmt)
+    }
+
+    unsafe fn desconectar_do_falso(env: SqlHandle, dbc: SqlHandle, stmt: SqlHandle) {
+        SQLFreeHandle(SQL_HANDLE_STMT, stmt);
+        SQLDisconnect(dbc);
+        SQLFreeHandle(SQL_HANDLE_DBC, dbc);
+        SQLFreeHandle(SQL_HANDLE_ENV, env);
+    }
+
+    /// `DELETE FROM t` nao devolve grade. O driver anunciava as colunas do
+    /// esquema da tabela citada (4, no banco da sonda) e o pyodbc, vendo
+    /// colunas, pedia atributos de um resultado que nao existe. Tambem nao
+    /// ha por que perguntar o esquema: o portao vem antes do trabalho.
+    #[test]
+    fn delete_nao_anuncia_colunas_nem_pergunta_o_esquema() {
+        fn responder(linha: &str) -> &'static str {
+            if linha.contains("\"op\":\"esquema\"") {
+                ESQUEMA_DO_438
+            } else {
+                r#"{"ok":true,"resultado":{"afetadas":1}}"#
+            }
+        }
+        let (porta, recebe) = servidor_falso(responder);
+        unsafe {
+            let (env, dbc, stmt) = conectar_no_falso(porta);
+            let sql = "DELETE FROM clientes WHERE id = 1\0";
+            assert_eq!(SQLExecDirect(stmt, sql.as_ptr(), SQL_NTS), SQL_SUCCESS);
+            let mut colunas: SqlSmallint = -1;
+            assert_eq!(SQLNumResultCols(stmt, &mut colunas), SQL_SUCCESS);
+            assert_eq!(colunas, 0, "comando sem grade nao tem colunas");
+            recebe.recv_timeout(ESPERA).expect("o pedido sql");
+            assert!(
+                recebe
+                    .recv_timeout(std::time::Duration::from_millis(300))
+                    .is_err(),
+                "nao devia perguntar o esquema de um comando sem grade"
+            );
+            desconectar_do_falso(env, dbc, stmt);
+        }
+    }
+
+    /// O pyodbc pergunta `SQL_DESC_UNSIGNED` para toda coluna, logo depois de
+    /// executar; a recusa (`HYC00`) derrubava ate o primeiro `SELECT`.
+    #[test]
+    fn colattribute_responde_sem_sinal_precisao_e_escala() {
+        fn responder(linha: &str) -> &'static str {
+            if linha.contains("\"op\":\"esquema\"") {
+                ESQUEMA_DO_438
+            } else {
+                r#"{"ok":true,"resultado":{"colunas":["nome"],"linhas":[{"nome":"Ana"}]}}"#
+            }
+        }
+        let (porta, _recebe) = servidor_falso(responder);
+        unsafe {
+            let (env, dbc, stmt) = conectar_no_falso(porta);
+            let sql = "SELECT nome FROM clientes\0";
+            assert_eq!(SQLExecDirect(stmt, sql.as_ptr(), SQL_NTS), SQL_SUCCESS);
+            for (campo, esperado) in [
+                (SQL_DESC_UNSIGNED, 0isize),
+                (SQL_DESC_PRECISION, 40),
+                (SQL_DESC_SCALE, 0),
+            ] {
+                let mut numero: SqlLen = -99;
+                let codigo = SQLColAttribute(
+                    stmt,
+                    1,
+                    campo,
+                    std::ptr::null_mut(),
+                    0,
+                    std::ptr::null_mut(),
+                    &mut numero,
+                );
+                assert_eq!(codigo, SQL_SUCCESS, "campo {campo}");
+                assert_eq!(numero, esperado, "campo {campo}");
+            }
+            desconectar_do_falso(env, dbc, stmt);
+        }
+    }
+
+    /// O unixODBC so extrai o erro de um driver ODBC 3 se ele exporta
+    /// `SQLGetDiagField` E `SQLGetDiagRec`. Sem o primeiro, todo erro virava
+    /// «no error reporting API found». Aqui, o conteudo: estado, texto e
+    /// quantidade, pelo mesmo diagnostico que o `SQLGetDiagRec` le.
+    #[test]
+    fn getdiagfield_entrega_estado_texto_e_quantidade() {
+        fn responder(linha: &str) -> &'static str {
+            if linha.contains("\"op\":\"esquema\"") {
+                ESQUEMA_DO_438
+            } else {
+                r#"{"ok":true,"resultado":{"colunas":["nome"],"linhas":[{"nome":"Ana"}],"truncado":true}}"#
+            }
+        }
+        let (porta, _recebe) = servidor_falso(responder);
+        unsafe {
+            let (env, dbc, stmt) = conectar_no_falso(porta);
+            let sql = "SELECT nome FROM clientes\0";
+            assert_eq!(
+                SQLExecDirect(stmt, sql.as_ptr(), SQL_NTS),
+                SQL_SUCCESS_WITH_INFO
+            );
+            let mut texto = [0u8; 256];
+            let mut tam: SqlSmallint = 0;
+            assert_eq!(
+                SQLGetDiagField(
+                    SQL_HANDLE_STMT,
+                    stmt,
+                    1,
+                    SQL_DIAG_SQLSTATE,
+                    texto.as_mut_ptr() as SqlPointer,
+                    256,
+                    &mut tam
+                ),
+                SQL_SUCCESS
+            );
+            assert_eq!(&texto[..tam as usize], b"01000");
+            assert_eq!(
+                SQLGetDiagField(
+                    SQL_HANDLE_STMT,
+                    stmt,
+                    1,
+                    SQL_DIAG_MESSAGE_TEXT,
+                    texto.as_mut_ptr() as SqlPointer,
+                    256,
+                    &mut tam
+                ),
+                SQL_SUCCESS
+            );
+            assert!(String::from_utf8_lossy(&texto[..tam as usize]).contains("max_linhas"));
+            let mut quantos: SqlInteger = -1;
+            assert_eq!(
+                SQLGetDiagField(
+                    SQL_HANDLE_STMT,
+                    stmt,
+                    0,
+                    SQL_DIAG_NUMBER,
+                    &mut quantos as *mut SqlInteger as SqlPointer,
+                    0,
+                    std::ptr::null_mut()
+                ),
+                SQL_SUCCESS
+            );
+            assert_eq!(quantos, 1);
+            assert_eq!(
+                SQLGetDiagField(
+                    SQL_HANDLE_STMT,
+                    stmt,
+                    2,
+                    SQL_DIAG_SQLSTATE,
+                    texto.as_mut_ptr() as SqlPointer,
+                    256,
+                    &mut tam
+                ),
+                SQL_NO_DATA
+            );
+            desconectar_do_falso(env, dbc, stmt);
+        }
+    }
+
+    /// O par de diagnostico tem de constar da lista que o driver anuncia, nas
+    /// tres formas da chamada (individual, vetor ODBC 2, bitmap ODBC 3).
+    #[test]
+    fn getfunctions_anuncia_o_par_de_diagnostico() {
+        unsafe {
+            for id in [1010u16, 1011] {
+                let mut existe: SqlUSmallint = 0;
+                assert_eq!(
+                    SQLGetFunctions(std::ptr::null_mut(), id, &mut existe),
+                    SQL_SUCCESS
+                );
+                assert_eq!(existe, 1, "funcao {id}");
+                let mut mapa = [0u16; 250];
+                assert_eq!(
+                    SQLGetFunctions(std::ptr::null_mut(), 999, mapa.as_mut_ptr()),
+                    SQL_SUCCESS
+                );
+                assert_ne!(
+                    mapa[usize::from(id) / 16] & (1 << (id % 16)),
+                    0,
+                    "bitmap {id}"
+                );
+            }
+            let mut existe: SqlUSmallint = 7;
+            assert_eq!(
+                SQLGetFunctions(std::ptr::null_mut(), 54, &mut existe),
+                SQL_SUCCESS
+            );
+            assert_eq!(existe, 0, "SQLTables nao existe neste driver");
+            let mut vetor = [9u16; 100];
+            assert_eq!(
+                SQLGetFunctions(std::ptr::null_mut(), 0, vetor.as_mut_ptr()),
+                SQL_SUCCESS
+            );
+            assert_eq!(vetor[11], 1, "SQLExecDirect no vetor ODBC 2");
         }
     }
 

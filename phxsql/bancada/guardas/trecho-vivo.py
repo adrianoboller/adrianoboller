@@ -792,7 +792,12 @@ TETO_TESTE_FORA_DO_BINARIO = 0
 TETO_TESTE_SEM_MODULO = 0
 # 726 -> 728 (524, 02/10/2026): as duas guardas do `fsync` da mae das pastas
 # novas do backup (zip e arvore). Piso so sobe com entrada nova.
-PISO_DAS_ENTRADAS = 728
+# 728 -> 733 (238, 02/10/2026): as cinco guardas da sonda viva do ODBC
+# (DELETE com colunas, SQL_DESC_UNSIGNED, par SQLGetDiagField/GetFunctions, e
+# as duas pontas do `?` do CALL). Medido por `--numeros`; piso so sobe com
+# entrada nova, e se outra frente somar entradas no mesmo passo o integrador
+# reconta -- o numero e do catalogo do dia, nao desta frente.
+PISO_DAS_ENTRADAS = 733
 
 # ------------------------------------------------------------- APOSENTADAS
 #
