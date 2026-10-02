@@ -1647,10 +1647,10 @@ mod tests {
             ("sequencia.rs", 2),
             ("sincronia.rs", 3),
             ("trava_de_instancia.rs", 1),
-            ("util.rs", 11),
+            ("util.rs", 12),
             ("volume.rs", 2),
         ];
-        const ABRIDORES: [&str; 9] = [
+        const ABRIDORES: [&str; 10] = [
             "OpenOptions::new()",
             "File::create(",
             "fs::write(",
@@ -1660,6 +1660,7 @@ mod tests {
             "escrever_do_banco(",
             "copiar_do_banco(",
             "recriar_no_destino(",
+            "reabrir_do_banco(",
         ];
         let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
         let mut medido: BTreeMap<String, usize> = BTreeMap::new();

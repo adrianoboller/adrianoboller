@@ -237,22 +237,9 @@ fn no_nome_real(e: impl Into<PhxError>, por_dentro: &Path, real: &Path) -> PhxEr
 /// copia e a mae de cada pasta criada. Sem isto, uma queda depois do
 /// manifesto novo podia voltar com o velho, ou sem o nome de uma copia.
 pub fn sincronizar_copias(copias: &Copias) -> Result<()> {
-    for (i, ((caminho, aberto), (por_dentro, anotado))) in copias
-        .caminhos
-        .iter()
-        .zip(&copias.abertos)
-        .zip(&copias.reabrir)
-        .enumerate()
+    for ((caminho, aberto), (por_dentro, anotado)) in
+        copias.caminhos.iter().zip(&copias.abertos).zip(&copias.reabrir)
     {
-        // Pedido 513 (passo 2): a copia que ja sincronizou na fase 1 e nao
-        // foi reescrita na fase 2 nao paga de novo -- ver [`sincronizar_fase_1`].
-        if copias
-            .sujas
-            .as_ref()
-            .is_some_and(|sujas| !sujas.contains(&i))
-        {
-            continue;
-        }
         match aberto {
             Some(arquivo) => crate::sincronia::sync_all_sem_abortar(arquivo, caminho)?,
             None => sincronizar_arquivo(por_dentro, *anotado, caminho)?,
@@ -1359,24 +1346,20 @@ pub fn acertar_fase_2(fase: &mut Fase1, eventos: &BTreeMap<PathBuf, u64>) -> Res
 /// Fecha a corrida em arvore: o relatorio (em ordem de caminho, para dois
 /// backups da mesma coisa darem manifestos comparaveis) e as copias para
 /// [`concluir`].
-/// O `fsync` das copias da fase 1, ANTES da fase 2 e fora de qualquer trava.
 ///
-/// Medido na bancada (`bancada/backup/retrato-com-escritor.py`, 561 MiB):
-/// com o `fsync` de tudo DEPOIS da fase 2, a escrita que esperou a fase 2
-/// no portao ainda pagava ~100 ms a mais que a propria fase 2 -- o disco
-/// estava ocupado sincronizando meio gigabyte de copias da fase 1 no
-/// instante em que o escritor voltou. Sincronizando a fase 1 enquanto o
-/// escritor ainda anda, o `concluir` de depois so' sincroniza o que a fase
-/// 2 reescreveu. Numa recusa, a corrida sai com a faxina do 576.
-pub fn sincronizar_fase_1(fase: &mut Fase1) -> Result<()> {
-    if let Err(e) = sincronizar_copias(&fase.copias) {
-        descartar_corrida(&fase.copias);
-        return Err(e);
-    }
-    fase.copias.sujas = Some(std::collections::BTreeSet::new());
-    Ok(())
-}
-
+/// HIPOTESE MORTA (pedido 646): sincronizar as copias da fase 1 ANTES da fase
+/// 2, ainda fora da trava (a antiga `sincronizar_fase_1`), para o escritor que
+/// espera a fase 2 voltar a um disco limpo. A 561 MiB parecia comprar ~100 ms;
+/// a 1.123 MiB (bancada `retrato-com-escritor.py`, 6 voltas) o maximo de uma
+/// escrita DURANTE a fase 1 foi 398 [370-439] ms (A) e 404 [312-1.563] ms (B)
+/// COM o `fsync` antes contra 32 [11-72] e 89 [30-107] ms SEM -- o `fsync` do
+/// grosso disputa E/S com o escritor que ainda anda -- e DEPOIS da fase 1 as
+/// faixas se cruzam nos dois cenarios (nada comprado). No cenario B ainda
+/// pagava duas vezes os ~27% que a fase 2 reescreve. Por isso as copias ficam
+/// sujas e o `concluir` sincroniza tudo depois da fase 2, fora da trava. A
+/// garantia nao muda: o manifesto so' nasce depois do `fsync` (524 C2) e o
+/// velho sai antes da primeira copia (577), de modo que uma queda na fase 2
+/// deixa um destino sem manifesto, que `op_backups` nao lista.
 pub fn terminar(mut fase: Fase1) -> (Relatorio, Copias) {
     fase.r.arquivos.sort_by(|a, b| a.caminho.cmp(&b.caminho));
     (fase.r, fase.copias)
@@ -1470,9 +1453,6 @@ impl Fase1 {
             sha256: para_hex(&sha256(dados)),
         };
         let indice = self.copias.indice.get(rel).copied();
-        if let Some(sujas) = self.copias.sujas.as_mut() {
-            sujas.insert(indice.unwrap_or(self.r.arquivos.len()));
-        }
         match indice {
             Some(i) => {
                 self.r.bytes = self.r.bytes - self.r.arquivos[i].bytes + bytes;
@@ -1716,9 +1696,6 @@ pub struct Copias {
     /// Caminho relativo -> indice nas listas paralelas: e' o que deixa a
     /// fase 2 trocar uma copia NO LUGAR (pedido 513, passo 2).
     indice: BTreeMap<String, usize>,
-    /// Os indices escritos desde o ultimo [`sincronizar_fase_1`]; `None` =
-    /// nenhum `fsync` ainda, todas sujas (a passada unica de sempre).
-    sujas: Option<std::collections::BTreeSet<usize>>,
 }
 
 impl std::ops::Deref for Copias {
@@ -2795,41 +2772,120 @@ mod tests {
         assert!(sobras.is_empty(), "a arvore temporaria ficou: {sobras:?}");
     }
 
-    /// **O `fsync` da fase 1 deixa so' o que a fase 2 reescreve para o
-    /// `concluir`**: depois de `sincronizar_fase_1` nada esta sujo; a
-    /// recopia e o arquivo novo da fase 2 entram nas sujas, e o que nao
-    /// mudou fica fora. Sem o `sincronizar_fase_1` (a passada unica), tudo
-    /// sincroniza no `concluir`, como sempre.
+    /// **Pedido 646: o `fsync` do grosso fica TODO para o `concluir`, depois
+    /// da fase 2**, inclusive o das copias que a fase 2 nao reescreveu. A fase
+    /// 1 sincronizava essas antes da trava e o `concluir` as pulava; medido a
+    /// 1 GB, isso so' trouxe picos de ~0,4 s para as escritas durante a
+    /// copia. Prova: recusa forjada de `fsync` num `.ndx` que a fase 2 NAO
+    /// tocou -- se alguem voltar a pular as copias "ja sincronizadas", o
+    /// `concluir` devolve Ok e o teste cai.
     #[test]
-    fn so_o_que_a_fase_2_reescreveu_fica_sujo_depois_do_fsync_da_fase_1() {
-        let base = temp("duas-fases-sujas");
+    fn o_concluir_sincroniza_tambem_o_que_a_fase_2_nao_reescreveu() {
+        let base = temp("duas-fases-sync-tudo");
         let raiz = base.join("dados");
+        let destino = base.join("copia");
         std::fs::create_dir_all(&raiz).unwrap();
         dados_de_exemplo(&raiz);
         envelhecer(&raiz);
-        let mut fase = copiar_fase_1(&raiz, &base.join("copia")).unwrap();
-        assert!(
-            fase.copias.sujas.is_none(),
-            "antes do fsync da fase 1, tudo sujo"
-        );
-        sincronizar_fase_1(&mut fase).unwrap();
-        assert_eq!(fase.copias.sujas.as_ref().map(|s| s.len()), Some(0));
-
+        let mut fase = copiar_fase_1(&raiz, &destino).unwrap();
         std::fs::write(raiz.join("Z/cadastroClientes.reg"), b"mudou").unwrap();
-        std::fs::write(raiz.join("Z/novo.reg"), b"nasceu").unwrap();
         let acerto = acertar_fase_2(&mut fase, &BTreeMap::new()).unwrap();
-        assert_eq!(acerto.arquivos, 2, "{acerto:?}");
-        let sujas = fase.copias.sujas.clone().unwrap();
-        let indice = |rel: &str| fase.copias.indice[rel];
-        assert!(sujas.contains(&indice("Z/cadastroClientes.reg")));
-        assert!(sujas.contains(&indice("Z/novo.reg")));
-        assert!(!sujas.contains(&indice("Z/cadastroClientes.ndx")));
-        assert_eq!(sujas.len(), 2, "{sujas:?}");
-
+        assert_eq!(acerto.arquivos, 1, "so' o .reg mudou: {acerto:?}");
         let (r, copias) = terminar(fase);
-        concluir(&base.join("copia"), 1, &r, &copias).unwrap();
-        assert!(conferir(&base.join("copia")).unwrap().ok());
+
+        let intocado = destino.join("Z/cadastroClientes.ndx");
+        assert!(intocado.is_file());
+        crate::sincronia::falha_de_teste::armar(
+            &intocado,
+            crate::sincronia::falha_de_teste::Onde::Fsync,
+            1,
+        );
+        let feito = concluir(&destino, 1, &r, &copias);
+        crate::sincronia::falha_de_teste::desarmar(&intocado);
+        assert!(
+            feito.is_err(),
+            "o concluir tem de sincronizar a copia que a fase 2 nao reescreveu"
+        );
     }
+
+    /// **Pedido 646: queda na fase 2.** Com a fase 1 sem `fsync` nenhum e o
+    /// processo morrendo no meio da fase 2 (aqui: a corrida simplesmente nao
+    /// chega ao `concluir`), o destino fica SEM manifesto -- e e isso que o
+    /// `op_backups` (que so' lista pasta com `backup.json`) e o `restaurar`
+    /// leem como «nao e um backup». A garantia e a mesma que havia com o
+    /// `fsync` antes da trava, que e o motivo de a reversao nao perder nada.
+    #[test]
+    fn queda_na_fase_2_deixa_destino_sem_manifesto_e_o_restaurar_recusa() {
+        let base = temp("queda-fase-2");
+        let raiz = base.join("dados");
+        let destino = base.join("copia");
+        std::fs::create_dir_all(&raiz).unwrap();
+        dados_de_exemplo(&raiz);
+        envelhecer(&raiz);
+        // Um backup velho no mesmo destino: o 577 o invalida na fase 1.
+        let velho = copiar_fase_1(&raiz, &destino).unwrap();
+        let (r_velho, copias_velhas) = terminar(velho);
+        concluir(&destino, 1, &r_velho, &copias_velhas).unwrap();
+        assert!(destino.join(MANIFESTO).is_file(), "o velho esta pronto");
+        drop(copias_velhas);
+
+        let mut fase = copiar_fase_1(&raiz, &destino).unwrap();
+        std::fs::write(raiz.join("Z/cadastroClientes.reg"), b"mudou").unwrap();
+        acertar_fase_2(&mut fase, &BTreeMap::new()).unwrap();
+        // A queda: nada de `concluir`, nem faxina (o processo morreu).
+        let _ = terminar(fase);
+
+        assert!(
+            !destino.join(MANIFESTO).exists(),
+            "sem concluir nao pode haver manifesto: o op_backups listaria"
+        );
+        assert!(
+            crate::restaurar::conteudo(&destino).is_err(),
+            "o restaurar tinha de recusar o destino sem manifesto"
+        );
+        assert!(
+            crate::restaurar::Preparada::preparar(&destino, &base.join("base"), "").is_err(),
+            "o restaurar tinha de recusar o destino sem manifesto"
+        );
+        assert!(conferir(&destino).is_err());
+    }
+
+    /// **Pedido 646: ninguem grava o manifesto antes do `fsync`.** Um
+    /// `fsync` recusado no `concluir` depois da fase 2 nao pode deixar
+    /// manifesto novo: aqui um `backup.json` sentinela esta no destino (o que
+    /// a faxina nao e dona de apagar) e tem de continuar com o conteudo dele.
+    /// Com `finalizar_manifesto` antes de `sincronizar_copias`, o sentinela
+    /// vira o manifesto de verdade e o teste cai.
+    #[test]
+    fn manifesto_nao_e_gravado_antes_do_fsync_das_duas_fases() {
+        let base = temp("manifesto-depois-do-fsync");
+        let raiz = base.join("dados");
+        let destino = base.join("copia");
+        std::fs::create_dir_all(&raiz).unwrap();
+        dados_de_exemplo(&raiz);
+        envelhecer(&raiz);
+        let mut fase = copiar_fase_1(&raiz, &destino).unwrap();
+        std::fs::write(raiz.join("Z/cadastroClientes.reg"), b"mudou").unwrap();
+        acertar_fase_2(&mut fase, &BTreeMap::new()).unwrap();
+        let (r, copias) = terminar(fase);
+        std::fs::write(destino.join(MANIFESTO), "SENTINELA").unwrap();
+
+        let recopiada = destino.join("Z/cadastroClientes.reg");
+        crate::sincronia::falha_de_teste::armar(
+            &recopiada,
+            crate::sincronia::falha_de_teste::Onde::Fsync,
+            1,
+        );
+        let feito = concluir(&destino, 1, &r, &copias);
+        crate::sincronia::falha_de_teste::desarmar(&recopiada);
+        assert!(feito.is_err(), "o fsync recusado tinha de subir");
+        let texto = std::fs::read_to_string(destino.join(MANIFESTO)).unwrap_or_default();
+        assert!(
+            texto == "SENTINELA" || texto.is_empty(),
+            "o manifesto foi gravado antes do fsync das copias: {texto}"
+        );
+    }
+
     /// Poe o `mtime` de cada arquivo da raiz 10 min no passado: fora da
     /// janela racy, para as provas medirem o `stat` e os eventos.
     fn envelhecer(raiz: &Path) {

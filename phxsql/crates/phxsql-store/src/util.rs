@@ -196,7 +196,37 @@ pub fn opcoes_do_banco() -> OpenOptions {
 /// abre diretorio a diretorio sem seguir link, e passa aqui o nome ja
 /// alcancado pelo descritor.
 pub fn recriar_do_banco(caminho: &Path, ler: bool) -> std::io::Result<File> {
-    recriar(caminho, ler, false)
+    recriar(caminho, ler, Modo::Banco)
+}
+
+/// O arquivo do banco que OUTROS processos seguram abertos e que, por isso,
+/// se REABRE em vez de recriar: a trava de instancia (pedido 648). Cria com
+/// 0600 se nao existe; se existe, abre o MESMO inode, para ler e escrever,
+/// SEM truncar e SEM mexer na permissao -- truncar apagaria o pid de quem
+/// segura a trava antes de o `flock` dizer que ela esta ocupada.
+///
+/// E' o terceiro modo do mesmo motor de [`recriar_do_banco`] (`create_new`,
+/// `lstat` do nome, `O_NOFOLLOW` e `fstat` do que abriu), e nao uma
+/// abertura propria: a trava abria com `create(true).write(true)`, que segue
+/// link e escrevia (`set_len(0)` + pid) no alvo de um `.phxsql.trava ->
+/// isca`. HIPOTESE MORTA: `recriar_no_destino` (trocar o nome alheio por um
+/// arquivo novo) -- trocar o inode da trava desfaz a exclusao mutua, porque
+/// quem ja a segura fica com o inode velho e o recem-chegado trava o novo.
+/// Por isso um arquivo de DOIS nomes (`nlink > 1`, o link fisico plantado
+/// para a trava escrever o pid no inode da vitima) RECUSA, e nao se troca.
+pub fn reabrir_do_banco(caminho: &Path, ler: bool) -> std::io::Result<File> {
+    recriar(caminho, ler, Modo::Reabrir)
+}
+
+/// O que o motor de [`recriar_do_banco`] faz com o arquivo que ja esta no nome.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Modo {
+    /// Trunca o mesmo inode.
+    Banco,
+    /// Troca o nome alheio por um arquivo novo (569).
+    Destino,
+    /// Abre o mesmo inode sem truncar; link fisico recusa (648).
+    Reabrir,
 }
 
 /// [`recriar_do_banco`] para um nome num DESTINO onde outros escrevem -- a
@@ -216,12 +246,13 @@ pub fn recriar_do_banco(caminho: &Path, ler: bool) -> std::io::Result<File> {
 /// daria o arquivo ao root e tiraria o acesso do servico. A pasta do backup e
 /// lugar onde terceiros escrevem por desenho; a raiz de dados, nao.
 pub fn recriar_no_destino(caminho: &Path, ler: bool) -> std::io::Result<File> {
-    recriar(caminho, ler, true)
+    recriar(caminho, ler, Modo::Destino)
 }
 
 /// O corpo de [`recriar_do_banco`] e [`recriar_no_destino`]: um motor so, e
 /// `destino` decide so o que fazer com o arquivo regular que nao e nosso.
-fn recriar(caminho: &Path, ler: bool, destino: bool) -> std::io::Result<File> {
+fn recriar(caminho: &Path, ler: bool, modo: Modo) -> std::io::Result<File> {
+    let destino = modo == Modo::Destino;
     // Duas voltas no maximo: a segunda so depois de o nome alheio sair
     // (569). Se alguem o plantar de novo no intervalo, o `create_new` recusa
     // -- o nosso conteudo nunca cai no inode dele.
@@ -244,6 +275,9 @@ fn recriar(caminho: &Path, ler: bool, destino: bool) -> std::io::Result<File> {
         if !nome.file_type().is_file() {
             return Err(recusa_do_nome(caminho, &nome));
         }
+        if modo == Modo::Reabrir && !um_nome_so(&nome) {
+            return Err(recusa_de_varios_nomes(caminho));
+        }
         if destino && !e_nosso(&nome) {
             std::fs::remove_file(caminho)?;
             tirou_o_alheio = true;
@@ -265,6 +299,14 @@ fn recriar(caminho: &Path, ler: bool, destino: bool) -> std::io::Result<File> {
         let aberto = arquivo.metadata()?;
         if !aberto.is_file() || !mesmo_arquivo(&aberto, &nome) || (destino && !e_nosso(&aberto)) {
             return Err(recusa_do_nome(caminho, &nome));
+        }
+        if modo == Modo::Reabrir {
+            // Os dois nomes tambem se conferem no que ABRIU: o link fisico
+            // plantado entre o `lstat` e o `open` so aparece aqui.
+            if !um_nome_so(&aberto) {
+                return Err(recusa_de_varios_nomes(caminho));
+            }
+            return Ok(arquivo);
         }
         arquivo.set_len(0)?;
         apertar_permissao(&arquivo);
@@ -294,6 +336,30 @@ fn e_nosso(m: &std::fs::Metadata) -> bool {
         let _ = m;
         true
     }
+}
+
+/// O arquivo tem um nome so. Fora do Unix a `std` nao conta nomes.
+fn um_nome_so(m: &std::fs::Metadata) -> bool {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        m.nlink() == 1
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = m;
+        true
+    }
+}
+
+/// A recusa de [`reabrir_do_banco`] diante de um link fisico.
+fn recusa_de_varios_nomes(caminho: &Path) -> std::io::Error {
+    std::io::Error::other(format!(
+        "{}: o arquivo tem mais de um nome (link fisico), e o banco nao grava \
+         nele -- escreveria no inode de outro arquivo. Tire o outro nome (ou \
+         o arquivo) e repita",
+        caminho.display()
+    ))
 }
 
 /// O uid com que este processo CRIA arquivo (o *fsuid*, quarto numero da
