@@ -74,6 +74,13 @@ fn main() {
             conferidor::TETO_FRASE_REPETIDA,
             conferidor::frases_repetidas().len()
         );
+        println!(
+            "catraca:nome=TETO_NUMERO_CRAVADO_EM_TELA;\
+             onde=crates/phxsql-server/src/conferidor.rs;\
+             valor={};medido={};mede=numero que so o servidor sabe cravado em texto de tela",
+            conferidor::TETO_NUMERO_CRAVADO_EM_TELA,
+            conferidor::numeros_cravados().len()
+        );
     }
 
     if ver_isentos {

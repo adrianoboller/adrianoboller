@@ -2964,6 +2964,20 @@ impl Servidor {
         }
     }
 
+    /// A porta de dados que o servidor escuta AGORA, e nao a do arquivo.
+    ///
+    /// Um lugar so para o `/saude` e o `ping`: a tela dizia «porta 5000» de
+    /// cabeca (pedido 645) porque so o formulario de entrada sabia a real.
+    fn porta_dados_agora(&self) -> u16 {
+        self.endereco_dos_dados
+            .lock()
+            .ok()
+            .and_then(|e| *e)
+            .map(|e| e.port())
+            .or_else(|| self.config.endereco().ok().map(|e| e.port()))
+            .unwrap_or(0)
+    }
+
     /// Guarda o endereco em que a porta de dados esta escutando AGORA.
     ///
     /// Ele pode diferir do `bind` do `config.json` depois de uma troca pela
@@ -10763,18 +10777,7 @@ impl Servidor {
                         // A porta que ele REALMENTE escuta agora, e nao a do
                         // arquivo: depois de uma troca pela tela, o formulario
                         // de entrada mandaria todo mundo para a porta velha.
-                        (
-                            "porta_dados",
-                            Json::de_u64(
-                                self.endereco_dos_dados
-                                    .lock()
-                                    .ok()
-                                    .and_then(|e| *e)
-                                    .map(|e| e.port())
-                                    .or_else(|| self.config.endereco().ok().map(|e| e.port()))
-                                    .unwrap_or(0) as u64,
-                            ),
-                        ),
+                        ("porta_dados", Json::de_u64(self.porta_dados_agora() as u64)),
                         (
                             "porta_dados_no_ar",
                             Json::Bool(self.porta_no_ar.load(Ordering::SeqCst)),
@@ -13818,6 +13821,19 @@ impl Servidor {
         match op {
             "ping" => Ok(Json::objeto(vec![
                 ("phxsql", Json::texto_de(VERSAO)),
+                // Para a tela nao cravar numeros que so o servidor sabe
+                // (pedido 645): a porta real e os tipos de arquivo que uma
+                // tabela pode ter, da lista UNICA do motor de armazenamento.
+                ("porta_dados", Json::de_u64(self.porta_dados_agora() as u64)),
+                (
+                    "arquivos_por_tabela",
+                    Json::Lista(
+                        phxsql_store::catalogo::Database::extensoes_de_uma_tabela()
+                            .iter()
+                            .map(|e| Json::texto_de(*e))
+                            .collect(),
+                    ),
+                ),
                 // O papel VIVO, das duas fontes que podem muda-lo: o cluster
                 // (eleicao e promocao automatica) e a promocao manual do
                 // spare. Responder o papel do config.json seria mentir depois
@@ -27405,11 +27421,46 @@ impl Servidor {
     /// dados termina assim mesmo; o que muda e que o resultado nao vai para
     /// lugar nenhum e a conexao nao volta.
     fn op_encerrar_sessao(&self, p: &Json) -> Result<Json> {
-        // Sessao do navegador vem por texto ("a1b2c3d4"); conexao da porta de
-        // dados, por numero. Aceitar os dois no mesmo campo evita duas
-        // operacoes para a mesma pergunta.
-        if let Some(texto) = p.campo("id").and_then(Json::texto) {
-            if texto.chars().any(|c| !c.is_ascii_digit()) {
+        // Quem e o alvo -- sessao do navegador ou conexao da porta de dados --
+        // e dito PELO PEDIDO (`"tipo": "web"|"conexao"`), nunca adivinhado pela
+        // forma do texto: o id web tem 8 digitos hex e 2,3% deles ((10/16)^8)
+        // saem so com algarismos, indistinguiveis de um numero de conexao
+        // (pedido 644). Sem o campo, so o que nao tem ambiguidade segue como
+        // antes (numero JSON = conexao; texto com letra = web, que conexao
+        // nunca tem); texto so de algarismos e RECUSADO dizendo por que --
+        // guarda nova entra pedida, mas o palpite que derrubava a conexao
+        // errada nao se mantem.
+        let id_texto = p.campo("id").and_then(Json::texto);
+        let web = match p.campo("tipo").and_then(Json::texto) {
+            Some("web") => true,
+            Some("conexao") => false,
+            Some(outro) => {
+                return Err(PhxError::Esquema(format!(
+                    "encerrar_sessao: \"tipo\" e \"web\" ou \"conexao\", nao {}",
+                    phxsql_core::error::citar(outro)
+                )))
+            }
+            None => match id_texto {
+                Some(t) if !t.is_empty() && t.chars().all(|c| c.is_ascii_digit()) => {
+                    return Err(PhxError::Esquema(
+                        "encerrar_sessao: id so de algarismos e ambiguo (sessao web ou \
+                         numero de conexao); mande \"tipo\": \"web\" ou \"conexao\""
+                            .into(),
+                    ))
+                }
+                Some(_) => true,
+                None => false,
+            },
+        };
+        if web {
+            // Prefixo vazio casaria qualquer sessao: recusa antes.
+            let Some(texto) = id_texto.filter(|t| !t.is_empty()) else {
+                return Err(PhxError::Esquema(
+                    "encerrar_sessao tipo web sem \"id\" de texto: o id vem da operacao `sessoes`"
+                        .into(),
+                ));
+            };
+            {
                 let mut s = self.sessoes.tomar("sessoes")?;
                 if !s.encerrar_por_prefixo(texto) {
                     // Pelo `citar`, como o instante e a duracao: o id vem do
@@ -27432,7 +27483,11 @@ impl Servidor {
                 ]));
             }
         }
-        let id = p.inteiro_ou("id", 0);
+        let id = match (id_texto, p.campo("id")) {
+            // tipo "conexao" com o numero escrito como texto.
+            (Some(t), _) => t.parse::<i64>().unwrap_or(0),
+            _ => p.inteiro_ou("id", 0),
+        };
         if id <= 0 {
             return Err(PhxError::Esquema(
                 "encerrar_sessao sem \"id\": o numero vem da operacao `sessoes`".into(),
@@ -74980,5 +75035,168 @@ mod testes_janela_da_escrita_local {
         let m = s.escritas_locais_na_replica.lock().unwrap();
         assert_eq!(m.get("loja/clientes"), Some(&1));
         assert_eq!(m.len(), 1);
+    }
+}
+
+/// Encerrar sessao: web x conexao pelo PEDIDO, nunca pela forma do id --
+/// pedido 644. Pelo soquete, porque o que se prova e que a conexao de mesmo
+/// numero continua de pe.
+#[cfg(test)]
+mod testes_encerrar_sessao_644 {
+    use super::*;
+    use crate::apoio_teste::Ligacao as Cliente;
+
+    fn subir(rotulo: &str) -> (DirTemp, Arc<Servidor>, u16) {
+        let dir = DirTemp::novo(rotulo);
+        let mut c = Config {
+            base: dir.to_path_buf(),
+            log_acessos: dir.join("acessos.log"),
+            blacklist: dir.join("blacklist.json"),
+            dblink: dir.join("dblink.json"),
+            jobs: dir.join("jobs.json"),
+            token: "t".into(),
+            ..Config::default()
+        };
+        // A cifra exigida mediria o portao errado: o que se prova aqui e outra coisa.
+        c.cifra_fio.exigir = false;
+        let s = Servidor::novo(c).unwrap();
+        let ouvinte = TcpListener::bind("127.0.0.1:0").unwrap();
+        let porta = ouvinte.local_addr().unwrap().port();
+        // Como o `servir` de producao: a porta REAL anotada antes de aceitar.
+        s.anotar_porta_no_ar(&ouvinte);
+        let s2 = Arc::clone(&s);
+        std::thread::spawn(move || s2.aceitar_ate_mandarem_parar(&ouvinte));
+        (dir, s, porta)
+    }
+
+    fn semear(s: &Servidor, id: &str) {
+        s.sessoes
+            .lock()
+            .unwrap()
+            .semear_para_teste(id, "ana", crate::agora_ms());
+    }
+
+    fn web_vivas(s: &Servidor) -> usize {
+        s.sessoes.lock().unwrap().quantas()
+    }
+
+    /// A conexao 1 (a primeira) e uma sessao web cujo id comeca por «1»: com a
+    /// heuristica «so algarismos = numero de conexao» o pedido derrubava a
+    /// conexao 1 e deixava a sessao web de pe.
+    #[test]
+    fn id_web_so_de_algarismos_encerra_a_sessao_e_poupa_a_conexao_de_mesmo_numero() {
+        let (_d, s, porta) = subir("encerrar-644-web");
+        let mut vitima = Cliente::nova(porta);
+        assert!(vitima.pedir(r#"{"op":"ping","token":"t"}"#).is_some());
+        let mut admin = Cliente::nova(porta);
+        semear(&s, "12345678901234567890123456789012345678901234567a");
+        semear(&s, "1");
+        assert_eq!(web_vivas(&s), 2);
+
+        let r = admin
+            .pedir(r#"{"op":"encerrar_sessao","token":"t","id":"1","tipo":"web"}"#)
+            .expect("resposta");
+        assert!(r.contains(r#""origem":"web""#), "{r}");
+        assert_eq!(
+            web_vivas(&s),
+            1,
+            "a sessao web de id «1» tinha de sair: {r}"
+        );
+        assert!(
+            vitima.pedir(r#"{"op":"ping","token":"t"}"#).is_some(),
+            "a conexao de mesmo numero (1) foi derrubada"
+        );
+    }
+
+    /// Sem o campo, o id so de algarismos e recusado dizendo por que, e nada
+    /// cai: nem a sessao, nem a conexao.
+    #[test]
+    fn sem_tipo_o_id_ambiguo_e_recusado_e_nada_cai() {
+        let (_d, s, porta) = subir("encerrar-644-ambiguo");
+        let mut vitima = Cliente::nova(porta);
+        assert!(vitima.pedir(r#"{"op":"ping","token":"t"}"#).is_some());
+        let mut admin = Cliente::nova(porta);
+        semear(&s, "1");
+        let r = admin
+            .pedir(r#"{"op":"encerrar_sessao","token":"t","id":"1"}"#)
+            .expect("resposta");
+        assert!(r.contains("ambiguo") && r.contains("tipo"), "{r}");
+        assert_eq!(web_vivas(&s), 1);
+        assert!(vitima.pedir(r#"{"op":"ping","token":"t"}"#).is_some());
+    }
+
+    /// O comportamento VELHO segue: numero JSON derruba a conexao, texto com
+    /// letra encerra a sessao web -- ninguem que mandava so `id` quebra.
+    #[test]
+    fn cliente_antigo_que_manda_so_id_continua_funcionando() {
+        let (_d, s, porta) = subir("encerrar-644-antigo");
+        let mut vitima = Cliente::nova(porta);
+        assert!(vitima.pedir(r#"{"op":"ping","token":"t"}"#).is_some());
+        let mut admin = Cliente::nova(porta);
+        semear(&s, "abcdef0123456789abcdef0123456789abcdef0123456789");
+        let r = admin
+            .pedir(r#"{"op":"encerrar_sessao","token":"t","id":"abcdef01"}"#)
+            .expect("resposta");
+        assert!(r.contains(r#""origem":"web""#), "{r}");
+        assert_eq!(web_vivas(&s), 0);
+        let r = admin
+            .pedir(r#"{"op":"encerrar_sessao","token":"t","id":1}"#)
+            .expect("resposta");
+        assert!(r.contains(r#""encerrada":1"#), "{r}");
+        assert!(
+            espera_cair(&mut vitima),
+            "o numero JSON tinha de derrubar a conexao 1"
+        );
+        let r = admin
+            .pedir(r#"{"op":"encerrar_sessao","token":"t","id":"x","tipo":"qualquer"}"#)
+            .expect("resposta");
+        assert!(r.contains("tipo"), "{r}");
+    }
+
+    /// Pedido 645: o `ping` diz a porta que o servidor escuta DE VERDADE (a
+    /// tela cravava 5000) e os tipos de arquivo da lista unica do motor.
+    #[test]
+    fn o_ping_diz_a_porta_real_e_os_tipos_de_arquivo_do_motor() {
+        let (_d, s, porta) = subir("ping-645");
+        assert_ne!(porta, 5000);
+        let mut c = Cliente::nova(porta);
+        let r = c.pedir(r#"{"op":"ping","token":"t"}"#).expect("resposta");
+        let j = Json::analisar(&r).unwrap();
+        let res = j.campo("resultado").unwrap();
+        assert_eq!(
+            res.inteiro_ou("porta_dados", 0),
+            i64::from(porta),
+            "o ping devia dizer a porta real: {r}"
+        );
+        let tipos: Vec<String> = res
+            .campo("arquivos_por_tabela")
+            .and_then(Json::lista)
+            .expect("lista de tipos")
+            .iter()
+            .filter_map(|x| x.texto().map(String::from))
+            .collect();
+        let do_motor: Vec<String> = phxsql_store::catalogo::Database::extensoes_de_uma_tabela()
+            .iter()
+            .map(|e| e.to_string())
+            .collect();
+        assert_eq!(
+            tipos, do_motor,
+            "a lista vem do motor, nao de um segundo lugar"
+        );
+        assert!(
+            tipos.len() > 5 && tipos.contains(&"fts".to_string()),
+            "{tipos:?}"
+        );
+        drop(s);
+    }
+
+    fn espera_cair(c: &mut Cliente) -> bool {
+        for _ in 0..200 {
+            if c.pedir(r#"{"op":"ping","token":"t"}"#).is_none() {
+                return true;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        false
     }
 }

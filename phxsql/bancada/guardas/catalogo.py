@@ -24634,4 +24634,71 @@ fn anotar(""",
             "servidor::testes_da_saude_do_disco::erro_de_es_numa_gravacao_chama_o_gancho_uma_vez_so",
         ],
     },
+    {
+        "id": "encerrar-sessao-adivinha-web-pela-forma",
+        "titulo": "o encerrar_sessao decide web x conexao pela forma do id e ignora o `tipo` do pedido (pedido 644)",
+        "porque": (
+            "o id web tem 8 digitos hex e 2,3% saem so com algarismos: adivinhar pela forma do texto toma a sessao web por numero de conexao e derruba a conexao de mesmo numero."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """            Some("web") => true,
+            Some("conexao") => false,
+""",
+        "troca": """            // DEFEITO REPOSTO (pedido 644): o tipo do pedido e ignorado.
+            Some("web") | Some("conexao") => id_texto
+                .map(|t| t.chars().any(|c| !c.is_ascii_digit()))
+                .unwrap_or(false),
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_encerrar_sessao_644::id_web_so_de_algarismos_encerra_a_sessao_e_poupa_a_conexao_de_mesmo_numero",
+        ],
+        "seguem": [
+            "servidor::testes_encerrar_sessao_644::cliente_antigo_que_manda_so_id_continua_funcionando",
+        ],
+    },
+    {
+        "id": "ping-crava-a-porta-5000",
+        "titulo": "o ping devolve a porta 5000 de fabrica em vez da que o servidor escuta (pedido 645)",
+        "porque": (
+            "a tela le a porta do ping; se ele crava 5000, o Profiler volta a mentir num servidor que escuta em outra porta."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """                // tabela pode ter, da lista UNICA do motor de armazenamento.
+                ("porta_dados", Json::de_u64(self.porta_dados_agora() as u64)),
+""",
+        "troca": """                // tabela pode ter, da lista UNICA do motor de armazenamento.
+                // DEFEITO REPOSTO (pedido 645): a porta de fabrica.
+                ("porta_dados", Json::de_u64(5000)),
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_encerrar_sessao_644::o_ping_diz_a_porta_real_e_os_tipos_de_arquivo_do_motor",
+        ],
+        "seguem": [
+            "servidor::testes_encerrar_sessao_644::sem_tipo_o_id_ambiguo_e_recusado_e_nada_cai",
+        ],
+    },
+    {
+        "id": "conferidor-nao-ve-porta-cravada",
+        "titulo": "o conferidor de numero cravado em texto de tela deixa de acusar «porta NNNN» (pedido 645)",
+        "porque": (
+            "sem o molde da porta o conferidor passa a calar justamente o padrao que o pedido 645 achou, e a catraca de numero cravado nao segura nada."
+        ),
+        "arquivo": "crates/phxsql-server/src/conferidor.rs",
+        "trecho": """        (PORTA.contains(&par[0]) && algarismos(par[1], 3, 5))
+""",
+        "troca": """        (false && PORTA.contains(&par[0]) && algarismos(par[1], 3, 5))
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "conferidor::testes::o_conferidor_de_numero_cravado_acusa_o_padrao_e_poupa_o_marcador",
+        ],
+        "seguem": [
+            "conferidor::testes::nenhuma_chave_com_os_seis_idiomas_colados",
+        ],
+    },
 ]
