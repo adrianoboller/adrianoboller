@@ -97,15 +97,15 @@ O **root é sempre supervisor e sempre ativo**, diga o que disser o arquivo.
 
 | Atividade | Cobre |
 |---|---|
-| `ler` | `bancos`, `tabelas`, `esquema`, `ler`, `varrer`, `buscar`, `sistabelas`, `siscolunas`, `pivotar`, `sequencias` |
-| `inserir` | `inserir` |
+| `ler` | `bancos`, `tabelas`, `esquema`, `ler`, `varrer`, `buscar`, `sistabelas`, `siscolunas`, `pivotar`, `sequencias`, `sequencia` |
+| `inserir` | `inserir`, `proximo_da_sequencia` (quem numera é quem insere — o `USAGE` na sequência do PostgreSQL) |
 | `alterar` | `atualizar` |
 | `excluir` | `excluir` |
-| `criar` | `criar_database`, `criar_schema`, `criar_tabela`, `duplicar_tabela`, `copiar_tabela` |
+| `criar` | `criar_database`, `criar_schema`, `criar_tabela`, `duplicar_tabela`, `copiar_tabela`, `criar_sequencia` |
 | `reindexar` | `reindexar` |
 | `diario` | `diario` |
 | `verificar` | `verificar` |
-| `administrar` | `acessos`, `ips`, `config`, `usuarios`, `excluir_tabela`, `ajustar_sequencia` |
+| `administrar` | `acessos`, `ips`, `config`, `usuarios`, `excluir_tabela`, `ajustar_sequencia`, `excluir_sequencia` |
 | `replicar` | `posicao`, `replicar` |
 
 > **`copiar_tabela` confere a permissão no DESTINO.** O portão geral confere

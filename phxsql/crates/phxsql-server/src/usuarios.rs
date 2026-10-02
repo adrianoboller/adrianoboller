@@ -166,6 +166,16 @@ impl Atividade {
             "exportar" | "export" => Atividade::Ler,
             // Mexer no contador pode fazer a proxima insercao repetir numero.
             "ajustar_sequencia" => Atividade::Administrar,
+            // A sequencia NOMEADA (pedido 229, `.seq`), pela matriz dos dois
+            // motores que a tem: criar pede o poder de criar (o `CREATE` no
+            // schema do PostgreSQL), pedir numero pede o de inserir (o
+            // `USAGE`/`UPDATE` na sequencia -- quem numera e quem insere), ler
+            // o estado pede ler, e apagar e irreversivel como apagar tabela:
+            // administrar.
+            "criar_sequencia" => Atividade::Criar,
+            "proximo_da_sequencia" => Atividade::Inserir,
+            "sequencia" => Atividade::Ler,
+            "excluir_sequencia" => Atividade::Administrar,
             // Consultar em memoria e ler: o dado e o mesmo, o caminho e outro.
             // Carregar tambem, porque carregar e varrer a tabela inteira.
             "memoria_carregar" | "memoria" | "SelectMemory" | "selectmemory"

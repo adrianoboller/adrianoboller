@@ -3179,7 +3179,23 @@ sequência sozinha não é chave única. Quem precisa de unicidade declara um
 índice `unico` sobre ela, e aí o próprio índice recusa a repetição.
 
 Uma sequência por tabela: duas dividiriam o mesmo contador, o que só pareceria
-defeito. O esquema recusa na criação.
+defeito. O esquema recusa na criação. Quem precisa de um contador **fora** de
+qualquer tabela — a numeração de documento fiscal, por exemplo — usa a
+**sequência nomeada**, o `.seq` da §24.
+
+### O teto do fio: 2⁵³, para todo inteiro de 64 bits
+
+O JSON desta casa tem um tipo numérico só, `f64`, e acima de 2⁵³ dois
+inteiros vizinhos leem o mesmo `f64`. A `Sequence` recusava o número cru
+nessa faixa desde 07/09/2026 e saía como texto; o `Int8`/`UInt8` era o irmão
+que passava — gravando o vizinho, calado. Desde 02/10/2026 os três carregadores
+têm o mesmo motor (`valores.rs::recusar_impreciso`): **número cru acima de 2⁵³
+é recusado na entrada**, com a saída na mensagem (mandar como texto), e **o
+valor gravado acima de 2⁵³ sai como texto** no JSON de resposta. Abaixo de 2⁵³
+nada muda. A decisão saiu da matriz dos quatro motores
+(`docs/AUTONUMBER.md` §C.5): PostgreSQL, MariaDB e MySQL recusam o inteiro que
+não cabe e nenhum grava um vizinho; só o SQLite cai para REAL, e só acima de
+2⁶³ — recusar 9 × 1.
 
 ---
 
@@ -3191,6 +3207,8 @@ defeito. O esquema recusa na criação.
 | Tamanho de `Str(n)` | 65 535 bytes |
 | Sequência por tabela | 1 (o contador do cabeçalho é único) |
 | Valor máximo de `Sequence` | 2⁶⁴ − 1 |
+| Inteiro de 64 bits pelo protocolo JSON | exato até 2⁵³ como número; acima disso **só como texto** (entra recusado como número, sai como texto — §24) |
+| Sequências nomeadas por database/schema | sem teto (um `.seq` cada, §24) |
 | Precisão de `Decimal` | 38 dígitos |
 | Texto do motivo no `.reason` | 2 000 bytes |
 | Identidade no `.reason` | 512 bytes |
@@ -4216,3 +4234,81 @@ pelo mesmo cache do núcleo. Depois de reiniciar, perdê-lo não custa nada — 
 cache que devolvia o que o disco perdeu também se foi. É um arquivo, e não um
 diretório: a listagem das bases o ignora. Decisão do dono (saída (a) do 509),
 30/09/2026; prova em `fsync_recusado_derruba_o_processo_e_a_marca_fica`.
+
+## 24. `.seq` — a sequência nomeada (pedido 229)
+
+Um contador com nome próprio, **fora de qualquer tabela**: o `CREATE SEQUENCE`
+do PostgreSQL e do MariaDB (`docs/AUTONUMBER.md` §B.2.4 e §C.5 — MySQL e
+SQLite não têm; 7 × 3 pela régua). Mora na pasta do database ou do schema, ao
+lado das tabelas, como `<nome>.seq`, e **divide o espaço de nomes com a
+tabela**: `nf.reg` e `nf.seq` não coexistem, porque nos dois motores que a têm
+a sequência é uma relação. O schema tem de existir antes (também os dois
+convergem). O `backup` o leva sem saber que ele existe — copia todo arquivo
+da pasta.
+
+### O arquivo: 256 bytes, dois slots de 128
+
+| Offset | Tam. | Campo |
+|---|---:|---|
+| 0 | 4 | assinatura `PSEQ` |
+| 4 | 2 | versão do formato (1) |
+| 6 | 2 | sinais: bit 0 `ciclo`, bit 1 `esgotada` |
+| 8 | 8 | `proximo` (i64) — o número que **ainda não saiu** |
+| 16 | 8 | `inicio` (i64) |
+| 24 | 8 | `passo` (i64, nunca 0; negativo desce) |
+| 32 | 8 | `minimo` (i64) |
+| 40 | 8 | `maximo` (i64) |
+| 48 | 8 | `entregues` (u64) — quantos números já saíram |
+| 56 | 8 | `geracao` (u64) — sobe a cada gravação |
+| 64 | 60 | reservado, zero |
+| 124 | 4 | CRC-32 dos 124 bytes acima |
+
+O segundo slot começa no byte 128 com a mesma anatomia. **Vale o slot válido
+de maior `geracao`**; um slot inválido ao lado de um válido não é erro — é a
+escrita rasgada que os dois slots existem para sobreviver. Os dois inválidos
+é `Corrompido`, e não há reparo: o número de documento fiscal não se
+adivinha.
+
+### Por que no lugar, e por que dois slots
+
+Cada `proximo` **grava e espera o disco antes de responder**: escreve o slot
+que não é o vigente e faz `fdatasync` no descritor aberto. Medido em
+02/10/2026 no disco de teste (`sequencia.rs::custo_de_um_proximo`): **147 a
+230 µs por número**, contra **771 µs** do `gravar_duravel` (temporário +
+`fsync` + `rename` + `fsync` da pasta) — a troca atômica custa cinco vezes
+mais, e o que ela compra (o arquivo anterior inteiro) os dois slots compram
+por um CRC. A criação, essa sim, passa pelo caminho durável de sempre (o
+descritor no `PorSincronizar`, e o `fsync` da pasta), porque ali a entrada da
+pasta é nova.
+
+**A garantia é «nunca repete», não «nunca pula».** O `proximo` gravado é
+sempre o que ainda não saiu, e a resposta só sai depois do `fdatasync`; uma
+queda entre os dois custa um buraco, nunca um número duas vezes. É a mesma
+garantia dos dois motores — o PostgreSQL pré-registra 32 valores no WAL e o
+MariaDB cacheia 1 000, e os dois pulam depois de uma queda; aqui o cache não
+existe (`CACHE 1`, como o padrão do PostgreSQL; 4 × 3 contra o MariaDB), e por
+isso o buraco só aparece se a máquina cair naquela janela.
+
+### Semântica
+
+Os padrões convergem entre PostgreSQL e MariaDB e entram sem pergunta:
+`passo` 1; subindo, `minimo` 1, `maximo` 2⁶³−1 e `inicio` no mínimo; descendo
+(`passo` < 0), `minimo` −2⁶³, `maximo` −1 e `inicio` no máximo; sem ciclo.
+Esgotar sem ciclo é **erro** (`LIMITE_EXCEDIDO`, e o arquivo fica marcado
+`esgotada` até um ajuste); com ciclo, volta ao outro extremo. `passo` 0 e
+faixa invertida são recusados antes de tocar o disco.
+
+### O que ela NÃO faz, com o número
+
+- **Não replica.** O arquivo não entra no diário de tabela nenhuma. A
+  replicação lógica do PostgreSQL não replica sequências (limitação
+  documentada); a do MariaDB replica — 4 × 3, não replica. Num cluster
+  `multi`, cada nó tem o seu `.seq`, e faixas disjuntas se declaram no
+  `inicio`/`passo` de cada um.
+- **Não tem SQL.** A gramática daqui não tem `CREATE` de objeto nenhum (nem
+  `CREATE TABLE`), e o `NEXT VALUE FOR` dentro de expressão está recusado na
+  §B.2.4 do `AUTONUMBER.md`. Entra só pelo protocolo: `criar_sequencia`,
+  `proximo_da_sequencia`, `sequencia`, `excluir_sequencia`, e o
+  `ajustar_sequencia` com o campo `sequencia` no lugar de `tabela`. A lista
+  do banco sai no `sequencias`, em `nomeadas`.
+- **Não tem cache.** Ver acima.

@@ -867,15 +867,20 @@ pub fn valor_para_json(v: &Value, ty: &ColumnType) -> Json {
             Json::texto_de(decimal_para_texto(*n, *escala))
         }
         (Value::Decimal(n), _) => Json::texto_de(n.to_string()),
-        (Value::Int(n), _) => Json::de_i64(*n),
-        // Um id (`Sequence`) acima de 2^53 nao cabe num `f64` sem perda: sair
-        // como `Json::de_u64` volta trocado no fio (bloco 19). Acima do teto
-        // ele sai como TEXTO, que e a unica forma honesta -- e a mesma que o
+        // Um inteiro acima de 2^53 nao cabe num `f64` sem perda: sair como
+        // `Json::de_u64` volta trocado no fio (bloco 19). Acima do teto ele
+        // sai como TEXTO, que e a unica forma honesta -- e a mesma que o
         // `json_para_valor` aceita de volta sem perda. Abaixo do teto continua
         // numero, exatamente como antes, para nao trocar o tipo do id comum
-        // debaixo de quem le a grade. Vale so para a `Sequence`; o `UInt8`
-        // partilha o teto e esta anotado em `docs/AUTONUMBER.md` como irmao.
-        (Value::UInt(n), ColumnType::Sequence) if *n > phxsql_core::json::INTEIRO_EXATO_MAX => {
+        // debaixo de quem le a grade. Valia so para a `Sequence` ate
+        // 02/10/2026; o `Int8`/`UInt8` partilha o teto e entrou pela matriz
+        // dos quatro motores (`docs/AUTONUMBER.md` §C.5): os quatro devolvem
+        // o inteiro de 64 bits EXATO, e nenhum o arredonda calado.
+        (Value::Int(n), _) if n.unsigned_abs() > phxsql_core::json::INTEIRO_EXATO_MAX => {
+            Json::texto_de(n.to_string())
+        }
+        (Value::Int(n), _) => Json::de_i64(*n),
+        (Value::UInt(n), _) if *n > phxsql_core::json::INTEIRO_EXATO_MAX => {
             Json::texto_de(n.to_string())
         }
         (Value::UInt(n), _) => Json::de_u64(*n),
@@ -925,13 +930,13 @@ fn so_digitos(t: &str) -> bool {
 /// era o unico que nao recusava, porque o carregador E o `i64`: nao havia
 /// nada acima dele contra o que conferir. Este e o irmao dos estreitos.
 ///
-/// **Deixa passar** a faixa entre 2^53 e o teto do tipo, onde o `f64` ja nao
-/// distingue um inteiro do seguinte. Alargar a recusa de 2^53 ao `Int8`/
-/// `UInt8` esta REGISTRADO como decisao de papel C em `docs/AUTONUMBER.md`
-/// §C.4 -- a frente G2 recusou faze-lo sozinha porque muda o comportamento de
-/// quem hoje manda numero grande e ve a coisa funcionar (arredondada). Uma
-/// frente nao revoga em silencio a dispensa que outra registrou. A `Sequence`
-/// tem o crivo dela, e continua tendo.
+/// **Deixa passar** a faixa entre 2^53 e o teto do tipo de proposito: esta
+/// funcao responde so «cabe no tipo?». A pergunta irma -- «o `f64` ainda
+/// distingue este inteiro do vizinho?» -- e de [`recusar_impreciso`], que vem
+/// logo depois dela nos tres carregadores (`Int`, `UInt`, `Sequence`). A ordem
+/// importa: `1e21` numa `Int8` e um erro de FAIXA, e dizer «perde precisao»
+/// sobre ele mandaria o cliente mandar como texto um numero que nao cabe de
+/// jeito nenhum.
 fn conferir_numero_cru(j: &Json, minimo: f64, acima_do_teto: f64, tipo: &str) -> Result<()> {
     let Json::Numero(n) = j else {
         return Ok(());
@@ -945,6 +950,33 @@ fn conferir_numero_cru(j: &Json, minimo: f64, acima_do_teto: f64, tipo: &str) ->
         )));
     }
     Ok(())
+}
+
+/// A recusa do numero CRU que chegou arredondado -- o motor UNICO dos tres
+/// carregadores de inteiro (`Int*`, `UInt*` e `Sequence`).
+///
+/// Acima de 2^53 dois inteiros vizinhos leem o MESMO `f64`, e a perda ja
+/// aconteceu no `Json::analisar`, antes de qualquer funcao daqui ver o valor.
+/// A `Sequence` recusava desde o bloco 19 (`docs/AUTONUMBER.md`); o
+/// `Int8`/`UInt8` passava gravando o vizinho, e a dispensa estava registrada
+/// na §C.4 como decisao de papel C. Decidida em 02/10/2026 pela matriz dos
+/// quatro motores (§C.5): PostgreSQL, MariaDB e MySQL recusam o inteiro que
+/// nao cabe e NUNCA gravam um vizinho calado; o SQLite so cai para REAL
+/// acima de 2^63. Recusar 9 x 1. A saida -- o mesmo numero como TEXTO, que
+/// nao passa por `f64` -- vai na mensagem, e `Uuid256` so para a `Sequence`,
+/// porque e la que a faixa e identidade.
+fn recusar_impreciso(j: &Json, destino: &str, alternativa: &str) -> Result<()> {
+    if !j.inteiro_impreciso() {
+        return Ok(());
+    }
+    Err(PhxError::Tipo(format!(
+        "acima de {} o protocolo perde precisao num numero cru; envie {destino} \
+         como texto (\"{}\"){alternativa}",
+        phxsql_core::json::INTEIRO_EXATO_MAX,
+        // O texto do f64 ja arredondado -- proposital: mostra o valor que
+        // SERIA gravado, para o cliente ver que nao era o que ele mandou.
+        j.escrever()
+    )))
 }
 
 /// O inteiro COM sinal deste JSON, ou o erro que diz o que impediu.
@@ -988,6 +1020,7 @@ fn inteiro_com_sinal(j: &Json) -> Result<i64> {
                 ACIMA_DO_TETO,
                 "inteiro de 64 bits com sinal",
             )?;
+            recusar_impreciso(j, "o inteiro", "")?;
             Ok(*n as i64)
         }
         _ => Err(PhxError::Tipo(format!(
@@ -1047,6 +1080,7 @@ fn inteiro_sem_sinal(j: &Json, esperado: &str, destino: &str) -> Result<u64> {
                 )));
             }
             conferir_numero_cru(j, 0.0, ACIMA_DO_TETO, "inteiro de 64 bits sem sinal")?;
+            recusar_impreciso(j, "o inteiro", "")?;
             Ok(*n as u64)
         }
         _ => Err(PhxError::Tipo(format!(
@@ -1086,6 +1120,20 @@ fn recebido(j: &Json) -> String {
 /// comparacao do `consultar`, que joga o erro fora) e para os testes do tipo.
 pub fn json_para_valor_da_coluna(j: &Json, coluna: &Column) -> Result<Value> {
     json_para_valor(j, &coluna.ty).map_err(|e| coluna.recusa_de_valor(e))
+}
+
+/// Um campo inteiro OPCIONAL de um pedido -- `None` quando ausente ou nulo
+/// -- pelo mesmo carregador das colunas `Int*`: numero cru ou texto, faixa
+/// conferida e o impreciso acima de 2^53 recusado. E o que os parametros da
+/// sequencia nomeada (`inicio`, `passo`, `minimo`, `maximo`) usam, em vez de
+/// um `inteiro_ou` que ignoraria o texto e aceitaria o vizinho calado.
+pub fn inteiro_opcional(p: &Json, campo: &str) -> Result<Option<i64>> {
+    match p.campo(campo) {
+        None | Some(Json::Nulo) => Ok(None),
+        Some(j) => inteiro_com_sinal(j)
+            .map(Some)
+            .map_err(|e| PhxError::Tipo(format!("campo {campo:?}: {e}"))),
+    }
 }
 
 /// JSON em valor do PhxSql, guiado pelo tipo da coluna.
@@ -1174,18 +1222,7 @@ pub fn json_para_valor(j: &Json, ty: &ColumnType) -> Result<Value> {
             // transforma corrupcao silenciosa (bloco 19) em erro lido. O mesmo
             // numero como TEXTO atravessa intacto (nao passa por f64), entao a
             // saida esta na propria mensagem. Ver `docs/AUTONUMBER.md`.
-            if j.inteiro_impreciso() {
-                return Err(PhxError::Tipo(format!(
-                    "acima de {} o protocolo perde precisao num numero cru; \
-                     envie o id como texto (\"{}\") ou use Uuid256 se precisar \
-                     dessa faixa",
-                    phxsql_core::json::INTEIRO_EXATO_MAX,
-                    // O texto do f64 ja arredondado -- proposital: mostra o
-                    // valor que SERIA gravado, para o cliente ver que nao era o
-                    // que ele mandou.
-                    j.inteiro().map(|v| v.to_string()).unwrap_or_default()
-                )));
-            }
+            recusar_impreciso(j, "o id", " ou use Uuid256 se precisar dessa faixa")?;
             Value::UInt(inteiro_sem_sinal(j, "numero da sequencia", "sequencia")?)
         }
         ColumnType::Date => match j {
@@ -2702,12 +2739,22 @@ mod testes_inteiro_em_texto {
             valor_para_json(&Value::UInt(9_007_199_254_740_992), &ColumnType::Sequence),
             Json::de_u64(9_007_199_254_740_992),
         );
-        // E um `UInt8` comum acima do teto continua numero: o irmao fica, e a
-        // decisao de alcanca-lo esta anotada em docs/AUTONUMBER.md.
-        assert!(matches!(
+        // E o `UInt8`/`Int8` comum acima do teto sai como texto tambem, desde
+        // 02/10/2026 (matriz dos quatro motores, docs/AUTONUMBER.md §C.5):
+        // era o irmao que ficava, e a casa ja tinha pago o preco de um
+        // numero mentiroso na saida uma vez.
+        assert_eq!(
             valor_para_json(&Value::UInt(9_007_199_254_740_993), &ColumnType::UInt8),
-            Json::Numero(_)
-        ));
+            Json::texto_de("9007199254740993"),
+        );
+        assert_eq!(
+            valor_para_json(&Value::Int(-9_007_199_254_740_993), &ColumnType::Int8),
+            Json::texto_de("-9007199254740993"),
+        );
+        assert_eq!(
+            valor_para_json(&Value::Int(9_007_199_254_740_992), &ColumnType::Int8),
+            Json::de_i64(9_007_199_254_740_992),
+        );
     }
 }
 
@@ -2782,25 +2829,35 @@ mod testes_teto_de_64_bits {
         assert!(matches!(e, PhxError::LimiteExcedido(_)), "{e}");
     }
 
-    /// **A faixa entre 2^53 e o teto continua PASSANDO -- e isso e uma dispensa
-    /// registrada, nao um descuido.**
+    /// **A faixa entre 2^53 e o teto e RECUSADA no `Int8`/`UInt8` -- decidido
+    /// pela matriz dos quatro motores em 02/10/2026.**
     ///
-    /// `docs/AUTONUMBER.md` §C.4 poe «alargar a recusa de 2^53 ao `Int8`/
-    /// `UInt8`» como decisao de papel C, e diz o motivo: muda o comportamento
-    /// de quem hoje manda numero grande e ve funcionar. A frente G2 recusou
-    /// faze-lo sozinha; esta frente nao a revoga em silencio.
+    /// Ate aqui este teste afirmava o contrario, por dispensa registrada em
+    /// `docs/AUTONUMBER.md` §C.4 («decisao de papel C»). A pesquisa fechou a
+    /// decisao (§C.5): PostgreSQL, MariaDB e MySQL recusam o inteiro que nao
+    /// cabe e nenhum deles grava um vizinho calado; so o SQLite cai para REAL,
+    /// e so acima de 2^63. Recusar 9 x 1. Gravar `2^53` quando o cliente
+    /// mandou `2^53+1` era exatamente «gravar um vizinho calado».
     ///
-    /// O teste existe para que a decisao APARECA: no dia em que papel C a
-    /// tomar, e ele que cai, apontando para o documento.
+    /// Reponha o defeito tirando o `recusar_impreciso` de `inteiro_com_sinal`
+    /// e de `inteiro_sem_sinal`: o `2^53+1` volta a ser aceito como `2^53`, e
+    /// as duas primeiras assercoes caem.
     #[test]
-    fn a_faixa_imprecisa_continua_passando_por_decisao_registrada() {
-        // 2^53+1 chega ao `f64` ja como 2^53, e e isso que se grava -- como
-        // antes desta frente. Ver AUTONUMBER.md §C.4.
-        assert_eq!(
-            json_para_valor(&Json::Numero(9_007_199_254_740_993.0), &ColumnType::Int8).unwrap(),
-            Value::Int(9_007_199_254_740_992)
+    fn a_faixa_imprecisa_e_recusada_no_int8_e_no_uint8() {
+        let e =
+            json_para_valor(&Json::Numero(9_007_199_254_740_993.0), &ColumnType::Int8).unwrap_err();
+        assert_eq!(e.nome(), "TIPO_INVALIDO", "{e}");
+        assert!(e.to_string().contains("perde precisao"), "{e}");
+        assert!(e.to_string().contains("texto"), "{e}");
+        let e = json_para_valor(&Json::Numero(9_007_199_254_740_993.0), &ColumnType::UInt8)
+            .unwrap_err();
+        assert!(e.to_string().contains("perde precisao"), "{e}");
+        // O negativo impreciso cai pelo mesmo crivo: o `abs()` esta no
+        // `inteiro_impreciso`.
+        assert!(
+            json_para_valor(&Json::Numero(-9_007_199_254_740_993.0), &ColumnType::Int8).is_err()
         );
-        // A saida honesta ja existe e FUNCIONA hoje: o mesmo valor como texto
+        // A saida honesta ja existia e FUNCIONA: o mesmo valor como texto
         // nao passa por f64 e atravessa intacto.
         assert_eq!(
             json_para_valor(&Json::texto_de("9007199254740993"), &ColumnType::Int8).unwrap(),

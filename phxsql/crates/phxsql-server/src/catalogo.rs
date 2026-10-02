@@ -334,10 +334,15 @@ pub const OPERACOES: &[Operacao] = &[
     Operacao {
         nome: "ajustar_sequencia",
         apelidos: &[],
-        resumo: "Muda o próximo número de uma coluna Sequence.",
+        resumo: "Muda o próximo número de uma coluna Sequence, ou de uma sequência nomeada.",
         parametros: &[
             DB,
-            TAB,
+            opc("tabela", "string", "a tabela da coluna Sequence (sem `sequencia`)"),
+            opc(
+                "sequencia",
+                "string",
+                "a sequência nomeada a ajustar, no lugar de `tabela`; aceita `schema.nome`",
+            ),
             opc(
                 "proxima",
                 "integer",
@@ -351,6 +356,50 @@ pub const OPERACOES: &[Operacao] = &[
             ),
         ],
         exemplo: r#"{"op":"ajustar_sequencia","database":"loja","tabela":"clientes","proxima":5000}"#,
+        ferramenta_mcp: false,
+    },
+    Operacao {
+        nome: "criar_sequencia",
+        apelidos: &[],
+        resumo: "Cria uma sequência nomeada, fora de qualquer tabela (um arquivo `.seq`).",
+        parametros: &[
+            DB,
+            obr("sequencia", "string", "o nome; aceita `schema.nome`"),
+            opc("inicio", "integer", "primeiro número (padrão: o mínimo subindo, o máximo descendo)"),
+            opc("passo", "integer", "incremento, negativo para descer (padrão 1; 0 é recusado)"),
+            opc("minimo", "integer", "piso da faixa (padrão 1 subindo, -2⁶³ descendo)"),
+            opc("maximo", "integer", "teto da faixa (padrão 2⁶³−1 subindo, -1 descendo)"),
+            opc("ciclo", "boolean", "ao esgotar, recomeça do outro extremo (padrão: não — esgotar é erro)"),
+        ],
+        exemplo: r#"{"op":"criar_sequencia","database":"loja","sequencia":"nf","inicio":1000}"#,
+        ferramenta_mcp: false,
+    },
+    Operacao {
+        nome: "proximo_da_sequencia",
+        apelidos: &[],
+        resumo: "O próximo número de uma sequência nomeada, durado em disco antes de sair.",
+        parametros: &[DB, obr("sequencia", "string", "o nome; aceita `schema.nome`")],
+        exemplo: r#"{"op":"proximo_da_sequencia","database":"loja","sequencia":"nf"}"#,
+        ferramenta_mcp: false,
+    },
+    Operacao {
+        nome: "sequencia",
+        apelidos: &[],
+        resumo: "O estado de uma sequência nomeada: próximo, faixa, passo, quantos já saíram.",
+        parametros: &[DB, obr("sequencia", "string", "o nome; aceita `schema.nome`")],
+        exemplo: r#"{"op":"sequencia","database":"loja","sequencia":"nf"}"#,
+        ferramenta_mcp: false,
+    },
+    Operacao {
+        nome: "excluir_sequencia",
+        apelidos: &[],
+        resumo: "Apaga uma sequência nomeada. Não há desfazer.",
+        parametros: &[
+            DB,
+            obr("sequencia", "string", "o nome; aceita `schema.nome`"),
+            obr("confirmar", "string", "repita o nome da sequência"),
+        ],
+        exemplo: r#"{"op":"excluir_sequencia","database":"loja","sequencia":"nf","confirmar":"nf"}"#,
         ferramenta_mcp: false,
     },
     // ----------------------------------------------------------- ler dado

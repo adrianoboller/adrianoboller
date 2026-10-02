@@ -114,6 +114,11 @@ pub const CLASSES: &[(&str, PorColuna)] = &[
     ("sequencias", PorColuna::Nenhum),
     ("sequences", PorColuna::Nenhum),
     ("ajustar_sequencia", PorColuna::Nenhum),
+    // A sequencia nomeada nao tem coluna: e um contador com nome.
+    ("criar_sequencia", PorColuna::Nenhum),
+    ("proximo_da_sequencia", PorColuna::Nenhum),
+    ("sequencia", PorColuna::Nenhum),
+    ("excluir_sequencia", PorColuna::Nenhum),
     // ------------------------------------------------------------- leitura
     ("ler", PorColuna::Le(Onde::Raiz)),
     ("varrer", PorColuna::Le(Onde::Lista)),

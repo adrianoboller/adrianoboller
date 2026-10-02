@@ -524,6 +524,14 @@ existe ainda (`PENDENCIAS.md`, planejado 13).
 
 ### Sprint 11 — Sequência como objeto próprio
 
+**FEITO em 02/10/2026 (pedido 229, `docs/AUTONUMBER.md` §C.5.3 e
+`docs/FORMATO.md` §24).** A premissa foi medida antes: o `NEXTVAL` durável
+custa **147 a 230 µs** por número com `fdatasync` no lugar em dois slots, e
+**771 µs** pela troca atômica — e a pergunta do buraco não foi ao dono, porque
+a régua dos motores a respondeu (cache 1 do PostgreSQL × 1 000 do MariaDB,
+4 × 3): sem cache, um `fdatasync` por número, nunca repete. O que o escopo
+dizia que não entra continua não entrando (`NEXT VALUE FOR` em expressão).
+
 **Escopo fechado.** Uma sequência nomeada no banco, independente de tabela, com
 `INCREMENT`, `MINVALUE`, `MAXVALUE`, `START` e `CYCLE`, e o valor obtido por
 uma operação do protocolo — utilizável por **várias** tabelas.

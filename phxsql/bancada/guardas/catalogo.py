@@ -4553,8 +4553,10 @@ pub fn limpar() {
             "corrupcao silenciosa por erro lido."
         ),
         "arquivo": "crates/phxsql-server/src/valores.rs",
-        "trecho": """            if j.inteiro_impreciso() {""",
-        "troca": """            if false && j.inteiro_impreciso() {""",
+        "trecho": """            recusar_impreciso(j, "o id", " ou use Uuid256 se precisar dessa faixa")?;
+""",
+        "troca": """            // DEFEITO REPOSTO (bloco 19): o id cru impreciso passa.
+""",
         "pacote": "phxsql-server",
         "alvo": ["--lib"],
         "caem": [
@@ -4573,8 +4575,8 @@ pub fn limpar() {
             "como numero volta trocado no fio. Texto e a unica forma honesta."
         ),
         "arquivo": "crates/phxsql-server/src/valores.rs",
-        "trecho": """        (Value::UInt(n), ColumnType::Sequence) if *n > phxsql_core::json::INTEIRO_EXATO_MAX => {""",
-        "troca": """        (Value::UInt(n), ColumnType::Sequence) if false && *n > phxsql_core::json::INTEIRO_EXATO_MAX => {""",
+        "trecho": """        (Value::UInt(n), _) if *n > phxsql_core::json::INTEIRO_EXATO_MAX => {""",
+        "troca": """        (Value::UInt(n), _) if false && *n > phxsql_core::json::INTEIRO_EXATO_MAX => {""",
         "pacote": "phxsql-server",
         "alvo": ["--lib"],
         "caem": [
@@ -6132,7 +6134,102 @@ pub fn limpar() {
         "seguem": [
             "valores::testes_teto_de_64_bits::abaixo_do_teto_nada_muda",
             "valores::testes_teto_de_64_bits::a_sequencia_continua_com_a_mensagem_dela",
-            "valores::testes_teto_de_64_bits::a_faixa_imprecisa_continua_passando_por_decisao_registrada",
+        ],
+    },
+    {
+        "id": "faixa-imprecisa-no-int8",
+        "titulo": "número cru entre 2⁵³ e o teto do `Int8`/`UInt8` era gravado como o VIZINHO, calado — `9007199254740993` virava `9007199254740992`",
+        "porque": (
+            "Conserto entra no caminho que o motivou, e o caminho IRMAO fica. A "
+            "`Sequence` recusava o numero cru impreciso desde o bloco 19 do "
+            "docs/AUTONUMBER.md; o `Int8`/`UInt8` ficou de fora por dispensa "
+            "registrada (§C.4, «decisao de papel C»), e a frente 245 chegou a "
+            "alarga-lo e desfez. Decidido em 02/10/2026 pela matriz dos quatro "
+            "motores (§C.5): PostgreSQL, MariaDB e MySQL recusam o inteiro que "
+            "nao cabe e nenhum grava um vizinho calado; o SQLite so cai para "
+            "REAL acima de 2^63. Recusar 9 x 1. O motor da recusa e UM "
+            "(`recusar_impreciso`) para os tres carregadores, e a saida "
+            "(texto) sai na mensagem."
+        ),
+        "arquivo": "crates/phxsql-server/src/valores.rs",
+        "trecho": (
+            '            recusar_impreciso(j, "o inteiro", "")?;\n'
+            "            Ok(*n as i64)\n"
+        ),
+        "troca": (
+            "            // DEFEITO REPOSTO (pedido 229, §C.4): o `Int8` deixa passar o\n"
+            "            // numero que o f64 ja arredondou, e grava o vizinho.\n"
+            "            Ok(*n as i64)\n"
+        ),
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "valores::testes_teto_de_64_bits::a_faixa_imprecisa_e_recusada_no_int8_e_no_uint8",
+        ],
+        "seguem": [
+            "valores::testes_teto_de_64_bits::abaixo_do_teto_nada_muda",
+            "valores::testes_teto_de_64_bits::numero_cru_fora_da_faixa_recusa_em_vez_de_saturar",
+            "valores::testes_inteiro_em_texto::sequencia_recusa_numero_cru_acima_do_teto_do_f64",
+        ],
+    },
+    {
+        "id": "sequencia-nomeada-proximo-sem-durar",
+        "titulo": "o `proximo` da sequência nomeada devolvia o número ANTES de durá-lo: reabrir repetia o que já tinha saído",
+        "porque": (
+            "docs/AUTONUMBER.md §B.2.4 e §C.5 -- a sequencia nomeada existe para "
+            "numeracao de documento fiscal, onde numero repetido e pior que "
+            "buraco. O `proximo` gravado no `.seq` e sempre o que AINDA NAO "
+            "saiu, e a resposta so sai depois do `fdatasync`: a queda custa um "
+            "buraco, nunca uma repeticao. Sem a gravacao, o contador vive so "
+            "em memoria e a reabertura volta ao 1."
+        ),
+        "arquivo": "crates/phxsql-store/src/sequencia.rs",
+        "trecho": (
+            "        self.gravar()?;\n"
+            "        Ok(valor)\n"
+        ),
+        "troca": (
+            "        // DEFEITO REPOSTO (pedido 229): o numero sai sem ir ao disco.\n"
+            "        Ok(valor)\n"
+        ),
+        "pacote": "phxsql-store",
+        "alvo": ["--lib"],
+        "caem": [
+            "sequencia::testes::o_proximo_sai_durado_e_a_reabertura_continua_de_onde_parou",
+            "sequencia::testes::um_slot_rasgado_nao_perde_a_sequencia_e_nao_repete",
+        ],
+        "seguem": [
+            "sequencia::testes::nasce_com_os_padroes_dos_dois_motores_que_a_tem",
+            "sequencia::testes::definicao_que_nao_fecha_e_recusada_antes_de_tocar_o_disco",
+        ],
+    },
+    {
+        "id": "tabela-com-nome-de-sequencia",
+        "titulo": "`criar_tabela` aceitava o nome de uma sequência nomeada que já existe: dois objetos com um nome só",
+        "porque": (
+            "Tres motores maduros convergindo e aceite automatico -- e aqui "
+            "sao os DOIS que tem `CREATE SEQUENCE` (PostgreSQL e MariaDB), "
+            "convergindo: a sequencia e uma relacao e divide o espaco de "
+            "nomes com a tabela. Os arquivos (`nf.reg`, `nf.seq`) coexistiriam "
+            "no disco sem conflito; o que nao coexiste e o nome na cabeca de "
+            "quem le `nf` numa mensagem de erro. O outro sentido (sequencia "
+            "com nome de tabela) mora no `criar_sequencia_adiando_o_fsync` e "
+            "e provado pelo mesmo teste."
+        ),
+        "arquivo": "crates/phxsql-store/src/catalogo.rs",
+        "trecho": "        if crate::sequencia::existe(&dir, esquema.nome()) {\n",
+        "troca": (
+            "        // DEFEITO REPOSTO (pedido 229): a tabela nasce por cima do nome.\n"
+            "        if false && crate::sequencia::existe(&dir, esquema.nome()) {\n"
+        ),
+        "pacote": "phxsql-store",
+        "alvo": ["--lib"],
+        "caem": [
+            "catalogo::testes_gestao::sequencia_nomeada_mora_ao_lado_das_tabelas_e_divide_o_nome",
+        ],
+        "seguem": [
+            "sequencia::testes::listar_e_excluir",
+            "catalogo::testes_gestao::excluir_tabela_deixa_o_nome_livre_para_a_proxima",
         ],
     },
     {
