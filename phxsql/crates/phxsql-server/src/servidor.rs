@@ -448,6 +448,18 @@ pub(crate) fn grava_dado_replicado(op: &str) -> bool {
     OPS_ESCRITA.contains(&op) && !OPS_DO_NO.contains(&op)
 }
 
+/// So em teste: roda no instante exato em que a escrita ja aconteceu e a
+/// conta da escrita local ainda nao assentou -- a janela em que a rodada da
+/// replica, noutra thread, via o diario andado sem a causa (pedido 630). Sem
+/// o gancho a janela e de microssegundos e o defeito so aparece a cada
+/// centenas de corridas; com ele, e deterministico.
+#[cfg(test)]
+type GanchoAposEscrita = std::cell::RefCell<Option<Box<dyn Fn(&Servidor)>>>;
+#[cfg(test)]
+thread_local! {
+    static GANCHO_APOS_ESCRITA: GanchoAposEscrita = const { std::cell::RefCell::new(None) };
+}
+
 /// O que um SPARE atende. Reserva e reserva: cliente comum nao le nem
 /// escreve; o que passa e administracao, monitoramento e a propria
 /// replicacao -- inclusive `posicao`/`replicar`, para o spare poder ser
@@ -2301,7 +2313,12 @@ impl Servidor {
     /// O portao vem antes do trabalho: fora de uma replica fiel, uma
     /// comparacao de papel e volta.
     ///
-    /// # Conta DEPOIS de a escrita acontecer, e nao no portao 2b (pedido 630)
+    /// # Conta em `executar_e_contar_escrita_local`, e nao no portao 2b (pedido 630)
+    ///
+    /// (02/10/2026: a conta agora entra ANTES da escrita e SAI se ela falhar --
+    /// a janela entre a escrita e a conta fazia a recusa nomear as duas causas
+    /// em vez da local. O resto desta nota descreve a razao de nao ser o
+    /// portao 2b, e continua valendo: o que sai e o que falhou.)
     ///
     /// Ate 01/10/2026 a conta ficava no portao 2b, antes do portao 3 de
     /// permissao e antes de a tabela abrir, com o nome do pedido sem validar.
@@ -2317,20 +2334,21 @@ impl Servidor {
     /// falhou no meio depois de gravar alguma coisa nao conta, e sem a conta
     /// a recusa da continuidade NOMEIA as duas causas em vez de escolher uma
     /// (`por_que_nao_continua`). Contar a mais escolheria a errada.
-    fn anotar_escrita_local(&self, pedido: &Json) {
+    fn anotar_escrita_local(&self, pedido: &Json) -> Option<String> {
         let papel = self.papel_atual();
         if !papel.puxa_de_origem() || papel == Papel::Multi {
-            return;
+            return None;
         }
         let (Some(db), Some(tab)) = (
             pedido.campo("database").and_then(Json::texto),
             pedido.campo("tabela").and_then(Json::texto),
         ) else {
-            return;
+            return None;
         };
-        if let Ok(mut m) = self.escritas_locais_na_replica.lock() {
-            *m.entry(Self::chave_do_diario(db, tab)).or_default() += 1;
-        }
+        let chave = Self::chave_do_diario(db, tab);
+        let mut m = self.escritas_locais_na_replica.lock().ok()?;
+        *m.entry(chave.clone()).or_default() += 1;
+        Some(chave)
     }
 
     /// Soma o que um handle de lote contou de orfas -- pedido 300 §2.7.
@@ -9213,11 +9231,45 @@ impl Servidor {
         pedido: &Json,
         sessao: &Sessao,
     ) -> Result<Json> {
+        // A conta entra ANTES da escrita e sai se ela falhar (pedido 630,
+        // corrigido em 02/10/2026): contar depois deixava uma janela entre
+        // a escrita aparecer no diario e o contador subir, e a rodada da
+        // replica que caisse nela via o diario andado SEM a causa contada --
+        // a recusa nomeava as duas causas em vez da local, e o recado
+        // ficava guardado por posicao (`continuidade_guardada`). Falhou ao
+        // custo de uma entrada transitoria no mapa, desfeita aqui.
+        let contada = if grava_dado_replicado(op) {
+            self.anotar_escrita_local(pedido)
+        } else {
+            None
+        };
         let r = self.aplicar_direito_por_coluna(op, pedido, sessao);
-        if r.is_ok() && grava_dado_replicado(op) {
-            self.anotar_escrita_local(pedido);
+        #[cfg(test)]
+        GANCHO_APOS_ESCRITA.with(|g| {
+            if let Some(f) = g.borrow().as_ref() {
+                f(self);
+            }
+        });
+        if r.is_err() {
+            if let Some(chave) = contada {
+                self.desfazer_escrita_local(&chave);
+            }
         }
         r
+    }
+
+    /// Tira do mapa a escrita local contada por uma operacao que falhou. A
+    /// entrada que chega a zero sai: o teto do mapa continua sendo o numero
+    /// de tabelas que existem (revisao SEC, M2), e nao o de nomes tentados.
+    fn desfazer_escrita_local(&self, chave: &str) {
+        if let Ok(mut m) = self.escritas_locais_na_replica.lock() {
+            if let Some(n) = m.get_mut(chave) {
+                *n = n.saturating_sub(1);
+                if *n == 0 {
+                    m.remove(chave);
+                }
+            }
+        }
     }
 
     /// O direito por COLUNA, no unico lugar em que ele existe.
@@ -74059,5 +74111,111 @@ mod testes_do_terceiro_na_tabela_que_nasce {
         let r = rb.lock().unwrap().clone().unwrap();
         let e = r.expect_err("B gravou a filha apontando para a mae que ainda nascia");
         assert!(e.contains("Nascendo"), "B recusou com outra familia: {e}");
+    }
+}
+
+/// **Pedido 630, a janela da conta (02/10/2026).** A escrita local na replica
+/// era contada DEPOIS de gravar. Entre uma coisa e outra a escrita ja estava no
+/// diario e o contador ainda nao subira: a rodada da replica que caisse ali
+/// (noutra thread) via o diario andado, chamava `por_que_nao_continua` com
+/// zero escritas locais e gravava a recusa das DUAS causas -- guardada por
+/// posicao, e o teste de soquete `escrita_local_sem_o_source_andar_...` lia
+/// «escrita localmente» onde esperava «escrita LOCAL». Flocou uma vez em
+/// centenas; aqui a janela e aberta de proposito pelo gancho.
+#[cfg(test)]
+mod testes_janela_da_escrita_local {
+    use super::*;
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    fn replica_de_escrita_livre(rotulo: &str) -> (DirTemp, Arc<Servidor>) {
+        let d = DirTemp::novo(&format!("janela-630-{rotulo}"));
+        let txt = r#"{"token":"t",
+            "replicacao":{"papel":"replica","id_servidor":"r",
+              "origens":[{"nome":"fonte","host":"10.9.9.9","porta":5000,
+                          "token":"t","databases":["loja"]}]}}"#;
+        let mut c = Config::de_json(&Json::analisar(txt).unwrap()).unwrap();
+        c.base = d.to_path_buf();
+        c.log_acessos = d.join("acessos.log");
+        c.blacklist = d.join("blacklist.json");
+        c.dblink = d.join("dblink.json");
+        c.jobs = d.join("jobs.json");
+        c.web.ligado = false;
+        c.validar().unwrap();
+        let s = Servidor::novo(c).unwrap();
+        (d, s)
+    }
+
+    fn rodar(s: &Servidor, op: &str, corpo: &str) -> Result<Json> {
+        let p = Json::analisar(&format!(r#"{{"op":"{op}",{corpo}}}"#)).unwrap();
+        s.executar_e_contar_escrita_local(op, &p, &Sessao::default())
+    }
+
+    /// O preparo passa por `executar` e nao pela conta: o que se mede aqui e o
+    /// `inserir`, e o `criar_tabela` tambem e escrita que a conta alcanca.
+    fn criar_loja(s: &Servidor) {
+        for (op, corpo) in [
+            ("criar_database", r#""database":"loja""#),
+            (
+                "criar_tabela",
+                r#""database":"loja","tabela":"clientes",
+                   "colunas":[{"nome":"id","tipo":"Int4","obrigatoria":true}],
+                   "indices":[{"nome":"porId","colunas":["id"],"unico":true,"primario":true}]"#,
+            ),
+        ] {
+            let p = Json::analisar(&format!(r#"{{"op":"{op}",{corpo}}}"#)).unwrap();
+            s.executar(op, &p, &Sessao::default()).unwrap();
+        }
+    }
+
+    const INSERIR_99: &str = r#""database":"loja","tabela":"clientes","linha":{"id":99}"#;
+
+    /// **A prova da janela.** No instante em que a escrita ja gravou e a
+    /// operacao ainda nao devolveu, a causa que a replica NOMEIA tem de ser a
+    /// local. Defeito reposto (contar depois do `Ok`): o gancho le zero e a
+    /// frase das duas causas -- este teste cai.
+    #[test]
+    fn na_janela_entre_gravar_e_responder_a_causa_ja_e_a_escrita_local() {
+        let (_d, s) = replica_de_escrita_livre("janela");
+        criar_loja(&s);
+        let lida = Rc::new(RefCell::new(String::new()));
+        let l2 = Rc::clone(&lida);
+        GANCHO_APOS_ESCRITA.with(|g| {
+            *g.borrow_mut() = Some(Box::new(move |s: &Servidor| {
+                *l2.borrow_mut() = s.por_que_nao_continua("loja/clientes", 3);
+            }));
+        });
+        rodar(&s, "inserir", INSERIR_99).unwrap();
+        GANCHO_APOS_ESCRITA.with(|g| *g.borrow_mut() = None);
+        let causa = lida.borrow().clone();
+        assert!(
+            causa.contains("escrita LOCAL") && causa.contains("ACEITOU 1"),
+            "na janela a replica nao sabia da propria escrita: {causa}"
+        );
+    }
+
+    /// O irmao que impede o conserto de contar a mais: pedido que FALHA (tabela
+    /// que nao existe) nao deixa conta nem entrada no mapa -- o teto da revisao
+    /// SEC M2 -- e a escrita boa soma uma so vez.
+    #[test]
+    fn escrita_que_falha_nao_deixa_conta_nem_entrada_no_mapa() {
+        let (_d, s) = replica_de_escrita_livre("falha");
+        criar_loja(&s);
+        for i in 0..5 {
+            let r = rodar(
+                &s,
+                "inserir",
+                &format!(r#""database":"loja","tabela":"nao_existe_{i}","linha":{{"id":1}}"#),
+            );
+            assert!(r.is_err(), "inserir em tabela inexistente tinha de falhar");
+        }
+        assert!(
+            s.escritas_locais_na_replica.lock().unwrap().is_empty(),
+            "a conta da escrita que falhou ficou no mapa"
+        );
+        rodar(&s, "inserir", INSERIR_99).unwrap();
+        let m = s.escritas_locais_na_replica.lock().unwrap();
+        assert_eq!(m.get("loja/clientes"), Some(&1));
+        assert_eq!(m.len(), 1);
     }
 }

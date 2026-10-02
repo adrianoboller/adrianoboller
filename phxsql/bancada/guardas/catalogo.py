@@ -21857,9 +21857,9 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "culpar o source."
         ),
         "arquivo": "crates/phxsql-server/src/servidor.rs",
-        "trecho": """            *m.entry(Self::chave_do_diario(db, tab)).or_default() += 1;""",
-        "troca": """            // DEFEITO REPOSTO (300 (4)): a escrita local passa calada.
-            let _ = (&mut m, db, tab);""",
+        "trecho": """        *m.entry(chave.clone()).or_default() += 1;""",
+        "troca": """        // DEFEITO REPOSTO (300 (4)): a escrita local passa calada.
+        let _ = &mut m;""",
         "pacote": "phxsql-server",
         "alvo": ["--test", "continuidade-da-replica"],
         "caem": ["escrita_local_na_replica_rompe_dizendo_a_causa_e_nao_pula_o_source"],
@@ -24047,5 +24047,50 @@ fn anotar(""",
         "alvo": ["--test", "migracao-da-cifra-pelo-soquete"],
         "caem": ["transacao_na_tabela_ligada_pela_chave_barra_a_migracao"],
         "seguem": ["declarar_nao_cifra_e_pedir_cifra_pelo_op_e_pelo_sql"],
+    },
+    {
+        "id": "escrita-local-contada-depois-da-escrita-630",
+        "titulo": "a escrita local na replica se conta DEPOIS de gravar: na janela entre uma coisa e outra a rodada da replica nomeia as duas causas e a recusa fica guardada por posicao",
+        "porque": (
+            "pedido 630, floco de 02/10/2026: `escrita_local_sem_o_source_andar_"
+            "rompe_pela_contagem_dizendo_a_causa` falhou uma vez numa corrida do "
+            "portoes.sh e passou depois. A escrita ja estava no diario e o "
+            "contador ainda nao subira; a rodada que caiu ali chamou "
+            "`por_que_nao_continua` com zero locais e gravou «escrita "
+            "localmente» onde o teste esperava «escrita LOCAL». O gancho de "
+            "teste abre a janela de proposito e a torna deterministica."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        let contada = if grava_dado_replicado(op) {
+            self.anotar_escrita_local(pedido)
+        } else {
+            None
+        };
+        let r = self.aplicar_direito_por_coluna(op, pedido, sessao);
+        #[cfg(test)]
+        GANCHO_APOS_ESCRITA.with(|g| {
+            if let Some(f) = g.borrow().as_ref() {
+                f(self);
+            }
+        });
+""",
+        "troca": """        let contada: Option<String> = None;
+        let r = self.aplicar_direito_por_coluna(op, pedido, sessao);
+        #[cfg(test)]
+        GANCHO_APOS_ESCRITA.with(|g| {
+            if let Some(f) = g.borrow().as_ref() {
+                f(self);
+            }
+        });
+        // DEFEITO REPOSTO (630): conta depois da escrita.
+        if r.is_ok() && grava_dado_replicado(op) {
+            self.anotar_escrita_local(pedido);
+        }
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": ["servidor::testes_janela_da_escrita_local::na_janela_entre_gravar_e_responder_a_causa_ja_e_a_escrita_local"],
+        "seguem": ["servidor::testes_janela_da_escrita_local::escrita_que_falha_nao_deixa_conta_nem_entrada_no_mapa"],
+        "prazo": 1800,
     },
 ]

@@ -1252,6 +1252,18 @@ função só (`executar_e_contar_escrita_local`). O mesmo laço deixa o mapa vaz
 O erro que sobra vai para o lado certo: a escrita que falha no meio não conta,
 e sem a conta a recusa nomeia as duas causas em vez de escolher a errada.
 
+**Correção de 02/10/2026 (floco do próprio teste do 630): a conta sobe ANTES
+da escrita e desce se ela falhar.** Contar depois do `Ok` deixava uma janela de
+microssegundos entre a escrita entrar no diário e o contador subir; a rodada da
+réplica que caía nela via o diário andado com zero locais e gravava a frase das
+duas causas — guardada por posição, sem rodada que a corrigisse. Falhou 1 vez
+em centenas (0/60 isolado, 0/30 do binário inteiro sob carga: estresse não
+reproduz janela estreita), e foi provada com um gancho de teste que abre a
+janela (`GANCHO_APOS_ESCRITA`): RED com a conta depois, GREEN com a conta
+antes. O mapa continua sem teto por nome inventado: a entrada que a operação
+falhada criou sai (`desfazer_escrita_local`). Ver a cognição
+`cognicao_conta-depois-da-escrita-abre-janela-que-a-rodada-ve_20261002_1530.md`.
+
 **Por que não a «coordenada da origem por tabela»** (o meio que a triagem citava):
 com o rowid como identidade, a escrita local diverge a réplica de qualquer
 jeito — a inclusão seguinte do source não acha o rowid dela e para. Trocar o
