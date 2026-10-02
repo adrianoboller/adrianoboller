@@ -812,7 +812,14 @@ TETO_TESTE_SEM_MODULO = 0
 # (`--so <id> --json`). Piso so sobe com entrada nova, e se outra frente somar
 # entradas no mesmo passo o integrador reconta -- o numero e do catalogo do
 # dia, nao desta frente.
-PISO_DAS_ENTRADAS = 747
+# 747 -> 757 (249, 02/10/2026): as dez guardas `gancho-*` do gancho externo do
+# operador (nunca chamado, sem o portao `ligado`, via shell, ambiente herdado,
+# sem kill no prazo, kill sem wait/zumbi, saida do filho vazando, campo
+# editavel pela API, config sem validar no arranque, config nao lida). Medido
+# por `--numeros` (757) nesta arvore; as dez + a `disco-silencio-furado`
+# estendida foram provadas uma a uma (`--so <id> --json`), todas PROVADA. Se
+# outra frente somar entradas no mesmo passo o integrador reconta.
+PISO_DAS_ENTRADAS = 757
 
 # ------------------------------------------------------------- APOSENTADAS
 #

@@ -1055,6 +1055,9 @@ pub struct Alertas {
     pub disco: Disco,
     /// O canal de SMS, pelo gateway e-mail-para-SMS da operadora.
     pub sms: Sms,
+    /// O gancho externo do operador (pedido 249): o meio do SMS quando a
+    /// operadora nao oferece e-mail-para-SMS. SO se edita pelo arquivo.
+    pub gancho: Gancho,
 }
 
 impl Default for Alertas {
@@ -1069,6 +1072,7 @@ impl Default for Alertas {
             email: Email::default(),
             disco: Disco::default(),
             sms: Sms::default(),
+            gancho: Gancho::default(),
         }
     }
 }
@@ -1107,6 +1111,7 @@ impl Alertas {
             email: Email::de_json(a)?,
             disco: Disco::de_json(a),
             sms: Sms::de_json(a)?,
+            gancho: Gancho::de_json(a)?,
         };
         // O SMS sai pelo MESMO rele do e-mail (e-mail-para-SMS da operadora):
         // ligado sem rele e um canal que promete e nunca entrega. A recusa vem
@@ -1173,6 +1178,7 @@ impl Alertas {
             ("email", self.email.para_json()),
             ("disco", self.disco.para_json()),
             ("sms", self.sms.para_json()),
+            ("gancho", self.gancho.para_json()),
         ])
     }
 }
@@ -1340,6 +1346,136 @@ impl Sms {
                 Json::Lista(self.numeros.iter().map(Json::texto_de).collect()),
             ),
             ("gateway_email", Json::texto_de(&self.gateway_email)),
+        ])
+    }
+}
+
+/// O gancho externo do operador: um programa que o servidor executa quando um
+/// evento de saude passa pelo silencio (pedido 249, parecer do papel J de
+/// 02/10/2026). E o meio do SMS para quem a operadora nao da e-mail-para-SMS;
+/// o canal em si e do operador, e o segredo do gateway mora no script dele.
+///
+/// # Isto executa um programa, e por isso so se edita pelo arquivo
+///
+/// `comando` e um vetor `argv` -- nunca uma linha de shell --, e o campo NAO
+/// esta em [`CAMPOS_EDITAVEIS`]: com ele la, quem tem `administrar` pela API
+/// executaria codigo no servidor. Ver `gancho.rs` para o resto da lente.
+#[derive(Clone)]
+pub struct Gancho {
+    pub ligado: bool,
+    /// `argv`: `comando[0]` e um caminho absoluto, existente e executavel.
+    pub comando: Vec<String>,
+    /// Prazo duro de uma execucao; ao estourar o filho leva `kill`.
+    pub timeout_s: u64,
+}
+
+impl Default for Gancho {
+    fn default() -> Self {
+        Gancho {
+            ligado: false,
+            comando: Vec::new(),
+            timeout_s: 10,
+        }
+    }
+}
+
+/// `Debug` a mao: os argumentos podem carregar o que o operador quis passar
+/// ao script, e o `Debug` da `Config` vai parar em log.
+impl std::fmt::Debug for Gancho {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Gancho")
+            .field("ligado", &self.ligado)
+            .field("programa", &self.comando.first())
+            .field("argumentos", &self.comando.len().saturating_sub(1))
+            .field("timeout_s", &self.timeout_s)
+            .finish()
+    }
+}
+
+/// Teto do prazo: o gancho roda NA thread do carteiro, e prazo longo atrasa o
+/// e-mail do aviso seguinte.
+pub const TETO_DO_PRAZO_DO_GANCHO_S: u64 = 120;
+
+impl Gancho {
+    fn de_json(alertas: &Json) -> Result<Gancho> {
+        let padrao = Gancho::default();
+        let Some(g) = alertas.campo("gancho") else {
+            return Ok(padrao);
+        };
+        // Elemento que nao e texto e RECUSADO, e nao descartado: `textos()`
+        // o largaria e deslocaria os argumentos para a esquerda.
+        let mut comando = Vec::new();
+        match g.campo("comando") {
+            None | Some(Json::Nulo) => {}
+            Some(c) => {
+                let Some(lista) = c.lista() else {
+                    return Err(PhxError::Esquema(
+                        "alertas.gancho.comando: tem de ser uma LISTA de textos \
+                         (programa e argumentos), e nao uma linha de shell"
+                            .into(),
+                    ));
+                };
+                for (i, item) in lista.iter().enumerate() {
+                    let Some(t) = item.texto() else {
+                        return Err(PhxError::Esquema(format!(
+                            "alertas.gancho.comando[{i}]: tem de ser texto"
+                        )));
+                    };
+                    comando.push(t.to_string());
+                }
+            }
+        }
+        let gancho = Gancho {
+            ligado: g.booleano_ou("ligado", false),
+            comando,
+            timeout_s: (g.inteiro_ou("timeout_s", padrao.timeout_s as i64).max(1) as u64)
+                .min(TETO_DO_PRAZO_DO_GANCHO_S),
+        };
+        if gancho.ligado {
+            gancho.validar()?;
+        }
+        Ok(gancho)
+    }
+
+    fn validar(&self) -> Result<()> {
+        let Some(programa) = self.comando.first() else {
+            return Err(PhxError::Esquema(
+                "alertas.gancho ligado sem \"comando\": a lista com o programa \
+                 (caminho absoluto) e os argumentos"
+                    .into(),
+            ));
+        };
+        if self.comando.len() > 32 || self.comando.iter().any(|a| a.len() > 1024) {
+            return Err(PhxError::Esquema(
+                "alertas.gancho.comando: no maximo 32 itens de 1024 bytes".into(),
+            ));
+        }
+        if self.comando.iter().any(|a| a.contains('\0')) {
+            return Err(PhxError::Esquema(
+                "alertas.gancho.comando: byte nulo num argumento".into(),
+            ));
+        }
+        crate::gancho::conferir_programa(programa).map_err(PhxError::Esquema)
+    }
+
+    /// O que a tela e a op `config` mostram: o programa e QUANTOS argumentos,
+    /// nunca os argumentos -- o operador pode ter posto neles o que o script
+    /// precisa, e a regra e que segredo nao viaja nem para a tela.
+    pub fn para_json(&self) -> Json {
+        Json::objeto(vec![
+            ("ligado", Json::Bool(self.ligado)),
+            (
+                "programa",
+                self.comando
+                    .first()
+                    .map(Json::texto_de)
+                    .unwrap_or(Json::Nulo),
+            ),
+            (
+                "argumentos",
+                Json::de_u64(self.comando.len().saturating_sub(1) as u64),
+            ),
+            ("timeout_s", Json::de_u64(self.timeout_s)),
         ])
     }
 }
@@ -4611,7 +4747,7 @@ const CAMPOS_CONHECIDOS: [&str; 34] = [
 /// as duas primeiras estao ganhando campos novos por outras frentes nesta
 /// rodada, e um aviso falso de "campo desconhecido" seria pior que a lacuna;
 /// as duas ultimas tem chaves livres (bases, tabelas).
-const SECOES_CONHECIDAS: [(&str, &[&str]); 16] = [
+const SECOES_CONHECIDAS: [(&str, &[&str]); 17] = [
     (
         "recursos",
         &[
@@ -4691,6 +4827,8 @@ const SECOES_CONHECIDAS: [(&str, &[&str]); 16] = [
             // Pedido 249: a sonda de saude do disco e o canal de SMS.
             "disco",
             "sms",
+            // Pedido 249: o programa do operador. FORA do `CAMPOS_EDITAVEIS`.
+            "gancho",
         ],
     ),
     (
@@ -4698,6 +4836,7 @@ const SECOES_CONHECIDAS: [(&str, &[&str]); 16] = [
         &["ligado", "checar_segundos", "repetir_minutos", "lento_ms"],
     ),
     ("alertas.sms", &["ligado", "numeros", "gateway_email"]),
+    ("alertas.gancho", &["ligado", "comando", "timeout_s"]),
     (
         "alertas.email",
         &[
@@ -9654,6 +9793,117 @@ mod testes_recursos {
         // arranque de quem nao usa SMS.
         let e = erro(r#"{"token":"t","alertas":{"sms":{"ligado":false,"numeros":["abc"]}}}"#);
         assert!(e.is_empty(), "{e}");
+    }
+
+    /// `alertas.gancho` tem leitor, e o valor lido e o do arquivo (config que
+    /// nao e lida mente). Os argumentos NAO aparecem na tela nem no `Debug`:
+    /// o operador pode ter posto neles o que o script precisa.
+    #[cfg(unix)]
+    #[test]
+    fn alertas_gancho_e_lido_do_arquivo_e_nao_mostra_os_argumentos() {
+        let c = Config::de_json(
+            &Json::analisar(
+                r#"{"token":"t","alertas":{"gancho":{"ligado":true,
+                    "comando":["/bin/sh","-c","sentinela-do-argumento"],"timeout_s":7}}}"#,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        let g = &c.alertas.gancho;
+        assert!(g.ligado);
+        assert_eq!(g.comando, vec!["/bin/sh", "-c", "sentinela-do-argumento"]);
+        assert_eq!(g.timeout_s, 7);
+        let tela = c.alertas.para_json().escrever();
+        assert!(tela.contains("/bin/sh"), "{tela}");
+        assert!(!tela.contains("sentinela-do-argumento"), "{tela}");
+        assert!(!format!("{c:?}").contains("sentinela-do-argumento"));
+        // E o prazo tem teto: o gancho roda na thread do carteiro.
+        let c = Config::de_json(
+            &Json::analisar(
+                r#"{"token":"t","alertas":{"gancho":{"ligado":true,
+                    "comando":["/bin/sh"],"timeout_s":99999}}}"#,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(c.alertas.gancho.timeout_s, TETO_DO_PRAZO_DO_GANCHO_S);
+    }
+
+    /// O gancho recusa no ARRANQUE o que nao executaria -- e o que seria
+    /// perigoso: relativo, inexistente, sem permissao de execucao, gravavel
+    /// por qualquer um, `comando` como linha de shell em vez de lista. E
+    /// DESLIGADO nada se confere (mesma regra do SMS), e o padrao e desligado.
+    #[cfg(unix)]
+    #[test]
+    fn o_gancho_recusa_no_arranque_o_que_nao_executaria() {
+        use std::os::unix::fs::PermissionsExt;
+        let erro = |json: &str| {
+            Config::de_json(&Json::analisar(json).unwrap())
+                .err()
+                .map(|e| e.to_string())
+                .unwrap_or_default()
+        };
+        let gancho = |g: &str| format!(r#"{{"token":"t","alertas":{{"gancho":{g}}}}}"#);
+        let e = erro(&gancho(r#"{"ligado":true}"#));
+        assert!(e.contains("sem \"comando\""), "{e}");
+        let e = erro(&gancho(r#"{"ligado":true,"comando":[]}"#));
+        assert!(e.contains("sem \"comando\""), "{e}");
+        let e = erro(&gancho(r#"{"ligado":true,"comando":"/bin/sh -c id"}"#));
+        assert!(e.contains("LISTA"), "{e}");
+        let e = erro(&gancho(r#"{"ligado":true,"comando":["/bin/sh",7]}"#));
+        assert!(e.contains("comando[1]") && e.contains("texto"), "{e}");
+        let e = erro(&gancho(r#"{"ligado":true,"comando":["avisar.sh"]}"#));
+        assert!(e.contains("absoluto"), "{e}");
+        let e = erro(&gancho(
+            r#"{"ligado":true,"comando":["/nao/existe/avisar.sh"]}"#,
+        ));
+        assert!(e.contains("nao existe"), "{e}");
+        let e = erro(&gancho(
+            r#"{"ligado":true,"comando":["/bin/sh","a\u0000b"]}"#,
+        ));
+        assert!(e.contains("nulo"), "{e}");
+        // Existe e nao executa / executa e qualquer um reescreve.
+        let d = crate::apoio_teste::DirTemp::novo("cfg-gancho");
+        let p = d.join("g.sh");
+        std::fs::write(&p, "#!/bin/sh\n").unwrap();
+        std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o644)).unwrap();
+        let e = erro(&gancho(&format!(
+            r#"{{"ligado":true,"comando":["{}"]}}"#,
+            p.display()
+        )));
+        assert!(e.contains("nao e executavel"), "{e}");
+        std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o777)).unwrap();
+        let e = erro(&gancho(&format!(
+            r#"{{"ligado":true,"comando":["{}"]}}"#,
+            p.display()
+        )));
+        assert!(e.contains("qualquer usuario"), "{e}");
+        std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let e = erro(&gancho(&format!(
+            r#"{{"ligado":true,"comando":["{}","a;b","$(id)"]}}"#,
+            p.display()
+        )));
+        assert!(e.is_empty(), "configuracao valida recusada: {e}");
+        // Desligado, lixo no bloco nao derruba o arranque de quem nao usa.
+        let e = erro(&gancho(r#"{"ligado":false,"comando":["relativo.sh"]}"#));
+        assert!(e.is_empty(), "{e}");
+        let c = Config::de_json(&Json::analisar(r#"{"token":"t"}"#).unwrap()).unwrap();
+        assert!(!c.alertas.gancho.ligado && c.alertas.gancho.comando.is_empty());
+    }
+
+    /// O gancho executa programa: NENHUM campo dele pode estar entre os que a
+    /// API grava. Este e o lado do inventario; o lado do comportamento e
+    /// `o_gancho_do_operador_nao_se_grava_pela_api`, no servidor.
+    #[test]
+    fn nenhum_campo_do_gancho_esta_em_campos_editaveis() {
+        for (campo, _, _) in CAMPOS_EDITAVEIS {
+            assert!(
+                !campo.contains("gancho"),
+                "{campo}: o gancho executa programa e so se edita pelo arquivo"
+            );
+        }
+        assert!(campo_editavel("alertas.gancho.comando").is_none());
+        assert!(campo_editavel("alertas.gancho.ligado").is_none());
     }
 
     /// `threads` e `cpu_percentual` tem leitor de verdade: o teto global do

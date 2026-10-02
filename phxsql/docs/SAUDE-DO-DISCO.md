@@ -196,7 +196,7 @@ nenhuma.** As opções, medidas:
 | **e-mail-para-SMS** da operadora (`numero@gateway`) | o relé SMTP que já existe | **sim** — inteiro |
 | gateway **HTTPS** (Twilio, Zenvia, AWS SNS, …) | TLS → crate | **não** — pétrea de zero dependências; pergunta ao dono (§8) |
 | gateway **HTTP** em texto puro | um cliente HTTP de saída | **não** — não existe nenhum na casa (§1), e nenhum gateway sério aceita texto puro |
-| **programa externo** (`comando: [...]`, sem shell) | `std::process::Command` | **não entrou nesta rodada** — está no contrato da rodada como opção, mas o brief da frente pediu o e-mail-para-SMS e deixou o resto como pergunta; executar comando vindo do `config.json` é ponto de segurança que merece o «sim» do dono antes (§8) |
+| **gancho externo do operador** (`alertas.gancho`, argv sem shell) | `std::process::Command` | **sim — §4.5**, parecer do papel J de 02/10/2026 (decidido pelo pesquisador, não subiu ao dono); o canal SMS em si passa a ser do operador |
 
 Como sai: o mesmo `Email` com o `para` trocado por `numeros[i]@gateway_email`.
 Colado do relé, na mesma corrida:
@@ -215,6 +215,71 @@ caminho do `base`, uma quebra de linha ou mais de 160 caracteres.
 
 **Exige `alertas.email.ligado`** — sem relé não há por onde sair, e a recusa
 vem no arranque, não na primeira falha de disco.
+
+### 4.5 O gancho do operador — o meio do SMS quando não há e-mail-para-SMS (02/10/2026)
+
+**Quem decidiu:** o papel J, pelo ciclo da cláusula pétrea «o pesquisador
+decide». Hipóteses, escritas antes: (a) e-mail-para-SMS só; (b) webhook HTTP;
+(c) modem GSM/AT; (d) gancho externo do operador. (b) morre: não há cliente
+HTTP nem TLS de cliente, e em HTTP o token vai em claro. (c) morre: `termios`
+exige `unsafe`/FFI. (a) fica, mas é frágil — a AT&T desligou o gateway em
+17/06/2025 (fonte de terceiros; as operadoras brasileiras **não foram
+reverificadas**). Venceu **(d)**: os maduros não embutem SMS, chamam um gancho
+do operador (`archive_command` do PostgreSQL, verificado na doc; MariaDB,
+MySQL e SQLite por memória, não reverificados).
+
+**O que entrou** (`gancho.rs`, `Alertas.gancho`):
+
+```json
+"alertas": {
+  "gancho": { "ligado": true,
+              "comando": ["/opt/phxsql/avisar-sms.sh", "--canal", "plantao"],
+              "timeout_s": 10 }
+}
+```
+
+| campo | padrão | o que faz |
+|---|---|---|
+| `gancho.ligado` | **false** | sem ele nada executa (guarda nova entra pedida) |
+| `gancho.comando` | `[]` | **vetor argv**; `[0]` é caminho absoluto, existente, executável e não gravável por «outros» — conferido no **arranque** |
+| `gancho.timeout_s` | 10 (1 a 120) | prazo duro; ao estourar, `kill` e `wait` |
+
+O que o programa recebe: as variáveis `PHXSQL_TIPO`, `PHXSQL_ORIGEM` (só
+`[A-Za-z0-9._-]`, até 64), `PHXSQL_QUANDO` e, no stdin, **a mesma linha de até
+160 caracteres do SMS por e-mail** (sem caminho). Nunca o pedido. O
+ambiente é limpo (`PATH` fixo), o diretório de trabalho é `/`, e o que o
+programa imprime vai para `/dev/null`.
+
+- **Chamado pelo mesmo carteiro** (`sonda-disco`), fora de qualquer trava,
+  depois do e-mail e do SMS-por-gateway, com o **mesmo silêncio por tipo**.
+  **Aditivo e independente**: funciona com o e-mail desligado, e o e-mail
+  segue sem o gancho.
+- **Uma execução em voo**; a que chega com outra rodando é descartada, não
+  enfileirada.
+- **O erro do gancho é só log e `avisos.ultima_falha`** (prefixo `gancho:`);
+  `avisos.gancho` conta as execuções com código zero. Nenhuma frase do erro
+  carrega o que o programa imprimiu.
+- **Só se edita pelo arquivo**: nenhum campo está em `CAMPOS_EDITAVEIS`. A
+  segurança está em `docs/SEGURANCA.md` §3.
+
+**O que o PhxSql promete (texto honesto, para o produto decidir se usa):**
+*o PhxSql entrega o aviso a um gancho do operador e, quando a operadora
+oferece e-mail-para-SMS, também por esse caminho; o canal SMS é do operador.*
+O segredo do gateway mora no script dele, nunca no `config.json`. SMS direto
+só com HTTPS de cliente (fora do 572 atual).
+
+**Limite dito:** o `kill` alcança o filho direto. Script que dispara um neto
+e sai deixa o neto vivo (a `std` não tem `killpg`, e `unsafe` não entra); o
+operador termina o script com `exec`.
+
+**Provas** (cada uma com o defeito reposto, guardas `gancho-*` no catálogo):
+erro de E/S pelo soquete executa o gancho com o e-mail desligado; três erros
+do mesmo tipo, uma execução; argumento com `;`/`$()` chega literal; ambiente
+não atravessa; sentinela impressa pelo script não chega ao `acessos.log`, ao
+painel nem ao stderr do servidor (outro processo); prazo mata e **colhe** o
+filho (`/proc/<pid>` some), e o carteiro segue; o campo não se grava pela API
+nem pelo `ALTER SERVER SET`; `comando[0]` relativo, inexistente, não
+executável ou gravável por qualquer um recusa no arranque.
 
 ### 4.3 O painel e a op
 
@@ -250,6 +315,9 @@ vem no arranque, não na primeira falha de disco.
 | `sms.ligado` | false | `avisar_saude_do_disco` | manda o SMS junto do e-mail |
 | `sms.numeros` | `[]` | `Sms::enderecos` | dígitos com `+` opcional; viram a parte local do endereço |
 | `sms.gateway_email` | `""` | `Sms::enderecos` | domínio da operadora, sem arroba |
+| `gancho.ligado` | **false** | `avisar_pelo_gancho` | executa o programa do operador (§4.5) |
+| `gancho.comando` | `[]` | `Gancho::de_json` | argv; `[0]` absoluto, validado no arranque |
+| `gancho.timeout_s` | 10 (1 a 120) | `gancho::executar` | prazo duro com `kill` |
 
 **Por que a sonda nasce ligada, ao contrário do vigia de espaço.** O vigia
 manda e-mail, e por isso nasce desligado — aviso que ninguém pediu é caixa
@@ -393,14 +461,14 @@ relatório da frente e em `ultima-corrida.json`:
 
 ## 8. Perguntas ao dono
 
-1. **O meio do SMS.** Entrou o e-mail-para-SMS da operadora, que funciona com
-   o relé que já existe. Se a operadora de vocês não oferece esse gateway,
-   as saídas são: (a) um **programa externo** configurado (`comando:
-   ["/usr/bin/curl", ...]`, sem shell, argumento a argumento — zero crate,
-   mas executa o que estiver no `config.json`, e isso é decisão de
-   segurança); (b) um gateway **HTTPS** — pede TLS, TLS pede crate, e a
-   pétrea diz que isso é pergunta, não decisão de frente. Qual dos dois, ou
-   nenhum?
+1. **O meio do SMS. RESOLVIDO pelo papel J, 02/10/2026** (não subiu ao dono:
+   convergência dos maduros, sem choque com pétrea): o **gancho externo do
+   operador** (§4.5) — programa externo, argv sem shell, com a lente de
+   segurança do parecer; o gateway HTTPS continua parado pela pétrea.
+   **Sobe ao dono só o produto:** a frase «o PhxSql entrega o aviso a um
+   gancho do operador e, quando a operadora oferece e-mail-para-SMS, também
+   por esse caminho; o canal SMS é do operador» é o que se promete ao
+   cliente?
 2. **O intervalo da sonda: 60 s ou 5 min? RESOLVIDO, DECISÃO DO DONO,
    17/09/2026 05:35** (`docs/PENDENCIAS.md` #249): **5 minutos**. Disco
    somente-leitura ou cheio não é evento de segundo, e 288 escritas por dia

@@ -45,6 +45,7 @@ pub mod pivot;
 // conversa pelo mesmo fio e nao depende deste crate. O caminho `crate::prazo`
 // continua valendo para quem ja o usava.
 pub use phxsql_core::prazo;
+pub mod gancho;
 pub mod profiler;
 pub mod pulso;
 pub mod quorum;

@@ -55,7 +55,7 @@
 use std::collections::{HashMap, VecDeque};
 use std::io::{ErrorKind, Read, Write};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Condvar, Mutex};
 use std::time::{Duration, Instant};
 
@@ -252,6 +252,9 @@ pub struct Avisos {
     pub sms: u64,
     pub ultimo_email_ms: i64,
     pub ultimo_sms_ms: i64,
+    /// Execucoes do gancho do operador que terminaram com codigo zero.
+    pub gancho: u64,
+    pub ultimo_gancho_ms: i64,
     /// A ultima falha em AVISAR -- rele fora do ar, gateway recusando. E
     /// noticia tambem, e nao pode sumir junto com o aviso que nao saiu.
     pub ultima_falha: Option<String>,
@@ -283,6 +286,10 @@ pub struct SaudeDoDisco {
     /// Acorda o carteiro na hora em que um evento entra -- «imediato» nao
     /// espera o relogio da sonda.
     carteiro: Condvar,
+    /// A reserva da execucao UNICA do gancho do operador: quem a perde e
+    /// descartado, e nao enfileirado. Por servidor, e nao global: dois
+    /// servidores no mesmo processo (os testes) nao se descartam.
+    pub gancho_em_voo: AtomicBool,
 }
 
 impl SaudeDoDisco {
@@ -300,6 +307,7 @@ impl SaudeDoDisco {
             passada: AtomicU64::new(0),
             fila: Mutex::new(VecDeque::new()),
             carteiro: Condvar::new(),
+            gancho_em_voo: AtomicBool::new(false),
         }
     }
 
@@ -502,6 +510,9 @@ impl SaudeDoDisco {
                 if canal == "sms" {
                     a.sms += 1;
                     a.ultimo_sms_ms = agora_ms;
+                } else if canal == "gancho" {
+                    a.gancho += 1;
+                    a.ultimo_gancho_ms = agora_ms;
                 } else {
                     a.email += 1;
                     a.ultimo_email_ms = agora_ms;
@@ -618,6 +629,7 @@ impl SaudeDoDisco {
                 Json::objeto(vec![
                     ("email", Json::de_u64(avisos.email)),
                     ("sms", Json::de_u64(avisos.sms)),
+                    ("gancho", Json::de_u64(avisos.gancho)),
                     ("ultimo_email", iso(avisos.ultimo_email_ms)),
                     ("ultimo_sms", iso(avisos.ultimo_sms_ms)),
                     (

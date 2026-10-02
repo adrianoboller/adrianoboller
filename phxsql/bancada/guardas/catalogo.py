@@ -5374,6 +5374,9 @@ pub fn limpar() {
         "caem": [
             "saude_do_disco::testes::o_primeiro_erro_avisa_e_o_segundo_na_janela_cala",
             "servidor::testes_da_saude_do_disco::erro_de_es_numa_gravacao_avisa_na_hora_e_uma_vez_so",
+            # O gancho do operador (249) usa o MESMO silencio por tipo.
+            "servidor::testes_da_saude_do_disco::tres_erros_do_mesmo_tipo_executam_o_gancho_uma_vez",
+            "servidor::testes_da_saude_do_disco::erro_de_es_numa_gravacao_chama_o_gancho_uma_vez_so",
         ],
         "seguem": [
             "saude_do_disco::testes::a_sonda_passa_num_diretorio_gravavel_e_apaga_o_canario",
@@ -5411,6 +5414,264 @@ pub fn limpar() {
         ],
         "seguem": [
             "config::testes_recursos::o_sms_recusa_no_arranque_o_que_nao_entregaria",
+        ],
+    },
+    # ------------------------- o gancho externo do operador (249, 02/10/2026)
+    # O PRIMEIRO programa externo que o servidor executa por conta propria
+    # para avisar (o firewall da blacklist e outra coisa: reage a um IP).
+    # Dez defeitos, um por decisao de seguranca do parecer do papel J.
+    {
+        "id": "gancho-nunca-chamado",
+        "titulo": "o carteiro da saúde não chama o gancho do operador",
+        "porque": (
+            "o gancho e um meio PROPRIO, ao lado do e-mail: sem a chamada no "
+            "carteiro o config.json promete um aviso (`alertas.gancho.ligado`) "
+            "que nunca sai -- configuracao que nao e lida mente. O erro de E/S "
+            "pelo soquete precisa chegar ao script, com o e-mail desligado."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        self.avisar_pelo_gancho(fio, &evento);
+""",
+        "troca": """        // DEFEITO REPOSTO (pedido 249): o gancho nunca e chamado.
+        let _ = &evento;
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_da_saude_do_disco::erro_de_es_numa_gravacao_chama_o_gancho_uma_vez_so",
+            "servidor::testes_da_saude_do_disco::tres_erros_do_mesmo_tipo_executam_o_gancho_uma_vez",
+            "servidor::testes_da_saude_do_disco::o_gancho_e_aditivo_o_email_sai_junto",
+        ],
+        "seguem": [
+            "servidor::testes_da_saude_do_disco::sem_gancho_ligado_nada_executa_e_o_email_segue",
+            "servidor::testes_da_saude_do_disco::erro_de_es_numa_gravacao_avisa_na_hora_e_uma_vez_so",
+        ],
+    },
+    {
+        "id": "gancho-sem-portao-ligado",
+        "titulo": "o gancho executa mesmo com `alertas.gancho.ligado` falso",
+        "porque": (
+            "guarda nova entra pedida, nao imposta: quem nao ligou o gancho "
+            "nao pode ver um programa executar. O portao `ligado` vem ANTES "
+            "de montar texto ou chamar `executar`, e e a unica copia dessa "
+            "decisao (a lei da casa: decisao escrita duas vezes envelhece)."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        if !g.ligado {
+            return;
+        }
+        fio.fazendo("chamando o gancho do operador");""",
+        "troca": """        // DEFEITO REPOSTO (pedido 249): sem o portao, o programa
+        // configurado executa mesmo desligado.
+        fio.fazendo("chamando o gancho do operador");""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_da_saude_do_disco::sem_gancho_ligado_nada_executa_e_o_email_segue",
+        ],
+        "seguem": [
+            "servidor::testes_da_saude_do_disco::o_gancho_e_aditivo_o_email_sai_junto",
+        ],
+    },
+    {
+        "id": "gancho-por-shell",
+        "titulo": "o comando do gancho passa por `sh -c`: `;` e `$()` viram execução",
+        "porque": (
+            "`comando` e um vetor argv entregue direto ao execve. Montar uma "
+            "linha e entrega-la ao shell faria um argumento `a;rm -rf /` ou "
+            "`$(id)` executar, e e exatamente o que o parecer proibe. O teste "
+            "imprime cada argumento e exige que cheguem LITERAIS."
+        ),
+        "arquivo": "crates/phxsql-server/src/gancho.rs",
+        "trecho": """    let mut cmd = Command::new(programa);
+    cmd.args(&g.comando[1..])
+""",
+        "troca": """    // DEFEITO REPOSTO (pedido 249): a linha inteira vai ao shell.
+    let mut cmd = Command::new("/bin/sh");
+    cmd.arg("-c")
+        .arg(g.comando.join(" "))
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "gancho::testes::argumento_com_metacaractere_chega_literal",
+        ],
+        "seguem": [
+            "gancho::testes::saida_do_filho_nao_volta_no_erro",
+        ],
+    },
+    {
+        "id": "gancho-ambiente-herdado",
+        "titulo": "o filho do gancho herda o ambiente do servidor",
+        "porque": (
+            "a senha do rele, o token e a chave do fio moram no ambiente de "
+            "quem subiu o servidor. `env_clear` + PATH fixo + as tres "
+            "variaveis do evento e tudo o que o script do operador recebe."
+        ),
+        "arquivo": "crates/phxsql-server/src/gancho.rs",
+        "trecho": """        .env_clear()
+""",
+        "troca": """        // DEFEITO REPOSTO (pedido 249): o ambiente do servidor atravessa.
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "gancho::testes::o_filho_recebe_as_variaveis_e_a_linha_e_nada_mais",
+        ],
+        "seguem": [
+            "gancho::testes::argumento_com_metacaractere_chega_literal",
+        ],
+    },
+    {
+        "id": "gancho-sem-kill-no-prazo",
+        "titulo": "o gancho que passa de `timeout_s` continua vivo",
+        "porque": (
+            "prazo duro: sem `kill`, um script pendurado (gateway fora do ar) "
+            "acumularia um processo por evento, e o carteiro esperaria para "
+            "sempre. A prova e contra o sistema operacional: o pid do filho "
+            "tem de sumir de /proc."
+        ),
+        "arquivo": "crates/phxsql-server/src/gancho.rs",
+        "trecho": """        if Instant::now() >= limite {
+            matar_e_colher(&mut filho);
+""",
+        "troca": """        if Instant::now() >= limite {
+            // DEFEITO REPOSTO (pedido 249): estoura o prazo e deixa vivo.
+            let _ = &filho;
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "gancho::testes::programa_que_estoura_o_prazo_e_morto_e_colhido",
+            "servidor::testes_da_saude_do_disco::gancho_que_estoura_o_prazo_e_morto_e_o_carteiro_segue",
+        ],
+        "seguem": [
+            "gancho::testes::saida_do_filho_nao_volta_no_erro",
+        ],
+    },
+    {
+        "id": "gancho-zumbi",
+        "titulo": "o gancho morto por prazo vira zumbi (kill sem wait)",
+        "porque": (
+            "`kill` sem `wait` deixa o filho na tabela de processos ate o "
+            "servidor cair: um zumbi por estouro de prazo. A prova olha "
+            "/proc/<pid> -- zumbi ainda tem entrada la, com State Z."
+        ),
+        "arquivo": "crates/phxsql-server/src/gancho.rs",
+        "trecho": """    let _ = filho.kill();
+    let _ = filho.wait();
+""",
+        "troca": """    // DEFEITO REPOSTO (pedido 249): mata e nao colhe.
+    let _ = filho.kill();
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "gancho::testes::programa_que_estoura_o_prazo_e_morto_e_colhido",
+            "servidor::testes_da_saude_do_disco::gancho_que_estoura_o_prazo_e_morto_e_o_carteiro_segue",
+        ],
+        "seguem": [
+            "gancho::testes::saida_do_filho_nao_volta_no_erro",
+        ],
+    },
+    {
+        "id": "gancho-saida-do-filho-vaza",
+        "titulo": "o stdout/stderr do gancho cai no stderr do servidor",
+        "porque": (
+            "o script do operador pode imprimir o segredo do gateway (um "
+            "`curl -v`). O filho escreve em /dev/null: o que nao se captura "
+            "nao vai ao log, ao painel nem ao stderr. A prova reexecuta o "
+            "binario de teste e le o stderr do servidor de verdade."
+        ),
+        "arquivo": "crates/phxsql-server/src/gancho.rs",
+        "trecho": """        .stdout(Stdio::null())
+        .stderr(Stdio::null());""",
+        "troca": """        // DEFEITO REPOSTO (pedido 249): a saida do filho e herdada.
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit());""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_da_saude_do_disco::a_sentinela_que_o_gancho_imprime_nao_vaza_para_lugar_nenhum",
+        ],
+        "seguem": [
+            "gancho::testes::saida_do_filho_nao_volta_no_erro",
+        ],
+    },
+    {
+        "id": "gancho-editavel-pela-api",
+        "titulo": "um campo de `alertas.gancho` entra no CAMPOS_EDITAVEIS",
+        "porque": (
+            "o gancho EXECUTA um programa. Com o campo editavel, quem tem "
+            "`administrar` pela API (ou pelo `ALTER SERVER SET`) executa "
+            "codigo no servidor: o campo so se edita pelo arquivo."
+        ),
+        "arquivo": "crates/phxsql-server/src/config.rs",
+        "trecho": """    ("bind", TipoDoCampo::Texto, false),
+    ("max_linhas", TipoDoCampo::Inteiro, true),
+""",
+        "troca": """    ("bind", TipoDoCampo::Texto, false),
+    // DEFEITO REPOSTO (pedido 249): o gancho vira editavel pela API.
+    ("alertas.gancho.ligado", TipoDoCampo::Booleano, false),
+    ("max_linhas", TipoDoCampo::Inteiro, true),
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "config::testes_recursos::nenhum_campo_do_gancho_esta_em_campos_editaveis",
+            "servidor::testes_config_gravar::o_gancho_do_operador_nao_se_grava_pela_api",
+        ],
+        "seguem": [
+            "servidor::testes_config_gravar::grava_no_arquivo_e_aplica_a_quente",
+        ],
+    },
+    {
+        "id": "gancho-nao-valida-no-arranque",
+        "titulo": "`comando[0]` relativo, inexistente ou não executável passa no arranque",
+        "porque": (
+            "a recusa certa e a lida ao subir o servidor (como o `Sms::"
+            "validar`), nao a que o carteiro descobre as tres da manha com o "
+            "disco morrendo. Relativo tambem depende do PATH de quem subiu."
+        ),
+        "arquivo": "crates/phxsql-server/src/config.rs",
+        "trecho": """        if gancho.ligado {
+            gancho.validar()?;
+        }
+""",
+        "troca": """        // DEFEITO REPOSTO (pedido 249): nada e conferido ao subir.
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "config::testes_recursos::o_gancho_recusa_no_arranque_o_que_nao_executaria",
+        ],
+        "seguem": [
+            "config::testes_recursos::alertas_gancho_e_lido_do_arquivo_e_nao_mostra_os_argumentos",
+        ],
+    },
+    {
+        "id": "gancho-config-nao-lida",
+        "titulo": "`alertas.gancho.timeout_s` está no arquivo e ninguém o lê",
+        "porque": (
+            "configuracao que nao e lida mente. Repor o defeito e devolver o "
+            "prazo padrao no lugar do valor do arquivo (e, de quebra, sem o "
+            "teto que protege a thread do carteiro)."
+        ),
+        "arquivo": "crates/phxsql-server/src/config.rs",
+        "trecho": """            timeout_s: (g.inteiro_ou("timeout_s", padrao.timeout_s as i64).max(1) as u64)
+                .min(TETO_DO_PRAZO_DO_GANCHO_S),
+""",
+        "troca": """            // DEFEITO REPOSTO (pedido 249): o campo esta no arquivo e
+            // ninguem o le.
+            timeout_s: padrao.timeout_s,
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "config::testes_recursos::alertas_gancho_e_lido_do_arquivo_e_nao_mostra_os_argumentos",
+        ],
+        "seguem": [
+            "config::testes_recursos::o_gancho_recusa_no_arranque_o_que_nao_executaria",
         ],
     },
     # -----------------------------------------------------------------------

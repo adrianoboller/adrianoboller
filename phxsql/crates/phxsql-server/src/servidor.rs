@@ -29219,7 +29219,10 @@ impl Servidor {
     /// eventos a entregar (os do gancho), e sem e-mail ainda ha canario a
     /// escrever (o painel). So nao sobe quando nao ha nada a fazer.
     fn ligar_sonda_de_disco(self: &Arc<Self>) {
-        if !self.saude.ligada() && !self.config.alertas.email.ligado {
+        if !self.saude.ligada()
+            && !self.config.alertas.email.ligado
+            && !self.config.alertas.gancho.ligado
+        {
             return;
         }
         let d = &self.config.alertas.disco;
@@ -29234,10 +29237,14 @@ impl Servidor {
             d.lento_ms,
             match (
                 self.config.alertas.email.ligado,
-                self.config.alertas.sms.ligado
+                self.config.alertas.sms.ligado,
+                self.config.alertas.gancho.ligado,
             ) {
-                (true, true) => "avisa por e-mail e SMS",
-                (true, false) => "avisa por e-mail",
+                (true, true, true) => "avisa por e-mail, SMS e gancho do operador",
+                (true, false, true) => "avisa por e-mail e gancho do operador",
+                (true, true, false) => "avisa por e-mail e SMS",
+                (true, false, false) => "avisa por e-mail",
+                (false, _, true) => "avisa pelo gancho do operador (e-mail desligado)",
                 _ => "so no painel (e-mail desligado)",
             }
         );
@@ -29314,6 +29321,24 @@ impl Servidor {
         if !evento.tipo.e_erro() {
             return;
         }
+        // Os dois meios sao independentes: o gancho do operador sai com o
+        // e-mail desligado (e o e-mail sem gancho), e o erro de um nunca
+        // impede o outro. O e-mail e o SMS-por-gateway vao primeiro, porque
+        // sao o comportamento que ja existia; o gancho vem depois, com prazo.
+        self.avisar_por_email_e_sms(fio, &evento, fora_do_disco);
+        self.avisar_pelo_gancho(fio, &evento);
+    }
+
+    /// O e-mail e o SMS por e-mail-para-SMS da operadora -- o aviso de
+    /// sempre, so movido para ca para o gancho nao herdar os `return` dele.
+    fn avisar_por_email_e_sms(
+        &self,
+        fio: &crate::telemetria::Fio,
+        evento: &crate::saude_do_disco::Evento,
+        fora_do_disco: bool,
+    ) {
+        let backup = evento.tipo == crate::saude_do_disco::Tipo::Backup;
+        let arranque = evento.tipo == crate::saude_do_disco::Tipo::Arranque;
         let email = self.config.alertas.email.clone();
         // O SMS ja nasce validado como «so com e-mail ligado» (config.rs).
         if !email.ligado {
@@ -29332,13 +29357,13 @@ impl Servidor {
             )
         };
         let corpo = if backup {
-            self.texto_do_aviso_de_backup(&evento)
+            self.texto_do_aviso_de_backup(evento)
         } else if arranque {
-            self.texto_do_aviso_do_arranque(&evento)
+            self.texto_do_aviso_do_arranque(evento)
         } else {
-            self.texto_do_aviso_de_saude(&evento)
+            self.texto_do_aviso_de_saude(evento)
         };
-        let linha_sms = Self::texto_do_sms_de_saude(&evento);
+        let linha_sms = Self::texto_do_sms_de_saude(evento);
         // O painel conta os avisos DA SAUDE DO DISCO (a carta diz «o disco
         // onde o banco grava»): o do backup sai pelo mesmo carteiro e fica
         // fora da conta dela, com o log proprio.
@@ -29383,6 +29408,41 @@ impl Servidor {
                 crate::agora_ms(),
             );
         }
+    }
+
+    /// O gancho externo do operador (pedido 249). O ERRO dele e so log e
+    /// `avisos.ultima_falha`: o aviso que nao saiu por aqui nao pode
+    /// derrubar o carteiro nem esconder o que saiu pelos outros meios.
+    ///
+    /// Roda na thread `sonda-disco`, fora de qualquer trava, e o portao
+    /// (`ligado`) vem ANTES de montar qualquer texto: desligado custa um
+    /// `if`. O texto e o MESMO do SMS por e-mail -- uma linha, ate 160
+    /// caracteres, sem caminho --, e e tudo o que o programa recebe do
+    /// evento; o pedido que provocou o erro nunca chega aqui.
+    fn avisar_pelo_gancho(
+        &self,
+        fio: &crate::telemetria::Fio,
+        evento: &crate::saude_do_disco::Evento,
+    ) {
+        let g = &self.config.alertas.gancho;
+        if !g.ligado {
+            return;
+        }
+        fio.fazendo("chamando o gancho do operador");
+        let quando = phxsql_core::datahora::instante_iso(evento.quando_ms);
+        let linha = Self::texto_do_sms_de_saude(evento);
+        let chamada = crate::gancho::Chamada {
+            tipo: evento.tipo.nome(),
+            origem: &evento.origem,
+            quando: &quando,
+            linha: &linha,
+        };
+        let r = crate::gancho::executar(g, &chamada, &self.saude.gancho_em_voo);
+        match &r {
+            Ok(()) => eprintln!("gancho do operador executado ({})", evento.tipo.nome()),
+            Err(e) => eprintln!("gancho do operador NAO EXECUTADO: {e}"),
+        }
+        self.saude.anotar_aviso("gancho", r, crate::agora_ms());
     }
 
     fn tipo_de_saude_legivel(tipo: crate::saude_do_disco::Tipo) -> &'static str {
@@ -47204,6 +47264,54 @@ mod testes_config_gravar {
         assert_eq!(s.max_linhas(), 1000);
     }
 
+    /// O gancho do operador EXECUTA um programa: se `alertas.gancho.*` fosse
+    /// editavel pela API, quem tem `administrar` executaria codigo no
+    /// servidor. Tentam-se todas as formas de chegar la -- campo a campo, a
+    /// secao inteira, e pelo `ALTER SERVER SET` (que desemboca na mesma
+    /// operacao) --, e o arquivo tem de sair igual.
+    ///
+    /// Reponha o defeito (acrescente `("alertas.gancho.comando", ...)` aos
+    /// `CAMPOS_EDITAVEIS`) e a primeira tentativa grava.
+    #[test]
+    fn o_gancho_do_operador_nao_se_grava_pela_api() {
+        let (s, caminho, _guarda) = servidor_de_arquivo("gancho", Cadastro::default());
+        let antes = std::fs::read_to_string(&caminho).unwrap();
+        let sessao = Sessao::default();
+        for campos in [
+            r#"{"alertas.gancho.comando":["/bin/sh","-c","id"]}"#,
+            r#"{"alertas.gancho.ligado":true}"#,
+            r#"{"alertas.gancho.timeout_s":5}"#,
+            r#"{"alertas.gancho":{"ligado":true,"comando":["/bin/true"]}}"#,
+            r#"{"alertas":{"gancho":{"ligado":true,"comando":["/bin/true"]}}}"#,
+        ] {
+            let e = s
+                .executar(
+                    "config_gravar",
+                    &pedido(&format!(r#"{{"campos":{campos}}}"#)),
+                    &sessao,
+                )
+                .expect_err(campos);
+            assert!(
+                format!("{e}").contains("nao se grava pela tela"),
+                "{campos}: {e}"
+            );
+        }
+        let e = s
+            .executar(
+                "diretiva_gravar",
+                &pedido(r#"{"escopo":"servidor","campo":"alertas.gancho.ligado","valor":true}"#),
+                &sessao,
+            )
+            .expect_err("ALTER SERVER SET chegou ao gancho");
+        assert!(format!("{e}").contains("nao se grava pela tela"), "{e}");
+        assert_eq!(
+            std::fs::read_to_string(&caminho).unwrap(),
+            antes,
+            "o arquivo mudou apesar da recusa"
+        );
+        assert!(!s.config.alertas.gancho.ligado);
+    }
+
     /// O token e o resto dos segredos nao se gravam por aqui -- e a resposta
     /// da operacao tambem nao os carrega de volta.
     #[test]
@@ -63260,6 +63368,356 @@ mod testes_da_saude_do_disco {
         let (cabecalho, corpo) = bruto.split_once("\r\n\r\n").unwrap();
         let texto = phxsql_core::base64::decodificar_texto(&corpo.replace("\r\n", "")).unwrap();
         (cabecalho.to_string(), texto)
+    }
+
+    // ------------------------------------- o gancho externo do operador (249)
+
+    /// Liga o gancho do operador na configuracao do teste.
+    #[cfg(unix)]
+    fn com_gancho(c: &mut Config, comando: Vec<String>, timeout_s: u64) {
+        c.alertas.gancho = crate::config::Gancho {
+            ligado: true,
+            comando,
+            timeout_s,
+        };
+    }
+
+    /// Espera o arquivo ter `linhas` linhas, ate `ate`. Devolve o que houver.
+    #[cfg(unix)]
+    fn esperar_linhas(caminho: &std::path::Path, linhas: usize, ate: Duration) -> String {
+        let fim = Instant::now() + ate;
+        loop {
+            let t = std::fs::read_to_string(caminho).unwrap_or_default();
+            if t.lines().count() >= linhas || Instant::now() >= fim {
+                return t;
+            }
+            std::thread::sleep(Duration::from_millis(25));
+        }
+    }
+
+    /// O pedido do papel J: disco com defeito de verdade (o `.reg` virou
+    /// diretorio -> `EISDIR`; o contêiner roda como root e `chmod` nao
+    /// prova EROFS) dispara o gancho PELO SOQUETE, que passa pelo `anotar`.
+    /// O e-mail esta DESLIGADO de proposito: o gancho e um meio proprio, e
+    /// nao carona do rele. O segundo erro do mesmo tipo, dentro da janela,
+    /// nao executa nada (o silencio por tipo e o do carteiro, o mesmo).
+    ///
+    /// Reponha o defeito (tire a chamada `avisar_pelo_gancho` do carteiro) e
+    /// este teste cai na espera do arquivo.
+    #[cfg(unix)]
+    #[test]
+    fn erro_de_es_numa_gravacao_chama_o_gancho_uma_vez_so() {
+        let dir = DirTemp::novo("gancho-aviso");
+        let apoio = crate::gancho::apoio_de_teste::dir("aviso");
+        let saida = apoio.join("saida.txt");
+        let s_ = crate::gancho::apoio_de_teste::script(
+            &apoio,
+            "g.sh",
+            &format!(
+                "{{ echo \"$PHXSQL_TIPO|$PHXSQL_ORIGEM|$PHXSQL_QUANDO\"; cat; }} >> {}",
+                saida.display()
+            ),
+        );
+        let mut c = config_base(&dir);
+        com_gancho(&mut c, vec![s_], 5);
+        assert!(!c.alertas.email.ligado, "o teste e do gancho SEM e-mail");
+        let s = Servidor::novo(c).unwrap();
+        com_tabela_quebrada(&s, &dir);
+        s.ligar_sonda_de_disco();
+        let porta = porta_de_dados_de_verdade(&s);
+
+        let inicio = Instant::now();
+        assert_eq!(inserir_quebrado(porta), CODIGO_DE_ES as u64);
+        let t = esperar_linhas(&saida, 2, Duration::from_secs(10));
+        assert!(
+            inicio.elapsed() < Duration::from_secs(5),
+            "o gancho nao foi imediato"
+        );
+        let linhas: Vec<&str> = t.lines().collect();
+        assert_eq!(linhas.len(), 2, "esperava variaveis + a linha: {t:?}");
+        assert!(linhas[0].starts_with("entrada_saida|inserir|20"), "{t}");
+        assert!(linhas[1].starts_with("PhxSql "), "{t}");
+        assert!(linhas[1].contains("erro de E/S"), "{t}");
+        assert!(linhas[1].chars().count() <= 160, "{t}");
+        // Nunca o caminho do disco e nunca o pedido.
+        let base = dir.display().to_string();
+        assert!(!t.contains(&base), "o gancho recebeu o caminho: {t}");
+        assert!(!t.contains("valores"), "o gancho recebeu o pedido: {t}");
+
+        // O segundo erro do MESMO tipo, dentro da janela: nada executa.
+        inserir_quebrado(porta);
+        std::thread::sleep(Duration::from_millis(700));
+        assert_eq!(
+            std::fs::read_to_string(&saida).unwrap().lines().count(),
+            2,
+            "o segundo erro dentro da janela executou o gancho de novo"
+        );
+        // O painel conta o gancho entregue.
+        let fim = Instant::now() + Duration::from_secs(5);
+        let mut n = 0.0;
+        while n < 1.0 && Instant::now() < fim {
+            n = s
+                .op_saude_disco(&Sessao::default())
+                .campo("avisos")
+                .and_then(|a| a.campo("gancho"))
+                .and_then(Json::numero)
+                .unwrap_or(0.0);
+            std::thread::sleep(Duration::from_millis(25));
+        }
+        assert_eq!(n, 1.0, "o painel nao contou o gancho");
+    }
+
+    /// Tres erros do mesmo tipo seguidos -> UMA execucao (o silencio por
+    /// tipo), pelo `evento_de_disco` que e o que o `anotar` e o fecho
+    /// chamam. Um tipo DIFERENTE passa: o silencio e por tipo.
+    #[cfg(unix)]
+    #[test]
+    fn tres_erros_do_mesmo_tipo_executam_o_gancho_uma_vez() {
+        let dir = DirTemp::novo("gancho-silencio");
+        let apoio = crate::gancho::apoio_de_teste::dir("silencio");
+        let saida = apoio.join("saida.txt");
+        let g = crate::gancho::apoio_de_teste::script(
+            &apoio,
+            "g.sh",
+            &format!("echo \"$PHXSQL_TIPO\" >> {}", saida.display()),
+        );
+        let mut c = config_base(&dir);
+        com_gancho(&mut c, vec![g], 5);
+        let s = Servidor::novo(c).unwrap();
+        s.ligar_sonda_de_disco();
+        use crate::saude_do_disco::Tipo;
+        for _ in 0..3 {
+            s.evento_de_disco(Tipo::EntradaSaida, "inserir", "b", "t", "x");
+        }
+        esperar_linhas(&saida, 1, Duration::from_secs(10));
+        s.evento_de_disco(Tipo::SemEspaco, "inserir", "b", "t", "y");
+        let t = esperar_linhas(&saida, 2, Duration::from_secs(10));
+        std::thread::sleep(Duration::from_millis(400));
+        let t2 = std::fs::read_to_string(&saida).unwrap();
+        assert_eq!(t, t2, "execucao a mais depois do silencio");
+        assert_eq!(
+            t.lines().collect::<Vec<_>>(),
+            vec!["entrada_saida", "sem_espaco"],
+            "{t}"
+        );
+    }
+
+    /// Sem `gancho.ligado` NADA executa -- o comportamento velho. O programa
+    /// esta configurado e e valido; so o interruptor esta desligado. E o
+    /// e-mail continua saindo, intacto.
+    #[cfg(unix)]
+    #[test]
+    fn sem_gancho_ligado_nada_executa_e_o_email_segue() {
+        let dir = DirTemp::novo("gancho-off");
+        let apoio = crate::gancho::apoio_de_teste::dir("off");
+        let marca = apoio.join("rodou");
+        let g = crate::gancho::apoio_de_teste::script(
+            &apoio,
+            "g.sh",
+            &format!("echo x >> {}", marca.display()),
+        );
+        let (porta_rele, caixa) = rele_falso();
+        let mut c = config_base(&dir);
+        com_rele(&mut c, porta_rele, false);
+        com_gancho(&mut c, vec![g], 5);
+        c.alertas.gancho.ligado = false;
+        let s = Servidor::novo(c).unwrap();
+        com_tabela_quebrada(&s, &dir);
+        s.ligar_sonda_de_disco();
+        inserir_quebrado(porta_de_dados_de_verdade(&s));
+        caixa
+            .recv_timeout(Duration::from_secs(10))
+            .expect("o e-mail velho parou de sair");
+        std::thread::sleep(Duration::from_millis(500));
+        assert!(!marca.exists(), "executou com gancho.ligado = false");
+    }
+
+    /// ADITIVO: com o e-mail E o gancho ligados, os dois saem pelo mesmo
+    /// evento -- o gancho nao substitui o e-mail.
+    #[cfg(unix)]
+    #[test]
+    fn o_gancho_e_aditivo_o_email_sai_junto() {
+        let dir = DirTemp::novo("gancho-aditivo");
+        let apoio = crate::gancho::apoio_de_teste::dir("aditivo");
+        let marca = apoio.join("rodou");
+        let g = crate::gancho::apoio_de_teste::script(
+            &apoio,
+            "g.sh",
+            &format!("echo x >> {}", marca.display()),
+        );
+        let (porta_rele, caixa) = rele_falso();
+        let mut c = config_base(&dir);
+        com_rele(&mut c, porta_rele, false);
+        com_gancho(&mut c, vec![g], 5);
+        let s = Servidor::novo(c).unwrap();
+        com_tabela_quebrada(&s, &dir);
+        s.ligar_sonda_de_disco();
+        inserir_quebrado(porta_de_dados_de_verdade(&s));
+        caixa
+            .recv_timeout(Duration::from_secs(10))
+            .expect("o e-mail nao saiu com o gancho ligado");
+        esperar_linhas(&marca, 1, Duration::from_secs(10));
+        assert!(marca.exists(), "o gancho nao executou ao lado do e-mail");
+    }
+
+    /// Prazo duro, no servidor: o script dorme muito mais que `timeout_s`, o
+    /// filho morre e e COLHIDO (nao sobra zumbi em `/proc`), o erro vira
+    /// `avisos.ultima_falha` -- e o carteiro SEGUE: o evento seguinte, de
+    /// outro tipo, executa o gancho de novo.
+    #[cfg(all(unix, target_os = "linux"))]
+    #[test]
+    fn gancho_que_estoura_o_prazo_e_morto_e_o_carteiro_segue() {
+        let dir = DirTemp::novo("gancho-prazo");
+        let apoio = crate::gancho::apoio_de_teste::dir("prazo");
+        let log = apoio.join("log.txt");
+        let g = crate::gancho::apoio_de_teste::script(
+            &apoio,
+            "g.sh",
+            &format!(
+                "echo \"$PHXSQL_TIPO $$\" >> {}; exec sleep 60",
+                log.display()
+            ),
+        );
+        let mut c = config_base(&dir);
+        com_gancho(&mut c, vec![g], 1);
+        let s = Servidor::novo(c).unwrap();
+        s.ligar_sonda_de_disco();
+        use crate::saude_do_disco::Tipo;
+        s.evento_de_disco(Tipo::EntradaSaida, "inserir", "b", "t", "x");
+        s.evento_de_disco(Tipo::SemEspaco, "inserir", "b", "t", "y");
+        // Dois prazos de 1 s, em fila: o carteiro nao ficou preso no primeiro.
+        let t = esperar_linhas(&log, 2, Duration::from_secs(15));
+        assert_eq!(t.lines().count(), 2, "o carteiro nao seguiu: {t:?}");
+        let pids: Vec<u32> = t
+            .lines()
+            .map(|l| l.split(' ').nth(1).unwrap().parse().unwrap())
+            .collect();
+        // Espera o segundo kill acontecer (o prazo dele corre depois da linha).
+        let fim = Instant::now() + Duration::from_secs(10);
+        while pids
+            .iter()
+            .any(|p| std::path::Path::new(&format!("/proc/{p}")).exists())
+            && Instant::now() < fim
+        {
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        for p in &pids {
+            assert!(
+                !std::path::Path::new(&format!("/proc/{p}")).exists(),
+                "o filho {p} do gancho continua vivo ou zumbi"
+            );
+        }
+        let falha = s
+            .op_saude_disco(&Sessao::default())
+            .campo("avisos")
+            .and_then(|a| a.campo("ultima_falha"))
+            .and_then(Json::texto)
+            .map(str::to_string)
+            .unwrap_or_default();
+        assert!(
+            falha.starts_with("gancho: ") && falha.contains("foi morto"),
+            "ultima_falha = {falha:?}"
+        );
+    }
+
+    /// A sentinela de segredo que o script imprime em stdout e stderr NAO
+    /// chega ao `acessos.log`, ao painel, a `op_saude_disco` NEM ao stderr do
+    /// servidor. O stderr so se prova em outro processo: o teste reexecuta
+    /// este binario (`filho_do_gancho_com_sentinela`) com `--nocapture` e
+    /// le o que o servidor de verdade escreveu.
+    #[cfg(unix)]
+    #[test]
+    fn a_sentinela_que_o_gancho_imprime_nao_vaza_para_lugar_nenhum() {
+        const FILHO: &str = "servidor::testes_da_saude_do_disco::filho_do_gancho_com_sentinela";
+        let apoio = crate::gancho::apoio_de_teste::dir("sentinela");
+        let saida = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", FILHO, "--nocapture", "--test-threads=1"])
+            .env("PHX_TESTE_FILHO_DO_GANCHO", apoio.as_os_str())
+            .output()
+            .unwrap();
+        let out = String::from_utf8_lossy(&saida.stdout).to_string();
+        let err = String::from_utf8_lossy(&saida.stderr).to_string();
+        assert!(saida.status.success(), "o filho falhou:\n{out}\n{err}");
+        assert!(
+            out.contains("1 passed") || out.contains("test result: ok"),
+            "{out}"
+        );
+        // O servidor DE VERDADE falou do gancho no stderr: sem isto, a
+        // ausencia da sentinela nao provaria nada.
+        assert!(
+            err.contains("gancho do operador NAO EXECUTADO: o gancho saiu com codigo 3"),
+            "o carteiro nao escreveu o erro do gancho:\n{err}"
+        );
+        for (onde, texto) in [("stdout", &out), ("stderr", &err)] {
+            assert!(
+                !texto.contains("SENTINELA-DE-SEGREDO"),
+                "a sentinela vazou para o {onde} do servidor:\n{texto}"
+            );
+        }
+    }
+
+    /// O corpo do teste acima, rodado no processo filho. Sem a variavel de
+    /// ambiente ele nao faz nada.
+    #[cfg(unix)]
+    #[test]
+    fn filho_do_gancho_com_sentinela() {
+        let Ok(apoio) = std::env::var("PHX_TESTE_FILHO_DO_GANCHO") else {
+            return;
+        };
+        let apoio = std::path::PathBuf::from(apoio);
+        let dir = DirTemp::novo("gancho-sentinela");
+        let marca = apoio.join("rodou");
+        let g = crate::gancho::apoio_de_teste::script(
+            &apoio,
+            "g.sh",
+            &format!(
+                "echo SENTINELA-DE-SEGREDO-STDOUT; echo SENTINELA-DE-SEGREDO-STDERR >&2; \
+                 echo x >> {}; exit 3",
+                marca.display()
+            ),
+        );
+        let mut c = config_base(&dir);
+        com_gancho(&mut c, vec![g], 5);
+        let s = Servidor::novo(c).unwrap();
+        com_tabela_quebrada(&s, &dir);
+        s.ligar_sonda_de_disco();
+        inserir_quebrado(porta_de_dados_de_verdade(&s));
+        esperar_linhas(&marca, 1, Duration::from_secs(10));
+        // A falha do gancho vira `ultima_falha`: espera por ela.
+        let fim = Instant::now() + Duration::from_secs(10);
+        let mut saude = s.op_saude_disco(&Sessao::default());
+        while saude
+            .campo("avisos")
+            .and_then(|a| a.campo("ultima_falha"))
+            .and_then(Json::texto)
+            .is_none()
+            && Instant::now() < fim
+        {
+            std::thread::sleep(Duration::from_millis(25));
+            saude = s.op_saude_disco(&Sessao::default());
+        }
+        let falha = saude
+            .campo("avisos")
+            .and_then(|a| a.campo("ultima_falha"))
+            .and_then(Json::texto)
+            .unwrap_or_default()
+            .to_string();
+        assert_eq!(falha, "gancho: o gancho saiu com codigo 3");
+        // Da carga: o eprintln do carteiro tem de sair ANTES de o processo
+        // acabar; o log e o painel sao lidos agora.
+        std::thread::sleep(Duration::from_millis(200));
+        let log = std::fs::read_to_string(dir.join("acessos.log")).unwrap_or_default();
+        let painel = s.op_painel(&Sessao::default()).unwrap().escrever();
+        for (onde, texto) in [
+            ("acessos.log", log),
+            ("painel", painel),
+            ("saude", saude.escrever()),
+        ] {
+            assert!(
+                !texto.contains("SENTINELA-DE-SEGREDO"),
+                "a sentinela vazou para {onde}"
+            );
+        }
     }
 
     /// O portao do gancho compara com 5001: se o codigo do `Io` mudar, este
