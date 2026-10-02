@@ -7081,7 +7081,11 @@ function copiarTabela(db, tab) {
 /** A tela de colar: escolhe destino e nome, e diz o que vai acontecer. */
 function telaCopiarColar(db) {
   const c = est.copia;
-  const bancos = est.bancos || [];
+  // O banco de onde se chegou entra SEMPRE na lista: `est.bancos` e a ultima
+  // foto da arvore, e um banco criado por fora (outra aba, outro cliente) ainda
+  // nao esta nela -- o select ficava vazio, `cc_db` voltava "" e o Colar
+  // seguia para um destino sem nome, abrindo depois «Tabelas de » em branco.
+  const bancos = [...new Set([db, ...(est.bancos || [])].filter(Boolean))];
 
   folha(txt("tela.tt_copiar_colar","Copiar e colar tabela"), c ? `na área: ${c.db}.${c.tab}` : "nada copiado ainda",
     !c
@@ -9079,13 +9083,16 @@ async function telaImportar(db, tab) {
          <span class="leg"><b>Não há transação.</b> O que entrou antes do erro
            fica gravado — não há como desfazer, porque o <code>.reg</code> não
            reaproveita slot e desfazer deixaria buracos.</span></label>
-     </div>
+     <!-- DENTRO do .form-dbl: o .cmp.largo so tem o estilo (coluna, dica
+          em minuscula, caixa que ocupa a linha) la dentro. Fora dele a caixa
+          da carga media ~166 px e a dica virava um grito de caixa alta. -->
      <label class="cmp largo"><span>A carga</span>
        <textarea id="impTexto" rows="12" class="campo mono"
          placeholder="id;nome;cidade&#10;1;Adriano;Blumenau&#10;2;Maria;Itajaí"></textarea>
        <span class="leg">A primeira linha é o <b>cabeçalho</b>, e os nomes são
          casados com as colunas da tabela <b>por nome</b> — não por posição.
          Coluna que a tabela não tem é erro; coluna que falta fica nula.</span></label>
+     </div>
      <div class="acoes">
        <button class="botao secundario" id="btPrever">Conferir</button>
        <button class="botao incluir" id="btImportar" disabled>Gravar</button>
@@ -11910,10 +11917,12 @@ async function telaDiagramaER(db, vez = vezDoPainel()) {
        outra tabela; o <b>clique</b> numa caixa abre o cartão dela. As posições
        ficam guardadas <em>neste navegador</em> (localStorage, por database) —
        outro navegador vê o layout automático.</p>
-       <p><strong>A chave estrangeira é DECLARADA, não imposta.</strong> Ela
-       alimenta o esquema, este desenho e o gerador de junções; o motor
-       <em>não</em> a confere na gravação — há teste que trava exatamente esse
-       comportamento, e o cartão de declarar repete essa verdade.</p>
+       <p>${marcado(txt("tela.er_nota_fk_1",
+         "**A chave estrangeira é declarada e conferida.** Ela alimenta o esquema, este desenho e o gerador de junções."))}
+       ${marcado(txt("tela.er_nota_fk_2",
+         "O motor a confere na gravação: filha sem mãe é recusada, e mãe com filha não é excluída."))}
+       ${marcado(txt("tela.er_nota_fk_3",
+         "Quem quer declarar sem conferir pede `verificar: false` pelo protocolo — escolha escrita, e não esquecimento."))}</p>
        <p>Cada caixa mostra até ${PhxER.MEDIDAS.maxColunas} colunas, com a chave
        primeiro — o resto vira uma contagem. As colunas de sistema
        (<code>rownum</code>, <code>softdeleted</code>) não entram: elas são do
@@ -11997,7 +12006,11 @@ function cartaoDeclararFk(db, de, para) {
                  ["cascata", "cascata — repete a operação nas filhas"],
                  ["anular", "anular — anula as colunas da filha"],
                  ["nada", "nada — não faz nada"]];
-  const selAcao = id => `<select id="${id}">${ACOES.map(([v, r]) =>
+  // O EXCLUIR so oferece `restringir`: o servidor recusa as outras tres na
+  // declaracao («nunca se mata o pai que tem filhos»), entao oferece-las era
+  // montar um menu cujas tres opcoes terminam em erro. O ALTERAR tem as quatro.
+  const selAcao = (id, so) => `<select id="${id}">${ACOES
+    .filter(([v]) => !so || so.includes(v)).map(([v, r]) =>
     `<option value="${v}">${esc(r)}</option>`).join("")}</select>`;
 
   const c = cartaoER(`
@@ -12019,14 +12032,14 @@ function cartaoDeclararFk(db, de, para) {
     <div class="form-dbl">
       <label class="cmp"><span>nome da chave</span>
         <input id="fkNome" value="${esc(nome)}"></label>
-      <label class="cmp"><span>ao excluir a linha-mãe</span>${selAcao("fkExc")}</label>
+      <label class="cmp"><span>ao excluir a linha-mãe</span>${selAcao("fkExc", ["restringir"])}</label>
       <label class="cmp"><span>ao alterar a chave da mãe</span>${selAcao("fkAlt")}</label>
     </div>
-    <div class="aviso" style="margin-top:12px"><strong>Declarada, não
-      imposta.</strong> O motor guarda a chave no esquema — este desenho, o
-      <code>esquema</code> e o gerador de junções a leem — mas <em>não</em> a
-      confere ao gravar: uma filha órfã ainda entra. Há teste que trava esse
-      comportamento; quando a imposição existir, este cartão muda junto.</div>
+    <div class="aviso" style="margin-top:12px">${marcado(txt("tela.fk_card_1",
+      "**Declarada e conferida.** A chave nasce conferida na gravação: filha sem mãe é recusada."))}
+      ${marcado(txt("tela.fk_card_2",
+      "Mãe que tem filha também não é excluída — nunca se mata o pai que tem filhos."))}
+      ${marcado(txt("tela.fk_card_3", "Por isso o excluir só aceita `restringir`."))}</div>
     <div id="fkRecado"></div>
     <div class="acoes">
       <button class="botao incluir" id="fkOk">Declarar a chave</button>
@@ -12505,14 +12518,18 @@ async function telaDadosPessoais(db) {
         nos_indices: a.coluna.nos_indices, descricao: a.coluna.descricao,
       })),
       pagina: { tamanho: 100, opcoes: [50, 100, 200] },
-      aoAbrirLinha: l => abrirTabela(l.base, l.tabela).then(() => irAba("estrutura")),
+      aoAbrirLinha: l => { est.aba = "estrutura"; return abrirTabela(l.base, l.tabela); },
     });
 
+    // A aba «Estrutura» vai por `est.aba` ANTES de abrir, e nao por um
+    // `.then(() => irAba(...))`: o `.then` toma o painel DE NOVO quando a
+    // tabela termina de abrir, e quem tivesse clicado noutra tela nesse meio
+    // tempo a via ser atropelada pela Estrutura (achado exercitando, caso 42).
     $("#gradeLgpd").addEventListener("click", ev => {
       const bTrilha = ev.target.closest(".trilha-lg");
       if (bTrilha) return telaTrilhaLgpd(bTrilha.dataset.db, bTrilha.dataset.tab);
       const bLg = ev.target.closest(".bt-lg");
-      if (bLg) abrirTabela(bLg.dataset.db, bLg.dataset.tab).then(() => irAba("estrutura"));
+      if (bLg) { est.aba = "estrutura"; abrirTabela(bLg.dataset.db, bLg.dataset.tab); }
     });
   }
 }
@@ -15374,7 +15391,10 @@ async function verQuemSou() {
 async function verSobre() {
   const vez = tomarPainel();
   let v = "—";
-  try { v = (await api("ping")).versao || "—"; } catch (e) { /* offline: segue */ }
+  // O ping responde a versao em `phxsql` (e nao em `versao`): lendo o campo
+  // errado a ficha «versão» da tela Sobre saia sempre «—» -- achado clicando
+  // no «?» da barra (caso 46).
+  try { const p = await api("ping"); v = p.phxsql || p.versao || "—"; } catch (e) { /* offline: segue */ }
   if (!aindaNoPainel(vez)) return;
   folha(txt("tela.mi_sobre","Sobre o PhxSql"), "Built to store. Engineered to scale.",
     `<div class="fichas">

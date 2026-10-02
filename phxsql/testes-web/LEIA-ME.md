@@ -67,6 +67,14 @@ Um por arquivo em `casos/`, na ordem do nome. A lista abaixo é o que cada um
 | `botoes-do-job` | a ficha do job: criar (nasce desligado), gravar alterações, rodar agora (soma UMA corrida), excluir recusando e aceitando o `confirm`. A prova é a op `jobs`, não a frase da tela |
 | `botoes-da-telemetria` | a barra e a legenda do painel vivo: a pausa deixa o relógio mudo, o Agora pede com a tela pausada, ligar/desligar muda a coleta no servidor, a legenda some e volta. Os rótulos esperados vêm da fábrica de idiomas |
 | `botoes-da-claude` | os doze botões da integração com a Claude **sem chave real**: a rota `https://api.anthropic.com/v1/messages` é interceptada (`page.route`) e responde o SSE do contrato; a chave é fabricada. Confere que a chave repousa na aba, nunca no disco, nunca num pedido ao `phxsqld`, e que o painel «o que vai subir» a mascara |
+| `botoes-da-gestao-de-tabela` | a gestão de tabela e de banco que só navega ou só confirma: partições (as **duas** formas, arquivo único e paginada), configuração, reparar índice (e a recusa de reparar sem espelho), importar uma carga (conferir → gravar, caixa da carga legível), exportar, soma de verificação, copiar/colar/esvaziar, motivos (inclusive a **recusa a quem não administra**), lixeira e «ver inteira», restaurar pela ficha, SysTables/SysColumns. Achou a **caixa da carga de 166 px com a dica em caixa alta** (o rótulo estava fora do `.form-dbl`) |
+| `botoes-de-sessoes-servico-e-profiler` | o **segundo cliente é um soquete real** (`conexaoViva`, em `apoio.mjs`): «Encerrar» uma conexão (recusar o `confirm` não derruba; aceitar fecha o soquete VISTO DE FORA), «Encerrar» uma sessão web de outro navegador, Parar/Subir a porta de dados (cliente novo leva recusa, o conectado segue) — devolvida num `finally` —, ligar/limpar/parar o profiler |
+| `botoes-da-telemetria-viva` | `#tlmEstacao`, `[data-nivel]`, `#tlmDerrubar` e `#tlmEncerrar` com gente conectada. O «Encerrar a operação» precisa de uma operação **viva**: uma carga de 1,6 milhão de linhas (~46 MB) que o servidor leva ~9 s para ler e gravar — medido que escrita concorrente em outra tabela não espera e que escrita contra tabela em transação é recusada na hora, então nenhuma das duas serve |
+| `botoes-de-lgpd-e-bloqueios` | «Varrer de novo» (acha a coluna marcada que nasceu depois de a tela abrir), o nome da tabela e «quem mexeu», «Reler» da trilha, «Gerar» para o firewall, «Salvar whitelist» (e a recusa de regra ilegível) e «soltar» um IP **realmente bloqueado** (`bloquearIp`: seis tokens errados de 127.0.0.2). Achou o `.then(irAba)` que atropelava a tela pedida depois |
+| `botoes-de-configuracao` | «Salvar no config.json», «Descartar», «de fábrica» e «Voltar às cores de fábrica» conferidos NO SERVIDOR (o ajuste mexido é só a cor da bolha, que não muda comportamento nenhum), «Editar em Gerais» e o editor de menu |
+| `botoes-de-restaurar-backup` | restaurar com outro nome, «Restaurar outra cópia», e **por cima**: nasce travado, só libera com o nome exato, a porta de dados parada é exigida e a linha que entrou depois da cópia some |
+| `botoes-do-modelo-e-do-conflito` | o cartão de declarar chave (**mouse de verdade**: arrasto de coluna a coluna), cancelar, declarar (e a filha sem mãe é recusada), e os dois botões do diálogo de conflito. Achou o cartão dizendo **«declarada, não imposta»** e o menu «ao excluir» oferecendo três opções que o servidor recusa |
+| `botoes-de-telas-avulsas` | conexões salvas (a senha e o token **não** vão para o navegador), o «?» da barra, os **sete formatos** da junção por contagem, a união, consulta na memória, ajuste de contador, mensagens, atualizar jobs, fechar o acompanhar-réplica, alinhar monitores (API dublada, como em `monitores`) e a célula JSON da grade. Achou a ficha «versão» do «Sobre» sempre em «—» |
 
 ## A prova real dos casos de botão: `prova-real-botoes.mjs`
 
@@ -79,6 +87,15 @@ Serve a página por um proxy reverso que **repõe um defeito** (botão morto,
 controle sem defeito exige que passe. Não recompila o `phxsqld`. Cada reposição
 confere que o trecho existe — se a tela mudar de forma, a prova grita em vez de
 passar sem repor nada.
+
+Hoje são **67 defeitos e 13 controles** (um por caso de botão), e cada corrida
+demora ~40 min porque o defeito pego espera o fim de um `waitFor` de 20 s: use
+`--so <pedaço>` para um caso só. **Um defeito que PASSA é achado, não ruído** —
+na rodada de 02/10/2026 quatro passaram (um seletor cujo `onchange` já fazia o
+trabalho do botão, uma corrida sorteada, um texto de reserva que só vale sem a
+chave, uma defesa em duas camadas) e cada um virou conserto do **caso**. O
+`conferirBinario` da bateria também vale aqui: mexeu em `ui/`, recompile o
+`phxsqld` antes (`cargo build --release -p phxsql-server --bin phxsqld`).
 
 ## O que a bateria GRAVOU: `botoes-exercitados.txt`
 

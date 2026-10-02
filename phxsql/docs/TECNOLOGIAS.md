@@ -34,20 +34,20 @@ foi estimado no lugar de uma medição que faltou.
 <!-- GERADO: bloco_linguagens_rust() -->
 | crate | arquivos .rs | codigo | teste | comentario | vazias | total |
 |---|---:|---:|---:|---:|---:|---:|
-| `phxsql-cli` | 1 | 866 | 104 | 148 | 81 | 1199 |
+| `phxsql-cli` | 1 | 872 | 104 | 156 | 82 | 1214 |
 | `phxsql-cmd` | 2 | 621 | 110 | 210 | 65 | 1006 |
-| `phxsql-core` | 40 | 15358 | 6000 | 4812 | 2002 | 28172 |
+| `phxsql-core` | 40 | 15408 | 6008 | 4837 | 2004 | 28257 |
 | `phxsql-ffi` | 7 | 1524 | 1786 | 930 | 297 | 4537 |
-| `phxsql-odbc` | 7 | 3164 | 1258 | 1108 | 279 | 5809 |
-| `phxsql-server` | 64 | 56520 | 48427 | 34666 | 7016 | 146629 |
-| `phxsql-sql` | 10 | 7337 | 4124 | 2858 | 843 | 15162 |
-| `phxsql-store` | 29 | 23216 | 5544 | 10650 | 2351 | 41761 |
+| `phxsql-odbc` | 7 | 3319 | 1481 | 1170 | 292 | 6262 |
+| `phxsql-server` | 66 | 59749 | 50748 | 36185 | 7303 | 153985 |
+| `phxsql-sql` | 10 | 7377 | 4179 | 2899 | 852 | 15307 |
+| `phxsql-store` | 33 | 25960 | 6021 | 12089 | 2619 | 46689 |
 | `phxzip` | 9 | 3074 | 501 | 804 | 284 | 4663 |
-| **total** | **169** | **111680** | **67854** | **56186** | **13218** | **248938** |
+| **total** | **175** | **117904** | **70938** | **59280** | **13798** | **261920** |
 
-Proporcao teste/codigo (so `src/`, sem comentario nem linha vazia): **67854/111680 = 0.61×**.
+Proporcao teste/codigo (so `src/`, sem comentario nem linha vazia): **70938/117904 = 0.60×**.
 
-Alem do `src/`: **94** programas de medicao em `examples/` (22821 linhas — bancada em Rust, nao produto nem teste) e **127** arquivos em `tests/` de integracao fora de `src/` (45713 linhas).
+Alem do `src/`: **96** programas de medicao em `examples/` (23269 linhas — bancada em Rust, nao produto nem teste) e **139** arquivos em `tests/` de integracao fora de `src/` (51531 linhas).
 <!-- /GERADO -->
 
 A proporção teste/código sai medida no bloco acima, não digitada aqui. O
@@ -74,17 +74,17 @@ Lista extraida de `crates/phxsql-server/src/http.rs` (todo `include_str!`/`inclu
 
 | arquivo embutido | linhas | KiB |
 |---|---:|---:|
-| `ui/index.html` | 15807 | 898.7 |
+| `ui/index.html` | 15992 | 907.9 |
 | `ui/grid/phx-grid.css` | 178 | 12.8 |
 | `ui/grid/phx-grid.js` | 1860 | 90.1 |
 | `ui/diagrama-er.js` | 712 | 29.1 |
 | `ui/telemetria.css` | 447 | 19.8 |
-| `ui/telemetria.js` | 1820 | 89.2 |
+| `ui/telemetria.js` | 1823 | 89.4 |
 | `ui/multitela.css` | 156 | 8.6 |
 | `ui/multitela.js` | 1588 | 69.0 |
 | `ui/claude.js` | 1533 | 77.8 |
 | `ui/grid/CHANGELOG-phx-grid.md` | 232 | 30.2 |
-| **total (10 arquivos)** | **24333** | **1325.2** |
+| **total (10 arquivos)** | **24521** | **1334.6** |
 
 Em `ui/` mas **fora** do `include_str!`/`include_bytes!` (4 arquivos, não embutidos no binário):
 - `crates/phxsql-server/ui/explorador.css`
@@ -108,11 +108,11 @@ mesmo motivo que o rodapé já errou uma vez.
 <!-- GERADO: bloco_outras_linguagens() -->
 | o que | onde | arquivos | linhas |
 |---|---|---:|---:|
-| JavaScript (prova ponta a ponta) | `testes-web/` | 60 | 13601 |
-| Python (bancada de medicao) | `bancada/` | 140 | 72335 |
+| JavaScript (prova ponta a ponta) | `testes-web/` | 74 | 16321 |
+| Python (bancada de medicao) | `bancada/` | 147 | 77648 |
 | Shell (empacotar, zelador, provas) | todo o repositorio | 27 | 3925 |
-| Markdown (documentacao tecnica) | `docs/`, **recursivo** (inclui `cognicao/`, `dossie/`, `propostas/`, `pmo/`) | 621 | 136291 |
-| Python (geradores de documentacao) | `docs/`, **recursivo** (`dossie/`, `pmo/`, `status/`, `planilha/`, `tecnologias/`, `geradores/`) | 42 | 18770 |
+| Markdown (documentacao tecnica) | `docs/`, **recursivo** (inclui `cognicao/`, `dossie/`, `propostas/`, `pmo/`) | 653 | 139948 |
+| Python (geradores de documentacao) | `docs/`, **recursivo** (`dossie/`, `pmo/`, `status/`, `planilha/`, `tecnologias/`, `geradores/`) | 42 | 19041 |
 
 A linha «Markdown (documentacao tecnica)» acima **exclui o proprio `docs/TECNOLOGIAS.md`** da contagem — ele e a SAIDA deste extrator, e contar a saida como entrada faz cada gravacao mudar o numero que a gravacao seguinte vai ler (pedido 404: tres corridas seguidas sem edicao nenhuma publicaram 106.750 -> 106.752 -> 106.753 linhas, nunca um ponto fixo). Mesmo molde da §17 da setima pagina de status, que escreve «— (esta pagina)» em vez de medir a si mesma.
 <!-- /GERADO -->
@@ -291,7 +291,7 @@ com o motivo escrito**, que é o que a cláusula realmente cobra.
 ### 4.2 Como se mediu
 
 <!-- GERADO: bloco_bancadas() -->
-`bancada/` tem **59** frentes de medicao (acid, alfanumerica, alter, arm, bateria, carga, catastrofes, catracas, cifra, cifra-do-fio, cluster, cobertura-da-tela, colmeia, comparacao, comparativo, concorrencia, conexoes, dblink, diretivas, dns-cloudflare, docker, durabilidade, embutido, exclusao, fts, gaps-sql, gestao, guardas, jobs, lgpd, manual, mvcc, odbc, pacote, particao-por-faixa, pitr, profiler, proibidos, quorum, referencias, registro, replicacao, rest, rotinas, seguranca, sequencias, servermail, sql-exemplos, sqlite, telemetria, tomada, transacoes, uniao, usuarios, utilizacao-padrao, vagas-da-tela, vetorial, windows, zelador), das quais **43** documentam a propria metodologia em `LEIA-ME.md`.
+`bancada/` tem **62** frentes de medicao (acid, alfanumerica, alter, arm, backup, bateria, carga, catastrofes, catracas, cifra, cifra-do-fio, cifra-migracao, cluster, cobertura-da-tela, colmeia, comparacao, comparativo, concorrencia, conexoes, dblink, diretivas, dns-cloudflare, docker, durabilidade, embutido, exclusao, fts, gaps-sql, gestao, guardas, instancia, jobs, lgpd, manual, mvcc, odbc, pacote, particao-por-faixa, pitr, profiler, proibidos, quorum, referencias, registro, replicacao, rest, rotinas, seguranca, sequencias, servermail, sql-exemplos, sqlite, telemetria, tomada, transacoes, uniao, usuarios, utilizacao-padrao, vagas-da-tela, vetorial, windows, zelador), das quais **43** documentam a propria metodologia em `LEIA-ME.md`.
 <!-- /GERADO -->
 
 A carga do lado do motor é
@@ -311,14 +311,16 @@ Conferidores em `crates/phxsql-server/src/`: `conferidor.rs`, `conferidor_botoes
 
 | constante | valor | arquivo |
 |---|---:|---|
+| `TETO_DE_TOQUES_PADRAO` | 1_000_000 | `crates/phxsql-server/src/bidirecional.rs` |
 | `TETO_DE_COLUNAS` | 12 | `crates/phxsql-server/src/bidirecional.rs` |
 | `TETO_DO_VALOR` | phxsql_core::error::TETO_DA_CITACAO | `crates/phxsql-server/src/bidirecional.rs` |
+| `TETO_DO_PRAZO_DO_FIREWALL_S` | 120 | `crates/phxsql-server/src/blacklist.rs` |
 | `TETO_DE_TABELAS_NO_PULSO` | 512 | `crates/phxsql-server/src/cluster.rs` |
 | `TETO_DO_NOME_NO_PULSO` | 256 | `crates/phxsql-server/src/cluster.rs` |
 | `TETO_COLADO` | 0 | `crates/phxsql-server/src/conferidor.rs` |
 | `TETO_FRASE_REPETIDA` | 0 | `crates/phxsql-server/src/conferidor.rs` |
-| `TETO_ROTULOS_E_CRASE` | 871 | `crates/phxsql-server/src/conferidor.rs` |
-| `TETO_BOTAO_SEM_PROVA` | 119 | `crates/phxsql-server/src/conferidor_botoes.rs` |
+| `TETO_ROTULOS_E_CRASE` | 863 | `crates/phxsql-server/src/conferidor.rs` |
+| `TETO_BOTAO_SEM_PROVA` | 0 | `crates/phxsql-server/src/conferidor_botoes.rs` |
 | `TETO_LEITURA_FORA_DO_CANAL` | 0 | `crates/phxsql-server/src/conferidor_canal.rs` |
 | `TETO_TABELA_NA_MAO` | 0 | `crates/phxsql-server/src/conferidor_grades.rs` |
 | `TETO_INVENTARIO_DESCASADO` | 0 | `crates/phxsql-server/src/conferidor_inventario.rs` |
@@ -327,6 +329,7 @@ Conferidores em `crates/phxsql-server/src/`: `conferidor.rs`, `conferidor_botoes
 | `TETO_TEMP_DIR_SOLTO` | 0 | `crates/phxsql-server/src/conferidor_temporarios.rs` |
 | `TETO_TXT_CRU_EM_HTML` | 1 | `crates/phxsql-server/src/conferidor_texto_cru.rs` |
 | `TETO_VERMELHA_SEM_PEDIDO` | 0 | `crates/phxsql-server/src/conferidor_vermelhas.rs` |
+| `TETO_DO_PRAZO_DO_GANCHO_S` | 120 | `crates/phxsql-server/src/config.rs` |
 | `TETO_DE_BYTES_DO_RESULTADO` | TETO_DO_REGISTRO | `crates/phxsql-server/src/dblink/conexao.rs` |
 | `TETO_DE_COLUNAS` | 4096 | `crates/phxsql-server/src/dblink/mod.rs` |
 | `TETO_DE_LINHAS_DE_CONTINUACAO` | 1000 | `crates/phxsql-server/src/email.rs` |
@@ -337,15 +340,16 @@ Conferidores em `crates/phxsql-server/src/`: `conferidor.rs`, `conferidor_botoes
 | `TETO` | Duration::from_secs(60) | `crates/phxsql-server/src/replica.rs` |
 | `TETO_DA_FILA` | 32 | `crates/phxsql-server/src/saude_do_disco.rs` |
 | `TETO_DO_LOTE_SERVIDO` | 16 * 1024 * 1024 | `crates/phxsql-server/src/servidor.rs` |
+| `TETO_DA_VEZ_CEDIDA` | Duration::from_secs(5) | `crates/phxsql-server/src/servidor.rs` |
 | `TETO_DE_EVENTOS_POR_LOTE` | 5_000 | `crates/phxsql-server/src/servidor.rs` |
 | `TETO_PIVOT` | 5_000_000 | `crates/phxsql-server/src/servidor.rs` |
 | `TETO_JUNCAO` | 500_000 | `crates/phxsql-server/src/servidor.rs` |
 | `TETO_COLETA_ROWIDS` | 1_000_000 | `crates/phxsql-server/src/servidor.rs` |
 | `TETO_ANINHAMENTO` | 8 | `crates/phxsql-server/src/servidor.rs` |
 
-**31** catracas (`TETO*`) encontradas em `crates/phxsql-server/src/`.
+**35** catracas (`TETO*`) encontradas em `crates/phxsql-server/src/`.
 
-`bancada/guardas/catalogo.py` cataloga **648** defeitos repostos, contados de `len(GUARDAS)` depois de importar o modulo (nao por regex no texto -- entradas com `trocas` tem mais de um `{` cada, e uma contagem de chaves as conta em dobro ou mais). Linhas do arquivo: 21625. Refazer a prova: `python3 bancada/guardas/provar-guardas.py`.
+`bancada/guardas/catalogo.py` cataloga **768** defeitos repostos, contados de `len(GUARDAS)` depois de importar o modulo (nao por regex no texto -- entradas com `trocas` tem mais de um `{` cada, e uma contagem de chaves as conta em dobro ou mais). Linhas do arquivo: 24637. Refazer a prova: `python3 bancada/guardas/provar-guardas.py`.
 <!-- /GERADO -->
 
 - **Ponta a ponta, pelo navegador**: os arquivos `.mjs` de `testes-web/` —
@@ -652,7 +656,7 @@ proposta de voltar sem medição nova.
 ### 5.1 Pedidos recusados, do próprio `PENDENCIAS.md`
 
 <!-- GERADO: bloco_recusados() -->
-`docs/PENDENCIAS.md` tem **623** pedidos numerados; **113** trazem a palavra RECUSADO no proprio texto:
+`docs/PENDENCIAS.md` tem **645** pedidos numerados; **117** trazem a palavra RECUSADO no proprio texto:
 
 | # | pedido |
 |---:|---|
@@ -698,6 +702,7 @@ proposta de voltar sem medição nova.
 | 262 | **Gatilho AFTER que grava pela mesma sessão dentro do COMMIT não chega a gravar** |
 | 265 | **Um gerador de telemetria e logs medidos — a seção NÃO NASCE na sétima página** |
 | 267 | **`panico_dentro_do_atender_devolve_a_vaga_da_porta_de_dados` exige que os TRÊS pânicos aconteçam, e sob carga o terceiro não chega** |
+| 268 | **A migração `Criptografar`/`Descriptografar` — declarar em `cifra.tabelas` não cifra o que já está gravado** |
 | 278 | **SEC A1 (alta) — o pulso do cluster aceita identidade auto-declarada, e uma epoca forjada rebaixa o master para sempre, inclusive apos reiniciar** |
 | 280 | **SEC A3 (media-alta) — `aplicar` pela rede desliga FK/CHECK/cascata num source sem `somente_leitura`: mata o pai que tem filhos, contra a petrea** |
 | 281 | **SEC A4 (media) — `cluster_no_remover` com `propagar:false` cria dois masters graváveis, sem partição de rede nenhuma** |
@@ -769,6 +774,9 @@ proposta de voltar sem medição nova.
 | 574 | **A cascata do `Table::atualizar` embutido não passa pela pré-conferência do 567: uma FK da filha para OUTRA mãe recusa um elo depois da mãe gravada** |
 | 583 | **A sincronia do DbLink contra PostgreSQL nao roda: o valor ja sai no dialeto certo, o resto da instrucao ainda e de MySQL** |
 | 598 | **`blacklist.json` e `replicacao-posicoes.json` regravados no lugar sem `fsync`; e o esvaziar da lixeira e o expurgo da trilha esquecem no erro os nomes ja apagados** |
+| 628 | **SEC ALTO -- a coluna calculada que cita coluna MARCADA ou NEGADA a copia em claro e fura o direito por coluna (o 245 O2(b) transformaria isso num ALTER, abrindo o cofre)** |
+| 630 | **SEC M2 -- 300: `anotar_escrita_local` conta ANTES do portao 3 e aceita chave sem validar: memoria sem teto e diagnostico envenenado** |
+| 639 | **`conferir_programa` do gancho só olha escrita por «outros»: não vê grupo, dono, diretório pai nem Windows** |
 <!-- /GERADO -->
 
 Os dois mais relevantes para este documento —

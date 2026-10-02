@@ -401,12 +401,12 @@ com o raciocínio de cada uma, está em `docs/CATRACAS.md`.
 
 | Catraca | Onde mora | Valor | Medido hoje | Estado |
 |---|---|---:|---:|---|
-| `TETO_BOTAO_SEM_PROVA` (botoes da tela que a bateria nao clica) | `crates/phxsql-server/src/conferidor_botoes.rs` | 119 | **119** | em cima, sem folga |
+| `TETO_BOTAO_SEM_PROVA` (botoes da tela que a bateria nao clica) | `crates/phxsql-server/src/conferidor_botoes.rs` | 0 | **0** | em cima, sem folga |
 | `TETO_TABELA_NA_MAO` (tabelas montadas a mao em vez de PhxGrid) | `crates/phxsql-server/src/conferidor_grades.rs` | 0 | **0** | em cima, sem folga |
 | `TETO_INVENTARIO_DESCASADO` (extensoes que faltam ou sobram entre o codigo e as tres copias) | `crates/phxsql-server/src/conferidor_inventario.rs` | 0 | **0** | em cima, sem folga |
 | `TETO_SEGREDO_SOLTO` (arquivos com cara de chave na arvore do repositorio) | `crates/phxsql-server/src/conferidor_segredos.rs` | 0 | **0** | em cima, sem folga |
 | `TETO_TEMP_DIR_SOLTO` (chamadas a std::env::temp_dir() fora do catalogo) | `crates/phxsql-server/src/conferidor_temporarios.rs` | 0 | **0** | em cima, sem folga |
-| `TETO_ROTULOS_E_CRASE` (textos cravados fora da fabrica de idiomas) | `crates/phxsql-server/src/conferidor.rs` | 871 | **871** | em cima, sem folga |
+| `TETO_ROTULOS_E_CRASE` (textos cravados fora da fabrica de idiomas) | `crates/phxsql-server/src/conferidor.rs` | 863 | **863** | em cima, sem folga |
 | `TETO_COLADO` (chaves com os seis idiomas identicos) | `crates/phxsql-server/src/conferidor.rs` | 0 | **0** | em cima, sem folga |
 | `TETO_FRASE_REPETIDA` (frase longa repetida em tres ou mais idiomas) | `crates/phxsql-server/src/conferidor.rs` | 0 | **0** | em cima, sem folga |
 | `TETO_VERMELHA_SEM_PEDIDO` (provas vermelhas sem pedido no PENDENCIAS.md) | `crates/phxsql-server/src/conferidor_vermelhas.rs` | 0 | **0** | em cima, sem folga |
@@ -425,14 +425,14 @@ com o raciocínio de cada uma, está em `docs/CATRACAS.md`.
 | `TETO_TESTE_FORA_DO_BINARIO` (testes que existem, mas nao no binario que a entrada nomeia) | `bancada/guardas/trecho-vivo.py` | 0 | **0** | em cima, sem folga |
 | `TETO_TESTE_SEM_MODULO` (testes de alvo --lib nomeados sem o caminho do modulo) | `bancada/guardas/trecho-vivo.py` | 0 | **0** | em cima, sem folga |
 | `TETO_NAO_JULGADA_ESCONDIDA` (entradas que a ultima corrida nao julgou e que a pagina nao nomeia) | `bancada/guardas/trecho-vivo.py` | 0 | **0** | em cima, sem folga |
-| `PISO_DAS_ENTRADAS` (entradas vivas do catalogo mais as aposentadas escritas) | `bancada/guardas/trecho-vivo.py` | piso 703 | **703** | em cima, sem folga |
+| `PISO_DAS_ENTRADAS` (entradas vivas do catalogo mais as aposentadas escritas) | `bancada/guardas/trecho-vivo.py` | piso 770 | **770** | em cima, sem folga |
 
 *25 catraca(s) medida(s) por conferidor + 3 catraca(s) imposta(s) por teste sem `--numeros` = **28** catraca(s) ao todo. Refaz com `python3 docs/qa/medir.py`.*
 
 **Catracas impostas por teste que ainda NÃO respondem a `--numeros`.** São catraca de verdade — um teste do próprio
 arquivo afirma contra a constante —, só falta o exemplo em `crates/*/examples/*.rs` que a exponha (no molde de `textos-fora-da-fabrica.rs`). Sem ele esta tabela sabe o VALOR declarado, mas não o MEDIDO de hoje:
 
-- `TETO_DE_TABELAS_NO_PULSO` — `crates/phxsql-server/src/cluster.rs:185`
+- `TETO_DE_TABELAS_NO_PULSO` — `crates/phxsql-server/src/cluster.rs:191`
 - `TETO_LEITURA_FORA_DO_CANAL` — `crates/phxsql-server/src/conferidor_canal.rs:227`
 - `TETO_TXT_CRU_EM_HTML` — `crates/phxsql-server/src/conferidor_texto_cru.rs:142`
 
@@ -442,16 +442,18 @@ sem medidor não segura nada e ainda parece que segura. Em `bancada/`,
 uma constante que seja limite de funcionamento sai daqui escrevendo
 `# nao-e-catraca: <motivo>` na própria linha dela:
 
-- `TETO` — `crates/phxsql-server/src/replica.rs:796`
+- `TETO` — `crates/phxsql-server/src/replica.rs:838`
 - `TETO_APERTO` — `bancada/seguranca/revisao-434-435/medir.py:13`
 - `TETO_CLIENT_HELLO` — `crates/phxsql-core/src/tls.rs:42`
-- `TETO_DA_CITACAO` — `crates/phxsql-core/src/error.rs:485`
+- `TETO_DA_CITACAO` — `crates/phxsql-core/src/error.rs:500`
 - `TETO_DA_SENHA` — `crates/phxsql-core/src/senha.rs:67`
 - `TETO_DE_BYTES_DO_RESULTADO` — `crates/phxsql-server/src/dblink/conexao.rs:159`
 - `TETO_DE_COLUNAS` — `crates/phxsql-server/src/dblink/mod.rs:121`
 - `TETO_DE_ITERACOES_DO_PAR` — `crates/phxsql-server/src/pg/scram.rs:157`
 - `TETO_DE_TOQUES_PADRAO` — `crates/phxsql-server/src/bidirecional.rs:485`
 - `TETO_DO_APERTO` — `crates/phxsql-core/src/fio.rs:524`
+- `TETO_DO_PRAZO_DO_FIREWALL_S` — `crates/phxsql-server/src/blacklist.rs:348`
+- `TETO_DO_PRAZO_DO_GANCHO_S` — `crates/phxsql-server/src/config.rs:1397`
 - `TETO_DO_REGISTRO` — `crates/phxsql-core/src/fio.rs:495`
 - `TETO_PADRAO` — `crates/phxzip/src/phz.rs:58`
 

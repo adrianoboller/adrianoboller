@@ -2266,6 +2266,96 @@ enquanto a pessoa espera outra tela passa a tomar a posse dela: o clique
 pendente é descartado e a pessoa clica de novo — janela de milissegundos a cada
 3 s, contra a tela errada por cima.
 
+### 13.12 A fila de botões fechou: 90 → 0 (pedido 190, 02/10/2026) — e o que o zero não diz
+
+Oito casos novos, `39` a `46`. Clicados de 211 para **296**, dispensados com
+motivo de 22 para **27**, **sem prova de 90 para 0**, e a catraca
+`TETO_BOTAO_SEM_PROVA` desceu de 90 para **0** no mesmo commit. Bateria
+**89 de 89** nos dois temas (era 71 de 71) e evidência de 313 para **437
+ganchos**.
+
+**O zero é por CHAVE, e não por sítio.** Os 90 do relatório eram **80 chaves**
+(`#btVoltarGer` mora em 5 sítios, `[data-t]` em 3…), e a evidência grava o
+gancho, não a tela: clicar um sítio dá por provado todo botão que divide a
+chave. O caso 39 clica os **dois** `#btVoltarGer` de partições (arquivo único e
+paginada), os dois `#btVoltaMot` (a lista e a recusa a quem não administra) e o
+`#btSemear` nas duas formas — o conferidor não cobraria nenhum. **Os sítios que
+dividem chave com outro e que esta máquina não alcança, ditos sem esconder:**
+o `#btVoltarGer` de «Reparar tabela» (a bateria não liga o espelho `.bkp`, o
+servidor recusa e o resultado nunca abre — o caso confere a recusa) e o
+`[data-t]` da lista de tabelas do DbLink (pede um MySQL/MariaDB de fora).
+Cognição: `cognicao_chave-de-botao-compartilhada-esconde-o-sitio-nao-exercitado_20261002_0650.md`.
+
+| caso | o que exercita | o que confere (o efeito, nunca o estado) |
+|---|---|---|
+| `39-botoes-da-gestao-de-tabela` | gestão de tabela e de banco: partições, configuração, importar, exportar, soma, copiar/colar, motivos, lixeira, SysTables/SysColumns | o banco restaurado/copiado/importado **existe e tem as linhas**; reparar índice recusado no `confirm` não abre o resultado; quem não administra recebe a recusa **e** a saída |
+| `40-botoes-de-sessoes-servico-e-profiler` | sessões, serviço, profiler, com um **segundo cliente de verdade** (`conexaoViva`) | o soquete cai **visto de fora**; recusar o `confirm` não derruba; a porta parada recusa cliente novo e **não** derruba o conectado; a sessão web do outro navegador cai no login e a de quem clicou, não |
+| `41-botoes-da-telemetria-viva` | `#tlmEstacao`, `[data-nivel]`, `#tlmDerrubar`, `#tlmEncerrar` | derrubar fecha o soquete; **encerrar** acerta uma operação viva (carga de 1,6 milhão de linhas) e a resposta da carga **concorda** com o que a tela disse (`marcada` ⇒ cancelada) |
+| `42-botoes-de-lgpd-e-bloqueios` | dado pessoal, trilha, bloqueios | a varredura nova acha a coluna que nasceu depois; o IP bloqueado de verdade (`127.0.0.2`) sai da lista **e volta a ser atendido** |
+| `43-botoes-de-configuracao` | gerais do servidor e editor de menu | `config` do servidor devolve o que a tela salvou, e a cor volta ao de fábrica |
+| `44-botoes-de-restaurar-backup` | restaurar com outro nome e **por cima** | o botão nasce travado, o nome pela metade não libera, a porta no ar recusa, e a linha entrada depois da cópia **some** |
+| `45-botoes-do-modelo-e-do-conflito` | cartão de declarar chave (arrasto com o mouse), diálogo de conflito | a chave aparece no esquema, a filha sem mãe é **recusada**, «Descartar o meu» não grava por cima do outro |
+| `46-botoes-de-telas-avulsas` | entrada, «?», junção (7 formatos), união, consulta, sequência, mensagens, jobs, multitela, célula JSON | as **contagens** dos sete formatos de Venn (3/4/4/5/1/1/2), o contador no servidor, a senha **fora** do navegador |
+
+**Prova real nos dois sentidos** (`prova-real-botoes.mjs`, sem recompilar):
+os 21 defeitos da rodada anterior viraram **67**, com **46 novos** — botão morto, `confirm` ignorado, handler sem
+efeito, a senha gravada junto da conexão, a caixa da carga fora do
+`.form-dbl`, o `.then(irAba)` atropelando a tela seguinte, o «ao excluir» com as
+quatro opções, o texto «declarada, não imposta» de volta. Medido: **13
+controles verdes e 67 de 67 defeitos pegos** — mas **quatro PASSARAM na primeira
+corrida**, e cada um mostrou um caso que aprovava por engano:
+
+| defeito que passou | por quê | o conserto |
+|---|---|---|
+| «Varrer de novo» morto | o caso mexia no seletor «Alcance», e o `onchange` dele já varre sozinho | o caso não toca no seletor |
+| `.then(irAba)` reposto | a corrida era sorteio: se a Estrutura terminava antes da outra tela pedir, não havia atropelo | o `esquema` fica **seguro no fio** até a outra tela pintar (molde do caso 38) |
+| «declarada, não imposta» de volta | o patch trocava o texto de **reserva** do `txt()`, que só vale quando a chave some da fábrica — patch inerte | o patch troca também a chave |
+| «Guardar conexão» guarda a senha | a segunda camada (`limparConexao`) descarta o campo sozinha | o patch quebra **as duas camadas**; o caso prova que a senha não chega ao navegador |
+
+Um quinto patch (`declarar_fk`) **gritou** em vez de passar: o trecho aparecia
+duas vezes. A reposição que confere a ocorrência única fez o que foi escrita
+para fazer.
+
+**Exercitar achou oito defeitos que ler o código não acharia — consertados:**
+
+| defeito | onde | o que quebrava |
+|---|---|---|
+| **mentira de tela contra a lei** | cartão «Declarar chave» e nota do diagrama ER | diziam «declarada, **não imposta**» e «uma filha órfã ainda entra» — o contrário da decisão do dono («chave declarada NASCE conferida»), na mesma tela do aviso «já conferida na gravação». Reescritos e **entraram pela fábrica** (6 chaves de frase, `tela.fk_card_*` e `tela.er_nota_fk_*`; catraca `textos-fora-da-fabrica` 871 → **863**) |
+| opção que o servidor recusa | «ao excluir a linha-mãe» | oferecia `cascata`, `anular` e `nada`; o servidor recusa as três na declaração. Passou a oferecer só `restringir` |
+| campo errado | ficha «versão» do «Sobre» (`?` da barra) | lia `ping.versao`; o servidor responde `ping.phxsql`. Saía sempre «—» |
+| CSS fora do componente | caixa «A carga» da importação | o rótulo estava fora do `.form-dbl`: a caixa media 166 px e a dica saía em **caixa alta** |
+| pintura tardia (irmã do 636) | nome da tabela em «Dado pessoal» | `abrirTabela(...).then(() => irAba(...))` tomava o painel **de novo** e atropelava a tela pedida depois; agora `est.aba` vai antes |
+| select vazio | «Copiar e colar» e «Alcance» do dado pessoal | `est.bancos` é a foto da árvore: banco criado por fora não estava no seletor, e o Colar seguia com destino `""`. O banco de onde se chegou entra sempre |
+| teste que floca | `botoes-dos-idiomas-e-do-backup` | esperava a carga de ~1.900 mensagens por 600 ms; passou a esperar o **efeito** |
+| teste que floca | `botoes-de-configuracao` (meu) | o «gravado» do aviso anterior valia pelo novo; o aviso é limpo antes de cada salvar |
+
+**Nomeado e NÃO consertado — é de `servidor.rs`, que é de outra frente:**
+`op_encerrar_sessao` decide «sessão web × número de conexão» por **o id ter
+alguma letra**. O id da sessão web tem 8 dígitos hexadecimais, e **2,3 %**
+((10/16)⁸) saem só com algarismos: aí o servidor os toma por número de conexão
+e responde `encerrar_sessao sem "id"` — ou derrubaria a conexão de mesmo
+número. O botão «Encerrar» da lista de sessões web falha em 1 de cada ~43
+sessões. O caso 40 sorteia outra sessão até o id ter letra, e o comentário diz
+por quê. A correção é do servidor: o pedido precisa dizer qual das duas é.
+
+**Duas dispensas novas, com motivo e número (5 botões):** `#btAnt`, `#btProx`,
+`#btEstr` e `#btVoltaEstr` (a tela de uma tabela de um banco de fora, que só
+abre com `dblink_ler` respondendo — não há MySQL/MariaDB nesta máquina) e
+`#btAcompRep` (só nasce com uma **origem de replicação**; é clicado de verdade
+em `testes-web/religar-na-tela.mjs`, e o `#acFim` do diálogo tem clique
+próprio no caso 46).
+
+**Ajustes na bateria:** a evidência não grava mais cliques em **SVG** (as
+bolhas da telemetria são `<g role="button">` montadas por `createElementNS` —
+o conferidor lê modelo de HTML, e gravá-las produzia «chave morta» com um id
+que muda a cada conexão). `apoio.mjs` ganhou `conexaoViva` e `bloquearIp`.
+
+**Não alcançado, nomeado:** o `#btVoltarGer` do reparo e o `[data-t]` do DbLink
+(acima); a bateria não prova a janela `window-management` (já registrada em
+`monitores`: o `#mtAlinhar` é provado com a API dublada); e os textos
+cravados que ainda dizem «porta 5000» na telemetria e «5 arquivos por tabela»
+no «Sobre» são números digitados à mão — fora desta frente.
+
 ## 14. Os portões de MEDIDOR, e por que eles ficam fora do catálogo de guardas
 
 Nesta rodada nasceu uma camada de prova que este documento ainda não descrevia:

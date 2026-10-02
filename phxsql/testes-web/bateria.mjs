@@ -168,6 +168,12 @@ const GRAVADOR = () => {
   document.addEventListener('click', e => {
     const alvo = e.target && e.target.closest && e.target.closest('button, [role="button"]');
     if (!alvo || !window.__phxGravaBotao) return;
+    // As bolhas da telemetria sao `<g role="button">` de SVG montadas por
+    // `createElementNS`: o conferidor so le o que esta escrito em modelo de
+    // HTML, entao gravar o clique nelas daria «chave morta» (`.tlm-bolha`,
+    // `[data-id="dados:23"]` -- um id que muda a cada conexao). Botao de
+    // verdade e HTML.
+    if (alvo instanceof SVGElement) return;
     const ganchos = [];
     if (alvo.id) ganchos.push('#' + alvo.id);
     for (const a of alvo.attributes) {

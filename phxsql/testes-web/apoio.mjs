@@ -4,6 +4,7 @@
  * Playwright, que e o navegador, e a `std` do Node. */
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { connect } from 'node:net';
 
 import { USUARIO, SENHA, TOKEN } from './servidor.mjs';
 
@@ -283,4 +284,86 @@ export async function abrirPeloMenu(page, chave) {
   if (!onde) throw new Falha(`nao achei item de menu com a chave «${chave}»`);
   await page.click(`.menubar .titulo[data-m="${onde.m}"]`);
   await page.click(`.menubar .item[data-m="${onde.m}"][data-i="${onde.i}"]`);
+}
+
+/** Uma CONEXAO VIVA na porta de dados, aberta de fora do navegador.
+ *
+ * E o "segundo cliente" que as telas de sessoes e de telemetria precisam para
+ * ter o que encerrar: sem ela o unico cliente do servidor da bateria e a
+ * propria pagina, e derruba-lo derrubaria o caso. Fala o protocolo de verdade
+ * (um `ping` com o token e a linha de resposta) -- nao e um soquete mudo, e
+ * por isso a sessao aparece na lista com origem e porta.
+ *
+ * `fechou` resolve quando o SERVIDOR fecha o soquete (`close`), que e a unica
+ * prova de que o botao de encerrar fez o que diz: a tela mudar nao e a
+ * conexao cair. `local` e a porta de origem, a mesma que a tela mostra. */
+export async function conexaoViva(ctx, { de = '127.0.0.1', login = false } = {}) {
+  const socket = connect({ host: '127.0.0.1', port: ctx.portaDados, localAddress: de });
+  socket.setEncoding('utf8');
+  let fechado = false;
+  const fechou = new Promise(res => socket.on('close', () => { fechado = true; res(true); }));
+  socket.on('error', () => {});
+  await new Promise((res, rej) => {
+    socket.once('connect', res);
+    socket.once('error', rej);
+  });
+  // Respostas em fila: o protocolo e uma linha de JSON por resposta, e uma
+  // resposta pode chegar em varios pedacos de rede.
+  let buf = '';
+  const fila = [];
+  const espera = [];
+  socket.on('data', d => {
+    buf += d;
+    let i;
+    while ((i = buf.indexOf('\n')) >= 0) {
+      const linha = buf.slice(0, i); buf = buf.slice(i + 1);
+      if (!linha.trim()) continue;
+      const r = JSON.parse(linha);
+      if (espera.length) espera.shift()(r); else fila.push(r);
+    }
+  });
+  const proxima = (ms = 30000) => new Promise((res, rej) => {
+    if (fila.length) return res(fila.shift());
+    const t = setTimeout(() => rej(new Falha('a conexao viva nao recebeu resposta a tempo')), ms);
+    espera.push(r => { clearTimeout(t); res(r); });
+  });
+  const enviar = o => socket.write(JSON.stringify({ token: TOKEN, ...o }) + '\n');
+  const perguntar = async o => { enviar(o); return await proxima(); };
+
+  const pong = await perguntar({ op: 'ping' });
+  if (!pong.ok) throw new Falha(`a conexao viva nao recebeu o ping: ${JSON.stringify(pong)}`);
+  if (login) {
+    const r = await perguntar({ op: 'login', usuario: USUARIO, senha: SENHA });
+    if (!r.ok) throw new Falha(`a conexao viva nao conseguiu entrar: ${JSON.stringify(r)}`);
+  }
+  return {
+    socket, local: socket.localPort, fechou, enviar, proxima, perguntar,
+    aberta: () => !fechado && !socket.destroyed,
+    derrubar: () => { if (!socket.destroyed) socket.destroy(); },
+  };
+}
+
+/** Faz o servidor BLOQUEAR um IP de verdade: seis pedidos com token errado,
+ * de dentro do proprio loopback (127.0.0.2 chega em 127.0.0.1 no Linux, e
+ * assim o IP bloqueado nunca e o que o navegador usa).
+ *
+ * Devolve a recusa do ultimo pedido, que ja diz «bloqueado». O limite e o da
+ * politica de fabrica (`tentativas_ate_bloquear` = 5): se um dia ela mudar, o
+ * caso reprova aqui dizendo que o IP nao bloqueou, e nao 40 linhas adiante
+ * dizendo que a lista esta vazia. */
+export async function bloquearIp(ctx, ip = '127.0.0.2') {
+  let ultimo = '';
+  for (let i = 0; i < 6; i++) {
+    ultimo = await new Promise(res => {
+      const c = connect({ host: '127.0.0.1', port: ctx.portaDados, localAddress: ip });
+      let b = '';
+      c.setEncoding('utf8');
+      c.on('data', d => { b += d; if (b.includes('\n')) { c.destroy(); res(b); } });
+      c.on('error', () => res(b));
+      c.on('close', () => res(b));
+      c.on('connect', () => c.write(JSON.stringify({ op: 'ping', token: 'errado-de-proposito' }) + '\n'));
+    });
+  }
+  if (!/bloqueado/.test(ultimo)) throw new Falha(`o IP ${ip} nao ficou bloqueado depois de 6 tokens errados: ${ultimo.slice(0, 200)}`);
+  return ultimo;
 }

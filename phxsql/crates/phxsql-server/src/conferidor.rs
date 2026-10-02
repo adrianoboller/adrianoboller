@@ -1410,7 +1410,13 @@ pub fn token_sem_definicao_e_sem_fallback() -> Vec<(&'static str, String)> {
 /// desceu. Desceu para o medido, e a mesma leva traduziu oito rotulos dos
 /// botoes que ganharam a cor da acao e do titulo de «Diretivas do banco»:
 /// medido 871.
-pub const TETO_ROTULOS_E_CRASE: usize = 871;
+///
+/// Desceu para **863** no pedido 190 (02/10/2026): ao exercitar o cartao de
+/// declarar chave e a nota do diagrama ER, os dois paragrafos cravados --
+/// que diziam «declarada, nao imposta», o contrario da decisao do dono --
+/// foram reescritos E entraram pela fabrica, em seis chaves de frase inteira
+/// (`tela.fk_card_*`, `tela.er_nota_fk_*`): oito literais cravados a menos.
+pub const TETO_ROTULOS_E_CRASE: usize = 863;
 #[cfg(test)]
 mod testes {
     use std::collections::HashSet;
