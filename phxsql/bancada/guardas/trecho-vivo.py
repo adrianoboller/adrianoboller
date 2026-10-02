@@ -799,8 +799,11 @@ TETO_TESTE_SEM_MODULO = 0
 # reconta -- o numero e do catalogo do dia, nao desta frente.
 # 733 -> 734 (513 passo 2a, 02/10/2026): a conta de espaco da arvore
 # temporaria do zip (`zip-sem-a-guarda-de-espaco-da-arvore-temporaria`).
-# Medido por `--numeros` neste checkout.
-PISO_DAS_ENTRADAS = 734
+# 734 -> 738 (229 c-pleno, 02/10/2026; no merge, 734 + 4): as quatro guardas do
+# contador da Sequence na promocao (adocao no abrir_para_replicar, campo no
+# posicao, campo no lote do quorum, motor da adocao no RegFile). Medido por
+# `--numeros` na arvore do merge.
+PISO_DAS_ENTRADAS = 738
 
 # ------------------------------------------------------------- APOSENTADAS
 #

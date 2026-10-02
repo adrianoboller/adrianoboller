@@ -163,7 +163,7 @@ Cada linha traz o bloco da sonda que a mediu. Todos os blocos estão em
 | 20 | backup e restauração | volta ao instante | volta ao instante | **volta ao instante do backup** |
 | 21 | `reindexar` e `verificar` | não tocam | não tocam | não tocam |
 | 22 | **replicação** source → réplica | igual, e diverge = para | reatribuído localmente | **vem da origem**, e o contador acompanha |
-| 23 | **promoção** de uma réplica atrasada | — | — | continua de onde **ela** parou: **5 números reemitidos** |
+| 23 | **promoção** de uma réplica atrasada | — | — | continua de onde **ela** parou: **5 números reemitidos** *(medido em 07/09; desde 02/10/2026 só o atraso de **rede** reemite — §C.6.1)* |
 | 24 | **bidirecional**, mesma faixa | — | — | **4 inserções → 2 linhas**; duas somem |
 | 24 | bidirecional, faixas disjuntas | — | — | funciona **uma** rodada; na segunda, 6 inserções → 5 linhas |
 | 24 | bidirecional com chave **`Uuid` v7** | — | — | **4 inserções → 4 linhas**, dos dois lados |
@@ -738,10 +738,14 @@ resolve.
   identidade do nó (`docs/FORMATO.md`, «O carimbo de criação e a faixa da
   `Sequence`, v10»).
 - **Contador durável propagado / faixa por nó na promoção** — o conserto pleno
-  do bloco 23.
+  do bloco 23. **FEITO em 02/10/2026 na parte que um protocolo assíncrono
+  alcança** (§C.6.1): o contador viaja no `posicao`; o que sobra é o atraso de
+  rede, que nenhum dos quatro recupera.
 - **Reescrever o `Json` com uma variante `Inteiro(i64)`** (§B.2.6, item 1) —
   787 chamadas atravessam o tipo; não é item desta frente, e o item 2 (recusar
-  cedo) não a impede depois.
+  cedo) não a impede depois. **MAPEADO em 02/10/2026, não implementado**
+  (§C.6.2): o alcance real é ~30 sítios e não 787, mas a mudança inverte a
+  recusa da §C.5.1.
 
 ## C.5 O que faltava do 229, decidido pela matriz dos quatro motores (02/10/2026)
 
@@ -813,6 +817,98 @@ dois slots, `fdatasync` por número — **147 a 230 µs** medidos contra **771 �
 da troca atômica, 5,2×, e a escrita rasgada sobrevivida pelo slot vigente.
 Guardas `sequencia-nomeada-proximo-sem-durar` (2/2 caem) e
 `tabela-com-nome-de-sequencia` (1/1 cai), provadas.
+
+### C.6 O que sobrou do 229 depois da §C.5 (02/10/2026, papel B)
+
+Duas pontas, e as duas medidas antes de mexer.
+
+#### C.6.1 Contador propagado na promoção — **entrou** (7 × 3)
+
+**Hipóteses, escritas antes de medir.** H1: o contador não viaja pelo fio, e a
+réplica só o empurra com os valores que aplica. H2: a promoção relê o maior
+valor gravado (`reparar`/`reconciliar_sequencia`) e isso já cobre. H3: o `.seq`
+da sequência nomeada replica e a promovida a herda.
+
+**Medido pelo soquete** (`tests/contador-na-promocao.rs`: source e réplica
+reais, um repetidor de linha entre os dois que segura só o `replicar`, ou seja,
+réplica no ar, falando com o source e **sem receber as linhas**): source com
+ids 1–5, réplica com 1–2, promovida numera… **3** (contador da réplica: 3, o
+source em 6). H1 **confirmada**; H2 **morta** — o `reconciliar_sequencia` varre
+o `.reg` DAQUI, onde o 3 a 5 não existem; H3 **morta** — o `.seq` não replica
+(decisão §C.5.3) e a promovida **recusa** pedir o `proximo` de uma sequência que
+nunca viu, em vez de recomeçar calada (teste que pina a decisão).
+
+**A matriz** (o contador acompanha a réplica?): PostgreSQL **sim** — a sequência
+é WAL-logada e vai ao standby físico (`sql-createsequence`: só a `UNLOGGED` não
+é replicada nem sobrevive a queda); MariaDB **sim** — a sequência replica pelo
+binlog (§C.5.3); MySQL **não** como objeto — o `AUTO_INCREMENT` do InnoDB segue
+as linhas aplicadas (replicação por linha) e reinicia do máximo gravado;
+SQLite **não** tem replicação. Propagar: 4+3 = **7**; só o dado aplicado:
+2+1 = **3**. Entra, sem pergunta, e nenhuma pétrea se opõe (o contador já mora
+no cabeçalho do `.reg`: **zero byte de formato**).
+
+**O que entrou.** O `posicao` do source traz `proxima_sequencia` por tabela com
+`Sequence` já usada (texto acima de 2⁵³, mesmo crivo do `valor_para_json`); o
+lote do quorum leva o mesmo campo; e a réplica o adota no
+`abrir_para_replicar` — o ponto único do laço de pull **e** do lote do quorum,
+os dois caminhos que chamam as mesmas funções na mesma ordem —, por
+`RegFile::adotar_sequencia_do_source`: só para a frente, e na faixa **deste**
+nó (`na_faixa`), porque o próximo do source pode ser o número do outro nó.
+Falhar em adotar não derruba a rodada. Com o conserto a promovida dá o **6**.
+
+**O que fica, e não se promete.** O atraso de **rede**: o que o master emitiu
+depois da última rodada que chegou à réplica (a sonda do bloco 23, que congela
+a réplica antes da emissão e mata o master, **continua dando 5** — não foi
+rodada de novo nesta frente). Nenhum replicador assíncrono recupera número que
+nunca saiu do master; o remédio estrutural é a faixa por nó (`passo`/`inicio`,
+já feita) ou reservar blocos À FRENTE e anunciá-los antes de usar (o `cache` do
+PostgreSQL e do MariaDB), que muda o contrato da numeração e fica registrado
+como o próximo passo se o dono quiser fechar também esse resto. A `DIVIDA` do
+`reconciliar_sequencia` foi reescrita para dizer só isso. Fora do alcance de
+propósito: o **bidirecional** (cada nó numera a própria faixa; adotar o
+contador do par é a pergunta errada) e a **restauração de backup antigo** (o
+`reparar` já a cobre).
+
+Guardas `contador-do-source-nao-adotado`, `posicao-sem-o-contador-da-sequencia`,
+`lote-do-quorum-sem-o-contador-da-sequencia` e `adocao-do-contador-nao-anda`.
+RED medido: sem a adoção o teste do soquete cai com «a replica promovida deu o
+numero 3»; com ela, passa.
+
+#### C.6.2 `Inteiro(i64)` no `Json` — **parecer, não implementado**
+
+**Alcance medido** (grep, 02/10/2026): os acessores que o §B.2.6 contou somam
+**2.040** linhas em 35–61 arquivos (`inteiro_ou` 607, `de_u64` 703, `.inteiro()`
+656, `de_i64` 74), mas **não são o custo**. O custo é de quem **casa a variante**:
+8 `match` exaustivos sobre `Json` em 7 arquivos e ~21 braços `Json::Numero(..) =>`
+em 10 (`valores.rs` 6, `consultar.rs` 3, `servidor.rs` 2, e `json.rs`, `lexico.rs`,
+`rotina.rs`, `config.rs`, `backup.rs`, `resultado.rs`, `phxsql-cmd`). Experimento:
+acrescentar a variante quebra a compilação já no `phxsql-core` e, em seguida, no
+`lexico.rs` — o compilador lista os sítios, não há lugar escondido.
+
+**O desenho mais estreito que fecha o dano:** o analisador só devolve
+`Inteiro(i128)` para **literal inteiro** (sem `.`/`e`) de módulo `≥ 2⁵³`; abaixo
+disso continua `Numero(f64)`, e os 2.040 usos dos acessores, os ~21 braços e
+todo teste de `PartialEq` de número pequeno não mudam. `inteiro()`/`numero()`
+leem as duas variantes; um `u64()`/`i64_exato()` novo lê o exato; `escrever`
+imprime os dígitos. Quem não conhece a variante nova **falha alto** (tipo
+errado), nunca arredonda calado.
+
+**Por que não entrou nesta rodada.** Não por tamanho — ~30 sítios, mecânico —,
+mas porque o desenho **desfaz a recusa** da §C.1/§C.5.1: com o número exato na
+mão, `json_para_valor` deixa de ter motivo para recusar `9007199254740993` e
+passa a **aceitá-lo** (o PostgreSQL aceita `bigint` exato; MariaDB/MySQL idem;
+é o lado 9 da matriz da §C.5.1 por outro caminho). Isso derruba por desenho as
+guardas `faixa-imprecisa-no-int8` e a da `Sequence` e reescreve o contrato de
+todo cliente que hoje lê «acima de 2⁵³ vai como texto». É decisão de contrato
+sobre dado já decidido hoje, em área (`valores.rs`, `servidor.rs`) onde outras
+frentes mexem. **Próximo passo, se a decisão for tomada:** (1) variante +
+analisador + escrita em `json.rs`, com o teste de ida e volta de 2⁵³+1; (2)
+consertar os ~30 sítios que o compilador listar; (3) `recusar_impreciso` passa
+a recusar só o **fora da faixa do tipo**, e as duas guardas são aposentadas por
+escrito (nunca afrouxadas); (4) a saída continua **texto** acima de 2⁵³ — cliente
+JavaScript lê o fio como `f64` de qualquer jeito. O dano que o item existia
+para fechar (id trocado no fio) **já está fechado** pela recusa na entrada e
+pelo texto na saída; a variante compra aceitar o exato, não evitar o estrago.
 
 ---
 

@@ -412,6 +412,38 @@ pub struct NoSource {
     pub nome: String,
     pub eventos: u64,
     pub esquema: Option<Schema>,
+    /// O PROXIMO numero que a `Sequence` do source vai entregar (pedido 229,
+    /// c-pleno). Zero = o source nao disse, ou a tabela nao tem `Sequence`.
+    /// Viaja no `posicao`, que a replica pergunta ANTES de puxar eventos: o
+    /// contador chega mesmo quando os eventos ainda nao chegaram, e e esse
+    /// descompasso que a promocao de uma replica atrasada pagava.
+    pub proxima_sequencia: u64,
+}
+
+/// O contador da sequencia como vai ao fio: numero ate 2^53, TEXTO acima.
+/// O `Json` da casa so tem `f64`, e um contador arredondado seria o numero de
+/// um vizinho -- o mesmo crivo do `valor_para_json` para o id gravado.
+pub fn proxima_sequencia_para_o_fio(n: u64) -> Json {
+    if n >= phxsql_core::json::INTEIRO_EXATO_MAX {
+        Json::texto_de(n.to_string())
+    } else {
+        Json::de_u64(n)
+    }
+}
+
+/// O inverso de [`proxima_sequencia_para_o_fio`]. Um UNICO leitor para o
+/// `posicao` e para o lote do quorum: dois leitores do mesmo campo divergiriam
+/// no primeiro formato novo. Torto ou ausente vira zero (`nao disse`), que a
+/// adocao ignora -- nunca um numero inventado.
+pub fn proxima_sequencia_do_fio(v: Option<&Json>) -> u64 {
+    match v {
+        Some(Json::Texto(t)) => t.parse().unwrap_or(0),
+        Some(j) => match j.inteiro() {
+            Some(n) if n > 0 => n as u64,
+            _ => 0,
+        },
+        None => 0,
+    }
 }
 
 /// O que o source diz sobre um database inteiro.
@@ -447,6 +479,7 @@ pub fn posicao(cliente: &mut Cliente, database: &str) -> Result<PosicaoDoSource>
                 nome: nome.clone(),
                 eventos: v.inteiro_ou("eventos", 0).max(0) as u64,
                 esquema,
+                proxima_sequencia: proxima_sequencia_do_fio(v.campo("proxima_sequencia")),
             });
         }
     }
@@ -1443,5 +1476,27 @@ mod testes_do_prazo_total_da_conversa {
             "a soma dos lotes ({:?}) nao passou do total ({total:?}): a prova nao prova nada",
             inicio.elapsed()
         );
+    }
+}
+
+#[cfg(test)]
+mod testes_da_sequencia_no_fio {
+    use super::*;
+
+    #[test]
+    fn o_contador_vai_e_volta_inteiro_inclusive_acima_de_2_elevado_a_53() {
+        for n in [1u64, 42, (1 << 53) - 1, 1 << 53, (1 << 53) + 1, u64::MAX] {
+            let fio = proxima_sequencia_para_o_fio(n).escrever();
+            let lido = Json::analisar(&fio).unwrap();
+            assert_eq!(proxima_sequencia_do_fio(Some(&lido)), n, "{n}: {fio}");
+        }
+    }
+
+    #[test]
+    fn campo_ausente_ou_torto_e_nao_disse() {
+        assert_eq!(proxima_sequencia_do_fio(None), 0);
+        assert_eq!(proxima_sequencia_do_fio(Some(&Json::Nulo)), 0);
+        assert_eq!(proxima_sequencia_do_fio(Some(&Json::texto_de("abc"))), 0);
+        assert_eq!(proxima_sequencia_do_fio(Some(&Json::Numero(-5.0))), 0);
     }
 }

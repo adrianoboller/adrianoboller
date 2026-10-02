@@ -5280,6 +5280,17 @@ impl Table {
         self.reg.sequencia_atual()
     }
 
+    /// Leva o contador desta tabela ao que o SOURCE anunciou (pedido 229,
+    /// c-pleno). Tabela sem coluna `Sequence` nao e tocada: o portao vem antes
+    /// do trabalho, e a esmagadora maioria das tabelas e assim. Devolve `true`
+    /// quando o contador andou. Ver `RegFile::adotar_sequencia_do_source`.
+    pub fn adotar_sequencia_do_source(&mut self, proxima: u64) -> Result<bool> {
+        if self.esquema.coluna_sequencia().is_none() {
+            return Ok(false);
+        }
+        self.reg.adotar_sequencia_do_source(proxima)
+    }
+
     /// Monta o payload do `.reg`, gravando antes o que vai para `.bin`/`.memo`.
     fn montar_payload(&mut self, valores: &[Value]) -> Result<Vec<u8>> {
         let mut payload = vec![0u8; self.esquema.payload_len()];
@@ -5826,12 +5837,11 @@ impl Table {
     /// # O que ela NAO resolve, e esta em `docs/AUTONUMBER.md`
     ///
     /// Na promocao de uma replica ATRASADA, os numeros que o master emitiu e
-    /// esta ponta nunca recebeu NAO estao no `.reg` daqui -- entao o maior
-    /// gravado aqui e menor que o do master morto, e continuar dele exige uma
-    /// decisao de projeto (faixa por no, ou contador duravel propagado). Aqui
-    /// garante-se so o alcancavel: o contador nunca fica atras do que ESTA
-    /// gravado nesta ponta.
-    /// DIVIDA: #229 promover uma replica atrasada continua de um numero menor que o do master morto -- falta decidir entre faixa por no e contador duravel propagado
+    /// esta ponta nunca recebeu NAO estao no `.reg` daqui. Esta varredura so
+    /// garante o alcancavel: o contador nunca fica atras do que ESTA gravado
+    /// nesta ponta. O resto vem do contador que o source anuncia a cada
+    /// rodada (`adotar_sequencia_do_source`, pedido 229 c-pleno).
+    /// DIVIDA: #229 promover uma replica cuja rede cortou antes da ultima rodada continua de um numero menor que o do master morto -- o contador viaja no `posicao` a cada rodada e so o atraso de rede sobra
     pub fn reconciliar_sequencia(&mut self) -> Result<u64> {
         let Some(i) = self.esquema.coluna_sequencia() else {
             return Ok(0);

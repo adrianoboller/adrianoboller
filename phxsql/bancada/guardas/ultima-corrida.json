@@ -4482,6 +4482,38 @@
       "quando": "2026-10-02 04:20"
     },
     {
+      "id": "contador-do-source-nao-adotado",
+      "titulo": "a replica abria a tabela sem adotar o contador da `Sequence` do source: promovida atrasada, reemitia o numero que o master ja tinha entregue",
+      "veredito": "PROVADA",
+      "segundos": 24.51,
+      "notas": [],
+      "quando": "2026-10-02 04:52"
+    },
+    {
+      "id": "posicao-sem-o-contador-da-sequencia",
+      "titulo": "o `posicao` do source nao dizia onde a `Sequence` estava: a replica nao tinha de onde adotar o contador",
+      "veredito": "PROVADA",
+      "segundos": 23.57,
+      "notas": [],
+      "quando": "2026-10-02 04:52"
+    },
+    {
+      "id": "lote-do-quorum-sem-o-contador-da-sequencia",
+      "titulo": "o lote do quorum nao levava o contador da `Sequence`: o caminho irmao do pull esquecia o que o pull sabe",
+      "veredito": "PROVADA",
+      "segundos": 73.69,
+      "notas": [],
+      "quando": "2026-10-02 04:52"
+    },
+    {
+      "id": "adocao-do-contador-nao-anda",
+      "titulo": "`adotar_sequencia_do_source` devolvia sem mover o contador: a adocao existia no fio e nao no disco",
+      "veredito": "PROVADA",
+      "segundos": 6.19,
+      "notas": [],
+      "quando": "2026-10-02 04:52"
+    },
+    {
       "id": "alter-com-regra-sem-aviso",
       "titulo": "`acrescentar_coluna` com `check` ou `calculada` numa tabela com linha é aceito SEM AVISO, e a linha velha fica fora da regra",
       "veredito": "PROVADA",

@@ -1256,6 +1256,34 @@ impl RegFile {
         Ok(novo)
     }
 
+    /// Adota o contador que o SOURCE anunciou (pedido 229, c-pleno): o
+    /// contador desta ponta passa para o primeiro numero da PROPRIA faixa que
+    /// nao e menor que o dele. Devolve `true` quando andou.
+    ///
+    /// # Por que existe, separado do `anotar_sequencia`
+    ///
+    /// O `anotar_sequencia` parte de um numero USADO (uma linha aplicada); o
+    /// do source e o PROXIMO a sair, e inclui o que ele entregou e a replica
+    /// ainda nao recebeu. Tratar um como o outro andaria um numero a mais, ou
+    /// a menos. So empurra para a frente, como o irmao: o remedio de quem quer
+    /// recuar e o `ajustar_sequencia`, ordem escrita do administrador.
+    ///
+    /// Sem o `exigir_faixa_para_numerar`: o resultado ja nasce na faixa deste
+    /// no (`na_faixa`), e recusar aqui derrubaria a rodada de replicacao por
+    /// causa de um contador que a conta acabaria de consertar.
+    pub fn adotar_sequencia_do_source(&mut self, proxima: u64) -> Result<bool> {
+        if proxima == 0 || proxima <= self.proxima_sequencia {
+            return Ok(false);
+        }
+        let novo = self.na_faixa(proxima);
+        if novo <= self.proxima_sequencia {
+            return Ok(false);
+        }
+        self.proxima_sequencia = novo;
+        self.gravar_contadores(1)?;
+        Ok(true)
+    }
+
     /// Maior carimbo de criacao ja gravado nesta tabela. 0 = nenhum.
     pub fn ultimo_carimbo(&self) -> u64 {
         self.ultimo_carimbo
