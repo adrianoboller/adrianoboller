@@ -247,3 +247,70 @@ fn reconciliar_numa_tabela_com_faixa_fica_na_faixa() {
         .unwrap();
     assert_eq!(id_da_linha(&mut t, r), 8);
 }
+
+// -------------------------------- pedido 229 c-pleno: o contador do source
+
+/// A replica adota o `proxima` do source: o numero que ele entregou e ela nao
+/// recebeu nao sai de novo, e o contador sobrevive a reabrir a tabela. Tire o
+/// corpo do `adotar_sequencia_do_source` e o proximo id volta a ser o 3.
+#[test]
+fn adotar_o_contador_do_source_pula_o_que_ele_ja_entregou() {
+    let d = comum::DirTemp::novo("adota-contador");
+    {
+        let mut t = Table::criar(&d, esquema_sem_unico()).unwrap();
+        for i in 0..2 {
+            t.inserir(&[Value::Null, Value::Str(format!("n{i}"))])
+                .unwrap();
+        }
+        assert!(
+            t.adotar_sequencia_do_source(6).unwrap(),
+            "andou de 3 para 6"
+        );
+        // Adotar de novo o mesmo valor, ou um menor, nao mexe em nada.
+        assert!(!t.adotar_sequencia_do_source(6).unwrap());
+        assert!(!t.adotar_sequencia_do_source(4).unwrap());
+        assert_eq!(t.sequencia_atual(), 6);
+    }
+    let mut t = Table::abrir(&d, "pedidos").unwrap();
+    assert_eq!(t.sequencia_atual(), 6, "o contador adotado esta no disco");
+    let r = t
+        .inserir(&[Value::Null, Value::Str("promovida".into())])
+        .unwrap();
+    assert_eq!(id_da_linha(&mut t, r), 6);
+}
+
+/// «Nao disse» (zero) e tabela sem `Sequence` nao tocam em nada: o source de
+/// antes do campo continua sendo uma origem valida.
+#[test]
+fn adotar_zero_ou_sem_sequencia_nao_faz_nada() {
+    let d = comum::DirTemp::novo("adota-nada");
+    let mut t = Table::criar(&d, esquema_sem_unico()).unwrap();
+    t.inserir(&[Value::Null, Value::Str("a".into())]).unwrap();
+    assert!(!t.adotar_sequencia_do_source(0).unwrap());
+    assert_eq!(t.sequencia_atual(), 2);
+
+    let d2 = comum::DirTemp::novo("adota-sem-seq");
+    let esquema = Schema::new(
+        "notas",
+        vec![Column::new("c", ColumnType::Str(30)).obrigatoria()],
+        vec![],
+    )
+    .unwrap();
+    let mut n = Table::criar(&d2, esquema).unwrap();
+    assert!(!n.adotar_sequencia_do_source(500).unwrap());
+    assert_eq!(n.sequencia_atual(), 0);
+}
+
+/// Numa tabela com faixa o contador adotado cai na faixa DESTE no, e nao no
+/// numero cru do source -- que pode ser o proximo do outro no.
+#[test]
+fn adotar_o_contador_cai_na_faixa_deste_no() {
+    phxsql_store::no::definir_inicio_da_sequencia(0);
+    let d = comum::DirTemp::novo("adota-faixa");
+    let mut t = Table::criar(&d, esquema_com_faixa()).unwrap();
+    t.inserir(&[Value::Null, Value::Str("a".into())]).unwrap();
+    assert!(t.adotar_sequencia_do_source(7).unwrap());
+    assert_eq!(t.sequencia_atual(), 8, "7 nao e do no par: o proximo e o 8");
+    let r = t.inserir(&[Value::Null, Value::Str("b".into())]).unwrap();
+    assert_eq!(id_da_linha(&mut t, r), 8);
+}

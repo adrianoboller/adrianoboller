@@ -23730,4 +23730,98 @@ fn anotar(""",
         "caem": ["servidor::testes_gatilhos::call_com_interrogacao_do_odbc_devolve_a_saida"],
         "seguem": ["servidor::testes_gatilhos::procedimento_com_in_out_e_while"],
     },
+    {
+        "id": "contador-do-source-nao-adotado",
+        "titulo": "a replica abria a tabela sem adotar o contador da `Sequence` do source: promovida atrasada, reemitia o numero que o master ja tinha entregue",
+        "porque": (
+            "pedido 229 (c-pleno), bloco 23 de docs/AUTONUMBER.md: o contador "
+            "mora no cabecalho do `.reg` e a replica so o empurrava com os "
+            "valores que APLICAVA. Medido pelo soquete (replica com 2 linhas, "
+            "source com 5, eventos presos): a promovida deu o 3. O "
+            "`abrir_para_replicar` e o ponto unico do laco de pull E do lote "
+            "do quorum, entao a adocao mora ali e nao em dois lugares."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """tabela.adotar_sequencia_do_source(no.proxima_sequencia)""",
+        "troca": """tabela.adotar_sequencia_do_source(0)""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "contador-na-promocao"],
+        "caem": [
+            "replica_atrasada_promovida_nao_reemite_o_que_o_master_entregou",
+        ],
+        "seguem": [
+            "replica_em_dia_promovida_continua_do_proximo_sem_buraco",
+            "sequencia_nomeada_nao_replica_e_a_promovida_recusa_em_vez_de_recomecar",
+        ],
+    },
+    {
+        "id": "posicao-sem-o-contador-da-sequencia",
+        "titulo": "o `posicao` do source nao dizia onde a `Sequence` estava: a replica nao tinha de onde adotar o contador",
+        "porque": (
+            "pedido 229 (c-pleno): o `posicao` e a pergunta que a replica faz "
+            "ANTES de puxar eventos, e por isso o carregador certo do "
+            "contador -- ele chega mesmo quando os eventos ainda nao "
+            "chegaram. Sem o campo, a adocao recebe zero (`nao disse`) e a "
+            "promocao volta a reemitir."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """if t.esquema().coluna_sequencia().is_some() && t.sequencia_atual() > 0 {""",
+        "troca": """if false && t.esquema().coluna_sequencia().is_some() && t.sequencia_atual() > 0 {""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "contador-na-promocao"],
+        "caem": [
+            "replica_atrasada_promovida_nao_reemite_o_que_o_master_entregou",
+        ],
+        "seguem": [
+            "replica_em_dia_promovida_continua_do_proximo_sem_buraco",
+            "sequencia_nomeada_nao_replica_e_a_promovida_recusa_em_vez_de_recomecar",
+        ],
+    },
+    {
+        "id": "lote-do-quorum-sem-o-contador-da-sequencia",
+        "titulo": "o lote do quorum nao levava o contador da `Sequence`: o caminho irmao do pull esquecia o que o pull sabe",
+        "porque": (
+            "pedido 229 (c-pleno): o quorum e o irmao do pull -- passa pelo "
+            "mesmo `abrir_para_replicar` -- e o numero que o commit "
+            "sincrono queimou sem gravar linha (insercao revertida, exclusao "
+            "fisica) so chega pelo campo do lote."
+        ),
+        "arquivo": "crates/phxsql-server/src/quorum.rs",
+        "trecho": """crate::replica::proxima_sequencia_para_o_fio(self.proxima_sequencia),""",
+        "troca": """crate::replica::proxima_sequencia_para_o_fio(0),""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "quorum::testes::o_lote_leva_o_contador_da_sequencia_e_a_replica_o_le",
+        ],
+        "seguem": [
+            "quorum::testes::o_quorum_conta_so_replicas",
+        ],
+    },
+    {
+        "id": "adocao-do-contador-nao-anda",
+        "titulo": "`adotar_sequencia_do_source` devolvia sem mover o contador: a adocao existia no fio e nao no disco",
+        "porque": (
+            "pedido 229 (c-pleno): o motor da adocao e UM so, no `RegFile`, "
+            "e faz a conta da faixa DESTE no (`na_faixa`) -- o proximo do "
+            "source pode ser o numero do outro no. Sem mover e sem gravar o "
+            "cabecalho, a promocao reemite mesmo com o campo no fio."
+        ),
+        "arquivo": "crates/phxsql-store/src/reg.rs",
+        "trecho": """        self.proxima_sequencia = novo;
+        self.gravar_contadores(1)?;
+        Ok(true)""",
+        "troca": """        let _ = novo;
+        Ok(false)""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "reconciliar-sequencia"],
+        "caem": [
+            "adotar_o_contador_do_source_pula_o_que_ele_ja_entregou",
+            "adotar_o_contador_cai_na_faixa_deste_no",
+        ],
+        "seguem": [
+            "adotar_zero_ou_sem_sequencia_nao_faz_nada",
+            "reconciliar_nunca_recua_o_contador",
+        ],
+    },
 ]

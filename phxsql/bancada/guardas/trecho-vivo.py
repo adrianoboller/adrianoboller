@@ -797,7 +797,10 @@ TETO_TESTE_SEM_MODULO = 0
 # as duas pontas do `?` do CALL). Medido por `--numeros`; piso so sobe com
 # entrada nova, e se outra frente somar entradas no mesmo passo o integrador
 # reconta -- o numero e do catalogo do dia, nao desta frente.
-PISO_DAS_ENTRADAS = 733
+# 733 -> 737 (229 c-pleno, 02/10/2026): as quatro guardas do contador da
+# Sequence na promocao (adocao no abrir_para_replicar, campo no posicao, campo
+# no lote do quorum, motor da adocao no RegFile). Medido por `--numeros`.
+PISO_DAS_ENTRADAS = 737
 
 # ------------------------------------------------------------- APOSENTADAS
 #

@@ -313,6 +313,16 @@ Três operações, no mesmo JSON Lines da porta 5000:
                         "erro":null}}
 ```
 
+**O contador da `Sequence` viaja no `posicao`** (pedido 229, c-pleno):
+cada tabela com `Sequence` já usada traz `"proxima_sequencia"` — o próximo
+número que o source vai entregar, como número até 2⁵³ e como **texto** acima
+dele (o `Json` da casa é `f64`). A réplica o adota **antes** de puxar evento
+algum e só empurra para a frente, caindo na faixa do próprio nó; é isso que
+impede a promoção de uma réplica **atrasada** de reemitir número que o master
+já entregou. O lote do quorum leva o mesmo campo. Sem mudança de formato em
+disco: é o contador que já mora no cabeçalho do `.reg`. A sequência **nomeada**
+não viaja (decisão de 02/10/2026, `AUTONUMBER.md` §C.5.3).
+
 A imagem viaja em **hexadecimal**, porque o transporte é JSON e JSON não tem
 bytes. Dobra o tamanho; a alternativa seria acrescentar um formato binário ao
 protocolo, e isso é uma decisão maior do que esta.

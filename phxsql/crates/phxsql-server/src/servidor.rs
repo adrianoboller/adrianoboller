@@ -2261,21 +2261,20 @@ impl Servidor {
                      config.json antes do proximo arranque",
                 ),
             ),
-            // O contador da sequencia continua de onde ESTA replica parou. Se
-            // ela estava ATRASADA, o master emitiu numeros que nunca chegaram
-            // aqui, e a proxima insercao os reemite -- reparar nao os recupera
-            // (eles nao estao no `.reg` daqui). O `reparar` garante so que o
-            // contador nao fica atras do que ESTA gravado nesta ponta. A
-            // protecao plena (faixa por no) e decisao de projeto. Ver
-            // `docs/AUTONUMBER.md`, defeito (c).
+            // Desde o c-pleno do pedido 229 o contador de cada Sequence viaja no
+            // `posicao` e a replica o adota a cada rodada, ANTES dos eventos:
+            // a replica atrasada de vazao nao reemite mais. O que sobra e o
+            // atraso de REDE -- o que o master emitiu depois da ultima rodada
+            // que chegou aqui --, que nenhum protocolo assincrono recupera.
             (
                 "aviso_sequencia",
                 Json::texto_de(
-                    "o contador de cada Sequence continua do ponto desta ponta; \
-                     rode `reparar` nas tabelas com Sequence para garantir que o \
-                     contador nao ficou atras do dado local. Se esta replica \
-                     estava atrasada, numeros que o master emitiu e ela nao \
-                     recebeu PODEM ser reemitidos -- ver docs/AUTONUMBER.md",
+                    "o contador de cada Sequence e o do ultimo `posicao` que o \
+                     master respondeu a esta replica; numeros que ele emitiu \
+                     depois disso (rede cortada antes da promocao) PODEM ser \
+                     reemitidos. Rode `reparar` nas tabelas com Sequence para \
+                     garantir que o contador nao ficou atras do dado local -- \
+                     ver docs/AUTONUMBER.md",
                 ),
             ),
         ]))
@@ -4003,6 +4002,18 @@ impl Servidor {
             pendente.levar_ao_disco()?;
             return Ok(None);
         };
+        // O contador do source ANTES de tudo, e vale tambem para o lote do
+        // quorum (que passa por aqui): o numero que ele ja entregou nao pode
+        // voltar a sair desta ponta quando ela for promovida. Falhar em
+        // adota-lo nao derruba a rodada -- a replica continua aplicando, e o
+        // pior caso e o de sempre (o contador do que ela tem).
+        if let Err(e) = tabela.adotar_sequencia_do_source(no.proxima_sequencia) {
+            eprintln!(
+                "replicacao: {database}.{}: o contador da sequencia do source nao \
+                 foi adotado: {e}",
+                no.nome
+            );
+        }
         let eventos = tabela.eventos()?;
         let outra_historia = recusa_da_linhagem(tabela.esquema(), database, no);
         // Pedido 589: a tabela fecha sob a trava, como sempre fechou; o
@@ -30305,6 +30316,16 @@ impl Servidor {
                     },
                 ),
             ];
+            // O contador da `Sequence` (pedido 229, c-pleno): a replica o adota
+            // antes de puxar evento nenhum, e e isso que impede a promocao de
+            // uma replica atrasada de reemitir numero que este master ja
+            // entregou. So a tabela com `Sequence` ja usada paga o campo.
+            if t.esquema().coluna_sequencia().is_some() && t.sequencia_atual() > 0 {
+                campos.push((
+                    "proxima_sequencia".to_string(),
+                    crate::replica::proxima_sequencia_para_o_fio(t.sequencia_atual()),
+                ));
+            }
             if com_esquema {
                 // O bloco de esquema CRU, do jeito que mora no `.reg`. A
                 // replica desserializa o mesmo bloco e cria a tabela dela --
@@ -30716,6 +30737,11 @@ impl Servidor {
                 tabela: x.tabela.clone(),
                 dado_pessoal,
                 eventos_do_master: x.posicao,
+                proxima_sequencia: if t.esquema().coluna_sequencia().is_some() {
+                    t.sequencia_atual()
+                } else {
+                    0
+                },
                 posicao: ini,
                 eventos,
                 linhagem: linhagem.clone(),
@@ -30922,6 +30948,9 @@ impl Servidor {
             nome: tabela.clone(),
             eventos: l.inteiro_ou("eventos_do_master", 0).max(0) as u64,
             esquema,
+            proxima_sequencia: crate::replica::proxima_sequencia_do_fio(
+                l.campo("proxima_sequencia"),
+            ),
         };
         let Some((local, outra_historia)) = self.abrir_para_replicar(&database, &no)? else {
             return Ok(None);
@@ -73366,6 +73395,7 @@ mod testes_da_linhagem_na_replica {
             nome: "clientes".into(),
             eventos: 0,
             esquema: Some(esquema),
+            proxima_sequencia: 0,
         }
     }
 
@@ -73464,6 +73494,7 @@ mod testes_da_absorcao_do_bidi {
             nome: "c".into(),
             eventos: 0,
             esquema: None,
+            proxima_sequencia: 0,
         };
         let origem = crate::config::Origem {
             nome: "outro".into(),

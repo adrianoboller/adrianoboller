@@ -99,6 +99,10 @@ pub struct LoteDoQuorum {
     pub dado_pessoal: bool,
     /// Quantos eventos o diario do master tem depois deste commit.
     pub eventos_do_master: u64,
+    /// O proximo numero da `Sequence` do master depois deste commit (0 = a
+    /// tabela nao tem, ou nao usou). Pedido 229, c-pleno: o mesmo campo do
+    /// `posicao`, para o quorum nao ser o caminho irmao que esquece o contador.
+    pub proxima_sequencia: u64,
     /// A posicao que a replica tem de ter para aplicar este lote. Com
     /// `posicao > 0` o primeiro evento da lista e o `posicao - 1`, o que a
     /// replica JA tem -- a conferencia de continuidade do pull, sem ida e
@@ -126,6 +130,10 @@ impl LoteDoQuorum {
             ("tabela", Json::texto_de(&self.tabela)),
             ("posicao", Json::de_u64(self.posicao)),
             ("eventos_do_master", Json::de_u64(self.eventos_do_master)),
+            (
+                "proxima_sequencia",
+                crate::replica::proxima_sequencia_para_o_fio(self.proxima_sequencia),
+            ),
             ("linhagem", self.linhagem.clone()),
             ("esquema", Json::texto_de(&self.esquema)),
             ("eventos", Json::Lista(self.eventos.clone())),
@@ -612,6 +620,7 @@ mod testes {
             tabela: t.into(),
             dado_pessoal: false,
             eventos_do_master: depois,
+            proxima_sequencia: 0,
             posicao: depois.saturating_sub(1),
             eventos: vec![],
             linhagem: Json::Nulo,
@@ -625,6 +634,22 @@ mod testes {
             database: db.into(),
             tabela: t.into(),
             posicao,
+        }
+    }
+
+    /// O lote do quorum leva o contador da `Sequence` (pedido 229, c-pleno), e
+    /// o leitor da replica o le de volta -- inclusive acima de 2^53. Sem o
+    /// campo no `para_json` o quorum seria o caminho irmao que esquece.
+    #[test]
+    fn o_lote_leva_o_contador_da_sequencia_e_a_replica_o_le() {
+        for n in [0u64, 7, (1 << 53) + 1] {
+            let mut l = lote("loja", "pedidos", 3);
+            l.proxima_sequencia = n;
+            let fio = Json::analisar(&l.para_json().escrever()).unwrap();
+            assert_eq!(
+                crate::replica::proxima_sequencia_do_fio(fio.campo("proxima_sequencia")),
+                n
+            );
         }
     }
 
