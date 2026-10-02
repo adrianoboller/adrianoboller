@@ -3877,9 +3877,9 @@
       "id": "escrita-local-na-replica-calada",
       "titulo": "A réplica aceitava escrita local calada, e a ruptura que ela causava culpava o source",
       "veredito": "PROVADA",
-      "segundos": 21.9,
+      "segundos": 19.63,
       "notas": [],
-      "quando": "2026-10-01 18:41"
+      "quando": "2026-10-02 05:52"
     },
     {
       "id": "novo-orfao-sobrevive-ao-excluir-tabela",
@@ -4584,6 +4584,14 @@
       "segundos": 23.78,
       "notas": [],
       "quando": "2026-10-02 05:07"
+    },
+    {
+      "id": "escrita-local-contada-depois-da-escrita-630",
+      "titulo": "a escrita local na replica se conta DEPOIS de gravar: na janela entre uma coisa e outra a rodada da replica nomeia as duas causas e a recusa fica guardada por posicao",
+      "veredito": "PROVADA",
+      "segundos": 70.33,
+      "notas": [],
+      "quando": "2026-10-02 05:52"
     },
     {
       "id": "alter-com-regra-sem-aviso",

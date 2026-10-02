@@ -812,7 +812,10 @@ TETO_TESTE_SEM_MODULO = 0
 # (`--so <id> --json`). Piso so sobe com entrada nova, e se outra frente somar
 # entradas no mesmo passo o integrador reconta -- o numero e do catalogo do
 # dia, nao desta frente.
-PISO_DAS_ENTRADAS = 747
+# 747 -> 748 (floco do 630, 02/10/2026): `escrita-local-contada-depois-da-
+# escrita-630`, medido por `--numeros` (748) na arvore desta frente; se a frente
+# do 268 entrar antes, o integrador reconta.
+PISO_DAS_ENTRADAS = 748
 
 # ------------------------------------------------------------- APOSENTADAS
 #
