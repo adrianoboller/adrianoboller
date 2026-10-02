@@ -573,6 +573,130 @@ pub(crate) const OPS_DE_REPLICACAO: &[&str] = &[
     "replicar_aguardar",
 ];
 
+/// As operacoes de MANUTENCAO que criam, apagam ou renomeiam arquivos de
+/// tabela SEM passar por `congelamento::congelar` -- e que por isso o
+/// despachar recusa enquanto um backup esta na fase 1 (pedido 513, passo 2,
+/// o `BLOCK_DDL` do MariaDB e o `LOCK INSTANCE FOR BACKUP` do MySQL).
+///
+/// Nao e correcao: a fase 2 compara a arvore inteira e acerta mesmo com
+/// arquivo criado ou apagado no meio. E custo -- um `reindexar` reescreve o
+/// `.ndx` inteiro e o joga na fase 2, que roda sem escritor. As reescritas
+/// que congelam (`acrescentar_coluna`, `migrar_esquema`, a trilha LGPD) sao
+/// recusadas pelo proprio `congelar`, no armazem: UMA pergunta, dois lados.
+/// O que grava DADO (`inserir`, `alterar`, `excluir`, `commit`) nao esta
+/// aqui, e e' esse o ganho do passo 2.
+pub(crate) const OPS_DE_MANUTENCAO: &[&str] = &[
+    "criar_database",
+    "criar_schema",
+    "criar_tabela",
+    "excluir_tabela",
+    "renomear_tabela",
+    "duplicar_tabela",
+    "copiar_tabela",
+    "reindexar",
+    "restaurar_backup",
+];
+
+/// O estado de uma corrida de backup entre a fase 1 e a fase 2 -- ver
+/// `Servidor::fazer_backup`.
+enum Pronto {
+    Arvore(phxsql_store::backup::Fase1),
+    Zip(phxsql_store::backup::Fase1),
+    /// Sem espaco para a arvore temporaria: a fase 2 faz a passada unica.
+    ZipSemEspaco {
+        livre: u64,
+    },
+    ZipInteiro {
+        zip: phxsql_store::backup::ZipParcial,
+        r: phxsql_store::backup::Relatorio,
+        livre: u64,
+    },
+}
+
+/// O que uma corrida de backup deixou -- a resposta do `backup` e a linha do
+/// agendado saem daqui, um motor so.
+#[derive(Default)]
+struct BackupFeito {
+    destino: PathBuf,
+    /// O zip, quando a copia foi para arquivo unico.
+    arquivo: Option<PathBuf>,
+    r: phxsql_store::backup::Relatorio,
+    ms: u64,
+    fase_1_ms: u64,
+    /// `None` so' no retrato inteiro (zip sem espaco).
+    acerto: Option<phxsql_store::backup::Acerto>,
+    /// Bytes livres medidos quando a arvore temporaria do zip nao coube.
+    sem_espaco: Option<u64>,
+}
+
+impl BackupFeito {
+    fn onde(&self) -> &Path {
+        self.arquivo.as_deref().unwrap_or(&self.destino)
+    }
+
+    fn para_json(&self) -> Vec<(&'static str, Json)> {
+        let mut campos = vec![
+            (
+                "destino",
+                Json::texto_de(self.destino.display().to_string()),
+            ),
+            ("arquivos", Json::de_u64(self.r.arquivos.len() as u64)),
+            ("bytes", Json::de_u64(self.r.bytes)),
+            ("ms", Json::de_u64(self.ms)),
+            (
+                "modo",
+                Json::texto_de(if self.acerto.is_some() {
+                    "duas_passadas"
+                } else {
+                    "retrato_inteiro"
+                }),
+            ),
+            (
+                "retrato_ms",
+                match self.r.retrato_ms {
+                    Some(t) => Json::Numero(t as f64),
+                    None => Json::Nulo,
+                },
+            ),
+            ("fase_1_ms", Json::de_u64(self.fase_1_ms)),
+        ];
+        if let Some(a) = &self.acerto {
+            campos.push((
+                "fase_2",
+                Json::objeto(vec![
+                    ("ms", Json::de_u64(a.ms)),
+                    ("arquivos", Json::de_u64(a.arquivos)),
+                    ("bytes", Json::de_u64(a.bytes)),
+                    ("conferidos", Json::de_u64(a.conferidos)),
+                    ("fora_do_bloqueio", Json::de_u64(a.fora_do_bloqueio)),
+                ]),
+            ));
+        }
+        if let Some(livre) = self.sem_espaco {
+            campos.push((
+                "motivo",
+                Json::texto_de(format!(
+                    "sem espaco para a arvore temporaria do zip ({livre} bytes livres): a \
+                     copia rodou inteira sob a trava, como antes do passo 2 do pedido 513"
+                )),
+            ));
+        }
+        if let Some(a) = &self.arquivo {
+            campos.push(("arquivo", Json::texto_de(a.display().to_string())));
+            campos.push(("comprimido", Json::de_u64(self.r.comprimido)));
+            campos.push((
+                "reducao_pct",
+                Json::de_u64(if self.r.bytes > 0 {
+                    100 - (self.r.comprimido * 100 / self.r.bytes).min(100)
+                } else {
+                    0
+                }),
+            ));
+        }
+        campos
+    }
+}
+
 /// O que a fase 3 de um alcance de tabela BIDIRECIONAL devolveu.
 #[derive(Default)]
 struct LoteBidi {
@@ -2370,7 +2494,10 @@ impl Servidor {
         // O quorum de escrita (pedido 207): o portao e uma leitura atomica e
         // vem ANTES de qualquer trabalho. Desligado, nenhum evento do diario
         // paga mais que a leitura de uma `Cell` de thread.
-        if self.quorum_vale_aqui() {
+        // E a mesma anotacao serve ao backup em duas passadas (pedido 513,
+        // passo 2): com retrato ligado, as tabelas tocadas sao a terceira
+        // rede da fase 2. Dois `load` quando nenhum dos dois esta ligado.
+        if self.quorum_vale_aqui() || phxsql_store::congelamento::em_retrato() {
             phxsql_store::log::anotar_tocadas();
         }
         // A ficha sai da vida do emprestimo e passa a viver ao lado do guard,
@@ -7156,7 +7283,25 @@ impl Servidor {
     }
 
     /// A COPIA de um backup -- o protocolo e o agendado passam por aqui, e e
-    /// o UNICO lugar que decide sob que trava ela roda (pedido 513, passo 1).
+    /// o UNICO lugar que decide sob que trava cada fase roda (pedido 513).
+    ///
+    /// # Duas passadas -- passo 2
+    ///
+    /// A FASE 1 (`fase_1`) corre SEM trava nenhuma: copia a raiz inteira e
+    /// anota a ficha de cada arquivo. So o retrato do armazem esta ligado
+    /// (`congelamento::comecar_retrato`), e ele serve a duas coisas: recusar
+    /// a manutencao que reescreveria tabela inteira no meio, e somar os
+    /// eventos por tabela tocada -- a terceira rede da fase 2.
+    ///
+    /// A FASE 2 (`fase_2`) e o passo 1 de antes: sob a ficha de LEITURA mais
+    /// o portao do retrato, que exclui so o escritor. Ela recebe os eventos
+    /// somados e acerta o destino: `stat` de tudo, recopia do que mudou. O
+    /// retrato -- o instante em que a copia e consistente -- e o da fase 2,
+    /// como o `BLOCK_COMMIT` do `mariabackup`.
+    ///
+    /// Antes do passo 2 a copia inteira rodava sob a ficha de leitura: 100 GB
+    /// eram 12-18 min (arvore) ou 50-64 min (zip) com a ESCRITA parada. Agora
+    /// a escrita espera so a fase 2.
     ///
     /// # Ficha compartilhada, e o portao antes dela
     ///
@@ -7169,77 +7314,189 @@ impl Servidor {
     /// gravam nada (`docs/CONCORRENCIA.md` §16); o recuo deles para a
     /// exclusiva espera no portao, como qualquer escritor.
     ///
-    /// Antes era a ficha EXCLUSIVA a copia inteira: 100 GB eram 50-64 min com
-    /// a LEITURA parada tambem. A escrita continua esperando a copia inteira
-    /// -- tirar a escrita da espera e o passo 2 do 513.
-    ///
     /// # A reentrancia, ANTES do portao
     ///
     /// Uma thread com a ficha exclusiva na mao esta na conta do portao: se
     /// ela fechasse o portao, esperaria a si mesma para sempre. A pergunta
     /// vem antes, e vira o mesmo erro comum da `COM_A_TRAVA`.
     ///
-    /// # O gancho de teste tem nome PROPRIO
+    /// # Os ganchos de teste tem nome PROPRIO
     ///
     /// O `despachar` arma o panico de teste pelo nome da OPERACAO, antes de
     /// qualquer trava. Com o gancho chamado `backup`, a pausa da prova do 513
     /// disparava ali, com trava nenhuma na mao -- e a escrita passava em 1 ms.
-    fn copiar_o_retrato<T>(
+    /// `backup_fase_1` dispara DEPOIS da fase 1 e antes da trava (a janela em
+    /// que o escritor anda); o `gancho` de quem chama dispara com a ficha da
+    /// fase 2 na mao.
+    fn copiar_o_retrato<F, T>(
         &self,
         #[allow(unused_variables)] gancho: &str,
-        copiar: impl FnOnce() -> Result<T>,
+        fase_1: impl FnOnce() -> Result<F>,
+        fase_2: impl FnOnce(F, &std::collections::BTreeMap<PathBuf, u64>) -> Result<T>,
     ) -> Result<T> {
         if COM_A_TRAVA.with(std::cell::Cell::get) {
             return Err(trava_reentrante());
         }
+        let em_curso = phxsql_store::congelamento::comecar_retrato(&self.config.base)?;
+        let pronto = fase_1()?;
+        #[cfg(test)]
+        self.armar_panico_de_teste("backup_fase_1");
         let _retrato = self.retrato.tirar_retrato();
         let _trava = self.travar_dados_para_ler()?;
         // So nos testes: o panico (pedido 502) ou a pausa (pedido 513) com a
         // ficha da copia na mao.
         #[cfg(test)]
         self.armar_panico_de_teste(gancho);
-        copiar()
+        let eventos = em_curso.eventos();
+        let feito = fase_2(pronto, &eventos);
+        // O bloqueio de manutencao solta ANTES da trava e do portao, de
+        // proposito: o escritor que esperou no portao a fase 2 inteira
+        // entraria com o retrato ainda ligado por microssegundos e levaria um
+        // 4006 de um backup que ja acabou.
+        drop(em_curso);
+        feito
+    }
+
+    /// O que uma corrida de backup deixou, para a resposta do protocolo e
+    /// para o log do agendado -- um motor so para os dois chamadores.
+    fn fazer_backup(
+        &self,
+        gancho: &str,
+        destino: &Path,
+        em_zip: bool,
+        banco: &str,
+        quem: &str,
+        quando: i64,
+    ) -> Result<BackupFeito> {
+        // Fase 1: a arvore (ou a arvore temporaria do zip) sem trava; fase 2:
+        // o acerto sob a ficha de leitura. O `fsync`, o manifesto e o rename
+        // final ficam FORA das duas: so tocam o destino, nunca leem `raiz`,
+        // e a catraca `alcancam-fsync-3` proibe alcancar `sync_all` com a
+        // trava na mao (pedidos 513/524) -- ver `backup.rs`, condicoes C1 e
+        // C2. O zip volta com o descritor de quem o escreveu (pedido 552).
+        let inicio = Instant::now();
+        let (fase_1_ms, pronto, acerto) = self.copiar_o_retrato(
+            gancho,
+            || {
+                let t = Instant::now();
+                let pronto = if em_zip {
+                    // Sem espaco para a arvore temporaria, a copia cai na
+                    // passada unica DIZENDO (`modo: retrato_inteiro`): quem
+                    // tem zip funcionando hoje nao passa a falhar.
+                    let livre = self.espaco_livre_em(destino);
+                    match phxsql_store::backup::copiar_fase_1_para_zip(
+                        &self.config.base,
+                        destino,
+                        banco,
+                        quem,
+                        quando,
+                        livre,
+                    )? {
+                        Some(fase) => Pronto::Zip(fase),
+                        None => Pronto::ZipSemEspaco {
+                            livre: livre.unwrap_or(0),
+                        },
+                    }
+                } else {
+                    let mut fase = phxsql_store::backup::copiar_fase_1(&self.config.base, destino)?;
+                    // O `fsync` do grosso da copia AQUI, com o escritor ainda
+                    // andando: depois da fase 2 so' o que ela reescreveu
+                    // sincroniza, e o escritor que esperou no portao nao
+                    // volta para um disco ocupado (medido: ~100 ms a mais
+                    // por escrita, bancada do 513).
+                    phxsql_store::backup::sincronizar_fase_1(&mut fase)?;
+                    Pronto::Arvore(fase)
+                };
+                Ok((t.elapsed().as_millis() as u64, pronto))
+            },
+            |(fase_1_ms, pronto), eventos| {
+                let (pronto, acerto) = match pronto {
+                    Pronto::Arvore(mut fase) => {
+                        let acerto = phxsql_store::backup::acertar_fase_2(&mut fase, eventos)?;
+                        (Pronto::Arvore(fase), Some(acerto))
+                    }
+                    Pronto::Zip(mut fase) => {
+                        let acerto = phxsql_store::backup::acertar_fase_2(&mut fase, eventos)?;
+                        (Pronto::Zip(fase), Some(acerto))
+                    }
+                    Pronto::ZipSemEspaco { livre } => {
+                        let (zip, r) = phxsql_store::backup::executar_zip(
+                            &self.config.base,
+                            destino,
+                            banco,
+                            quem,
+                            quando,
+                        )?;
+                        (Pronto::ZipInteiro { zip, r, livre }, None)
+                    }
+                    inteiro @ Pronto::ZipInteiro { .. } => (inteiro, None),
+                };
+                Ok((fase_1_ms, pronto, acerto))
+            },
+        )?;
+        let mut feito = BackupFeito {
+            destino: destino.to_path_buf(),
+            fase_1_ms,
+            acerto,
+            ..BackupFeito::default()
+        };
+        match pronto {
+            Pronto::Arvore(fase) => {
+                let (r, copias) = phxsql_store::backup::terminar(fase);
+                phxsql_store::backup::concluir(destino, quando, &r, &copias)?;
+                feito.r = r;
+            }
+            Pronto::Zip(fase) => {
+                let (zip, r) = phxsql_store::backup::concluir_zip(fase)?;
+                phxsql_store::backup::finalizar_zip(&zip)?;
+                feito.arquivo = Some(zip.to_path_buf());
+                feito.r = r;
+            }
+            Pronto::ZipInteiro { zip, r, livre } => {
+                phxsql_store::backup::finalizar_zip(&zip)?;
+                feito.arquivo = Some(zip.to_path_buf());
+                feito.r = r;
+                feito.sem_espaco = Some(livre);
+            }
+            Pronto::ZipSemEspaco { .. } => unreachable!("a fase 2 troca este estado"),
+        }
+        feito.ms = inicio.elapsed().as_millis() as u64;
+        Ok(feito)
+    }
+
+    /// O espaco livre, em bytes, no disco de `caminho` -- pelo `df`, o mesmo
+    /// motor do painel (`sistema::espaco`). `None` quando nao se mede (fora
+    /// do Linux, ou pasta que ainda nao existe e cujo pai tampouco).
+    fn espaco_livre_em(&self, caminho: &Path) -> Option<u64> {
+        let mut existente = caminho;
+        while !existente.exists() {
+            existente = existente.parent()?;
+        }
+        crate::sistema::espaco(&[existente])
+            .first()
+            .map(|e| e.livre_kb.saturating_mul(1024))
     }
 
     fn rodar_backup_agendado(&self, quando: i64) -> Result<String> {
         let b = &self.config.backup;
-        // O `fsync` (e o manifesto/rename final) saem da trava (pedido
-        // 513/524): a trava so protege a LEITURA de `raiz`, e nem
-        // `sincronizar` nem `finalizar_manifesto`/`finalizar_zip` leem nada
-        // de la. Ver a nota "Escrever e sincronizar sao DOIS passos" em
-        // `backup.rs`. UM bloco de trava por chamada, como sempre -- so o
-        // que esta DENTRO dele mudou.
-        // O zip volta com o descritor de quem o escreveu (pedido 552), e e
-        // nele que o `finalizar_zip` sincroniza -- por isso viaja inteiro, e
-        // nao so o caminho.
-        // A trava da copia e decidida no `copiar_o_retrato`, o MESMO do
+        // A trava de cada fase e decidida no `copiar_o_retrato`, o MESMO do
         // `op_backup` -- e la que mora o gancho de teste do panico (pedido
-        // 502), agora com a ficha COMPARTILHADA na mao (pedido 513).
-        let (destino, r, a_sincronizar, zip) = self.copiar_o_retrato("backup_agendado", || {
-            Ok(if b.zip {
-                let (zip, r) = phxsql_store::backup::executar_zip(
-                    &self.config.base,
-                    &b.destino,
-                    &b.database,
-                    &b.admin,
-                    quando,
-                )?;
-                (zip.to_path_buf(), r, None, Some(zip))
-            } else {
-                let pasta = b.destino.join(
-                    phxsql_core::datahora::instante_iso(quando).replace([' ', ':', ','], "-"),
-                );
-                let (r, a_sincronizar) =
-                    phxsql_store::backup::executar(&self.config.base, &pasta, quando)?;
-                (pasta, r, Some(a_sincronizar), None)
-            })
-        })?;
-        if let Some(a_sincronizar) = a_sincronizar {
-            phxsql_store::backup::concluir(&destino, quando, &r, &a_sincronizar)?;
-        } else if let Some(zip) = &zip {
-            phxsql_store::backup::finalizar_zip(zip)?;
-        }
-        let onde = destino.display().to_string();
+        // 502), com a ficha COMPARTILHADA da fase 2 na mao (pedido 513).
+        let destino = if b.zip {
+            b.destino.clone()
+        } else {
+            b.destino
+                .join(phxsql_core::datahora::instante_iso(quando).replace([' ', ':', ','], "-"))
+        };
+        let feito = self.fazer_backup(
+            "backup_agendado",
+            &destino,
+            b.zip,
+            &b.database,
+            &b.admin,
+            quando,
+        )?;
+        let onde = feito.onde().display().to_string();
 
         // O log de acessos guarda tambem o que o servidor faz sozinho: senao,
         // a unica prova de que o backup rodou seria o arquivo existir.
@@ -7260,13 +7517,27 @@ impl Servidor {
 
         let apagados = self.limpar_backups_velhos();
         Ok(format!(
-            "{onde} ({} arquivos, {} bytes{}{})",
-            r.arquivos.len(),
-            r.bytes,
+            "{onde} ({} arquivos, {} bytes{}{}{}{})",
+            feito.r.arquivos.len(),
+            feito.r.bytes,
             if b.zip {
-                format!(", zip de {} bytes", r.comprimido)
+                format!(", zip de {} bytes", feito.r.comprimido)
             } else {
                 String::new()
+            },
+            match &feito.acerto {
+                Some(a) => format!(
+                    ", fase 2 em {} ms: {} arquivo(s), {} bytes",
+                    a.ms, a.arquivos, a.bytes
+                ),
+                None => String::new(),
+            },
+            match feito.sem_espaco {
+                Some(livre) => format!(
+                    ", retrato inteiro sob a trava: sem espaco para a arvore temporaria \
+                     ({livre} bytes livres)"
+                ),
+                None => String::new(),
             },
             if apagados > 0 {
                 format!(", {apagados} antigo(s) apagado(s)")
@@ -13433,6 +13704,18 @@ impl Servidor {
                 }
             }
             return r;
+        }
+        // O BLOQUEIO DE MANUTENCAO do backup em duas passadas (pedido 513,
+        // passo 2): um `load` quando nao ha retrato, e so' entao a lista.
+        // A recusa e' `EmMigracao` (4006, `repetir: true`): o backup termina
+        // sozinho, e o pedido vale repetido.
+        if phxsql_store::congelamento::em_retrato()
+            && OPS_DE_MANUTENCAO.contains(&op)
+            && phxsql_store::congelamento::em_retrato_de(&self.config.base)
+        {
+            return Err(phxsql_store::congelamento::recusa_de_manutencao_no_retrato(
+                &format!("a operacao {op}"),
+            ));
         }
         match op {
             "ping" => Ok(Json::objeto(vec![
@@ -25535,7 +25818,6 @@ impl Servidor {
             return Err(PhxError::Esquema("informe \"destino\"".into()));
         }
         let quando = crate::agora_ms();
-        let inicio = Instant::now();
         let em_zip = p.booleano_ou("zip", false);
         let banco = p.texto_ou("database", "").trim().to_string();
         // Quem fez entra no nome do arquivo. Sem login, entrou pelo token de
@@ -25546,63 +25828,17 @@ impl Servidor {
             sessao.login().to_string()
         };
 
-        // O retrato vale a COPIA inteira -- e o que "consistente" quer dizer
-        // sem transacao: nenhuma escrita acontece no meio. Quem decide sob
-        // que trava e o `copiar_o_retrato`, o MESMO do backup agendado. O
-        // `fsync` (e o manifesto/rename final) ficam FORA: so tocam o
-        // destino, nunca leem `raiz`, e a catraca `alcancam-fsync-2` proibe
-        // alcancar `sync_all` com a trava na mao (pedido 513/524) -- ver a
-        // nota do modulo em `backup.rs`, condicoes C1 e C2.
-        let (caminho_zip, r, a_sincronizar) = self.copiar_o_retrato("backup_copia", || {
-            Ok(if em_zip {
-                let (caminho, r) = phxsql_store::backup::executar_zip(
-                    &self.config.base,
-                    std::path::Path::new(&destino),
-                    &banco,
-                    &quem,
-                    quando,
-                )?;
-                (Some(caminho), r, None)
-            } else {
-                let (r, a_sincronizar) = phxsql_store::backup::executar(
-                    &self.config.base,
-                    std::path::Path::new(&destino),
-                    quando,
-                )?;
-                (None, r, Some(a_sincronizar))
-            })
-        })?;
-        if let Some(a_sincronizar) = a_sincronizar {
-            phxsql_store::backup::concluir(
-                std::path::Path::new(&destino),
-                quando,
-                &r,
-                &a_sincronizar,
-            )?;
-        } else if let Some(caminho) = &caminho_zip {
-            phxsql_store::backup::finalizar_zip(caminho)?;
-        }
-        let arquivo = caminho_zip.map(|c| c.display().to_string());
-
-        let mut campos = vec![
-            ("destino", Json::texto_de(&destino)),
-            ("arquivos", Json::de_u64(r.arquivos.len() as u64)),
-            ("bytes", Json::de_u64(r.bytes)),
-            ("ms", Json::de_u64(inicio.elapsed().as_millis() as u64)),
-        ];
-        if let Some(a) = arquivo {
-            campos.push(("arquivo", Json::texto_de(a)));
-            campos.push(("comprimido", Json::de_u64(r.comprimido)));
-            campos.push((
-                "reducao_pct",
-                Json::de_u64(if r.bytes > 0 {
-                    100 - (r.comprimido * 100 / r.bytes).min(100)
-                } else {
-                    0
-                }),
-            ));
-        }
-        Ok(Json::objeto(campos))
+        // As duas fases, a trava de cada uma e o `fsync` fora delas sao
+        // decididos no `fazer_backup`, o MESMO do backup agendado.
+        let feito = self.fazer_backup(
+            "backup_copia",
+            std::path::Path::new(&destino),
+            em_zip,
+            &banco,
+            &quem,
+            quando,
+        )?;
+        Ok(Json::objeto(feito.para_json()))
     }
 
     /// Confere `.reg` contra `.bkp` e conserta o que der.
@@ -32989,7 +33225,12 @@ impl Drop for TravaMedida<'_> {
         // motivo. O portao e a `Cell` da anotacao, ligada so com o quorum.
         if phxsql_store::log::anotando_tocadas() {
             let tocadas = phxsql_store::log::tomar_tocadas();
-            if !std::thread::panicking() && !tocadas.is_empty() {
+            // O retrato do backup (pedido 513, passo 2) soma ANTES de soltar
+            // o guard: a fase 2 toma a ficha de leitura so' depois de todo
+            // escritor sair, entao ve tudo o que foi anotado aqui.
+            phxsql_store::congelamento::anotar_no_retrato(&tocadas);
+            if !std::thread::panicking() && !tocadas.is_empty() && self.servidor.quorum_vale_aqui()
+            {
                 self.servidor.esperar_o_quorum(&self.instancia, tocadas);
             }
         }
@@ -69295,9 +69536,22 @@ mod testes_do_panico_sob_a_trava {
     /// descreve.
     fn backup_agendado(c: &mut Config, dir: &std::path::Path) {
         c.backup.agendado = true;
-        c.backup.destino = dir.join("backups");
+        c.backup.destino = destino_do_backup_agendado(dir);
         c.backup.hora = String::new();
         c.backup.cada_horas = 24;
+    }
+
+    /// O destino do backup agendado dos cenarios `backup` e `backup_pausado`
+    /// -- IRMAO de `dir`, pelo mesmo motivo do `destino_do_backup_c1`. Era
+    /// `dir/backups`, dentro da raiz, e a recusa do destino nunca aparecia
+    /// porque o gancho de teste disparava ANTES da copia; com a fase 1 do
+    /// 513 (passo 2) rodando antes do gancho, a recusa saia primeiro e a
+    /// prova caia pelo motivo errado. Quem usa apaga a pasta no fim.
+    fn destino_do_backup_agendado(dir: &std::path::Path) -> std::path::PathBuf {
+        dir.with_file_name(format!(
+            "{}-backups",
+            dir.file_name().unwrap().to_string_lossy()
+        ))
     }
 
     /// O `.log` das corridas dos jobs do filho.
@@ -69428,6 +69682,7 @@ mod testes_do_panico_sob_a_trava {
         );
         let _ = filho.kill();
         let _ = filho.wait();
+        let _ = std::fs::remove_dir_all(destino_do_backup_agendado(&dir));
         assert!(
             erro.contains("backup agendado FALHOU") && erro.contains("PANICO"),
             "o panico do backup nao virou falha dita: {erro}"
@@ -69463,6 +69718,7 @@ mod testes_do_panico_sob_a_trava {
         let servindo = pedir(porta, r#""op":"ping""#);
         let _ = filho.kill();
         let _ = filho.wait();
+        let _ = std::fs::remove_dir_all(destino_do_backup_agendado(&dir));
         assert!(
             !segundo.contains(PAUSA_513),
             "LACO DE QUEDAS: o backup que derrubou o processo rodou DE NOVO no \
@@ -72569,6 +72825,307 @@ mod testes_do_retrato_do_backup {
             Some(antes),
             "o retrato tem o .reg de outro instante: a escrita entrou no meio \
              da copia"
+        );
+    }
+
+    // ------------------------------------------------ o passo 2 do 513
+
+    /// Um servidor com `loja.clientes` (5 linhas, cabecalho curado) no ar,
+    /// e o destino irmao do backup -- o cenario das provas do passo 2.
+    struct Loja {
+        s: Arc<Servidor>,
+        dir: DirTemp,
+        destino: std::path::PathBuf,
+        porta: u16,
+        fio: Option<std::thread::JoinHandle<()>>,
+    }
+
+    impl Loja {
+        fn subir(nome: &str) -> Loja {
+            let dir = DirTemp::novo(nome);
+            let destino = dir.with_file_name(format!(
+                "{}-backup",
+                dir.file_name().unwrap().to_string_lossy()
+            ));
+            let _ = std::fs::remove_dir_all(&destino);
+            let mut c = Config {
+                base: dir.to_path_buf(),
+                log_acessos: dir.join("acessos.log"),
+                blacklist: dir.join("blacklist.json"),
+                dblink: dir.join("dblink.json"),
+                jobs: dir.join("jobs.json"),
+                token: "t".into(),
+                ..Config::default()
+            };
+            c.cifra_fio.exigir = false;
+            let s = Servidor::novo(c).unwrap();
+            let ouvinte = TcpListener::bind("127.0.0.1:0").unwrap();
+            let porta = ouvinte.local_addr().unwrap().port();
+            let fio = {
+                let s = Arc::clone(&s);
+                std::thread::spawn(move || s.aceitar_ate_mandarem_parar(&ouvinte))
+            };
+            falar(porta, r#""op":"criar_database","database":"loja""#);
+            falar(
+                porta,
+                r#""op":"criar_tabela","database":"loja","tabela":"clientes",
+                   "colunas":[{"nome":"id","tipo":"Int8","obrigatoria":true},
+                              {"nome":"nome","tipo":"Str(20)"}],
+                   "indices":[{"nome":"porId","colunas":["id"],"unico":true}]"#,
+            );
+            for id in 1..=5 {
+                falar(
+                    porta,
+                    &format!(
+                        r#""op":"inserir","database":"loja","tabela":"clientes",
+                           "valores":{{"id":{id},"nome":"C{id}"}}"#
+                    ),
+                );
+            }
+            // A cura do cabecalho do `.log` antes do backup -- ver a prova
+            // do passo 1, acima.
+            falar(
+                porta,
+                r#""op":"varrer","database":"loja","tabela":"clientes","max":1"#,
+            );
+            Loja {
+                s,
+                dir,
+                destino,
+                porta,
+                fio: Some(fio),
+            }
+        }
+
+        /// Arma a pausa no gancho `gancho` e dispara um backup em arvore
+        /// noutra thread; volta quando a pausa COMECOU.
+        fn backup_pausado(&self, gancho: &str) -> std::thread::JoinHandle<Json> {
+            *self.s.panico_de_teste_na_op.lock().unwrap() = Some((
+                gancho.into(),
+                PanicoDeTeste::Pausa(PAUSA, "pausa de teste no backup (pedido 513, passo 2)"),
+            ));
+            let (porta, d) = (self.porta, self.destino.display().to_string());
+            let backup = std::thread::spawn(move || {
+                falar(porta, &format!(r#""op":"backup","destino":"{d}""#))
+            });
+            let ate = Instant::now() + Duration::from_secs(10);
+            while self.s.panico_de_teste_na_op.lock().unwrap().is_some() {
+                assert!(
+                    Instant::now() < ate,
+                    "o backup nunca chegou ao gancho {gancho}"
+                );
+                std::thread::sleep(Duration::from_millis(2));
+            }
+            backup
+        }
+
+        /// A resposta CRUA (com `ok` falso quando recusa).
+        fn cru(&self, corpo: &str) -> Json {
+            let corpo: String = corpo.split_whitespace().collect::<Vec<_>>().join(" ");
+            let r = Ligacao::nova(self.porta)
+                .pedir(&format!("{{\"token\":\"t\",{corpo}}}"))
+                .unwrap_or_else(|| panic!("a conexao caiu sem resposta: {corpo}"));
+            Json::analisar(&r).unwrap_or_else(|e| panic!("resposta ilegivel {r:?}: {e}"))
+        }
+
+        fn reg_vivo(&self) -> u64 {
+            let reg = achar_reg(&self.dir, "clientes.reg").expect("o .reg da tabela");
+            std::fs::metadata(reg).unwrap().len()
+        }
+
+        fn reg_copiado(&self) -> Option<u64> {
+            achar_reg(&self.destino, "clientes.reg").map(|p| std::fs::metadata(p).unwrap().len())
+        }
+    }
+
+    impl Drop for Loja {
+        fn drop(&mut self) {
+            self.s.parar_de_aceitar.store(true, Ordering::SeqCst);
+            let _ = TcpStream::connect(("127.0.0.1", self.porta));
+            if let Some(f) = self.fio.take() {
+                let _ = f.join();
+            }
+            let _ = std::fs::remove_dir_all(&self.destino);
+        }
+    }
+
+    /// **Passo 2: a escrita NAO espera a fase 1, e o retrato e o do FIM.**
+    ///
+    /// A copia para no gancho `backup_fase_1` -- depois de copiar tudo, antes
+    /// da trava. Um `inserir` nessa janela tem de voltar na hora (com a trava
+    /// na fase 1, guarda `backup-fase-1-sob-a-trava`, ele espera a pausa
+    /// inteira). E a copia que sai tem de conter essa linha: a fase 2
+    /// recopia o `.reg` que mudou (sem a fase 2, guarda `backup-sem-fase-2`,
+    /// o `.reg` copiado e o de antes da escrita e o `conferir` aprova o
+    /// retrato ERRADO -- por isso a prova compara o tamanho do `.reg` vivo
+    /// com o copiado, e nao so o `conferir`).
+    #[test]
+    fn a_escrita_nao_espera_a_fase_1_e_o_retrato_e_o_do_fim() {
+        let loja = Loja::subir("retrato-513p2");
+        let antes = loja.reg_vivo();
+        let backup = loja.backup_pausado("backup_fase_1");
+
+        let t = Instant::now();
+        falar(
+            loja.porta,
+            r#""op":"inserir","database":"loja","tabela":"clientes",
+               "valores":{"id":6,"nome":"C6"}"#,
+        );
+        let escrita = t.elapsed();
+        let vivo = loja.reg_vivo();
+        assert!(vivo > antes, "a premissa: a escrita cresce o .reg");
+
+        let resposta = backup.join().unwrap();
+        let conferido = falar(
+            loja.porta,
+            &format!(
+                r#""op":"conferir_backup","destino":"{}""#,
+                loja.destino.display()
+            ),
+        );
+        eprintln!(
+            "513/2: escrita durante a fase 1 {} ms (pausa {} ms); resposta {}",
+            escrita.as_millis(),
+            PAUSA.as_millis(),
+            resposta.escrever()
+        );
+        assert!(
+            escrita < PAUSA / 4,
+            "a escrita ESPEROU a fase 1 do backup: {escrita:?} com a copia parada {PAUSA:?}"
+        );
+        assert_eq!(resposta.texto_ou("modo", ""), "duas_passadas");
+        let fase_2 = resposta
+            .campo("fase_2")
+            .expect("o bloco fase_2 na resposta");
+        assert!(
+            fase_2.inteiro_ou("arquivos", 0) >= 1,
+            "a fase 2 nao recopiou nada: {}",
+            resposta.escrever()
+        );
+        assert!(
+            resposta.inteiro_ou("retrato_ms", 0) > 0,
+            "sem retrato_ms: {}",
+            resposta.escrever()
+        );
+        assert!(
+            conferido.booleano_ou("integro", false),
+            "o backup nao confere: {}",
+            conferido.escrever()
+        );
+        assert_eq!(
+            loja.reg_copiado(),
+            Some(vivo),
+            "o retrato NAO e o do fim: o .reg copiado e o de antes da escrita feita \
+             durante a fase 1"
+        );
+        let manifesto = std::fs::read_to_string(loja.destino.join("backup.json")).unwrap();
+        let manifesto = Json::analisar(&manifesto).unwrap();
+        assert!(
+            manifesto.inteiro_ou("retrato_ms", 0) >= manifesto.inteiro_ou("quando_ms", 0),
+            "o manifesto nao carrega o retrato_ms: {}",
+            manifesto.escrever()
+        );
+    }
+
+    /// **Passo 2: a manutencao espera o backup; o dado nao.**
+    ///
+    /// Com a copia parada na fase 1, `criar_tabela` (que nao congela) e
+    /// `acrescentar_coluna` (que congela) recusam com 4006 e `repetir:
+    /// true`; o `inserir` passa. Depois do backup, as duas passam. Guarda
+    /// `manutencao-durante-o-retrato`: sem a pergunta no `congelar`, a
+    /// reescrita entra no meio da copia.
+    #[test]
+    fn a_manutencao_espera_o_backup_e_o_dado_nao() {
+        let loja = Loja::subir("retrato-513p2-ddl");
+        let backup = loja.backup_pausado("backup_fase_1");
+
+        let criar = loja.cru(
+            r#""op":"criar_tabela","database":"loja","tabela":"pedidos",
+               "colunas":[{"nome":"id","tipo":"Int8","obrigatoria":true}]"#,
+        );
+        let coluna = loja.cru(
+            r#""op":"acrescentar_coluna","database":"loja","tabela":"clientes",
+               "coluna":{"nome":"email","tipo":"Str(40)"}"#,
+        );
+        let dado = loja.cru(
+            r#""op":"inserir","database":"loja","tabela":"clientes",
+               "valores":{"id":7,"nome":"C7"}"#,
+        );
+        backup.join().unwrap();
+        let depois = loja.cru(
+            r#""op":"criar_tabela","database":"loja","tabela":"pedidos",
+               "colunas":[{"nome":"id","tipo":"Int8","obrigatoria":true}]"#,
+        );
+        let coluna_depois = loja.cru(
+            r#""op":"acrescentar_coluna","database":"loja","tabela":"clientes",
+               "coluna":{"nome":"email","tipo":"Str(40)"}"#,
+        );
+
+        for (nome, r) in [("criar_tabela", &criar), ("acrescentar_coluna", &coluna)] {
+            assert!(
+                !r.booleano_ou("ok", true),
+                "{nome} ENTROU durante a fase 1 do backup: {}",
+                r.escrever()
+            );
+            assert_eq!(
+                r.inteiro_ou("codigo", 0),
+                4006,
+                "{nome}: codigo errado: {}",
+                r.escrever()
+            );
+            assert!(
+                r.booleano_ou("repetir", false),
+                "{nome}: a recusa nao diz repetir: {}",
+                r.escrever()
+            );
+        }
+        assert!(
+            dado.booleano_ou("ok", false),
+            "o inserir ESPEROU ou recusou durante a fase 1: {}",
+            dado.escrever()
+        );
+        assert!(
+            depois.booleano_ou("ok", false),
+            "depois do backup o criar_tabela continua recusado: {}",
+            depois.escrever()
+        );
+        assert!(
+            coluna_depois.booleano_ou("ok", false),
+            "depois do backup o acrescentar_coluna continua recusado: {}",
+            coluna_depois.escrever()
+        );
+    }
+
+    /// **Comportamento velho: sem backup em curso, a manutencao passa na
+    /// hora** -- e o `zip` em duas passadas sai integro e sem a arvore
+    /// temporaria no destino.
+    #[test]
+    fn sem_backup_a_manutencao_passa_e_o_zip_sai_em_duas_passadas() {
+        let loja = Loja::subir("retrato-513p2-zip");
+        let criar = loja.cru(
+            r#""op":"criar_tabela","database":"loja","tabela":"pedidos",
+               "colunas":[{"nome":"id","tipo":"Int8","obrigatoria":true}]"#,
+        );
+        assert!(criar.booleano_ou("ok", false), "{}", criar.escrever());
+        let r = falar(
+            loja.porta,
+            &format!(
+                r#""op":"backup","destino":"{}","zip":true"#,
+                loja.destino.display()
+            ),
+        );
+        assert_eq!(r.texto_ou("modo", ""), "duas_passadas", "{}", r.escrever());
+        let zip = std::path::PathBuf::from(r.texto_ou("arquivo", ""));
+        assert!(zip.is_file(), "o zip nao existe: {}", r.escrever());
+        let sobras: Vec<String> = std::fs::read_dir(&loja.destino)
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .filter(|n| n.ends_with(".retrato.part"))
+            .collect();
+        assert!(
+            sobras.is_empty(),
+            "a arvore temporaria ficou no destino: {sobras:?}"
         );
     }
 }

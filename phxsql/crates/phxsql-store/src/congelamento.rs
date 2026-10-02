@@ -171,6 +171,13 @@ pub fn congelar(diretorio: &Path, nome: &str, motivo: impl Into<String>) -> Resu
             "a tabela {nome} ja esta sendo reescrita: {ja}"
         )));
     }
+    // Pedido 513 (passo 2): com o backup copiando, a reescrita espera -- lido
+    // com o registro na mao, o par com `comecar_retrato`.
+    if em_retrato_de(diretorio) {
+        return Err(recusa_de_manutencao_no_retrato(&format!(
+            "a reescrita da tabela {nome}"
+        )));
+    }
     c.insert(chave.clone(), motivo.into());
     QUANTAS.fetch_add(1, Ordering::SeqCst);
     Ok(Congelada { chave })
@@ -216,6 +223,199 @@ pub fn conferir(diretorio: &Path, nome: &str) -> Result<()> {
 /// Quantas estao congeladas. So para medir e para teste.
 pub fn quantas() -> usize {
     QUANTAS.load(Ordering::SeqCst)
+}
+
+// ------------------------------------------------------------ o RETRATO
+//
+// O backup em duas passadas (pedido 513, passo 2) copia a raiz SEM a trava de
+// dados (fase 1) e so depois, sob a ficha de leitura, acerta o que mudou (fase
+// 2). Durante a fase 1 duas coisas precisam de um registro do PROCESSO, e as
+// duas moram aqui porque sao a mesma pergunta que `congelar` ja faz -- «ha
+// uma reescrita em curso?» -- vista do outro lado:
+//
+// * **o bloqueio de manutencao**: uma reescrita inteira de tabela
+//   (`congelar`) durante a fase 1 joga o `.reg` e o `.ndx` inteiros na fase
+//   2, que roda sem escritor. Nao e correcao -- a fase 2 compara a arvore
+//   inteira e acerta mesmo com arquivo criado, apagado ou reescrito --, e
+//   custo: MySQL (`LOCK INSTANCE FOR BACKUP`) e MariaDB (`BACKUP STAGE
+//   BLOCK_DDL`) bloqueiam, o PostgreSQL nao; 2 + 3 = 5 contra 4. Entao
+//   `congelar` recusa enquanto ha retrato da raiz que contem a tabela, com
+//   `EmMigracao` (4006, `repetir: true`), e a fase 1 so comeca sem nada
+//   congelado debaixo dela.
+//
+// * **a rede dos eventos**: a `Tocada` que a tomada da trava ja anota para o
+//   quorum (pedido 207, `log::anotar_tocadas`) e somada aqui por tabela
+//   enquanto ha retrato. E a terceira rede da fase 2, para relogio que recua
+//   (`mtime` e tamanho iguais depois de uma escrita): custa zero abertura de
+//   `.log` sob a trava, contra uma abertura por tabela que o contrato
+//   raciocinava.
+//
+// O retrato e POR RAIZ de dados, e nao do processo: dois servidores no mesmo
+// processo (a suite de testes) nao se bloqueiam. Um retrato por raiz por vez:
+// o segundo ESPERA o primeiro acabar, como esperava com a ficha exclusiva.
+
+/// O registro do retrato: as raizes em retrato e os eventos por tabela desde
+/// que a primeira ligou.
+struct RegistroDoRetrato {
+    /// As raizes (pela [`chave`], absoluta e em minusculas) com backup em
+    /// curso.
+    raizes: Vec<PathBuf>,
+    /// `chave(diretorio, nome)` -> eventos do diario desde o inicio da fase 1.
+    eventos: BTreeMap<PathBuf, u64>,
+}
+
+static RETRATO: Mutex<RegistroDoRetrato> = Mutex::new(RegistroDoRetrato {
+    raizes: Vec::new(),
+    eventos: BTreeMap::new(),
+});
+
+/// Quantas raizes estao em retrato -- o interruptor lido no caminho quente da
+/// tomada da trava e do `congelar`: sem retrato, um `load` e nada mais.
+static EM_RETRATO: AtomicUsize = AtomicUsize::new(0);
+
+/// Quem espera o retrato anterior da mesma raiz acabar dorme aqui.
+static RETRATO_ACABOU: std::sync::Condvar = std::sync::Condvar::new();
+
+/// A posse do retrato de uma raiz. Desliga no `Drop` -- inclusive no
+/// desenrolar de um panico no meio da copia, senao a manutencao daquela raiz
+/// ficaria recusada ate o processo reiniciar.
+#[derive(Debug)]
+pub struct RetratoEmCurso {
+    raiz: PathBuf,
+}
+
+fn registro() -> Result<std::sync::MutexGuard<'static, RegistroDoRetrato>> {
+    RETRATO
+        .lock()
+        .map_err(|_| PhxError::Corrompido("o registro do retrato esta envenenado".into()))
+}
+
+/// A chave de uma raiz de dados: a mesma regua da tabela, sem o nome.
+fn chave_da_raiz(raiz: &Path) -> PathBuf {
+    chave(raiz, "")
+}
+
+/// `tabela` (uma [`chave`]) esta debaixo de `raiz` (uma [`chave_da_raiz`])?
+fn debaixo_de(tabela: &Path, raiz: &Path) -> bool {
+    tabela.starts_with(raiz)
+}
+
+/// Comeca a fase 1 de um backup de `raiz`: espera o retrato anterior da mesma
+/// raiz acabar e recusa se ha reescrita de tabela dela em curso (seria
+/// recopiada inteira na fase 2, e a recusa diz qual e, com `repetir`).
+pub fn comecar_retrato(raiz: &Path) -> Result<RetratoEmCurso> {
+    let raiz = chave_da_raiz(raiz);
+    let mut r = registro()?;
+    while r.raizes.iter().any(|x| x == &raiz) {
+        r = RETRATO_ACABOU
+            .wait(r)
+            .map_err(|_| PhxError::Corrompido("o registro do retrato esta envenenado".into()))?;
+    }
+    // Sob o registro do retrato E o das congeladas, na mesma ordem que
+    // `congelar` (congeladas por dentro): nenhum dos dois comeca no meio do
+    // outro.
+    let c = CONGELADAS
+        .lock()
+        .map_err(|_| PhxError::Corrompido("o registro de congelamento esta envenenado".into()))?;
+    if let Some((tabela, motivo)) = c.iter().find(|(t, _)| debaixo_de(t, &raiz)) {
+        return Err(PhxError::EmMigracao(format!(
+            "o backup nao comeca durante a reescrita de uma tabela ({}: {motivo}): a \
+             reescrita termina sozinha, e o backup pode ser repetido em seguida",
+            tabela.display()
+        )));
+    }
+    // O interruptor liga COM o registro das congeladas na mao: ligado depois
+    // de solta-lo, um `congelar` que entrasse no intervalo leria «sem
+    // retrato» e os dois passariam.
+    if r.raizes.is_empty() {
+        r.eventos.clear();
+    }
+    r.raizes.push(raiz.clone());
+    EM_RETRATO.fetch_add(1, Ordering::SeqCst);
+    drop(c);
+    Ok(RetratoEmCurso { raiz })
+}
+
+/// Ha backup na fase 1 ou 2 de alguma raiz agora? Um `load`.
+pub fn em_retrato() -> bool {
+    EM_RETRATO.load(Ordering::SeqCst) > 0
+}
+
+/// Ha backup em curso da raiz que contem `diretorio`? O caminho comum e o
+/// `load` de [`em_retrato`]; so com retrato ligado se monta chave.
+pub fn em_retrato_de(diretorio: &Path) -> bool {
+    if !em_retrato() {
+        return false;
+    }
+    let chave = chave_da_raiz(diretorio);
+    RETRATO
+        .lock()
+        .map(|r| r.raizes.iter().any(|raiz| debaixo_de(&chave, raiz)))
+        .unwrap_or(false)
+}
+
+/// A recusa de quem quer fazer manutencao (criar, apagar, renomear ou
+/// reescrever tabela/database) com o retrato ligado -- um texto so, para o
+/// `congelar` e para o despachar do servidor. `EmMigracao` e o tipo que ja
+/// diz `repetir: true` (codigo 4006).
+pub fn recusa_de_manutencao_no_retrato(o_que: &str) -> PhxError {
+    PhxError::EmMigracao(format!(
+        "{o_que} espera o backup em curso terminar: durante a copia a estrutura das \
+         tabelas fica como esta (o dado continua gravando). Tente de novo em alguns \
+         instantes"
+    ))
+}
+
+/// Soma, no registro do retrato, os eventos de cada tabela tocada por uma
+/// tomada da trava. Sem retrato, custa o `load` do interruptor.
+pub fn anotar_no_retrato(tocadas: &[crate::log::Tocada]) {
+    if !em_retrato() || tocadas.is_empty() {
+        return;
+    }
+    let Ok(mut r) = RETRATO.lock() else {
+        return;
+    };
+    if r.raizes.is_empty() {
+        return;
+    }
+    for t in tocadas {
+        // `antes == depois` e «nao sei contar» (o `total()` recusou): conta
+        // UM, para a tabela entrar na fase 2 em vez de sumir da rede.
+        let n = t.depois.saturating_sub(t.antes).max(1);
+        *r.eventos.entry(chave(&t.diretorio, &t.nome)).or_insert(0) += n;
+    }
+}
+
+impl RetratoEmCurso {
+    /// Os eventos por tabela desde que o retrato comecou -- a foto que a fase
+    /// 2 compara com o zero da fase 1. So as tabelas desta raiz.
+    pub fn eventos(&self) -> BTreeMap<PathBuf, u64> {
+        RETRATO
+            .lock()
+            .map(|r| {
+                r.eventos
+                    .iter()
+                    .filter(|(t, _)| debaixo_de(t, &self.raiz))
+                    .map(|(t, n)| (t.clone(), *n))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+}
+
+impl Drop for RetratoEmCurso {
+    fn drop(&mut self) {
+        if let Ok(mut r) = RETRATO.lock() {
+            if let Some(i) = r.raizes.iter().position(|x| x == &self.raiz) {
+                r.raizes.remove(i);
+                EM_RETRATO.fetch_sub(1, Ordering::SeqCst);
+            }
+            if r.raizes.is_empty() {
+                r.eventos.clear();
+            }
+        }
+        RETRATO_ACABOU.notify_all();
+    }
 }
 
 #[cfg(test)]

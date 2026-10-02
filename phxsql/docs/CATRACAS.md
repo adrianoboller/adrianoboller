@@ -2075,6 +2075,52 @@ velha reposta, sai 1), e as três peças da costura (`portoes.sh`, `todas.py` e 
 própria prova) vão para a árvore temporária a partir da cópia viva, não do
 HEAD.
 
+## 20. 513 passo 2 — o backup em duas passadas: `PISO_DAS_ENTRADAS` 717 → **723**, e uma guarda que já era redundante (02/10/2026)
+
+A frente do backup sem a trava durante a cópia entrou com **seis** guardas
+novas, cada uma com o defeito que repõe e provada pelo
+`provar-guardas.py` (`ultima-corrida.json`, 02/10/2026):
+
+| guarda | o que repõe | cai |
+|---|---|---|
+| `backup-fase-1-sob-a-trava` | a fase 1 inteira sob a ficha de leitura (o passo 1) | o `inserir` durante a fase 1 espera a pausa inteira |
+| `backup-sem-fase-2` | a árvore sai sem a fase 2 | o `.reg` copiado é o de antes da escrita — e o `conferir` aprova |
+| `backup-fase-2-nao-acerta` | o mesmo, visto do armazém | alterado, novo e sumido entre as fases ficam como na fase 1 |
+| `backup-fase-2-sem-racy` | só o `stat` decide | o arquivo escrito no mesmo tique não é recopiado |
+| `backup-fase-2-sem-eventos` | sem a rede dos eventos | a tabela que andou com o relógio recuado não é recopiada |
+| `manutencao-durante-o-retrato` | `congelar` sem perguntar pelo retrato | a reescrita entra no meio da fase 1 |
+
+O piso sobe de 717 para **723** no mesmo passo (717 + 6, zero aposentadas).
+
+**Cinco entradas antigas do `backup.rs` envelheceram com a refatoração** — o
+laço de cópia virou `Fase1::copiar_tudo`/`gravar` — e foram **consertadas, não
+aposentadas**: o ponto de reposição andou, o defeito é o mesmo
+(`backup-reaproveitado-que-falha-deixa-o-manifesto-velho`,
+`backup-copia-fecha-o-descritor-antes-do-fsync`,
+`backup-atravessa-link-na-pasta-do-meio`,
+`destino-do-backup-conferido-so-pelo-nome`, as quatro **PROVADAS** de novo; e
+`backup-destino-que-contem-a-raiz`).
+
+**E essa quinta já não pegava — e não por esta frente.** Com o defeito
+reposto (só a conferência de texto do destino), o teste
+`destino_que_se_mistura_com_a_raiz_e_recusado_antes` **passa**: desde o pedido
+611 (S7, commit `940e0e31`, 01/10 06:57) a mesma pergunta é feita ao
+**descritor** da pasta aberta, antes da primeira cópia, e os quatro destinos do
+teste recusam ali. A última PROVADA dessa entrada era de 01/10 **02:26** —
+quatro horas e meia antes do 611. A entrada passou a declarar
+`espera: "nada muda"` com a nota, e o par que a cobre é
+`destino-do-backup-conferido-so-pelo-nome`. Guarda redundante escrita como
+redundante é medida; escrita como provada é número velho anunciando sucesso.
+
+E o preço que a primeira rodada do provador cobrou: a primeira versão da
+`backup-fase-1-sob-a-trava` listava a prova da manutenção nos `seguem`, e ela
+**caiu junto** (ESTRAGOU). Não era estrago: com a trava reposta na fase 1, o
+`acrescentar_coluna` espera no portão e **entra depois do backup** — cai pelo
+defeito reposto. A prova saiu dos `seguem` com o motivo escrito ao lado. E o
+mesmo laço achou um defeito real: o bloqueio de manutenção soltava **depois**
+da trava e do portão, então quem esperou a fase 2 inteira no portão entrava
+com o retrato ainda ligado por microssegundos e levava um 4006 de um backup
+que já tinha acabado. Hoje o registro solta antes.
 ## Metodologia
 
 1. `grep -rn "TETO\|MAX\|LIMITE"` em `crates/*/src/**/*.rs` e em `bancada/`,

@@ -10,18 +10,33 @@
 //!
 //! # Consistencia
 //!
-//! "Consistente" aqui quer dizer uma coisa precisa: **nenhuma escrita acontece
-//! durante a copia**. Quem chama exclui todo ESCRITOR do inicio ao fim, e como
-//! toda escrita passa pela trava unica de dados, nao ha registro pela metade
-//! no meio do caminho.
+//! "Consistente" aqui quer dizer uma coisa precisa: **o que esta no destino
+//! e o que estava na raiz num instante em que nenhum escritor andava** -- o
+//! `retrato_ms` do manifesto. Como toda escrita passa pela trava unica de
+//! dados, nao ha registro pela metade nem commit pela metade nesse instante.
 //!
-//! Desde o pedido 513 (passo 1) o servidor faz isso com a ficha de LEITURA da
-//! trava mais o portao do retrato (`phxsql-server`, `retrato.rs`): o leitor
-//! continua andando durante a copia, e so o escritor espera. Este modulo nao
-//! sabe de trava nenhuma -- ele so le `raiz` e escreve no destino, fora dela.
+//! Desde o pedido 513 (passo 2) isso se faz em DUAS passadas, e e' por isso
+//! que a escrita nao espera mais a copia inteira:
 //!
-//! E menos do que um snapshot de verdade -- uma escrita longa faz o backup
-//! esperar, e o backup faz a escrita esperar a copia inteira.
+//! * a **fase 1** ([`copiar_fase_1`]) corre sem trava: copia tudo e anota a
+//!   ficha de cada arquivo (`stat` ANTES de ler);
+//! * a **fase 2** ([`acertar_fase_2`]) corre sem escritor -- no servidor,
+//!   sob a ficha de LEITURA da trava mais o portao do retrato
+//!   (`phxsql-server`, `retrato.rs`), que exclui so' quem escreve: refaz o
+//!   `stat` de tudo e recopia o que mudou, o que nasceu, tira o que sumiu.
+//!
+//! A decisao de recopiar e' UMA funcao pura, [`precisa_recopiar`], com tres
+//! redes: o `stat` (tamanho, `mtime`, inode), o diario da tabela que andou
+//! (para relogio que recua) e o «racily clean» do git (`mtime` a menos de 2 s
+//! do `stat` da fase 1 recopia sempre). E' o caso do MariaDB para tabela sem
+//! redo -- copiar por fora e recopiar sob o bloqueio curto o que estava em
+//! uso --, porque o nosso `.log` e' logico e o replay fisico do PostgreSQL nao
+//! se aplica (contrato em `docs/propostas/207-e-513p2-contrato-01-10-2026.md`).
+//!
+//! Este modulo nao sabe de trava nenhuma -- ele so le `raiz` e escreve no
+//! destino. A copia em uma passada ([`executar`], [`executar_zip`]) e' a fase
+//! 1 sozinha, para quem ja exclui o escritor por fora (a CLI, com o servidor
+//! parado) e para o zip sem espaco para a arvore temporaria.
 //!
 //! # E a transacao, que passou a existir, nao muda isto
 //!
@@ -222,12 +237,22 @@ fn no_nome_real(e: impl Into<PhxError>, por_dentro: &Path, real: &Path) -> PhxEr
 /// copia e a mae de cada pasta criada. Sem isto, uma queda depois do
 /// manifesto novo podia voltar com o velho, ou sem o nome de uma copia.
 pub fn sincronizar_copias(copias: &Copias) -> Result<()> {
-    for ((caminho, aberto), (por_dentro, anotado)) in copias
+    for (i, ((caminho, aberto), (por_dentro, anotado))) in copias
         .caminhos
         .iter()
         .zip(&copias.abertos)
         .zip(&copias.reabrir)
+        .enumerate()
     {
+        // Pedido 513 (passo 2): a copia que ja sincronizou na fase 1 e nao
+        // foi reescrita na fase 2 nao paga de novo -- ver [`sincronizar_fase_1`].
+        if copias
+            .sujas
+            .as_ref()
+            .is_some_and(|sujas| !sujas.contains(&i))
+        {
+            continue;
+        }
         match aberto {
             Some(arquivo) => crate::sincronia::sync_all_sem_abortar(arquivo, caminho)?,
             None => sincronizar_arquivo(por_dentro, *anotado, caminho)?,
@@ -349,6 +374,12 @@ pub struct Relatorio {
     /// formato do caminho acerta quase sempre, e "quase sempre" numa
     /// restauracao quer dizer restaurar um schema como se fosse um banco.
     pub database: Option<String>,
+    /// O instante do RETRATO -- o da fase 2 (pedido 513, passo 2), quando
+    /// nenhum escritor anda e cada arquivo do destino e' o da raiz naquele
+    /// instante. `quando_ms` e' quando o backup COMECOU; os dois diferem
+    /// pela duracao da fase 1. `None` so' na conferencia e no manifesto
+    /// antigo, que o `conferir` e o `restaurar` aceitam como antes.
+    pub retrato_ms: Option<i64>,
 }
 
 impl Relatorio {
@@ -383,6 +414,15 @@ impl Relatorio {
                 Json::texto_de(phxsql_core::datahora::instante_iso(quando_ms)),
             ),
             ("quando_ms", Json::Numero(quando_ms as f64)),
+            // O retrato (pedido 513, passo 2): o instante em que o conteudo
+            // e' consistente. Manifesto de antes nao o tem e segue valendo.
+            (
+                "retrato_ms",
+                match self.retrato_ms {
+                    Some(t) => Json::Numero(t as f64),
+                    None => Json::Nulo,
+                },
+            ),
             ("arquivos", Json::de_u64(self.arquivos.len() as u64)),
             ("bytes", Json::de_u64(self.bytes)),
             // Os dois campos entraram JUNTO com a restauracao. Manifesto
@@ -496,10 +536,12 @@ pub fn nome_do_zip(banco: &str, admin: &str, quando_ms: i64) -> String {
 /// instalar nada. O manifesto vai dentro, entao a copia carrega a propria
 /// conferencia.
 ///
-/// `banco` vazio copia a raiz inteira. Quem chama segura a trava de dados
-/// durante ESTA chamada (ela le `raiz`); o conteudo volta escrito num nome
-/// PARCIAL (pedido 524, condicao C2 -- ver [`finalizar_zip`]), e o caminho
-/// devolvido e o nome FINAL, que so existe depois de chamar `finalizar_zip`.
+/// `banco` vazio copia a raiz inteira. E a copia em UMA passada: quem chama
+/// segura a trava de dados durante ESTA chamada (ela le `raiz`) -- a CLI, e
+/// o servidor quando nao ha espaco para a arvore temporaria das duas fases
+/// ([`copiar_fase_1_para_zip`]). O conteudo volta escrito num nome PARCIAL
+/// (pedido 524, condicao C2 -- ver [`finalizar_zip`]), e o caminho devolvido
+/// e o nome FINAL, que so existe depois de chamar `finalizar_zip`.
 pub fn executar_zip(
     raiz: &Path,
     pasta: &Path,
@@ -507,6 +549,33 @@ pub fn executar_zip(
     admin: &str,
     quando_ms: i64,
 ) -> Result<(ZipParcial, Relatorio)> {
+    let origem = origem_do_zip(raiz, banco)?;
+    // Pedido 577: a pasta que esta chamada cria sai junto com o erro -- o
+    // `.part` ja sai pelo `escrever_sem_sync`, e sem isto sobrava a pasta
+    // vazia que ninguem pediu. Pelo motor do 576: so' a que NASCEU aqui, e
+    // com `remove_dir`, que so' remove vazia e nao segue link.
+    conferir_destino(raiz, pasta, false)?;
+    let mut criadas = Copias::default();
+    if let Err(e) = criar_pasta_da_corrida(pasta, &mut criadas.pastas) {
+        descartar_corrida(&criadas);
+        return Err(e);
+    }
+    let retrato_ms = Some(crate::util::agora_ms());
+    let feito = montar_zip(&origem, pasta, banco, admin, quando_ms, retrato_ms);
+    if feito.is_err() {
+        descartar_corrida(&criadas);
+    }
+    let (alvo, arquivo, r) = feito?;
+    let zip = ZipParcial {
+        alvo,
+        arquivo,
+        pastas: criadas.pastas,
+    };
+    Ok((zip, r))
+}
+
+/// A origem de um zip: a raiz inteira, ou o database `banco` dentro dela.
+fn origem_do_zip(raiz: &Path, banco: &str) -> Result<PathBuf> {
     let origem = if banco.is_empty() {
         raiz.to_path_buf()
     } else {
@@ -519,27 +588,107 @@ pub fn executar_zip(
             origem.display()
         )));
     }
-    // Pedido 577: a pasta que esta chamada cria sai junto com o erro -- o
-    // `.part` ja sai pelo `escrever_sem_sync`, e sem isto sobrava a pasta
-    // vazia que ninguem pediu. Pelo motor do 576: so' a que NASCEU aqui, e
-    // com `remove_dir`, que so' remove vazia e nao segue link.
+    Ok(origem)
+}
+
+/// A FASE 1 de um zip em duas passadas: a arvore vai para
+/// `pasta/<nome do zip>.retrato.part/` sem trava nenhuma, e [`concluir_zip`]
+/// a comprime DEPOIS da fase 2 e a apaga.
+///
+/// Precisa de espaco para a arvore inteira antes de comprimir. `livre` e o
+/// que quem chama mediu na pasta (bytes; `None` = nao mediu): abaixo do
+/// tamanho da origem mais 10%, devolve `Ok(None)` e quem chama cai na copia
+/// em uma passada ([`executar_zip`]) DIZENDO -- pela pétrea «guarda nova
+/// entra pedida», quem tem zip funcionando hoje nao passa a falhar.
+pub fn copiar_fase_1_para_zip(
+    raiz: &Path,
+    pasta: &Path,
+    banco: &str,
+    admin: &str,
+    quando_ms: i64,
+    livre: Option<u64>,
+) -> Result<Option<Fase1>> {
+    let origem = origem_do_zip(raiz, banco)?;
     conferir_destino(raiz, pasta, false)?;
-    let mut criadas = Copias::default();
-    if let Err(e) = criar_pasta_da_corrida(pasta, &mut criadas.pastas) {
-        descartar_corrida(&criadas);
-        return Err(e);
+    if let Some(livre) = livre {
+        let precisa = tamanho_da_arvore(&origem)?;
+        if livre < precisa.saturating_add(precisa / 10) {
+            return Ok(None);
+        }
     }
-    let feito = montar_zip(&origem, pasta, banco, admin, quando_ms);
-    if feito.is_err() {
-        descartar_corrida(&criadas);
-    }
-    let (alvo, arquivo, r) = feito?;
-    let zip = ZipParcial {
-        alvo,
-        arquivo,
-        pastas: criadas.pastas,
+    let nome = nome_do_zip(
+        if banco.is_empty() { "dados" } else { banco },
+        admin,
+        quando_ms,
+    );
+    let arvore = pasta.join(arvore_parcial_de(&nome));
+    let pedido = PedidoDeZip {
+        pasta: pasta.to_path_buf(),
+        banco: banco.to_string(),
+        admin: admin.to_string(),
+        quando_ms,
     };
-    Ok((zip, r))
+    // Teto ZERO de descritores: a arvore temporaria nao recebe `fsync` (o
+    // zip e' quem sincroniza), entao nao ha por que segurar descritor nenhum.
+    copiar_fase_1_com_teto(&origem, &arvore, 0, Some(pedido)).map(Some)
+}
+
+/// O nome da arvore temporaria de um zip: `<nome>.retrato.part/`. Um
+/// diretorio com esse sufixo e' nosso, e orfao se velho (ver
+/// [`limpar_parciais_orfaos`]).
+fn arvore_parcial_de(nome_do_zip: &str) -> String {
+    format!("{nome_do_zip}.retrato.part")
+}
+
+/// A soma dos tamanhos de tudo debaixo de `origem`, pelo `stat` (sem ler).
+fn tamanho_da_arvore(origem: &Path) -> Result<u64> {
+    let mut total = 0u64;
+    for arquivo in listar(origem)? {
+        if let Ok(m) = std::fs::metadata(&arquivo) {
+            total = total.saturating_add(m.len());
+        }
+    }
+    Ok(total)
+}
+
+/// DEPOIS da fase 2 e fora da trava: comprime a arvore temporaria no `.part`
+/// do zip e a apaga. O que volta e o mesmo par de [`executar_zip`], para
+/// [`finalizar_zip`] concluir.
+pub fn concluir_zip(mut fase: Fase1) -> Result<(ZipParcial, Relatorio)> {
+    let Some(pedido) = fase.zip.take() else {
+        return Err(PhxError::Esquema(
+            "esta corrida e' em arvore, nao em zip: use `terminar`".into(),
+        ));
+    };
+    let retrato_ms = fase.r.retrato_ms;
+    let feito = montar_zip(
+        &fase.arvore,
+        &pedido.pasta,
+        &pedido.banco,
+        &pedido.admin,
+        pedido.quando_ms,
+        retrato_ms,
+    );
+    // A arvore sai sempre -- deu certo ou nao --, pelo motor do 576: so' o
+    // que esta corrida fez nascer, pelo descritor da mae.
+    descartar_corrida(&fase.copias);
+    let (alvo, arquivo, r) = feito?;
+    // As pastas que nasceram ACIMA da arvore (a propria `pasta`, se nova)
+    // ficam com o zip: saem com ele numa recusa do `finalizar_zip`.
+    let pastas = fase
+        .copias
+        .pastas
+        .drain(..)
+        .filter(|p| !p.real().starts_with(&fase.arvore))
+        .collect();
+    Ok((
+        ZipParcial {
+            alvo,
+            arquivo,
+            pastas,
+        },
+        r,
+    ))
 }
 
 /// O ZIP escrito com nome PARCIAL e ainda nao sincronizado -- o que
@@ -572,13 +721,16 @@ impl AsRef<Path> for ZipParcial {
 }
 
 /// O corpo de [`executar_zip`] depois da pasta criada, separado para o erro
-/// dele passar pela faxina da pasta num lugar so' (pedido 577).
+/// dele passar pela faxina da pasta num lugar so' (pedido 577) -- e o de
+/// [`concluir_zip`], que o chama sobre a arvore temporaria: um laco so' le e
+/// comprime, venha a origem da raiz viva ou da copia da fase 2.
 fn montar_zip(
     origem: &Path,
     pasta: &Path,
     banco: &str,
     admin: &str,
     quando_ms: i64,
+    retrato_ms: Option<i64>,
 ) -> Result<(PathBuf, File, Relatorio)> {
     let alvo = pasta.join(nome_do_zip(
         if banco.is_empty() { "dados" } else { banco },
@@ -589,6 +741,7 @@ fn montar_zip(
     let mut zip = phxsql_core::zip::Zip::novo(quando_ms);
     let mut r = Relatorio {
         database: (!banco.is_empty()).then(|| banco.to_string()),
+        retrato_ms,
         ..Relatorio::default()
     };
     for arquivo in listar(origem)? {
@@ -648,6 +801,13 @@ fn e_nome_de_parcial(nome: &str) -> bool {
         .is_some_and(|zip| zip.ends_with(".zip") && zip.matches('_').count() >= 3)
 }
 
+/// O nome tem a cara da arvore temporaria de um zip NOSSO:
+/// `Banco_Admin_Data_HoraMin.zip.retrato.part` (pedido 513, passo 2).
+fn e_nome_de_arvore_parcial(nome: &str) -> bool {
+    nome.strip_suffix(".retrato.part")
+        .is_some_and(|zip| zip.ends_with(".zip") && zip.matches('_').count() >= 3)
+}
+
 /// A faxina dos `.part` que um backup que falhou deixou para tras -- pedido
 /// 555. Roda em [`finalizar_zip`], depois do `rename` que deu certo, entao
 /// alcanca os tres chamadores (CLI, `backup` pelo protocolo e o agendado)
@@ -675,14 +835,32 @@ fn limpar_parciais_orfaos(pasta: &Path, nosso: &std::fs::Metadata) -> usize {
     let mut apagados = 0;
     for entrada in dir.flatten() {
         let nome = entrada.file_name();
-        if !nome.to_str().is_some_and(e_nome_de_parcial) {
-            continue;
-        }
         let caminho = entrada.path();
         let Ok(m) = std::fs::symlink_metadata(&caminho) else {
             continue;
         };
-        if !m.file_type().is_file() || !mesmo_dono(&m, nosso) {
+        if !mesmo_dono(&m, nosso) {
+            continue;
+        }
+        // A arvore temporaria de um zip em duas passadas (pedido 513, passo
+        // 2) que o servidor deixou ao cair no meio: so' com o nosso sufixo,
+        // so' diretorio de verdade (link nao e' seguido pelo `remove_dir_all`
+        // no proprio nome, e o `lstat` ja o recusou), so' velha.
+        if nome.to_str().is_some_and(e_nome_de_arvore_parcial) {
+            let velha = m
+                .modified()
+                .ok()
+                .and_then(|t| agora.duration_since(t).ok())
+                .is_some_and(|idade| idade >= IDADE_DE_ORFAO);
+            if m.file_type().is_dir() && velha && std::fs::remove_dir_all(&caminho).is_ok() {
+                apagados += 1;
+            }
+            continue;
+        }
+        if !nome.to_str().is_some_and(e_nome_de_parcial) {
+            continue;
+        }
+        if !m.file_type().is_file() {
             continue;
         }
         let velho = m
@@ -896,13 +1074,20 @@ pub fn escolher_para_apagar(nomes: &[String], manter: usize) -> Vec<String> {
 /// Copia a raiz de dados para o destino e escreve o manifesto -- SEM
 /// sincronizar nada.
 ///
-/// Quem chama e responsavel por segurar a trava de dados durante ESTA
-/// chamada (ela le `raiz`). Devolve, alem do relatorio, as [`Copias`] (sem o
-/// manifesto) para [`concluir`] rodar depois, com a trava ja solta: ele
-/// sincroniza cada uma e so entao escreve e sincroniza o `backup.json`, e
-/// numa falha apaga o que esta corrida criou (pedido 576). A falha DENTRO
-/// desta funcao ja sai com a mesma faxina feita. Ver a nota "Escrever e sincronizar sao DOIS passos" no
-/// topo do modulo.
+/// E a copia em UMA passada: so' a [`copiar_fase_1`], sem a fase 2 -- quem
+/// chama exclui todo escritor durante ESTA chamada (a CLI, processo a parte
+/// com o servidor parado; os testes), entao nao ha janela entre as fases e
+/// nada a acertar. Uma fase 2 aqui recopiaria todo arquivo «racy» (escrito
+/// nos ultimos 2 s) sem motivo, e a prova pelo `strace`
+/// (`tests/fsync-no-descritor-que-escreveu.rs`) acusou: duas aberturas
+/// onde o `fsync` no descritor que escreveu pede UMA. O servidor chama as
+/// duas fases separadas, com a trava de dados so' na segunda (pedido 513,
+/// passo 2). Devolve, alem do
+/// relatorio, as [`Copias`] (sem o manifesto) para [`concluir`] rodar depois,
+/// com a trava ja solta: ele sincroniza cada uma e so entao escreve e
+/// sincroniza o `backup.json`, e numa falha apaga o que esta corrida criou
+/// (pedido 576). A falha DENTRO desta funcao ja sai com a mesma faxina feita.
+/// Ver a nota "Escrever e sincronizar sao DOIS passos" no topo do modulo.
 ///
 /// # Por que a gravacao NAO fica em cache -- pedido 524
 ///
@@ -929,95 +1114,488 @@ pub fn executar(raiz: &Path, destino: &Path, _quando_ms: i64) -> Result<(Relator
 /// [`executar`] com o teto de descritores dado -- separado para a prova do
 /// caminho alem do teto nao precisar de milhares de arquivos.
 fn executar_com_teto(raiz: &Path, destino: &Path, teto: usize) -> Result<(Relatorio, Copias)> {
-    if !raiz.is_dir() {
+    let fase = copiar_fase_1_com_teto(raiz, destino, teto, None)?;
+    Ok(terminar(fase))
+}
+
+// ------------------------------------------------- as DUAS passadas (513/2)
+//
+// O backup copia a raiz em duas fases. A FASE 1 corre SEM a trava de dados:
+// anota a ficha de cada arquivo (`stat` ANTES de ler) e o copia. A FASE 2
+// corre sem escritor (no servidor, sob a ficha de leitura e o portao do
+// retrato): faz o `stat` de tudo de novo e recopia so o que mudou -- e o que,
+// pelas tres redes de [`precisa_recopiar`], PODE ter mudado sem o `stat`
+// dizer --, copia o que nasceu, apaga do destino o que sumiu. O retrato e o
+// instante da fase 2, como o `BLOCK_COMMIT` do `mariabackup`: o que ha no
+// destino depois dela e exatamente o que ha na raiz naquele instante, byte a
+// byte, porque cada arquivo ou foi recopiado agora ou provadamente nao mudou.
+//
+// E o caso do MariaDB para tabela SEM redo (copiar por fora, recopiar sob o
+// bloqueio curto o que estava em uso): o nosso `.log` e logico e a imagem e
+// opcional, entao o replay fisico do PostgreSQL nao se aplica (contrato
+// `docs/propostas/207-e-513p2-contrato-01-10-2026.md` §513.3).
+
+/// A ficha de um arquivo da raiz no instante do `stat` -- o que a fase 2
+/// compara com o `stat` de agora.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Ficha {
+    pub bytes: u64,
+    /// O `mtime`, em nanossegundos desde a epoca (negativo antes dela).
+    pub mtime_ns: i128,
+    /// dev/inode, onde ha; o arquivo TROCADO (apagado e recriado com o mesmo
+    /// nome) muda de inode mesmo com tamanho e `mtime` iguais.
+    pub identidade: Option<(u64, u64)>,
+    /// O instante do proprio `stat`, em nanossegundos desde a epoca -- a
+    /// regua do «racily clean».
+    pub lido_em_ns: i128,
+}
+
+/// A janela do «racily clean» (a regra do `git`): arquivo cujo `mtime` estava
+/// a menos disto do `stat` da fase 1 e recopiado SEMPRE, porque uma escrita
+/// no mesmo tique do relogio do sistema de arquivos deixa `mtime` e tamanho
+/// iguais. Medido no kernel 6.18 (carimbo fino): 0 repeticoes em 20.000
+/// escritas seguidas; kernels sem carimbo fino (anteriores ao 6.13) usam
+/// relogio grosso, e e para eles que a janela existe. Dois segundos cobrem a
+/// granularidade de 1 s do ext3/FAT com folga.
+pub const JANELA_RACY_NS: i128 = 2_000_000_000;
+
+fn ns_desde_a_epoca(t: std::time::SystemTime) -> i128 {
+    match t.duration_since(std::time::UNIX_EPOCH) {
+        Ok(d) => d.as_nanos() as i128,
+        Err(e) => -(e.duration().as_nanos() as i128),
+    }
+}
+
+/// A [`Ficha`] de `caminho`, pelo `stat` de agora.
+fn ficha_de(caminho: &Path) -> Result<Ficha> {
+    let m = std::fs::metadata(caminho)?;
+    let lido_em_ns = ns_desde_a_epoca(std::time::SystemTime::now());
+    Ok(Ficha {
+        bytes: m.len(),
+        mtime_ns: m.modified().map(ns_desde_a_epoca).unwrap_or(i128::MIN),
+        identidade: identidade(&m),
+        lido_em_ns,
+    })
+}
+
+/// A decisao da fase 2 para UM arquivo que a fase 1 ja copiou: recopiar?
+///
+/// Tres redes, e basta uma acusar:
+///
+/// 1. o `stat` mudou -- tamanho, `mtime` ou inode;
+/// 2. o diario da tabela do arquivo cresceu desde a fase 1
+///    (`eventos_agora != eventos_antes`): e a rede para o relogio que RECUA,
+///    quando a escrita deixa o `mtime` igual ou mais velho;
+/// 3. o «racily clean»: o `mtime` da fase 1 estava a menos de
+///    [`JANELA_RACY_NS`] do proprio `stat` (ou no futuro) -- uma escrita no
+///    mesmo tique nao mudaria o `mtime`, entao recopia sem perguntar.
+///
+/// Pura de proposito: e a unica decisao da fase 2, e se prova sem disco.
+pub fn precisa_recopiar(
+    antes: &Ficha,
+    agora: &Ficha,
+    eventos_antes: u64,
+    eventos_agora: u64,
+) -> bool {
+    if antes.bytes != agora.bytes
+        || antes.mtime_ns != agora.mtime_ns
+        || antes.identidade != agora.identidade
+    {
+        return true;
+    }
+    if eventos_agora != eventos_antes {
+        return true;
+    }
+    antes.lido_em_ns.saturating_sub(antes.mtime_ns) < JANELA_RACY_NS
+}
+
+/// O que a fase 1 anotou de cada arquivo, pelo caminho relativo.
+#[derive(Debug, Default)]
+pub struct Inventario {
+    fichas: BTreeMap<String, Ficha>,
+}
+
+impl Inventario {
+    /// Quantos arquivos a fase 1 copiou.
+    pub fn len(&self) -> usize {
+        self.fichas.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.fichas.is_empty()
+    }
+
+    /// A soma dos tamanhos no `stat` da fase 1.
+    pub fn bytes(&self) -> u64 {
+        self.fichas.values().map(|f| f.bytes).sum()
+    }
+}
+
+/// O pedido de ZIP de uma corrida em duas fases: a arvore temporaria vira o
+/// arquivo unico DEPOIS da trava ([`concluir_zip`]).
+#[derive(Debug)]
+struct PedidoDeZip {
+    pasta: PathBuf,
+    banco: String,
+    admin: String,
+    quando_ms: i64,
+}
+
+/// A corrida entre a fase 1 e a fase 2: o que ja esta no destino e a ficha de
+/// cada arquivo no instante em que foi lido.
+#[derive(Debug)]
+pub struct Fase1 {
+    /// A origem (a raiz, ou `raiz/<banco>` no zip de um banco so).
+    origem: PathBuf,
+    /// Onde a arvore esta sendo escrita (o destino, ou a arvore temporaria
+    /// do zip).
+    arvore: PathBuf,
+    teto: usize,
+    r: Relatorio,
+    copias: Copias,
+    inventario: Inventario,
+    ancora_de: BTreeMap<PathBuf, usize>,
+    zip: Option<PedidoDeZip>,
+}
+
+/// O que a fase 2 fez, para a resposta e para a bancada.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct Acerto {
+    pub ms: u64,
+    /// Arquivos recopiados, copiados pela primeira vez ou apagados do destino.
+    pub arquivos: u64,
+    /// Bytes escritos na fase 2.
+    pub bytes: u64,
+    /// Arquivos que nasceram, sumiram ou trocaram de inode durante a fase 1 --
+    /// o que o bloqueio de manutencao existe para evitar, contado e publicado
+    /// em vez de suposto.
+    pub fora_do_bloqueio: u64,
+    /// Arquivos conferidos pelo `stat` (todos os da raiz na fase 2).
+    pub conferidos: u64,
+}
+
+/// A FASE 1 da copia em arvore: sem trava nenhuma, copia tudo e anota a ficha
+/// de cada arquivo. O servidor chama com o retrato ligado so para o bloqueio
+/// de manutencao; a consistencia vem inteira da fase 2.
+pub fn copiar_fase_1(raiz: &Path, destino: &Path) -> Result<Fase1> {
+    copiar_fase_1_com_teto(raiz, destino, teto_de_abertos(), None)
+}
+
+fn copiar_fase_1_com_teto(
+    origem: &Path,
+    arvore: &Path,
+    teto: usize,
+    zip: Option<PedidoDeZip>,
+) -> Result<Fase1> {
+    if !origem.is_dir() {
         return Err(PhxError::NaoEncontrado(format!(
             "a raiz de dados {} nao existe",
-            raiz.display()
+            origem.display()
         )));
     }
-    conferir_destino(raiz, destino, true)?;
-    let mut r = Relatorio::default();
-    let mut copias = Copias {
-        destino: destino.to_path_buf(),
-        ..Copias::default()
+    conferir_destino(origem, arvore, true)?;
+    let mut fase = Fase1 {
+        origem: origem.to_path_buf(),
+        arvore: arvore.to_path_buf(),
+        teto,
+        // Na passada unica o retrato e' a copia inteira (quem chama exclui o
+        // escritor), e o instante dele e' o do comeco; a fase 2, quando ha,
+        // o reescreve com o instante dela.
+        r: Relatorio {
+            retrato_ms: Some(crate::util::agora_ms()),
+            ..Relatorio::default()
+        },
+        copias: Copias {
+            destino: arvore.to_path_buf(),
+            ..Copias::default()
+        },
+        inventario: Inventario::default(),
+        ancora_de: BTreeMap::new(),
+        zip,
     };
     // Pedido 576: a recusa no meio da copia (disco cheio, `EFBIG`, nome
     // ocupado) sai daqui com o que esta corrida fez nascer ja apagado --
     // senao ficava uma pasta de copias sem manifesto que ninguem reconhece.
-    if let Err(e) = copiar_arvore(raiz, destino, teto, &mut r, &mut copias) {
-        descartar_corrida(&copias);
+    if let Err(e) = fase.copiar_tudo() {
+        descartar_corrida(&fase.copias);
         return Err(e);
     }
-    Ok((r, copias))
+    Ok(fase)
 }
 
-/// O laco de [`executar`], separado para o erro dele passar pela faxina da
-/// corrida num lugar so'.
-fn copiar_arvore(
-    raiz: &Path,
-    destino: &Path,
-    teto: usize,
-    r: &mut Relatorio,
-    copias: &mut Copias,
-) -> Result<()> {
-    criar_pasta_da_corrida(destino, &mut copias.pastas)?;
-    // Pedido 568: daqui para dentro o destino se percorre pelo descritor de
-    // cada pasta, sem seguir link em componente nenhum. O proprio `destino`
-    // e o unico nome que se segue: ele e escolha de quem chama.
-    let aberto = crate::util::Pasta::abrir(destino)?;
-    // Pedido 611 (S7): o nome ja foi conferido la em cima, mas quem recebe as
-    // copias e o descritor -- e e ele que se confere, antes da primeira.
-    conferir_destino_aberto(raiz, destino, &aberto, true)?;
-    copias.ancoras.push(Arc::new(aberto));
-    let mut ancora_de: BTreeMap<PathBuf, usize> = BTreeMap::new();
-    ancora_de.insert(PathBuf::new(), 0);
-    let arquivos = listar(raiz)?;
-    // Pedido 577: o manifesto de uma corrida ANTERIOR sai antes da primeira
-    // escrita. Pasta reaproveitada que falha no meio fica com copias ja
-    // sobrescritas (o nome nao e' desta corrida, a faxina do 576 nao as tira,
-    // e esta certo nao tirar), e o `backup.json` velho continuaria dizendo
-    // «pronto» com SHA que nao bate mais. Sem ele, `op_backups` nao a lista e
-    // o `restaurar` a recusa inteira ("nao e um backup do PhxSql") em vez de
-    // confiar num manifesto que mente. So' depois do `listar`: se a leitura
-    // da raiz recusa, nenhuma copia mudou e o backup velho continua valendo.
-    invalidar_manifesto_velho(copias)?;
-    for arquivo in arquivos {
-        let rel = relativo(raiz, &arquivo);
-        let dados = std::fs::read(&arquivo)?;
-        let alvo = destino.join(&rel);
-        let rel_p = Path::new(&rel);
-        let Some(nome) = rel_p.file_name() else {
-            continue;
+/// A FASE 2: sem escritor (quem chama garante), confere o `stat` de cada
+/// arquivo da origem contra a ficha da fase 1 e acerta o destino. `eventos` e
+/// o diario que andou por tabela desde a fase 1 (`congelamento::chave` ->
+/// eventos), a terceira rede de [`precisa_recopiar`]; vazio na copia em uma
+/// passada. O `retrato_ms` do manifesto e o instante desta chamada.
+pub fn acertar_fase_2(fase: &mut Fase1, eventos: &BTreeMap<PathBuf, u64>) -> Result<Acerto> {
+    let inicio = std::time::Instant::now();
+    fase.r.retrato_ms = Some(crate::util::agora_ms());
+    let feito = fase.acertar(eventos);
+    match feito {
+        Ok(mut acerto) => {
+            acerto.ms = inicio.elapsed().as_millis() as u64;
+            Ok(acerto)
+        }
+        Err(e) => {
+            descartar_corrida(&fase.copias);
+            Err(e)
+        }
+    }
+}
+
+/// Fecha a corrida em arvore: o relatorio (em ordem de caminho, para dois
+/// backups da mesma coisa darem manifestos comparaveis) e as copias para
+/// [`concluir`].
+/// O `fsync` das copias da fase 1, ANTES da fase 2 e fora de qualquer trava.
+///
+/// Medido na bancada (`bancada/backup/retrato-com-escritor.py`, 561 MiB):
+/// com o `fsync` de tudo DEPOIS da fase 2, a escrita que esperou a fase 2
+/// no portao ainda pagava ~100 ms a mais que a propria fase 2 -- o disco
+/// estava ocupado sincronizando meio gigabyte de copias da fase 1 no
+/// instante em que o escritor voltou. Sincronizando a fase 1 enquanto o
+/// escritor ainda anda, o `concluir` de depois so' sincroniza o que a fase
+/// 2 reescreveu. Numa recusa, a corrida sai com a faxina do 576.
+pub fn sincronizar_fase_1(fase: &mut Fase1) -> Result<()> {
+    if let Err(e) = sincronizar_copias(&fase.copias) {
+        descartar_corrida(&fase.copias);
+        return Err(e);
+    }
+    fase.copias.sujas = Some(std::collections::BTreeSet::new());
+    Ok(())
+}
+
+pub fn terminar(mut fase: Fase1) -> (Relatorio, Copias) {
+    fase.r.arquivos.sort_by(|a, b| a.caminho.cmp(&b.caminho));
+    (fase.r, fase.copias)
+}
+
+impl Fase1 {
+    /// O que a fase 1 anotou. So para medir e para teste.
+    pub fn inventario(&self) -> &Inventario {
+        &self.inventario
+    }
+
+    /// O laco da fase 1 -- o corpo de [`copiar_fase_1`], separado para o erro
+    /// dele passar pela faxina da corrida num lugar so'.
+    fn copiar_tudo(&mut self) -> Result<()> {
+        criar_pasta_da_corrida(&self.arvore, &mut self.copias.pastas)?;
+        // Pedido 568: daqui para dentro o destino se percorre pelo descritor
+        // de cada pasta, sem seguir link em componente nenhum. O proprio
+        // `arvore` e o unico nome que se segue: ele e escolha de quem chama.
+        let aberto = crate::util::Pasta::abrir(&self.arvore)?;
+        // Pedido 611 (S7): o nome ja foi conferido la em cima, mas quem
+        // recebe as copias e o descritor -- e e ele que se confere, antes da
+        // primeira.
+        conferir_destino_aberto(&self.origem, &self.arvore, &aberto, true)?;
+        self.copias.ancoras.push(Arc::new(aberto));
+        self.ancora_de.insert(PathBuf::new(), 0);
+        let arquivos = listar(&self.origem)?;
+        // Pedido 577: o manifesto de uma corrida ANTERIOR sai antes da
+        // primeira escrita. Pasta reaproveitada que falha no meio fica com
+        // copias ja sobrescritas (o nome nao e' desta corrida, a faxina do
+        // 576 nao as tira, e esta certo nao tirar), e o `backup.json` velho
+        // continuaria dizendo «pronto» com SHA que nao bate mais. Sem ele,
+        // `op_backups` nao a lista e o `restaurar` a recusa inteira ("nao e
+        // um backup do PhxSql") em vez de confiar num manifesto que mente.
+        // So' depois do `listar`: se a leitura da raiz recusa, nenhuma copia
+        // mudou e o backup velho continua valendo.
+        invalidar_manifesto_velho(&self.copias)?;
+        for arquivo in arquivos {
+            self.copiar_um(&arquivo)?;
+        }
+        Ok(())
+    }
+
+    /// `stat` ANTES de ler, e depois a copia: a ficha diz o que o arquivo era
+    /// no maximo no instante em que a leitura comecou. Uma escrita entre o
+    /// `stat` e o `read` muda o `mtime` para depois da ficha, e a fase 2 a ve.
+    fn copiar_um(&mut self, arquivo: &Path) -> Result<Option<u64>> {
+        let rel = relativo(&self.origem, arquivo);
+        let ficha = match ficha_de(arquivo) {
+            Ok(f) => f,
+            // Sumiu entre o `listar` e o `stat` (tabela apagada no meio): nao
+            // ha o que copiar, e a fase 2 nao o vera na origem.
+            Err(PhxError::Io(e)) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(e) => return Err(e),
         };
-        let pasta = entrar_na_pasta(copias, &mut ancora_de, rel_p.parent())?;
-        let por_dentro = copias.ancoras[pasta].por_dentro(nome);
+        let dados = match std::fs::read(arquivo) {
+            Ok(d) => d,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(e) => return Err(e.into()),
+        };
+        let bytes = dados.len() as u64;
+        self.gravar(&rel, &dados, ficha)?;
+        Ok(Some(bytes))
+    }
+
+    /// Grava `dados` como a copia de `rel` -- a primeira vez (fase 1, ou
+    /// arquivo que nasceu) empilha nas [`Copias`]; a segunda (fase 2) troca
+    /// NO LUGAR, no mesmo indice, para as listas paralelas continuarem
+    /// paralelas e o `fsync` de depois alcancar o descritor novo.
+    fn gravar(&mut self, rel: &str, dados: &[u8], ficha: Ficha) -> Result<()> {
+        let alvo = self.arvore.join(rel);
+        let rel_p = Path::new(rel);
+        let Some(nome) = rel_p.file_name() else {
+            return Ok(());
+        };
+        let pasta = entrar_na_pasta(&mut self.copias, &mut self.ancora_de, rel_p.parent())?;
+        let por_dentro = self.copias.ancoras[pasta].por_dentro(nome);
         // O `lstat` ANTES de escrever e' o que separa a copia que nasceu
         // agora da que ja existia (destino reaproveitado): so' a primeira e'
         // desta corrida, e so' ela pode sair numa falha.
         let nasce = std::fs::symlink_metadata(&por_dentro).is_err();
-        let arquivo = escrever_sem_sync(&por_dentro, &dados)
+        let arquivo = escrever_sem_sync(&por_dentro, dados)
             .map_err(|e| no_nome_real(e, &por_dentro, &alvo))?;
         if nasce {
-            copias.nascidas.push(por_dentro.clone());
+            self.copias.nascidas.push(por_dentro.clone());
         }
-        // Pedido 552: o descritor viaja ate o `fsync`, ate o teto; alem dele
-        // fecha aqui e a copia volta ao caminho de reabrir -- que confere o
-        // inode anotado agora (irmao do 570).
-        copias
-            .reabrir
-            .push((por_dentro, identidade(&arquivo.metadata()?)));
-        copias.onde.push(pasta);
-        let seguras = copias.abertos.iter().filter(|a| a.is_some()).count();
-        copias.abertos.push((seguras < teto).then_some(arquivo));
-        copias.caminhos.push(alvo);
-        r.bytes += dados.len() as u64;
-        r.arquivos.push(Arquivo {
-            caminho: rel,
-            bytes: dados.len() as u64,
-            sha256: para_hex(&sha256(&dados)),
-        });
+        let anotado = identidade(&arquivo.metadata()?);
+        let bytes = dados.len() as u64;
+        let registro = Arquivo {
+            caminho: rel.to_string(),
+            bytes,
+            sha256: para_hex(&sha256(dados)),
+        };
+        let indice = self.copias.indice.get(rel).copied();
+        if let Some(sujas) = self.copias.sujas.as_mut() {
+            sujas.insert(indice.unwrap_or(self.r.arquivos.len()));
+        }
+        match indice {
+            Some(i) => {
+                self.r.bytes = self.r.bytes - self.r.arquivos[i].bytes + bytes;
+                self.r.arquivos[i] = registro;
+                self.copias.reabrir[i] = (por_dentro, anotado);
+                // O `recriar_no_destino` reabre o MESMO inode (a copia e'
+                // nossa) e o trunca: o descritor velho apontava para o que
+                // acabou de ser reescrito, e o novo o substitui. A copia que
+                // ja estava alem do teto continua fechada.
+                let tinha = self.copias.abertos[i].is_some();
+                self.copias.abertos[i] = tinha.then_some(arquivo);
+            }
+            None => {
+                // Pedido 552: o descritor viaja ate o `fsync`, ate o teto;
+                // alem dele fecha aqui e a copia volta ao caminho de reabrir
+                // -- que confere o inode anotado agora (irmao do 570).
+                self.copias.reabrir.push((por_dentro, anotado));
+                self.copias.onde.push(pasta);
+                let seguras = self.copias.abertos.iter().filter(|a| a.is_some()).count();
+                self.copias
+                    .abertos
+                    .push((seguras < self.teto).then_some(arquivo));
+                self.copias.caminhos.push(alvo);
+                self.copias
+                    .indice
+                    .insert(rel.to_string(), self.r.arquivos.len());
+                self.r.bytes += bytes;
+                self.r.arquivos.push(registro);
+            }
+        }
+        self.inventario.fichas.insert(rel.to_string(), ficha);
+        Ok(())
     }
-    Ok(())
+
+    /// Tira do destino a copia de `rel`, que sumiu da origem durante a fase
+    /// 1, e a tira das listas paralelas no mesmo indice.
+    fn apagar(&mut self, rel: &str) {
+        let Some(i) = self.copias.indice.remove(rel) else {
+            return;
+        };
+        let (por_dentro, _) = self.copias.reabrir.remove(i);
+        descartar_parcial(&por_dentro);
+        self.copias.nascidas.retain(|p| p != &por_dentro);
+        self.copias.caminhos.remove(i);
+        self.copias.abertos.remove(i);
+        self.copias.onde.remove(i);
+        let registro = self.r.arquivos.remove(i);
+        self.r.bytes -= registro.bytes;
+        for v in self.copias.indice.values_mut() {
+            if *v > i {
+                *v -= 1;
+            }
+        }
+        self.inventario.fichas.remove(rel);
+    }
+
+    /// O corpo de [`acertar_fase_2`].
+    fn acertar(&mut self, eventos: &BTreeMap<PathBuf, u64>) -> Result<Acerto> {
+        let mut acerto = Acerto::default();
+        let mut vistos: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+        for arquivo in listar(&self.origem)? {
+            let rel = relativo(&self.origem, &arquivo);
+            acerto.conferidos += 1;
+            let agora = match ficha_de(&arquivo) {
+                Ok(f) => f,
+                Err(PhxError::Io(e)) if e.kind() == std::io::ErrorKind::NotFound => continue,
+                Err(e) => return Err(e),
+            };
+            vistos.insert(rel.clone());
+            let recopia = match self.inventario.fichas.get(&rel) {
+                None => {
+                    acerto.fora_do_bloqueio += 1;
+                    true
+                }
+                Some(antes) => {
+                    if antes.identidade != agora.identidade {
+                        acerto.fora_do_bloqueio += 1;
+                    }
+                    let n = eventos_da_tabela(eventos, &self.origem, &rel);
+                    precisa_recopiar(antes, &agora, 0, n)
+                }
+            };
+            if recopia {
+                if let Some(bytes) = self.copiar_um(&arquivo)? {
+                    acerto.arquivos += 1;
+                    acerto.bytes += bytes;
+                }
+            }
+        }
+        let sumidos: Vec<String> = self
+            .inventario
+            .fichas
+            .keys()
+            .filter(|rel| !vistos.contains(*rel))
+            .cloned()
+            .collect();
+        for rel in sumidos {
+            self.apagar(&rel);
+            acerto.arquivos += 1;
+            acerto.fora_do_bloqueio += 1;
+        }
+        Ok(acerto)
+    }
+}
+
+/// Os eventos, em `eventos` (por `congelamento::chave`), da tabela a que o
+/// arquivo `rel` pertence -- zero se nenhuma tabela dele andou.
+///
+/// Um arquivo de tabela e `<dir>/<nome><sufixo>.<ext>`, com o sufixo do
+/// volume vazio, `#NNNN` ou `_NNNN`: pertence a `<dir>/<nome>` quando o
+/// caminho (pela mesma regua da chave: absoluto, em minusculas) comeca pela
+/// chave e o que sobra comeca por `.`, `#` ou `_`. Tabela `a` e arquivo
+/// `a_b.reg` de `a_b` casam de mais -- custa uma recopia a mais, nunca uma
+/// a menos.
+fn eventos_da_tabela(eventos: &BTreeMap<PathBuf, u64>, origem: &Path, rel: &str) -> u64 {
+    if eventos.is_empty() {
+        return 0;
+    }
+    let caminho = origem.join(rel);
+    let (Some(dir), Some(nome)) = (caminho.parent(), caminho.file_name()) else {
+        return 0;
+    };
+    let do_arquivo = crate::congelamento::chave(dir, &nome.to_string_lossy())
+        .to_string_lossy()
+        .into_owned();
+    eventos
+        .iter()
+        .filter(|(tabela, _)| {
+            let t = tabela.to_string_lossy();
+            do_arquivo
+                .strip_prefix(t.as_ref())
+                .is_some_and(|resto| resto.starts_with(['.', '#', '_']))
+        })
+        .map(|(_, n)| *n)
+        .sum()
 }
 
 /// O indice, em `copias.ancoras`, da pasta `rel` (relativa ao destino) --
@@ -1123,6 +1701,12 @@ pub struct Copias {
     /// Diretorios que esta corrida criou, do mais externo para o mais
     /// interno, cada um com a mae aberta e o inode (pedido 593).
     pastas: Vec<crate::util::Nascida>,
+    /// Caminho relativo -> indice nas listas paralelas: e' o que deixa a
+    /// fase 2 trocar uma copia NO LUGAR (pedido 513, passo 2).
+    indice: BTreeMap<String, usize>,
+    /// Os indices escritos desde o ultimo [`sincronizar_fase_1`]; `None` =
+    /// nenhum `fsync` ainda, todas sujas (a passada unica de sempre).
+    sujas: Option<std::collections::BTreeSet<usize>>,
 }
 
 impl std::ops::Deref for Copias {
@@ -1984,5 +2568,263 @@ mod tests {
         );
         assert!(escolher_para_apagar(&nomes, 99).is_empty());
         assert_eq!(escolher_para_apagar(&nomes, 1).len(), 4);
+    }
+
+    // ------------------------------------------------ o passo 2 do 513
+
+    fn ficha(bytes: u64, mtime_ns: i128, lido_em_ns: i128) -> Ficha {
+        Ficha {
+            bytes,
+            mtime_ns,
+            identidade: Some((1, 42)),
+            lido_em_ns,
+        }
+    }
+
+    /// **A decisao da fase 2, pura.** O arquivo que nao mudou e cujo `mtime`
+    /// e velho NAO se recopia (e o que faz a fase 2 ser barata); o que mudou
+    /// no `stat`, sim.
+    #[test]
+    fn a_fase_2_so_recopia_o_que_o_stat_acusa() {
+        let s = 1_000_000_000_000i128; // 1000 s depois da epoca
+        let antes = ficha(10, s, s + 60 * JANELA_RACY_NS);
+        assert!(
+            !precisa_recopiar(&antes, &antes, 0, 0),
+            "nada mudou e recopiou"
+        );
+        assert!(
+            precisa_recopiar(&antes, &ficha(11, s, s), 0, 0),
+            "o tamanho mudou"
+        );
+        assert!(
+            precisa_recopiar(&antes, &ficha(10, s + 1, s), 0, 0),
+            "o mtime mudou"
+        );
+        let mut trocado = antes.clone();
+        trocado.identidade = Some((1, 43));
+        assert!(
+            precisa_recopiar(&antes, &trocado, 0, 0),
+            "o inode mudou (arquivo trocado)"
+        );
+    }
+
+    /// **O «racily clean»**: `stat` igual, mas o `mtime` da fase 1 estava a
+    /// menos de 2 s do proprio `stat` -- uma escrita no mesmo tique do relogio
+    /// nao mudaria nada, entao recopia. Guarda `backup-fase-2-sem-racy`: so'
+    /// comparando o `stat`, este teste cai.
+    #[test]
+    fn o_arquivo_racy_e_recopiado_mesmo_com_o_stat_igual() {
+        let s = 1_000_000_000_000i128;
+        let racy = ficha(10, s, s + JANELA_RACY_NS / 2);
+        assert!(precisa_recopiar(&racy, &racy, 0, 0), "racy e nao recopiou");
+        let no_futuro = ficha(10, s + 5 * JANELA_RACY_NS, s);
+        assert!(
+            precisa_recopiar(&no_futuro, &no_futuro, 0, 0),
+            "mtime no futuro e nao recopiou"
+        );
+        let na_borda = ficha(10, s, s + JANELA_RACY_NS);
+        assert!(
+            !precisa_recopiar(&na_borda, &na_borda, 0, 0),
+            "exatamente 2 s nao e racy"
+        );
+    }
+
+    /// **A rede dos eventos**: `stat` igual e velho, mas o diario da tabela
+    /// andou (relogio que recuou) -- recopia. Guarda
+    /// `backup-fase-2-sem-eventos`: tirando a rede, este teste cai.
+    #[test]
+    fn a_tabela_que_andou_e_recopiada_mesmo_com_o_stat_igual() {
+        let s = 1_000_000_000_000i128;
+        let velha = ficha(10, s, s + 60 * JANELA_RACY_NS);
+        assert!(!precisa_recopiar(&velha, &velha, 0, 0));
+        assert!(
+            precisa_recopiar(&velha, &velha, 0, 3),
+            "a tabela andou e nao recopiou"
+        );
+    }
+
+    /// **As duas passadas acertam o que mudou entre elas**: arquivo
+    /// alterado, arquivo novo e arquivo sumido entre a fase 1 e a fase 2 --
+    /// o destino sai igual a origem, o `conferir` aprova, e o acerto conta
+    /// os tres (dois deles `fora_do_bloqueio`). Sem a fase 2 (guarda
+    /// `backup-sem-fase-2`), o destino e o de antes das mudancas.
+    #[test]
+    fn a_fase_2_acerta_o_alterado_o_novo_e_o_sumido() {
+        let base = temp("duas-fases");
+        let raiz = base.join("dados");
+        let destino = base.join("copia");
+        std::fs::create_dir_all(&raiz).unwrap();
+        dados_de_exemplo(&raiz);
+        // Os arquivos de exemplo acabaram de nascer: todos racy. Para a prova
+        // medir as TRES redes e nao a janela, envelhece o mtime deles.
+        envelhecer(&raiz);
+
+        let mut fase = copiar_fase_1(&raiz, &destino).unwrap();
+        assert_eq!(fase.inventario().len(), 4);
+
+        // Entre as fases: altera um, cria um, apaga um.
+        std::fs::write(
+            raiz.join("Z/cadastroClientes.reg"),
+            b"registros aqui, e mais",
+        )
+        .unwrap();
+        std::fs::write(raiz.join("Z/novo.reg"), b"nasceu no meio").unwrap();
+        std::fs::remove_file(raiz.join("Z/cadastroClientes_002.reg")).unwrap();
+
+        let acerto = acertar_fase_2(&mut fase, &BTreeMap::new()).unwrap();
+        assert_eq!(acerto.conferidos, 4, "{acerto:?}");
+        assert_eq!(acerto.arquivos, 3, "{acerto:?}");
+        assert_eq!(acerto.fora_do_bloqueio, 2, "novo + sumido: {acerto:?}");
+        assert_eq!(acerto.bytes, 22 + 14, "{acerto:?}");
+        let (r, copias) = terminar(fase);
+        assert!(r.retrato_ms.is_some());
+        assert_eq!(r.arquivos.len(), 4);
+        concluir(&destino, 1_787_000_000_000, &r, &copias).unwrap();
+
+        assert_eq!(
+            std::fs::read(destino.join("Z/cadastroClientes.reg")).unwrap(),
+            b"registros aqui, e mais"
+        );
+        assert!(destino.join("Z/novo.reg").is_file());
+        assert!(!destino.join("Z/cadastroClientes_002.reg").exists());
+        let c = conferir(&destino).unwrap();
+        assert!(c.ok(), "{:?}", c.divergencias);
+        let manifesto =
+            Json::analisar(&std::fs::read_to_string(destino.join(MANIFESTO)).unwrap()).unwrap();
+        assert!(manifesto.inteiro_ou("retrato_ms", 0) > 0);
+    }
+
+    /// **Sem nada mudado, a fase 2 nao recopia nada** -- e o que faz a
+    /// escrita esperar so' o `stat` de tudo.
+    #[test]
+    fn sem_mudanca_a_fase_2_so_confere() {
+        let base = temp("duas-fases-quietas");
+        let raiz = base.join("dados");
+        std::fs::create_dir_all(&raiz).unwrap();
+        dados_de_exemplo(&raiz);
+        envelhecer(&raiz);
+        let mut fase = copiar_fase_1(&raiz, &base.join("copia")).unwrap();
+        let acerto = acertar_fase_2(&mut fase, &BTreeMap::new()).unwrap();
+        assert_eq!(acerto.arquivos, 0, "{acerto:?}");
+        assert_eq!(acerto.conferidos, 4, "{acerto:?}");
+    }
+
+    /// **A rede dos eventos no acerto de verdade**: `stat` igual, mas a
+    /// tabela `Z/cadastroClientes` consta como tocada -- os arquivos DELA
+    /// (`.reg`, `.ndx` e o volume `_002`) recopiam; o do schema nao.
+    #[test]
+    fn a_fase_2_recopia_os_arquivos_da_tabela_tocada() {
+        let base = temp("duas-fases-eventos");
+        let raiz = base.join("dados");
+        std::fs::create_dir_all(&raiz).unwrap();
+        dados_de_exemplo(&raiz);
+        envelhecer(&raiz);
+        let mut fase = copiar_fase_1(&raiz, &base.join("copia")).unwrap();
+        let mut eventos = BTreeMap::new();
+        eventos.insert(
+            crate::congelamento::chave(&raiz.join("Z"), "cadastroClientes"),
+            2u64,
+        );
+        let acerto = acertar_fase_2(&mut fase, &eventos).unwrap();
+        assert_eq!(acerto.arquivos, 3, "{acerto:?}");
+        assert_eq!(acerto.fora_do_bloqueio, 0, "{acerto:?}");
+    }
+
+    /// **O zip em duas passadas**: a arvore temporaria nasce em `pasta`,
+    /// vira o `.zip` depois da fase 2 e some. E sem espaco a fase 1 nem
+    /// comeca -- devolve `None`, e quem chama cai na passada unica dizendo.
+    #[test]
+    fn o_zip_em_duas_passadas_comprime_a_arvore_e_a_apaga() {
+        let base = temp("duas-fases-zip");
+        let raiz = base.join("dados");
+        let pasta = base.join("zips");
+        std::fs::create_dir_all(&raiz).unwrap();
+        dados_de_exemplo(&raiz);
+
+        assert!(
+            copiar_fase_1_para_zip(&raiz, &pasta, "", "ana", 1_787_000_000_000, Some(0))
+                .unwrap()
+                .is_none(),
+            "sem espaco a fase 1 tinha de recusar"
+        );
+        assert!(!pasta.exists(), "a recusa por espaco nao cria nada");
+
+        let mut fase = copiar_fase_1_para_zip(&raiz, &pasta, "", "ana", 1_787_000_000_000, None)
+            .unwrap()
+            .expect("com espaco a fase 1 roda");
+        let arvore: Vec<_> = std::fs::read_dir(&pasta)
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .collect();
+        assert!(
+            arvore.iter().any(|n| n.ends_with(".zip.retrato.part")),
+            "a arvore temporaria nao esta na pasta: {arvore:?}"
+        );
+        std::fs::write(raiz.join("Z/cadastroClientes.reg"), b"mudou entre as fases").unwrap();
+        let acerto = acertar_fase_2(&mut fase, &BTreeMap::new()).unwrap();
+        assert!(acerto.arquivos >= 1, "{acerto:?}");
+        let (zip, r) = concluir_zip(fase).unwrap();
+        finalizar_zip(&zip).unwrap();
+        assert!(zip.is_file());
+        assert!(r.retrato_ms.is_some());
+        let bytes = std::fs::read(&*zip).unwrap();
+        let texto = String::from_utf8_lossy(&bytes);
+        assert!(
+            texto.contains("mudou entre as fases"),
+            "o zip e' o da fase 2"
+        );
+        let sobras: Vec<_> = std::fs::read_dir(&pasta)
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .filter(|n| n.ends_with(".retrato.part"))
+            .collect();
+        assert!(sobras.is_empty(), "a arvore temporaria ficou: {sobras:?}");
+    }
+
+    /// **O `fsync` da fase 1 deixa so' o que a fase 2 reescreve para o
+    /// `concluir`**: depois de `sincronizar_fase_1` nada esta sujo; a
+    /// recopia e o arquivo novo da fase 2 entram nas sujas, e o que nao
+    /// mudou fica fora. Sem o `sincronizar_fase_1` (a passada unica), tudo
+    /// sincroniza no `concluir`, como sempre.
+    #[test]
+    fn so_o_que_a_fase_2_reescreveu_fica_sujo_depois_do_fsync_da_fase_1() {
+        let base = temp("duas-fases-sujas");
+        let raiz = base.join("dados");
+        std::fs::create_dir_all(&raiz).unwrap();
+        dados_de_exemplo(&raiz);
+        envelhecer(&raiz);
+        let mut fase = copiar_fase_1(&raiz, &base.join("copia")).unwrap();
+        assert!(
+            fase.copias.sujas.is_none(),
+            "antes do fsync da fase 1, tudo sujo"
+        );
+        sincronizar_fase_1(&mut fase).unwrap();
+        assert_eq!(fase.copias.sujas.as_ref().map(|s| s.len()), Some(0));
+
+        std::fs::write(raiz.join("Z/cadastroClientes.reg"), b"mudou").unwrap();
+        std::fs::write(raiz.join("Z/novo.reg"), b"nasceu").unwrap();
+        let acerto = acertar_fase_2(&mut fase, &BTreeMap::new()).unwrap();
+        assert_eq!(acerto.arquivos, 2, "{acerto:?}");
+        let sujas = fase.copias.sujas.clone().unwrap();
+        let indice = |rel: &str| fase.copias.indice[rel];
+        assert!(sujas.contains(&indice("Z/cadastroClientes.reg")));
+        assert!(sujas.contains(&indice("Z/novo.reg")));
+        assert!(!sujas.contains(&indice("Z/cadastroClientes.ndx")));
+        assert_eq!(sujas.len(), 2, "{sujas:?}");
+
+        let (r, copias) = terminar(fase);
+        concluir(&base.join("copia"), 1, &r, &copias).unwrap();
+        assert!(conferir(&base.join("copia")).unwrap().ok());
+    }
+    /// Poe o `mtime` de cada arquivo da raiz 10 min no passado: fora da
+    /// janela racy, para as provas medirem o `stat` e os eventos.
+    fn envelhecer(raiz: &Path) {
+        let velho = std::time::SystemTime::now() - std::time::Duration::from_secs(600);
+        for a in listar(raiz).unwrap() {
+            let f = File::options().write(true).open(&a).unwrap();
+            f.set_modified(velho).unwrap();
+        }
     }
 }

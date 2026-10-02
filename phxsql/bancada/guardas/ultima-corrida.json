@@ -2656,10 +2656,12 @@
     {
       "id": "backup-destino-que-contem-a-raiz",
       "titulo": "o backup em arvore aceita destino igual, acima ou (por link) dentro da raiz de dados",
-      "veredito": "PROVADA",
-      "segundos": 17.5,
-      "notas": [],
-      "quando": "2026-10-01 02:26"
+      "veredito": "REDUNDANTE",
+      "segundos": 8.5,
+      "notas": [
+        "medido em 02/10/2026 (frente do 513 passo 2), e nao deduzido: desde o pedido 611 (S7, `conferir_destino_aberto`, commit 940e0e31 de 01/10 06:57) a mesma pergunta e feita ao DESCRITOR da pasta aberta, antes da primeira copia -- entao repor so' a conferencia de texto no `conferir_destino` nao e sentido por teste nenhum: os quatro destinos do teste recusam no descritor. A guarda que pega o par e `destino-do-backup-conferido-so-pelo-nome`. A ultima PROVADA desta entrada e de 01/10 02:26, ANTES do 611."
+      ],
+      "quando": "2026-10-02 02:03"
     },
     {
       "id": "dblink-puxar-le-blob-cru",
@@ -2793,9 +2795,9 @@
       "id": "backup-reaproveitado-que-falha-deixa-o-manifesto-velho",
       "titulo": "o backup em pasta REAPROVEITADA que falha deixa o `backup.json` velho descrevendo cópias que já mudaram",
       "veredito": "PROVADA",
-      "segundos": 8.12,
+      "segundos": 5.51,
       "notas": [],
-      "quando": "2026-10-01 06:59"
+      "quando": "2026-10-02 02:03"
     },
     {
       "id": "backup-fsync-reabre-a-copia",
@@ -2809,9 +2811,9 @@
       "id": "backup-copia-fecha-o-descritor-antes-do-fsync",
       "titulo": "a cópia do backup fecha o descritor na escrita, sob a trava, e o inode fica livre para sair da memória antes do `fsync`",
       "veredito": "PROVADA",
-      "segundos": 5.09,
+      "segundos": 5.58,
       "notas": [],
-      "quando": "2026-09-30 23:04"
+      "quando": "2026-10-02 02:03"
     },
     {
       "id": "zip-fsync-reabre-o-part",
@@ -2913,9 +2915,9 @@
       "id": "backup-atravessa-link-na-pasta-do-meio",
       "titulo": "o backup volta a criar e atravessar as pastas do destino pelo NOME: um link numa pasta do meio (`copias/loja -> dados/rh`) grava a cópia por cima da tabela viva de outro database",
       "veredito": "PROVADA",
-      "segundos": 7.73,
+      "segundos": 7.62,
       "notas": [],
-      "quando": "2026-09-30 23:40"
+      "quando": "2026-10-02 02:03"
     },
     {
       "id": "backup-escreve-no-arquivo-de-outro-dono",
@@ -3571,9 +3573,9 @@
       "id": "destino-do-backup-conferido-so-pelo-nome",
       "titulo": "o destino do backup é conferido pelo NOME e aberto depois pelo descritor: a troca de um link no meio põe as cópias dentro do database vivo",
       "veredito": "PROVADA",
-      "segundos": 10.68,
+      "segundos": 8.52,
       "notas": [],
-      "quando": "2026-10-01 06:59"
+      "quando": "2026-10-02 02:03"
     },
     {
       "id": "chave-sem-urandom-pela-mistura",
@@ -4366,6 +4368,54 @@
       "segundos": 12.2,
       "notas": [],
       "quando": "2026-10-02 01:12"
+    },
+    {
+      "id": "backup-fase-1-sob-a-trava",
+      "titulo": "A fase 1 do backup (a cópia inteira) sob a ficha de leitura: a escrita esperava a cópia inteira, como no passo 1",
+      "veredito": "PROVADA",
+      "segundos": 68.82,
+      "notas": [],
+      "quando": "2026-10-02 02:03"
+    },
+    {
+      "id": "backup-sem-fase-2",
+      "titulo": "O backup em duas passadas SEM a fase 2: a cópia sai da fase 1, e a escrita feita durante ela não está no backup -- e o `conferir` aprova o retrato errado",
+      "veredito": "PROVADA",
+      "segundos": 69.55,
+      "notas": [],
+      "quando": "2026-10-02 02:03"
+    },
+    {
+      "id": "backup-fase-2-nao-acerta",
+      "titulo": "A fase 2 do armazém devolvendo um acerto vazio sem conferir nada: o alterado, o novo e o sumido entre as fases ficam como estavam na fase 1",
+      "veredito": "PROVADA",
+      "segundos": 9.56,
+      "notas": [],
+      "quando": "2026-10-02 02:03"
+    },
+    {
+      "id": "backup-fase-2-sem-racy",
+      "titulo": "A fase 2 decidindo só pelo `stat`: o arquivo escrito no mesmo tique do relógio (mtime e tamanho iguais) não é recopiado",
+      "veredito": "PROVADA",
+      "segundos": 8.71,
+      "notas": [],
+      "quando": "2026-10-02 02:03"
+    },
+    {
+      "id": "backup-fase-2-sem-eventos",
+      "titulo": "A fase 2 sem a rede dos eventos: a tabela que andou com o relógio recuado (stat igual) não é recopiada",
+      "veredito": "PROVADA",
+      "segundos": 8.59,
+      "notas": [],
+      "quando": "2026-10-02 02:03"
+    },
+    {
+      "id": "manutencao-durante-o-retrato",
+      "titulo": "`congelar` sem perguntar pelo retrato: a reescrita inteira de uma tabela entra no meio da fase 1 do backup",
+      "veredito": "PROVADA",
+      "segundos": 68.51,
+      "notas": [],
+      "quando": "2026-10-02 02:03"
     },
     {
       "id": "alter-com-regra-sem-aviso",

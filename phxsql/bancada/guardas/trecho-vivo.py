@@ -676,6 +676,14 @@ dia, nunca no desejado:
   (`sequencia-nomeada-proximo-sem-durar`) e a tabela que nascia com o nome
   de uma sequencia (`tabela-com-nome-de-sequencia`). 720, medido pelo
   `--numeros`.
+  **SUBIU para 726 em 02/10/2026** (pedido 513, passo 2; no merge, 720 + 6):
+  seis guardas novas do backup em duas passadas -- a fase 1 sob a trava
+  (`backup-fase-1-sob-a-trava`), a fase 2 que faltava
+  (`backup-sem-fase-2`), que nao acertava (`backup-fase-2-nao-acerta`),
+  sem o racy (`backup-fase-2-sem-racy`) e sem os eventos
+  (`backup-fase-2-sem-eventos`), e a manutencao durante o retrato
+  (`manutencao-durante-o-retrato`). 726, medido pelo `--numeros` na arvore
+  do merge.
 
 # A QUINTA REGUA: a tabela publicada pode ser MENOR que o catalogo
 
@@ -782,7 +790,7 @@ TETO_TESTE_MORTO = 0
 TETO_TRECHO_AMBIGUO = 0
 TETO_TESTE_FORA_DO_BINARIO = 0
 TETO_TESTE_SEM_MODULO = 0
-PISO_DAS_ENTRADAS = 720
+PISO_DAS_ENTRADAS = 726
 
 # ------------------------------------------------------------- APOSENTADAS
 #

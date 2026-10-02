@@ -3649,10 +3649,33 @@ O QUE "CONSISTENTE" QUER DIZER AQUI
     precisa curar o cabecalho do diario, e essa primeira leitura espera a
     copia terminar. As demais nao esperam.
 
-    E menos do que um snapshot de verdade: uma escrita longa faz o backup
-    esperar, e o backup faz a escrita esperar a copia inteira. Tirar a
-    escrita da espera (copiar sem trava e acertar no fim, como o
-    mariabackup) e o passo 2 do pedido 513, ainda nao feito.
+    A ESCRITA NAO ESPERA A COPIA INTEIRA (pedido 513, passo 2, desde
+    02/10/2026). O backup roda em DUAS PASSADAS: a fase 1 copia a raiz
+    inteira sem trava nenhuma (o dado continua gravando), e a fase 2, sob
+    a ficha de leitura e com o escritor parado no portao, confere o stat
+    de cada arquivo contra o que a fase 1 anotou e recopia so o que mudou
+    -- e o que PODE ter mudado sem o stat dizer: arquivo escrito a menos de
+    2 s do stat (o «racily clean» do git) e tabela cujo diario andou. O
+    retrato e o instante da fase 2 (o `retrato_ms` do manifesto e da
+    resposta), como o BLOCK_COMMIT do mariabackup. A resposta traz
+    "modo":"duas_passadas" e "fase_2":{"ms","arquivos","bytes",
+    "conferidos","fora_do_bloqueio"}.
+
+    O que ESPERA o backup, de proposito: criar, apagar e renomear tabela,
+    reindexar, restaurar por cima e as reescritas inteiras (acrescentar
+    coluna, migrar esquema) recebem 4006 com "repetir":true durante a
+    copia -- e o custo de uma tabela reescrita inteira na fase 2, nao
+    correcao (MySQL e MariaDB bloqueiam DDL durante o backup; o PostgreSQL
+    nao: 5 contra 4). Repete-se quando o backup termina.
+
+    ZIP: a arvore temporaria nasce em <destino>/<nome>.zip.retrato.part/
+    e vira o .zip depois da fase 2. Sem espaco para ela (menos que o
+    tamanho da raiz mais 10%), o backup cai na passada unica sob a trava
+    DIZENDO ("modo":"retrato_inteiro", "motivo"), em vez de falhar.
+
+    Medido pelo soquete (bancada/backup/retrato-com-escritor.py): ver
+    bancada/backup/resultados.json -- a espera maxima de um inserir
+    durante o backup, antes e depois, com o tamanho do banco medido.
 
     Pela linha de comando NAO ha essa garantia -- ela nao segura trava
     nenhuma. Com o servidor no ar, use a operacao.
