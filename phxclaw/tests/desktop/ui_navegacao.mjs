@@ -167,6 +167,43 @@ try {
   const somaFam = geral.familias.reduce((a, t) => a + Number(t.split('/')[1]), 0);
   check('Visao geral: cartoes de agentes e ferramentas = JSON', geral.agentes === String(equipe.total) && geral.ferramentas === String(ferramentas.total), `${geral.agentes} ${geral.ferramentas}`);
   check('Visao geral: macroareas e familias de capability saem dos JSON', JSON.stringify(geral.macros) === JSON.stringify(equipe.macroareas.map(m => m.total)) && geral.familias.length === familiasEsperadas && somaFam === ferramentas.total, `${geral.macros.length} macro, ${geral.familias.length} fam, soma ${somaFam}`);
+  // SP000036 L2: os seis cartoes de acao sao familias do ferramentas.json, com a MESMA conta
+  // concedidas/total da malha; fundo neutro (nunca a cor da borda) e a cor de acao so nos tres
+  // que tem acao. As execucoes recentes sao as 5 mais novas do stub de /v1/tasks (que chega
+  // fora de ordem de proposito), com o rotulo de estado da fabrica, nunca o codigo.
+  const fabL2 = lerAsset('textos.json').textos;
+  const cartoes = await page.$$eval('#geralAcoes .acao-cartao', cs => cs.map(c => {
+    const cs_ = getComputedStyle(c);
+    return { acao: c.dataset.acao, grupo: c.dataset.grupo, conta: c.querySelector('em').textContent, nome: c.querySelector('b').textContent,
+      borda: cs_.borderTopColor, fundo: cs_.backgroundColor, classe: [...c.classList].filter(k => k !== 'acao-cartao').join(' ') };
+  }));
+  const contaFamilia = g => { const fs = ferramentas.ferramentas.filter(f => f.grupo === g); return `${fs.filter(f => f.concedida).length}/${fs.length}`; };
+  const contasOk = cartoes.length === 6 && cartoes.every(c => c.conta === contaFamilia(c.grupo)) && new Set(cartoes.map(c => c.grupo)).size === 6;
+  check('Visao geral: 6 cartoes de acao = 6 familias do ferramentas.json, concedidas/total iguais ao JSON', contasOk, cartoes.map(c => `${c.acao}:${c.grupo}=${c.conta}`).join(' '));
+  const nomesCartao = cartoes.map(c => c.nome);
+  check('Visao geral: nome dos cartoes sai da fabrica (6 chaves painel.acao.*)', ['pesquisar', 'analisar', 'construir', 'testar', 'implantar', 'entregar'].every((k, i) => nomesCartao[i] === fabL2[`painel.acao.${k}`].pt), nomesCartao.join(','));
+  const fundoCheio = cartoes.filter(c => c.fundo === c.borda || (c.fundo !== 'rgba(0, 0, 0, 0)' && c.fundo !== 'transparent'));
+  const comCor = cartoes.filter(c => c.classe).map(c => `${c.acao}=${c.classe}`);
+  check('Visao geral: cartoes so contorno (fundo neutro) e cor de acao em exatamente 3 (construir/testar/implantar)', fundoCheio.length === 0 && comCor.join(' ') === 'construir=inclui testar=consulta implantar=altera', `${comCor.join(' ')} cheios=${fundoCheio.length}`);
+  const execs = await page.$$eval('#geralExecucoes .execucao', es => es.map(e => ({ id: e.dataset.id, estado: e.querySelector('.tarefa-estado').textContent, objetivo: e.querySelector('.objetivo').textContent })));
+  const maisNovas = TAREFAS.slice().sort((a, b) => (a.created_at < b.created_at ? 1 : -1)).slice(0, 5);
+  check('Visao geral: execucoes recentes = as 5 mais novas do stub de /v1/tasks, na ordem, estado pelo rotulo da fabrica',
+    execs.length === 5 && execs.every((e, i) => e.id === maisNovas[i].id && e.objetivo === maisNovas[i].objective && e.estado === fabL2[`tarefas.estado.${maisNovas[i].status}`].pt),
+    execs.map(e => `${e.id}:${e.estado}`).join(' | '));
+  await page.click('#geralExecucoes .execucao');
+  await page.waitForTimeout(600);
+  const abriuExec = await page.evaluate(() => ({ tela: document.body.dataset.tela, titulo: document.querySelector('#tarefasDetalhe .tarefa-titulo')?.textContent, marcada: document.querySelector('#tarefasLista tbody tr.selecionada')?.dataset.id }));
+  check('Visao geral: clicar uma execucao abre o MESMO detalhe da tela Tarefas', abriuExec.tela === 'tarefas' && abriuExec.titulo === maisNovas[0].objective && abriuExec.marcada === maisNovas[0].id, JSON.stringify(abriuExec));
+  await page.click('.nav[data-tela="geral"]');
+  await page.waitForTimeout(300);
+  await page.click('#geralAcoes .acao-cartao[data-acao="testar"]');
+  await page.waitForTimeout(300);
+  const prefill = await page.evaluate(() => ({ tela: document.body.dataset.tela, valor: document.getElementById('tarefasObjetivo').value, foco: document.activeElement?.id }));
+  check('Visao geral: o cartao leva a Tarefas com o objetivo-modelo da fabrica preenchido e o foco no campo (o envio e o formulario de la)',
+    prefill.tela === 'tarefas' && prefill.valor === fabL2['painel.acao.testar_objetivo'].pt && prefill.foco === 'tarefasObjetivo', JSON.stringify(prefill).slice(0, 160));
+  await page.$eval('#tarefasObjetivo', c => { c.value = ''; });
+  await page.click('.nav[data-tela="geral"]');
+  await page.waitForTimeout(300);
   check('Visao geral: barra de concessao = concedidas/total', Math.abs(parseFloat(geral.barra) - (concF / ferramentas.total) * 100) < 0.01 && geral.mini === Object.keys(absorcao).length, `${geral.barra} mini=${geral.mini}`);
   check('Visao geral: sem os textos de enfeite (formatos, TRUSTED, Retries, pipeline e task graph estaticos)', !geral.fixos, String(geral.fixos));
   await page.screenshot({ path: join(OUT, 'ui_geral.png'), fullPage: false });
@@ -551,7 +588,9 @@ try {
     avisos: document.querySelectorAll('#tela-geral .vazio.aviso').length,
     barra: document.getElementById('geralFerramentasBarra').hidden,
   }));
-  check('sem os tres JSON: Visao geral mostra travessao e tres avisos, sem barra', vazio.nums.every(n => n === '—') && vazio.avisos === 3 && vazio.barra, JSON.stringify(vazio));
+  // Quatro avisos: macroareas, malha, absorcao e (SP000036 L2) os cartoes de acao, que perdem a
+  // fonte junto com a malha -- cartao sem ferramentas.json nao mostra 0/0 inventado.
+  check('sem os tres JSON: Visao geral mostra travessao e quatro avisos, sem barra', vazio.nums.every(n => n === '—') && vazio.avisos === 4 && vazio.barra, JSON.stringify(vazio));
   await p3.screenshot({ path: join(OUT, 'ui_geral_sem_json.png') });
 
   // Sob a CSP do Tauri (script-src 'self', style-src 'self', sem 'unsafe-inline'): a grade

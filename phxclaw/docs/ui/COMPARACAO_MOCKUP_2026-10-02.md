@@ -209,6 +209,40 @@ em 0, `qualificar.mjs` nos dois temas e as capturas regravadas em `tests/desktop
 
 **Tamanho do L1**: ~185 linhas (70 HTML + 90 CSS + 25 JS) + 11 chaves; 4 arquivos; zero rota nova.
 
+## 5. L1 casca — ENTREGUE (commit `4802e21b`, 02/10/2026)
+
+O que o plano da §4 prometia para o L1 e o que foi medido no commit (`git show --stat 4802e21b`
+e `grep`/`wc` sobre a árvore comitada; a `apps/phxclaw-ui/` está em edição por outra frente
+nesta rodada e **não** foi lida da árvore de trabalho):
+
+| Previsto na §4 | Entregue | Medida |
+|---|---|---|
+| 4 arquivos | 6 | `index.html` +42/−, `app.css` +78/−, `app.js` +56, `textos.json` +15/−, `config-catalogo.json` +31 (gerado), `sw.js` +4/− |
+| ~185 linhas | — | o `--stat` dá 42+78+56+15+4 = **195** linhas tocadas na UI (sem o catálogo gerado) |
+| 11 chaves novas | **13** | `grep -o '"casca\.[a-z_.]*"' textos.json \| sort -u`: `casca.assistente.alternar`, `casca.assistente.sem_conversa`, `casca.assistente.titulo`, `casca.atalho`, `casca.busca`, `casca.menu.capacidades`, `casca.menu.painel`, `casca.menu.sistema`, `casca.menu.trabalho`, `casca.nao_medido`, `casca.rodape.idioma`, `casca.rodape.pasta`, `casca.rodape.versao` — duas a mais que o previsto (`casca.atalho` e `casca.assistente.alternar`) |
+| zero rota nova | zero | nenhum `.route(` novo no commit |
+| cache da casca | `phxclaw-casca-9` | `sw.js` (nome muda quando a casca ganha arquivo) |
+| menu em 4 áreas | sim | `PAINEL` (geral); `TRABALHO` (tarefas, ide); `CAPACIDADES` (agentes, ferramentas, absorcao); `SISTEMA` (config) — `index.html:104-114` |
+| rodapé lido | sim | versão de `host_status`, pasta de `/v1/config` `agente.pasta`, idioma da fábrica; sem fonte = `casca.nao_medido` |
+| assistente recolhível | sim, vazio | só título e «sem conversa», como previsto |
+
+Prova real do commit (parecer do integrador na sprint `docs/sprints/Sessao_00001_Sprint_SP000035_20261002060631.md`):
+`ui_navegacao` 58/58, `ui_config` 21/21, `qualificar` T1/T4 18/18, textos cravados 0 (334 chaves).
+Três defeitos só apareceram exercitando no navegador e foram consertados no mesmo commit: a grade
+alargava com texto pseudo-localizado, o lema do rodapé quebrava em três linhas, e o subtítulo passava
+sob a barra de orçamento.
+
+**Desvio declarado: a ordem do DOM do menu.** O plano dizia que a checagem «menu tem as sete
+telas» do `ui_navegacao.mjs` continuaria valendo *na mesma ordem*. Não continuou: a ordem do DOM
+passou a ser a **visual** (por área), para o foco do teclado seguir o olho — `geral, tarefas, ide,
+agentes, ferramentas, absorcao, config` — e não mais a ordem das `<section>` do HTML (`geral,
+agentes, ide, ferramentas, absorcao, tarefas, config`, que era a lista esperada em
+`050063e4`). A lista esperada do roteiro foi atualizada com o motivo escrito no comentário
+(`tests/desktop/ui_navegacao.mjs:115-117`). Consequência para quem lê o HTML: a ordem das seções
+e a do menu divergem de propósito; quem precisar que casem muda as seções, não o menu.
+
+Os lotes L2–L6 continuam como na §4; o L2 é o próximo (cartões de ação + execuções recentes).
+
 ## Resposta curta
 
 - **Blocos: 22 — existe 4 · parcial 7 · não 11** (6 dos «não» com fonte real hoje, 5 sem fonte).

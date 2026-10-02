@@ -127,6 +127,26 @@ pub trait Provedor: Send + Sync + 'static {
     fn receber(&self, cursor: Option<&str>, espera_seg: u64) -> Result<Vec<Entrada>, String>;
     /// Manda UM pedaco que ja cabe no limite; devolve o id que o servico deu.
     fn enviar(&self, conversa: &str, texto: &str) -> Result<String, String>;
+    /// A conversa e uma sala de varios (MUC do XMPP): nela a lista de permitidos tem de
+    /// conferir TAMBEM o autor, porque a sala permitida nao faz de cada ocupante um dono do
+    /// agente. O padrao `false` deixa todo canal sem sala como sempre foi.
+    fn sala(&self, _conversa: &str) -> bool {
+        false
+    }
+}
+
+/// A UNICA decisao de quem pode falar com o agente: a conversa na lista e, quando o
+/// provedor diz que ela e sala, o autor tambem -- pela identidade que o provedor entregou
+/// (no XMPP, o JID real do ocupante ou `sala/nick` se o operador confia no nick). `None` e
+/// conversa sem sala: so a conversa decide, como sempre; `Some("")` e ocupante sem
+/// identidade conferivel, e nunca entra.
+pub fn autorizado(
+    permitidos: &BTreeSet<String>,
+    conversa: &str,
+    autor_na_sala: Option<&str>,
+) -> bool {
+    permitidos.contains(conversa.trim())
+        && autor_na_sala.is_none_or(|a| !a.trim().is_empty() && permitidos.contains(a.trim()))
 }
 
 /// O gateway registra a evidencia de envio e confere o canal; o provedor so manda.
@@ -308,9 +328,10 @@ pub struct Canal {
     conta: String,
     permitidos: Arc<BTreeSet<String>>,
     principais: Arc<BTreeMap<String, Uuid>>,
-    /// Conversa -> tarefa parada em `AwaitingInput` que perguntou nela. A proxima mensagem
-    /// dessa conversa e a resposta, nao um pedido novo.
-    esperas: Arc<std::sync::Mutex<BTreeMap<String, String>>>,
+    /// Conversa -> (tarefa parada em `AwaitingInput` que perguntou nela, autor que a abriu).
+    /// A proxima mensagem dessa conversa E DESSE AUTOR e a resposta, nao um pedido novo;
+    /// numa sala, a fala de outro ocupante nao responde pela tarefa de quem perguntou.
+    esperas: Arc<std::sync::Mutex<BTreeMap<String, (String, String)>>>,
     gateway: ChannelGateway,
     cursor_arq: PathBuf,
     log: Registro,
@@ -373,9 +394,9 @@ impl Canal {
         self.provedor.nome()
     }
 
-    /// A unica decisao de quem pode falar com o agente e para quem ele pode escrever.
+    /// Para quem o agente pode escrever (e a entrada de conversa sem sala): ver `autorizado`.
     pub fn permitido(&self, conversa: &str) -> bool {
-        self.permitidos.contains(conversa.trim())
+        autorizado(&self.permitidos, conversa, None)
     }
 
     /// Cursor gravado em disco. Sem arquivo: o provedor decide (os pendentes, ou "agora").
@@ -466,10 +487,16 @@ impl Canal {
     async fn tratar(&self, s: &ApiState, m: &Mensagem) -> Option<tokio::task::JoinHandle<()>> {
         let nome = self.nome();
         let conversa = m.conversa.as_str();
-        if !self.permitido(conversa) {
+        let na_sala = self.provedor.sala(conversa).then_some(m.autor.as_str());
+        if !autorizado(&self.permitidos, conversa, na_sala) {
             // So o id: o texto de quem nao foi autorizado nao entra no registro.
+            let quem = match na_sala {
+                Some("") => " de ocupante sem identidade conferivel".to_string(),
+                Some(a) => format!(" de {a}"),
+                None => String::new(),
+            };
             (self.log)(&format!(
-                "{nome}: mensagem da conversa {conversa} ignorada (fora da lista)"
+                "{nome}: mensagem da conversa {conversa}{quem} ignorada (fora da lista)"
             ));
             return None;
         }
@@ -497,12 +524,15 @@ impl Canal {
         };
         // A tarefa desta conversa perguntou algo (`ask_user`, regra `perguntar`): a mensagem
         // e a resposta, pela mesma `perguntas::responder` da rota HTTP e da CLI.
-        let esperando = self
-            .esperas
-            .lock()
-            .ok()
-            .and_then(|mut g| g.remove(conversa));
-        if let Some(id) = esperando {
+        // Numa sala, so quem abriu a tarefa responde por ela: a fala de outro ocupante segue
+        // como pedido novo e a espera fica de pe.
+        let esperando = self.esperas.lock().ok().and_then(|mut g| {
+            let mesmo_autor = g
+                .get(conversa)
+                .is_some_and(|(_, autor)| na_sala.is_none() || autor == &m.autor);
+            mesmo_autor.then(|| g.remove(conversa)).flatten()
+        });
+        if let Some((id, _)) = esperando {
             match crate::perguntas::responder(&id, texto) {
                 Ok(()) => {
                     (self.log)(&format!(
@@ -526,10 +556,11 @@ impl Canal {
                 (self.log)(&format!("{nome}: conversa {conversa} -> tarefa {}", c.id));
                 let canal = self.clone();
                 let conversa = conversa.to_string();
+                let autor = m.autor.clone();
                 let store = s.store.clone();
                 Some(tokio::spawn(async move {
                     let texto = match canal
-                        .acompanhar(&store, &conversa, &c.id, c.fim, sessao)
+                        .acompanhar(&store, &conversa, &autor, &c.id, c.fim, sessao)
                         .await
                     {
                         Ok(t) => resposta_da_tarefa(&t),
@@ -562,6 +593,7 @@ impl Canal {
         &self,
         store: &crate::tarefa::TaskStore,
         conversa: &str,
+        autor: &str,
         id: &str,
         mut fim: tokio::task::JoinHandle<Task>,
         sessao: Uuid,
@@ -580,7 +612,7 @@ impl Canal {
                     let marca = format!("{}|{q}", t.updated_at.timestamp_micros());
                     if perguntada.as_deref() != Some(marca.as_str()) {
                         if let Ok(mut g) = self.esperas.lock() {
-                            g.insert(conversa.to_string(), id.to_string());
+                            g.insert(conversa.to_string(), (id.to_string(), autor.to_string()));
                         }
                         if let Err(e) = self.enviar(conversa, &q, Some(sessao)).await {
                             (self.log)(&format!(
@@ -604,7 +636,7 @@ impl Canal {
     /// Tira a marca de espera da conversa, se ainda e desta tarefa.
     fn soltar_espera(&self, conversa: &str, id: &str) {
         if let Ok(mut g) = self.esperas.lock()
-            && g.get(conversa).is_some_and(|x| x == id)
+            && g.get(conversa).is_some_and(|(x, _)| x == id)
         {
             g.remove(conversa);
         }
@@ -871,6 +903,34 @@ mod tests {
         assert_eq!(
             texto_de_html("<p><span>@bot</span> oi &amp; tchau<br/>linha</p>"),
             "@bot oi & tchau\nlinha"
+        );
+    }
+
+    /// Prova real (A1): trocar o `&&` do `autorizado` por `||` no ramo do autor, ou fazer
+    /// `Some("")` passar, reprova; tirar o `is_none_or` (exigir autor sempre) reprova
+    /// `sem_sala_nada_muda`.
+    #[test]
+    fn sala_permitida_nao_faz_de_todo_ocupante_um_dono_e_sem_sala_nada_muda() {
+        let p: BTreeSet<String> = ["sala@conf.x", "ana@x.org", "sala@conf.x/bia"]
+            .into_iter()
+            .map(String::from)
+            .collect();
+        // Sem sala: so a conversa decide, como sempre (o autor nem e olhado).
+        assert!(autorizado(&p, "sala@conf.x", None));
+        assert!(autorizado(&p, "ana@x.org", None));
+        assert!(!autorizado(&p, "zed@x.org", None));
+        // Na sala: a sala E o autor, pelo JID real ou por `sala/nick`.
+        assert!(autorizado(&p, "sala@conf.x", Some("ana@x.org")));
+        assert!(autorizado(&p, "sala@conf.x", Some("sala@conf.x/bia")));
+        assert!(!autorizado(&p, "sala@conf.x", Some("zed@x.org")));
+        assert!(!autorizado(&p, "sala@conf.x", Some("sala@conf.x/zed")));
+        assert!(
+            !autorizado(&p, "sala@conf.x", Some("")),
+            "ocupante sem identidade conferivel nunca entra"
+        );
+        assert!(
+            !autorizado(&p, "outra@conf.x", Some("ana@x.org")),
+            "autor permitido numa sala fora da lista nao entra"
         );
     }
 

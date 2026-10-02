@@ -1,12 +1,22 @@
 //! XMPP (Jabber): conexao de cliente com SASL PLAIN, bind de recurso e presenca; as
 //! mensagens `type='chat'` viram tarefa e a resposta volta como `<message>` ao JID.
 //! Sala multiusuario (MUC, XEP-0045): o agente entra nas `salas` da configuracao com o
-//! `apelido` ao abrir a conexao; o `groupchat` vira tarefa com a sala como conversa e o nick
-//! como autor, e a resposta volta `groupchat` a sala. O eco da propria fala (nick igual ao
-//! apelido) e o historico que a sala manda ao entrar (`<delay/>`) ficam de fora: sem isso o
-//! agente responderia a si mesmo e ao passado. Mensagem privada de ocupante (`chat` vindo
-//! de `sala/nick`) chega com a conversa `sala/nick` inteira, para a resposta nao sair em
-//! publico; so entra se o operador a permitir assim.
+//! `apelido` ao abrir a conexao; o `groupchat` vira tarefa com a sala como conversa, e a
+//! resposta volta `groupchat` a sala. O eco da propria fala (o nick que a sala nos deu, que
+//! pode nao ser o configurado: status 210) e o historico que a sala manda ao entrar
+//! (`<delay/>`) ficam de fora: sem isso o agente responderia a si mesmo e ao passado.
+//! Mensagem privada de ocupante (`chat` vindo de `sala/nick`) chega com a conversa
+//! `sala/nick` inteira, para a resposta nao sair em publico; so entra se o operador a
+//! permitir assim.
+//!
+//! Quem manda numa sala NAO e a sala: a sala em `PERMITIDOS` deixa o agente ouvir e falar
+//! nela, e cada ocupante que o comanda tem de estar na lista tambem. O autor que vai ao
+//! portao (`canais::autorizado`) e o JID real do ocupante, lido do `<item jid='…'/>` da
+//! presenca MUC (XEP-0045 §7.2.3, salas nao anonimas) e guardado por `sala/nick` enquanto a
+//! conexao vive; numa sala anonima o nick e forjavel, e so vale como `sala/nick` se o
+//! operador ligou `confiar_no_nick`. Ocupante sem identidade conferivel chega ao portao com
+//! autor vazio, que nunca passa. E o que o portao recusa nunca chega ao disco: a caixa
+//! guarda so o metadado da recusa (conversa, autor, hora, tamanho), nunca o texto.
 //!
 //! Mesmo desenho do IRC: a conexao fica aberta, uma thread le o fluxo XML, responde ao ping
 //! do servidor (XEP-0199) na hora e poe as mensagens numa fila; o que chega vai para a
@@ -18,17 +28,29 @@
 //! O fluxo XML e lido por recorte de estrofe (`<message ...>...</message>`) e nao por um
 //! analisador de fluxo: as estrofes que importam nao se aninham, e o analisador do
 //! quick-xml quer o documento inteiro, que num fluxo XMPP so termina quando a conexao cai.
+//! A marca de abertura e lida atributo por atributo, respeitando as aspas: procurar
+//! ` from='` dentro dela aceitava `id="x' from='dono'" from='mal'` como vindo do dono, e um
+//! `>` dentro de valor cortava a marca. Estrofe acima de `TETO_ESTROFE` ou fila de
+//! estrofes cheia (`CAPACIDADE_FILA`) derruba a conexao com erro legivel, nunca cresce
+//! sem fim nem entra em panico.
 
 use super::caixa::Caixa;
 use super::cripto::base64;
 use super::http::Credencial;
 use super::tls::{Fio, Tls, conectar, conectar_para_starttls, ler_em_fundo};
-use super::{Entrada, Mensagem, Provedor, Unidade};
-use serde_json::Value;
+use super::{Entrada, Mensagem, Provedor, Unidade, autorizado};
+use serde_json::{Value, json};
+use std::collections::{BTreeSet, HashMap};
 use std::io::{Read, Write};
-use std::sync::mpsc::{Receiver, RecvTimeoutError, channel};
+use std::sync::mpsc::{Receiver, RecvTimeoutError, TrySendError, sync_channel};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
+
+/// Maior estrofe aceita. Servidores limitam a 10 mil bytes ou pouco mais; 256 KiB deixa
+/// folga a avatar e a formulario de sala, e segura o buffer de quem manda sem fechar.
+pub const TETO_ESTROFE: usize = 256 * 1024;
+/// Estrofes lidas e ainda nao entregues ao `receber`; acima disso a conexao cai.
+pub const CAPACIDADE_FILA: usize = 1024;
 
 pub struct Config {
     pub endereco: String,
@@ -41,6 +63,12 @@ pub struct Config {
     pub salas: Vec<String>,
     /// Nick nas salas; vazio = a parte local do JID.
     pub apelido: String,
+    /// A lista de permitidos do canal (a mesma do portao): o texto de quem esta fora dela
+    /// nao chega ao disco.
+    pub permitidos: Vec<String>,
+    /// Numa sala anonima (presenca sem `<item jid>`), aceitar `sala/nick` da lista como
+    /// identidade do ocupante. Padrao `false`: o nick e de quem chegar primeiro com ele.
+    pub confiar_no_nick: bool,
 }
 
 /// O que uma estrofe `<message>` carrega quando e tarefa.
@@ -58,15 +86,44 @@ pub struct Recebida {
     pub sala: bool,
 }
 
+/// `sala/nick` (sala em minusculas) -> JID real sem recurso, em minusculas.
+type Ocupantes = Arc<Mutex<HashMap<String, String>>>;
+
 struct Conexao {
     escrita: Arc<Mutex<Fio>>,
     estrofes: Mutex<Receiver<String>>,
+    /// Por que a leitura em fundo parou, quando foi por teto e nao pelo servidor.
+    erro: Arc<Mutex<Option<String>>>,
+    /// Sala (minusculas) -> o nick que a sala nos deu de fato.
+    apelidos: Vec<(String, String)>,
+    ocupantes: Ocupantes,
+}
+
+impl Conexao {
+    fn apelido_em(&self, sala: &str) -> Option<&str> {
+        let sala = sala.to_ascii_lowercase();
+        self.apelidos
+            .iter()
+            .find(|(s, _)| *s == sala)
+            .map(|(_, n)| n.as_str())
+    }
 }
 
 pub struct Xmpp {
     cfg: Config,
     caixa: Arc<Caixa>,
     conexao: Mutex<Option<Arc<Conexao>>>,
+    permitidos: BTreeSet<String>,
+}
+
+/// JID na forma que se compara: parte local e dominio em minusculas (RFC 7622: ambos sao
+/// insensiveis a caixa), recurso como veio (e sensivel). Vale para `sala/nick` tambem.
+pub fn jid_normal(jid: &str) -> String {
+    let jid = jid.trim();
+    match jid.split_once('/') {
+        Some((nu, r)) => format!("{}/{r}", nu.to_ascii_lowercase()),
+        None => jid.to_ascii_lowercase(),
+    }
 }
 
 pub fn escapar(s: &str) -> String {
@@ -110,17 +167,66 @@ pub fn desescapar(s: &str) -> String {
     saida
 }
 
-/// Valor de um atributo na marca de abertura da estrofe.
-pub fn atributo(estrofe: &str, nome: &str) -> Option<String> {
-    let abertura = &estrofe[..estrofe.find('>')?];
-    for aspas in ['\'', '"'] {
-        let chave = format!(" {nome}={aspas}");
-        if let Some(i) = abertura.find(&chave) {
-            let resto = &abertura[i + chave.len()..];
-            return Some(desescapar(&resto[..resto.find(aspas)?]));
+/// Onde fecha a marca de abertura que comeca em `s` (o indice do `>`), pulando o que esta
+/// entre aspas: um `>` dentro de valor nao fecha marca nenhuma. `None` se nao fechou.
+fn fim_da_abertura(s: &str) -> Option<usize> {
+    let mut aspas: Option<char> = None;
+    for (i, c) in s.char_indices() {
+        match (aspas, c) {
+            (Some(a), c) if c == a => aspas = None,
+            (Some(_), _) => {}
+            (None, '\'' | '"') => aspas = Some(c),
+            (None, '>') => return Some(i),
+            _ => {}
         }
     }
     None
+}
+
+/// Os atributos da marca de abertura de `estrofe`, na ordem, cada valor ja sem escape. E o
+/// UNICO leitor de atributo: a marca e percorrida nome a nome, e um valor so termina na
+/// aspa que o abriu -- assim `id="x' from='dono'" from='mal'` tem um `id` esquisito e um
+/// `from` so, `mal`, em vez de o `from` forjado dentro do `id` vir primeiro.
+pub fn atributos(estrofe: &str) -> Vec<(String, String)> {
+    let mut saida = Vec::new();
+    let Some(fim) = fim_da_abertura(estrofe) else {
+        return saida;
+    };
+    let abertura = &estrofe[..fim];
+    // Pula o nome da marca.
+    let mut resto = abertura
+        .trim_start_matches('<')
+        .trim_start_matches(|c: char| !c.is_whitespace());
+    loop {
+        resto = resto.trim_start();
+        if resto.is_empty() || resto == "/" {
+            return saida;
+        }
+        let Some(igual) = resto.find('=') else {
+            return saida;
+        };
+        let nome = resto[..igual].trim();
+        let valor = resto[igual + 1..].trim_start();
+        let Some(aspas) = valor.chars().next().filter(|c| matches!(c, '\'' | '"')) else {
+            return saida;
+        };
+        let valor = &valor[1..];
+        let Some(fecha) = valor.find(aspas) else {
+            return saida;
+        };
+        if !nome.is_empty() {
+            saida.push((nome.to_string(), desescapar(&valor[..fecha])));
+        }
+        resto = &valor[fecha + 1..];
+    }
+}
+
+/// Valor de um atributo na marca de abertura da estrofe; o primeiro com esse nome.
+pub fn atributo(estrofe: &str, nome: &str) -> Option<String> {
+    atributos(estrofe)
+        .into_iter()
+        .find(|(n, _)| n == nome)
+        .map(|(_, v)| v)
 }
 
 /// `<message from='a@b/r' type='chat'><body>oi</body></message>` e o `groupchat` da sala
@@ -147,7 +253,7 @@ pub fn mensagem_da_estrofe(estrofe: &str) -> Option<Recebida> {
         return None;
     }
     let i = estrofe.find("<body")?;
-    let abre = i + estrofe[i..].find('>')?;
+    let abre = i + fim_da_abertura(&estrofe[i..])?;
     if estrofe[..abre].ends_with('/') {
         return None;
     }
@@ -194,6 +300,24 @@ pub fn erro_da_presenca(estrofe: &str) -> Option<String> {
     }))
 }
 
+/// O que uma presenca de sala diz de um ocupante: `(sala/nick normalizado, JID real sem
+/// recurso em minusculas se a sala o mostra, saiu)`. `None` se nao e presenca de ocupante.
+/// O JID vem do `<item jid='…'/>` do `muc#user` (XEP-0045 §7.2.3); sala anonima nao o manda.
+pub fn ocupante_da_presenca(p: &str) -> Option<(String, Option<String>, bool)> {
+    if !p.starts_with("<presence") || atributo(p, "type").as_deref() == Some("error") {
+        return None;
+    }
+    let de = atributo(p, "from")?;
+    de.split_once('/')?;
+    let saiu = atributo(p, "type").as_deref() == Some("unavailable");
+    let jid = p
+        .find("<item")
+        .and_then(|i| atributo(&p[i..], "jid"))
+        .map(|j| jid_normal(j.split('/').next().unwrap_or("")))
+        .filter(|j| !j.is_empty());
+    Some((jid_normal(&de), jid, saiu))
+}
+
 /// A proxima estrofe inteira de um dos `nomes` a partir de `desde`: `Some(Ok((inicio, fim)))`;
 /// `Some(Err(inicio))` se comecou e ainda nao terminou; `None` se nao ha nenhuma.
 fn achar_estrofe(buf: &str, desde: usize, nomes: &[&str]) -> Option<Result<(usize, usize), usize>> {
@@ -201,7 +325,7 @@ fn achar_estrofe(buf: &str, desde: usize, nomes: &[&str]) -> Option<Result<(usiz
         .iter()
         .filter_map(|n| buf[desde..].find(&format!("<{n}")).map(|i| (desde + i, *n)))
         .min_by_key(|(i, _)| *i)?;
-    let Some(gt) = buf[i..].find('>').map(|g| i + g) else {
+    let Some(gt) = fim_da_abertura(&buf[i..]).map(|g| i + g) else {
         return Some(Err(i));
     };
     if buf[..gt].ends_with('/') {
@@ -225,12 +349,13 @@ fn presencas(buf: &str) -> Vec<&str> {
     saida
 }
 
-/// Tira do buffer as estrofes inteiras de `message` e `iq`; o resto fica para a proxima
-/// leitura.
-fn recortar(buf: &mut String) -> Vec<String> {
+/// Tira do buffer as estrofes inteiras de `message`, `iq` e `presence`; o resto fica para
+/// a proxima leitura. Estrofe aberta que ja passou de `TETO_ESTROFE` e erro: quem manda
+/// sem fechar nao pode crescer a memoria ate o processo cair.
+fn recortar(buf: &mut String) -> Result<Vec<String>, String> {
     let mut saida = Vec::new();
     loop {
-        match achar_estrofe(buf, 0, &["message", "iq"]) {
+        match achar_estrofe(buf, 0, &["message", "iq", "presence"]) {
             None => {
                 // Nada aproveitavel: guarda so o fim, que pode ser o comeco de uma estrofe.
                 if buf.len() > 64 {
@@ -240,11 +365,17 @@ fn recortar(buf: &mut String) -> Vec<String> {
                         .unwrap_or(0);
                     buf.drain(..corte);
                 }
-                return saida;
+                return Ok(saida);
             }
             Some(Err(i)) => {
                 buf.drain(..i);
-                return saida;
+                if buf.len() > TETO_ESTROFE {
+                    buf.clear();
+                    return Err(format!(
+                        "xmpp: estrofe acima de {TETO_ESTROFE} bytes sem fechar; conexao derrubada"
+                    ));
+                }
+                return Ok(saida);
             }
             Some(Ok((i, fim))) => {
                 saida.push(buf[i..fim].to_string());
@@ -291,6 +422,11 @@ fn ler_ate_que<T>(
         if Instant::now() >= fim {
             return Err(format!("xmpp: o servidor nao respondeu ({espera})"));
         }
+        if buf.len() > TETO_ESTROFE {
+            return Err(format!(
+                "xmpp: o servidor mandou mais de {TETO_ESTROFE} bytes sem o esperado ({espera})"
+            ));
+        }
         s.set_read_timeout(Some(Duration::from_millis(500))).ok();
         match s.read(&mut bloco) {
             Ok(0) => return Err("xmpp: o servidor fechou a conexao".into()),
@@ -308,7 +444,14 @@ fn ler_ate_que<T>(
 /// Entra na sala (XEP-0045 §7.2) e espera a sala confirmar: a presenca de volta com o
 /// proprio nick e o `status 110`, ou a de erro, que vira motivo legivel. Esperar e preciso:
 /// sem a confirmacao, um 409 chegaria depois, misturado ao fluxo, e ninguem o veria.
-fn entrar_na_sala(s: &mut Fio, buf: &mut String, sala: &str, apelido: &str) -> Result<(), String> {
+/// Devolve o nick que a sala nos deu: com `status 210` o servico troca o pedido, e o eco da
+/// propria fala so se reconhece pelo nick de fato.
+fn entrar_na_sala(
+    s: &mut Fio,
+    buf: &mut String,
+    sala: &str,
+    apelido: &str,
+) -> Result<String, String> {
     escrever_em(
         s,
         &format!(
@@ -330,9 +473,15 @@ fn entrar_na_sala(s: &mut Fio, buf: &mut String, sala: &str, apelido: &str) -> R
                 });
             }
             // A sala confirma refletindo a nossa presenca (`sala/apelido`); o `status 110` cobre
-            // o servico que trocou o nick (XEP-0045 §7.2.9, status 210).
-            (de == minha || p.contains("code='110'") || p.contains("code=\"110\""))
-                .then_some(Ok(()))
+            // o servico que trocou o nick (XEP-0045 §7.2.9, status 210), e ai o nick e o do
+            // `from` refletido, nao o pedido.
+            let e_minha = de == minha || p.contains("code='110'") || p.contains("code=\"110\"");
+            e_minha.then(|| {
+                Ok(atributo(p, "from")
+                    .and_then(|f| f.split_once('/').map(|(_, n)| n.to_string()))
+                    .filter(|n| !n.is_empty())
+                    .unwrap_or_else(|| apelido.to_string()))
+            })
         })
     })?
 }
@@ -350,10 +499,17 @@ pub fn eco(r: &Recebida, jid: &str, apelido: &str) -> bool {
 
 impl Xmpp {
     pub fn novo(cfg: Config, caixa: Arc<Caixa>) -> Self {
+        let permitidos = cfg
+            .permitidos
+            .iter()
+            .map(|p| jid_normal(p))
+            .filter(|p| !p.is_empty())
+            .collect();
         Self {
             cfg,
             caixa,
             conexao: Mutex::new(None),
+            permitidos,
         }
     }
 
@@ -371,10 +527,26 @@ impl Xmpp {
     }
 
     fn e_sala(&self, conversa: &str) -> bool {
-        self.cfg
-            .salas
-            .iter()
-            .any(|s| s.eq_ignore_ascii_case(conversa))
+        let conversa = jid_normal(conversa);
+        self.cfg.salas.iter().any(|s| jid_normal(s) == conversa)
+    }
+
+    /// A identidade de um ocupante para o portao: o JID real que a sala mostrou na presenca;
+    /// sem ele, `sala/nick` so se o operador confia no nick; senao vazio, que nunca passa.
+    fn identidade(&self, c: &Conexao, sala_nick: &str) -> String {
+        if let Some(j) = c
+            .ocupantes
+            .lock()
+            .ok()
+            .and_then(|o| o.get(sala_nick).cloned())
+        {
+            return j;
+        }
+        if self.cfg.confiar_no_nick {
+            sala_nick.to_string()
+        } else {
+            String::new()
+        }
     }
 
     fn cabecalho(&self) -> Result<String, String> {
@@ -446,18 +618,48 @@ xmlns:stream='http://etherx.jabber.org/streams' version='1.0'>",
         buf.clear();
         escrever_em(&mut s, "<presence/>")?;
         let apelido = self.apelido();
+        let mut apelidos = Vec::new();
         for sala in &self.cfg.salas {
-            entrar_na_sala(&mut s, &mut buf, sala, &apelido)?;
+            let nick = entrar_na_sala(&mut s, &mut buf, sala, &apelido)?;
+            apelidos.push((jid_normal(sala), nick));
         }
         s.set_read_timeout(None).ok();
         let escrita = Arc::new(Mutex::new(s));
-        let (tx, rx) = channel();
+        let (tx, rx) = sync_channel(CAPACIDADE_FILA);
+        let erro: Arc<Mutex<Option<String>>> = Arc::default();
+        let ocupantes: Ocupantes = Arc::default();
+        let (erro_fundo, ocupantes_fundo) = (erro.clone(), ocupantes.clone());
         // Fraco, como no IRC: a leitura em fundo nao pode manter o fio vivo sozinha.
         let pong = Arc::downgrade(&escrita);
         let mut despachar = move |bytes: &[u8]| {
             buf.push_str(&String::from_utf8_lossy(bytes));
-            for e in recortar(&mut buf) {
-                if e.starts_with("<iq") {
+            let estrofes = match recortar(&mut buf) {
+                Ok(e) => e,
+                Err(m) => {
+                    if let Ok(mut g) = erro_fundo.lock() {
+                        *g = Some(m);
+                    }
+                    return false;
+                }
+            };
+            for e in estrofes {
+                if e.starts_with("<presence") {
+                    // O JID real dos ocupantes vem pela presenca, antes de qualquer fala
+                    // deles; e por ele que o portao decide quem comanda.
+                    if let Some((chave, jid, saiu)) = ocupante_da_presenca(&e)
+                        && let Ok(mut o) = ocupantes_fundo.lock()
+                    {
+                        match (saiu, jid) {
+                            (true, _) => {
+                                o.remove(&chave);
+                            }
+                            (false, Some(j)) => {
+                                o.insert(chave, j);
+                            }
+                            (false, None) => {}
+                        }
+                    }
+                } else if e.starts_with("<iq") {
                     if e.contains("urn:xmpp:ping")
                         && atributo(&e, "type").as_deref() == Some("get")
                         && let Some(p) = pong.upgrade()
@@ -466,8 +668,19 @@ xmlns:stream='http://etherx.jabber.org/streams' version='1.0'>",
                         let para = escapar(&atributo(&e, "from").unwrap_or_default());
                         let _ = escrever(&p, &format!("<iq type='result' id='{id}' to='{para}'/>"));
                     }
-                } else if tx.send(e).is_err() {
-                    return false;
+                } else {
+                    match tx.try_send(e) {
+                        Ok(()) => {}
+                        Err(TrySendError::Full(_)) => {
+                            if let Ok(mut g) = erro_fundo.lock() {
+                                *g = Some(format!(
+                                    "xmpp: {CAPACIDADE_FILA} estrofes esperando sem ninguem ler; conexao derrubada"
+                                ));
+                            }
+                            return false;
+                        }
+                        Err(TrySendError::Disconnected(_)) => return false,
+                    }
                 }
             }
             true
@@ -479,6 +692,9 @@ xmlns:stream='http://etherx.jabber.org/streams' version='1.0'>",
         Ok(Conexao {
             escrita,
             estrofes: Mutex::new(rx),
+            erro,
+            apelidos,
+            ocupantes,
         })
     }
 
@@ -516,7 +732,7 @@ impl Provedor for Xmpp {
     }
 
     fn receber(&self, cursor: Option<&str>, espera_seg: u64) -> Result<Vec<Entrada>, String> {
-        let eu = self.cfg.jid.to_ascii_lowercase();
+        let eu = jid_normal(&self.cfg.jid);
         let apelido = self.apelido();
         let novas = self.com_conexao(|c| {
             let fila = c
@@ -528,32 +744,63 @@ impl Provedor for Xmpp {
             loop {
                 match fila.recv_timeout(espera) {
                     Ok(e) => {
-                        if let Some(r) = mensagem_da_estrofe(&e)
-                            && !eco(&r, &eu, &apelido)
-                        {
-                            let (conversa, autor) = if !r.sala && self.e_sala(&r.conversa) {
+                        if let Some(r) = mensagem_da_estrofe(&e) {
+                            let meu_nick = c.apelido_em(&r.conversa).unwrap_or(&apelido);
+                            let de_sala = r.sala || self.e_sala(&r.conversa);
+                            // Numa sala, a identidade do ocupante; fora dela, o JID mesmo.
+                            let identidade = if de_sala {
+                                self.identidade(c, &jid_normal(&r.de))
+                            } else {
+                                jid_normal(&r.autor)
+                            };
+                            let (conversa, autor) = if !r.sala && de_sala {
                                 // Privada de ocupante: a conversa e `sala/nick`, senao a
                                 // resposta sairia `groupchat` para a sala inteira.
-                                (r.de.clone(), r.autor.clone())
+                                (jid_normal(&r.de), identidade)
                             } else {
-                                (r.conversa, r.autor)
+                                (jid_normal(&r.conversa), identidade)
                             };
-                            novas.push((
-                                Mensagem {
-                                    conversa,
-                                    autor,
-                                    id: r.id,
-                                    texto: Some(r.texto),
-                                },
-                                Value::Null,
-                            ));
+                            if !eco(&r, &eu, meu_nick) && autor != eu {
+                                let na_sala = de_sala.then_some(autor.as_str());
+                                if autorizado(&self.permitidos, &conversa, na_sala) {
+                                    novas.push((
+                                        Mensagem {
+                                            conversa,
+                                            autor,
+                                            id: r.id,
+                                            texto: Some(r.texto),
+                                        },
+                                        Value::Null,
+                                    ));
+                                } else {
+                                    // Fora da lista: so o metadado chega ao disco; o texto
+                                    // de quem nao foi autorizado nao se guarda.
+                                    novas.push((
+                                        Mensagem {
+                                            conversa,
+                                            autor,
+                                            id: r.id,
+                                            texto: None,
+                                        },
+                                        json!({
+                                            "recusada": true,
+                                            "de": r.de,
+                                            "hora": chrono::Utc::now().to_rfc3339(),
+                                            "tamanho": r.texto.len(),
+                                        }),
+                                    ));
+                                }
+                            }
                         }
                         espera = Duration::from_millis(50);
                     }
                     Err(RecvTimeoutError::Timeout) => return Ok(novas),
                     Err(RecvTimeoutError::Disconnected) if !novas.is_empty() => return Ok(novas),
                     Err(RecvTimeoutError::Disconnected) => {
-                        return Err("xmpp: o servidor fechou a conexao".into());
+                        let motivo = c.erro.lock().ok().and_then(|mut g| g.take());
+                        return Err(
+                            motivo.unwrap_or_else(|| "xmpp: o servidor fechou a conexao".into())
+                        );
                     }
                 }
             }
@@ -562,6 +809,12 @@ impl Provedor for Xmpp {
             self.caixa.anexar(novas)?;
         }
         self.caixa.ler_desde(cursor, Duration::ZERO)
+    }
+
+    /// A sala, e a conversa privada `sala/nick` de um ocupante dela: nas duas o portao
+    /// confere o autor.
+    fn sala(&self, conversa: &str) -> bool {
+        self.e_sala(conversa.split('/').next().unwrap_or(conversa))
     }
 
     fn enviar(&self, conversa: &str, texto: &str) -> Result<String, String> {

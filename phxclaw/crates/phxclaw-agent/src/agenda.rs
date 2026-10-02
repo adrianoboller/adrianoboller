@@ -1,4 +1,7 @@
-//! Tarefas agendadas: um objetivo que vira tarefa nova a cada disparo.
+//! Tarefas agendadas: um objetivo que vira tarefa nova a cada disparo -- ou um FLUXO
+//! (`fluxo`, caminho do JSON) que roda pelo `fluxos::rodar_com` a cada disparo, sem
+//! modelo quando so tem passos de ferramenta. O `objetivo` com prefixo `fluxo: ARQ`
+//! continua valendo (e o caminho antigo); o campo e o explicito.
 //!
 //! A proxima execucao sai do `next_fire` do rustclaw-native (mesmo motor de cron da base).
 //! A agenda persiste em JSON; quem a roda chama `due(agora)` periodicamente.
@@ -14,6 +17,9 @@ pub struct Schedule {
     pub id: String,
     pub name: String,
     pub objective: String,
+    /// Caminho do fluxo a rodar no disparo, em vez de criar tarefa com o objetivo.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fluxo: Option<String>,
     pub spec: ScheduleSpec,
     pub next_run: DateTime<Utc>,
     pub enabled: bool,
@@ -49,12 +55,45 @@ impl Agenda {
         spec: ScheduleSpec,
         now: DateTime<Utc>,
     ) -> Result<Schedule, String> {
+        self.add_com(name, objective, None, spec, now)
+    }
+
+    /// Agenda um FLUXO: o objetivo gravado e so o rotulo (`fluxo: ARQ`), e o disparo roda
+    /// o arquivo. O fluxo e lido aqui, para o arquivo invalido parar na mao de quem
+    /// agenda e nao no disparo das 3h.
+    pub fn add_fluxo(
+        &mut self,
+        name: &str,
+        caminho: &str,
+        spec: ScheduleSpec,
+        now: DateTime<Utc>,
+    ) -> Result<Schedule, String> {
+        let texto = std::fs::read_to_string(caminho).map_err(|e| format!("{caminho}: {e}"))?;
+        let f = crate::fluxos::ler(&texto)?;
+        self.add_com(
+            name,
+            &format!("{}{}", crate::api::PREFIXO_FLUXO, f.nome),
+            Some(caminho.to_string()),
+            spec,
+            now,
+        )
+    }
+
+    fn add_com(
+        &mut self,
+        name: &str,
+        objective: &str,
+        fluxo: Option<String>,
+        spec: ScheduleSpec,
+        now: DateTime<Utc>,
+    ) -> Result<Schedule, String> {
         validate_schedule(&spec).map_err(|e| e.to_string())?;
         let next_run = next_fire(&spec, now).ok_or("a expressao nunca dispara")?;
         let s = Schedule {
             id: phxclaw_types::new_uuid_v7().to_string(),
             name: name.into(),
             objective: objective.into(),
+            fluxo,
             spec,
             next_run,
             enabled: true,
@@ -63,6 +102,16 @@ impl Agenda {
         self.items.push(s.clone());
         self.save().map_err(|e| e.to_string())?;
         Ok(s)
+    }
+
+    /// `add_fluxo` com o relogio de agora, para a CLI.
+    pub fn adicionar_fluxo_agora(
+        &mut self,
+        name: &str,
+        caminho: &str,
+        spec: ScheduleSpec,
+    ) -> Result<Schedule, String> {
+        self.add_fluxo(name, caminho, spec, Utc::now())
     }
 
     /// `add` com o relogio de agora: a porta da CLI, que nao carrega o chrono.

@@ -48,13 +48,10 @@ fn fluxo_do_exemplo() -> Fluxo {
     fluxos::ler(&std::fs::read_to_string(format!("{PASTA}/fluxo.json")).unwrap()).unwrap()
 }
 
-/// O mesmo sha que `fluxos::retomar` confere: da definicao serializada.
+/// O mesmo sha que `fluxos::retomar` confere, pelo MESMO motor: a assinatura canonica.
+/// (Antes era uma copia do calculo aqui; copia divergiu no dia em que o hash mudou.)
 fn sha_do_fluxo(f: &Fluxo) -> String {
-    use sha2::Digest;
-    sha2::Sha256::digest(serde_json::to_string(f).unwrap().as_bytes())
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect()
+    fluxos::assinatura(f)
 }
 
 /// Servidor HTTP local que guarda cada corpo recebido: e o "canal" da prova.
@@ -137,6 +134,8 @@ fn corrida_com_navegador_pronto(a: &Agent, f: &Fluxo) -> String {
         fluxo_sha256: sha_do_fluxo(f),
         sucesso: false,
         passos,
+        formato: 1,
+        ate: None,
     })
     .ok();
     a.store.save(&t).unwrap();

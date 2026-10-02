@@ -4,8 +4,9 @@
 Sprint SP000001 | 01/10/2026 | planejamento (concluída)
 ```
 
-Numeração global, sequencial, sem reuso. Estados: **EM EXECUÇÃO** (frente rodando agora), **PLANEJADA**
-(entra quando a anterior integrar), **BLOQUEADA** (espera decisão ou credencial do dono).
+Numeração global, sequencial, sem reuso. Estados: **CONCLUÍDA** (integrada e comitada), **EM EXECUÇÃO** (frente rodando agora),
+**PLANEJADA** (entra quando a anterior integrar), **BLOQUEADA** (espera decisão ou credencial do dono).
+São os quatro que o `tools/dossie/numeros.py` aceita; outro estado é parada do gerador.
 
 Base medida (gerar_absorcao.py, 01/10, contando o que as frentes de git e interação já entregaram e
 ainda não comitaram): Claude Code 82,9% · Codex 67,4% · OpenClaw 56,4% · Hermes 55,0% · OpenJarvis 38,2%.

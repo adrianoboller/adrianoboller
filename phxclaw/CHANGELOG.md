@@ -1,3 +1,22 @@
+# v0.70 — PHX Flow Engine onda 1, sala XMPP, casca do painel (02/10/2026, commit 4802e21b)
+
+- `fluxos.rs` vira motor de dados: saída por itens JSON, nós `se`/`juntar`/`lote`/`parar_com_erro`,
+  `ao_errar` por passo, `fluxo_de_erro`, `teto_ms` por passo e por fluxo, expressões por caminho
+  JSON (sem JS). Fluxo antigo roda igual (teste do comportamento velho). 10 testes em
+  `tests/fluxo_motor.rs`; prova real reposta um a um fica para a onda 2. n8n 40,7% → 55,9% no
+  agente (`gerar_absorcao.py`). Formato e divergências: `docs/N8N.md` §8.
+- Canal XMPP com sala multiusuário (XEP-0045): chaves `SALAS`/`APELIDO`, eco e histórico com
+  `<delay/>` ignorados, `groupchat` para a sala e `chat` para privada de ocupante, erro de presença
+  (409 etc.) legível. Sala em `PERMITIDOS` = qualquer ocupante comanda o agente
+  (`docs/GUIA_DO_OPERADOR.md`, «Canal XMPP»).
+- Casca do painel (SP000036 L1): menu em 4 áreas com rótulo ao lado, barra de comando que abre a
+  paleta, rodapé lido (versão, pasta, idioma), assistente recolhível; 13 chaves `casca.*`; ordem
+  do DOM do menu = ordem visual (`docs/ui/COMPARACAO_MOCKUP_2026-10-02.md` §5).
+- Portões (parecer do integrador): fmt ok, clippy 0, 450 testes verdes / 0 falhas / 1 ignorado,
+  ui_navegacao 58/58, ui_config 21/21, qualificar 18/18, textos cravados 0.
+- Documentação: nasce `docs/TECNOLOGIAS.md` com extrator `tools/gerar_tecnologias.py`.
+- Sem entradas v0.68 e v0.69 neste arquivo (não escritas na época; não inventadas agora).
+
 # v0.67 — BPM Visual Editor + Crash-safe Replay
 
 - F13 source gap closed;

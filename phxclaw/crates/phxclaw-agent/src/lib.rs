@@ -75,6 +75,7 @@ pub mod sincronizar;
 pub mod sistema;
 pub mod site;
 pub mod skills;
+pub mod subfluxo;
 pub mod tarefa;
 pub mod testes;
 pub mod tunel;

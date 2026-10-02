@@ -25,7 +25,7 @@
 //!   para um no de codigo do n8n servir aos dois sentidos. Fora da janela de 5 minutos a
 //!   assinatura nao vale: um pedido capturado nao dispara o gatilho para sempre.
 
-use crate::api::{ApiState, Criada, Recusa, criar_tarefa_com};
+use crate::api::{ApiState, Criada, Recusa, criar_fluxo_com, criar_tarefa_com};
 use axum::extract::{Path as Caminho, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
@@ -152,14 +152,24 @@ pub struct GatilhoDeArquivo {
     #[serde(default)]
     pub padrao: Option<String>,
     /// `{arquivos}` vira a lista dos copiados para a pasta da tarefa.
+    #[serde(default)]
     pub objetivo: String,
+    /// Em vez de tarefa com objetivo: o fluxo (caminho do JSON) a rodar, com um item
+    /// `{"arquivo": "gatilho/x.csv"}` por arquivo copiado como `{{entrada}}`.
+    #[serde(default)]
+    pub fluxo: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct GatilhoDeWebhook {
     pub nome: String,
     /// `{corpo}` vira o corpo recebido, cercado e rotulado como dado.
+    #[serde(default)]
     pub objetivo: String,
+    /// Em vez de tarefa com objetivo: o fluxo (caminho do JSON) a rodar, com o corpo
+    /// (JSON vira itens; texto vira um item) como `{{entrada}}`.
+    #[serde(default)]
+    pub fluxo: Option<String>,
     /// Quem nao tem o token da API manda este no cabecalho `X-PhxClaw-Segredo`.
     #[serde(default)]
     pub segredo: Option<String>,
@@ -189,6 +199,54 @@ impl Gatilhos {
         for a in &mut g.arquivos {
             if a.pasta.is_relative() {
                 a.pasta = raiz.join(&a.pasta);
+            }
+        }
+        // Um dos dois, e so um: gatilho sem objetivo e sem fluxo dispararia o nada; com os
+        // dois, ninguem saberia qual valeu.
+        let um_so = |nome: &str, objetivo: &str, fluxo: &Option<String>| -> Result<(), String> {
+            let tem_fluxo = fluxo.as_deref().is_some_and(|f| !f.trim().is_empty());
+            if objetivo.trim().is_empty() == !tem_fluxo {
+                return Err(format!(
+                    "{}: gatilho {nome}: informe 'objetivo' OU 'fluxo' (exatamente um)",
+                    arq.display()
+                ));
+            }
+            Ok(())
+        };
+        for a in &g.arquivos {
+            um_so(&a.nome, &a.objetivo, &a.fluxo)?;
+        }
+        for w in &g.webhooks {
+            um_so(&w.nome, &w.objetivo, &w.fluxo)?;
+        }
+        for f in g
+            .arquivos
+            .iter()
+            .filter_map(|a| a.fluxo.as_deref())
+            .chain(g.webhooks.iter().filter_map(|w| w.fluxo.as_deref()))
+        {
+            let caminho = if Path::new(f).is_relative() {
+                raiz.join(f)
+            } else {
+                PathBuf::from(f)
+            };
+            // Lido ao carregar: fluxo invalido para aqui, nao no primeiro disparo.
+            let t = std::fs::read_to_string(&caminho)
+                .map_err(|e| format!("{}: gatilho: fluxo {f}: {e}", arq.display()))?;
+            crate::fluxos::ler(&t).map_err(|e| format!("{}: gatilho: fluxo {f}: {e}", arq.display()))?;
+        }
+        for a in &mut g.arquivos {
+            if let Some(f) = &a.fluxo
+                && Path::new(f).is_relative()
+            {
+                a.fluxo = Some(raiz.join(f).to_string_lossy().into_owned());
+            }
+        }
+        for w in &mut g.webhooks {
+            if let Some(f) = &w.fluxo
+                && Path::new(f).is_relative()
+            {
+                w.fluxo = Some(raiz.join(f).to_string_lossy().into_owned());
             }
         }
         Ok(g)
@@ -327,6 +385,28 @@ pub fn disparar_arquivos(s: &ApiState, obs: &mut [Observador]) -> Vec<Result<Cri
             ));
         }
         let lista = lista.join(", ");
+        let copiar = |work: &std::path::Path| -> std::io::Result<()> {
+            for (de, para) in &rels {
+                if std::fs::metadata(de).is_ok_and(|m| m.len() <= BYTES_MAX) {
+                    let alvo = work.join(para);
+                    if let Some(pai) = alvo.parent() {
+                        std::fs::create_dir_all(pai)?;
+                    }
+                    std::fs::copy(de, alvo)?;
+                }
+            }
+            Ok(())
+        };
+        if let Some(f) = &o.gatilho.fluxo {
+            // O fluxo recebe um item por arquivo copiado e roda pelo MESMO caminho do
+            // sub-fluxo e da agenda; a copia e o mesmo preparo da tarefa de objetivo.
+            let entrada = rels
+                .iter()
+                .map(|(_, r)| json!({"arquivo": r, "gatilho": o.gatilho.nome}))
+                .collect();
+            v.push(criar_fluxo_com(s, f, entrada, copiar));
+            continue;
+        }
         let objetivo = if o.gatilho.objetivo.contains("{arquivos}") {
             o.gatilho.objetivo.replace("{arquivos}", &lista)
         } else {
@@ -341,18 +421,7 @@ pub fn disparar_arquivos(s: &ApiState, obs: &mut [Observador]) -> Vec<Result<Cri
                 objective: format!("[gatilho {}] {objetivo}", o.gatilho.nome),
                 ..NovaTarefa::default()
             },
-            |work| {
-                for (de, para) in &rels {
-                    if std::fs::metadata(de).is_ok_and(|m| m.len() <= BYTES_MAX) {
-                        let alvo = work.join(para);
-                        if let Some(pai) = alvo.parent() {
-                            std::fs::create_dir_all(pai)?;
-                        }
-                        std::fs::copy(de, alvo)?;
-                    }
-                }
-                Ok(())
-            },
+            copiar,
         );
         v.push(r);
     }
@@ -407,6 +476,30 @@ async fn webhook(
     if corpo.chars().count() > CORPO_MAX {
         c.push_str("\n[... corpo truncado]");
     }
+    let responder = |r: Result<Criada, Recusa>| match r {
+        Ok(c) => (StatusCode::ACCEPTED, Json(json!({"id": c.id}))).into_response(),
+        Err(Recusa {
+            retry_after: Some(seg),
+            erro,
+            ..
+        }) => (
+            StatusCode::TOO_MANY_REQUESTS,
+            [(header::RETRY_AFTER, seg.to_string())],
+            Json(json!({"error": erro, "retry_after": seg})),
+        )
+            .into_response(),
+        Err(r) => resp(r.status, &r.erro),
+    };
+    if let Some(f) = &g.fluxo {
+        // O corpo entra como DADO do fluxo (`{{entrada}}`), nunca como texto de objetivo:
+        // JSON vira itens, texto vira um item de texto.
+        return responder(criar_fluxo_com(
+            &e.api,
+            f,
+            crate::fluxos::itens_de_texto(&c),
+            |_| Ok(()),
+        ));
+    }
     // A cerca nao pode ser fechada pelo proprio corpo.
     let c = c.replace("```", "'''");
     let cercado = format!(
@@ -425,20 +518,7 @@ async fn webhook(
         },
         |_| Ok(()),
     );
-    match r {
-        Ok(c) => (StatusCode::ACCEPTED, Json(json!({"id": c.id}))).into_response(),
-        Err(Recusa {
-            retry_after: Some(seg),
-            erro,
-            ..
-        }) => (
-            StatusCode::TOO_MANY_REQUESTS,
-            [(header::RETRY_AFTER, seg.to_string())],
-            Json(json!({"error": erro, "retry_after": seg})),
-        )
-            .into_response(),
-        Err(r) => resp(r.status, &r.erro),
-    }
+    responder(r)
 }
 
 /// `X-PhxClaw-Carimbo` + `X-PhxClaw-Assinatura` sobre o corpo cru, com a assinatura do

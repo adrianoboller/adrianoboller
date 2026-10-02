@@ -163,9 +163,10 @@ pub const COMANDOS: &[Comando] = &[
         nome: "fluxo",
         resumo: "Fluxo em DAG: rodar e retomar",
         apelidos: &["workflow"],
-        uso: "fluxo rodar ARQ.json | retomar TAREFA ARQ.json [--modelo M] [--pasta DIR]",
-        descricao: "Fluxo declarativo em DAG; cada passo e uma tarefa do agente ou uma ferramenta, \
-                    pelo mesmo portao. retomar pula os passos que deram certo.",
+        uso: "fluxo rodar ARQ.json [--ate PASSO] | retomar TAREFA ARQ.json [--modelo M] [--pasta DIR]",
+        descricao: "Fluxo declarativo em DAG; cada passo e tarefa, ferramenta, skill, mcp, comando \
+                    ou no de controle, pelo mesmo portao. --ate para no passo (inclusive) e grava; \
+                    retomar continua dali e pula os passos que deram certo.",
     },
     Comando {
         grupo: Grupo::EquipeEFluxos,

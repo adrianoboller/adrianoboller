@@ -166,6 +166,61 @@ De `phxclaw config mostrar --json`: **52 segredos no catalogo**; 52 tem comando 
 </details>
 <!-- gerado:segredos:fim -->
 
+### Canal XMPP: a sala multiusuário (MUC, XEP-0045)
+
+Desde o commit `4802e21b` (02/10/2026) o canal `xmpp` entra em salas, além do `chat` a dois.
+Fonte: `crates/phxclaw-agent/src/canais/xmpp.rs` (692 linhas, `wc -l`) e as duas chaves
+novas do catálogo (`crates/phxclaw-config-runtime/src/agente/catalogo.rs`, `CanalDef`
+`xmpp`), que o gerador já espalhou pela tabela acima, por `schemas/config.exemplo.json` e
+pelo `config-catalogo.json` da tela:
+
+| Chave do catálogo | Variável | Tipo | O que faz |
+| --- | --- | --- | --- |
+| `canais.xmpp.salas` (`SALAS`) | `PHXCLAW_XMPP_SALAS` | lista | JIDs das salas em que o bot entra ao abrir a conexão. Vazia = comportamento de antes (só `chat`). |
+| `canais.xmpp.apelido` (`APELIDO`) | `PHXCLAW_XMPP_APELIDO` | texto | nick nas salas; vazio = a parte local do JID. |
+| `canais.xmpp.permitidos` (`PERMITIDOS`) | `PHXCLAW_XMPP_PERMITIDOS` | lista | já existia; **a sala também vai aqui**, senão o que vem dela é descartado. |
+
+```sh
+PHXCLAW_XMPP_SALAS=ops@conference.exemplo.com \
+PHXCLAW_XMPP_APELIDO=phxclaw \
+PHXCLAW_XMPP_PERMITIDOS=ops@conference.exemplo.com,adriano@exemplo.com \
+phxclaw canal xmpp
+```
+
+O que o canal faz com o que chega da sala, e o que ignora de propósito
+(`mensagem_da_estrofe`, `eco`, `erro_da_presenca`):
+
+- **`groupchat` vira tarefa** com a sala como conversa e o nick como autor; a resposta volta
+  `groupchat` à sala inteira (XEP-0045 §7.4).
+- **Chat privado de ocupante** (`type='chat'` vindo de `sala/nick`) chega com a conversa
+  `sala/nick` inteira, e a resposta volta `chat` só a ele — nunca em público. Só entra se
+  `sala/nick` estiver em `PERMITIDOS`.
+- **Ignorado, com o motivo:** o **eco** da própria fala (a sala reflete a todos, inclusive a
+  quem falou; nick igual ao apelido), o **histórico** que a sala reenvia ao entrar
+  (`<delay/>`, `urn:xmpp:delay` ou o antigo `jabber:x:delay` — senão o agente responderia ao
+  passado) e o **aviso da própria sala** (mensagem sem nick: assunto, aviso de serviço).
+  Estado de digitação sem `<body>` também não é mensagem.
+- **Erro ao entrar vira motivo legível**, e a entrada **espera** a confirmação da sala (a
+  presença refletida com o nosso nick ou `status 110`): sem esperar, um 409 chegaria depois,
+  misturado ao fluxo, e ninguém o veria. Os motivos: `conflict` (409) «o apelido já está em
+  uso na sala», `item-not-found` «a sala não existe», `not-authorized` «a sala pede senha»,
+  `forbidden` «o agente está banido da sala», `registration-required` «a sala só aceita
+  membros», `service-unavailable` «a sala está lotada», `not-acceptable` «a sala não aceita
+  esse apelido», `jid-malformed`; condição desconhecida sai como `erro <code>`.
+
+**Consequência de permissão, para o operador decidir sabendo:** a lista de permitidos
+confere a **conversa**, e na sala a conversa é a sala. **Sala em `PERMITIDOS` = qualquer
+ocupante da sala comanda o agente.** Filtrar por ocupante dentro da sala é decisão de produto
+que não foi tomada (está nas pendências da sprint `docs/sprints/Sessao_00001_Sprint_SP000035_20261002060631.md`);
+até lá, ponha em `SALAS` só sala cujos membros você deixaria falar com o agente, ou use a
+privada de ocupante (`sala/nick` em `PERMITIDOS`), que é por pessoa.
+
+Ainda não existe: senha de sala e troca de nick no MUC (pendência declarada). Prova:
+`crates/phxclaw-agent/tests/canais.rs` (`xmpp_entra_na_sala_ouve_so_os_outros_e_responde_em_groupchat`,
+`xmpp_nick_em_conflito_na_sala_e_erro_legivel`) e o teste de unidade
+`groupchat_vira_entrada_com_nick_e_eco_historico_e_aviso_nao` no próprio `xmpp.rs`, contra um
+servidor XMPP falso; nenhum servidor MUC real foi exercitado.
+
 ### Forjas (GitHub, GitLab)
 
 As ferramentas `github`/`gitlab` **não existem** antes do token guardado; `GITHUB_TOKEN` e

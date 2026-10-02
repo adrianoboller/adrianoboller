@@ -133,6 +133,15 @@
         </div>
       </section>
 
+      <!-- SP000036 L2: seis cartoes de acao, um por familia de capacidade do ferramentas.json
+           (a contagem concedida/total e a MESMA da malha de capacidades, medida do JSON). Cor
+           de acao so onde ha acao (construir inclui, testar consulta, implantar altera); os
+           outros ficam neutros. Clique pre-preenche o objetivo da nova tarefa na tela Tarefas:
+           o envio continua sendo o formulario de la, um caminho so. -->
+      <section class="acoes-grid" id="geralAcoes" data-fonte="ferramentas.json" aria-label="Ações" data-txt-al="painel.acoes_titulo">
+        <p class="vazio" data-txt="geral.lendo">Lendo…</p>
+      </section>
+
       <!-- Nenhum numero desta tela e digitado: cada um vive dentro de um [data-fonte] que diz
            de onde veio (o host ou um JSON gerado), e o roteiro de prova reprova numero solto.
            Fonte ausente deixa o travessao e diz que nao ha fonte; nunca inventa. -->
@@ -152,6 +161,13 @@
         <article class="panel absorcao-panel" data-fonte="absorcao.json">
           <header class="panel-head"><div><span class="eyebrow" data-txt="geral.abs_sobretitulo">ABSORÇÃO / ABSORCAO.JSON</span><h2 data-txt="geral.abs_titulo">Capacidades por produto</h2></div><button class="acao consulta" data-ir="absorcao" data-txt="geral.detalhes">DETALHES →</button></header>
           <div class="absorcao-mini" id="geralAbsorcaoLista"><p class="vazio" data-txt="geral.lendo">Lendo…</p></div>
+        </article>
+
+        <!-- As 5 tarefas mais novas de GET /v1/tasks: o estado sai do mesmo formatador da tela
+             Tarefas (tarefas.js), e a linha clicada abre o mesmo detalhe de la. -->
+        <article class="panel execucoes-panel" data-fonte="api /v1/tasks">
+          <header class="panel-head"><div><span class="eyebrow" data-txt="painel.execucoes_sobretitulo">TAREFAS / API DO AGENTE</span><h2 data-txt="painel.execucoes_titulo">Execuções recentes</h2></div><button class="acao consulta" data-ir="tarefas" data-txt="painel.ver_todas">VER TODAS →</button></header>
+          <ol class="execucoes" id="geralExecucoes" aria-label="Execuções recentes" data-txt-al="painel.execucoes_titulo"><li class="vazio" data-txt="geral.lendo">Lendo…</li></ol>
         </article>
 
         <article class="panel capability-panel" data-fonte="ferramentas.json">
