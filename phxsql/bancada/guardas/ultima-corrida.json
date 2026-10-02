@@ -2598,6 +2598,166 @@
       "quando": "2026-09-24 15:15"
     },
     {
+      "id": "fk-antes-do-default",
+      "titulo": "a chave estrangeira confere a linha crua, e o DEFAULT sem mãe grava a filha órfã",
+      "veredito": "PROVADA",
+      "segundos": 8.25,
+      "notas": [],
+      "quando": "2026-10-02 11:56"
+    },
+    {
+      "id": "fk-antes-do-default-pelo-servidor",
+      "titulo": "o DEFAULT e a calculada sem mãe gravam a órfã pelo servidor, fora e dentro da transação",
+      "veredito": "PROVADA",
+      "segundos": 95.75,
+      "notas": [],
+      "quando": "2026-10-02 11:56"
+    },
+    {
+      "id": "cascata-sobre-calculada-na-declaracao",
+      "titulo": "a chave sobre coluna calculada é declarada em cascata, e a filha fica órfã quando a mãe troca de chave",
+      "veredito": "PROVADA",
+      "segundos": 91.28,
+      "notas": [],
+      "quando": "2026-10-02 11:56"
+    },
+    {
+      "id": "cascata-confere-a-filha-crua",
+      "titulo": "a cascata confere a filha crua, e a mãe fica gravada quando a linha final da filha recusa",
+      "veredito": "PROVADA",
+      "segundos": 8.09,
+      "notas": [],
+      "quando": "2026-10-02 11:56"
+    },
+    {
+      "id": "literal-no-erro-do-sql",
+      "titulo": "o erro de sintaxe do SQL cita o literal do pedido («e veio '123.456.789-00'»)",
+      "veredito": "PROVADA",
+      "segundos": 6.41,
+      "notas": [],
+      "quando": "2026-10-02 11:56"
+    },
+    {
+      "id": "literal-no-erro-da-expressao",
+      "titulo": "o erro da expressão cita o literal do pedido na janela, no «sobrou» e no «esperava»",
+      "veredito": "PROVADA",
+      "segundos": 9.22,
+      "notas": [],
+      "quando": "2026-10-02 11:56"
+    },
+    {
+      "id": "texto-sem-fechar-no-acessos-log",
+      "titulo": "o `texto sem fechar` da expressão cita o pedido inteiro, e o `acessos.log` grava o dado em claro",
+      "veredito": "PROVADA",
+      "segundos": 35.39,
+      "notas": [],
+      "quando": "2026-10-02 11:56"
+    },
+    {
+      "id": "senha-sobra-no-erro-do-cadastro",
+      "titulo": "a recusa do `CREATE USER` cita o que sobrou — e numa senha de aspas não dobradas o que sobra é um pedaço dela",
+      "veredito": "PROVADA",
+      "segundos": 6.23,
+      "notas": [],
+      "quando": "2026-10-02 11:56"
+    },
+    {
+      "id": "senha-fora-de-aspas-simples-no-perfil",
+      "titulo": "o `sem_a_senha` tapa só o literal de aspas simples: `PASSWORD \"x\"`, `PASSWORD x` e `PASSWORD 123` saem em claro no `perfil.txt`",
+      "veredito": "PROVADA",
+      "segundos": 6.19,
+      "notas": [],
+      "quando": "2026-10-02 11:56"
+    },
+    {
+      "id": "aspas-duplas-no-erro-de-sintaxe",
+      "titulo": "`VALUES (2, \"123.456.789-00\")`, o texto do jeito do MySQL, volta citado no erro e vai ao `acessos.log`",
+      "veredito": "PROVADA",
+      "segundos": 6.02,
+      "notas": [],
+      "quando": "2026-10-02 11:56"
+    },
+    {
+      "id": "duracao-citada-sem-teto",
+      "titulo": "a recusa da duração cita o texto recebido inteiro: `BEGIN TRANSACTION TIMEOUT '<1 MiB>'` soma um megabyte ao `acessos.log`",
+      "veredito": "PROVADA",
+      "segundos": 100.52,
+      "notas": [],
+      "quando": "2026-10-02 11:56"
+    },
+    {
+      "id": "portao-da-senha-por-espaco",
+      "titulo": "o portão da redação da senha lê palavras separadas por espaço: `/* odbc */ CREATE USER`, `ALTER ROLE … PASSWORD` e `SET PASSWORD FOR` levam a senha em claro ao `perfil.txt` e ao `jobs.json`",
+      "veredito": "PROVADA",
+      "segundos": 6.26,
+      "notas": [],
+      "quando": "2026-10-02 11:56"
+    },
+    {
+      "id": "senha-depois-de-identified",
+      "titulo": "a redação só olha `PASSWORD`: `IDENTIFIED BY \"x\"`, a forma do MySQL e do MariaDB, sai em claro no perfil",
+      "veredito": "PROVADA",
+      "segundos": 6.84,
+      "notas": [],
+      "quando": "2026-10-02 11:56"
+    },
+    {
+      "id": "parametros-irmaos-da-senha",
+      "titulo": "o Profiler tapa o `?` do `ALTER USER c PASSWORD ?` e grava o `parametros` irmão com a senha em claro",
+      "veredito": "PROVADA",
+      "segundos": 93.64,
+      "notas": [],
+      "quando": "2026-10-02 11:56"
+    },
+    {
+      "id": "portao-da-senha-pelos-simbolos",
+      "titulo": "o portão da redação lê símbolos e o perfil e o job guardam bytes: a linha comentada, o `/*!…*/` e o literal que carrega a senha passam em claro",
+      "veredito": "PROVADA",
+      "segundos": 6.54,
+      "notas": [],
+      "quando": "2026-10-02 11:56"
+    },
+    {
+      "id": "palavra-que-contem-a-senha",
+      "titulo": "`MASTER_PASSWORD=x` e `SOURCE_PASSWORD=\"x\"`: só a palavra exata abre a redação, e a senha sai em claro no perfil",
+      "veredito": "PROVADA",
+      "segundos": 6.84,
+      "notas": [],
+      "quando": "2026-10-02 11:56"
+    },
+    {
+      "id": "eco-do-sql-com-a-senha",
+      "titulo": "o roteiro com a senha numa linha comentada roda, e a resposta da op `sql` ecoa o texto inteiro no campo `sql`",
+      "veredito": "PROVADA",
+      "segundos": 34.57,
+      "notas": [],
+      "quando": "2026-10-02 11:56"
+    },
+    {
+      "id": "jobs-json-antigo-derruba-o-arranque",
+      "titulo": "a guarda de credencial roda tambem ao LER o `jobs.json`, e o job legitimo salvo antes dela derruba o arranque",
+      "veredito": "PROVADA",
+      "segundos": 21.96,
+      "notas": [],
+      "quando": "2026-10-02 11:56"
+    },
+    {
+      "id": "job-recusado-roda-mesmo-assim",
+      "titulo": "o job que voltou do disco com credencial sobe e RODA -- pela agenda, pela tela, ou religado",
+      "veredito": "PROVADA",
+      "segundos": 23.0,
+      "notas": [],
+      "quando": "2026-10-02 11:56"
+    },
+    {
+      "id": "ficha-do-job-devolve-a-senha-do-disco",
+      "titulo": "o job aceito no arranque com a senha no pedido a devolve na ficha da op `jobs`",
+      "veredito": "PROVADA",
+      "segundos": 22.76,
+      "notas": [],
+      "quando": "2026-10-02 11:56"
+    },
+    {
       "id": "esquema-vaza-o-histograma-da-particao",
       "titulo": "`op_esquema` publica `baldes[].registros` mesmo com a coluna da partição negada ao usuário",
       "veredito": "PROVADA",
