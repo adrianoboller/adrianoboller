@@ -17966,6 +17966,54 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         "seguem": ["a_copia_sincroniza_no_descritor_que_a_escreveu"],
     },
     {
+        "id": "zip-pasta-nova-sem-fsync-da-mae",
+        "titulo": "o backup em ZIP responde «concluido» sem o `fsync` da mae de cada pasta que criou",
+        "porque": (
+            "pedido 524, o que sobrava (o `fsync` do diretorio): o `rename` do "
+            "`.part` ja passava pelo motor do 467, mas a ENTRADA da pasta "
+            "nova mora na mae dela, e so a arvore (579/593) a sincronizava. "
+            "Numa queda a cadeia `novo/zips` inteira, com o zip dentro, podia "
+            "sumir depois do «concluido». A prova e sob `strace`: `fsync` num "
+            "descritor que aponta para a mae de cada nascida."
+        ),
+        "arquivo": "crates/phxsql-store/src/backup.rs",
+        "trecho": """    for nascida in &zip.pastas {
+        if let Err(e) = sincronizar_pasta(nascida.mae()) {
+            descartar_pastas(&zip.pastas);
+            return Err(e);
+        }
+    }
+""",
+        "troca": """    // DEFEITO REPOSTO (524): a mae das pastas criadas nao sincroniza.
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "fsync-no-descritor-que-escreveu"],
+        "caem": ["o_zip_sincroniza_o_diretorio_depois_do_rename"],
+        "seguem": ["a_arvore_sincroniza_a_mae_de_cada_pasta_que_criou"],
+    },
+    {
+        "id": "arvore-pasta-nova-sem-fsync-da-mae",
+        "titulo": "o backup em arvore responde «concluido» sem o `fsync` da mae de cada pasta que criou",
+        "porque": (
+            "pedido 524, o irmao em arvore da guarda do zip: 579/593 ja "
+            "sincronizam as pastas tocadas; a prova contra o nucleo em "
+            "destino NOVO em cadeia (`novo/copia`) faltava, e sem ela a "
+            "remocao do laco passava calada pela suite."
+        ),
+        "arquivo": "crates/phxsql-store/src/backup.rs",
+        "trecho": """    for pasta in pastas_tocadas(copias) {
+        sincronizar_pasta(&pasta)?;
+    }
+""",
+        "troca": """    // DEFEITO REPOSTO (524): nenhuma pasta sincroniza.
+    let _ = pastas_tocadas(copias);
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "fsync-no-descritor-que-escreveu"],
+        "caem": ["a_arvore_sincroniza_a_mae_de_cada_pasta_que_criou"],
+        "seguem": ["o_zip_sincroniza_o_diretorio_depois_do_rename"],
+    },
+    {
         "id": "zip-rename-que-recusa-deixa-a-pasta",
         "titulo": "o `rename` final do backup em ZIP que recusa deixa vazia a pasta que a corrida criou",
         "porque": (

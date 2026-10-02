@@ -435,3 +435,86 @@ fn o_zip_sincroniza_no_descritor_que_o_escreveu() {
         .expect("a premissa: o .part foi renomeado");
     assert!(fsync < renomeou, "o rename veio antes do fsync do .part");
 }
+
+/// **O ZIP sincroniza o DIRETORIO depois do `rename` do `.part` -- e a mae de
+/// cada pasta que a corrida criou** (pedido 524, o que sobrava: o `fsync` do
+/// diretorio).
+///
+/// O `rename` da troca e a entrada da pasta nova sao dado de DIRETORIO: sem
+/// `fsync` deles, uma queda logo depois de «concluido» podia devolver a
+/// pasta sem o `.zip`, ou sem a pasta. A pergunta ao nucleo e para onde
+/// aponta o descritor que recebeu o `fsync`, como no teste da pasta (593).
+#[test]
+fn o_zip_sincroniza_o_diretorio_depois_do_rename() {
+    if let Some(pasta) = std::env::var_os(FILHO) {
+        let pasta = PathBuf::from(pasta);
+        let raiz = pasta.parent().unwrap().parent().unwrap().join("dados");
+        let (zip, _) = backup::executar_zip(&raiz, &pasta, "loja", "ana", QUANDO).unwrap();
+        backup::finalizar_zip(&zip).unwrap();
+        return;
+    }
+    let d = DirTemp::novo("524-strace-zip-dir");
+    raiz_com_dado(&d);
+    // Duas pastas novas em cadeia: `novo` (mae: d) e `zips` (mae: `novo`).
+    let pasta = d.join("novo").join("zips");
+    let Some(chamadas) = sob_strace("o_zip_sincroniza_o_diretorio_depois_do_rename", &pasta, &d)
+    else {
+        return;
+    };
+    let renomeou = chamadas
+        .iter()
+        .position(|c| matches!(c, Chamada::Renomeou(_, para) if para.ends_with(".zip")))
+        .expect("a premissa: o .part foi renomeado");
+    let sincronizou = |alvo: &Path, de: usize| {
+        let alvo = alvo.to_string_lossy().into_owned();
+        (de..chamadas.len()).any(|i| {
+            matches!(&chamadas[i], Chamada::Sincronizou(f)
+                if aponta_para(&chamadas[..i], *f) == Some(alvo.as_str()))
+        })
+    };
+    assert!(
+        sincronizou(&pasta, renomeou),
+        "o rename do .part ficou sem o fsync da pasta do zip:\n{:#?}",
+        &chamadas[renomeou..]
+    );
+    assert!(
+        sincronizou(&d.join("novo"), 0),
+        "a entrada de `zips` ficou sem o fsync da mae (`novo`)"
+    );
+    assert!(
+        sincronizou(&d, 0),
+        "a entrada de `novo` ficou sem o fsync da mae (a pasta de cima)"
+    );
+}
+
+/// O irmao em arvore do teste acima: o destino nasce em cadeia (`novo/copia`)
+/// e a entrada de cada pasta nova sincroniza na mae dela (579/593 ja faziam;
+/// aqui a prova e contra o nucleo, nos dois caminhos do 524).
+#[test]
+fn a_arvore_sincroniza_a_mae_de_cada_pasta_que_criou() {
+    if let Some(destino) = std::env::var_os(FILHO) {
+        let destino = PathBuf::from(destino);
+        let raiz = destino.parent().unwrap().parent().unwrap().join("dados");
+        let (r, copias) = backup::executar(&raiz, &destino, QUANDO).unwrap();
+        backup::concluir(&destino, QUANDO, &r, &copias).unwrap();
+        return;
+    }
+    let d = DirTemp::novo("524-strace-arvore-dir");
+    raiz_com_dado(&d);
+    let destino = d.join("novo").join("copia");
+    let Some(chamadas) = sob_strace(
+        "a_arvore_sincroniza_a_mae_de_cada_pasta_que_criou",
+        &destino,
+        &d,
+    ) else {
+        return;
+    };
+    for mae in [d.join("novo"), d.to_path_buf()] {
+        let alvo = mae.to_string_lossy().into_owned();
+        let achou = (0..chamadas.len()).any(|i| {
+            matches!(&chamadas[i], Chamada::Sincronizou(f)
+                if aponta_para(&chamadas[..i], *f) == Some(alvo.as_str()))
+        });
+        assert!(achou, "a pasta {alvo} ficou sem o fsync da entrada nova");
+    }
+}
