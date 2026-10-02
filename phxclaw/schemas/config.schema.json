@@ -1140,6 +1140,13 @@
                 "array"
               ]
             },
+            "apelido": {
+              "description": "Apelido nas salas; vazio = a parte local do JID (ambiente: PHXCLAW_XMPP_APELIDO)",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
             "ca": {
               "description": "Autoridade (PEM) no lugar das raízes públicas (ambiente: PHXCLAW_XMPP_CA)",
               "type": [
@@ -1163,6 +1170,16 @@
             },
             "permitidos": {
               "description": "Conversas de xmpp que podem falar com o agente (obrigatória) (ambiente: PHXCLAW_XMPP_PERMITIDOS)",
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "salas": {
+              "description": "JIDs das salas (MUC) em que o bot entra; a sala também vai em PERMITIDOS (ambiente: PHXCLAW_XMPP_SALAS)",
               "items": {
                 "type": "string"
               },

@@ -138,6 +138,60 @@ function desenharHost() {
 desenharHost();
 idiomas.aoTrocar(desenharHost);
 
+// RODAPE (SP000036 L1): versao, pasta ativa e idioma sao DADO lido -- o host (host_status),
+// o /v1/config (chave agente.pasta) e a fabrica (idiomas.atual). Sem fonte, «NAO MEDIDO»
+// da fabrica; nunca um valor digitado. Mesmo desenho de sempre: estado guardado, rotulo
+// refeito na troca de idioma (um data-txt no <b> trocaria o dado pelo rotulo).
+const rodapeVisto = { versao: null, pasta: null };
+// Bandeira por idioma, desenhada em SVG (emoji de bandeira nao desenha no Windows; o mesmo
+// desenho do console do PhxSql). Idioma sem bandeira mostra so o codigo.
+const BANDEIRAS = {
+  pt: '<svg viewBox="0 0 24 16" aria-hidden="true"><rect width="24" height="16" fill="#009b3a"/><path d="M12 1.7 22.3 8 12 14.3 1.7 8Z" fill="#fedf00"/><circle cx="12" cy="8" r="3.9" fill="#002776"/></svg>',
+  en: '<svg viewBox="0 0 24 16" aria-hidden="true"><rect width="24" height="16" fill="#012169"/><path d="M0 0 24 16M24 0 0 16" stroke="#fff" stroke-width="3.2"/><path d="M0 0 24 16M24 0 0 16" stroke="#c8102e" stroke-width="1.7"/><path d="M12 0V16M0 8H24" stroke="#fff" stroke-width="5.4"/><path d="M12 0V16M0 8H24" stroke="#c8102e" stroke-width="3.2"/></svg>',
+};
+function desenharRodape() {
+  const nao = txt('casca.nao_medido', 'NÃO MEDIDO');
+  document.getElementById('rodapeVersao').textContent = rodapeVisto.versao ?? nao;
+  document.getElementById('rodapePasta').textContent = rodapeVisto.pasta ?? nao;
+  document.getElementById('rodapeIdioma').textContent = idiomas.atual.toUpperCase();
+  document.getElementById('rodapeBandeira').innerHTML = BANDEIRAS[idiomas.atual] || '';
+}
+desenharRodape();
+idiomas.aoTrocar(desenharRodape);
+// A pasta: GET /v1/config (o mesmo que a tela Configuracao le), so a chave agente.pasta.
+// Sem API, sem token ou sem valor fica o «NAO MEDIDO»; leitura que falhou nao e erro de tela.
+(async () => {
+  try {
+    let token = '';
+    try { token = localStorage.getItem('phxclaw.token') || ''; } catch { /* sem armazenamento */ }
+    const r = await fetch('./v1/config', { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store' });
+    if (!r.ok) return;
+    const vista = await r.json();
+    const chave = (vista.chaves || []).find(c => c.chave === 'agente.pasta');
+    const valor = chave?.valor ?? chave?.padrao ?? null;
+    if (typeof valor === 'string' && valor) { rodapeVisto.pasta = valor; desenharRodape(); }
+  } catch { /* sem rede ou sem API: fica NAO MEDIDO */ }
+})();
+
+// ASSISTENTE (SP000036 L1): so abrir/recolher, escolha guardada no aparelho. Vazio por ora.
+(() => {
+  const CHAVE = 'phxclaw.assistente';
+  const botao = document.getElementById('assistenteAlternar');
+  let aberto = false;
+  try { aberto = localStorage.getItem(CHAVE) === 'aberto'; } catch { /* sem armazenamento */ }
+  const aplicar = () => {
+    if (aberto) app.dataset.assistente = 'aberto'; else delete app.dataset.assistente;
+    document.getElementById('assistente').dataset.recolhido = aberto ? '0' : '1';
+    botao.setAttribute('aria-expanded', String(aberto));
+  };
+  botao.addEventListener('click', () => {
+    aberto = !aberto;
+    try { localStorage.setItem(CHAVE, aberto ? 'aberto' : 'recolhido'); } catch { /* idem */ }
+    aplicar();
+  });
+  aplicar();
+})();
+
 // O topo diz o estado do NUCLEO pelo que o host respondeu, nunca por texto fixo: sem host
 // nativo nao ha nucleo a vista e a tela diz isso (o ponto nao pulsa). Estado guardado e
 // rotulo desenhado na hora, como o painel do host, para a troca de idioma refazer o rotulo.
@@ -186,6 +240,8 @@ async function connectNativeBridge() {
       const el = document.getElementById(id);
       if (el) el.textContent = `v${status.version}`;
     }
+    rodapeVisto.versao = `v${status.version}`;
+    desenharRodape();
     hostSession.textContent = compactUuid(status.session_uuid);
     liveReceivers.textContent = String(status.live_bus?.receiver_count ?? 0);
     hostVisto.politica = [

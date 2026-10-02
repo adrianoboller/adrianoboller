@@ -122,6 +122,9 @@ fn corrida_com_navegador_pronto(a: &Agent, f: &Fluxo) -> String {
                 id,
                 estado: "ok".into(),
                 saida,
+                // Relatorio de antes dos itens: a retomada converte o texto em item.
+                itens: vec![],
+                portas: Default::default(),
                 tarefa: None,
                 tentativas: 1,
                 reaproveitado: false,

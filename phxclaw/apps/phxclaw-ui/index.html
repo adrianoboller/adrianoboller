@@ -72,9 +72,12 @@
         <i></i>
         <span id="liveEventStatus"></span>
       </div>
+      <!-- Barra de comando (SP000036 L1): o campo largo com «Ctrl K» desenhado e o MESMO botao
+           #abrirPaleta de antes -- abre o #paleta, e o fechar devolve o foco a ele. Zero logica
+           nova; o que mudou e a afordancia. A 640 vira so a lupa. -->
+      <button id="abrirPaleta" type="button" class="cmd-bar" aria-haspopup="dialog" aria-keyshortcuts="Control+K"
+        aria-label="Buscar e comandos (Ctrl+K)" data-txt-al="paleta.abrir" title="Buscar e comandos (Ctrl+K)" data-txt-tt="paleta.abrir"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5 21 21"/></svg></span><span class="cmd-dica" data-txt="casca.busca">Buscar, ir para uma tela ou comando</span><kbd aria-hidden="true" data-txt="casca.atalho">Ctrl K</kbd></button>
       <div class="top-actions">
-        <button id="abrirPaleta" type="button" class="icone" aria-haspopup="dialog" aria-keyshortcuts="Control+K"
-          aria-label="Buscar e comandos (Ctrl+K)" data-txt-al="paleta.abrir" title="Buscar e comandos (Ctrl+K)" data-txt-tt="paleta.abrir"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5 21 21"/></svg></button>
         <!-- Tema: o icone mostra para onde o clique leva (sol no escuro, lua no claro); o nome
              acessivel vem da fabrica e diz o mesmo (tema.js). -->
         <button id="trocarTema" type="button" class="icone" aria-label="Mudar para o tema claro" title="Mudar para o tema claro"><svg class="ico-sol" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2.5M12 19v2.5M2.5 12H5M19 12h2.5M5.3 5.3l1.8 1.8M16.9 16.9l1.8 1.8M5.3 18.7l1.8-1.8M16.9 7.1l1.8-1.8"/></svg><svg class="ico-lua" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg></button>
@@ -94,13 +97,20 @@
     <aside class="sidebar">
       <nav>
         <!-- Cada botao nomeia a tela que abre (data-tela); o selo so aparece quando um
-             arquivo gerado deu o numero -- vazio, o CSS o esconde. -->
+             arquivo gerado deu o numero -- vazio, o CSS o esconde.
+             SP000036 L1: rotulo AO LADO do icone, em 4 areas (so as que TEM tela). A ordem do
+             DOM e a visual (foco segue o olho); abaixo de 1300 px volta ao trilho de icones e
+             as areas somem. -->
+        <span class="nav-grupo" data-txt="casca.menu.painel">PAINEL</span>
         <button class="nav active" data-tela="geral" aria-current="page"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"/></svg></span><em data-txt="menu.geral">Visão geral</em></button>
-        <button class="nav" data-tela="agentes"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.6 3.4-5.5 6.5-5.5s5.7 1.9 6.5 5.5"/><path d="M15.5 4.7a3.5 3.5 0 0 1 0 6.6M18 14.8c1.9.7 3.1 2.4 3.5 5.2"/></svg></span><em data-txt="menu.agentes">Agentes</em><b id="seloAgentes"></b></button>
+        <span class="nav-grupo" data-txt="casca.menu.trabalho">TRABALHO</span>
+        <button class="nav" data-tela="tarefas"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M10 6h10M10 12h10M10 18h10"/><path d="m3.5 6 1.5 1.5L7.5 5M3.5 12l1.5 1.5 2.5-2.5M3.5 18l1.5 1.5 2.5-2.5"/></svg></span><em data-txt="menu.tarefas">Tarefas</em></button>
         <button class="nav" data-tela="ide"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><rect x="2.5" y="4" width="19" height="16" rx="2"/><path d="m6.5 9 3.5 3-3.5 3M12.5 15h5"/></svg></span><em>IDE</em><b id="seloIde"></b></button>
+        <span class="nav-grupo" data-txt="casca.menu.capacidades">CAPACIDADES</span>
+        <button class="nav" data-tela="agentes"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.6 3.4-5.5 6.5-5.5s5.7 1.9 6.5 5.5"/><path d="M15.5 4.7a3.5 3.5 0 0 1 0 6.6M18 14.8c1.9.7 3.1 2.4 3.5 5.2"/></svg></span><em data-txt="menu.agentes">Agentes</em><b id="seloAgentes"></b></button>
         <button class="nav" data-tela="ferramentas"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M4 20l9-9"/><circle cx="16" cy="8" r="4.5"/><path d="M16 8l3.2-3.2"/></svg></span><em data-txt="menu.ferramentas">Ferramentas</em><b id="seloFerramentas"></b></button>
         <button class="nav" data-tela="absorcao"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M12 3l9 9-9 9-9-9z"/><path d="M12 8l4 4-4 4-4-4z"/></svg></span><em data-txt="menu.absorcao">Absorção</em></button>
-        <button class="nav" data-tela="tarefas"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M10 6h10M10 12h10M10 18h10"/><path d="m3.5 6 1.5 1.5L7.5 5M3.5 12l1.5 1.5 2.5-2.5M3.5 18l1.5 1.5 2.5-2.5"/></svg></span><em data-txt="menu.tarefas">Tarefas</em></button>
+        <span class="nav-grupo" data-txt="casca.menu.sistema">SISTEMA</span>
         <button class="nav" data-tela="config"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><circle cx="12" cy="12" r="3.5"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/></svg></span><em data-txt="menu.config">Configuração</em></button>
       </nav>
       <div class="sidebar-bottom">
@@ -312,7 +322,27 @@
       <div id="configConteudo" class="grade-alvo" data-uma-pagina data-fonte="api /v1/config"></div>
      </section>
     </main>
-    <footer class="footerbar"><span data-txt="rodape.disciplina">DISCIPLINA</span><i aria-hidden="true">•</i><span data-txt="rodape.seguranca">SEGURANÇA</span><i aria-hidden="true">•</i><span data-txt="rodape.qualidade">QUALIDADE</span><i aria-hidden="true">•</i><span data-txt="rodape.evolucao">EVOLUÇÃO</span><i aria-hidden="true">•</i><span data-txt="rodape.liberdade">LIBERDADE</span><b data-txt="rodape.lema">“Juntos somos infinitos.”</b></footer>
+    <!-- Rodape (SP000036 L1): versao, pasta ativa e idioma sao DADO lido (host_status,
+         /v1/config agente.pasta, idiomas.atual) e o app.js os escreve; sem fonte fica «NAO
+         MEDIDO» da fabrica -- nunca um valor digitado. Os cinco valores da casa ficam a direita. -->
+    <footer class="footerbar">
+      <span class="rod-item" data-fonte="host"><span class="rod-rotulo" data-txt="casca.rodape.versao">VERSÃO</span><b id="rodapeVersao"></b></span>
+      <span class="rod-item" data-fonte="api /v1/config"><span class="rod-rotulo" data-txt="casca.rodape.pasta">PASTA</span><b id="rodapePasta"></b></span>
+      <span class="rod-item" data-fonte="idiomas"><span class="rod-rotulo" data-txt="casca.rodape.idioma">IDIOMA</span><i id="rodapeBandeira" class="bandeira" aria-hidden="true"></i><b id="rodapeIdioma"></b></span>
+      <span class="rod-valores"><span data-txt="rodape.disciplina">DISCIPLINA</span><i aria-hidden="true">•</i><span data-txt="rodape.seguranca">SEGURANÇA</span><i aria-hidden="true">•</i><span data-txt="rodape.qualidade">QUALIDADE</span><i aria-hidden="true">•</i><span data-txt="rodape.evolucao">EVOLUÇÃO</span><i aria-hidden="true">•</i><span data-txt="rodape.liberdade">LIBERDADE</span></span>
+      <b class="rod-lema" data-txt="rodape.lema">“Juntos somos infinitos.”</b>
+    </footer>
+    <!-- Assistente (SP000036 L1): o painel a direita, VAZIO e recolhido por padrao -- so o
+         titulo, «sem conversa» e o botao de abrir/recolher (escolha em localStorage, app.js).
+         A conversa sobre os quatro verbos de tarefa e lote posterior. -->
+    <aside id="assistente" class="assistente" aria-label="Assistente" data-txt-al="casca.assistente.titulo" data-recolhido="1">
+      <header class="assistente-head">
+        <h2 data-txt="casca.assistente.titulo">Assistente</h2>
+        <button id="assistenteAlternar" type="button" class="icone" aria-expanded="false" aria-controls="assistenteCorpo"
+          aria-label="Abrir ou recolher o assistente" data-txt-al="casca.assistente.alternar" title="Abrir ou recolher o assistente" data-txt-tt="casca.assistente.alternar"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="m9.5 6 6 6-6 6"/></svg></span></button>
+      </header>
+      <div id="assistenteCorpo" class="assistente-corpo"><p class="vazio" data-txt="casca.assistente.sem_conversa">Sem conversa.</p></div>
+    </aside>
   </div>
   <script src="./assets/idiomas.js"></script>
   <script src="./assets/grades.js"></script>

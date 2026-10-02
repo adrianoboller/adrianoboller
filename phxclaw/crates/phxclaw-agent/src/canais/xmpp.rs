@@ -1,12 +1,19 @@
 //! XMPP (Jabber): conexao de cliente com SASL PLAIN, bind de recurso e presenca; as
 //! mensagens `type='chat'` viram tarefa e a resposta volta como `<message>` ao JID.
+//! Sala multiusuario (MUC, XEP-0045): o agente entra nas `salas` da configuracao com o
+//! `apelido` ao abrir a conexao; o `groupchat` vira tarefa com a sala como conversa e o nick
+//! como autor, e a resposta volta `groupchat` a sala. O eco da propria fala (nick igual ao
+//! apelido) e o historico que a sala manda ao entrar (`<delay/>`) ficam de fora: sem isso o
+//! agente responderia a si mesmo e ao passado. Mensagem privada de ocupante (`chat` vindo
+//! de `sala/nick`) chega com a conversa `sala/nick` inteira, para a resposta nao sair em
+//! publico; so entra se o operador a permitir assim.
 //!
 //! Mesmo desenho do IRC: a conexao fica aberta, uma thread le o fluxo XML, responde ao ping
 //! do servidor (XEP-0199) na hora e poe as mensagens numa fila; o que chega vai para a
 //! `Caixa` em disco antes de virar tarefa. TLS por STARTTLS (RFC 6120 §5) pelo
 //! `canais::tls`, com o certificado conferido contra o DOMINIO do JID; servidor que nao
 //! oferece `<starttls/>` e recusado (nunca se cai para texto claro calado). Sem TLS
-//! (`PHXCLAW_XMPP_TLS=false`), so loopback. Sala multiusuario (MUC, `groupchat`) fica de fora.
+//! (`PHXCLAW_XMPP_TLS=false`), so loopback.
 //!
 //! O fluxo XML e lido por recorte de estrofe (`<message ...>...</message>`) e nao por um
 //! analisador de fluxo: as estrofes que importam nao se aninham, e o analisador do
@@ -30,6 +37,25 @@ pub struct Config {
     pub senha: Credencial,
     /// `None` = texto claro, so em loopback; com TLS, STARTTLS obrigatorio.
     pub tls: Option<Tls>,
+    /// JIDs das salas (XEP-0045) em que o agente entra ao abrir a conexao; vazio = nenhuma.
+    pub salas: Vec<String>,
+    /// Nick nas salas; vazio = a parte local do JID.
+    pub apelido: String,
+}
+
+/// O que uma estrofe `<message>` carrega quando e tarefa.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Recebida {
+    /// O `from` inteiro, com recurso.
+    pub de: String,
+    /// JID sem recurso: o remetente no `chat`, a sala no `groupchat`.
+    pub conversa: String,
+    /// O remetente sem recurso no `chat`; o nick (recurso) no `groupchat`.
+    pub autor: String,
+    pub id: String,
+    pub texto: String,
+    /// `type='groupchat'`.
+    pub sala: bool,
 }
 
 struct Conexao {
@@ -97,14 +123,29 @@ pub fn atributo(estrofe: &str, nome: &str) -> Option<String> {
     None
 }
 
-/// `<message from='a@b/r' type='chat'><body>oi</body></message>` como (JID sem recurso,
-/// id, texto). Estado de digitacao (`<composing/>` sem `<body>`) nao e mensagem.
-pub fn mensagem_da_estrofe(estrofe: &str) -> Option<(String, String, String)> {
-    if atributo(estrofe, "type").as_deref() != Some("chat") {
+/// `<message from='a@b/r' type='chat'><body>oi</body></message>` e o `groupchat` da sala
+/// como `Recebida`. Estado de digitacao (`<composing/>` sem `<body>`) nao e mensagem; no
+/// `groupchat`, tambem nao sao: a fala da propria sala (sem nick, e assunto ou aviso) e o
+/// historico que a sala reenvia ao entrar (`<delay/>`, XEP-0203 ou o antigo `jabber:x:delay`),
+/// porque o agente responderia a conversas de antes dele chegar.
+pub fn mensagem_da_estrofe(estrofe: &str) -> Option<Recebida> {
+    let sala = match atributo(estrofe, "type").as_deref() {
+        Some("chat") => false,
+        Some("groupchat") => true,
+        _ => return None,
+    };
+    let de = atributo(estrofe, "from")?;
+    let (nu, recurso) = match de.split_once('/') {
+        Some((n, r)) => (n.to_string(), r.to_string()),
+        None => (de.clone(), String::new()),
+    };
+    if sala
+        && (recurso.is_empty()
+            || estrofe.contains("urn:xmpp:delay")
+            || estrofe.contains("jabber:x:delay"))
+    {
         return None;
     }
-    let de = atributo(estrofe, "from")?;
-    let nu = de.split('/').next()?.to_string();
     let i = estrofe.find("<body")?;
     let abre = i + estrofe[i..].find('>')?;
     if estrofe[..abre].ends_with('/') {
@@ -112,7 +153,76 @@ pub fn mensagem_da_estrofe(estrofe: &str) -> Option<(String, String, String)> {
     }
     let fecha = estrofe.find("</body>")?;
     let texto = desescapar(&estrofe[abre + 1..fecha]);
-    Some((nu, atributo(estrofe, "id").unwrap_or_default(), texto))
+    Some(Recebida {
+        de,
+        autor: if sala { recurso } else { nu.clone() },
+        conversa: nu,
+        id: atributo(estrofe, "id").unwrap_or_default(),
+        texto,
+        sala,
+    })
+}
+
+/// Motivo legivel de uma `<presence type='error'>` da sala (XEP-0045 §7.2), pelo filho da
+/// condicao; sem condicao conhecida, o `code` cru. `None` se nao e erro.
+pub fn erro_da_presenca(estrofe: &str) -> Option<String> {
+    if atributo(estrofe, "type").as_deref() != Some("error") {
+        return None;
+    }
+    let motivo = [
+        ("<conflict", "o apelido ja esta em uso na sala"),
+        ("<item-not-found", "a sala nao existe"),
+        ("<not-authorized", "a sala pede senha"),
+        ("<forbidden", "o agente esta banido da sala"),
+        ("<registration-required", "a sala so aceita membros"),
+        ("<service-unavailable", "a sala esta lotada"),
+        ("<not-acceptable", "a sala nao aceita esse apelido"),
+        (
+            "<jid-malformed",
+            "o JID da sala ou o apelido esta mal formado",
+        ),
+    ]
+    .iter()
+    .find(|(marca, _)| estrofe.contains(marca))
+    .map(|(_, m)| (*m).to_string());
+    Some(motivo.unwrap_or_else(|| {
+        let i = estrofe.find("<error").unwrap_or(0);
+        format!(
+            "erro {}",
+            atributo(&estrofe[i..], "code").unwrap_or_else(|| "sem condicao".into())
+        )
+    }))
+}
+
+/// A proxima estrofe inteira de um dos `nomes` a partir de `desde`: `Some(Ok((inicio, fim)))`;
+/// `Some(Err(inicio))` se comecou e ainda nao terminou; `None` se nao ha nenhuma.
+fn achar_estrofe(buf: &str, desde: usize, nomes: &[&str]) -> Option<Result<(usize, usize), usize>> {
+    let (i, nome) = nomes
+        .iter()
+        .filter_map(|n| buf[desde..].find(&format!("<{n}")).map(|i| (desde + i, *n)))
+        .min_by_key(|(i, _)| *i)?;
+    let Some(gt) = buf[i..].find('>').map(|g| i + g) else {
+        return Some(Err(i));
+    };
+    if buf[..gt].ends_with('/') {
+        return Some(Ok((i, gt + 1)));
+    }
+    Some(match buf[gt..].find(&format!("</{nome}>")) {
+        Some(f) => Ok((i, gt + f + nome.len() + 3)),
+        None => Err(i),
+    })
+}
+
+/// As estrofes inteiras de `presence` no buffer, sem tirar nada: o que vier junto
+/// (mensagens da sala) segue para a leitura em fundo.
+fn presencas(buf: &str) -> Vec<&str> {
+    let mut saida = Vec::new();
+    let mut desde = 0;
+    while let Some(Ok((i, f))) = achar_estrofe(buf, desde, &["presence"]) {
+        saida.push(&buf[i..f]);
+        desde = f;
+    }
+    saida
 }
 
 /// Tira do buffer as estrofes inteiras de `message` e `iq`; o resto fica para a proxima
@@ -120,42 +230,27 @@ pub fn mensagem_da_estrofe(estrofe: &str) -> Option<(String, String, String)> {
 fn recortar(buf: &mut String) -> Vec<String> {
     let mut saida = Vec::new();
     loop {
-        let inicio = [buf.find("<message"), buf.find("<iq")]
-            .into_iter()
-            .flatten()
-            .min();
-        let Some(i) = inicio else {
-            // Nada aproveitavel: guarda so o fim, que pode ser o comeco de uma estrofe.
-            if buf.len() > 64 {
-                let corte = buf.len() - 64;
-                let corte = (corte..buf.len())
-                    .find(|c| buf.is_char_boundary(*c))
-                    .unwrap_or(0);
-                buf.drain(..corte);
-            }
-            return saida;
-        };
-        let nome = if buf[i..].starts_with("<message") {
-            "message"
-        } else {
-            "iq"
-        };
-        let Some(gt) = buf[i..].find('>').map(|g| i + g) else {
-            return saida;
-        };
-        let fim = if buf[..gt].ends_with('/') {
-            gt + 1
-        } else {
-            match buf[gt..].find(&format!("</{nome}>")) {
-                Some(f) => gt + f + nome.len() + 3,
-                None => {
-                    buf.drain(..i);
-                    return saida;
+        match achar_estrofe(buf, 0, &["message", "iq"]) {
+            None => {
+                // Nada aproveitavel: guarda so o fim, que pode ser o comeco de uma estrofe.
+                if buf.len() > 64 {
+                    let corte = buf.len() - 64;
+                    let corte = (corte..buf.len())
+                        .find(|c| buf.is_char_boundary(*c))
+                        .unwrap_or(0);
+                    buf.drain(..corte);
                 }
+                return saida;
             }
-        };
-        saida.push(buf[i..fim].to_string());
-        buf.drain(..fim);
+            Some(Err(i)) => {
+                buf.drain(..i);
+                return saida;
+            }
+            Some(Ok((i, fim))) => {
+                saida.push(buf[i..fim].to_string());
+                buf.drain(..fim);
+            }
+        }
     }
 }
 
@@ -172,17 +267,29 @@ fn escrever_em(s: &mut Fio, x: &str) -> Result<(), String> {
 
 /// Le ate o buffer conter um dos marcadores, ou o prazo vencer.
 fn ler_ate(s: &mut Fio, buf: &mut String, marcas: &[&str]) -> Result<String, String> {
+    ler_ate_que(s, buf, &marcas.join(" | "), |b| {
+        marcas
+            .iter()
+            .find(|m| b.contains(**m))
+            .map(|m| (*m).to_string())
+    })
+}
+
+/// Le ate `decide` dar resposta sobre o buffer, ou o prazo vencer (`espera` vai no erro).
+fn ler_ate_que<T>(
+    s: &mut Fio,
+    buf: &mut String,
+    espera: &str,
+    mut decide: impl FnMut(&str) -> Option<T>,
+) -> Result<T, String> {
     let fim = Instant::now() + Duration::from_secs(15);
     let mut bloco = [0u8; 4096];
     loop {
-        if let Some(m) = marcas.iter().find(|m| buf.contains(**m)) {
-            return Ok((*m).to_string());
+        if let Some(t) = decide(buf) {
+            return Ok(t);
         }
         if Instant::now() >= fim {
-            return Err(format!(
-                "xmpp: o servidor nao respondeu ({})",
-                marcas.join(" | ")
-            ));
+            return Err(format!("xmpp: o servidor nao respondeu ({espera})"));
         }
         s.set_read_timeout(Some(Duration::from_millis(500))).ok();
         match s.read(&mut bloco) {
@@ -198,6 +305,49 @@ fn ler_ate(s: &mut Fio, buf: &mut String, marcas: &[&str]) -> Result<String, Str
     }
 }
 
+/// Entra na sala (XEP-0045 §7.2) e espera a sala confirmar: a presenca de volta com o
+/// proprio nick e o `status 110`, ou a de erro, que vira motivo legivel. Esperar e preciso:
+/// sem a confirmacao, um 409 chegaria depois, misturado ao fluxo, e ninguem o veria.
+fn entrar_na_sala(s: &mut Fio, buf: &mut String, sala: &str, apelido: &str) -> Result<(), String> {
+    escrever_em(
+        s,
+        &format!(
+            "<presence to='{}/{}'><x xmlns='http://jabber.org/protocol/muc'/></presence>",
+            escapar(sala),
+            escapar(apelido)
+        ),
+    )?;
+    let minha = format!("{sala}/{apelido}").to_ascii_lowercase();
+    ler_ate_que(s, buf, &format!("presenca da sala {sala}"), |b| {
+        presencas(b).into_iter().find_map(|p| {
+            let de = atributo(p, "from")?.to_ascii_lowercase();
+            if let Some(motivo) = erro_da_presenca(p) {
+                // O erro vem de `sala/apelido`; o de outra sala nao decide esta.
+                return (de == minha).then(|| {
+                    Err(format!(
+                        "xmpp: nao entrou na sala {sala} como {apelido}: {motivo}"
+                    ))
+                });
+            }
+            // A sala confirma refletindo a nossa presenca (`sala/apelido`); o `status 110` cobre
+            // o servico que trocou o nick (XEP-0045 §7.2.9, status 210).
+            (de == minha || p.contains("code='110'") || p.contains("code=\"110\""))
+                .then_some(Ok(()))
+        })
+    })?
+}
+
+/// A propria fala de volta: no `chat`, o que sai do proprio JID (outro recurso); na sala, o
+/// que a sala reflete com o nosso nick (XEP-0045 §7.4 manda refletir a todos, inclusive a quem
+/// falou).
+pub fn eco(r: &Recebida, jid: &str, apelido: &str) -> bool {
+    if r.sala {
+        r.autor.eq_ignore_ascii_case(apelido)
+    } else {
+        r.conversa.eq_ignore_ascii_case(jid)
+    }
+}
+
 impl Xmpp {
     pub fn novo(cfg: Config, caixa: Arc<Caixa>) -> Self {
         Self {
@@ -205,6 +355,26 @@ impl Xmpp {
             caixa,
             conexao: Mutex::new(None),
         }
+    }
+
+    fn apelido(&self) -> String {
+        if self.cfg.apelido.trim().is_empty() {
+            self.cfg
+                .jid
+                .split('@')
+                .next()
+                .unwrap_or("phxclaw")
+                .to_string()
+        } else {
+            self.cfg.apelido.trim().to_string()
+        }
+    }
+
+    fn e_sala(&self, conversa: &str) -> bool {
+        self.cfg
+            .salas
+            .iter()
+            .any(|s| s.eq_ignore_ascii_case(conversa))
     }
 
     fn cabecalho(&self) -> Result<String, String> {
@@ -275,13 +445,16 @@ xmlns:stream='http://etherx.jabber.org/streams' version='1.0'>",
         }
         buf.clear();
         escrever_em(&mut s, "<presence/>")?;
+        let apelido = self.apelido();
+        for sala in &self.cfg.salas {
+            entrar_na_sala(&mut s, &mut buf, sala, &apelido)?;
+        }
         s.set_read_timeout(None).ok();
         let escrita = Arc::new(Mutex::new(s));
         let (tx, rx) = channel();
         // Fraco, como no IRC: a leitura em fundo nao pode manter o fio vivo sozinha.
         let pong = Arc::downgrade(&escrita);
-        let mut buf = String::new();
-        ler_em_fundo(escrita.clone(), move |bytes| {
+        let mut despachar = move |bytes: &[u8]| {
             buf.push_str(&String::from_utf8_lossy(bytes));
             for e in recortar(&mut buf) {
                 if e.starts_with("<iq") {
@@ -298,7 +471,11 @@ xmlns:stream='http://etherx.jabber.org/streams' version='1.0'>",
                 }
             }
             true
-        });
+        };
+        // O que sobrou da entrada nas salas (mensagens que a sala ja mandou) nao pode esperar
+        // a proxima leitura: num fluxo parado, ela nunca vem.
+        despachar(b"");
+        ler_em_fundo(escrita.clone(), despachar);
         Ok(Conexao {
             escrita,
             estrofes: Mutex::new(rx),
@@ -340,6 +517,7 @@ impl Provedor for Xmpp {
 
     fn receber(&self, cursor: Option<&str>, espera_seg: u64) -> Result<Vec<Entrada>, String> {
         let eu = self.cfg.jid.to_ascii_lowercase();
+        let apelido = self.apelido();
         let novas = self.com_conexao(|c| {
             let fila = c
                 .estrofes
@@ -350,15 +528,22 @@ impl Provedor for Xmpp {
             loop {
                 match fila.recv_timeout(espera) {
                     Ok(e) => {
-                        if let Some((de, id, texto)) = mensagem_da_estrofe(&e)
-                            && de.to_ascii_lowercase() != eu
+                        if let Some(r) = mensagem_da_estrofe(&e)
+                            && !eco(&r, &eu, &apelido)
                         {
+                            let (conversa, autor) = if !r.sala && self.e_sala(&r.conversa) {
+                                // Privada de ocupante: a conversa e `sala/nick`, senao a
+                                // resposta sairia `groupchat` para a sala inteira.
+                                (r.de.clone(), r.autor.clone())
+                            } else {
+                                (r.conversa, r.autor)
+                            };
                             novas.push((
                                 Mensagem {
-                                    conversa: de.clone(),
-                                    autor: de,
-                                    id,
-                                    texto: Some(texto),
+                                    conversa,
+                                    autor,
+                                    id: r.id,
+                                    texto: Some(r.texto),
                                 },
                                 Value::Null,
                             ));
@@ -381,11 +566,17 @@ impl Provedor for Xmpp {
 
     fn enviar(&self, conversa: &str, texto: &str) -> Result<String, String> {
         let id = phxclaw_types::new_uuid_v7().to_string();
+        // A sala recebe `groupchat` no JID sem recurso (XEP-0045 §7.4); o resto e `chat`.
+        let tipo = if self.e_sala(conversa) {
+            "groupchat"
+        } else {
+            "chat"
+        };
         self.com_conexao(|c| {
             escrever(
                 &c.escrita,
                 &format!(
-                    "<message to='{}' type='chat' id='{id}'><body>{}</body></message>",
+                    "<message to='{}' type='{tipo}' id='{id}'><body>{}</body></message>",
                     escapar(conversa),
                     escapar(texto)
                 ),
@@ -402,9 +593,16 @@ mod tests {
     #[test]
     fn estrofe_de_chat_vira_mensagem_e_digitacao_nao() {
         let e = "<message from='ana@x.org/celular' type='chat' id='m1'><body>oi &amp; &#233;</body></message>";
+        let r = mensagem_da_estrofe(e).unwrap();
         assert_eq!(
-            mensagem_da_estrofe(e),
-            Some(("ana@x.org".into(), "m1".into(), "oi & \u{e9}".into()))
+            (
+                r.conversa.as_str(),
+                r.autor.as_str(),
+                r.id.as_str(),
+                r.texto.as_str(),
+                r.sala
+            ),
+            ("ana@x.org", "ana@x.org", "m1", "oi & \u{e9}", false)
         );
         assert_eq!(
             mensagem_da_estrofe("<message from='a@x' type='chat'><composing xmlns='x'/></message>"),
@@ -414,5 +612,81 @@ mod tests {
         let r = recortar(&mut b);
         assert_eq!(r.len(), 2);
         assert_eq!(b, "<mess");
+    }
+
+    /// Prova real: tirar `r.autor.eq_ignore_ascii_case(apelido)` do `eco` (devolver `false` na
+    /// sala) reprova o eco; tirar o `urn:xmpp:delay` do `mensagem_da_estrofe` reprova o
+    /// historico; tirar `recurso.is_empty()` reprova o aviso da sala.
+    #[test]
+    fn groupchat_vira_entrada_com_nick_e_eco_historico_e_aviso_nao() {
+        let e = "<message from='sala@conf.x.org/ana' type='groupchat' id='g1'><body>oi</body></message>";
+        let r = mensagem_da_estrofe(e).unwrap();
+        assert_eq!(
+            (
+                r.conversa.as_str(),
+                r.autor.as_str(),
+                r.id.as_str(),
+                r.texto.as_str(),
+                r.sala
+            ),
+            ("sala@conf.x.org", "ana", "g1", "oi", true)
+        );
+        assert!(!eco(&r, "agente@x.org", "claw"));
+        let proprio = mensagem_da_estrofe(
+            "<message from='sala@conf.x.org/Claw' type='groupchat'><body>eco</body></message>",
+        )
+        .unwrap();
+        assert!(
+            eco(&proprio, "agente@x.org", "claw"),
+            "o nick refletido e o nosso"
+        );
+        assert_eq!(
+            mensagem_da_estrofe(
+                "<message from='sala@conf.x.org/ana' type='groupchat'><body>antes</body><delay xmlns='urn:xmpp:delay' stamp='2026-01-01T00:00:00Z'/></message>"
+            ),
+            None,
+            "historico da sala"
+        );
+        assert_eq!(
+            mensagem_da_estrofe(
+                "<message from='sala@conf.x.org' type='groupchat'><subject>tema</subject></message>"
+            ),
+            None,
+            "fala da propria sala"
+        );
+        // Privada de ocupante: `chat`, e o `de` guarda o nick para a resposta nao ir a sala.
+        let priv_ = mensagem_da_estrofe(
+            "<message from='sala@conf.x.org/ana' type='chat'><body>psiu</body></message>",
+        )
+        .unwrap();
+        assert_eq!(
+            (priv_.sala, priv_.de.as_str()),
+            (false, "sala@conf.x.org/ana")
+        );
+    }
+
+    /// Prova real: tirar o `<conflict` da tabela faz o motivo cair em `erro 409`, e o teste
+    /// pede o texto legivel.
+    #[test]
+    fn presenca_de_erro_409_vira_motivo_legivel_e_a_de_entrada_nao() {
+        let e = "<presence from='sala@conf.x.org/claw' to='agente@x.org/phxclaw' type='error'><x xmlns='http://jabber.org/protocol/muc'/><error by='sala@conf.x.org' type='cancel' code='409'><conflict xmlns='urn:ietf:params:xml:ns:xmpp-stanzas'/></error></presence>";
+        assert_eq!(
+            erro_da_presenca(e).as_deref(),
+            Some("o apelido ja esta em uso na sala")
+        );
+        assert_eq!(
+            erro_da_presenca("<presence from='s@c/x' type='error'><error code='500'/></presence>")
+                .as_deref(),
+            Some("erro 500")
+        );
+        let ok = "<presence from='sala@conf.x.org/claw'><x xmlns='http://jabber.org/protocol/muc#user'><item affiliation='none' role='participant'/><status code='110'/></x></presence>";
+        assert_eq!(erro_da_presenca(ok), None);
+        // O recorte de presencas nao tira a mensagem que veio junto.
+        let buf = format!(
+            "{ok}<message from='sala@conf.x.org/ana' type='groupchat'><body>1</body></message><presence from='sala@conf.x.org/bia'/><presence from='s@c/"
+        );
+        let ps = presencas(&buf);
+        assert_eq!(ps.len(), 2);
+        assert_eq!(ps[0], ok);
     }
 }

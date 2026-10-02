@@ -49,7 +49,7 @@ abaixo aparece em exatamente uma sprint.
 | SP000032 | 9 | Fechar em 100% (dono, 02/10): RSA para Teams/Google Chat, pacotes de plugin completos, XMPP MUC, Nostr DM, VS Code onda 2, minimapa/dobra, SSH local, Live Share; iMessage, voz ao vivo, RAPL e nuvem dependem de recurso do dono | 32 | PLANEJADA |
 | SP000033 | 9 | Integração total com o n8n (dono, 02/10): PhxClaw chama fluxos do n8n (webhook/REST, chave no broker) e o n8n chama o PhxClaw (nó da comunidade + MCP nos dois sentidos); prova real com n8n de verdade | — | EM EXECUÇÃO (código entregue 02/10; prova com n8n real NÃO VALIDADA: depende da máquina do dono) |
 | SP000034 | 9 | Prova de uso fora de desenvolvimento (dono, 02/10): monitor de passagens aéreas para a China — fluxo agendado, navegador/API, memória, aviso por canal; medido de verdade | — | EM EXECUÇÃO (prova no Google Flights VERIFICADA 02/10; aviso real depende da credencial do dono) |
-| SP000035 | 9 | PHX Flow Engine (dono, 02/10): o fluxos.rs vira motor de nós (ferramenta, agente, skill, MCP, comando, comportamento) com itens, condição, laço, espera e erro tratado — n8n como 7ª fonte, medido em 40,7%; editor visual é onda à parte | 35 | PLANEJADA |
+| SP000035 | 9 | PHX Flow Engine (dono, 02/10): o fluxos.rs vira motor de nós (ferramenta, agente, skill, MCP, comando, comportamento) com itens, condição, laço, espera e erro tratado — n8n como 7ª fonte, medido em 40,7%; editor visual é onda à parte | 35 | EM EXECUÇÃO (onda 1 entregue 02/10: itens, se/juntar/lote/parar_com_erro, ao_errar, tetos, expressões por caminho, fluxo_de_erro — 9 ids no agente; ondas 2–5 por fazer) |
 | SP000036 | 9 | Painel no molde do mockup do dono (02/10): paleta de comandos, menu por áreas, cartões de ação, projetos, modelos (só medido), skills, execuções, agenda, notificações, assistente; tokens da marca; nenhum número digitado | — | EM EXECUÇÃO (fase 1 entregue; fase 2 em lotes) |
 | UI-R01 | 8 | Phx Responsive UI — contratos e layout: intenção responsiva no UI-IR (janela e contêiner), breakpoints num JSON único, motor que compila para Grid/Flexbox/container queries, sem perder estado ao redimensionar | — | CONCLUÍDA (onda 7) |
 | UI-R02 | 8 | Adaptador Bootstrap substituível: componentes semânticos → Bootstrap 5.3, tokens do PhxClaw nas variáveis do Bootstrap, arquivo local com versão fixada, sem o JS do Bootstrap mexer no DOM controlado | — | CONCLUÍDA (onda 7) |
@@ -440,7 +440,7 @@ de 270). O que falta, por fonte, sai de `phxclaw.json` (estado ≠ agente):
   CAVP), chave pública lida do JWKS; fecha `canal_teams` e `canal_googlechat` (3 fontes cada).
 - **R2 pacotes de plugin completos** — `.claude-plugin`/`.codex-plugin` com comandos, skills, hooks e
   agentes, não só os servidores MCP; assinados, no bwrap; fecha `plugins` em 4 fontes.
-- **R3 canais** — `canal_xmpp` sala multiusuário (XEP-0045); `canal_nostr` mensagem direta cifrada
+- **R3 canais** — `canal_xmpp` sala multiusuário (XEP-0045) — FEITO 02/10 (`canais/xmpp.rs`, `SALAS`/`APELIDO`); `canal_nostr` mensagem direta cifrada
   (NIP-17 sobre NIP-44, com o secp256k1 do bip340.rs e ChaCha20 escrito aqui, vetores do NIP-44).
 - **R4 VS Code onda 2** — perfis, settings_sync, ide_web, acessibilidade, breadcrumbs, tunel_remoto,
   plugins (junto com R2), marketplace_extensoes, sugestao_inline_ia.
@@ -461,7 +461,7 @@ de 270). O que falta, por fonte, sai de `phxclaw.json` (estado ≠ agente):
 imprime 100% por fonte. Nada digitado.
 
 
-## SP000035 — PHX Flow Engine (ordem do dono, 02/10/2026) — PLANEJADA
+## SP000035 — PHX Flow Engine (ordem do dono, 02/10/2026) — EM EXECUÇÃO (onda 1 entregue)
 
 **Fonte primária.** `git clone --depth 1 --filter=blob:none --sparse` de `github.com/n8n-io/n8n`
 funcionou de primeira pelo proxy (commit `56aa3d8`, `packages/workflow` 2.42.0, 23 MB) e o mesmo para
@@ -476,8 +476,12 @@ triagem de 01/10 já tinha (R12: recusar embutir). Para os nós da comunidade a 
 license is MIT»* — e o `n8n-nodes-starter` é MIT (`package.json` `"license": "MIT"`). Ou seja, um nó da
 comunidade escrito por nós (SP000033) nasce MIT por exigência deles, e isso não contamina o motor.
 
-**Medido (gerar_absorcao.py, 02/10):** n8n **40,7% no agente | 55,1% com bibliotecas** (24 sim, 17
-pela metade, 18 não, de 59). Cada id vale 1,69 pp.
+**Medido (gerar_absorcao.py, 02/10), antes da onda 1:** n8n **40,7% no agente | 55,1% com bibliotecas**
+(24 sim, 17 pela metade, 18 não, de 59). Cada id vale 1,69 pp.
+
+**Medido depois da onda 1 (gerar_absorcao.py, 02/10, mesmo dia):** n8n **55,9% no agente | 66,9% com
+bibliotecas** (33 sim, 13 pela metade, 13 não, de 59). A onda comprou +15,2 pp (a previsão dizia +15,3,
+por arredondamento de 9 × 1,69).
 
 ### O que o `fluxos.rs` já é (470 linhas, lido)
 
@@ -511,7 +515,7 @@ ferramenta pelo `Agent::call_tool` — **o portão único**. Progresso gravado n
 1. **Dados e controle (motor):** itens em vez de string; nós `se`, `juntar`, `lote`, `parar_com_erro`;
    `continuar_em_erro`/`saida_de_erro`; teto por passo e por fluxo; expressões `{{passo.campo}}` por
    caminho JSON (sem JS). Fecha: nos_e_conexoes, execucao_por_item, ramificacao_if_switch, juncao_merge,
-   laco_lotes, continuar_em_erro, timeout_execucao, expressoes, fluxo_de_erro (9 ids → +15,3 pp).
+   laco_lotes, continuar_em_erro, timeout_execucao, expressoes, fluxo_de_erro (9 ids → previsão +15,3 pp; medido +15,2 pp). **Entregue 02/10.**
 2. **Nós que são o que o dono descreveu:** `skill` (skills.rs), `mcp` (mcp.rs), `comando` (comandos.rs),
    `comportamento` (estilos.rs/equipe.rs papel) viram tipos de passo pelo MESMO `call_tool`; ferramenta
    `fluxo` (sub-fluxo) e `rodar --ate`; gatilho (agenda, webhook, pasta) apontando para fluxo. Fecha:

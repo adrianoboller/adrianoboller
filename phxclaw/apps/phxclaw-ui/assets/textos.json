@@ -322,6 +322,19 @@
     "config.pede_token": { "pt": "Informe o token de acesso (tela Tarefas) para ler e gravar a configuração; abaixo, o catálogo.", "en": "Enter the access token (Tasks screen) to read and save the settings; below, the catalog." },
     "config.pela_ponte": { "pt": "O controle remoto não administra o agente: a configuração se edita na tela servida pelo próprio agente. Abaixo, o catálogo.", "en": "Remote control does not administer the agent: settings are edited on the screen served by the agent itself. Below, the catalog." },
     "config.tira_item": { "pt": "remover {item} de {chave}", "en": "remove {item} from {chave}" },
-    "config.tag_rotulo": { "pt": "{chave}: novo item", "en": "{chave}: new item" }
+    "config.tag_rotulo": { "pt": "{chave}: novo item", "en": "{chave}: new item" },
+    "casca.menu.painel": { "pt": "PAINEL", "en": "PANEL" },
+    "casca.menu.trabalho": { "pt": "TRABALHO", "en": "WORK" },
+    "casca.menu.capacidades": { "pt": "CAPACIDADES", "en": "CAPABILITIES" },
+    "casca.menu.sistema": { "pt": "SISTEMA", "en": "SYSTEM" },
+    "casca.busca": { "pt": "Buscar, ir para uma tela ou comando", "en": "Search, go to a screen or command" },
+    "casca.atalho": { "pt": "Ctrl K", "en": "Ctrl K" },
+    "casca.assistente.titulo": { "pt": "Assistente", "en": "Assistant" },
+    "casca.assistente.sem_conversa": { "pt": "Sem conversa.", "en": "No conversation." },
+    "casca.assistente.alternar": { "pt": "Abrir ou recolher o assistente", "en": "Open or collapse the assistant" },
+    "casca.rodape.versao": { "pt": "VERSÃO", "en": "VERSION" },
+    "casca.rodape.pasta": { "pt": "PASTA", "en": "FOLDER" },
+    "casca.rodape.idioma": { "pt": "IDIOMA", "en": "LANGUAGE" },
+    "casca.nao_medido": { "pt": "NÃO MEDIDO", "en": "NOT MEASURED" }
   }
 }

@@ -398,8 +398,8 @@
    "evidencia": "canais/mastodon.rs pelo laco unico Canal::rodada (provado contra servidor falso; falta credencial real)"
   },
   "canal_xmpp": {
-   "estado": "parcial",
-   "evidencia": "STARTTLS feito; sem sala multiusuario"
+   "estado": "agente",
+   "evidencia": "canais/xmpp.rs: STARTTLS e sala multiusuario (XEP-0045: entra nas SALAS com o APELIDO, groupchat vira tarefa, eco e historico fora; provado contra servidor falso)"
   },
   "canal_rocketchat": {
    "estado": "agente",
@@ -600,32 +600,32 @@
    "teste": "tests/desktop/ide_web.mjs (agente REAL `phxclaw servir`, Chromium sem Tauri): 10/10 -- token errado recusado, bash recusado, o Helix sobe no PTY e o NOR chega ao canvas, :q encerra; RED medido (copia da UI com o adaptador websocket desligado derruba); crates/phxclaw-agent/tests/ide_web.rs: websocket em processo (2 testes); 4 unitarios em ide.rs"
   },
   "nos_e_conexoes": {
-   "estado": "parcial",
-   "evidencia": "fluxos.rs Passo: um passo e tarefa OU ferramenta, com `depende`; saida unica em texto, sem portas de saida multiplas nem tipo de conexao (o n8n tem main/ai_tool/ai_memory e N saidas por no)"
+   "estado": "agente",
+   "evidencia": "fluxos.rs Passo: no e tarefa | ferramenta | se | juntar | lote | parar_com_erro, conexao `id` ou `id:porta` (verdadeiro/falso/erro) validada na leitura; passo cuja porta nao disparou sai `pulado`. tests/fluxo_motor.rs::nos_e_conexoes"
   },
   "execucao_por_item": {
-   "estado": "nao",
-   "evidencia": "fluxos.rs substituir(): a saida de um passo e UMA string; nao ha lista de itens, nem rodar o passo uma vez por item, nem pairedItem"
+   "estado": "agente",
+   "evidencia": "fluxos.rs Saida{texto,itens}: saida de passo e Vec<Value>; `por_item: true` roda uma passada por item da `entrada` (ferramenta pelo call_tool, agente por tarefa filha), sem por_item recebe a lista. tests/fluxo_motor.rs::execucao_por_item e comportamento_velho_fluxo_de_texto_roda_igual"
   },
   "expressoes": {
-   "estado": "parcial",
-   "evidencia": "fluxos.rs referencias()/substituir(): so `{{id}}` de passo declarado em `depende`; sem linguagem de expressao ($json, $node, funcoes de data/texto)"
+   "estado": "agente",
+   "evidencia": "fluxos.rs resolver()/pelo_caminho(): `{{passo.campo.sub[0]}}` por caminho JSON sem JS; expressao sozinha num argumento passa o valor com o tipo; caminho inexistente falha o passo sem nova tentativa. tests/fluxo_motor.rs::expressoes"
   },
   "variaveis_globais": {
    "estado": "nao",
    "evidencia": "nenhum `$vars`: o fluxo so enxerga saidas de passos; o config.json nao e lido pelo fluxo"
   },
   "ramificacao_if_switch": {
-   "estado": "nao",
-   "evidencia": "fluxos.rs nao tem passo de condicao: toda dependencia e incondicional; a unica bifurcacao e falha -> bloqueado"
+   "estado": "agente",
+   "evidencia": "fluxos.rs no `se` {caminho, operador igual|diferente|contem|maior|menor|existe, valor}: cada item vai para a porta verdadeiro ou falso; ramo sem item e `pulado`. tests/fluxo_motor.rs::ramificacao_if_switch"
   },
   "juncao_merge": {
-   "estado": "parcial",
-   "evidencia": "fluxos.rs: passo com varias `depende` recebe todas as saidas por `{{a}}`/`{{b}}` (equivale ao combine por posicao); sem append, combine por campo nem chooseBranch"
+   "estado": "agente",
+   "evidencia": "fluxos.rs no `juntar` {modo append|chave|ramo}: append concatena, chave combina os itens das duas entradas pelo campo, ramo fica com o ramo vivo e so pula quando todos morreram. tests/fluxo_motor.rs::juncao_merge"
   },
   "laco_lotes": {
-   "estado": "nao",
-   "evidencia": "fluxos.rs: DAG sem laco (TaskGraphError::Cycle recusa); nao ha SplitInBatches nem loop sobre itens"
+   "estado": "agente",
+   "evidencia": "fluxos.rs no `lote` N: itens-lote; o passo seguinte com por_item faz uma passada por lote (laco sem ciclo no grafo, TaskGraphError::Cycle fica). tests/fluxo_motor.rs::laco_lotes (inclui se + lote + continuar_em_erro)"
   },
   "espera_wait": {
    "estado": "nao",
@@ -636,16 +636,16 @@
    "evidencia": "fluxos.rs Passo.tentativas -> phxclaw_task_graph::RetryPolicy (base 50 ms, teto 2 s); teste orquestracao.rs fluxo_que_falha_no_meio_retoma_de_onde_parou conta as tentativas"
   },
   "timeout_execucao": {
-   "estado": "parcial",
-   "evidencia": "motor.rs AgentConfig.tool_timeout (120 s) vale por chamada de ferramenta via ToolContext; sem teto por passo de agente nem do fluxo inteiro (EXECUTIONS_TIMEOUT do n8n)"
+   "estado": "agente",
+   "evidencia": "fluxos.rs `teto_ms` por passo (por tentativa) e por fluxo, prazo() escolhe o menor e a falha diz qual estourou; o que nao chegou a rodar sai `falhou` com o motivo. tests/fluxo_motor.rs::timeout_execucao"
   },
   "continuar_em_erro": {
-   "estado": "nao",
-   "evidencia": "fluxos.rs executar(): passo que falha vira `falhou` e os dependentes `bloqueado`; nao ha continueOnFail, saida de erro nem alwaysOutputData"
+   "estado": "agente",
+   "evidencia": "fluxos.rs `ao_errar: parar|continuar|saida_de_erro` por passo depois das tentativas: continuar segue com {erro,passo} na saida, saida_de_erro esvazia a principal e manda o item pela porta `erro`. tests/fluxo_motor.rs::continuar_em_erro"
   },
   "fluxo_de_erro": {
-   "estado": "nao",
-   "evidencia": "nenhum fluxo de erro: hooks.rs TaskEnd roda um comando no fim da tarefa, nao dispara outro fluxo com os dados do erro"
+   "estado": "agente",
+   "evidencia": "fluxos.rs Fluxo.fluxo_de_erro: passo fora do grafo que roda pelo mesmo call_tool/rodar_filhas quando o fluxo falha, com {{erro.passos[i].passo|motivo}}; no `parar_com_erro`. tests/fluxo_motor.rs::fluxo_de_erro"
   },
   "execucao_parcial": {
    "estado": "nao",

@@ -372,6 +372,10 @@ pub async fn ligar(
                 jid: ctx.exigir("JID")?,
                 senha: ctx.segredo("SENHA")?,
                 tls: ctx.tls()?,
+                salas: lista(&ctx.cfg("SALAS").unwrap_or_default())
+                    .into_iter()
+                    .collect(),
+                apelido: ctx.cfg("APELIDO").unwrap_or_default(),
             };
             (Arc::new(super::xmpp::Xmpp::novo(cfg, ctx.caixa("")?)), None)
         }

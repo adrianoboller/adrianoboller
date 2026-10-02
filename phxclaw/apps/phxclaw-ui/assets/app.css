@@ -18,7 +18,8 @@
   /* ESCALA TIPOGRAFICA fixa (o PhxSql usa 15 tamanhos de 9 a 17 px sem escala): oito degraus,
      nenhum abaixo de 12 px. Texto fora da escala reprova na sonda G11 do qualificar.mjs. */
   --fs-1:12px;--fs-2:13px;--fs-3:15px;--fs-4:18px;--fs-5:21px;--fs-6:25px;--fs-7:30px;--fs-8:37px;
-  --sidebar:104px;
+  /* SP000036 L1: menu com rotulo ao lado (224) e o painel do assistente recolhido (48). */
+  --sidebar:224px;--assistente:48px;
 }
 /* Tema claro (papel quente), LIGADO pelo tema.js (botao do topo, escolha guardada, ou o
    prefers-color-scheme do sistema quando nao ha escolha). Valores do PhxSql; ouro e violeta
@@ -58,8 +59,8 @@ button{font:inherit;color:inherit}
 .wordmark{font-size:clamp(34px,11vw,58px);font-weight:800;line-height:1;letter-spacing:-.045em}.wordmark span{background:linear-gradient(180deg,var(--ouro-claro),var(--ouro));-webkit-background-clip:text;background-clip:text;color:transparent}.wordmark b{font-weight:800;color:var(--texto)}.strap{margin-top:12px;font-size:var(--fs-2);letter-spacing:.34em;color:var(--texto-2)}.splash-rule{height:1px;width:82%;margin:34px auto 22px;background:linear-gradient(90deg,transparent,color-mix(in srgb,var(--info) 46%,transparent),color-mix(in srgb,var(--ouro) 50%,transparent),color-mix(in srgb,var(--info) 46%,transparent),transparent)}.boot-row{display:flex;justify-content:space-between;color:var(--texto-2);font-size:var(--fs-2);text-transform:uppercase;letter-spacing:.12em}.progress{height:5px;margin-top:10px;background:var(--painel-2);border:1px solid var(--linha);border-radius:8px;overflow:hidden}.progress span{display:block;width:0;height:100%;background:linear-gradient(90deg,var(--laranja),var(--ouro-2),var(--ouro));box-shadow:0 0 16px color-mix(in srgb,var(--info) 60%,transparent);transition:width .35s ease}.boot-modules{min-height:42px;margin-top:16px;display:flex;gap:8px;justify-content:center;align-items:center;flex-wrap:wrap}.boot-modules span{border:1px solid var(--linha);background:color-mix(in srgb,var(--painel-2) 70%,transparent);color:var(--texto-3);font-size:var(--fs-1);padding:6px 9px;border-radius:4px;letter-spacing:.1em;text-transform:uppercase;transition:.3s}.boot-modules span.done{color:var(--texto);border-color:color-mix(in srgb,var(--ok) 40%,transparent);background:color-mix(in srgb,var(--ok) 22%,transparent)}.splash-foot{margin-top:34px;font-size:var(--fs-1);color:var(--texto-3);letter-spacing:.28em}
 
 /* SHELL */
-.app-shell{position:fixed;inset:0;display:grid;grid-template-columns:var(--sidebar) 1fr;grid-template-rows:76px 1fr;background:var(--fundo);opacity:0;transform:scale(1.012);transition:.6s ease}.app-shell.visible{opacity:1;transform:none}.topbar{grid-column:1/-1;display:flex;align-items:center;padding:0 24px;border-bottom:1px solid var(--linha);background:color-mix(in srgb,var(--painel) 92%,transparent);backdrop-filter:blur(16px);z-index:5}.brand-mini{display:flex;align-items:center;width:370px}.brand-mini img{width:47px;height:47px;margin-right:11px}.brand-mini strong{font-size:var(--fs-5);letter-spacing:-.02em;color:var(--ouro)}.brand-mini strong span{color:var(--texto)}.brand-mini small{display:block;color:var(--texto-3);font-size:var(--fs-1);letter-spacing:.16em;margin-top:3px}.top-status{flex:1;display:flex;align-items:center;justify-content:center;gap:13px;color:var(--texto-2);font-size:var(--fs-1);letter-spacing:.13em}.top-status i{width:1px;height:18px;background:var(--linha-forte)}.pulse-dot{width:8px;height:8px;border-radius:50%;background:var(--ok);box-shadow:0 0 13px var(--ok);animation:pulse 1.6s infinite}@keyframes pulse{50%{opacity:.45;box-shadow:0 0 4px var(--ok)}}.top-actions{width:180px;display:flex;align-items:center;justify-content:flex-end;gap:9px}.top-actions button{border:1px solid var(--linha-forte);background:var(--painel-2);border-radius:6px;width:36px;height:36px;color:var(--texto-2)}
-.sidebar{grid-row:2;background:var(--painel);border-right:1px solid var(--linha);display:flex;flex-direction:column;justify-content:space-between;padding:15px 9px 12px}.sidebar nav{display:flex;flex-direction:column;gap:7px}.nav{position:relative;height:67px;width:100%;border:1px solid transparent;background:transparent;border-radius:7px;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--texto-3);cursor:pointer}.nav span{font-size:var(--fs-5);line-height:1;margin-bottom:5px}.nav em{font-style:normal;font-size:var(--fs-1)}.nav b{position:absolute;top:4px;right:4px;font-size:var(--fs-1);color:var(--fundo);background:var(--laranja);border-radius:10px;min-width:15px;padding:2px 4px}.nav.active{color:var(--texto);border-color:var(--laranja);background:linear-gradient(180deg,color-mix(in srgb,var(--info) 10%,transparent),color-mix(in srgb,var(--info) 3%,transparent));box-shadow:inset 3px 0 0 var(--laranja)}.sidebar-bottom{display:flex;flex-direction:column;gap:8px}.security-card{border:1px solid color-mix(in srgb,var(--ok) 24%,transparent);background:color-mix(in srgb,var(--ok) 6%,transparent);padding:9px 6px;display:flex;align-items:center;gap:6px;border-radius:6px;color:var(--ok)}.security-card>span{font-size:var(--fs-4)}.security-card b{font-size:var(--fs-1);display:block}.security-card small{font-size:var(--fs-1);color:var(--texto-3)}
+.app-shell{position:fixed;inset:0;display:grid;grid-template-columns:var(--sidebar) minmax(0,1fr) var(--assistente);grid-template-rows:76px 1fr;background:var(--fundo);opacity:0;transform:scale(1.012);transition:.6s ease}.app-shell.visible{opacity:1;transform:none}.topbar{grid-column:1/-1;display:flex;align-items:center;padding:0 24px;border-bottom:1px solid var(--linha);background:color-mix(in srgb,var(--painel) 92%,transparent);backdrop-filter:blur(16px);z-index:5}.brand-mini{display:flex;align-items:center;width:370px}.brand-mini img{width:47px;height:47px;margin-right:11px}.brand-mini strong{font-size:var(--fs-5);letter-spacing:-.02em;color:var(--ouro)}.brand-mini strong span{color:var(--texto)}.brand-mini small{display:block;color:var(--texto-3);font-size:var(--fs-1);letter-spacing:.16em;margin-top:3px}.top-status{flex:1;min-width:0;overflow:hidden;display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:4px 13px;color:var(--texto-2);font-size:var(--fs-1);letter-spacing:.13em}.top-status i{width:1px;height:18px;background:var(--linha-forte)}.pulse-dot{width:8px;height:8px;border-radius:50%;background:var(--ok);box-shadow:0 0 13px var(--ok);animation:pulse 1.6s infinite}@keyframes pulse{50%{opacity:.45;box-shadow:0 0 4px var(--ok)}}.top-actions{width:auto;display:flex;align-items:center;justify-content:flex-end;gap:9px}.top-actions button{border:1px solid var(--linha-forte);background:var(--painel-2);border-radius:6px;width:36px;height:36px;color:var(--texto-2)}
+.sidebar{grid-row:2;background:var(--painel);border-right:1px solid var(--linha);display:flex;flex-direction:column;justify-content:space-between;padding:15px 9px 12px}.sidebar nav{display:flex;flex-direction:column;gap:7px}.nav{position:relative;height:44px;width:100%;border:1px solid transparent;background:transparent;border-radius:7px;display:flex;flex-direction:row;align-items:center;justify-content:flex-start;gap:11px;padding:0 12px;color:var(--texto-3);cursor:pointer;text-align:left}.nav em{font-style:normal;font-size:var(--fs-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.nav b{margin-left:auto;font-size:var(--fs-1);color:var(--fundo);background:var(--laranja);border-radius:10px;min-width:15px;padding:2px 4px}.nav.active{color:var(--texto);border-color:var(--laranja);background:linear-gradient(180deg,color-mix(in srgb,var(--info) 10%,transparent),color-mix(in srgb,var(--info) 3%,transparent));box-shadow:inset 3px 0 0 var(--laranja)}.sidebar-bottom{display:flex;flex-direction:column;gap:8px}.security-card{border:1px solid color-mix(in srgb,var(--ok) 24%,transparent);background:color-mix(in srgb,var(--ok) 6%,transparent);padding:9px 6px;display:flex;align-items:center;gap:6px;border-radius:6px;color:var(--ok)}.security-card>span{font-size:var(--fs-4)}.security-card b{font-size:var(--fs-1);display:block}.security-card small{font-size:var(--fs-1);color:var(--texto-3)}
 .main{grid-column:2;grid-row:2;overflow:hidden;padding:26px 30px 0;display:flex;flex-direction:column}.hero-row{display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:20px}.eyebrow{color:var(--laranja);font-size:var(--fs-1);letter-spacing:.18em;font-weight:700}.hero-row h1{font-size:var(--fs-8);line-height:1;margin:8px 0 6px;letter-spacing:-.035em;font-weight:720}.hero-row p{margin:0;color:var(--texto-3);font-size:var(--fs-2)}.hero-actions{display:flex;gap:9px}.hero-actions button,.panel-head button{border-radius:5px;padding:10px 14px;font-size:var(--fs-1);letter-spacing:.11em;font-weight:700}
 .metric-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:13px}.metric{position:relative;min-height:122px;border:1px solid var(--linha-forte);background:linear-gradient(180deg,color-mix(in srgb,var(--painel-2) 95%,transparent),color-mix(in srgb,var(--painel) 95%,transparent));border-radius:8px;padding:15px;overflow:hidden}.metric::before{content:"";position:absolute;left:0;top:0;bottom:0;width:2px;background:currentColor;box-shadow:0 0 14px currentColor}.metric::after{content:"";position:absolute;width:110px;height:110px;border-radius:50%;right:-44px;top:-48px;background:radial-gradient(circle,currentColor 0,transparent 68%);opacity:.06}.metric.gold{color:var(--ouro)}.metric.cyan{color:var(--laranja)}.metric.violet{color:var(--violeta)}.metric.green{color:var(--ok)}.metric header{display:flex;justify-content:space-between;font-size:var(--fs-1);letter-spacing:.13em;font-weight:700}.metric header i{font-style:normal}.metric strong{display:block;font-size:var(--fs-6);color:var(--texto);margin-top:12px;letter-spacing:-.02em}.metric strong em{font-size:var(--fs-1);color:var(--texto-2);font-style:normal;font-weight:500}.metric small{display:block;color:var(--texto-3);font-size:var(--fs-1);margin-top:4px}.budget{position:absolute;right:17px;bottom:20px;width:94px;height:5px;background:var(--realce);border-radius:6px;overflow:hidden}.budget span{display:block;height:100%;background:linear-gradient(90deg,var(--violeta),var(--violeta))}.chips{position:absolute;right:14px;bottom:14px;display:flex;gap:4px}.chips span{font-size:var(--fs-1);border:1px solid color-mix(in srgb,var(--ok) 26%,transparent);padding:4px;color:var(--ok);border-radius:3px;background:color-mix(in srgb,var(--ok) 6%,transparent)}
 .dashboard-grid{flex:1;min-height:0;display:grid;grid-template-columns:1.62fr .78fr;grid-template-rows:1.03fr .97fr;gap:12px}.panel{border:1px solid var(--linha);background:linear-gradient(180deg,color-mix(in srgb,var(--painel-2) 96%,transparent),color-mix(in srgb,var(--painel) 96%,transparent));border-radius:8px;min-height:0;overflow:hidden}.panel-head{height:61px;border-bottom:1px solid var(--linha);display:flex;align-items:center;justify-content:space-between;padding:0 16px}.panel-head h2{font-size:var(--fs-3);margin:3px 0 0}.panel-head button{padding:7px 9px;border:1px solid var(--linha-forte);background:var(--painel-2);color:var(--texto-3)}.live{color:var(--ok);border:1px solid color-mix(in srgb,var(--ok) 25%,transparent);font-size:var(--fs-1);padding:4px 7px;border-radius:9px;letter-spacing:.12em}.policy{font-size:var(--fs-1);letter-spacing:.13em;color:var(--texto);border:1px solid color-mix(in srgb,var(--violeta) 30%,transparent);padding:4px 6px;border-radius:4px}
@@ -325,7 +326,7 @@ body.force-dashboard .splash{display:none}body.force-dashboard .app-shell{opacit
    cor do texto do botao. */
 .ico{display:block;line-height:0}
 .ico svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:var(--traco);stroke-linecap:round;stroke-linejoin:round}
-.nav .ico{margin-bottom:5px}
+.nav .ico{flex:none}
 .security-card>.ico svg{width:18px;height:18px}
 
 /* DADO EM MONO (Style Phoenix Padrao): versao, sessao, endereco, contagem do host, codigo e o
@@ -351,3 +352,72 @@ code,#brandVersion,#kernelVersion,#hostSession,#liveReceivers,#apiEndpoint,.cfg-
    qualquer ponto em vez de passar da tela. A 390 a Agentes rolava 8 px de lado por causa de
    «PhxClaw_Equipe_110_..._RustOffline.xlsx» (sonda T4, qualificacao nos dois temas). */
 .tela-sub{overflow-wrap:anywhere}
+
+/* CASCA (SP000036 L1, docs/ui/COMPARACAO_MOCKUP_2026-10-02.md §4): menu com rotulo ao lado
+   em 4 areas, barra de comando visivel, rodape com dado lido, assistente recolhido. Tudo em
+   token da marca; cor de acao continua so em acao. */
+/* Areas do menu: rotulo (caixa alta e certo em rotulo; dado nunca). */
+.nav-grupo{display:block;margin:10px 12px 4px;font-size:var(--fs-1);letter-spacing:.16em;font-weight:700;color:var(--texto-3);text-transform:uppercase}
+.nav-grupo:first-child{margin-top:0}
+/* Barra de comando: parece um campo, e um botao (abre o #paleta). Contorno, nunca fundo
+   cheio: o fundo e o do painel, e so a borda acende no hover/foco. */
+.cmd-bar{flex:1;max-width:560px;height:40px;margin:0 24px;display:flex;align-items:center;gap:10px;padding:0 12px;border:1px solid var(--linha-forte);border-radius:8px;background:var(--painel-2);color:var(--texto-3);font:inherit;font-size:var(--fs-2);cursor:pointer;text-align:left;min-width:0}
+.cmd-bar:hover{border-color:var(--laranja);color:var(--texto-2)}
+.cmd-bar .ico svg{width:18px;height:18px}
+.cmd-bar .cmd-dica{flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.cmd-bar kbd{font:inherit;font-size:var(--fs-1);letter-spacing:.08em;padding:2px 7px;border:1px solid var(--linha-forte);border-radius:4px;color:var(--texto-3);background:var(--painel)}
+/* Rodape: rotulo + dado lido (mono, como todo dado), e os cinco valores da casa a direita. */
+/* minmax(0,1fr) na coluna do meio e min-width:0 no topo: texto comprido (um caminho, um
+   rotulo noutro idioma) encolhe em vez de alargar a grade da casca para fora da janela. */
+.footerbar{gap:18px;letter-spacing:.08em;min-width:0;overflow:hidden}
+.rod-item{display:inline-flex;align-items:center;gap:7px;white-space:nowrap}
+.rod-rotulo{letter-spacing:.16em}
+.rod-item>b{font-family:var(--mono);font-weight:500;font-style:normal;letter-spacing:0;color:var(--texto-2);max-width:260px;overflow:hidden;text-overflow:ellipsis}
+.rod-item .bandeira svg{display:block;width:20px;height:14px;border-radius:2px;box-shadow:0 0 0 1px var(--linha-forte)}
+.rod-item .bandeira:empty{display:none}
+.rod-valores{display:inline-flex;align-items:center;gap:10px;margin-left:auto;letter-spacing:.18em}
+.footerbar .rod-lema{margin-left:0;white-space:nowrap;flex:none}
+/* Com o assistente aberto o rodape perde 272 px: os cinco valores cedem antes do dado (visto
+   na captura: o lema quebrava em tres linhas). */
+@media(max-width:1600px){.app-shell[data-assistente="aberto"] .rod-valores{display:none}}
+/* O cartao com barra de orcamento (FERRAMENTAS): o subtitulo nao passa por baixo da barra
+   quando o cartao estreita (visto na captura do tema claro com o assistente aberto). */
+.metric:has(.budget:not([hidden])) small{padding-right:104px}
+/* Assistente: coluna da direita na grade da casca; recolhido e so o botao num trilho. */
+.assistente{grid-column:3;grid-row:2/4;border-left:1px solid var(--linha);background:var(--painel);display:flex;flex-direction:column;min-width:0;overflow:hidden}
+.assistente-head{display:flex;align-items:center;justify-content:space-between;gap:8px;height:52px;padding:0 8px 0 16px;border-bottom:1px solid var(--linha)}
+.assistente-head h2{margin:0;font-size:var(--fs-3);white-space:nowrap}
+.assistente-head .icone{width:32px;height:32px;display:grid;place-items:center;padding:0;border:1px solid var(--linha-forte);background:var(--painel-2);border-radius:6px;color:var(--texto-2);cursor:pointer}
+.assistente-head .icone:hover{border-color:var(--laranja);color:var(--texto)}
+.assistente-head .ico svg{width:18px;height:18px;transition:transform .2s}
+.assistente-corpo{flex:1;overflow:auto;padding:16px}
+.assistente-corpo .vazio{margin:0;color:var(--texto-3);font-size:var(--fs-2)}
+.app-shell[data-assistente="aberto"]{--assistente:320px}
+.app-shell:not([data-assistente="aberto"]) .assistente-head{justify-content:center;padding:0;border-bottom:0}
+.app-shell:not([data-assistente="aberto"]) .assistente-head h2,.app-shell:not([data-assistente="aberto"]) .assistente-corpo{display:none}
+.app-shell[data-assistente="aberto"] .assistente-head .ico svg{transform:rotate(180deg)}
+/* Estreito (ate 1300): volta ao trilho de icones de antes -- icone em cima, rotulo embaixo,
+   sem as areas -- e a barra de comando cede o lugar ao estado do topo. */
+@media(max-width:1300px){
+  .nav{height:67px;flex-direction:column;justify-content:center;gap:0;padding:0;text-align:center}
+  .nav .ico{margin-bottom:5px}
+  .nav em{font-size:var(--fs-1);white-space:normal;overflow:visible}
+  .nav b{position:absolute;top:4px;right:4px;margin:0}
+  .nav-grupo{display:none}
+  .cmd-bar{max-width:360px;margin:0 16px}
+  .rod-valores{display:none}
+}
+@media(max-width:900px){
+  /* Sem lugar para um trilho a mais: o assistente (vazio neste lote) sai da grade. */
+  .app-shell{grid-template-columns:var(--sidebar) minmax(0,1fr)}
+  .assistente{display:none}
+  .footerbar .rod-lema{display:none}
+}
+@media(max-width:640px){
+  /* So a lupa, como antes: 36 px, ao lado do tema e do idioma. */
+  .cmd-bar{flex:none;width:36px;height:36px;max-width:none;margin:0 9px 0 auto;padding:0;justify-content:center;gap:0;border-radius:6px}
+  .cmd-bar .cmd-dica,.cmd-bar kbd{display:none}
+  .top-actions{margin-left:0}
+  .footerbar{height:auto;min-height:34px;flex-wrap:wrap;gap:6px 14px;padding-top:6px;padding-bottom:6px}
+  .rod-item>b{max-width:160px}
+}

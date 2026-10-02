@@ -1962,6 +1962,21 @@
       "variavel": "PHXCLAW_WHATSAPP_VERIFY_TOKEN"
     },
     {
+      "chave": "canais.xmpp.apelido",
+      "comando_do_segredo": null,
+      "descricao": "Apelido nas salas; vazio = a parte local do JID",
+      "descricao_en": "Nickname in rooms; empty = the local part of the JID",
+      "motivo_so_ambiente": null,
+      "motivo_so_ambiente_en": null,
+      "natureza": "config",
+      "opcoes": null,
+      "padrao": null,
+      "secao": "canais",
+      "segredo": false,
+      "tipo": "texto",
+      "variavel": "PHXCLAW_XMPP_APELIDO"
+    },
+    {
       "chave": "canais.xmpp.ca",
       "comando_do_segredo": null,
       "descricao": "Autoridade (PEM) no lugar das raízes públicas",
@@ -2021,6 +2036,22 @@
       "separador_no_ambiente": ",",
       "tipo": "lista",
       "variavel": "PHXCLAW_XMPP_PERMITIDOS"
+    },
+    {
+      "chave": "canais.xmpp.salas",
+      "comando_do_segredo": null,
+      "descricao": "JIDs das salas (MUC) em que o bot entra; a sala também vai em PERMITIDOS",
+      "descricao_en": "Room JIDs (MUC) the bot joins; the room also goes in PERMITIDOS",
+      "motivo_so_ambiente": null,
+      "motivo_so_ambiente_en": null,
+      "natureza": "config",
+      "opcoes": null,
+      "padrao": null,
+      "secao": "canais",
+      "segredo": false,
+      "separador_no_ambiente": ",",
+      "tipo": "lista",
+      "variavel": "PHXCLAW_XMPP_SALAS"
     },
     {
       "chave": "canais.xmpp.senha",

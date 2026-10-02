@@ -16,7 +16,9 @@
 // a marca do topo, os favicons, a abertura nos dois temas e o icone mascaravel.
 // Casca 8: o paineis.js (explorador de testes, loja de plugins e perfis) e a trilha do IDE
 // entraram (VS Code onda 2, 02/10/2026).
-const CACHE = 'phxclaw-casca-8';
+// Casca 9: a casca nova (SP000036 L1: menu em areas, barra de comando, rodape lido, assistente)
+// -- nenhum arquivo a mais, mas HTML, CSS e JS mudaram juntos e o instalado troca os tres de uma vez.
+const CACHE = 'phxclaw-casca-9';
 const CASCA = [
   './', './index.html', './manifest.webmanifest',
   './assets/app.css', './assets/app.js', './assets/tema.js', './assets/idiomas.js', './assets/tarefas.js', './assets/tarefas.css',

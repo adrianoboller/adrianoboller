@@ -112,7 +112,9 @@ const browser = await chromium.launch();
 try {
   const { page, erros } = await abrirPagina(browser);
   const botoes = await page.$$eval('.nav[data-tela]', bs => bs.map(b => b.dataset.tela));
-  check('menu tem as sete telas', JSON.stringify(botoes) === JSON.stringify(['geral', 'agentes', 'ide', 'ferramentas', 'absorcao', 'tarefas', 'config']), botoes.join(','));
+  // Ordem das 4 areas da casca (SP000036 L1): Painel; Trabalho; Capacidades; Sistema. A ordem
+  // do DOM e a visual, para o foco seguir o olho.
+  check('menu tem as sete telas', JSON.stringify(botoes) === JSON.stringify(['geral', 'tarefas', 'ide', 'agentes', 'ferramentas', 'absorcao', 'config']), botoes.join(','));
 
   for (const tela of botoes) {
     await page.click(`.nav[data-tela="${tela}"]`);

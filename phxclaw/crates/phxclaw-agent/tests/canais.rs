@@ -2256,6 +2256,8 @@ async fn xmpp_autentica_faz_bind_responde_ping_e_escapa_a_resposta() {
             jid: "agente@x.org".into(),
             senha: cred(&b, "xmpp", "xmpp-senha", TOKEN),
             tls: None,
+            salas: Vec::new(),
+            apelido: String::new(),
         },
         Caixa::abrir(dir.join("xmpp.caixa.jsonl")).unwrap(),
     ));
@@ -2280,6 +2282,141 @@ async fn xmpp_autentica_faz_bind_responde_ping_e_escapa_a_resposta() {
     let d = depois.lock().unwrap().clone();
     assert!(d.contains("<iq type='result' id='p1' to='x.org'/>"), "{d}");
     assert!(d.contains("<body>a&lt;b &amp; &apos;c&apos;</body>"), "{d}");
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+/// Servidor XMPP falso que autentica, faz o bind e, na entrada na sala `sala@conf.x.org`,
+/// responde o que `na_sala` mandar; devolve o endereco e o que o cliente escreveu depois.
+fn xmpp_falso_com_sala(na_sala: &'static str) -> (String, Arc<Mutex<String>>) {
+    let l = TcpListener::bind("127.0.0.1:0").unwrap();
+    let end = l.local_addr().unwrap().to_string();
+    let depois = Arc::new(Mutex::new(String::new()));
+    let d2 = depois.clone();
+    std::thread::spawn(move || {
+        let (mut s, _) = l.accept().unwrap();
+        let mut buf = String::new();
+        let esperar = |s: &mut std::net::TcpStream, buf: &mut String, marca: &str| {
+            let mut b = [0u8; 4096];
+            while !buf.contains(marca) {
+                let n = s.read(&mut b).unwrap();
+                assert!(n > 0, "cliente fechou antes de {marca}");
+                buf.push_str(&String::from_utf8_lossy(&b[..n]));
+            }
+            let i = buf.find(marca).unwrap() + marca.len();
+            let antes = buf[..i].to_string();
+            buf.drain(..i);
+            antes
+        };
+        esperar(&mut s, &mut buf, "version='1.0'>");
+        s.write_all(b"<?xml version='1.0'?><stream:stream from='x.org' id='1' version='1.0' xmlns='jabber:client' xmlns:stream='http://etherx.jabber.org/streams'><stream:features><mechanisms xmlns='urn:ietf:params:xml:ns:xmpp-sasl'><mechanism>PLAIN</mechanism></mechanisms></stream:features>").unwrap();
+        esperar(&mut s, &mut buf, "</auth>");
+        s.write_all(b"<success xmlns='urn:ietf:params:xml:ns:xmpp-sasl'/>")
+            .unwrap();
+        esperar(&mut s, &mut buf, "version='1.0'>");
+        s.write_all(b"<stream:stream from='x.org' id='2' version='1.0'><stream:features><bind xmlns='urn:ietf:params:xml:ns:xmpp-bind'/></stream:features>").unwrap();
+        esperar(&mut s, &mut buf, "</iq>");
+        s.write_all(b"<iq type='result' id='bind1'><bind xmlns='urn:ietf:params:xml:ns:xmpp-bind'><jid>agente@x.org/phxclaw</jid></bind></iq>").unwrap();
+        esperar(&mut s, &mut buf, "<presence/>");
+        let entrada = esperar(&mut s, &mut buf, "</presence>");
+        assert!(
+            entrada.contains("to='sala@conf.x.org/claw'")
+                && entrada.contains("<x xmlns='http://jabber.org/protocol/muc'/>"),
+            "entrada na sala pede o x do MUC: {entrada}"
+        );
+        s.write_all(na_sala.as_bytes()).unwrap();
+        let mut b = [0u8; 4096];
+        loop {
+            match s.read(&mut b) {
+                Ok(0) | Err(_) => break,
+                Ok(n) => d2
+                    .lock()
+                    .unwrap()
+                    .push_str(&String::from_utf8_lossy(&b[..n])),
+            }
+        }
+    });
+    (end, depois)
+}
+
+fn xmpp_com_sala(dir: &std::path::Path, end: String) -> Arc<phxclaw_agent::canais::xmpp::Xmpp> {
+    let b = broker_em(dir).unwrap();
+    Arc::new(phxclaw_agent::canais::xmpp::Xmpp::novo(
+        phxclaw_agent::canais::xmpp::Config {
+            endereco: end,
+            jid: "agente@x.org".into(),
+            senha: cred(&b, "xmpp", "xmpp-senha", TOKEN),
+            tls: None,
+            salas: vec!["sala@conf.x.org".into()],
+            apelido: "claw".into(),
+        },
+        Caixa::abrir(dir.join("xmpp.caixa.jsonl")).unwrap(),
+    ))
+}
+
+/// A sala confirma a entrada (presenca refletida com `status 110`) e, no mesmo bloco, manda
+/// o historico com `<delay/>`, uma fala de ocupante, o eco do proprio nick e um aviso da sala
+/// sem nick: so a fala vira tarefa, com a sala como conversa e o nick como autor; a resposta
+/// volta `groupchat` ao JID da sala.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn xmpp_entra_na_sala_ouve_so_os_outros_e_responde_em_groupchat() {
+    let dir = tmp();
+    let (end, depois) = xmpp_falso_com_sala(
+        "<presence from='sala@conf.x.org/bia' to='agente@x.org/phxclaw'><x xmlns='http://jabber.org/protocol/muc#user'><item affiliation='none' role='participant'/></x></presence>\
+<presence from='sala@conf.x.org/claw' to='agente@x.org/phxclaw'><x xmlns='http://jabber.org/protocol/muc#user'><item affiliation='member' role='participant'/><status code='110'/></x></presence>\
+<message from='sala@conf.x.org/ana' type='groupchat' id='h1'><body>ontem</body><delay xmlns='urn:xmpp:delay' from='sala@conf.x.org' stamp='2026-01-01T00:00:00Z'/></message>\
+<message from='sala@conf.x.org' type='groupchat'><subject>tema</subject></message>\
+<message from='sala@conf.x.org/ana' type='groupchat' id='g1'><body>claw, resume?</body></message>\
+<message from='sala@conf.x.org/claw' type='groupchat' id='g2'><body>eco</body></message>",
+    );
+    let x = xmpp_com_sala(&dir, end);
+    let y = x.clone();
+    let l = bloq(move || y.receber(None, 2)).await.unwrap();
+    let ms = so_mensagens(&l);
+    assert_eq!(ms.len(), 1, "so a fala de ocupante: {ms:?}");
+    assert_eq!(
+        (
+            ms[0].conversa.as_str(),
+            ms[0].autor.as_str(),
+            ms[0].texto.as_deref()
+        ),
+        ("sala@conf.x.org", "ana", Some("claw, resume?"))
+    );
+    let y = x.clone();
+    bloq(move || y.enviar("sala@conf.x.org", "resumo"))
+        .await
+        .unwrap();
+    let y = x.clone();
+    bloq(move || y.enviar("ana@x.org", "em privado"))
+        .await
+        .unwrap();
+    for _ in 0..100 {
+        if depois.lock().unwrap().matches("</message>").count() >= 2 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    let d = depois.lock().unwrap().clone();
+    assert!(
+        d.contains("<message to='sala@conf.x.org' type='groupchat'"),
+        "{d}"
+    );
+    assert!(d.contains("<message to='ana@x.org' type='chat'"), "{d}");
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+/// Nick em uso (409): a entrada falha com motivo legivel, e nao com panico nem silencio.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn xmpp_nick_em_conflito_na_sala_e_erro_legivel() {
+    let dir = tmp();
+    let (end, _) = xmpp_falso_com_sala(
+        "<presence from='sala@conf.x.org/claw' to='agente@x.org/phxclaw' type='error'><x xmlns='http://jabber.org/protocol/muc'/><error by='sala@conf.x.org' type='cancel' code='409'><conflict xmlns='urn:ietf:params:xml:ns:xmpp-stanzas'/></error></presence>",
+    );
+    let x = xmpp_com_sala(&dir, end);
+    let e = bloq(move || x.receber(None, 2)).await.unwrap_err();
+    assert!(
+        e.contains("sala@conf.x.org") && e.contains("claw") && e.contains("apelido ja esta em uso"),
+        "{e}"
+    );
     let _ = std::fs::remove_dir_all(dir);
 }
 

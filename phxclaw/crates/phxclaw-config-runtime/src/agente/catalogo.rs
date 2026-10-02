@@ -1939,6 +1939,20 @@ const CANAIS: &[CanalDef] = &[
             ("JID", K::T(("JID do bot", "Bot JID"))),
             ("SENHA", K::S(("Senha do JID", "JID password"))),
             ("TLS", K::Tls),
+            (
+                "SALAS",
+                K::L((
+                    "JIDs das salas (MUC) em que o bot entra; a sala também vai em PERMITIDOS",
+                    "Room JIDs (MUC) the bot joins; the room also goes in PERMITIDOS",
+                )),
+            ),
+            (
+                "APELIDO",
+                K::T((
+                    "Apelido nas salas; vazio = a parte local do JID",
+                    "Nickname in rooms; empty = the local part of the JID",
+                )),
+            ),
         ],
     },
     CanalDef {
