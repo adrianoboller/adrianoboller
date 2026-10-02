@@ -174,7 +174,7 @@ def c09_artefato_com_segredo():
 
 
 def c10_sem_licenca():
-    """Sem licenca valida, o hook recusa os scripts do plugin."""
+    """Sem licenca valida o plugin roda igual (3.51.0): verificar diz ausente e o hook nao nega."""
     amb = dict(os.environ, WX_LICENCA=str(Path(tempfile.mkdtemp()) / "nao-existe"))
     r = subprocess.run([sys.executable, str(SCRIPTS / "licenca.py"), "verificar"],
                        capture_output=True, text=True, env=amb, timeout=120)
@@ -183,8 +183,8 @@ def c10_sem_licenca():
     h = subprocess.run([sys.executable, str(RAIZ / "hooks/licenca.py" if (RAIZ / "hooks/licenca.py").exists() else SCRIPTS / "licenca.py"), "hook"],
                        input=json.dumps(pedido), capture_output=True, text=True, env=amb, timeout=120)
     negou = "deny" in h.stdout
-    ok = "valida" not in r.stdout and negou
-    return ok, "sem licença: verificar não diz válida e o hook recusa o script"
+    ok = "valida" not in r.stdout and not negou
+    return ok, "sem licença: verificar não diz válida e o hook NÃO recusa o script"
 
 
 def c11_exportar_sem_segredo():
@@ -501,7 +501,7 @@ CENARIOS = [
     ("07 ERP com quatro módulos", c07_erp_completo, "domínio, pasta e skill por módulo"),
     ("08 backup incoerente", c08_backup_incoerente, "RPO que o backup não sustenta é recusado"),
     ("09 artefato com segredo", c09_artefato_com_segredo, "token não entra no acervo"),
-    ("10 sem licença", c10_sem_licenca, "o hook recusa os scripts do plugin"),
+    ("10 sem licença", c10_sem_licenca, "o plugin roda igual; o hook não nega"),
     ("11 exportar sem segredo", c11_exportar_sem_segredo, ".env fora, .env.exemplo dentro"),
     ("12 instalador em conferência", c12_instalador_confere, "não instala e não suja"),
     ("13 legado PHP de verdade", c13_legado_php_de_verdade, "projeto sem nada de WX atravessa o G0"),

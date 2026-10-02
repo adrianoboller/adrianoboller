@@ -41,7 +41,7 @@ cada coisa, está em `PRE-REQUISITOS.md`.
 ```bash
 ./instalar.sh                    # Linux e macOS
 ./instalar.sh --conferir         # mostra o que faria, sem mudar nada
-./instalar.sh --serial "WX2.…"   # instala e ativa a licença
+./instalar.sh --serial "WX2.…"   # instala e registra o serial (opcional)
 ```
 
 ```powershell
@@ -312,7 +312,7 @@ geradas por `docs/prints/gerar.md`).
 | ![papeis](docs/prints/15-papeis-backlog-e-entrega-zipada.png) backlog com papel dono, Kanban por papel e a entrega zipada ao stakeholder | ![letra-f](docs/prints/16-letra-f-erp-botoes-e-design-md.png) letra F para ERP: a tabela de botões, posição e fundo no `DESIGN.md` |
 | ![bloco-0](docs/prints/17-bloco-0-empresa-e-projeto.png) bloco 0: softhouse, diretores, endereço, um item por mensagem | ![senha](docs/prints/18-senha-colada-nao-e-gravada.png) senha colada na conversa: não gravada, não repetida, revogar e usar `credencial_ref` |
 | ![processo](docs/prints/19-letra-h-processo-de-conversao.png) letra H: sinais, três opções e o processo de conversão para a escolhida, peça por peça | ![tela-modelo](docs/prints/20-letra-f0-tela-modelo.png) F0: a tela principal do legado como modelo, aberta antes de registrar, com o que preservar e o que mudar |
-| ![licenca](docs/prints/21-licenca-serial-de-ativacao.png) serial de ativação: sem ele o PMO recusa; instalado, a mesma sessão roda | ![respostas](docs/prints/22-respostas-do-questionario.png) sessão nova acha o aprovador e o prazo em `respostas_questionario.md`, sem perguntar |
+| ![licenca](docs/prints/21-licenca-serial-de-ativacao.png) serial de ativação (na época portão; desde a 3.51.0 o plugin roda sem ele) | ![respostas](docs/prints/22-respostas-do-questionario.png) sessão nova acha o aprovador e o prazo em `respostas_questionario.md`, sem perguntar |
 | ![ambiente](docs/prints/23-letra-k-ambiente-sem-senha.png) letra K: PostgreSQL, papéis por nível e a senha do root que não é gravada nem repetida | ![n8n](docs/prints/24-letra-k7-n8n-integrado.png) K7: n8n sim ou não, e cada item da integração um por mensagem |
 | ![kickoff](docs/prints/25-primeira-sessao-index-e-kickoff.png) primeira sessão: lê `INDEX_FILES.md` e o kickoff, sabe o escopo da v1 e recusa código sem G0 | ![exportar](docs/prints/26-pmo-exportar-projeto-organizado.png) `pmo exportar`: o projeto organizado na pasta do usuário, sem segredo, com hashes |
 | ![zelador](docs/prints/27-zelador-limpeza-diaria.png) o zelador limpa temporários ao abrir a sessão e deixa o registro medido | ![identificacao](docs/prints/28-identificacao-bloco-sprint.png) toda resposta abre com `BlocoNNNN-SPNNNNN-Título · data`, injetado pelo hook |
@@ -323,14 +323,14 @@ geradas por `docs/prints/gerar.md`).
 
 ## Hooks e RAG
 
-Os hooks do plugin fazem valer as regras: licença, portão G0, anexos somente leitura, nenhum segredo em arquivo, Kanban sincronizado com a matriz, identificação em toda interação, zelador diário. O RAG local (`rag.py`, BM25 sem dependência) indexa os documentos do projeto e injeta a cada pergunta os trechos mais próximos com `arquivo#linha`. Detalhe em `references/hooks-e-rag.md`.
+Os hooks do plugin fazem valer as regras: portão G0, anexos somente leitura, nenhum segredo em arquivo, Kanban sincronizado com a matriz, identificação em toda interação, zelador diário. O RAG local (`rag.py`, BM25 sem dependência) indexa os documentos do projeto e injeta a cada pergunta os trechos mais próximos com `arquivo#linha`. Detalhe em `references/hooks-e-rag.md`.
 
 ## Licença e serial
 
 Como ativar cliente a cliente, passo a passo: `licenca/ATIVACAO.md`
 (e `docs/ativacao-do-serial.pdf` para mandar ao cliente).
 
-O plugin só roda com serial válido em `~/.wx-claude-code/licenca`, assinado com RSA-2048 pela chave privada de quem distribui; o plugin traz só a pública. Sem serial, os comandos param e o hook nega os scripts e a escrita em `.wx-migration/`. O que isso protege e o que não protege, e os comandos de quem distribui, em `licenca/LEIA-ME.md`; capítulo 8 do manual para o cliente.
+**O serial é opcional desde a 3.51.0**, por decisão do dono: o plugin roda sem ele e nenhum hook nega nada. Quem instala um serial (assinado com RSA-2048 pela chave privada de quem distribui; o plugin traz só a pública) ganha o registro: a sessão abre dizendo para quem está licenciado, o `CLAUDE.md` gerado leva a marca d'água e o fornecedor recebe um aviso por instalação. O que isso protege e o que não protege, e os comandos de quem distribui, em `licenca/LEIA-ME.md`; capítulo 8 do manual para o cliente.
 
 ## Vídeo de uso
 

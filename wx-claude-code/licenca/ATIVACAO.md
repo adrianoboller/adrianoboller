@@ -45,8 +45,9 @@ python3 skills/conversao-wx/scripts/licenca.py verificar
 ```
 
 Grava em `~/.wx-claude-code/licenca` (ou onde `WX_LICENCA` apontar). A partir
-daí os hooks liberam os scripts, e o `CLAUDE.md` gerado no projeto sai com a
-marca d'água dizendo para quem a licença foi emitida.
+daí a sessão abre dizendo para quem está licenciado, e o `CLAUDE.md` gerado
+no projeto sai com a marca d'água. Sem serial o plugin roda igual (3.51.0):
+o serial registra, não trava.
 
 ## Quando o serial é recusado
 

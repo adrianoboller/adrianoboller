@@ -1,6 +1,6 @@
-# Relatório do plugin WX Claude Code 3.50.0
+# Relatório do plugin WX Claude Code 3.51.0
 
-Medido em 2026-09-09 por `docs/dossie/numeros-do-plugin.py`; nenhum número abaixo foi digitado.
+Medido em 2026-10-02 por `docs/dossie/numeros-do-plugin.py`; nenhum número abaixo foi digitado.
 
 ## O que é
 
@@ -18,10 +18,10 @@ Plugin do Claude Code que converte projetos WINDEV, WEBDEV e WINDEV Mobile para 
 | skills | 21 |
 | skills de ERP (pacote skills.sh) | 8 |
 | scripts Python | 42 |
-| linhas de Python (scripts e hooks) | 17850 |
+| linhas de Python (scripts e hooks) | 17846 |
 | documentos de referência | 19 |
 | testes de regressão | 111 |
-| hooks do plugin | 14 |
+| hooks do plugin | 13 |
 | blocos do questionário (0, A–M) | 14 |
 | itens do bloco 0 | 16 |
 | subperguntas de F (F0–F13) | 14 |
@@ -52,7 +52,7 @@ Plugin do Claude Code que converte projetos WINDEV, WEBDEV e WINDEV Mobile para 
 | constantes da WL_C# no índice | 863 |
 | corpus do Help (bytes) | 26750976 |
 | páginas válidas do corpus | 12035 |
-| linhas do manual | 948 |
+| linhas do manual | 952 |
 | tabelas do exemplo ESTOQUE | 7 |
 
 ## O que foi provado em sessão real

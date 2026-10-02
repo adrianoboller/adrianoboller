@@ -39,7 +39,7 @@ regras = [
     ("Número visível sai de um gerador", "os deste dossiê vêm de numeros-do-plugin.py; a página para investidores já ficou quatro versões com 34 agentes e 12 testes por ter sido digitada."),
     ("Interface só se prova exercitando", "cada funcionalidade nova teve sessão real gravada; uma delas achou o .env.exemplo caindo no filtro de .env, outra o manifesto dizendo missing para dados que existiam."),
     ("O que não se mede fica INDISPONÍVEL", "painel, relatório e medidor de ambiente nunca mostram zero no lugar do desconhecido."),
-    ("Guarda nova entra pedida, não imposta", "a licença trava só os scripts e a escrita em .wx-migration; o resto do Claude Code segue; o hook custa 54 ms medidos."),
+    ("Guarda nova entra pedida, não imposta", "a licença trava nada desde a 3.51.0: registra e só; antes travava só os scripts e a escrita em .wx-migration, e o resto do Claude Code seguia; o hook custa 54 ms medidos."),
 ]
 regras += [
     ("Regra de negócio se esconde em arquivo de declaração", "o piloto vertical achou uma função de arredondamento de dinheiro dentro de um mod.rs — e por isso o grafo só perdoa arquivo cuja última linha útil ainda seja declaração ou importação. Critério medido; lista de nomes teria deixado passar."),
@@ -57,7 +57,7 @@ faltas = [
     "O piloto vertical G4 provou um MÓDULO (cinco regras do ESTOQUE, 10/10 no golden master capturado do legado), não um sistema: telas, relatórios, integrações e o banco real ficaram de fora, e a query saiu com confiança média por não ter banco por trás.",
     "Os quatro comandos de adoção da governança nunca rodaram num cliente; a ordem proposta é raciocínio, não medição.",
     "O instalador em PowerShell nunca foi executado — só tem prova estrutural, porque não há Windows neste ambiente.",
-    "A licença é dissuasão por hook; servir corpus e agentes de um servidor ficou para depois, por decisão do dono.",
+    "A licença é registro, não portão (3.51.0); servir corpus e agentes de um servidor ficou para depois, por decisão do dono.",
     "O custo em tokens do questionário inteiro numa sessão real não foi medido.",
     "O questionário não pausa nem retoma; com mais de setenta itens, isso pesa.",
     "Dos seis documentos de auditoria, só a procedência tem caso de uso comercial claro; os outros cinco ainda não foram exigidos por ninguém.",

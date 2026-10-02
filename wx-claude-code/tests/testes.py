@@ -540,13 +540,15 @@ class Questionario(unittest.TestCase):
         self.assertGreater(conferidos, 5, "o teste nao achou linha de comando nenhuma; a heuristica quebrou")
         self.assertEqual(problemas, [], "\n".join(problemas))
 
-    def test_licenca_continua_ligada_nos_hooks(self):
-        """A chave nao pode sumir numa refatoracao: o hook de sessao e o de ferramenta
-        continuam chamando a licenca, e a chave publica esta no pacote."""
+    def test_licenca_e_registro_e_nao_portao(self):
+        """Decisao do dono na 3.51.0: o plugin roda sem serial. O PreToolUse da licenca
+        saiu do hooks.json; o de sessao continua, so para dizer a quem esta licenciado;
+        a chave publica continua no pacote para quem quiser registrar. O comportamento
+        velho (negar) e o que este teste proibe."""
         hooks = json.loads((RAIZ / "hooks" / "hooks.json").read_text())
         chamadas = json.dumps(hooks)
-        self.assertIn("licenca.py\\\" hook", chamadas)
-        self.assertIn("licenca.py\\\" hook-sessao", chamadas)
+        self.assertNotIn('licenca.py\\" hook"', chamadas, "o portao da licenca voltou ao PreToolUse")
+        self.assertIn('licenca.py\\" hook-sessao', chamadas)
         chave = json.loads((RAIZ / "licenca" / "chave-publica.json").read_text())
         self.assertEqual(chave["algoritmo"], "RSA-2048/SHA-256")
         self.assertGreater(int(str(chave["n"]), 16).bit_length(), 2040)
@@ -2495,22 +2497,26 @@ class Licenca(unittest.TestCase):
         outra_priv, _ = L.gerar_chaves()
         self.assertEqual(L.verificar_serial(L.gerar_serial("X", "2099-01-01", outra_priv), self.pub)["status"], "assinatura-invalida")
 
-    def test_hook_nega_scripts_do_plugin_sem_licenca_e_libera_com(self):
+    def test_hook_nunca_nega_e_a_sessao_so_fala_com_serial(self):
+        """Sem serial, com serial vencido ou com serial valido, o PreToolUse libera
+        sempre (ficou so por compatibilidade). O SessionStart cala sem serial e
+        identifica o licenciado quando ha um valido."""
         tmp = Path(tempfile.mkdtemp())
         try:
             (tmp / "chave-publica.json").write_text(json.dumps(self.pub))
             env = dict(os.environ, WX_LICENCA=str(tmp / "licenca"))
-            def hook(entrada):
-                return subprocess.run([sys.executable, "-c", f"import sys; sys.path.insert(0, {str(SCRIPTS)!r}); import licenca; from pathlib import Path; licenca.CHAVE_PUBLICA = Path({str(tmp / 'chave-publica.json')!r}); sys.exit(licenca.hook_pre_tool())"], input=json.dumps(entrada), capture_output=True, text=True, env=env).stdout
+            def roda(func, entrada):
+                return subprocess.run([sys.executable, "-c", f"import sys; sys.path.insert(0, {str(SCRIPTS)!r}); import licenca; from pathlib import Path; licenca.CHAVE_PUBLICA = Path({str(tmp / 'chave-publica.json')!r}); sys.exit(licenca.{func}())"], input=json.dumps(entrada), capture_output=True, text=True, env=env).stdout
             plugin = {"tool_name": "Bash", "tool_input": {"command": "python3 x/skills/conversao-wx/scripts/pmo.py status"}}
-            self.assertIn('"deny"', hook(plugin))
-            self.assertIn('"deny"', hook({"tool_name": "Write", "tool_input": {"file_path": "/p/.wx-migration/gaps.md"}}))
-            self.assertEqual(hook({"tool_name": "Bash", "tool_input": {"command": "cargo test"}}), "")
-            self.assertEqual(hook({"tool_name": "Write", "tool_input": {"file_path": "/p/src/main.rs"}}), "")
-            (tmp / "licenca").write_text(self.lic.gerar_serial("Softhouse X", "2099-01-01", self.priv))
-            self.assertEqual(hook(plugin), "")
+            self.assertEqual(roda("hook_pre_tool", plugin), "")
+            self.assertEqual(roda("hook_pre_tool", {"tool_name": "Write", "tool_input": {"file_path": "/p/.wx-migration/gaps.md"}}), "")
+            self.assertEqual(roda("hook_sessao", {}), "", "sem serial a sessao nao pode receber aviso")
             (tmp / "licenca").write_text(self.lic.gerar_serial("Softhouse X", "2000-01-01", self.priv))
-            self.assertIn("vencida", hook(plugin))
+            self.assertEqual(roda("hook_pre_tool", plugin), "")
+            self.assertEqual(roda("hook_sessao", {}), "")
+            (tmp / "licenca").write_text(self.lic.gerar_serial("Softhouse X", "2099-01-01", self.priv))
+            self.assertEqual(roda("hook_pre_tool", plugin), "")
+            self.assertIn("licenciado para Softhouse X", roda("hook_sessao", {}))
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
 

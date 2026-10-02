@@ -5,7 +5,7 @@
 .DESCRIPTION
   O mesmo caminho do instalar.sh, para quem usa Windows -- que e o publico do
   WINDEV. Confere os pre-requisitos, poe o corpus no lugar, valida o pacote,
-  instala o plugin no Claude Code e, com -Serial, ativa a licenca.
+  instala o plugin no Claude Code e, com -Serial, registra a licenca (opcional: o plugin roda sem serial).
 
   Falta algum pre-requisito? Ele mostra o comando que resolveria e PERGUNTA
   antes de rodar. Nada e instalado sem voce ver e aprovar; sem terminal
@@ -182,7 +182,7 @@ elseif (Existe "claude") {
   Aviso "sem o CLI claude; depois rode: claude plugin marketplace add <pasta-pai>; claude plugin install wx-claude-code@wx-claude-code"
 }
 
-Passo "5. Licenca"
+Passo "5. Licenca (opcional: o plugin roda sem serial)"
 $lic = Join-Path $Raiz "skills\conversao-wx\scripts\licenca.py"
 if ($Serial -and -not $Conferir) {
   # mesma ordem do instalar.sh: termos antes do serial, aceite registrado com hash
@@ -196,8 +196,8 @@ if ($Serial -and -not $Conferir) {
 $estado = & $py $lic verificar 2>$null
 if ($estado -match '^valida') { Ok $estado }
 else {
-  Aviso "sem licenca valida: os hooks vao recusar os scripts do plugin"
-  Aviso "mande ao fornecedor a saida de: $py `"$lic`" maquina"
+  Write-Host "  sem serial: o plugin roda igual; o serial so registra a quem foi licenciado"
+  Write-Host "  para registrar depois: $py `"$lic`" instalar <serial>"
 }
 
 Remove-Item $saidaValidacao -ErrorAction SilentlyContinue

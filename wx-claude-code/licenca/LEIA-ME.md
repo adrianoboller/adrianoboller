@@ -1,7 +1,9 @@
 # Licença e serial de ativação
 
-O plugin só roda com um serial válido instalado em `~/.wx-claude-code/licenca`
-(ou no caminho de `$WX_LICENCA`). O serial é assinado com **RSA-2048** pela
+**Desde a 3.51.0 o serial é opcional**, por decisão do dono: o plugin roda
+sem ele, nenhum hook nega nada, e a sessão sem serial não recebe aviso. O
+serial, quando instalado em `~/.wx-claude-code/licenca` (ou no caminho de
+`$WX_LICENCA`), registra a quem o plugin foi licenciado. Ele é assinado com **RSA-2048** pela
 chave privada de quem distribui; o plugin carrega só a chave pública
 (`chave-publica.json`) e por isso **não consegue emitir nem forjar** um serial.
 Tudo é `std` do Python, sem dependência, como o resto do plugin.
@@ -9,9 +11,9 @@ Tudo é `std` do Python, sem dependência, como o resto do plugin.
 ## O que isto protege, e o que não protege
 
 Um plugin do Claude Code é texto: quem instala lê os agentes, os scripts e a
-chave pública. O serial e os hooks são **dissuasão para o cliente honesto**
-(licença vencida, máquina trocada, cópia passada adiante por descuido). Quem
-quiser apagar duas linhas do `hooks.json` remove a trava. **A proteção real é
+chave pública. O serial é **registro**, não trava: até a 3.50.0 havia um
+`PreToolUse` que negava os scripts sem serial, dissuasão para o cliente
+honesto que duas linhas apagadas do `hooks.json` removiam; saiu na 3.51.0. **A proteção real é
 servir o corpus do Help, as referências e os agentes de um servidor seu**, com
 o serial conferido a cada chamada; aí o plugin sem servidor não tem o que
 consultar, e um serial vazado se revoga na hora. Este arquivo cobre a primeira
@@ -32,8 +34,9 @@ dos termos declara; sem rede, fica pendente e a instalação segue.
 - Serial: `WX2.<payload>.<assinatura>`, com `payload` em JSON (id, cliente,
   e-mail, validade, impressão da máquina opcional, data de emissão) e a
   assinatura RSA/SHA-256 do payload. Um byte alterado e a verificação falha.
-- Hook `SessionStart`: injeta no contexto «licenciado para X até Y» ou «sem
-  licença válida: recuse os comandos». Hook `PreToolUse`: nega a execução dos
+- Hook `SessionStart`: com serial válido injeta «licenciado para X até Y»;
+  sem, cala. O hook `PreToolUse` (`licenca.py hook`) existe só por
+  compatibilidade com settings antigos e libera sempre. Até a 3.50.0 ele negava a execução dos
   scripts do plugin (`Bash` com `conversao-wx/scripts`) e toda escrita em
   `.wx-migration/` enquanto não houver serial válido. O resto do Claude Code
   continua funcionando: projeto que não usa o plugin não é afetado.

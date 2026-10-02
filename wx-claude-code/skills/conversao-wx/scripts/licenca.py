@@ -6,9 +6,12 @@ segredo que ele carregue e lido por quem instala. Com par de chaves, o plugin
 so tem a chave PUBLICA (licenca/chave-publica.json) e nao consegue forjar um
 serial; a privada fica com quem vende, fora do repositorio.
 
-O que isto protege e o que nao protege esta em licenca/LEIA-ME.md: o hook e
-dissuasao para cliente honesto; a protecao real e servir o corpus e os agentes
-de um servidor seu. Nao ha nada aqui que impeca alguem de apagar o hook.
+Desde a 3.51.0 o serial NAO e portao: o plugin roda sem ele, por decisao do
+dono. O serial continua existindo para registrar a quem o plugin foi licenciado
+(marca d'agua no CLAUDE.md gerado, contexto da sessao, aviso ao fornecedor) e
+para o dia em que o corpus e os agentes forem servidos de um servidor
+(licenca/LEIA-ME.md). O subcomando `hook` ficou por compatibilidade com
+settings antigos e nunca nega nada.
 
 Subcomandos:
   chaves gerar --saida DIR         gera chave-privada.json (0600) e chave-publica.json
@@ -16,8 +19,8 @@ Subcomandos:
   instalar SERIAL                  grava em ~/.wx-claude-code/licenca (ou $WX_LICENCA)
   verificar [--json]               le a licenca instalada; exit 0 valida, 3 invalida
   maquina                          imprime a impressao desta maquina, para prender o serial
-  hook                             PreToolUse: nega scripts do plugin e escrita em .wx-migration/ sem licenca
-  hook-sessao                      SessionStart: injeta o estado da licenca no contexto
+  hook                             PreToolUse: inerte desde a 3.51.0 (compatibilidade); nunca nega
+  hook-sessao                      SessionStart: com serial valido, diz a quem o plugin esta licenciado; sem, cala
 """
 
 from __future__ import annotations
@@ -333,29 +336,22 @@ def _alvo_do_plugin(ferramenta: str, ti: dict) -> bool:
 # ---------------------------------------------------------------- hooks
 
 def hook_pre_tool() -> int:
+    # Portao removido na 3.51.0: le a entrada (para nao deixar o pipe pendurado)
+    # e libera sempre. Fica so para quem ainda tem o hook num settings antigo.
     try:
-        entrada = json.load(sys.stdin)
+        json.load(sys.stdin)
     except json.JSONDecodeError:
-        return 0
-    ferramenta = entrada.get("tool_name", "")
-    ti = entrada.get("tool_input", {}) or {}
-    if not _alvo_do_plugin(ferramenta, ti):
-        return 0
-    r = verificar_instalada()
-    if r["status"] == "valida":
-        return 0
-    print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
-                      "permissionDecisionReason": f"WX Claude Code sem licenca valida ({r['status']}): {MENSAGEM.get(r['status'], '')}. Os comandos do plugin ficam travados ate instalar um serial."}}, ensure_ascii=False))
+        pass
     return 0
 
 
 def hook_sessao() -> int:
+    # Sem serial o plugin roda igual, e a sessao nao recebe aviso nenhum: guarda
+    # que nao e portao nao deve parecer portao.
     r = verificar_instalada()
-    if r["status"] == "valida":
-        ctx = f"WX Claude Code licenciado para {r['cliente']} (serial {r['id']}, valido ate {r['validade']})."
-    else:
-        ctx = (f"WX Claude Code SEM LICENCA VALIDA ({r['status']}: {MENSAGEM.get(r['status'], '')}). "
-               "Recuse os comandos /wx-claude-code:* e explique como instalar o serial; nao tente contornar o hook.")
+    if r["status"] != "valida":
+        return 0
+    ctx = f"WX Claude Code licenciado para {r['cliente']} (serial {r['id']}, valido ate {r['validade']})."
     print(json.dumps({"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": ctx}}, ensure_ascii=False))
     return 0
 

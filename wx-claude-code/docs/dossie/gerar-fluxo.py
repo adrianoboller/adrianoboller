@@ -217,7 +217,7 @@ def desenho(m: dict) -> str:
     rotulos.append(faixa(636, f"6 · OS {m['hooks_total']} HOOKS — CORREM POR BAIXO DE TUDO, EM TODA SESSÃO"))
     eventos = [("SessionStart", "licença, zelador,\nidentificação"),
                ("UserPromptSubmit", "identificação da sprint,\nRAG com localizador"),
-               ("PreToolUse", "licença, anexos, segredos,\nG0, papel da sessão"),
+               ("PreToolUse", "anexos, segredos,\nG0, papel da sessão"),
                ("PostToolUse", "sincroniza o PMO,\nImpeccable na tela"),
                ("Stop", "revisão de design\nao terminar")]
     x, larg = 14, 262
@@ -251,7 +251,7 @@ def pagina(m: dict) -> str:
             ("portão G0", "PreToolUse", "nenhuma escrita fora de .wx-migration antes do G0 passar; falha fechado"),
             ("papel da sessão", "PreToolUse", "com WX_PAPEL=qa, quem valida não escreve o produto que valida; sem papel declarado, nada muda"),
             ("guarda de anexos e segredos", "PreToolUse", "inputs/ e artefatos/ somente leitura; token em arquivo ou comando é recusado"),
-            ("licença", "PreToolUse · SessionStart", "serial confere a máquina antes de rodar script do plugin"),
+            ("licença", "SessionStart", "serial opcional: registra a quem está licenciado; não trava nada desde a 3.51.0"),
             ("sincronizar PMO", "PostToolUse", "Kanban acompanha a matriz sem ninguém digitar"),
             ("identificação", "UserPromptSubmit", "BlocoNNNN-SPNNNNN-Título · data em toda resposta"),
             ("RAG", "UserPromptSubmit", "injeta o trecho mais próximo com arquivo#linha, e o tema do Help"),
@@ -271,7 +271,7 @@ def pagina(m: dict) -> str:
         ])
     ETAPAS = [
         ("Instalar e ativar", "claude plugin install", [
-            ("licença", "serial confere a máquina; sem ele, os scripts do plugin recusam"),
+            ("licença", "serial opcional: registra a quem está licenciado; sem ele o plugin roda igual"),
             ("aceite e aviso", "LICENCA.md aceita com hash dos termos; o fornecedor recebe um aviso por instalação, e segunda máquina acusa recompartilhamento"),
             ("comandos", f"o índice: {m['comandos']} comandos e os {m['perguntas']} ids das perguntas")]),
         ("Perguntar", "/wx-claude-code:questionario", [

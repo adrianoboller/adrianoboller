@@ -3,13 +3,14 @@
 #
 # Faz o caminho inteiro e para no primeiro problema dizendo qual e: confere os
 # pre-requisitos, poe o corpus no lugar, valida o pacote, instala o plugin no
-# Claude Code e, se voce passar um serial, ativa a licenca.
+# Claude Code e, se voce passar um serial, registra a licenca (opcional:
+# o plugin roda sem serial).
 #
 # Nao instala nada escondido e nao mexe em nada fora de ~/.claude e
 # ~/.wx-claude-code.
 #
 #   ./instalar.sh                     instala do jeito normal
-#   ./instalar.sh --serial "WX2.…"    instala e ativa a licenca
+#   ./instalar.sh --serial "WX2.…"    instala e registra a licenca (opcional)
 #   ./instalar.sh --conferir          so confere, nao muda nada
 #   ./instalar.sh --sim               responde sim a toda pergunta (automacao)
 #   ./instalar.sh --corpus /caminho/Help_WL_12k_Json.zip
@@ -197,7 +198,7 @@ else
   aviso "sem o CLI claude; depois rode: claude plugin marketplace add <pasta-pai> && claude plugin install wx-claude-code@wx-claude-code"
 fi
 
-passo "5. Licenca"
+passo "5. Licenca (opcional: o plugin roda sem serial)"
 LIC="$RAIZ/skills/conversao-wx/scripts/licenca.py"
 if [ -n "$SERIAL" ] && [ "$SO_CONFERIR" = 0 ]; then
   # os termos aparecem ANTES de gravar o serial, e o aceite fica registrado com
@@ -212,8 +213,8 @@ fi
 if python3 "$LIC" verificar 2>/dev/null | grep -q '^valida'; then
   verde "$(python3 "$LIC" verificar)"
 else
-  aviso "sem licenca valida: os hooks vao recusar os scripts do plugin"
-  aviso "mande ao fornecedor a saida de: python3 $LIC maquina"
+  echo "  sem serial: o plugin roda igual; o serial so registra a quem foi licenciado"
+  echo "  para registrar depois: python3 $LIC instalar <serial>"
 fi
 # quem instala precisa saber que a chave e de exemplo: com ela, qualquer um que
 # leia o repositorio emite serial valido para este plugin
@@ -230,5 +231,5 @@ cat <<FIM
     /wx-claude-code:comandos         o indice dos comandos e das perguntas
 
   Manual: $RAIZ/MANUAL.md e docs/manual-de-uso.pdf
-  Ativacao por serial: $RAIZ/licenca/ATIVACAO.md
+  Serial (opcional): $RAIZ/licenca/ATIVACAO.md
 FIM

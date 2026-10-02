@@ -127,7 +127,7 @@ claude plugin validate wx-claude-code
 | `/wx-claude-code:exportar` | Exporta o projeto resultante, organizado em sete pastas, com manifesto e SHA-256, para a pasta que o usuario escolheu. |
 | `/wx-claude-code:zelador` | Limpa temporarios antigos do projeto (preflight, logs, caches) uma vez por dia e mede o espaco, sem tocar no que importa. |
 | `/wx-claude-code:semaforo` | Semaforo fisico ou na tela: vermelho aguardando voce, amarelo em execucao, verde pronto. Liga por um arquivo de configuracao; desligado custa zero. |
-| `/wx-claude-code:licenca` | Ativa o plugin por serial, confere a licenca instalada e explica o que ela protege e o que nao. |
+| `/wx-claude-code:licenca` | Registra o serial (opcional: o plugin roda sem ele), confere a licenca instalada e explica o que ela e. |
 | `/wx-claude-code:laudo-tokens` | Laudo de uso de tokens em 3 fases (auditar, corrigir, habitos). Somente leitura; nada muda sem aprovacao. |
 <!-- fim dos comandos -->
 
@@ -890,10 +890,14 @@ detalha. Tabelas completas em `references/perfis-de-destino.md`.
 
 ## 8. Licença e serial de ativação
 
-O plugin só executa com um serial válido. Sem ele, a sessão abre com o aviso
-«sem licença válida», os comandos `/wx-claude-code:*` param na primeira linha
-e o hook nega a execução dos scripts do plugin e qualquer escrita em
-`.wx-migration/`. O resto do Claude Code continua normal.
+**O serial é opcional.** Desde a 3.51.0, por decisão do dono, o plugin roda
+sem serial: nenhum hook nega script nem escrita, e a sessão não recebe aviso.
+Até a 3.50.0 o `PreToolUse` negava os scripts do plugin e a escrita em
+`.wx-migration/` sem serial válido; isso saiu, e o teste que trava a volta é
+`test_licenca_e_registro_e_nao_portao`. O que o serial faz hoje é
+**registrar**: a sessão abre dizendo para quem o plugin está licenciado, o
+`CLAUDE.md` gerado leva a marca d'água e o fornecedor recebe um aviso por
+instalação.
 
 **Instalar o serial que você recebeu:**
 

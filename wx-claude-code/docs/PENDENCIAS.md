@@ -193,7 +193,7 @@ igualdade contra o legado rodando.
 - estado: `parcial`
 - tamanho: 3 · grande
 - por que importa: Deixado para depois, a pedido.
-- hoje: Serial por hook (dissuasão). Servidor adiado por decisão do dono.
+- hoje: Serial opcional, só registro: o portão por hook saiu na 3.51.0 por decisão do dono. Servidor adiado pela mesma decisão.
 - construir: Servir corpus e agentes de um servidor com o serial; revogação; contagem de projetos.
 - medido: na 3.42.0 entrou a metade que dá para fazer sem servir o corpus: termos claros (`LICENCA.md`), aceite registrado com hash, e o aviso de instalação assinado no serial com o receptor que manda o e-mail e acusa segunda máquina como possível recompartilhamento. Continua faltando servir o corpus e revogar de verdade
 

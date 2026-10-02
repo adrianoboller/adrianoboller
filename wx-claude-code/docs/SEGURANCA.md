@@ -2,6 +2,13 @@
 
 Documento da área, no lugar da conversa: o que foi **medido**, o que foi
 **decidido**, e o que continua aberto. Atualize aqui quando mexer em licença,
+
+> **3.51.0:** o serial deixou de ser portão, por decisão do dono. O
+> `PreToolUse` que negava scripts sem serial saiu do `hooks.json`; o serial
+> registra (sessão, marca d'água, aviso ao fornecedor) e só. A tabela abaixo
+> descreve o que a primeira camada valia quando existia; a segunda camada
+> (item 20 das pendências) continua sendo a única proteção real.
+>
 hooks ou guardas.
 
 ## A verdade de partida

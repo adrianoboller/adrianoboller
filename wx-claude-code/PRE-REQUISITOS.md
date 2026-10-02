@@ -60,8 +60,9 @@ python3 -m pip install pypdf          # ou: pdfminer.six
 
 ## Para o cliente usar
 
-Além dos obrigatórios acima, um **serial** de licença: sem ele os hooks recusam
-os scripts do plugin. Como emitir está em `licenca/ATIVACAO.md`.
+Nada além dos obrigatórios acima. O **serial** de licença é opcional desde a
+3.51.0: sem ele o plugin roda igual; com ele, fica registrado a quem foi
+licenciado. Como emitir está em `licenca/ATIVACAO.md`.
 
 ## Para desenvolver o plugin
 

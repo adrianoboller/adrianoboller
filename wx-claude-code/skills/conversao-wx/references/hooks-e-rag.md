@@ -6,11 +6,10 @@ Regra que é só texto depende de o modelo obedecer. Estas viraram hook, e o har
 
 | Evento | Hook | O que faz | Custo medido |
 | --- | --- | --- | --- |
-| SessionStart | `licenca.py hook-sessao` | injeta o estado da licença | ~54 ms |
+| SessionStart | `licenca.py hook-sessao` | com serial válido diz a quem o plugin está licenciado; sem, cala | ~54 ms |
 | SessionStart | `zelador.py hook-sessao` | limpa temporários, uma vez por dia | só no primeiro dia |
 | SessionStart, UserPromptSubmit | `pmo.py hook-identificacao` | injeta `BlocoNNNN-SPNNNNN-Título · data` | ~50 ms |
 | UserPromptSubmit | `rag.py hook` | injeta os 4 trechos do projeto mais próximos da pergunta, com `arquivo#Lnn` | 48 ms com 256 trechos (índice em cache; reindexa quando marcado) |
-| PreToolUse | `licenca.py hook` | sem serial válido nega scripts do plugin e escrita em `.wx-migration/` | ~54 ms |
 | PreToolUse | `portao_g0.py` | G0 BLOCKED nega escrita de código fora de `.wx-migration/` (resolve `..`, cobre Bash com `>`) | — |
 | PreToolUse | `guarda_anexos_e_segredos.py` | anexos somente leitura (nega Write/Edit e `rm`, `mv`, `>` na raiz de evidências); nega conteúdo com formato de token, gravação de `.env` e `git add .env` | — |
 | PostToolUse | `sincronizar_pmo.py` | `traceability.csv` ou `backlog.md` editados regeram o Kanban; `questionario.json` editado lembra de reaplicar; qualquer doc de `.wx-migration/` marca o RAG para reindexar | só quando toca `.wx-migration/` |

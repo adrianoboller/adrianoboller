@@ -97,9 +97,8 @@ python3 "$CLAUDE_PLUGIN_ROOT/skills/conversao-wx/scripts/licenca.py" verificar
 | `chave-ausente` | o plugin está sem `licenca/chave-publica.json` |
 
 **Passo 11.** A partir daí toda sessão abre dizendo para quem o plugin está licenciado,
-    e o `CLAUDE.md` gerado leva a marca d'água. Sem serial válido os comandos
-    `/wx-claude-code:*` param na primeira linha e o hook nega os scripts do
-    plugin e qualquer escrita em `.wx-migration/`.
+    e o `CLAUDE.md` gerado leva a marca d'água. Sem serial o plugin roda
+    igual (desde a 3.51.0): o serial registra, não trava.
 
 ## O que chega a você
 
@@ -116,8 +115,9 @@ O item 3 da licença é o que você invoca no terceiro caso.
 
 ## O que isso protege, e o que não
 
-O serial e os hooks são dissuasão para o cliente honesto: o plugin é texto, e
-quem apagar o hook remove a trava. A proteção de verdade é servir o corpus e
+O serial é registro, não trava: desde a 3.51.0 nenhum hook nega nada (até a
+3.50.0 o `PreToolUse` negava os scripts sem serial, e duas linhas apagadas
+removiam isso). A proteção de verdade é servir o corpus e
 os agentes de um servidor seu, com o serial conferido a cada chamada — está em
 `docs/SEGURANCA.md`, com o esforço de cada ataque.
 
