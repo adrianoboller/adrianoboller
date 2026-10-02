@@ -2472,13 +2472,70 @@ retrato restaurado com outro nome abre e confere nos dois cenários.
   da fase 1 antes da trava, ~30 ms (585/699/665 contra 532/670/631). O
   diagnóstico foi hipótese escrita e medida nos dois sentidos.
 
-**O que fica:** a leitura máxima (~190–375 ms nos dois binários) não é do
-backup — é a mesma com e sem ele — e fica como número, não como causa; o zip
-monta o arquivo em RAM como antes, e sem espaço para a árvore temporária cai
-na passada única **dizendo** (`modo: retrato_inteiro`); a disputa de E/S da
-fase 1 com o escritor não foi isolada (a bancada mede o escritor durante o
-backup inteiro, e o p99 do `inserir` ficou em 1,4–7,1 ms); Windows não foi
-provado (`mtime` do NTFS por caminho, contrato §513.7).
+**A prova em 1 GB (02/10/2026, o que sobrava do 513):** banco de **1.123 MiB**
+(20 tabelas, 526.334 linhas), mesma bancada, 3 voltas, rótulo
+`duas_passadas_1gb` do `resultados.json` (retrato de 561 MiB mantido ao lado).
+Não há `passo_1` neste tamanho (o binário de antes não está mais compilável
+daqui): a comparação com o passo 1 continua sendo a de 561 MiB.
+
+| 1.123 MiB | escrita espera, máximo | fase 2 | fase 2 / backup |
+|---|---|---|---|
+| **A**, duas tabelas pequenas | **1.076 ms** [967–1.342] | 978 ms [892–1.291], 140–183 MB | 8,3 % |
+| **B**, maior tabela | **3.961 ms** [3.567–4.042] | 3.682 ms [3.300–3.769], 606–650 MB | **27,6 %** |
+
+Em A a espera de uma escrita continua ≈ fase 2 (1.075,9 ms contra 978 + 10 % =
+1.075,8 ms: 0,1 ms acima no corte estrito, dentro da folga de 1 ms do
+`veredito()` — empate, não folga) e o B
+fica a **27,6 %** da cópia, **abaixo dos 50 % do gatilho do 2b**: dobrar o
+banco não mudou o veredito (25,4 % → 27,6 %), a fase 2 cresce com o que o
+escritor mexeu, não com o banco. Retrato restaurado íntegro nos dois.
+
+**A disputa de E/S da fase 1 com o escritor, isolada.** Hipóteses escritas
+antes: **H1** o `fsync` do grosso na fase 1 compete com o escritor (a espera
+das escritas DURANTE a fase 1 sobe); **H2** o `fsync` antes da trava devolve
+um disco limpo ao escritor que esperou a fase 2 (a espera pós-fase-1 cai). A
+bancada passou a separar as escritas pela janela `[t0, t0 + fase_1_ms]`, e o
+mesmo banco rodou com o binário atual e com um binário SEM o
+`sincronizar_fase_1` (o `fsync` do grosso volta para o `concluir`, depois da
+fase 2 — o desenho de antes), rótulo `duas_passadas_1gb_sem_fsync_antes`:
+
+| máximo de uma escrita | com `fsync` antes | sem `fsync` antes |
+|---|---|---|
+| durante a fase 1, A | **398 ms** [370–439] | **32 ms** [11–72] |
+| durante a fase 1, B | **404 ms** [312–1.563] | **89 ms** [30–107] |
+| depois da fase 1, A | 1.076 ms [967–1.342] | 995 ms [799–1.005] |
+| depois da fase 1, B | 3.961 ms [3.567–4.042] | 3.746 ms [3.711–4.294] |
+
+**H1 se sustenta** (6 de 6 voltas com `fsync` ≥ 312 ms contra 6 de 6 sem ≤ 107
+ms; faixas não se cruzam). **H2 morreu a 1 GB:** a espera depois da fase 1 tem
+faixas que se cruzam nos dois cenários (A 967–1.342 contra 799–1.005; B
+3.567–4.042 contra 3.711–4.294), então **não há vencedor** (pedido 155) — o
+ganho de ~100 ms medido a 561 MiB não reaparece. O p99 não distingue (1,1–2,6
+ms contra 1,2–5,9 ms). Resultado honesto: o `fsync` antes da trava **custa**
+picos de ~0,4 s às escritas durante a cópia e **não comprou** nada medível na
+espera da fase 2 neste tamanho e neste disco. Não foi revertido aqui — o
+número do 561 MiB diz o contrário e a decisão de desenho é do papel C —, e
+nenhuma guarda trava a posição da chamada (é desempenho, e teste unitário não
+vê tempo).
+
+**O zip sem espaço, com ENOSPC de verdade** (`bancada/backup/zip-sem-espaco.py`,
+precisa de root): um `tmpfs` de 16 MiB como destino de um banco de 70 MiB.
+Resultado: `modo: retrato_inteiro`, `motivo` «sem espaco para a arvore
+temporaria do zip (16777216 bytes livres)…», zip de 1,7 MB, sem
+`.retrato.part`, e o `restaurar_backup` do zip volta com a mesma contagem de
+registros por tabela; o irmão (tmpfs de 160 MiB) sai `duas_passadas`. **Com a
+conta `livre < tamanho + 10 %` removida** o servidor responde `ERRO_DE_ES: …
+No space left on device (os error 28)` em 41 ms — guarda
+`zip-sem-a-guarda-de-espaco-da-arvore-temporaria`, PROVADA.
+(`conferir_backup` não lê zip: o zip se confere restaurando.)
+
+**O que fica:** a leitura máxima (~190–375 ms nos dois binários a 561 MiB;
+até 1.563 ms numa volta a 1 GB, também na fase 1) não é do backup — é a mesma
+com e sem ele — e fica como número, não como causa; o zip monta o arquivo em
+RAM como antes; **Windows não foi provado** e não pode ser provado aqui
+(`mtime` do NTFS por caminho, resolução e regra do «racily clean» no NTFS,
+contrato §513.7): é limite nomeado, e a bancada acima só roda onde há
+`mount` de tmpfs (Linux, root).
 ## 17. O mapa das threads — semáforo e teto (16/09/2026, pedido 248)
 
 Pedido do dono, literal: *«Multi threads devem ter um controle altamente

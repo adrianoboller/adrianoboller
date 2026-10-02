@@ -797,7 +797,10 @@ TETO_TESTE_SEM_MODULO = 0
 # as duas pontas do `?` do CALL). Medido por `--numeros`; piso so sobe com
 # entrada nova, e se outra frente somar entradas no mesmo passo o integrador
 # reconta -- o numero e do catalogo do dia, nao desta frente.
-PISO_DAS_ENTRADAS = 733
+# 733 -> 734 (513 passo 2a, 02/10/2026): a conta de espaco da arvore
+# temporaria do zip (`zip-sem-a-guarda-de-espaco-da-arvore-temporaria`).
+# Medido por `--numeros` neste checkout.
+PISO_DAS_ENTRADAS = 734
 
 # ------------------------------------------------------------- APOSENTADAS
 #

@@ -619,8 +619,27 @@ BANCADAS = [
                          .get("fase_2_ms", {}).get("mediana")),
             "integro": (d.get("duas_passadas", {}).get("cenarios", {}).get("A", {})
                         .get("restaurado_integro")),
+            # A prova em 1 GB (rotulo proprio, com a propria data) e o zip sem
+            # espaco com ENOSPC de verdade (tmpfs): cada um com o seu retrato.
+            "quando_1gb": d.get("duas_passadas_1gb", {}).get("quando"),
+            "mib_1gb": round((d.get("duas_passadas_1gb", {}).get("bytes_em_disco") or 0) / 1048576),
+            "escrita_max_A_1gb": (d.get("duas_passadas_1gb", {}).get("cenarios", {})
+                                  .get("A", {}).get("escrita_max_ms", {}).get("mediana")),
+            "fase_2_B_1gb": (d.get("duas_passadas_1gb", {}).get("cenarios", {}).get("B", {})
+                             .get("fase_2_ms", {}).get("mediana")),
+            "backup_B_1gb": (d.get("duas_passadas_1gb", {}).get("cenarios", {}).get("B", {})
+                             .get("backup_ms", {}).get("mediana")),
+            "zip_sem_espaco": (d.get("zip_sem_espaco", {}).get("passou")),
+            "quando_zip": d.get("zip_sem_espaco", {}).get("quando"),
         },
         "campos": [("mib", "banco", "MiB"),
+                   ("quando_1gb", "prova em 1 GB, medida em", ""),
+                   ("mib_1gb", "banco da prova em 1 GB", "MiB"),
+                   ("escrita_max_A_1gb", "escrita espera (duas passadas, A, 1 GB)", "ms"),
+                   ("fase_2_B_1gb", "fase 2 (B, 1 GB)", "ms"),
+                   ("backup_B_1gb", "backup inteiro (B, 1 GB)", "ms"),
+                   ("zip_sem_espaco", "zip sem espaço (ENOSPC em tmpfs) passou", ""),
+                   ("quando_zip", "zip sem espaço medido em", ""),
                    ("escrita_max_A_passo_1", "escrita espera (passo 1, A)", "ms"),
                    ("escrita_max_A_duas_passadas", "escrita espera (duas passadas, A)", "ms"),
                    ("fase_2_A", "fase 2 (A)", "ms"),
