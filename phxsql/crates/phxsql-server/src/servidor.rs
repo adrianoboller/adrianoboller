@@ -1694,6 +1694,9 @@ pub struct Servidor {
     /// linha no log. Conta criacao, e nao abertura: a cadeia ja criada abre a
     /// cada rodada, e contar a abertura inflaria o numero sem tabela nova.
     ledger_marcado_recebido: AtomicU64,
+    /// Pedido 652: quais pares ja foram avisados de que o Noise sera recusado
+    /// na 0.20. Silencio por par; consultado so em `responder_aperto`.
+    aviso_do_noise: crate::fio_dados::AvisoDoNoise,
     /// Os outros dois ajustes que a tela de configuracao muda A QUENTE.
     ///
     /// O `somente_leitura_vivo` acima serve aos DOIS caminhos que o mudam: a
@@ -2016,6 +2019,7 @@ impl Servidor {
             posicoes_bidi: Mutex::new(posicoes_bidi),
             numeros_bidi: Mutex::new(numeros_bidi),
             ledger_marcado_recebido: AtomicU64::new(0),
+            aviso_do_noise: crate::fio_dados::AvisoDoNoise::default(),
             janela: Janela::nova(&config.recursos),
             sujas: Mutex::new(std::collections::HashSet::new()),
             trava_das_sequencias: Mutex::new(()),
@@ -5861,7 +5865,7 @@ impl Servidor {
             return Ok(());
         }
         let c = &estado.config;
-        let credencial_do_cluster = c.usuario.is_empty() || sessao.login() == c.usuario;
+        let credencial_do_cluster = sessao_e_do_cluster(c, sessao);
         // Primeiro sem rede: IP contra IP. So quando nao bate e que o nome de
         // host da lista e resolvido -- `endereco` aceita nome («host ou IP»),
         // e a propagacao de um cluster configurado por nome chega de um IP;
@@ -12787,10 +12791,40 @@ impl Servidor {
         match feito {
             Ok((transporte, _)) => {
                 *canal = Canal::Cifrado(Box::new(transporte));
+                // Pedido 652 (decisao do dono, 01/10/2026): na 0.19 o Noise
+                // ainda entra, mas quem chega por ele e registrado. E este o
+                // ponto UNICO onde o servidor aceita um aperto Noise; o TLS
+                // decide-se antes, no primeiro byte (`abrir_fio_de_dados`), e
+                // nunca passa por aqui. Noise DENTRO de um TLS ja e o canal
+                // novo, e nao se avisa.
+                if !saida.cifrado() {
+                    self.avisar_que_o_noise_acaba(ip);
+                }
                 true
             }
             Err(_) => false,
         }
+    }
+
+    /// Uma linha de log por PAR que ainda chegou por Noise (a porta e efemera,
+    /// entao o par e o endereco). O iniciador e o no da lista do cluster que
+    /// tem esse endereco, ou `cliente`: no aperto NX quem inicia ainda nao se
+    /// identificou, e o login so existe depois dele.
+    fn avisar_que_o_noise_acaba(&self, ip: &str) {
+        if !self.aviso_do_noise.avisar(ip, crate::agora_ms()) {
+            return;
+        }
+        let iniciador = self
+            .cluster
+            .as_ref()
+            .and_then(|c| {
+                c.lista()
+                    .into_iter()
+                    .find(|n| mesmo_endereco_ip(&n.endereco, ip))
+                    .map(|n| format!("no {}", n.id))
+            })
+            .unwrap_or_else(|| "cliente".to_string());
+        eprintln!("{}", crate::fio_dados::linha_do_noise(ip, &iniciador));
     }
 
     /// O aperto em si: mensagem 1 em Base64 entra, mensagem 2 em Base64 sai.
@@ -31146,13 +31180,31 @@ impl Servidor {
                 self.msg("erro.pulso_de_no_desconhecido", &[("id", &id)]),
             ));
         }
-        let confirmados = crate::quorum::Exigencia::da_lista(p.campo("confirmado"));
+        // Pedido 649: o `id` e declarado pelo cliente e nao amarra a sessao,
+        // entao a confirmacao so vale para a tabela que ESTA sessao passa por
+        // `replica_alcanca` -- o mesmo portao que filtra os lotes entregues.
+        // Sem isto, um `Replicar` so da tabela A fechava o quorum de B sem
+        // nenhuma replica ter gravado B (a durabilidade anunciada, mentira).
+        let confirmados: Vec<crate::quorum::Exigencia> =
+            crate::quorum::Exigencia::da_lista(p.campo("confirmado"))
+                .into_iter()
+                .filter(|c| replica_alcanca(sessao.usuario.as_ref(), &c.database, &c.tabela))
+                .collect();
+        // A ficha do cubo (que tabela as replicas alcancam) so e gravada por
+        // quem entra com a credencial do CLUSTER: o ultimo-a-chegar-vence
+        // deixava um `Replicar` fraco estreitar o alcance e degradar o
+        // servidor. Cluster sem `usuario` declarado = comportamento velho.
+        let ficha = if sessao_e_do_cluster(&estado.config, sessao) {
+            sessao.usuario.as_ref()
+        } else {
+            None
+        };
         // A espera cabe no pulso: a replica tem de voltar a conversar antes
         // de o silencio dela parecer queda.
         let teto = estado.config.pulso_s.saturating_mul(1_000).max(100);
         let esperar =
             Duration::from_millis(p.inteiro_ou("esperar_ms", 0).clamp(0, teto as i64) as u64);
-        let entrega = cubo.aguardar(&id, sessao.usuario.as_ref(), &confirmados, esperar);
+        let entrega = cubo.aguardar(&id, ficha, &confirmados, esperar);
         let cifrado = self.fio_cifrado(sessao);
         let mut lotes = Vec::with_capacity(entrega.lotes.len());
         for l in &entrega.lotes {
@@ -33761,6 +33813,15 @@ enum EscopoDaPosicao<'a> {
 /// tudo, que e o comportamento de sempre.
 fn replica_alcanca(usuario: Option<&Usuario>, database: &str, tabela: &str) -> bool {
     usuario.is_none_or(|u| u.pode_em(database, tabela, Atividade::Replicar))
+}
+
+/// A sessao entrou com a credencial do cluster (`cluster.usuario`)?
+///
+/// Cluster sem usuario declarado = sim (o comportamento de sempre: entra pelo
+/// token). E o MESMO predicado que o crivo do `propagar` usa, escrito uma vez
+/// para o quorum nao ter uma segunda opiniao sobre quem e «o no» (649).
+fn sessao_e_do_cluster(c: &crate::config::Cluster, sessao: &Sessao) -> bool {
+    c.usuario.is_empty() || sessao.login() == c.usuario
 }
 
 /// `(database, tabela qualificada)` de uma tabela tocada, pelo caminho do
@@ -47007,6 +47068,120 @@ mod testes_config_gravar {
             )
             .unwrap();
         assert!(r.booleano_ou("acrescentado", false), "{}", r.escrever());
+    }
+
+    /// Um usuario que so `replicar` nas bases listadas.
+    fn so_replica(login: &str, bases: &[&str]) -> Usuario {
+        let mut u = operador();
+        u.login = login.into();
+        u.bases = bases
+            .iter()
+            .map(|b| {
+                (
+                    b.to_string(),
+                    Permissoes {
+                        replicar: true,
+                        ..Permissoes::default()
+                    },
+                )
+            })
+            .collect();
+        u
+    }
+
+    fn aguardar_como(
+        s: &Servidor,
+        quem: &Usuario,
+        confirmado: &str,
+    ) -> Result<Json> {
+        s.executar(
+            "replicar_aguardar",
+            &pedido(&format!(r#"{{"id":"no2","confirmado":[{confirmado}]}}"#)),
+            &sessao_com(Some(quem.clone()), "127.0.0.1"),
+        )
+    }
+
+    fn exigencia(db: &str, t: &str) -> Vec<crate::quorum::Exigencia> {
+        vec![crate::quorum::Exigencia {
+            database: db.into(),
+            tabela: t.into(),
+            posicao: 5,
+        }]
+    }
+
+    fn servidor_de_quorum(
+        nome: &str,
+        usuario_do_cluster: &str,
+    ) -> (Arc<Servidor>, DirTemp) {
+        let usuario = usuario_do_cluster.to_string();
+        let (s, _, g) = servidor_em_cluster_com(nome, Cadastro::default(), move |c| {
+            let cl = c.cluster.as_mut().unwrap();
+            cl.usuario = usuario;
+            cl.quorum_minimo = 1;
+            cl.quorum_prazo_ms = 100;
+        });
+        assert_eq!(
+            s.cluster.as_ref().unwrap().papel(),
+            crate::cluster::PapelVivo::Master
+        );
+        (s, g)
+    }
+
+    const A_5: &str = r#"{"database":"A","tabela":"t","posicao":5}"#;
+    const B_5: &str = r#"{"database":"B","tabela":"t","posicao":5}"#;
+
+    /// **Pedido 649: o ack do quorum so vale para a tabela que a SESSAO
+    /// alcanca, e a ficha do cluster so e gravada por quem e do cluster.**
+    ///
+    /// Cenario A: um `Replicar` so da base A confirma B (que nenhuma replica
+    /// gravou) e o quorum de B nao pode fechar. Cenario B: a ficha do cluster
+    /// (alcance de todas as replicas) nao e sobrescrita por ele.
+    ///
+    /// # O vermelho
+    ///
+    /// Sem o filtro `replica_alcanca` nos confirmados, o `esperar` de B
+    /// alcanca; sem `sessao_e_do_cluster`, a ficha vira a do `fraco`.
+    #[test]
+    fn replicar_de_outra_credencial_nao_forja_o_ack_nem_a_ficha() {
+        let (s, _g) = servidor_de_quorum("ack649", "clu");
+        let cubo = s.quorum.clone().expect("cubo");
+        let clu = so_replica("clu", &["*"]);
+        let fraco = so_replica("fraco", &["A"]);
+        aguardar_como(&s, &clu, "").unwrap();
+        assert_eq!(cubo.ficha().unwrap().login, "clu");
+
+        aguardar_como(&s, &fraco, &format!("{A_5},{B_5}")).unwrap();
+        assert_eq!(
+            cubo.ficha().unwrap().login,
+            "clu",
+            "a ficha do cluster foi sobrescrita por outra credencial"
+        );
+        let b = cubo.esperar(vec![], &exigencia("B", "t"));
+        assert!(!b.alcancado, "o ack forjado de B fechou o quorum: {b:?}");
+        // O que ele de fato alcanca continua contando: nao e um portao que
+        // recusaria tudo.
+        let a = cubo.esperar(vec![], &exigencia("A", "t"));
+        assert!(a.alcancado, "o ack legitimo de A nao contou: {a:?}");
+    }
+
+    /// O comportamento VELHO (cluster de um usuario so, ou sem usuario): a
+    /// credencial do cluster confirma qualquer tabela que alcanca e grava a
+    /// ficha. O portao do 649 nao pode recusar o cluster que ja rodava.
+    #[test]
+    fn cluster_de_um_usuario_so_confirma_e_grava_a_ficha_como_antes() {
+        let (s, _g) = servidor_de_quorum("ack649-velho", "clu");
+        let cubo = s.quorum.clone().expect("cubo");
+        aguardar_como(&s, &so_replica("clu", &["*"]), &format!("{A_5},{B_5}")).unwrap();
+        assert_eq!(cubo.ficha().unwrap().login, "clu");
+        assert!(cubo.esperar(vec![], &exigencia("B", "t")).alcancado);
+
+        // Sem `cluster.usuario`: qualquer sessao com ficha a grava, como
+        // sempre foi.
+        let (s, _g) = servidor_de_quorum("ack649-sem-usuario", "");
+        let cubo = s.quorum.clone().expect("cubo");
+        aguardar_como(&s, &so_replica("qualquer", &["*"]), B_5).unwrap();
+        assert_eq!(cubo.ficha().unwrap().login, "qualquer");
+        assert!(cubo.esperar(vec![], &exigencia("B", "t")).alcancado);
     }
 
     /// A lista aceita NOME de host («host ou IP»), e a propagacao de um
