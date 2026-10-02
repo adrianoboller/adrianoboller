@@ -339,14 +339,63 @@ driver_nao_sabe_mandar`, em `lib.rs`) teve a linha do `SQL_C_WCHAR`
 INVERTIDA — e o proprio teste do defeito reposto: reintroduzir a recusa
 antiga faz essa linha cair.
 
+### 2.1.2. A sonda viva do pedido 238 (02/10/2026)
+
+`bancada/odbc/sonda-viva.py` fecha o que o unitario nao prova: conexao de
+verdade, **pelo gerenciador de driver real** (unixODBC 2.3.12,
+`libodbc.so.2`) e um `phxsqld` real pelo soquete. O texto (`Sao Joao` com
+acento mais um emoji, fora do BMP) vai e volta em UTF-16; o parametro de saida
+roda por `{call p(?, ?)}` com `OUT` inteiro, `OUT` em `SQL_C_WCHAR` e `INOUT`.
+Cada caso repete N vezes e grava `bancada/odbc/resultados.json` com N, data e a
+faixa min-max (nunca so a media). Requisitos: `unixodbc-dev` e `pyodbc`
+(`pip3 install pyodbc`); a sonda diz isso e para, em vez de pular calada.
+
+**Hipoteses escritas antes de medir**, e o que sobreviveu:
+
+| Hipotese | Veredito |
+|---|---|
+| H1 o gerenciador recusa/reescreve o `SQL_C_WCHAR` num driver so-ANSI | **morta**: ele repassa o tipo C intacto; o texto de 20 de 20 voltou identico |
+| H2 o nosso driver tem defeito de borda que o unitario nao via | **viva, tres vezes** (abaixo) |
+| H3 o servidor nao aceita o `?` do `CALL`, e o `OUT` nunca funcionou ponta a ponta | **viva**: o unitario do driver e o do servidor passavam e nenhum encontrava o outro |
+| H4 faltava `SQLGetFunctions` e o gerenciador escondia o diagnostico | **morta**: exportado, nada mudou. A causa era outra (abaixo) |
+
+**Os defeitos que so a conexao real achou** (cada um com guarda no
+`bancada/guardas/catalogo.py`, provada com o defeito reposto):
+
+1. **Todo erro do driver chegava sem SQLSTATE nem texto.** O unixODBC so
+   extrai o diagnostico de um driver ODBC 3 se ele exporta `SQLGetDiagField`
+   **e** `SQLGetDiagRec` (`CHECK_SQLGETDIAGFIELD && CHECK_SQLGETDIAGREC`, no
+   fonte `DriverManager/SQLExecDirect.c` da 2.3.12). O driver so exportava o
+   segundo: o aplicativo lia «Driver returned SQL_ERROR ... but no error
+   reporting API found» e o `SQLGetDiagRec` do driver **nem era chamado**
+   (medido com um `eprintln!` dentro dele). A prova de ABI nao via: carrega a
+   `.so` e chama as funcoes dela direto, sem gerenciador. Agora existe
+   `SQLGetDiagField` (estado, texto, quantidade, origem) e o erro chega:
+   `42S02 ... a tabela tabela_que_nao_existe nao existe`.
+2. **`DELETE FROM t` anunciava as colunas da tabela.** Comando sem grade traz
+   so `afetadas`, mas o driver montava as colunas pelo esquema do `FROM`: 4
+   colunas onde ODBC espera zero. `resultado::sem_grade` decide, e **antes** de
+   perguntar o esquema ao servidor (o portao vem antes do trabalho).
+3. **`SQLColAttribute(SQL_DESC_UNSIGNED)` recusava `HYC00`.** O pyodbc pergunta
+   isso de toda coluna logo depois de executar; a recusa virava excecao ate no
+   `DELETE`. Passam tambem `SQL_DESC_PRECISION` e `SQL_DESC_SCALE`.
+4. **O `OUT` nunca funcionou de ponta a ponta (H3).** O driver ligava o buffer
+   e sabia escrever o `saida`; o servidor tratava `CALL` **antes** de resolver
+   `parametros` e o `?` morria no analisador de argumentos («esperava um valor
+   e veio ?»). `rotina::comando_com` resolve o `?` do `CALL` no **lexico** (nunca
+   por substituicao de texto) e so ali: `CREATE`/`DROP`/`SHOW` seguem como eram, e
+   o `?` sem `parametros` continua recusado — o teste do comportamento velho.
+
+`SQLGetFunctions` entrou assim mesmo (a conformidade Core a manda), com a lista
+`FUNCOES_EXPORTADAS` que tem de acompanhar os `#[no_mangle]`.
 ### O limite honesto de hoje
 
-**A op `sql` do servidor ainda nao le `parametros`**, e o lexico dele recusa o
-caractere `?` — medido em 08/09/2026 em
-`crates/phxsql-server/src/servidor.rs:11795` (`op_sql` le so `texto`/`sql`).
-Entao um `WHERE id = ?` volta com erro de sintaxe *do servidor*, e nao com a
-linha. O lado do driver esta pronto e provado; o outro lado e a frente
-F-CONSULTA do `docs/propostas/comparativo-19.md`.
+**Atualizado em 02/10/2026 (pedido 238): esta secao envelheceu.** Em 08/09/2026
+a op `sql` nao lia `parametros` e o lexico recusava o `?`. Hoje le: a sonda viva
+(secao 2.1.2) faz `SELECT nome FROM clientes WHERE id = ?` e
+`INSERT ... VALUES (?, ?)` por pyodbc, pelo unixODBC real, 20 de 20, e o `CALL`
+com `?` passou a resolver. O que **continua** fora e o valor de retorno
+`{? = call ...}` (procedimento do PhxSql so tem `OUT`/`INOUT`).
 
 O passo 7c da prova de ABI e uma **sonda viva**: ele confere sempre o que nao
 depende do servidor e TENTA a volta, e enquanto ela nao vier a linha sai como

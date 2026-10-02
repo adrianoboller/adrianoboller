@@ -773,7 +773,29 @@ pub enum Comando {
 /// para a camada SELECT de sempre. Os verbos vizinhos que NAO cabem recusam
 /// com o caminho certo, em vez de "sintaxe invalida".
 pub fn comando(texto: &str) -> Result<Option<Comando>> {
-    let simbolos = lexico::analisar(texto)?;
+    comando_com(texto, &[])
+}
+
+/// O mesmo reconhecimento, com os `parametros` da op `sql` (o `?` do ODBC).
+///
+/// So o `CALL` os resolve -- e e deles que o parametro de SAIDA do ODBC
+/// precisa: `{call p(?, ?)}` chega como `CALL p(?, ?)` e, sem isto, o `?`
+/// parava no analisador de argumentos («esperava um valor e veio ?»). Achado
+/// pela sonda viva do pedido 238: o driver ligava o `OUT` e o servidor nunca
+/// via o `?` do `CALL`. O `CREATE`/`DROP`/`SHOW` seguem como sempre: o corpo de
+/// um procedimento e texto verbatim e nao tem `?` a resolver, e os
+/// literais entram no LEXICO (como em `analisar_comando_com`), nunca por
+/// substituicao de texto.
+pub fn comando_com(texto: &str, parametros: &[Json]) -> Result<Option<Comando>> {
+    let mut simbolos = lexico::analisar(texto)?;
+    let e_call = simbolos
+        .first()
+        .and_then(|s| s.token.palavra_chave())
+        .as_deref()
+        == Some("CALL");
+    if e_call && !parametros.is_empty() {
+        simbolos = lexico::resolver_parametros(simbolos, parametros)?;
+    }
     let Some(primeiro) = simbolos.first() else {
         return Ok(None);
     };
@@ -2804,6 +2826,43 @@ mod testes {
             Valor::Numero(Numero::de_texto("-2.5").unwrap())
         );
         assert_eq!(argumentos[3], Valor::Nulo);
+    }
+
+    /// O `?` do ODBC num `CALL` (pedido 238, sonda viva): `{call p(?, ?)}` chega
+    /// como `CALL p(?, ?)` com `parametros`, e o `?` vira o literal da posicao
+    /// no lexico. O `OUT` puro manda NULL.
+    #[test]
+    fn call_resolve_o_interrogacao_do_odbc() {
+        let params = [Json::de_u64(21), Json::Nulo];
+        let c = comando_com("CALL dobro(?, ?)", &params).unwrap().unwrap();
+        let Comando::Chamar { nome, argumentos } = c else {
+            panic!("esperava CALL")
+        };
+        assert_eq!(nome, "dobro");
+        assert_eq!(argumentos.len(), 2);
+        assert_eq!(
+            argumentos[0],
+            Valor::Numero(Numero::de_texto("21").unwrap())
+        );
+        assert_eq!(argumentos[1], Valor::Nulo);
+    }
+
+    /// O comportamento VELHO, par do de cima: sem `parametros` o `?` do `CALL`
+    /// continua recusado como sempre -- guarda nova entra pedida, nao imposta.
+    #[test]
+    fn call_com_interrogacao_e_sem_parametros_continua_recusado() {
+        assert!(comando("CALL dobro(?, ?)").is_err());
+        assert!(comando_com("CALL dobro(?, ?)", &[]).is_err());
+    }
+
+    /// So o `CALL` resolve: o corpo de um `CREATE PROCEDURE` e texto verbatim,
+    /// e `parametros` mandados junto nao o mexem.
+    #[test]
+    fn create_procedure_ignora_parametros() {
+        let params = [Json::de_u64(1)];
+        let a = comando_com("CREATE PROCEDURE p(OUT y INT) SET y = 1", &[]).unwrap();
+        let b = comando_com("CREATE PROCEDURE p(OUT y INT) SET y = 1", &params).unwrap();
+        assert_eq!(a, b);
     }
 
     #[test]

@@ -23616,4 +23616,118 @@ fn anotar(""",
         "caem": ["a_arvore_sincroniza_a_mae_de_cada_pasta_que_criou"],
         "seguem": ["o_zip_sincroniza_o_diretorio_depois_do_rename"],
     },
+    {
+        "id": "odbc-dml-anuncia-colunas-do-esquema",
+        "titulo": "um DELETE pelo driver ODBC anunciava as colunas do esquema da tabela citada",
+        "porque": (
+            "pedido 238, sonda viva (02/10/2026): `DELETE FROM clientes` "
+            "respondia `afetadas` e o driver montava a grade pelo esquema da "
+            "tabela do FROM -- 4 colunas onde ODBC espera zero. O pyodbc, vendo "
+            "colunas, pedia atributos de um resultado que nao existe e a "
+            "execucao falhava. O portao e `sem_grade`: sem ele o driver ainda "
+            "gastava uma ida ao servidor para tipar colunas inexistentes."
+        ),
+        "arquivo": "crates/phxsql-odbc/src/resultado.rs",
+        "trecho": """    resposta.campo("afetadas").is_some()
+        && resposta.campo("linhas").is_none()
+""",
+        "troca": """    false
+        && resposta.campo("linhas").is_none()
+""",
+        "pacote": "phxsql-odbc",
+        "alvo": ["--lib"],
+        "caem": [
+            "resultado::testes::comando_sem_grade_nao_ganha_as_colunas_do_esquema",
+            "testes::delete_nao_anuncia_colunas_nem_pergunta_o_esquema",
+        ],
+        "seguem": ["resultado::testes::contagem_vira_grade_de_uma_celula"],
+    },
+    {
+        "id": "odbc-colattribute-recusa-unsigned",
+        "titulo": "`SQLColAttribute(SQL_DESC_UNSIGNED)` recusava com HYC00 e derrubava o primeiro SELECT do pyodbc",
+        "porque": (
+            "pedido 238, sonda viva: o pyodbc pergunta `SQL_DESC_UNSIGNED` de "
+            "toda coluna logo depois de executar; a resposta `HYC00` do driver "
+            "virava excecao em qualquer consulta. Ler o codigo nao mostrava: "
+            "o atributo e raro numa prova de ABI escrita por quem conhece o "
+            "driver, e comum num cliente escrito por quem nao o conhece."
+        ),
+        "arquivo": "crates/phxsql-odbc/src/lib.rs",
+        "trecho": """                SQL_DESC_UNSIGNED => {
+                    escrever_num(numero_saida, 0);
+                    SQL_SUCCESS
+                }
+""",
+        "troca": """                // DEFEITO REPOSTO (238): UNSIGNED cai no `outro` e recusa.
+""",
+        "pacote": "phxsql-odbc",
+        "alvo": ["--lib"],
+        "caem": ["testes::colattribute_responde_sem_sinal_precisao_e_escala"],
+        "seguem": ["testes::getfunctions_anuncia_o_par_de_diagnostico"],
+    },
+    {
+        "id": "odbc-getfunctions-esconde-o-par-de-diagnostico",
+        "titulo": "o driver ODBC deixava de anunciar `SQLGetDiagField` na lista de funcoes",
+        "porque": (
+            "pedido 238, sonda viva: o unixODBC so extrai erro de driver ODBC "
+            "3 se ele exporta `SQLGetDiagField` E `SQLGetDiagRec` "
+            "(`CHECK_SQLGETDIAGFIELD && CHECK_SQLGETDIAGREC`). Faltando o "
+            "primeiro, todo erro chegava ao aplicativo como «no error "
+            "reporting API found», sem SQLSTATE nem texto, e o "
+            "`SQLGetDiagRec` nunca era chamado. A prova de ABI nao via: chama "
+            "o driver direto. Esta guarda cobre a LISTA; que a funcao exista "
+            "e entregue o conteudo e do teste `getdiagfield_*` (remove-la "
+            "quebra a compilacao do proprio teste)."
+        ),
+        "arquivo": "crates/phxsql-odbc/src/lib.rs",
+        "trecho": """    1010, // SQLGetDiagField
+""",
+        "troca": """    // DEFEITO REPOSTO (238): o par de diagnostico nao e anunciado.
+""",
+        "pacote": "phxsql-odbc",
+        "alvo": ["--lib"],
+        "caem": ["testes::getfunctions_anuncia_o_par_de_diagnostico"],
+        "seguem": ["testes::getdiagfield_entrega_estado_texto_e_quantidade"],
+    },
+    {
+        "id": "sql-call-nao-resolve-interrogacao-do-odbc",
+        "titulo": "o `CALL` da op `sql` recusava o `?` do ODBC, e o parametro de SAIDA nunca funcionou ponta a ponta",
+        "porque": (
+            "pedido 238, sonda viva: o driver ligava `SQL_PARAM_OUTPUT` e "
+            "escrevia o `saida` no buffer -- provado em unitario --, mas o "
+            "servidor tratava `CALL` ANTES de resolver `parametros` e o `?` "
+            "parava no analisador de argumentos («esperava um valor e veio "
+            "?»). Os dois lados tinham teste e nenhum encontrava o outro. O "
+            "`?` entra no LEXICO (`resolver_parametros`), nunca por "
+            "substituicao de texto, e so no `CALL`."
+        ),
+        "arquivo": "crates/phxsql-sql/src/rotina.rs",
+        "trecho": """    if e_call && !parametros.is_empty() {""",
+        "troca": """    if false && e_call && !parametros.is_empty() {""",
+        "pacote": "phxsql-sql",
+        "alvo": ["--lib"],
+        "caem": ["rotina::testes::call_resolve_o_interrogacao_do_odbc"],
+        "seguem": [
+            "rotina::testes::call_com_interrogacao_e_sem_parametros_continua_recusado",
+            "rotina::testes::create_procedure_ignora_parametros",
+        ],
+    },
+    {
+        "id": "servidor-call-nao-passa-parametros-a-rotina",
+        "titulo": "a op `sql` chamava a rotina SEM os `parametros` do pedido",
+        "porque": (
+            "pedido 238, o irmao da guarda de cima: `rotina::comando_com` "
+            "resolve o `?`, mas quem o alimenta e o `op_sql`. Chamar "
+            "`comando_com(&texto, &[])` compila, passa a suite do `phxsql-sql` "
+            "inteira e devolve o erro «veio ?» a todo cliente ODBC. So o "
+            "teste que despacha o pedido pela op ve."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """phxsql_sql::rotina::comando_com(&texto, &parametros)?""",
+        "troca": """phxsql_sql::rotina::comando_com(&texto, &[])?""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": ["servidor::testes_gatilhos::call_com_interrogacao_do_odbc_devolve_a_saida"],
+        "seguem": ["servidor::testes_gatilhos::procedimento_com_in_out_e_while"],
+    },
 ]

@@ -129,4 +129,7 @@ pub const SQL_DESC_DISPLAY_SIZE: SqlUSmallint = 6;
 pub const SQL_DESC_TYPE: SqlUSmallint = 1002;
 pub const SQL_DESC_LENGTH: SqlUSmallint = 1003;
 pub const SQL_DESC_NULLABLE: SqlUSmallint = 1008;
+pub const SQL_DESC_UNSIGNED: SqlUSmallint = 8;
+pub const SQL_DESC_PRECISION: SqlUSmallint = 1005;
+pub const SQL_DESC_SCALE: SqlUSmallint = 1006;
 pub const SQL_DESC_NAME: SqlUSmallint = 1011;

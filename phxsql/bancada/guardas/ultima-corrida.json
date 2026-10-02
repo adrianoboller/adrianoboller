@@ -4434,6 +4434,46 @@
       "quando": "2026-10-02 02:48"
     },
     {
+      "id": "odbc-dml-anuncia-colunas-do-esquema",
+      "titulo": "um DELETE pelo driver ODBC anunciava as colunas do esquema da tabela citada",
+      "veredito": "PROVADA",
+      "segundos": 8.09,
+      "notas": [],
+      "quando": "2026-10-02 03:42"
+    },
+    {
+      "id": "odbc-colattribute-recusa-unsigned",
+      "titulo": "`SQLColAttribute(SQL_DESC_UNSIGNED)` recusava com HYC00 e derrubava o primeiro SELECT do pyodbc",
+      "veredito": "PROVADA",
+      "segundos": 8.1,
+      "notas": [],
+      "quando": "2026-10-02 03:42"
+    },
+    {
+      "id": "odbc-getfunctions-esconde-o-par-de-diagnostico",
+      "titulo": "o driver ODBC deixava de anunciar `SQLGetDiagField` na lista de funcoes",
+      "veredito": "PROVADA",
+      "segundos": 7.96,
+      "notas": [],
+      "quando": "2026-10-02 03:42"
+    },
+    {
+      "id": "sql-call-nao-resolve-interrogacao-do-odbc",
+      "titulo": "o `CALL` da op `sql` recusava o `?` do ODBC, e o parametro de SAIDA nunca funcionou ponta a ponta",
+      "veredito": "PROVADA",
+      "segundos": 4.86,
+      "notas": [],
+      "quando": "2026-10-02 03:42"
+    },
+    {
+      "id": "servidor-call-nao-passa-parametros-a-rotina",
+      "titulo": "a op `sql` chamava a rotina SEM os `parametros` do pedido",
+      "veredito": "PROVADA",
+      "segundos": 70.4,
+      "notas": [],
+      "quando": "2026-10-02 03:42"
+    },
+    {
       "id": "alter-com-regra-sem-aviso",
       "titulo": "`acrescentar_coluna` com `check` ou `calculada` numa tabela com linha é aceito SEM AVISO, e a linha velha fica fora da regra",
       "veredito": "PROVADA",

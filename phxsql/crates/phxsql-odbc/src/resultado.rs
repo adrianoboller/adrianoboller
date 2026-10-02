@@ -229,9 +229,29 @@ pub fn celula_texto(v: &Json) -> Option<String> {
     }
 }
 
+/// A resposta e de um comando que NAO devolve grade (`DELETE`, `UPDATE`,
+/// `INSERT`...): traz `afetadas` e nem `linhas` nem `colunas`. ODBC distingue
+/// pelo numero de colunas -- zero quer dizer «nao ha o que buscar» --, e o
+/// driver nao pode inventar colunas a partir do esquema da tabela citada:
+/// o `DELETE FROM clientes` chegou a anunciar 4 colunas, e um cliente real
+/// (pyodbc) entao pedia atributos de coluna de um resultado que nao existe.
+/// Achado pela sonda viva do pedido 238.
+pub fn sem_grade(resposta: &Json) -> bool {
+    resposta.campo("afetadas").is_some()
+        && resposta.campo("linhas").is_none()
+        && resposta.campo("colunas").is_none()
+        && resposta.campo("contagem").is_none()
+}
+
 /// Monta o conjunto de resultados a partir da resposta da op `sql` e das
 /// fichas do esquema (que podem faltar -- ai todo rotulo vira texto).
 pub fn montar(resposta: &Json, fichas: &[Ficha]) -> Resultado {
+    if sem_grade(resposta) {
+        return Resultado {
+            colunas: Vec::new(),
+            linhas: Vec::new(),
+        };
+    }
     let ficha_de = |nome: &str| {
         fichas
             .iter()
@@ -415,6 +435,25 @@ mod testes {
         let nomes: Vec<&str> = r.colunas.iter().map(|c| c.nome.as_str()).collect();
         assert_eq!(nomes, ["id", "nome"]);
         assert_eq!(r.linhas[0], vec![Some("1".into()), Some("Ana".into())]);
+    }
+
+    /// `DELETE FROM clientes` traz so `afetadas`: comando sem grade tem ZERO
+    /// colunas, mesmo com o esquema da tabela a mao (a sonda viva do pedido 238
+    /// viu o driver anunciar as 4 colunas de um DELETE).
+    #[test]
+    fn comando_sem_grade_nao_ganha_as_colunas_do_esquema() {
+        let esquema = Json::analisar(
+            r#"{"colunas":[{"nome":"id","tipo":"Int4","tamanho":4,"nullable":false,"sistema":false}]}"#,
+        )
+        .unwrap();
+        let fichas = fichas_do_esquema(&esquema);
+        let delete = Json::analisar(r#"{"afetadas":1}"#).unwrap();
+        assert!(sem_grade(&delete));
+        assert!(montar(&delete, &fichas).colunas.is_empty());
+        // O par: um SELECT que voltou VAZIO (sem `afetadas`) segue com colunas.
+        let vazio = Json::analisar(r#"{"linhas":[]}"#).unwrap();
+        assert!(!sem_grade(&vazio));
+        assert_eq!(montar(&vazio, &fichas).colunas.len(), 1);
     }
 
     #[test]
