@@ -4418,6 +4418,22 @@
       "quando": "2026-10-02 02:03"
     },
     {
+      "id": "zip-pasta-nova-sem-fsync-da-mae",
+      "titulo": "o backup em ZIP responde «concluido» sem o `fsync` da mae de cada pasta que criou",
+      "veredito": "PROVADA",
+      "segundos": 5.73,
+      "notas": [],
+      "quando": "2026-10-02 02:48"
+    },
+    {
+      "id": "arvore-pasta-nova-sem-fsync-da-mae",
+      "titulo": "o backup em arvore responde «concluido» sem o `fsync` da mae de cada pasta que criou",
+      "veredito": "PROVADA",
+      "segundos": 5.68,
+      "notas": [],
+      "quando": "2026-10-02 02:48"
+    },
+    {
       "id": "alter-com-regra-sem-aviso",
       "titulo": "`acrescentar_coluna` com `check` ou `calculada` numa tabela com linha é aceito SEM AVISO, e a linha velha fica fora da regra",
       "veredito": "PROVADA",

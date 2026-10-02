@@ -790,7 +790,9 @@ TETO_TESTE_MORTO = 0
 TETO_TRECHO_AMBIGUO = 0
 TETO_TESTE_FORA_DO_BINARIO = 0
 TETO_TESTE_SEM_MODULO = 0
-PISO_DAS_ENTRADAS = 726
+# 726 -> 728 (524, 02/10/2026): as duas guardas do `fsync` da mae das pastas
+# novas do backup (zip e arvore). Piso so sobe com entrada nova.
+PISO_DAS_ENTRADAS = 728
 
 # ------------------------------------------------------------- APOSENTADAS
 #

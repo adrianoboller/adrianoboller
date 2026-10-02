@@ -1040,6 +1040,18 @@ pub fn finalizar_zip(zip: &ZipParcial) -> Result<()> {
         descartar_pastas(&zip.pastas);
         return Err(e);
     }
+    // Pedido 524: a entrada de cada pasta que a corrida CRIOU mora na mae
+    // dela, e o `fsync` da pasta do zip (no `rename`) nao a alcanca -- uma
+    // queda levava a cadeia inteira, com o zip dentro, depois do «concluido».
+    // O mesmo ajudante da arvore ([`sincronizar_pasta`], no descritor da mae
+    // que a corrida abriu), fora da trava. Depois do `rename`: o zip final ja
+    // existe e uma recusa aqui tira so o aviso de «concluido», nao o dado.
+    for nascida in &zip.pastas {
+        if let Err(e) = sincronizar_pasta(nascida.mae()) {
+            descartar_pastas(&zip.pastas);
+            return Err(e);
+        }
+    }
     if let (Some(pasta), Ok(nosso)) = (alvo.parent(), std::fs::symlink_metadata(alvo)) {
         limpar_parciais_orfaos(pasta, &nosso);
     }
