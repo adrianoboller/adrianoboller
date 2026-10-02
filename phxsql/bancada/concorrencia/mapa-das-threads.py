@@ -255,10 +255,14 @@ CATALOGO = [
         "agulha": '"sonda-disco"',
         "nome": "sonda-disco",
         "teto": "1 (sobe uma vez no arranque, com `alertas.disco.ligado` ou "
-                "`alertas.email.ligado`; pedido 249). E a sonda E o carteiro: "
+                "`alertas.email.ligado` ou `alertas.gancho.ligado`; pedido 249). "
+                "E a sonda E o carteiro: "
                 "quem registra um evento so entrega a fila (`SaudeDoDisco::"
                 "entregar`, sem rede, porque pode estar com a trava de dados na "
-                "mao), e esta thread acorda por `Condvar` e fala com o rele. O "
+                "mao), e esta thread acorda por `Condvar` e fala com o rele -- "
+                "e, desde 02/10/2026, executa o gancho do operador NELA (a "
+                "vigia do prazo e o `try_wait` desta thread, sem thread nova: "
+                "o teto continua 1). O "
                 "teto mora no `if` de `ligar_sonda_de_disco`, que roda uma vez "
                 "no `servir`.",
     },

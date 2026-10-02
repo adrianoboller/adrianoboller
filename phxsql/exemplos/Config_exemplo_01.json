@@ -180,6 +180,12 @@
       "ligado": false,
       "numeros": ["+5541999990000"],
       "gateway_email": "sms.operadora.com.br"
+    },
+    "gancho": {
+      "_nota": "Programa SEU, chamado a cada aviso de saude do disco (argv, sem shell). O canal SMS em si e do operador; o segredo do gateway fica no script. So se edita neste arquivo.",
+      "ligado": false,
+      "comando": ["/opt/phxsql/avisar-sms.sh"],
+      "timeout_s": 10
     }
   },
 

@@ -815,7 +815,14 @@ TETO_TESTE_SEM_MODULO = 0
 # 747 -> 748 (floco do 630, 02/10/2026): `escrita-local-contada-depois-da-
 # escrita-630`, medido por `--numeros` (748) na arvore desta frente; se a frente
 # do 268 entrar antes, o integrador reconta.
-PISO_DAS_ENTRADAS = 748
+# 748 -> 758 (249, 02/10/2026; no merge, 748 + 10): as dez guardas `gancho-*` do gancho externo do
+# operador (nunca chamado, sem o portao `ligado`, via shell, ambiente herdado,
+# sem kill no prazo, kill sem wait/zumbi, saida do filho vazando, campo
+# editavel pela API, config sem validar no arranque, config nao lida). Medido
+# por `--numeros` (758) na arvore do merge; as dez + a `disco-silencio-furado`
+# estendida foram provadas uma a uma (`--so <id> --json`), todas PROVADA. Se
+# outra frente somar entradas no mesmo passo o integrador reconta.
+PISO_DAS_ENTRADAS = 758
 
 # ------------------------------------------------------------- APOSENTADAS
 #

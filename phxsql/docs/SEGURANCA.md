@@ -349,6 +349,55 @@ fica só o que é segurança, revisto com o chapéu trocado em 16/09/2026:
    arroba, sem espaço e sem quebra de linha — o mesmo crivo de injeção de
    cabeçalho que `email.rs` já aplica ao `de` e ao `para`.
 
+### O gancho do operador: um programa que o servidor executa para avisar (pedido 249, 02/10/2026)
+
+Aqui o servidor passa a **executar um programa** por conta de um evento de
+disco. Precedente a dizer: a regra de firewall (§5) já executa um argv do
+`config.json` (`blacklist.rs`), mas reage a um IP e roda com `.output()` — sem
+prazo e com o ambiente herdado; o gancho é o primeiro com `env_clear`, prazo
+duro e saída descartada. Lente e o que cada decisão fecha (provas e guardas
+`gancho-*`):
+
+1. **Sem shell, sem substituição.** `comando` é um vetor `argv` entregue ao
+   `execve`; não existe `sh -c`, nem `%`, `{}`, `$`. Um argumento com `;` ou
+   `$()` chega literal (teste imprime cada argumento).
+2. **Só pelo arquivo.** Nenhum campo de `alertas.gancho` está em
+   `CAMPOS_EDITAVEIS`: com ele, `administrar` pela API (ou `ALTER SERVER SET`)
+   viraria execução de código no servidor. O teste tenta o campo, a seção
+   inteira e o `ALTER`, e o arquivo sai igual.
+3. **O programa é validado no arranque**: caminho absoluto (o `PATH` de quem
+   subiu o servidor não vale), existente, arquivo comum, executável e **não
+   gravável por «outros»** — programa que qualquer conta da máquina reescreve
+   é execução de código oferecida a essa conta. Elemento do `comando` que não
+   é texto é recusado, não descartado (descartar deslocaria os argumentos).
+4. **Ambiente limpo.** `env_clear` + `PATH` fixo + três variáveis do evento.
+   A senha do relé, o token e a chave do fio moram no ambiente do servidor e
+   não atravessam (teste: nenhuma `CARGO_*` chega ao filho).
+5. **O que entra é pouco**: tipo, origem (só `[A-Za-z0-9._-]`, até 64 — vem
+   de fora do módulo e variável com quebra de linha é o que um script
+   desatento interpola) e hora; no stdin, a linha de ≤160 caracteres do SMS,
+   sem caminho. **Nunca o pedido.**
+6. **O que sai é descartado.** stdout e stderr do filho vão para `/dev/null`,
+   e não são capturados nem truncados: texto de programa externo no log ou no
+   painel seria o caminho do segredo do gateway (um `curl -v`) até o
+   `acessos.log`. O que não se captura não vaza, e a garantia não depende de
+   um crivo. Provado em **outro processo**, lendo o stderr do servidor.
+7. **Prazo duro e sem zumbi.** `try_wait` até `timeout_s` (teto 120), depois
+   `kill` e `wait`; prova contra o SO (`/proc/<pid>` some). Sem thread nova:
+   a vigia é a thread do carteiro. Uma execução em voo; a segunda é
+   descartada.
+8. **O erro do gancho não carrega saída**: «saiu com código N», «foi morto
+   por prazo», «não foi possível iniciar (tipo do erro)» — sem o caminho do
+   programa. Vai ao log e a `avisos.ultima_falha`.
+9. **A tela e a op `config` mostram o programa e a quantidade de argumentos,
+   nunca os argumentos**; o `Debug` da `Config` idem.
+
+**Risco residual, dito:** o `kill` alcança o filho direto, não os netos (a
+`std` não tem `killpg`; `unsafe`/FFI não entra). **Quem escreve o
+`config.json` já executa código como o servidor** (pode trocar o `comando`),
+o que é a mesma fronteira de confiança do arquivo desde sempre — por isso o
+campo não sai dele. O segredo do gateway fica no script do operador.
+
 ---
 
 ## 4. `blacklist.json`

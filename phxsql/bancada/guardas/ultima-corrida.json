@@ -1121,9 +1121,9 @@
       "id": "disco-silencio-furado",
       "titulo": "todo erro de E/S manda um aviso: cem mil linhas, cem mil e-mails",
       "veredito": "PROVADA",
-      "segundos": 33.47,
+      "segundos": 72.53,
       "notas": [],
-      "quando": "2026-09-16 15:25"
+      "quando": "2026-10-02 06:32"
     },
     {
       "id": "disco-config-nao-lida",
@@ -4592,6 +4592,86 @@
       "segundos": 70.33,
       "notas": [],
       "quando": "2026-10-02 05:52"
+    },
+    {
+      "id": "gancho-nunca-chamado",
+      "titulo": "o carteiro da saúde não chama o gancho do operador",
+      "veredito": "PROVADA",
+      "segundos": 90.4,
+      "notas": [],
+      "quando": "2026-10-02 06:32"
+    },
+    {
+      "id": "gancho-sem-portao-ligado",
+      "titulo": "o gancho executa mesmo com `alertas.gancho.ligado` falso",
+      "veredito": "PROVADA",
+      "segundos": 79.39,
+      "notas": [],
+      "quando": "2026-10-02 06:32"
+    },
+    {
+      "id": "gancho-por-shell",
+      "titulo": "o comando do gancho passa por `sh -c`: `;` e `$()` viram execução",
+      "veredito": "PROVADA",
+      "segundos": 80.81,
+      "notas": [],
+      "quando": "2026-10-02 06:32"
+    },
+    {
+      "id": "gancho-ambiente-herdado",
+      "titulo": "o filho do gancho herda o ambiente do servidor",
+      "veredito": "PROVADA",
+      "segundos": 76.31,
+      "notas": [],
+      "quando": "2026-10-02 06:32"
+    },
+    {
+      "id": "gancho-sem-kill-no-prazo",
+      "titulo": "o gancho que passa de `timeout_s` continua vivo",
+      "veredito": "PROVADA",
+      "segundos": 79.33,
+      "notas": [],
+      "quando": "2026-10-02 06:32"
+    },
+    {
+      "id": "gancho-zumbi",
+      "titulo": "o gancho morto por prazo vira zumbi (kill sem wait)",
+      "veredito": "PROVADA",
+      "segundos": 80.04,
+      "notas": [],
+      "quando": "2026-10-02 06:32"
+    },
+    {
+      "id": "gancho-saida-do-filho-vaza",
+      "titulo": "o stdout/stderr do gancho cai no stderr do servidor",
+      "veredito": "PROVADA",
+      "segundos": 74.22,
+      "notas": [],
+      "quando": "2026-10-02 06:32"
+    },
+    {
+      "id": "gancho-editavel-pela-api",
+      "titulo": "um campo de `alertas.gancho` entra no CAMPOS_EDITAVEIS",
+      "veredito": "PROVADA",
+      "segundos": 82.93,
+      "notas": [],
+      "quando": "2026-10-02 06:32"
+    },
+    {
+      "id": "gancho-nao-valida-no-arranque",
+      "titulo": "`comando[0]` relativo, inexistente ou não executável passa no arranque",
+      "veredito": "PROVADA",
+      "segundos": 72.1,
+      "notas": [],
+      "quando": "2026-10-02 06:32"
+    },
+    {
+      "id": "gancho-config-nao-lida",
+      "titulo": "`alertas.gancho.timeout_s` está no arquivo e ninguém o lê",
+      "veredito": "PROVADA",
+      "segundos": 73.73,
+      "notas": [],
+      "quando": "2026-10-02 06:32"
     },
     {
       "id": "alter-com-regra-sem-aviso",

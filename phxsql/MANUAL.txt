@@ -3604,6 +3604,35 @@ AGENDADO
     e a recusa vem no arranque. Gateway HTTP(S) de SMS NAO entra: pede TLS,
     TLS pede crate, e isso e decisao do dono (docs/SAUDE-DO-DISCO.md).
 
+    GANCHO DO OPERADOR (alertas.gancho) -- O CANAL SMS EM SI E DO OPERADOR.
+    O PhxSql NAO envia SMS: ele entrega o aviso a um programa seu, e o
+    programa fala com o gateway que voce contratou (e guarda o segredo dele
+    -- nunca ponha token no config.json). Serve para quem a operadora nao
+    oferece e-mail-para-SMS, e funciona com o e-mail desligado.
+
+        "gancho": { "ligado": true,
+                    "comando": ["/opt/phxsql/avisar-sms.sh", "plantao"],
+                    "timeout_s": 10 }
+
+      - "comando" e uma LISTA (programa e argumentos), nunca uma linha de
+        shell: um argumento com ; ou $() chega literal ao programa. O
+        primeiro item e caminho absoluto, de arquivo executavel que
+        "outros" nao possam gravar; o servidor recusa no arranque se nao
+        for. Edita-se SO pelo arquivo -- a tela e o ALTER SERVER SET nao
+        gravam este campo, de proposito (executa programa).
+      - O programa recebe as variaveis PHXSQL_TIPO, PHXSQL_ORIGEM e
+        PHXSQL_QUANDO, e no stdin a mesma linha de ate 160 caracteres do
+        SMS (sem caminho e sem o pedido). O ambiente do servidor NAO
+        atravessa (PATH fixo), o diretorio de trabalho e "/", e o que ele
+        imprime e descartado.
+      - Prazo de timeout_s segundos (1 a 120): estourou, o processo leva
+        kill. Termine o script com "exec" no ultimo programa -- um
+        processo-neto nao e alcancado. Uma execucao por vez; o silencio e
+        o mesmo do e-mail (um aviso por tipo a cada repetir_minutos).
+      - Falha do gancho nao derruba nada: vira linha no log e
+        avisos.ultima_falha ("gancho: ..."), e e-mail e SMS-por-gateway
+        seguem.
+
     A sonda vem LIGADA de fabrica (so mede e pinta o painel; sem e-mail
     ligado nao sai aviso nenhum). Quem nao quer a escrita periodica poe
     "disco": {"ligado": false}. Na tela, o cartao "Saude do disco" fica no
