@@ -1501,6 +1501,18 @@ PROFILER: O QUE ESTA CHEGANDO, ANTES DE VIRAR DADO
     O payload de uma tabela cifrada gravado em claro ao lado do .reg cifrado
     anula o proposito do cofre, que e proteger o ARQUIVO COPIADO.
 
+    DECLARAR NAO CIFRA O QUE JA ESTA GRAVADO. "cifra.tabelas" e so uma
+    INTENCAO: ela diz ao Profiler que aquela tabela e sigilosa, e nao toca
+    o disco. O que decide se o .reg esta cifrado e o proprio arquivo -- a
+    tabela nasce cifrada quando tem coluna marcada como dado pessoal e o
+    cofre esta ligado, e so nessa hora. Uma tabela que ja existia em claro
+    CONTINUA em claro depois de entrar na lista, e o Profiler passa a
+    esconder o texto dos pedidos dela mesmo assim. Por isso, antes de
+    contar com o cofre para uma tabela antiga, confira o arquivo e nao a
+    lista. A migracao que cifra (ou descifra) uma tabela ja gravada esta
+    pedida (pedido 268) e ainda NAO existe; quando existir, sera uma
+    operacao pedida, nunca efeito de declarar.
+
     A lista e por NOME QUALIFICADO -- "banco.tabela" --, porque dois bancos
     podem ter tabelas com o mesmo nome. E ela vale para o pedido inteiro:
     basta UMA tabela declarada aparecer em qualquer lugar dele, inclusive

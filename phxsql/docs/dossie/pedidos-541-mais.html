@@ -223,7 +223,7 @@ footer{
 <div class="envelope">
 <header>
   <div class="rotulo">PhxSql · o dossiê do que foi pedido — página 7 de 7</div>
-  <h1>Pedidos 541 em diante<br>de 636 ao todo</h1>
+  <h1>Pedidos 541 em diante<br>de 637 ao todo</h1>
   <p class="chamada">Uma linha por pedido seu, na ordem em que você pediu. O
   estado é <strong>medido contra o código</strong>, não contra a lembrança — foi
   assim que a chave estrangeira saiu de «pronto» para «parcial», e o Centro de
@@ -238,25 +238,25 @@ footer{
   <nav class="faixas" aria-label="As 7 páginas de pedidos, por faixa"><a href="https://claude.ai/artifact/4jSZ5yZFnjEnbGGbE3i5nz">1–190</a><a href="https://claude.ai/artifact/MAc3CcjfCPbjVm5sQZwYoC">191–260</a><a href="pedidos-261-320.html">261–320</a><a href="pedidos-321-360.html">321–360</a><a href="pedidos-361-430.html">361–430</a><a href="pedidos-431-540.html">431–540</a><a href="pedidos-541-mais.html" class="ativa" aria-current="page">541 em diante</a></nav>
 
   <div class="placar">
-    <div class="c"><div class="v">636</div><div class="r">pedidos, ao todo</div></div>
-    <div class="c feito"><div class="v">533</div><div class="r">feitos</div></div>
-    <div class="c parcial"><div class="v">10</div><div class="r">parciais</div></div>
+    <div class="c"><div class="v">637</div><div class="r">pedidos, ao todo</div></div>
+    <div class="c feito"><div class="v">534</div><div class="r">feitos</div></div>
+    <div class="c parcial"><div class="v">9</div><div class="r">parciais</div></div>
     <div class="c planejado"><div class="v">7</div><div class="r">planejados</div></div>
-    <div class="c depois"><div class="v">86</div><div class="r">depois da versão</div></div>
+    <div class="c depois"><div class="v">87</div><div class="r">depois da versão</div></div>
   </div>
 
   <div class="faixa-info">
     <span class="rotulo-inline">Nesta página</span>
-    <strong>96</strong> pedidos (faixa 541 em diante) ·
+    <strong>97</strong> pedidos (faixa 541 em diante) ·
     <span class="feito">82 feitos</span> ·
     <span class="parcial">1 parciais</span> ·
     <span class="planejado">1 planejados</span> ·
-    <span class="depois">12 depois da versão</span>
+    <span class="depois">13 depois da versão</span>
   </div>
 </header>
 
 <h2>O que está aberto, nesta faixa</h2>
-<p class="sub">Os 2 que não fecharam nesta faixa (1 pela metade e 1 sem começar), com o motivo de cada um. O motivo importa mais que o estado: uns esperam trabalho, outros esperam uma decisão sua, e outros esperam coisa de fora deste repositório. (12 ficaram para depois desta versão — veja a lista completa abaixo.)</p>
+<p class="sub">Os 2 que não fecharam nesta faixa (1 pela metade e 1 sem começar), com o motivo de cada um. O motivo importa mais que o estado: uns esperam trabalho, outros esperam uma decisão sua, e outros esperam coisa de fora deste repositório. (13 ficaram para depois desta versão — veja a lista completa abaixo.)</p>
 <div class="rolo">
   <table>
     <thead><tr><th class="n">#</th><th class="st">estado</th><th>o que você pediu</th><th>onde está</th></tr></thead>
@@ -276,7 +276,7 @@ footer{
   não tem opinião própria sobre nenhum item.
 </div>
 
-<h2 id="todos">Os 96 desta faixa (541 em diante), na ordem em que você pediu</h2>
+<h2 id="todos">Os 97 desta faixa (541 em diante), na ordem em que você pediu</h2>
 <p class="sub">A numeração é a sequência real dos seus pedidos — ela diz
 <em>quando</em> cada coisa foi pedida, e é por isso que vale mantê-la. As
 outras 6 faixas estão no menu acima.</p>
@@ -393,6 +393,7 @@ outras 6 faixas estão no menu acima.</p>
       <tr data-e="feito"><td class="n mono">634</td><td class="st"><span class="pino feito">Feito</span></td><td class="p"><strong>Perda silenciosa: com tique grosso de <code>mtime</code>, um <code>atualizar</code> feito entre a FASE A e a FASE B passa no retrato e é desfeito pela troca</strong></td><td class="e">Achado da frente do 427 (01/10/2026), medido com tique simulado: a linha 45 volta de «NOVO» para «c45» depois da troca, sem erro. Só acontece se um escritor escapar do congelamento. Comparar o cabeçalho do volume 1 não basta — bytes que mudam por operação: <code>inserir</code> 8, <code>excluir_suave</code> 5, <code>restaurar</code> 5, <code>excluir_de_vez</code> 5, <code>atualizar</code> <strong>0</strong>. Fechar pede um contador de escrita no cabeçalho, ou seja, <strong>mudança de formato</strong> — decisão do papel C (DBA), e mudança de formato entra cedo. NTFS não medido. <strong>Parecer do papel C (01/10/2026):</strong> dentro do processo nenhum escritor escapa do congelamento (abertura gravável única em <code>table.rs</code> ~2439, congelamento com a trava global na mão); o 634 acontece <strong>entre processos</strong> — o congelamento é <code>static</code> do processo e não há trava de arquivo (item N do <code>CONTRATO-1.0.md</code>). <strong>Decidido:</strong> NÃO ao contador no cabeçalho (o <code>.reg</code> v4 tem 0 byte livre, exigiria v6 + migração, e o processo B grava o contador da RAM dele: velho por 1, passa calado); NÃO ao hash na FASE B (O(n) sob a trava, desfaz o 421). <strong>SIM à sentinela de <code>mtime</code></strong>: no retrato, com a trava na mão, <code>set_modified</code> grava um <code>mtime</code> sentinela representável no FAT; qualquer escrita depois põe «agora», diferente da sentinela em qualquer tique. Sem mudança de formato. A causa vira o 635. <strong>Fechado em 01/10/2026 pela sentinela</strong>: o <code>retratar</code> sela cada volume (e o <code>.bkp</code>) com <code>set_modified</code> em 1980-01-02 00:00 UTC; a FASE B confere a sentinela; troca abortada devolve o <code>mtime</code> só a quem ainda a tem. Tique grosso simulado de verdade (<code>Relogio::Parado</code> — a simulação do 427 devolvia qualquer valor e passaria com e sem conserto); FAT/NTFS reais não medidos. Sem o selo 3/8 testes caem, sem a devolução 1/8. Guardas <code>retrato-da-fase-a-sem-selo-634</code> e <code>selo-do-retrato-nao-devolve-o-mtime-634</code>, PROVADAS. <code>.ndx</code>/<code>.pag</code> não precisam: nenhum é trocado por retrato montado fora da trava.</td></tr>
       <tr data-e="feito"><td class="n mono">635</td><td class="st"><span class="pino feito">Feito</span></td><td class="p"><strong>Dois processos gravando no mesmo diretório destroem contadores: falta a trava de instância entre processos</strong></td><td class="e">Achado do papel C no parecer do 634 (01/10/2026). O congelamento é <code>static</code> do processo e não existe trava de arquivo (item N do <code>CONTRATO-1.0.md</code>, <code>FORMATO.md</code> ~4070): a CLI <code>phxsql</code>, um app pela <code>phxsql-ffi</code> ou um segundo <code>phxsqld</code> gravam no mesmo diretório sem recusa. <strong>Já perde dado sem reescrita nenhuma:</strong> o <code>atualizar</code> chama <code>gravar_contadores(1)</code> (<code>reg.rs</code> ~2875), que grava o cabeçalho inteiro da RAM do processo — o segundo sobrescreve <code>slot_count</code>, <code>live_count</code> e <code>marcadas</code> do primeiro com valores velhos. <strong>Aceite automático por convergência:</strong> o PostgreSQL recusa pelo <code>postmaster.pid</code>, o InnoDB (MySQL/MariaDB) trava o <code>ibdata1</code> («Unable to lock»), o SQLite coordena por trava de arquivo; nenhuma pétrea se opõe (só std). Trava só para quem abre para GRAVAR; leitura continua livre. Meio a decidir medido: <code>File::try_lock</code> (std 1.89, sobe a versão mínima de 1.75) ou arquivo de pid por <code>create_new</code> com prova de vida. <strong>Fechado em 01/10/2026 por <code>File::try_lock</code></strong> (<code>trava_de_instancia.rs</code>, arquivo <code>.phxsql.trava</code> 0600 com o pid, no mesmo ponto do congelamento: <code>Table::abrir_com</code> ao gravar, <code>criar</code>, <code>excluir_tabela</code>, <code>renomear_tabela</code>, troca antes de copiar). Mortas: pid com prova de vida (Windows sem FFI deixa trava eterna; retomar é corrida) e <code>flock</code> por <code>extern &quot;C&quot;</code> (<code>unsafe</code>). <strong>Custo: versão mínima do Rust 1.75 → 1.89</strong>, 19 avisos novos do clippy consertados. Recusa <code>PhxError::InstanciaOcupada</code> 4008, seis idiomas, 503 no REST, só o nome da pasta. A raiz ociosa fixa a trava (o <code>phxsqld</code> parado continua recusando a CLI); a CLI que só lê abre para ler. Corrida do <code>fork</code>: 19/150 falhas só fechando o arquivo, 0/150 com <code>unlock</code> antes. Prova pelo SO (filho reexecutado, <code>kill -9</code> não deixa trava) e <code>bancada/instancia/provar.py</code> 4/4. Guardas <code>segundo-gravador-sem-trava-de-instancia-635</code> e <code>raiz-ociosa-solta-a-trava-de-instancia-635</code>, PROVADAS. Limites: Windows não exercitado (lá a recusa não diz o pid); a trava não vê quem não usa o motor (<code>cp</code>, editor).</td></tr>
       <tr data-e="planejado"><td class="n mono">636</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>Pintura tardia: o «Criar» do cartão ER termina com <code>await montarArvore(); telaDiagramaER(db)</code> e o diagrama pode pintar POR CIMA de uma tela que a pessoa já abriu</strong></td><td class="e">Achado da frente do 190 (02/10/2026), família do pedido 170. A corrida inteira da bateria web reprovou 2 vezes por isso; o caso passou a esperar <code>ER.esquemas</code> ter a tabela, o que esconde o defeito sem consertá-lo. Conserto: a pintura confere que a tela ainda é a que pediu (ou é cancelada ao trocar de tela), pelo mesmo motor das outras telas assíncronas — procurar os irmãos que fazem <code>await</code> e depois pintam sem conferir. Prova: caso web que abre outra tela logo depois do «Criar» e confere que o diagrama não a cobre; tem de cair com o defeito reposto.</td></tr>
+      <tr data-e="depois"><td class="n mono">637</td><td class="st"><span class="pino depois">Depois da versão</span></td><td class="p"><strong>Provar o retrato do backup no Windows: o <code>mtime</code> do NTFS (resolução, regra do «racily clean») só se mede numa máquina Windows</strong></td><td class="e">Limite nomeado do 513 passo 2 (02/10/2026). A prova do backup em duas passadas e do selo de <code>mtime</code> (634) é Linux/ext4 com tique simulado; FAT/NTFS reais nunca foram medidos e a bancada do zip (tmpfs) exige root em Linux. <strong>Gate externo: precisa de uma máquina Windows</strong> (o motor já compila cruzado para Windows). ⏸ «depois da versão» por não ser defeito ativo medido nem bloquear a entrega; sai do ⏸ no dia em que houver máquina para rodar <code>bancada/backup/</code> lá.</td></tr>
     </tbody>
   </table>
   <div class="vazio" id="vazio" hidden>Nenhum pedido bate com isso.</div>

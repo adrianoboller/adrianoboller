@@ -208,6 +208,9 @@ class Escritor(threading.Thread):
         self.parar = threading.Event()
         self.inserir_ms = []
         self.escrita_ms = []
+        # Quando cada escrita COMECOU (perf_counter), para separar a espera
+        # da fase 1 da espera da fase 2 (pedido 513, disputa de E/S).
+        self.escrita_t = []
         self.feitos = 0
         self.erro = None
 
@@ -224,6 +227,7 @@ class Escritor(threading.Thread):
                     gasto = (time.perf_counter() - t0) * 1000
                     self.inserir_ms.append(gasto)
                     self.escrita_ms.append(gasto)
+                    self.escrita_t.append(t0)
                     if not r.get("ok"):
                         self.erro = r
                         return
@@ -232,6 +236,7 @@ class Escritor(threading.Thread):
                     r = fio({"op": "atualizar", "database": DB, "tabela": t, "rowid": rowid,
                              "valores": {"id": i, "txt": TEXTO[:1000]}})
                     self.escrita_ms.append((time.perf_counter() - t0) * 1000)
+                    self.escrita_t.append(t0)
                     if not r.get("ok"):
                         self.erro = r
                         return
@@ -239,6 +244,7 @@ class Escritor(threading.Thread):
                         t0 = time.perf_counter()
                         fio({"op": "excluir", "database": DB, "tabela": t, "rowid": rowid - 5})
                         self.escrita_ms.append((time.perf_counter() - t0) * 1000)
+                        self.escrita_t.append(t0)
                     self.feitos += 1
         finally:
             fio.fechar()
@@ -340,7 +346,19 @@ def cenario(nome, fio, base, linhas, escritor_em, leitor_em, voltas, rotulo, gua
         # entraria no backup do cenario seguinte.
         falhas = conferir_so(fio, destino)
         fase_2 = r.get("fase_2") or {}
+        # A janela da fase 1 e' [t0, t0 + fase_1_ms]: o que comecou nela
+        # disputa E/S com a copia; o que comecou depois pega a fase 2 e o
+        # fim. Pelo relogio do cliente (o servidor so' devolve duracao).
+        f1 = (r.get("fase_1_ms") or 0) / 1000.0
+        ts = esc.escrita_t[antes_escritas:]
+        na_f1 = [g for g, t in zip(escritas, ts) if t0 <= t <= t0 + f1]
+        pos_f1 = [g for g, t in zip(escritas, ts) if t > t0 + f1]
         m = {
+            "escrita_fase1_max_ms": round(max(na_f1), 3) if na_f1 else None,
+            "escrita_fase1_p99_ms": p99(na_f1),
+            "escrita_fase1_mediana_ms": med(na_f1),
+            "escrita_fase1_n": len(na_f1),
+            "escrita_pos_fase1_max_ms": round(max(pos_f1), 3) if pos_f1 else None,
             "backup_ms": round(total_ms, 1),
             "servidor_ms": r.get("ms"),
             "modo": r.get("modo", "retrato_inteiro"),
@@ -364,7 +382,10 @@ def cenario(nome, fio, base, linhas, escritor_em, leitor_em, voltas, rotulo, gua
               f"fase 2 {m['fase_2_ms']} ms / {m['fase_2_bytes']} B, escrita max "
               f"{m['escrita_max_ms']} ms, inserir max {m['inserir_max_ms']} ms p99 "
               f"{m['inserir_p99_ms']} ms ({len(durante)} durante), "
-              f"leitura max {m['leitura_max_ms']} ms, integro {m['retrato_integro']}")
+              f"leitura max {m['leitura_max_ms']} ms, integro {m['retrato_integro']}; "
+              f"fase 1: max {m['escrita_fase1_max_ms']} p99 {m['escrita_fase1_p99_ms']} "
+              f"med {m['escrita_fase1_mediana_ms']} (n={m['escrita_fase1_n']}), "
+              f"pos-fase-1 max {m['escrita_pos_fase1_max_ms']}")
         if falhas:
             print("    FALHAS:", falhas)
         medidas.append(m)
@@ -373,6 +394,8 @@ def cenario(nome, fio, base, linhas, escritor_em, leitor_em, voltas, rotulo, gua
         else:
             shutil.rmtree(destino, ignore_errors=True)
     chaves = ["backup_ms", "fase_2_ms", "fase_2_bytes", "escrita_max_ms", "escrita_p99_ms",
+              "escrita_fase1_max_ms", "escrita_fase1_p99_ms", "escrita_fase1_mediana_ms",
+              "escrita_pos_fase1_max_ms",
               "inserir_max_ms", "inserir_p99_ms", "inserir_mediana_ms", "leitura_max_ms"]
     resumo = {"voltas": medidas}
     for k in chaves:

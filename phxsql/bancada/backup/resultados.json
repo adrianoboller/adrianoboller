@@ -532,5 +532,774 @@
         "falhas_da_restauracao": []
       }
     }
+  },
+  "duas_passadas_1gb": {
+    "quando": "2026-10-02 04:05:21",
+    "binario": "/tmp/claude-0/-home-user-adrianoboller/5451b70d-11db-5d31-b519-9670a7730887/scratchpad/phxsqld-com",
+    "mb_pedidos": 1024,
+    "bytes_em_disco": 1177256233,
+    "tabelas": 20,
+    "linhas": 526334,
+    "voltas": 3,
+    "cenarios": {
+      "A": {
+        "voltas": [
+          {
+            "escrita_fase1_max_ms": 370.371,
+            "escrita_fase1_p99_ms": 1.06,
+            "escrita_fase1_mediana_ms": 0.328,
+            "escrita_fase1_n": 25718,
+            "escrita_pos_fase1_max_ms": 967.103,
+            "backup_ms": 11713.9,
+            "servidor_ms": 11713,
+            "modo": "duas_passadas",
+            "fase_1_ms": 10747,
+            "fase_2_ms": 892,
+            "fase_2_arquivos": 16,
+            "fase_2_bytes": 140011712,
+            "fase_2_fora_do_bloqueio": 1,
+            "escrita_max_ms": 967.103,
+            "escrita_p99_ms": 1.058,
+            "inserir_max_ms": 967.103,
+            "inserir_p99_ms": 1.058,
+            "inserir_mediana_ms": 0.297,
+            "inserir_durante": 9013,
+            "escritas_durante": 9830,
+            "leitura_max_ms": 356.437,
+            "retrato_integro": true,
+            "falhas": []
+          },
+          {
+            "escrita_fase1_max_ms": 439.308,
+            "escrita_fase1_p99_ms": 1.61,
+            "escrita_fase1_mediana_ms": 0.336,
+            "escrita_fase1_n": 25910,
+            "escrita_pos_fase1_max_ms": 1075.913,
+            "backup_ms": 13391.1,
+            "servidor_ms": 13390,
+            "modo": "duas_passadas",
+            "fase_1_ms": 12311,
+            "fase_2_ms": 978,
+            "fase_2_arquivos": 16,
+            "fase_2_bytes": 163362764,
+            "fase_2_fora_do_bloqueio": 2,
+            "escrita_max_ms": 1075.913,
+            "escrita_p99_ms": 1.604,
+            "inserir_max_ms": 439.308,
+            "inserir_p99_ms": 2.597,
+            "inserir_mediana_ms": 0.305,
+            "inserir_durante": 9063,
+            "escritas_durante": 9830,
+            "leitura_max_ms": 432.606,
+            "retrato_integro": true,
+            "falhas": []
+          },
+          {
+            "escrita_fase1_max_ms": 397.786,
+            "escrita_fase1_p99_ms": 1.54,
+            "escrita_fase1_mediana_ms": 0.303,
+            "escrita_fase1_n": 20547,
+            "escrita_pos_fase1_max_ms": 1341.958,
+            "backup_ms": 9880.3,
+            "servidor_ms": 9880,
+            "modo": "duas_passadas",
+            "fase_1_ms": 8532,
+            "fase_2_ms": 1291,
+            "fase_2_arquivos": 16,
+            "fase_2_bytes": 182795458,
+            "fase_2_fora_do_bloqueio": 2,
+            "escrita_max_ms": 1341.958,
+            "escrita_p99_ms": 1.556,
+            "inserir_max_ms": 1341.958,
+            "inserir_p99_ms": 2.421,
+            "inserir_mediana_ms": 0.283,
+            "inserir_durante": 7198,
+            "escritas_durante": 8112,
+            "leitura_max_ms": 386.087,
+            "retrato_integro": true,
+            "falhas": []
+          }
+        ],
+        "backup_ms": {
+          "mediana": 11713.9,
+          "faixa": [
+            9880.3,
+            13391.1
+          ]
+        },
+        "fase_2_ms": {
+          "mediana": 978,
+          "faixa": [
+            892,
+            1291
+          ]
+        },
+        "fase_2_bytes": {
+          "mediana": 163362764,
+          "faixa": [
+            140011712,
+            182795458
+          ]
+        },
+        "escrita_max_ms": {
+          "mediana": 1075.913,
+          "faixa": [
+            967.103,
+            1341.958
+          ]
+        },
+        "escrita_p99_ms": {
+          "mediana": 1.556,
+          "faixa": [
+            1.058,
+            1.604
+          ]
+        },
+        "escrita_fase1_max_ms": {
+          "mediana": 397.786,
+          "faixa": [
+            370.371,
+            439.308
+          ]
+        },
+        "escrita_fase1_p99_ms": {
+          "mediana": 1.54,
+          "faixa": [
+            1.06,
+            1.61
+          ]
+        },
+        "escrita_fase1_mediana_ms": {
+          "mediana": 0.328,
+          "faixa": [
+            0.303,
+            0.336
+          ]
+        },
+        "escrita_pos_fase1_max_ms": {
+          "mediana": 1075.913,
+          "faixa": [
+            967.103,
+            1341.958
+          ]
+        },
+        "inserir_max_ms": {
+          "mediana": 967.103,
+          "faixa": [
+            439.308,
+            1341.958
+          ]
+        },
+        "inserir_p99_ms": {
+          "mediana": 2.421,
+          "faixa": [
+            1.058,
+            2.597
+          ]
+        },
+        "inserir_mediana_ms": {
+          "mediana": 0.297,
+          "faixa": [
+            0.283,
+            0.305
+          ]
+        },
+        "leitura_max_ms": {
+          "mediana": 386.087,
+          "faixa": [
+            356.437,
+            432.606
+          ]
+        },
+        "modo": "duas_passadas",
+        "retrato_integro": true,
+        "restaurado_integro": true,
+        "falhas_da_restauracao": []
+      },
+      "B": {
+        "voltas": [
+          {
+            "escrita_fase1_max_ms": 312.408,
+            "escrita_fase1_p99_ms": 2.073,
+            "escrita_fase1_mediana_ms": 0.336,
+            "escrita_fase1_n": 20131,
+            "escrita_pos_fase1_max_ms": 3566.519,
+            "backup_ms": 12767.1,
+            "servidor_ms": 12766,
+            "modo": "duas_passadas",
+            "fase_1_ms": 9198,
+            "fase_2_ms": 3300,
+            "fase_2_arquivos": 8,
+            "fase_2_bytes": 606473734,
+            "fase_2_fora_do_bloqueio": 1,
+            "escrita_max_ms": 3566.519,
+            "escrita_p99_ms": 2.038,
+            "inserir_max_ms": 312.408,
+            "inserir_p99_ms": 2.414,
+            "inserir_mediana_ms": 0.299,
+            "inserir_durante": 7160,
+            "escritas_durante": 7982,
+            "leitura_max_ms": 311.334,
+            "retrato_integro": true,
+            "falhas": []
+          },
+          {
+            "escrita_fase1_max_ms": 1562.976,
+            "escrita_fase1_p99_ms": 1.743,
+            "escrita_fase1_mediana_ms": 0.349,
+            "escrita_fase1_n": 26915,
+            "escrita_pos_fase1_max_ms": 3961.16,
+            "backup_ms": 18021.2,
+            "servidor_ms": 18020,
+            "modo": "duas_passadas",
+            "fase_1_ms": 14059,
+            "fase_2_ms": 3682,
+            "fase_2_arquivos": 8,
+            "fase_2_bytes": 630729214,
+            "fase_2_fora_do_bloqueio": 1,
+            "escrita_max_ms": 3961.16,
+            "escrita_p99_ms": 1.677,
+            "inserir_max_ms": 3961.16,
+            "inserir_p99_ms": 2.328,
+            "inserir_mediana_ms": 0.314,
+            "inserir_durante": 9435,
+            "escritas_durante": 10236,
+            "leitura_max_ms": 1563.294,
+            "retrato_integro": true,
+            "falhas": []
+          },
+          {
+            "escrita_fase1_max_ms": 404.413,
+            "escrita_fase1_p99_ms": 2.299,
+            "escrita_fase1_mediana_ms": 0.341,
+            "escrita_fase1_n": 20387,
+            "escrita_pos_fase1_max_ms": 4042.067,
+            "backup_ms": 13330.2,
+            "servidor_ms": 13329,
+            "modo": "duas_passadas",
+            "fase_1_ms": 9287,
+            "fase_2_ms": 3769,
+            "fase_2_arquivos": 8,
+            "fase_2_bytes": 649840240,
+            "fase_2_fora_do_bloqueio": 1,
+            "escrita_max_ms": 4042.067,
+            "escrita_p99_ms": 2.275,
+            "inserir_max_ms": 404.413,
+            "inserir_p99_ms": 2.403,
+            "inserir_mediana_ms": 0.306,
+            "inserir_durante": 7204,
+            "escritas_durante": 8000,
+            "leitura_max_ms": 401.862,
+            "retrato_integro": true,
+            "falhas": []
+          }
+        ],
+        "backup_ms": {
+          "mediana": 13330.2,
+          "faixa": [
+            12767.1,
+            18021.2
+          ]
+        },
+        "fase_2_ms": {
+          "mediana": 3682,
+          "faixa": [
+            3300,
+            3769
+          ]
+        },
+        "fase_2_bytes": {
+          "mediana": 630729214,
+          "faixa": [
+            606473734,
+            649840240
+          ]
+        },
+        "escrita_max_ms": {
+          "mediana": 3961.16,
+          "faixa": [
+            3566.519,
+            4042.067
+          ]
+        },
+        "escrita_p99_ms": {
+          "mediana": 2.038,
+          "faixa": [
+            1.677,
+            2.275
+          ]
+        },
+        "escrita_fase1_max_ms": {
+          "mediana": 404.413,
+          "faixa": [
+            312.408,
+            1562.976
+          ]
+        },
+        "escrita_fase1_p99_ms": {
+          "mediana": 2.073,
+          "faixa": [
+            1.743,
+            2.299
+          ]
+        },
+        "escrita_fase1_mediana_ms": {
+          "mediana": 0.341,
+          "faixa": [
+            0.336,
+            0.349
+          ]
+        },
+        "escrita_pos_fase1_max_ms": {
+          "mediana": 3961.16,
+          "faixa": [
+            3566.519,
+            4042.067
+          ]
+        },
+        "inserir_max_ms": {
+          "mediana": 404.413,
+          "faixa": [
+            312.408,
+            3961.16
+          ]
+        },
+        "inserir_p99_ms": {
+          "mediana": 2.403,
+          "faixa": [
+            2.328,
+            2.414
+          ]
+        },
+        "inserir_mediana_ms": {
+          "mediana": 0.306,
+          "faixa": [
+            0.299,
+            0.314
+          ]
+        },
+        "leitura_max_ms": {
+          "mediana": 401.862,
+          "faixa": [
+            311.334,
+            1563.294
+          ]
+        },
+        "modo": "duas_passadas",
+        "retrato_integro": true,
+        "restaurado_integro": true,
+        "falhas_da_restauracao": []
+      }
+    }
+  },
+  "duas_passadas_1gb_sem_fsync_antes": {
+    "quando": "2026-10-02 04:09:07",
+    "binario": "/tmp/claude-0/-home-user-adrianoboller/5451b70d-11db-5d31-b519-9670a7730887/scratchpad/phxsqld-sem-fsync",
+    "mb_pedidos": 1024,
+    "bytes_em_disco": 1177256233,
+    "tabelas": 20,
+    "linhas": 526334,
+    "voltas": 3,
+    "cenarios": {
+      "A": {
+        "voltas": [
+          {
+            "escrita_fase1_max_ms": 31.593,
+            "escrita_fase1_p99_ms": 1.436,
+            "escrita_fase1_mediana_ms": 0.356,
+            "escrita_fase1_n": 24450,
+            "escrita_pos_fase1_max_ms": 799.097,
+            "backup_ms": 12206.9,
+            "servidor_ms": 12206,
+            "modo": "duas_passadas",
+            "fase_1_ms": 10623,
+            "fase_2_ms": 723,
+            "fase_2_arquivos": 16,
+            "fase_2_bytes": 138765448,
+            "fase_2_fora_do_bloqueio": 2,
+            "escrita_max_ms": 799.097,
+            "escrita_p99_ms": 1.533,
+            "inserir_max_ms": 315.411,
+            "inserir_p99_ms": 1.274,
+            "inserir_mediana_ms": 0.323,
+            "inserir_durante": 8619,
+            "escritas_durante": 9332,
+            "leitura_max_ms": 296.501,
+            "retrato_integro": true,
+            "falhas": []
+          },
+          {
+            "escrita_fase1_max_ms": 11.483,
+            "escrita_fase1_p99_ms": 1.652,
+            "escrita_fase1_mediana_ms": 0.329,
+            "escrita_fase1_n": 24263,
+            "escrita_pos_fase1_max_ms": 1004.831,
+            "backup_ms": 13386.0,
+            "servidor_ms": 13385,
+            "modo": "duas_passadas",
+            "fase_1_ms": 9894,
+            "fase_2_ms": 891,
+            "fase_2_arquivos": 16,
+            "fase_2_bytes": 160870512,
+            "fase_2_fora_do_bloqueio": 2,
+            "escrita_max_ms": 1004.831,
+            "escrita_p99_ms": 1.713,
+            "inserir_max_ms": 1004.831,
+            "inserir_p99_ms": 2.074,
+            "inserir_mediana_ms": 0.299,
+            "inserir_durante": 8660,
+            "escritas_durante": 9422,
+            "leitura_max_ms": 980.918,
+            "retrato_integro": true,
+            "falhas": []
+          },
+          {
+            "escrita_fase1_max_ms": 71.744,
+            "escrita_fase1_p99_ms": 1.368,
+            "escrita_fase1_mediana_ms": 0.32,
+            "escrita_fase1_n": 19960,
+            "escrita_pos_fase1_max_ms": 994.66,
+            "backup_ms": 9898.2,
+            "servidor_ms": 9897,
+            "modo": "duas_passadas",
+            "fase_1_ms": 8164,
+            "fase_2_ms": 878,
+            "fase_2_arquivos": 16,
+            "fase_2_bytes": 180171008,
+            "fase_2_fora_do_bloqueio": 2,
+            "escrita_max_ms": 994.66,
+            "escrita_p99_ms": 1.386,
+            "inserir_max_ms": 994.66,
+            "inserir_p99_ms": 1.756,
+            "inserir_mediana_ms": 0.296,
+            "inserir_durante": 7234,
+            "escritas_durante": 8144,
+            "leitura_max_ms": 354.857,
+            "retrato_integro": true,
+            "falhas": []
+          }
+        ],
+        "backup_ms": {
+          "mediana": 12206.9,
+          "faixa": [
+            9898.2,
+            13386.0
+          ]
+        },
+        "fase_2_ms": {
+          "mediana": 878,
+          "faixa": [
+            723,
+            891
+          ]
+        },
+        "fase_2_bytes": {
+          "mediana": 160870512,
+          "faixa": [
+            138765448,
+            180171008
+          ]
+        },
+        "escrita_max_ms": {
+          "mediana": 994.66,
+          "faixa": [
+            799.097,
+            1004.831
+          ]
+        },
+        "escrita_p99_ms": {
+          "mediana": 1.533,
+          "faixa": [
+            1.386,
+            1.713
+          ]
+        },
+        "escrita_fase1_max_ms": {
+          "mediana": 31.593,
+          "faixa": [
+            11.483,
+            71.744
+          ]
+        },
+        "escrita_fase1_p99_ms": {
+          "mediana": 1.436,
+          "faixa": [
+            1.368,
+            1.652
+          ]
+        },
+        "escrita_fase1_mediana_ms": {
+          "mediana": 0.329,
+          "faixa": [
+            0.32,
+            0.356
+          ]
+        },
+        "escrita_pos_fase1_max_ms": {
+          "mediana": 994.66,
+          "faixa": [
+            799.097,
+            1004.831
+          ]
+        },
+        "inserir_max_ms": {
+          "mediana": 994.66,
+          "faixa": [
+            315.411,
+            1004.831
+          ]
+        },
+        "inserir_p99_ms": {
+          "mediana": 1.756,
+          "faixa": [
+            1.274,
+            2.074
+          ]
+        },
+        "inserir_mediana_ms": {
+          "mediana": 0.299,
+          "faixa": [
+            0.296,
+            0.323
+          ]
+        },
+        "leitura_max_ms": {
+          "mediana": 354.857,
+          "faixa": [
+            296.501,
+            980.918
+          ]
+        },
+        "modo": "duas_passadas",
+        "retrato_integro": true,
+        "restaurado_integro": true,
+        "falhas_da_restauracao": []
+      },
+      "B": {
+        "voltas": [
+          {
+            "escrita_fase1_max_ms": 106.576,
+            "escrita_fase1_p99_ms": 1.187,
+            "escrita_fase1_mediana_ms": 0.341,
+            "escrita_fase1_n": 20142,
+            "escrita_pos_fase1_max_ms": 3711.313,
+            "backup_ms": 12637.8,
+            "servidor_ms": 12637,
+            "modo": "duas_passadas",
+            "fase_1_ms": 8356,
+            "fase_2_ms": 3415,
+            "fase_2_arquivos": 8,
+            "fase_2_bytes": 606380306,
+            "fase_2_fora_do_bloqueio": 1,
+            "escrita_max_ms": 3711.313,
+            "escrita_p99_ms": 1.225,
+            "inserir_max_ms": 3711.313,
+            "inserir_p99_ms": 2.17,
+            "inserir_mediana_ms": 0.313,
+            "inserir_durante": 7375,
+            "escritas_durante": 8154,
+            "leitura_max_ms": 292.157,
+            "retrato_integro": true,
+            "falhas": []
+          },
+          {
+            "escrita_fase1_max_ms": 89.422,
+            "escrita_fase1_p99_ms": 5.888,
+            "escrita_fase1_mediana_ms": 0.307,
+            "escrita_fase1_n": 22579,
+            "escrita_pos_fase1_max_ms": 4294.383,
+            "backup_ms": 18619.1,
+            "servidor_ms": 18618,
+            "modo": "duas_passadas",
+            "fase_1_ms": 12083,
+            "fase_2_ms": 3899,
+            "fase_2_arquivos": 8,
+            "fase_2_bytes": 627817770,
+            "fase_2_fora_do_bloqueio": 1,
+            "escrita_max_ms": 4294.383,
+            "escrita_p99_ms": 5.888,
+            "inserir_max_ms": 4294.383,
+            "inserir_p99_ms": 6.983,
+            "inserir_mediana_ms": 0.283,
+            "inserir_durante": 8102,
+            "escritas_durante": 8950,
+            "leitura_max_ms": 666.243,
+            "retrato_integro": true,
+            "falhas": []
+          },
+          {
+            "escrita_fase1_max_ms": 30.133,
+            "escrita_fase1_p99_ms": 2.555,
+            "escrita_fase1_mediana_ms": 0.314,
+            "escrita_fase1_n": 20418,
+            "escrita_pos_fase1_max_ms": 3746.42,
+            "backup_ms": 13145.4,
+            "servidor_ms": 13144,
+            "modo": "duas_passadas",
+            "fase_1_ms": 8825,
+            "fase_2_ms": 3384,
+            "fase_2_arquivos": 8,
+            "fase_2_bytes": 647084954,
+            "fase_2_fora_do_bloqueio": 1,
+            "escrita_max_ms": 3746.42,
+            "escrita_p99_ms": 2.502,
+            "inserir_max_ms": 3746.42,
+            "inserir_p99_ms": 2.725,
+            "inserir_mediana_ms": 0.281,
+            "inserir_durante": 7638,
+            "escritas_durante": 8377,
+            "leitura_max_ms": 347.539,
+            "retrato_integro": true,
+            "falhas": []
+          }
+        ],
+        "backup_ms": {
+          "mediana": 13145.4,
+          "faixa": [
+            12637.8,
+            18619.1
+          ]
+        },
+        "fase_2_ms": {
+          "mediana": 3415,
+          "faixa": [
+            3384,
+            3899
+          ]
+        },
+        "fase_2_bytes": {
+          "mediana": 627817770,
+          "faixa": [
+            606380306,
+            647084954
+          ]
+        },
+        "escrita_max_ms": {
+          "mediana": 3746.42,
+          "faixa": [
+            3711.313,
+            4294.383
+          ]
+        },
+        "escrita_p99_ms": {
+          "mediana": 2.502,
+          "faixa": [
+            1.225,
+            5.888
+          ]
+        },
+        "escrita_fase1_max_ms": {
+          "mediana": 89.422,
+          "faixa": [
+            30.133,
+            106.576
+          ]
+        },
+        "escrita_fase1_p99_ms": {
+          "mediana": 2.555,
+          "faixa": [
+            1.187,
+            5.888
+          ]
+        },
+        "escrita_fase1_mediana_ms": {
+          "mediana": 0.314,
+          "faixa": [
+            0.307,
+            0.341
+          ]
+        },
+        "escrita_pos_fase1_max_ms": {
+          "mediana": 3746.42,
+          "faixa": [
+            3711.313,
+            4294.383
+          ]
+        },
+        "inserir_max_ms": {
+          "mediana": 3746.42,
+          "faixa": [
+            3711.313,
+            4294.383
+          ]
+        },
+        "inserir_p99_ms": {
+          "mediana": 2.725,
+          "faixa": [
+            2.17,
+            6.983
+          ]
+        },
+        "inserir_mediana_ms": {
+          "mediana": 0.283,
+          "faixa": [
+            0.281,
+            0.313
+          ]
+        },
+        "leitura_max_ms": {
+          "mediana": 347.539,
+          "faixa": [
+            292.157,
+            666.243
+          ]
+        },
+        "modo": "duas_passadas",
+        "retrato_integro": true,
+        "restaurado_integro": true,
+        "falhas_da_restauracao": []
+      }
+    }
+  },
+  "zip_sem_espaco_defeito_reposto": {
+    "quando": "2026-10-02 03:59:44",
+    "binario": "/tmp/claude-0/-home-user-adrianoboller/5451b70d-11db-5d31-b519-9670a7730887/scratchpad/phxsqld-red-guarda",
+    "mb_pedidos": 64,
+    "bytes_em_disco": 73601833,
+    "tmpfs_pequeno_mib": 16,
+    "tmpfs_grande_mib": 160,
+    "itens": {
+      "pequeno": {
+        "ok": false,
+        "ms": 42.2,
+        "modo": null,
+        "motivo": null,
+        "livre_citado": null
+      },
+      "grande": {
+        "ok": true,
+        "ms": 1845.5,
+        "modo": "duas_passadas"
+      }
+    },
+    "falhas": [
+      "o backup em disco pequeno FALHOU em vez de cair na passada unica: {'ok': False, 'op': 'backup', 'erro': '[SP000010] erro de E/S: /tmp/phx-zip-513-21760/pequeno/dados_servico_2026-10-02_0359.zip.retrato.part/loja/t00.reg: No space left on device (os error 28)', 'codigo': 5001, 'nome': 'ERRO_DE_ES', 'classe': 'sistema', 'sprint': 'SP000010', 'repetir': True, 'ms': 41}"
+    ],
+    "passou": false
+  },
+  "zip_sem_espaco": {
+    "quando": "2026-10-02 04:10:01",
+    "binario": "/tmp/claude-0/-home-user-adrianoboller/5451b70d-11db-5d31-b519-9670a7730887/scratchpad/phxsqld-com",
+    "mb_pedidos": 64,
+    "bytes_em_disco": 73601832,
+    "tmpfs_pequeno_mib": 16,
+    "tmpfs_grande_mib": 160,
+    "itens": {
+      "pequeno": {
+        "ok": true,
+        "ms": 1194.8,
+        "zip_bytes": 1774360,
+        "modo": "retrato_inteiro",
+        "motivo": "sem espaco para a arvore temporaria do zip (16777216 bytes livres): a copia rodou inteira sob a trava, como antes do passo 2 do pedido 513",
+        "livre_citado": "sem espaco para a arvore temporaria do zip (16777216 bytes livres): a copia rodou inteira sob a trava, como antes do passo 2 do pedido 513"
+      },
+      "grande": {
+        "ok": true,
+        "ms": 3559.5,
+        "modo": "duas_passadas"
+      }
+    },
+    "falhas": [],
+    "passou": true
   }
 }

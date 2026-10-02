@@ -23730,4 +23730,26 @@ fn anotar(""",
         "caem": ["servidor::testes_gatilhos::call_com_interrogacao_do_odbc_devolve_a_saida"],
         "seguem": ["servidor::testes_gatilhos::procedimento_com_in_out_e_while"],
     },
+    {
+        "id": "zip-sem-a-guarda-de-espaco-da-arvore-temporaria",
+        "titulo": "o zip em duas passadas copia a arvore inteira para um disco que nao a comporta e o backup MORRE em vez de cair na passada unica",
+        "porque": (
+            "pedido 513, passo 2a (o que sobrava: o zip sem espaco). A arvore "
+            "temporaria do zip precisa de espaco para o banco INTEIRO antes de "
+            "comprimir; sem a conta `livre < tamanho + 10%` quem tinha zip "
+            "funcionando passa a receber ENOSPC. Provado contra o sistema "
+            "operacional em `bancada/backup/zip-sem-espaco.py`: com a conta "
+            "removida o servidor responde «No space left on device» num tmpfs "
+            "de 16 MiB; com ela, `modo: retrato_inteiro` e um zip que restaura. "
+            "O unitario so' passa `Some(0)`: esta guarda trava a DECISAO, a "
+            "bancada trava o ENOSPC."
+        ),
+        "arquivo": "crates/phxsql-store/src/backup.rs",
+        "trecho": """        if livre < precisa.saturating_add(precisa / 10) {""",
+        "troca": """        if false && livre < precisa.saturating_add(precisa / 10) {""",
+        "pacote": "phxsql-store",
+        "alvo": ["--lib"],
+        "caem": ["backup::tests::o_zip_em_duas_passadas_comprime_a_arvore_e_a_apaga"],
+        "seguem": ["backup::tests::o_zip_leva_tudo_e_o_manifesto_dentro"],
+    },
 ]
