@@ -207,6 +207,19 @@ reescrito da própria cópia, pelo mesmo caminho.
 A segunda é estrutura, e tem seção própria: `acrescentar_coluna`. Ver
 §1.1.
 
+**A migração `criptografar`/`descriptografar` (pedido 268) NÃO mudou o
+formato.** O estado «cifrado» já era o byte de versão do volume (4 claro,
+5 cifrado, `cab_len` 128 ↔ 192) e o material no cabeçalho de 192 bytes; a
+migração reescreve cada volume num `*.novo` com o mesmo motor de troca do
+`acrescentar_coluna` (o i-ésimo slot continua o i-ésimo; `data_offset`
+desliza 64 bytes porque o cabeçalho cresce ou encolhe) e troca por `rename`,
+volume 1 primeiro. **Uma única mudança de regra de leitura:** a geometria que
+a abertura compara entre os volumes e os `*.novo` passou de `(slot_size,
+data_offset, CRC do esquema)` para essa tripla **mais a versão do volume**
+(`reg.rs::geometria_do_volume`) — em tabela só de colunas externas o rabo é
+zero e a tripla sozinha podia ser igual nos dois lados da migração. Nenhum
+byte novo em disco; ver `docs/SEGURANCA.md` §13.6.
+
 ### 1.1 `acrescentar_coluna` — a coluna nova numa tabela que já tem dado
 
 Uma coluna a mais aumenta o `payload_len`, e portanto o `slot_size`. Como

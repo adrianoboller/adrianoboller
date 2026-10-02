@@ -795,7 +795,7 @@ impl RegFile {
         let mut trocas = Vec::new();
         let mut sobras = Vec::new();
         let paginada = self.esquema.paginacao().ligada();
-        let esperado = Some((self.slot_size, self.data_offset, self.esquema_crc));
+        let esperado = Some(self.geometria_esperada());
         for v in self.volumes.existentes() {
             let caminho = self.volumes.caminho(v);
             for alvo in [Some(caminho), self.volumes.caminho_do_espelho(v)]
@@ -901,6 +901,24 @@ impl RegFile {
         Ok(apagados)
     }
 
+    /// A geometria que os volumes desta tabela tem de declarar:
+    /// `(slot_size, data_offset, CRC do esquema, versao do formato)`.
+    ///
+    /// UM lugar, para as duas perguntas que a comparam com a de um arquivo --
+    /// quem separa os `*.novo` e quem confere a uniformidade --, e a VERSAO
+    /// esta nela desde o pedido 268: sem ela, a migracao da cifra de uma
+    /// tabela so de colunas externas (rabo zero, `slot_size` igual) que
+    /// guardasse o mesmo `data_offset` deixaria o `*.novo` indistinguivel do
+    /// volume velho, e a abertura trataria a troca decidida como sobra.
+    fn geometria_esperada(&self) -> (usize, u64, u32, u16) {
+        (
+            self.slot_size,
+            self.data_offset,
+            self.esquema_crc,
+            versao_do_material(&self.material),
+        )
+    }
+
     /// Todo volume tem de declarar a MESMA largura de slot e o mesmo esquema.
     ///
     /// # Por que a conferencia existe
@@ -919,7 +937,7 @@ impl RegFile {
         if !self.esquema.paginacao().ligada() {
             return Ok(());
         }
-        let esperado = (self.slot_size, self.data_offset, self.esquema_crc);
+        let esperado = self.geometria_esperada();
         for v in self.volumes.existentes() {
             let caminho = self.volumes.caminho(v);
             let Some(achado) = geometria_do_volume(&caminho) else {
@@ -934,6 +952,11 @@ impl RegFile {
                     format!(
                         "o volume 1 declara slot de {} bytes e este declara {}",
                         self.slot_size, achado.0
+                    )
+                } else if achado.3 != esperado.3 {
+                    format!(
+                        "o volume 1 e da versao {} do formato e este da {}",
+                        esperado.3, achado.3
                     )
                 } else {
                     "o volume 1 declara outro bloco de esquema que este".to_string()
@@ -1319,17 +1342,38 @@ impl RegFile {
     }
 
     fn montar_cabecalho(&self, volume: u32) -> Vec<u8> {
-        let versao = if self.material.cifrado() {
-            VERSAO_CIFRADO
-        } else {
-            VERSAO
-        };
-        let mut buf = vec![0u8; self.cab_len];
+        self.montar_cabecalho_com(
+            volume,
+            &self.material,
+            self.cab_len,
+            self.slot_size,
+            self.data_offset,
+        )
+    }
+
+    /// O cabecalho de um volume com a cifra, a largura e o `data_offset`
+    /// DADOS -- o `montar_cabecalho` do `self` e este com os valores dele.
+    ///
+    /// A migracao da cifra (pedido 268) monta o cabecalho do estado que ainda
+    /// nao e o do `self`: trocar os campos do `self` so pelo tempo de monta-lo
+    /// era possivel, mas um campo esquecido na troca gravaria cabecalho
+    /// misturado, e o que a prova da chave amarra (versao e `slot_size`) so
+    /// aparece na abertura seguinte.
+    fn montar_cabecalho_com(
+        &self,
+        volume: u32,
+        material: &cofre::Material,
+        cab_len: usize,
+        slot_size: usize,
+        data_offset: u64,
+    ) -> Vec<u8> {
+        let versao = versao_do_material(material);
+        let mut buf = vec![0u8; cab_len];
         buf[0..8].copy_from_slice(MAGIC_REG);
         buf[8..10].copy_from_slice(&versao.to_le_bytes());
-        buf[10..12].copy_from_slice(&(self.cab_len as u16).to_le_bytes());
+        buf[10..12].copy_from_slice(&(cab_len as u16).to_le_bytes());
         por_u32(&mut buf, 12, volume);
-        por_u32(&mut buf, 16, self.slot_size as u32);
+        por_u32(&mut buf, 16, slot_size as u32);
         // Contadores da tabela inteira: so o volume 1 e autoritativo.
         if volume == 1 {
             por_u64(&mut buf, 20, self.slot_count);
@@ -1339,7 +1383,7 @@ impl RegFile {
             por_u64(&mut buf, 108, self.marcadas);
             por_u64(&mut buf, 116, self.ultimo_carimbo);
         }
-        por_u64(&mut buf, 44, self.data_offset);
+        por_u64(&mut buf, 44, data_offset);
         por_u32(&mut buf, 52, self.esquema_bytes.len() as u32);
         por_u32(&mut buf, 56, self.esquema_crc);
         por_i64(&mut buf, 60, self.criado_em);
@@ -1360,12 +1404,8 @@ impl RegFile {
         // O sal e a prova entram DEPOIS dos 128 bytes da versao 4, e por isso
         // os offsets de tudo que ja existia continuam onde estavam. So o CRC
         // se mexeu -- ele mora no fim, e o fim mudou de lugar.
-        self.material.gravar(
-            &mut buf,
-            MATERIAL_EM,
-            &rotulo_da_prova(versao, self.slot_size),
-        );
-        let fim = self.cab_len - 4;
+        material.gravar(&mut buf, MATERIAL_EM, &rotulo_da_prova(versao, slot_size));
+        let fim = cab_len - 4;
         let crc = crc32(&buf[..fim]);
         por_u32(&mut buf, fim, crc);
         buf
@@ -1721,8 +1761,6 @@ impl RegFile {
                 self.volumes.caminho_do_espelho(v),
             ));
         }
-        let (retrato, selos) = self.retratar(&primeiros)?;
-
         // Os cabecalhos saem do `montar_cabecalho`, que le o `self`: troca-se
         // o esquema so pelo tempo de monta-los, e o `self` volta a ser a
         // tabela velha antes de qualquer arquivo ser escrito.
@@ -1741,8 +1779,58 @@ impl RegFile {
         self.esquema_crc = velho.2;
         self.data_offset = velho.3;
 
+        // Os slots viajam byte a byte: so o cabecalho e o bloco mudam. O rabo
+        // da FASE A (retrato, dono, escrita, espelho) e o do `alargar_fase_a`.
+        let troca = self.reescrever_fase_a(primeiros, &cabs, &mut |caminho, cab, _, _| {
+            reescrever_volume(caminho, cab, &bytes, origem, destino).map(|_| 0)
+        })?;
+        Ok(TrocaDoEsquema {
+            troca,
+            esquema: novo,
+            bytes,
+            crc,
+            data_offset: destino,
+        })
+    }
+
+    /// **O rabo comum das FASES A** -- o retrato selado, o dono dos `*.novo`,
+    /// a escrita de cada volume (e do espelho dele) e a [`TrocaPendente`] que
+    /// sai. UM lugar para os tres que reescrevem a tabela inteira ao lado:
+    /// [`RegFile::alargar_fase_a`] (coluna a mais), a regravacao do esquema
+    /// ([`RegFile::regravar_esquema_fase_a`]) e a migracao da cifra
+    /// ([`RegFile::migrar_cifra_fase_a`], pedido 268).
+    ///
+    /// # O que muda de um para o outro, e so isso
+    ///
+    /// O `escrever` -- como UM volume vira o `*.novo` (byte a byte, ou slot a
+    /// slot por um `transformar`) -- e os `cabs`, que cada chamador monta do
+    /// estado NOVO que vai descrever. Nada do que protege a queda mora no
+    /// chamador: o retrato antes da primeira leitura, o dono antes do primeiro
+    /// byte, todo `*.novo` sincronizado antes do primeiro `rename`. Uma terceira
+    /// copia deste corpo divergiria no dia em que alguem mexesse na ordem
+    /// numa so, e a queda no meio e justamente o caso que nenhum teste de
+    /// caminho feliz acusa.
+    ///
+    /// `escrever(caminho, cabecalho, volume, primeiro_rowid)` devolve quantos
+    /// slots passaram; so os do volume principal entram na conta, o espelho e
+    /// a copia independente dele (reescrito LENDO DO ESPELHO).
+    ///
+    /// Erro na escrita joga fora os `*.novo` (a FASE B nao vai acontecer).
+    fn reescrever_fase_a(
+        &self,
+        primeiros: Vec<(u32, RowId, PathBuf, Option<PathBuf>)>,
+        cabs: &[Vec<u8>],
+        escrever: EscritorDeVolume,
+    ) -> Result<TrocaPendente> {
+        // O RETRATO, tirado antes de a primeira leitura acontecer: e contra
+        // ele que a FASE B confere que ninguem escreveu no volume vivo
+        // enquanto o `*.novo` era montado. Ver `conferir_retrato`.
+        let (retrato, selos) = self.retratar(&primeiros)?;
+        // O dono dos `*.novo` nasce ANTES do primeiro byte (pedido 625): um
+        // `*.novo` pela metade tambem nao e sobra enquanto esta fase vive.
+        let dono = novos_com_dono::Dono::tomar(&primeiros);
         let a_trocar = TrocaPendente {
-            _dono: novos_com_dono::Dono::tomar(&primeiros),
+            _dono: dono,
             slots: 0,
             trocas: primeiros
                 .iter()
@@ -1754,12 +1842,18 @@ impl RegFile {
         crate::ndx::panico_de_teste::passar(
             crate::ndx::panico_de_teste::Ponto::FaseADepoisDoRetrato,
         );
-        for ((_, _, caminho, espelho), cab) in primeiros.iter().zip(&cabs) {
-            let escrito = reescrever_volume(caminho, cab, &bytes, origem, destino).and_then(|_| {
+
+        // FASE A -- escrever. Nenhum `rename` acontece aqui: cada volume vira
+        // um `*.novo` completo e sincronizado ao lado do seu. Enquanto esta
+        // fase corre, a tabela no disco continua sendo a VELHA, inteira. Uma
+        // queda aqui nao deixa nada pela metade: os `*.novo` orfaos sao lixo,
+        // e o `abrir` os reconhece como lixo porque o volume 1 ainda e velho.
+        let mut slots = 0u64;
+        for ((v, primeiro, caminho, espelho), cab) in primeiros.iter().zip(cabs) {
+            let escrito = escrever(caminho, cab, *v, *primeiro).and_then(|n| {
+                slots += n;
                 match espelho {
-                    // O espelho e reescrito LENDO DO ESPELHO, como no caminho
-                    // de uma fase so.
-                    Some(e) if e.exists() => reescrever_volume(e, cab, &bytes, origem, destino),
+                    Some(e) if e.exists() => escrever(e, cab, *v, *primeiro).map(|_| ()),
                     _ => Ok(()),
                 }
             });
@@ -1768,13 +1862,7 @@ impl RegFile {
                 return Err(e);
             }
         }
-        Ok(TrocaDoEsquema {
-            troca: a_trocar,
-            esquema: novo,
-            bytes,
-            crc,
-            data_offset: destino,
-        })
+        Ok(TrocaPendente { slots, ..a_trocar })
     }
 
     /// A FASE B: confere o retrato, e so `rename` -- o volume 1 primeiro, que
@@ -2070,66 +2158,30 @@ impl RegFile {
         self.slot_size = slot_novo;
         self.data_offset = destino;
 
-        // O RETRATO, tirado antes de a primeira leitura acontecer: e contra
-        // ele que a FASE B confere que ninguem escreveu no volume vivo
-        // enquanto o `*.novo` era montado. Ver `conferir_retrato`.
-        let (retrato, selos) = self.retratar(&primeiros)?;
-        // O dono dos `*.novo` nasce ANTES do primeiro byte (pedido 625): um
-        // `*.novo` pela metade tambem nao e sobra enquanto esta fase vive.
-        let dono = novos_com_dono::Dono::tomar(&primeiros);
-        crate::ndx::panico_de_teste::passar(
-            crate::ndx::panico_de_teste::Ponto::FaseADepoisDoRetrato,
-        );
-
-        // FASE A -- escrever. Nenhum `rename` acontece aqui: cada volume vira
-        // um `*.novo` completo e sincronizado ao lado do seu. Enquanto esta
-        // fase corre, a tabela no disco continua sendo a VELHA, inteira. Uma
-        // queda aqui nao deixa nada pela metade: os `*.novo` orfaos sao lixo,
-        // e o `abrir` os reconhece como lixo porque o volume 1 ainda e velho.
-        let mut slots = 0u64;
-        for (v, primeiro, caminho, espelho) in &primeiros {
-            let cab = self.montar_cabecalho(*v);
-            slots += escrever_volume_alargado(
+        // Os cabecalhos saem do estado NOVO do `self`, e o retrato e o resto da
+        // FASE A saem do rabo comum (`reescrever_fase_a`): a copia que havia
+        // aqui e a da regravacao do esquema eram a mesma sequencia, e a da
+        // migracao da cifra seria a terceira.
+        let cabs: Vec<Vec<u8>> = primeiros
+            .iter()
+            .map(|(v, ..)| self.montar_cabecalho(*v))
+            .collect();
+        let bytes_do_esquema = self.esquema_bytes.clone();
+        self.reescrever_fase_a(primeiros, &cabs, &mut |caminho, cab, v, primeiro| {
+            // O espelho e reescrito LENDO DO ESPELHO, como no `regravar_esquema`:
+            // a copia independente dele e o que ele existe para ser.
+            escrever_volume_alargado(
                 caminho,
-                &cab,
-                &self.esquema_bytes,
+                cab,
+                &bytes_do_esquema,
                 origem,
                 destino,
                 slot_velho,
                 slot_novo,
-                *v,
-                *primeiro,
+                v,
+                primeiro,
                 &mut transformar,
-            )?;
-            // O espelho e reescrito LENDO DO ESPELHO, como no `regravar_esquema`:
-            // a copia independente dele e o que ele existe para ser.
-            if let Some(espelho) = espelho {
-                if espelho.exists() {
-                    escrever_volume_alargado(
-                        espelho,
-                        &cab,
-                        &self.esquema_bytes,
-                        origem,
-                        destino,
-                        slot_velho,
-                        slot_novo,
-                        *v,
-                        *primeiro,
-                        &mut transformar,
-                    )?;
-                }
-            }
-        }
-
-        Ok(TrocaPendente {
-            slots,
-            _dono: dono,
-            trocas: primeiros
-                .into_iter()
-                .map(|(_, _, caminho, espelho)| (caminho, espelho))
-                .collect(),
-            retrato,
-            _selos: selos,
+            )
         })
     }
 
@@ -2182,6 +2234,202 @@ impl RegFile {
         }
         self.volumes.fechar_todos();
         Ok(pendente.slots)
+    }
+
+    /// **Pedido 268: a conferencia da migracao da cifra**, ANTES de gravar byte.
+    ///
+    /// Devolve a razao como dado ([`RecusaDaMigracao`]) e nao como texto: quem
+    /// serve o cliente a traduz pela fabrica de idiomas, e o motor continua
+    /// com UMA decisao -- a mesma que o `migrar_cifra_fase_a` aplica por
+    /// dentro, para que pular a conferencia de fora nao vire pular a regra.
+    ///
+    /// # O que recusa, e por que cada uma
+    ///
+    /// * **coluna externa marcada** (`Memo`/`Bin`): cifrar o `.reg` nao sela o
+    ///   conteudo do `.memo`/`.bin`, e `Descriptografar` deixaria blob selado
+    ///   sob um `.reg` v4 -- silencioso, o CRC bate. Fica para a 2a entrega;
+    /// * **indice de texto sobre coluna marcada**: o `.fts` guarda as palavras
+    ///   da coluna em claro, e migrar sem tocar nele diria «cifrada» com o
+    ///   vocabulario do campo legivel ao lado;
+    /// * **nada a cifrar**: sem coluna marcada inline o rabo seria zero e a
+    ///   tabela ganharia 64 bytes de cabecalho para nao proteger nada;
+    /// * **cofre desligado**: `Material::novo` devolveria `EM_CLARO` calado.
+    pub fn conferir_migracao_da_cifra(
+        &self,
+        cifrar: bool,
+    ) -> std::result::Result<(), RecusaDaMigracao> {
+        if cifrar && self.material.cifrado() {
+            return Err(RecusaDaMigracao::JaCifrada);
+        }
+        if !cifrar && !self.material.cifrado() {
+            return Err(RecusaDaMigracao::JaEmClaro);
+        }
+        if let Some((_, c)) = self
+            .esquema
+            .colunas_pessoais()
+            .into_iter()
+            .find(|(_, c)| c.ty.externo())
+        {
+            return Err(RecusaDaMigracao::ColunaExterna(c.nome.clone()));
+        }
+        let colunas = self.esquema.colunas();
+        if let Some(i) = self.esquema.indices_de_texto().iter().find(|i| {
+            colunas
+                .get(i.coluna)
+                .is_some_and(|c| c.dado_pessoal.e_pessoal())
+        }) {
+            return Err(RecusaDaMigracao::IndiceDeTexto(
+                i.nome.clone(),
+                colunas[i.coluna].nome.clone(),
+            ));
+        }
+        if cifrar && self.faixas.is_empty() {
+            return Err(RecusaDaMigracao::NadaACifrar);
+        }
+        if cifrar && !cofre::ligado() {
+            return Err(RecusaDaMigracao::CofreDesligado);
+        }
+        Ok(())
+    }
+
+    /// **Pedido 268: a FASE A da migracao da cifra** -- `Criptografar`
+    /// (`cifrar`) ou `Descriptografar` -- pelo MESMO motor de troca do 632:
+    /// cada volume (e o espelho) vira um `*.novo` completo e sincronizado, e
+    /// nada e trocado. O `self` continua descrevendo a tabela VELHA, inteira.
+    ///
+    /// # O que muda em relacao ao `alargar_fase_a`, e so isso
+    ///
+    /// O `transformar`: o slot velho abre com o material velho
+    /// (`abrir_slot_com`) e o novo sai de `montar_slot_com` com o material
+    /// novo, o MESMO payload byte a byte. E o cabecalho: `cab_len` 128 <-> 192
+    /// e o `data_offset` junto (o bloco de esquema, igual nos dois lados,
+    /// desliza 64 bytes). O i-esimo slot continua o i-esimo -- rowid, ordem de
+    /// digitacao e `.ndx` intactos -- e o slot livre mantem o status.
+    ///
+    /// **Sal NOVO a cada `Criptografar`** (`Material::novo`): reaproveitar o
+    /// de uma cifragem anterior repetiria chave e nonce entre a tabela que
+    /// foi decifrada e a que volta a ser cifrada. `Descriptografar` usa
+    /// `EM_CLARO`.
+    ///
+    /// Quem solta a trava depois daqui congela a tabela (`congelamento`): o
+    /// `*.novo` e um retrato, e a FASE B confere o retrato.
+    pub fn migrar_cifra_fase_a(&mut self, cifrar: bool) -> Result<TrocaDaCifra> {
+        self.conferir_migracao_da_cifra(cifrar)
+            .map_err(|r| PhxError::Esquema(r.to_string()))?;
+        let material_novo = if cifrar {
+            cofre::Material::novo()?
+        } else {
+            cofre::Material::EM_CLARO
+        };
+        if cifrar && !material_novo.cifrado() {
+            // O cofre desligou entre a conferencia e o sorteio do sal.
+            return Err(PhxError::Esquema(
+                RecusaDaMigracao::CofreDesligado.to_string(),
+            ));
+        }
+        let cab_len_novo = if cifrar { CAB_LEN_CIFRADO } else { CAB_LEN };
+        let pv = self.esquema.payload_len();
+        let slot_novo = SLOT_CAB + pv + material_novo.rabo(largura_marcada(&self.faixas));
+        let destino = alinhar(
+            cab_len_novo as u64 + self.esquema_bytes.len() as u64,
+            ALINHAMENTO,
+        );
+        let origem = self.data_offset;
+        let slot_velho = self.slot_size;
+        let material_velho = self.material;
+        let faixas = self.faixas.clone();
+
+        let mut transformar =
+            |volume: u32, rowid: RowId, slot: &[u8], nome: &str| -> Result<Vec<u8>> {
+                let status = slot[0];
+                let versao = Campos(slot).u64(8);
+                let payload =
+                    match abrir_slot_com(&material_velho, &faixas, pv, volume, rowid, slot, nome) {
+                        Ok(p) => p,
+                        // Slot LIVRE que nao abre nunca guardou linha viva (ou o
+                        // corpo ja foi para a lixeira): volta zerado, como no
+                        // `alargar_fase_a`. Um ATIVO que nao abre ABORTA -- perder
+                        // linha em silencio e o pior resultado desta operacao.
+                        Err(e) => {
+                            if status == STATUS_ATIVO {
+                                return Err(e);
+                            }
+                            vec![0u8; pv]
+                        }
+                    };
+                let mut fora = montar_slot_com(
+                    &material_novo,
+                    &faixas,
+                    slot_novo,
+                    volume,
+                    rowid,
+                    versao,
+                    &payload,
+                );
+                // Depois do `montar_slot_com`: o CRC nao cobre o status, e repo-lo
+                // aqui e o que mantem o livre livre.
+                fora[0] = status;
+                Ok(fora)
+            };
+
+        self.volumes.fechar_todos();
+        let mut primeiros: Vec<(u32, RowId, PathBuf, Option<PathBuf>)> = Vec::new();
+        for v in self.volumes.existentes() {
+            primeiros.push((
+                v,
+                self.primeiro_rowid_do_volume(v),
+                self.volumes.caminho(v),
+                self.volumes.caminho_do_espelho(v),
+            ));
+        }
+        let cabs: Vec<Vec<u8>> = primeiros
+            .iter()
+            .map(|(v, ..)| {
+                self.montar_cabecalho_com(*v, &material_novo, cab_len_novo, slot_novo, destino)
+            })
+            .collect();
+        let bytes_do_esquema = self.esquema_bytes.clone();
+        let troca =
+            self.reescrever_fase_a(primeiros, &cabs, &mut |caminho, cab, v, primeiro| {
+                escrever_volume_alargado(
+                    caminho,
+                    cab,
+                    &bytes_do_esquema,
+                    origem,
+                    destino,
+                    slot_velho,
+                    slot_novo,
+                    v,
+                    primeiro,
+                    &mut transformar,
+                )
+            })?;
+        Ok(TrocaDaCifra {
+            troca,
+            material: material_novo,
+            cab_len: cab_len_novo,
+            slot_size: slot_novo,
+            data_offset: destino,
+        })
+    }
+
+    /// A FASE B da migracao da cifra: confere o retrato e so `rename`, pelo
+    /// `alargar_fase_b` (o volume 1 e o ponto de compromisso). So depois do
+    /// ultimo `rename` o `self` passa a descrever a tabela nova.
+    ///
+    /// Retrato que nao bate descarta os `*.novo` e recusa: nada foi trocado.
+    /// Devolve quantos slots a FASE A passou.
+    pub fn migrar_cifra_fase_b(&mut self, t: TrocaDaCifra) -> Result<u64> {
+        if let Err(e) = t.troca.conferir_retrato() {
+            t.troca.descartar();
+            return Err(e);
+        }
+        let slots = self.alargar_fase_b(t.troca)?;
+        self.material = t.material;
+        self.cab_len = t.cab_len;
+        self.slot_size = t.slot_size;
+        self.data_offset = t.data_offset;
+        Ok(slots)
     }
 
     /// O primeiro rowid que mora num volume.
@@ -3130,6 +3378,17 @@ fn largura_marcada(faixas: &[(usize, usize)]) -> usize {
     faixas.iter().map(|(_, n)| n).sum()
 }
 
+/// A versao do formato que um volume com este material carrega: 5 cifrado, 4
+/// em claro. A UNICA regra -- o cabecalho, a geometria esperada e a migracao
+/// da cifra perguntam aqui.
+fn versao_do_material(material: &cofre::Material) -> u16 {
+    if material.cifrado() {
+        VERSAO_CIFRADO
+    } else {
+        VERSAO
+    }
+}
+
 /// A parte estavel do cabecalho que a prova da chave amarra.
 ///
 /// Nao entra contador nenhum: eles mudam a cada linha inserida, e uma prova
@@ -3264,6 +3523,11 @@ fn reescrever_volume(
 /// nonce e no dado associado da cifra, e o nome so aparece na mensagem de erro.
 type Transformador<'a> = &'a mut dyn FnMut(u32, RowId, &[u8], &str) -> Result<Vec<u8>>;
 
+/// Como a FASE A escreve UM volume: `(caminho, cabecalho, volume,
+/// primeiro_rowid)` -> quantos slots passaram. O unico ponto em que as tres
+/// FASES A (coluna a mais, regravacao do esquema, migracao da cifra) diferem.
+type EscritorDeVolume<'a> = &'a mut dyn FnMut(&Path, &[u8], u32, RowId) -> Result<u64>;
+
 /// Quem diz, linha a linha, o conteudo da coluna nova no
 /// [`RegFile::alargar_fase_a`] (pedido 245, O2b): recebe o rowid, o payload
 /// VELHO em claro e o abridor de externo deste arquivo, e devolve os bytes da
@@ -3330,7 +3594,7 @@ pub(crate) fn volume_e_paginacao_declarados(caminho: &Path) -> Option<(u32, Pagi
 /// acusa na leitura.
 fn novo_completo(novo: &Path, alvo: &Path) -> bool {
     let slots = |caminho: &Path| -> Option<(u64, u64)> {
-        let (slot, inicio, _) = geometria_do_volume(caminho)?;
+        let (slot, inicio, ..) = geometria_do_volume(caminho)?;
         let tamanho = std::fs::metadata(caminho).ok()?.len();
         let corpo = tamanho.checked_sub(inicio)?;
         let slot = (slot as u64).max(1);
@@ -3345,13 +3609,13 @@ fn novo_completo(novo: &Path, alvo: &Path) -> bool {
     }
 }
 
-/// `(slot_size, data_offset, CRC do esquema)` que um arquivo de volume
+/// `(slot_size, data_offset, CRC do esquema, versao)` que um arquivo de volume
 /// **declara**, ou `None` se ele nem chega a ser um cabecalho valido.
 ///
 /// Le 128 bytes e confere o magic e o CRC do cabecalho antes de acreditar em
 /// qualquer numero: e o mesmo cuidado do `achar_primeiro_volume`, e existe
 /// para que um arquivo pela metade nunca seja tomado por um volume pronto.
-fn geometria_do_volume(caminho: &Path) -> Option<(usize, u64, u32)> {
+fn geometria_do_volume(caminho: &Path) -> Option<(usize, u64, u32, u16)> {
     let mut cab = vec![0u8; CAB_LEN];
     let mut f = File::open(caminho).ok()?;
     ler_exato(&mut f, 0, &mut cab).ok()?;
@@ -3372,7 +3636,7 @@ fn geometria_do_volume(caminho: &Path) -> Option<(usize, u64, u32)> {
     if crc32(&cab[..cab_len - 4]) != c.u32(cab_len - 4) {
         return None;
     }
-    Some((c.u32(16) as usize, c.u64(44), c.u32(56)))
+    Some((c.u32(16) as usize, c.u64(44), c.u32(56), versao))
 }
 
 /// O que um arquivo de volume era no instante em que a FASE A comecou a
@@ -3498,6 +3762,86 @@ impl TrocaPendente {
             }
         }
         apagados
+    }
+}
+
+/// Por que a migracao da cifra (pedido 268) recusa -- como DADO, para o
+/// servidor traduzir pela fabrica de idiomas sem comparar frase.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RecusaDaMigracao {
+    /// `Criptografar` numa tabela que ja e cifrada (versao 5).
+    JaCifrada,
+    /// `Descriptografar` numa tabela que ja esta em claro (versao 4).
+    JaEmClaro,
+    /// Coluna `Memo`/`Bin` marcada: o conteudo mora no `.memo`/`.bin`.
+    ColunaExterna(String),
+    /// `(indice, coluna)`: indice de texto sobre coluna marcada.
+    IndiceDeTexto(String, String),
+    /// Nenhuma coluna inline marcada.
+    NadaACifrar,
+    /// O cofre esta desligado.
+    CofreDesligado,
+}
+
+impl std::fmt::Display for RecusaDaMigracao {
+    /// O texto de fabrica (portugues), que e o degrau 3 da fabrica de idiomas.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RecusaDaMigracao::JaCifrada => {
+                write!(f, "a tabela ja esta cifrada: nada a criptografar")
+            }
+            RecusaDaMigracao::JaEmClaro => {
+                write!(f, "a tabela ja esta em claro: nada a descriptografar")
+            }
+            RecusaDaMigracao::ColunaExterna(c) => write!(
+                f,
+                "a coluna \"{c}\" e Memo/Bin e esta marcada como dado pessoal: a migracao \
+                 da cifra desta versao so alcanca colunas inline, e deixaria o conteudo \
+                 no .memo/.bin como esta. Nada foi gravado"
+            ),
+            RecusaDaMigracao::IndiceDeTexto(i, c) => write!(
+                f,
+                "o indice de texto \"{i}\" e sobre a coluna marcada \"{c}\": o .fts guarda \
+                 as palavras dela em claro, e a migracao nao o toca. Exclua o indice antes. \
+                 Nada foi gravado"
+            ),
+            RecusaDaMigracao::NadaACifrar => write!(
+                f,
+                "nada a cifrar: a tabela nao tem coluna inline marcada como dado \
+                 pessoal. Marque a coluna antes (marcar_lgpd)"
+            ),
+            RecusaDaMigracao::CofreDesligado => write!(
+                f,
+                "o cofre esta desligado: ligue a cifra no config.json antes de criptografar"
+            ),
+        }
+    }
+}
+
+/// A FASE A da migracao da cifra pronta: os `*.novo` e o estado que a FASE B
+/// passa a descrever depois dos `rename`.
+pub struct TrocaDaCifra {
+    troca: TrocaPendente,
+    material: cofre::Material,
+    cab_len: usize,
+    slot_size: usize,
+    data_offset: u64,
+}
+
+impl TrocaDaCifra {
+    /// Para onde a troca leva a tabela: `true` = cifrada.
+    pub fn cifra(&self) -> bool {
+        self.material.cifrado()
+    }
+
+    /// Quantos slots a FASE A passou.
+    pub fn slots(&self) -> u64 {
+        self.troca.slots()
+    }
+
+    /// Joga fora os `*.novo`, quando a FASE B nao vai acontecer.
+    pub fn descartar(self) -> usize {
+        self.troca.descartar()
     }
 }
 

@@ -11,7 +11,19 @@
 //! ALTER DATABASE erp SET comandos_proibidos = (reindexar, excluir_tabela);
 //! ALTER TABLE    clientes SET duplicate_check = TRUE;
 //! ALTER CONNECTION SET compression = TRUE;
+//!
+//! ALTER TABLE    clientes ENCRYPT;
+//! ALTER TABLE    clientes DECRYPT MOTIVO 'rotacao da chave';
 //! ```
+//!
+//! # `ENCRYPT`/`DECRYPT` nao sao diretiva, e moram aqui de proposito
+//!
+//! Sao a migracao da cifra (pedido 268): uma OPERACAO sobre a tabela, e nao
+//! um campo de configuracao. Entram por esta gramatica porque ela ja e a
+//! dona do `ALTER TABLE <nome> <verbo>` -- um segundo detector reclamaria a
+//! mesma frase e as duas ordens de despacho divergiriam. O que a frase vira
+//! e o MESMO pedido `criptografar`/`descriptografar` do protocolo: o SQL e
+//! so uma porta, e o servidor passa o pedido pelos mesmos portoes.
 //!
 //! # Por que uma gramatica, e nao doze funcoes `HSet…`
 //!
@@ -107,12 +119,25 @@ impl Comando {
         }
         if self.op == "diretivas" {
             pares.push(("diario".into(), Json::de_u64(DIARIO_NO_SHOW)));
+        } else if self.e_migracao_da_cifra() {
+            // Sem campo nem valor: a operacao so precisa da tabela, e um
+            // `campo` vazio no pedido seria lido como diretiva sem nome.
+            if !self.motivo.is_empty() {
+                pares.push(("motivo".into(), Json::texto_de(&self.motivo)));
+            }
         } else {
             pares.push(("campo".into(), Json::texto_de(&self.campo)));
             pares.push(("valor".into(), self.valor.clone()));
             pares.push(("motivo".into(), Json::texto_de(&self.motivo)));
         }
         Json::Objeto(pares)
+    }
+}
+
+impl Comando {
+    /// E a migracao da cifra (pedido 268), e nao uma diretiva?
+    pub fn e_migracao_da_cifra(&self) -> bool {
+        matches!(self.op.as_str(), "criptografar" | "descriptografar")
     }
 }
 
@@ -158,6 +183,30 @@ pub fn comando(texto: &str) -> Result<Option<Comando>> {
             valor: Json::Nulo,
             motivo: String::new(),
         }));
+    }
+
+    // `ALTER TABLE <nome> ENCRYPT|DECRYPT`: a migracao da cifra (pedido 268).
+    // So na tabela: a cifra e por arquivo de dado, e `ALTER SERVER ENCRYPT`
+    // nao quer dizer nada que o motor saiba fazer.
+    if escopo == Escopo::Tabela {
+        let op = match p.palavra().as_str() {
+            "ENCRYPT" | "CRIPTOGRAFAR" => Some("criptografar"),
+            "DECRYPT" | "DESCRIPTOGRAFAR" => Some("descriptografar"),
+            _ => None,
+        };
+        if let Some(op) = op {
+            p.i += 1;
+            let motivo = p.motivo(pos)?;
+            p.fim(pos, "ALTER")?;
+            return Ok(Some(Comando {
+                op: op.into(),
+                escopo,
+                alvo,
+                campo: String::new(),
+                valor: Json::Nulo,
+                motivo,
+            }));
+        }
     }
 
     p.exigir_palavra(pos, "SET", escopo)?;
@@ -576,6 +625,43 @@ mod testes {
                 e.to_string().contains(pedaco),
                 "{texto:?} recusou com {e}, e eu esperava {pedaco:?}"
             );
+        }
+    }
+
+    /// **Pedido 268:** `ALTER TABLE t ENCRYPT|DECRYPT` e a migracao da cifra
+    /// -- o MESMO pedido do protocolo, sem `campo` nem `valor` (um `campo`
+    /// vazio seria lido como diretiva sem nome).
+    #[test]
+    fn alter_table_encrypt_e_decrypt_viram_a_migracao_da_cifra() {
+        let e = c("ALTER TABLE vendas.clientes ENCRYPT;");
+        assert_eq!(e.op, "criptografar");
+        assert!(e.e_migracao_da_cifra());
+        assert_eq!(e.alvo, "vendas.clientes");
+        let p = e.pedido();
+        assert_eq!(p.texto_ou("tabela", ""), "vendas.clientes");
+        assert!(p.campo("campo").is_none(), "migracao nao leva campo");
+        assert!(p.campo("valor").is_none());
+
+        let d = c("ALTER TABLE clientes DECRYPT MOTIVO 'rotacao da chave'");
+        assert_eq!(d.op, "descriptografar");
+        assert_eq!(d.pedido().texto_ou("motivo", ""), "rotacao da chave");
+        // Em portugues tambem.
+        assert_eq!(c("ALTER TABELA t CRIPTOGRAFAR").op, "criptografar");
+        assert_eq!(c("ALTER TABELA t DESCRIPTOGRAFAR").op, "descriptografar");
+        // As diretivas de sempre nao sao migracao.
+        assert!(!c("ALTER TABLE t SET duplicate_check = TRUE").e_migracao_da_cifra());
+    }
+
+    /// O irmao: `ENCRYPT` so vale na tabela, e sobra de texto continua erro.
+    #[test]
+    fn encrypt_fora_da_tabela_ou_com_sobra_recusa() {
+        for (texto, pedaco) in [
+            ("ALTER SERVER ENCRYPT", "esperava SET"),
+            ("ALTER DATABASE erp ENCRYPT", "esperava SET"),
+            ("ALTER TABLE t ENCRYPT AND MORE", "sobrou"),
+        ] {
+            let e = comando(texto).expect_err(&format!("{texto:?} devia recusar"));
+            assert!(e.to_string().contains(pedaco), "{texto:?} recusou com {e}");
         }
     }
 

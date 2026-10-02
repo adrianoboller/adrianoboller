@@ -1821,15 +1821,17 @@ pub struct Cifra {
     ///
     /// Ela DECLARA. Nao cifra nada: cifrar uma tabela que ja existe e
     /// reescrever o `.reg` slot a slot, e isso e a migracao
-    /// `Criptografar`/`Descriptografar`, que ainda nao existe -- pedido #268,
-    /// com o desenho ja decidido em `docs/SEGURANCA.md` §13.6.
+    /// `criptografar`/`descriptografar` -- operacao PEDIDA (`op` ou
+    /// `ALTER TABLE ... ENCRYPT`), nunca efeito desta lista. Existe desde
+    /// 02/10/2026 (pedido #268, `docs/SEGURANCA.md` §13.6), sem Memo/Bin
+    /// marcado e sem o historico.
     /// O leitor que ela tem hoje e o **Profiler**, que para de gravar o texto
     /// do pedido no `perfil.txt` quando o pedido toca uma tabela desta lista.
     ///
     /// A fonte da verdade sobre "isto esta cifrado?" continua sendo o DISCO --
     /// o cabecalho do `.reg` diz, e e ele que a leitura consulta. A lista e a
     /// INTENCAO; o disco e o estado. Ver `docs/SEGURANCA.md` §13.
-    /// DIVIDA: #268 marcar a tabela nao cifra o que ja esta gravado -- a migracao que reescreve o `.reg` slot a slot nao existe, entao a lista declara mais do que o disco cumpre
+    /// DIVIDA: #268 a lista so declara (o Profiler a le) e a migracao pedida ainda nao alcanca coluna Memo/Bin marcada nem o historico (.log, .trash, .reason), entao `cifra.tabelas` continua prometendo mais do que o disco cumpre
     pub tabelas: Vec<String>,
 }
 

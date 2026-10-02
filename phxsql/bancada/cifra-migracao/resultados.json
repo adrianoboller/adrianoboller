@@ -1,0 +1,200 @@
+{
+  "quando": "2026-10-02T04:30:43",
+  "esta_medindo_antes": false,
+  "esta_medindo_quem_antes": "",
+  "modo": "completo",
+  "medidas": [
+    {
+      "linhas": 10000,
+      "por_volume": null,
+      "repeticoes": 5,
+      "cifrar": {
+        "slots": 10000,
+        "volumes": 1,
+        "fase_a_ms": {
+          "min": 135.2,
+          "mediana": 143.4,
+          "max": 188.9
+        },
+        "fase_b_ms": {
+          "min": 1.36,
+          "mediana": 1.9,
+          "max": 2.29
+        },
+        "us_por_slot": {
+          "min": 0.507,
+          "mediana": 1.114,
+          "max": 5.953
+        },
+        "bytes_depois": 1651088
+      },
+      "decifrar": {
+        "slots": 10000,
+        "volumes": 1,
+        "fase_a_ms": {
+          "min": 10.2,
+          "mediana": 11.7,
+          "max": 14.4
+        },
+        "fase_b_ms": {
+          "min": 1.26,
+          "mediana": 1.38,
+          "max": 1.91
+        },
+        "us_por_slot": {
+          "min": 1.019,
+          "mediana": 1.168,
+          "max": 1.443
+        },
+        "bytes_depois": 1491024
+      }
+    },
+    {
+      "linhas": 100000,
+      "por_volume": null,
+      "repeticoes": 5,
+      "cifrar": {
+        "slots": 100000,
+        "volumes": 1,
+        "fase_a_ms": {
+          "min": 229.6,
+          "mediana": 241.3,
+          "max": 321.3
+        },
+        "fase_b_ms": {
+          "min": 9.82,
+          "mediana": 11.05,
+          "max": 12.25
+        },
+        "us_por_slot": {
+          "min": 0.977,
+          "mediana": 1.025,
+          "max": 1.941
+        },
+        "bytes_depois": 16501088
+      },
+      "decifrar": {
+        "slots": 100000,
+        "volumes": 1,
+        "fase_a_ms": {
+          "min": 94.8,
+          "mediana": 102.6,
+          "max": 135.7
+        },
+        "fase_b_ms": {
+          "min": 7.62,
+          "mediana": 8.18,
+          "max": 8.61
+        },
+        "us_por_slot": {
+          "min": 0.948,
+          "mediana": 1.026,
+          "max": 1.357
+        },
+        "bytes_depois": 14901024
+      }
+    },
+    {
+      "linhas": 100000,
+      "por_volume": 10000,
+      "repeticoes": 5,
+      "cifrar": {
+        "slots": 100000,
+        "volumes": 10,
+        "fase_a_ms": {
+          "min": 235.0,
+          "mediana": 236.6,
+          "max": 295.9
+        },
+        "fase_b_ms": {
+          "min": 14.58,
+          "mediana": 16.71,
+          "max": 19.88
+        },
+        "us_por_slot": {
+          "min": 1.04,
+          "mediana": 1.128,
+          "max": 1.575
+        },
+        "bytes_depois": 16510880
+      },
+      "decifrar": {
+        "slots": 100000,
+        "volumes": 10,
+        "fase_a_ms": {
+          "min": 100.9,
+          "mediana": 112.2,
+          "max": 114.1
+        },
+        "fase_b_ms": {
+          "min": 12.99,
+          "mediana": 13.84,
+          "max": 17.96
+        },
+        "us_por_slot": {
+          "min": 1.009,
+          "mediana": 1.122,
+          "max": 1.141
+        },
+        "bytes_depois": 14910240
+      }
+    },
+    {
+      "linhas": 1000000,
+      "por_volume": null,
+      "repeticoes": 3,
+      "cifrar": {
+        "slots": 1000000,
+        "volumes": 1,
+        "fase_a_ms": {
+          "min": 1119.3,
+          "mediana": 1122.7,
+          "max": 1320.2
+        },
+        "fase_b_ms": {
+          "min": 79.87,
+          "mediana": 86.66,
+          "max": 99.74
+        },
+        "us_por_slot": {
+          "min": 0.919,
+          "mediana": 1.0,
+          "max": 1.158
+        },
+        "bytes_depois": 165001088
+      },
+      "decifrar": {
+        "slots": 1000000,
+        "volumes": 1,
+        "fase_a_ms": {
+          "min": 899.6,
+          "mediana": 909.6,
+          "max": 1016.7
+        },
+        "fase_b_ms": {
+          "min": 70.04,
+          "mediana": 77.71,
+          "max": 81.1
+        },
+        "us_por_slot": {
+          "min": 0.9,
+          "mediana": 0.91,
+          "max": 1.017
+        },
+        "bytes_depois": 149001024
+      }
+    }
+  ],
+  "fsync": {
+    "100000_linhas_1_volume": {
+      "preparo": 9,
+      "criptografar": 2,
+      "descriptografar": 2
+    },
+    "100000_linhas_10_volumes": {
+      "preparo": 18,
+      "criptografar": 20,
+      "descriptografar": 20
+    }
+  }
+}

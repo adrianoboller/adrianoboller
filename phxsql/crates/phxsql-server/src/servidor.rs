@@ -308,6 +308,10 @@ pub(crate) const OPS_ESCRITA: &[&str] = &[
     // Acrescentar coluna reescreve o `.reg` inteiro. E a maior escrita de
     // estrutura que existe aqui.
     "acrescentar_coluna",
+    // Criptografar/descriptografar (pedido 268) reescreve o `.reg` inteiro, a
+    // mesma familia do `acrescentar_coluna`.
+    "criptografar",
+    "descriptografar",
     // Levar a tabela ao PSCH v10 reescreve o `.reg` inteiro UMA VEZ POR
     // COLUNA que falta -- e a mesma familia do `acrescentar_coluna`, porque e
     // ele que faz o trabalho. A VISTA PREVIA (sem `confirmar`) vem junto de
@@ -13846,6 +13850,11 @@ impl Servidor {
             "motivos" | "reasons" => self.op_motivos(p, sessao),
             "trilha" | "trilha_lgpd" => self.op_trilha(p, sessao),
             "marcar_lgpd" | "marcar_dado_pessoal" => self.op_marcar_lgpd(p, sessao),
+            // Pedido 268: UMA funcao para as duas -- a unica diferenca e o
+            // sentido, e duas copias do roteiro (trava, congelamento, FASE A
+            // fora da trava) divergiriam na primeira correcao de uma so.
+            "criptografar" => self.op_migrar_cifra(p, sessao, true),
+            "descriptografar" => self.op_migrar_cifra(p, sessao, false),
             "esvaziar_lixeira" => self.op_esvaziar_lixeira(p, sessao),
             "expurgar_trilha" => self.op_expurgar_trilha(p, sessao),
             "diario" => self.op_diario(p, sessao),
@@ -22380,7 +22389,17 @@ impl Servidor {
                     ));
                 }
             }
-            let bruto = self.executar(&c.op, &pedido, sessao)?;
+            // A migracao da cifra (pedido 268) e OPERACAO sobre a tabela, nao
+            // diretiva: a op `sql` so exige `ler`, entao ela entra pelos
+            // MESMOS portoes que o `despachar` (permissao por tabela,
+            // somente-leitura, politica) -- o `executar_derivado`, que e o
+            // irmao feito para isto. As diretivas de sempre conferem por
+            // dentro (`exigir_administrar_config`) e seguem como estavam.
+            let bruto = if c.e_migracao_da_cifra() {
+                self.executar_derivado(&c.op, &pedido, sessao)?
+            } else {
+                self.executar(&c.op, &pedido, sessao)?
+            };
             return Ok(Json::objeto(vec![
                 ("sql", sql_de_volta(&texto)),
                 ("op", Json::texto_de(&c.op)),
@@ -25308,6 +25327,107 @@ impl Servidor {
             // por que. Numa tabela ja v6 e sempre `false`.
             ("arquivos_reescritos", Json::Bool(reescreveu)),
         ]))
+    }
+
+    /// `criptografar` / `descriptografar` (pedido 268): leva ao disco, PEDIDO,
+    /// o que `cifra.tabelas` so declara. **Administrador.**
+    ///
+    /// ```json
+    /// {"op":"criptografar","database":"loja","tabela":"clientes"}
+    /// ```
+    ///
+    /// # O roteiro e o do `marcar_lgpd`, e e proposital
+    ///
+    /// Uma funcao para os dois sentidos, e o mesmo motor de troca do 632 por
+    /// baixo: a recusa de escopo ANTES de congelar e de gravar byte, a
+    /// transacao viva na vizinhanca (`EM_TRANSACAO`: quem cede e a migracao),
+    /// o congelamento, a trava global SOLTA durante a FASE A -- a parte cara,
+    /// O(linhas) -- e retomada so para a FASE B, que e `rename`. Por isso a
+    /// operacao nao entra na conta das secoes que alcancam `fsync` com a
+    /// trava na mao: o `sincronizar` que o `marcar_lgpd` faz sob a trava aqui
+    /// nao existe, porque a FASE A ja sincronizou cada `*.novo` e a FASE B
+    /// troca por `trocar_duravel`.
+    ///
+    /// # O que a resposta diz em voz alta
+    ///
+    /// `.log`, `.trash`, `.reason` e `.ndx` ficam em claro, e a migracao e
+    /// LOCAL: nao replica. Fica no campo `avisos`, na lingua do servidor.
+    fn op_migrar_cifra(&self, p: &Json, sessao: &Sessao, cifrar: bool) -> Result<Json> {
+        let inicio = std::time::Instant::now();
+        let dados = self.travar_dados()?;
+        let mut t = self.abrir_travada(&dados, p, sessao)?;
+        // O motor decide; daqui sai so a FRASE, pela fabrica.
+        if let Err(r) = t.conferir_migracao_da_cifra(cifrar) {
+            return Err(PhxError::Esquema(self.recusa_da_migracao(&r, t.nome())));
+        }
+        if let Some(recado) = self.transacao_na_vizinhanca(
+            &dados,
+            p.texto_ou("database", ""),
+            p.texto_ou("tabela", ""),
+            &t,
+        )? {
+            return Err(PhxError::EmTransacao(recado));
+        }
+        let posse = phxsql_store::congelamento::congelar(
+            t.diretorio(),
+            t.nome(),
+            if cifrar {
+                "criptografando"
+            } else {
+                "descriptografando"
+            },
+        )?;
+        drop(dados);
+        let troca = t.preparar_migracao_da_cifra(cifrar)?;
+        // Em bloco, e nao solto: o mapa da trava le `#[cfg(test)]` ate a
+        // chave seguinte, e solto ele engolia a secao da trava retomada.
+        #[cfg(test)]
+        {
+            self.rodar_gancho_da_janela();
+        }
+        let dados = self.travar_dados()?;
+        let slots = t.aplicar_migracao_da_cifra(troca)?;
+        let registros = t.registros();
+        drop(posse);
+        drop(dados);
+        let ms = inicio.elapsed().as_secs_f64() * 1e3;
+        let aviso = self.msg(
+            if cifrar {
+                "erro.migracao_aviso_criptografou"
+            } else {
+                "erro.migracao_aviso_descriptografou"
+            },
+            &[],
+        );
+        Ok(Json::objeto(vec![
+            ("database", Json::texto_de(p.texto_ou("database", ""))),
+            ("tabela", Json::texto_de(p.texto_ou("tabela", ""))),
+            ("cifrada", Json::Bool(cifrar)),
+            ("versao", Json::de_u64(if cifrar { 5 } else { 4 })),
+            ("slots_reescritos", Json::de_u64(slots)),
+            ("registros", Json::de_u64(registros)),
+            ("ms", Json::Numero(ms)),
+            ("avisos", Json::Lista(vec![Json::texto_de(aviso)])),
+        ]))
+    }
+
+    /// A frase de uma recusa da migracao da cifra, pela fabrica de idiomas.
+    /// Por CHAVE, nunca pela comparacao do texto: o motor devolve a razao
+    /// como dado justamente para a redacao poder mudar sem quebrar a
+    /// traducao.
+    fn recusa_da_migracao(&self, r: &phxsql_store::RecusaDaMigracao, tabela: &str) -> String {
+        use phxsql_store::RecusaDaMigracao as R;
+        match r {
+            R::JaCifrada => self.msg("erro.migracao_ja_cifrada", &[("tabela", tabela)]),
+            R::JaEmClaro => self.msg("erro.migracao_ja_em_claro", &[("tabela", tabela)]),
+            R::ColunaExterna(c) => self.msg("erro.migracao_coluna_externa", &[("coluna", c)]),
+            R::IndiceDeTexto(i, c) => self.msg(
+                "erro.migracao_indice_de_texto",
+                &[("indice", i), ("coluna", c)],
+            ),
+            R::NadaACifrar => self.msg("erro.migracao_nada_a_cifrar", &[("tabela", tabela)]),
+            R::CofreDesligado => self.msg("erro.migracao_cofre_desligado", &[("tabela", tabela)]),
+        }
     }
 
     /// `trilha`: a trilha de LGPD da tabela. **So administrador.**

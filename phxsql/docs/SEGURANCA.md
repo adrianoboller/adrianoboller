@@ -2761,7 +2761,8 @@ porque ela não responde *«isto está cifrado?»* — responde *«isto deve est
 
 A consequência prática, e ela vai escrita na tela: **declarar não cifra**. Uma
 tabela nomeada na lista cujo `.reg` está em claro continua em claro até alguém
-rodar a migração — que é a parte que **não** foi entregue (§13.6).
+rodar a migração — que desde 02/10/2026 existe como operação **pedida**
+(`criptografar`/`descriptografar`, §13.6), nunca por declaração.
 
 **E o decisor do Profiler não seguia esta seção — por treze dias.** Esta lei
 estava escrita aqui em 05/09/2026 e valia para a LEITURA do dado (que lê o
@@ -2810,21 +2811,74 @@ no ramo dele.
 dado da declarada, e gravar o texto porque a *outra* metade é comum seria vazar
 pela metade que ninguém declarou.
 
-### 13.6 O que NÃO foi entregue, nomeado
+### 13.6 A migração `criptografar`/`descriptografar` (pedido 268) — o que entrou, e o que NÃO
 
-**`Criptografar(tab1, tab2, "Senha")` / `Descriptografar(…)`** — a migração que
-reescreve o `.reg` slot a slot no molde do `ALTER TABLE ADD COLUMN`. **Não
-entrou nesta rodada.** Com ela virão, e o desenho já está decidido:
+**Entrou em 02/10/2026, na 1ª entrega.** `declarar` tabela em `cifra.tabelas`
+**continua não cifrando nada** — a lista é intenção, só o Profiler a lê, e o
+estado é o byte de versão do `.reg` (4 claro, 5 cifrado). Cifrar o que já está
+gravado é uma **operação pedida**, com nome:
 
-- **o `.log`, o `.trash` e o `.reason` são append-only.** `Criptografar` protege
-  o dado **atual** e **não o histórico**; `Descriptografar` abre o atual e
-  **deixa o histórico cifrado**. Não é defeito — é o formato;
-- **o `.ndx` continua em claro.** Medido: **200 de 200** pares `(valor, rowid)`
-  legíveis sem chave nenhuma, e o `.ndx` (28.672 B) é **maior** que o `.reg`
-  (23.440 B) que a cifra protege (§12.3);
-- **a queda no meio** precisa da mesma resposta que o `ALTER` deu com o volume 1
-  como ponto de compromisso — metade cifrada e metade em claro **abre sem erro
-  nenhum** se ninguém marcar.
+```json
+{"op":"criptografar","database":"loja","tabela":"clientes"}
+{"op":"descriptografar","database":"loja","tabela":"clientes"}
+```
+
+e, pelo mesmo núcleo, `ALTER TABLE clientes ENCRYPT` / `DECRYPT` no SQL.
+Permissão `administrar` (o SQL passa pelo mesmo portão que o `op`: a op `sql`
+só exige `ler`, e a guarda `migracao-da-cifra-pelo-sql-sem-portao` prova isso).
+
+**Como funciona — o mesmo motor de troca do pedido 632, sem formato novo.**
+Cada volume (e o espelho) vira um `*.novo` ao lado, **sincronizado**, com o
+i-ésimo slot sendo o i-ésimo (rowid, ordem de digitação e `.ndx` intactos;
+nenhum slot é reaproveitado; o excluído continua excluído). Só depois do último
+`*.novo` vem o `rename`, **volume 1 primeiro** — é o ponto de compromisso: uma
+queda antes dele abre a tabela velha e inteira; uma queda depois dele, a
+**abertura termina para a frente**. O payload é aberto com o material velho e
+selado com o novo, byte a byte (`rowstamp`/`rowtime` moram no payload e ficam).
+**Sal NOVO a cada `criptografar`** (reaproveitar o anterior repetiria chave e
+nonce entre duas vidas do arquivo). A FASE A, que custa O(linhas), roda **fora
+da trava global**, com a tabela congelada; a FASE B, só `rename`, roda dentro.
+Transação viva na tabela **ou numa tabela ligada a ela por chave**: a migração
+cede (`EM_TRANSACAO`).
+
+**Dito em voz alta, porque a palavra «cifrada» promete mais do que isto:**
+
+- **o `.log`, o `.trash` e o `.reason` ficam como estão** — são append-only.
+  `criptografar` protege o dado **atual** e **não o histórico**;
+  `descriptografar` abre o atual e **deixa o histórico cifrado**. É o formato,
+  não defeito. A resposta da operação diz isso, na língua do servidor;
+- **o `.ndx` continua em claro.** Medido no pedido 194: **200 de 200** pares
+  `(valor, rowid)` legíveis sem chave nenhuma, e o `.ndx` (28.672 B) é
+  **maior** que o `.reg` (23.440 B) que a cifra protege (§12.3);
+- **a migração é local: não replica.** A réplica recebe a imagem da linha e
+  sela com o material **dela**; quem migra a origem tem de migrar a réplica
+  também, e a resposta diz isso;
+- **colunas `Memo`/`Bin` marcadas NÃO são alcançadas** (decisão do dono,
+  02/10/2026: 1ª entrega aceita sem elas). Cifrar o `.reg` não sela o conteúdo
+  do `.memo`/`.bin`, e `descriptografar` deixaria blob selado sob um `.reg` v4
+  — silencioso, o CRC bate. Por isso a operação **recusa, antes de gravar um
+  byte**, a tabela com coluna externa **marcada**; coluna `Memo`/`Bin` **não**
+  marcada não impede migrar as colunas inline. Idem o **índice de texto sobre
+  coluna marcada** (o `.fts` guarda as palavras em claro).
+
+**A queda no meio, provada** (três camadas, cada uma no seu teste): panico de
+teste antes do `rename` do volume 1 e depois dele (tabela de 1 volume e
+paginada de 3, nos dois sentidos — `tests/migracao-da-cifra.rs`), e
+**`SIGKILL` pelo soquete** num `phxsqld` de verdade, 32 rodadas em tabela de 40
+volumes (`tests/migracao-da-cifra-pelo-soquete.rs`): em todas a tabela abriu,
+as 1.600 linhas bateram, uma versão só, sem `*.novo`; em 1–2 de cada 32 a queda
+deixou o conjunto **misturado** e a abertura o terminou para a frente.
+
+**Custo, medido** (`bancada/cifra-migracao/medir.py`, 02/10/2026; mediana e
+faixa min–max de 3 a 5 corridas): **1,0 µs por slot** em 1.000.000 de linhas
+(0,92–1,16, N=3), 1,0–1,1 µs em 100.000 (N=5), nos dois sentidos — abaixo da
+estimativa do parecer (1,3–1,6). O PBKDF2 do sal novo (~130–290 ms) é por
+migração, não por linha. **`fsync`, que o parecer não mediu:** 2 por migração
+numa tabela de 1 volume (o `*.novo` + a pasta) e **2 por volume** (20 em dez)
+nas paginadas — o número não depende de N, depende dos volumes. **A FASE B,
+que roda dentro da trava, não é constante**: 11 ms a 100.000 linhas, **87 ms a
+1.000.000** (o `rename` por cima de um arquivo de 165 MB libera as extensões do
+velho); é o mesmo custo do `acrescentar_coluna`, e não foi medido o espelho.
 
 **A senha por banco** (`config.json` com uma senha por database, obrigatória)
 **também não entrou**, e o parecer está na §13.7.

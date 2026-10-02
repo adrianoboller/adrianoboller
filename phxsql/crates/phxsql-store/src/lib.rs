@@ -75,7 +75,7 @@ pub use memoria::{Consulta, Filtro, Operador, Ordem, Resultado, TabelaMemoria};
 pub use motivo::{Motivo, MotivoFile, EXT_REASON, MAGIC_MOTIVO};
 pub use ndx::{DescritorIndice, NdxFile, MAGIC_NDX, PAGINA_PADRAO};
 pub use pag::EXT_PAG;
-pub use reg::{RegFile, TrocaDoEsquema, MAGIC_REG};
+pub use reg::{RecusaDaMigracao, RegFile, TrocaDaCifra, TrocaDoEsquema, MAGIC_REG};
 pub use table::{CheckViolado, Linha, Lote, PlanoV10, Relatorio, Salto, SemEscrever, Table, Visao};
 pub use trilha::{TrilhaFile, EXT_LGPD, MAGIC_TRILHA};
 pub use volume::Volumes;

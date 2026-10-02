@@ -766,6 +766,36 @@ ACRESCENTAR COLUNA NUMA TABELA QUE JA TEM DADO: acrescentar_coluna
     Exige ADMINISTRAR: e a maior escrita de estrutura do motor, e a que nao
     tem desfazer barato.
 
+CIFRAR OU DECIFRAR O QUE JA ESTA GRAVADO: criptografar / descriptografar
+
+    {"op":"criptografar","database":"loja","tabela":"clientes"}
+    {"op":"descriptografar","database":"loja","tabela":"clientes"}
+    ALTER TABLE clientes ENCRYPT;        (o mesmo pedido, pelo SQL)
+    ALTER TABLE clientes DECRYPT;
+
+    Declarar a tabela em cifra.tabelas NAO cifra nada: a lista e intencao, e
+    so o Profiler a le. Cifrar uma tabela que ja existe em claro e esta
+    operacao, PEDIDA. Pre-condicoes: cifra ligada no config.json, ao menos
+    uma coluna inline marcada como dado pessoal, e nenhuma transacao viva na
+    tabela (nem em tabela ligada a ela por chave -- a migracao cede). Exige
+    ADMINISTRAR. Recusa, ANTES de gravar um byte e dizendo o motivo, a
+    tabela que ja esta no estado pedido, a que nao tem coluna marcada, a que
+    tem coluna Memo/Bin MARCADA (o conteudo mora no .memo/.bin e esta versao
+    nao o alcanca) e a que tem indice de texto sobre coluna marcada.
+
+    Como: cada volume (e o espelho) e reescrito num arquivo ao lado, slot a
+    slot na mesma ordem -- rowid, ordem de digitacao e .ndx nao mudam, e o
+    slot excluido continua excluido -- e so depois vem o rename, volume 1
+    primeiro. Uma queda antes dele deixa a tabela velha inteira; uma queda
+    depois, a abertura termina o trabalho. Cada criptografar sorteia sal novo.
+    Custo medido: ~1,0 us por linha (1.000.000 em ~1,1 s), mais ~130-290 ms de
+    PBKDF2 por migracao, e 2 fsync por volume.
+
+    O QUE ELA NAO FAZ, e a resposta repete em "avisos": o historico (.log,
+    .trash, .reason) e o indice (.ndx) ficam em claro -- criptografar protege
+    o dado ATUAL --, e a migracao e LOCAL: nao replica. Migre a replica
+    tambem. Detalhe e medida em docs/SEGURANCA.md §13.6.
+
 SERVIDOR MCP (Model Context Protocol)
 
     phxsqld --mcp                                  pelo token de servico
@@ -1985,6 +2015,8 @@ OPERACOES
     acrescentar_coluna database, tabela, nome, [tipo], [obrigatoria],
                     [padrao], [caption], [descricao], [mascara],
                     [dado_pessoal]           reescreve o .reg; exige administrar
+    criptografar    database, tabela         cifra o dado ATUAL do .reg; administrar
+    descriptografar database, tabela         o inverso; administrar
     duplicar_tabela database, tabela, destino
     copiar_tabela   database, tabela, destino_database, destino
     excluir_tabela  database, tabela, confirmar   confirmar repete o nome

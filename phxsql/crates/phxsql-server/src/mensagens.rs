@@ -664,6 +664,167 @@ pub const FABRICA: &[MensagemFabrica] = &[
             "",
         ],
     },
+    // Pedido 268: as recusas da migracao `criptografar`/`descriptografar`. A
+    // decisao e do motor (`RegFile::conferir_migracao_da_cifra`, que devolve a
+    // razao como DADO); daqui sai so a frase, nos seis idiomas, porque quem
+    // recusa antes de gravar um byte tem de dizer o motivo na lingua de quem
+    // pediu.
+    MensagemFabrica {
+        nome: "erro.migracao_ja_cifrada",
+        textos: [
+            "a tabela {tabela} ja esta cifrada (versao 5): nada a criptografar",
+            "la table {tabela} est deja chiffrée (version 5) : rien à chiffrer",
+            "table {tabela} is already encrypted (version 5): nothing to encrypt",
+            "la tabella {tabela} è già cifrata (versione 5): niente da cifrare",
+            "Tabelle {tabela} ist bereits verschlüsselt (Version 5): nichts zu verschlüsseln",
+            "la tabla {tabela} ya está cifrada (versión 5): nada que cifrar",
+        ],
+    },
+    MensagemFabrica {
+        nome: "erro.migracao_ja_em_claro",
+        textos: [
+            "a tabela {tabela} ja esta em claro (versao 4): nada a descriptografar",
+            "la table {tabela} est déjà en clair (version 4) : rien à déchiffrer",
+            "table {tabela} is already in plaintext (version 4): nothing to decrypt",
+            "la tabella {tabela} è già in chiaro (versione 4): niente da decifrare",
+            "Tabelle {tabela} liegt bereits im Klartext vor (Version 4): nichts zu entschlüsseln",
+            "la tabla {tabela} ya está en claro (versión 4): nada que descifrar",
+        ],
+    },
+    MensagemFabrica {
+        nome: "erro.migracao_coluna_externa",
+        textos: [
+            "a coluna {coluna} (Memo/Bin) esta marcada como dado pessoal: esta \
+             versao da migracao so cifra colunas inline e deixaria o conteudo no \
+             .memo/.bin como esta. Nada foi gravado",
+            "la colonne {coluna} (Memo/Bin) est marquée comme donnée personnelle : \
+             cette version de la migration ne chiffre que les colonnes inline et \
+             laisserait le contenu du .memo/.bin tel quel. Rien n'a été écrit",
+            "column {coluna} (Memo/Bin) is marked as personal data: this version of \
+             the migration only encrypts inline columns and would leave the \
+             .memo/.bin content as is. Nothing was written",
+            "la colonna {coluna} (Memo/Bin) è marcata come dato personale: questa \
+             versione della migrazione cifra solo colonne inline e lascerebbe il \
+             contenuto del .memo/.bin com'è. Nulla è stato scritto",
+            "Spalte {coluna} (Memo/Bin) ist als personenbezogen markiert: diese \
+             Version der Migration verschlüsselt nur Inline-Spalten und ließe den \
+             Inhalt in .memo/.bin unverändert. Nichts wurde geschrieben",
+            "la columna {coluna} (Memo/Bin) está marcada como dato personal: esta \
+             versión de la migración solo cifra columnas inline y dejaría el \
+             contenido del .memo/.bin como está. No se escribió nada",
+        ],
+    },
+    MensagemFabrica {
+        nome: "erro.migracao_indice_de_texto",
+        textos: [
+            "o indice de texto {indice} e sobre a coluna marcada {coluna}: o .fts \
+             guarda as palavras dela em claro e a migracao nao o toca. Exclua o \
+             indice antes. Nada foi gravado",
+            "l'index texte {indice} porte sur la colonne marquée {coluna} : le .fts \
+             garde ses mots en clair et la migration n'y touche pas. Supprimez \
+             l'index d'abord. Rien n'a été écrit",
+            "text index {indice} is on the marked column {coluna}: the .fts keeps \
+             its words in plaintext and the migration does not touch it. Drop the \
+             index first. Nothing was written",
+            "l'indice di testo {indice} è sulla colonna marcata {coluna}: il .fts \
+             tiene le parole in chiaro e la migrazione non lo tocca. Elimina prima \
+             l'indice. Nulla è stato scritto",
+            "der Textindex {indice} liegt auf der markierten Spalte {coluna}: das \
+             .fts hält die Wörter im Klartext, die Migration rührt es nicht an. \
+             Löschen Sie zuerst den Index. Nichts wurde geschrieben",
+            "el índice de texto {indice} está sobre la columna marcada {coluna}: el \
+             .fts guarda sus palabras en claro y la migración no lo toca. Elimine \
+             antes el índice. No se escribió nada",
+        ],
+    },
+    MensagemFabrica {
+        nome: "erro.migracao_nada_a_cifrar",
+        textos: [
+            "nada a cifrar: a tabela {tabela} nao tem coluna inline marcada como \
+             dado pessoal. Marque a coluna antes (marcar_lgpd)",
+            "rien à chiffrer : la table {tabela} n'a aucune colonne inline marquée \
+             comme donnée personnelle. Marquez d'abord la colonne (marcar_lgpd)",
+            "nothing to encrypt: table {tabela} has no inline column marked as \
+             personal data. Mark the column first (marcar_lgpd)",
+            "niente da cifrare: la tabella {tabela} non ha colonne inline marcate \
+             come dato personale. Marca prima la colonna (marcar_lgpd)",
+            "nichts zu verschlüsseln: Tabelle {tabela} hat keine als \
+             personenbezogen markierte Inline-Spalte. Markieren Sie zuerst die \
+             Spalte (marcar_lgpd)",
+            "nada que cifrar: la tabla {tabela} no tiene columna inline marcada \
+             como dato personal. Marque antes la columna (marcar_lgpd)",
+        ],
+    },
+    MensagemFabrica {
+        nome: "erro.migracao_cofre_desligado",
+        textos: [
+            "o cofre esta desligado: ligue a cifra no config.json antes de \
+             criptografar a tabela {tabela}",
+            "le coffre est désactivé : activez le chiffrement dans config.json \
+             avant de chiffrer la table {tabela}",
+            "the vault is off: turn encryption on in config.json before encrypting \
+             table {tabela}",
+            "il vault è spento: attiva la cifratura in config.json prima di \
+             cifrare la tabella {tabela}",
+            "der Tresor ist aus: schalten Sie die Verschlüsselung in config.json \
+             ein, bevor Sie Tabelle {tabela} verschlüsseln",
+            "la bóveda está apagada: active el cifrado en config.json antes de \
+             cifrar la tabla {tabela}",
+        ],
+    },
+    // Os dois avisos da RESPOSTA de sucesso: dizem em voz alta o que a
+    // migracao nao alcanca. O prefixo `erro.` e do conferidor da fabrica, que
+    // exige um so para todo texto que o servidor devolve; aqui nao ha erro.
+    MensagemFabrica {
+        nome: "erro.migracao_aviso_criptografou",
+        textos: [
+            "cifrado o dado ATUAL do .reg. O historico (.log, .trash, .reason) e o \
+             indice (.ndx) continuam em claro, e a migracao e local: nao replica. \
+             Faca o mesmo nos outros servidores",
+            "la donnée ACTUELLE du .reg est chiffrée. L'historique (.log, .trash, \
+             .reason) et l'index (.ndx) restent en clair, et la migration est \
+             locale : elle ne se réplique pas. Faites de même sur les autres serveurs",
+            "the CURRENT data in the .reg is now encrypted. The history (.log, \
+             .trash, .reason) and the index (.ndx) stay in plaintext, and the \
+             migration is local: it does not replicate. Do the same on the other \
+             servers",
+            "il dato ATTUALE del .reg è ora cifrato. Lo storico (.log, .trash, \
+             .reason) e l'indice (.ndx) restano in chiaro, e la migrazione è \
+             locale: non si replica. Fai lo stesso sugli altri server",
+            "die AKTUELLEN Daten im .reg sind jetzt verschlüsselt. Verlauf (.log, \
+             .trash, .reason) und Index (.ndx) bleiben im Klartext, und die \
+             Migration ist lokal: sie wird nicht repliziert. Auf den anderen \
+             Servern wiederholen",
+            "el dato ACTUAL del .reg ahora está cifrado. El historial (.log, \
+             .trash, .reason) y el índice (.ndx) siguen en claro, y la migración \
+             es local: no se replica. Haga lo mismo en los otros servidores",
+        ],
+    },
+    MensagemFabrica {
+        nome: "erro.migracao_aviso_descriptografou",
+        textos: [
+            "o dado ATUAL do .reg voltou ao claro. O historico ja gravado cifrado \
+             (.log, .trash, .reason) continua cifrado, e a migracao e local: nao \
+             replica. Faca o mesmo nos outros servidores",
+            "la donnée ACTUELLE du .reg est revenue en clair. L'historique déjà \
+             chiffré (.log, .trash, .reason) reste chiffré, et la migration est \
+             locale : elle ne se réplique pas. Faites de même sur les autres serveurs",
+            "the CURRENT data in the .reg is back in plaintext. History already \
+             written encrypted (.log, .trash, .reason) stays encrypted, and the \
+             migration is local: it does not replicate. Do the same on the other \
+             servers",
+            "il dato ATTUALE del .reg è tornato in chiaro. Lo storico già scritto \
+             cifrato (.log, .trash, .reason) resta cifrato, e la migrazione è \
+             locale: non si replica. Fai lo stesso sugli altri server",
+            "die AKTUELLEN Daten im .reg liegen wieder im Klartext. Bereits \
+             verschlüsselt geschriebener Verlauf (.log, .trash, .reason) bleibt \
+             verschlüsselt, und die Migration ist lokal: sie wird nicht \
+             repliziert. Auf den anderen Servern wiederholen",
+            "el dato ACTUAL del .reg volvió a estar en claro. El historial ya \
+             escrito cifrado (.log, .trash, .reason) sigue cifrado, y la migración \
+             es local: no se replica. Haga lo mismo en los otros servidores",
+        ],
+    },
     MensagemFabrica {
         nome: "erro.pulso_de_no_desconhecido",
         textos: [
@@ -1237,6 +1398,48 @@ mod tests {
                     m.nome,
                     t.len(),
                     LARGURA_DO_TEXTO
+                );
+            }
+        }
+    }
+
+    /// **Pedido 268:** as recusas e os avisos da migracao da cifra saem nos
+    /// SEIS idiomas, e nao so em portugues e ingles com o resto caindo para o
+    /// portugues -- quem recusa antes de gravar um byte tem de dizer o motivo
+    /// na lingua de quem pediu. Os marcadores `{...}` de cada texto tambem
+    /// tem de ser os do portugues: traducao que perde `{coluna}` diz «a coluna
+    /// esta marcada» sem dizer qual.
+    ///
+    /// # Prova real
+    ///
+    /// Esvaziando uma celula de `erro.migracao_coluna_externa`, ou trocando
+    /// `{coluna}` por outra palavra em uma delas, o teste reprova.
+    #[test]
+    fn a_migracao_da_cifra_fala_os_seis_idiomas() {
+        let marcadores = |t: &str| -> Vec<String> {
+            let mut v: Vec<String> = t
+                .split('{')
+                .skip(1)
+                .filter_map(|r| r.split('}').next().map(str::to_string))
+                .collect();
+            v.sort();
+            v
+        };
+        let nomes: Vec<&str> = FABRICA
+            .iter()
+            .map(|m| m.nome)
+            .filter(|n| n.starts_with("erro.migracao_"))
+            .collect();
+        assert_eq!(nomes.len(), 8, "{nomes:?}");
+        for n in nomes {
+            let m = FABRICA.iter().find(|m| m.nome == n).unwrap();
+            for (i, t) in m.textos.iter().enumerate() {
+                assert!(!t.is_empty(), "{n} sem o idioma {}", IDIOMAS[i]);
+                assert_eq!(
+                    marcadores(t),
+                    marcadores(m.textos[0]),
+                    "{n} em {} perdeu ou inventou um marcador",
+                    IDIOMAS[i]
                 );
             }
         }

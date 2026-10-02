@@ -797,7 +797,16 @@ TETO_TESTE_SEM_MODULO = 0
 # as duas pontas do `?` do CALL). Medido por `--numeros`; piso so sobe com
 # entrada nova, e se outra frente somar entradas no mesmo passo o integrador
 # reconta -- o numero e do catalogo do dia, nao desta frente.
-PISO_DAS_ENTRADAS = 733
+# 733 -> 742 (268, 02/10/2026): as nove guardas da migracao da cifra
+# (`criptografar`/`descriptografar`) -- selar com o material velho, reaproveitar
+# o sal, ressuscitar o slot livre, a FASE B sem conferir o retrato, o Memo/Bin
+# marcado deixado em claro, o 'nada a cifrar', a versao fora da geometria, o
+# SQL sem o portao e a migracao sem a pergunta da transacao na vizinhanca.
+# Medido por `--numeros` (742); as nove foram provadas uma a uma pelo provador
+# (`--so <id> --json`). Piso so sobe com entrada nova, e se outra frente somar
+# entradas no mesmo passo o integrador reconta -- o numero e do catalogo do
+# dia, nao desta frente.
+PISO_DAS_ENTRADAS = 742
 
 # ------------------------------------------------------------- APOSENTADAS
 #

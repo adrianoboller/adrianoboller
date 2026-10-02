@@ -237,6 +237,10 @@ pub const CLASSES: &[(&str, PorColuna)] = &[
     ("marcar_lgpd", PorColuna::Nenhum),
     ("marcar_dado_pessoal", PorColuna::Nenhum),
     ("esvaziar_lixeira", PorColuna::Nenhum),
+    // A resposta de `criptografar`/`descriptografar` (pedido 268) diz a
+    // tabela, a versao e quantos slots passaram -- nenhum valor de coluna.
+    ("criptografar", PorColuna::Nenhum),
+    ("descriptografar", PorColuna::Nenhum),
     // A resposta diz quais VOLUMES sairam, quantos registros e os instantes --
     // nenhum valor de coluna, nenhuma identidade de linha.
     ("expurgar_trilha", PorColuna::Nenhum),
