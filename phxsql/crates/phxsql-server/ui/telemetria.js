@@ -1692,7 +1692,7 @@ window.PhxTelemetria = (function () {
         "Derrubar a conexão {n}? O soquete fecha e o cliente perde a resposta."),
         { n: a.ligacao }))) return;
       try {
-        const r = await estado.api("encerrar_sessao", { id: a.ligacao });
+        const r = await estado.api("encerrar_sessao", { id: a.ligacao, tipo: "conexao" });
         estado.aoAvisar(r.aviso || txt("tela.tl_conexao_encerrada", "conexão encerrada"));
       } catch (e) { estado.aoAvisar(String(e), true); }
       volta();

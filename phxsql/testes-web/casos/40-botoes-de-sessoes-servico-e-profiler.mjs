@@ -58,6 +58,15 @@ async function corpo(ctx, extras) {
   const esperar = sel => page.waitForSelector(sel, { timeout: ESPERA });
   const some = sel => page.waitForSelector(sel, { state: 'detached', timeout: ESPERA });
 
+  // Espia os pedidos de encerramento (pedido 644): a tela tem de DIZER qual das
+  // duas e o alvo. O id web sorteado so tem algarismos em 2,3% das corridas,
+  // entao o servidor sozinho nao pegaria a tela que esquecesse o campo.
+  await page.evaluate(() => {
+    window.__encerrar = [];
+    const orig = api;
+    api = (op, p) => { if (op === 'encerrar_sessao') window.__encerrar.push(p); return orig(op, p); };
+  });
+
   // ------------------------------------------------ sessoes: encerrar uma conexao
   passo = 'sessoes: encerrar uma conexao';
   const a = await conexaoViva(ctx);
@@ -81,6 +90,7 @@ async function corpo(ctx, extras) {
   await clicarOuExplicar(page, celula(a.local));
   const caiu = await Promise.race([a.fechou, new Promise(r => setTimeout(() => r(false), 8000))]);
   verdade(caiu, 'o Encerrar nao fechou o soquete do cliente');
+  igual((await page.evaluate(() => window.__encerrar.at(-1))).tipo, 'conexao', 'o Encerrar da conexao devia mandar tipo=conexao');
   verdade(b.aberta(), 'o Encerrar derrubou tambem a conexao vizinha');
   await page.waitForFunction(porta => !document.querySelector('#gradeSessoes')?.textContent.includes(':' + porta),
     a.local, { timeout: ESPERA });
@@ -90,17 +100,8 @@ async function corpo(ctx, extras) {
   const outro = await ctx.page.context().newPage();
   extras.push(() => outro.close());
   await entrar(outro, ctx.url);
-  // ACHADO NOMEADO, NAO CONSERTADO (e de `servidor.rs`, que e de outra frente):
-  // `op_encerrar_sessao` decide web x conexao por «o id tem alguma letra». O id
-  // da sessao web e hexadecimal de 8 digitos, e 2,3% deles ((10/16)^8) saem so
-  // com algarismos -- ai o servidor o toma por NUMERO DE CONEXAO e responde
-  // «encerrar_sessao sem "id"» (ou derrubaria a conexao de mesmo numero). O caso
-  // nao pode depender dessa sorte: sorteia outra sessao ate o id ter uma letra.
-  for (let i = 0; i < 12 && /^\d+$/.test(await outro.evaluate(() => est.sessao.slice(0, 8))); i++) {
-    await outro.evaluate(() => api('sair').catch(() => {}));
-    await entrar(outro, ctx.url);
-    ctx.notas.push('id de sessao web so com algarismos: sorteada outra (defeito do servidor, ver o comentario do caso)');
-  }
+  // O pedido diz «tipo: web»: o id sorteado pode ter so algarismos (2,3%) sem
+  // que isso mude a sessao encerrada (pedido 644) -- nada a esquivar aqui.
   await page.evaluate(() => verSessoes());
   await esperar('#gradeSessoesWeb [data-killweb]');
   await page.waitForFunction(() => document.querySelectorAll('#gradeSessoesWeb [data-killweb]').length >= 2,
@@ -122,6 +123,7 @@ async function corpo(ctx, extras) {
   await outro.evaluate(() => api('bancos'));                    // continua valendo
   page.once('dialog', d => d.accept());
   await clicarOuExplicar(page, `#gradeSessoesWeb [data-killweb="${alvoWeb}"]`);
+  igual((await page.evaluate(() => window.__encerrar.at(-1))).tipo, 'web', 'o Encerrar da sessao web devia mandar tipo=web');
   // O proximo pedido de quem estava la cai no login.
   let caiuNoLogin = false;
   for (let i = 0; i < 20 && !caiuNoLogin; i++) {
@@ -179,6 +181,11 @@ async function corpo(ctx, extras) {
   passo = 'profiler: ligar, limpar e parar';
   await page.evaluate(() => verProfiler());
   await esperar('#pfLigar');
+  // Pedido 645: a porta do subtitulo e a que o servidor escuta, e nao a 5000
+  // cravada (a bateria sobe numa porta de proposito diferente).
+  await page.waitForFunction(p => document.querySelector('#subtitulo')?.textContent.includes('porta ' + p),
+    String(ctx.portaDados), { timeout: ESPERA });
+  verdade(!/porta 5000/.test(await page.textContent('#subtitulo')), 'o subtitulo do Profiler crava a porta 5000');
   verdade(await page.$eval('#pfParar', x => x.disabled), 'Parar nao pode estar liberado com o profiler desligado');
   await page.fill('#pfOp', 'ping');
   await clicarOuExplicar(page, '#pfLigar');

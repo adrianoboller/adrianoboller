@@ -4770,6 +4770,30 @@
       "quando": "2026-10-02 08:27"
     },
     {
+      "id": "encerrar-sessao-adivinha-web-pela-forma",
+      "titulo": "o encerrar_sessao decide web x conexao pela forma do id e ignora o `tipo` do pedido (pedido 644)",
+      "veredito": "PROVADA",
+      "segundos": 76.31,
+      "notas": [],
+      "quando": "2026-10-02 10:14"
+    },
+    {
+      "id": "ping-crava-a-porta-5000",
+      "titulo": "o ping devolve a porta 5000 de fabrica em vez da que o servidor escuta (pedido 645)",
+      "veredito": "PROVADA",
+      "segundos": 80.22,
+      "notas": [],
+      "quando": "2026-10-02 10:14"
+    },
+    {
+      "id": "conferidor-nao-ve-porta-cravada",
+      "titulo": "o conferidor de numero cravado em texto de tela deixa de acusar «porta NNNN» (pedido 645)",
+      "veredito": "PROVADA",
+      "segundos": 77.99,
+      "notas": [],
+      "quando": "2026-10-02 10:14"
+    },
+    {
       "id": "alter-com-regra-sem-aviso",
       "titulo": "`acrescentar_coluna` com `check` ou `calculada` numa tabela com linha é aceito SEM AVISO, e a linha velha fica fora da regra",
       "veredito": "PROVADA",

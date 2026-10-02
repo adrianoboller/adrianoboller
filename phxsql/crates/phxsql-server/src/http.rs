@@ -717,6 +717,22 @@ impl Sessoes {
         self.dentro.get_mut(id).and_then(|s| s.desafio.take())
     }
 
+    /// Planta uma sessao com id escolhido: o id real e sorteado, e o caso que
+    /// o pedido 644 cobra (id so de algarismos, 2,3% deles) nao se provaria
+    /// esperando a sorte.
+    #[cfg(test)]
+    pub fn semear_para_teste(&mut self, id: &str, login: &str, agora_ms: i64) {
+        self.dentro.insert(
+            id.to_string(),
+            Sessao {
+                login: login.to_string(),
+                expira_ms: agora_ms + 3_600_000,
+                desde_ms: agora_ms,
+                desafio: None,
+            },
+        );
+    }
+
     pub fn encerrar(&mut self, id: &str) -> bool {
         self.dentro.remove(id).is_some()
     }

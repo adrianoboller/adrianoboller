@@ -406,9 +406,10 @@ com o raciocínio de cada uma, está em `docs/CATRACAS.md`.
 | `TETO_INVENTARIO_DESCASADO` (extensoes que faltam ou sobram entre o codigo e as tres copias) | `crates/phxsql-server/src/conferidor_inventario.rs` | 0 | **0** | em cima, sem folga |
 | `TETO_SEGREDO_SOLTO` (arquivos com cara de chave na arvore do repositorio) | `crates/phxsql-server/src/conferidor_segredos.rs` | 0 | **0** | em cima, sem folga |
 | `TETO_TEMP_DIR_SOLTO` (chamadas a std::env::temp_dir() fora do catalogo) | `crates/phxsql-server/src/conferidor_temporarios.rs` | 0 | **0** | em cima, sem folga |
-| `TETO_ROTULOS_E_CRASE` (textos cravados fora da fabrica de idiomas) | `crates/phxsql-server/src/conferidor.rs` | 863 | **863** | em cima, sem folga |
+| `TETO_ROTULOS_E_CRASE` (textos cravados fora da fabrica de idiomas) | `crates/phxsql-server/src/conferidor.rs` | 861 | **861** | em cima, sem folga |
 | `TETO_COLADO` (chaves com os seis idiomas identicos) | `crates/phxsql-server/src/conferidor.rs` | 0 | **0** | em cima, sem folga |
 | `TETO_FRASE_REPETIDA` (frase longa repetida em tres ou mais idiomas) | `crates/phxsql-server/src/conferidor.rs` | 0 | **0** | em cima, sem folga |
+| `TETO_NUMERO_CRAVADO_EM_TELA` (numero que so o servidor sabe cravado em texto de tela) | `crates/phxsql-server/src/conferidor.rs` | 6 | **6** | em cima, sem folga |
 | `TETO_VERMELHA_SEM_PEDIDO` (provas vermelhas sem pedido no PENDENCIAS.md) | `crates/phxsql-server/src/conferidor_vermelhas.rs` | 0 | **0** | em cima, sem folga |
 | `TETO_FSYNC_DA_SUBIDA` (fsync gastos pela subida do byte 52 numa janela, por tabela) | `crates/phxsql-store/src/conferidor_fsync.rs` | 1 | **1** | em cima, sem folga |
 | `TETO_FSYNC_POR_FECHO_V2` (fsync gastos por fecho de janela de durabilidade) | `crates/phxsql-store/src/conferidor_fsync.rs` | 8 | **8** | em cima, sem folga |
@@ -425,9 +426,9 @@ com o raciocínio de cada uma, está em `docs/CATRACAS.md`.
 | `TETO_TESTE_FORA_DO_BINARIO` (testes que existem, mas nao no binario que a entrada nomeia) | `bancada/guardas/trecho-vivo.py` | 0 | **0** | em cima, sem folga |
 | `TETO_TESTE_SEM_MODULO` (testes de alvo --lib nomeados sem o caminho do modulo) | `bancada/guardas/trecho-vivo.py` | 0 | **0** | em cima, sem folga |
 | `TETO_NAO_JULGADA_ESCONDIDA` (entradas que a ultima corrida nao julgou e que a pagina nao nomeia) | `bancada/guardas/trecho-vivo.py` | 0 | **0** | em cima, sem folga |
-| `PISO_DAS_ENTRADAS` (entradas vivas do catalogo mais as aposentadas escritas) | `bancada/guardas/trecho-vivo.py` | piso 770 | **770** | em cima, sem folga |
+| `PISO_DAS_ENTRADAS` (entradas vivas do catalogo mais as aposentadas escritas) | `bancada/guardas/trecho-vivo.py` | piso 773 | **773** | em cima, sem folga |
 
-*25 catraca(s) medida(s) por conferidor + 3 catraca(s) imposta(s) por teste sem `--numeros` = **28** catraca(s) ao todo. Refaz com `python3 docs/qa/medir.py`.*
+*26 catraca(s) medida(s) por conferidor + 3 catraca(s) imposta(s) por teste sem `--numeros` = **29** catraca(s) ao todo. Refaz com `python3 docs/qa/medir.py`.*
 
 **Catracas impostas por teste que ainda NÃO respondem a `--numeros`.** São catraca de verdade — um teste do próprio
 arquivo afirma contra a constante —, só falta o exemplo em `crates/*/examples/*.rs` que a exponha (no molde de `textos-fora-da-fabrica.rs`). Sem ele esta tabela sabe o VALOR declarado, mas não o MEDIDO de hoje:

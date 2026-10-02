@@ -2194,8 +2194,11 @@ pub const OPERACOES: &[Operacao] = &[
         nome: "encerrar_sessao",
         apelidos: &["kill"],
         resumo: "Derruba uma conexão pelo número dela.",
-        parametros: &[obr("id", "integer", "o id da ligação, do `sessoes`")],
-        exemplo: r#"{"op":"encerrar_sessao","id":17}"#,
+        parametros: &[
+            obr("id", "integer", "o id da ligação, do `sessoes` (ou o começo do id da sessão web)"),
+            opc("tipo", "string", "`conexao` ou `web`: qual das duas é o alvo. Sem ele, id só de algarismos em texto é recusado por ambíguo"),
+        ],
+        exemplo: r#"{"op":"encerrar_sessao","id":17,"tipo":"conexao"}"#,
         ferramenta_mcp: false,
     },
     Operacao {

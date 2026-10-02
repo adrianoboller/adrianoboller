@@ -2433,7 +2433,7 @@ const DEMO = {
 function demo(op, p) {
   const d = DEMO, nome = (p.tabela||"").split(".").pop();
   switch (op) {
-    case "ping": return {phxsql:"0.3.0", papel:"isolado", conexoes:1};
+    case "ping": return {phxsql:"0.3.0", papel:"isolado", conexoes:1, porta_dados:5000, arquivos_por_tabela:["reg","ndx","bin","memo","log"]};
     case "bancos": return d.bancos;
     case "tabelas": return {database:p.database, ...(d.tabelas[p.database]||{schemas:[],tabelas:[]})};
     case "esquema": return d.esquema[nome] || {tabela:nome,registros:0,slots:0,colunas:[],indices:[],chaves_estrangeiras:[],paginacao:null};
@@ -2733,6 +2733,7 @@ async function abrirApp() {
   // honesto; corte que perde o dado nao -- o texto inteiro fica aqui.
   $("#eu").title = quemSou;
   const p = await api("ping");
+  est.porta = p.porta_dados;               // a porta REAL, para os textos que a citam
   // «papel isolado» sai do titulo: servidor sozinho e o caso comum, e dizer
   // isso na barra o tempo todo e ruido que ocupa o lugar do que importa. Mas
   // `source` e `replica` FICAM -- essas mudam o que a tela deixa fazer
@@ -6722,7 +6723,7 @@ async function pivotPasso3() {
   // verdadeiro), e o `||` antigo contava com o `undefined` de antes -- o
   // «← Resultado» nascia sem `onclick` (achado pela bateria, pedido 636).
   $("#pv_json").onclick = () => { folha(txt("tela.tt_pivot_pedido","Tabela dinâmica · o pedido"),
-    txt("tela.st_mesmo_cruzamento_5000","o mesmo cruzamento pela porta 5000"),
+    preencher(txt("tela.st_mesmo_cruzamento_porta","o mesmo cruzamento pela porta {porta}"), {porta: est.porta || "?"}),
     `<pre class="dado">${esc(JSON.stringify({
       op: "pivotar", database: w.db, tabela: w.tabela,
       juntar: w.juncoes, linhas: w.linhas, colunas: w.colunas,
@@ -9885,7 +9886,7 @@ async function verSessoes() {
     if (!confirm(marcado(txt("tela.se_confirma_kill",
         "Encerrar a conexão {id}?\n\nO cliente do outro lado perde a conexão."), { id }))) return;
     try {
-      const r = await api("encerrar_sessao", { id: Number(id) });
+      const r = await api("encerrar_sessao", { id: Number(id), tipo: "conexao" });
       avisar(marcado(txt("tela.se_av_kill", "conexão {id} ({estava}) — {aviso}"),
         { id: r.encerrada, estava: r.estava, aviso: r.aviso }));
       verSessoes();
@@ -9912,7 +9913,7 @@ async function verSessoes() {
       if (!confirm(marcado(txt("tela.se_confirma_killweb",
           "Encerrar a sessão web {id}…?\n\nO próximo clique de quem estava usando cai no login."), { id }))) return;
       try {
-        const r = await api("encerrar_sessao", { id });
+        const r = await api("encerrar_sessao", { id, tipo: "web" });
         avisar(marcado(txt("tela.se_av_killweb", "sessão {id} encerrada — {aviso}"),
           { id: r.encerrada, aviso: r.aviso }));
         verSessoes();
@@ -11744,7 +11745,7 @@ async function editarJob(nome) {
        <label class="largo"><span>${esc(txt("tela.jb_lb_pedido","Pedido do protocolo"))}</span>
          <textarea id="jbPedido" spellcheck="false">${
            esc(x ? JSON.stringify(x.pedido, null, 2) : '{\n  "op": "ping"\n}')}</textarea>
-         <span class="leg">${marcado(txt("tela.jb_leg_pedido","o mesmo objeto que a porta 5000 aceita, **sem** o `token` — o job não entra pela rede"))}</span></label>
+         <span class="leg">${marcado(txt("tela.jb_leg_pedido","o mesmo objeto que a porta {porta} aceita, **sem** o `token` — o job não entra pela rede"), { porta: est.porta || "?" })}</span></label>
 
        <label class="chk largo">
          <input type="checkbox" id="jbLigado" ${x && x.ligado ? "checked" : ""}>
@@ -14002,9 +14003,11 @@ async function verProfiler() {
   const bancos = await api("bancos").catch(() => []);
   const e = await api("profiler", { max: 200 }).catch(() => ({ ligado:false, filtro:{} }));
   const f = e.filtro || {};
+  // A porta que o servidor escuta AGORA (pode ter sido trocada pela tela).
+  await api("ping").then(p => { est.porta = p.porta_dados; }).catch(() => {});
 
   if (!aindaNoPainel(vez)) return;
-  folha(txt("tela.fer_profiler","Profiler"), txt("tela.st_profiler_o_que_chega","o que chega pela porta 5000, antes de virar dado"),
+  folha(txt("tela.fer_profiler","Profiler"), preencher(txt("tela.st_profiler_o_que_chega","o que chega pela porta {porta}, antes de virar dado"), { porta: est.porta || "?" }),
     `<div class="acoes prof-topo">
        <label class="mini-campo">Database
          <select id="pfDb"><option value="">— todos —</option>
@@ -15390,17 +15393,17 @@ async function verQuemSou() {
 
 async function verSobre() {
   const vez = tomarPainel();
-  let v = "—";
+  let v = "—", tipos = [];
   // O ping responde a versao em `phxsql` (e nao em `versao`): lendo o campo
   // errado a ficha «versão» da tela Sobre saia sempre «—» -- achado clicando
   // no «?» da barra (caso 46).
-  try { const p = await api("ping"); v = p.phxsql || p.versao || "—"; } catch (e) { /* offline: segue */ }
+  try { const p = await api("ping"); v = p.phxsql || p.versao || "—"; tipos = p.arquivos_por_tabela || []; } catch (e) { /* offline: segue */ }
   if (!aindaNoPainel(vez)) return;
   folha(txt("tela.mi_sobre","Sobre o PhxSql"), "Built to store. Engineered to scale.",
     `<div class="fichas">
        <div class="ficha"><div class="v">${esc(v)}</div><div class="r">versão</div></div>
-       <div class="ficha"><div class="v">5</div><div class="r">arquivos por tabela</div>
-         <div class="u">.reg .ndx .bin .memo .log</div></div>
+       <div class="ficha"><div class="v">${tipos.length ? tipos.length : "—"}</div><div class="r">${esc(txt("tela.sobre_tipos_por_tabela","tipos de arquivo por tabela"))}</div>
+         <div class="u">${esc(tipos.map(x => "." + x).join(" "))}</div></div>
        <div class="ficha"><div class="v">0</div><div class="r">dependências</div>
          <div class="u">só a std do Rust</div></div>
      </div>

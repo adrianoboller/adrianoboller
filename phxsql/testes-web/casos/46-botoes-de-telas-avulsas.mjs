@@ -112,6 +112,26 @@ async function corpo(ctx, desfazer) {
     undefined, { timeout: ESPERA });
   contem(await page.textContent('#painel .fichas'), versao, 'a ajuda devia dizer a versao que o servidor diz');
   await capturar(ctx, ctx.nomeCaptura('sobre'));
+  // Pedido 645: o Sobre nao crava «5 arquivos por tabela» -- o numero e a lista
+  // saem do `ping`, da lista unica do motor de armazenamento.
+  passo = 'sobre: os tipos de arquivo vem do servidor';
+  const tipos = (await api(page, 'ping')).arquivos_por_tabela;
+  verdade(Array.isArray(tipos) && tipos.length > 5, `o ping devia trazer a lista de tipos (>5, ha .fts/.lgpd/.pag): ${JSON.stringify(tipos)}`);
+  const fichaTipos = await page.$$eval('#painel .ficha', fs => fs.map(f => [f.querySelector('.v')?.textContent, f.querySelector('.u')?.textContent || '']));
+  verdade(fichaTipos.some(([v, u]) => v === String(tipos.length) && tipos.every(t => u.includes('.' + t))),
+    `o Sobre devia mostrar ${tipos.length} tipos e a lista do servidor, mostrou ${JSON.stringify(fichaTipos)}`);
+
+  // A tabela com .memo e .fts: o subtitulo da estrutura lista o que o servidor
+  // diz que a tabela TEM -- nem as cinco da frase velha, nem as onze possiveis.
+  passo = 'estrutura: a contagem de arquivos de uma tabela com .memo e .fts';
+  const dbArq = bancoDoCaso(ctx, 'Arq');
+  await cenario(page, dbArq, 'doc');
+  await api(page, 'redeclarar_indices_texto', { database: dbArq, tabela: 'doc', indices_texto: [{ nome: 'porFicha', coluna: 'ficha' }] });
+  const doServidor = (await api(page, 'esquema', { database: dbArq, tabela: 'doc' })).arquivos;
+  verdade(doServidor.includes('.fts') && doServidor.includes('.memo'), `a tabela devia ter .fts e .memo: ${JSON.stringify(doServidor)}`);
+  await page.evaluate(([d, t]) => { est.aba = 'estrutura'; return abrirTabela(d, t); }, [dbArq, 'doc']);
+  await page.waitForFunction(esperado => document.querySelector('#subtitulo')?.textContent.includes(esperado),
+    doServidor.join(' + '), { timeout: ESPERA });
 
   // ========================================================= juncao e uniao
   passo = 'juncao: os sete formatos';

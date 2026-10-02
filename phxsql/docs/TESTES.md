@@ -2329,14 +2329,32 @@ para fazer.
 | teste que floca | `botoes-dos-idiomas-e-do-backup` | esperava a carga de ~1.900 mensagens por 600 ms; passou a esperar o **efeito** |
 | teste que floca | `botoes-de-configuracao` (meu) | o «gravado» do aviso anterior valia pelo novo; o aviso é limpo antes de cada salvar |
 
-**Nomeado e NÃO consertado — é de `servidor.rs`, que é de outra frente:**
-`op_encerrar_sessao` decide «sessão web × número de conexão» por **o id ter
-alguma letra**. O id da sessão web tem 8 dígitos hexadecimais, e **2,3 %**
-((10/16)⁸) saem só com algarismos: aí o servidor os toma por número de conexão
-e responde `encerrar_sessao sem "id"` — ou derrubaria a conexão de mesmo
-número. O botão «Encerrar» da lista de sessões web falha em 1 de cada ~43
-sessões. O caso 40 sorteia outra sessão até o id ter letra, e o comentário diz
-por quê. A correção é do servidor: o pedido precisa dizer qual das duas é.
+**Consertado depois (pedido 644, 02/10/2026):** `op_encerrar_sessao` decidia
+«sessão web × número de conexão» por **o id ter alguma letra**, e 2,3 %
+((10/16)⁸) dos ids web saem só com algarismos. Agora o **pedido diz** qual é:
+`"tipo": "web"` ou `"tipo": "conexao"`, e a tela manda o campo nos três botões
+«Encerrar» (sessões, sessões web, derrubar da telemetria). Compatibilidade, por
+que *guarda nova entra pedida, não imposta*: sem o campo, número JSON segue
+sendo conexão e texto com letra segue sendo sessão web (conexão nunca tem
+letra — não há palpite); **texto só de algarismos é recusado dizendo por quê**,
+nunca adivinhado — era o único caso em que o velho derrubava a conexão errada.
+Prova pelo soquete em `servidor::testes_encerrar_sessao_644` (id web «1» ×
+conexão 1; **RED medido** com a heurística reposta: a conexão 1 caía). O caso 40
+não sorteia mais sessão até o id ter letra: espia o pedido e confere `tipo`.
+
+**Números cravados na tela (pedido 645, 02/10/2026):** o Profiler dizia «pela
+porta 5000» e o Sobre «5 arquivos por tabela». Agora o `ping` traz
+`porta_dados` (a porta que o servidor escuta *agora*, a mesma função do
+`/saude`) e `arquivos_por_tabela` (a lista única de
+`Database::extensoes_de_uma_tabela`, 11 tipos), e a tela só os lê. O
+conferidor `numeros_cravados` (catraca nova `TETO_NUMERO_CRAVADO_EM_TELA` = 6,
+medida; **não** sobe nenhuma outra) acusa pela forma «porta NNNN» e «N arquivos»
+(plural); `TETO_ROTULOS_E_CRASE` caiu de 863 para 861. Ficam 6 achados do mesmo
+molde, fora do pedido: `nt_sete_arquivos`, `g_prompt_duplicar_nome` («cinco
+arquivos»), `sb_bio_adriano`, e o «7000 by default» do swagger. A tabela com
+`.memo` e `.fts` tem a contagem conferida no caso 46 (subtítulo da estrutura =
+`esquema.arquivos` do servidor); a porta, no caso 40 (a bateria sobe em 6200,
+nunca em 5000).
 
 **Duas dispensas novas, com motivo e número (5 botões):** `#btAnt`, `#btProx`,
 `#btEstr` e `#btVoltaEstr` (a tela de uma tabela de um banco de fora, que só

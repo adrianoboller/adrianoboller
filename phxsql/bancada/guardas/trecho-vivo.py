@@ -833,7 +833,10 @@ TETO_TESTE_SEM_MODULO = 0
 # entrada: o `std` abre tudo com CLOEXEC, entao nao ha trecho nosso para
 # repor -- a prova la e o controle do detector (`o_detector_de_descritores_ve_o_que_vaza`).
 # Se outra frente somar entradas no mesmo passo o integrador reconta.
-PISO_DAS_ENTRADAS = 770
+# 770 -> 773 (02/10/2026, pedidos 644 e 645): `encerrar-sessao-adivinha-web-pela-forma`,
+# `ping-crava-a-porta-5000` e `conferidor-nao-ve-porta-cravada`, as tres
+# provadas uma a uma (`--so <id> --json`). Medido por `--numeros` (773).
+PISO_DAS_ENTRADAS = 773
 
 # ------------------------------------------------------------- APOSENTADAS
 #

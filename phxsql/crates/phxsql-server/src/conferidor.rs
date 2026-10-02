@@ -1141,6 +1141,75 @@ pub fn frases_repetidas() -> Vec<(&'static str, &'static str, usize)> {
     achados
 }
 
+/// O numero que so o servidor sabe, escrito dentro de uma frase de tela --
+/// «pela porta 5000», «5 arquivos por tabela» (pedido 645).
+///
+/// Reconhece dois moldes, pela FORMA e nao por lista de frases:
+///
+/// 1. uma palavra de porta (`porta`, `port`, `puerto`, `puerta`) seguida de
+///    espaco e de 3 a 5 algarismos;
+/// 2. numero (algarismos, ou por extenso de dois a onze) seguido de uma
+///    palavra de arquivo no PLURAL (`arquivos`, `files`, `fichiers`, `archivi`,
+///    `Dateien`, `archivos`).
+///
+/// O que a pagina INTERPOLA (`{porta}`, `${...}`) nao casa, porque ali nao ha
+/// algarismo: o texto certo e o que deixa o lugar do numero para o servidor.
+pub fn numero_cravado_em(texto: &str) -> bool {
+    let t = texto.to_lowercase();
+    let palavras: Vec<&str> = t
+        .split(|c: char| !(c.is_alphanumeric() || c == '_'))
+        .filter(|p| !p.is_empty())
+        .collect();
+    const PORTA: [&str; 4] = ["porta", "port", "puerto", "puerta"];
+    // So o PLURAL: «0 = arquivo unico» e «1 arquivo» nao afirmam contagem.
+    const ARQUIVO: [&str; 6] = [
+        "arquivos", "files", "fichiers", "archivi", "dateien", "archivos",
+    ];
+    const POR_EXTENSO: [&str; 10] = [
+        "dois", "tres", "três", "quatro", "cinco", "seis", "sete", "oito", "nove", "dez",
+    ];
+    let algarismos = |p: &str, min: usize, max: usize| {
+        (min..=max).contains(&p.len()) && p.bytes().all(|b| b.is_ascii_digit())
+    };
+    palavras.windows(2).any(|par| {
+        (PORTA.contains(&par[0]) && algarismos(par[1], 3, 5))
+            || (ARQUIVO.contains(&par[1])
+                && (algarismos(par[0], 1, 3) && par[0] != "0" && par[0] != "1"
+                    || POR_EXTENSO.contains(&par[0])))
+    })
+}
+
+/// Onde a tela crava um numero que o servidor sabe: (onde, a linha).
+///
+/// Duas vias, como o conferidor de rotulos: o texto de cada idioma da
+/// fabrica, e as linhas do fonte da interface que chamam `txt(` (o texto de
+/// reserva que mora ao lado da chave). Linha de dado de demonstracao (a
+/// amostra `ficha:"veio pela porta 5000"`) nao chama `txt(` e fica de fora.
+pub fn numeros_cravados() -> Vec<(String, String)> {
+    let mut achados = Vec::new();
+    for f in crate::idiomas::FABRICA_TELA {
+        for t in f.textos.iter() {
+            if numero_cravado_em(t) {
+                achados.push((f.nome.to_string(), (*t).to_string()));
+                break; // uma vez por chave, senao seriam seis por frase.
+            }
+        }
+    }
+    for (arquivo, fonte) in FONTES {
+        for (i, linha) in fonte.lines().enumerate() {
+            if linha.contains("txt(") && numero_cravado_em(linha) {
+                achados.push((format!("{arquivo}:{}", i + 1), linha.trim().to_string()));
+            }
+        }
+    }
+    achados
+}
+
+/// Numeros cravados em texto de tela -- catraca NOVA do pedido 645, no numero
+/// medido do dia em que a regua nasceu. **So desce.** Nao substitui nenhuma
+/// outra: e uma pergunta que nenhuma catraca fazia.
+pub const TETO_NUMERO_CRAVADO_EM_TELA: usize = 6;
+
 /// Chaves com os seis idiomas iguais. **So desce**, e hoje e zero.
 pub const TETO_COLADO: usize = 0;
 
@@ -1416,7 +1485,7 @@ pub fn token_sem_definicao_e_sem_fallback() -> Vec<(&'static str, String)> {
 /// que diziam «declarada, nao imposta», o contrario da decisao do dono --
 /// foram reescritos E entraram pela fabrica, em seis chaves de frase inteira
 /// (`tela.fk_card_*`, `tela.er_nota_fk_*`): oito literais cravados a menos.
-pub const TETO_ROTULOS_E_CRASE: usize = 863;
+pub const TETO_ROTULOS_E_CRASE: usize = 861;
 #[cfg(test)]
 mod testes {
     use std::collections::HashSet;
@@ -1620,6 +1689,53 @@ mod testes {
                  se traduz mesmo -- e ai ele entra nos ISENTOS com a razao escrita",
                 achadas.len()
             );
+        }
+    }
+
+    /// O pedido 645: a tela nao crava o numero que so o servidor sabe.
+    #[test]
+    fn nenhum_numero_cravado_em_texto_de_tela_acima_da_catraca() {
+        let achadas = numeros_cravados();
+        if achadas.len() > TETO_NUMERO_CRAVADO_EM_TELA {
+            panic!(
+                "{} numero(s) cravado(s) em texto de tela, e a catraca esta em \
+                 {TETO_NUMERO_CRAVADO_EM_TELA}:\n{}\nO numero vem do servidor (`ping`), \
+                 e o texto leva um {{marcador}}",
+                achadas.len(),
+                achadas
+                    .iter()
+                    .map(|(onde, t)| format!("  {onde}: {t}"))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            );
+        }
+        assert!(
+            achadas.len() + 3 >= TETO_NUMERO_CRAVADO_EM_TELA,
+            "sobraram {} e a catraca esta em {TETO_NUMERO_CRAVADO_EM_TELA}: baixe-a no mesmo commit",
+            TETO_NUMERO_CRAVADO_EM_TELA - achadas.len()
+        );
+    }
+
+    /// Os dois sentidos da regua: acusa o cravado, deixa passar o marcador.
+    #[test]
+    fn o_conferidor_de_numero_cravado_acusa_o_padrao_e_poupa_o_marcador() {
+        for cravado in [
+            "o que chega pela porta 5000, antes de virar dado",
+            "what arrives on port 5000",
+            "5 arquivos por tabela",
+            "Os cinco arquivos sao copiados",
+            "ein Port 5000",
+        ] {
+            assert!(numero_cravado_em(cravado), "devia acusar {cravado:?}");
+        }
+        for certo in [
+            "o que chega pela porta {porta}, antes de virar dado",
+            "{n} arquivo(s)",
+            "tipos de arquivo por tabela",
+            "a porta de dados esta aceitando conexao",
+            "um arquivo por vez",
+        ] {
+            assert!(!numero_cravado_em(certo), "nao devia acusar {certo:?}");
         }
     }
 

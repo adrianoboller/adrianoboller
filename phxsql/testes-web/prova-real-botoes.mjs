@@ -108,11 +108,11 @@ const DEFEITOS = [
 
   // ------------------------------------------------------------- caso 40
   { caso: 'botoes-de-sessoes-servico-e-profiler', nome: 'o «Encerrar» da sessão não fecha o soquete',
-    patch: trocar('      const r = await api("encerrar_sessao", { id: Number(id) });', '      const r = { encerrada: id, estava: "", aviso: "" };') },
+    patch: trocar('      const r = await api("encerrar_sessao", { id: Number(id), tipo: "conexao" });', '      const r = { encerrada: id, estava: "", aviso: "" };') },
   { caso: 'botoes-de-sessoes-servico-e-profiler', nome: 'o «Encerrar» da sessão ignora o confirm',
     patch: trocar('    if (!confirm(marcado(txt("tela.se_confirma_kill",\n        "Encerrar a conexão {id}?\\n\\nO cliente do outro lado perde a conexão."), { id }))) return;', '    confirm("x");') },
   { caso: 'botoes-de-sessoes-servico-e-profiler', nome: 'o «Encerrar» da sessão web não encerra',
-    patch: trocar('        const r = await api("encerrar_sessao", { id });', '        const r = { encerrada: id, aviso: "" };') },
+    patch: trocar('        const r = await api("encerrar_sessao", { id, tipo: "web" });', '        const r = { encerrada: id, aviso: "" };') },
   { caso: 'botoes-de-sessoes-servico-e-profiler', nome: 'o «Parar a porta de dados» não para',
     patch: trocar('      const r = await api("servico_parar");', '      const r = { conexoes_abertas: 0 };') },
   { caso: 'botoes-de-sessoes-servico-e-profiler', nome: 'o «Limpar» do profiler não limpa o anel',
@@ -120,7 +120,7 @@ const DEFEITOS = [
 
   // ------------------------------------------------------------- caso 41
   { caso: 'botoes-da-telemetria-viva', nome: 'o «Derrubar a conexão» não derruba',
-    patch: trocar('        const r = await estado.api("encerrar_sessao", { id: a.ligacao });', '        const r = {};') },
+    patch: trocar('        const r = await estado.api("encerrar_sessao", { id: a.ligacao, tipo: "conexao" });', '        const r = {};') },
   { caso: 'botoes-da-telemetria-viva', nome: 'o «Derrubar a conexão» ignora o confirm',
     patch: trocar('      if (!confirm(preencher(txt("tela.tl_derrubar_pergunta",\n        "Derrubar a conexão {n}? O soquete fecha e o cliente perde a resposta."),\n        { n: a.ligacao }))) return;', '      confirm("x");') },
   { caso: 'botoes-da-telemetria-viva', nome: 'o «Encerrar a operação» não manda o pedido',
@@ -189,6 +189,18 @@ const DEFEITOS = [
                           '    database: $("#db").value.trim(),\n    senha: $("#s").value,\n    quando: new Date().toISOString(),\n  };\n  const lista = conexoes();')(
                    trocar('    quando:   String(c.quando ?? "").slice(0, 40),\n  };',
                           '    quando:   String(c.quando ?? "").slice(0, 40),\n    senha:    c.senha,\n  };')(html)) },
+  // ------------------------------------------------------------- pedido 644
+  { caso: 'botoes-de-sessoes-servico-e-profiler', nome: 'o «Encerrar» da sessao web esquece de dizer o tipo (o servidor teria de adivinhar)',
+    patch: trocar('api("encerrar_sessao", { id, tipo: "web" })', 'api("encerrar_sessao", { id })') },
+  { caso: 'botoes-de-sessoes-servico-e-profiler', nome: 'o «Encerrar» da conexao esquece de dizer o tipo',
+    patch: trocar('api("encerrar_sessao", { id: Number(id), tipo: "conexao" })', 'api("encerrar_sessao", { id: Number(id) })') },
+  // ------------------------------------------------------------- pedido 645
+  { caso: 'botoes-de-sessoes-servico-e-profiler', nome: 'o Profiler volta a cravar «porta 5000» no subtitulo',
+    patch: trocar('preencher(txt("tela.st_profiler_o_que_chega","o que chega pela porta {porta}, antes de virar dado"), { porta: est.porta || "?" })', '"o que chega pela porta 5000, antes de virar dado"') },
+  { caso: 'botoes-de-telas-avulsas', nome: 'o Sobre volta a cravar «5 arquivos por tabela»',
+    patch: trocar('<div class="v">${tipos.length ? tipos.length : "—"}</div>', '<div class="v">5</div>') },
+  { caso: 'botoes-de-telas-avulsas', nome: 'o subtitulo da estrutura volta a listar as cinco extensoes de cabeca',
+    patch: trocar('$("#subtitulo").textContent = `${database} · ${e.arquivos.join(" + ")}`;', '$("#subtitulo").textContent = `${database} · .reg + .ndx + .bin + .memo + .log`;') },
   { caso: 'botoes-de-telas-avulsas', nome: 'a ficha «versão» do Sobre lê o campo errado do ping (o defeito achado clicando)',
     patch: trocar('v = p.phxsql || p.versao || "—";', 'v = p.versao || "—";') },
   { caso: 'botoes-de-telas-avulsas', nome: 'o ajuste do contador grava um número a mais',
