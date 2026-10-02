@@ -12,6 +12,31 @@ Os números são **medidos**, nunca estimados.
 
 ## Não lançado
 
+### 268 — `criptografar`/`descriptografar`: cifrar o que já está gravado, pedido
+
+**Adicionado**
+
+- **268** — a operação `criptografar` (e a inversa `descriptografar`; no SQL,
+  `ALTER TABLE t ENCRYPT|DECRYPT`) leva ao disco o que `cifra.tabelas` só
+  declara: reescreve o `.reg` v4↔v5 pelo mesmo motor de troca do 632 (`*.novo`
+  sincronizado, `rename` com o volume 1 como compromisso, FASE A fora da
+  trava), com sal novo a cada cifragem e rowid, ordem de digitação e `.ndx`
+  intactos. **Sem mudança de formato.** Recusa, antes de gravar byte, coluna
+  `Memo`/`Bin` marcada e índice de texto sobre coluna marcada. Medido
+  (`bancada/cifra-migracao/medir.py`): ~1,0 µs/slot (1.000.000 de linhas em
+  ~1,1 s), 2 `fsync` por volume; 32 `SIGKILL` pelo soquete sem uma tabela
+  pela metade. `docs/SEGURANCA.md` §13.6.
+
+**Mudado**
+
+- A geometria que a abertura compara entre volumes e `*.novo` passa a incluir a
+  versão do volume (só regra de leitura; nenhum byte novo).
+
+**Sabido**
+
+- O histórico (`.log`, `.trash`, `.reason`) e o `.ndx` ficam em claro, a
+  migração é local (não replica) e não alcança `Memo`/`Bin` marcado.
+
 ### 207 — a escrita com quórum: o commit espera N réplicas gravarem em disco
 
 **Adicionado**

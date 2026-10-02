@@ -803,7 +803,16 @@ TETO_TESTE_SEM_MODULO = 0
 # contador da Sequence na promocao (adocao no abrir_para_replicar, campo no
 # posicao, campo no lote do quorum, motor da adocao no RegFile). Medido por
 # `--numeros` na arvore do merge.
-PISO_DAS_ENTRADAS = 738
+# 738 -> 747 (268, 02/10/2026; no merge, 738 + 9): as nove guardas da migracao da cifra
+# (`criptografar`/`descriptografar`) -- selar com o material velho, reaproveitar
+# o sal, ressuscitar o slot livre, a FASE B sem conferir o retrato, o Memo/Bin
+# marcado deixado em claro, o 'nada a cifrar', a versao fora da geometria, o
+# SQL sem o portao e a migracao sem a pergunta da transacao na vizinhanca.
+# Medido por `--numeros` (747) na arvore do merge; as nove foram provadas uma a uma pelo provador
+# (`--so <id> --json`). Piso so sobe com entrada nova, e se outra frente somar
+# entradas no mesmo passo o integrador reconta -- o numero e do catalogo do
+# dia, nao desta frente.
+PISO_DAS_ENTRADAS = 747
 
 # ------------------------------------------------------------- APOSENTADAS
 #

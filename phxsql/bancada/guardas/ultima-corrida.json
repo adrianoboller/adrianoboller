@@ -4514,6 +4514,78 @@
       "quando": "2026-10-02 04:52"
     },
     {
+      "id": "migracao-da-cifra-sela-com-o-material-velho",
+      "titulo": "Criptografar selava os slots com o material VELHO (em claro) e a tabela saia 'cifrada' com o segredo legivel",
+      "veredito": "PROVADA",
+      "segundos": 7.5,
+      "notas": [],
+      "quando": "2026-10-02 05:07"
+    },
+    {
+      "id": "migracao-da-cifra-reaproveita-o-sal",
+      "titulo": "cada Criptografar tinha de sortear sal NOVO; reaproveitar o anterior repete chave e nonce",
+      "veredito": "PROVADA",
+      "segundos": 8.03,
+      "notas": [],
+      "quando": "2026-10-02 05:07"
+    },
+    {
+      "id": "migracao-da-cifra-ressuscita-o-slot-livre",
+      "titulo": "a migracao reescrevia o slot excluido como ATIVO: a linha apagada voltava",
+      "veredito": "PROVADA",
+      "segundos": 8.39,
+      "notas": [],
+      "quando": "2026-10-02 05:07"
+    },
+    {
+      "id": "migracao-da-cifra-sem-conferir-o-retrato",
+      "titulo": "a FASE B da migracao renomeava o retrato por cima de uma escrita confirmada no meio",
+      "veredito": "PROVADA",
+      "segundos": 8.07,
+      "notas": [],
+      "quando": "2026-10-02 05:07"
+    },
+    {
+      "id": "migracao-da-cifra-deixa-o-memo-marcado-em-claro",
+      "titulo": "Criptografar aceitava tabela com coluna Memo/Bin marcada e deixava o conteudo legivel no .memo/.bin",
+      "veredito": "PROVADA",
+      "segundos": 8.02,
+      "notas": [],
+      "quando": "2026-10-02 05:07"
+    },
+    {
+      "id": "migracao-da-cifra-sem-nada-a-cifrar",
+      "titulo": "Criptografar de tabela sem coluna inline marcada reescrevia a tabela para a v5 sem proteger nada",
+      "veredito": "PROVADA",
+      "segundos": 8.51,
+      "notas": [],
+      "quando": "2026-10-02 05:07"
+    },
+    {
+      "id": "geometria-do-volume-sem-a-versao",
+      "titulo": "a decisao da troca sem a versao na geometria deixa o *.novo da migracao indistinguivel do volume velho",
+      "veredito": "PROVADA",
+      "segundos": 8.84,
+      "notas": [],
+      "quando": "2026-10-02 05:07"
+    },
+    {
+      "id": "migracao-da-cifra-pelo-sql-sem-portao",
+      "titulo": "ALTER TABLE ... ENCRYPT pelo SQL passava pela permissao da op `sql` (ler) e cifrava a tabela",
+      "veredito": "PROVADA",
+      "segundos": 24.45,
+      "notas": [],
+      "quando": "2026-10-02 05:07"
+    },
+    {
+      "id": "migracao-da-cifra-sem-pergunta-de-transacao",
+      "titulo": "a migracao congelava a tabela debaixo de uma transacao viva e o COMMIT dela saia pela metade",
+      "veredito": "PROVADA",
+      "segundos": 23.78,
+      "notas": [],
+      "quando": "2026-10-02 05:07"
+    },
+    {
       "id": "alter-com-regra-sem-aviso",
       "titulo": "`acrescentar_coluna` com `check` ou `calculada` numa tabela com linha é aceito SEM AVISO, e a linha velha fica fora da regra",
       "veredito": "PROVADA",

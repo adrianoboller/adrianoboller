@@ -333,6 +333,11 @@ impl Atividade {
             // cria podia, em laco, dobrar o disco de uma tabela grande alheia,
             // congela-la, e tirar a busca de texto dela.
             "acrescentar_coluna" | "redeclarar_indices_texto" => Atividade::Administrar,
+            // Criptografar/descriptografar (pedido 268) reescreve o `.reg`
+            // INTEIRO e muda o que o disco entrega a quem o copia: e
+            // administracao, como `marcar_lgpd`, e pelo mesmo portao (o campo
+            // `tabela`).
+            "criptografar" | "descriptografar" => Atividade::Administrar,
             // Levar a tabela ao PSCH v10 e o `acrescentar_coluna` duas vezes,
             // entao nao pode pedir menos que ele. E o campo que o portao le e
             // o `tabela` de sempre -- com uma excecao que a propria operacao

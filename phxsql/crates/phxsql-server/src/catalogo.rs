@@ -1424,6 +1424,30 @@ pub const OPERACOES: &[Operacao] = &[
         ferramenta_mcp: false,
     },
     Operacao {
+        nome: "criptografar",
+        apelidos: &[],
+        resumo: "Cifra o dado ATUAL de uma tabela que já existe em claro \
+                 (colunas inline marcadas como dado pessoal; cofre ligado). \
+                 Reescreve o `.reg` inteiro, sal novo; o rowid e o `.ndx` não \
+                 mudam. Recusa coluna Memo/Bin marcada e índice de texto sobre \
+                 coluna marcada. O histórico (`.log`, `.trash`, `.reason`) e o \
+                 `.ndx` ficam em claro, e a migração não replica.",
+        parametros: &[DB, TAB],
+        exemplo: r#"{"op":"criptografar","database":"loja","tabela":"clientes"}"#,
+        ferramenta_mcp: false,
+    },
+    Operacao {
+        nome: "descriptografar",
+        apelidos: &[],
+        resumo: "O inverso do `criptografar`: devolve ao claro o dado ATUAL de \
+                 uma tabela cifrada. Exige a chave (a tabela cifrada só abre com \
+                 ela). O histórico gravado cifrado continua cifrado, e a \
+                 migração não replica.",
+        parametros: &[DB, TAB],
+        exemplo: r#"{"op":"descriptografar","database":"loja","tabela":"clientes"}"#,
+        ferramenta_mcp: false,
+    },
+    Operacao {
         nome: "migrar_esquema",
         apelidos: &[],
         resumo: "A porta do formato de esquema atual: leva ao PSCH v10 uma \

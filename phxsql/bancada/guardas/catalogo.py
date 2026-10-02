@@ -23846,4 +23846,206 @@ fn anotar(""",
             "reconciliar_nunca_recua_o_contador",
         ],
     },
+    {
+        "id": "migracao-da-cifra-sela-com-o-material-velho",
+        "titulo": "Criptografar selava os slots com o material VELHO (em claro) e a tabela saia 'cifrada' com o segredo legivel",
+        "porque": (
+            "pedido 268: o `transformar` da migracao abre o slot com o material "
+            "velho e SELA com o novo; trocar um pelo outro compila, a tabela "
+            "muda para a versao 5, o CRC de cada slot bate -- e o nome do "
+            "cliente continua legivel nos bytes do `.reg`. So o teste que "
+            "procura o segredo no arquivo depois da migracao ve; o veredito da "
+            "operacao e 'ok' nos dois casos."
+        ),
+        "arquivo": "crates/phxsql-store/src/reg.rs",
+        "trecho": """                let mut fora = montar_slot_com(
+                    &material_novo,
+                    &faixas,
+                    slot_novo,""",
+        "troca": """                let mut fora = montar_slot_com(
+                    &material_velho,
+                    &faixas,
+                    slot_novo,""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "migracao-da-cifra"],
+        "caem": ["round_trip_devolve_o_payload_byte_a_byte"],
+        "seguem": ["migrar_para_onde_a_tabela_ja_esta_e_recusado"],
+    },
+    {
+        "id": "migracao-da-cifra-reaproveita-o-sal",
+        "titulo": "cada Criptografar tinha de sortear sal NOVO; reaproveitar o anterior repete chave e nonce",
+        "porque": (
+            "pedido 268, parecer do papel C: a tabela decifrada e cifrada de "
+            "novo com o mesmo material repetiria a chave (e, com a versao do "
+            "slot repetida, o nonce) entre duas vidas do mesmo arquivo. Nao "
+            "da erro nenhum e a tabela abre -- so o teste que compara o sal "
+            "dos dois cabecalhos ve."
+        ),
+        "arquivo": "crates/phxsql-store/src/reg.rs",
+        "trecho": """        let material_novo = if cifrar {
+            cofre::Material::novo()?
+        } else {""",
+        "troca": """        let material_novo = if cifrar {
+            { static C: std::sync::Mutex<Option<cofre::Material>> = std::sync::Mutex::new(None); let mut g = C.lock().unwrap(); if g.is_none() { *g = Some(cofre::Material::novo()?); } (*g).unwrap() }
+        } else {""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "migracao-da-cifra"],
+        "caem": ["cada_criptografar_sorteia_sal_novo"],
+        "seguem": ["round_trip_devolve_o_payload_byte_a_byte"],
+    },
+    {
+        "id": "migracao-da-cifra-ressuscita-o-slot-livre",
+        "titulo": "a migracao reescrevia o slot excluido como ATIVO: a linha apagada voltava",
+        "porque": (
+            "pedido 268: `montar_slot_com` devolve sempre `STATUS_ATIVO`; o "
+            "status velho e reposto DEPOIS, porque o CRC nao o cobre. Sem a "
+            "reposicao o slot excluido (de vez ou suave) volta a ser linha "
+            "viva, o rowid e a ordem de digitacao nao mudam e nada reclama -- "
+            "uma exclusao desfeita em silencio, e numa tabela de dado pessoal."
+        ),
+        "arquivo": "crates/phxsql-store/src/reg.rs",
+        "trecho": """                // Depois do `montar_slot_com`: o CRC nao cobre o status, e repo-lo
+                // aqui e o que mantem o livre livre.
+                fora[0] = status;""",
+        "troca": """                fora[0] = STATUS_ATIVO;""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "migracao-da-cifra"],
+        "caem": ["slot_excluido_continua_excluido_e_o_rowid_nao_anda"],
+        "seguem": ["round_trip_devolve_o_payload_byte_a_byte"],
+    },
+    {
+        "id": "migracao-da-cifra-sem-conferir-o-retrato",
+        "titulo": "a FASE B da migracao renomeava o retrato por cima de uma escrita confirmada no meio",
+        "porque": (
+            "pedido 268: o `*.novo` e um retrato; quem escreve entre as duas "
+            "fases (o congelamento impede em servico) tem a escrita PERDIDA se "
+            "a FASE B nao conferir o retrato. O congelamento previne, o "
+            "retrato garante -- e perda de dado em silencio e o pior "
+            "resultado desta operacao."
+        ),
+        "arquivo": "crates/phxsql-store/src/reg.rs",
+        "trecho": """        if let Err(e) = t.troca.conferir_retrato() {
+            t.troca.descartar();
+            return Err(e);
+        }
+        let slots = self.alargar_fase_b(t.troca)?;""",
+        "troca": """        let slots = self.alargar_fase_b(t.troca)?;""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "migracao-da-cifra"],
+        "caem": ["escrita_no_meio_e_conflito_sem_perda"],
+        "seguem": ["queda_antes_do_rename_do_volume_1_abre_velha_e_inteira"],
+    },
+    {
+        "id": "migracao-da-cifra-deixa-o-memo-marcado-em-claro",
+        "titulo": "Criptografar aceitava tabela com coluna Memo/Bin marcada e deixava o conteudo legivel no .memo/.bin",
+        "porque": (
+            "pedido 268, parecer do papel C: cifrar o `.reg` nao sela o "
+            "conteudo do `.memo`/`.bin`, e `Descriptografar` deixaria blob "
+            "selado sob um `.reg` v4 -- silencioso, o CRC bate. A 1a entrega "
+            "RECUSA, antes de gravar byte, e a recusa e a unica coisa entre a "
+            "palavra 'cifrada' e o memo sigiloso em claro ao lado."
+        ),
+        "arquivo": "crates/phxsql-store/src/reg.rs",
+        "trecho": """            return Err(RecusaDaMigracao::ColunaExterna(c.nome.clone()));""",
+        "troca": """            let _ = c;""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "migracao-da-cifra"],
+        "caem": ["coluna_externa_e_indice_de_texto_sao_recusados_antes_de_gravar"],
+        "seguem": ["migrar_para_onde_a_tabela_ja_esta_e_recusado"],
+    },
+    {
+        "id": "migracao-da-cifra-sem-nada-a-cifrar",
+        "titulo": "Criptografar de tabela sem coluna inline marcada reescrevia a tabela para a v5 sem proteger nada",
+        "porque": (
+            "pedido 268: sem faixa marcada o rabo do slot e zero e o unico "
+            "efeito seria 64 bytes de cabecalho e uma tabela carimbada de "
+            "cifrada que nao cifra nada. A conferencia e a mesma regra do "
+            "`criar` ('tabela sem coluna marcada nasce em claro')."
+        ),
+        "arquivo": "crates/phxsql-store/src/reg.rs",
+        "trecho": """        if cifrar && self.faixas.is_empty() {
+            return Err(RecusaDaMigracao::NadaACifrar);
+        }""",
+        "troca": "",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "migracao-da-cifra"],
+        "caem": ["sem_coluna_marcada_ou_sem_cofre_nada_e_tocado"],
+        "seguem": ["migrar_para_onde_a_tabela_ja_esta_e_recusado"],
+    },
+    {
+        "id": "geometria-do-volume-sem-a-versao",
+        "titulo": "a decisao da troca sem a versao na geometria deixa o *.novo da migracao indistinguivel do volume velho",
+        "porque": (
+            "pedido 268, guarda obrigatoria do parecer: em tabela so de "
+            "colunas externas o rabo e zero e o `slot_size` nao muda; com o "
+            "mesmo `data_offset` e o mesmo CRC de esquema, a troca DECIDIDA "
+            "(volume 1 ja novo) vira 'sobra', o `*.novo` e apagado e o "
+            "conjunto fica com versoes misturadas, calado, porque a "
+            "uniformidade compara a mesma tripla."
+        ),
+        "arquivo": "crates/phxsql-store/src/reg.rs",
+        "trecho": """                let decidida = paginada
+                    && alvo.exists()
+                    && geometria_do_volume(&alvo) != esperado
+                    && geometria_do_volume(&novo) == esperado;""",
+        "troca": """                let sem_versao = |g: Option<(usize, u64, u32, u16)>| g.map(|g| (g.0, g.1, g.2));
+                let decidida = paginada
+                    && alvo.exists()
+                    && sem_versao(geometria_do_volume(&alvo)) != sem_versao(esperado)
+                    && sem_versao(geometria_do_volume(&novo)) == sem_versao(esperado);""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "migracao-da-cifra"],
+        "caem": ["a_versao_entra_na_geometria_quando_o_resto_empata"],
+        "seguem": ["queda_depois_do_rename_do_volume_1_termina_para_a_frente"],
+    },
+    {
+        "id": "migracao-da-cifra-pelo-sql-sem-portao",
+        "titulo": "ALTER TABLE ... ENCRYPT pelo SQL passava pela permissao da op `sql` (ler) e cifrava a tabela",
+        "porque": (
+            "pedido 268: a op `sql` so exige `ler`, e as diretivas conferem "
+            "por dentro. A migracao e operacao sobre a tabela e exige "
+            "`administrar`; chamar `executar` (como as diretivas) em vez do "
+            "`executar_derivado` abre a porta dos fundos -- o pedido 'op' "
+            "continua recusado, e o teste do op sozinho passa."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """                self.executar_derivado(&c.op, &pedido, sessao)?
+            } else {
+                self.executar(&c.op, &pedido, sessao)?""",
+        "troca": """                self.executar(&c.op, &pedido, sessao)?
+            } else {
+                self.executar(&c.op, &pedido, sessao)?""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "migracao-da-cifra-pelo-soquete"],
+        "caem": ["quem_nao_administra_nao_migra_nem_pelo_sql"],
+        "seguem": ["declarar_nao_cifra_e_pedir_cifra_pelo_op_e_pelo_sql"],
+    },
+    {
+        "id": "migracao-da-cifra-sem-pergunta-de-transacao",
+        "titulo": "a migracao congelava a tabela debaixo de uma transacao viva e o COMMIT dela saia pela metade",
+        "porque": (
+            "pedido 268, o irmao do 426: a transacao empilhada na tabela (ou "
+            "numa ligada a ela) nao pode ser surpreendida por uma reescrita. "
+            "Quem cede e a migracao (`EM_TRANSACAO`). Sem a pergunta o "
+            "congelamento barra o commit no meio e a recuperacao do "
+            "arranque e quem acha o estrago."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """            return Err(PhxError::Esquema(self.recusa_da_migracao(&r, t.nome())));
+        }
+        if let Some(recado) = self.transacao_na_vizinhanca(
+            &dados,
+            p.texto_ou("database", ""),
+            p.texto_ou("tabela", ""),
+            &t,
+        )? {
+            return Err(PhxError::EmTransacao(recado));
+        }""",
+        "troca": """            return Err(PhxError::Esquema(self.recusa_da_migracao(&r, t.nome())));
+        }""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "migracao-da-cifra-pelo-soquete"],
+        "caem": ["transacao_na_tabela_ligada_pela_chave_barra_a_migracao"],
+        "seguem": ["declarar_nao_cifra_e_pedir_cifra_pelo_op_e_pelo_sql"],
+    },
 ]

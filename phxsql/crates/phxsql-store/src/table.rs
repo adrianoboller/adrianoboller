@@ -31,6 +31,7 @@ use crate::log::{Evento, LogFile, Operacao, EXT_LOG};
 use crate::motivo::{Motivo, MotivoFile, Tipo, EXT_REASON};
 use crate::ndx::{panico_de_teste, NdxFile};
 use crate::reg::RegFile;
+use crate::reg::TrocaDaCifra;
 use crate::reg::TrocaDoEsquema;
 // Qualificado: `crate::log::Evento` ja ocupa o nome `Evento` aqui, e os dois
 // eventos sao coisas diferentes -- um e do diario, o outro e da trilha.
@@ -1557,6 +1558,36 @@ impl Table {
     ) -> Result<Option<TrocaDoEsquema>> {
         let novo = self.reg.esquema_com_marcas(marcas)?;
         self.preparar_troca(novo)
+    }
+
+    /// **Pedido 268: a conferencia da migracao da cifra**, sem gravar nada --
+    /// para o servidor recusar ANTES de congelar a tabela e para traduzir a
+    /// razao pela fabrica de idiomas. Ver [`RegFile::conferir_migracao_da_cifra`].
+    pub fn conferir_migracao_da_cifra(
+        &self,
+        cifrar: bool,
+    ) -> std::result::Result<(), crate::reg::RecusaDaMigracao> {
+        self.reg.conferir_migracao_da_cifra(cifrar)
+    }
+
+    /// **Pedido 268: a FASE A de `Criptografar`/`Descriptografar`** -- a
+    /// reescrita da tabela ao lado, que custa O(linhas) e e a unica parte que
+    /// pode correr FORA da trava global. Quem chama congelou a tabela
+    /// (`congelamento::congelar`) e soltou a trava; a FASE B entra pelo
+    /// [`Table::aplicar_migracao_da_cifra`].
+    ///
+    /// O motor e o do `marcar_lgpd` e do `acrescentar_coluna`, nao um
+    /// segundo: ver [`RegFile::migrar_cifra_fase_a`].
+    pub fn preparar_migracao_da_cifra(&mut self, cifrar: bool) -> Result<TrocaDaCifra> {
+        self.reg.migrar_cifra_fase_a(cifrar)
+    }
+
+    /// A FASE B da migracao da cifra: so `rename`, com o retrato conferido.
+    /// Devolve quantos slots a FASE A reescreveu.
+    pub fn aplicar_migracao_da_cifra(&mut self, troca: TrocaDaCifra) -> Result<u64> {
+        let slots = self.reg.migrar_cifra_fase_b(troca)?;
+        self.esquema = self.reg.esquema().clone();
+        Ok(slots)
     }
 
     fn preparar_troca(&mut self, novo: Schema) -> Result<Option<TrocaDoEsquema>> {
