@@ -1665,6 +1665,7 @@ VARIAS INSTANCIAS, DOCKER E CLUSTER
           "avisar_cada_min": 5,           // aceita fracao: 0.1 = 6 s
           "quorum_minimo": 0,             // replicas que confirmam; 0 = desliga
           "quorum_prazo_ms": 10000,       // 100..600000; vencido = grava e avisa
+          "atraso_maximo_na_eleicao": 0,  // teto de atraso do eleito; 0 = sem teto
           "token": "...", "usuario": "replicador",
           "senha_hash": "pbkdf2-sha256$...",
           "databases": [],                // vazio = todos os do master
@@ -1682,7 +1683,10 @@ VARIAS INSTANCIAS, DOCKER E CLUSTER
     permissao "replicar"). Master calado alem da janela abre eleicao: so
     promove quem enxerga a MAIORIA dos nos configurados; entre os elegiveis
     vence a maior posicao do diario, empate pela prioridade e depois pelo
-    menor id. O papel vivo e a epoca (cresce a cada eleicao) persistem em
+    menor id. Com "atraso_maximo_na_eleicao": N (pedido 313; padrao 0 =
+    sem teto, o comportamento de sempre), quem esta mais de N eventos atras
+    da ultima posicao que o master publicou nao concorre; todos atras, NINGUEM
+    se promove e a degradacao diz por que. O papel vivo e a epoca (cresce a cada eleicao) persistem em
     base/cluster.estado.json -- o master antigo que volta se ve destronado
     pela epoca maior no pulso e SE REBAIXA sozinho. Um master que perde a
     maioria de vista RECUSA escrita, para conter o split-brain.
@@ -1703,6 +1707,14 @@ VARIAS INSTANCIAS, DOCKER E CLUSTER
     naquele no; vazio = tunel sem pino, so escuta passiva). Padrao false: um
     cluster que ja rodava continua em claro na atualizacao -- guarda nova entra
     pedida. Ligar exige que todo no atenda o aperto. Ver docs/CIFRA-DO-FIO.md.
+
+    NOISE NA 0.19, RECUSADO NA 0.20 (pedido 652). A porta de dados aceita o
+    aperto Noise e o TLS; quem ainda chega por Noise fica no erro padrao, UMA
+    linha por par e depois uma hora calado:
+        aviso: conexao por Noise do par 10.0.0.2 (iniciador: no no2): o Noise
+        será recusado na 0.20; use TLS
+    O iniciador e o no da lista do cluster com aquele endereco, ou "cliente".
+    Use as linhas para saber quem migrar antes da 0.20.
 
     ESCALONAR A QUENTE (pedido 217). Acrescentar ou tirar um no do cluster
     VIVO, sem reiniciar ninguem:

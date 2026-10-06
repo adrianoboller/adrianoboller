@@ -7086,3 +7086,66 @@ Prova real: `calculada_sobre_externo_selado_nasce_marcada_e_nao_vaza_no_reg`,
 `calculada_derivada_de_coluna_negada_nao_se_le` e
 `a_recusa_da_calculada_sobre_coluna_marcada_nao_diz_a_linha`, cada uma com
 guarda no catálogo.
+
+## 41. O ack do quórum entre credenciais, o contador do source sem teto e quem ainda chega por Noise (pedidos 649, 650 e 652, 06/10/2026)
+
+### 41.1 O ack do quórum só vale para o que a SESSÃO alcança (649)
+
+O `replicar_aguardar` recebe o `id` do nó do próprio pedido, e o `id` só
+confere que existe um nó com esse nome — não amarra a sessão. Dois furos
+saíam daí, ENTRE credenciais com `Replicar`:
+
+- **O ack forjado.** Um `Replicar` só da base A mandava
+  `confirmado:[{B, posicao: 2^63}]` e o quórum de B fechava sem nenhuma
+  réplica ter gravado B. Agora cada confirmação passa pelo MESMO portão que
+  filtra os lotes entregues, `replica_alcanca(sessao, database, tabela)`: o
+  que a sessão não pode replicar não conta.
+- **A ficha último-a-chegar-vence.** A ficha do cubo (que tabela as réplicas
+  alcançam, lida pelo commit) era copiada de qualquer sessão. Agora só a
+  grava quem entra com a credencial do cluster — o MESMO predicado do crivo
+  do `propagar` (`sessao_e_do_cluster`), escrito uma vez.
+
+**A postura, dita.** O que este conserto fecha é a falta de checagem ENTRE
+credenciais. Dentro de uma credencial a confiança continua aceita: quem tem
+`Replicar` sobre A pode confirmar A, e um cluster com um único usuário de
+cluster (`cluster.usuario`, o desenho de sempre) confia nele inteiro. Cluster
+sem `cluster.usuario` declarado continua gravando a ficha de qualquer sessão,
+como sempre — guarda nova entra pedida. Prova:
+`replicar_de_outra_credencial_nao_forja_o_ack_nem_a_ficha` e o comportamento
+velho, `cluster_de_um_usuario_so_confirma_e_grava_a_ficha_como_antes`.
+
+### 41.2 O contador que o source anuncia tem teto: 2^53 (650)
+
+O `adotar_sequencia_do_source` aceitava qualquer `proxima` maior que a
+atual, e o contador só anda para a frente: um source com defeito ou hostil
+que mandasse `u64::MAX - 1` gastava a numeração da réplica para sempre, e a
+réplica promovida emitiria ids absurdos. O teto é o do próprio tipo (o 229
+fechou `Int8`/`UInt8` em 2^53, e acima disso o número nem viaja no JSON do
+fio sem virar texto); um teto mais baixo («atual + folga») puniria a réplica
+muito atrasada, que é o caso legítimo. Acima dele a adoção é RECUSADA com
+`LIMITE_EXCEDIDO`, e a rodada de replicação continua (o erro vai ao log,
+como já ia). E o `na_faixa` soma saturando: era pânico em debug e volta a
+zero em release. Prova: `contador_do_source_acima_de_2_53_e_recusado_sem_panico`,
+`contador_hostil_com_passo_3_nao_da_a_volta` e
+`na_faixa_perto_do_teto_satura_em_vez_de_dar_a_volta`.
+
+### 41.3 Quem ainda chega por Noise fica no log, uma linha por par (652)
+
+Decisão do dono de 01/10/2026 (`plano-tls13-572` §T6b-2): na 0.19 a porta de
+dados ACEITA o Noise e o TLS, e registra quem ainda chegou por Noise; na
+0.20 o Noise passa a ser recusado. A linha sai do ponto ÚNICO onde o
+servidor aceita um aperto Noise (`responder_aperto`) — o TLS se decide antes,
+no primeiro byte, e nunca passa por ali; Noise dentro de TLS não se avisa:
+
+```text
+aviso: conexao por Noise do par 10.0.0.2 (iniciador: no no2): o Noise será recusado na 0.20; use TLS
+```
+
+O par é o endereço (a porta é efêmera); o iniciador é o nó da lista do
+cluster com esse endereço, ou `cliente` — no aperto NX quem inicia ainda não
+se identificou. Sem caminho e sem segredo. **Silêncio por par:** uma linha e
+depois uma hora calado (`SILENCIO_DO_NOISE_MS`), porque a réplica e o pulso
+reconectam a cada segundo; a memória dos pares tem teto (1.024) e, cheia sem
+nada vencido, os novos ficam calados em vez de os velhos voltarem a gritar.
+Prova pelo processo (`tests/aviso-do-noise.rs`): TLS não gera a linha, Noise
+gera e continua ATENDIDO, o mesmo par reconectando não gera a segunda.

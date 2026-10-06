@@ -836,7 +836,16 @@ TETO_TESTE_SEM_MODULO = 0
 # 770 -> 773 (02/10/2026, pedidos 644 e 645): `encerrar-sessao-adivinha-web-pela-forma`,
 # `ping-crava-a-porta-5000` e `conferidor-nao-ve-porta-cravada`, as tres
 # provadas uma a uma (`--so <id> --json`). Medido por `--numeros` (773).
-PISO_DAS_ENTRADAS = 773
+# 773 -> 782 (06/10/2026, frente segurança 2 -- SERVER, pedidos 649, 650, 652,
+# 313, 573 e 653): `ack-do-quorum-sem-alcance`, `ficha-do-quorum-ultimo-a-chegar`,
+# `sequencia-do-source-sem-teto`, `na-faixa-da-a-volta`, `noise-entra-sem-registro`,
+# `noise-sem-silencio-por-par`, `eleicao-sem-teto-de-atraso`,
+# `arranque-recusado-calado` e `veneno-permanente-recusa`, provadas uma a uma
+# (`--so <id> --json`). `eleicao-prefere-completa` e `quorum-ack-pede-a-trava`
+# tiveram o TRECHO atualizado (o codigo mudou de lugar; o defeito e o mesmo).
+# Medido por `--numeros` (782). Se outra frente somar entradas no mesmo passo
+# o integrador reconta.
+PISO_DAS_ENTRADAS = 782
 
 # ------------------------------------------------------------- APOSENTADAS
 #

@@ -153,13 +153,28 @@ pub fn na_faixa(piso: u64, inicio: u64, passo: u64) -> u64 {
     if resto == alvo {
         piso
     } else {
-        piso + (alvo + passo - resto) % passo
+        // Satura em vez de dar a volta (650): em debug o `+` era panico, em
+        // release dava `wrap` e o numero voltava para perto de zero -- um id
+        // velho com cara de novo. Quem chama ja barra tudo acima de 2^53
+        // antes (`adotar_sequencia_do_source`), entao aqui a saturacao e so o
+        // cinto: nunca emite numero menor que o piso.
+        piso.saturating_add((alvo + passo - resto) % passo)
     }
 }
 
 #[cfg(test)]
 mod testes {
     use super::*;
+
+    /// Pedido 650: perto de `u64::MAX` a faixa nao pode dar a volta. Com
+    /// `inicio` 1 e passo 3, o `u64::MAX` (resto 0) precisaria somar 1: o `+`
+    /// antigo era panico em debug e `wrap` para 0 em release.
+    #[test]
+    fn na_faixa_perto_do_teto_satura_em_vez_de_dar_a_volta() {
+        assert_eq!(na_faixa(u64::MAX, 1, 3), u64::MAX);
+        assert!(na_faixa(u64::MAX - 1, 1, 3) >= u64::MAX - 1);
+        assert_eq!(na_faixa(u64::MAX, 0, 2), u64::MAX);
+    }
 
     #[test]
     fn no_teto_o_seguinte_nao_da_a_volta() {

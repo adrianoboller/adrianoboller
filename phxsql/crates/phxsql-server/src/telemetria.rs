@@ -784,6 +784,23 @@ pub struct Fio {
 }
 
 impl Fio {
+    /// Um fio FORA da telemetria, para quem roda antes de ela existir: o
+    /// arranque recusado do pedido 573 avisa pelo carteiro, que anota o que
+    /// faz num `Fio`, e nao ha `Servidor` -- nem painel -- para listar
+    /// threads. Ninguem le este; ele existe para o carteiro ser um so.
+    pub fn avulso(nome: &str, finalidade: &'static str) -> Fio {
+        Fio {
+            id: 0,
+            nome: nome.into(),
+            finalidade,
+            familia: "servico",
+            desde_ms: crate::agora_ms(),
+            fazendo: Mutex::new(String::new()),
+            voltas: AtomicU64::new(0),
+            viva: AtomicBool::new(true),
+        }
+    }
+
     /// Anota o que a thread esta fazendo agora, e conta mais uma volta.
     ///
     /// So para laco de fundo, que da uma volta por segundo no maximo. Nao

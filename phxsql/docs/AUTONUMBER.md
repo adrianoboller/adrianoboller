@@ -856,6 +856,15 @@ os dois caminhos que chamam as mesmas funções na mesma ordem —, por
 nó (`na_faixa`), porque o próximo do source pode ser o número do outro nó.
 Falhar em adotar não derruba a rodada. Com o conserto a promovida dá o **6**.
 
+**O teto da adoção (pedido 650, 06/10/2026).** `proxima` acima de 2⁵³
+(`INTEIRO_EXATO_MAX`, o teto que o 229 deu ao tipo) é **recusado** com
+`LIMITE_EXCEDIDO` e o contador não anda: o contador só anda para a frente, e um
+source com defeito ou hostil que anunciasse `u64::MAX - 1` gastaria a
+numeração da réplica para sempre. Um teto mais baixo («atual + folga») puniria
+a réplica muito atrasada, que é o caso legítimo. E o `na_faixa` soma
+saturando — era pânico em debug e volta a zero em release. Ver
+`docs/SEGURANCA.md` §41.2.
+
 **O que fica, e não se promete.** O atraso de **rede**: o que o master emitiu
 depois da última rodada que chegou à réplica (a sonda do bloco 23, que congela
 a réplica antes da emissão e mata o master, **continua dando 5** — não foi

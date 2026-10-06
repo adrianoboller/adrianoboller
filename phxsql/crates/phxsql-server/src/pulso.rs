@@ -233,8 +233,13 @@ pub(crate) fn forjar_contra_o_pino_cego(
 ///
 /// O veneno nao sai: toda chamada seguinte acha a trava envenenada de novo, e
 /// o aviso numa funcao solta viraria uma linha por pulso -- o aviso que
-/// ninguem le. O `Mutex::clear_poison` resolveria sozinho, mas e de 1.77 e a
-/// casa promete 1.75 (`rust-version` do `Cargo.toml`). Entao a trava anda com
+/// ninguem le. Quando isto nasceu a casa prometia 1.75 e o
+/// `Mutex::clear_poison` (1.77) nao existia; com o `rust-version` em 1.89
+/// (pedido 635) ele existe, e a marca propria fica por outro motivo (pedido
+/// 653): o veneno do `std` se poe quando a GUARDA cai no desenrolar, depois
+/// do que quer que a [`Tomada`] faca -- limpar ali seria envenenar de novo no
+/// passo seguinte, e limpar na tomada seguinte e o mesmo `swap` que a marca
+/// ja faz, com uma escrita na trava a mais. Entao a trava anda com
 /// a propria marca, e quem a poe e a [`Tomada`]: ao cair no desenrolar de um
 /// panico, ela anota «sujou». A proxima tomada ve a marca, avisa, roda o
 /// saneamento e a limpa -- um aviso por PANICO, e nao por trava: com o veneno

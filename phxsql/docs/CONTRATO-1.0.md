@@ -205,6 +205,7 @@ declarado acima, consistência dependente do escopo da cascata.*
 | **N** | **`replicacao_estado` não conta nada durante um corte silencioso** — o monitoramento não distingue «nada a replicar» de «cego» | `REPLICACAO.md` §13 |
 | **N** | **O pulso do cluster vai em claro**, mesmo com a cifra do fio ligada na replicação: cifrar metade do tráfego do cluster é pior que não cifrar nenhuma, porque parece protegido | `REPLICACAO.md` §13 |
 | **N** | **O bidirecional só foi provado com dois servidores** | `REPLICACAO.md` §13 |
+| **N** | **Por padrão, a eleição promove o menos atrasado por mais longe que ele esteja.** O teto existe e é pedido (`cluster.atraso_maximo_na_eleicao`, pedido 313): com ele, o candidato além do teto não concorre e, todos além dele, ninguém é promovido e a degradação diz por quê. Sem ele (padrão 0), a réplica mil eventos atrás vira master e o que ela não tinha se perde | `CLUSTER.md` §2.4; `tests/teto-de-atraso-na-eleicao.rs` |
 | **N** | **`replica.rs` não tem nenhum teste no `cargo test`.** O laço que faz a replicação andar é provado só por `bancada/replicacao/`, que precisa de quatro servidores e **não roda no portão** | `TESTES.md` §1 e §5.2 |
 
 ### 2.5 Segurança

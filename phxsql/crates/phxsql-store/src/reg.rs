@@ -1294,7 +1294,24 @@ impl RegFile {
     /// Sem o `exigir_faixa_para_numerar`: o resultado ja nasce na faixa deste
     /// no (`na_faixa`), e recusar aqui derrubaria a rodada de replicacao por
     /// causa de um contador que a conta acabaria de consertar.
+    ///
+    /// # O teto (pedido 650)
+    ///
+    /// `proxima` acima de 2^53 ([`phxsql_core::json::INTEIRO_EXATO_MAX`]) e
+    /// RECUSADO. O contador so anda para a frente e o `ajustar_sequencia` e a
+    /// unica volta, entao um source (ou master do quorum) com defeito ou
+    /// hostil que mandasse `u64::MAX - 1` gastaria a numeracao da replica
+    /// para sempre -- e ela, promovida, emitiria ids absurdos. O teto e o do
+    /// proprio tipo: o pedido 229 fechou `Int8`/`UInt8` em 2^53, e um id acima
+    /// disso nem cabe no JSON do fio sem virar texto. Nenhum contador honesto
+    /// chega la; escolher um teto mais baixo (contador atual + folga) puniria
+    /// a replica que ficou muito atras, que e o caso legitimo.
     pub fn adotar_sequencia_do_source(&mut self, proxima: u64) -> Result<bool> {
+        if proxima > phxsql_core::json::INTEIRO_EXATO_MAX {
+            return Err(PhxError::LimiteExcedido(format!(
+                "o contador {proxima} que o source anunciou passa de 2^53; nao foi adotado"
+            )));
+        }
         if proxima == 0 || proxima <= self.proxima_sequencia {
             return Ok(false);
         }
