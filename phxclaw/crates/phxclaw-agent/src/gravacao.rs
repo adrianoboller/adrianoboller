@@ -62,7 +62,9 @@ const CHAVES_SECRETAS: &[&str] = &[
     "bearer",
 ];
 
-fn chave_secreta(k: &str) -> bool {
+/// Publica porque o fluxo recusa variavel com nome de segredo pela MESMA lista: duas
+/// listas divergiriam no dia em que alguem acrescentasse um nome numa so.
+pub fn chave_secreta(k: &str) -> bool {
     let k = k.to_ascii_lowercase().replace('-', "_");
     CHAVES_SECRETAS
         .iter()

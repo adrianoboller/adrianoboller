@@ -18,7 +18,13 @@
 // entraram (VS Code onda 2, 02/10/2026).
 // Casca 9: a casca nova (SP000036 L1: menu em areas, barra de comando, rodape lido, assistente)
 // -- nenhum arquivo a mais, mas HTML, CSS e JS mudaram juntos e o instalado troca os tres de uma vez.
-const CACHE = 'phxclaw-casca-9';
+// Casca 10: os cartoes de acao e as execucoes recentes na Visao geral (SP000036 L2) -- de
+// novo nenhum arquivo a mais, mas HTML, CSS, app.js, tarefas.js e textos.json mudaram juntos:
+// um app.js novo sobre um tarefas.js velho nao acharia o cliente que ele reusa (window.tarefas).
+// Casca 11: a lista de Tarefas ganhou piso min-content (grades.css: a «Criada em» saia cortada a
+// 1536 px) e o #brandVersion declara a fonte (index.html) -- nenhum arquivo a mais; sem trocar o
+// nome, o instalado sem rede ficaria com a coluna cortada.
+const CACHE = 'phxclaw-casca-11';
 const CASCA = [
   './', './index.html', './manifest.webmanifest',
   './assets/app.css', './assets/app.js', './assets/tema.js', './assets/idiomas.js', './assets/tarefas.js', './assets/tarefas.css',

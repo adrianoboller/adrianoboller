@@ -439,6 +439,13 @@ impl Montagem {
         }
         tools.extend(em_worktree);
         tools.push(paralelo);
+        // Sub-fluxo: entra na lista como qualquer ferramenta e recebe o agente montado
+        // DEPOIS, com a lista inteira (inclusive ela mesma): fluxo chama fluxo, e o teto de
+        // profundidade do `fluxos.rs` e quem segura. `flow.run` fica fora do padrao.
+        let subfluxo = Arc::new(crate::subfluxo::FluxoTool::nova(
+            self.raiz_do_agente().join("fluxos"),
+        ));
+        tools.push(subfluxo.clone());
         let repetidos = nomes_repetidos(&tools);
         if !repetidos.is_empty() {
             return Err(format!(
@@ -446,7 +453,9 @@ impl Montagem {
                 repetidos.join(", ")
             ));
         }
-        Ok(Agent::new(llm, tools, config, self.store.clone()))
+        let agente = Agent::new(llm, tools, config, self.store.clone());
+        let _ = subfluxo.base.set(agente.clone());
+        Ok(agente)
     }
 }
 

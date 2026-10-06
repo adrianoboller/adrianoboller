@@ -953,13 +953,19 @@ async fn subir_dispositivos(
 /// `phxclaw fluxo rodar ARQ`: o fluxo declarativo pelo motor do agente
 /// (`phxclaw_agent::fluxos`), o mesmo que qualquer outra entrada usaria.
 async fn fluxo(args: &[String]) -> Result<()> {
-    const USO: &str =
-        "uso: phxclaw fluxo rodar ARQ.json | retomar TAREFA ARQ.json [--modelo M] [--pasta DIR]";
+    const USO: &str = "uso: phxclaw fluxo rodar ARQ.json [--ate PASSO] | retomar TAREFA ARQ.json \
+[--modelo M] [--pasta DIR]";
     let (arq, retomada) = match (args.first().map(String::as_str), args.get(1), args.get(2)) {
         (Some("rodar" | "run"), Some(arq), _) => (arq, None),
         (Some("retomar" | "resume"), Some(t), Some(arq)) => (arq, Some(t.clone())),
         _ => bail!("{USO}"),
     };
+    // `--ate PASSO`: so ate o passo (inclusive), com o progresso gravado como a retomada
+    // ja grava -- `retomar` continua dali. So no `rodar`: retomar ja sabe onde parou.
+    let ate = opcao(args, "--ate");
+    if ate.is_some() && retomada.is_some() {
+        bail!("--ate so vale no rodar; retomar continua de onde o rodar parou");
+    }
     let f =
         phxclaw_agent::fluxos::ler(&std::fs::read_to_string(arq)?).map_err(anyhow::Error::msg)?;
     let modelo = opcao(args, "--modelo").unwrap_or_else(|| MODELO_PADRAO.into());
@@ -972,9 +978,20 @@ async fn fluxo(args: &[String]) -> Result<()> {
         f.nome,
         f.passos.len()
     );
-    let r = match &retomada {
-        None => phxclaw_agent::fluxos::rodar(&agente, &f).await,
-        Some(t) => phxclaw_agent::fluxos::retomar(&agente, &f, t).await,
+    let r = match (&retomada, &ate) {
+        (None, None) => phxclaw_agent::fluxos::rodar(&agente, &f).await,
+        (None, Some(a)) => {
+            phxclaw_agent::fluxos::rodar_com(
+                &agente,
+                &f,
+                phxclaw_agent::fluxos::Execucao {
+                    ate: Some(a),
+                    ..phxclaw_agent::fluxos::Execucao::default()
+                },
+            )
+            .await
+        }
+        (Some(t), _) => phxclaw_agent::fluxos::retomar(&agente, &f, t).await,
     }
     .map_err(anyhow::Error::msg)?;
     for p in &r.passos {
@@ -1037,15 +1054,14 @@ async fn agenda(args: &[String]) -> Result<()> {
                 (None, Some(c)) => phxclaw_agent::agenda::ScheduleSpec::CronExpression(c),
                 _ => bail!("{USO}"),
             };
-            if let Some(arq) = phxclaw_agent::api::fluxo_do_objetivo(objetivo) {
-                // Fluxo invalido para aqui, na mao de quem agenda, e nao no disparo das 3h.
-                phxclaw_agent::fluxos::ler(&std::fs::read_to_string(arq)?)
-                    .map_err(anyhow::Error::msg)?;
-            }
             let mut a = Agenda::open(raiz.join("agenda.json"))?;
-            let s = a
-                .adicionar_agora(nome, objetivo, spec)
-                .map_err(anyhow::Error::msg)?;
+            // `fluxo: ARQ` no objetivo agenda o fluxo pelo campo explicito (o arquivo e lido
+            // aqui: fluxo invalido para na mao de quem agenda, nao no disparo das 3h).
+            let s = match phxclaw_agent::api::fluxo_do_objetivo(objetivo) {
+                Some(arq) => a.adicionar_fluxo_agora(nome, arq, spec),
+                None => a.adicionar_agora(nome, objetivo, spec),
+            }
+            .map_err(anyhow::Error::msg)?;
             println!(
                 "agendado {} ({}): proxima execucao {}",
                 s.id,

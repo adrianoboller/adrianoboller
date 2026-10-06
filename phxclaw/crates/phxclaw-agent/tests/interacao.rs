@@ -397,6 +397,7 @@ async fn heartbeat_e_gatilhos_criam_tarefa_pela_mesma_funcao() {
         pasta: pasta.clone(),
         padrao: Some("*.csv".into()),
         objetivo: "Some os valores de {arquivos}".into(),
+        fluxo: None,
     })];
     assert!(
         disparar_arquivos(&s, &mut obs).is_empty(),
@@ -439,6 +440,7 @@ async fn heartbeat_e_gatilhos_criam_tarefa_pela_mesma_funcao() {
         webhooks: vec![GatilhoDeWebhook {
             nome: "deploy".into(),
             objetivo: "Analise o evento de deploy: {corpo}".into(),
+            fluxo: None,
             segredo: Some("segredo-do-gatilho-1234567890".into()),
         }],
     });

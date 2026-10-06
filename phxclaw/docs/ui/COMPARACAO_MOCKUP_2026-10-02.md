@@ -61,7 +61,7 @@ Rotas conferidas por `grep '\.route("'` em `crates/` e `apps/` (26 rotas, das qu
 | 11 | Projetos Recentes (5, chip de estado, «há 2h») | não | — | **sem fonte hoje**: não há `/v1/projetos`. O mais próximo: `/v1/config/perfis` (lista de perfis, ativo) e `agente.pasta`. Estado «Em desenvolvimento/Planejado» é dado que ninguém grava |
 | 12 | Agentes & Swarm (6 equipes, N agentes, Online/Em execução/Aguardando) | parcial | `#geralMacro` (11 macroáreas com total, de `equipe.json`); `tela-agentes` (grade phx-grid, 111) | `equipe.json`. Estado vivo por agente/equipe: **sem fonte** (`/v1/tasks` dá o que roda por tarefa, não por agente). Mostrar só o que `equipe.json` tem |
 | 13 | Uso de Modelos: rosca, «1.248 requisições», 6 modelos em %, «US$ 12,46 ↓28%», mini-barras | não | — | `/v1/tasks[].model` existe hoje → **contagem de tarefas por modelo** é medível já. Requisições, tokens e **custo em US$: só com a SP000030** (duração/tokens por passo). Até lá: «NÃO MEDIDO» |
-| 14 | Skills em Destaque (8 cartões com ícone colorido) | parcial | `tela-ferramentas` (72 ferramentas por capacidade, grade); `#geralCapacidades` (malha) | `ferramentas.json`. «Destaque» não tem critério medido (não há uso por ferramenta) → ordem alfabética ou por capacidade, nunca «destaque» inventado |
+| 14 | Skills em Destaque (8 cartões com ícone colorido) | parcial | `tela-ferramentas` (ferramentas por capacidade, grade; a contagem vem do `ferramentas.json`); `#geralCapacidades` (malha) | `ferramentas.json`. «Destaque» não tem critério medido (não há uso por ferramenta) → ordem alfabética ou por capacidade, nunca «destaque» inventado |
 | 15 | Execuções Recentes (5, estado + «há N min») | existe (noutra tela) | `tela-tarefas` (grade com estado por cor de ação, objetivo, data) — não aparece na Visão geral | `GET /v1/tasks` (ordenada por `created_at`, as 5 mais novas); clique → `/v1/tasks/{id}` |
 | 16 | Infraestrutura & Status (4 servidores, 2 links fibra, 1 Starlink, 99,8% uptime, «todos operacionais») | não | — | **sem rota hoje**: só a ferramenta `linux_system` (`crates/phxclaw-agent/src/sistema.rs:308`, `panel item=uptime|memory|disk|kernel`) chamada pelo agente, não pela tela. Servidores/fibra/Starlink: **sem fonte nenhuma** |
 | 17 | Armazenamento (2,4 TB / 10 TB, 24 %, por categoria) | não | — | `linux_system panel item=disk` (mesma ressalva: sem rota). Categorias Projetos/Modelos/Logs: sem fonte |
@@ -208,6 +208,40 @@ Total estimado de chaves novas: **54** (×2 idiomas). Cada lote fecha com `texto
 em 0, `qualificar.mjs` nos dois temas e as capturas regravadas em `tests/desktop/out/`.
 
 **Tamanho do L1**: ~185 linhas (70 HTML + 90 CSS + 25 JS) + 11 chaves; 4 arquivos; zero rota nova.
+
+## 5. L1 casca — ENTREGUE (commit `4802e21b`, 02/10/2026)
+
+O que o plano da §4 prometia para o L1 e o que foi medido no commit (`git show --stat 4802e21b`
+e `grep`/`wc` sobre a árvore comitada; a `apps/phxclaw-ui/` está em edição por outra frente
+nesta rodada e **não** foi lida da árvore de trabalho):
+
+| Previsto na §4 | Entregue | Medida |
+|---|---|---|
+| 4 arquivos | 6 | `index.html` +42/−, `app.css` +78/−, `app.js` +56, `textos.json` +15/−, `config-catalogo.json` +31 (gerado), `sw.js` +4/− |
+| ~185 linhas | — | o `--stat` dá 42+78+56+15+4 = **195** linhas tocadas na UI (sem o catálogo gerado) |
+| 11 chaves novas | **13** | `grep -o '"casca\.[a-z_.]*"' textos.json \| sort -u`: `casca.assistente.alternar`, `casca.assistente.sem_conversa`, `casca.assistente.titulo`, `casca.atalho`, `casca.busca`, `casca.menu.capacidades`, `casca.menu.painel`, `casca.menu.sistema`, `casca.menu.trabalho`, `casca.nao_medido`, `casca.rodape.idioma`, `casca.rodape.pasta`, `casca.rodape.versao` — duas a mais que o previsto (`casca.atalho` e `casca.assistente.alternar`) |
+| zero rota nova | zero | nenhum `.route(` novo no commit |
+| cache da casca | `phxclaw-casca-9` | `sw.js` (nome muda quando a casca ganha arquivo) |
+| menu em 4 áreas | sim | `PAINEL` (geral); `TRABALHO` (tarefas, ide); `CAPACIDADES` (agentes, ferramentas, absorcao); `SISTEMA` (config) — `index.html:104-114` |
+| rodapé lido | sim | versão de `host_status`, pasta de `/v1/config` `agente.pasta`, idioma da fábrica; sem fonte = `casca.nao_medido` |
+| assistente recolhível | sim, vazio | só título e «sem conversa», como previsto |
+
+Prova real do commit (parecer do integrador na sprint `docs/sprints/Sessao_00001_Sprint_SP000035_20261002060631.md`):
+`ui_navegacao` 58/58, `ui_config` 21/21, `qualificar` T1/T4 18/18, textos cravados 0 (334 chaves).
+Três defeitos só apareceram exercitando no navegador e foram consertados no mesmo commit: a grade
+alargava com texto pseudo-localizado, o lema do rodapé quebrava em três linhas, e o subtítulo passava
+sob a barra de orçamento.
+
+**Desvio declarado: a ordem do DOM do menu.** O plano dizia que a checagem «menu tem as sete
+telas» do `ui_navegacao.mjs` continuaria valendo *na mesma ordem*. Não continuou: a ordem do DOM
+passou a ser a **visual** (por área), para o foco do teclado seguir o olho — `geral, tarefas, ide,
+agentes, ferramentas, absorcao, config` — e não mais a ordem das `<section>` do HTML (`geral,
+agentes, ide, ferramentas, absorcao, tarefas, config`, que era a lista esperada em
+`050063e4`). A lista esperada do roteiro foi atualizada com o motivo escrito no comentário
+(`tests/desktop/ui_navegacao.mjs:115-117`). Consequência para quem lê o HTML: a ordem das seções
+e a do menu divergem de propósito; quem precisar que casem muda as seções, não o menu.
+
+Os lotes L2–L6 continuam como na §4; o L2 é o próximo (cartões de ação + execuções recentes).
 
 ## Resposta curta
 

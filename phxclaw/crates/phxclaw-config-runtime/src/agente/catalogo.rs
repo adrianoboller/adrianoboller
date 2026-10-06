@@ -1942,8 +1942,8 @@ const CANAIS: &[CanalDef] = &[
             (
                 "SALAS",
                 K::L((
-                    "JIDs das salas (MUC) em que o bot entra; a sala também vai em PERMITIDOS",
-                    "Room JIDs (MUC) the bot joins; the room also goes in PERMITIDOS",
+                    "JIDs das salas (MUC) em que o bot entra; cada sala também precisa estar em PERMITIDOS",
+                    "JIDs of the rooms (MUC) the bot joins; each room must also be listed in PERMITIDOS",
                 )),
             ),
             (
@@ -1952,6 +1952,16 @@ const CANAIS: &[CanalDef] = &[
                     "Apelido nas salas; vazio = a parte local do JID",
                     "Nickname in rooms; empty = the local part of the JID",
                 )),
+            ),
+            (
+                "CONFIAR_NO_NICK",
+                K::B(
+                    (
+                        "Numa sala anônima, aceitar sala/nick de PERMITIDOS como identidade do ocupante. Risco: o nick é de quem chegar primeiro com ele",
+                        "In an anonymous room, accept room/nick from PERMITIDOS as the occupant's identity. Risk: the nick belongs to whoever takes it first",
+                    ),
+                    "false",
+                ),
             ),
         ],
     },

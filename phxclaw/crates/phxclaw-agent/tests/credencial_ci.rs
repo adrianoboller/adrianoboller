@@ -991,6 +991,8 @@ async fn xmpp_sobe_starttls_antes_da_senha_e_recusa_quem_nao_oferece() {
             tls: Some(Tls::com_ca_pem(CA).unwrap()),
             salas: Vec::new(),
             apelido: String::new(),
+            permitidos: vec!["ana@localhost".into()],
+            confiar_no_nick: false,
         },
         Caixa::abrir(dir.join("c.jsonl")).unwrap(),
     ));
@@ -1031,6 +1033,8 @@ async fn xmpp_sobe_starttls_antes_da_senha_e_recusa_quem_nao_oferece() {
             tls: Some(Tls::com_ca_pem(CA).unwrap()),
             salas: Vec::new(),
             apelido: String::new(),
+            permitidos: vec!["ana@localhost".into()],
+            confiar_no_nick: false,
         },
         Caixa::abrir(dir.join("d.jsonl")).unwrap(),
     );

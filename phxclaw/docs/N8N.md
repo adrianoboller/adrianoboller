@@ -227,3 +227,136 @@ exportados pelo proprio n8n (que substituem os escritos a mao).
 - **Sessao do `/mcp` com forma de UUID.** O `safe_id` do `TaskStore` so guarda hex e
   `-`; um id livre do cliente colapsaria (`sessao-n8n-1` virava `c-ea-8-1`) e dois
   clientes cairiam na mesma pasta. Achado pelo teste, antes de existir cliente real.
+
+## 8. PHX Flow Engine -- onda 1 (SP000035, commit `4802e21b`, 02/10/2026)
+
+O n8n nao se embute (secao 1), mas o que ele faz por dentro -- um motor de **dados** por
+itens, com nos de controle -- passou a existir aqui, no `crates/phxclaw-agent/src/fluxos.rs`
+(**1.540 linhas** medidas por `wc -l` no `git show HEAD:…/fluxos.rs`; eram 470 antes da onda).
+Medido pelo gerador (`python3 docs/absorcao/gerar_absorcao.py`): n8n **55,9% no agente** depois da
+onda 1 (02/10; antes eram 40,7%) e **62,7% no agente | 73,7% com bibliotecas** depois da onda 2
+(06/10; 37 sim, 13 pela metade, 9 nao, de 59). A onda 2 esta em `tests/fluxo_onda2.rs`.
+Prova: `crates/phxclaw-agent/tests/fluxo_motor.rs`, **10 testes** (`grep -c '#[tokio::test]'`),
+um deles o comportamento VELHO (`comportamento_velho_fluxo_de_texto_roda_igual`). A prova real
+reposta um a um (defeito reposto -> teste falha) **ainda nao foi feita** nesses dez: e a divida
+declarada no commit, para a onda 2.
+
+### 8a. O formato do fluxo (lido de `Fluxo`, `Passo`, `ler` e `validar`)
+
+Topo do arquivo:
+
+| Campo | Tipo | Padrao | Regra do `validar` |
+| --- | --- | --- | --- |
+| `nome` | texto | obrigatorio | -- |
+| `max_paralelo` | inteiro | 4 | >= 1 |
+| `passos` | lista de passos | obrigatorio | 1 a **64** (`MAX_PASSOS`) |
+| `fluxo_de_erro` | id de passo | nenhum | o passo existe, **nao tem `depende`**, e `tarefa` ou `ferramenta`, e **ninguem depende dele**; roda fora do grafo, so quando o fluxo falha, e so ele pode usar `{{erro}}` |
+| `teto_ms` | inteiro | nenhum | > 0; teto do fluxo inteiro |
+
+Cada passo tem `id` (letras, digitos, `_`, `-`; nunca vazio nem `erro`), **exatamente um**
+tipo entre `tarefa`, `ferramenta`, `se`, `juntar`, `lote` e `parar_com_erro`, e os campos:
+
+| Campo | O que e | Regra |
+| --- | --- | --- |
+| `depende` | lista de `id` ou `id:porta` | o `id` existe; a porta existe (`verdadeiro`/`falso` de um `se`, `erro` de quem tem `ao_errar: saida_de_erro`); **dependencia de um `se` sem porta e recusada** |
+| `tarefa` | objetivo de um subagente (`rodar_filhas`, o mesmo laco do `parallel_research`) | aceita `{{x}}` |
+| `ferramenta` + `args` | nome de ferramenta e argumentos; passa pelo `Agent::call_tool` | `{{x}}` em qualquer texto dos `args`; texto que e SO uma expressao vira o valor (lista, objeto, numero), nao texto |
+| `se` | `{caminho, operador, valor}`; `caminho` e relativo a cada item da entrada (vazio = o item inteiro) | `operador` em `igual`, `diferente`, `contem`, `maior`, `menor`, `existe`; cada item sai pela porta `verdadeiro` ou `falso` |
+| `juntar` | `{modo, chave}` | `append` (todos os itens, na ordem de `depende`) e `ramo` (os itens do primeiro ramo que disparou) pedem `depende`; `chave` pede **exatamente duas** dependencias e a `chave` |
+| `lote` | inteiro N | >= 1; a entrada vira itens-lote de ate N itens |
+| `parar_com_erro` | mensagem | falha o passo e o fluxo; aceita `{{x}}` |
+| `tentativas` | inteiro | padrao 1; >= 1 (`RetryPolicy` do `phxclaw-task-graph`) |
+| `por_item` | booleano | roda uma vez por item da entrada; pede `depende` |
+| `entrada` | id | qual dependencia e a entrada de `por_item`/`se`/`lote`; padrao: a primeira; **tem de estar em `depende`** |
+| `ao_errar` | `parar` (padrao), `continuar`, `saida_de_erro` | `continuar` segue com `{"erro": …}` na saida principal; `saida_de_erro` esvazia a principal e poe o item na porta `erro` |
+| `teto_ms` | inteiro | > 0; por tentativa |
+
+**Saida e expressoes.** A saida de todo passo e uma LISTA DE ITENS JSON: array vira N itens,
+objeto vira um, qualquer outro texto vira um item de texto (por isso o fluxo antigo roda igual).
+`{{id}}` inteiro em texto e o texto cru da saida; `{{id.campo.sub[0]}}` entra pelo caminho
+JSON (`pelo_caminho`), **sem avaliar codigo**. So de passo declarado em `depende`: `{{x}}` de
+quem nao esta la e recusado **na leitura** (`"passo P usa {{x}} sem declarar 'x' em depende"`),
+nao descoberto na execucao.
+
+**Como `por_item` expoe o item da vez -- e uma divergencia entre o doc e o codigo.** O
+comentario do campo (`fluxos.rs:130`) diz «`{{entrada}}` e o item da vez». O codigo
+(`fluxos.rs:1121-1133`) faz outra coisa: a cada passada ele substitui, na visao do passo, a
+saida da dependencia de entrada por **um item so** -- entao o item da vez se le pelo **id da
+entrada** (`{{lista.n}}`, como o teste `execucao_por_item` faz), e `{{entrada}}` seria
+recusado pelo `validar`, porque `entrada` nao esta em `depende`. Esta secao documenta o que o
+codigo faz; o comentario do fonte que prometia `{{entrada}}` foi corrigido na onda 2.
+
+**Estados no relatorio** (`Resultado.estado`): `ok`, `falhou`, `bloqueado` (dependencia que nao
+terminou bem), `pulado` (porta sem itens, ramo morto) e `continuou` (falhou e `ao_errar`
+seguiu). `reaproveitado: true` marca saida vinda de uma execucao anterior; a retomada confere
+o `fluxo_sha256` da definicao e recusa outra.
+
+### 8b. Um exemplo completo
+
+Conferido **por leitura** contra `ler`/`validar` (o `cargo` esta proibido nesta rodada por
+disco; nenhum teste rodou este JSON). Cada regra que ele exercita esta anotada depois.
+
+```json
+{"nome": "triagem", "max_paralelo": 2, "teto_ms": 120000, "fluxo_de_erro": "avisar",
+ "passos": [
+  {"id": "ler", "ferramenta": "read_file", "args": {"path": "pedidos.json"},
+   "tentativas": 2, "teto_ms": 5000},
+  {"id": "urgente", "depende": ["ler"],
+   "se": {"caminho": "prioridade", "operador": "igual", "valor": "alta"}},
+  {"id": "resumir", "depende": ["urgente:verdadeiro"], "por_item": true,
+   "ao_errar": "saida_de_erro", "tarefa": "resuma em uma linha: {{urgente.texto}}"},
+  {"id": "lotes", "depende": ["urgente:falso"], "lote": 10},
+  {"id": "arquivar", "depende": ["lotes"], "por_item": true, "ao_errar": "continuar",
+   "ferramenta": "write_file",
+   "args": {"path": "arquivo/{{lotes[0].id}}.json", "content": "{{lotes}}"}},
+  {"id": "tudo", "depende": ["resumir", "arquivar"], "juntar": {"modo": "append"}},
+  {"id": "falhas", "depende": ["resumir:erro"], "parar_com_erro": "resumo falhou: {{resumir}}"},
+  {"id": "avisar", "ferramenta": "write_file", "args": {"path": "erro.txt", "content": "{{erro}}"}}
+ ]}
+```
+
+- `ler`: `read_file` de um JSON com uma lista -> N itens; 2 tentativas, 5 s cada.
+- `urgente`: `se` sobre cada item (`prioridade == "alta"`); quem depende dele **tem** de dizer
+  a porta -- `resumir` usa `urgente:verdadeiro`, `lotes` usa `urgente:falso`.
+- `resumir`: um subagente por item; `{{urgente.texto}}` e o item da vez (8a); erro vai pela
+  porta `erro`, que `falhas` consome e transforma em parada com mensagem.
+- `lotes` + `arquivar`: lotes de 10, uma gravacao por lote; `{{lotes}}` sozinho vira a lista
+  (nao texto); erro de um lote `continuar` -> `{"erro": …}` na saida e o fluxo segue.
+- `tudo`: `append` das duas saidas na ordem de `depende`.
+- `avisar`: o fluxo de erro -- sem `depende`, ninguem depende dele, e o unico que pode ler
+  `{{erro}}`.
+- 8 passos (<= 64), ids validos, nenhum ciclo, nenhum `{{x}}` fora de `depende`.
+
+Um fluxo de verdade, do formato velho (so `ferramenta`/`tarefa`/`depende`/`tentativas`), esta
+em `exemplos/passagens-china/fluxo.json`; ele continua lendo igual.
+
+### 8c. Onde DIVERGE do n8n, e a restricao nossa que causou cada divergencia
+
+Esta no doc do modulo (`fluxos.rs:33-50`); copiado aqui porque e a prova de que a logica
+passou pela nossa cabeca (lei: «a prova de que passou e a divergencia»):
+
+| Divergencia | Restricao nossa |
+| --- | --- |
+| Expressao e **caminho JSON**, nunca JavaScript (o `expression.ts` do n8n avalia JS) | uma segunda sandbox para codigo do operador seria uma segunda politica |
+| Todo passo de ferramenta passa pelo `Agent::call_tool`; o n8n chama o `execute` do no direto | portao unico: fluxo com portao proprio e a segunda copia da politica, e a que alguem esqueceria |
+| `lote` nao desdobra o grafo nem fecha ciclo (o `SplitInBatches` volta ao proprio no); devolve itens-lote e o passo seguinte faz `por_item` | `TaskGraphError::Cycle` fica: ciclo e o que impede retomar com prova |
+| **Sem `pairedItem`** | cada chamada pelo portao ja deixa evidencia propria no ledger; a ligacao item -> origem e o registro de evidencia |
+| Progresso gravado por onda e `fluxo_sha256` conferido na retomada (o n8n deixa editar e retomar) | saida velha nunca se aplica a definicao nova |
+| Passo que nao disparou sai como `pulado`, nao some | relatorio onde o passo some nao prova que ele nao rodou |
+| Nos de controle sao do **motor**, nao ferramentas | ferramenta de controle passaria pelo portao de capacidade como se fosse acao do agente, e nao e |
+
+### 8d. A hipotese que morreu: copiar o `pairedItem`
+
+O n8n carrega `pairedItem` em cada `INodeExecutionData` (`workflow/src/interfaces.ts:1854`,
+`:1873`) porque o no reordena e filtra itens **dentro do mesmo no**, e sem o ponteiro o editor
+nao sabe de onde cada item veio. Aqui cada passo e uma chamada pelo portao, com evidencia
+propria no ledger, e o `se`/`lote`/`juntar` sao do motor, que ja sabe a origem de cada porta.
+Copiar o ponteiro seria carregar um campo que nenhuma prova pede. Decisao registrada em
+`docs/absorcao/SPRINTS.md` («Hipoteses que morreram, com o numero»): **entra so se um no de
+juncao por campo precisar** -- o `juntar` por `chave` da onda 1 nao precisou. Outras tres
+hipoteses mortas da mesma pesquisa (editor antes do motor; agendar fluxo «ja existia»; queue
+mode pede Redis) estao la, com o numero de cada uma.
+
+O que fica para as ondas 2-5 (SPRINTS.md): `skill`/`mcp`/`comando` como tipos de passo,
+sub-fluxo e `rodar --ate`, gatilho apontando para fluxo; `esperar` e dados pinados; fila com
+workers so com numero de bancada; editor visual em SVG proprio -- **xyflow recusado (R20)**.

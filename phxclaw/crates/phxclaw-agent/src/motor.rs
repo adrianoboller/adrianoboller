@@ -193,6 +193,9 @@ pub const CAPACIDADES_QUE_ESCREVEM: &[&str] = &[
     "gonogo.write",
     // Fluxos do n8n do operador: `run` dispara trabalho em outro sistema (fora do padrao).
     "automacao.n8n",
+    // Sub-fluxo (`fluxo`): roda um fluxo gravado, cujos passos escrevem o que a politica
+    // deixar; fora do padrao, porque e o modelo decidindo rodar um DAG inteiro.
+    "flow.run",
 ];
 
 /// Capacidades cujas ferramentas criam processo. Para elas a regra de comando vale MESMO

@@ -521,7 +521,12 @@ def medidores() -> list[dict]:
         if not uso:
             continue
         comando = uso.group(1).split(";")[0].strip()
-        saidas = [s for s in re.findall(r"writeFileSync\(join\(OUT,\s*'([^']+\.json)'\)", t) if "parcial" not in s]
+        # A regua casa o NOME do arquivo .json gravado, nao a forma da chamada: o ui_paineis.mjs
+        # grava por `join(SAIDA, ...)` e ficou NAO MEDIDO com o arquivo existindo (QA, 02/10/2026).
+        # Roteiro Python grava por `json.dump` em `open(... .json)`; entra pelo mesmo casador.
+        saidas = re.findall(r"writeFileSync\(join\(\w+,\s*'([^']+\.json)'\)", t)
+        saidas += re.findall(r"open\([^)]*['\"]([A-Za-z0-9_\-]+\.json)['\"][^)]*['\"]w['\"]", t)
+        saidas = [s for s in dict.fromkeys(saidas) if "parcial" not in s]
         resultado = None
         for s in saidas:
             p = (out_dir / "qualificacao" / s) if "qualificacao" in arq.parts else (out_dir / s)

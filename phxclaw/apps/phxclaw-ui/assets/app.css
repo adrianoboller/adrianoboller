@@ -421,3 +421,49 @@ code,#brandVersion,#kernelVersion,#hostSession,#liveReceivers,#apiEndpoint,.cfg-
   .footerbar{height:auto;min-height:34px;flex-wrap:wrap;gap:6px 14px;padding-top:6px;padding-bottom:6px}
   .rod-item>b{max-width:160px}
 }
+
+/* SP000036 L2: cartoes de acao e execucoes recentes na Visao geral. Fundo NEUTRO (o do
+   painel) em todos; a cor de acao vai so no contorno e no icone dos tres que tem acao, e o
+   preenchimento so no hover com ponteiro -- a lei «contorno, nunca fundo cheio». */
+.acoes-grid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:12px;margin-bottom:13px}
+.acoes-grid>.vazio{grid-column:1/-1}
+.acao-cartao{font:inherit;text-align:left;display:flex;flex-direction:column;gap:6px;min-width:0;min-height:128px;padding:12px 13px;border:1px solid var(--linha-forte);border-radius:8px;color:var(--texto);background:linear-gradient(180deg,color-mix(in srgb,var(--painel-2) 96%,transparent),color-mix(in srgb,var(--painel) 96%,transparent));cursor:pointer;transition:border-color .15s,transform .15s}
+.acao-cartao .ico{color:var(--texto-2)}
+.acao-cartao b{font-size:var(--fs-3);font-weight:700;letter-spacing:-.01em}
+.acao-cartao small{color:var(--texto-3);font-size:var(--fs-1);line-height:1.35}
+.acao-cartao .familia{margin-top:auto;display:flex;align-items:center;gap:8px;padding-top:6px}
+.acao-cartao code{color:var(--laranja);font-size:var(--fs-1)}
+.acao-cartao em{font-style:normal;font-size:var(--fs-1);letter-spacing:.04em;padding:2px 6px;border-radius:3px;border:1px solid}
+.acao-cartao em.sim{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 45%,transparent)}
+.acao-cartao em.meio{color:var(--aviso);border-color:color-mix(in srgb,var(--aviso) 45%,transparent)}
+.acao-cartao em.nao{color:var(--aviso);border-style:dashed;border-color:color-mix(in srgb,var(--aviso) 55%,transparent)}
+.acao-cartao.inclui{border-color:var(--acao-incluir)}.acao-cartao.inclui .ico{color:var(--acao-incluir)}
+.acao-cartao.consulta{border-color:var(--acao-consultar)}.acao-cartao.consulta .ico{color:var(--acao-consultar)}
+.acao-cartao.altera{border-color:var(--acao-alterar)}.acao-cartao.altera .ico{color:var(--acao-alterar)}
+.acao-cartao:focus-visible{outline:2px solid var(--laranja);outline-offset:2px}
+@media(hover:hover){
+  .acao-cartao:hover{border-color:var(--laranja);transform:translateY(-1px)}
+  .acao-cartao.inclui:hover{background:color-mix(in srgb,var(--acao-incluir) 14%,var(--painel));border-color:var(--acao-incluir)}
+  .acao-cartao.consulta:hover{background:color-mix(in srgb,var(--acao-consultar) 14%,var(--painel));border-color:var(--acao-consultar)}
+  .acao-cartao.altera:hover{background:color-mix(in srgb,var(--acao-alterar) 14%,var(--painel));border-color:var(--acao-alterar)}
+}
+/* Largura inteira, como a malha logo abaixo: sozinho numa coluna deixava a outra vazia (visto
+   exercitando a 1536). Vem ANTES da malha: e o que esta acontecendo agora. */
+.execucoes-panel{grid-column:1/-1}
+.execucoes{list-style:none;margin:0;padding:6px 8px 10px}
+.execucoes>.vazio{padding:12px 8px}
+.execucoes li{border-bottom:1px solid var(--linha)}
+.execucoes li:last-child{border-bottom:0}
+.execucao{font:inherit;width:100%;display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:10px;align-items:center;padding:8px;border:0;border-radius:4px;background:transparent;color:var(--texto);text-align:left;cursor:pointer}
+.execucao:hover,.execucao:focus-visible{background:var(--painel-2);outline:none}
+.execucao:focus-visible{box-shadow:inset 0 0 0 1px var(--laranja)}
+.execucao .tarefa-estado{white-space:nowrap}
+.execucao .objetivo{font-size:var(--fs-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.execucao time{color:var(--texto-3);font-size:var(--fs-1);font-family:var(--mono);white-space:nowrap}
+@media(max-width:1300px){.acoes-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:640px){
+  .acoes-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+  .acao-cartao{min-height:0;padding:10px}
+  .execucao{grid-template-columns:minmax(0,1fr) auto;grid-template-rows:auto auto}
+  .execucao .objetivo{grid-column:1/-1;white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+}

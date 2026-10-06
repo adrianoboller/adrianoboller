@@ -452,6 +452,7 @@ async fn webhook_do_n8n_dispara_o_gatilho_por_segredo_ou_por_hmac() {
         webhooks: vec![GatilhoDeWebhook {
             nome: "n8n-resultado".into(),
             objetivo: "Trate o resultado do fluxo: {corpo}".into(),
+            fluxo: None,
             segredo: Some(SEGREDO.into()),
         }],
     });

@@ -317,6 +317,88 @@ pub fn criar_tarefa_com(
     Ok(Criada { id, fim })
 }
 
+/// O UNICO caminho de disparar um FLUXO gravado de fora (agenda, gatilho de arquivo,
+/// webhook): le e valida o arquivo, cria a tarefa-mae AQUI (o id volta a quem disparou,
+/// como o da tarefa de objetivo), roda o `preparo` na pasta dela e entrega a execucao ao
+/// mesmo `fluxos::rodar_com` da CLI e do sub-fluxo. Passa pelo balde de fichas como a
+/// tarefa de objetivo: um webhook publico que dispara fluxo nao pode custar menos que um
+/// que cria tarefa.
+pub fn criar_fluxo_com(
+    s: &ApiState,
+    caminho: &str,
+    entrada: Vec<Value>,
+    preparo: impl FnOnce(&std::path::Path) -> std::io::Result<()>,
+) -> Result<Criada, Recusa> {
+    let recusa = |status, e: String| Recusa {
+        status,
+        erro: e,
+        retry_after: None,
+    };
+    let f = std::fs::read_to_string(caminho)
+        .map_err(|e| format!("{caminho}: {e}"))
+        .and_then(|t| crate::fluxos::ler(&t))
+        .map_err(|e| recusa(StatusCode::BAD_REQUEST, format!("fluxo: {e}")))?;
+    let agente = (s.factory)(&s.default_model).map_err(|e| recusa(StatusCode::BAD_REQUEST, e))?;
+    if let Err(seg) = s.limite.tomar() {
+        return Err(Recusa {
+            status: StatusCode::TOO_MANY_REQUESTS,
+            erro: "limite de criacao de tarefas".into(),
+            retry_after: Some(seg),
+        });
+    }
+    let mae = crate::fluxos::tarefa_do_fluxo(&f, &s.default_model);
+    s.store
+        .save(&mae)
+        .map_err(|e| recusa(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let work = s.store.workdir(&mae.id);
+    let _ = std::fs::create_dir_all(&work);
+    if let Err(e) = preparo(&work) {
+        let mut t = mae;
+        t.status = TaskStatus::Failed;
+        t.error = Some(format!("preparo da pasta: {e}"));
+        let _ = s.store.save(&t);
+        return Err(recusa(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("preparo da pasta: {e}"),
+        ));
+    }
+    let id = mae.id.clone();
+    let store = s.store.clone();
+    let fim = tokio::spawn(async move {
+        let id = mae.id.clone();
+        let r = crate::fluxos::rodar_com(
+            &agente,
+            &f,
+            crate::fluxos::Execucao {
+                entrada,
+                mae: Some(mae),
+                ..crate::fluxos::Execucao::default()
+            },
+        )
+        .await;
+        match store.load(&id) {
+            Ok(mut t) => {
+                if let Err(e) = r {
+                    // Recusa antes do primeiro passo (ciclo, variavel sem config): a tarefa
+                    // ja esta no disco e nao pode ficar `Pending` para sempre.
+                    t.status = TaskStatus::Failed;
+                    t.error = Some(e);
+                    let _ = store.save(&t);
+                }
+                t
+            }
+            Err(e) => {
+                let mut t = Task::new(format!("{}?", crate::fluxos::PREFIXO_TAREFA), "");
+                t.id = id;
+                t.status = TaskStatus::Failed;
+                t.error = Some(format!("tarefa do fluxo sumiu do disco: {e}"));
+                t
+            }
+        }
+    });
+    Ok(Criada { id, fim })
+}
+
 /// Roda em segundo plano, registra o cancelamento e chama o webhook no fim.
 pub fn executar(s: ApiState, agente: Agent, t: Task) -> tokio::task::JoinHandle<Task> {
     let cancel = CancelFlag::default();
@@ -533,7 +615,11 @@ async fn artefato(
 #[derive(Deserialize)]
 struct NovoAgendamento {
     name: String,
+    /// Objetivo da tarefa (ou `fluxo: ARQ`, o prefixo antigo); OU `fluxo`, o caminho.
+    #[serde(default)]
     objective: String,
+    #[serde(default)]
+    fluxo: Option<String>,
     /// Cron de 5 campos (UTC) ou `every_seconds` (>= 60).
     #[serde(default)]
     cron: Option<String>,
@@ -553,12 +639,22 @@ async fn agendar(State(s): State<ApiState>, h: HeaderMap, Json(n): Json<NovoAgen
             ));
         }
     };
-    let item = s
-        .agenda
-        .lock()
-        .unwrap()
-        .add(&n.name, &n.objective, spec, Utc::now())
-        .map_err(|e| erro(StatusCode::BAD_REQUEST, e))?;
+    let item = match n.fluxo.as_deref().map(str::trim).filter(|f| !f.is_empty()) {
+        Some(f) if n.objective.trim().is_empty() => {
+            s.agenda
+                .lock()
+                .unwrap()
+                .add_fluxo(&n.name, f, spec, Utc::now())
+        }
+        Some(_) => Err("informe objective OU fluxo, nao os dois".to_string()),
+        None if n.objective.trim().is_empty() => Err("informe objective OU fluxo".to_string()),
+        None => s
+            .agenda
+            .lock()
+            .unwrap()
+            .add(&n.name, &n.objective, spec, Utc::now()),
+    }
+    .map_err(|e| erro(StatusCode::BAD_REQUEST, e))?;
     Ok((StatusCode::CREATED, Json(item)).into_response())
 }
 
@@ -613,26 +709,23 @@ pub fn disparar_agenda_com_handles(s: &ApiState) -> Vec<tokio::task::JoinHandle<
                 let _ = s.agenda.lock().unwrap().save();
             }
         };
-        if let Some(arq) = fluxo_do_objetivo(&v.objective) {
-            // O fluxo e lido NO disparo: editar o arquivo entre dois disparos vale na
-            // proxima vez, sem reagendar. Arquivo invalido e registrado e nao derruba o laco.
-            let arq = arq.to_string();
-            handles.push(tokio::spawn(async move {
-                let f = match std::fs::read_to_string(&arq)
-                    .map_err(|e| format!("{arq}: {e}"))
-                    .and_then(|t| crate::fluxos::ler(&t))
-                {
-                    Ok(f) => f,
-                    Err(e) => {
-                        eprintln!("agenda: fluxo {arq} nao disparado: {e}");
-                        return;
-                    }
-                };
-                match crate::fluxos::rodar(&agente, &f).await {
-                    Ok(r) => anotar(r.tarefa),
-                    Err(e) => eprintln!("agenda: fluxo {}: {e}", f.nome),
+        // O campo `fluxo` explicito, ou o prefixo `fluxo: ARQ` no objetivo (o caminho
+        // antigo, intacto). O arquivo e lido NO disparo: editar entre dois disparos vale na
+        // proxima vez, sem reagendar. Invalido e registrado e nao derruba o laco.
+        let arq = v
+            .fluxo
+            .clone()
+            .or_else(|| fluxo_do_objetivo(&v.objective).map(str::to_string));
+        if let Some(arq) = arq {
+            match criar_fluxo_com(s, &arq, vec![], |_| Ok(())) {
+                Ok(c) => {
+                    anotar(c.id);
+                    handles.push(tokio::spawn(async move {
+                        let _ = c.fim.await;
+                    }));
                 }
-            }));
+                Err(e) => eprintln!("agenda: fluxo {arq} nao disparado: {}", e.erro),
+            }
         } else {
             let t = Task::new(v.objective.clone(), s.default_model.clone());
             anotar(t.id.clone());

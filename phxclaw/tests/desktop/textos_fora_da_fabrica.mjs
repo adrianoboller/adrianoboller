@@ -45,6 +45,7 @@ const ISENTOS = new Map([
   ['ZERO TRUST', 'nome da politica de seguranca (config/constitution.json)'],
   ['Deny-by-default', 'nome da politica de seguranca (config/constitution.json)'],
   ['IDE', 'sigla (nome da tela)'], ['bash —', 'nome do programa na aba; o resto e o titulo do terminal (dado)'],
+  ['Helix —', 'nome do programa na aba (ide.js atualizarAbas); o resto e o titulo do terminal (dado)'],
   ['OpenClaw', 'produto'], ['Hermes', 'produto'], ['Claude Code', 'produto'], ['Codex', 'produto'], ['OpenJarvis', 'produto'], ['VS Code', 'produto'],
   // (As 15 etapas do boot, nomes de modulo do kernel, sairam com o temporizador da abertura:
   // isento sem uso e porta aberta para o texto voltar cravado sem ninguem ver.)
@@ -115,7 +116,7 @@ function stubTauri(modo) {
           case 'host_status': return { version: '0', session_uuid: '0', policy: {}, live_bus: { receiver_count: 1 }, api: null };
           case 'verify_evidence': return { valid: modo !== 'host-invalido', records: 1 };
           case 'events_snapshot': return [];
-          case 'terminal_abrir': return { id: 't1', pid: 1, programa: args.programa, cwd: '/' };
+          case 'terminal_abrir': return { id: args.programa === 'helix' ? 't2' : 't1', pid: 1, programa: args.programa, cwd: '/' };
           default: return null;
         }
       },
@@ -248,6 +249,13 @@ try {
   await p.evaluate(() => window.__emitir('terminal_grade', { id: 't1', completa: true, colunas: 10, linhas: 2, fundo: 0, frente: 0, linhas_alteradas: [], cursor: null, titulo: '§', encerrado: { codigo: 0 } }));
   await p.waitForTimeout(150);
   registrar('host+terminal', await coletar(p));
+  // A aba do Helix tem o nome do programa cravado no ide.js; sem abri-la aqui o texto nunca
+  // aparecia a varredura (e o isento ficaria sem uso, porta aberta).
+  await p.click('#ideAbrirHelix');
+  await p.waitForTimeout(150);
+  await p.evaluate(() => window.__emitir('terminal_grade', { id: 't2', completa: true, colunas: 10, linhas: 2, fundo: 0, frente: 0, linhas_alteradas: [], cursor: null, titulo: '§', encerrado: null }));
+  await p.waitForTimeout(150);
+  registrar('host+helix', await coletar(p));
   await p.close();
 
   p = await abrir(browser, { modo: 'sem-host' });

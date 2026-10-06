@@ -722,7 +722,115 @@ function semFonte(alvo, arquivo, erro) {
 
 document.querySelectorAll('[data-ir]').forEach(b => b.addEventListener('click', () => mostrarTela(b.dataset.ir)));
 
+// Familias de capacidade (o `grupo` do ferramentas.json): concedidas/total por familia. UMA
+// conta para a malha de capacidades e para os cartoes de acao -- duas contas divergiriam.
+function familiasDe(caps) {
+  const familias = new Map();
+  for (const c of caps) {
+    if (!familias.has(c.grupo)) familias.set(c.grupo, { n: 0, conc: 0, caps: [] });
+    const f = familias.get(c.grupo);
+    f.n += c.lista.length;
+    f.conc += c.lista.filter(x => x.concedida).length;
+    f.caps.push(c.capacidade);
+  }
+  return familias;
+}
+const concessao = f => el('em', f.conc === f.n ? 'sim' : f.conc ? 'meio' : 'nao', `${f.conc}/${f.n}`);
+
+// SP000036 L2: os seis cartoes de acao do painel. Cada um e UMA familia do ferramentas.json
+// (a contagem vem de la, nunca digitada) e um objetivo-modelo para a nova tarefa. Cor de
+// acao so onde ha acao: construir inclui (verde), testar consulta (azul), implantar altera
+// (amarelo); os outros tres sao neutros -- seis cores sem significado seriam o arco-iris
+// que o Style Phoenix Padrao lista como defeito. Uma chave literal por texto, para o
+// conferidor da fabrica as ver. Icone de traco unico (--traco), como o resto da tela.
+const ACOES_PAINEL = [
+  { chave: 'pesquisar', grupo: 'web', classe: '', icone: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5 21 21"/>',
+    nome: () => txt('painel.acao.pesquisar', 'Pesquisar'), descricao: () => txt('painel.acao.pesquisar_desc', 'Buscar na web, ler páginas e fontes'),
+    objetivo: () => txt('painel.acao.pesquisar_objetivo', 'Pesquisar na web sobre: (tema) — resumir o que foi achado, com as fontes.') },
+  { chave: 'analisar', grupo: 'code', classe: '', icone: '<path d="M4 20h16"/><path d="M7 16v-5M12 16V7M17 16v-9"/>',
+    nome: () => txt('painel.acao.analisar', 'Analisar'), descricao: () => txt('painel.acao.analisar_desc', 'Revisar código e apontar o que mudar'),
+    objetivo: () => txt('painel.acao.analisar_objetivo', 'Analisar o código em: (caminho) — listar defeitos, riscos e o que mudar, por prioridade.') },
+  { chave: 'construir', grupo: 'fs', classe: 'inclui', icone: '<path d="M12 3 20 7.5v9L12 21 4 16.5v-9L12 3z"/><path d="M4 7.5 12 12l8-4.5M12 12v9"/>',
+    nome: () => txt('painel.acao.construir', 'Construir'), descricao: () => txt('painel.acao.construir_desc', 'Criar e editar arquivos do projeto'),
+    objetivo: () => txt('painel.acao.construir_objetivo', 'Construir: (o quê) em (caminho) — criar os arquivos e explicar cada decisão.') },
+  { chave: 'testar', grupo: 'shell', classe: 'consulta', icone: '<circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/>',
+    nome: () => txt('painel.acao.testar', 'Testar'), descricao: () => txt('painel.acao.testar_desc', 'Rodar comandos e testes na sandbox'),
+    objetivo: () => txt('painel.acao.testar_objetivo', 'Testar o projeto em: (caminho) — rodar a suíte, listar o que falhou e por quê.') },
+  { chave: 'implantar', grupo: 'site', classe: 'altera', icone: '<path d="M12 19V5"/><path d="m6 11 6-6 6 6"/><path d="M4 21h16"/>',
+    nome: () => txt('painel.acao.implantar', 'Implantar'), descricao: () => txt('painel.acao.implantar_desc', 'Publicar o site ou a entrega'),
+    objetivo: () => txt('painel.acao.implantar_objetivo', 'Implantar: publicar (pasta) e devolver o endereço e o que foi verificado.') },
+  { chave: 'entregar', grupo: 'doc', classe: '', icone: '<path d="M3 11.5 21 3l-6 18-3-7.5L3 11.5z"/><path d="m12 13.5 9-10.5"/>',
+    nome: () => txt('painel.acao.entregar', 'Entregar'), descricao: () => txt('painel.acao.entregar_desc', 'Gerar documento, planilha ou apresentação'),
+    objetivo: () => txt('painel.acao.entregar_objetivo', 'Entregar: (documento) sobre (assunto) — gerar o arquivo e resumir o conteúdo.') },
+];
+function desenharAcoes(familias) {
+  document.getElementById('geralAcoes').replaceChildren(...ACOES_PAINEL.map(a => {
+    const b = el('button', `acao-cartao${a.classe ? ` ${a.classe}` : ''}`);
+    b.type = 'button';
+    b.dataset.acao = a.chave;
+    b.dataset.grupo = a.grupo;
+    const ico = el('span', 'ico');
+    ico.setAttribute('aria-hidden', 'true');
+    ico.innerHTML = `<svg viewBox="0 0 24 24" focusable="false">${a.icone}</svg>`;
+    // O chip da familia e o `grupo` como esta no JSON (dado), nao o nome da tabela acima:
+    // familia que o ferramentas.json desta maquina nao tem fica sem chip e diz NAO MEDIDO,
+    // em vez de um 0/0 inventado -- e o conferidor da fabrica nao ve texto cravado.
+    const grupo = [...familias.keys()].find(k => k === a.grupo);
+    const f = grupo === undefined ? null : familias.get(grupo);
+    const conta = f ? concessao(f) : el('em', 'nao', txt('casca.nao_medido', 'NÃO MEDIDO'));
+    conta.title = txt('painel.acao.familia', 'Família {grupo}: {concedidas} de {total} ferramentas concedidas por padrão', { grupo: a.grupo, concedidas: f?.conc ?? '—', total: f?.n ?? '—' });
+    const familia = el('span', 'familia');
+    if (f) familia.append(el('code', null, grupo));
+    familia.append(conta);
+    b.append(ico, el('b', null, a.nome()), el('small', null, a.descricao()), familia);
+    // A nova tarefa nasce pelo formulario da tela Tarefas (um envio so): aqui so se
+    // pre-preenche o objetivo-modelo e se leva o foco para la, para a pessoa completar.
+    b.addEventListener('click', () => {
+      mostrarTela('tarefas');
+      const campo = document.getElementById('tarefasObjetivo');
+      campo.value = a.objetivo();
+      campo.focus();
+      campo.setSelectionRange(campo.value.length, campo.value.length);
+    });
+    return b;
+  }));
+}
+
+// Execucoes recentes: as 5 tarefas mais novas de GET /v1/tasks, pelo cliente da tela Tarefas
+// (tarefas.js expoe api, estado e abrir -- um cliente, um formatador, um detalhe). Sem API
+// ou sem token, a mesma frase que a tela Tarefas diria; o erro do agente e DADO.
+const EXECUCOES_NO_PAINEL = 5;
+async function desenharExecucoes() {
+  const alvo = document.getElementById('geralExecucoes');
+  const dizer = (texto, classe = 'vazio') => alvo.replaceChildren(el('li', classe, texto));
+  const t = window.tarefas;
+  if (!t) return;
+  if (!t.comHttp) return dizer(txt('tarefas.sem_api', 'A API de tarefas só existe com a tela servida pelo agente (phxclaw servir) ou pela ponte.'));
+  if (!t.token()) return dizer(txt('tarefas.pede_token', 'Informe o token de acesso para ver as tarefas.'));
+  let ts;
+  try { ts = await t.api('GET', 'tasks'); } catch (e) {
+    if (e.rede) { mostrarTentar('geral', true); return dizer(txt('erro.sem_rede', 'Sem conexão com o agente — confira a rede e toque em TENTAR DE NOVO.'), 'vazio aviso'); }
+    return dizer(e.status === 401 ? txt('tarefas.sem_token', 'Token recusado: confira o token de acesso.')
+      : txt('erro.servidor', 'O agente respondeu com erro ({status}): {erro}. Toque em TENTAR DE NOVO; se repetir, veja o log do agente.', { status: e.status ?? '—', erro: e.message }), 'vazio aviso');
+  }
+  if (!ts.length) return dizer(txt('tarefas.nenhuma', 'Nenhuma tarefa ainda.'));
+  const novas = ts.slice().sort((a, b) => (a.created_at < b.created_at ? 1 : -1)).slice(0, EXECUCOES_NO_PAINEL);
+  alvo.replaceChildren(...novas.map(x => {
+    const li = el('li');
+    const b = el('button', 'execucao');
+    b.type = 'button';
+    b.dataset.id = x.id;
+    const quando = el('time', null, dataHora(x.created_at));
+    quando.dateTime = x.created_at;
+    b.append(el('span', `tarefa-estado estado-${x.status}`, t.estado(x.status)), el('span', 'objetivo', x.objective), quando);
+    b.addEventListener('click', () => t.abrir(x.id));
+    li.append(b);
+    return li;
+  }));
+}
+
 carregadores.geral = async () => {
+  desenharExecucoes();
   const [eq, fe, ab] = await Promise.allSettled(['equipe.json', 'ferramentas.json', 'absorcao.json'].map(lerJson));
   const $ = id => document.getElementById(id);
 
@@ -756,24 +864,18 @@ carregadores.geral = async () => {
     barra.hidden = false;
     barra.firstElementChild.style.width = `${(conc / d.total) * 100}%`;
     barra.title = txt('geral.barra_concedidas', '{concedidas} de {total} concedidas por padrão', { concedidas: conc, total: d.total });
-    const familias = new Map();
-    for (const c of caps) {
-      if (!familias.has(c.grupo)) familias.set(c.grupo, { n: 0, conc: 0, caps: [] });
-      const f = familias.get(c.grupo);
-      f.n += c.lista.length;
-      f.conc += c.lista.filter(x => x.concedida).length;
-      f.caps.push(c.capacidade);
-    }
+    const familias = familiasDe(caps);
     $('geralCapacidades').replaceChildren(...[...familias.entries()].map(([g, f]) => {
       const r = el('div');
       r.title = f.caps.join(', ');
-      r.append(el('code', null, g), el('span', null, f.caps.map(c => c.slice(g.length + 1) || c).join(' • ')),
-        el('em', f.conc === f.n ? 'sim' : f.conc ? 'meio' : 'nao', `${f.conc}/${f.n}`));
+      r.append(el('code', null, g), el('span', null, f.caps.map(c => c.slice(g.length + 1) || c).join(' • ')), concessao(f));
       return r;
     }));
+    desenharAcoes(familias);
   } else {
     $('geralFerramentasNota').textContent = txt('geral.ausente', '{arquivo} ausente', { arquivo: 'ferramentas.json' });
     semFonte($('geralCapacidades'), 'ferramentas.json', fe.reason);
+    semFonte($('geralAcoes'), 'ferramentas.json', fe.reason);
   }
 
   if (ab.status === 'fulfilled') {

@@ -298,5 +298,12 @@
     }, 2500);
   };
   idiomas.aoTrocar(() => { if (document.body.dataset.tela === 'tarefas') atualizar(); });
+
+  // O que a Visao geral reusa (SP000036 L2, «Execucoes recentes»): o MESMO cliente, o mesmo
+  // formatador de estado e o mesmo detalhe -- abrir(id) escolhe a tarefa e leva a esta tela,
+  // que a desenha como se a linha tivesse sido clicada aqui. Um segundo fetch ou um segundo
+  // rotulo de estado la seria a decisao escrita duas vezes.
+  window.tarefas = { api, estado, token, comHttp, abrir(id) { selecionada = id; mostrarTela('tarefas'); } };
   if (document.body.dataset.tela === 'tarefas') carregadores.tarefas();
+  else if (document.body.dataset.tela === 'geral') desenharExecucoes();
 })();
