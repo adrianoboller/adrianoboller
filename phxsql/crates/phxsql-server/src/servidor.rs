@@ -55054,19 +55054,38 @@ mod testes_transacoes {
                 escreve(&s, &ses, &pedido(id, codigo));
             }
 
+            // O que a transacao VE de cada filha, lido ANTES do COMMIT: o
+            // elo que o `empilhar` planejou so pelo disco ja esta na lista, e
+            // a leitura dentro da transacao o mostra desfazendo o que a lista
+            // escreveu. O COMMIT refaz o elo (pedido 537) sobre a linha
+            // atual e esconde o defeito -- medido em 06/10: com o plano do
+            // `empilhar` reposto so-pelo-disco, a conferencia de depois do
+            // COMMIT passava e a leitura de dentro da transacao caia.
+            let ver = |rowid: u64| -> (i64, i64, bool) {
+                let l = linha(&s, &ses, "pedidos", rowid);
+                (
+                    l.inteiro_ou("id", -1),
+                    l.inteiro_ou("cod_cliente", -1),
+                    excluida(&l),
+                )
+            };
+
             escreve(&s, &ses, r#""op":"begin""#);
             escreve(&s, &ses, &muda_pedido(1, 11, 5));
             escreve(&s, &ses, &muda_cliente(1, 1, 6));
+            assert_eq!(ver(1), (11, 6, false), "dentro da transacao, lista 1");
             confirma(&s, &ses);
 
             escreve(&s, &ses, r#""op":"begin""#);
             escreve(&s, &ses, &muda_pedido(2, 20, 8));
             escreve(&s, &ses, &muda_cliente(2, 2, 16));
+            assert_eq!(ver(2), (20, 8, false), "dentro da transacao, lista 2");
             confirma(&s, &ses);
 
             escreve(&s, &ses, r#""op":"begin""#);
             escreve(&s, &ses, &exclui("pedidos", 3, false));
             escreve(&s, &ses, &muda_cliente(3, 3, 26));
+            assert_eq!(ver(3), (30, 26, true), "dentro da transacao, lista 3");
             confirma(&s, &ses);
 
             let visto: Vec<(i64, i64, bool)> = (1..=3)

@@ -1618,6 +1618,30 @@ correção que a casa já fez com o mutex: o número não muda a decisão, muda 
 frase que a explica, e a frase errada é a que sobrevive.
 
 
+### 9.10 Duas guardas que o provador (263) achou NAO PEGOU, as duas pelo mesmo motivo
+
+`fechar-do-embutido-nao-sincroniza` e `elo-do-empilhar-pelo-disco` passavam com
+o defeito reposto (02/10, 12:45 e 13:08). **Saída honesta nas duas: (i), o teste
+estava fraco** -- o defeito segue possível, e o que o escondia era **outro
+conserto, posterior, que cobre o veredito final**:
+
+| guarda | hipóteses | o que a medição disse |
+|---|---|---|
+| fechar do embutido | (a) confere o veredito, não o dano; (b) o defeito sumiu do caminho; (c) outro ponto repete o `fsync` | (a) **viva**, (b) **viva em parte**: com o `fechar` reposto como só-o-`Drop`, byte 52 do `.ndx` = **1** no disco (medido) e, no processo novo, `precisa_reconstruir` = **falso**: o `phx_base_abrir` passou a rodar `recuperar_marcas` (563), que reconstrói o índice marcado. A sonda abre de qualquer jeito. (c) morta: não há segundo `sincronizar` no caminho |
+| elo do `empilhar` | (a), (b) o COMMIT refaz o elo, (c) outro caminho de empilhar | (b) **viva**: `pre_conferir_a_lista` chama `refazer_o_elo` (537) sobre a linha atual, então o resultado **depois do COMMIT** sai certo mesmo com o plano do `empilhar` só pelo disco. (c) morta: os três pontos passam por `planejar_cascata_empilhada` |
+
+O padrão repete a lição desta casa: **o teste media o veredito que um conserto
+POSTERIOR passou a garantir, e não o dano que o defeito faz**. O dano que sobra
+é outro, e é o que o teste passou a medir: (1) o byte 52 em **0** no disco logo
+depois do `phx_tabela_fechar` -- o processo seguinte não paga uma reconstrução
+O(n) nem depende do que o núcleo ainda não levou ao disco; (2) a **leitura de
+dentro da transação** depois do `UPDATE` da mãe -- o elo planejado só pelo disco
+já está na lista, e a transação lê `id 10` onde a lista escreveu `11`
+(`(10, 6, false)` contra `(11, 6, false)`).
+
+Prova real: ver `docs/cognicao/cognicao_guarda-que-mede-o-veredito-que-outro-conserto-passou-a-garantir_20261006_2100.md`.
+
+
 ## 10. O que a rodada das transações achou na própria bateria
 
 Três achados que não vieram do código novo: vieram de rodar a bateria e
