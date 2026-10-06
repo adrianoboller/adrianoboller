@@ -19,7 +19,7 @@ um.
 | **SMS** | não — zero ocorrências de `sms` no código | — |
 | gancho no erro de E/S (`PhxError::Io`, 5001, `SP000010`) | não — virava resposta e linha no `acessos.log` | `error.rs:152` |
 | sonda de escrita / montagem só-leitura | não — um EROFS passava calado até a próxima gravação | — |
-| `fsync` do fecho recusado | virava só uma chave de volta na lista de sujas, sem noticiar ninguém (desde o 509 o processo aborta na recusa, e o aviso por e-mail dessa recusa deixou de sair — ver abaixo) | `descarregar_sujas_com` |
+| `fsync` do fecho recusado | virava só uma chave de volta na lista de sujas, sem noticiar ninguém (desde o 509 o processo aborta na recusa; o aviso dessa recusa sai no arranque seguinte, desde o 573 — ver abaixo) | `descarregar_sujas_com` |
 | cliente HTTP de saída em texto puro | não — os únicos `GET`/`POST` escritos num `TcpStream` são de **testes** contra o próprio servidor (`servidor.rs:42072`, `:42198`) | — |
 
 A última linha decide o meio do SMS (§4).
@@ -87,9 +87,17 @@ sujas e ponto. O `fecho_recusado` levava o erro para a mesma saúde, com
 origem `fecho` e a base/tabela da chave. **Desde o pedido 509 (24/09/2026) isso
 não acontece mais para o `fsync` recusado:** o servidor ABORTA no instante da
 recusa (`sincronia::ao_recusar`), antes de o fecho chegar ao `fecho_recusado`, e
-portanto **não sai evento nem e-mail** dessa recusa. O aviso volta com o
-arranque do 509 (a sentinela que o arranque no mesmo boot acha; parecer do
-papel C 509+512, C3) — até lá, quem vê a queda é o supervisor e o `stderr`.
+portanto **não sai evento nem e-mail** dessa recusa no processo que cai. **O
+aviso voltou em 06/10/2026 (pedido 573), pelo arranque seguinte:** a
+sentinela do 509 guarda o caminho e o erro, e o arranque que a acha no MESMO
+boot avisa ANTES de recusar subir — pelo mesmo carteiro (`Carteiro` em
+`servidor.rs`: e-mail, SMS pelo gateway e o gancho do operador), de forma
+síncrona, porque não há thread `sonda-disco` ainda e o processo vai sair logo
+depois. O evento é do tipo `entrada_saida`, origem `arranque`; a linha do
+SMS/gancho não leva caminho. O supervisor que tenta subir de novo a cada
+poucos segundos repete o aviso a cada tentativa — é o processo dizendo, a cada
+vez, que não subiu. Prova pelo processo: `tests/aviso-do-arranque-recusado.rs`
+(sentinela plantada → o gancho roda, o arranque recusa dizendo por quê).
 E o **próprio `acessos.log`** que não
 aceita escrita também é evento (origem `acessos.log`): esse erro ninguém
 recebe como resposta.

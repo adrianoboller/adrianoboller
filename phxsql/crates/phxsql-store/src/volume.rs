@@ -304,10 +304,12 @@ fn diretorio_real(diretorio: &Path) -> PathBuf {
 ///
 /// # Por que escrita a mao, e nao `std::path::absolute`
 ///
-/// Porque ela e' estavel a partir do Rust **1.79** e este projeto declara
-/// **1.75** no `Cargo.toml` -- e MSRV e' promessa de compatibilidade, nao
-/// detalhe de compilacao. Subi-la para poupar cinco linhas trocaria uma
-/// promessa por conveniencia, e trocaria calada.
+/// Porque, quando ela foi escrita, a `absolute` era estavel so a partir do
+/// Rust **1.79** e este projeto declarava **1.75** -- e MSRV e' promessa de
+/// compatibilidade, nao detalhe de compilacao. O `rust-version` subiu para
+/// **1.89** (pedido 635, pelo `File::try_lock`), entao a razao de versao
+/// acabou (pedido 653); trocar esta funcao pela da `std` fica para quem
+/// mexer aqui, porque a divergencia abaixo continua valendo.
 ///
 /// A divergencia contra a receita da `std`, e a restricao que a causou: a
 /// `absolute` tambem tira os componentes `.` e as barras repetidas, e aqui

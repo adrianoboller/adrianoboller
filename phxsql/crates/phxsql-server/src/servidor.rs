@@ -1243,8 +1243,18 @@ pub struct Servidor {
     ///
     /// # Por que dois contadores, e nao o veneno do `RwLock`
     ///
-    /// O veneno nao sai: o `clear_poison` e de 1.77 e a casa promete 1.75
-    /// (`rust-version`). Entao a trava fica envenenada para sempre depois do
+    /// O veneno nao sai, e de proposito (pedido 653). A razao velha era a
+    /// versao -- o `clear_poison` e de 1.77 e a casa prometia 1.75 --, e ela
+    /// acabou com o `rust-version` em 1.89. A que fica: o `RwLock` se
+    /// envenena quando a GUARDA cai, e quem a segura no desenrolar e o
+    /// proprio `TravaMedida::drop`, que repara e so DEPOIS solta -- o reparo
+    /// nao tem como limpar um veneno que ainda nao foi posto. Limpar na
+    /// tomada seguinte custaria uma escrita na trava para poupar as duas
+    /// leituras atomicas abaixo, que a tomada envenenada ja paga, e nao
+    /// mudaria decisao nenhuma: quem decide e ESTE par, e nao o veneno. A
+    /// prova de que a trava volta a atender com o veneno permanente, tomada
+    /// apos tomada, e `o_veneno_permanente_continua_recuperando_tomada_apos_tomada`.
+    /// Entao a trava fica envenenada para sempre depois do
     /// primeiro panico, e o que decide se ela volta a atender e ESTE par: com
     /// os dois iguais, todo panico que a sujou ja passou pelo reparo do
     /// `TravaMedida::drop`, e o estado do disco e o que o arranque deixaria.
@@ -1694,6 +1704,9 @@ pub struct Servidor {
     /// linha no log. Conta criacao, e nao abertura: a cadeia ja criada abre a
     /// cada rodada, e contar a abertura inflaria o numero sem tabela nova.
     ledger_marcado_recebido: AtomicU64,
+    /// Pedido 652: quais pares ja foram avisados de que o Noise sera recusado
+    /// na 0.20. Silencio por par; consultado so em `responder_aperto`.
+    aviso_do_noise: crate::fio_dados::AvisoDoNoise,
     /// Os outros dois ajustes que a tela de configuracao muda A QUENTE.
     ///
     /// O `somente_leitura_vivo` acima serve aos DOIS caminhos que o mudam: a
@@ -1815,7 +1828,12 @@ impl Servidor {
         phxsql_store::sincronia::ao_recusar(fsync_recusado_derruba_o_processo);
         // E o arranque que vem DEPOIS de uma queda dessas, no mesmo boot, nao
         // sobe (pedido 509, saida (a), decisao do dono em 30/09/2026).
-        conferir_sentinela_509(&config.base)?;
+        // Pedido 573: o operador e AVISADO antes da recusa, pelo carteiro do
+        // 249 -- o `fsync` recusado derrubou o processo e o carteiro morreu
+        // junto, entao quem diz e o arranque seguinte.
+        conferir_sentinela_509(&config.base, |caminho, erro| {
+            avisar_o_arranque_recusado(&config, caminho, erro)
+        })?;
         registrar_base_da_sentinela(&config.base);
         // `recursos.cache_paginas` estava no config.json e na documentacao
         // desde a 0.13.0 -- e nao era lido por ninguem, porque o cache nao
@@ -2016,6 +2034,7 @@ impl Servidor {
             posicoes_bidi: Mutex::new(posicoes_bidi),
             numeros_bidi: Mutex::new(numeros_bidi),
             ledger_marcado_recebido: AtomicU64::new(0),
+            aviso_do_noise: crate::fio_dados::AvisoDoNoise::default(),
             janela: Janela::nova(&config.recursos),
             sujas: Mutex::new(std::collections::HashSet::new()),
             trava_das_sequencias: Mutex::new(()),
@@ -2554,8 +2573,9 @@ impl Servidor {
     ///
     /// Sai UMA vez por panico, e nao a cada tomada: quem o escreve e o proprio
     /// reparo, com o relatorio do que fez. Esta funcao fica calada no caminho
-    /// que recupera -- o veneno e permanente (1.75 nao tem `clear_poison`), e
-    /// um aviso por tomada seria uma linha por pedido, o aviso que ninguem le.
+    /// que recupera -- o veneno e permanente (de proposito: ver o campo
+    /// `panicos_na_trava`, pedido 653), e um aviso por tomada seria uma linha
+    /// por pedido, o aviso que ninguem le.
     fn depois_do_veneno<G>(&self, veneno: std::sync::PoisonError<G>) -> Result<G> {
         let panicos = self.panicos_na_trava.load(Ordering::SeqCst);
         let reparos = self.reparos_da_trava.load(Ordering::SeqCst);
@@ -5128,7 +5148,46 @@ impl Servidor {
                 let silencio = agora - estado.master_visto_ms();
                 if silencio > c.janela_ms() {
                     let vivos = estado.vivos(agora);
-                    match crate::cluster::vencedor(&vivos, estado.total()) {
+                    // Pedido 313: a referencia do teto de atraso e a ultima
+                    // posicao que o master publicou -- a que os clientes ja
+                    // ouviram «gravei» -- ou a do vivo mais a frente, se o
+                    // master nunca pulsou para ca.
+                    let do_master = estado
+                        .master_atual()
+                        .and_then(|(id, _)| mapa.get(&id).map(|p| p.posicao))
+                        .unwrap_or(0);
+                    let referencia = vivos
+                        .iter()
+                        .map(|v| v.posicao)
+                        .max()
+                        .unwrap_or(0)
+                        .max(do_master);
+                    let eleicao = crate::cluster::eleger(
+                        &vivos,
+                        estado.total(),
+                        referencia,
+                        c.atraso_maximo_na_eleicao,
+                    );
+                    let eleito = match eleicao {
+                        crate::cluster::Eleicao::TodosAtrasados {
+                            referencia,
+                            menor_atraso,
+                        } => {
+                            motivos.push(format!(
+                                "master calado ha {}s e todos os {} vivos atras da ultima \
+                                 posicao dele ({referencia}) mais do que \
+                                 cluster.atraso_maximo_na_eleicao ({}): o menos atrasado \
+                                 esta {menor_atraso} atras -- NAO promovo",
+                                silencio / 1_000,
+                                vivos.len(),
+                                c.atraso_maximo_na_eleicao
+                            ));
+                            return motivos;
+                        }
+                        crate::cluster::Eleicao::SemMaioria => None,
+                        crate::cluster::Eleicao::Eleito(v) => Some(v),
+                    };
+                    match eleito {
                         // O teste de protecao mais importante da bateria: sem
                         // maioria visivel, ficar degradado E a decisao certa.
                         None => motivos.push(format!(
@@ -5861,7 +5920,7 @@ impl Servidor {
             return Ok(());
         }
         let c = &estado.config;
-        let credencial_do_cluster = c.usuario.is_empty() || sessao.login() == c.usuario;
+        let credencial_do_cluster = sessao_e_do_cluster(c, sessao);
         // Primeiro sem rede: IP contra IP. So quando nao bate e que o nome de
         // host da lista e resolvido -- `endereco` aceita nome («host ou IP»),
         // e a propagacao de um cluster configurado por nome chega de um IP;
@@ -5974,7 +6033,6 @@ impl Servidor {
         };
         let agora = crate::agora_ms();
         let c = &estado.config;
-        // `map_or(true, ..)` e nao `is_none_or`: o MSRV do workspace e 1.75.
         let administra = sessao
             .usuario
             .as_ref()
@@ -12787,10 +12845,40 @@ impl Servidor {
         match feito {
             Ok((transporte, _)) => {
                 *canal = Canal::Cifrado(Box::new(transporte));
+                // Pedido 652 (decisao do dono, 01/10/2026): na 0.19 o Noise
+                // ainda entra, mas quem chega por ele e registrado. E este o
+                // ponto UNICO onde o servidor aceita um aperto Noise; o TLS
+                // decide-se antes, no primeiro byte (`abrir_fio_de_dados`), e
+                // nunca passa por aqui. Noise DENTRO de um TLS ja e o canal
+                // novo, e nao se avisa.
+                if !saida.cifrado() {
+                    self.avisar_que_o_noise_acaba(ip);
+                }
                 true
             }
             Err(_) => false,
         }
+    }
+
+    /// Uma linha de log por PAR que ainda chegou por Noise (a porta e efemera,
+    /// entao o par e o endereco). O iniciador e o no da lista do cluster que
+    /// tem esse endereco, ou `cliente`: no aperto NX quem inicia ainda nao se
+    /// identificou, e o login so existe depois dele.
+    fn avisar_que_o_noise_acaba(&self, ip: &str) {
+        if !self.aviso_do_noise.avisar(ip, crate::agora_ms()) {
+            return;
+        }
+        let iniciador = self
+            .cluster
+            .as_ref()
+            .and_then(|c| {
+                c.lista()
+                    .into_iter()
+                    .find(|n| mesmo_endereco_ip(&n.endereco, ip))
+                    .map(|n| format!("no {}", n.id))
+            })
+            .unwrap_or_else(|| "cliente".to_string());
+        eprintln!("{}", crate::fio_dados::linha_do_noise(ip, &iniciador));
     }
 
     /// O aperto em si: mensagem 1 em Base64 entra, mensagem 2 em Base64 sai.
@@ -29472,270 +29560,18 @@ impl Servidor {
         );
     }
 
-    /// O aviso de um evento de saude que passou pelo silencio. Sempre escreve
-    /// no erro padrao; e-mail e SMS saem se o rele estiver ligado.
-    ///
-    /// SO a thread `sonda-disco` chama isto, fora de qualquer trava do
-    /// servidor. Quem registra o evento (o `anotar`, o fecho) entrega a fila
-    /// e volta -- ver `evento_de_disco`.
+    /// O aviso de um evento de saude que passou pelo silencio -- pelo
+    /// [`Carteiro`], o motor UNICO que o arranque recusado tambem usa (573).
     fn avisar_saude_do_disco(
         &self,
         fio: &crate::telemetria::Fio,
         evento: crate::saude_do_disco::Evento,
     ) {
-        // O backup agendado pega carona no carteiro (pedido 510), e o texto e
-        // dele: «detectou um problema no disco onde o banco grava» seria
-        // mentira sobre um destino sem permissao.
-        let backup = evento.tipo == crate::saude_do_disco::Tipo::Backup;
-        // O do arranque (255) tambem nao e do disco: texto proprio, e fora da
-        // conta dos avisos de saude, como o do backup.
-        let arranque = evento.tipo == crate::saude_do_disco::Tipo::Arranque;
-        let fora_do_disco = backup || arranque;
-        if !fora_do_disco {
-            eprintln!(
-                "SAUDE DO DISCO ({}): {} em {}{} -- {}",
-                evento.tipo.nome(),
-                Self::tipo_de_saude_legivel(evento.tipo),
-                evento.origem,
-                Self::alvo_do_evento(&evento),
-                evento.texto
-            );
+        Carteiro {
+            config: &self.config,
+            saude: &self.saude,
         }
-        // Lentidao e aviso de painel, nunca de canal.
-        if !evento.tipo.e_erro() {
-            return;
-        }
-        // Os dois meios sao independentes: o gancho do operador sai com o
-        // e-mail desligado (e o e-mail sem gancho), e o erro de um nunca
-        // impede o outro. O e-mail e o SMS-por-gateway vao primeiro, porque
-        // sao o comportamento que ja existia; o gancho vem depois, com prazo.
-        self.avisar_por_email_e_sms(fio, &evento, fora_do_disco);
-        self.avisar_pelo_gancho(fio, &evento);
-    }
-
-    /// O e-mail e o SMS por e-mail-para-SMS da operadora -- o aviso de
-    /// sempre, so movido para ca para o gancho nao herdar os `return` dele.
-    fn avisar_por_email_e_sms(
-        &self,
-        fio: &crate::telemetria::Fio,
-        evento: &crate::saude_do_disco::Evento,
-        fora_do_disco: bool,
-    ) {
-        let backup = evento.tipo == crate::saude_do_disco::Tipo::Backup;
-        let arranque = evento.tipo == crate::saude_do_disco::Tipo::Arranque;
-        let email = self.config.alertas.email.clone();
-        // O SMS ja nasce validado como «so com e-mail ligado» (config.rs).
-        if !email.ligado {
-            return;
-        }
-        let sms = self.config.alertas.sms.clone();
-        let assunto = if backup {
-            "PhxSql: o backup agendado FALHOU".to_string()
-        } else if arranque {
-            "PhxSql: o arranque reconstruiu indices depois de uma queda".to_string()
-        } else {
-            format!(
-                "PhxSql: saude do disco -- {} ({})",
-                Self::tipo_de_saude_legivel(evento.tipo),
-                evento.origem
-            )
-        };
-        let corpo = if backup {
-            self.texto_do_aviso_de_backup(evento)
-        } else if arranque {
-            self.texto_do_aviso_do_arranque(evento)
-        } else {
-            self.texto_do_aviso_de_saude(evento)
-        };
-        let linha_sms = Self::texto_do_sms_de_saude(evento);
-        // O painel conta os avisos DA SAUDE DO DISCO (a carta diz «o disco
-        // onde o banco grava»): o do backup sai pelo mesmo carteiro e fica
-        // fora da conta dela, com o log proprio.
-        let de_que = if backup {
-            "do backup agendado"
-        } else if arranque {
-            "do arranque"
-        } else {
-            "de saude do disco"
-        };
-        fio.fazendo("falando com o rele de e-mail");
-        let r = crate::email::enviar(&email, &assunto, &corpo);
-        match &r {
-            Ok(r) => eprintln!("aviso {de_que} enviado: {r}"),
-            // Falhar em avisar tambem e noticia, como no disco cheio.
-            Err(e) => eprintln!("aviso {de_que} NAO ENVIADO: {e}"),
-        }
-        if !fora_do_disco {
-            self.saude.anotar_aviso(
-                "email",
-                r.map(|_| ()).map_err(|e| e.to_string()),
-                crate::agora_ms(),
-            );
-        }
-        if !sms.ligado {
-            return;
-        }
-        fio.fazendo("mandando o SMS pelo gateway da operadora");
-        // O MESMO rele, com os destinatarios trocados por `numero@gateway`:
-        // e o que a operadora entrega como texto.
-        let mut por_sms = email.clone();
-        por_sms.para = sms.enderecos();
-        let r = crate::email::enviar(&por_sms, "PhxSql", &linha_sms);
-        match &r {
-            Ok(r) => eprintln!("SMS {de_que} enviado: {r}"),
-            Err(e) => eprintln!("SMS {de_que} NAO ENVIADO: {e}"),
-        }
-        if !fora_do_disco {
-            self.saude.anotar_aviso(
-                "sms",
-                r.map(|_| ()).map_err(|e| e.to_string()),
-                crate::agora_ms(),
-            );
-        }
-    }
-
-    /// O gancho externo do operador (pedido 249). O ERRO dele e so log e
-    /// `avisos.ultima_falha`: o aviso que nao saiu por aqui nao pode
-    /// derrubar o carteiro nem esconder o que saiu pelos outros meios.
-    ///
-    /// Roda na thread `sonda-disco`, fora de qualquer trava, e o portao
-    /// (`ligado`) vem ANTES de montar qualquer texto: desligado custa um
-    /// `if`. O texto e o MESMO do SMS por e-mail -- uma linha, ate 160
-    /// caracteres, sem caminho --, e e tudo o que o programa recebe do
-    /// evento; o pedido que provocou o erro nunca chega aqui.
-    fn avisar_pelo_gancho(
-        &self,
-        fio: &crate::telemetria::Fio,
-        evento: &crate::saude_do_disco::Evento,
-    ) {
-        let g = &self.config.alertas.gancho;
-        if !g.ligado {
-            return;
-        }
-        fio.fazendo("chamando o gancho do operador");
-        let quando = phxsql_core::datahora::instante_iso(evento.quando_ms);
-        let linha = Self::texto_do_sms_de_saude(evento);
-        let chamada = crate::gancho::Chamada {
-            tipo: evento.tipo.nome(),
-            origem: &evento.origem,
-            quando: &quando,
-            linha: &linha,
-        };
-        let r = crate::gancho::executar(g, &chamada, &self.saude.gancho_em_voo);
-        match &r {
-            Ok(()) => eprintln!("gancho do operador executado ({})", evento.tipo.nome()),
-            Err(e) => eprintln!("gancho do operador NAO EXECUTADO: {e}"),
-        }
-        self.saude.anotar_aviso("gancho", r, crate::agora_ms());
-    }
-
-    fn tipo_de_saude_legivel(tipo: crate::saude_do_disco::Tipo) -> &'static str {
-        use crate::saude_do_disco::Tipo;
-        match tipo {
-            Tipo::SoLeitura => "montagem so-leitura (EROFS)",
-            Tipo::SemEspaco => "sem espaco (ENOSPC)",
-            Tipo::EntradaSaida => "erro de E/S",
-            Tipo::Conferencia => "o dado voltou diferente do escrito",
-            Tipo::Lento => "disco lento",
-            Tipo::Backup => "o backup agendado falhou",
-            Tipo::Arranque => "o arranque reconstruiu indices",
-        }
-    }
-
-    /// O corpo do e-mail do arranque que reconstruiu indices -- pedido 255.
-    /// Diz o que aconteceu, que o dado nao se perdeu por isso, e o que fazer
-    /// com a tabela que ficou pendente.
-    fn texto_do_aviso_do_arranque(&self, e: &crate::saude_do_disco::Evento) -> String {
-        format!(
-            "O PhxSql subiu depois de uma queda, e o arranque reconstruiu indices que \
-             ela deixou para tras.\n\n\x20 servidor   {}\n  base       {}\n  quando     \
-             {}\n  o que      {}\n\n\
-             O indice se reconstroi a partir do arquivo de dados: nenhuma linha se \
-             perdeu por isso. Se ha tabela pendente, ela recusa ate alguem rodar \
-             `reindexar` nela. Queda sem aviso se investiga: energia, SIGKILL, falta \
-             de memoria.\n\
-             Servidor PhxSql {VERSAO}\n",
-            crate::email::nome_da_maquina(),
-            self.config.base.display(),
-            phxsql_core::datahora::instante_iso(e.quando_ms),
-            e.texto
-        )
-    }
-
-    /// O corpo do e-mail do backup agendado que falhou -- pedido 510. Leva o
-    /// destino e o erro, e o que acontece depois: sem isto, quem le nao sabe
-    /// se o servidor tenta de novo daqui a um minuto ou amanha.
-    fn texto_do_aviso_de_backup(&self, e: &crate::saude_do_disco::Evento) -> String {
-        let b = &self.config.backup;
-        format!(
-            "O backup agendado do PhxSql FALHOU -- a copia desta rodada NAO existe.\n\n\
-             \x20 servidor   {}\n  base       {}\n  destino    {}\n  quando     {}\n  \
-             erro       {}\n\n\
-             O proximo backup roda na proxima hora da agenda ({}). Enquanto ele \
-             continuar falhando, o proximo aviso sai em ate {} min; o primeiro que der \
-             certo zera o silencio.\n\
-             Servidor PhxSql {VERSAO}\n",
-            crate::email::nome_da_maquina(),
-            self.config.base.display(),
-            b.destino.display(),
-            phxsql_core::datahora::instante_iso(e.quando_ms),
-            e.texto,
-            if b.hora.is_empty() {
-                format!("a cada {} h", b.cada_horas)
-            } else {
-                format!("todo dia as {}", b.hora)
-            },
-            self.config.alertas.disco.repetir_minutos
-        )
-    }
-
-    /// ` (base/tabela)` quando o evento nomeia uma; vazio quando nao.
-    fn alvo_do_evento(e: &crate::saude_do_disco::Evento) -> String {
-        match (e.database.is_empty(), e.tabela.is_empty()) {
-            (true, true) => String::new(),
-            (false, true) => format!(" ({})", e.database),
-            _ => format!(" ({}/{})", e.database, e.tabela),
-        }
-    }
-
-    /// O corpo do e-mail. Leva o servidor, o `base`, o tipo, a origem, a hora
-    /// e o texto do erro -- e NUNCA o pedido que o provocou: a resposta de um
-    /// `inserir` recusado por E/S nao carrega a linha, e o e-mail tambem nao.
-    fn texto_do_aviso_de_saude(&self, e: &crate::saude_do_disco::Evento) -> String {
-        let mut t = String::new();
-        t.push_str("O PhxSql detectou um problema no disco onde o banco grava.\n\n");
-        t.push_str(&format!(
-            "  servidor   {}\n  base       {}\n  tipo       {}\n  origem     {}{}\n  quando     {}\n  erro       {}\n\n",
-            crate::email::nome_da_maquina(),
-            self.config.base.display(),
-            Self::tipo_de_saude_legivel(e.tipo),
-            e.origem,
-            Self::alvo_do_evento(e),
-            phxsql_core::datahora::instante_iso(e.quando_ms),
-            e.texto
-        ));
-        t.push_str(&format!(
-            "  erros de E/S desde o arranque: {}\n",
-            self.saude.erros_es()
-        ));
-        match self.saude.ultima_sonda() {
-            Some(s) => t.push_str(&format!(
-                "  ultima sonda: {} ({} ms, {})\n\n",
-                match &s.falha {
-                    None => "passou".to_string(),
-                    Some((_, texto)) => format!("falhou -- {texto}"),
-                },
-                s.duracao_us / 1_000,
-                phxsql_core::datahora::instante_iso(s.medido_em_ms)
-            )),
-            None => t.push_str("  ultima sonda: ainda nao rodou\n\n"),
-        }
-        t.push_str(&format!(
-            "Enquanto o problema continuar, o proximo aviso deste tipo sai em ate {} min.\n\
-             Servidor PhxSql {VERSAO}\n",
-            self.config.alertas.disco.repetir_minutos
-        ));
-        t
+        .avisar_saude_do_disco(fio, evento);
     }
 
     /// O SMS: UMA linha, ate 160 caracteres, sem caminho e sem segredo. SMS
@@ -29759,9 +29595,9 @@ impl Servidor {
             format!(
                 "PhxSql {}: disco {} em {}{} {hora} UTC",
                 crate::email::nome_da_maquina(),
-                Self::tipo_de_saude_legivel(e.tipo),
+                Carteiro::tipo_de_saude_legivel(e.tipo),
                 e.origem,
-                Self::alvo_do_evento(e)
+                Carteiro::alvo_do_evento(e)
             )
         };
         // O ajudante UNICO (pedido 643): `database`/`tabela` vem do pedido de
@@ -31146,13 +30982,31 @@ impl Servidor {
                 self.msg("erro.pulso_de_no_desconhecido", &[("id", &id)]),
             ));
         }
-        let confirmados = crate::quorum::Exigencia::da_lista(p.campo("confirmado"));
+        // Pedido 649: o `id` e declarado pelo cliente e nao amarra a sessao,
+        // entao a confirmacao so vale para a tabela que ESTA sessao passa por
+        // `replica_alcanca` -- o mesmo portao que filtra os lotes entregues.
+        // Sem isto, um `Replicar` so da tabela A fechava o quorum de B sem
+        // nenhuma replica ter gravado B (a durabilidade anunciada, mentira).
+        let confirmados: Vec<crate::quorum::Exigencia> =
+            crate::quorum::Exigencia::da_lista(p.campo("confirmado"))
+                .into_iter()
+                .filter(|c| replica_alcanca(sessao.usuario.as_ref(), &c.database, &c.tabela))
+                .collect();
+        // A ficha do cubo (que tabela as replicas alcancam) so e gravada por
+        // quem entra com a credencial do CLUSTER: o ultimo-a-chegar-vence
+        // deixava um `Replicar` fraco estreitar o alcance e degradar o
+        // servidor. Cluster sem `usuario` declarado = comportamento velho.
+        let ficha = if sessao_e_do_cluster(&estado.config, sessao) {
+            sessao.usuario.as_ref()
+        } else {
+            None
+        };
         // A espera cabe no pulso: a replica tem de voltar a conversar antes
         // de o silencio dela parecer queda.
         let teto = estado.config.pulso_s.saturating_mul(1_000).max(100);
         let esperar =
             Duration::from_millis(p.inteiro_ou("esperar_ms", 0).clamp(0, teto as i64) as u64);
-        let entrega = cubo.aguardar(&id, sessao.usuario.as_ref(), &confirmados, esperar);
+        let entrega = cubo.aguardar(&id, ficha, &confirmados, esperar);
         let cifrado = self.fio_cifrado(sessao);
         let mut lotes = Vec::with_capacity(entrega.lotes.len());
         for l in &entrega.lotes {
@@ -32751,6 +32605,290 @@ impl<T> TomarTrava<T> for Mutex<T> {
 /// boot le do cache do nucleo o que o disco perdeu, o `sincronizar` responde
 /// Ok e a marca sairia -- o 509 continua aberto nessa metade. O que parar
 /// compra e nao confirmar mais nada sobre este disco neste processo.
+/// O carteiro dos avisos de saude: e-mail, SMS pelo gateway e o gancho do
+/// operador (pedido 249).
+///
+/// # Por que um tipo fora do `Servidor`
+///
+/// Pedido 573: o arranque que acha a sentinela do 509 recusa subir ANTES de o
+/// `Servidor` existir, e o operador tem de ser avisado por ali tambem.
+/// Escrever um segundo envio para o arranque seria a decisao «como se avisa»
+/// escrita duas vezes -- a que envelhecesse mandaria e-mail sem SMS, ou sem o
+/// gancho. Entao o motor e este, com o que ele de fato le (a `Config` e a
+/// `SaudeDoDisco`), e o `Servidor` o empresta.
+pub(crate) struct Carteiro<'a> {
+    pub config: &'a Config,
+    pub saude: &'a crate::saude_do_disco::SaudeDoDisco,
+}
+
+impl Carteiro<'_> {
+    /// O aviso de um evento de saude que passou pelo silencio. Sempre escreve
+    /// no erro padrao; e-mail e SMS saem se o rele estiver ligado.
+    ///
+    /// SO a thread `sonda-disco` chama isto, fora de qualquer trava do
+    /// servidor. Quem registra o evento (o `anotar`, o fecho) entrega a fila
+    /// e volta -- ver `evento_de_disco`.
+    pub(crate) fn avisar_saude_do_disco(
+        &self,
+        fio: &crate::telemetria::Fio,
+        evento: crate::saude_do_disco::Evento,
+    ) {
+        // O backup agendado pega carona no carteiro (pedido 510), e o texto e
+        // dele: «detectou um problema no disco onde o banco grava» seria
+        // mentira sobre um destino sem permissao.
+        let backup = evento.tipo == crate::saude_do_disco::Tipo::Backup;
+        // O do arranque (255) tambem nao e do disco: texto proprio, e fora da
+        // conta dos avisos de saude, como o do backup.
+        let arranque = evento.tipo == crate::saude_do_disco::Tipo::Arranque;
+        let fora_do_disco = backup || arranque;
+        if !fora_do_disco {
+            eprintln!(
+                "SAUDE DO DISCO ({}): {} em {}{} -- {}",
+                evento.tipo.nome(),
+                Carteiro::tipo_de_saude_legivel(evento.tipo),
+                evento.origem,
+                Carteiro::alvo_do_evento(&evento),
+                evento.texto
+            );
+        }
+        // Lentidao e aviso de painel, nunca de canal.
+        if !evento.tipo.e_erro() {
+            return;
+        }
+        // Os dois meios sao independentes: o gancho do operador sai com o
+        // e-mail desligado (e o e-mail sem gancho), e o erro de um nunca
+        // impede o outro. O e-mail e o SMS-por-gateway vao primeiro, porque
+        // sao o comportamento que ja existia; o gancho vem depois, com prazo.
+        self.avisar_por_email_e_sms(fio, &evento, fora_do_disco);
+        self.avisar_pelo_gancho(fio, &evento);
+    }
+
+    /// O e-mail e o SMS por e-mail-para-SMS da operadora -- o aviso de
+    /// sempre, so movido para ca para o gancho nao herdar os `return` dele.
+    fn avisar_por_email_e_sms(
+        &self,
+        fio: &crate::telemetria::Fio,
+        evento: &crate::saude_do_disco::Evento,
+        fora_do_disco: bool,
+    ) {
+        let backup = evento.tipo == crate::saude_do_disco::Tipo::Backup;
+        let arranque = evento.tipo == crate::saude_do_disco::Tipo::Arranque;
+        let email = self.config.alertas.email.clone();
+        // O SMS ja nasce validado como «so com e-mail ligado» (config.rs).
+        if !email.ligado {
+            return;
+        }
+        let sms = self.config.alertas.sms.clone();
+        let assunto = if backup {
+            "PhxSql: o backup agendado FALHOU".to_string()
+        } else if arranque {
+            "PhxSql: o arranque reconstruiu indices depois de uma queda".to_string()
+        } else {
+            format!(
+                "PhxSql: saude do disco -- {} ({})",
+                Carteiro::tipo_de_saude_legivel(evento.tipo),
+                evento.origem
+            )
+        };
+        let corpo = if backup {
+            self.texto_do_aviso_de_backup(evento)
+        } else if arranque {
+            self.texto_do_aviso_do_arranque(evento)
+        } else {
+            self.texto_do_aviso_de_saude(evento)
+        };
+        let linha_sms = Servidor::texto_do_sms_de_saude(evento);
+        // O painel conta os avisos DA SAUDE DO DISCO (a carta diz «o disco
+        // onde o banco grava»): o do backup sai pelo mesmo carteiro e fica
+        // fora da conta dela, com o log proprio.
+        let de_que = if backup {
+            "do backup agendado"
+        } else if arranque {
+            "do arranque"
+        } else {
+            "de saude do disco"
+        };
+        fio.fazendo("falando com o rele de e-mail");
+        let r = crate::email::enviar(&email, &assunto, &corpo);
+        match &r {
+            Ok(r) => eprintln!("aviso {de_que} enviado: {r}"),
+            // Falhar em avisar tambem e noticia, como no disco cheio.
+            Err(e) => eprintln!("aviso {de_que} NAO ENVIADO: {e}"),
+        }
+        if !fora_do_disco {
+            self.saude.anotar_aviso(
+                "email",
+                r.map(|_| ()).map_err(|e| e.to_string()),
+                crate::agora_ms(),
+            );
+        }
+        if !sms.ligado {
+            return;
+        }
+        fio.fazendo("mandando o SMS pelo gateway da operadora");
+        // O MESMO rele, com os destinatarios trocados por `numero@gateway`:
+        // e o que a operadora entrega como texto.
+        let mut por_sms = email.clone();
+        por_sms.para = sms.enderecos();
+        let r = crate::email::enviar(&por_sms, "PhxSql", &linha_sms);
+        match &r {
+            Ok(r) => eprintln!("SMS {de_que} enviado: {r}"),
+            Err(e) => eprintln!("SMS {de_que} NAO ENVIADO: {e}"),
+        }
+        if !fora_do_disco {
+            self.saude.anotar_aviso(
+                "sms",
+                r.map(|_| ()).map_err(|e| e.to_string()),
+                crate::agora_ms(),
+            );
+        }
+    }
+
+    /// O gancho externo do operador (pedido 249). O ERRO dele e so log e
+    /// `avisos.ultima_falha`: o aviso que nao saiu por aqui nao pode
+    /// derrubar o carteiro nem esconder o que saiu pelos outros meios.
+    ///
+    /// Roda na thread `sonda-disco`, fora de qualquer trava, e o portao
+    /// (`ligado`) vem ANTES de montar qualquer texto: desligado custa um
+    /// `if`. O texto e o MESMO do SMS por e-mail -- uma linha, ate 160
+    /// caracteres, sem caminho --, e e tudo o que o programa recebe do
+    /// evento; o pedido que provocou o erro nunca chega aqui.
+    fn avisar_pelo_gancho(
+        &self,
+        fio: &crate::telemetria::Fio,
+        evento: &crate::saude_do_disco::Evento,
+    ) {
+        let g = &self.config.alertas.gancho;
+        if !g.ligado {
+            return;
+        }
+        fio.fazendo("chamando o gancho do operador");
+        let quando = phxsql_core::datahora::instante_iso(evento.quando_ms);
+        let linha = Servidor::texto_do_sms_de_saude(evento);
+        let chamada = crate::gancho::Chamada {
+            tipo: evento.tipo.nome(),
+            origem: &evento.origem,
+            quando: &quando,
+            linha: &linha,
+        };
+        let r = crate::gancho::executar(g, &chamada, &self.saude.gancho_em_voo);
+        match &r {
+            Ok(()) => eprintln!("gancho do operador executado ({})", evento.tipo.nome()),
+            Err(e) => eprintln!("gancho do operador NAO EXECUTADO: {e}"),
+        }
+        self.saude.anotar_aviso("gancho", r, crate::agora_ms());
+    }
+
+    fn tipo_de_saude_legivel(tipo: crate::saude_do_disco::Tipo) -> &'static str {
+        use crate::saude_do_disco::Tipo;
+        match tipo {
+            Tipo::SoLeitura => "montagem so-leitura (EROFS)",
+            Tipo::SemEspaco => "sem espaco (ENOSPC)",
+            Tipo::EntradaSaida => "erro de E/S",
+            Tipo::Conferencia => "o dado voltou diferente do escrito",
+            Tipo::Lento => "disco lento",
+            Tipo::Backup => "o backup agendado falhou",
+            Tipo::Arranque => "o arranque reconstruiu indices",
+        }
+    }
+
+    /// O corpo do e-mail do arranque que reconstruiu indices -- pedido 255.
+    /// Diz o que aconteceu, que o dado nao se perdeu por isso, e o que fazer
+    /// com a tabela que ficou pendente.
+    fn texto_do_aviso_do_arranque(&self, e: &crate::saude_do_disco::Evento) -> String {
+        format!(
+            "O PhxSql subiu depois de uma queda, e o arranque reconstruiu indices que \
+             ela deixou para tras.\n\n\x20 servidor   {}\n  base       {}\n  quando     \
+             {}\n  o que      {}\n\n\
+             O indice se reconstroi a partir do arquivo de dados: nenhuma linha se \
+             perdeu por isso. Se ha tabela pendente, ela recusa ate alguem rodar \
+             `reindexar` nela. Queda sem aviso se investiga: energia, SIGKILL, falta \
+             de memoria.\n\
+             Servidor PhxSql {VERSAO}\n",
+            crate::email::nome_da_maquina(),
+            self.config.base.display(),
+            phxsql_core::datahora::instante_iso(e.quando_ms),
+            e.texto
+        )
+    }
+
+    /// O corpo do e-mail do backup agendado que falhou -- pedido 510. Leva o
+    /// destino e o erro, e o que acontece depois: sem isto, quem le nao sabe
+    /// se o servidor tenta de novo daqui a um minuto ou amanha.
+    fn texto_do_aviso_de_backup(&self, e: &crate::saude_do_disco::Evento) -> String {
+        let b = &self.config.backup;
+        format!(
+            "O backup agendado do PhxSql FALHOU -- a copia desta rodada NAO existe.\n\n\
+             \x20 servidor   {}\n  base       {}\n  destino    {}\n  quando     {}\n  \
+             erro       {}\n\n\
+             O proximo backup roda na proxima hora da agenda ({}). Enquanto ele \
+             continuar falhando, o proximo aviso sai em ate {} min; o primeiro que der \
+             certo zera o silencio.\n\
+             Servidor PhxSql {VERSAO}\n",
+            crate::email::nome_da_maquina(),
+            self.config.base.display(),
+            b.destino.display(),
+            phxsql_core::datahora::instante_iso(e.quando_ms),
+            e.texto,
+            if b.hora.is_empty() {
+                format!("a cada {} h", b.cada_horas)
+            } else {
+                format!("todo dia as {}", b.hora)
+            },
+            self.config.alertas.disco.repetir_minutos
+        )
+    }
+
+    /// ` (base/tabela)` quando o evento nomeia uma; vazio quando nao.
+    fn alvo_do_evento(e: &crate::saude_do_disco::Evento) -> String {
+        match (e.database.is_empty(), e.tabela.is_empty()) {
+            (true, true) => String::new(),
+            (false, true) => format!(" ({})", e.database),
+            _ => format!(" ({}/{})", e.database, e.tabela),
+        }
+    }
+
+    /// O corpo do e-mail. Leva o servidor, o `base`, o tipo, a origem, a hora
+    /// e o texto do erro -- e NUNCA o pedido que o provocou: a resposta de um
+    /// `inserir` recusado por E/S nao carrega a linha, e o e-mail tambem nao.
+    fn texto_do_aviso_de_saude(&self, e: &crate::saude_do_disco::Evento) -> String {
+        let mut t = String::new();
+        t.push_str("O PhxSql detectou um problema no disco onde o banco grava.\n\n");
+        t.push_str(&format!(
+            "  servidor   {}\n  base       {}\n  tipo       {}\n  origem     {}{}\n  quando     {}\n  erro       {}\n\n",
+            crate::email::nome_da_maquina(),
+            self.config.base.display(),
+            Carteiro::tipo_de_saude_legivel(e.tipo),
+            e.origem,
+            Carteiro::alvo_do_evento(e),
+            phxsql_core::datahora::instante_iso(e.quando_ms),
+            e.texto
+        ));
+        t.push_str(&format!(
+            "  erros de E/S desde o arranque: {}\n",
+            self.saude.erros_es()
+        ));
+        match self.saude.ultima_sonda() {
+            Some(s) => t.push_str(&format!(
+                "  ultima sonda: {} ({} ms, {})\n\n",
+                match &s.falha {
+                    None => "passou".to_string(),
+                    Some((_, texto)) => format!("falhou -- {texto}"),
+                },
+                s.duracao_us / 1_000,
+                phxsql_core::datahora::instante_iso(s.medido_em_ms)
+            )),
+            None => t.push_str("  ultima sonda: ainda nao rodou\n\n"),
+        }
+        t.push_str(&format!(
+            "Enquanto o problema continuar, o proximo aviso deste tipo sai em ate {} min.\n\
+             Servidor PhxSql {VERSAO}\n",
+            self.config.alertas.disco.repetir_minutos
+        ));
+        t
+    }
+}
+
 /// A sentinela do pedido 509, na raiz da instancia.
 ///
 /// # O buraco que ela fecha
@@ -32814,7 +32952,11 @@ fn gravar_sentinela_509(caminho: &Path, e: &std::io::Error) {
 }
 
 /// O arranque: com a sentinela no disco, sobe so se o boot mudou.
-fn conferir_sentinela_509(base: &Path) -> Result<()> {
+///
+/// `avisar(caminho, erro)` roda UMA vez, so no caminho que recusa, e ANTES de
+/// devolver a recusa (pedido 573): e o unico ponto que sabe que o servidor
+/// nao vai subir.
+fn conferir_sentinela_509(base: &Path, avisar: impl FnOnce(&str, &str)) -> Result<()> {
     let arquivo = base.join(SENTINELA_509);
     let Ok(texto) = std::fs::read_to_string(&arquivo) else {
         return Ok(());
@@ -32841,6 +32983,11 @@ fn conferir_sentinela_509(base: &Path) -> Result<()> {
         .lines()
         .find_map(|l| l.strip_prefix("caminho="))
         .unwrap_or("?");
+    let erro = texto
+        .lines()
+        .find_map(|l| l.strip_prefix("erro="))
+        .unwrap_or("?");
+    avisar(caminho, erro);
     Err(PhxError::Io(std::io::Error::other(format!(
         "o servidor NAO sobe: o fsync de {caminho} foi recusado neste MESMO boot \
          ({}). O cache do nucleo pode estar devolvendo o que o disco perdeu, e a \
@@ -32857,6 +33004,40 @@ fn conferir_sentinela_509(base: &Path) -> Result<()> {
             String::new()
         }
     ))))
+}
+
+/// O aviso do arranque que a sentinela do 509 recusou (pedido 573).
+///
+/// Sai pelo MESMO [`Carteiro`] da saude do disco (e-mail, SMS pelo gateway,
+/// gancho do operador), de forma sincrona: nao ha thread `sonda-disco` ainda,
+/// nem trava nenhuma na mao, e o processo vai sair logo depois -- enfileirar
+/// seria perder o aviso. O tipo e o de E/S: foi um `fsync` recusado, e e o
+/// que o operador ja filtra. Sem e-mail e sem gancho, so a linha do erro
+/// padrao -- a mesma de todo evento de saude.
+fn avisar_o_arranque_recusado(config: &Config, caminho: &str, erro: &str) {
+    let saude =
+        crate::saude_do_disco::SaudeDoDisco::nova(config.alertas.disco.clone(), &config.base);
+    let evento = crate::saude_do_disco::Evento {
+        quando_ms: crate::agora_ms(),
+        tipo: crate::saude_do_disco::Tipo::EntradaSaida,
+        origem: "arranque".into(),
+        database: String::new(),
+        tabela: String::new(),
+        texto: format!(
+            "o fsync de {caminho} foi recusado ({erro}) neste MESMO boot, e o \
+             servidor NAO sobe ate o volume ser remontado ou a maquina \
+             reiniciada (pedido 509)"
+        ),
+    };
+    let fio = crate::telemetria::Fio::avulso(
+        "arranque",
+        "avisa pelo carteiro que o arranque foi recusado pela sentinela do 509",
+    );
+    Carteiro {
+        config,
+        saude: &saude,
+    }
+    .avisar_saude_do_disco(&fio, evento);
 }
 
 /// O gancho do processo para o disco que recusa -- o `abort`.
@@ -33761,6 +33942,15 @@ enum EscopoDaPosicao<'a> {
 /// tudo, que e o comportamento de sempre.
 fn replica_alcanca(usuario: Option<&Usuario>, database: &str, tabela: &str) -> bool {
     usuario.is_none_or(|u| u.pode_em(database, tabela, Atividade::Replicar))
+}
+
+/// A sessao entrou com a credencial do cluster (`cluster.usuario`)?
+///
+/// Cluster sem usuario declarado = sim (o comportamento de sempre: entra pelo
+/// token). E o MESMO predicado que o crivo do `propagar` usa, escrito uma vez
+/// para o quorum nao ter uma segunda opiniao sobre quem e «o no» (649).
+fn sessao_e_do_cluster(c: &crate::config::Cluster, sessao: &Sessao) -> bool {
+    c.usuario.is_empty() || sessao.login() == c.usuario
 }
 
 /// `(database, tabela qualificada)` de uma tabela tocada, pelo caminho do
@@ -47007,6 +47197,113 @@ mod testes_config_gravar {
             )
             .unwrap();
         assert!(r.booleano_ou("acrescentado", false), "{}", r.escrever());
+    }
+
+    /// Um usuario que so `replicar` nas bases listadas.
+    fn so_replica(login: &str, bases: &[&str]) -> Usuario {
+        let mut u = operador();
+        u.login = login.into();
+        u.bases = bases
+            .iter()
+            .map(|b| {
+                (
+                    b.to_string(),
+                    Permissoes {
+                        replicar: true,
+                        ..Permissoes::default()
+                    },
+                )
+            })
+            .collect();
+        u
+    }
+
+    fn aguardar_como(s: &Servidor, quem: &Usuario, confirmado: &str) -> Result<Json> {
+        s.executar(
+            "replicar_aguardar",
+            &pedido(&format!(r#"{{"id":"no2","confirmado":[{confirmado}]}}"#)),
+            &sessao_com(Some(quem.clone()), "127.0.0.1"),
+        )
+    }
+
+    fn exigencia(db: &str, t: &str) -> Vec<crate::quorum::Exigencia> {
+        vec![crate::quorum::Exigencia {
+            database: db.into(),
+            tabela: t.into(),
+            posicao: 5,
+        }]
+    }
+
+    fn servidor_de_quorum(nome: &str, usuario_do_cluster: &str) -> (Arc<Servidor>, DirTemp) {
+        let usuario = usuario_do_cluster.to_string();
+        let (s, _, g) = servidor_em_cluster_com(nome, Cadastro::default(), move |c| {
+            let cl = c.cluster.as_mut().unwrap();
+            cl.usuario = usuario;
+            cl.quorum_minimo = 1;
+            cl.quorum_prazo_ms = 100;
+        });
+        assert_eq!(
+            s.cluster.as_ref().unwrap().papel(),
+            crate::cluster::PapelVivo::Master
+        );
+        (s, g)
+    }
+
+    const A_5: &str = r#"{"database":"A","tabela":"t","posicao":5}"#;
+    const B_5: &str = r#"{"database":"B","tabela":"t","posicao":5}"#;
+
+    /// **Pedido 649: o ack do quorum so vale para a tabela que a SESSAO
+    /// alcanca, e a ficha do cluster so e gravada por quem e do cluster.**
+    ///
+    /// Cenario A: um `Replicar` so da base A confirma B (que nenhuma replica
+    /// gravou) e o quorum de B nao pode fechar. Cenario B: a ficha do cluster
+    /// (alcance de todas as replicas) nao e sobrescrita por ele.
+    ///
+    /// # O vermelho
+    ///
+    /// Sem o filtro `replica_alcanca` nos confirmados, o `esperar` de B
+    /// alcanca; sem `sessao_e_do_cluster`, a ficha vira a do `fraco`.
+    #[test]
+    fn replicar_de_outra_credencial_nao_forja_o_ack_nem_a_ficha() {
+        let (s, _g) = servidor_de_quorum("ack649", "clu");
+        let cubo = s.quorum.clone().expect("cubo");
+        let clu = so_replica("clu", &["*"]);
+        let fraco = so_replica("fraco", &["A"]);
+        aguardar_como(&s, &clu, "").unwrap();
+        assert_eq!(cubo.ficha().unwrap().login, "clu");
+
+        aguardar_como(&s, &fraco, &format!("{A_5},{B_5}")).unwrap();
+        assert_eq!(
+            cubo.ficha().unwrap().login,
+            "clu",
+            "a ficha do cluster foi sobrescrita por outra credencial"
+        );
+        let b = cubo.esperar(vec![], &exigencia("B", "t"));
+        assert!(!b.alcancado, "o ack forjado de B fechou o quorum: {b:?}");
+        // O que ele de fato alcanca continua contando: nao e um portao que
+        // recusaria tudo.
+        let a = cubo.esperar(vec![], &exigencia("A", "t"));
+        assert!(a.alcancado, "o ack legitimo de A nao contou: {a:?}");
+    }
+
+    /// O comportamento VELHO (cluster de um usuario so, ou sem usuario): a
+    /// credencial do cluster confirma qualquer tabela que alcanca e grava a
+    /// ficha. O portao do 649 nao pode recusar o cluster que ja rodava.
+    #[test]
+    fn cluster_de_um_usuario_so_confirma_e_grava_a_ficha_como_antes() {
+        let (s, _g) = servidor_de_quorum("ack649-velho", "clu");
+        let cubo = s.quorum.clone().expect("cubo");
+        aguardar_como(&s, &so_replica("clu", &["*"]), &format!("{A_5},{B_5}")).unwrap();
+        assert_eq!(cubo.ficha().unwrap().login, "clu");
+        assert!(cubo.esperar(vec![], &exigencia("B", "t")).alcancado);
+
+        // Sem `cluster.usuario`: qualquer sessao com ficha a grava, como
+        // sempre foi.
+        let (s, _g) = servidor_de_quorum("ack649-sem-usuario", "");
+        let cubo = s.quorum.clone().expect("cubo");
+        aguardar_como(&s, &so_replica("qualquer", &["*"]), B_5).unwrap();
+        assert_eq!(cubo.ficha().unwrap().login, "qualquer");
+        assert!(cubo.esperar(vec![], &exigencia("B", "t")).alcancado);
     }
 
     /// A lista aceita NOME de host («host ou IP»), e a propagacao de um
@@ -68913,6 +69210,69 @@ mod testes_do_panico_sob_a_trava {
             .unwrap_or_default()
     }
 
+    /// **Pedido 653: o veneno da trava de dados e PERMANENTE de proposito, e
+    /// ela continua atendendo tomada apos tomada.**
+    ///
+    /// A razao velha de nao limpar o veneno era a versao (`clear_poison` e de
+    /// 1.77; a casa prometia 1.75). Com o `rust-version` em 1.89 a pergunta
+    /// voltou: deve-se limpar? Nao -- quem decide e o par
+    /// `panicos_na_trava`/`reparos_da_trava`, e o veneno so o aciona. Esta
+    /// prova segura as duas metades: depois de UM panico reparado, o `RwLock`
+    /// continua envenenado e mesmo assim vinte pedidos seguidos, de leitura e
+    /// de escrita, atendem -- e os contadores ficam em 1 e 1.
+    ///
+    /// O vermelho: com o `depois_do_veneno` exigindo trava limpa (o
+    /// `trava_de_dados_sem_reparo` sempre), o primeiro pedido depois do
+    /// panico ja recusa com `SP000010`.
+    #[test]
+    fn o_veneno_permanente_continua_recuperando_tomada_apos_tomada() {
+        let dir = DirTemp::novo("panico-653-veneno");
+        let s = Servidor::novo(config_base(&dir)).unwrap();
+        let porta = porta_de_dados_de_verdade(&s);
+        semear(porta);
+        armar(&s, "inserir");
+        let morto = pedir(
+            porta,
+            r#""op":"inserir","database":"loja","tabela":"clientes",
+               "valores":{"id":6,"nome":"C6"}"#,
+        );
+        assert!(morto.is_none(), "o inserir armado nao caiu no panico");
+        assert!(
+            s.dados.is_poisoned(),
+            "o panico com a trava na mao nao a envenenou -- a prova nao exercita nada"
+        );
+        for i in 0..20 {
+            let id = 100 + i;
+            ok(
+                pedir(
+                    porta,
+                    &format!(
+                        r#""op":"inserir","database":"loja","tabela":"outra","valores":{{"id":{id}}}"#
+                    ),
+                ),
+                &format!("inserir {id} depois do veneno"),
+            );
+            ok(
+                pedir(
+                    porta,
+                    r#""op":"varrer","database":"loja","tabela":"outra","max":1"#,
+                ),
+                "varrer depois do veneno",
+            );
+        }
+        assert!(
+            s.dados.is_poisoned(),
+            "alguem passou a limpar o veneno: a decisao do 653 mudou sem a prova mudar"
+        );
+        assert_eq!(
+            (
+                s.panicos_na_trava.load(Ordering::SeqCst),
+                s.reparos_da_trava.load(Ordering::SeqCst)
+            ),
+            (1, 1)
+        );
+    }
+
     /// **(a) e (b), fora de transacao.** O `inserir` morre com o slot e o
     /// contador do `.reg` gravados e nenhuma chave no indice.
     ///
@@ -69991,7 +70351,7 @@ mod testes_do_panico_sob_a_trava {
         let dir = DirTemp::novo("sentinela-509-sem-boot");
         std::fs::create_dir_all(&dir.0).unwrap();
         std::fs::write(dir.join(super::SENTINELA_509), "caminho=/x\n").unwrap();
-        let e = super::conferir_sentinela_509(&dir.0).unwrap_err();
+        let e = super::conferir_sentinela_509(&dir.0, |_, _| {}).unwrap_err();
         assert!(e.to_string().contains(super::SENTINELA_509), "{e}");
         assert!(dir.join(super::SENTINELA_509).exists());
     }

@@ -314,3 +314,51 @@ fn adotar_o_contador_cai_na_faixa_deste_no() {
     let r = t.inserir(&[Value::Null, Value::Str("b".into())]).unwrap();
     assert_eq!(id_da_linha(&mut t, r), 8);
 }
+
+/// **Pedido 650: o contador que o source manda tem teto.** Um source com
+/// defeito (ou hostil) anunciando `u64::MAX - 1` nao pode gastar a numeracao
+/// da replica -- que, promovida, emitiria ids absurdos --, nem derrubar a
+/// adocao com `panic` de overflow dentro de `na_faixa`.
+///
+/// # O vermelho
+///
+/// Sem o teto, o contador salta para ~2^64 (o `assert_eq!` do contador cai);
+/// sem a saturacao do `na_faixa`, o `u64::MAX` com passo 2 e `panic` em debug.
+#[test]
+fn contador_do_source_acima_de_2_53_e_recusado_sem_panico() {
+    phxsql_store::no::definir_inicio_da_sequencia(0);
+    let d = comum::DirTemp::novo("adota-teto");
+    let mut t = Table::criar(&d, esquema_com_faixa()).unwrap();
+    t.inserir(&[Value::Null, Value::Str("a".into())]).unwrap();
+    let antes = t.sequencia_atual();
+    for hostil in [u64::MAX - 1, u64::MAX, (1u64 << 53) + 1] {
+        let e = t.adotar_sequencia_do_source(hostil).unwrap_err();
+        assert_eq!(e.nome(), "LIMITE_EXCEDIDO", "{e}");
+        assert_eq!(t.sequencia_atual(), antes, "o contador andou com {hostil}");
+    }
+    // O teto e inclusivo e nao recusa quem esta atras: o legitimo anda.
+    assert!(t.adotar_sequencia_do_source(1 << 53).unwrap());
+    assert!(t.sequencia_atual() <= (1u64 << 53) + 2);
+}
+
+/// O mesmo, com passo 3 como no pedido: a faixa nao pode dar a volta.
+#[test]
+fn contador_hostil_com_passo_3_nao_da_a_volta() {
+    phxsql_store::no::definir_inicio_da_sequencia(0);
+    let d = comum::DirTemp::novo("adota-teto-passo3");
+    let esquema = Schema::new(
+        "tres",
+        vec![
+            Column::new("id", ColumnType::Sequence),
+            Column::new("c", ColumnType::Str(30)),
+        ],
+        vec![IndexDef::new("porId", vec![IndexColumn::asc(0)]).unico()],
+    )
+    .unwrap()
+    .com_passo_da_sequencia(3)
+    .unwrap();
+    let mut t = Table::criar(&d, esquema).unwrap();
+    let antes = t.sequencia_atual();
+    assert!(t.adotar_sequencia_do_source(u64::MAX - 1).is_err());
+    assert_eq!(t.sequencia_atual(), antes);
+}

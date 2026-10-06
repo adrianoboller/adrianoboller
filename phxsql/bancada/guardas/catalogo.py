@@ -8704,7 +8704,10 @@ pub fn limpar() {
             "incompleto venceria um no com menos diario e completo."
         ),
         "arquivo": "crates/phxsql-server/src/cluster.rs",
-        "trecho": """    vivos.iter().max_by(|a, b| {
+        # Trecho atualizado em 06/10/2026 (pedido 313): a comparacao mudou-se
+        # do `vencedor` para o `eleger`, que a roda depois do teto de atraso.
+        # O defeito e o mesmo.
+        "trecho": """    let eleito = aptos.max_by(|a, b| {
         // `!incompleta`: completa (true) ordena acima de incompleta (false).
         (!a.incompleta)
             .cmp(&(!b.incompleta))
@@ -8712,14 +8715,14 @@ pub fn limpar() {
             .then(a.prioridade.cmp(&b.prioridade))
             // Invertido de proposito: no empate total, o id MENOR ganha.
             .then_with(|| b.id.cmp(&a.id))
-    })""",
-        "troca": """    vivos.iter().max_by(|a, b| {
+    });""",
+        "troca": """    let eleito = aptos.max_by(|a, b| {
         // DEFEITO REPOSTO: ignora `incompleta` e volta a comparar so a posicao.
         a.posicao
             .cmp(&b.posicao)
             .then(a.prioridade.cmp(&b.prioridade))
             .then_with(|| b.id.cmp(&a.id))
-    })""",
+    });""",
         "pacote": "phxsql-server",
         "alvo": ["--lib"],
         "caem": [
@@ -23117,11 +23120,13 @@ pub const PRAZO_SOB_A_TRAVA: Duration = Duration::from_secs(3600);""",
             "commit com quorum ja volta pelo prazo com alcancado:false."
         ),
         "arquivo": "crates/phxsql-server/src/servidor.rs",
-        "trecho": """        let entrega = cubo.aguardar(&id, sessao.usuario.as_ref(), &confirmados, esperar);
+        # Trecho atualizado em 06/10/2026 (pedido 649): a ficha passou a ser
+        # a da sessao do cluster, e nao a de qualquer sessao. Defeito igual.
+        "trecho": """        let entrega = cubo.aguardar(&id, ficha, &confirmados, esperar);
 """,
         "troca": """        // DEFEITO REPOSTO (207): o ack pede a trava de dados.
         let _trava = self.travar_dados()?;
-        let entrega = cubo.aguardar(&id, sessao.usuario.as_ref(), &confirmados, esperar);
+        let entrega = cubo.aguardar(&id, ficha, &confirmados, esperar);
 """,
         "pacote": "phxsql-server",
         "alvo": ["--test", "quorum-de-escrita"],
@@ -24699,6 +24704,196 @@ fn anotar(""",
         ],
         "seguem": [
             "conferidor::testes::nenhuma_chave_com_os_seis_idiomas_colados",
+        ],
+    },
+    {
+        "id": "ack-do-quorum-sem-alcance",
+        "titulo": "o ack do quorum vale para tabela que a sessao nao alcanca (pedido 649)",
+        "porque": (
+            "um `Replicar` so da base A confirmava B e o quorum de B fechava sem nenhuma replica ter gravado B -- a durabilidade anunciada vira mentira."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """                .filter(|c| replica_alcanca(sessao.usuario.as_ref(), &c.database, &c.tabela))
+""",
+        "troca": """                // DEFEITO REPOSTO (pedido 649): toda confirmacao conta.
+                .filter(|_| true)
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_config_gravar::replicar_de_outra_credencial_nao_forja_o_ack_nem_a_ficha",
+        ],
+        "seguem": [
+            "servidor::testes_config_gravar::cluster_de_um_usuario_so_confirma_e_grava_a_ficha_como_antes",
+        ],
+    },
+    {
+        "id": "ficha-do-quorum-ultimo-a-chegar",
+        "titulo": "a ficha do cubo do quorum e gravada por qualquer credencial `Replicar` (pedido 649)",
+        "porque": (
+            "ultimo-a-chegar-vence deixava um `Replicar` fraco estreitar o alcance que o commit consulta e degradar o servidor."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        let ficha = if sessao_e_do_cluster(&estado.config, sessao) {
+""",
+        "troca": """        // DEFEITO REPOSTO (pedido 649): qualquer sessao grava a ficha.
+        let ficha = if true || sessao_e_do_cluster(&estado.config, sessao) {
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_config_gravar::replicar_de_outra_credencial_nao_forja_o_ack_nem_a_ficha",
+        ],
+        "seguem": [
+            "servidor::testes_config_gravar::cluster_de_um_usuario_so_confirma_e_grava_a_ficha_como_antes",
+        ],
+    },
+    {
+        "id": "sequencia-do-source-sem-teto",
+        "titulo": "o contador de sequencia que o source anuncia e adotado sem teto (pedido 650)",
+        "porque": (
+            "o contador so anda para a frente: um `u64::MAX - 1` de um source com defeito ou hostil gastava a numeracao da replica para sempre."
+        ),
+        "arquivo": "crates/phxsql-store/src/reg.rs",
+        "trecho": """        if proxima > phxsql_core::json::INTEIRO_EXATO_MAX {
+""",
+        "troca": """        // DEFEITO REPOSTO (pedido 650): sem teto.
+        if false {
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "reconciliar-sequencia"],
+        "caem": [
+            "contador_do_source_acima_de_2_53_e_recusado_sem_panico",
+            "contador_hostil_com_passo_3_nao_da_a_volta",
+        ],
+        "seguem": [
+            "adotar_o_contador_cai_na_faixa_deste_no",
+        ],
+    },
+    {
+        "id": "na-faixa-da-a-volta",
+        "titulo": "`na_faixa` soma sem saturar perto de `u64::MAX` (pedido 650)",
+        "porque": (
+            "em debug era panico de overflow, em release o numero dava a volta para perto de zero: um id velho com cara de novo."
+        ),
+        "arquivo": "crates/phxsql-store/src/no.rs",
+        "trecho": """        piso.saturating_add((alvo + passo - resto) % passo)
+""",
+        "troca": """        // DEFEITO REPOSTO (pedido 650): a soma de antes.
+        piso + (alvo + passo - resto) % passo
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--lib"],
+        "caem": [
+            "no::testes::na_faixa_perto_do_teto_satura_em_vez_de_dar_a_volta",
+        ],
+        "seguem": [
+            "no::testes::no_teto_o_seguinte_nao_da_a_volta",
+        ],
+    },
+    {
+        "id": "noise-entra-sem-registro",
+        "titulo": "quem chega pelo Noise entra sem a linha de log da transicao para o TLS (pedido 652)",
+        "porque": (
+            "decisao do dono de 01/10/2026: na 0.19 o Noise entra e fica registrado; sem a linha, a 0.20 recusa nos que ninguem sabia que ainda falavam Noise."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """                if !saida.cifrado() {
+                    self.avisar_que_o_noise_acaba(ip);
+""",
+        "troca": """                // DEFEITO REPOSTO (pedido 652): o Noise entra calado.
+                if false && !saida.cifrado() {
+                    self.avisar_que_o_noise_acaba(ip);
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "aviso-do-noise"],
+        "caem": [
+            "quem_chega_por_noise_e_registrado_uma_vez_por_par_e_o_tls_nao",
+        ],
+        "seguem": [],
+    },
+    {
+        "id": "noise-sem-silencio-por-par",
+        "titulo": "o aviso do Noise sai uma linha por conexao em vez de uma por par (pedido 652)",
+        "porque": (
+            "a replica e o pulso reconectam a cada segundo: uma linha por conexao enterra o resto do log e vira o aviso que ninguem le."
+        ),
+        "arquivo": "crates/phxsql-server/src/fio_dados.rs",
+        "trecho": """            if agora_ms.saturating_sub(*ultimo) < SILENCIO_DO_NOISE_MS {
+                return false;
+""",
+        "troca": """            // DEFEITO REPOSTO (pedido 652): sem silencio.
+            if false && agora_ms.saturating_sub(*ultimo) < SILENCIO_DO_NOISE_MS {
+                return false;
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "fio_dados::testes::o_aviso_e_um_por_par_e_volta_depois_do_silencio",
+        ],
+        "seguem": [
+            "fio_dados::testes::a_linha_traz_a_frase_do_dono_e_nenhum_caminho",
+        ],
+    },
+    {
+        "id": "eleicao-sem-teto-de-atraso",
+        "titulo": "a eleicao promove a replica atrasada alem do `atraso_maximo_na_eleicao` (pedido 313)",
+        "porque": (
+            "comparar sem desqualificar antes promove o menos ruim de um grupo de ruins: a replica mil eventos atras vira master e apaga o que os clientes ouviram gravado."
+        ),
+        "arquivo": "crates/phxsql-server/src/cluster.rs",
+        "trecho": """        .filter(|c| teto == SEM_TETO_DE_ATRASO || atraso(c) <= teto);
+""",
+        "troca": """        // DEFEITO REPOSTO (pedido 313): o teto nao desqualifica ninguem.
+        .filter(|c| teto == SEM_TETO_DE_ATRASO || atraso(c) <= teto || true);
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "teto-de-atraso-na-eleicao"],
+        "caem": [
+            "com_o_teto_a_replica_atrasada_nao_se_promove_e_diz_por_que",
+        ],
+        "seguem": [
+            "sem_o_teto_a_eleicao_promove_como_sempre",
+        ],
+    },
+    {
+        "id": "arranque-recusado-calado",
+        "titulo": "o arranque recusado pela sentinela do 509 nao avisa o operador (pedido 573)",
+        "porque": (
+            "o fsync recusado derruba o processo e o carteiro morre junto; sem o aviso do arranque seguinte, o operador so descobre lendo o journal."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """    avisar(caminho, erro);
+""",
+        "troca": """    // DEFEITO REPOSTO (pedido 573): recusa calada.
+    let _ = (&avisar, caminho, erro);
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "aviso-do-arranque-recusado"],
+        "caem": [
+            "a_sentinela_do_509_avisa_pelo_gancho_e_o_arranque_recusa_dizendo_por_que",
+        ],
+        "seguem": [],
+    },
+    {
+        "id": "veneno-permanente-recusa",
+        "titulo": "a trava de dados envenenada recusa mesmo com o reparo terminado (pedido 653)",
+        "porque": (
+            "o veneno do `RwLock` e permanente de proposito; quem decide e o par panicos/reparos. Exigir trava limpa fecharia a base no primeiro panico reparado."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        if panicos > 0 && reparos == panicos {
+""",
+        "troca": """        // DEFEITO REPOSTO (pedido 653): veneno = recusa.
+        if false && panicos > 0 && reparos == panicos {
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_do_panico_sob_a_trava::o_veneno_permanente_continua_recuperando_tomada_apos_tomada",
+        ],
+        "seguem": [
+            "servidor::testes_do_panico_sob_a_trava::sentinela_sem_boot_nao_deixa_subir",
         ],
     },
 ]

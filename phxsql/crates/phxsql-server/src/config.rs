@@ -651,6 +651,22 @@ pub struct Cluster {
     /// -- e o caminho e o mesmo da cifra: sobem-se todos os nos, e so entao
     /// se liga.
     pub exigir_prova_do_pulso: bool,
+    /// O teto de atraso da eleicao -- pedido 313, o `maximum_lag_on_failover`
+    /// do Patroni. Candidato atras da ultima posicao que o master publicou
+    /// (na mesma unidade da `posicao` do pulso: eventos do diario somados
+    /// nas tabelas replicadas) MAIS do que isto nao se promove; todos acima
+    /// dele, a eleicao nao promove ninguem e diz por que.
+    ///
+    /// # Zero = desligado, e e o padrao
+    ///
+    /// Guarda nova entra pedida, nao imposta. O Patroni nasce com 1 MiB
+    /// ligado, mas o numero dele e de BYTES de WAL; o nosso e de eventos,
+    /// e nao ha numero de fabrica que sirva a uma tabela de dez linhas e a
+    /// uma de dez milhoes. Ligado de fabrica, um cluster que ja rodava
+    /// passaria a ficar sem master na primeira queda com replica atrasada
+    /// -- o estrago que a regra proibe. Quem prefere ficar sem master a
+    /// promover uma replica atrasada escreve o numero.
+    pub atraso_maximo_na_eleicao: u64,
 }
 
 /// `Debug` a mao: as credenciais com que ESTE no fala com os outros. O token
@@ -676,6 +692,7 @@ impl std::fmt::Debug for Cluster {
             senha_hash: _,
             cifra,
             exigir_prova_do_pulso,
+            atraso_maximo_na_eleicao,
         } = self;
         f.debug_struct("Cluster")
             .field("nos", nos)
@@ -693,6 +710,7 @@ impl std::fmt::Debug for Cluster {
             .field("senha_hash", &"(oculto)")
             .field("cifra", cifra)
             .field("exigir_prova_do_pulso", exigir_prova_do_pulso)
+            .field("atraso_maximo_na_eleicao", atraso_maximo_na_eleicao)
             .finish()
     }
 }
@@ -753,6 +771,9 @@ impl Cluster {
             senha_hash: c.texto_ou("senha_hash", "").trim().to_string(),
             cifra,
             exigir_prova_do_pulso: c.booleano_ou("exigir_prova_do_pulso", false),
+            // Negativo vira zero (desligado): o lado de sempre, nunca um
+            // teto inventado.
+            atraso_maximo_na_eleicao: c.inteiro_ou("atraso_maximo_na_eleicao", 0).max(0) as u64,
         }))
     }
 
@@ -897,6 +918,10 @@ impl Cluster {
             (
                 "exigir_prova_do_pulso",
                 Json::Bool(self.exigir_prova_do_pulso),
+            ),
+            (
+                "atraso_maximo_na_eleicao",
+                Json::de_u64(self.atraso_maximo_na_eleicao),
             ),
             (
                 "nos",

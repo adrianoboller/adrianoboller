@@ -301,10 +301,65 @@ pub struct Candidato {
 /// no que fizer a mesma conta. Se TODOS estiverem incompletos, a preferencia
 /// se anula e a eleicao segue pelo numero: um cluster ainda precisa de master.
 pub fn vencedor(vivos: &[Candidato], total_configurado: usize) -> Option<&Candidato> {
-    if vivos.len() * 2 <= total_configurado {
-        return None;
+    match eleger(vivos, total_configurado, 0, SEM_TETO_DE_ATRASO) {
+        Eleicao::Eleito(v) => Some(v),
+        Eleicao::SemMaioria | Eleicao::TodosAtrasados { .. } => None,
     }
-    vivos.iter().max_by(|a, b| {
+}
+
+/// `cluster.atraso_maximo_na_eleicao` desligado: o comportamento de sempre.
+pub const SEM_TETO_DE_ATRASO: u64 = 0;
+
+/// O resultado de uma eleicao com o teto de atraso (pedido 313).
+#[derive(Debug, PartialEq, Eq)]
+pub enum Eleicao<'a> {
+    /// Os vivos nao passam da metade dos configurados.
+    SemMaioria,
+    Eleito(&'a Candidato),
+    /// Ha maioria, e TODOS os vivos estao atras da `referencia` mais do que
+    /// o teto. Nao promover e a decisao: melhor sem master que com um master
+    /// que apaga em silencio o que os clientes ja ouviram «gravei».
+    TodosAtrasados {
+        referencia: u64,
+        menor_atraso: u64,
+    },
+}
+
+/// A eleicao com o teto de atraso -- o `maximum_lag_on_failover` do Patroni
+/// (`patroni/ha.py`, `is_lagging`), pedido 313.
+///
+/// O candidato atrasado da `referencia` mais do que `teto` e DESQUALIFICADO
+/// ANTES de qualquer comparacao, como no Patroni: comparar primeiro e filtrar
+/// depois promoveria o menos ruim de um grupo inteiro de ruins, que e o
+/// defeito. A maioria, porem, conta TODOS os vivos -- ela responde «ha
+/// particao?», e o atraso nao muda quem esta do mesmo lado dela.
+///
+/// `teto` = [`SEM_TETO_DE_ATRASO`] desliga o filtro: e o padrao, e e
+/// exatamente o `vencedor` de antes (guarda nova entra pedida, nao imposta).
+///
+/// # A referencia, e por que ela e a do master que calou
+///
+/// O Patroni mede contra a ultima posicao do LIDER gravada no DCS. Aqui nao
+/// ha DCS: a referencia e a maior entre a ultima posicao que o master
+/// publicou no pulso e a dos vivos -- quem chama a monta. Predicado local,
+/// sobre o escalar que a eleicao ja compara, e por isso nao mexe no consenso
+/// (a recusa do pedido 294 nao o alcanca). Dois nos que viram pulsos
+/// diferentes do master podem discordar na borda do teto; o pior caso e
+/// nenhum se promover, que e o lado seguro.
+pub fn eleger(
+    vivos: &[Candidato],
+    total_configurado: usize,
+    referencia: u64,
+    teto: u64,
+) -> Eleicao<'_> {
+    if vivos.len() * 2 <= total_configurado {
+        return Eleicao::SemMaioria;
+    }
+    let atraso = |c: &Candidato| referencia.saturating_sub(c.posicao);
+    let aptos = vivos
+        .iter()
+        .filter(|c| teto == SEM_TETO_DE_ATRASO || atraso(c) <= teto);
+    let eleito = aptos.max_by(|a, b| {
         // `!incompleta`: completa (true) ordena acima de incompleta (false).
         (!a.incompleta)
             .cmp(&(!b.incompleta))
@@ -312,7 +367,14 @@ pub fn vencedor(vivos: &[Candidato], total_configurado: usize) -> Option<&Candid
             .then(a.prioridade.cmp(&b.prioridade))
             // Invertido de proposito: no empate total, o id MENOR ganha.
             .then_with(|| b.id.cmp(&a.id))
-    })
+    });
+    match eleito {
+        Some(v) => Eleicao::Eleito(v),
+        None => Eleicao::TodosAtrasados {
+            referencia,
+            menor_atraso: vivos.iter().map(atraso).min().unwrap_or(referencia),
+        },
+    }
 }
 
 const PAPEL_MASTER: u8 = 1;
@@ -1798,6 +1860,41 @@ mod testes {
             "b",
             "com todos incompletos, a maior posicao volta a decidir"
         );
+    }
+
+    /// **Pedido 313: o atrasado alem do teto e desqualificado ANTES de
+    /// comparar.** Master calou na posicao 1.000; teto 100. O `b` (950)
+    /// passa, o `a` (10) nao -- mesmo com prioridade maior, porque o filtro
+    /// vem antes do desempate. Todos atras: ninguem e eleito, e a eleicao DIZ.
+    ///
+    /// O vermelho: sem o filtro, o caso «todos atras» elege o `b` (900).
+    #[test]
+    fn o_teto_de_atraso_desqualifica_antes_de_comparar() {
+        let vivos = [c("a", 10, 9), c("b", 950, 0), c("c", 980, 0)];
+        assert_eq!(eleger(&vivos, 3, 1_000, 100), Eleicao::Eleito(&vivos[2]));
+        let vivos = [c("a", 10, 9), c("b", 900, 0)];
+        assert_eq!(
+            eleger(&vivos, 3, 1_000, 50),
+            Eleicao::TodosAtrasados {
+                referencia: 1_000,
+                menor_atraso: 100
+            }
+        );
+        // A maioria conta TODOS os vivos, atrasados inclusive: sem ela, e
+        // «sem maioria», e nao «todos atrasados».
+        assert_eq!(eleger(&vivos, 4, 1_000, 50), Eleicao::SemMaioria);
+    }
+
+    /// O comportamento VELHO: sem teto (o padrao), o menos atrasado vence por
+    /// mais longe que esteja, como sempre venceu.
+    #[test]
+    fn sem_teto_o_menos_atrasado_continua_vencendo() {
+        let vivos = [c("a", 10, 9), c("b", 900, 0)];
+        assert_eq!(
+            eleger(&vivos, 3, 1_000_000, SEM_TETO_DE_ATRASO),
+            Eleicao::Eleito(&vivos[1])
+        );
+        assert_eq!(vencedor(&vivos, 3).unwrap().id, "b");
     }
 
     fn config_de_teste() -> Cluster {

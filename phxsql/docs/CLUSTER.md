@@ -58,6 +58,7 @@ soquete.
   "avisar_cada_min": 5,              // aceita fração: 0.1 = 6 s
   "quorum_minimo": 0,                // réplicas que confirmam cada gravação; 0 = desliga (§2.4)
   "quorum_prazo_ms": 10000,          // espera vencida: grava, avisa e degrada
+  "atraso_maximo_na_eleicao": 0,     // teto de atraso do eleito; 0 = sem teto (§2.4)
   "token": "...", "usuario": "replicador",
   "senha_hash": "pbkdf2-sha256$...", // a MESMA tríade da origem de replicação
   "databases": [],                   // vazio = todos os do master
@@ -322,6 +323,27 @@ e é problema de rede. O que o banco entrega é a **semântica** de endereço
 único pelo protocolo: qualquer nó sabe dizer quem manda, e diz.
 
 ### 2.4 O que isto NÃO garante — leia antes de confiar
+
+**O teto de atraso da eleição existe desde 06/10/2026 (pedido 313), e é
+pedido.** Sem ele (o padrão, `atraso_maximo_na_eleicao: 0`), a eleição promove
+o MENOS atrasado dos vivos por mais longe que ele esteja — com todos muito
+atrás, promove o menos ruim e chama de eleição. Com
+`cluster.atraso_maximo_na_eleicao: N`, o candidato que está mais de N atrás
+da última posição que o master publicou no pulso (a unidade é a da
+`posicao`: eventos do diário somados nas tabelas replicadas) é
+**desqualificado antes de qualquer comparação**, como o
+`maximum_lag_on_failover` do Patroni; se todos estiverem acima do teto,
+**ninguém é promovido** e a degradação diz isso («... NAO promovo», com a
+referência e o menor atraso) — melhor sem master que com um master que
+apaga em silêncio o que os clientes já ouviram «gravei». A maioria continua
+contando TODOS os vivos. Por que o padrão é zero, e não o 1 MiB do Patroni:
+o número dele é de bytes de WAL, e o nosso de eventos — nenhum número de
+fábrica serve a uma tabela de dez linhas e a uma de dez milhões —, e ligado
+de fábrica um cluster que já rodava passaria a ficar sem master na primeira
+queda com réplica atrasada. A referência é a de cada nó (o último pulso do
+master que ELE viu): dois nós podem discordar na borda do teto, e o pior caso
+é ninguém se promover. Prova pelo soquete:
+`tests/teto-de-atraso-na-eleicao.rs`, nos dois sentidos.
 
 **O quórum de escrita existe desde 01/10/2026 (pedido 207), e é pedido.** Com
 `cluster.quorum_minimo: N`, o commit espera N **réplicas** aplicarem e gravarem

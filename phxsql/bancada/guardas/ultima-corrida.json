@@ -1737,9 +1737,9 @@
       "id": "eleicao-prefere-completa",
       "titulo": "`cluster::vencedor` volta a comparar so a posicao numerica, ignorando `incompleta`",
       "veredito": "PROVADA",
-      "segundos": 49.14,
+      "segundos": 88.08,
       "notas": [],
-      "quando": "2026-09-24 00:45"
+      "quando": "2026-10-06 22:14"
     },
     {
       "id": "replica-nao-atende-escrita",
@@ -5177,9 +5177,9 @@
       "id": "quorum-ack-pede-a-trava",
       "titulo": "o `replicar_aguardar` tomando a trava de dados do master: a réplica espera o commit que espera por ela, e todo commit estoura o prazo",
       "veredito": "PROVADA",
-      "segundos": 39.36,
+      "segundos": 38.19,
       "notas": [],
-      "quando": "2026-10-02 00:00"
+      "quando": "2026-10-06 22:14"
     },
     {
       "id": "quorum-ack-antes-do-fsync",
@@ -5684,6 +5684,78 @@
       "segundos": 77.99,
       "notas": [],
       "quando": "2026-10-02 10:14"
+    },
+    {
+      "id": "ack-do-quorum-sem-alcance",
+      "titulo": "o ack do quorum vale para tabela que a sessao nao alcanca (pedido 649)",
+      "veredito": "PROVADA",
+      "segundos": 89.66,
+      "notas": [],
+      "quando": "2026-10-06 22:14"
+    },
+    {
+      "id": "ficha-do-quorum-ultimo-a-chegar",
+      "titulo": "a ficha do cubo do quorum e gravada por qualquer credencial `Replicar` (pedido 649)",
+      "veredito": "PROVADA",
+      "segundos": 92.15,
+      "notas": [],
+      "quando": "2026-10-06 22:14"
+    },
+    {
+      "id": "sequencia-do-source-sem-teto",
+      "titulo": "o contador de sequencia que o source anuncia e adotado sem teto (pedido 650)",
+      "veredito": "PROVADA",
+      "segundos": 8.94,
+      "notas": [],
+      "quando": "2026-10-06 22:14"
+    },
+    {
+      "id": "na-faixa-da-a-volta",
+      "titulo": "`na_faixa` soma sem saturar perto de `u64::MAX` (pedido 650)",
+      "veredito": "PROVADA",
+      "segundos": 12.47,
+      "notas": [],
+      "quando": "2026-10-06 22:14"
+    },
+    {
+      "id": "noise-entra-sem-registro",
+      "titulo": "quem chega pelo Noise entra sem a linha de log da transicao para o TLS (pedido 652)",
+      "veredito": "PROVADA",
+      "segundos": 28.55,
+      "notas": [],
+      "quando": "2026-10-06 22:14"
+    },
+    {
+      "id": "noise-sem-silencio-por-par",
+      "titulo": "o aviso do Noise sai uma linha por conexao em vez de uma por par (pedido 652)",
+      "veredito": "PROVADA",
+      "segundos": 99.05,
+      "notas": [],
+      "quando": "2026-10-06 22:14"
+    },
+    {
+      "id": "eleicao-sem-teto-de-atraso",
+      "titulo": "a eleicao promove a replica atrasada alem do `atraso_maximo_na_eleicao` (pedido 313)",
+      "veredito": "PROVADA",
+      "segundos": 28.65,
+      "notas": [],
+      "quando": "2026-10-06 22:14"
+    },
+    {
+      "id": "arranque-recusado-calado",
+      "titulo": "o arranque recusado pela sentinela do 509 nao avisa o operador (pedido 573)",
+      "veredito": "PROVADA",
+      "segundos": 24.38,
+      "notas": [],
+      "quando": "2026-10-06 22:14"
+    },
+    {
+      "id": "veneno-permanente-recusa",
+      "titulo": "a trava de dados envenenada recusa mesmo com o reparo terminado (pedido 653)",
+      "veredito": "PROVADA",
+      "segundos": 96.99,
+      "notas": [],
+      "quando": "2026-10-06 22:14"
     },
     {
       "id": "alter-com-regra-sem-aviso",
