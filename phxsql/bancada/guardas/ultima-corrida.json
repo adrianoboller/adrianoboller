@@ -3266,12 +3266,196 @@
       "quando": "2026-10-02 13:08"
     },
     {
+      "id": "smtp-ecoa-a-credencial",
+      "titulo": "o erro do SMTP traz o texto do rele, e o rele que ecoa a credencial poe o base64 da senha no log",
+      "veredito": "PROVADA",
+      "segundos": 97.01,
+      "notas": [],
+      "quando": "2026-10-06 20:58"
+    },
+    {
+      "id": "arranque-reconstroi-calado",
+      "titulo": "o arranque reconstroi indice marcado e so diz no `stderr`: quem opera nao fica sabendo da queda",
+      "veredito": "PROVADA",
+      "segundos": 124.16,
+      "notas": [],
+      "quando": "2026-10-06 20:58"
+    },
+    {
+      "id": "reconstruir-fts-sem-janela",
+      "titulo": "o panico no meio do `reconstruir_fts` grava o indice de texto pela metade marcado limpo",
+      "veredito": "PROVADA",
+      "segundos": 9.34,
+      "notas": [],
+      "quando": "2026-10-06 20:58"
+    },
+    {
+      "id": "carimbo-da-a-volta-no-teto",
+      "titulo": "o rowstamp empurrado ao teto por evento replicado da a volta, e o filho nasce com carimbo menor que o pai",
+      "veredito": "PROVADA",
+      "segundos": 8.73,
+      "notas": [],
+      "quando": "2026-10-06 20:58"
+    },
+    {
+      "id": "upsert-solto-sem-trava-da-linha",
+      "titulo": "o upsert solto altera a linha que uma transacao segura, e o COMMIT dela apaga a escrita",
+      "veredito": "PROVADA",
+      "segundos": 104.54,
+      "notas": [],
+      "quando": "2026-10-06 20:58"
+    },
+    {
+      "id": "cascata-solta-sem-trava-da-filha",
+      "titulo": "a cascata solta grava a filha que uma transacao segura, por cima do X dela",
+      "veredito": "PROVADA",
+      "segundos": 115.46,
+      "notas": [],
+      "quando": "2026-10-06 20:58"
+    },
+    {
+      "id": "cascata-solta-sem-pre-conferencia",
+      "titulo": "a cascata solta grava a mae antes de conferir a FK da filha para OUTRA mae, e deixa filhas orfas",
+      "veredito": "PROVADA",
+      "segundos": 166.79,
+      "notas": [],
+      "quando": "2026-10-06 20:58"
+    },
+    {
       "id": "elo-implicito-sem-trava",
       "titulo": "o elo que só o COMMIT descobre escreve sem trava, e a leitura repetível de outra transação lê 5 e depois 6",
       "veredito": "PROVADA",
       "segundos": 82.86,
       "notas": [],
       "quando": "2026-10-01 21:28"
+    },
+    {
+      "id": "ciclo-de-commits-sem-desempate",
+      "titulo": "dois COMMITs cujos elos se barram são mandados repetir para sempre, e ninguém confirma",
+      "veredito": "PROVADA",
+      "segundos": 136.81,
+      "notas": [],
+      "quando": "2026-10-06 20:58"
+    },
+    {
+      "id": "quem-cede-no-ciclo-segura-as-travas",
+      "titulo": "a transação que cede no ciclo de COMMITs volta ativa com as travas, e a mais velha continua barrada",
+      "veredito": "PROVADA",
+      "segundos": 153.66,
+      "notas": [],
+      "quando": "2026-10-06 20:58"
+    },
+    {
+      "id": "aresta-velha-depois-do-savepoint",
+      "titulo": "a transação barrada volta ao SAVEPOINT e a aresta velha faz a outra ceder num ciclo que não existe mais",
+      "veredito": "PROVADA",
+      "segundos": 96.0,
+      "notas": [],
+      "quando": "2026-10-06 20:58"
+    },
+    {
+      "id": "corrente-do-ciclo-atravessa-quem-nao-confirma",
+      "titulo": "a corrente do ciclo atravessa transação em ABORT_ONLY, e a outra cede por quem nunca mais vai confirmar",
+      "veredito": "PROVADA",
+      "segundos": 112.12,
+      "notas": [],
+      "quando": "2026-10-06 20:58"
+    },
+    {
+      "id": "cascata-em-voo-ignorada-no-drop",
+      "titulo": "pânico entre duas filhas da cascata solta deixa as seguintes na chave velha, e a tabela delas não recusa",
+      "veredito": "PROVADA",
+      "segundos": 10.42,
+      "notas": [],
+      "quando": "2026-10-06 20:58"
+    },
+    {
+      "id": "cascata-em-voo-so-no-aplicar",
+      "titulo": "pânico depois de a mãe ir ao disco e antes da primeira filha deixa as filhas na chave velha, calado",
+      "veredito": "PROVADA",
+      "segundos": 11.37,
+      "notas": [],
+      "quando": "2026-10-06 20:58"
+    },
+    {
+      "id": "cascata-do-embutido-sem-marca",
+      "titulo": "a cascata do `ao_alterar` do embutido volta a rodar sem marca: a queda no meio deixa a filha na chave velha, e a abertura a cala",
+      "veredito": "PROVADA",
+      "segundos": 11.75,
+      "notas": [],
+      "quando": "2026-10-06 20:58"
+    },
+    {
+      "id": "recusa-do-fsync-por-grafia",
+      "titulo": "a recusa do `fsync` casa pela GRAFIA do caminho: pelo symlink ou por `dir/../dir` o mesmo diretório sincroniza Ok e baixa o byte 52",
+      "veredito": "PROVADA",
+      "segundos": 10.17,
+      "notas": [],
+      "quando": "2026-10-06 20:58"
+    },
+    {
+      "id": "dblink-mysql-lenenc-embrulha",
+      "titulo": "o DbLink MySQL(R) entra em pânico com `0xFE` + `u64::MAX` num campo `lenenc` do par, e corta calado o campo maior que o pacote",
+      "veredito": "PROVADA",
+      "segundos": 154.46,
+      "notas": [],
+      "quando": "2026-10-06 21:27"
+    },
+    {
+      "id": "dblink-pg-contagem-negativa",
+      "titulo": "o DbLink PostgreSQL(R) reserva `Vec::with_capacity` da contagem de campos `int16` do par: `-1` vira `usize::MAX` e pânico de `capacity overflow`",
+      "veredito": "PROVADA",
+      "segundos": 138.54,
+      "notas": [],
+      "quando": "2026-10-06 21:27"
+    },
+    {
+      "id": "dblink-mysql-cadeia-alem-do-fim",
+      "titulo": "o aperto de mão do DbLink MySQL(R) entra em pânico com saudação curta ou troca de plugin sem NUL, antes da credencial",
+      "veredito": "PROVADA",
+      "segundos": 125.93,
+      "notas": [],
+      "quando": "2026-10-06 21:27"
+    },
+    {
+      "id": "job-dispara-job",
+      "titulo": "um job cujo pedido é `job_rodar` sobe uma corrida aninhada por nível, sem teto: o job de si mesmo empilha threads até o processo cair",
+      "veredito": "PROVADA",
+      "segundos": 26.72,
+      "notas": [],
+      "quando": "2026-10-06 21:27"
+    },
+    {
+      "id": "smtp-sem-prazo-total-da-conversa",
+      "titulo": "o `timeout_s` do cliente SMTP mede o silêncio e não a conversa: um relé que pingue abaixo do prazo segura a thread de aviso pelo tempo que quiser",
+      "veredito": "PROVADA",
+      "segundos": 94.22,
+      "notas": [],
+      "quando": "2026-10-06 21:27"
+    },
+    {
+      "id": "fts-nasce-com-permissao-aberta",
+      "titulo": "o `.fts` nasce `644` -- legivel por todo usuario da maquina",
+      "veredito": "PROVADA",
+      "segundos": 12.63,
+      "notas": [],
+      "quando": "2026-10-06 21:27"
+    },
+    {
+      "id": "conferir-fk-afirma-indice-sao-quando-marcado",
+      "titulo": "a conferencia contra a MAE afirma \"esta sao\" com o indice marcado",
+      "veredito": "PROVADA",
+      "segundos": 9.31,
+      "notas": [],
+      "quando": "2026-10-06 21:27"
+    },
+    {
+      "id": "procura-das-filhas-afirma-indice-sao-quando-marcado",
+      "titulo": "a procura pelas filhas afirma \"esta sao\" com o indice marcado",
+      "veredito": "PROVADA",
+      "segundos": 8.87,
+      "notas": [],
+      "quando": "2026-10-06 21:27"
     },
     {
       "id": "backup-sem-fsync",
@@ -3314,6 +3498,62 @@
         "medido em 02/10/2026 (frente do 513 passo 2), e nao deduzido: desde o pedido 611 (S7, `conferir_destino_aberto`, commit 940e0e31 de 01/10 06:57) a mesma pergunta e feita ao DESCRITOR da pasta aberta, antes da primeira copia -- entao repor so' a conferencia de texto no `conferir_destino` nao e sentido por teste nenhum: os quatro destinos do teste recusam no descritor. A guarda que pega o par e `destino-do-backup-conferido-so-pelo-nome`. A ultima PROVADA desta entrada e de 01/10 02:26, ANTES do 611."
       ],
       "quando": "2026-10-02 02:03"
+    },
+    {
+      "id": "diff-null-na-chave-apaga-linha-irma",
+      "titulo": "o `diff` com NULL repetido no indice some com linhas do relatorio",
+      "veredito": "PROVADA",
+      "segundos": 111.64,
+      "notas": [],
+      "quando": "2026-10-06 21:27"
+    },
+    {
+      "id": "recusa-de-coluna-marcada-cita-o-valor",
+      "titulo": "A recusa de conversão cita o valor curto de coluna marcada como dado pessoal",
+      "veredito": "PROVADA",
+      "segundos": 149.98,
+      "notas": [],
+      "quando": "2026-10-06 21:27"
+    },
+    {
+      "id": "dblink-empurra-valor-pela-regua-de-nome",
+      "titulo": "O DbLink empurra valor de texto pela régua de NOME de objeto",
+      "veredito": "PROVADA",
+      "segundos": 150.1,
+      "notas": [],
+      "quando": "2026-10-06 21:27"
+    },
+    {
+      "id": "dblink-puxar-cita-a-celula-remota",
+      "titulo": "O DbLink, ao puxar, cita na recusa a célula do outro banco",
+      "veredito": "PROVADA",
+      "segundos": 135.67,
+      "notas": [],
+      "quando": "2026-10-06 21:27"
+    },
+    {
+      "id": "dblink-puxar-apara-o-texto",
+      "titulo": "O DbLink, ao puxar, apara o texto e troca o vazio por nulo",
+      "veredito": "PROVADA",
+      "segundos": 117.06,
+      "notas": [],
+      "quando": "2026-10-06 21:27"
+    },
+    {
+      "id": "dblink-empurra-upsert-de-mysql-no-postgres",
+      "titulo": "O DbLink empurra para o PostgreSQL com o upsert do MySQL",
+      "veredito": "PROVADA",
+      "segundos": 127.14,
+      "notas": [],
+      "quando": "2026-10-06 21:27"
+    },
+    {
+      "id": "dblink-empurra-booleano-como-numero",
+      "titulo": "O DbLink empurra o booleano como 1/0",
+      "veredito": "PROVADA",
+      "segundos": 108.62,
+      "notas": [],
+      "quando": "2026-10-06 21:27"
     },
     {
       "id": "dblink-puxar-le-blob-cru",
