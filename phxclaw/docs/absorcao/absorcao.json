@@ -1185,16 +1185,13 @@
  },
  "n8n": {
   "total": 59,
-  "no_agente": 33,
+  "no_agente": 37,
   "parcial": 13,
-  "nao": 13,
-  "pct_agente": 55.9,
-  "pct_com_bibliotecas": 66.9,
+  "nao": 9,
+  "pct_agente": 62.7,
+  "pct_com_bibliotecas": 73.7,
   "falta": [
-   "variaveis_globais",
    "espera_wait",
-   "execucao_parcial",
-   "subfluxo",
    "gatilho_formulario",
    "segredos_externos",
    "poda_execucoes",
@@ -1202,19 +1199,18 @@
    "modelos_fluxo",
    "etiquetas_pastas",
    "projetos_rbac",
-   "assistente_construtor_ia",
    "instalacao_docker_k8s"
   ],
   "pela_metade": [
    "dados_pinados",
    "versionamento_fluxo",
    "gatilho_poll",
-   "gatilho_dispara_fluxo",
    "oauth2_generico",
    "dados_binarios",
    "fila_workers",
    "concorrencia_limite",
    "controle_versao_git_fluxos",
+   "assistente_construtor_ia",
    "guardrails",
    "requisicao_http",
    "observabilidade_insights",
@@ -1240,7 +1236,7 @@
    },
    {
     "id": "variaveis_globais",
-    "estado": "nao"
+    "estado": "agente"
    },
    {
     "id": "ramificacao_if_switch",
@@ -1276,7 +1272,7 @@
    },
    {
     "id": "execucao_parcial",
-    "estado": "nao"
+    "estado": "agente"
    },
    {
     "id": "retomar_execucao",
@@ -1288,7 +1284,7 @@
    },
    {
     "id": "subfluxo",
-    "estado": "nao"
+    "estado": "agente"
    },
    {
     "id": "execucao_codigo",
@@ -1328,7 +1324,7 @@
    },
    {
     "id": "gatilho_dispara_fluxo",
-    "estado": "parcial"
+    "estado": "agente"
    },
    {
     "id": "credenciais_cifradas",
@@ -1392,7 +1388,7 @@
    },
    {
     "id": "assistente_construtor_ia",
-    "estado": "nao"
+    "estado": "parcial"
    },
    {
     "id": "plugins",

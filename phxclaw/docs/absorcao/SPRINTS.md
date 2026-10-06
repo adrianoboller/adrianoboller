@@ -484,6 +484,24 @@ comunidade escrito por nós (SP000033) nasce MIT por exigência deles, e isso n�
 bibliotecas** (33 sim, 13 pela metade, 13 não, de 59). A onda comprou +15,2 pp (a previsão dizia +15,3,
 por arredondamento de 9 × 1,69).
 
+**Medido depois da onda 2 (gerar_absorcao.py, 06/10):** n8n **62,7% no agente | 73,7% com
+bibliotecas** (37 sim, 13 pela metade, 9 não, de 59). +6,8 pp: subfluxo, execucao_parcial,
+gatilho_dispara_fluxo e variaveis_globais viraram «agente», cada um com teste nomeado pelo id em
+`tests/fluxo_onda2.rs` (17 testes); assistente_construtor_ia subiu só a «parcial» (o agente escreve
+e roda o fluxo pela ferramenta `fluxo`, mas não há assistente de pedido → fluxo). A previsão da onda
+dizia 5 ids; entraram 4 inteiros e 1 pela metade.
+
+Junto da onda 2 (06/10): parecer do DBA (assinatura do JSON canônico com chaves ordenadas e sem
+campo no padrão; `formato` no relatório, ausente = 1; `saida` só quando não deriva de `itens`;
+progresso que o disco recusa vai para a evidência), segurança A3 (`max_itens` 1.000 por passo,
+um semáforo de `max_paralelo` para chamadas e subagentes da onda, `teto_ms` padrão de 1 h) e a
+prova real da onda 1: `laco_lotes` passava porque todas as passadas falhavam, e escondia que o
+motor jogava fora as passadas boas quando uma falhava — agora `continuar`/`saida_de_erro` ficam
+com as boas e marcam a que falhou (o `continueOnFail` do n8n). Achado na escrita dos testes:
+`{"config": "chave.inexistente"}` numa variável derrubava o processo em pânico (o
+`Configuracao::valor` trata chave desconhecida como erro de programação) — hoje é recusa na
+leitura. RED medido em 9 testes (8 da onda 2 + `laco_lotes`).
+
 ### O que o `fluxos.rs` já é (470 linhas, lido)
 
 DAG declarativo em JSON (`passos[]` com `depende`, `tarefa` OU `ferramenta`, `tentativas`), validado na

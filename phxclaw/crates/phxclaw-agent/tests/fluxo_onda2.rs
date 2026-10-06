@@ -280,8 +280,8 @@ fn execucoes(a: &Agent, nome: &str) -> Vec<Task> {
 /// Reposta que derruba: em `fluxos::conferir_cadeia`, `profundidade > MAX_PROFUNDIDADE`
 /// trocado por `false` (a cadeia de 9 roda); em `subfluxo.rs`, `caminho` de volta a
 /// `PathBuf::from(c)` (o `../fora.json` deixa de ser recusado). RED medido: a recusa de
-/// ciclo desligada (`&& r.fluxo_sha256 == hash` trocado por `&& false`) faz o teste
-/// estourar a pilha de fluxos ate o teto de profundidade, e a asercao «ciclo» cai.
+/// ciclo desligada (`&& r.fluxo_sha256 == hash` trocado por `&& false`) deixa o fluxo
+/// chamar a si mesmo ate o teto de profundidade: 8 execucoes onde devia haver 1, e cai.
 #[tokio::test]
 async fn subfluxo() {
     let pasta = tmp("fluxos");
@@ -956,12 +956,13 @@ async fn so_controle_nao_chama_o_portao() {
 /// campo no valor padrao. Tres consequencias, as tres conferidas: (1) o numero e o sha do
 /// texto canonico escrito aqui a mao -- a definicao da onda 1 assina igual depois de o
 /// `Passo` ganhar `max_itens` e o `Fluxo` ganhar `teto_ms` e `variaveis`; (2) a ordem das
-/// chaves de `args` no texto do usuario nao muda nada (o workspace liga o `preserve_order`
-/// do serde_json); (3) escrever o padrao explicito tambem nao.
+/// chaves de `args` no texto do usuario nao muda nada; (3) escrever o padrao explicito
+/// tambem nao.
 ///
 /// RED medido: `skip_serializing_if = "e_max_itens"` removido do `Passo::max_itens` --
-/// o canonico ganha `"max_itens":1000` e (1) cai. E o `ordenado()` trocado por `v.clone()`
-/// derruba (2).
+/// o canonico ganha `"max_itens":1000` e (1) cai. O `ordenado()` desligado NAO derruba
+/// (2) neste build (medido: o `preserve_order` so entra pela dependencia de build do
+/// tree-sitter, e o `Map` de runtime ja ordena); (2) segura o dia em que ele entrar.
 #[test]
 fn assinatura_canonica() {
     let canonico = r#"{"nome":"x","passos":[{"args":{"a":2,"b":1},"ferramenta":"eco","id":"a"}]}"#;

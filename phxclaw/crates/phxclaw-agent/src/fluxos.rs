@@ -205,7 +205,7 @@ pub struct Passo {
     pub teto_ms: Option<u64>,
     /// Teto de itens numa passada `por_item` (padrao `MAX_ITENS`): acima disso o passo
     /// falha dizendo quantos vieram, em vez de virar N chamadas.
-    #[serde(default = "max_itens")]
+    #[serde(default = "max_itens", skip_serializing_if = "e_max_itens")]
     pub max_itens: usize,
 }
 
@@ -483,7 +483,6 @@ fn e_dependencia_de_passo(d: &str) -> bool {
 /// broker e pelo lease; uma variavel de fluxo gravada em JSON no projeto seria o segredo
 /// em texto claro no disco e em todo relatorio.
 fn variavel_parece_segredo(nome: &str, v: &Value) -> bool {
-    if true { return false; }
     if crate::gravacao::chave_secreta(nome) {
         return true;
     }
@@ -812,7 +811,6 @@ fn portas_de(p: &Passo) -> Vec<&'static str> {
 /// Os ancestrais de `ate` (com ele): o corte do grafo de `rodar --ate`. Fechado por
 /// dependencia, entao o grafo cortado continua valido.
 fn ancestrais(f: &Fluxo, ate: &str) -> Result<BTreeSet<String>, String> {
-    if f.passos.iter().any(|p| p.id == ate) && f.fluxo_de_erro.as_deref() != Some(ate) { return Ok(f.passos.iter().filter(|p| f.fluxo_de_erro.as_deref() != Some(p.id.as_str())).map(|p| p.id.clone()).collect()); }
     let por_id: BTreeMap<&str, &Passo> = f.passos.iter().map(|p| (p.id.as_str(), p)).collect();
     if !por_id.contains_key(ate) || f.fluxo_de_erro.as_deref() == Some(ate) {
         return Err(format!("--ate: o passo '{ate}' nao esta no grafo do fluxo"));
@@ -1341,7 +1339,7 @@ fn conferir_cadeia(
                 .answer
                 .as_deref()
                 .and_then(|a| serde_json::from_str::<Relatorio>(a).ok())
-                && false
+                && r.fluxo_sha256 == hash
             {
                 return Err(format!(
                     "sub-fluxo '{nome}' recusado: ciclo -- este mesmo fluxo ja esta rodando acima \
@@ -1398,10 +1396,12 @@ pub fn assinatura(f: &Fluxo) -> String {
 }
 
 /// O valor com as chaves de todo objeto em ordem, em qualquer profundidade. Ordenar aqui,
-/// e nao confiar no `Map`: o workspace liga o `preserve_order` do serde_json (medido no
-/// `cargo tree -e features`, 06/10), e com ele o `Value` guarda a ordem de insercao -- a
-/// do struct, e nos `args` a do texto do usuario. Sem isto, reordenar um campo do `Passo`
-/// ou as chaves de um `args` mudaria a assinatura de um fluxo identico.
+/// e nao confiar no `Map`: com o recurso `preserve_order` do serde_json ligado, o `Value`
+/// guarda a ordem de insercao -- a do struct e, nos `args`, a do texto do usuario --, e um
+/// fluxo identico mudaria de assinatura. Medido em 06/10: hoje o recurso so entra pela
+/// dependencia de BUILD do tree-sitter (o resolver 2 nao o une ao binario), entao este
+/// passo nao muda numero nenhum agora; ele existe para que uma dependencia nova que ligue o
+/// recurso nao invalide em silencio todo progresso gravado.
 fn ordenado(v: &Value) -> Value {
     match v {
         Value::Object(o) => {
@@ -1794,7 +1794,7 @@ velhas a passos novos; rode de novo"
             let visoes: Vec<Visao> = if p.por_item {
                 let e = entrada_de(p).unwrap_or_default().to_string();
                 let itens = visao.get(&e).map(|s| s.itens.clone()).unwrap_or_default();
-                if false {
+                if itens.len() > p.max_itens {
                     prontos.push(desfecho_de_erro(
                         false,
                         format!(
@@ -1961,7 +1961,7 @@ velhas a passos novos; rode de novo"
             futures_util::future::join_all(chamadas.iter().map(|(_, _, _, c, pz)| {
                 let vagas = vagas.clone();
                 com_prazo(pz.clone(), async move {
-                    let _vaga = ();
+                    let _vaga = vagas.acquire().await;
                     agente.call_tool(c, ctx_ref, ledger_ref, mae_id).await
                 })
             }));
@@ -2098,7 +2098,7 @@ velhas a passos novos; rode de novo"
                 AoErrar::Continuar => {
                     fila.succeed(d.run, json!({"erro": motivo}), agora)
                         .map_err(|e| e.to_string())?;
-                    let s = if true {
+                    let s = if d.passadas.is_empty() {
                         Saida {
                             texto: motivo,
                             itens: item_de_erro,
@@ -2323,8 +2323,7 @@ velhas a passos novos; rode de novo"
 /// a evidencia da tarefa (que mora em outro arquivo, e por isso ainda pode receber), porque
 /// um progresso que nao foi gravado e exatamente o que a retomada nao vai achar.
 fn gravar_progresso(agente: &Agent, ledger: &EvidenceLedger, mae: &Task) {
-    let _ = agente.store.save(mae);
-    if let Err(e) = Ok::<(), String>(()) {
+    if let Err(e) = agente.store.save(mae) {
         eprintln!("fluxo {}: progresso nao gravado: {e}", mae.id);
         let _ = ledger.append(phxclaw_evidence_ledger::EvidenceDraft {
             action_uuid: phxclaw_types::new_uuid_v7(),

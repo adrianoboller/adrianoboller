@@ -612,8 +612,8 @@
    "evidencia": "fluxos.rs resolver()/pelo_caminho(): `{{passo.campo.sub[0]}}` por caminho JSON sem JS; expressao sozinha num argumento passa o valor com o tipo; caminho inexistente falha o passo sem nova tentativa. tests/fluxo_motor.rs::expressoes"
   },
   "variaveis_globais": {
-   "estado": "nao",
-   "evidencia": "nenhum `$vars`: o fluxo so enxerga saidas de passos; o config.json nao e lido pelo fluxo"
+   "estado": "agente",
+   "evidencia": "fluxos.rs Fluxo.variaveis: {{var.nome.campo}} em texto, argumento e objetivo; {\"config\": \"chave\"} le o config.json no disparo (chave fora do catalogo ou segredo recusada na leitura); segredo recusado por nome e por forma (variavel_parece_segredo). tests/fluxo_onda2.rs::variaveis_globais e variavel_parece_segredo (RED medido)"
   },
   "ramificacao_if_switch": {
    "estado": "agente",
@@ -648,8 +648,8 @@
    "evidencia": "fluxos.rs Fluxo.fluxo_de_erro: passo fora do grafo que roda pelo mesmo call_tool/rodar_filhas quando o fluxo falha, com {{erro.passos[i].passo|motivo}}; no `parar_com_erro`. tests/fluxo_motor.rs::fluxo_de_erro"
   },
   "execucao_parcial": {
-   "estado": "nao",
-   "evidencia": "phxclaw fluxo rodar roda o DAG inteiro; nao ha rodar ate o passo N nem rodar so um passo com entrada gravada"
+   "estado": "agente",
+   "evidencia": "`phxclaw fluxo rodar ARQ --ate PASSO` -> fluxos::Execucao.ate: roda os ancestrais do passo, grava o corte no relatorio (`ate`), os de fora saem `nao_pedido` e `retomar` continua dali. tests/fluxo_onda2.rs::execucao_parcial (RED medido com o corte ignorado)"
   },
   "retomar_execucao": {
    "estado": "agente",
@@ -660,8 +660,8 @@
    "evidencia": "fluxos.rs:298 anteriores: a saida gravada de um passo ok substitui a execucao na retomada (e o mecanismo do pin); falta escolher e editar o dado pinado"
   },
   "subfluxo": {
-   "estado": "nao",
-   "evidencia": "nao existe ferramenta nem passo que rode outro fluxo (nenhum `fluxo` entre as 72 de ferramentas.json); fluxo so entra pela CLI"
+   "estado": "agente",
+   "evidencia": "subfluxo.rs ferramenta `fluxo` (capacidade flow.run, pelo call_tool): roda fluxo gravado por `nome` (pasta de fluxos) ou `caminho` (confine da pasta da tarefa) com itens de entrada, once/each; teto de 8 fluxos empilhados e ciclo recusado pela assinatura na cadeia de parent (fluxos::conferir_cadeia). tests/fluxo_onda2.rs::subfluxo (RED medido com a recusa de ciclo desligada)"
   },
   "versionamento_fluxo": {
    "estado": "parcial",
@@ -680,8 +680,8 @@
    "evidencia": "nenhum formulario servido pelo agente que vire tarefa ou retome fluxo; a UI tem so o formulario de nova tarefa"
   },
   "gatilho_dispara_fluxo": {
-   "estado": "parcial",
-   "evidencia": "agenda.rs e gatilhos.rs criam TAREFA com objetivo (criar_tarefa_com); nenhum deles dispara um fluxo, porque nao ha ferramenta nem rota de fluxo"
+   "estado": "agente",
+   "evidencia": "campo `fluxo` em agenda.rs (add_fluxo), gatilhos.rs (pasta e webhook) e POST /v1/schedules, os tres por api::criar_fluxo_com (balde de fichas, tarefa-mae, mesmo fluxos::rodar_com); arquivo copiado e corpo do webhook entram como {{entrada}}; o objetivo e o prefixo `fluxo: ARQ` continuam. tests/fluxo_onda2.rs::gatilho_dispara_fluxo e gatilho_com_objetivo_comportamento_velho"
   },
   "credenciais_cifradas": {
    "estado": "agente",
@@ -740,8 +740,8 @@
    "evidencia": "o fluxo e um JSON no projeto e git.rs/git_write o versionam como qualquer arquivo; sem push/pull de fluxos como entidade nem ambientes dev/prod"
   },
   "assistente_construtor_ia": {
-   "estado": "nao",
-   "evidencia": "o agente escreve JSON com write_file, mas nao ha ferramenta que valide (fluxos::ler) nem rode o fluxo gerado"
+   "estado": "parcial",
+   "evidencia": "o agente escreve o JSON (write_file) e roda/valida pela ferramenta `fluxo` com `caminho` na pasta da tarefa -- o erro de leitura volta ao modelo (tests/fluxo_onda2.rs::subfluxo, fluxo `constroi`); falta o assistente de fato (pedido em linguagem natural -> fluxo, com previa) e nenhum teste com modelo real"
   },
   "ferramentas_do_agente": {
    "estado": "agente",
