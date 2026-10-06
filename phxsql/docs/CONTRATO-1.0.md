@@ -106,6 +106,7 @@ A regra primordial: **nunca se mata o pai que tem filhos.**
 | **G** | **O `.log` não mudou de versão para a transação existir.** Réplica de qualquer versão aplica sem saber que houve transação | `TRANSACOES.md` §6.1 |
 | **G** | **Cluster com eleição e promoção automática**, provado com três servidores e um SMTP falso na bateria | `CLUSTER.md` §2; parte `cluster` do `provar.py` |
 | **G** | **Escrita na réplica recebe `REDIRECIONA`** (HTTP 421 pelo REST), com o endereço do primário | `REPLICACAO.md` §10; `REST.md` §6 |
+| **G** | **Escrita com quórum, pedida** (pedido 207): `cluster.quorum_minimo` = N faz o commit esperar N réplicas **aplicarem e gravarem em disco** antes do «ok» (zero = desligado, como sempre foi). Espera vencida (`quorum_prazo_ms`, padrão 10.000) **não desfaz** a gravação: responde `alcancado:false` e degrada. Custo medido em loopback, release: **4,010 ms** por commit com 1 de 2 contra **0,305 ms** sem (13,15×); teto dito de ~237 commits/s no servidor inteiro, porque a espera segura a trava de dados. A atomicidade de um commit entre tabelas continua não atravessando o fio (§2.4) | `REPLICACAO.md` §19; `bancada/quorum/`; pedidos 207 e 299 |
 
 ### 1.6 Segurança
 
@@ -152,20 +153,20 @@ Esta seção é a que separa contrato de folheto. Nada aqui é esquecimento.
 
 ### 2.1 **Não é «ACID compliant»** — e a frase não se escreve
 
-**N** — A folha de marca afirma *ACID compliant*. **É falso, e continua falso.**
+**N** — A folha de marca afirma *ACID compliant*. **Não se afirma, e a razão não é o padrão `READ COMMITTED`** (o PostgreSQL se declara ACID com o mesmo padrão; correção do dono em 24/09/2026, pedido 337): é que a prova de cada letra no nível declarado, e a atomicidade entre tabelas através do fio da réplica (pedido 299), ainda não fecham.
 A resposta precisa, letra por letra, está em `TRANSACOES.md` §12:
 
 | letra | estado | com precisão |
 |---|---|---|
 | **A** | **entregue** | o conjunto de escrita é aplicado inteiro ou não é aplicado; o `ROLLBACK` não deixa slot, rowid nem evento |
 | **I** | **entregue, com o nome certo; leitura repetível pela trava desde 16/09/2026, para quem pede** | por padrão, escrita serializável por tabela, leitura confirmada e não bloqueante, **sem leitura repetível**. Quem pede `"leitura_repetivel": true` (ou `BEGIN ISOLATION LEVEL REPEATABLE READ`) fecha a leitura não repetível e o fantasma pela trava compartilhada (`ACID.md` §4.5). **Não é ANSI SERIALIZABLE** em regime nenhum, e não pode ser chamado assim |
-| **C** | **PARCIAL** | tipo, unicidade, gatilhos e integridade referencial são conferidos. O que falta: **a cascata escreve em tabela que a transação não declarou**, então um `ROLLBACK` não alcança a filha. Enquanto isso valer, o **C** não está inteiro |
+| **C** | **entregue dentro da transação** (ACID-C, 15/09/2026) | tipo, unicidade, gatilhos e integridade referencial são conferidos. A lacuna que esta linha trazia — *a cascata do `ao_alterar` escreve em tabela que a transação não declarou* — **fechou**: cada filha entra no conjunto de escrita, o `ROLLBACK` a alcança, o `COMMIT` a conta e a leitura da própria transação a vê (`ACID.md` §2.4 e §3.3). **O que continua fora:** a atomicidade de um commit entre tabelas não atravessa o fio da réplica (§2.4 abaixo, pedido 299) |
 | **D** | **entregue, e configurável** | com `durabilidade: sistema` quem abre mão é quem configurou, e está escrito |
 
 **N** — **A 1.0 não usará a expressão «ACID compliant» em documento técnico**, com
 ou sem qualificação, e isso é regra da casa e não estilo. O que se pode escrever,
 e é verdade: *atomicidade e durabilidade entregues, isolamento entregue no nível
-declarado acima, consistência dependente do escopo da cascata.*
+declarado acima, consistência conferida na origem e dentro da transação — e a atomicidade de um commit entre tabelas **não** atravessa o fio da réplica.*
 
 ### 2.2 Onde a decisão foi **NÃO conferir** — escolhas, não buracos
 
@@ -198,7 +199,7 @@ declarado acima, consistência dependente do escopo da cascata.*
 
 | | não-garantia | número / prova |
 |---|---|---|
-| **N** | **Não é síncrona.** A réplica fica atrás: **1,3 a 2,1 s** com o laço em 2 s | `REPLICACAO.md` §15 |
+| **N** | **Não é síncrona por padrão.** A réplica fica atrás: **1,3 a 2,1 s** com o laço em 2 s. A escrita **com quórum** existe e é **pedida** (`cluster.quorum_minimo` > 0, §1.5): com ela o commit espera N réplicas gravarem em disco, e espera vencida **não desfaz** a gravação — responde `alcancado:false` e o servidor degrada | `REPLICACAO.md` §15 e §19 |
 | **N** | **Não substitui backup.** A réplica repete o `DELETE` errado, e repete rápido | `REPLICACAO.md` §15 |
 | **N** | **A posição é por tabela, e não há ordem global entre tabelas.** *Consequência que este documento nomeia e que ainda **não foi medida**:* um `COMMIT` que escreve em duas tabelas produz eventos em dois `.log`, puxados por posições independentes — logo **a transação chega parcelada na réplica**, e há uma janela em que a réplica mostra metade dela. No source a atomicidade vale; entre servidores, não. A medição que fecharia isto: `bancada/transacoes/` escrevendo em duas tabelas num `COMMIT` e a réplica lida entre os dois lotes | deduzido de `INTEGRIDADE.md` §3 + `TRANSACOES.md` §6.2. **`REPLICACAO.md` §15 envelheceu neste ponto**: ele diz «não há transação, então não há ordem global a preservar» — e agora há transação |
 | **N** | **O lote é buscado com a trava de dados na mão.** Medido: `varrer` esperou **30,7 s** numa réplica cortada em silêncio, e no bidirecional os dois lados se trancam por 30 s com a rede sã | `REPLICACAO.md` §13 e §17 |
@@ -212,9 +213,9 @@ declarado acima, consistência dependente do escopo da cascata.*
 
 | | não-garantia | motivo |
 |---|---|---|
-| **N** | **Não é TLS.** Não há certificado, cadeia, autoridade nem revogação. A confiança é o **pino**; sem pino é TOFU, e quem estiver no meio na primeira conexão vence para sempre | `SEGURANCA.md` §7 |
+| **N** | **A cifra do fio (Noise) não é TLS**: não há certificado, cadeia, autoridade nem revogação. A confiança é o **pino**; sem pino é TOFU, e quem estiver no meio na primeira conexão vence para sempre. **O TLS 1.3 existe, só como SERVIDOR e pedido** (`"tls": true`) nas portas web, REST e de dados — escrito aqui, sem crate; **não há cliente TLS** (réplica, cluster, DbLink e ODBC por TLS não existem) e o AES-128-GCM não é oferecido | `SEGURANCA.md` §7 (TLS 1.3 nativo) e §7.1 |
 | **N** | **`cifra_fio.exigir` nasce DESLIGADA**, e com ela desligada a proteção vale contra **escuta passiva e nada mais**: o atacante ativo corta o `cifrar` e o cliente rebaixa para claro. Nasce desligada porque guarda nova entra pedida — ligá-la quebraria todo cliente que não fala o aperto, o driver ODBC inclusive | `SEGURANCA.md` §7 |
-| **N** | **A interface web não tem cifra própria, e não pode ter.** O navegador fala TLS ou fala claro; um aperto em JavaScript seria teatro, porque o próprio script chega pelo canal que se quer proteger. As saídas honestas são proxy com TLS à frente, ou túnel | `SEGURANCA.md` §6 e §7 |
+| **N** | **A interface web não tem cifra própria, e não pode ter.** O navegador fala TLS ou fala claro; um aperto em JavaScript seria teatro, porque o próprio script chega pelo canal que se quer proteger. As saídas honestas são o **TLS do próprio servidor** (pedido, `"tls": true`), proxy com TLS à frente, ou túnel — e **sem nenhuma das três a porta web fala claro** | `SEGURANCA.md` §6 e §7 |
 | **N** | **A cifra do fio não interopera** com outras implementações de Noise: os tijolos são de norma e conferidos, a composição não foi rodada contra os vetores do *cacophony* | `SEGURANCA.md` §7 |
 | **N** | **O `.ndx` sobre a coluna marcada continua em claro**, e há teste que **prova o vazamento**: um índice guarda a chave para poder comparar, e cifrá-la destruiria a ordem. Quem precisa dos dois tira o índice da coluna sensível | `SEGURANCA.md` §11.3; teste `o_indice_sobre_a_coluna_marcada_continua_em_claro` |
 | **N** | **Ligar a cifra não cifra o que já existe**, e não há comando de recifragem: vale do volume seguinte em diante | `SEGURANCA.md` §8 e §11.6 |
@@ -338,7 +339,7 @@ candidatos, e por isso são perguntas — a coluna da direita diz qual.
 
 | | candidato | teste | pergunta |
 |---|---|---|---|
-| **P** | **Trava de diretório**: recusar subir quando outro processo já serve aquele caminho | (1) | [P4](#54-as-perguntas-que-este-documento-acrescenta) |
+| **R** | **Trava de diretório** — respondida em 01/10/2026 (pedido 635): o segundo gravador é recusado (`4008`) | (1) | [P4](#54-as-perguntas-que-este-documento-acrescenta) |
 | **P** | **A transação chega parcelada na réplica** (§2.4) — medir antes de decidir | (1) | P5 |
 | **P** | **A cascata escreve fora do escopo declarado da transação** — é o que falta do **C** | (1) | P6 |
 | **P** | **`replica.rs` sem teste no portão** — o laço que faz a replicação andar | (1) | P7 |
@@ -418,12 +419,14 @@ descreve?**
 
 Não estavam no roteiro, e cada uma passa no critério da §4.1.
 
-**P4 — A trava de diretório.** Não há trava de arquivo nem de registro
-(`FORMATO.md` §17), e conferido no código não há arquivo de trava: **nada impede
-dois processos de abrirem o mesmo diretório de dados.** O caso fácil de acontecer
-não é exótico — é a CLI `phxsql reindex` rodando num diretório que o `phxsqld`
-está servindo. **Entra na 1.0 uma trava de diretório que faz o segundo processo
-recusar subir dizendo quem já está lá?**
+**P4 — A trava de diretório. RESPONDIDA em 01/10/2026 (pedido 635).** A
+pergunta nasceu quando não havia trava de arquivo e nada impedia dois processos
+de abrirem o mesmo diretório de dados (o caso fácil era a CLI `phxsql reindex`
+rodando numa pasta que o `phxsqld` servia). Hoje há: `File::try_lock` no arquivo
+`.phxsql.trava`, tomado no ponto único da abertura gravável; o segundo gravador
+é recusado com `4008 INSTANCIA_OCUPADA`. O que continua sem resposta está na
+§2.3: a trava não vê quem não usa este motor (`cp`, editor) e no Windows não
+sabe dizer o pid. O custo foi a versão mínima do Rust, de 1.75 para 1.89.
 
 **P5 — A transação parcelada na réplica.** A posição de replicação é por tabela
 e não existe ordem global entre tabelas (`INTEGRIDADE.md` §3); um `COMMIT` que

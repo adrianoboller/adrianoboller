@@ -1,7 +1,9 @@
 # Formato de arquivo do PhxSql
 
-Uma tabela de dados do PhxSql é composta por até oito arquivos físicos que
-compartilham o mesmo nome-base — mais o espelho e o descritor:
+Uma tabela de dados do PhxSql é composta por sete arquivos sempre presentes e,
+ao todo, por até **onze tipos** de arquivo físico que compartilham o mesmo
+nome-base (a tabela abaixo lista dez e o `.bkp` vem logo depois; o `.fts`
+entra só em tabela com índice de texto):
 
 ```
 cadastroClientes.reg + .ndx + .bin + .memo + .log + .trash + .reason

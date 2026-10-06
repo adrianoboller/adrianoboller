@@ -42,44 +42,44 @@ contando `#[test]` por arquivo e agrupando:
 <!-- cobertura:inicio -->
 | área | testes | % |
 |---|---:|---:|
-| Protocolo e portões (despachar) | 810 | 22,1 |
-| Motor de dados (arquivos, índice, diários) | 764 | 20,9 |
-| Servidor (outros) | 487 | 13,3 |
-| Núcleo (JSON, tipos, UUID, zip, paralelo) | 318 | 8,7 |
-| Camada SQL (léxico, sintaxe, tradução) | 261 | 7,1 |
-| Configuração | 167 | 4,6 |
-| Criptografia e codificação | 146 | 4,0 |
-| DbLink | 141 | 3,8 |
-| Telemetria e profiler | 81 | 2,2 |
-| ODBC | 76 | 2,1 |
-| **Gatilhos e procedimentos** | **45** | **1,2** |
+| Motor de dados (arquivos, índice, diários) | 868 | 22,2 |
+| Protocolo e portões (despachar) | 850 | 21,8 |
+| Servidor (outros) | 553 | 14,2 |
+| Núcleo (JSON, tipos, UUID, zip, paralelo) | 323 | 8,3 |
+| Camada SQL (léxico, sintaxe, tradução) | 263 | 6,7 |
+| Configuração | 171 | 4,4 |
+| Criptografia e codificação | 146 | 3,7 |
+| DbLink | 141 | 3,6 |
+| ODBC | 81 | 2,1 |
+| Telemetria e profiler | 81 | 2,1 |
+| **Gatilhos e procedimentos** | **48** | **1,2** |
+| **Replicação** | **45** | **1,2** |
 | **Jobs** | **42** | **1,1** |
-| **Replicação** | **39** | **1,1** |
-| **Usuários e permissões** | **39** | **1,1** |
-| **Mensagens (i18n do servidor)** | **33** | **0,9** |
+| **Usuários e permissões** | **39** | **1,0** |
+| **Mensagens (i18n do servidor)** | **36** | **0,9** |
 | **Interface web (servidor HTTP)** | **30** | **0,8** |
-| **Cluster** | **25** | **0,7** |
-| **Segurança de rede (blacklist, firewall)** | **23** | **0,6** |
-| **Console de terminal (phxsqlcmd)** | **21** | **0,6** |
-| **MCP** | **21** | **0,6** |
+| **Segurança de rede (blacklist, firewall)** | **27** | **0,7** |
+| **Cluster** | **27** | **0,7** |
+| **Console de terminal (phxsqlcmd)** | **21** | **0,5** |
+| **MCP** | **21** | **0,5** |
 | **Transações** | **19** | **0,5** |
-| **Alertas e e-mail** | **17** | **0,5** |
-| **Junções e união** | **17** | **0,5** |
-| **Exportação** | **13** | **0,4** |
+| **Alertas e e-mail** | **17** | **0,4** |
+| **Junções e união** | **17** | **0,4** |
+| **Exportação** | **13** | **0,3** |
 | **Pivot** | **12** | **0,3** |
 | **CLI** | **10** | **0,3** |
 | **Monitor de máquina** | **6** | **0,2** |
-| **total** | **3663** | |
+| **total** | **3907** | |
 
 Arquivos de `src` com mais de 120 linhas e **zero** `#[test]`:
 
 | arquivo | linhas |
 |---|---:|
-| `phxsql-store/src/table.rs` | 9132 |
-| `phxsql-store/src/ndx.rs` | 2787 |
+| `phxsql-store/src/table.rs` | 9778 |
+| `phxsql-store/src/ndx.rs` | 2856 |
 | `phxsql-ffi/src/lib.rs` | 1640 |
-| `phxsql-server/src/main.rs` | 803 |
-| `phxsql-store/src/integridade.rs` | 334 |
+| `phxsql-server/src/main.rs` | 812 |
+| `phxsql-store/src/integridade.rs` | 336 |
 | `phxsql-ffi/src/punho.rs` | 303 |
 | `phxsql-ffi/src/valor.rs` | 290 |
 | `phxsql-server/src/carga.rs` | 260 |
@@ -87,7 +87,7 @@ Arquivos de `src` com mais de 120 linhas e **zero** `#[test]`:
 | `phxzip/src/erro.rs` | 167 |
 | `phxsql-odbc/src/registro.rs` | 149 |
 | `phxzip/src/phz.rs` | 138 |
-| `phxsql-odbc/src/tipos.rs` | 132 |
+| `phxsql-odbc/src/tipos.rs` | 135 |
 <!-- cobertura:fim -->
 
 As duas tabelas acima **não se digitam**: `python3

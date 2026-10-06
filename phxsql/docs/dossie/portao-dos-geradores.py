@@ -254,6 +254,8 @@ PLANO = [
      "le resultado.json e resultado-alfabetica.json da propria pasta; blocos GERADO"),
     ("docs/geradores/direito-por-coluna.py", ["docs/SEGURANCA.md"], "exato",
      "le CLASSES de crates/phxsql-server/src/direito_coluna.rs; bloco GERADO"),
+    ("docs/geradores/catracas-do-trecho-vivo.py", ["docs/CATRACAS.md"], "exato",
+     "le `trecho-vivo.py --numeros` (Python puro) e escreve a tabela da §12.3; so' a coluna Nasceu e' historia"),
     ("capturas-no-dossie.py", [CONSOLE], "exato",
      "embute os PNG ja reduzidos de capturas/ como data URI; deterministico"),
     ("tetos-da-trava.py", [CONSOLE], "exato",

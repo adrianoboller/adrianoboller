@@ -20,16 +20,16 @@ decisão do dono de 01/10/2026 — estabilizar (fechar os defeitos da conta) →
 ## Estado medido
 
 <!-- SPRINTS:inicio -->
-_Contado do `PENDENCIAS.md` por `python3 docs/pmo/sprints.py`, gerado em 01/10/2026 15:15 UTC. Não se edita: muda a linha `**Pedidos**` da sprint ou o estado no `PENDENCIAS.md`, e roda o gerador._
+_Contado do `PENDENCIAS.md` por `python3 docs/pmo/sprints.py`, gerado em 06/10/2026 23:33 UTC. Não se edita: muda a linha `**Pedidos**` da sprint ou o estado no `PENDENCIAS.md`, e roda o gerador._
 
 | Sprint | Pedidos | ☑️ feitos | ◐ | ☐ | ⏸ | Abertos (◐ + ☐) |
 |---|---:|---:|---:|---:|---:|---|
 | SPR-01 · A onda em curso (integrar o que já está pronto) | 10 | 10 | 0 | 0 | 0 | 0 |
-| SPR-02 · Segurança que resta | 8 | 6 | 0 | 2 | 0 | 2: 618☐ 619☐ |
-| SPR-03 · Formato antes de selar (parecer do DBA) | 3 | 2 | 0 | 1 | 0 | 1: 605☐ |
-| SPR-04 · Garantias da replicação e do cluster | 8 | 3 | 4 | 1 | 0 | 5: 300◐ 330◐ 207◐ 513◐ 620☐ |
-| SPR-05 · Higiene do motor, do ODBC e das guardas | 16 | 4 | 7 | 5 | 0 | 12: 229◐ 238◐ 245◐ 249◐ 259◐ 427☐ 524◐ 263◐ 268☐ 621☐ 622☐ 623☐ |
-| SPR-06 · Selagem da 0.19.0 | 4 | 0 | 4 | 0 | 0 | 4: 338◐ 190◐ 326◐ 339◐ |
+| SPR-02 · Segurança que resta | 8 | 8 | 0 | 0 | 0 | 0 |
+| SPR-03 · Formato antes de selar (parecer do DBA) | 3 | 3 | 0 | 0 | 0 | 0 |
+| SPR-04 · Garantias da replicação e do cluster | 8 | 8 | 0 | 0 | 0 | 0 |
+| SPR-05 · Higiene do motor, do ODBC e das guardas | 16 | 15 | 1 | 0 | 0 | 1: 263◐ |
+| SPR-06 · Selagem da 0.19.0 | 4 | 1 | 3 | 0 | 0 | 3: 338◐ 326◐ 339◐ |
 | SPR-07 · T6b-1 cliente TLS por pino da chave + T6e (buracos do servidor) | — | — | — | — | — | sem lista de pedidos (não contada) |
 | SPR-08 · T6b-2 TLS no lugar do Noise (réplica/cluster/cmd/DbLink phx, Remoto, ODBC); servidor ainda aceita Noise | — | — | — | — | — | sem lista de pedidos (não contada) |
 | SPR-09 · T6c-1 RSA (PKCS#1 v1.5 e PSS), P-384, SHA-384 | — | — | — | — | — | sem lista de pedidos (não contada) |
@@ -39,9 +39,9 @@ _Contado do `PENDENCIAS.md` por `python3 docs/pmo/sprints.py`, gerado em 01/10/2
 | SPR-13 · 454/455 — PhxZip como produto (web, PhxZipCmd, pacote, manual) | 2 | 0 | 1 | 1 | 0 | 2: 454☐ 455◐ |
 | SPR-14 · 333 — chat estilo WhatsApp e robô no PhxMail | 1 | 0 | 0 | 1 | 0 | 1: 333☐ |
 | SPR-15 · 495/496 — as duas IAs (crime cibernético; DBA sênior) | 2 | 0 | 0 | 2 | 0 | 2: 495☐ 496☐ |
-| **Total nas sprints** | 55 | 25 | 16 | 14 | 0 | 30 |
+| **Total nas sprints** | 55 | 45 | 5 | 5 | 0 | 10 |
 
-**Abertos (◐ + ☐) no `PENDENCIAS.md` fora de sprint nenhuma: 1** — 572.
+**Abertos (◐ + ☐) no `PENDENCIAS.md` fora de sprint nenhuma: 9** — 572, 646, 647, 651, 654, 655, 656, 657, 658.
 <!-- SPRINTS:fim -->
 
 O bloco conta o `PENDENCIAS.md` **da árvore de trabalho** na hora da corrida. Em

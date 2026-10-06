@@ -418,14 +418,27 @@ def sonda_codigo():
     # ERRO CORRIGIDO EM 07/09/2026: esta sonda apontava para `config.rs:709`,
     # que fala do cliente de E-MAIL e nao do transporte. Veredito certo,
     # evidencia errada -- e evidencia errada e a que sobrevive.
-    ond = citar("crates/phxsql-server/src/rest.rs", r"TLS aqui",
-                "sem menção de TLS no transporte")
+    # ERRO DE 02/10/2026: o veredito aqui estava CRAVADO em NAO, e o TLS 1.3 de
+    # servidor existe desde o pedido 572 (T4). Sonda que nao depende do que
+    # acha nao e sonda. Agora o mesmo molde da trava por linha: a coisa existe
+    # (`tls.rs`), esta ligada ao servidor (`servidor.rs` chama `tls::aceitar`)
+    # e tem porta que a pede (`TlsPorta` na config). O TLS de CLIENTE (replica,
+    # cluster, DbLink) nao existe e vai dito na nota -- o motor oferece TLS na
+    # porta de quem ESCUTA, que e o que a capacidade «TLS no transporte» mede
+    # nos outros motores (`ssl_cert_file`, `ssl_cert`, `client_encryption_options`).
+    # O RESULTADO so muda quando a bancada rodar de novo: este arquivo nao
+    # escreve o `resultados.json`.
+    tls_mod = tem("crates/phxsql-core/src/tls.rs", r"pub fn aceitar")
+    tls_ligado = tem("crates/phxsql-server/src/servidor.rs", r"phxsql_core::tls::aceitar")
+    tls_cfg = tem("crates/phxsql-server/src/config.rs", r"pub struct TlsPorta")
     fora["tls_no_transporte"] = {
         "titulo": "TLS no transporte",
-        "phxsql": (NAO, ond),
-        "nota": "a cifra da porta de DADOS é própria (aperto estilo Noise) e "
-                "existe; o que não existe é TLS, que exigiria crate — e zero "
-                "dependências é pétrea",
+        "phxsql": (TEM if (tls_mod and tls_ligado and tls_cfg) else NAO,
+                   f"TLS 1.3 de servidor em {tls_mod}; ligado em {tls_ligado}; "
+                   f"pedido por `tls: true` em {tls_cfg}"),
+        "nota": "TLS 1.3 só de SERVIDOR (portas web, REST e de dados), escrito "
+                "aqui sem crate (pedido 572); a cifra própria estilo Noise "
+                "continua na replicação e no cluster, e NÃO há cliente TLS",
     }
 
     # As QUATRO sondas que moravam aqui ate 08/09/2026 -- direito por coluna,

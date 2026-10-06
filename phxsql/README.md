@@ -5,8 +5,11 @@
 > Built to store. Engineered to scale.
 
 Motor de dados em Rust no modelo de arquivos separados por tabela: cada tabela
-lógica é a soma de sete arquivos físicos — mais um oitavo, o espelho `.bkp`,
-quando ele está ligado.
+lógica é a soma de **sete arquivos sempre presentes** e de até **onze tipos** no
+total: a trilha `.lgpd` (tabela com coluna de dado pessoal), o índice de texto
+`.fts` (tabela que declara um), o espelho `.bkp` (quando ligado) e o descritor
+`.pag`. A lista completa, com assinatura e quem lê cada um, está em
+[`docs/FORMATO.md`](docs/FORMATO.md).
 
 ```
 cadastroClientes.reg    registros, na ordem de digitação
@@ -287,7 +290,9 @@ O motor de armazenamento está completo e testado: **3.632 testes** no projeto i
 | Integração no FraseSQL como `engine = "phxsql"` | pendente |
 | Transações `BEGIN`/`COMMIT`/`ROLLBACK`/`SAVEPOINT` | pronto — nada vai a disco antes do `COMMIT`, e a ordem de digitação fica intacta |
 | Compactação do `.reg` | recusada — renumeraria o `rowid`, que é endereço, e quebraria a ordem de digitação (`docs/COMPARACAO.md`) |
-| Modo exclusivo, TLS | pendente — o TLS virou cifra própria do fio ([`docs/CIFRA-DO-FIO.md`](docs/CIFRA-DO-FIO.md)), que **não** é TLS |
+| Modo exclusivo | pendente |
+| TLS 1.3 de **servidor** nas portas web, REST e de dados (`"tls": true`) | pronto — escrito aqui, sem crate, provado contra `curl`, `openssl s_client` e Chromium ([`docs/SEGURANCA.md`](docs/SEGURANCA.md) §7); a cifra própria do fio ([`docs/CIFRA-DO-FIO.md`](docs/CIFRA-DO-FIO.md)) continua sendo a outra via |
+| TLS de **cliente** (réplica, cluster, DbLink e ODBC por TLS) | pendente — só a porta que escuta aceita TLS |
 
 O roteiro completo, com as decisões tomadas e o que cada peça depende, está em
 [`docs/PLANO.md`](docs/PLANO.md); a revisão do que ainda falta, com o porquê de
@@ -333,8 +338,9 @@ oferece a cifra: a página cai em Base64 e diz isso na tela. Detalhes na
 seção 9 do [`MANUAL.txt`](MANUAL.txt).
 
 A porta web — e as duas do REST — **nascem presas a `127.0.0.1`**. HTTP é texto
-puro e o `phxsqld` não termina TLS (zero dependências externas é pétrea): a
-saída é um **proxy reverso** que termina TLS na frente dele, e proxy só protege
+puro, e o TLS 1.3 do próprio `phxsqld` é **pedido**, não padrão (`"tls": true`
+na seção; escrito aqui, sem crate): quem não o liga tem como saída um **proxy
+reverso** que termina TLS na frente dele, e proxy só protege
 se o motor não estiver aberto ao lado. Escrever um endereço que atende de fora
 continua podendo — é escolha de quem implanta — e o arranque **avisa** dizendo o
 que fazer; `"atras_de_proxy": true` na seção declara que o proxy já está lá e
