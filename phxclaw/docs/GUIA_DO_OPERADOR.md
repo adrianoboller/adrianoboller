@@ -169,16 +169,18 @@ De `phxclaw config mostrar --json`: **52 segredos no catalogo**; 52 tem comando 
 ### Canal XMPP: a sala multiusuário (MUC, XEP-0045)
 
 Desde o commit `4802e21b` (02/10/2026) o canal `xmpp` entra em salas, além do `chat` a dois.
-Fonte: `crates/phxclaw-agent/src/canais/xmpp.rs` (692 linhas, `wc -l`) e as duas chaves
-novas do catálogo (`crates/phxclaw-config-runtime/src/agente/catalogo.rs`, `CanalDef`
-`xmpp`), que o gerador já espalhou pela tabela acima, por `schemas/config.exemplo.json` e
-pelo `config-catalogo.json` da tela:
+Fonte: `crates/phxclaw-agent/src/canais/xmpp.rs` (1.013 linhas, `wc -l`, 06/10/2026), o
+portão `canais::autorizado` em `canais/mod.rs` e as chaves do catálogo
+(`crates/phxclaw-config-runtime/src/agente/catalogo.rs`, `CanalDef` `xmpp`), que o gerador
+espalha pela tabela acima, por `schemas/config.exemplo.json` e pelo `config-catalogo.json`
+da tela:
 
 | Chave do catálogo | Variável | Tipo | O que faz |
 | --- | --- | --- | --- |
-| `canais.xmpp.salas` (`SALAS`) | `PHXCLAW_XMPP_SALAS` | lista | JIDs das salas em que o bot entra ao abrir a conexão. Vazia = comportamento de antes (só `chat`). |
+| `canais.xmpp.salas` (`SALAS`) | `PHXCLAW_XMPP_SALAS` | lista | JIDs das salas em que o bot entra ao abrir a conexão; cada sala também precisa estar em `PERMITIDOS`. Vazia = só `chat`. |
 | `canais.xmpp.apelido` (`APELIDO`) | `PHXCLAW_XMPP_APELIDO` | texto | nick nas salas; vazio = a parte local do JID. |
-| `canais.xmpp.permitidos` (`PERMITIDOS`) | `PHXCLAW_XMPP_PERMITIDOS` | lista | já existia; **a sala também vai aqui**, senão o que vem dela é descartado. |
+| `canais.xmpp.permitidos` (`PERMITIDOS`) | `PHXCLAW_XMPP_PERMITIDOS` | lista | a sala **e** cada pessoa que pode comandar o agente nela (pelo JID real). |
+| `canais.xmpp.confiar_no_nick` (`CONFIAR_NO_NICK`) | `PHXCLAW_XMPP_CONFIAR_NO_NICK` | booleano, padrão `false` | só para sala anônima: aceitar `sala/nick` de `PERMITIDOS` como identidade. **Risco:** numa sala anônima, o nick é de quem chegar primeiro com ele. |
 
 ```sh
 PHXCLAW_XMPP_SALAS=ops@conference.exemplo.com \
@@ -187,19 +189,38 @@ PHXCLAW_XMPP_PERMITIDOS=ops@conference.exemplo.com,adriano@exemplo.com \
 phxclaw canal xmpp
 ```
 
+**Quem comanda o agente numa sala.** A sala em `PERMITIDOS` deixa o agente ouvir e falar
+nela; **não** faz de cada ocupante um dono. Cada fala passa pelo portão com a sala **e** o
+autor, e o autor é:
+
+- **o JID real do ocupante**, lido do `<item jid='…'/>` da presença da sala (XEP-0045
+  §7.2.3, salas não anônimas). O nick não conta: `ana` com o JID de outra pessoa é aquela
+  outra pessoa, mesmo com `sala/ana` na lista e `CONFIAR_NO_NICK=true`;
+- numa **sala anônima** (a presença não traz o JID), `sala/nick` — **só** com
+  `CONFIAR_NO_NICK=true`. Sem isso o ocupante chega sem identidade conferível e nunca passa.
+
+No exemplo acima, só `adriano@exemplo.com` comanda o agente em `ops@conference…`; os outros
+ocupantes falam e o agente não age. Quando uma tarefa aberta na sala pergunta algo
+(`ask_user`), **só quem a abriu** responde por ela: a fala de outro ocupante permitido vira
+pedido novo. A fala recusada **não chega ao disco**: a caixa guarda só o metadado (conversa,
+autor, hora, tamanho), e o registro diz o autor, nunca o texto. O JID se compara sem
+diferença de caixa na parte local e no domínio (RFC 7622), dos dois lados: `Adriano@Exemplo.com`
+na lista vale para `adriano@exemplo.com`.
+
 O que o canal faz com o que chega da sala, e o que ignora de propósito
 (`mensagem_da_estrofe`, `eco`, `erro_da_presenca`):
 
-- **`groupchat` vira tarefa** com a sala como conversa e o nick como autor; a resposta volta
-  `groupchat` à sala inteira (XEP-0045 §7.4).
+- **`groupchat` vira tarefa** com a sala como conversa e o JID real (ou `sala/nick`, ver
+  acima) como autor; a resposta volta `groupchat` à sala inteira (XEP-0045 §7.4).
 - **Chat privado de ocupante** (`type='chat'` vindo de `sala/nick`) chega com a conversa
   `sala/nick` inteira, e a resposta volta `chat` só a ele — nunca em público. Só entra se
-  `sala/nick` estiver em `PERMITIDOS`.
+  `sala/nick` **e** a identidade do ocupante estiverem em `PERMITIDOS`.
 - **Ignorado, com o motivo:** o **eco** da própria fala (a sala reflete a todos, inclusive a
-  quem falou; nick igual ao apelido), o **histórico** que a sala reenvia ao entrar
-  (`<delay/>`, `urn:xmpp:delay` ou o antigo `jabber:x:delay` — senão o agente responderia ao
-  passado) e o **aviso da própria sala** (mensagem sem nick: assunto, aviso de serviço).
-  Estado de digitação sem `<body>` também não é mensagem.
+  quem falou; o nick é o que a sala nos deu de fato, que com `status 210` pode não ser o
+  configurado), o **histórico** que a sala reenvia ao entrar (`<delay/>`, `urn:xmpp:delay`
+  ou o antigo `jabber:x:delay` — senão o agente responderia ao passado) e o **aviso da
+  própria sala** (mensagem sem nick, com ou sem corpo: assunto, aviso de serviço). Estado de
+  digitação sem `<body>` também não é mensagem.
 - **Erro ao entrar vira motivo legível**, e a entrada **espera** a confirmação da sala (a
   presença refletida com o nosso nick ou `status 110`): sem esperar, um 409 chegaria depois,
   misturado ao fluxo, e ninguém o veria. Os motivos: `conflict` (409) «o apelido já está em
@@ -207,19 +228,21 @@ O que o canal faz com o que chega da sala, e o que ignora de propósito
   `forbidden` «o agente está banido da sala», `registration-required` «a sala só aceita
   membros», `service-unavailable` «a sala está lotada», `not-acceptable` «a sala não aceita
   esse apelido», `jid-malformed`; condição desconhecida sai como `erro <code>`.
+- **Estrofe gigante ou fila parada derruba a conexão com erro legível**: estrofe acima de
+  256 KiB sem fechar (`TETO_ESTROFE`) ou 1.024 estrofes esperando sem ninguém ler
+  (`CAPACIDADE_FILA`). O laço reconecta na volta seguinte.
 
-**Consequência de permissão, para o operador decidir sabendo:** a lista de permitidos
-confere a **conversa**, e na sala a conversa é a sala. **Sala em `PERMITIDOS` = qualquer
-ocupante da sala comanda o agente.** Filtrar por ocupante dentro da sala é decisão de produto
-que não foi tomada (está nas pendências da sprint `docs/sprints/Sessao_00001_Sprint_SP000035_20261002060631.md`);
-até lá, ponha em `SALAS` só sala cujos membros você deixaria falar com o agente, ou use a
-privada de ocupante (`sala/nick` em `PERMITIDOS`), que é por pessoa.
-
-Ainda não existe: senha de sala e troca de nick no MUC (pendência declarada). Prova:
+Ainda não existe: senha de sala e o agente trocar o próprio nick com a conexão aberta.
+Prova, contra um servidor XMPP falso (nenhum servidor MUC real foi exercitado):
 `crates/phxclaw-agent/tests/canais.rs` (`xmpp_entra_na_sala_ouve_so_os_outros_e_responde_em_groupchat`,
-`xmpp_nick_em_conflito_na_sala_e_erro_legivel`) e o teste de unidade
-`groupchat_vira_entrada_com_nick_e_eco_historico_e_aviso_nao` no próprio `xmpp.rs`, contra um
-servidor XMPP falso; nenhum servidor MUC real foi exercitado.
+`xmpp_ocupante_comum_de_sala_permitida_nao_vira_tarefa_nem_chega_ao_disco`,
+`xmpp_nick_so_vale_em_sala_anonima_e_so_se_o_operador_confia`,
+`xmpp_privada_de_ocupante_responde_em_chat_ao_nick_nunca_na_sala`,
+`xmpp_fala_antes_da_confirmacao_chega_e_o_eco_usa_o_nick_que_a_sala_deu`,
+`xmpp_estrofe_sem_fim_e_fila_cheia_derrubam_a_conexao_com_erro_legivel`,
+`xmpp_ligado_compara_jid_sem_caixa_na_lista`, `xmpp_nick_em_conflito_na_sala_e_erro_legivel`,
+`na_sala_so_quem_abriu_a_tarefa_responde_a_pergunta_dela`) e os testes de unidade do
+`xmpp.rs` e do `canais/mod.rs`.
 
 ### Forjas (GitHub, GitLab)
 

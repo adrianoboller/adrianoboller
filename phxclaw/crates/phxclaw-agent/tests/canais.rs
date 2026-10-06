@@ -2548,7 +2548,11 @@ async fn xmpp_ocupante_comum_de_sala_permitida_nao_vira_tarefa_nem_chega_ao_disc
 /// a `ana` forjada no segundo.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn xmpp_nick_so_vale_em_sala_anonima_e_so_se_o_operador_confia() {
-    let lista = ["sala@conf.x.org", "sala@conf.x.org/dono", "sala@conf.x.org/ana"];
+    let lista = [
+        "sala@conf.x.org",
+        "sala@conf.x.org/dono",
+        "sala@conf.x.org/ana",
+    ];
     let roteiro = || {
         format!(
             "{}{}{MINHA_110}{}{}",
@@ -2660,11 +2664,25 @@ async fn xmpp_fala_antes_da_confirmacao_chega_e_o_eco_usa_o_nick_que_a_sala_deu(
         &["sala@conf.x.org", "ana@x.org"],
         false,
     ));
-    let l = bloq(move || x.receber(None, 2)).await.unwrap();
+    // Junta as voltas ate a ultima fala: o que se prova e O QUE chega, nao em quantas voltas.
+    let mut l = Vec::new();
+    for _ in 0..4 {
+        let y = x.clone();
+        l = bloq(move || y.receber(None, 1)).await.unwrap();
+        if autores_e_textos(&l)
+            .iter()
+            .any(|(_, t)| t.as_deref() == Some("depois"))
+        {
+            break;
+        }
+    }
     assert_eq!(
         autores_e_textos(&l),
         vec![
-            ("ana@x.org".to_string(), Some("antes da entrada".to_string())),
+            (
+                "ana@x.org".to_string(),
+                Some("antes da entrada".to_string())
+            ),
             ("ana@x.org".to_string(), Some("depois".to_string())),
         ]
     );
@@ -2691,7 +2709,9 @@ async fn xmpp_estrofe_sem_fim_e_fila_cheia_derrubam_a_conexao_com_erro_legivel()
 
     let dir = tmp();
     let muitas: String = (0..CAPACIDADE_FILA + 76)
-        .map(|i| format!("<message from='zed@x.org/r' type='chat' id='z{i}'><body>{i}</body></message>"))
+        .map(|i| {
+            format!("<message from='zed@x.org/r' type='chat' id='z{i}'><body>{i}</body></message>")
+        })
         .collect();
     let (end, _) = xmpp_falso_com_sala(format!("{MINHA_110}<!--pausa-->{muitas}"));
     let x = Arc::new(xmpp_na_sala(&dir, end, &["sala@conf.x.org"], false));
@@ -2816,9 +2836,7 @@ async fn na_sala_so_quem_abriu_a_tarefa_responde_a_pergunta_dela() {
             enviadas: enviadas.clone(),
         }),
         "conta",
-        ["sala", "dono", "bia"]
-            .into_iter()
-            .collect::<BTreeSet<_>>(),
+        ["sala", "dono", "bia"].into_iter().collect::<BTreeSet<_>>(),
         &dir.join("canal"),
         registro().0,
     )
@@ -2856,10 +2874,7 @@ async fn na_sala_so_quem_abriu_a_tarefa_responde_a_pergunta_dela() {
         vec!["Joana-da-bia", "faca o relatorio"],
         "a fala de bia e pedido novo"
     );
-    assert!(
-        t.iter().all(|x| x.status == TaskStatus::Completed),
-        "{t:?}"
-    );
+    assert!(t.iter().all(|x| x.status == TaskStatus::Completed), "{t:?}");
     let e = enviadas.lock().unwrap().clone();
     assert!(e.iter().any(|(_, x)| x == "relatorio feito"), "{e:?}");
     let _ = std::fs::remove_dir_all(dir);

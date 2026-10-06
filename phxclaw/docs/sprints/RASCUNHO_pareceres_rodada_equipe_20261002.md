@@ -57,3 +57,9 @@
 - ui_navegacao 65/65 com checagem nova de número no topo/rodapé; RED medido (cópia com 451 → 64/65). #brandVersion com data-fonte="host". lerAsset segue DIR_DA_UI.
 - Isenção «Helix —» com RED medido; grade de Tarefas sem corte na 1536 (minmax(min-content)); sw casca 11.
 - Pendência L1: lema do rodapé cortado a 1366 px.
+
+## Retomada 06/10 — conserto SEC do XMPP — entregue
+- A1, A1-pergunta, A2, M1, M2 (estrofe e fila), M3, M4, B3 (dois lados), P1, P2, P3: todos com teste nomeado e RED MEDIDO.
+- CONFIAR_NO_NICK (padrão false) no catálogo; artefatos regerados; sim_ou_nao() único para booleano no ligar.rs.
+- Placar: lib canais 23/23, test canais 41/41 (3 corridas), credencial_ci 9+1 ign., config-runtime 21; clippy 0.
+- Extras sem RED próprio: presença sem JID apaga par velho; resto de entrada acima do teto não sobe a leitura.

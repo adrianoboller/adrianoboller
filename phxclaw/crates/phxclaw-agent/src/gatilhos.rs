@@ -233,7 +233,8 @@ impl Gatilhos {
             // Lido ao carregar: fluxo invalido para aqui, nao no primeiro disparo.
             let t = std::fs::read_to_string(&caminho)
                 .map_err(|e| format!("{}: gatilho: fluxo {f}: {e}", arq.display()))?;
-            crate::fluxos::ler(&t).map_err(|e| format!("{}: gatilho: fluxo {f}: {e}", arq.display()))?;
+            crate::fluxos::ler(&t)
+                .map_err(|e| format!("{}: gatilho: fluxo {f}: {e}", arq.display()))?;
         }
         for a in &mut g.arquivos {
             if let Some(f) = &a.fluxo

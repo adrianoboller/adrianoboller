@@ -16,7 +16,10 @@
 //! conexao vive; numa sala anonima o nick e forjavel, e so vale como `sala/nick` se o
 //! operador ligou `confiar_no_nick`. Ocupante sem identidade conferivel chega ao portao com
 //! autor vazio, que nunca passa. E o que o portao recusa nunca chega ao disco: a caixa
-//! guarda so o metadado da recusa (conversa, autor, hora, tamanho), nunca o texto.
+//! guarda so o metadado da recusa (conversa, autor, hora, tamanho), nunca o texto. Pergunta
+//! pendente de tarefa aberta na sala so se responde pelo mesmo autor (`Canal::tratar`). JID
+//! se compara pelo `jid_normal` (parte local e dominio em minusculas, RFC 7622) aqui e na
+//! lista do canal (`ligar`), senao `Ana@X.org` escrito pelo operador nunca bateria.
 //!
 //! Mesmo desenho do IRC: a conexao fica aberta, uma thread le o fluxo XML, responde ao ping
 //! do servidor (XEP-0199) na hora e poe as mensagens numa fila; o que chega vai para a
@@ -121,8 +124,8 @@ pub struct Xmpp {
 pub fn jid_normal(jid: &str) -> String {
     let jid = jid.trim();
     match jid.split_once('/') {
-        Some((nu, r)) => format!("{nu}/{r}"),
-        None => jid.to_string(),
+        Some((nu, r)) => format!("{}/{r}", nu.to_ascii_lowercase()),
+        None => jid.to_ascii_lowercase(),
     }
 }
 
@@ -246,7 +249,7 @@ pub fn mensagem_da_estrofe(estrofe: &str) -> Option<Recebida> {
         None => (de.clone(), String::new()),
     };
     if sala
-        && (false
+        && (recurso.is_empty()
             || estrofe.contains("urn:xmpp:delay")
             || estrofe.contains("jabber:x:delay"))
     {
@@ -369,7 +372,7 @@ fn recortar(buf: &mut String) -> Result<Vec<String>, String> {
             }
             Some(Err(i)) => {
                 buf.drain(..i);
-                if false {
+                if buf.len() > TETO_ESTROFE {
                     buf.clear();
                     return Err(format!(
                         "xmpp: estrofe acima de {TETO_ESTROFE} bytes sem fechar; conexao derrubada"
@@ -542,7 +545,7 @@ impl Xmpp {
         {
             return j;
         }
-        if true {
+        if self.cfg.confiar_no_nick {
             sala_nick.to_string()
         } else {
             String::new()
@@ -623,7 +626,6 @@ xmlns:stream='http://etherx.jabber.org/streams' version='1.0'>",
             let nick = entrar_na_sala(&mut s, &mut buf, sala, &apelido)?;
             apelidos.push((jid_normal(sala), nick));
         }
-        buf.clear();
         s.set_read_timeout(None).ok();
         let escrita = Arc::new(Mutex::new(s));
         let (tx, rx) = sync_channel(CAPACIDADE_FILA);
@@ -968,7 +970,11 @@ mod tests {
     #[test]
     fn estrofe_sem_fechar_acima_do_teto_e_erro_e_abaixo_espera() {
         let mut b = format!("<message type='chat' from='a@x'><body>{}", "a".repeat(1000));
-        assert_eq!(recortar(&mut b), Ok(vec![]), "abaixo do teto, espera o resto");
+        assert_eq!(
+            recortar(&mut b),
+            Ok(vec![]),
+            "abaixo do teto, espera o resto"
+        );
         let mut b = format!(
             "<message type='chat' from='a@x'><body>{}",
             "a".repeat(TETO_ESTROFE)
@@ -987,7 +993,11 @@ mod tests {
         let p = "<presence from='Sala@Conf.x.org/Ana'><x xmlns='http://jabber.org/protocol/muc#user'><item jid='ANA@x.org/tel' role='participant'/></x></presence>";
         assert_eq!(
             ocupante_da_presenca(p),
-            Some(("sala@conf.x.org/Ana".into(), Some("ana@x.org".into()), false))
+            Some((
+                "sala@conf.x.org/Ana".into(),
+                Some("ana@x.org".into()),
+                false
+            ))
         );
         let anonima = "<presence from='sala@conf.x.org/dono'><x xmlns='http://jabber.org/protocol/muc#user'><item role='participant'/></x></presence>";
         assert_eq!(

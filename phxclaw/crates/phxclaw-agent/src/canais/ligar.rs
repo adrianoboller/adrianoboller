@@ -62,6 +62,18 @@ struct Ctx<'a> {
     var: Var<'a>,
 }
 
+/// Valor de chave booleana do catalogo (`K::B`, e o `TLS`): o `true`/`false` do config.json
+/// chega como texto. So os sins e os naos conhecidos decidem; o resto fica no `padrao`, que e
+/// o lado seguro de quem chama. Recebe o valor lido, e nao o nome da chave, para a leitura
+/// continuar sendo um `ctx.cfg("…")` que o levantamento do fonte enxerga.
+fn sim_ou_nao(valor: Option<String>, padrao: bool) -> bool {
+    match valor.map(|v| v.trim().to_ascii_lowercase()).as_deref() {
+        Some("sim" | "true" | "1" | "yes" | "on") => true,
+        Some("nao" | "false" | "0" | "no" | "off") => false,
+        _ => padrao,
+    }
+}
+
 impl Ctx<'_> {
     fn chave(&self, k: &str) -> String {
         format!("PHXCLAW_{}_{k}", self.prefixo)
@@ -76,25 +88,10 @@ impl Ctx<'_> {
     fn tls(&self) -> Result<Option<super::tls::Tls>, String> {
         // O catalogo declara `TLS` booleano: o `false` do config.json chega aqui como texto,
         // e so «nao» deixaria o `false` ligar o TLS calado.
-        if !self.booleano("TLS", true) {
+        if !sim_ou_nao(self.cfg("TLS"), true) {
             return Ok(None);
         }
         super::tls::Tls::da_config(self.cfg("CA").as_deref()).map(Some)
-    }
-
-    /// Chave booleana do catalogo (`K::B`): o `true`/`false` do config.json chega como
-    /// texto. So os sins e os naos conhecidos decidem; o resto fica no `padrao`, que e o
-    /// lado seguro de quem chama.
-    fn booleano(&self, k: &str, padrao: bool) -> bool {
-        match self
-            .cfg(k)
-            .map(|v| v.trim().to_ascii_lowercase())
-            .as_deref()
-        {
-            Some("sim" | "true" | "1" | "yes" | "on") => true,
-            Some("nao" | "false" | "0" | "no" | "off") => false,
-            _ => padrao,
-        }
     }
 
     fn exigir(&self, k: &str) -> Result<String, String> {
@@ -399,7 +396,7 @@ pub async fn ligar(
                     .collect(),
                 apelido: ctx.cfg("APELIDO").unwrap_or_default(),
                 permitidos: permitidos.iter().cloned().collect(),
-                confiar_no_nick: ctx.booleano("CONFIAR_NO_NICK", false),
+                confiar_no_nick: sim_ou_nao(ctx.cfg("CONFIAR_NO_NICK"), false),
             };
             (Arc::new(super::xmpp::Xmpp::novo(cfg, ctx.caixa("")?)), None)
         }

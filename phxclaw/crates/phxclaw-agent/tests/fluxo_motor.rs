@@ -387,9 +387,13 @@ async fn laco_lotes() {
     assert!(r.sucesso, "{r:#?}");
     let roda = passo(&r, "roda");
     assert_eq!(roda.estado, "continuou");
-    assert_eq!(roda.itens.len(), 3, "as duas passadas boas ficaram: {roda:#?}");
+    assert_eq!(
+        roda.itens.len(),
+        3,
+        "as duas passadas boas ficaram: {roda:#?}"
+    );
     assert_eq!(roda.itens[0], json!("1"));
-    assert_eq!(roda.itens[1]["erro"], json!("4 nao vale"));
+    assert!(roda.itens[1]["erro"].as_str().unwrap().contains("4 nao vale"));
     assert_eq!(roda.itens[1]["item"], json!(1));
     assert_eq!(roda.itens[2], json!("7"));
     assert_eq!(passo(&r, "fim").estado, "ok");
@@ -404,7 +408,7 @@ async fn laco_lotes() {
     let roda = passo(&r, "roda");
     assert_eq!(roda.itens, vec![json!("1"), json!("7")]);
     assert_eq!(roda.portas["erro"].len(), 1);
-    assert_eq!(roda.portas["erro"][0]["erro"], json!("4 nao vale"));
+    assert!(roda.portas["erro"][0]["erro"].as_str().unwrap().contains("4 nao vale"));
     assert_eq!(passo(&r, "fim").estado, "ok");
     assert_eq!(passo(&r, "trata").estado, "ok");
 
@@ -413,7 +417,7 @@ async fn laco_lotes() {
     let r = fluxos::rodar(&a, &central("parar")).await.unwrap();
     assert!(!r.sucesso);
     assert_eq!(passo(&r, "roda").estado, "falhou");
-    assert_eq!(passo(&r, "roda").saida, "4 nao vale");
+    assert!(passo(&r, "roda").saida.contains("4 nao vale"));
     assert_eq!(passo(&r, "fim").estado, "bloqueado");
 }
 

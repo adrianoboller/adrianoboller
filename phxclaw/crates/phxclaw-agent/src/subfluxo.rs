@@ -75,7 +75,8 @@ impl FluxoTool {
 fn ler_fluxo(arq: &Path) -> Result<Fluxo, ToolError> {
     let texto = std::fs::read_to_string(arq)
         .map_err(|e| ToolError::InvalidArguments(format!("fluxo {}: {e}", arq.display())))?;
-    fluxos::ler(&texto).map_err(|e| ToolError::InvalidArguments(format!("fluxo {}: {e}", arq.display())))
+    fluxos::ler(&texto)
+        .map_err(|e| ToolError::InvalidArguments(format!("fluxo {}: {e}", arq.display())))
 }
 
 /// Os itens do ultimo passo que terminou bem, na ordem em que os passos terminaram.
@@ -118,7 +119,9 @@ Every step of the sub-flow goes through the same policy as your own tool calls."
             let arq = self.arquivo(&args, &ctx.workdir)?;
             let f = ler_fluxo(&arq)?;
             let agente = self.base.get().ok_or_else(|| {
-                ToolError::Failed("ferramenta fluxo sem agente montado (defeito de montagem)".into())
+                ToolError::Failed(
+                    "ferramenta fluxo sem agente montado (defeito de montagem)".into(),
+                )
             })?;
             let entrada: Vec<Value> = args
                 .get("entrada")

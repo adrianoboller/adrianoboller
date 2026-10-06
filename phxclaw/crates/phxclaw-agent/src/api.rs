@@ -640,11 +640,12 @@ async fn agendar(State(s): State<ApiState>, h: HeaderMap, Json(n): Json<NovoAgen
         }
     };
     let item = match n.fluxo.as_deref().map(str::trim).filter(|f| !f.is_empty()) {
-        Some(f) if n.objective.trim().is_empty() => s
-            .agenda
-            .lock()
-            .unwrap()
-            .add_fluxo(&n.name, f, spec, Utc::now()),
+        Some(f) if n.objective.trim().is_empty() => {
+            s.agenda
+                .lock()
+                .unwrap()
+                .add_fluxo(&n.name, f, spec, Utc::now())
+        }
         Some(_) => Err("informe objective OU fluxo, nao os dois".to_string()),
         None if n.objective.trim().is_empty() => Err("informe objective OU fluxo".to_string()),
         None => s
