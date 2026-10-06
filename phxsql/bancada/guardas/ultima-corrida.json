@@ -3072,12 +3072,10 @@
     {
       "id": "fechar-do-embutido-nao-sincroniza",
       "titulo": "o embutido que fecha a tabela sem `phx_sincronizar` não a abre no processo seguinte, e a ABI não tem como reconstruí-la",
-      "veredito": "NAO PEGOU",
-      "segundos": 9.35,
-      "notas": [
-        "PASSOU COM O DEFEITO REPOSTO: testes::fechar_sem_sincronizar_e_o_proximo_processo_abre"
-      ],
-      "quando": "2026-10-02 12:45"
+      "veredito": "PROVADA",
+      "segundos": 8.68,
+      "notas": [],
+      "quando": "2026-10-06 22:42"
     },
     {
       "id": "phx-reindexar-nao-reindexa",
@@ -3146,12 +3144,10 @@
     {
       "id": "elo-do-empilhar-pelo-disco",
       "titulo": "o elo que o `empilhar` planeja pelo disco sobrescreve o que a própria lista já escreveu na filha",
-      "veredito": "NAO PEGOU",
-      "segundos": 92.36,
-      "notas": [
-        "PASSOU COM O DEFEITO REPOSTO: servidor::testes_transacoes::integridade_na_transacao::o_elo_da_cascata_nao_desfaz_o_que_a_lista_escreveu_na_filha"
-      ],
-      "quando": "2026-10-02 13:08"
+      "veredito": "PROVADA",
+      "segundos": 86.65,
+      "notas": [],
+      "quando": "2026-10-06 22:42"
     },
     {
       "id": "tabela-que-some-segura-as-marcas",

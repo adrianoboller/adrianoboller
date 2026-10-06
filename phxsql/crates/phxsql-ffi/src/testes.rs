@@ -413,6 +413,23 @@ fn fechar_sem_sincronizar_e_o_proximo_processo_abre() {
         }
         // Sem phx_sincronizar: e o que o cliente de antes do 522 fazia.
         assert_eq!(phx_tabela_fechar(tab), PHX_OK, "{}", erro_agora());
+        // O DANO, medido no disco ANTES de o processo seguinte existir. Desde
+        // o 563 o `phx_base_abrir` reconstroi sozinho o indice que o
+        // processo anterior deixou marcado, entao a sonda abre MESMO com o
+        // `fechar` reposto como so-o-Drop (medido em 06/10: byte 52 = 1 no
+        // disco, `precisa_reconstruir` falso no processo novo, sonda verde).
+        // O veredito «abriu» nao distingue os dois mundos; o que os distingue
+        // e o que o fechar deixou: a marca baixada (byte 52 = 0, com `fsync`),
+        // que poupa ao processo seguinte a reconstrucao O(n) e a cabeca do
+        // `.reg` que o nucleo ainda nao levou ao disco.
+        let ndx = achar_ndx(&area.0, "clientes").expect("o .ndx de clientes sumiu");
+        assert_eq!(
+            std::fs::read(&ndx).unwrap()[52],
+            0,
+            "o fechar do embutido deixou o byte 52 do .ndx em 1: so este processo sabe \
+             a arvore coerente, e o seguinte paga uma reconstrucao inteira (ou perde o \
+             que o nucleo nao levou ao disco) -- o fechar tem de sincronizar"
+        );
         assert_eq!(phx_base_fechar(base), PHX_OK);
 
         let saida = std::process::Command::new(std::env::current_exe().unwrap())
