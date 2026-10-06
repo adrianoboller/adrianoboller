@@ -50,7 +50,7 @@ abaixo aparece em exatamente uma sprint.
 | SP000032 | 9 | Fechar em 100% (dono, 02/10): RSA para Teams/Google Chat, pacotes de plugin completos, XMPP MUC, Nostr DM, VS Code onda 2, minimapa/dobra, SSH local, Live Share; iMessage, voz ao vivo, RAPL e nuvem dependem de recurso do dono | 32 | PLANEJADA |
 | SP000033 | 9 | Integração total com o n8n (dono, 02/10): PhxClaw chama fluxos do n8n (webhook/REST, chave no broker) e o n8n chama o PhxClaw (nó da comunidade + MCP nos dois sentidos); prova real com n8n de verdade | — | EM EXECUÇÃO (código entregue 02/10; prova com n8n real NÃO VALIDADA: depende da máquina do dono) |
 | SP000034 | 9 | Prova de uso fora de desenvolvimento (dono, 02/10): monitor de passagens aéreas para a China — fluxo agendado, navegador/API, memória, aviso por canal; medido de verdade | — | EM EXECUÇÃO (prova no Google Flights VERIFICADA 02/10; aviso real depende da credencial do dono) |
-| SP000035 | 9 | PHX Flow Engine (dono, 02/10): o fluxos.rs vira motor de nós (ferramenta, agente, skill, MCP, comando, comportamento) com itens, condição, laço, espera e erro tratado — n8n como 7ª fonte, medido em 40,7%; editor visual é onda à parte | 35 | EM EXECUÇÃO (onda 1 entregue 02/10: itens, se/juntar/lote/parar_com_erro, ao_errar, tetos, expressões por caminho, fluxo_de_erro — 9 ids no agente; ondas 2–5 por fazer) |
+| SP000035 | 9 | PHX Flow Engine (dono, 02/10): o fluxos.rs vira motor de nós (ferramenta, agente, skill, MCP, comando, comportamento) com itens, condição, laço, espera e erro tratado — n8n como 7ª fonte, medido em 40,7%; editor visual é onda à parte | 35 | EM EXECUÇÃO (onda 1 entregue 02/10: itens, se/juntar/lote/parar_com_erro, ao_errar, tetos, expressões por caminho, fluxo_de_erro; onda 2 entregue 06/10: skill/mcp/comando como passo, sub-fluxo, --ate, gatilho→fluxo, variáveis; ondas 3–5 por fazer) |
 | SP000036 | 9 | Painel no molde do mockup do dono (02/10): paleta de comandos, menu por áreas, cartões de ação, projetos, modelos (só medido), skills, execuções, agenda, notificações, assistente; tokens da marca; nenhum número digitado | — | EM EXECUÇÃO (fase 1 entregue; fase 2 em lotes) |
 | UI-R01 | 8 | Phx Responsive UI — contratos e layout: intenção responsiva no UI-IR (janela e contêiner), breakpoints num JSON único, motor que compila para Grid/Flexbox/container queries, sem perder estado ao redimensionar | — | CONCLUÍDA (onda 7) |
 | UI-R02 | 8 | Adaptador Bootstrap substituível: componentes semânticos → Bootstrap 5.3, tokens do PhxClaw nas variáveis do Bootstrap, arquivo local com versão fixada, sem o JS do Bootstrap mexer no DOM controlado | — | CONCLUÍDA (onda 7) |
@@ -462,7 +462,7 @@ de 270). O que falta, por fonte, sai de `phxclaw.json` (estado ≠ agente):
 imprime 100% por fonte. Nada digitado.
 
 
-## SP000035 — PHX Flow Engine (ordem do dono, 02/10/2026) — EM EXECUÇÃO (onda 1 entregue)
+## SP000035 — PHX Flow Engine (ordem do dono, 02/10/2026) — EM EXECUÇÃO (ondas 1 e 2 entregues)
 
 **Fonte primária.** `git clone --depth 1 --filter=blob:none --sparse` de `github.com/n8n-io/n8n`
 funcionou de primeira pelo proxy (commit `56aa3d8`, `packages/workflow` 2.42.0, 23 MB) e o mesmo para

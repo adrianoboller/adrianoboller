@@ -29,7 +29,7 @@ sem SMTP não há `send_email`, sem token não há `github` — e por isso há d
 montou aqui e o que existe no código mas não montou.
 
 <!-- gerado:ferramentas:inicio -->
-Medido em 2026-10-02 por `python3 tools/gerar_doc_agente.py`, de `phxclaw ferramentas` (versao 0.70.0, binario de 2026-10-02 04:48), com `PHXCLAW_CAPACIDADES` no padrao. **72 ferramentas montadas nesta maquina**, 61 concedidas por padrao.
+Medido em 2026-10-06 por `python3 tools/gerar_doc_agente.py`, de `phxclaw ferramentas` (versao 0.70.0, binario de 2026-10-06 21:16), com `PHXCLAW_CAPACIDADES` no padrao. **73 ferramentas montadas nesta maquina**, 61 concedidas por padrao.
 
 | Capacidade | Padrao | Ferramentas |
 |---|---|---|
@@ -39,6 +39,7 @@ Medido em 2026-10-02 por `python3 tools/gerar_doc_agente.py`, de `phxclaw ferram
 | `code.review` | sim | `code_review` |
 | `desktop.control` | **nao** | `desktop` |
 | `doc.write` | sim | `design_erp_ui`, `screenshot_to_erp_ui`, `create_document`, `create_spreadsheet`, `create_presentation` |
+| `flow.run` | **nao** | `fluxo` |
 | `fs.read` | sim | `read_file`, `list_files`, `ocr`, `image`, `read_document`, `zip_list`, `data_file`, `pdf`, `glob`, `grep`, `file_history`, `notebook_read`, `checkpoint_list`, `lsp` |
 | `fs.write` | sim | `write_file`, `edit_file`, `image_render`, `zip`, `data_file_format`, `pdf_create`, `replace_in_project`, `file_history_restore`, `notebook_edit`, `checkpoint_restore` |
 | `git.read` | sim | `git` |
@@ -141,6 +142,7 @@ Medido em 2026-10-02 por `python3 tools/gerar_doc_agente.py`, de `phxclaw ferram
 | `team_delegate` | `team.delegate` | Delegate one self-contained sub-task to a PhxClaw team role (by id or name, see team_list). The role runs as a sub-agent with its own mission and limits and only the tools both it and you are allowed; returns its answer. Human roles do not run: they come back asking for a human decision. |
 | `parallel_tasks` | `agent.parallel` | Run up to 6 coding tasks in parallel over a git repo in the working directory. Each task gets its own git worktree (branch phxclaw/<name>) as an isolated sandboxed workspace and a sub-agent; when all finish, each worktree's changes are committed on its branch. Returns per task: answer, branch, commit and changed files. 'attempts' (best-of-N, up to 4) runs the same objective N times in separate worktrees (<name>-1..N) so you can compare and keep the best. Review/merge the branches afterwards with git/git_write. |
 | `parallel_research` | `agent.spawn` | Run up to 6 independent sub-agents in parallel, one per sub-task, and return each answer. Use for research over many items (compare products, gather facts about several topics). |
+| `fluxo` | `flow.run` | Run a saved PhxClaw flow (DAG, JSON file) as a sub-flow and return the items produced by its last step as a JSON array. Give 'caminho' (path to the .json inside the task folder) or 'nome' (file in the agent's flows folder). 'entrada' are the input items the flow reads as {{entrada}}; 'modo' 'once' (default) runs the flow once with the whole list, 'each' runs it once per item. Every step of the sub-flow goes through the same policy as your own tool calls. |
 
 </details>
 <!-- gerado:ferramentas:fim -->
@@ -148,7 +150,7 @@ Medido em 2026-10-02 por `python3 tools/gerar_doc_agente.py`, de `phxclaw ferram
 ### Existem no fonte, não montadas nesta máquina
 
 <!-- gerado:condicionais:inicio -->
-Medido em 2026-10-02: **15 ferramentas existem no fonte e nao montaram nesta maquina** (dependem de configuracao, token, canal ou feature de compilacao; a condicao de cada uma esta em `crates/phxclaw-agent/src/montagem.rs`).
+Medido em 2026-10-06: **15 ferramentas existem no fonte e nao montaram nesta maquina** (dependem de configuracao, token, canal ou feature de compilacao; a condicao de cada uma esta em `crates/phxclaw-agent/src/montagem.rs`).
 
 | Ferramenta | Definida em |
 |---|---|
@@ -180,7 +182,7 @@ A referência é a ajuda do próprio binário, copiada aqui pelo gerador (os `CL
 antigos não cobrem o agente).
 
 <!-- gerado:cli:inicio -->
-Saida de `phxclaw --help`, gerada em 2026-10-02:
+Saida de `phxclaw --help`, gerada em 2026-10-06:
 
 ```text
 PhxClaw 0.70.0
@@ -285,7 +287,7 @@ POLITICA: PHXCLAW_CAPACIDADES=web.search,web.browse,fs.read,fs.write,... (padrao
 ## Equipe de papéis
 
 <!-- gerado:equipe:inicio -->
-**111 papeis** carregados de `config/agents` (medido em 2026-10-02 por `phxclaw equipe listar`).
+**111 papeis** carregados de `config/agents` (medido em 2026-10-06 por `phxclaw equipe listar`).
 <!-- gerado:equipe:fim -->
 
 - **`team_list`** (`team.read`) lista os papéis (id, nome, macroárea, tipo, criticidade,

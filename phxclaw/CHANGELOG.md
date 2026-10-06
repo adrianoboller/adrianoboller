@@ -7,8 +7,20 @@
   agente (`gerar_absorcao.py`). Formato e divergências: `docs/N8N.md` §8.
 - Canal XMPP com sala multiusuário (XEP-0045): chaves `SALAS`/`APELIDO`, eco e histórico com
   `<delay/>` ignorados, `groupchat` para a sala e `chat` para privada de ocupante, erro de presença
-  (409 etc.) legível. Sala em `PERMITIDOS` = qualquer ocupante comanda o agente
-  (`docs/GUIA_DO_OPERADOR.md`, «Canal XMPP»).
+  (409 etc.) legível (`docs/GUIA_DO_OPERADOR.md`, «Canal XMPP»).
+- Segurança do XMPP (revisão SEC, retomada 06/10): a sala em `PERMITIDOS` deixa o agente ouvir e
+  falar nela, mas só comanda o ocupante cujo JID real (`<item jid>`) está na lista; resposta a
+  pergunta pendente só de quem abriu a tarefa; `CONFIAR_NO_NICK` (padrão `false`) para sala
+  anônima; atributo injetado, estrofe acima de 256 KiB, fila cheia, texto de quem não é permitido
+  no disco e eco com nick trocado consertados — cada um com teste que reprova com o defeito reposto.
+- Motor de fluxo, onda 2: tipos de passo skill/mcp/comando/comportamento pelo mesmo portão,
+  ferramenta `fluxo` (sub-fluxo once/each, profundidade 8, ciclo recusado), `rodar --ate`, gatilho
+  que dispara fluxo, `variaveis` com segredo recusado; hash canônico da definição, `formato` no
+  relatório, uma cópia só do dado por passo, teto de itens e de chamadas simultâneas por item;
+  passadas boas ficam quando uma falha. 17 testes em `tests/fluxo_onda2.rs`; n8n 55,9% → 62,7% no
+  agente (`gerar_absorcao.py`).
+- Painel L2 (cartões de ação e execuções recentes) e checagem de número digitado no topo e no
+  rodapé da tela.
 - Casca do painel (SP000036 L1): menu em 4 áreas com rótulo ao lado, barra de comando que abre a
   paleta, rodapé lido (versão, pasta, idioma), assistente recolhível; 13 chaves `casca.*`; ordem
   do DOM do menu = ordem visual (`docs/ui/COMPARACAO_MOCKUP_2026-10-02.md` §5).

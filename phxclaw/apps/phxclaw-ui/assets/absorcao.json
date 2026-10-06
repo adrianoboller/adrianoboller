@@ -719,11 +719,11 @@
  },
  "openjarvis": {
   "total": 55,
-  "no_agente": 49,
-  "parcial": 5,
+  "no_agente": 50,
+  "parcial": 4,
   "nao": 1,
-  "pct_agente": 89.1,
-  "pct_com_bibliotecas": 93.6,
+  "pct_agente": 90.9,
+  "pct_com_bibliotecas": 94.5,
   "falta": [
    "canal_imessage"
   ],
@@ -731,7 +731,6 @@
    "telemetria_energia",
    "canal_googlechat",
    "canal_teams",
-   "canal_xmpp",
    "canal_nostr"
   ],
   "lido_em": "01/10/2026",
@@ -938,7 +937,7 @@
    },
    {
     "id": "canal_xmpp",
-    "estado": "parcial"
+    "estado": "agente"
    },
    {
     "id": "canal_rocketchat",
@@ -1186,21 +1185,13 @@
  },
  "n8n": {
   "total": 59,
-  "no_agente": 24,
-  "parcial": 17,
-  "nao": 18,
-  "pct_agente": 40.7,
-  "pct_com_bibliotecas": 55.1,
+  "no_agente": 37,
+  "parcial": 13,
+  "nao": 9,
+  "pct_agente": 62.7,
+  "pct_com_bibliotecas": 73.7,
   "falta": [
-   "execucao_por_item",
-   "variaveis_globais",
-   "ramificacao_if_switch",
-   "laco_lotes",
    "espera_wait",
-   "continuar_em_erro",
-   "fluxo_de_erro",
-   "execucao_parcial",
-   "subfluxo",
    "gatilho_formulario",
    "segredos_externos",
    "poda_execucoes",
@@ -1208,23 +1199,18 @@
    "modelos_fluxo",
    "etiquetas_pastas",
    "projetos_rbac",
-   "assistente_construtor_ia",
    "instalacao_docker_k8s"
   ],
   "pela_metade": [
-   "nos_e_conexoes",
-   "expressoes",
-   "juncao_merge",
-   "timeout_execucao",
    "dados_pinados",
    "versionamento_fluxo",
    "gatilho_poll",
-   "gatilho_dispara_fluxo",
    "oauth2_generico",
    "dados_binarios",
    "fila_workers",
    "concorrencia_limite",
    "controle_versao_git_fluxos",
+   "assistente_construtor_ia",
    "guardrails",
    "requisicao_http",
    "observabilidade_insights",
@@ -1238,31 +1224,31 @@
    },
    {
     "id": "nos_e_conexoes",
-    "estado": "parcial"
+    "estado": "agente"
    },
    {
     "id": "execucao_por_item",
-    "estado": "nao"
+    "estado": "agente"
    },
    {
     "id": "expressoes",
-    "estado": "parcial"
+    "estado": "agente"
    },
    {
     "id": "variaveis_globais",
-    "estado": "nao"
+    "estado": "agente"
    },
    {
     "id": "ramificacao_if_switch",
-    "estado": "nao"
+    "estado": "agente"
    },
    {
     "id": "juncao_merge",
-    "estado": "parcial"
+    "estado": "agente"
    },
    {
     "id": "laco_lotes",
-    "estado": "nao"
+    "estado": "agente"
    },
    {
     "id": "espera_wait",
@@ -1274,19 +1260,19 @@
    },
    {
     "id": "timeout_execucao",
-    "estado": "parcial"
+    "estado": "agente"
    },
    {
     "id": "continuar_em_erro",
-    "estado": "nao"
+    "estado": "agente"
    },
    {
     "id": "fluxo_de_erro",
-    "estado": "nao"
+    "estado": "agente"
    },
    {
     "id": "execucao_parcial",
-    "estado": "nao"
+    "estado": "agente"
    },
    {
     "id": "retomar_execucao",
@@ -1298,7 +1284,7 @@
    },
    {
     "id": "subfluxo",
-    "estado": "nao"
+    "estado": "agente"
    },
    {
     "id": "execucao_codigo",
@@ -1338,7 +1324,7 @@
    },
    {
     "id": "gatilho_dispara_fluxo",
-    "estado": "parcial"
+    "estado": "agente"
    },
    {
     "id": "credenciais_cifradas",
@@ -1402,7 +1388,7 @@
    },
    {
     "id": "assistente_construtor_ia",
-    "estado": "nao"
+    "estado": "parcial"
    },
    {
     "id": "plugins",

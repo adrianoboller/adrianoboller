@@ -233,8 +233,9 @@ exportados pelo proprio n8n (que substituem os escritos a mao).
 O n8n nao se embute (secao 1), mas o que ele faz por dentro -- um motor de **dados** por
 itens, com nos de controle -- passou a existir aqui, no `crates/phxclaw-agent/src/fluxos.rs`
 (**1.540 linhas** medidas por `wc -l` no `git show HEAD:…/fluxos.rs`; eram 470 antes da onda).
-Medido pelo gerador (`python3 docs/absorcao/gerar_absorcao.py`, 02/10): n8n **55,9% no agente |
-66,9% com bibliotecas** (33 sim, 13 pela metade, 13 nao, de 59); antes da onda eram 40,7%.
+Medido pelo gerador (`python3 docs/absorcao/gerar_absorcao.py`): n8n **55,9% no agente** depois da
+onda 1 (02/10; antes eram 40,7%) e **62,7% no agente | 73,7% com bibliotecas** depois da onda 2
+(06/10; 37 sim, 13 pela metade, 9 nao, de 59). A onda 2 esta em `tests/fluxo_onda2.rs`.
 Prova: `crates/phxclaw-agent/tests/fluxo_motor.rs`, **10 testes** (`grep -c '#[tokio::test]'`),
 um deles o comportamento VELHO (`comportamento_velho_fluxo_de_texto_roda_igual`). A prova real
 reposta um a um (defeito reposto -> teste falha) **ainda nao foi feita** nesses dez: e a divida
@@ -283,8 +284,7 @@ comentario do campo (`fluxos.rs:130`) diz «`{{entrada}}` e o item da vez». O c
 saida da dependencia de entrada por **um item so** -- entao o item da vez se le pelo **id da
 entrada** (`{{lista.n}}`, como o teste `execucao_por_item` faz), e `{{entrada}}` seria
 recusado pelo `validar`, porque `entrada` nao esta em `depende`. Esta secao documenta o que o
-codigo faz; a linha 130 do fonte e um defeito de comentario a corrigir na onda 2 (o `fluxos.rs`
-esta em edicao por outra frente nesta rodada, e por isso nao foi tocado aqui).
+codigo faz; o comentario do fonte que prometia `{{entrada}}` foi corrigido na onda 2.
 
 **Estados no relatorio** (`Resultado.estado`): `ok`, `falhou`, `bloqueado` (dependencia que nao
 terminou bem), `pulado` (porta sem itens, ramo morto) e `continuou` (falhou e `ao_errar`

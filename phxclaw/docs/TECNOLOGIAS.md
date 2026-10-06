@@ -19,7 +19,7 @@ paralelo, e um número medido com outra frente a meio caminho é número com dat
 errado. Fora dos blocos, cada número cita o documento ou o comando de onde saiu.
 
 <!-- gerado:tec:carimbo:inicio -->
-Medido em 2026-10-02 na arvore de trabalho sobre o commit `754cdac3` (branch `phxclaw/v070-nativo`), por `python3 tools/gerar_tecnologias.py`. Arquivos modificados e nao comitados no momento da medida: 28.
+Medido em 2026-10-06 na arvore de trabalho sobre o commit `610fd82c` (branch `phxclaw/rascunho-equipe-20261002`), por `python3 tools/gerar_tecnologias.py`. Arquivos modificados e nao comitados no momento da medida: 3.
 <!-- gerado:tec:carimbo:fim -->
 
 ## 1. Linguagens e volume, contados
@@ -27,15 +27,15 @@ Medido em 2026-10-02 na arvore de trabalho sobre o commit `754cdac3` (branch `ph
 <!-- gerado:tec:linguagens:inicio -->
 | linguagem | arquivos | linhas | onde (pastas com mais linhas) |
 |---|---:|---:|---|
-| `.rs` | 380 | 151301 | `crates` 144328, `apps` 6895, `sdk` 78 |
-| `.js` | 13 | 13510 | `apps` 13299, `tests` 203, `integracoes` 8 |
-| `.mjs` | 16 | 3291 | `tests` 3287, `apps` 4 |
+| `.rs` | 381 | 153621 | `crates` 146648, `apps` 6895, `sdk` 78 |
+| `.js` | 13 | 13513 | `apps` 13302, `tests` 203, `integracoes` 8 |
+| `.mjs` | 16 | 3322 | `tests` 3318, `apps` 4 |
 | `.py` | 175 | 12902 | `tools` 8029, `scripts` 2887, `sdk` 768 |
 | `.ts` | 4 | 375 | `integracoes` 356, `integrations` 19 |
 | `.html` | 29 | 1440 | `docs` 779, `apps` 373, `ui` 194 |
-| `.css` | 6 | 1228 | `apps` 1222, `crates` 6 |
+| `.css` | 6 | 1231 | `apps` 1225, `crates` 6 |
 | `.sh` | 33 | 960 | `tools` 553, `ci` 147, `scripts` 141 |
-| **total** | **656** | **185007** | |
+| **total** | **657** | **187364** | |
 <!-- gerado:tec:linguagens:fim -->
 
 Leitura do retrato: o produto é Rust (`crates/` + `apps/phxclaw`); o JavaScript é a interface
@@ -47,9 +47,9 @@ workspace Rust.
 ### 1.1 Rust
 
 <!-- gerado:tec:rust:inicio -->
-- Rust: **122027** linhas fora de `tests/` e `examples/`, **28732** em `tests/` de integracao, **542** em `examples/`; proporcao teste/codigo (so integracao) 28732/122027 = 0.24x.
+- Rust: **122565** linhas fora de `tests/` e `examples/`, **30514** em `tests/` de integracao, **542** em `examples/`; proporcao teste/codigo (so integracao) 30514/122565 = 0.25x.
 - **118** crates em `crates/` + os binarios em `apps/`.
-- **757** funcoes marcadas `#[test]`/`#[tokio::test]`.
+- **778** funcoes marcadas `#[test]`/`#[tokio::test]`.
 - **39** dependencias diretas no `[workspace.dependencies]` do `Cargo.toml`: `anyhow`, `aes-gcm`, `secrecy`, `zeroize`, `axum`, `futures-util`, `getrandom`, `tokio-stream`, `base64`, `chrono`, `csv`, `ed25519-dalek`, `enigo`, `postgres`, `quick-xml`, `reqwest`, `semver`, `serde`, `serde_json`, `sha2`, `thiserror`, `tokio`, `url`, `rustls`, `rustls-pki-types`, `webpki-roots`, `tokio-tungstenite`, `uuid`, `xcap`, `walkdir`, `tree-sitter`, `tree-sitter-rust`, `tree-sitter-python`, `tree-sitter-javascript`, `tree-sitter-typescript`, `tree-sitter-go`, `tree-sitter-c`, `tree-sitter-cpp`, `tree-sitter-java`.
 - **849** pacotes no `Cargo.lock` (a arvore inteira, transitivas incluidas).
 <!-- gerado:tec:rust:fim -->

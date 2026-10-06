@@ -503,10 +503,17 @@
       "descricao": "Run up to 6 independent sub-agents in parallel, one per sub-task, and return each answer. Use for research over many items (compare products, gather facts about several topics).",
       "grupo": "agent",
       "nome": "parallel_research"
+    },
+    {
+      "capacidade": "flow.run",
+      "concedida": false,
+      "descricao": "Run a saved PhxClaw flow (DAG, JSON file) as a sub-flow and return the items produced by its last step as a JSON array. Give 'caminho' (path to the .json inside the task folder) or 'nome' (file in the agent's flows folder). 'entrada' are the input items the flow reads as {{entrada}}; 'modo' 'once' (default) runs the flow once with the whole list, 'each' runs it once per item. Every step of the sub-flow goes through the same policy as your own tool calls.",
+      "grupo": "flow",
+      "nome": "fluxo"
     }
   ],
   "gerado_por": "phxclaw ferramentas",
   "observacao": "montadas nesta maquina: shell exige bwrap, navegador exige Chromium, e-mail e banco exigem configuracao",
-  "total": 72,
+  "total": 73,
   "versao": "0.70.0"
 }

@@ -745,7 +745,7 @@
   },
   "ferramentas_do_agente": {
    "estado": "agente",
-   "evidencia": "ferramentas.json: 72 ferramentas nativas + mcp.rs (mcp__servidor__ferramenta) + plugins.rs assinados, todas pelo mesmo portao Agent::call_tool"
+   "evidencia": "ferramentas.json (ferramentas nativas, contadas pelo gerador) + mcp.rs (mcp__servidor__ferramenta) + plugins.rs assinados, todas pelo mesmo portao Agent::call_tool"
   },
   "aprovacao_humana": {
    "estado": "agente",
