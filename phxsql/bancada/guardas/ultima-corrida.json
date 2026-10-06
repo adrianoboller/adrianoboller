@@ -3815,9 +3815,9 @@
       "id": "backup-escreve-no-arquivo-de-outro-dono",
       "titulo": "o backup volta a truncar e reescrever o arquivo regular de OUTRO dono (ou com link físico) que já está no destino: quem plantou fica dono da cópia do banco, e no ZIP o `.part` plantado vira o `.zip` final",
       "veredito": "PROVADA",
-      "segundos": 9.19,
+      "segundos": 10.56,
       "notas": [],
-      "quando": "2026-09-30 23:00"
+      "quando": "2026-10-06 22:29"
     },
     {
       "id": "fifo-trocada-na-janela-para-o-backup",
@@ -5756,6 +5756,62 @@
       "segundos": 96.99,
       "notas": [],
       "quando": "2026-10-06 22:14"
+    },
+    {
+      "id": "backup-fsync-do-grosso-na-fase-1",
+      "titulo": "O `fsync` do grosso da cópia de volta à fase 1 do backup, com o escritor andando (pedido 646)",
+      "veredito": "PROVADA",
+      "segundos": 12.25,
+      "notas": [],
+      "quando": "2026-10-06 22:29"
+    },
+    {
+      "id": "backup-manifesto-nasce-na-fase-2",
+      "titulo": "O manifesto do backup gravado já na fase 2, antes do `concluir`: uma queda ali deixa um destino que o `op_backups` lista e o `restaurar` aceita (pedido 646)",
+      "veredito": "PROVADA",
+      "segundos": 12.11,
+      "notas": [],
+      "quando": "2026-10-06 22:29"
+    },
+    {
+      "id": "backup-concluir-manifesto-antes-do-fsync",
+      "titulo": "O `concluir` grava o manifesto ANTES do `fsync` das cópias das duas fases (pedido 646, condição C2 do 524)",
+      "veredito": "PROVADA",
+      "segundos": 12.81,
+      "notas": [],
+      "quando": "2026-10-06 22:29"
+    },
+    {
+      "id": "trava-de-instancia-segue-link",
+      "titulo": "A trava de instância aberta com `create(true).write(true)`: segue o `.phxsql.trava` plantado como link e TRUNCA o alvo (pedido 648)",
+      "veredito": "PROVADA",
+      "segundos": 12.71,
+      "notas": [],
+      "quando": "2026-10-06 22:29"
+    },
+    {
+      "id": "trava-de-instancia-aceita-link-fisico",
+      "titulo": "O motor do arquivo do banco deixa de contar os nomes do inode: a trava escreve o pid num `.phxsql.trava` que é link físico de outro arquivo (pedido 648)",
+      "veredito": "PROVADA",
+      "segundos": 12.36,
+      "notas": [],
+      "quando": "2026-10-06 22:29"
+    },
+    {
+      "id": "zip-retrato-part-aproveitado",
+      "titulo": "A árvore temporária do zip (`.retrato.part`) aproveitada se já existe: o link plantado leva a cópia para fora e o intruso entra no zip (pedido 651)",
+      "veredito": "PROVADA",
+      "segundos": 12.86,
+      "notas": [],
+      "quando": "2026-10-06 22:29"
+    },
+    {
+      "id": "restaurar-aceita-trava-no-manifesto",
+      "titulo": "A restauração aceita um manifesto que lista `.phxsql.trava`, nome que o backup nunca grava (pedido 651)",
+      "veredito": "PROVADA",
+      "segundos": 12.77,
+      "notas": [],
+      "quando": "2026-10-06 22:29"
     },
     {
       "id": "alter-com-regra-sem-aviso",

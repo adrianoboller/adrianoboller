@@ -2413,7 +2413,9 @@ inteira. São duas fases, decididas num lugar só:
 
 - **fase 1** — `backup::copiar_fase_1`: sem trava, com o `stat` de cada arquivo
   **antes** de lê-lo (tamanho, `mtime` em ns, dev/inode, o instante do `stat`),
-  e o `fsync` de tudo ainda fora da trava (`sincronizar_fase_1`);
+  **sem `fsync` nenhum** (pedido 646: o `sincronizar_fase_1` que sincronizava
+  o grosso aqui saiu — a 1.123 MiB custava picos de ~0,4 s às escritas durante
+  a fase 1 e não comprava nada medível depois dela);
 - **fase 2** — `backup::acertar_fase_2`: o caminho do passo 1 (portão do
   retrato + ficha de leitura, só o escritor espera): refaz o `stat` de tudo e
   recopia o que [`precisa_recopiar`](../crates/phxsql-store/src/backup.rs)
@@ -2421,8 +2423,8 @@ inteira. São duas fases, decididas num lugar só:
   `Tocada` do 207, somada por tabela no registro do retrato do
   `congelamento.rs`, para relógio que recua); **ou** o `mtime` da fase 1 estava
   a menos de 2 s do próprio `stat` (o «racily clean» do git). Copia o que
-  nasceu, tira do destino o que sumiu, e o `concluir` de depois só sincroniza o
-  que a fase 2 reescreveu.
+  nasceu, tira do destino o que sumiu, e o `concluir` de depois sincroniza
+  **todas** as cópias, fora da trava, e só então grava o manifesto (524 C2).
 
 O retrato é o instante da fase 2 (`retrato_ms`, no manifesto e na resposta),
 como o `BLOCK_COMMIT` do `mariabackup`; o caso que se aplica a nós é o do

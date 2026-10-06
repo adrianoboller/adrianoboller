@@ -780,7 +780,7 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `ficha-do-fio-pulada-no-panico` | a ficha da thread na telemetria fica «viva» para sempre quando o corpo entra em pânico | 1 | ✅ provada |
 | `disco-erro-de-es-sem-aviso` | o erro de E/S respondido ao cliente não avisa ninguém | 3 | ✅ provada |
 | `disco-sonda-cega-ao-erro` | a sonda canário diz «passou» num diretório que o sistema operacional recusa | 1 | ✅ provada |
-| `disco-silencio-furado` | todo erro de E/S manda um aviso: cem mil linhas, cem mil e-mails | 2 | ✅ provada |
+| `disco-silencio-furado` | todo erro de E/S manda um aviso: cem mil linhas, cem mil e-mails | 4 | ✅ provada |
 | `disco-config-nao-lida` | `alertas.disco.checar_segundos` está no arquivo e ninguém o lê | 2 | ✅ provada |
 | `recuperacao-deixa-a-marca-orfa` | a recuperação completa (ou descarta) a marca `.tx` e a deixa no disco | 1 | ✅ provada |
 | `recuperacao-nao-completa-o-commit` | a recuperação conta e apaga a marca válida sem completar o commit | 1 | ✅ provada |
@@ -965,13 +965,95 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `pagina-despejada-que-o-disco-recusou-some` | a página suja despejada do cache que o disco recusou some: nem no arquivo, nem na RAM | 1 | ✅ provada |
 | `servidor-segue-de-pe-depois-do-fsync-recusado` | o servidor segue de pé depois de um `fsync` recusado, gravando num disco que já se sabe que mente | 1 | ✅ provada |
 | `completar-engole-a-tabela-que-nao-foi-ao-disco` | a recuperação engole o erro do `sincronizar` e apaga a marca de um commit cujo dado não foi ao disco | 1 | ✅ provada |
+| `fk-antes-do-default` | a chave estrangeira confere a linha crua, e o DEFAULT sem mãe grava a filha órfã | 5 | ✅ provada |
+| `fk-antes-do-default-pelo-servidor` | o DEFAULT e a calculada sem mãe gravam a órfã pelo servidor, fora e dentro da transação | 2 | ✅ provada |
+| `cascata-sobre-calculada-na-declaracao` | a chave sobre coluna calculada é declarada em cascata, e a filha fica órfã quando a mãe troca de chave | 1 | ✅ provada |
+| `cascata-confere-a-filha-crua` | a cascata confere a filha crua, e a mãe fica gravada quando a linha final da filha recusa | 2 | ✅ provada |
+| `literal-no-erro-do-sql` | o erro de sintaxe do SQL cita o literal do pedido («e veio '123.456.789-00'») | 1 | ✅ provada |
+| `literal-no-erro-da-expressao` | o erro da expressão cita o literal do pedido na janela, no «sobrou» e no «esperava» | 2 | ✅ provada |
+| `texto-sem-fechar-no-acessos-log` | o `texto sem fechar` da expressão cita o pedido inteiro, e o `acessos.log` grava o dado em claro | 1 | ✅ provada |
+| `senha-sobra-no-erro-do-cadastro` | a recusa do `CREATE USER` cita o que sobrou — e numa senha de aspas não dobradas o que sobra é um pedaço dela | 1 | ✅ provada |
+| `senha-fora-de-aspas-simples-no-perfil` | o `sem_a_senha` tapa só o literal de aspas simples: `PASSWORD "x"`, `PASSWORD x` e `PASSWORD 123` saem em claro no `perfil.txt` | 1 | ✅ provada |
+| `aspas-duplas-no-erro-de-sintaxe` | `VALUES (2, "123.456.789-00")`, o texto do jeito do MySQL, volta citado no erro e vai ao `acessos.log` | 1 | ✅ provada |
+| `duracao-citada-sem-teto` | a recusa da duração cita o texto recebido inteiro: `BEGIN TRANSACTION TIMEOUT '<1 MiB>'` soma um megabyte ao `acessos.log` | 1 | ✅ provada |
+| `portao-da-senha-por-espaco` | o portão da redação da senha lê palavras separadas por espaço: `/* odbc */ CREATE USER`, `ALTER ROLE … PASSWORD` e `SET PASSWORD FOR` levam a senha em claro ao `perfil.txt` e ao `jobs.json` | 1 | ✅ provada |
+| `senha-depois-de-identified` | a redação só olha `PASSWORD`: `IDENTIFIED BY "x"`, a forma do MySQL e do MariaDB, sai em claro no perfil | 1 | ✅ provada |
+| `parametros-irmaos-da-senha` | o Profiler tapa o `?` do `ALTER USER c PASSWORD ?` e grava o `parametros` irmão com a senha em claro | 1 | ✅ provada |
+| `portao-da-senha-pelos-simbolos` | o portão da redação lê símbolos e o perfil e o job guardam bytes: a linha comentada, o `/*!…*/` e o literal que carrega a senha passam em claro | 1 | ✅ provada |
+| `palavra-que-contem-a-senha` | `MASTER_PASSWORD=x` e `SOURCE_PASSWORD="x"`: só a palavra exata abre a redação, e a senha sai em claro no perfil | 2 | ✅ provada |
+| `eco-do-sql-com-a-senha` | o roteiro com a senha numa linha comentada roda, e a resposta da op `sql` ecoa o texto inteiro no campo `sql` | 1 | ✅ provada |
+| `jobs-json-antigo-derruba-o-arranque` | a guarda de credencial roda tambem ao LER o `jobs.json`, e o job legitimo salvo antes dela derruba o arranque | 1 | ✅ provada |
+| `job-recusado-roda-mesmo-assim` | o job que voltou do disco com credencial sobe e RODA -- pela agenda, pela tela, ou religado | 1 | ✅ provada |
+| `ficha-do-job-devolve-a-senha-do-disco` | o job aceito no arranque com a senha no pedido a devolve na ficha da op `jobs` | 1 | ✅ provada |
+| `pbkdf2-normaliza-a-chave-a-cada-iteracao` | PBKDF2 resume a senha longa a cada iteração: o custo do login cresce com o tamanho dela | 1 | ✅ provada |
+| `conferir-sem-o-teto-da-senha` | o `conferir` roda o PBKDF2 com senha acima do teto | 1 | ✅ provada |
+| `fachada-do-login-com-mil-iteracoes` | o login de quem não existe paga 2.000 iterações contra as 210.000 de quem existe | 1 | ✅ provada |
+| `inativo-pula-o-pbkdf2` | o login de quem está inativo responde sem PBKDF2 nenhum | 1 | ✅ provada |
+| `prova-de-quem-nao-existe-sai-sem-conferir` | o login por desafio-resposta de quem não existe, ou está inativo, sai sem conferir a prova | 1 | ✅ provada |
+| `login-sem-o-teto-da-senha` | o login recebe senha acima do teto e recusa como «credencial inválida» | 1 | ✅ provada |
+| `criar-usuario-sem-o-teto-da-senha` | `usuario_criar`, `usuario_alterar` e `CREATE USER` derivam o hash de senha acima do teto | 1 | ✅ provada |
+| `pulso-que-morre-fica-marcado` | a thread de pulso que morre em panico nao se desmarca do `pulsando` | 1 | ✅ provada |
+| `pulso-em-panico-sem-recuo` | o pulso que entra em panico a cada volta vira laco de panico | 1 | ✅ provada |
+| `relogio-de-jobs-morto-diz-que-esta-no-ar` | o relogio de jobs que morre continua marcado como no ar | 1 | ✅ provada |
+| `amostrador-morto-diz-que-esta-no-ar` | o amostrador que morre continua marcado como no ar no retrato | 1 | ✅ provada |
+| `job-corre-na-thread-de-servico` | o job em panico com a trava na mao derruba o servidor | 1 | ✅ provada |
+| `backup-corre-na-thread-de-servico` | o backup agendado em panico com a trava na mao derruba o servidor | 1 | ✅ provada |
+| `job-que-derrubou-roda-de-novo-no-arranque` | a corrida de job que derrubou o processo roda de novo no arranque | 1 | ✅ provada |
+| `backup-que-derrubou-roda-de-novo-no-arranque` | o backup que derrubou o processo roda de novo no arranque | 1 | ✅ provada |
+| `lapide-do-futuro-empurra-o-job` | a lapide de job com hora no futuro vira a ultima corrida sem teto | 1 | ✅ provada |
+| `lapide-do-futuro-empurra-o-backup` | a lapide do backup com hora no futuro vira a ultima corrida sem teto | 1 | ✅ provada |
+| `corrida-interrompida-nao-avisa` | a corrida de job fechada no arranque como FALHOU nao avisa por e-mail | 1 | ✅ provada |
+| `backup-agendado-falha-calado` | o backup agendado que falha so escreve no erro padrao | 1 | ✅ provada |
+| `dblink-ilegivel-derruba-o-motor` | o cadastro do DbLink ilegivel derruba o motor inteiro | 1 | ✅ provada |
+| `dblink-que-nao-se-le-abre-vazio` | o dblink.json que existe e nao se le vira cadastro vazio | 1 | ✅ provada |
+| `jobs-ilegivel-derruba-o-motor` | o cadastro de jobs ilegivel derruba o motor inteiro | 1 | ✅ provada |
+| `core-leva-a-senha-do-cofre` | o core do abort leva a senha do cofre para o disco | 1 | ✅ provada |
+| `catalogo-so-declara-token-nao-token-remoto` | o catálogo de `replicacao_testar` não declara `token_remoto`, o campo que a sonda lê primeiro | 1 | ✅ provada |
 | `esquema-vaza-o-histograma-da-particao` | `op_esquema` publica `baldes[].registros` mesmo com a coluna da partição negada ao usuário | 2 | ✅ provada |
+| `dblink-mysql-sem-teto-de-colunas` | o DbLink MySQL(R) reserva `Vec::with_capacity` do número de colunas que o PAR manda, sem teto | 1 | ✅ provada |
+| `dblink-mysql-sem-teto-do-quadro-acumulado` | `ler_quadro` do DbLink MySQL(R) junta continuações de 16 MB sem teto sobre o total | 1 | ✅ provada |
+| `smtp-sem-teto-de-linhas-de-continuacao` | o cliente SMTP aceita QUALQUER número de linhas de continuação (`250-...`), sem teto | 1 | ✅ provada |
+| `por-login-para-no-primeiro-que-casa` | `Cadastro::por_login` é um `find`: quem não existe custa muito mais que o primeiro da lista | 1 | ✅ provada |
+| `fechar-baixa-o-byte-52-sem-fsync` | o `fechar` grava o byte 52 em 0 sem `fsync`: o núcleo guarda o cabeçalho limpo e perde as páginas | 3 | ✅ provada |
+| `atestado-sobrevive-a-escrita` | o atestado do processo sobrevive à escrita que não terminou: a reabertura confia na árvore de antes dela | 1 | ✅ provada |
+| `atestado-pelo-caminho-e-nao-pelo-arquivo` | o atestado do processo vale para o caminho, e não para o arquivo: outro `.ndx` no mesmo lugar abre confiado | 1 | ✅ provada |
+| `atestado-de-antes-da-recusa-vale-depois` | o atestado que o `fechar` deu ANTES de um `fsync` recusado no diretório continua valendo depois dele | 1 | ✅ provada |
+| `fts-fora-do-fecho-da-janela` | o `.fts` fica fora do fecho da janela: nenhum `fsync` o alcança, e o byte 52 dele só desce sem `fsync` | 1 | ✅ provada |
+| `reindexar-deixa-o-punho-velho-gravar` | o `reindexar` deixa o punho velho gravar páginas e cabeçalho por cima do `.ndx` recém-truncado | 1 | ✅ provada |
 | `restauracao-nao-reconstroi-o-marcado` | a restauração de backup devolve a tabela com o `.ndx` marcado, e ela recusa toda escrita até alguém mandar `reindexar` | 1 | ✅ provada |
+| `arranque-nao-reconstroi-o-marcado` | o arranque não reconstrói o `.ndx` que o processo anterior só fechou: a tabela sobe recusando até alguém mandar `reindexar` | 1 | ✅ provada |
+| `atestado-fica-no-caminho-velho` | renomear, duplicar ou colar uma tabela escrita desde o último fecho deixa o destino recusando tudo, sem queda nenhuma | 1 | ✅ provada |
+| `renomear-esquece-o-atestado` | o renomear move os arquivos e deixa o atestado no nome velho: a tabela renomeada recusa tudo | 1 | ✅ provada |
+| `fechar-do-embutido-nao-sincroniza` | o embutido que fecha a tabela sem `phx_sincronizar` não a abre no processo seguinte, e a ABI não tem como reconstruí-la | 1 | ❌ **não pegou** |
+| `phx-reindexar-nao-reindexa` | o `phx_reindexar` responde Ok sem reconstruir: o índice que a queda marcou continua recusando pela ABI | 1 | ✅ provada |
+| `auto-referencia-pulada-no-excluir` | excluir o chefe que tem subordinado na MESMA tabela responde Ok, e o subordinado fica órfão | 1 | ✅ provada |
+| `auto-referencia-pulada-no-excluir-pelo-servidor` | o chefe com subordinado sai pelo servidor, e na transação `[inserir 11->10, excluir 10]` confirma | 2 | ✅ provada |
+| `auto-laco-conta-como-filha` | a linha que aponta só para si mesma é contada como filha dela, e nunca mais sai | 1 | ✅ provada |
+| `renomear-pula-a-auto-referencia` | renomear a tabela que aponta para si mesma deixa a chave no nome velho, e o chefe com subordinado passa a sair | 1 | ✅ provada |
+| `marca-do-disco-no-empilhar` | dentro da transação, alterar a linha excluída suave a ressuscita; fora, ela continua excluída | 1 | ✅ provada |
+| `upsert-solto-ressuscita-a-excluida` | o upsert fora de transação ressuscita a linha excluída suave; o mesmo upsert dentro a mantém excluída | 1 | ✅ provada |
+| `mescla-do-upsert-sobre-o-disco` | o upsert com SET dentro da transação mescla sobre a linha do disco, e a excluída na lista ressuscita | 1 | ✅ provada |
+| `elo-do-empilhar-pelo-disco` | o elo que o `empilhar` planeja pelo disco sobrescreve o que a própria lista já escreveu na filha | 1 | ❌ **não pegou** |
+| `tabela-que-some-segura-as-marcas` | a tabela escrita na janela e excluida ou renomeada fica nas sujas pelo nome velho e segura todas as marcas de COMMIT | 1 | ✅ provada |
+| `renomear-deixa-o-registro-no-nome-velho` | o renomear deixa o registro do que deve ao disco no nome velho, e a divida fica para sempre onde ninguem sincroniza | 1 | ✅ provada |
+| `familia-partida-por-grafia` | a familia do `Volumes` se parte por symlink e `..`, e familia partida perde dado | 1 | ✅ provada |
+| `inserir-sem-janela-do-texto` | o inserir deixa a linha viva fora da busca de texto num panico entre o `.reg` e o `indexar_texto` | 1 | ✅ provada |
+| `atualizar-sem-janela-do-texto` | o atualizar deixa o texto novo fora da busca num panico entre o `.reg` e o `.fts` | 1 | ✅ provada |
+| `excluir-sem-janela-do-texto` | o excluir de vez deixa a linha viva fora da busca num panico entre o texto e o slot | 1 | ✅ provada |
+| `cascata-embutida-sem-pre-conferencia` | a cascata do embutido grava a mae antes de conferir a FK da filha para OUTRA mae | 1 | ✅ provada |
+| `jobs-devolve-a-coluna-negada` | o `jobs` devolve o pedido salvo inteiro, com o valor da coluna negada que alguem digitou na definicao | 1 | ✅ provada |
+| `cabecalho-do-ndx-rasgado-trava-a-tabela` | o cabecalho do `.ndx` rasgado impede a tabela de abrir, e nem o arranque nem o `reindexar` o refazem | 1 | ✅ provada |
+| `diretiva-sigilosa-sai-crua-no-sql` | `ALTER SERVER SET <campo sigiloso> = x` sai cru no perfil: a redacao do SQL so conhecia `PASSWORD` | 1 | ✅ provada |
+| `diretiva-sigilosa-sai-crua-no-json` | o `valor` do `diretiva_gravar` e a chave do `config_gravar` com caminho sigiloso saem crus no perfil | 1 | ✅ provada |
+| `sal-falso-pelo-token` | o sal falso do `desafio` sai do token que todo cliente tem, e quem o tem sabe quem nao existe | 1 | ✅ provada |
+| `scram-sem-teto-de-iteracoes` | o `i=` do SCRAM que o par manda nao tem teto, e cada iteracao e CPU deste processo | 1 | ✅ provada |
+| `recado-de-trava-entrega-o-login` | o recado de trava mostra o login do dono dela a quem esbarrou, que pode nem ter direito na tabela | 1 | ✅ provada |
+| `elo-implicito-sem-trava` | o elo que só o COMMIT descobre escreve sem trava, e a leitura repetível de outra transação lê 5 e depois 6 | 1 | ✅ provada |
 | `backup-sem-fsync` | o backup responde "concluido" sem `fsync` nenhum | 2 | ✅ provada |
 | `backup-fsync-derruba-o-servidor` | o `fsync` recusado no DESTINO DE UM BACKUP derruba o servidor inteiro | 1 | ✅ provada |
 | `backup-recusa-envenena-a-raiz` | a recusa do `fsync` no destino do backup marca a raiz de dados, e todo COMMIT seguinte recusa | 1 | ✅ provada |
 | `backup-recusa-para-o-commit` | pelo soquete: depois de um backup com `fsync` recusado no destino, o `inserir` seguinte erra | 1 | ✅ provada |
-| `backup-destino-que-contem-a-raiz` | o backup em arvore aceita destino igual, acima ou (por link) dentro da raiz de dados | 1 | ✅ provada |
+| `backup-destino-que-contem-a-raiz` | o backup em arvore aceita destino igual, acima ou (por link) dentro da raiz de dados | 1 | 🟰 redundante |
 | `dblink-puxar-le-blob-cru` | O DbLink, ao puxar, lê o BLOB cru como se fosse hexadecimal | 3 | ✅ provada |
 | `dblink-tela-mostra-blob-com-perda` | O DbLink mostra na tela o BLOB remoto pelo leitor com perda | 2 | ✅ provada |
 | `dblink-colacao-bin-vira-hex` | O DbLink mostra em hexadecimal o texto de uma colação _bin | 2 | ✅ provada |
@@ -1148,94 +1230,110 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `calculada-cita-coluna-negada-na-declaracao` | `acrescentar_coluna` com calculada (ou CHECK) que cita coluna negada ao usuario e aceito, e a coluna negada passa a ser lida por outro nome | 1 | ✅ provada |
 | `calculada-derivada-de-negada-se-le` | a calculada que o dono declarou sobre coluna negada sai na leitura de quem nao le a coluna | 1 | ✅ provada |
 | `recusa-da-calculada-marcada-diz-a-linha` | a recusa da calculada sobre coluna marcada nomeia a linha velha, e vira oraculo por rowid sobre o dado pessoal | 1 | ✅ provada |
+| `espera-de-fora-so-le-o-campo-tabela-629` | A espera da tabela que nasce, fora da trava, lia só o campo «tabela» e mandava o juntar esperar com a trava global na mão | 1 | ✅ provada |
+| `espera-de-dentro-sem-prazo-629` | A espera da tabela que nasce DENTRO da trava global não tinha prazo: um fsync lento de pasta parava o servidor inteiro | 1 | ✅ provada |
+| `irma-que-nao-abre-some-do-excluir` | na busca reversa do `excluir`, a irma cujo `.reg` nao abre fica de fora, e a mae com filha ilegivel morre | 1 | ✅ provada |
+| `irma-que-nao-abre-some-do-excluir-tabela` | o `excluir_tabela` (e o renomear) pula a irma que nao abre, e a tabela mae some com a filha ilegivel apontando para ela | 1 | ✅ provada |
+| `irma-que-nao-abre-some-do-ao-alterar` | a cascata do `ao_alterar` pula a irma que nao abre, e a mae muda a chave deixando a filha ilegivel apontando para a chave velha | 1 | ✅ provada |
+| `irma-em-troca-vira-recusa-eterna` | a busca reversa abre a irma sem curar, e a irma em troca interrompida passa a trancar toda exclusao do diretorio | 1 | ✅ provada |
+| `escrita-local-contada-antes-do-portao-3` | a escrita local na replica fiel se conta no portao 2b, antes da permissao e da abertura da tabela: memoria sem teto e diagnostico envenenado | 1 | ✅ provada |
+| `escrita-local-pelo-sql-nao-conta` | o `executar_derivado` chama o direito por coluna sem a conta da escrita local, e o `INSERT` pelo SQL numa replica fiel volta a ser calado | 1 | ✅ provada |
+| `regravar-esquema-troca-volume-a-volume-632` | a regravacao de esquema de uma fase so escreve e troca volume a volume, e a queda no meio do *.novo do volume 2 destroi o volume | 1 | ✅ provada |
+| `troca-decidida-renomeia-novo-incompleto-632` | a abertura termina a troca decidida com um *.novo que nao tem todos os slots do volume velho | 1 | ✅ provada |
+| `ordem-de-digitacao-reaproveita-slot` | o `.reg` reaproveita o slot da linha excluída, e a linha nova entra no meio da ordem de digitação | 1 | ✅ provada |
+| `ao-excluir-aceita-cascata` | a declaração da chave aceita `ao_excluir` em cascata, e o pai com filhos passa a poder morrer | 1 | ✅ provada |
+| `chave-declarada-nasce-sem-conferir` | a chave declarada sem `verificar` volta a nascer sem conferir, e o órfão entra calado | 1 | ✅ provada |
+| `chave-sem-saida-para-nao-conferir` | o `verificar: false` escrito deixa de valer, e quem escolheu não conferir perde a opção junto com o padrão | 1 | ✅ provada |
+| `carimbo-por-tabela-empata-pai-e-filha` | o `rowstamp` sai de um contador por tabela, e o pai e a filha nascem com o mesmo carimbo | 1 | ✅ provada |
+| `versao-imposta-ao-cliente-antigo` | a guarda de conflito passa a exigir `versao`, e todo cliente antigo para de gravar | 1 | ✅ provada |
+| `quinta-operacao-na-ficha-compartilhada` | o `ler` entra na pista de leitura sem a varredura de escrita escondida, e a catraca da ficha compartilhada tem de acusar | 1 | ✅ provada |
+| `operacao-cancelavel-fora-da-lista` | uma operação com ponto de cancelamento fica fora de `OPS_CANCELAVEIS`, e a tela mostra o botão desabilitado | 1 | ✅ provada |
+| `indice-da-chave-imposto-a-quem-nao-confere` | a chave com `verificar: false` ganha índice na filha, e a guarda nova passa a ser imposta | 1 | ✅ provada |
+| `retrato-da-fase-a-nao-ve-volume-que-nasce-427` | o retrato da FASE A fotografa so os volumes que existem, e o volume que nasce no meio dela fica na geometria velha | 2 | ✅ provada |
+| `retrato-da-fase-a-sem-selo-634` | o retrato da FASE A guarda o `mtime` real, e a atualizacao no mesmo tique passa e e desfeita pela troca | 3 | ✅ provada |
+| `selo-do-retrato-nao-devolve-o-mtime-634` | a troca abortada deixa o volume com o `mtime` de 1980 | 1 | ✅ provada |
+| `segundo-gravador-sem-trava-de-instancia-635` | dois processos abrem a mesma pasta para gravar e um sobrescreve os contadores do outro | 3 | ✅ provada |
+| `raiz-ociosa-solta-a-trava-de-instancia-635` | o servidor ocioso, entre dois pedidos, deixa a CLI gravar a pasta que ele serve | 1 | ✅ provada |
+| `quorum-espera-sem-degradar` | o commit com quórum esperando o prazo inteiro a cada gravação, sem o modo degradado: uma réplica caída para o servidor 10 s por commit | 1 | ✅ provada |
+| `quorum-espera-fora-da-trava` | a espera do quórum depois de soltar a trava de dados: a linha fica visível antes de qualquer réplica ter confirmado | 1 | ✅ provada |
+| `quorum-ack-pede-a-trava` | o `replicar_aguardar` tomando a trava de dados do master: a réplica espera o commit que espera por ela, e todo commit estoura o prazo | 1 | ✅ provada |
+| `quorum-ack-antes-do-fsync` | a réplica confirmando o lote do quórum sem levá-lo ao disco: o «ok» vira «recebi», a garantia que o Cassandra chama de QUORUM | 1 | ✅ provada |
+| `quorum-de-epoca-velha` | a réplica aceitando lote de master com época menor que a que ela conhece: o master rebaixado continuaria obtendo confirmação | 1 | ✅ provada |
+| `quorum-sem-fsync-local` | o master esperando o quórum sem ter sincronizado a própria gravação: volta como master atrás das réplicas que confirmaram | 1 | ✅ provada |
+| `quorum-escritor-sem-espera` | a anotação das tabelas tocadas fora do ponto único onde o diário cresce: a família de escrita esquecida responde «gravei» sem quórum | 2 | ✅ provada |
+| `quorum-conta-o-master` | o `quorum_minimo` contando o master: `quorum_minimo:2` com três nós fecharia com uma réplica só | 1 | ✅ provada |
+| `quorum-espera-quem-nao-existe` | o commit com quórum esperando o prazo inteiro sem nenhuma réplica no canal: o arranque do master para o servidor 10 s por nada | 1 | ✅ provada |
+| `quorum-volta-sem-recuo` | o degradado voltando ao síncrono no primeiro ack, sem o recuo: uma réplica que pisca para o servidor inteiro a cada pulso | 1 | ✅ provada |
+| `faixa-imprecisa-no-int8` | número cru entre 2⁵³ e o teto do `Int8`/`UInt8` era gravado como o VIZINHO, calado — `9007199254740993` virava `9007199254740992` | 1 | ✅ provada |
+| `sequencia-nomeada-proximo-sem-durar` | o `proximo` da sequência nomeada devolvia o número ANTES de durá-lo: reabrir repetia o que já tinha saído | 2 | ✅ provada |
+| `tabela-com-nome-de-sequencia` | `criar_tabela` aceitava o nome de uma sequência nomeada que já existe: dois objetos com um nome só | 1 | ✅ provada |
+| `backup-fase-1-sob-a-trava` | A fase 1 do backup (a cópia inteira) sob a ficha de leitura: a escrita esperava a cópia inteira, como no passo 1 | 1 | ✅ provada |
+| `backup-sem-fase-2` | O backup em duas passadas SEM a fase 2: a cópia sai da fase 1, e a escrita feita durante ela não está no backup -- e o `conferir` aprova o retrato errado | 1 | ✅ provada |
+| `backup-fase-2-nao-acerta` | A fase 2 do armazém devolvendo um acerto vazio sem conferir nada: o alterado, o novo e o sumido entre as fases ficam como estavam na fase 1 | 4 | ✅ provada |
+| `backup-fase-2-sem-racy` | A fase 2 decidindo só pelo `stat`: o arquivo escrito no mesmo tique do relógio (mtime e tamanho iguais) não é recopiado | 1 | ✅ provada |
+| `backup-fase-2-sem-eventos` | A fase 2 sem a rede dos eventos: a tabela que andou com o relógio recuado (stat igual) não é recopiada | 2 | ✅ provada |
+| `manutencao-durante-o-retrato` | `congelar` sem perguntar pelo retrato: a reescrita inteira de uma tabela entra no meio da fase 1 do backup | 1 | ✅ provada |
+| `zip-pasta-nova-sem-fsync-da-mae` | o backup em ZIP responde «concluido» sem o `fsync` da mae de cada pasta que criou | 1 | ✅ provada |
+| `arvore-pasta-nova-sem-fsync-da-mae` | o backup em arvore responde «concluido» sem o `fsync` da mae de cada pasta que criou | 1 | ✅ provada |
+| `odbc-dml-anuncia-colunas-do-esquema` | um DELETE pelo driver ODBC anunciava as colunas do esquema da tabela citada | 2 | ✅ provada |
+| `odbc-colattribute-recusa-unsigned` | `SQLColAttribute(SQL_DESC_UNSIGNED)` recusava com HYC00 e derrubava o primeiro SELECT do pyodbc | 1 | ✅ provada |
+| `odbc-getfunctions-esconde-o-par-de-diagnostico` | o driver ODBC deixava de anunciar `SQLGetDiagField` na lista de funcoes | 1 | ✅ provada |
+| `sql-call-nao-resolve-interrogacao-do-odbc` | o `CALL` da op `sql` recusava o `?` do ODBC, e o parametro de SAIDA nunca funcionou ponta a ponta | 1 | ✅ provada |
+| `servidor-call-nao-passa-parametros-a-rotina` | a op `sql` chamava a rotina SEM os `parametros` do pedido | 1 | ✅ provada |
+| `zip-sem-a-guarda-de-espaco-da-arvore-temporaria` | o zip em duas passadas copia a arvore inteira para um disco que nao a comporta e o backup MORRE em vez de cair na passada unica | 1 | ✅ provada |
+| `contador-do-source-nao-adotado` | a replica abria a tabela sem adotar o contador da `Sequence` do source: promovida atrasada, reemitia o numero que o master ja tinha entregue | 1 | ✅ provada |
+| `posicao-sem-o-contador-da-sequencia` | o `posicao` do source nao dizia onde a `Sequence` estava: a replica nao tinha de onde adotar o contador | 1 | ✅ provada |
+| `lote-do-quorum-sem-o-contador-da-sequencia` | o lote do quorum nao levava o contador da `Sequence`: o caminho irmao do pull esquecia o que o pull sabe | 1 | ✅ provada |
+| `adocao-do-contador-nao-anda` | `adotar_sequencia_do_source` devolvia sem mover o contador: a adocao existia no fio e nao no disco | 2 | ✅ provada |
+| `migracao-da-cifra-sela-com-o-material-velho` | Criptografar selava os slots com o material VELHO (em claro) e a tabela saia 'cifrada' com o segredo legivel | 1 | ✅ provada |
+| `migracao-da-cifra-reaproveita-o-sal` | cada Criptografar tinha de sortear sal NOVO; reaproveitar o anterior repete chave e nonce | 1 | ✅ provada |
+| `migracao-da-cifra-ressuscita-o-slot-livre` | a migracao reescrevia o slot excluido como ATIVO: a linha apagada voltava | 1 | ✅ provada |
+| `migracao-da-cifra-sem-conferir-o-retrato` | a FASE B da migracao renomeava o retrato por cima de uma escrita confirmada no meio | 1 | ✅ provada |
+| `migracao-da-cifra-deixa-o-memo-marcado-em-claro` | Criptografar aceitava tabela com coluna Memo/Bin marcada e deixava o conteudo legivel no .memo/.bin | 1 | ✅ provada |
+| `migracao-da-cifra-sem-nada-a-cifrar` | Criptografar de tabela sem coluna inline marcada reescrevia a tabela para a v5 sem proteger nada | 1 | ✅ provada |
+| `geometria-do-volume-sem-a-versao` | a decisao da troca sem a versao na geometria deixa o *.novo da migracao indistinguivel do volume velho | 1 | ✅ provada |
+| `migracao-da-cifra-pelo-sql-sem-portao` | ALTER TABLE ... ENCRYPT pelo SQL passava pela permissao da op `sql` (ler) e cifrava a tabela | 1 | ✅ provada |
+| `migracao-da-cifra-sem-pergunta-de-transacao` | a migracao congelava a tabela debaixo de uma transacao viva e o COMMIT dela saia pela metade | 1 | ✅ provada |
+| `escrita-local-contada-depois-da-escrita-630` | a escrita local na replica se conta DEPOIS de gravar: na janela entre uma coisa e outra a rodada da replica nomeia as duas causas e a recusa fica guardada por posicao | 1 | ✅ provada |
+| `gancho-nunca-chamado` | o carteiro da saúde não chama o gancho do operador | 3 | ✅ provada |
+| `gancho-sem-portao-ligado` | o gancho executa mesmo com `alertas.gancho.ligado` falso | 1 | ✅ provada |
+| `gancho-por-shell` | o comando do gancho passa por `sh -c`: `;` e `$()` viram execução | 1 | ✅ provada |
+| `gancho-ambiente-herdado` | o filho do gancho herda o ambiente do servidor | 2 | ✅ provada |
+| `gancho-sem-kill-no-prazo` | o gancho que passa de `timeout_s` continua vivo | 3 | ✅ provada |
+| `gancho-zumbi` | o gancho morto por prazo vira zumbi (kill sem wait) | 2 | ✅ provada |
+| `gancho-saida-do-filho-vaza` | o stdout/stderr do gancho cai no stderr do servidor | 1 | ✅ provada |
+| `gancho-editavel-pela-api` | um campo de `alertas.gancho` entra no CAMPOS_EDITAVEIS | 2 | ✅ provada |
+| `gancho-nao-valida-no-arranque` | `comando[0]` relativo, inexistente ou não executável passa no arranque | 1 | ✅ provada |
+| `gancho-config-nao-lida` | `alertas.gancho.timeout_s` está no arquivo e ninguém o lê | 1 | ✅ provada |
+| `firewall-sob-o-mutex-da-lista-negra` | o comando de firewall roda com a lista negra na mao (pedido 638) | 1 | ✅ provada |
+| `firewall-output-sem-prazo-e-com-stderr` | o firewall volta a `Command::output()`: sem prazo, ambiente herdado, stderr no erro (pedido 638) | 1 | ✅ provada |
+| `gancho-reserva-sem-raii` | a reserva da execucao unica do gancho nao e solta por `Drop` (pedido 640) | 1 | ✅ provada |
+| `gancho-programa-gravavel-pelo-grupo` | o programa do gancho 0775 (gravavel pelo grupo) passa na conferencia (pedido 639) | 1 | ✅ provada |
+| `gancho-programa-em-diretorio-gravavel` | o programa do gancho em diretorio 0777 sem sticky passa na conferencia (pedido 639) | 1 | ✅ provada |
+| `gancho-programa-por-link-simbolico` | o link do programa do gancho nao e seguido: julga-se o modo do proprio link (pedido 639) | 1 | ✅ provada |
+| `gancho-programa-de-outro-dono` | o programa do gancho pertence a outro usuario e passa (pedido 639) | 1 | ✅ provada |
+| `gancho-diretorio-de-outro-dono` | o diretorio do programa do gancho pertence a outro usuario e passa (pedido 639) | 1 | ✅ provada |
+| `gancho-linha-so-troca-crlf` | a linha do SMS e do stdin do gancho so troca CR e LF (pedido 643) | 1 | ✅ provada |
+| `json-texto-sem-escapar-a-aspa` | o escritor de JSON deixa a aspa do valor sem escapar: texto vira campo (pedido 249, B1a) | 1 | ✅ provada |
+| `io-do-caminho-pedido-avisa-o-disco` | o Io de um caminho digitado pelo usuario dispara o aviso de saude do disco (pedido 641) | 1 | ✅ provada |
+| `profiler-caminho-pedido-como-io` | o `arquivo` do profiler que nao abre volta como erro de E/S (pedido 641) | 1 | ✅ provada |
+| `encerrar-sessao-adivinha-web-pela-forma` | o encerrar_sessao decide web x conexao pela forma do id e ignora o `tipo` do pedido (pedido 644) | 1 | ✅ provada |
+| `ping-crava-a-porta-5000` | o ping devolve a porta 5000 de fabrica em vez da que o servidor escuta (pedido 645) | 1 | ✅ provada |
+| `conferidor-nao-ve-porta-cravada` | o conferidor de numero cravado em texto de tela deixa de acusar «porta NNNN» (pedido 645) | 1 | ✅ provada |
+| `backup-fsync-do-grosso-na-fase-1` | O `fsync` do grosso da cópia de volta à fase 1 do backup, com o escritor andando (pedido 646) | 1 | ✅ provada |
+| `backup-manifesto-nasce-na-fase-2` | O manifesto do backup gravado já na fase 2, antes do `concluir`: uma queda ali deixa um destino que o `op_backups` lista e o `restaurar` aceita (pedido 646) | 1 | ✅ provada |
+| `backup-concluir-manifesto-antes-do-fsync` | O `concluir` grava o manifesto ANTES do `fsync` das cópias das duas fases (pedido 646, condição C2 do 524) | 1 | ✅ provada |
+| `trava-de-instancia-segue-link` | A trava de instância aberta com `create(true).write(true)`: segue o `.phxsql.trava` plantado como link e TRUNCA o alvo (pedido 648) | 3 | ✅ provada |
+| `trava-de-instancia-aceita-link-fisico` | O motor do arquivo do banco deixa de contar os nomes do inode: a trava escreve o pid num `.phxsql.trava` que é link físico de outro arquivo (pedido 648) | 1 | ✅ provada |
+| `zip-retrato-part-aproveitado` | A árvore temporária do zip (`.retrato.part`) aproveitada se já existe: o link plantado leva a cópia para fora e o intruso entra no zip (pedido 651) | 2 | ✅ provada |
+| `restaurar-aceita-trava-no-manifesto` | A restauração aceita um manifesto que lista `.phxsql.trava`, nome que o backup nunca grava (pedido 651) | 1 | ✅ provada |
 | `alter-com-regra-sem-aviso` | `acrescentar_coluna` com `check` ou `calculada` numa tabela com linha é aceito SEM AVISO, e a linha velha fica fora da regra | — | 🪦 aposentada (01/10/2026) |
 | `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | — | 🪦 aposentada (18/09/2026) |
 
-**508 das 681 guardas do catálogo: 2 aposentadas, 502 provadas, 4 redundantes** — 15448 s de mutação, medido de 2026-09-16 15:25 a 2026-10-01 19:19, em 6 datas (2026-09-16: 112, 2026-09-17: 8, 2026-09-18: 3, 2026-09-24: 177, 2026-09-30: 37, 2026-10-01: 171).
+**687 das 778 guardas do catálogo: 2 aposentadas, 2 não pegaram, 678 provadas, 5 redundantes** — 24339 s de mutação, medido de 2026-09-16 15:25 a 2026-10-06 21:30, em 8 datas (2026-09-16: 109, 2026-09-17: 8, 2026-09-18: 3, 2026-09-24: 176, 2026-09-30: 34, 2026-10-01: 192, 2026-10-02: 157, 2026-10-06: 8).
 
-> **Esta rodada NÃO julgou 175 das 681 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 175 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 93 das 778 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 93 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
-- `fk-antes-do-default` — a chave estrangeira confere a linha crua, e o DEFAULT sem mãe grava a filha órfã
-- `fk-antes-do-default-pelo-servidor` — o DEFAULT e a calculada sem mãe gravam a órfã pelo servidor, fora e dentro da transação
-- `cascata-sobre-calculada-na-declaracao` — a chave sobre coluna calculada é declarada em cascata, e a filha fica órfã quando a mãe troca de chave
-- `cascata-confere-a-filha-crua` — a cascata confere a filha crua, e a mãe fica gravada quando a linha final da filha recusa
-- `literal-no-erro-do-sql` — o erro de sintaxe do SQL cita o literal do pedido («e veio '123.456.789-00'»)
-- `literal-no-erro-da-expressao` — o erro da expressão cita o literal do pedido na janela, no «sobrou» e no «esperava»
-- `texto-sem-fechar-no-acessos-log` — o `texto sem fechar` da expressão cita o pedido inteiro, e o `acessos.log` grava o dado em claro
-- `senha-sobra-no-erro-do-cadastro` — a recusa do `CREATE USER` cita o que sobrou — e numa senha de aspas não dobradas o que sobra é um pedaço dela
-- `senha-fora-de-aspas-simples-no-perfil` — o `sem_a_senha` tapa só o literal de aspas simples: `PASSWORD "x"`, `PASSWORD x` e `PASSWORD 123` saem em claro no `perfil.txt`
-- `aspas-duplas-no-erro-de-sintaxe` — `VALUES (2, "123.456.789-00")`, o texto do jeito do MySQL, volta citado no erro e vai ao `acessos.log`
-- `duracao-citada-sem-teto` — a recusa da duração cita o texto recebido inteiro: `BEGIN TRANSACTION TIMEOUT '<1 MiB>'` soma um megabyte ao `acessos.log`
-- `portao-da-senha-por-espaco` — o portão da redação da senha lê palavras separadas por espaço: `/* odbc */ CREATE USER`, `ALTER ROLE … PASSWORD` e `SET PASSWORD FOR` levam a senha em claro ao `perfil.txt` e ao `jobs.json`
-- `senha-depois-de-identified` — a redação só olha `PASSWORD`: `IDENTIFIED BY "x"`, a forma do MySQL e do MariaDB, sai em claro no perfil
-- `parametros-irmaos-da-senha` — o Profiler tapa o `?` do `ALTER USER c PASSWORD ?` e grava o `parametros` irmão com a senha em claro
-- `portao-da-senha-pelos-simbolos` — o portão da redação lê símbolos e o perfil e o job guardam bytes: a linha comentada, o `/*!…*/` e o literal que carrega a senha passam em claro
-- `palavra-que-contem-a-senha` — `MASTER_PASSWORD=x` e `SOURCE_PASSWORD="x"`: só a palavra exata abre a redação, e a senha sai em claro no perfil
-- `eco-do-sql-com-a-senha` — o roteiro com a senha numa linha comentada roda, e a resposta da op `sql` ecoa o texto inteiro no campo `sql`
-- `jobs-json-antigo-derruba-o-arranque` — a guarda de credencial roda tambem ao LER o `jobs.json`, e o job legitimo salvo antes dela derruba o arranque
-- `job-recusado-roda-mesmo-assim` — o job que voltou do disco com credencial sobe e RODA -- pela agenda, pela tela, ou religado
-- `ficha-do-job-devolve-a-senha-do-disco` — o job aceito no arranque com a senha no pedido a devolve na ficha da op `jobs`
-- `pbkdf2-normaliza-a-chave-a-cada-iteracao` — PBKDF2 resume a senha longa a cada iteração: o custo do login cresce com o tamanho dela
-- `conferir-sem-o-teto-da-senha` — o `conferir` roda o PBKDF2 com senha acima do teto
-- `fachada-do-login-com-mil-iteracoes` — o login de quem não existe paga 2.000 iterações contra as 210.000 de quem existe
-- `inativo-pula-o-pbkdf2` — o login de quem está inativo responde sem PBKDF2 nenhum
-- `prova-de-quem-nao-existe-sai-sem-conferir` — o login por desafio-resposta de quem não existe, ou está inativo, sai sem conferir a prova
-- `login-sem-o-teto-da-senha` — o login recebe senha acima do teto e recusa como «credencial inválida»
-- `criar-usuario-sem-o-teto-da-senha` — `usuario_criar`, `usuario_alterar` e `CREATE USER` derivam o hash de senha acima do teto
-- `pulso-que-morre-fica-marcado` — a thread de pulso que morre em panico nao se desmarca do `pulsando`
-- `pulso-em-panico-sem-recuo` — o pulso que entra em panico a cada volta vira laco de panico
-- `relogio-de-jobs-morto-diz-que-esta-no-ar` — o relogio de jobs que morre continua marcado como no ar
-- `amostrador-morto-diz-que-esta-no-ar` — o amostrador que morre continua marcado como no ar no retrato
-- `job-corre-na-thread-de-servico` — o job em panico com a trava na mao derruba o servidor
-- `backup-corre-na-thread-de-servico` — o backup agendado em panico com a trava na mao derruba o servidor
-- `job-que-derrubou-roda-de-novo-no-arranque` — a corrida de job que derrubou o processo roda de novo no arranque
-- `backup-que-derrubou-roda-de-novo-no-arranque` — o backup que derrubou o processo roda de novo no arranque
-- `lapide-do-futuro-empurra-o-job` — a lapide de job com hora no futuro vira a ultima corrida sem teto
-- `lapide-do-futuro-empurra-o-backup` — a lapide do backup com hora no futuro vira a ultima corrida sem teto
-- `corrida-interrompida-nao-avisa` — a corrida de job fechada no arranque como FALHOU nao avisa por e-mail
-- `backup-agendado-falha-calado` — o backup agendado que falha so escreve no erro padrao
-- `dblink-ilegivel-derruba-o-motor` — o cadastro do DbLink ilegivel derruba o motor inteiro
-- `dblink-que-nao-se-le-abre-vazio` — o dblink.json que existe e nao se le vira cadastro vazio
-- `jobs-ilegivel-derruba-o-motor` — o cadastro de jobs ilegivel derruba o motor inteiro
-- `core-leva-a-senha-do-cofre` — o core do abort leva a senha do cofre para o disco
-- `catalogo-so-declara-token-nao-token-remoto` — o catálogo de `replicacao_testar` não declara `token_remoto`, o campo que a sonda lê primeiro
-- `dblink-mysql-sem-teto-de-colunas` — o DbLink MySQL(R) reserva `Vec::with_capacity` do número de colunas que o PAR manda, sem teto
-- `dblink-mysql-sem-teto-do-quadro-acumulado` — `ler_quadro` do DbLink MySQL(R) junta continuações de 16 MB sem teto sobre o total
-- `smtp-sem-teto-de-linhas-de-continuacao` — o cliente SMTP aceita QUALQUER número de linhas de continuação (`250-...`), sem teto
-- `por-login-para-no-primeiro-que-casa` — `Cadastro::por_login` é um `find`: quem não existe custa muito mais que o primeiro da lista
-- `fechar-baixa-o-byte-52-sem-fsync` — o `fechar` grava o byte 52 em 0 sem `fsync`: o núcleo guarda o cabeçalho limpo e perde as páginas
-- `atestado-sobrevive-a-escrita` — o atestado do processo sobrevive à escrita que não terminou: a reabertura confia na árvore de antes dela
-- `atestado-pelo-caminho-e-nao-pelo-arquivo` — o atestado do processo vale para o caminho, e não para o arquivo: outro `.ndx` no mesmo lugar abre confiado
-- `atestado-de-antes-da-recusa-vale-depois` — o atestado que o `fechar` deu ANTES de um `fsync` recusado no diretório continua valendo depois dele
-- `fts-fora-do-fecho-da-janela` — o `.fts` fica fora do fecho da janela: nenhum `fsync` o alcança, e o byte 52 dele só desce sem `fsync`
-- `reindexar-deixa-o-punho-velho-gravar` — o `reindexar` deixa o punho velho gravar páginas e cabeçalho por cima do `.ndx` recém-truncado
-- `arranque-nao-reconstroi-o-marcado` — o arranque não reconstrói o `.ndx` que o processo anterior só fechou: a tabela sobe recusando até alguém mandar `reindexar`
-- `atestado-fica-no-caminho-velho` — renomear, duplicar ou colar uma tabela escrita desde o último fecho deixa o destino recusando tudo, sem queda nenhuma
-- `renomear-esquece-o-atestado` — o renomear move os arquivos e deixa o atestado no nome velho: a tabela renomeada recusa tudo
-- `fechar-do-embutido-nao-sincroniza` — o embutido que fecha a tabela sem `phx_sincronizar` não a abre no processo seguinte, e a ABI não tem como reconstruí-la
-- `phx-reindexar-nao-reindexa` — o `phx_reindexar` responde Ok sem reconstruir: o índice que a queda marcou continua recusando pela ABI
-- `auto-referencia-pulada-no-excluir` — excluir o chefe que tem subordinado na MESMA tabela responde Ok, e o subordinado fica órfão
-- `auto-referencia-pulada-no-excluir-pelo-servidor` — o chefe com subordinado sai pelo servidor, e na transação `[inserir 11->10, excluir 10]` confirma
-- `auto-laco-conta-como-filha` — a linha que aponta só para si mesma é contada como filha dela, e nunca mais sai
-- `renomear-pula-a-auto-referencia` — renomear a tabela que aponta para si mesma deixa a chave no nome velho, e o chefe com subordinado passa a sair
-- `marca-do-disco-no-empilhar` — dentro da transação, alterar a linha excluída suave a ressuscita; fora, ela continua excluída
-- `upsert-solto-ressuscita-a-excluida` — o upsert fora de transação ressuscita a linha excluída suave; o mesmo upsert dentro a mantém excluída
-- `mescla-do-upsert-sobre-o-disco` — o upsert com SET dentro da transação mescla sobre a linha do disco, e a excluída na lista ressuscita
-- `elo-do-empilhar-pelo-disco` — o elo que o `empilhar` planeja pelo disco sobrescreve o que a própria lista já escreveu na filha
-- `tabela-que-some-segura-as-marcas` — a tabela escrita na janela e excluida ou renomeada fica nas sujas pelo nome velho e segura todas as marcas de COMMIT
-- `renomear-deixa-o-registro-no-nome-velho` — o renomear deixa o registro do que deve ao disco no nome velho, e a divida fica para sempre onde ninguem sincroniza
-- `familia-partida-por-grafia` — a familia do `Volumes` se parte por symlink e `..`, e familia partida perde dado
-- `inserir-sem-janela-do-texto` — o inserir deixa a linha viva fora da busca de texto num panico entre o `.reg` e o `indexar_texto`
-- `atualizar-sem-janela-do-texto` — o atualizar deixa o texto novo fora da busca num panico entre o `.reg` e o `.fts`
-- `excluir-sem-janela-do-texto` — o excluir de vez deixa a linha viva fora da busca num panico entre o texto e o slot
-- `cascata-embutida-sem-pre-conferencia` — a cascata do embutido grava a mae antes de conferir a FK da filha para OUTRA mae
-- `jobs-devolve-a-coluna-negada` — o `jobs` devolve o pedido salvo inteiro, com o valor da coluna negada que alguem digitou na definicao
-- `cabecalho-do-ndx-rasgado-trava-a-tabela` — o cabecalho do `.ndx` rasgado impede a tabela de abrir, e nem o arranque nem o `reindexar` o refazem
-- `diretiva-sigilosa-sai-crua-no-sql` — `ALTER SERVER SET <campo sigiloso> = x` sai cru no perfil: a redacao do SQL so conhecia `PASSWORD`
-- `diretiva-sigilosa-sai-crua-no-json` — o `valor` do `diretiva_gravar` e a chave do `config_gravar` com caminho sigiloso saem crus no perfil
-- `sal-falso-pelo-token` — o sal falso do `desafio` sai do token que todo cliente tem, e quem o tem sabe quem nao existe
-- `scram-sem-teto-de-iteracoes` — o `i=` do SCRAM que o par manda nao tem teto, e cada iteracao e CPU deste processo
-- `recado-de-trava-entrega-o-login` — o recado de trava mostra o login do dono dela a quem esbarrou, que pode nem ter direito na tabela
 - `smtp-ecoa-a-credencial` — o erro do SMTP traz o texto do rele, e o rele que ecoa a credencial poe o base64 da senha no log
 - `arranque-reconstroi-calado` — o arranque reconstroi indice marcado e so diz no `stderr`: quem opera nao fica sabendo da queda
 - `reconstruir-fts-sem-janela` — o panico no meio do `reconstruir_fts` grava o indice de texto pela metade marcado limpo
@@ -1243,7 +1341,6 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 - `upsert-solto-sem-trava-da-linha` — o upsert solto altera a linha que uma transacao segura, e o COMMIT dela apaga a escrita
 - `cascata-solta-sem-trava-da-filha` — a cascata solta grava a filha que uma transacao segura, por cima do X dela
 - `cascata-solta-sem-pre-conferencia` — a cascata solta grava a mae antes de conferir a FK da filha para OUTRA mae, e deixa filhas orfas
-- `elo-implicito-sem-trava` — o elo que só o COMMIT descobre escreve sem trava, e a leitura repetível de outra transação lê 5 e depois 6
 - `ciclo-de-commits-sem-desempate` — dois COMMITs cujos elos se barram são mandados repetir para sempre, e ninguém confirma
 - `quem-cede-no-ciclo-segura-as-travas` — a transação que cede no ciclo de COMMITs volta ativa com as travas, e a mais velha continua barrada
 - `aresta-velha-depois-do-savepoint` — a transação barrada volta ao SAVEPOINT e a aresta velha faz a outra ceder num ciclo que não existe mais
@@ -1344,6 +1441,9 @@ As notas que a rodada deixou:
 - `ffi-panico-atravessa` — o binario abortou, que e como esta guarda pega
 - `rest-fecha-sem-escoar` — confirmado: nenhum teste de unidade sente isto, e nao poderia -- o RST e do sistema operacional, e so aparece com um soquete de verdade. Quem pega e o passo 13 de `bancada/rest/provar.py`, e esta entrada existe para dizer, com o numero da rodada, que a cobertura mora la e nao aqui
 - `recuperar-sem-reindexar` — confirmado: nenhum teste de unidade pega este defeito. O indice so fica para tras quando o PROCESSO morre no meio da passada, e isso so acontece de verdade em `bancada/transacoes/provar.py` -- que e por isso que a prova por soquete existe.
+- `fechar-do-embutido-nao-sincroniza` — PASSOU COM O DEFEITO REPOSTO: testes::fechar_sem_sincronizar_e_o_proximo_processo_abre
+- `elo-do-empilhar-pelo-disco` — PASSOU COM O DEFEITO REPOSTO: servidor::testes_transacoes::integridade_na_transacao::o_elo_da_cascata_nao_desfaz_o_que_a_lista_escreveu_na_filha
+- `backup-destino-que-contem-a-raiz` — medido em 02/10/2026 (frente do 513 passo 2), e nao deduzido: desde o pedido 611 (S7, `conferir_destino_aberto`, commit 940e0e31 de 01/10 06:57) a mesma pergunta e feita ao DESCRITOR da pasta aberta, antes da primeira copia -- entao repor so' a conferencia de texto no `conferir_destino` nao e sentido por teste nenhum: os quatro destinos do teste recusam no descritor. A guarda que pega o par e `destino-do-backup-conferido-so-pelo-nome`. A ultima PROVADA desta entrada e de 01/10 02:26, ANTES do 611.
 - `prova-do-gravar-privado-dentro-do-processo` — o binario abortou, que e como esta guarda pega
 <!-- guardas:fim -->
 

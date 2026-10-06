@@ -1301,5 +1301,931 @@
     },
     "falhas": [],
     "passou": true
+  },
+  "duas_passadas_1gb_646": {
+    "quando": "2026-10-06 21:04:18",
+    "binario": "/tmp/claude-0/-home-user-adrianoboller/5451b70d-11db-5d31-b519-9670a7730887/scratchpad/phxsqld-646",
+    "mb_pedidos": 1024,
+    "bytes_em_disco": 1177256232,
+    "tabelas": 20,
+    "linhas": 526334,
+    "voltas": 5,
+    "load_ao_fim": [
+      6.8271484375,
+      6.40625,
+      5.1240234375
+    ],
+    "nota": "pedido 646: par novo x controle na mesma janela de carga (scratch par_646.py); so o backup da primeira volta de B passa pela restauracao inteira, por disco",
+    "cenarios": {
+      "A": {
+        "voltas": [
+          {
+            "escrita_fase1_max_ms": 444.146,
+            "escrita_fase1_p99_ms": 11.364,
+            "escrita_fase1_mediana_ms": 0.464,
+            "escrita_fase1_n": 11875,
+            "escrita_pos_fase1_max_ms": 1077.231,
+            "backup_ms": 17964.2,
+            "servidor_ms": 17963,
+            "modo": "duas_passadas",
+            "fase_1_ms": 15693,
+            "fase_2_ms": 873,
+            "fase_2_arquivos": 16,
+            "fase_2_bytes": 128337880,
+            "fase_2_fora_do_bloqueio": 2,
+            "escrita_max_ms": 1077.231,
+            "escrita_p99_ms": 11.774,
+            "inserir_max_ms": 1077.231,
+            "inserir_p99_ms": 12.372,
+            "inserir_mediana_ms": 0.399,
+            "inserir_durante": 4223,
+            "escritas_durante": 4738,
+            "leitura_max_ms": 685.451,
+            "retrato_integro": true,
+            "falhas": []
+          },
+          {
+            "escrita_fase1_max_ms": 214.657,
+            "escrita_fase1_p99_ms": 6.453,
+            "escrita_fase1_mediana_ms": 0.41,
+            "escrita_fase1_n": 18969,
+            "escrita_pos_fase1_max_ms": 1064.821,
+            "backup_ms": 17694.4,
+            "servidor_ms": 17693,
+            "modo": "duas_passadas",
+            "fase_1_ms": 15431,
+            "fase_2_ms": 947,
+            "fase_2_arquivos": 16,
+            "fase_2_bytes": 144535814,
+            "fase_2_fora_do_bloqueio": 2,
+            "escrita_max_ms": 1064.821,
+            "escrita_p99_ms": 6.453,
+            "inserir_max_ms": 1064.821,
+            "inserir_p99_ms": 9.547,
+            "inserir_mediana_ms": 0.349,
+            "inserir_durante": 6890,
+            "escritas_durante": 7126,
+            "leitura_max_ms": 427.404,
+            "retrato_integro": true,
+            "falhas": []
+          },
+          {
+            "escrita_fase1_max_ms": 136.501,
+            "escrita_fase1_p99_ms": 12.009,
+            "escrita_fase1_mediana_ms": 0.424,
+            "escrita_fase1_n": 13126,
+            "escrita_pos_fase1_max_ms": 1765.197,
+            "backup_ms": 17749.7,
+            "servidor_ms": 17747,
+            "modo": "duas_passadas",
+            "fase_1_ms": 15266,
+            "fase_2_ms": 1165,
+            "fase_2_arquivos": 16,
+            "fase_2_bytes": 157961850,
+            "fase_2_fora_do_bloqueio": 2,
+            "escrita_max_ms": 1765.197,
+            "escrita_p99_ms": 12.261,
+            "inserir_max_ms": 110.47,
+            "inserir_p99_ms": 14.891,
+            "inserir_mediana_ms": 0.36,
+            "inserir_durante": 4825,
+            "escritas_durante": 5544,
+            "leitura_max_ms": 592.067,
+            "retrato_integro": true,
+            "falhas": []
+          },
+          {
+            "escrita_fase1_max_ms": 243.516,
+            "escrita_fase1_p99_ms": 8.597,
+            "escrita_fase1_mediana_ms": 0.396,
+            "escrita_fase1_n": 13485,
+            "escrita_pos_fase1_max_ms": 1745.638,
+            "backup_ms": 15296.2,
+            "servidor_ms": 15292,
+            "modo": "duas_passadas",
+            "fase_1_ms": 12907,
+            "fase_2_ms": 1171,
+            "fase_2_arquivos": 16,
+            "fase_2_bytes": 171475842,
+            "fase_2_fora_do_bloqueio": 2,
+            "escrita_max_ms": 1745.638,
+            "escrita_p99_ms": 8.44,
+            "inserir_max_ms": 1745.638,
+            "inserir_p99_ms": 11.624,
+            "inserir_mediana_ms": 0.339,
+            "inserir_durante": 5037,
+            "escritas_durante": 5788,
+            "leitura_max_ms": 570.054,
+            "retrato_integro": true,
+            "falhas": []
+          },
+          {
+            "escrita_fase1_max_ms": 224.429,
+            "escrita_fase1_p99_ms": 11.971,
+            "escrita_fase1_mediana_ms": 0.396,
+            "escrita_fase1_n": 15078,
+            "escrita_pos_fase1_max_ms": 1810.111,
+            "backup_ms": 18269.5,
+            "servidor_ms": 18268,
+            "modo": "duas_passadas",
+            "fase_1_ms": 15280,
+            "fase_2_ms": 1737,
+            "fase_2_arquivos": 16,
+            "fase_2_bytes": 185391716,
+            "fase_2_fora_do_bloqueio": 2,
+            "escrita_max_ms": 1810.111,
+            "escrita_p99_ms": 11.728,
+            "inserir_max_ms": 161.21,
+            "inserir_p99_ms": 12.772,
+            "inserir_mediana_ms": 0.341,
+            "inserir_durante": 5503,
+            "escritas_durante": 5796,
+            "leitura_max_ms": 551.478,
+            "retrato_integro": true,
+            "falhas": []
+          }
+        ],
+        "backup_ms": {
+          "mediana": 17749.7,
+          "faixa": [
+            15296.2,
+            18269.5
+          ]
+        },
+        "fase_2_ms": {
+          "mediana": 1165,
+          "faixa": [
+            873,
+            1737
+          ]
+        },
+        "fase_2_bytes": {
+          "mediana": 157961850,
+          "faixa": [
+            128337880,
+            185391716
+          ]
+        },
+        "escrita_max_ms": {
+          "mediana": 1745.638,
+          "faixa": [
+            1064.821,
+            1810.111
+          ]
+        },
+        "escrita_p99_ms": {
+          "mediana": 11.728,
+          "faixa": [
+            6.453,
+            12.261
+          ]
+        },
+        "escrita_fase1_max_ms": {
+          "mediana": 224.429,
+          "faixa": [
+            136.501,
+            444.146
+          ]
+        },
+        "escrita_fase1_p99_ms": {
+          "mediana": 11.364,
+          "faixa": [
+            6.453,
+            12.009
+          ]
+        },
+        "escrita_fase1_mediana_ms": {
+          "mediana": 0.41,
+          "faixa": [
+            0.396,
+            0.464
+          ]
+        },
+        "escrita_pos_fase1_max_ms": {
+          "mediana": 1745.638,
+          "faixa": [
+            1064.821,
+            1810.111
+          ]
+        },
+        "inserir_max_ms": {
+          "mediana": 1064.821,
+          "faixa": [
+            110.47,
+            1745.638
+          ]
+        },
+        "inserir_p99_ms": {
+          "mediana": 12.372,
+          "faixa": [
+            9.547,
+            14.891
+          ]
+        },
+        "inserir_mediana_ms": {
+          "mediana": 0.349,
+          "faixa": [
+            0.339,
+            0.399
+          ]
+        },
+        "leitura_max_ms": {
+          "mediana": 570.054,
+          "faixa": [
+            427.404,
+            685.451
+          ]
+        },
+        "modo": "duas_passadas",
+        "retrato_integro": true
+      },
+      "B": {
+        "voltas": [
+          {
+            "escrita_fase1_max_ms": 6336.145,
+            "escrita_fase1_p99_ms": 12.196,
+            "escrita_fase1_mediana_ms": 0.506,
+            "escrita_fase1_n": 12568,
+            "escrita_pos_fase1_max_ms": 487.841,
+            "backup_ms": 21326.1,
+            "servidor_ms": 21325,
+            "modo": "duas_passadas",
+            "fase_1_ms": 13681,
+            "fase_2_ms": 5924,
+            "fase_2_arquivos": 8,
+            "fase_2_bytes": 599952456,
+            "fase_2_fora_do_bloqueio": 1,
+            "escrita_max_ms": 6336.145,
+            "escrita_p99_ms": 12.032,
+            "inserir_max_ms": 6336.145,
+            "inserir_p99_ms": 12.609,
+            "inserir_mediana_ms": 0.401,
+            "inserir_durante": 4666,
+            "escritas_durante": 5261,
+            "leitura_max_ms": 479.43,
+            "retrato_integro": true,
+            "falhas": []
+          },
+          {
+            "escrita_fase1_max_ms": 178.176,
+            "escrita_fase1_p99_ms": 4.805,
+            "escrita_fase1_mediana_ms": 0.365,
+            "escrita_fase1_n": 23331,
+            "escrita_pos_fase1_max_ms": 4711.366,
+            "backup_ms": 19751.8,
+            "servidor_ms": 19751,
+            "modo": "duas_passadas",
+            "fase_1_ms": 14333,
+            "fase_2_ms": 4227,
+            "fase_2_arquivos": 8,
+            "fase_2_bytes": 621282372,
+            "fase_2_fora_do_bloqueio": 1,
+            "escrita_max_ms": 4711.366,
+            "escrita_p99_ms": 4.783,
+            "inserir_max_ms": 4711.366,
+            "inserir_p99_ms": 5.606,
+            "inserir_mediana_ms": 0.322,
+            "inserir_durante": 8347,
+            "escritas_durante": 9083,
+            "leitura_max_ms": 473.92,
+            "retrato_integro": true,
+            "falhas": []
+          },
+          {
+            "escrita_fase1_max_ms": 215.347,
+            "escrita_fase1_p99_ms": 11.468,
+            "escrita_fase1_mediana_ms": 0.445,
+            "escrita_fase1_n": 13957,
+            "escrita_pos_fase1_max_ms": 5247.599,
+            "backup_ms": 21252.5,
+            "servidor_ms": 21251,
+            "modo": "duas_passadas",
+            "fase_1_ms": 14812,
+            "fase_2_ms": 4716,
+            "fase_2_arquivos": 8,
+            "fase_2_bytes": 634737686,
+            "fase_2_fora_do_bloqueio": 1,
+            "escrita_max_ms": 5247.599,
+            "escrita_p99_ms": 11.514,
+            "inserir_max_ms": 215.347,
+            "inserir_p99_ms": 11.341,
+            "inserir_mediana_ms": 0.384,
+            "inserir_durante": 5018,
+            "escritas_durante": 5466,
+            "leitura_max_ms": 534.933,
+            "retrato_integro": true,
+            "falhas": []
+          },
+          {
+            "escrita_fase1_max_ms": 228.33,
+            "escrita_fase1_p99_ms": 10.472,
+            "escrita_fase1_mediana_ms": 0.434,
+            "escrita_fase1_n": 16395,
+            "escrita_pos_fase1_max_ms": 4923.678,
+            "backup_ms": 22012.3,
+            "servidor_ms": 22008,
+            "modo": "duas_passadas",
+            "fase_1_ms": 16113,
+            "fase_2_ms": 4470,
+            "fase_2_arquivos": 8,
+            "fase_2_bytes": 649952556,
+            "fase_2_fora_do_bloqueio": 1,
+            "escrita_max_ms": 4923.678,
+            "escrita_p99_ms": 10.173,
+            "inserir_max_ms": 4923.678,
+            "inserir_p99_ms": 12.689,
+            "inserir_mediana_ms": 0.36,
+            "inserir_durante": 6100,
+            "escritas_durante": 6681,
+            "leitura_max_ms": 436.112,
+            "retrato_integro": true,
+            "falhas": []
+          },
+          {
+            "escrita_fase1_max_ms": 357.143,
+            "escrita_fase1_p99_ms": 9.813,
+            "escrita_fase1_mediana_ms": 0.449,
+            "escrita_fase1_n": 15412,
+            "escrita_pos_fase1_max_ms": 4940.45,
+            "backup_ms": 21902.4,
+            "servidor_ms": 21902,
+            "modo": "duas_passadas",
+            "fase_1_ms": 16084,
+            "fase_2_ms": 4574,
+            "fase_2_arquivos": 8,
+            "fase_2_bytes": 664725940,
+            "fase_2_fora_do_bloqueio": 1,
+            "escrita_max_ms": 4940.45,
+            "escrita_p99_ms": 9.595,
+            "inserir_max_ms": 357.143,
+            "inserir_p99_ms": 11.388,
+            "inserir_mediana_ms": 0.369,
+            "inserir_durante": 5698,
+            "escritas_durante": 6153,
+            "leitura_max_ms": 361.632,
+            "retrato_integro": true,
+            "falhas": []
+          }
+        ],
+        "backup_ms": {
+          "mediana": 21326.1,
+          "faixa": [
+            19751.8,
+            22012.3
+          ]
+        },
+        "fase_2_ms": {
+          "mediana": 4574,
+          "faixa": [
+            4227,
+            5924
+          ]
+        },
+        "fase_2_bytes": {
+          "mediana": 634737686,
+          "faixa": [
+            599952456,
+            664725940
+          ]
+        },
+        "escrita_max_ms": {
+          "mediana": 4940.45,
+          "faixa": [
+            4711.366,
+            6336.145
+          ]
+        },
+        "escrita_p99_ms": {
+          "mediana": 10.173,
+          "faixa": [
+            4.783,
+            12.032
+          ]
+        },
+        "escrita_fase1_max_ms": {
+          "mediana": 228.33,
+          "faixa": [
+            178.176,
+            6336.145
+          ]
+        },
+        "escrita_fase1_p99_ms": {
+          "mediana": 10.472,
+          "faixa": [
+            4.805,
+            12.196
+          ]
+        },
+        "escrita_fase1_mediana_ms": {
+          "mediana": 0.445,
+          "faixa": [
+            0.365,
+            0.506
+          ]
+        },
+        "escrita_pos_fase1_max_ms": {
+          "mediana": 4923.678,
+          "faixa": [
+            487.841,
+            5247.599
+          ]
+        },
+        "inserir_max_ms": {
+          "mediana": 4711.366,
+          "faixa": [
+            215.347,
+            6336.145
+          ]
+        },
+        "inserir_p99_ms": {
+          "mediana": 11.388,
+          "faixa": [
+            5.606,
+            12.689
+          ]
+        },
+        "inserir_mediana_ms": {
+          "mediana": 0.369,
+          "faixa": [
+            0.322,
+            0.401
+          ]
+        },
+        "leitura_max_ms": {
+          "mediana": 473.92,
+          "faixa": [
+            361.632,
+            534.933
+          ]
+        },
+        "modo": "duas_passadas",
+        "retrato_integro": true,
+        "restaurado_integro": true,
+        "falhas_da_restauracao": []
+      }
+    }
+  },
+  "duas_passadas_1gb_646_controle_com_fsync": {
+    "quando": "2026-10-06 21:11:02",
+    "binario": "/tmp/claude-0/-home-user-adrianoboller/5451b70d-11db-5d31-b519-9670a7730887/scratchpad/phxsqld-com",
+    "mb_pedidos": 1024,
+    "bytes_em_disco": 1177256233,
+    "tabelas": 20,
+    "linhas": 526334,
+    "voltas": 5,
+    "load_ao_fim": [
+      4.5859375,
+      6.46728515625,
+      5.74658203125
+    ],
+    "nota": "pedido 646: par novo x controle na mesma janela de carga (scratch par_646.py); so o backup da primeira volta de B passa pela restauracao inteira, por disco",
+    "cenarios": {
+      "A": {
+        "voltas": [
+          {
+            "escrita_fase1_max_ms": 485.409,
+            "escrita_fase1_p99_ms": 13.597,
+            "escrita_fase1_mediana_ms": 0.467,
+            "escrita_fase1_n": 16159,
+            "escrita_pos_fase1_max_ms": 1204.016,
+            "backup_ms": 22275.3,
+            "servidor_ms": 22274,
+            "modo": "duas_passadas",
+            "fase_1_ms": 21050,
+            "fase_2_ms": 1104,
+            "fase_2_arquivos": 16,
+            "fase_2_bytes": 131620350,
+            "fase_2_fora_do_bloqueio": 2,
+            "escrita_max_ms": 1204.016,
+            "escrita_p99_ms": 13.508,
+            "inserir_max_ms": 411.562,
+            "inserir_p99_ms": 20.499,
+            "inserir_mediana_ms": 0.383,
+            "inserir_durante": 5624,
+            "escritas_durante": 6094,
+            "leitura_max_ms": 542.141,
+            "retrato_integro": true,
+            "falhas": []
+          },
+          {
+            "escrita_fase1_max_ms": 497.514,
+            "escrita_fase1_p99_ms": 8.767,
+            "escrita_fase1_mediana_ms": 0.464,
+            "escrita_fase1_n": 18082,
+            "escrita_pos_fase1_max_ms": 1412.775,
+            "backup_ms": 20211.6,
+            "servidor_ms": 20211,
+            "modo": "duas_passadas",
+            "fase_1_ms": 18778,
+            "fase_2_ms": 1300,
+            "fase_2_arquivos": 16,
+            "fase_2_bytes": 147759878,
+            "fase_2_fora_do_bloqueio": 2,
+            "escrita_max_ms": 1412.775,
+            "escrita_p99_ms": 8.767,
+            "inserir_max_ms": 147.825,
+            "inserir_p99_ms": 11.611,
+            "inserir_mediana_ms": 0.381,
+            "inserir_durante": 6171,
+            "escritas_durante": 6704,
+            "leitura_max_ms": 482.658,
+            "retrato_integro": true,
+            "falhas": []
+          },
+          {
+            "escrita_fase1_max_ms": 556.847,
+            "escrita_fase1_p99_ms": 6.417,
+            "escrita_fase1_mediana_ms": 0.459,
+            "escrita_fase1_n": 16571,
+            "escrita_pos_fase1_max_ms": 1496.679,
+            "backup_ms": 16197.8,
+            "servidor_ms": 16194,
+            "modo": "duas_passadas",
+            "fase_1_ms": 14679,
+            "fase_2_ms": 1431,
+            "fase_2_arquivos": 16,
+            "fase_2_bytes": 162490764,
+            "fase_2_fora_do_bloqueio": 2,
+            "escrita_max_ms": 1496.679,
+            "escrita_p99_ms": 6.417,
+            "inserir_max_ms": 1496.679,
+            "inserir_p99_ms": 8.254,
+            "inserir_mediana_ms": 0.371,
+            "inserir_durante": 5710,
+            "escritas_durante": 6256,
+            "leitura_max_ms": 542.233,
+            "retrato_integro": true,
+            "falhas": []
+          },
+          {
+            "escrita_fase1_max_ms": 554.951,
+            "escrita_fase1_p99_ms": 17.718,
+            "escrita_fase1_mediana_ms": 0.529,
+            "escrita_fase1_n": 9523,
+            "escrita_pos_fase1_max_ms": 1558.13,
+            "backup_ms": 16679.3,
+            "servidor_ms": 16679,
+            "modo": "duas_passadas",
+            "fase_1_ms": 15092,
+            "fase_2_ms": 1501,
+            "fase_2_arquivos": 16,
+            "fase_2_bytes": 171265422,
+            "fase_2_fora_do_bloqueio": 2,
+            "escrita_max_ms": 1558.13,
+            "escrita_p99_ms": 17.577,
+            "inserir_max_ms": 1558.13,
+            "inserir_p99_ms": 26.905,
+            "inserir_mediana_ms": 0.415,
+            "inserir_durante": 3359,
+            "escritas_durante": 3696,
+            "leitura_max_ms": 553.542,
+            "retrato_integro": true,
+            "falhas": []
+          },
+          {
+            "escrita_fase1_max_ms": 341.689,
+            "escrita_fase1_p99_ms": 7.666,
+            "escrita_fase1_mediana_ms": 0.411,
+            "escrita_fase1_n": 19257,
+            "escrita_pos_fase1_max_ms": 1542.225,
+            "backup_ms": 19318.0,
+            "servidor_ms": 19316,
+            "modo": "duas_passadas",
+            "fase_1_ms": 17752,
+            "fase_2_ms": 1489,
+            "fase_2_arquivos": 16,
+            "fase_2_bytes": 188179870,
+            "fase_2_fora_do_bloqueio": 2,
+            "escrita_max_ms": 1542.225,
+            "escrita_p99_ms": 7.546,
+            "inserir_max_ms": 113.48,
+            "inserir_p99_ms": 11.195,
+            "inserir_mediana_ms": 0.357,
+            "inserir_durante": 6644,
+            "escritas_durante": 7166,
+            "leitura_max_ms": 334.281,
+            "retrato_integro": true,
+            "falhas": []
+          }
+        ],
+        "backup_ms": {
+          "mediana": 19318.0,
+          "faixa": [
+            16197.8,
+            22275.3
+          ]
+        },
+        "fase_2_ms": {
+          "mediana": 1431,
+          "faixa": [
+            1104,
+            1501
+          ]
+        },
+        "fase_2_bytes": {
+          "mediana": 162490764,
+          "faixa": [
+            131620350,
+            188179870
+          ]
+        },
+        "escrita_max_ms": {
+          "mediana": 1496.679,
+          "faixa": [
+            1204.016,
+            1558.13
+          ]
+        },
+        "escrita_p99_ms": {
+          "mediana": 8.767,
+          "faixa": [
+            6.417,
+            17.577
+          ]
+        },
+        "escrita_fase1_max_ms": {
+          "mediana": 497.514,
+          "faixa": [
+            341.689,
+            556.847
+          ]
+        },
+        "escrita_fase1_p99_ms": {
+          "mediana": 8.767,
+          "faixa": [
+            6.417,
+            17.718
+          ]
+        },
+        "escrita_fase1_mediana_ms": {
+          "mediana": 0.464,
+          "faixa": [
+            0.411,
+            0.529
+          ]
+        },
+        "escrita_pos_fase1_max_ms": {
+          "mediana": 1496.679,
+          "faixa": [
+            1204.016,
+            1558.13
+          ]
+        },
+        "inserir_max_ms": {
+          "mediana": 411.562,
+          "faixa": [
+            113.48,
+            1558.13
+          ]
+        },
+        "inserir_p99_ms": {
+          "mediana": 11.611,
+          "faixa": [
+            8.254,
+            26.905
+          ]
+        },
+        "inserir_mediana_ms": {
+          "mediana": 0.381,
+          "faixa": [
+            0.357,
+            0.415
+          ]
+        },
+        "leitura_max_ms": {
+          "mediana": 542.141,
+          "faixa": [
+            334.281,
+            553.542
+          ]
+        },
+        "modo": "duas_passadas",
+        "retrato_integro": true
+      },
+      "B": {
+        "voltas": [
+          {
+            "escrita_fase1_max_ms": 358.556,
+            "escrita_fase1_p99_ms": 5.548,
+            "escrita_fase1_mediana_ms": 0.375,
+            "escrita_fase1_n": 20461,
+            "escrita_pos_fase1_max_ms": 5404.644,
+            "backup_ms": 19911.8,
+            "servidor_ms": 19909,
+            "modo": "duas_passadas",
+            "fase_1_ms": 14503,
+            "fase_2_ms": 4992,
+            "fase_2_arquivos": 8,
+            "fase_2_bytes": 606263406,
+            "fase_2_fora_do_bloqueio": 1,
+            "escrita_max_ms": 5404.644,
+            "escrita_p99_ms": 5.502,
+            "inserir_max_ms": 5404.644,
+            "inserir_p99_ms": 5.821,
+            "inserir_mediana_ms": 0.34,
+            "inserir_durante": 7130,
+            "escritas_durante": 7753,
+            "leitura_max_ms": 411.462,
+            "retrato_integro": true,
+            "falhas": []
+          },
+          {
+            "escrita_fase1_max_ms": 390.096,
+            "escrita_fase1_p99_ms": 11.283,
+            "escrita_fase1_mediana_ms": 0.43,
+            "escrita_fase1_n": 20700,
+            "escrita_pos_fase1_max_ms": 5623.972,
+            "backup_ms": 25923.3,
+            "servidor_ms": 25920,
+            "modo": "duas_passadas",
+            "fase_1_ms": 20296,
+            "fase_2_ms": 5546,
+            "fase_2_arquivos": 8,
+            "fase_2_bytes": 624686554,
+            "fase_2_fora_do_bloqueio": 1,
+            "escrita_max_ms": 5623.972,
+            "escrita_p99_ms": 11.022,
+            "inserir_max_ms": 5623.972,
+            "inserir_p99_ms": 11.315,
+            "inserir_mediana_ms": 0.369,
+            "inserir_durante": 7236,
+            "escritas_durante": 7791,
+            "leitura_max_ms": 376.42,
+            "retrato_integro": true,
+            "falhas": []
+          },
+          {
+            "escrita_fase1_max_ms": 5196.879,
+            "escrita_fase1_p99_ms": 3.409,
+            "escrita_fase1_mediana_ms": 0.447,
+            "escrita_fase1_n": 22204,
+            "escrita_pos_fase1_max_ms": 7.932,
+            "backup_ms": 19619.0,
+            "servidor_ms": 19618,
+            "modo": "duas_passadas",
+            "fase_1_ms": 14431,
+            "fase_2_ms": 5032,
+            "fase_2_arquivos": 8,
+            "fase_2_bytes": 644413164,
+            "fase_2_fora_do_bloqueio": 1,
+            "escrita_max_ms": 5196.879,
+            "escrita_p99_ms": 3.45,
+            "inserir_max_ms": 5196.879,
+            "inserir_p99_ms": 4.064,
+            "inserir_mediana_ms": 0.37,
+            "inserir_durante": 7657,
+            "escritas_durante": 8234,
+            "leitura_max_ms": 504.045,
+            "retrato_integro": true,
+            "falhas": []
+          },
+          {
+            "escrita_fase1_max_ms": 505.892,
+            "escrita_fase1_p99_ms": 5.005,
+            "escrita_fase1_mediana_ms": 0.443,
+            "escrita_fase1_n": 20999,
+            "escrita_pos_fase1_max_ms": 4856.245,
+            "backup_ms": 19212.1,
+            "servidor_ms": 19211,
+            "modo": "duas_passadas",
+            "fase_1_ms": 14352,
+            "fase_2_ms": 4514,
+            "fase_2_arquivos": 8,
+            "fase_2_bytes": 663147266,
+            "fase_2_fora_do_bloqueio": 1,
+            "escrita_max_ms": 4856.245,
+            "escrita_p99_ms": 4.886,
+            "inserir_max_ms": 4856.245,
+            "inserir_p99_ms": 5.343,
+            "inserir_mediana_ms": 0.369,
+            "inserir_durante": 7275,
+            "escritas_durante": 7918,
+            "leitura_max_ms": 487.5,
+            "retrato_integro": true,
+            "falhas": []
+          },
+          {
+            "escrita_fase1_max_ms": 459.901,
+            "escrita_fase1_p99_ms": 4.107,
+            "escrita_fase1_mediana_ms": 0.422,
+            "escrita_fase1_n": 21998,
+            "escrita_pos_fase1_max_ms": 4842.108,
+            "backup_ms": 18561.6,
+            "servidor_ms": 18561,
+            "modo": "duas_passadas",
+            "fase_1_ms": 13719,
+            "fase_2_ms": 4445,
+            "fase_2_arquivos": 8,
+            "fase_2_bytes": 682610126,
+            "fase_2_fora_do_bloqueio": 1,
+            "escrita_max_ms": 4842.108,
+            "escrita_p99_ms": 4.072,
+            "inserir_max_ms": 94.709,
+            "inserir_p99_ms": 4.491,
+            "inserir_mediana_ms": 0.357,
+            "inserir_durante": 7595,
+            "escritas_durante": 8189,
+            "leitura_max_ms": 456.539,
+            "retrato_integro": true,
+            "falhas": []
+          }
+        ],
+        "backup_ms": {
+          "mediana": 19619.0,
+          "faixa": [
+            18561.6,
+            25923.3
+          ]
+        },
+        "fase_2_ms": {
+          "mediana": 4992,
+          "faixa": [
+            4445,
+            5546
+          ]
+        },
+        "fase_2_bytes": {
+          "mediana": 644413164,
+          "faixa": [
+            606263406,
+            682610126
+          ]
+        },
+        "escrita_max_ms": {
+          "mediana": 5196.879,
+          "faixa": [
+            4842.108,
+            5623.972
+          ]
+        },
+        "escrita_p99_ms": {
+          "mediana": 4.886,
+          "faixa": [
+            3.45,
+            11.022
+          ]
+        },
+        "escrita_fase1_max_ms": {
+          "mediana": 459.901,
+          "faixa": [
+            358.556,
+            5196.879
+          ]
+        },
+        "escrita_fase1_p99_ms": {
+          "mediana": 5.005,
+          "faixa": [
+            3.409,
+            11.283
+          ]
+        },
+        "escrita_fase1_mediana_ms": {
+          "mediana": 0.43,
+          "faixa": [
+            0.375,
+            0.447
+          ]
+        },
+        "escrita_pos_fase1_max_ms": {
+          "mediana": 4856.245,
+          "faixa": [
+            7.932,
+            5623.972
+          ]
+        },
+        "inserir_max_ms": {
+          "mediana": 5196.879,
+          "faixa": [
+            94.709,
+            5623.972
+          ]
+        },
+        "inserir_p99_ms": {
+          "mediana": 5.343,
+          "faixa": [
+            4.064,
+            11.315
+          ]
+        },
+        "inserir_mediana_ms": {
+          "mediana": 0.369,
+          "faixa": [
+            0.34,
+            0.37
+          ]
+        },
+        "leitura_max_ms": {
+          "mediana": 456.539,
+          "faixa": [
+            376.42,
+            504.045
+          ]
+        },
+        "modo": "duas_passadas",
+        "retrato_integro": true,
+        "restaurado_integro": true,
+        "falhas_da_restauracao": []
+      }
+    }
   }
 }

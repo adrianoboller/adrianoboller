@@ -4,7 +4,7 @@
      `--catraca` reprova se este arquivo nao bater com o que o extrator
      geraria agora; rode o comando sem flag para atualizar. -->
 
-Gerado dos `cognicao_*.md` com `**Estado:** FRUTIFERO` -- 11 hoje, de 415 cognicoes no total.
+Gerado dos `cognicao_*.md` com `**Estado:** FRUTIFERO` -- 11 hoje, de 416 cognicoes no total.
 
 ## A calculada é a coluna protegida por outro nome — e o preenchimento em lote promove o vazamento de linha a vazamento de tabela
 

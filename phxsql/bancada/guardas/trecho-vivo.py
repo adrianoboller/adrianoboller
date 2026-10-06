@@ -845,7 +845,15 @@ TETO_TESTE_SEM_MODULO = 0
 # tiveram o TRECHO atualizado (o codigo mudou de lugar; o defeito e o mesmo).
 # Medido por `--numeros` (782). Se outra frente somar entradas no mesmo passo
 # o integrador reconta.
-PISO_DAS_ENTRADAS = 782
+# 782 -> 789 (frente STORE, pedidos 646/648/651): `backup-fsync-do-grosso-na-fase-1`,
+# `backup-manifesto-nasce-na-fase-2`, `backup-concluir-manifesto-antes-do-fsync`
+# (646), `trava-de-instancia-segue-link`, `trava-de-instancia-aceita-link-fisico`
+# (648), `zip-retrato-part-aproveitado` e `restaurar-aceita-trava-no-manifesto`
+# (651), provadas uma a uma (`--so <id> --json`); e a
+# `backup-escreve-no-arquivo-de-outro-dono` teve o trecho acertado ao `Modo`
+# do motor (o mesmo defeito) e foi reprovada. Medido por `--numeros` (780) na
+# arvore desta frente; a frente SERVER soma em paralelo -- o integrador reconta.
+PISO_DAS_ENTRADAS = 789
 
 # ------------------------------------------------------------- APOSENTADAS
 #
