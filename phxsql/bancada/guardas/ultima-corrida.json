@@ -2758,6 +2758,198 @@
       "quando": "2026-10-02 11:56"
     },
     {
+      "id": "pbkdf2-normaliza-a-chave-a-cada-iteracao",
+      "titulo": "PBKDF2 resume a senha longa a cada iteração: o custo do login cresce com o tamanho dela",
+      "veredito": "PROVADA",
+      "segundos": 9.46,
+      "notas": [],
+      "quando": "2026-10-02 12:29"
+    },
+    {
+      "id": "conferir-sem-o-teto-da-senha",
+      "titulo": "o `conferir` roda o PBKDF2 com senha acima do teto",
+      "veredito": "PROVADA",
+      "segundos": 9.21,
+      "notas": [],
+      "quando": "2026-10-02 12:29"
+    },
+    {
+      "id": "fachada-do-login-com-mil-iteracoes",
+      "titulo": "o login de quem não existe paga 2.000 iterações contra as 210.000 de quem existe",
+      "veredito": "PROVADA",
+      "segundos": 122.23,
+      "notas": [],
+      "quando": "2026-10-02 12:29"
+    },
+    {
+      "id": "inativo-pula-o-pbkdf2",
+      "titulo": "o login de quem está inativo responde sem PBKDF2 nenhum",
+      "veredito": "PROVADA",
+      "segundos": 133.3,
+      "notas": [],
+      "quando": "2026-10-02 12:29"
+    },
+    {
+      "id": "prova-de-quem-nao-existe-sai-sem-conferir",
+      "titulo": "o login por desafio-resposta de quem não existe, ou está inativo, sai sem conferir a prova",
+      "veredito": "PROVADA",
+      "segundos": 136.33,
+      "notas": [],
+      "quando": "2026-10-02 12:29"
+    },
+    {
+      "id": "login-sem-o-teto-da-senha",
+      "titulo": "o login recebe senha acima do teto e recusa como «credencial inválida»",
+      "veredito": "PROVADA",
+      "segundos": 125.91,
+      "notas": [],
+      "quando": "2026-10-02 12:29"
+    },
+    {
+      "id": "criar-usuario-sem-o-teto-da-senha",
+      "titulo": "`usuario_criar`, `usuario_alterar` e `CREATE USER` derivam o hash de senha acima do teto",
+      "veredito": "PROVADA",
+      "segundos": 99.51,
+      "notas": [],
+      "quando": "2026-10-02 12:29"
+    },
+    {
+      "id": "pulso-que-morre-fica-marcado",
+      "titulo": "a thread de pulso que morre em panico nao se desmarca do `pulsando`",
+      "veredito": "PROVADA",
+      "segundos": 115.76,
+      "notas": [],
+      "quando": "2026-10-02 12:29"
+    },
+    {
+      "id": "pulso-em-panico-sem-recuo",
+      "titulo": "o pulso que entra em panico a cada volta vira laco de panico",
+      "veredito": "PROVADA",
+      "segundos": 146.9,
+      "notas": [],
+      "quando": "2026-10-02 12:29"
+    },
+    {
+      "id": "relogio-de-jobs-morto-diz-que-esta-no-ar",
+      "titulo": "o relogio de jobs que morre continua marcado como no ar",
+      "veredito": "PROVADA",
+      "segundos": 93.06,
+      "notas": [],
+      "quando": "2026-10-02 12:29"
+    },
+    {
+      "id": "amostrador-morto-diz-que-esta-no-ar",
+      "titulo": "o amostrador que morre continua marcado como no ar no retrato",
+      "veredito": "PROVADA",
+      "segundos": 94.98,
+      "notas": [],
+      "quando": "2026-10-02 12:29"
+    },
+    {
+      "id": "job-corre-na-thread-de-servico",
+      "titulo": "o job em panico com a trava na mao derruba o servidor",
+      "veredito": "PROVADA",
+      "segundos": 93.7,
+      "notas": [],
+      "quando": "2026-10-02 12:29"
+    },
+    {
+      "id": "backup-corre-na-thread-de-servico",
+      "titulo": "o backup agendado em panico com a trava na mao derruba o servidor",
+      "veredito": "PROVADA",
+      "segundos": 100.17,
+      "notas": [],
+      "quando": "2026-10-02 12:29"
+    },
+    {
+      "id": "job-que-derrubou-roda-de-novo-no-arranque",
+      "titulo": "a corrida de job que derrubou o processo roda de novo no arranque",
+      "veredito": "PROVADA",
+      "segundos": 91.03,
+      "notas": [],
+      "quando": "2026-10-02 12:29"
+    },
+    {
+      "id": "backup-que-derrubou-roda-de-novo-no-arranque",
+      "titulo": "o backup que derrubou o processo roda de novo no arranque",
+      "veredito": "PROVADA",
+      "segundos": 92.07,
+      "notas": [],
+      "quando": "2026-10-02 12:29"
+    },
+    {
+      "id": "lapide-do-futuro-empurra-o-job",
+      "titulo": "a lapide de job com hora no futuro vira a ultima corrida sem teto",
+      "veredito": "PROVADA",
+      "segundos": 93.88,
+      "notas": [],
+      "quando": "2026-10-02 12:29"
+    },
+    {
+      "id": "lapide-do-futuro-empurra-o-backup",
+      "titulo": "a lapide do backup com hora no futuro vira a ultima corrida sem teto",
+      "veredito": "PROVADA",
+      "segundos": 91.32,
+      "notas": [],
+      "quando": "2026-10-02 12:29"
+    },
+    {
+      "id": "corrida-interrompida-nao-avisa",
+      "titulo": "a corrida de job fechada no arranque como FALHOU nao avisa por e-mail",
+      "veredito": "PROVADA",
+      "segundos": 96.13,
+      "notas": [],
+      "quando": "2026-10-02 12:29"
+    },
+    {
+      "id": "backup-agendado-falha-calado",
+      "titulo": "o backup agendado que falha so escreve no erro padrao",
+      "veredito": "PROVADA",
+      "segundos": 91.29,
+      "notas": [],
+      "quando": "2026-10-02 12:29"
+    },
+    {
+      "id": "dblink-ilegivel-derruba-o-motor",
+      "titulo": "o cadastro do DbLink ilegivel derruba o motor inteiro",
+      "veredito": "PROVADA",
+      "segundos": 20.38,
+      "notas": [],
+      "quando": "2026-10-02 12:29"
+    },
+    {
+      "id": "dblink-que-nao-se-le-abre-vazio",
+      "titulo": "o dblink.json que existe e nao se le vira cadastro vazio",
+      "veredito": "PROVADA",
+      "segundos": 23.99,
+      "notas": [],
+      "quando": "2026-10-02 12:45"
+    },
+    {
+      "id": "jobs-ilegivel-derruba-o-motor",
+      "titulo": "o cadastro de jobs ilegivel derruba o motor inteiro",
+      "veredito": "PROVADA",
+      "segundos": 23.32,
+      "notas": [],
+      "quando": "2026-10-02 12:45"
+    },
+    {
+      "id": "core-leva-a-senha-do-cofre",
+      "titulo": "o core do abort leva a senha do cofre para o disco",
+      "veredito": "PROVADA",
+      "segundos": 22.04,
+      "notas": [],
+      "quando": "2026-10-02 12:45"
+    },
+    {
+      "id": "catalogo-so-declara-token-nao-token-remoto",
+      "titulo": "o catálogo de `replicacao_testar` não declara `token_remoto`, o campo que a sonda lê primeiro",
+      "veredito": "PROVADA",
+      "segundos": 92.64,
+      "notas": [],
+      "quando": "2026-10-02 12:45"
+    },
+    {
       "id": "esquema-vaza-o-histograma-da-particao",
       "titulo": "`op_esquema` publica `baldes[].registros` mesmo com a coluna da partição negada ao usuário",
       "veredito": "PROVADA",
@@ -2766,12 +2958,312 @@
       "quando": "2026-10-01 03:03"
     },
     {
+      "id": "dblink-mysql-sem-teto-de-colunas",
+      "titulo": "o DbLink MySQL(R) reserva `Vec::with_capacity` do número de colunas que o PAR manda, sem teto",
+      "veredito": "PROVADA",
+      "segundos": 93.9,
+      "notas": [],
+      "quando": "2026-10-02 12:45"
+    },
+    {
+      "id": "dblink-mysql-sem-teto-do-quadro-acumulado",
+      "titulo": "`ler_quadro` do DbLink MySQL(R) junta continuações de 16 MB sem teto sobre o total",
+      "veredito": "PROVADA",
+      "segundos": 93.49,
+      "notas": [],
+      "quando": "2026-10-02 12:45"
+    },
+    {
+      "id": "smtp-sem-teto-de-linhas-de-continuacao",
+      "titulo": "o cliente SMTP aceita QUALQUER número de linhas de continuação (`250-...`), sem teto",
+      "veredito": "PROVADA",
+      "segundos": 91.09,
+      "notas": [],
+      "quando": "2026-10-02 12:45"
+    },
+    {
+      "id": "por-login-para-no-primeiro-que-casa",
+      "titulo": "`Cadastro::por_login` é um `find`: quem não existe custa muito mais que o primeiro da lista",
+      "veredito": "PROVADA",
+      "segundos": 90.88,
+      "notas": [],
+      "quando": "2026-10-02 12:45"
+    },
+    {
+      "id": "fechar-baixa-o-byte-52-sem-fsync",
+      "titulo": "o `fechar` grava o byte 52 em 0 sem `fsync`: o núcleo guarda o cabeçalho limpo e perde as páginas",
+      "veredito": "PROVADA",
+      "segundos": 8.17,
+      "notas": [],
+      "quando": "2026-10-02 12:45"
+    },
+    {
+      "id": "atestado-sobrevive-a-escrita",
+      "titulo": "o atestado do processo sobrevive à escrita que não terminou: a reabertura confia na árvore de antes dela",
+      "veredito": "PROVADA",
+      "segundos": 7.58,
+      "notas": [],
+      "quando": "2026-10-02 12:45"
+    },
+    {
+      "id": "atestado-pelo-caminho-e-nao-pelo-arquivo",
+      "titulo": "o atestado do processo vale para o caminho, e não para o arquivo: outro `.ndx` no mesmo lugar abre confiado",
+      "veredito": "PROVADA",
+      "segundos": 7.94,
+      "notas": [],
+      "quando": "2026-10-02 12:45"
+    },
+    {
+      "id": "atestado-de-antes-da-recusa-vale-depois",
+      "titulo": "o atestado que o `fechar` deu ANTES de um `fsync` recusado no diretório continua valendo depois dele",
+      "veredito": "PROVADA",
+      "segundos": 7.82,
+      "notas": [],
+      "quando": "2026-10-02 12:45"
+    },
+    {
+      "id": "fts-fora-do-fecho-da-janela",
+      "titulo": "o `.fts` fica fora do fecho da janela: nenhum `fsync` o alcança, e o byte 52 dele só desce sem `fsync`",
+      "veredito": "PROVADA",
+      "segundos": 8.41,
+      "notas": [],
+      "quando": "2026-10-02 12:45"
+    },
+    {
+      "id": "reindexar-deixa-o-punho-velho-gravar",
+      "titulo": "o `reindexar` deixa o punho velho gravar páginas e cabeçalho por cima do `.ndx` recém-truncado",
+      "veredito": "PROVADA",
+      "segundos": 8.89,
+      "notas": [],
+      "quando": "2026-10-02 12:45"
+    },
+    {
       "id": "restauracao-nao-reconstroi-o-marcado",
       "titulo": "a restauração de backup devolve a tabela com o `.ndx` marcado, e ela recusa toda escrita até alguém mandar `reindexar`",
       "veredito": "PROVADA",
       "segundos": 3.4,
       "notas": [],
       "quando": "2026-09-30 13:25"
+    },
+    {
+      "id": "arranque-nao-reconstroi-o-marcado",
+      "titulo": "o arranque não reconstrói o `.ndx` que o processo anterior só fechou: a tabela sobe recusando até alguém mandar `reindexar`",
+      "veredito": "PROVADA",
+      "segundos": 92.68,
+      "notas": [],
+      "quando": "2026-10-02 12:45"
+    },
+    {
+      "id": "atestado-fica-no-caminho-velho",
+      "titulo": "renomear, duplicar ou colar uma tabela escrita desde o último fecho deixa o destino recusando tudo, sem queda nenhuma",
+      "veredito": "PROVADA",
+      "segundos": 8.4,
+      "notas": [],
+      "quando": "2026-10-02 12:45"
+    },
+    {
+      "id": "renomear-esquece-o-atestado",
+      "titulo": "o renomear move os arquivos e deixa o atestado no nome velho: a tabela renomeada recusa tudo",
+      "veredito": "PROVADA",
+      "segundos": 8.22,
+      "notas": [],
+      "quando": "2026-10-02 12:45"
+    },
+    {
+      "id": "fechar-do-embutido-nao-sincroniza",
+      "titulo": "o embutido que fecha a tabela sem `phx_sincronizar` não a abre no processo seguinte, e a ABI não tem como reconstruí-la",
+      "veredito": "NAO PEGOU",
+      "segundos": 9.35,
+      "notas": [
+        "PASSOU COM O DEFEITO REPOSTO: testes::fechar_sem_sincronizar_e_o_proximo_processo_abre"
+      ],
+      "quando": "2026-10-02 12:45"
+    },
+    {
+      "id": "phx-reindexar-nao-reindexa",
+      "titulo": "o `phx_reindexar` responde Ok sem reconstruir: o índice que a queda marcou continua recusando pela ABI",
+      "veredito": "PROVADA",
+      "segundos": 9.11,
+      "notas": [],
+      "quando": "2026-10-02 12:45"
+    },
+    {
+      "id": "auto-referencia-pulada-no-excluir",
+      "titulo": "excluir o chefe que tem subordinado na MESMA tabela responde Ok, e o subordinado fica órfão",
+      "veredito": "PROVADA",
+      "segundos": 8.6,
+      "notas": [],
+      "quando": "2026-10-02 12:45"
+    },
+    {
+      "id": "auto-referencia-pulada-no-excluir-pelo-servidor",
+      "titulo": "o chefe com subordinado sai pelo servidor, e na transação `[inserir 11->10, excluir 10]` confirma",
+      "veredito": "PROVADA",
+      "segundos": 91.54,
+      "notas": [],
+      "quando": "2026-10-02 12:45"
+    },
+    {
+      "id": "auto-laco-conta-como-filha",
+      "titulo": "a linha que aponta só para si mesma é contada como filha dela, e nunca mais sai",
+      "veredito": "PROVADA",
+      "segundos": 8.31,
+      "notas": [],
+      "quando": "2026-10-02 13:08"
+    },
+    {
+      "id": "renomear-pula-a-auto-referencia",
+      "titulo": "renomear a tabela que aponta para si mesma deixa a chave no nome velho, e o chefe com subordinado passa a sair",
+      "veredito": "PROVADA",
+      "segundos": 12.02,
+      "notas": [],
+      "quando": "2026-10-02 13:08"
+    },
+    {
+      "id": "marca-do-disco-no-empilhar",
+      "titulo": "dentro da transação, alterar a linha excluída suave a ressuscita; fora, ela continua excluída",
+      "veredito": "PROVADA",
+      "segundos": 103.93,
+      "notas": [],
+      "quando": "2026-10-02 13:08"
+    },
+    {
+      "id": "upsert-solto-ressuscita-a-excluida",
+      "titulo": "o upsert fora de transação ressuscita a linha excluída suave; o mesmo upsert dentro a mantém excluída",
+      "veredito": "PROVADA",
+      "segundos": 94.82,
+      "notas": [],
+      "quando": "2026-10-02 13:08"
+    },
+    {
+      "id": "mescla-do-upsert-sobre-o-disco",
+      "titulo": "o upsert com SET dentro da transação mescla sobre a linha do disco, e a excluída na lista ressuscita",
+      "veredito": "PROVADA",
+      "segundos": 92.27,
+      "notas": [],
+      "quando": "2026-10-02 13:08"
+    },
+    {
+      "id": "elo-do-empilhar-pelo-disco",
+      "titulo": "o elo que o `empilhar` planeja pelo disco sobrescreve o que a própria lista já escreveu na filha",
+      "veredito": "NAO PEGOU",
+      "segundos": 92.36,
+      "notas": [
+        "PASSOU COM O DEFEITO REPOSTO: servidor::testes_transacoes::integridade_na_transacao::o_elo_da_cascata_nao_desfaz_o_que_a_lista_escreveu_na_filha"
+      ],
+      "quando": "2026-10-02 13:08"
+    },
+    {
+      "id": "tabela-que-some-segura-as-marcas",
+      "titulo": "a tabela escrita na janela e excluida ou renomeada fica nas sujas pelo nome velho e segura todas as marcas de COMMIT",
+      "veredito": "PROVADA",
+      "segundos": 91.68,
+      "notas": [],
+      "quando": "2026-10-02 13:08"
+    },
+    {
+      "id": "renomear-deixa-o-registro-no-nome-velho",
+      "titulo": "o renomear deixa o registro do que deve ao disco no nome velho, e a divida fica para sempre onde ninguem sincroniza",
+      "veredito": "PROVADA",
+      "segundos": 92.99,
+      "notas": [],
+      "quando": "2026-10-02 13:08"
+    },
+    {
+      "id": "familia-partida-por-grafia",
+      "titulo": "a familia do `Volumes` se parte por symlink e `..`, e familia partida perde dado",
+      "veredito": "PROVADA",
+      "segundos": 11.63,
+      "notas": [],
+      "quando": "2026-10-02 13:08"
+    },
+    {
+      "id": "inserir-sem-janela-do-texto",
+      "titulo": "o inserir deixa a linha viva fora da busca de texto num panico entre o `.reg` e o `indexar_texto`",
+      "veredito": "PROVADA",
+      "segundos": 8.98,
+      "notas": [],
+      "quando": "2026-10-02 13:08"
+    },
+    {
+      "id": "atualizar-sem-janela-do-texto",
+      "titulo": "o atualizar deixa o texto novo fora da busca num panico entre o `.reg` e o `.fts`",
+      "veredito": "PROVADA",
+      "segundos": 8.32,
+      "notas": [],
+      "quando": "2026-10-02 13:08"
+    },
+    {
+      "id": "excluir-sem-janela-do-texto",
+      "titulo": "o excluir de vez deixa a linha viva fora da busca num panico entre o texto e o slot",
+      "veredito": "PROVADA",
+      "segundos": 8.76,
+      "notas": [],
+      "quando": "2026-10-02 13:08"
+    },
+    {
+      "id": "cascata-embutida-sem-pre-conferencia",
+      "titulo": "a cascata do embutido grava a mae antes de conferir a FK da filha para OUTRA mae",
+      "veredito": "PROVADA",
+      "segundos": 8.49,
+      "notas": [],
+      "quando": "2026-10-02 13:08"
+    },
+    {
+      "id": "jobs-devolve-a-coluna-negada",
+      "titulo": "o `jobs` devolve o pedido salvo inteiro, com o valor da coluna negada que alguem digitou na definicao",
+      "veredito": "PROVADA",
+      "segundos": 93.88,
+      "notas": [],
+      "quando": "2026-10-02 13:08"
+    },
+    {
+      "id": "cabecalho-do-ndx-rasgado-trava-a-tabela",
+      "titulo": "o cabecalho do `.ndx` rasgado impede a tabela de abrir, e nem o arranque nem o `reindexar` o refazem",
+      "veredito": "PROVADA",
+      "segundos": 94.76,
+      "notas": [],
+      "quando": "2026-10-02 13:08"
+    },
+    {
+      "id": "diretiva-sigilosa-sai-crua-no-sql",
+      "titulo": "`ALTER SERVER SET <campo sigiloso> = x` sai cru no perfil: a redacao do SQL so conhecia `PASSWORD`",
+      "veredito": "PROVADA",
+      "segundos": 6.83,
+      "notas": [],
+      "quando": "2026-10-02 13:08"
+    },
+    {
+      "id": "diretiva-sigilosa-sai-crua-no-json",
+      "titulo": "o `valor` do `diretiva_gravar` e a chave do `config_gravar` com caminho sigiloso saem crus no perfil",
+      "veredito": "PROVADA",
+      "segundos": 94.77,
+      "notas": [],
+      "quando": "2026-10-02 13:08"
+    },
+    {
+      "id": "sal-falso-pelo-token",
+      "titulo": "o sal falso do `desafio` sai do token que todo cliente tem, e quem o tem sabe quem nao existe",
+      "veredito": "PROVADA",
+      "segundos": 97.25,
+      "notas": [],
+      "quando": "2026-10-02 13:08"
+    },
+    {
+      "id": "scram-sem-teto-de-iteracoes",
+      "titulo": "o `i=` do SCRAM que o par manda nao tem teto, e cada iteracao e CPU deste processo",
+      "veredito": "PROVADA",
+      "segundos": 99.72,
+      "notas": [],
+      "quando": "2026-10-02 13:08"
+    },
+    {
+      "id": "recado-de-trava-entrega-o-login",
+      "titulo": "o recado de trava mostra o login do dono dela a quem esbarrou, que pode nem ter direito na tabela",
+      "veredito": "PROVADA",
+      "segundos": 96.94,
+      "notas": [],
+      "quando": "2026-10-02 13:08"
     },
     {
       "id": "elo-implicito-sem-trava",
