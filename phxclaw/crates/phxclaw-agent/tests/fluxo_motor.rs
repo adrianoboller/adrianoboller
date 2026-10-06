@@ -32,7 +32,7 @@ fn tmp(nome: &str) -> PathBuf {
 }
 
 /// `eco`: devolve `texto` (texto cru, ou JSON quando nao e texto), depois de dormir
-/// `dorme_ms`; com `falhar`, falha com essa mensagem. Conta as chamadas que chegaram.
+/// `dorme_ms`; com `falhar` nao vazio, falha com essa mensagem. Conta as chamadas.
 struct Eco {
     chamadas: AtomicUsize,
 }
@@ -58,7 +58,13 @@ impl Tool for Eco {
             if let Some(ms) = args.get("dorme_ms").and_then(Value::as_u64) {
                 tokio::time::sleep(Duration::from_millis(ms)).await;
             }
-            if let Some(m) = args.get("falhar").and_then(Value::as_str) {
+            // `falhar` vazio nao falha: e o que deixa uma passada por item falhar e a
+            // vizinha nao, com o motivo vindo do proprio item (`{{lotes[0].f}}`).
+            if let Some(m) = args
+                .get("falhar")
+                .and_then(Value::as_str)
+                .filter(|m| !m.is_empty())
+            {
                 return Err(ToolError::Failed(m.into()));
             }
             Ok(ToolOutput::text(match args.get("texto") {
@@ -329,6 +335,12 @@ async fn juncao_merge() {
 /// passada por lote -- o laco do n8n sem ciclo no grafo. E o teste central da onda:
 /// `se` + `lote` + `continuar_em_erro` no mesmo fluxo, com a passada que falha nao
 /// derrubando as outras.
+///
+/// Prova real (06/10): a versao anterior fazia TODAS as passadas falharem, e por isso
+/// passava com o motor jogando fora as passadas boas quando uma falhava -- o contrario do
+/// que este comentario afirma. Agora uma passada falha e as outras nao; com o
+/// `parcial()` reposto como «so a primeira falha» (`fluxos.rs`, ramo `Continuar` usando
+/// `item_de_erro`), `roda.itens` volta com 1 item e o teste cai (RED medido).
 #[tokio::test]
 async fn laco_lotes() {
     let (a, eco) = agente(&["fs.read"]);
@@ -350,22 +362,59 @@ async fn laco_lotes() {
     assert_eq!(passo(&r, "primeiro").saida, "2");
     assert_eq!(eco.chamadas.load(Ordering::SeqCst), 1 + 3 + 1);
 
-    // o fluxo central da onda: se + lote + continuar em erro
-    let (a, _) = agente(&["fs.read"]);
-    let f = fluxo(json!({"nome":"central","passos":[
-        {"id":"lista","ferramenta":"eco","args":{"texto":[{"n":1},{"n":2},{"n":3},{"n":4}]}},
-        {"id":"par","depende":["lista"],"se":{"caminho":"n","operador":"contem","valor":"x"}},
-        {"id":"lotes","depende":["par:falso"],"lote":3},
-        {"id":"roda","depende":["lotes"],"por_item":true,"ao_errar":"continuar","ferramenta":"eco",
-         "args":{"texto":"{{lotes[0].n}}","falhar":"{{lotes[0].n}} nao vale"}},
-        {"id":"fim","depende":["roda"],"ferramenta":"eco","args":{"texto":"{{roda}}"}}
-    ]}));
-    let r = fluxos::rodar(&a, &f).await.unwrap();
+    // o fluxo central da onda: se + lote + continuar em erro, com UMA passada falhando
+    // (o lote [4,5]) e as outras duas boas
+    let central = |ao_errar: &str| {
+        let mut v = json!({"nome":"central","passos":[
+            {"id":"lista","ferramenta":"eco","args":{"texto":[
+                {"n":1,"f":""},{"n":2,"f":""},{"n":3,"f":""},{"n":4,"f":"4 nao vale"},
+                {"n":5,"f":""},{"n":6,"f":""},{"n":7,"f":""}]}},
+            {"id":"par","depende":["lista"],"se":{"caminho":"n","operador":"contem","valor":"x"}},
+            {"id":"lotes","depende":["par:falso"],"lote":3},
+            {"id":"roda","depende":["lotes"],"por_item":true,"ao_errar":ao_errar,"ferramenta":"eco",
+             "args":{"texto":"{{lotes[0].n}}","falhar":"{{lotes[0].f}}"}},
+            {"id":"fim","depende":["roda"],"ferramenta":"eco","args":{"texto":"{{roda}}"}},
+            {"id":"trata","depende":["roda:erro"],"ferramenta":"eco","args":{"texto":"{{roda}}"}}
+        ]});
+        // a porta `erro` so existe com saida_de_erro; nos outros, `trata` sai do fluxo
+        if ao_errar != "saida_de_erro" {
+            v["passos"].as_array_mut().unwrap().pop();
+        }
+        fluxo(v)
+    };
+    let (a, eco) = agente(&["fs.read"]);
+    let r = fluxos::rodar(&a, &central("continuar")).await.unwrap();
     assert!(r.sucesso, "{r:#?}");
-    assert_eq!(passo(&r, "roda").estado, "continuou");
-    let erro = passo(&r, "roda").itens[0]["erro"].as_str().unwrap();
-    assert!(erro.contains("1 nao vale"), "{erro}");
+    let roda = passo(&r, "roda");
+    assert_eq!(roda.estado, "continuou");
+    assert_eq!(roda.itens.len(), 3, "as duas passadas boas ficaram: {roda:#?}");
+    assert_eq!(roda.itens[0], json!("1"));
+    assert_eq!(roda.itens[1]["erro"], json!("4 nao vale"));
+    assert_eq!(roda.itens[1]["item"], json!(1));
+    assert_eq!(roda.itens[2], json!("7"));
     assert_eq!(passo(&r, "fim").estado, "ok");
+    // 1 (lista) + 3 passadas + 1 (fim)
+    assert_eq!(eco.chamadas.load(Ordering::SeqCst), 5);
+
+    // saida_de_erro: as boas pela principal, a que falhou pela porta `erro` -- e os DOIS
+    // lados disparam
+    let (a, _) = agente(&["fs.read"]);
+    let r = fluxos::rodar(&a, &central("saida_de_erro")).await.unwrap();
+    assert!(r.sucesso, "{r:#?}");
+    let roda = passo(&r, "roda");
+    assert_eq!(roda.itens, vec![json!("1"), json!("7")]);
+    assert_eq!(roda.portas["erro"].len(), 1);
+    assert_eq!(roda.portas["erro"][0]["erro"], json!("4 nao vale"));
+    assert_eq!(passo(&r, "fim").estado, "ok");
+    assert_eq!(passo(&r, "trata").estado, "ok");
+
+    // parar (padrao): uma passada falha, o passo falha -- nao ha meio sucesso calado
+    let (a, _) = agente(&["fs.read"]);
+    let r = fluxos::rodar(&a, &central("parar")).await.unwrap();
+    assert!(!r.sucesso);
+    assert_eq!(passo(&r, "roda").estado, "falhou");
+    assert_eq!(passo(&r, "roda").saida, "4 nao vale");
+    assert_eq!(passo(&r, "fim").estado, "bloqueado");
 }
 
 /// `ao_errar`: `parar` (padrao) bloqueia os dependentes; `continuar` segue com o item de

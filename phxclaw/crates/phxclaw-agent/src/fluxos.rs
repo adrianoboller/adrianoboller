@@ -1215,6 +1215,24 @@ async fn rodar_grupo(
 /// As passadas terminadas de um passo: (run, tentativa, [(ok, texto)], tarefa filha).
 type Passadas = (Uuid, u16, Vec<(bool, String)>, Option<String>);
 
+/// Um passo `por_item` que falhou so em parte: os itens das passadas boas e um item de
+/// erro por passada que falhou (com o indice do item). E o `continueOnFail` do n8n --
+/// o no segue com os itens bons e marca o que falhou --, que e onde o motor converge:
+/// jogar fora 99 passadas boas por causa de uma desfaria trabalho que ja passou pelo
+/// portao e ja deixou evidencia.
+fn parcial(id: &str, passadas: &[(bool, String)]) -> (Vec<Value>, Vec<Value>) {
+    let mut bons = Vec::new();
+    let mut erros = Vec::new();
+    for (i, (ok, t)) in passadas.iter().enumerate() {
+        if *ok {
+            bons.extend(itens_de_texto(t));
+        } else {
+            erros.push(json!({"erro": t, "passo": id, "item": i}));
+        }
+    }
+    (bons, erros)
+}
+
 /// O desfecho de um passo numa onda, antes de passar pela fila.
 struct Desfecho {
     run: Uuid,
@@ -1227,6 +1245,9 @@ struct Desfecho {
     /// Erro de definicao (expressao sem caminho, `parar_com_erro`): tentar de novo nao
     /// muda nada.
     repetivel: bool,
+    /// As passadas de um passo `por_item` que falhou em PARTE, na ordem dos itens: com
+    /// `ao_errar` que segue, as boas ficam e so a que falhou vira item de erro.
+    passadas: Vec<(bool, String)>,
 }
 
 /// Roda o fluxo inteiro. O fluxo e ele mesmo uma tarefa (pasta, evidencia, `task.json`):
@@ -1333,14 +1354,35 @@ pub async fn retomar(agente: &Agent, fluxo: &Fluxo, tarefa: &str) -> Result<Rela
 /// assinar o texto deixaria a alteracao em memoria sem assinatura.
 pub fn assinatura(f: &Fluxo) -> String {
     use sha2::Digest;
-    // `serde_json::Value` ordena as chaves (Map e BTreeMap sem `preserve_order`).
     let canonico = serde_json::to_value(f)
-        .and_then(|v| serde_json::to_string(&v))
+        .map(|v| ordenado(&v).to_string())
         .unwrap_or_default();
     sha2::Sha256::digest(canonico.as_bytes())
         .iter()
         .map(|b| format!("{b:02x}"))
         .collect()
+}
+
+/// O valor com as chaves de todo objeto em ordem, em qualquer profundidade. Ordenar aqui,
+/// e nao confiar no `Map`: o workspace liga o `preserve_order` do serde_json (medido no
+/// `cargo tree -e features`, 06/10), e com ele o `Value` guarda a ordem de insercao -- a
+/// do struct, e nos `args` a do texto do usuario. Sem isto, reordenar um campo do `Passo`
+/// ou as chaves de um `args` mudaria a assinatura de um fluxo identico.
+fn ordenado(v: &Value) -> Value {
+    match v {
+        Value::Object(o) => {
+            let mut chaves: Vec<&String> = o.keys().collect();
+            chaves.sort();
+            Value::Object(
+                chaves
+                    .into_iter()
+                    .map(|k| (k.clone(), ordenado(&o[k])))
+                    .collect(),
+            )
+        }
+        Value::Array(a) => Value::Array(a.iter().map(ordenado).collect()),
+        outro => outro.clone(),
+    }
 }
 
 /// O estado que atravessa as ondas: saidas, portas e o que nao disparou.
@@ -1648,7 +1690,10 @@ velhas a passos novos; rode de novo"
                     },
                 };
                 mem.guardar(&p.id, saida, antes.portas.clone());
-                if antes.estado == "continuou" && p.ao_errar == AoErrar::SaidaDeErro {
+                if antes.estado == "continuou"
+                    && p.ao_errar == AoErrar::SaidaDeErro
+                    && antes.itens.is_empty()
+                {
                     mem.mortos.insert(p.id.clone());
                 }
                 feitos.push(Resultado {
@@ -1684,6 +1729,7 @@ velhas a passos novos; rode de novo"
                 portas: BTreeMap::new(),
                 tarefa: None,
                 repetivel,
+                passadas: vec![],
             };
             if !t.e_trabalho() {
                 {
@@ -1698,6 +1744,7 @@ velhas a passos novos; rode de novo"
                             portas,
                             tarefa: None,
                             repetivel: false,
+                            passadas: vec![],
                         },
                         Err(e) => desfecho_de_erro(false, e, false),
                     });
@@ -1745,6 +1792,7 @@ velhas a passos novos; rode de novo"
                     portas: BTreeMap::new(),
                     tarefa: None,
                     repetivel: false,
+                    passadas: vec![],
                 });
                 continue;
             }
@@ -1905,7 +1953,8 @@ velhas a passos novos; rode de novo"
             ));
         let (terminadas, respostas) = tokio::join!(fut_filhas, fut_ferramentas);
         // Junta as passadas de cada passo, na ordem dos itens: qualquer passada que falhou
-        // falha o passo com o motivo dela.
+        // falha a TENTATIVA com o motivo dela (a nova tentativa refaz o passo inteiro). Na
+        // ultima, `ao_errar` que segue fica com as passadas boas -- ver `parcial`.
         let mut por_passo: BTreeMap<String, Passadas> = BTreeMap::new();
         for ((run, tentativa, id, r), primeira) in terminadas.into_iter().zip(ids_das_filhas) {
             let entrada = por_passo
@@ -1947,6 +1996,11 @@ velhas a passos novos; rode de novo"
                     portas: BTreeMap::new(),
                     tarefa,
                     repetivel: true,
+                    passadas: if passadas.len() > 1 {
+                        passadas
+                    } else {
+                        vec![]
+                    },
                 },
                 None => {
                     let saida = match passadas.as_slice() {
@@ -1964,6 +2018,7 @@ velhas a passos novos; rode de novo"
                         portas: BTreeMap::new(),
                         tarefa,
                         repetivel: false,
+                        passadas: vec![],
                     }
                 }
             });
@@ -2003,6 +2058,7 @@ velhas a passos novos; rode de novo"
                 continue;
             }
             let item_de_erro = vec![json!({"erro": motivo, "passo": d.id})];
+            let (bons, erros) = parcial(&d.id, &d.passadas);
             let (estado, saida, portas) = match p.ao_errar {
                 AoErrar::Parar => {
                     fila.fail(d.run, motivo.clone(), false, agora)
@@ -2012,9 +2068,27 @@ velhas a passos novos; rode de novo"
                 AoErrar::Continuar => {
                     fila.succeed(d.run, json!({"erro": motivo}), agora)
                         .map_err(|e| e.to_string())?;
-                    let s = Saida {
-                        texto: motivo,
-                        itens: item_de_erro,
+                    let s = if d.passadas.is_empty() {
+                        Saida {
+                            texto: motivo,
+                            itens: item_de_erro,
+                        }
+                    } else {
+                        // Na ordem dos itens: a passada boa com os itens dela, a que
+                        // falhou com o item de erro no lugar.
+                        Saida::de_itens(
+                            d.passadas
+                                .iter()
+                                .enumerate()
+                                .flat_map(|(i, (ok, t))| {
+                                    if *ok {
+                                        itens_de_texto(t)
+                                    } else {
+                                        vec![json!({"erro": t, "passo": d.id, "item": i})]
+                                    }
+                                })
+                                .collect(),
+                        )
                     };
                     mem.guardar(&d.id, s.clone(), BTreeMap::new());
                     ("continuou", s, BTreeMap::new())
@@ -2023,14 +2097,21 @@ velhas a passos novos; rode de novo"
                     fila.succeed(d.run, json!({"erro": motivo}), agora)
                         .map_err(|e| e.to_string())?;
                     let mut portas = BTreeMap::new();
-                    portas.insert("erro".to_string(), item_de_erro);
-                    let s = Saida {
-                        texto: motivo,
-                        itens: vec![],
+                    let s = if d.passadas.is_empty() {
+                        portas.insert("erro".to_string(), item_de_erro);
+                        Saida {
+                            texto: motivo,
+                            itens: vec![],
+                        }
+                    } else {
+                        portas.insert("erro".to_string(), erros);
+                        Saida::de_itens(bons)
                     };
                     mem.guardar(&d.id, s.clone(), portas.clone());
-                    // A saida principal nao disparou: quem depende dela pula.
-                    mem.mortos.insert(d.id.clone());
+                    // Saida principal sem item nao disparou: quem depende dela pula.
+                    if s.itens.is_empty() {
+                        mem.mortos.insert(d.id.clone());
+                    }
                     ("continuou", s, portas)
                 }
             };
@@ -2109,7 +2190,7 @@ velhas a passos novos; rode de novo"
         )
     });
     // O fluxo de erro: roda pelo MESMO portao e laco dos outros passos, com `{{erro}}` =
-    // os passos que falharam e o motivo de cada um. O fluxo continua falho.
+    // `{fluxo, passos: [{passo, motivo}], bloqueados: [id]}`. O fluxo continua falho.
     if !sucesso && let Some(id) = &fluxo.fluxo_de_erro {
         let p = fluxo.passos.iter().find(|p| &p.id == id).expect("validado");
         let falhos: Vec<Value> = feitos
@@ -2117,10 +2198,21 @@ velhas a passos novos; rode de novo"
             .filter(|r| r.estado == "falhou")
             .map(|r| json!({"passo": r.id, "motivo": r.saida}))
             .collect();
+        // `bloqueado` nao entra em `passos`: ele nao falhou e nao tem motivo -- e o efeito
+        // de quem falhou. Vai a parte, para o passo de erro saber o que ficou sem rodar.
+        let bloqueados: Vec<&str> = feitos
+            .iter()
+            .filter(|r| r.estado == "bloqueado")
+            .map(|r| r.id.as_str())
+            .collect();
         let mut visao = mem.fixos.clone();
         visao.insert(
             "erro".into(),
-            Saida::de_itens(vec![json!({"fluxo": fluxo.nome, "passos": falhos})]),
+            Saida::de_itens(vec![json!({
+                "fluxo": fluxo.nome,
+                "passos": falhos,
+                "bloqueados": bloqueados,
+            })]),
         );
         let pz = prazo(p, fim_do_fluxo);
         let (ok, texto, tarefa) = match tipo(p)? {

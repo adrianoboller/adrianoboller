@@ -41,9 +41,11 @@ impl FluxoTool {
         }
     }
 
-    /// O arquivo do fluxo: `caminho` como veio, ou `nome` (so letra, digito, `-`, `_`)
-    /// dentro da pasta de fluxos -- nome com `/` ou `..` nao vira caminho pelas costas.
-    fn arquivo(&self, args: &Value) -> Result<PathBuf, ToolError> {
+    /// O arquivo do fluxo: `caminho` pelo `confine` da pasta da tarefa (a porta de disco
+    /// de toda ferramenta: sem ele, `caminho` lia qualquer JSON da maquina e a mensagem de
+    /// erro do serde devolvia trechos dele -- leitura sem `fs.read`), ou `nome` (so letra,
+    /// digito, `-`, `_`) dentro da pasta de fluxos, que e o lugar do operador.
+    fn arquivo(&self, args: &Value, workdir: &Path) -> Result<PathBuf, ToolError> {
         let texto = |k: &str| {
             args.get(k)
                 .and_then(Value::as_str)
@@ -51,7 +53,7 @@ impl FluxoTool {
                 .filter(|s| !s.is_empty())
         };
         match (texto("caminho"), texto("nome")) {
-            (Some(c), None) => Ok(PathBuf::from(c)),
+            (Some(c), None) => crate::tarefa::confine(workdir, c).map_err(ToolError::Denied),
             (None, Some(n)) => {
                 if !n
                     .chars()
@@ -91,8 +93,8 @@ impl Tool for FluxoTool {
         ToolSpec {
             name: "fluxo".into(),
             description: "Run a saved PhxClaw flow (DAG, JSON file) as a sub-flow and return the \
-items produced by its last step as a JSON array. Give 'caminho' (path to the .json) or 'nome' \
-(file in the agent's flows folder). 'entrada' are the input items the flow reads as {{entrada}}; \
+items produced by its last step as a JSON array. Give 'caminho' (path to the .json inside the \
+task folder) or 'nome' (file in the agent's flows folder). 'entrada' are the input items the flow reads as {{entrada}}; \
 'modo' 'once' (default) runs the flow once with the whole list, 'each' runs it once per item. \
 Every step of the sub-flow goes through the same policy as your own tool calls."
                 .into(),
@@ -113,7 +115,7 @@ Every step of the sub-flow goes through the same policy as your own tool calls."
         ctx: &'a ToolContext,
     ) -> BoxFut<'a, Result<ToolOutput, ToolError>> {
         Box::pin(async move {
-            let arq = self.arquivo(&args)?;
+            let arq = self.arquivo(&args, &ctx.workdir)?;
             let f = ler_fluxo(&arq)?;
             let agente = self.base.get().ok_or_else(|| {
                 ToolError::Failed("ferramenta fluxo sem agente montado (defeito de montagem)".into())

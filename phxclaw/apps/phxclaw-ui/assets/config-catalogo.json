@@ -1992,6 +1992,21 @@
       "variavel": "PHXCLAW_XMPP_CA"
     },
     {
+      "chave": "canais.xmpp.confiar_no_nick",
+      "comando_do_segredo": null,
+      "descricao": "Numa sala anônima, aceitar sala/nick de PERMITIDOS como identidade do ocupante. Risco: o nick é de quem chegar primeiro com ele",
+      "descricao_en": "In an anonymous room, accept room/nick from PERMITIDOS as the occupant's identity. Risk: the nick belongs to whoever takes it first",
+      "motivo_so_ambiente": null,
+      "motivo_so_ambiente_en": null,
+      "natureza": "config",
+      "opcoes": null,
+      "padrao": false,
+      "secao": "canais",
+      "segredo": false,
+      "tipo": "booleano",
+      "variavel": "PHXCLAW_XMPP_CONFIAR_NO_NICK"
+    },
+    {
       "chave": "canais.xmpp.endereco",
       "comando_do_segredo": null,
       "descricao": "Servidor host:porta",
@@ -2040,8 +2055,8 @@
     {
       "chave": "canais.xmpp.salas",
       "comando_do_segredo": null,
-      "descricao": "JIDs das salas (MUC) em que o bot entra; a sala também vai em PERMITIDOS",
-      "descricao_en": "Room JIDs (MUC) the bot joins; the room also goes in PERMITIDOS",
+      "descricao": "JIDs das salas (MUC) em que o bot entra; cada sala também precisa estar em PERMITIDOS",
+      "descricao_en": "JIDs of the rooms (MUC) the bot joins; each room must also be listed in PERMITIDOS",
       "motivo_so_ambiente": null,
       "motivo_so_ambiente_en": null,
       "natureza": "config",

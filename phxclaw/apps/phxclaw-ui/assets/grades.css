@@ -52,7 +52,10 @@
    celular (ate 640px) vale o empilhado do tarefas.css -- sem o limite, a coluna minima de
    360px empurrava o detalhe para fora da tela (achado pelo pwa_ponte.mjs, num Pixel 7). */
 @media(min-width:641px){
-  .tarefas-grade{grid-template-columns:minmax(360px,1.3fr) 1fr}
+  /* Piso min-content (e nao 360px fixo): com o detalhe aberto, a 1536 px a lista ficava 21 px
+     mais estreita que a propria tabela e a «Criada em» saia cortada no segundo («06:00:0»),
+     escondida atras da rolagem horizontal (achado exercitando, L2 da SP000036). */
+  .tarefas-grade{grid-template-columns:minmax(min-content,1.3fr) 1fr}
   .tarefas-grade:has(.tarefas-detalhe[hidden]){grid-template-columns:1fr}
 }
 .grade-alvo tbody tr{cursor:default}

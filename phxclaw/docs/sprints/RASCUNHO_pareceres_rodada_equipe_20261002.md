@@ -52,3 +52,8 @@
 - XMPP conserto SEC pela metade: NÃO COMPILA (ligar.rs:370 sem permitidos/confiar_no_nick; xmpp.rs:866 teste sem tratar Result do recortar). Falta chave CONFIAR_NO_NICK no catálogo e regerar artefatos.
 - Onda 2 do fluxo: compila; faltam testes da onda 2 e os itens do DBA/SEC A3/QA.
 - Nada disto passou pelo Integrador. Branch de rascunho, não o phxclaw/v070-nativo.
+
+## Retomada 06/10 — guarda da casca (designer) — entregue
+- ui_navegacao 65/65 com checagem nova de número no topo/rodapé; RED medido (cópia com 451 → 64/65). #brandVersion com data-fonte="host". lerAsset segue DIR_DA_UI.
+- Isenção «Helix —» com RED medido; grade de Tarefas sem corte na 1536 (minmax(min-content)); sw casca 11.
+- Pendência L1: lema do rodapé cortado a 1366 px.

@@ -25,7 +25,9 @@ mkdirSync(OUT, { recursive: true });
 const ORIGEM = 'http://phxclaw.local';
 const TIPOS = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.json': 'application/json', '.woff2': 'font/woff2', '.png': 'image/png' };
 
-const lerAsset = nome => JSON.parse(readFileSync(join(RAIZ, 'apps/phxclaw-ui/assets', nome), 'utf8'));
+// Le do MESMO diretorio que o navegador carrega: prova numa copia compara a copia com ela mesma
+// (antes lia de RAIZ e a copia era medida contra os JSON da arvore real).
+const lerAsset = nome => JSON.parse(readFileSync(join(UI, 'assets', nome), 'utf8'));
 const grade = JSON.parse(readFileSync(join(AQUI, 'dados/grade_bash.json'), 'utf8'));
 
 // A API de tarefas falsa: um estado de cada, com a data FORA de ordem, para a grade provar
@@ -134,6 +136,27 @@ try {
   check('selo Agentes = total do equipe.json', seloDe('seloAgentes') === String(equipe.total), `${seloDe('seloAgentes')} / ${equipe.total}`);
   check('selo Ferramentas = total do ferramentas.json', seloDe('seloFerramentas') === String(ferramentas.total), `${seloDe('seloFerramentas')} / ${ferramentas.total}`);
   check('nenhum selo sem id (numero digitado)', selos.every(([id]) => id), JSON.stringify(selos));
+
+  // Casca (SP000036 L1): o topo e o rodape tambem sao tela. Todo texto com digito FORA das
+  // <section class="tela"> tem de morar num [data-fonte] -- o digito solto no rodape e o selo
+  // digitado de novo com outro nome, e as varreduras por tela nao o alcancam.
+  // Prova real (02/10/2026): <b>451</b> no footer passava 58/58 aqui e 0 cravados no
+  // textos_fora_da_fabrica (so letras contam la); com esta checagem, FALHA :: 451.
+  const cascaSolta = await page.evaluate(() => {
+    const fora = [];
+    const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    for (let n = w.nextNode(); n; n = w.nextNode()) {
+      const t = n.textContent.trim();
+      if (!t || !/\d/.test(t)) continue;
+      const el = n.parentElement;
+      // Os selos do menu (.nav b[id]) ja sao medidos contra o JSON pelas checagens de selo
+      // acima -- selo sem id e o que reprova la; aqui so o que ninguem mede.
+      if (!el || el.closest('section.tela, script, style, #splash, .nav b[id]')) continue;
+      if (!el.closest('[data-fonte]')) fora.push(t);
+    }
+    return fora;
+  });
+  check('casca: nenhum numero fora de [data-fonte] no topo e no rodape', cascaSolta.length === 0, cascaSolta.join(' | ').slice(0, 200));
 
   // Visao geral: nenhum numero solto. Todo texto com numero isolado (8 formatos, 7 TRUSTED,
   // 3x, 78%) e toda largura em estilo tem de morar dentro de um [data-fonte]; e os numeros

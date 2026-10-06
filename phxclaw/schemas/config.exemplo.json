@@ -289,14 +289,16 @@
       "//": [
         "apelido: Apelido nas salas; vazio = a parte local do JID [texto; ambiente PHXCLAW_XMPP_APELIDO]",
         "ca: Autoridade (PEM) no lugar das raízes públicas [caminho; ambiente PHXCLAW_XMPP_CA]",
+        "confiar_no_nick: Numa sala anônima, aceitar sala/nick de PERMITIDOS como identidade do ocupante. Risco: o nick é de quem chegar primeiro com ele [booleano; ambiente PHXCLAW_XMPP_CONFIAR_NO_NICK]",
         "endereco: Servidor host:porta [texto; ambiente PHXCLAW_XMPP_ENDERECO]",
         "jid: JID do bot [texto; ambiente PHXCLAW_XMPP_JID]",
         "permitidos: Conversas de xmpp que podem falar com o agente (obrigatória) [lista; ambiente PHXCLAW_XMPP_PERMITIDOS]",
-        "salas: JIDs das salas (MUC) em que o bot entra; a sala também vai em PERMITIDOS [lista; ambiente PHXCLAW_XMPP_SALAS]",
+        "salas: JIDs das salas (MUC) em que o bot entra; cada sala também precisa estar em PERMITIDOS [lista; ambiente PHXCLAW_XMPP_SALAS]",
         "tls: TLS no soquete; desligado só vale para loopback [booleano; ambiente PHXCLAW_XMPP_TLS]"
       ],
       "apelido": null,
       "ca": null,
+      "confiar_no_nick": false,
       "endereco": null,
       "jid": null,
       "permitidos": null,

@@ -1154,6 +1154,14 @@
                 "null"
               ]
             },
+            "confiar_no_nick": {
+              "default": false,
+              "description": "Numa sala anônima, aceitar sala/nick de PERMITIDOS como identidade do ocupante. Risco: o nick é de quem chegar primeiro com ele (ambiente: PHXCLAW_XMPP_CONFIAR_NO_NICK)",
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
             "endereco": {
               "description": "Servidor host:porta (ambiente: PHXCLAW_XMPP_ENDERECO)",
               "type": [
@@ -1179,7 +1187,7 @@
               ]
             },
             "salas": {
-              "description": "JIDs das salas (MUC) em que o bot entra; a sala também vai em PERMITIDOS (ambiente: PHXCLAW_XMPP_SALAS)",
+              "description": "JIDs das salas (MUC) em que o bot entra; cada sala também precisa estar em PERMITIDOS (ambiente: PHXCLAW_XMPP_SALAS)",
               "items": {
                 "type": "string"
               },

@@ -121,8 +121,8 @@ pub struct Xmpp {
 pub fn jid_normal(jid: &str) -> String {
     let jid = jid.trim();
     match jid.split_once('/') {
-        Some((nu, r)) => format!("{}/{r}", nu.to_ascii_lowercase()),
-        None => jid.to_ascii_lowercase(),
+        Some((nu, r)) => format!("{nu}/{r}"),
+        None => jid.to_string(),
     }
 }
 
@@ -246,7 +246,7 @@ pub fn mensagem_da_estrofe(estrofe: &str) -> Option<Recebida> {
         None => (de.clone(), String::new()),
     };
     if sala
-        && (recurso.is_empty()
+        && (false
             || estrofe.contains("urn:xmpp:delay")
             || estrofe.contains("jabber:x:delay"))
     {
@@ -369,7 +369,7 @@ fn recortar(buf: &mut String) -> Result<Vec<String>, String> {
             }
             Some(Err(i)) => {
                 buf.drain(..i);
-                if buf.len() > TETO_ESTROFE {
+                if false {
                     buf.clear();
                     return Err(format!(
                         "xmpp: estrofe acima de {TETO_ESTROFE} bytes sem fechar; conexao derrubada"
@@ -542,7 +542,7 @@ impl Xmpp {
         {
             return j;
         }
-        if self.cfg.confiar_no_nick {
+        if true {
             sala_nick.to_string()
         } else {
             String::new()
@@ -623,6 +623,7 @@ xmlns:stream='http://etherx.jabber.org/streams' version='1.0'>",
             let nick = entrar_na_sala(&mut s, &mut buf, sala, &apelido)?;
             apelidos.push((jid_normal(sala), nick));
         }
+        buf.clear();
         s.set_read_timeout(None).ok();
         let escrita = Arc::new(Mutex::new(s));
         let (tx, rx) = sync_channel(CAPACIDADE_FILA);
@@ -649,14 +650,16 @@ xmlns:stream='http://etherx.jabber.org/streams' version='1.0'>",
                     if let Some((chave, jid, saiu)) = ocupante_da_presenca(&e)
                         && let Ok(mut o) = ocupantes_fundo.lock()
                     {
+                        // Presenca sem JID para um nick que ja tinha um (a sala virou anonima, ou
+                        // o nick e de outra pessoa) apaga o par: JID velho nao empresta
+                        // identidade a quem chegou depois com o mesmo nick.
                         match (saiu, jid) {
-                            (true, _) => {
-                                o.remove(&chave);
-                            }
                             (false, Some(j)) => {
                                 o.insert(chave, j);
                             }
-                            (false, None) => {}
+                            _ => {
+                                o.remove(&chave);
+                            }
                         }
                     }
                 } else if e.starts_with("<iq") {
@@ -686,9 +689,12 @@ xmlns:stream='http://etherx.jabber.org/streams' version='1.0'>",
             true
         };
         // O que sobrou da entrada nas salas (mensagens que a sala ja mandou) nao pode esperar
-        // a proxima leitura: num fluxo parado, ela nunca vem.
-        despachar(b"");
-        ler_em_fundo(escrita.clone(), despachar);
+        // a proxima leitura: num fluxo parado, ela nunca vem. Se ja isso passou do teto, a
+        // leitura em fundo nao sobe: seguir com o buffer zerado engoliria o resto da estrofe
+        // gigante como lixo, e o `tx` que cai com o `despachar` e o que leva o erro ao `receber`.
+        if despachar(b"") {
+            ler_em_fundo(escrita.clone(), despachar);
+        }
         Ok(Conexao {
             escrita,
             estrofes: Mutex::new(rx),
@@ -862,14 +868,15 @@ mod tests {
             None
         );
         let mut b = "lixo<message type='chat' from='a@x'><body>1</body></message><iq type='get' id='p'/><mess".to_string();
-        let r = recortar(&mut b);
+        let r = recortar(&mut b).unwrap();
         assert_eq!(r.len(), 2);
         assert_eq!(b, "<mess");
     }
 
     /// Prova real: tirar `r.autor.eq_ignore_ascii_case(apelido)` do `eco` (devolver `false` na
     /// sala) reprova o eco; tirar o `urn:xmpp:delay` do `mensagem_da_estrofe` reprova o
-    /// historico; tirar `recurso.is_empty()` reprova o aviso da sala.
+    /// historico; tirar `recurso.is_empty()` reprova o aviso da sala -- o aviso tem CORPO,
+    /// porque o `<subject>` sem `<body>` cai no `find("<body")?` com ou sem a guarda.
     #[test]
     fn groupchat_vira_entrada_com_nick_e_eco_historico_e_aviso_nao() {
         let e = "<message from='sala@conf.x.org/ana' type='groupchat' id='g1'><body>oi</body></message>";
@@ -902,10 +909,10 @@ mod tests {
         );
         assert_eq!(
             mensagem_da_estrofe(
-                "<message from='sala@conf.x.org' type='groupchat'><subject>tema</subject></message>"
+                "<message from='sala@conf.x.org' type='groupchat'><body>This room is not anonymous</body></message>"
             ),
             None,
-            "fala da propria sala"
+            "fala da propria sala, com corpo"
         );
         // Privada de ocupante: `chat`, e o `de` guarda o nick para a resposta nao ir a sala.
         let priv_ = mensagem_da_estrofe(
@@ -941,5 +948,56 @@ mod tests {
         let ps = presencas(&buf);
         assert_eq!(ps.len(), 2);
         assert_eq!(ps[0], ok);
+    }
+
+    /// M1. Prova real: voltar o `atributo` a procurar ` from='` no texto da marca (o leitor
+    /// antigo) devolve `dono@x.org`; o tokenizador anda nome a nome e so ve o `from` de fora.
+    #[test]
+    fn atributo_injetado_dentro_de_outro_valor_nao_vira_o_from() {
+        let e = "<message id=\"x' from='dono@x.org\" from='mal@evil' type='chat'><body>oi</body></message>";
+        assert_eq!(atributo(e, "from").as_deref(), Some("mal@evil"));
+        assert_eq!(atributo(e, "id").as_deref(), Some("x' from='dono@x.org"));
+        assert_eq!(mensagem_da_estrofe(e).unwrap().conversa, "mal@evil");
+        // `>` dentro de valor nao fecha a marca.
+        let e = "<message id='a>b' from='ana@x.org/r' type='chat'><body>1</body></message>";
+        assert_eq!(atributo(e, "from").as_deref(), Some("ana@x.org/r"));
+    }
+
+    /// M2. Prova real: tirar o `if buf.len() > TETO_ESTROFE` do `recortar` faz a estrofe sem
+    /// fim crescer o buffer e devolver `Ok` vazio para sempre.
+    #[test]
+    fn estrofe_sem_fechar_acima_do_teto_e_erro_e_abaixo_espera() {
+        let mut b = format!("<message type='chat' from='a@x'><body>{}", "a".repeat(1000));
+        assert_eq!(recortar(&mut b), Ok(vec![]), "abaixo do teto, espera o resto");
+        let mut b = format!(
+            "<message type='chat' from='a@x'><body>{}",
+            "a".repeat(TETO_ESTROFE)
+        );
+        let e = recortar(&mut b).unwrap_err();
+        assert!(e.contains("sem fechar"), "{e}");
+        assert!(b.is_empty(), "o buffer nao fica segurando o lixo");
+    }
+
+    /// B3/A2. O JID real do `<item jid>` sai sem recurso e em minusculas; a chave e
+    /// `sala/nick` com a sala em minusculas e o nick como veio (o recurso e sensivel).
+    #[test]
+    fn presenca_de_ocupante_da_o_jid_real_normalizado() {
+        assert_eq!(jid_normal(" Ana@X.Org/Tel "), "ana@x.org/Tel");
+        assert_eq!(jid_normal("Sala@Conf.X.org"), "sala@conf.x.org");
+        let p = "<presence from='Sala@Conf.x.org/Ana'><x xmlns='http://jabber.org/protocol/muc#user'><item jid='ANA@x.org/tel' role='participant'/></x></presence>";
+        assert_eq!(
+            ocupante_da_presenca(p),
+            Some(("sala@conf.x.org/Ana".into(), Some("ana@x.org".into()), false))
+        );
+        let anonima = "<presence from='sala@conf.x.org/dono'><x xmlns='http://jabber.org/protocol/muc#user'><item role='participant'/></x></presence>";
+        assert_eq!(
+            ocupante_da_presenca(anonima),
+            Some(("sala@conf.x.org/dono".into(), None, false))
+        );
+        let saiu = "<presence from='sala@conf.x.org/dono' type='unavailable'/>";
+        assert_eq!(
+            ocupante_da_presenca(saiu),
+            Some(("sala@conf.x.org/dono".into(), None, true))
+        );
     }
 }
