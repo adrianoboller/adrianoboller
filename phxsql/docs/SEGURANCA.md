@@ -7086,3 +7086,65 @@ Prova real: `calculada_sobre_externo_selado_nasce_marcada_e_nao_vaza_no_reg`,
 `calculada_derivada_de_coluna_negada_nao_se_le` e
 `a_recusa_da_calculada_sobre_coluna_marcada_nao_diz_a_linha`, cada uma com
 guarda no catálogo.
+
+## 41. A trava de instância, a árvore temporária do zip e o manifesto que lista a trava (pedidos 648 e 651, 06/10/2026)
+
+**648 — a trava seguia link e truncava o alvo.** `trava_de_instancia::tomar`
+abria o `.phxsql.trava` com `create(true).write(true)` e depois fazia
+`set_len(0)` + pid: um `.phxsql.trava -> isca` plantado TRUNCAVA a isca, o
+link pendurado CRIAVA o alvo fora da pasta, e um link físico escrevia o pid no
+inode da vítima. Agora a trava passa pelo **mesmo motor** de `recriar_do_banco`
+(`util.rs`, modo `Reabrir`): `create_new` no caso comum; se o nome existe,
+`lstat` (só arquivo regular), `O_NOFOLLOW | O_NONBLOCK`, `fstat` do que abriu
+(o mesmo dev/inode do `lstat`) e `nlink == 1` conferido **antes e depois** da
+abertura — e NÃO trunca nem mexe no modo ao abrir (truncar apagaria o pid de
+quem segura). A recusa sai como `PhxError::Esquema` com só o nome da pasta
+(pedido 428).
+
+*Hipótese que morreu:* usar o `recriar_no_destino` (569), que troca o nome
+alheio por um arquivo novo. Trocar o inode da trava desfaz a exclusão mútua —
+quem já a segura fica com o inode velho e o recém-chegado trava o novo. Por
+isso o link físico **recusa** em vez de ser trocado. `create_new` sozinho
+também não serve: a trava precisa reabrir o arquivo que já é dela.
+
+Prova (`trava_de_instancia::testes`): link simbólico, link pendurado e link
+físico para uma isca com conteúdo — a isca fica intacta e `tomar` recusa; os
+três caem com o `create(true).write(true)` reposto, e o do link físico cai
+sozinho com o `nlink` desligado. O irmão `trava_que_ja_existe_reabre_e_trava`
+prova que o arquivo legítimo continua reabrindo, com o modo que tinha.
+
+**651 (a) — a árvore temporária do zip seguia o nome plantado.** O
+`<nome>.zip.retrato.part/` tem nome previsível (banco, admin, minuto) numa
+pasta onde terceiros escrevem, e era criado por `create_dir_all` e aberto por
+`Pasta::abrir`, que SEGUE o nome. Medido antes do conserto: com o nome
+plantado como link para uma pasta-isca, a cópia do `.reg` **reescreveu o
+arquivo de mesmo nome na isca**; com uma pasta de verdade plantada já cheia, o
+**intruso entrou no zip** (e viraria tabela na restauração). O link físico no
+nome de uma cópia já era recusado (motor do 569). Agora a árvore **nasce**
+(`mkdir` sem `-p` pelo descritor da mãe — `AlreadyExists` para link, pasta ou
+arquivo), entra-se nela sem seguir link, e o que abriu tem de estar vazio e
+ser do dono do processo; é esse descritor que recebe as cópias. Nome ocupado
+recusa e não se apaga. Janela que sobra: quem tem o MESMO uid, que já pode
+tudo no destino. A conferência «vazia e do dono» é defesa da janela entre o
+`mkdir` e a abertura e **não tem teste** (pede corrida com outro uid).
+
+ENOSPC da árvore, lido: a guarda de espaço (`livre < tamanho + 10%`) manda
+para a passada única dizendo (medido com `tmpfs`,
+`bancada/backup/zip-sem-espaco.py`); um ENOSPC no meio da cópia sobe como erro
+de E/S e a faxina do 576 tira só o que a corrida fez nascer.
+
+**651 (b) — manifesto hostil com `.phxsql.trava`.** O `caminho_seguro` só
+recusava o que sai da pasta; o manifesto que listava `Z/.phxsql.trava` era
+aceito, e o arquivo de estado entrava no database restaurado com o conteúdo
+de quem montou o backup. O backup nunca o grava (`backup::listar` o omite),
+então `ler_manifesto` passa a recusá-lo antes de qualquer escrita. O `*.novo`
+fica de fora de propósito: o backup o copia quando o acha, e um `.novo` hostil
+não faz nada que um `.reg` hostil do mesmo backup já não faça. O sufixo
+`.lixo` não existe no código.
+
+Provas: `backup::tests::retrato_part_plantado_como_link_nao_leva_a_copia_para_fora`,
+`retrato_part_plantado_ja_cheio_nao_entra_no_zip` e
+`restaurar::tests::manifesto_que_lista_a_trava_de_instancia_e_recusado`, cada
+uma caindo com o defeito reposto; guardas `trava-de-instancia-segue-link`,
+`trava-de-instancia-aceita-link-fisico`, `zip-retrato-part-aproveitado` e
+`restaurar-aceita-trava-no-manifesto` em `bancada/guardas/catalogo.py`.

@@ -206,15 +206,30 @@ pub fn tomar(diretorio: &Path) -> Result<Option<Posse>> {
     let caminho = chave.join(NOME_DO_ARQUIVO);
     // 0600 pelo motor da permissao (pedido 542): o pid e pouco, mas arquivo
     // do banco legivel pela maquina inteira e o que aquele pedido fechou.
-    let mut arquivo = match crate::util::opcoes_do_banco()
-        .read(true)
-        .write(true)
-        .create(true)
-        .truncate(false)
-        .open(&caminho)
-    {
+    //
+    // Pedido 648: pelo MESMO motor de `recriar_do_banco`, no modo que reabre
+    // sem truncar. O `create(true).write(true)` de antes seguia um
+    // `.phxsql.trava -> isca` plantado e o `set_len(0)` + pid abaixo
+    // TRUNCAVA a isca. Link simbolico, FIFO e link fisico recusam; so o
+    // arquivo regular de um nome so' (o nosso, que outros processos tambem
+    // seguram) abre.
+    let mut arquivo = match crate::util::reabrir_do_banco(&caminho, true) {
         Ok(f) => f,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound && !chave.is_dir() => return Ok(None),
+        // Recusa do motor (sem `errno`): a frase dele traz o caminho inteiro,
+        // e a daqui vai crua ao cliente (428) -- so o NOME da pasta.
+        Err(e) if e.raw_os_error().is_none() => {
+            let pasta = chave
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            return Err(PhxError::Esquema(format!(
+                "a pasta {pasta} tem um {NOME_DO_ARQUIVO} que nao e um arquivo \
+                 comum de um nome so (link simbolico, link fisico ou outro \
+                 tipo): o banco recusa gravar atraves dele, porque escreveria \
+                 fora da pasta. Tire esse nome da pasta e tente de novo"
+            )));
+        }
         Err(e) => return Err(PhxError::from(e)),
     };
     match arquivo.try_lock() {
@@ -368,6 +383,78 @@ mod testes {
         outro
             .try_lock()
             .expect("a trava nao saiu com a ultima posse");
+    }
+
+    /// Pedido 648: o `.phxsql.trava` plantado como link simbolico para um
+    /// arquivo-isca. Com o `create(true).write(true)` de antes, `tomar`
+    /// seguia o link e o `set_len(0)` + pid TRUNCAVA a isca.
+    #[cfg(unix)]
+    #[test]
+    fn trava_plantada_como_link_simbolico_nao_trunca_o_alvo() {
+        let d = crate::apoio_teste::DirTemp::novo("trava-link-simbolico");
+        let isca = d.0.join("isca.txt");
+        std::fs::write(&isca, "conteudo que nao pode sumir").unwrap();
+        std::os::unix::fs::symlink(&isca, d.0.join(NOME_DO_ARQUIVO)).unwrap();
+        let r = tomar(&d.0);
+        assert_eq!(
+            std::fs::read_to_string(&isca).unwrap(),
+            "conteudo que nao pode sumir",
+            "a isca foi mexida atraves do link"
+        );
+        let e = r.expect_err("o link tinha de ser recusado, e nao seguido");
+        let frase = e.to_string();
+        assert!(frase.contains(NOME_DO_ARQUIVO), "{frase}");
+        assert!(
+            !frase.contains(d.0.to_str().unwrap()),
+            "a frase vai ao cliente: so o nome da pasta ({frase})"
+        );
+    }
+
+    /// O mesmo, com link PENDURADO: o `create(true)` de antes CRIAVA o alvo
+    /// fora da pasta.
+    #[cfg(unix)]
+    #[test]
+    fn trava_plantada_como_link_pendurado_nao_cria_o_alvo() {
+        let d = crate::apoio_teste::DirTemp::novo("trava-link-pendurado");
+        let alvo = d.0.join("nao-existia.txt");
+        std::os::unix::fs::symlink(&alvo, d.0.join(NOME_DO_ARQUIVO)).unwrap();
+        assert!(tomar(&d.0).is_err());
+        assert!(!alvo.exists(), "o link pendurado criou o alvo");
+    }
+
+    /// Link FISICO: dois nomes no mesmo inode. A trava escreveria o pid no
+    /// inode da vitima (`set_len(0)`), sem link simbolico nenhum a recusar.
+    #[cfg(unix)]
+    #[test]
+    fn trava_plantada_como_link_fisico_nao_trunca_a_isca() {
+        let d = crate::apoio_teste::DirTemp::novo("trava-link-fisico");
+        let isca = d.0.join("isca.txt");
+        std::fs::write(&isca, "conteudo que nao pode sumir").unwrap();
+        std::fs::hard_link(&isca, d.0.join(NOME_DO_ARQUIVO)).unwrap();
+        let r = tomar(&d.0);
+        assert_eq!(
+            std::fs::read_to_string(&isca).unwrap(),
+            "conteudo que nao pode sumir",
+            "a isca foi mexida atraves do link fisico"
+        );
+        assert!(r.is_err(), "link fisico tinha de ser recusado");
+    }
+
+    /// O irmao que impede um portao que recusaria tudo: o arquivo da trava
+    /// que JA existe (de uma corrida anterior, ou de outro processo) abre e
+    /// trava, e o `0600` de antes continua o mesmo.
+    #[cfg(unix)]
+    #[test]
+    fn trava_que_ja_existe_reabre_e_trava() {
+        use std::os::unix::fs::PermissionsExt;
+        let d = crate::apoio_teste::DirTemp::novo("trava-reabre");
+        drop(tomar(&d.0).unwrap().unwrap());
+        let caminho = d.0.join(NOME_DO_ARQUIVO);
+        std::fs::set_permissions(&caminho, std::fs::Permissions::from_mode(0o640)).unwrap();
+        let posse = tomar(&d.0).unwrap().expect("o arquivo ja existente abre");
+        assert!(posse.0.vale());
+        let modo = std::fs::metadata(&caminho).unwrap().permissions().mode() & 0o777;
+        assert_eq!(modo, 0o640, "reabrir nao mexe na permissao que ja estava");
     }
 
     #[test]

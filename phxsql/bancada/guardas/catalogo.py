@@ -18754,10 +18754,10 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "e com `hard_link` (sem root)."
         ),
         "arquivo": "crates/phxsql-store/src/util.rs",
-        "trecho": """    recriar(caminho, ler, true)
+        "trecho": """    recriar(caminho, ler, Modo::Destino)
 """,
         "troca": """    // DEFEITO REPOSTO (569): o destino reescreve o inode que estiver no nome.
-    recriar(caminho, ler, false)
+    recriar(caminho, ler, Modo::Banco)
 """,
         "pacote": "phxsql-store",
         "alvo": ["--test", "destino-do-backup-sem-atalho"],
@@ -24699,6 +24699,204 @@ fn anotar(""",
         ],
         "seguem": [
             "conferidor::testes::nenhuma_chave_com_os_seis_idiomas_colados",
+        ],
+    },
+    {
+        "id": "backup-fsync-do-grosso-na-fase-1",
+        "titulo": "O `fsync` do grosso da cópia de volta à fase 1 do backup, com o escritor andando (pedido 646)",
+        "porque": (
+            "pedido 646: a 1.123 MiB o `fsync` das copias ANTES da fase 2 deu "
+            "picos de 398 [370-439] ms (A) e 404 [312-1.563] ms (B) a uma "
+            "escrita durante a fase 1, contra 32 e 89 ms sem ele, e depois da "
+            "fase 1 as faixas se cruzavam: nada comprado. A prova arma recusa "
+            "de `fsync` no destino inteiro durante as duas fases."
+        ),
+        "arquivo": "crates/phxsql-store/src/backup.rs",
+        "trecho": """    if let Err(e) = fase.copiar_tudo() {
+        descartar_corrida(&fase.copias);
+        return Err(e);
+    }
+    Ok(fase)
+}
+""",
+        "troca": """    if let Err(e) = fase.copiar_tudo() {
+        descartar_corrida(&fase.copias);
+        return Err(e);
+    }
+    // DEFEITO REPOSTO (646): o grosso sincroniza na fase 1.
+    if fase.zip.is_none() {
+        sincronizar_copias(&fase.copias)?;
+    }
+    Ok(fase)
+}
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--lib"],
+        "caem": [
+            "backup::tests::o_concluir_sincroniza_tambem_o_que_a_fase_2_nao_reescreveu",
+        ],
+        "seguem": [
+            "backup::tests::copia_tudo_e_confere",
+            "backup::tests::o_zip_em_duas_passadas_comprime_a_arvore_e_a_apaga",
+        ],
+    },
+    {
+        "id": "backup-manifesto-nasce-na-fase-2",
+        "titulo": "O manifesto do backup gravado já na fase 2, antes do `concluir`: uma queda ali deixa um destino que o `op_backups` lista e o `restaurar` aceita (pedido 646)",
+        "porque": (
+            "pedido 646: sem o `fsync` antes da trava, a garantia de uma queda "
+            "na fase 2 e' so' esta -- o destino fica SEM manifesto (o velho sai "
+            "antes da primeira copia, 577; o novo so' nasce depois do `fsync`, "
+            "524 C2). Manifesto gravado antes disso mente sobre copias que "
+            "ainda nao estao no disco."
+        ),
+        "arquivo": "crates/phxsql-store/src/backup.rs",
+        "trecho": """    let feito = fase.acertar(eventos);
+""",
+        "troca": """    let feito = fase.acertar(eventos);
+    // DEFEITO REPOSTO (646): o manifesto nasce na fase 2.
+    let feito = feito.and_then(|a| finalizar_manifesto(&fase.copias, 1, &fase.r).map(|()| a));
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--lib"],
+        "caem": [
+            "backup::tests::queda_na_fase_2_deixa_destino_sem_manifesto_e_o_restaurar_recusa",
+        ],
+        "seguem": [
+            "backup::tests::manifesto_nao_e_gravado_antes_do_fsync_das_duas_fases",
+            "backup::tests::copia_tudo_e_confere",
+        ],
+    },
+    {
+        "id": "backup-concluir-manifesto-antes-do-fsync",
+        "titulo": "O `concluir` grava o manifesto ANTES do `fsync` das cópias das duas fases (pedido 646, condição C2 do 524)",
+        "porque": (
+            "pedido 646: com o `fsync` todo no `concluir`, a ordem dele e' a "
+            "garantia inteira. Manifesto antes do `fsync` diz «pronto» sobre "
+            "copias que uma queda de energia leva."
+        ),
+        "arquivo": "crates/phxsql-store/src/backup.rs",
+        "trecho": """    let feito = sincronizar_copias(copias).and_then(|()| finalizar_manifesto(copias, quando_ms, r));
+""",
+        "troca": """    // DEFEITO REPOSTO (646): manifesto antes do fsync.
+    let feito = finalizar_manifesto(copias, quando_ms, r).and_then(|()| sincronizar_copias(copias));
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--lib"],
+        "caem": [
+            "backup::tests::manifesto_nao_e_gravado_antes_do_fsync_das_duas_fases",
+        ],
+        "seguem": [
+            "backup::tests::queda_na_fase_2_deixa_destino_sem_manifesto_e_o_restaurar_recusa",
+            "backup::tests::copia_tudo_e_confere",
+        ],
+    },
+    {
+        "id": "trava-de-instancia-segue-link",
+        "titulo": "A trava de instância aberta com `create(true).write(true)`: segue o `.phxsql.trava` plantado como link e TRUNCA o alvo (pedido 648)",
+        "porque": (
+            "revisao SEC de 01-02/10/2026: o `set_len(0)` + pid caia no alvo "
+            "de um `.phxsql.trava -> isca`, e o link pendurado CRIAVA o alvo "
+            "fora da pasta. A trava passa pelo motor de `recriar_do_banco` "
+            "(modo que reabre sem truncar)."
+        ),
+        "arquivo": "crates/phxsql-store/src/trava_de_instancia.rs",
+        "trecho": """    let mut arquivo = match crate::util::reabrir_do_banco(&caminho, true) {
+""",
+        "troca": """    // DEFEITO REPOSTO (648): abertura propria, que segue link.
+    let mut arquivo = match crate::util::opcoes_do_banco()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(&caminho)
+    {
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--lib"],
+        "caem": [
+            "trava_de_instancia::testes::trava_plantada_como_link_simbolico_nao_trunca_o_alvo",
+            "trava_de_instancia::testes::trava_plantada_como_link_pendurado_nao_cria_o_alvo",
+            "trava_de_instancia::testes::trava_plantada_como_link_fisico_nao_trunca_a_isca",
+        ],
+        "seguem": [
+            "trava_de_instancia::testes::trava_que_ja_existe_reabre_e_trava",
+            "trava_de_instancia::testes::outro_descritor_e_recusado_enquanto_a_posse_vive",
+        ],
+    },
+    {
+        "id": "trava-de-instancia-aceita-link-fisico",
+        "titulo": "O motor do arquivo do banco deixa de contar os nomes do inode: a trava escreve o pid num `.phxsql.trava` que é link físico de outro arquivo (pedido 648)",
+        "porque": (
+            "pedido 648: a trava REABRE o arquivo (outros processos a seguram), "
+            "entao nao pode trocar o inode como o destino do 569 faz -- quem ja "
+            "a segura ficaria com o velho e a exclusao mutua acabaria. O link "
+            "fisico plantado so' se recusa pelo `nlink`."
+        ),
+        "arquivo": "crates/phxsql-store/src/util.rs",
+        "trecho": """        m.nlink() == 1
+""",
+        "troca": """        // DEFEITO REPOSTO (648): nlink nao se confere.
+        m.nlink() >= 1
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--lib"],
+        "caem": [
+            "trava_de_instancia::testes::trava_plantada_como_link_fisico_nao_trunca_a_isca",
+        ],
+        "seguem": [
+            "trava_de_instancia::testes::trava_plantada_como_link_simbolico_nao_trunca_o_alvo",
+            "trava_de_instancia::testes::trava_que_ja_existe_reabre_e_trava",
+        ],
+    },
+    {
+        "id": "zip-retrato-part-aproveitado",
+        "titulo": "A árvore temporária do zip (`.retrato.part`) aproveitada se já existe: o link plantado leva a cópia para fora e o intruso entra no zip (pedido 651)",
+        "porque": (
+            "pedido 651 (a), medido antes do conserto: com o `create_dir_all` "
+            "+ `Pasta::abrir` da arvore comum, o link no nome previsivel da "
+            "arvore temporaria fazia a copia do `.reg` reescrever o arquivo de "
+            "mesmo nome na pasta-isca, e a pasta plantada ja cheia punha o "
+            "intruso no zip."
+        ),
+        "arquivo": "crates/phxsql-store/src/backup.rs",
+        "trecho": """        let aberto = if self.zip.is_some() {
+""",
+        "troca": """        // DEFEITO REPOSTO (651): a arvore do zip como a comum.
+        let aberto = if false {
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--lib"],
+        "caem": [
+            "backup::tests::retrato_part_plantado_como_link_nao_leva_a_copia_para_fora",
+            "backup::tests::retrato_part_plantado_ja_cheio_nao_entra_no_zip",
+        ],
+        "seguem": [
+            "backup::tests::o_zip_em_duas_passadas_comprime_a_arvore_e_a_apaga",
+        ],
+    },
+    {
+        "id": "restaurar-aceita-trava-no-manifesto",
+        "titulo": "A restauração aceita um manifesto que lista `.phxsql.trava`, nome que o backup nunca grava (pedido 651)",
+        "porque": (
+            "pedido 651 (b): o `caminho_seguro` so' recusa o que sai da pasta; "
+            "a trava de instancia e' estado do processo, omitida pelo "
+            "`backup::listar`, e manifesto que a traz nao saiu de um backup "
+            "do PhxSql."
+        ),
+        "arquivo": "crates/phxsql-store/src/restaurar.rs",
+        "trecho": """        if nome_reservado(&caminho) {
+""",
+        "troca": """        // DEFEITO REPOSTO (651): so' o `caminho_seguro` confere.
+        if false && nome_reservado(&caminho) {
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--lib"],
+        "caem": [
+            "restaurar::tests::manifesto_que_lista_a_trava_de_instancia_e_recusado",
+        ],
+        "seguem": [
+            "restaurar::tests::caminho_que_escapa_da_pasta_e_recusado",
         ],
     },
 ]

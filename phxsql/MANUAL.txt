@@ -1646,7 +1646,10 @@ VARIAS INSTANCIAS, DOCKER E CLUSTER
     app embutido, enquanto a base estiver aberta. LER continua livre. Se o
     processo cair (ate por kill -9), o sistema solta a trava sozinho -- nao
     ha arquivo para apagar a mao. O `.phxsql.trava` fica na pasta e nao entra
-    no backup.
+    no backup -- e um manifesto de backup que o liste e recusado na
+    restauracao (pedido 651). Se o `.phxsql.trava` for um link simbolico, um
+    link fisico ou outra coisa que nao um arquivo comum, a pasta RECUSA
+    gravar dizendo isso (pedido 648): tire o nome e repita.
 
     DOCKER: sim, e a imagem final e `scratch` -- sem shell, sem gerenciador
     de pacotes, so o binario. So e possivel porque nao ha dependencia externa
@@ -3753,7 +3756,10 @@ O QUE "CONSISTENTE" QUER DIZER AQUI
     ZIP: a arvore temporaria nasce em <destino>/<nome>.zip.retrato.part/
     e vira o .zip depois da fase 2. Sem espaco para ela (menos que o
     tamanho da raiz mais 10%), o backup cai na passada unica sob a trava
-    DIZENDO ("modo":"retrato_inteiro", "motivo"), em vez de falhar.
+    DIZENDO ("modo":"retrato_inteiro", "motivo"), em vez de falhar. A
+    arvore temporaria tem de NASCER na corrida: se o nome ja existe (link,
+    pasta ou arquivo que a corrida nao criou), o backup recusa dizendo o
+    nome, em vez de copiar atraves dele (pedido 651).
 
     Medido pelo soquete (bancada/backup/retrato-com-escritor.py): ver
     bancada/backup/resultados.json -- a espera maxima de um inserir

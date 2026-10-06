@@ -1635,6 +1635,12 @@ mod tests {
         // devolver o numero. Nao e familia do `Volumes`: sao dois slots de
         // 128 bytes com CRC, e a escrita rasgada e sobrevivida pelo slot
         // vigente, nao pela marca.
+        // Pedido 648: `util.rs` 11 -> 12 e `reabrir_do_banco` na lista dos
+        // ABRIDORES -- a trava de instancia deixou a abertura propria
+        // (`opcoes_do_banco().create(true)`, que seguia link) pelo modo
+        // `Reabrir` do motor do 542; a definicao conta 1 no `util.rs`, e o
+        // `trava_de_instancia.rs` continua com 1, agora pelo motor. Caminho
+        // novo nenhum: o mesmo arquivo, aberto pelo mesmo motor dos outros.
         const HOJE: &[(&str, usize)] = &[
             ("backup.rs", 2),
             ("catalogo.rs", 4),
@@ -1647,10 +1653,10 @@ mod tests {
             ("sequencia.rs", 2),
             ("sincronia.rs", 3),
             ("trava_de_instancia.rs", 1),
-            ("util.rs", 11),
+            ("util.rs", 12),
             ("volume.rs", 2),
         ];
-        const ABRIDORES: [&str; 9] = [
+        const ABRIDORES: [&str; 10] = [
             "OpenOptions::new()",
             "File::create(",
             "fs::write(",
@@ -1660,6 +1666,7 @@ mod tests {
             "escrever_do_banco(",
             "copiar_do_banco(",
             "recriar_no_destino(",
+            "reabrir_do_banco(",
         ];
         let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
         let mut medido: BTreeMap<String, usize> = BTreeMap::new();

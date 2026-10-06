@@ -191,6 +191,20 @@ fn caminho_seguro(rel: &str) -> bool {
         .all(|parte| !parte.is_empty() && parte != "." && parte != ".." && !parte.contains('\0'))
 }
 
+/// Este caminho termina num nome que o backup NUNCA grava, porque e' estado
+/// do processo e nao dado -- pedido 651 (b). Hoje e' um so: a trava de
+/// instancia, que `backup::listar` omite. Manifesto que a lista nao saiu de
+/// um backup nosso.
+///
+/// O `*.novo` de uma reescrita fica de fora de proposito: o backup o copia
+/// quando o acha (a copia so termina a troca do `.reg` antes, pedido 624), e
+/// o que um `.novo` hostil faria na abertura um `.reg` hostil ja faz -- o
+/// backup inteiro e' tao confiavel quanto quem o montou, e o SHA so prova
+/// que nao mudou depois. Recusa-lo quebraria backup legitimo sem fechar nada.
+fn nome_reservado(rel: &str) -> bool {
+    rel.rsplit('/').next() == Some(crate::trava_de_instancia::NOME_DO_ARQUIVO)
+}
+
 /// O manifesto lido: o que cada arquivo tem de ter.
 struct Manifesto {
     esperados: BTreeMap<String, (u64, String)>,
@@ -217,6 +231,13 @@ fn ler_manifesto(fonte: &mut Fonte, origem: &Path) -> Result<Manifesto> {
         if !caminho_seguro(&caminho) {
             return Err(PhxError::Corrompido(format!(
                 "o manifesto traz o caminho {caminho:?}, que sairia da pasta de destino"
+            )));
+        }
+        if nome_reservado(&caminho) {
+            return Err(PhxError::Corrompido(format!(
+                "o manifesto traz {caminho:?}, a trava de instancia: o backup do \
+                 PhxSql nunca a copia, entao este manifesto nao saiu de um \
+                 backup dele -- nada foi restaurado"
             )));
         }
         esperados.insert(
@@ -1054,6 +1075,54 @@ mod tests {
         let e = conteudo(&copia).unwrap_err();
         assert!(e.to_string().contains("sairia da pasta"), "{e}");
         let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// **Pedido 651 (b): manifesto hostil que lista a trava de instancia.** O
+    /// backup nunca a copia (`backup::listar` a omite), entao um manifesto que
+    /// traz `.phxsql.trava` nao saiu daqui -- e restaurado, o arquivo de
+    /// estado do processo que grava entraria na pasta com o conteudo de quem
+    /// montou o backup. Recusa no manifesto, antes de qualquer escrita, e o
+    /// `.reg` legitimo ao lado (o irmao) continua sendo caminho valido.
+    #[test]
+    fn manifesto_que_lista_a_trava_de_instancia_e_recusado() {
+        let base = temp("manifesto-com-trava");
+        let copia = base.join("copia");
+        std::fs::create_dir_all(copia.join("Z")).unwrap();
+        let item = |rel: &str, dados: &[u8]| {
+            std::fs::write(copia.join(rel), dados).unwrap();
+            format!(
+                r#"{{"caminho":"{rel}","bytes":{},"sha256":"{}"}}"#,
+                dados.len(),
+                para_hex(&sha256(dados))
+            )
+        };
+        let reg = item("Z/clientes.reg", b"registros de clientes");
+        let trava = item("Z/.phxsql.trava", b"424242\n");
+        std::fs::write(
+            copia.join(MANIFESTO),
+            format!(
+                r#"{{"phxsql":"9.9.9","quando":"agora","escopo":"raiz",
+                    "conteudo":[{reg},{trava}]}}"#
+            ),
+        )
+        .unwrap();
+
+        let e = conteudo(&copia).map(|_| ()).unwrap_err();
+        assert!(e.to_string().contains(".phxsql.trava"), "{e}");
+        let dados = base.join("dados");
+        assert!(Preparada::preparar(&copia, &dados, "Z").is_err());
+        let palcos: Vec<_> = std::fs::read_dir(&base)
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .filter(|n| n.contains("restaurando"))
+            .collect();
+        assert!(
+            palcos.is_empty(),
+            "a recusa tem de vir antes do palco: {palcos:?}"
+        );
+        assert!(caminho_seguro("Z/clientes.reg") && !nome_reservado("Z/clientes.reg"));
+        assert!(nome_reservado(".phxsql.trava") && nome_reservado("Z/s/.phxsql.trava"));
     }
 
     /// **O comportamento VELHO.** Backup gravado antes de o manifesto dizer o

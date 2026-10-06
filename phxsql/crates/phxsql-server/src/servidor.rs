@@ -7476,14 +7476,13 @@ impl Servidor {
                         },
                     }
                 } else {
-                    let mut fase = phxsql_store::backup::copiar_fase_1(&self.config.base, destino)?;
-                    // O `fsync` do grosso da copia AQUI, com o escritor ainda
-                    // andando: depois da fase 2 so' o que ela reescreveu
-                    // sincroniza, e o escritor que esperou no portao nao
-                    // volta para um disco ocupado (medido: ~100 ms a mais
-                    // por escrita, bancada do 513).
-                    phxsql_store::backup::sincronizar_fase_1(&mut fase)?;
-                    Pronto::Arvore(fase)
+                    // Sem `fsync` aqui (pedido 646): sincronizar o grosso com o
+                    // escritor andando deu picos de ~0,4 s a 1 GB e nada
+                    // depois; o `concluir` sincroniza tudo, fora da trava.
+                    Pronto::Arvore(phxsql_store::backup::copiar_fase_1(
+                        &self.config.base,
+                        destino,
+                    )?)
                 };
                 Ok((t.elapsed().as_millis() as u64, pronto))
             },
