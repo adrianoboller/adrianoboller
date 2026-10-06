@@ -291,15 +291,15 @@ footer code{font-size:.9em}
 <div class="kpi"><b>316.504</b><span>linhas de Rust</span><span class="q">2026-10-01 13:43:47</span></div>
 <div class="kpi"><b>9</b><span>crates</span><span class="q">2026-10-01 13:43:47</span></div>
 <div class="kpi feito"><b>0</b><span>dependências externas</span><span class="q">2026-10-01 13:43:47</span></div>
-<div class="kpi"><b>625</b><span>pedidos do dono</span><span class="q">2026-10-01</span></div>
-<div class="kpi feito"><b>512</b><span>pedidos feitos</span><span class="q">2026-10-01</span></div>
-<div class="kpi parcial"><b>15</b><span>pedidos parciais</span><span class="q">2026-10-01</span></div>
-<div class="kpi planejado"><b>12</b><span>pedidos planejados</span><span class="q">2026-10-01</span></div>
-<div class="kpi depois"><b>86</b><span>pedidos depois da versão</span><span class="q">2026-10-01</span></div>
-<div class="kpi"><b>661</b><span>guardas no catálogo</span><span class="q">2026-10-01</span></div>
-<div class="kpi"><b>45</b><span>catracas no fonte</span><span class="q">2026-10-01</span></div>
-<div class="kpi"><b class="curto">18/18</b><span>bancadas com resultado</span><span class="q">2026-10-01</span></div>
-<div class="kpi"><b>3.698</b><span><code>#[test]</code> contados no fonte</span><span class="q">2026-10-01</span></div>
+<div class="kpi"><b>659</b><span>pedidos do dono</span><span class="q">2026-10-06</span></div>
+<div class="kpi feito"><b>547</b><span>pedidos feitos</span><span class="q">2026-10-06</span></div>
+<div class="kpi parcial"><b>6</b><span>pedidos parciais</span><span class="q">2026-10-06</span></div>
+<div class="kpi planejado"><b>20</b><span>pedidos planejados</span><span class="q">2026-10-06</span></div>
+<div class="kpi depois"><b>86</b><span>pedidos depois da versão</span><span class="q">2026-10-06</span></div>
+<div class="kpi"><b>771</b><span>guardas no catálogo</span><span class="q">2026-10-06</span></div>
+<div class="kpi"><b>48</b><span>catracas no fonte</span><span class="q">2026-10-06</span></div>
+<div class="kpi"><b class="curto">19/19</b><span>bancadas com resultado</span><span class="q">2026-10-06</span></div>
+<div class="kpi"><b>3.883</b><span><code>#[test]</code> contados no fonte</span><span class="q">2026-10-06</span></div>
 </div>
 <p class="fonte"><b>De onde sai:</b> <code>CAPABILITIES.json</code> (gravado por <code>docs/dossie/numeros-do-projeto.py</code>, que roda <code>cargo test</code>), <code>docs/PENDENCIAS.md</code> pelo <code>ler()</code> de <code>docs/dossie/pagina-dos-pedidos.py</code>, <code>bancada/guardas/catalogo.py</code>, as constantes <code>TETO_*</code> do fonte Rust e a tabela de bancadas de <code>docs/dossie/pagina-dos-testes.py</code>.</p>
 
@@ -328,27 +328,27 @@ lugar só, e <b>só com o que sai de gerador</b>.</div>
 <h2 id="s3"><span class="n">03 ·</span>Os crates, medidos</h2>
 <p class="sub">Linhas de <code>src/</code> classificadas linha a linha pelo extrator das tecnologias — código, teste, comentário e vazias são separados, não estimados.</p>
 <div class="rolo"><table><thead><tr><th>crate</th><th class="num">arquivos</th><th class="num">código</th><th class="num">teste</th><th class="num">total</th><th>o que é</th></tr></thead><tbody>
-<tr><td class="mono">phxsql-server</td><td class="num">64</td><td class="num">56.830</td><td class="num">48.658</td><td class="num">147.530</td><td>Servidor TCP do PhxSql, porta 5000</td></tr>
-<tr><td class="mono">phxsql-store</td><td class="num">29</td><td class="num">23.292</td><td class="num">5.544</td><td class="num">41.917</td><td>Motor de armazenamento PhxSql: .reg + .ndx + .bin + .memo</td></tr>
-<tr><td class="mono">phxsql-core</td><td class="num">40</td><td class="num">15.358</td><td class="num">6.000</td><td class="num">28.172</td><td>Tipos, esquema, codificacao de chaves e utilitarios do PhxSql</td></tr>
-<tr><td class="mono">phxsql-sql</td><td class="num">10</td><td class="num">7.337</td><td class="num">4.124</td><td class="num">15.162</td><td>Camada SQL do PhxSql: analisador lexico, sintatico e tradutor para as operacoes do protocolo</td></tr>
-<tr><td class="mono">phxsql-odbc</td><td class="num">7</td><td class="num">3.164</td><td class="num">1.258</td><td class="num">5.809</td><td>Driver ODBC 3.x do PhxSql: biblioteca de ABI C sobre o protocolo JSON da porta de dados</td></tr>
+<tr><td class="mono">phxsql-server</td><td class="num">66</td><td class="num">59.847</td><td class="num">50.930</td><td class="num">154.339</td><td>Servidor TCP do PhxSql, porta 5000</td></tr>
+<tr><td class="mono">phxsql-store</td><td class="num">33</td><td class="num">25.960</td><td class="num">6.021</td><td class="num">46.689</td><td>Motor de armazenamento PhxSql: .reg + .ndx + .bin + .memo</td></tr>
+<tr><td class="mono">phxsql-core</td><td class="num">40</td><td class="num">15.408</td><td class="num">6.008</td><td class="num">28.257</td><td>Tipos, esquema, codificacao de chaves e utilitarios do PhxSql</td></tr>
+<tr><td class="mono">phxsql-sql</td><td class="num">10</td><td class="num">7.377</td><td class="num">4.179</td><td class="num">15.307</td><td>Camada SQL do PhxSql: analisador lexico, sintatico e tradutor para as operacoes do protocolo</td></tr>
+<tr><td class="mono">phxsql-odbc</td><td class="num">7</td><td class="num">3.319</td><td class="num">1.481</td><td class="num">6.262</td><td>Driver ODBC 3.x do PhxSql: biblioteca de ABI C sobre o protocolo JSON da porta de dados</td></tr>
 <tr><td class="mono">phxzip</td><td class="num">9</td><td class="num">3.074</td><td class="num">501</td><td class="num">4.663</td><td>PhxZip -- o 7-Zip em Rust, zero dependencias: formato 7z, 7zAES, LZMA e LZMA2</td></tr>
 <tr><td class="mono">phxsql-ffi</td><td class="num">7</td><td class="num">1.524</td><td class="num">1.786</td><td class="num">4.537</td><td>PhxSql embutido: o motor como biblioteca, por ABI de C -- para Android, iOS e IoT</td></tr>
-<tr><td class="mono">phxsql-cli</td><td class="num">1</td><td class="num">866</td><td class="num">104</td><td class="num">1.199</td><td>Ferramenta de linha de comando do PhxSql</td></tr>
+<tr><td class="mono">phxsql-cli</td><td class="num">1</td><td class="num">872</td><td class="num">104</td><td class="num">1.214</td><td>Ferramenta de linha de comando do PhxSql</td></tr>
 <tr><td class="mono">phxsql-cmd</td><td class="num">2</td><td class="num">621</td><td class="num">110</td><td class="num">1.006</td><td>Console interativo do PhxSql: fala o protocolo JSON com um servidor</td></tr>
-<tr><td class="mono"><b>total</b></td><td class="num"><b>169</b></td><td class="num"><b>112.066</b></td><td class="num"><b>68.085</b></td><td class="num"><b>249.995</b></td><td>proporção teste/código <b>0,61×</b></td></tr>
+<tr><td class="mono"><b>total</b></td><td class="num"><b>175</b></td><td class="num"><b>118.002</b></td><td class="num"><b>71.120</b></td><td class="num"><b>262.274</b></td><td>proporção teste/código <b>0,60×</b></td></tr>
 </tbody></table></div>
 <div class="barras">
-<div class="barra-linha"><span class="l"><code>phxsql-server</code></span><span class="t"><i class="b-cheia" style="width:100.00%"></i></span><span class="n">147.530</span></div>
-<div class="barra-linha"><span class="l"><code>phxsql-store</code></span><span class="t"><i class="b-cheia" style="width:28.41%"></i></span><span class="n">41.917</span></div>
-<div class="barra-linha"><span class="l"><code>phxsql-core</code></span><span class="t"><i class="b-cheia" style="width:19.10%"></i></span><span class="n">28.172</span></div>
-<div class="barra-linha"><span class="l"><code>phxsql-sql</code></span><span class="t"><i class="b-cheia" style="width:10.28%"></i></span><span class="n">15.162</span></div>
-<div class="barra-linha"><span class="l"><code>phxsql-odbc</code></span><span class="t"><i class="b-cheia" style="width:3.94%"></i></span><span class="n">5.809</span></div>
-<div class="barra-linha"><span class="l"><code>phxzip</code></span><span class="t"><i class="b-cheia" style="width:3.16%"></i></span><span class="n">4.663</span></div>
-<div class="barra-linha"><span class="l"><code>phxsql-ffi</code></span><span class="t"><i class="b-cheia" style="width:3.08%"></i></span><span class="n">4.537</span></div>
-<div class="barra-linha"><span class="l"><code>phxsql-cli</code></span><span class="t"><i class="b-cheia" style="width:0.81%"></i></span><span class="n">1.199</span></div>
-<div class="barra-linha"><span class="l"><code>phxsql-cmd</code></span><span class="t"><i class="b-cheia" style="width:0.68%"></i></span><span class="n">1.006</span></div>
+<div class="barra-linha"><span class="l"><code>phxsql-server</code></span><span class="t"><i class="b-cheia" style="width:100.00%"></i></span><span class="n">154.339</span></div>
+<div class="barra-linha"><span class="l"><code>phxsql-store</code></span><span class="t"><i class="b-cheia" style="width:30.25%"></i></span><span class="n">46.689</span></div>
+<div class="barra-linha"><span class="l"><code>phxsql-core</code></span><span class="t"><i class="b-cheia" style="width:18.31%"></i></span><span class="n">28.257</span></div>
+<div class="barra-linha"><span class="l"><code>phxsql-sql</code></span><span class="t"><i class="b-cheia" style="width:9.92%"></i></span><span class="n">15.307</span></div>
+<div class="barra-linha"><span class="l"><code>phxsql-odbc</code></span><span class="t"><i class="b-cheia" style="width:4.06%"></i></span><span class="n">6.262</span></div>
+<div class="barra-linha"><span class="l"><code>phxzip</code></span><span class="t"><i class="b-cheia" style="width:3.02%"></i></span><span class="n">4.663</span></div>
+<div class="barra-linha"><span class="l"><code>phxsql-ffi</code></span><span class="t"><i class="b-cheia" style="width:2.94%"></i></span><span class="n">4.537</span></div>
+<div class="barra-linha"><span class="l"><code>phxsql-cli</code></span><span class="t"><i class="b-cheia" style="width:0.79%"></i></span><span class="n">1.214</span></div>
+<div class="barra-linha"><span class="l"><code>phxsql-cmd</code></span><span class="t"><i class="b-cheia" style="width:0.65%"></i></span><span class="n">1.006</span></div>
 </div>
 <div class="nota a"><b>Este total e o da §01 não são o mesmo número, e nenhum está errado.</b> Aqui são as linhas de <code>src/</code>, classificadas linha a linha; lá são <b>todos</b> os <code>.rs</code> de <code>crates/</code> — inclui <code>tests/</code> de integração e os <code>examples/</code> das bancadas. Duas receitas, dois nomes, e cada um dito onde aparece: número sem a receita ao lado é número que o próximo leitor conserta para o lado errado.</div>
 <p class="fonte"><b>De onde sai:</b> o <code>contar_crate()</code> de <code>docs/tecnologias/extrair.py</code> (o mesmo que escreve a tabela do <code>docs/TECNOLOGIAS.md</code>) e a <code>description</code> de cada <code>Cargo.toml</code>. A lista de crates sai da varredura de <code>crates/</code>: crate novo entra sozinho.</p>
@@ -469,7 +469,7 @@ entra na figura.</p>
     <text x="850" y="294" text-anchor="middle" font-size="8.5" opacity=".7">grave demais: bloqueio de IP</text>
     <path d="M250 498 L250 520" stroke="var(--ok)" stroke-width="1.6" marker-end="url(#setaMotO)"/>
     <rect x="60" y="522" width="380" height="34" rx="4" fill="var(--ok)" fill-opacity=".10" stroke="var(--ok)" stroke-width="1.5"/>
-    <text x="250" y="543" text-anchor="middle" font-size="10.5">a operação, entre as 142 do catálogo</text>
+    <text x="250" y="543" text-anchor="middle" font-size="10.5">a operação, entre as 150 do catálogo</text>
     <text x="264" y="514" font-size="9.5" opacity=".7">passou os 10</text>
     <rect x="60" y="572" width="380" height="46" rx="4" fill="none" stroke="var(--pend)" stroke-width="1.4"/>
     <text x="250" y="590" text-anchor="middle" font-size="10.5" fill="var(--pend)">a trava de dados</text>
@@ -555,38 +555,33 @@ própria.</figcaption>
 <h2 id="s7"><span class="n">07 ·</span>Os pedidos do dono</h2>
 <p class="sub">Um por linha do <code>docs/PENDENCIAS.md</code>, lido pelo mesmo <code>ler()</code> da página dos pedidos — duas contagens divergiriam na primeira mudança de legenda. O denominador das barras é <b>feito + parcial + planejado</b> — um pedido «depois da versão» não pesa a favor nem contra o que falta agora.</p>
 <div class="barras">
-<div class="barra-linha"><span class="l">Feito</span><span class="t"><i class="b-feito" style="width:94.99%"></i></span><span class="n">512 · 95,0%</span></div>
-<div class="barra-linha"><span class="l">Parcial</span><span class="t"><i class="b-parcial" style="width:2.78%"></i></span><span class="n">15 · 2,8%</span></div>
-<div class="barra-linha"><span class="l">Planejado</span><span class="t"><i class="b-planejado" style="width:2.23%"></i></span><span class="n">12 · 2,2%</span></div>
+<div class="barra-linha"><span class="l">Feito</span><span class="t"><i class="b-feito" style="width:95.46%"></i></span><span class="n">547 · 95,5%</span></div>
+<div class="barra-linha"><span class="l">Parcial</span><span class="t"><i class="b-parcial" style="width:1.05%"></i></span><span class="n">6 · 1,0%</span></div>
+<div class="barra-linha"><span class="l">Planejado</span><span class="t"><i class="b-planejado" style="width:3.49%"></i></span><span class="n">20 · 3,5%</span></div>
 <div class="barra-linha"><span class="l">Depois da versão</span><span class="t"><i class="b-depois" style="width:100.00%"></i></span><span class="n">86</span></div>
 </div>
 <div class="legenda"><span class="feito"><i></i>feito</span><span class="parcial"><i></i>parcial</span><span class="planejado"><i></i>planejado</span><span class="depois"><i></i>depois da versão</span></div>
 <h3>Os dez pedidos abertos mais recentes</h3>
 <div class="rolo"><table><thead><tr><th class="num">#</th><th>estado</th><th>o que você pediu</th></tr></thead><tbody>
-<tr><td class="num">625</td><td><span class="etiqueta e-plan">Planejado</span></td><td>**Os <code>*.novo</code> do <code>.reg</code> de uma fase A interrompida ficam no disco enquanto a tabela existir: copia inteira da tabela, sem dono**</td></tr>
-<tr><td class="num">624</td><td><span class="etiqueta e-plan">Planejado</span></td><td><strong>O <code>duplicar_tabela</code> de uma tabela paginada com a troca decidida e nao terminada copia volumes de duas versoes</strong></td></tr>
-<tr><td class="num">622</td><td><span class="etiqueta e-plan">Planejado</span></td><td><strong>QA -- nove petreas tem teste no codigo e nenhuma guarda que reponha o defeito: nada prova que o teste delas cai</strong></td></tr>
-<tr><td class="num">620</td><td><span class="etiqueta e-plan">Planejado</span></td><td><strong>SEC B1 -- o mapa de toques do bidirecional nao zera quando a tabela e apagada e recriada (ou restaurada): a <code>marca</code> aponta para offset do <code>.log</code> antigo</strong></td></tr>
-<tr><td class="num">605</td><td><span class="etiqueta e-plan">Planejado</span></td><td><strong>Fsync de criar/excluir garante quem chamou, nao um TERCEIRO: B insere numa tabela recem-criada por A, ouve «ok», e uma queda antes do <code>fsync</code> da pasta de A leva a tabela e a linha de B</strong></td></tr>
-<tr><td class="num">572</td><td><span class="etiqueta e-parcial">Parcial</span></td><td><strong>ORDEM DO DONO, 30/09/2026 -- TLS no transporte, TLS 1.3 ESCRITO AQUI</strong></td></tr>
-<tr><td class="num">524</td><td><span class="etiqueta e-parcial">Parcial</span></td><td><strong>O backup não faz <code>fsync</code> de nada, e o comentário que conta os caminhos de escrita diz que faz</strong></td></tr>
-<tr><td class="num">513</td><td><span class="etiqueta e-parcial">Parcial</span></td><td><strong>O backup segura a trava global de escrita durante a copia inteira: 100 GB sao 50 a 64 minutos com o banco parado para escrita</strong></td></tr>
-<tr><td class="num">496</td><td><span class="etiqueta e-plan">Planejado</span></td><td><strong>A IA do PhxSql com a cognicao de um DBA senior: prever a catastrofe ANTES dela</strong></td></tr>
-<tr><td class="num">495</td><td><span class="etiqueta e-plan">Planejado</span></td><td><strong>A IA do PhxSql analisa crime de ciberseguranca dentro do banco: injecao de SQL e qualquer comportamento anormal</strong></td></tr>
+<tr><td class="num">658</td><td><span class="etiqueta e-plan">Planejado</span></td><td><strong>Nenhuma catraca olha a IDADE do veredito, e o cabeçalho de <code>ultima-corrida.json</code> mente sobre o retrato</strong></td></tr>
+<tr><td class="num">657</td><td><span class="etiqueta e-plan">Planejado</span></td><td><strong>Guardas cujo teste confere só um trecho de mensagem que o código produz em outro ponto do mesmo arquivo: o risco que deixou <code>sequencia-numero-cru-perde-precisao</code> «NÃO PEGAR» hoje</strong></td></tr>
+<tr><td class="num">656</td><td><span class="etiqueta e-plan">Planejado</span></td><td><strong>As catracas de rótulos e de números cravados têm folga embutida (30 e 3): podem ficar frouxas sem acusar, e o QA-PDCA diz «sem folga»</strong></td></tr>
+<tr><td class="num">655</td><td><span class="etiqueta e-plan">Planejado</span></td><td><strong>Pétreas sem guarda no catálogo e entradas fracas: <code>seguem</code> ausente em 6 e vazio em 34, e nenhuma catraca recusa isso</strong></td></tr>
+<tr><td class="num">654</td><td><span class="etiqueta e-plan">Planejado</span></td><td><strong>O teto de botões sem prova chegou a 0 em parte por <code>DISPENSADOS</code> (22 → 27), uma lista que não tem teto nem piso: porta dos fundos para afrouxar a catraca sem tocá-la</strong></td></tr>
+<tr><td class="num">653</td><td><span class="etiqueta e-plan">Planejado</span></td><td><strong>Comentários que prometem «Rust 1.75» ficaram velhos depois da subida para 1.89 — e um deles justifica uma ausência de código que já não procede</strong></td></tr>
+<tr><td class="num">652</td><td><span class="etiqueta e-plan">Planejado</span></td><td><strong>O servidor aceita Noise e TLS mas não registra por conexão quem ainda chegou por Noise: decisão do dono de 01/10 sem implementação</strong></td></tr>
+<tr><td class="num">651</td><td><span class="etiqueta e-plan">Planejado</span></td><td><strong>Faltam duas provas adversas da revisão SEC que ficaram «não provado»: o <code>.retrato.part</code> do backup em duas passadas e o manifesto hostil que lista <code>.phxsql.trava</code></strong></td></tr>
+<tr><td class="num">650</td><td><span class="etiqueta e-plan">Planejado</span></td><td><strong>O contador de sequência que o source manda não tem teto: um source (ou master do quórum) hostil ou com defeito empurra a numeração da réplica a ~2^64</strong></td></tr>
+<tr><td class="num">649</td><td><span class="etiqueta e-plan">Planejado</span></td><td><strong>O ack do quórum é forjável por qualquer credencial com <code>Replicar</code>: o <code>id</code> é declarado pelo cliente e <code>confirmado</code> vai direto para <code>posicoes</code> com <code>max</code></strong></td></tr>
 </tbody></table></div>
 <p class="fonte"><b>De onde sai:</b> <code>docs/PENDENCIAS.md</code>, pelo <code>ler()</code> de <code>docs/dossie/pagina-dos-pedidos.py</code>. A lista inteira, com o estado de cada um, está em <code>docs/dossie/pedidos-*.html</code> — páginas por faixa de número, cortadas pelo <b>tamanho medido</b> a cada corrida (pedido 403; a página antiga, única, tinha passado de 1,3 MB). O número de páginas não é fixo. Pedido com estado fora da legenda <b>para</b> o leitor com o número da linha — o 150 passou meses invisível por causa disso.</p>
 
 <h2 id="s8"><span class="n">08 ·</span>O que está travado com você</h2>
 <p class="sub">Pedido aberto cujo texto casa um <b>léxico explícito</b> do gerador. A frase que casou aparece: quem lê julga o casamento em vez de acreditar nele.</p>
 <ul class="gates">
+<li><div class="cab"><span class="n">#652</span><span class="etiqueta e-parado">Planejado</span><span class="tt"><strong>O servidor aceita Noise e TLS mas não registra por conexão quem ainda chegou por Noise: decisão do dono de 01/10 sem implementação</strong></span></div><p class="tr">O servidor aceita Noise e TLS mas não registra por conexão quem ainda chegou por Noise: decisão do dono de 01/10 sem implementação — Parecer J de prontidão (02/10/2026). plano-tls13-572.md §T6b-2: decisão do dono, 01/10/2026 — na 0.1 …</p><p class="fonte"><b>Casou:</b> «decisão do dono»</p></li>
 <li><div class="cab"><span class="n">#339</span><span class="etiqueta e-parado">Parcial</span><span class="tt"><strong>PARECER EXTERNO — achados de seguranca e de alcance: chave da API no <code>localStorage</code>, o valor cifrado em claro no <code>.ndx</code> e o destino dele nas OUTRAS representacoes</strong></span></div><p class="tr">… lar, retencao e expurgo alcancando historico e backup pedem validacao juridica , e isso e decisao do dono, nao medicao. E as duas sondas das frentes vivem FORA do repositorio ( scratchpad/sonda/ , com dependencia por caminho para phxsq …</p><p class="fonte"><b>Casou:</b> «decisao do dono»</p></li>
 <li><div class="cab"><span class="n">#263</span><span class="etiqueta e-parado">Parcial</span><span class="tt"><strong>Onze guardas do catálogo estavam QUEBRADAS — o <code>trecho</code> que repõe o defeito não existe mais, então a guarda não pode nem ser tentada</strong></span></div><p class="tr">… azo do provador merece medida própria, não um número maior no chute. docs/CATRACAS.md §12 DECISAO DO DONO, 17/09/2026 05:32: rodar o provador INTEIRO no fecho , com a maquina livre — a corrida parcial de hoje julgou 151 das 187 e o num …</p><p class="fonte"><b>Casou:</b> «decisao do dono»</p></li>
-<li><div class="cab"><span class="n">#259</span><span class="etiqueta e-parado">Parcial</span><span class="tt"><strong>O excluir do padrão custa 24–28 µs mesmo sem fsync, contra 3,7–4,4 do inserir: 8 <code>write</code> e ~5 <code>openat</code> por exclusão</strong></span></div><p class="tr">… , openat 5 → 1) e continua com a frente do uuid.rs : muda a entropia de todo UUID da casa DECISAO DO DONO, 17/09/2026 05:35: pular a busca reversa da integridade quando NENHUMA tabela declara chave apontando para esta — a varredura do  …</p><p class="fonte"><b>Casou:</b> «decisao do dono»</p></li>
-<li><div class="cab"><span class="n">#249</span><span class="etiqueta e-parado">Parcial</span><span class="tt"><strong>Saúde do disco do banco: sonda canário, EROFS, erro de E/S imediato, aviso por e-mail e SMS</strong></span></div><p class="tr">… o, aviso por e-mail e SMS — Entregue em 16/09/2026 (frente D), menos o meio do SMS, que é decisão do dono.  crates/phxsql-server/src/saude_do_disco.rs (957 linhas, 12 testes): sonda canário no diretório de dados (escreve, fsync , lê, a …</p><p class="fonte"><b>Casou:</b> «decisão do dono» · «decisao do dono» · «parado por decisão»</p></li>
-<li><div class="cab"><span class="n">#245</span><span class="etiqueta e-parado">Parcial</span><span class="tt"><strong>Seis observações da revisão do motor, menores, para varrer numa rodada de higiene (O1-O6)</strong></span></div><p class="tr">… cisão na mesa do dono, não código pendente. Formato em disco não foi tocado nesta frente. DECISAO DO DONO, 17/09/2026 05:41, sobre o item que faltava (O2, restricao acrescentada contra linha velha): RECUSAR A DECLARACAO, nomeando quant …</p><p class="fonte"><b>Casou:</b> «decisao do dono»</p></li>
-<li><div class="cab"><span class="n">#238</span><span class="etiqueta e-parado">Parcial</span><span class="tt"><strong><code>SQL_C_WCHAR</code> e parâmetro de SAÍDA recusam no driver ODBC</strong></span></div><p class="tr">…  PhxSql não tem retorno de procedimento, só OUT / INOUT ). Fica ◐ até a sonda viva rodar. DECISAO DO DONO, 17/09/2026 05:35: fazer a sonda viva quando o disco permitir, MEDINDO O DISCO ANTES — o codigo dos dois lados ja existe e tem te …</p><p class="fonte"><b>Casou:</b> «decisao do dono»</p></li>
-<li><div class="cab"><span class="n">#229</span><span class="etiqueta e-parado">Parcial</span><span class="tt"><strong>Auto number: tres defeitos de produto medidos pela F8</strong></span></div><p class="tr">… ALWAYS ; Uuid nasce sozinho; sequencia nomeada) e o alargamento do teto ao Int8 / UInt8 . DECISAO DO DONO, 17/09/2026 05:32: os itens de formato entram JUNTO com as cinco decisoes de formato que estao na mesa (inicio/passo por no e a d …</p><p class="fonte"><b>Casou:</b> «decisao do dono»</p></li>
-<li><div class="cab"><span class="n">#207</span><span class="etiqueta e-parado">Parcial</span><span class="tt"><strong>Transação com quórum — replicar a gravação esperando N servidores confirmarem</strong></span></div><p class="tr">… ica e page cache) — meia transacao e pior que nada. docs/propostas/quorum-de-escrita.md . DECISAO DO DONO, 17/09/2026 05:41, a pergunta que travava o quorum: o ok da replica significa APLIQUEI E GRAVEI EM DISCO. E a unica das tres que  …</p><p class="fonte"><b>Casou:</b> «decisao do dono»</p></li>
 </ul>
 <p class="fonte"><b>De onde sai:</b> o <code>achar_gates()</code> de <code>docs/pmo/pagina-do-status-do-projeto.py</code> — o mesmo léxico do painel PMO, importado e não copiado.</p>
 
@@ -594,32 +589,32 @@ própria.</figcaption>
 <h2 id="s9"><span class="n">09 ·</span>Riscos</h2>
 <p class="sub">A <b>nota é avaliação</b> — probabilidade e impacto saíram de uma leitura dos documentos, na data que cada linha diz. A coluna <b>medida</b> é número, e sai de uma sonda do gerador. Os dois tipos estão separados de propósito: quem discorda de uma avaliação muda a linha do <code>docs/RISCOS.md</code> com o motivo; quem discorda de um número roda a sonda.</p>
 <div class="kpis">
-<div class="kpi"><b>19</b><span>riscos no catálogo</span><span class="q">2026-10-01</span></div>
-<div class="kpi falta"><b>11</b><span>de impacto <b>alto</b></span><span class="q">2026-10-01</span></div>
-<div class="kpi parcial"><b>5</b><span>já acontecendo (<b>certa</b>)</span><span class="q">2026-10-01</span></div>
-<div class="kpi planejado"><b>5</b><span>que dependem do <b>dono</b></span><span class="q">2026-10-01</span></div>
-<div class="kpi"><b>4</b><span>com sonda — o resto é avaliação pura</span><span class="q">2026-10-01</span></div>
+<div class="kpi"><b>19</b><span>riscos no catálogo</span><span class="q">2026-10-06</span></div>
+<div class="kpi falta"><b>10</b><span>de impacto <b>alto</b></span><span class="q">2026-10-06</span></div>
+<div class="kpi parcial"><b>5</b><span>já acontecendo (<b>certa</b>)</span><span class="q">2026-10-06</span></div>
+<div class="kpi planejado"><b>5</b><span>que dependem do <b>dono</b></span><span class="q">2026-10-06</span></div>
+<div class="kpi"><b>4</b><span>com sonda — o resto é avaliação pura</span><span class="q">2026-10-06</span></div>
 </div>
 <div class="rolo"><table><thead><tr><th>#</th><th>risco, e a fonte de onde ele saiu</th><th>prob.</th><th>impacto</th><th>dono</th><th>avaliado em</th><th>medida</th></tr></thead><tbody>
-<tr><td class="mono">R1</td><td>A catraca <code>alcancam-fsync</code> está <b>vermelha</b> (23 seções críticas alcançam <code>fsync</code> com a trava global na mão, teto 22) e a decisão de como fechá-la está com o dono desde 08/09. Enquanto isso, a saída mais barata da pressão é subir o teto — que a pétrea G proíbe<p class="fonte"><b>Fonte:</b> <code>docs/PENDENCIAS.md</code> #252 · <code>docs/CATRACAS.md</code> §13</p></td><td><span class="etiqueta e-nao">certa</span></td><td><span class="etiqueta e-nao">alto</span></td><td class="mono">dono</td><td class="q">2026-09-16</td><td><b>0</b><br><span class="mtime">catracas reprovando · 2026-09-30 13:03 (mtime)</span></td></tr>
-<tr><td class="mono">R3</td><td>Onze guardas do catálogo estavam <b>quebradas</b> — o trecho que repõe o defeito não existe mais no código, então a guarda não pode nem ser provada contra o defeito que a motivou. Guarda que não se prova é catálogo, não guarda<p class="fonte"><b>Fonte:</b> <code>docs/PENDENCIAS.md</code> #263</p></td><td><span class="etiqueta e-nao">certa</span></td><td><span class="etiqueta e-nao">alto</span></td><td class="mono">G</td><td class="q">2026-09-16</td><td><b>0</b><br><span class="mtime">guardas entregues vermelhas · 2026-10-01</span></td></tr>
+<tr><td class="mono">R1</td><td>A catraca <code>alcancam-fsync</code> está <b>vermelha</b> (23 seções críticas alcançam <code>fsync</code> com a trava global na mão, teto 22) e a decisão de como fechá-la está com o dono desde 08/09. Enquanto isso, a saída mais barata da pressão é subir o teto — que a pétrea G proíbe<p class="fonte"><b>Fonte:</b> <code>docs/PENDENCIAS.md</code> #252 · <code>docs/CATRACAS.md</code> §13</p></td><td><span class="etiqueta e-nao">certa</span></td><td><span class="etiqueta e-nao">alto</span></td><td class="mono">dono</td><td class="q">2026-09-16</td><td><b>0</b><br><span class="mtime">catracas reprovando · 2026-10-06 20:35 (mtime)</span></td></tr>
+<tr><td class="mono">R3</td><td>Onze guardas do catálogo estavam <b>quebradas</b> — o trecho que repõe o defeito não existe mais no código, então a guarda não pode nem ser provada contra o defeito que a motivou. Guarda que não se prova é catálogo, não guarda<p class="fonte"><b>Fonte:</b> <code>docs/PENDENCIAS.md</code> #263</p></td><td><span class="etiqueta e-nao">certa</span></td><td><span class="etiqueta e-nao">alto</span></td><td class="mono">G</td><td class="q">2026-09-16</td><td><b>0</b><br><span class="mtime">guardas entregues vermelhas · 2026-10-06</span></td></tr>
 <tr><td class="mono">R2</td><td>A bateria de ponta a ponta <b>só roda quando alguém a chama</b>: não há <code>cron</code> neste contêiner. Ela passou de 29/08 a 16/09 sem rodar, e nesses dezoito dias a <code>alcancam-fsync</code> esteve furada sem ninguém ver<p class="fonte"><b>Fonte:</b> <code>docs/PENDENCIAS.md</code> #252 · <code>docs/cognicao/cognicao_catraca-que-so-roda-na-bateria-que-ninguem-roda-e-catraca-frouxa_20260916_0655.md</code></p></td><td><span class="etiqueta e-parcial">alta</span></td><td><span class="etiqueta e-nao">alto</span></td><td class="mono">G</td><td class="q">2026-09-16</td><td><b>—</b></td></tr>
 <tr><td class="mono">R8</td><td>Gatilho <code>AFTER</code> que grava pela mesma sessão <b>dentro do <code>COMMIT</code></b> não chega a gravar. É perda silenciosa: o commit responde bem e o efeito do gatilho não está lá<p class="fonte"><b>Fonte:</b> <code>docs/PENDENCIAS.md</code> #262</p></td><td><span class="etiqueta e-parcial">alta</span></td><td><span class="etiqueta e-nao">alto</span></td><td class="mono">B</td><td class="q">2026-09-16</td><td><b>—</b></td></tr>
 <tr><td class="mono">R6</td><td><b>Sem TLS real no transporte</b> — a cifra do fio é a Noise-like desta casa. Os três motores maduros convergem em cifrar a conexão, e o meio (uma crate de TLS) bate na pétrea de zero dependências: é choque de pétrea contra convergência, e está com o dono<p class="fonte"><b>Fonte:</b> <code>docs/PENDENCIAS.md</code> #239 · <code>docs/CIFRA-DO-FIO.md</code> · <code>CLAUDE.md</code></p></td><td><span class="etiqueta e-plan">média</span></td><td><span class="etiqueta e-nao">alto</span></td><td class="mono">dono</td><td class="q">2026-09-16</td><td><b>—</b></td></tr>
 <tr><td class="mono">R9</td><td>Tomada no meio de um <code>BULKINSERT</code> ou de um <code>reindexar</code> deixa a tabela <b>recusando</b> até alguém reindexar à mão, e o arranque <b>não diz nada</b> sobre isso<p class="fonte"><b>Fonte:</b> <code>docs/PENDENCIAS.md</code> #255</p></td><td><span class="etiqueta e-plan">média</span></td><td><span class="etiqueta e-nao">alto</span></td><td class="mono">B</td><td class="q">2026-09-16</td><td><b>—</b></td></tr>
 <tr><td class="mono">R10</td><td>Saúde do disco do banco: sem sonda canário, sem tratar <code>EROFS</code> nem erro de E/S na hora. Disco cheio ou montado como somente-leitura vira erro tarde, no meio de uma gravação<p class="fonte"><b>Fonte:</b> <code>docs/PENDENCIAS.md</code> #249 · <code>docs/SAUDE-DO-DISCO.md</code></p></td><td><span class="etiqueta e-plan">média</span></td><td><span class="etiqueta e-nao">alto</span></td><td class="mono">C</td><td class="q">2026-09-16</td><td><b>—</b></td></tr>
-<tr><td class="mono">R12</td><td><code>cluster.quorum_minimo</code> é <b>guardado e não imposto</b>: hoje o master confirma sem esperar réplica nenhuma. Está escrito no código e na tela — mas campo que parece efeito é o defeito que o <code>recursos.cache_paginas</code> já custou<p class="fonte"><b>Fonte:</b> <code>docs/PENDENCIAS.md</code> #207 · <code>crates/phxsql-server/src/config.rs::quorum_minimo</code></p></td><td><span class="etiqueta e-plan">média</span></td><td><span class="etiqueta e-nao">alto</span></td><td class="mono">B</td><td class="q">2026-09-16</td><td><b>—</b></td></tr>
 <tr><td class="mono">R14</td><td>O código vive numa <b>branch de outro repositório</b> (<code>adrianoboller/adrianoboller</code>): o repositório próprio <code>adrianoboller/phxsql</code> depende de o dono criá-lo. Custódia do trabalho fora do lugar dele<p class="fonte"><b>Fonte:</b> <code>docs/PENDENCIAS.md</code> #18 · <code>docs/BACKUP.md</code></p></td><td><span class="etiqueta e-plan">média</span></td><td><span class="etiqueta e-nao">alto</span></td><td class="mono">dono</td><td class="q">2026-09-16</td><td><b>—</b></td></tr>
 <tr><td class="mono">R17</td><td>A <b>coluna de data/hora de sistema por linha</b> — o invariante «impossível o filho ter a mesma data do pai» — está <b>decidida e não implementada</b>. É mudança de formato, e mudança de formato entra cedo: depois vira migração<p class="fonte"><b>Fonte:</b> <code>CLAUDE.md</code> (invariantes acima do voto) · <code>docs/CORREIO-CAMPOS.md</code></p></td><td><span class="etiqueta e-plan">média</span></td><td><span class="etiqueta e-nao">alto</span></td><td class="mono">C</td><td class="q">2026-09-16</td><td><b>—</b></td></tr>
 <tr><td class="mono">R11</td><td>Na promoção de uma réplica <b>atrasada</b>, os números de sequência que o master emitiu e esta ponta nunca recebeu não estão no <code>.reg</code> daqui: o contador continua de um valor menor que o do master morto. Exige decisão de projeto (faixa por nó ou contador durável propagado)<p class="fonte"><b>Fonte:</b> <code>docs/AUTONUMBER.md</code> · <code>docs/PENDENCIAS.md</code> #229 · <code>crates/phxsql-store/src/table.rs::reconciliar_sequencia</code></p></td><td><span class="etiqueta e-tem">baixa</span></td><td><span class="etiqueta e-nao">alto</span></td><td class="mono">C</td><td class="q">2026-09-16</td><td><b>—</b></td></tr>
 <tr><td class="mono">R4</td><td>A folha de marca afirma <b>ACID compliant</b>, e o «I» entregue sem pedir é <code>READ COMMITTED</code>. Quem compra pela folha espera o que o motor não dá por padrão — e a folha não é a fonte da verdade<p class="fonte"><b>Fonte:</b> <code>marca/LEIA-ME.md</code> · <code>docs/ACID.md</code> §2.4/§4.4 · <code>CLAUDE.md</code></p></td><td><span class="etiqueta e-nao">certa</span></td><td><span class="etiqueta e-parcial">médio</span></td><td class="mono">dono</td><td class="q">2026-09-16</td><td><b>—</b></td></tr>
-<tr><td class="mono">R7</td><td>Há pedidos abertos <b>parados com gente</b>, não com engenharia: o léxico dos gates os acha no <code>PENDENCIAS.md</code>. Risco de cronograma que nenhuma frente resolve trabalhando mais<p class="fonte"><b>Fonte:</b> <code>docs/PENDENCIAS.md</code>, pelo léxico de <code>docs/pmo/pagina-do-status-do-projeto.py</code></p></td><td><span class="etiqueta e-nao">certa</span></td><td><span class="etiqueta e-parcial">médio</span></td><td class="mono">dono</td><td class="q">2026-09-16</td><td><b>8</b><br><span class="mtime">pedidos abertos parados com gente · 2026-10-01</span></td></tr>
+<tr><td class="mono">R7</td><td>Há pedidos abertos <b>parados com gente</b>, não com engenharia: o léxico dos gates os acha no <code>PENDENCIAS.md</code>. Risco de cronograma que nenhuma frente resolve trabalhando mais<p class="fonte"><b>Fonte:</b> <code>docs/PENDENCIAS.md</code>, pelo léxico de <code>docs/pmo/pagina-do-status-do-projeto.py</code></p></td><td><span class="etiqueta e-nao">certa</span></td><td><span class="etiqueta e-parcial">médio</span></td><td class="mono">dono</td><td class="q">2026-09-16</td><td><b>3</b><br><span class="mtime">pedidos abertos parados com gente · 2026-10-06</span></td></tr>
 <tr><td class="mono">R16</td><td>O PDCA dos gaps parou em <b>Plan + Check</b>: as recomendações estão medidas e a fase <b>Do</b> não ocorreu. Pesquisa medida que não vira trabalho envelhece igual a número digitado<p class="fonte"><b>Fonte:</b> <code>docs/PDCA-GAPS.md</code></p></td><td><span class="etiqueta e-nao">certa</span></td><td><span class="etiqueta e-parcial">médio</span></td><td class="mono">A</td><td class="q">2026-09-16</td><td><b>—</b></td></tr>
 <tr><td class="mono">R13</td><td>O lixo que os <code>examples/</code> deixam em <code>/tmp</code> está <b>contado, não medido</b>, e o zelador <b>não roda por horário</b> (não há <code>cron</code> aqui). O ambiente já chegou a 560 MB livres sem ninguém saber por quê<p class="fonte"><b>Fonte:</b> <code>docs/PENDENCIAS.md</code> #209 · <code>CLAUDE.md</code> (papel D)</p></td><td><span class="etiqueta e-parcial">alta</span></td><td><span class="etiqueta e-parcial">médio</span></td><td class="mono">D</td><td class="q">2026-09-16</td><td><b>—</b></td></tr>
 <tr><td class="mono">R15</td><td>Prova que <b>falha sob carga sem defeito nenhum</b> (<code>panico_dentro_do_atender_devolve_a_vaga_da_porta_de_dados</code> exige que os três pânicos aconteçam). Teste instável ensina a ignorar vermelho, que é o pior hábito que uma catraca pode criar<p class="fonte"><b>Fonte:</b> <code>docs/PENDENCIAS.md</code> #267</p></td><td><span class="etiqueta e-parcial">alta</span></td><td><span class="etiqueta e-parcial">médio</span></td><td class="mono">F</td><td class="q">2026-09-16</td><td><b>—</b></td></tr>
 <tr><td class="mono">R5</td><td><code>SERIALIZABLE</code> não existe e <b>não se reivindica</b>; a leitura repetível existe pela trava e <b>pedida</b>. Quem não pede continua em leitura confirmada e pode ver anomalia que MySQL® e MariaDB® não mostrariam no padrão de fábrica deles<p class="fonte"><b>Fonte:</b> <code>docs/SOMBRA.md</code> §5b · <code>docs/ACID.md</code> §4.5 · <code>docs/PENDENCIAS.md</code> #246</p></td><td><span class="etiqueta e-plan">média</span></td><td><span class="etiqueta e-parcial">médio</span></td><td class="mono">B</td><td class="q">2026-09-16</td><td><b>—</b></td></tr>
+<tr><td class="mono">R12</td><td><code>cluster.quorum_minimo</code> <b>é imposto desde 01/10/2026</b> (pedido 207), e o risco mudou de lado: ligado, a espera segura a <b>trava de dados global</b> — o servidor inteiro fica no teto medido de ~237 commits/s em loopback, e menos com o <code>fsync</code> e a rede de um cliente; e ligar <b>a quente</b> com a réplica no meio de um pull pode degradar o primeiro commit<p class="fonte"><b>Fonte:</b> <code>docs/REPLICACAO.md</code> §19.9 · <code>bancada/quorum/resultados-quorum-real.json</code> · <code>crates/phxsql-server/src/quorum.rs</code></p></td><td><span class="etiqueta e-plan">média</span></td><td><span class="etiqueta e-parcial">médio</span></td><td class="mono">B</td><td class="q">2026-10-01</td><td><b>—</b></td></tr>
 <tr><td class="mono">R18</td><td>Documento de gate <b>desatualizado</b>: <code>docs/BACKLOG-TIPOS.md</code> ainda declara o P0 (atomicidade do commit pai+filho) <b>aberto</b> e o usa para barrar dois motores, enquanto o pedido #189 está fechado e o <code>conferir_fks_com</code> já enxerga a mãe da transação. Frente que o ler bloqueia sem motivo<p class="fonte"><b>Fonte:</b> <code>docs/BACKLOG-TIPOS.md</code> §«Os três portões» · <code>docs/PENDENCIAS.md</code> #189 · <code>crates/phxsql-store/src/table.rs::MaesEmProgresso</code></p></td><td><span class="etiqueta e-plan">média</span></td><td><span class="etiqueta e-parcial">médio</span></td><td class="mono">H</td><td class="q">2026-09-16</td><td><b>—</b></td></tr>
-<tr><td class="mono">R19</td><td>A dívida marcada no fonte pode ser <b>apagada sem ser paga</b>, e nada acusa: a marca é uma linha de comentário em arquivos que receberam <b>197 commits em 14 dias</b> (<code>servidor.rs</code> 81, <code>table.rs</code> 36, <code>config.rs</code> 24), e a contagem <b>melhora</b> quando ela some. A redação anterior — «a contagem sobe sozinha» — foi <b>derrubada medida</b> em 16/09/2026: a série tem <b>um ponto</b> (as 19 nasceram juntas em <code>f64b822</code>), e subir seria o inventário andando. Um teto pioraria, porque puniria quem marca, e <b>9 das 19</b> não se pagam por engenharia (pétrea, recusa certa, decisão do dono)<p class="fonte"><b>Fonte:</b> <code>docs/propostas/catraca-da-divida.md</code> (o parecer que mediu) · <code>docs/status/riscos.py</code> (a varredura) · <code>docs/CATRACAS.md</code></p></td><td><span class="etiqueta e-plan">média</span></td><td><span class="etiqueta e-parcial">médio</span></td><td class="mono">G</td><td class="q">2026-09-16</td><td><b>18</b><br><span class="mtime">marcas // DIVIDA: no fonte · 2026-10-01</span></td></tr>
+<tr><td class="mono">R19</td><td>A dívida marcada no fonte pode ser <b>apagada sem ser paga</b>, e nada acusa: a marca é uma linha de comentário em arquivos que receberam <b>197 commits em 14 dias</b> (<code>servidor.rs</code> 81, <code>table.rs</code> 36, <code>config.rs</code> 24), e a contagem <b>melhora</b> quando ela some. A redação anterior — «a contagem sobe sozinha» — foi <b>derrubada medida</b> em 16/09/2026: a série tem <b>um ponto</b> (as 19 nasceram juntas em <code>f64b822</code>), e subir seria o inventário andando. Um teto pioraria, porque puniria quem marca, e <b>9 das 19</b> não se pagam por engenharia (pétrea, recusa certa, decisão do dono)<p class="fonte"><b>Fonte:</b> <code>docs/propostas/catraca-da-divida.md</code> (o parecer que mediu) · <code>docs/status/riscos.py</code> (a varredura) · <code>docs/CATRACAS.md</code></p></td><td><span class="etiqueta e-plan">média</span></td><td><span class="etiqueta e-parcial">médio</span></td><td class="mono">G</td><td class="q">2026-09-16</td><td><b>17</b><br><span class="mtime">marcas // DIVIDA: no fonte · 2026-10-06</span></td></tr>
 </tbody></table></div>
 <div class="nota a"><b>Risco não é pendência.</b> A pendência diz <i>o que ainda não foi feito</i>; o risco diz <i>o que acontece se continuar assim</i>. Quase toda linha acima aponta para um pedido do <code>docs/PENDENCIAS.md</code> — e há risco sem pedido nenhum, que é justamente o que esta seção existe para não perder.</div>
 <p class="fonte"><b>De onde sai:</b> <code>docs/RISCOS.md</code>, que <b>se edita</b> — a avaliação é humana e datada, como a do <code>docs/STATUS.md</code>. Os números da coluna <b>medida</b> não estão lá: cada linha nomeia uma <b>sonda</b>, e a sonda é resolvida aqui, contra a varredura desta mesma página (a seção seguinte), o <code>achar_gates()</code> de <code>docs/pmo/pagina-do-status-do-projeto.py</code> sobre o <code>docs/PENDENCIAS.md</code>, o <code>guardas_vermelhas()</code> de <code>docs/dossie/pagina-dos-testes.py</code>, que varre <code>#[ignore = "VERMELHA …"]</code> no fonte, o bloco <code>catracas:</code> do <code>docs/QA-PDCA.md</code>, escrito por <code>docs/qa/medir.py</code>. Sonda que não existe <b>para</b> a página, nomeando a chave.</p>
@@ -627,38 +622,37 @@ própria.</figcaption>
 <h2 id="s10"><span class="n">10 ·</span>Dívida técnica, contada no fonte</h2>
 <p class="sub">Cada linha abaixo é uma marca <code>// DIVIDA:</code> no código, <b>ao lado da frase que já explicava a dívida</b>. Nenhuma foi inventada aqui: a varredura achou o que estava escrito e a marca só o tornou contável. Dívida que só existe na cabeça de quem escreveu não se conta — e o que não se conta não desce.</p>
 <div class="kpis">
-<div class="kpi"><b>18</b><span>marcas <code>// DIVIDA:</code></span><span class="q">2026-10-01</span></div>
-<div class="kpi"><b>15</b><span>arquivos com dívida marcada</span><span class="q">2026-10-01</span></div>
-<div class="kpi"><b>6</b><span>crates atingidos</span><span class="q">2026-10-01</span></div>
-<div class="kpi planejado"><b>5</b><span>que citam um pedido do dono</span><span class="q">2026-10-01</span></div>
+<div class="kpi"><b>17</b><span>marcas <code>// DIVIDA:</code></span><span class="q">2026-10-06</span></div>
+<div class="kpi"><b>15</b><span>arquivos com dívida marcada</span><span class="q">2026-10-06</span></div>
+<div class="kpi"><b>6</b><span>crates atingidos</span><span class="q">2026-10-06</span></div>
+<div class="kpi planejado"><b>4</b><span>que citam um pedido do dono</span><span class="q">2026-10-06</span></div>
 </div>
 <div class="barras">
-<div class="barra-linha"><span class="l">phxsql-server</span><span class="t"><i class="b-cheia" style="width:100.00%"></i></span><span class="n">9</span></div>
-<div class="barra-linha"><span class="l">phxsql-store</span><span class="t"><i class="b-cheia" style="width:33.33%"></i></span><span class="n">3</span></div>
-<div class="barra-linha"><span class="l">phxsql-core</span><span class="t"><i class="b-cheia" style="width:22.22%"></i></span><span class="n">2</span></div>
-<div class="barra-linha"><span class="l">phxsql-sql</span><span class="t"><i class="b-cheia" style="width:22.22%"></i></span><span class="n">2</span></div>
-<div class="barra-linha"><span class="l">phxsql-cmd</span><span class="t"><i class="b-cheia" style="width:11.11%"></i></span><span class="n">1</span></div>
-<div class="barra-linha"><span class="l">phxsql-odbc</span><span class="t"><i class="b-cheia" style="width:11.11%"></i></span><span class="n">1</span></div>
+<div class="barra-linha"><span class="l">phxsql-server</span><span class="t"><i class="b-cheia" style="width:100.00%"></i></span><span class="n">8</span></div>
+<div class="barra-linha"><span class="l">phxsql-store</span><span class="t"><i class="b-cheia" style="width:37.50%"></i></span><span class="n">3</span></div>
+<div class="barra-linha"><span class="l">phxsql-core</span><span class="t"><i class="b-cheia" style="width:25.00%"></i></span><span class="n">2</span></div>
+<div class="barra-linha"><span class="l">phxsql-sql</span><span class="t"><i class="b-cheia" style="width:25.00%"></i></span><span class="n">2</span></div>
+<div class="barra-linha"><span class="l">phxsql-cmd</span><span class="t"><i class="b-cheia" style="width:12.50%"></i></span><span class="n">1</span></div>
+<div class="barra-linha"><span class="l">phxsql-odbc</span><span class="t"><i class="b-cheia" style="width:12.50%"></i></span><span class="n">1</span></div>
 </div>
 <div class="rolo"><table><thead><tr><th>onde</th><th>pedido</th><th>o que falta</th></tr></thead><tbody>
 <tr><td class="mono">crates/phxsql-cmd/src/lib.rs:91</td><td><span class="mtime">sem pedido</span></td><td>o console não aceita o pino da chave do fio -- o túnel dele é TOFU, e protege só de escuta passiva</td></tr>
 <tr><td class="mono">crates/phxsql-core/src/tipo_database.rs:62</td><td><span class="mtime">sem pedido</span></td><td>so o motor padrao existe -- hive e vetorial tem tipo, marcador e portao de recusa, e o motor de cada um e frente aberta</td></tr>
 <tr><td class="mono">crates/phxsql-core/src/vetor.rs:39</td><td><span class="mtime">sem pedido</span></td><td>a coluna VECTOR&lt;F32,N&gt; da frente V3 nao existe -- hoje ninguem declara a dimensao, e por isso o par de tamanhos diferentes so panica em vez de ser impossivel</td></tr>
-<tr><td class="mono">crates/phxsql-odbc/src/lib.rs:1658</td><td><span class="mtime">sem pedido</span></td><td>falta o `SQLEndTran`, entao o driver so dirige em autocommit -- a transacao que o servidor tem nao alcanca quem chega pelo ODBC</td></tr>
+<tr><td class="mono">crates/phxsql-odbc/src/lib.rs:1845</td><td><span class="mtime">sem pedido</span></td><td>falta o `SQLEndTran`, entao o driver so dirige em autocommit -- a transacao que o servidor tem nao alcanca quem chega pelo ODBC</td></tr>
 <tr><td class="mono">crates/phxsql-server/src/conferidor_temporarios.rs:36</td><td><span class="etiqueta e-nao">#209 Depois da versão</span></td><td>o conferidor nao varre `examples/`, entao o lixo que eles deixam em `/tmp` continua fora da catraca</td></tr>
-<tr><td class="mono">crates/phxsql-server/src/config.rs:604</td><td><span class="etiqueta e-parcial">#207 Parcial</span></td><td>o quorum e guardado e nao imposto -- a escrita com quorum nao existe, e o master confirma sem esperar replica nenhuma</td></tr>
-<tr><td class="mono">crates/phxsql-server/src/config.rs:1740</td><td><span class="mtime">sem pedido</span></td><td>ligar a cifra nao alcanca o diario que ja existe em claro -- um append-only nao se reescreve, e nao ha migracao que cifre para tras</td></tr>
-<tr><td class="mono">crates/phxsql-server/src/config.rs:1794</td><td><span class="etiqueta e-plan">#268 Planejado</span></td><td>marcar a tabela nao cifra o que ja esta gravado -- a migracao que reescreve o `.reg` slot a slot nao existe, entao a lista declara mais do que o disco cumpre</td></tr>
+<tr><td class="mono">crates/phxsql-server/src/config.rs:1914</td><td><span class="mtime">sem pedido</span></td><td>ligar a cifra nao alcanca o diario que ja existe em claro -- um append-only nao se reescreve, e nao ha migracao que cifre para tras</td></tr>
+<tr><td class="mono">crates/phxsql-server/src/config.rs:1970</td><td><span class="etiqueta e-tem">#268 Feito</span></td><td>a lista so declara (o Profiler a le) e a migracao pedida ainda nao alcanca coluna Memo/Bin marcada nem o historico (.log, .trash, .reason), entao `cifra.tabelas` continua prometendo mais do que o disco cumpre</td></tr>
 <tr><td class="mono">crates/phxsql-server/src/dblink/sincronia.rs:324</td><td><span class="mtime">sem pedido</span></td><td>o espelho do DbLink so aceita chave primaria de UMA coluna -- tabela remota com chave composta recusa</td></tr>
 <tr><td class="mono">crates/phxsql-server/src/mensagens.rs:124</td><td><span class="mtime">sem pedido</span></td><td>`erro.versao_nao_suportada` vai sem traducao nos cinco idiomas -- quem escolheu outro idioma le portugues nessa frase</td></tr>
 <tr><td class="mono">crates/phxsql-server/src/profiler.rs:58</td><td><span class="mtime">sem pedido</span></td><td>marcar uma tabela nao apaga o `perfil.txt.N` ja gravado em claro -- quem marca depois de perfilar tem de apagar os arquivos a mao</td></tr>
 <tr><td class="mono">crates/phxsql-server/src/servidor.rs:19</td><td><span class="etiqueta e-tem">#164 Feito</span></td><td>nao ha trava de arquivo nem de registro -- toda operacao de dados se enfileira no mutex global, e as travas finas continuam por fazer</td></tr>
-<tr><td class="mono">crates/phxsql-server/src/servidor.rs:11054</td><td><span class="mtime">sem pedido</span></td><td>a porta MCP por HTTP nasce sem escrita e sem login por usuario -- as duas metades ficaram para a fase 2, com o dono</td></tr>
+<tr><td class="mono">crates/phxsql-server/src/servidor.rs:11628</td><td><span class="mtime">sem pedido</span></td><td>a porta MCP por HTTP nasce sem escrita e sem login por usuario -- as duas metades ficaram para a fase 2, com o dono</td></tr>
 <tr><td class="mono">crates/phxsql-sql/src/consulta.rs:85</td><td><span class="mtime">sem pedido</span></td><td>correlacao que nao e igualdade, `EXISTS` nao correlacionado, CTE recursiva, e `DISTINCT`/`UNION` dentro da composicao continuam sem substrato -- a traducao recusa nomeando</td></tr>
 <tr><td class="mono">crates/phxsql-sql/src/traduzir.rs:28</td><td><span class="mtime">sem pedido</span></td><td>`SELECT` cuja pergunta nenhum indice responde inteira recusa em vez de varrer -- falta o indice, ou o planejador que escolha entre os que ha</td></tr>
 <tr><td class="mono">crates/phxsql-store/src/ledger.rs:105</td><td><span class="mtime">sem pedido</span></td><td>a coluna da assinatura existe no esquema e ninguem a preenche -- o ledger prova integridade, nao autoria</td></tr>
 <tr><td class="mono">crates/phxsql-store/src/restaurar.rs:53</td><td><span class="mtime">sem pedido</span></td><td>a restauracao nao confere assinatura -- o manifesto prova que o backup nao apodreceu, nao que ninguem o reescreveu de proposito</td></tr>
-<tr><td class="mono">crates/phxsql-store/src/table.rs:5569</td><td><span class="etiqueta e-parcial">#229 Parcial</span></td><td>promover uma replica atrasada continua de um numero menor que o do master morto -- falta decidir entre faixa por no e contador duravel propagado</td></tr>
+<tr><td class="mono">crates/phxsql-store/src/table.rs:5875</td><td><span class="etiqueta e-tem">#229 Feito</span></td><td>promover uma replica cuja rede cortou antes da ultima rodada continua de um numero menor que o do master morto -- o contador viaja no `posicao` a cada rodada e so o atraso de rede sobra</td></tr>
 </tbody></table></div>
 <div class="nota v"><b>Este número não tem catraca, e isso é dito em vez de escondido.</b> Nada reprova quem acrescentar mais uma marca — ao contrário das catracas do §13, que só descem. Pôr uma aqui hoje puniria justamente quem <b>marca</b> a dívida que já existia, que é o contrário do que esta seção quer. A decisão é do papel G, e está no catálogo de riscos como R19.</div>
 <p class="fonte"><b>De onde sai:</b> a varredura de <code>// DIVIDA:</code> em <code>crates/**/*.rs</code> — a lista de arquivos sai do <b>disco</b>, não de uma cópia no script: lista digitada perde o arquivo que nascer amanhã. O estado de cada pedido citado vem do <code>ler()</code> de <code>docs/dossie/pagina-dos-pedidos.py</code>, e marca que cita pedido inexistente <b>para</b> o gerador. Feita por <code>docs/status/riscos.py</code>, no molde do <code>crates/phxsql-server/src/conferidor.rs</code>.</p>
@@ -668,47 +662,48 @@ própria.</figcaption>
 <p class="sub">Dois números diferentes de propósito: o de cima é o que a suíte <b>executou</b>; o de baixo é quantos <code>#[test]</code> existem no fonte, por área.</p>
 <div class="kpis">
 <div class="kpi feito"><b>3.632</b><span>testes que passaram na suíte</span><span class="q">2026-10-01 13:43:47</span></div>
-<div class="kpi"><b>3.698</b><span><code>#[test]</code> no fonte</span><span class="q">2026-10-01</span></div>
-<div class="kpi"><b>27</b><span>áreas com teste</span><span class="q">2026-10-01</span></div>
+<div class="kpi"><b>3.883</b><span><code>#[test]</code> no fonte</span><span class="q">2026-10-06</span></div>
+<div class="kpi"><b>27</b><span>áreas com teste</span><span class="q">2026-10-06</span></div>
 </div>
 <div class="barras">
-<div class="barra-linha"><span class="l">Protocolo e portões (despachar)</span><span class="t"><i class="b-cheia" style="width:100.00%"></i></span><span class="n">813 · 22,0%</span></div>
-<div class="barra-linha"><span class="l">Motor de dados (arquivos, índice, diários)</span><span class="t"><i class="b-cheia" style="width:94.83%"></i></span><span class="n">771 · 20,8%</span></div>
-<div class="barra-linha"><span class="l">Servidor (outros)</span><span class="t"><i class="b-cheia" style="width:61.87%"></i></span><span class="n">503 · 13,6%</span></div>
-<div class="barra-linha"><span class="l">Núcleo (JSON, tipos, UUID, zip, paralelo)</span><span class="t"><i class="b-cheia" style="width:39.73%"></i></span><span class="n">323 · 8,7%</span></div>
-<div class="barra-linha"><span class="l">Camada SQL (léxico, sintaxe, tradução)</span><span class="t"><i class="b-cheia" style="width:32.10%"></i></span><span class="n">261 · 7,1%</span></div>
-<div class="barra-linha"><span class="l">Configuração</span><span class="t"><i class="b-cheia" style="width:20.54%"></i></span><span class="n">167 · 4,5%</span></div>
-<div class="barra-linha"><span class="l">Criptografia e codificação</span><span class="t"><i class="b-cheia" style="width:17.96%"></i></span><span class="n">146 · 3,9%</span></div>
-<div class="barra-linha"><span class="l">DbLink</span><span class="t"><i class="b-cheia" style="width:17.34%"></i></span><span class="n">141 · 3,8%</span></div>
-<div class="barra-linha"><span class="l">Telemetria e profiler</span><span class="t"><i class="b-cheia" style="width:9.96%"></i></span><span class="n">81 · 2,2%</span></div>
-<div class="barra-linha"><span class="l">ODBC</span><span class="t"><i class="b-cheia" style="width:9.35%"></i></span><span class="n">76 · 2,1%</span></div>
-<div class="barra-linha"><span class="l">Gatilhos e procedimentos</span><span class="t"><i class="b-cheia" style="width:5.54%"></i></span><span class="n">45 · 1,2%</span></div>
-<div class="barra-linha"><span class="l">Replicação</span><span class="t"><i class="b-cheia" style="width:5.29%"></i></span><span class="n">43 · 1,2%</span></div>
-<div class="barra-linha"><span class="l">Jobs</span><span class="t"><i class="b-cheia" style="width:5.17%"></i></span><span class="n">42 · 1,1%</span></div>
-<div class="barra-linha"><span class="l">Usuários e permissões</span><span class="t"><i class="b-cheia" style="width:4.80%"></i></span><span class="n">39 · 1,1%</span></div>
-<div class="barra-linha"><span class="l">Mensagens (i18n do servidor)</span><span class="t"><i class="b-cheia" style="width:4.06%"></i></span><span class="n">33 · 0,9%</span></div>
-<div class="barra-linha"><span class="l">Interface web (servidor HTTP)</span><span class="t"><i class="b-cheia" style="width:3.69%"></i></span><span class="n">30 · 0,8%</span></div>
-<div class="barra-linha"><span class="l">Cluster</span><span class="t"><i class="b-cheia" style="width:3.08%"></i></span><span class="n">25 · 0,7%</span></div>
-<div class="barra-linha"><span class="l">Segurança de rede (blacklist, firewall)</span><span class="t"><i class="b-cheia" style="width:2.83%"></i></span><span class="n">23 · 0,6%</span></div>
-<div class="barra-linha"><span class="l">Console de terminal (phxsqlcmd)</span><span class="t"><i class="b-cheia" style="width:2.58%"></i></span><span class="n">21 · 0,6%</span></div>
-<div class="barra-linha"><span class="l">MCP</span><span class="t"><i class="b-cheia" style="width:2.58%"></i></span><span class="n">21 · 0,6%</span></div>
-<div class="barra-linha"><span class="l">Transações</span><span class="t"><i class="b-cheia" style="width:2.34%"></i></span><span class="n">19 · 0,5%</span></div>
-<div class="barra-linha"><span class="l">Alertas e e-mail</span><span class="t"><i class="b-cheia" style="width:2.09%"></i></span><span class="n">17 · 0,5%</span></div>
-<div class="barra-linha"><span class="l">Junções e união</span><span class="t"><i class="b-cheia" style="width:2.09%"></i></span><span class="n">17 · 0,5%</span></div>
-<div class="barra-linha"><span class="l">Exportação</span><span class="t"><i class="b-cheia" style="width:1.60%"></i></span><span class="n">13 · 0,4%</span></div>
-<div class="barra-linha"><span class="l">Pivot</span><span class="t"><i class="b-cheia" style="width:1.48%"></i></span><span class="n">12 · 0,3%</span></div>
-<div class="barra-linha"><span class="l">CLI</span><span class="t"><i class="b-cheia" style="width:1.23%"></i></span><span class="n">10 · 0,3%</span></div>
-<div class="barra-linha"><span class="l">Monitor de máquina</span><span class="t"><i class="b-cheia" style="width:0.74%"></i></span><span class="n">6 · 0,2%</span></div>
+<div class="barra-linha"><span class="l">Motor de dados (arquivos, índice, diários)</span><span class="t"><i class="b-cheia" style="width:100.00%"></i></span><span class="n">856 · 22,0%</span></div>
+<div class="barra-linha"><span class="l">Protocolo e portões (despachar)</span><span class="t"><i class="b-cheia" style="width:98.95%"></i></span><span class="n">847 · 21,8%</span></div>
+<div class="barra-linha"><span class="l">Servidor (outros)</span><span class="t"><i class="b-cheia" style="width:63.79%"></i></span><span class="n">546 · 14,1%</span></div>
+<div class="barra-linha"><span class="l">Núcleo (JSON, tipos, UUID, zip, paralelo)</span><span class="t"><i class="b-cheia" style="width:37.73%"></i></span><span class="n">323 · 8,3%</span></div>
+<div class="barra-linha"><span class="l">Camada SQL (léxico, sintaxe, tradução)</span><span class="t"><i class="b-cheia" style="width:30.72%"></i></span><span class="n">263 · 6,8%</span></div>
+<div class="barra-linha"><span class="l">Configuração</span><span class="t"><i class="b-cheia" style="width:19.98%"></i></span><span class="n">171 · 4,4%</span></div>
+<div class="barra-linha"><span class="l">Criptografia e codificação</span><span class="t"><i class="b-cheia" style="width:17.06%"></i></span><span class="n">146 · 3,8%</span></div>
+<div class="barra-linha"><span class="l">DbLink</span><span class="t"><i class="b-cheia" style="width:16.47%"></i></span><span class="n">141 · 3,6%</span></div>
+<div class="barra-linha"><span class="l">ODBC</span><span class="t"><i class="b-cheia" style="width:9.46%"></i></span><span class="n">81 · 2,1%</span></div>
+<div class="barra-linha"><span class="l">Telemetria e profiler</span><span class="t"><i class="b-cheia" style="width:9.46%"></i></span><span class="n">81 · 2,1%</span></div>
+<div class="barra-linha"><span class="l">Gatilhos e procedimentos</span><span class="t"><i class="b-cheia" style="width:5.61%"></i></span><span class="n">48 · 1,2%</span></div>
+<div class="barra-linha"><span class="l">Replicação</span><span class="t"><i class="b-cheia" style="width:5.26%"></i></span><span class="n">45 · 1,2%</span></div>
+<div class="barra-linha"><span class="l">Jobs</span><span class="t"><i class="b-cheia" style="width:4.91%"></i></span><span class="n">42 · 1,1%</span></div>
+<div class="barra-linha"><span class="l">Usuários e permissões</span><span class="t"><i class="b-cheia" style="width:4.56%"></i></span><span class="n">39 · 1,0%</span></div>
+<div class="barra-linha"><span class="l">Mensagens (i18n do servidor)</span><span class="t"><i class="b-cheia" style="width:4.21%"></i></span><span class="n">36 · 0,9%</span></div>
+<div class="barra-linha"><span class="l">Interface web (servidor HTTP)</span><span class="t"><i class="b-cheia" style="width:3.50%"></i></span><span class="n">30 · 0,8%</span></div>
+<div class="barra-linha"><span class="l">Segurança de rede (blacklist, firewall)</span><span class="t"><i class="b-cheia" style="width:3.15%"></i></span><span class="n">27 · 0,7%</span></div>
+<div class="barra-linha"><span class="l">Cluster</span><span class="t"><i class="b-cheia" style="width:2.92%"></i></span><span class="n">25 · 0,6%</span></div>
+<div class="barra-linha"><span class="l">Console de terminal (phxsqlcmd)</span><span class="t"><i class="b-cheia" style="width:2.45%"></i></span><span class="n">21 · 0,5%</span></div>
+<div class="barra-linha"><span class="l">MCP</span><span class="t"><i class="b-cheia" style="width:2.45%"></i></span><span class="n">21 · 0,5%</span></div>
+<div class="barra-linha"><span class="l">Transações</span><span class="t"><i class="b-cheia" style="width:2.22%"></i></span><span class="n">19 · 0,5%</span></div>
+<div class="barra-linha"><span class="l">Alertas e e-mail</span><span class="t"><i class="b-cheia" style="width:1.99%"></i></span><span class="n">17 · 0,4%</span></div>
+<div class="barra-linha"><span class="l">Junções e união</span><span class="t"><i class="b-cheia" style="width:1.99%"></i></span><span class="n">17 · 0,4%</span></div>
+<div class="barra-linha"><span class="l">Exportação</span><span class="t"><i class="b-cheia" style="width:1.52%"></i></span><span class="n">13 · 0,3%</span></div>
+<div class="barra-linha"><span class="l">Pivot</span><span class="t"><i class="b-cheia" style="width:1.40%"></i></span><span class="n">12 · 0,3%</span></div>
+<div class="barra-linha"><span class="l">CLI</span><span class="t"><i class="b-cheia" style="width:1.17%"></i></span><span class="n">10 · 0,3%</span></div>
+<div class="barra-linha"><span class="l">Monitor de máquina</span><span class="t"><i class="b-cheia" style="width:0.70%"></i></span><span class="n">6 · 0,2%</span></div>
 </div>
 <p class="fonte"><b>De onde sai:</b> o <code>medir()</code> de <code>docs/dossie/cobertura-por-area.py</code>, que conta <code>#[test]</code> em <code>crates/*/src</code> e <code>crates/*/tests</code>; e o campo <code>testes</code> do <code>CAPABILITIES.json</code>, que sai de um <code>cargo test</code> de verdade.</p>
 
 <h2 id="s12"><span class="n">12 ·</span>O catálogo de guardas</h2>
 <p class="sub">Cada guarda é um defeito que esta casa já pagou, escrito de um jeito que a máquina consegue <b>repor</b> — e o teste nomeado tem de cair quando ele volta. Prova real nos dois sentidos.</p>
 <div class="kpis">
-<div class="kpi"><b>661</b><span>guardas no catálogo</span><span class="q">2026-10-01</span></div>
-<div class="kpi feito"><b>482</b><span>provada</span><span class="q">2026-09-16 a 2026-10-01</span></div>
-<div class="kpi parcial"><b>4</b><span>redundante</span><span class="q">2026-09-16 15:25</span></div>
-<div class="kpi falta"><b>0</b><span>guardas VERMELHAS no fonte</span><span class="q">2026-10-01</span></div>
+<div class="kpi"><b>771</b><span>guardas no catálogo</span><span class="q">2026-10-06</span></div>
+<div class="kpi falta"><b>2</b><span>nao pegou</span><span class="q">2026-10-02 13:08</span></div>
+<div class="kpi feito"><b>673</b><span>provada</span><span class="q">2026-09-16 a 2026-10-02</span></div>
+<div class="kpi parcial"><b>5</b><span>redundante</span><span class="q">2026-09-16 a 2026-10-02</span></div>
+<div class="kpi falta"><b>0</b><span>guardas VERMELHAS no fonte</span><span class="q">2026-10-06</span></div>
 </div>
 <div class="nota a"><b>Guarda quebrada não é guarda reprovada — é pior.</b> Quebrada não roda, e o catálogo continua a contando como cobertura. O contador acima é o que o catálogo <b>tem</b>; o que ele <b>provou</b> sai da última corrida do provador, que leva cerca de uma hora porque repõe o defeito e roda <code>cargo test</code> para cada entrada.</div>
 <p class="fonte"><b>De onde sai:</b> o <code>guardas()</code> de <code>docs/dossie/pagina-dos-testes.py</code>, que <b>importa</b> <code>bancada/guardas/catalogo.py</code> em vez de contar <code>"id":</code> por regex — contar texto mediria o arquivo, importar mede a lista que a bateria percorre; <code>bancada/guardas/ultima-corrida.json</code>; e a varredura de <code>#[ignore = "VERMELHA …"]</code> no fonte.</p>
@@ -716,46 +711,49 @@ própria.</figcaption>
 <h2 id="s13"><span class="n">13 ·</span>As catracas</h2>
 <p class="sub">Cada <code>TETO_*</code> é um número que <b>só desce</b>. Catraca frouxa não segura nada — e ela nunca sobe, nem quando a régua muda: régua que passa a medir mais <b>aposenta</b> a antiga e faz nascer outra, no número medido do dia.</p>
 <div class="rolo"><table><thead><tr><th>catraca</th><th class="num">teto</th><th>fonte</th></tr></thead><tbody>
-<tr><td class="mono">TETO</td><td class="num">60 s</td><td class="mono">crates/phxsql-server/src/replica.rs:796</td></tr>
-<tr><td class="mono">TETO_ANINHAMENTO</td><td class="num">8</td><td class="mono">crates/phxsql-server/src/servidor.rs:32613</td></tr>
-<tr><td class="mono">TETO_BOTAO_SEM_PROVA</td><td class="num">119</td><td class="mono">crates/phxsql-server/src/conferidor_botoes.rs:845</td></tr>
+<tr><td class="mono">TETO</td><td class="num">60 s</td><td class="mono">crates/phxsql-server/src/replica.rs:838</td></tr>
+<tr><td class="mono">TETO_ANINHAMENTO</td><td class="num">8</td><td class="mono">crates/phxsql-server/src/servidor.rs:34239</td></tr>
+<tr><td class="mono">TETO_BOTAO_SEM_PROVA</td><td class="num">0</td><td class="mono">crates/phxsql-server/src/conferidor_botoes.rs:906</td></tr>
 <tr><td class="mono">TETO_CLIENT_HELLO</td><td class="num">32.768</td><td class="mono">crates/phxsql-core/src/tls.rs:42</td></tr>
-<tr><td class="mono">TETO_COLADO</td><td class="num">0</td><td class="mono">crates/phxsql-server/src/conferidor.rs:1145</td></tr>
-<tr><td class="mono">TETO_COLETA_ROWIDS</td><td class="num">1.000.000</td><td class="mono">crates/phxsql-server/src/servidor.rs:32432</td></tr>
-<tr><td class="mono">TETO_DA_CASCATA</td><td class="num">16</td><td class="mono">crates/phxsql-store/src/table.rs:266</td></tr>
-<tr><td class="mono">TETO_DA_CITACAO</td><td class="num">48</td><td class="mono">crates/phxsql-core/src/error.rs:467</td></tr>
+<tr><td class="mono">TETO_COLADO</td><td class="num">0</td><td class="mono">crates/phxsql-server/src/conferidor.rs:1214</td></tr>
+<tr><td class="mono">TETO_COLETA_ROWIDS</td><td class="num">1.000.000</td><td class="mono">crates/phxsql-server/src/servidor.rs:34058</td></tr>
+<tr><td class="mono">TETO_DA_CASCATA</td><td class="num">16</td><td class="mono">crates/phxsql-store/src/table.rs:267</td></tr>
+<tr><td class="mono">TETO_DA_CITACAO</td><td class="num">48</td><td class="mono">crates/phxsql-core/src/error.rs:500</td></tr>
 <tr><td class="mono">TETO_DA_FILA</td><td class="num">32</td><td class="mono">crates/phxsql-server/src/saude_do_disco.rs:76</td></tr>
 <tr><td class="mono">TETO_DA_SENHA</td><td class="num">65.535</td><td class="mono">crates/phxsql-core/src/senha.rs:67</td></tr>
-<tr><td class="mono">TETO_DA_VEZ_CEDIDA</td><td class="num">5 s</td><td class="mono">crates/phxsql-server/src/servidor.rs:984</td></tr>
+<tr><td class="mono">TETO_DA_VEZ_CEDIDA</td><td class="num">5 s</td><td class="mono">crates/phxsql-server/src/servidor.rs:1135</td></tr>
 <tr><td class="mono">TETO_DE_BYTES_DO_RESULTADO</td><td class="num">134.217.728</td><td class="mono">crates/phxsql-server/src/dblink/conexao.rs:159</td></tr>
 <tr><td class="mono">TETO_DE_COLUNAS (3 com este nome)</td><td class="num">32.767</td><td class="mono">crates/phxsql-core/src/schema.rs:105</td></tr>
-<tr><td class="mono">TETO_DE_COLUNAS (3 com este nome)</td><td class="num">12</td><td class="mono">crates/phxsql-server/src/bidirecional.rs:699</td></tr>
+<tr><td class="mono">TETO_DE_COLUNAS (3 com este nome)</td><td class="num">12</td><td class="mono">crates/phxsql-server/src/bidirecional.rs:718</td></tr>
 <tr><td class="mono">TETO_DE_COLUNAS (3 com este nome)</td><td class="num">4.096</td><td class="mono">crates/phxsql-server/src/dblink/mod.rs:121</td></tr>
-<tr><td class="mono">TETO_DE_EVENTOS_POR_LOTE</td><td class="num">5.000</td><td class="mono">crates/phxsql-server/src/servidor.rs:993</td></tr>
+<tr><td class="mono">TETO_DE_EVENTOS_POR_LOTE</td><td class="num">5.000</td><td class="mono">crates/phxsql-server/src/servidor.rs:1144</td></tr>
 <tr><td class="mono">TETO_DE_ITERACOES_DO_PAR</td><td class="num">1.000.000</td><td class="mono">crates/phxsql-server/src/pg/scram.rs:157</td></tr>
 <tr><td class="mono">TETO_DE_LEITURA</td><td class="num">4.096</td><td class="mono">crates/phxsql-server/src/conferidor_segredos.rs:85</td></tr>
 <tr><td class="mono">TETO_DE_LINHAS_DE_CONTINUACAO</td><td class="num">1.000</td><td class="mono">crates/phxsql-server/src/email.rs:66</td></tr>
-<tr><td class="mono">TETO_DE_NIVEIS</td><td class="num">1.024</td><td class="mono">crates/phxsql-store/src/util.rs:600</td></tr>
-<tr><td class="mono">TETO_DE_TABELAS_NO_PULSO</td><td class="num">512</td><td class="mono">crates/phxsql-server/src/cluster.rs:185</td></tr>
-<tr><td class="mono">TETO_DE_TOQUES_PADRAO</td><td class="num">1.000.000</td><td class="mono">crates/phxsql-server/src/bidirecional.rs:481</td></tr>
+<tr><td class="mono">TETO_DE_NIVEIS</td><td class="num">1.024</td><td class="mono">crates/phxsql-store/src/util.rs:606</td></tr>
+<tr><td class="mono">TETO_DE_TABELAS_NO_PULSO</td><td class="num">512</td><td class="mono">crates/phxsql-server/src/cluster.rs:191</td></tr>
+<tr><td class="mono">TETO_DE_TOQUES_PADRAO</td><td class="num">1.000.000</td><td class="mono">crates/phxsql-server/src/bidirecional.rs:485</td></tr>
 <tr><td class="mono">TETO_DO_APERTO</td><td class="num">65.536</td><td class="mono">crates/phxsql-core/src/fio.rs:524</td></tr>
 <tr><td class="mono">TETO_DO_CABECALHO</td><td class="num">400</td><td class="mono">crates/phxsql-server/src/profiler.rs:184</td></tr>
 <tr><td class="mono">TETO_DO_CAMPO</td><td class="num">120</td><td class="mono">crates/phxsql-server/src/profiler.rs:174</td></tr>
 <tr><td class="mono">TETO_DO_ERRO</td><td class="num">500</td><td class="mono">crates/phxsql-server/src/profiler.rs:178</td></tr>
-<tr><td class="mono">TETO_DO_LOTE_SERVIDO</td><td class="num">16.777.216</td><td class="mono">crates/phxsql-server/src/servidor.rs:958</td></tr>
-<tr><td class="mono">TETO_DO_NOME_NO_PULSO</td><td class="num">256</td><td class="mono">crates/phxsql-server/src/cluster.rs:189</td></tr>
+<tr><td class="mono">TETO_DO_LOTE_SERVIDO</td><td class="num">16.777.216</td><td class="mono">crates/phxsql-server/src/servidor.rs:1109</td></tr>
+<tr><td class="mono">TETO_DO_NOME_NO_PULSO</td><td class="num">256</td><td class="mono">crates/phxsql-server/src/cluster.rs:195</td></tr>
+<tr><td class="mono">TETO_DO_PRAZO_DO_FIREWALL_S</td><td class="num">120</td><td class="mono">crates/phxsql-server/src/blacklist.rs:348</td></tr>
+<tr><td class="mono">TETO_DO_PRAZO_DO_GANCHO_S</td><td class="num">120</td><td class="mono">crates/phxsql-server/src/config.rs:1397</td></tr>
 <tr><td class="mono">TETO_DO_REGISTRO</td><td class="num">134.217.728</td><td class="mono">crates/phxsql-core/src/fio.rs:495</td></tr>
-<tr><td class="mono">TETO_DO_VALOR</td><td class="num">48</td><td class="mono">crates/phxsql-server/src/bidirecional.rs:740</td></tr>
-<tr><td class="mono">TETO_FRASE_REPETIDA</td><td class="num">0</td><td class="mono">crates/phxsql-server/src/conferidor.rs:1149</td></tr>
+<tr><td class="mono">TETO_DO_VALOR</td><td class="num">48</td><td class="mono">crates/phxsql-server/src/bidirecional.rs:759</td></tr>
+<tr><td class="mono">TETO_FRASE_REPETIDA</td><td class="num">0</td><td class="mono">crates/phxsql-server/src/conferidor.rs:1218</td></tr>
 <tr><td class="mono">TETO_FSYNC_DA_SUBIDA</td><td class="num">1</td><td class="mono">crates/phxsql-store/src/conferidor_fsync.rs:99</td></tr>
 <tr><td class="mono">TETO_FSYNC_POR_FECHO_V2</td><td class="num">8</td><td class="mono">crates/phxsql-store/src/conferidor_fsync.rs:63</td></tr>
 <tr><td class="mono">TETO_INVENTARIO_DESCASADO</td><td class="num">0</td><td class="mono">crates/phxsql-server/src/conferidor_inventario.rs:360</td></tr>
-<tr><td class="mono">TETO_JUNCAO</td><td class="num">500.000</td><td class="mono">crates/phxsql-server/src/servidor.rs:32421</td></tr>
+<tr><td class="mono">TETO_JUNCAO</td><td class="num">500.000</td><td class="mono">crates/phxsql-server/src/servidor.rs:34047</td></tr>
 <tr><td class="mono">TETO_LEITURA_FORA_DO_CANAL</td><td class="num">0</td><td class="mono">crates/phxsql-server/src/conferidor_canal.rs:227</td></tr>
 <tr><td class="mono">TETO_MENSAGEM</td><td class="num">1.024</td><td class="mono">crates/phxsql-core/src/tls.rs:46</td></tr>
+<tr><td class="mono">TETO_NUMERO_CRAVADO_EM_TELA</td><td class="num">6</td><td class="mono">crates/phxsql-server/src/conferidor.rs:1211</td></tr>
 <tr><td class="mono">TETO_PADRAO</td><td class="num">16.777.216</td><td class="mono">crates/phxzip/src/phz.rs:58</td></tr>
-<tr><td class="mono">TETO_PIVOT</td><td class="num">5.000.000</td><td class="mono">crates/phxsql-server/src/servidor.rs:32419</td></tr>
-<tr><td class="mono">TETO_ROTULOS_E_CRASE</td><td class="num">871</td><td class="mono">crates/phxsql-server/src/conferidor.rs:1413</td></tr>
+<tr><td class="mono">TETO_PIVOT</td><td class="num">5.000.000</td><td class="mono">crates/phxsql-server/src/servidor.rs:34045</td></tr>
+<tr><td class="mono">TETO_ROTULOS_E_CRASE</td><td class="num">861</td><td class="mono">crates/phxsql-server/src/conferidor.rs:1488</td></tr>
 <tr><td class="mono">TETO_SEGREDO_SOLTO</td><td class="num">0</td><td class="mono">crates/phxsql-server/src/conferidor_segredos.rs:315</td></tr>
 <tr><td class="mono">TETO_TABELA_NA_MAO</td><td class="num">0</td><td class="mono">crates/phxsql-server/src/conferidor_grades.rs:426</td></tr>
 <tr><td class="mono">TETO_TEMP_DIR_SOLTO</td><td class="num">0</td><td class="mono">crates/phxsql-server/src/conferidor_temporarios.rs:253</td></tr>
@@ -767,21 +765,22 @@ própria.</figcaption>
 <h2 id="s14"><span class="n">14 ·</span>As bancadas, com a data de cada medição</h2>
 <p class="sub">Os <code>resultados.json</code> são de corridas de <b>dias diferentes</b>: juntá-los sem dizer quando publicaria um retrato que nunca existiu. Bancada sem resultado aparece como <b>não medida</b>, com o comando para rodar — nunca some da tabela.</p>
 <div class="kpis">
-<div class="kpi"><b class="curto">18/18</b><span>bancadas com resultado</span><span class="q">2026-10-01</span></div>
-<div class="kpi falta"><b>0</b><span>bancadas <b>não medidas</b></span><span class="q">2026-10-01</span></div>
+<div class="kpi"><b class="curto">19/19</b><span>bancadas com resultado</span><span class="q">2026-10-06</span></div>
+<div class="kpi falta"><b>0</b><span>bancadas <b>não medidas</b></span><span class="q">2026-10-06</span></div>
 </div>
 <div class="rolo"><table><thead><tr><th>bancada e o que ela prova</th><th>medida em</th><th>o que saiu</th></tr></thead><tbody>
 <tr><td class="nome">Comparativo — o que falta aqui, contra quem tem<div class="prova">a mesma pergunta em quatro motores vivos, com um controle positivo que TODOS têm de recusar — e sonda de efeito, nunca «aceitou»</div></td><td class="q mono">2026-09-17T19:41:13</td><td class="v"><b>capacidades perguntadas</b> 19 · <b>faltam ou pela metade aqui</b> 1</td></tr>
 <tr><td class="nome">Cobertura da tela sobre o protocolo<div class="prova">as duas listas saem do código — as operações do array OPERACOES e os arquivos da tela dos include_str! do http.rs</div></td><td class="q mono">2026-09-09T06:26:06</td><td class="v"><b>operações no catálogo</b> 136 · <b>alcançadas pela tela</b> 109</td></tr>
-<tr><td class="nome">Cluster — eleição e promoção<div class="prova">três nós de verdade, um SMTP falso, e a promoção acontecendo quando o master cai</div></td><td class="q mono">2026-09-23 22:32 <span class="mtime" title="a data saiu do mtime do arquivo, e nao do proprio resultado">(mtime)</span></td><td class="v"><b>promoção em</b> 4,3 s · <b>escrita aceita em</b> 4,3 s · <b>época do nó isolado</b> 1 · <b>linhas no fim</b> 3.801</td></tr>
+<tr><td class="nome">Cluster — eleição e promoção<div class="prova">três nós de verdade, um SMTP falso, e a promoção acontecendo quando o master cai</div></td><td class="q mono">2026-10-06 20:35 <span class="mtime" title="a data saiu do mtime do arquivo, e nao do proprio resultado">(mtime)</span></td><td class="v"><b>promoção em</b> 4,3 s · <b>escrita aceita em</b> 4,3 s · <b>época do nó isolado</b> 1 · <b>linhas no fim</b> 3.801</td></tr>
 <tr><td class="nome">Replicação — quatro servidores<div class="prova">master e três espelhos no ar, com retrato SHA-256 de cada linha nos quatro</div></td><td class="q mono">2026-09-17</td><td class="v"><b>master</b> 45.117 linhas/s · <b>réplica aplica</b> 43.606 eventos/s · <b>alcance</b> 2,3 s · <b>os quatro iguais no fim</b> sim</td></tr>
 <tr><td class="nome">Replicação — credencial recusada não bloqueia o IP<div class="prova">um master e uma réplica com o hash errado, pelo soquete: a réplica tenta UMA vez e estaciona, o blacklist.json fica vazio e o operador do mesmo IP entra — com dois controles na mesma corrida: cinco logins errados da própria bancada continuam bloqueando o master, e a origem fora do ar continua sendo procurada com recuo crescente</div></td><td class="q mono">2026-09-17 02:36:30</td><td class="v"><b>tentativas da réplica</b> 1 · <b>bloqueou o IP</b> NÃO · <b>operador derrubado</b> NÃO · <b>recuo de rede</b> [1.0, 2.0, 4.0, 8.0] s</td></tr>
 <tr><td class="nome">Telemetria — quanto custa ligar a instrumentação<div class="prova">um servidor só, com o interruptor virado em tempo de execução a cada par curto e a ordem alternada — o custo sai do PISO de cada lado (o efeito é aditivo; a média mede o vizinho) e só é declarado quando o teste de sinal passa a 3 sigma. Carga que não resolve aparece como «dentro do ruído», com a contagem dos pares ao lado</div></td><td class="q mono">2026-09-16T20:48:33</td><td class="v"><b>carga da máquina na corrida</b> 6,5 · <b>linhas no pior caso</b> 200.000</td></tr>
 <tr><td class="nome">Transações — atomicidade pelo soquete<div class="prova">SIGKILL no meio de um COMMIT de 3.000 linhas, e o banco reaberto depois — a exigência não é «as 3.000 estão lá», é NUNCA METADE, com o relatório dizendo qual dos dois. E o portão se prova apagando a marca .tx: sem ela o banco volta pela metade, que é o preço da garantia aparecendo</div></td><td class="q mono">2026-09-07 09:06</td><td class="v"><b>conferências pelo soquete</b> 36 · <b>falhas</b> 0 · <b>linhas depois da queda</b> 3.001 · <b>ficou pela metade</b> NÃO</td></tr>
 <tr><td class="nome">PITR — restaurar a um instante, pelo soquete<div class="prova">a linha 3 é gravada DEPOIS do corte e tem de NÃO aparecer no restaurado — e o mesmo backup restaurado sem ate volta com uma linha só, que é o controle positivo na mesma corrida. Sem ele, uma restauração que devolvesse duas linhas por acaso passaria</div></td><td class="q mono">2026-09-18 11:30</td><td class="v"><b>conferências pelo soquete</b> 22 · <b>falhas</b> 0 · <b>eventos reaplicados</b> 2 · <b>pulados depois do corte</b> 1</td></tr>
 <tr><td class="nome">Quórum — o que custaria esperar as réplicas<div class="prova">esta não prova recurso: mede o PREÇO de uma decisão que ainda não foi tomada. Separa o que a bancada de replicação somava num número só — os 826 ms publicados lá são 99,9% sono do laço, e o transporte custa 0,475 ms. Tudo em localhost: é o PISO, e a rede real custa mais</div></td><td class="q mono">2026-09-17 02:40</td><td class="v"><b>gravar no master</b> 0,152 ms · <b>levar a uma réplica</b> 0,349 ms · <b>commit esperando 2 de 3</b> 3,04 × · <b>commit esperando 3 de 3</b> 3,56 ×</td></tr>
-<tr><td class="nome">ACID — as quatro letras<div class="prova">cada afirmação com o controle da mesma corrida; o nível de isolamento sai medido, não citado</div></td><td class="q mono">2026-09-23 22:32 <span class="mtime" title="a data saiu do mtime do arquivo, e nao do proprio resultado">(mtime)</span></td><td class="v"><b>versao</b> phxsqld 0.18.0 (41e82efa97c8) x86_64-unknown-linux-gnu · <b>rapido</b> NÃO</td></tr>
-<tr><td class="nome">Durabilidade — o fecho da janela<div class="prova">os `fsync` contados por `strace` contra o `phxsqld` de pé</div></td><td class="q mono">2026-09-23 22:32 <span class="mtime" title="a data saiu do mtime do arquivo, e nao do proprio resultado">(mtime)</span></td><td class="v"><b>defeito_confirmado_a</b> NÃO</td></tr>
+<tr><td class="nome">Backup com escritor concorrente — o passo 2 do 513, pelo soquete<div class="prova">um phxsqld próprio, banco de N MB em 20 tabelas, uma thread gravando sem parar durante o backup em árvore; o escritor em duas tabelas pequenas (A) e na maior (B); a espera máxima de uma escrita no passo 1 (binário de antes) contra as duas passadas; o retrato restaurado com outro nome e aberto. Faixas min-max em 3 voltas (pedido 155)</div></td><td class="q mono">2026-10-02 01:17:37</td><td class="v"><b>banco</b> 561 MiB · <b>prova em 1 GB, medida em</b> 2026-10-02 04:05:21 · <b>banco da prova em 1 GB</b> 1.123 MiB · <b>escrita espera (duas passadas, A, 1 GB)</b> 1075,91 ms · <b>fase 2 (B, 1 GB)</b> 3.682 ms · <b>backup inteiro (B, 1 GB)</b> 13330,2 ms · <b>zip sem espaço (ENOSPC em tmpfs) passou</b> sim · <b>zip sem espaço medido em</b> 2026-10-02 04:10:01 · <b>escrita espera (passo 1, A)</b> 7201,7 ms · <b>escrita espera (duas passadas, A)</b> 664,507 ms · <b>fase 2 (A)</b> 631 ms · <b>fase 2 (B, maior tabela)</b> 2.316 ms · <b>restaurado íntegro</b> sim</td></tr>
+<tr><td class="nome">ACID — as quatro letras<div class="prova">cada afirmação com o controle da mesma corrida; o nível de isolamento sai medido, não citado</div></td><td class="q mono">2026-10-06 20:35 <span class="mtime" title="a data saiu do mtime do arquivo, e nao do proprio resultado">(mtime)</span></td><td class="v"><b>versao</b> phxsqld 0.18.0 (41e82efa97c8) x86_64-unknown-linux-gnu · <b>rapido</b> NÃO</td></tr>
+<tr><td class="nome">Durabilidade — o fecho da janela<div class="prova">os `fsync` contados por `strace` contra o `phxsqld` de pé</div></td><td class="q mono">2026-10-06 20:35 <span class="mtime" title="a data saiu do mtime do arquivo, e nao do proprio resultado">(mtime)</span></td><td class="v"><b>defeito_confirmado_a</b> NÃO</td></tr>
 <tr><td class="nome">Carga — uma a uma contra o lote<div class="prova">o custo da viagem de rede, separado do custo de gravar</div></td><td class="q mono">2026-08-29</td><td class="v"><b>quando</b> 2026-08-29 · <b>versao</b> 0.17.0 · <b>linhas</b> 20.000 · <b>por_lote</b> 5.000</td></tr>
 <tr><td class="nome">Os três motores a um milhão<div class="prova">PhxSql, MySQL® e SQLite® intercalados na MESMA rodada, porque medidas de dias diferentes carregam o ambiente junto</div></td><td class="q mono">2026-09-08 02:49:47</td><td class="v"><b>linhas</b> 1.000.000 · <b>operacoes_por_fase_pontual</b> 20.000 · <b>rodadas</b> 3 · <b>medido_em</b> 2026-09-08 02:49:47</td></tr>
 <tr><td class="nome">Índice de texto — o `.fts` contra a varredura<div class="prova">as duas faixas respondem a MESMA pergunta e devolvem o MESMO conjunto de rowids -- o medidor aborta se não baterem, e aborta se nenhuma busca achar linha</div></td><td class="q mono">2026-09-07T01:09:13</td><td class="v"><b>índice sobre varredura</b> 31399,1 (21164,6–33443,8) × · <b>busca pelo índice</b> 137,73 (129,06–212,67) µs · <b>preço na escrita</b> 5,67 (5,38–6,06) × · <b>linhas achadas (conjuntos idênticos)</b> 9.339</td></tr>
@@ -810,7 +809,7 @@ própria.</figcaption>
 <div class="kpi"><b>105.001</b><span>linhas replicadas</span><span class="q">2026-09-17</span></div>
 <div class="kpi feito"><b class="curto">sim</b><span>os dois lados iguais no fim</span><span class="q">2026-09-17</span></div>
 <div class="kpi"><b class="curto">1.679 → 1.827 ms</b><span>um salto → dois saltos</span><span class="q">2026-09-17</span></div>
-<div class="kpi"><b class="curto">4,3 s</b><span>promoção automática no cluster</span><span class="q">2026-09-23 22:32</span></div>
+<div class="kpi"><b class="curto">4,3 s</b><span>promoção automática no cluster</span><span class="q">2026-10-06 20:35</span></div>
 </div>
 <p class="fonte"><b>Topologia da corrida:</b> <code>master -&gt; slave01, slave02, slave03</code> — quatro processos phxsqld em 127.0.0.1, no mesmo container</p>
 <div class="rolo"><table><thead><tr><th>o que se fez no master</th><th class="num">atraso até a réplica (ms)</th></tr></thead><tbody>
@@ -829,7 +828,7 @@ própria.</figcaption>
 <h2 id="s17"><span class="n">17 ·</span>Telemetria e logs</h2>
 <p class="sub">Instrumentação desligada tem de custar zero, e o <b>portão que decide isso vem antes do trabalho</b> — é pétrea, e nasceu do Profiler cobrando 7% desligado. Aqui está o preço de ligá-la, medido por soquete contra um servidor de verdade.</p>
 <div class="kpis">
-<div class="kpi feito"><b>5</b><span>pontos de captura, todos abrindo pelo portão</span><span class="q">2026-10-01</span></div>
+<div class="kpi feito"><b>5</b><span>pontos de captura, todos abrindo pelo portão</span><span class="q">2026-10-06</span></div>
 <div class="kpi"><b class="curto">+0,253 µs</b><span>custo de ligar — <code>ping</code></span><span class="q">2026-09-16</span></div>
 <div class="kpi"><b class="curto">171,3 B</b><span>de <code>acessos.log</code> por operação</span><span class="q">2026-09-16</span></div>
 <div class="kpi"><b>6</b><span>threads com finalidade escrita, vivas no servidor</span><span class="q">2026-09-16</span></div>
@@ -884,11 +883,11 @@ calado nem se ignora calado.</div>
 <h2 id="s20"><span class="n">20 ·</span>Documentação</h2>
 <p class="sub">Esta seção <b>nasceu</b> porque o gerador existe: a lista dos documentos contados sai do código, não de uma cópia aqui.</p>
 <div class="kpis">
-<div class="kpi"><b>100</b><span>documentos contados</span><span class="q">2026-10-01</span></div>
-<div class="kpi"><b>82.763</b><span>linhas de documentação</span><span class="q">2026-10-01</span></div>
-<div class="kpi"><b>385</b><span>arquivos de cognição</span><span class="q">2026-10-01</span></div>
-<div class="kpi"><b>15</b><span>páginas geradas e publicadas</span><span class="q">2026-10-01</span></div>
-<div class="kpi"><b>30</b><span>geradores no portão</span><span class="q">2026-10-01</span></div>
+<div class="kpi"><b>101</b><span>documentos contados</span><span class="q">2026-10-06</span></div>
+<div class="kpi"><b>84.835</b><span>linhas de documentação</span><span class="q">2026-10-06</span></div>
+<div class="kpi"><b>415</b><span>arquivos de cognição</span><span class="q">2026-10-06</span></div>
+<div class="kpi"><b>15</b><span>páginas geradas e publicadas</span><span class="q">2026-10-06</span></div>
+<div class="kpi"><b>31</b><span>geradores no portão</span><span class="q">2026-10-06</span></div>
 </div>
 <h3>As páginas que esta casa gera</h3>
 <div class="rolo"><table><thead><tr><th>página</th><th class="num">KiB</th><th>quem a escreve</th></tr></thead><tbody>
@@ -896,31 +895,31 @@ calado nem se ignora calado.</div>
 <tr><td class="mono">docs/dossie/console-em-imagens.html</td><td class="num">2.205</td><td class="mono">docs/dossie/pagina-do-console.py</td></tr>
 <tr><td class="mono">docs/dossie/dossie-phxsql-0.18.html</td><td class="num">450</td><td class="mono">docs/dossie/pagina-do-console.py</td></tr>
 <tr><td class="mono">docs/dossie/graficos.html</td><td class="num">43</td><td class="mono">docs/dossie/graficos-dos-testes.py</td></tr>
-<tr><td class="mono">docs/dossie/pedidos-001-190.html</td><td class="num">293</td><td class="mono">docs/dossie/pagina-dos-pedidos.py</td></tr>
-<tr><td class="mono">docs/dossie/pedidos-191-260.html</td><td class="num">259</td><td class="mono">docs/dossie/pagina-dos-pedidos.py</td></tr>
-<tr><td class="mono">docs/dossie/pedidos-261-320.html</td><td class="num">242</td><td class="mono">docs/dossie/pagina-dos-pedidos.py</td></tr>
+<tr><td class="mono">docs/dossie/pedidos-001-190.html</td><td class="num">287</td><td class="mono">docs/dossie/pagina-dos-pedidos.py</td></tr>
+<tr><td class="mono">docs/dossie/pedidos-191-260.html</td><td class="num">241</td><td class="mono">docs/dossie/pagina-dos-pedidos.py</td></tr>
+<tr><td class="mono">docs/dossie/pedidos-261-320.html</td><td class="num">249</td><td class="mono">docs/dossie/pagina-dos-pedidos.py</td></tr>
 <tr><td class="mono">docs/dossie/pedidos-321-360.html</td><td class="num">265</td><td class="mono">docs/dossie/pagina-dos-pedidos.py</td></tr>
-<tr><td class="mono">docs/dossie/pedidos-361-430.html</td><td class="num">223</td><td class="mono">docs/dossie/pagina-dos-pedidos.py</td></tr>
-<tr><td class="mono">docs/dossie/pedidos-431-540.html</td><td class="num">266</td><td class="mono">docs/dossie/pagina-dos-pedidos.py</td></tr>
-<tr><td class="mono">docs/dossie/pedidos-541-mais.html</td><td class="num">168</td><td class="mono">docs/dossie/pagina-dos-pedidos.py</td></tr>
-<tr><td class="mono">docs/pmo/status-do-projeto.html</td><td class="num">49</td><td class="mono">docs/pmo/pagina-do-status-do-projeto.py</td></tr>
+<tr><td class="mono">docs/dossie/pedidos-361-430.html</td><td class="num">222</td><td class="mono">docs/dossie/pagina-dos-pedidos.py</td></tr>
+<tr><td class="mono">docs/dossie/pedidos-431-540.html</td><td class="num">267</td><td class="mono">docs/dossie/pagina-dos-pedidos.py</td></tr>
+<tr><td class="mono">docs/dossie/pedidos-541-mais.html</td><td class="num">255</td><td class="mono">docs/dossie/pagina-dos-pedidos.py</td></tr>
+<tr><td class="mono">docs/pmo/status-do-projeto.html</td><td class="num">45</td><td class="mono">docs/pmo/pagina-do-status-do-projeto.py</td></tr>
 <tr><td class="mono">docs/status/status-do-projeto.html</td><td class="num"><span class="mtime">— (esta página)</span></td><td class="mono">docs/status/riscos.py</td></tr>
-<tr><td class="mono">docs/dossie/status.html</td><td class="num">33</td><td class="mono">docs/dossie/pagina-de-status.py</td></tr>
-<tr><td class="mono">docs/dossie/testes.html</td><td class="num">79</td><td class="mono">docs/dossie/pagina-dos-testes.py</td></tr>
+<tr><td class="mono">docs/dossie/status.html</td><td class="num">34</td><td class="mono">docs/dossie/pagina-de-status.py</td></tr>
+<tr><td class="mono">docs/dossie/testes.html</td><td class="num">63</td><td class="mono">docs/dossie/pagina-dos-testes.py</td></tr>
 </tbody></table></div>
 <p class="fonte">O tamanho <b>desta</b> página não aparece de propósito: escrevê-lo muda o tamanho dela, e o número seguinte já seria outro — número que não chega a ponto fixo não é número medido, é número que persegue a própria cauda.</p>
 <h3>Os dez maiores documentos</h3>
 <div class="barras">
-<div class="barra-linha"><span class="l"><code>CHANGELOG.md</code></span><span class="t"><i class="b-cheia" style="width:100.00%"></i></span><span class="n">6.919</span></div>
-<div class="barra-linha"><span class="l"><code>SEGURANCA.md</code></span><span class="t"><i class="b-cheia" style="width:99.25%"></i></span><span class="n">6.867</span></div>
-<div class="barra-linha"><span class="l"><code>MANUAL.txt</code></span><span class="t"><i class="b-cheia" style="width:64.21%"></i></span><span class="n">4.443</span></div>
-<div class="barra-linha"><span class="l"><code>FORMATO.md</code></span><span class="t"><i class="b-cheia" style="width:59.13%"></i></span><span class="n">4.091</span></div>
-<div class="barra-linha"><span class="l"><code>DESEMPENHO.md</code></span><span class="t"><i class="b-cheia" style="width:56.38%"></i></span><span class="n">3.901</span></div>
-<div class="barra-linha"><span class="l"><code>REPLICACAO.md</code></span><span class="t"><i class="b-cheia" style="width:41.55%"></i></span><span class="n">2.875</span></div>
-<div class="barra-linha"><span class="l"><code>CONCORRENCIA.md</code></span><span class="t"><i class="b-cheia" style="width:38.62%"></i></span><span class="n">2.672</span></div>
-<div class="barra-linha"><span class="l"><code>TESTES.md</code></span><span class="t"><i class="b-cheia" style="width:37.30%"></i></span><span class="n">2.581</span></div>
-<div class="barra-linha"><span class="l"><code>CATRACAS.md</code></span><span class="t"><i class="b-cheia" style="width:29.86%"></i></span><span class="n">2.066</span></div>
-<div class="barra-linha"><span class="l"><code>PESQUISA-MVCC-E-FORMATO.md</code></span><span class="t"><i class="b-cheia" style="width:22.37%"></i></span><span class="n">1.548</span></div>
+<div class="barra-linha"><span class="l"><code>CHANGELOG.md</code></span><span class="t"><i class="b-cheia" style="width:100.00%"></i></span><span class="n">7.115</span></div>
+<div class="barra-linha"><span class="l"><code>SEGURANCA.md</code></span><span class="t"><i class="b-cheia" style="width:99.62%"></i></span><span class="n">7.088</span></div>
+<div class="barra-linha"><span class="l"><code>MANUAL.txt</code></span><span class="t"><i class="b-cheia" style="width:64.96%"></i></span><span class="n">4.622</span></div>
+<div class="barra-linha"><span class="l"><code>FORMATO.md</code></span><span class="t"><i class="b-cheia" style="width:61.07%"></i></span><span class="n">4.345</span></div>
+<div class="barra-linha"><span class="l"><code>DESEMPENHO.md</code></span><span class="t"><i class="b-cheia" style="width:55.99%"></i></span><span class="n">3.984</span></div>
+<div class="barra-linha"><span class="l"><code>REPLICACAO.md</code></span><span class="t"><i class="b-cheia" style="width:41.90%"></i></span><span class="n">2.981</span></div>
+<div class="barra-linha"><span class="l"><code>TESTES.md</code></span><span class="t"><i class="b-cheia" style="width:41.04%"></i></span><span class="n">2.920</span></div>
+<div class="barra-linha"><span class="l"><code>CONCORRENCIA.md</code></span><span class="t"><i class="b-cheia" style="width:39.40%"></i></span><span class="n">2.803</span></div>
+<div class="barra-linha"><span class="l"><code>CATRACAS.md</code></span><span class="t"><i class="b-cheia" style="width:30.22%"></i></span><span class="n">2.150</span></div>
+<div class="barra-linha"><span class="l"><code>PESQUISA-MVCC-E-FORMATO.md</code></span><span class="t"><i class="b-cheia" style="width:21.76%"></i></span><span class="n">1.548</span></div>
 </div>
 <p class="fonte"><b>De onde sai:</b> o <code>arquivos_de_doc()</code> e o <code>linhas_de_doc()</code> de <code>docs/dossie/numeros-do-projeto.py</code> — a mesma receita que alimenta o <code>CAPABILITIES.json</code>, e por isso os dois números não podem divergir. As páginas saem dos <b>alvos</b> do <code>PLANO</code> de <code>docs/dossie/portao-dos-geradores.py</code>: página nova entra na conta sozinha no dia em que o gerador dela entrar no portão.</p>
 
@@ -940,27 +939,27 @@ calado nem se ignora calado.</div>
 </div>
 <div class="legenda"><span class="entregue"><i></i>entregue ou fechado</span><span class="parado"><i></i>parado</span><span class="aberto"><i></i>aberto</span></div>
 <div class="kpis">
-<div class="kpi"><b>23</b><span>itens no board</span><span class="q">2026-10-01</span></div>
-<div class="kpi"><b>20</b><span>abertos</span><span class="q">2026-10-01</span></div>
-<div class="kpi feito"><b>3</b><span>entregues ou fechados</span><span class="q">2026-10-01</span></div>
-<div class="kpi falta"><b>0</b><span>parados</span><span class="q">2026-10-01</span></div>
-<div class="kpi falta"><b>11</b><span>abertos de escalão <b>forte</b></span><span class="q">2026-10-01</span></div>
+<div class="kpi"><b>23</b><span>itens no board</span><span class="q">2026-10-06</span></div>
+<div class="kpi"><b>20</b><span>abertos</span><span class="q">2026-10-06</span></div>
+<div class="kpi feito"><b>3</b><span>entregues ou fechados</span><span class="q">2026-10-06</span></div>
+<div class="kpi falta"><b>0</b><span>parados</span><span class="q">2026-10-06</span></div>
+<div class="kpi falta"><b>11</b><span>abertos de escalão <b>forte</b></span><span class="q">2026-10-06</span></div>
 </div>
 <p class="fonte"><b>De onde sai:</b> o <code>ler()</code> de <code>docs/pmo/rollup.py</code>, sobre <code>docs/pmo/BACKLOG.md</code>. O estado é a <b>primeira palavra</b> da última célula; palavra fora do léxico <b>para</b> o leitor nomeando a linha. O escalão aparece pelo <b>nível</b>, nunca por nome de modelo.</p>
 
 <h2 id="s23"><span class="n">23 ·</span>As últimas frentes</h2>
 <p class="sub">Do próprio <code>git log</code>, só leitura. O commit conta a decisão e o motivo, não a lista de arquivos.</p>
 <div class="rolo"><table><thead><tr><th>commit</th><th>quando</th><th>o que decidiu</th></tr></thead><tbody>
-<tr><td class="mono">764bc07c</td><td class="q">2026-10-01 17:17</td><td>618+619: WIP da frente</td></tr>
-<tr><td class="mono">7189c267</td><td class="q">2026-10-01 16:47</td><td>330b+300: WIP da frente</td></tr>
-<tr><td class="mono">6513054c</td><td class="q">2026-10-01 14:58</td><td>interface: WIP da frente</td></tr>
-<tr><td class="mono">d983efcd</td><td class="q">2026-10-01 14:48</td><td>175+364: WIP da frente</td></tr>
-<tr><td class="mono">f304466e</td><td class="q">2026-10-01 14:24</td><td>telas: capturas no tema claro, por legibilidade (pedido do dono)</td></tr>
-<tr><td class="mono">07dc4a0c</td><td class="q">2026-10-01 14:21</td><td>telas: folha de impressao -- uma tela por pagina, em paisagem, sem o indice</td></tr>
-<tr><td class="mono">0bfc2ec9</td><td class="q">2026-10-01 14:04</td><td>dossie: as 79 telas do console numa pagina propria, ligada da secao 18</td></tr>
-<tr><td class="mono">6c346d56</td><td class="q">2026-10-01 13:55</td><td>dossie: rodada dos 29 geradores no fecho de 01/10/2026</td></tr>
-<tr><td class="mono">d7e8285a</td><td class="q">2026-10-01 12:53</td><td>330+300+424: WIP da frente</td></tr>
-<tr><td class="mono">53e283e8</td><td class="q">2026-10-01 12:22</td><td>617+322: WIP da frente</td></tr>
+<tr><td class="mono">5d57de67</td><td class="q">2026-10-06 20:34</td><td>263: lotes 1 a 5 do provador -- 61 vereditos novos, dois NAO PEGOU</td></tr>
+<tr><td class="mono">5c79888d</td><td class="q">2026-10-02 12:27</td><td>Pausa: roteiro de retomada e vereditos parciais do provador (263)</td></tr>
+<tr><td class="mono">f48194ce</td><td class="q">2026-10-02 12:11</td><td>654-659: auditoria do QA antes do selo -- portas dos fundos das catracas e guardas fracas</td></tr>
+<tr><td class="mono">15f29313</td><td class="q">2026-10-02 12:07</td><td>573/313/652/653: parecer de prontidao -- dois voltam a conta, duas lacunas novas</td></tr>
+<tr><td class="mono">734e655a</td><td class="q">2026-10-02 12:05</td><td>648-651: revisao de seguranca da rodada -- tres defeitos e duas provas adversas</td></tr>
+<tr><td class="mono">da680cc0</td><td class="q">2026-10-02 12:04</td><td>646/647: decisoes do papel C -- reverter o fsync antes da trava; FASE B e linear</td></tr>
+<tr><td class="mono">8149864e</td><td class="q">2026-10-02 12:03</td><td>263: primeiro lote do provador -- 20 guardas sem veredito, 20 PROVADAS</td></tr>
+<tr><td class="mono">96de3e94</td><td class="q">2026-10-02 10:08</td><td>644+645: WIP da frente</td></tr>
+<tr><td class="mono">9b1d789f</td><td class="q">2026-10-02 08:56</td><td>190 zero: WIP da frente</td></tr>
+<tr><td class="mono">0c540e1a</td><td class="q">2026-10-02 08:05</td><td>638+249+639-643: WIP da frente</td></tr>
 </tbody></table></div>
 <p class="fonte"><b>De onde sai:</b> <code>git log --no-merges -n 10</code> na raiz do repositório. Commit novo muda esta seção — e aí ela estava velha mesmo, que é o que o portão dos geradores existe para pegar.</p>
 
@@ -1003,7 +1002,7 @@ calado nem se ignora calado.</div>
 <div class="nota g"><b>As quatro que faltavam nasceram em 16/09/2026, e nenhuma nasceu pelo atalho.</b> Riscos e Dívida técnica (pedido 264) exigiram um <code>docs/RISCOS.md</code> tabelado e uma marca <code>// DIVIDA:</code> no fonte; Telemetria e logs (265) exigiu que a bancada passasse a gravar <code>resultados.json</code>, porque sem ele não havia a data em que o número foi medido; Antes × Depois (266) exigiu uma série versionada, porque o <code>CAPABILITIES.json</code> é sobrescrito e só guarda o agora. Nos quatro casos <b>a fonte veio antes do gerador</b> — é isso que a lei cobra, e é por isso que ela demora mais que digitar o número.</div>
 <div class="nota v"><b>Por que isto é a seção mais importante da página.</b> O exemplo trazia <b>677 números no texto visível, todos digitados à mão</b>. Adotá-lo como veio criaria 677 lugares onde um número envelhece calado — e esta casa já pagou isso quatro vezes: o selo da capa parado numa versão por quatro lançamentos, 198 pedidos onde eram 203, 428 testes onde eram 451, 780 KiB de interface onde eram 1.032. A quarta ensina o alcance da lei: <b>gerador certo chamado pela metade entrega número velho anunciando sucesso.</b></div>
 <footer>
-  Gerado por <code>docs/status/pagina-do-status-do-projeto.py</code> em 01/10/2026 17:57 UTC,
+  Gerado por <code>docs/status/pagina-do-status-do-projeto.py</code> em 06/10/2026 22:05 UTC,
   pelo comando <code>./status-html.sh</code>. <b>Nenhum número desta página foi
   digitado</b>: cada um sai de um gerador, e cada seção diz de qual. Onde o
   gerador não existe, a seção <b>não nasceu</b> — está nomeada na §25, com o

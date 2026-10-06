@@ -708,8 +708,11 @@ espelho exato do «DESCEU — BAIXE O TETO». Uma entrada de `APOSENTADAS` que
 **volte** ao catálogo também reprova: ela contaria dos dois lados e inflaria o
 piso em silêncio.
 
-### 12.3 Os sete números, medidos em 16/09/2026 (a sétima em 17/09)
+### 12.3 Os sete números (nasceram em 16/09/2026; valor e medido, gerados)
 
+A tabela abaixo sai de `python3 docs/geradores/catracas-do-trecho-vivo.py`, que lê `trecho-vivo.py --numeros`; só a coluna «Nasceu» é história escrita à mão.
+
+<!-- GERADO: catracas-do-trecho-vivo.py -->
 | Régua | Lado | Valor | Medido | Nasceu |
 |---|---|---:|---:|---|
 | `TETO_TRECHO_MORTO` | teto | 0 | **0** | 16/09, em 8; desceu para 0 no mesmo dia |
@@ -718,7 +721,8 @@ piso em silêncio.
 | `TETO_TESTE_FORA_DO_BINARIO` | teto | 0 | **0** | 16/09, nesta frente |
 | `TETO_TESTE_SEM_MODULO` | teto | 0 | **0** | 17/09, pedido 273 — depois do conserto dos três nomes da §15.7.7; §12.7 |
 | `TETO_NAO_JULGADA_ESCONDIDA` | teto | 0 | **0** | 16/09, pedido 269: nasceu medido em **26** e desceu para **0** no mesmo passo, republicando a corrida de 15:25 |
-| `PISO_DAS_ENTRADAS` | **piso** | 177 | **177** | nasceu 16/09 em 143; **subiu para 145** (frente vizinha, no mesmo dia), para **151** na frente 245/O2–O6, para **160** na frente G-CRIPTO (§15), para **169** na frente G-SENHA (§15.7), para **170** com o `Debug` do DbLink (17/09 — a constante subiu e esta linha ficou em 169 até a frente seguinte) e para **177** na segunda leva da pétrea da senha (§15.7.7) — 177 entradas vivas + 0 aposentadas. Piso só sobe, e sobe no mesmo passo em que o catálogo cresce |
+| `PISO_DAS_ENTRADAS` | **piso** | 773 | **773** | 16/09 em 143, e sobe junto com o catálogo (145, 151, 160, 169, 170 e 177 em 16–17/09, e daí em diante — o valor de hoje é o da coluna «Valor»). Piso só sobe, e sobe no mesmo passo em que o catálogo cresce |
+<!-- /GERADO: catracas-do-trecho-vivo.py -->
 
 **Nenhum teto subiu e nenhuma catraca se aposentou, e isso é decisão.** A
 régua do `TETO_TRECHO_MORTO` **não mudou**: ela continua respondendo
@@ -1912,8 +1916,8 @@ contado contra o código-fonte, e nenhum entra na tabela de catracas.
 - **`conferidor_dependencias.rs`** (zero dependências externas) — portão
   binário, não catraca: não há contagem, é passa/não passa. Documentado na
   seção acima.
-- **`bancada/guardas/catalogo.py`** (o catálogo de defeitos repostos, **177
-  entradas** medidas em 17/09/2026) — é a OUTRA metade do papel G, as guardas
+- **`bancada/guardas/catalogo.py`** (o catálogo de defeitos repostos; o tamanho
+  dele sai do gerador da §12.3, nunca desta linha) — é a OUTRA metade do papel G, as guardas
   de regressão provadas por mutação. Não é catraca: cada entrada prova um
   defeito específico voltando e sendo pego, não uma contagem que sobe e desce.
   Tem seu próprio inventário em `docs/TESTES.md` §12 e não se repete aqui.
@@ -1922,8 +1926,9 @@ contado contra o código-fonte, e nenhum entra na tabela de catracas.
   demonstração de que um número digitado em prosa envelhece calado. **E ele
   envelheceu de novo no mesmo dia:** a catraca foi de 143 a 145 numa frente
   vizinha e este documento continuou dizendo 143 — travar o número no código
-  não o publica. Enquanto estes três não saírem de um gerador, quem mexe no
-  `PISO_DAS_ENTRADAS` atualiza esta seção no mesmo passo.
+  não o publica. **Desde 02/10/2026 a tabela da §12.3 sai de um gerador**
+  (`docs/geradores/catracas-do-trecho-vivo.py`, no `PLANO` do portão dos
+  geradores): quem mexe no `PISO_DAS_ENTRADAS` roda o gerador, não digita.
 - **Os três portões** (`cargo fmt --check`, `clippy -D warnings`, `cargo
   test --workspace`, `docs/PORTOES.md`) — estruturais, sem folga numérica.
 - **As catracas de CONTAGEM NO FONTE dentro de `#[test]`** — hoje

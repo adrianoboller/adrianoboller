@@ -3768,7 +3768,7 @@ O teste que trava isso é o do comportamento **velho**:
 <!-- direito-por-coluna: gerado por docs/geradores/direito-por-coluna.py -->
 ## 15. Direito por coluna: as 6 que devolvem linha, as 3 que escrevem e as 20 que recusam
 
-Medido em 142 operações do catálogo (`crates/phxsql-server/src/catalogo.rs`), classificadas uma a uma em `CLASSES`, no `crates/phxsql-server/src/direito_coluna.rs`. Os apelidos viajam com a operação e não contam de novo.
+Medido em 150 operações do catálogo (`crates/phxsql-server/src/catalogo.rs`), classificadas uma a uma em `CLASSES`, no `crates/phxsql-server/src/direito_coluna.rs`. Os apelidos viajam com a operação e não contam de novo.
 
 | classe | quantas | o que o servidor faz |
 |---|---:|---|
@@ -3776,7 +3776,7 @@ Medido em 142 operações do catálogo (`crates/phxsql-server/src/catalogo.rs`),
 | `Escreve` | 3 | recebe colunas para gravar |
 | `Estrutura` | 1 | descreve a estrutura |
 | `Recusa` | 20 | devolve ou grava linha por caminho que a peneira não alcança |
-| `Nenhum` | 106 | não toca em dado de linha |
+| `Nenhum` | 114 | não toca em dado de linha |
 
 As listas que decidem alguma coisa:
 
@@ -3785,7 +3785,7 @@ As listas que decidem alguma coisa:
 - **Descreve a estrutura, que continua inteira** (1): `esquema`.
 - **Recusam a tabela restrita, para não vazar** (20): `diferencas`, `agrupar`, `pivotar`, `juntar`, `unir`, `checksum`, `exportar`, `importar_conferir`, `lixeira`, `motivos`, `trilha`, `duplicar_tabela`, `renomear_tabela`, `copiar_tabela`, `diario`, `replicar`, `aplicar`, `backup`, `profiler`, `dblink_sincronizar`.
 
-As outras 106 não devolvem nem recebem dado de linha, e por isso passam sem custo nenhum.
+As outras 114 não devolvem nem recebem dado de linha, e por isso passam sem custo nenhum.
 
 <!-- fim direito-por-coluna -->
 
@@ -5527,7 +5527,7 @@ desenrolar não envenena ao cair.
    escrita dizendo qual tabela a operação morta tocava;
 4. conta o reparo. Só então a trava volta a atender.
 
-O veneno não sai (`clear_poison` é de 1.77, a casa promete 1.75): quem decide
+O veneno não sai (o `clear_poison` é de 1.77; a casa prometia 1.75 quando isto foi escrito, e desde 02/10/2026 promete 1.89 — o motivo deixou de valer, e o desenho por contagem fica até alguém medir se `clear_poison` o substituiria, pedido 653): quem decide
 é o par `panicos_na_trava`/`reparos_da_trava`. Iguais, as duas portas
 (`travar_dados` e `travar_dados_para_ler`) recuperam o guard; diferentes, falham
 fechado com o `SP000010` que agora **nomeia** a trava e a conta:
@@ -6419,7 +6419,7 @@ delas.
 
 ### O aviso: uma vez por PÂNICO, e não por trava
 
-O veneno do `Mutex` não sai (o `clear_poison` é de 1.77; a casa promete 1.75),
+O veneno do `Mutex` não sai (o `clear_poison` é de 1.77; a casa prometia 1.75 quando isto foi escrito, e desde 02/10/2026 promete 1.89 — o motivo deixou de valer; ver a nota na seção anterior),
 e a `TravaDaGuarda` avisava uma vez **por trava**: o segundo pânico com ela na
 mão passaria calado — e, com o saneamento novo, sem saneamento. Agora quem
 anota é a `Tomada`, o guarda que a trava devolve: no `Drop`, se a thread está

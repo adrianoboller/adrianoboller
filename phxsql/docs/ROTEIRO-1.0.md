@@ -220,6 +220,11 @@ Hoje o transporte usa cifra própria estilo Noise (`docs/CIFRA-DO-FIO.md`), e a
 recusa de escrever TLS à mão está registrada com motivo: *«TLS mal escrito é
 pior que TLS ausente, porque parece seguro»*.
 
+**Atualização de 02/10/2026: a primeira metade foi escolhida e feita.** O TLS
+1.3 de **servidor** (portas web, REST e de dados) foi escrito aqui, sem crate,
+pelo pedido 572 (`SEGURANCA.md` §7); o que continua sem existir é o **cliente**
+TLS e o mTLS. O texto abaixo é o da decisão original.
+
 A SP000024 pede TLS 1.3 e mTLS. Isso significa ou **escrever TLS** — o que a
 recusa desaconselha — ou **admitir dependência externa**, o que quebra a regra
 de zero dependências. Há um terceiro caminho: **proxy obrigatório** (a própria
@@ -228,7 +233,17 @@ nenhum é gratuito.
 
 ---
 
-## PhxSql 0.19 — Fundação
+## Marco de plano 0.19 — Fundação
+
+> **Aviso de 02/10/2026 sobre os rótulos «Marco de plano 0.19 … 0.24».** Eles
+> nasceram em agosto como nomes de **marcos do plano**, antes de existir versão
+> publicada com esses números, e **não são** as versões do `Cargo.toml`: a
+> **0.19.0** que o repositório carrega entregou transações, cifra do fio,
+> cluster e quórum (ver `CHANGELOG.md`), isto é, itens espalhados por vários
+> destes marcos, e a **0.20** de verdade é a próxima versão, não o marco
+> «Transações e integridade». Quem lê «0.20» precisa saber qual das duas coisas
+> está lendo; por isso o título diz «Marco de plano». Os rótulos antigos ficam
+> no histórico do git.
 
 | # | Sprint | Estado medido |
 |---|---|---|
@@ -238,7 +253,7 @@ nenhum é gratuito.
 | SP000004 | Fonte única de verdade e documentação gerada | **feito** — `CAPABILITIES.json` e os geradores escrevendo README, `TESTES.md` e `REST.md` |
 | SP000005 | Decomposição de `servidor.rs` e fronteiras arquiteturais | **não iniciado** — **22.560** linhas (remedido; eram 22.396, e a conversão das telas não passa por aqui — o crescimento é das frentes de servidor) |
 
-## PhxSql 0.20 — Transações e integridade
+## Marco de plano 0.20 — Transações e integridade
 
 | # | Sprint | Estado medido |
 |---|---|---|
@@ -248,7 +263,7 @@ nenhum é gratuito.
 | SP000009 | FK em todos os caminhos e verificador de consistência | **FEITA (03/09)** — o levantamento dos caminhos de escrita saiu do **código**, não de lista, e está em `docs/INTEGRIDADE.md` §1 com arquivo e linha. Quatro buracos fechados, os quatro medidos por sonda: filha nascendo de mãe morta, `excluir_tabela` matando o pai (`catalogo.rs:414`), declarar conferida sobre órfã, e a réplica divergindo. **A réplica APLICA, ela não JULGA** (`table.rs:787`) — conferindo, ela recusava a filha que a origem já aceitara e `pedidos` ficava com **0 de 2** eventos em duas das três ordens: a guarda causava a perda de dado que existe para impedir. O **bidirecional** caía no mesmo buraco por outra porta (casa por chave, não por rowid) e ali a consequência era pior: o erro subia pelo `?`, a posição nunca andava, e o par de servidores ficava **parado**. E a cascata do source passou a gravar a imagem no diário da filha — sem ela a réplica recusava o evento com «veio sem imagem», nas três ordens. **O verificador** é `crates/phxsql-store/src/integridade.rs` com `--example conferir-integridade`: ele faz as três perguntas (tabela mãe existe, há índice dos dois lados, cada filha tem mãe viva) e **RELATA, não conserta** — consertar dado do dono sem ele pedir é pior que o defeito. `docs/INTEGRIDADE.md` |
 | SP000010 | Protocolo de commit e matriz real de durabilidade | **FEITA (03/09)** — a matriz cruza os cinco pontos de morte (antes do `fsync` da marca, depois dele e antes da 1ª tabela, entre operações/tabelas, entre a última operação e o `unlink`, no meio da cascata do `ao_alterar`) com os três regimes, provada por `SIGKILL` de processo real, nunca teste unitário (`bancada/durabilidade/prova.py`). **Achado central, medido e não suposto**: os quatro primeiros pontos têm a mesma garantia nos três regimes — `gravar_marca` sincroniza sempre, incondicional ao regime, e uma queda de PROCESSO nunca perde um `write` que o kernel já recebeu. O regime só decide **quanto tempo a marca fica pendurada** depois de um commit que não caiu: `por_operacao` nunca deixa (0/0/0 numa checagem a 1,25 s), `por_lote` fecha com o relógio de fundo (1/1/0), `sistema` nunca fecha sozinho (1/1/1). **A matriz achou um quinto caso, não previsto pelo documento**: a cascata pode deixar o **índice da filha** sujo (write-back do `.ndx`, mecanismo geral — `DESEMPENHO.md` §4.8), e a recuperação recusa cascatear para ela em vez de arriscar; medido em 21 corridas (1.200 filhas), 9 caíram nesse caso e as 9 saíram **denunciadas** em `operacoes IMPOSSIVEIS` — zero cascatas parciais em silêncio. `docs/TRANSACOES.md` §5.5.3 e §5.7 |
 
-## PhxSql 0.21 — Concorrência e armazenamento
+## Marco de plano 0.21 — Concorrência e armazenamento
 
 | # | Sprint | Estado medido |
 |---|---|---|
@@ -259,7 +274,7 @@ nenhum é gratuito.
 | SP000015 | Buffer pool, checkpoints e group commit | **parcial** — cache de páginas (2,40×) e group commit (2,63×) medidos |
 | SP000016 | MVCC e níveis de isolamento | **DESBLOQUEADO pela medição** — não depende mais da SP000013. Medido no oráculo: leitura aberta antes da escrita alheia continua vendo a versão velha sem bloquear (100 → 100 → 200, o 200 só após o próprio commit), as versões velhas acumulam enquanto a leitura está aberta (*history list* 7 → 207) e são recolhidas quando ela fecha (26 s → 0, demonstrado uma vez; uma segunda tentativa ficou inconclusiva e isso fica dito). O caminho aqui é cadeia de versões ancorada no `rowid` + área de undo, no molde do InnoDB |
 
-## PhxSql 0.22 — SQL relacional
+## Marco de plano 0.22 — SQL relacional
 
 **A coluna abaixo estava vazia — nunca tinha sido remedida.** Remedida em
 03/09: das sete, **cinco têm trabalho real e testado** (`crates/phxsql-sql`,
@@ -291,7 +306,7 @@ atualizam. Repeti-los aqui seria a segunda contagem da mesma coisa — o jeito
 clássico de dois pedaços do mesmo documento discordarem, que já custou ao
 dossiê um painel dizendo 28.914 enquanto a seção ao lado dizia 34.048.
 
-## PhxSql 0.23 — Segurança
+## Marco de plano 0.23 — Segurança
 
 | # | Sprint |
 |---|---|
@@ -304,7 +319,7 @@ A criptografia em repouso **já existe** por coluna marcada (0,10 µs/linha,
 escolha (c) do dono entre quatro medidas); o que a SP000026 acrescenta é gestão
 de chaves e auditoria inviolável.
 
-## PhxSql 0.24 — Alta disponibilidade e ecossistema
+## Marco de plano 0.24 — Alta disponibilidade e ecossistema
 
 | # | Sprint |
 |---|---|

@@ -39,15 +39,15 @@ foi estimado no lugar de uma medição que faltou.
 | `phxsql-core` | 40 | 15408 | 6008 | 4837 | 2004 | 28257 |
 | `phxsql-ffi` | 7 | 1524 | 1786 | 930 | 297 | 4537 |
 | `phxsql-odbc` | 7 | 3319 | 1481 | 1170 | 292 | 6262 |
-| `phxsql-server` | 66 | 59749 | 50748 | 36185 | 7303 | 153985 |
+| `phxsql-server` | 66 | 59847 | 50930 | 36242 | 7320 | 154339 |
 | `phxsql-sql` | 10 | 7377 | 4179 | 2899 | 852 | 15307 |
 | `phxsql-store` | 33 | 25960 | 6021 | 12089 | 2619 | 46689 |
 | `phxzip` | 9 | 3074 | 501 | 804 | 284 | 4663 |
-| **total** | **175** | **117904** | **70938** | **59280** | **13798** | **261920** |
+| **total** | **175** | **118002** | **71120** | **59337** | **13815** | **262274** |
 
-Proporcao teste/codigo (so `src/`, sem comentario nem linha vazia): **70938/117904 = 0.60×**.
+Proporcao teste/codigo (so `src/`, sem comentario nem linha vazia): **71120/118002 = 0.60×**.
 
-Alem do `src/`: **96** programas de medicao em `examples/` (23269 linhas — bancada em Rust, nao produto nem teste) e **139** arquivos em `tests/` de integracao fora de `src/` (51531 linhas).
+Alem do `src/`: **96** programas de medicao em `examples/` (23276 linhas — bancada em Rust, nao produto nem teste) e **139** arquivos em `tests/` de integracao fora de `src/` (51531 linhas).
 <!-- /GERADO -->
 
 A proporção teste/código sai medida no bloco acima, não digitada aqui. O
@@ -74,7 +74,7 @@ Lista extraida de `crates/phxsql-server/src/http.rs` (todo `include_str!`/`inclu
 
 | arquivo embutido | linhas | KiB |
 |---|---:|---:|
-| `ui/index.html` | 15992 | 907.9 |
+| `ui/index.html` | 15995 | 908.5 |
 | `ui/grid/phx-grid.css` | 178 | 12.8 |
 | `ui/grid/phx-grid.js` | 1860 | 90.1 |
 | `ui/diagrama-er.js` | 712 | 29.1 |
@@ -84,7 +84,7 @@ Lista extraida de `crates/phxsql-server/src/http.rs` (todo `include_str!`/`inclu
 | `ui/multitela.js` | 1588 | 69.0 |
 | `ui/claude.js` | 1533 | 77.8 |
 | `ui/grid/CHANGELOG-phx-grid.md` | 232 | 30.2 |
-| **total (10 arquivos)** | **24521** | **1334.6** |
+| **total (10 arquivos)** | **24524** | **1335.2** |
 
 Em `ui/` mas **fora** do `include_str!`/`include_bytes!` (4 arquivos, não embutidos no binário):
 - `crates/phxsql-server/ui/explorador.css`
@@ -108,11 +108,11 @@ mesmo motivo que o rodapé já errou uma vez.
 <!-- GERADO: bloco_outras_linguagens() -->
 | o que | onde | arquivos | linhas |
 |---|---|---:|---:|
-| JavaScript (prova ponta a ponta) | `testes-web/` | 74 | 16321 |
-| Python (bancada de medicao) | `bancada/` | 147 | 77648 |
+| JavaScript (prova ponta a ponta) | `testes-web/` | 74 | 16360 |
+| Python (bancada de medicao) | `bancada/` | 147 | 77731 |
 | Shell (empacotar, zelador, provas) | todo o repositorio | 27 | 3925 |
-| Markdown (documentacao tecnica) | `docs/`, **recursivo** (inclui `cognicao/`, `dossie/`, `propostas/`, `pmo/`) | 653 | 139948 |
-| Python (geradores de documentacao) | `docs/`, **recursivo** (`dossie/`, `pmo/`, `status/`, `planilha/`, `tecnologias/`, `geradores/`) | 42 | 19041 |
+| Markdown (documentacao tecnica) | `docs/`, **recursivo** (inclui `cognicao/`, `dossie/`, `propostas/`, `pmo/`) | 656 | 140274 |
+| Python (geradores de documentacao) | `docs/`, **recursivo** (`dossie/`, `pmo/`, `status/`, `planilha/`, `tecnologias/`, `geradores/`) | 44 | 19279 |
 
 A linha «Markdown (documentacao tecnica)» acima **exclui o proprio `docs/TECNOLOGIAS.md`** da contagem — ele e a SAIDA deste extrator, e contar a saida como entrada faz cada gravacao mudar o numero que a gravacao seguinte vai ler (pedido 404: tres corridas seguidas sem edicao nenhuma publicaram 106.750 -> 106.752 -> 106.753 linhas, nunca um ponto fixo). Mesmo molde da §17 da setima pagina de status, que escreve «— (esta pagina)» em vez de medir a si mesma.
 <!-- /GERADO -->
@@ -317,6 +317,7 @@ Conferidores em `crates/phxsql-server/src/`: `conferidor.rs`, `conferidor_botoes
 | `TETO_DO_PRAZO_DO_FIREWALL_S` | 120 | `crates/phxsql-server/src/blacklist.rs` |
 | `TETO_DE_TABELAS_NO_PULSO` | 512 | `crates/phxsql-server/src/cluster.rs` |
 | `TETO_DO_NOME_NO_PULSO` | 256 | `crates/phxsql-server/src/cluster.rs` |
+| `TETO_NUMERO_CRAVADO_EM_TELA` | 6 | `crates/phxsql-server/src/conferidor.rs` |
 | `TETO_COLADO` | 0 | `crates/phxsql-server/src/conferidor.rs` |
 | `TETO_FRASE_REPETIDA` | 0 | `crates/phxsql-server/src/conferidor.rs` |
 | `TETO_ROTULOS_E_CRASE` | 861 | `crates/phxsql-server/src/conferidor.rs` |
@@ -347,9 +348,9 @@ Conferidores em `crates/phxsql-server/src/`: `conferidor.rs`, `conferidor_botoes
 | `TETO_COLETA_ROWIDS` | 1_000_000 | `crates/phxsql-server/src/servidor.rs` |
 | `TETO_ANINHAMENTO` | 8 | `crates/phxsql-server/src/servidor.rs` |
 
-**35** catracas (`TETO*`) encontradas em `crates/phxsql-server/src/`.
+**36** catracas (`TETO*`) encontradas em `crates/phxsql-server/src/`.
 
-`bancada/guardas/catalogo.py` cataloga **768** defeitos repostos, contados de `len(GUARDAS)` depois de importar o modulo (nao por regex no texto -- entradas com `trocas` tem mais de um `{` cada, e uma contagem de chaves as conta em dobro ou mais). Linhas do arquivo: 24637. Refazer a prova: `python3 bancada/guardas/provar-guardas.py`.
+`bancada/guardas/catalogo.py` cataloga **771** defeitos repostos, contados de `len(GUARDAS)` depois de importar o modulo (nao por regex no texto -- entradas com `trocas` tem mais de um `{` cada, e uma contagem de chaves as conta em dobro ou mais). Linhas do arquivo: 24704. Refazer a prova: `python3 bancada/guardas/provar-guardas.py`.
 <!-- /GERADO -->
 
 - **Ponta a ponta, pelo navegador**: os arquivos `.mjs` de `testes-web/` —
@@ -656,7 +657,7 @@ proposta de voltar sem medição nova.
 ### 5.1 Pedidos recusados, do próprio `PENDENCIAS.md`
 
 <!-- GERADO: bloco_recusados() -->
-`docs/PENDENCIAS.md` tem **645** pedidos numerados; **117** trazem a palavra RECUSADO no proprio texto:
+`docs/PENDENCIAS.md` tem **659** pedidos numerados; **121** trazem a palavra RECUSADO no proprio texto:
 
 | # | pedido |
 |---:|---|
@@ -677,6 +678,10 @@ proposta de voltar sem medição nova.
 | 179 | **O teto do MVCC morreu medido — a Sombra continua de pé, por outro motivo** |
 | 180 | **O comboio do fecho de janela é real, e nem `RwLock` nem MVCC o consertam** |
 | 186 | **O fecho da janela de durabilidade não sincronizava o arquivo de DADOS** |
+| 644 | **`op_encerrar_sessao` decide «sessão web × número de conexão» por o id ter alguma letra: 2,3% dos ids de sessão web saem só com algarismos e o «Encerrar» falha ou derruba a conexão errada** |
+| 651 | **Faltam duas provas adversas da revisão SEC que ficaram «não provado»: o `.retrato.part` do backup em duas passadas e o manifesto hostil que lista `.phxsql.trava`** |
+| 652 | **O servidor aceita Noise e TLS mas não registra por conexão quem ainda chegou por Noise: decisão do dono de 01/10 sem implementação** |
+| 655 | **Pétreas sem guarda no catálogo e entradas fracas: `seguem` ausente em 6 e vazio em 34, e nenhuma catraca recusa isso** |
 | 191 | **Bateria de testes de utilização padrão: criar base, incluir 20.000 registros em tabela complexa, com e sem binários e memos** |
 | 192 | **Testes de paginação alfabética** |
 | 194 | **Senha própria por tabela na cifra em repouso — medir primeiro, decidir depois** |

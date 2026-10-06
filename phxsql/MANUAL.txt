@@ -7,7 +7,9 @@ Built to store. Engineered to scale.                      |   versao 0.19.0
 
 1. O QUE E
 --------------------------------------------------------------------------------
-O PhxSql guarda cada tabela logica em sete arquivos fisicos:
+O PhxSql guarda cada tabela logica em sete arquivos fisicos sempre presentes
+(ate onze tipos no total: .lgpd, .fts, .bkp e .pag aparecem so quando a tabela
+ou o config os pedem; ver docs/FORMATO.md):
 
     cadastroClientes.reg    registros, na ordem de digitacao
     cadastroClientes.ndx    indices (B+tree)
@@ -2727,10 +2729,11 @@ LIGAR
     O ENDERECO DE FABRICA E 127.0.0.1, E ISSO E UMA GUARDA
 
     HTTP e texto puro: senha, token e dado viajam legiveis para quem estiver
-    no caminho. O PhxSql nao termina TLS -- a saida e um proxy reverso que
-    termina TLS na frente dele (docs/SEGURANCA.md 7.1), e proxy so protege
-    se o motor NAO estiver aberto ao lado dele: com a porta web na rede,
-    quem ataca liga direto e pula o TLS inteiro.
+    no caminho. O PhxSql TERMINA TLS 1.3 nas portas web, REST e de dados
+    quando "tls": true (docs/SEGURANCA.md 7); ele nao e o padrao. Sem isso, a
+    saida e um proxy reverso que termina TLS na frente dele (7.1), e proxy so
+    protege se o motor NAO estiver aberto ao lado dele: com a porta web na
+    rede, quem ataca liga direto e pula o TLS inteiro.
 
     Por isso, quem escreve um bind que atende de fora ("0.0.0.0:5001" ou o
     IP da placa) le no arranque um aviso dizendo isso e o que fazer. Ele NAO
@@ -3229,7 +3232,8 @@ LIGAR
     quem nao tem a secao `rest` no arquivo continua exatamente como estava.
 
     E AS DUAS NASCEM EM 127.0.0.1, pelo mesmo motivo da interface web: HTTP e
-    texto puro, e quem quiser TLS poe um proxy reverso na frente. Endereco que
+    texto puro, e quem quiser cifrar liga "tls": true na secao (TLS 1.3, ver
+    docs/SEGURANCA.md 7) ou poe um proxy reverso na frente. Endereco que
     atende de fora sobe assim mesmo e AVISA no arranque; "atras_de_proxy":
     true cala o aviso e vale para as DUAS portas desta secao, porque as duas
     sobem do mesmo bloco e do mesmo operador. Ver docs/SEGURANCA.md 7.1 e 7.2.
@@ -3280,8 +3284,8 @@ TOKEN
     credencial se edita no arquivo. A tela diz se existe um; nunca qual e.
 
     ATENCAO: Bearer sobre HTTP em claro entrega o token a quem escuta o fio, em
-    todo pedido. Nao ha TLS aqui -- ponha um proxy que termine TLS na frente, ou
-    um tunel. E o mesmo limite da secao 7 do docs/SEGURANCA.md.
+    todo pedido. Sem "tls": true na secao nao ha TLS aqui -- ligue-o (docs/SEGURANCA.md
+    7) ou ponha um proxy que termine TLS na frente, ou um tunel. E o mesmo limite da secao 7 do docs/SEGURANCA.md.
 
 QUAL BANCO E QUAIS TABELAS
 
@@ -3544,7 +3548,7 @@ AGENDADO
 
     Opt-in, no bloco de e-mail que ja existe no config.json -- o mesmo do
     aviso de disco apertado (ver o "alertas" no Config_exemplo_01.json,
-    inclusive o limite honesto: sem TLS, o rele tem de ser seu):
+    inclusive o limite honesto: o cliente SMTP nao fala TLS, o rele tem de ser seu):
 
         "alertas": { "email": { "ligado": true, "avisar_jobs": true, ... } }
 
@@ -3601,8 +3605,8 @@ AGENDADO
     para numero@gateway, e a operadora entrega como texto. Uma linha de ate
     160 caracteres, sem o caminho do disco e sem segredo (SMS atravessa a
     operadora em claro). Exige email.ligado -- sem rele nao ha por onde sair,
-    e a recusa vem no arranque. Gateway HTTP(S) de SMS NAO entra: pede TLS,
-    TLS pede crate, e isso e decisao do dono (docs/SAUDE-DO-DISCO.md).
+    e a recusa vem no arranque. Gateway HTTP(S) de SMS NAO entra: pede
+    cliente TLS, e o PhxSql so tem TLS de SERVIDOR (docs/SAUDE-DO-DISCO.md).
 
     GANCHO DO OPERADOR (alertas.gancho) -- O CANAL SMS EM SI E DO OPERADOR.
     O PhxSql NAO envia SMS: ele entrega o aviso a um programa seu, e o
