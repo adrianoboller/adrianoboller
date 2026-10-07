@@ -1348,7 +1348,7 @@ def mensagem_ambigua(entradas, ler_arquivo=None, corpos=None):
 # lote passa de N dias -- e esse e o ponto. O `--catraca` imprime quem vence
 # primeiro, para o `provar-guardas.py --so` comecar por elas.
 DIAS_DO_VEREDITO = 14
-TETO_VEREDITO_VELHO = 14
+TETO_VEREDITO_VELHO = 0
 
 
 def vereditos_velhos(corrida, hoje, dias=DIAS_DO_VEREDITO, vivas=None):

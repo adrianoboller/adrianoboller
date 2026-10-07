@@ -793,6 +793,15 @@ CIFRAR OU DECIFRAR O QUE JA ESTA GRAVADO: criptografar / descriptografar
     Custo medido: ~1,0 us por linha (1.000.000 em ~1,1 s), mais ~130-290 ms de
     PBKDF2 por migracao, e 2 fsync por volume.
 
+    O ARQUIVO NOVO E SEMPRE NOSSO (pedido 661). O ".novo" nasce por criacao
+    exclusiva depois de tirar o nome: um ".novo" ou link fisico plantado na
+    pasta nao recebe o texto claro do DECRYPT. Antes dos renames a FASE B
+    confere cada ".novo" contra o arquivo que a FASE A escreveu (mesmo inode,
+    um nome so, tamanho e data); trocado no meio, a operacao RECUSA com
+    conflito, tira o nome e nao troca nada. Fica dito: a janela entre a
+    conferencia e o rename (microssegundos, exige escrita na pasta de dados)
+    nao se fecha so com a biblioteca padrao.
+
     O QUE ELA NAO FAZ, e a resposta repete em "avisos": o historico (.log,
     .trash, .reason) e o indice (.ndx) ficam em claro -- criptografar protege
     o dado ATUAL --, e a migracao e LOCAL: nao replica. Migre a replica
@@ -1764,6 +1773,13 @@ VARIAS INSTANCIAS, DOCKER E CLUSTER
     1 de 2 contra 0,3 ms sem -- ~237 commits/s de teto do servidor inteiro
     neste disco, porque a espera segura a trava de dados. Estado em
     replicacao_estado.quorum.
+
+    A CONFIRMACAO NAO SE FORJA ENTRE CREDENCIAIS (pedido 649). A confirmacao
+    so conta para a base e a tabela que a SESSAO que a mandou pode replicar
+    (a permissao "replicar" dela), e a ficha de alcance do cluster so e
+    gravada por quem entra com a credencial do cluster (cluster.usuario). Um
+    cluster com um unico usuario de cluster confia nele inteiro -- e o
+    desenho; sem cluster.usuario nada muda. Detalhe: docs/SEGURANCA.md 41.1.
 
     O QUE NAO E: nao e Raft. Sem quorum_minimo, a replicacao continua
     assincrona -- o master confirma sem esperar replica. Master que morre pode levar
@@ -2749,6 +2765,11 @@ LIGAR
     saida e um proxy reverso que termina TLS na frente dele (7.1), e proxy so
     protege se o motor NAO estiver aberto ao lado dele: com a porta web na
     rede, quem ataca liga direto e pula o TLS inteiro.
+
+    DECISAO DO DONO, 07/10/2026 (pedido 660, depois da versao): na 1.0 o TLS
+    passa a ser OBRIGATORIO por padrao. Na 0.19 segue opcional, para nao
+    quebrar cliente antigo, e o aviso no ping para conexao nao cifrada AINDA
+    NAO existe -- esta decidido, nao implementado.
 
     Por isso, quem escreve um bind que atende de fora ("0.0.0.0:5001" ou o
     IP da placa) le no arranque um aviso dizendo isso e o que fazer. Ele NAO

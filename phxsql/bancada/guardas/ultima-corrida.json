@@ -1,5 +1,5 @@
 {
-  "quando": "2026-10-07 14:10",
+  "quando": "2026-10-07 15:08",
   "mais_antigo": "2026-09-16 15:25",
   "guardas": [
     {
@@ -228,9 +228,9 @@
       "id": "trava-atras-da-rede",
       "titulo": "o laço da réplica segura a trava de dados enquanto lê do soquete",
       "veredito": "PROVADA",
-      "segundos": 16.01,
+      "segundos": 29.9,
       "notas": [],
-      "quando": "2026-09-17 04:58"
+      "quando": "2026-10-07 14:26"
     },
     {
       "id": "ordem-pequena-aceita",
@@ -260,17 +260,17 @@
       "id": "cifra-do-fio-rebaixada",
       "titulo": "a cifra do fio de volta a OPCIONAL por padrão",
       "veredito": "PROVADA",
-      "segundos": 3.36,
+      "segundos": 22.71,
       "notas": [],
-      "quando": "2026-09-18 14:32"
+      "quando": "2026-10-07 14:26"
     },
     {
       "id": "portas-http-sem-o-portao-da-cifra",
       "titulo": "as portas HTTP atendendo em claro com a cifra exigida",
       "veredito": "PROVADA",
-      "segundos": 5.91,
+      "segundos": 21.24,
       "notas": [],
-      "quando": "2026-09-18 14:32"
+      "quando": "2026-10-07 14:26"
     },
     {
       "id": "transcricao-sem-o-cifrado",
@@ -308,9 +308,9 @@
       "id": "fio-sem-teto-de-registro",
       "titulo": "a leitura do fio volta a ser ilimitada",
       "veredito": "PROVADA",
-      "segundos": 3.93,
+      "segundos": 9.04,
       "notas": [],
-      "quando": "2026-09-24 02:38"
+      "quando": "2026-10-07 14:55"
     },
     {
       "id": "teto-do-fio-sem-a-constante",
@@ -348,9 +348,9 @@
       "id": "replicacao-do-cluster-em-claro",
       "titulo": "a replicação entre os nós do cluster saindo em claro",
       "veredito": "PROVADA",
-      "segundos": 29.39,
+      "segundos": 82.55,
       "notas": [],
-      "quando": "2026-09-17 05:01"
+      "quando": "2026-10-07 14:26"
     },
     {
       "id": "alter-compacta-o-buraco",
@@ -528,9 +528,9 @@
       "id": "marca-antes-do-fsync",
       "titulo": "a marca `.tx` é apagada antes de a tabela sincronizar",
       "veredito": "PROVADA",
-      "segundos": 49.34,
+      "segundos": 83.36,
       "notas": [],
-      "quando": "2026-09-24 01:13"
+      "quando": "2026-10-07 14:39"
     },
     {
       "id": "insert-sem-travar-o-fim",
@@ -938,9 +938,9 @@
       "id": "colisao-de-sequence-calada",
       "titulo": "dois masters na mesma faixa perdem uma linha sem contar a ninguém",
       "veredito": "PROVADA",
-      "segundos": 29.23,
+      "segundos": 80.66,
       "notas": [],
-      "quando": "2026-09-17 04:59"
+      "quando": "2026-10-07 14:26"
     },
     {
       "id": "contador-de-sequence-atras-do-dado",
@@ -994,9 +994,9 @@
       "id": "replica-insiste-na-credencial-recusada",
       "titulo": "a réplica com credencial recusada insistia a cada `reconectar_em` e bloqueava o próprio IP — derrubando o operador junto",
       "veredito": "PROVADA",
-      "segundos": 28.45,
+      "segundos": 81.89,
       "notas": [],
-      "quando": "2026-09-17 05:02"
+      "quando": "2026-10-07 14:26"
     },
     {
       "id": "upsert-zera-a-coluna-negada",
@@ -1154,9 +1154,9 @@
       "id": "ndx-queda-com-cabecalho-limpo",
       "titulo": "a marca de sujo do `.ndx` fica só em RAM e a queda deixa o índice atrasado em silêncio",
       "veredito": "PROVADA",
-      "segundos": 2.15,
+      "segundos": 8.39,
       "notas": [],
-      "quando": "2026-09-24 03:58"
+      "quando": "2026-10-07 15:08"
     },
     {
       "id": "reserva-sobrevive-a-queda-da-ligacao",
@@ -1194,25 +1194,25 @@
       "id": "fsync-so-dos-escritos",
       "titulo": "o fecho confia só no registro em RAM — e o registro nasceu vazio com o processo",
       "veredito": "PROVADA",
-      "segundos": 2.73,
+      "segundos": 11.36,
       "notas": [],
-      "quando": "2026-09-16 15:25"
+      "quando": "2026-10-07 14:26"
     },
     {
       "id": "relogio-ao-alcance-do-teste",
       "titulo": "o estado do gerador de v7 fica ao alcance de um teste, que o escreve para trás",
       "veredito": "PROVADA",
-      "segundos": 2.6,
+      "segundos": 8.79,
       "notas": [],
-      "quando": "2026-09-16 15:25"
+      "quando": "2026-10-07 14:26"
     },
     {
       "id": "upsert-gatilho-do-ramo",
       "titulo": "no upsert que atualiza, o BEFORE UPDATE vê a linha mesclada e o AFTER é o do ramo que ele virou",
       "veredito": "PROVADA",
-      "segundos": 38.48,
+      "segundos": 84.81,
       "notas": [],
-      "quando": "2026-09-16 15:25"
+      "quando": "2026-10-07 14:26"
     },
     {
       "id": "threads-do-so-pela-diferenca",
@@ -1378,9 +1378,9 @@
       "id": "cifra-reserializa-a-senha",
       "titulo": "o `para_json` da cifra devolve a senha de verdade em vez de «(oculta)»",
       "veredito": "PROVADA",
-      "segundos": 48.51,
+      "segundos": 82.43,
       "notas": [],
-      "quando": "2026-09-24 01:24"
+      "quando": "2026-10-07 14:55"
     },
     {
       "id": "debug-da-cifra-mostra-a-senha",
@@ -1458,9 +1458,9 @@
       "id": "cluster-devolve-a-credencial-na-tela",
       "titulo": "o resumo do cluster na op `config` leva o token entre nós e o hash do replicador",
       "veredito": "PROVADA",
-      "segundos": 30.88,
+      "segundos": 82.95,
       "notas": [],
-      "quando": "2026-09-17 05:03"
+      "quando": "2026-10-07 14:26"
     },
     {
       "id": "token-do-rest-entra-pela-tela",
@@ -1474,9 +1474,9 @@
       "id": "cifra-do-odbc-volta-a-nascer-em-claro",
       "titulo": "a receita do driver ODBC volta a nascer em claro, e o esquecimento vira o padrao",
       "veredito": "PROVADA",
-      "segundos": 1.35,
+      "segundos": 8.9,
       "notas": [],
-      "quando": "2026-09-18 14:32"
+      "quando": "2026-10-07 14:26"
     },
     {
       "id": "receita-odbc-devolve-a-senha",
@@ -1490,9 +1490,9 @@
       "id": "cifra-do-fio-reserializa-a-privada",
       "titulo": "o `para_json` da cifra do fio devolve a chave privada em vez de «(oculta)»",
       "veredito": "PROVADA",
-      "segundos": 48.63,
+      "segundos": 84.04,
       "notas": [],
-      "quando": "2026-09-24 01:24"
+      "quando": "2026-10-07 14:55"
     },
     {
       "id": "especificacao-openapi-leva-o-token",
@@ -1746,33 +1746,33 @@
       "id": "replica-nao-atende-escrita",
       "titulo": "`aplicar` pela rede deixa de exigir um papel que receba replicacao",
       "veredito": "PROVADA",
-      "segundos": 34.81,
+      "segundos": 82.49,
       "notas": [],
-      "quando": "2026-09-17 04:54"
+      "quando": "2026-10-07 14:26"
     },
     {
       "id": "spare-nao-atende-ninguem",
       "titulo": "o papel Spare deixa de recusar toda operacao que nao esta em OPS_NO_SPARE",
       "veredito": "PROVADA",
-      "segundos": 33.83,
+      "segundos": 83.09,
       "notas": [],
-      "quando": "2026-09-17 04:55"
+      "quando": "2026-10-07 14:26"
     },
     {
       "id": "read-replica-recusa-escrita",
       "titulo": "`ReadReplica` deixa de recusar escrita e para de apontar o primario",
       "veredito": "PROVADA",
-      "segundos": 33.88,
+      "segundos": 83.69,
       "notas": [],
-      "quando": "2026-09-17 04:56"
+      "quando": "2026-10-07 14:26"
     },
     {
       "id": "pulso-fora-da-lista-e-recusado",
       "titulo": "`op_cluster_pulso` deixa de conferir o id contra a lista viva de nos",
       "veredito": "PROVADA",
-      "segundos": 51.58,
+      "segundos": 83.52,
       "notas": [],
-      "quando": "2026-09-24 00:45"
+      "quando": "2026-10-07 14:39"
     },
     {
       "id": "laco-preso-no-unico-secundario",
@@ -1834,129 +1834,131 @@
       "id": "erro-do-pulso-mapeia-quem-nao-tem-pino",
       "titulo": "a recusa da prova do pulso dizendo quais nós ainda não têm pino",
       "veredito": "PROVADA",
-      "segundos": 18.39,
+      "segundos": 24.53,
       "notas": [],
-      "quando": "2026-09-24 00:51"
+      "quando": "2026-10-07 14:39"
     },
     {
       "id": "pino-cego-sem-a-recusa-do-no-sem-pino",
       "titulo": "a forja contra o pino cego entrando pelo nó sem pino",
       "veredito": "PROVADA",
-      "segundos": 55.88,
+      "segundos": 82.28,
       "notas": [],
-      "quando": "2026-09-24 00:45"
+      "quando": "2026-10-07 14:39"
     },
     {
       "id": "nonce-do-pulso-sem-regua-de-bytes",
       "titulo": "o nonce do pulso retido do tamanho que o remetente escolheu",
       "veredito": "PROVADA",
-      "segundos": 61.6,
+      "segundos": 81.62,
       "notas": [],
-      "quando": "2026-09-24 00:45"
+      "quando": "2026-10-07 14:39"
     },
     {
       "id": "antirrepeticao-envenenada-vira-pulso-inedito",
       "titulo": "a antirrepetição do pulso desligada, calada, por uma trava envenenada",
       "veredito": "PROVADA",
-      "segundos": 64.96,
+      "segundos": 81.13,
       "notas": [],
-      "quando": "2026-09-24 00:45"
+      "quando": "2026-10-07 14:39"
     },
     {
       "id": "trava-da-guarda-recupera-calada",
       "titulo": "a trava envenenada da guarda recuperada sem dizer nada",
       "veredito": "PROVADA",
-      "segundos": 33.25,
+      "segundos": 83.89,
       "notas": [],
-      "quando": "2026-09-24 01:49"
+      "quando": "2026-10-07 14:55"
     },
     {
       "id": "tofu-envenenado-vira-nunca-provou",
       "titulo": "o TOFU do pulso desligado, calado, por uma trava envenenada",
       "veredito": "PROVADA",
-      "segundos": 47.44,
+      "segundos": 85.11,
       "notas": [],
-      "quando": "2026-09-24 01:49"
+      "quando": "2026-10-07 14:55"
     },
     {
       "id": "guarda-do-pulso-inerte-e-muda",
       "titulo": "o pulso sem prova aceito sem deixar rastro no log",
       "veredito": "PROVADA",
-      "segundos": 18.6,
+      "segundos": 24.03,
       "notas": [],
-      "quando": "2026-09-24 00:51"
+      "quando": "2026-10-07 14:39"
     },
     {
       "id": "guarda-do-pulso-inerte-aviso-por-pulso",
       "titulo": "o aviso da guarda inerte repetido a cada pulso",
       "veredito": "PROVADA",
-      "segundos": 18.6,
+      "segundos": 25.1,
       "notas": [],
-      "quando": "2026-09-24 00:51"
+      "quando": "2026-10-07 14:39"
     },
     {
       "id": "resposta-do-pulso-sem-crivo-da-lista",
       "titulo": "a resposta do pulso com id fantasma rebaixando o master",
       "veredito": "PROVADA",
-      "segundos": 16.22,
+      "segundos": 21.05,
       "notas": [],
-      "quando": "2026-09-24 00:51"
+      "quando": "2026-10-07 14:39"
     },
     {
       "id": "resposta-sem-prova-assinada-so-com-pino",
       "titulo": "a resposta de sucesso a um pulso sem prova dizendo quais nós têm pino",
       "veredito": "PROVADA",
-      "segundos": 18.57,
+      "segundos": 24.37,
       "notas": [],
-      "quando": "2026-09-24 00:51"
+      "quando": "2026-10-07 14:39"
     },
     {
       "id": "resposta-sem-prova-assina-e-esconde",
       "titulo": "a resposta a um pulso sem prova igual na forma e diferente no relógio",
       "veredito": "PROVADA",
-      "segundos": 18.74,
+      "segundos": 23.75,
       "notas": [],
-      "quando": "2026-09-24 00:51"
+      "quando": "2026-10-07 14:39"
     },
     {
       "id": "reescrita-sem-portao-na-trava",
       "titulo": "a migração congela a tabela que o COMMIT de uma transação aberta vai abrir",
       "veredito": "PROVADA",
-      "segundos": 16.71,
+      "segundos": 21.01,
       "notas": [],
-      "quando": "2026-09-24 01:13"
+      "quando": "2026-10-07 14:39"
     },
     {
       "id": "acrescentar-coluna-sem-portao",
       "titulo": "o acrescentar_coluna congela a tabela que o COMMIT de uma transação aberta vai abrir",
       "veredito": "PROVADA",
-      "segundos": 16.8,
+      "segundos": 23.1,
       "notas": [],
-      "quando": "2026-09-24 01:13"
+      "quando": "2026-10-07 14:39"
     },
     {
       "id": "commit-sem-rede-antes-da-marca",
       "titulo": "o COMMIT grava a marca com uma tabela do alcance congelada",
-      "veredito": "PROVADA",
-      "segundos": 16.47,
-      "notas": [],
-      "quando": "2026-09-24 01:13"
+      "veredito": "NAO PEGOU",
+      "segundos": 24.08,
+      "notas": [
+        "PASSOU COM O DEFEITO REPOSTO: o_commit_contra_a_tabela_congelada_nao_sai_pela_metade"
+      ],
+      "quando": "2026-10-07 14:39"
     },
     {
       "id": "instrucao-na-vizinha-da-congelada",
       "titulo": "a escrita ligada pela chave a uma tabela congelada entra na lista da transação",
       "veredito": "PROVADA",
-      "segundos": 16.35,
+      "segundos": 23.45,
       "notas": [],
-      "quando": "2026-09-24 01:13"
+      "quando": "2026-10-07 14:39"
     },
     {
       "id": "braco-de-erro-retrava",
       "titulo": "a passada do COMMIT quebra depois da marca e a recuperação da hora não roda",
       "veredito": "PROVADA",
-      "segundos": 48.84,
+      "segundos": 84.93,
       "notas": [],
-      "quando": "2026-09-24 01:13"
+      "quando": "2026-10-07 14:55"
     },
     {
       "id": "completar-apaga-a-marca-impossivel",
@@ -1970,17 +1972,17 @@
       "id": "after-no-commit-some-calado",
       "titulo": "o AFTER disparado no COMMIT grava numa lista já descartada e some sem aviso",
       "veredito": "PROVADA",
-      "segundos": 16.88,
+      "segundos": 23.74,
       "notas": [],
-      "quando": "2026-09-24 01:13"
+      "quando": "2026-10-07 14:55"
     },
     {
       "id": "commit-zero-aplicado-vira-committed",
       "titulo": "a passada que quebra antes de qualquer byte da lista responde COMMITTED",
       "veredito": "PROVADA",
-      "segundos": 49.15,
+      "segundos": 81.82,
       "notas": [],
-      "quando": "2026-09-24 01:13"
+      "quando": "2026-10-07 14:55"
     },
     {
       "id": "commit-meio-sem-dizer-o-que-ficou",
@@ -1994,17 +1996,19 @@
       "id": "de-hex-fatia-texto-por-byte",
       "titulo": "o de_hex em pânico com hexadecimal que corta um caractere de vários bytes",
       "veredito": "PROVADA",
-      "segundos": 4.03,
+      "segundos": 7.94,
       "notas": [],
-      "quando": "2026-09-24 01:49"
+      "quando": "2026-10-07 14:55"
     },
     {
       "id": "prova-do-pulso-derruba-a-conexao",
       "titulo": "a prova do pulso que corta um caractere derruba a conexão e mata o laço do pulso",
-      "veredito": "PROVADA",
-      "segundos": 12.99,
-      "notas": [],
-      "quando": "2026-09-24 01:49"
+      "veredito": "NAO PEGOU",
+      "segundos": 24.72,
+      "notas": [
+        "PASSOU COM O DEFEITO REPOSTO: a_prova_torta_na_resposta_nao_mata_o_laco_do_pulso"
+      ],
+      "quando": "2026-10-07 14:55"
     },
     {
       "id": "copia-do-de-hex-envenena-a-trava-de-dados",
@@ -2018,25 +2022,25 @@
       "id": "percent-da-web-fatia-texto-por-byte",
       "titulo": "o %XX da porta web em pânico com caractere de vários bytes, sem login",
       "veredito": "PROVADA",
-      "segundos": 10.52,
+      "segundos": 25.06,
       "notas": [],
-      "quando": "2026-09-24 01:49"
+      "quando": "2026-10-07 14:55"
     },
     {
       "id": "mapa-do-cluster-envenenado-vira-vazio",
       "titulo": "o mapa de pulsos envenenado devolvido vazio: a eleição trava",
       "veredito": "PROVADA",
-      "segundos": 42.73,
+      "segundos": 80.88,
       "notas": [],
-      "quando": "2026-09-24 01:49"
+      "quando": "2026-10-07 14:55"
     },
     {
       "id": "lista-do-cluster-envenenada-volta-ao-arranque",
       "titulo": "a lista viva de nós envenenada respondida pelo config.json do arranque",
       "veredito": "PROVADA",
-      "segundos": 36.38,
+      "segundos": 82.83,
       "notas": [],
-      "quando": "2026-09-24 01:49"
+      "quando": "2026-10-07 14:55"
     },
     {
       "id": "smtp-linha-sem-teto",
@@ -2050,57 +2054,57 @@
       "id": "teto-decidido-antes-do-bloqueio",
       "titulo": "o teto da linha é decidido antes de a leitura bloquear, e o usuário excluído enquanto esperava manda 1 MiB",
       "veredito": "PROVADA",
-      "segundos": 17.02,
+      "segundos": 24.01,
       "notas": [],
-      "quando": "2026-09-24 02:38"
+      "quando": "2026-10-07 14:55"
     },
     {
       "id": "teto-decidido-sem-refrescar-a-ficha",
       "titulo": "o teto é perguntado na hora certa, mas com a ficha da sessão que nunca se refrescou",
       "veredito": "PROVADA",
-      "segundos": 11.81,
+      "segundos": 22.64,
       "notas": [],
-      "quando": "2026-09-24 02:38"
+      "quando": "2026-10-07 14:55"
     },
     {
       "id": "teto-refrescado-antes-do-bloqueio",
       "titulo": "a ficha é refrescada antes de a leitura bloquear, e o excluído enquanto esperava continua com 128 MiB",
       "veredito": "PROVADA",
-      "segundos": 10.32,
+      "segundos": 21.87,
       "notas": [],
-      "quando": "2026-09-24 02:39"
+      "quando": "2026-10-07 15:08"
     },
     {
       "id": "linha-residente-depois-da-resposta",
       "titulo": "a linha já respondida fica residente enquanto a conexão espera a próxima",
       "veredito": "PROVADA",
-      "segundos": 35.79,
+      "segundos": 51.05,
       "notas": [],
-      "quando": "2026-09-24 02:38"
+      "quando": "2026-10-07 15:08"
     },
     {
       "id": "hexadecimal-ecoa-o-valor",
       "titulo": "o erro do hexadecimal inválido devolve o valor recebido inteiro",
       "veredito": "PROVADA",
-      "segundos": 3.1,
+      "segundos": 9.16,
       "notas": [],
-      "quando": "2026-09-24 02:38"
+      "quando": "2026-10-07 15:08"
     },
     {
       "id": "citar-sem-teto",
       "titulo": "a citação do valor recebido numa mensagem de erro perde o teto, e os irmãos voltam a ecoar",
       "veredito": "PROVADA",
-      "segundos": 3.09,
+      "segundos": 8.54,
       "notas": [],
-      "quando": "2026-09-24 02:38"
+      "quando": "2026-10-07 15:08"
     },
     {
       "id": "json-recebido-ecoa-o-valor",
       "titulo": "a recusa de tipo do `inserir` devolve o JSON recebido inteiro, pelo fio e pelo `acessos.log`",
       "veredito": "PROVADA",
-      "segundos": 10.5,
+      "segundos": 26.5,
       "notas": [],
-      "quando": "2026-09-24 02:38"
+      "quando": "2026-10-07 15:08"
     },
     {
       "id": "phxzip-bomba-do-lzma2",
@@ -2162,9 +2166,9 @@
       "id": "marca-do-ndx-sobe-depois-do-reg",
       "titulo": "o byte 52 do `.ndx` só sobe na primeira página suja, depois de o `.reg` já ter gravado a linha: a queda no meio volta limpa",
       "veredito": "PROVADA",
-      "segundos": 1.57,
+      "segundos": 7.76,
       "notas": [],
-      "quando": "2026-09-24 03:58"
+      "quando": "2026-10-07 15:08"
     },
     {
       "id": "drop-do-ndx-decide-por-panicking",
@@ -2186,65 +2190,65 @@
       "id": "sincronizar-limpa-o-ndx-aberto-sujo",
       "titulo": "o `sincronizar` de um `.ndx` que abriu sujo grava o byte 52 em 0 sem reconstruir: a escrita do descritor que caiu fica fora do índice",
       "veredito": "PROVADA",
-      "segundos": 1.63,
+      "segundos": 7.54,
       "notas": [],
-      "quando": "2026-09-24 03:58"
+      "quando": "2026-10-07 15:08"
     },
     {
       "id": "reindexar-sem-janela-grava-o-ndx-vazio",
       "titulo": "um pânico no meio do `reindexar` grava o `.ndx` recém-recriado VAZIO e marcado limpo: a tabela inteira fica fora do índice",
       "veredito": "PROVADA",
-      "segundos": 1.69,
+      "segundos": 7.29,
       "notas": [],
-      "quando": "2026-09-24 03:58"
+      "quando": "2026-10-07 15:08"
     },
     {
       "id": "janela-do-ndx-interrompe-em-toda-recusa",
       "titulo": "«tabela cheia» fecha a janela do `.ndx` como interrompida: uma recusa comum passa a exigir `reparar indice`",
       "veredito": "PROVADA",
-      "segundos": 1.58,
+      "segundos": 7.89,
       "notas": [],
-      "quando": "2026-09-24 03:58"
+      "quando": "2026-10-07 15:08"
     },
     {
       "id": "dblink-cifra-selo-ignorado",
       "titulo": "com a chave mestra disponível, o `dblink.json` recebe a senha e o token em claro",
       "veredito": "PROVADA",
-      "segundos": 37.7,
+      "segundos": 84.66,
       "notas": [],
-      "quando": "2026-09-24 03:58"
+      "quando": "2026-10-07 15:08"
     },
     {
       "id": "dblink-cifra-envelope-sem-nome",
       "titulo": "o envelope da ligação A colado na linha da ligação B abre, e a B apresenta a senha de outro banco",
       "veredito": "PROVADA",
-      "segundos": 45.01,
+      "segundos": 79.53,
       "notas": [],
-      "quando": "2026-09-24 03:58"
+      "quando": "2026-10-07 15:08"
     },
     {
       "id": "dblink-cifra-sem-prova",
       "titulo": "a chave mestra errada abre o cadastro, e a ligação salva em seguida sai selada com ela",
       "veredito": "PROVADA",
-      "segundos": 56.11,
+      "segundos": 84.53,
       "notas": [],
-      "quando": "2026-09-24 03:58"
+      "quando": "2026-10-07 15:08"
     },
     {
       "id": "dblink-cifra-chave-ausente-derruba",
       "titulo": "sem a chave mestra, o cadastro recusa abrir e o servidor inteiro não sobe",
       "veredito": "PROVADA",
-      "segundos": 42.15,
+      "segundos": 83.98,
       "notas": [],
-      "quando": "2026-09-24 03:58"
+      "quando": "2026-10-07 15:08"
     },
     {
       "id": "dblink-cifra-formato-2-sem-chave",
       "titulo": "o `dblink.json` de hoje, sem chave declarada, ganha `formato: 2` ao ser regravado",
       "veredito": "PROVADA",
-      "segundos": 35.47,
+      "segundos": 82.58,
       "notas": [],
-      "quando": "2026-09-24 03:58"
+      "quando": "2026-10-07 15:08"
     },
     {
       "id": "dblink-cifra-chave-dentro-da-pasta",

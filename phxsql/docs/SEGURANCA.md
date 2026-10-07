@@ -312,10 +312,12 @@ tudo: a bancada dispara primeiro um aviso que o motor já sabia mandar (job que
 falhou), porque um SMTP falso que não recebe nada não prova ausência de
 e-mail — prova que o SMTP falso não presta.
 
-### O aviso de saúde do disco, por e-mail e SMS (pedido 249)
+### O aviso de saúde do disco, por e-mail, SMS por e-mail e gancho (pedido 249)
 
 O sétimo `email::enviar` é o da **saúde do disco** — e o primeiro que também
-sai por **SMS**. O desenho e as provas estão em `docs/SAUDE-DO-DISCO.md`; aqui
+sai por **SMS** (e-mail-para-SMS da operadora; decisão do dono de 07/10/2026:
+o PhxSql **não traz SMS embutido** — o gancho dispara UM comando configurado
+pelo dono do banco, e o canal SMS em si é dele). O desenho e as provas estão em `docs/SAUDE-DO-DISCO.md`; aqui
 fica só o que é segurança, revisto com o chapéu trocado em 16/09/2026:
 
 1. **O que a mensagem carrega, e o que isso expõe.** O e-mail leva o nome de
@@ -7150,7 +7152,7 @@ nada vencido, os novos ficam calados em vez de os velhos voltarem a gritar.
 Prova pelo processo (`tests/aviso-do-noise.rs`): TLS não gera a linha, Noise
 gera e continua ATENDIDO, o mesmo par reconectando não gera a segunda.
 
-## 41. A trava de instância, a árvore temporária do zip e o manifesto que lista a trava (pedidos 648 e 651, 06/10/2026)
+## 42. A trava de instância, a árvore temporária do zip e o manifesto que lista a trava (pedidos 648 e 651, 06/10/2026)
 
 **648 — a trava seguia link e truncava o alvo.** `trava_de_instancia::tomar`
 abria o `.phxsql.trava` com `create(true).write(true)` e depois fazia
@@ -7211,3 +7213,35 @@ Provas: `backup::tests::retrato_part_plantado_como_link_nao_leva_a_copia_para_fo
 uma caindo com o defeito reposto; guardas `trava-de-instancia-segue-link`,
 `trava-de-instancia-aceita-link-fisico`, `zip-retrato-part-aproveitado` e
 `restaurar-aceita-trava-no-manifesto` em `bancada/guardas/catalogo.py`.
+
+## 43. O `.novo` da migração, o texto que o ODBC cortava e o contador da queda (pedidos 661, 663, 664 e 665, 07/10/2026)
+
+**661 — o `.novo` reusava inode alheio.** A FASE A da migração de cifra
+(`reescrever_volume`, `escrever_volume_alargado`) truncava e reusava o `*.novo`
+no modo `Banco`: um link físico plantado com esse nome recebia o payload —
+no `DECRYPT`, o texto claro, num arquivo que tem outro nome. Agora o `*.novo`
+nasce por `util::recriar_temporario` (tira o nome, `create_new`, modo `Destino`
+do MESMO motor), e a FASE B confere cada um contra o `fstat` do descritor que o
+escreveu (mesmo inode, um nome só, tamanho e data; `util::ainda_o_mesmo_temporario`)
+dentro do `alargar_fase_b`, por onde passam as três FASES B. Trocado, recusa
+com `Conflito`, tira o nome e **nada é trocado**. Provas, com o defeito reposto
+caindo: `o_novo_plantado_como_link_fisico_nao_recebe_o_texto_claro`,
+`o_novo_trocado_entre_as_fases_e_recusado` e
+`o_novo_trocado_na_janela_sem_trava_e_recusado`. **Fica dito:** a janela entre
+a conferência e o `rename` (exige escrita na pasta de dados) não se fecha sem
+`renameat2`/descritor de diretório. **No Windows** o motor não distingue link
+(pedido 662, aberto, não provado no sistema operacional): a recusa de link do
+648 e deste não vale lá.
+
+**663 — o ODBC cortava sem avisar.** `SQLColAttribute` e `SQLGetDiagField`
+devolviam os bytes escritos e não o total, sem `01004`, e `SQLGetDiagRec` virava
+negativo acima de 32.767 bytes. Sem estouro de buffer e sem vazamento de
+segredo (a receita mascarada continua escondendo a senha). Agora um só motor,
+`devolver_texto`, trata os seis (ver `docs/ODBC.md`).
+
+**664 e 665 — a numeração na queda.** A queda **não repete** número: o contador
+do auto number e o `slot_count` saem na mesma escrita do cabeçalho, sob um CRC
+só; a queda pode perder a última linha não sincronizada, e o que repete vem de
+fora da gravação (`ajustar_sequencia` para trás, backup antigo, réplica
+atrasada promovida). E o `.seq` só avança o estado em memória depois do
+`fdatasync`, para duas falhas seguidas de gravação não rasgarem os dois slots.

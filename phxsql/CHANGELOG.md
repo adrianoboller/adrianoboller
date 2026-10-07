@@ -36,6 +36,28 @@ da seção `## 0.19.0` mais abaixo, regravado por
   `Int8`/`UInt8` (matriz 9×1) e **sequência nomeada** (`.seq`, `FORMATO.md`
   §24; 147–230 µs por número contra 771 µs do `gravar_duravel`, 5,2×; matriz
   7×3). `IDENTITY ALWAYS` morreu medido (4×6). Continua parcial: ver abaixo.
+  **Decisão do dono, 07/10 (§C.6.1):** o buraco da numeração com blocos à
+  frente é **permitido e documentado**, como no PostgreSQL e no MySQL, que não
+  reaproveitam número (`docs/AUTONUMBER.md`; o bloco à frente ainda não existe).
+- **664** — texto de garantia corrigido: a queda **não repete** número (contador
+  e `slot_count` saem na mesma escrita do cabeçalho, sob um CRC só); pode perder
+  a última linha não sincronizada. Teste `sequencia_nao_repete_com_cabecalho_perdido`,
+  RED medido: ids `[1, 2, 3, 1]`.
+- **665** — o `.seq` só adota o estado novo **depois do `fdatasync`**; duas
+  falhas seguidas de gravação já não deixam os dois slots inválidos (RED:
+  `Corrompido`, CRC dos dois slots).
+- **650** — contador anunciado pelo source acima de 2^53 é recusado
+  (`LIMITE_EXCEDIDO`) e `na_faixa` soma saturando.
+- **649** — o ack do quórum só conta para a base/tabela que a **sessão** pode
+  replicar, e a ficha do cluster só a grava a credencial do cluster (RED: «o ack
+  forjado de B fechou o quórum»). Cluster de um usuário só confia nele inteiro,
+  dito em `SEGURANCA.md` §41.1.
+- **313** — `cluster.atraso_maximo_na_eleicao` (padrão **0 = sem teto**, guarda
+  nova entra pedida): quem passa do teto não concorre; todos atrás, ninguém se
+  promove e a degradação diz «NAO promovo».
+- **652** — o servidor registra no log, **uma linha por par** (silêncio de 1 h,
+  memória de até 1.024 pares), quem ainda chega por Noise, com a frase «o Noise
+  será recusado na 0.20; use TLS». O Noise segue aceito na 0.19.
 
 **Backup e durabilidade**
 
@@ -54,6 +76,17 @@ da seção `## 0.19.0` mais abaixo, regravado por
   sobrescrito por arquivo cortado: **1.088 bytes sobre 3.900, 30 linhas
   destruídas** (medido pela queda real). Toda reescrita escreve todos os
   `*.novo` antes de trocar.
+- **661** — o `*.novo` da migração nasce por criação exclusiva (o `DECRYPT` não
+  deposita mais texto claro num link físico plantado) e a FASE B o confere
+  contra o descritor que o escreveu; trocado, recusa e nada se troca. Três testes
+  caem com o defeito reposto. **Fica:** a janela entre a conferência e o `rename`
+  (exige escrita na pasta de dados).
+- **573** — o arranque recusado pela sentinela do `fsync` (509) agora **avisa o
+  operador** (e-mail, SMS por e-mail e gancho, pelo tipo `Carteiro`, motor
+  único) antes de devolver o erro.
+- **646** (◐, **parcial**) — o `fsync` do grosso saiu do backup, com 3 guardas
+  provadas; o aceite («máximo da fase 1 ≤ ~100 ms») **não reproduziu** com a
+  máquina carregada. Falta uma volta de 1 GB com a máquina quieta.
 - **427** — o retrato da fase A passa a ver o volume que nasce durante ela. A
   dúvida «tamanho e `mtime` bastam?» foi medida no ext4 (**0 de 2.000** passaram
   invisíveis); o tique grosso de FAT/HFS+/NFS foi **simulado**, não medido.
@@ -65,6 +98,13 @@ da seção `## 0.19.0` mais abaixo, regravado por
   `4008 INSTANCIA_OCUPADA`. Ler continua livre; `kill -9` não deixa trava
   eterna. Prova por processos reais, `bancada/instancia/provar.py` 4/4; corrida
   do `fork`: 19/150 falhas só fechando o arquivo, 0/150 com `unlock` antes.
+- **648** — a trava abre pelo **motor único** (modo `Reabrir`, `O_NOFOLLOW`):
+  link simbólico, pendurado ou físico no `.phxsql.trava` é **recusado** e a isca
+  não é truncada. Duas guardas caem com o `create(true).write(true)` reposto.
+- **651** — o `.retrato.part` do backup nasce sem seguir nome plantado, e o
+  manifesto que lista `.phxsql.trava` é recusado na restauração
+  (`SEGURANCA.md` §42). A leitura adversária do resto gerou o **661**, o **662**
+  e o **663**.
 - **Mudado: a versão mínima do Rust passa de 1.75 para 1.89** (`rust-version`
   no `Cargo.toml`), custo direto do 635 — `File::try_lock` é da `std` 1.89. 19
   avisos novos do clippy consertados.
@@ -83,7 +123,9 @@ da seção `## 0.19.0` mais abaixo, regravado por
 - **249** — saúde do disco com gancho de alerta (sonda canário, EROFS, erro de
   E/S, e-mail e SMS por e-mail-para-SMS); revisão SEC: nenhum caminho remoto
   vira execução de código, e a injeção por campo editável tem teste. O que o
-  PhxSql promete como «aviso por SMS» é decisão de produto e fica com o dono.
+  PhxSql promete como «aviso por SMS» foi decidido pelo dono em 07/10: o gancho
+  dispara **UM comando configurado pelo dono do banco**, e o PhxSql **não
+  promete SMS embutido** (ajustado no `MANUAL.txt` e no `SAUDE-DO-DISCO.md`).
 - **638** — o firewall da lista negra rodava comando sem prazo, com ambiente
   herdado e **sob o mutex da lista negra**: três tokens errados paravam o
   servidor inteiro. Agora usa o MESMO motor do gancho, fora do mutex;
@@ -97,6 +139,11 @@ da seção `## 0.19.0` mais abaixo, regravado por
   nenhum teste de unidade via: erro sem SQLSTATE nem texto, `DELETE` anunciando
   colunas, `SQL_DESC_UNSIGNED` recusado e o `CALL` tratado antes de resolver
   `parametros`. `{? = call ...}` segue sem substrato.
+- **663** — `SQLColAttribute`, `SQLGetDiagField`, `SQLGetDiagRec`,
+  `SQLDescribeCol`, `SQLGetInfo` e `SQLDriverConnect` passam por **um** motor
+  (`devolver_texto`): devolve o tamanho **total** (saturado em 32.767) e avisa
+  `01004` quando o buffer não coube. RED: o `NULL` devolvia 0 e o diagnóstico
+  longo voltava −25.521.
 
 **Interface**
 
@@ -115,6 +162,26 @@ da seção `## 0.19.0` mais abaixo, regravado por
   conferidor de números cravados em tela (`TETO_NUMERO_CRAVADO_EM_TELA`) acusa o
   padrão.
 
+**Rigor do catálogo de guardas e das catracas**
+
+- **263** (◐) — o catálogo inteiro foi julgado pelo provador. Lido de
+  `bancada/guardas/ultima-corrida.json` (corrida mais nova de 07/10/2026 14:10;
+  veredito mais velho que ficou, de 16/09/2026): **797** guardas, **793
+  PROVADA** e **4 REDUNDANTE**. As que deram NÃO PEGOU ou QUEBRADA no caminho
+  (`ndx-novo-sobe-com-o-diretorio-vazio`, `cascata-solta-sem-marca`,
+  `fechar-do-embutido-nao-sincroniza`, `elo-do-empilhar-pelo-disco`,
+  `trava-fora-do-ponto-unico`) voltaram a cair com o defeito reposto.
+- **654** — `bancada/guardas/listas-de-dispensa.py`: as listas `DISPENSADOS`
+  (teto **27**) e `ISENTOS` (teto **81**) só descem; dispensa sem motivo ou
+  vencida reprova.
+- **656** — as folgas embutidas de duas catracas do conferidor saíram: o teto é
+  o medido (folga zero).
+- **658** — o cabeçalho do `ultima-corrida.json` diz a corrida mais nova
+  (`quando`) e o veredito mais velho (`mais_antigo`), e a nona régua do
+  `trecho-vivo.py` reprova veredito com mais de **14** dias; `TETO_VEREDITO_VELHO`
+  está hoje em **14** (lido do `trecho-vivo.py`; desceu conforme o provador
+  renovou os vereditos).
+
 **Integridade**
 
 - **630** — `escritas_locais` só conta depois do portão 3: 10.100 escritas
@@ -126,6 +193,16 @@ da seção `## 0.19.0` mais abaixo, regravado por
 - **632**, **427**, **524** — acima, em «Backup e durabilidade».
 
 ### O que NÃO está nesta versão
+
+- **TLS obrigatório (660, ⏸):** decisão do dono de 07/10 — opcional na 0.19, **obrigatório
+  por padrão na 1.0**; o aviso no `ping` para conexão não cifrada ainda **não
+  existe**.
+- **Parada da troca de volume (647, ☐ aberto):** a FASE B é linear no tamanho
+  (extrapolação, não medida, a 100 milhões); decisão do dono de 07/10: **medir a
+  10 M de linhas antes de mexer**, promessa de produto de parada de escrita ≤ 1 s
+  a 10 M, número final só depois da medição.
+- **Windows (662, ☐):** o motor de arquivo não distingue link no Windows; as
+  recusas dos pedidos 648 e 661 valem em Linux.
 
 - **Windows (637, ⏸):** o `mtime` do NTFS (resolução, «racily clean») só se
   mede numa máquina Windows; a prova do backup em duas passadas é Linux/ext4
