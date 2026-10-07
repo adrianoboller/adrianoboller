@@ -1,0 +1,366 @@
+<meta charset="utf-8">
+<title>Pedidos 671 em diante do PhxSql (8/8)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Exo+2:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+:root{
+  --papel:#fbf9f7; --papel-2:#f3efec; --papel-3:#e9e3de;
+  --tinta:#1a1210; --tinta-2:#4a3f3a; --tinta-3:#7a6d66;
+  --linha:#ded6d0;
+  --acento:#c63c0a;
+  --feito:#2f7a3e; --parcial:#8a6a1f; --planejado:#7a6d66;
+  --sombra:0 1px 2px rgba(26,18,16,.06),0 8px 24px rgba(26,18,16,.05);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --papel:#040814; --papel-2:#0a1122; --papel-3:#131c31;
+    --tinta:#dde2eb; --tinta-2:#a8b0c0; --tinta-3:#7c8598;
+    --linha:#1e2940;
+    --acento:#ff8a1c;
+    --feito:#5cbf74; --parcial:#d5a83c; --planejado:#7c8598;
+    --sombra:0 1px 2px rgba(0,0,0,.4),0 8px 24px rgba(0,0,0,.3);
+  }
+}
+:root[data-theme="dark"]{
+  --papel:#040814; --papel-2:#0a1122; --papel-3:#131c31;
+  --tinta:#dde2eb; --tinta-2:#a8b0c0; --tinta-3:#7c8598;
+  --linha:#1e2940;
+  --acento:#ff8a1c;
+  --feito:#5cbf74; --parcial:#d5a83c; --planejado:#7c8598;
+  --sombra:0 1px 2px rgba(0,0,0,.4),0 8px 24px rgba(0,0,0,.3);
+}
+*{box-sizing:border-box}
+body{
+  margin:0;background:var(--papel);color:var(--tinta);
+  font-family:"Source Serif 4",Georgia,"Times New Roman",serif;
+  font-size:16px;line-height:1.55;
+  -webkit-font-smoothing:antialiased;
+}
+h1,h2,h3,.rotulo,.pino,.filtros button{font-family:"Exo 2","Helvetica Neue",Arial,sans-serif}
+code,.mono,.num{font-family:"IBM Plex Mono",ui-monospace,Menlo,monospace}
+code{
+  font-size:.86em;background:var(--papel-2);
+  padding:1px 4px;border-radius:3px;color:var(--tinta-2);
+}
+.envelope{max-width:1080px;margin:0 auto;padding:0 20px 80px}
+
+header{padding:52px 0 28px;border-bottom:1px solid var(--linha)}
+.rotulo{
+  font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;
+  color:var(--acento);font-weight:600;margin-bottom:12px;
+}
+h1{
+  font-size:clamp(30px,5vw,46px);font-weight:700;line-height:1.08;
+  margin:0 0 14px;letter-spacing:-.015em;text-wrap:balance;
+}
+h1 .x{color:var(--acento)}
+.chamada{
+  max-width:64ch;color:var(--tinta-2);font-size:17px;margin:0 0 4px;
+}
+
+.faixas{
+  display:flex;flex-wrap:wrap;gap:8px;margin:22px 0 0;
+}
+.faixas a{
+  font-family:"IBM Plex Mono",monospace;font-size:12.5px;font-weight:500;
+  text-decoration:none;color:var(--tinta-2);
+  border:1px solid var(--linha);border-radius:999px;
+  padding:6px 14px;
+}
+.faixas a:hover{border-color:var(--acento);color:var(--acento)}
+.faixas a.ativa{
+  border-color:var(--acento);color:var(--acento);background:var(--papel-2);
+  font-weight:600;
+}
+
+.placar{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
+  gap:10px;margin:30px 0 0;
+}
+.placar .c{
+  border:1px solid var(--linha);border-radius:6px;padding:14px 16px;
+  background:var(--papel-2);
+}
+.placar .v{
+  font-family:"Exo 2",sans-serif;font-size:34px;font-weight:700;
+  line-height:1;font-variant-numeric:tabular-nums;
+}
+.placar .r{
+  font-family:"IBM Plex Mono",monospace;font-size:10px;
+  letter-spacing:.13em;text-transform:uppercase;color:var(--tinta-3);
+  margin-top:7px;
+}
+.placar .feito .v{color:var(--feito)}
+.placar .parcial .v{color:var(--parcial)}
+.placar .planejado .v{color:var(--planejado)}
+
+.faixa-info{
+  margin:16px 0 0;padding:12px 16px;border-left:3px solid var(--acento);
+  background:var(--papel-2);border-radius:0 5px 5px 0;
+  font-size:14.5px;color:var(--tinta-2);
+}
+.faixa-info .rotulo-inline{
+  font-family:"Exo 2",sans-serif;font-weight:600;color:var(--tinta);
+  font-size:12px;text-transform:uppercase;letter-spacing:.08em;
+  margin-right:8px;
+}
+.faixa-info strong{color:var(--tinta);font-variant-numeric:tabular-nums}
+.faixa-info .feito{color:var(--feito)}
+.faixa-info .parcial{color:var(--parcial)}
+.faixa-info .planejado{color:var(--planejado)}
+
+h2{
+  font-size:22px;font-weight:600;margin:52px 0 6px;letter-spacing:-.01em;
+  scroll-margin-top:74px;
+}
+h2 + .sub{color:var(--tinta-3);font-size:15px;margin:0 0 20px;max-width:64ch}
+
+.barra{
+  position:sticky;top:0;z-index:5;background:var(--papel);
+  border-bottom:1px solid var(--linha);
+  padding:12px 0;margin:0 0 4px;
+  display:flex;flex-wrap:wrap;gap:10px;align-items:center;
+}
+.filtros{display:flex;flex-wrap:wrap;gap:6px}
+.filtros button{
+  font-size:12.5px;font-weight:500;cursor:pointer;
+  background:none;color:var(--tinta-2);
+  border:1px solid var(--linha);border-radius:999px;
+  padding:5px 13px;
+}
+.filtros button:hover{border-color:var(--acento);color:var(--acento)}
+.filtros button[aria-pressed="true"]{
+  border-color:var(--acento);color:var(--acento);
+  background:color-mix(in srgb,var(--acento) 9%,transparent);
+}
+.filtros button:focus-visible,input:focus-visible{
+  outline:2px solid var(--acento);outline-offset:2px;
+}
+input[type="search"]{
+  font-family:"Source Serif 4",Georgia,serif;font-size:14px;
+  background:var(--papel-2);color:var(--tinta);
+  border:1px solid var(--linha);border-radius:5px;
+  padding:6px 11px;min-width:190px;flex:1;max-width:280px;
+}
+.conta{
+  font-family:"IBM Plex Mono",monospace;font-size:11px;
+  color:var(--tinta-3);margin-left:auto;white-space:nowrap;
+}
+
+.rolo{overflow-x:auto;-webkit-overflow-scrolling:touch}
+table{border-collapse:collapse;width:100%;min-width:660px}
+/* Cabecalho NAO grudento: `.rolo` tem `overflow-x:auto`, e isso faz dele um
+   contexto de rolagem proprio -- o `position:sticky` do `thead` passava a se
+   medir por ele e caia POR CIMA da primeira linha. Quem gruda e a barra de
+   filtro, que e onde esta a contagem. */
+thead th{
+  font-family:"IBM Plex Mono",monospace;font-weight:500;
+  font-size:10px;letter-spacing:.13em;text-transform:uppercase;
+  color:var(--tinta-3);text-align:left;
+  padding:12px 12px 8px;border-bottom:1px solid var(--linha);
+  background:var(--papel);
+}
+tbody td{
+  padding:14px 12px;border-bottom:1px solid var(--linha);
+  vertical-align:top;font-size:15px;
+}
+tbody tr:hover td{background:var(--papel-2)}
+td.n{
+  font-size:12px;color:var(--tinta-3);text-align:right;
+  font-variant-numeric:tabular-nums;width:44px;white-space:nowrap;
+}
+td.p{width:34%;color:var(--tinta)}
+td.e{color:var(--tinta-2);font-size:14.5px}
+th.st,td.st{width:104px}
+
+/* A forma tambem carrega o estado, e nao so a cor: cheio, meio, vazio. */
+.pino{
+  display:inline-flex;align-items:center;gap:6px;
+  font-size:11px;font-weight:600;letter-spacing:.03em;white-space:nowrap;
+}
+.pino::before{
+  content:"";width:9px;height:9px;border-radius:50%;
+  border:1.5px solid currentColor;flex:none;
+}
+.pino.feito{color:var(--feito)}
+.pino.feito::before{background:currentColor}
+.pino.parcial{color:var(--parcial)}
+.pino.parcial::before{background:linear-gradient(90deg,currentColor 50%,transparent 50%)}
+.pino.planejado{color:var(--planejado)}
+
+.vazio{padding:38px 12px;color:var(--tinta-3);text-align:center;font-style:italic}
+
+.nota{
+  border-left:3px solid var(--acento);background:var(--papel-2);
+  padding:14px 18px;border-radius:0 5px 5px 0;margin:26px 0;
+  font-size:15px;color:var(--tinta-2);max-width:66ch;
+}
+.nota .t{
+  display:block;font-family:"Exo 2",sans-serif;font-weight:600;
+  color:var(--tinta);font-size:14px;margin-bottom:5px;
+}
+footer{
+  margin-top:56px;padding-top:22px;border-top:1px solid var(--linha);
+  color:var(--tinta-3);font-size:13.5px;max-width:66ch;
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+<style>
+.placar .depois .v{color:#5b4a9e}
+.faixa-info .depois{color:#5b4a9e}
+.pino.depois{color:#5b4a9e}
+.pino.depois::before{background:none;border-style:dashed}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]) .placar .depois .v,
+  :root:not([data-theme="light"]) .faixa-info .depois,
+  :root:not([data-theme="light"]) .pino.depois{color:#b7a6ea}
+}
+:root[data-theme="dark"] .placar .depois .v,
+:root[data-theme="dark"] .faixa-info .depois,
+:root[data-theme="dark"] .pino.depois{color:#b7a6ea}
+</style>
+<div class="envelope">
+<header>
+  <div class="rotulo">PhxSql · o dossiê do que foi pedido — página 8 de 8</div>
+  <h1>Pedidos 671 em diante<br>de 680 ao todo</h1>
+  <p class="chamada">Uma linha por pedido seu, na ordem em que você pediu. O
+  estado é <strong>medido contra o código</strong>, não contra a lembrança — foi
+  assim que a chave estrangeira saiu de «pronto» para «parcial», e o Centro de
+  Controle de «pronto» para «só navega».</p>
+  <p class="chamada">Esta lista deixou de caber numa página só (pedido 403,
+  23/09/2026): a publicada tinha 1.304.729 bytes, e republicá-la exigia reler
+  a versão antiga inteira. Ela virou <strong>8 páginas</strong>,
+  cortadas pelo <strong>tamanho medido</strong> de cada faixa de número de
+  pedido (nunca por número redondo) — esta é a faixa
+  <strong>671 em diante</strong>.</p>
+
+  <nav class="faixas" aria-label="As 8 páginas de pedidos, por faixa"><a href="https://claude.ai/artifact/4jSZ5yZFnjEnbGGbE3i5nz">1–190</a><a href="https://claude.ai/artifact/MAc3CcjfCPbjVm5sQZwYoC">191–260</a><a href="pedidos-261-320.html">261–320</a><a href="pedidos-321-360.html">321–360</a><a href="pedidos-361-430.html">361–430</a><a href="pedidos-431-540.html">431–540</a><a href="pedidos-541-670.html">541–670</a><a href="pedidos-671-mais.html" class="ativa" aria-current="page">671 em diante</a></nav>
+
+  <div class="placar">
+    <div class="c"><div class="v">680</div><div class="r">pedidos, ao todo</div></div>
+    <div class="c feito"><div class="v">566</div><div class="r">feitos</div></div>
+    <div class="c parcial"><div class="v">7</div><div class="r">parciais</div></div>
+    <div class="c planejado"><div class="v">18</div><div class="r">planejados</div></div>
+    <div class="c depois"><div class="v">89</div><div class="r">depois da versão</div></div>
+  </div>
+
+  <div class="faixa-info">
+    <span class="rotulo-inline">Nesta página</span>
+    <strong>10</strong> pedidos (faixa 671 em diante) ·
+    <span class="feito">2 feitos</span> ·
+    <span class="parcial">0 parciais</span> ·
+    <span class="planejado">8 planejados</span>
+  </div>
+</header>
+
+<h2>O que está aberto, nesta faixa</h2>
+<p class="sub">Os 8 que não fecharam nesta faixa (8 sem começar), com o motivo de cada um. O motivo importa mais que o estado: uns esperam trabalho, outros esperam uma decisão sua, e outros esperam coisa de fora deste repositório.</p>
+<div class="rolo">
+  <table>
+    <thead><tr><th class="n">#</th><th class="st">estado</th><th>o que você pediu</th><th>onde está</th></tr></thead>
+    <tbody>
+      <tr data-e="planejado"><td class="n mono">673</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>Texto de tela e erro de motor entraram fora da fábrica de idiomas depois de 01/10</strong></td><td class="e">Varredura do tradutor, 07/10/2026 (lida; o <code>textos-fora-da-fabrica --tudo</code> deu 861, igual ao <code>TETO_ROTULOS_E_CRASE</code>, então a catraca não acusou: o que entrou empatou com o que saiu). Em <code>ui/index.html</code>: <code>← Resultado</code> (:6732), <code>ao excluir a linha-mãe</code> (:12036), <code>rodando…</code> (:15042), <code>SysColumns · </code> (:8571) e as interpoladas <code>lendo o esquema…</code> (:11857) e <code>lendo…</code> (:12546), mais os irmãos anteriores :12037, :11858 e :12392. Em <code>mensagens.rs</code>: <code>erro.expressao_cita_coluna_negada</code> sem FR, IT, DE e ES. Erros do motor cravados em português que chegam à resposta: <code>servidor.rs:26196</code> (<code>do_caminho_pedido</code>) e <code>valores.rs:534</code>. As linhas de log do operador (<code>gancho.rs</code>, <code>blacklist.rs</code>, <code>fio_dados.rs</code>, <code>profiler.rs</code>, <code>eprintln!</code> do servidor) ficam em português de propósito e se documentam ao lado das três exceções do <code>mensagens.rs</code>. Entregável: as chaves com os seis textos (a lista pronta está no relatório do tradutor de 07/10), a remedição do conferidor e o <code>TETO_ROTULOS_E_CRASE</code> baixado ao número medido no mesmo commit.</td></tr>
+      <tr data-e="planejado"><td class="n mono">674</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>O token do servidor continua indo em claro pela rede da loja, e nenhum teste entrega dado pessoal por TLS real na porta de dados</strong></td><td class="e">Resto do 667, achado pela frente que o fechou (07/10/2026). A senha deixou de sair pela LAN sem contexto seguro, mas o token da sessão que volta do login segue o mesmo caminho em claro; e o <code>fio_cifrado</code> só passou a enxergar o TLS da porta de dados (campo <code>fio_tls</code> da <code>Sessao</code>) nesta rodada, sem teste próprio que entregue dado pessoal por TLS real na 5000. Entregável: a mesma recusa (ou o mesmo escape escrito) para o token fora do loopback sem TLS, e o teste de soquete com TLS real que prove o dado pessoal passando e, com o <code>fio_tls</code> desligado, recusado.</td></tr>
+      <tr data-e="planejado"><td class="n mono">675</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>A suíte deu VERMELHO uma vez em três corridas na mesma árvore, e o <code>./portoes.sh</code> não guarda o log que diria qual teste caiu</strong></td><td class="e">Medido pelo integrador em 07/10/2026, no merge de 670–672: o primeiro <code>./portoes.sh</code> saiu com <code>suite (saiu 101)</code>; a suíte rodada de novo deu 156 binários verdes e o <code>./portoes.sh</code> seguinte, VERDE. «Flake» não é causa: algum teste depende de algo que muda entre corridas (tempo, porta, disco, ordem), e é defeito ativo até se achar qual. O nome dele se perdeu porque o <code>portoes.sh</code> não grava a saída do <code>cargo test</code> em lugar nenhum. Conserto: o <code>portoes.sh</code> grava o log da suíte num arquivo com data e imprime o caminho e os testes que caíram ao sair VERMELHO; depois, rodar a suíte em laço até reproduzir e consertar a causa.</td></tr>
+      <tr data-e="planejado"><td class="n mono">676</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>325 F2 — id de transação no <code>.log</code> (44 → 52 bytes): a venda chega ao central inteira ou não chega</strong></td><td class="e">Decisão do dono, 07/10/2026: entra antes do selo da 0.19.0, porque mudança de formato entra cedo e ainda não há dado em produção. Hoje o cabeçalho do registro do <code>.log</code> está cheio (a origem u16 usa os bytes que eram reservados, <code>FORMATO.md:1852</code>), e um commit entre tabelas não atravessa o fio da réplica como unidade (pedido 299). Entregável: versão nova do <code>.log</code> com o id de transação, origem e réplica subindo juntas, a réplica aplicando a transação inteira ou nada, leitura do formato velho, <code>docs/FORMATO.md</code> no mesmo commit, e a prova de queda do fio no meio de uma venda de vários itens (o central nunca vê a venda pela metade). Formato em disco: assina o papel C.</td></tr>
+      <tr data-e="planejado"><td class="n mono">677</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>325 F1 — guarda que proíbe escrita local nas bases que o nó recebe por réplica, e cadastro só no central</strong></td><td class="e">Decisão do dono, 07/10/2026. No espelho, o central não escreve no <code>caixaNN</code> e o caixa não escreve nas tabelas de cadastro que recebe do central: a gravação local nelas é recusada dizendo de onde a tabela vem. Prova: escrita local numa base recebida por réplica recusa, venda no caixa passa, cadastro no caixa com o central caído recusa com a frase do contrato.</td></tr>
+      <tr data-e="planejado"><td class="n mono">678</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>325 F0 — bancada com 20 caixas e 1 central, derrubando o central no meio do expediente</strong></td><td class="e">Parecer do pesquisador, 07/10/2026. Vem antes de prometer: mede a chegada simultânea de 20 origens (pode travar na trava global de dados), o atraso do central ao voltar e o crescimento do diário do caixa por dia de venda. Grava <code>resultados.json</code> com faixa min–max.</td></tr>
+      <tr data-e="planejado"><td class="n mono">679</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>325 F3 — visão da loja no central por <code>unir</code>, medida contra o teto de linhas</strong></td><td class="e">Parecer do pesquisador, 07/10/2026. A loja inteira se lê no central unindo os 20 <code>caixaNN</code>, sem juntar as fontes numa tabela (a ordem de digitação de cada caixa fica intacta).</td></tr>
+      <tr data-e="planejado"><td class="n mono">680</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>325 F4 — o contrato do que o caixa faz com o central caído</strong></td><td class="e">Decisão do dono, 07/10/2026: vende com o último preço recebido, baixa estoque local, não cadastra; o central vê a loja atrasada até voltar. Escrito no MANUAL e no CONTRATO, sem número que não venha da bancada do 678.</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="nota">
+  <span class="t">Por que «parcial» e não «feito»</span>
+  Meio caminho andado continua sendo meio caminho, e a lista diz <em>qual</em>
+  metade — porque é a metade que falta que decide se o pedido serve para alguma
+  coisa hoje. O estado sai da primeira coluna do
+  <code>docs/PENDENCIAS.md</code>, que é medido contra o código; esta página
+  não tem opinião própria sobre nenhum item.
+</div>
+
+<h2 id="todos">Os 10 desta faixa (671 em diante), na ordem em que você pediu</h2>
+<p class="sub">A numeração é a sequência real dos seus pedidos — ela diz
+<em>quando</em> cada coisa foi pedida, e é por isso que vale mantê-la. As
+outras 7 faixas estão no menu acima.</p>
+
+<div class="barra">
+  <div class="filtros" role="group" aria-label="Filtrar por estado">
+    <button type="button" data-f="todos" aria-pressed="true">Todos</button>
+    <button type="button" data-f="feito" aria-pressed="false">Feitos</button>
+    <button type="button" data-f="parcial" aria-pressed="false">Parciais</button>
+    <button type="button" data-f="planejado" aria-pressed="false">Planejados</button>
+    <button type="button" data-f="depois" aria-pressed="false">Depois da versão</button>
+  </div>
+  <input type="search" id="busca" placeholder="procurar nesta faixa…" aria-label="Procurar nos pedidos desta faixa">
+  <span class="conta" id="conta"></span>
+</div>
+
+<div class="rolo">
+  <table id="tudo">
+    <thead><tr><th class="n">#</th><th class="st">estado</th><th>o que você pediu</th><th>o que existe hoje</th></tr></thead>
+    <tbody>
+      <tr data-e="feito"><td class="n mono">671</td><td class="st"><span class="pino feito">Feito</span></td><td class="p"><strong>A prova do 664 repõe o cabeçalho inteiro de uma vez e não distingue «mesma escrita» de «duas escritas»</strong></td><td class="e">Papel F, 07/10/2026, lido e não medido. <code>tests/reconciliar-sequencia.rs:sequencia_nao_repete_com_cabecalho_perdido</code> prova que o contador mora no cabeçalho, não que sai na MESMA escrita do <code>slot_count</code>. Defeito que passa: o contador num <code>pwrite</code> separado (ou só no <code>sincronizar</code>/<code>drop</code>). O estado que repete número (<code>slot_count</code> durável à frente do contador) nunca é montado. Conserto da prova: montar esse estado e exigir recusa pelo CRC ou id sem repetição, ou contar as escritas no cabeçalho por um gancho de <code>falha_de_teste</code>; medir o RED com o <code>pwrite</code> separado. <strong>Fechado em 07/10/2026 (papel F), medido.</strong> Defeito alternativo reposto (<code>gravar_contadores</code> em três <code>escrever</code>: <code>..36</code>, <code>36..44</code>, <code>44..</code>): <code>sequencia_nao_repete_com_cabecalho_perdido</code> VERDE. Prova nova <code>contador_e_slot_count_saem_na_mesma_escrita</code>: <code>falha_de_teste::anotar_escritas</code> conta as CHAMADAS de escrita no <code>.reg</code> durante a 4ª inserção (gancho no <code>Volumes::escrever</code>, só <code>debug_assertions</code>, e só depois de um atômico); toda escrita que toca 20..28 ou 36..44 tem de levar os dois, com <code>slot_count</code> 4 e contador 5. Com o defeito: <code>[(1224, 88), (0, 36), (36, 8), (44, 84)]</code> e RED; sem ele, verde. Guarda <code>contador-da-sequencia-em-escrita-separada</code>. <code>tests/reconciliar-sequencia.rs</code>, <code>volume.rs</code>, <code>sincronia.rs</code></td></tr>
+      <tr data-e="feito"><td class="n mono">672</td><td class="st"><span class="pino feito">Feito</span></td><td class="p"><strong>A conferência da FASE B do 661 tem cinco condições e a prova cobre uma: o link físico pendurado no <code>.novo</code> entre as fases passa</strong></td><td class="e">Papel F, 07/10/2026, lido e não medido. <code>tests/migracao-da-cifra.rs:o_novo_trocado_entre_as_fases_e_recusado</code> só troca o inode (<code>mesmo_arquivo</code>); tirar o <code>um_nome_so</code>, o tamanho ou o mtime de <code>util.rs:ainda_o_mesmo_temporario</code> deixa as três provas verdes. No DECRYPT, quem pendura um link físico no <code>.novo</code> entre as fases fica com um nome para a tabela em claro depois do rename. E <code>reg.rs:conferir_novos</code> segue em frente (<code>continue</code>) com qualquer erro do <code>symlink_metadata</code>. Conserto: <code>hard_link(.novo, isca)</code> entre o <code>preparar</code> e o <code>aplicar</code> tem de dar <code>Conflito</code>, e uma escrita pelo nome entre as fases também; o <code>continue</code> vira recusa; medir o RED tirando cada condição. <strong>Fechado em 07/10/2026 (papel F), medido, com FURO REAL no código.</strong> Antes: sem o <code>um_nome_so</code> ou sem o tamanho, as provas do 661 VERDES; e sem o INODE também -- o teste «do inode» apagava e recriava o <code>.novo</code>, o sistema de arquivos devolvia o MESMO inode, e quem o segurava era a data (sem a data ele caía). O <code>continue</code> no erro do <code>lstat</code> era furo real: com o <code>clientes.bkp.novo</code> do espelho apagado entre as fases, a FASE B do <code>Descriptografar</code> respondia <code>Ok(20)</code> com o <code>.reg</code> em claro e o <code>.bkp</code> cifrado atrás (<code>trocar_pelo_novo</code> pula <code>.novo</code> ausente). Conserto pelo mesmo motor: o <code>lstat</code> passou para dentro de <code>util::ainda_o_mesmo_temporario(escrito, caminho)</code> e «não se lê» é <code>false</code>; o <code>conferir_novos</code> só chama. Provas: link físico (<code>hard_link(.novo, isca)</code>), escrita pelo nome no mesmo tamanho, <code>.novo</code> que cresceu com a data reposta, <code>.novo</code> do espelho que sumiu, e o do inode refeito (velho vivo com outro nome, data reposta). RED medido tirando cada condição: inode, <code>um_nome_so</code>, tamanho, data e o <code>continue</code> -- cada uma derruba EXATAMENTE a sua prova (1 de 17), e verde 17 de 17 com o conserto. Cinco guardas <code>fase-b-*</code>. Cognição <code>cognicao_apagar-e-recriar-devolve-o-mesmo-inode_20261007_1637.md</code>. <code>util.rs</code>, <code>reg.rs</code>, <code>tests/migracao-da-cifra.rs</code></td></tr>
+      <tr data-e="planejado"><td class="n mono">673</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>Texto de tela e erro de motor entraram fora da fábrica de idiomas depois de 01/10</strong></td><td class="e">Varredura do tradutor, 07/10/2026 (lida; o <code>textos-fora-da-fabrica --tudo</code> deu 861, igual ao <code>TETO_ROTULOS_E_CRASE</code>, então a catraca não acusou: o que entrou empatou com o que saiu). Em <code>ui/index.html</code>: <code>← Resultado</code> (:6732), <code>ao excluir a linha-mãe</code> (:12036), <code>rodando…</code> (:15042), <code>SysColumns · </code> (:8571) e as interpoladas <code>lendo o esquema…</code> (:11857) e <code>lendo…</code> (:12546), mais os irmãos anteriores :12037, :11858 e :12392. Em <code>mensagens.rs</code>: <code>erro.expressao_cita_coluna_negada</code> sem FR, IT, DE e ES. Erros do motor cravados em português que chegam à resposta: <code>servidor.rs:26196</code> (<code>do_caminho_pedido</code>) e <code>valores.rs:534</code>. As linhas de log do operador (<code>gancho.rs</code>, <code>blacklist.rs</code>, <code>fio_dados.rs</code>, <code>profiler.rs</code>, <code>eprintln!</code> do servidor) ficam em português de propósito e se documentam ao lado das três exceções do <code>mensagens.rs</code>. Entregável: as chaves com os seis textos (a lista pronta está no relatório do tradutor de 07/10), a remedição do conferidor e o <code>TETO_ROTULOS_E_CRASE</code> baixado ao número medido no mesmo commit.</td></tr>
+      <tr data-e="planejado"><td class="n mono">674</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>O token do servidor continua indo em claro pela rede da loja, e nenhum teste entrega dado pessoal por TLS real na porta de dados</strong></td><td class="e">Resto do 667, achado pela frente que o fechou (07/10/2026). A senha deixou de sair pela LAN sem contexto seguro, mas o token da sessão que volta do login segue o mesmo caminho em claro; e o <code>fio_cifrado</code> só passou a enxergar o TLS da porta de dados (campo <code>fio_tls</code> da <code>Sessao</code>) nesta rodada, sem teste próprio que entregue dado pessoal por TLS real na 5000. Entregável: a mesma recusa (ou o mesmo escape escrito) para o token fora do loopback sem TLS, e o teste de soquete com TLS real que prove o dado pessoal passando e, com o <code>fio_tls</code> desligado, recusado.</td></tr>
+      <tr data-e="planejado"><td class="n mono">675</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>A suíte deu VERMELHO uma vez em três corridas na mesma árvore, e o <code>./portoes.sh</code> não guarda o log que diria qual teste caiu</strong></td><td class="e">Medido pelo integrador em 07/10/2026, no merge de 670–672: o primeiro <code>./portoes.sh</code> saiu com <code>suite (saiu 101)</code>; a suíte rodada de novo deu 156 binários verdes e o <code>./portoes.sh</code> seguinte, VERDE. «Flake» não é causa: algum teste depende de algo que muda entre corridas (tempo, porta, disco, ordem), e é defeito ativo até se achar qual. O nome dele se perdeu porque o <code>portoes.sh</code> não grava a saída do <code>cargo test</code> em lugar nenhum. Conserto: o <code>portoes.sh</code> grava o log da suíte num arquivo com data e imprime o caminho e os testes que caíram ao sair VERMELHO; depois, rodar a suíte em laço até reproduzir e consertar a causa.</td></tr>
+      <tr data-e="planejado"><td class="n mono">676</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>325 F2 — id de transação no <code>.log</code> (44 → 52 bytes): a venda chega ao central inteira ou não chega</strong></td><td class="e">Decisão do dono, 07/10/2026: entra antes do selo da 0.19.0, porque mudança de formato entra cedo e ainda não há dado em produção. Hoje o cabeçalho do registro do <code>.log</code> está cheio (a origem u16 usa os bytes que eram reservados, <code>FORMATO.md:1852</code>), e um commit entre tabelas não atravessa o fio da réplica como unidade (pedido 299). Entregável: versão nova do <code>.log</code> com o id de transação, origem e réplica subindo juntas, a réplica aplicando a transação inteira ou nada, leitura do formato velho, <code>docs/FORMATO.md</code> no mesmo commit, e a prova de queda do fio no meio de uma venda de vários itens (o central nunca vê a venda pela metade). Formato em disco: assina o papel C.</td></tr>
+      <tr data-e="planejado"><td class="n mono">677</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>325 F1 — guarda que proíbe escrita local nas bases que o nó recebe por réplica, e cadastro só no central</strong></td><td class="e">Decisão do dono, 07/10/2026. No espelho, o central não escreve no <code>caixaNN</code> e o caixa não escreve nas tabelas de cadastro que recebe do central: a gravação local nelas é recusada dizendo de onde a tabela vem. Prova: escrita local numa base recebida por réplica recusa, venda no caixa passa, cadastro no caixa com o central caído recusa com a frase do contrato.</td></tr>
+      <tr data-e="planejado"><td class="n mono">678</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>325 F0 — bancada com 20 caixas e 1 central, derrubando o central no meio do expediente</strong></td><td class="e">Parecer do pesquisador, 07/10/2026. Vem antes de prometer: mede a chegada simultânea de 20 origens (pode travar na trava global de dados), o atraso do central ao voltar e o crescimento do diário do caixa por dia de venda. Grava <code>resultados.json</code> com faixa min–max.</td></tr>
+      <tr data-e="planejado"><td class="n mono">679</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>325 F3 — visão da loja no central por <code>unir</code>, medida contra o teto de linhas</strong></td><td class="e">Parecer do pesquisador, 07/10/2026. A loja inteira se lê no central unindo os 20 <code>caixaNN</code>, sem juntar as fontes numa tabela (a ordem de digitação de cada caixa fica intacta).</td></tr>
+      <tr data-e="planejado"><td class="n mono">680</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>325 F4 — o contrato do que o caixa faz com o central caído</strong></td><td class="e">Decisão do dono, 07/10/2026: vende com o último preço recebido, baixa estoque local, não cadastra; o central vê a loja atrasada até voltar. Escrito no MANUAL e no CONTRATO, sem número que não venha da bancada do 678.</td></tr>
+    </tbody>
+  </table>
+  <div class="vazio" id="vazio" hidden>Nenhum pedido bate com isso.</div>
+</div>
+
+<footer>
+  Gerado de <code>docs/PENDENCIAS.md</code> por
+  <code>docs/dossie/pagina-dos-pedidos.py</code> — a lista não se digita, pela
+  mesma razão que o selo do dossiê não se digita. Esta é a página
+  <strong>8 de 8</strong> (faixa 671 em diante); as outras estão no
+  menu do topo. O dossiê técnico, com o formato byte a byte e a bancada
+  medida, é uma página à parte.
+</footer>
+</div>
+
+<script>
+(function(){
+  const linhas = Array.from(document.querySelectorAll('#tudo tbody tr'));
+  const botoes = Array.from(document.querySelectorAll('.filtros button'));
+  const busca  = document.getElementById('busca');
+  const conta  = document.getElementById('conta');
+  const vazio  = document.getElementById('vazio');
+  let filtro = 'todos';
+
+  // Sem isto, quem digita «indice» nao acha «indice» com acento -- e em
+  // portugues isso e a busca falhando calada, nao uma sutileza.
+  const achatar = t => t.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  linhas.forEach(tr => tr.dataset.busca = achatar(tr.textContent));
+
+  function aplicar(){
+    const q = achatar(busca.value.trim());
+    let vistos = 0;
+    for (const tr of linhas) {
+      const okEstado = filtro === 'todos' || tr.dataset.e === filtro;
+      const okTexto  = !q || tr.dataset.busca.includes(q);
+      const mostra = okEstado && okTexto;
+      tr.hidden = !mostra;
+      if (mostra) vistos++;
+    }
+    conta.textContent = vistos + ' de ' + linhas.length;
+    vazio.hidden = vistos !== 0;
+  }
+
+  botoes.forEach(b => b.addEventListener('click', () => {
+    filtro = b.dataset.f;
+    botoes.forEach(o => o.setAttribute('aria-pressed', String(o === b)));
+    aplicar();
+  }));
+  busca.addEventListener('input', aplicar);
+  aplicar();
+})();
+</script>
