@@ -861,7 +861,11 @@ TETO_TESTE_SEM_MODULO = 0
 # provador NAO rodou nesta frente -- o integrador prova na arvore mesclada. A
 # `sequencia-nomeada-proximo-sem-durar` teve o trecho acertado ao `gravar(novo)`
 # do 665 (o mesmo defeito). Medido por `--numeros` (796).
-PISO_DAS_ENTRADAS = 796
+# 796 -> 797 (07/10/2026, frente das guardas que nao pegavam): nasce
+# `cascata-solta-pela-marca-do-embutido`, que guarda a regressao que a troca
+# velha da `cascata-solta-sem-marca` exercitava (o servidor voltar a chamar
+# `t.atualizar`). Medido por `--numeros` (797).
+PISO_DAS_ENTRADAS = 797
 
 # ------------------------------------------------------------- APOSENTADAS
 #
