@@ -802,6 +802,14 @@ CIFRAR OU DECIFRAR O QUE JA ESTA GRAVADO: criptografar / descriptografar
     conferencia e o rename (microssegundos, exige escrita na pasta de dados)
     nao se fecha so com a biblioteca padrao.
 
+    A PARADA, DITA COM O ALCANCE CERTO (pedido 647, decisao de 07/10/2026).
+    A promessa de parada de no maximo 1 s vale para a TRAVA GLOBAL do banco:
+    o resto do banco nao espera mais que isso por causa da migracao. A TABELA
+    MIGRADA, ao contrario, fica SO PARA LEITURA durante a primeira fase, por
+    um tempo que CRESCE com o tamanho dela. Nao ha numero garantido para esse
+    tempo: a conta de 7 a 10 s a 10 milhoes de linhas e do DBA, nao medida.
+    A medicao a 10 M esta PENDENTE (pedido 647).
+
     O QUE ELA NAO FAZ, e a resposta repete em "avisos": o historico (.log,
     .trash, .reason) e o indice (.ndx) ficam em claro -- criptografar protege
     o dado ATUAL --, e a migracao e LOCAL: nao replica. Migre a replica
@@ -4591,6 +4599,27 @@ Estado atual: o .log ja e o binlog e o diario ja pode ser lido pela rede
 (op "diario"). Falta a imagem da linha no evento, que e o que permite
 APLICAR e nao so auditar. Ver docs/REPLICACAO.md para o desenho completo,
 incluindo multi-source e failover.
+
+16.1 O caixa com o central caido  (pedido 680, decisao do dono de 07/10/2026)
+
+    Desenho ESPELHO: cada caixa e um phxsqld dono do proprio database, e o
+    central e replica das origens. O que o caixa faz com o central fora do ar:
+
+      - VENDE com o ultimo preco que recebeu do central.
+      - BAIXA o estoque LOCAL.
+      - NAO cadastra: cliente novo e produto novo so se cadastram com o
+        central NO AR. E de proposito -- assim nao existe cadastro duplicado.
+      - O central ve a loja ATRASADA ate o caixa voltar; nao ve a venda
+        enquanto ela nao chegou.
+      - A venda chega ao central INTEIRA, ou nao chega: a PARTIR DO pedido
+        676 (id de transacao no .log). Ate ele entrar, um commit entre tabelas
+        NAO atravessa o fio da replicacao como unidade (pedido 299), e o
+        central pode ver a venda pela metade.
+
+    AINDA NAO MEDIDO: nenhum tempo de atraso, volume de diario ou numero de
+    caixas simultaneos esta prometido aqui. Esses numeros virao da bancada do
+    pedido 678 (20 caixas e 1 central, derrubando o central no meio do
+    expediente) e entram neste texto so quando ela gravar resultados.json.
 
 
 17. PROBLEMAS FREQUENTES

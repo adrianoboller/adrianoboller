@@ -209,6 +209,19 @@ declarado acima, consistência conferida na origem e dentro da transação — e
 | **N** | **Por padrão, a eleição promove o menos atrasado por mais longe que ele esteja.** O teto existe e é pedido (`cluster.atraso_maximo_na_eleicao`, pedido 313): com ele, o candidato além do teto não concorre e, todos além dele, ninguém é promovido e a degradação diz por quê. Sem ele (padrão 0), a réplica mil eventos atrás vira master e o que ela não tinha se perde | `CLUSTER.md` §2.4; `tests/teto-de-atraso-na-eleicao.rs` |
 | **N** | **`replica.rs` não tem nenhum teste no `cargo test`.** O laço que faz a replicação andar é provado só por `bancada/replicacao/`, que precisa de quatro servidores e **não roda no portão** | `TESTES.md` §1 e §5.2 |
 
+### 2.4b O caixa offline (pedido 680, decisão do dono, 07/10/2026)
+
+Desenho **espelho**: cada caixa é um `phxsqld` dono do próprio database; o central é réplica das origens. Com o central caído:
+
+| | o que o contrato diz | prova / estado |
+|---|---|---|
+| **S** | O caixa **vende** com o último preço recebido do central e **baixa o estoque local** | pedido 678 (bancada) — **ainda não medido** |
+| **N** | O caixa **não cadastra**: cliente e produto novos só se cadastram com o central **no ar**, o que elimina cadastro duplicado | guarda do pedido 677 — **ainda não existe** |
+| **N** | O central **vê a loja atrasada** até o caixa voltar | pedido 679 (visão por `unir`) |
+| **S, a partir de** | A venda chega ao central **inteira ou não chega**, **a partir do** pedido 676 (id de transação no `.log`). Antes dele vale o §2.4: a transação chega parcelada | pedido 676 — **aberto** |
+
+**Nenhum número de tempo, atraso ou volume é prometido.** Eles saem da bancada do pedido 678 (20 caixas, 1 central, central derrubado no meio do expediente), que **ainda não foi medida**; entram aqui só com o `resultados.json` e a data.
+
 ### 2.5 Segurança
 
 | | não-garantia | motivo |
