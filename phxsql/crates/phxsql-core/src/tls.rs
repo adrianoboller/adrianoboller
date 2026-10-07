@@ -36,6 +36,9 @@ use crate::error::{PhxError, Result};
 use crate::hash::iguais_em_tempo_constante;
 use crate::tls13::{self, tipo, Conjunto, Protecao, Transcricao, MAX_CLARO, RESUMO};
 
+mod cliente;
+pub use cliente::{conectar, pino_de_texto, pino_em_texto, Confianca, OpcoesCliente};
+
 /// O maior `ClientHello` aceito. Um navegador com chave pos-quantica manda
 /// uns 1,8 KiB; o teto da folga de sobra sem deixar um estranho alocar 16 MiB
 /// (o maximo que o campo de 24 bits permite).
@@ -55,6 +58,7 @@ mod ext {
     pub const GRUPOS: u16 = 10;
     pub const ASSINATURAS: u16 = 13;
     pub const ALPN: u16 = 16;
+    pub const COOKIE: u16 = 44;
     pub const VERSOES: u16 = 43;
     pub const CHAVES: u16 = 51;
 }
@@ -62,26 +66,32 @@ mod ext {
 mod hs {
     pub const CLIENT_HELLO: u8 = 1;
     pub const SERVER_HELLO: u8 = 2;
+    pub const NEW_SESSION_TICKET: u8 = 4;
     pub const EXTENSOES: u8 = 8;
     pub const CERTIFICADO: u8 = 11;
+    pub const PEDIDO_DE_CERTIFICADO: u8 = 13;
     pub const VERIFICACAO: u8 = 15;
     pub const FINISHED: u8 = 20;
     pub const KEY_UPDATE: u8 = 24;
     pub const MESSAGE_HASH: u8 = 254;
 }
 
-/// Os alertas que este servidor manda (§6).
+/// Os alertas que esta casa manda (§6), dos dois lados.
 mod alerta {
     pub const CLOSE_NOTIFY: u8 = 0;
     pub const UNEXPECTED_MESSAGE: u8 = 10;
     pub const BAD_RECORD_MAC: u8 = 20;
     pub const RECORD_OVERFLOW: u8 = 22;
     pub const HANDSHAKE_FAILURE: u8 = 40;
+    pub const BAD_CERTIFICATE: u8 = 42;
+    pub const UNSUPPORTED_CERTIFICATE: u8 = 43;
     pub const ILLEGAL_PARAMETER: u8 = 47;
     pub const DECODE_ERROR: u8 = 50;
     pub const DECRYPT_ERROR: u8 = 51;
     pub const PROTOCOL_VERSION: u8 = 70;
     pub const INTERNAL_ERROR: u8 = 80;
+    pub const MISSING_EXTENSION: u8 = 109;
+    pub const UNSUPPORTED_EXTENSION: u8 = 110;
 }
 
 /// O `random` do `HelloRetryRequest`: o SHA-256 de "HelloRetryRequest"
@@ -136,6 +146,14 @@ impl Identidade {
     /// O certificado da folha, em DER.
     pub fn certificado(&self) -> &[u8] {
         &self.cadeia[0]
+    }
+
+    /// O pino desta identidade: `SHA-256` do SPKI da folha -- o que o
+    /// cliente que confia por pino ([`Confianca::Pino`]) tem de trazer.
+    pub fn pino(&self) -> Result<[u8; 32]> {
+        Ok(crate::hash::sha256(crate::x509::spki_do_certificado(
+            &self.cadeia[0],
+        )?))
     }
 }
 
@@ -464,11 +482,16 @@ impl<S: Read + Write> Registro<S> {
                     }
                     self.pendente.extend_from_slice(&c);
                 }
-                Some((tipo::ALERTA, _)) => {
-                    return falha(
+                Some((tipo::ALERTA, a)) => {
+                    // O codigo do alerta vai no erro: do lado cliente e a
+                    // unica pista de por que o servidor alheio recusou.
+                    return Err(Falha(
                         alerta::CLOSE_NOTIFY,
-                        "o cliente abortou o aperto com um alerta",
-                    )
+                        PhxError::Corrompido(format!(
+                            "TLS: o par abortou o aperto com o alerta {}",
+                            a.get(1).copied().unwrap_or(0)
+                        )),
+                    ));
                 }
                 Some(_) => return falha(alerta::UNEXPECTED_MESSAGE, "dado antes do fim do aperto"),
             }
@@ -506,6 +529,7 @@ fn alerta_da_abertura(e: &PhxError) -> u8 {
 // ------------------------------------------------------------ aperto ----
 
 /// A escolha do grupo e o segredo compartilhado.
+#[derive(Clone)]
 enum Troca {
     X25519([u8; 32]),
     P256([u8; 32]),
@@ -536,17 +560,17 @@ impl Troca {
         }
     }
 
-    fn segredo(&self, do_cliente: &[u8]) -> Aperto<[u8; 32]> {
+    fn segredo(&self, do_par: &[u8]) -> Aperto<[u8; 32]> {
         match self {
             Troca::X25519(k) => {
-                let Ok(p) = <[u8; 32]>::try_from(do_cliente) else {
+                let Ok(p) = <[u8; 32]>::try_from(do_par) else {
                     return falha(alerta::ILLEGAL_PARAMETER, "chave X25519 sem 32 bytes");
                 };
                 de_phx(alerta::ILLEGAL_PARAMETER, crate::x25519::segredo(k, &p))
             }
-            Troca::P256(k) => match crate::p256::ecdh(k, do_cliente) {
+            Troca::P256(k) => match crate::p256::ecdh(k, do_par) {
                 Some(s) => Ok(s),
-                None => falha(alerta::ILLEGAL_PARAMETER, "ponto P-256 do cliente invalido"),
+                None => falha(alerta::ILLEGAL_PARAMETER, "ponto P-256 do par invalido"),
             },
         }
     }
@@ -595,6 +619,10 @@ pub struct Negociado {
     pub grupo: u16,
     /// O conjunto de cifra do registro.
     pub conjunto: Conjunto,
+    /// Do lado CLIENTE: o pino do servidor, `SHA-256` do SPKI do certificado
+    /// que ele mostrou e cuja chave assinou o aperto. Quem conectou sem pino
+    /// (primeiro contato) le daqui o que anotar. Do lado servidor, `None`.
+    pub pino: Option<[u8; 32]>,
 }
 
 fn apertar<S: Read + Write>(
@@ -771,6 +799,7 @@ fn apertar<S: Read + Write>(
         nome: ola.nome,
         grupo,
         conjunto,
+        pino: None,
     };
     Ok((negociado, c_ap, s_ap))
 }
@@ -806,6 +835,7 @@ pub fn aceitar<S: Read + Write>(
             claro: Vec::new(),
             pos: 0,
             fechado: false,
+            cliente: false,
             negociado,
         }),
         Err(Falha(a, e)) => {
@@ -828,6 +858,10 @@ pub struct FluxoTls<S> {
     claro: Vec<u8>,
     pos: usize,
     fechado: bool,
+    /// O lado cliente aceita o `NewSessionTicket` depois do aperto (e o
+    /// descarta: retomada nao entra, plano do 572 §2.3); o servidor nunca
+    /// recebe um.
+    cliente: bool,
     negociado: Negociado,
 }
 
@@ -876,7 +910,14 @@ impl<S: Read + Write> FluxoTls<S> {
                 return falha(alerta::DECODE_ERROR, "mensagem de aperto truncada");
             }
             let n = u32::from_be_bytes([0, msgs[1], msgs[2], msgs[3]]) as usize;
-            if msgs.len() < 4 + n || n > TETO_MENSAGEM {
+            // O ticket do servidor pode passar de 1 KiB; do cliente, nada
+            // pos-aperto passa.
+            let teto = if self.cliente {
+                MAX_CLARO
+            } else {
+                TETO_MENSAGEM
+            };
+            if msgs.len() < 4 + n || n > teto {
                 // §5.1 permite partir, mas nao ha mensagem pos-aperto do
                 // cliente que precise; partir aqui e so custo de memoria.
                 return falha(
@@ -903,6 +944,9 @@ impl<S: Read + Write> FluxoTls<S> {
                         ));
                     }
                 }
+                // §4.6.1: o ticket se le e se joga fora -- quem nao retoma
+                // nao precisa guardar segredo de sessao nenhum.
+                (hs::NEW_SESSION_TICKET, _) if self.cliente => {}
                 (hs::KEY_UPDATE, _) => {
                     return falha(alerta::ILLEGAL_PARAMETER, "KeyUpdate malformado")
                 }
@@ -925,7 +969,7 @@ impl<S: Read + Write> FluxoTls<S> {
                 Some((tipo::ALERTA, a)) => {
                     self.fechado = true;
                     if a.get(1) != Some(&alerta::CLOSE_NOTIFY) {
-                        return falha(alerta::CLOSE_NOTIFY, "o cliente mandou um alerta");
+                        return falha(alerta::CLOSE_NOTIFY, "o par mandou um alerta");
                     }
                 }
                 Some((tipo::HANDSHAKE, c)) => self.pos_aperto(c)?,
@@ -976,9 +1020,11 @@ mod testes {
 
     /// Diretorio do teste que se apaga no `Drop`: o core nao tem
     /// `apoio_teste`.
-    struct Dir(std::path::PathBuf);
+    /// Tambem e o guarda dos testes do cliente (`tls::cliente::testes`):
+    /// um segundo guarda la seria um segundo `temp_dir` fora do catalogo.
+    pub(super) struct Dir(pub(super) std::path::PathBuf);
     impl Dir {
-        fn novo(nome: &str) -> Dir {
+        pub(super) fn novo(nome: &str) -> Dir {
             let d = std::env::temp_dir().join(format!("phx-tls-{nome}-{}", std::process::id()));
             let _ = std::fs::remove_dir_all(&d);
             std::fs::create_dir_all(&d).unwrap();

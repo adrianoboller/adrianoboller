@@ -2326,6 +2326,17 @@ pub struct CifraFio {
     /// So morde quando ha tunel: em claro nao ha transcricao a que amarrar.
     /// Nasce DESLIGADA -- guarda nova entra pedida, nao imposta.
     pub exigir_amarra: bool,
+    /// Aceita a SENHA (`senha`/`senha_b64` no login) vinda de fora do
+    /// loopback por fio que nao e cifrado (pedido 667).
+    ///
+    /// Nasce DESLIGADO: a tela aberta por `http://<IP da LAN>` nao tem
+    /// `crypto.subtle`, cai na reserva Base64, e quem escuta a rede da loja
+    /// decodifica a senha. Desligado, o servidor recusa a senha antes de
+    /// olhar o cadastro e a tela nem a manda. `true` e o escape ESCRITO de
+    /// quem aceita o risco (rede isolada, laboratorio) -- o mesmo molde do
+    /// `"exigir": false`. Nao alcanca o desafio-resposta, que nao leva a
+    /// senha.
+    pub senha_em_claro_pela_rede: bool,
     /// PRIVADA de proposito: quem quiser ler passa por [`CifraFio::estatica`],
     /// e o `para_json` nunca a inclui.
     chave_privada: Segredo,
@@ -2344,6 +2355,7 @@ impl std::fmt::Debug for CifraFio {
             .field("ligada", &self.ligada)
             .field("exigir", &self.exigir)
             .field("exigir_amarra", &self.exigir_amarra)
+            .field("senha_em_claro_pela_rede", &self.senha_em_claro_pela_rede)
             .field("chave_privada", &"(oculta)")
             .field("chave_privada_env", &self.chave_privada_env)
             .field("arquivo", &self.arquivo)
@@ -2368,6 +2380,7 @@ impl Default for CifraFio {
             // garantia anunciada.
             exigir: true,
             exigir_amarra: false,
+            senha_em_claro_pela_rede: false,
             chave_privada: Segredo::default(),
             chave_privada_env: String::new(),
             arquivo: PathBuf::from("chave-do-fio.hex"),
@@ -2386,6 +2399,8 @@ impl CifraFio {
             ligada: c.booleano_ou("ligada", padrao.ligada),
             exigir: c.booleano_ou("exigir", padrao.exigir),
             exigir_amarra: c.booleano_ou("exigir_amarra", padrao.exigir_amarra),
+            senha_em_claro_pela_rede: c
+                .booleano_ou("senha_em_claro_pela_rede", padrao.senha_em_claro_pela_rede),
             chave_privada,
             chave_privada_env,
             arquivo: {
@@ -2459,6 +2474,10 @@ impl CifraFio {
             ("ligada", Json::Bool(self.ligada)),
             ("exigir", Json::Bool(self.exigir)),
             ("exigir_amarra", Json::Bool(self.exigir_amarra)),
+            (
+                "senha_em_claro_pela_rede",
+                Json::Bool(self.senha_em_claro_pela_rede),
+            ),
             (
                 "arquivo",
                 Json::texto_de(self.arquivo.display().to_string()),
@@ -4904,6 +4923,7 @@ const SECOES_CONHECIDAS: [(&str, &[&str]); 17] = [
             "ligada",
             "exigir",
             "exigir_amarra",
+            "senha_em_claro_pela_rede",
             "chave_privada",
             "chave_privada_env",
             "arquivo",

@@ -2185,7 +2185,7 @@ const est = { sessao:null, usuario:null, token:"", demo:false,
               bancos:[], atual:null, aba:"estrutura", ordem:"", linhas:[],
               // Para onde este console esta falando. Vazio = o proprio
               // servidor que serviu a pagina.
-              servidor:"", portaLocal:5000, servidores:[], servidoresSeguranca:[], database:"",
+              servidor:"", portaLocal:5000, servidores:[], servidoresSeguranca:[], senhaEmClaroPelaRede:false, database:"",
               // Os textos da tela no idioma escolhido, como `/idiomas` os
               // resolveu. Vazio = o portugues que ja esta no HTML.
               textos:null,
@@ -2573,6 +2573,9 @@ async function detectarModo() {
     // tela so LE isto para avisar, nao decide nada -- quem liga o tunel e o
     // servidor da interface, pela config dele.
     est.servidoresSeguranca = saude.servidores_seguranca || [];
+    // Pedido 667: o servidor diz se aceitaria a senha em claro vinda da rede.
+    // So com o escape escrito na config dele a reserva Base64 pode sair.
+    est.senhaEmClaroPelaRede = saude.senha_em_claro_pela_rede === true;
     $("#pt").value = est.portaLocal;
     $("#campoChave").hidden = !saude.exige_chave;
     if (est.servidores.length) {
@@ -2590,7 +2593,9 @@ async function detectarModo() {
         "Servidor encontrado nesta origem. Informe o token do `config.json` e as suas credenciais.")) + "<br>"
       + (podeProvar()
           ? marcado(txt("tela.lg_desafio_resposta", "Login por **desafio‑resposta**: a senha não sai desta máquina."))
-          : marcado(txt("tela.lg_contexto_inseguro", "Contexto não seguro: o login cai em **Base64**, que esconde a senha de quem olha, não de quem captura. Use HTTPS ou um túnel.")));
+          : est.senhaEmClaroPelaRede
+            ? marcado(txt("tela.lg_contexto_inseguro", "Contexto não seguro: o login cai em **Base64**, que esconde a senha de quem olha, não de quem captura. Use HTTPS ou um túnel."))
+            : marcado(txt("tela.lg_senha_retida", "Contexto não seguro (**http://** fora deste computador): a senha **não sai** por aqui, porque quem escuta a rede a leria. Abra por **https://** (`tls: true` na seção web), por um túnel ou pelo localhost.")));
     $("#t").parentElement.hidden = false;
     // Avisa, ao escolher o destino, se a interface vai cifrar o fio ate ele.
     // Isolado do login de proposito: se algo aqui falhar, o formulario segue
@@ -2668,6 +2673,14 @@ async function entrar() {
     } else {
       // Reserva: Base64. Nao e cifra -- so tira a senha do olho e do escape
       // do JSON. O que protege de verdade e o tunel.
+      //
+      // E por isso ela so sai com o escape escrito no servidor (pedido 667):
+      // sem contexto seguro a pagina esta em http:// fora do loopback, e a
+      // recusa tem de vir ANTES de a senha ir para o fio, nao depois.
+      if (!est.senhaEmClaroPelaRede) {
+        throw new Error(txt("tela.lg_senha_retida_curta",
+          "A senha não saiu: esta página está em http:// fora deste computador. Abra por https://, por um túnel ou pelo localhost."));
+      }
       const b64 = s => btoa(unescape(encodeURIComponent(s)));
       const pedido = { usuario_b64:b64(usuario), senha_b64:b64(senha) };
       if (est.servidor) pedido.servidor = est.servidor;

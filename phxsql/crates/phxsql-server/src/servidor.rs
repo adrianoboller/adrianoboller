@@ -833,6 +833,12 @@ struct Sessao {
     /// SESSAO pelo mesmo motivo do `ip`: e propriedade da conexao, e o portao
     /// que compara o IP com uma lista precisa saber se o IP diz quem pediu.
     ip_do_proxy: bool,
+    /// O fio desta conexao e TLS nativo (pedido 572): `FioWeb::Tls` nas
+    /// portas HTTP, a `Escrita::Tls` na de dados. Mora na SESSAO pelo motivo
+    /// do `ip`, e e o que o [`Servidor::fio_cifrado`] le -- antes dele, a
+    /// conexao TLS da porta de dados contava como «em claro» para o dado
+    /// pessoal, e a da web so contava cifrada com `exigir` ligado.
+    fio_tls: bool,
 }
 
 impl Sessao {
@@ -10880,6 +10886,14 @@ impl Servidor {
                             "exige_chave",
                             Json::Bool(self.cadastro().alguem_exige_chave()),
                         ),
+                        (
+                            // Pedido 667: a tela sem `crypto.subtle` so manda
+                            // a senha pela reserva Base64 se o servidor a
+                            // aceitaria. Sem isto ela mandaria e so depois
+                            // ouviria a recusa -- com a senha ja no fio.
+                            "senha_em_claro_pela_rede",
+                            Json::Bool(self.config.cifra_fio.senha_em_claro_pela_rede),
+                        ),
                     ]),
                 );
             }
@@ -11751,7 +11765,8 @@ impl Servidor {
             .unwrap_or("")
             .trim()
             .to_string();
-        let (mut sessao, mut id_sessao) = self.sessao_do_cabecalho(&id_pedido, ip, "rest", agora);
+        let (mut sessao, mut id_sessao) =
+            self.sessao_do_cabecalho(&id_pedido, ip, "rest", fluxo.cifrado(), agora);
 
         // O pedido: o caminho manda a operacao, o corpo traz o resto, o
         // `config.json` estreita, e so entao o `despachar` decide.
@@ -11979,6 +11994,7 @@ impl Servidor {
         id_pedido: &str,
         ip: &str,
         familia: &str,
+        fio_tls: bool,
         agora: i64,
     ) -> (Sessao, String) {
         let duracao = self.config.web.sessao_ms();
@@ -11994,6 +12010,7 @@ impl Servidor {
             // que e estar em claro, e a que alguem esquecesse voltaria a
             // anunciar cifra onde nao ha.
             entrada: Entrada::Http,
+            fio_tls,
             ..Sessao::default()
         };
         let mut id_sessao = String::new();
@@ -12074,7 +12091,8 @@ impl Servidor {
             .trim()
             .to_string();
 
-        let (mut sessao, mut id_sessao) = self.sessao_do_cabecalho(&id_pedido, ip, "web", agora);
+        let (mut sessao, mut id_sessao) =
+            self.sessao_do_cabecalho(&id_pedido, ip, "web", fluxo.cifrado(), agora);
 
         // Abrir conexao para outro PhxSql, se o login pediu um servidor.
         //
@@ -12124,72 +12142,84 @@ impl Servidor {
             .ok()
             .and_then(|r| r.get(&id_sessao).cloned());
 
-        let (op, autenticado, resultado) = match (&ja_remota, servidor_remoto.is_empty()) {
-            // Sessao ja amarrada a um servidor remoto: tudo vai para la.
-            (Some(conexao), _) => self.encaminhar(conexao, &pedido.corpo, ip),
-            // Login novo pedindo servidor: abre, encaminha, e guarda se entrou.
-            (None, false) => {
-                let r = self.abrir_remoto(&servidor_remoto, &pedido.corpo, ip);
-                match r {
-                    Ok((op, valor, conexao)) => {
-                        if id_sessao.is_empty() {
-                            if let Ok(mut vivas) = self.sessoes.lock() {
-                                id_sessao = vivas.nova("", duracao, agora);
-                            }
-                        }
-                        if let Ok(mut r) = self.remotos.lock() {
-                            r.insert(id_sessao.clone(), conexao);
-                        }
-                        (op, true, Ok(valor))
-                    }
-                    Err((op, e)) => (op, false, Err(e)),
-                }
-            }
-            (None, true) => {
-                // O PROFILER olha aqui tambem. A porta da interface e HTTP e
-                // nao JSON por linha, mas o pedido e o mesmo objeto e chega
-                // pelo mesmo TCP -- deixar a web de fora faria o profiler
-                // mentir por omissao justamente para quem esta olhando por
-                // ela.
-                let marca = if self.profiler_ligado.load(Ordering::Relaxed) {
-                    let alvo = objeto_do_pedido(&pedido.corpo, &Ok(Json::Nulo));
-                    let nome_op = Json::analisar(&pedido.corpo)
-                        .ok()
-                        .map(|j| j.texto_ou("op", "?").to_string())
-                        .unwrap_or_else(|| "?".into());
-                    self.profiler.lock().ok().and_then(|mut pr| {
-                        pr.chegou(
-                            &pedido.corpo,
-                            &nome_op,
-                            sessao.login(),
-                            &alvo.database,
-                            &alvo.tabela,
-                            ip,
-                            agora,
-                        )
-                    })
-                } else {
-                    None
-                };
-                let saida = self.despachar(&pedido.corpo, &mut sessao, ip);
-                if let Some(serial) = marca {
-                    if let Ok(mut pr) = self.profiler.lock() {
-                        pr.terminou(
-                            serial,
-                            inicio.elapsed().as_millis() as u64,
-                            saida.2.is_ok(),
-                            &saida
-                                .2
-                                .as_ref()
-                                .err()
-                                .map(|e| e.to_string())
-                                .unwrap_or_default(),
-                        );
-                    }
-                }
-                saida
-            }
+        // O login que vai para OUTRO servidor nao passa pelo `op_login`
+        // daqui, mas a senha atravessou o fio ate aqui do mesmo jeito: o
+        // mesmo portao, antes de abrir ou de encaminhar (pedido 667).
+        let fio_da_senha = if ja_remota.is_some() || !servidor_remoto.is_empty() {
+            Json::analisar(&pedido.corpo)
+                .ok()
+                .and_then(|j| self.conferir_o_fio_da_senha(&j, &sessao).err())
+        } else {
+            None
         };
+        let (op, autenticado, resultado) =
+            match (fio_da_senha, &ja_remota, servidor_remoto.is_empty()) {
+                (Some(e), _, _) => ("login".to_string(), false, Err(e)),
+                // Sessao ja amarrada a um servidor remoto: tudo vai para la.
+                (None, Some(conexao), _) => self.encaminhar(conexao, &pedido.corpo, ip),
+                // Login novo pedindo servidor: abre, encaminha, e guarda se entrou.
+                (None, None, false) => {
+                    let r = self.abrir_remoto(&servidor_remoto, &pedido.corpo, ip);
+                    match r {
+                        Ok((op, valor, conexao)) => {
+                            if id_sessao.is_empty() {
+                                if let Ok(mut vivas) = self.sessoes.lock() {
+                                    id_sessao = vivas.nova("", duracao, agora);
+                                }
+                            }
+                            if let Ok(mut r) = self.remotos.lock() {
+                                r.insert(id_sessao.clone(), conexao);
+                            }
+                            (op, true, Ok(valor))
+                        }
+                        Err((op, e)) => (op, false, Err(e)),
+                    }
+                }
+                (None, None, true) => {
+                    // O PROFILER olha aqui tambem. A porta da interface e HTTP e
+                    // nao JSON por linha, mas o pedido e o mesmo objeto e chega
+                    // pelo mesmo TCP -- deixar a web de fora faria o profiler
+                    // mentir por omissao justamente para quem esta olhando por
+                    // ela.
+                    let marca = if self.profiler_ligado.load(Ordering::Relaxed) {
+                        let alvo = objeto_do_pedido(&pedido.corpo, &Ok(Json::Nulo));
+                        let nome_op = Json::analisar(&pedido.corpo)
+                            .ok()
+                            .map(|j| j.texto_ou("op", "?").to_string())
+                            .unwrap_or_else(|| "?".into());
+                        self.profiler.lock().ok().and_then(|mut pr| {
+                            pr.chegou(
+                                &pedido.corpo,
+                                &nome_op,
+                                sessao.login(),
+                                &alvo.database,
+                                &alvo.tabela,
+                                ip,
+                                agora,
+                            )
+                        })
+                    } else {
+                        None
+                    };
+                    let saida = self.despachar(&pedido.corpo, &mut sessao, ip);
+                    if let Some(serial) = marca {
+                        if let Ok(mut pr) = self.profiler.lock() {
+                            pr.terminou(
+                                serial,
+                                inicio.elapsed().as_millis() as u64,
+                                saida.2.is_ok(),
+                                &saida
+                                    .2
+                                    .as_ref()
+                                    .err()
+                                    .map(|e| e.to_string())
+                                    .unwrap_or_default(),
+                            );
+                        }
+                    }
+                    saida
+                }
+            };
         let remota = ja_remota.is_some() || !servidor_remoto.is_empty();
         let ms = inicio.elapsed().as_millis() as u64;
         if let Some(a) = &atividade {
@@ -12386,6 +12416,7 @@ impl Servidor {
             ligacao: id_ligacao,
             ip: ip.clone(),
             entrada: Entrada::Dados,
+            fio_tls: saida.cifrado(),
             ..Sessao::default()
         };
         // Sai do registro por qualquer caminho -- inclusive os `return` do
@@ -13651,6 +13682,10 @@ impl Servidor {
         // Todo caminho de erro devolve a MESMA mensagem, para nao dizer se o
         // que falhou foi o login, a senha ou o desafio.
         let recusa = || PhxError::Autorizacao(self.msg("erro.credencial_invalida", &[]));
+
+        // Antes do cadastro e do PBKDF2: e politica do fio, nao «senha
+        // errada», e por isso nao diz nada sobre o usuario (pedido 667).
+        self.conferir_o_fio_da_senha(p, sessao)?;
 
         // Amarracao da credencial ao canal (channel binding), o gap da §10 da
         // `docs/CIFRA-DO-FIO.md`. Quem pede `amarrar_canal` prende a prova a
@@ -30592,10 +30627,40 @@ impl Servidor {
     ///   rotina interna recusar a si mesma.
     fn fio_cifrado(&self, sessao: &Sessao) -> bool {
         match sessao.entrada {
-            Entrada::Dados => sessao.transcricao_do_fio.is_some(),
-            Entrada::Http => self.config.cifra_fio.exigir,
+            Entrada::Dados => sessao.transcricao_do_fio.is_some() || sessao.fio_tls,
+            Entrada::Http => sessao.fio_tls || self.config.cifra_fio.exigir,
             Entrada::SemFio => true,
         }
+    }
+
+    /// A SENHA pode atravessar o fio desta sessao? (pedido 667)
+    ///
+    /// So quando o pedido traz `senha`/`senha_b64` -- o desafio-resposta
+    /// nao leva a senha e passa sempre. Passa quando o fio e cifrado (a
+    /// MESMA pergunta do dado pessoal, pelo mesmo [`Self::fio_cifrado`]:
+    /// duas ideias de «cifrado» divergiriam no primeiro conserto), quando a
+    /// origem e o loopback (a senha nao sai da maquina), ou com o escape
+    /// escrito `cifra_fio.senha_em_claro_pela_rede`.
+    ///
+    /// UM portao para os dois caminhos que recebem a senha: o `op_login`
+    /// (local, qualquer porta) e o login da web que vai para OUTRO servidor
+    /// -- este nao passa pelo `op_login` daqui, e a senha ja atravessou o
+    /// fio ate aqui do mesmo jeito.
+    fn conferir_o_fio_da_senha(&self, p: &Json, sessao: &Sessao) -> Result<()> {
+        if p.campo("senha").is_none() && p.campo("senha_b64").is_none() {
+            return Ok(());
+        }
+        let loopback = sessao
+            .ip
+            .trim()
+            .parse::<std::net::IpAddr>()
+            .is_ok_and(|ip| ip.to_canonical().is_loopback());
+        if self.config.cifra_fio.senha_em_claro_pela_rede || loopback || self.fio_cifrado(sessao) {
+            return Ok(());
+        }
+        Err(PhxError::Autorizacao(
+            self.msg("erro.senha_em_claro_pela_rede", &[]),
+        ))
     }
 
     /// Os eventos do diario de `t` a partir de `desde`, prontos para o fio --
@@ -45482,6 +45547,96 @@ mod testes_cadastro_de_usuarios {
         c.jobs = dir.join("jobs.json");
         c.cifra_fio.exigir_amarra = exigir_amarra;
         (Servidor::novo(c).unwrap(), caminho, dir)
+    }
+
+    /// Pedido 667, pelo `op_login` direto: a senha em claro de fora do
+    /// loopback se recusa ANTES do cadastro, e cada fio protegido continua
+    /// entrando. O servidor nasce com `exigir: false` -- com a exigencia
+    /// ligada a porta HTTP em claro nem chega ao login.
+    #[test]
+    fn senha_em_claro_de_fora_do_loopback_se_recusa_antes_do_cadastro() {
+        let (s0, caminho, _g) = servidor_com_cadastro("667");
+        drop(s0);
+        let mut c = Config::ler(&caminho).unwrap();
+        c.log_acessos = _g.join("acessos.log");
+        c.blacklist = _g.join("blacklist.json");
+        c.dblink = _g.join("dblink.json");
+        c.jobs = _g.join("jobs.json");
+        c.cifra_fio.exigir = false;
+        let s = Servidor::novo(c.clone()).unwrap();
+        let b64 = phxsql_core::base64::codificar(SENHA_DA_ANA.as_bytes());
+        let com_senha_b64 = format!(r#"{{"usuario":"ana","senha_b64":"{b64}"}}"#);
+        let com_senha = format!(r#"{{"usuario":"ana","senha":"{SENHA_DA_ANA}"}}"#);
+        let tentar = |s: &Servidor, corpo: &str, ses: Sessao| {
+            let mut ses = ses;
+            s.op_login(&pedido(corpo), &mut ses)
+        };
+        let web = |ip: &str, fio_tls: bool| Sessao {
+            ip: ip.into(),
+            entrada: Entrada::Http,
+            fio_tls,
+            ..Sessao::default()
+        };
+        let recusa = |r: Result<Json>| {
+            let e = r.expect_err("a senha em claro de fora entrou").to_string();
+            assert!(e.contains("de fora deste computador, recusada"), "{e}");
+        };
+
+        // A web em claro pela LAN, nas duas formas da senha.
+        recusa(tentar(&s, &com_senha_b64, web("192.168.0.20", false)));
+        recusa(tentar(&s, &com_senha, web("192.168.0.20", false)));
+        // Antes do cadastro: quem nao existe recebe a MESMA recusa.
+        recusa(tentar(
+            &s,
+            r#"{"usuario":"ninguem","senha":"x"}"#,
+            web("10.1.2.3", false),
+        ));
+        // A porta de dados em claro, de fora, tambem.
+        let dados = |ip: &str| Sessao {
+            ip: ip.into(),
+            entrada: Entrada::Dados,
+            ..Sessao::default()
+        };
+        recusa(tentar(&s, &com_senha, dados("10.1.2.3")));
+
+        // Entram: o loopback (nas tres grafias), o TLS nativo, o tunel, o
+        // TLS da porta de dados e a sessao sem fio.
+        for ip in ["127.0.0.1", "::1", "::ffff:127.0.0.1"] {
+            tentar(&s, &com_senha_b64, web(ip, false)).expect(ip);
+        }
+        tentar(&s, &com_senha_b64, web("192.168.0.20", true)).expect("web TLS");
+        let mut tunel = dados("10.1.2.3");
+        tunel.transcricao_do_fio = Some([7; 32]);
+        tentar(&s, &com_senha, tunel).expect("tunel");
+        let mut tls = dados("10.1.2.3");
+        tls.fio_tls = true;
+        tentar(&s, &com_senha, tls).expect("TLS da porta de dados");
+        tentar(&s, &com_senha, Sessao::default()).expect("sem fio");
+
+        // O desafio-resposta nao leva a senha: entra de fora em claro.
+        let dk = phxsql_core::senha::derivado_do_hash(
+            &s.cadastro().por_login("ana").unwrap().senha_hash,
+        )
+        .unwrap();
+        let mut ses = web("192.168.0.20", false);
+        let d = s
+            .op_desafio(&pedido(r#"{"usuario":"ana"}"#), &mut ses)
+            .unwrap();
+        let nonce = d.texto_ou("nonce", "").to_string();
+        let nc = phxsql_core::desafio::nonce();
+        let prova = phxsql_core::desafio::calcular_prova(&dk, &nonce, &nc, "ana", None);
+        s.op_login(
+            &pedido(&format!(
+                r#"{{"usuario":"ana","prova":"{prova}","nonce_cliente":"{nc}"}}"#
+            )),
+            &mut ses,
+        )
+        .expect("o desafio-resposta de fora nao leva senha e tinha de entrar");
+
+        // O escape escrito: o comportamento velho, por escolha.
+        c.cifra_fio.senha_em_claro_pela_rede = true;
+        let s = Servidor::novo(c).unwrap();
+        tentar(&s, &com_senha_b64, web("192.168.0.20", false)).expect("o escape nao valeu");
     }
 
     fn pedido(txt: &str) -> Json {

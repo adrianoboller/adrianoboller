@@ -25342,4 +25342,135 @@ fn anotar(""",
             "sequencia::testes::o_proximo_sai_durado_e_a_reabertura_continua_de_onde_parou",
         ],
     },
+    {
+        "id": "tls-cliente-pino-ignorado",
+        "titulo": "O cliente TLS conecta com pino e não confere o SPKI do servidor contra ele (pedido 572, T6b-1)",
+        "porque": (
+            "pedido 572 T6b-1, 07/10/2026: sem a conferencia, o pino vira enfeite e quem se poe no meio com outra chave passa."
+        ),
+        "arquivo": "crates/phxsql-core/src/tls/cliente.rs",
+        "trecho": """    if let Confianca::Pino(esperado) = op.confianca {
+""",
+        "troca": """    // DEFEITO REPOSTO (572): o pino nao se confere.
+    if let (true, Confianca::Pino(esperado)) = (false, op.confianca) {
+""",
+        "pacote": "phxsql-core",
+        "alvo": ["--lib"],
+        "caem": [
+            "tls::cliente::testes::o_pino_certo_passa_e_o_errado_recusa_com_bad_certificate",
+        ],
+        "seguem": [
+            "tls::cliente::testes::o_traco_da_secao_3_da_rfc_8448_byte_a_byte",
+        ],
+    },
+    {
+        "id": "tls-cliente-certificate-verify-sem-conferir",
+        "titulo": "O cliente TLS não confere a assinatura do `CertificateVerify` contra a chave do certificado (pedido 572, T6b-1)",
+        "porque": (
+            "pedido 572 T6b-1, 07/10/2026: sem pino, e a unica prova de que o servidor tem a privada do certificado que mostrou; o pino anotado no primeiro contato sairia de uma chave que ninguem provou ter."
+        ),
+        "arquivo": "crates/phxsql-core/src/tls/cliente.rs",
+        "trecho": """    conferir(
+        alg,
+""",
+        "troca": """    // DEFEITO REPOSTO (572): a assinatura nao se confere.
+    let _ = conferir;
+    (|_: u16, _: &[u8], _: &[u8], _: &[u8]| -> Aperto<()> { Ok(()) })(
+        alg,
+""",
+        "pacote": "phxsql-core",
+        "alvo": ["--lib"],
+        "caem": [
+            "tls::cliente::testes::certificado_de_uma_chave_assinado_por_outra_recusa",
+            "tls::cliente::testes::o_certificado_rsa_se_recusa_nomeando_o_algoritmo",
+        ],
+        "seguem": [
+            "tls::cliente::testes::conversa_com_o_servidor_desta_casa_pelo_pino",
+        ],
+    },
+    {
+        "id": "tls-cliente-finished-do-servidor-sem-conferir",
+        "titulo": "O cliente TLS não confere o `Finished` do servidor (pedido 572, T6b-1)",
+        "porque": (
+            "pedido 572 T6b-1, 07/10/2026: o Finished e o que amarra a transcricao inteira a chave do aperto; sem ele, mensagem trocada no caminho passa."
+        ),
+        "arquivo": "crates/phxsql-core/src/tls/cliente.rs",
+        "trecho": """    if !iguais_em_tempo_constante(&m[4..], &esperado) {
+        return falha(alerta::DECRYPT_ERROR, "o Finished do servidor nao confere");
+""",
+        "troca": """    // DEFEITO REPOSTO (572): o Finished do servidor nao se confere.
+    if false && !iguais_em_tempo_constante(&m[4..], &esperado) {
+        return falha(alerta::DECRYPT_ERROR, "o Finished do servidor nao confere");
+""",
+        "pacote": "phxsql-core",
+        "alvo": ["--lib"],
+        "caem": [
+            "tls::cliente::testes::finished_do_servidor_adulterado_recusa",
+        ],
+        "seguem": [
+            "tls::cliente::testes::o_traco_da_secao_3_da_rfc_8448_byte_a_byte",
+        ],
+    },
+    {
+        "id": "tls-cliente-hrr-sem-eco-do-cookie",
+        "titulo": "O cliente TLS não ecoa o `cookie` do `HelloRetryRequest` no segundo `ClientHello` (pedido 572, T6b-1)",
+        "porque": (
+            "pedido 572 T6b-1, 07/10/2026: a RFC 8446 4.2.2 obriga o eco; o servidor sem estado que manda cookie recusa o segundo ClientHello sem ele, e o traco da secao 5 da RFC 8448 deixa de bater."
+        ),
+        "arquivo": "crates/phxsql-core/src/tls/cliente.rs",
+        "trecho": """        let (ch2, t2) = oferta.segundo(grupo, sh.cookie.as_deref());
+""",
+        "troca": """        // DEFEITO REPOSTO (572): o cookie nao volta.
+        let (ch2, t2) = oferta.segundo(grupo, None);
+""",
+        "pacote": "phxsql-core",
+        "alvo": ["--lib"],
+        "caem": [
+            "tls::cliente::testes::o_hrr_da_secao_5_com_eco_do_cookie_byte_a_byte",
+        ],
+        "seguem": [
+            "tls::cliente::testes::o_traco_da_secao_3_da_rfc_8448_byte_a_byte",
+        ],
+    },
+    {
+        "id": "senha-em-claro-de-fora-do-loopback",
+        "titulo": "O `op_login` aceita `senha`/`senha_b64` de fora do loopback por fio sem cifra (pedido 667)",
+        "porque": (
+            "pedido 667, 07/10/2026: a tela aberta por http:// na LAN cai na reserva Base64 e quem escuta a rede decodifica a senha; o portao recusa antes do cadastro, com o escape escrito na config."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        self.conferir_o_fio_da_senha(p, sessao)?;
+""",
+        "troca": """        // DEFEITO REPOSTO (667): a senha em claro de fora entra.
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_cadastro_de_usuarios::senha_em_claro_de_fora_do_loopback_se_recusa_antes_do_cadastro",
+        ],
+        "seguem": [
+            "servidor::testes_cadastro_de_usuarios::cria_grava_no_arquivo_e_o_login_novo_ja_entra",
+        ],
+    },
+    {
+        "id": "senha-em-claro-pelo-login-remoto-da-web",
+        "titulo": "O login da web que vai para OUTRO servidor leva a senha em claro de fora do loopback sem passar pelo portao (pedido 667)",
+        "porque": (
+            "pedido 667, 07/10/2026: o login com servidor no pedido nao passa pelo op_login daqui, e a senha ja atravessou o fio ate aqui; e o caminho irmao do portao."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """                .and_then(|j| self.conferir_o_fio_da_senha(&j, &sessao).err())
+""",
+        "troca": """                // DEFEITO REPOSTO (667): o login remoto sem o portao.
+                .and_then(|_j| None)
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "senha-fora-do-loopback"],
+        "caem": [
+            "senha_em_claro_de_fora_do_loopback_se_recusa_pelos_dois_caminhos",
+        ],
+        "seguem": [
+            "com_o_escape_escrito_a_senha_de_fora_entra",
+        ],
+    },
 ]
