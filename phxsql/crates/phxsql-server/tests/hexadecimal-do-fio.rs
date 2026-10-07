@@ -33,7 +33,7 @@ use comum::DirTemp;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use phxsql_core::hash::para_hex;
@@ -226,27 +226,41 @@ fn a_prova_do_pulso_que_corta_um_caractere_e_recusada_com_resposta() {
     );
 }
 
+/// Quantos pulsos o par recebeu em CADA conexao, na ordem em que elas
+/// chegaram.
+type PorConexao = Arc<Mutex<Vec<usize>>>;
+
 /// Um par no endereco do `noB` que responde a TODO pulso com a `prova` que
-/// corta um caractere. Devolve a porta e quantos pulsos ele recebeu -- o
-/// canario de que o laco do `noA` continua chegando nele.
-fn par_que_responde_prova_torta() -> (u16, Arc<AtomicUsize>) {
+/// corta um caractere. Devolve a porta, quantos pulsos ele recebeu -- o
+/// canario de que o laco do `noA` continua chegando nele -- e quantos
+/// chegaram por CONEXAO, que e o que separa a thread viva da ressuscitada.
+fn par_que_responde_prova_torta() -> (u16, Arc<AtomicUsize>, PorConexao) {
     let ouvinte = TcpListener::bind("127.0.0.1:0").unwrap();
     let porta = ouvinte.local_addr().unwrap().port();
     let vistos = Arc::new(AtomicUsize::new(0));
     let contador = Arc::clone(&vistos);
+    let por_conexao: PorConexao = Arc::new(Mutex::new(Vec::new()));
+    let conexoes = Arc::clone(&por_conexao);
     std::thread::spawn(move || {
         for conexao in ouvinte.incoming() {
             let Ok(conexao) = conexao else { return };
             let contador = Arc::clone(&contador);
+            let conexoes = Arc::clone(&conexoes);
             std::thread::spawn(move || {
                 let Ok(mut escrita) = conexao.try_clone() else {
                     return;
+                };
+                let esta = {
+                    let mut c = conexoes.lock().unwrap_or_else(|e| e.into_inner());
+                    c.push(0);
+                    c.len() - 1
                 };
                 for linha in BufReader::new(conexao).lines() {
                     if linha.is_err() {
                         return;
                     }
                     contador.fetch_add(1, Ordering::SeqCst);
+                    conexoes.lock().unwrap_or_else(|e| e.into_inner())[esta] += 1;
                     let resposta = format!(
                         r#"{{"ok":true,"op":"cluster_pulso","resultado":{{"id":"noB","papel":"replica","epoca":0,"posicao":0,"incompleta":false,"prioridade":0,"para":"noA","quando":{quando},"nonce":"{nonce}","prova":"{prova}"}}}}"#,
                         quando = phxsql_server::agora_ms(),
@@ -260,31 +274,48 @@ fn par_que_responde_prova_torta() -> (u16, Arc<AtomicUsize>) {
             });
         }
     });
-    (porta, vistos)
+    (porta, vistos, por_conexao)
 }
 
 /// **O irmao do pedido: a RESPOSTA do pulso.** O laco do pulso do `noA`
 /// confere a resposta do par pelo mesmo `conferir_identidade`, e o mesmo
 /// `de_hex`.
 ///
-/// Com o `de_hex` velho, medido: a thread de pulso do `noA` para o `noB`
-/// morre no primeiro pulso e NUNCA mais sobe -- ela so se desmarca do
-/// `pulsando` quando sai pelo caminho normal, e o supervisor nao sobe outra
-/// para um id que ainda esta marcado. O par recebe 1 pulso e mais nada.
+/// Com o `de_hex` velho, medido em 2026-09: a thread de pulso do `noA` para
+/// o `noB` morre no primeiro pulso e NUNCA mais sobe. Desde o pedido 452 o
+/// supervisor a RESSUSCITA (o `Drop` da `GuardaDoPulso` desmarca e o recuo
+/// comeca em 1 s), e o total de pulsos em 4,5 s deixou de denunciar: medido
+/// com o defeito reposto em 07/10/2026, o total passava o `>= 3` da thread
+/// viva. O veredito «o par continua sendo pulsado» passou a ser do 452.
+///
+/// O que continua sendo deste teste e a CAUSA: a thread que sobrevive a
+/// resposta torta segue na MESMA conexao (o `pulsar` so sai no primeiro erro
+/// de E/S, e a recusa da prova nao e erro de E/S); a que morre e substituida
+/// abre outra conexao a cada volta. Com o defeito, cada conexao leva 1 pulso.
 #[test]
 fn a_prova_torta_na_resposta_nao_mata_o_laco_do_pulso() {
     let base = DirTemp::novo("hex-pulso-resposta");
-    let (porta_b, vistos) = par_que_responde_prova_torta();
+    let (porta_b, vistos, por_conexao) = par_que_responde_prova_torta();
     let (_a, _porta) = subir_no_a(&base, porta_b);
 
     // pulso_s = 1: em 4,5 s o laco vivo pulsa quatro vezes ou mais.
     std::thread::sleep(Duration::from_millis(4_500));
     let recebidos = vistos.load(Ordering::SeqCst);
+    let conexoes = por_conexao
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone();
+    let na_mais_longa = conexoes.iter().copied().max().unwrap_or(0);
+    assert!(
+        na_mais_longa >= 3,
+        "a conexao mais longa do noA levou {na_mais_longa} pulso(s) em 4,5 s \
+         com pulso_s = 1 (por conexao: {conexoes:?}, {recebidos} no total): a \
+         thread de pulso morreu no de_hex da RESPOSTA, e quem pulsa e a que o \
+         supervisor sobe de novo depois do recuo do 452"
+    );
     assert!(
         recebidos >= 3,
-        "o noA pulsou o noB {recebidos} vez(es) em 4,5 s com pulso_s = 1: a \
-         thread de pulso morreu no de_hex da RESPOSTA e o supervisor nao sobe \
-         outra para um id que continua marcado"
+        "o noA pulsou o noB {recebidos} vez(es) em 4,5 s com pulso_s = 1"
     );
 }
 

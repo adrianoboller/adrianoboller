@@ -565,6 +565,7 @@ pub mod falha_de_teste {
         let i = a
             .iter()
             .position(|(p, o, _)| *o == onde && alvo.starts_with(p.as_str()))?;
+        olhar_no_disparo(&a[i].0);
         a[i].2 -= 1;
         if a[i].2 == 0 {
             a.remove(i);
@@ -579,6 +580,124 @@ pub mod falha_de_teste {
             | Onde::GravacaoDaSequencia => 28,
             Onde::RemocaoDeVolume => 16,
         }))
+    }
+
+    /// Quem olha um nome NO INSTANTE em que a arma de `arma` dispara --
+    /// pedido 670. A prova que so confere o disco depois do erro mede o
+    /// estado DEPOIS da faxina, e uma faxina que apaga tudo no erro esconde o
+    /// que estava la na hora da queda. A queda real e esse instante.
+    #[cfg(debug_assertions)]
+    static VIGIAS: std::sync::Mutex<Vec<Vigia>> = std::sync::Mutex::new(Vec::new());
+
+    /// A arma (prefixo, absoluto), o nome olhado e um `bool` por disparo.
+    #[cfg(debug_assertions)]
+    type Vigia = (String, std::path::PathBuf, Vec<bool>);
+
+    /// A cada disparo da arma `arma`, anota se `olhar` existe (pelo `lstat`).
+    pub fn vigiar(arma: &Path, olhar: &Path) {
+        #[cfg(debug_assertions)]
+        {
+            let chave = super::absoluto(arma).to_string_lossy().into_owned();
+            let mut v = super::trava(&VIGIAS);
+            v.retain(|(a, _, _)| a != &chave);
+            v.push((chave, olhar.to_path_buf(), Vec::new()));
+        }
+        #[cfg(not(debug_assertions))]
+        let _ = (arma, olhar);
+    }
+
+    /// O que [`vigiar`] viu, um `bool` por disparo, e tira o vigia.
+    pub fn visto(arma: &Path) -> Vec<bool> {
+        #[cfg(debug_assertions)]
+        {
+            let chave = super::absoluto(arma).to_string_lossy().into_owned();
+            let mut v = super::trava(&VIGIAS);
+            let i = v.iter().position(|(a, _, _)| a == &chave);
+            i.map(|i| v.remove(i).2).unwrap_or_default()
+        }
+        #[cfg(not(debug_assertions))]
+        {
+            let _ = arma;
+            Vec::new()
+        }
+    }
+
+    #[cfg(debug_assertions)]
+    fn olhar_no_disparo(arma: &str) {
+        let mut v = super::trava(&VIGIAS);
+        for (a, olhar, vistos) in v.iter_mut() {
+            if a == arma {
+                vistos.push(std::fs::symlink_metadata(olhar).is_ok());
+            }
+        }
+    }
+
+    /// As escritas de um arquivo, uma por chamada -- pedido 671. «Saem na
+    /// MESMA escrita» e uma afirmacao sobre CHAMADAS, e o disco depois dela
+    /// nao a distingue de duas escritas seguidas: so a queda no meio
+    /// distinguiria, e a queda no meio de um `pwrite` nao se forja por teste.
+    /// Contar as chamadas, com os bytes de cada uma, prova a mesma coisa.
+    #[cfg(debug_assertions)]
+    static ESCRITAS: std::sync::Mutex<Vec<Anotadas>> = std::sync::Mutex::new(Vec::new());
+
+    /// O arquivo (absoluto) e cada escrita nele, `(offset, bytes)`.
+    #[cfg(debug_assertions)]
+    type Anotadas = (String, Vec<(u64, Vec<u8>)>);
+
+    #[cfg(debug_assertions)]
+    static ANOTANDO: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+    /// Comeca a anotar as escritas do arquivo `arquivo` (caminho exato).
+    pub fn anotar_escritas(arquivo: &Path) {
+        #[cfg(debug_assertions)]
+        {
+            let chave = super::absoluto(arquivo).to_string_lossy().into_owned();
+            let mut e = super::trava(&ESCRITAS);
+            e.retain(|(p, _)| p != &chave);
+            e.push((chave, Vec::new()));
+            ANOTANDO.store(e.len(), std::sync::atomic::Ordering::Release);
+        }
+        #[cfg(not(debug_assertions))]
+        let _ = arquivo;
+    }
+
+    /// As escritas anotadas de `arquivo`, `(offset, bytes)` na ordem, e para
+    /// de anotar.
+    pub fn escritas(arquivo: &Path) -> Vec<(u64, Vec<u8>)> {
+        #[cfg(debug_assertions)]
+        {
+            let chave = super::absoluto(arquivo).to_string_lossy().into_owned();
+            let mut e = super::trava(&ESCRITAS);
+            let r = e
+                .iter()
+                .position(|(p, _)| p == &chave)
+                .map(|i| e.remove(i).1)
+                .unwrap_or_default();
+            ANOTANDO.store(e.len(), std::sync::atomic::Ordering::Release);
+            r
+        }
+        #[cfg(not(debug_assertions))]
+        {
+            let _ = arquivo;
+            Vec::new()
+        }
+    }
+
+    /// Ha alguem anotando? A pergunta vem ANTES de montar o caminho, para a
+    /// escrita sem vigia nao pagar nem a alocacao dele.
+    #[cfg(debug_assertions)]
+    pub(crate) fn anotando() -> bool {
+        ANOTANDO.load(std::sync::atomic::Ordering::Acquire) != 0
+    }
+
+    /// O ponto de passagem das escritas, no caminho de producao.
+    #[cfg(debug_assertions)]
+    pub(crate) fn anotar(arquivo: &Path, offset: u64, bytes: &[u8]) {
+        let alvo = super::absoluto(arquivo).to_string_lossy().into_owned();
+        let mut e = super::trava(&ESCRITAS);
+        if let Some((_, v)) = e.iter_mut().find(|(p, _)| p == &alvo) {
+            v.push((offset, bytes.to_vec()));
+        }
     }
 }
 

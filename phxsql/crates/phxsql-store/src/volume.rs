@@ -949,6 +949,10 @@ impl Volumes {
     }
 
     pub fn escrever(&mut self, volume: u32, offset: u64, buf: &[u8]) -> Result<()> {
+        #[cfg(debug_assertions)]
+        if crate::sincronia::falha_de_teste::anotando() {
+            crate::sincronia::falha_de_teste::anotar(&self.caminho(volume), offset, buf);
+        }
         let f = self.arquivo(volume, true)?;
         f.seek(SeekFrom::Start(offset))?;
         f.write_all(buf)?;

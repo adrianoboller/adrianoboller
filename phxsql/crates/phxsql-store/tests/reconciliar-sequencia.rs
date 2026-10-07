@@ -195,6 +195,75 @@ fn sequencia_nao_repete_com_cabecalho_perdido() {
     assert_eq!(t.registros(), 4);
 }
 
+/// **Pedido 671: o contador e o `slot_count` saem na MESMA escrita.**
+///
+/// A prova de cima repoe o cabecalho INTEIRO de uma vez, e por isso so prova
+/// que o contador mora no cabecalho: com o contador num `pwrite` separado, o
+/// disco depois das duas escritas e identico, e ela fica verde. O estado que
+/// repete numero -- `slot_count` duravel a frente do contador -- so existe
+/// ENTRE as duas escritas, e a queda no meio de um `pwrite` nao se forja.
+/// Entao a prova conta as CHAMADAS de escrita no `.reg` durante a quarta
+/// insercao (`falha_de_teste::anotar_escritas`): toda escrita que toca o
+/// `slot_count` (bytes 20..28) ou o contador (36..44) tem de levar os DOIS
+/// inteiros, e com os valores desta insercao -- `slot_count` 4 e contador 5.
+///
+/// # Prova real
+///
+/// Com o `gravar_contadores` em tres `escrever` (`..36`, `36..44`, `44..`),
+/// medido em 07/10/2026: a prova de cima VERDE, esta VERMELHA.
+#[test]
+fn contador_e_slot_count_saem_na_mesma_escrita() {
+    use phxsql_store::sincronia::falha_de_teste::{anotar_escritas, escritas};
+    let d = comum::DirTemp::novo("contador-mesma-escrita");
+    let mut t = Table::criar(&d, esquema_sem_unico()).unwrap();
+    for i in 1..=3 {
+        t.inserir(&[Value::Null, Value::Str(format!("n{i}"))])
+            .unwrap();
+    }
+    t.sincronizar().unwrap();
+    let reg = d.join("pedidos.reg");
+    anotar_escritas(&reg);
+    t.inserir(&[Value::Null, Value::Str("quarta".into())])
+        .unwrap();
+    let todas = escritas(&reg);
+    drop(t);
+
+    let toca = |off: u64, n: usize, ini: u64, fim: u64| off < fim && off + n as u64 > ini;
+    let cobre = |off: u64, n: usize, ini: u64, fim: u64| off <= ini && off + n as u64 >= fim;
+    let mut com_os_dois = 0;
+    for (off, bytes) in &todas {
+        let n = bytes.len();
+        if !(toca(*off, n, 20, 28) || toca(*off, n, 36, 44)) {
+            continue;
+        }
+        assert!(
+            cobre(*off, n, 20, 28) && cobre(*off, n, 36, 44),
+            "uma escrita de {n} bytes no offset {off} levou so um dos dois \
+             (slot_count 20..28, contador 36..44): a queda entre ela e a outra \
+             deixa o slot_count duravel a frente do contador, e o numero repete. \
+             Escritas: {:?}",
+            todas.iter().map(|(o, b)| (*o, b.len())).collect::<Vec<_>>()
+        );
+        let u64_em = |i: u64| {
+            let i = (i - off) as usize;
+            u64::from_le_bytes(bytes[i..i + 8].try_into().unwrap())
+        };
+        assert_eq!(u64_em(20), 4, "o slot_count desta insercao");
+        assert_eq!(
+            u64_em(36),
+            5,
+            "o contador que vai junto do slot_count 4 tem de estar a frente do id 4"
+        );
+        com_os_dois += 1;
+    }
+    assert!(
+        com_os_dois >= 1,
+        "nenhuma escrita levou o slot_count: a anotacao nao viu o cabecalho \
+         ({} escritas)",
+        todas.len()
+    );
+}
+
 /// Tabela sem coluna `Sequence`: reconciliar e no-op, devolve 0 e nao explode.
 #[test]
 fn sem_sequencia_reconciliar_e_zero() {

@@ -271,14 +271,23 @@ pub fn recriar_temporario(caminho: &Path) -> std::io::Result<File> {
 }
 
 /// O temporario de [`recriar_temporario`] continua o MESMO no nome (pedido
-/// 661)? `escrito` e o `fstat` do descritor depois do ultimo byte; `nome`, o
-/// `lstat` de agora. Mesmo inode, regular, um nome so, mesmo tamanho e mesma
-/// data -- quem trocou o nome na janela sem trava, ou pendurou um link
-/// fisico nele, ou escreveu por ele, nao passa.
-pub fn ainda_o_mesmo_temporario(escrito: &std::fs::Metadata, nome: &std::fs::Metadata) -> bool {
+/// 661)? `escrito` e o `fstat` do descritor depois do ultimo byte; o nome se
+/// le aqui, pelo `lstat` de agora. Mesmo inode, regular, um nome so, mesmo
+/// tamanho e mesma data -- quem trocou o nome na janela sem trava, ou
+/// pendurou um link fisico nele, ou escreveu por ele, nao passa.
+///
+/// E o nome que NAO SE LE (sumiu, ou o `lstat` recusou) tambem nao passa --
+/// pedido 672. A leitura mora aqui, e nao no chamador, porque «nao consegui
+/// olhar» e parte da mesma decisao: o `conferir_novos` seguia em frente
+/// (`continue`) nesse caso, e o `.novo` do espelho apagado entre as fases
+/// deixava a FASE B responder Ok com o `.bkp` velho atras do `.reg` novo.
+pub fn ainda_o_mesmo_temporario(escrito: &std::fs::Metadata, caminho: &Path) -> bool {
+    let Ok(nome) = std::fs::symlink_metadata(caminho) else {
+        return false;
+    };
     nome.file_type().is_file()
-        && mesmo_arquivo(escrito, nome)
-        && um_nome_so(nome)
+        && mesmo_arquivo(escrito, &nome)
+        && um_nome_so(&nome)
         && escrito.len() == nome.len()
         && escrito.modified().ok() == nome.modified().ok()
 }
