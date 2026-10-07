@@ -1,5 +1,5 @@
 {
-  "quando": "2026-10-07 11:04",
+  "quando": "2026-10-07 11:53",
   "mais_antigo": "2026-09-16 15:25",
   "guardas": [
     {
@@ -3721,6 +3721,152 @@
       "quando": "2026-10-07 10:48"
     },
     {
+      "id": "expurgar-trilha-fora-do-ops-do-no",
+      "titulo": "A réplica somente-leitura não expurga a própria trilha `.lgpd`",
+      "veredito": "PROVADA",
+      "segundos": 82.7,
+      "notas": [],
+      "quando": "2026-10-07 11:33"
+    },
+    {
+      "id": "veneno-dito-uma-vez-por-trava",
+      "titulo": "O segundo pânico com as transações na mão passa calado e sem saneamento",
+      "veredito": "PROVADA",
+      "segundos": 81.2,
+      "notas": [],
+      "quando": "2026-10-07 11:33"
+    },
+    {
+      "id": "commit-ignora-o-prazo",
+      "titulo": "o COMMIT depois do prazo da transação grava a lista inteira",
+      "veredito": "PROVADA",
+      "segundos": 83.5,
+      "notas": [],
+      "quando": "2026-10-07 11:33"
+    },
+    {
+      "id": "old-do-before-update-pelo-disco",
+      "titulo": "dentro da transação o OLD do BEFORE UPDATE é a linha do disco, e o delta de estoque sai -4 onde é -2",
+      "veredito": "PROVADA",
+      "segundos": 84.18,
+      "notas": [],
+      "quando": "2026-10-07 11:33"
+    },
+    {
+      "id": "old-do-upsert-pelo-disco",
+      "titulo": "o upsert que vira alteração na transação dá ao BEFORE UPDATE o OLD do disco",
+      "veredito": "PROVADA",
+      "segundos": 83.74,
+      "notas": [],
+      "quando": "2026-10-07 11:33"
+    },
+    {
+      "id": "old-do-before-delete-pelo-disco",
+      "titulo": "dentro da transação o BEFORE DELETE vê a linha do disco, e a nascida na transação nem dispara",
+      "veredito": "PROVADA",
+      "segundos": 86.79,
+      "notas": [],
+      "quando": "2026-10-07 11:33"
+    },
+    {
+      "id": "elo-do-empilhar-sem-trava-de-linha",
+      "titulo": "o elo que o empilhar planeja não trava a linha da filha, e a escrita de outra conexão nela passa",
+      "veredito": "PROVADA",
+      "segundos": 83.15,
+      "notas": [],
+      "quando": "2026-10-07 11:33"
+    },
+    {
+      "id": "elo-do-empilhar-regrava-a-linha-inteira",
+      "titulo": "o COMMIT regrava a filha inteira que o empilhar viu, e desfaz a cascata solta de outra mãe dela",
+      "veredito": "PROVADA",
+      "segundos": 83.16,
+      "notas": [],
+      "quando": "2026-10-07 11:33"
+    },
+    {
+      "id": "cascata-solta-sem-marca",
+      "titulo": "a alteração solta que cascateia grava sem marca, e a queda no meio deixa filha na chave velha",
+      "veredito": "NAO PEGOU",
+      "segundos": 83.19,
+      "notas": [
+        "PASSOU COM O DEFEITO REPOSTO: servidor::testes_do_panico_sob_a_trava::sigkill_no_meio_da_cascata_solta_o_arranque_a_completa"
+      ],
+      "quando": "2026-10-07 11:33"
+    },
+    {
+      "id": "upsert-solto-cascateia-sem-marca",
+      "titulo": "o upsert solto que vira alteração com cascata grava pelo `atualizar` de dentro dele, sem marca",
+      "veredito": "PROVADA",
+      "segundos": 83.61,
+      "notas": [],
+      "quando": "2026-10-07 11:33"
+    },
+    {
+      "id": "cascata-solta-com-o-punho-de-quem-chama-sujo",
+      "titulo": "a cascata solta abre o punho da passada com o `t` de quem chama ainda sujo, e o `Drop` dele desfaz o índice da mãe",
+      "veredito": "PROVADA",
+      "segundos": 86.32,
+      "notas": [],
+      "quando": "2026-10-07 11:33"
+    },
+    {
+      "id": "descida-do-punho-sem-o-fts",
+      "titulo": "a descida do punho de quem chama leva o `.ndx` e esquece o `.fts`: a busca de texto da mãe acha o nome velho",
+      "veredito": "PROVADA",
+      "segundos": 85.11,
+      "notas": [],
+      "quando": "2026-10-07 11:33"
+    },
+    {
+      "id": "varredura-encerra-quem-confirma",
+      "titulo": "a varredura do prazo encerra a transação que está no COMMIT e solta as travas de quem ainda grava",
+      "veredito": "PROVADA",
+      "segundos": 83.26,
+      "notas": [],
+      "quando": "2026-10-07 11:33"
+    },
+    {
+      "id": "devolver-desfaz-o-abort-only",
+      "titulo": "a lista devolvida ao fim de um COMMIT recusado desfaz o ABORT_ONLY que chegou no meio",
+      "veredito": "PROVADA",
+      "segundos": 81.04,
+      "notas": [],
+      "quando": "2026-10-07 11:33"
+    },
+    {
+      "id": "subida-do-byte-52-sem-fsync",
+      "titulo": "a SUBIDA do byte 52 volta a ir só ao cache do núcleo: numa queda de energia o disco guarda o `.reg` novo sob o 0 do último fecho, e o pai com filhas se apaga calado",
+      "veredito": "PROVADA",
+      "segundos": 7.62,
+      "notas": [],
+      "quando": "2026-10-07 11:33"
+    },
+    {
+      "id": "subida-do-byte-52-sincroniza-a-cada-pagina",
+      "titulo": "a subida do byte 52 sincroniza a cada página suja, e não só na passagem de 0 para 1: um `fdatasync` no laço quente de toda escrita",
+      "veredito": "PROVADA",
+      "segundos": 8.62,
+      "notas": [],
+      "quando": "2026-10-07 11:40"
+    },
+    {
+      "id": "arquivo-do-banco-nasce-aberto",
+      "titulo": "os arquivos do banco voltam a nascer na permissão do `umask`: `.reg`, `.ndx`, `.log`, `.lgpd`… `644`, legíveis por todo usuário da máquina",
+      "veredito": "PROVADA",
+      "segundos": 7.95,
+      "notas": [],
+      "quando": "2026-10-07 11:40"
+    },
+    {
+      "id": "diretorio-do-banco-nasce-aberto",
+      "titulo": "a raiz, o database, o palco da restauração e o destino do backup voltam a nascer `755`",
+      "veredito": "PROVADA",
+      "segundos": 8.15,
+      "notas": [],
+      "quando": "2026-10-07 11:40"
+    },
+    {
       "id": "arquivo-refeito-herda-o-modo-velho",
       "titulo": "o arquivo que o banco REFAZ por cima de um antigo -- o `.ndx` e o `.fts` do `reindexar` -- herda o `644` dele",
       "veredito": "PROVADA",
@@ -3737,12 +3883,54 @@
       "quando": "2026-09-30 23:04"
     },
     {
+      "id": "base-antiga-sem-alerta",
+      "titulo": "a base antiga, `644` em `755`, deixa de ser apontada: o motor não aperta o que existe e ninguém avisa",
+      "veredito": "PROVADA",
+      "segundos": 7.87,
+      "notas": [],
+      "quando": "2026-10-07 11:40"
+    },
+    {
+      "id": "arranque-nao-alerta-a-base-antiga",
+      "titulo": "o `phxsqld` sobe numa base `644`/`755` sem dizer nada",
+      "veredito": "PROVADA",
+      "segundos": 20.3,
+      "notas": [],
+      "quando": "2026-10-07 11:40"
+    },
+    {
       "id": "backup-atravessa-link-plantado",
       "titulo": "o motor da permissão volta a seguir o link simbólico no último nome: um link plantado no destino do backup faz o `.reg` ser gravado NA vítima de fora, e ela vira 0600",
       "veredito": "PROVADA",
       "segundos": 10.35,
       "notas": [],
       "quando": "2026-09-30 23:04"
+    },
+    {
+      "id": "base-por-link-cala-o-alerta",
+      "titulo": "o alerta da base antiga cala quando `config.base` é um link simbólico",
+      "veredito": "PROVADA",
+      "segundos": 8.31,
+      "notas": [],
+      "quando": "2026-10-07 11:40"
+    },
+    {
+      "id": "arranque-cala-o-alerta-da-base-por-link",
+      "titulo": "o `phxsqld` sobe numa base `644`/`755` alcançada por link simbólico sem dizer nada",
+      "veredito": "PROVADA",
+      "segundos": 18.81,
+      "notas": [],
+      "quando": "2026-10-07 11:40"
+    },
+    {
+      "id": "ndx-novo-sobe-com-o-diretorio-vazio",
+      "titulo": "o primeiro cabeçalho durável de um `.ndx` novo leva o byte 52 em 1 e ZERO índices: a queda no meio do `reindexar` trava a tabela",
+      "veredito": "NAO PEGOU",
+      "segundos": 7.7,
+      "notas": [
+        "PASSOU COM O DEFEITO REPOSTO: o_ndx_refeito_leva_o_diretorio_inteiro_na_primeira_subida"
+      ],
+      "quando": "2026-10-07 11:40"
     },
     {
       "id": "migracao-do-separador-decide-pelo-nome",
@@ -3793,6 +3981,62 @@
       "quando": "2026-09-30 15:55"
     },
     {
+      "id": "diario-que-falha-sem-marca-do-evento-devido",
+      "titulo": "o `.log` que falha depois de a linha estar no `.reg` não deixa a marca do evento devido, e a abertura não sabe o que completar",
+      "veredito": "PROVADA",
+      "segundos": 7.22,
+      "notas": [],
+      "quando": "2026-10-07 11:40"
+    },
+    {
+      "id": "abertura-nao-completa-o-evento-devido",
+      "titulo": "a abertura da tabela acha a marca do evento devido e não completa o `.log` pela linha",
+      "veredito": "PROVADA",
+      "segundos": 7.3,
+      "notas": [],
+      "quando": "2026-10-07 11:40"
+    },
+    {
+      "id": "diario-que-falha-nao-derruba-o-servidor",
+      "titulo": "o servidor segue de pé depois de o `.log` falhar com a linha já no `.reg` — linha sem diário servindo",
+      "veredito": "PROVADA",
+      "segundos": 84.41,
+      "notas": [],
+      "quando": "2026-10-07 11:40"
+    },
+    {
+      "id": "disco-cheio-deixa-a-sentinela-do-509",
+      "titulo": "o disco cheio que derruba pelo `.log` grava a sentinela do `fsync` recusado, e o servidor não sobe no mesmo boot",
+      "veredito": "PROVADA",
+      "segundos": 83.13,
+      "notas": [],
+      "quando": "2026-10-07 11:40"
+    },
+    {
+      "id": "exclusao-de-vez-sem-conferir-o-teto-do-diario",
+      "titulo": "no teto do diário, a exclusão de vez tira a linha do `.reg` e só então o `.log` recusa",
+      "veredito": "PROVADA",
+      "segundos": 7.96,
+      "notas": [],
+      "quando": "2026-10-07 11:40"
+    },
+    {
+      "id": "exclusao-de-vez-motivo-que-falha-pula-o-diario",
+      "titulo": "na exclusão de vez, o `.reason` que falha com o slot já livre devolve o erro antes do `.log` — a linha some sem evento",
+      "veredito": "PROVADA",
+      "segundos": 7.4,
+      "notas": [],
+      "quando": "2026-10-07 11:40"
+    },
+    {
+      "id": "insercao-fts-que-falha-pula-o-diario",
+      "titulo": "na inclusão, o `.fts` que falha com a linha já no `.reg` devolve o erro antes do `.log` — a linha fica sem evento",
+      "veredito": "PROVADA",
+      "segundos": 7.29,
+      "notas": [],
+      "quando": "2026-10-07 11:40"
+    },
+    {
       "id": "zip-que-falha-no-rename-deixa-o-part",
       "titulo": "o `rename` final do backup em ZIP que recusa deixa o `.part` na pasta para sempre",
       "veredito": "PROVADA",
@@ -3815,6 +4059,14 @@
       "segundos": 5.51,
       "notas": [],
       "quando": "2026-10-02 02:03"
+    },
+    {
+      "id": "zip-que-falha-deixa-a-pasta-que-criou",
+      "titulo": "o backup em ZIP que falha deixa vazia a pasta que ele mesmo criou",
+      "veredito": "PROVADA",
+      "segundos": 8.1,
+      "notas": [],
+      "quando": "2026-10-07 11:53"
     },
     {
       "id": "backup-fsync-reabre-a-copia",
@@ -3857,6 +4109,30 @@
       "quando": "2026-09-30 23:05"
     },
     {
+      "id": "cascata-dispara-after-do-elo-so-no-commit",
+      "titulo": "a mesma cascata do `ao_alterar` dispara o AFTER da filha no COMMIT e não na alteração solta",
+      "veredito": "PROVADA",
+      "segundos": 84.87,
+      "notas": [],
+      "quando": "2026-10-07 11:53"
+    },
+    {
+      "id": "dblink-troca-o-host-e-herda-a-senha",
+      "titulo": "trocar o host de uma ligação do DbLink sem mandar a senha herda a guardada, e ela sai para o destino novo",
+      "veredito": "PROVADA",
+      "segundos": 84.92,
+      "notas": [],
+      "quando": "2026-10-07 11:53"
+    },
+    {
+      "id": "dblink-no-fio-com-a-trava-de-dados",
+      "titulo": "`dblink_ligar` e `dblink_sincronizar` vão ao fio com a trava de dados global na mão: um par que goteja abaixo do prazo por leitura prende todo pedido de todo cliente",
+      "veredito": "PROVADA",
+      "segundos": 83.17,
+      "notas": [],
+      "quando": "2026-10-07 11:53"
+    },
+    {
       "id": "dblink-sem-prazo-total",
       "titulo": "Os três clientes do DbLink (mysql, pg e phx) só têm prazo por LEITURA: um par que goteja um byte antes de cada prazo prende a thread do job ou da conexão para sempre",
       "veredito": "PROVADA",
@@ -3881,6 +4157,94 @@
       "quando": "2026-10-01 07:17"
     },
     {
+      "id": "replica-sem-prazo-total",
+      "titulo": "O laço da réplica, a sonda e o console só têm prazo por LEITURA: um par que goteja um byte antes de cada prazo prende a thread para sempre",
+      "veredito": "PROVADA",
+      "segundos": 86.49,
+      "notas": [],
+      "quando": "2026-10-07 11:53"
+    },
+    {
+      "id": "porta-lida-pela-metade",
+      "titulo": "O apoio dos testes lia a porta do phxsqld antes de a linha acabar: o eprintln! sai em várias escritas, e o parse do endereço pela metade dava AddrParseError (ou a porta errada)",
+      "veredito": "PROVADA",
+      "segundos": 20.8,
+      "notas": [],
+      "quando": "2026-10-07 11:53"
+    },
+    {
+      "id": "copia-da-troca-sem-fsync",
+      "titulo": "A cópia de reserva da troca no restaurar (o caminho sem rename) apagava a origem sem fsync da cópia: uma queda no meio deixava a única via de volta pela metade",
+      "veredito": "PROVADA",
+      "segundos": 11.9,
+      "notas": [],
+      "quando": "2026-10-07 11:53"
+    },
+    {
+      "id": "replica-limite-sem-recuo",
+      "titulo": "O estouro do prazo total da réplica caía em `Outra`: o par que goteja era retentado no intervalo fixo, sem recuo",
+      "veredito": "PROVADA",
+      "segundos": 83.7,
+      "notas": [],
+      "quando": "2026-10-07 11:53"
+    },
+    {
+      "id": "cluster-replica-sem-recuo",
+      "titulo": "O laço da réplica do CLUSTER retentava a cada pulso sem o `Ritmo`: sem recuo nem para rede nem para limite",
+      "veredito": "PROVADA",
+      "segundos": 83.91,
+      "notas": [],
+      "quando": "2026-10-07 11:53"
+    },
+    {
+      "id": "odbc-sem-prazo-total",
+      "titulo": "O driver ODBC só tinha prazo por LEITURA: um servidor que goteja um byte antes de cada prazo prendia a thread do aplicativo dentro do SQLExecDirect",
+      "veredito": "PROVADA",
+      "segundos": 14.01,
+      "notas": [],
+      "quando": "2026-10-07 11:53"
+    },
+    {
+      "id": "odbc-total-pela-vida-da-conexao",
+      "titulo": "O prazo total do driver ODBC contado pela vida da conexão, e não por pedido: o aplicativo que abre de manhã e consulta à tarde cairia no primeiro pedido depois do total",
+      "veredito": "PROVADA",
+      "segundos": 7.76,
+      "notas": [],
+      "quando": "2026-10-07 11:53"
+    },
+    {
+      "id": "copia-de-tabela-sem-fsync",
+      "titulo": "`duplicar_tabela` e `copiar_tabela_para` respondiam «ok» com a cópia só no cache do núcleo: uma queda podia levar a tabela nova, ou deixá-la rasgada",
+      "veredito": "PROVADA",
+      "segundos": 11.29,
+      "notas": [],
+      "quando": "2026-10-07 11:53"
+    },
+    {
+      "id": "copia-de-tabela-sem-fsync-da-pasta",
+      "titulo": "A cópia de tabela sincronizava os arquivos e não a pasta: o nome novo podia sumir numa queda depois do «ok»",
+      "veredito": "PROVADA",
+      "segundos": 11.23,
+      "notas": [],
+      "quando": "2026-10-07 11:53"
+    },
+    {
+      "id": "colar-em-schema-novo-sem-fsync-do-database",
+      "titulo": "Colar num schema que ainda não existe criava a pasta dele sem `fsync` do database: a cópia sincronizada podia morar numa pasta que a queda leva",
+      "veredito": "PROVADA",
+      "segundos": 11.39,
+      "notas": [],
+      "quando": "2026-10-07 11:53"
+    },
+    {
+      "id": "porta-anunciada-em-pedacos",
+      "titulo": "A linha «porta de dados escutando em …» saía em várias escritas: quem lia o log no meio via a porta pela metade",
+      "veredito": "PROVADA",
+      "segundos": 20.26,
+      "notas": [],
+      "quando": "2026-10-07 11:53"
+    },
+    {
       "id": "criar-tabela-sem-fsync-dos-arquivos",
       "titulo": "`criar_tabela` respondia «criada» com o `.reg`, o `.ndx` e os outros arquivos só no cache do núcleo: numa queda a tabela podia sumir ou voltar sem o esquema",
       "veredito": "PROVADA",
@@ -3895,6 +4259,22 @@
       "segundos": 9.7,
       "notas": [],
       "quando": "2026-10-01 18:04"
+    },
+    {
+      "id": "criar-database-sem-fsync-da-base",
+      "titulo": "`criar_database` criava a pasta sem `fsync` da base: o database que o cliente ouviu criar podia sumir numa queda",
+      "veredito": "PROVADA",
+      "segundos": 11.92,
+      "notas": [],
+      "quando": "2026-10-07 11:53"
+    },
+    {
+      "id": "marca-do-database-sem-fsync",
+      "titulo": "O marcador `_database.json` nascia sem `fsync`: numa queda uma colmeia voltava como database padrão, calada",
+      "veredito": "PROVADA",
+      "segundos": 11.91,
+      "notas": [],
+      "quando": "2026-10-07 11:53"
     },
     {
       "id": "excluir-tabela-sem-fsync-da-pasta",
