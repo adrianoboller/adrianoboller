@@ -66498,6 +66498,71 @@ mod testes_da_varredura_da_fk_fora_da_trava {
         assert_eq!(l.inteiro_ou("cliente_id", -1), 1, "{}", l.escrever());
     }
 
+    /// **Pedido 661: o `*.novo` trocado na janela sem trava e recusado na
+    /// FASE B.** O gancho tira o `pedidos.reg.novo` que a FASE A escreveu e
+    /// poe no nome um arquivo de MESMO conteudo e outro inode -- quem tem
+    /// escrita na pasta de dados faz isso entre as fases. A declaracao recusa
+    /// com `Conflito`, a tabela fica como estava e o nome plantado sai.
+    ///
+    /// # Prova real
+    ///
+    /// Sem o `conferir_novos` no `alargar_fase_b`, o `rename` publica o
+    /// arquivo plantado, a declaracao passa e o `expect_err` reprova.
+    #[test]
+    fn o_novo_trocado_na_janela_sem_trava_e_recusado() {
+        let (s, dir) = preparar("novo-trocado");
+        let trocou: Arc<Mx<bool>> = Arc::new(Mx::new(false));
+        {
+            let d = dir.to_path_buf();
+            let trocou = Arc::clone(&trocou);
+            *s.na_janela_sem_trava.lock().unwrap() = Some(Box::new(move || {
+                let novo = d.join("b").join("pedidos.reg.novo");
+                let Ok(bytes) = std::fs::read(&novo) else {
+                    return;
+                };
+                std::fs::remove_file(&novo).unwrap();
+                std::fs::write(&novo, &bytes).unwrap();
+                *trocou.lock().unwrap() = true;
+            }));
+        }
+        let e = s
+            .executar(
+                "declarar_fk",
+                &pedido(
+                    r#"{"database":"b","tabela":"pedidos",
+                        "nome":"fk_cliente_com_nome_comprido_de_proposito_para_estourar_a_folga_do_alinhamento",
+                        "colunas":["cliente_id"],"tabela_ref":"clientes","colunas_ref":["id"]}"#,
+                ),
+                &Sessao::default(),
+            )
+            .expect_err("o `.novo` trocado na janela foi publicado pela FASE B");
+        assert!(
+            *trocou.lock().unwrap(),
+            "o preparo falhou: nao havia `.novo` na janela, e o teste nao exercitou a troca"
+        );
+        assert!(matches!(e, PhxError::Conflito(_)), "recusou como {e:?}");
+        assert!(
+            novos(&dir).is_empty(),
+            "o nome plantado ficou: {:?}",
+            novos(&dir)
+        );
+        // A tabela continua a velha: le, grava, e a chave nao nasceu.
+        let l = s
+            .executar(
+                "ler",
+                &pedido(r#"{"database":"b","tabela":"pedidos","rowid":1}"#),
+                &Sessao::default(),
+            )
+            .expect("a tabela nao se le depois da recusa");
+        assert_eq!(l.inteiro_ou("cliente_id", -1), 1, "{}", l.escrever());
+        s.executar(
+            "inserir",
+            &pedido(r#"{"database":"b","tabela":"pedidos","linha":{"id":12,"cliente_id":99}}"#),
+            &Sessao::default(),
+        )
+        .expect("a chave nasceu apesar da recusa, ou a tabela ficou congelada");
+    }
+
     /// O `marcar_lgpd` tem a mesma forma: na janela a tabela esta congelada
     /// e a vizinha grava; com transacao viva na tabela, ele cede.
     #[test]

@@ -83,6 +83,55 @@ unsafe fn escrever_num<T>(ptr: *mut T, valor: T) {
     }
 }
 
+/// O motor das saidas de TEXTO com tamanho em `SQLSMALLINT` (pedido 663):
+/// nome de coluna, atributo de coluna, campo e registro de diagnostico,
+/// `SQLGetInfo` e a connection string de volta.
+///
+/// Escreve o que couber (com NUL), poe em `tamanho` o comprimento TOTAL do
+/// texto -- nunca o que foi escrito -- e devolve `SQL_SUCCESS_WITH_INFO`
+/// quando um buffer dado nao coube. E o contrato do ODBC que o idioma
+/// «pergunta com NULL, aloca, pergunta de novo» exige: com o tamanho escrito
+/// no lugar do total, o `SQLColAttribute` com `info` nulo devolvia 0, e o
+/// cliente alocava 1 byte e ficava com o nome cortado sem aviso. Ponteiro
+/// nulo nao e truncagem: nao havia buffer para nao caber (`SQL_SUCCESS`).
+///
+/// O total passa de 32.767 so num texto que nao cabe em `SQLSMALLINT`:
+/// satura em `i16::MAX` em vez de virar negativo -- o `as` cru dava -32.768
+/// para 32.768 bytes, e tamanho negativo o cliente le como erro ou como
+/// `SQL_NTS`.
+///
+/// `aviso` e o diagnostico `01004` da truncagem, no handle dado. As funcoes
+/// de DIAGNOSTICO passam `None`: a especificacao manda que elas nao postem
+/// registro sobre si mesmas, e postar no meio da leitura mudaria a lista
+/// que o cliente esta percorrendo.
+///
+/// # Safety
+///
+/// `buf`, quando nao nulo, precisa ter `cap` bytes; `tamanho` nulo e aceito.
+unsafe fn devolver_texto(
+    dado: &[u8],
+    buf: *mut SqlChar,
+    cap: SqlSmallint,
+    tamanho: *mut SqlSmallint,
+    aviso: Option<(usize, &str)>,
+) -> SqlReturn {
+    let (_, truncou) = escrever_texto(dado, buf, SqlLen::from(cap));
+    escrever_num(tamanho, tamanho_smallint(dado.len()));
+    if truncou && !buf.is_null() {
+        if let Some((id, o_que)) = aviso {
+            anotar(id, "01004", &format!("{o_que} foi truncado"));
+        }
+        return SQL_SUCCESS_WITH_INFO;
+    }
+    SQL_SUCCESS
+}
+
+/// O comprimento total em `SQLSMALLINT`, saturado em 32.767 (ver
+/// [`devolver_texto`]).
+fn tamanho_smallint(n: usize) -> SqlSmallint {
+    SqlSmallint::try_from(n).unwrap_or(SqlSmallint::MAX)
+}
+
 /// Entrega uma celula no buffer do aplicativo, a partir do byte `ja`.
 ///
 /// Devolve `(codigo, novo_ja, diagnostico)`. E o unico caminho de dados do
@@ -458,13 +507,13 @@ pub unsafe extern "system" fn SQLDriverConnect(
             return codigo;
         }
         let volta = receita_mascarada(&receita);
-        let (n, truncou) = escrever_texto(volta.as_bytes(), saida, capacidade_saida as SqlLen);
-        escrever_num(tamanho_saida, n as SqlSmallint);
-        if truncou && !saida.is_null() {
-            anotar(id, "01004", "a connection string de volta foi truncada");
-            return SQL_SUCCESS_WITH_INFO;
-        }
-        SQL_SUCCESS
+        devolver_texto(
+            volta.as_bytes(),
+            saida,
+            capacidade_saida,
+            tamanho_saida,
+            Some((id, "a connection string de volta")),
+        )
     })
 }
 
@@ -1216,18 +1265,17 @@ pub unsafe extern "system" fn SQLDescribeCol(
                 SQL_ERROR
             }
             Some(Some(Some(c))) => {
-                let (_escritos, truncou) =
-                    escrever_texto(c.nome.as_bytes(), nome, capacidade_nome as SqlLen);
-                escrever_num(tamanho_nome, c.nome.len() as SqlSmallint);
                 escrever_num(tipo_sql, c.tipo_sql);
                 escrever_num(tamanho_coluna, c.tamanho);
                 escrever_num(casas_decimais, c.decimais);
                 escrever_num(nulavel, c.nulavel);
-                if truncou {
-                    anotar(id, "01004", "o nome da coluna foi truncado");
-                    return SQL_SUCCESS_WITH_INFO;
-                }
-                SQL_SUCCESS
+                devolver_texto(
+                    c.nome.as_bytes(),
+                    nome,
+                    capacidade_nome,
+                    tamanho_nome,
+                    Some((id, "o nome da coluna")),
+                )
             }
         }
     })
@@ -1270,15 +1318,13 @@ pub unsafe extern "system" fn SQLColAttribute(
                 SQL_ERROR
             }
             Some(Some(Some(c))) => match campo {
-                SQL_COLUMN_NAME | SQL_DESC_NAME | SQL_DESC_LABEL => {
-                    let (n, _) = escrever_texto(
-                        c.nome.as_bytes(),
-                        texto_saida as *mut SqlChar,
-                        capacidade as SqlLen,
-                    );
-                    escrever_num(tamanho_saida, n as SqlSmallint);
-                    SQL_SUCCESS
-                }
+                SQL_COLUMN_NAME | SQL_DESC_NAME | SQL_DESC_LABEL => devolver_texto(
+                    c.nome.as_bytes(),
+                    texto_saida as *mut SqlChar,
+                    capacidade,
+                    tamanho_saida,
+                    Some((id, "o nome da coluna")),
+                ),
                 SQL_COLUMN_TYPE | SQL_DESC_TYPE => {
                     escrever_num(numero_saida, SqlLen::from(c.tipo_sql));
                     SQL_SUCCESS
@@ -1593,14 +1639,13 @@ pub unsafe extern "system" fn SQLGetDiagRec(
             Some(Some(d)) => {
                 let (_, _) = escrever_texto(d.estado.as_bytes(), estado, 6);
                 escrever_num(nativo, d.nativo);
-                let (_, truncou) =
-                    escrever_texto(d.mensagem.as_bytes(), mensagem, capacidade as SqlLen);
-                escrever_num(tamanho_mensagem, d.mensagem.len() as SqlSmallint);
-                if truncou {
-                    SQL_SUCCESS_WITH_INFO
-                } else {
-                    SQL_SUCCESS
-                }
+                devolver_texto(
+                    d.mensagem.as_bytes(),
+                    mensagem,
+                    capacidade,
+                    tamanho_mensagem,
+                    None,
+                )
             }
         }
     })
@@ -1742,14 +1787,13 @@ pub unsafe extern "system" fn SQLGetDiagField(
             Some(Some(d)) => d,
         };
         let texto = |valor: &str| -> SqlReturn {
-            let (n, truncou) =
-                escrever_texto(valor.as_bytes(), info as *mut SqlChar, capacidade as SqlLen);
-            escrever_num(tamanho, n as SqlSmallint);
-            if truncou {
-                SQL_SUCCESS_WITH_INFO
-            } else {
-                SQL_SUCCESS
-            }
+            devolver_texto(
+                valor.as_bytes(),
+                info as *mut SqlChar,
+                capacidade,
+                tamanho,
+                None,
+            )
         };
         match campo {
             SQL_DIAG_SQLSTATE => texto(&d.estado),
@@ -1792,11 +1836,18 @@ pub unsafe extern "system" fn SQLGetInfo(
         let Some(Some((servidor, usuario))) = dados else {
             return SQL_INVALID_HANDLE;
         };
+        // Toda chamada comeca com o diagnostico limpo; sem isto o `01004` da
+        // truncagem (pedido 663) se acumulava de uma pergunta para a outra.
+        limpar_diag(id);
         let versao = env!("CARGO_PKG_VERSION");
         let texto = |v: String| -> SqlReturn {
-            let (n, _) = escrever_texto(v.as_bytes(), saida as *mut SqlChar, capacidade as SqlLen);
-            escrever_num(tamanho_saida, n as SqlSmallint);
-            SQL_SUCCESS
+            devolver_texto(
+                v.as_bytes(),
+                saida as *mut SqlChar,
+                capacidade,
+                tamanho_saida,
+                Some((id, "o texto de SQLGetInfo")),
+            )
         };
         match tipo {
             SQL_DRIVER_NAME => texto("phxsql_odbc".into()),
@@ -2900,6 +2951,201 @@ mod testes {
                 assert_eq!(numero, esperado, "campo {campo}");
             }
             desconectar_do_falso(env, dbc, stmt);
+        }
+    }
+
+    /// **Pedido 663: o texto devolvido pelo tamanho TOTAL, com `01004` na
+    /// truncagem.** Capacidade 4 num nome de 10 bytes: `SQL_SUCCESS_WITH_INFO`,
+    /// tamanho 10 e `01004` -- no `SQLColAttribute` como no `SQLDescribeCol`
+    /// que ele espelha. Com o ponteiro nulo, `SQL_SUCCESS` e o tamanho 10: e a
+    /// pergunta do idioma «pergunta com NULL, aloca, pergunta de novo».
+    ///
+    /// # Prova real
+    ///
+    /// Com o `SQLColAttribute` de antes (tamanho = bytes escritos, sem aviso),
+    /// o nulo devolve 0 e a capacidade 4 devolve `SQL_SUCCESS` com 3: as duas
+    /// primeiras asserções reprovam.
+    #[test]
+    fn colattribute_trunca_com_01004_e_devolve_o_total() {
+        fn responder(linha: &str) -> &'static str {
+            if linha.contains("\"op\":\"esquema\"") {
+                r#"{"ok":true,"resultado":{"colunas":[{"nome":"cidade_uf1","tipo":"Str(40)","tamanho":40,"nullable":true}]}}"#
+            } else {
+                r#"{"ok":true,"resultado":{"colunas":["cidade_uf1"],"linhas":[{"cidade_uf1":"SC"}]}}"#
+            }
+        }
+        let (porta, _recebe) = servidor_falso(responder);
+        unsafe {
+            let (env, dbc, stmt) = conectar_no_falso(porta);
+            let sql = "SELECT cidade_uf1 FROM clientes\0";
+            assert_eq!(SQLExecDirect(stmt, sql.as_ptr(), SQL_NTS), SQL_SUCCESS);
+
+            let mut tam: SqlSmallint = -1;
+            let codigo = SQLColAttribute(
+                stmt,
+                1,
+                SQL_DESC_NAME,
+                std::ptr::null_mut(),
+                0,
+                &mut tam,
+                std::ptr::null_mut(),
+            );
+            assert_eq!((codigo, tam), (SQL_SUCCESS, 10), "pergunta com NULL");
+
+            let mut buf = [0xAAu8; 4];
+            let mut tam: SqlSmallint = -1;
+            let codigo = SQLColAttribute(
+                stmt,
+                1,
+                SQL_DESC_NAME,
+                buf.as_mut_ptr() as SqlPointer,
+                4,
+                &mut tam,
+                std::ptr::null_mut(),
+            );
+            assert_eq!(
+                (codigo, tam),
+                (SQL_SUCCESS_WITH_INFO, 10),
+                "capacidade 4 num nome de 10 bytes"
+            );
+            assert_eq!(&buf, b"cid\0");
+            assert_eq!(diag_n(stmt, 1).0, "01004");
+
+            // O irmao que ele espelha, pela mesma regua.
+            let mut buf = [0xAAu8; 4];
+            let mut tam: SqlSmallint = -1;
+            let codigo = SQLDescribeCol(
+                stmt,
+                1,
+                buf.as_mut_ptr(),
+                4,
+                &mut tam,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+            );
+            assert_eq!((codigo, tam), (SQL_SUCCESS_WITH_INFO, 10));
+            assert_eq!(diag_n(stmt, 1).0, "01004");
+            let mut tam: SqlSmallint = -1;
+            let codigo = SQLDescribeCol(
+                stmt,
+                1,
+                std::ptr::null_mut(),
+                0,
+                &mut tam,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+            );
+            assert_eq!((codigo, tam), (SQL_SUCCESS, 10), "DescribeCol com NULL");
+
+            // O campo de diagnostico: total, aviso sem postar registro.
+            // O NULL acima limpou o diagnostico; a truncagem o repoe.
+            let codigo = SQLColAttribute(
+                stmt,
+                1,
+                SQL_DESC_NAME,
+                buf.as_mut_ptr() as SqlPointer,
+                4,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+            );
+            assert_eq!(codigo, SQL_SUCCESS_WITH_INFO);
+            let total = diag_n(stmt, 1).1.len();
+            assert!(total > 4, "a mensagem do 01004 cabe em 4 bytes?");
+            let mut tam: SqlSmallint = -1;
+            let codigo = SQLGetDiagField(
+                SQL_HANDLE_STMT,
+                stmt,
+                1,
+                SQL_DIAG_MESSAGE_TEXT,
+                buf.as_mut_ptr() as SqlPointer,
+                4,
+                &mut tam,
+            );
+            assert_eq!(
+                (codigo, tam as usize),
+                (SQL_SUCCESS_WITH_INFO, total),
+                "SQLGetDiagField truncado"
+            );
+            let mut tam: SqlSmallint = -1;
+            let codigo = SQLGetDiagField(
+                SQL_HANDLE_STMT,
+                stmt,
+                1,
+                SQL_DIAG_MESSAGE_TEXT,
+                std::ptr::null_mut(),
+                0,
+                &mut tam,
+            );
+            assert_eq!(
+                (codigo, tam as usize),
+                (SQL_SUCCESS, total),
+                "SQLGetDiagField com NULL"
+            );
+            let mut quantos: SqlInteger = -1;
+            SQLGetDiagField(
+                SQL_HANDLE_STMT,
+                stmt,
+                0,
+                SQL_DIAG_NUMBER,
+                &mut quantos as *mut SqlInteger as SqlPointer,
+                0,
+                std::ptr::null_mut(),
+            );
+            assert_eq!(quantos, 1, "a leitura do diagnostico postou registro");
+            desconectar_do_falso(env, dbc, stmt);
+        }
+    }
+
+    /// **Pedido 663: acima de 32.767 bytes o tamanho satura, nao vira
+    /// negativo.** Uma mensagem de 40.000 bytes no `SQLGetDiagRec` e no
+    /// `SQLGetDiagField`: `SQL_SUCCESS_WITH_INFO` e 32.767.
+    ///
+    /// # Prova real
+    ///
+    /// Com o `as SqlSmallint` cru de antes, 40.000 vira -25.536 e a asserção
+    /// do tamanho reprova.
+    #[test]
+    fn diagnostico_longo_satura_o_tamanho_em_32767() {
+        unsafe {
+            let mut env: SqlHandle = std::ptr::null_mut();
+            assert_eq!(
+                SQLAllocHandle(SQL_HANDLE_ENV, std::ptr::null_mut(), &mut env),
+                SQL_SUCCESS
+            );
+            let id = registro::id_de(env);
+            limpar_diag(id);
+            anotar(id, "HY000", &"x".repeat(40_000));
+            let mut estado = [0u8; 6];
+            let mut nativo: SqlInteger = 0;
+            let mut msg = [0u8; 16];
+            let mut tam: SqlSmallint = 0;
+            let codigo = SQLGetDiagRec(
+                SQL_HANDLE_ENV,
+                env,
+                1,
+                estado.as_mut_ptr(),
+                &mut nativo,
+                msg.as_mut_ptr(),
+                16,
+                &mut tam,
+            );
+            assert_eq!((codigo, tam), (SQL_SUCCESS_WITH_INFO, SqlSmallint::MAX));
+            let mut tam: SqlSmallint = 0;
+            let codigo = SQLGetDiagField(
+                SQL_HANDLE_ENV,
+                env,
+                1,
+                SQL_DIAG_MESSAGE_TEXT,
+                msg.as_mut_ptr() as SqlPointer,
+                16,
+                &mut tam,
+            );
+            assert_eq!((codigo, tam), (SQL_SUCCESS_WITH_INFO, SqlSmallint::MAX));
+            assert_eq!(SQLFreeHandle(SQL_HANDLE_ENV, env), SQL_SUCCESS);
         }
     }
 

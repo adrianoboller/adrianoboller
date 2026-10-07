@@ -205,6 +205,10 @@ do cabeçalho já estava no cache do sistema operacional, e matar o processo nã
 o apaga. O que o `SIGKILL` **não** prova é queda de energia, e aí o `fsync`
 pendente é a diferença. *O que depende do sistema operacional se prova contra o
 sistema operacional* — e este teste prova o que prova, não mais.
+*(Pedido 664, 07/10/2026: na queda de energia o que se perde é a **linha** não
+sincronizada junto com o contador, porque os dois moram no mesmo cabeçalho sob
+um CRC só — perda sem `fsync`, não repetição. Ver §C.6.1 e o teste
+`sequencia_nao_repete_com_cabecalho_perdido`.)*
 
 **6. O teto real do número não é o do formato.** `docs/FORMATO.md` publica
 2⁶⁴−1 para o `rownum`, e a coluna `Sequence` é `u64`. Só que o `Json` desta casa
@@ -893,7 +897,7 @@ O que o cliente pode e não pode supor:
 |---|---|---|
 | os números **crescem** (cada `Sequence` nova é maior que a anterior, na faixa do nó) | **sim** | `proxima_da_sequencia` só anda para a frente; `adotar_sequencia_do_source` só empurra para a frente, com teto em 2^53 |
 | os números são **contíguos** (sem lacuna) | **não** | linha recusada depois da numeração gasta número; `inserir_lote` e handle longo deixam lacuna; réplica promovida pode pular (a faixa do nó) |
-| **queda** de processo não deixa lacuna | **não** | com bloco à frente, o que não foi usado se perde; hoje, sem cache, a queda faz o oposto — o contador do cabeçalho pode voltar atrás (repetir), por isso a unicidade vem de índice `unico`, não da sequência |
+| **queda** de processo não deixa lacuna | **não** | com bloco à frente, o que não foi usado se perde; hoje, sem cache, a queda **não repete número**: o contador (byte 36) e o `slot_count` (byte 20) saem na mesma escrita do cabeçalho, sob um CRC só (`gravar_contadores`), e linha visível implica contador à frente dela — a queda de energia pode só **perder a última linha não sincronizada** (o slot fica além do `slot_count` e é reescrito), e cabeçalho rasgado é recusa. Travado por `sequencia_nao_repete_com_cabecalho_perdido` (pedido 664). O que repete número vem de fora da gravação — `ajustar_sequencia` para trás, backup antigo, promoção de réplica atrasada —, e por isso a unicidade vem de índice `unico`, não da sequência |
 | **`ROLLBACK`** devolve o número | **não se pode supor** | hoje o rollback transacional não gasta número (nada vai a disco antes do `COMMIT`, §A.1); a decisão permite que passe a gastar, e o cliente não deve depender de nenhum dos dois |
 | número excluído é **reaproveitado** | **nunca** | a ordem de digitação é sagrada: o `.reg` não reaproveita slot, e o contador não recua |
 | a ordem de **inserção** = ordem do número | só dentro de um nó | entre nós, cada um numera a própria faixa |
