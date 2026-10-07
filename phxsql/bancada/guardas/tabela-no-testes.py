@@ -145,8 +145,9 @@ def datas_da_corrida(dados):
     """Quando os vereditos foram medidos: o INTERVALO, e quantos por data.
 
     Pedido 621. O `ultima-corrida.json` e' uma MESCLA -- cada `--so` preserva
-    os vereditos antigos com a data deles, e o `quando` do topo e' a MAIS
-    ANTIGA (`provar-guardas.py`, `topo = min(quandos)`). Publicar so ele
+    os vereditos antigos com a data deles, e o `quando` do topo era a MAIS
+    ANTIGA (desde o pedido 658 e' a mais NOVA, com `mais_antigo` ao lado --
+    `provar-guardas.py`, `_mesclar_e_gravar`). Publicar so um extremo
     dizia «medido em 2026-09-16 15:25» sobre 483 vereditos de seis datas, 145
     deles do dia da auditoria: um retrato que nunca existiu, o erro que a
     pagina dos testes existe para nao cometer.

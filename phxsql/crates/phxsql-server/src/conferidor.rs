@@ -1513,8 +1513,12 @@ mod testes {
                 mostra.join("\n")
             );
         }
+        // Sem folga (pedido 656): havia um `saturating_sub(30)` aqui, e com ele
+        // trinta textos podiam ser traduzidos sem a catraca descer -- frouxa
+        // em ate 30 enquanto o QA-PDCA publicava «em cima, sem folga». O teto
+        // e o medido; traduziu, baixa no mesmo commit.
         assert!(
-            faltando.len() >= TETO_ROTULOS_E_CRASE.saturating_sub(30),
+            faltando.len() >= TETO_ROTULOS_E_CRASE,
             "sobraram {} e a catraca esta em {TETO_ROTULOS_E_CRASE}: baixe a catraca no mesmo \
              commit da traducao, senao ela deixa de segurar",
             faltando.len()
@@ -1709,8 +1713,10 @@ mod testes {
                     .join("\n")
             );
         }
+        // Sem folga (pedido 656): o `+ 3` que estava aqui deixava a catraca
+        // frouxa em ate tres. O teto e o medido.
         assert!(
-            achadas.len() + 3 >= TETO_NUMERO_CRAVADO_EM_TELA,
+            achadas.len() >= TETO_NUMERO_CRAVADO_EM_TELA,
             "sobraram {} e a catraca esta em {TETO_NUMERO_CRAVADO_EM_TELA}: baixe-a no mesmo commit",
             TETO_NUMERO_CRAVADO_EM_TELA - achadas.len()
         );

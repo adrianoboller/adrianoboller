@@ -724,11 +724,17 @@ def julgar(g, vereditos, desfecho):
 # A diferenca para o `achados-do-dba.py`: la os "estagios" sao tres nomes
 # fixos; aqui sao ate 180 ids, e cada um pode ter sido medido num DIA
 # diferente -- a mesma disciplina da pagina de testes ("cada numero traz a
-# data em que foi medido"). Por isso a mescla ganha `quando` POR ENTRADA, e
-# o `quando` do TOPO deixa de ser "agora" e passa a ser o mais ANTIGO entre
-# as entradas que sobrevivem no arquivo: e' a leitura que nao superestima o
-# que esta ali -- se uma entrada de 07/09 continua no arquivo, o topo nao
-# pode dizer que tudo e' de hoje.
+# data em que foi medido"). Por isso a mescla ganha `quando` POR ENTRADA.
+#
+# E o TOPO carrega DOIS campos, porque um so mentia (pedido 658): ate 07/10 o
+# `quando` do topo era o mais ANTIGO das entradas -- «nao superestima» -- e o
+# arquivo dizia «2026-09-16 15:25» com vereditos ate 06/10. Quem le o topo
+# pergunta «quando foi a ultima corrida?», e a resposta era a primeira. Hoje
+# `quando` e' a corrida MAIS NOVA que gravou o retrato, e `mais_antigo` e' o
+# veredito mais velho que ainda esta nele -- os dois extremos com nome, em vez
+# de um extremo vestido de outro. A idade de cada veredito continua sendo a
+# do `quando` da propria entrada, e e' ela que a catraca de idade le
+# (`trecho-vivo.py`, nona regua).
 
 
 # ------------------------------------------- e a TRAVA do arquivo de saida
@@ -844,7 +850,10 @@ def _mesclar_e_gravar(caminho, so_ligado, resultados):
                 anterior = json.load(f)
         except (OSError, ValueError):
             anterior = {}
-        quando_do_arquivo_antigo = anterior.get("quando")
+        # O mais antigo primeiro (pedido 658): herdar o `quando` do topo, que
+        # passou a ser o MAIS NOVO, rejuvenesceria a entrada sem data.
+        quando_do_arquivo_antigo = (anterior.get("mais_antigo")
+                                    or anterior.get("quando"))
         for item in anterior.get("guardas", []) or []:
             # Migracao: um arquivo de ANTES desta mudanca (como o
             # `ultima-corrida.json` de 16/09) nao tem `quando` por entrada --
@@ -877,10 +886,11 @@ def _mesclar_e_gravar(caminho, so_ligado, resultados):
     resto = [i for i in mesclado if i not in set(ordem_catalogo)]
     guardas_final = [mesclado[i] for i in ordem_catalogo + resto]
     quandos = [g["quando"] for g in guardas_final if g.get("quando")]
-    topo = min(quandos) if quandos else agora
+    topo = max(quandos) if quandos else agora
+    mais_antigo = min(quandos) if quandos else agora
     with open(caminho, "w", encoding="utf-8") as f:
-        json.dump({"quando": topo, "guardas": guardas_final}, f,
-                  ensure_ascii=False, indent=2)
+        json.dump({"quando": topo, "mais_antigo": mais_antigo,
+                   "guardas": guardas_final}, f, ensure_ascii=False, indent=2)
     preservadas = sorted(set(antigas) - set(novas))
     return preservadas, topo
 
@@ -927,9 +937,28 @@ def autoteste_mescla_json():
                       if g["id"] == "guarda-a")["veredito"] == "QUEBRADA")
         conferir("o retorno nomeia quem foi preservado",
                  preservadas == ["guarda-b"], str(preservadas))
-        conferir("o `quando` do topo e' o da entrada preservada (mais antigo)",
-                 depois["quando"] == completa["quando"],
-                 "%s != %s" % (depois["quando"], completa["quando"]))
+        conferir("o `mais_antigo` do topo e' o da entrada preservada",
+                 depois["mais_antigo"] == completa["quando"],
+                 "%s != %s" % (depois.get("mais_antigo"), completa["quando"]))
+        # Pedido 658: o `quando` do topo e' a corrida MAIS NOVA. Uma entrada
+        # com data forjada para o passado prova o sentido: se o topo voltasse
+        # a ser o minimo, ele diria 2000.
+        with open(alvo, encoding="utf-8") as f:
+            velho = json.load(f)
+        for g in velho["guardas"]:
+            if g["id"] == "guarda-b":
+                g["quando"] = "2000-01-01 00:00"
+        with open(alvo, "w", encoding="utf-8") as f:
+            json.dump(velho, f)
+        _gravar_json(alvo, True, [(g_a, "PROVADA", 0.5, [])])
+        topo = json.load(open(alvo, encoding="utf-8"))
+        conferir("o `quando` do topo e' a corrida MAIS NOVA, nao a mais antiga",
+                 topo["quando"] != "2000-01-01 00:00"
+                 and topo["quando"] == max(g["quando"] for g in topo["guardas"]),
+                 str({k: v for k, v in topo.items() if k != "guardas"}))
+        conferir("e o `mais_antigo` diz o veredito mais velho que ficou",
+                 topo["mais_antigo"] == "2000-01-01 00:00",
+                 str(topo.get("mais_antigo")))
 
         # 3. uma corrida COMPLETA depois de uma parcial volta a sobrescrever
         # por inteiro -- nao arrasta preservados de uma rodada que a corrida
@@ -1375,7 +1404,7 @@ def main():
         if preservadas:
             print("\n%d guarda(s) preservada(s) de corrida(s) anterior(es) em "
                   "%s: %s" % (len(preservadas), opc.json, ", ".join(preservadas)))
-            print("quando (topo, a mais antiga que ainda esta no arquivo): %s"
+            print("quando (topo, a corrida mais nova que gravou o retrato): %s"
                   % topo)
 
     # Codigo de saida honesto: 1 quando alguma guarda nao ficou provada.

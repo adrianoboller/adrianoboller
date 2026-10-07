@@ -3552,12 +3552,28 @@
       "quando": "2026-10-06 21:27"
     },
     {
+      "id": "dblink-puxar-le-booleano-pela-carga-colada",
+      "titulo": "O DbLink, ao puxar, lê o booleano pela régua da carga colada",
+      "veredito": "PROVADA",
+      "segundos": 86.79,
+      "notas": [],
+      "quando": "2026-10-07 10:48"
+    },
+    {
       "id": "dblink-puxar-le-blob-cru",
       "titulo": "O DbLink, ao puxar, lê o BLOB cru como se fosse hexadecimal",
       "veredito": "PROVADA",
       "segundos": 58.32,
       "notas": [],
       "quando": "2026-09-30 23:59"
+    },
+    {
+      "id": "dblink-puxar-inventa-uuid",
+      "titulo": "O DbLink, ao puxar, troca a célula «novo» por um uuid aleatório",
+      "veredito": "PROVADA",
+      "segundos": 92.86,
+      "notas": [],
+      "quando": "2026-10-07 10:48"
     },
     {
       "id": "dblink-tela-mostra-blob-com-perda",
@@ -3590,6 +3606,118 @@
       "segundos": 58.11,
       "notas": [],
       "quando": "2026-09-30 23:55"
+    },
+    {
+      "id": "faixa-do-slot-cita-coluna-marcada",
+      "titulo": "A faixa do tipo, conferida no slot, cita o número de coluna marcada",
+      "veredito": "PROVADA",
+      "segundos": 92.6,
+      "notas": [],
+      "quando": "2026-10-07 10:48"
+    },
+    {
+      "id": "carga-colada-converte-sem-a-coluna",
+      "titulo": "A carga colada converte a célula sem a marca da coluna",
+      "veredito": "PROVADA",
+      "segundos": 98.64,
+      "notas": [],
+      "quando": "2026-10-07 10:48"
+    },
+    {
+      "id": "upsert-converte-sem-a-coluna",
+      "titulo": "O `atualizar` do upsert converte o valor sem a marca da coluna",
+      "veredito": "PROVADA",
+      "segundos": 85.98,
+      "notas": [],
+      "quando": "2026-10-07 10:48"
+    },
+    {
+      "id": "sql-vai-ao-perfil-com-o-literal",
+      "titulo": "O `sql` vai ao `perfil.txt` com o literal dentro",
+      "veredito": "PROVADA",
+      "segundos": 84.22,
+      "notas": [],
+      "quando": "2026-10-07 10:48"
+    },
+    {
+      "id": "sql-vai-ao-perfil-com-o-literal-pelo-soquete",
+      "titulo": "O `INSERT` em SQL da tabela marcada vai ao `perfil.txt` com o valor, visto pelo soquete",
+      "veredito": "PROVADA",
+      "segundos": 20.56,
+      "notas": [],
+      "quando": "2026-10-07 10:48"
+    },
+    {
+      "id": "erro-do-sql-normalizado-vai-ao-arquivo",
+      "titulo": "O `sql` normalizado leva ao arquivo o erro que cita o literal",
+      "veredito": "PROVADA",
+      "segundos": 82.8,
+      "notas": [],
+      "quando": "2026-10-07 10:48"
+    },
+    {
+      "id": "normaliza-o-que-nao-e-sql",
+      "titulo": "O Profiler normaliza pelo NOME do campo, e a carga colada vira lixo de léxico",
+      "veredito": "PROVADA",
+      "segundos": 82.66,
+      "notas": [],
+      "quando": "2026-10-07 10:48"
+    },
+    {
+      "id": "transacoes-recuperadas-sem-sanear",
+      "titulo": "O registro das transações volta do pânico sem sanear, e o COMMIT seguinte confirma o que ele não afirma",
+      "veredito": "PROVADA",
+      "segundos": 82.55,
+      "notas": [],
+      "quando": "2026-10-07 10:48"
+    },
+    {
+      "id": "transacoes-envenenadas-recusam-toda-conexao",
+      "titulo": "Um pânico com as transações na mão mata toda transação de toda conexão até reiniciar",
+      "veredito": "PROVADA",
+      "segundos": 82.75,
+      "notas": [],
+      "quando": "2026-10-07 10:48"
+    },
+    {
+      "id": "trava-suja-sem-nome",
+      "titulo": "O `SP000010` da trava suja sai com a MESMA frase em 85 pontos de 14 travas",
+      "veredito": "PROVADA",
+      "segundos": 86.06,
+      "notas": [],
+      "quando": "2026-10-07 10:48"
+    },
+    {
+      "id": "esvaziar-lixeira-fora-do-ops-do-no",
+      "titulo": "A réplica somente-leitura não esvazia o próprio `.trash`, e a linha apagada no source fica nela para sempre",
+      "veredito": "PROVADA",
+      "segundos": 22.27,
+      "notas": [],
+      "quando": "2026-10-07 10:48"
+    },
+    {
+      "id": "ops-do-no-fora-do-ops-escrita",
+      "titulo": "`esvaziar_lixeira` e `expurgar_trilha` fora do `OPS_ESCRITA`: rodam dentro de BEGIN sem voltar no ROLLBACK e passam por cima da trava de outra transação",
+      "veredito": "PROVADA",
+      "segundos": 24.0,
+      "notas": [],
+      "quando": "2026-10-07 10:48"
+    },
+    {
+      "id": "normalizado-deixa-o-booleano-cru",
+      "titulo": "O `sql` normalizado deixa `TRUE`, `FALSE` e `NULL` crus no `perfil.txt`",
+      "veredito": "PROVADA",
+      "segundos": 5.97,
+      "notas": [],
+      "quando": "2026-10-07 10:48"
+    },
+    {
+      "id": "sql-vai-ao-perfil-com-o-literal-na-bateria-do-497",
+      "titulo": "O `sql` vai ao `perfil.txt` com o literal, visto pela bateria do 497 nas duas portas",
+      "veredito": "PROVADA",
+      "segundos": 30.25,
+      "notas": [],
+      "quando": "2026-10-07 10:48"
     },
     {
       "id": "arquivo-refeito-herda-o-modo-velho",
