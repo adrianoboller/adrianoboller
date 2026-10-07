@@ -1,5 +1,5 @@
 {
-  "quando": "2026-10-07 14:00",
+  "quando": "2026-10-07 14:10",
   "mais_antigo": "2026-09-16 15:25",
   "guardas": [
     {
@@ -163,14 +163,10 @@
     {
       "id": "trava-fora-do-ponto-unico",
       "titulo": "uma tomada da trava de dados fora do `travar_dados()`",
-      "veredito": "QUEBRADA",
-      "segundos": 24.27,
-      "notas": [
-        "o codigo com o defeito reposto nao compila",
-        "error[E0061]: this function takes 1 argument but 0 arguments were supplied",
-        "error: could not compile `phxsql-server` (lib test) due to 1 previous error"
-      ],
-      "quando": "2026-10-07 14:00"
+      "veredito": "PROVADA",
+      "segundos": 81.62,
+      "notas": [],
+      "quando": "2026-10-07 14:10"
     },
     {
       "id": "trava-sem-guarda-de-reentrancia",

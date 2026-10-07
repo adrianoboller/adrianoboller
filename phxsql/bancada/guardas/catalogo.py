@@ -1131,7 +1131,7 @@ GUARDAS = [
         # compila nao e guarda -- e por isso o executor a chama de QUEBRADA em
         # vez de PROVADA, e foi ele que pegou esta.
         "troca": """        // DEFEITO REPOSTO: a decima-quarta tomada, fora do ponto unico.
-        let mut raiz = self.dados.write().map_err(|_| trava_envenenada())?;
+        let mut raiz = self.dados.write().map_err(|_| trava_envenenada("dados"))?;
         let dados = raiz.exclusiva();
         Ok(idiomas::estado(&dados, idioma))
 """,
