@@ -223,7 +223,7 @@ footer{
 <div class="envelope">
 <header>
   <div class="rotulo">PhxSql · o dossiê do que foi pedido — página 7 de 7</div>
-  <h1>Pedidos 541 em diante<br>de 672 ao todo</h1>
+  <h1>Pedidos 541 em diante<br>de 673 ao todo</h1>
   <p class="chamada">Uma linha por pedido seu, na ordem em que você pediu. O
   estado é <strong>medido contra o código</strong>, não contra a lembrança — foi
   assim que a chave estrangeira saiu de «pronto» para «parcial», e o Centro de
@@ -238,25 +238,25 @@ footer{
   <nav class="faixas" aria-label="As 7 páginas de pedidos, por faixa"><a href="https://claude.ai/artifact/4jSZ5yZFnjEnbGGbE3i5nz">1–190</a><a href="https://claude.ai/artifact/MAc3CcjfCPbjVm5sQZwYoC">191–260</a><a href="pedidos-261-320.html">261–320</a><a href="pedidos-321-360.html">321–360</a><a href="pedidos-361-430.html">361–430</a><a href="pedidos-431-540.html">431–540</a><a href="pedidos-541-mais.html" class="ativa" aria-current="page">541 em diante</a></nav>
 
   <div class="placar">
-    <div class="c"><div class="v">672</div><div class="r">pedidos, ao todo</div></div>
+    <div class="c"><div class="v">673</div><div class="r">pedidos, ao todo</div></div>
     <div class="c feito"><div class="v">562</div><div class="r">feitos</div></div>
     <div class="c parcial"><div class="v">7</div><div class="r">parciais</div></div>
-    <div class="c planejado"><div class="v">14</div><div class="r">planejados</div></div>
+    <div class="c planejado"><div class="v">15</div><div class="r">planejados</div></div>
     <div class="c depois"><div class="v">89</div><div class="r">depois da versão</div></div>
   </div>
 
   <div class="faixa-info">
     <span class="rotulo-inline">Nesta página</span>
-    <strong>132</strong> pedidos (faixa 541 em diante) ·
+    <strong>133</strong> pedidos (faixa 541 em diante) ·
     <span class="feito">105 feitos</span> ·
     <span class="parcial">2 parciais</span> ·
-    <span class="planejado">9 planejados</span> ·
+    <span class="planejado">10 planejados</span> ·
     <span class="depois">16 depois da versão</span>
   </div>
 </header>
 
 <h2>O que está aberto, nesta faixa</h2>
-<p class="sub">Os 11 que não fecharam nesta faixa (2 pela metade e 9 sem começar), com o motivo de cada um. O motivo importa mais que o estado: uns esperam trabalho, outros esperam uma decisão sua, e outros esperam coisa de fora deste repositório. (16 ficaram para depois desta versão — veja a lista completa abaixo.)</p>
+<p class="sub">Os 12 que não fecharam nesta faixa (2 pela metade e 10 sem começar), com o motivo de cada um. O motivo importa mais que o estado: uns esperam trabalho, outros esperam uma decisão sua, e outros esperam coisa de fora deste repositório. (16 ficaram para depois desta versão — veja a lista completa abaixo.)</p>
 <div class="rolo">
   <table>
     <thead><tr><th class="n">#</th><th class="st">estado</th><th>o que você pediu</th><th>onde está</th></tr></thead>
@@ -272,6 +272,7 @@ footer{
       <tr data-e="planejado"><td class="n mono">670</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>A prova do 646 «manifesto só depois do fsync» confere o estado DEPOIS da faxina, e aceita manifesto ausente</strong></td><td class="e">Papel F, 07/10/2026, lido e não medido. <code>backup.rs:manifesto_nao_e_gravado_antes_do_fsync_das_duas_fases</code> só fica vermelho porque o <code>backup.json</code> SENTINELA impede o <code>descartar_parcial</code> do <code>concluir</code>, e o <code>texto.is_empty()</code> é aceito como verde. Defeito que passa: o manifesto gravado antes do <code>fsync</code> com uma faxina que o apaga sempre no erro. A janela real (queda entre o manifesto e o fsync) nunca é observada. Conserto da prova: registrar se o <code>backup.json</code> existe no instante em que a falha forjada de <code>Onde::Fsync</code> dispara, e tirar o <code>is_empty()</code> do aceite; medir o RED com esse defeito alternativo.</td></tr>
       <tr data-e="planejado"><td class="n mono">671</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>A prova do 664 repõe o cabeçalho inteiro de uma vez e não distingue «mesma escrita» de «duas escritas»</strong></td><td class="e">Papel F, 07/10/2026, lido e não medido. <code>tests/reconciliar-sequencia.rs:sequencia_nao_repete_com_cabecalho_perdido</code> prova que o contador mora no cabeçalho, não que sai na MESMA escrita do <code>slot_count</code>. Defeito que passa: o contador num <code>pwrite</code> separado (ou só no <code>sincronizar</code>/<code>drop</code>). O estado que repete número (<code>slot_count</code> durável à frente do contador) nunca é montado. Conserto da prova: montar esse estado e exigir recusa pelo CRC ou id sem repetição, ou contar as escritas no cabeçalho por um gancho de <code>falha_de_teste</code>; medir o RED com o <code>pwrite</code> separado.</td></tr>
       <tr data-e="planejado"><td class="n mono">672</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>A conferência da FASE B do 661 tem cinco condições e a prova cobre uma: o link físico pendurado no <code>.novo</code> entre as fases passa</strong></td><td class="e">Papel F, 07/10/2026, lido e não medido. <code>tests/migracao-da-cifra.rs:o_novo_trocado_entre_as_fases_e_recusado</code> só troca o inode (<code>mesmo_arquivo</code>); tirar o <code>um_nome_so</code>, o tamanho ou o mtime de <code>util.rs:ainda_o_mesmo_temporario</code> deixa as três provas verdes. No DECRYPT, quem pendura um link físico no <code>.novo</code> entre as fases fica com um nome para a tabela em claro depois do rename. E <code>reg.rs:conferir_novos</code> segue em frente (<code>continue</code>) com qualquer erro do <code>symlink_metadata</code>. Conserto: <code>hard_link(.novo, isca)</code> entre o <code>preparar</code> e o <code>aplicar</code> tem de dar <code>Conflito</code>, e uma escrita pelo nome entre as fases também; o <code>continue</code> vira recusa; medir o RED tirando cada condição.</td></tr>
+      <tr data-e="planejado"><td class="n mono">673</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>Texto de tela e erro de motor entraram fora da fábrica de idiomas depois de 01/10</strong></td><td class="e">Varredura do tradutor, 07/10/2026 (lida; o <code>textos-fora-da-fabrica --tudo</code> deu 861, igual ao <code>TETO_ROTULOS_E_CRASE</code>, então a catraca não acusou: o que entrou empatou com o que saiu). Em <code>ui/index.html</code>: <code>← Resultado</code> (:6732), <code>ao excluir a linha-mãe</code> (:12036), <code>rodando…</code> (:15042), <code>SysColumns · </code> (:8571) e as interpoladas <code>lendo o esquema…</code> (:11857) e <code>lendo…</code> (:12546), mais os irmãos anteriores :12037, :11858 e :12392. Em <code>mensagens.rs</code>: <code>erro.expressao_cita_coluna_negada</code> sem FR, IT, DE e ES. Erros do motor cravados em português que chegam à resposta: <code>servidor.rs:26196</code> (<code>do_caminho_pedido</code>) e <code>valores.rs:534</code>. As linhas de log do operador (<code>gancho.rs</code>, <code>blacklist.rs</code>, <code>fio_dados.rs</code>, <code>profiler.rs</code>, <code>eprintln!</code> do servidor) ficam em português de propósito e se documentam ao lado das três exceções do <code>mensagens.rs</code>. Entregável: as chaves com os seis textos (a lista pronta está no relatório do tradutor de 07/10), a remedição do conferidor e o <code>TETO_ROTULOS_E_CRASE</code> baixado ao número medido no mesmo commit.</td></tr>
     </tbody>
   </table>
 </div>
@@ -285,7 +286,7 @@ footer{
   não tem opinião própria sobre nenhum item.
 </div>
 
-<h2 id="todos">Os 132 desta faixa (541 em diante), na ordem em que você pediu</h2>
+<h2 id="todos">Os 133 desta faixa (541 em diante), na ordem em que você pediu</h2>
 <p class="sub">A numeração é a sequência real dos seus pedidos — ela diz
 <em>quando</em> cada coisa foi pedida, e é por isso que vale mantê-la. As
 outras 6 faixas estão no menu acima.</p>
@@ -438,6 +439,7 @@ outras 6 faixas estão no menu acima.</p>
       <tr data-e="planejado"><td class="n mono">670</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>A prova do 646 «manifesto só depois do fsync» confere o estado DEPOIS da faxina, e aceita manifesto ausente</strong></td><td class="e">Papel F, 07/10/2026, lido e não medido. <code>backup.rs:manifesto_nao_e_gravado_antes_do_fsync_das_duas_fases</code> só fica vermelho porque o <code>backup.json</code> SENTINELA impede o <code>descartar_parcial</code> do <code>concluir</code>, e o <code>texto.is_empty()</code> é aceito como verde. Defeito que passa: o manifesto gravado antes do <code>fsync</code> com uma faxina que o apaga sempre no erro. A janela real (queda entre o manifesto e o fsync) nunca é observada. Conserto da prova: registrar se o <code>backup.json</code> existe no instante em que a falha forjada de <code>Onde::Fsync</code> dispara, e tirar o <code>is_empty()</code> do aceite; medir o RED com esse defeito alternativo.</td></tr>
       <tr data-e="planejado"><td class="n mono">671</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>A prova do 664 repõe o cabeçalho inteiro de uma vez e não distingue «mesma escrita» de «duas escritas»</strong></td><td class="e">Papel F, 07/10/2026, lido e não medido. <code>tests/reconciliar-sequencia.rs:sequencia_nao_repete_com_cabecalho_perdido</code> prova que o contador mora no cabeçalho, não que sai na MESMA escrita do <code>slot_count</code>. Defeito que passa: o contador num <code>pwrite</code> separado (ou só no <code>sincronizar</code>/<code>drop</code>). O estado que repete número (<code>slot_count</code> durável à frente do contador) nunca é montado. Conserto da prova: montar esse estado e exigir recusa pelo CRC ou id sem repetição, ou contar as escritas no cabeçalho por um gancho de <code>falha_de_teste</code>; medir o RED com o <code>pwrite</code> separado.</td></tr>
       <tr data-e="planejado"><td class="n mono">672</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>A conferência da FASE B do 661 tem cinco condições e a prova cobre uma: o link físico pendurado no <code>.novo</code> entre as fases passa</strong></td><td class="e">Papel F, 07/10/2026, lido e não medido. <code>tests/migracao-da-cifra.rs:o_novo_trocado_entre_as_fases_e_recusado</code> só troca o inode (<code>mesmo_arquivo</code>); tirar o <code>um_nome_so</code>, o tamanho ou o mtime de <code>util.rs:ainda_o_mesmo_temporario</code> deixa as três provas verdes. No DECRYPT, quem pendura um link físico no <code>.novo</code> entre as fases fica com um nome para a tabela em claro depois do rename. E <code>reg.rs:conferir_novos</code> segue em frente (<code>continue</code>) com qualquer erro do <code>symlink_metadata</code>. Conserto: <code>hard_link(.novo, isca)</code> entre o <code>preparar</code> e o <code>aplicar</code> tem de dar <code>Conflito</code>, e uma escrita pelo nome entre as fases também; o <code>continue</code> vira recusa; medir o RED tirando cada condição.</td></tr>
+      <tr data-e="planejado"><td class="n mono">673</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>Texto de tela e erro de motor entraram fora da fábrica de idiomas depois de 01/10</strong></td><td class="e">Varredura do tradutor, 07/10/2026 (lida; o <code>textos-fora-da-fabrica --tudo</code> deu 861, igual ao <code>TETO_ROTULOS_E_CRASE</code>, então a catraca não acusou: o que entrou empatou com o que saiu). Em <code>ui/index.html</code>: <code>← Resultado</code> (:6732), <code>ao excluir a linha-mãe</code> (:12036), <code>rodando…</code> (:15042), <code>SysColumns · </code> (:8571) e as interpoladas <code>lendo o esquema…</code> (:11857) e <code>lendo…</code> (:12546), mais os irmãos anteriores :12037, :11858 e :12392. Em <code>mensagens.rs</code>: <code>erro.expressao_cita_coluna_negada</code> sem FR, IT, DE e ES. Erros do motor cravados em português que chegam à resposta: <code>servidor.rs:26196</code> (<code>do_caminho_pedido</code>) e <code>valores.rs:534</code>. As linhas de log do operador (<code>gancho.rs</code>, <code>blacklist.rs</code>, <code>fio_dados.rs</code>, <code>profiler.rs</code>, <code>eprintln!</code> do servidor) ficam em português de propósito e se documentam ao lado das três exceções do <code>mensagens.rs</code>. Entregável: as chaves com os seis textos (a lista pronta está no relatório do tradutor de 07/10), a remedição do conferidor e o <code>TETO_ROTULOS_E_CRASE</code> baixado ao número medido no mesmo commit.</td></tr>
     </tbody>
   </table>
   <div class="vazio" id="vazio" hidden>Nenhum pedido bate com isso.</div>
