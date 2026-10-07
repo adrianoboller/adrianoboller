@@ -883,6 +883,34 @@ Guardas `contador-do-source-nao-adotado`, `posicao-sem-o-contador-da-sequencia`,
 RED medido: sem a adoção o teste do soquete cai com «a replica promovida deu o
 numero 3»; com ela, passa.
 
+**O contrato do buraco — decisão do dono, 07/10/2026 («Recomendado»).** O
+buraco na numeração, inclusive o de blocos reservados à frente e anunciados
+antes do uso (o `cache` do PostgreSQL e do MariaDB), é **permitido e
+documentado**, como no PostgreSQL e no MySQL, que não reaproveitam número.
+O que o cliente pode e não pode supor:
+
+| suposição do cliente | vale? | por quê, e o que o código faz hoje (lido em 07/10/2026) |
+|---|---|---|
+| os números **crescem** (cada `Sequence` nova é maior que a anterior, na faixa do nó) | **sim** | `proxima_da_sequencia` só anda para a frente; `adotar_sequencia_do_source` só empurra para a frente, com teto em 2^53 |
+| os números são **contíguos** (sem lacuna) | **não** | linha recusada depois da numeração gasta número; `inserir_lote` e handle longo deixam lacuna; réplica promovida pode pular (a faixa do nó) |
+| **queda** de processo não deixa lacuna | **não** | com bloco à frente, o que não foi usado se perde; hoje, sem cache, a queda faz o oposto — o contador do cabeçalho pode voltar atrás (repetir), por isso a unicidade vem de índice `unico`, não da sequência |
+| **`ROLLBACK`** devolve o número | **não se pode supor** | hoje o rollback transacional não gasta número (nada vai a disco antes do `COMMIT`, §A.1); a decisão permite que passe a gastar, e o cliente não deve depender de nenhum dos dois |
+| número excluído é **reaproveitado** | **nunca** | a ordem de digitação é sagrada: o `.reg` não reaproveita slot, e o contador não recua |
+| a ordem de **inserção** = ordem do número | só dentro de um nó | entre nós, cada um numera a própria faixa |
+
+Numeração sem lacuna (documento fiscal) **não** é promessa da `Sequence`:
+exige série própria sem cache e sem lote, e conferida pelo cliente.
+
+**Divergência código × decisão, dita sem esconder:** a decisão autoriza o
+buraco **com blocos reservados à frente**, mas esse mecanismo **não existe no
+código** — `sequencia.rs` documenta «cache NAO EXISTE» e o `CACHE` entra
+desligado (§B.3). Hoje o contrato acima vale como **teto do que se pode
+prometer**; a reserva de bloco, quando vier, não precisa de nova decisão do
+dono, só de formato (e o `.reg` ganha, no máximo, um contador de reserva no
+cabeçalho, em mudança de formato entrando cedo). O resíduo da promoção
+(5 números reemitidos pela sonda do bloco 23) continua sendo perda inerente
+da replicação assíncrona.
+
 #### C.6.2 `Inteiro(i64)` no `Json` — **parecer, não implementado**
 
 **Alcance medido** (grep, 02/10/2026): os acessores que o §B.2.6 contou somam

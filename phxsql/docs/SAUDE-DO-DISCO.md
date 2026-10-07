@@ -1,5 +1,9 @@
 # A saúde do disco onde o banco grava (pedido 249)
 
+> **Frase de produto (decisão do dono, 07/10/2026, pedido 249):** o gancho
+> dispara **UM comando configurado pelo dono do banco** (argv sem shell, com
+> prazo). O PhxSql **não promete SMS embutido**: o canal SMS é do operador.
+
 Pedido do dono, 16/09/2026: *«Monitor de status da saúde do disco onde o banco
 de dados está sendo gravado; em caso de log de erro, aviso ⚠️ imediato por
 e-mail e SMS.»*
