@@ -149,7 +149,14 @@ SQLGetDiagRec    SQLGetInfo       SQLSetConnectAttr SQLSetStmtAttr
   faixa — estourar da `22003`) e ponto flutuante (`SQL_C_DOUBLE`/`FLOAT`).
   Buffer curto trunca AVISANDO (`01004`, `SQL_SUCCESS_WITH_INFO`) e a proxima
   chamada continua de onde parou — ha teste com o defeito reposto para isso
-  (secao 7).
+  (secao 7). **Pedido 663:** o mesmo vale para os textos de metadado e de
+  diagnostico — `SQLDescribeCol`, `SQLColAttribute`, `SQLGetDiagRec`,
+  `SQLGetDiagField`, `SQLGetInfo` e `SQLDriverConnect` passam por UM motor
+  (`devolver_texto`): escreve o que cabe, devolve o tamanho TOTAL (saturado em
+  32.767) e avisa com `01004`/`SQL_SUCCESS_WITH_INFO` quando o buffer dado nao
+  coube; com ponteiro nulo devolve so o tamanho, e o idioma «pergunta com
+  NULL, aloca, pergunta de novo» funciona. As funcoes de diagnostico nao
+  postam registro sobre si mesmas.
 * **So as funcoes ANSI.** As `...W` (`SQLDriverConnectW` e companhia)
   continuam de fora: o gerenciador de driver converte as chamadas wide do
   aplicativo para as ANSI sozinho, e o custo de dobrar a superficie de 24

@@ -42,4 +42,4 @@ aproveitado.
 Guarda `zip-retrato-part-aproveitado` (`bancada/guardas/catalogo.py`) e os
 dois testes em `crates/phxsql-store/src/backup.rs`. O buraco que fica: a
 conferência «vazia e do dono» depois do `mkdir` não tem teste (pede corrida
-com outro uid), e é dita em `docs/SEGURANCA.md` §41.
+com outro uid), e é dita em `docs/SEGURANCA.md` §42.
