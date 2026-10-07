@@ -1,5 +1,5 @@
 {
-  "quando": "2026-10-07 13:03",
+  "quando": "2026-10-07 13:39",
   "mais_antigo": "2026-09-16 15:25",
   "guardas": [
     {
@@ -814,17 +814,17 @@
       "id": "cursor-do-pedaco-sem-o-mais-um",
       "titulo": "o cursor da varredura em pedaços devolve de novo a linha da borda",
       "veredito": "PROVADA",
-      "segundos": 3.25,
+      "segundos": 8.77,
       "notas": [],
-      "quando": "2026-09-16 15:25"
+      "quando": "2026-10-07 13:19"
     },
     {
       "id": "perfil-grava-o-texto-da-tabela-declarada",
       "titulo": "o perfil.txt grava em claro o pedido de uma tabela declarada em cifra.tabelas",
       "veredito": "PROVADA",
-      "segundos": 40.38,
+      "segundos": 85.35,
       "notas": [],
-      "quando": "2026-09-16 15:25"
+      "quando": "2026-10-07 13:19"
     },
     {
       "id": "perfil-decide-so-pela-lista-e-nao-pelo-reg-cifrado",
@@ -854,33 +854,33 @@
       "id": "perfil-so-olha-a-tabela-do-primeiro-nivel",
       "titulo": "o Profiler so olha a tabela do primeiro nível e a junção vira a porta dos fundos",
       "veredito": "PROVADA",
-      "segundos": 32.28,
+      "segundos": 84.55,
       "notas": [],
-      "quando": "2026-09-16 15:25"
+      "quando": "2026-10-07 13:19"
     },
     {
       "id": "fase-da-telemetria-com-dado-do-usuario",
       "titulo": "a fase do SQL Check passa a carregar dado do usuário, e o furo nasce calado",
       "veredito": "PROVADA",
-      "segundos": 32.93,
+      "segundos": 83.99,
       "notas": [],
-      "quando": "2026-09-16 15:25"
+      "quando": "2026-10-07 13:19"
     },
     {
       "id": "cache-de-derivadas-sobrevive-a-troca-de-senha",
       "titulo": "o cache de chaves derivadas responde a quem não deu a senha",
       "veredito": "PROVADA",
-      "segundos": 5.73,
+      "segundos": 10.41,
       "notas": [],
-      "quando": "2026-09-16 15:25"
+      "quando": "2026-10-07 13:19"
     },
     {
       "id": "fts-reindexar-sem-o-irmao",
       "titulo": "o reindexar reconstrói só o .ndx, e a queda trava a tabela para sempre",
       "veredito": "PROVADA",
-      "segundos": 1.47,
+      "segundos": 7.35,
       "notas": [],
-      "quando": "2026-09-16 15:25"
+      "quando": "2026-10-07 13:19"
     },
     {
       "id": "fts-reconstruir-sem-recriar",
@@ -894,9 +894,9 @@
       "id": "fts-abrir-recusa-a-tabela",
       "titulo": "o .fts ilegível derruba a tabela inteira, em vez de se refazer",
       "veredito": "PROVADA",
-      "segundos": 2.15,
+      "segundos": 7.72,
       "notas": [],
-      "quando": "2026-09-16 15:25"
+      "quando": "2026-10-07 13:19"
     },
     {
       "id": "fts-nasce-na-pista-de-leitura",
@@ -910,17 +910,17 @@
       "id": "fts-chave-truncada-nao-se-declara",
       "titulo": "a chave truncada não se declara truncada, e a busca acha a mais",
       "veredito": "PROVADA",
-      "segundos": 1.82,
+      "segundos": 7.97,
       "notas": [],
-      "quando": "2026-09-16 15:25"
+      "quando": "2026-10-07 13:19"
     },
     {
       "id": "operacao-sem-poder-declarado",
       "titulo": "operação catalogada sem linha de poder vira administrador em silêncio",
       "veredito": "PROVADA",
-      "segundos": 33.42,
+      "segundos": 84.02,
       "notas": [],
-      "quando": "2026-09-16 15:25"
+      "quando": "2026-10-07 13:19"
     },
     {
       "id": "sequencia-numero-cru-perde-precisao",
@@ -958,41 +958,41 @@
       "id": "regra-de-coluna-com-typo-carrega-calada",
       "titulo": "regra de direito por coluna que cita coluna inexistente carrega calada e não protege nada",
       "veredito": "PROVADA",
-      "segundos": 33.5,
+      "segundos": 85.94,
       "notas": [],
-      "quando": "2026-09-16 15:25"
+      "quando": "2026-10-07 13:19"
     },
     {
       "id": "juncao-direita-vazia-perde-colunas",
       "titulo": "LEFT JOIN com a direita vazia sai sem as colunas da direita, e a forma da linha muda",
       "veredito": "PROVADA",
-      "segundos": 36.6,
+      "segundos": 86.57,
       "notas": [],
-      "quando": "2026-09-16 15:25"
+      "quando": "2026-10-07 13:19"
     },
     {
       "id": "decimal-do-consultar-compara-como-texto",
       "titulo": "Decimal no consultar.expressao compara como texto, e 9,50 passa por um filtro de acima de 10",
       "veredito": "PROVADA",
-      "segundos": 35.62,
+      "segundos": 86.63,
       "notas": [],
-      "quando": "2026-09-16 15:25"
+      "quando": "2026-10-07 13:19"
     },
     {
       "id": "existe-fora-do-inventario-de-tabelas",
       "titulo": "existe[].de fora de tabelas_do_pedido: quem pergunta que tabelas o consultar alcanca nao ve a de dentro do EXISTS",
       "veredito": "PROVADA",
-      "segundos": 32.01,
+      "segundos": 86.07,
       "notas": [],
-      "quando": "2026-09-16 15:25"
+      "quando": "2026-10-07 13:19"
     },
     {
       "id": "wchar-recusa-no-driver-odbc",
       "titulo": "SQL_C_WCHAR volta a recusar no driver ODBC, que agora fala UTF-16 na borda",
       "veredito": "PROVADA",
-      "segundos": 1.26,
+      "segundos": 9.47,
       "notas": [],
-      "quando": "2026-09-16 15:25"
+      "quando": "2026-10-07 13:19"
     },
     {
       "id": "replica-insiste-na-credencial-recusada",
@@ -1006,65 +1006,65 @@
       "id": "upsert-zera-a-coluna-negada",
       "titulo": "o upsert (`inserir` com `se_existir: \"atualizar\"`) zerava a coluna que o usuário não altera — para quem não lê, para quem lê e não altera, pelo SQL `ON CONFLICT DO UPDATE` e em transação",
       "veredito": "PROVADA",
-      "segundos": 38.38,
+      "segundos": 87.62,
       "notas": [],
-      "quando": "2026-09-16 15:25"
+      "quando": "2026-10-07 13:19"
     },
     {
       "id": "presenca-da-coluna-negada-recusa-a-ficha",
       "titulo": "a presença da coluna que o usuário não altera recusava a operação inteira — e a ficha, que manda a linha inteira com a coluna como `null`, não incluía nem salvava nada",
       "veredito": "PROVADA",
-      "segundos": 38.95,
+      "segundos": 85.36,
       "notas": [],
-      "quando": "2026-09-16 15:25"
+      "quando": "2026-10-07 13:39"
     },
     {
       "id": "set-do-on-conflict-ignorado",
       "titulo": "o `SET` do `INSERT … ON CONFLICT DO UPDATE` / `ON DUPLICATE KEY UPDATE` (o campo `atualizar`) era ignorado calado, e o `VALUES` ia por cima da linha com NULL no que ele não trazia",
       "veredito": "PROVADA",
-      "segundos": 38.64,
+      "segundos": 88.52,
       "notas": [],
-      "quando": "2026-09-16 15:25"
+      "quando": "2026-10-07 13:39"
     },
     {
       "id": "filtro-do-indice-parcial-e-oraculo",
       "titulo": "o índice parcial cujo `onde` cita a coluna negada respondia sobre ela: varrer por ele devolvia exatamente quem tem `salario > 5000`",
       "veredito": "PROVADA",
-      "segundos": 39.44,
+      "segundos": 87.46,
       "notas": [],
-      "quando": "2026-09-16 15:25"
+      "quando": "2026-10-07 13:39"
     },
     {
       "id": "juncao-materializa-antes-do-teto",
       "titulo": "as junções `interno`/`esquerdo`/`direito`/`completo` materializavam a saída inteira antes de conferir o teto — 1000 × 1000 com a mesma chave custava +561 MiB para recusar contra um teto de 1000",
       "veredito": "PROVADA",
-      "segundos": 40.2,
+      "segundos": 86.91,
       "notas": [],
-      "quando": "2026-09-16 15:25"
+      "quando": "2026-10-07 13:39"
     },
     {
       "id": "select-da-coluna-negada-devolve-nulo",
       "titulo": "`SELECT salario FROM folha` por quem não lê `salario` devolvia `{\"salario\": null}` em toda linha, em vez de recusar",
       "veredito": "PROVADA",
-      "segundos": 38.22,
+      "segundos": 87.59,
       "notas": [],
-      "quando": "2026-09-16 15:25"
+      "quando": "2026-10-07 13:39"
     },
     {
       "id": "em-engole-o-campo-ausente",
       "titulo": "`consultar.em` com `campo` que o sub-pedido não devolve — inclusive a coluna negada — respondia zero linhas com `ok: true`",
       "veredito": "PROVADA",
-      "segundos": 38.07,
+      "segundos": 87.84,
       "notas": [],
-      "quando": "2026-09-16 15:25"
+      "quando": "2026-10-07 13:39"
     },
     {
       "id": "literal-negativo-nao-parseia",
       "titulo": "o literal negativo não parseava em `SET`/`VALUES` («esperava um valor e veio \"-\"») enquanto `WHERE a = -5` passava pela expressão",
       "veredito": "PROVADA",
-      "segundos": 1.99,
+      "segundos": 6.58,
       "notas": [],
-      "quando": "2026-09-16 15:25"
+      "quando": "2026-10-07 13:39"
     },
     {
       "id": "tabela-inexistente-vaza-o-caminho",
@@ -1078,25 +1078,25 @@
       "id": "permissao-sem-devolver-a-vaga",
       "titulo": "a permissão do semáforo morre sem devolver a vaga — o `fetch_sub` esquecido, com outro nome",
       "veredito": "PROVADA",
-      "segundos": 6.65,
+      "segundos": 12.33,
       "notas": [],
-      "quando": "2026-09-16 15:25"
+      "quando": "2026-10-07 13:39"
     },
     {
       "id": "permissao-de-dados-sem-raii",
       "titulo": "a vaga da porta de dados só volta no caminho feliz — um pânico no `atender` a leva junto",
       "veredito": "PROVADA",
-      "segundos": 38.79,
+      "segundos": 88.75,
       "notas": [],
-      "quando": "2026-09-16 15:25"
+      "quando": "2026-10-07 13:39"
     },
     {
       "id": "web-sem-teto",
       "titulo": "a porta web volta a nascer sem teto — uma thread por pedido, como até a 0.18",
       "veredito": "PROVADA",
-      "segundos": 38.82,
+      "segundos": 88.98,
       "notas": [],
-      "quando": "2026-09-16 15:25"
+      "quando": "2026-10-07 13:39"
     },
     {
       "id": "ficha-do-fio-pulada-no-panico",
@@ -1110,17 +1110,17 @@
       "id": "disco-erro-de-es-sem-aviso",
       "titulo": "o erro de E/S respondido ao cliente não avisa ninguém",
       "veredito": "PROVADA",
-      "segundos": 42.41,
+      "segundos": 105.75,
       "notas": [],
-      "quando": "2026-09-16 15:25"
+      "quando": "2026-10-07 13:39"
     },
     {
       "id": "disco-sonda-cega-ao-erro",
       "titulo": "a sonda canário diz «passou» num diretório que o sistema operacional recusa",
       "veredito": "PROVADA",
-      "segundos": 38.6,
+      "segundos": 90.91,
       "notas": [],
-      "quando": "2026-09-16 15:25"
+      "quando": "2026-10-07 13:39"
     },
     {
       "id": "disco-silencio-furado",
@@ -1134,9 +1134,9 @@
       "id": "disco-config-nao-lida",
       "titulo": "`alertas.disco.checar_segundos` está no arquivo e ninguém o lê",
       "veredito": "PROVADA",
-      "segundos": 33.53,
+      "segundos": 83.87,
       "notas": [],
-      "quando": "2026-09-16 15:25"
+      "quando": "2026-10-07 13:39"
     },
     {
       "id": "recuperacao-deixa-a-marca-orfa",
@@ -1166,9 +1166,9 @@
       "id": "reserva-sobrevive-a-queda-da-ligacao",
       "titulo": "a saída da conexão não solta a reserva do BULKINSERT",
       "veredito": "PROVADA",
-      "segundos": 35.4,
+      "segundos": 85.4,
       "notas": [],
-      "quando": "2026-09-16 15:25"
+      "quando": "2026-10-07 13:39"
     },
     {
       "id": "bulkinsert-false-nao-drena-a-marca",
@@ -1190,9 +1190,9 @@
       "id": "fsync-do-arquivo-limpo",
       "titulo": "`Volumes::sincronizar` leva ao disco todo descritor aberto, sem pular o limpo",
       "veredito": "PROVADA",
-      "segundos": 1.56,
+      "segundos": 8.32,
       "notas": [],
-      "quando": "2026-09-16 15:25"
+      "quando": "2026-10-07 13:39"
     },
     {
       "id": "fsync-so-dos-escritos",
