@@ -1096,12 +1096,17 @@ impl RegFile {
 
     /// Toma o proximo valor da sequencia e avanca o contador.
     ///
-    /// O cabecalho so vai para o disco no `sincronizar`, junto com os demais
-    /// contadores da tabela. Se a maquina cair antes disso, o contador volta
-    /// atras e valores ja gravados podem repetir -- e por isso que a
-    /// sequencia nao serve como chave unica sozinha. Quem precisa de unicidade
-    /// declara um indice `unico` sobre ela, e ai o proprio indice recusa a
-    /// repeticao.
+    /// O contador vai para o disco na MESMA escrita do cabecalho que leva o
+    /// `slot_count`, sob um CRC so (`gravar_contadores`): linha visivel
+    /// implica contador a frente dela. A queda antes do `sincronizar` pode
+    /// perder a ultima linha nao sincronizada -- o slot fica alem do
+    /// `slot_count` e e reescrito --, e isso e perda sem `fsync`, nao
+    /// repeticao (pedido 664, `sequencia_nao_repete_com_cabecalho_perdido`);
+    /// cabecalho rasgado e recusa pelo CRC. O que REPETE numero sao outros
+    /// caminhos, todos de fora da gravacao: `ajustar_sequencia` para tras,
+    /// backup antigo restaurado e promocao de replica atrasada. Por eles a
+    /// sequencia nao serve como chave unica sozinha: quem precisa de
+    /// unicidade declara um indice `unico` sobre ela, e o indice recusa.
     pub fn proxima_da_sequencia(&mut self) -> u64 {
         let (v, seguinte) = self.proxima_sem_andar(self.proxima_sequencia);
         self.proxima_sequencia = seguinte;
@@ -1827,7 +1832,7 @@ impl RegFile {
         // Os slots viajam byte a byte: so o cabecalho e o bloco mudam. O rabo
         // da FASE A (retrato, dono, escrita, espelho) e o do `alargar_fase_a`.
         let troca = self.reescrever_fase_a(primeiros, &cabs, &mut |caminho, cab, _, _| {
-            reescrever_volume(caminho, cab, &bytes, origem, destino).map(|_| 0)
+            reescrever_volume(caminho, cab, &bytes, origem, destino).map(|m| (0, m))
         })?;
         Ok(TrocaDoEsquema {
             troca,
@@ -1882,6 +1887,7 @@ impl RegFile {
                 .map(|(_, _, caminho, espelho)| (caminho.clone(), espelho.clone()))
                 .collect(),
             retrato,
+            novos: Vec::new(),
             _selos: selos,
         };
         crate::ndx::panico_de_teste::passar(
@@ -1894,11 +1900,15 @@ impl RegFile {
         // queda aqui nao deixa nada pela metade: os `*.novo` orfaos sao lixo,
         // e o `abrir` os reconhece como lixo porque o volume 1 ainda e velho.
         let mut slots = 0u64;
+        let mut novos = Vec::new();
         for ((v, primeiro, caminho, espelho), cab) in primeiros.iter().zip(cabs) {
-            let escrito = escrever(caminho, cab, *v, *primeiro).and_then(|n| {
+            let escrito = escrever(caminho, cab, *v, *primeiro).and_then(|(n, m)| {
                 slots += n;
+                novos.push((caminho_do_novo(caminho), m));
                 match espelho {
-                    Some(e) if e.exists() => escrever(e, cab, *v, *primeiro).map(|_| ()),
+                    Some(e) if e.exists() => escrever(e, cab, *v, *primeiro).map(|(_, m)| {
+                        novos.push((caminho_do_novo(e), m));
+                    }),
                     _ => Ok(()),
                 }
             });
@@ -1907,7 +1917,11 @@ impl RegFile {
                 return Err(e);
             }
         }
-        Ok(TrocaPendente { slots, ..a_trocar })
+        Ok(TrocaPendente {
+            slots,
+            novos,
+            ..a_trocar
+        })
     }
 
     /// A FASE B: confere o retrato, e so `rename` -- o volume 1 primeiro, que
@@ -2259,6 +2273,16 @@ impl RegFile {
                      estava. Nada foi perdido -- rode a operacao de novo"
                 )));
             }
+        }
+        // Pedido 661: e o `*.novo` que a FASE A escreveu, e nao um posto no
+        // nome dele na janela sem trava? Aqui, e nao so no
+        // `conferir_retrato`, porque as tres FASES B passam por este ponto
+        // e o `rename` logo abaixo e o que publica o arquivo. Trocado, o
+        // nome sai (`descartar` tira o NOME, nunca escreve no inode) e nada
+        // foi trocado ainda.
+        if let Err(e) = pendente.conferir_novos() {
+            pendente.descartar();
+            return Err(e);
         }
         crate::ndx::panico_de_teste::passar(
             crate::ndx::panico_de_teste::Ponto::FaseBAntesDaPrimeiraTroca,
@@ -3517,14 +3541,16 @@ fn reescrever_volume(
     esquema_bytes: &[u8],
     origem: u64,
     destino: u64,
-) -> Result<()> {
+) -> Result<std::fs::Metadata> {
     let tmp = caminho_do_novo(caminho);
 
     let mut de = File::open(caminho)?;
     let tamanho = de.metadata()?.len();
     // Pelo motor da permissao (pedido 542): o `.novo` vira o `.reg`, e um
     // `.novo` largado por uma troca interrompida nao empresta o modo dele.
-    let mut para = crate::util::recriar_do_banco(&tmp, false)?;
+    // E nasce NOVO (pedido 661): o nome que estiver la sai, e o inode dele
+    // -- link fisico de uma isca -- nunca recebe o conteudo da tabela.
+    let mut para = crate::util::recriar_temporario(&tmp)?;
     para.write_all(cab)?;
     para.write_all(esquema_bytes)?;
     let escrito = cab.len() as u64 + esquema_bytes.len() as u64;
@@ -3544,8 +3570,7 @@ fn reescrever_volume(
         }
     }
     crate::sincronia::sync_all(&para, &tmp)?;
-    drop(para);
-    Ok(())
+    Ok(para.metadata()?)
 }
 
 /// Escreve o `*.novo` de UM volume com slots MAIS LARGOS, um a um, na mesma
@@ -3569,9 +3594,12 @@ fn reescrever_volume(
 type Transformador<'a> = &'a mut dyn FnMut(u32, RowId, &[u8], &str) -> Result<Vec<u8>>;
 
 /// Como a FASE A escreve UM volume: `(caminho, cabecalho, volume,
-/// primeiro_rowid)` -> quantos slots passaram. O unico ponto em que as tres
-/// FASES A (coluna a mais, regravacao do esquema, migracao da cifra) diferem.
-type EscritorDeVolume<'a> = &'a mut dyn FnMut(&Path, &[u8], u32, RowId) -> Result<u64>;
+/// primeiro_rowid)` -> quantos slots passaram e o `fstat` do `*.novo`
+/// escrito (pedido 661: e contra ele que a FASE B confere o `*.novo`). O
+/// unico ponto em que as tres FASES A (coluna a mais, regravacao do esquema,
+/// migracao da cifra) diferem.
+type EscritorDeVolume<'a> =
+    &'a mut dyn FnMut(&Path, &[u8], u32, RowId) -> Result<(u64, std::fs::Metadata)>;
 
 /// Quem diz, linha a linha, o conteudo da coluna nova no
 /// [`RegFile::alargar_fase_a`] (pedido 245, O2b): recebe o rowid, o payload
@@ -3724,6 +3752,11 @@ pub struct TrocaPendente {
     /// `(volume, espelho)` na ordem da troca. O volume 1 vem primeiro.
     trocas: Vec<(PathBuf, Option<PathBuf>)>,
     retrato: Vec<RetratoDoVolume>,
+    /// Cada `*.novo` escrito, com o `fstat` do descritor depois do ultimo
+    /// byte (pedido 661). O retrato acima so olha os volumes VIVOS; entre as
+    /// fases, com a trava solta, um `*.novo` trocado entrava pelo `rename`
+    /// sem conferencia nenhuma.
+    novos: Vec<(PathBuf, std::fs::Metadata)>,
     /// Os `mtime` originais dos volumes selados no retrato (pedido 634). Sai
     /// no `Drop`, e so devolve o original a quem AINDA tem a sentinela -- ver
     /// [`Selos`].
@@ -3782,6 +3815,33 @@ impl TrocaPendente {
                     "{o_que}: a troca foi ABORTADA e a tabela continua inteira e \
                      como estava. Nada foi perdido -- rode a operacao de novo \
                      quando ninguem estiver gravando nela"
+                )));
+            }
+        }
+        Ok(())
+    }
+
+    /// Cada `*.novo` ainda e o que a FASE A escreveu (pedido 661): mesmo
+    /// inode, um nome so, mesmo tamanho e mesma data. O que sumiu fica para
+    /// a recusa propria do `alargar_fase_b`, que diz «sumiu».
+    fn conferir_novos(&self) -> Result<()> {
+        for (novo, escrito) in &self.novos {
+            let Ok(nome) = std::fs::symlink_metadata(novo) else {
+                continue;
+            };
+            if !crate::util::ainda_o_mesmo_temporario(escrito, &nome) {
+                // So o NOME do arquivo, pelo mesmo motivo do
+                // `conferir_retrato` (pedido 428).
+                let arquivo = novo
+                    .file_name()
+                    .map(|f| f.to_string_lossy().into_owned())
+                    .unwrap_or_default();
+                return Err(PhxError::Conflito(format!(
+                    "{arquivo} nao e mais o arquivo que a reescrita montou (foi \
+                     trocado, ganhou outro nome ou foi escrito por fora): a \
+                     troca foi ABORTADA e a tabela continua inteira e como \
+                     estava. Confira quem mais escreve na pasta de dados e \
+                     rode a operacao de novo"
                 )));
             }
         }
@@ -4134,12 +4194,12 @@ fn escrever_volume_alargado(
     volume: u32,
     primeiro_rowid: RowId,
     transformar: Transformador,
-) -> Result<u64> {
+) -> Result<(u64, std::fs::Metadata)> {
     let nome = caminho
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_default();
-    let tmp = caminho.with_file_name(format!("{nome}.{SUFIXO_NOVO}"));
+    let tmp = caminho_do_novo(caminho);
 
     let de = File::open(caminho)?;
     let tamanho = de.metadata()?.len();
@@ -4151,8 +4211,9 @@ fn escrever_volume_alargado(
     let mut de = std::io::BufReader::with_capacity(1 << 20, de);
     de.seek(SeekFrom::Start(origem))?;
 
-    // Pelo motor da permissao (pedido 542) -- o irmao de cima.
-    let para = crate::util::recriar_do_banco(&tmp, false)?;
+    // Pelo motor da permissao (pedido 542) e sempre novo (pedido 661) -- o
+    // irmao de cima. O `descriptografar` passa por aqui com o texto claro.
+    let para = crate::util::recriar_temporario(&tmp)?;
     let mut para = std::io::BufWriter::with_capacity(1 << 20, para);
     para.write_all(cab)?;
     para.write_all(esquema_bytes)?;
@@ -4173,8 +4234,7 @@ fn escrever_volume_alargado(
     // arquivos que ja estao no disco inteiros, senao a troca "atomica"
     // publicaria um arquivo cujo miolo ainda esta no cache.
     crate::sincronia::sync_all(&para, &tmp)?;
-    drop(para);
-    Ok(quantos)
+    Ok((quantos, para.metadata()?))
 }
 
 /// O primeiro volume do `.reg` desta tabela, ou `None` se nao houver nenhum.

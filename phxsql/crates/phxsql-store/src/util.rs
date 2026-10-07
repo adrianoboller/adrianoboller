@@ -249,6 +249,40 @@ pub fn recriar_no_destino(caminho: &Path, ler: bool) -> std::io::Result<File> {
     recriar(caminho, ler, Modo::Destino)
 }
 
+/// O arquivo TEMPORARIO de uma troca (o `*.novo` das FASES A, pedido 661):
+/// sempre novo e sempre nosso. Tira o nome que estiver la e nasce pelo modo
+/// [`recriar_no_destino`] -- o `create_new` do mesmo motor, nunca um segundo.
+///
+/// O modo `Banco` truncava e reusava o inode do nome: um `t.reg.novo`
+/// plantado como link fisico de uma isca recebia o payload da FASE A -- no
+/// `descriptografar`, o texto claro da tabela inteira num arquivo com outro
+/// nome, fora do alcance de quem apaga o `.novo`. Reusar o inode de um
+/// temporario nao compra nada (ninguem mais o tem aberto, ao contrario do
+/// `.ndx` do `reindexar`), entao o nome sai sempre. Se alguem o plantar de
+/// novo entre o `remove_file` e o `create_new`, o modo `Destino` o tira
+/// outra vez ou recusa -- o conteudo nunca cai no inode alheio.
+pub fn recriar_temporario(caminho: &Path) -> std::io::Result<File> {
+    match std::fs::remove_file(caminho) {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(e),
+    }
+    recriar(caminho, false, Modo::Destino)
+}
+
+/// O temporario de [`recriar_temporario`] continua o MESMO no nome (pedido
+/// 661)? `escrito` e o `fstat` do descritor depois do ultimo byte; `nome`, o
+/// `lstat` de agora. Mesmo inode, regular, um nome so, mesmo tamanho e mesma
+/// data -- quem trocou o nome na janela sem trava, ou pendurou um link
+/// fisico nele, ou escreveu por ele, nao passa.
+pub fn ainda_o_mesmo_temporario(escrito: &std::fs::Metadata, nome: &std::fs::Metadata) -> bool {
+    nome.file_type().is_file()
+        && mesmo_arquivo(escrito, nome)
+        && um_nome_so(nome)
+        && escrito.len() == nome.len()
+        && escrito.modified().ok() == nome.modified().ok()
+}
+
 /// O corpo de [`recriar_do_banco`] e [`recriar_no_destino`]: um motor so, e
 /// `destino` decide so o que fazer com o arquivo regular que nao e nosso.
 fn recriar(caminho: &Path, ler: bool, modo: Modo) -> std::io::Result<File> {

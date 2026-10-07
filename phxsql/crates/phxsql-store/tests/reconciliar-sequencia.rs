@@ -125,6 +125,76 @@ fn reconciliar_nunca_recua_o_contador() {
     );
 }
 
+/// **Pedido 664: a queda NAO faz o contador voltar e repetir numero.**
+///
+/// O contador (byte 36) e o `slot_count` (byte 20) saem na MESMA escrita do
+/// cabecalho, sob um CRC so (`gravar_contadores`): linha visivel implica
+/// contador a frente dela. A queda que perde o cabecalho perde a linha junto
+/// -- o slot fica alem do `slot_count` e e reescrito --, e isso e perda sem
+/// `fsync`, nao repeticao. O roteiro: tres linhas e `sincronizar`; guarda os
+/// 128 bytes do cabecalho; a quarta sem sincronizar; repoe o cabecalho
+/// guardado (a queda: o slot chegou ao disco, o cabecalho nao); reabre e
+/// insere. Ids 1 a 4 e contagem 4.
+///
+/// Sem indice de proposito: o `.ndx` gravado no `drop` traria a chave da
+/// linha perdida e o teste mediria a reconstrucao dele, nao o contador.
+///
+/// # Prova real
+///
+/// Com o contador fora do cabecalho do `gravar_contadores` (o byte 36 nao
+/// escrito pelo `montar_cabecalho`), a reabertura le o contador zerado, a
+/// linha nova sai com id 1 e a lista dos ids reprova.
+#[test]
+fn sequencia_nao_repete_com_cabecalho_perdido() {
+    use std::io::{Seek, SeekFrom, Write};
+    let d = comum::DirTemp::novo("cabecalho-perdido");
+    let esquema = Schema::new(
+        "pedidos",
+        vec![
+            Column::new("id", ColumnType::Sequence).obrigatoria(),
+            Column::new("c", ColumnType::Str(30)).obrigatoria(),
+        ],
+        vec![],
+    )
+    .unwrap();
+    let reg = d.join("pedidos.reg");
+    let mut t = Table::criar(&d, esquema).unwrap();
+    for i in 1..=3 {
+        t.inserir(&[Value::Null, Value::Str(format!("n{i}"))])
+            .unwrap();
+    }
+    t.sincronizar().unwrap();
+    let cabecalho = std::fs::read(&reg).unwrap()[..128].to_vec();
+    t.inserir(&[Value::Null, Value::Str("perdida".into())])
+        .unwrap();
+    drop(t);
+
+    let mut f = std::fs::OpenOptions::new().write(true).open(&reg).unwrap();
+    f.seek(SeekFrom::Start(0)).unwrap();
+    f.write_all(&cabecalho).unwrap();
+    f.sync_all().unwrap();
+    drop(f);
+
+    let mut t = Table::abrir(&d, "pedidos").unwrap();
+    t.inserir(&[Value::Null, Value::Str("depois".into())])
+        .unwrap();
+    let ids: Vec<u64> = t
+        .varrer()
+        .unwrap()
+        .iter()
+        .map(|(_, l)| match &l[0] {
+            Value::UInt(n) => *n,
+            outro => panic!("id nao e UInt: {outro:?}"),
+        })
+        .collect();
+    assert_eq!(
+        ids,
+        vec![1, 2, 3, 4],
+        "a queda que perdeu o cabecalho fez o contador repetir numero"
+    );
+    assert_eq!(t.registros(), 4);
+}
+
 /// Tabela sem coluna `Sequence`: reconciliar e no-op, devolve 0 e nao explode.
 #[test]
 fn sem_sequencia_reconciliar_e_zero() {

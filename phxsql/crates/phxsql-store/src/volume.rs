@@ -1643,6 +1643,11 @@ mod tests {
         // `Reabrir` do motor do 542; a definicao conta 1 no `util.rs`, e o
         // `trava_de_instancia.rs` continua com 1, agora pelo motor. Caminho
         // novo nenhum: o mesmo arquivo, aberto pelo mesmo motor dos outros.
+        // Pedido 661: `util.rs` 12 -> 13 e `recriar_temporario` na lista
+        // dos ABRIDORES -- o `*.novo` das FASES A (`reg.rs`, 2) deixou o modo
+        // `Banco` do motor do 542, que reusava o inode do nome, pelo modo
+        // `Destino` depois de tirar o nome. Mesmo motor, mesma contagem no
+        // `reg.rs`; a definicao conta 1 no `util.rs`.
         const HOJE: &[(&str, usize)] = &[
             ("backup.rs", 2),
             ("catalogo.rs", 4),
@@ -1655,10 +1660,10 @@ mod tests {
             ("sequencia.rs", 2),
             ("sincronia.rs", 3),
             ("trava_de_instancia.rs", 1),
-            ("util.rs", 12),
+            ("util.rs", 13),
             ("volume.rs", 2),
         ];
-        const ABRIDORES: [&str; 10] = [
+        const ABRIDORES: [&str; 11] = [
             "OpenOptions::new()",
             "File::create(",
             "fs::write(",
@@ -1669,6 +1674,7 @@ mod tests {
             "copiar_do_banco(",
             "recriar_no_destino(",
             "reabrir_do_banco(",
+            "recriar_temporario(",
         ];
         let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
         let mut medido: BTreeMap<String, usize> = BTreeMap::new();

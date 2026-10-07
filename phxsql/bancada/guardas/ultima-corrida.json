@@ -1,5 +1,6 @@
 {
-  "quando": "2026-09-16 15:25",
+  "quando": "2026-10-07 11:04",
+  "mais_antigo": "2026-09-16 15:25",
   "guardas": [
     {
       "id": "profiler-recorta",
@@ -5373,9 +5374,9 @@
       "id": "sequencia-nomeada-proximo-sem-durar",
       "titulo": "o `proximo` da sequência nomeada devolvia o número ANTES de durá-lo: reabrir repetia o que já tinha saído",
       "veredito": "PROVADA",
-      "segundos": 12.39,
+      "segundos": 11.36,
       "notas": [],
-      "quando": "2026-10-02 01:12"
+      "quando": "2026-10-07 11:04"
     },
     {
       "id": "tabela-com-nome-de-sequencia",
@@ -5936,6 +5937,62 @@
       "segundos": 12.77,
       "notas": [],
       "quando": "2026-10-06 22:29"
+    },
+    {
+      "id": "novo-da-fase-a-reusa-o-inode",
+      "titulo": "O `*.novo` da FASE A trunca e reusa o inode do nome: o `descriptografar` escreve o texto claro numa isca plantada como link físico (pedido 661)",
+      "veredito": "PROVADA",
+      "segundos": 10.22,
+      "notas": [],
+      "quando": "2026-10-07 11:04"
+    },
+    {
+      "id": "fase-b-nao-confere-o-novo",
+      "titulo": "A FASE B renomeia o `*.novo` sem conferir que é o que a FASE A escreveu: o trocado entre as fases vira o `.reg` (pedido 661)",
+      "veredito": "PROVADA",
+      "segundos": 9.37,
+      "notas": [],
+      "quando": "2026-10-07 11:04"
+    },
+    {
+      "id": "fase-b-nao-confere-o-novo-na-janela",
+      "titulo": "O `*.novo` trocado na janela sem trava do servidor (`rodar_gancho_da_janela`) é publicado pela FASE B (pedido 661)",
+      "veredito": "PROVADA",
+      "segundos": 84.74,
+      "notas": [],
+      "quando": "2026-10-07 11:04"
+    },
+    {
+      "id": "colattribute-tamanho-escrito-sem-01004",
+      "titulo": "`SQLColAttribute` devolve os bytes escritos e não o total, e trunca sem `01004`: a pergunta com NULL volta 0 (pedido 663)",
+      "veredito": "PROVADA",
+      "segundos": 9.03,
+      "notas": [],
+      "quando": "2026-10-07 11:04"
+    },
+    {
+      "id": "tamanho-smallint-negativo",
+      "titulo": "O tamanho de texto acima de 32.767 bytes vira negativo no `SQLGetDiagRec`/`SQLGetDiagField` (pedido 663)",
+      "veredito": "PROVADA",
+      "segundos": 9.18,
+      "notas": [],
+      "quando": "2026-10-07 11:04"
+    },
+    {
+      "id": "contador-da-sequencia-fora-do-cabecalho",
+      "titulo": "O contador do auto number sai do cabeçalho de `gravar_contadores`: a queda que perde o cabeçalho repete número (pedido 664)",
+      "veredito": "PROVADA",
+      "segundos": 7.6,
+      "notas": [],
+      "quando": "2026-10-07 11:04"
+    },
+    {
+      "id": "seq-avanca-antes-de-gravar",
+      "titulo": "O `.seq` avança `geracao`/`proximo` antes do `fdatasync`: duas gravações que falham rasgam os dois slots (pedido 665)",
+      "veredito": "PROVADA",
+      "segundos": 11.09,
+      "notas": [],
+      "quando": "2026-10-07 11:04"
     },
     {
       "id": "alter-com-regra-sem-aviso",

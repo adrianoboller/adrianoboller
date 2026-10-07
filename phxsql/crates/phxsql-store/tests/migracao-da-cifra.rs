@@ -711,3 +711,91 @@ fn a_versao_entra_na_geometria_quando_o_resto_empata() {
     assert!(novos(&d).is_empty());
     cofre::desligar();
 }
+
+// ---------------------------------------------------------------------------
+// (661) o `*.novo` e sempre nosso e novo, e a FASE B o confere
+// ---------------------------------------------------------------------------
+
+/// Um `clientes.reg.novo` plantado como LINK FISICO de uma isca antes da
+/// FASE A: o `Descriptografar` escreve o texto claro num arquivo NOVO, e a
+/// isca fica como estava.
+///
+/// A isca e plantada com a tabela ja aberta: a abertura gravavel recolhe os
+/// `*.novo` orfaos (pedido 625), e plantar antes dela faria o teste passar
+/// pela limpeza, e nao pelo conserto.
+///
+/// # Prova real
+///
+/// Com o `.novo` voltando ao `recriar_do_banco` (modo `Banco`, que trunca e
+/// reusa o inode do nome), a isca recebe o payload em claro -- o
+/// `contem(SEGREDO)` da isca reprova.
+#[test]
+fn o_novo_plantado_como_link_fisico_nao_recebe_o_texto_claro() {
+    let _t = UM_DE_CADA_VEZ.lock().unwrap_or_else(|e| e.into_inner());
+    let d = tabela_em_claro("isca-novo", false, 20);
+    migrar(&d, true);
+    assert_eq!(versao(&d), 5);
+
+    let isca = d.join("isca.txt");
+    std::fs::write(&isca, b"conteudo da isca").unwrap();
+
+    let mut t = Table::abrir(&d, "clientes").unwrap();
+    std::fs::hard_link(&isca, d.join("clientes.reg.novo")).unwrap();
+    let troca = t.preparar_migracao_da_cifra(false).unwrap();
+    t.aplicar_migracao_da_cifra(troca)
+        .expect("o descriptografar com o nome plantado tinha de passar por um arquivo novo");
+    drop(t);
+
+    let na_isca = std::fs::read(&isca).unwrap();
+    assert!(
+        !contem(&na_isca, SEGREDO.as_bytes()),
+        "o texto claro da tabela caiu na isca pelo link fisico do `.novo`"
+    );
+    assert_eq!(na_isca, b"conteudo da isca", "a isca foi reescrita");
+    assert_eq!(versao(&d), 4);
+    conferir_linhas(&d, 20);
+    assert!(novos(&d).is_empty());
+    cofre::desligar();
+}
+
+/// O `clientes.reg.novo` trocado na janela entre as fases (trava solta) por
+/// um arquivo de mesmo conteudo e OUTRO inode: a FASE B recusa com
+/// `Conflito`, nada e trocado, e o nome plantado sai.
+///
+/// Mesmo conteudo de proposito: a conferencia e de IDENTIDADE (o arquivo que
+/// a FASE A escreveu), nao de forma -- um `*.novo` montado por fora com
+/// cabecalho valido passaria por uma conferencia de forma.
+///
+/// # Prova real
+///
+/// Sem o `conferir_novos` no `alargar_fase_b`, o `rename` publica o arquivo
+/// plantado e o `unwrap_err` reprova.
+#[test]
+fn o_novo_trocado_entre_as_fases_e_recusado() {
+    let _t = UM_DE_CADA_VEZ.lock().unwrap_or_else(|e| e.into_inner());
+    let d = tabela_em_claro("troca-novo", false, 20);
+    migrar(&d, true);
+    let mut t = Table::abrir(&d, "clientes").unwrap();
+    let troca = t.preparar_migracao_da_cifra(false).unwrap();
+
+    let novo = d.join("clientes.reg.novo");
+    let bytes = std::fs::read(&novo).unwrap();
+    std::fs::remove_file(&novo).unwrap();
+    std::fs::write(&novo, &bytes).unwrap();
+
+    let e = t.aplicar_migracao_da_cifra(troca).unwrap_err();
+    assert!(matches!(e, PhxError::Conflito(_)), "recusou como {e:?}");
+    assert!(
+        !format!("{e}").contains(d.to_string_lossy().as_ref()),
+        "a recusa vazou o caminho da raiz: {e}"
+    );
+    drop(t);
+    assert_eq!(versao(&d), 5, "o `.novo` trocado foi publicado");
+    assert!(
+        novos(&d).is_empty(),
+        "o nome plantado ficou: {:?}",
+        novos(&d)
+    );
+    conferir_linhas(&d, 20);
+    cofre::desligar();
+}

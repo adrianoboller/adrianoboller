@@ -408,24 +408,28 @@ impl Sequencia {
                 }
             )));
         }
-        let valor = self.estado.proximo;
-        let dentro = |v: i64| v >= self.estado.minimo && v <= self.estado.maximo;
-        match valor.checked_add(self.estado.passo) {
-            Some(seguinte) if dentro(seguinte) => self.estado.proximo = seguinte,
-            _ if self.estado.ciclo => {
-                self.estado.proximo = if self.estado.passo > 0 {
-                    self.estado.minimo
+        // O estado seguinte nasce numa COPIA (pedido 665): a memoria so
+        // anda depois de o disco saber que o numero saiu. Andar antes e
+        // gravar depois deixava a `geracao` adiantada quando a gravacao
+        // falhava, e a gravacao seguinte caia no slot que ainda valia.
+        let mut novo = self.estado;
+        let valor = novo.proximo;
+        let dentro = |v: i64| v >= novo.minimo && v <= novo.maximo;
+        match valor.checked_add(novo.passo) {
+            Some(seguinte) if dentro(seguinte) => novo.proximo = seguinte,
+            _ if novo.ciclo => {
+                novo.proximo = if novo.passo > 0 {
+                    novo.minimo
                 } else {
-                    self.estado.maximo
+                    novo.maximo
                 }
             }
-            _ => self.estado.esgotada = true,
+            _ => novo.esgotada = true,
         }
-        self.estado.entregues += 1;
+        novo.entregues += 1;
         // Grava antes de devolver: o numero so e de alguem depois de o disco
-        // saber que ele saiu. Se a gravacao falhar, o estado em memoria e
-        // descartado junto com o erro -- quem reabrir le o anterior.
-        self.gravar()?;
+        // saber que ele saiu.
+        self.gravar(novo)?;
         Ok(valor)
     }
 
@@ -440,20 +444,38 @@ impl Sequencia {
                 self.estado.minimo, self.estado.maximo
             )));
         }
-        self.estado.proximo = proximo;
-        self.estado.esgotada = false;
-        self.gravar()
+        let mut novo = self.estado;
+        novo.proximo = proximo;
+        novo.esgotada = false;
+        self.gravar(novo)
     }
 
-    /// Grava o estado no slot que NAO e o vigente e espera o disco. Se a
-    /// escrita ou o `fdatasync` falharem, o estado em memoria e o erro saem
-    /// juntos: quem reabrir le o slot anterior, que continua valido.
-    fn gravar(&mut self) -> Result<()> {
-        self.estado.geracao += 1;
-        let slot = (self.estado.geracao % 2) * SLOT as u64;
-        let bytes = self.estado.bytes();
+    /// Grava `novo` no slot que NAO e o vigente, espera o disco, e SO ENTAO
+    /// o adota como estado em memoria (pedido 665).
+    ///
+    /// A ordem e a garantia: a `geracao` da memoria e a do slot que vale, e
+    /// o slot alternado sai dela. Se a escrita ou o `fdatasync` falharem, a
+    /// memoria fica como estava, e a proxima tentativa cai no MESMO slot
+    /// alternado -- nunca no vigente. Antes, a `geracao` andava antes da
+    /// gravacao: duas falhas seguidas (ENOSPC, EIO) escreviam os DOIS slots,
+    /// e dois slots rasgados deixavam a sequencia sem estado legivel.
+    fn gravar(&mut self, mut novo: Estado) -> Result<()> {
+        novo.geracao = self.estado.geracao + 1;
+        let slot = (novo.geracao % 2) * SLOT as u64;
+        let bytes = novo.bytes();
+        #[cfg(debug_assertions)]
+        if let Some(erro) = crate::sincronia::falha_de_teste::disparar(
+            &self.caminho,
+            crate::sincronia::falha_de_teste::Onde::GravacaoDaSequencia,
+        ) {
+            // O slot rasgado: metade escrita, e o erro.
+            crate::util::escrever_em(&mut self.arquivo, slot, &bytes[..bytes.len() / 2])?;
+            return Err(PhxError::Io(erro));
+        }
         crate::util::escrever_em(&mut self.arquivo, slot, &bytes)?;
-        crate::sincronia::sync_data(&self.arquivo, &self.caminho)
+        crate::sincronia::sync_data(&self.arquivo, &self.caminho)?;
+        self.estado = novo;
+        Ok(())
     }
 }
 
@@ -533,6 +555,44 @@ mod testes {
         assert_eq!(s.proximo().unwrap(), 4);
         drop(s);
         assert_eq!(Sequencia::abrir(&d.0, "nf").unwrap().estado().proximo, 5);
+    }
+
+    /// **Pedido 665: duas gravacoes que falham seguidas nao rasgam os DOIS
+    /// slots.** Cada falha forjada escreve METADE do slot e devolve ENOSPC
+    /// (`Onde::GravacaoDaSequencia`). Com a memoria parada ate o
+    /// `fdatasync` dar certo, as duas caem no MESMO slot alternado, o vigente
+    /// fica intacto, e a reabertura le o ultimo numero entregue (2): o
+    /// proximo e o 3, sem buraco e sem repeticao. Na mesma instancia, depois
+    /// das falhas, o proximo tambem e o 3.
+    ///
+    /// # Prova real
+    ///
+    /// Com a `geracao` andando antes da gravacao (o defeito reposto), a
+    /// segunda falha cai no slot vigente: os dois ficam rasgados e a
+    /// reabertura recusa com `Corrompido` -- a sequencia sem estado legivel.
+    #[test]
+    fn duas_gravacoes_que_falham_seguidas_nao_rasgam_os_dois_slots() {
+        use crate::sincronia::falha_de_teste::{armar, desarmar, Onde};
+        let d = pasta("duas-falhas");
+        let mut s = Sequencia::criar(&d.0, "nf", Definicao::default()).unwrap();
+        assert_eq!(s.proximo().unwrap(), 1);
+        assert_eq!(s.proximo().unwrap(), 2);
+        armar(s.caminho(), Onde::GravacaoDaSequencia, 2);
+        assert!(s.proximo().is_err(), "a primeira falha forjada nao chegou");
+        assert!(s.proximo().is_err(), "a segunda falha forjada nao chegou");
+        desarmar(s.caminho());
+
+        let reaberta = Sequencia::abrir(&d.0, "nf")
+            .unwrap_or_else(|e| panic!("duas falhas deixaram a sequencia ilegivel: {e}"));
+        assert_eq!(
+            reaberta.estado().proximo,
+            3,
+            "a reabertura nao le o ultimo numero entregue"
+        );
+        assert_eq!(s.estado().proximo, 3, "a memoria andou sem o disco");
+        assert_eq!(s.proximo().unwrap(), 3);
+        drop((s, reaberta));
+        assert_eq!(Sequencia::abrir(&d.0, "nf").unwrap().estado().proximo, 4);
     }
 
     #[test]

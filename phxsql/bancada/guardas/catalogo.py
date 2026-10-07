@@ -23349,11 +23349,12 @@ fn anotar(""",
         ),
         "arquivo": "crates/phxsql-store/src/sequencia.rs",
         "trecho": (
-            "        self.gravar()?;\n"
+            "        self.gravar(novo)?;\n"
             "        Ok(valor)\n"
         ),
         "troca": (
             "        // DEFEITO REPOSTO (pedido 229): o numero sai sem ir ao disco.\n"
+            "        let _ = novo;\n"
             "        Ok(valor)\n"
         ),
         "pacote": "phxsql-store",
@@ -25092,6 +25093,191 @@ fn anotar(""",
         ],
         "seguem": [
             "restaurar::tests::caminho_que_escapa_da_pasta_e_recusado",
+        ],
+    },
+    {
+        "id": "novo-da-fase-a-reusa-o-inode",
+        "titulo": "O `*.novo` da FASE A trunca e reusa o inode do nome: o `descriptografar` escreve o texto claro numa isca plantada como link físico (pedido 661)",
+        "porque": (
+            "pedido 661, SEC 07/10/2026: o `recriar_do_banco` (modo `Banco`) "
+            "trunca o mesmo inode, e um `t.reg.novo` que e link fisico de uma "
+            "isca recebia o payload da FASE A -- no DECRYPT, a tabela inteira "
+            "em claro num arquivo de outro nome."
+        ),
+        "arquivo": "crates/phxsql-store/src/util.rs",
+        "trecho": """pub fn recriar_temporario(caminho: &Path) -> std::io::Result<File> {
+    match std::fs::remove_file(caminho) {
+""",
+        "troca": """pub fn recriar_temporario(caminho: &Path) -> std::io::Result<File> {
+    // DEFEITO REPOSTO (661): o modo Banco, que trunca e reusa o inode.
+    return recriar(caminho, false, Modo::Banco);
+    #[allow(unreachable_code)]
+    match std::fs::remove_file(caminho) {
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "migracao-da-cifra"],
+        "caem": [
+            "o_novo_plantado_como_link_fisico_nao_recebe_o_texto_claro",
+        ],
+        "seguem": [
+            "round_trip_devolve_o_payload_byte_a_byte",
+            "o_novo_trocado_entre_as_fases_e_recusado",
+        ],
+    },
+    {
+        "id": "fase-b-nao-confere-o-novo",
+        "titulo": "A FASE B renomeia o `*.novo` sem conferir que é o que a FASE A escreveu: o trocado entre as fases vira o `.reg` (pedido 661)",
+        "porque": (
+            "pedido 661: o `conferir_retrato` olha so os volumes vivos; com a "
+            "trava solta entre as fases, um `*.novo` trocado entrava pelo "
+            "`rename` sem conferencia nenhuma."
+        ),
+        "arquivo": "crates/phxsql-store/src/reg.rs",
+        "trecho": """        if let Err(e) = pendente.conferir_novos() {
+""",
+        "troca": """        // DEFEITO REPOSTO (661): o `*.novo` nao se confere.
+        if let Err(e) = Ok::<(), PhxError>(()) {
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "migracao-da-cifra"],
+        "caem": [
+            "o_novo_trocado_entre_as_fases_e_recusado",
+        ],
+        "seguem": [
+            "round_trip_devolve_o_payload_byte_a_byte",
+            "o_novo_plantado_como_link_fisico_nao_recebe_o_texto_claro",
+        ],
+    },
+    {
+        "id": "fase-b-nao-confere-o-novo-na-janela",
+        "titulo": "O `*.novo` trocado na janela sem trava do servidor (`rodar_gancho_da_janela`) é publicado pela FASE B (pedido 661)",
+        "porque": (
+            "pedido 661, o mesmo defeito pelo caminho do servidor: a FASE A "
+            "corre com a trava global solta, e quem escreve na pasta de dados "
+            "troca o `*.novo` antes de a FASE B retomar a trava."
+        ),
+        "arquivo": "crates/phxsql-store/src/reg.rs",
+        "trecho": """        if let Err(e) = pendente.conferir_novos() {
+""",
+        "troca": """        // DEFEITO REPOSTO (661): o `*.novo` nao se confere.
+        if let Err(e) = Ok::<(), PhxError>(()) {
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_da_varredura_da_fk_fora_da_trava::o_novo_trocado_na_janela_sem_trava_e_recusado",
+        ],
+        "seguem": [
+            "servidor::testes_da_varredura_da_fk_fora_da_trava::a_reescrita_do_esquema_acontece_fora_da_trava",
+        ],
+    },
+    {
+        "id": "colattribute-tamanho-escrito-sem-01004",
+        "titulo": "`SQLColAttribute` devolve os bytes escritos e não o total, e trunca sem `01004`: a pergunta com NULL volta 0 (pedido 663)",
+        "porque": (
+            "pedido 663, SEC 07/10/2026: com `info` nulo o tamanho voltava 0 e "
+            "o idioma «pergunta com NULL, aloca, pergunta de novo» deixava o "
+            "cliente com o nome cortado sem aviso."
+        ),
+        "arquivo": "crates/phxsql-odbc/src/lib.rs",
+        "trecho": """                SQL_COLUMN_NAME | SQL_DESC_NAME | SQL_DESC_LABEL => devolver_texto(
+                    c.nome.as_bytes(),
+                    texto_saida as *mut SqlChar,
+                    capacidade,
+                    tamanho_saida,
+                    Some((id, "o nome da coluna")),
+                ),
+""",
+        "troca": """                SQL_COLUMN_NAME | SQL_DESC_NAME | SQL_DESC_LABEL => {
+                    // DEFEITO REPOSTO (663): bytes escritos, sem aviso.
+                    let (n, _) = escrever_texto(
+                        c.nome.as_bytes(),
+                        texto_saida as *mut SqlChar,
+                        capacidade as SqlLen,
+                    );
+                    escrever_num(tamanho_saida, n as SqlSmallint);
+                    SQL_SUCCESS
+                }
+""",
+        "pacote": "phxsql-odbc",
+        "alvo": ["--lib"],
+        "caem": [
+            "testes::colattribute_trunca_com_01004_e_devolve_o_total",
+        ],
+        "seguem": [
+            "testes::colattribute_responde_sem_sinal_precisao_e_escala",
+            "testes::diagnostico_longo_satura_o_tamanho_em_32767",
+        ],
+    },
+    {
+        "id": "tamanho-smallint-negativo",
+        "titulo": "O tamanho de texto acima de 32.767 bytes vira negativo no `SQLGetDiagRec`/`SQLGetDiagField` (pedido 663)",
+        "porque": (
+            "pedido 663: o `as SqlSmallint` cru dava -32.768 para 32.768 "
+            "bytes; tamanho negativo o cliente le como erro ou como `SQL_NTS`."
+        ),
+        "arquivo": "crates/phxsql-odbc/src/lib.rs",
+        "trecho": """    SqlSmallint::try_from(n).unwrap_or(SqlSmallint::MAX)
+""",
+        "troca": """    // DEFEITO REPOSTO (663): o `as` cru.
+    n as SqlSmallint
+""",
+        "pacote": "phxsql-odbc",
+        "alvo": ["--lib"],
+        "caem": [
+            "testes::diagnostico_longo_satura_o_tamanho_em_32767",
+        ],
+        "seguem": [
+            "testes::colattribute_trunca_com_01004_e_devolve_o_total",
+            "testes::getdiagfield_entrega_estado_texto_e_quantidade",
+        ],
+    },
+    {
+        "id": "contador-da-sequencia-fora-do-cabecalho",
+        "titulo": "O contador do auto number sai do cabeçalho de `gravar_contadores`: a queda que perde o cabeçalho repete número (pedido 664)",
+        "porque": (
+            "pedido 664, parecer do papel C 07/10/2026: o byte 36 e o "
+            "`slot_count` saem na MESMA escrita sob um CRC so, e e isso que "
+            "faz a queda perder a linha em vez de repetir o numero."
+        ),
+        "arquivo": "crates/phxsql-store/src/reg.rs",
+        "trecho": """            por_u64(&mut buf, 36, self.proxima_sequencia);
+""",
+        "troca": """            // DEFEITO REPOSTO (664): o contador fora do cabecalho.
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "reconciliar-sequencia"],
+        "caem": [
+            "sequencia_nao_repete_com_cabecalho_perdido",
+        ],
+        "seguem": [
+            "sem_sequencia_reconciliar_e_zero",
+            "contador_atras_do_dado_repete_o_numero_calado",
+        ],
+    },
+    {
+        "id": "seq-avanca-antes-de-gravar",
+        "titulo": "O `.seq` avança `geracao`/`proximo` antes do `fdatasync`: duas gravações que falham rasgam os dois slots (pedido 665)",
+        "porque": (
+            "pedido 665, parecer do papel C 07/10/2026: com a memoria adiantada "
+            "a gravacao seguinte caia no slot que ainda valia, e duas falhas "
+            "seguidas (ENOSPC, EIO) deixavam a sequencia sem estado legivel."
+        ),
+        "arquivo": "crates/phxsql-store/src/sequencia.rs",
+        "trecho": """        novo.geracao = self.estado.geracao + 1;
+""",
+        "troca": """        novo.geracao = self.estado.geracao + 1;
+        // DEFEITO REPOSTO (665): a memoria anda antes do disco.
+        self.estado = novo;
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--lib"],
+        "caem": [
+            "sequencia::testes::duas_gravacoes_que_falham_seguidas_nao_rasgam_os_dois_slots",
+        ],
+        "seguem": [
+            "sequencia::testes::um_slot_rasgado_nao_perde_a_sequencia_e_nao_repete",
+            "sequencia::testes::o_proximo_sai_durado_e_a_reabertura_continua_de_onde_parou",
         ],
     },
 ]

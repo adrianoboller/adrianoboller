@@ -853,7 +853,15 @@ TETO_TESTE_SEM_MODULO = 0
 # `backup-escreve-no-arquivo-de-outro-dono` teve o trecho acertado ao `Modo`
 # do motor (o mesmo defeito) e foi reprovada. Medido por `--numeros` (780) na
 # arvore desta frente; a frente SERVER soma em paralelo -- o integrador reconta.
-PISO_DAS_ENTRADAS = 789
+# 789 -> 796 (pedidos 661, 663, 664 e 665, 07/10/2026): `novo-da-fase-a-reusa-o-inode`,
+# `fase-b-nao-confere-o-novo` e `fase-b-nao-confere-o-novo-na-janela` (661),
+# `colattribute-tamanho-escrito-sem-01004` e `tamanho-smallint-negativo` (663),
+# `contador-da-sequencia-fora-do-cabecalho` (664) e `seq-avanca-antes-de-gravar`
+# (665). RED medido a mao (defeito reposto, teste caiu, restaurado); o
+# provador NAO rodou nesta frente -- o integrador prova na arvore mesclada. A
+# `sequencia-nomeada-proximo-sem-durar` teve o trecho acertado ao `gravar(novo)`
+# do 665 (o mesmo defeito). Medido por `--numeros` (796).
+PISO_DAS_ENTRADAS = 796
 
 # ------------------------------------------------------------- APOSENTADAS
 #

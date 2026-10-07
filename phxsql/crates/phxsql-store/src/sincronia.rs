@@ -513,6 +513,10 @@ pub mod falha_de_teste {
         /// exclusao de varios volumes (o esvaziar da lixeira, o expurgo da
         /// trilha), depois de os anteriores ja terem saido (pedido 598).
         RemocaoDeVolume,
+        /// A gravacao de um slot do `.seq` devolve ENOSPC com METADE do slot
+        /// escrita -- o slot rasgado que o disco cheio ou o EIO deixam
+        /// (pedido 665).
+        GravacaoDaSequencia,
     }
 
     #[cfg(debug_assertions)]
@@ -571,7 +575,8 @@ pub mod falha_de_teste {
             Onde::PaginaDoIndice
             | Onde::GravacaoDaTrilha
             | Onde::GravacaoDoDiario
-            | Onde::GravacaoDoMotivo => 28,
+            | Onde::GravacaoDoMotivo
+            | Onde::GravacaoDaSequencia => 28,
             Onde::RemocaoDeVolume => 16,
         }))
     }
