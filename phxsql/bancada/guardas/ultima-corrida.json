@@ -1,5 +1,5 @@
 {
-  "quando": "2026-10-07 15:51",
+  "quando": "2026-10-07 16:06",
   "mais_antigo": "2026-09-16 15:25",
   "guardas": [
     {
@@ -6383,6 +6383,54 @@
       "segundos": 11.09,
       "notas": [],
       "quando": "2026-10-07 11:04"
+    },
+    {
+      "id": "tls-cliente-pino-ignorado",
+      "titulo": "O cliente TLS conecta com pino e não confere o SPKI do servidor contra ele (pedido 572, T6b-1)",
+      "veredito": "PROVADA",
+      "segundos": 8.92,
+      "notas": [],
+      "quando": "2026-10-07 16:06"
+    },
+    {
+      "id": "tls-cliente-certificate-verify-sem-conferir",
+      "titulo": "O cliente TLS não confere a assinatura do `CertificateVerify` contra a chave do certificado (pedido 572, T6b-1)",
+      "veredito": "PROVADA",
+      "segundos": 8.55,
+      "notas": [],
+      "quando": "2026-10-07 16:06"
+    },
+    {
+      "id": "tls-cliente-finished-do-servidor-sem-conferir",
+      "titulo": "O cliente TLS não confere o `Finished` do servidor (pedido 572, T6b-1)",
+      "veredito": "PROVADA",
+      "segundos": 8.81,
+      "notas": [],
+      "quando": "2026-10-07 16:06"
+    },
+    {
+      "id": "tls-cliente-hrr-sem-eco-do-cookie",
+      "titulo": "O cliente TLS não ecoa o `cookie` do `HelloRetryRequest` no segundo `ClientHello` (pedido 572, T6b-1)",
+      "veredito": "PROVADA",
+      "segundos": 8.59,
+      "notas": [],
+      "quando": "2026-10-07 16:06"
+    },
+    {
+      "id": "senha-em-claro-de-fora-do-loopback",
+      "titulo": "O `op_login` aceita `senha`/`senha_b64` de fora do loopback por fio sem cifra (pedido 667)",
+      "veredito": "PROVADA",
+      "segundos": 81.88,
+      "notas": [],
+      "quando": "2026-10-07 16:06"
+    },
+    {
+      "id": "senha-em-claro-pelo-login-remoto-da-web",
+      "titulo": "O login da web que vai para OUTRO servidor leva a senha em claro de fora do loopback sem passar pelo portao (pedido 667)",
+      "veredito": "PROVADA",
+      "segundos": 19.43,
+      "notas": [],
+      "quando": "2026-10-07 16:06"
     },
     {
       "id": "alter-com-regra-sem-aviso",

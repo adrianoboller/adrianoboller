@@ -240,6 +240,118 @@ pub fn der_ecdsa(r: &[u8; 32], s: &[u8; 32]) -> Vec<u8> {
     asn1::sequencia(&[asn1::inteiro(r), asn1::inteiro(s)])
 }
 
+/// O inverso de [`der_ecdsa`]: `(r, s)` de 32 bytes cada. `None` para DER
+/// torto, sobra depois da sequencia ou inteiro maior que a ordem cabe -- a
+/// entrada vem da rede (o `CertificateVerify` de um servidor alheio).
+pub fn ecdsa_de_der(der: &[u8]) -> Option<([u8; 32], [u8; 32])> {
+    let (seq, resto) = asn1::esperar(der, asn1::TAG_SEQUENCE).ok()?;
+    if !resto.is_empty() {
+        return None;
+    }
+    let partes = asn1::filhos(seq.conteudo).ok()?;
+    let [r, s] = partes.as_slice() else {
+        return None;
+    };
+    let mut saida = [[0u8; 32]; 2];
+    for (el, dest) in [r, s].into_iter().zip(saida.iter_mut()) {
+        if el.tag != asn1::TAG_INTEGER {
+            return None;
+        }
+        // O `decodificar_inteiro` ja tira o 0x00 de sinal e recusa o DER nao
+        // minimo; o que ainda passa de 32 bytes nao cabe na ordem da P-256.
+        let m = asn1::decodificar_inteiro(el.conteudo).ok()?;
+        if m.len() > 32 {
+            return None;
+        }
+        dest[32 - m.len()..].copy_from_slice(&m);
+    }
+    Some((saida[0], saida[1]))
+}
+
+/// A chave publica que um certificado alheio carrega, ja reconhecida.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ChavePublica {
+    /// ECDSA/ECDH P-256, ponto `04 || X || Y`.
+    P256(Vec<u8>),
+    /// Ed25519.
+    Ed25519([u8; 32]),
+    /// Qualquer outra: o OID do algoritmo, para a recusa NOMEAR o que veio
+    /// (RSA, P-384...) em vez de dizer so «invalida».
+    Outra(Vec<u64>),
+}
+
+/// O `subjectPublicKeyInfo` de um certificado, em DER cru (o TLV inteiro).
+///
+/// Cru porque e dele que sai o pino (`SHA-256` do SPKI, a forma do
+/// `--pinnedpubkey` do curl e do HPKP): re-codificar o campo trocaria o
+/// pino de quem o codifica de outro jeito.
+pub fn spki_do_certificado(cert: &[u8]) -> crate::error::Result<&[u8]> {
+    let torto = |m: &str| crate::error::PhxError::Corrompido(format!("X.509: {m}"));
+    let (c, _) = asn1::esperar(cert, asn1::TAG_SEQUENCE)?;
+    let (tbs, _) = asn1::esperar(c.conteudo, asn1::TAG_SEQUENCE)?;
+    let mut resto = tbs.conteudo;
+    // A versao [0] e opcional (v1 nao a traz); o SPKI e o setimo campo com
+    // ela e o sexto sem ela.
+    let (primeiro, _) = asn1::analisar(resto)?;
+    let pular = if primeiro.tag == asn1::tag_contexto(0) {
+        6
+    } else {
+        5
+    };
+    for _ in 0..pular {
+        resto = asn1::analisar(resto)?.1;
+    }
+    let (spki, depois) = asn1::analisar(resto)?;
+    if spki.tag != asn1::TAG_SEQUENCE {
+        return Err(torto(
+            "o subjectPublicKeyInfo nao esta onde a RFC 5280 o poe",
+        ));
+    }
+    Ok(&resto[..resto.len() - depois.len()])
+}
+
+/// Le o SPKI e diz que chave e.
+pub fn chave_do_spki(spki: &[u8]) -> crate::error::Result<ChavePublica> {
+    let torto = |m: &str| crate::error::PhxError::Corrompido(format!("X.509: {m}"));
+    let (s, sobra) = asn1::esperar(spki, asn1::TAG_SEQUENCE)?;
+    if !sobra.is_empty() {
+        return Err(torto("sobra depois do subjectPublicKeyInfo"));
+    }
+    let partes = asn1::filhos(s.conteudo)?;
+    let [alg, bits] = partes.as_slice() else {
+        return Err(torto("subjectPublicKeyInfo sem os dois campos"));
+    };
+    if alg.tag != asn1::TAG_SEQUENCE || bits.tag != asn1::TAG_BIT_STRING {
+        return Err(torto("subjectPublicKeyInfo com tipo errado"));
+    }
+    let a = asn1::filhos(alg.conteudo)?;
+    let Some(o) = a.first().filter(|o| o.tag == asn1::TAG_OID) else {
+        return Err(torto("algoritmo da chave sem OID"));
+    };
+    let oid_alg = asn1::decodificar_oid(o.conteudo)?;
+    let (nao_usados, chave) = asn1::decodificar_bit_string(bits.conteudo)?;
+    if nao_usados != 0 {
+        return Err(torto("chave publica com bits sobrando"));
+    }
+    if oid_alg == OID_EC_PUBLICA {
+        let curva = match a.get(1) {
+            Some(c) if c.tag == asn1::TAG_OID => asn1::decodificar_oid(c.conteudo)?,
+            _ => return Err(torto("chave EC sem a curva")),
+        };
+        if curva != OID_P256 {
+            return Ok(ChavePublica::Outra(curva));
+        }
+        return Ok(ChavePublica::P256(chave));
+    }
+    if oid_alg == OID_ED25519 {
+        let k: [u8; 32] = chave
+            .try_into()
+            .map_err(|_| torto("chave Ed25519 sem 32 bytes"))?;
+        return Ok(ChavePublica::Ed25519(k));
+    }
+    Ok(ChavePublica::Outra(oid_alg))
+}
+
 fn extensao(oid: &[u64], critica: bool, valor: Vec<u8>) -> Vec<u8> {
     let mut campos = vec![asn1::oid(oid)];
     if critica {

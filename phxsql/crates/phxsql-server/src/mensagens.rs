@@ -458,6 +458,32 @@ pub const FABRICA: &[MensagemFabrica] = &[
              docs/SEGURANCA.md 7.1",
         ],
     },
+    // Pedido 667: a senha que chegaria em claro de fora do loopback. Diz as
+    // TRES saidas escritas, porque quem a recebe e a tela aberta pela LAN, e
+    // um «acesso negado» seco mandaria procurar a senha errada.
+    MensagemFabrica {
+        nome: "erro.senha_em_claro_pela_rede",
+        textos: [
+            "senha em claro de fora deste computador, recusada: use https \
+             (\"tls\": true na secao web), um tunel ou o localhost -- ou aceite \
+             o risco com \"senha_em_claro_pela_rede\": true em cifra_fio",
+            "mot de passe en clair hors de cet ordinateur, refusé : utilisez \
+             https (\"tls\": true, section web), un tunnel ou localhost -- ou \
+             acceptez le risque : \"senha_em_claro_pela_rede\": true dans cifra_fio",
+            "plain-text password from outside this computer, refused: use https \
+             (\"tls\": true in the web section), a tunnel or localhost -- or \
+             accept the risk with \"senha_em_claro_pela_rede\": true under cifra_fio",
+            "password in chiaro da fuori questo computer, rifiutata: usi https \
+             (\"tls\": true nella sezione web), un tunnel o localhost -- o \
+             accetti il rischio: \"senha_em_claro_pela_rede\": true in cifra_fio",
+            "Klartext-Kennwort von außerhalb dieses Rechners abgelehnt: https \
+             (\"tls\": true im Abschnitt web), Tunnel oder localhost nutzen -- \
+             oder Risiko: \"senha_em_claro_pela_rede\": true unter cifra_fio",
+            "contraseña en claro desde fuera de este equipo, rechazada: use https \
+             (\"tls\": true en la sección web), un túnel o localhost -- o acepte \
+             el riesgo con \"senha_em_claro_pela_rede\": true en cifra_fio",
+        ],
+    },
     // A quarta do mesmo interruptor, e a unica que morde por TABELA e nao por
     // conexao: replicar tabela com coluna marcada exige o tunel da §7 (pedido
     // 342). Ela tem de dizer as duas saidas escritas -- ligar a cifra na

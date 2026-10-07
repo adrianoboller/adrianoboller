@@ -865,7 +865,18 @@ TETO_TESTE_SEM_MODULO = 0
 # `cascata-solta-pela-marca-do-embutido`, que guarda a regressao que a troca
 # velha da `cascata-solta-sem-marca` exercitava (o servidor voltar a chamar
 # `t.atualizar`). Medido por `--numeros` (797).
-PISO_DAS_ENTRADAS = 797
+# 797 -> 801 (pedido 572, T6b-1, 07/10/2026 -- o cliente TLS 1.3): nascem
+# `tls-cliente-pino-ignorado`, `tls-cliente-certificate-verify-sem-conferir`,
+# `tls-cliente-finished-do-servidor-sem-conferir` e
+# `tls-cliente-hrr-sem-eco-do-cookie`. RED medido a mao (defeito reposto,
+# teste caiu, restaurado); o provador NAO rodou nesta frente -- o integrador
+# prova na arvore mesclada. Medido por `--numeros` (801).
+# 801 -> 803 (pedido 667, 07/10/2026, mesma frente): nascem
+# `senha-em-claro-de-fora-do-loopback` (o portao no `op_login`) e
+# `senha-em-claro-pelo-login-remoto-da-web` (o caminho irmao, o login que vai
+# para outro servidor). RED medido a mao; provador NAO rodou. Medido por
+# `--numeros` (803).
+PISO_DAS_ENTRADAS = 803
 
 # ------------------------------------------------------------- APOSENTADAS
 #
