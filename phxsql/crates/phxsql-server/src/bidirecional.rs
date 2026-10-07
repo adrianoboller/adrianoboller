@@ -829,6 +829,15 @@ pub struct EstadoOrigem {
     /// Quando o laco vai tentar de novo depois de uma falha, ms desde a
     /// epoca. Zero quando ele nao esta esperando por falha nenhuma.
     pub proxima_tentativa_ms: i64,
+    /// Transacoes da origem que passaram do teto de memoria da replica e
+    /// foram aplicadas em PEDACOS desde o arranque -- pedido 676. Zero no
+    /// caso comum; acima de zero, um leitor daqui pode ter visto uma delas
+    /// pela metade enquanto chegava.
+    pub transacoes_em_pedacos: u64,
+    /// A origem e anterior ao pedido 676 (nao manda o id de transacao): a
+    /// replica aplica evento a evento, e a venda de varias tabelas nao chega
+    /// inteira.
+    pub origem_sem_id_de_transacao: bool,
 }
 
 impl EstadoOrigem {
@@ -896,6 +905,14 @@ impl EstadoOrigem {
                 },
             ),
             ("religadas", Json::de_u64(self.religadas)),
+            (
+                "transacoes_em_pedacos",
+                Json::de_u64(self.transacoes_em_pedacos),
+            ),
+            (
+                "origem_sem_id_de_transacao",
+                Json::Bool(self.origem_sem_id_de_transacao),
+            ),
             (
                 "falhas_de_rede_seguidas",
                 Json::de_u64(self.falhas_de_rede_seguidas as u64),

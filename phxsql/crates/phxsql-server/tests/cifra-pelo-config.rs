@@ -63,10 +63,17 @@ fn o_campo_do_config_liga_a_cifra_de_verdade() {
         .unwrap();
     l.sincronizar().unwrap();
     let bruto = std::fs::read(d.join("t.log")).unwrap();
+    // Desde o pedido 676 o `.log` novo e da versao 4 cifrado ou nao: quem diz
+    // que a cifra ligou e a flag do byte 40, e nao mais a versao.
     assert_eq!(
         u16::from_le_bytes([bruto[8], bruto[9]]),
-        3,
-        "o .log nasceu na versao velha com a cifra ligada"
+        cofre::VERSAO_COM_TX,
+        "o .log nasceu numa versao velha"
+    );
+    assert_eq!(
+        bruto[40] & 1,
+        1,
+        "o .log nasceu em claro com a cifra ligada"
     );
     assert!(
         !bruto.windows(8).any(|j| j == b"Blumenau"),
@@ -118,7 +125,12 @@ fn config_de_ontem_continua_subindo_sem_cifra() {
     l.registrar(Operacao::Inclusao, 1, 1).unwrap();
     l.sincronizar().unwrap();
     let bruto = std::fs::read(d.join("t.log")).unwrap();
-    assert_eq!(u16::from_le_bytes([bruto[8], bruto[9]]), 2);
+    // A versao 4 (pedido 676) com a flag de cifra apagada: em claro.
+    assert_eq!(
+        u16::from_le_bytes([bruto[8], bruto[9]]),
+        cofre::VERSAO_COM_TX
+    );
+    assert_eq!(bruto[40] & 1, 0, "um config sem cifra cifrou o .log");
     std::fs::remove_dir_all(&d).unwrap();
 }
 

@@ -836,7 +836,20 @@ pub struct Cabecalho {
     /// A marca do evento devido -- so o `.log` a usa (pedido 498). Ver
     /// [`Marca`].
     pub marca: Option<Marca>,
+    /// O volume e da versao 4: cada evento leva o id de transacao (pedido
+    /// 676) e o cabecalho do arquivo tem 128 bytes, cifrado ou nao. So o
+    /// `.log` nasce assim -- ver [`Cabecalho::novo_do_diario`].
+    pub com_tx: bool,
 }
+
+/// A versao do cabecalho de volume do `.log` com o id de transacao no evento
+/// (pedido 676). Um binario anterior le a versao no offset 8, ve 4 acima da
+/// maxima dele (3) e recusa nomeando o arquivo -- e e por isso que o
+/// cabecalho desta versao tem SEMPRE 128 bytes: o leitor velho le 64, ve a
+/// versao >= 3 e volta com 128 antes de comparar. Com 64 bytes ele bateria no
+/// fim de um volume recem-criado e diria «arquivo truncado» em vez de
+/// «versao nao suportada».
+pub const VERSAO_COM_TX: u16 = 4;
 
 /// Bytes da marca do evento devido, no cabecalho do volume.
 pub const MARCA_LEN: usize = 16;
@@ -887,6 +900,7 @@ impl Cabecalho {
                 iteracoes: 0,
                 chave: None,
                 marca: None,
+                com_tx: false,
             });
         }
         let mut sal = [0u8; SAL_LEN];
@@ -902,6 +916,23 @@ impl Cabecalho {
             iteracoes,
             chave: Some(chave),
             marca: None,
+            com_tx: false,
+        })
+    }
+
+    /// Um volume NOVO do `.log`: versao 4, 128 bytes de cabecalho, cifrado
+    /// se o cofre mandar -- pedido 676.
+    ///
+    /// Separado do [`Cabecalho::novo`] porque a `.trash`, o `.reason` e a
+    /// trilha continuam na 2/3: o id de transacao e assunto da replicacao, e
+    /// so o diario da tabela viaja pelo fio.
+    pub fn novo_do_diario(volume: u32) -> Result<Cabecalho> {
+        let base = Cabecalho::novo(volume)?;
+        Ok(Cabecalho {
+            fim: CAB_V3 as u64,
+            cab_len: CAB_V3,
+            com_tx: true,
+            ..base
         })
     }
 
@@ -1059,6 +1090,7 @@ pub fn ler_cabecalho(
         iteracoes: 0,
         chave: None,
         marca: None,
+        com_tx: versao >= VERSAO_COM_TX,
     };
     let om = off_marca(cab_len);
     if bruto[om] != 0 {
@@ -1089,7 +1121,13 @@ pub fn ler_cabecalho(
 pub fn gravar_cabecalho(cab: &Cabecalho, magic: &[u8; 8]) -> Vec<u8> {
     let mut buf = vec![0u8; cab.cab_len];
     buf[0..8].copy_from_slice(magic);
-    let versao: u16 = if cab.cifrado() { 3 } else { 2 };
+    let versao: u16 = if cab.com_tx {
+        VERSAO_COM_TX
+    } else if cab.cifrado() {
+        3
+    } else {
+        2
+    };
     buf[8..10].copy_from_slice(&versao.to_le_bytes());
     buf[10..12].copy_from_slice(&(cab.cab_len as u16).to_le_bytes());
     por_u32(&mut buf, 12, cab.volume);
@@ -1162,6 +1200,7 @@ pub fn ler_cabecalho_do_volume(
     volumes: &mut crate::volume::Volumes,
     volume: u32,
     magic: &'static [u8; 8],
+    versao_maxima: u16,
 ) -> Result<Cabecalho> {
     let nome = volumes.caminho(volume).display().to_string();
     let mut buf = vec![0u8; CAB_V2];
@@ -1170,7 +1209,7 @@ pub fn ler_cabecalho_do_volume(
         buf.resize(CAB_V3, 0);
         volumes.ler(volume, 0, &mut buf)?;
     }
-    ler_cabecalho(&buf, magic, &nome, 3)
+    ler_cabecalho(&buf, magic, &nome, versao_maxima)
 }
 
 /// Grava o cabecalho do volume no proprio volume.

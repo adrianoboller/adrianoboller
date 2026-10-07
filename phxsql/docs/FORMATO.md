@@ -1766,12 +1766,12 @@ corrompido.
 Toda inclusão, alteração e exclusão é registrada com data e hora. O arquivo é
 append-only e sem índice: é um diário, não uma tabela.
 
-### Cabeçalho (64 bytes na versão 2, 128 na 3)
+### Cabeçalho (64 bytes na versão 2, 128 na 3 e na 4)
 
 | Off | Tam | Campo |
 |----:|----:|---|
 | 0 | 8 | assinatura `PHXLOG\0\0` |
-| 8 | 2 | versão do formato (2 em claro, 3 cifrado) |
+| 8 | 2 | versão do formato (2 em claro, 3 cifrado, **4 com o id de transação no evento** — em claro ou cifrada, pela flag) |
 | 10 | 2 | tamanho do cabeçalho (64 ou 128) |
 | 12 | 4 | número do volume |
 | 16 | 8 | eventos neste volume |
@@ -1780,7 +1780,9 @@ append-only e sem índice: é um diário, não uma tabela.
 | 40 | 16 | **marca do evento devido** — só no volume 1, só na versão 2 (ver abaixo) |
 | 56 | 4 | CRC-32 dos bytes 0..56 — **só na versão 2** |
 
-E na versão 3, que é a do volume cifrado:
+E nas versões 3 e 4 (a 3 é a do volume cifrado; a 4 tem este mesmo
+cabeçalho de 128 bytes **sempre**, cifrada ou não, e os 40..80 só valem com a
+flag ligada):
 
 | Off | Tam | Campo |
 |----:|----:|---|
@@ -1804,10 +1806,30 @@ do cabeçalho (bytes 0..16 e 40..64): os contadores mudam a cada gravação, e u
 prova que mudasse com eles não protegeria nada a mais.
 
 **A versão é por volume, e não por tabela.** Ligar a cifra num banco que já
-existe faz o volume *seguinte* nascer na versão 3, com sal próprio; os volumes
+existe faz o volume *seguinte* nascer cifrado, com sal próprio; os volumes
 anteriores continuam em claro e continuam abrindo. Um arquivo *append-only* não
 se reescreve, então não há como cifrar para trás — e dizer o contrário seria
 vender uma garantia que o desenho não dá.
+
+**A versão 4 (pedido 676, 07/10/2026) é a de todo volume que nasce daqui em
+diante**, cifrado ou não. Ela muda duas coisas: o evento ganha 8 bytes (o id de
+transação, ver abaixo) e o cabeçalho do arquivo passa a ter **128 bytes mesmo
+em claro**. O segundo é por causa do primeiro leitor que vai encontrá-la — o
+binário anterior: ele lê 64 bytes, vê versão ≥ 3, volta com 128 e só então
+compara com a máxima dele (3), recusando com `VERSAO_NAO_SUPORTADA` e o nome do
+arquivo. Com 64 bytes ele bateria no fim de um volume recém-criado e diria
+«arquivo truncado», que manda procurar o defeito no lugar errado. O `.trash`,
+o `.reason` e o `.lgpd` continuam na 2/3: o id de transação é assunto da
+replicação, e só o diário da tabela viaja pelo fio.
+
+**O volume velho continua velho.** Um volume gravado na 2 ou na 3 abre, é lido
+e **continua recebendo eventos de 44 bytes, com `tx` zero**, até a paginação
+virar — o arquivo não se reescreve, pelo mesmo motivo da cifra. O volume
+seguinte nasce na 4. Consequência honesta: uma tabela que ainda escreve num
+volume anterior ao 676 não tem a garantia de transação inteira na réplica
+enquanto não virar de volume (a réplica aplica o evento de `tx` zero sozinho,
+como sempre aplicou). Como ainda não há dado em produção, isso só alcança
+bancos de desenvolvimento.
 
 ### A marca do evento devido (pedido 498)
 
@@ -1842,7 +1864,7 @@ que não coube) é o último, acima do 1 e com menos de 64 bytes: nunca teve
 evento, e a abertura com escrita o apaga em vez de deixar o `.log` inteiro sem
 abrir.
 
-### Evento: 44 bytes de cabeçalho, e talvez um corpo
+### Evento: 52 bytes de cabeçalho (44 até a versão 3), e talvez um corpo
 
 | Off | Tam | Campo |
 |----:|----:|---|
@@ -1854,9 +1876,10 @@ abrir.
 | 20 | 8 | versão do registro depois da operação |
 | 28 | 4 | usuário (0 = não informado) |
 | 32 | 4 | tamanho da imagem (0 = sem imagem) |
-| 36 | 4 | CRC-32 dos bytes 0..36 **e do corpo como está no arquivo** |
+| 36 | 4 | CRC-32 dos bytes 0..36 (e, na versão 4, dos 44..52) **e do corpo como está no arquivo** |
 | 40 | 4 | tempero do nonce — sorteado por evento; zero no volume em claro |
-| 44 | N | imagem da linha (cifrada + etiqueta de 16 bytes, na versão 3) |
+| 44 | 8 | **id de transação** — só na versão 4 (pedido 676); ver abaixo |
+| 52 | N | imagem da linha (cifrada + etiqueta de 16 bytes, se o volume é cifrado); em 44 nas versões 2 e 3 |
 
 O carimbo é em **milissegundos**, não segundos, para que operações no mesmo
 segundo continuem ordenáveis. Uma operação recusada — chave duplicada, tabela
@@ -1884,6 +1907,39 @@ O `tamanho da imagem` é o que vem **no arquivo**: num volume cifrado ele conta
 os 16 bytes da etiqueta. É de propósito — quem caminha pelo arquivo precisa
 saber onde o próximo evento começa sem ter a chave, e a leitura devolve a
 imagem já decifrada.
+
+### O id de transação (versão 4, pedido 676)
+
+Todo evento gravado numa mesma **tomada da trava de escrita** do servidor leva
+o mesmo `tx` — e um `COMMIT` entre tabelas (a venda, os itens, o pagamento) é
+uma tomada só. É com ele que a réplica aplica a transação da origem **inteira
+ou nada**: o diário é por tabela, e sem o id um commit de três tabelas chegava
+como três fluxos soltos, cada um aplicado na sua vez (pedido 299).
+
+- **Onde nasce.** No `phxsql-store` (`log::proximo_tx`), um contador do
+  **processo**, estritamente crescente: `max(último + 1, relógio_ms << 16)`. O
+  id só se tira no primeiro evento da tomada — tomada que só lê não gasta
+  número. Fora de uma tomada (a CLI, a FFI, o store usado direto) cada evento
+  ganha o seu.
+- **Por que o relógio, e não um contador gravado.** A réplica junta as tabelas
+  pela **ordem** dos ids, então o processo que reinicia não pode recomeçar do
+  zero; gravar o contador seria uma escrita a mais por commit, a mesma que o
+  `.log` tirou do caminho ao levar o cabeçalho só no `sincronizar`. O relógio dá
+  o piso de graça: 65.536 ids por milissegundo antes de o contador passar à
+  frente dele. **O preço, escrito:** um relógio que recua entre dois arranques
+  mais do que o contador andou emite id menor que o da vida anterior. Nada se
+  perde — cada tabela continua na ordem do próprio diário —, mas a transação
+  daquele trecho pode chegar à réplica em pedaços.
+- **Zero quer dizer «sem id»**: o evento de um volume das versões 2 e 3, ou o
+  de uma origem anterior ao campo. A réplica o aplica sozinho.
+- **Está no CRC e, cifrado, no dado associado.** Um `tx` trocado no disco
+  juntaria na réplica eventos de transações diferentes; ele derruba a leitura
+  como um rowid trocado.
+
+No fio, o `replicar` manda o campo `"tx"` como **texto** (o id passa de 2^53
+desde o primeiro número, e o JSON da casa só tem `f64`) e só quando ele não é
+zero; o `posicao` anuncia `"tx_no_diario": true`. Como a réplica usa isso está
+em `docs/REPLICACAO.md` §8.2.
 
 ### A cifra do corpo (versão 3)
 
@@ -4193,7 +4249,8 @@ Documentado aqui para não haver surpresa:
   planejador de índice (`crates/phxsql-sql/src/lib.rs`).
 - **A cifra cobre três arquivos, não os sete.** Esta linha é de quando a cifra
   nasceu, e ela **envelheceu em três passos**: `.log`, `.trash` e `.reason`
-  vieram primeiro (versão 3); depois vieram o `.reg` (versão 5), o `.bin` e o
+  vieram primeiro (versão 3; o `.log` novo é a versão 4 desde o pedido 676, a
+  cifra pela flag); depois vieram o `.reg` (versão 5), o `.bin` e o
   `.memo` pela coluna marcada, e a marca `.tx` do `COMMIT` (versão 4); e em
   23/09/2026 veio o `.fts` (versão 2, página selada). **O que continua em
   claro é o `.ndx`**, por decisão registrada em `SEGURANCA.md` §11.3 — ali a

@@ -681,7 +681,7 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `remoto-em-claro-para-quem-exige` | o abrir_remoto manda o login em claro mesmo com cifra: true | 1 | ✅ provada |
 | `fio-sem-teto-de-registro` | a leitura do fio volta a ser ilimitada | 1 | ✅ provada |
 | `teto-do-fio-sem-a-constante` | o `Canal::ler` de producao troca `TETO_DO_REGISTRO` por um teto quase infinito | 1 | ✅ provada |
-| `teto-do-fio-sem-a-constante-no-soquete` | a mesma troca da constante por um teto quase infinito, vista pela rede | 1 | ✅ provada |
+| `teto-do-fio-sem-a-constante-no-soquete` | a mesma troca da constante por um teto quase infinito, vista pela rede | 1 | ❌ **não pegou** |
 | `teto-da-linha-sem-a-constante-no-soquete` | o `teto_da_linha` do servidor troca `TETO_DO_REGISTRO` por um teto quase infinito, visto pela rede | 1 | ✅ provada |
 | `pulso-do-cluster-em-claro` | o pulso da eleição saindo em claro com a cifra do cluster ligada | 1 | ✅ provada |
 | `replicacao-do-cluster-em-claro` | a replicação entre os nós do cluster saindo em claro | 1 | ✅ provada |
@@ -708,7 +708,7 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `commit-confirma-abortada` | o COMMIT confirma uma transação que já estava em ABORT_ONLY | 1 | ✅ provada |
 | `marca-antes-do-fsync` | a marca `.tx` é apagada antes de a tabela sincronizar | 1 | ✅ provada |
 | `insert-sem-travar-o-fim` | duas transações que anexam preveem o mesmo rowid | 1 | ✅ provada |
-| `recuperar-sem-reindexar` | a recuperação não reconstrói o `.ndx` que a queda deixou para trás | 1 | 🟰 redundante |
+| `recuperar-sem-reindexar` | a recuperação não reconstrói o `.ndx` que a queda deixou para trás | 1 | ✅ provada |
 | `comum-anexa-no-fim-travado` | a escrita comum que anexa não olha o fim travado | 1 | ✅ provada |
 | `dependencia-de-fora-fica-invisivel` | o filtro de dependência externa vira mudo (mede e nunca acusa) | 1 | ✅ provada |
 | `sem-indice-na-filha-ignora-em-vez-de-recusar` | sem índice na filha, a exclusão da mãe ignora em vez de recusar | 1 | ✅ provada |
@@ -882,7 +882,7 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `resposta-sem-prova-assina-e-esconde` | a resposta a um pulso sem prova igual na forma e diferente no relógio | 1 | ✅ provada |
 | `reescrita-sem-portao-na-trava` | a migração congela a tabela que o COMMIT de uma transação aberta vai abrir | 1 | ✅ provada |
 | `acrescentar-coluna-sem-portao` | o acrescentar_coluna congela a tabela que o COMMIT de uma transação aberta vai abrir | 1 | ✅ provada |
-| `commit-sem-rede-antes-da-marca` | o COMMIT grava a marca com uma tabela do alcance congelada | 1 | ✅ provada |
+| `commit-sem-rede-antes-da-marca` | o COMMIT grava a marca com uma tabela do alcance congelada | 1 | ❌ **não pegou** |
 | `instrucao-na-vizinha-da-congelada` | a escrita ligada pela chave a uma tabela congelada entra na lista da transação | 1 | ✅ provada |
 | `braco-de-erro-retrava` | a passada do COMMIT quebra depois da marca e a recuperação da hora não roda | 2 | ✅ provada |
 | `completar-apaga-a-marca-impossivel` | a recuperação do COMMIT apaga a marca de uma operação que só estava congelada | 1 | ✅ provada |
@@ -1024,7 +1024,7 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `arranque-nao-reconstroi-o-marcado` | o arranque não reconstrói o `.ndx` que o processo anterior só fechou: a tabela sobe recusando até alguém mandar `reindexar` | 1 | ✅ provada |
 | `atestado-fica-no-caminho-velho` | renomear, duplicar ou colar uma tabela escrita desde o último fecho deixa o destino recusando tudo, sem queda nenhuma | 1 | ✅ provada |
 | `renomear-esquece-o-atestado` | o renomear move os arquivos e deixa o atestado no nome velho: a tabela renomeada recusa tudo | 1 | ✅ provada |
-| `fechar-do-embutido-nao-sincroniza` | o embutido que fecha a tabela sem `phx_sincronizar` não a abre no processo seguinte, e a ABI não tem como reconstruí-la | 1 | ❌ **não pegou** |
+| `fechar-do-embutido-nao-sincroniza` | o embutido que fecha a tabela sem `phx_sincronizar` não a abre no processo seguinte, e a ABI não tem como reconstruí-la | 1 | ✅ provada |
 | `phx-reindexar-nao-reindexa` | o `phx_reindexar` responde Ok sem reconstruir: o índice que a queda marcou continua recusando pela ABI | 1 | ✅ provada |
 | `auto-referencia-pulada-no-excluir` | excluir o chefe que tem subordinado na MESMA tabela responde Ok, e o subordinado fica órfão | 1 | ✅ provada |
 | `auto-referencia-pulada-no-excluir-pelo-servidor` | o chefe com subordinado sai pelo servidor, e na transação `[inserir 11->10, excluir 10]` confirma | 2 | ✅ provada |
@@ -1033,7 +1033,7 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `marca-do-disco-no-empilhar` | dentro da transação, alterar a linha excluída suave a ressuscita; fora, ela continua excluída | 1 | ✅ provada |
 | `upsert-solto-ressuscita-a-excluida` | o upsert fora de transação ressuscita a linha excluída suave; o mesmo upsert dentro a mantém excluída | 1 | ✅ provada |
 | `mescla-do-upsert-sobre-o-disco` | o upsert com SET dentro da transação mescla sobre a linha do disco, e a excluída na lista ressuscita | 1 | ✅ provada |
-| `elo-do-empilhar-pelo-disco` | o elo que o `empilhar` planeja pelo disco sobrescreve o que a própria lista já escreveu na filha | 1 | ❌ **não pegou** |
+| `elo-do-empilhar-pelo-disco` | o elo que o `empilhar` planeja pelo disco sobrescreve o que a própria lista já escreveu na filha | 1 | ✅ provada |
 | `tabela-que-some-segura-as-marcas` | a tabela escrita na janela e excluida ou renomeada fica nas sujas pelo nome velho e segura todas as marcas de COMMIT | 1 | ✅ provada |
 | `renomear-deixa-o-registro-no-nome-velho` | o renomear deixa o registro do que deve ao disco no nome velho, e a divida fica para sempre onde ninguem sincroniza | 1 | ✅ provada |
 | `familia-partida-por-grafia` | a familia do `Volumes` se parte por symlink e `..`, e familia partida perde dado | 1 | ✅ provada |
@@ -1048,39 +1048,133 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `sal-falso-pelo-token` | o sal falso do `desafio` sai do token que todo cliente tem, e quem o tem sabe quem nao existe | 1 | ✅ provada |
 | `scram-sem-teto-de-iteracoes` | o `i=` do SCRAM que o par manda nao tem teto, e cada iteracao e CPU deste processo | 1 | ✅ provada |
 | `recado-de-trava-entrega-o-login` | o recado de trava mostra o login do dono dela a quem esbarrou, que pode nem ter direito na tabela | 1 | ✅ provada |
+| `smtp-ecoa-a-credencial` | o erro do SMTP traz o texto do rele, e o rele que ecoa a credencial poe o base64 da senha no log | 1 | ✅ provada |
+| `arranque-reconstroi-calado` | o arranque reconstroi indice marcado e so diz no `stderr`: quem opera nao fica sabendo da queda | 1 | ✅ provada |
+| `reconstruir-fts-sem-janela` | o panico no meio do `reconstruir_fts` grava o indice de texto pela metade marcado limpo | 1 | ✅ provada |
+| `carimbo-da-a-volta-no-teto` | o rowstamp empurrado ao teto por evento replicado da a volta, e o filho nasce com carimbo menor que o pai | 1 | ✅ provada |
+| `upsert-solto-sem-trava-da-linha` | o upsert solto altera a linha que uma transacao segura, e o COMMIT dela apaga a escrita | 1 | ✅ provada |
+| `cascata-solta-sem-trava-da-filha` | a cascata solta grava a filha que uma transacao segura, por cima do X dela | 1 | ✅ provada |
+| `cascata-solta-sem-pre-conferencia` | a cascata solta grava a mae antes de conferir a FK da filha para OUTRA mae, e deixa filhas orfas | 1 | ✅ provada |
 | `elo-implicito-sem-trava` | o elo que só o COMMIT descobre escreve sem trava, e a leitura repetível de outra transação lê 5 e depois 6 | 1 | ✅ provada |
+| `ciclo-de-commits-sem-desempate` | dois COMMITs cujos elos se barram são mandados repetir para sempre, e ninguém confirma | 2 | ✅ provada |
+| `quem-cede-no-ciclo-segura-as-travas` | a transação que cede no ciclo de COMMITs volta ativa com as travas, e a mais velha continua barrada | 1 | ✅ provada |
+| `aresta-velha-depois-do-savepoint` | a transação barrada volta ao SAVEPOINT e a aresta velha faz a outra ceder num ciclo que não existe mais | 1 | ✅ provada |
+| `corrente-do-ciclo-atravessa-quem-nao-confirma` | a corrente do ciclo atravessa transação em ABORT_ONLY, e a outra cede por quem nunca mais vai confirmar | 1 | ✅ provada |
+| `cascata-em-voo-ignorada-no-drop` | pânico entre duas filhas da cascata solta deixa as seguintes na chave velha, e a tabela delas não recusa | 2 | ✅ provada |
+| `cascata-em-voo-so-no-aplicar` | pânico depois de a mãe ir ao disco e antes da primeira filha deixa as filhas na chave velha, calado | 2 | ✅ provada |
+| `cascata-do-embutido-sem-marca` | a cascata do `ao_alterar` do embutido volta a rodar sem marca: a queda no meio deixa a filha na chave velha, e a abertura a cala | 2 | ✅ provada |
+| `recusa-do-fsync-por-grafia` | a recusa do `fsync` casa pela GRAFIA do caminho: pelo symlink ou por `dir/../dir` o mesmo diretório sincroniza Ok e baixa o byte 52 | 2 | ✅ provada |
+| `dblink-mysql-lenenc-embrulha` | o DbLink MySQL(R) entra em pânico com `0xFE` + `u64::MAX` num campo `lenenc` do par, e corta calado o campo maior que o pacote | 3 | ✅ provada |
+| `dblink-pg-contagem-negativa` | o DbLink PostgreSQL(R) reserva `Vec::with_capacity` da contagem de campos `int16` do par: `-1` vira `usize::MAX` e pânico de `capacity overflow` | 1 | ✅ provada |
+| `dblink-mysql-cadeia-alem-do-fim` | o aperto de mão do DbLink MySQL(R) entra em pânico com saudação curta ou troca de plugin sem NUL, antes da credencial | 2 | ✅ provada |
+| `job-dispara-job` | um job cujo pedido é `job_rodar` sobe uma corrida aninhada por nível, sem teto: o job de si mesmo empilha threads até o processo cair | 1 | ✅ provada |
+| `smtp-sem-prazo-total-da-conversa` | o `timeout_s` do cliente SMTP mede o silêncio e não a conversa: um relé que pingue abaixo do prazo segura a thread de aviso pelo tempo que quiser | 1 | ✅ provada |
+| `fts-nasce-com-permissao-aberta` | o `.fts` nasce `644` -- legivel por todo usuario da maquina | 2 | ✅ provada |
+| `conferir-fk-afirma-indice-sao-quando-marcado` | a conferencia contra a MAE afirma "esta sao" com o indice marcado | 2 | ✅ provada |
+| `procura-das-filhas-afirma-indice-sao-quando-marcado` | a procura pelas filhas afirma "esta sao" com o indice marcado | 1 | ✅ provada |
 | `backup-sem-fsync` | o backup responde "concluido" sem `fsync` nenhum | 2 | ✅ provada |
 | `backup-fsync-derruba-o-servidor` | o `fsync` recusado no DESTINO DE UM BACKUP derruba o servidor inteiro | 1 | ✅ provada |
 | `backup-recusa-envenena-a-raiz` | a recusa do `fsync` no destino do backup marca a raiz de dados, e todo COMMIT seguinte recusa | 1 | ✅ provada |
 | `backup-recusa-para-o-commit` | pelo soquete: depois de um backup com `fsync` recusado no destino, o `inserir` seguinte erra | 1 | ✅ provada |
 | `backup-destino-que-contem-a-raiz` | o backup em arvore aceita destino igual, acima ou (por link) dentro da raiz de dados | 1 | 🟰 redundante |
+| `diff-null-na-chave-apaga-linha-irma` | o `diff` com NULL repetido no indice some com linhas do relatorio | 2 | ✅ provada |
+| `recusa-de-coluna-marcada-cita-o-valor` | A recusa de conversão cita o valor curto de coluna marcada como dado pessoal | 4 | ✅ provada |
+| `dblink-empurra-valor-pela-regua-de-nome` | O DbLink empurra valor de texto pela régua de NOME de objeto | 2 | ✅ provada |
+| `dblink-puxar-cita-a-celula-remota` | O DbLink, ao puxar, cita na recusa a célula do outro banco | 2 | ✅ provada |
+| `dblink-puxar-apara-o-texto` | O DbLink, ao puxar, apara o texto e troca o vazio por nulo | 1 | ✅ provada |
+| `dblink-empurra-upsert-de-mysql-no-postgres` | O DbLink empurra para o PostgreSQL com o upsert do MySQL | 3 | ✅ provada |
+| `dblink-empurra-booleano-como-numero` | O DbLink empurra o booleano como 1/0 | 1 | ✅ provada |
+| `dblink-puxar-le-booleano-pela-carga-colada` | O DbLink, ao puxar, lê o booleano pela régua da carga colada | 1 | ✅ provada |
 | `dblink-puxar-le-blob-cru` | O DbLink, ao puxar, lê o BLOB cru como se fosse hexadecimal | 3 | ✅ provada |
+| `dblink-puxar-inventa-uuid` | O DbLink, ao puxar, troca a célula «novo» por um uuid aleatório | 1 | ✅ provada |
 | `dblink-tela-mostra-blob-com-perda` | O DbLink mostra na tela o BLOB remoto pelo leitor com perda | 2 | ✅ provada |
 | `dblink-colacao-bin-vira-hex` | O DbLink mostra em hexadecimal o texto de uma colação _bin | 2 | ✅ provada |
 | `dblink-espelho-bin-pela-bandeira` | O espelho do DbLink cria Bin a coluna de texto em colação _bin | 1 | ✅ provada |
 | `dblink-bit-lido-como-hex-decimal` | O DbLink puxa o BIT do MySQL em hexadecimal e o grava como decimal | 2 | ✅ provada |
+| `faixa-do-slot-cita-coluna-marcada` | A faixa do tipo, conferida no slot, cita o número de coluna marcada | 1 | ✅ provada |
+| `carga-colada-converte-sem-a-coluna` | A carga colada converte a célula sem a marca da coluna | 1 | ✅ provada |
+| `upsert-converte-sem-a-coluna` | O `atualizar` do upsert converte o valor sem a marca da coluna | 1 | ✅ provada |
+| `sql-vai-ao-perfil-com-o-literal` | O `sql` vai ao `perfil.txt` com o literal dentro | 3 | ✅ provada |
+| `sql-vai-ao-perfil-com-o-literal-pelo-soquete` | O `INSERT` em SQL da tabela marcada vai ao `perfil.txt` com o valor, visto pelo soquete | 1 | ✅ provada |
+| `erro-do-sql-normalizado-vai-ao-arquivo` | O `sql` normalizado leva ao arquivo o erro que cita o literal | 1 | ✅ provada |
+| `normaliza-o-que-nao-e-sql` | O Profiler normaliza pelo NOME do campo, e a carga colada vira lixo de léxico | 1 | ✅ provada |
+| `transacoes-recuperadas-sem-sanear` | O registro das transações volta do pânico sem sanear, e o COMMIT seguinte confirma o que ele não afirma | 1 | ✅ provada |
+| `transacoes-envenenadas-recusam-toda-conexao` | Um pânico com as transações na mão mata toda transação de toda conexão até reiniciar | 1 | ✅ provada |
+| `trava-suja-sem-nome` | O `SP000010` da trava suja sai com a MESMA frase em 85 pontos de 14 travas | 1 | ✅ provada |
+| `esvaziar-lixeira-fora-do-ops-do-no` | A réplica somente-leitura não esvazia o próprio `.trash`, e a linha apagada no source fica nela para sempre | 1 | ✅ provada |
+| `ops-do-no-fora-do-ops-escrita` | `esvaziar_lixeira` e `expurgar_trilha` fora do `OPS_ESCRITA`: rodam dentro de BEGIN sem voltar no ROLLBACK e passam por cima da trava de outra transação | 2 | ✅ provada |
+| `normalizado-deixa-o-booleano-cru` | O `sql` normalizado deixa `TRUE`, `FALSE` e `NULL` crus no `perfil.txt` | 1 | ✅ provada |
+| `sql-vai-ao-perfil-com-o-literal-na-bateria-do-497` | O `sql` vai ao `perfil.txt` com o literal, visto pela bateria do 497 nas duas portas | 1 | ✅ provada |
+| `expurgar-trilha-fora-do-ops-do-no` | A réplica somente-leitura não expurga a própria trilha `.lgpd` | 2 | ✅ provada |
+| `veneno-dito-uma-vez-por-trava` | O segundo pânico com as transações na mão passa calado e sem saneamento | 1 | ✅ provada |
+| `commit-ignora-o-prazo` | o COMMIT depois do prazo da transação grava a lista inteira | 1 | ✅ provada |
+| `old-do-before-update-pelo-disco` | dentro da transação o OLD do BEFORE UPDATE é a linha do disco, e o delta de estoque sai -4 onde é -2 | 1 | ✅ provada |
+| `old-do-upsert-pelo-disco` | o upsert que vira alteração na transação dá ao BEFORE UPDATE o OLD do disco | 1 | ✅ provada |
+| `old-do-before-delete-pelo-disco` | dentro da transação o BEFORE DELETE vê a linha do disco, e a nascida na transação nem dispara | 1 | ✅ provada |
+| `elo-do-empilhar-sem-trava-de-linha` | o elo que o empilhar planeja não trava a linha da filha, e a escrita de outra conexão nela passa | 1 | ✅ provada |
+| `elo-do-empilhar-regrava-a-linha-inteira` | o COMMIT regrava a filha inteira que o empilhar viu, e desfaz a cascata solta de outra mãe dela | 1 | ✅ provada |
+| `cascata-solta-sem-marca` | a alteração solta que cascateia grava sem marca, e a queda no meio deixa filha na chave velha | 4 | ✅ provada |
+| `cascata-solta-pela-marca-do-embutido` | a alteração solta que cascateia volta ao `Table::atualizar`: a marca do store não se completa no reparo da trava | 3 | ✅ provada |
+| `upsert-solto-cascateia-sem-marca` | o upsert solto que vira alteração com cascata grava pelo `atualizar` de dentro dele, sem marca | 1 | ✅ provada |
+| `cascata-solta-com-o-punho-de-quem-chama-sujo` | a cascata solta abre o punho da passada com o `t` de quem chama ainda sujo, e o `Drop` dele desfaz o índice da mãe | 1 | ✅ provada |
+| `descida-do-punho-sem-o-fts` | a descida do punho de quem chama leva o `.ndx` e esquece o `.fts`: a busca de texto da mãe acha o nome velho | 1 | ✅ provada |
+| `varredura-encerra-quem-confirma` | a varredura do prazo encerra a transação que está no COMMIT e solta as travas de quem ainda grava | 1 | ✅ provada |
+| `devolver-desfaz-o-abort-only` | a lista devolvida ao fim de um COMMIT recusado desfaz o ABORT_ONLY que chegou no meio | 1 | ✅ provada |
+| `subida-do-byte-52-sem-fsync` | a SUBIDA do byte 52 volta a ir só ao cache do núcleo: numa queda de energia o disco guarda o `.reg` novo sob o 0 do último fecho, e o pai com filhas se apaga calado | 2 | ✅ provada |
+| `subida-do-byte-52-sincroniza-a-cada-pagina` | a subida do byte 52 sincroniza a cada página suja, e não só na passagem de 0 para 1: um `fdatasync` no laço quente de toda escrita | 1 | ✅ provada |
+| `arquivo-do-banco-nasce-aberto` | os arquivos do banco voltam a nascer na permissão do `umask`: `.reg`, `.ndx`, `.log`, `.lgpd`… `644`, legíveis por todo usuário da máquina | 1 | ✅ provada |
+| `diretorio-do-banco-nasce-aberto` | a raiz, o database, o palco da restauração e o destino do backup voltam a nascer `755` | 2 | ✅ provada |
 | `arquivo-refeito-herda-o-modo-velho` | o arquivo que o banco REFAZ por cima de um antigo -- o `.ndx` e o `.fts` do `reindexar` -- herda o `644` dele | 1 | ✅ provada |
 | `copia-do-backup-nasce-aberta` | a cópia do backup volta a nascer `644` -- até a do `.lgpd`, que nasceu `600` | 1 | ✅ provada |
+| `base-antiga-sem-alerta` | a base antiga, `644` em `755`, deixa de ser apontada: o motor não aperta o que existe e ninguém avisa | 1 | ✅ provada |
+| `arranque-nao-alerta-a-base-antiga` | o `phxsqld` sobe numa base `644`/`755` sem dizer nada | 1 | ✅ provada |
 | `backup-atravessa-link-plantado` | o motor da permissão volta a seguir o link simbólico no último nome: um link plantado no destino do backup faz o `.reg` ser gravado NA vítima de fora, e ela vira 0600 | 3 | ✅ provada |
+| `base-por-link-cala-o-alerta` | o alerta da base antiga cala quando `config.base` é um link simbólico | 1 | ✅ provada |
+| `arranque-cala-o-alerta-da-base-por-link` | o `phxsqld` sobe numa base `644`/`755` alcançada por link simbólico sem dizer nada | 1 | ✅ provada |
+| `ndx-novo-sobe-com-o-diretorio-vazio` | o primeiro cabeçalho durável de um `.ndx` novo leva o byte 52 em 1 e ZERO índices: a queda no meio do `reindexar` trava a tabela | 1 | ✅ provada |
 | `migracao-do-separador-decide-pelo-nome` | a migracao do separador de volume le `vendas_2024.reg` como volume 2024 de `vendas` e some com a tabela | 1 | ✅ provada |
 | `marca-do-separador-antes-dos-renomes` | a marca do formato de volume vai ao disco antes dos `rename`s, e a queda no meio deixa o diretorio marcado e meio migrado | 1 | ✅ provada |
 | `painel-com-copia-do-analisador-de-volume` | o painel soma os bytes do `.reg` por uma copia do nome do volume e mede zero em tabela de 4 digitos ou por letra | 1 | ✅ provada |
 | `carga-adiada-solta-sem-reconstruir` | o `bulkinsert(false)` da carga com o índice adiado solta a reserva com a árvore suspensa | 1 | ✅ provada |
 | `suspensao-do-indice-so-na-ram` | a suspensão do `.ndx` para a carga adiada fica só na memória, e a queda no meio deixa a árvore vazia se declarando limpa | 2 | ✅ provada |
 | `carga-adiada-orfa-sem-reconstruir` | a carga adiada que sai sem o `bulkinsert(false)` (conexão caída, reserva vencida) deixa o índice suspenso até o próximo arranque | 1 | ✅ provada |
+| `diario-que-falha-sem-marca-do-evento-devido` | o `.log` que falha depois de a linha estar no `.reg` não deixa a marca do evento devido, e a abertura não sabe o que completar | 3 | ✅ provada |
+| `abertura-nao-completa-o-evento-devido` | a abertura da tabela acha a marca do evento devido e não completa o `.log` pela linha | 3 | ✅ provada |
+| `diario-que-falha-nao-derruba-o-servidor` | o servidor segue de pé depois de o `.log` falhar com a linha já no `.reg` — linha sem diário servindo | 1 | ✅ provada |
+| `disco-cheio-deixa-a-sentinela-do-509` | o disco cheio que derruba pelo `.log` grava a sentinela do `fsync` recusado, e o servidor não sobe no mesmo boot | 1 | ✅ provada |
+| `exclusao-de-vez-sem-conferir-o-teto-do-diario` | no teto do diário, a exclusão de vez tira a linha do `.reg` e só então o `.log` recusa | 1 | ✅ provada |
+| `exclusao-de-vez-motivo-que-falha-pula-o-diario` | na exclusão de vez, o `.reason` que falha com o slot já livre devolve o erro antes do `.log` — a linha some sem evento | 1 | ✅ provada |
+| `insercao-fts-que-falha-pula-o-diario` | na inclusão, o `.fts` que falha com a linha já no `.reg` devolve o erro antes do `.log` — a linha fica sem evento | 1 | ✅ provada |
 | `zip-que-falha-no-rename-deixa-o-part` | o `rename` final do backup em ZIP que recusa deixa o `.part` na pasta para sempre | 1 | ✅ provada |
 | `backup-em-pasta-que-falha-deixa-as-copias` | o backup em PASTA cujo manifesto recusa deixa as cópias na pasta sem `backup.json` para sempre | 1 | ✅ provada |
 | `backup-reaproveitado-que-falha-deixa-o-manifesto-velho` | o backup em pasta REAPROVEITADA que falha deixa o `backup.json` velho descrevendo cópias que já mudaram | 1 | ✅ provada |
+| `zip-que-falha-deixa-a-pasta-que-criou` | o backup em ZIP que falha deixa vazia a pasta que ele mesmo criou | 1 | ✅ provada |
 | `backup-fsync-reabre-a-copia` | o `fsync` da cópia do backup cai num descritor REABERTO, e não no de quem escreveu | 1 | ✅ provada |
 | `backup-copia-fecha-o-descritor-antes-do-fsync` | a cópia do backup fecha o descritor na escrita, sob a trava, e o inode fica livre para sair da memória antes do `fsync` | 2 | ✅ provada |
 | `zip-fsync-reabre-o-part` | o `fsync` do `.part` do backup em ZIP cai num descritor REABERTO, e não no de quem escreveu | 1 | ✅ provada |
 | `backup-manifesto-novo-sem-fsync-da-pasta` | o manifesto novo do backup nasce sem o `fsync` da pasta de onde o `backup.json` velho saiu | 1 | ✅ provada |
 | `zip-rename-que-recusa-deixa-a-pasta` | o `rename` final do backup em ZIP que recusa deixa vazia a pasta que a corrida criou | 1 | ✅ provada |
+| `cascata-dispara-after-do-elo-so-no-commit` | a mesma cascata do `ao_alterar` dispara o AFTER da filha no COMMIT e não na alteração solta | 1 | ✅ provada |
+| `dblink-troca-o-host-e-herda-a-senha` | trocar o host de uma ligação do DbLink sem mandar a senha herda a guardada, e ela sai para o destino novo | 2 | ✅ provada |
+| `dblink-no-fio-com-a-trava-de-dados` | `dblink_ligar` e `dblink_sincronizar` vão ao fio com a trava de dados global na mão: um par que goteja abaixo do prazo por leitura prende todo pedido de todo cliente | 1 | ✅ provada |
 | `dblink-sem-prazo-total` | Os três clientes do DbLink (mysql, pg e phx) só têm prazo por LEITURA: um par que goteja um byte antes de cada prazo prende a thread do job ou da conexão para sempre | 1 | ✅ provada |
 | `dblink-sem-teto-de-bytes` | O resultado do DbLink só tem teto de LINHAS: o par decide quanto pesa cada uma (até 128 MiB no MySQL, 64 MiB no PostgreSQL) e o servidor guarda gigabytes | 2 | ✅ provada |
 | `dblink-max-mib-sem-leitor` | O `max_mib` da ligação do DbLink aparece no arquivo e na tela e nenhum cliente o lê: o teto de bytes fica o de fábrica, diga a ligação o que disser | 1 | ✅ provada |
+| `replica-sem-prazo-total` | O laço da réplica, a sonda e o console só têm prazo por LEITURA: um par que goteja um byte antes de cada prazo prende a thread para sempre | 1 | ✅ provada |
+| `porta-lida-pela-metade` | O apoio dos testes lia a porta do phxsqld antes de a linha acabar: o eprintln! sai em várias escritas, e o parse do endereço pela metade dava AddrParseError (ou a porta errada) | 2 | ✅ provada |
+| `copia-da-troca-sem-fsync` | A cópia de reserva da troca no restaurar (o caminho sem rename) apagava a origem sem fsync da cópia: uma queda no meio deixava a única via de volta pela metade | 1 | ✅ provada |
+| `replica-limite-sem-recuo` | O estouro do prazo total da réplica caía em `Outra`: o par que goteja era retentado no intervalo fixo, sem recuo | 2 | ✅ provada |
+| `cluster-replica-sem-recuo` | O laço da réplica do CLUSTER retentava a cada pulso sem o `Ritmo`: sem recuo nem para rede nem para limite | 1 | ✅ provada |
+| `odbc-sem-prazo-total` | O driver ODBC só tinha prazo por LEITURA: um servidor que goteja um byte antes de cada prazo prendia a thread do aplicativo dentro do SQLExecDirect | 1 | ✅ provada |
+| `odbc-total-pela-vida-da-conexao` | O prazo total do driver ODBC contado pela vida da conexão, e não por pedido: o aplicativo que abre de manhã e consulta à tarde cairia no primeiro pedido depois do total | 1 | ✅ provada |
+| `copia-de-tabela-sem-fsync` | `duplicar_tabela` e `copiar_tabela_para` respondiam «ok» com a cópia só no cache do núcleo: uma queda podia levar a tabela nova, ou deixá-la rasgada | 1 | ✅ provada |
+| `copia-de-tabela-sem-fsync-da-pasta` | A cópia de tabela sincronizava os arquivos e não a pasta: o nome novo podia sumir numa queda depois do «ok» | 1 | ✅ provada |
+| `colar-em-schema-novo-sem-fsync-do-database` | Colar num schema que ainda não existe criava a pasta dele sem `fsync` do database: a cópia sincronizada podia morar numa pasta que a queda leva | 1 | ✅ provada |
+| `porta-anunciada-em-pedacos` | A linha «porta de dados escutando em …» saía em várias escritas: quem lia o log no meio via a porta pela metade | 1 | ✅ provada |
 | `criar-tabela-sem-fsync-dos-arquivos` | `criar_tabela` respondia «criada» com o `.reg`, o `.ndx` e os outros arquivos só no cache do núcleo: numa queda a tabela podia sumir ou voltar sem o esquema | 1 | ✅ provada |
 | `garantir-schema-sem-fsync-do-database` | `criar_schema` e `criar_tabela` num schema novo criavam a pasta sem `fsync` do database: o schema que o cliente ouviu criar podia sumir numa queda | 2 | ✅ provada |
+| `criar-database-sem-fsync-da-base` | `criar_database` criava a pasta sem `fsync` da base: o database que o cliente ouviu criar podia sumir numa queda | 1 | ✅ provada |
+| `marca-do-database-sem-fsync` | O marcador `_database.json` nascia sem `fsync`: numa queda uma colmeia voltava como database padrão, calada | 1 | ✅ provada |
 | `excluir-tabela-sem-fsync-da-pasta` | `excluir_tabela` respondia «excluída» com os `unlink` só no cache do núcleo: numa queda a tabela voltava, inteira ou pela metade | 1 | ✅ provada |
 | `esvaziar-lixeira-sem-fsync-da-pasta` | `esvaziar_lixeira` apagava os volumes do `.trash` sem `fsync` da pasta: numa queda o dado apagado de vez voltava, com o `.reason` dizendo que saiu | 1 | ✅ provada |
 | `expurgo-da-trilha-sem-fsync-da-pasta` | A fase 3 do expurgo da trilha apagava os volumes do `.lgpd` sem `fsync` da pasta: numa queda o volume vencido voltava, com o rastro selado dizendo que saiu | 1 | ✅ provada |
@@ -1320,6 +1414,15 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `encerrar-sessao-adivinha-web-pela-forma` | o encerrar_sessao decide web x conexao pela forma do id e ignora o `tipo` do pedido (pedido 644) | 1 | ✅ provada |
 | `ping-crava-a-porta-5000` | o ping devolve a porta 5000 de fabrica em vez da que o servidor escuta (pedido 645) | 1 | ✅ provada |
 | `conferidor-nao-ve-porta-cravada` | o conferidor de numero cravado em texto de tela deixa de acusar «porta NNNN» (pedido 645) | 1 | ✅ provada |
+| `ack-do-quorum-sem-alcance` | o ack do quorum vale para tabela que a sessao nao alcanca (pedido 649) | 1 | ✅ provada |
+| `ficha-do-quorum-ultimo-a-chegar` | a ficha do cubo do quorum e gravada por qualquer credencial `Replicar` (pedido 649) | 1 | ✅ provada |
+| `sequencia-do-source-sem-teto` | o contador de sequencia que o source anuncia e adotado sem teto (pedido 650) | 2 | ✅ provada |
+| `na-faixa-da-a-volta` | `na_faixa` soma sem saturar perto de `u64::MAX` (pedido 650) | 1 | ✅ provada |
+| `noise-entra-sem-registro` | quem chega pelo Noise entra sem a linha de log da transicao para o TLS (pedido 652) | 1 | ✅ provada |
+| `noise-sem-silencio-por-par` | o aviso do Noise sai uma linha por conexao em vez de uma por par (pedido 652) | 1 | ✅ provada |
+| `eleicao-sem-teto-de-atraso` | a eleicao promove a replica atrasada alem do `atraso_maximo_na_eleicao` (pedido 313) | 1 | ✅ provada |
+| `arranque-recusado-calado` | o arranque recusado pela sentinela do 509 nao avisa o operador (pedido 573) | 1 | ✅ provada |
+| `veneno-permanente-recusa` | a trava de dados envenenada recusa mesmo com o reparo terminado (pedido 653) | 1 | ✅ provada |
 | `backup-fsync-do-grosso-na-fase-1` | O `fsync` do grosso da cópia de volta à fase 1 do backup, com o escritor andando (pedido 646) | 1 | ✅ provada |
 | `backup-manifesto-nasce-na-fase-2` | O manifesto do backup gravado já na fase 2, antes do `concluir`: uma queda ali deixa um destino que o `op_backups` lista e o `restaurar` aceita (pedido 646) | 1 | ✅ provada |
 | `backup-concluir-manifesto-antes-do-fsync` | O `concluir` grava o manifesto ANTES do `fsync` das cópias das duas fases (pedido 646, condição C2 do 524) | 1 | ✅ provada |
@@ -1327,106 +1430,37 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `trava-de-instancia-aceita-link-fisico` | O motor do arquivo do banco deixa de contar os nomes do inode: a trava escreve o pid num `.phxsql.trava` que é link físico de outro arquivo (pedido 648) | 1 | ✅ provada |
 | `zip-retrato-part-aproveitado` | A árvore temporária do zip (`.retrato.part`) aproveitada se já existe: o link plantado leva a cópia para fora e o intruso entra no zip (pedido 651) | 2 | ✅ provada |
 | `restaurar-aceita-trava-no-manifesto` | A restauração aceita um manifesto que lista `.phxsql.trava`, nome que o backup nunca grava (pedido 651) | 1 | ✅ provada |
+| `novo-da-fase-a-reusa-o-inode` | O `*.novo` da FASE A trunca e reusa o inode do nome: o `descriptografar` escreve o texto claro numa isca plantada como link físico (pedido 661) | 1 | ✅ provada |
+| `fase-b-nao-confere-o-novo` | A FASE B renomeia o `*.novo` sem conferir que é o que a FASE A escreveu: o trocado entre as fases vira o `.reg` (pedido 661) | 1 | ✅ provada |
+| `fase-b-nao-confere-o-novo-na-janela` | O `*.novo` trocado na janela sem trava do servidor (`rodar_gancho_da_janela`) é publicado pela FASE B (pedido 661) | 1 | ✅ provada |
+| `colattribute-tamanho-escrito-sem-01004` | `SQLColAttribute` devolve os bytes escritos e não o total, e trunca sem `01004`: a pergunta com NULL volta 0 (pedido 663) | 1 | ✅ provada |
+| `tamanho-smallint-negativo` | O tamanho de texto acima de 32.767 bytes vira negativo no `SQLGetDiagRec`/`SQLGetDiagField` (pedido 663) | 1 | ✅ provada |
+| `contador-da-sequencia-fora-do-cabecalho` | O contador do auto number sai do cabeçalho de `gravar_contadores`: a queda que perde o cabeçalho repete número (pedido 664) | 1 | ✅ provada |
+| `seq-avanca-antes-de-gravar` | O `.seq` avança `geracao`/`proximo` antes do `fdatasync`: duas gravações que falham rasgam os dois slots (pedido 665) | 1 | ✅ provada |
+| `tls-cliente-pino-ignorado` | O cliente TLS conecta com pino e não confere o SPKI do servidor contra ele (pedido 572, T6b-1) | 1 | ✅ provada |
+| `tls-cliente-certificate-verify-sem-conferir` | O cliente TLS não confere a assinatura do `CertificateVerify` contra a chave do certificado (pedido 572, T6b-1) | 2 | ✅ provada |
+| `tls-cliente-finished-do-servidor-sem-conferir` | O cliente TLS não confere o `Finished` do servidor (pedido 572, T6b-1) | 1 | ✅ provada |
+| `tls-cliente-hrr-sem-eco-do-cookie` | O cliente TLS não ecoa o `cookie` do `HelloRetryRequest` no segundo `ClientHello` (pedido 572, T6b-1) | 1 | ✅ provada |
+| `senha-em-claro-de-fora-do-loopback` | O `op_login` aceita `senha`/`senha_b64` de fora do loopback por fio sem cifra (pedido 667) | 1 | ✅ provada |
+| `senha-em-claro-pelo-login-remoto-da-web` | O login da web que vai para OUTRO servidor leva a senha em claro de fora do loopback sem passar pelo portao (pedido 667) | 1 | ✅ provada |
+| `backup-manifesto-antes-do-fsync-com-faxina-total` | O `concluir` grava o manifesto ANTES do `fsync` e a faxina o apaga em TODO erro: a prova que só olhava depois da faxina passava (pedido 670) | 2 | ✅ provada |
+| `contador-da-sequencia-em-escrita-separada` | O contador do auto number vai ao disco num `pwrite` SEPARADO do `slot_count`: a queda entre os dois repete número (pedido 671) | 1 | ✅ provada |
+| `fase-b-aceita-novo-de-outro-inode` | A FASE B deixa de comparar o inode do `*.novo`: o arquivo plantado com o mesmo tamanho e a mesma data vira o `.reg` (pedido 672) | 1 | ✅ provada |
+| `fase-b-aceita-link-fisico-no-novo` | A FASE B deixa de contar os nomes do `*.novo`: o link físico pendurado entre as fases vira um segundo nome da tabela em claro (pedido 672) | 1 | ✅ provada |
+| `fase-b-aceita-novo-que-cresceu` | A FASE B deixa de comparar o tamanho do `*.novo`: o que cresceu entre as fases, com a data reposta, é publicado (pedido 672) | 1 | ✅ provada |
+| `fase-b-aceita-novo-escrito-por-fora` | A FASE B deixa de comparar a data do `*.novo`: a escrita pelo nome entre as fases, no mesmo tamanho, é publicada (pedido 672) | 1 | ✅ provada |
+| `fase-b-segue-com-o-novo-que-nao-se-le` | O `conferir_novos` segue em frente quando o `lstat` do `*.novo` falha: o `.novo` do espelho apagado entre as fases deixa o `.bkp` velho atrás do `.reg` novo, com Ok (pedido 672) | 1 | ✅ provada |
 | `alter-com-regra-sem-aviso` | `acrescentar_coluna` com `check` ou `calculada` numa tabela com linha é aceito SEM AVISO, e a linha velha fica fora da regra | — | 🪦 aposentada (01/10/2026) |
 | `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | — | 🪦 aposentada (18/09/2026) |
 
-**687 das 778 guardas do catálogo: 2 aposentadas, 2 não pegaram, 678 provadas, 5 redundantes** — 24339 s de mutação, medido de 2026-09-16 15:25 a 2026-10-06 21:30, em 8 datas (2026-09-16: 109, 2026-09-17: 8, 2026-09-18: 3, 2026-09-24: 176, 2026-09-30: 34, 2026-10-01: 192, 2026-10-02: 157, 2026-10-06: 8).
+**810 das 812 guardas do catálogo: 2 aposentadas, 2 não pegaram, 802 provadas, 4 redundantes** — 36404 s de mutação, medido de 2026-09-16 15:25 a 2026-10-07 16:41, em 7 datas (2026-09-16: 1, 2026-09-24: 84, 2026-09-30: 34, 2026-10-01: 192, 2026-10-02: 153, 2026-10-06: 51, 2026-10-07: 295).
 
-> **Esta rodada NÃO julgou 93 das 778 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 93 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 4 das 812 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 4 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
-- `smtp-ecoa-a-credencial` — o erro do SMTP traz o texto do rele, e o rele que ecoa a credencial poe o base64 da senha no log
-- `arranque-reconstroi-calado` — o arranque reconstroi indice marcado e so diz no `stderr`: quem opera nao fica sabendo da queda
-- `reconstruir-fts-sem-janela` — o panico no meio do `reconstruir_fts` grava o indice de texto pela metade marcado limpo
-- `carimbo-da-a-volta-no-teto` — o rowstamp empurrado ao teto por evento replicado da a volta, e o filho nasce com carimbo menor que o pai
-- `upsert-solto-sem-trava-da-linha` — o upsert solto altera a linha que uma transacao segura, e o COMMIT dela apaga a escrita
-- `cascata-solta-sem-trava-da-filha` — a cascata solta grava a filha que uma transacao segura, por cima do X dela
-- `cascata-solta-sem-pre-conferencia` — a cascata solta grava a mae antes de conferir a FK da filha para OUTRA mae, e deixa filhas orfas
-- `ciclo-de-commits-sem-desempate` — dois COMMITs cujos elos se barram são mandados repetir para sempre, e ninguém confirma
-- `quem-cede-no-ciclo-segura-as-travas` — a transação que cede no ciclo de COMMITs volta ativa com as travas, e a mais velha continua barrada
-- `aresta-velha-depois-do-savepoint` — a transação barrada volta ao SAVEPOINT e a aresta velha faz a outra ceder num ciclo que não existe mais
-- `corrente-do-ciclo-atravessa-quem-nao-confirma` — a corrente do ciclo atravessa transação em ABORT_ONLY, e a outra cede por quem nunca mais vai confirmar
-- `cascata-em-voo-ignorada-no-drop` — pânico entre duas filhas da cascata solta deixa as seguintes na chave velha, e a tabela delas não recusa
-- `cascata-em-voo-so-no-aplicar` — pânico depois de a mãe ir ao disco e antes da primeira filha deixa as filhas na chave velha, calado
-- `cascata-do-embutido-sem-marca` — a cascata do `ao_alterar` do embutido volta a rodar sem marca: a queda no meio deixa a filha na chave velha, e a abertura a cala
-- `recusa-do-fsync-por-grafia` — a recusa do `fsync` casa pela GRAFIA do caminho: pelo symlink ou por `dir/../dir` o mesmo diretório sincroniza Ok e baixa o byte 52
-- `dblink-mysql-lenenc-embrulha` — o DbLink MySQL(R) entra em pânico com `0xFE` + `u64::MAX` num campo `lenenc` do par, e corta calado o campo maior que o pacote
-- `dblink-pg-contagem-negativa` — o DbLink PostgreSQL(R) reserva `Vec::with_capacity` da contagem de campos `int16` do par: `-1` vira `usize::MAX` e pânico de `capacity overflow`
-- `dblink-mysql-cadeia-alem-do-fim` — o aperto de mão do DbLink MySQL(R) entra em pânico com saudação curta ou troca de plugin sem NUL, antes da credencial
-- `job-dispara-job` — um job cujo pedido é `job_rodar` sobe uma corrida aninhada por nível, sem teto: o job de si mesmo empilha threads até o processo cair
-- `smtp-sem-prazo-total-da-conversa` — o `timeout_s` do cliente SMTP mede o silêncio e não a conversa: um relé que pingue abaixo do prazo segura a thread de aviso pelo tempo que quiser
-- `fts-nasce-com-permissao-aberta` — o `.fts` nasce `644` -- legivel por todo usuario da maquina
-- `conferir-fk-afirma-indice-sao-quando-marcado` — a conferencia contra a MAE afirma "esta sao" com o indice marcado
-- `procura-das-filhas-afirma-indice-sao-quando-marcado` — a procura pelas filhas afirma "esta sao" com o indice marcado
-- `diff-null-na-chave-apaga-linha-irma` — o `diff` com NULL repetido no indice some com linhas do relatorio
-- `recusa-de-coluna-marcada-cita-o-valor` — A recusa de conversão cita o valor curto de coluna marcada como dado pessoal
-- `dblink-empurra-valor-pela-regua-de-nome` — O DbLink empurra valor de texto pela régua de NOME de objeto
-- `dblink-puxar-cita-a-celula-remota` — O DbLink, ao puxar, cita na recusa a célula do outro banco
-- `dblink-puxar-apara-o-texto` — O DbLink, ao puxar, apara o texto e troca o vazio por nulo
-- `dblink-empurra-upsert-de-mysql-no-postgres` — O DbLink empurra para o PostgreSQL com o upsert do MySQL
-- `dblink-empurra-booleano-como-numero` — O DbLink empurra o booleano como 1/0
-- `dblink-puxar-le-booleano-pela-carga-colada` — O DbLink, ao puxar, lê o booleano pela régua da carga colada
-- `dblink-puxar-inventa-uuid` — O DbLink, ao puxar, troca a célula «novo» por um uuid aleatório
-- `faixa-do-slot-cita-coluna-marcada` — A faixa do tipo, conferida no slot, cita o número de coluna marcada
-- `carga-colada-converte-sem-a-coluna` — A carga colada converte a célula sem a marca da coluna
-- `upsert-converte-sem-a-coluna` — O `atualizar` do upsert converte o valor sem a marca da coluna
-- `sql-vai-ao-perfil-com-o-literal` — O `sql` vai ao `perfil.txt` com o literal dentro
-- `sql-vai-ao-perfil-com-o-literal-pelo-soquete` — O `INSERT` em SQL da tabela marcada vai ao `perfil.txt` com o valor, visto pelo soquete
-- `erro-do-sql-normalizado-vai-ao-arquivo` — O `sql` normalizado leva ao arquivo o erro que cita o literal
-- `normaliza-o-que-nao-e-sql` — O Profiler normaliza pelo NOME do campo, e a carga colada vira lixo de léxico
-- `transacoes-recuperadas-sem-sanear` — O registro das transações volta do pânico sem sanear, e o COMMIT seguinte confirma o que ele não afirma
-- `transacoes-envenenadas-recusam-toda-conexao` — Um pânico com as transações na mão mata toda transação de toda conexão até reiniciar
-- `trava-suja-sem-nome` — O `SP000010` da trava suja sai com a MESMA frase em 85 pontos de 14 travas
-- `esvaziar-lixeira-fora-do-ops-do-no` — A réplica somente-leitura não esvazia o próprio `.trash`, e a linha apagada no source fica nela para sempre
-- `ops-do-no-fora-do-ops-escrita` — `esvaziar_lixeira` e `expurgar_trilha` fora do `OPS_ESCRITA`: rodam dentro de BEGIN sem voltar no ROLLBACK e passam por cima da trava de outra transação
-- `normalizado-deixa-o-booleano-cru` — O `sql` normalizado deixa `TRUE`, `FALSE` e `NULL` crus no `perfil.txt`
-- `sql-vai-ao-perfil-com-o-literal-na-bateria-do-497` — O `sql` vai ao `perfil.txt` com o literal, visto pela bateria do 497 nas duas portas
-- `expurgar-trilha-fora-do-ops-do-no` — A réplica somente-leitura não expurga a própria trilha `.lgpd`
-- `veneno-dito-uma-vez-por-trava` — O segundo pânico com as transações na mão passa calado e sem saneamento
-- `commit-ignora-o-prazo` — o COMMIT depois do prazo da transação grava a lista inteira
-- `old-do-before-update-pelo-disco` — dentro da transação o OLD do BEFORE UPDATE é a linha do disco, e o delta de estoque sai -4 onde é -2
-- `old-do-upsert-pelo-disco` — o upsert que vira alteração na transação dá ao BEFORE UPDATE o OLD do disco
-- `old-do-before-delete-pelo-disco` — dentro da transação o BEFORE DELETE vê a linha do disco, e a nascida na transação nem dispara
-- `elo-do-empilhar-sem-trava-de-linha` — o elo que o empilhar planeja não trava a linha da filha, e a escrita de outra conexão nela passa
-- `elo-do-empilhar-regrava-a-linha-inteira` — o COMMIT regrava a filha inteira que o empilhar viu, e desfaz a cascata solta de outra mãe dela
-- `cascata-solta-sem-marca` — a alteração solta que cascateia grava sem marca, e a queda no meio deixa filha na chave velha
-- `upsert-solto-cascateia-sem-marca` — o upsert solto que vira alteração com cascata grava pelo `atualizar` de dentro dele, sem marca
-- `cascata-solta-com-o-punho-de-quem-chama-sujo` — a cascata solta abre o punho da passada com o `t` de quem chama ainda sujo, e o `Drop` dele desfaz o índice da mãe
-- `descida-do-punho-sem-o-fts` — a descida do punho de quem chama leva o `.ndx` e esquece o `.fts`: a busca de texto da mãe acha o nome velho
-- `varredura-encerra-quem-confirma` — a varredura do prazo encerra a transação que está no COMMIT e solta as travas de quem ainda grava
-- `devolver-desfaz-o-abort-only` — a lista devolvida ao fim de um COMMIT recusado desfaz o ABORT_ONLY que chegou no meio
-- `subida-do-byte-52-sem-fsync` — a SUBIDA do byte 52 volta a ir só ao cache do núcleo: numa queda de energia o disco guarda o `.reg` novo sob o 0 do último fecho, e o pai com filhas se apaga calado
-- `subida-do-byte-52-sincroniza-a-cada-pagina` — a subida do byte 52 sincroniza a cada página suja, e não só na passagem de 0 para 1: um `fdatasync` no laço quente de toda escrita
-- `arquivo-do-banco-nasce-aberto` — os arquivos do banco voltam a nascer na permissão do `umask`: `.reg`, `.ndx`, `.log`, `.lgpd`… `644`, legíveis por todo usuário da máquina
-- `diretorio-do-banco-nasce-aberto` — a raiz, o database, o palco da restauração e o destino do backup voltam a nascer `755`
-- `base-antiga-sem-alerta` — a base antiga, `644` em `755`, deixa de ser apontada: o motor não aperta o que existe e ninguém avisa
-- `arranque-nao-alerta-a-base-antiga` — o `phxsqld` sobe numa base `644`/`755` sem dizer nada
-- `base-por-link-cala-o-alerta` — o alerta da base antiga cala quando `config.base` é um link simbólico
-- `arranque-cala-o-alerta-da-base-por-link` — o `phxsqld` sobe numa base `644`/`755` alcançada por link simbólico sem dizer nada
-- `ndx-novo-sobe-com-o-diretorio-vazio` — o primeiro cabeçalho durável de um `.ndx` novo leva o byte 52 em 1 e ZERO índices: a queda no meio do `reindexar` trava a tabela
-- `diario-que-falha-sem-marca-do-evento-devido` — o `.log` que falha depois de a linha estar no `.reg` não deixa a marca do evento devido, e a abertura não sabe o que completar
-- `abertura-nao-completa-o-evento-devido` — a abertura da tabela acha a marca do evento devido e não completa o `.log` pela linha
-- `diario-que-falha-nao-derruba-o-servidor` — o servidor segue de pé depois de o `.log` falhar com a linha já no `.reg` — linha sem diário servindo
-- `disco-cheio-deixa-a-sentinela-do-509` — o disco cheio que derruba pelo `.log` grava a sentinela do `fsync` recusado, e o servidor não sobe no mesmo boot
-- `exclusao-de-vez-sem-conferir-o-teto-do-diario` — no teto do diário, a exclusão de vez tira a linha do `.reg` e só então o `.log` recusa
-- `exclusao-de-vez-motivo-que-falha-pula-o-diario` — na exclusão de vez, o `.reason` que falha com o slot já livre devolve o erro antes do `.log` — a linha some sem evento
-- `insercao-fts-que-falha-pula-o-diario` — na inclusão, o `.fts` que falha com a linha já no `.reg` devolve o erro antes do `.log` — a linha fica sem evento
-- `zip-que-falha-deixa-a-pasta-que-criou` — o backup em ZIP que falha deixa vazia a pasta que ele mesmo criou
-- `cascata-dispara-after-do-elo-so-no-commit` — a mesma cascata do `ao_alterar` dispara o AFTER da filha no COMMIT e não na alteração solta
-- `dblink-troca-o-host-e-herda-a-senha` — trocar o host de uma ligação do DbLink sem mandar a senha herda a guardada, e ela sai para o destino novo
-- `dblink-no-fio-com-a-trava-de-dados` — `dblink_ligar` e `dblink_sincronizar` vão ao fio com a trava de dados global na mão: um par que goteja abaixo do prazo por leitura prende todo pedido de todo cliente
-- `replica-sem-prazo-total` — O laço da réplica, a sonda e o console só têm prazo por LEITURA: um par que goteja um byte antes de cada prazo prende a thread para sempre
-- `porta-lida-pela-metade` — O apoio dos testes lia a porta do phxsqld antes de a linha acabar: o eprintln! sai em várias escritas, e o parse do endereço pela metade dava AddrParseError (ou a porta errada)
-- `copia-da-troca-sem-fsync` — A cópia de reserva da troca no restaurar (o caminho sem rename) apagava a origem sem fsync da cópia: uma queda no meio deixava a única via de volta pela metade
-- `replica-limite-sem-recuo` — O estouro do prazo total da réplica caía em `Outra`: o par que goteja era retentado no intervalo fixo, sem recuo
-- `cluster-replica-sem-recuo` — O laço da réplica do CLUSTER retentava a cada pulso sem o `Ritmo`: sem recuo nem para rede nem para limite
-- `odbc-sem-prazo-total` — O driver ODBC só tinha prazo por LEITURA: um servidor que goteja um byte antes de cada prazo prendia a thread do aplicativo dentro do SQLExecDirect
-- `odbc-total-pela-vida-da-conexao` — O prazo total do driver ODBC contado pela vida da conexão, e não por pedido: o aplicativo que abre de manhã e consulta à tarde cairia no primeiro pedido depois do total
-- `copia-de-tabela-sem-fsync` — `duplicar_tabela` e `copiar_tabela_para` respondiam «ok» com a cópia só no cache do núcleo: uma queda podia levar a tabela nova, ou deixá-la rasgada
-- `copia-de-tabela-sem-fsync-da-pasta` — A cópia de tabela sincronizava os arquivos e não a pasta: o nome novo podia sumir numa queda depois do «ok»
-- `colar-em-schema-novo-sem-fsync-do-database` — Colar num schema que ainda não existe criava a pasta dele sem `fsync` do database: a cópia sincronizada podia morar numa pasta que a queda leva
-- `porta-anunciada-em-pedacos` — A linha «porta de dados escutando em …» saía em várias escritas: quem lia o log no meio via a porta pela metade
-- `criar-database-sem-fsync-da-base` — `criar_database` criava a pasta sem `fsync` da base: o database que o cliente ouviu criar podia sumir numa queda
-- `marca-do-database-sem-fsync` — O marcador `_database.json` nascia sem `fsync`: numa queda uma colmeia voltava como database padrão, calada
+- `replica-aplica-o-que-chegou-sem-esperar-a-transacao` — A réplica volta a aplicar o que chegou, lote a lote e tabela a tabela: com o fio caído no meio do envio o central mostra a venda pela metade (pedido 676)
+- `tomada-da-trava-sem-unidade-do-diario` — A tomada da trava de escrita deixa de abrir a unidade do diário: cada evento de um COMMIT ganha id próprio e a réplica aplica a venda em pedaços (pedido 676)
+- `crc-do-evento-sem-o-id-de-transacao` — O CRC do evento da versão 4 do `.log` deixa de cobrir o id de transação: um `tx` trocado no disco passa no `verificar` (pedido 676)
+- `grupo-sem-a-vez-das-maes` — O grupo da réplica volta a aplicar as tabelas na ordem da chegada: a filha do mesmo commit entra antes da mãe e é contada órfã sem nunca ter sido visível sem ela (pedido 676)
 
 As guardas que esta corrida ainda cita, hoje aposentadas:
 
@@ -1438,11 +1472,11 @@ As notas que a rodada deixou:
 - `cadeia-sem-teto` — o binario abortou, que e como esta guarda pega
 - `aad-fora-do-slot` — confirmado: tirar so o AAD nao e sentido por teste nenhum, porque o `nonce_de_pedaco` carrega o ROWID. Medido em 03/09/2026, e nao deduzido: tirando o AAD e SO o rowid do nonce -- volume e contador ficando --, o teste CAI. Volume e versao nao entram nesta conta porque o teste copia o slot INTEIRO, e os dois slots moram no mesmo volume com a mesma versao
 - `nonce-sem-endereco` — confirmado: tirar so o endereco do nonce tambem passa despercebido, porque o AAD carrega o ROWID. Medido em 03/09/2026: tirando o endereco do nonce e SO o rowid do AAD -- volume e versao ficando --, o teste CAI
+- `teto-do-fio-sem-a-constante-no-soquete` — PASSOU COM O DEFEITO REPOSTO: a_resposta_acima_do_teto_e_recusada_por_limite_e_a_rodada_seguinte_abre_outra
 - `ffi-panico-atravessa` — o binario abortou, que e como esta guarda pega
 - `rest-fecha-sem-escoar` — confirmado: nenhum teste de unidade sente isto, e nao poderia -- o RST e do sistema operacional, e so aparece com um soquete de verdade. Quem pega e o passo 13 de `bancada/rest/provar.py`, e esta entrada existe para dizer, com o numero da rodada, que a cobertura mora la e nao aqui
-- `recuperar-sem-reindexar` — confirmado: nenhum teste de unidade pega este defeito. O indice so fica para tras quando o PROCESSO morre no meio da passada, e isso so acontece de verdade em `bancada/transacoes/provar.py` -- que e por isso que a prova por soquete existe.
-- `fechar-do-embutido-nao-sincroniza` — PASSOU COM O DEFEITO REPOSTO: testes::fechar_sem_sincronizar_e_o_proximo_processo_abre
-- `elo-do-empilhar-pelo-disco` — PASSOU COM O DEFEITO REPOSTO: servidor::testes_transacoes::integridade_na_transacao::o_elo_da_cascata_nao_desfaz_o_que_a_lista_escreveu_na_filha
+- `recuperar-sem-reindexar` — o binario abortou, que e como esta guarda pega
+- `commit-sem-rede-antes-da-marca` — PASSOU COM O DEFEITO REPOSTO: o_commit_contra_a_tabela_congelada_nao_sai_pela_metade
 - `backup-destino-que-contem-a-raiz` — medido em 02/10/2026 (frente do 513 passo 2), e nao deduzido: desde o pedido 611 (S7, `conferir_destino_aberto`, commit 940e0e31 de 01/10 06:57) a mesma pergunta e feita ao DESCRITOR da pasta aberta, antes da primeira copia -- entao repor so' a conferencia de texto no `conferir_destino` nao e sentido por teste nenhum: os quatro destinos do teste recusam no descritor. A guarda que pega o par e `destino-do-backup-conferido-so-pelo-nome`. A ultima PROVADA desta entrada e de 01/10 02:26, ANTES do 611.
 - `prova-do-gravar-privado-dentro-do-processo` — o binario abortou, que e como esta guarda pega
 <!-- guardas:fim -->

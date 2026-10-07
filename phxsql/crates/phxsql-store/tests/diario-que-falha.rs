@@ -66,7 +66,9 @@ fn abrir(d: &std::path::Path) -> Table {
 /// dizer «nada devido».
 fn marca_no_disco(d: &std::path::Path) -> u8 {
     let bruto = std::fs::read(d.join("contas.log")).unwrap();
-    bruto[40] & 0x7f
+    // O `.log` nasce na versao 4 (pedido 676), de cabecalho de 128 bytes: a
+    // marca mora depois da prova da chave, em 80, como na versao 3.
+    bruto[80] & 0x7f
 }
 
 #[test]

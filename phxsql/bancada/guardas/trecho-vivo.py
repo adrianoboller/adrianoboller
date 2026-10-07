@@ -885,7 +885,15 @@ TETO_TESTE_SEM_MODULO = 0
 # o defeito ALTERNATIVO que a prova velha deixava passar. RED medido a mao
 # (troca do catalogo aplicada, `caem` cairam e `seguem` verdes, restaurado);
 # provador NAO rodou.
-PISO_DAS_ENTRADAS = 810
+# 810 -> 814 (pedido 676, 07/10/2026 -- o id de transacao no `.log`): nascem
+# `replica-aplica-o-que-chegou-sem-esperar-a-transacao` (o alcance por tabela
+# e por lote de antes), `tomada-da-trava-sem-unidade-do-diario` (o id por
+# evento em vez de por commit), `crc-do-evento-sem-o-id-de-transacao` e
+# `grupo-sem-a-vez-das-maes` (a filha do mesmo commit aplicada antes da mae e
+# contada orfa). RED medido a mao (troca do catalogo aplicada, `caem` cairam
+# e `seguem` verdes, restaurado); provador NAO rodou. Medido por `--numeros`
+# (814).
+PISO_DAS_ENTRADAS = 814
 
 # ------------------------------------------------------------- APOSENTADAS
 #

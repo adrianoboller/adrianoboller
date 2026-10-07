@@ -1096,8 +1096,9 @@ não citado de outro dia.)
 > zero.**
 
 Os três cortam volume por **bytes**, não por linhas, e o padrão é
-`bytes_por_arquivo = 1 GiB`. Um evento sem imagem tem 44 bytes: o `.log`
-só fecha o primeiro volume em **~24,4 milhões de eventos**. Com um milhão de
+`bytes_por_arquivo = 1 GiB`. Um evento sem imagem tem 52 bytes desde a versão 4
+do `.log` (pedido 676; eram 44): o `.log` só fecha o primeiro volume em
+**~20,6 milhões de eventos** (eram ~24,4). Com um milhão de
 linhas os três estão, cada um, num único arquivo — e esse arquivo é o que ainda
 está recebendo escrita.
 

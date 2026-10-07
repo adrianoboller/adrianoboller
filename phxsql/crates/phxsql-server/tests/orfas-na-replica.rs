@@ -2,20 +2,21 @@
 //! PELO SOQUETE, com um source e uma replica de verdade.
 //!
 //! A replica aplica e nao julga a chave estrangeira (`Table::julga_integridade`,
-//! com a medida: julgar la perdia 2 de 2 eventos). A replicacao anda por
-//! TABELA, e a filha chega antes da mae -- entao o invariante petreo «so existe
-//! filho se o pai existir primeiro» nao vale na replica no intervalo, e nao
-//! valia NADA que dissesse isso. Os tres maduros convergem em contar a
-//! divergencia do aplicador e deixa-la visivel: `orfas_na_replica` no
-//! `replicacao_estado`.
+//! com a medida: julgar la perdia 2 de 2 eventos). Os tres maduros convergem
+//! em contar a divergencia do aplicador e deixa-la visivel: `orfas_na_replica`
+//! no `replicacao_estado`.
 //!
-//! # Como se fabrica a filha antes da mae, sem sorte
+//! # O que mudou com o pedido 676, e por que a fabrica mudou junto
 //!
-//! A replica alcanca as tabelas na ordem do `posicao` do source, que e a de
-//! `Database::todas_as_tabelas` -- ORDENADA por nome. Uma filha chamada
-//! `a_itens` passa antes da mae `clientes`; uma chamada `pedidos`, depois.
-//! Se a ordem um dia deixar de ser por nome, a primeira prova cai dizendo que
-//! nao contou, e a segunda continua valendo -- nenhuma passa por engano.
+//! Ate o 676 a replicacao andava por TABELA, e a filha chegava antes da mae
+//! pela ordem dos nomes (`a_itens` antes de `clientes`): era assim que estas
+//! provas fabricavam a orfa. Desde o 676 a replica junta as tabelas pelo id
+//! de transacao e aplica cada grupo sob UMA tomada, com a mae antes da filha
+//! (`ordem_das_maes`) -- a filha que so chegava antes por causa do nome deixou
+//! de ser orfa, e conta-la seria alarme falso. A orfa que sobra e a de
+//! verdade: a mae que NAO chega. A fabrica agora e essa -- a `clientes` da
+//! replica e de OUTRA historia (criada por conta, posta antes de ela subir),
+//! entao a replica a recusa e as filhas entram sem mae nenhuma.
 
 mod comum;
 use comum::DirTemp;
@@ -104,28 +105,15 @@ fn contar(porta: u16, tabela: &str) -> usize {
     .unwrap_or(0)
 }
 
+/// A mae, `clientes`.
+const CLIENTES: &str = r#""op":"criar_tabela","database":"loja","tabela":"clientes",
+   "colunas":[{"nome":"id","tipo":"Int8","obrigatoria":true}],
+   "indices":[{"nome":"pk_id","colunas":["id"],"unico":true,"primario":true}]"#;
+
 /// O source com a mae `clientes` e a filha `filha`, as duas com [`LINHAS`]
 /// linhas -- a filha apontando para mae que EXISTE (o source julga).
 fn source_com(porta: u16, filha: &str) {
-    exigir(porta, r#""op":"criar_database","database":"loja""#);
-    exigir(
-        porta,
-        r#""op":"criar_tabela","database":"loja","tabela":"clientes",
-           "colunas":[{"nome":"id","tipo":"Int8","obrigatoria":true}],
-           "indices":[{"nome":"pk_id","colunas":["id"],"unico":true,"primario":true}]"#,
-    );
-    exigir(
-        porta,
-        &format!(
-            r#""op":"criar_tabela","database":"loja","tabela":"{filha}",
-               "colunas":[{{"nome":"id","tipo":"Int8","obrigatoria":true}},
-                          {{"nome":"cliente","tipo":"Int8"}}],
-               "indices":[{{"nome":"pk_id","colunas":["id"],"unico":true,"primario":true}},
-                          {{"nome":"por_cliente","colunas":["cliente"]}}],
-               "chaves_estrangeiras":[{{"nome":"fk_cliente","colunas":["cliente"],
-                                       "tabela_ref":"clientes","colunas_ref":["id"]}}]"#
-        ),
-    );
+    tabelas(porta, filha);
     for i in 1..=LINHAS {
         exigir(
             porta,
@@ -143,30 +131,33 @@ fn source_com(porta: u16, filha: &str) {
     }
 }
 
-/// O par: o source ja com tudo escrito, e a replica subindo DEPOIS -- a
-/// primeira rodada dela alcanca as duas tabelas, na ordem do source.
-fn par(nome: &str, filha: &str) -> (NoAr, NoAr, DirTemp, DirTemp) {
-    par_em(nome, filha, false)
+/// O database e as duas tabelas, sem linha nenhuma.
+fn tabelas(porta: u16, filha: &str) {
+    exigir(porta, r#""op":"criar_database","database":"loja""#);
+    exigir(porta, CLIENTES);
+    exigir(
+        porta,
+        &format!(
+            r#""op":"criar_tabela","database":"loja","tabela":"{filha}",
+               "colunas":[{{"nome":"id","tipo":"Int8","obrigatoria":true}},
+                          {{"nome":"cliente","tipo":"Int8"}}],
+               "indices":[{{"nome":"pk_id","colunas":["id"],"unico":true,"primario":true}},
+                          {{"nome":"por_cliente","colunas":["cliente"]}}],
+               "chaves_estrangeiras":[{{"nome":"fk_cliente","colunas":["cliente"],
+                                       "tabela_ref":"clientes","colunas_ref":["id"]}}]"#
+        ),
+    );
 }
 
-/// [`par`] no modo BIDIRECIONAL: os dois `multi`, e quem puxa grava pela
-/// chave (`inserir_replicado`) em vez de pelo rowid -- o caminho irmao.
-fn par_em(nome: &str, filha: &str, bidi: bool) -> (NoAr, NoAr, DirTemp, DirTemp) {
-    let base_s = DirTemp::novo(&format!("orfas-source-{nome}"));
-    let base_r = DirTemp::novo(&format!("orfas-replica-{nome}"));
-    let (papel_s, papel_r) = if bidi {
-        (Papel::Multi, Papel::Multi)
-    } else {
-        (Papel::Source, Papel::Replica)
-    };
-    let s = subir(config(&base_s.0, "fonte", papel_s));
-    source_com(s.porta, filha);
-    let mut cr = config(&base_r.0, "copia", papel_r);
+/// A replica de `porta`, ainda sem esperar nada.
+fn replica_de(base: &Path, porta: u16, bidi: bool) -> NoAr {
+    let papel = if bidi { Papel::Multi } else { Papel::Replica };
+    let mut cr = config(base, "copia", papel);
     cr.somente_leitura = !bidi;
     cr.replicacao.origens = vec![Origem {
         nome: "fonte".into(),
         host: "127.0.0.1".into(),
-        porta: s.porta,
+        porta,
         token: TOKEN.into(),
         databases: vec!["loja".into()],
         reconectar_em: 1,
@@ -178,17 +169,54 @@ fn par_em(nome: &str, filha: &str, bidi: bool) -> (NoAr, NoAr, DirTemp, DirTemp)
         cifra: false,
         chave_do_fio: String::new(),
     }];
-    let r = subir(cr);
+    subir(cr)
+}
+
+/// Espera ate `pronto` ou estoura dizendo `o_que`.
+fn esperar(o_que: &str, mut pronto: impl FnMut() -> bool) {
     let ate = Instant::now() + ESPERA;
-    while contar(r.porta, filha) < LINHAS as usize || contar(r.porta, "clientes") < LINHAS as usize
-    {
+    while !pronto() {
         assert!(
             Instant::now() < ate,
-            "a replica nao alcancou as duas tabelas em {} s",
+            "{o_que} nao aconteceu em {} s",
             ESPERA.as_secs()
         );
         std::thread::sleep(Duration::from_millis(100));
     }
+}
+
+/// Copia uma arvore de diretorios.
+fn copiar(de: &Path, para: &Path) {
+    std::fs::create_dir_all(para).unwrap();
+    for e in std::fs::read_dir(de).unwrap() {
+        let e = e.unwrap();
+        let alvo = para.join(e.file_name());
+        if e.file_type().unwrap().is_dir() {
+            copiar(&e.path(), &alvo);
+        } else {
+            std::fs::copy(e.path(), alvo).unwrap();
+        }
+    }
+}
+
+/// O par: o source ja com tudo escrito, e a replica subindo DEPOIS -- a
+/// primeira rodada dela alcanca as duas tabelas, na ordem do source.
+fn par(nome: &str, filha: &str) -> (NoAr, NoAr, DirTemp, DirTemp) {
+    par_em(nome, filha, false)
+}
+
+/// [`par`] no modo BIDIRECIONAL: os dois `multi`, e quem puxa grava pela
+/// chave (`inserir_replicado`) em vez de pelo rowid -- o caminho irmao.
+fn par_em(nome: &str, filha: &str, bidi: bool) -> (NoAr, NoAr, DirTemp, DirTemp) {
+    let base_s = DirTemp::novo(&format!("orfas-source-{nome}"));
+    let base_r = DirTemp::novo(&format!("orfas-replica-{nome}"));
+    let papel_s = if bidi { Papel::Multi } else { Papel::Source };
+    let s = subir(config(&base_s.0, "fonte", papel_s));
+    source_com(s.porta, filha);
+    let r = replica_de(&base_r.0, s.porta, bidi);
+    esperar("a replica alcancar as duas tabelas", || {
+        contar(r.porta, filha) >= LINHAS as usize && contar(r.porta, "clientes") >= LINHAS as usize
+    });
     (s, r, base_s, base_r)
 }
 
@@ -199,17 +227,39 @@ fn orfas(porta: u16) -> Json {
         .unwrap_or(Json::Nulo)
 }
 
-/// **A prova real.** `a_itens` chega antes de `clientes`: as tres filhas
-/// entram sem mae (a replica nao recusa -- recusar perderia as tres) e as tres
-/// sao CONTADAS. A mae chega depois e o dado converge; o numero fica, porque
-/// conta o que ACONTECEU, como o `apply_error_count` do PostgreSQL.
+/// **A prova real.** A `clientes` desta replica e de OUTRA historia: a
+/// replica a recusa (a mae nunca chega), as tres filhas entram sem mae (a
+/// replica nao recusa -- recusar perderia as tres) e as tres sao CONTADAS. O
+/// numero fica, porque conta o que ACONTECEU, como o `apply_error_count` do
+/// PostgreSQL.
 ///
 /// **Defeito reposto** (o ramo da replica em `Table::conferir_as_maes` sem o
 /// veredito -- `pendente` sempre `None`, que e o silencio de antes): o campo
 /// vem vazio e o teste cai na asercao da contagem.
 #[test]
-fn a_filha_que_chega_antes_da_mae_e_contada() {
-    let (_s, r, _bs, _br) = par("antes", "a_itens");
+fn a_filha_cuja_mae_nao_chega_e_contada() {
+    // A mae de outra historia: criada por um servidor a parte, com o mesmo
+    // esquema e outra linhagem, e posta na replica antes de ela subir.
+    let base_x = DirTemp::novo("orfas-outra-historia");
+    {
+        let x = subir(config(&base_x.0, "outro", Papel::Source));
+        exigir(x.porta, r#""op":"criar_database","database":"loja""#);
+        exigir(x.porta, CLIENTES);
+    }
+    let base_s = DirTemp::novo("orfas-source-sem-mae");
+    let base_r = DirTemp::novo("orfas-replica-sem-mae");
+    copiar(&base_x.0.join("loja"), &base_r.0.join("loja"));
+    let s = subir(config(&base_s.0, "fonte", Papel::Source));
+    source_com(s.porta, "a_itens");
+    let r = replica_de(&base_r.0, s.porta, false);
+    esperar("a filha chegar", || {
+        contar(r.porta, "a_itens") >= LINHAS as usize
+    });
+    assert_eq!(
+        contar(r.porta, "clientes"),
+        0,
+        "a mae de outra historia recebeu linha"
+    );
     let o = orfas(r.porta);
     let t = o
         .campo("loja/a_itens")
@@ -218,6 +268,64 @@ fn a_filha_que_chega_antes_da_mae_e_contada() {
     assert_eq!(t.inteiro_ou("sem_conferir", -1), 0, "{}", o.escrever());
     // E a replica NAO recusou: as tres filhas estao la.
     assert_eq!(contar(r.porta, "a_itens"), LINHAS as usize);
+    drop(r);
+    drop(s);
+}
+
+/// **Pedido 676: a mae do MESMO commit entra antes da filha.** Uma transacao
+/// so grava `clientes` 1 e `a_itens` 1. O grupo vai sob uma tomada, mas tabela
+/// por tabela -- e `a_itens` vem antes de `clientes` pelo nome. Sem a vez das
+/// maes (`ordem_das_maes`), a filha seria aplicada primeiro e CONTADA como
+/// orfa, sem nunca ter sido visivel sem a mae: alarme falso.
+#[test]
+fn a_mae_do_mesmo_commit_entra_antes_da_filha() {
+    let base_s = DirTemp::novo("orfas-source-um-commit");
+    let base_r = DirTemp::novo("orfas-replica-um-commit");
+    let s = subir(config(&base_s.0, "fonte", Papel::Source));
+    tabelas(s.porta, "a_itens");
+    let mut b = Ligacao::nova(s.porta);
+    b.exigir(r#""op":"begin","database":"loja""#);
+    b.exigir(r#""op":"inserir","database":"loja","tabela":"clientes","linha":{"id":1}"#);
+    b.exigir(r#""op":"inserir","database":"loja","tabela":"a_itens","linha":{"id":1,"cliente":1}"#);
+    b.exigir(r#""op":"commit""#);
+    let r = replica_de(&base_r.0, s.porta, false);
+    esperar("o commit chegar", || {
+        contar(r.porta, "a_itens") == 1 && contar(r.porta, "clientes") == 1
+    });
+    let o = orfas(r.porta);
+    assert!(
+        o.campo("loja/a_itens").is_none(),
+        "a filha do mesmo commit foi aplicada antes da mae e contada: {}",
+        o.escrever()
+    );
+}
+
+/// Uma conexao que FICA -- a transacao vive na sessao.
+struct Ligacao {
+    escrita: TcpStream,
+    leitor: BufReader<TcpStream>,
+}
+
+impl Ligacao {
+    fn nova(porta: u16) -> Ligacao {
+        let fluxo = TcpStream::connect(("127.0.0.1", porta)).unwrap();
+        fluxo
+            .set_read_timeout(Some(Duration::from_secs(10)))
+            .unwrap();
+        Ligacao {
+            escrita: fluxo.try_clone().unwrap(),
+            leitor: BufReader::new(fluxo),
+        }
+    }
+
+    fn exigir(&mut self, corpo: &str) {
+        let corpo: String = corpo.split_whitespace().collect::<Vec<_>>().join(" ");
+        writeln!(self.escrita, "{{\"token\":\"{TOKEN}\",{corpo}}}").unwrap();
+        let mut r = String::new();
+        self.leitor.read_line(&mut r).unwrap();
+        let j = Json::analisar(&r).unwrap_or_else(|e| panic!("resposta ilegivel {r:?}: {e}"));
+        assert!(j.booleano_ou("ok", false), "{corpo} -> {r}");
+    }
 }
 
 /// **O comportamento velho, e o falso positivo que ela nao pode ter.** A

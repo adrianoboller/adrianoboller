@@ -1088,7 +1088,10 @@ versão nova.** O `.log` não ganha campo, não ganha flag e não ganha operaç�
   `Operacao::de_tag` devolve `Corrompido` para qualquer tag que não seja 1, 2
   ou 3. Uma tag `BEGIN` não seria ignorada — ela **pararia a replicação**.
 * **Um identificador de transação não cabe no cabeçalho.** Os 44 bytes estão
-  cheios, e os «reservados» já foram gastos pela `origem`.
+  cheios, e os «reservados» já foram gastos pela `origem`. *(Superado em
+  07/10/2026 pelo pedido 676: o `.log` ganhou a versão 4, de 52 bytes, com o id
+  — por volume, sem reescrever o volume velho, e o binário anterior recusa a 4
+  nomeando o arquivo. Ver `FORMATO.md` §4 e `REPLICACAO.md` §8.2.)*
 * **No corpo também não cabe:** ele é a imagem da linha, e um prefixo ali seria
   lido como coluna por toda réplica antiga.
 

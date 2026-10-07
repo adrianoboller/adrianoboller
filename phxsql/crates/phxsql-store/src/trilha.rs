@@ -711,7 +711,7 @@ impl TrilhaFile {
             ip: String::new(),
         };
         if ativo_existe {
-            let cab = cofre::ler_cabecalho_do_volume(&mut t.volumes, SONDA, MAGIC_TRILHA)?;
+            let cab = cofre::ler_cabecalho_do_volume(&mut t.volumes, SONDA, MAGIC_TRILHA, 3)?;
             // O descritor aberto com o numero de sonda sai: dali em diante o
             // ativo e chamado pelo numero dele.
             t.volumes.fechar_todos();
@@ -818,7 +818,7 @@ impl TrilhaFile {
         if let Some(c) = self.cabs.get(&volume) {
             return Ok(*c);
         }
-        let cab = cofre::ler_cabecalho_do_volume(&mut self.volumes, volume, MAGIC_TRILHA)?;
+        let cab = cofre::ler_cabecalho_do_volume(&mut self.volumes, volume, MAGIC_TRILHA, 3)?;
         // O numero do nome E o do cabecalho: e o que o rastro e o bilhete
         // citam, e arquivo que diz outro numero nao e deste volume.
         //
@@ -1693,7 +1693,7 @@ impl TrilhaFile {
     /// O bilhete do volume como ele esta no disco AGORA -- cabecalho relido,
     /// sem o cache desta instancia.
     fn bilhete_no_disco(&mut self, volume: u32) -> Result<([u8; 16], u64)> {
-        let cab = cofre::ler_cabecalho_do_volume(&mut self.volumes, volume, MAGIC_TRILHA)?;
+        let cab = cofre::ler_cabecalho_do_volume(&mut self.volumes, volume, MAGIC_TRILHA, 3)?;
         let mut uuid = [0u8; 16];
         if cab.quantos > 0 && cab.fim >= cab.cab_len as u64 + REGISTRO_CAB as u64 {
             self.volumes

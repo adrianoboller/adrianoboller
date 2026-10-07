@@ -57,7 +57,9 @@ use phxsql_core::schema::{Column, IndexColumn, IndexDef, Schema};
 use phxsql_core::types::ColumnType;
 use phxsql_core::value::Value;
 use phxsql_core::zip::deflate;
-use phxsql_store::log::EVENTO_CAB;
+// O `.log` que nasce hoje e da versao 4 (pedido 676): o evento sem imagem tem
+// 52 bytes, e e ele que enche o volume daqui em diante.
+use phxsql_store::log::EVENTO_CAB_TX as EVENTO_CAB;
 use phxsql_store::table::Table;
 
 const CIDADES: [&str; 8] = [

@@ -388,7 +388,7 @@ impl LixeiraFile {
         if let Some(c) = self.cabs.get(&volume) {
             return Ok(*c);
         }
-        let cab = cofre::ler_cabecalho_do_volume(&mut self.volumes, volume, MAGIC_LIXEIRA)?;
+        let cab = cofre::ler_cabecalho_do_volume(&mut self.volumes, volume, MAGIC_LIXEIRA, 3)?;
         self.cabs.insert(volume, cab);
         Ok(cab)
     }

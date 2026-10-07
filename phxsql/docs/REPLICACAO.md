@@ -724,6 +724,84 @@ transações, a promoção é segura quando as réplicas estão na mesma posiç�
 exige conferência quando não estão. Failover **automático** — eleição, quórum,
 heartbeat — é outra frente; o degrau manual daqui é o que ela vai chamar.
 
+### 8.2 A venda chega inteira, ou não chega (pedido 676)
+
+O cenário do pedido 325 — vinte caixas, cada um dono do próprio database, e o
+central réplica das vinte origens — pôs na frente o preço que o pedido 299
+tinha declarado: o diário é **por tabela**, e a réplica alcançava uma tabela
+de cada vez, lote a lote, cada lote sob a sua tomada da trava. Uma venda com
+itens e pagamento, um `COMMIT` só no caixa, aparecia no central tabela por
+tabela — e, com o fio caído no meio, ficava **pela metade** até a conexão
+voltar, legível por qualquer cliente e indistinguível de um estado completo.
+
+O comportamento certo é o dos três maduros, e entrou sem pergunta: PostgreSQL
+(*«applies the data in the same order as the publisher so that transactional
+consistency is guaranteed»*), MySQL (GTID) e MariaDB (*«event group … always
+applied as a unit»*) aplicam a transação da origem como unidade. O **meio** é
+nosso:
+
+1. **O id de transação no evento do `.log`** (versão 4, `docs/FORMATO.md` §4):
+   o mesmo para todo evento de uma tomada da trava de escrita, estritamente
+   crescente no processo da origem.
+2. **O `posicao` é uma fronteira de commit.** Ele conta os eventos de todas as
+   tabelas com a trava de escrita da origem na mão, então toda transação antes
+   dele está inteira antes dele. A réplica puxa até ali e não além.
+3. **O `Juntador`** (`replica.rs`) funde os diários das tabelas pela ordem dos
+   ids: a transação `T` está inteira na mão quando, em toda tabela, o último
+   evento que chegou já é de outra transação ou a tabela chegou à fronteira. Os
+   lotes chegam **fora** da trava; o grupo vai ao disco **sob uma tomada só**
+   (`Servidor::aplicar_grupo_da_replica`), e nenhum leitor do central vê o meio
+   dele. Transações inteiras seguidas dividem a tomada, até 500 eventos — senão
+   o alcance de um diário de autocommits pagaria uma tomada por evento. Dentro
+   da tomada o grupo vai tabela por tabela, **a mãe antes da filha**
+   (`ordem_das_maes`, pelas chaves declaradas): quem lê não vê a ordem, mas a
+   contagem de órfãs (§2.7 do pedido 300) vê, e a filha do mesmo commit
+   aplicada antes da mãe seria contada sem nunca ter sido visível sem ela. Com
+   isso a filha que só chegava antes **pelo nome** (`a_itens` antes de
+   `clientes`) deixou de ser órfã na réplica; a órfã que sobra é a de verdade —
+   a mãe que não chega.
+4. **O fio que cai no meio** sai da rodada com o que estava na mão descartado:
+   nada daquilo foi gravado, a posição local de cada tabela continua no começo
+   da transação que chegava, e a rodada seguinte a pede **desde o começo**.
+
+**O teto, e o que acontece acima dele.** Ter a transação inteira na mão antes
+de aplicar custa memória, e uma carga de um milhão de linhas num commit não
+cabe. Os maduros derramam em disco (`relay log`, `logical_decoding_work_mem`);
+aqui ainda não há onde. Acima de **64 MiB** na memória da réplica
+(`TETO_DA_TRANSACAO`) a transação vai **em pedaços**, cada um sob uma tomada,
+como tudo ia antes — e isso é **contado** em `replicacao_estado` →
+`transacoes_em_pedacos` e dito no log do processo. Parar a réplica no lugar
+trocaria uma garantia que não vale para a carga grande por uma réplica parada
+para sempre. Uma venda são alguns KiB.
+
+**Origem e réplica sobem juntas.** A réplica anterior ao 676 ignora o campo
+`tx` e continua aplicando evento a evento (não há como ela recusar: ela não
+sabe que o campo existe). A réplica nova diante de uma origem anterior vê o
+`posicao` sem `"tx_no_diario"`, aplica evento a evento e **diz isso uma vez**
+no log, deixando `origem_sem_id_de_transacao: true` no `replicacao_estado`. E
+o binário anterior que abrir um `.log` da versão 4 — uma cópia, um backup
+restaurado — recusa com `VERSAO_NAO_SUPORTADA` nomeando o arquivo.
+
+**O que NÃO mudou, e é de propósito:**
+
+- o `aplicar_evento` que falha no meio do grupo (rowid que não bate — a
+  réplica já divergiu) deixa o que entrou antes dele: é o *fail-stop* de
+  sempre, e desfazer pediria a Sombra, parada por decisão do dono;
+- a **queda do processo** da réplica no meio de um grupo deixa o grupo pela
+  metade no disco até a próxima rodada completá-lo — a garantia comprada aqui é
+  a do fio, não a da queda;
+- **os caminhos irmãos** que aplicam o mesmo diário continuam por tabela: o
+  lote do quórum do cluster (`aplicar_lote_do_quorum`, uma tomada por lote) e o
+  bidirecional (`rodada_bidirecional`). O id viaja nos dois; juntá-los pelo id
+  é a próxima frente.
+
+Provado pelo soquete (`tests/venda-inteira-na-replica.rs`): uma venda de 3 e de
+600 itens em três tabelas, o fio derrubado no 2.º e no 4.º `replicar`, e o
+central **nunca** mostra `(vendas, itens, pagamentos)` diferente de `(0,0,0)` ou
+`(1,N,1)`. Com a aplicação por lote reposta o central fica com `(0,3,0)`,
+`(0,500,0)` e `(0,600,1)`; sem a unidade do diário na tomada da trava, com
+`(1,499,0)`.
+
 ---
 
 ## 9. Os quatro modos
@@ -2309,7 +2387,8 @@ volta: o master voltou ao síncrono em **2,02 s**, e o commit seguinte confirmou
 - **BULKINSERT** com quórum espera a cada lote (cada lote solta a trava), e o
   `fsync` local acontece a cada lote — o ganho de não sincronizar até o
   `BULKINSERT(false)` some com o quórum ligado;
-- a atomicidade **entre tabelas** continua não atravessando o fio (pedido 299);
+- a atomicidade **entre tabelas** atravessa o fio do PULL desde o pedido 676
+  (§8.2), mas **não** o lote do quórum, que ainda se aplica tabela a tabela;
 - a recusa da **época velha** tem prova só da regra pura
   (`aceita_a_epoca`); o chamador no laço da réplica não tem prova pelo
   soquete — montar um master de época velha vivo pede uma partição.
@@ -2567,7 +2646,7 @@ posição do cluster. As que **não valem**, com o pedido que as carrega:
 | mesmo carimbo/origem no `.log` | NÃO, unidirecional — o PITR já faz certo | 298 |
 | integridade referencial na réplica | NÃO, decisão **já** registrada | pedido 171/`INTEGRIDADE.md` §3 |
 | unicidade na réplica | SIM, mas trava o par no bidirecional | 292 (decisão do dono, 4/6) |
-| atomicidade de commit | NÃO, e RECUSADO consertar sem o dono | 299 |
+| atomicidade de commit | SIM no pull da réplica desde 07/10/2026 (§8.2); NÃO no lote do quórum nem no bidirecional | 299, 676 |
 | posição somada do cluster | NÃO em quatro cenários | 294, 295, 300 |
 
 **As seis decisões do dono** (§6 do parecer, pedidos 289–294): coluna de
