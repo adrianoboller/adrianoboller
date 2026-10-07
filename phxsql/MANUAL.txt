@@ -3586,7 +3586,7 @@ AGENDADO
     guarda nova entra pedida, nao imposta. A senha do rele, como sempre,
     nunca aparece em mensagem nenhuma.
 
-    SAUDE DO DISCO: SONDA CANARIO, E-MAIL E SMS (pedido 249)
+    SAUDE DO DISCO: SONDA CANARIO, E-MAIL E GANCHO DO OPERADOR (pedido 249)
 
     O vigia de ESPACO acima pergunta «quanto falta». A saude do disco
     pergunta «o disco ainda aceita escrita?» -- e nao espera relogio nenhum
@@ -3602,8 +3602,10 @@ AGENDADO
         cliente -- inserir, atualizar, excluir, ler -- conta e avisa NA
         HORA. O fsync do fecho da janela recusado tambem, e o proprio
         acessos.log que nao aceita escrita.
-      - O AVISO: e-mail pelo bloco alertas.email (o mesmo do disco cheio) e
-        SMS por alertas.sms. O primeiro evento de cada tipo sai imediato; o
+      - O AVISO: e-mail pelo bloco alertas.email (o mesmo do disco cheio), SMS
+        por e-mail-da-operadora (alertas.sms) e o gancho do operador. O gancho
+        dispara UM comando configurado pelo dono do banco (lista de argv, sem
+        shell, com prazo); o PhxSql nao traz SMS embutido. O primeiro evento de cada tipo sai imediato; o
         seguinte do MESMO tipo cala por repetir_minutos (30) -- um erro por
         linha numa carga de cem mil linhas e UM e-mail, nao cem mil.
 
