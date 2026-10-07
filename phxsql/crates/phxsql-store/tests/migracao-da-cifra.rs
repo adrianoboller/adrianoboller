@@ -758,6 +758,20 @@ fn o_novo_plantado_como_link_fisico_nao_recebe_o_texto_claro() {
     cofre::desligar();
 }
 
+/// O `.novo` plantado difere do escrito SO no inode: mesmo tamanho, mesma
+/// data, um nome so.
+#[cfg(unix)]
+fn so_o_inode_mudou(novo: &Path, antes: &std::fs::Metadata) {
+    use std::os::unix::fs::MetadataExt;
+    let depois = std::fs::metadata(novo).unwrap();
+    assert_ne!(depois.ino(), antes.ino(), "o inode voltou");
+    assert_eq!(depois.modified().unwrap(), antes.modified().unwrap());
+    assert_eq!((depois.len(), depois.nlink()), (antes.len(), 1));
+}
+
+#[cfg(not(unix))]
+fn so_o_inode_mudou(_novo: &Path, _antes: &std::fs::Metadata) {}
+
 /// O `clientes.reg.novo` trocado na janela entre as fases (trava solta) por
 /// um arquivo de mesmo conteudo e OUTRO inode: a FASE B recusa com
 /// `Conflito`, nada e trocado, e o nome plantado sai.
@@ -766,10 +780,20 @@ fn o_novo_plantado_como_link_fisico_nao_recebe_o_texto_claro() {
 /// a FASE A escreveu), nao de forma -- um `*.novo` montado por fora com
 /// cabecalho valido passaria por uma conferencia de forma.
 ///
+/// # Mesmo tamanho, mesma data, e o inode velho SEGURO -- pedido 672
+///
+/// A versao de antes apagava o `.novo` e escrevia outro, e o sistema de
+/// arquivos DEVOLVIA o mesmo numero de inode ao arquivo novo: medido em
+/// 07/10/2026, sem a comparacao das DATAS este teste caia, e sem a do inode
+/// nao caia -- ele provava a data dizendo provar a identidade. Agora o
+/// velho fica vivo com outro nome (o inode nao volta a fila) e a data do
+/// novo e reposta: so o inode separa.
+///
 /// # Prova real
 ///
 /// Sem o `conferir_novos` no `alargar_fase_b`, o `rename` publica o arquivo
-/// plantado e o `unwrap_err` reprova.
+/// plantado e o `unwrap_err` reprova; sem o `mesmo_arquivo` no
+/// `ainda_o_mesmo_temporario`, tambem.
 #[test]
 fn o_novo_trocado_entre_as_fases_e_recusado() {
     let _t = UM_DE_CADA_VEZ.lock().unwrap_or_else(|e| e.into_inner());
@@ -779,9 +803,17 @@ fn o_novo_trocado_entre_as_fases_e_recusado() {
     let troca = t.preparar_migracao_da_cifra(false).unwrap();
 
     let novo = d.join("clientes.reg.novo");
+    let antes = std::fs::metadata(&novo).unwrap();
     let bytes = std::fs::read(&novo).unwrap();
-    std::fs::remove_file(&novo).unwrap();
+    std::fs::rename(&novo, d.join("o-velho-seguro")).unwrap();
     std::fs::write(&novo, &bytes).unwrap();
+    std::fs::File::options()
+        .write(true)
+        .open(&novo)
+        .unwrap()
+        .set_modified(antes.modified().unwrap())
+        .unwrap();
+    so_o_inode_mudou(&novo, &antes);
 
     let e = t.aplicar_migracao_da_cifra(troca).unwrap_err();
     assert!(matches!(e, PhxError::Conflito(_)), "recusou como {e:?}");
@@ -796,6 +828,175 @@ fn o_novo_trocado_entre_as_fases_e_recusado() {
         "o nome plantado ficou: {:?}",
         novos(&d)
     );
+    conferir_linhas(&d, 20);
+    cofre::desligar();
+}
+
+// ---------------------------------------------------------------------------
+// Pedido 672: as outras condicoes da conferencia da FASE B
+// ---------------------------------------------------------------------------
+//
+// O `util::ainda_o_mesmo_temporario` confere cinco coisas (regular, mesmo
+// inode, um nome so, mesmo tamanho, mesma data) e a prova de cima so trocava
+// o inode. Cada teste abaixo deixa as outras iguais e quebra UMA, com a
+// tabela EM CLARO saindo no `Descriptografar` -- o caso em que o `.novo`
+// publicado e o texto claro da tabela inteira.
+
+/// Uma tabela cifrada (v5) aberta, com o `Descriptografar` preparado: o
+/// `clientes.reg.novo` em claro esta no disco e a FASE B ainda nao rodou.
+fn entre_as_fases(rotulo: &str) -> (DirTemp, Table, phxsql_store::TrocaDaCifra) {
+    let d = tabela_em_claro(rotulo, false, 20);
+    migrar(&d, true);
+    assert_eq!(versao(&d), 5);
+    let mut t = Table::abrir(&d, "clientes").unwrap();
+    let troca = t.preparar_migracao_da_cifra(false).unwrap();
+    (d, t, troca)
+}
+
+/// A FASE B recusou com `Conflito`, nada foi trocado e nenhum `.novo` ficou.
+fn recusou_sem_trocar(d: &Path, r: phxsql_core::error::Result<u64>, o_que: &str) {
+    let e = r.expect_err(o_que);
+    assert!(matches!(e, PhxError::Conflito(_)), "recusou como {e:?}");
+    assert_eq!(versao(d), 5, "{o_que}: o `.novo` foi publicado");
+    assert!(novos(d).is_empty(), "o nome ficou: {:?}", novos(d));
+    conferir_linhas(d, 20);
+}
+
+/// **Um LINK FISICO pendurado no `.novo` entre as fases.** Mesmo inode,
+/// mesmo tamanho, mesma data: so o `um_nome_so` separa. Publicado, a isca
+/// vira um segundo nome da tabela EM CLARO que continua valendo depois do
+/// `rename` -- toda escrita seguinte na tabela aparece nela.
+///
+/// # Prova real
+///
+/// Sem o `um_nome_so` no `ainda_o_mesmo_temporario`, medido em 07/10/2026:
+/// a FASE B publica e este cai; o `o_novo_trocado_entre_as_fases_e_recusado`
+/// segue verde.
+#[test]
+fn o_novo_com_link_fisico_pendurado_entre_as_fases_e_recusado() {
+    let _t = UM_DE_CADA_VEZ.lock().unwrap_or_else(|e| e.into_inner());
+    let (d, mut t, troca) = entre_as_fases("link-entre-fases");
+    std::fs::hard_link(d.join("clientes.reg.novo"), d.join("isca")).unwrap();
+    let r = t.aplicar_migracao_da_cifra(troca);
+    drop(t);
+    recusou_sem_trocar(&d, r, "o `.novo` com um segundo nome passou");
+    cofre::desligar();
+}
+
+/// **Uma escrita pelo NOME, no mesmo tamanho, entre as fases.** Mesmo inode,
+/// um nome so, mesmo tamanho: so a data separa.
+///
+/// O relogio dos carimbos do sistema de arquivos pode ser grosso (um tique
+/// do kernel), e a escrita na mesma fatia nao moveria a data: se nao moveu,
+/// a prova a empurra um segundo, que e o que a escrita moveria num relogio
+/// fino. O que se prova e a CONDICAO, nao a resolucao do relogio.
+///
+/// # Prova real
+///
+/// Sem a comparacao das datas, medido em 07/10/2026: este cai.
+#[test]
+fn o_novo_escrito_pelo_nome_no_mesmo_tamanho_e_recusado() {
+    use std::io::{Seek, SeekFrom, Write};
+    let _t = UM_DE_CADA_VEZ.lock().unwrap_or_else(|e| e.into_inner());
+    let (d, mut t, troca) = entre_as_fases("escrita-entre-fases");
+    let novo = d.join("clientes.reg.novo");
+    let antes = std::fs::metadata(&novo).unwrap();
+    let ultimo = antes.len() - 1;
+    let byte = std::fs::read(&novo).unwrap()[ultimo as usize];
+    let mut f = std::fs::OpenOptions::new().write(true).open(&novo).unwrap();
+    f.seek(SeekFrom::Start(ultimo)).unwrap();
+    f.write_all(&[byte ^ 0xFF]).unwrap();
+    if f.metadata().unwrap().modified().unwrap() == antes.modified().unwrap() {
+        f.set_modified(antes.modified().unwrap() + std::time::Duration::from_secs(1))
+            .unwrap();
+    }
+    drop(f);
+    assert_eq!(std::fs::metadata(&novo).unwrap().len(), antes.len());
+    let r = t.aplicar_migracao_da_cifra(troca);
+    drop(t);
+    recusou_sem_trocar(&d, r, "o `.novo` escrito por fora passou");
+    cofre::desligar();
+}
+
+/// **O `.novo` que CRESCEU entre as fases, com a data reposta.** Mesmo
+/// inode, um nome so, mesma data: so o tamanho separa. Repor a data e uma
+/// chamada (`utimensat`) ao alcance de quem escreve no arquivo.
+///
+/// # Prova real
+///
+/// Sem a comparacao dos tamanhos, medido em 07/10/2026: este cai.
+#[test]
+fn o_novo_que_cresceu_com_a_data_reposta_e_recusado() {
+    use std::io::Write;
+    let _t = UM_DE_CADA_VEZ.lock().unwrap_or_else(|e| e.into_inner());
+    let (d, mut t, troca) = entre_as_fases("cresceu-entre-fases");
+    let novo = d.join("clientes.reg.novo");
+    let antes = std::fs::metadata(&novo).unwrap();
+    let mut f = std::fs::OpenOptions::new()
+        .append(true)
+        .open(&novo)
+        .unwrap();
+    f.write_all(&[0u8; 64]).unwrap();
+    f.set_modified(antes.modified().unwrap()).unwrap();
+    drop(f);
+    let depois = std::fs::metadata(&novo).unwrap();
+    assert_eq!(depois.modified().unwrap(), antes.modified().unwrap());
+    assert_ne!(depois.len(), antes.len());
+    let r = t.aplicar_migracao_da_cifra(troca);
+    drop(t);
+    recusou_sem_trocar(&d, r, "o `.novo` que cresceu passou");
+    cofre::desligar();
+}
+
+/// **O `.novo` do ESPELHO que sumiu entre as fases.** O `conferir_novos`
+/// seguia em frente (`continue`) com qualquer erro do `lstat`; o volume
+/// principal tem a pergunta «sumiu?» logo antes, o espelho nao. Sem a
+/// recusa, o `rename` do `.reg` acontecia, o do `.bkp` falhava, e a tabela
+/// ficava com o principal EM CLARO e o espelho cifrado: a segunda chance do
+/// `.reg` passava a ser outro arquivo.
+///
+/// # Prova real
+///
+/// Com o `continue` de volta no erro do `lstat`, medido em 07/10/2026: este
+/// cai.
+#[test]
+fn o_novo_do_espelho_que_sumiu_entre_as_fases_e_recusado() {
+    let _t = UM_DE_CADA_VEZ.lock().unwrap_or_else(|e| e.into_inner());
+    cofre::desligar();
+    let d = DirTemp::novo("migra-espelho-sumiu");
+    let mut t = Table::criar_espelhada(&d, esquema(false)).unwrap();
+    for i in 1..=20 {
+        t.inserir(&linha(i)).unwrap();
+    }
+    t.sincronizar().unwrap();
+    drop(t);
+    cofre::definir(SENHA, RAPIDO).unwrap();
+    let mut t = Table::abrir_espelhada(&d, "clientes").unwrap();
+    let troca = t.preparar_migracao_da_cifra(true).unwrap();
+    t.aplicar_migracao_da_cifra(troca).unwrap();
+    drop(t);
+    let bkp = d.join("clientes.bkp");
+    assert_eq!((versao(&d), versao_do(&bkp)), (5, 5));
+
+    let mut t = Table::abrir_espelhada(&d, "clientes").unwrap();
+    let troca = t.preparar_migracao_da_cifra(false).unwrap();
+    let do_espelho = d.join("clientes.bkp.novo");
+    assert!(
+        do_espelho.is_file(),
+        "o espelho nao ganhou `.novo`: {:?}",
+        novos(&d)
+    );
+    std::fs::remove_file(&do_espelho).unwrap();
+    let r = t.aplicar_migracao_da_cifra(troca);
+    drop(t);
+    let e = r.expect_err("o `.novo` do espelho sumiu e a FASE B seguiu");
+    assert!(matches!(e, PhxError::Conflito(_)), "recusou como {e:?}");
+    assert_eq!(
+        (versao(&d), versao_do(&bkp)),
+        (5, 5),
+        "o principal e o espelho ficaram em versoes diferentes"
+    );
+    assert!(novos(&d).is_empty(), "o nome ficou: {:?}", novos(&d));
     conferir_linhas(&d, 20);
     cofre::desligar();
 }

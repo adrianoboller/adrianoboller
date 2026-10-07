@@ -10104,6 +10104,15 @@ pub fn limpar() {
         "prazo": 300,
     },
     # 47. O mesmo `de_hex`, visto pelo SOQUETE -- pedido 446
+    #
+    # NAO PEGOU na renovacao de 07/10/2026, e a troca estava certa: o
+    # `a_prova_torta_na_resposta_nao_mata_o_laco_do_pulso` media o TOTAL de
+    # pulsos em 4,5 s, e o pedido 452 passou a ressuscitar a thread morta
+    # (`GuardaDoPulso`, recuo de 1 s) -- medido com a troca: 3 pulsos, o
+    # mesmo `>= 3` da thread viva. O teste passou a medir a CAUSA: pulsos por
+    # CONEXAO (a thread viva fica na mesma; a ressuscitada abre outra), [1, 1,
+    # 1] com a troca. RED 3 de 3, verde 5 de 5. Caso da cognicao
+    # `guarda-que-mede-o-veredito-que-outro-conserto-passou-a-garantir`.
     # -----------------------------------------------------------------------
     {
         "id": "prova-do-pulso-derruba-a-conexao",
@@ -25471,6 +25480,221 @@ fn anotar(""",
         ],
         "seguem": [
             "com_o_escape_escrito_a_senha_de_fora_entra",
+        ],
+    },
+    # Pedidos 670-672 (papel F, 07/10/2026): provas que passavam com um
+    # defeito ALTERNATIVO. Cada troca abaixo e o defeito que a prova velha
+    # deixava passar; RED medido a mao (troca aplicada, o teste de `caem`
+    # caiu, restaurado, verde). O provador NAO rodou nesta frente.
+    {
+        "id": "backup-manifesto-antes-do-fsync-com-faxina-total",
+        "titulo": "O `concluir` grava o manifesto ANTES do `fsync` e a faxina o apaga em TODO erro: a prova que só olhava depois da faxina passava (pedido 670)",
+        "porque": (
+            "pedido 670: a prova do 646 conferia o `backup.json` DEPOIS do "
+            "`concluir` e aceitava o vazio; com a faxina apagando o manifesto "
+            "em todo erro, a janela real (queda entre o manifesto e o `fsync`) "
+            "nunca era vista. Medido: a prova velha VERDE com este defeito; "
+            "a nova olha o nome no instante do disparo do `fsync` "
+            "(`falha_de_teste::vigiar`) e exige o sentinela inteiro."
+        ),
+        "arquivo": "crates/phxsql-store/src/backup.rs",
+        "trecho": """    let feito = sincronizar_copias(copias).and_then(|()| finalizar_manifesto(copias, quando_ms, r));
+    if feito.is_err() {
+        // O manifesto que nasceu agora e nao sincronizou diria «pronto» sobre
+        // copias que acabam de sair; o que ja existia antes nao e' nosso.
+        if manifesto_nasce {
+            descartar_parcial(&manifesto);
+        }
+""",
+        "troca": """    // DEFEITO REPOSTO (670): manifesto ANTES do fsync, faxina que o apaga sempre.
+    let _ = manifesto_nasce;
+    let feito = finalizar_manifesto(copias, quando_ms, r).and_then(|()| sincronizar_copias(copias));
+    if feito.is_err() {
+        {
+            descartar_parcial(&manifesto);
+        }
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--lib"],
+        "caem": [
+            "backup::tests::manifesto_nao_existe_no_instante_do_fsync_das_copias",
+            "backup::tests::manifesto_nao_e_gravado_antes_do_fsync_das_duas_fases",
+        ],
+        "seguem": [
+            "backup::tests::manifesto_nao_nasce_se_uma_copia_nao_sincroniza",
+            "backup::tests::copia_tudo_e_confere",
+        ],
+    },
+    {
+        "id": "contador-da-sequencia-em-escrita-separada",
+        "titulo": "O contador do auto number vai ao disco num `pwrite` SEPARADO do `slot_count`: a queda entre os dois repete número (pedido 671)",
+        "porque": (
+            "pedido 671: a prova do 664 repoe o cabecalho inteiro de uma vez "
+            "e nao distingue uma escrita de duas -- o disco depois das duas e "
+            "identico. Medido: `sequencia_nao_repete_com_cabecalho_perdido` "
+            "VERDE com este defeito. A nova conta as CHAMADAS de escrita no "
+            "`.reg` (`falha_de_teste::anotar_escritas`): [(0, 36), (36, 8), "
+            "(44, 84)] em vez de uma de 128."
+        ),
+        "arquivo": "crates/phxsql-store/src/reg.rs",
+        "trecho": """    fn gravar_contadores(&mut self, volume: u32) -> Result<()> {
+        let buf = self.montar_cabecalho(volume);
+        self.volumes.escrever(volume, 0, &buf)
+    }
+""",
+        "troca": """    fn gravar_contadores(&mut self, volume: u32) -> Result<()> {
+        // DEFEITO REPOSTO (671): o contador num pwrite separado.
+        let buf = self.montar_cabecalho(volume);
+        self.volumes.escrever(volume, 0, &buf[..36])?;
+        self.volumes.escrever(volume, 36, &buf[36..44])?;
+        self.volumes.escrever(volume, 44, &buf[44..])
+    }
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "reconciliar-sequencia"],
+        "caem": [
+            "contador_e_slot_count_saem_na_mesma_escrita",
+        ],
+        "seguem": [
+            "sequencia_nao_repete_com_cabecalho_perdido",
+            "reconciliar_empurra_o_contador_para_depois_do_maior",
+        ],
+    },
+    {
+        "id": "fase-b-aceita-novo-de-outro-inode",
+        "titulo": "A FASE B deixa de comparar o inode do `*.novo`: o arquivo plantado com o mesmo tamanho e a mesma data vira o `.reg` (pedido 672)",
+        "porque": (
+            "pedido 672: a prova do 661 apagava o `.novo` e escrevia outro, e o "
+            "sistema de arquivos devolvia o MESMO numero de inode -- medido, "
+            "ela caia pela data e nao pelo inode. Agora o velho fica vivo com "
+            "outro nome e a data e reposta: so o inode separa."
+        ),
+        "arquivo": "crates/phxsql-store/src/util.rs",
+        "trecho": """    nome.file_type().is_file()
+        && mesmo_arquivo(escrito, &nome)
+""",
+        "troca": """    nome.file_type().is_file()
+        // DEFEITO REPOSTO (672): o inode nao se compara.
+        && (true || mesmo_arquivo(escrito, &nome))
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "migracao-da-cifra"],
+        "caem": [
+            "o_novo_trocado_entre_as_fases_e_recusado",
+        ],
+        "seguem": [
+            "o_novo_com_link_fisico_pendurado_entre_as_fases_e_recusado",
+            "o_novo_escrito_pelo_nome_no_mesmo_tamanho_e_recusado",
+            "round_trip_devolve_o_payload_byte_a_byte",
+        ],
+    },
+    {
+        "id": "fase-b-aceita-link-fisico-no-novo",
+        "titulo": "A FASE B deixa de contar os nomes do `*.novo`: o link físico pendurado entre as fases vira um segundo nome da tabela em claro (pedido 672)",
+        "porque": (
+            "pedido 672: sem o `um_nome_so` as tres provas do 661 seguiam "
+            "verdes (medido). No `Descriptografar`, o link posto no `.novo` "
+            "entre as fases sobrevive ao `rename` como outro nome do `.reg` "
+            "em claro."
+        ),
+        "arquivo": "crates/phxsql-store/src/util.rs",
+        "trecho": """        && um_nome_so(&nome)
+        && escrito.len() == nome.len()
+""",
+        "troca": """        // DEFEITO REPOSTO (672): os nomes do inode nao se contam.
+        && (true || um_nome_so(&nome))
+        && escrito.len() == nome.len()
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "migracao-da-cifra"],
+        "caem": [
+            "o_novo_com_link_fisico_pendurado_entre_as_fases_e_recusado",
+        ],
+        "seguem": [
+            "o_novo_trocado_entre_as_fases_e_recusado",
+            "o_novo_plantado_como_link_fisico_nao_recebe_o_texto_claro",
+        ],
+    },
+    {
+        "id": "fase-b-aceita-novo-que-cresceu",
+        "titulo": "A FASE B deixa de comparar o tamanho do `*.novo`: o que cresceu entre as fases, com a data reposta, é publicado (pedido 672)",
+        "porque": (
+            "pedido 672: sem a comparacao dos tamanhos as provas do 661 "
+            "seguiam verdes (medido). Repor a data e um `utimensat` ao alcance "
+            "de quem escreve no arquivo."
+        ),
+        "arquivo": "crates/phxsql-store/src/util.rs",
+        "trecho": """        && escrito.len() == nome.len()
+        && escrito.modified().ok() == nome.modified().ok()
+""",
+        "troca": """        // DEFEITO REPOSTO (672): o tamanho nao se compara.
+        && (true || escrito.len() == nome.len())
+        && escrito.modified().ok() == nome.modified().ok()
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "migracao-da-cifra"],
+        "caem": [
+            "o_novo_que_cresceu_com_a_data_reposta_e_recusado",
+        ],
+        "seguem": [
+            "o_novo_trocado_entre_as_fases_e_recusado",
+            "o_novo_escrito_pelo_nome_no_mesmo_tamanho_e_recusado",
+        ],
+    },
+    {
+        "id": "fase-b-aceita-novo-escrito-por-fora",
+        "titulo": "A FASE B deixa de comparar a data do `*.novo`: a escrita pelo nome entre as fases, no mesmo tamanho, é publicada (pedido 672)",
+        "porque": (
+            "pedido 672: a escrita que nao muda o tamanho so se ve pela data. "
+            "Medido: esta comparacao era a que segurava, por acaso, a prova "
+            "do inode do 661 (o inode voltava)."
+        ),
+        "arquivo": "crates/phxsql-store/src/util.rs",
+        "trecho": """        && escrito.modified().ok() == nome.modified().ok()
+}
+""",
+        "troca": """        // DEFEITO REPOSTO (672): a data nao se compara.
+        && (true || escrito.modified().ok() == nome.modified().ok())
+}
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "migracao-da-cifra"],
+        "caem": [
+            "o_novo_escrito_pelo_nome_no_mesmo_tamanho_e_recusado",
+        ],
+        "seguem": [
+            "o_novo_trocado_entre_as_fases_e_recusado",
+            "o_novo_que_cresceu_com_a_data_reposta_e_recusado",
+        ],
+    },
+    {
+        "id": "fase-b-segue-com-o-novo-que-nao-se-le",
+        "titulo": "O `conferir_novos` segue em frente quando o `lstat` do `*.novo` falha: o `.novo` do espelho apagado entre as fases deixa o `.bkp` velho atrás do `.reg` novo, com Ok (pedido 672)",
+        "porque": (
+            "pedido 672, furo REAL medido antes do conserto: o `continue` no "
+            "erro do `symlink_metadata` e o `trocar_pelo_novo` que pula o "
+            "`.novo` ausente faziam a FASE B do `Descriptografar` responder "
+            "Ok(20) com o principal em claro e o espelho cifrado. A decisao "
+            "inteira, `lstat` incluso, passou para o "
+            "`util::ainda_o_mesmo_temporario`."
+        ),
+        "arquivo": "crates/phxsql-store/src/util.rs",
+        "trecho": """    let Ok(nome) = std::fs::symlink_metadata(caminho) else {
+        return false;
+    };
+""",
+        "troca": """    let Ok(nome) = std::fs::symlink_metadata(caminho) else {
+        return true; // DEFEITO REPOSTO (672): o `continue` de antes.
+    };
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "migracao-da-cifra"],
+        "caem": [
+            "o_novo_do_espelho_que_sumiu_entre_as_fases_e_recusado",
+        ],
+        "seguem": [
+            "o_novo_trocado_entre_as_fases_e_recusado",
+            "round_trip_devolve_o_payload_byte_a_byte",
         ],
     },
 ]

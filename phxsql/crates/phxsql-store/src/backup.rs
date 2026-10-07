@@ -2971,11 +2971,58 @@ mod tests {
         let feito = concluir(&destino, 1, &r, &copias);
         crate::sincronia::falha_de_teste::desarmar(&recopiada);
         assert!(feito.is_err(), "o fsync recusado tinha de subir");
-        let texto = std::fs::read_to_string(destino.join(MANIFESTO)).unwrap_or_default();
-        assert!(
-            texto == "SENTINELA" || texto.is_empty(),
-            "o manifesto foi gravado antes do fsync das copias: {texto}"
+        // Pedido 670: o sentinela INTEIRO, e nada de aceitar o vazio. Aceitar
+        // `is_empty()` deixava passar o manifesto gravado antes do `fsync`
+        // com uma faxina que o apaga sempre no erro -- inclusive o que nao
+        // era dela.
+        let texto = std::fs::read_to_string(destino.join(MANIFESTO))
+            .unwrap_or_else(|e| panic!("a faxina apagou o backup.json que nao era dela: {e}"));
+        assert_eq!(
+            texto, "SENTINELA",
+            "o manifesto foi gravado antes do fsync das copias"
         );
+    }
+
+    /// **Pedido 670: a JANELA do 646, observada.** Sem sentinela nenhum: o
+    /// `backup.json` nao pode EXISTIR no instante em que o `fsync` da copia
+    /// recopiada falha -- e esse instante que uma queda real congela. Conferir
+    /// so depois do erro media o estado DEPOIS da faxina do `concluir`, e uma
+    /// faxina que apaga o manifesto no erro o esconderia.
+    ///
+    /// # Prova real
+    ///
+    /// Com `finalizar_manifesto` antes de `sincronizar_copias` E a faxina
+    /// apagando o manifesto em todo erro, o teste do sentinela de cima e este
+    /// caem; com a prova de antes (o `is_empty()` aceito), os dois passavam.
+    #[test]
+    fn manifesto_nao_existe_no_instante_do_fsync_das_copias() {
+        let base = temp("manifesto-no-instante-do-fsync");
+        let raiz = base.join("dados");
+        let destino = base.join("copia");
+        std::fs::create_dir_all(&raiz).unwrap();
+        dados_de_exemplo(&raiz);
+        envelhecer(&raiz);
+        let mut fase = copiar_fase_1(&raiz, &destino).unwrap();
+        std::fs::write(raiz.join("Z/cadastroClientes.reg"), b"mudou").unwrap();
+        acertar_fase_2(&mut fase, &BTreeMap::new()).unwrap();
+        let (r, copias) = terminar(fase);
+
+        let recopiada = destino.join("Z/cadastroClientes.reg");
+        use crate::sincronia::falha_de_teste::{armar, desarmar, vigiar, visto, Onde};
+        vigiar(&recopiada, &destino.join(MANIFESTO));
+        armar(&recopiada, Onde::Fsync, 1);
+        let feito = concluir(&destino, 1, &r, &copias);
+        desarmar(&recopiada);
+        let na_hora = visto(&recopiada);
+        assert!(feito.is_err(), "o fsync recusado tinha de subir");
+        assert_eq!(
+            na_hora,
+            vec![false],
+            "o backup.json existia no instante em que o fsync da copia falhou \
+             (um bool por disparo): a queda ali deixava um manifesto dizendo \
+             «pronto» sobre copias que nao estavam no disco"
+        );
+        assert!(!destino.join(MANIFESTO).exists());
     }
 
     /// O zip em duas passadas do teste adverso do 651: a fase 1 na pasta dos

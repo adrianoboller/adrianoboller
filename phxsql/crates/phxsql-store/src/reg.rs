@@ -3826,10 +3826,9 @@ impl TrocaPendente {
     /// a recusa propria do `alargar_fase_b`, que diz «sumiu».
     fn conferir_novos(&self) -> Result<()> {
         for (novo, escrito) in &self.novos {
-            let Ok(nome) = std::fs::symlink_metadata(novo) else {
-                continue;
-            };
-            if !crate::util::ainda_o_mesmo_temporario(escrito, &nome) {
+            // O nome que nao se le tambem recusa (pedido 672): a decisao
+            // inteira mora no `util`, inclusive o `lstat`.
+            if !crate::util::ainda_o_mesmo_temporario(escrito, novo) {
                 // So o NOME do arquivo, pelo mesmo motivo do
                 // `conferir_retrato` (pedido 428).
                 let arquivo = novo
@@ -3837,8 +3836,8 @@ impl TrocaPendente {
                     .map(|f| f.to_string_lossy().into_owned())
                     .unwrap_or_default();
                 return Err(PhxError::Conflito(format!(
-                    "{arquivo} nao e mais o arquivo que a reescrita montou (foi \
-                     trocado, ganhou outro nome ou foi escrito por fora): a \
+                    "{arquivo} nao e mais o arquivo que a reescrita montou (sumiu, \
+                     foi trocado, ganhou outro nome ou foi escrito por fora): a \
                      troca foi ABORTADA e a tabela continua inteira e como \
                      estava. Confira quem mais escreve na pasta de dados e \
                      rode a operacao de novo"

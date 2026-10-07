@@ -876,7 +876,16 @@ TETO_TESTE_SEM_MODULO = 0
 # `senha-em-claro-pelo-login-remoto-da-web` (o caminho irmao, o login que vai
 # para outro servidor). RED medido a mao; provador NAO rodou. Medido por
 # `--numeros` (803).
-PISO_DAS_ENTRADAS = 803
+# 803 -> 810 (pedidos 670-672, papel F, 07/10/2026): nascem
+# `backup-manifesto-antes-do-fsync-com-faxina-total` (670),
+# `contador-da-sequencia-em-escrita-separada` (671) e as cinco da FASE B do
+# 672 -- uma por condicao do `ainda_o_mesmo_temporario` (`...-de-outro-inode`,
+# `...-link-fisico-no-novo`, `...-que-cresceu`, `...-escrito-por-fora`) e a
+# do `lstat` que falha (`fase-b-segue-com-o-novo-que-nao-se-le`). Cada uma e
+# o defeito ALTERNATIVO que a prova velha deixava passar. RED medido a mao
+# (troca do catalogo aplicada, `caem` cairam e `seguem` verdes, restaurado);
+# provador NAO rodou.
+PISO_DAS_ENTRADAS = 810
 
 # ------------------------------------------------------------- APOSENTADAS
 #

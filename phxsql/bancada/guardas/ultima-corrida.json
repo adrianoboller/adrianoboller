@@ -1,5 +1,5 @@
 {
-  "quando": "2026-10-07 16:06",
+  "quando": "2026-10-07 16:41",
   "mais_antigo": "2026-09-16 15:25",
   "guardas": [
     {
@@ -2005,12 +2005,10 @@
     {
       "id": "prova-do-pulso-derruba-a-conexao",
       "titulo": "a prova do pulso que corta um caractere derruba a conexão e mata o laço do pulso",
-      "veredito": "NAO PEGOU",
-      "segundos": 24.72,
-      "notas": [
-        "PASSOU COM O DEFEITO REPOSTO: a_prova_torta_na_resposta_nao_mata_o_laco_do_pulso"
-      ],
-      "quando": "2026-10-07 14:55"
+      "veredito": "PROVADA",
+      "segundos": 24.71,
+      "notas": [],
+      "quando": "2026-10-07 16:41"
     },
     {
       "id": "copia-do-de-hex-envenena-a-trava-de-dados",
@@ -6431,6 +6429,62 @@
       "segundos": 19.43,
       "notas": [],
       "quando": "2026-10-07 16:06"
+    },
+    {
+      "id": "backup-manifesto-antes-do-fsync-com-faxina-total",
+      "titulo": "O `concluir` grava o manifesto ANTES do `fsync` e a faxina o apaga em TODO erro: a prova que só olhava depois da faxina passava (pedido 670)",
+      "veredito": "PROVADA",
+      "segundos": 11.33,
+      "notas": [],
+      "quando": "2026-10-07 16:41"
+    },
+    {
+      "id": "contador-da-sequencia-em-escrita-separada",
+      "titulo": "O contador do auto number vai ao disco num `pwrite` SEPARADO do `slot_count`: a queda entre os dois repete número (pedido 671)",
+      "veredito": "PROVADA",
+      "segundos": 7.62,
+      "notas": [],
+      "quando": "2026-10-07 16:41"
+    },
+    {
+      "id": "fase-b-aceita-novo-de-outro-inode",
+      "titulo": "A FASE B deixa de comparar o inode do `*.novo`: o arquivo plantado com o mesmo tamanho e a mesma data vira o `.reg` (pedido 672)",
+      "veredito": "PROVADA",
+      "segundos": 10.01,
+      "notas": [],
+      "quando": "2026-10-07 16:41"
+    },
+    {
+      "id": "fase-b-aceita-link-fisico-no-novo",
+      "titulo": "A FASE B deixa de contar os nomes do `*.novo`: o link físico pendurado entre as fases vira um segundo nome da tabela em claro (pedido 672)",
+      "veredito": "PROVADA",
+      "segundos": 10.17,
+      "notas": [],
+      "quando": "2026-10-07 16:41"
+    },
+    {
+      "id": "fase-b-aceita-novo-que-cresceu",
+      "titulo": "A FASE B deixa de comparar o tamanho do `*.novo`: o que cresceu entre as fases, com a data reposta, é publicado (pedido 672)",
+      "veredito": "PROVADA",
+      "segundos": 10.23,
+      "notas": [],
+      "quando": "2026-10-07 16:41"
+    },
+    {
+      "id": "fase-b-aceita-novo-escrito-por-fora",
+      "titulo": "A FASE B deixa de comparar a data do `*.novo`: a escrita pelo nome entre as fases, no mesmo tamanho, é publicada (pedido 672)",
+      "veredito": "PROVADA",
+      "segundos": 9.8,
+      "notas": [],
+      "quando": "2026-10-07 16:41"
+    },
+    {
+      "id": "fase-b-segue-com-o-novo-que-nao-se-le",
+      "titulo": "O `conferir_novos` segue em frente quando o `lstat` do `*.novo` falha: o `.novo` do espelho apagado entre as fases deixa o `.bkp` velho atrás do `.reg` novo, com Ok (pedido 672)",
+      "veredito": "PROVADA",
+      "segundos": 10.11,
+      "notas": [],
+      "quando": "2026-10-07 16:41"
     },
     {
       "id": "alter-com-regra-sem-aviso",
