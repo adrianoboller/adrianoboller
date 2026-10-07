@@ -240,8 +240,8 @@ footer{
   <div class="placar">
     <div class="c"><div class="v">680</div><div class="r">pedidos, ao todo</div></div>
     <div class="c feito"><div class="v">566</div><div class="r">feitos</div></div>
-    <div class="c parcial"><div class="v">7</div><div class="r">parciais</div></div>
-    <div class="c planejado"><div class="v">18</div><div class="r">planejados</div></div>
+    <div class="c parcial"><div class="v">8</div><div class="r">parciais</div></div>
+    <div class="c planejado"><div class="v">17</div><div class="r">planejados</div></div>
     <div class="c depois"><div class="v">89</div><div class="r">depois da versão</div></div>
   </div>
 
@@ -249,13 +249,13 @@ footer{
     <span class="rotulo-inline">Nesta página</span>
     <strong>10</strong> pedidos (faixa 671 em diante) ·
     <span class="feito">2 feitos</span> ·
-    <span class="parcial">0 parciais</span> ·
-    <span class="planejado">8 planejados</span>
+    <span class="parcial">1 parciais</span> ·
+    <span class="planejado">7 planejados</span>
   </div>
 </header>
 
 <h2>O que está aberto, nesta faixa</h2>
-<p class="sub">Os 8 que não fecharam nesta faixa (8 sem começar), com o motivo de cada um. O motivo importa mais que o estado: uns esperam trabalho, outros esperam uma decisão sua, e outros esperam coisa de fora deste repositório.</p>
+<p class="sub">Os 8 que não fecharam nesta faixa (1 pela metade e 7 sem começar), com o motivo de cada um. O motivo importa mais que o estado: uns esperam trabalho, outros esperam uma decisão sua, e outros esperam coisa de fora deste repositório.</p>
 <div class="rolo">
   <table>
     <thead><tr><th class="n">#</th><th class="st">estado</th><th>o que você pediu</th><th>onde está</th></tr></thead>
@@ -267,7 +267,7 @@ footer{
       <tr data-e="planejado"><td class="n mono">677</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>325 F1 — guarda que proíbe escrita local nas bases que o nó recebe por réplica, e cadastro só no central</strong></td><td class="e">Decisão do dono, 07/10/2026. No espelho, o central não escreve no <code>caixaNN</code> e o caixa não escreve nas tabelas de cadastro que recebe do central: a gravação local nelas é recusada dizendo de onde a tabela vem. Prova: escrita local numa base recebida por réplica recusa, venda no caixa passa, cadastro no caixa com o central caído recusa com a frase do contrato.</td></tr>
       <tr data-e="planejado"><td class="n mono">678</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>325 F0 — bancada com 20 caixas e 1 central, derrubando o central no meio do expediente</strong></td><td class="e">Parecer do pesquisador, 07/10/2026. Vem antes de prometer: mede a chegada simultânea de 20 origens (pode travar na trava global de dados), o atraso do central ao voltar e o crescimento do diário do caixa por dia de venda. Grava <code>resultados.json</code> com faixa min–max.</td></tr>
       <tr data-e="planejado"><td class="n mono">679</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>325 F3 — visão da loja no central por <code>unir</code>, medida contra o teto de linhas</strong></td><td class="e">Parecer do pesquisador, 07/10/2026. A loja inteira se lê no central unindo os 20 <code>caixaNN</code>, sem juntar as fontes numa tabela (a ordem de digitação de cada caixa fica intacta).</td></tr>
-      <tr data-e="planejado"><td class="n mono">680</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>325 F4 — o contrato do que o caixa faz com o central caído</strong></td><td class="e">Decisão do dono, 07/10/2026: vende com o último preço recebido, baixa estoque local, não cadastra; o central vê a loja atrasada até voltar. Escrito no MANUAL e no CONTRATO, sem número que não venha da bancada do 678.</td></tr>
+      <tr data-e="parcial"><td class="n mono">680</td><td class="st"><span class="pino parcial">Parcial</span></td><td class="p"><strong>325 F4 — o contrato do que o caixa faz com o central caído</strong></td><td class="e">Decisão do dono, 07/10/2026: vende com o último preço recebido, baixa estoque local, não cadastra; o central vê a loja atrasada até voltar. Escrito no MANUAL e no CONTRATO, sem número que não venha da bancada do 678. <strong>Parcial em 07/10/2026: o contrato está escrito (MANUAL §16.1 e CONTRATO-1.0 §2.4b), sem número de tempo ou volume; fecha quando a bancada do 678 der os números e o 676 e o 677 entrarem.</strong></td></tr>
     </tbody>
   </table>
 </div>
@@ -311,7 +311,7 @@ outras 7 faixas estão no menu acima.</p>
       <tr data-e="planejado"><td class="n mono">677</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>325 F1 — guarda que proíbe escrita local nas bases que o nó recebe por réplica, e cadastro só no central</strong></td><td class="e">Decisão do dono, 07/10/2026. No espelho, o central não escreve no <code>caixaNN</code> e o caixa não escreve nas tabelas de cadastro que recebe do central: a gravação local nelas é recusada dizendo de onde a tabela vem. Prova: escrita local numa base recebida por réplica recusa, venda no caixa passa, cadastro no caixa com o central caído recusa com a frase do contrato.</td></tr>
       <tr data-e="planejado"><td class="n mono">678</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>325 F0 — bancada com 20 caixas e 1 central, derrubando o central no meio do expediente</strong></td><td class="e">Parecer do pesquisador, 07/10/2026. Vem antes de prometer: mede a chegada simultânea de 20 origens (pode travar na trava global de dados), o atraso do central ao voltar e o crescimento do diário do caixa por dia de venda. Grava <code>resultados.json</code> com faixa min–max.</td></tr>
       <tr data-e="planejado"><td class="n mono">679</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>325 F3 — visão da loja no central por <code>unir</code>, medida contra o teto de linhas</strong></td><td class="e">Parecer do pesquisador, 07/10/2026. A loja inteira se lê no central unindo os 20 <code>caixaNN</code>, sem juntar as fontes numa tabela (a ordem de digitação de cada caixa fica intacta).</td></tr>
-      <tr data-e="planejado"><td class="n mono">680</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>325 F4 — o contrato do que o caixa faz com o central caído</strong></td><td class="e">Decisão do dono, 07/10/2026: vende com o último preço recebido, baixa estoque local, não cadastra; o central vê a loja atrasada até voltar. Escrito no MANUAL e no CONTRATO, sem número que não venha da bancada do 678.</td></tr>
+      <tr data-e="parcial"><td class="n mono">680</td><td class="st"><span class="pino parcial">Parcial</span></td><td class="p"><strong>325 F4 — o contrato do que o caixa faz com o central caído</strong></td><td class="e">Decisão do dono, 07/10/2026: vende com o último preço recebido, baixa estoque local, não cadastra; o central vê a loja atrasada até voltar. Escrito no MANUAL e no CONTRATO, sem número que não venha da bancada do 678. <strong>Parcial em 07/10/2026: o contrato está escrito (MANUAL §16.1 e CONTRATO-1.0 §2.4b), sem número de tempo ou volume; fecha quando a bancada do 678 der os números e o 676 e o 677 entrarem.</strong></td></tr>
     </tbody>
   </table>
   <div class="vazio" id="vazio" hidden>Nenhum pedido bate com isso.</div>
