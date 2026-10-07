@@ -512,7 +512,14 @@ fn esquema_de_dois_indices() -> Schema {
 /// ja foi ao arquivo quando ele recusa, e depois da recusa nada mais o regrava
 /// (o `fechar` para em `pode_baixar_a_marca`). O que fica e o que o disco
 /// guardaria. Com o conserto a reabertura diz «marcado, reconstrua»; com o
-/// defeito, recusa abrir.
+/// defeito, recusava abrir.
+///
+/// **E o veredito da reabertura deixou de denunciar o defeito** (medido em
+/// 07/10/2026, a guarda deu NAO PEGOU): o 575 faz a abertura pular a conta
+/// de indices quando o `.ndx` pede reconstrucao, e o cabecalho de diretorio
+/// vazio com o byte 52 em 1 abre «marcado, reconstrua» com ou sem o laco
+/// errado. Por isso a prova mede a CAUSA antes do veredito: a contagem de
+/// indices do cabecalho duravel (offset 16), que o defeito deixa em 0.
 #[test]
 fn o_ndx_refeito_leva_o_diretorio_inteiro_na_primeira_subida() {
     let d = DirTemp::novo("533-p1-diretorio");
@@ -531,6 +538,13 @@ fn o_ndx_refeito_leva_o_diretorio_inteiro_na_primeira_subida() {
     );
     drop(t);
     assert_eq!(byte_52(&d), 1, "o cabecalho da subida tem o byte em 1");
+    let cab = std::fs::read(&ndx).unwrap();
+    let qtd_no_disco = u32::from_le_bytes(cab[16..20].try_into().unwrap());
+    assert_eq!(
+        qtd_no_disco, 2,
+        "o primeiro cabecalho duravel do .ndx refeito levou {qtd_no_disco} indices: \
+         a subida rodou antes de o diretorio estar inteiro"
+    );
     match Table::abrir(&*d, "pedidos") {
         Ok(t) => assert!(
             t.indice_precisa_reconstruir(),

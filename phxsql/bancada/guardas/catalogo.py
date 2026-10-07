@@ -16923,10 +16923,27 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             // vazio: refaze-lo repetiria a varredura das irmas.
             t.atualizar_sem_cascata(rowid, linha)?;
 """,
-        "troca": """        // DEFEITO REPOSTO (540): a cascata solta vai pelo `atualizar`, sem marca.
+        # TROCA REFEITA em 07/10/2026: a de antes chamava `t.atualizar`, e
+        # desde o pedido 563 o `Table::atualizar` grava a MARCA da cascata
+        # por conta propria -- a troca deixou de repor «sem marca». Medido: o
+        # SIGKILL passava com ela, achando no disco a `.tx` do store (mae e
+        # as duas filhas) que o arranque completava; o provador deu 3 de 4.
+        # A troca agora cascateia em linha pelo `atualizar_com_maes`, que
+        # planeja e aplica a cascata sem marca nenhuma -- o defeito que o
+        # titulo nomeia. A regressao que a troca velha exercitava (o ramo do
+        # servidor sumir e cair na marca do store) mora na entrada irma
+        # `cascata-solta-pela-marca-do-embutido`, logo abaixo.
+        "troca": """        // DEFEITO REPOSTO (540): a cascata solta grava em linha, SEM marca
+        // nenhuma -- nem a do servidor, nem a do `Table::atualizar` (563).
         if true {
+            struct SemMaes;
+            impl phxsql_store::table::MaesEmProgresso for SemMaes {
+                fn mae(&mut self, _t: &str) -> Option<&mut Table> {
+                    None
+                }
+            }
             let _ = (&atual, &plano);
-            t.atualizar(rowid, linha)?;
+            t.atualizar_com_maes(rowid, linha, &mut SemMaes)?;
 """,
         "pacote": "phxsql-server",
         "alvo": ["--lib"],
@@ -16937,6 +16954,46 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "servidor::testes_do_panico_sob_a_trava::a_cascata_solta_sem_queda_grava_inteira_e_a_marca_espera_o_fsync",
         ],
         "seguem": [
+            "servidor::testes_do_panico_sob_a_trava::panico_no_meio_da_cascata_na_transacao_sai_com_a_cascata_inteira",
+            "servidor::testes_do_panico_sob_a_trava::panico_na_passada_do_commit_sai_com_a_transacao_inteira_na_hora",
+        ],
+    },
+    {
+        "id": "cascata-solta-pela-marca-do-embutido",
+        "titulo": "a alteração solta que cascateia volta ao `Table::atualizar`: a marca do store não se completa no reparo da trava",
+        "porque": (
+            "irma de `cascata-solta-sem-marca`, separada em 07/10/2026. Se o "
+            "ramo do 540 sumir e o servidor voltar a chamar `t.atualizar`, a "
+            "cascata ainda ganha a marca do embutido (563) -- e o SIGKILL "
+            "segue salvo pelo arranque, medido. O que quebra e o panico no "
+            "meio com o processo de pe: o reparo da trava completa a marca EM "
+            "VOO do servidor, e a do store fica para a abertura seguinte -- "
+            "filha na chave velha servida enquanto isso."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        if plano.is_empty() {
+            // O mesmo plano que o `atualizar` refaria por dentro, e ele saiu
+            // vazio: refaze-lo repetiria a varredura das irmas.
+            t.atualizar_sem_cascata(rowid, linha)?;
+""",
+        "troca": """        // DEFEITO REPOSTO (540, irma): a cascata solta volta ao `atualizar`
+        // do store, com a marca DELE e nao a do servidor.
+        if true {
+            let _ = (&atual, &plano);
+            t.atualizar(rowid, linha)?;
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_do_panico_sob_a_trava::panico_no_meio_da_cascata_fora_da_transacao_sai_com_a_cascata_inteira",
+            "servidor::testes_do_panico_sob_a_trava::panico_no_meio_da_cascata_do_upsert_solto_sai_com_a_cascata_inteira",
+            "servidor::testes_do_panico_sob_a_trava::a_cascata_solta_sem_queda_grava_inteira_e_a_marca_espera_o_fsync",
+        ],
+        # O SIGKILL SEGUE aqui de proposito, e medido em 07/10/2026: com esta
+        # troca a `.tx` do store esta no disco na hora da queda e o arranque a
+        # completa. Ele cai na entrada irma, onde nao ha marca nenhuma.
+        "seguem": [
+            "servidor::testes_do_panico_sob_a_trava::sigkill_no_meio_da_cascata_solta_o_arranque_a_completa",
             "servidor::testes_do_panico_sob_a_trava::panico_no_meio_da_cascata_na_transacao_sai_com_a_cascata_inteira",
             "servidor::testes_do_panico_sob_a_trava::panico_na_passada_do_commit_sai_com_a_transacao_inteira_na_hora",
         ],
@@ -17427,6 +17484,11 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
 """,
         "pacote": "phxsql-store",
         "alvo": ["--test", "disco-que-recusa"],
+        # NAO PEGOU em 07/10/2026, e a troca estava certa: o 575 faz a abertura
+        # pular a conta de indices de um `.ndx` que pede reconstrucao, e o
+        # veredito «abre e manda reconstruir» passou a sair com ou sem o laco
+        # errado. O teste agora mede a CAUSA -- a contagem de indices do
+        # cabecalho duravel (offset 16) -- antes do veredito. RED 1 de 1.
         "caem": ["o_ndx_refeito_leva_o_diretorio_inteiro_na_primeira_subida"],
         "seguem": [
             "a_subida_recusada_recusa_antes_do_reg",
