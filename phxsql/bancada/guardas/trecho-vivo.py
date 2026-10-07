@@ -1057,7 +1057,14 @@ def fontes():
             mods = (MODULO.findall(texto)
                     if (os.sep + "tests" + os.sep) in caminho else [])
             _FONTES[caminho] = (set(FUNCAO.findall(texto)), mods)
+            # O texto fica guardado para as reguas dos pedidos 655 e 657, que
+            # perguntam pelo CORPO de um teste: reler o disco por pergunta foi
+            # o custo que esta funcao existe para nao pagar (ver acima).
+            _TEXTOS[caminho] = texto
     return _FONTES
+
+
+_TEXTOS = {}
 
 
 def nomes_de_funcao():
@@ -1089,13 +1096,29 @@ def fns_do_binario(pacote, alvo):
     chave = (pacote, tuple(alvo))
     if chave in _BINARIOS:
         return _BINARIOS[chave]
+    arquivos = arquivos_do_binario(pacote, alvo)
+    if arquivos is None:
+        return None
     lidas = fontes()
     encontradas = set()
+    for caminho in arquivos:
+        encontradas |= lidas[caminho][0]
+    _BINARIOS[chave] = encontradas
+    return encontradas
+
+
+def arquivos_do_binario(pacote, alvo):
+    """Os arquivos `.rs` que compoem o binario de teste nomeado -- a mesma
+    resolucao para quem pergunta pelas `fn` e para quem pergunta pelos
+    `#[test]` (pedido 655): duas resolucoes divergiriam no primeiro `mod`.
+    `None` quando o alvo e um que esta regua nao sabe resolver."""
+    lidas = fontes()
+    encontradas = []
     if alvo and alvo[0] == "--lib":
         base = os.path.join(RAIZ, "crates", pacote, "src") + os.sep
-        for caminho, (fns, _mods) in lidas.items():
+        for caminho in lidas:
             if caminho.startswith(base):
-                encontradas |= fns
+                encontradas.append(caminho)
     elif len(alvo) >= 2 and alvo[0] == "--test":
         pendentes = [os.path.join(RAIZ, "crates", pacote, "tests",
                                   alvo[1] + ".rs")]
@@ -1105,8 +1128,8 @@ def fns_do_binario(pacote, alvo):
             if caminho in vistos or caminho not in lidas:
                 continue
             vistos.add(caminho)
-            fns, mods = lidas[caminho]
-            encontradas |= fns
+            _fns, mods = lidas[caminho]
+            encontradas.append(caminho)
             pasta = os.path.dirname(caminho)
             for mod in mods:
                 for candidato in (os.path.join(pasta, mod + ".rs"),
@@ -1119,7 +1142,6 @@ def fns_do_binario(pacote, alvo):
         # do binario -- regua que nao sabe tem de dizer que nao sabe, e nao
         # inventar um veredito. `None` faz o chamador pular a pergunta.
         return None
-    _BINARIOS[chave] = encontradas
     return encontradas
 
 
@@ -1142,6 +1164,214 @@ def sem_modulo(entradas):
                 if "::" not in teste:
                     achadas.append((g.get("id"), campo, teste))
     return achadas
+
+
+# ------------------------------------------- A SETIMA REGUA (pedido 655)
+#
+# `seguem` e o que separa uma guarda provada de uma troca que quebrou o
+# arquivo inteiro: sem ele, um `troca` que nao compila do jeito certo, ou que
+# derruba o modulo todo, derruba tambem os `caem` -- e sai PROVADA. A
+# auditoria G de 02/10/2026 contou 6 entradas sem o campo e 34 com ele vazio;
+# em 07/10 eram 6 e 39, e nenhuma regua acusava. Esta conta as duas formas.
+# Medido em 07/10/2026: das 45, 18 caem nas isencoes de baixo (3 `aborta`, 15
+# binarios cujo unico teste e o `caem`), e 27 sao divida -- o teto nasce ai.
+#
+# Duas isencoes, e as duas saem do CODIGO, nao de uma lista: `espera:
+# "aborta"` (o binario inteiro cai, nao ha vizinho que possa seguir de pe) e
+# o binario `--test` cujo unico `#[test]` e o proprio `caem` (nao ha vizinho
+# para nomear). Isencao digitada envelheceria; estas se remedem a cada
+# corrida.
+TETO_SEGUEM_FALTANDO = 27
+
+TESTE_FN = re.compile(r"#\[test\]\s*(?:#\[[^\]]*\]\s*)*(?:async\s+)?fn\s+(\w+)")
+
+
+def testes_do_binario(pacote, alvo):
+    """Os nomes curtos de todo `#[test]` do binario, ou `None` se o alvo nao
+    se resolve -- regua que nao sabe nao inventa veredito."""
+    arquivos = arquivos_do_binario(pacote, alvo)
+    if arquivos is None:
+        return None
+    fontes()
+    nomes = set()
+    for caminho in arquivos:
+        nomes |= set(TESTE_FN.findall(_TEXTOS.get(caminho, "")))
+    return nomes
+
+
+def seguem_faltando(entradas, testes_de=None):
+    """(id, forma) de cada entrada sem `seguem` util, fora das isencoes.
+
+    `testes_de(g)` devolve os `#[test]` do binario da entrada; o autoteste o
+    troca por um dicionario sintetico."""
+    testes_de = testes_de or (
+        lambda g: testes_do_binario(g.get("pacote", ""), g.get("alvo") or []))
+    achadas = []
+    for g in entradas:
+        if g.get("seguem"):
+            continue
+        if g.get("espera") == "aborta":
+            continue
+        nomes = testes_de(g)
+        caem = {t.split("::")[-1] for t in g.get("caem") or []}
+        if nomes is not None and not (nomes - caem):
+            continue
+        achadas.append((g.get("id"), "ausente" if "seguem" not in g else "vazio"))
+    return achadas
+
+
+# ------------------------------------------- A OITAVA REGUA (pedido 657)
+#
+# A `sequencia-numero-cru-perde-precisao` saiu NAO PEGOU em 02/10/2026 por um
+# motivo que se ve sem compilar: o teste dela confere `contains("perde
+# precisao")`, e essa frase o codigo de producao do MESMO arquivo escreve em
+# dois pontos. Repor o defeito num deles deixa o outro produzindo a frase, e o
+# teste passa pelo caminho errado. A heuristica da auditoria e esta: a
+# entrada cujos `caem` so conferem frases (`contains("X")`) que aparecem 2+
+# vezes no codigo de producao dos arquivos que ela troca -- e nenhuma frase
+# unica que so o caminho do defeito produza.
+#
+# E HEURISTICA, e o numero diz isso: frase que o teste le de um helper, ou de
+# outro arquivo, nao se ve aqui; e uma frase repetida pode estar certa, quando
+# o teste tambem confere um campo que so aquele caminho preenche. Por isso
+# ela e catraca no numero medido (so desce) e nao zero imposto: o conserto e
+# caso a caso, pelo provador -- nome de erro unico por caminho, ou o teste
+# conferindo o campo do caminho. O que ela impede ja e o que importa: guarda
+# NOVA com o mesmo defeito.
+#
+# Frase com menos de 5 caracteres ou sem letra nao conta (`" = "`, `"x"`,
+# `"554"`): medido, eram elas que enchiam a lista de entradas que conferem
+# saida de `strace` ou um valor de linha, e nao mensagem nenhuma.
+TETO_MENSAGEM_AMBIGUA = 82
+
+FRASE = re.compile(r'contains\(\s*"((?:[^"\\]|\\.)*)"\s*\)')
+
+
+_INDICE_FN = None
+
+
+def corpo_de(nome):
+    """Os corpos de toda `fn nome(` em `crates/**`, chaves balanceadas.
+
+    Pelo indice de UMA passagem, e nao por uma busca por nome: a primeira
+    versao corria um `re` por teste sobre os textos que citavam `fn nome` e
+    custou 21 s medidos -- a mesma armadilha das quatrocentas buscas que o
+    `fontes()` conta (31,6 s)."""
+    global _INDICE_FN
+    fontes()
+    if _INDICE_FN is None:
+        _INDICE_FN = {}
+        for caminho, texto in _TEXTOS.items():
+            for m in FUNCAO.finditer(texto):
+                _INDICE_FN.setdefault(m.group(1), []).append((caminho, m.end()))
+    corpos = []
+    for caminho, fim in _INDICE_FN.get(nome, []):
+        texto = _TEXTOS[caminho]
+        i = texto.find("{", fim)
+        if i < 0:
+            continue
+        prof, j = 1, i + 1
+        while j < len(texto) and prof:
+            if texto[j] == "{":
+                prof += 1
+            elif texto[j] == "}":
+                prof -= 1
+            j += 1
+        corpos.append(texto[i:j])
+    return corpos
+
+
+def producao(texto):
+    """O codigo antes do primeiro `#[cfg(test)]` -- e onde a mensagem nasce."""
+    k = texto.find("#[cfg(test)]")
+    return texto if k < 0 else texto[:k]
+
+
+def mensagem_ambigua(entradas, ler_arquivo=None, corpos=None):
+    """(id, {frase: ocorrencias}) de cada entrada cujas frases conferidas
+    so aparecem repetidas no codigo de producao que ela troca."""
+    if ler_arquivo is None:
+        fontes()
+
+        def ler_arquivo(rel):
+            return _TEXTOS.get(os.path.join(RAIZ, rel), "")
+    corpos = corpos or corpo_de
+    achadas = []
+    for g in entradas:
+        prods = [producao(ler_arquivo(arq)) for arq, _t in pares(g)]
+        frases = set()
+        for teste in g.get("caem") or []:
+            for corpo in corpos(teste.split("::")[-1]):
+                frases |= {f for f in FRASE.findall(corpo)
+                           if len(f) >= 5 and re.search(r"[A-Za-z]", f)}
+        vistas = {f: sum(p.count(f) for p in prods) for f in frases}
+        vistas = {f: n for f, n in vistas.items() if n >= 1}
+        if vistas and all(n >= 2 for n in vistas.values()):
+            achadas.append((g.get("id"), vistas))
+    return achadas
+
+
+# -------------------------------------------- A NONA REGUA (pedido 658)
+#
+# A idade do veredito. Em 07/10/2026 a corrida publicada tinha 109 vereditos
+# de 16/09 -- antes da maior parte do que mudou -- e o `LEIA-ME` da pasta ja
+# registrava uma guarda que deu QUEBRADA horas depois do veredito PROVADA.
+# Veredito velho e a mesma doenca do numero digitado: ele diz uma coisa que
+# foi verdade, sem dizer que pode nao ser mais.
+#
+# N sai da cadencia MEDIDA do fecho, nao de chute: `git log` de 03/09 a 06/10
+# tem commits de fecho em 11 datas, e o maior intervalo entre dois fechos
+# seguidos e de 7 dias (09/09 -> 16/09). N = 14 e «um fecho pode passar sem
+# reprovar a guarda; dois, nao» -- o provador custa uma hora inteira, e exigir
+# toda guarda em todo fecho seria a catraca que se pula.
+#
+# Conta TODAS as entradas julgadas, e nao so «as das petreas» do pedido: o
+# catalogo nao marca petrea em campo nenhum, e escolher por frase no `porque`
+# seria resolver por comparacao de texto -- e mediria menos do que existe.
+# Entrada sem veredito nao entra: essa e da quinta regua.
+#
+# Catraca no medido do dia (so desce), e nao zero: nasceu com 119 velhas (as
+# de 16, 17 e 18/09 vivas no catalogo), e 175 de 24/09 vencem em 09/10. O
+# relogio anda sozinho, e por isso ela REPROVA sem commit nenhum quando um
+# lote passa de N dias -- e esse e o ponto. O `--catraca` imprime quem vence
+# primeiro, para o `provar-guardas.py --so` comecar por elas.
+DIAS_DO_VEREDITO = 14
+TETO_VEREDITO_VELHO = 119
+
+
+def vereditos_velhos(corrida, hoje, dias=DIAS_DO_VEREDITO, vivas=None):
+    """(velhas, proximas): ids com veredito mais velho que `dias`, e os que
+    vencem nos proximos 7 dias -- `hoje` e `datetime.date`, injetado para o
+    autoteste nao depender do relogio."""
+    import datetime
+    velhas, proximas = [], []
+    for r in corrida.get("guardas") or []:
+        # Aposentada que ficou no arquivo nao guarda mais nada: a idade dela
+        # nao e divida de ninguem.
+        if vivas is not None and r.get("id") not in vivas:
+            continue
+        q = str(r.get("quando") or "")[:10]
+        try:
+            dia = datetime.date.fromisoformat(q)
+        except ValueError:
+            # Veredito sem data e veredito de idade desconhecida: conta como
+            # velho, porque o zero calado e o que esta regua existe para negar.
+            velhas.append((r.get("id"), "sem data"))
+            continue
+        idade = (hoje - dia).days
+        if idade > dias:
+            velhas.append((r.get("id"), q))
+        elif idade > dias - 7:
+            proximas.append((r.get("id"), q))
+    return velhas, proximas
+
+
+def corrida_lida():
+    try:
+        with open(CORRIDA, encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {"guardas": []}
 
 
 def achados():
@@ -1267,7 +1497,8 @@ def escondidas():
     # da tabela e na do aviso. Procurar o id solto casaria um id DENTRO de
     # outro, e a regua daria por nomeada uma entrada que ninguem nomeou.
     _ESCONDIDAS = {
-        # Pedido 621: o `quando` do topo e' so a MAIS ANTIGA de uma mescla.
+        # Pedido 621: o `quando` do topo e' so UM extremo de uma mescla (o
+        # mais antigo ate o 658; o mais novo depois dele).
         "quando": ferramenta.datas_da_corrida(corrida),
         "julgadas": len(corrida.get("guardas") or []),
         "nao_julgadas": faltam,
@@ -1295,8 +1526,24 @@ def medido(dados=None):
         "TETO_TESTE_FORA_DO_BINARIO": len(fora),
         "TETO_TESTE_SEM_MODULO": len(sem_modulo(catalogo())),
         "TETO_NAO_JULGADA_ESCONDIDA": len(escondidas()["escondidas"]),
+        "TETO_SEGUEM_FALTANDO": len(seguem_faltando(catalogo())),
+        "TETO_MENSAGEM_AMBIGUA": len(mensagem_ambigua(catalogo())),
+        "TETO_VEREDITO_VELHO": len(velhos_hoje()[0]),
         "PISO_DAS_ENTRADAS": len(catalogo()) + len(APOSENTADAS),
     }
+
+
+_VELHOS = None
+
+
+def velhos_hoje():
+    """A nona regua contra a corrida publicada e o relogio de hoje."""
+    global _VELHOS
+    if _VELHOS is None:
+        import datetime
+        _VELHOS = vereditos_velhos(corrida_lida(), datetime.date.today(),
+                                   vivas={g.get("id") for g in catalogo()})
+    return _VELHOS
 
 
 # Cada catraca desta regua: nome, valor, o que mede, e de que LADO ela trava.
@@ -1331,6 +1578,23 @@ AS_CATRACAS = [
      "rodar o provador: e' republicar a MESMA corrida, que ja nomeia o que "
      "ela nao julgou -- `python3 bancada/guardas/tabela-no-testes.py "
      "bancada/guardas/ultima-corrida.json`."),
+    ("TETO_SEGUEM_FALTANDO", TETO_SEGUEM_FALTANDO, "teto",
+     "entradas sem `seguem` (ausente ou vazio) fora das isencoes medidas",
+     "sem `seguem`, uma troca que quebre o arquivo inteiro sai PROVADA. "
+     "Nomeie no `seguem` um teste do MESMO binario que tem de seguir de pe "
+     "com o defeito reposto, e prove com `provar-guardas.py --so <id>`."),
+    ("TETO_MENSAGEM_AMBIGUA", TETO_MENSAGEM_AMBIGUA, "teto",
+     "entradas cujos `caem` so conferem frases repetidas no codigo trocado",
+     "o teste confere uma frase que outro caminho do MESMO arquivo tambem "
+     "produz -- o risco que deixou a `sequencia-numero-cru-perde-precisao` "
+     "NAO PEGOU. De ao caminho um erro com nome unico, ou faca o teste "
+     "conferir o campo que so ele preenche."),
+    ("TETO_VEREDITO_VELHO", TETO_VEREDITO_VELHO, "teto",
+     "entradas cujo ultimo veredito tem mais de %d dias" % DIAS_DO_VEREDITO,
+     "veredito velho diz o que foi verdade sem dizer que pode nao ser mais. "
+     "Reprove as mais velhas primeiro: `python3 bancada/guardas/"
+     "provar-guardas.py --so <id> ... --json bancada/guardas/"
+     "ultima-corrida.json` (a lista sai acima)."),
     ("PISO_DAS_ENTRADAS", PISO_DAS_ENTRADAS, "piso",
      "entradas vivas do catalogo mais as aposentadas escritas",
      "sumiu entrada do catalogo sem aposentadoria escrita. Apagar a entrada "
@@ -1385,6 +1649,27 @@ def catraca():
         print("   -- teste de --lib nomeado sem o caminho do modulo:")
         for gid, campo, teste in curtos:
             print(f"      {gid}: {campo} -> {teste}")
+    # As tres de baixo sao DIVIDA medida (o teto nasceu acima de zero), e a
+    # lista sai inteira so com `-v`: no veredito normal, afogaria a linha que
+    # importa. O numero sai sempre.
+    detalhe = "-v" in sys.argv
+    sem_seguem = seguem_faltando(catalogo())
+    if sem_seguem and detalhe:
+        print("   -- entrada sem `seguem` (fora das isencoes):")
+        for gid, forma in sem_seguem:
+            print(f"      {gid}: {forma}")
+    ambiguas = mensagem_ambigua(catalogo())
+    if ambiguas and detalhe:
+        print("   -- entrada que so confere frase repetida no codigo trocado:")
+        for gid, frases in ambiguas:
+            print(f"      {gid}: " + ", ".join(
+                f"{f!r} x{n}" for f, n in sorted(frases.items())))
+    velhas, proximas = velhos_hoje()
+    print(f"   {len(velhas)} veredito(s) com mais de {DIAS_DO_VEREDITO} dias; "
+          f"{len(proximas)} vencem nos proximos 7")
+    if detalhe:
+        for gid, q in velhas:
+            print(f"      velho: {gid} ({q})")
 
     # O buraco cru sai IMPRESSO e nao travado: ele cresce quando alguem
     # escreve uma guarda nova, que e trabalho certo. Numero que nao se pode
@@ -1599,12 +1884,114 @@ def autoteste_da_sexta():
     return 1 if falhas else 0
 
 
+def autoteste_das_tres_novas():
+    """Prova real da setima, oitava e nona reguas (pedidos 655, 657, 658).
+
+    Cada uma com o defeito reposto (tem de ACUSAR) e com os controles que uma
+    regua mal feita erraria (tem de PASSAR): a isencao medida, a frase unica,
+    a fronteira exata dos N dias."""
+    import copy
+    import datetime
+    falhas = []
+
+    def conferir(nome, cond, detalhe=""):
+        print("   %s  %s%s" % ("ok  " if cond else "FALHOU", nome,
+                               "" if cond else "  -- " + detalhe))
+        if not cond:
+            falhas.append(nome)
+
+    # ---- setima: `seguem`
+    binarios = {"um": {"so_o_caem"}, "varios": {"so_o_caem", "vizinho"}}
+
+    def testes_de(g):
+        return binarios.get((g.get("alvo") or ["", ""])[-1])
+
+    base = {"alvo": ["--test", "varios"], "caem": ["so_o_caem"]}
+    casos = [
+        (dict(base, id="com", seguem=["vizinho"]), []),
+        (dict(base, id="sem"), [("sem", "ausente")]),
+        (dict(base, id="vazio", seguem=[]), [("vazio", "vazio")]),
+        (dict(base, id="aborta", espera="aborta"), []),
+        (dict(base, id="sozinho", alvo=["--test", "um"]), []),
+        (dict(base, id="nao-sei", alvo=["--bin", "x"]), [("nao-sei", "ausente")]),
+    ]
+    for g, esperado in casos:
+        r = seguem_faltando([g], testes_de)
+        conferir("seguem: %s" % g["id"], r == esperado, str(r))
+    reais = catalogo()
+    conferir("seguem: o catalogo de hoje mede o teto",
+             len(seguem_faltando(reais)) == TETO_SEGUEM_FALTANDO,
+             str(len(seguem_faltando(reais))))
+    # o defeito reposto na arvore de verdade: uma entrada NOVA sem `seguem`
+    # num binario com vizinhos -- a primeira `--lib` com `seguem` cheio.
+    modelo = next(g for g in reais if g.get("seguem") and g["alvo"] == ["--lib"])
+    nova = copy.deepcopy(modelo)
+    nova["id"] = nova["id"] + "-sem-seguem"
+    del nova["seguem"]
+    conferir("seguem: entrada nova sem `seguem` sobe o numero (reprova)",
+             len(seguem_faltando(reais + [nova])) == TETO_SEGUEM_FALTANDO + 1)
+
+    # ---- oitava: mensagem ambigua
+    def arquivo(prod):
+        return lambda rel: prod + "\n#[cfg(test)]\nmod t { \"perde precisao\" }"
+
+    def corpos(frases):
+        return lambda nome: ["{ assert!(e.contains(\"%s\")); }" % f for f in frases]
+
+    g = {"id": "g", "arquivo": "a.rs", "trecho": "x", "caem": ["t"]}
+    duas = 'erro("perde precisao"); outro("perde precisao");'
+    uma = 'erro("perde precisao"); outro("nao cabe aqui");'
+    conferir("ambigua: frase repetida no codigo trocado ACUSA",
+             len(mensagem_ambigua([g], arquivo(duas), corpos(["perde precisao"]))) == 1)
+    conferir("ambigua: frase unica passa",
+             mensagem_ambigua([g], arquivo(uma), corpos(["perde precisao"])) == [])
+    conferir("ambigua: uma frase unica ao lado da repetida passa (o teste discrimina)",
+             mensagem_ambigua([g], arquivo(duas + ' z("so aqui, unica");'),
+                              corpos(["perde precisao", "so aqui, unica"])) == [])
+    conferir("ambigua: a copia dentro de #[cfg(test)] nao conta como producao",
+             mensagem_ambigua([g], arquivo('erro("perde precisao");'),
+                              corpos(["perde precisao"])) == [])
+    conferir("ambigua: frase curta ou sem letra nao conta",
+             mensagem_ambigua([g], arquivo('a(" = "); b(" = ");'), corpos([" = "])) == [])
+    conferir("ambigua: o caso que fundou a regua esta na lista",
+             "sequencia-numero-cru-perde-precisao"
+             in {i for i, _f in mensagem_ambigua(reais)})
+    conferir("ambigua: o catalogo de hoje mede o teto",
+             len(mensagem_ambigua(reais)) == TETO_MENSAGEM_AMBIGUA)
+
+    # ---- nona: idade do veredito
+    hoje = datetime.date(2026, 10, 7)
+    corrida = {"guardas": [
+        {"id": "15d", "quando": "2026-09-22 10:00"},
+        {"id": "14d", "quando": "2026-09-23 23:59"},
+        {"id": "8d", "quando": "2026-09-29 00:00"},
+        {"id": "7d", "quando": "2026-09-30 00:00"},
+        {"id": "sem-data"},
+        {"id": "aposentada", "quando": "2026-01-01 00:00"},
+    ]}
+    vivas = {"15d", "14d", "8d", "7d", "sem-data"}
+    velhas, proximas = vereditos_velhos(corrida, hoje, 14, vivas)
+    conferir("idade: 15 dias e velho, 14 ainda nao (a fronteira e `>`)",
+             [i for i, _q in velhas] == ["15d", "sem-data"], str(velhas))
+    conferir("idade: veredito sem data conta como velho, nunca como zero",
+             ("sem-data", "sem data") in velhas)
+    conferir("idade: aposentada no arquivo nao e divida",
+             "aposentada" not in {i for i, _q in velhas})
+    conferir("idade: os que vencem em 7 dias saem listados",
+             [i for i, _q in proximas] == ["14d", "8d"], str(proximas))
+    print("   %s" % ("todos passaram" if not falhas
+                     else "FALHOU: " + ", ".join(falhas)))
+    return 1 if falhas else 0
+
+
 def principal():
     if "--autoteste" in sys.argv:
         print("=== autoteste da quinta regua (pedido 269) ===")
         quinta = autoteste_da_quinta()
         print("=== autoteste da sexta regua (pedido 273) ===")
-        return quinta or autoteste_da_sexta()
+        sexta = autoteste_da_sexta()
+        print("=== autoteste da setima, oitava e nona reguas (655, 657, 658) ===")
+        return quinta or sexta or autoteste_das_tres_novas()
     if "--catraca" in sys.argv:
         return catraca()
     if "--numeros" in sys.argv:

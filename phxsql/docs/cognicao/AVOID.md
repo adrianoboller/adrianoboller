@@ -4,7 +4,7 @@
      `--catraca` reprova se este arquivo nao bater com o que o extrator
      geraria agora; rode o comando sem flag para atualizar. -->
 
-Gerado dos `cognicao_*.md` com `**Estado:** INFRUTIFERO` -- 10 hoje, de 418 cognicoes no total.
+Gerado dos `cognicao_*.md` com `**Estado:** INFRUTIFERO` -- 10 hoje, de 420 cognicoes no total.
 
 ## «O branch da frente é ancestral do HEAD» não prova que o trabalho dela foi integrado
 

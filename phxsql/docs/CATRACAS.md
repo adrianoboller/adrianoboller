@@ -2126,6 +2126,58 @@ mesmo laço achou um defeito real: o bloqueio de manutenção soltava **depois**
 da trava e do portão, então quem esperou a fase 2 inteira no portão entrava
 com o retrato ainda ligado por microssegundos e levava um 4006 de um backup
 que já tinha acabado. Hoje o registro solta antes.
+
+## 21. O rigor do catálogo de guardas — pedidos 654 a 658 (07/10/2026)
+
+A auditoria G de 02/10 achou cinco lugares por onde uma catraca afrouxa sem
+ninguém tocar nela. Cada um virou régua em Python, nascida no número medido do
+dia, com `--autoteste` que repõe o defeito (tem de reprovar) e roda os
+controles (tem de passar). Todas entram sozinhas no `bancada/catracas/todas.py`.
+
+| catraca | onde | nasce em | o que repõe o RED |
+|---|---|---:|---|
+| `TETO_DISPENSADOS_DE_BOTAO` | `bancada/guardas/listas-de-dispensa.py` | 27 | uma dispensa nova no `DISPENSADOS` sem baixar o teto: 28 |
+| `TETO_ISENTOS_DE_TRADUCAO` | idem | 81 | uma isenção nova no `ISENTOS` |
+| `TETO_DISPENSA_SEM_MOTIVO` | idem | 0 | o motivo do `#btClAdd` apagado; o do `PhxSql` em branco |
+| `TETO_DISPENSA_VENCIDA` | idem | 0 | `#rzIr3` na evidência da bateria: a razão da dispensa deixou de valer |
+| `TETO_FOLGA_ESCONDIDA` | `bancada/guardas/folga-de-catraca.py` | 0 | o `saturating_sub(30)` e o `+ 3` de volta no `conferidor.rs`: 2 |
+| `TETO_REMOVE_FORCADO` | `bancada/guardas/frente-so-numa-pasta.py` | 0 | `git worktree remove -f` no `limpar-frentes.sh` |
+| `TETO_FRENTE_SUJA_APAGADA` | idem | 0 | sem a prova do `status --porcelain` **e** com `-f`: a cópia suja some na corrida real |
+| `TETO_SEGUEM_FALTANDO` | `bancada/guardas/trecho-vivo.py` | 27 | um `seguem` esvaziado no catálogo: 28 |
+| `TETO_MENSAGEM_AMBIGUA` | idem | 82 | frase conferida que o código trocado escreve 2 vezes |
+| `TETO_VEREDITO_VELHO` | idem | 119 | veredito com mais de 14 dias |
+
+Quatro decisões que valem saber antes de mexer:
+
+- **A lista que decide o que a catraca conta também é catraca.** O
+  `TETO_BOTAO_SEM_PROVA` chegou a zero com o `DISPENSADOS` indo de 22 para 27;
+  sem teto na lista, ela era a porta dos fundos. A régua lê o fonte Rust e não
+  decide nada que o conferidor decida — por isso a dispensa vencida compara a
+  chave **exata** e mede menos que o `provado()` no caso do `[data-x="v"]`
+  interpolado, dito no cabeçalho.
+- **Folga muda é zero; folga nomeada é decisão.** As duas folgas saíram do
+  `conferidor.rs` (o medido de 02/10 já era o teto — 861 e 6 —, e nada mudou
+  na tela desde então). Folga que um dia for necessária vira constante
+  `FOLGA_*` e não conta aqui: o defeito era ela não aparecer em lugar nenhum.
+  O crivo exige `.len()` na condição, o mesmo do `docs/qa/medir.py`: sem ele,
+  o `TETO_DO_REGISTRO + 1` de um limite de funcionamento contava como folga
+  (4 falsos medidos).
+- **Duas cercas pedem duas guardas.** Sem a prova do `status --porcelain`, o
+  próprio git ainda recusa apagar a cópia suja — até alguém pôr o `-f`. Então
+  o comportamento se prova contra o git de verdade (um repositório numa pasta
+  temporária, três cópias, o script rodado) e o texto se confere à parte.
+- **O relógio anda sozinho.** `TETO_VEREDITO_VELHO` reprova sem commit nenhum
+  quando um lote passa de 14 dias — os 175 vereditos de 24/09 vencem em
+  09/10. N = 14 sai do `git log`: o maior intervalo entre dois fechos seguidos
+  (03/09–06/10) é de 7 dias, e a guarda pode pular um fecho, não dois.
+  O `--catraca -v` lista quem vence; o conserto é `provar-guardas.py --so`.
+
+O `TETO_SEGUEM_FALTANDO` não conta duas formas que se medem no código: `espera:
+"aborta"` (3) e binário `--test` cujo único teste é o próprio `caem` (15). E o
+`TETO_MENSAGEM_AMBIGUA` é heurística declarada: frase lida por um helper ou de
+outro arquivo não se vê, e frase com menos de 5 caracteres ou sem letra não
+conta (`" = "` do `strace` enchia a lista).
+
 ## Metodologia
 
 1. `grep -rn "TETO\|MAX\|LIMITE"` em `crates/*/src/**/*.rs` e em `bancada/`,
