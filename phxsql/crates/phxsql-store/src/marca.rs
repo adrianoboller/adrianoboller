@@ -618,7 +618,7 @@ pub fn gravar_marca(
     carimbo_ms: i64,
     ops: &[Escrita],
 ) -> Result<PathBuf> {
-    gravar_com(diretorio, id, carimbo_ms, ops, None)
+    gravar_com(&caminho_da_marca(diretorio, id), id, carimbo_ms, ops, None)
 }
 
 /// A acao da marca que corresponde a um evento do diario. A exclusao da
@@ -672,13 +672,70 @@ pub fn gravar_marca_da_replica(
             elo_da_cascata: false,
         })
         .collect();
-    gravar_com(diretorio, id, carimbo_ms, &ops, Some(eventos))
+    gravar_com(
+        &caminho_da_marca(diretorio, id),
+        id,
+        carimbo_ms,
+        &ops,
+        Some(eventos),
+    )
+}
+
+/// O prefixo da marca do grupo do BIDIRECIONAL -- pedido 698.
+///
+/// # Por que outro nome, e nao outra versao
+///
+/// O conteudo e o da marca da replica, byte por byte, pelo mesmo
+/// [`gravar_com`]: muda so QUEM a completa. A da replica se completa pelo
+/// rowid e pela posicao do diario daqui ([`aplicar_evento_da_marca`]); a do
+/// bidirecional, pela CHAVE e pelo «mais recente vence», que moram no
+/// servidor e precisam do mapa de toques. Com o mesmo `transacao_`, a
+/// recuperacao do store a leria como replica e gravaria pelo rowid de LA --
+/// que no bidirecional e de outro servidor. Com outro nome a recuperacao do
+/// store nem a ve, e um servidor anterior a deixa quieta em vez de
+/// descarta-la.
+pub const PREFIXO_DO_BIDI: &str = "bidi_";
+
+/// Grava a marca do grupo do bidirecional e sincroniza, antes do primeiro
+/// evento do grupo -- pedido 698. Ver [`PREFIXO_DO_BIDI`].
+///
+/// O `rowid` de cada evento e o de LA, e vai so para a marca ficar inteira:
+/// quem completa casa pela chave, nunca por ele.
+pub fn gravar_marca_do_bidi(
+    diretorio: &Path,
+    id: u64,
+    carimbo_ms: i64,
+    eventos: &[EventoDoGrupo<'_>],
+) -> Result<PathBuf> {
+    let ops: Vec<Escrita> = eventos
+        .iter()
+        .map(|e| Escrita {
+            database: String::new(),
+            tabela: e.tabela.to_string(),
+            acao: acao_do_evento(e.operacao),
+            rowid: e.rowid,
+            linha: Vec::new(),
+            linha_antiga: Vec::new(),
+            motivo: String::new(),
+            cascata_na_lista: false,
+            elo_do_empilhar: false,
+            elo_da_cascata: false,
+        })
+        .collect();
+    let caminho = diretorio.join(format!("{PREFIXO_DO_BIDI}{id}.{EXTENSAO}"));
+    gravar_com(&caminho, id, carimbo_ms, &ops, Some(eventos))
+}
+
+/// As marcas do bidirecional de `dir`, na ordem do id -- o mesmo laco de
+/// [`marcas_em`], com o outro prefixo.
+pub fn marcas_do_bidi_em(dir: &Path) -> Vec<PathBuf> {
+    marcas_com_prefixo(dir, PREFIXO_DO_BIDI)
 }
 
 /// O corpo unico das duas portas de gravacao. `replica`, quando vem, tem um
 /// evento por operacao, na mesma ordem.
 fn gravar_com(
-    diretorio: &Path,
+    caminho: &Path,
     id: u64,
     carimbo_ms: i64,
     ops: &[Escrita],
@@ -755,7 +812,7 @@ fn gravar_com(
         b.extend_from_slice(&crc.to_le_bytes());
     }
 
-    let caminho = caminho_da_marca(diretorio, id);
+    let caminho = caminho.to_path_buf();
     let mut f = criar_privado(&caminho, id)?;
     // O `sync_all` e a peca, e nao um detalhe: sem ele a marca pode estar so
     // no cache do sistema quando a passada comecar, e a queda deixaria o dado
@@ -1362,6 +1419,7 @@ pub fn tratar_marca(
 fn completar(db: &Database, marca: &Marca, r: &mut Relatorio) -> bool {
     let mut tabelas: HashMap<String, Table> = HashMap::new();
     let mut replica_parou = false;
+    let mut reter = false;
     for op in &marca.operacoes {
         // Garante o handle no mapa, aberto e preparado UMA vez.
         if !tabelas.contains_key(&op.tabela) {
@@ -1453,9 +1511,24 @@ fn completar(db: &Database, marca: &Marca, r: &mut Relatorio) -> bool {
             let mut maes = MaesAbertas {
                 abertas: &mut tabelas,
             };
-            match aplicar_uma(&mut t, op, &mut maes) {
-                Ok(true) => r.reaplicadas += 1,
-                Ok(false) => r.ja_aplicadas += 1,
+            match aplicar_na_recuperacao(&mut t, op, &mut maes) {
+                Ok(Desfecho::Aplicou) => r.reaplicadas += 1,
+                Ok(Desfecho::JaEstava) => r.ja_aplicadas += 1,
+                // Pedido 699: o diario diz que o evento entrou e o `.reg` nao
+                // tem a linha. A marca FICA -- ela e a unica copia, aqui, da
+                // imagem do que se perdeu --, e as operacoes seguintes do
+                // grupo param como em qualquer recusa.
+                Ok(Desfecho::LinhaPerdida(motivo)) => {
+                    replica_parou = true;
+                    reter = true;
+                    r.impossiveis.push(format!(
+                        "transacao {}: {} rowid {} em {} ({motivo}); a marca fica no disco",
+                        marca.id,
+                        op.acao.nome(),
+                        op.rowid,
+                        op.tabela
+                    ))
+                }
                 Err(e) => {
                     replica_parou |= op.replica.is_some();
                     r.impossiveis.push(format!(
@@ -1493,7 +1566,18 @@ fn completar(db: &Database, marca: &Marca, r: &mut Relatorio) -> bool {
             ));
         }
     }
-    no_disco
+    no_disco && !reter
+}
+
+/// O que a reaplicacao de UMA operacao da marca fez.
+#[derive(Debug, PartialEq, Eq)]
+enum Desfecho {
+    Aplicou,
+    JaEstava,
+    /// O diario daqui tem o evento e o `.reg` nao tem o que ele diz -- pedido
+    /// 699. Nao e «ja estava»: e dado que o disco perdeu, e a marca que o
+    /// descreve nao pode sair.
+    LinhaPerdida(String),
 }
 
 /// Aplica uma operacao da marca. `Ok(false)` = ja estava aplicada.
@@ -1506,28 +1590,64 @@ pub(crate) fn aplicar_uma(
     op: &OperacaoDaMarca,
     maes: &mut dyn MaesEmProgresso,
 ) -> Result<bool> {
+    match aplicar_na_recuperacao(t, op, maes)? {
+        Desfecho::Aplicou => Ok(true),
+        Desfecho::JaEstava => Ok(false),
+        Desfecho::LinhaPerdida(motivo) => Err(PhxError::Corrompido(motivo)),
+    }
+}
+
+/// O slot da inclusao `rowid` ja foi consumido? `Ok(true)` = sim, e a linha
+/// esta nele; `Ok(false)` = ainda nao, ele vem depois do ultimo.
+///
+/// # Uma resposta so, para a marca do `COMMIT` e para a da replica
+///
+/// As duas perguntam a mesma coisa antes de gravar -- «a passada ja chegou
+/// neste slot?» -- e a da replica nao perguntava (pedido 699): conferia so o
+/// diario, e a queda entre o `.reg` e o evento fazia a reaplicacao gravar a
+/// linha num slot NOVO, duplicada.
+///
+/// Slot dentro da faixa e LIVRE recusa: o `.reg` nao reaproveita slot, entao
+/// nao ha como refazer esta linha no lugar dela. E a unica lacuna deste
+/// desenho, e ela esta escrita na §5.4 do documento em vez de escondida.
+fn slot_ja_consumido(t: &mut Table, rowid: u64) -> Result<bool> {
+    if rowid > t.slots() {
+        return Ok(false);
+    }
+    if t.ler(rowid)?.is_some() {
+        return Ok(true);
+    }
+    Err(PhxError::Corrompido(format!(
+        "o slot {rowid} ja foi consumido e esta livre; o .reg nao \
+         reaproveita slot, entao esta linha nao volta para o \
+         lugar dela"
+    )))
+}
+
+/// O corpo do [`aplicar_uma`], com o desfecho inteiro -- a recuperacao precisa
+/// distinguir a linha perdida de uma recusa qualquer.
+fn aplicar_na_recuperacao(
+    t: &mut Table,
+    op: &OperacaoDaMarca,
+    maes: &mut dyn MaesEmProgresso,
+) -> Result<Desfecho> {
     if let Some(ev) = &op.replica {
         return aplicar_evento_da_marca(t, op.rowid, ev);
     }
+    let feito = |b: bool| {
+        if b {
+            Desfecho::Aplicou
+        } else {
+            Desfecho::JaEstava
+        }
+    };
     match op.acao {
         Acao::Inserir => {
             // O slot ja existe? Entao a passada chegou nele e nao ha o que
             // fazer -- a reaplicacao e idempotente pelo rowid, e e por isso
             // que a marca guarda o rowid alvo e nao so a linha.
-            if op.rowid <= t.slots() {
-                if t.ler(op.rowid)?.is_some() {
-                    return Ok(false);
-                }
-                // Slot dentro da faixa e LIVRE: o `.reg` nao reaproveita slot,
-                // entao nao ha como refazer esta linha no lugar dela. E a
-                // unica lacuna deste desenho, e ela esta escrita na §5.4 do
-                // documento em vez de escondida.
-                return Err(PhxError::Corrompido(format!(
-                    "o slot {} ja foi consumido e esta livre; o .reg nao \
-                     reaproveita slot, entao esta linha nao volta para o \
-                     lugar dela",
-                    op.rowid
-                )));
+            if slot_ja_consumido(t, op.rowid)? {
+                return Ok(Desfecho::JaEstava);
             }
             let saiu = t.inserir_com_maes(&op.linha, maes)?;
             if saiu != op.rowid {
@@ -1536,7 +1656,7 @@ pub(crate) fn aplicar_uma(
                     op.rowid
                 )));
             }
-            Ok(true)
+            Ok(Desfecho::Aplicou)
         }
         Acao::Atualizar => {
             if t.ler(op.rowid)?.is_none() {
@@ -1554,7 +1674,7 @@ pub(crate) fn aplicar_uma(
             // valores.
             if op.cascata_na_lista {
                 t.atualizar_sem_cascata_com_maes(op.rowid, &op.linha, maes)?;
-                return Ok(true);
+                return Ok(Desfecho::Aplicou);
             }
             t.atualizar_com_maes(op.rowid, &op.linha, maes)?;
             // **O `atualizar` sozinho NAO refaz a cascata, e isso esta
@@ -1570,13 +1690,15 @@ pub(crate) fn aplicar_uma(
             if !op.linha_antiga.is_empty() {
                 t.recascatear(&op.linha_antiga, &op.linha)?;
             }
-            Ok(true)
+            Ok(Desfecho::Aplicou)
         }
         // O irmao da passada: as exclusoes emprestam as FILHAS que a mesma
         // marca ja reaplicou, e a restauracao as MAES (pedido 448).
-        Acao::ExcluirSuave => Ok(t.excluir_suave_com_maes(op.rowid, &op.motivo, maes)?),
-        Acao::ExcluirDeVez => Ok(t.excluir_de_vez_com_maes(op.rowid, &op.motivo, maes)?),
-        Acao::Restaurar => Ok(t.restaurar_com_maes(op.rowid, &op.motivo, maes)?),
+        Acao::ExcluirSuave => Ok(feito(t.excluir_suave_com_maes(op.rowid, &op.motivo, maes)?)),
+        Acao::ExcluirDeVez => Ok(feito(
+            t.excluir_de_vez_com_maes(op.rowid, &op.motivo, maes)?,
+        )),
+        Acao::Restaurar => Ok(feito(t.restaurar_com_maes(op.rowid, &op.motivo, maes)?)),
     }
 }
 
@@ -1592,7 +1714,8 @@ pub(crate) fn aplicar_uma(
 /// - o diario tem exatamente `posicao` eventos: este e o proximo, aplica;
 /// - tem mais: o evento em `posicao` tem de ser ESTE (carimbo, operacao e
 ///   rowid, os campos da conferencia de continuidade da replica). Sendo,
-///   ja entrou; nao sendo, a marca e de outra historia da tabela -- recriada
+///   ja entrou -- se o `.reg` confirmar (pedido 699,
+///   [`conferir_o_reg_do_evento`]); nao sendo, a marca e de outra historia da tabela -- recriada
 ///   depois da queda, ou escrita por fora -- e reaplicar por cima seria
 ///   gravar dado alheio. Recusa, e o relatorio a conta como impossivel;
 /// - tem menos: falta evento ANTES deste, e aplicar abriria um buraco que o
@@ -1601,7 +1724,7 @@ pub(crate) fn aplicar_uma(
 /// O aplicador e o da replica ([`Table::aplicar_evento`]), com o carimbo e a
 /// origem de la, e sem julgar a chave estrangeira -- conta a orfa, como a
 /// rodada conta.
-fn aplicar_evento_da_marca(t: &mut Table, rowid: u64, ev: &EventoDaReplica) -> Result<bool> {
+fn aplicar_evento_da_marca(t: &mut Table, rowid: u64, ev: &EventoDaReplica) -> Result<Desfecho> {
     let tem = t.eventos()?;
     if tem > ev.posicao {
         let la = t.diario(ev.posicao, 1)?;
@@ -1609,7 +1732,7 @@ fn aplicar_evento_da_marca(t: &mut Table, rowid: u64, ev: &EventoDaReplica) -> R
             Some(e)
                 if e.carimbo == ev.carimbo_ms && e.operacao == ev.operacao && e.rowid == rowid =>
             {
-                Ok(false)
+                conferir_o_reg_do_evento(t, rowid, ev)
             }
             _ => Err(PhxError::Corrompido(format!(
                 "o evento {} do diario de {} nao e o que a marca do grupo da replica \
@@ -1631,8 +1754,76 @@ fn aplicar_evento_da_marca(t: &mut Table, rowid: u64, ev: &EventoDaReplica) -> R
     }
     t.contar_orfas();
     t.forcar_proximo_evento(ev.carimbo_ms, ev.origem);
+    // Pedido 699: o diario esta na posicao, mas o `.reg` pode estar a frente
+    // dele -- a inclusao grava o slot ANTES do evento, e a queda entre os dois
+    // deixa a linha sem evento. Reaplicar pelo `aplicar_evento` gravaria a
+    // linha de novo num slot NOVO (o `.reg` nao reaproveita slot), duplicada
+    // se a tabela nao tiver indice unico. A pergunta e a mesma do `COMMIT`
+    // ([`slot_ja_consumido`]); o que muda e a resposta ao «ja estava»: aqui
+    // falta o evento, e ele se completa SEM tocar no `.reg`, senao a rodada
+    // seguinte pediria este evento de novo a origem.
+    if ev.operacao == crate::log::Operacao::Inclusao && slot_ja_consumido(t, rowid)? {
+        t.completar_o_diario_da_inclusao(rowid, &ev.imagem)?;
+        return Ok(Desfecho::Aplicou);
+    }
     t.aplicar_evento(ev.operacao, rowid, &ev.imagem)?;
-    Ok(true)
+    Ok(Desfecho::Aplicou)
+}
+
+/// O evento ja esta no diario daqui: o `.reg` confirma? -- pedido 699, o
+/// inverso da queda entre o `.reg` e o evento.
+///
+/// A queda de ENERGIA antes do `fsync` pode deixar o diario no disco e o
+/// `.reg` nao. Responder «ja estava» olhando so o diario apagava a marca com
+/// a linha ausente -- e a marca era, aqui, a unica copia da imagem dela.
+///
+/// Inclusao e alteracao deixam a linha no slot; a exclusao o deixa livre.
+/// Slot livre depois de uma inclusao ou alteracao so e legitimo se um evento
+/// POSTERIOR do mesmo diario o excluiu -- e e o diario que diz.
+fn conferir_o_reg_do_evento(t: &mut Table, rowid: u64, ev: &EventoDaReplica) -> Result<Desfecho> {
+    use crate::log::Operacao;
+    let presente = rowid >= 1 && rowid <= t.slots() && t.ler_sem_externos(rowid)?.is_some();
+    let perdida = match ev.operacao {
+        Operacao::Exclusao if presente => Some(format!(
+            "o diario de {} tem a exclusao do rowid {rowid} e o .reg ainda tem a linha: \
+             a exclusao nao chegou ao disco",
+            t.nome()
+        )),
+        Operacao::Exclusao => None,
+        _ if presente => None,
+        _ if excluida_depois(t, rowid, ev.posicao + 1)? => None,
+        op => Some(format!(
+            "o diario de {} tem a {} do rowid {rowid} e o .reg nao tem a linha: o \
+             disco perdeu o slot que o diario confirma",
+            t.nome(),
+            op.nome()
+        )),
+    };
+    Ok(match perdida {
+        Some(motivo) => Desfecho::LinhaPerdida(motivo),
+        None => Desfecho::JaEstava,
+    })
+}
+
+/// O diario daqui exclui `rowid` em algum evento a partir de `desde`?
+fn excluida_depois(t: &mut Table, rowid: u64, desde: u64) -> Result<bool> {
+    const LOTE: u64 = 1024;
+    let total = t.eventos()?;
+    let mut pos = desde;
+    while pos < total {
+        let lote = t.diario(pos, LOTE)?;
+        if lote.is_empty() {
+            break;
+        }
+        if lote
+            .iter()
+            .any(|e| e.rowid == rowid && e.operacao == crate::log::Operacao::Exclusao)
+        {
+            return Ok(true);
+        }
+        pos += lote.len() as u64;
+    }
+    Ok(false)
 }
 
 // ------------------------------------------------------------ a recuperacao
@@ -1744,6 +1935,10 @@ fn completar_as_marcas_de(db: &Database, r: &mut Relatorio) {
 /// Duas marcas no mesmo diretorio sao completadas nessa ordem: a segunda pode
 /// depender do que a primeira gravou.
 pub fn marcas_em(dir: &Path) -> Vec<PathBuf> {
+    marcas_com_prefixo(dir, PREFIXO)
+}
+
+fn marcas_com_prefixo(dir: &Path, prefixo: &str) -> Vec<PathBuf> {
     let Ok(entradas) = std::fs::read_dir(dir) else {
         return Vec::new();
     };
@@ -1753,7 +1948,7 @@ pub fn marcas_em(dir: &Path) -> Vec<PathBuf> {
         .filter(|p| {
             p.file_name()
                 .and_then(|n| n.to_str())
-                .is_some_and(|n| n.starts_with(PREFIXO) && n.ends_with(&format!(".{EXTENSAO}")))
+                .is_some_and(|n| n.starts_with(prefixo) && n.ends_with(&format!(".{EXTENSAO}")))
         })
         .collect();
     marcas.sort();
@@ -2117,5 +2312,129 @@ mod testes {
         assert_eq!(r.impossiveis.len(), 2, "{r:?}");
         let mut t = db.abrir_qualificada("itens").unwrap();
         assert_eq!(t.eventos().unwrap(), 1, "nada entrou por cima");
+    }
+
+    /// `itens` SEM indice nenhum: a reaplicacao que grava num slot novo nao
+    /// esbarra em unicidade, e a linha sai duplicada -- o caso do pedido 699.
+    fn itens_sem_indice(db: &Database) -> Table {
+        let e = Schema::new(
+            "itens",
+            vec![
+                Column::new("id", ColumnType::Int8).obrigatoria(),
+                Column::new("venda", ColumnType::Int8),
+            ],
+            vec![],
+        )
+        .unwrap();
+        db.criar_tabela(None, e).unwrap()
+    }
+
+    /// **Pedido 699.** A queda entre o `.reg` e o evento do diario: o slot da
+    /// segunda inclusao ja esta gravado e o diario so tem a primeira. A
+    /// recuperacao completa SO o evento -- a linha nao entra de novo num slot
+    /// novo. Aqui a queda e um panico no ponto exato (`InserirDepoisDoContador`);
+    /// a prova contra o sistema operacional, com `SIGKILL`, e a do servidor
+    /// (`venda-inteira-na-queda-da-replica.rs`).
+    ///
+    /// Vermelho medido sem o `slot_ja_consumido` no `aplicar_evento_da_marca`:
+    /// a recuperacao grava a linha 2 de novo no slot 3 e o `aplicar_evento`
+    /// recusa a divergencia DEPOIS de gravar -- 5 slots para 4 linhas.
+    #[test]
+    fn a_queda_entre_o_reg_e_o_diario_nao_duplica_a_linha() {
+        let d = dir("replica-reg-sem-evento");
+        let ev = eventos_da_origem(&d.join("origem"), 4);
+        let db = base_com_imagem(&d.join("central"));
+        let mut t = itens_sem_indice(&db);
+        t.forcar_proximo_evento(ev[0].0.carimbo, 7);
+        t.aplicar_evento(ev[0].0.operacao, ev[0].0.rowid, &ev[0].1)
+            .unwrap();
+        crate::ndx::panico_de_teste::armar(
+            crate::ndx::panico_de_teste::Ponto::InserirDepoisDoContador,
+        );
+        t.forcar_proximo_evento(ev[1].0.carimbo, 7);
+        let caiu = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _ = t.aplicar_evento(ev[1].0.operacao, ev[1].0.rowid, &ev[1].1);
+        }));
+        crate::ndx::panico_de_teste::desarmar();
+        assert!(caiu.is_err(), "o panico de teste nao disparou");
+        drop(t);
+        let mut t = db.abrir_qualificada("itens").unwrap();
+        assert_eq!(
+            (t.slots(), t.eventos().unwrap()),
+            (2, 1),
+            "o arranjo nao reproduziu a queda: o slot 2 tem de estar no .reg e o \
+             evento dele fora do diario"
+        );
+        drop(t);
+        gravar_marca_da_replica(db.caminho(), 44, 0, &grupo(&ev)).unwrap();
+        let r = db.recuperar_marcas();
+        assert!(r.impossiveis.is_empty(), "{r:?}");
+        assert!(marcas_em(db.caminho()).is_empty(), "a marca completada sai");
+        let mut t = db.abrir_qualificada("itens").unwrap();
+        assert_eq!(
+            (t.slots(), t.registros()),
+            (4, 4),
+            "a recuperacao gravou a linha que ja estava no .reg num slot NOVO"
+        );
+        let meu = t.diario(0, 0).unwrap();
+        assert_eq!(meu.len(), 4, "o evento que faltava nao foi completado");
+        for (m, (la, _)) in meu.iter().zip(&ev) {
+            assert_eq!(
+                (m.carimbo, m.operacao, m.rowid),
+                (la.carimbo, la.operacao, la.rowid)
+            );
+        }
+    }
+
+    /// **Pedido 699, o inverso.** O diario tem a inclusao e o `.reg` nao tem o
+    /// slot -- a queda de energia que levou o `.reg` e deixou o diario. A
+    /// recuperacao recusa nomeando, e a marca FICA: ela e a unica copia,
+    /// aqui, da imagem da linha perdida.
+    ///
+    /// Vermelho medido sem o `conferir_o_reg_do_evento`: o evento confere com
+    /// o diario, a resposta e «ja estava», e a marca sai com a linha ausente.
+    #[test]
+    fn evento_no_diario_sem_a_linha_no_reg_segura_a_marca() {
+        let d = dir("replica-evento-sem-reg");
+        let ev = eventos_da_origem(&d.join("origem"), 2);
+        let central = d.join("central");
+        let guardado = d.join("reg-com-um");
+        let db = base_com_imagem(&central);
+        let mut t = itens_sem_indice(&db);
+        t.forcar_proximo_evento(ev[0].0.carimbo, 7);
+        t.aplicar_evento(ev[0].0.operacao, ev[0].0.rowid, &ev[0].1)
+            .unwrap();
+        t.sincronizar().unwrap();
+        drop(t);
+        // O `.reg` como estava com UMA linha...
+        std::fs::create_dir_all(&guardado).unwrap();
+        let regs: Vec<PathBuf> = std::fs::read_dir(&central)
+            .unwrap()
+            .filter_map(|e| e.ok().map(|e| e.path()))
+            .filter(|p| p.extension().is_some_and(|x| x == "reg"))
+            .collect();
+        assert!(!regs.is_empty(), "nenhum .reg em {}", central.display());
+        for r in &regs {
+            std::fs::copy(r, guardado.join(r.file_name().unwrap())).unwrap();
+        }
+        let mut t = db.abrir_qualificada("itens").unwrap();
+        t.forcar_proximo_evento(ev[1].0.carimbo, 7);
+        t.aplicar_evento(ev[1].0.operacao, ev[1].0.rowid, &ev[1].1)
+            .unwrap();
+        t.sincronizar().unwrap();
+        drop(t);
+        // ... e o diario com DUAS: o disco perdeu o slot e ficou com o evento.
+        for r in &regs {
+            std::fs::copy(guardado.join(r.file_name().unwrap()), r).unwrap();
+        }
+        let caminho = gravar_marca_da_replica(db.caminho(), 45, 0, &grupo(&ev)).unwrap();
+        let r = db.recuperar_marcas();
+        assert_eq!(r.ja_aplicadas, 1, "{r:?}");
+        assert_eq!(r.impossiveis.len(), 1, "{r:?}");
+        assert!(r.impossiveis[0].contains("o .reg nao tem a linha"), "{r:?}");
+        assert!(
+            caminho.exists(),
+            "a marca saiu com a linha ausente do .reg -- era a unica copia dela"
+        );
     }
 }

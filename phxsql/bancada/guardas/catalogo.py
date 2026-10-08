@@ -26159,6 +26159,115 @@ fn anotar(""",
         "caem": [
             "o_sigkill_no_meio_do_grupo_nao_deixa_a_venda_pela_metade",
         ],
-        "seguem": [],
+        "seguem": [
+            "sem_queda_a_venda_chega_inteira_e_a_marca_sai",
+        ],
+    },
+    {
+        "id": "replica-reaplica-inclusao-sem-olhar-o-reg",
+        "titulo": "A recuperação do grupo da réplica volta a conferir só o diário: o SIGKILL entre o `.reg` e o evento reabre com a linha duplicada (pedido 699)",
+        "porque": (
+            "pedido 699, parecer do papel C na revisao do 682: a inclusao grava o "
+            "slot antes do evento, e a reaplicacao que olha so o diario grava a "
+            "linha de novo num slot NOVO -- o `.reg` nao reaproveita slot. "
+            "Medido contra o SO com o defeito reposto: SIGKILL dentro da 3.a "
+            "inclusao (gancho `InserirDepoisDoContador`), tabelas sem indice, "
+            "reabertura com a origem inalcancavel, retrato (0, 4, 0) -- o item 3 "
+            "duplicado e o resto do grupo de fora. Com a guarda, (1, 5, 1)."
+        ),
+        "arquivo": "crates/phxsql-store/src/marca.rs",
+        "trecho": """    if ev.operacao == crate::log::Operacao::Inclusao && slot_ja_consumido(t, rowid)? {
+""",
+        "troca": """    // DEFEITO REPOSTO (699): a reaplicacao nao olha o `.reg`.
+    if false && slot_ja_consumido(t, rowid)? {
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "venda-inteira-na-queda-da-replica"],
+        "caem": [
+            "o_sigkill_entre_o_reg_e_o_diario_nao_duplica_a_linha",
+        ],
+        "seguem": [
+            "o_sigkill_no_meio_do_grupo_nao_deixa_a_venda_pela_metade",
+            "sem_queda_a_venda_chega_inteira_e_a_marca_sai",
+        ],
+    },
+    {
+        "id": "evento-no-diario-sem-a-linha-apaga-a-marca",
+        "titulo": "O evento que está no diário conta como aplicado sem o `.reg` confirmar: a marca do grupo sai com a linha ausente (pedido 699)",
+        "porque": (
+            "pedido 699, o inverso: a queda de energia antes do `fsync` pode "
+            "deixar o diario e levar o slot. Responder «ja estava» olhando so o "
+            "diario apagava a marca -- a unica copia, aqui, da imagem da linha. "
+            "Medido com o defeito reposto: a recuperacao conta 2 ja aplicadas, "
+            "0 impossiveis, e a marca sai."
+        ),
+        "arquivo": "crates/phxsql-store/src/marca.rs",
+        "trecho": """                conferir_o_reg_do_evento(t, rowid, ev)
+""",
+        "troca": """                // DEFEITO REPOSTO (699): o diario basta.
+                {
+                    let _ = conferir_o_reg_do_evento;
+                    Ok(Desfecho::JaEstava)
+                }
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--lib"],
+        "caem": [
+            "marca::testes::evento_no_diario_sem_a_linha_no_reg_segura_a_marca",
+        ],
+        "seguem": [
+            "marca::testes::a_recuperacao_completa_o_grupo_da_replica_pela_posicao",
+            "marca::testes::a_queda_entre_o_reg_e_o_diario_nao_duplica_a_linha",
+        ],
+    },
+    {
+        "id": "grupo-do-bidi-sem-marca",
+        "titulo": "O grupo do bidirecional deixa de gravar a marca: o SIGKILL no meio dele reabre com a venda pela metade (pedido 698)",
+        "porque": (
+            "pedido 698, o irmao do 682: o bidirecional aplica pela chave e "
+            "ficou sem a marca. Medido contra o SO com o defeito reposto: "
+            "SIGKILL do `phxsqld` multi depois do 3.o de 7 eventos aplicados "
+            "por chave, reabertura com o outro lado inalcancavel, retrato "
+            "(0, 3, 0). Com a marca, (1, 5, 1)."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        let marca = self.marcar_o_grupo_bidi(database, filas, &grupo, hash_dele)?;
+""",
+        "troca": """        // DEFEITO REPOSTO (698): o grupo do bidirecional nao grava marca.
+        let _ = Self::marcar_o_grupo_bidi;
+        let marca: Option<PathBuf> = None;
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "venda-inteira-na-queda-do-bidi"],
+        "caem": [
+            "o_sigkill_no_meio_do_grupo_do_bidi_nao_deixa_a_venda_pela_metade",
+        ],
+        "seguem": [
+            "sem_queda_a_venda_chega_inteira_e_a_marca_sai",
+        ],
+    },
+    {
+        "id": "marca-do-bidi-sem-completar-no-arranque",
+        "titulo": "A marca do grupo do bidirecional é gravada e o arranque não a completa: a venda reabre pela metade (pedido 698)",
+        "porque": (
+            "pedido 698: a marca so vale se o arranque a completar ANTES de a "
+            "porta abrir, pelo mesmo motor da rodada. Medido contra o SO com o "
+            "defeito reposto: o mesmo SIGKILL no 3.o de 7 eventos, retrato "
+            "(0, 3, 0) com a marca intacta no disco."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        servidor.completar_marcas_do_bidi();
+""",
+        "troca": """        // DEFEITO REPOSTO (698): o arranque nao completa a marca do bidi.
+        let _ = Servidor::completar_marcas_do_bidi;
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "venda-inteira-na-queda-do-bidi"],
+        "caem": [
+            "o_sigkill_no_meio_do_grupo_do_bidi_nao_deixa_a_venda_pela_metade",
+        ],
+        "seguem": [
+            "sem_queda_a_venda_chega_inteira_e_a_marca_sai",
+        ],
     },
 ]

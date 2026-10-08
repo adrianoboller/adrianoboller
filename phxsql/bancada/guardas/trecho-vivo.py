@@ -914,7 +914,14 @@ TETO_TESTE_SEM_MODULO = 0
 # meio do grupo): nasce `grupo-da-replica-sem-marca`. RED medido a mao contra
 # o SO (troca do catalogo aplicada, SIGKILL no meio do grupo, retrato
 # (0, 3, 0); restaurado, (1, 5, 1)); provador NAO rodou.
-PISO_DAS_ENTRADAS = 827
+# 827 -> 831 (pedidos 698 e 699, 08/10/2026 -- a recuperacao do grupo que
+# confere o `.reg`, e o bidirecional com a mesma marca): nascem
+# `replica-reaplica-inclusao-sem-olhar-o-reg`,
+# `evento-no-diario-sem-a-linha-apaga-a-marca`, `grupo-do-bidi-sem-marca` e
+# `marca-do-bidi-sem-completar-no-arranque`. RED medido a mao (troca
+# aplicada; as tres de SIGKILL contra o SO: (0, 4, 0), (0, 3, 0), (0, 3, 0);
+# restaurado, verdes); provador NAO rodou.
+PISO_DAS_ENTRADAS = 831
 
 # ------------------------------------------------------------- APOSENTADAS
 #

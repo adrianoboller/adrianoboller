@@ -3624,7 +3624,7 @@ ruído. O que aparecia era o PBKDF2, nunca o selo.
 
 ### v5/v6: o grupo da réplica (pedido 682, 08/10/2026)
 
-**A migração para a v5/v6 só vai para frente** (parecer do papel C, 08/10/2026): um binário anterior ao 682 lê a marca v5/v6 como `NaoConfere` e a apaga sem aviso, devolvendo a janela da venda sem os itens até a rodada seguinte. Não volte o binário da réplica depois de atualizá-lo.
+**A migração para a v5/v6 só vai para frente** (parecer do papel C, 08/10/2026): um binário anterior ao 682 lê a marca v5/v6 como `NaoConfere` e a apaga sem aviso, devolvendo a janela da venda sem os itens até a rodada seguinte. Não volte o binário da réplica depois de atualizá-lo. A marca do bidirecional (`bidi_<id>.tx`, pedido 698) tem o mesmo leiaute; um binário anterior a ignora em paz (filtra pelo prefixo `transacao_`), mas aí o grupo partido do bidi volta a ficar à vista até um binário 698 ou posterior subir.
 
 **Quem mais grava uma marca:** a réplica fiel, antes do primeiro evento de cada
 grupo do `Juntador` (`Servidor::aplicar_grupo_da_replica`, pelo pull e pelo
@@ -3654,7 +3654,21 @@ quando o diário tem exatamente `posicao` eventos; com mais, confere que o
 evento em `posicao` é **este** (carimbo, operação, rowid — os campos da
 conferência de continuidade) e passa adiante, ou recusa se for outro (a tabela
 mudou de história depois da queda); com menos, recusa. A primeira recusa
-**para** o resto da marca. O aplicador é o da réplica (`Table::aplicar_evento`,
+**para** o resto da marca.
+
+**E o `.reg` também é conferido (pedido 699, 08/10/2026).** A inclusão grava o
+slot **antes** do evento, e conferir só o diário fazia a queda entre os dois
+gravar a linha de novo num slot **novo** — duplicada, sem índice único. Com o
+diário na posição, a inclusão cujo `rowid` já está no `.reg` com a linha
+presente **não** chama o `inserir`: o evento se completa sozinho, do payload que
+está no disco (`Table::completar_o_diario_da_inclusao`, com o carimbo de criação
+conferido); `rowid` na faixa com o slot livre recusa nomeando a lacuna — a mesma
+pergunta e a mesma resposta da marca do `COMMIT` (`slot_ja_consumido`). E o
+inverso: o evento que **está** no diário só conta como aplicado se o `.reg`
+confirmar — inclusão e alteração com a linha no slot (ou excluída por um evento
+posterior do mesmo diário), exclusão com o slot livre. Senão é a queda de
+energia que levou o slot e deixou o diário, e a marca **fica** no disco, com a
+recusa no relatório: ela é, ali, a única cópia da imagem da linha perdida. O aplicador é o da réplica (`Table::aplicar_evento`,
 com o carimbo e a origem de lá e sem julgar a chave estrangeira), para o diário
 completado continuar o da origem.
 
@@ -3663,8 +3677,35 @@ ordem do group commit. O grupo que para no meio por erro do dado (a réplica
 divergiu) apaga a marca na hora: completar no arranque bateria no mesmo evento.
 Custo: uma marca com `fsync` por grupo, do tamanho das imagens do grupo.
 
-**Fora do alcance, dito:** o bidirecional (`aplicar_grupo_bidi`) aplica pela
-chave, com «mais recente vence», e não grava marca.
+### O grupo do bidirecional: `bidi_<id>.tx` (pedido 698, 08/10/2026)
+
+O bidirecional (`aplicar_grupo_bidi`) grava a **mesma** marca — o mesmo
+`gravar_com`, byte por byte a v5/v6 acima, o mesmo `id` do contador, o mesmo
+selo, o mesmo 0600 e `fsync` antes da trava — num arquivo de **outro nome**:
+`bidi_<id>.tx`, na pasta do database. O nome é o que separa **quem completa**:
+a marca da réplica se completa no store, pelo rowid e pela posição do diário
+daqui; a do bidirecional casa pela **chave**, com «mais recente vence», e isso
+mora no servidor (o mapa de toques). Com o prefixo `transacao_`, a recuperação
+do store a leria como réplica e gravaria pelo rowid de **lá**.
+
+Diferenças do conteúdo, dentro do mesmo leiaute: o `rowid` é o de lá (vai para
+a marca ficar inteira; quem completa nunca o usa), a `posicao` é a do diário da
+**origem**, e a `origem` vai **resolvida** — o zero de um par anterior ao campo
+já chega trocado pelo número do par, porque o arranque que completa não
+conversa com ninguém.
+
+**Quem completa:** o `Servidor::novo`, antes de a porta abrir, pelo **mesmo**
+corpo da rodada (`aplicar_itens_bidi`): o diário local de cada tabela entra no
+mapa de toques e cada evento passa pelo `aplicar_por_chave`. A idempotência é a
+do «mais recente vence»: o evento que entrou antes da queda está no diário
+daqui com o carimbo e a origem de lá, e reaplicá-lo empata com o próprio toque.
+O `fsync` das tabelas e a saída da marca vêm depois de soltar a trava. A marca
+que não se lê, ou cifrada sem a chave, **fica**, com o caminho no log; a que
+não confere sai.
+
+**Quem apaga na rodada:** o fim do alcance, depois do `fsync`, como a da
+réplica; o grupo em que nada entrou apaga na hora. Um binário anterior ao 698
+não vê `bidi_*.tx` e o deixa quieto — não descarta nem completa.
 
 ### O arquivo nasce 0600 — em toda versão, cifrada ou não
 

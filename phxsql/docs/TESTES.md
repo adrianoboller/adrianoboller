@@ -1460,18 +1460,24 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `commit-misto-sem-contar` | A tomada que grava em volume sem id (2/3) e em volume com id (4) volta a passar calada: a réplica recebe o commit partido e ninguém conta (pedido 684) | 1 | ✅ provada |
 | `commit-acima-do-teto-aceito` | O COMMIT acima do teto da transação volta a ser aceito na origem: a réplica o recebe em pedaços (pedido 685) | 1 | ✅ provada |
 | `custo-da-transacao-sem-a-imagem` | A conta da origem esquece a imagem da linha: aceita a transação que a réplica mede acima do teto, e ela chega em pedaços (pedido 685) | 1 | ✅ provada |
+| `escrita-local-na-base-recebida-por-replica` | A base que o nó recebe por réplica volta a aceitar escrita local: o caixa cadastra no database do central (pedido 677) | 3 | ✅ provada |
+| `espelho-imposto-a-quem-nao-pediu` | A guarda do 677 volta a valer sem `"espelho": true`: config antigo passa a recusar a escrita local que fazia | 1 | ✅ provada |
+| `quorum-aplica-lote-a-lote` | O lote do quórum volta a ser aplicado tabela a tabela: o leitor da réplica vê a venda pela metade (pedido 681) | 1 | ✅ provada |
+| `quorum-entrega-parte-o-commit` | A entrega do quórum volta a cortar no meio de um commit: a réplica recebe uma tabela da venda sem a outra (pedido 681) | 1 | ✅ provada |
+| `bidi-alcanca-tabela-a-tabela` | O bidirecional volta a alcançar tabela a tabela: o par vê os itens sem a venda quando o fio cai (pedido 681) | 3 | ✅ provada |
+| `carga-acima-do-teto-aceita` | A carga fora de transação acima do teto volta a ser aceita: a réplica a recebe em pedaços (pedido 686) | 1 | ✅ provada |
+| `grupo-da-replica-sem-marca` | O grupo da réplica deixa de gravar a marca `.tx`: o SIGKILL no meio dele reabre a réplica com a venda pela metade (pedido 682) | 1 | ✅ provada |
 | `alter-com-regra-sem-aviso` | `acrescentar_coluna` com `check` ou `calculada` numa tabela com linha é aceito SEM AVISO, e a linha velha fica fora da regra | — | 🪦 aposentada (01/10/2026) |
 | `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | — | 🪦 aposentada (18/09/2026) |
 
-**820 das 823 guardas do catálogo: 2 aposentadas, 2 não pegaram, 812 provadas, 4 redundantes** — 36587 s de mutação, medido de 2026-09-16 15:25 a 2026-10-08 03:24, em 8 datas (2026-09-16: 1, 2026-09-24: 84, 2026-09-30: 34, 2026-10-01: 191, 2026-10-02: 153, 2026-10-06: 51, 2026-10-07: 295, 2026-10-08: 11).
+**827 das 829 guardas do catálogo: 2 aposentadas, 2 não pegaram, 819 provadas, 4 redundantes** — 36772 s de mutação, medido de 2026-09-16 15:25 a 2026-10-08 05:45, em 8 datas (2026-09-16: 1, 2026-09-24: 84, 2026-09-30: 34, 2026-10-01: 189, 2026-10-02: 152, 2026-10-06: 51, 2026-10-07: 295, 2026-10-08: 21).
 
-> **Esta rodada NÃO julgou 5 das 823 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 5 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 4 das 829 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 4 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
-- `escrita-local-na-base-recebida-por-replica` — A base que o nó recebe por réplica volta a aceitar escrita local: o caixa cadastra no database do central (pedido 677)
-- `quorum-aplica-lote-a-lote` — O lote do quórum volta a ser aplicado tabela a tabela: o leitor da réplica vê a venda pela metade (pedido 681)
-- `quorum-entrega-parte-o-commit` — A entrega do quórum volta a cortar no meio de um commit: a réplica recebe uma tabela da venda sem a outra (pedido 681)
-- `bidi-alcanca-tabela-a-tabela` — O bidirecional volta a alcançar tabela a tabela: o par vê os itens sem a venda quando o fio cai (pedido 681)
-- `carga-acima-do-teto-aceita` — A carga fora de transação acima do teto volta a ser aceita: a réplica a recebe em pedaços (pedido 686)
+- `replica-reaplica-inclusao-sem-olhar-o-reg` — A recuperação do grupo da réplica volta a conferir só o diário: o SIGKILL entre o `.reg` e o evento reabre com a linha duplicada (pedido 699)
+- `evento-no-diario-sem-a-linha-apaga-a-marca` — O evento que está no diário conta como aplicado sem o `.reg` confirmar: a marca do grupo sai com a linha ausente (pedido 699)
+- `grupo-do-bidi-sem-marca` — O grupo do bidirecional deixa de gravar a marca: o SIGKILL no meio dele reabre com a venda pela metade (pedido 698)
+- `marca-do-bidi-sem-completar-no-arranque` — A marca do grupo do bidirecional é gravada e o arranque não a completa: a venda reabre pela metade (pedido 698)
 
 As guardas que esta corrida ainda cita, hoje aposentadas:
 

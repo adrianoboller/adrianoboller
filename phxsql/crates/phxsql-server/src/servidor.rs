@@ -713,6 +713,28 @@ impl BackupFeito {
     }
 }
 
+/// A identidade de UMA tabela no bidirecional, emprestada -- o que o
+/// [`Servidor::aplicar_tabela_bidi`] precisa, venha da rodada ou da marca do
+/// arranque (pedido 698).
+#[derive(Clone, Copy)]
+struct AlvoBidi<'a> {
+    nome: &'a str,
+    chave_tab: &'a str,
+    indice: &'a str,
+    pos_chave: &'a [usize],
+}
+
+/// Uma tabela de um grupo do bidirecional: quem, e o que aplicar. Ver
+/// [`Servidor::aplicar_itens_bidi`].
+struct ItemBidi<'a> {
+    nome: &'a str,
+    chave_tab: &'a str,
+    /// O indice e as colunas da chave, ja conferidos pela rodada; `None` no
+    /// arranque (pedido 698), que os tira do esquema.
+    identidade: Option<(&'a str, &'a [usize])>,
+    eventos: &'a [crate::replica::EventoRecebido],
+}
+
 /// O que a fase 3 de um alcance de tabela BIDIRECIONAL devolveu.
 #[derive(Default)]
 struct LoteBidi {
@@ -911,16 +933,25 @@ fn ordem_das_maes(filas: &[&crate::replica::NoSource]) -> Vec<usize> {
     vez
 }
 
+/// So em `debug`: o processo se mata por `SIGKILL` de verdade, sem rodar
+/// destrutor nenhum -- as provas de queda dos pedidos 682, 698 e 699.
+///
+/// O sinal vem do proprio processo em vez de um `sleep` esperando o teste:
+/// dormir com a trava global na mao subia a catraca `rede-ou-espera` (11 ->
+/// 12), e catraca nao sobe. Sem o `kill`, `exit(137)`.
+#[cfg(debug_assertions)]
+fn sigkill_de_teste(aviso: &str) -> ! {
+    eprintln!("{aviso}");
+    let _ = std::process::Command::new("kill")
+        .args(["-KILL", &std::process::id().to_string()])
+        .status();
+    std::process::exit(137);
+}
+
 /// O que um grupo do alcance deu. Ver `Servidor::aplicar_grupo_da_replica`.
 enum Grupo {
     /// Aplicou `n` eventos; as tabelas em `rompidas` sairam da rodada.
-    /// `marca` e o bilhete do grupo (pedido 682): quem chama o apaga so
-    /// DEPOIS do `fsync` das tabelas -- ver `soltar_marcas_da_replica`.
-    Aplicado {
-        n: u64,
-        rompidas: Vec<usize>,
-        marca: Option<PathBuf>,
-    },
+    Aplicado { n: u64, rompidas: Vec<usize> },
     /// A posicao local de alguma tabela andou com a trava solta: nada se
     /// aplicou.
     Andou,
@@ -2345,6 +2376,10 @@ impl Servidor {
             servidor.config.diretivas.teto_do_arquivo(),
             servidor.config.diretivas.arquivos,
         );
+        // Pedido 698: o grupo do bidirecional que a queda partiu se completa
+        // AQUI, antes de a porta abrir -- o irmao do `recuperar` la de cima,
+        // que precisa do servidor de pe (o mapa de toques e dele).
+        servidor.completar_marcas_do_bidi();
         // Quem configurou "idioma" pediu o recurso: a tabela de mensagens e
         // semeada no arranque se ainda nao existe. Sem o campo, nada e criado
         // -- guarda nova entra pedida, nao imposta.
@@ -5044,9 +5079,14 @@ impl Servidor {
                             phxsql_store::log::teto_da_transacao() / (1024 * 1024)
                         );
                     }
-                    match self.aplicar_grupo_da_replica(database, &mut filas, grupo, origem) {
-                        Ok(Grupo::Aplicado { n, rompidas, marca }) => {
-                            marcas.extend(marca);
+                    match self.aplicar_grupo_da_replica(
+                        database,
+                        &mut filas,
+                        grupo,
+                        origem,
+                        &mut marcas,
+                    ) {
+                        Ok(Grupo::Aplicado { n, rompidas }) => {
                             aplicados += n;
                             for i in rompidas {
                                 juntador.largar(i);
@@ -5106,12 +5146,22 @@ impl Servidor {
     /// antes dele e devolve o erro, o fail-stop de sempre, e a marca sai ali
     /// mesmo -- completar no arranque bateria no mesmo erro. Desfazer pediria
     /// a Sombra, que esta parada por decisao do dono.
+    ///
+    /// # Onde a marca vai parar -- `marcas`
+    ///
+    /// Entra em `marcas` no instante em que fica EM VOO, e nao so no fim: um
+    /// `?` no meio do grupo (a tabela que nao abre, o diario que nao conta)
+    /// devolvia o erro com a marca fora da lista, e ela ficava no disco ate o
+    /// proximo arranque -- que reaplicaria um grupo cuja rodada ja tinha ido
+    /// adiante (pedido 699, a pendencia menor). Na lista, ela sai depois do
+    /// `fsync` da rodada, como a de todo grupo.
     fn aplicar_grupo_da_replica(
         &self,
         database: &str,
         filas: &mut [FilaDaReplica],
         mut grupo: Vec<(usize, Vec<crate::replica::EventoRecebido>)>,
         origem: &str,
+        marcas: &mut Vec<PathBuf>,
     ) -> Result<Grupo> {
         // A mae antes da filha; entre iguais, a ordem de chegada (o sort e
         // estavel). Ver `ordem_das_maes`.
@@ -5207,9 +5257,16 @@ impl Servidor {
                     caminho: m.clone(),
                     gravada: true,
                 });
+                marcas.push(m.clone());
             }
             #[cfg(debug_assertions)]
             let parar_em: Option<u64> = std::env::var("PHXSQL_TESTE_PARAR_NO_GRUPO")
+                .ok()
+                .and_then(|v| v.parse().ok());
+            // So em `debug`, pedido 699: o N-esimo evento do grupo morre DENTRO
+            // da inclusao, com o slot no `.reg` e o evento fora do diario.
+            #[cfg(debug_assertions)]
+            let parar_no_reg: Option<u64> = std::env::var("PHXSQL_TESTE_PARAR_NO_REG")
                 .ok()
                 .and_then(|v| v.parse().ok());
             let mut aplicou = false;
@@ -5229,24 +5286,23 @@ impl Servidor {
                     // (papel C, 17/09/2026, §2.3) -- ver
                     // `aplicar_lote_da_replica`.
                     t.forcar_proximo_evento(e.carimbo_ms, e.origem);
+                    #[cfg(debug_assertions)]
+                    if parar_no_reg == Some(total + n + 1) {
+                        phxsql_store::ndx::panico_de_teste::armar_gancho(
+                            phxsql_store::ndx::panico_de_teste::Ponto::InserirDepoisDoContador,
+                            || sigkill_de_teste("teste: parado entre o .reg e o diario"),
+                        );
+                    }
                     if let Err(erro) = t.aplicar_evento(e.operacao, e.rowid, &e.imagem) {
                         falhou = Some(erro);
                         break;
                     }
                     n += 1;
                     // So em `debug`: a prova do 682 mata o PROCESSO aqui, com
-                    // parte do grupo no disco, por SIGKILL de verdade. O sinal
-                    // vem do proprio processo em vez de um `sleep` esperando o
-                    // teste: dormir com a trava global na mao subia a catraca
-                    // `rede-ou-espera` (11 -> 12), e catraca nao sobe. Sem o
-                    // `kill`, `exit(137)` -- sai sem rodar destrutor nenhum.
+                    // parte do grupo no disco, por SIGKILL de verdade.
                     #[cfg(debug_assertions)]
                     if parar_em == Some(total + n) {
-                        eprintln!("teste: parado no meio do grupo da replica");
-                        let _ = std::process::Command::new("kill")
-                            .args(["-KILL", &std::process::id().to_string()])
-                            .status();
-                        std::process::exit(137);
+                        sigkill_de_teste("teste: parado no meio do grupo da replica");
                     }
                 }
                 self.anotar_orfas(&format!("{database}/{}", f.no.nome), t.orfas_contadas());
@@ -5260,6 +5316,7 @@ impl Servidor {
                     trava.marca_em_voo = None;
                     if let Some(m) = &marca {
                         let _ = std::fs::remove_file(m);
+                        marcas.retain(|x| x != m);
                     }
                     return Err(erro);
                 }
@@ -5284,6 +5341,7 @@ impl Servidor {
             if !aplicou {
                 if let Some(m) = &marca {
                     let _ = std::fs::remove_file(m);
+                    marcas.retain(|x| x != m);
                 }
             }
         }
@@ -5300,7 +5358,6 @@ impl Servidor {
         Ok(Grupo::Aplicado {
             n: total,
             rompidas: rompidas.into_iter().map(|(i, _)| i).collect(),
-            marca: if total > 0 { marca } else { None },
         })
     }
 
@@ -7008,14 +7065,14 @@ impl Servidor {
     /// Aplica numa tabela os eventos dela que vieram num grupo do
     /// bidirecional, com a trava ja na mao de quem chama -- fase 3, por
     /// [`Self::aplicar_grupo_bidi`] (pedido 681).
-    #[allow(
-        clippy::too_many_arguments,
-        reason = "o laco de uma tabela junta as identidades dos dois lados"
-    )]
+    ///
+    /// Recebe a identidade solta, e nao a `FilaBidi`, porque o arranque a
+    /// chama tambem, completando a marca do grupo (pedido 698) sem rodada
+    /// nenhuma -- pelo MESMO motor, e nao por um segundo aplicador.
     fn aplicar_tabela_bidi(
         &self,
         db: &phxsql_store::catalogo::Database,
-        f: &FilaBidi,
+        alvo: AlvoBidi<'_>,
         eventos: &[crate::replica::EventoRecebido],
         meu_hash: u16,
         hash_dele: u16,
@@ -7023,21 +7080,21 @@ impl Servidor {
         // No multi as duas imagens sao obrigatorias -- a chave mora nela, e
         // exclusao tambem viaja por chave --, e quem as liga e a politica do
         // diario herdada do `Database` (`politica_do_diario`, pedido 564).
-        let mut tabela = db.abrir_qualificada(&f.no.nome)?;
+        let mut tabela = db.abrir_qualificada(alvo.nome)?;
         // O irmao da replica fiel (pedido 300 §2.7): o `inserir_replicado` e o
         // `atualizar_replicado` tambem nao julgam, e passam pela MESMA
         // conferencia que conta.
         tabela.contar_orfas();
         let saida = self.aplicar_eventos_bidi(
             &mut tabela,
-            &f.chave_tab,
-            &f.indice,
-            &f.pos_chave,
+            alvo.chave_tab,
+            alvo.indice,
+            alvo.pos_chave,
             eventos,
             meu_hash,
             hash_dele,
         );
-        self.anotar_orfas(&f.chave_tab, tabela.orfas_contadas());
+        self.anotar_orfas(alvo.chave_tab, tabela.orfas_contadas());
         saida
     }
 
@@ -7066,7 +7123,23 @@ impl Servidor {
                 continue;
             }
             match self.aplicar_por_chave(tabela, chave_tab, indice, pos_chave, e, hash_dele)? {
-                bidirecional::Aplicacao::Aplicado => saida.aplicados += 1,
+                bidirecional::Aplicacao::Aplicado => {
+                    saida.aplicados += 1;
+                    // So em `debug`: a prova do 698 mata o PROCESSO depois do
+                    // N-esimo evento aplicado por chave, com parte do grupo no
+                    // disco -- o mesmo esquema do grupo da replica fiel.
+                    #[cfg(debug_assertions)]
+                    {
+                        static APLICADOS: AtomicU64 = AtomicU64::new(0);
+                        let feitos = APLICADOS.fetch_add(1, Ordering::SeqCst) + 1;
+                        let parar_em: Option<u64> = std::env::var("PHXSQL_TESTE_PARAR_NO_GRUPO")
+                            .ok()
+                            .and_then(|v| v.parse().ok());
+                        if parar_em == Some(feitos) {
+                            sigkill_de_teste("teste: parado no meio do grupo do bidirecional");
+                        }
+                    }
+                }
                 bidirecional::Aplicacao::Ignorado => {}
                 // O lote PARA aqui, e os eventos seguintes ficam para depois
                 // do `replicacao_pular`: seguir aplicaria uma alteracao de uma
@@ -7202,6 +7275,8 @@ impl Servidor {
         let mut juntador =
             crate::replica::Juntador::novo(&alvos, phxsql_store::log::teto_da_transacao());
         let mut aplicados = 0u64;
+        // As marcas dos grupos (pedido 698): saem depois do `fsync` do fim.
+        let mut marcas: Vec<PathBuf> = Vec::new();
         let saida = loop {
             match juntador.passo() {
                 crate::replica::Passo::Puxar { fila, desde } => {
@@ -7221,9 +7296,14 @@ impl Servidor {
                     for (i, _) in &grupo {
                         filas[*i].tocada = true;
                     }
-                    let (n, paradas) = match self
-                        .aplicar_grupo_bidi(database, &filas, grupo, meu_hash, hash_dele)
-                    {
+                    let (n, paradas) = match self.aplicar_grupo_bidi(
+                        database,
+                        &filas,
+                        grupo,
+                        meu_hash,
+                        hash_dele,
+                        &mut marcas,
+                    ) {
                         Ok(x) => x,
                         Err(e) => break Err(e),
                     };
@@ -7313,6 +7393,8 @@ impl Servidor {
                 self.sincronizar_replicada(database, &f.no.nome)?;
             }
         }
+        // O dado no disco, entao o bilhete sai -- a ordem do group commit.
+        Self::soltar_marcas_da_replica(marcas);
         if filas.iter().any(|f| f.desde > f.inicio) {
             // A troca duravel (temporario, `fsync`, `rename`, `fsync` da
             // pasta) roda FORA da trava global de dados -- so com a do mapa
@@ -7338,6 +7420,15 @@ impl Servidor {
     /// a tabela que para no meio de uma transacao deixa o que entrou antes
     /// dela. Desfazer pediria a Sombra, parada por decisao do dono; a parada
     /// e nominal e a posicao dela nao anda.
+    ///
+    /// # A queda do PROCESSO no meio -- pedido 698
+    ///
+    /// O irmao do 682: o grupo grava a MESMA marca da replica fiel (o mesmo
+    /// [`crate::transacao::gravar_marca_do_bidi`], o mesmo formato, o mesmo
+    /// selo), sincronizada ANTES da trava, e o arranque a completa pelo MESMO
+    /// motor que aplica aqui ([`Self::completar_marcas_do_bidi`]). Ela entra
+    /// em `marcas` antes do primeiro evento e sai depois do `fsync` do
+    /// alcance, como a do grupo da replica.
     #[allow(
         clippy::type_complexity,
         reason = "a parada carrega posicao, motivo e detalhe, como `LoteBidi`"
@@ -7349,18 +7440,303 @@ impl Servidor {
         mut grupo: Vec<(usize, Vec<crate::replica::EventoRecebido>)>,
         meu_hash: u16,
         hash_dele: u16,
+        marcas: &mut Vec<PathBuf>,
     ) -> Result<(u64, Vec<(usize, (u64, &'static str, String))>)> {
         // A vez das maes, a mesma do grupo da replica fiel (`ordem_das_maes`).
         grupo.sort_by_key(|(i, _)| filas[*i].vez);
+        // O bilhete antes da trava: o `fsync` dele com a trava global na mao
+        // pararia o servidor pelo tempo de um disco (catraca `alcancam-fsync`).
+        let marca = self.marcar_o_grupo_bidi(database, filas, &grupo, hash_dele)?;
+        if let Some(m) = &marca {
+            marcas.push(m.clone());
+        }
+        let itens: Vec<ItemBidi<'_>> = grupo
+            .iter()
+            .map(|(i, eventos)| {
+                let f = &filas[*i];
+                ItemBidi {
+                    nome: &f.no.nome,
+                    chave_tab: &f.chave_tab,
+                    identidade: Some((&f.indice, &f.pos_chave)),
+                    eventos,
+                }
+            })
+            .collect();
+        let (n, paradas) =
+            self.aplicar_itens_bidi(database, marca.as_deref(), &itens, meu_hash, hash_dele)?;
+        let paradas = paradas
+            .into_iter()
+            .map(|(k, p)| (grupo[k].0, p))
+            .collect::<Vec<_>>();
+        // Grupo em que nada entrou nao tem o que trazer de volta.
+        if n == 0 {
+            if let Some(m) = &marca {
+                let _ = std::fs::remove_file(m);
+                marcas.retain(|x| x != m);
+            }
+        }
+        Ok((n, paradas))
+    }
+
+    /// Grava e sincroniza a marca do grupo do bidirecional (pedido 698), SEM a
+    /// trava de dados. `None` quando o grupo nao tem evento a aplicar.
+    ///
+    /// A origem de cada evento vai RESOLVIDA (zero vira `hash_dele`, como o
+    /// `aplicar_por_chave` faz): o arranque que a completa nao conversa com o
+    /// outro lado, e nao saberia de quem era o zero.
+    fn marcar_o_grupo_bidi(
+        &self,
+        database: &str,
+        filas: &[FilaBidi],
+        grupo: &[(usize, Vec<crate::replica::EventoRecebido>)],
+        hash_dele: u16,
+    ) -> Result<Option<PathBuf>> {
+        let mut eventos = Vec::new();
+        for (i, lista) in grupo {
+            let f = &filas[*i];
+            for e in lista {
+                eventos.push(crate::transacao::EventoDoGrupo {
+                    tabela: &f.no.nome,
+                    operacao: e.operacao,
+                    rowid: e.rowid,
+                    carimbo_ms: e.carimbo_ms,
+                    origem: if e.origem == 0 { hash_dele } else { e.origem },
+                    posicao: e.posicao,
+                    imagem: &e.imagem,
+                });
+            }
+        }
+        if eventos.is_empty() {
+            return Ok(None);
+        }
+        let dir = self.config.base.join(database);
+        let id = self.transacoes.travar().numero_de_marca();
+        crate::transacao::gravar_marca_do_bidi(&dir, id, crate::agora_ms(), &eventos).map(Some)
+    }
+
+    /// Completa, no arranque, as marcas de grupo do bidirecional que um
+    /// processo anterior deixou -- pedido 698.
+    ///
+    /// # Pelo MESMO motor, e nao por um segundo aplicador
+    ///
+    /// A marca da replica fiel se completa no store, pelo rowid e pela
+    /// posicao. A do bidirecional casa pela CHAVE, com o «mais recente
+    /// vence», e isso mora aqui: o mapa de toques e o servidor. Entao cada
+    /// tabela da marca passa pela mesma absorcao do diario local e pelo
+    /// mesmo [`Self::aplicar_tabela_bidi`] da rodada. A idempotencia sai de
+    /// graca dele: o evento que ja tinha entrado antes da queda esta no
+    /// diario daqui com o carimbo e a origem de la, a absorcao o poe no mapa,
+    /// e reaplicar empata -- o remoto nao vence o proprio toque.
+    ///
+    /// # Quando
+    ///
+    /// No `Servidor::novo`, antes de a porta abrir e de qualquer rodada: e o
+    /// que impede um leitor de ver a venda pela metade entre o arranque e a
+    /// rodada seguinte, ou para sempre com o outro lado fora do ar. O `fsync`
+    /// das tabelas e a saida da marca vem DEPOIS de soltar a trava, na ordem
+    /// do group commit.
+    ///
+    /// A marca que nao se le por E/S, ou cifrada sem a chave, FICA, com o
+    /// caminho no log; a que nao confere e um grupo que nunca comecou, e sai.
+    fn completar_marcas_do_bidi(&self) {
+        // Pelo diretorio, e nao pela trava: a marca nasce em
+        // `config.base/<database>` (`marcar_o_grupo_bidi`), e quem a grava
+        // confere, com a trava, que e o do database aberto.
+        let Ok(entradas) = std::fs::read_dir(&self.config.base) else {
+            return;
+        };
+        let mut dirs: Vec<PathBuf> = entradas
+            .filter_map(|e| e.ok().map(|e| e.path()))
+            .filter(|p| p.is_dir())
+            .collect();
+        dirs.sort();
+        for dir in dirs {
+            let Some(database) = dir.file_name().and_then(|n| n.to_str()).map(str::to_string)
+            else {
+                continue;
+            };
+            let caminhos = crate::transacao::marcas_do_bidi_em(&dir);
+            for caminho in caminhos {
+                let marca = match crate::transacao::ler_marca(&caminho) {
+                    Ok(crate::transacao::Leitura::Aberta(m)) => m,
+                    Ok(crate::transacao::Leitura::NaoConfere) => {
+                        let _ = std::fs::remove_file(&caminho);
+                        continue;
+                    }
+                    Ok(crate::transacao::Leitura::SemChave(motivo)) => {
+                        eprintln!(
+                            "AVISO: a marca do bidirecional {} esta PARADA sem a chave \
+                             ({motivo}); ela NAO foi apagada",
+                            caminho.display()
+                        );
+                        continue;
+                    }
+                    Err(e) => {
+                        eprintln!(
+                            "AVISO: a marca do bidirecional {} nao se leu ({e}); ela \
+                             NAO foi apagada",
+                            caminho.display()
+                        );
+                        continue;
+                    }
+                };
+                match self.completar_grupo_bidi(&database, &marca) {
+                    Ok((n, tabelas)) => {
+                        let no_disco = tabelas
+                            .iter()
+                            .all(|t| self.sincronizar_replicada(&database, t).is_ok());
+                        if no_disco {
+                            let _ = std::fs::remove_file(&caminho);
+                        }
+                        eprintln!(
+                            "bidirecional: o grupo da marca {} foi completado no arranque \
+                             ({n} evento(s) entraram agora){}",
+                            caminho.display(),
+                            if no_disco {
+                                ""
+                            } else {
+                                "; o fsync falhou e a marca fica"
+                            }
+                        );
+                    }
+                    Err(e) => eprintln!(
+                        "AVISO: o grupo da marca do bidirecional {} nao se completou \
+                         ({e}); ela NAO foi apagada",
+                        caminho.display()
+                    ),
+                }
+            }
+        }
+    }
+
+    /// O corpo do [`Self::completar_marcas_do_bidi`] para UMA marca, com a
+    /// trava na mao: devolve quantos eventos entraram e as tabelas tocadas.
+    /// O par que parou (conflito, toque esquecido) para a tabela aqui como
+    /// na rodada, e a rodada seguinte o para de novo, nominal.
+    fn completar_grupo_bidi(
+        &self,
+        database: &str,
+        marca: &crate::transacao::Marca,
+    ) -> Result<(u64, Vec<String>)> {
+        let meu_hash = self.config.replicacao.numero();
+        // A marca guarda as tabelas na vez das maes, contiguas: uma fatia por
+        // tabela, na ordem em que o grupo as aplicou.
+        let mut fatias: Vec<(String, Vec<crate::replica::EventoRecebido>)> = Vec::new();
+        for op in &marca.operacoes {
+            let Some(ev) = &op.replica else { continue };
+            let e = crate::replica::EventoRecebido {
+                operacao: ev.operacao,
+                rowid: op.rowid,
+                versao: 0,
+                imagem: ev.imagem.clone(),
+                carimbo_ms: ev.carimbo_ms,
+                origem: ev.origem,
+                posicao: ev.posicao,
+                tx: 0,
+            };
+            match fatias.last_mut() {
+                Some((nome, lista)) if *nome == op.tabela => lista.push(e),
+                _ => fatias.push((op.tabela.clone(), vec![e])),
+            }
+        }
+        let chaves: Vec<String> = fatias
+            .iter()
+            .map(|(nome, _)| format!("{database}/{nome}"))
+            .collect();
+        let itens: Vec<ItemBidi<'_>> = fatias
+            .iter()
+            .zip(&chaves)
+            .map(|((nome, eventos), chave_tab)| ItemBidi {
+                nome,
+                chave_tab,
+                identidade: None,
+                eventos,
+            })
+            .collect();
+        // A origem vai resolvida na marca: nenhum evento chega com zero, e o
+        // `hash_dele` nao e consultado.
+        let (n, paradas) = self.aplicar_itens_bidi(database, None, &itens, meu_hash, 0)?;
+        for (k, (posicao, motivo, _)) in paradas {
+            eprintln!(
+                "AVISO: o grupo do bidirecional parou em {} no arranque ({motivo}, \
+                 posicao {posicao} da origem); a rodada seguinte o para de novo, nominal",
+                chaves[k]
+            );
+        }
+        Ok((n, fatias.into_iter().map(|(nome, _)| nome).collect()))
+    }
+
+    /// O corpo de um grupo do bidirecional com a trava na mao, UM so para a
+    /// rodada ([`Self::aplicar_grupo_bidi`]) e para o arranque que completa a
+    /// marca ([`Self::completar_grupo_bidi`], pedido 698). Devolve quantos
+    /// eventos entraram e as paradas, pelo indice em `itens`.
+    ///
+    /// O item sem `identidade` e o do arranque: o processo acabou de nascer e
+    /// o mapa de toques esta vazio, entao a identidade sai do esquema e o
+    /// diario local entra no mapa ANTES -- senao o «mais recente vence» nao
+    /// veria o que ja tinha entrado antes da queda, e a idempotencia (o evento
+    /// reaplicado empata com o proprio toque) nao existiria.
+    #[allow(
+        clippy::type_complexity,
+        reason = "a parada carrega posicao, motivo e detalhe, como `LoteBidi`"
+    )]
+    fn aplicar_itens_bidi(
+        &self,
+        database: &str,
+        marca: Option<&Path>,
+        itens: &[ItemBidi<'_>],
+        meu_hash: u16,
+        hash_dele: u16,
+    ) -> Result<(u64, Vec<(usize, (u64, &'static str, String))>)> {
         let mut n = 0u64;
         let mut paradas = Vec::new();
         let trava = self.travar_dados()?;
         let db = trava.abrir_database(database)?;
-        for (i, eventos) in &grupo {
-            let feito = self.aplicar_tabela_bidi(&db, &filas[*i], eventos, meu_hash, hash_dele)?;
+        if let Some(m) = marca {
+            if m.parent() != Some(db.caminho()) {
+                return Err(PhxError::Corrompido(format!(
+                    "a marca do grupo do bidirecional de {database} foi gravada em {} \
+                     e o database esta em {}",
+                    m.display(),
+                    db.caminho().display()
+                )));
+            }
+        }
+        for (k, it) in itens.iter().enumerate() {
+            let resolvida: (String, Vec<usize>);
+            let (indice, pos_chave) = match it.identidade {
+                Some(x) => x,
+                None => {
+                    let mut t = db.abrir_qualificada(it.nome)?;
+                    let Some(chave) = bidirecional::chave_unica(t.esquema()) else {
+                        return Err(PhxError::Esquema(format!(
+                            "{} perdeu a chave unica depois da queda: o grupo do \
+                             bidirecional casa por ela e nao se completa sem ela",
+                            it.chave_tab
+                        )));
+                    };
+                    self.absorver_diario_local(
+                        &mut t,
+                        it.chave_tab,
+                        &chave.1,
+                        meu_hash,
+                        None,
+                        true,
+                    )?;
+                    resolvida = chave;
+                    (resolvida.0.as_str(), resolvida.1.as_slice())
+                }
+            };
+            let alvo = AlvoBidi {
+                nome: it.nome,
+                chave_tab: it.chave_tab,
+                indice,
+                pos_chave,
+            };
+            let feito = self.aplicar_tabela_bidi(&db, alvo, it.eventos, meu_hash, hash_dele)?;
             n += feito.aplicados;
             if let Some(p) = feito.parou_em {
-                paradas.push((*i, p));
+                paradas.push((k, p));
             }
         }
         Ok((n, paradas))
@@ -32191,11 +32567,14 @@ impl Servidor {
                     break Ok(());
                 }
                 crate::replica::Passo::Aplicar { grupo, .. } => {
-                    match self.aplicar_grupo_da_replica(database, &mut filas, grupo, origem) {
-                        Ok(Grupo::Aplicado {
-                            rompidas, marca, ..
-                        }) => {
-                            marcas.extend(marca);
+                    match self.aplicar_grupo_da_replica(
+                        database,
+                        &mut filas,
+                        grupo,
+                        origem,
+                        &mut marcas,
+                    ) {
+                        Ok(Grupo::Aplicado { rompidas, .. }) => {
                             for i in rompidas {
                                 juntador.largar(i);
                                 atras = true;

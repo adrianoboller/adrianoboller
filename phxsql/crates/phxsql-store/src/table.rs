@@ -7937,6 +7937,41 @@ impl Table {
         r
     }
 
+    /// Grava SO o evento de uma inclusao cuja linha ja esta no `.reg` --
+    /// pedido 699, a recuperacao do grupo da replica.
+    ///
+    /// A inclusao grava o slot antes do evento; a queda entre os dois deixa a
+    /// linha sem evento, e o diario daqui deixa de continuar o da origem. A
+    /// linha nao se grava de novo (o slot seria outro, e ela sairia
+    /// duplicada); o evento sai do payload que ESTA no disco, pela mesma
+    /// imagem que o `inserir` teria anotado, com o carimbo e a origem que
+    /// quem chama forcou.
+    ///
+    /// A linha do slot tem de ser a do evento: com o carimbo de criacao dos
+    /// dois lados, ele e conferido como na alteracao replicada
+    /// ([`Table::conferir_identidade`]).
+    pub(crate) fn completar_o_diario_da_inclusao(
+        &mut self,
+        rowid: RowId,
+        imagem_de_la: &[u8],
+    ) -> Result<()> {
+        let payload = self.reg.ler(rowid)?.ok_or_else(|| {
+            PhxError::NaoEncontrado(format!(
+                "{}: o rowid {rowid} nao tem linha para completar o diario",
+                self.nome
+            ))
+        })?;
+        if !imagem_de_la.is_empty() {
+            if let Some(i) = self.esquema.coluna_rowstamp() {
+                let (de_la, _) = Table::abrir_imagem(imagem_de_la)?;
+                let do_source = self.rowstamp_do_payload(&de_la, i)?;
+                self.conferir_identidade(Operacao::Inclusao, rowid, Some(do_source), &payload)?;
+            }
+        }
+        let imagem = self.preparar_diario(&payload)?;
+        self.anotar_imagem(Operacao::Inclusao, rowid, 1, &imagem)
+    }
+
     /// Insere uma linha que OUTRO servidor ja aceitou, sem julgar de novo.
     ///
     /// # Para que existe, se ja ha o `aplicar_evento`
@@ -8136,6 +8171,7 @@ impl Table {
         }
         let (o_que, em_vez) = match operacao {
             Operacao::Exclusao => ("a exclusao", "apagar uma no lugar da outra"),
+            Operacao::Inclusao => ("a inclusao", "dar uma pela outra"),
             _ => ("a alteracao", "gravar uma por cima da outra"),
         };
         Err(PhxError::Corrompido(format!(

@@ -1,5 +1,5 @@
 {
-  "quando": "2026-10-08 05:45",
+  "quando": "2026-10-08 06:25",
   "mais_antigo": "2026-09-16 15:25",
   "guardas": [
     {
@@ -6618,9 +6618,41 @@
       "id": "grupo-da-replica-sem-marca",
       "titulo": "O grupo da réplica deixa de gravar a marca `.tx`: o SIGKILL no meio dele reabre a réplica com a venda pela metade (pedido 682)",
       "veredito": "PROVADA",
-      "segundos": 18.73,
+      "segundos": 20.76,
       "notas": [],
-      "quando": "2026-10-08 05:45"
+      "quando": "2026-10-08 06:25"
+    },
+    {
+      "id": "replica-reaplica-inclusao-sem-olhar-o-reg",
+      "titulo": "A recuperação do grupo da réplica volta a conferir só o diário: o SIGKILL entre o `.reg` e o evento reabre com a linha duplicada (pedido 699)",
+      "veredito": "PROVADA",
+      "segundos": 21.75,
+      "notas": [],
+      "quando": "2026-10-08 06:25"
+    },
+    {
+      "id": "evento-no-diario-sem-a-linha-apaga-a-marca",
+      "titulo": "O evento que está no diário conta como aplicado sem o `.reg` confirmar: a marca do grupo sai com a linha ausente (pedido 699)",
+      "veredito": "PROVADA",
+      "segundos": 12.27,
+      "notas": [],
+      "quando": "2026-10-08 06:25"
+    },
+    {
+      "id": "grupo-do-bidi-sem-marca",
+      "titulo": "O grupo do bidirecional deixa de gravar a marca: o SIGKILL no meio dele reabre com a venda pela metade (pedido 698)",
+      "veredito": "PROVADA",
+      "segundos": 20.48,
+      "notas": [],
+      "quando": "2026-10-08 06:25"
+    },
+    {
+      "id": "marca-do-bidi-sem-completar-no-arranque",
+      "titulo": "A marca do grupo do bidirecional é gravada e o arranque não a completa: a venda reabre pela metade (pedido 698)",
+      "veredito": "PROVADA",
+      "segundos": 19.47,
+      "notas": [],
+      "quando": "2026-10-08 06:25"
     },
     {
       "id": "alter-com-regra-sem-aviso",
