@@ -4625,6 +4625,31 @@ incluindo multi-source e failover.
         NAO atravessa o fio da replicacao como unidade (pedido 299), e o
         central pode ver a venda pela metade.
 
+    A LOJA NO CENTRAL (pedido 679). Cada caixa chega ao central no database
+    dele (caixa01, caixa02, ...), e a loja se le EMPILHANDO os caixas com
+    "unir" e um braco por caixa -- nada se copia para uma tabela da loja, e a
+    ordem de digitacao de cada caixa fica no .reg dele. Cada braco diz o
+    proprio database e passa pela permissao como um pedido proprio:
+
+      {"op":"unir","database":"caixa01","modo":"tudo","partes":[
+        {"op":"agrupar","database":"caixa01","tabela":"vendas",
+         "agregados":[{"funcao":"contagem","apelido":"n"},
+                      {"funcao":"soma","coluna":"valor","apelido":"total"}]},
+        {"op":"agrupar","database":"caixa02","tabela":"vendas", "...":"..."},
+        {"op":"agrupar","database":"caixa03","tabela":"vendas", "...":"..."}]}
+
+    Sai uma linha por caixa, na ordem dos bracos ("por_parte" diz quantas
+    vieram de cada um); o total da loja e a soma dessas linhas.
+
+    O TETO. Cada braco e um pedido inteiro em memoria, recortado por
+    max_linhas (o do topo do config.json, 1000 de fabrica). Um braco
+    "varrer" sobre um caixa com mais vendas que isso vem CORTADO, e a uniao
+    responde "truncado": true -- nao recusa, e nao diz que veio inteira. Por
+    isso a visao da loja se pede AGRUPADA dentro do braco: o "agrupar" le a
+    tabela inteira do caixa e devolve um grupo (recusa so quando os GRUPOS
+    passam do teto). A uniao em si para no "max" dela, 5.000.000 linhas.
+    Para ver venda a venda de um caixa grande, pagine o "varrer" desse caixa.
+
     AINDA NAO MEDIDO: nenhum tempo de atraso, volume de diario ou numero de
     caixas simultaneos esta prometido aqui. Esses numeros virao da bancada do
     pedido 678 (20 caixas e 1 central, derrubando o central no meio do

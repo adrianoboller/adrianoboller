@@ -934,7 +934,15 @@ TETO_TESTE_SEM_MODULO = 0
 # troca de cada uma aplicada; as duas do bidi contra o SO, SIGKILL dentro da
 # 3.a inclusao: [inclusao 1, inclusao 2, alteracao 3, ...] e dois ids no
 # grupo; restaurado, verdes); provador NAO rodou.
-PISO_DAS_ENTRADAS = 838
+# 838 -> 843 (pedidos 702 e 679, 08/10/2026 -- o COMMIT completado no
+# arranque com o id da metade que entrou, e a visao da loja pelo `unir`):
+# nascem `commit-completado-no-arranque-com-outro-id` (contra o SO: SIGKILL
+# depois da 3.a escrita da passada, 2 ids na venda), `metade-adotada-na-marca-
+# inteira`, `metade-adotada-depois-de-outro-commit`, `braco-da-uniao-perde-o-
+# database-dele` e `uniao-cala-o-braco-cortado-no-teto`. RED medido a mao
+# (troca de cada uma aplicada, `caem` cairam, restaurado, verdes); provador
+# NAO rodou.
+PISO_DAS_ENTRADAS = 843
 
 # ------------------------------------------------------------- APOSENTADAS
 #

@@ -1,5 +1,5 @@
 {
-  "quando": "2026-10-08 07:25",
+  "quando": "2026-10-08 08:02",
   "mais_antigo": "2026-09-16 15:25",
   "guardas": [
     {
@@ -6709,6 +6709,46 @@
       "segundos": 11.81,
       "notas": [],
       "quando": "2026-10-08 07:25"
+    },
+    {
+      "id": "commit-completado-no-arranque-com-outro-id",
+      "titulo": "A marca do COMMIT completada no arranque dá ao resto um id de transação novo: a réplica encadeada recebe a venda em dois pedaços (pedido 702)",
+      "veredito": "PROVADA",
+      "segundos": 22.39,
+      "notas": [],
+      "quando": "2026-10-08 08:02"
+    },
+    {
+      "id": "metade-adotada-na-marca-inteira",
+      "titulo": "A recuperação adota o id do grupo de uma marca que já está INTEIRA no diário: a regravação redundante se pendura num grupo que a réplica já fechou (pedido 702)",
+      "veredito": "PROVADA",
+      "segundos": 12.41,
+      "notas": [],
+      "quando": "2026-10-08 08:02"
+    },
+    {
+      "id": "metade-adotada-depois-de-outro-commit",
+      "titulo": "A recuperação adota o id antigo com um commit DEPOIS na cauda de uma tabela da marca: o diário sai fora da ordem dos ids (pedido 702)",
+      "veredito": "PROVADA",
+      "segundos": 14.87,
+      "notas": [],
+      "quando": "2026-10-08 08:02"
+    },
+    {
+      "id": "braco-da-uniao-perde-o-database-dele",
+      "titulo": "O braço do `unir` deixa de ler o próprio `database`: a visão da loja lê o mesmo caixa N vezes (pedido 679)",
+      "veredito": "PROVADA",
+      "segundos": 26.23,
+      "notas": [],
+      "quando": "2026-10-08 08:02"
+    },
+    {
+      "id": "uniao-cala-o-braco-cortado-no-teto",
+      "titulo": "O `unir` responde `truncado: false` com um braço parado no teto de linhas: a loja aparece inteira sem estar (pedido 679)",
+      "veredito": "PROVADA",
+      "segundos": 26.22,
+      "notas": [],
+      "quando": "2026-10-08 08:02"
     },
     {
       "id": "alter-com-regra-sem-aviso",

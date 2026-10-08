@@ -1433,7 +1433,16 @@ fn completar(db: &Database, marca: &Marca, r: &mut Relatorio) -> bool {
     // resto do grupo em pedacos, um por evento. No reparo de um panico a
     // tomada da trava ja tem a unidade -- a mesma que gravou a primeira
     // metade --, e ela fica.
-    let _unidade = UnidadeDaMarca::abrir();
+    let unidade = UnidadeDaMarca::abrir();
+    // Pedido 702: a marca do COMMIT completada no ARRANQUE adota o id da
+    // metade que entrou antes da queda -- o irmao do `adotar_tx_na_unidade`
+    // que a marca da replica faz pela posicao. So com a unidade propria: no
+    // reparo de um panico a da tomada ja e a da primeira metade.
+    if unidade.0 {
+        if let Some(tx) = id_da_metade_que_entrou(db, marca) {
+            crate::log::adotar_tx_na_unidade(tx);
+        }
+    }
     let mut tabelas: HashMap<String, Table> = HashMap::new();
     let mut replica_parou = false;
     let mut reter = false;
@@ -1584,6 +1593,130 @@ fn completar(db: &Database, marca: &Marca, r: &mut Relatorio) -> bool {
         }
     }
     no_disco && !reter
+}
+
+/// O id de transacao que a metade da marca do `COMMIT` que ENTROU no diario
+/// levou antes da queda -- pedido 702. `None` = nao ha metade provada, ou a
+/// passada terminou; o resto entao leva um id novo, como antes.
+///
+/// # Por que se procura no diario, e nao na marca
+///
+/// A marca nasce antes do primeiro evento, e o id so se tira no primeiro
+/// evento (`log::tx_do_evento`): ela nao o sabe. Gravar o id nela mudaria o
+/// formato para responder uma pergunta que o diario ja responde -- a passada
+/// e uma so por vez sob a trava, entao a metade que entrou e a CAUDA de cada
+/// tabela que ela tocou.
+///
+/// # O que conta como prova de que a cauda e desta marca
+///
+/// Errar para o lado de adotar juntaria esta transacao a ANTERIOR na replica
+/// encadeada -- pior que o pedaco que o pedido conserta. Entao so a operacao
+/// que se reconhece sem ambiguidade ancora o id ([`evento_da_operacao`]), duas
+/// caudas que apontam ids diferentes nao ancoram nada, e duas condicoes
+/// devolvem `None` mesmo com a ancora:
+///
+/// - alguma tabela da marca tem cauda com id MAIOR: houve commit depois, logo
+///   a passada desta terminou e a marca so esperava a janela;
+/// - os eventos com o id somam ao menos uma por operacao: a passada terminou,
+///   e o que a recuperacao regrava e redundante -- ele nao se pendura num
+///   grupo que a replica ja fechou.
+fn id_da_metade_que_entrou(db: &Database, marca: &Marca) -> Option<u64> {
+    if marca.operacoes.is_empty() || marca.operacoes.iter().any(|o| o.replica.is_some()) {
+        return None;
+    }
+    let mut nomes: Vec<&str> = Vec::new();
+    for op in &marca.operacoes {
+        if !nomes.contains(&op.tabela.as_str()) {
+            nomes.push(&op.tabela);
+        }
+    }
+    let mut abertas = Vec::with_capacity(nomes.len());
+    for nome in nomes {
+        abertas.push((nome, db.abrir_qualificada(nome).ok()?));
+    }
+    let mut ancora: Option<u64> = None;
+    let mut maior_cauda = 0u64;
+    for (nome, t) in abertas.iter_mut() {
+        let total = t.eventos().ok()?;
+        if total == 0 {
+            continue;
+        }
+        let (ev, imagem) = t.diario_com_imagem(total - 1, 1).ok()?.into_iter().next()?;
+        maior_cauda = maior_cauda.max(ev.tx);
+        let reconhecida = ev.tx != 0
+            && marca
+                .operacoes
+                .iter()
+                .filter(|op| op.tabela == *nome)
+                .any(|op| evento_da_operacao(t, &ev, &imagem, op, marca.carimbo_ms));
+        if reconhecida {
+            if ancora.is_some_and(|a| a != ev.tx) {
+                return None;
+            }
+            ancora = Some(ev.tx);
+        }
+    }
+    let tx = ancora?;
+    if maior_cauda > tx {
+        return None;
+    }
+    let mut do_grupo = 0usize;
+    for (nome, t) in abertas.iter_mut() {
+        let ops_aqui = marca
+            .operacoes
+            .iter()
+            .filter(|op| op.tabela == *nome)
+            .count() as u64;
+        let total = t.eventos().ok()?;
+        let k = ops_aqui.min(total);
+        do_grupo += t
+            .diario(total - k, k)
+            .ok()?
+            .iter()
+            .filter(|e| e.tx == tx)
+            .count();
+    }
+    (do_grupo < marca.operacoes.len()).then_some(tx)
+}
+
+/// O evento `ev` (com a `imagem`) e o que a operacao `op` da marca grava? So
+/// as que se reconhecem sem ambiguidade -- pedido 702:
+///
+/// - a inclusao, pelo rowid: o `.reg` nao reaproveita slot, entao ha UMA
+///   inclusao por rowid na vida da tabela;
+/// - a exclusao de vez, pelo rowid e por nascer depois da marca: a linha nao
+///   se apaga de vez duas vezes;
+/// - a alteracao que muda alguma coisa, pela imagem igual a linha nova e
+///   diferente da antiga: a do commit ANTERIOR na mesma linha tem a imagem da
+///   antiga desta.
+///
+/// A exclusao suave e a restauracao gravam alteracao com a imagem do proprio
+/// motor, e a alteracao que nao muda nada nao se distingue da anterior: nao
+/// ancoram, e a marca que so tem delas leva um id novo, como antes.
+fn evento_da_operacao(
+    t: &mut Table,
+    ev: &crate::log::Evento,
+    imagem: &[u8],
+    op: &OperacaoDaMarca,
+    carimbo_da_marca: i64,
+) -> bool {
+    use crate::log::Operacao;
+    if ev.rowid != op.rowid {
+        return false;
+    }
+    match op.acao {
+        Acao::Inserir => ev.operacao == Operacao::Inclusao,
+        Acao::ExcluirDeVez => ev.operacao == Operacao::Exclusao && ev.carimbo >= carimbo_da_marca,
+        Acao::Atualizar => {
+            ev.operacao == Operacao::Alteracao
+                && ev.carimbo >= carimbo_da_marca
+                && !op.linha_antiga.is_empty()
+                && op.linha != op.linha_antiga
+                && !imagem.is_empty()
+                && t.valores_da_imagem(imagem).is_ok_and(|v| v == op.linha)
+        }
+        Acao::ExcluirSuave | Acao::Restaurar => false,
+    }
 }
 
 /// A unidade de transacao que a recuperacao de UMA marca abre quando ninguem
@@ -2707,6 +2840,90 @@ mod testes {
         assert!(
             ids.iter().all(|x| *x == ids[0]),
             "o grupo completado no arranque saiu em pedacos: ids {ids:?}"
+        );
+    }
+
+    fn op_da_marca(tabela: &str, acao: Acao, rowid: u64) -> OperacaoDaMarca {
+        OperacaoDaMarca {
+            tabela: tabela.into(),
+            acao,
+            rowid,
+            linha: vec![Value::Int(rowid as i64), Value::Int(1)],
+            linha_antiga: Vec::new(),
+            motivo: String::new(),
+            cascata_na_lista: false,
+            replica: None,
+        }
+    }
+
+    /// **Pedido 702, as duas guardas do lado de NAO adotar.** O id da metade
+    /// que entrou so vale para a passada que a queda interrompeu: a marca
+    /// INTEIRA no diario (so esperava a janela) e a que tem um commit DEPOIS
+    /// dela devolvem `None` -- adotar ali penduraria regravacao redundante num
+    /// grupo que a replica ja fechou. E o controle: com um evento faltando,
+    /// adota o id da metade.
+    ///
+    /// Vermelho medido tirando cada guarda: `Some` na marca inteira, e
+    /// `Some` com a cauda maior em `outra`.
+    #[test]
+    fn a_metade_que_entrou_so_ancora_a_passada_interrompida() {
+        let d = dir("702-guardas");
+        let db = base_com_imagem(&d);
+        let mut t = itens(&db);
+        crate::log::abrir_unidade();
+        t.inserir(&[Value::Int(1), Value::Int(1)]).unwrap();
+        t.inserir(&[Value::Int(2), Value::Int(1)]).unwrap();
+        crate::log::fechar_unidade();
+        let x = t.diario(0, 0).unwrap()[0].tx;
+        assert_ne!(x, 0, "premissa: o volume guarda o id");
+        t.sincronizar().unwrap();
+        drop(t);
+        let marca = |ops: Vec<OperacaoDaMarca>| Marca {
+            id: 1,
+            carimbo_ms: 0,
+            operacoes: ops,
+        };
+        let inteira = marca(vec![
+            op_da_marca("itens", Acao::Inserir, 1),
+            op_da_marca("itens", Acao::Inserir, 2),
+        ]);
+        assert_eq!(
+            id_da_metade_que_entrou(&db, &inteira),
+            None,
+            "a marca inteira no diario adotou o id do grupo ja fechado"
+        );
+        let pela_metade = marca(vec![
+            op_da_marca("itens", Acao::Inserir, 1),
+            op_da_marca("itens", Acao::Inserir, 2),
+            op_da_marca("itens", Acao::Inserir, 3),
+        ]);
+        assert_eq!(id_da_metade_que_entrou(&db, &pela_metade), Some(x));
+
+        // Um commit DEPOIS, numa tabela que a marca nomeia sem ancorar nela.
+        let e = Schema::new(
+            "outra",
+            vec![
+                Column::new("id", ColumnType::Int8).obrigatoria(),
+                Column::new("venda", ColumnType::Int8),
+            ],
+            vec![IndexDef::new("pk", vec![IndexColumn::asc(0)]).unico()],
+        )
+        .unwrap();
+        let mut o = db.criar_tabela(None, e).unwrap();
+        crate::log::abrir_unidade();
+        o.inserir(&[Value::Int(1), Value::Int(1)]).unwrap();
+        crate::log::fechar_unidade();
+        o.sincronizar().unwrap();
+        drop(o);
+        let com_commit_depois = marca(vec![
+            op_da_marca("itens", Acao::Inserir, 1),
+            op_da_marca("itens", Acao::Inserir, 2),
+            op_da_marca("outra", Acao::ExcluirSuave, 1),
+        ]);
+        assert_eq!(
+            id_da_metade_que_entrou(&db, &com_commit_depois),
+            None,
+            "houve commit depois da passada e o resto adotou o id antigo"
         );
     }
 

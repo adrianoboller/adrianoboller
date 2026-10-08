@@ -961,6 +961,18 @@ fn sigkill_de_teste(aviso: &str) -> ! {
     std::process::exit(137);
 }
 
+/// So em `debug`: `PHXSQL_TESTE_PARAR_NO_COMMIT=N`, lido UMA vez -- a prova
+/// do pedido 702 (`tests/commit-inteiro-na-queda.rs`).
+#[cfg(debug_assertions)]
+fn parar_no_commit_de_teste() -> Option<u64> {
+    static N: std::sync::OnceLock<Option<u64>> = std::sync::OnceLock::new();
+    *N.get_or_init(|| {
+        std::env::var("PHXSQL_TESTE_PARAR_NO_COMMIT")
+            .ok()
+            .and_then(|v| v.parse().ok())
+    })
+}
+
 /// O que um grupo do alcance deu. Ver `Servidor::aplicar_grupo_da_replica`.
 enum Grupo {
     /// Aplicou `n` eventos; as tabelas em `rompidas` sairam da rodada.
@@ -21769,6 +21781,13 @@ impl Servidor {
             // todas as tabelas abertas, e ela precisa estar la.
             abertas.insert(e.tabela.clone(), t);
             *aplicadas += 1;
+            // So em `debug`, pedido 702: o processo morre depois da N-esima
+            // escrita da passada, com a marca no disco e parte do commit no
+            // diario -- a queda que o arranque completa.
+            #[cfg(debug_assertions)]
+            if parar_no_commit_de_teste() == Some(*aplicadas as u64) {
+                sigkill_de_teste("teste: parado no meio da passada do COMMIT");
+            }
         }
         // **O GROUP COMMIT, e ele e a janela de durabilidade que ja existia.**
         //

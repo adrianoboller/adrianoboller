@@ -3484,6 +3484,20 @@ até a abertura seguinte); e o `reindex` do CLI, antes de reconstruir. **Não** 
 `Instancia::abrir_database` genérico: o servidor o chama em serviço, com marca
 de commit já aplicado esperando o fecho da janela.
 
+**E o id de transação do resto** (pedido 702, 08/10/2026; **o leiaute não
+muda**). A marca nasce antes do primeiro evento e não sabe o id que a passada
+vai tirar (`log::tx_do_evento`). Quem o acha é o arranque, no diário: a passada
+é uma por vez sob a trava, então a metade que entrou é a **cauda** das tabelas
+que ela tocou. Só ancora o id a operação que se reconhece sem ambiguidade — a
+inclusão pelo rowid (o `.reg` não reaproveita slot), a exclusão de vez pelo
+rowid e pelo carimbo, a alteração que muda alguma coisa pela imagem igual à
+linha nova — e a recuperação o adota (`log::adotar_tx_na_unidade`, o mesmo do
+701) para a réplica encadeada receber a transação inteira. Não adota quando a
+passada terminou: cauda com id **maior** numa tabela da marca (houve commit
+depois) ou eventos com o id somando uma por operação (a marca só esperava a
+janela). Nesses casos, e na marca que só tem exclusão suave, restauração ou
+alteração sem mudança, o resto leva um id novo, como antes.
+
 ### O leiaute
 
 ```text

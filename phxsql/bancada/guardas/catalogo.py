@@ -26457,4 +26457,116 @@ fn anotar(""",
             "marca::testes::a_queda_entre_o_reg_e_o_diario_nao_duplica_a_linha",
         ],
     },
+    {
+        "id": "commit-completado-no-arranque-com-outro-id",
+        "titulo": "A marca do COMMIT completada no arranque dá ao resto um id de transação novo: a réplica encadeada recebe a venda em dois pedaços (pedido 702)",
+        "porque": (
+            "pedido 702, o resto do 701: a marca nasce antes do primeiro evento "
+            "e nao sabe o id; o arranque completava o resto com um id novo. "
+            "Medido contra o SO com o defeito reposto: SIGKILL depois da 3.a "
+            "escrita da passada, e a venda reaberta com 2 ids de transacao."
+        ),
+        "arquivo": "crates/phxsql-store/src/marca.rs",
+        "trecho": """        if let Some(tx) = id_da_metade_que_entrou(db, marca) {
+""",
+        "troca": """        // DEFEITO REPOSTO (702): o resto do COMMIT leva um id novo.
+        if let Some(tx) = id_da_metade_que_entrou(db, marca).filter(|_| false) {
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "commit-inteiro-na-queda"],
+        "caem": [
+            "o_commit_completado_no_arranque_leva_o_id_da_metade_que_entrou",
+        ],
+        "seguem": [],
+    },
+    {
+        "id": "metade-adotada-na-marca-inteira",
+        "titulo": "A recuperação adota o id do grupo de uma marca que já está INTEIRA no diário: a regravação redundante se pendura num grupo que a réplica já fechou (pedido 702)",
+        "porque": (
+            "pedido 702: a marca que so esperava a janela de durabilidade nao "
+            "tem metade nenhuma faltando. Medido com o defeito reposto: "
+            "`Some(id)` para a marca com as duas inclusoes no diario."
+        ),
+        "arquivo": "crates/phxsql-store/src/marca.rs",
+        "trecho": """    (do_grupo < marca.operacoes.len()).then_some(tx)
+""",
+        "troca": """    // DEFEITO REPOSTO (702): adota mesmo com a marca inteira no diario.
+    Some(tx)
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--lib"],
+        "caem": [
+            "marca::testes::a_metade_que_entrou_so_ancora_a_passada_interrompida",
+        ],
+        "seguem": [
+            "marca::testes::o_arranque_completa_o_grupo_com_o_id_da_primeira_metade",
+        ],
+    },
+    {
+        "id": "metade-adotada-depois-de-outro-commit",
+        "titulo": "A recuperação adota o id antigo com um commit DEPOIS na cauda de uma tabela da marca: o diário sai fora da ordem dos ids (pedido 702)",
+        "porque": (
+            "pedido 702: commit depois da passada prova que ela terminou, e o "
+            "id antigo depois de um maior desordena o diario que a replica "
+            "junta pelo id. Medido com o defeito reposto: `Some(id antigo)` com "
+            "a cauda de `outra` maior."
+        ),
+        "arquivo": "crates/phxsql-store/src/marca.rs",
+        "trecho": """    if maior_cauda > tx {
+""",
+        "troca": """    // DEFEITO REPOSTO (702): ignora o commit depois da passada.
+    if maior_cauda > tx && false {
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--lib"],
+        "caem": [
+            "marca::testes::a_metade_que_entrou_so_ancora_a_passada_interrompida",
+        ],
+        "seguem": [
+            "marca::testes::o_arranque_completa_o_grupo_com_o_id_da_primeira_metade",
+        ],
+    },
+    {
+        "id": "braco-da-uniao-perde-o-database-dele",
+        "titulo": "O braço do `unir` deixa de ler o próprio `database`: a visão da loja lê o mesmo caixa N vezes (pedido 679)",
+        "porque": (
+            "pedido 679 (325 F3): no desenho espelho cada caixa e um database, "
+            "e a visao da loja e um `unir` com um braco por `caixaNN`. Medido "
+            "com o defeito reposto (o braco herda sempre o database de fora): "
+            "as tres linhas saem [4, 100] -- o caixa01 tres vezes."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        let sem_base = sub.texto_ou("database", "").trim().is_empty();
+""",
+        "troca": """        // DEFEITO REPOSTO (679): o braco herda sempre o database de fora.
+        let sem_base = true;
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "visao-da-loja"],
+        "caem": [
+            "a_loja_se_le_pelos_tres_caixas_sem_juntar_as_fontes",
+        ],
+        "seguem": [],
+    },
+    {
+        "id": "uniao-cala-o-braco-cortado-no-teto",
+        "titulo": "O `unir` responde `truncado: false` com um braço parado no teto de linhas: a loja aparece inteira sem estar (pedido 679)",
+        "porque": (
+            "pedido 679: o caixa com mais vendas que `max_linhas` vem cortado "
+            "no braco `varrer`. Medido com o defeito reposto (so o corte da "
+            "propria uniao conta): por_parte [4, 2, 5] e `truncado: false`."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """            ("truncado", Json::Bool(r.truncado || cortou_braco)),
+""",
+        "troca": """            // DEFEITO REPOSTO (679): o braco cortado nao conta.
+            ("truncado", Json::Bool(r.truncado)),
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "visao-da-loja"],
+        "caem": [
+            "a_loja_se_le_pelos_tres_caixas_sem_juntar_as_fontes",
+        ],
+        "seguem": [],
+    },
 ]
