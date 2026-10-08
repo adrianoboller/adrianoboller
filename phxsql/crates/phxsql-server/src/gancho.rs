@@ -570,9 +570,10 @@ mod testes {
         assert!(!e.contains("SEGREDO"), "{e}");
     }
 
-    #[test]
-    fn programa_que_estoura_o_prazo_e_morto_e_colhido() {
-        let d = dir("prazo");
+    /// Sobe um programa que passa do prazo de 1 s e devolve o pid dele. O
+    /// `DirTemp` volta junto para o pidfile viver ate o fim do teste.
+    fn estourar_o_prazo(nome: &str) -> (crate::apoio_teste::DirTemp, u32) {
+        let d = dir(nome);
         let pidfile = d.join("pid");
         let s = script(
             &d,
@@ -592,6 +593,45 @@ mod testes {
             .trim()
             .parse()
             .unwrap();
+        (d, pid)
+    }
+
+    /// **Morto**, separado de **colhido** (pedido 655): o teste de baixo
+    /// servia as duas guardas e caia igual para as duas -- o filho vivo e o
+    /// zumbi deixam `/proc/<pid>` de pe. Aqui so se exige que ele tenha
+    /// deixado de RODAR: zumbi (`State: Z`) passa, porque o `kill` aconteceu;
+    /// o filho que segue em `sleep` cai. O `kill` e assincrono, por isso a
+    /// espera curta antes do veredito.
+    #[test]
+    fn programa_que_estoura_o_prazo_e_morto() {
+        let (_d, pid) = estourar_o_prazo("prazo-morto");
+        if !cfg!(target_os = "linux") {
+            return;
+        }
+        let estado = |pid: u32| {
+            std::fs::read_to_string(format!("/proc/{pid}/status"))
+                .ok()
+                .and_then(|t| {
+                    t.lines()
+                        .find_map(|l| l.strip_prefix("State:").map(|v| v.trim().to_string()))
+                })
+        };
+        let ate = Instant::now() + Duration::from_secs(2);
+        loop {
+            match estado(pid) {
+                None => return,
+                Some(e) if e.starts_with('Z') => return,
+                Some(e) if Instant::now() >= ate => {
+                    panic!("o filho {pid} passou do prazo e continua rodando ({e}): nao foi morto")
+                }
+                Some(_) => std::thread::sleep(Duration::from_millis(20)),
+            }
+        }
+    }
+
+    #[test]
+    fn programa_que_estoura_o_prazo_e_morto_e_colhido() {
+        let (_d, pid) = estourar_o_prazo("prazo");
         // Contra o sistema operacional: morto E colhido. Zumbi deixaria
         // `/proc/<pid>` de pe, com `State: Z`.
         if cfg!(target_os = "linux") {
@@ -659,6 +699,9 @@ mod testes {
         std::fs::set_permissions(&s, std::fs::Permissions::from_mode(0o775)).unwrap();
         let e = conferir_programa(&s).unwrap_err();
         assert!(e.contains("grupo"), "{e}");
+        // Pedido 657: «grupo» sai tambem da recusa do diretorio («por grupo
+        // ou outros»); a do ARQUIVO e a unica que diz «pelo grupo».
+        assert!(e.contains("e gravavel pelo grupo"), "{e}");
         // O irmao que impede um portao que recusaria tudo: 0755 passa.
         std::fs::set_permissions(&s, std::fs::Permissions::from_mode(0o755)).unwrap();
         conferir_programa(&s).unwrap();
@@ -676,6 +719,9 @@ mod testes {
         std::fs::set_permissions(&sub, std::fs::Permissions::from_mode(0o777)).unwrap();
         let e = conferir_programa(&s).unwrap_err();
         assert!(e.contains("sticky"), "{e}");
+        // Pedido 657: «sticky» aparece em comentario e codigo do arquivo; a
+        // recusa do diretorio aberto e a unica com esta frase.
+        assert!(e.contains("por grupo ou outros e sem o bit sticky"), "{e}");
         std::fs::set_permissions(&sub, std::fs::Permissions::from_mode(0o1777)).unwrap();
         conferir_programa(&s).unwrap();
         std::fs::set_permissions(&sub, std::fs::Permissions::from_mode(0o755)).unwrap();
@@ -700,6 +746,7 @@ mod testes {
         std::os::unix::fs::symlink(&aberto, &elo1).unwrap();
         let e = conferir_programa(&elo1.display().to_string()).unwrap_err();
         assert!(e.contains("qualquer usuario"), "{e}");
+        assert!(e.contains("e gravavel por qualquer usuario"), "{e}");
         // 2
         let real = script(&d, "real.sh", "exit 0");
         let sub = d.join("sub");
@@ -709,6 +756,7 @@ mod testes {
         std::fs::set_permissions(&sub, std::fs::Permissions::from_mode(0o777)).unwrap();
         let e = conferir_programa(&elo2.display().to_string()).unwrap_err();
         assert!(e.contains("sticky"), "{e}");
+        assert!(e.contains("por grupo ou outros e sem o bit sticky"), "{e}");
         std::fs::set_permissions(&sub, std::fs::Permissions::from_mode(0o755)).unwrap();
         // 3
         conferir_programa(&elo2.display().to_string()).unwrap();
@@ -729,7 +777,27 @@ mod testes {
         std::os::unix::fs::chown(&s, Some(54321), None).unwrap();
         let e = conferir_programa(&s).unwrap_err();
         assert!(e.contains("outro usuario"), "{e}");
-        // E o diretorio de outro usuario tambem (o dono dele troca o arquivo).
+        // Pedido 657: «pertence a outro usuario» a recusa do DIRETORIO tambem
+        // escreve; so a do arquivo diz quem pode ser dono, e nunca «um
+        // diretorio de». Antes este teste servia a duas guardas e a do
+        // diretorio passava por ele com a do arquivo reposta.
+        assert!(
+            e.contains("so root ou o usuario do servidor podem ser donos"),
+            "{e}"
+        );
+        assert!(!e.contains("um diretorio de"), "{e}");
+    }
+
+    /// O irmao do de cima, separado dele (pedido 657): o diretorio de outro
+    /// usuario recusa pela recusa PROPRIA -- o dono dele troca o arquivo por
+    /// `rename` --, e nao pela do arquivo, que aqui e do usuario certo.
+    #[test]
+    fn diretorio_de_outro_usuario_e_recusado() {
+        if uid_do_servidor() != Some(0) {
+            eprintln!("pulado: plantar o dono exige root");
+            return;
+        }
+        let d = dir("dono-dir");
         let sub = d.join("sub");
         std::fs::create_dir(&sub).unwrap();
         let s2 = script(&sub, "h.sh", "exit 0");
@@ -738,6 +806,11 @@ mod testes {
         let e = conferir_programa(&s2).unwrap_err();
         assert!(
             e.contains("diretorio") && e.contains("outro usuario"),
+            "{e}"
+        );
+        assert!(e.contains("(uid 54321)"), "{e}");
+        assert!(
+            !e.contains("so root ou o usuario do servidor podem ser donos"),
             "{e}"
         );
     }
@@ -786,9 +859,41 @@ mod testes {
     /// So 0, 1 e 2 (mais o do proprio script, que o `sh` segura). O servidor
     /// do teste tem arquivo aberto, soquete escutando e uma trava: nada
     /// disso pode atravessar o `exec`.
+    /// Os descritores que ESTE processo ja recebeu do pai sem `O_CLOEXEC`
+    /// (bit `02000000` do `flags:` em `/proc/self/fdinfo`). Nao sao do
+    /// servidor: o executor do GitHub entrega dois pipes assim ao `cargo test`,
+    /// e eles atravessam o `exec` porque a `std` nao fecha o que o processo
+    /// herdou -- fechar exigiria `pre_exec`, que e `unsafe`, e o servidor nao
+    /// usa `unsafe` (SEGURANCA.md). Lidos ANTES de o teste abrir qualquer
+    /// coisa, entao um descritor do servidor sem `O_CLOEXEC` continua caindo.
+    #[cfg(target_os = "linux")]
+    fn herdados_do_pai() -> Vec<String> {
+        let mut v = Vec::new();
+        for e in std::fs::read_dir("/proc/self/fdinfo")
+            .into_iter()
+            .flatten()
+            .flatten()
+        {
+            let n = e.file_name().to_string_lossy().to_string();
+            if matches!(n.as_str(), "0" | "1" | "2") {
+                continue;
+            }
+            let info = std::fs::read_to_string(e.path()).unwrap_or_default();
+            let flags = info
+                .lines()
+                .find_map(|l| l.strip_prefix("flags:"))
+                .and_then(|f| u32::from_str_radix(f.trim(), 8).ok());
+            if flags.is_some_and(|f| f & 0o2000000 == 0) {
+                v.push(n);
+            }
+        }
+        v
+    }
+
     #[cfg(target_os = "linux")]
     #[test]
     fn o_filho_nao_herda_descritores_do_servidor() {
+        let herdados = herdados_do_pai();
         let d = dir("fds");
         let sentinela = d.join("sentinela-aberta.dat");
         std::fs::write(&sentinela, "x").unwrap();
@@ -808,7 +913,10 @@ mod testes {
             // O `sh` guarda copias do stdout/stderr originais (`/dev/null`,
             // descartados de proposito) acima do fd 10, ao redirecionar.
             .filter(|(n, alvo)| {
-                !matches!(n.as_str(), "0" | "1" | "2") && *alvo != s && alvo != "/dev/null"
+                !matches!(n.as_str(), "0" | "1" | "2")
+                    && *alvo != s
+                    && alvo != "/dev/null"
+                    && !herdados.contains(n)
             })
             .collect();
         assert!(!fds_listados(&t).is_empty(), "a listagem veio vazia: {t:?}");
