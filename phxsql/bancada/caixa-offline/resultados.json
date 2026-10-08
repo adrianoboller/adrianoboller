@@ -1,0 +1,2925 @@
+{
+  "pedido": 678,
+  "quando": "2026-10-08 08:22",
+  "binario": {
+    "commit": "bf4bbdb9",
+    "arvore_de_crates_suja": false,
+    "versao": "phxsqld 0.19.0 (bf4bbdb91ab5) x86_64-unknown-linux-gnu",
+    "binario_compilado_em": "2026-10-08 08:12:17"
+  },
+  "maquina": "4 nucleos; 21 processos phxsqld em 127.0.0.1, no mesmo container",
+  "maquina_ocupada": false,
+  "reconectar_em_s": 1,
+  "chegada_inclui": "o sono do laco da replica do central (1 s quando a rodada anterior nao achou nada) MAIS o transporte MAIS a resolucao do observador (rodada_do_observador_ms)",
+  "carga": {
+    "caixas": 20,
+    "segundos_por_fase": 20,
+    "itens_por_venda": "3 a 10",
+    "pausa_entre_vendas_s": [
+      0.1,
+      0.3
+    ],
+    "venda": "begin; 1 vendas; k itens (FK conferida); k atualizar estoque; commit"
+  },
+  "faixas": {
+    "chegada_com_o_central_no_ar_ms": {
+      "antes": {
+        "min": {
+          "min": 15.4,
+          "mediana": 17.4,
+          "max": 18.1,
+          "por_volta": [
+            17.4,
+            18.1,
+            15.4,
+            17.9,
+            15.4
+          ]
+        },
+        "mediana": {
+          "min": 539.3,
+          "mediana": 547.2,
+          "max": 557.6,
+          "por_volta": [
+            547.2,
+            539.3,
+            546.9,
+            554.8,
+            557.6
+          ]
+        },
+        "p95": {
+          "min": 1015.2,
+          "mediana": 1016.0,
+          "max": 1025.2,
+          "por_volta": [
+            1025.2,
+            1015.2,
+            1016.0,
+            1017.6,
+            1015.2
+          ]
+        },
+        "max": {
+          "min": 1255.9,
+          "mediana": 1301.2,
+          "max": 1404.2,
+          "por_volta": [
+            1255.9,
+            1263.8,
+            1404.2,
+            1301.2,
+            1304.2
+          ]
+        }
+      },
+      "depois": {
+        "min": {
+          "min": 10.3,
+          "mediana": 15.3,
+          "max": 24.2,
+          "por_volta": [
+            18.8,
+            14.0,
+            10.3,
+            24.2,
+            15.3
+          ]
+        },
+        "mediana": {
+          "min": 568.9,
+          "mediana": 593.9,
+          "max": 627.0,
+          "por_volta": [
+            593.9,
+            579.9,
+            568.9,
+            610.8,
+            627.0
+          ]
+        },
+        "p95": {
+          "min": 1038.0,
+          "mediana": 1059.4,
+          "max": 1127.0,
+          "por_volta": [
+            1059.4,
+            1048.5,
+            1038.0,
+            1067.8,
+            1127.0
+          ]
+        },
+        "max": {
+          "min": 1319.9,
+          "mediana": 1457.4,
+          "max": 2065.1,
+          "por_volta": [
+            1394.8,
+            1457.4,
+            1319.9,
+            1829.4,
+            2065.1
+          ]
+        }
+      }
+    },
+    "chegada_das_vendas_da_queda_max_ms": {
+      "min": 20965.7,
+      "mediana": 21280.2,
+      "max": 21761.8,
+      "por_volta": [
+        21280.2,
+        21174.2,
+        20965.7,
+        21541.5,
+        21761.8
+      ]
+    },
+    "vendas_pegas_pela_queda_antes_de_puxadas": {
+      "min": 32,
+      "mediana": 36,
+      "max": 48,
+      "por_volta": [
+        34,
+        32,
+        48,
+        36,
+        37
+      ]
+    },
+    "venda_no_caixa_mediana_ms": {
+      "antes": {
+        "min": 11.4,
+        "mediana": 12.15,
+        "max": 12.61,
+        "por_volta": [
+          12.61,
+          11.67,
+          12.15,
+          11.4,
+          12.48
+        ]
+      },
+      "durante": {
+        "min": 9.47,
+        "mediana": 9.9,
+        "max": 10.12,
+        "por_volta": [
+          9.9,
+          9.47,
+          9.65,
+          10.12,
+          10.11
+        ]
+      },
+      "depois": {
+        "min": 10.8,
+        "mediana": 12.1,
+        "max": 12.91,
+        "por_volta": [
+          12.82,
+          11.2,
+          10.8,
+          12.91,
+          12.1
+        ]
+      }
+    },
+    "venda_no_caixa_max_ms": {
+      "antes": {
+        "min": 102.03,
+        "mediana": 111.57,
+        "max": 116.23,
+        "por_volta": [
+          116.23,
+          102.03,
+          111.64,
+          111.57,
+          104.16
+        ]
+      },
+      "durante": {
+        "min": 34.45,
+        "mediana": 46.27,
+        "max": 105.09,
+        "por_volta": [
+          46.27,
+          34.45,
+          79.88,
+          105.09,
+          46.03
+        ]
+      },
+      "depois": {
+        "min": 45.41,
+        "mediana": 69.05,
+        "max": 81.81,
+        "por_volta": [
+          81.81,
+          49.22,
+          45.41,
+          80.78,
+          69.05
+        ]
+      }
+    },
+    "recusadas": {
+      "min": 0,
+      "mediana": 0,
+      "max": 0,
+      "por_volta": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "central_atende_s": {
+      "min": 0.021,
+      "mediana": 0.027,
+      "max": 0.051,
+      "por_volta": [
+        0.022,
+        0.034,
+        0.021,
+        0.027,
+        0.051
+      ]
+    },
+    "alcance_s": {
+      "min": 1.38,
+      "mediana": 1.5,
+      "max": 1.86,
+      "por_volta": [
+        1.47,
+        1.5,
+        1.38,
+        1.75,
+        1.86
+      ]
+    },
+    "vendas_no_religar": {
+      "min": 3737,
+      "mediana": 3743,
+      "max": 3781,
+      "por_volta": [
+        3737,
+        3781,
+        3743,
+        3737,
+        3767
+      ]
+    },
+    "sonda_varrer_max_ms": {
+      "ocioso": {
+        "min": 1.11,
+        "mediana": 2.29,
+        "max": 3.39,
+        "por_volta": [
+          2.22,
+          2.29,
+          3.05,
+          1.11,
+          3.39
+        ]
+      },
+      "antes": {
+        "min": 46.41,
+        "mediana": 66.89,
+        "max": 102.76,
+        "por_volta": [
+          64.48,
+          66.89,
+          46.41,
+          100.12,
+          102.76
+        ]
+      },
+      "depois": {
+        "min": 250.83,
+        "mediana": 362.99,
+        "max": 595.34,
+        "por_volta": [
+          595.34,
+          362.99,
+          277.82,
+          589.88,
+          250.83
+        ]
+      }
+    },
+    "sonda_varrer_mediana_ms": {
+      "ocioso": {
+        "min": 0.43,
+        "mediana": 0.49,
+        "max": 0.5,
+        "por_volta": [
+          0.49,
+          0.5,
+          0.49,
+          0.43,
+          0.44
+        ]
+      },
+      "antes": {
+        "min": 0.81,
+        "mediana": 0.89,
+        "max": 1.04,
+        "por_volta": [
+          1.04,
+          0.81,
+          0.89,
+          0.88,
+          0.91
+        ]
+      },
+      "depois": {
+        "min": 2.27,
+        "mediana": 3.14,
+        "max": 3.84,
+        "por_volta": [
+          3.84,
+          2.77,
+          2.27,
+          3.14,
+          3.32
+        ]
+      }
+    },
+    "sonda_ping_max_ms": {
+      "ocioso": {
+        "min": 0.97,
+        "mediana": 1.16,
+        "max": 4.13,
+        "por_volta": [
+          1.16,
+          1.11,
+          4.13,
+          1.85,
+          0.97
+        ]
+      },
+      "antes": {
+        "min": 6.67,
+        "mediana": 7.45,
+        "max": 12.94,
+        "por_volta": [
+          6.67,
+          7.45,
+          12.2,
+          12.94,
+          7.38
+        ]
+      },
+      "depois": {
+        "min": 9.15,
+        "mediana": 17.18,
+        "max": 43.3,
+        "por_volta": [
+          9.15,
+          9.74,
+          17.18,
+          18.51,
+          43.3
+        ]
+      }
+    },
+    "alcance_eventos_aplicados_pelo_central": {
+      "min": 51941,
+      "mediana": 52589,
+      "max": 53739,
+      "por_volta": [
+        52588,
+        53584,
+        53739,
+        51941,
+        52589
+      ]
+    },
+    "diario_bytes_por_venda_mediana": {
+      "min": 1549.0,
+      "mediana": 1558.0,
+      "max": 1564.0,
+      "por_volta": [
+        1549.0,
+        1564.0,
+        1556.0,
+        1558.0,
+        1559.0
+      ]
+    },
+    "meias_vendas_vistas": {
+      "min": 0,
+      "mediana": 0,
+      "max": 0,
+      "por_volta": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "tres_tabelas_iguais": [
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "voltas": [
+    {
+      "caixas": 20,
+      "segundos_por_fase": 20,
+      "montagem_s": 0.85,
+      "central_morto_em": "08:17:21",
+      "vendas_no_religar": 3737,
+      "central_atende_s": 0.022,
+      "alcance_s": 1.47,
+      "convergiu_depois_da_ultima_venda_s": 0.65,
+      "conferencia": {
+        "tres_tabelas_iguais_caixa_e_central": true,
+        "caixas_com_contagem_de_vendas_diferente": 0,
+        "vendas_cometidas": 5582,
+        "vendas_no_central": 5582,
+        "itens_no_central": 36144,
+        "sanduiches_conferidos": 5084,
+        "meias_vendas_vistas": 0,
+        "meias_exemplos": [],
+        "divergentes": []
+      },
+      "replicacao_estado_central": {
+        "papel": "replica",
+        "papel_configurado": "replica",
+        "id_servidor": "central",
+        "somente_leitura": false,
+        "origens": {
+          "caixa01": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:18:02,705",
+            "aplicados": 2699,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa02": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:18:03,174",
+            "aplicados": 2651,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa03": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:18:02,936",
+            "aplicados": 2559,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa04": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:18:03,092",
+            "aplicados": 2595,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa05": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:18:02,953",
+            "aplicados": 2521,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa06": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:18:03,267",
+            "aplicados": 2599,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa07": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:18:03,323",
+            "aplicados": 2567,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa08": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:18:02,811",
+            "aplicados": 2602,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa09": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:18:03,281",
+            "aplicados": 2622,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa10": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:18:02,841",
+            "aplicados": 2640,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa11": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:18:02,673",
+            "aplicados": 2742,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa12": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:18:03,436",
+            "aplicados": 2649,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa13": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:18:03,210",
+            "aplicados": 2633,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa14": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:18:03,046",
+            "aplicados": 2630,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa15": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:18:03,625",
+            "aplicados": 2555,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa16": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:18:03,071",
+            "aplicados": 2638,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa17": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:18:02,868",
+            "aplicados": 2736,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa18": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:18:03,377",
+            "aplicados": 2664,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa19": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:18:03,575",
+            "aplicados": 2565,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa20": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:18:03,510",
+            "aplicados": 2721,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          }
+        },
+        "colisoes_de_sequencia": {},
+        "carimbos_do_futuro": {},
+        "recusas_por_unicidade": {},
+        "toques_no_mapa": {},
+        "orfas_na_replica": {},
+        "escritas_locais": {},
+        "ledger_marcado_recebido": 0,
+        "quorum": null,
+        "id_de_transacao": {
+          "recuos_do_relogio": 0,
+          "commits_mistos": 0,
+          "teto_da_transacao": 67108864
+        }
+      },
+      "aplicados_pelo_central": 52588,
+      "central_erros_por_origem": {},
+      "chegada_ms": {
+        "antes": {
+          "n": 1813,
+          "min": 17.4,
+          "mediana": 547.2,
+          "p95": 1025.2,
+          "max": 1255.9
+        },
+        "durante": {
+          "n": 1890,
+          "min": 783.7,
+          "mediana": 11123.7,
+          "p95": 20046.3,
+          "max": 21280.2
+        },
+        "depois": {
+          "n": 1845,
+          "min": 18.8,
+          "mediana": 593.9,
+          "p95": 1059.4,
+          "max": 1394.8
+        },
+        "antes_pega_pela_queda": {
+          "n": 34,
+          "min": 20255.3,
+          "mediana": 21305.6,
+          "p95": 21784.7,
+          "max": 21949.8
+        }
+      },
+      "venda_no_caixa_ms": {
+        "antes": {
+          "n": 1847,
+          "min": 3.27,
+          "mediana": 12.61,
+          "p95": 30.12,
+          "max": 116.23
+        },
+        "durante": {
+          "n": 1890,
+          "min": 3.45,
+          "mediana": 9.9,
+          "p95": 17.97,
+          "max": 46.27
+        },
+        "depois": {
+          "n": 1845,
+          "min": 3.54,
+          "mediana": 12.82,
+          "p95": 26.82,
+          "max": 81.81
+        }
+      },
+      "vendas_por_fase": {
+        "antes": 1847,
+        "durante": 1890,
+        "depois": 1845
+      },
+      "recusadas": 0,
+      "recusadas_por_fase": {},
+      "recusadas_exemplos": [],
+      "sonda_central_ms": {
+        "ocioso": {
+          "ping": {
+            "n": 142,
+            "min": 0.11,
+            "mediana": 0.37,
+            "p95": 0.61,
+            "max": 1.16
+          },
+          "varrer": {
+            "n": 142,
+            "min": 0.21,
+            "mediana": 0.49,
+            "p95": 0.91,
+            "max": 2.22
+          }
+        },
+        "antes": {
+          "ping": {
+            "n": 811,
+            "min": 0.11,
+            "mediana": 0.4,
+            "p95": 1.97,
+            "max": 6.67
+          },
+          "varrer": {
+            "n": 811,
+            "min": 0.21,
+            "mediana": 1.04,
+            "p95": 17.3,
+            "max": 64.48
+          }
+        },
+        "depois": {
+          "ping": {
+            "n": 711,
+            "min": 0.1,
+            "mediana": 0.37,
+            "p95": 1.76,
+            "max": 9.15
+          },
+          "varrer": {
+            "n": 711,
+            "min": 0.24,
+            "mediana": 3.84,
+            "p95": 33.05,
+            "max": 595.34
+          }
+        }
+      },
+      "rodada_do_observador_ms": {
+        "n": 1045,
+        "min": 3.18,
+        "mediana": 14.68,
+        "p95": 110.43,
+        "max": 740.87
+      },
+      "diario_bytes_por_venda": {
+        "n": 20,
+        "min": 1484.0,
+        "mediana": 1549.0,
+        "p95": 1599.0,
+        "max": 1599.0
+      },
+      "disco_do_database_bytes_por_venda": {
+        "n": 20,
+        "min": 2574.0,
+        "mediana": 2672.0,
+        "p95": 2752.0,
+        "max": 2752.0
+      },
+      "itens_por_venda_media": 6.48,
+      "bancada_bytes": 60380120
+    },
+    {
+      "caixas": 20,
+      "segundos_por_fase": 20,
+      "montagem_s": 0.83,
+      "central_morto_em": "08:18:29",
+      "vendas_no_religar": 3781,
+      "central_atende_s": 0.034,
+      "alcance_s": 1.5,
+      "convergiu_depois_da_ultima_venda_s": 0.45,
+      "conferencia": {
+        "tres_tabelas_iguais_caixa_e_central": true,
+        "caixas_com_contagem_de_vendas_diferente": 0,
+        "vendas_cometidas": 5660,
+        "vendas_no_central": 5660,
+        "itens_no_central": 36761,
+        "sanduiches_conferidos": 5574,
+        "meias_vendas_vistas": 0,
+        "meias_exemplos": [],
+        "divergentes": []
+      },
+      "replicacao_estado_central": {
+        "papel": "replica",
+        "papel_configurado": "replica",
+        "id_servidor": "central",
+        "somente_leitura": false,
+        "origens": {
+          "caixa01": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:19:10,281",
+            "aplicados": 2788,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa02": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:19:10,150",
+            "aplicados": 2763,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa03": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:19:10,269",
+            "aplicados": 2771,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa04": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:19:10,184",
+            "aplicados": 2712,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa05": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:19:11,055",
+            "aplicados": 2711,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa06": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:19:11,088",
+            "aplicados": 2706,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa07": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:19:11,003",
+            "aplicados": 2762,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa08": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:19:10,296",
+            "aplicados": 2715,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa09": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:19:10,208",
+            "aplicados": 2541,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa10": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:19:11,002",
+            "aplicados": 2590,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa11": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:19:10,623",
+            "aplicados": 2830,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa12": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:19:10,152",
+            "aplicados": 2706,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa13": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:19:10,508",
+            "aplicados": 2640,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa14": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:19:11,028",
+            "aplicados": 2699,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa15": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:19:10,399",
+            "aplicados": 2506,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa16": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:19:10,872",
+            "aplicados": 2499,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa17": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:19:11,126",
+            "aplicados": 2689,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa18": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:19:10,984",
+            "aplicados": 2831,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa19": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:19:10,664",
+            "aplicados": 2541,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa20": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:19:10,185",
+            "aplicados": 2584,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          }
+        },
+        "colisoes_de_sequencia": {},
+        "carimbos_do_futuro": {},
+        "recusas_por_unicidade": {},
+        "toques_no_mapa": {},
+        "orfas_na_replica": {},
+        "escritas_locais": {},
+        "ledger_marcado_recebido": 0,
+        "quorum": null,
+        "id_de_transacao": {
+          "recuos_do_relogio": 0,
+          "commits_mistos": 0,
+          "teto_da_transacao": 67108864
+        }
+      },
+      "aplicados_pelo_central": 53584,
+      "central_erros_por_origem": {},
+      "chegada_ms": {
+        "antes": {
+          "n": 1844,
+          "min": 18.1,
+          "mediana": 539.3,
+          "p95": 1015.2,
+          "max": 1263.8
+        },
+        "antes_pega_pela_queda": {
+          "n": 32,
+          "min": 20269.4,
+          "mediana": 21028.1,
+          "p95": 21586.7,
+          "max": 21766.4
+        },
+        "durante": {
+          "n": 1906,
+          "min": 473.4,
+          "mediana": 11044.2,
+          "p95": 19849.6,
+          "max": 21174.2
+        },
+        "depois": {
+          "n": 1878,
+          "min": 14.0,
+          "mediana": 579.9,
+          "p95": 1048.5,
+          "max": 1457.4
+        }
+      },
+      "venda_no_caixa_ms": {
+        "antes": {
+          "n": 1876,
+          "min": 3.5,
+          "mediana": 11.67,
+          "p95": 28.55,
+          "max": 102.03
+        },
+        "durante": {
+          "n": 1906,
+          "min": 3.37,
+          "mediana": 9.47,
+          "p95": 18.03,
+          "max": 34.45
+        },
+        "depois": {
+          "n": 1878,
+          "min": 3.09,
+          "mediana": 11.2,
+          "p95": 23.11,
+          "max": 49.22
+        }
+      },
+      "vendas_por_fase": {
+        "antes": 1876,
+        "durante": 1906,
+        "depois": 1878
+      },
+      "recusadas": 0,
+      "recusadas_por_fase": {},
+      "recusadas_exemplos": [],
+      "sonda_central_ms": {
+        "ocioso": {
+          "ping": {
+            "n": 143,
+            "min": 0.1,
+            "mediana": 0.36,
+            "p95": 0.6,
+            "max": 1.11
+          },
+          "varrer": {
+            "n": 143,
+            "min": 0.25,
+            "mediana": 0.5,
+            "p95": 0.93,
+            "max": 2.29
+          }
+        },
+        "antes": {
+          "ping": {
+            "n": 844,
+            "min": 0.1,
+            "mediana": 0.36,
+            "p95": 1.61,
+            "max": 7.45
+          },
+          "varrer": {
+            "n": 844,
+            "min": 0.19,
+            "mediana": 0.81,
+            "p95": 13.56,
+            "max": 66.89
+          }
+        },
+        "depois": {
+          "ping": {
+            "n": 752,
+            "min": 0.1,
+            "mediana": 0.34,
+            "p95": 1.42,
+            "max": 9.74
+          },
+          "varrer": {
+            "n": 752,
+            "min": 0.2,
+            "mediana": 2.77,
+            "p95": 29.03,
+            "max": 362.99
+          }
+        }
+      },
+      "rodada_do_observador_ms": {
+        "n": 1190,
+        "min": 3.13,
+        "mediana": 13.09,
+        "p95": 89.7,
+        "max": 1236.46
+      },
+      "diario_bytes_por_venda": {
+        "n": 20,
+        "min": 1499.0,
+        "mediana": 1564.0,
+        "p95": 1596.0,
+        "max": 1596.0
+      },
+      "disco_do_database_bytes_por_venda": {
+        "n": 20,
+        "min": 2584.0,
+        "mediana": 2706.0,
+        "p95": 2758.0,
+        "max": 2758.0
+      },
+      "itens_por_venda_media": 6.49,
+      "bancada_bytes": 62101604
+    },
+    {
+      "caixas": 20,
+      "segundos_por_fase": 20,
+      "montagem_s": 0.89,
+      "central_morto_em": "08:19:36",
+      "vendas_no_religar": 3743,
+      "central_atende_s": 0.021,
+      "alcance_s": 1.38,
+      "convergiu_depois_da_ultima_venda_s": 0.7,
+      "conferencia": {
+        "tres_tabelas_iguais_caixa_e_central": true,
+        "caixas_com_contagem_de_vendas_diferente": 0,
+        "vendas_cometidas": 5633,
+        "vendas_no_central": 5633,
+        "itens_no_central": 36636,
+        "sanduiches_conferidos": 5366,
+        "meias_vendas_vistas": 0,
+        "meias_exemplos": [],
+        "divergentes": []
+      },
+      "replicacao_estado_central": {
+        "papel": "replica",
+        "papel_configurado": "replica",
+        "id_servidor": "central",
+        "somente_leitura": false,
+        "origens": {
+          "caixa01": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:20:18,671",
+            "aplicados": 2675,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa02": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:20:18,356",
+            "aplicados": 2742,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa03": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:20:18,665",
+            "aplicados": 2847,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa04": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:20:18,235",
+            "aplicados": 2786,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa05": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:20:18,593",
+            "aplicados": 2670,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa06": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:20:18,531",
+            "aplicados": 2593,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa07": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:20:18,144",
+            "aplicados": 2595,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa08": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:20:18,181",
+            "aplicados": 2757,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa09": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:20:18,209",
+            "aplicados": 2650,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa10": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:20:18,547",
+            "aplicados": 2463,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa11": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:20:18,628",
+            "aplicados": 2492,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa12": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:20:18,769",
+            "aplicados": 2784,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa13": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:20:18,242",
+            "aplicados": 2769,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa14": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:20:17,974",
+            "aplicados": 2765,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa15": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:20:18,009",
+            "aplicados": 2698,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa16": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:20:18,553",
+            "aplicados": 2709,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa17": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:20:18,572",
+            "aplicados": 2653,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa18": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:20:18,463",
+            "aplicados": 2684,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa19": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:20:18,498",
+            "aplicados": 2697,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa20": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:20:18,516",
+            "aplicados": 2710,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          }
+        },
+        "colisoes_de_sequencia": {},
+        "carimbos_do_futuro": {},
+        "recusas_por_unicidade": {},
+        "toques_no_mapa": {},
+        "orfas_na_replica": {},
+        "escritas_locais": {},
+        "ledger_marcado_recebido": 0,
+        "quorum": null,
+        "id_de_transacao": {
+          "recuos_do_relogio": 0,
+          "commits_mistos": 0,
+          "teto_da_transacao": 67108864
+        }
+      },
+      "aplicados_pelo_central": 53739,
+      "central_erros_por_origem": {},
+      "chegada_ms": {
+        "antes": {
+          "n": 1810,
+          "min": 15.4,
+          "mediana": 546.9,
+          "p95": 1016.0,
+          "max": 1404.2
+        },
+        "durante": {
+          "n": 1888,
+          "min": 599.6,
+          "mediana": 10826.9,
+          "p95": 19795.3,
+          "max": 20965.7
+        },
+        "depois": {
+          "n": 1887,
+          "min": 10.3,
+          "mediana": 568.9,
+          "p95": 1038.0,
+          "max": 1319.9
+        },
+        "antes_pega_pela_queda": {
+          "n": 48,
+          "min": 20579.1,
+          "mediana": 21134.3,
+          "p95": 21677.7,
+          "max": 21851.2
+        }
+      },
+      "venda_no_caixa_ms": {
+        "antes": {
+          "n": 1858,
+          "min": 3.61,
+          "mediana": 12.15,
+          "p95": 29.26,
+          "max": 111.64
+        },
+        "durante": {
+          "n": 1888,
+          "min": 3.2,
+          "mediana": 9.65,
+          "p95": 17.83,
+          "max": 79.88
+        },
+        "depois": {
+          "n": 1887,
+          "min": 3.58,
+          "mediana": 10.8,
+          "p95": 23.84,
+          "max": 45.41
+        }
+      },
+      "vendas_por_fase": {
+        "antes": 1858,
+        "durante": 1888,
+        "depois": 1887
+      },
+      "recusadas": 0,
+      "recusadas_por_fase": {},
+      "recusadas_exemplos": [],
+      "sonda_central_ms": {
+        "ocioso": {
+          "ping": {
+            "n": 140,
+            "min": 0.15,
+            "mediana": 0.38,
+            "p95": 1.26,
+            "max": 4.13
+          },
+          "varrer": {
+            "n": 140,
+            "min": 0.22,
+            "mediana": 0.49,
+            "p95": 1.39,
+            "max": 3.05
+          }
+        },
+        "antes": {
+          "ping": {
+            "n": 835,
+            "min": 0.08,
+            "mediana": 0.35,
+            "p95": 1.44,
+            "max": 12.2
+          },
+          "varrer": {
+            "n": 835,
+            "min": 0.17,
+            "mediana": 0.89,
+            "p95": 14.39,
+            "max": 46.41
+          }
+        },
+        "depois": {
+          "ping": {
+            "n": 776,
+            "min": 0.07,
+            "mediana": 0.32,
+            "p95": 1.38,
+            "max": 17.18
+          },
+          "varrer": {
+            "n": 776,
+            "min": 0.19,
+            "mediana": 2.27,
+            "p95": 25.28,
+            "max": 277.82
+          }
+        }
+      },
+      "rodada_do_observador_ms": {
+        "n": 1158,
+        "min": 3.1,
+        "mediana": 13.54,
+        "p95": 91.34,
+        "max": 924.65
+      },
+      "diario_bytes_por_venda": {
+        "n": 20,
+        "min": 1489.0,
+        "mediana": 1556.0,
+        "p95": 1629.0,
+        "max": 1629.0
+      },
+      "disco_do_database_bytes_por_venda": {
+        "n": 20,
+        "min": 2577.0,
+        "mediana": 2689.0,
+        "p95": 2828.0,
+        "max": 2828.0
+      },
+      "itens_por_venda_media": 6.5,
+      "bancada_bytes": 61690322
+    },
+    {
+      "caixas": 20,
+      "segundos_por_fase": 20,
+      "montagem_s": 0.8,
+      "central_morto_em": "08:20:44",
+      "vendas_no_religar": 3737,
+      "central_atende_s": 0.027,
+      "alcance_s": 1.75,
+      "convergiu_depois_da_ultima_venda_s": 0.5,
+      "conferencia": {
+        "tres_tabelas_iguais_caixa_e_central": true,
+        "caixas_com_contagem_de_vendas_diferente": 0,
+        "vendas_cometidas": 5576,
+        "vendas_no_central": 5576,
+        "itens_no_central": 35963,
+        "sanduiches_conferidos": 5253,
+        "meias_vendas_vistas": 0,
+        "meias_exemplos": [],
+        "divergentes": []
+      },
+      "replicacao_estado_central": {
+        "papel": "replica",
+        "papel_configurado": "replica",
+        "id_servidor": "central",
+        "somente_leitura": false,
+        "origens": {
+          "caixa01": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:21:26,240",
+            "aplicados": 2705,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa02": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:21:25,679",
+            "aplicados": 2795,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa03": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:21:25,572",
+            "aplicados": 2600,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa04": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:21:26,257",
+            "aplicados": 2497,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa05": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:21:25,799",
+            "aplicados": 2542,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa06": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:21:25,378",
+            "aplicados": 2410,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa07": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:21:26,069",
+            "aplicados": 2624,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa08": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:21:25,907",
+            "aplicados": 2609,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa09": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:21:26,311",
+            "aplicados": 2719,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa10": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:21:25,600",
+            "aplicados": 2576,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa11": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:21:26,110",
+            "aplicados": 2619,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa12": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:21:26,124",
+            "aplicados": 2630,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa13": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:21:26,221",
+            "aplicados": 2590,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa14": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:21:25,991",
+            "aplicados": 2661,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa15": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:21:25,337",
+            "aplicados": 2470,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa16": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:21:25,998",
+            "aplicados": 2679,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa17": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:21:25,541",
+            "aplicados": 2468,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa18": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:21:25,502",
+            "aplicados": 2469,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa19": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:21:26,300",
+            "aplicados": 2642,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa20": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:21:25,625",
+            "aplicados": 2636,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          }
+        },
+        "colisoes_de_sequencia": {},
+        "carimbos_do_futuro": {},
+        "recusas_por_unicidade": {},
+        "toques_no_mapa": {},
+        "orfas_na_replica": {},
+        "escritas_locais": {},
+        "ledger_marcado_recebido": 0,
+        "quorum": null,
+        "id_de_transacao": {
+          "recuos_do_relogio": 0,
+          "commits_mistos": 0,
+          "teto_da_transacao": 67108864
+        }
+      },
+      "aplicados_pelo_central": 51941,
+      "central_erros_por_origem": {},
+      "chegada_ms": {
+        "antes": {
+          "n": 1829,
+          "min": 17.9,
+          "mediana": 554.8,
+          "p95": 1017.6,
+          "max": 1301.2
+        },
+        "antes_pega_pela_queda": {
+          "n": 36,
+          "min": 20224.7,
+          "mediana": 21520.9,
+          "p95": 22079.5,
+          "max": 22176.0
+        },
+        "durante": {
+          "n": 1873,
+          "min": 919.2,
+          "mediana": 11233.1,
+          "p95": 20216.0,
+          "max": 21541.5
+        },
+        "depois": {
+          "n": 1838,
+          "min": 24.2,
+          "mediana": 610.8,
+          "p95": 1067.8,
+          "max": 1829.4
+        }
+      },
+      "venda_no_caixa_ms": {
+        "antes": {
+          "n": 1865,
+          "min": 3.74,
+          "mediana": 11.4,
+          "p95": 26.43,
+          "max": 111.57
+        },
+        "durante": {
+          "n": 1873,
+          "min": 3.14,
+          "mediana": 10.12,
+          "p95": 22.54,
+          "max": 105.09
+        },
+        "depois": {
+          "n": 1838,
+          "min": 3.63,
+          "mediana": 12.91,
+          "p95": 31.94,
+          "max": 80.78
+        }
+      },
+      "vendas_por_fase": {
+        "antes": 1865,
+        "durante": 1873,
+        "depois": 1838
+      },
+      "recusadas": 0,
+      "recusadas_por_fase": {},
+      "recusadas_exemplos": [],
+      "sonda_central_ms": {
+        "ocioso": {
+          "ping": {
+            "n": 143,
+            "min": 0.18,
+            "mediana": 0.35,
+            "p95": 0.63,
+            "max": 1.85
+          },
+          "varrer": {
+            "n": 143,
+            "min": 0.25,
+            "mediana": 0.43,
+            "p95": 0.78,
+            "max": 1.11
+          }
+        },
+        "antes": {
+          "ping": {
+            "n": 837,
+            "min": 0.08,
+            "mediana": 0.36,
+            "p95": 1.8,
+            "max": 12.94
+          },
+          "varrer": {
+            "n": 837,
+            "min": 0.2,
+            "mediana": 0.88,
+            "p95": 14.27,
+            "max": 100.12
+          }
+        },
+        "depois": {
+          "ping": {
+            "n": 679,
+            "min": 0.09,
+            "mediana": 0.38,
+            "p95": 1.65,
+            "max": 18.51
+          },
+          "varrer": {
+            "n": 679,
+            "min": 0.27,
+            "mediana": 3.14,
+            "p95": 37.46,
+            "max": 589.88
+          }
+        }
+      },
+      "rodada_do_observador_ms": {
+        "n": 1119,
+        "min": 2.89,
+        "mediana": 11.86,
+        "p95": 112.41,
+        "max": 1479.35
+      },
+      "diario_bytes_por_venda": {
+        "n": 20,
+        "min": 1454.0,
+        "mediana": 1558.0,
+        "p95": 1593.0,
+        "max": 1593.0
+      },
+      "disco_do_database_bytes_por_venda": {
+        "n": 20,
+        "min": 2506.0,
+        "mediana": 2686.0,
+        "p95": 2771.0,
+        "max": 2771.0
+      },
+      "itens_por_venda_media": 6.45,
+      "bancada_bytes": 60582573
+    },
+    {
+      "caixas": 20,
+      "segundos_por_fase": 20,
+      "montagem_s": 0.87,
+      "central_morto_em": "08:21:51",
+      "vendas_no_religar": 3767,
+      "central_atende_s": 0.051,
+      "alcance_s": 1.86,
+      "convergiu_depois_da_ultima_venda_s": 0.7,
+      "conferencia": {
+        "tres_tabelas_iguais_caixa_e_central": true,
+        "caixas_com_contagem_de_vendas_diferente": 0,
+        "vendas_cometidas": 5617,
+        "vendas_no_central": 5617,
+        "itens_no_central": 36435,
+        "sanduiches_conferidos": 5115,
+        "meias_vendas_vistas": 0,
+        "meias_exemplos": [],
+        "divergentes": []
+      },
+      "replicacao_estado_central": {
+        "papel": "replica",
+        "papel_configurado": "replica",
+        "id_servidor": "central",
+        "somente_leitura": false,
+        "origens": {
+          "caixa01": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:22:33,225",
+            "aplicados": 2721,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa02": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:22:33,336",
+            "aplicados": 2629,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa03": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:22:33,206",
+            "aplicados": 2612,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa04": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:22:33,256",
+            "aplicados": 2681,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa05": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:22:33,126",
+            "aplicados": 2621,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa06": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:22:33,376",
+            "aplicados": 2726,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa07": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:22:33,650",
+            "aplicados": 2670,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa08": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:22:33,320",
+            "aplicados": 2743,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa09": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:22:33,673",
+            "aplicados": 2559,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa10": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:22:33,474",
+            "aplicados": 2596,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa11": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:22:33,753",
+            "aplicados": 2595,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa12": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:22:33,513",
+            "aplicados": 2638,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa13": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:22:33,524",
+            "aplicados": 2482,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa14": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:22:33,499",
+            "aplicados": 2544,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa15": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:22:33,648",
+            "aplicados": 2657,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa16": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:22:33,381",
+            "aplicados": 2638,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa17": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:22:33,036",
+            "aplicados": 2604,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa18": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:22:33,304",
+            "aplicados": 2459,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa19": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:22:33,403",
+            "aplicados": 2704,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa20": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 08:22:33,067",
+            "aplicados": 2710,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          }
+        },
+        "colisoes_de_sequencia": {},
+        "carimbos_do_futuro": {},
+        "recusas_por_unicidade": {},
+        "toques_no_mapa": {},
+        "orfas_na_replica": {},
+        "escritas_locais": {},
+        "ledger_marcado_recebido": 0,
+        "quorum": null,
+        "id_de_transacao": {
+          "recuos_do_relogio": 0,
+          "commits_mistos": 0,
+          "teto_da_transacao": 67108864
+        }
+      },
+      "aplicados_pelo_central": 52589,
+      "central_erros_por_origem": {},
+      "chegada_ms": {
+        "antes": {
+          "n": 1843,
+          "min": 15.4,
+          "mediana": 557.6,
+          "p95": 1015.2,
+          "max": 1304.2
+        },
+        "antes_pega_pela_queda": {
+          "n": 37,
+          "min": 20228.1,
+          "mediana": 21421.2,
+          "p95": 22315.6,
+          "max": 22562.6
+        },
+        "durante": {
+          "n": 1890,
+          "min": 643.9,
+          "mediana": 11327.9,
+          "p95": 20281.2,
+          "max": 21761.8
+        },
+        "depois": {
+          "n": 1847,
+          "min": 15.3,
+          "mediana": 627.0,
+          "p95": 1127.0,
+          "max": 2065.1
+        }
+      },
+      "venda_no_caixa_ms": {
+        "antes": {
+          "n": 1880,
+          "min": 3.31,
+          "mediana": 12.48,
+          "p95": 36.34,
+          "max": 104.16
+        },
+        "durante": {
+          "n": 1890,
+          "min": 3.66,
+          "mediana": 10.11,
+          "p95": 19.69,
+          "max": 46.03
+        },
+        "depois": {
+          "n": 1847,
+          "min": 3.71,
+          "mediana": 12.1,
+          "p95": 28.35,
+          "max": 69.05
+        }
+      },
+      "vendas_por_fase": {
+        "antes": 1880,
+        "durante": 1890,
+        "depois": 1847
+      },
+      "recusadas": 0,
+      "recusadas_por_fase": {},
+      "recusadas_exemplos": [],
+      "sonda_central_ms": {
+        "ocioso": {
+          "ping": {
+            "n": 143,
+            "min": 0.12,
+            "mediana": 0.36,
+            "p95": 0.52,
+            "max": 0.97
+          },
+          "varrer": {
+            "n": 143,
+            "min": 0.24,
+            "mediana": 0.44,
+            "p95": 0.76,
+            "max": 3.39
+          }
+        },
+        "antes": {
+          "ping": {
+            "n": 808,
+            "min": 0.09,
+            "mediana": 0.39,
+            "p95": 2.02,
+            "max": 7.38
+          },
+          "varrer": {
+            "n": 808,
+            "min": 0.2,
+            "mediana": 0.91,
+            "p95": 17.92,
+            "max": 102.76
+          }
+        },
+        "depois": {
+          "ping": {
+            "n": 689,
+            "min": 0.08,
+            "mediana": 0.37,
+            "p95": 1.53,
+            "max": 43.3
+          },
+          "varrer": {
+            "n": 689,
+            "min": 0.25,
+            "mediana": 3.32,
+            "p95": 37.34,
+            "max": 250.83
+          }
+        }
+      },
+      "rodada_do_observador_ms": {
+        "n": 1078,
+        "min": 3.09,
+        "mediana": 11.95,
+        "p95": 103.56,
+        "max": 1211.85
+      },
+      "diario_bytes_por_venda": {
+        "n": 20,
+        "min": 1466.0,
+        "mediana": 1559.0,
+        "p95": 1597.0,
+        "max": 1597.0
+      },
+      "disco_do_database_bytes_por_venda": {
+        "n": 20,
+        "min": 2538.0,
+        "mediana": 2691.0,
+        "p95": 2761.0,
+        "max": 2761.0
+      },
+      "itens_por_venda_media": 6.49,
+      "bancada_bytes": 60927819
+    }
+  ]
+}

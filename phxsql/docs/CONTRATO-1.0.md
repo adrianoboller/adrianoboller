@@ -215,12 +215,12 @@ Desenho **espelho**: cada caixa é um `phxsqld` dono do próprio database; o cen
 
 | | o que o contrato diz | prova / estado |
 |---|---|---|
-| **S** | O caixa **vende** com o último preço recebido do central e **baixa o estoque local** | pedido 678 (bancada) — **ainda não medido** |
-| **N** | O caixa **não cadastra**: cliente e produto novos só se cadastram com o central **no ar**, o que elimina cadastro duplicado | guarda do pedido 677 — **ainda não existe** |
+| **S** | O caixa **vende** com o último preço recebido do central e **baixa o estoque local**, sem recusa e sem ficar mais lento com o central fora | pedido 678, `bancada/caixa-offline/resultados.json` (20 caixas, 5 voltas) |
+| **N** | O caixa **não cadastra**: cliente e produto novos só se cadastram com o central **no ar**, o que elimina cadastro duplicado | guarda do pedido 677, pedida por `"espelho": true` |
 | **N** | O central **vê a loja atrasada** até o caixa voltar | pedido 679 (visão por `unir`) |
-| **S, a partir de** | A venda chega ao central **inteira ou não chega**, **a partir do** pedido 676 (id de transação no `.log`). Antes dele vale o §2.4: a transação chega parcelada | pedido 676 — **aberto** |
+| **S** | A venda chega ao central **inteira ou não chega**, e **uma vez só**, mesmo com o fio ou o processo caindo no meio | pedidos 676, 682 e 698 a 702 (provas com `SIGKILL`); 678 conferiu caixa e central iguais linha a linha |
 
-**Nenhum número de tempo, atraso ou volume é prometido.** Eles saem da bancada do pedido 678 (20 caixas, 1 central, central derrubado no meio do expediente), que **ainda não foi medida**; entram aqui só com o `resultados.json` e a data.
+**Nenhum número de tempo, atraso ou volume é prometido aqui.** Os medidos (20 caixas, 1 central derrubado no meio do expediente, 5 voltas) ficam no `bancada/caixa-offline/resultados.json`, com faixa e data. O atraso de chegada acompanha `reconectar_em` (medido com 1 s; o de fábrica é 10 s). **Não medido:** alcance depois de horas fora e rede de loja real. **Não garantido:** teto de disco do caixa, porque o diário ainda não tem expurgo (pedido 706).
 
 ### 2.5 Segurança
 

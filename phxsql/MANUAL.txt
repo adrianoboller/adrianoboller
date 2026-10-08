@@ -4620,10 +4620,21 @@ incluindo multi-source e failover.
                        "databases":["loja"], "espelho": true, "...":"..."}]
       - O central ve a loja ATRASADA ate o caixa voltar; nao ve a venda
         enquanto ela nao chegou.
-      - A venda chega ao central INTEIRA, ou nao chega: a PARTIR DO pedido
-        676 (id de transacao no .log). Ate ele entrar, um commit entre tabelas
-        NAO atravessa o fio da replicacao como unidade (pedido 299), e o
-        central pode ver a venda pela metade.
+      - A venda chega ao central INTEIRA, ou nao chega, e chega UMA vez so
+        (pedidos 676, 682, 698 a 702): nem o fio que cai, nem o processo do
+        caixa ou do central morto no meio deixam a venda pela metade.
+
+    O QUE FOI MEDIDO (pedido 678, bancada/caixa-offline/, 20 caixas e 1
+    central em 5 voltas; os numeros, com faixa e data, ficam no
+    resultados.json de la e no LEIA-ME da pasta -- este manual nao os copia):
+    com o central derrubado o caixa vendeu sem nenhuma recusa e sem ficar mais
+    lento; ao voltar, o central alcancou os 20 caixas sem venda pela metade e
+    sem venda duplicada (conferido linha a linha nos dois lados). O atraso de
+    chegada acompanha replicacao.origens[].reconectar_em: a bancada mediu com
+    1 s, e o de fabrica e 10 s -- quem quer o central em dia rapido baixa esse
+    numero. NAO medido: alcance depois de horas fora do ar, rede de loja real.
+    E o diario do caixa cresce a cada venda e ainda NAO tem expurgo (pedido
+    706): numa loja que fica meses no ar, acompanhe o disco do caixa.
 
     A LOJA NO CENTRAL (pedido 679). Cada caixa chega ao central no database
     dele (caixa01, caixa02, ...), e a loja se le EMPILHANDO os caixas com

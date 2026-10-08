@@ -14,6 +14,7 @@ deve acreditar.
 | `resultados-3-milhoes.json` | a corrida de 3.000.000, guardada inteira |
 | `carga-3-milhoes.log` | o log dela |
 | `bateria/` | a bateria de **ponta a ponta**: os seis itens do pedido feitos como um usuário faria, pelo soquete e pela tela, e a medição do que o gatilho e a chave custam. Ver `bateria/LEIA-ME.md` |
+| `caixa-offline/` | o **espelho do pedido 325 medido** (pedido 678): 20 caixas e 1 central réplica das 20 origens, o central derrubado com `SIGKILL` no meio do expediente e religado. Mede chegada, venda recusada, alcance, meia venda e diário por venda. Ver `caixa-offline/LEIA-ME.md` |
 | `exclusao/` | a **prova pelo processo** da janela de durabilidade da exclusão: 150 exclusões pelo soquete e um `SIGKILL` no meio da janela. Ver `exclusao/LEIA-ME.md` |
 | `usuarios/` | o **cadastro pelo protocolo** (pedido 221) contra o motor vivo: cria, loga na conexão nova, troca a senha, confere que a velha caiu, exclui e vê a sessão aberta parar de valer — e varre `config.json`, `acessos.log` e o `perfil.txt` do Profiler ligado atrás da senha. Não mede tempo: julga. Ver `usuarios/LEIA-ME.md` |
 | `guardas/` | o catálogo dos **defeitos repostos** e o executor que os repõe: prova que cada teste ainda pega o defeito que o motivou. Não mede nada — julga as outras baterias. Ver `guardas/LEIA-ME.md` |
