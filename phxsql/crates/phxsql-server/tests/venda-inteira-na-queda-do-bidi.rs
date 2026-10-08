@@ -199,7 +199,8 @@ fn subir_central_com(
         .stderr(Stdio::from(std::fs::File::create(&erro_padrao).unwrap()));
     cmd.env_remove("PHXSQL_TESTE_PARAR_NO_GRUPO")
         .env_remove("PHXSQL_TESTE_PARAR_NO_REG")
-        .env_remove(FALHAR_NO_EVENTO);
+        .env_remove(FALHAR_NO_EVENTO)
+        .env_remove("PHXSQL_TESTE_PARAR_DEPOIS_DA_MARCA_DO_BIDI");
     if let Some((var, n, _)) = parar {
         cmd.env(var, n.to_string());
     }
@@ -525,28 +526,27 @@ fn o_erro_de_dado_no_meio_do_grupo_do_bidi_nao_deixa_a_venda_pela_metade() {
     );
 }
 
-/// **A prova real do 723.** A copia fria (o caminho da CLI) de um central que
-/// morreu no meio de um grupo do bidirecional, restaurada noutro servidor. O
-/// palco nao completa a marca `bidi_` -- quem casa pela chave e o servidor --,
-/// mas a confere: o grupo pela metade RECUSA a restauracao nomeando a marca.
-/// Vermelho medido antes do conserto: a restauracao passava e mostrava a
-/// venda pela metade ate o proximo arranque do destino.
-#[test]
-fn a_copia_do_central_caido_no_meio_do_grupo_nao_restaura_meia_venda() {
-    let base_o = DirTemp::novo("copia-bidi-caixa");
-    let base_c = DirTemp::novo("copia-bidi-central");
+/// O roteiro do 723: o central morre pelo gancho `parar`, a copia fria (o
+/// caminho da CLI) sai do disco dele, e se restaura num servidor limpo.
+/// Devolve a resposta do `restaurar_backup` e o retrato do restaurado.
+fn restaurar_a_copia_do_central(
+    rotulo: &str,
+    parar: Option<Parada>,
+) -> (Json, (usize, usize, usize)) {
+    let base_o = DirTemp::novo(&format!("{rotulo}-caixa"));
+    let base_c = DirTemp::novo(&format!("{rotulo}-central"));
     std::fs::create_dir_all(&base_c.0).unwrap();
     let (_outro, porta_o) = subir_origem(&base_o.0);
     criar_as_tabelas(porta_o);
     vender(porta_o, 1);
-    let (mut filho, _) = subir_central(&base_c.0, 1, porta_o, no_grupo(3));
+    let (mut filho, _) = subir_central(&base_c.0, 1, porta_o, parar);
     filho.0.kill().unwrap();
     filho.0.wait().unwrap();
     drop(filho);
     assert_eq!(
         marcas_do_bidi(&base_c.0.join("dados").join("loja")).len(),
         1,
-        "premissa: a marca do grupo pela metade tinha de estar no disco caido"
+        "premissa: a marca do grupo tinha de estar no disco caido"
     );
 
     let copias = base_c.0.join("copias");
@@ -566,7 +566,7 @@ fn a_copia_do_central_caido_no_meio_do_grupo_nao_restaura_meia_venda() {
         .find(|p| p.extension().is_some_and(|x| x == "zip"))
         .expect("a copia nao gerou .zip");
 
-    let base_d = DirTemp::novo("copia-bidi-destino");
+    let base_d = DirTemp::novo(&format!("{rotulo}-destino"));
     let mut c = Config {
         bind: "127.0.0.1:0".into(),
         base: base_d.0.join("dados"),
@@ -592,6 +592,20 @@ fn a_copia_do_central_caido_no_meio_do_grupo_nao_restaura_meia_venda() {
     ))
     .unwrap();
     let retrato = retrato(porta_d);
+    let sobra = marcas_do_bidi(&base_d.0.join("dados").join("loja"));
+    assert!(
+        sobra.is_empty(),
+        "a marca do bidi entrou na raiz do destino: {sobra:?}"
+    );
+    (r, retrato)
+}
+
+/// **A prova real do 723, o caso «parte».** A copia de um central que morreu
+/// no 3.o evento do grupo RECUSA a restauracao nomeando a marca. Vermelho
+/// medido antes do conserto: a restauracao passava e mostrava `(0, 3, 0)`.
+#[test]
+fn a_copia_do_central_caido_no_meio_do_grupo_nao_restaura_meia_venda() {
+    let (r, retrato) = restaurar_a_copia_do_central("copia-bidi-parte", no_grupo(3));
     assert!(
         !r.booleano_ou("ok", true) && r.texto_ou("erro", "").contains("bidi_"),
         "a restauracao da copia com o grupo do bidi pela metade passou (retrato \
@@ -599,4 +613,169 @@ fn a_copia_do_central_caido_no_meio_do_grupo_nao_restaura_meia_venda() {
         r.escrever()
     );
     assert_eq!(retrato, (0, 0, 0), "o database pela metade entrou na raiz");
+}
+
+/// **723, o caso «todos».** O central morre com o grupo INTEIRO aplicado e a
+/// marca ainda no disco (o `fsync` da rodada nao chegou): a restauracao passa,
+/// a venda vem inteira, e a marca sai no palco. Vermelho medido com o
+/// conferidor recusando tambem este caso (o `presentes != total` trocado por
+/// `presentes != 0`).
+#[test]
+fn a_copia_com_o_grupo_inteiro_restaura_e_a_marca_sai() {
+    let (r, retrato) = restaurar_a_copia_do_central("copia-bidi-todos", no_grupo(7));
+    assert!(r.booleano_ou("ok", false), "{}", r.escrever());
+    assert_eq!(retrato, (1, ITENS, 1));
+}
+
+/// **723, o caso «nenhum».** O central morre com a marca do grupo no disco e
+/// nenhum evento aplicado: a restauracao passa, a venda nao esta (o destino a
+/// pede de novo pelas posicoes dele), e a marca sai no palco. Vermelho medido
+/// com o conferidor recusando quando nada esta presente.
+#[test]
+fn a_copia_com_o_grupo_ausente_restaura_e_a_marca_sai() {
+    let (r, retrato) = restaurar_a_copia_do_central(
+        "copia-bidi-nenhum",
+        Some((
+            "PHXSQL_TESTE_PARAR_DEPOIS_DA_MARCA_DO_BIDI",
+            1,
+            "bidirecional parado depois da marca do grupo",
+        )),
+    );
+    assert!(r.booleano_ou("ok", false), "{}", r.escrever());
+    assert_eq!(retrato, (0, 0, 0));
+}
+
+/// **723, o caso que parece «nenhum» e e «parte».** O central morre DENTRO da
+/// primeira inclusao do grupo (o 700): nenhum evento no diario, mas a linha
+/// no `.reg`. Restaurar daria uma linha sem inclusao no diario e sem a marca
+/// que a completaria -- recusa. Vermelho medido sem a conferencia da linha
+/// orfa (a restauracao passava).
+#[test]
+fn a_copia_com_a_primeira_inclusao_pela_metade_recusa() {
+    let (r, _) = restaurar_a_copia_do_central("copia-bidi-orfa", no_reg(1));
+    assert!(
+        !r.booleano_ou("ok", true) && r.texto_ou("erro", "").contains("sem a inclusao"),
+        "{}",
+        r.escrever()
+    );
+}
+
+/// **A prova real da E7 do 722: a parada nominal e por TRANSACAO.** O central
+/// tem uma linha LOCAL que ocupa o codigo 203 num indice unico SECUNDARIO de
+/// `itens`; a venda 2 do caixa traz um item com o mesmo codigo, no meio da
+/// venda. O conflito e deterministico -- completar para a frente bateria nele
+/// de novo --, entao o grupo inteiro tem de parar ANTES do primeiro evento.
+/// Vermelho medido antes do conserto: a parada era por tabela, e o central
+/// ficava com parte da venda 2.
+#[test]
+fn o_conflito_no_meio_da_venda_para_a_venda_inteira_no_bidi() {
+    let base_o = DirTemp::novo("e7-bidi-caixa");
+    let base_c = DirTemp::novo("e7-bidi-central");
+    std::fs::create_dir_all(&base_c.0).unwrap();
+    let (_outro, porta_o) = subir_origem(&base_o.0);
+    let mut b = Ligacao::nova(porta_o);
+    b.exigir(r#""op":"criar_database","database":"loja""#);
+    for tabela in ["vendas", "pagamentos"] {
+        b.exigir(&format!(
+            r#""op":"criar_tabela","database":"loja","tabela":"{tabela}",
+               "colunas":[{{"nome":"id","tipo":"Int8","obrigatoria":true}},
+                          {{"nome":"venda","tipo":"Int8"}}],
+               "indices":[{{"nome":"pk_id","colunas":["id"],"unico":true,"primario":true}}]"#
+        ));
+    }
+    b.exigir(
+        r#""op":"criar_tabela","database":"loja","tabela":"itens",
+           "colunas":[{"nome":"id","tipo":"Int8","obrigatoria":true},
+                      {"nome":"venda","tipo":"Int8"},
+                      {"nome":"codigo","tipo":"Int8"}],
+           "indices":[{"nome":"pk_id","colunas":["id"],"unico":true,"primario":true},
+                      {"nome":"porCodigo","colunas":["codigo"],"unico":true}]"#,
+    );
+    let vender_com_codigo = |b: &mut Ligacao, n: usize| {
+        b.exigir(r#""op":"begin","database":"loja""#);
+        b.exigir(&format!(
+            r#""op":"inserir","database":"loja","tabela":"vendas","linha":{{"id":{n},"venda":{n}}}"#
+        ));
+        for i in 1..=ITENS {
+            let id = (n - 1) * ITENS + i;
+            b.exigir(&format!(
+                r#""op":"inserir","database":"loja","tabela":"itens",
+                   "linha":{{"id":{id},"venda":{n},"codigo":{}}}"#,
+                n * 100 + i
+            ));
+        }
+        b.exigir(&format!(
+            r#""op":"inserir","database":"loja","tabela":"pagamentos","linha":{{"id":{n},"venda":{n}}}"#
+        ));
+        b.exigir(r#""op":"commit""#);
+    };
+    vender_com_codigo(&mut b, 1);
+
+    let (filho, porta_c) = subir_central(&base_c.0, 1, porta_o, None);
+    let ate = Instant::now() + ESPERA;
+    while retrato(porta_c) != (1, ITENS, 1) {
+        assert!(
+            Instant::now() < ate,
+            "a venda 1 nao chegou: {:?}",
+            retrato(porta_c)
+        );
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    // A linha LOCAL que ocupa o codigo do 3.o item da venda 2.
+    Ligacao::nova(porta_c).exigir(
+        r#""op":"inserir","database":"loja","tabela":"itens",
+           "linha":{"id":999,"venda":0,"codigo":203}"#,
+    );
+    vender_com_codigo(&mut b, 2);
+    // Rodadas de folga (uma por segundo): o que fosse entrar ja teria entrado.
+    std::thread::sleep(Duration::from_secs(4));
+    let r = retrato(porta_c);
+    drop(filho);
+    assert_eq!(
+        r,
+        (1, ITENS + 1, 1),
+        "o conflito no meio da venda 2 deixou parte dela no central: \
+         (vendas, itens, pagamentos) = {r:?}"
+    );
+}
+
+/// **O ramo «completou na hora» do 722.** O erro injetado e PASSAGEIRO (cai so
+/// na primeira vez): o grupo para no meio, e a completacao com a mesma trava,
+/// pelo corpo da completacao do arranque, o atravessa -- a venda fica inteira
+/// sem queda nenhuma, e a marca sai depois do `fsync` da rodada. Vermelho
+/// medido com a completacao tirada (o `marca.filter(|_| n > 0)` sempre
+/// vazio): o grupo volta o erro, a marca sai com a lista, e a venda fica
+/// pela metade.
+#[test]
+fn o_erro_passageiro_no_meio_do_grupo_do_bidi_completa_na_hora() {
+    let base_o = DirTemp::novo("passageiro-bidi-caixa");
+    let base_c = DirTemp::novo("passageiro-bidi-central");
+    std::fs::create_dir_all(&base_c.0).unwrap();
+    let (_outro, porta_o) = subir_origem(&base_o.0);
+    criar_as_tabelas(porta_o);
+    vender(porta_o, 1);
+
+    let (filho, porta_c) = subir_central_com(&base_c.0, 1, porta_o, None, Some("itens:2:uma"));
+    let erro = base_c.0.join("stderr-1.txt");
+    let ate = Instant::now() + ESPERA;
+    while !std::fs::read_to_string(&erro)
+        .unwrap_or_default()
+        .contains("foi completado pela marca, com a mesma trava (pedido 722)")
+    {
+        assert!(
+            Instant::now() < ate,
+            "o grupo nao foi completado na hora: {}",
+            std::fs::read_to_string(&erro).unwrap_or_default()
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let r = retrato(porta_c);
+    let pasta = base_c.0.join("dados").join("loja");
+    let ate = Instant::now() + ESPERA;
+    while !marcas_do_bidi(&pasta).is_empty() {
+        assert!(Instant::now() < ate, "a marca completada nao saiu do disco");
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    drop(filho);
+    assert_eq!(r, (1, ITENS, 1), "a venda completada na hora ficou {r:?}");
 }

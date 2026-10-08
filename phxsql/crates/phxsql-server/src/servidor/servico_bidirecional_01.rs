@@ -4,6 +4,7 @@
 //! so movimento; o que outro arquivo do servidor usa passa a `pub(super)`.
 
 use super::*;
+use phxsql_store::table::Pendente;
 
 /// A identidade de UMA tabela no bidirecional, emprestada -- o que o
 /// [`Servidor::aplicar_tabela_bidi`] precisa, venha da rodada ou da marca do
@@ -284,6 +285,22 @@ impl Servidor {
         saida
     }
 
+    /// So em `debug`: o gancho `PHXSQL_TESTE_FALHAR_NO_EVENTO` do pedido 722
+    /// cai neste evento? `<tabela>:<rowid>` cai sempre; `<tabela>:<rowid>:uma`,
+    /// so na primeira vez do processo.
+    #[cfg(debug_assertions)]
+    fn falhar_no_evento_de_teste(tabela: &str, rowid: u64) -> bool {
+        static JA_CAIU: AtomicBool = AtomicBool::new(false);
+        let Some(v) = gancho_de_teste_em_texto("PHXSQL_TESTE_FALHAR_NO_EVENTO") else {
+            return false;
+        };
+        let alvo = format!("{tabela}:{rowid}");
+        match v.strip_suffix(":uma") {
+            Some(uma) => uma == alvo && !JA_CAIU.swap(true, Ordering::SeqCst),
+            None => v == alvo,
+        }
+    }
+
     /// O laco de [`Self::aplicar_tabela_bidi`], separado para a contagem de
     /// orfas ser colhida tambem quando ele sai pelo erro.
     fn aplicar_eventos_bidi(
@@ -323,10 +340,10 @@ impl Servidor {
             // So em `debug`, pedido 722: o evento `<tabela>:<rowid de la>`
             // falha com erro do DADO no lugar de se aplicar -- sempre, como um
             // erro de dado de verdade bate no mesmo evento em toda tentativa.
+            // Com `:uma` no fim, falha SO a primeira vez: o erro passageiro,
+            // que a completacao na hora atravessa.
             #[cfg(debug_assertions)]
-            if gancho_de_teste_em_texto("PHXSQL_TESTE_FALHAR_NO_EVENTO").as_deref()
-                == Some(format!("{}:{}", alvo.nome, e.rowid).as_str())
-            {
+            if Self::falhar_no_evento_de_teste(alvo.nome, e.rowid) {
                 eprintln!(
                     "teste: erro de dado injetado no evento {}:{}",
                     alvo.nome, e.rowid
@@ -368,10 +385,7 @@ impl Servidor {
                 // linha que o conflito deixou de fora, e a divergencia se
                 // espalharia em vez de ficar num ponto que se sabe nomear.
                 bidirecional::Aplicacao::Conflito(c) => {
-                    let detalhe = format!(
-                        "indice {:?}, valor {:?}; a linha daqui e {}, a de la e {}",
-                        c.indice, c.valor, c.linha_daqui, c.linha_de_la
-                    );
+                    let detalhe = Self::detalhe_do_conflito(&c);
                     saida.parou_em = Some((e.posicao, "conflito_de_unicidade", detalhe));
                     break;
                 }
@@ -379,15 +393,7 @@ impl Servidor {
                 // do piso. Para pelo mesmo motivo do conflito -- a posicao nao
                 // anda, e nenhum lado e escolhido calado.
                 bidirecional::Aplicacao::Esquecida(chave) => {
-                    let detalhe = format!(
-                        "chave {chave}: o mapa de toques passou do teto \
-                         (replicacao.teto_de_toques = {}) e esqueceu o ultimo toque \
-                         local dela, e o evento nao e mais recente que o mais novo \
-                         esquecido -- aplicar ou descartar seria escolher um lado as \
-                         cegas. Suba o teto e reinicie (o mapa se refaz do diario), \
-                         ou solte o par sabendo que este evento sera pulado",
-                        self.config.replicacao.teto_de_toques
-                    );
+                    let detalhe = self.detalhe_do_esquecido(&chave);
                     saida.parou_em = Some((e.posicao, "toque_esquecido_pelo_teto", detalhe));
                     break;
                 }
@@ -683,6 +689,15 @@ impl Servidor {
         let marca = self.marcar_o_grupo_bidi(database, filas, &grupo, hash_dele)?;
         if let Some(m) = &marca {
             marcas.push(m.clone());
+        }
+        // So em `debug`, pedido 723: o processo morre com a marca do grupo no
+        // disco e NENHUM evento dele aplicado -- a copia fria que o palco tem
+        // de aceitar, tirando a marca.
+        #[cfg(debug_assertions)]
+        if marca.is_some()
+            && gancho_de_teste("PHXSQL_TESTE_PARAR_DEPOIS_DA_MARCA_DO_BIDI") == Some(1)
+        {
+            sigkill_de_teste("teste: bidirecional parado depois da marca do grupo");
         }
         let itens: Vec<ItemBidi<'_>> = grupo
             .iter()
@@ -995,6 +1010,20 @@ impl Servidor {
                 gravada: true,
             });
         }
+        // Pedido 722, a E7: o grupo da RODADA se ensaia inteiro antes do
+        // primeiro evento -- a parada nominal (conflito de unicidade, toque
+        // esquecido) e deterministica e bateria de novo em qualquer
+        // completacao, entao ela tem de acontecer ANTES de algo entrar. Se
+        // algum evento pararia, nenhum entra, e o par para no comeco do grupo
+        // em cada tabela dele: a parada passa a ser por TRANSACAO. A
+        // completacao do arranque (sem identidade) nao ensaia: ali o grupo ja
+        // comecou, e so se anda para a frente.
+        if marca.is_some() && itens.iter().all(|it| it.identidade.is_some()) {
+            if let Some(parada) = self.ensaiar_o_grupo_bidi(&db, itens, meu_hash, hash_dele) {
+                trava.marca_em_voo = None;
+                return Ok((0, Self::paradas_do_grupo(itens, parada)));
+            }
+        }
         let (n, paradas, parou) = self.aplicar_itens_bidi_sob(&db, itens, meu_hash, hash_dele);
         let Some(erro) = parou else {
             trava.marca_em_voo = None;
@@ -1048,6 +1077,200 @@ impl Servidor {
                 reter: true,
             }),
         }
+    }
+
+    /// O ENSAIO A SECO do grupo do bidirecional -- pedido 722, a E7 do desenho
+    /// unico. Responde «algum evento deste grupo PARARIA o par?» sem gravar
+    /// nada: o mesmo «mais recente vence» do [`Self::aplicar_por_chave`], com
+    /// os toques dos eventos anteriores do MESMO grupo por cima do mapa, e a
+    /// unicidade conferida contra o disco mais o que o grupo ja teria escrito
+    /// (a sobreposicao do `Table`, a mesma da pre-conferencia do COMMIT) --
+    /// inclusive nos indices secundarios, que e onde o conflito costuma
+    /// morar. Devolve o item e a parada `(posicao, motivo, detalhe)`.
+    ///
+    /// Ensaio, e nao garantia: o que ele nao alcanca (o teto de toques que
+    /// esquece no meio do grupo, a linha que a gravacao completa diferente da
+    /// imagem) cai no aplicador como antes, que para a tabela -- o cinto. E o
+    /// erro que nao e parada nominal (E/S, imagem que nao abre) nao se decide
+    /// aqui: o ensaio desiste e deixa o aplicador dize-lo, pelo `parou`.
+    #[allow(clippy::type_complexity, reason = "como `LoteBidi`")]
+    fn ensaiar_o_grupo_bidi(
+        &self,
+        db: &phxsql_store::catalogo::Database,
+        itens: &[ItemBidi<'_>],
+        meu_hash: u16,
+        hash_dele: u16,
+    ) -> Option<(usize, (u64, &'static str, String))> {
+        for (k, it) in itens.iter().enumerate() {
+            let (indice, pos_chave) = it.identidade?;
+            match self.ensaiar_a_tabela_bidi(db, it, indice, pos_chave, meu_hash, hash_dele) {
+                Ok(Some(p)) => return Some((k, p)),
+                Ok(None) => {}
+                // O ensaio nao sabe julgar: o aplicador fala.
+                Err(_) => return None,
+            }
+        }
+        None
+    }
+
+    /// O ensaio de UMA tabela do grupo. Ver [`Self::ensaiar_o_grupo_bidi`].
+    fn ensaiar_a_tabela_bidi(
+        &self,
+        db: &phxsql_store::catalogo::Database,
+        it: &ItemBidi<'_>,
+        indice: &str,
+        pos_chave: &[usize],
+        meu_hash: u16,
+        hash_dele: u16,
+    ) -> Result<Option<(u64, &'static str, String)>> {
+        let mut t = db.abrir_qualificada(it.nome)?;
+        let mut locais: HashMap<String, Toque> = HashMap::new();
+        let mut nascidas = 0u64;
+        for e in it.eventos {
+            if e.origem == meu_hash || e.imagem.is_empty() {
+                continue;
+            }
+            let (valores, chave, antiga) =
+                Self::identidades_do_evento(&mut t, e.operacao, &e.imagem, pos_chave)?;
+            let origem_ev = if e.origem == 0 { hash_dele } else { e.origem };
+            let agora = crate::agora_ms();
+            let carimbo = if bidirecional::carimbo_alem_da_folga(e.carimbo_ms, agora) {
+                agora
+            } else {
+                e.carimbo_ms
+            };
+            let (vence, vence_na_antiga) = {
+                let guarda = self.toques_bidi.tomar("toques_bidi")?;
+                let mapa = guarda.get(it.chave_tab);
+                let decide = |c: &str| match locais.get(c) {
+                    Some(l) if bidirecional::remoto_vence(carimbo, origem_ev, l) => {
+                        bidirecional::Decisao::Vence
+                    }
+                    Some(_) => bidirecional::Decisao::Perde,
+                    None => match mapa {
+                        Some(m) => m.decidir(c, carimbo, origem_ev),
+                        None => bidirecional::Decisao::Vence,
+                    },
+                };
+                (decide(&chave), antiga.as_ref().map(|(_, c)| decide(c)))
+            };
+            if vence == bidirecional::Decisao::NaoSei
+                || vence_na_antiga == Some(bidirecional::Decisao::NaoSei)
+            {
+                let chave_dita = Self::chave_dita(&t, pos_chave, &valores);
+                return Ok(Some((
+                    e.posicao,
+                    "toque_esquecido_pelo_teto",
+                    self.detalhe_do_esquecido(&chave_dita),
+                )));
+            }
+            if vence != bidirecional::Decisao::Vence {
+                continue;
+            }
+            let vence_na_antiga = vence_na_antiga == Some(bidirecional::Decisao::Vence);
+            let tupla = bidirecional::tupla(&valores, pos_chave);
+            match e.operacao {
+                Operacao::Inclusao | Operacao::Alteracao => {
+                    let achadas = t.buscar(indice, &tupla)?;
+                    let achada =
+                        Self::uma_linha_so(&t, it.chave_tab, indice, pos_chave, &valores, achadas)?;
+                    let velha = match &antiga {
+                        Some((tv, _)) if vence_na_antiga => {
+                            let achadas = t.buscar(indice, tv)?;
+                            Self::uma_linha_so(
+                                &t,
+                                it.chave_tab,
+                                indice,
+                                pos_chave,
+                                &valores,
+                                achadas,
+                            )?
+                        }
+                        _ => None,
+                    };
+                    // A mesma escolha do aplicador: a linha da chave nova, ou
+                    // a da chave velha que muda de chave; a velha que sobra
+                    // quando as duas existem sai.
+                    let proprio = achada.or(velha);
+                    if let (Some(v), Some(_)) = (velha, achada) {
+                        let _ = t.sobrepor_mais(v, Pendente::Exclusao);
+                    }
+                    if let Err(PhxError::Duplicado(qual)) = t.conferir_unicidade(&valores, proprio)
+                    {
+                        let alvo = AlvoBidi {
+                            nome: it.nome,
+                            chave_tab: it.chave_tab,
+                            indice,
+                            pos_chave,
+                            orfa: None,
+                        };
+                        let c = self.contar_o_conflito(&mut t, alvo, e, &valores, &qual)?;
+                        return Ok(Some((
+                            e.posicao,
+                            "conflito_de_unicidade",
+                            Self::detalhe_do_conflito(&c),
+                        )));
+                    }
+                    let _ = match proprio {
+                        Some(r) => t.sobrepor_mais(r, Pendente::Alteracao(&valores, &[])),
+                        None => {
+                            nascidas += 1;
+                            t.sobrepor_mais(t.slots() + nascidas, Pendente::Insercao(&valores))
+                        }
+                    };
+                }
+                Operacao::Exclusao => {
+                    let achadas = t.buscar(indice, &tupla)?;
+                    if let Some(r) =
+                        Self::uma_linha_so(&t, it.chave_tab, indice, pos_chave, &valores, achadas)?
+                    {
+                        let _ = t.sobrepor_mais(r, Pendente::Exclusao);
+                    }
+                }
+            }
+            let toque = Toque {
+                carimbo,
+                origem: origem_ev,
+                excluido: e.operacao == Operacao::Exclusao,
+            };
+            if let Some((_, velha)) = antiga.filter(|_| vence_na_antiga) {
+                locais.insert(
+                    velha,
+                    Toque {
+                        excluido: true,
+                        ..toque
+                    },
+                );
+            }
+            locais.insert(chave, toque);
+        }
+        Ok(None)
+    }
+
+    /// A parada de UM evento vira a parada do grupo inteiro: cada tabela dele
+    /// para na posicao do PRIMEIRO evento dela no grupo -- nenhum entrou, e a
+    /// rodada seguinte pede de novo dali, depois do `replicacao_pular`.
+    #[allow(clippy::type_complexity, reason = "como `LoteBidi`")]
+    fn paradas_do_grupo(
+        itens: &[ItemBidi<'_>],
+        (culpado, (_, motivo, detalhe)): (usize, (u64, &'static str, String)),
+    ) -> Vec<(usize, (u64, &'static str, String))> {
+        itens
+            .iter()
+            .enumerate()
+            .filter_map(|(k, it)| {
+                let inicio = it.eventos.first()?.posicao;
+                let dito = if k == culpado {
+                    detalhe.clone()
+                } else {
+                    format!(
+                        "a transacao parou em {}: {detalhe}",
+                        itens[culpado].chave_tab
+                    )
+                };
+                Some((k, (inicio, motivo, dito)))
+            })
+            .collect()
     }
 
     /// O laco de [`Self::aplicar_itens_bidi`] com a trava ja na mao. Toda
@@ -1621,28 +1844,7 @@ impl Servidor {
         // corrompida e trava envenenada continuam parando a rodada, que e o
         // comportamento de sempre.
         if let Err(PhxError::Duplicado(qual)) = &escrita {
-            if let Ok(mut guarda) = self.toques_bidi.lock() {
-                guarda
-                    .entry(chave_tab.to_string())
-                    .or_default()
-                    .recusas_por_unicidade += 1;
-            }
-            let conflito = self.analisar_conflito(tabela, indice, pos_chave, &valores, qual)?;
-            let chave_dita = Self::chave_dita(tabela, pos_chave, &valores);
-            eprintln!(
-                "CONFLITO DE UNICIDADE em {chave_tab}: o evento de {} da chave \
-                 {chave_dita} colide com uma linha daqui. indice={:?} valor={:?} \
-                 linha daqui={} \
-                 linha de la={}. A replicacao DESTA tabela neste par PAROU na posicao \
-                 {}; solte-a com replicacao_pular depois de resolver -- ver \
-                 docs/REPLICACAO.md §21 e docs/PENDENCIAS.md, pedido 292",
-                e.operacao.nome(),
-                conflito.indice,
-                conflito.valor,
-                conflito.linha_daqui,
-                conflito.linha_de_la,
-                e.posicao
-            );
+            let conflito = self.contar_o_conflito(tabela, alvo, e, &valores, qual)?;
             return Ok(bidirecional::Aplicacao::Conflito(Box::new(conflito)));
         }
         escrita?;
@@ -1773,6 +1975,66 @@ impl Servidor {
     ///
     /// Zero no caminho sa: so roda depois de um `Err(Duplicado)`, que agora
     /// para o par -- ou seja, uma vez por parada, e nao uma vez por evento.
+    /// O conflito de unicidade CONTADO e gritado -- um corpo so para o
+    /// aplicador e o ensaio do grupo (pedido 722): o contador, a analise
+    /// (indice, valor redigido, as duas linhas) e a linha do log.
+    fn contar_o_conflito(
+        &self,
+        tabela: &mut Table,
+        alvo: AlvoBidi<'_>,
+        e: &crate::replica::EventoRecebido,
+        valores: &[Value],
+        qual: &str,
+    ) -> Result<bidirecional::Conflito> {
+        let chave_tab = alvo.chave_tab;
+        if let Ok(mut guarda) = self.toques_bidi.lock() {
+            guarda
+                .entry(chave_tab.to_string())
+                .or_default()
+                .recusas_por_unicidade += 1;
+        }
+        let conflito =
+            self.analisar_conflito(tabela, alvo.indice, alvo.pos_chave, valores, qual)?;
+        let chave_dita = Self::chave_dita(tabela, alvo.pos_chave, valores);
+        eprintln!(
+            "CONFLITO DE UNICIDADE em {chave_tab}: o evento de {} da chave \
+             {chave_dita} colide com uma linha daqui. indice={:?} valor={:?} \
+             linha daqui={} \
+             linha de la={}. A replicacao DESTA tabela neste par PAROU na posicao \
+             {}; solte-a com replicacao_pular depois de resolver -- ver \
+             docs/REPLICACAO.md §21 e docs/PENDENCIAS.md, pedido 292",
+            e.operacao.nome(),
+            conflito.indice,
+            conflito.valor,
+            conflito.linha_daqui,
+            conflito.linha_de_la,
+            e.posicao
+        );
+        Ok(conflito)
+    }
+
+    /// O detalhe da parada por conflito, o mesmo no aplicador e no ensaio.
+    fn detalhe_do_conflito(c: &bidirecional::Conflito) -> String {
+        format!(
+            "indice {:?}, valor {:?}; a linha daqui e {}, a de la e {}",
+            c.indice, c.valor, c.linha_daqui, c.linha_de_la
+        )
+    }
+
+    /// O detalhe da parada pelo toque esquecido, o mesmo no aplicador e no
+    /// ensaio.
+    fn detalhe_do_esquecido(&self, chave: &str) -> String {
+        format!(
+            "chave {chave}: o mapa de toques passou do teto \
+             (replicacao.teto_de_toques = {}) e esqueceu o ultimo toque \
+             local dela, e o evento nao e mais recente que o mais novo \
+             esquecido -- aplicar ou descartar seria escolher um lado as \
+             cegas. Suba o teto e reinicie (o mapa se refaz do diario), \
+             ou solte o par sabendo que este evento sera pulado",
+            self.config.replicacao.teto_de_toques
+        )
+    }
+
     fn analisar_conflito(
         &self,
         tabela: &mut Table,

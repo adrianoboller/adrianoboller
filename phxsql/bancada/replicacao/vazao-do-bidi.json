@@ -1,0 +1,24 @@
+{
+ "medido_em": "2026-10-08 20:34",
+ "carga": [
+  "2.39",
+  "2.85",
+  "3.20"
+ ],
+ "pergunta": "eventos/s que o central bidirecional aplica ao alcancar N vendas de 7 eventos, da porta aberta ate tudo visivel",
+ "vendas": 2000,
+ "resultados": {
+  "sem-e7": {
+   "mediana": 31074,
+   "min": 28849,
+   "max": 33959,
+   "corridas": 8
+  },
+  "com-e7": {
+   "mediana": 29526,
+   "min": 26975,
+   "max": 32157,
+   "corridas": 8
+  }
+ }
+}

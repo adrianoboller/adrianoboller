@@ -3840,7 +3840,16 @@ por erro (o `?` do aplicador, a tabela que não abre) não a apaga mais (pedido
 722, o 713 no bidirecional): completa o resto na hora, com a mesma trava, pelo
 corpo da completação do arranque; o que nem assim fecha deixa a marca no disco e
 fora da lista da rodada. A **parada nominal** (conflito de unicidade, toque
-esquecido) continua por tabela — fechá-la pede a pré-conferência do grupo (E7). Um binário anterior ao 698
+esquecido) passou a ser por **transação** (a E7, pedido 722): o grupo da rodada
+se ensaia a seco antes do primeiro evento — o «mais recente vence» com os toques
+dos eventos anteriores do mesmo grupo, e a unicidade contra o disco mais o que o
+grupo já teria escrito, nos índices secundários também —, e se algum evento
+pararia, nenhum entra e cada tabela do grupo para na posição do primeiro evento
+dela. A marca sai (nada entrou). O que o ensaio não alcança cai no aplicador,
+que continua parando a tabela — o cinto. Custo medido na vazão de quem alcança
+(`bancada/replicacao/vazao-do-bidi.py`, vendas de 7 eventos): 31.074
+(28.849–33.959) eventos/s sem o ensaio contra 29.526 (26.975–32.157) com ele —
+as faixas se cruzam. Um binário anterior ao 698
 não vê `bidi_*.tx` e o deixa quieto — não descarta nem completa.
 
 ### v7/v8: o bilhete posicional (pedidos 709 a 716, 08/10/2026)

@@ -8967,12 +8967,19 @@ pub fn limpar() {
             "(`replicacao_pular`). Por isso os testes que caem mudaram de nome."
         ),
         "arquivo": "crates/phxsql-server/src/servidor/servico_bidirecional_01.rs",
-        "trecho": """        if let Err(PhxError::Duplicado(qual)) = &escrita {""",
-        # O padrao nunca casa (`false` contra `true`), entao o bloco inteiro
-        # fica inalcancavel e o `escrita?;` logo abaixo volta a subir o erro --
-        # que e exatamente o defeito de origem, sem apagar linha nenhuma.
+        # ATUALIZADO em 08/10/2026 (pedido 722): o conflito passou a ser achado
+        # PRIMEIRO pelo ensaio do grupo, e o aplicador ficou de cinto. Os dois
+        # gritam pelo MESMO `contar_o_conflito`: repor o defeito ali -- a
+        # recusa voltando como erro -- faz o ensaio desistir e o aplicador
+        # subir o erro pelo `?`, que e o defeito de origem pelos dois caminhos.
+        "trecho": """        let chave_tab = alvo.chave_tab;
+""",
         "troca": """        // DEFEITO REPOSTO: a recusa volta a subir pelo `?` de quem chama.
-        if let (Err(PhxError::Duplicado(qual)), false) = (&escrita, true) {""",
+        if !qual.is_empty() {
+            return Err(PhxError::Duplicado(qual.to_string()));
+        }
+        let chave_tab = alvo.chave_tab;
+""",
         "pacote": "phxsql-server",
         "alvo": ["--test", "laco-do-unico-secundario"],
         "caem": [

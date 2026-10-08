@@ -939,6 +939,29 @@ pub fn conferir_os_grupos_do_bidi(db: &Database) -> Result<usize> {
                 presentes += 1;
             }
         }
+        // Nenhum evento no diario, mas a queda pode ter pego a PRIMEIRA
+        // inclusao entre o slot e o evento (o 700): a linha no `.reg` sem
+        // inclusao no diario e parte do grupo que entrou, e nao «nenhum».
+        let mut orfa = None;
+        if presentes == 0 {
+            for (nome, t) in abertas.iter_mut() {
+                let ultimo = t.slots();
+                if ultimo > 0
+                    && t.ler_sem_externos(ultimo)?.is_some()
+                    && !inclusao_no_diario_pelo_rowid(t, ultimo)?
+                {
+                    orfa = Some(format!("{nome} rowid {ultimo}"));
+                }
+            }
+        }
+        if let Some(onde) = orfa {
+            return Err(PhxError::Corrompido(format!(
+                "a copia pegou no meio o grupo do bidirecional da marca {}: nenhum \
+                 evento dele esta no diario, mas a linha {onde} esta no .reg sem a \
+                 inclusao -- a queda entre o slot e o evento. NADA foi restaurado",
+                caminho.display()
+            )));
+        }
         if presentes != 0 && presentes != total {
             return Err(PhxError::Corrompido(format!(
                 "a copia pegou no meio o grupo do bidirecional da marca {}: {presentes} \

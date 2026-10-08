@@ -86,10 +86,22 @@ class No:
             raise SystemExit(f"{pedido.get('op')} recusado: {r}")
         return r
 
-    def contar(self, tabela):
-        r = self.pedir({"op": "varrer", "database": "loja", "tabela": tabela, "max": 1_000_000},
-                       exigir=False)
-        return len(((r.get("resultado") or {}).get("linhas")) or [])
+    def registros(self):
+        """`registros` de cada tabela, pelo `sistabelas` -- um pedido so, e sem o
+        teto de linhas do `varrer`."""
+        r = self.pedir({"op": "sistabelas", "database": "loja"}, exigir=False)
+        achadas = {}
+        def andar(x):
+            if isinstance(x, dict):
+                if "tabela" in x and "registros" in x:
+                    achadas[x["tabela"]] = x["registros"]
+                for v in x.values():
+                    andar(v)
+            elif isinstance(x, list):
+                for v in x:
+                    andar(v)
+        andar(r.get("resultado"))
+        return tuple(achadas.get(t, 0) for t in ("vendas", "itens", "pagamentos"))
 
     def fechar(self):
         try:
@@ -127,7 +139,7 @@ def uma_corrida(binario, vendas):
         alvo = (vendas, vendas * ITENS, vendas)
         ate = time.time() + 600
         while True:
-            visto = tuple(central.contar(t) for t in ("vendas", "itens", "pagamentos"))
+            visto = central.registros()
             if visto == alvo:
                 return 7 * vendas / (time.perf_counter() - inicio)
             if time.time() > ate:
