@@ -2687,6 +2687,9 @@ pub mod panico_de_teste {
         /// `Table::excluir_de_vez`: as chaves ja sairam do `.ndx`, e o slot
         /// continua vivo no `.reg`.
         ExcluirEntreRemoverEExcluir,
+        /// `Table::excluir_de_vez` (pedido 701, c): o slot ja saiu do `.reg`
+        /// e a linha ja esta na lixeira, e o evento ainda nao foi ao diario.
+        ExcluirDepoisDoSlot,
         /// `Table::reindexar`: o `.ndx` ja recriado VAZIO, e o `.reg` varrido
         /// sem nenhuma arvore montada ainda.
         NoMeioDoReindexar,

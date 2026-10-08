@@ -7261,6 +7261,7 @@ impl Table {
         self.fechar_janela_do_texto(texto, feito.is_ok());
         let (removeu, estava_marcada) = feito?;
         if removeu {
+            panico_de_teste::passar(panico_de_teste::Ponto::ExcluirDepoisDoSlot);
             // O slot ja saiu: nenhum erro pula o diario (pedido 498). O
             // contador e o `.reason` sao observadores; a linha que some sem
             // evento e a replica que nunca a apaga.
@@ -7669,16 +7670,9 @@ impl Table {
         let (versao, imagem) = match d.operacao {
             Operacao::Exclusao => {
                 let imagem = if d.com_imagem {
-                    let total = self.lixeira.total()?;
-                    let ultima = match total {
-                        0 => None,
-                        n => self.lixeira.ler(n - 1, 1, true)?.pop(),
-                    };
-                    match ultima {
-                        Some(u) if u.rowid == d.rowid => {
-                            montar_imagem(&u.payload, &self.externos_da_imagem(u.externos))
-                        }
-                        _ => {
+                    match self.ultima_da_lixeira_se_for(d.rowid)? {
+                        Some(u) => montar_imagem(&u.payload, &self.externos_da_imagem(u.externos)),
+                        None => {
                             return Err(PhxError::Corrompido(format!(
                                 "{}: o diario deve a exclusao da linha {} com imagem, \
                                  e a ultima linha da lixeira nao e ela (pedido 498)",
@@ -7711,6 +7705,21 @@ impl Table {
             }
         };
         self.log.completar_devido(versao, &imagem)
+    }
+
+    /// A ultima linha da lixeira, se ela for a de `rowid` -- com o conteudo dos
+    /// externos. A exclusao de vez a guarda ANTES de o slot sair, entao e ela
+    /// a imagem do «antes» de uma exclusao que nao chegou ao diario: a do
+    /// evento devido (pedido 498) e a da marca da replica (pedido 701, c).
+    fn ultima_da_lixeira_se_for(
+        &mut self,
+        rowid: RowId,
+    ) -> Result<Option<crate::lixeira::Descartada>> {
+        let ultima = match self.lixeira.total()? {
+            0 => None,
+            n => self.lixeira.ler(n - 1, 1, true)?.pop(),
+        };
+        Ok(ultima.filter(|u| u.rowid == rowid))
     }
 
     /// A imagem da linha de um rowid, lendo o payload do `.reg`.
@@ -7938,7 +7947,8 @@ impl Table {
     }
 
     /// Grava SO o evento de uma inclusao cuja linha ja esta no `.reg` --
-    /// pedido 699, a recuperacao do grupo da replica.
+    /// pedido 699, a recuperacao do grupo da replica, e 700, a do grupo do
+    /// bidirecional (que casa pela chave e chama pelo servidor).
     ///
     /// A inclusao grava o slot antes do evento; a queda entre os dois deixa a
     /// linha sem evento, e o diario daqui deixa de continuar o da origem. A
@@ -7950,7 +7960,7 @@ impl Table {
     /// A linha do slot tem de ser a do evento: com o carimbo de criacao dos
     /// dois lados, ele e conferido como na alteracao replicada
     /// ([`Table::conferir_identidade`]).
-    pub(crate) fn completar_o_diario_da_inclusao(
+    pub fn completar_o_diario_da_inclusao(
         &mut self,
         rowid: RowId,
         imagem_de_la: &[u8],
@@ -7970,6 +7980,49 @@ impl Table {
         }
         let imagem = self.preparar_diario(&payload)?;
         self.anotar_imagem(Operacao::Inclusao, rowid, 1, &imagem)
+    }
+
+    /// Grava SO o evento de uma exclusao de vez cujo slot ja saiu do `.reg` --
+    /// pedido 701 (c), o irmao de [`Table::completar_o_diario_da_inclusao`].
+    ///
+    /// A exclusao libera o slot antes do evento; a queda entre os dois deixa a
+    /// linha fora do `.reg` e o diario sem a exclusao, e reaplicar pelo
+    /// `aplicar_evento` recusava («aqui ele nao existe») a cada arranque. O
+    /// que faltava era a imagem do ANTES, e ela existe: a exclusao guarda a
+    /// linha na lixeira antes de liberar o slot -- e a mesma fonte do evento
+    /// devido do pedido 498 ([`Table::ultima_da_lixeira_se_for`]).
+    ///
+    /// A ultima da lixeira tem de ser esta linha, e com o carimbo de criacao
+    /// dos dois lados ela e conferida como na exclusao replicada. Sem isso,
+    /// recusa dizendo o que falta: completar com a linha errada daria a
+    /// replica encadeada a exclusao de outra linha.
+    pub(crate) fn completar_o_diario_da_exclusao(
+        &mut self,
+        rowid: RowId,
+        imagem_de_la: &[u8],
+    ) -> Result<()> {
+        let Some(u) = self.ultima_da_lixeira_se_for(rowid)? else {
+            return Err(PhxError::Corrompido(format!(
+                "{}: o slot {rowid} ja saiu do .reg e a exclusao dele nao esta no \
+                 diario, e a ultima linha da lixeira nao e ela -- sem a imagem do \
+                 antes, o evento nao se completa",
+                self.nome
+            )));
+        };
+        if !imagem_de_la.is_empty() {
+            if let Some(i) = self.esquema.coluna_rowstamp() {
+                let (de_la, _) = Table::abrir_imagem(imagem_de_la)?;
+                let do_source = self.rowstamp_do_payload(&de_la, i)?;
+                self.conferir_identidade(Operacao::Exclusao, rowid, Some(do_source), &u.payload)?;
+            }
+        }
+        let imagem = if self.imagem_no_diario && self.imagem_na_exclusao {
+            montar_imagem(&u.payload, &self.externos_da_imagem(u.externos))
+        } else {
+            Vec::new()
+        };
+        self.log.conferir_teto(imagem.len())?;
+        self.anotar_imagem(Operacao::Exclusao, rowid, 0, &imagem)
     }
 
     /// Insere uma linha que OUTRO servidor ja aceitou, sem julgar de novo.

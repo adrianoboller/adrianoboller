@@ -46,7 +46,7 @@ use phxsql_store::catalogo::Instancia;
 // quem ja chamava `transacao::gravar_marca` nao mudar -- reexportar, e nao
 // copiar: dois motores de marca seriam a copia que diverge.
 pub use phxsql_store::marca::{
-    caminho_da_marca, codificar_linha, decodificar_linha, decodificar_linha_em,
+    caminho_da_marca, codificar_linha, decodificar_linha, decodificar_linha_em, e_marca_do_bidi,
     falhar_a_proxima_leitura_de_teste, gravar_marca, gravar_marca_da_replica, gravar_marca_do_bidi,
     ler_marca, marcas_do_bidi_em, tratar_marca, Acao, Escrita, EventoDaReplica, EventoDoGrupo,
     Leitura, Marca, NoArranque, OperacaoDaMarca, Relatorio, EXTENSAO, MAGIC, PREFIXO, VERSAO,

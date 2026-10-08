@@ -722,7 +722,20 @@ struct AlvoBidi<'a> {
     chave_tab: &'a str,
     indice: &'a str,
     pos_chave: &'a [usize],
+    /// O slot vivo cuja inclusao nunca chegou ao diario daqui -- pedido 700.
+    /// So o arranque que completa a marca o acha; na rodada e `None`.
+    orfa: Option<u64>,
 }
+
+/// A tabela `b/c` casada por `porId`, a dos testes do `aplicar_por_chave`.
+#[cfg(test)]
+const ALVO_DE_TESTE: AlvoBidi<'static> = AlvoBidi {
+    nome: "c",
+    chave_tab: "b/c",
+    indice: "porId",
+    pos_chave: &[0],
+    orfa: None,
+};
 
 /// Uma tabela de um grupo do bidirecional: quem, e o que aplicar. Ver
 /// [`Servidor::aplicar_itens_bidi`].
@@ -7085,35 +7098,22 @@ impl Servidor {
         // `atualizar_replicado` tambem nao julgam, e passam pela MESMA
         // conferencia que conta.
         tabela.contar_orfas();
-        let saida = self.aplicar_eventos_bidi(
-            &mut tabela,
-            alvo.chave_tab,
-            alvo.indice,
-            alvo.pos_chave,
-            eventos,
-            meu_hash,
-            hash_dele,
-        );
+        let saida = self.aplicar_eventos_bidi(&mut tabela, alvo, eventos, meu_hash, hash_dele);
         self.anotar_orfas(alvo.chave_tab, tabela.orfas_contadas());
         saida
     }
 
     /// O laco de [`Self::aplicar_tabela_bidi`], separado para a contagem de
     /// orfas ser colhida tambem quando ele sai pelo erro.
-    #[allow(
-        clippy::too_many_arguments,
-        reason = "o laco de uma tabela junta as identidades dos dois lados"
-    )]
     fn aplicar_eventos_bidi(
         &self,
         tabela: &mut Table,
-        chave_tab: &str,
-        indice: &str,
-        pos_chave: &[usize],
+        alvo: AlvoBidi<'_>,
         eventos: &[crate::replica::EventoRecebido],
         meu_hash: u16,
         hash_dele: u16,
     ) -> Result<LoteBidi> {
+        let mut orfa = alvo.orfa;
         let mut saida = LoteBidi::default();
         for e in eventos {
             // Cinto e suspensorio: o source ja suprimiu pelo `para`, e
@@ -7122,7 +7122,24 @@ impl Servidor {
             if e.origem == meu_hash {
                 continue;
             }
-            match self.aplicar_por_chave(tabela, chave_tab, indice, pos_chave, e, hash_dele)? {
+            // So em `debug`, pedido 700: o N-esimo evento tentado morre DENTRO
+            // da inclusao, com o slot no `.reg` e o evento fora do diario --
+            // o mesmo gancho do grupo da replica fiel (699).
+            #[cfg(debug_assertions)]
+            {
+                static TENTADOS: AtomicU64 = AtomicU64::new(0);
+                let vez = TENTADOS.fetch_add(1, Ordering::SeqCst) + 1;
+                let parar_no_reg: Option<u64> = std::env::var("PHXSQL_TESTE_PARAR_NO_REG")
+                    .ok()
+                    .and_then(|v| v.parse().ok());
+                if parar_no_reg == Some(vez) {
+                    phxsql_store::ndx::panico_de_teste::armar_gancho(
+                        phxsql_store::ndx::panico_de_teste::Ponto::InserirDepoisDoContador,
+                        || sigkill_de_teste("teste: bidirecional parado entre o .reg e o diario"),
+                    );
+                }
+            }
+            match self.aplicar_por_chave(tabela, alvo, e, hash_dele, &mut orfa)? {
                 bidirecional::Aplicacao::Aplicado => {
                     saida.aplicados += 1;
                     // So em `debug`: a prova do 698 mata o PROCESSO depois do
@@ -7690,7 +7707,7 @@ impl Servidor {
     ) -> Result<(u64, Vec<(usize, (u64, &'static str, String))>)> {
         let mut n = 0u64;
         let mut paradas = Vec::new();
-        let trava = self.travar_dados()?;
+        let mut trava = self.travar_dados()?;
         let db = trava.abrir_database(database)?;
         if let Some(m) = marca {
             if m.parent() != Some(db.caminho()) {
@@ -7701,9 +7718,19 @@ impl Servidor {
                     db.caminho().display()
                 )));
             }
+            // EM VOO, como a do grupo da replica fiel (pedido 700): o panico no
+            // meio do grupo chega ao reparo da trava sabendo que ha um grupo
+            // pela metade -- e o reparo, que nao casa pela chave, derruba o
+            // processo para o arranque completa-lo antes de a porta abrir.
+            trava.marca_em_voo = Some(MarcaEmVoo {
+                database: database.to_string(),
+                caminho: m.to_path_buf(),
+                gravada: true,
+            });
         }
         for (k, it) in itens.iter().enumerate() {
             let resolvida: (String, Vec<usize>);
+            let mut orfa = None;
             let (indice, pos_chave) = match it.identidade {
                 Some(x) => x,
                 None => {
@@ -7723,6 +7750,8 @@ impl Servidor {
                         None,
                         true,
                     )?;
+                    orfa = self.slot_sem_inclusao_no_diario(&mut t, it.chave_tab)?;
+                    Self::adotar_o_id_do_grupo(&mut t, it.eventos)?;
                     resolvida = chave;
                     (resolvida.0.as_str(), resolvida.1.as_slice())
                 }
@@ -7732,6 +7761,7 @@ impl Servidor {
                 chave_tab: it.chave_tab,
                 indice,
                 pos_chave,
+                orfa,
             };
             let feito = self.aplicar_tabela_bidi(&db, alvo, it.eventos, meu_hash, hash_dele)?;
             n += feito.aplicados;
@@ -7739,7 +7769,56 @@ impl Servidor {
                 paradas.push((k, p));
             }
         }
+        trava.marca_em_voo = None;
         Ok((n, paradas))
+    }
+
+    /// O slot vivo do fim do `.reg` cuja inclusao nunca chegou ao diario daqui
+    /// -- pedido 700. So depois de absorver o diario INTEIRO no mapa, que e o
+    /// que o arranque faz.
+    ///
+    /// O rowid nasce sempre no fim, e a inclusao grava o slot antes do
+    /// evento: a queda entre os dois so deixa orfa a ULTIMA linha, e ela e
+    /// orfa se nenhum evento do diario a nomeia.
+    fn slot_sem_inclusao_no_diario(&self, t: &mut Table, chave_tab: &str) -> Result<Option<u64>> {
+        let ultimo = t.slots();
+        let nomeado = self
+            .toques_bidi
+            .tomar("toques_bidi")?
+            .get(chave_tab)
+            .map_or(0, |m| m.maior_rowid);
+        if ultimo == 0 || ultimo <= nomeado {
+            return Ok(None);
+        }
+        Ok(t.ler_sem_externos(ultimo)?.map(|_| ultimo))
+    }
+
+    /// O resto do grupo leva o id de transacao que a primeira metade levou
+    /// antes da queda -- pedido 701 (b), o irmao da marca da replica fiel.
+    ///
+    /// Aqui nao ha posicao local na marca: o evento que ja entrou se reconhece
+    /// pelo carimbo e pela origem de la, que o `aplicar_por_chave` grava no
+    /// diario daqui. Se o ULTIMO evento da tabela e um do grupo, o id dele e
+    /// o da unidade que a queda interrompeu. Nao sendo (nada entrou, ou o
+    /// carimbo foi trocado pelo relogio daqui), o resto leva um id novo -- e
+    /// chega a replica encadeada como uma transacao so, que e o que faltava.
+    fn adotar_o_id_do_grupo(
+        t: &mut Table,
+        eventos: &[crate::replica::EventoRecebido],
+    ) -> Result<()> {
+        let total = t.eventos()?;
+        if total == 0 {
+            return Ok(());
+        }
+        if let Some(ultimo) = t.diario(total - 1, 1)?.first() {
+            if eventos
+                .iter()
+                .any(|e| e.carimbo_ms == ultimo.carimbo && e.origem == ultimo.origem)
+            {
+                phxsql_store::log::adotar_tx_na_unidade(ultimo.tx);
+            }
+        }
+        Ok(())
     }
 
     /// Poe no mapa de toques os eventos locais que ele ainda nao viu.
@@ -7818,6 +7897,7 @@ impl Servidor {
             }
             for (ev, imagem) in lote {
                 mapa.vistos += 1;
+                mapa.maior_rowid = mapa.maior_rowid.max(ev.rowid);
                 if imagem.is_empty() {
                     continue;
                 }
@@ -7960,15 +8040,24 @@ impl Servidor {
     ///
     /// Devolve `false` quando o toque local venceu -- que nao e erro, e o
     /// conflito fazendo o trabalho dele.
+    ///
+    /// `orfa` e o slot vivo sem inclusao no diario daqui (pedido 700, ver
+    /// [`AlvoBidi::orfa`]): o evento cuja chave o acha COMPLETA a inclusao em
+    /// vez de gravar por cima, e a orfa se gasta.
     fn aplicar_por_chave(
         &self,
         tabela: &mut Table,
-        chave_tab: &str,
-        indice: &str,
-        pos_chave: &[usize],
+        alvo: AlvoBidi<'_>,
         e: &crate::replica::EventoRecebido,
         hash_dele: u16,
+        orfa: &mut Option<u64>,
     ) -> Result<bidirecional::Aplicacao> {
+        let AlvoBidi {
+            chave_tab,
+            indice,
+            pos_chave,
+            ..
+        } = alvo;
         if e.imagem.is_empty() {
             return Err(PhxError::Esquema(format!(
                 "evento de {} sem imagem no bidirecional: o outro lado precisa \
@@ -8080,6 +8169,22 @@ impl Servidor {
                     let achada = Self::uma_linha_so(
                         tabela, chave_tab, indice, pos_chave, &valores, achadas,
                     )?;
+                    // Pedido 700: a chave achou a linha cuja inclusao a queda
+                    // deixou fora do diario -- e a deste evento, que estava
+                    // sendo incluida quando o processo morreu (o arranque so
+                    // chega aqui pelo grupo da marca, e a chave sem toque e a
+                    // que o diario nunca viu). Gravar por cima mandaria a
+                    // replica encadeada a ALTERACAO de uma linha que ela nunca
+                    // viu nascer; a pergunta e a do `slot_ja_consumido` da
+                    // replica fiel, e a resposta tambem: completa so o evento,
+                    // do payload que esta no disco.
+                    if achada.is_some() && achada == *orfa {
+                        let rowid = achada.unwrap_or_default();
+                        tabela.forcar_proximo_evento(carimbo, origem_ev);
+                        tabela.completar_o_diario_da_inclusao(rowid, &[])?;
+                        *orfa = None;
+                        return Ok(());
+                    }
                     // A linha da chave ANTIGA, quando a alteracao trocou a
                     // chave e a troca venceu la -- ver `anexar_o_antes` no
                     // store. Sem isto, buscar so pela chave nova nao achava
@@ -22246,6 +22351,22 @@ impl Servidor {
         //    saia do disco e a trava voltava a atender com a transacao
         //    confirmada pela metade. Com ele a marca fica, a falha vai para as
         //    impossiveis, e o arranque -- com descritores novos -- a completa.
+        //
+        //    Pedido 700: a marca do grupo do BIDIRECIONAL nao se completa
+        //    aqui. O `completar_marca_em_voo` e o motor do rowid e da posicao,
+        //    e a do bidirecional casa pela chave contra o mapa de toques --
+        //    reaplica-la pelo rowid gravaria por cima de linha alheia sempre
+        //    que as posicoes dos dois lados coincidissem. O motor dela e o do
+        //    arranque (`completar_marcas_do_bidi`), com a porta fechada; entao
+        //    o reparo nao se afirma, e o processo cai com a marca no disco
+        //    (H5), como a thread de servico ja cairia.
+        if let Some(bidi) = marca_em_voo.filter(|m| crate::transacao::e_marca_do_bidi(&m.caminho)) {
+            return Err(format!(
+                "a marca em voo {} e de um grupo do bidirecional: ela se completa \
+                 pela chave, no arranque, e fica no disco",
+                bidi.caminho.display()
+            ));
+        }
         if let Some(em_voo) = marca_em_voo {
             let caminho = &em_voo.caminho;
             #[cfg(test)]
@@ -66799,11 +66920,10 @@ mod testes_do_carimbo_do_futuro {
         let aplicou = s
             .aplicar_por_chave(
                 &mut t,
-                "b/c",
-                "porId",
-                &[0],
+                ALVO_DE_TESTE,
                 &e,
                 bidirecional::hash_id("beta"),
+                &mut None,
             )
             .unwrap();
         assert!(
@@ -66844,11 +66964,10 @@ mod testes_do_carimbo_do_futuro {
         let e = evento(&mut t, adiantado);
         s.aplicar_por_chave(
             &mut t,
-            "b/c",
-            "porId",
-            &[0],
+            ALVO_DE_TESTE,
             &e,
             bidirecional::hash_id("beta"),
+            &mut None,
         )
         .unwrap();
         let (toque, contados) = toque_de(&s);
@@ -66993,11 +67112,10 @@ mod testes_da_recusa_por_unicidade {
         let r = s
             .aplicar_por_chave(
                 &mut aqui,
-                "b/c",
-                "porId",
-                &[0],
+                ALVO_DE_TESTE,
                 &e,
                 bidirecional::hash_id("beta"),
+                &mut None,
             )
             .expect("a recusa por unicidade nao pode subir: ela para o par de servidores");
         let bidirecional::Aplicacao::Conflito(c) = &r else {
@@ -67039,11 +67157,10 @@ mod testes_da_recusa_por_unicidade {
         let aplicou = s
             .aplicar_por_chave(
                 &mut aqui,
-                "b/c",
-                "porId",
-                &[0],
+                ALVO_DE_TESTE,
                 &e,
                 bidirecional::hash_id("beta"),
+                &mut None,
             )
             .unwrap();
         assert!(aplicou.entrou(), "o evento sem conflito tem de entrar");
@@ -67072,11 +67189,10 @@ mod testes_da_recusa_por_unicidade {
         let erro = s
             .aplicar_por_chave(
                 &mut aqui,
-                "b/c",
-                "porId",
-                &[0],
+                ALVO_DE_TESTE,
                 &e,
                 bidirecional::hash_id("beta"),
+                &mut None,
             )
             .unwrap_err();
         assert!(erro.to_string().contains("sem imagem"), "{erro}");
@@ -71451,6 +71567,209 @@ mod testes_do_panico_sob_a_trava {
             "a marca nao saiu nem depois do fsync da `b`"
         );
         assert!(s.sujas.lock().unwrap().is_empty());
+    }
+
+    /// **Pedido 701 (d), a prova propria do conserto do 699 (c).** Um `?` no
+    /// meio do grupo da replica -- aqui, a segunda tabela que nao abre mais
+    /// -- devolve o erro com a marca JA na lista da rodada, que a sincroniza e
+    /// a solta. Fora da lista, ela ficava no disco ate o proximo arranque.
+    ///
+    /// A falta e montada de dentro da primeira inclusao do grupo (o gancho
+    /// roda nesta thread, com a trava na mao, e SEGUE): os arquivos da
+    /// segunda tabela saem do lugar depois da conferencia de posicao e antes
+    /// de o laco chegar nela.
+    ///
+    /// Vermelho medido sem o `marcas.push` do instante EM VOO: o erro volta e
+    /// a lista sai vazia.
+    #[test]
+    fn o_erro_no_meio_do_grupo_da_replica_deixa_a_marca_na_lista() {
+        let dir = DirTemp::novo("grupo-699c-lista");
+        let mut c = config_base(&dir);
+        c.replicacao.imagem_da_linha = true;
+        let s = Servidor::novo(c).unwrap();
+        let porta = porta_de_dados_de_verdade(&s);
+        let tabelas = ["itens", "pagamentos"];
+        for db in ["origem", "loja"] {
+            ok(
+                pedir(
+                    porta,
+                    &format!(r#""op":"criar_database","database":"{db}""#),
+                ),
+                "criar_database",
+            );
+            for t in tabelas {
+                ok(
+                    pedir(
+                        porta,
+                        &format!(
+                            r#""op":"criar_tabela","database":"{db}","tabela":"{t}",
+                               "colunas":[{{"nome":"id","tipo":"Int8","obrigatoria":true}}]"#
+                        ),
+                    ),
+                    "criar_tabela",
+                );
+            }
+        }
+        for t in tabelas {
+            ok(
+                pedir(
+                    porta,
+                    &format!(
+                        r#""op":"inserir","database":"origem","tabela":"{t}","valores":{{"id":1}}"#
+                    ),
+                ),
+                "inserir na origem",
+            );
+        }
+        let mut grupo = Vec::new();
+        let mut filas = Vec::new();
+        {
+            let trava = s.travar_dados().unwrap();
+            let origem = trava.abrir_database("origem").unwrap();
+            for (i, t) in tabelas.iter().enumerate() {
+                let (e, imagem) = origem
+                    .abrir_qualificada(t)
+                    .unwrap()
+                    .diario_com_imagem(0, 1)
+                    .unwrap()
+                    .remove(0);
+                grupo.push((
+                    i,
+                    vec![crate::replica::EventoRecebido {
+                        operacao: e.operacao,
+                        rowid: e.rowid,
+                        versao: e.versao,
+                        imagem,
+                        carimbo_ms: e.carimbo,
+                        origem: 9,
+                        posicao: 0,
+                        tx: 0,
+                    }],
+                ));
+                filas.push(FilaDaReplica {
+                    no: crate::replica::NoSource {
+                        nome: t.to_string(),
+                        eventos: 1,
+                        esquema: None,
+                        proxima_sequencia: 0,
+                    },
+                    chave: format!("loja/{t}"),
+                    posicao: 0,
+                    conferir: false,
+                    conferencia: None,
+                    aplicados: 0,
+                    ordem: i,
+                });
+            }
+        }
+        let pasta = dir.join("loja");
+        let fora = dir.join("fora");
+        std::fs::create_dir_all(&fora).unwrap();
+        phxsql_store::ndx::panico_de_teste::armar_gancho(
+            Ponto::InserirDepoisDoContador,
+            move || {
+                for e in std::fs::read_dir(&pasta).unwrap().filter_map(|e| e.ok()) {
+                    if e.file_name().to_string_lossy().starts_with("pagamentos") {
+                        std::fs::rename(e.path(), fora.join(e.file_name())).unwrap();
+                    }
+                }
+            },
+        );
+        let mut marcas = Vec::new();
+        let r =
+            s.aplicar_grupo_da_replica("loja", &mut filas, grupo, "origem-de-teste", &mut marcas);
+        phxsql_store::ndx::panico_de_teste::desarmar();
+        assert!(
+            r.is_err(),
+            "a segunda tabela fora do lugar tinha de devolver o erro do meio do grupo"
+        );
+        assert_eq!(
+            marcas.len(),
+            1,
+            "o `?` do meio do grupo devolveu o erro com a marca fora da lista da rodada"
+        );
+        assert!(
+            marcas[0].exists(),
+            "a marca tem de estar no disco ate o fsync"
+        );
+    }
+
+    /// **Pedido 700: o panico no meio do grupo do BIDIRECIONAL.** A marca do
+    /// grupo fica EM VOO como a da replica fiel, mas o reparo nao a completa:
+    /// o motor do reparo e o do rowid e da posicao, e a do bidirecional casa
+    /// pela chave. O reparo nao se afirma, a marca FICA, e o processo cai
+    /// para o arranque completa-la com a porta fechada.
+    ///
+    /// O arranjo e o pior caso: a posicao do evento coincide com o tamanho do
+    /// diario daqui, e o motor do rowid aplicaria a alteracao sem recusar.
+    /// Vermelho medido sem o desvio no `reparo_da_trava`: o reparo «completa»,
+    /// devolve `Ok`, apaga a marca e o cliente 1 vira «novo» por cima.
+    #[test]
+    fn o_reparo_nao_completa_pelo_rowid_a_marca_do_bidi() {
+        let dir = DirTemp::novo("panico-700-bidi");
+        let mut c = config_base(&dir);
+        c.replicacao.imagem_da_linha = true;
+        let s = Servidor::novo(c).unwrap();
+        let porta = porta_de_dados_de_verdade(&s);
+        semear(porta);
+        for nome in ["novo", "C1"] {
+            ok(
+                pedir(
+                    porta,
+                    &format!(
+                        r#""op":"atualizar","database":"loja","tabela":"clientes","rowid":1,
+                           "valores":{{"id":1,"nome":"{nome}"}}"#
+                    ),
+                ),
+                "atualizar o cliente 1",
+            );
+        }
+        let trava = s.travar_dados().unwrap();
+        let mut t = trava
+            .abrir_database("loja")
+            .unwrap()
+            .abrir_qualificada("clientes")
+            .unwrap();
+        let total = t.eventos().unwrap();
+        let (velho, imagem) = t.diario_com_imagem(total - 2, 1).unwrap().remove(0);
+        drop(t);
+        assert_eq!(velho.operacao, Operacao::Alteracao);
+        assert!(!imagem.is_empty(), "a alteracao tem de levar a imagem");
+        let marca = crate::transacao::gravar_marca_do_bidi(
+            &dir.join("loja"),
+            777,
+            crate::agora_ms(),
+            &[crate::transacao::EventoDoGrupo {
+                tabela: "clientes",
+                operacao: Operacao::Alteracao,
+                rowid: 1,
+                carimbo_ms: velho.carimbo + 1,
+                origem: 9,
+                posicao: total,
+                imagem: &imagem,
+            }],
+        )
+        .unwrap();
+        let em_voo = MarcaEmVoo {
+            database: "loja".into(),
+            caminho: marca.clone(),
+            gravada: true,
+        };
+        let r = s.reparo_da_trava(&trava, Some(&em_voo));
+        drop(trava);
+        assert!(
+            r.as_ref().is_err_and(|m| m.contains("bidirecional")),
+            "o reparo completou pelo rowid a marca do bidirecional: {r:?}"
+        );
+        assert!(
+            marca.exists(),
+            "a marca do bidirecional saiu do disco no reparo"
+        );
+        assert_eq!(
+            nome_do_cliente(porta, 1),
+            "C1",
+            "o reparo gravou pelo rowid"
+        );
     }
 
     /// **M1: o reparo completa SO a marca em voo.**

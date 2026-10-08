@@ -921,7 +921,20 @@ TETO_TESTE_SEM_MODULO = 0
 # `marca-do-bidi-sem-completar-no-arranque`. RED medido a mao (troca
 # aplicada; as tres de SIGKILL contra o SO: (0, 4, 0), (0, 3, 0), (0, 3, 0);
 # restaurado, verdes); provador NAO rodou.
-PISO_DAS_ENTRADAS = 831
+# 831 -> 838 (pedidos 700 e 701, 08/10/2026 -- o caminho irmao do 699 no
+# bidirecional e o resto da revisao do papel C): nascem
+# `bidi-grava-alteracao-por-cima-da-inclusao-orfa`,
+# `bidi-completa-o-grupo-com-outro-id`,
+# `reparo-completa-pelo-rowid-a-marca-do-bidi`,
+# `erro-no-meio-do-grupo-tira-a-marca-da-lista`,
+# `alteracao-ja-aplicada-sem-olhar-o-conteudo`,
+# `marca-completada-fora-da-unidade` e `exclusao-sem-evento-recusa-na-marca`;
+# a `evento-no-diario-sem-a-linha-apaga-a-marca` (699) foi reancorada na
+# chamada que ganhou as operacoes seguintes da marca. RED medido a mao (a
+# troca de cada uma aplicada; as duas do bidi contra o SO, SIGKILL dentro da
+# 3.a inclusao: [inclusao 1, inclusao 2, alteracao 3, ...] e dois ids no
+# grupo; restaurado, verdes); provador NAO rodou.
+PISO_DAS_ENTRADAS = 838
 
 # ------------------------------------------------------------- APOSENTADAS
 #

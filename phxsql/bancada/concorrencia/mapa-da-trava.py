@@ -496,8 +496,16 @@ def mapear(alvo=None):
     # Sao DEZ neste arquivo e nao um: procurar «mod testes» pegava o primeiro e
     # deixava nove passarem -- e as tomadas dos testes da reentrancia entravam
     # no mapa como se fossem caminho de servidor.
+    #
+    # E o `cfg(all(test, debug_assertions))` tambem (pedido 700): o modulo do
+    # panico sob a trava e de teste so em `debug`, e a regua que casava so o
+    # `cfg(test)` cru contava as tomadas dos testes dele como producao -- a
+    # primeira que entrou la subiu `alcancam-fsync` sem nenhuma linha de
+    # servidor mudar.
     proibido = []
-    for t in re.finditer(r"#\s*\[\s*cfg\s*\(\s*test\s*\)\s*\]", limpo):
+    for t in re.finditer(
+        r"#\s*\[\s*cfg\s*\(\s*(?:test|all\s*\(\s*test\b[^\]]*\))\s*\)\s*\]", limpo
+    ):
         a = limpo.find("{", t.end())
         if a >= 0:
             proibido.append((t.start(), fim_do_bloco(limpo, a)))
@@ -713,7 +721,9 @@ def autoteste():
     with tempfile.NamedTemporaryFile("w", suffix=".rs", delete=False) as f:
         f.write("impl S {\n    fn op(&self) {\n        let d = self.travar_dados()?;\n"
                 "    }\n}\n#[cfg(test)]\nmod t1 { fn a() { s.travar_dados(); } }\n"
-                "#[cfg(test)]\nmod t2 { fn b() { s.travar_dados(); } }\n")
+                "#[cfg(test)]\nmod t2 { fn b() { s.travar_dados(); } }\n"
+                "#[cfg(all(test, debug_assertions))]\n"
+                "mod t3 { fn c() { s.travar_dados(); } }\n")
         caminho = pathlib.Path(f.name)
     secoes, _, _ = mapear(caminho)
     caminho.unlink()

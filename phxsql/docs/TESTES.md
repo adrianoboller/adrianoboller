@@ -1467,17 +1467,24 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `bidi-alcanca-tabela-a-tabela` | O bidirecional volta a alcançar tabela a tabela: o par vê os itens sem a venda quando o fio cai (pedido 681) | 3 | ✅ provada |
 | `carga-acima-do-teto-aceita` | A carga fora de transação acima do teto volta a ser aceita: a réplica a recebe em pedaços (pedido 686) | 1 | ✅ provada |
 | `grupo-da-replica-sem-marca` | O grupo da réplica deixa de gravar a marca `.tx`: o SIGKILL no meio dele reabre a réplica com a venda pela metade (pedido 682) | 1 | ✅ provada |
+| `replica-reaplica-inclusao-sem-olhar-o-reg` | A recuperação do grupo da réplica volta a conferir só o diário: o SIGKILL entre o `.reg` e o evento reabre com a linha duplicada (pedido 699) | 1 | ✅ provada |
+| `evento-no-diario-sem-a-linha-apaga-a-marca` | O evento que está no diário conta como aplicado sem o `.reg` confirmar: a marca do grupo sai com a linha ausente (pedido 699) | 1 | ✅ provada |
+| `grupo-do-bidi-sem-marca` | O grupo do bidirecional deixa de gravar a marca: o SIGKILL no meio dele reabre com a venda pela metade (pedido 698) | 1 | ✅ provada |
+| `marca-do-bidi-sem-completar-no-arranque` | A marca do grupo do bidirecional é gravada e o arranque não a completa: a venda reabre pela metade (pedido 698) | 1 | ✅ provada |
 | `alter-com-regra-sem-aviso` | `acrescentar_coluna` com `check` ou `calculada` numa tabela com linha é aceito SEM AVISO, e a linha velha fica fora da regra | — | 🪦 aposentada (01/10/2026) |
 | `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | — | 🪦 aposentada (18/09/2026) |
 
-**827 das 829 guardas do catálogo: 2 aposentadas, 2 não pegaram, 819 provadas, 4 redundantes** — 36772 s de mutação, medido de 2026-09-16 15:25 a 2026-10-08 05:45, em 8 datas (2026-09-16: 1, 2026-09-24: 84, 2026-09-30: 34, 2026-10-01: 189, 2026-10-02: 152, 2026-10-06: 51, 2026-10-07: 295, 2026-10-08: 21).
+**831 das 836 guardas do catálogo: 2 aposentadas, 2 não pegaram, 823 provadas, 4 redundantes** — 36848 s de mutação, medido de 2026-09-16 15:25 a 2026-10-08 06:25, em 8 datas (2026-09-16: 1, 2026-09-24: 84, 2026-09-30: 34, 2026-10-01: 189, 2026-10-02: 152, 2026-10-06: 51, 2026-10-07: 295, 2026-10-08: 25).
 
-> **Esta rodada NÃO julgou 4 das 829 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 4 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 7 das 836 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 7 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
-- `replica-reaplica-inclusao-sem-olhar-o-reg` — A recuperação do grupo da réplica volta a conferir só o diário: o SIGKILL entre o `.reg` e o evento reabre com a linha duplicada (pedido 699)
-- `evento-no-diario-sem-a-linha-apaga-a-marca` — O evento que está no diário conta como aplicado sem o `.reg` confirmar: a marca do grupo sai com a linha ausente (pedido 699)
-- `grupo-do-bidi-sem-marca` — O grupo do bidirecional deixa de gravar a marca: o SIGKILL no meio dele reabre com a venda pela metade (pedido 698)
-- `marca-do-bidi-sem-completar-no-arranque` — A marca do grupo do bidirecional é gravada e o arranque não a completa: a venda reabre pela metade (pedido 698)
+- `bidi-grava-alteracao-por-cima-da-inclusao-orfa` — O arranque do bidirecional grava uma ALTERAÇÃO pela chave de um rowid cuja inclusão a queda deixou fora do diário (pedido 700)
+- `bidi-completa-o-grupo-com-outro-id` — O arranque completa o grupo do bidirecional com um id de transação novo: a réplica encadeada recebe a venda em dois pedaços (pedido 701 b)
+- `reparo-completa-pelo-rowid-a-marca-do-bidi` — O reparo da trava completa pelo rowid a marca em voo do grupo do bidirecional, que casa pela chave (pedido 700)
+- `erro-no-meio-do-grupo-tira-a-marca-da-lista` — O `?` no meio do grupo da réplica devolve o erro com a marca fora da lista da rodada: ela fica no disco até o próximo arranque (pedido 701 d)
+- `alteracao-ja-aplicada-sem-olhar-o-conteudo` — A recuperação da marca da réplica dá a alteração por aplicada só porque a linha existe: a versão velha no `.reg` faz a marca sair (pedido 701 a)
+- `marca-completada-fora-da-unidade` — O arranque completa a marca da réplica fora de uma unidade de transação: cada evento ganha um id e o grupo chega em pedaços à réplica encadeada (pedido 701 b)
+- `exclusao-sem-evento-recusa-na-marca` — A queda entre o slot liberado e o evento da exclusão: a recuperação da marca recusa a cada arranque em vez de completar o evento da lixeira (pedido 701 c)
 
 As guardas que esta corrida ainda cita, hoje aposentadas:
 

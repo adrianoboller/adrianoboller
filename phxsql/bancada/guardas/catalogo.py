@@ -26202,11 +26202,11 @@ fn anotar(""",
             "0 impossiveis, e a marca sai."
         ),
         "arquivo": "crates/phxsql-store/src/marca.rs",
-        "trecho": """                conferir_o_reg_do_evento(t, rowid, ev)
+        "trecho": """                conferir_o_reg_do_evento(t, rowid, ev, seguintes)
 """,
         "troca": """                // DEFEITO REPOSTO (699): o diario basta.
                 {
-                    let _ = conferir_o_reg_do_evento;
+                    let _ = (conferir_o_reg_do_evento, seguintes);
                     Ok(Desfecho::JaEstava)
                 }
 """,
@@ -26268,6 +26268,193 @@ fn anotar(""",
         ],
         "seguem": [
             "sem_queda_a_venda_chega_inteira_e_a_marca_sai",
+        ],
+    },
+    {
+        "id": "bidi-grava-alteracao-por-cima-da-inclusao-orfa",
+        "titulo": "O arranque do bidirecional grava uma ALTERAÇÃO pela chave de um rowid cuja inclusão a queda deixou fora do diário (pedido 700)",
+        "porque": (
+            "pedido 700, parecer do papel C na revisao do 698/699: a inclusao "
+            "grava o slot antes do evento; com a linha no slot e o evento fora "
+            "do diario, o arranque nao acha toque para a chave, a busca acha a "
+            "linha, e o `aplicar_por_chave` gravava uma alteracao por cima -- a "
+            "replica encadeada recebia a alteracao de uma linha que nunca viu "
+            "nascer. Medido contra o SO com o defeito reposto: SIGKILL dentro "
+            "da 3.a inclusao do grupo, reabertura com o outro lado "
+            "inalcancavel; o diario de `itens` sai [inclusao 1, inclusao 2, "
+            "alteracao 3, inclusao 4, inclusao 5]. Com a guarda, uma inclusao "
+            "por linha."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """                    if achada.is_some() && achada == *orfa {
+""",
+        "troca": """                    // DEFEITO REPOSTO (700): a linha orfa vira alteracao.
+                    if false && achada.is_some() && achada == *orfa {
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "venda-inteira-na-queda-do-bidi"],
+        "caem": [
+            "a_queda_entre_o_reg_e_o_diario_no_bidi_completa_a_inclusao",
+        ],
+        "seguem": [
+            "o_sigkill_no_meio_do_grupo_do_bidi_nao_deixa_a_venda_pela_metade",
+            "sem_queda_a_venda_chega_inteira_e_a_marca_sai",
+        ],
+    },
+    {
+        "id": "bidi-completa-o-grupo-com-outro-id",
+        "titulo": "O arranque completa o grupo do bidirecional com um id de transação novo: a réplica encadeada recebe a venda em dois pedaços (pedido 701 b)",
+        "porque": (
+            "pedido 701 (b), o irmao no bidirecional: a metade do grupo que "
+            "entrou antes da queda tem o id da tomada interrompida, e o resto "
+            "ganhava o da tomada do arranque. Medido contra o SO com o defeito "
+            "reposto: o mesmo SIGKILL dentro da 3.a inclusao, e os 7 eventos do "
+            "grupo saem com dois ids (2 + 5)."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """                    Self::adotar_o_id_do_grupo(&mut t, it.eventos)?;
+""",
+        "troca": """                    // DEFEITO REPOSTO (701 b): o resto do grupo leva outro id.
+                    let _ = Self::adotar_o_id_do_grupo;
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "venda-inteira-na-queda-do-bidi"],
+        "caem": [
+            "a_queda_entre_o_reg_e_o_diario_no_bidi_completa_a_inclusao",
+        ],
+        "seguem": [
+            "o_sigkill_no_meio_do_grupo_do_bidi_nao_deixa_a_venda_pela_metade",
+            "sem_queda_a_venda_chega_inteira_e_a_marca_sai",
+        ],
+    },
+    {
+        "id": "reparo-completa-pelo-rowid-a-marca-do-bidi",
+        "titulo": "O reparo da trava completa pelo rowid a marca em voo do grupo do bidirecional, que casa pela chave (pedido 700)",
+        "porque": (
+            "pedido 700: a marca do grupo do bidirecional fica EM VOO como a da "
+            "replica fiel, e o motor do reparo e o do rowid e da posicao. Com "
+            "as posicoes dos dois lados coincidindo, ele aplicava a alteracao "
+            "pelo rowid. Medido com o defeito reposto: o reparo devolve `Ok`, a "
+            "marca sai do disco e o cliente 1 vira «novo» por cima de «C1»."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        if let Some(bidi) = marca_em_voo.filter(|m| crate::transacao::e_marca_do_bidi(&m.caminho)) {
+""",
+        "troca": """        // DEFEITO REPOSTO (700): o reparo trata a marca do bidi pelo rowid.
+        if let Some(bidi) = marca_em_voo.filter(|_| false) {
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_do_panico_sob_a_trava::o_reparo_nao_completa_pelo_rowid_a_marca_do_bidi",
+        ],
+        "seguem": [
+            "servidor::testes_do_panico_sob_a_trava::o_reparo_completa_so_a_marca_em_voo",
+        ],
+    },
+    {
+        "id": "erro-no-meio-do-grupo-tira-a-marca-da-lista",
+        "titulo": "O `?` no meio do grupo da réplica devolve o erro com a marca fora da lista da rodada: ela fica no disco até o próximo arranque (pedido 701 d)",
+        "porque": (
+            "pedido 701 (d): o conserto do 699 (c) -- a marca entra na lista da "
+            "rodada no instante em que fica EM VOO -- nao tinha prova propria. "
+            "Medido com o defeito reposto: a segunda tabela do grupo sai do "
+            "lugar de dentro da primeira inclusao, o grupo devolve o erro e a "
+            "lista sai vazia."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """                    gravada: true,
+                });
+                marcas.push(m.clone());
+""",
+        "troca": """                    gravada: true,
+                });
+                // DEFEITO REPOSTO (699 c): a marca so entra na lista no fim.
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_do_panico_sob_a_trava::o_erro_no_meio_do_grupo_da_replica_deixa_a_marca_na_lista",
+        ],
+        "seguem": [
+            "servidor::testes_do_panico_sob_a_trava::o_reparo_completa_so_a_marca_em_voo",
+        ],
+    },
+    {
+        "id": "alteracao-ja-aplicada-sem-olhar-o-conteudo",
+        "titulo": "A recuperação da marca da réplica dá a alteração por aplicada só porque a linha existe: a versão velha no `.reg` faz a marca sair (pedido 701 a)",
+        "porque": (
+            "pedido 701 (a), parecer do papel C: a queda de energia que deixou "
+            "a versao VELHA no `.reg` e o evento no diario fazia a marca sair, e "
+            "ela era a unica copia da nova. Medido com o defeito reposto: a "
+            "recuperacao conta 2 ja aplicadas, 0 impossiveis, e a marca sai "
+            "com a venda 1 no slot que devia dizer 2."
+        ),
+        "arquivo": "crates/phxsql-store/src/marca.rs",
+        "trecho": """        _ if presente && o_reg_tem_a_imagem(t, rowid, ev)? => None,
+""",
+        "troca": """        // DEFEITO REPOSTO (701 a): a presenca basta.
+        _ if presente => None,
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--lib"],
+        "caem": [
+            "marca::testes::alteracao_no_diario_com_a_versao_velha_no_reg_segura_a_marca",
+        ],
+        "seguem": [
+            "marca::testes::duas_alteracoes_no_disco_contam_ja_aplicadas",
+            "marca::testes::evento_no_diario_sem_a_linha_no_reg_segura_a_marca",
+        ],
+    },
+    {
+        "id": "marca-completada-fora-da-unidade",
+        "titulo": "O arranque completa a marca da réplica fora de uma unidade de transação: cada evento ganha um id e o grupo chega em pedaços à réplica encadeada (pedido 701 b)",
+        "porque": (
+            "pedido 701 (b): no arranque nao ha trava tomada, e fora de unidade "
+            "o `log` da a cada evento um id proprio. Medido com o defeito "
+            "reposto: os 3 eventos completados saem com 3 ids, nenhum o da "
+            "primeira metade."
+        ),
+        "arquivo": "crates/phxsql-store/src/marca.rs",
+        "trecho": """        let propria = !crate::log::unidade_aberta();
+""",
+        "troca": """        // DEFEITO REPOSTO (701 b): a marca se completa fora de unidade.
+        let propria = false;
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--lib"],
+        "caem": [
+            "marca::testes::o_arranque_completa_o_grupo_com_o_id_da_primeira_metade",
+        ],
+        "seguem": [
+            "marca::testes::a_recuperacao_completa_o_grupo_da_replica_pela_posicao",
+        ],
+    },
+    {
+        "id": "exclusao-sem-evento-recusa-na-marca",
+        "titulo": "A queda entre o slot liberado e o evento da exclusão: a recuperação da marca recusa a cada arranque em vez de completar o evento da lixeira (pedido 701 c)",
+        "porque": (
+            "pedido 701 (c), o resto do 699: a exclusao libera o slot antes do "
+            "evento, e o `aplicar_evento` recusava («aqui ele nao existe»). A "
+            "imagem do antes existe -- a lixeira a guarda antes de o slot sair. "
+            "Medido com o defeito reposto (panico `ExcluirDepoisDoSlot`): a "
+            "recuperacao conta 1 impossivel e o diario fica sem a exclusao."
+        ),
+        "arquivo": "crates/phxsql-store/src/marca.rs",
+        "trecho": """    if ev.operacao == crate::log::Operacao::Exclusao
+        && rowid >= 1
+""",
+        "troca": """    // DEFEITO REPOSTO (701 c): a exclusao sem evento recusa.
+    if false
+        && rowid >= 1
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--lib"],
+        "caem": [
+            "marca::testes::a_queda_entre_o_slot_e_o_diario_completa_a_exclusao",
+        ],
+        "seguem": [
+            "marca::testes::a_queda_entre_o_reg_e_o_diario_nao_duplica_a_linha",
         ],
     },
 ]

@@ -126,9 +126,32 @@ fn vender(porta: u16, n: usize) {
     b.exigir(r#""op":"commit""#);
 }
 
-/// O `phxsqld` bidirecional, puxando de `porta_outro`. `parar_em` liga o
-/// gancho de `debug` que o mata no meio do grupo.
-fn subir_central(dir: &Path, vez: u32, porta_outro: u16, parar_em: Option<u64>) -> (Filho, u16) {
+/// Onde o gancho de `debug` mata o central: a variavel, o N, e o aviso que
+/// ele deixa no erro padrao antes de morrer.
+type Parada = (&'static str, u64, &'static str);
+
+/// Depois do N-esimo evento aplicado por chave -- a prova do 698.
+fn no_grupo(n: u64) -> Option<Parada> {
+    Some((
+        "PHXSQL_TESTE_PARAR_NO_GRUPO",
+        n,
+        "parado no meio do grupo do bidirecional",
+    ))
+}
+
+/// DENTRO da N-esima inclusao tentada, com o slot no `.reg` e o evento fora
+/// do diario -- a prova do 700.
+fn no_reg(n: u64) -> Option<Parada> {
+    Some((
+        "PHXSQL_TESTE_PARAR_NO_REG",
+        n,
+        "bidirecional parado entre o .reg e o diario",
+    ))
+}
+
+/// O `phxsqld` bidirecional, puxando de `porta_outro`. `parar` liga o gancho
+/// de `debug` que o mata no meio do grupo.
+fn subir_central(dir: &Path, vez: u32, porta_outro: u16, parar: Option<Parada>) -> (Filho, u16) {
     let config = dir.join("config.json");
     std::fs::write(
         &config,
@@ -161,16 +184,16 @@ fn subir_central(dir: &Path, vez: u32, porta_outro: u16, parar_em: Option<u64>) 
         .stderr(Stdio::from(std::fs::File::create(&erro_padrao).unwrap()));
     cmd.env_remove("PHXSQL_TESTE_PARAR_NO_GRUPO")
         .env_remove("PHXSQL_TESTE_PARAR_NO_REG");
-    if let Some(n) = parar_em {
-        cmd.env("PHXSQL_TESTE_PARAR_NO_GRUPO", n.to_string());
+    if let Some((var, n, _)) = parar {
+        cmd.env(var, n.to_string());
     }
     let mut filho = Filho(cmd.spawn().expect("nao consegui iniciar o phxsqld"));
     let porta = porta_do_phxsqld(&mut filho, &erro_padrao).unwrap_or_else(|e| panic!("{e}"));
-    if parar_em.is_some() {
+    if let Some((_, _, aviso)) = parar {
         let ate = Instant::now() + ESPERA;
         loop {
             let texto = std::fs::read_to_string(&erro_padrao).unwrap_or_default();
-            if texto.contains("parado no meio do grupo do bidirecional") {
+            if texto.contains(aviso) {
                 break;
             }
             assert!(
@@ -225,7 +248,7 @@ fn o_sigkill_no_meio_do_grupo_do_bidi_nao_deixa_a_venda_pela_metade() {
     criar_as_tabelas(porta_o);
     vender(porta_o, 1);
 
-    let (mut filho, _) = subir_central(&base_c.0, 1, porta_o, Some(3));
+    let (mut filho, _) = subir_central(&base_c.0, 1, porta_o, no_grupo(3));
     filho.0.kill().unwrap();
     filho.0.wait().unwrap();
     drop(filho);
@@ -314,6 +337,109 @@ fn sem_queda_a_venda_chega_inteira_e_a_marca_sai() {
         assert!(
             Instant::now() < ate,
             "marca de grupo sobrou no disco: {sobra:?}"
+        );
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    drop(filho);
+}
+
+/// Um evento do diario como a prova o confere: `(operacao, rowid, tx)`.
+type EventoLido = (String, u64, u64);
+
+/// O diario de cada tabela do central, lido do disco com o processo morto.
+fn diarios(base_c: &Path) -> Vec<(&'static str, Vec<EventoLido>)> {
+    let inst = phxsql_store::catalogo::Instancia::nova(base_c.join("dados")).unwrap();
+    let db = inst.abrir_database("loja").unwrap();
+    ["vendas", "itens", "pagamentos"]
+        .into_iter()
+        .map(|nome| {
+            let mut t = db.abrir_qualificada(nome).unwrap();
+            let ev = t
+                .diario(0, 0)
+                .unwrap()
+                .into_iter()
+                .map(|e| (e.operacao.nome().to_string(), e.rowid, e.tx))
+                .collect();
+            (nome, ev)
+        })
+        .collect()
+}
+
+/// **A prova real do 700.** O central bidirecional morre (`SIGKILL`) DENTRO da
+/// 3.a inclusao do grupo -- o slot ja no `.reg`, o evento fora do diario -- e
+/// reabre sem o outro lado. O arranque completa o grupo pela marca, e a linha
+/// que estava sendo incluida entra no diario daqui como a INCLUSAO que ela e,
+/// e nao como uma alteracao por cima de um rowid que o diario nunca viu
+/// nascer: a replica encadeada nao recebe alteracao de linha que nao tem.
+///
+/// E o pedido 701 (b) no bidirecional: os eventos do grupo -- os de antes da
+/// queda e os que o arranque completou -- levam UM id de transacao so.
+///
+/// Vermelho medido sem a orfa no `aplicar_por_chave`: o diario de `itens`
+/// sai com `alteracao` no rowid 2 e nenhuma inclusao dele. Sem o
+/// `adotar_o_id_do_grupo`: o grupo sai com dois ids.
+#[test]
+fn a_queda_entre_o_reg_e_o_diario_no_bidi_completa_a_inclusao() {
+    let base_o = DirTemp::novo("queda-bidi-reg-caixa");
+    let base_c = DirTemp::novo("queda-bidi-reg-central");
+    std::fs::create_dir_all(&base_c.0).unwrap();
+    let (_outro, porta_o) = subir_origem(&base_o.0);
+    criar_as_tabelas(porta_o);
+    vender(porta_o, 1);
+
+    let (mut filho, _) = subir_central(&base_c.0, 1, porta_o, no_reg(3));
+    filho.0.kill().unwrap();
+    filho.0.wait().unwrap();
+    drop(filho);
+
+    let (filho, porta_c) = subir_central(&base_c.0, 2, comum::porta_fechada(), None);
+    let r = retrato(porta_c);
+    assert_eq!(
+        r,
+        (1, ITENS, 1),
+        "depois do SIGKILL dentro da inclusao, o central reabriu com a venda \
+         errada (vendas, itens, pagamentos) = {r:?}"
+    );
+    drop(filho);
+
+    let d = diarios(&base_c.0);
+    let mut ids = Vec::new();
+    for (nome, eventos) in &d {
+        let linhas = if *nome == "itens" { ITENS } else { 1 };
+        let esperado: Vec<(String, u64)> = (1..=linhas as u64)
+            .map(|r| ("inclusao".to_string(), r))
+            .collect();
+        let tem: Vec<(String, u64)> = eventos.iter().map(|(o, r, _)| (o.clone(), *r)).collect();
+        assert_eq!(
+            tem, esperado,
+            "o diario de {nome} nao tem uma INCLUSAO por linha: o arranque gravou \
+             por cima de um rowid cuja inclusao a queda deixou fora do diario"
+        );
+        ids.extend(eventos.iter().map(|(_, _, tx)| *tx));
+    }
+    assert!(ids[0] != 0, "o volume tem de guardar o id");
+    assert!(
+        ids.iter().all(|t| *t == ids[0]),
+        "o grupo saiu do arranque em pedacos -- ids {ids:?}"
+    );
+
+    // De volta ao outro lado: nada entra duas vezes, e a 2.a venda chega.
+    let (filho, porta_c) = subir_central(&base_c.0, 3, porta_o, None);
+    vender(porta_o, 2);
+    let ate = Instant::now() + ESPERA;
+    loop {
+        let r = retrato(porta_c);
+        if r == (2, 2 * ITENS, 2) {
+            break;
+        }
+        assert!(
+            r == (1, ITENS, 1),
+            "a segunda venda apareceu pela metade, ou a primeira mudou: {r:?}"
+        );
+        assert!(
+            Instant::now() < ate,
+            "a segunda venda nao chegou em {} s: {r:?}",
+            ESPERA.as_secs()
         );
         std::thread::sleep(Duration::from_millis(50));
     }

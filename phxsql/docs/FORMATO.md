@@ -3672,6 +3672,22 @@ recusa no relatório: ela é, ali, a única cópia da imagem da linha perdida. O
 com o carimbo e a origem de lá e sem julgar a chave estrangeira), para o diário
 completado continuar o da origem.
 
+**E o conteúdo, e a exclusão, e o id (pedido 701, 08/10/2026).** A linha
+presente só confirma a inclusão ou a alteração se os **valores** dela forem os
+da imagem do evento (o payload daqui aponta para o `.memo` daqui; os dois passam
+pelo mesmo decodificador) — senão a versão velha no `.reg` fazia a marca sair, e
+ela era a única cópia da nova. Conteúdo diferente só é legítimo se uma alteração
+**posterior** o trocou, no diário daqui ou numa operação seguinte da mesma
+marca. A exclusão com a queda entre o slot liberado e o evento **se completa**:
+o slot livre na faixa, com o diário na posição, ganha só o evento, com a imagem
+do antes tirada da última linha da lixeira — que a exclusão grava antes de
+liberar o slot, a mesma fonte do evento devido do pedido 498; lixeira que não
+termina nela recusa dizendo isso. E a marca se completa dentro de **uma**
+unidade de transação: no arranque, aberta pela própria recuperação e com o `tx`
+do evento que já tinha entrado (o da primeira metade do grupo), para a réplica
+encadeada receber o grupo inteiro; no reparo de um pânico, a da tomada da
+trava, que é a mesma que gravou a primeira metade.
+
 **Quem apaga:** a rodada, depois do `fsync` de cada tabela que aplicou — a
 ordem do group commit. O grupo que para no meio por erro do dado (a réplica
 divergiu) apaga a marca na hora: completar no arranque bateria no mesmo evento.
@@ -3702,6 +3718,17 @@ daqui com o carimbo e a origem de lá, e reaplicá-lo empata com o próprio toqu
 O `fsync` das tabelas e a saída da marca vêm depois de soltar a trava. A marca
 que não se lê, ou cifrada sem a chave, **fica**, com o caminho no log; a que
 não confere sai.
+
+**A inclusão que a queda deixou fora do diário (pedido 700).** O irmão do 699
+pela chave: o slot vivo no fim do `.reg` que nenhum evento do diário daqui nomeia
+(o maior `rowid` visto na absorção, `MapaDeToques::maior_rowid`) é a linha cuja
+inclusão a queda interrompeu. O evento cuja chave a acha **completa a inclusão**
+(`Table::completar_o_diario_da_inclusao`, do payload do disco) em vez de gravar
+uma alteração por cima — que mandaria à réplica encadeada a alteração de uma
+linha que ela nunca viu nascer. O resto do grupo adota o `tx` do último evento
+da tabela quando ele é do grupo (carimbo e origem de lá). A marca fica **em voo**
+na trava, mas o reparo de um pânico não a completa — o motor dele é o do rowid
+—: recusa, e o processo cai para o arranque completá-la com a porta fechada.
 
 **Quem apaga na rodada:** o fim do alcance, depois do `fsync`, como a da
 réplica; o grupo em que nada entrou apaga na hora. Um binário anterior ao 698

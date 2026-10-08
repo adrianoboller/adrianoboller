@@ -1,5 +1,5 @@
 {
-  "quando": "2026-10-08 06:25",
+  "quando": "2026-10-08 07:25",
   "mais_antigo": "2026-09-16 15:25",
   "guardas": [
     {
@@ -6634,9 +6634,9 @@
       "id": "evento-no-diario-sem-a-linha-apaga-a-marca",
       "titulo": "O evento que está no diário conta como aplicado sem o `.reg` confirmar: a marca do grupo sai com a linha ausente (pedido 699)",
       "veredito": "PROVADA",
-      "segundos": 12.27,
+      "segundos": 11.98,
       "notas": [],
-      "quando": "2026-10-08 06:25"
+      "quando": "2026-10-08 07:25"
     },
     {
       "id": "grupo-do-bidi-sem-marca",
@@ -6653,6 +6653,62 @@
       "segundos": 19.47,
       "notas": [],
       "quando": "2026-10-08 06:25"
+    },
+    {
+      "id": "bidi-grava-alteracao-por-cima-da-inclusao-orfa",
+      "titulo": "O arranque do bidirecional grava uma ALTERAÇÃO pela chave de um rowid cuja inclusão a queda deixou fora do diário (pedido 700)",
+      "veredito": "PROVADA",
+      "segundos": 22.64,
+      "notas": [],
+      "quando": "2026-10-08 07:25"
+    },
+    {
+      "id": "bidi-completa-o-grupo-com-outro-id",
+      "titulo": "O arranque completa o grupo do bidirecional com um id de transação novo: a réplica encadeada recebe a venda em dois pedaços (pedido 701 b)",
+      "veredito": "PROVADA",
+      "segundos": 22.75,
+      "notas": [],
+      "quando": "2026-10-08 07:25"
+    },
+    {
+      "id": "reparo-completa-pelo-rowid-a-marca-do-bidi",
+      "titulo": "O reparo da trava completa pelo rowid a marca em voo do grupo do bidirecional, que casa pela chave (pedido 700)",
+      "veredito": "PROVADA",
+      "segundos": 83.85,
+      "notas": [],
+      "quando": "2026-10-08 07:25"
+    },
+    {
+      "id": "erro-no-meio-do-grupo-tira-a-marca-da-lista",
+      "titulo": "O `?` no meio do grupo da réplica devolve o erro com a marca fora da lista da rodada: ela fica no disco até o próximo arranque (pedido 701 d)",
+      "veredito": "PROVADA",
+      "segundos": 83.76,
+      "notas": [],
+      "quando": "2026-10-08 07:25"
+    },
+    {
+      "id": "alteracao-ja-aplicada-sem-olhar-o-conteudo",
+      "titulo": "A recuperação da marca da réplica dá a alteração por aplicada só porque a linha existe: a versão velha no `.reg` faz a marca sair (pedido 701 a)",
+      "veredito": "PROVADA",
+      "segundos": 12.85,
+      "notas": [],
+      "quando": "2026-10-08 07:25"
+    },
+    {
+      "id": "marca-completada-fora-da-unidade",
+      "titulo": "O arranque completa a marca da réplica fora de uma unidade de transação: cada evento ganha um id e o grupo chega em pedaços à réplica encadeada (pedido 701 b)",
+      "veredito": "PROVADA",
+      "segundos": 11.46,
+      "notas": [],
+      "quando": "2026-10-08 07:25"
+    },
+    {
+      "id": "exclusao-sem-evento-recusa-na-marca",
+      "titulo": "A queda entre o slot liberado e o evento da exclusão: a recuperação da marca recusa a cada arranque em vez de completar o evento da lixeira (pedido 701 c)",
+      "veredito": "PROVADA",
+      "segundos": 11.81,
+      "notas": [],
+      "quando": "2026-10-08 07:25"
     },
     {
       "id": "alter-com-regra-sem-aviso",

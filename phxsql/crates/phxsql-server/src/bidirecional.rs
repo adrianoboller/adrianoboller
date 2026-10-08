@@ -466,6 +466,13 @@ pub struct MapaDeToques {
     /// chave fora do mapa tem toque local acima dele -- e e isso que deixa o
     /// mapa esquecer sem perder a decisao. `None` = nunca esqueceu nada.
     pub piso: Option<(i64, u16)>,
+    /// O maior rowid que um evento do diario daqui ja nomeou -- pedido 700.
+    ///
+    /// A inclusao grava o slot antes do evento, e o rowid nasce sempre no fim
+    /// do `.reg`: um slot vivo ACIMA deste numero e uma linha cuja inclusao
+    /// nunca chegou ao diario. E o arranque que pergunta, ao completar a marca
+    /// do grupo ([`crate::servidor`], `aplicar_itens_bidi`).
+    pub maior_rowid: u64,
 }
 
 /// Quantas chaves distintas o mapa de toques de UMA tabela guarda, no padrao
@@ -511,6 +518,7 @@ impl MapaDeToques {
         self.marca = None;
         self.toques.clear();
         self.piso = None;
+        self.maior_rowid = 0;
         self.vidas_novas += 1;
     }
 

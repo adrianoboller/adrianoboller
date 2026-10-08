@@ -731,6 +731,39 @@ pub fn fechar_unidade() {
     }
 }
 
+/// Ha unidade aberta nesta thread? -- pedido 701 (b).
+///
+/// A recuperacao de uma marca abre a PROPRIA unidade so quando ninguem abriu:
+/// no reparo de um panico a tomada da trava ja tem a dela, e e a mesma que
+/// gravou a primeira metade do grupo -- fecha-la ali partiria o grupo.
+pub fn unidade_aberta() -> bool {
+    UNIDADE.with(|u| u.get().is_some())
+}
+
+/// A unidade aberta que ainda nao gravou evento passa a levar o id `tx` --
+/// pedido 701 (b). Devolve se adotou.
+///
+/// Existe para a marca que o arranque completa: a metade do grupo que entrou
+/// antes da queda ja esta no diario com um id, e o resto, com um id novo,
+/// chegaria a replica encadeada como OUTRA transacao -- o grupo em pedacos. O
+/// id adotado ja foi emitido e o `.log` que o guarda semeou o
+/// [`proximo_tx`] com ele ([`semear_tx`]), entao nao recua ordem nenhuma. Zero
+/// e «sem id» (volume 2/3) e nao se adota; a unidade que ja gravou fica com o
+/// dela.
+pub fn adotar_tx_na_unidade(tx: u64) -> bool {
+    if tx == 0 {
+        return false;
+    }
+    UNIDADE.with(|u| {
+        if u.get() == Some(0) {
+            u.set(Some(tx));
+            true
+        } else {
+            false
+        }
+    })
+}
+
 /// Anota na unidade aberta se o evento foi com id ou sem -- pedido 684 (b).
 /// Fora de unidade nao ha commit para misturar.
 fn anotar_mistura(com_id: bool) {

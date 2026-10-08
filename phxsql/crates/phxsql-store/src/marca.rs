@@ -732,6 +732,16 @@ pub fn marcas_do_bidi_em(dir: &Path) -> Vec<PathBuf> {
     marcas_com_prefixo(dir, PREFIXO_DO_BIDI)
 }
 
+/// `caminho` e uma marca do bidirecional? -- pedido 700. Pelo nome, que e o
+/// que separa QUEM a completa: a do bidirecional casa pela chave, no
+/// servidor, e nunca pelo rowid do [`tratar_marca`].
+pub fn e_marca_do_bidi(caminho: &Path) -> bool {
+    caminho
+        .file_name()
+        .and_then(|n| n.to_str())
+        .is_some_and(|n| n.starts_with(PREFIXO_DO_BIDI))
+}
+
 /// O corpo unico das duas portas de gravacao. `replica`, quando vem, tem um
 /// evento por operacao, na mesma ordem.
 fn gravar_com(
@@ -1417,10 +1427,17 @@ pub fn tratar_marca(
 /// Reaplica o que falta de UMA marca. Devolve se as tabelas dela foram ao
 /// disco -- e so entao a marca pode sair, em qualquer [`NoArranque`].
 fn completar(db: &Database, marca: &Marca, r: &mut Relatorio) -> bool {
+    // Pedido 701 (b): a marca se completa dentro de UMA unidade de transacao.
+    // No arranque nao ha trava tomada, e fora de unidade cada evento ganhava
+    // um id so dele (`log::tx_do_evento`): a replica encadeada recebia o
+    // resto do grupo em pedacos, um por evento. No reparo de um panico a
+    // tomada da trava ja tem a unidade -- a mesma que gravou a primeira
+    // metade --, e ela fica.
+    let _unidade = UnidadeDaMarca::abrir();
     let mut tabelas: HashMap<String, Table> = HashMap::new();
     let mut replica_parou = false;
     let mut reter = false;
-    for op in &marca.operacoes {
+    for (k, op) in marca.operacoes.iter().enumerate() {
         // Garante o handle no mapa, aberto e preparado UMA vez.
         if !tabelas.contains_key(&op.tabela) {
             match db.abrir_qualificada(&op.tabela) {
@@ -1511,7 +1528,7 @@ fn completar(db: &Database, marca: &Marca, r: &mut Relatorio) -> bool {
             let mut maes = MaesAbertas {
                 abertas: &mut tabelas,
             };
-            match aplicar_na_recuperacao(&mut t, op, &mut maes) {
+            match aplicar_na_recuperacao(&mut t, op, &marca.operacoes[k + 1..], &mut maes) {
                 Ok(Desfecho::Aplicou) => r.reaplicadas += 1,
                 Ok(Desfecho::JaEstava) => r.ja_aplicadas += 1,
                 // Pedido 699: o diario diz que o evento entrou e o `.reg` nao
@@ -1569,6 +1586,29 @@ fn completar(db: &Database, marca: &Marca, r: &mut Relatorio) -> bool {
     no_disco && !reter
 }
 
+/// A unidade de transacao que a recuperacao de UMA marca abre quando ninguem
+/// abriu -- pedido 701 (b). Fecha no `Drop`, para o `?` e o panico no meio
+/// nao deixarem a thread presa numa unidade que nao e de mais ninguem.
+struct UnidadeDaMarca(bool);
+
+impl UnidadeDaMarca {
+    fn abrir() -> UnidadeDaMarca {
+        let propria = !crate::log::unidade_aberta();
+        if propria {
+            crate::log::abrir_unidade();
+        }
+        UnidadeDaMarca(propria)
+    }
+}
+
+impl Drop for UnidadeDaMarca {
+    fn drop(&mut self) {
+        if self.0 {
+            crate::log::fechar_unidade();
+        }
+    }
+}
+
 /// O que a reaplicacao de UMA operacao da marca fez.
 #[derive(Debug, PartialEq, Eq)]
 enum Desfecho {
@@ -1590,7 +1630,7 @@ pub(crate) fn aplicar_uma(
     op: &OperacaoDaMarca,
     maes: &mut dyn MaesEmProgresso,
 ) -> Result<bool> {
-    match aplicar_na_recuperacao(t, op, maes)? {
+    match aplicar_na_recuperacao(t, op, &[], maes)? {
         Desfecho::Aplicou => Ok(true),
         Desfecho::JaEstava => Ok(false),
         Desfecho::LinhaPerdida(motivo) => Err(PhxError::Corrompido(motivo)),
@@ -1626,13 +1666,23 @@ fn slot_ja_consumido(t: &mut Table, rowid: u64) -> Result<bool> {
 
 /// O corpo do [`aplicar_uma`], com o desfecho inteiro -- a recuperacao precisa
 /// distinguir a linha perdida de uma recusa qualquer.
+///
+/// `seguintes` sao as operacoes da MESMA marca depois desta: o slot que o
+/// diario daqui ainda nao explica pode estar explicado por uma delas (pedido
+/// 701) -- a exclusao seguinte que tambem nao chegou ao diario, a alteracao
+/// seguinte que chegou ao `.reg` e nao ao evento.
 fn aplicar_na_recuperacao(
     t: &mut Table,
     op: &OperacaoDaMarca,
+    seguintes: &[OperacaoDaMarca],
     maes: &mut dyn MaesEmProgresso,
 ) -> Result<Desfecho> {
     if let Some(ev) = &op.replica {
-        return aplicar_evento_da_marca(t, op.rowid, ev);
+        let seguintes = Seguintes {
+            tabela: &op.tabela,
+            ops: seguintes,
+        };
+        return aplicar_evento_da_marca(t, op.rowid, ev, seguintes);
     }
     let feito = |b: bool| {
         if b {
@@ -1724,7 +1774,12 @@ fn aplicar_na_recuperacao(
 /// O aplicador e o da replica ([`Table::aplicar_evento`]), com o carimbo e a
 /// origem de la, e sem julgar a chave estrangeira -- conta a orfa, como a
 /// rodada conta.
-fn aplicar_evento_da_marca(t: &mut Table, rowid: u64, ev: &EventoDaReplica) -> Result<Desfecho> {
+fn aplicar_evento_da_marca(
+    t: &mut Table,
+    rowid: u64,
+    ev: &EventoDaReplica,
+    seguintes: Seguintes<'_>,
+) -> Result<Desfecho> {
     let tem = t.eventos()?;
     if tem > ev.posicao {
         let la = t.diario(ev.posicao, 1)?;
@@ -1732,7 +1787,11 @@ fn aplicar_evento_da_marca(t: &mut Table, rowid: u64, ev: &EventoDaReplica) -> R
             Some(e)
                 if e.carimbo == ev.carimbo_ms && e.operacao == ev.operacao && e.rowid == rowid =>
             {
-                conferir_o_reg_do_evento(t, rowid, ev)
+                // Pedido 701 (b): o evento que ja entrou diz o id da unidade
+                // que gravou a primeira metade do grupo, e o resto o adota --
+                // so se a unidade desta recuperacao ainda nao gravou nada.
+                crate::log::adotar_tx_na_unidade(e.tx);
+                conferir_o_reg_do_evento(t, rowid, ev, seguintes)
             }
             _ => Err(PhxError::Corrompido(format!(
                 "o evento {} do diario de {} nao e o que a marca do grupo da replica \
@@ -1766,6 +1825,19 @@ fn aplicar_evento_da_marca(t: &mut Table, rowid: u64, ev: &EventoDaReplica) -> R
         t.completar_o_diario_da_inclusao(rowid, &ev.imagem)?;
         return Ok(Desfecho::Aplicou);
     }
+    // Pedido 701 (c), o irmao da exclusao: o slot sai do `.reg` ANTES do
+    // evento, e a queda entre os dois deixa o slot livre com o diario na
+    // posicao. Reaplicar pelo `aplicar_evento` recusava («aqui ele nao
+    // existe») e a marca avisava a cada arranque; o evento se completa da
+    // lixeira, que guardou a linha antes de o slot sair.
+    if ev.operacao == crate::log::Operacao::Exclusao
+        && rowid >= 1
+        && rowid <= t.slots()
+        && t.ler_sem_externos(rowid)?.is_none()
+    {
+        t.completar_o_diario_da_exclusao(rowid, &ev.imagem)?;
+        return Ok(Desfecho::Aplicou);
+    }
     t.aplicar_evento(ev.operacao, rowid, &ev.imagem)?;
     Ok(Desfecho::Aplicou)
 }
@@ -1779,8 +1851,15 @@ fn aplicar_evento_da_marca(t: &mut Table, rowid: u64, ev: &EventoDaReplica) -> R
 ///
 /// Inclusao e alteracao deixam a linha no slot; a exclusao o deixa livre.
 /// Slot livre depois de uma inclusao ou alteracao so e legitimo se um evento
-/// POSTERIOR do mesmo diario o excluiu -- e e o diario que diz.
-fn conferir_o_reg_do_evento(t: &mut Table, rowid: u64, ev: &EventoDaReplica) -> Result<Desfecho> {
+/// POSTERIOR do mesmo diario o excluiu -- e e o diario que diz. E a linha
+/// presente tem de ser a do evento (pedido 701, a): presenca sozinha deixava
+/// sair a marca com a versao velha no slot.
+fn conferir_o_reg_do_evento(
+    t: &mut Table,
+    rowid: u64,
+    ev: &EventoDaReplica,
+    seguintes: Seguintes<'_>,
+) -> Result<Desfecho> {
     use crate::log::Operacao;
     let presente = rowid >= 1 && rowid <= t.slots() && t.ler_sem_externos(rowid)?.is_some();
     let perdida = match ev.operacao {
@@ -1790,8 +1869,23 @@ fn conferir_o_reg_do_evento(t: &mut Table, rowid: u64, ev: &EventoDaReplica) -> 
             t.nome()
         )),
         Operacao::Exclusao => None,
-        _ if presente => None,
-        _ if excluida_depois(t, rowid, ev.posicao + 1)? => None,
+        _ if presente && o_reg_tem_a_imagem(t, rowid, ev)? => None,
+        // Pedido 701 (a): a linha esta la com OUTRO conteudo. So e legitimo
+        // se uma alteracao posterior do mesmo diario o trocou; senao e a
+        // queda de energia que levou a versao nova do `.reg` e deixou a velha
+        // -- e a marca era a unica copia da nova.
+        _ if presente
+            && tocada_depois(t, rowid, ev.posicao + 1, Operacao::Alteracao, seguintes)? =>
+        {
+            None
+        }
+        op if presente => Some(format!(
+            "o diario de {} tem a {} do rowid {rowid} e o .reg tem a linha com \
+             outro conteudo: a versao que o diario confirma nao chegou ao disco",
+            t.nome(),
+            op.nome()
+        )),
+        _ if tocada_depois(t, rowid, ev.posicao + 1, Operacao::Exclusao, seguintes)? => None,
         op => Some(format!(
             "o diario de {} tem a {} do rowid {rowid} e o .reg nao tem a linha: o \
              disco perdeu o slot que o diario confirma",
@@ -1805,8 +1899,60 @@ fn conferir_o_reg_do_evento(t: &mut Table, rowid: u64, ev: &EventoDaReplica) -> 
     })
 }
 
-/// O diario daqui exclui `rowid` em algum evento a partir de `desde`?
-fn excluida_depois(t: &mut Table, rowid: u64, desde: u64) -> Result<bool> {
+/// A linha `rowid` do `.reg` e a que a imagem do evento traz? -- pedido 701
+/// (a).
+///
+/// Compara VALORES, e nao bytes: o payload daqui aponta os externos para o
+/// `.memo` daqui e sela com a chave daqui, e a imagem traz o conteudo aberto.
+/// Os dois passam pelo mesmo decodificador e sao a mesma linha se e so se os
+/// valores batem. Evento sem imagem nao tem com o que comparar, e a presenca
+/// e tudo o que se sabe -- e o que a recuperacao sabia antes.
+fn o_reg_tem_a_imagem(t: &mut Table, rowid: u64, ev: &EventoDaReplica) -> Result<bool> {
+    if ev.imagem.is_empty() {
+        return Ok(true);
+    }
+    let de_la = t.valores_da_imagem(&ev.imagem)?;
+    Ok(t.ler(rowid)?.as_deref() == Some(de_la.as_slice()))
+}
+
+/// As operacoes da marca depois da que se reaplica, e a tabela dela -- ver
+/// [`aplicar_na_recuperacao`].
+#[derive(Clone, Copy)]
+struct Seguintes<'a> {
+    tabela: &'a str,
+    ops: &'a [OperacaoDaMarca],
+}
+
+impl Seguintes<'_> {
+    /// Alguma seguinte, nesta tabela, faz `qual` no `rowid`? So as do grupo
+    /// da replica: e o evento que diz a operacao.
+    fn tem(&self, rowid: u64, qual: crate::log::Operacao) -> bool {
+        self.ops.iter().any(|op| {
+            op.rowid == rowid
+                && op.tabela == self.tabela
+                && op.replica.as_ref().is_some_and(|ev| ev.operacao == qual)
+        })
+    }
+}
+
+/// O diario daqui tem a operacao `qual` sobre `rowid` em algum evento a
+/// partir de `desde` -- ou uma operacao SEGUINTE da mesma marca, nesta
+/// tabela, a tem?
+///
+/// A marca conta porque a queda pode ter levado o evento da seguinte junto
+/// (pedido 701): o diario ainda nao a tem, e ela nao passa sem conferencia
+/// propria -- a exclusao seguinte so se completa se a lixeira tiver a linha,
+/// a alteracao seguinte reaplica o conteudo dela.
+fn tocada_depois(
+    t: &mut Table,
+    rowid: u64,
+    desde: u64,
+    qual: crate::log::Operacao,
+    seguintes: Seguintes<'_>,
+) -> Result<bool> {
+    if seguintes.tem(rowid, qual) {
+        return Ok(true);
+    }
     const LOTE: u64 = 1024;
     let total = t.eventos()?;
     let mut pos = desde;
@@ -1815,10 +1961,7 @@ fn excluida_depois(t: &mut Table, rowid: u64, desde: u64) -> Result<bool> {
         if lote.is_empty() {
             break;
         }
-        if lote
-            .iter()
-            .any(|e| e.rowid == rowid && e.operacao == crate::log::Operacao::Exclusao)
-        {
+        if lote.iter().any(|e| e.rowid == rowid && e.operacao == qual) {
             return Ok(true);
         }
         pos += lote.len() as u64;
@@ -2435,6 +2578,190 @@ mod testes {
         assert!(
             caminho.exists(),
             "a marca saiu com a linha ausente do .reg -- era a unica copia dela"
+        );
+    }
+
+    /// Os eventos `ev` como os de uma origem que mexeu em `itens` do jeito que
+    /// `mexer` mandar -- inclusao, alteracao, exclusao --, com imagem.
+    fn eventos_de(d: &Path, mexer: impl FnOnce(&mut Table)) -> Vec<(crate::log::Evento, Vec<u8>)> {
+        let db = base_com_imagem(d);
+        let mut t = itens_sem_indice(&db);
+        mexer(&mut t);
+        drop(t);
+        let mut t = db.abrir_qualificada("itens").unwrap();
+        t.diario_com_imagem(0, 0).unwrap()
+    }
+
+    fn aplicar(t: &mut Table, e: &(crate::log::Evento, Vec<u8>)) {
+        t.forcar_proximo_evento(e.0.carimbo, 7);
+        t.aplicar_evento(e.0.operacao, e.0.rowid, &e.1).unwrap();
+    }
+
+    fn copiar_os_reg(de: &Path, para: &Path) -> Vec<PathBuf> {
+        std::fs::create_dir_all(para).unwrap();
+        let regs: Vec<PathBuf> = std::fs::read_dir(de)
+            .unwrap()
+            .filter_map(|e| e.ok().map(|e| e.path()))
+            .filter(|p| p.extension().is_some_and(|x| x == "reg"))
+            .collect();
+        assert!(!regs.is_empty(), "nenhum .reg em {}", de.display());
+        for r in &regs {
+            std::fs::copy(r, para.join(r.file_name().unwrap())).unwrap();
+        }
+        regs
+    }
+
+    /// **Pedido 701 (a).** O diario tem a alteracao e o `.reg` ficou com a
+    /// versao VELHA da linha -- a queda de energia que levou o slot novo e
+    /// deixou o evento. A linha esta la, e por isso a presenca nao basta: a
+    /// recuperacao compara o conteudo, recusa nomeando, e a marca FICA, porque
+    /// e a unica copia da versao nova.
+    ///
+    /// Vermelho medido sem o `o_reg_tem_a_imagem`: as duas operacoes contam
+    /// «ja estava» e a marca sai com a venda 1 no slot que devia dizer 2.
+    #[test]
+    fn alteracao_no_diario_com_a_versao_velha_no_reg_segura_a_marca() {
+        let d = dir("replica-alteracao-velha");
+        let ev = eventos_de(&d.join("origem"), |t| {
+            t.inserir(&[Value::Int(1), Value::Int(1)]).unwrap();
+            t.atualizar(1, &[Value::Int(1), Value::Int(2)]).unwrap();
+        });
+        assert_eq!(ev.len(), 2);
+        let central = d.join("central");
+        let db = base_com_imagem(&central);
+        let mut t = itens_sem_indice(&db);
+        aplicar(&mut t, &ev[0]);
+        t.sincronizar().unwrap();
+        drop(t);
+        let regs = copiar_os_reg(&central, &d.join("reg-velho"));
+        let mut t = db.abrir_qualificada("itens").unwrap();
+        aplicar(&mut t, &ev[1]);
+        t.sincronizar().unwrap();
+        drop(t);
+        for r in &regs {
+            std::fs::copy(d.join("reg-velho").join(r.file_name().unwrap()), r).unwrap();
+        }
+        let caminho = gravar_marca_da_replica(db.caminho(), 46, 0, &grupo(&ev)).unwrap();
+        let r = db.recuperar_marcas();
+        assert_eq!(r.ja_aplicadas, 1, "{r:?}");
+        assert_eq!(r.impossiveis.len(), 1, "{r:?}");
+        assert!(r.impossiveis[0].contains("outro conteudo"), "{r:?}");
+        assert!(
+            caminho.exists(),
+            "a marca saiu com a versao velha no .reg -- era a unica copia da nova"
+        );
+    }
+
+    /// O controle do de cima: a alteracao que chegou ao `.reg` conta «ja
+    /// estava», e a alteracao seguinte do mesmo diario legitima o conteudo
+    /// diferente da anterior -- a comparacao nao recusa o que esta certo.
+    #[test]
+    fn duas_alteracoes_no_disco_contam_ja_aplicadas() {
+        let d = dir("replica-duas-alteracoes");
+        let ev = eventos_de(&d.join("origem"), |t| {
+            t.inserir(&[Value::Int(1), Value::Int(1)]).unwrap();
+            t.atualizar(1, &[Value::Int(1), Value::Int(2)]).unwrap();
+            t.atualizar(1, &[Value::Int(1), Value::Int(3)]).unwrap();
+        });
+        let db = base_com_imagem(&d.join("central"));
+        let mut t = itens_sem_indice(&db);
+        for e in &ev {
+            aplicar(&mut t, e);
+        }
+        t.sincronizar().unwrap();
+        drop(t);
+        gravar_marca_da_replica(db.caminho(), 47, 0, &grupo(&ev)).unwrap();
+        let r = db.recuperar_marcas();
+        assert_eq!(r.ja_aplicadas, 3, "{r:?}");
+        assert!(r.impossiveis.is_empty(), "{r:?}");
+        assert!(marcas_em(db.caminho()).is_empty(), "a marca completada sai");
+    }
+
+    /// **Pedido 701 (b).** O arranque completa a marca numa unidade de
+    /// transacao SO, e com o id que a primeira metade do grupo ja levou: a
+    /// replica encadeada junta pelo id, e o resto com ids novos chegaria la
+    /// como outras transacoes.
+    ///
+    /// Vermelho medido sem a `UnidadeDaMarca`: cada evento completado ganha
+    /// um id proprio, e nenhum e o da primeira metade.
+    #[test]
+    fn o_arranque_completa_o_grupo_com_o_id_da_primeira_metade() {
+        let d = dir("replica-um-id-so");
+        let ev = eventos_da_origem(&d.join("origem"), 4);
+        let db = base_com_imagem(&d.join("central"));
+        let mut t = itens(&db);
+        // A primeira metade, numa unidade -- como a tomada da trava da rodada.
+        crate::log::abrir_unidade();
+        aplicar(&mut t, &ev[0]);
+        crate::log::fechar_unidade();
+        t.sincronizar().unwrap();
+        drop(t);
+        gravar_marca_da_replica(db.caminho(), 48, 0, &grupo(&ev)).unwrap();
+        let r = db.recuperar_marcas();
+        assert_eq!((r.reaplicadas, r.ja_aplicadas), (3, 1), "{r:?}");
+        let mut t = db.abrir_qualificada("itens").unwrap();
+        let meu = t.diario(0, 0).unwrap();
+        assert_eq!(meu.len(), 4);
+        assert_ne!(meu[0].tx, 0, "o volume tem de guardar o id");
+        let ids: Vec<u64> = meu.iter().map(|e| e.tx).collect();
+        assert!(
+            ids.iter().all(|x| *x == ids[0]),
+            "o grupo completado no arranque saiu em pedacos: ids {ids:?}"
+        );
+    }
+
+    /// **Pedido 701 (c).** A queda entre o slot liberado e o evento da
+    /// exclusao: a linha saiu do `.reg` e o diario nao tem a exclusao. A
+    /// recuperacao completa SO o evento, com a imagem do antes tirada da
+    /// lixeira, e a marca sai.
+    ///
+    /// Vermelho medido sem o ramo da exclusao no `aplicar_evento_da_marca`:
+    /// o `aplicar_evento` recusa («aqui ele nao existe») e o diario fica sem
+    /// a exclusao.
+    #[test]
+    fn a_queda_entre_o_slot_e_o_diario_completa_a_exclusao() {
+        let d = dir("replica-exclusao-sem-evento");
+        let ev = eventos_de(&d.join("origem"), |t| {
+            t.inserir(&[Value::Int(1), Value::Int(1)]).unwrap();
+            t.inserir(&[Value::Int(2), Value::Int(1)]).unwrap();
+            t.excluir_de_vez(1, "teste").unwrap();
+        });
+        assert_eq!(ev[2].0.operacao, Operacao::Exclusao);
+        assert!(!ev[2].1.is_empty(), "a exclusao tem de levar a imagem");
+        let db = base_com_imagem(&d.join("central"));
+        let mut t = itens_sem_indice(&db);
+        aplicar(&mut t, &ev[0]);
+        aplicar(&mut t, &ev[1]);
+        crate::ndx::panico_de_teste::armar(crate::ndx::panico_de_teste::Ponto::ExcluirDepoisDoSlot);
+        t.forcar_proximo_evento(ev[2].0.carimbo, 7);
+        let caiu = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _ = t.aplicar_evento(ev[2].0.operacao, ev[2].0.rowid, &ev[2].1);
+        }));
+        crate::ndx::panico_de_teste::desarmar();
+        assert!(caiu.is_err(), "o panico de teste nao disparou");
+        drop(t);
+        let mut t = db.abrir_qualificada("itens").unwrap();
+        assert_eq!(
+            (t.registros(), t.eventos().unwrap()),
+            (1, 2),
+            "o arranjo nao reproduziu a queda: o slot 1 tem de estar livre e a \
+             exclusao fora do diario"
+        );
+        drop(t);
+        let caminho = gravar_marca_da_replica(db.caminho(), 49, 0, &grupo(&ev)).unwrap();
+        let r = db.recuperar_marcas();
+        assert!(r.impossiveis.is_empty(), "{r:?}");
+        assert!(!caminho.exists(), "a marca completada sai");
+        let mut t = db.abrir_qualificada("itens").unwrap();
+        let meu = t.diario_com_imagem(0, 0).unwrap();
+        assert_eq!(meu.len(), 3, "a exclusao que faltava nao foi completada");
+        assert_eq!(
+            (meu[2].0.operacao, meu[2].0.rowid, meu[2].0.carimbo),
+            (Operacao::Exclusao, 1, ev[2].0.carimbo)
+        );
+        assert_eq!(
+            meu[2].1, ev[2].1,
+            "a imagem do antes nao e a da linha excluida"
         );
     }
 }
