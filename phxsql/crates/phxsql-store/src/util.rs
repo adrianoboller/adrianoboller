@@ -506,7 +506,7 @@ pub fn abrir_sem_seguir(opcoes: &mut OpenOptions, caminho: &Path) -> std::io::Re
         const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
         const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x0000_0400;
         let arquivo = opcoes
-            .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
+            .custom_flags(0) // DEFEITO REPOSTO (662): sem a bandeira
             .open(caminho)?;
         let m = arquivo.metadata()?;
         if m.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 && !m.file_type().is_symlink() {
