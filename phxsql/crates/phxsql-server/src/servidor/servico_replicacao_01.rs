@@ -575,6 +575,9 @@ impl Servidor {
         mut cliente: crate::replica::Cliente,
         origem: &crate::config::Origem,
     ) -> Result<u64> {
+        // Quem puxa se apresenta (pedido 706): a origem que declarou este id
+        // em `diario.consumidores` segura o diario ate ele confirmar.
+        cliente.dizer_quem_puxa(&self.config.replicacao.id_servidor);
         // O que a origem ANUNCIA -- a lista declarada, ou o que a descoberta
         // trouxe --, menos os nomes que ja sao de outra origem. E aqui que o
         // servidor sabe, pela primeira vez e com certeza, que duas origens vao
@@ -598,7 +601,14 @@ impl Servidor {
 
         let mut aplicados = 0u64;
         for database in databases {
-            let p = crate::replica::posicao(&mut cliente, &database)?;
+            let mut p = crate::replica::posicao(&mut cliente, &database)?;
+            // Pedido 706: a origem ja expurgou o que esta replica precisava.
+            // Ela se refaz pelo retrato da origem e segue dali -- a posicao
+            // vem dentro do `.log` copiado.
+            if self.precisa_de_retrato(&database, &p.bases)? {
+                self.refazer_por_retrato(&mut cliente, &database, &origem.nome)?;
+                p = crate::replica::posicao(&mut cliente, &database)?;
+            }
             if let Some(e) = do_cluster {
                 e.anunciar_tabelas(
                     &database,
@@ -1315,6 +1325,9 @@ impl Servidor {
                     } else {
                         desde
                     };
+                    // O que ja foi ao disco aqui: a posicao do comeco da
+                    // rodada -- o que entrou nela so vai no `fsync` do fim.
+                    cliente.dizer_o_duravel(f.posicao.saturating_sub(f.aplicados));
                     let mut eventos =
                         match crate::replica::puxar(cliente, database, &f.no.nome, pedir) {
                             Ok(e) => e,
@@ -1379,6 +1392,17 @@ impl Servidor {
         for f in &filas {
             if f.aplicados > 0 {
                 self.sincronizar_replicada(database, &f.no.nome)?;
+            }
+        }
+        // Pedido 706: agora o que entrou nesta rodada esta no disco, e a
+        // origem que segura o diario por esta replica pode saber. Um evento
+        // pedido de onde a tabela parou, com o `duravel` igual -- so quando a
+        // rodada aplicou algo, e sem erro de rede derrubando a rodada: a
+        // confirmacao que se perde aqui chega na rodada seguinte.
+        for f in filas.iter().filter(|_| saida.is_ok()) {
+            if f.aplicados > 0 {
+                cliente.dizer_o_duravel(f.posicao);
+                let _ = crate::replica::puxar_um(cliente, database, &f.no.nome, f.posicao);
             }
         }
         Self::soltar_marcas_da_replica(marcas);
@@ -1472,6 +1496,22 @@ impl Servidor {
         // andou por escrita local, o evento nao confere e a marca sai como
         // impossivel, sem gravar nada.
         let marca = self.marcar_o_grupo(database, filas, &grupo, &rompidas)?;
+        // So em `debug`, pedido 715: o N-esimo grupo com marca PARA aqui -- a
+        // marca no disco e a trava ainda nao tomada --, para a prova pegar uma
+        // transacao local que nasce DEPOIS da marca e entra ANTES do grupo. A
+        // trava esta solta: dormir aqui nao segura ninguem.
+        #[cfg(debug_assertions)]
+        if marca.is_some() {
+            static GRUPOS: AtomicU64 = AtomicU64::new(0);
+            if gancho_de_teste("PHXSQL_TESTE_PARAR_ANTES_DA_TRAVA_DO_GRUPO")
+                == Some(GRUPOS.fetch_add(1, Ordering::SeqCst) + 1)
+            {
+                eprintln!("teste: grupo da replica parado antes da trava");
+                loop {
+                    std::thread::sleep(Duration::from_secs(3600));
+                }
+            }
+        }
         let soltar = |marca: &Option<PathBuf>| {
             if let Some(m) = marca {
                 let _ = std::fs::remove_file(m);
@@ -1530,22 +1570,36 @@ impl Servidor {
                 marcas.push(m.clone());
             }
             #[cfg(debug_assertions)]
-            let parar_em: Option<u64> = std::env::var("PHXSQL_TESTE_PARAR_NO_GRUPO")
-                .ok()
-                .and_then(|v| v.parse().ok());
+            let parar_em = gancho_de_teste("PHXSQL_TESTE_PARAR_NO_GRUPO");
             // So em `debug`, pedido 699: o N-esimo evento do grupo morre DENTRO
             // da inclusao, com o slot no `.reg` e o evento fora do diario.
             #[cfg(debug_assertions)]
-            let parar_no_reg: Option<u64> = std::env::var("PHXSQL_TESTE_PARAR_NO_REG")
-                .ok()
-                .and_then(|v| v.parse().ok());
+            let parar_no_reg = gancho_de_teste("PHXSQL_TESTE_PARAR_NO_REG");
+            // So em `debug`, pedido 713: o evento `<tabela>:<rowid>` falha com
+            // erro do DADO no lugar de se aplicar -- e falha SEMPRE, como um
+            // erro de dado de verdade bate no mesmo evento em toda rodada.
+            #[cfg(debug_assertions)]
+            let falhar_no_evento = gancho_de_teste_em_texto("PHXSQL_TESTE_FALHAR_NO_EVENTO");
             let mut aplicou = false;
-            for (i, eventos) in &grupo {
+            // Pedido 713: QUALQUER quebra daqui ate o fim do grupo -- o erro
+            // do dado no evento, a tabela que nao abre, a posicao que nao
+            // anda -- cai no mesmo lugar, `parou`, e e decidida uma vez so
+            // logo abaixo. Eram tres saidas: o braco do dado apagava a marca,
+            // e os dois `?` a deixavam na lista que a rodada apaga depois do
+            // `fsync`. As tres deixavam a venda pela metade para sempre.
+            let mut parou: Option<PhxError> = None;
+            'grupo: for (i, eventos) in &grupo {
                 if rompidas.iter().any(|(j, _)| j == i) {
                     continue;
                 }
                 let f = &mut filas[*i];
-                let mut t = db.abrir_qualificada(&f.no.nome)?;
+                let mut t = match db.abrir_qualificada(&f.no.nome) {
+                    Ok(t) => t,
+                    Err(e) => {
+                        parou = Some(e);
+                        break 'grupo;
+                    }
+                };
                 // Pedido 300 §2.7: a replica nao julga a chave estrangeira --
                 // CONTA a filha que entra sem a mae.
                 t.contar_orfas();
@@ -1562,6 +1616,20 @@ impl Servidor {
                             phxsql_store::ndx::panico_de_teste::Ponto::InserirDepoisDoContador,
                             || sigkill_de_teste("teste: parado entre o .reg e o diario"),
                         );
+                    }
+                    #[cfg(debug_assertions)]
+                    if falhar_no_evento.as_deref()
+                        == Some(format!("{}:{}", f.no.nome, e.rowid).as_str())
+                    {
+                        eprintln!(
+                            "teste: erro de dado injetado no evento {}:{}",
+                            f.no.nome, e.rowid
+                        );
+                        falhou = Some(PhxError::Duplicado(format!(
+                            "teste: erro de dado injetado no evento {}:{}",
+                            f.no.nome, e.rowid
+                        )));
+                        break;
                     }
                     if let Err(erro) = t.aplicar_evento(e.operacao, e.rowid, &e.imagem) {
                         falhou = Some(erro);
@@ -1580,28 +1648,72 @@ impl Servidor {
                 total += n;
                 aplicou |= n > 0;
                 if let Some(erro) = falhou {
-                    // Fail-stop: a replica divergiu, e completar no arranque
-                    // bateria no mesmo evento. A marca sai com o erro, como a
-                    // do `COMMIT` que para no meio por erro do dado.
-                    trava.marca_em_voo = None;
-                    if let Some(m) = &marca {
-                        let _ = std::fs::remove_file(m);
-                        marcas.retain(|x| x != m);
-                    }
-                    return Err(erro);
+                    parou = Some(erro);
+                    break 'grupo;
                 }
-                let nova = t.eventos()?;
+                let nova = match t.eventos() {
+                    Ok(nova) => nova,
+                    Err(e) => {
+                        parou = Some(e);
+                        break 'grupo;
+                    }
+                };
                 if n > 0 && nova <= f.posicao {
-                    return Err(PhxError::Corrompido(format!(
+                    parou = Some(PhxError::Corrompido(format!(
                         "replicacao de {database}.{}: {n} evento(s) aplicado(s) e a \
                          posicao continua em {}",
                         f.no.nome, f.posicao
                     )));
+                    break 'grupo;
                 }
                 f.posicao = nova;
                 f.conferencia = None;
                 f.conferir = false;
                 aplicadas.push(*i);
+            }
+            if let Some(erro) = parou {
+                trava.marca_em_voo = None;
+                let Some(m) = marca.as_ref().filter(|_| aplicou) else {
+                    // Nada do grupo entrou: nao ha meia venda, e a marca sai
+                    // com o erro -- o `NadaAplicado` do `COMMIT`.
+                    if let Some(m) = &marca {
+                        let _ = std::fs::remove_file(m);
+                        marcas.retain(|x| x != m);
+                    }
+                    return Err(erro);
+                };
+                // Parte entrou. A decisao do dono no 685 e «a venda chega
+                // inteira ou nao chega, sem excecao», e desfazer devolveria
+                // slot (ordem de digitacao). Entao para a FRENTE, como o
+                // `COMMIT` cuja passada quebra depois da marca: completar o
+                // resto AGORA, com a mesma trava, pelo motor da recuperacao
+                // (`aplicar_evento_da_marca`, pela posicao do diario). O erro
+                // que so a rodada ve -- e o injetado pela prova -- nao volta
+                // ali; o que volta deixa a marca no disco para o arranque, e
+                // ela SAI da lista da rodada: apaga-la depois do `fsync`, como
+                // antes, era perder o unico bilhete da metade que falta (I12).
+                marcas.retain(|x| x != m);
+                let r = crate::transacao::completar_marca_em_voo(&trava, database, m, true);
+                if r.houve() {
+                    eprintln!("{}", r.texto(&self.config.base));
+                }
+                if r.completadas == 1 && r.impossiveis.is_empty() && r.paradas.is_empty() {
+                    eprintln!(
+                        "replicacao [{origem}]: {database}: o grupo parou no meio ({erro}) e \
+                         foi completado pela marca, inteiro, com a mesma trava (pedido 713)"
+                    );
+                    // A posicao de cada tabela mudou por baixo da rodada: ela
+                    // sai, e a proxima recomeca de onde a replica esta.
+                    return Ok(Grupo::Andou);
+                }
+                return Err(com_nota(
+                    erro,
+                    &format!(
+                        "o grupo da replica parou no meio e nao se completou agora; a \
+                         marca {} fica no disco e o arranque a completa (pedido 713)",
+                        m.display()
+                    ),
+                ));
             }
             // O grupo terminou: a marca deixa de estar EM VOO (o reparo de um
             // panico daqui em diante nao a completa) e espera o `fsync` da

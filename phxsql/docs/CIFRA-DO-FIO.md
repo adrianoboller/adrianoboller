@@ -1134,3 +1134,43 @@ junto, com o nome antigo escrito no comentário: teste que muda de significado e
 fica com o nome de ontem mente para quem lê a lista. E os que **não** mudaram
 de significado são os do escape escrito — eles ficam iguais dos dois lados da
 virada, que é o que faz a virada ter um lado de fora.
+
+## 14. O TLS no lugar do Noise, pedido (pedido 572, T6b-2, 08/10/2026)
+
+O servidor já atendia TLS 1.3 na porta de dados desde a T6a (`"tls": true`,
+decidido pelo primeiro byte, `0x16`). Faltavam os **iniciadores**. Agora todos
+os que falam com outro PhxSql aceitam um **pino TLS** — `sha256//<base64 do
+SHA-256 do SPKI>`, a forma do `--pinnedpubkey` do curl, e o que o servidor
+imprime no arranque («tls da porta dados: pino …»):
+
+| iniciador | onde se escreve |
+|---|---|
+| réplica e sonda `replicacao_testar` | `replicacao.origens[].pino_tls` / parâmetro `pino_tls` |
+| pulso e propagação do cluster, réplica do cluster | `cluster.nos[].pino_tls` (propagado no `cluster_no_acrescentar`) |
+| DbLink `phxsql` | `pino_tls` da ligação (a ficha só diz `tem_pino_tls`) |
+| `Remoto` da interface | `web.servidores[].pino_tls` (só na forma de objeto) |
+| `phxsqlcmd` | `--pino-tls sha256//…` |
+| driver ODBC | `PINO_TLS=sha256//…` na connection string |
+
+**Pedido, não imposto:** sem o campo, tudo segue como era (Noise quando a
+`cifra` pede). Com ele, a conexão é TLS 1.3 conferida pelo pino e a `cifra`
+deixa de decidir — uma cifra por conexão; Noise por dentro do TLS é recusado
+no cliente. A decisão mora em **um** lugar por cliente (`replica::Cliente::
+proteger`), e a passagem para TLS em **um** motor
+(`phxsql_core::tls::FioDeCliente::passar_a_tls`), usado pela réplica, pelo
+`Remoto` e pelo ODBC.
+
+**A amarração ao canal continua valendo** (§10): pelo TLS, o vínculo é o
+`tls-exporter` da RFC 9266 (`EXPORTER-Channel-Binding`, contexto vazio, 32
+bytes), dos dois lados. O servidor guarda o dele na sessão no aceite TLS, e o
+`amarrar_canal` do login e a prova de identidade do pulso usam esse valor no
+lugar da transcrição do Noise. Consequência: com `cifra_fio.exigir_amarra`
+ligado, um cliente TLS que **não** amarra passa a ser recusado — antes ele
+passava porque a sessão TLS não tinha vínculo nenhum (e `encryption_neste_canal`
+dizia `false` para uma conexão TLS, o que também deixou de ser mentira).
+
+A **identidade** do nó no cluster continua sendo o `chave_do_fio` (X25519): a
+prova do pulso sai do Diffie-Hellman com ela, não do certificado TLS.
+
+Vetores: o exportador confere com o `openssl -keymatexport` na mesma conexão,
+nos dois sentidos (ver `cognicao_prova-de-tls-exige-destino-que-recuse-o-noise_20261008_1925.md`).

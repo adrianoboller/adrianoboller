@@ -40,6 +40,18 @@ struct ItemBidi<'a> {
     eventos: &'a [crate::replica::EventoRecebido],
 }
 
+/// O que os itens de um grupo do bidi deram: os eventos que entraram e as
+/// paradas nominais, pelo indice no grupo.
+type FeitoBidi = (u64, Vec<(usize, (u64, &'static str, String))>);
+
+/// A quebra no meio de um grupo do bidi -- pedido 722. `reter` = parte do
+/// grupo entrou e a completacao na hora nao fechou: a marca FICA no disco
+/// para o arranque, e quem chama a tira da lista que a rodada apaga.
+struct ParouNoGrupo {
+    erro: PhxError,
+    reter: bool,
+}
+
 /// O que a fase 3 de um alcance de tabela BIDIRECIONAL devolveu.
 #[derive(Default)]
 struct LoteBidi {
@@ -48,6 +60,10 @@ struct LoteBidi {
     /// O evento que PAROU o par: a posicao dele no diario da origem, o motivo
     /// (em chave) e o detalhe ja redigido. `None` = o lote inteiro passou.
     parou_em: Option<(u64, &'static str, String)>,
+    /// O erro que quebrou o lote no meio -- pedido 722. Vem DENTRO do lote, e
+    /// nao pelo `?`, para quem chama saber quantos entraram antes dele: com
+    /// `aplicados > 0` o grupo esta pela metade e tem de se completar.
+    erro: Option<PhxError>,
 }
 
 /// Uma tabela no alcance BIDIRECIONAL de um database -- pedido 681. O que o
@@ -304,7 +320,31 @@ impl Servidor {
                     );
                 }
             }
-            match self.aplicar_por_chave(tabela, alvo, e, hash_dele, &mut orfa)? {
+            // So em `debug`, pedido 722: o evento `<tabela>:<rowid de la>`
+            // falha com erro do DADO no lugar de se aplicar -- sempre, como um
+            // erro de dado de verdade bate no mesmo evento em toda tentativa.
+            #[cfg(debug_assertions)]
+            if gancho_de_teste_em_texto("PHXSQL_TESTE_FALHAR_NO_EVENTO").as_deref()
+                == Some(format!("{}:{}", alvo.nome, e.rowid).as_str())
+            {
+                eprintln!(
+                    "teste: erro de dado injetado no evento {}:{}",
+                    alvo.nome, e.rowid
+                );
+                saida.erro = Some(PhxError::Duplicado(format!(
+                    "teste: erro de dado injetado no evento {}:{}",
+                    alvo.nome, e.rowid
+                )));
+                break;
+            }
+            let aplicacao = match self.aplicar_por_chave(tabela, alvo, e, hash_dele, &mut orfa) {
+                Ok(a) => a,
+                Err(erro) => {
+                    saida.erro = Some(erro);
+                    break;
+                }
+            };
+            match aplicacao {
                 bidirecional::Aplicacao::Aplicado => {
                     saida.aplicados += 1;
                     // So em `debug`: a prova do 698 mata o PROCESSO depois do
@@ -598,10 +638,22 @@ impl Servidor {
     /// chave. Devolve quantos eventos entraram e as tabelas que PARARAM o par
     /// (conflito de unicidade ou toque esquecido), com onde e por que.
     ///
-    /// O que NAO e atomico, e e de proposito, como no grupo da replica fiel:
-    /// a tabela que para no meio de uma transacao deixa o que entrou antes
-    /// dela. Desfazer pediria a Sombra, parada por decisao do dono; a parada
-    /// e nominal e a posicao dela nao anda.
+    /// # A quebra no meio -- pedido 722
+    ///
+    /// Vale aqui a decisao do dono no 685: a venda chega inteira ou nao chega.
+    /// Desfazer devolveria slot (ordem de digitacao), entao, como no grupo da
+    /// replica fiel desde o 713, so se anda para a FRENTE: o erro com parte
+    /// do grupo aplicada completa o resto na hora, com a mesma trava, pelo
+    /// corpo da completacao do arranque, e o que nem assim fecha deixa a
+    /// marca no disco e fora da lista da rodada. Este comentario dizia que a
+    /// meia transacao era de proposito «como no grupo da replica fiel»: a
+    /// paridade era a razao, e o 713 a acabou.
+    ///
+    /// A parada NOMINAL (conflito de unicidade, toque esquecido) continua por
+    /// tabela, com a posicao parada no evento -- o que entrou antes dela na
+    /// mesma transacao fica. Fechar isso pede a pre-conferencia do grupo
+    /// inteiro antes do primeiro evento (E7 do desenho unico), e e o resto do
+    /// pedido 722.
     ///
     /// # A queda do PROCESSO no meio -- pedido 698
     ///
@@ -644,8 +696,26 @@ impl Servidor {
                 }
             })
             .collect();
-        let (n, paradas) =
-            self.aplicar_itens_bidi(database, marca.as_deref(), &itens, meu_hash, hash_dele)?;
+        let (n, paradas) = match self.aplicar_itens_bidi(
+            database,
+            marca.as_deref(),
+            &itens,
+            meu_hash,
+            hash_dele,
+        ) {
+            Ok(x) => x,
+            Err(ParouNoGrupo { erro, reter }) => {
+                // A marca do grupo pela metade que nao se completou FICA
+                // no disco para o arranque: a rodada a apagaria depois do
+                // `fsync`, e ela e o unico bilhete da metade que falta (I12).
+                if reter {
+                    if let Some(m) = &marca {
+                        marcas.retain(|x| x != m);
+                    }
+                }
+                return Err(erro);
+            }
+        };
         let paradas = paradas
             .into_iter()
             .map(|(k, p)| (grupo[k].0, p))
@@ -801,6 +871,27 @@ impl Servidor {
         marca: &crate::transacao::Marca,
     ) -> Result<(u64, Vec<String>)> {
         let meu_hash = self.config.replicacao.numero();
+        let (fatias, chaves) = Self::fatias_da_marca_bidi(database, marca);
+        let itens = Self::itens_das_fatias(&fatias, &chaves);
+        // A origem vai resolvida na marca: nenhum evento chega com zero, e o
+        // `hash_dele` nao e consultado.
+        let (n, paradas) = self
+            .aplicar_itens_bidi(database, None, &itens, meu_hash, 0)
+            .map_err(|p| p.erro)?;
+        Self::avisar_paradas_da_completacao(&chaves, &paradas);
+        Ok((n, fatias.into_iter().map(|(nome, _)| nome).collect()))
+    }
+
+    /// As fatias da marca do bidi -- uma por tabela, na ordem em que o grupo
+    /// as aplicou -- e a chave de cada uma no mapa de toques.
+    #[allow(clippy::type_complexity, reason = "nome e eventos de cada fatia")]
+    fn fatias_da_marca_bidi(
+        database: &str,
+        marca: &crate::transacao::Marca,
+    ) -> (
+        Vec<(String, Vec<crate::replica::EventoRecebido>)>,
+        Vec<String>,
+    ) {
         // A marca guarda as tabelas na vez das maes, contiguas: uma fatia por
         // tabela, na ordem em que o grupo as aplicou.
         let mut fatias: Vec<(String, Vec<crate::replica::EventoRecebido>)> = Vec::new();
@@ -821,31 +912,43 @@ impl Servidor {
                 _ => fatias.push((op.tabela.clone(), vec![e])),
             }
         }
-        let chaves: Vec<String> = fatias
+        let chaves = fatias
             .iter()
             .map(|(nome, _)| format!("{database}/{nome}"))
             .collect();
-        let itens: Vec<ItemBidi<'_>> = fatias
+        (fatias, chaves)
+    }
+
+    /// Os itens da completacao: sem identidade, que sai do esquema e do
+    /// diario local absorvido (ver [`Self::aplicar_itens_bidi`]).
+    fn itens_das_fatias<'a>(
+        fatias: &'a [(String, Vec<crate::replica::EventoRecebido>)],
+        chaves: &'a [String],
+    ) -> Vec<ItemBidi<'a>> {
+        fatias
             .iter()
-            .zip(&chaves)
+            .zip(chaves)
             .map(|((nome, eventos), chave_tab)| ItemBidi {
                 nome,
                 chave_tab,
                 identidade: None,
                 eventos,
             })
-            .collect();
-        // A origem vai resolvida na marca: nenhum evento chega com zero, e o
-        // `hash_dele` nao e consultado.
-        let (n, paradas) = self.aplicar_itens_bidi(database, None, &itens, meu_hash, 0)?;
+            .collect()
+    }
+
+    #[allow(clippy::type_complexity, reason = "como `LoteBidi`")]
+    fn avisar_paradas_da_completacao(
+        chaves: &[String],
+        paradas: &[(usize, (u64, &'static str, String))],
+    ) {
         for (k, (posicao, motivo, _)) in paradas {
             eprintln!(
-                "AVISO: o grupo do bidirecional parou em {} no arranque ({motivo}, \
+                "AVISO: o grupo do bidirecional parou em {} na completacao ({motivo}, \
                  posicao {posicao} da origem); a rodada seguinte o para de novo, nominal",
-                chaves[k]
+                chaves[*k]
             );
         }
-        Ok((n, fatias.into_iter().map(|(nome, _)| nome).collect()))
     }
 
     /// O corpo de um grupo do bidirecional com a trava na mao, UM so para a
@@ -869,19 +972,18 @@ impl Servidor {
         itens: &[ItemBidi<'_>],
         meu_hash: u16,
         hash_dele: u16,
-    ) -> Result<(u64, Vec<(usize, (u64, &'static str, String))>)> {
-        let mut n = 0u64;
-        let mut paradas = Vec::new();
-        let mut trava = self.travar_dados()?;
-        let db = trava.abrir_database(database)?;
+    ) -> std::result::Result<FeitoBidi, ParouNoGrupo> {
+        let nada = |erro| ParouNoGrupo { erro, reter: false };
+        let mut trava = self.travar_dados().map_err(nada)?;
+        let db = trava.abrir_database(database).map_err(nada)?;
         if let Some(m) = marca {
             if m.parent() != Some(db.caminho()) {
-                return Err(PhxError::Corrompido(format!(
+                return Err(nada(PhxError::Corrompido(format!(
                     "a marca do grupo do bidirecional de {database} foi gravada em {} \
                      e o database esta em {}",
                     m.display(),
                     db.caminho().display()
-                )));
+                ))));
             }
             // EM VOO, como a do grupo da replica fiel (pedido 700): o panico no
             // meio do grupo chega ao reparo da trava sabendo que ha um grupo
@@ -893,49 +995,131 @@ impl Servidor {
                 gravada: true,
             });
         }
-        for (k, it) in itens.iter().enumerate() {
-            let resolvida: (String, Vec<usize>);
-            let mut orfa = None;
-            let (indice, pos_chave) = match it.identidade {
-                Some(x) => x,
-                None => {
-                    let mut t = db.abrir_qualificada(it.nome)?;
-                    let Some(chave) = bidirecional::chave_unica(t.esquema()) else {
-                        return Err(PhxError::Esquema(format!(
-                            "{} perdeu a chave unica depois da queda: o grupo do \
-                             bidirecional casa por ela e nao se completa sem ela",
-                            it.chave_tab
-                        )));
-                    };
-                    self.absorver_diario_local(
-                        &mut t,
-                        it.chave_tab,
-                        &chave.1,
-                        meu_hash,
-                        None,
-                        true,
-                    )?;
-                    orfa = self.slot_sem_inclusao_no_diario(&mut t, it.chave_tab)?;
-                    Self::adotar_o_id_do_grupo(&mut t, it.eventos)?;
-                    resolvida = chave;
-                    (resolvida.0.as_str(), resolvida.1.as_slice())
+        let (n, paradas, parou) = self.aplicar_itens_bidi_sob(&db, itens, meu_hash, hash_dele);
+        let Some(erro) = parou else {
+            trava.marca_em_voo = None;
+            return Ok((n, paradas));
+        };
+        // Pedido 722: nada entrou, ou nao ha marca (a propria completacao do
+        // arranque): o erro volta como sempre, e a marca da rodada sai com a
+        // lista. Parte entrou: para a FRENTE, ja, com a mesma trava, pelo
+        // corpo da completacao -- o mesmo aplicador, casando pela chave, e o
+        // «mais recente vence» faz o que ja entrou empatar com o proprio toque.
+        let Some(m) = marca.filter(|_| n > 0) else {
+            trava.marca_em_voo = None;
+            return Err(nada(erro));
+        };
+        let completado = match crate::transacao::ler_marca(m) {
+            Ok(crate::transacao::Leitura::Aberta(lida)) => {
+                let (fatias, chaves) = Self::fatias_da_marca_bidi(database, &lida);
+                let itens = Self::itens_das_fatias(&fatias, &chaves);
+                let (k, mais, parou) = self.aplicar_itens_bidi_sob(&db, &itens, meu_hash, 0);
+                Self::avisar_paradas_da_completacao(&chaves, &mais);
+                match parou {
+                    None => Ok(k),
+                    Some(e) => Err(e),
                 }
-            };
-            let alvo = AlvoBidi {
-                nome: it.nome,
-                chave_tab: it.chave_tab,
-                indice,
-                pos_chave,
-                orfa,
-            };
-            let feito = self.aplicar_tabela_bidi(&db, alvo, it.eventos, meu_hash, hash_dele)?;
-            n += feito.aplicados;
-            if let Some(p) = feito.parou_em {
-                paradas.push((k, p));
+            }
+            Ok(_) => Err(PhxError::Corrompido(format!(
+                "a marca {} voltou incompleta na releitura",
+                m.display()
+            ))),
+            Err(e) => Err(e),
+        };
+        trava.marca_em_voo = None;
+        match completado {
+            Ok(k) => {
+                eprintln!(
+                    "bidirecional: {database}: o grupo parou no meio ({erro}) e foi \
+                     completado pela marca, com a mesma trava (pedido 722)"
+                );
+                Ok((n + k, paradas))
+            }
+            Err(e) => Err(ParouNoGrupo {
+                erro: com_nota(
+                    erro,
+                    &format!(
+                        "o grupo do bidirecional parou no meio e nao se completou agora \
+                         ({e}); a marca {} fica no disco e o arranque a completa \
+                         (pedido 722)",
+                        m.display()
+                    ),
+                ),
+                reter: true,
+            }),
+        }
+    }
+
+    /// O laco de [`Self::aplicar_itens_bidi`] com a trava ja na mao. Toda
+    /// quebra -- a tabela que nao abre, a absorcao, o aplicador -- cai em
+    /// `parou` e o laco para ali (pedido 722): eram saidas pelo `?`, que
+    /// largavam a marca da metade na lista que a rodada apaga.
+    #[allow(clippy::type_complexity, reason = "como `LoteBidi`")]
+    fn aplicar_itens_bidi_sob(
+        &self,
+        db: &phxsql_store::catalogo::Database,
+        itens: &[ItemBidi<'_>],
+        meu_hash: u16,
+        hash_dele: u16,
+    ) -> (
+        u64,
+        Vec<(usize, (u64, &'static str, String))>,
+        Option<PhxError>,
+    ) {
+        let mut n = 0u64;
+        let mut paradas = Vec::new();
+        for (k, it) in itens.iter().enumerate() {
+            let feito = (|| -> Result<LoteBidi> {
+                let resolvida: (String, Vec<usize>);
+                let mut orfa = None;
+                let (indice, pos_chave) = match it.identidade {
+                    Some(x) => x,
+                    None => {
+                        let mut t = db.abrir_qualificada(it.nome)?;
+                        let Some(chave) = bidirecional::chave_unica(t.esquema()) else {
+                            return Err(PhxError::Esquema(format!(
+                                "{} perdeu a chave unica depois da queda: o grupo do \
+                                 bidirecional casa por ela e nao se completa sem ela",
+                                it.chave_tab
+                            )));
+                        };
+                        self.absorver_diario_local(
+                            &mut t,
+                            it.chave_tab,
+                            &chave.1,
+                            meu_hash,
+                            None,
+                            true,
+                        )?;
+                        orfa = self.slot_sem_inclusao_no_diario(&mut t, it.chave_tab)?;
+                        Self::adotar_o_id_do_grupo(&mut t, it.eventos)?;
+                        resolvida = chave;
+                        (resolvida.0.as_str(), resolvida.1.as_slice())
+                    }
+                };
+                let alvo = AlvoBidi {
+                    nome: it.nome,
+                    chave_tab: it.chave_tab,
+                    indice,
+                    pos_chave,
+                    orfa,
+                };
+                self.aplicar_tabela_bidi(db, alvo, it.eventos, meu_hash, hash_dele)
+            })();
+            match feito {
+                Ok(feito) => {
+                    n += feito.aplicados;
+                    if let Some(e) = feito.erro {
+                        return (n, paradas, Some(e));
+                    }
+                    if let Some(p) = feito.parou_em {
+                        paradas.push((k, p));
+                    }
+                }
+                Err(e) => return (n, paradas, Some(e)),
             }
         }
-        trava.marca_em_voo = None;
-        Ok((n, paradas))
+        (n, paradas, None)
     }
 
     /// O slot vivo do fim do `.reg` cuja inclusao nunca chegou ao diario daqui

@@ -1747,7 +1747,11 @@ GUARDAS = [
         ),
         "arquivo": "crates/phxsql-server/src/servidor/servico_web_01.rs",
         "trecho": """        if let Some(sv) = self.config.web.servidor(destino) {
-            if sv.cifra {
+            // O `pino_tls` decide antes da `cifra` (pedido 572, T6b-2): a mesma
+            // ordem do `replica::Cliente::proteger`.
+            if let Some(p) = sv.pino_tls().map_err(|e| (op.clone(), e))? {
+                remoto.cifrar_tls(p).map_err(|e| (op.clone(), e))?;
+            } else if sv.cifra {
                 let pino = sv.pino_do_fio().map_err(|e| (op.clone(), e))?;
                 remoto.cifrar(pino).map_err(|e| (op.clone(), e))?;
             }
@@ -1818,6 +1822,9 @@ GUARDAS = [
         "caem": [
             "fio::testes::o_teto_do_registro_para_a_leitura_e_nao_so_recusa_depois",
         ],
+        "seguem": [
+            "fio::testes::canal_leva_e_traz",
+        ],
     },
     # 24c. O teto do fio: a CONSTANTE trocada por um teto quase infinito
     # -----------------------------------------------------------------------
@@ -1883,17 +1890,26 @@ GUARDAS = [
             "`Canal::ler`, que a replica ainda usa -- e ganhou entrada propria "
             "com a troca onde o servidor le: "
             "`teto-da-linha-sem-a-constante-no-soquete`."
+            "\n\nREPONTADA em 08/10/2026 (pedido 655, papel B a servico do G): "
+            "a metade da REPLICA envelheceu do mesmo jeito, com o pedido 610. "
+            "O `replica::Cliente::pedir` deixou de chamar `Canal::ler` -- passa "
+            "`TETO_DO_REGISTRO` ao `trocar`, que le por `ler_decidindo(teto)`. "
+            "Com a troca no `fio.rs` a prova ficou verde (NAO PEGOU de 07/10). "
+            "Hipoteses escritas antes: (a) outra camada recusa antes -- o "
+            "servidor falso ou o prazo; (b) o teste nao alcanca mais o ponto "
+            "trocado. Morreu (a): a fonte falsa so despeja bytes, e se outro "
+            "teto segurasse a recusa traria outro numero, nao o mesmo "
+            "134217728. Ficou (b), lido no fonte: nenhum caminho de producao da "
+            "replica passa pelo `Canal::ler`. A troca foi para onde a constante "
+            "entra hoje, a chamada do `pedir`; a irma de unidade "
+            "(`teto-do-fio-sem-a-constante`) continua guardando o `Canal::ler`."
         ),
-        "arquivo": "crates/phxsql-core/src/fio.rs",
-        "trecho": """    pub fn ler<L: BufRead>(&mut self, leitor: &mut L) -> Result<Recebido> {
-        self.ler_ate(leitor, TETO_DO_REGISTRO)
-    }
+        "arquivo": "crates/phxsql-server/src/replica.rs",
+        "trecho": """        let resposta = self.trocar(campos, phxsql_core::fio::TETO_DO_REGISTRO, &mut false)?;
 """,
-        "troca": """    pub fn ler<L: BufRead>(&mut self, leitor: &mut L) -> Result<Recebido> {
-        // DEFEITO REPOSTO: a chamada de producao troca a constante por um teto
-        // praticamente infinito -- o fio inteiro fica sem teto.
-        self.ler_ate(leitor, u64::MAX - 1)
-    }
+        "troca": """        // DEFEITO REPOSTO: a chamada de producao troca a constante por um teto
+        // praticamente infinito -- a resposta do source fica sem teto.
+        let resposta = self.trocar(campos, u64::MAX - 1, &mut false)?;
 """,
         "pacote": "phxsql-server",
         "alvo": ["--test", "teto-da-resposta"],
@@ -2003,15 +2019,21 @@ GUARDAS = [
             "-- so o tunel real faz os dois nos se enxergarem."
         ),
         "arquivo": "crates/phxsql-server/src/servidor/servico_cluster_01.rs",
-        "trecho": """        if c.cifra {
-            cliente.cifrar(no.pino_do_fio()?)?;
-        }
+        "trecho": """        cliente.proteger(c.cifra, no.pino_do_fio()?, no.pino_tls()?)?;
         if !c.usuario.is_empty() {
+            cliente.autenticar(&c.usuario, &c.senha_hash, "")?;
+        }
+        loop {
 """,
         "troca": """        // DEFEITO REPOSTO: o pulso sai em claro mesmo com cluster.cifra
         // ligada. Cifrar so a replicacao e deixar o pulso em claro e a metade
         // que engana -- o `exigir` do outro no o recusa e o cluster nao forma.
+        // (Repontada em 08/10/2026: o `cifrar` virou `proteger`, pedido 572.)
+        let _ = (c.cifra, no.pino_do_fio()?, no.pino_tls()?);
         if !c.usuario.is_empty() {
+            cliente.autenticar(&c.usuario, &c.senha_hash, "")?;
+        }
+        loop {
 """,
         "pacote": "phxsql-server",
         "alvo": ["--test", "cluster-cifrado"],
@@ -2122,12 +2144,14 @@ GUARDAS = [
         ),
         "arquivo": "crates/phxsql-store/src/reg.rs",
         "trecho": """        for (caminho, espelho) in &pendente.trocas {
+            self.segurar_o_velho(caminho);
             trocar_pelo_novo(caminho)?;
 """,
         "troca": """        // DEFEITO REPOSTO: o espelho nao acompanha a troca.
         for (caminho, espelho) in &pendente.trocas {
             let _ = espelho;
             let espelho: &Option<PathBuf> = &None;
+            self.segurar_o_velho(caminho);
             trocar_pelo_novo(caminho)?;
 """,
         "pacote": "phxsql-store",
@@ -6873,6 +6897,9 @@ pub fn limpar() {
             "usuarios::tests::a_ficha_nunca_devolve_a_senha",
             "servidor::testes_cadastro_de_usuarios::a_senha_nunca_aparece_no_arquivo_nem_na_resposta",
         ],
+        "seguem": [
+            "usuarios::tests::o_debug_do_usuario_nunca_mostra_o_hash",
+        ],
     },
     {
         "id": "senha-em-claro-no-cadastro",
@@ -6912,6 +6939,9 @@ pub fn limpar() {
         "caem": [
             "servidor::testes_cadastro_de_usuarios::a_senha_nunca_aparece_no_arquivo_nem_na_resposta",
             "usuarios::tests::trocar_a_senha_leva_junto_a_que_estava_em_texto_puro",
+        ],
+        "seguem": [
+            "usuarios::tests::cadastro_invalido_e_recusado",
         ],
     },
     {
@@ -7440,6 +7470,9 @@ pub fn limpar() {
         "alvo": ["--lib"],
         "caem": [
             "fio::testes::o_texto_claro_nao_aparece_no_fio",
+        ],
+        "seguem": [
+            "fio::testes::em_claro_o_eof_continua_sendo_fim",
         ],
     },
     {
@@ -8684,6 +8717,9 @@ pub fn limpar() {
         "caem": [
             "servidor::testes_posicao_do_diario::tabela_que_nao_abre_nao_pode_encolher_a_posicao_em_silencio",
         ],
+        "seguem": [
+            "servidor::testes_config_gravar::a_posicao_por_tabela_vai_ao_painel_e_nao_ao_voto",
+        ],
     },
     # -----------------------------------------------------------------------
     # 183. a eleicao prefere posicao COMPLETA (pedido 211)
@@ -9836,6 +9872,22 @@ pub fn limpar() {
             "a outra. Com ela, a recusa vem antes da marca e a transacao "
             "continua ativa (o `SQLITE_BUSY` no COMMIT)."
         ),
+        # MUDOU DE LADO em 08/10/2026 (pedido 720, papel F), medido numa copia:
+        # tirando SO a rede, o teste passa porque a pre-conferencia do 448
+        # (`pre_conferir_a_lista`), que roda depois do `preparar_a_marca` e
+        # ainda ANTES da marca, abre a `mae` congelada, recebe EM_MIGRACAO
+        # (4006, classe de acesso) e devolve a lista -- a resposta sai SEM o
+        # «e o COMMIT abriria essa tabela», que e a frase da rede. Tirando a
+        # pre-conferencia e deixando a rede, tambem passa (a frase volta). As
+        # duas camadas juntas se provam em `commit-sem-as-duas-recusas-...`.
+        "espera": "nada muda",
+        "nota_da_redundancia": (
+            "confirmado (pedido 720): sem a rede do 426, quem recusa o COMMIT "
+            "antes da marca e a pre-conferencia do 448 -- EM_MIGRACAO 4006 sem "
+            "a frase da rede, 0 de 2 linhas gravadas. Tirando as duas camadas, "
+            "o teste CAI com 1 de 2 linhas no disco e o arranque aplicando a "
+            "outra (`commit-sem-as-duas-recusas-antes-da-marca`)"
+        ),
         "arquivo": "crates/phxsql-server/src/servidor/servico_marca_01.rs",
         "trecho": """        let dir = trava.abrir_database(database)?.caminho().to_path_buf();
         if phxsql_store::congelamento::quantas() == 0 {
@@ -9848,6 +9900,53 @@ pub fn limpar() {
             return Ok(dir);
         }
 """,
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "commit-pelo-soquete"],
+        "caem": [],
+        "seguem": [
+            "o_commit_contra_a_tabela_congelada_nao_sai_pela_metade",
+            "a_escrita_na_vizinha_da_congelada_recusa_na_instrucao",
+        ],
+        "prazo": 420,
+    },
+    # 39b. O COMMIT sem NENHUMA recusa antes da marca -- 426 + 448 (pedido 720)
+    # -----------------------------------------------------------------------
+    {
+        "id": "commit-sem-as-duas-recusas-antes-da-marca",
+        "titulo": "o COMMIT grava a marca com a tabela congelada quando a rede do 426 E a pre-conferencia do 448 somem",
+        "porque": (
+            "pedido 720: a rede do 426 e a pre-conferencia do 448 recusam, "
+            "cada uma sozinha, a tabela congelada antes da marca -- tirar uma "
+            "so nao derruba nada, e a guarda de uma camada passava por engano. "
+            "Sem as duas, a passada bate na `mae` congelada DEPOIS da marca: "
+            "1 de 2 linhas no disco, e o arranque aplicando a outra."
+        ),
+        "trocas": [
+            {
+                "arquivo": "crates/phxsql-server/src/servidor/servico_marca_01.rs",
+                "trecho": """        let dir = trava.abrir_database(database)?.caminho().to_path_buf();
+        if phxsql_store::congelamento::quantas() == 0 {
+            return Ok(dir);
+        }
+""",
+                "troca": """        let dir = trava.abrir_database(database)?.caminho().to_path_buf();
+        // DEFEITO REPOSTO (1/2, 426): sem a rede antes da marca.
+        if phxsql_store::congelamento::quantas() < usize::MAX {
+            return Ok(dir);
+        }
+""",
+            },
+            {
+                "arquivo": "crates/phxsql-server/src/servidor/servico_transacao_01.rs",
+                "trecho": """        let conferida = if pre_conferir {
+            self.pre_conferir_a_lista(&trava, &database, &mut escritas, sessao, |i, elos| {
+""",
+                "troca": """        // DEFEITO REPOSTO (2/2, 448): a lista vai para a marca sem conferir.
+        let conferida = if false && pre_conferir {
+            self.pre_conferir_a_lista(&trava, &database, &mut escritas, sessao, |i, elos| {
+""",
+            },
+        ],
         "pacote": "phxsql-server",
         "alvo": ["--test", "commit-pelo-soquete"],
         "caem": [
@@ -10402,6 +10501,357 @@ pub fn limpar() {
             "email::testes::o_cabecalho_sai_completo",
         ],
     },
+    # 655. A leitura fora do `Canal` reposta no caso que FUNDOU a lei «funcao e
+    # comando vem do mesmo motor» (pedido 434): a porta HTTP e o aperto do
+    # ODBC. Cada uma por dois caminhos -- o soquete, que mede a memoria, e a
+    # catraca `TETO_LEITURA_FORA_DO_CANAL`, que le o fonte. Sem estas, a
+    # catraca existia em 0 sem ninguem ter provado que ela sobe.
+    # -----------------------------------------------------------------------
+    {
+        "id": "leitura-fora-do-canal-na-web",
+        "titulo": "a porta HTTP le a linha do pedido por `read_line` cru, fora do `Canal` (o caso que fundou a lei, pedido 434)",
+        "porque": (
+            "pedido 434, o caso que fundou a lei «funcao e comando vem do mesmo "
+            "motor»: a leitura da linha de pedido fora do `Canal` nao tinha "
+            "teto, e o anonimo escolhia quanta memoria a porta reservava. "
+            "Provado pelo soquete: a linha sem fim faz o servidor desistir no "
+            "teto."
+        ),
+        "arquivo": "crates/phxsql-server/src/http.rs",
+        "trecho": """    let linha = match canal.ler_ate(&mut leitor, MAX_CABECALHO as u64) {
+        Ok(Recebido::Linha(l)) => l,
+        Err(phxsql_core::error::PhxError::LimiteExcedido(_)) => {
+            return grande("a linha do pedido", MAX_CABECALHO)
+        }
+        _ => return PedidoLido::Nada,
+    };
+""",
+        "troca": """    // DEFEITO REPOSTO (434): a linha do pedido por `read_line` cru, fora
+    // do `Canal` -- quem escolhe quanta memoria a porta reserva e quem ainda
+    // nao pediu nada.
+    let mut cru = String::new();
+    let lido = {
+        use std::io::BufRead;
+        leitor.read_line(&mut cru)
+    };
+    let linha = match lido {
+        Ok(n) if n > 0 => cru,
+        _ => return PedidoLido::Nada,
+    };
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "teto-da-linha-http"],
+        "caem": [
+            "a_linha_de_pedido_sem_fim_faz_o_servidor_desistir",
+        ],
+        "seguem": [
+            "a_linha_de_cabecalho_sem_fim_faz_o_servidor_desistir",
+            "o_pedido_de_sempre_continua_passando",
+        ],
+        "prazo": 300,
+    },
+    {
+        "id": "leitura-fora-do-canal-na-web-pela-catraca",
+        "titulo": "a leitura crua da linha do pedido HTTP volta e a catraca `TETO_LEITURA_FORA_DO_CANAL` nao sobe",
+        "porque": (
+            "pedido 655: a catraca do `conferidor_canal` nasceu em 0 e nada "
+            "provava que ela acusa a leitura crua no lugar que a fundou. A "
+            "mesma troca da guarda do soquete, julgada agora pelo fonte."
+        ),
+        "arquivo": "crates/phxsql-server/src/http.rs",
+        "trecho": """    let linha = match canal.ler_ate(&mut leitor, MAX_CABECALHO as u64) {
+        Ok(Recebido::Linha(l)) => l,
+        Err(phxsql_core::error::PhxError::LimiteExcedido(_)) => {
+            return grande("a linha do pedido", MAX_CABECALHO)
+        }
+        _ => return PedidoLido::Nada,
+    };
+""",
+        "troca": """    // DEFEITO REPOSTO (434): a linha do pedido por `read_line` cru, fora
+    // do `Canal` -- quem escolhe quanta memoria a porta reserva e quem ainda
+    // nao pediu nada.
+    let mut cru = String::new();
+    let lido = {
+        use std::io::BufRead;
+        leitor.read_line(&mut cru)
+    };
+    let linha = match lido {
+        Ok(n) if n > 0 => cru,
+        _ => return PedidoLido::Nada,
+    };
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "conferidor_canal::testes::ninguem_le_linha_de_soquete_fora_do_canal",
+        ],
+        "seguem": [
+            "conferidor_canal::testes::o_catalogo_de_isentos_da_leitura_bate_com_o_disco",
+            "conferidor_canal::testes::o_conferidor_acusa_a_leitura_plantada",
+        ],
+    },
+    {
+        "id": "leitura-fora-do-canal-no-aperto-do-odbc",
+        "titulo": "o driver ODBC le a resposta do aperto por `read_line` cru, fora do `Canal` (o terceiro irmao do 312)",
+        "porque": (
+            "pedido 434 no ODBC: o `cifrar` do driver era o terceiro irmao dos "
+            "dois do 312 e ficou com o `read_line` cru -- o servidor do outro "
+            "lado escolhia quanta memoria o driver reservava, antes do tunel e "
+            "de qualquer credencial. Com o defeito a recusa ainda acontece, por "
+            "OUTRO motivo (nao e JSON), e por isso o teste confere o motivo."
+        ),
+        "arquivo": "crates/phxsql-odbc/src/conexao.rs",
+        "trecho": """        let resposta = match self
+            .fio
+            .ler_ate(&mut self.leitor, phxsql_core::fio::TETO_DO_APERTO)
+            .map_err(prazo::reclassificar)
+""",
+        "troca": """        // DEFEITO REPOSTO (312/434 no ODBC): a resposta do aperto por
+        // `read_line` cru, fora do `Canal` -- o servidor do outro lado escolhe
+        // quanta memoria o driver reserva, antes de qualquer credencial.
+        let mut cru = String::new();
+        let lido = {
+            use std::io::BufRead;
+            self.leitor
+                .read_line(&mut cru)
+                .map(|n| if n == 0 { Recebido::Fim } else { Recebido::Linha(cru) })
+                .map_err(PhxError::Io)
+        };
+        let resposta = match lido
+            .map_err(prazo::reclassificar)
+""",
+        "pacote": "phxsql-odbc",
+        "alvo": ["--lib"],
+        "caem": [
+            "conexao::testes::a_resposta_do_aperto_acima_do_teto_e_recusada_pelo_limite",
+        ],
+        "seguem": [
+            "conexao::testes::aperto_pelo_canal_fecha_e_fala_por_dentro",
+            "conexao::testes::o_aperto_recusado_ensina_a_saida",
+        ],
+    },
+    {
+        "id": "leitura-fora-do-canal-no-aperto-do-odbc-pela-catraca",
+        "titulo": "a leitura crua do aperto do ODBC volta e a catraca `TETO_LEITURA_FORA_DO_CANAL` nao sobe",
+        "porque": (
+            "pedido 655: o `conferidor_canal` varre `crates/*/src` inteiro, e o "
+            "ODBC e onde moravam quatro das cinco leituras que fundaram a lei. "
+            "A mesma troca da guarda do soquete do ODBC, julgada pelo fonte."
+        ),
+        "arquivo": "crates/phxsql-odbc/src/conexao.rs",
+        "trecho": """        let resposta = match self
+            .fio
+            .ler_ate(&mut self.leitor, phxsql_core::fio::TETO_DO_APERTO)
+            .map_err(prazo::reclassificar)
+""",
+        "troca": """        // DEFEITO REPOSTO (312/434 no ODBC): a resposta do aperto por
+        // `read_line` cru, fora do `Canal` -- o servidor do outro lado escolhe
+        // quanta memoria o driver reserva, antes de qualquer credencial.
+        let mut cru = String::new();
+        let lido = {
+            use std::io::BufRead;
+            self.leitor
+                .read_line(&mut cru)
+                .map(|n| if n == 0 { Recebido::Fim } else { Recebido::Linha(cru) })
+                .map_err(PhxError::Io)
+        };
+        let resposta = match lido
+            .map_err(prazo::reclassificar)
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "conferidor_canal::testes::ninguem_le_linha_de_soquete_fora_do_canal",
+        ],
+        "seguem": [
+            "conferidor_canal::testes::o_catalogo_de_isentos_da_leitura_bate_com_o_disco",
+            "conferidor_canal::testes::o_conferidor_acusa_a_leitura_plantada",
+        ],
+    },
+    # 655. Os conferidores com o «ok 0 por engano» reposto: o casador que
+    # nunca casa (ou que casa tudo) deixa a catraca da arvore real verde --
+    # e a guarda e a prova SINTETICA de cada um, que tem de cair. O
+    # `conferidor_fsync` fica de fora com o motivo no PENDENCIAS (655).
+    # -----------------------------------------------------------------------
+    {
+        "id": "conferidor-de-segredos-cala-por-engano",
+        "titulo": "o conferidor de segredos varre a arvore e nao acusa nada, nem a chave plantada",
+        "porque": (
+            "pedido 655: oito conferidores so tinham teste de unidade, e o "
+            "risco e o `ok 0` por engano -- o que a lei do "
+            "`TETO_BOTAO_SEM_PROVA` descreve. Aqui a varredura chama o crivo e "
+            "joga o veredito fora: a catraca da arvore real continua `ok 0`, e "
+            "so a prova numa arvore plantada cai."
+        ),
+        "arquivo": "crates/phxsql-server/src/conferidor_segredos.rs",
+        "trecho": """        if let Some(motivo) = crivo(&nome, conteudo.as_deref()) {
+""",
+        "troca": """        // DEFEITO REPOSTO (655): a varredura descarta o veredito do crivo.
+        if let Some(motivo) = crivo(&nome, conteudo.as_deref()).filter(|_| false) {
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "conferidor_segredos::testes::a_varredura_acusa_a_chave_solta_e_cala_quando_ela_sai",
+        ],
+        "seguem": [
+            "conferidor_segredos::testes::o_crivo_pega_a_chave_e_deixa_o_legitimo_passar",
+            "conferidor_segredos::testes::nenhum_segredo_solto_na_arvore",
+        ],
+    },
+    {
+        "id": "conferidor-de-temporarios-cala-por-engano",
+        "titulo": "o conferidor dos temporarios deixa de casar o padrao e diz `ok 0` com o `temp_dir` cru na arvore",
+        "porque": (
+            "pedido 655, o `ok 0` por engano: o casador da linha nunca casa. A "
+            "catraca da arvore continua verde -- e o catalogo de isentos, que "
+            "conta QUANTAS chamadas cada arquivo isento tem, e quem pega: um "
+            "zero onde se esperava um e o mesmo zero que esconderia o defeito."
+        ),
+        "arquivo": "crates/phxsql-server/src/conferidor_temporarios.rs",
+        "trecho": """            if linha.contains(PADRAO) {
+""",
+        "troca": """            // DEFEITO REPOSTO (655): o casador nunca casa.
+            if linha.contains(PADRAO) && false {
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "conferidor_temporarios::testes::o_catalogo_de_isentos_bate_com_o_disco",
+        ],
+        "seguem": [
+            "conferidor_temporarios::testes::o_conferidor_acusa_quando_o_defeito_volta",
+            "conferidor_temporarios::testes::ninguem_chama_temp_dir_fora_do_catalogo",
+        ],
+    },
+    {
+        "id": "conferidor-de-vermelhas-cala-por-engano",
+        "titulo": "o conferidor das provas vermelhas deixa de reconhecer o `#[ignore]` da vermelha e a catraca fica verde com qualquer uma solta",
+        "porque": (
+            "pedido 655, o `ok 0` por engano: o casador pula toda linha. Sem "
+            "vermelha viva na arvore, a catraca de verdade da `ok 0` dos dois "
+            "jeitos -- so a prova sintetica (que o proprio conferidor separou "
+            "para nao depender de uma vermelha real) cai."
+        ),
+        "arquivo": "crates/phxsql-server/src/conferidor_vermelhas.rs",
+        "trecho": """        if !linha.contains(MARCA) || !linha.trim_start().starts_with("#[ignore") {
+""",
+        "troca": """        // DEFEITO REPOSTO (655): o casador pula toda linha.
+        if true || !linha.contains(MARCA) || !linha.trim_start().starts_with("#[ignore") {
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "conferidor_vermelhas::testes::o_casador_enxerga_uma_vermelha_sintetica",
+        ],
+        "seguem": [
+            "conferidor_vermelhas::testes::toda_prova_vermelha_tem_pedido_no_pendencias",
+        ],
+    },
+    {
+        "id": "conferidor-de-inventario-ve-tudo-por-engano",
+        "titulo": "o conferidor do inventario de extensoes acha toda extensao em qualquer figura e nunca acusa a copia que perdeu uma",
+        "porque": (
+            "pedido 655, o `ok 0` por engano no sentido que importa aqui: o "
+            "casador responde «esta la» para tudo, entao as tres copias sempre "
+            "batem com o codigo. A conferencia da arvore real continua verde; a "
+            "prova sintetica da figura sem o `.fts` cai."
+        ),
+        "arquivo": "crates/phxsql-server/src/conferidor_inventario.rs",
+        "trecho": """    let alvo = format!(".{ext}");
+""",
+        "troca": """    // DEFEITO REPOSTO (655): o casador ve toda extensao em qualquer texto.
+    if !ext.is_empty() {
+        return true;
+    }
+    let alvo = format!(".{ext}");
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "conferidor_inventario::testes::acusa_quando_uma_figura_perde_uma_extensao",
+        ],
+        "seguem": [
+            "conferidor_inventario::testes::mencoes_desconhecidas_acha_extensao_errada_e_ignora_prosa",
+            "conferidor_inventario::testes::toda_extensao_do_codigo_aparece_nas_tres_copias",
+        ],
+    },
+    {
+        "id": "conferidor-de-grades-cala-por-engano",
+        "titulo": "o conferidor de grades deixa de ver o `<table` cru e so conta o ajudante",
+        "porque": (
+            "pedido 655, o `ok 0` por engano pela metade: a forma crua deixa de "
+            "contar e a forma do ajudante continua. A prova sintetica do que "
+            "ele promete cai, e a catraca da arvore real (que so pergunta se "
+            "sobrou alguma) segue verde -- o zero por engano em pessoa."
+        ),
+        "arquivo": "crates/phxsql-server/src/conferidor_grades.rs",
+        "trecho": """        while let Some(p) = resto.find("<table") {
+""",
+        "troca": """        // DEFEITO REPOSTO (655): a tabela crua nao conta.
+        while let Some(p) = resto.find("<table").filter(|_| false) {
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "conferidor_grades::testes::o_conferidor_acha_o_que_promete",
+            "conferidor_grades::testes::duas_na_mesma_linha_contam_duas",
+        ],
+        # O vizinho do ajudante ESTRAGOU no provador (08/10/2026): a fonte
+        # sintetica dele declara `return "<table>"`, e a troca o derruba. O
+        # vizinho e a catraca da arvore real, que passa com o zero por engano.
+        "seguem": [
+            "conferidor_grades::testes::nenhuma_tabela_nova_fora_do_padrao",
+        ],
+    },
+    {
+        "id": "conferidor-de-botoes-cala-por-engano",
+        "titulo": "o conferidor de botoes deixa de ver o `<button` e so conta o `role=button`",
+        "porque": (
+            "pedido 655, o `ok 0` por engano pela metade: o botao de marcacao "
+            "deixa de contar. A prova sintetica cai; a lista de ganchos, que "
+            "sai do CSS e nao da varredura, segue de pe."
+        ),
+        "arquivo": "crates/phxsql-server/src/conferidor_botoes.rs",
+        "trecho": """    while let Some(rel) = fonte[de..].find("<button") {
+""",
+        "troca": """    // DEFEITO REPOSTO (655): o botao de marcacao nao conta.
+    while let Some(rel) = fonte[de..].find("<button").filter(|_| false) {
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "conferidor_botoes::testes::o_conferidor_acha_o_que_promete",
+        ],
+        "seguem": [
+            "conferidor_botoes::testes::a_lista_de_ganchos_sai_do_codigo",
+        ],
+    },
+    {
+        "id": "conferidor-de-texto-cru-cala-por-engano",
+        "titulo": "o conferidor do texto cru deixa de achar o `${txt(` sem `esc` e a catraca fica verde",
+        "porque": (
+            "pedido 655, o `ok 0` por engano: o casador nunca acha. A catraca "
+            "de teto (`<=`) passa com zero; quem pega e a prova sintetica e a "
+            "do teto com dono, que exige o numero EXATO -- a igualdade e o que "
+            "torna o zero suspeito."
+        ),
+        "arquivo": "crates/phxsql-server/src/conferidor_texto_cru.rs",
+        "trecho": """        while let Some(p) = linha[de..].find("${txt(") {
+""",
+        "troca": """        // DEFEITO REPOSTO (655): o casador nunca acha.
+        while let Some(p) = linha[de..].find("${txt(").filter(|_| false) {
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "conferidor_texto_cru::testes::o_conferidor_acha_o_que_promete",
+            "conferidor_texto_cru::testes::o_teto_de_um_ainda_tem_dono",
+        ],
+        "seguem": [
+            "conferidor_texto_cru::testes::nenhum_texto_de_tela_novo_chega_cru_ao_html",
+        ],
+    },
     # 442.1 O teto decidido antes de a leitura bloquear
     {
         "id": "teto-decidido-antes-do-bloqueio",
@@ -10431,6 +10881,7 @@ pub fn limpar() {
         "caem": [
             "o_usuario_excluido_com_a_conexao_aberta_perde_o_teto_na_linha_seguinte",
             "a_conexao_aberta_antes_do_primeiro_cadastro_perde_o_teto_quando_ele_nasce",
+            "quem_e_excluido_enquanto_o_proprio_pedido_espera_perde_o_teto_na_linha_seguinte",
         ],
         "seguem": [
             # Os comportamentos velhos do 434, que nao podem mudar.
@@ -10464,6 +10915,7 @@ pub fn limpar() {
         "alvo": ["--test", "teto-da-linha-anonima"],
         "caem": [
             "o_usuario_excluido_com_a_conexao_aberta_perde_o_teto_na_linha_seguinte",
+            "quem_e_excluido_enquanto_o_proprio_pedido_espera_perde_o_teto_na_linha_seguinte",
         ],
         "seguem": [
             "a_conexao_aberta_antes_do_primeiro_cadastro_perde_o_teto_quando_ele_nasce",
@@ -10508,6 +10960,7 @@ pub fn limpar() {
             "a_linha_grande_antes_do_login_e_recusada_pelo_teto_do_anonimo",
             "depois_do_login_a_linha_grande_continua_passando",
             "sem_cadastro_a_linha_grande_continua_passando",
+            "quem_e_excluido_enquanto_o_proprio_pedido_espera_perde_o_teto_na_linha_seguinte",
         ],
     },
     # 442.3 A linha respondida continua na memoria
@@ -11834,6 +12287,7 @@ pub const ITERACOES_MINIMAS_DO_CADASTRO: u32 = phxsql_store::cofre::ITERACOES_MI
             "servidor::testes_do_panico_sob_a_trava::panico_no_meio_do_inserir_nao_fecha_a_base_e_nao_deixa_fantasma",
             "servidor::testes_do_panico_sob_a_trava::panico_na_passada_do_commit_sai_com_a_transacao_inteira_na_hora",
             "servidor::testes_do_panico_sob_a_trava::reparo_que_falha_derruba_o_processo_em_vez_de_servir",
+            "servidor::testes_do_panico_sob_a_trava::panico_na_passada_do_commit_reabre_a_trava_na_hora",
         ],
         "seguem": [
             "servidor::testes_das_threads::panico_dentro_do_atender_devolve_a_vaga_da_porta_de_dados",
@@ -11883,9 +12337,13 @@ pub const ITERACOES_MINIMAS_DO_CADASTRO: u32 = phxsql_store::cofre::ITERACOES_MI
             "servidor::testes_do_panico_sob_a_trava::panico_no_meio_do_inserir_nao_fecha_a_base_e_nao_deixa_fantasma",
             "servidor::testes_do_panico_sob_a_trava::panico_na_passada_do_commit_sai_com_a_transacao_inteira_na_hora",
             "servidor::testes_do_panico_sob_a_trava::reparo_que_falha_derruba_o_processo_em_vez_de_servir",
+            "servidor::testes_do_panico_sob_a_trava::panico_na_passada_do_commit_completa_a_marca_na_hora",
         ],
         "seguem": [
             "servidor::testes_janela_e_cadeia::so_um_lugar_toma_a_trava",
+            # Pedido 655, medido: sem reparo a trava envenenada volta a
+            # atender assim mesmo -- o que cai e a marca, nao a trava.
+            "servidor::testes_do_panico_sob_a_trava::panico_na_passada_do_commit_reabre_a_trava_na_hora",
         ],
         "prazo": 600,
     },
@@ -11947,10 +12405,12 @@ pub const ITERACOES_MINIMAS_DO_CADASTRO: u32 = phxsql_store::cofre::ITERACOES_MI
         "alvo": ["--lib"],
         "caem": [
             "servidor::testes_do_panico_sob_a_trava::panico_na_passada_do_commit_sai_com_a_transacao_inteira_na_hora",
+            "servidor::testes_do_panico_sob_a_trava::panico_na_passada_do_commit_completa_a_marca_na_hora",
         ],
         "seguem": [
             "servidor::testes_do_panico_sob_a_trava::panico_no_meio_do_inserir_nao_fecha_a_base_e_nao_deixa_fantasma",
             "servidor::testes_do_panico_sob_a_trava::o_reparo_completa_so_a_marca_em_voo",
+            "servidor::testes_do_panico_sob_a_trava::panico_na_passada_do_commit_reabre_a_trava_na_hora",
         ],
         "prazo": 600,
     },
@@ -13618,7 +14078,9 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         "caem": [
             "servidor::testes_do_pulso_que_morre::pulso_que_morre_em_panico_volta_a_pulsar",
         ],
-        "seguem": [],
+        "seguem": [
+            "servidor::testes_do_recuo_no_cluster::a_falha_unica_volta_no_pulso_de_sempre",
+        ],
     },
     {
         "id": "pulso-em-panico-sem-recuo",
@@ -13667,7 +14129,9 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         "caem": [
             "servidor::testes_do_relogio_e_do_backup::relogio_de_jobs_que_morre_nao_continua_dizendo_que_esta_no_ar",
         ],
-        "seguem": [],
+        "seguem": [
+            "servidor::testes_do_relogio_e_do_backup::lapide_do_backup_no_futuro_nao_vira_a_ultima_corrida",
+        ],
     },
     {
         "id": "amostrador-morto-diz-que-esta-no-ar",
@@ -13688,7 +14152,9 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         "caem": [
             "servidor::testes_do_relogio_e_do_backup::amostrador_que_morre_nao_continua_dizendo_que_esta_no_ar",
         ],
-        "seguem": [],
+        "seguem": [
+            "servidor::testes_do_relogio_e_do_backup::lapide_do_backup_no_futuro_nao_vira_a_ultima_corrida",
+        ],
     },
     {
         "id": "job-corre-na-thread-de-servico",
@@ -13711,7 +14177,9 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         "caem": [
             "servidor::testes_do_panico_sob_a_trava::job_em_panico_sob_a_trava_vira_corrida_que_falhou_e_o_servidor_fica",
         ],
-        "seguem": [],
+        "seguem": [
+            "servidor::testes_do_panico_sob_a_trava::backup_em_panico_sob_a_trava_falha_e_o_servidor_fica",
+        ],
     },
     {
         "id": "backup-corre-na-thread-de-servico",
@@ -13744,7 +14212,9 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         "caem": [
             "servidor::testes_do_panico_sob_a_trava::backup_em_panico_sob_a_trava_falha_e_o_servidor_fica",
         ],
-        "seguem": [],
+        "seguem": [
+            "servidor::testes_do_panico_sob_a_trava::job_em_panico_sob_a_trava_vira_corrida_que_falhou_e_o_servidor_fica",
+        ],
     },
     {
         "id": "job-que-derrubou-roda-de-novo-no-arranque",
@@ -13768,7 +14238,9 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         "caem": [
             "servidor::testes_do_panico_sob_a_trava::corrida_de_job_que_derrubou_o_processo_nao_roda_de_novo_no_arranque",
         ],
-        "seguem": [],
+        "seguem": [
+            "servidor::testes_do_panico_sob_a_trava::corrida_de_backup_que_derrubou_o_processo_nao_roda_de_novo_no_arranque",
+        ],
     },
     {
         "id": "backup-que-derrubou-roda-de-novo-no-arranque",
@@ -13790,7 +14262,9 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         "caem": [
             "servidor::testes_do_panico_sob_a_trava::corrida_de_backup_que_derrubou_o_processo_nao_roda_de_novo_no_arranque",
         ],
-        "seguem": [],
+        "seguem": [
+            "servidor::testes_do_panico_sob_a_trava::corrida_de_job_que_derrubou_o_processo_nao_roda_de_novo_no_arranque",
+        ],
     },
     {
         "id": "lapide-do-futuro-empurra-o-job",
@@ -13837,7 +14311,9 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         "caem": [
             "servidor::testes_do_relogio_e_do_backup::lapide_do_backup_no_futuro_nao_vira_a_ultima_corrida",
         ],
-        "seguem": [],
+        "seguem": [
+            "servidor::testes_do_relogio_e_do_backup::corrida_de_job_interrompida_avisa_por_email",
+        ],
     },
     {
         "id": "corrida-interrompida-nao-avisa",
@@ -13859,7 +14335,9 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         "caem": [
             "servidor::testes_do_relogio_e_do_backup::corrida_de_job_interrompida_avisa_por_email",
         ],
-        "seguem": [],
+        "seguem": [
+            "servidor::testes_do_relogio_e_do_backup::backup_agendado_que_falha_avisa_pelo_carteiro",
+        ],
     },
     {
         "id": "backup-agendado-falha-calado",
@@ -13880,7 +14358,9 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         "caem": [
             "servidor::testes_do_relogio_e_do_backup::backup_agendado_que_falha_avisa_pelo_carteiro",
         ],
-        "seguem": [],
+        "seguem": [
+            "servidor::testes_do_relogio_e_do_backup::corrida_de_job_interrompida_avisa_por_email",
+        ],
     },
     {
         "id": "dblink-ilegivel-derruba-o-motor",
@@ -14230,7 +14710,9 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "o_processo_novo_manda_reconstruir_o_que_so_foi_fechado",
             "a_escrita_que_nao_terminou_tira_o_atestado",
         ],
-        "seguem": [],
+        "seguem": [
+            "o_indice_de_texto_vai_ao_fecho_da_janela",
+        ],
     },
     {
         "id": "atestado-sobrevive-a-escrita",
@@ -14357,9 +14839,12 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         # ATUALIZADO em 30/09/2026 (pedido 508): o palco migra o separador de
         # volume antes, e o `Database` do palco ganhou nome para servir tambem a
         # lista de tabelas. A chamada e a mesma.
-        "trecho": """        let (indices_reconstruidos, indices_pendentes) = no_palco.reconstruir_indices_marcados();
+        # ATUALIZADO em 08/10/2026 (pedido 712): o palco passa pelo
+        # `recuperar_marcas` do arranque, que completa as marcas e SO DEPOIS
+        # reconstroi o indice marcado. Repor o defeito e tirar a passada.
+        "trecho": """        let r = no_palco.recuperar_marcas();
 """,
-        "troca": """        let (indices_reconstruidos, indices_pendentes) = (0usize, Vec::<String>::new()); // DEFEITO REPOSTO (522)
+        "troca": """        let r = crate::marca::Relatorio::default(); // DEFEITO REPOSTO (522)
 """,
         "pacote": "phxsql-store",
         "alvo": ["--lib"],
@@ -14755,7 +15240,9 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         "caem": [
             "volume::tests::a_chave_da_familia_junta_as_grafias_que_o_pathbuf_ja_junta",
         ],
-        "seguem": [],
+        "seguem": [
+            "volume::tests::sem_paginacao_usa_arquivo_unico_sem_sufixo",
+        ],
     },
     {
         "id": "inserir-sem-janela-do-texto",
@@ -14838,7 +15325,9 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         "pacote": "phxsql-store",
         "alvo": ["--test", "cascata-ao-alterar"],
         "caem": ["a_fk_da_filha_para_outra_mae_recusa_antes_da_marca_no_embutido"],
-        "seguem": [],
+        "seguem": [
+            "a_filha_acompanha_a_chave_que_a_mae_mudou",
+        ],
     },
     {
         "id": "jobs-devolve-a-coluna-negada",
@@ -14885,7 +15374,9 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         "caem": [
             "servidor::testes_da_saude_do_disco::o_arranque_que_reconstroi_indice_avisa_pelo_carteiro",
         ],
-        "seguem": [],
+        "seguem": [
+            "servidor::testes_da_saude_do_disco::erro_de_es_numa_gravacao_avisa_na_hora_e_uma_vez_so",
+        ],
     },
     {
         "id": "diretiva-sigilosa-sai-crua-no-sql",
@@ -14902,7 +15393,9 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         "pacote": "phxsql-sql",
         "alvo": ["--lib"],
         "caem": ["usuario::testes::a_diretiva_do_campo_sigiloso_sai_redigida"],
-        "seguem": [],
+        "seguem": [
+            "usuario::testes::a_senha_sai_do_texto_do_comando",
+        ],
     },
     {
         "id": "diretiva-sigilosa-sai-crua-no-json",
@@ -14919,7 +15412,9 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         "pacote": "phxsql-server",
         "alvo": ["--lib"],
         "caem": ["profiler::testes::o_valor_do_campo_sigiloso_sai_redigido_pelo_json"],
-        "seguem": [],
+        "seguem": [
+            "profiler::testes::a_senha_nunca_aparece",
+        ],
     },
     {
         "id": "sal-falso-pelo-token",
@@ -14936,7 +15431,9 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         "pacote": "phxsql-server",
         "alvo": ["--lib"],
         "caem": ["servidor::testes_do_sal_falso::a_sonda_do_token_nao_acerta_o_sal_falso_e_ele_e_estavel"],
-        "seguem": [],
+        "seguem": [
+            "servidor::testes_cadastro_de_usuarios::cria_grava_no_arquivo_e_o_login_novo_ja_entra",
+        ],
     },
     {
         "id": "scram-sem-teto-de-iteracoes",
@@ -14970,7 +15467,9 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         "pacote": "phxsql-server",
         "alvo": ["--lib"],
         "caem": ["transacao::testes::o_recado_da_barrada_nomeia_quem_segura"],
-        "seguem": [],
+        "seguem": [
+            "transacao::testes::abrir_duas_vezes_na_mesma_conexao_recusa",
+        ],
     },
     {
         "id": "smtp-ecoa-a-credencial",
@@ -15012,7 +15511,9 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         "caem": [
             "servidor::testes_da_saude_do_disco::o_arranque_que_reconstroi_indice_avisa_pelo_carteiro",
         ],
-        "seguem": [],
+        "seguem": [
+            "servidor::testes_da_saude_do_disco::sem_email_ligado_o_erro_conta_e_nao_avisa",
+        ],
     },
     {
         "id": "reconstruir-fts-sem-janela",
@@ -15346,10 +15847,18 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "pego na fronteira: [6, 5] nos dois; com a marca, [6, 6]."
         ),
         "arquivo": "crates/phxsql-store/src/table.rs",
-        "trecho": """        let marca =
-            crate::marca::gravar_marca(&self.diretorio, id, crate::util::agora_ms(), &escritas)?;
+        # ATUALIZADO em 08/10/2026 (pedido 709): a marca do embutido leva o
+        # bilhete posicional (`gravar_marca_posicional`). A chamada e a mesma.
+        "trecho": """        let marca = crate::marca::gravar_marca_posicional(
+            &self.diretorio,
+            id,
+            crate::util::agora_ms(),
+            &escritas,
+            bilhete,
+        )?;
 """,
         "troca": """        // DEFEITO REPOSTO (563): a cascata do embutido sem marca.
+        let _ = bilhete;
         let marca = crate::marca::caminho_da_marca(&self.diretorio, id);
 """,
         "pacote": "phxsql-ffi",
@@ -17597,7 +18106,9 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         "pacote": "phxsql-server",
         "alvo": ["--lib"],
         "caem": ["servidor::testes_painel_508::painel_soma_os_bytes_do_disco"],
-        "seguem": [],
+        "seguem": [
+            "servidor::testes_da_saude_do_disco::erro_de_es_numa_gravacao_avisa_na_hora_e_uma_vez_so",
+        ],
         "prazo": 900,
     },
     {
@@ -17686,6 +18197,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             origem,
             usuario: self.usuario,
             com_imagem: !imagem.is_empty(),
+            tx,
         });
 """,
         "troca": """        // DEFEITO REPOSTO (498): a falha nao deixa a marca no disco.
@@ -17696,6 +18208,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             origem,
             usuario: self.usuario,
             com_imagem: !imagem.is_empty(),
+            tx,
         });
         let marcou: Result<()> = Ok(());
 """,
@@ -17744,7 +18257,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "Medido com o defeito: o filho segue de pe depois do ENOSPC."
         ),
         "arquivo": "crates/phxsql-store/src/log.rs",
-        "trecho": """        crate::sincronia::diario_sem_evento(&self.volumes.caminho(1), &io);
+        "trecho": """        crate::sincronia::diario_sem_evento(&self.volumes.caminho(self.primeiro()), &io);
 """,
         "troca": """        // DEFEITO REPOSTO (498): o processo nao cai.
         let _ = crate::sincronia::diario_sem_evento;
@@ -18869,13 +19382,9 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "PARA, e o prazo de 20 s do teste vira a reprovacao."
         ),
         "arquivo": "crates/phxsql-store/src/util.rs",
-        "trecho": """        let arquivo = sem_seguir_nem_esperar(&mut abrir)
-            .open(caminho)
-""",
+        "trecho": """        let arquivo = abrir_sem_seguir(&mut abrir, caminho)""",
         "troca": """        // DEFEITO REPOSTO (570): segue o link e espera o leitor da FIFO.
-        let arquivo = abrir
-            .open(caminho)
-""",
+        let arquivo = abrir.open(caminho)""",
         "pacote": "phxsql-store",
         "alvo": ["--test", "destino-do-backup-sem-atalho"],
         "caem": ["a_fifo_trocada_na_janela_nao_para_o_motor"],
@@ -18896,8 +19405,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "link e confere o inode que a escrita anotou."
         ),
         "arquivo": "crates/phxsql-store/src/backup.rs",
-        "trecho": """    let arquivo = crate::util::sem_seguir_nem_esperar(&mut abrir)
-        .open(alvo)
+        "trecho": """    let arquivo = crate::util::abrir_sem_seguir(&mut abrir, alvo)
         .map_err(|e| no_nome_real(e, alvo, mostrar))?;
     let aberto = arquivo.metadata()?;
     if !aberto.is_file() || identidade(&aberto) != anotado {
@@ -21351,7 +21859,9 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         "caem": [
             "servidor::testes_da_linhagem_na_replica::a_replica_recusa_a_tabela_de_outra_historia",
         ],
-        "seguem": [],
+        "seguem": [
+            "servidor::testes_do_lote_de_replicacao::replicar_com_max_zero_serve_o_lote_padrao_e_nao_o_diario_inteiro",
+        ],
         "prazo": 1500,
     },
     {
@@ -24324,6 +24834,9 @@ fn anotar(""",
         "pacote": "phxsql-server",
         "alvo": ["--lib"],
         "caem": [
+            # Pedido 655: o «morto» separado do «colhido» -- este e o teste que
+            # so esta guarda derruba; o zumbi passa nele.
+            "gancho::testes::programa_que_estoura_o_prazo_e_morto",
             "gancho::testes::programa_que_estoura_o_prazo_e_morto_e_colhido",
             "servidor::testes_da_saude_do_disco::gancho_que_estoura_o_prazo_e_morto_e_o_carteiro_segue",
             "blacklist::tests::o_firewall_roda_pelo_motor_do_gancho",
@@ -24355,6 +24868,8 @@ fn anotar(""",
         ],
         "seguem": [
             "gancho::testes::saida_do_filho_nao_volta_no_erro",
+            # Pedido 655: o zumbi foi MORTO -- so nao foi colhido.
+            "gancho::testes::programa_que_estoura_o_prazo_e_morto",
         ],
     },
     {
@@ -24625,6 +25140,7 @@ fn anotar(""",
         ],
         "seguem": [
             "gancho::testes::a_conferencia_do_programa_recusa_o_que_nao_executaria",
+            "gancho::testes::diretorio_de_outro_usuario_e_recusado",
         ],
     },
     {
@@ -24641,11 +25157,14 @@ fn anotar(""",
 """,
         "pacote": "phxsql-server",
         "alvo": ["--lib"],
+        # Pedido 657: o teste do arquivo servia as duas guardas; separado, o do
+        # arquivo segue de pe com o diretorio reposto -- e vira o vizinho.
         "caem": [
-            "gancho::testes::programa_de_outro_usuario_e_recusado",
+            "gancho::testes::diretorio_de_outro_usuario_e_recusado",
         ],
         "seguem": [
             "gancho::testes::a_conferencia_do_programa_recusa_o_que_nao_executaria",
+            "gancho::testes::programa_de_outro_usuario_e_recusado",
         ],
     },
     {
@@ -25418,7 +25937,7 @@ fn anotar(""",
         "alvo": ["--lib"],
         "caem": [
             "tls::cliente::testes::certificado_de_uma_chave_assinado_por_outra_recusa",
-            "tls::cliente::testes::o_certificado_rsa_se_recusa_nomeando_o_algoritmo",
+            "tls::cliente::testes::o_certificate_verify_rsa_pss_do_traco_confere_e_o_adulterado_cai",
         ],
         "seguem": [
             "tls::cliente::testes::conversa_com_o_servidor_desta_casa_pelo_pino",
@@ -25494,11 +26013,19 @@ fn anotar(""",
         "porque": (
             "pedido 667, 07/10/2026: o login com servidor no pedido nao passa pelo op_login daqui, e a senha ja atravessou o fio ate aqui; e o caminho irmao do portao."
         ),
+        # Repontada em 08/10/2026 (pedido 655): o portao ganhou a emissao da
+        # sessao logo atras dele, e a recusa da sessao escreve a mesma frase
+        # («de fora deste computador, recusada») -- NAO PEGOU. Hipoteses: (a)
+        # a camada nova recusa no lugar; (b) o teste nao alcanca. Ficou (a),
+        # lida no `mensagens.rs`; o teste passou a exigir a frase da SENHA.
         "arquivo": "crates/phxsql-server/src/servidor/servico_web_01.rs",
-        "trecho": """                .and_then(|j| self.conferir_o_fio_da_senha(&j, &sessao).err())
+        "trecho": """                self.conferir_o_fio_da_senha(&j, &sessao)
+                    .and_then(|()| {
 """,
-        "troca": """                // DEFEITO REPOSTO (667): o login remoto sem o portao.
-                .and_then(|_j| None)
+        "troca": """                // DEFEITO REPOSTO (667): o login remoto sem o portao do fio da
+                // senha (repontada em 08/10/2026: o portao ganhou a emissao).
+                Ok(())
+                    .and_then(|()| {
 """,
         "pacote": "phxsql-server",
         "alvo": ["--test", "senha-fora-do-loopback"],
@@ -26496,17 +27023,25 @@ fn anotar(""",
             "escrita da passada, e a venda reaberta com 2 ids de transacao."
         ),
         "arquivo": "crates/phxsql-store/src/marca.rs",
-        "trecho": """        if let Some(tx) = id_da_metade_que_entrou(db, marca) {
+        # ATUALIZADO em 08/10/2026 (pedido 709): a marca v7/v8 traz o id; a
+        # adivinhacao pela cauda so vale para as anteriores. A adocao e a mesma.
+        "trecho": """        if let Some(tx) = tx {
+            crate::log::semear_tx(tx);
 """,
         "troca": """        // DEFEITO REPOSTO (702): o resto do COMMIT leva um id novo.
-        if let Some(tx) = id_da_metade_que_entrou(db, marca).filter(|_| false) {
+        if let Some(tx) = tx.filter(|_| false) {
+            crate::log::semear_tx(tx);
 """,
         "pacote": "phxsql-server",
         "alvo": ["--test", "commit-inteiro-na-queda"],
         "caem": [
             "o_commit_completado_no_arranque_leva_o_id_da_metade_que_entrou",
         ],
-        "seguem": [],
+        # Pedido 655: o binario ganhou vizinhos (08/10/2026) e a isencao do
+        # `caem` unico deixou de valer -- a setima regua acusou.
+        "seguem": [
+            "a_alteracao_e_a_exclusao_do_commit_sem_o_evento_completam_o_diario",
+        ],
     },
     {
         "id": "metade-adotada-na-marca-inteira",

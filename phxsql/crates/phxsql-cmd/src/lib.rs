@@ -93,6 +93,39 @@ impl Console {
         Console::abrir(host, porta, token, espera, true)
     }
 
+    /// Abre por **TLS 1.3**, conferindo o PINO do certificado do servidor
+    /// (`sha256//<base64>`, o que ele imprime no arranque) -- pedido 572,
+    /// T6b-2. E o que o console ganha que o tunel Noise dele nao tinha: com
+    /// pino, quem esta no meio nao se passa pelo servidor.
+    ///
+    /// O mesmo `Cliente` e a mesma funcao da replica e do cluster
+    /// (`Cliente::cifrar_tls`); o servidor precisa de `"tls": true`.
+    pub fn ligar_por_tls(
+        host: &str,
+        porta: u16,
+        token: &str,
+        espera: Duration,
+        pino: [u8; 32],
+    ) -> Result<Console> {
+        let mut cliente = Cliente::conectar(host, porta, token, espera)?;
+        cliente.cifrar_tls(pino).map_err(|e| {
+            if matches!(e, PhxError::LimiteExcedido(_)) {
+                return e;
+            }
+            PhxError::Autorizacao(format!(
+                "{host}:{porta} nao fechou o TLS com o pino dado ({e}). O servidor \
+                 precisa de \"tls\": true, e o pino e o que ele imprime no arranque \
+                 («tls da porta dados: pino ...»)"
+            ))
+        })?;
+        Ok(Console {
+            cliente,
+            database: String::new(),
+            cru: false,
+            destino: format!("{host}:{porta}"),
+        })
+    }
+
     /// O **escape escrito**: abre em claro, como era antes do pedido 370.
     ///
     /// Existe pelo mesmo motivo do `"exigir": false` do servidor e do `CIFRA=0`

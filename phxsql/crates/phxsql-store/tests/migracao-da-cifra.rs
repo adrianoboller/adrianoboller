@@ -1000,3 +1000,69 @@ fn o_novo_do_espelho_que_sumiu_entre_as_fases_e_recusado() {
     conferir_linhas(&d, 20);
     cofre::desligar();
 }
+
+// ---------------------------------------------------------------------------
+// Pedido 647: o inode velho morre FORA da trava
+// ---------------------------------------------------------------------------
+
+/// Quantos descritores DESTE processo apontam para um arquivo apagado dentro
+/// de `d` -- o volume velho que a FASE B trocou e que alguem ainda segura. E o
+/// sistema operacional que responde, pelo `/proc/self/fd`, e nao um contador
+/// do motor: o que se prova e onde o nucleo solta o inode.
+#[cfg(target_os = "linux")]
+fn velhos_seguros(d: &Path) -> usize {
+    let d = std::fs::canonicalize(d).unwrap();
+    let prefixo = format!("{}/", d.display());
+    std::fs::read_dir("/proc/self/fd")
+        .unwrap()
+        .flatten()
+        .filter_map(|e| std::fs::read_link(e.path()).ok())
+        .map(|alvo| alvo.to_string_lossy().into_owned())
+        .filter(|alvo| alvo.starts_with(&prefixo) && alvo.ends_with(" (deleted)"))
+        .count()
+}
+
+/// A FASE B deixa cada volume velho vivo num descritor, sem nome, e o
+/// `soltar_volumes_velhos` -- que o servidor chama depois de soltar a trava
+/// global -- e quem o fecha. Medido em 08/10/2026: a 10 M de linhas o
+/// `rename` por cima custava 1,2 s porque derrubava o ultimo nome do inode e
+/// o nucleo liberava as extensoes ali dentro, com a trava na mao.
+///
+/// Tambem prova o esquecido: o `Drop` da tabela solta, e no fim nenhum volume
+/// velho -- o EM CLARO do `Criptografar` -- fica preso no processo.
+///
+/// # Prova real
+///
+/// Sem o `segurar_o_velho` no `alargar_fase_b`, nenhum descritor aponta para
+/// arquivo apagado depois da FASE B e a segunda asserção reprova (0 contra o
+/// numero de volumes).
+#[cfg(target_os = "linux")]
+#[test]
+fn a_fase_b_segura_o_volume_velho_ate_soltar() {
+    let _t = UM_DE_CADA_VEZ.lock().unwrap_or_else(|e| e.into_inner());
+    let d = tabela_em_claro("segura-o-velho", true, 70);
+    let n = volumes(&d).len();
+    assert!(n >= 3, "a prova pede mais de um volume: {n}");
+
+    let mut t = Table::abrir(&d, "clientes").unwrap();
+    let troca = t.preparar_migracao_da_cifra(true).unwrap();
+    assert_eq!(velhos_seguros(&d), 0, "a FASE A nao troca nada");
+    t.aplicar_migracao_da_cifra(troca).unwrap();
+    assert_eq!(
+        velhos_seguros(&d),
+        n,
+        "a FASE B nao segurou os volumes velhos: o `rename` os liberou sob a trava"
+    );
+    assert_eq!(t.soltar_volumes_velhos(), n);
+    assert_eq!(velhos_seguros(&d), 0, "soltar nao fechou os velhos");
+
+    // O esquecido: ninguem chama o `soltar`, e o `Drop` fecha.
+    let troca = t.preparar_migracao_da_cifra(false).unwrap();
+    t.aplicar_migracao_da_cifra(troca).unwrap();
+    assert_eq!(velhos_seguros(&d), n);
+    drop(t);
+    assert_eq!(velhos_seguros(&d), 0, "o `Drop` deixou volume velho preso");
+
+    conferir_linhas(&d, 70);
+    cofre::desligar();
+}

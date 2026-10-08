@@ -205,6 +205,10 @@ impl Servidor {
         // `main` imprime) e para o log daqui, porque o `main` ja imprimiu a
         // lista dele antes de chegar aqui. Ver `Cadastro::conferir_colunas`.
         let mut config = config;
+        // Pedido 714: o contador nasce ACIMA de toda marca que ficou no disco
+        // -- a retida pela recuperacao, de qualquer familia --, e nao so do
+        // relogio, que pode ter recuado desde a vida que a gravou.
+        let semente_das_marcas = crate::transacao::semente_do_contador(&raiz.exclusiva());
         {
             let dados = raiz.exclusiva();
             let avisos = config
@@ -353,6 +357,9 @@ impl Servidor {
             interrompidas_a_avisar: Mutex::new(interrompidas),
             avisos_de_jobs: Mutex::new(HashMap::new()),
             expurgo_da_trilha: Mutex::new(()),
+            expurgo_do_diario: Mutex::new(()),
+            confirmados_do_diario: Mutex::new(HashMap::new()),
+            retrato_servido: Mutex::new(None),
             avisos_de_seguranca: Mutex::new(HashMap::new()),
             porta_no_ar: AtomicBool::new(false),
             parar_de_aceitar: AtomicBool::new(false),
@@ -421,7 +428,7 @@ impl Servidor {
             ),
             transacoes: crate::pulso::TravaDaGuarda::nova_saneada(
                 "das transacoes abertas",
-                crate::transacao::Transacoes::nova(crate::agora_ms()),
+                crate::transacao::Transacoes::nova(semente_das_marcas),
                 crate::transacao::Transacoes::abortar_abertas,
             ),
             transacoes_abertas: AtomicUsize::new(0),

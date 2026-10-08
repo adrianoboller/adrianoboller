@@ -195,6 +195,7 @@ fn terreno(nome: &str, teto: Option<u64>) -> (NoAr, NoAr, DirTemp, DirTemp) {
         hora: String::new(),
         cifra: false,
         chave_do_fio: String::new(),
+        pino_tls: String::new(),
         espelho: false,
     }];
     let b = subir(cb);

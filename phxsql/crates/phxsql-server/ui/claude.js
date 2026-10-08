@@ -12,12 +12,17 @@
  *
  * ## Onde a chave REPOUSA, e por que mudou (pedido 339(a))
  *
- * Ela morava no `localStorage`. Hoje mora no `sessionStorage` — a razão, a
- * conta do custo para quem usa e o que isto NÃO conserta estão inteiros no
- * comentário da seção «configuração», mais abaixo. Em uma linha: o que muda
- * não é o alcance de um XSS (igual nos dois), é que a chave deixa de
- * sobreviver ao `Sair`, ao fechar o navegador e à troca de pessoa na
- * máquina.
+ * Ela morava no `localStorage`, depois no `sessionStorage`; hoje mora só em
+ * MEMÓRIA, e nenhum armazenamento do navegador a guarda — a razão (OWASP),
+ * a conta do custo e o que isto NÃO conserta estão no comentário da seção
+ * «configuração», mais abaixo. Em uma linha: o alcance de um XSS não muda;
+ * muda que a chave deixa de ficar ESCRITA no perfil do navegador e passa a
+ * durar o mesmo que o login.
+ *
+ * Mais duas travas do mesmo pedido: o administrador desliga a integração
+ * pelo `config.json` (`web.integracao_claude`), e o servidor a corta no
+ * `connect-src` da página; e o conteúdo só sai depois de APROVADO, com o
+ * corpo exato mostrado antes do clique.
  *
  * O corolário é a regra que este arquivo inteiro respeita: **a chave não entra
  * em nenhum pedido ao PhxSql.** Ela só aparece no cabeçalho `x-api-key` do
@@ -121,50 +126,60 @@ window.PhxIA = (function () {
 
   /* ------------------------------------------------------- configuração
      DUAS gavetas, partidas pelo TEMPO DE VIDA e não pelo assunto — pedido
-     339(a).
+     339(a), refeito em 08/10/2026.
 
      O que é PREFERÊNCIA (modelo escolhido, interruptor) fica no
      `localStorage`: é do navegador de quem usa, nunca chega ao servidor, e
      durar para sempre é o que se quer dela.
 
-     O que é SEGREDO (a chave da API, e o endereço para onde ela vai) fica no
-     `sessionStorage`, que morre quando a aba fecha. O motivo NÃO é XSS — um
-     XSS na aba aberta lê as duas iguais, e o ativo maior (`est.token`) já
-     vive em memória. O motivo é o eixo que nada mais cobria: o
-     `localStorage` sobrevive ao `Sair`, ao fechar o navegador e à TROCA DE
-     PESSOA. Este console é declaradamente de máquina compartilhada — o
-     histórico de conexões diz «quem senta nesta máquina» —, e a chave da API
-     é de terceiro e paga por quem a digitou. Quem sentar depois não deve
-     achar a conta da Anthropic de outro ligada e pronta para gastar.
+     O que é SEGREDO (a chave da API, o endereço para onde ela vai e a marca
+     de que o endereço foi trocado por querer) fica em MEMÓRIA, numa variável
+     deste fechamento — e em NENHUM armazenamento do navegador. Até
+     08/10/2026 ficava no `sessionStorage`, e a decisão de sair de lá é pela
+     convergência das duas fontes da OWASP:
 
-     E o custo para quem usa é MEDIDO, não estimado: `sessionStorage`
-     SOBREVIVE ao F5 na mesma aba, e a janela destacada (`window.open` da
-     mesma origem) nasce com uma cópia dele. Ou seja, redigita-se uma vez por
-     aba — menos vezes do que o próprio login, que é de memória pura e cai a
-     cada recarga. A chave passa a durar MAIS que a sessão que a protege, em
-     vez de durar para sempre.
+       - a folha *HTML5 Security* manda não guardar dado sensível no
+         `localStorage` e aceita o `sessionStorage` só como o menos pior,
+         «se não é preciso persistir»;
+       - o *ASVS* 4.0.3, requisito 8.2.2 (nível 1), manda que NENHUM
+         armazenamento do navegador — `localStorage`, `sessionStorage`,
+         IndexedDB, cookies — carregue dado sensível.
 
-     O endereço vai junto da chave, e não das preferências, porque é ele que
-     decide PARA ONDE o segredo sai: endereço plantado que sobrevive ao
-     fechar o navegador seria uma tubulação permanente para a chave seguinte.
+     A única saída que as duas aceitam é a memória, e ela entrou. O que isto
+     NÃO conserta, e a tela diz: um XSS na aba aberta alcança a memória
+     também (e intercepta o `fetch` de qualquer jeito); o ativo maior,
+     `est.token`, já vivia em memória pelo mesmo motivo. O que muda é o que
+     sobra ESCRITO: nada no perfil do navegador, nada na cópia do
+     `sessionStorage` que o `window.open` clona para a janela destacada.
 
-     Em janela privada o acesso pode ESTOURAR, e não só voltar vazio — por
-     isso todo toque é dentro de try/catch e a tela desenha certo sem valor
-     guardado. */
+     O custo é medido e é o certo: a chave cai no F5 e no Sair, exatamente
+     como o login do PhxSql. Antes ela durava MAIS que a sessão que a
+     protege; agora dura o mesmo. A janela destacada não herda a chave:
+     quem quiser a Claude lá a cola lá.
+
+     Em janela privada o acesso ao `localStorage` pode ESTOURAR, e não só
+     voltar vazio — por isso todo toque é dentro de try/catch e a tela
+     desenha certo sem valor guardado. */
   const GAVETA = "phxsql.ia";            // preferências, no localStorage
-  const COFRE  = "phxsql.ia.chave";      // segredo, no sessionStorage
+  /* Onde a chave morou entre 23/09 e 08/10/2026. Só se LÊ, para tirar de lá
+     (`migrarDoDisco`); nada mais escreve nesta gaveta. */
+  const COFRE_VELHO = "phxsql.ia.chave";
 
   /* `endpoint_confirmado` mora com os segredos de proposito (pedido 436,
      M5): e a marca de que quem trocou o endereco o fez por querer, e uma
      marca no `localStorage` seria plantavel do mesmo jeito que o endereco
      -- o `cfg()` le o disco para tudo que nao e segredo. */
   const SEGREDOS = ["chave", "endpoint", "endpoint_confirmado"];
-  /* Do disco para a aba, so a CHAVE se promove. O endereco que estiver no
-     disco e o caminho de um endereco plantado chegar a toda aba nova (SEC
-     M5): antes, `migrarDoDisco` o promovia para a aba, e a chave seguinte
-     saia por ele. Nao ha campo na tela que grave endereco no disco; o que
-     estiver la nao foi a tela quem pos. */
+  /* De um armazenamento velho para a memoria, so a CHAVE se promove. O
+     endereco que estiver no disco ou na aba e o caminho de um endereco
+     plantado chegar a toda aba nova (SEC M5): o que estiver la nao foi a
+     tela de hoje quem pos. */
   const PROMOVIDOS = ["chave"];
+
+  /** O cofre: memoria deste fechamento, e mais nada. Nao ha `setItem` de
+   *  segredo em lugar nenhum deste arquivo -- e a prova
+   *  `testes-web/prova-339-chave.mjs` confere isso pelo efeito. */
+  let cofre = {};
 
   /* O armazem chega como FUNCAO, e nao como referencia: em janela privada (e
      com cookies bloqueados no Chrome) quem estoura e o proprio acesso a
@@ -185,49 +200,69 @@ window.PhxIA = (function () {
     try { armazem().setItem(nome, JSON.stringify(valor)); } catch { /* privada */ }
   }
 
-  /** Tira do `localStorage` a chave que rodadas anteriores gravaram ali, e a
-   *  passa para o cofre da aba — UMA vez, na primeira leitura.
+  function apagarGaveta(armazem, nome) {
+    try { armazem().removeItem(nome); } catch { /* privada */ }
+  }
+
+  /** Tira a chave dos DOIS lugares onde rodadas anteriores a gravaram -- o
+   *  `localStorage` (ate 23/09/2026) e o `sessionStorage` (ate 08/10/2026)
+   *  -- e a passa para a memoria, UMA vez, na primeira leitura.
    *
-   *  Sem isto, quem já tinha chave guardada a veria sumir sem explicação
-   *  («Ainda não há chave guardada») e a redigitaria com a antiga ainda no
-   *  disco. Com isto, a chave sai do disco no primeiro desenho da tela e
-   *  continua valendo nesta aba. Devolve `true` quando houve mudança, e é
-   *  esse `true` que a tela de Configurações usa para DIZER o que aconteceu —
-   *  conserto calado em cima de segredo é o que faz alguém achar que ainda
-   *  tem o que não tem. */
+   *  Sem isto, quem ja tinha chave guardada a veria sumir sem explicacao e a
+   *  redigitaria com a antiga ainda escrita no perfil. Devolve `true` quando
+   *  uma CHAVE foi movida, e e esse `true` que a tela de Configuracoes usa
+   *  para DIZER o que aconteceu -- conserto calado em cima de segredo e o
+   *  que faz alguem achar que ainda tem o que nao tem. */
   let migrou = false;
   function migrarDoDisco() {
     const velha = lerGaveta(DISCO, GAVETA);
-    const achados = SEGREDOS.filter(k => velha[k] && k in velha);
-    if (!achados.length) return false;
-    const cofre = lerGaveta(ABA, COFRE);
-    for (const k of achados)
-      if (PROMOVIDOS.includes(k) && !cofre[k]) cofre[k] = velha[k];
-    for (const k of SEGREDOS) delete velha[k];
-    gravarGaveta(ABA, COFRE, cofre);
-    gravarGaveta(DISCO, GAVETA, velha);
+    const daAba = lerGaveta(ABA, COFRE_VELHO);
+    const noDisco = SEGREDOS.filter(k => velha[k]);
+    const naAba = SEGREDOS.filter(k => daAba[k]);
+    let moveuChave = false;
+    for (const fonte of [daAba, velha])
+      for (const k of PROMOVIDOS)
+        if (fonte[k] && !cofre[k]) { cofre[k] = fonte[k]; moveuChave = true; }
+    if (noDisco.length) {
+      for (const k of SEGREDOS) delete velha[k];
+      gravarGaveta(DISCO, GAVETA, velha);
+    }
+    // A gaveta velha da aba sai INTEIRA: ela so guardava segredo.
+    if (naAba.length || Object.keys(daAba).length) apagarGaveta(ABA, COFRE_VELHO);
     // O aviso «a chave foi movida» so quando uma CHAVE foi movida: um
     // endereco descartado sozinho nao e chave nenhuma, e o aviso mentiria.
-    const moveuChave = achados.some(k => PROMOVIDOS.includes(k));
     if (moveuChave) migrou = true;
     return moveuChave;
   }
   const houveMigracao = () => migrou;
 
+  /** O administrador desligou a integracao no `config.json`
+   *  (`web.integracao_claude: false`)? Quem decide e o SERVIDOR, que le o
+   *  campo e o diz no `/saude` -- e, mais forte que isto, tira a origem da
+   *  Anthropic do `connect-src` da pagina, de modo que o proprio navegador
+   *  barra a chamada. Esta funcao so serve para a TELA dizer o porque, em
+   *  vez de deixar a pessoa diante de um erro de rede.
+   *
+   *  Servidor velho, sem o campo, deixa ligada: guarda nova entra pedida. */
+  function desligadaPeloServidor() {
+    return typeof est !== "undefined" && !!est && est.integracaoClaude === false;
+  }
+
   function cfg() {
     migrarDoDisco();
     const padrao = { chave: "", modelo: MODELO_PADRAO, ligado: false,
                      endpoint: ENDPOINT_OFICIAL };
-    return Object.assign(padrao, lerGaveta(DISCO, GAVETA), lerGaveta(ABA, COFRE));
+    const pref = lerGaveta(DISCO, GAVETA);
+    for (const k of SEGREDOS) delete pref[k];
+    return Object.assign(padrao, pref, cofre);
   }
 
-  /** Grava cada campo na gaveta que lhe cabe. O partidor é a lista `SEGREDOS`
+  /** Grava cada campo no lugar que lhe cabe. O partidor é a lista `SEGREDOS`
    *  e não um `if` por campo: campo novo entra numa das duas listas, e não
    *  num terceiro lugar que ninguém lembra de conferir. */
   function gravar(mudanca) {
     migrarDoDisco();
     const pref = lerGaveta(DISCO, GAVETA);
-    const cofre = lerGaveta(ABA, COFRE);
     for (const k of Object.keys(mudanca || {})) {
       if (SEGREDOS.includes(k)) cofre[k] = mudanca[k];
       else pref[k] = mudanca[k];
@@ -237,18 +272,18 @@ window.PhxIA = (function () {
     for (const k of SEGREDOS) if (!cofre[k]) delete cofre[k];
     for (const k of SEGREDOS) delete pref[k];
     gravarGaveta(DISCO, GAVETA, pref);
-    gravarGaveta(ABA, COFRE, cofre);
     return cfg();
   }
 
-  /** Ligada é ter chave E interruptor. Sem as duas, a tela de Query não muda
-   *  em nada — que é o comportamento VELHO, e é o que o teste trava.
+  /** Ligada é ter chave E interruptor, e o servidor não ter desligado. Sem
+   *  as três, a tela de Query não muda em nada — que é o comportamento
+   *  VELHO, e é o que o teste trava.
    *
-   *  Com a chave na aba, «ligado sem chave» deixou de ser só o estado de quem
-   *  nunca configurou: é também o de quem configurou ontem e abriu uma aba
-   *  nova. A Query continua sem desenhar nada (o comportamento velho não
-   *  muda), e quem explica é a tela de Configurações, que é onde se conserta. */
+   *  Com a chave em memória, «ligado sem chave» é também o estado de quem
+   *  configurou e depois recarregou a página. A Query continua sem desenhar
+   *  nada, e quem explica é a tela de Configurações. */
   function ligada() {
+    if (desligadaPeloServidor()) return false;
     const c = cfg();
     return !!(c.ligado && c.chave);
   }
@@ -329,7 +364,13 @@ window.PhxIA = (function () {
    *
    *  Erro no MEIO do fluxo chega como `event: error` com HTTP 200 — quem só
    *  olha o código de status não o vê. */
-  async function perguntar(receita, pergunta, contexto, aoPedaco) {
+  async function perguntar(receita, pergunta, contexto, aoPedaco, corpoAprovado) {
+    // Desligada pelo administrador: a chamada nao sai nem tentando. O CSP da
+    // pagina ja a barraria no navegador; dizer antes poupa a pessoa de ler
+    // um erro de rede que nao explica nada.
+    if (desligadaPeloServidor())
+      throw new Error(txt("tela.ia_e_desligada",
+        "A integração com a Claude foi desligada pelo administrador deste servidor (web.integracao_claude no config.json). Nada saiu desta máquina."));
     const c = cfg();
     if (!c.chave) throw new Error(txt("tela.ia_e_sem_chave", "Sem chave configurada."));
     const alvo = c.endpoint || ENDPOINT_OFICIAL;
@@ -350,7 +391,11 @@ window.PhxIA = (function () {
       r = await fetch(alvo, {
         method: "POST",
         headers: cabecalhos(c.chave),
-        body: JSON.stringify(corpo(receita, pergunta, contexto, c.modelo || MODELO_PADRAO)),
+        // O corpo APROVADO sai byte a byte como foi mostrado: e o mesmo
+        // texto que o painel de aprovacao desenhou, e nao um segundo
+        // `corpo(...)` montado agora -- entre a vista e o envio a pessoa pode
+        // ter trocado o modelo ou a pergunta, e o que se aprova e o que sai.
+        body: corpoAprovado || JSON.stringify(corpo(receita, pergunta, contexto, c.modelo || MODELO_PADRAO)),
       });
     } catch (e) {
       // Rede caída, DNS, ou a política de segurança da página barrando o
@@ -811,6 +856,18 @@ Regras que o PhxSql impõe e que a proposta tem de respeitar:
 
   /** A tela de Configurações → Integração com a Claude. */
   function telaConfig() {
+    // Desligada pelo administrador: a tela diz isso e NAO oferece campo de
+    // chave. A chave que estivesse em memoria sai junto -- campo que aceita
+    // segredo para uma integracao que nao pode sair e convite a colar a
+    // chave a toa.
+    if (desligadaPeloServidor()) {
+      cofre = {};
+      folha(txt("tela.ia_titulo", "Integração com a Claude"),
+        txt("tela.ia_subtitulo", "a chave é sua e fica nesta aba · o servidor PhxSql não participa"),
+        `<div class="aviso mal" id="iaDesligadaAdm">${marcado(txt("tela.ia_desligada_adm",
+          "**Desligada pelo administrador.** O `config.json` deste servidor traz `\"integracao_claude\": false` em `web`: o próprio navegador barra a chamada à Anthropic, e nada do esquema nem das linhas sai daqui."))}</div>`);
+      return;
+    }
     const c = cfg();
     const temChave = !!c.chave;
     /* CAIXA ALTA SOBRE DADO, e como ela entra aqui.
@@ -839,8 +896,8 @@ Regras que o PhxSql impõe e que a proposta tem de respeitar:
          ${marcado(txt("tela.ia_leia",
            "**Leia antes de ligar.** Esta tela liga o Centro de Controle direto na API da Anthropic, **do seu navegador**. Em português claro:"))}
          <ul class="lista-limpa" style="margin-top:8px">
-           <li>· ${marcado(txt("tela.ia_leia_chave",
-               "a chave fica **nesta aba**, e não no servidor nem no disco: some ao fechar a aba (cada **janela destacada** leva uma cópia, que some quando ela fecha), sobrevive a recarregar, e quem sentar aqui depois de você não a encontra;"))}</li>
+           <li>· ${marcado(txt("tela.ia_leia_chave_mem",
+               "a chave fica **só na memória desta aba**, nem no servidor nem no armazenamento do navegador: some ao recarregar, ao **Sair** e ao fechar a aba, como o seu login, e quem sentar aqui depois não a encontra;"))}</li>
            <li>· ${marcado(txt("tela.ia_leia_sobe",
                "as suas perguntas e o contexto que você mandar (o **esquema** do banco, e as linhas se você marcar) **vão para a Anthropic**, que é uma empresa de fora;"))}</li>
            <li>· ${marcado(txt("tela.ia_leia_servidor",
@@ -855,7 +912,7 @@ Regras que o PhxSql impõe e que a proposta tem de respeitar:
            <input id="iaChave" type="password" autocomplete="off"
                   placeholder="${temChave ? E(txt("tela.ia_chave_guardada", "guardada — digite para trocar")) : "sk-ant-…"}">
            <span class="leg">${temChave
-             ? marcado(txt("tela.ia_chave_fim", "Há uma chave nesta aba, terminada em `{fim}` — ela some ao fechar a aba e sobrevive a recarregar a página. Cada janela destacada desta aba leva uma cópia, que só some quando ela fecha também."),
+             ? marcado(txt("tela.ia_chave_fim_mem", "Há uma chave na memória desta aba, terminada em `{fim}` — ela some ao recarregar a página, ao Sair e ao fechar a aba, junto com o seu login."),
                        { fim: fim(c.chave) })
              : c.ligado
                ? marcado(txt("tela.ia_sem_chave_na_aba", "A integração está **ligada**, mas a chave não está nesta aba. Cole-a de novo para os botões da Claude voltarem à tela de Query."))
@@ -887,7 +944,7 @@ Regras que o PhxSql impõe e que a proposta tem de respeitar:
          { onde: c.endpoint || ENDPOINT_OFICIAL })}</div>`}
 
        ${houveMigracao() ? `<div class="aviso" id="iaMigrada">${marcado(
-         txt("tela.ia_migrada", "A chave que estava guardada **no disco deste navegador** foi movida para esta aba, e apagada do disco. Ela continua valendo agora; vai sumir quando você fechar a aba e as janelas destacadas dela."))}</div>` : ""}
+         txt("tela.ia_migrada_mem", "A chave que estava guardada **no armazenamento deste navegador** foi movida para a memória desta aba e apagada de lá. Ela vale agora; some ao recarregar, ao Sair ou ao fechar a aba."))}</div>` : ""}
 
        <div class="dbl-titulo" style="margin-top:16px">
          <button class="botao incluir" id="iaSalvar">${E(txt("tela.salvar", "Salvar"))}</button>
@@ -1100,8 +1157,11 @@ Regras que o PhxSql impõe e que a proposta tem de respeitar:
       return null;
     }
     const c = cfg();
-    const b = corpo(RECEITAS[receitaAtual], e.pergunta || txt("tela.ia_ainda_vazio", "(ainda vazio)"),
-                    ctx.texto, c.modelo || MODELO_PADRAO);
+    // Com corpo APROVADO, o painel desenha ESSE texto, e nao um corpo
+    // remontado: o que a pessoa aprova tem de ser o que sai pelo fio.
+    const b = jaMontado && jaMontado.aprovado ? JSON.parse(jaMontado.aprovado)
+      : corpo(RECEITAS[receitaAtual], e.pergunta || txt("tela.ia_ainda_vazio", "(ainda vazio)"),
+              ctx.texto, c.modelo || MODELO_PADRAO);
     const cab = Object.assign({}, cabecalhos(c.chave));
     cab["x-api-key"] = fim(c.chave) || txt("tela.ia_sem_chave_curto", "(sem chave)");
     alvo.innerHTML = (ctx.resumo.semBanco
@@ -1135,15 +1195,37 @@ Regras que o PhxSql impõe e que a proposta tem de respeitar:
         txt("tela.ia_sem_esquema", "Não deu para ler o esquema: {erro}"), { erro: String(err) }))}</div>`;
       return;
     }
-    // O painel do que subiu fica montado ANTES de a resposta chegar: quem
-    // quiser conferir não precisa esperar, e não descobre depois.
-    await mostrarEnvio(onde, Object.assign({}, e, { ctx }));
+    // APROVACAO DO CONTEUDO (pedido 339(a)): o corpo e montado UMA vez,
+    // mostrado inteiro, e so sai com um clique sobre ELE. Antes o painel
+    // aparecia junto da chamada -- quem lia descobria o que tinha subido, e
+    // o esquema tambem carrega metadado comercial que o cliente pode nao
+    // querer mandar para fora. A receita e o texto ficam presos aqui: trocar
+    // a pergunta ou o modelo depois da vista nao muda o que foi aprovado.
+    const receita = RECEITAS[receitaAtual];
+    const aprovado = JSON.stringify(corpo(receita, e.pergunta, ctx.texto,
+                                          cfg().modelo || MODELO_PADRAO));
+    await mostrarEnvio(onde, Object.assign({}, e, { ctx, aprovado }));
+    saida.innerHTML = `<div class="aviso" id="iaAprovacao">${marcado(txt("tela.ia_aprovar_pede",
+        "**Nada saiu ainda.** Confira acima o que vai para a Anthropic — a pergunta, o esquema e as linhas, se marcou. Só o clique em «Enviar isto» manda, e manda exatamente o que está mostrado."))}
+      <div class="dbl-titulo" style="margin-top:10px">
+        <button class="botao incluir" id="iaAprovar">${E(txt("tela.ia_aprovar", "Enviar isto à Anthropic"))}</button>
+        <button class="botao secundario" id="iaNaoEnviar">${E(txt("tela.ia_nao_enviar", "Não enviar"))}</button>
+      </div></div>`;
+    const aprovou = await new Promise(fim => {
+      saida.querySelector("#iaAprovar").onclick = () => fim(true);
+      saida.querySelector("#iaNaoEnviar").onclick = () => fim(false);
+    });
+    if (!aprovou) {
+      saida.innerHTML = `<div class="aviso" id="iaNaoEnviado">${E(txt("tela.ia_nao_enviado",
+        "Nada foi enviado. O que estava no painel continua só nesta tela."))}</div>`;
+      return;
+    }
 
     saida.innerHTML = `<h3>${E(txt("tela.ia_resposta", "Resposta"))}</h3><pre class="dado" id="iaTexto" style="white-space:pre-wrap;word-break:break-word">…</pre>`;
     const alvo = onde.querySelector("#iaTexto");
     const tok = onde.querySelector("#iaTokens");
     try {
-      const r = await perguntar(RECEITAS[receitaAtual], e.pergunta, ctx.texto,
+      const r = await perguntar(receita, e.pergunta, ctx.texto,
         (parcial, uso) => {
           alvo.textContent = parcial;
           tok.innerHTML = E(preencher(txt("tela.ia_tokens",
@@ -1154,13 +1236,13 @@ Regras que o PhxSql impõe e que a proposta tem de respeitar:
       tok.innerHTML = marcado(txt("tela.ia_tokens_fim",
         "entrada **{entrada}** · saída **{saida}** token(s) — o custo é da sua conta"),
         { entrada: r.uso.entrada, saida: r.uso.saida });
-      if (RECEITAS[receitaAtual].editor) {
+      if (receita.editor) {
         const campo = onde.querySelector("#iaSql");
         if (campo) campo.value = limparSql(r.texto);
       }
       // O plano vira REVISÃO, e não criação: a conferência e os cliques ficam
       // entre a resposta e a primeira escrita.
-      if (RECEITAS[receitaAtual].plano)
+      if (receita.plano)
         await renderizarPlano(onde, r.texto, e.db);
     } catch (err) {
       saida.innerHTML = `<div class="aviso mal">${E(err.message || String(err))}</div>`;
@@ -1526,7 +1608,10 @@ Regras que o PhxSql impõe e que a proposta tem de respeitar:
     telaConfig, botaoDaConsulta, ligada,
     // Expostos para o exercício automatizado poder olhar por dentro sem
     // depender do desenho da tela.
-    _cfg: cfg, _corpo: corpo, _cabecalhos: cabecalhos, _limparSql: limparSql,
+    // `_gravar` existe porque a chave saiu de todo armazenamento (339(a)):
+    // o exercicio que antes escrevia no `sessionStorage` agora passa pela
+    // MESMA funcao que o botao Salvar chama, e nao por um atalho.
+    _cfg: cfg, _gravar: gravar, _corpo: corpo, _cabecalhos: cabecalhos, _limparSql: limparSql,
     _redigir: redigir, _conferirTipo: conferirTipo, _analisarPlano: analisarPlano,
     _conferirPlano: conferirPlano, ENDPOINT_OFICIAL, CABECALHO_NAVEGADOR,
   };

@@ -441,6 +441,9 @@ pub struct EventoDevido {
     pub origem: u16,
     pub usuario: u32,
     pub com_imagem: bool,
+    /// O id de transacao que o evento levaria (pedido 715) -- o da unidade
+    /// em que ele falhou. Zero = nao se sabe (volume 2/3): a abertura tira um.
+    pub tx: u64,
 }
 
 /// Bit 7 do primeiro byte da marca: o evento devido levava imagem.
@@ -456,6 +459,7 @@ impl EventoDevido {
         cofre::Marca {
             carimbo: self.carimbo,
             bytes,
+            tx: self.tx,
         }
     }
 
@@ -474,6 +478,7 @@ impl EventoDevido {
             origem: c.u16(2),
             usuario: c.u32(4),
             com_imagem: m.bytes[0] & MARCA_COM_IMAGEM != 0,
+            tx: m.tx,
         })
     }
 }
@@ -764,6 +769,26 @@ pub fn adotar_tx_na_unidade(tx: u64) -> bool {
     })
 }
 
+/// Tira AGORA o id da unidade aberta, antes do primeiro evento, e o devolve
+/// -- pedido 709. Fora de unidade devolve 0: ali cada evento ganha o seu, e
+/// nao ha um id que uma marca possa prometer.
+///
+/// Existe para a marca do `COMMIT` levar no bilhete o id que todos os eventos
+/// dela vao levar: a recuperacao o adota em vez de adivinha-lo pela cauda do
+/// diario. A unidade que ja gravou devolve o id dela, que e o mesmo que os
+/// eventos seguintes da tomada levam.
+pub fn reservar_tx_na_unidade() -> u64 {
+    UNIDADE.with(|u| match u.get() {
+        Some(0) => {
+            let t = proximo_tx();
+            u.set(Some(t));
+            t
+        }
+        Some(t) => t,
+        None => 0,
+    })
+}
+
 /// Anota na unidade aberta se o evento foi com id ou sem -- pedido 684 (b).
 /// Fora de unidade nao ha commit para misturar.
 fn anotar_mistura(com_id: bool) {
@@ -789,6 +814,116 @@ fn tx_do_evento() -> u64 {
     })
 }
 
+/// O que a abertura achou do volume ativo de um diario SEM paginacao --
+/// pedido 706.
+enum Ativo {
+    /// O diario e paginado: o nome do volume sai da paginacao, como sempre.
+    Paginado,
+    /// Nem ativo legivel nem fechado: o caso de sempre do volume 1, que a
+    /// abertura trata como sempre tratou.
+    Nenhum,
+    /// O cabecalho do `t.log`, ja lido -- e ele que diz o numero do ativo.
+    Lido(Cabecalho),
+    /// Ha fechados e o ativo nao nasceu (a queda entre o `rename` do que
+    /// fechou e o cabecalho do seguinte): o numero e o maior fechado + 1.
+    PorNascer(u32),
+}
+
+/// Os volumes do diario de `nome`.
+///
+/// Paginado, como sempre: `t#001.log`, `t#002.log`. SEM paginacao, pelo
+/// formato B da trilha (pedido 706, F2): o ativo em `t.log` e os fechados em
+/// `t#NNN.log`, sem teto de numero. Sem expurgo ligado o diario sem
+/// paginacao nunca vira de volume, e entao isto e exatamente o `t.log` de
+/// sempre: o ativo e o 1, e o nome e o mesmo.
+///
+/// O numero do ativo sai do cabecalho dele, que a abertura ia ler de qualquer
+/// jeito -- por isso o caso comum (o 1) nao custa leitura nenhuma a mais.
+fn volumes_do_diario(
+    diretorio: &Path,
+    nome: &str,
+    paginacao: Paginacao,
+) -> Result<(Volumes, Ativo)> {
+    if paginacao.ligada() {
+        return Ok((
+            Volumes::novo(diretorio, nome, EXT_LOG, paginacao),
+            Ativo::Paginado,
+        ));
+    }
+    let mut v = Volumes::novo_da_trilha(diretorio, nome, EXT_LOG, 1);
+    let tamanho = match v.tamanho(1) {
+        Ok(t) => Some(t),
+        Err(PhxError::NaoEncontrado(_)) => None,
+        Err(e) => return Err(e),
+    };
+    if tamanho.is_some_and(|t| t >= cofre::CAB_V2 as u64) {
+        let cab = cofre::ler_cabecalho_do_volume(&mut v, 1, MAGIC_LOG, cofre::VERSAO_COM_TX)?;
+        if cab.volume == 0 {
+            return Err(PhxError::Corrompido(format!(
+                "{}: o cabecalho do volume ativo do diario diz volume 0",
+                v.caminho(1).display()
+            )));
+        }
+        if cab.volume != 1 {
+            // O descritor aberto sob o numero 1 e o do ativo de outro numero:
+            // sai, e volta pelo numero certo na proxima leitura.
+            v.fechar_todos();
+            v.definir_ativo_da_trilha(cab.volume);
+        }
+        return Ok((v, Ativo::Lido(cab)));
+    }
+    let maior = maior_fechado_do_diario(diretorio, nome)?;
+    if maior == 0 {
+        return Ok((v, Ativo::Nenhum));
+    }
+    v.fechar_todos();
+    v.definir_ativo_da_trilha(maior + 1);
+    Ok((v, Ativo::PorNascer(maior + 1)))
+}
+
+/// O maior volume FECHADO do diario sem paginacao, pelo nome (`t#NNN.log`).
+/// Zero se nao ha. O nome se le pelo motor unico do pedido 508, como a
+/// trilha faz com os dela.
+fn maior_fechado_do_diario(diretorio: &Path, nome: &str) -> Result<u32> {
+    let fim = format!(".{EXT_LOG}");
+    let entradas = match std::fs::read_dir(diretorio) {
+        Ok(e) => e,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(0),
+        Err(e) => return Err(e.into()),
+    };
+    let mut maior = 0u32;
+    for entrada in entradas.flatten() {
+        let arquivo = entrada.file_name();
+        let Some(arquivo) = arquivo.to_str() else {
+            continue;
+        };
+        let Some((tabela, meio)) = arquivo
+            .strip_suffix(fim.as_str())
+            .and_then(phxsql_core::paginacao::separar_volume)
+        else {
+            continue;
+        };
+        if tabela == nome && meio.bytes().all(|b| b.is_ascii_digit()) {
+            if let Ok(n) = meio.parse::<u32>() {
+                maior = maior.max(n);
+            }
+        }
+    }
+    Ok(maior)
+}
+
+/// Faz nascer o ativo `n` que a queda deixou por nascer, com a base e o
+/// maior id herdados do fechado `n - 1` -- os mesmos que a virada daria.
+fn renascer_o_ativo(volumes: &mut Volumes, n: u32) -> Result<()> {
+    let anterior = cofre::ler_cabecalho_do_volume(volumes, n - 1, MAGIC_LOG, cofre::VERSAO_COM_TX)?;
+    let base_anterior = if n - 1 == 1 { 0 } else { anterior.base };
+    volumes.garantir(n)?;
+    let novo = Cabecalho::novo_do_diario(n)?
+        .com_tx_visto(anterior.ultimo_tx)
+        .com_base(base_anterior + anterior.quantos);
+    cofre::gravar_cabecalho_no_volume(volumes, &novo, MAGIC_LOG)
+}
+
 pub struct LogFile {
     volumes: Volumes,
     cabs: HashMap<u32, Cabecalho>,
@@ -800,6 +935,9 @@ pub struct LogFile {
     /// O evento que este diario deve (pedido 498). De pe, nada mais se anexa
     /// -- ver [`LogFile::conferir_teto`] -- ate a abertura completar.
     devendo: Option<EventoDevido>,
+    /// O diario SEM paginacao mora no formato B da trilha (pedido 706): o
+    /// ativo em `t.log`, os fechados em `t#NNN.log`. Ver [`volumes_do_diario`].
+    trilha: bool,
 }
 
 impl LogFile {
@@ -812,13 +950,20 @@ impl LogFile {
         // O diario corta o volume no tamanho DELE, que nao e o do `.bin`. Ver
         // `crate::diario`: sem configuracao, manda o esquema, como sempre.
         let paginacao = crate::diario::paginacao(paginacao);
+        let trilha = !paginacao.ligada();
+        let volumes = if trilha {
+            Volumes::novo_da_trilha(diretorio, nome, EXT_LOG, 1)
+        } else {
+            Volumes::novo(diretorio, nome, EXT_LOG, paginacao)
+        };
         let mut l = LogFile {
-            volumes: Volumes::novo(diretorio, nome, EXT_LOG, paginacao),
+            volumes,
             cabs: HashMap::new(),
             volume_atual: 1,
             marca: None,
             usuario: 0,
             devendo: None,
+            trilha,
         };
         l.volumes.criar(1)?;
         l.gravar_cab(Cabecalho::novo_do_diario(1)?)?;
@@ -827,7 +972,7 @@ impl LogFile {
 
     pub fn abrir(diretorio: impl AsRef<Path>, nome: &str, paginacao: Paginacao) -> Result<LogFile> {
         let paginacao = crate::diario::paginacao(paginacao);
-        let volumes = Volumes::novo(diretorio, nome, EXT_LOG, paginacao);
+        let (volumes, ativo) = volumes_do_diario(diretorio.as_ref(), nome, paginacao)?;
         let existentes = volumes.existentes();
         if existentes.is_empty() {
             return Err(PhxError::NaoEncontrado(format!(
@@ -836,6 +981,14 @@ impl LogFile {
             )));
         }
         let mut volumes = volumes;
+        // O ativo do formato B que nao chegou a nascer -- a queda entre o
+        // `rename` do que fechou e o cabecalho do seguinte. Nasce aqui, com a
+        // base e o id herdados, antes de qualquer outra conta.
+        if let Ativo::PorNascer(n) = ativo {
+            renascer_o_ativo(&mut volumes, n)?;
+        }
+        let existentes = volumes.existentes();
+        let primeiro = existentes[0];
         let volume_atual = match sem_cabecalho(&mut volumes, &existentes)? {
             // O volume que nasceu sem cabecalho nunca teve evento: sai.
             Some(orfao) => {
@@ -844,6 +997,7 @@ impl LogFile {
             }
             None => *existentes.last().unwrap(),
         };
+        let trilha = !paginacao.ligada();
         let mut l = LogFile {
             volumes,
             cabs: HashMap::new(),
@@ -851,8 +1005,14 @@ impl LogFile {
             marca: None,
             usuario: 0,
             devendo: None,
+            trilha,
         };
-        let primeiro = l.cab(1)?;
+        if let Ativo::Lido(cab) = ativo {
+            l.cabs.insert(cab.volume, cab);
+        }
+        // A marca do evento devido mora no PRIMEIRO volume que existe, e nao
+        // no 1: depois de um expurgo o 1 nao existe mais (pedido 706, F3).
+        let primeiro = l.cab(primeiro)?;
         l.cab(volume_atual)?;
         // So o volume CORRENTE pode ter ficado atrasado: os anteriores foram
         // fechados quando a paginacao virou, e ali o cabecalho vai a disco na
@@ -903,7 +1063,7 @@ impl LogFile {
         cauda_em_memoria: bool,
     ) -> Result<Option<LogFile>> {
         let paginacao = crate::diario::paginacao(paginacao);
-        let volumes = Volumes::novo(diretorio, nome, EXT_LOG, paginacao);
+        let (volumes, ativo) = volumes_do_diario(diretorio.as_ref(), nome, paginacao)?;
         let existentes = volumes.existentes();
         if existentes.is_empty() {
             return Err(PhxError::NaoEncontrado(format!(
@@ -912,8 +1072,11 @@ impl LogFile {
             )));
         }
         let mut volumes = volumes;
-        // Apagar o volume que nasceu sem cabecalho e escrever.
-        if sem_cabecalho(&mut volumes, &existentes)?.is_some() {
+        // Apagar o volume que nasceu sem cabecalho e escrever; fazer nascer o
+        // ativo do formato B que nao nasceu tambem (pedido 706).
+        if matches!(ativo, Ativo::PorNascer(_))
+            || sem_cabecalho(&mut volumes, &existentes)?.is_some()
+        {
             return Ok(None);
         }
         let volume_atual = *existentes.last().unwrap();
@@ -924,9 +1087,13 @@ impl LogFile {
             marca: None,
             usuario: 0,
             devendo: None,
+            trilha: !paginacao.ligada(),
         };
+        if let Ativo::Lido(cab) = ativo {
+            l.cabs.insert(cab.volume, cab);
+        }
         // O evento devido (498) se completa escrevendo.
-        if l.cab(1)?.marca.is_some() {
+        if l.cab(existentes[0])?.marca.is_some() {
             return Ok(None);
         }
         l.cab(volume_atual)?;
@@ -999,6 +1166,31 @@ impl LogFile {
         carimbo: Option<i64>,
         origem: u16,
     ) -> Result<Evento> {
+        self.registrar_com_tx(
+            operacao,
+            rowid,
+            versao,
+            imagem,
+            carimbo,
+            origem,
+            tx_do_evento(),
+        )
+    }
+
+    /// O [`LogFile::registrar_detalhado`] com o id de transacao ja escolhido
+    /// -- pedido 715: o evento devido o guarda na falha e o reusa ao
+    /// completar, sem tirar outro da unidade de quem completa.
+    #[allow(clippy::too_many_arguments)]
+    fn registrar_com_tx(
+        &mut self,
+        operacao: Operacao,
+        rowid: RowId,
+        versao: u64,
+        imagem: &[u8],
+        carimbo: Option<i64>,
+        origem: u16,
+        tx: u64,
+    ) -> Result<Evento> {
         self.conferir_devendo()?;
         conferir_imagem(imagem.len())?;
         // O tamanho que vai ao arquivo pode ser maior que o da imagem: num
@@ -1012,7 +1204,7 @@ impl LogFile {
             usuario: self.usuario,
             origem,
             tam_imagem: atual.ocupa(imagem.len()) as u32,
-            tx: tx_do_evento(),
+            tx,
             largo: atual.com_tx,
         };
         // O evento como FOI gravado: o volume velho zera o `tx` e encurta o
@@ -1069,6 +1261,13 @@ impl LogFile {
         let paginacao = self.volumes.paginacao();
         let atual = self.cab(self.volume_atual)?;
         let vazio = atual.fim <= atual.cab_len as u64;
+        // Sem paginacao o diario so vira de volume com o expurgo ligado, e
+        // sem teto de volumes: o formato B nunca reusa numero (pedido 706).
+        if self.trilha {
+            let corte = crate::diario::corte_do_expurgo();
+            let virou = corte > 0 && !vazio && atual.fim + ocupa > corte;
+            return Ok((self.volume_atual + u32::from(virou), virou, atual));
+        }
         let (volume, virou) = paginacao.volume_externo(self.volume_atual, atual.fim, ocupa, vazio);
         if virou && paginacao.ligada() && volume > paginacao.max_arquivos {
             return Err(PhxError::LimiteExcedido(format!(
@@ -1118,7 +1317,7 @@ impl LogFile {
     }
 
     fn devido_no(&self, cab: &Cabecalho) -> Result<Option<EventoDevido>> {
-        let nome = self.volumes.caminho(1).display().to_string();
+        let nome = self.volumes.caminho(cab.volume).display().to_string();
         cab.marca
             .as_ref()
             .map(|m| EventoDevido::da_marca(m, &nome))
@@ -1162,17 +1361,15 @@ impl LogFile {
         origem: u16,
     ) -> Result<Evento> {
         let carimbo = carimbo.unwrap_or_else(agora_ms);
-        let e = match self.registrar_detalhado(
-            operacao,
-            rowid,
-            versao,
-            imagem,
-            Some(carimbo),
-            origem,
-        ) {
-            Ok(e) => return Ok(e),
-            Err(e) => e,
-        };
+        // O id sai AQUI, e nao dentro do registro: na falha ele vai junto
+        // para a marca do devido (pedido 715).
+        let tx = tx_do_evento();
+        let e =
+            match self.registrar_com_tx(operacao, rowid, versao, imagem, Some(carimbo), origem, tx)
+            {
+                Ok(e) => return Ok(e),
+                Err(e) => e,
+            };
         // O diario ja devendo nao troca a marca: a primeira e a que a
         // abertura completa, e a tabela recusou esta escrita antes de gravar
         // a linha.
@@ -1186,12 +1383,13 @@ impl LogFile {
             origem,
             usuario: self.usuario,
             com_imagem: !imagem.is_empty(),
+            tx,
         });
         let io = std::io::Error::other(match &marcou {
             Ok(()) => e.to_string(),
             Err(m) => format!("{e} (e a marca do evento devido tambem falhou: {m})"),
         });
-        crate::sincronia::diario_sem_evento(&self.volumes.caminho(1), &io);
+        crate::sincronia::diario_sem_evento(&self.volumes.caminho(self.primeiro()), &io);
         Err(PhxError::Io(std::io::Error::other(format!(
             "a linha {rowid} esta no .reg e o diario nao gravou o evento de {} \
              dela ({io}). {} (pedido 498)",
@@ -1207,7 +1405,7 @@ impl LogFile {
 
     fn marcar_devido(&mut self, d: EventoDevido) -> Result<()> {
         self.devendo = Some(d);
-        let c = self.cab(1)?;
+        let c = self.cab(self.primeiro())?;
         self.gravar_cab(c.com_marca(Some(d.marca())))
     }
 
@@ -1232,13 +1430,20 @@ impl LogFile {
         if !ja_esta {
             self.devendo = None;
             let usuario = std::mem::replace(&mut self.usuario, d.usuario);
-            let feito = self.registrar_detalhado(
+            // Pedido 715: com o id guardado, o evento sai com ELE, e a unidade
+            // de quem completa nao e tocada. Quem completa e a abertura da
+            // tabela -- no arranque, dentro da unidade que a recuperacao da
+            // marca abriu e que ainda vai adotar o id da marca; tirar um id
+            // dela aqui partia a transacao em duas na replica encadeada.
+            let tx = if d.tx != 0 { d.tx } else { tx_do_evento() };
+            let feito = self.registrar_com_tx(
                 d.operacao,
                 d.rowid,
                 versao,
                 imagem,
                 Some(d.carimbo),
                 d.origem,
+                tx,
             );
             self.usuario = usuario;
             if let Err(e) = feito {
@@ -1248,7 +1453,7 @@ impl LogFile {
             self.sincronizar()?;
         }
         self.devendo = None;
-        let c = self.cab(1)?;
+        let c = self.cab(self.primeiro())?;
         self.gravar_cab(c.com_marca(None))
     }
 
@@ -1256,6 +1461,16 @@ impl LogFile {
         let (volume, virou, atual) = self.destino(evento.ocupa())?;
 
         let cab = if virou {
+            // A base do volume novo e a contagem de tudo o que veio antes
+            // (pedido 706), tirada ANTES de o ativo da trilha mudar de nome.
+            let base = self.total()?;
+            if self.trilha {
+                // O cabecalho do que fecha vai ao arquivo antes do `rename`:
+                // a cura so anda pelo volume corrente, e o fechado tem de
+                // dizer quantos eventos tem.
+                self.gravar_cab(atual)?;
+                self.volumes.fechar_ativo_da_trilha()?;
+            }
             self.volumes.garantir(volume)?;
             // O volume NOVO sorteia o proprio sal, e por isso tem a propria
             // chave: e o que deixa o numero de ordem do nonce ser o offset
@@ -1264,7 +1479,9 @@ impl LogFile {
             // isto, a virada seguida de uma queda antes do primeiro
             // `sincronizar` deixaria o volume corrente dizendo «nenhum id», e
             // a abertura nao teria piso nenhum.
-            let novo = Cabecalho::novo_do_diario(volume)?.com_tx_visto(atual.ultimo_tx);
+            let novo = Cabecalho::novo_do_diario(volume)?
+                .com_tx_visto(atual.ultimo_tx)
+                .com_base(base);
             self.gravar_cab(novo)?;
             self.volume_atual = volume;
             novo
@@ -1403,13 +1620,23 @@ impl LogFile {
         Ok((achados, cab))
     }
 
-    /// Total de eventos em todos os volumes.
+    /// Total de eventos em todos os volumes -- contando, desde o pedido 706,
+    /// os que ja sairam pelo expurgo: a posicao so anda para a frente.
     pub fn total(&mut self) -> Result<u64> {
-        let mut t = 0;
-        for v in self.volumes.existentes() {
+        self.total_e_base().map(|(t, _)| t)
+    }
+
+    /// O total e a base numa varredura so dos volumes -- o `posicao` do
+    /// servidor anuncia os dois (pedido 706), e duas varreduras custariam o
+    /// dobro dos `stat` na tabela paginada.
+    pub fn total_e_base(&mut self) -> Result<(u64, u64)> {
+        let existentes = self.volumes.existentes();
+        let base = self.base_de(&existentes)?;
+        let mut t = base;
+        for v in existentes {
             t += self.cab(v)?.quantos;
         }
-        Ok(t)
+        Ok((t, base))
     }
 
     /// Le os eventos em ordem cronologica, do mais antigo para o mais recente.
@@ -1477,6 +1704,17 @@ impl LogFile {
         // dela: caminhar para tras nao da, o evento nao tem largura fixa. E so
         // se ela for DESTE diario (pedido 620): a de outra vida da tabela
         // custa a varredura do comeco, nunca um evento pulado.
+        let existentes = self.volumes.existentes();
+        // Pedido 706: o que veio antes do primeiro volume que existe saiu pelo
+        // expurgo. Pedir la e erro dito, nunca o evento seguinte no lugar.
+        let base = self.base_de(&existentes)?;
+        if pular < base {
+            return Err(PhxError::NaoEncontrado(format!(
+                "{}: o diario comeca no evento {base}, e o {pular} saiu pelo \
+                 expurgo (pedido 706)",
+                self.volumes.caminho(self.primeiro()).display()
+            )));
+        }
         let marca = self.marca.filter(|m| m.evento <= pular);
         let marca = match marca {
             Some(m) if self.marca_confere(&m) => Some(m),
@@ -1484,12 +1722,12 @@ impl LogFile {
         };
         let (mut vistos, comeco) = match marca {
             Some(m) => (m.evento, Some(m)),
-            None => (0, None),
+            None => (base, None),
         };
         // O ultimo evento entregue, que vira a ancora da marca seguinte.
         let mut ultimo: Option<AncoraDaMarca> = None;
 
-        for volume in self.volumes.existentes() {
+        for volume in existentes {
             if let Some(m) = comeco {
                 if volume < m.volume {
                     continue; // ja contado dentro do `vistos` da marca
@@ -1661,8 +1899,11 @@ impl LogFile {
 
     /// Eventos de um registro especifico, em ordem cronologica.
     pub fn historico(&mut self, rowid: RowId) -> Result<Vec<Evento>> {
+        // Do primeiro evento que ainda existe: o historico encolhe com o
+        // expurgo (pedido 706), e a copia mora no diario de quem puxou.
+        let base = self.base()?;
         Ok(self
-            .ler(0, 0)?
+            .ler(base, 0)?
             .into_iter()
             .filter(|e| e.rowid == rowid)
             .collect())
@@ -1729,6 +1970,275 @@ impl LogFile {
     /// `Volumes::sincronizados` -- conta o ARQUIVO, e nao a chamada.
     pub fn sincronizados(&self) -> u64 {
         self.volumes.sincronizados()
+    }
+}
+
+/// Por que um volume do diario saiu no expurgo -- pedido 706.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MotivoDoExpurgo {
+    /// Todo consumidor declarado ja confirmou ter puxado o volume -- e o
+    /// seguinte inteiro, que e a margem.
+    Confirmado,
+    /// Ninguem confirmou, e o evento mais novo dele passou do prazo (decisao
+    /// do dono, 08/10/2026: o caixa segura no maximo 30 dias de diario e
+    /// continua vendendo). Quem nao puxou recebe a recusa dita, e se refaz
+    /// por copia.
+    Prazo,
+}
+
+/// Onde o plano do expurgo parou, e por que -- o relatorio diz o que NAO fez.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ParadaDoExpurgo {
+    /// Nao ha volume fechado alem do ultimo, e o ultimo fechado nunca sai.
+    SemFechado,
+    /// O diario deve um evento (pedido 498): nada sai ate a abertura completar.
+    Devendo,
+    /// O proximo volume ainda nao foi confirmado por todos e nao passou do
+    /// prazo.
+    Retido,
+    /// O volume seguinte e de versao anterior a 4 e nao tem onde guardar a
+    /// base: ele nao pode virar o primeiro.
+    SemBase,
+}
+
+impl ParadaDoExpurgo {
+    pub fn nome(self) -> &'static str {
+        match self {
+            ParadaDoExpurgo::SemFechado => "sem_fechado",
+            ParadaDoExpurgo::Devendo => "devendo",
+            ParadaDoExpurgo::Retido => "retido",
+            ParadaDoExpurgo::SemBase => "sem_base",
+        }
+    }
+}
+
+/// O que o expurgo do diario vai tirar -- pedido 706. Sai de
+/// [`LogFile::planejar_expurgo`] e se cumpre em tres passos, como o da trilha
+/// (368): a base no cabecalho de quem fica ([`LogFile::gravar_bases_do_expurgo`],
+/// com a trava), o `fsync` dela ([`PlanoDoExpurgo::levar_bases_ao_disco`],
+/// sem a trava) e so entao os volumes saem ([`LogFile::concluir_expurgo`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PlanoDoExpurgo {
+    /// O prefixo que sai, do mais velho para o mais novo.
+    pub volumes: Vec<(u32, MotivoDoExpurgo)>,
+    /// O primeiro volume que fica, e quantos eventos vieram antes dele.
+    pub sobrevivente: u32,
+    pub base: u64,
+    /// Eventos e bytes que saem.
+    pub eventos: u64,
+    pub bytes: u64,
+    pub parada: ParadaDoExpurgo,
+    /// Os volumes cujo cabecalho ainda nao diz a base certa, com ela, e o
+    /// caminho de cada um -- todos FECHADOS, entao o nome nao muda entre os
+    /// passos.
+    bases: Vec<(u32, u64, PathBuf)>,
+}
+
+impl PlanoDoExpurgo {
+    pub fn vazio(&self) -> bool {
+        self.volumes.is_empty()
+    }
+
+    /// O `fsync` dos cabecalhos que ganharam a base, FORA da trava global.
+    ///
+    /// Tem de acontecer antes de o primeiro volume sair: uma queda depois do
+    /// `unlink` com a base ainda na memoria do nucleo deixaria o primeiro
+    /// volume dizendo «nao sei», e a tabela recusaria abrir -- recusa, nunca
+    /// posicao deslizada, mas recusa evitavel.
+    pub fn levar_bases_ao_disco(&self) -> Result<()> {
+        for (_, _, caminho) in &self.bases {
+            let f = std::fs::File::open(caminho)?;
+            crate::sincronia::sync_all(&f, caminho)?;
+        }
+        Ok(())
+    }
+}
+
+impl LogFile {
+    /// O primeiro volume que existe. Depois de um expurgo, nao e o 1.
+    fn primeiro(&self) -> u32 {
+        self.volumes.existentes().first().copied().unwrap_or(1)
+    }
+
+    /// Quantos eventos vieram antes do primeiro volume que existe -- os que
+    /// sairam pelo expurgo (pedido 706). Zero enquanto o volume 1 existe.
+    pub fn base(&mut self) -> Result<u64> {
+        let existentes = self.volumes.existentes();
+        self.base_de(&existentes)
+    }
+
+    fn base_de(&mut self, existentes: &[u32]) -> Result<u64> {
+        let primeiro = match existentes.first() {
+            None | Some(1) => return Ok(0),
+            Some(p) => *p,
+        };
+        let cab = self.cab(primeiro)?;
+        if !cab.com_tx || cab.base == 0 {
+            return Err(PhxError::Corrompido(format!(
+                "{}: o diario comeca no volume {primeiro} e o cabecalho dele nao diz \
+                 quantos eventos vieram antes (pedido 706). Contar do zero daria a \
+                 replica o evento errado sem erro nenhum",
+                self.volumes.caminho(primeiro).display()
+            )));
+        }
+        Ok(cab.base)
+    }
+
+    /// O carimbo mais novo de um volume, andando pelos cabecalhos dos
+    /// eventos sem ler imagem. O mais novo, e nao o ultimo: o relogio pode ter
+    /// recuado no meio do volume, e o prazo vale pelo evento mais recente.
+    fn carimbo_mais_novo(&mut self, volume: u32) -> Result<i64> {
+        let cab = self.cab(volume)?;
+        let larg = largura(&cab);
+        let mut offset = cab.cab_len as u64;
+        let mut maior = i64::MIN;
+        while offset + larg as u64 <= cab.fim {
+            let mut cheio = [0u8; EVENTO_CAB_TX];
+            let buf = &mut cheio[..larg];
+            self.volumes.ler(volume, offset, buf)?;
+            let e = Evento::ler(buf, cab.com_tx)?;
+            maior = maior.max(e.carimbo);
+            offset += e.ocupa();
+        }
+        Ok(maior)
+    }
+
+    /// Decide o que o expurgo tira, sem escrever nada -- pedido 706.
+    ///
+    /// Sai o PREFIXO de volumes fechados, do mais velho para a frente, e para
+    /// no primeiro que nao pode sair. Um volume sai quando:
+    ///
+    /// - **confirmado**: `confirmado` (o MENOR dos consumidores declarados,
+    ///   ou `None` quando algum ainda nao disse nada) cobre o volume E o
+    ///   seguinte inteiro. A margem de um volume e a de quem pede `desde`
+    ///   sem dizer o que ja foi ao disco dele: numa queda ele volta pedindo
+    ///   menos, e o pedido tem de cair dentro do que ficou; ou
+    /// - **prazo**: o evento mais novo dele e anterior a `limite_ms`.
+    ///
+    /// E nunca saem o ativo nem o ULTIMO fechado: quem fica e sempre um
+    /// fechado, cujo nome nao muda entre os passos, e o volume seguinte a
+    /// tudo o que sai tem de guardar a base (versao 4).
+    pub fn planejar_expurgo(
+        &mut self,
+        confirmado: Option<u64>,
+        limite_ms: Option<i64>,
+    ) -> Result<PlanoDoExpurgo> {
+        let existentes = self.volumes.existentes();
+        let mut base = self.base_de(&existentes)?;
+        let mut plano = PlanoDoExpurgo {
+            volumes: Vec::new(),
+            sobrevivente: existentes.first().copied().unwrap_or(1),
+            base,
+            eventos: 0,
+            bytes: 0,
+            parada: ParadaDoExpurgo::SemFechado,
+            bases: Vec::new(),
+        };
+        if self.devendo.is_some() {
+            plano.parada = ParadaDoExpurgo::Devendo;
+            return Ok(plano);
+        }
+        let fechados: Vec<u32> = existentes
+            .iter()
+            .copied()
+            .filter(|v| *v < self.volume_atual)
+            .collect();
+        // O ultimo fechado fica sempre: ele e o sobrevivente minimo.
+        let candidatos = fechados.len().saturating_sub(1);
+        let mut ordinais: Vec<(u32, u64)> = Vec::new();
+        for &v in &fechados[..candidatos] {
+            let cab = self.cab(v)?;
+            let seguinte = self.cab(v + 1)?;
+            if !seguinte.com_tx {
+                plano.parada = ParadaDoExpurgo::SemBase;
+                break;
+            }
+            let fim = base + cab.quantos;
+            let vencido = match limite_ms {
+                Some(l) => self.carimbo_mais_novo(v)? < l,
+                None => false,
+            };
+            let motivo = if confirmado.is_some_and(|c| fim + seguinte.quantos <= c) {
+                MotivoDoExpurgo::Confirmado
+            } else if vencido {
+                MotivoDoExpurgo::Prazo
+            } else {
+                plano.parada = ParadaDoExpurgo::Retido;
+                break;
+            };
+            plano.volumes.push((v, motivo));
+            plano.eventos += cab.quantos;
+            plano.bytes += cab.fim;
+            base = fim;
+            plano.sobrevivente = v + 1;
+            plano.base = base;
+            ordinais.push((v + 1, base));
+        }
+        // Toda base que vai virar «a do primeiro» em algum ponto do caminho
+        // -- a do sobrevivente, e a de cada volume que sai depois do mais
+        // velho, porque a queda pode acontecer entre dois `unlink`.
+        for (v, b) in ordinais {
+            if self.cab(v)?.base != b {
+                plano.bases.push((v, b, self.volumes.caminho(v)));
+            }
+        }
+        Ok(plano)
+    }
+
+    /// Passo 1 do expurgo, com a trava: a base vai ao cabecalho de quem fica.
+    /// Sem `fsync` -- ver [`PlanoDoExpurgo::levar_bases_ao_disco`].
+    pub fn gravar_bases_do_expurgo(&mut self, plano: &PlanoDoExpurgo) -> Result<()> {
+        for &(v, b, _) in &plano.bases {
+            let cab = self.cab(v)?;
+            self.gravar_cab(cab.com_base(b))?;
+        }
+        Ok(())
+    }
+
+    /// Passo 3 do expurgo, com a trava de novo: os volumes saem, do mais
+    /// velho para a frente. Devolve os caminhos que sairam, para o `fsync` da
+    /// pasta fora da trava.
+    ///
+    /// Confere de novo o que o plano supos, porque entre os passos o servidor
+    /// atendeu outros pedidos: o diario continua sem dever evento, o prefixo
+    /// ainda e o comeco do que existe, nenhum volume planejado virou o ativo,
+    /// e o sobrevivente diz, NO DISCO, a base que o plano calculou.
+    pub fn concluir_expurgo(&mut self, plano: &PlanoDoExpurgo) -> Result<Vec<PathBuf>> {
+        if plano.vazio() {
+            return Ok(Vec::new());
+        }
+        let nome = self.volumes.nome().to_string();
+        let recusa = |motivo: &str| {
+            Err(PhxError::Conflito(format!(
+                "o expurgo do diario de {nome} nao se cumpriu: {motivo} (pedido 706)"
+            )))
+        };
+        if self.devendo.is_some() {
+            return recusa("o diario passou a dever um evento");
+        }
+        let existentes = self.volumes.existentes();
+        if existentes.first() != plano.volumes.first().map(|(v, _)| v) {
+            return recusa("o comeco do diario mudou");
+        }
+        if plano.sobrevivente >= self.volume_atual || !self.volumes.existe(plano.sobrevivente) {
+            return recusa("o volume que fica deixou de ser um fechado");
+        }
+        self.cabs.remove(&plano.sobrevivente);
+        let no_disco = self.cab(plano.sobrevivente)?;
+        if !no_disco.com_tx || no_disco.base != plano.base {
+            return recusa("a base do volume que fica nao e a do plano");
+        }
+        let mut sairam = Vec::new();
+        for &(v, _) in &plano.volumes {
+            let caminho = self.volumes.caminho(v);
+            self.volumes.apagar_volume(v)?;
+            self.cabs.remove(&v);
+            sairam.push(caminho);
+        }
+        // A marca de leitura podia ancorar num volume que saiu; a
+        // conferencia dela ja a recusaria, mas nao ha por que guarda-la.
+        self.marca = None;
+        Ok(sairam)
     }
 }
 
@@ -2317,5 +2827,66 @@ mod tests {
         let lidos: Vec<u64> = b.ler(0, 0).unwrap().iter().map(|e| e.tx).collect();
         assert_eq!(lidos, vec![x, x, de_novo]);
         std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    /// **Pedido 710, o caso do volume velho.** A marca v7 traz o id, mas o
+    /// diario da tabela ainda e um volume da versao 2 (anterior ao 676), que
+    /// grava o evento com id ZERO. A conferencia das duas faces pelo id acharia
+    /// o diario sem nada desta marca e completaria a inclusao DE NOVO -- o
+    /// evento em dobro, numa marca de passada terminada. Sem o id no diario, a
+    /// inclusao se confere pelo rowid, como na marca sem bilhete.
+    ///
+    /// Prova real: tirar o `e.tx == 0` do `diario_da_linha` (marca.rs) faz o
+    /// diario sair com dois eventos.
+    #[test]
+    fn a_marca_com_id_no_diario_sem_id_nao_duplica_a_inclusao() {
+        use phxsql_core::schema::{Column, Schema};
+        use phxsql_core::types::ColumnType;
+        use phxsql_core::value::Value;
+        let d = dir_temp("v2-marca-710");
+        let e = Schema::new("t", vec![Column::new("id", ColumnType::Int4)], vec![]).unwrap();
+        let linha = vec![Value::Int(1)];
+        {
+            let mut t = crate::table::Table::criar(&d.0, e).unwrap();
+            assert_eq!(t.inserir(&linha).unwrap(), 1);
+            t.sincronizar().unwrap();
+        }
+        // O diario vira o de um binario anterior: a mesma inclusao, sem id.
+        std::fs::remove_file(d.0.join("t.log")).unwrap();
+        diario_da_versao_2(&d.0, Paginacao::DESLIGADA, &[b""]);
+        let op = crate::marca::Escrita {
+            database: String::new(),
+            tabela: "t".into(),
+            acao: crate::marca::Acao::Inserir,
+            rowid: 1,
+            linha,
+            linha_antiga: Vec::new(),
+            motivo: String::new(),
+            cascata_na_lista: false,
+            elo_do_empilhar: false,
+            elo_da_cascata: false,
+        };
+        crate::marca::gravar_marca_posicional(
+            &d.0,
+            9,
+            0,
+            &[op],
+            crate::marca::Bilhete {
+                tx: proximo_tx(),
+                versoes_antes: &[0],
+            },
+        )
+        .unwrap();
+        let r = crate::marca::recuperar_no_diretorio(
+            &d.0,
+            crate::catalogo::PoliticaDoDiario::default(),
+        );
+        assert!(r.impossiveis.is_empty(), "{:?}", r.impossiveis);
+        let mut l = LogFile::abrir(&d.0, "t", Paginacao::DESLIGADA).unwrap();
+        assert_eq!(
+            l.total().unwrap(),
+            1,
+            "a recuperacao completou de novo uma inclusao que o diario sem id ja tinha"
+        );
     }
 }

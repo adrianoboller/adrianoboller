@@ -328,15 +328,13 @@ fn recriar(caminho: &Path, ler: bool, modo: Modo) -> std::io::Result<File> {
         }
         let mut abrir = OpenOptions::new();
         abrir.read(ler).write(true);
-        let arquivo = sem_seguir_nem_esperar(&mut abrir)
-            .open(caminho)
-            .map_err(|e| {
-                if trocado_na_janela(&e) {
-                    recusa_do_nome(caminho, &nome)
-                } else {
-                    e
-                }
-            })?;
+        let arquivo = abrir_sem_seguir(&mut abrir, caminho).map_err(|e| {
+            if trocado_na_janela(&e) {
+                recusa_do_nome(caminho, &nome)
+            } else {
+                e
+            }
+        })?;
         // Quem decide e o `fstat` do que ABRIU, nunca o nome: o mesmo inode
         // do `lstat`, regular, e (no destino) ainda nosso.
         let aberto = arquivo.metadata()?;
@@ -372,7 +370,10 @@ fn e_nosso(m: &std::fs::Metadata) -> bool {
     um_nome_so(m) && do_processo(m)
 }
 
-/// O arquivo tem um nome so. Fora do Unix a `std` nao conta nomes.
+/// O arquivo tem um nome so. Fora do Unix a `std` nao conta nomes: no
+/// Windows o `number_of_links` existe, mas so na `std` instavel
+/// (`windows_by_handle`), e o link FISICO plantado passa -- pedido 662,
+/// escrito no SEGURANCA.md §33.4.
 fn um_nome_so(m: &std::fs::Metadata) -> bool {
     #[cfg(unix)]
     {
@@ -400,7 +401,8 @@ fn recusa_de_varios_nomes(caminho: &Path) -> std::io::Error {
 /// linha `Uid:` do `/proc/self/status`), lido uma vez. A `std` nao tem
 /// `geteuid`, e chama-lo pede FFI e `unsafe`; o `/proc` diz o mesmo sem os
 /// dois. `None` fora do Linux ou sem `/proc`: o crivo do dono cala e fica o
-/// do `nlink`, dito em [`e_nosso`].
+/// do `nlink`, dito em [`e_nosso`]. So existe onde o `uid` existe (unix).
+#[cfg(unix)]
 fn uid_do_processo() -> Option<u32> {
     static UID: std::sync::OnceLock<Option<u32>> = std::sync::OnceLock::new();
     *UID.get_or_init(|| {
@@ -479,6 +481,44 @@ pub fn sem_seguir_nem_esperar(opcoes: &mut OpenOptions) -> &mut OpenOptions {
         opcoes.custom_flags(nofollow | nonblock);
     }
     opcoes
+}
+
+/// Abre um nome que ja existe SEM seguir link no ultimo componente -- o
+/// motor unico de quem reabre (o `recriar` e o `fsync` tardio do backup).
+///
+/// No Linux sao as [`bandeiras`] de [`sem_seguir_nem_esperar`]: o `open`
+/// recusa o link (`ELOOP`). No Windows (pedido 662) nao ha recusa no `open`,
+/// mas ha o equivalente de abrir O PROPRIO link: `FILE_FLAG_OPEN_REPARSE_POINT`
+/// (`0x00200000`), pela `custom_flags` estavel da `std`. O handle de um link
+/// (simbolico ou *junction*) responde `is_symlink` e portanto `!is_file` no
+/// `fstat`, e quem chama ja recusa por ai -- sem a bandeira, o `open` seguia
+/// o link plantado entre o `lstat` e ele e o `fstat` dizia «regular».
+///
+/// O ponto de reparse que NAO e link (deduplicacao do Windows Server,
+/// arquivo de nuvem) nao se le nem se escreve pelo handle da bandeira: ela
+/// pula o filtro que hidrata o conteudo, e truncar ali gravaria no esboco.
+/// Esse reabre sem a bandeira -- o caminho de antes, com a janela de antes,
+/// so para esse tipo de arquivo.
+pub fn abrir_sem_seguir(opcoes: &mut OpenOptions, caminho: &Path) -> std::io::Result<File> {
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::{MetadataExt, OpenOptionsExt};
+        const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
+        const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x0000_0400;
+        let arquivo = opcoes
+            .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
+            .open(caminho)?;
+        let m = arquivo.metadata()?;
+        if m.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 && !m.file_type().is_symlink() {
+            drop(arquivo);
+            return opcoes.custom_flags(0).open(caminho);
+        }
+        Ok(arquivo)
+    }
+    #[cfg(not(windows))]
+    {
+        sem_seguir_nem_esperar(opcoes).open(caminho)
+    }
 }
 
 /// Um diretorio ABERTO, por onde se chega aos nomes de dentro sem atravessar
@@ -762,8 +802,11 @@ fn abrir_diretorio(caminho: &Path, sem_seguir: bool) -> std::io::Result<File> {
 }
 
 /// O que o `fstat` do descritor aberto e o `lstat` do nome dizem do MESMO
-/// arquivo. Fora do Unix nao ha inode para comparar, e nao ha link plantado
-/// pelo mesmo caminho: vale o `is_file` do `lstat`, que ja passou.
+/// arquivo. Fora do Unix nao ha inode para comparar (no Windows o
+/// `file_index` e o `volume_serial_number` so existem na `std` instavel):
+/// vale o `is_file` do que ABRIU, e o link plantado na janela cai nele porque
+/// [`abrir_sem_seguir`] abre o proprio link (pedido 662). A troca por OUTRO
+/// arquivo regular na janela nao se ve ali.
 fn mesmo_arquivo(aberto: &std::fs::Metadata, nome: &std::fs::Metadata) -> bool {
     #[cfg(unix)]
     {
@@ -1004,5 +1047,51 @@ mod tests {
             Some(20),
             "o O_DIRECTORY {diretorio:o} nao valeu: {e}"
         );
+    }
+
+    /// Pedido 662: no Windows o `abrir_sem_seguir` abre o PROPRIO link
+    /// (`FILE_FLAG_OPEN_REPARSE_POINT`), e o `!is_file()` dos chamadores
+    /// recusa -- o conteudo do alvo nao recebe byte. E o controle: arquivo
+    /// comum abre e e arquivo, para a prova nao passar com um portao que
+    /// recusaria tudo. Roda so no Windows de verdade (job `windows` do CI):
+    /// a `std` no Linux nao tem como fingir o que o NTFS faz.
+    ///
+    /// # Prova real
+    ///
+    /// Sem a bandeira, o `open` segue o link, o handle e do ALVO e responde
+    /// `is_file()`: a primeira asserção reprova.
+    #[cfg(windows)]
+    #[test]
+    fn sem_seguir_no_windows_recusa_link_plantado() {
+        let d = crate::apoio_teste::DirTemp::novo("util-sem-seguir-windows");
+        let alvo = d.join("alvo.reg");
+        std::fs::write(&alvo, b"conteudo do alvo").unwrap();
+        let link = d.join("plantado.reg");
+        std::os::windows::fs::symlink_file(&alvo, &link)
+            .expect("o runner precisa poder criar link simbolico");
+
+        let mut abrir = OpenOptions::new();
+        abrir.read(true).write(true);
+        // Recusar ja na abertura (o `Err`) tambem e recusar.
+        if let Ok(f) = abrir_sem_seguir(&mut abrir, &link) {
+            let m = f.metadata().unwrap();
+            assert!(
+                !m.is_file(),
+                "o handle e do ALVO: o link foi seguido ({:?})",
+                m.file_type()
+            );
+        }
+        // O chamador: reabrir pelo nome do link e recusado, e o alvo intacto.
+        assert!(
+            recriar_do_banco(&link, true).is_err(),
+            "o link foi reaberto"
+        );
+        assert_eq!(std::fs::read(&alvo).unwrap(), b"conteudo do alvo");
+
+        // Controle: o arquivo comum abre e e arquivo.
+        let mut abrir = OpenOptions::new();
+        abrir.read(true).write(true);
+        let f = abrir_sem_seguir(&mut abrir, &alvo).expect("arquivo comum recusado");
+        assert!(f.metadata().unwrap().is_file());
     }
 }

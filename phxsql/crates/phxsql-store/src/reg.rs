@@ -240,6 +240,23 @@ pub struct RegFile {
     /// (pedido 625). So se anotam aqui: quem apaga e o
     /// [`RegFile::recolher_sobras_da_fase_a`], e so pela abertura gravavel.
     sobras_da_fase_a: Vec<PathBuf>,
+    /// Os descritores dos volumes que a FASE B trocou por cima -- pedido 647.
+    ///
+    /// Medido em 08/10/2026 (`strace -f -T`, 10 M de linhas, ~1,65 GB): o
+    /// `rename` por cima custava 1,202 s dos 1,203 s da FASE B, porque era
+    /// ele que derrubava o ULTIMO nome do inode velho, e o nucleo solta as
+    /// extensoes e o cache de paginas dentro da chamada. Com um descritor
+    /// aberto o inode sobrevive ao `rename` sem nome, e a liberacao sai no
+    /// ULTIMO `close` -- que e este, chamado por
+    /// [`RegFile::soltar_volumes_velhos`] DEPOIS que quem chamou soltou a
+    /// trava global. Nunca se le por eles.
+    ///
+    /// Esquecido, o `Drop` do `RegFile` solta do mesmo jeito: o pior caso e o
+    /// de hoje (a liberacao onde a tabela morrer), nunca um inode preso para
+    /// sempre. Sem nome, o volume velho -- EM CLARO, no `Criptografar` -- nao
+    /// se alcanca pela pasta enquanto espera. So `unix`: no Windows um handle
+    /// aberto no destino pode recusar a troca, e la fica o caminho de antes.
+    volumes_velhos: Vec<File>,
     /// Slots ja usados em cada balde da particao alfanumerica.
     ///
     /// Indice do vetor = balde - 1, com 37 posicoes fixas. Vazio nos outros
@@ -403,6 +420,7 @@ impl RegFile {
             recuperados: 0,
             fronteiras: Vec::new(),
             sobras_da_fase_a: Vec::new(),
+            volumes_velhos: Vec::new(),
         };
         if r.esquema.paginacao().modo.periodo().is_some() {
             r.fronteiras.push(Fronteira {
@@ -720,6 +738,7 @@ impl RegFile {
             recuperados: 0,
             fronteiras: Vec::new(),
             sobras_da_fase_a: Vec::new(),
+            volumes_velhos: Vec::new(),
         };
         // O contador do processo volta do DADO, e nao do relogio: sem isto um
         // no que reinicie emitiria carimbo menor que o de linha ja gravada.
@@ -2255,6 +2274,10 @@ impl RegFile {
     /// Quem soltou a trava entre as duas fases tem de tomar a trava de novo
     /// **antes** desta e conferir o retrato ([`TrocaPendente::conferir_retrato`]).
     pub fn alargar_fase_b(&mut self, pendente: TrocaPendente) -> Result<u64> {
+        // Os velhos de uma FASE B anterior que ninguem soltou saem aqui, e nao
+        // se acumulam: uma tabela de vida longa com tres trocas seguraria tres
+        // copias mortas dela no disco (pedido 647).
+        self.soltar_volumes_velhos();
         // Todo `*.novo` do conjunto antes do PRIMEIRO `rename` (pedido 625).
         // O `trocar_pelo_novo` pula o que nao acha, e era o certo enquanto
         // ninguem apagava `*.novo`; agora a abertura gravavel recolhe as
@@ -2289,9 +2312,11 @@ impl RegFile {
         );
         let mut no_volume_1 = true;
         for (caminho, espelho) in &pendente.trocas {
+            self.segurar_o_velho(caminho);
             trocar_pelo_novo(caminho)?;
             if let Some(espelho) = espelho {
                 if espelho.exists() {
+                    self.segurar_o_velho(espelho);
                     trocar_pelo_novo(espelho)?;
                 }
             }
@@ -2303,6 +2328,34 @@ impl RegFile {
         }
         self.volumes.fechar_todos();
         Ok(pendente.slots)
+    }
+
+    /// Abre o volume que o `rename` seguinte vai derrubar, para o inode dele
+    /// sobreviver a troca (ver `volumes_velhos`). Falhar aqui nao e erro: a
+    /// troca segue, e a liberacao volta para dentro do `rename`, como antes.
+    /// Sem seguir link, pelo motor de quem reabre nome que ja existe -- o
+    /// descritor nunca le, mas tambem nao tem por que prender o alvo de um.
+    /// So leitura: nao e caminho de escrita, e por isso fica fora da conta do
+    /// `nenhum_caminho_de_escrita_novo_fora_do_volumes` (`reg.rs` segue 2).
+    fn segurar_o_velho(&mut self, caminho: &Path) {
+        #[cfg(unix)]
+        if caminho_do_novo(caminho).exists() {
+            if let Ok(f) = crate::util::abrir_sem_seguir(File::options().read(true), caminho) {
+                self.volumes_velhos.push(f);
+            }
+        }
+        #[cfg(not(unix))]
+        let _ = caminho;
+    }
+
+    /// Fecha os descritores dos volumes que a FASE B trocou -- e e AQUI que o
+    /// nucleo solta as extensoes e o cache de paginas deles (pedido 647).
+    /// Quem segura a trava global chama isto DEPOIS de solta-la. Devolve
+    /// quantos fechou.
+    pub fn soltar_volumes_velhos(&mut self) -> usize {
+        let n = self.volumes_velhos.len();
+        self.volumes_velhos.clear();
+        n
     }
 
     /// **Pedido 268: a conferencia da migracao da cifra**, ANTES de gravar byte.

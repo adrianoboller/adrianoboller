@@ -47,9 +47,10 @@ use phxsql_store::catalogo::Instancia;
 // copiar: dois motores de marca seriam a copia que diverge.
 pub use phxsql_store::marca::{
     caminho_da_marca, codificar_linha, decodificar_linha, decodificar_linha_em, e_marca_do_bidi,
-    falhar_a_proxima_leitura_de_teste, gravar_marca, gravar_marca_da_replica, gravar_marca_do_bidi,
-    ler_marca, marcas_do_bidi_em, tratar_marca, Acao, Escrita, EventoDaReplica, EventoDoGrupo,
-    Leitura, Marca, NoArranque, OperacaoDaMarca, Relatorio, EXTENSAO, MAGIC, PREFIXO, VERSAO,
+    estado_do_slot, falhar_a_proxima_leitura_de_teste, gravar_marca, gravar_marca_da_replica,
+    gravar_marca_do_bidi, gravar_marca_posicional, ler_marca, marcas_do_bidi_em, tratar_marca,
+    versoes_antes, Acao, Bilhete, Escrita, EventoDaReplica, EventoDoGrupo, Leitura, Marca,
+    NoArranque, OperacaoDaMarca, Relatorio, EXTENSAO, MAGIC, PREFIXO, VERSAO,
     VERSAO_CASCATA_EM_CLARO, VERSAO_LINHA_ANTIGA_SEM_CASCATA, VERSAO_REPLICA_CIFRADA,
     VERSAO_REPLICA_EM_CLARO, VERSAO_SEM_LINHA_ANTIGA,
 };
@@ -734,6 +735,24 @@ fn quem(t: &Transacao, agora_ms: i64) -> String {
 /// databases. Cada um completa as marcas dele e so DEPOIS reconstroi o indice
 /// marcado, e e essa ordem que impede o passe do 522 de calar a orfa -- ver o
 /// documento de la.
+/// A semente do contador de transacoes e de marcas do servidor -- pedido
+/// 714: o relogio, ou o maior id de marca que ja esta no disco, de qualquer
+/// database e de qualquer familia. E o MESMO gerador do embutido
+/// (`marca::proximo_id_acima_de`), menos um, porque o [`Transacoes`] soma um
+/// antes de entregar.
+pub fn semente_do_contador(dados: &Instancia) -> i64 {
+    let mut maior = 0u64;
+    if let Ok(bases) = dados.databases() {
+        for nome in bases {
+            if let Ok(db) = dados.abrir_database(&nome) {
+                maior = maior.max(db.maior_id_de_marca());
+            }
+        }
+    }
+    let proximo = phxsql_store::marca::proximo_id_acima_de(maior);
+    (proximo - 1).min(i64::MAX as u64) as i64
+}
+
 pub fn recuperar(dados: &Instancia) -> Relatorio {
     let comeco = std::time::Instant::now();
     let mut r = Relatorio::default();

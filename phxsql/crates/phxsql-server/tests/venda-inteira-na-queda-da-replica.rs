@@ -141,6 +141,8 @@ fn vender(porta: u16, n: usize) {
 /// `.reg` e o evento fora do diario (699).
 const NO_GRUPO: &str = "PHXSQL_TESTE_PARAR_NO_GRUPO";
 const NO_REG: &str = "PHXSQL_TESTE_PARAR_NO_REG";
+/// Pedido 713: o evento `<tabela>:<rowid>` falha com erro do dado, sempre.
+const FALHAR_NO_EVENTO: &str = "PHXSQL_TESTE_FALHAR_NO_EVENTO";
 
 /// O `phxsqld` replica, puxando de `porta_origem`. `parar_em` liga um dos
 /// ganchos de `debug` acima.
@@ -149,6 +151,17 @@ fn subir_replica(
     vez: u32,
     porta_origem: u16,
     parar_em: Option<(&str, u64)>,
+) -> (Filho, u16) {
+    subir_replica_com(dir, vez, porta_origem, parar_em, None)
+}
+
+/// [`subir_replica`] com o gancho do 713 ([`FALHAR_NO_EVENTO`]).
+fn subir_replica_com(
+    dir: &Path,
+    vez: u32,
+    porta_origem: u16,
+    parar_em: Option<(&str, u64)>,
+    falhar_em: Option<&str>,
 ) -> (Filho, u16) {
     let config = dir.join("config.json");
     std::fs::write(
@@ -181,9 +194,14 @@ fn subir_replica(
         .current_dir(dir)
         .stdout(Stdio::null())
         .stderr(Stdio::from(std::fs::File::create(&erro_padrao).unwrap()));
-    cmd.env_remove(NO_GRUPO).env_remove(NO_REG);
+    cmd.env_remove(NO_GRUPO)
+        .env_remove(NO_REG)
+        .env_remove(FALHAR_NO_EVENTO);
     if let Some((gancho, n)) = parar_em {
         cmd.env(gancho, n.to_string());
+    }
+    if let Some(evento) = falhar_em {
+        cmd.env(FALHAR_NO_EVENTO, evento);
     }
     let mut filho = Filho(cmd.spawn().expect("nao consegui iniciar o phxsqld"));
     let porta = porta_do_phxsqld(&mut filho, &erro_padrao).unwrap_or_else(|e| panic!("{e}"));
@@ -394,4 +412,66 @@ fn sem_queda_a_venda_chega_inteira_e_a_marca_sai() {
         std::thread::sleep(Duration::from_millis(50));
     }
     drop(filho);
+}
+
+fn marcas_na(pasta: &Path) -> Vec<String> {
+    std::fs::read_dir(pasta)
+        .map(|ls| {
+            ls.filter_map(|e| e.ok())
+                .map(|e| e.file_name().to_string_lossy().into_owned())
+                .filter(|n| n.starts_with("transacao_"))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// **A prova real do 713 (F9).** Um erro do DADO no terceiro evento do grupo
+/// (o segundo item), depois de a venda e o primeiro item entrarem. Vermelho
+/// medido antes do conserto: o braco de erro APAGAVA a marca, e a replica
+/// ficava com `(1, 1, 0)` -- a venda pela metade para sempre, contra a
+/// decisao do dono no 685 («inteira ou nao chega, sem excecao»).
+///
+/// O erro e injetado e permanente: so o caminho da rodada o ve. O que o
+/// conserto faz e o que o `COMMIT` faz quando a passada quebra depois da
+/// marca -- completar para a FRENTE, na hora, com a mesma trava, pelo motor
+/// da recuperacao --, e a venda fica inteira.
+#[test]
+fn o_erro_de_dado_no_meio_do_grupo_nao_deixa_a_venda_pela_metade() {
+    let base_o = DirTemp::novo("dado-replica-origem");
+    let base_c = DirTemp::novo("dado-replica-central");
+    std::fs::create_dir_all(&base_c.0).unwrap();
+    let (_origem, porta_o) = subir_origem(&base_o.0);
+    criar_as_tabelas(porta_o, true);
+    vender(porta_o, 1);
+
+    let (filho, porta_c) = subir_replica_com(&base_c.0, 1, porta_o, None, Some("itens:2"));
+    let erro = base_c.0.join("stderr-1.txt");
+    let ate = Instant::now() + ESPERA;
+    while !std::fs::read_to_string(&erro)
+        .unwrap_or_default()
+        .contains("teste: erro de dado injetado no evento itens:2")
+    {
+        assert!(
+            Instant::now() < ate,
+            "o erro injetado nunca chegou ao evento"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    // Uma rodada inteira de folga: o estado que se le e o que fica.
+    std::thread::sleep(Duration::from_millis(1500));
+    let r = retrato(porta_c);
+    let pasta = base_c.0.join("dados").join("loja");
+    let sobra = marcas_na(&pasta);
+    drop(filho);
+    assert!(
+        r == (1, ITENS, 1) || r == (0, 0, 0),
+        "o erro de dado no meio do grupo deixou a venda PELA METADE: \
+         (vendas, itens, pagamentos) = {r:?}; marcas no disco: {sobra:?}"
+    );
+
+    // E o arranque, sem a origem, nao muda o que se via.
+    let (filho, porta_c) = subir_replica(&base_c.0, 2, comum::porta_fechada(), None);
+    let depois = retrato(porta_c);
+    drop(filho);
+    assert_eq!(depois, r, "o arranque mudou a venda: {r:?} -> {depois:?}");
 }

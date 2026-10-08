@@ -115,6 +115,7 @@ fn config_da_replica(
         hora: String::new(),
         cifra: false,
         chave_do_fio: String::new(),
+        pino_tls: String::new(),
         espelho: false,
     }];
     c

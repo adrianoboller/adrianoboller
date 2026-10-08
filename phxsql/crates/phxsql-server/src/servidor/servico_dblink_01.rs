@@ -59,6 +59,9 @@ impl Servidor {
             if p.campo("chave_do_fio").is_none() {
                 d = d.com_o_pino_de(antiga);
             }
+            if p.campo("pino_tls").is_none() {
+                d = d.com_o_pino_tls_de(antiga);
+            }
             if p.campo("senha").is_none() && d.senha_env.is_empty() {
                 d = d.com_a_senha_de(antiga)?;
             }

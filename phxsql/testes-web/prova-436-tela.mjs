@@ -13,10 +13,10 @@
  *       passar) e uma chave; aperta-se «Testar a chave». O dano medido e o
  *       pedido que sai com `x-api-key` -- e nao o recado da tela.
  *
- * B4 -- a tela dizia que a chave «some ao fechar a aba». Mede-se o que o
- *       navegador faz: uma janela aberta a partir da aba (o `window.open` da
- *       multitela, sem `noopener`) nasce com uma COPIA do `sessionStorage`, e
- *       a copia sobrevive a aba fechar. O verde e a frase dizendo isso.
+ * B4 -- a tela dizia que a chave «some ao fechar a aba», e a janela aberta
+ *       pelo `window.open` nascia com COPIA do `sessionStorage`. Desde o
+ *       339(a) refeito (08/10/2026) a chave so mora em memoria: o verde e a
+ *       janela NAO herdar a chave e a frase dizer que ela cai ao recarregar.
  *
  * B5 -- login recusado deixava a chave privada Ed25519 em `#k`. Mede-se o
  *       `.value` (nunca o `page.content()`, que nao traz valor de `<input>`:
@@ -131,17 +131,21 @@ try {
     ]);
     await janela.waitForLoadState('domcontentloaded');
     await page.close();
+    // Desde 08/10/2026 (339(a) refeito) a chave mora so em MEMORIA: a
+    // janela nao herda copia nenhuma, nem no `sessionStorage` nem no modulo.
     const copia = await janela.evaluate(() => sessionStorage.getItem('phxsql.ia.chave') || '');
-    const sobreviveu = copia.includes(CHAVE_IA);
-    // A frase, lida na tela que a pessoa ve.
+    const naJanela = await janela.evaluate(() => (window.PhxIA && window.PhxIA._cfg().chave) || '');
+    const herdou = copia.includes(CHAVE_IA) || naJanela.includes(CHAVE_IA);
+    // A frase, lida na tela que a pessoa ve: tem de dizer que a chave cai
+    // ao recarregar, e nao prometer copia na janela destacada.
     const p2 = await ctx.newPage();
     await entrar(p2, url);
     await definirIA(p2, { chave: CHAVE_IA });
     await abrirConfigClaude(p2);
     const frase = await p2.$eval('#iaChave + .leg', e => e.textContent);
-    const diz = /janela destacada/i.test(frase);
-    registrar('B4_a_frase_diz_o_que_o_navegador_faz', sobreviveu && diz,
-      `a copia na janela sobreviveu a aba fechar: ${sobreviveu}; a frase diz: ${JSON.stringify(frase.trim())}`);
+    const diz = /recarregar/i.test(frase) && !/janela destacada/i.test(frase);
+    registrar('B4_a_frase_diz_o_que_o_navegador_faz', !herdou && diz,
+      `a janela destacada herdou a chave: ${herdou}; a frase diz: ${JSON.stringify(frase.trim())}`);
     await ctx.close();
   }
 } finally {

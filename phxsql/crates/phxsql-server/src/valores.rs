@@ -2687,6 +2687,13 @@ mod testes_inteiro_em_texto {
         // tambem recusa, com a mensagem generica -- sem esta linha o teste
         // passava com o portao especifico retirado (a guarda NAO PEGOU).
         assert!(e.to_string().contains("Uuid256"), "{e}");
+        // Pedido 657: «Uuid256» e «perde precisao» o codigo escreve em mais de
+        // um ponto; a alternativa INTEIRA so o chamador da `Sequence` passa.
+        assert!(
+            e.to_string()
+                .contains("ou use Uuid256 se precisar dessa faixa"),
+            "{e}"
+        );
 
         // 2^53 exato tambem cai, e de proposito: um f64 que le 2^53 tanto pode
         // ser o proprio quanto um `2^53+1` arredondado, e aqui sao a mesma
@@ -2828,9 +2835,17 @@ mod testes_teto_de_64_bits {
         let t = e.to_string();
         assert!(t.contains("1000000000000000000000"), "{t}");
         assert!(t.contains("64 bits"), "{t}");
+        // Pedido 657: «64 bits» sai em cinco pontos do arquivo; o sinal e a
+        // largura juntos so o ramo do `Int8` escreve -- a recusa do `UInt8`
+        // abaixo nao serve de alibi para ele.
+        assert!(
+            t.contains("nao cabe em inteiro de 64 bits com sinal"),
+            "{t}"
+        );
 
         let e = json_para_valor(&Json::Numero(1e21), &ColumnType::UInt8).unwrap_err();
         assert!(matches!(e, PhxError::LimiteExcedido(_)), "{e}");
+        assert!(e.to_string().contains("64 bits sem sinal"), "{e}");
     }
 
     /// **A faixa entre 2^53 e o teto e RECUSADA no `Int8`/`UInt8` -- decidido
@@ -2853,9 +2868,20 @@ mod testes_teto_de_64_bits {
         assert_eq!(e.nome(), "TIPO_INVALIDO", "{e}");
         assert!(e.to_string().contains("perde precisao"), "{e}");
         assert!(e.to_string().contains("texto"), "{e}");
+        // Pedido 657: «perde precisao» o arquivo escreve em mais de um ponto, e
+        // a `Sequence` passa pelo mesmo motor. O que so a coluna de inteiro
+        // diz e o destino «o inteiro» -- e nunca a saida da `Sequence`.
+        let t = e.to_string();
+        assert!(
+            t.contains("o protocolo perde precisao num numero cru"),
+            "{t}"
+        );
+        assert!(t.contains("envie o inteiro como texto"), "{t}");
+        assert!(!t.contains("Uuid256"), "{t}");
         let e = json_para_valor(&Json::Numero(9_007_199_254_740_993.0), &ColumnType::UInt8)
             .unwrap_err();
         assert!(e.to_string().contains("perde precisao"), "{e}");
+        assert!(e.to_string().contains("envie o inteiro como texto"), "{e}");
         // O negativo impreciso cai pelo mesmo crivo: o `abs()` esta no
         // `inteiro_impreciso`.
         assert!(
@@ -2887,6 +2913,17 @@ mod testes_teto_de_64_bits {
             .unwrap_err();
         assert!(matches!(e, PhxError::LimiteExcedido(_)), "{e}");
         assert!(e.to_string().contains("nao cabe"), "{e}");
+        // Pedido 657: «nao cabe» sai em oito pontos; a faixa com sinal e os
+        // dois extremos escritos so o ramo `so_digitos` do `Int8` produz.
+        let t = e.to_string();
+        assert!(
+            t.contains("nao cabe em inteiro de 64 bits com sinal ("),
+            "{t}"
+        );
+        assert!(
+            t.contains("(-9223372036854775808 a 9223372036854775807)"),
+            "{t}"
+        );
 
         // O CONTROLE, e ele e o que impede o crivo de virar uma peneira que
         // aceita tudo: texto que NAO e inteiro escrito continua sendo erro de

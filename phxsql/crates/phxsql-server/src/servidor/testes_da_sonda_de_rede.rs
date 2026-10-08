@@ -31,6 +31,7 @@ fn origem(nome: &str, porta: u16) -> crate::config::Origem {
         hora: String::new(),
         cifra: false,
         chave_do_fio: String::new(),
+        pino_tls: String::new(),
         espelho: false,
     }
 }

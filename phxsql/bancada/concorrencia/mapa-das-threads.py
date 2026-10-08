@@ -245,6 +245,14 @@ CATALOGO = [
                 "Pedido 368.",
     },
     {
+        "arquivo": "crates/phxsql-server/src/servidor/servico_diario_01.rs",
+        "agulha": '"expurgo-do-diario"',
+        "nome": "expurgo-do-diario",
+        "teto": "1 (sobe uma vez no arranque, so com `diario.expurgo`; o "
+                "portao e o `if !cfg.expurgo { return; }` antes do `subir`). "
+                "Pedido 706.",
+    },
+    {
         "arquivo": "crates/phxsql-server/src/servidor/servico_jobs_01.rs",
         "agulha": '"relogio-jobs"',
         "nome": "relogio-jobs",

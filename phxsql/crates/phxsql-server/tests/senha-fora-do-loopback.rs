@@ -140,6 +140,12 @@ fn senha_em_claro_de_fora_do_loopback_se_recusa_pelos_dois_caminhos() {
         &login("ana", r#","servidor":"127.0.0.1:1""#),
     );
     assert!(r.contains("de fora deste computador, recusada"), "{r}");
+    // Pedido 655 (o NAO PEGOU de 08/10/2026): a frase de cima a recusa da
+    // SESSAO em claro tambem escreve, e ela vem logo depois deste portao no
+    // mesmo caminho -- tirado o portao da senha, a da sessao recusava no
+    // lugar dele e a prova passava. A recusa tem de ser a da SENHA.
+    assert!(r.contains("senha em claro de fora deste computador"), "{r}");
+    assert!(!r.contains("sessao web em claro"), "{r}");
 
     // (3) do loopback, o mesmo pedido entra.
     let r = http(

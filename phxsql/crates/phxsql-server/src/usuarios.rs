@@ -416,7 +416,9 @@ impl Atividade {
             // O fluxo de replicacao e o diario com a linha inteira dentro:
             // permissao propria, para poder dar a uma replica sem dar mais
             // nada -- e para nao sair de graca junto com `ler`.
-            "posicao" | "replicar" => Atividade::Replicar,
+            // O retrato da replica (pedido 706) leva a base inteira pelo
+            // mesmo canal: a mesma permissao, e so ela.
+            "posicao" | "replicar" | "retrato_da_replica" => Atividade::Replicar,
             // O pulso e conversa entre nos do cluster, autenticada como a
             // replicacao -- nunca anonima: quem pode pedir o fluxo pode dizer
             // que esta vivo. Ja o estado e leitura: e o endereco unico do

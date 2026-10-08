@@ -980,15 +980,29 @@ mod testes {
         }
         for mensagens in casos {
             let rotulo = format!("{mensagens:?}");
+            // A contagem e a ultima mensagem do caso, nos dois formatos.
+            let ultima = &mensagens[mensagens.len() - 1].1;
+            let n = i16::from_be_bytes([ultima[0], ultima[1]]);
             let porta = servidor_falso(mensagens);
             let erro = conexao_com(porta)
                 .consultar("SELECT 1", 100)
                 .err()
                 .unwrap_or_else(|| panic!("{rotulo}: devia recusar"));
-            assert!(
-                erro.to_string().contains("malformada") || erro.to_string().contains("teto"),
-                "{rotulo}: {erro}"
-            );
+            // Pedido 657: «malformada» sai de duas recusas (a contagem e a
+            // `DataRow` de tamanho errado) e «teto» de varias. Cada caso
+            // confere a frase que so o `quantos_campos` produz para ele.
+            let texto = erro.to_string();
+            if n < 0 {
+                assert!(
+                    texto.contains(&format!("malformada: {n} campos")),
+                    "{rotulo}: {texto}"
+                );
+            } else {
+                assert!(
+                    texto.contains("campos, acima do teto de"),
+                    "{rotulo}: {texto}"
+                );
+            }
         }
     }
 

@@ -162,11 +162,11 @@ def autoteste():
              folgas_no_texto(real) == [], str(folgas_no_texto(real)))
     conferir("a arvore inteira mede o teto", len(medir()) == TETO_FOLGA_ESCONDIDA,
              str(medir()))
-    reposto = real.replace("faltando.len() >= TETO_ROTULOS_E_CRASE,",
-                           "faltando.len() >= TETO_ROTULOS_E_CRASE.saturating_sub(30),", 1)
+    reposto = real.replace("faltando.len() >= TETO_ROTULOS_CRASE_E_JS,",
+                           "faltando.len() >= TETO_ROTULOS_CRASE_E_JS.saturating_sub(30),", 1)
     reposto = reposto.replace("achadas.len() >= TETO_NUMERO_CRAVADO_EM_TELA,",
                               "achadas.len() + 3 >= TETO_NUMERO_CRAVADO_EM_TELA,", 1)
-    conferir("o recorte achou os dois lugares", reposto.count("TETO_ROTULOS_E_CRASE.saturating_sub(30),") == 1
+    conferir("o recorte achou os dois lugares", reposto.count("TETO_ROTULOS_CRASE_E_JS.saturating_sub(30),") == 1
              and reposto.count("achadas.len() + 3 >=") == 1)
     conferir("as duas folgas de 02/10 repostas: acusa as DUAS",
              len(folgas_no_texto(reposto)) == 2, str(folgas_no_texto(reposto)))

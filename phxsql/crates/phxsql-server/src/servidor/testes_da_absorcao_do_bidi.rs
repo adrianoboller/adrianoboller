@@ -70,6 +70,7 @@ fn rodada(s: &Servidor) {
         hora: String::new(),
         cifra: false,
         chave_do_fio: String::new(),
+        pino_tls: String::new(),
         espelho: false,
     };
     let meu_hash = s.config.replicacao.numero();

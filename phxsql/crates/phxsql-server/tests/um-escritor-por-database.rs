@@ -66,6 +66,7 @@ fn origem(nome: &str, porta: u16, database: &str) -> Origem {
         hora: String::new(),
         cifra: false,
         chave_do_fio: String::new(),
+        pino_tls: String::new(),
         // A guarda e PEDIDA: o espelho do 325 escreve o campo.
         espelho: true,
     }

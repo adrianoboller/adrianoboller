@@ -230,6 +230,20 @@ impl ComPrazo {
     pub fn prazo(&self) -> Prazo {
         self.prazo
     }
+
+    /// Uma terceira ponta do mesmo soquete, com o mesmo prazo -- para quem
+    /// passa a falar TLS por UM fluxo so, depois de ter nascido com dois.
+    pub fn clonar(&self) -> io::Result<ComPrazo> {
+        Ok(ComPrazo {
+            fluxo: self.fluxo.try_clone()?,
+            prazo: self.prazo,
+        })
+    }
+
+    /// Recomeca o total desta ponta -- o [`rearmar`] de quem tem uma so.
+    pub fn rearmar(&mut self) {
+        self.prazo = self.prazo.rearmado();
+    }
 }
 
 /// Recomeca o total nas DUAS metades com o mesmo instante: uma operacao nova

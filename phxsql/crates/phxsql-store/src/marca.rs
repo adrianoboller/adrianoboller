@@ -82,6 +82,35 @@ pub const VERSAO_REPLICA_EM_CLARO: u32 = 5;
 /// replicar coluna marcada com cofre), e marca em claro o poria no disco.
 pub const VERSAO_REPLICA_CIFRADA: u32 = 6;
 
+/// A v7 (pedido 709): a marca do `COMMIT` com o BILHETE POSICIONAL, em claro.
+/// Cabecalho da v3 mais o `tx` que todos os eventos dela levam; cada operacao
+/// leva no fim do payload a VERSAO que o slot tinha antes dela.
+///
+/// # Por que a versao do slot, e nao a linha antiga
+///
+/// Porque a pergunta da recuperacao e «a passada ja passou desta operacao?»,
+/// e o conteudo nao a responde: o `COMMIT` que muda «0» para «a» seguido de
+/// uma solta que volta a «0» deixa o slot igual ao de antes, e a exclusao
+/// suave e a restauracao so tem dois estados. A versao do slot so anda (FORMATO
+/// §1, bytes 8..16), e e o LSN da linha: slot com versao MAIOR que a de antes
+/// ja recebeu esta operacao, ou recebeu escrita depois dela, e nos dois casos
+/// reaplicar grava por cima de estado mais novo -- o que PostgreSQL, InnoDB e
+/// SQLite convergem em nunca fazer (`recuperacao-e-replica-desenho-unico.md`
+/// §4, linha 2).
+///
+/// # Por que versao nova, e nao byte novo na v3
+///
+/// O mesmo motivo da v5: o leitor de antes PULA o que sobra do payload depois
+/// do byte da cascata e leria a v7 como v3, reaplicando sem condicao. Com a
+/// versao nova ele cai em [`Leitura::NaoConfere`] -- e ai APAGA uma transacao
+/// confirmada: voltar o binario com marca v7 de pe e a armadilha ja escrita
+/// para a v5/v6, «so para frente». Nenhum binario foi selado com a v3 como
+/// unica, e e por isso que entra agora.
+pub const VERSAO_POSICIONAL_EM_CLARO: u32 = 7;
+
+/// A v8: a v7 com o cofre ligado -- cabecalho da v4 (material) mais o `tx`.
+pub const VERSAO_POSICIONAL_CIFRADA: u32 = 8;
+
 /// Quanto o cabecalho ocupa ate o CRC, nas versoes 1 a 3: magic, versao, id,
 /// carimbo e o numero de operacoes.
 const CAB_ATE_CRC: usize = 8 + 4 + 8 + 8 + 4;
@@ -415,6 +444,10 @@ pub struct OperacaoDaMarca {
     /// Pedido 682: esta operacao e um evento que a replica recebeu da origem
     /// (marca v5/v6). `None` em toda marca de `COMMIT`.
     pub replica: Option<EventoDaReplica>,
+    /// Pedido 709 (marca v7/v8): a versao que o slot tinha ANTES desta
+    /// operacao, 0 na inclusao. `None` nas versoes anteriores -- ali a
+    /// recuperacao faz o que sempre fez.
+    pub versao_antes: Option<u64>,
 }
 
 /// O que a marca do grupo da replica guarda de cada evento, alem de tabela,
@@ -465,7 +498,22 @@ pub struct EventoDoGrupo<'a> {
 pub struct Marca {
     pub id: u64,
     pub carimbo_ms: i64,
+    /// Pedido 709 (v7/v8): o id de transacao que todos os eventos desta marca
+    /// levam no diario, reservado sob a trava antes do primeiro. 0 nas
+    /// versoes anteriores, e na marca gravada fora de unidade.
+    pub tx: u64,
     pub operacoes: Vec<OperacaoDaMarca>,
+}
+
+/// O bilhete posicional da marca v7/v8 -- pedido 709. Ver
+/// [`VERSAO_POSICIONAL_EM_CLARO`].
+#[derive(Debug, Clone, Copy)]
+pub struct Bilhete<'a> {
+    /// Ver [`Marca::tx`].
+    pub tx: u64,
+    /// Uma por operacao, na ordem: ver [`OperacaoDaMarca::versao_antes`].
+    /// Sai de [`versoes_antes`].
+    pub versoes_antes: &'a [u64],
 }
 
 /// O caminho da marca desta transacao, dentro do diretorio do database.
@@ -612,13 +660,129 @@ fn criar_privado(caminho: &Path, id: u64) -> Result<std::fs::File> {
 /// INTENCAO antes de mexer no alvo, porque *«a ordem inversa tem uma janela em
 /// que o registro nao existe em lugar nenhum, e essa janela nao tem conserto
 /// depois.»*
+///
+/// Grava a marca SEM bilhete (v3/v4): e o formato de um binario anterior, e
+/// so as provas o chamam -- para conferir que a marca deixada por ele continua
+/// sendo lida e completada. Todo caminho de escrita grava pela
+/// [`gravar_marca_posicional`].
 pub fn gravar_marca(
     diretorio: &Path,
     id: u64,
     carimbo_ms: i64,
     ops: &[Escrita],
 ) -> Result<PathBuf> {
-    gravar_com(&caminho_da_marca(diretorio, id), id, carimbo_ms, ops, None)
+    gravar_com(
+        &caminho_da_marca(diretorio, id),
+        id,
+        carimbo_ms,
+        ops,
+        Fim::Nada,
+    )
+}
+
+/// Grava a marca v7/v8, com o bilhete posicional -- pedido 709. A ordem e a
+/// do [`gravar_marca`]: grava e sincroniza antes de a passada tocar em
+/// arquivo de dado.
+pub fn gravar_marca_posicional(
+    diretorio: &Path,
+    id: u64,
+    carimbo_ms: i64,
+    ops: &[Escrita],
+    bilhete: Bilhete<'_>,
+) -> Result<PathBuf> {
+    if bilhete.versoes_antes.len() != ops.len() {
+        return Err(PhxError::Esquema(format!(
+            "a marca {id} tem {} operacao(oes) e {} versao(oes) de antes",
+            ops.len(),
+            bilhete.versoes_antes.len()
+        )));
+    }
+    gravar_com(
+        &caminho_da_marca(diretorio, id),
+        id,
+        carimbo_ms,
+        ops,
+        Fim::Bilhete(bilhete),
+    )
+}
+
+/// O estado de um slot que [`versoes_antes`] precisa: a versao (`None` =
+/// livre ou alem do fim) e a marca de exclusao suave (`None` = a tabela nao
+/// tem, ou o slot esta livre).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EstadoDoSlot {
+    pub versao: Option<u64>,
+    pub suave: Option<bool>,
+}
+
+/// O estado do slot `rowid` de `t`, lido do disco -- o cabecalho do slot e,
+/// so quando `com_suave`, a linha sem os externos.
+pub fn estado_do_slot(t: &mut Table, rowid: u64, com_suave: bool) -> Result<EstadoDoSlot> {
+    if rowid == 0 || rowid > t.slots() {
+        return Ok(EstadoDoSlot {
+            versao: None,
+            suave: None,
+        });
+    }
+    let versao = t.versao(rowid)?;
+    let suave = match (com_suave, versao, t.esquema().coluna_softdeleted()) {
+        (true, Some(_), Some(i)) => t
+            .ler_sem_externos(rowid)?
+            .map(|l| matches!(l.get(i), Some(Value::Bool(true)))),
+        _ => None,
+    };
+    Ok(EstadoDoSlot { versao, suave })
+}
+
+/// A versao que cada operacao de `ops` vai encontrar no slot dela -- o
+/// bilhete da marca v7/v8 (pedido 709). `estado` le o slot do disco, com a
+/// trava na mao, e e chamado UMA vez por linha: as operacoes seguintes da
+/// mesma linha se deduzem das anteriores, como a passada as fara.
+///
+/// # A regra quando nao se sabe: contar a escrita
+///
+/// A exclusao suave e a restauracao nao gravam quando a linha ja esta no
+/// estado pedido (`Table::marcar`), e a alteracao pode mudar a coluna de
+/// sistema. Onde a deducao nao sabe o estado, ela conta que a operacao
+/// GRAVA. Os dois erros nao custam o mesmo: contar a mais faz a recuperacao
+/// reaplicar uma operacao que ja tinha entrado -- o comportamento de antes,
+/// os mesmos valores --, e contar a menos a faria pular uma operacao
+/// confirmada que nao entrou.
+pub fn versoes_antes(
+    ops: &[Escrita],
+    mut estado: impl FnMut(&str, u64, bool) -> Result<EstadoDoSlot>,
+) -> Result<Vec<u64>> {
+    // (tabela, rowid) -> (versao, suave): o estado DEDUZIDO depois das
+    // operacoes ja vistas.
+    let mut slots: HashMap<(&str, u64), (u64, Option<bool>)> = HashMap::new();
+    let mut saida = Vec::with_capacity(ops.len());
+    for e in ops {
+        let chave = (e.tabela.as_str(), e.rowid);
+        let atual = match slots.get(&chave) {
+            Some(v) => *v,
+            None if e.acao == Acao::Inserir => (0, None),
+            None => {
+                let precisa = matches!(e.acao, Acao::ExcluirSuave | Acao::Restaurar);
+                let lido = estado(&e.tabela, e.rowid, precisa)?;
+                (lido.versao.unwrap_or(0), lido.suave)
+            }
+        };
+        saida.push(atual.0);
+        let (v, suave) = atual;
+        let depois = match e.acao {
+            // A linha nova pode nascer com a coluna de sistema ligada, e a
+            // alteracao pode mexer nela: a marca suave depois delas nao se sabe.
+            Acao::Inserir => (1, None),
+            Acao::Atualizar => (v + 1, None),
+            Acao::ExcluirSuave if suave == Some(true) => (v, suave),
+            Acao::ExcluirSuave => (v + 1, Some(true)),
+            Acao::Restaurar if suave == Some(false) => (v, suave),
+            Acao::Restaurar => (v + 1, Some(false)),
+            Acao::ExcluirDeVez => (0, None),
+        };
+        slots.insert(chave, depois);
+    }
+    Ok(saida)
 }
 
 /// A acao da marca que corresponde a um evento do diario. A exclusao da
@@ -677,7 +841,7 @@ pub fn gravar_marca_da_replica(
         id,
         carimbo_ms,
         &ops,
-        Some(eventos),
+        Fim::Replica(eventos),
     )
 }
 
@@ -723,7 +887,96 @@ pub fn gravar_marca_do_bidi(
         })
         .collect();
     let caminho = diretorio.join(format!("{PREFIXO_DO_BIDI}{id}.{EXTENSAO}"));
-    gravar_com(&caminho, id, carimbo_ms, &ops, Some(eventos))
+    gravar_com(&caminho, id, carimbo_ms, &ops, Fim::Replica(eventos))
+}
+
+/// Confere, SEM completar, as marcas do bidirecional de `db` -- pedido 723, o
+/// palco da restauracao. Quem completa a do bidi e o servidor, pela chave e
+/// pelo mapa de toques, e o palco nao tem servidor; entao ele so pergunta,
+/// por evento, se o diario do palco ja o tem (o carimbo e a origem de la, que
+/// o `aplicar_por_chave` grava):
+///
+/// - **todos**: a passada terminou e a marca so esperava o `fsync` -- sai;
+/// - **nenhum**: o grupo nunca entrou nesta copia, e o destino o pede de novo
+///   pelas posicoes dele -- sai tambem;
+/// - **parte**: a copia pegou o grupo no meio, e restaurar entregaria meia
+///   venda ate o proximo arranque do destino. Recusa nomeando a marca.
+///
+/// A marca que nao se le, ou cifrada sem a chave, tambem recusa: sem ler nao
+/// ha como saber em qual dos tres casos ela esta. Devolve quantas sairam.
+pub fn conferir_os_grupos_do_bidi(db: &Database) -> Result<usize> {
+    let mut sairam = 0;
+    for caminho in marcas_do_bidi_em(db.caminho()) {
+        let marca = match ler_marca(&caminho)? {
+            Leitura::Aberta(m) => m,
+            Leitura::NaoConfere => {
+                std::fs::remove_file(&caminho)?;
+                sairam += 1;
+                continue;
+            }
+            Leitura::SemChave(motivo) => {
+                return Err(PhxError::Corrompido(format!(
+                    "a copia traz a marca do bidirecional {} e esta chave nao a abre \
+                     ({motivo}): sem le-la nao ha como saber se o grupo dela entrou \
+                     inteiro. NADA foi restaurado",
+                    caminho.display()
+                )))
+            }
+        };
+        let mut presentes = 0usize;
+        let mut total = 0usize;
+        let mut abertas: HashMap<String, Table> = HashMap::new();
+        for op in &marca.operacoes {
+            let Some(ev) = &op.replica else { continue };
+            total += 1;
+            if !abertas.contains_key(&op.tabela) {
+                abertas.insert(op.tabela.clone(), db.abrir_qualificada(&op.tabela)?);
+            }
+            let t = abertas
+                .get_mut(&op.tabela)
+                .expect("acabou de entrar no mapa");
+            if evento_de_la_no_diario(t, ev.carimbo_ms, ev.origem, marca.carimbo_ms)? {
+                presentes += 1;
+            }
+        }
+        if presentes != 0 && presentes != total {
+            return Err(PhxError::Corrompido(format!(
+                "a copia pegou no meio o grupo do bidirecional da marca {}: {presentes} \
+                 de {total} evento(s) estao no diario. Restaurada assim, ela mostraria \
+                 a transacao pela metade -- use uma copia de antes ou de depois do \
+                 grupo. NADA foi restaurado",
+                caminho.display()
+            )));
+        }
+        drop(abertas);
+        std::fs::remove_file(&caminho)?;
+        sairam += 1;
+    }
+    Ok(sairam)
+}
+
+/// O diario de `t` tem o evento nascido em `carimbo` na `origem`? Le de tras
+/// para a frente ate o primeiro evento de id anterior a marca: o id sai do
+/// relogio deslocado 16 bits (pedido 676), e todo evento aplicado por esta
+/// marca nasceu depois dela. Volume sem id (zero) nao tem esse corte, e a
+/// leitura segue ate o comeco.
+fn evento_de_la_no_diario(t: &mut Table, carimbo: i64, origem: u16, desde_ms: i64) -> Result<bool> {
+    const LOTE: u64 = 1024;
+    let piso = (desde_ms.max(0) as u64) << 16;
+    let mut fim = t.eventos()?;
+    while fim > 0 {
+        let ini = fim.saturating_sub(LOTE);
+        for e in t.diario(ini, fim - ini)?.iter().rev() {
+            if e.carimbo == carimbo && e.origem == origem {
+                return Ok(true);
+            }
+            if e.tx != 0 && e.tx < piso {
+                return Ok(false);
+            }
+        }
+        fim = ini;
+    }
+    Ok(false)
 }
 
 /// As marcas do bidirecional de `dir`, na ordem do id -- o mesmo laco de
@@ -742,24 +995,41 @@ pub fn e_marca_do_bidi(caminho: &Path) -> bool {
         .is_some_and(|n| n.starts_with(PREFIXO_DO_BIDI))
 }
 
-/// O corpo unico das duas portas de gravacao. `replica`, quando vem, tem um
-/// evento por operacao, na mesma ordem.
+/// O que vai no fim de cada operacao, depois do byte da cascata -- e e isso
+/// que decide a versao da marca.
+#[derive(Clone, Copy)]
+enum Fim<'a> {
+    /// Nada: a v3/v4 de um binario anterior ([`gravar_marca`]).
+    Nada,
+    /// O evento da replica (v5/v6), um por operacao, na mesma ordem.
+    Replica(&'a [EventoDoGrupo<'a>]),
+    /// O bilhete posicional (v7/v8).
+    Bilhete(Bilhete<'a>),
+}
+
+/// O corpo unico das portas de gravacao.
 fn gravar_com(
     caminho: &Path,
     id: u64,
     carimbo_ms: i64,
     ops: &[Escrita],
-    replica: Option<&[EventoDoGrupo<'_>]>,
+    fim: Fim<'_>,
 ) -> Result<PathBuf> {
     // O material e conferido AQUI, na criacao, e vale para a marca inteira.
-    // Com o cofre desligado ele e `EM_CLARO`, e ai a marca nasce v3 -- os
-    // mesmos bytes de antes, para quem nunca pediu cifra.
+    // Com o cofre desligado ele e `EM_CLARO`, e ai a marca nasce em claro --
+    // a v7, ou a v3 de um binario anterior.
     let material = material_da_marca()?;
-    let versao = match (material.cifrado(), replica.is_some()) {
-        (true, false) => VERSAO,
-        (false, false) => VERSAO_CASCATA_EM_CLARO,
-        (true, true) => VERSAO_REPLICA_CIFRADA,
-        (false, true) => VERSAO_REPLICA_EM_CLARO,
+    let versao = match (material.cifrado(), fim) {
+        (true, Fim::Nada) => VERSAO,
+        (false, Fim::Nada) => VERSAO_CASCATA_EM_CLARO,
+        (true, Fim::Replica(_)) => VERSAO_REPLICA_CIFRADA,
+        (false, Fim::Replica(_)) => VERSAO_REPLICA_EM_CLARO,
+        (true, Fim::Bilhete(_)) => VERSAO_POSICIONAL_CIFRADA,
+        (false, Fim::Bilhete(_)) => VERSAO_POSICIONAL_EM_CLARO,
+    };
+    let replica = match fim {
+        Fim::Replica(r) => Some(r),
+        _ => None,
     };
 
     let mut b = Vec::with_capacity(4096);
@@ -774,6 +1044,11 @@ fn gravar_com(
         let rotulo = b[..ROTULO].to_vec();
         b.resize(CAB_ATE_CRC_CIFRADA, 0);
         material.gravar(&mut b, MATERIAL_EM, &rotulo);
+    }
+    // Pedido 709: o `tx` vai DEPOIS do material, logo antes do CRC -- o
+    // material continua no mesmo lugar da v4, e o leitor dele nao muda.
+    if let Fim::Bilhete(bl) = fim {
+        b.extend_from_slice(&bl.tx.to_le_bytes());
     }
     b.extend_from_slice(&crc32(&b).to_le_bytes());
 
@@ -805,6 +1080,11 @@ fn gravar_com(
             payload.extend_from_slice(&ev.posicao.to_le_bytes());
             payload.extend_from_slice(&(ev.imagem.len() as u32).to_le_bytes());
             payload.extend_from_slice(ev.imagem);
+        }
+        // Pedido 709 (v7/v8): a versao de antes, no mesmo lugar -- o fim do
+        // payload, sob o mesmo selo e o mesmo CRC.
+        if let Fim::Bilhete(bl) = fim {
+            payload.extend_from_slice(&bl.versoes_antes[i].to_le_bytes());
         }
         // O selo e POR OPERACAO, no MESMO bloco que o CRC ja cobria: a unidade
         // de dano continua sendo a operacao, e nao o arquivo. Selar a marca
@@ -903,8 +1183,14 @@ pub fn ler_marca(caminho: &Path) -> Result<Leitura> {
         | VERSAO_LINHA_ANTIGA_SEM_CASCATA
         | VERSAO_SEM_LINHA_ANTIGA
         | VERSAO_REPLICA_EM_CLARO => CAB_ATE_CRC,
+        VERSAO_POSICIONAL_EM_CLARO => CAB_ATE_CRC + 8,
+        VERSAO_POSICIONAL_CIFRADA => CAB_ATE_CRC_CIFRADA + 8,
         _ => return Ok(Leitura::NaoConfere),
     };
+    let posicional = matches!(
+        versao,
+        VERSAO_POSICIONAL_EM_CLARO | VERSAO_POSICIONAL_CIFRADA
+    );
     if b.len() < ate_crc + 4 {
         return Ok(Leitura::NaoConfere);
     }
@@ -914,7 +1200,10 @@ pub fn ler_marca(caminho: &Path) -> Result<Leitura> {
     }
     let nome_do_arquivo = caminho.display().to_string();
     let da_replica = matches!(versao, VERSAO_REPLICA_EM_CLARO | VERSAO_REPLICA_CIFRADA);
-    let material = if matches!(versao, VERSAO | VERSAO_REPLICA_CIFRADA) {
+    let material = if matches!(
+        versao,
+        VERSAO | VERSAO_REPLICA_CIFRADA | VERSAO_POSICIONAL_CIFRADA
+    ) {
         match Material::ler(&b, MATERIAL_EM, &nome_do_arquivo, &b[..ROTULO]) {
             Ok(m) => m,
             // A terceira resposta. Qualquer recusa daqui vem de uma marca que
@@ -933,6 +1222,11 @@ pub fn ler_marca(caminho: &Path) -> Result<Leitura> {
     let id = leitor.u64()?;
     let carimbo_ms = i64::from_le_bytes(leitor.fixo::<8>()?);
     let n = leitor.u32()? as usize;
+    let tx = if posicional {
+        u64::from_le_bytes(b[ate_crc - 8..ate_crc].try_into().expect("oito bytes"))
+    } else {
+        0
+    };
     // Pula o material (quando ha) e o CRC do cabecalho de uma vez so.
     leitor.i = ate_crc + 4;
 
@@ -1038,8 +1332,22 @@ pub fn ler_marca(caminho: &Path) -> Result<Leitura> {
         } else {
             None
         };
+        // Pedido 709: a versao de antes, os oito ultimos bytes do payload.
+        let versao_antes = if posicional {
+            let mut r = Leitor {
+                b: &payload,
+                i: apos_antiga + 1,
+            };
+            match r.u64() {
+                Ok(v) => Some(v),
+                Err(_) => return Ok(Leitura::NaoConfere),
+            }
+        } else {
+            None
+        };
         operacoes.push(OperacaoDaMarca {
             replica,
+            versao_antes,
             tabela,
             acao,
             rowid,
@@ -1052,6 +1360,7 @@ pub fn ler_marca(caminho: &Path) -> Result<Leitura> {
     Ok(Leitura::Aberta(Marca {
         id,
         carimbo_ms,
+        tx,
         operacoes,
     }))
 }
@@ -1230,6 +1539,7 @@ impl Escrita {
             motivo: self.motivo.clone(),
             cascata_na_lista: self.cascata_na_lista,
             replica: None,
+            versao_antes: None,
         }
     }
 }
@@ -1245,20 +1555,44 @@ impl Escrita {
 /// diretorio no mesmo instante -- o `create_new` do [`gravar_marca`] recusa
 /// dizendo qual e, sem gravar por cima de marca nenhuma.
 pub fn proximo_id_no_diretorio(dir: &Path) -> u64 {
-    let sufixo = format!(".{EXTENSAO}");
-    let maior = marcas_em(dir)
-        .iter()
-        .filter_map(|c| {
-            c.file_name()?
-                .to_str()?
-                .strip_prefix(PREFIXO)?
-                .strip_suffix(sufixo.as_str())?
-                .parse::<u64>()
-                .ok()
-        })
-        .max()
-        .unwrap_or(0);
+    proximo_id_acima_de(maior_id_de_marca_em(dir))
+}
+
+/// O gerador UNICO de id de marca -- pedido 714: o relogio, ou um acima do
+/// `maior` id que ja esta no disco, o que for maior. O embutido o chama com o
+/// maior do diretorio dele; o servidor, no arranque, com o maior de todos os
+/// databases, e dai em diante soma um.
+///
+/// Sem o piso do disco, o relogio recuado entre dois arranques fazia a marca
+/// nova nascer ABAIXO de uma retida da vida anterior (cifrada sem a chave,
+/// linha perdida): completada antes dela no arranque seguinte, contra a ordem
+/// de criacao -- ou com o mesmo id, e o `create_new` recusava o `COMMIT`.
+pub fn proximo_id_acima_de(maior: u64) -> u64 {
     (crate::util::agora_ms().max(1) as u64).max(maior.saturating_add(1))
+}
+
+/// O id de uma marca pelo nome do arquivo, de qualquer familia
+/// (`transacao_`, `bidi_`). `None` = nao e marca.
+fn id_da_marca(caminho: &Path) -> Option<u64> {
+    let nome = caminho.file_name()?.to_str()?;
+    let resto = nome
+        .strip_prefix(PREFIXO)
+        .or_else(|| nome.strip_prefix(PREFIXO_DO_BIDI))?;
+    resto
+        .strip_suffix(EXTENSAO)?
+        .strip_suffix('.')?
+        .parse::<u64>()
+        .ok()
+}
+
+/// O maior id de marca de `dir`, das duas familias. 0 = nenhuma.
+pub fn maior_id_de_marca_em(dir: &Path) -> u64 {
+    marcas_com_prefixo(dir, PREFIXO)
+        .iter()
+        .chain(marcas_com_prefixo(dir, PREFIXO_DO_BIDI).iter())
+        .filter_map(|c| id_da_marca(c))
+        .max()
+        .unwrap_or(0)
 }
 
 /// As maes da cascata do embutido: a propria tabela que mudou de chave (o
@@ -1438,14 +1772,34 @@ fn completar(db: &Database, marca: &Marca, r: &mut Relatorio) -> bool {
     // metade que entrou antes da queda -- o irmao do `adotar_tx_na_unidade`
     // que a marca da replica faz pela posicao. So com a unidade propria: no
     // reparo de um panico a da tomada ja e a da primeira metade.
+    //
+    // Pedido 709: a marca v7/v8 TRAZ o id, reservado sob a trava antes do
+    // primeiro evento -- nao ha o que adivinhar pela cauda. Ele so nao se
+    // adota quando alguma tabela da marca ja tem cauda com id MAIOR: houve
+    // escrita depois, a passada terminou, e um evento com o id velho depois
+    // de um novo poria o diario fora de ordem.
     if unidade.0 {
-        if let Some(tx) = id_da_metade_que_entrou(db, marca) {
+        let tx = if marca.tx != 0 {
+            (maior_cauda(db, marca) <= marca.tx).then_some(marca.tx)
+        } else {
+            id_da_metade_que_entrou(db, marca)
+        };
+        if let Some(tx) = tx {
+            crate::log::semear_tx(tx);
             crate::log::adotar_tx_na_unidade(tx);
         }
     }
     let mut tabelas: HashMap<String, Table> = HashMap::new();
     let mut replica_parou = false;
     let mut reter = false;
+    // Pedido 710: a versao de antes da PRIMEIRA operacao da marca em cada
+    // linha -- a partir dela se sabe quantos eventos a linha deve ter.
+    let mut primeira: HashMap<(&str, u64), u64> = HashMap::new();
+    for op in &marca.operacoes {
+        if let Some(v) = op.versao_antes {
+            primeira.entry((op.tabela.as_str(), op.rowid)).or_insert(v);
+        }
+    }
     for (k, op) in marca.operacoes.iter().enumerate() {
         // Garante o handle no mapa, aberto e preparado UMA vez.
         if !tabelas.contains_key(&op.tabela) {
@@ -1537,7 +1891,15 @@ fn completar(db: &Database, marca: &Marca, r: &mut Relatorio) -> bool {
             let mut maes = MaesAbertas {
                 abertas: &mut tabelas,
             };
-            match aplicar_na_recuperacao(&mut t, op, &marca.operacoes[k + 1..], &mut maes) {
+            let bilhete = Faces {
+                tx: marca.tx,
+                primeira: primeira
+                    .get(&(op.tabela.as_str(), op.rowid))
+                    .copied()
+                    .unwrap_or(0),
+            };
+            match aplicar_na_recuperacao(&mut t, op, &marca.operacoes[k + 1..], &mut maes, bilhete)
+            {
                 Ok(Desfecho::Aplicou) => r.reaplicadas += 1,
                 Ok(Desfecho::JaEstava) => r.ja_aplicadas += 1,
                 // Pedido 699: o diario diz que o evento entrou e o `.reg` nao
@@ -1679,6 +2041,31 @@ fn id_da_metade_que_entrou(db: &Database, marca: &Marca) -> Option<u64> {
     (do_grupo < marca.operacoes.len()).then_some(tx)
 }
 
+/// O maior id de transacao na cauda das tabelas que a marca nomeia -- pedido
+/// 709. Tabela que nao abre conta como `u64::MAX`: sem a cauda nao ha como
+/// provar que o id da marca ainda e o mais novo, e quem chama nao adota.
+fn maior_cauda(db: &Database, marca: &Marca) -> u64 {
+    let mut nomes: Vec<&str> = Vec::new();
+    for op in &marca.operacoes {
+        if !nomes.contains(&op.tabela.as_str()) {
+            nomes.push(&op.tabela);
+        }
+    }
+    let mut maior = 0u64;
+    for nome in nomes {
+        let cauda = (|| -> Result<u64> {
+            let mut t = db.abrir_qualificada(nome)?;
+            let total = t.eventos()?;
+            if total == 0 {
+                return Ok(0);
+            }
+            Ok(t.diario(total - 1, 1)?.first().map_or(0, |e| e.tx))
+        })();
+        maior = maior.max(cauda.unwrap_or(u64::MAX));
+    }
+    maior
+}
+
 /// O evento `ev` (com a `imagem`) e o que a operacao `op` da marca grava? So
 /// as que se reconhecem sem ambiguidade -- pedido 702:
 ///
@@ -1720,12 +2107,13 @@ fn evento_da_operacao(
 }
 
 /// A unidade de transacao que a recuperacao de UMA marca abre quando ninguem
-/// abriu -- pedido 701 (b). Fecha no `Drop`, para o `?` e o panico no meio
-/// nao deixarem a thread presa numa unidade que nao e de mais ninguem.
-struct UnidadeDaMarca(bool);
+/// abriu -- pedido 701 (b) --, e a cascata do embutido tambem (pedido 716).
+/// Fecha no `Drop`, para o `?` e o panico no meio nao deixarem a thread presa
+/// numa unidade que nao e de mais ninguem.
+pub(crate) struct UnidadeDaMarca(bool);
 
 impl UnidadeDaMarca {
-    fn abrir() -> UnidadeDaMarca {
+    pub(crate) fn abrir() -> UnidadeDaMarca {
         let propria = !crate::log::unidade_aberta();
         if propria {
             crate::log::abrir_unidade();
@@ -1763,7 +2151,7 @@ pub(crate) fn aplicar_uma(
     op: &OperacaoDaMarca,
     maes: &mut dyn MaesEmProgresso,
 ) -> Result<bool> {
-    match aplicar_na_recuperacao(t, op, &[], maes)? {
+    match aplicar_na_recuperacao(t, op, &[], maes, Faces::SEM_BILHETE)? {
         Desfecho::Aplicou => Ok(true),
         Desfecho::JaEstava => Ok(false),
         Desfecho::LinhaPerdida(motivo) => Err(PhxError::Corrompido(motivo)),
@@ -1809,6 +2197,7 @@ fn aplicar_na_recuperacao(
     op: &OperacaoDaMarca,
     seguintes: &[OperacaoDaMarca],
     maes: &mut dyn MaesEmProgresso,
+    faces: Faces,
 ) -> Result<Desfecho> {
     if let Some(ev) = &op.replica {
         let seguintes = Seguintes {
@@ -1824,13 +2213,19 @@ fn aplicar_na_recuperacao(
             Desfecho::JaEstava
         }
     };
+    if let Some(antes) = op.versao_antes {
+        if a_linha_ja_passou(t, op, antes)? {
+            return so_o_diario(t, op, antes, faces);
+        }
+    }
     match op.acao {
         Acao::Inserir => {
-            // O slot ja existe? Entao a passada chegou nele e nao ha o que
-            // fazer -- a reaplicacao e idempotente pelo rowid, e e por isso
-            // que a marca guarda o rowid alvo e nao so a linha.
+            // O slot ja existe? Entao a passada chegou nele e o `.reg` nao
+            // tem o que fazer -- a reaplicacao e idempotente pelo rowid, e e
+            // por isso que a marca guarda o rowid alvo e nao so a linha. O
+            // diario pode nao ter chegado (pedido 710): `so_o_diario`.
             if slot_ja_consumido(t, op.rowid)? {
-                return Ok(Desfecho::JaEstava);
+                return so_o_diario(t, op, 0, faces);
             }
             let saiu = t.inserir_com_maes(&op.linha, maes)?;
             if saiu != op.rowid {
@@ -1883,6 +2278,186 @@ fn aplicar_na_recuperacao(
         )),
         Acao::Restaurar => Ok(feito(t.restaurar_com_maes(op.rowid, &op.motivo, maes)?)),
     }
+}
+
+/// A linha da operacao `op` ja passou dela? -- pedido 709, a pergunta da
+/// marca v7/v8.
+///
+/// A versao do slot so anda, e `antes` e a que ele tinha quando a passada ia
+/// chegar nesta operacao. Versao MAIOR: a passada ja gravou esta operacao, ou
+/// gravou e alguem escreveu depois -- uma escrita SOLTA, sem bilhete, durante
+/// a janela de durabilidade. Nos dois casos reaplicar regrava por cima de
+/// estado mais novo (o F1: o «a» do `COMMIT` voltava por cima do «b» da
+/// solta) e acrescenta ao diario um evento que nenhum cliente fez (o F3).
+///
+/// Slot livre dentro da faixa: a linha saiu de vez -- por esta marca ou depois
+/// dela -- e o `.reg` nao reaproveita slot, entao nada desta operacao tem onde
+/// entrar. Alem do fim, ou na versao de antes, a operacao nao entrou: segue o
+/// caminho de sempre, que a aplica (ou recusa dizendo por que).
+///
+/// A inclusao nao passa por aqui: o slot consumido ja a responde
+/// ([`slot_ja_consumido`]).
+fn a_linha_ja_passou(t: &mut Table, op: &OperacaoDaMarca, antes: u64) -> Result<bool> {
+    if op.acao == Acao::Inserir || op.rowid == 0 || op.rowid > t.slots() {
+        return Ok(false);
+    }
+    Ok(match t.versao(op.rowid)? {
+        Some(v) => v > antes,
+        None => true,
+    })
+}
+
+/// O que a regra das duas faces precisa saber da marca alem da operacao --
+/// pedido 710.
+#[derive(Clone, Copy)]
+struct Faces {
+    /// Ver [`Marca::tx`]. 0 = a marca nao o traz (v1-v6, ou gravada fora de
+    /// unidade), e ai so a inclusao se confere, pelo rowid.
+    tx: u64,
+    /// A versao de antes da PRIMEIRA operacao desta marca nesta linha.
+    primeira: u64,
+}
+
+impl Faces {
+    /// A operacao aplicada fora de recuperacao (a cascata do embutido): a
+    /// passada esta acontecendo agora, e nao ha diario a completar.
+    const SEM_BILHETE: Faces = Faces { tx: 0, primeira: 0 };
+}
+
+/// O `.reg` ja passou da operacao `op`: falta o diario? -- pedido 710, a
+/// regra das duas faces (`recuperacao-e-replica-desenho-unico.md` §3.3) na
+/// marca do `COMMIT`.
+///
+/// A passada grava o slot ANTES do evento, e o `SIGKILL` entre os dois deixa
+/// a linha no `.reg` sem o evento. Responder «ja estava» olhando so o `.reg`
+/// -- o que a inclusao fazia -- deixava a linha fora do diario para sempre:
+/// a replica nunca a recebia, e o `verificar` nao acusa. A resposta e a do
+/// 699 na marca da replica: completar SO o evento, sem tocar no `.reg`.
+///
+/// Como se sabe que falta, por operacao:
+///
+/// - **inclusao e exclusao de vez** acontecem uma vez por linha: o evento
+///   dela esta no diario ou nao esta;
+/// - **alteracao, exclusao suave e restauracao**, so com o `tx` da marca
+///   (v7/v8) e so se o slot esta EXATAMENTE uma versao depois desta operacao:
+///   os eventos da linha com o `tx` da marca contam as escritas dela, e a
+///   versao conta as mesmas escritas no `.reg`. Uma a menos no diario e a que
+///   a queda levou -- so pode ser a ultima, porque a passada para ali.
+///
+/// Escrita de id MAIOR na linha (`depois`) quer dizer que a passada terminou
+/// e alguem gravou depois: nada a completar.
+fn so_o_diario(t: &mut Table, op: &OperacaoDaMarca, antes: u64, faces: Faces) -> Result<Desfecho> {
+    use crate::log::Operacao;
+    let linha = if faces.tx == 0 {
+        None
+    } else {
+        diario_da_linha(t, op.rowid, faces.tx)?
+    };
+    let Some(linha) = linha else {
+        // Sem o id -- a marca nao o traz, ou o volume do diario e anterior ao
+        // id no evento (676) e grava zero --, so a inclusao se reconhece, pela
+        // ordem do rowid. Contar pelo id ali acharia o diario sem nada desta
+        // marca e completaria de novo cada inclusao: o evento em dobro.
+        if op.acao == Acao::Inserir && !inclusao_no_diario_pelo_rowid(t, op.rowid)? {
+            t.completar_o_diario_da_inclusao(op.rowid, &[])?;
+            return Ok(Desfecho::Aplicou);
+        }
+        return Ok(Desfecho::JaEstava);
+    };
+    if linha.depois {
+        return Ok(Desfecho::JaEstava);
+    }
+    let tem = |qual: Operacao| linha.com_o_tx.contains(&qual);
+    match op.acao {
+        Acao::Inserir if !tem(Operacao::Inclusao) => {
+            t.completar_o_diario_da_inclusao(op.rowid, &[])?;
+            Ok(Desfecho::Aplicou)
+        }
+        Acao::ExcluirDeVez if !tem(Operacao::Exclusao) && t.versao(op.rowid)?.is_none() => {
+            t.completar_o_diario_da_exclusao(op.rowid, &[])?;
+            Ok(Desfecho::Aplicou)
+        }
+        Acao::Atualizar | Acao::ExcluirSuave | Acao::Restaurar => {
+            let devidos = (antes + 1).saturating_sub(faces.primeira);
+            if t.versao(op.rowid)? == Some(antes + 1) && linha.com_o_tx.len() as u64 + 1 == devidos
+            {
+                t.completar_o_diario_da_alteracao(op.rowid)?;
+                return Ok(Desfecho::Aplicou);
+            }
+            Ok(Desfecho::JaEstava)
+        }
+        _ => Ok(Desfecho::JaEstava),
+    }
+}
+
+/// O que o diario de `t` tem da linha `rowid` com o id `tx`, e se alguma
+/// escrita de id MAIOR a tocou depois -- pedido 710.
+struct NaLinha {
+    com_o_tx: Vec<crate::log::Operacao>,
+    depois: bool,
+}
+
+/// Le o diario de `t` de tras para a frente ate o primeiro evento de id
+/// menor que `tx`: o id so cresce no diario de uma tabela (pedido 684), entao
+/// tudo o que esta marca gravou -- e tudo o que veio depois -- esta nessa
+/// cauda. Custa a cauda desde o `COMMIT`, que e a janela de durabilidade.
+///
+/// `None` = a cauda tem evento SEM id (volume 2/3, anterior ao 676): ali o
+/// id nao separa esta marca de nada, e quem chama decide sem ele.
+fn diario_da_linha(t: &mut Table, rowid: u64, tx: u64) -> Result<Option<NaLinha>> {
+    const LOTE: u64 = 1024;
+    let mut r = NaLinha {
+        com_o_tx: Vec::new(),
+        depois: false,
+    };
+    let mut fim = t.eventos()?;
+    while fim > 0 {
+        let ini = fim.saturating_sub(LOTE);
+        let lote = t.diario(ini, fim - ini)?;
+        for e in lote.iter().rev() {
+            if e.tx == 0 {
+                return Ok(None);
+            }
+            if e.tx < tx {
+                return Ok(Some(r));
+            }
+            if e.rowid != rowid {
+                continue;
+            }
+            if e.tx == tx {
+                r.com_o_tx.push(e.operacao);
+            } else {
+                r.depois = true;
+            }
+        }
+        fim = ini;
+    }
+    Ok(Some(r))
+}
+
+/// A inclusao do `rowid` esta no diario? Sem o id da marca, pela ordem: o
+/// `.reg` so anexa, entao as inclusoes entram no diario na ordem do rowid, e
+/// a primeira inclusao MENOR achada de tras para a frente diz que a desta
+/// linha nao esta.
+fn inclusao_no_diario_pelo_rowid(t: &mut Table, rowid: u64) -> Result<bool> {
+    const LOTE: u64 = 1024;
+    let mut fim = t.eventos()?;
+    while fim > 0 {
+        let ini = fim.saturating_sub(LOTE);
+        let lote = t.diario(ini, fim - ini)?;
+        for e in lote.iter().rev() {
+            if e.operacao == crate::log::Operacao::Inclusao {
+                if e.rowid == rowid {
+                    return Ok(true);
+                }
+                if e.rowid < rowid {
+                    return Ok(false);
+                }
+            }
+        }
+        fim = ini;
+    }
+    Ok(false)
 }
 
 /// Reaplica um evento do grupo da replica -- pedido 682. `Ok(false)` = ja
@@ -2195,6 +2770,20 @@ impl Database {
     }
 }
 
+impl Database {
+    /// O maior id de marca deste database -- a raiz e a pasta de cada schema,
+    /// as duas familias. E o piso do contador do servidor (pedido 714).
+    pub fn maior_id_de_marca(&self) -> u64 {
+        let mut maior = maior_id_de_marca_em(self.caminho());
+        for s in self.schemas().unwrap_or_default() {
+            if let Ok(d) = self.diretorio(Some(&s)) {
+                maior = maior.max(maior_id_de_marca_em(&d));
+            }
+        }
+        maior
+    }
+}
+
 /// Completa -- ou descarta -- cada marca do diretorio de `db`, na ordem do id,
 /// e apaga a que pode sair. O corpo unico dos dois lacos de abertura, o da
 /// [`Database::recuperar_marcas`] e o da [`recuperar_no_diretorio`].
@@ -2227,8 +2816,43 @@ fn marcas_com_prefixo(dir: &Path, prefixo: &str) -> Vec<PathBuf> {
                 .is_some_and(|n| n.starts_with(prefixo) && n.ends_with(&format!(".{EXTENSAO}")))
         })
         .collect();
-    marcas.sort();
+    // Pela ordem NUMERICA do id, e nao pelo texto (pedido 714, o F12): o
+    // texto so concorda com o numero enquanto todos os ids tiverem a mesma
+    // largura, e o piso do disco ou um relogio de outra decada a muda.
+    //
+    // E ANTES do id, de que lado da trava a marca nasceu (pedido 715): a
+    // ordem de completar e a ordem em que a TRAVA as teria aplicado. A do
+    // `COMMIT` e a da cascata solta nascem com a trava na mao, e no maximo
+    // uma delas escreve no arranque; a do grupo da replica (v5/v6) nasce FORA
+    // dela e so entra depois de toma-la. O id nao diz isso: o do `COMMIT` sai
+    // no `BEGIN`, e um `BEGIN` depois da marca do grupo tem id maior e entra
+    // antes. Pelo id, o arranque completava o grupo primeiro, o grupo tomava o
+    // rowid que o `COMMIT` tinha planejado, e o `COMMIT` saia pela metade dado
+    // como completado. Pelo nome nao da: as duas familias dividem o prefixo.
+    marcas.sort_by_key(|p| {
+        (
+            nasce_fora_da_trava(p),
+            id_da_marca(p).unwrap_or(u64::MAX),
+            p.clone(),
+        )
+    });
     marcas
+}
+
+/// A marca nasceu FORA da trava de dados? -- pedido 715. Pela versao do
+/// cabecalho: a v5/v6 (grupo da replica e do bidirecional) se grava antes de
+/// tomar a trava; as outras, com ela. Marca que nem se le fica com as da
+/// trava: quem decide o que fazer com ela e a leitura de verdade, depois.
+fn nasce_fora_da_trava(caminho: &Path) -> bool {
+    use std::io::Read;
+    let mut cab = [0u8; 12];
+    let lido = std::fs::File::open(caminho).and_then(|mut f| f.read_exact(&mut cab));
+    lido.is_ok()
+        && &cab[..8] == MAGIC
+        && matches!(
+            u32::from_le_bytes([cab[8], cab[9], cab[10], cab[11]]),
+            VERSAO_REPLICA_EM_CLARO | VERSAO_REPLICA_CIFRADA
+        )
 }
 
 /// Completa as marcas de UM diretorio de tabelas -- o `reindex` do CLI, que
@@ -2458,6 +3082,122 @@ mod testes {
         // o CRC. Se o material tivesse entrado, seriam 76.
         let primeira_op = u16::from_le_bytes([b[CAB_ATE_CRC + 4], b[CAB_ATE_CRC + 5]]);
         assert_eq!(primeira_op as usize, "clientes".len());
+    }
+
+    // ------------------------------------------ o bilhete posicional (709)
+
+    /// A v7 volta com o `tx` e a versao de antes de cada operacao, e o resto
+    /// da operacao igual ao da v3.
+    #[test]
+    fn a_marca_v7_volta_com_o_bilhete() {
+        let d = dir("v7");
+        let mut ops = uma_escrita("Blumenau");
+        ops.push(ops[0].clone());
+        let bilhete = Bilhete {
+            tx: 77 << 16,
+            versoes_antes: &[3, 4],
+        };
+        let caminho = gravar_marca_posicional(&d, 14, 5, &ops, bilhete).unwrap();
+        let b = std::fs::read(&caminho).unwrap();
+        assert_eq!(
+            u32::from_le_bytes([b[8], b[9], b[10], b[11]]),
+            VERSAO_POSICIONAL_EM_CLARO
+        );
+        let m = ler_marca(&caminho).unwrap().marca().expect("a v7 confere");
+        assert_eq!((m.id, m.carimbo_ms, m.tx), (14, 5, 77 << 16));
+        let v: Vec<_> = m.operacoes.iter().map(|o| o.versao_antes).collect();
+        assert_eq!(v, vec![Some(3), Some(4)]);
+        assert_eq!(m.operacoes[0].linha, ops[0].linha);
+        // A v3 continua sem bilhete: a recuperacao dela faz o de sempre.
+        let v3 = gravar_marca(&d, 15, 5, &ops).unwrap();
+        let m3 = ler_marca(&v3).unwrap().marca().unwrap();
+        assert_eq!(m3.tx, 0);
+        assert!(m3.operacoes.iter().all(|o| o.versao_antes.is_none()));
+    }
+
+    /// Um bilhete com uma versao a menos nao vira marca: a operacao sem
+    /// versao seria reaplicada sem a pergunta que a v7 existe para fazer.
+    #[test]
+    fn bilhete_de_tamanho_errado_nao_vira_marca() {
+        let d = dir("v7-curta");
+        let bilhete = Bilhete {
+            tx: 1,
+            versoes_antes: &[],
+        };
+        assert!(gravar_marca_posicional(&d, 16, 0, &uma_escrita("x"), bilhete).is_err());
+        assert!(marcas_em(&d).is_empty());
+    }
+
+    /// As marcas se completam na ordem NUMERICA do id, e nao na do texto --
+    /// pedido 714 (o F12): `transacao_10` vem depois de `transacao_9`. E o
+    /// maior id olha as duas familias.
+    ///
+    /// Prova real: voltar o `sort()` do texto poe a 10 antes da 9.
+    #[test]
+    fn as_marcas_seguem_o_numero_do_id_e_nao_o_texto() {
+        let d = dir("ordem");
+        for id in [10u64, 9, 100] {
+            std::fs::write(caminho_da_marca(&d, id), b"x").unwrap();
+        }
+        std::fs::write(d.join("bidi_250.tx"), b"x").unwrap();
+        let ids: Vec<u64> = marcas_em(&d)
+            .iter()
+            .filter_map(|c| id_da_marca(c))
+            .collect();
+        assert_eq!(ids, vec![9, 10, 100]);
+        assert_eq!(maior_id_de_marca_em(&d), 250);
+        assert!(proximo_id_no_diretorio(&d) > 250);
+    }
+
+    fn op(tabela: &str, acao: Acao, rowid: u64) -> Escrita {
+        let mut e = uma_escrita("x").remove(0);
+        e.tabela = tabela.into();
+        e.acao = acao;
+        e.rowid = rowid;
+        e
+    }
+
+    /// As versoes de antes saem do disco UMA vez por linha e se deduzem dai
+    /// em diante, como a passada as fara; e onde nao se sabe, conta-se a
+    /// escrita (o erro que so reaplica, e nunca o que pula).
+    #[test]
+    fn as_versoes_de_antes_seguem_a_passada() {
+        let ops = vec![
+            op("a", Acao::Atualizar, 1),
+            op("a", Acao::Atualizar, 1),
+            op("a", Acao::ExcluirSuave, 1),
+            op("a", Acao::ExcluirSuave, 1),
+            op("a", Acao::Restaurar, 1),
+            op("b", Acao::Inserir, 9),
+            op("b", Acao::Atualizar, 9),
+            op("a", Acao::ExcluirSuave, 2),
+            op("a", Acao::Restaurar, 2),
+        ];
+        let mut lidas = Vec::new();
+        let v = versoes_antes(&ops, |t, r, com_suave| {
+            lidas.push((t.to_string(), r, com_suave));
+            Ok(match r {
+                1 => EstadoDoSlot {
+                    versao: Some(5),
+                    suave: None,
+                },
+                _ => EstadoDoSlot {
+                    versao: Some(2),
+                    suave: Some(true),
+                },
+            })
+        })
+        .unwrap();
+        // 1: 5 -> 6 -> 7; a alteracao nao diz o suave, entao a primeira
+        // exclusao conta (7 -> 8) e a segunda ja sabe que nao grava (8); a
+        // restauracao grava (8 -> 9). A inclusao nasce na 1. A linha 2 ja
+        // estava excluida: a exclusao nao grava, a restauracao grava.
+        assert_eq!(v, vec![5, 6, 7, 8, 8, 0, 1, 2, 2]);
+        assert_eq!(
+            lidas,
+            vec![("a".to_string(), 1, false), ("a".to_string(), 2, true)],
+            "o disco se le uma vez por linha, e a inclusao nao le"
+        );
     }
 
     // ------------------------------------------- o grupo da replica (682)
@@ -2853,6 +3593,7 @@ mod testes {
             motivo: String::new(),
             cascata_na_lista: false,
             replica: None,
+            versao_antes: None,
         }
     }
 
@@ -2881,6 +3622,7 @@ mod testes {
         let marca = |ops: Vec<OperacaoDaMarca>| Marca {
             id: 1,
             carimbo_ms: 0,
+            tx: 0,
             operacoes: ops,
         };
         let inteira = marca(vec![

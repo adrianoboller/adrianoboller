@@ -2596,6 +2596,10 @@ async function detectarModo() {
     // Pedido 667: o servidor diz se aceitaria a senha em claro vinda da rede.
     // So com o escape escrito na config dele a reserva Base64 pode sair.
     est.senhaEmClaroPelaRede = saude.senha_em_claro_pela_rede === true;
+    // Pedido 339(a): o administrador desliga a Claude no config.json, e o
+    // servidor diz aqui. So `false` explicito desliga: servidor velho, sem o
+    // campo, mantem o comportamento de antes.
+    est.integracaoClaude = saude.integracao_claude !== false;
     $("#pt").value = est.portaLocal;
     $("#campoChave").hidden = !saude.exige_chave;
     if (est.servidores.length) {
@@ -3460,7 +3464,7 @@ function ligarConteudo() {
   const atualizaBarra = () => {
     const n = est.grade.selecionadas().length;
     barra.hidden = n === 0;
-    conta.textContent = `${fmt(n)} linha(s) marcada(s)`;
+    conta.textContent = preencher(txt("tela.g_n_linhas_marcadas", "{n} linha(s) marcada(s)"), { n: fmt(n) });
   };
   // A grade nao avisa quando a selecao muda, entao a tela pergunta. Um
   // temporizador de 200 ms custa nada e evita um evento novo no contrato da
@@ -4697,7 +4701,7 @@ function ligarFichaUsuario() {
     };
     if (r.senha) pedido.senha = r.senha;
 
-    rec.textContent = "gravando…";
+    rec.textContent = txt("tela.st_gravando", "gravando…");
     try {
       const res = await api(r.novo ? "usuario_criar" : "usuario_alterar", pedido);
       avisar(preencher(
@@ -5324,7 +5328,7 @@ async function abrirFicha(db, tab, rowid) {
   $("#btSalvar").onclick = async ev => {
     ev.preventDefault();
     const rec = $("#recadoFicha");
-    rec.textContent = "gravando…";
+    rec.textContent = txt("tela.st_gravando", "gravando…");
     try {
       if (novo) {
         const r = await api("inserir", { database: db, tabela: tab, valores: valores() });
@@ -5833,13 +5837,16 @@ async function excluirTabelaDe(db, tab) {
 const tetoDoSufixo = digitos => Math.pow(10, Math.min(9, Math.max(1, digitos))) - 1;
 
 /** Como cada regra de particao corta o volume, em uma linha. */
-const PARTICOES = [
-  ["quantidade", "por faixa de quantidade", "volume novo a cada N registros — o endereço sai de divisão"],
-  ["letra",      "alfanumérica (A–Z, 0–9)", "um arquivo por letra inicial: Clientes#A.reg … Clientes#Outros.reg"],
-  ["mensal",     "mensal",                  "volume novo quando o mês vira"],
-  ["bimestral",  "bimestral",               "jan-fev, mar-abr, mai-jun, jul-ago, set-out, nov-dez"],
-  ["semestral",  "semestral",               "jan-jun e jul-dez"],
-  ["anual",      "anual",                   "volume novo a cada ano"],
+/* Funcao, e nao vetor pronto: o vetor nascia quando a pagina carregava,
+ * ANTES de os textos do idioma chegarem, e um `txt(…)` ali devolveria
+ * portugues para sempre. O primeiro elemento e protocolo e nao se traduz. */
+const PARTICOES = () => [
+  ["quantidade", txt("tela.part_quantidade", "por faixa de quantidade"), txt("tela.part_quantidade_diz", "volume novo a cada N registros — o endereço sai de divisão")],
+  ["letra",      txt("tela.part_letra", "alfanumérica (A–Z, 0–9)"), txt("tela.part_letra_diz", "um arquivo por letra inicial: Clientes#A.reg … Clientes#Outros.reg")],
+  ["mensal",     txt("tela.part_mensal", "mensal"),       txt("tela.part_mensal_diz", "volume novo quando o mês vira")],
+  ["bimestral",  txt("tela.part_bimestral", "bimestral"), txt("tela.part_bimestral_diz", "jan-fev, mar-abr, mai-jun, jul-ago, set-out, nov-dez")],
+  ["semestral",  txt("tela.part_semestral", "semestral"), txt("tela.part_semestral_diz", "jan-jun e jul-dez")],
+  ["anual",      txt("tela.part_anual", "anual"),         txt("tela.part_anual_diz", "volume novo a cada ano")],
 ];
 
 /** Os tipos que podem carregar a data da particao. */
@@ -5983,7 +5990,7 @@ function desenharNovaTabela(db) {
        ${r.particionada ? `
        <div class="bloco">
          <label class="largo"><span>${esc(txt("tela.nt_como_volume_corta","como o volume corta"))}</span>
-           <select id="nt_regra">${PARTICOES.map(([k, rot, diz]) =>
+           <select id="nt_regra">${PARTICOES().map(([k, rot, diz]) =>
              `<option value="${k}"${k === r.particao ? " selected" : ""}>${esc(rot)} — ${esc(diz)}</option>`
            ).join("")}</select></label>
 
@@ -6074,7 +6081,7 @@ function gradeDeParticoes(r, porPeriodo) {
       ${marcado(preencher(txt("tela.nt_capacidade_total","Capacidade total: **{n}** registros."), {n: (teto * por).toLocaleString("pt-BR")}))}</p></div>`;
   }
 
-  const regra = PARTICOES.find(p => p[0] === r.particao) || PARTICOES[1];
+  const regra = PARTICOES().find(p => p[0] === r.particao) || PARTICOES()[1];
   const exemplos = {
     mensal:    ["2026-01", "2026-02", "2026-03"],
     bimestral: ["2026-B1 (jan-fev)", "2026-B2 (mar-abr)", "2026-B3 (mai-jun)"],
@@ -6226,7 +6233,7 @@ function ligarNovaTabela(db) {
       }
     }
 
-    rec.textContent = "criando…";
+    rec.textContent = txt("tela.ia_criando", "criando…");
     try {
       const feito = await api("criar_tabela", pedido);
       const emSchema = r.schema ? preencher(txt("tela.g_em_schema"," em {schema}"), {schema: r.schema}) : "";
@@ -6353,27 +6360,29 @@ async function ajustarSequencia(db, tabela, atual) {
    uma grade de vinte por doze --, e trazer as cem mil para o navegador somar
    seria pagar o transporte do que vai ser jogado fora. */
 
-const AGREGADORES = [
-  ["soma",       "Soma",              "o total dos valores"],
-  ["media",      "Média",             "a soma dividida pela quantidade"],
-  ["contagem",   "Contagem",          "quantas linhas caem na célula — não precisa de campo de valor"],
-  ["minimo",     "Mínimo",            "o menor valor"],
-  ["maximo",     "Máximo",            "o maior valor"],
-  ["distintos",  "Valores distintos", "quantos valores DIFERENTES caem na célula"],
+/* As tres listas sao FUNCOES pelo mesmo motivo de `PARTICOES`: montadas na
+ * hora de desenhar, depois de os textos do idioma chegarem. */
+const AGREGADORES = () => [
+  ["soma",       txt("tela.pv_ag_soma", "Soma"),                   txt("tela.pv_ag_soma_diz", "o total dos valores")],
+  ["media",      txt("tela.pv_ag_media", "Média"),                 txt("tela.pv_ag_media_diz", "a soma dividida pela quantidade")],
+  ["contagem",   txt("tela.pv_ag_contagem", "Contagem"),           txt("tela.pv_ag_contagem_diz", "quantas linhas caem na célula — não precisa de campo de valor")],
+  ["minimo",     txt("tela.pv_ag_minimo", "Mínimo"),               txt("tela.pv_ag_minimo_diz", "o menor valor")],
+  ["maximo",     txt("tela.pv_ag_maximo", "Máximo"),               txt("tela.pv_ag_maximo_diz", "o maior valor")],
+  ["distintos",  txt("tela.pv_ag_distintos", "Valores distintos"), txt("tela.pv_ag_distintos_diz", "quantos valores DIFERENTES caem na célula")],
 ];
 
-const GRANULARIDADES = [
-  ["exato",     "cada valor"],
-  ["dia",       "por dia"],
-  ["mes",       "por mês"],
-  ["trimestre", "por trimestre"],
-  ["ano",       "por ano"],
+const GRANULARIDADES = () => [
+  ["exato",     txt("tela.pv_gr_exato", "cada valor")],
+  ["dia",       txt("tela.pv_gr_dia", "por dia")],
+  ["mes",       txt("tela.pv_gr_mes", "por mês")],
+  ["trimestre", txt("tela.pv_gr_trimestre", "por trimestre")],
+  ["ano",       txt("tela.pv_gr_ano", "por ano")],
 ];
 
-const EIXOS = [
-  ["linhas",  "Linhas",  "cada valor vira uma linha da grade"],
-  ["colunas", "Colunas", "cada valor vira uma coluna — deixe vazio para uma coluna só"],
-  ["valor",   "Valores", "o campo que a célula resume"],
+const EIXOS = () => [
+  ["linhas",  txt("tela.pv_eixo_linhas", "Linhas"),         txt("tela.pv_eixo_linhas_diz", "cada valor vira uma linha da grade")],
+  ["colunas", txt("tela.et_colunas_titulo", "Colunas"),     txt("tela.pv_eixo_colunas_diz", "cada valor vira uma coluna — deixe vazio para uma coluna só")],
+  ["valor",   txt("tela.pv_eixo_valores", "Valores"),       txt("tela.pv_eixo_valores_diz", "o campo que a célula resume")],
 ];
 
 /** O estado do assistente, para ele sobreviver a ir e voltar entre os passos. */
@@ -6569,7 +6578,7 @@ async function pivotPasso2() {
           return `<span class="pv-chip" draggable="true" data-zona="${chave}" data-i="${i}">
             ${esc(c.rotulo || f.campo)}
             ${chave !== "valor" && c.data ? `<select class="pv-gran" data-zona="${chave}" data-i="${i}">${
-              GRANULARIDADES.map(([k, r]) =>
+              GRANULARIDADES().map(([k, r]) =>
                 `<option value="${k}"${k === (f.granularidade||"exato") ? " selected":""}>${esc(r)}</option>`
               ).join("")}</select>` : ""}
             <button type="button" class="pv-chip-x" data-zona="${chave}" data-i="${i}">×</button>
@@ -6590,10 +6599,10 @@ async function pivotPasso2() {
             ${esc(c.rotulo)}${c.campo.includes(".") ? `<em>${esc(c.campo.split(".")[0])}</em>` : ""}
           </span>`).join("")}</div>
       </div>
-      <div class="pv-zonas">${EIXOS.map(([k, t, d]) => zona(k, t, d)).join("")}
+      <div class="pv-zonas">${EIXOS().map(([k, t, d]) => zona(k, t, d)).join("")}
         <div class="pv-agg">
           <label><span>como resumir</span>
-            <select id="pv_ag">${AGREGADORES.map(([k, r, d]) =>
+            <select id="pv_ag">${AGREGADORES().map(([k, r, d]) =>
               `<option value="${k}"${k === w.agregador ? " selected" : ""}>${esc(r)} — ${esc(d)}</option>`
             ).join("")}</select></label>
         </div>
@@ -6698,7 +6707,7 @@ async function pivotPasso3() {
 
   const nome = c => (w._campos && w._campos[c] ? w._campos[c].rotulo : c);
   const cabLinha = r.campos_linha.map(nome).join(" / ");
-  const agRot = (AGREGADORES.find(a => a[0] === r.agregador) || ["", r.agregador])[1];
+  const agRot = (AGREGADORES().find(a => a[0] === r.agregador) || ["", r.agregador])[1];
 
   $("#pvCorpo").innerHTML = `
     <div class="fichas">
@@ -6773,7 +6782,7 @@ async function pivotPasso3() {
       juntar: w.juncoes, linhas: w.linhas, colunas: w.colunas,
       valor: w.valor ? w.valor.campo : undefined, agregador: w.agregador,
     }, null, 2))}</pre>
-    <div class="acoes"><button class="botao secundario" id="pv_volta3">← Resultado</button></div>`);
+    <div class="acoes"><button class="botao secundario" id="pv_volta3">${esc(txt("tela.volta_resultado", "← Resultado"))}</button></div>`);
     $("#pv_volta3").onclick = () => desenharPivot();
   };
 }
@@ -7177,7 +7186,7 @@ function telaCopiarColar(db) {
     const destinoDb = $("#cc_db").value;
     const destino = $("#cc_nome").value.trim();
     if (!destino) return avisar(txt("tela.g_de_nome_copia","dê um nome à cópia"), true);
-    $("#ccRecado").textContent = "copiando…";
+    $("#ccRecado").textContent = txt("tela.st_copiando", "copiando…");
     try {
       const r = await api("copiar_tabela", {
         database: c.db, tabela: c.tab,
@@ -7475,7 +7484,7 @@ function ligarBackups(backups) {
 /** O que a cópia tem dentro, e as duas formas de trazer de volta. */
 async function verDentroDoBackup(origem, de) {
   const alvo = $("#rstDetalhe");
-  alvo.innerHTML = `<div class="vazio">lendo o manifesto…</div>`;
+  alvo.innerHTML = `<div class="vazio">${esc(txt("tela.st_lendo_manifesto", "lendo o manifesto…"))}</div>`;
   try {
     const [d, srv, bancos] = await Promise.all([
       api("restaurar_backup", { origem, de, simular: true }),
@@ -7563,7 +7572,7 @@ async function verDentroDoBackup(origem, de) {
 async function restaurarAgora(origem, de, destino, porCima) {
   const vez = tomarPainel();
   if (!destino) return avisar(txt("tela.g_de_nome_database_restaurado","dê um nome ao database restaurado"), true);
-  $("#rstRecado").textContent = "conferindo o SHA-256 e restaurando…";
+  $("#rstRecado").textContent = txt("tela.st_conferindo_restaurando", "conferindo o SHA-256 e restaurando…");
   try {
     const r = await api("restaurar_backup", {
       origem, de, database: destino,
@@ -8612,7 +8621,7 @@ async function verSysTables(db) {
 async function verSysColumns(db, tabela_) {
   db = db || databaseCorrente();
   if (!db) return avisar(txt("tela.g_sem_database_escolhido","nenhum database escolhido"), true);
-  const vez = folha("SysColumns · " + db, txt("tela.carregando","carregando…"), `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
+  const vez = folha("SysColumns" + " · " + db, txt("tela.carregando","carregando…"), `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
   const r = await api("siscolunas", tabela_ ? { database: db, tabela: tabela_ } : { database: db });
   const linhas = r.colunas || [];
 
@@ -9181,7 +9190,7 @@ async function telaImportar(db, tab) {
     // A prévia é lida NO NAVEGADOR pelo mesmo caminho do servidor? Não —
     // seria uma segunda implementação, e as duas divergiriam. Manda para o
     // servidor com `conferir`, que lê e devolve sem gravar nada.
-    $("#impSaida").innerHTML = `<div class="centro">lendo…</div>`;
+    $("#impSaida").innerHTML = `<div class="centro">${esc(txt("tela.st_lendo", "lendo…"))}</div>`;
     try {
       const r = await api("importar_conferir", {
         database: db, tabela: tab, texto,
@@ -9231,7 +9240,7 @@ async function telaImportar(db, tab) {
   $("#btImportar").onclick = async () => {
     const texto = previa();
     if (texto === null) return;
-    $("#impSaida").innerHTML = `<div class="centro">gravando…</div>`;
+    $("#impSaida").innerHTML = `<div class="centro">${esc(txt("tela.st_gravando", "gravando…"))}</div>`;
     try {
       const r = await api("inserir_lote", {
         database: db, tabela: tab, texto,
@@ -9291,33 +9300,30 @@ async function dialogoExcluir(db, tab, rowid, aoTerminar, versao) {
   const fundo = document.createElement("div");
   fundo.className = "sobre";
   fundo.innerHTML = `
-    <div class="caixa" role="dialog" aria-modal="true" aria-label="Excluir registro">
-      <h3>Excluir o registro ${rowid}</h3>
+    <div class="caixa" role="dialog" aria-modal="true" aria-label="${esc(txt("tela.exc_titulo_al", "Excluir registro"))}">
+      <h3>${esc(preencher(txt("tela.exc_titulo", "Excluir o registro {rowid}"), { rowid }))}</h3>
       <div class="sub">${esc(db)} · ${esc(tab)}</div>
       <div class="modos" id="modosExc">
         <button class="modo escolhido" data-modo="suave">
           <span class="m-ico">🚫</span>
-          <span><span class="m-rot">Marcar como excluído</span>
-            <span class="m-diz">A linha some das listas e continua no
-              <code>.reg</code>, inteira. Dá para restaurar.</span></span>
+          <span><span class="m-rot">${esc(txt("tela.exc_marcar", "Marcar como excluído"))}</span>
+            <span class="m-diz">${marcado(txt("tela.exc_marcar_diz", "A linha some das listas e continua no `.reg`, inteira. Dá para restaurar."))}</span></span>
         </button>
         <button class="modo risco" data-modo="fisico">
           <span class="m-ico">🗑</span>
-          <span><span class="m-rot">Excluir de vez</span>
-            <span class="m-diz">Sai do <code>.reg</code>. A linha inteira vai
-              antes para o <code>.trash</code>, de onde só o administrador
-              lê — e o slot não é reaproveitado.</span></span>
+          <span><span class="m-rot">${esc(txt("tela.exc_de_vez", "Excluir de vez"))}</span>
+            <span class="m-diz">${marcado(txt("tela.exc_de_vez_diz", "Sai do `.reg`. A linha inteira vai antes para o `.trash`, de onde só o administrador lê — e o slot não é reaproveitado."))}</span></span>
         </button>
       </div>
       <label class="cmp"><span>${esc(txt("tela.rot_motivo","Motivo"))}${exige ? ` <b>${esc(txt("tela.exc_obrigatorio","(obrigatório)"))}</b>` : ""}</span>
         <input id="excMotivo" class="campo" maxlength="2000"
-               placeholder="${exige ? "esta tabela exige o motivo escrito"
-                                    : "opcional, mas fica registrado no .reason"}">
+               placeholder="${esc(exige ? txt("tela.exc_ph_exige", "esta tabela exige o motivo escrito")
+                                        : txt("tela.exc_ph_opcional", "opcional, mas fica registrado no .reason"))}">
         <span class="leg">${marcado(txt("tela.exc_leg_reason","Vai para o `.reason` com a data, a hora e quem você é. Sobrevive à linha."))}</span></label>
       <div id="excRecado"></div>
       <div class="acoes">
         <button class="botao secundario" id="btExcNao">${esc(txt("tela.cancelar", "Cancelar"))}</button>
-        <button class="botao marcar" id="btExcSim">Marcar como excluído</button>
+        <button class="botao marcar" id="btExcSim">${esc(txt("tela.exc_marcar", "Marcar como excluído"))}</button>
       </div>
     </div>`;
   document.body.appendChild(fundo);
@@ -9329,7 +9335,7 @@ async function dialogoExcluir(db, tab, rowid, aoTerminar, versao) {
     [...fundo.querySelectorAll(".modo")].forEach(b =>
       b.classList.toggle("escolhido", b.dataset.modo === modo));
     const sim = fundo.querySelector("#btExcSim");
-    sim.textContent = modo === "suave" ? "Marcar como excluído" : "Excluir de vez";
+    sim.textContent = modo === "suave" ? txt("tela.exc_marcar", "Marcar como excluído") : txt("tela.exc_de_vez", "Excluir de vez");
     // Rosa para a que volta, vermelho para a que não volta. O botão troca de
     // cor junto com o texto: quem clica sem ler o texto ainda vê a cor mudar.
     sim.classList.toggle("marcar", modo === "suave");
@@ -9662,8 +9668,10 @@ async function telaLixeira(db, tab) {
   if (!aindaNoPainel(vez)) return;
   const cols = (d.colunas || []).filter(c => !c.sistema);
   const itens = d.descartadas || [];
-  $("#subtitulo").textContent =
-    `${esc(db)} · ${fmt(d.total)} linha(s), ${fmtBytes(d.bytes)}`;
+  // `textContent` nao interpreta HTML: o `esc()` que estava aqui mostrava
+  // `&amp;` no nome de um banco com `&`.
+  $("#subtitulo").textContent = preencher(txt("tela.st_db_n_linhas_bytes", "{db} · {n} linha(s), {bytes}"),
+    { db, n: fmt(d.total), bytes: fmtBytes(d.bytes) });
 
   $("#painel").innerHTML =
     `<p class="leg">Cada linha aqui saiu do <code>.reg</code>. Ela foi gravada
@@ -9822,7 +9830,7 @@ async function telaMotivos(db, tab) {
 
   if (!aindaNoPainel(vez)) return;
   const regs = d.motivos || [];
-  $("#subtitulo").textContent = `${esc(db)} · ${fmt(d.total)} registro(s)`;
+  $("#subtitulo").textContent = preencher(txt("tela.st_db_n_registros", "{db} · {n} registro(s)"), { db, n: fmt(d.total) });
   $("#painel").innerHTML =
     `<p class="leg">O <code>.log</code> diz que houve uma exclusão no rowid tal,
        no instante tal. O que ele não tem onde dizer — o evento dele tem 36
@@ -10529,7 +10537,7 @@ async function telaDbLink(nome) {
      </div>
      <div id="avisoDbl"></div>
      <div class="dbl-corpo">
-       <div class="dbl-lista" id="listaTab"><div class="centro">carregando…</div></div>
+       <div class="dbl-lista" id="listaTab"><div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div></div>
        <div class="dbl-dado" id="dadoTab">
          <div class="vazioc">escolha uma tabela à esquerda</div>
        </div>
@@ -10586,7 +10594,7 @@ async function abrirTabelaDbl(tabela, salto = 0) {
   DBL.tabela = tabela;
   $$("#listaTab .dbl-tab").forEach(b => b.classList.toggle("viva", b.dataset.t === tabela));
   const alvo = $("#dadoTab");
-  alvo.innerHTML = `<div class="centro">lendo ${esc(tabela)}…</div>`;
+  alvo.innerHTML = `<div class="centro">${esc(preencher(txt("tela.st_lendo_tabela", "lendo {tabela}…"), { tabela }))}</div>`;
   let r;
   try {
     r = await api("dblink_ler", { dblink: DBL.ligacao, database: DBL.database, tabela, salto });
@@ -11919,8 +11927,8 @@ async function telaDiagramaER(db, vez = vezDoPainel()) {
   // A posse que ESTA tela tomou ao anunciar «lendo»: o laco de `esquema` abaixo
   // e o `dblink` sao `await`s, e a pintura final so vale se ninguem pintou
   // outra coisa enquanto eles voltavam.
-  const minha = folha(txt("tela.fer_diagrama","Diagrama ER"), `${esc(db)} · lendo o esquema…`,
-    `<div class="centro">lendo o esquema de cada tabela…</div>`);
+  const minha = folha(txt("tela.fer_diagrama","Diagrama ER"), `${esc(db)} · ${esc(txt("tela.st_lendo_esquema", "lendo o esquema…"))}`,
+    `<div class="centro">${esc(txt("tela.st_lendo_esquema_tabelas", "lendo o esquema de cada tabela…"))}</div>`);
   const t = await api("tabelas", { database: db });
   const esquemas = [];
   for (const nome of (t.tabelas || [])) {
@@ -12068,10 +12076,11 @@ function cartaoDeclararFk(db, de, para) {
   let nome = `fk_${para.tabela}`;
   for (let n = 2; nomes.has(nome); n++) nome = `fk_${para.tabela}_${n}`;
 
-  const ACOES = [["restringir", "restringir — recusa enquanto houver filha"],
-                 ["cascata", "cascata — repete a operação nas filhas"],
-                 ["anular", "anular — anula as colunas da filha"],
-                 ["nada", "nada — não faz nada"]];
+  // O valor e protocolo e nao se traduz; o rotulo, sim.
+  const ACOES = [["restringir", txt("tela.fk_acao_restringir", "restringir — recusa enquanto houver filha")],
+                 ["cascata", txt("tela.fk_acao_cascata", "cascata — repete a operação nas filhas")],
+                 ["anular", txt("tela.fk_acao_anular", "anular — anula as colunas da filha")],
+                 ["nada", txt("tela.fk_acao_nada", "nada — não faz nada")]];
   // O EXCLUIR so oferece `restringir`: o servidor recusa as outras tres na
   // declaracao («nunca se mata o pai que tem filhos»), entao oferece-las era
   // montar um menu cujas tres opcoes terminam em erro. O ALTERAR tem as quatro.
@@ -12080,26 +12089,24 @@ function cartaoDeclararFk(db, de, para) {
     `<option value="${v}">${esc(r)}</option>`).join("")}</select>`;
 
   const c = cartaoER(`
-    <h3>Declarar chave estrangeira</h3>
+    <h3>${esc(txt("tela.fk_declarar_titulo", "Declarar chave estrangeira"))}</h3>
     <div class="sub"><code>${esc(de.tabela)}.${esc(de.coluna)}</code> →
       <code>${esc(para.tabela)}.${esc(para.coluna)}</code></div>
-    <p style="font-size:12.5px">A chave entra em <b>${esc(de.tabela)}</b> (a
-      filha) e aponta para <b>${esc(para.tabela)}</b>${de.tabela === para.tabela
-        ? " — a própria tabela: é o laço do «chefe que também é funcionário», e ele é legítimo"
-        : ""}.</p>
-    ${!tiposCasam ? `<div class="aviso">Os tipos não
-      são iguais: <code>${esc(de.coluna)}</code> é <code>${esc(tipoA)}</code> e
-      <code>${esc(para.coluna)}</code> é <code>${esc(tipoB)}</code>. A
-      declaração entra mesmo assim — mas um JOIN entre os dois vai comparar
-      valores de tipos diferentes.</div>` : ""}
-    ${cb && !cb.primaria ? `<div class="aviso"><code>${esc(para.coluna)}</code>
-      não é a chave primária de ${esc(para.tabela)} — o normal é a chave
-      apontar para a primária. A declaração entra mesmo assim.</div>` : ""}
+    <p style="font-size:12.5px">${marcado(de.tabela === para.tabela
+      ? txt("tela.fk_entra_em_propria", "A chave entra em **{filha}** (a filha) e aponta para **{mae}** — a própria tabela: é o laço do «chefe que também é funcionário», e ele é legítimo.")
+      : txt("tela.fk_entra_em", "A chave entra em **{filha}** (a filha) e aponta para **{mae}**."),
+      { filha: de.tabela, mae: para.tabela })}</p>
+    ${!tiposCasam ? `<div class="aviso">${marcado(txt("tela.fk_tipos_diferentes",
+      "Os tipos não são iguais: `{de}` é `{tipo_de}` e `{para}` é `{tipo_para}`. A declaração entra mesmo assim — mas um JOIN entre os dois vai comparar valores de tipos diferentes."),
+      { de: de.coluna, tipo_de: tipoA, para: para.coluna, tipo_para: tipoB })}</div>` : ""}
+    ${cb && !cb.primaria ? `<div class="aviso">${marcado(txt("tela.fk_nao_aponta_primaria",
+      "`{coluna}` não é a chave primária de {tabela} — o normal é a chave apontar para a primária. A declaração entra mesmo assim."),
+      { coluna: para.coluna, tabela: para.tabela })}</div>` : ""}
     <div class="form-dbl">
-      <label class="cmp"><span>nome da chave</span>
+      <label class="cmp"><span>${esc(txt("tela.fk_nome_chave", "nome da chave"))}</span>
         <input id="fkNome" value="${esc(nome)}"></label>
-      <label class="cmp"><span>ao excluir a linha-mãe</span>${selAcao("fkExc", ["restringir"])}</label>
-      <label class="cmp"><span>ao alterar a chave da mãe</span>${selAcao("fkAlt")}</label>
+      <label class="cmp"><span>${esc(txt("tela.fk_ao_excluir_mae", "ao excluir a linha-mãe"))}</span>${selAcao("fkExc", ["restringir"])}</label>
+      <label class="cmp"><span>${esc(txt("tela.fk_ao_alterar_mae", "ao alterar a chave da mãe"))}</span>${selAcao("fkAlt")}</label>
     </div>
     <div class="aviso" style="margin-top:12px">${marcado(txt("tela.fk_card_1",
       "**Declarada e conferida.** A chave nasce conferida na gravação: filha sem mãe é recusada."))}
@@ -12108,7 +12115,7 @@ function cartaoDeclararFk(db, de, para) {
       ${marcado(txt("tela.fk_card_3", "Por isso o excluir só aceita `restringir`."))}</div>
     <div id="fkRecado"></div>
     <div class="acoes">
-      <button class="botao incluir" id="fkOk">Declarar a chave</button>
+      <button class="botao incluir" id="fkOk">${esc(txt("tela.fk_declarar_botao", "Declarar a chave"))}</button>
       <button class="botao secundario" id="fkNao">${esc(txt("tela.cancelar", "Cancelar"))}</button>
     </div>`);
 
@@ -12116,7 +12123,7 @@ function cartaoDeclararFk(db, de, para) {
   c.corpo.querySelector("#fkOk").onclick = async () => {
     const nomeFk = c.corpo.querySelector("#fkNome").value.trim();
     if (!nomeFk) return c.corpo.querySelector("#fkRecado").innerHTML =
-      `<div class="aviso mal">dê um nome à chave</div>`;
+      `<div class="aviso mal">${esc(txt("tela.fk_de_um_nome", "dê um nome à chave"))}</div>`;
     const vez = vezDoPainel();
     try {
       await api("declarar_fk", {
@@ -12453,7 +12460,7 @@ async function telaDadosPessoais(db) {
   const bancos = est.bancos || await api("bancos");
   const alvos = db ? [db] : bancos;
   const vez = folha(txt("tela.tt_dado_pessoal","Dado pessoal"), txt("tela.st_varrendo_esquema","varrendo o esquema…"),
-    `<div class="centro">lendo o esquema de cada tabela…</div>`);
+    `<div class="centro">${esc(txt("tela.st_lendo_esquema_tabelas", "lendo o esquema de cada tabela…"))}</div>`);
 
   const achados = [];
   let colunasVistas = 0, semClassificacao = 0, semAcesso = 0;
@@ -12607,8 +12614,8 @@ async function telaDadosPessoais(db) {
  * respostas muito diferentes para quem audita.
  */
 async function telaTrilhaLgpd(db, tab, tipo) {
-  const vez = folha(txt("tela.tt_trilha_lgpd","Trilha de LGPD"), `${esc(db)}.${esc(tab)} · lendo…`,
-    `<div class="centro">lendo o <code>.lgpd</code>…</div>`);
+  const vez = folha(txt("tela.tt_trilha_lgpd","Trilha de LGPD"), `${esc(db)}.${esc(tab)} · ${esc(txt("tela.st_lendo", "lendo…"))}`,
+    `<div class="centro">${marcado(txt("tela.st_lendo_lgpd", "lendo o `.lgpd`…"))}</div>`);
   let t;
   try {
     t = await api("trilha", { database: db, tabela: tab, limite: 500,
@@ -13314,7 +13321,7 @@ async function assistenteReplicacao() {
     if (prova) { prova.parar(); prova = null; }
     corpo.innerHTML = `
       <h3>${esc(titulo)}</h3>
-      <div class="sub">assistente de replicação · ${esc(rz.modo.rot)} · passo ${passo} de 6</div>
+      <div class="sub">${esc(preencher(txt("tela.rz_sub", "assistente de replicação · {modo} · passo {passo} de {total}"), { modo: rz.modo.rot, passo, total: 6 }))}</div>
       ${html}
       <div id="rzRecado"></div>
       <div class="acoes">${acoes}</div>`;
@@ -13351,7 +13358,7 @@ async function assistenteReplicacao() {
       // Dentro do corpo do diálogo: a tela atrás também tem um `.sub`, e o
       // seletor solto trocaria o título DELA.
       corpo.querySelector(".sub").textContent =
-        `assistente de replicação · ${rz.modo.rot} · passo 1 de 6`;
+        preencher(txt("tela.rz_sub", "assistente de replicação · {modo} · passo {passo} de {total}"), { modo: rz.modo.rot, passo: 1, total: 6 });
     });
     const ja = $("#rzJaAcomp");
     if (ja) ja.onclick = () => { fechar(); abrirProvaReplicacao(cfg.origens); };
@@ -14361,39 +14368,37 @@ async function telaMensagens() {
   est.atual = null;
   $("#abas").innerHTML = "";
   pararMonitor();
-  $("#titulo").textContent = "Mensagens do servidor";
-  $("#subtitulo").textContent =
-    "phxsys.mensagens · um texto por idioma; célula vazia cai para o português";
+  $("#titulo").textContent = txt("tela.tt_mensagens_servidor", "Mensagens do servidor");
+  $("#subtitulo").textContent = txt("tela.st_mensagens_por_idioma",
+    "phxsys.mensagens · um texto por idioma; célula vazia cai para o português");
   const p = $("#painel");
   p.innerHTML = `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`;
   try {
     const m = await api("mensagens");
     if (!aindaNoPainel(vez)) return;
     const cabec = `<div class="aviso">
-        Idioma em uso: <b>${esc(m.idioma)}</b> — é o campo <code>idioma</code> do
-        <code>config.json</code>; trocar o <i>idioma</i> exige reinício, editar os
-        <i>textos</i> não. Cada mensagem é uma linha da tabela
-        <code>${esc(m.database)}.${esc(m.tabela)}</code>: <code>id</code> e
-        <code>TextName</code> são fixos (a programação busca por eles) e as colunas
-        ${(m.idiomas||[]).map(i=>`<code>${esc(i)}</code>`).join(", ")} guardam o texto.
-        O código estruturado do erro (ex.: 4002 EM_CARGA) nunca muda com o idioma.
+        ${marcado(txt("tela.msg_idioma_em_uso", "Idioma em uso: **{idioma}** — é o campo `idioma` do `config.json`; trocar o *idioma* exige reinício, editar os *textos* não."), { idioma: m.idioma })}
+        ${marcado(txt("tela.msg_cada_linha", "Cada mensagem é uma linha da tabela `{tabela}`: `id` e `TextName` são fixos (a programação busca por eles) e as colunas `{colunas}` guardam o texto."),
+          { tabela: `${m.database}.${m.tabela}`, colunas: (m.idiomas || []).join(", ") })}
+        ${esc(txt("tela.msg_codigo_nunca_muda", "O código estruturado do erro (ex.: 4002 EM_CARGA) nunca muda com o idioma."))}
       </div>`;
     if (!m.existe) {
-      p.innerHTML = cabec + `<div class="aviso">A tabela ainda não existe neste
-          servidor. Semear cria o database <code>phxsys</code> e grava as
-          ${fmt(m.de_fabrica)} mensagens de fábrica — traduza depois, pela grade;
-          o que ficar em branco continua saindo em português.</div>
+      p.innerHTML = cabec + `<div class="aviso">${esc(txt("tela.msg_tabela_nao_existe", "A tabela ainda não existe neste servidor."))}
+          ${marcado(txt("tela.msg_semear_cria", "Semear cria o database `phxsys` e grava as {n} mensagens de fábrica — traduza depois, pela grade; o que ficar em branco continua saindo em português."), { n: fmt(m.de_fabrica) })}</div>
         <div class="acoes">
-          <button class="botao incluir" id="btSemear">Semear mensagens</button>
+          <button class="botao incluir" id="btSemear">${esc(txt("tela.msg_semear", "Semear mensagens"))}</button>
         </div>`;
     } else {
       const faltam = Math.max(0, (m.de_fabrica || 0) - (m.linhas || 0));
       p.innerHTML = cabec + `<div class="acoes">
-          <button class="botao consultar" id="btAbrirGrade">Abrir a tabela na grade</button>
-          <button class="botao incluir" id="btSemear">Semear / completar</button>
-          <span class="leg">${fmt(m.linhas)} mensagens na tabela ·
-            ${fmt(m.de_fabrica)} de fábrica${faltam ? ` · ${fmt(faltam)} por semear` : ""} ·
-            texto editado vale em poucos segundos, sem reiniciar</span>
+          <button class="botao consultar" id="btAbrirGrade">${esc(txt("tela.msg_abrir_grade", "Abrir a tabela na grade"))}</button>
+          <button class="botao incluir" id="btSemear">${esc(txt("tela.msg_semear_completar", "Semear / completar"))}</button>
+          <span class="leg">${esc([
+            preencher(txt("tela.msg_n_na_tabela", "{n} mensagens na tabela"), { n: fmt(m.linhas) }),
+            preencher(txt("tela.msg_n_de_fabrica", "{n} de fábrica"), { n: fmt(m.de_fabrica) }),
+            ...(faltam ? [preencher(txt("tela.msg_n_por_semear", "{n} por semear"), { n: fmt(faltam) })] : []),
+            txt("tela.msg_vale_sem_reiniciar", "texto editado vale em poucos segundos, sem reiniciar"),
+          ].join(" · "))}</span>
         </div>`;
       $("#btAbrirGrade").onclick = () => verConteudoEditavel(m.database, m.tabela);
     }
@@ -15103,7 +15108,7 @@ async function backupAgora() {
     textoOk: txt("tela.fer_backup","Backup"),
   });
   if (alvo === null) return;
-  const vez = folha(txt("tela.fer_backup","Backup"), txt("tela.st_copiando_conferindo","copiando e conferindo…"), `<div class="centro">rodando…</div>`);
+  const vez = folha(txt("tela.fer_backup","Backup"), txt("tela.st_copiando_conferindo","copiando e conferindo…"), `<div class="centro">${esc(txt("tela.st_rodando", "rodando…"))}</div>`);
   // O `destino` e OBRIGATORIO no protocolo e a tela nao o mandava: o pedido
   // voltava «informe "destino"», a excecao subia sem dono, e a folha ficava em
   // «rodando…» PARA SEMPRE -- sem backup e sem erro, que e a pior das duas
@@ -15145,7 +15150,7 @@ async function conferirBackup() {
   });
   if (!caminho || !caminho.trim()) return;
   const vez = folha(txt("tela.tt_conferencia_backup","Conferência do backup"), txt("tela.st_recalculando_sha","recalculando o SHA-256 de cada arquivo…"),
-        `<div class="centro">conferindo…</div>`);
+        `<div class="centro">${esc(txt("tela.ia_conferindo", "conferindo…"))}</div>`);
   // O IRMAO do `backupAgora`: pasta que nao existe deixava a folha em
   // «conferindo…» para sempre, pela mesma falta de dono na excecao.
   let r;
@@ -15169,7 +15174,7 @@ async function conferirBackup() {
                    divergencias: (r.divergencias || []).length },
                  [["arquivos", txt("tela.fc_arquivos","arquivos")],
                   ["bytes","bytes"],
-                  ["divergencias","divergências"]]) +
+                  ["divergencias", txt("tela.fc_divergencias", "divergências")]]) +
         `<pre class="dado">${esc(JSON.stringify(r, null, 1))}</pre>`);
 }
 

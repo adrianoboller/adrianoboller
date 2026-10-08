@@ -42,3 +42,37 @@ jobs:
 
       - name: "Portao 3: suite de testes (cargo test --workspace)"
         run: cargo test --workspace
+
+  # Pedido 662: a recusa de link no Windows (`util::abrir_sem_seguir`, com
+  # `FILE_FLAG_OPEN_REPARSE_POINT`) so se prova no Windows de verdade -- a
+  # compilacao cruzada no Linux diz que o codigo existe, nao que o NTFS
+  # devolve o handle do link. Roda SO o teste dela: a suite inteira no
+  # Windows e outra conversa, com outros testes que pressupoem Unix.
+  windows:
+    name: recusa de link no Windows (pedido 662)
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: phxsql
+    steps:
+      - name: Baixar o codigo
+        uses: actions/checkout@v4
+
+      - name: Mostrar o toolchain resolvido
+        run: rustc --version --verbose
+
+      # Filtro de teste que nao casa nada sai VERDE com «0 passed» -- o mesmo
+      # portao que engole o proprio fracasso, por outro caminho. Antes de
+      # rodar, a lista tem de trazer o teste pelo nome exato. Sem cano: a
+      # saida vai para uma variavel e o codigo do cargo se confere a parte.
+      - name: "O teste existe para o filtro (sem isso o verde nao prova nada)"
+        run: |
+          $lista = cargo test -p phxsql-store --lib -- --exact util::tests::sem_seguir_no_windows_recusa_link_plantado --list
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (-not ($lista -match '^util::tests::sem_seguir_no_windows_recusa_link_plantado: test$')) {
+            Write-Error "o filtro nao achou util::tests::sem_seguir_no_windows_recusa_link_plantado"
+            exit 1
+          }
+
+      - name: "Prova: link plantado e recusado, arquivo comum abre"
+        run: cargo test -p phxsql-store --lib -- --exact util::tests::sem_seguir_no_windows_recusa_link_plantado

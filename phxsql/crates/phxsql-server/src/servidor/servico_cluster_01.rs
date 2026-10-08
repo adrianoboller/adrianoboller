@@ -233,9 +233,7 @@ impl Servidor {
         // sairia em claro mesmo com a cifra do cluster ligada, que e o defeito
         // que a guarda `pulso-do-cluster-em-claro` repoe: cifrar so a
         // replicacao e deixar o pulso em claro e a metade que engana.
-        if c.cifra {
-            cliente.cifrar(no.pino_do_fio()?)?;
-        }
+        cliente.proteger(c.cifra, no.pino_do_fio()?, no.pino_tls()?)?;
         if !c.usuario.is_empty() {
             cliente.autenticar(&c.usuario, &c.senha_hash, "")?;
         }
@@ -1079,6 +1077,7 @@ impl Servidor {
                 .inteiro_ou("porta", crate::config::PORTA_PADRAO as i64)
                 .clamp(1, 65_535) as u16,
             chave_do_fio: p.texto_ou("chave_do_fio", "").trim().to_string(),
+            pino_tls: p.texto_ou("pino_tls", "").trim().to_string(),
         };
         let mudou = estado.acrescentar(no.clone());
         match self.gravar_a_lista_do_cluster(&estado) {
@@ -1120,6 +1119,9 @@ impl Servidor {
                         // privada de ninguem. Quando o cluster esta cifrado, a
                         // propria propagacao ja vai por dentro do tunel.
                         ("chave_do_fio", Json::texto_de(&no.chave_do_fio)),
+                        // O pino TLS e o irmao do de cima: sem ele, os outros
+                        // nos falariam com o novo pelo Noise (pedido 572).
+                        ("pino_tls", Json::texto_de(&no.pino_tls)),
                         ("propagar", Json::Bool(false)),
                     ],
                 ),
@@ -1322,9 +1324,7 @@ impl Servidor {
                 // ligada ela tambem vai por dentro do tunel, senao um no com
                 // `cifra_fio.exigir` recusaria a ordem de escalonamento em
                 // claro. O pino e o do no de destino.
-                if c.cifra {
-                    cliente.cifrar(no.pino_do_fio()?)?;
-                }
+                cliente.proteger(c.cifra, no.pino_do_fio()?, no.pino_tls()?)?;
                 if !c.usuario.is_empty() {
                     cliente.autenticar(&c.usuario, &c.senha_hash, "")?;
                 }
@@ -1593,6 +1593,7 @@ pub(super) fn origem_do_master(
         // `cluster.cifra` protege o trafego INTEIRO do cluster, nunca so metade.
         cifra: c.cifra,
         chave_do_fio: no.chave_do_fio.clone(),
+        pino_tls: no.pino_tls.clone(),
         espelho: false,
     }
 }

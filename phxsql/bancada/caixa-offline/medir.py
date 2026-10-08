@@ -36,6 +36,7 @@ import hashlib
 import json
 import os
 import random
+import re
 import shutil
 import signal
 import socket
@@ -148,8 +149,17 @@ def origem(nome, porta, databases):
             "cifra": False, "espelho": True}
 
 
+# Pedido 706: o expurgo do diario do caixa, ligado com `--expurgo`. O volume
+# no piso (64 KiB) e uma passada a cada 2 s comprimem meses de loja em
+# minutos; o prazo e o do dono (30 dias), que nenhuma volta alcanca -- aqui
+# so sai o que o central confirmou.
+EXPURGO = {"expurgo": True, "consumidores": ["central"], "volume_kib": 64,
+           "passada_s": 2, "prazo_dias": 30}
+COM_EXPURGO = False
+
+
 def config(porta, id_servidor, origens):
-    return {
+    c = {
         "base": "base",
         # bancada de teste, NAO cliente do produto -- fala em claro para medir
         # a replicacao espelho sem o aperto de mao no meio
@@ -159,6 +169,9 @@ def config(porta, id_servidor, origens):
         "replicacao": {"papel": "replica", "id_servidor": id_servidor,
                        "imagem_da_linha": True, "origens": origens},
     }
+    if COM_EXPURGO and id_servidor != "central":
+        c["diario"] = dict(EXPURGO)
+    return c
 
 
 class Bancada:
@@ -306,11 +319,50 @@ def contar(lig, db, tabela):
     return int(gs[0]["n"]) if gs else 0
 
 
+def expurgado_pelo_log(dir_no):
+    """O que o caixa disse ter tirado do diario, pela linha da passada no
+    `servidor.log` -- medido por quem apagou, e nao estimado aqui."""
+    vols = evs = bts = 0
+    try:
+        with open(os.path.join(dir_no, "servidor.log"), errors="replace") as f:
+            for linha in f:
+                m = re.search(r"expurgo do diario: (\d+) volume\(s\), (\d+) evento\(s\), "
+                              r"(\d+) bytes", linha)
+                if m:
+                    vols += int(m.group(1))
+                    evs += int(m.group(2))
+                    bts += int(m.group(3))
+    except OSError:
+        pass
+    return vols, evs, bts
+
+
+def refeitos_pelo_log(dir_no):
+    try:
+        with open(os.path.join(dir_no, "servidor.log"), errors="replace") as f:
+            return sum(1 for linha in f if "refeito por retrato da origem" in linha)
+    except OSError:
+        return 0
+
+
+def amostrador_do_diario(est, b, caixas):
+    """Os bytes de `.log` de cada caixa, a cada segundo, com a fase."""
+    while not est.parar_obs.wait(1.0):
+        for c in caixas:
+            l, _ = bytes_do_diario(os.path.join(b.dir(c), "base", c))
+            est.diario_amostras.append((est.fase, c, l))
+
+
 def bytes_do_diario(dir_db):
     tot_log, tot = 0, 0
     for raiz, _, arqs in os.walk(dir_db):
         for a in arqs:
-            t = os.path.getsize(os.path.join(raiz, a))
+            # O arquivo pode sair entre a listagem e o tamanho: o expurgo
+            # (706) apaga volume, a troca do `.pag` apaga o `.novo`.
+            try:
+                t = os.path.getsize(os.path.join(raiz, a))
+            except FileNotFoundError:
+                continue
             tot += t
             if a.endswith(".log"):
                 tot_log += t
@@ -335,6 +387,7 @@ class Estado:
         self.meias = []                # (caixa, vendas, itens, esperado)
         self.sanduiches = 0
         self.rodadas_poller = []
+        self.diario_amostras = []      # (fase, caixa, bytes de .log)
 
 
 def vendedor(est, caixa, porta, semente):
@@ -540,6 +593,9 @@ def volta(n_caixas, seg_fase, semente):
         obs = [threading.Thread(target=observador_chegada, args=(est, caixas)),
                threading.Thread(target=observador_trava, args=(est,)),
                threading.Thread(target=observador_meia_venda, args=(est, caixas))]
+        if COM_EXPURGO:
+            obs.append(threading.Thread(target=amostrador_do_diario,
+                                        args=(est, b, caixas)))
         vend = [threading.Thread(target=vendedor,
                                  args=(est, c, b.portas[c], semente * 100 + i))
                 for i, c in enumerate(caixas)]
@@ -596,6 +652,11 @@ def volta(n_caixas, seg_fase, semente):
                 break
             time.sleep(0.05)
         r["convergiu_depois_da_ultima_venda_s"] = round(time.perf_counter() - t_fim, 2)
+        if COM_EXPURGO:
+            # Tres passadas depois de o central confirmar tudo: e o retrato
+            # do disco do caixa com o central em dia de novo.
+            est.fase = "fim"
+            time.sleep(3 * EXPURGO["passada_s"] + 1)
         time.sleep(0.3)
         est.parar_obs.set()
         for t in obs:
@@ -676,6 +737,31 @@ def volta(n_caixas, seg_fase, semente):
         itens_med = (sum(sum(x[0] for x in est.cometidas[c].values()) for c in caixas)
                      / max(1, r["conferencia"]["vendas_cometidas"]))
         r["itens_por_venda_media"] = round(itens_med, 2)
+        if COM_EXPURGO:
+            kib = lambda x: round(x / 1024, 1)  # noqa: E731
+            por_fase = {}
+            for fase, c, l in est.diario_amostras:
+                por_fase.setdefault(fase, []).append(l)
+            fim = {c: bytes_do_diario(os.path.join(b.dir(c), "base", c))[0] for c in caixas}
+            tirado = {c: expurgado_pelo_log(b.dir(c)) for c in caixas}
+            r["diario_com_expurgo"] = {
+                "config": EXPURGO,
+                "log_por_caixa_kib_por_fase": {f: faixa([kib(x) for x in v], 1)
+                                               for f, v in por_fase.items()},
+                "log_por_caixa_no_fim_kib": faixa([kib(x) for x in fim.values()], 1),
+                "volumes_tirados_por_caixa": faixa([t[0] for t in tirado.values()], 0),
+                "eventos_tirados_por_caixa": faixa([t[1] for t in tirado.values()], 0),
+                # O diario que o caixa GEROU na volta: o que ficou mais o que
+                # o expurgo disse ter tirado -- e o tamanho sem expurgo.
+                "log_gerado_por_caixa_kib": faixa(
+                    [kib(fim[c] - diario0[c][0] + tirado[c][2]) for c in caixas], 1),
+                # Quantas vezes o central se refez pelo retrato do caixa (a
+                # linha que ele mesmo escreve no `servidor.log`).
+                "central_refeito_por_retrato": refeitos_pelo_log(b.dir("central")),
+                "vendas_perdidas_no_central": (
+                    r["conferencia"]["vendas_cometidas"]
+                    - r["conferencia"]["vendas_no_central"]),
+            }
         r["bancada_bytes"] = sum(
             os.path.getsize(os.path.join(rz, a))
             for rz, _, arqs in os.walk(BASE) for a in arqs)
@@ -764,6 +850,16 @@ def main():
             del argv[i:i + 2]
             return v
         return padrao
+    global COM_EXPURGO
+    if "--expurgo" in argv:
+        argv.remove("--expurgo")
+        COM_EXPURGO = True
+    # `--prazo-s N`: o prazo de ENSAIO do expurgo (`diario.prazo_s`). Com a
+    # fase maior que ele, o central fica fora ALEM do prazo, o caixa solta o
+    # que ele nao puxou, e o central se refaz pelo retrato ao voltar.
+    prazo_s = opcao("--prazo-s", 0)
+    if prazo_s:
+        EXPURGO["prazo_s"] = prazo_s
     n_caixas = opcao("--caixas", 20)
     seg = opcao("--fase", 20)
     n_voltas = int(argv[0]) if argv else 3
@@ -771,7 +867,14 @@ def main():
         raise SystemExit(f"nao achei {PHXSQLD}")
     portao = subprocess.run(["bash", os.path.join(RAIZ, "bancada", "esta-medindo.sh")],
                             capture_output=True, text=True)
-    if portao.returncode == 0:
+    # `--mesmo-ocupada`: o expurgo (706) pergunta por BYTES de disco e venda
+    # perdida, que a carga da maquina nao muda -- so as latencias mudam, e o
+    # resultado sai marcado `maquina_ocupada` com quem ocupava. Sem a flag,
+    # recusa como sempre.
+    mesmo_ocupada = "--mesmo-ocupada" in argv
+    if mesmo_ocupada:
+        argv.remove("--mesmo-ocupada")
+    if portao.returncode == 0 and not mesmo_ocupada:
         raise SystemExit("ha medicao em curso na maquina -- espere:\n" + portao.stdout)
     bin_ = binario()
     voltas = []
@@ -788,12 +891,14 @@ def main():
     if os.path.exists(BASE):
         shutil.rmtree(BASE)
     saida = {
-        "pedido": 678,
+        "pedido": 706 if COM_EXPURGO else 678,
         "quando": time.strftime("%Y-%m-%d %H:%M"),
         "binario": bin_,
         "maquina": f"{os.cpu_count()} nucleos; {n_caixas + 1} processos phxsqld "
                    "em 127.0.0.1, no mesmo container",
         "maquina_ocupada": portao.returncode == 0,
+        "ocupada_por": (portao.stdout.strip().splitlines()
+                        if portao.returncode == 0 else []),
         "reconectar_em_s": RECONECTAR_EM,
         "chegada_inclui": (f"o sono do laco da replica do central ({RECONECTAR_EM} s "
                            "quando a rodada anterior nao achou nada) MAIS o transporte "
@@ -803,10 +908,14 @@ def main():
                   "venda": "begin; 1 vendas; k itens (FK conferida); k atualizar "
                            "estoque; commit"},
         "faixas": agregar(voltas),
+        "diario_com_expurgo": ([v.get("diario_com_expurgo") for v in voltas]
+                               if COM_EXPURGO else None),
         "voltas": voltas,
     }
     # Ensaio (menos caixas, fase curta) nao sobrescreve o resultado da casa.
-    arq = os.environ.get("PHX_CAIXA_SAIDA") or os.path.join(AQUI, "resultados.json")
+    # O expurgo grava ao lado: e outra pergunta, e o resultado do 678 fica.
+    padrao = "resultados-expurgo.json" if COM_EXPURGO else "resultados.json"
+    arq = os.environ.get("PHX_CAIXA_SAIDA") or os.path.join(AQUI, padrao)
     with open(arq + ".parcial", "w") as f:
         json.dump(saida, f, indent=2, ensure_ascii=False)
         f.write("\n")

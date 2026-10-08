@@ -311,3 +311,42 @@ fn marca_em_claro_continua_sendo_lida_com_o_cofre_ligado() {
     assert_eq!(m.operacoes[1].motivo, SEGREDO_MOTIVO);
     cofre::desligar();
 }
+
+// ------------------------------------------------- 5. o bilhete (pedido 709)
+
+/// A marca v8 -- o bilhete posicional com o cofre ligado -- volta com o `tx`
+/// e a versao de antes de cada operacao, e o valor continua fora dos bytes.
+///
+/// Prova real: gravar o `tx` antes do material (e nao depois) desloca o
+/// material, e a leitura cai em `SemChave`; esquecer a versao no payload faz
+/// a leitura cair em `NaoConfere`.
+#[test]
+fn a_marca_v8_volta_com_o_bilhete_e_sem_o_claro() {
+    let _t = UM_DE_CADA_VEZ.lock().unwrap_or_else(|e| e.into_inner());
+    let d = DirTemp::novo("marca-v8");
+    cofre::definir(SENHA, RAPIDO).unwrap();
+    let bilhete = transacao::Bilhete {
+        tx: 0x1234_5678_9abc,
+        versoes_antes: &[41, 7],
+    };
+    let caminho =
+        transacao::gravar_marca_posicional(&d, 105, 1_700_000_000_000, &escritas(), bilhete)
+            .unwrap();
+    let bruto = std::fs::read(&caminho).unwrap();
+    assert_eq!(
+        u32::from_le_bytes([bruto[8], bruto[9], bruto[10], bruto[11]]),
+        phxsql_store::marca::VERSAO_POSICIONAL_CIFRADA
+    );
+    for agulha in segredos() {
+        assert!(!contem(&bruto, agulha.as_bytes()), "{agulha:?} em claro");
+    }
+    let m = match ler_marca(&caminho).unwrap() {
+        Leitura::Aberta(m) => m,
+        outra => panic!("a v8 nao abriu: {outra:?}"),
+    };
+    assert_eq!(m.tx, 0x1234_5678_9abc);
+    assert_eq!(m.operacoes[0].versao_antes, Some(41));
+    assert_eq!(m.operacoes[1].versao_antes, Some(7));
+    assert_eq!(m.operacoes[0].linha[1], Value::Str(SEGREDO.into()));
+    assert_eq!(m.operacoes[1].motivo, SEGREDO_MOTIVO);
+}

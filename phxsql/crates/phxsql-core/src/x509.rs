@@ -217,6 +217,10 @@ pub fn cert_autoassinado(
 const OID_EC_PUBLICA: [u64; 6] = [1, 2, 840, 10045, 2, 1];
 /// OID `prime256v1` = 1.2.840.10045.3.1.7 (RFC 5480).
 const OID_P256: [u64; 7] = [1, 2, 840, 10045, 3, 1, 7];
+/// `secp384r1` (SEC 2 / RFC 5480 §2.1.1.1).
+const OID_P384: [u64; 5] = [1, 3, 132, 0, 34];
+/// `rsaEncryption` (RFC 8017 §A.1, RFC 3279 §2.3.1).
+const OID_RSA: [u64; 7] = [1, 2, 840, 113549, 1, 1, 1];
 /// OID `ecdsa-with-SHA256` = 1.2.840.10045.4.3.2 (RFC 5758).
 const OID_ECDSA_SHA256: [u64; 7] = [1, 2, 840, 10045, 4, 3, 2];
 const OID_SAN: [u64; 4] = [2, 5, 29, 17];
@@ -275,6 +279,10 @@ pub enum ChavePublica {
     P256(Vec<u8>),
     /// Ed25519.
     Ed25519([u8; 32]),
+    /// ECDSA P-384, ponto `04 || X || Y` (pedido 572, T6c-1).
+    P384(Vec<u8>),
+    /// RSA (`rsaEncryption`), ja lida e conferida no tamanho.
+    Rsa(crate::rsa::ChavePublica),
     /// Qualquer outra: o OID do algoritmo, para a recusa NOMEAR o que veio
     /// (RSA, P-384...) em vez de dizer so «invalida».
     Outra(Vec<u64>),
@@ -338,6 +346,9 @@ pub fn chave_do_spki(spki: &[u8]) -> crate::error::Result<ChavePublica> {
             Some(c) if c.tag == asn1::TAG_OID => asn1::decodificar_oid(c.conteudo)?,
             _ => return Err(torto("chave EC sem a curva")),
         };
+        if curva == OID_P384 {
+            return Ok(ChavePublica::P384(chave));
+        }
         if curva != OID_P256 {
             return Ok(ChavePublica::Outra(curva));
         }
@@ -348,6 +359,9 @@ pub fn chave_do_spki(spki: &[u8]) -> crate::error::Result<ChavePublica> {
             .try_into()
             .map_err(|_| torto("chave Ed25519 sem 32 bytes"))?;
         return Ok(ChavePublica::Ed25519(k));
+    }
+    if oid_alg == OID_RSA {
+        return Ok(ChavePublica::Rsa(crate::rsa::ChavePublica::de_der(&chave)?));
     }
     Ok(ChavePublica::Outra(oid_alg))
 }

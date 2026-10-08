@@ -316,7 +316,12 @@ fn acima_do_teto_a_web_responde_503_com_retry_after_e_a_vaga_volta() {
     let dir = DirTemp::novo("web-503");
     let mut c = config_base(&dir);
     c.recursos.conexoes_web_max = 1;
-    c.recursos.fila_web_ms = 100;
+    // Pedido 703: eram 100 ms, e o teto da recusa imediata tambem -- o mesmo
+    // numero do defeito, entao o escalonador da suite cheia decidia. Com a fila
+    // longa, o defeito (esperar a fila) custa FILA_MS e a recusa imediata e
+    // medida contra a METADE dele; o piso de B continua robusto a carga.
+    const FILA_MS: u64 = 1_000;
+    c.recursos.fila_web_ms = FILA_MS;
     let s = Servidor::novo(c).unwrap();
     let porta = porta_web(&s);
 
@@ -330,7 +335,7 @@ fn acima_do_teto_a_web_responde_503_com_retry_after_e_a_vaga_volta() {
         "A nao tomou a vaga"
     );
 
-    // B espera os 100 ms da fila e recebe 503.
+    // B espera a fila inteira e recebe 503.
     let t0 = Instant::now();
     let r = get_saude(porta);
     let esperou = t0.elapsed();
@@ -339,7 +344,7 @@ fn acima_do_teto_a_web_responde_503_com_retry_after_e_a_vaga_volta() {
     assert!(r.contains("porta HTTP cheia"), "{r}");
     assert!(r.contains("\"retry_after_s\":1"), "{r}");
     assert!(
-        esperou >= Duration::from_millis(100),
+        esperou >= Duration::from_millis(FILA_MS),
         "nao esperou a fila: {esperou:?}"
     );
 
@@ -348,7 +353,7 @@ fn acima_do_teto_a_web_responde_503_com_retry_after_e_a_vaga_volta() {
     let r = get_saude(porta);
     assert!(r.starts_with("HTTP/1.1 503 "), "{r}");
     assert!(
-        t0.elapsed() < Duration::from_millis(100),
+        t0.elapsed() < Duration::from_millis(FILA_MS / 2),
         "com a fila declarada cheia a recusa tinha de ser imediata: {:?}",
         t0.elapsed()
     );
@@ -363,7 +368,7 @@ fn acima_do_teto_a_web_responde_503_com_retry_after_e_a_vaga_volta() {
         == 0));
     // Passa a janela da fila declarada cheia, para que D nao dependa
     // de quem chegou primeiro: a vaga ou o relogio.
-    std::thread::sleep(Duration::from_millis(150));
+    std::thread::sleep(Duration::from_millis(FILA_MS + 150));
     let r = get_saude(porta);
     assert!(
         r.starts_with("HTTP/1.1 200 "),
@@ -372,7 +377,7 @@ fn acima_do_teto_a_web_responde_503_com_retry_after_e_a_vaga_volta() {
 
     let log = std::fs::read_to_string(dir.join("acessos.log")).unwrap_or_default();
     assert!(
-        log.contains("porta HTTP cheia (1 threads, fila de 100 ms)"),
+        log.contains("porta HTTP cheia (1 threads, fila de 1000 ms)"),
         "{log}"
     );
 }

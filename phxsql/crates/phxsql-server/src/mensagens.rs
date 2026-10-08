@@ -207,6 +207,21 @@ pub const FABRICA: &[MensagemFabrica] = &[
     // encerrou e o que estava rodando. Traduzir de verdade exigiria mover
     // essa montagem para a tabela -- trabalho que so vale quando alguem
     // pedir a tela noutro idioma e esbarrar nisto.
+    //
+    // E duas familias que ficam FORA desta tabela de proposito (pedido 673),
+    // nenhuma delas uma quarta excecao, porque nenhuma chega ao cliente como
+    // frase do servidor:
+    // - as linhas de LOG DO OPERADOR (`gancho.rs`, `blacklist.rs`,
+    //   `fio_dados.rs`, `profiler.rs`, os `eprintln!` do servidor) ficam em
+    //   portugues: o leitor e o operador e o filtro de log (fail2ban, a
+    //   §5.1 do SEGURANCA.md), e filtro nao pode quebrar porque alguem trocou
+    //   o idioma -- o mesmo motivo do `acessos.log` gravar o `Display`.
+    // - o `{detalhe}` que o MOTOR escreve (`valores.rs`, `PhxError::Esquema`
+    //   montado por funcao livre, sem o `Servidor` na mao) continua no idioma
+    //   do motor, dentro da moldura traduzida -- e a regra do MENSAGENS.md.
+    //   Traduzir um desses `format!` e deixar as centenas irmas seria meia
+    //   mentira; a frase que o SERVIDOR monta inteira (como
+    //   `erro.caminho_inutilizavel`) e que entra aqui.
     MensagemFabrica {
         nome: "erro.cancelado",
         textos: [
@@ -484,6 +499,32 @@ pub const FABRICA: &[MensagemFabrica] = &[
              el riesgo con \"senha_em_claro_pela_rede\": true en cifra_fio",
         ],
     },
+    // Pedido 674: o id de sessao HTTP que nasceria em claro de fora do
+    // loopback. As mesmas saidas da senha (pedido 667) e o MESMO escape --
+    // um escape so, porque quem aceitou a senha em claro aceitou o id.
+    MensagemFabrica {
+        nome: "erro.sessao_em_claro_pela_rede",
+        textos: [
+            "sessao web em claro de fora deste computador, recusada: use https \
+             (\"tls\": true na secao web), um tunel ou o localhost -- ou aceite \
+             o risco com \"senha_em_claro_pela_rede\": true em cifra_fio",
+            "session web en clair hors de cet ordinateur, refusée : utilisez \
+             https (\"tls\": true, section web), un tunnel ou localhost -- ou \
+             acceptez le risque : \"senha_em_claro_pela_rede\": true dans cifra_fio",
+            "plain-text web session from outside this computer, refused: use https \
+             (\"tls\": true in the web section), a tunnel or localhost -- or \
+             accept the risk with \"senha_em_claro_pela_rede\": true under cifra_fio",
+            "sessione web in chiaro da fuori questo computer, rifiutata: usi https \
+             (\"tls\": true nella sezione web), un tunnel o localhost -- o \
+             accetti il rischio: \"senha_em_claro_pela_rede\": true in cifra_fio",
+            "Klartext-Websitzung von außerhalb dieses Rechners abgelehnt: https \
+             (\"tls\": true im Abschnitt web), Tunnel oder localhost nutzen -- \
+             oder Risiko: \"senha_em_claro_pela_rede\": true unter cifra_fio",
+            "sesión web en claro desde fuera de este equipo, rechazada: use https \
+             (\"tls\": true en la sección web), un túnel o localhost -- o acepte \
+             el riesgo con \"senha_em_claro_pela_rede\": true en cifra_fio",
+        ],
+    },
     // A quarta do mesmo interruptor, e a unica que morde por TABELA e nao por
     // conexao: replicar tabela com coluna marcada exige o tunel da §7 (pedido
     // 342). Ela tem de dizer as duas saidas escritas -- ligar a cifra na
@@ -521,6 +562,57 @@ pub const FABRICA: &[MensagemFabrica] = &[
              imagen de la fila va en claro aquí: pida {\"op\":\"cifrar\"} antes de \
              replicar, o ponga \"cifra\": true en el origen de esta réplica. Ver \
              docs/SEGURANCA.md 11.8",
+        ],
+    },
+    // A replica pediu o diario abaixo do que a origem ainda guarda: os
+    // volumes sairam pelo expurgo (pedido 706). Tem de dizer a saida -- a
+    // replica se refaz por copia --, porque o laco que a recebe nao tem outra.
+    // O PITR do irmao (pedido 706): a copia e mais velha que o diario vivo
+    // ainda guarda. A tabela fica no instante da copia, e a frase diz por que.
+    MensagemFabrica {
+        nome: "erro.pitr_diario_expurgado",
+        textos: [
+            "a copia de {tabela} parou no evento {posicao} e o diario vivo so \
+             guarda desde o {base}: o trecho entre os dois saiu pelo expurgo. A \
+             tabela ficou no instante da copia",
+            "la copie de {tabela} s'arrête à l'événement {posicao} et le journal \
+             vivant ne garde que depuis {base} : l'entre-deux a été purgé. La \
+             table reste à l'instant de la copie",
+            "the copy of {tabela} stops at event {posicao} and the live log only \
+             keeps from {base}: the gap was purged. The table stays at the moment \
+             of the copy",
+            "la copia di {tabela} si ferma all'evento {posicao} e il diario vivo \
+             conserva solo da {base}: l'intervallo è stato eliminato. La tabella \
+             resta all'istante della copia",
+            "die Kopie von {tabela} endet bei Ereignis {posicao}, das lebende \
+             Journal hat erst ab {base}: die Lücke wurde bereinigt. Die Tabelle \
+             bleibt beim Zeitpunkt der Kopie",
+            "la copia de {tabela} se detiene en el evento {posicao} y el diario \
+             vivo solo guarda desde {base}: el tramo se purgó. La tabla queda en \
+             el instante de la copia",
+        ],
+    },
+    MensagemFabrica {
+        nome: "erro.diario_expurgado",
+        textos: [
+            "o diario de {tabela} aqui comeca no evento {base} e a replica pediu \
+             desde {desde}: o que falta saiu pelo expurgo. Refaca a replica a \
+             partir de uma copia desta origem",
+            "le journal de {tabela} commence ici à l'événement {base} et la \
+             réplique a demandé depuis {desde} : le reste a été purgé. Refaites la \
+             réplique à partir d'une copie de cette source",
+            "the log of {tabela} here starts at event {base} and the replica asked \
+             from {desde}: the rest was purged. Rebuild the replica from a copy of \
+             this source",
+            "il diario di {tabela} qui inizia all'evento {base} e la replica ha \
+             chiesto da {desde}: il resto è stato eliminato. Rifaccia la replica da \
+             una copia di questa sorgente",
+            "das Journal von {tabela} beginnt hier bei Ereignis {base}, die Replik \
+             fragte ab {desde}: der Rest wurde bereinigt. Bauen Sie die Replik aus \
+             einer Kopie dieser Quelle neu auf",
+            "el diario de {tabela} aquí empieza en el evento {base} y la réplica \
+             pidió desde {desde}: lo que falta se purgó. Rehaga la réplica a partir \
+             de una copia de este origen",
         ],
     },
     // Amarracao da credencial ao canal (channel binding). O cliente pediu
@@ -663,13 +755,22 @@ pub const FABRICA: &[MensagemFabrica] = &[
             "a coluna {coluna} cita {citada}, que este usuario nao le em {tabela}: \
              a expressao copiaria ou contaria o valor dela. Recusado; peca a leitura \
              de {citada} ou declare a expressao sem ela",
-            "",
+            "la colonne {coluna} cite {citada}, que cet utilisateur ne lit pas dans \
+             {tabela} : l'expression copierait ou compterait sa valeur. Refusé ; \
+             demandez la lecture de {citada} ou déclarez l'expression sans elle",
             "column {coluna} cites {citada}, which this user cannot read in {tabela}: \
              the expression would copy or count its value. Refused; ask to read \
              {citada} or declare the expression without it",
-            "",
-            "",
-            "",
+            "la colonna {coluna} cita {citada}, che questo utente non legge in \
+             {tabela}: l'espressione ne copierebbe o conterebbe il valore. Rifiutato; \
+             chiedi la lettura di {citada} o dichiara l'espressione senza di essa",
+            "die Spalte {coluna} verweist auf {citada}, die dieser Benutzer in \
+             {tabela} nicht lesen darf: der Ausdruck würde deren Wert kopieren oder \
+             zählen. Abgelehnt; beantragen Sie Lesezugriff auf {citada} oder \
+             deklarieren Sie den Ausdruck ohne sie",
+            "la columna {coluna} cita {citada}, que este usuario no lee en {tabela}: \
+             la expresión copiaría o contaría su valor. Rechazado; pida la lectura de \
+             {citada} o declare la expresión sin ella",
         ],
     },
     // Pedido 245, O2a: a decisao e a contagem sao do motor
@@ -1091,6 +1192,20 @@ pub const FABRICA: &[MensagemFabrica] = &[
             "il carico di {linhas} riga/righe arriva a {bytes} byte nel diario, oltre il tetto di {teto} byte che la replica applica per intero: nulla è stato scritto; dividi il carico in lotti più piccoli",
             "die Last von {linhas} Zeile(n) erreicht {bytes} Bytes im Journal, über der Grenze von {teto} Bytes, die die Replik ganz anwendet: nichts wurde geschrieben; teilen Sie die Last in kleinere Stapel",
             "la carga de {linhas} fila(s) llega a {bytes} bytes en el diario, por encima del techo de {teto} bytes que la réplica aplica entero: no se grabó nada; divida la carga en lotes más pequeños",
+        ],
+    },
+    // Pedido 673: o `destino`/`origem` de backup, conferencia e restauracao
+    // que o sistema operacional recusou. A frase e do servidor; o `{motivo}`
+    // e o texto do sistema operacional, e fica como veio.
+    MensagemFabrica {
+        nome: "erro.caminho_inutilizavel",
+        textos: [
+            "o caminho {caminho} nao pode ser usado: {motivo}",
+            "le chemin {caminho} ne peut pas être utilisé : {motivo}",
+            "the path {caminho} cannot be used: {motivo}",
+            "il percorso {caminho} non può essere usato: {motivo}",
+            "der Pfad {caminho} kann nicht verwendet werden: {motivo}",
+            "la ruta {caminho} no se puede usar: {motivo}",
         ],
     },
 ];

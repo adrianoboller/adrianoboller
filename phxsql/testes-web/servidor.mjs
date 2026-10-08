@@ -30,7 +30,7 @@ function hashDaSenha(phxsqld, senha) {
   return m[1];
 }
 
-function config(base, hash, portaDados, portaWeb, hostWeb) {
+function config(base, hash, portaDados, portaWeb, hostWeb, webExtra = {}) {
   return {
     base,
     bind: `127.0.0.1:${portaDados}`,
@@ -39,7 +39,7 @@ function config(base, hash, portaDados, portaWeb, hostWeb) {
     // A bateria abre e fecha ficha o tempo todo; sem isto a sessao poderia
     // vencer no meio de um caso longo e o erro sairia como «nao autenticado»,
     // que manda procurar defeito no lugar errado.
-    web: { ligado: true, bind: `${hostWeb}:${portaWeb}`, sessao_minutos: 60 },
+    web: { ligado: true, bind: `${hostWeb}:${portaWeb}`, sessao_minutos: 60, ...webExtra },
     // A PORTA HTTP DESTA BATERIA E TEXTO PURO, E DE PROPOSITO.
     //
     // O pedido 370 fez `cifra_fio.exigir` nascer `true`, e desde entao toda
@@ -93,12 +93,14 @@ function portaAberta(porta) {
 /** Sobe um phxsqld isolado. Devolve o que a bateria precisa para o derrubar. */
 /* `hostWeb` existe para a prova que precisa chegar a tela por um IP que NAO
  * e o loopback (pedido 667): o padrao continua sendo so o 127.0.0.1. */
-export async function subir({ phxsqld, portaDados = PORTA_DADOS, portaWeb = PORTA_WEB, hostWeb = '127.0.0.1', log }) {
+/* `webExtra` entra por cima da secao `web` -- e o caminho da prova que
+ * precisa de um campo dela, como o `integracao_claude: false` do 339(a). */
+export async function subir({ phxsqld, portaDados = PORTA_DADOS, portaWeb = PORTA_WEB, hostWeb = '127.0.0.1', webExtra, log }) {
   const dir = mkdtempSync(join(tmpdir(), 'phx-bateria-'));
   const base = join(dir, 'dados');
   const caminhoConfig = join(dir, 'config.json');
   writeFileSync(caminhoConfig,
-    JSON.stringify(config(base, hashDaSenha(phxsqld, SENHA), portaDados, portaWeb, hostWeb), null, 2));
+    JSON.stringify(config(base, hashDaSenha(phxsqld, SENHA), portaDados, portaWeb, hostWeb, webExtra), null, 2));
 
   // PORTA JA OCUPADA E MEDIÇÃO DE OUTRO SERVIDOR.
   //

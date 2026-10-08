@@ -1680,6 +1680,27 @@ pub const OPERACOES: &[Operacao] = &[
         ferramenta_mcp: false,
     },
     Operacao {
+        nome: "retrato_da_replica",
+        apelidos: &[],
+        resumo: "O retrato fiel dos arquivos de um database, para a réplica que \
+                 ficou atrás do que o diário ainda guarda se refazer (pedido 706).",
+        parametros: &[
+            DB,
+            opc(
+                "indice",
+                "integer",
+                "com `id`: o arquivo do retrato cujo pedaço se quer; sem ele, o \
+                 pedido tira um retrato novo e devolve a lista",
+            ),
+            opc("id", "integer", "o retrato que o pedido anterior devolveu"),
+            opc("offset", "integer", "onde o pedaço começa no arquivo"),
+            MAX,
+            opc("soltar", "boolean", "apaga o retrato servido"),
+        ],
+        exemplo: r#"{"op":"retrato_da_replica","database":"caixa01"}"#,
+        ferramenta_mcp: false,
+    },
+    Operacao {
         nome: "replicacao_estado",
         apelidos: &[],
         resumo: "O estado do laço de replicação deste servidor: papel vivo, \
@@ -1781,6 +1802,13 @@ pub const OPERACOES: &[Operacao] = &[
                 "string",
                 "o pino do source (a chave pública dele, 64 dígitos \
                  hexadecimais). Sem ele o túnel protege só da escuta passiva",
+            ),
+            opc(
+                "pino_tls",
+                "string",
+                "o pino TLS do source, `sha256//<base64>` do SPKI (o que ele \
+                 imprime no arranque). Escrito, a sonda fala TLS 1.3 no lugar \
+                 do túnel Noise, como o laço vai falar depois",
             ),
         ],
         exemplo: r#"{"op":"replicacao_testar","origem":"curitiba"}"#,
@@ -1894,6 +1922,12 @@ pub const OPERACOES: &[Operacao] = &[
             obr("id", "string", "o id do nó novo, como os outros vão chamá-lo"),
             obr("endereco", "string", "o host ou IP por onde os outros o alcançam"),
             opc("porta", "integer", "a porta de dados dele; 5000 quando não vem"),
+            opc(
+                "pino_tls",
+                "string",
+                "o pino TLS do nó novo (`sha256//<base64>`, o que ele imprime \
+                 no arranque): os outros passam a pulsá-lo por TLS 1.3",
+            ),
             opc(
                 "propagar",
                 "boolean",
@@ -2544,6 +2578,14 @@ pub const OPERACOES: &[Operacao] = &[
                  (o pino), em hexadecimal de 32 bytes. Escrever o pino liga a \
                  cifra — quem o escreveu quer o túnel conferido. A resposta \
                  devolve `tem_pino`, nunca o pino",
+            ),
+            opc(
+                "pino_tls",
+                "string",
+                "só para `phxsql`: o pino TLS do outro lado, `sha256//<base64>` \
+                 do SPKI (o que ele imprime no arranque). Escrito, a ligação fala \
+                 TLS 1.3 conferido no lugar do túnel. A resposta devolve \
+                 `tem_pino_tls`, nunca o pino",
             ),
         ],
         exemplo: r#"{"op":"dblink_salvar","nome":"erp","motor":"mysql","host":"10.1.1.9","usuario":"leitor","senha_env":"ERP_SENHA","database":"producao"}"#,

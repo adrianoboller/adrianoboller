@@ -306,6 +306,7 @@ fn cenario(rotulo: &str, vida: VidaNova) -> (String, Json) {
         hora: String::new(),
         cifra: false,
         chave_do_fio: String::new(),
+        pino_tls: String::new(),
         espelho: false,
     }];
     let b = subir(cb);

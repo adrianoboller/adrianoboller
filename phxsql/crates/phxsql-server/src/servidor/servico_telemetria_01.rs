@@ -944,10 +944,9 @@ impl Servidor {
                 // Irmao do A2 da revisao SEC de 17/09/2026: a resposta e a
                 // mesma byte a byte, o que muda e o que se aloca.
                 let total = t.eventos()?;
-                (
-                    total,
-                    t.diario(total.saturating_sub(max as u64), max as u64)?,
-                )
+                // A cauda nunca comeca antes do que o expurgo deixou (706).
+                let de = total.saturating_sub(max as u64).max(t.base_do_diario()?);
+                (total, t.diario(de, max as u64)?)
             }
         };
         let recentes: Vec<Json> = eventos
@@ -1248,8 +1247,12 @@ impl Servidor {
                         .map(|c| t.esquema().colunas()[*c].nome.clone())
                         .collect()
                 });
+            // A base do diario (pedido 706): o primeiro evento que ainda
+            // existe aqui. A replica atras dela se refaz por retrato.
+            let (eventos, base) = t.eventos_e_base()?;
             let mut campos = vec![
-                ("eventos".to_string(), Json::de_u64(t.eventos()?)),
+                ("eventos".to_string(), Json::de_u64(eventos)),
+                ("base".to_string(), Json::de_u64(base)),
                 ("registros".to_string(), Json::de_u64(t.registros())),
                 // A chave unica, se houver: e a identidade que o modo
                 // bidirecional exige, e e aqui que um assistente descobre

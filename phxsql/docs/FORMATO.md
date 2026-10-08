@@ -1779,7 +1779,7 @@ append-only e sem índice: é um diário, não uma tabela.
 | 16 | 8 | eventos neste volume |
 | 24 | 8 | `fim` — ponto de anexação |
 | 32 | 8 | alterado em — **ou**, com a marca de pé, o carimbo do evento devido (ms) |
-| 40 | 16 | **marca do evento devido** — só no volume 1, só na versão 2 (ver abaixo) |
+| 40 | 16 | **marca do evento devido** — só no primeiro volume que existe, só na versão 2 (ver abaixo) |
 | 56 | 4 | CRC-32 dos bytes 0..56 — **só na versão 2** |
 
 E nas versões 3 e 4 (a 3 é a do volume cifrado; a 4 tem este mesmo
@@ -1792,9 +1792,91 @@ flag ligada):
 | 44 | 4 | iterações do PBKDF2 |
 | 48 | 16 | sal do PBKDF2, em claro |
 | 64 | 16 | prova da chave — etiqueta Poly1305 de mensagem vazia |
-| 80 | 16 | **marca do evento devido** — só no volume 1 (ver abaixo) |
+| 80 | 16 | **marca do evento devido** — só no primeiro volume que existe (ver abaixo; era o volume 1 até o pedido 706) |
 | 96 | 8 | **maior id de transação gravado no volume** — só na versão 4 (pedido 684); zero = nenhum, ou volume anterior ao campo |
+| 104 | 8 | **base**: quantos eventos o diário tinha ANTES deste volume — só na versão 4 (pedido 706); zero no volume 1 é verdade, zero num primeiro volume que não é o 1 é «não sei» e recusa |
+| 112 | 8 | **id de transação do evento devido** — só na versão 4, só com a marca do evento devido de pé (pedido 715); zero = não se sabe |
 | 120 | 4 | CRC-32 dos bytes 0..120 |
+
+**O id do evento devido (pedido 715, 08/10/2026).** O evento que o `.log` ficou
+devendo (498) se completa na abertura gravável seguinte da tabela — e no
+arranque essa abertura acontece **dentro da unidade de transação que a
+recuperação de uma marca acabou de abrir**. Sem o id guardado, o devido tirava
+dali um id **novo** antes de a unidade adotar o da marca: a cauda passava a ter
+dois ids, a adoção falhava, e a transação chegava à réplica encadeada em dois
+pedaços (medido: `[T, N, N]` numa venda de três eventos). Agora o id é tirado
+**antes** da gravação que falha e vai junto com a marca do devido, nos bytes
+112..120 do primeiro volume; a abertura completa o evento com **ele**, sem tocar
+na unidade de quem completa. Em serviço vale o mesmo: o devido deixa de entrar
+no id da primeira tomada que abrir a tabela, que é de outra transação.
+Ausência benigna, **sem subir a versão**: os bytes eram reservados e gravados
+zero, e zero lê como «não sei» — a abertura tira um id como antes. Um primeiro
+volume da versão 2 ou 3 não tem onde guardá-lo, e o devido dele se completa
+como antes.
+
+**A base do volume, e o expurgo do diário (pedido 706, 08/10/2026; parecer do
+papel C em `docs/propostas/expurgo-do-diario-706.md`).** A posição de um evento
+é o ordinal dele no diário, e é ela que a réplica guarda. Até aqui a contagem
+começava em zero no primeiro volume que existe — então tirar o volume 1 faria
+toda posição deslizar para trás, e a réplica que pede `desde: N` receberia o
+evento N+k **sem erro**. Agora `total = base(primeiro) + Σ quantos`, a
+varredura começa em `base(primeiro)`, e pedir abaixo da base é recusa dita
+(`erro.diario_expurgado`, pela fábrica de idiomas), nunca o evento seguinte no
+lugar. O volume que nasce na virada grava a base (`total` de antes da virada),
+como herda o `ultimo_tx`; o expurgo regrava a base certa em todo volume que
+pode virar o primeiro e faz o `fsync` **antes** do primeiro `unlink`. Ausência
+benigna, **sem subir a versão**: os bytes 104..112 eram reservados e gravados
+zero, zero no volume 1 é verdade, e o volume 1 é o único que um diário anterior
+ao campo pode ter como primeiro. Um volume da versão 2 ou 3 não tem onde
+guardar a base, e por isso nunca vira o primeiro: o expurgo para antes dele.
+
+**O diário sem paginação vira de volume no formato B da trilha** (pedido 706,
+F2). Com `diario.expurgo` ligado no `config.json`, o `.log` de uma tabela sem
+paginação corta em `diario.volume_kib` (padrão 4096): o ativo continua em
+`t.log`, e os fechados vão para `t#NNN.log` (no mínimo 3 dígitos, sem teto,
+número nunca reusado) — o mesmo formato da trilha `.lgpd` do pedido 368. O
+número do ativo está no cabeçalho dele (offset 12); se o ativo sumiu numa
+queda entre o `rename` do que fechou e o nascimento do seguinte, a abertura o
+faz nascer com o número `maior fechado + 1`, a base e o id herdados. Com o
+expurgo desligado nada muda: o diário sem paginação nunca vira, e o ativo é o
+volume 1 em `t.log`, como sempre.
+
+**O que sai, e o que nunca sai.** Sai o **prefixo** de volumes fechados, e só
+quando (a) todo consumidor declarado em `diario.consumidores` confirmou ter
+puxado o volume **e o seguinte inteiro** (a margem de quem pede `desde` sem
+dizer o que já foi ao disco dele), ou (b) o evento mais novo do volume passou de
+`diario.prazo_dias` (padrão 30, decisão do dono de 08/10/2026: o caixa nunca
+para de vender, e o central que ficou fora além do prazo se refaz pelo retrato,
+abaixo). Nunca saem o ativo nem o último fechado; nada sai com evento devido
+(498) nem com marca de transação de pé no diretório. A confirmação de cada
+consumidor mora só na memória da origem: perdida num reinício, o expurgo
+**segura** até o consumidor pedir de novo. E ela é o **`duravel`**, quando
+vem: a réplica fiel manda no `replicar` a posição que já foi ao disco dela (o
+começo da rodada) e, depois do `fsync` do fim da rodada, um pedido de um
+evento com o `duravel` igual à posição nova. O `desde` sozinho conta a cauda
+da rodada ainda sem `fsync`, e uma queda de energia da réplica a leva.
+
+**O retrato da réplica (pedido 706, item (d) do parecer).** O `posicao` da
+origem anuncia, por tabela, a `base` — o primeiro evento que ela ainda guarda.
+A réplica cuja posição local ficou abaixo dela pede `retrato_da_replica`: a
+origem descarrega as tabelas sujas, e numa tomada da trava copia **fiel**
+(bytes iguais, a mesma linhagem do 601) o `.reg`, `.ndx`, `.bin`, `.memo` e
+`.log` de cada tabela do database para arquivos `.retrato-servido-*` na raiz
+de dados (arquivo, e não pasta: toda pasta da raiz é um database); a réplica
+os recebe em pedaços de 8 MiB para `.retrato-recebido-*`, leva cada um ao
+disco, e numa tomada só troca os arquivos das tabelas pelos recebidos. A
+posição não viaja: ela está dentro do `.log` copiado, na base do primeiro
+volume. Uma tomada para o database inteiro, nos dois lados, porque o retrato
+foi tirado entre dois commits e a venda chega com os itens. Só a réplica fiel
+(e o espelho); o bidirecional não se refaz assim.
+
+**A migração só vai para frente, e voltar o binário é perigoso.** Num diário
+paginado cujo volume 1 saiu, o binário anterior ao 706 cai em `cab(1)`: falha
+alta, não desliza. Mas numa tabela **sem** paginação que já virou no formato B,
+ele lê o `t.log` como volume 1, não enxerga os fechados `t#NNN.log` e conta do
+zero: **as posições deslizam calado** para a réplica que puxar dele. Depois da
+primeira virada no formato B, não volte o binário; o expurgo nasce desligado
+justamente para que só quem o liga entre nesse caminho.
 
 **O maior id de transação no cabeçalho (pedido 684, 08/10/2026).** O id sai do
 relógio e de um contador em memória, e um processo novo começa com o contador
@@ -3446,7 +3528,7 @@ tabelas ir para a janela de durabilidade em vez de acontecer por commit.
 **Quem mais grava uma marca** (pedido 540, 24/09/2026; **o leiaute não muda**):
 a alteração SOLTA — sem `BEGIN` — que muda a chave de uma mãe com filhas
 cascateando. Ela é uma transação de uma instrução: a mãe e cada filha vão para
-uma marca v3/v4 comum, todas com o byte `cascata_na_lista` em 1 (a mãe primeiro,
+uma marca comum (v3/v4 até o 709, v7/v8 desde ele), todas com o byte `cascata_na_lista` em 1 (a mãe primeiro,
 os elos pai-antes-de-filha), e a recuperação a completa como completa a de um
 `COMMIT`. O `id` sai do mesmo contador das transações, e por isso nunca colide
 com o nome de uma. A leitura não distingue as duas, e não precisa: as duas se
@@ -3455,7 +3537,7 @@ completam do mesmo jeito. O que o COMMIT passou a fazer com o elo planejado no
 formato: a marca recebe a linha já refeita.
 
 **E o embutido também grava** (pedido 563, 30/09/2026; **o leiaute não muda**,
-mesmos bytes v3/v4): o `Table::atualizar` do `phxsql-store` — a porta do
+mesmos bytes do `COMMIT` — v3/v4 até o 709, v7/v8 desde ele): o `Table::atualizar` do `phxsql-store` — a porta do
 `phx_atualizar` do FFI e do CLI — que muda a chave de uma mãe com filhas
 cascateando grava a mesma marca, com a mesma lista (a mãe com a linha como
 veio do chamador, depois cada elo, todos com `cascata_na_lista` em 1), antes da
@@ -3465,7 +3547,7 @@ primeira escrita da mãe. Três diferenças, nenhuma de formato:
   com o nome **simples** das tabelas. A chave estrangeira não atravessa
   diretório, então a mãe e as filhas moram ali; a do servidor continua na raiz,
   com o nome qualificado.
-- **O `id`:** o maior entre o relógio em ms e «a maior marca do diretório + 1».
+- **O `id`:** o maior entre o relógio em ms e «a maior marca do diretório + 1» — desde o pedido 714 o mesmo gerador do servidor, que olha também as marcas `bidi_`.
   O embutido não tem o contador das transações; o `create_new` recusa a
   colisão que sobra (dois processos no mesmo diretório no mesmo ms) sem gravar
   por cima de nada.
@@ -3502,7 +3584,8 @@ alteração sem mudança, o resto leva um id novo, como antes.
 
 ```text
 cabeçalho  [magic "PHXTX\0\0\0" 8][versao u32][id u64][carimbo i64]
-           [n_operacoes u32]{material de cifra 40, só na v4}[crc32 u32]
+           [n_operacoes u32]{material de cifra 40, só na v4/v6/v8}
+           {tx u64, só na v7/v8}[crc32 u32]
 
 operação   [tam_tabela u16][tabela bytes][op u8][rowid alvo u64]
            [tam_guardado u32][payload, selado na v4 …][crc32 u32]
@@ -3511,12 +3594,13 @@ operação   [tam_tabela u16][tabela bytes][op u8][rowid alvo u64]
 | campo | tamanho | o que é |
 |---|---|---|
 | `magic` | 8 | `PHXTX\0\0\0`, como todo arquivo do motor |
-| `versao` | 4 | 4 com o cofre ligado, 3 sem ele (a 2 e a 1 continuam sendo **lidas**); **6/5** na marca do grupo da réplica, com e sem cofre (pedido 682) |
+| `versao` | 4 | **8 com o cofre ligado, 7 sem ele** na marca de todo caminho de escrita (o bilhete posicional, pedido 709); 4/3 são as de um binário anterior, e elas e a 2 e a 1 continuam sendo **lidas**; **6/5** na marca do grupo da réplica e do bidirecional, com e sem cofre (pedido 682) |
 | `id` | 8 | o identificador da transação, o mesmo do nome do arquivo |
 | `carimbo` | 8 | ms desde a época, quando a marca foi escrita |
 | `n_operacoes` | 4 | quantas operações vêm a seguir |
-| material de cifra | 40 | **só na v4**: flags, iterações, sal e prova da chave — o mesmo bloco do `.reg` e dos diários (`cofre::MATERIAL_LEN`) |
-| `crc32` | 4 | do cabeçalho inteiro até aqui — e **ele muda de lugar na v4**, porque o material entrou antes dele |
+| material de cifra | 40 | **só na v4/v6/v8**: flags, iterações, sal e prova da chave — o mesmo bloco do `.reg` e dos diários (`cofre::MATERIAL_LEN`) |
+| `tx` | 8 | **só na v7/v8**: o id de transação que todos os eventos desta marca levam no diário, reservado sob a trava antes do primeiro (`log::reservar_tx_na_unidade`); 0 = gravada fora de unidade |
+| `crc32` | 4 | do cabeçalho inteiro até aqui — e **ele muda de lugar** na v4 e na v7/v8, porque o material e o `tx` entraram antes dele |
 
 E por operação:
 
@@ -3524,7 +3608,7 @@ E por operação:
 |---|---|---|
 | `op` | 1 | 1 inserir, 2 atualizar, 3 excluir suave, 4 excluir de vez, 5 restaurar |
 | `rowid alvo` | 8 | **o slot que esta operação vai escrever** |
-| `payload` | variável | a linha codificada, o motivo, a **linha antiga** (v2) e o byte **`cascata_na_lista`** (v3) |
+| `payload` | variável | a linha codificada, o motivo, a **linha antiga** (v2), o byte **`cascata_na_lista`** (v3) e, na v7/v8, a **versão de antes** (`u64`) |
 | `crc32` | 4 | de toda a operação, do `tam_tabela` ao fim do payload |
 
 ### Por que o `rowid alvo`, e não só a linha
@@ -3703,9 +3787,15 @@ encadeada receber o grupo inteiro; no reparo de um pânico, a da tomada da
 trava, que é a mesma que gravou a primeira metade.
 
 **Quem apaga:** a rodada, depois do `fsync` de cada tabela que aplicou — a
-ordem do group commit. O grupo que para no meio por erro do dado (a réplica
-divergiu) apaga a marca na hora: completar no arranque bateria no mesmo evento.
-Custo: uma marca com `fsync` por grupo, do tamanho das imagens do grupo.
+ordem do group commit. O grupo em que **nada** entrou apaga a marca na hora.
+O grupo que para **no meio** — erro do dado, a tabela que não abre, a posição
+que não anda — **não** a apaga mais (pedido 713, 08/10/2026): apagava, e a
+venda ficava pela metade para sempre, contra a decisão do dono no 685
+(«inteira ou não chega»). Ele se completa **na hora**, com a mesma trava, pelo
+motor da recuperação (pela posição do diário), como o `COMMIT` cuja passada
+quebra depois da marca; o que nem assim fecha deixa a marca **no disco** e fora
+da lista da rodada, para o arranque. Custo: uma marca com `fsync` por grupo, do
+tamanho das imagens do grupo.
 
 ### O grupo do bidirecional: `bidi_<id>.tx` (pedido 698, 08/10/2026)
 
@@ -3745,8 +3835,116 @@ na trava, mas o reparo de um pânico não a completa — o motor dele é o do ro
 —: recusa, e o processo cai para o arranque completá-la com a porta fechada.
 
 **Quem apaga na rodada:** o fim do alcance, depois do `fsync`, como a da
-réplica; o grupo em que nada entrou apaga na hora. Um binário anterior ao 698
+réplica; o grupo em que nada entrou apaga na hora. O grupo que **quebra** no meio
+por erro (o `?` do aplicador, a tabela que não abre) não a apaga mais (pedido
+722, o 713 no bidirecional): completa o resto na hora, com a mesma trava, pelo
+corpo da completação do arranque; o que nem assim fecha deixa a marca no disco e
+fora da lista da rodada. A **parada nominal** (conflito de unicidade, toque
+esquecido) continua por tabela — fechá-la pede a pré-conferência do grupo (E7). Um binário anterior ao 698
 não vê `bidi_*.tx` e o deixa quieto — não descarta nem completa.
+
+### v7/v8: o bilhete posicional (pedidos 709 a 716, 08/10/2026)
+
+**A migração para a v7/v8 só vai para frente** (o mesmo aviso da v5/v6): um
+binário anterior lê a v7/v8 como `NaoConfere` e **apaga** uma transação
+confirmada. Não volte o binário com uma marca de pé. Nenhum binário foi selado
+com a v3/v4 como única, e foi por isso que a mudança entrou agora
+(`docs/propostas/recuperacao-e-replica-desenho-unico.md` §3.2).
+
+**O que ela acrescenta, e onde.** O cabeçalho da v3 (v7) ou o da v4 (v8) com o
+`tx` antes do CRC; e cada operação com a **versão do slot antes dela** nos
+oito últimos bytes do payload, depois do byte da cascata — sob o mesmo selo e o
+mesmo CRC. A inclusão leva 0. As versões saem de `marca::versoes_antes`, com a
+trava na mão, depois da pré-conferência e antes da passada: o disco se lê **uma**
+vez por linha (o cabeçalho do slot; a linha sem externos só quando a operação
+é exclusão suave ou restauração), e as operações seguintes da mesma linha se
+deduzem como a passada as fará. Onde a dedução não sabe o estado (a exclusão
+suave depois de uma alteração), ela **conta a escrita**: contar a mais faz a
+recuperação reaplicar o que já tinha entrado — os mesmos valores —, e contar a
+menos a faria pular uma operação confirmada. A inclusão não lê nada: o `COMMIT`
+de venda, que é todo inclusão, não paga abertura nenhuma a mais.
+
+**Por que a versão do slot.** Ela só anda (§1, bytes 8..16), e é o LSN da linha.
+A pergunta da recuperação é «a passada já passou desta operação?», e o conteúdo
+não a responde: «0» → «a» pelo `COMMIT` e «a» → «0» por uma solta deixam o
+slot igual ao de antes, e a exclusão suave só tem dois estados. Slot com versão
+**maior** que a de antes já recebeu a operação — ou recebeu escrita depois
+dela —, e nos dois casos reaplicar grava por cima de estado mais novo, o que
+PostgreSQL, InnoDB e SQLite convergem em nunca fazer.
+
+**O defeito que ela fecha, medido (pedido 709).** O `COMMIT` que só esperava o
+fecho da janela tinha a marca reaplicada no arranque **sem condição**: `COMMIT`
+X=«a», solta X=«b», `SIGKILL` — o arranque devolvia X a «a», com um evento novo
+de carimbo do arranque (no bidirecional, esse evento ganha o «mais recente
+vence» do par). O mesmo com a exclusão suave por cima da restauração e com a
+restauração por cima da exclusão. E sem escrita depois (711), cada alteração da
+marca regravava o slot e acrescentava ao diário um evento que nenhum cliente
+fez. Hoje a operação cujo slot passou dela grava **zero bytes e zero eventos**.
+
+**As duas faces (pedido 710).** O `.reg` à frente não basta: a passada grava o
+slot **antes** do evento, e o `SIGKILL` entre os dois deixava a linha sem
+evento — o arranque via o slot e respondia «já estava». A recuperação agora
+olha o diário também (`so_o_diario` no `marca.rs`): a inclusão e a exclusão de
+vez acontecem uma vez por linha, e o evento delas está ou não está; a
+alteração, a exclusão suave e a restauração se contam pelos eventos da linha com
+o `tx` da marca contra a versão do slot — uma a menos no diário é a que a queda
+levou, e só pode ser a última. O que falta se completa do que está no disco, sem
+tocar no `.reg` (o `completar_o_diario_da_*` do 699 e do 701, mais o irmão da
+alteração), com o `tx` da marca. O diário se lê de trás para a frente até o
+primeiro evento de id menor que o da marca — o id só cresce no diário de uma
+tabela (684) —, e isso custa a cauda desde o `COMMIT`. Sem o `tx` (v3/v4), só a
+inclusão se confere, pela ordem do rowid.
+
+**O id (pedidos 702 e 715).** O `tx` da marca substitui a adivinhação do 702
+pela cauda: a recuperação o adota na unidade dela antes de qualquer evento. Ele
+só **não** se adota quando alguma tabela da marca já tem cauda com id maior —
+houve escrita depois, a passada terminou, e um evento com o id velho depois de
+um novo poria o diário fora de ordem.
+
+**Quem mais grava a v7/v8.** O `COMMIT` e a cascata solta, pela mesma porta
+(`Servidor::gravar_a_marca_da_lista`), e o embutido (`Table::atualizar` com
+cascata) — este agora dentro de uma unidade de transação própria (pedido 716):
+a mãe e as filhas saem com **um** id no diário, onde antes cada evento tinha o
+seu (medido: três ids numa cascata de mãe e duas filhas).
+
+**O id da marca é um gerador só (pedido 714).** `marca::proximo_id_acima_de`:
+o relógio, ou um acima da maior marca no disco — das duas famílias
+(`transacao_` e `bidi_`) e de todas as pastas do database —, o que for maior. O
+embutido o chama a cada marca; o servidor, no arranque, para semear o contador
+das transações. Antes o servidor nascia só do relógio, e com o relógio recuado
+uma marca retida da vida anterior (cifrada sem a chave, linha perdida) ficava
+com id **maior** que o do `COMMIT` novo (medido: 1791481932538 contra a retida
+1791491932277). E a ordem de completar é a **numérica** do id, e não a do texto
+do nome.
+
+**A ordem de completar é a da trava, e não a do id (pedido 715).** A marca do grupo da
+réplica (v5/v6) divide o prefixo `transacao_` e o contador com a do `COMMIT`, mas nasce **fora**
+da trava e só entra depois de tomá-la; o id do `COMMIT` sai no `BEGIN`. Então o arranque completa
+primeiro as marcas que nascem **com** a trava (v1–v4 e v7/v8, das quais no máximo uma escreve) e
+depois as v5/v6, cada grupo pelo id — a versão do cabeçalho decide, nunca o nome. Pelo id só, um
+`BEGIN` depois da marca do grupo deixava o grupo tomar o rowid que o `COMMIT` tinha planejado
+(medido: a linha da origem no lugar da do `COMMIT`). As `bidi_` vêm depois de todas, como antes.
+
+**Marca retida e a cauda.** A conferência das duas faces lê o diário de trás para a frente até o
+primeiro id menor que o da marca: enquanto a marca vive só a janela de durabilidade, é a cauda da
+janela. Uma marca **retida** (I12) relida meses depois lê a cauda inteira desde ela — custo não
+medido, e é só dela.
+
+**A restauração completa as marcas no palco (pedido 712).** A marca viaja no
+backup de propósito, e o palco só reconstruía o índice: o database entrava na
+raiz com a marca de pé — e a cópia fria de um servidor caído no meio da passada
+mostrava a venda **pela metade** (medido: `(1, 2, 0)` numa venda de `(1, 5, 1)`).
+Agora o palco passa pelo mesmo `Database::recuperar_marcas` do arranque —
+marcas primeiro, índice marcado depois — antes do `rename`, com a política do
+diário de quem restaura. Marca que não se lê recusa a restauração inteira.
+
+**E as `bidi_` no palco só se conferem (pedido 723).** Quem completa a do
+bidirecional casa pela chave, no servidor, e o palco não tem servidor. Ele
+pergunta, por evento, se o diário do palco já o tem (o carimbo e a origem de
+lá): **todos** ou **nenhum**, a marca sai (o grupo entrou inteiro, ou nunca
+entrou nesta cópia e o destino o pede de novo pelas posições dele); **parte**,
+a restauração recusa nomeando a marca (medido: a cópia fria de um central caído
+no 3.º evento restaurava `(0, 3, 0)`). Marca que não se lê também recusa.
 
 ### O arquivo nasce 0600 — em toda versão, cifrada ou não
 
@@ -3853,7 +4051,7 @@ que a etiqueta virou outra coisa.
 ### O que a leitura faz com uma marca que não confere
 
 Devolve «não confere». Um CRC quebrado, uma assinatura errada, uma versão
-desconhecida (nenhuma das quatro), um arquivo truncado ou uma etiqueta que não
+desconhecida (nenhuma das oito), um arquivo truncado ou uma etiqueta que não
 fecha **depois de a chave já se provar certa** são todos a **mesma** resposta:
 um commit que **nunca começou** — porque a marca é sincronizada inteira antes
 de qualquer escrita. Ela é apagada, e o disco continua como estava.

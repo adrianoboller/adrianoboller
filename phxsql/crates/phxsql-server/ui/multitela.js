@@ -1102,13 +1102,13 @@ window.PhxTelas = (function () {
     if (!canal) {
       if (recado) {
         recado.className = "recado erro";
-        recado.textContent = "este navegador não tem BroadcastChannel: entre novamente";
+        recado.textContent = txt("tela.mt_sem_broadcast", "este navegador não tem BroadcastChannel: entre novamente");
       }
       return Promise.resolve(false);
     }
     if (recado) {
       recado.className = "recado info";
-      recado.textContent = "pedindo a sessão à janela principal…";
+      recado.textContent = txt("tela.mt_pedindo_sessao", "pedindo a sessão à janela principal…");
     }
     const de = `j${Date.now()}${Math.random().toString(36).slice(2, 7)}`;
     return new Promise(resolve => {
@@ -1131,7 +1131,7 @@ window.PhxTelas = (function () {
         canal.onmessage = antes;
         if (recado) {
           recado.className = "recado erro";
-          recado.textContent = "a janela principal não respondeu — entre por aqui";
+          recado.textContent = txt("tela.mt_principal_nao_respondeu", "a janela principal não respondeu — entre por aqui");
         }
         resolve(false);
       }, 2500);

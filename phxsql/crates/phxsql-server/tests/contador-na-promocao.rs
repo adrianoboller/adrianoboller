@@ -24,7 +24,7 @@ use comum::DirTemp;
 
 use std::io::{BufRead, BufReader, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -75,15 +75,39 @@ fn esperar_porta(porta: u16) {
     panic!("a porta {porta} nao abriu em 5 s");
 }
 
+/// As fases do repetidor (pedido 703). Na `SEGURANDO` NENHUMA linha da replica
+/// anda; na `DEPOIS` tudo anda e cada `posicao` que sai conta em
+/// `posicoes_depois` -- por construcao, so as que o source respondeu quando os
+/// inserts ja tinham acabado.
+const LIVRE: usize = 0;
+const SEGURANDO: usize = 1;
+const DEPOIS: usize = 2;
+
 /// O repetidor: cada linha do cliente vai ao destino e a resposta volta. Com o
 /// portao FECHADO, a linha que pede `replicar` fica presa (sem resposta).
-fn repetidor(destino: u16, fechado: Arc<AtomicBool>) -> u16 {
+///
+/// Pedido 703: o teste esperava 5 s por «uma rodada que comecou depois dos
+/// inserts», mas nao controlava onde os inserts caiam na rodada. Um `posicao`
+/// no meio deles adotava um contador parcial e o `replicar` dessa rodada ficava
+/// preso no portao ate o silencio da replica (30 s) -- sem rodada nova, o
+/// contador certo nao chegava. Medido: um sleep de 1,5 s entre o 1o e o 2o
+/// insert faz o teste cair sozinho, 3 de 3 (contador 5, esperava 6). Era
+/// corrida de ORDEM que a carga sorteia, nao lentidao; a fase `SEGURANDO`
+/// fixa a ordem e `posicoes_depois` e o evento a esperar.
+fn repetidor(
+    destino: u16,
+    fechado: Arc<AtomicBool>,
+    fase: Arc<AtomicUsize>,
+    posicoes_depois: Arc<AtomicUsize>,
+) -> u16 {
     let ouvinte = TcpListener::bind("127.0.0.1:0").unwrap();
     let porta = ouvinte.local_addr().unwrap().port();
     std::thread::spawn(move || {
         for entrada in ouvinte.incoming() {
             let Ok(cliente) = entrada else { continue };
             let fechado = Arc::clone(&fechado);
+            let fase = Arc::clone(&fase);
+            let posicoes_depois = Arc::clone(&posicoes_depois);
             std::thread::spawn(move || {
                 let Ok(origem) = TcpStream::connect(("127.0.0.1", destino)) else {
                     return;
@@ -98,6 +122,13 @@ fn repetidor(destino: u16, fechado: Arc<AtomicBool>) -> u16 {
                     if lado_do_cliente.read_line(&mut linha).unwrap_or(0) == 0 {
                         return;
                     }
+                    while fase.load(Ordering::SeqCst) == SEGURANDO {
+                        std::thread::sleep(Duration::from_millis(5));
+                    }
+                    // Lida ANTES de encaminhar: so conta o que o source vai
+                    // responder depois de a fase `DEPOIS` ter comecado.
+                    let conta = fase.load(Ordering::SeqCst) == DEPOIS
+                        && linha.contains(r#""op":"posicao""#);
                     if linha.contains(r#""op":"replicar""#) {
                         while fechado.load(Ordering::SeqCst) {
                             std::thread::sleep(Duration::from_millis(20));
@@ -109,6 +140,9 @@ fn repetidor(destino: u16, fechado: Arc<AtomicBool>) -> u16 {
                     let mut resposta = String::new();
                     if lado_do_source.read_line(&mut resposta).unwrap_or(0) == 0 {
                         return;
+                    }
+                    if conta {
+                        posicoes_depois.fetch_add(1, Ordering::SeqCst);
                     }
                     if de_volta.write_all(resposta.as_bytes()).is_err() {
                         return;
@@ -206,6 +240,8 @@ fn esperar(quanto: Duration, mut pronto: impl FnMut() -> bool) -> bool {
 struct Par {
     _pastas: (DirTemp, DirTemp),
     fechado: Arc<AtomicBool>,
+    fase: Arc<AtomicUsize>,
+    posicoes_depois: Arc<AtomicUsize>,
     porta_source: u16,
     porta_replica: u16,
     _s: Arc<Servidor>,
@@ -221,7 +257,14 @@ fn par(nome: &str) -> Par {
     cs.replicacao.imagem_da_linha = true;
     let (s, porta_source) = subir(cs);
     let fechado = Arc::new(AtomicBool::new(false));
-    let via = repetidor(porta_source, Arc::clone(&fechado));
+    let fase = Arc::new(AtomicUsize::new(LIVRE));
+    let posicoes_depois = Arc::new(AtomicUsize::new(0));
+    let via = repetidor(
+        porta_source,
+        Arc::clone(&fechado),
+        Arc::clone(&fase),
+        Arc::clone(&posicoes_depois),
+    );
     let mut cr = config_base(&b);
     cr.replicacao.papel = Papel::Replica;
     cr.replicacao.id_servidor = "replica-do-teste".into();
@@ -239,12 +282,15 @@ fn par(nome: &str) -> Par {
         hora: String::new(),
         cifra: false,
         chave_do_fio: String::new(),
+        pino_tls: String::new(),
         espelho: false,
     }];
     let (r, porta_replica) = subir(cr);
     Par {
         _pastas: (a, b),
         fechado,
+        fase,
+        posicoes_depois,
         porta_source,
         porta_replica,
         _s: s,
@@ -265,10 +311,21 @@ fn replica_atrasada_promovida_nao_reemite_o_que_o_master_entregou() {
         esperar(Duration::from_secs(20), || ids(p.porta_replica).len() == 2),
         "a replica nao chegou a 2 linhas"
     );
+    // Ordem, nao relogio (pedido 703): nada da replica anda enquanto os
+    // inserts acontecem, e so depois se espera o EVENTO «um `posicao`
+    // respondido depois dos inserts» e o contador que ele carrega. Os 60 s sao
+    // so desistencia, nao afirmacao de rapidez.
+    p.fase.store(SEGURANDO, Ordering::SeqCst);
     p.fechado.store(true, Ordering::SeqCst);
     inserir(p.porta_source, 3);
-    // O contador chega pelo `posicao`, que o portao nao segura.
-    let chegou = esperar(Duration::from_secs(5), || proxima(p.porta_replica) >= 6);
+    p.fase.store(DEPOIS, Ordering::SeqCst);
+    // O contador chega pelo `posicao`, que o portao do `replicar` nao segura.
+    let paciencia = Duration::from_secs(60);
+    assert!(
+        esperar(paciencia, || p.posicoes_depois.load(Ordering::SeqCst) >= 1),
+        "nenhum `posicao` passou depois dos inserts em {paciencia:?}"
+    );
+    let chegou = esperar(paciencia, || proxima(p.porta_replica) >= 6);
     assert_eq!(
         ids(p.porta_replica),
         vec![1, 2],

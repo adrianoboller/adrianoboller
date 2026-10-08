@@ -681,7 +681,7 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `remoto-em-claro-para-quem-exige` | o abrir_remoto manda o login em claro mesmo com cifra: true | 1 | ✅ provada |
 | `fio-sem-teto-de-registro` | a leitura do fio volta a ser ilimitada | 1 | ✅ provada |
 | `teto-do-fio-sem-a-constante` | o `Canal::ler` de producao troca `TETO_DO_REGISTRO` por um teto quase infinito | 1 | ✅ provada |
-| `teto-do-fio-sem-a-constante-no-soquete` | a mesma troca da constante por um teto quase infinito, vista pela rede | 1 | ❌ **não pegou** |
+| `teto-do-fio-sem-a-constante-no-soquete` | a mesma troca da constante por um teto quase infinito, vista pela rede | 1 | ✅ provada |
 | `teto-da-linha-sem-a-constante-no-soquete` | o `teto_da_linha` do servidor troca `TETO_DO_REGISTRO` por um teto quase infinito, visto pela rede | 1 | ✅ provada |
 | `pulso-do-cluster-em-claro` | o pulso da eleição saindo em claro com a cifra do cluster ligada | 1 | ✅ provada |
 | `replicacao-do-cluster-em-claro` | a replicação entre os nós do cluster saindo em claro | 1 | ✅ provada |
@@ -882,7 +882,7 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `resposta-sem-prova-assina-e-esconde` | a resposta a um pulso sem prova igual na forma e diferente no relógio | 1 | ✅ provada |
 | `reescrita-sem-portao-na-trava` | a migração congela a tabela que o COMMIT de uma transação aberta vai abrir | 1 | ✅ provada |
 | `acrescentar-coluna-sem-portao` | o acrescentar_coluna congela a tabela que o COMMIT de uma transação aberta vai abrir | 1 | ✅ provada |
-| `commit-sem-rede-antes-da-marca` | o COMMIT grava a marca com uma tabela do alcance congelada | 1 | ❌ **não pegou** |
+| `commit-sem-rede-antes-da-marca` | o COMMIT grava a marca com uma tabela do alcance congelada | — | ❌ **não pegou** |
 | `instrucao-na-vizinha-da-congelada` | a escrita ligada pela chave a uma tabela congelada entra na lista da transação | 1 | ✅ provada |
 | `braco-de-erro-retrava` | a passada do COMMIT quebra depois da marca e a recuperação da hora não roda | 2 | ✅ provada |
 | `completar-apaga-a-marca-impossivel` | a recuperação do COMMIT apaga a marca de uma operação que só estava congelada | 1 | ✅ provada |
@@ -896,8 +896,19 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `mapa-do-cluster-envenenado-vira-vazio` | o mapa de pulsos envenenado devolvido vazio: a eleição trava | 1 | ✅ provada |
 | `lista-do-cluster-envenenada-volta-ao-arranque` | a lista viva de nós envenenada respondida pelo config.json do arranque | 1 | ✅ provada |
 | `smtp-linha-sem-teto` | o cliente SMTP lê a linha do relé com `read_line` cru, sem teto de tamanho | 3 | ✅ provada |
-| `teto-decidido-antes-do-bloqueio` | o teto da linha é decidido antes de a leitura bloquear, e o usuário excluído enquanto esperava manda 1 MiB | 2 | ✅ provada |
-| `teto-decidido-sem-refrescar-a-ficha` | o teto é perguntado na hora certa, mas com a ficha da sessão que nunca se refrescou | 1 | ✅ provada |
+| `leitura-fora-do-canal-na-web` | a porta HTTP le a linha do pedido por `read_line` cru, fora do `Canal` (o caso que fundou a lei, pedido 434) | 1 | ✅ provada |
+| `leitura-fora-do-canal-na-web-pela-catraca` | a leitura crua da linha do pedido HTTP volta e a catraca `TETO_LEITURA_FORA_DO_CANAL` nao sobe | 1 | ✅ provada |
+| `leitura-fora-do-canal-no-aperto-do-odbc` | o driver ODBC le a resposta do aperto por `read_line` cru, fora do `Canal` (o terceiro irmao do 312) | 1 | ✅ provada |
+| `leitura-fora-do-canal-no-aperto-do-odbc-pela-catraca` | a leitura crua do aperto do ODBC volta e a catraca `TETO_LEITURA_FORA_DO_CANAL` nao sobe | 1 | ✅ provada |
+| `conferidor-de-segredos-cala-por-engano` | o conferidor de segredos varre a arvore e nao acusa nada, nem a chave plantada | 1 | ✅ provada |
+| `conferidor-de-temporarios-cala-por-engano` | o conferidor dos temporarios deixa de casar o padrao e diz `ok 0` com o `temp_dir` cru na arvore | 1 | ✅ provada |
+| `conferidor-de-vermelhas-cala-por-engano` | o conferidor das provas vermelhas deixa de reconhecer o `#[ignore]` da vermelha e a catraca fica verde com qualquer uma solta | 1 | ✅ provada |
+| `conferidor-de-inventario-ve-tudo-por-engano` | o conferidor do inventario de extensoes acha toda extensao em qualquer figura e nunca acusa a copia que perdeu uma | 1 | ✅ provada |
+| `conferidor-de-grades-cala-por-engano` | o conferidor de grades deixa de ver o `<table` cru e so conta o ajudante | 2 | ✅ provada |
+| `conferidor-de-botoes-cala-por-engano` | o conferidor de botoes deixa de ver o `<button` e so conta o `role=button` | 1 | ✅ provada |
+| `conferidor-de-texto-cru-cala-por-engano` | o conferidor do texto cru deixa de achar o `${txt(` sem `esc` e a catraca fica verde | 2 | ✅ provada |
+| `teto-decidido-antes-do-bloqueio` | o teto da linha é decidido antes de a leitura bloquear, e o usuário excluído enquanto esperava manda 1 MiB | 3 | ✅ provada |
+| `teto-decidido-sem-refrescar-a-ficha` | o teto é perguntado na hora certa, mas com a ficha da sessão que nunca se refrescou | 2 | ✅ provada |
 | `teto-refrescado-antes-do-bloqueio` | a ficha é refrescada antes de a leitura bloquear, e o excluído enquanto esperava continua com 128 MiB | 2 | ✅ provada |
 | `linha-residente-depois-da-resposta` | a linha já respondida fica residente enquanto a conexão espera a próxima | 1 | ✅ provada |
 | `hexadecimal-ecoa-o-valor` | o erro do hexadecimal inválido devolve o valor recebido inteiro | 1 | ✅ provada |
@@ -937,10 +948,10 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `phxzip-contagem-sem-teto` | a contagem de entradas do cabeçalho comprimido dimensiona vetores pelo que o arquivo declara | 1 | ✅ provada |
 | `phxzip-cabecalho-plano-sem-teto` | o cabeçalho gravado em claro é analisado inteiro mesmo acima de `Limites::cabecalho` | 1 | ✅ provada |
 | `phxzip-nome-repetido-na-leitura` | duas entradas com o mesmo nome: o extrator grava a segunda por cima da primeira, calado | 1 | ✅ provada |
-| `panico-sob-a-trava-sem-reparo` | um pânico com a trava global de dados na mão a envenena para sempre: toda conexão recebe «a trava suja» até reiniciar | 3 | ✅ provada |
-| `trava-de-dados-recupera-sem-reparar` | a trava de dados envenenada volta a atender sem reparo nenhum (a H2 ingênua): o disco rasgado e a cópia em RAM servidos como se nada tivesse havido | 3 | ✅ provada |
+| `panico-sob-a-trava-sem-reparo` | um pânico com a trava global de dados na mão a envenena para sempre: toda conexão recebe «a trava suja» até reiniciar | 4 | ✅ provada |
+| `trava-de-dados-recupera-sem-reparar` | a trava de dados envenenada volta a atender sem reparo nenhum (a H2 ingênua): o disco rasgado e a cópia em RAM servidos como se nada tivesse havido | 4 | ✅ provada |
 | `reparo-da-trava-sem-o-piso` | o reparo da trava que falha deixa o processo de pé, servindo de estado incerto, em vez de abortar | 2 | ✅ provada |
-| `reparo-da-trava-sem-as-marcas-orfas` | o reparo da trava não completa a marca em voo: o COMMIT que morreu na passada sai pela metade, com as travas da transação já soltas | 1 | ✅ provada |
+| `reparo-da-trava-sem-as-marcas-orfas` | o reparo da trava não completa a marca em voo: o COMMIT que morreu na passada sai pela metade, com as travas da transação já soltas | 2 | ✅ provada |
 | `reparo-varre-todas-as-marcas` | o reparo da trava completa marca que não é do pânico: reaplica um `atualizar` velho por cima da gravação mais nova | 2 | ✅ provada |
 | `reparo-da-trava-deixa-o-residente` | o reparo da trava deixa a cópia residente de pé: a memória serve a tabela atrás do disco depois do pânico | 1 | ✅ provada |
 | `fecho-drena-as-sujas-antes-do-fsync` | o fecho da janela esvazia a lista das tabelas sujas antes de sincronizar: um pânico no meio apaga a marca de commit cujo dado não foi ao disco | 1 | ✅ provada |
@@ -1393,7 +1404,7 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `gancho-sem-portao-ligado` | o gancho executa mesmo com `alertas.gancho.ligado` falso | 1 | ✅ provada |
 | `gancho-por-shell` | o comando do gancho passa por `sh -c`: `;` e `$()` viram execução | 1 | ✅ provada |
 | `gancho-ambiente-herdado` | o filho do gancho herda o ambiente do servidor | 2 | ✅ provada |
-| `gancho-sem-kill-no-prazo` | o gancho que passa de `timeout_s` continua vivo | 3 | ✅ provada |
+| `gancho-sem-kill-no-prazo` | o gancho que passa de `timeout_s` continua vivo | 4 | ✅ provada |
 | `gancho-zumbi` | o gancho morto por prazo vira zumbi (kill sem wait) | 2 | ✅ provada |
 | `gancho-saida-do-filho-vaza` | o stdout/stderr do gancho cai no stderr do servidor | 1 | ✅ provada |
 | `gancho-editavel-pela-api` | um campo de `alertas.gancho` entra no CAMPOS_EDITAVEIS | 2 | ✅ provada |
@@ -1471,20 +1482,30 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `evento-no-diario-sem-a-linha-apaga-a-marca` | O evento que está no diário conta como aplicado sem o `.reg` confirmar: a marca do grupo sai com a linha ausente (pedido 699) | 1 | ✅ provada |
 | `grupo-do-bidi-sem-marca` | O grupo do bidirecional deixa de gravar a marca: o SIGKILL no meio dele reabre com a venda pela metade (pedido 698) | 1 | ✅ provada |
 | `marca-do-bidi-sem-completar-no-arranque` | A marca do grupo do bidirecional é gravada e o arranque não a completa: a venda reabre pela metade (pedido 698) | 1 | ✅ provada |
+| `bidi-grava-alteracao-por-cima-da-inclusao-orfa` | O arranque do bidirecional grava uma ALTERAÇÃO pela chave de um rowid cuja inclusão a queda deixou fora do diário (pedido 700) | 1 | ✅ provada |
+| `bidi-completa-o-grupo-com-outro-id` | O arranque completa o grupo do bidirecional com um id de transação novo: a réplica encadeada recebe a venda em dois pedaços (pedido 701 b) | 1 | ✅ provada |
+| `reparo-completa-pelo-rowid-a-marca-do-bidi` | O reparo da trava completa pelo rowid a marca em voo do grupo do bidirecional, que casa pela chave (pedido 700) | 1 | ✅ provada |
+| `erro-no-meio-do-grupo-tira-a-marca-da-lista` | O `?` no meio do grupo da réplica devolve o erro com a marca fora da lista da rodada: ela fica no disco até o próximo arranque (pedido 701 d) | 1 | ✅ provada |
+| `alteracao-ja-aplicada-sem-olhar-o-conteudo` | A recuperação da marca da réplica dá a alteração por aplicada só porque a linha existe: a versão velha no `.reg` faz a marca sair (pedido 701 a) | 1 | ✅ provada |
+| `marca-completada-fora-da-unidade` | O arranque completa a marca da réplica fora de uma unidade de transação: cada evento ganha um id e o grupo chega em pedaços à réplica encadeada (pedido 701 b) | 1 | ✅ provada |
+| `exclusao-sem-evento-recusa-na-marca` | A queda entre o slot liberado e o evento da exclusão: a recuperação da marca recusa a cada arranque em vez de completar o evento da lixeira (pedido 701 c) | 1 | ✅ provada |
+| `commit-completado-no-arranque-com-outro-id` | A marca do COMMIT completada no arranque dá ao resto um id de transação novo: a réplica encadeada recebe a venda em dois pedaços (pedido 702) | 1 | ✅ provada |
+| `metade-adotada-na-marca-inteira` | A recuperação adota o id do grupo de uma marca que já está INTEIRA no diário: a regravação redundante se pendura num grupo que a réplica já fechou (pedido 702) | 1 | ✅ provada |
+| `metade-adotada-depois-de-outro-commit` | A recuperação adota o id antigo com um commit DEPOIS na cauda de uma tabela da marca: o diário sai fora da ordem dos ids (pedido 702) | 1 | ✅ provada |
+| `braco-da-uniao-perde-o-database-dele` | O braço do `unir` deixa de ler o próprio `database`: a visão da loja lê o mesmo caixa N vezes (pedido 679) | 1 | ✅ provada |
+| `uniao-cala-o-braco-cortado-no-teto` | O `unir` responde `truncado: false` com um braço parado no teto de linhas: a loja aparece inteira sem estar (pedido 679) | 1 | ✅ provada |
+| `sinal-mata-sem-fechar-a-janela` | O `phxsqld` morre pelo padrão do núcleo no SIGTERM/SIGINT: a janela não vai ao disco e o `.ndx` fica «para trás numa queda» (pedido 687) | 3 | ✅ provada |
+| `parada-afirma-sem-levar-ao-disco` | A parada em ordem sai com código 0 sem ter sincronizado as tabelas sujas (pedido 687) | 3 | ✅ provada |
+| `ponte-mcp-sai-sem-fechar-a-janela` | A ponte MCP termina no fim da entrada sem fechar a janela: o `.ndx` do que ela gravou fica marcado (irmão do 687) | 1 | ✅ provada |
+| `recusa-manda-comando-que-nao-existe` | A recusa do índice marcado manda rodar «`reparar indice`», comando que não existe em porta nenhuma (pedido 688) | 1 | ✅ provada |
 | `alter-com-regra-sem-aviso` | `acrescentar_coluna` com `check` ou `calculada` numa tabela com linha é aceito SEM AVISO, e a linha velha fica fora da regra | — | 🪦 aposentada (01/10/2026) |
 | `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | — | 🪦 aposentada (18/09/2026) |
 
-**831 das 836 guardas do catálogo: 2 aposentadas, 2 não pegaram, 823 provadas, 4 redundantes** — 36848 s de mutação, medido de 2026-09-16 15:25 a 2026-10-08 06:25, em 8 datas (2026-09-16: 1, 2026-09-24: 84, 2026-09-30: 34, 2026-10-01: 189, 2026-10-02: 152, 2026-10-06: 51, 2026-10-07: 295, 2026-10-08: 25).
+**858 das 857 guardas do catálogo: 2 aposentadas, 1 não pegou, 851 provadas, 4 redundantes** — 38959 s de mutação, medido de 2026-09-16 15:25 a 2026-10-08 20:14, em 8 datas (2026-09-16: 1, 2026-09-24: 62, 2026-09-30: 30, 2026-10-01: 140, 2026-10-02: 97, 2026-10-06: 36, 2026-10-07: 221, 2026-10-08: 271).
 
-> **Esta rodada NÃO julgou 7 das 836 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 7 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 1 das 857 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 1 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
-- `bidi-grava-alteracao-por-cima-da-inclusao-orfa` — O arranque do bidirecional grava uma ALTERAÇÃO pela chave de um rowid cuja inclusão a queda deixou fora do diário (pedido 700)
-- `bidi-completa-o-grupo-com-outro-id` — O arranque completa o grupo do bidirecional com um id de transação novo: a réplica encadeada recebe a venda em dois pedaços (pedido 701 b)
-- `reparo-completa-pelo-rowid-a-marca-do-bidi` — O reparo da trava completa pelo rowid a marca em voo do grupo do bidirecional, que casa pela chave (pedido 700)
-- `erro-no-meio-do-grupo-tira-a-marca-da-lista` — O `?` no meio do grupo da réplica devolve o erro com a marca fora da lista da rodada: ela fica no disco até o próximo arranque (pedido 701 d)
-- `alteracao-ja-aplicada-sem-olhar-o-conteudo` — A recuperação da marca da réplica dá a alteração por aplicada só porque a linha existe: a versão velha no `.reg` faz a marca sair (pedido 701 a)
-- `marca-completada-fora-da-unidade` — O arranque completa a marca da réplica fora de uma unidade de transação: cada evento ganha um id e o grupo chega em pedaços à réplica encadeada (pedido 701 b)
-- `exclusao-sem-evento-recusa-na-marca` — A queda entre o slot liberado e o evento da exclusão: a recuperação da marca recusa a cada arranque em vez de completar o evento da lixeira (pedido 701 c)
+- `commit-sem-as-duas-recusas-antes-da-marca` — o COMMIT grava a marca com a tabela congelada quando a rede do 426 E a pre-conferencia do 448 somem
 
 As guardas que esta corrida ainda cita, hoje aposentadas:
 
@@ -1496,7 +1517,6 @@ As notas que a rodada deixou:
 - `cadeia-sem-teto` — o binario abortou, que e como esta guarda pega
 - `aad-fora-do-slot` — confirmado: tirar so o AAD nao e sentido por teste nenhum, porque o `nonce_de_pedaco` carrega o ROWID. Medido em 03/09/2026, e nao deduzido: tirando o AAD e SO o rowid do nonce -- volume e contador ficando --, o teste CAI. Volume e versao nao entram nesta conta porque o teste copia o slot INTEIRO, e os dois slots moram no mesmo volume com a mesma versao
 - `nonce-sem-endereco` — confirmado: tirar so o endereco do nonce tambem passa despercebido, porque o AAD carrega o ROWID. Medido em 03/09/2026: tirando o endereco do nonce e SO o rowid do AAD -- volume e versao ficando --, o teste CAI
-- `teto-do-fio-sem-a-constante-no-soquete` — PASSOU COM O DEFEITO REPOSTO: a_resposta_acima_do_teto_e_recusada_por_limite_e_a_rodada_seguinte_abre_outra
 - `ffi-panico-atravessa` — o binario abortou, que e como esta guarda pega
 - `rest-fecha-sem-escoar` — confirmado: nenhum teste de unidade sente isto, e nao poderia -- o RST e do sistema operacional, e so aparece com um soquete de verdade. Quem pega e o passo 13 de `bancada/rest/provar.py`, e esta entrada existe para dizer, com o numero da rodada, que a cobertura mora la e nao aqui
 - `recuperar-sem-reindexar` — o binario abortou, que e como esta guarda pega

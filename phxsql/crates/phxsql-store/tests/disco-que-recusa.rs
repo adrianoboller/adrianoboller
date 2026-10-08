@@ -244,6 +244,13 @@ fn disco_ainda_cheio_deixa_a_marca_e_o_recado_certo() {
         recado.contains("`reindexar`"),
         "o recado tinha de mandar reconstruir, e disse: {recado}"
     );
+    // Pedido 657: o comando sai em mais de uma recusa; a do byte 52 em 1 e a
+    // unica que diz «ficou para tras» -- e nao a da escrita interrompida.
+    assert!(
+        recado.contains("ficou para tras numa queda e nao e confiavel"),
+        "o recado nao e o do byte 52: {recado}"
+    );
+    assert!(!recado.contains("parou no meio"), "{recado}");
     t.reindexar().unwrap();
     todos_achados(&mut t, 1..=2_000);
 }

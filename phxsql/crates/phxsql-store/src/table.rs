@@ -1595,6 +1595,15 @@ impl Table {
         Ok(slots)
     }
 
+    /// Fecha os volumes velhos que a ultima FASE B trocou por cima, e e neste
+    /// `close` que o nucleo solta as extensoes deles (pedido 647: 1,2 s a
+    /// 10 M de linhas, que o `rename` pagava sob a trava global). Quem chama
+    /// a FASE B sob a trava chama isto DEPOIS de solta-la; esquecido, o
+    /// `Drop` da tabela faz o mesmo. Devolve quantos descritores fechou.
+    pub fn soltar_volumes_velhos(&mut self) -> usize {
+        self.reg.soltar_volumes_velhos()
+    }
+
     fn preparar_troca(&mut self, novo: Schema) -> Result<Option<TrocaDoEsquema>> {
         if self.reg.esquema_cabe(&novo) {
             return Ok(None);
@@ -4146,8 +4155,33 @@ impl Table {
             });
         }
         let id = crate::marca::proximo_id_no_diretorio(&self.diretorio);
-        let marca =
-            crate::marca::gravar_marca(&self.diretorio, id, crate::util::agora_ms(), &escritas)?;
+        // O bilhete posicional (pedido 709), pelo MESMO `versoes_antes` do
+        // servidor: a mae e a propria tabela, as filhas estao no mapa.
+        let versoes = {
+            let mae = &mut *self;
+            let filhas = &mut abertas;
+            crate::marca::versoes_antes(&escritas, |tabela, r, com_suave| {
+                let t = if tabela == mae.nome {
+                    &mut *mae
+                } else {
+                    filhas.get_mut(tabela).ok_or_else(|| {
+                        PhxError::Esquema(format!("a filha {tabela} da cascata nao abriu"))
+                    })?
+                };
+                crate::marca::estado_do_slot(t, r, com_suave)
+            })?
+        };
+        let bilhete = crate::marca::Bilhete {
+            tx: crate::log::reservar_tx_na_unidade(),
+            versoes_antes: &versoes,
+        };
+        let marca = crate::marca::gravar_marca_posicional(
+            &self.diretorio,
+            id,
+            crate::util::agora_ms(),
+            &escritas,
+            bilhete,
+        )?;
         Ok((marca, escritas, abertas))
     }
 
@@ -6629,6 +6663,12 @@ impl Table {
         let mut lista = Vec::new();
         Self::coletar_a_arvore(&mut plano.cascata, &mut lista, None, 1)?;
         plano.cascata.clear();
+        // Pedido 716: a cascata e UMA transacao no diario, como a do servidor
+        // -- a mae e cada filha com o mesmo id, reservado na marca. Fora de
+        // unidade cada evento ganhava o seu, e a replica encadeada de uma base
+        // escrita pelo embutido recebia a cascata em pedacos. Quem ja abriu
+        // uma (a recuperacao) fica com a dela.
+        let _unidade = crate::marca::UnidadeDaMarca::abrir();
         let (marca, escritas, mut abertas) =
             self.gravar_a_marca_da_cascata(rowid, valores, &plano.valores_antigos, lista)?;
         let mut guarda = MarcaAntesDaMae(Some(marca.clone()));
@@ -7980,6 +8020,26 @@ impl Table {
         }
         let imagem = self.preparar_diario(&payload)?;
         self.anotar_imagem(Operacao::Inclusao, rowid, 1, &imagem)
+    }
+
+    /// Grava SO o evento de uma alteracao que ja esta no `.reg` -- pedido 710,
+    /// o irmao de [`Table::completar_o_diario_da_inclusao`] na marca do
+    /// `COMMIT`: a queda entre o slot regravado e o evento deixava a linha nova
+    /// sem alteracao no diario, e a replica nunca a recebia.
+    ///
+    /// A versao e a imagem saem da linha como ela esta AGORA, como no evento
+    /// devido do 498 -- e pelo mesmo motivo, sem o «antes» de uma troca de
+    /// chave: o payload antigo ja nao existe em lugar nenhum do disco.
+    pub(crate) fn completar_o_diario_da_alteracao(&mut self, rowid: RowId) -> Result<()> {
+        let payload = self.reg.ler(rowid)?.ok_or_else(|| {
+            PhxError::NaoEncontrado(format!(
+                "{}: o rowid {rowid} nao tem linha para completar o diario",
+                self.nome
+            ))
+        })?;
+        let versao = self.reg.versao(rowid)?.unwrap_or(0);
+        let imagem = self.preparar_diario(&payload)?;
+        self.anotar_imagem(Operacao::Alteracao, rowid, versao, &imagem)
     }
 
     /// Grava SO o evento de uma exclusao de vez cujo slot ja saiu do `.reg` --
@@ -9681,6 +9741,69 @@ impl Table {
     /// Eventos de um registro especifico.
     pub fn historico(&mut self, rowid: RowId) -> Result<Vec<Evento>> {
         self.log.historico(rowid)
+    }
+
+    /// A posicao do primeiro evento que o diario ainda tem: zero, ate o
+    /// primeiro expurgo (pedido 706). Abaixo dela, a leitura recusa.
+    pub fn base_do_diario(&mut self) -> Result<u64> {
+        self.log.base()
+    }
+
+    /// O total de eventos e a base do diario, numa varredura so (pedido 706).
+    pub fn eventos_e_base(&mut self) -> Result<(u64, u64)> {
+        self.log.total_e_base()
+    }
+
+    /// O plano do expurgo do diario -- ver
+    /// [`crate::log::LogFile::planejar_expurgo`]. Nao escreve nada.
+    pub fn planejar_expurgo_do_diario(
+        &mut self,
+        confirmado: Option<u64>,
+        limite_ms: Option<i64>,
+    ) -> Result<crate::log::PlanoDoExpurgo> {
+        self.log.planejar_expurgo(confirmado, limite_ms)
+    }
+
+    /// Passo 1 do expurgo do diario, com a trava: a base no cabecalho de
+    /// quem fica.
+    pub fn gravar_bases_do_expurgo_do_diario(
+        &mut self,
+        plano: &crate::log::PlanoDoExpurgo,
+    ) -> Result<()> {
+        self.log.gravar_bases_do_expurgo(plano)
+    }
+
+    /// Passo 3 do expurgo do diario, com a trava: os volumes saem, e o
+    /// `fsync` da pasta volta para depois de soltar a trava (pedido 591).
+    /// Tambem no erro: o que ja saiu deve o mesmo `fsync` (pedido 598).
+    pub fn concluir_expurgo_do_diario_adiando_o_fsync(
+        &mut self,
+        plano: &crate::log::PlanoDoExpurgo,
+    ) -> (Result<()>, crate::catalogo::PorSincronizar) {
+        let mut sairam = Vec::new();
+        let r = self.log.concluir_expurgo(plano).map(|s| sairam = s);
+        (
+            r,
+            crate::catalogo::PorSincronizar::entradas_que_sairam(sairam),
+        )
+    }
+
+    /// Os tres passos do expurgo do diario de uma vez, para quem nao tem trava
+    /// global a poupar -- a tabela aberta direto, um teste, a FFI.
+    pub fn expurgar_diario(
+        &mut self,
+        confirmado: Option<u64>,
+        limite_ms: Option<i64>,
+    ) -> Result<crate::log::PlanoDoExpurgo> {
+        let plano = self.planejar_expurgo_do_diario(confirmado, limite_ms)?;
+        if plano.vazio() {
+            return Ok(plano);
+        }
+        self.gravar_bases_do_expurgo_do_diario(&plano)?;
+        plano.levar_bases_ao_disco()?;
+        let (r, pendente) = self.concluir_expurgo_do_diario_adiando_o_fsync(&plano);
+        pendente.levar_ao_disco()?;
+        r.map(|()| plano)
     }
 
     /// Onde a ultima leitura do diario parou. Ver [`crate::log::MarcaDoDiario`].

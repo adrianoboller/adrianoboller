@@ -627,6 +627,8 @@ fn io_do_caminho_do_usuario_nao_avisa_o_disco() {
 #[test]
 fn do_caminho_pedido_separa_os_dois_io() {
     use std::io::{Error, ErrorKind};
+    let dir = DirTemp::novo("caminho_pedido");
+    let s = Servidor::novo(config_base(&dir)).unwrap();
     let io = |k: ErrorKind| -> Result<()> { Err(PhxError::Io(Error::from(k))) };
     // Operacao que le o banco: so as formas de caminho/permissao saem.
     for k in [
@@ -634,7 +636,7 @@ fn do_caminho_pedido_separa_os_dois_io() {
         ErrorKind::PermissionDenied,
         ErrorKind::NotADirectory,
     ] {
-        let e = Servidor::do_caminho_pedido(io(k), "/x", false).unwrap_err();
+        let e = s.do_caminho_pedido(io(k), "/x", false).unwrap_err();
         assert_eq!(e.codigo(), 2001, "{k:?} deveria ser erro do pedido");
     }
     for k in [
@@ -643,14 +645,17 @@ fn do_caminho_pedido_separa_os_dois_io() {
         ErrorKind::Other,
         ErrorKind::TimedOut,
     ] {
-        let e = Servidor::do_caminho_pedido(io(k), "/x", false).unwrap_err();
+        let e = s.do_caminho_pedido(io(k), "/x", false).unwrap_err();
         assert_eq!(e.codigo(), CODIGO_DE_ES, "{k:?} e do disco e tem de avisar");
     }
     // Operacao que so le o caminho do pedido: todo `Io` e dele.
-    let e = Servidor::do_caminho_pedido(io(ErrorKind::Other), "/x", true).unwrap_err();
+    let e = s
+        .do_caminho_pedido(io(ErrorKind::Other), "/x", true)
+        .unwrap_err();
     assert_eq!(e.codigo(), 2001);
     // E o que nao e `Io` passa intacto.
-    let e = Servidor::do_caminho_pedido::<()>(Err(PhxError::NaoEncontrado("n".into())), "/x", true)
+    let e = s
+        .do_caminho_pedido::<()>(Err(PhxError::NaoEncontrado("n".into())), "/x", true)
         .unwrap_err();
     assert_eq!(e.codigo(), 3001);
 }

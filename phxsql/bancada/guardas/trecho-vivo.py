@@ -950,7 +950,11 @@ TETO_TESTE_SEM_MODULO = 0
 # «ficou para tras numa queda») e `recusa-manda-comando-que-nao-existe`. RED
 # medido a mao (troca de cada uma aplicada, `caem` cairam, restaurado,
 # verdes); provador NAO rodou.
-PISO_DAS_ENTRADAS = 847
+# 08/10/2026 (frente 655/657): +11 -- 4 da leitura fora do `Canal` (web e
+# aperto do ODBC, pelo soquete e pela catraca) e 7 dos conferidores com o
+# «ok 0 por engano» reposto; e +1 da frente do 720 na mesma arvore
+# (`commit-sem-as-duas-recusas-antes-da-marca`). Contado, nao somado.
+PISO_DAS_ENTRADAS = 859
 
 # ------------------------------------------------------------- APOSENTADAS
 #
@@ -1272,15 +1276,19 @@ def sem_modulo(entradas):
 # em 07/10 eram 6 e 39, e nenhuma regua acusava. Esta conta as duas formas.
 # Medido em 07/10/2026: das 45, 18 caem nas isencoes de baixo (3 `aborta`, 15
 # binarios cujo unico teste e o `caem`), e 27 sao divida -- o teto nasce ai.
+# 08/10/2026 (frente 655/657): os 26 com vizinho preenchidos e provados pelo
+# `provar-guardas.py --so`; o 27o (`suspensao-do-indice-so-na-ram`) saiu pela
+# isencao, porque o unico teste fora do `caem` e uma sonda `#[ignore]` que o
+# provador nunca roda. 27 -> 0.
 #
 # Duas isencoes, e as duas saem do CODIGO, nao de uma lista: `espera:
 # "aborta"` (o binario inteiro cai, nao ha vizinho que possa seguir de pe) e
 # o binario `--test` cujo unico `#[test]` e o proprio `caem` (nao ha vizinho
 # para nomear). Isencao digitada envelheceria; estas se remedem a cada
 # corrida.
-TETO_SEGUEM_FALTANDO = 27
+TETO_SEGUEM_FALTANDO = 0
 
-TESTE_FN = re.compile(r"#\[test\]\s*(?:#\[[^\]]*\]\s*)*(?:async\s+)?fn\s+(\w+)")
+TESTE_FN = re.compile(r"#\[test\]\s*((?:#\[[^\]]*\]\s*)*)(?:async\s+)?fn\s+(\w+)")
 
 
 def testes_do_binario(pacote, alvo):
@@ -1292,7 +1300,12 @@ def testes_do_binario(pacote, alvo):
     fontes()
     nomes = set()
     for caminho in arquivos:
-        nomes |= set(TESTE_FN.findall(_TEXTOS.get(caminho, "")))
+        # O `#[ignore]` nao conta como vizinho: o provador roda sem
+        # `--ignored`, entao a sonda nunca sai "ok" e um `seguem` com ela
+        # daria ESTRAGOU sempre (medido em 08/10/2026: `indice-adiado` tem
+        # dois `caem` e uma sonda ignorada, e nenhum vizinho possivel).
+        nomes |= {n for attrs, n in TESTE_FN.findall(_TEXTOS.get(caminho, ""))
+                  if "#[ignore" not in attrs}
     return nomes
 
 
@@ -1345,7 +1358,7 @@ def seguem_faltando(entradas, testes_de=None):
 # a uniao do servidor na linha 21 (`#[cfg(test)] mod testes_x;`, sem corpo) e
 # nunca viu a producao do servidor.rs; a serie com o passado se perde de
 # proposito, como em TETO_TABELA_NA_MAO. Nao e subida de teto.
-TETO_MENSAGEM_AMBIGUA_COM_O_SERVIDOR_INTEIRO = 148  # medido em 08/10/2026 (o --numeros)
+TETO_MENSAGEM_AMBIGUA_COM_O_SERVIDOR_INTEIRO = 130  # 148 -> 130 em 08/10/2026 (pedido 657)
 
 FRASE = re.compile(r'contains\(\s*"((?:[^"\\]|\\.)*)"\s*\)')
 
@@ -1386,8 +1399,14 @@ def corpo_de(nome):
 
 # So `#[cfg(test)] mod x {` COM corpo encerra a producao: `mod x;` (sem corpo)
 # e a declaracao de um arquivo de teste e nao diz nada do que vem depois.
+#
+# E `#[cfg(all(test, unix))]` encerra tambem (pedido 657, 08/10/2026): o
+# `gancho.rs` abre os testes assim, e a regua contava o texto dos testes como
+# producao -- toda frase que um teste conferia virava «repetida» so por estar
+# escrita no proprio teste. Medido: 6 entradas saiam daqui so por isso (137 ->
+# 131), e nenhuma entrou.
 MODULO_DE_TESTE_COM_CORPO = re.compile(
-    r"#\[cfg\(test\)\]\s*(?:#\[[^\]]*\]\s*)*"
+    r"#\[cfg\((?:test|all\(test\b[^\]]*\))\)\]\s*(?:#\[[^\]]*\]\s*)*"
     r"(?:pub(?:\([^)]*\))?\s+)?mod\s+\w+\s*\{")
 
 
@@ -2044,6 +2063,14 @@ def autoteste_das_tres_novas():
     for g, esperado in casos:
         r = seguem_faltando([g], testes_de)
         conferir("seguem: %s" % g["id"], r == esperado, str(r))
+    # a sonda `#[ignore]` nao e vizinho: o provador nao a roda, e contar com
+    # ela tiraria da isencao o binario cujo unico teste rodado e o `caem`
+    fonte = ("#[test]\nfn so_o_caem() {}\n"
+             "#[test]\n#[ignore = \"sonda\"]\nfn sonda() {}\n"
+             "#[test]\n#[should_panic]\nfn vizinho_que_entra() {}\n")
+    rodados = {n for attrs, n in TESTE_FN.findall(fonte) if "#[ignore" not in attrs}
+    conferir("seguem: a sonda #[ignore] nao conta como vizinho",
+             rodados == {"so_o_caem", "vizinho_que_entra"}, str(rodados))
     reais = catalogo()
     conferir("seguem: o catalogo de hoje mede o teto",
              len(seguem_faltando(reais)) == TETO_SEGUEM_FALTANDO,
@@ -2077,11 +2104,24 @@ def autoteste_das_tres_novas():
     conferir("ambigua: a copia dentro de #[cfg(test)] nao conta como producao",
              mensagem_ambigua([g], arquivo('erro("perde precisao");'),
                               corpos(["perde precisao"])) == [])
+    # pedido 657: o `gancho.rs` abre os testes com `#[cfg(all(test, unix))]`
+    conferir("ambigua: a copia dentro de #[cfg(all(test, unix))] nao conta",
+             mensagem_ambigua([g], lambda rel: 'erro("perde precisao");\n'
+                              '#[cfg(all(test, unix))]\nmod t { "perde precisao" }',
+                              corpos(["perde precisao"])) == [])
     conferir("ambigua: frase curta ou sem letra nao conta",
              mensagem_ambigua([g], arquivo('a(" = "); b(" = ");'), corpos([" = "])) == [])
-    conferir("ambigua: o caso que fundou a regua esta na lista",
-             "sequencia-numero-cru-perde-precisao"
-             in {i for i, _f in mensagem_ambigua(reais)})
+    # O caso que fundou foi CONSERTADO no pedido 657 (o teste passou a
+    # conferir a alternativa inteira da `Sequence`); a prova de que a regua
+    # ainda o veria e o corpo de ANTES do conserto, contra o `valores.rs` real.
+    fundador = [g2 for g2 in reais if g2["id"] == "sequencia-numero-cru-perde-precisao"]
+    corpo_velho = ('{ assert!(e.contains("perde precisao")); '
+                   'assert!(e.contains("texto")); assert!(e.contains("Uuid256")); }')
+    conferir("ambigua: o caso que fundou a regua, com o teste de antes, esta na lista",
+             [i for i, _f in mensagem_ambigua(fundador, corpos=lambda n: [corpo_velho])]
+             == ["sequencia-numero-cru-perde-precisao"])
+    conferir("ambigua: e com o teste de hoje (657) saiu dela",
+             mensagem_ambigua(fundador) == [])
     conferir("ambigua: o catalogo de hoje mede o teto",
              len(mensagem_ambigua(reais)) == TETO_MENSAGEM_AMBIGUA_COM_O_SERVIDOR_INTEIRO)
 

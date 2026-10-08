@@ -1146,7 +1146,15 @@ impl Servidor {
             caminho: crate::transacao::caminho_da_marca(&dir, id),
             gravada: false,
         });
-        let marca = match crate::transacao::gravar_marca(&dir, id, crate::agora_ms(), &escritas) {
+        let marca = match self.gravar_a_marca_da_lista(
+            trava,
+            database,
+            sessao,
+            &dir,
+            id,
+            crate::agora_ms(),
+            &escritas,
+        ) {
             Ok(c) => c,
             Err(e) => {
                 trava.marca_em_voo = None;
@@ -1535,6 +1543,8 @@ impl Servidor {
         let registros = t.registros();
         drop(posse);
         drop(dados);
+        // Pedido 647: o inode velho morre AQUI, fora da trava global.
+        t.soltar_volumes_velhos();
         let ms = inicio.elapsed().as_secs_f64() * 1e3;
         let aviso = self.msg(
             if cifrar {

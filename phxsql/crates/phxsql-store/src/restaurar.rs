@@ -532,7 +532,17 @@ impl Preparada {
     ///
     /// Nao toca no destino. Backup que nao confere para AQUI, e o unico
     /// estrago possivel e um diretorio temporario, que o `Drop` apaga.
-    pub fn preparar(origem: &Path, base: &Path, de: &str) -> Result<Preparada> {
+    ///
+    /// `politica` e a do diario de quem restaura (pedido 712): a marca de
+    /// transacao que a copia trouxe se completa AQUI, e o evento que ela
+    /// grava tem de ir com a imagem se a base replica -- um padrao aqui seria
+    /// o «desligado» decidido calado (pedido 601).
+    pub fn preparar(
+        origem: &Path,
+        base: &Path,
+        de: &str,
+        politica: crate::catalogo::PoliticaDoDiario,
+    ) -> Result<Preparada> {
         let mut fonte = Fonte::abrir(origem)?;
         let m = ler_manifesto(&mut fonte, origem)?;
         let (de, prefixo) = escolher(&m.escopo, de)?;
@@ -631,9 +641,34 @@ impl Preparada {
         // `x#001.reg`. A migracao e a MESMA da subida -- pelo cabecalho, com
         // `fsync` e marca --, e roda no palco, onde nenhum punho existe. O
         // backup novo traz a marca junto e passa sem renomear nada.
+        //
+        // E ANTES do indice, as marcas de transacao (pedido 712): a marca
+        // viaja no backup de proposito -- e ela que completa o `COMMIT` que a
+        // copia pegou no meio --, e o palco so reconstruia o indice, a ordem
+        // do 522 invertida. A copia fria de um servidor caido no meio da
+        // passada entrava na raiz com a venda PELA METADE visivel, e a marca
+        // de pe era completada no proximo arranque por cima do que se
+        // escreveu desde a restauracao. O motor e o do arranque
+        // ([`crate::catalogo::Database::recuperar_marcas`]): marcas primeiro,
+        // indice marcado depois, e so entao o database entra na raiz -- o
+        // «recuperar antes de servir» que o arranque ja cumpre.
         crate::separador::migrar_database(&palco)?;
-        let no_palco = crate::catalogo::Database::no_diretorio(&palco);
-        let (indices_reconstruidos, indices_pendentes) = no_palco.reconstruir_indices_marcados();
+        let no_palco = crate::catalogo::Database::no_diretorio_com_politica(&palco, politica);
+        let r = no_palco.recuperar_marcas();
+        if r.impede_subir() {
+            return Err(PhxError::Corrompido(format!(
+                "a copia traz marca de transacao que nao se le ({}): ela pode ser um \
+                 COMMIT confirmado, e restaurar sem ela entregaria a transacao pela \
+                 metade. NADA foi restaurado",
+                r.sem_leitura.join("; ")
+            )));
+        }
+        // E as do bidirecional (pedido 723), que o palco so CONFERE: quem as
+        // completa casa pela chave, no servidor. Grupo que a copia pegou no
+        // meio recusa a restauracao; inteiro ou ausente, a marca sai.
+        crate::marca::conferir_os_grupos_do_bidi(&no_palco)?;
+        let indices_reconstruidos = r.indices_reconstruidos;
+        let indices_pendentes = r.indices_pendentes;
 
         Ok(Preparada {
             // Do catalogo, e nao da vitrine dos nomes: o palco ja migrou, e
@@ -873,7 +908,7 @@ mod tests {
         assert!(c.declarado, "o manifesto novo DIZ o escopo");
         assert_eq!(c.arquivos, 4);
 
-        let p = Preparada::preparar(&zip, &raiz, "").unwrap();
+        let p = Preparada::preparar(&zip, &raiz, "", Default::default()).unwrap();
         assert_eq!(p.de(), "Z");
         assert_eq!(p.arquivos(), 4);
         assert_eq!(
@@ -919,12 +954,12 @@ mod tests {
         assert_eq!(c.databases, vec!["Financeiro".to_string(), "Z".to_string()]);
 
         // Sem dizer qual, a copia da raiz recusa -- e diz o que fazer.
-        let Err(e) = Preparada::preparar(&copia, &raiz, "") else {
+        let Err(e) = Preparada::preparar(&copia, &raiz, "", Default::default()) else {
             panic!("copia da raiz restaurou sem ninguem dizer qual database");
         };
         assert!(e.to_string().contains("qual database"), "{e}");
 
-        let p = Preparada::preparar(&copia, &raiz, "Financeiro").unwrap();
+        let p = Preparada::preparar(&copia, &raiz, "Financeiro", Default::default()).unwrap();
         let r = p.confirmar(&raiz, "Fin2", false).unwrap();
         assert_eq!(r.arquivos, 1);
         assert_eq!(r.tabelas, vec!["contas".to_string()]);
@@ -953,7 +988,7 @@ mod tests {
         // passar por conferencia de conteudo.
         std::fs::write(copia.join("Z/clientes.reg"), b"registros de CLIENTES").unwrap();
 
-        let Err(e) = Preparada::preparar(&copia, &raiz, "Z") else {
+        let Err(e) = Preparada::preparar(&copia, &raiz, "Z", Default::default()) else {
             panic!("o backup adulterado passou pela conferencia");
         };
         assert_eq!(e.nome(), "CORROMPIDO", "veio {e}");
@@ -977,7 +1012,7 @@ mod tests {
         copia_de(&raiz, &copia, 1_787_000_000_000);
         std::fs::write(copia.join("Z/intruso.reg"), b"entrei depois").unwrap();
 
-        let Err(e) = Preparada::preparar(&copia, &raiz, "Z") else {
+        let Err(e) = Preparada::preparar(&copia, &raiz, "Z", Default::default()) else {
             panic!("o arquivo intruso passou pela conferencia");
         };
         assert!(e.to_string().contains("nao esta no backup.json"), "{e}");
@@ -995,7 +1030,7 @@ mod tests {
         copia_de(&raiz, &copia, 1_787_000_000_000);
         std::fs::remove_file(copia.join("Z/clientes.ndx")).unwrap();
 
-        assert!(Preparada::preparar(&copia, &raiz, "Z").is_err());
+        assert!(Preparada::preparar(&copia, &raiz, "Z", Default::default()).is_err());
         let _ = std::fs::remove_dir_all(&base);
     }
 
@@ -1011,13 +1046,13 @@ mod tests {
         std::fs::write(raiz.join("Z/clientes.reg"), b"mudou depois do backup").unwrap();
 
         // Sem `por_cima`, recusa e diz o caminho.
-        let e = Preparada::preparar(&zip, &raiz, "")
+        let e = Preparada::preparar(&zip, &raiz, "", Default::default())
             .unwrap()
             .confirmar(&raiz, "Z", false)
             .unwrap_err();
         assert!(e.to_string().contains("POR CIMA"), "{e}");
 
-        let r = Preparada::preparar(&zip, &raiz, "")
+        let r = Preparada::preparar(&zip, &raiz, "", Default::default())
             .unwrap()
             .confirmar(&raiz, "Z", true)
             .unwrap();
@@ -1110,7 +1145,7 @@ mod tests {
         let e = conteudo(&copia).map(|_| ()).unwrap_err();
         assert!(e.to_string().contains(".phxsql.trava"), "{e}");
         let dados = base.join("dados");
-        assert!(Preparada::preparar(&copia, &dados, "Z").is_err());
+        assert!(Preparada::preparar(&copia, &dados, "Z", Default::default()).is_err());
         let palcos: Vec<_> = std::fs::read_dir(&base)
             .unwrap()
             .flatten()
@@ -1155,7 +1190,7 @@ mod tests {
         assert_eq!(c.escopo, Escopo::Raiz);
         assert_eq!(c.versao, "0.18.0");
 
-        let r = Preparada::preparar(&copia, &raiz, "Z")
+        let r = Preparada::preparar(&copia, &raiz, "Z", Default::default())
             .unwrap()
             .confirmar(&raiz, "Zvelho", false)
             .unwrap();
@@ -1205,7 +1240,7 @@ mod tests {
             Escopo::Database("Z".into()),
             "o nome do banco sai do nome do arquivo"
         );
-        let r = Preparada::preparar(&velho_zip, &raiz, "")
+        let r = Preparada::preparar(&velho_zip, &raiz, "", Default::default())
             .unwrap()
             .confirmar(&raiz, "Zzip", false)
             .unwrap();
@@ -1227,7 +1262,7 @@ mod tests {
         let zip = zip_de(&base, &raiz, "Z");
 
         let caminho = {
-            let p = Preparada::preparar(&zip, &raiz, "").unwrap();
+            let p = Preparada::preparar(&zip, &raiz, "", Default::default()).unwrap();
             let onde = p.palco.clone();
             assert!(onde.is_dir());
             assert!(
@@ -1249,7 +1284,7 @@ mod tests {
         dados_de_exemplo(&raiz);
         let zip = zip_de(&base, &raiz, "Z");
         for mau in ["..", "../fora", "/etc", "a/b", ""] {
-            let p = Preparada::preparar(&zip, &raiz, "").unwrap();
+            let p = Preparada::preparar(&zip, &raiz, "", Default::default()).unwrap();
             assert!(p.confirmar(&raiz, mau, false).is_err(), "{mau:?} passou");
         }
         let _ = std::fs::remove_dir_all(&base);
@@ -1324,7 +1359,7 @@ mod tests {
         );
         let zip = zip_de(&base, &raiz, "Z");
 
-        let r = Preparada::preparar(&zip, &raiz, "Z")
+        let r = Preparada::preparar(&zip, &raiz, "Z", Default::default())
             .unwrap()
             .confirmar(&raiz, "Z2", false)
             .unwrap();

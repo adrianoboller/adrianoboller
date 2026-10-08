@@ -280,6 +280,7 @@ fn replica_por(base: &Path, porta: u16, bidi: bool) -> NoAr {
         hora: String::new(),
         cifra: false,
         chave_do_fio: String::new(),
+        pino_tls: String::new(),
         espelho: false,
     }];
     subir(c)

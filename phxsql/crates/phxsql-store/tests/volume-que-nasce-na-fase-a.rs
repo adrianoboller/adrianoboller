@@ -262,6 +262,12 @@ fn o_volume_que_nasce_na_fase_a_do_acrescentar_coluna_aborta_a_troca() {
         texto.contains("ABORTADA") && texto.contains(&nascido),
         "a recusa nao diz o que houve nem qual arquivo nasceu ({nascido}): {texto}"
     );
+    // Pedido 657: «ABORTADA» sai de tres recusas do `reg.rs`; so a do
+    // retrato com o volume que NASCEU diz «nasceu».
+    assert!(
+        texto.contains("nasceu enquanto a reescrita montava o arquivo novo"),
+        "{texto}"
+    );
     let pasta = d.0.display().to_string();
     assert!(!texto.contains(&pasta), "a recusa publica a pasta: {texto}");
     assert!(pendente.descartar() > 0, "o descarte nao apagou nada");
@@ -296,6 +302,13 @@ fn o_volume_que_nasce_na_fase_a_do_esquema_aborta_a_troca() {
         .redeclarar_depois_de_conferir(fks, recibo, Some(troca))
         .expect_err("a troca renomeou com um volume que o retrato nao viu");
     assert!(matches!(e, PhxError::Conflito(_)), "recusou como {e:?}");
+    // Pedido 657: o `Conflito` sai de varias recusas; a do retrato com o
+    // volume que nasceu e a unica com esta frase.
+    assert!(
+        e.to_string()
+            .contains("nasceu enquanto a reescrita montava o arquivo novo"),
+        "{e}"
+    );
     assert!(novos(&d.0).is_empty(), "sobrou `*.novo`: {:?}", novos(&d.0));
     drop(t);
 
@@ -384,6 +397,13 @@ fn a_atualizacao_na_fase_a_com_tique_grosso_aborta_a_troca_634() {
         .expect_err("o retrato nao viu a atualizacao no tique grosso: a troca a desfaria");
     assert!(matches!(e, PhxError::Conflito(_)), "recusou como {e:?}");
     assert!(e.to_string().contains("ABORTADA"), "{e}");
+    // Pedido 657: «ABORTADA» sai de tres recusas; a do retrato que viu o
+    // volume MUDAR (e nao nascer, nem o `*.novo` trocado) e esta.
+    assert!(
+        e.to_string()
+            .contains("mudou enquanto a reescrita montava o arquivo novo"),
+        "{e}"
+    );
     pendente.descartar();
     drop(t);
     assert_eq!(nome_do_alvo(&d.0), Value::Str("NOVO".into()));
@@ -407,6 +427,11 @@ fn a_atualizacao_na_fase_a_do_esquema_com_tique_grosso_aborta_a_troca_634() {
         .redeclarar_depois_de_conferir(fks, recibo, Some(troca))
         .expect_err("a troca renomeou por cima da atualizacao");
     assert!(matches!(e, PhxError::Conflito(_)), "recusou como {e:?}");
+    assert!(
+        e.to_string()
+            .contains("mudou enquanto a reescrita montava o arquivo novo"),
+        "{e}"
+    );
     drop(t);
     assert_eq!(nome_do_alvo(&d.0), Value::Str("NOVO".into()));
 }

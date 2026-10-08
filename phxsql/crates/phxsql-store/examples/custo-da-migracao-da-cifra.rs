@@ -162,12 +162,18 @@ fn main() {
         let tb = Instant::now();
         t.aplicar_migracao_da_cifra(troca).unwrap();
         let fase_b_ms = tb.elapsed().as_secs_f64() * 1e3;
+        // Pedido 647: o servidor fecha os volumes velhos DEPOIS de soltar a
+        // trava, e e nesse `close` que o nucleo libera as extensoes. Medido a
+        // parte para o custo aparecer onde foi parar, e nao sumir da conta.
+        let ts = Instant::now();
+        t.soltar_volumes_velhos();
+        let soltar_ms = ts.elapsed().as_secs_f64() * 1e3;
         drop(t);
         // O custo por slot sem o PBKDF2, que e por migracao e nao por linha.
         let sem_pbkdf2 = (fase_a_s * 1e3 - if cifrar { pbkdf2_ms } else { 0.0 }).max(0.0);
         println!(
             "{nome}: slots={slots} fase_a_ms={:.1} fase_b_ms={fase_b_ms:.2} us_por_slot={:.3} \
-             volumes={volumes} bytes_depois={}",
+             volumes={volumes} bytes_depois={} soltar_ms={soltar_ms:.2}",
             fase_a_s * 1e3,
             sem_pbkdf2 * 1e3 / slots.max(1) as f64,
             bytes_do_reg(&d)

@@ -79,6 +79,34 @@ pub fn segredo_master(handshake: &[u8; RESUMO]) -> [u8; RESUMO] {
     crate::hkdf::extrair(&sal, &[0u8; RESUMO])
 }
 
+/// `TLS-Exporter(label, context_value, key_length)` (§7.5):
+///
+/// ```text
+/// HKDF-Expand-Label(Derive-Secret(exporter_master_secret, label, ""),
+///                   "exporter", Hash(context_value), key_length)
+/// ```
+///
+/// Sem contexto e com contexto vazio dao o MESMO valor no TLS 1.3 -- a §7.5
+/// acabou com a distincao do 1.2, e e por isso que nao ha `Option` aqui.
+/// Recusa tamanho acima do teto do HKDF (255 blocos) em vez de estourar: o
+/// tamanho e de quem chama, e nao uma constante do protocolo.
+pub fn exportar(
+    exp_master: &[u8; RESUMO],
+    rotulo: &str,
+    contexto: &[u8],
+    saida: &mut [u8],
+) -> Result<()> {
+    // O rotulo vai num `opaque label<7..255>` junto do prefixo `tls13 `.
+    if rotulo.len() > 255 - 6 || saida.len() > 255 * RESUMO {
+        return Err(PhxError::LimiteExcedido(
+            "exportador TLS: rotulo ou tamanho acima do que a RFC 8446 §7.1 codifica".into(),
+        ));
+    }
+    let segredo = derivar_segredo(exp_master, rotulo, &sha256(b""));
+    expandir_rotulo(&segredo, "exporter", &sha256(contexto), saida);
+    Ok(())
+}
+
 /// Chave e IV de um sentido do trafego (§7.3).
 pub struct ChavesDeTrafego {
     pub chave: Vec<u8>,

@@ -123,9 +123,10 @@ fn a_corrida_que_falha_na_pasta_reaproveitada_leva_o_manifesto_velho() {
     );
     let base = d.join("base");
     std::fs::create_dir_all(&base).unwrap();
-    let e = phxsql_store::restaurar::Preparada::preparar(&destino, &base, "loja")
-        .err()
-        .expect("o restaurar tinha de recusar a pasta sem manifesto");
+    let e =
+        phxsql_store::restaurar::Preparada::preparar(&destino, &base, "loja", Default::default())
+            .err()
+            .expect("o restaurar tinha de recusar a pasta sem manifesto");
     assert!(
         e.to_string().contains(backup::MANIFESTO),
         "a recusa nao diz o que falta: {e}"

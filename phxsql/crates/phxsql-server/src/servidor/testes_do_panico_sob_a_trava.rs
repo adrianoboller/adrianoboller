@@ -552,6 +552,96 @@ fn panico_na_passada_do_commit_sai_com_a_transacao_inteira_na_hora() {
     conferir_indice(porta, &[1, 2, 3, 4, 5, 10, 11, 12, 13]);
 }
 
+// O teste de cima serve QUATRO guardas (pedido 655): a trava que nao se
+// repara (duas), a marca em voo que fica para o reinicio e a recuperacao que
+// nao reconstroi o indice -- e cai igual para as quatro. Os tres de baixo
+// repetem o cenario e conferem UMA etapa cada um, na ordem em que o dano
+// aparece; cada guarda ganha o teste que so ela derruba, e os outros dois
+// ficam de pe como vizinhos.
+
+/// O cenario do de cima ate o panico no `COMMIT`: tres linhas inseridas numa
+/// transacao, o `COMMIT` armado para cair na primeira escrita da passada.
+fn commit_em_panico_na_passada(nome: &str) -> (DirTemp, Arc<Servidor>, u16) {
+    let dir = DirTemp::novo(nome);
+    let s = Servidor::novo(config_base(&dir)).unwrap();
+    let porta = porta_de_dados_de_verdade(&s);
+    semear(porta);
+    let mut tx = Ligacao::nova(porta);
+    ok(falar(&mut tx, r#""op":"begin","database":"loja""#), "begin");
+    for id in [10, 11, 12] {
+        ok(
+            falar(
+                &mut tx,
+                &format!(
+                    r#""op":"inserir","database":"loja","tabela":"clientes",
+                       "valores":{{"id":{id},"nome":"T{id}"}}"#
+                ),
+            ),
+            "inserir na transacao",
+        );
+    }
+    armar(&s, "commit");
+    let morto = falar(&mut tx, r#""op":"commit""#);
+    assert!(
+        morto.is_none(),
+        "premissa: o commit armado tinha de cair no panico, e respondeu {:?}",
+        morto.map(|j| j.escrever())
+    );
+    drop(tx);
+    (dir, s, porta)
+}
+
+/// Etapa 1: a trava de dados volta a atender OUTRA conexao. E a etapa das
+/// guardas do reparo da trava (451); a marca e o indice nao entram aqui.
+#[test]
+fn panico_na_passada_do_commit_reabre_a_trava_na_hora() {
+    let (_dir, _s, porta) = commit_em_panico_na_passada("panico-451-trava");
+    let lida = pedir(
+        porta,
+        r#""op":"varrer","database":"loja","tabela":"clientes","max":1000"#,
+    )
+    .expect("o varrer seguinte, por OUTRA conexao, caiu sem resposta");
+    assert!(
+        lida.booleano_ou("ok", false),
+        "a trava de dados ficou FECHADA depois do panico no COMMIT: {}",
+        lida.escrever()
+    );
+}
+
+/// Etapa 2: a transacao CONFIRMADA sai inteira e a marca dela sai do disco
+/// -- o reparo completa a marca em voo na hora, e nao no reinicio.
+#[test]
+fn panico_na_passada_do_commit_completa_a_marca_na_hora() {
+    let (dir, _s, porta) = commit_em_panico_na_passada("panico-451-marca");
+    assert_eq!(
+        ids(porta, "clientes"),
+        vec![1, 2, 3, 4, 5, 10, 11, 12],
+        "a transacao CONFIRMADA (a marca estava no disco) nao saiu inteira"
+    );
+    assert!(
+        marcas(&dir).is_empty(),
+        "a marca do commit completado ficou no disco: {:?}",
+        marcas(&dir)
+    );
+}
+
+/// Etapa 3: o indice da tabela nomeada na marca sai em dia, e o rowid
+/// seguinte nao colide com os que a transacao reservou.
+#[test]
+fn panico_na_passada_do_commit_deixa_o_indice_em_dia() {
+    let (_dir, _s, porta) = commit_em_panico_na_passada("panico-451-indice");
+    conferir_indice(porta, &[1, 2, 3, 4, 5, 10, 11, 12]);
+    let novo = ok(
+        pedir(
+            porta,
+            r#""op":"inserir","database":"loja","tabela":"clientes",
+                   "valores":{"id":13,"nome":"C13"}"#,
+        ),
+        "inserir depois do reparo",
+    );
+    assert_eq!(novo.inteiro_ou("rowid", -1), 9, "{}", novo.escrever());
+}
+
 /// `loja.mae(id, codigo)` com `codigo` unico no 5, e `loja.filha` com duas
 /// linhas apontando para ele, `ao_alterar` em cascata -- o cenario do
 /// pedido 490.
@@ -897,18 +987,23 @@ fn panico_no_fecho_da_janela_nao_apaga_a_marca_de_quem_nao_foi_ao_disco() {
     assert!(s.sujas.lock().unwrap().is_empty());
 }
 
-/// **Pedido 701 (d), a prova propria do conserto do 699 (c).** Um `?` no
-/// meio do grupo da replica -- aqui, a segunda tabela que nao abre mais
-/// -- devolve o erro com a marca JA na lista da rodada, que a sincroniza e
-/// a solta. Fora da lista, ela ficava no disco ate o proximo arranque.
+/// **Pedido 701 (d), refeito pelo 713.** Um `?` no meio do grupo da replica
+/// -- aqui, a segunda tabela que nao abre mais -- com a primeira JA aplicada.
+///
+/// O 701 (d) queria a marca na lista da rodada, que a sincroniza e a SOLTA.
+/// Com metade do grupo no disco isso e o F9: soltar a marca depois do
+/// `fsync` perde o unico bilhete da metade que falta, e a venda fica pela
+/// metade para sempre. Desde o 713 o grupo que para no meio se completa
+/// pela marca na hora; quando nem isso fecha (a tabela continua fora do
+/// lugar), a marca FICA no disco para o arranque e sai da lista da rodada.
 ///
 /// A falta e montada de dentro da primeira inclusao do grupo (o gancho
 /// roda nesta thread, com a trava na mao, e SEGUE): os arquivos da
 /// segunda tabela saem do lugar depois da conferencia de posicao e antes
 /// de o laco chegar nela.
 ///
-/// Vermelho medido sem o `marcas.push` do instante EM VOO: o erro volta e
-/// a lista sai vazia.
+/// Vermelho medido com o conserto do 713 reposto (a marca de volta na lista
+/// e o `remove_file` da rodada): a marca sai do disco com metade do grupo.
 #[test]
 fn o_erro_no_meio_do_grupo_da_replica_deixa_a_marca_na_lista() {
     let dir = DirTemp::novo("grupo-699c-lista");
@@ -1007,14 +1102,21 @@ fn o_erro_no_meio_do_grupo_da_replica_deixa_a_marca_na_lista() {
         r.is_err(),
         "a segunda tabela fora do lugar tinha de devolver o erro do meio do grupo"
     );
-    assert_eq!(
-        marcas.len(),
-        1,
-        "o `?` do meio do grupo devolveu o erro com a marca fora da lista da rodada"
-    );
+    let e = r.err().unwrap().to_string();
+    assert!(e.contains("o grupo da replica parou no meio"), "{e}");
     assert!(
-        marcas[0].exists(),
-        "a marca tem de estar no disco ate o fsync"
+        marcas.is_empty(),
+        "a marca do grupo pela metade ficou na lista que a rodada apaga depois do fsync"
+    );
+    let no_disco: Vec<_> = std::fs::read_dir(dir.join("loja"))
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_name().to_string_lossy().starts_with("transacao_"))
+        .collect();
+    assert_eq!(
+        no_disco.len(),
+        1,
+        "a marca do grupo pela metade saiu do disco: o arranque nao tem o que completar"
     );
 }
 

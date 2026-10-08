@@ -598,7 +598,7 @@ impl Servidor {
 
         // As duas fases, a trava de cada uma e o `fsync` fora delas sao
         // decididos no `fazer_backup`, o MESMO do backup agendado.
-        let feito = Self::do_caminho_pedido(
+        let feito = self.do_caminho_pedido(
             self.fazer_backup(
                 "backup_copia",
                 std::path::Path::new(&destino),
@@ -626,7 +626,12 @@ impl Servidor {
     /// CAMINHO ou PERMISSAO -- nao existe, sem permissao, nao e diretorio --
     /// saem do alerta; `EIO`, `ENOSPC`, `EROFS` e `EDQUOT` continuam `Io`,
     /// porque sao exatamente o que o aviso existe para pegar.
+    ///
+    /// A frase sai da tabela de mensagens (`erro.caminho_inutilizavel`,
+    /// pedido 673): e o servidor quem a monta inteira, como os portoes. O
+    /// `{motivo}` e o texto do sistema operacional e fica como veio -- e dado.
     pub(super) fn do_caminho_pedido<T>(
+        &self,
         r: Result<T>,
         caminho: &str,
         qualquer_io: bool,
@@ -641,7 +646,13 @@ impl Servidor {
                             | std::io::ErrorKind::NotADirectory
                     ) =>
             {
-                PhxError::Esquema(format!("o caminho {caminho:?} nao pode ser usado: {io}"))
+                PhxError::Esquema(self.msg(
+                    "erro.caminho_inutilizavel",
+                    &[
+                        ("caminho", &format!("{caminho:?}")),
+                        ("motivo", &io.to_string()),
+                    ],
+                ))
             }
             outro => outro,
         })
@@ -666,7 +677,7 @@ impl Servidor {
         if destino.is_empty() {
             return Err(PhxError::Esquema("informe \"destino\"".into()));
         }
-        let r = Self::do_caminho_pedido(
+        let r = self.do_caminho_pedido(
             phxsql_store::backup::conferir(std::path::Path::new(&destino)),
             &destino,
             true,
@@ -834,7 +845,7 @@ impl Servidor {
         }
         let caminho = std::path::PathBuf::from(&origem);
         let conteudo =
-            Self::do_caminho_pedido(phxsql_store::restaurar::conteudo(&caminho), &origem, true)?;
+            self.do_caminho_pedido(phxsql_store::restaurar::conteudo(&caminho), &origem, true)?;
 
         // O PITR e lido AQUI, antes de o pedido tocar em disco. Todas as
         // recusas que dao para conferir sem restaurar acontecem antes da
@@ -1013,7 +1024,12 @@ impl Servidor {
         // cada arquivo e escrever o palco. Segurar a trava por esse tempo
         // pararia o servidor inteiro pela duracao da copia.
         let inicio = Instant::now();
-        let preparada = Preparada::preparar(&caminho, &self.config.base, &de)?;
+        let preparada = Preparada::preparar(
+            &caminho,
+            &self.config.base,
+            &de,
+            politica_do_diario(&self.config),
+        )?;
 
         // O PITR acontece NO PALCO, antes de o database entrar na raiz.
         //
@@ -1314,7 +1330,24 @@ impl Servidor {
             let mut ultimo: Option<i64> = None;
             let mut parou: Option<String> = None;
 
-            match Self::diario_vivo_continua(&mut td, &mut tv, posicao, vivos) {
+            // Pedido 706: a copia e mais velha que o que o diario vivo ainda
+            // guarda -- o expurgo levou o trecho entre ela e o agora (e o
+            // evento `posicao - 1`, com que a continuidade se confere). A
+            // recusa diz «expurgado», pela fabrica, e nao «a copia diverge».
+            let base_viva = tv.base_do_diario()?;
+            let continua = if base_viva > 0 && posicao <= base_viva {
+                Err(self.msg(
+                    "erro.pitr_diario_expurgado",
+                    &[
+                        ("tabela", nome),
+                        ("posicao", &posicao.to_string()),
+                        ("base", &base_viva.to_string()),
+                    ],
+                ))
+            } else {
+                Self::diario_vivo_continua(&mut td, &mut tv, posicao, vivos)
+            };
+            match continua {
                 Ok(()) => {
                     let mut pos = posicao;
                     'tabela: while pos < vivos {

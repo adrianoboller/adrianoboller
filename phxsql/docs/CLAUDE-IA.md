@@ -30,8 +30,8 @@ poderia vazar.
 
 - o servidor PhxSql **nunca vê a chave**, **nunca faz a chamada** e **não
   precisa de TLS**. Nenhuma linha de Rust fala com a Anthropic;
-- a chave mora no `localStorage` do navegador de quem usa, e é dele. Cada
-  pessoa usa a própria chave e paga a própria conta;
+- a chave mora **só na memória da aba** de quem usa, e é dele (pedido 339(a),
+  ver §3). Cada pessoa usa a própria chave e paga a própria conta;
 - quem abrir o console de outra máquina precisa configurar a chave lá. É o
   preço, e a tela diz isso antes de ligar.
 
@@ -152,6 +152,50 @@ que procura chave *de verdade* e não a mera menção do prefixo — a dica
   diretório de dados: nada;
 - e o **Profiler do servidor ligado**, que grava o pedido de cada chamada, viu
   **0 eventos** com a chave dentro. Com o defeito reposto, viu 13.
+
+### Onde a chave repousa, o desligamento e a aprovação (pedido 339(a), 08/10/2026)
+
+**Repouso: só memória.** Até 23/09/2026 a chave morava no `localStorage`;
+até 08/10/2026, no `sessionStorage`. Hoje mora numa variável do módulo e em
+**nenhum** armazenamento do navegador. Decisão pela convergência das duas
+fontes da OWASP: a folha *HTML5 Security* manda tirar dado sensível do
+`localStorage` e aceita o `sessionStorage` só como o menos pior; o *ASVS*
+4.0.3, requisito 8.2.2 (nível 1), proíbe dado sensível em **qualquer**
+armazenamento do navegador (`localStorage`, `sessionStorage`, IndexedDB,
+cookies). A única saída que as duas aceitam é a memória. **Hipótese que
+morreu:** ficar no `sessionStorage` — passa na folha e reprova no ASVS.
+
+- **O que NÃO conserta:** XSS na aba aberta alcança a memória também, e
+  intercepta o `fetch`. O ativo maior (`est.token`) já vivia em memória pelo
+  mesmo motivo; o conserto de XSS é o do pedido 347, não o do armazenamento.
+- **O que muda:** nada fica escrito no perfil do navegador, e a janela
+  destacada não herda cópia. **Custo:** a chave cai no F5 e no Sair — o mesmo
+  tempo de vida do login, que é memória pura. Antes durava mais que a sessão
+  que a protege.
+- **Migração:** chave achada em qualquer dos dois armazenamentos velhos vai
+  para a memória e sai de lá na primeira leitura, e a tela diz que fez isso.
+
+**Desligamento administrativo:** `"web": { "integracao_claude": false }` no
+`config.json`. O servidor **lê** o campo e faz duas coisas: tira
+`https://api.anthropic.com` do `connect-src` da página — quem barra é o
+navegador, inclusive uma tela adulterada — e diz `integracao_claude: false`
+no `/saude`, para a tela explicar o porquê em vez de mostrar um erro de
+rede. Nasce `true` (guarda nova entra pedida, não imposta).
+
+**Aprovação do conteúdo:** «Perguntar» não envia mais. Monta o corpo **uma**
+vez, mostra o corpo inteiro e os cabeçalhos (chave mascarada) e só envia no
+clique em «Enviar isto à Anthropic» — e envia **o mesmo texto** que foi
+mostrado, não um corpo remontado. «Não enviar» fecha sem subir nada. O
+«Testar a chave» continua sem aprovação: manda só a palavra `ok`, nada do
+banco.
+
+**Prova real nos dois sentidos:** `testes-web/prova-339-chave.mjs` — 12/12
+verdes no binário novo; **9 vermelhos** no binário de `HEAD` antes do
+conserto (chave no `sessionStorage`, chave sobrevivendo ao F5, envio sem
+aprovação, CSP com a Anthropic e `fetch` saindo com a integração
+desligada, botão da Claude na Query). Os 2 verdes que sobram nos dois são os
+controles. E em Rust: `desligada_pelo_administrador_a_pagina_nao_alcanca_a_anthropic`
+e `integracao_claude_e_lida_e_nasce_ligada`.
 
 ---
 
@@ -504,12 +548,13 @@ discutir antes.
   um pino vermelho *«NÃO é o oficial»* quando ele não é. Desde 01/10/2026 (pedido
   436, M5) isso deixou de ser só aviso: o `perguntar()` — o único lugar de
   onde a chave sai — recusa endereço não oficial sem a marca
-  `endpoint_confirmado` igual a ele, que mora com os segredos, na aba. E o
-  endereço que estiver no `localStorage` não se promove mais para a aba: do
-  disco, só a chave. Prova: `testes-web/prova-436-tela.mjs`.
+  `endpoint_confirmado` igual a ele, que mora com os segredos, em memória. E o
+  endereço que estiver num armazenamento do navegador não se promove mais: de
+  lá, só a chave. Prova: `testes-web/prova-436-tela.mjs`.
 - **A integração é por navegador.** Não há como um administrador ligá-la para
   todo mundo de uma vez — e isso é consequência direta de a chave ser de quem
-  usa, não um esquecimento.
+  usa, não um esquecimento. **Desligar**, sim: `web.integracao_claude: false`
+  (§3).
 - **Não há ação autônoma do motor.** A IA **propõe** — SQL, plano de
   modelagem, índice — e a pessoa clica; nenhum caminho do servidor decide nem
   grava sozinho (`executar()` do `claude.js`: *«pelo clique da pessoa, e nunca

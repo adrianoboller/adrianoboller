@@ -803,12 +803,28 @@ CIFRAR OU DECIFRAR O QUE JA ESTA GRAVADO: criptografar / descriptografar
     nao se fecha so com a biblioteca padrao.
 
     A PARADA, DITA COM O ALCANCE CERTO (pedido 647, decisao de 07/10/2026).
-    A promessa de parada de no maximo 1 s vale para a TRAVA GLOBAL do banco:
-    o resto do banco nao espera mais que isso por causa da migracao. A TABELA
-    MIGRADA, ao contrario, fica SO PARA LEITURA durante a primeira fase, por
-    um tempo que CRESCE com o tamanho dela. Nao ha numero garantido para esse
-    tempo: a conta de 7 a 10 s a 10 milhoes de linhas e do DBA, nao medida.
-    A medicao a 10 M esta PENDENTE (pedido 647).
+    A promessa de parada de no maximo 1 s e so da TRAVA GLOBAL do banco -- a
+    segunda fase (os renames), onde o banco inteiro espera. A TABELA MIGRADA
+    fica SO PARA LEITURA durante a primeira fase (a reescrita), por um tempo
+    que CRESCE com o tamanho dela, e essa fase nao entra na promessa.
+
+    Medido em 08/10/2026, 10 milhoes de linhas (~1,65 GB), 3 voltas, mediana
+    [min-max], na maquina de desenvolvimento com carga de outros processos:
+
+        primeira fase (so a tabela)  criptografar 11,5 s [11,3-11,7]
+                                     descriptografar 14,0 s [13,6-14,9]
+        segunda fase (banco todo)    criptografar 2,6 ms [2,1-2,8]
+                                     descriptografar 1,1 ms [0,6-7,6]
+        em 10 volumes de 1 milhao    criptografar 24 ms [3-29]
+                                     descriptografar 14 ms [2-40]
+
+    O que pesava na segunda fase era o rename por cima do volume velho: o
+    sistema de arquivos liberava o arquivo velho DENTRO da chamada (1,20 s de
+    1,20 s, medido sob strace). Desde o pedido 647 o banco segura o volume
+    velho aberto ate soltar a trava, e a liberacao (~0,75 a 1,1 s a 10 M)
+    acontece DEPOIS, sem ninguem esperar por ela. So no Linux/Unix: no
+    Windows a segunda fase continua pagando a liberacao. O acrescentar_coluna
+    troca os volumes pelo mesmo caminho e ganhou o mesmo.
 
     O QUE ELA NAO FAZ, e a resposta repete em "avisos": o historico (.log,
     .trash, .reason) e o indice (.ndx) ficam em claro -- criptografar protege
@@ -1737,6 +1753,35 @@ VARIAS INSTANCIAS, DOCKER E CLUSTER
         será recusado na 0.20; use TLS
     O iniciador e o no da lista do cluster com aquele endereco, ou "cliente".
     Use as linhas para saber quem migrar antes da 0.20.
+
+    MIGRAR PARA O TLS: O PINO_TLS (pedido 572). O servidor que tem "tls": true
+    imprime o pino do certificado dele no arranque:
+        tls da porta dados: pino sha256//Zm9v...=
+    Esse texto vai no cliente que fala com ele. Escrito, a conexao e TLS 1.3
+    conferida por ESSE pino no lugar do Noise, e o "cifra" do cliente deixa de
+    decidir; sem ele, tudo segue como era. Pino errado recusa ANTES do token,
+    e a recusa diz o pino que o servidor mostrou. Onde se escreve:
+
+        replica           replicacao.origens[].pino_tls
+        sonda             {"op":"replicacao_testar", ..., "pino_tls":"sha256//..."}
+        cluster           cluster.nos[].pino_tls (pulso, propagacao e replica;
+                          vai junto no cluster_no_acrescentar)
+        DbLink phxsql     "pino_tls" na ligacao (a ficha mostra so tem_pino_tls;
+                          salvar sem o campo mantem o pino; motor alheio recusa)
+        interface (Remoto) web.servidores[].pino_tls (so na forma de objeto)
+        phxsqlcmd         --pino-tls sha256//...
+        ODBC              PINO_TLS=sha256//... na connection string
+
+    No cluster, o chave_do_fio de cada no CONTINUA sendo a identidade dele: a
+    prova do pulso sai do Diffie-Hellman com essa chave, e nao do certificado.
+
+    A AMARRACAO AO CANAL PELO TLS. O "amarrar_canal" do login e a prova do
+    pulso prendem a credencial a ESTA conexao. Pelo Noise o vinculo e a
+    transcricao do aperto; pelo TLS e o tls-exporter da RFC 9266 (rotulo
+    EXPORTER-Channel-Binding, 32 bytes), que os dois lados calculam sozinhos e
+    so coincide se ninguem terminou o TLS no meio. Os clientes desta casa
+    amarram sozinhos. CONSEQUENCIA: com cifra_fio.exigir_amarra ligado, um
+    cliente que chega por TLS e NAO pede a amarracao passa a ser recusado.
 
     ESCALONAR A QUENTE (pedido 217). Acrescentar ou tirar um no do cluster
     VIVO, sem reiniciar ninguem:
@@ -2750,8 +2795,14 @@ LIGAR
           "ligado": true,
           "bind": "127.0.0.1:5001",
           "sessao_minutos": 60,
-          "atras_de_proxy": false
+          "atras_de_proxy": false,
+          "integracao_claude": true
         }
+
+    "integracao_claude": false DESLIGA a integracao da tela com a Claude
+    (API da Anthropic) nesta instalacao: a origem da Anthropic sai da
+    politica de seguranca da pagina e o proprio navegador barra a chamada.
+    Nasce true. Ver docs/CLAUDE-IA.md 3.
 
     Depois: phxsqld --config config.json
 
@@ -3652,7 +3703,8 @@ AGENDADO
     160 caracteres, sem o caminho do disco e sem segredo (SMS atravessa a
     operadora em claro). Exige email.ligado -- sem rele nao ha por onde sair,
     e a recusa vem no arranque. Gateway HTTP(S) de SMS NAO entra: pede
-    cliente TLS, e o PhxSql so tem TLS de SERVIDOR (docs/SAUDE-DO-DISCO.md).
+    cliente TLS que confira cadeia e nome, e o cliente TLS do PhxSql so
+    confia por pino, entre PhxSql (docs/SAUDE-DO-DISCO.md; pedido 572, T6c).
 
     GANCHO DO OPERADOR (alertas.gancho) -- O CANAL SMS EM SI E DO OPERADOR.
     O PhxSql NAO envia SMS: ele entrega o aviso a um programa seu, e o
@@ -4633,8 +4685,36 @@ incluindo multi-source e failover.
     chegada acompanha replicacao.origens[].reconectar_em: a bancada mediu com
     1 s, e o de fabrica e 10 s -- quem quer o central em dia rapido baixa esse
     numero. NAO medido: alcance depois de horas fora do ar, rede de loja real.
-    E o diario do caixa cresce a cada venda e ainda NAO tem expurgo (pedido
-    706): numa loja que fica meses no ar, acompanhe o disco do caixa.
+
+    O EXPURGO DO DIARIO DO CAIXA (pedido 706). O diario cresce ~1,5 KB por
+    venda; no caixa, ligue no config.json:
+
+      "diario": {"expurgo": true, "consumidores": ["central"],
+                 "prazo_dias": 30}
+
+    Sai do .log so o volume que o central confirmou ter no disco, ou o que
+    passou de prazo_dias (30, decisao do dono) mesmo sem confirmacao: o caixa
+    nunca para de vender. O central que volta depois do prazo ve que ficou
+    atras do que o caixa guarda e se refaz SOZINHO pelo retrato do caixa (a
+    copia fiel do database), e segue dali. Desligado (o padrao), nada muda.
+    Os numeros medidos ficam em bancada/caixa-offline/resultados-expurgo.json.
+
+    LIMITES DO EXPURGO, DITOS COM O NUMERO:
+      - Tabela SEM paginacao (a do caixa): o diario nao tem teto de volumes;
+        o numero passa de #999 sem parar (provado com 1.000+ volumes).
+      - Tabela COM paginacao: o diario segue o teto de volumes dela (999 por
+        padrao) e o numero nao reinicia. No menor corte que o config aceita
+        (recursos.diario_volume_mib = 1) sao ~999 MiB de diario, umas 650 mil
+        vendas -- ~3,5 anos a 500 vendas por dia; no corte de fabrica (1 GiB
+        por volume), ~650 milhoes. Conta derivada do 1,5 KB por venda, nao
+        medida em anos de loja.
+      - O prazo de 30 dias so foi medido ENCURTADO (diario.prazo_s, segundos,
+        so para ensaio); a bancada usou 30 s. Com 30 dias de verdade, nao.
+      - So a replica fiel e o espelho se refazem pelo retrato; o par
+        bidirecional (papel multi) nao.
+      - O retrato copia o database inteiro numa tomada da trava global do
+        caixa: a venda espera a copia (megabytes, fracao de segundo; nao
+        medido em database grande).
 
     A LOJA NO CENTRAL (pedido 679). Cada caixa chega ao central no database
     dele (caixa01, caixa02, ...), e a loja se le EMPILHANDO os caixas com

@@ -528,3 +528,58 @@ fn o_console_para_no_prazo_total_contra_o_par_que_goteja() {
         "voltou em {durou:?}, antes do total de 4 s"
     );
 }
+
+// ---------------------------------------------------------------------------
+// O console pelo TLS conferido (pedido 572, T6b-2)
+// ---------------------------------------------------------------------------
+
+/// **`--pino-tls` fecha com o pino certo e recusa o errado.** O servidor sobe
+/// com `"tls": true` e o autoassinado nasce ao lado do `config.json`; o pino
+/// sai do certificado gravado, como o operador o tiraria. Com o pino errado o
+/// binario sai com erro ANTES de mandar o token -- e o diz.
+#[test]
+fn o_binario_fala_tls_pelo_pino_e_recusa_o_pino_errado() {
+    let dir = pasta("tls");
+    let mut c = Config {
+        bind: "127.0.0.1:0".into(),
+        base: dir.to_path_buf(),
+        log_acessos: dir.join("acessos.log"),
+        blacklist: dir.join("blacklist.json"),
+        dblink: dir.join("dblink.json"),
+        jobs: dir.join("jobs.json"),
+        token: TOKEN.into(),
+        caminho: Some(dir.join("config.json")),
+        ..Default::default()
+    };
+    c.web.ligado = false;
+    c.tls.ligado = true;
+    let s = Servidor::novo(c).unwrap();
+    let copia = Arc::clone(&s);
+    std::thread::spawn(move || {
+        let _ = copia.escutar();
+    });
+    let porta = comum::porta_real(|| s.porta_dos_dados());
+    let pem = std::fs::read_to_string(dir.join("tls-dados-certificado.pem")).unwrap();
+    let cert = phxsql_core::x509::blocos_pem(&pem, "CERTIFICATE").unwrap();
+    let spki = phxsql_core::x509::spki_do_certificado(&cert[0]).unwrap();
+    let pino = phxsql_core::tls::pino_em_texto(&phxsql_core::hash::sha256(spki));
+
+    let rodar = |pino: &str| {
+        Command::new(env!("CARGO_BIN_EXE_phxsqlcmd"))
+            .args(["--host", "127.0.0.1", "--porta", &porta.to_string()])
+            .args(["--token", TOKEN, "--pino-tls", pino, "--comando", "bancos"])
+            .output()
+            .unwrap()
+    };
+    let certo = rodar(&pino);
+    assert!(
+        certo.status.success(),
+        "o console nao atravessou pelo TLS: {}",
+        String::from_utf8_lossy(&certo.stderr)
+    );
+    let torto = phxsql_core::tls::pino_em_texto(&[0x33; 32]);
+    let errado = rodar(&torto);
+    let e = String::from_utf8_lossy(&errado.stderr);
+    assert!(!errado.status.success(), "o pino errado passou");
+    assert!(e.contains(&pino), "a recusa nao diz o pino visto: {e}");
+}

@@ -27,7 +27,8 @@
 //!
 //! `TLS_CHACHA20_POLY1305_SHA256` e `TLS_AES_128_GCM_SHA256`; X25519 (a chave
 //! que vai no primeiro `ClientHello`) e P-256 (por `HelloRetryRequest`, com
-//! eco do `cookie`); assinaturas `ecdsa_secp256r1_sha256` e `ed25519`. Nada
+//! eco do `cookie`); assinaturas `ecdsa_secp256r1_sha256`, `ed25519`,
+//! `ecdsa_secp384r1_sha384` e `rsa_pss_rsae_sha256/384/512` (T6c-1). Nada
 //! de PSK, 0-RTT ou retomada: o `NewSessionTicket` se descarta.
 //! `CertificateRequest` se responde com `Certificate` vazio (§4.4.2) -- o
 //! servidor decide se aceita cliente sem certificado.
@@ -41,16 +42,33 @@ use super::{
 };
 use crate::error::{PhxError, Result};
 use crate::hash::{iguais_em_tempo_constante, sha256};
-use crate::tls13::{self, tipo, Conjunto, Protecao, Transcricao, MAX_CLARO, RESUMO};
+use crate::tls13::{self, tipo, Conjunto, Protecao, Transcricao, MAX_CLARO};
 use crate::x509::ChavePublica;
 
 /// `ed25519` (RFC 8446 §4.2.3).
 const ED25519: u16 = 0x0807;
+/// `ecdsa_secp384r1_sha384` (RFC 8446 §4.2.3).
+const ECDSA_SECP384R1_SHA384: u16 = 0x0503;
+/// `rsa_pss_rsae_sha256/384/512`: PSS com chave `rsaEncryption`, que e a do
+/// certificado RSA comum. A §4.4.3 proibe o `rsa_pkcs1_*` no
+/// `CertificateVerify` do 1.3 -- ele so vale na assinatura do CERTIFICADO,
+/// que e a T6c-2 --, e o `rsa_pss_pss_*` pede chave `id-RSASSA-PSS`, que
+/// quase ninguem emite.
+const RSA_PSS_RSAE_SHA256: u16 = 0x0804;
+const RSA_PSS_RSAE_SHA384: u16 = 0x0805;
+const RSA_PSS_RSAE_SHA512: u16 = 0x0806;
 
 /// As assinaturas que este cliente sabe CONFERIR, e por isso as unicas que
-/// anuncia: anunciar RSA sem saber conferir RSA convidaria o servidor a
-/// mandar o que so se aceitaria sem conferir.
-const ASSINATURAS: [u16; 2] = [ECDSA_SECP256R1_SHA256, ED25519];
+/// anuncia: anunciar um algoritmo sem saber conferi-lo convidaria o servidor
+/// a mandar o que so se aceitaria sem conferir.
+const ASSINATURAS: [u16; 6] = [
+    ECDSA_SECP256R1_SHA256,
+    ED25519,
+    ECDSA_SECP384R1_SHA384,
+    RSA_PSS_RSAE_SHA256,
+    RSA_PSS_RSAE_SHA384,
+    RSA_PSS_RSAE_SHA512,
+];
 
 /// A maior mensagem `Certificate` aceita. Uma cadeia publica de tres
 /// certificados RSA fica em 4-6 KiB; o teto da folga sem deixar o servidor
@@ -381,8 +399,7 @@ pub(super) fn conferir_assinatura(
             alerta::UNSUPPORTED_CERTIFICATE,
             PhxError::Corrompido(format!(
                 "TLS: o certificado do servidor tem chave de algoritmo {} \
-                 -- este cliente confere P-256 e Ed25519; RSA e P-384 sao \
-                 a fatia T6c do pedido 572",
+                 -- este cliente confere P-256, P-384, RSA e Ed25519",
                 oid.iter()
                     .map(|a| a.to_string())
                     .collect::<Vec<_>>()
@@ -407,6 +424,22 @@ pub(super) fn conferir_assinatura(
             Ok(a) => crate::ed25519::conferir(q, conteudo, a),
             Err(_) => false,
         },
+        (ECDSA_SECP384R1_SHA384, ChavePublica::P384(q)) => {
+            match crate::p384::assinatura_de_der(assinatura) {
+                Some((r, s)) => crate::p384::verificar(q, conteudo, &r, &s),
+                None => false,
+            }
+        }
+        (RSA_PSS_RSAE_SHA256 | RSA_PSS_RSAE_SHA384 | RSA_PSS_RSAE_SHA512, ChavePublica::Rsa(k)) => {
+            use crate::rsa::Resumo;
+            let resumo = match alg {
+                RSA_PSS_RSAE_SHA256 => Resumo::Sha256,
+                RSA_PSS_RSAE_SHA384 => Resumo::Sha384,
+                _ => Resumo::Sha512,
+            };
+            // §4.2.3: o sal tem o tamanho do resumo, e MGF1 com o mesmo resumo.
+            crate::rsa::verificar_pss(k, resumo, conteudo, assinatura, resumo.tamanho())
+        }
         _ => {
             return falha(
                 alerta::ILLEGAL_PARAMETER,
@@ -446,7 +479,7 @@ pub(super) fn apertar_cliente<S: Read + Write>(
     oferta: &mut dyn Oferta,
     op: &OpcoesCliente,
     conferir: Conferidor,
-) -> Aperto<(Negociado, [u8; RESUMO], [u8; RESUMO])> {
+) -> Aperto<super::Segredos> {
     let mut transcricao = Transcricao::default();
     let (ch1, mut troca) = oferta.primeiro();
     // §5.1: o primeiro ClientHello pode ir com a versao de registro 0x0301,
@@ -593,6 +626,7 @@ pub(super) fn apertar_cliente<S: Read + Write>(
     let master = tls13::segredo_master(&segredo_hs);
     let c_ap = tls13::derivar_segredo(&master, "c ap traffic", &t_sf);
     let s_ap = tls13::derivar_segredo(&master, "s ap traffic", &t_sf);
+    let exp = tls13::derivar_segredo(&master, "exp master", &t_sf);
 
     let mut voo = Vec::new();
     if let Some(contexto) = pedido_de_certificado {
@@ -619,7 +653,12 @@ pub(super) fn apertar_cliente<S: Read + Write>(
         conjunto,
         pino: Some(pino),
     };
-    Ok((negociado, c_ap, s_ap))
+    Ok(super::Segredos {
+        negociado,
+        c_ap,
+        s_ap,
+        exp,
+    })
 }
 
 pub(super) fn conectar_com<S: Read + Write>(
@@ -635,7 +674,12 @@ pub(super) fn conectar_com<S: Read + Write>(
         pendente: Vec::new(),
     };
     match apertar_cliente(&mut r, oferta, op, conferir) {
-        Ok((negociado, c_ap, s_ap)) => Ok(FluxoTls {
+        Ok(super::Segredos {
+            negociado,
+            c_ap,
+            s_ap,
+            exp,
+        }) => Ok(FluxoTls {
             r: Registro {
                 fluxo: r.fluxo,
                 envio: Some(Protecao::de_segredo_com(&c_ap, negociado.conjunto)),
@@ -644,6 +688,7 @@ pub(super) fn conectar_com<S: Read + Write>(
             },
             segredo_envio: c_ap,
             segredo_recebimento: s_ap,
+            segredo_exportador: exp,
             claro: Vec::new(),
             pos: 0,
             fechado: false,
@@ -768,17 +813,6 @@ mod testes {
         }
     }
 
-    /// O servidor do traco assina com RSA-PSS (0x0804), que esta fatia nao
-    /// confere (T6c). O conferidor de mentira so aceita ESSE algoritmo e ESSE
-    /// conteudo -- o resto do aperto (transcricao, chaves, Finished) e o que o
-    /// traco prova.
-    fn conferidor_do_traco(alg: u16, _spki: &[u8], conteudo: &[u8], _a: &[u8]) -> Aperto<()> {
-        assert_eq!(alg, 0x0804, "o traco assina com rsa_pss_rsae_sha256");
-        assert_eq!(&conteudo[..64], &[0x20u8; 64][..]);
-        assert_eq!(&conteudo[64..98], b"TLS 1.3, server CertificateVerify\0");
-        Ok(())
-    }
-
     fn op(confianca: Confianca) -> OpcoesCliente<'static> {
         OpcoesCliente {
             nome: Some("server"),
@@ -795,7 +829,7 @@ mod testes {
     ) -> (Result<FluxoTls<Roteiro>>, OfertaDoTraco) {
         let mut oferta = oferta_da_secao_3();
         let fio = roteiro(&[R3_SH, voo, R3_NST, R3_SDADOS, R3_SALERTA]);
-        let r = conectar_com(fio, &op(confianca), &mut oferta, &conferidor_do_traco);
+        let r = conectar_com(fio, &op(confianca), &mut oferta, &conferir_assinatura);
         (r, oferta)
     }
 
@@ -903,19 +937,28 @@ mod testes {
     }
 
     #[test]
-    fn o_certificado_rsa_se_recusa_nomeando_o_algoritmo() {
-        // Pelo conferidor de PRODUCAO: o traco assina com RSA, e esta fatia nao
-        // confere RSA -- a recusa diz o que veio, em vez de aceitar sem conferir.
+    fn o_certificate_verify_rsa_pss_do_traco_confere_e_o_adulterado_cai() {
+        // O traco da RFC 8448 assina com `rsa_pss_rsae_sha256` e uma chave RSA
+        // de 1024 bits: desde a T6c-1 ele passa pelo conferidor de PRODUCAO
+        // (os testes acima ja o usam). Aqui, o lado contrario: um bit da
+        // assinatura trocado, e o servidor do traco recebe `decrypt_error`
+        // pela assinatura, e nao pela chave de registro.
         let mut oferta = oferta_da_secao_3();
         let fio = roteiro(&[R3_SH, R3_VOO]);
-        let r = conectar_com(
+        let torto = |alg: u16, spki: &[u8], conteudo: &[u8], a: &[u8]| {
+            let mut a = a.to_vec();
+            a[10] ^= 1;
+            conferir_assinatura(alg, spki, conteudo, &a)
+        };
+        let e = conectar_com(
             fio,
             &op(Confianca::AnotarNoPrimeiroContato),
             &mut oferta,
-            &conferir_assinatura,
-        );
-        let e = r.expect_err("aceitou RSA sem conferir").to_string();
-        assert!(e.contains("1.2.840.113549.1.1.1"), "{e}");
+            &torto,
+        )
+        .expect_err("aceitou a assinatura RSA adulterada")
+        .to_string();
+        assert!(e.contains("nao confere com o certificado"), "{e}");
     }
 
     #[test]
@@ -937,7 +980,7 @@ mod testes {
             fio,
             &op(Confianca::AnotarNoPrimeiroContato),
             &mut oferta,
-            &conferidor_do_traco,
+            &conferir_assinatura,
         )
         .expect("o cliente recusou o traco do HRR");
         let mut esperado = b(R5_CH1);
@@ -1139,6 +1182,87 @@ mod testes {
     }
 
     #[test]
+    fn o_vinculo_do_canal_do_cliente_e_o_que_o_openssl_s_server_exporta() {
+        // O lado cliente do `tls-exporter` (RFC 9266): o vetor e o
+        // `-keymatexport` do `s_server` na MESMA conexao -- com HRR e AES num
+        // dos casos, porque a transcricao do `exp master` muda com eles.
+        for extra in [
+            vec![],
+            vec![
+                "-groups",
+                "P-256",
+                "-ciphersuites",
+                "TLS_AES_128_GCM_SHA256",
+            ],
+        ] {
+            let d = dir("vinculo");
+            let (cert, chave, pino) = identidade_p256(&d);
+            let porta = TcpListener::bind("127.0.0.1:0")
+                .unwrap()
+                .local_addr()
+                .unwrap()
+                .port();
+            // Sem `-www`: so o modo de eco imprime o material exportado. Com
+            // `-naccept 1` ele sai quando a conexao fecha, e a saida inteira
+            // fica para ler de uma vez.
+            let filho = Command::new("openssl")
+                .args(["s_server", "-naccept", "1", "-tls1_3", "-accept"])
+                .arg(porta.to_string())
+                .arg("-cert")
+                .arg(&cert)
+                .arg("-key")
+                .arg(&chave)
+                .args(["-keymatexport", super::super::ROTULO_DO_VINCULO])
+                .args(["-keymatexportlen", "32"])
+                .args(&extra)
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::null())
+                .spawn()
+                .unwrap();
+            let mut servidor = SServer(filho, porta);
+            let mut conectado = None;
+            for _ in 0..100 {
+                if let Ok(f) = TcpStream::connect(("127.0.0.1", porta)) {
+                    conectado = Some(f);
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(50));
+            }
+            let f = conectado.expect("o openssl s_server nao abriu a porta");
+            f.set_read_timeout(Some(Duration::from_secs(20))).unwrap();
+            let op = OpcoesCliente {
+                nome: Some("localhost"),
+                alpn: &[],
+                confianca: Confianca::Pino(pino),
+            };
+            let mut t = conectar(f, &op).expect("o aperto com o openssl falhou");
+            let nosso = crate::hash::para_hex(&t.vinculo_do_canal());
+            t.write_all(b"fim\n").unwrap();
+            t.despedir().unwrap();
+            drop(t);
+            drop(servidor.0.stdin.take());
+            let mut saida = String::new();
+            servidor
+                .0
+                .stdout
+                .take()
+                .unwrap()
+                .read_to_string(&mut saida)
+                .unwrap();
+            let deles = saida
+                .lines()
+                .find_map(|l| l.trim().strip_prefix("Keying material: "))
+                .map(str::to_ascii_lowercase);
+            assert_eq!(
+                deles.as_deref(),
+                Some(nosso.as_str()),
+                "{extra:?}: o exportador do cliente diverge do OpenSSL\n{saida}"
+            );
+        }
+    }
+
+    #[test]
     fn com_o_openssl_s_server_so_de_p256_passa_pelo_hrr() {
         let d = dir("hrr");
         let (cert, chave, pino) = identidade_p256(&d);
@@ -1210,29 +1334,50 @@ mod testes {
     }
 
     #[test]
-    fn com_o_openssl_s_server_de_chave_rsa_a_recusa_vem_do_servidor() {
-        // RSA nao se anuncia (nao se sabe conferir): o servidor que so tem RSA
-        // nao acha assinatura em comum e aborta com handshake_failure (40).
-        let d = dir("rsa");
-        let cert = d.0.join("cert.pem");
-        let chave = d.0.join("chave.pem");
-        let ok = Command::new("openssl")
-            .args([
-                "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1",
-            ])
-            .args(["-subj", "/CN=localhost", "-keyout"])
-            .arg(&chave)
-            .arg("-out")
-            .arg(&cert)
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
-            .unwrap();
-        assert!(ok.success());
-        let s = s_server(&cert, &chave, &[]);
-        let e = pedir_ao_s_server(s.1, [0; 32])
-            .expect_err("conectou num servidor RSA")
-            .to_string();
-        assert!(e.contains("alerta 40"), "{e}");
+    fn com_o_openssl_s_server_de_chave_rsa_e_p384() {
+        // Certificados gerados pelo OPENSSL: RSA 2048 (o CertificateVerify sai
+        // `rsa_pss_rsae_sha256`) e P-384 (`ecdsa_secp384r1_sha384`). O pino e
+        // o do `pkey -pubout | sha256`, a receita do curl.
+        for (nome, chave_nova, grupos) in [
+            ("rsa", vec!["-newkey", "rsa:2048"], None),
+            (
+                "p384",
+                vec!["-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:P-384"],
+                None,
+            ),
+            ("rsa3072", vec!["-newkey", "rsa:3072"], Some("P-256")),
+        ] {
+            let d = dir(nome);
+            let cert = d.0.join("cert.pem");
+            let chave = d.0.join("chave.pem");
+            let ok = Command::new("openssl")
+                .args(["req", "-x509", "-nodes", "-days", "1"])
+                .args(&chave_nova)
+                .args(["-subj", "/CN=localhost", "-keyout"])
+                .arg(&chave)
+                .arg("-out")
+                .arg(&cert)
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status()
+                .unwrap();
+            assert!(ok.success());
+            let pub_der = Command::new("openssl")
+                .args(["pkey", "-pubout", "-outform", "DER", "-in"])
+                .arg(&chave)
+                .output()
+                .unwrap()
+                .stdout;
+            let extra: Vec<&str> = grupos.map(|g| vec!["-groups", g]).unwrap_or_default();
+            let s = s_server(&cert, &chave, &extra);
+            let (pagina, _) = pedir_ao_s_server(s.1, sha256(&pub_der))
+                .unwrap_or_else(|e| panic!("{nome}: o aperto falhou: {e}"));
+            assert!(pagina.contains("HTTP/1.0 200 ok"), "{nome}: {pagina}");
+            // E o pino de OUTRA chave recusa, depois de conferir a assinatura.
+            let e = pedir_ao_s_server(s.1, [7; 32])
+                .expect_err("pino errado passou")
+                .to_string();
+            assert!(e.contains("pino"), "{nome}: {e}");
+        }
     }
 }

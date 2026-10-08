@@ -2410,7 +2410,9 @@ impl Servidor {
         // qualquer arquivo de dado. A ordem inversa tem uma janela em que o
         // trabalho existe pela metade e nao ha intencao nenhuma no disco para
         // completa-lo -- e essa janela nao tem conserto depois.
-        let marca = match crate::transacao::gravar_marca(&dir, id, carimbo, &escritas) {
+        let marca = match self
+            .gravar_a_marca_da_lista(&trava, &database, sessao, &dir, id, carimbo, &escritas)
+        {
             Ok(c) => c,
             Err(e) => {
                 drop(trava);

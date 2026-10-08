@@ -430,6 +430,8 @@ pub fn varrer(arquivo: &'static str, fonte: &str) -> Vec<Achado> {
     let mut achados = Vec::new();
     achados.extend(via_marcacao(arquivo, &limpo, &inicios));
     achados.extend(via_rotulo(arquivo, &limpo, &inicios));
+    achados.extend(via_atribuicao(arquivo, &limpo, &inicios));
+    achados.extend(via_lista_de_rotulos(arquivo, &limpo, &inicios));
     achados
 }
 
@@ -808,6 +810,194 @@ fn via_rotulo(arquivo: &'static str, limpo: &str, inicios: &[usize]) -> Vec<Acha
                 }
             }
         }
+    }
+    achados
+}
+
+// =====================================================================
+// Via 3: o texto que o JavaScript poe direto na tela (pedido 695)
+// =====================================================================
+
+/// As propriedades do DOM que mostram texto, e o que cada uma e.
+///
+/// Entraram no pedido 695: o video do CRUD achou `rec.textContent =
+/// "gravando…"` na tela e fora da conta -- nenhuma das [`RECEITAS`] olhava
+/// atribuicao. `value` fica de fora pelo mesmo motivo de
+/// [`ATRIBUTOS_VISIVEIS`]: carrega dado. `innerHTML` tambem: o texto dele
+/// entre etiquetas ja e da via 1, e conta-lo aqui seria contar duas vezes.
+pub const PROPRIEDADES_DE_TEXTO: &[(&str, &str)] = &[
+    (
+        ".textContent",
+        "o texto de um elemento, posto pelo JavaScript",
+    ),
+    (".innerText", "o mesmo, pela outra propriedade"),
+    (".title", "a dica que aparece ao parar o ponteiro"),
+    (".placeholder", "o texto de exemplo de um campo vazio"),
+];
+
+/// `x.textContent = "…"`, `x.title = cond ? "a" : "b"`, `x.innerText = n +
+/// " linhas"`: os literais do lado direito, ate o fim do comando.
+///
+/// So os literais de NIVEL ZERO contam. O que esta dentro de parenteses e
+/// argumento de funcao -- `x.title = r.get("nome")` pede o campo `nome`, e
+/// isso e dado e nao rotulo. O `txt(…)` e o `${…}` ja viraram [`BURACO`] na
+/// limpeza, entao `x.textContent = txt("tela.k", "…")` nao sobra para julgar.
+fn via_atribuicao(arquivo: &'static str, limpo: &str, inicios: &[usize]) -> Vec<Achado> {
+    let b = limpo.as_bytes();
+    let mut achados = Vec::new();
+    for (prop, _) in PROPRIEDADES_DE_TEXTO {
+        let mut i = 0;
+        while let Some(p) = limpo[i..].find(prop) {
+            let p = i + p;
+            i = p + prop.len();
+            // `.title` nao pode ser o comeco de `.titleFoo`.
+            if b.get(i).is_some_and(|&c| parte_de_nome(c) && c != b'.') {
+                continue;
+            }
+            let resto = &limpo[i..];
+            let sem_espaco = resto.trim_start_matches([' ', '\t']);
+            // Atribuicao, e nao comparacao: `=` sozinho.
+            if !sem_espaco.starts_with('=') || sem_espaco[1..].starts_with('=') {
+                continue;
+            }
+            let ini = i + (resto.len() - sem_espaco.len()) + 1;
+            // O lado direito pode comecar na linha de baixo.
+            let lado = &limpo[ini..];
+            let pulo = lado.len() - lado.trim_start().len();
+            let ini = ini + pulo;
+            achados.extend(literais_do_comando(arquivo, limpo, inicios, ini));
+        }
+    }
+    achados
+}
+
+/// Os literais de nivel zero de um comando que comeca em `ini`, ate o `;`, a
+/// `,` ou a quebra de linha de nivel zero -- ou o `)`/`]`/`}` que fecha quem
+/// o contem.
+fn literais_do_comando(
+    arquivo: &'static str,
+    limpo: &str,
+    inicios: &[usize],
+    ini: usize,
+) -> Vec<Achado> {
+    let b = limpo.as_bytes();
+    let mut achados = Vec::new();
+    let mut nivel = 0i32;
+    let mut j = ini;
+    while j < b.len() {
+        let c = b[j];
+        match c {
+            b'"' | b'\'' | b'`' => {
+                let Some(valor) = literal(&limpo[j..]) else {
+                    break;
+                };
+                let fim = j + valor.len() + 2;
+                if nivel == 0 && !comparado(limpo, j, fim) {
+                    if let Some(a) = pesar(arquivo, limpo, inicios, j, valor, Canal::Rotulo) {
+                        achados.push(a);
+                    }
+                }
+                j = fim;
+                continue;
+            }
+            b'(' | b'[' | b'{' => nivel += 1,
+            b')' | b']' | b'}' => {
+                if nivel == 0 {
+                    break;
+                }
+                nivel -= 1;
+            }
+            b';' | b',' | b'\n' if nivel == 0 => break,
+            _ => {}
+        }
+        j += 1;
+    }
+    achados
+}
+
+/// O literal entre `ini` e `fim` e um lado de comparacao (`===`, `!==`,
+/// `==`, `!=`)? Entao e valor de protocolo, e nao texto que a tela mostra:
+/// `x.textContent = papel !== "isolado" ? … : …` le o papel, e o texto esta
+/// nos ramos do ternario. Medido ao nascer a regua: dois falsos positivos
+/// (`"isolado"` e `"suave"`), os dois deste molde.
+fn comparado(limpo: &str, ini: usize, fim: usize) -> bool {
+    let antes = limpo[..ini].trim_end();
+    let depois = limpo[fim..].trim_start();
+    antes.ends_with("==")
+        || antes.ends_with("!=")
+        || depois.starts_with("==")
+        || depois.starts_with("!=")
+}
+
+/// As listas de rotulo: `["mensal", "volume novo quando o mês vira"]`.
+///
+/// A forma e a das tabelas de opcoes do JavaScript (`PARTICOES`,
+/// `AGREGADORES`, o menu de acoes da chave estrangeira): um vetor so de
+/// literais cujo PRIMEIRO e um identificador -- o valor, que e protocolo e
+/// nao se traduz -- e os seguintes sao o que a tela mostra.
+///
+/// Tres crivos, e cada um tira um falso positivo medido:
+/// - vetor com qualquer elemento que nao seja literal fica de fora: o
+///   `txt(…)` virou [`BURACO`], entao `["restringir", txt("…", "…")]` ja
+///   esta pela fabrica;
+/// - vetor com um literal `tela.` fica de fora: e o par rotulo/chave
+///   resolvido por quem desenha, o mesmo acordo do `rot:`/`txt:`;
+/// - so conta o literal que tem cara de frase -- espaco, letra com acento
+///   ou maiuscula no comeco. `["linhas", "colunas"]` e lista de
+///   identificadores e nao acusa; o preco e nao ver o rotulo de UMA palavra
+///   minuscula sem acento («mensal»), e ele fica escrito aqui para ninguem
+///   achar que a regua o ve.
+fn via_lista_de_rotulos(arquivo: &'static str, limpo: &str, inicios: &[usize]) -> Vec<Achado> {
+    let b = limpo.as_bytes();
+    let mut achados = Vec::new();
+    let mut i = 0;
+    while let Some(p) = limpo[i..].find('[') {
+        let p = i + p;
+        i = p + 1;
+        let mut j = p + 1;
+        let mut itens: Vec<(usize, &str)> = Vec::new();
+        let fechou = loop {
+            while j < b.len() && (b[j] == b' ' || b[j] == b'\t' || b[j] == b'\n' || b[j] == b',') {
+                j += 1;
+            }
+            if j >= b.len() {
+                break false;
+            }
+            if b[j] == b']' {
+                break true;
+            }
+            if b[j] != b'"' && b[j] != b'\'' {
+                break false;
+            }
+            let Some(valor) = literal(&limpo[j..]) else {
+                break false;
+            };
+            itens.push((j, valor));
+            j += valor.len() + 2;
+        };
+        if !fechou || itens.len() < 2 {
+            continue;
+        }
+        let ident = |s: &str| {
+            !s.is_empty()
+                && s.bytes()
+                    .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == b'_')
+        };
+        if !ident(itens[0].1) || itens.iter().any(|(_, v)| v.starts_with("tela.")) {
+            continue;
+        }
+        for &(onde, valor) in &itens[1..] {
+            let frase = valor.contains(' ')
+                || valor.chars().any(|c| c.is_alphabetic() && !c.is_ascii())
+                || valor.chars().next().is_some_and(|c| c.is_uppercase());
+            if !frase {
+                continue;
+            }
+            if let Some(a) = pesar(arquivo, limpo, inicios, onde, valor, Canal::Rotulo) {
+                achados.push(a);
+            }
+        }
+        i = j + 1;
     }
     achados
 }
@@ -1495,7 +1685,40 @@ pub fn token_sem_definicao_e_sem_fallback() -> Vec<(&'static str, String)> {
 /// (motivo, «(obrigatório)» e a legenda do `.reason`, agora pelo `marcado()`)
 /// e o cartao de criar tabela do diagrama entraram pela fabrica -- doze
 /// literais a menos, medidos pelo conferidor (861 -> 849).
-pub const TETO_ROTULOS_E_CRASE: usize = 849;
+///
+/// Desceu para **813** no pedido 673 (08/10/2026): o resto do cartao de
+/// declarar chave (titulo, frases, rotulos e o menu de acoes), a tela de
+/// Mensagens do servidor inteira e os recados de espera («lendo…»,
+/// «gravando…», «rodando…») de todas as telas -- 36 literais a menos,
+/// medidos pelo conferidor (849 -> 813). Os `textContent = "…"` do pedido
+/// 695, que a regua de entao nao via, entraram junto e nao mexiam no numero.
+///
+/// # E esta catraca SUBSTITUI `TETO_ROTULOS_E_CRASE` (pedido 695, 08/10/2026)
+///
+/// A regua passou a medir mais, e por isso o nome mudou de novo, no mesmo
+/// molde de `TETO` -> `TETO_ROTULOS_E_CRASE` e de
+/// `conferidor_grades::TETO_TABELA_NA_MAO`: **aposenta a antiga, nasce uma
+/// nova no numero medido do dia** -- nunca se sobe um teto. O historico acima
+/// e o da antiga, e fica para quem quiser a serie; a comparacao numerica com
+/// ela se perde de proposito.
+///
+/// O que a regua passou a ver: o video do CRUD achou `rec.textContent =
+/// "gravando…"` na tela e fora da conta. Nenhuma [`RECEITAS`] olhava
+/// atribuicao, nem as listas de opcoes do JavaScript. Duas vias novas:
+/// [`PROPRIEDADES_DE_TEXTO`] (`textContent`, `innerText`, `title`,
+/// `placeholder` -- o lado direito, nivel zero, sem o lado de comparacao) e
+/// as listas `["valor", "Rótulo", …]` (`via_lista_de_rotulos`, com os tres
+/// crivos escritos nela).
+///
+/// Nasceu em **857**: os 813 da antiga mais 44 que so a regua nova via (as
+/// listas de particao e do Pivot, o dialogo de excluir, subtitulos postos
+/// por `textContent`). A mesma leva traduziu o lote coerente que ela achou
+/// -- as quatro listas, o dialogo de excluir inteiro, o subtitulo do
+/// assistente de replicacao, a lixeira e os motivos -- e desceu para
+/// **806**. Ficou de fora de proposito a lista `FORMATOS_ENTRADA` (quatro):
+/// e da tela de Importar, que tem duas dezenas de textos cravados, e meia
+/// tela traduzida e meia mentira.
+pub const TETO_ROTULOS_CRASE_E_JS: usize = 806;
 #[cfg(test)]
 mod testes {
     use std::collections::HashSet;
@@ -1509,14 +1732,14 @@ mod testes {
     fn a_catraca_dos_textos_fora_da_fabrica() {
         let achados = conferir();
         let faltando = fora(&achados);
-        if faltando.len() > TETO_ROTULOS_E_CRASE {
+        if faltando.len() > TETO_ROTULOS_CRASE_E_JS {
             let mostra: Vec<String> = faltando
                 .iter()
                 .take(40)
                 .map(|a| format!("  {}:{} {:?}", a.arquivo, a.linha, a.texto))
                 .collect();
             panic!(
-                "{} textos de tela fora da fabrica, e a catraca esta em {TETO_ROTULOS_E_CRASE}.\n\
+                "{} textos de tela fora da fabrica, e a catraca esta em {TETO_ROTULOS_CRASE_E_JS}.\n\
                  Os primeiros:\n{}\n\
                  Todos: cargo run --example textos-fora-da-fabrica -p phxsql-server",
                 faltando.len(),
@@ -1528,8 +1751,8 @@ mod testes {
         // em ate 30 enquanto o QA-PDCA publicava «em cima, sem folga». O teto
         // e o medido; traduziu, baixa no mesmo commit.
         assert!(
-            faltando.len() >= TETO_ROTULOS_E_CRASE,
-            "sobraram {} e a catraca esta em {TETO_ROTULOS_E_CRASE}: baixe a catraca no mesmo \
+            faltando.len() >= TETO_ROTULOS_CRASE_E_JS,
+            "sobraram {} e a catraca esta em {TETO_ROTULOS_CRASE_E_JS}: baixe a catraca no mesmo \
              commit da traducao, senao ela deixa de segurar",
             faltando.len()
         );
@@ -1584,7 +1807,7 @@ mod testes {
         assert!(
             faltando.is_empty(),
             "o servidor serve {faltando:?} e o FONTES nao mede -- texto cravado \
-             ali nao conta para a catraca. Acrescente ao FONTES e reveja o TETO_ROTULOS_E_CRASE"
+             ali nao conta para a catraca. Acrescente ao FONTES e reveja o TETO_ROTULOS_CRASE_E_JS"
         );
     }
 
@@ -1648,6 +1871,67 @@ mod testes {
         }
         // E o mesmo rotulo pela fabrica nao acusa nada.
         assert!(fora(&varrer("teste", r#"{ rot:txt("tela.painel","Painel") }"#)).is_empty());
+    }
+
+    /// Pedido 695: o texto que o JavaScript poe direto na tela. **Prova real
+    /// nos dois sentidos:** o `textContent = "…"` cravado reprova, e o MESMO
+    /// texto pela fabrica passa; tire `via_atribuicao` do `varrer` e a
+    /// primeira metade cai.
+    #[test]
+    fn ve_o_texto_posto_pelo_javascript() {
+        for (fonte, esperado) in [
+            (r#"rec.textContent = "gravando…";"#, "gravando…"),
+            (r##"$("#t").innerText="Tabela salva";"##, "Tabela salva"),
+            (r#"b.title = "Abrir a ficha";"#, "Abrir a ficha"),
+            (r#"i.placeholder = `nome da coluna`;"#, "nome da coluna"),
+            // O lado direito pode estar na linha de baixo.
+            (
+                "x.textContent =\n    \"lendo o esquema\";",
+                "lendo o esquema",
+            ),
+            // Os dois ramos do ternario sao texto; o lado comparado, nao.
+            (
+                r#"s.textContent = m === "suave" ? "Marcar" : "Excluir de vez";"#,
+                "Excluir de vez",
+            ),
+            // A lista de opcoes: o primeiro e protocolo, o resto e tela.
+            (
+                r#"const L = [["soma", "Soma", "o total dos valores"]];"#,
+                "o total dos valores",
+            ),
+        ] {
+            let faltando: Vec<String> = fora(&varrer("teste", fonte))
+                .iter()
+                .map(|a| a.texto.clone())
+                .collect();
+            assert!(
+                faltando.iter().any(|t| t == esperado),
+                "{fonte} devia acusar {esperado:?}, achou {faltando:?}"
+            );
+        }
+        for fonte in [
+            r#"rec.textContent = txt("tela.st_gravando", "gravando…");"#,
+            r#"b.title = txt("tela.k", "Abrir a ficha");"#,
+            // Comparacao nao e atribuicao.
+            r#"if (x.textContent === "Sessões") parar();"#,
+            // Argumento de funcao e dado: pede o campo `nome`.
+            r#"b.title = r.campo("nome descrito");"#,
+            // O lado comparado e protocolo.
+            r#"f.textContent = p !== "isolado sem par" ? rotulo : "";"#,
+            // Lista com a chave ao lado, ou com o rotulo pela fabrica.
+            r#"[["dados", "Dados e catálogo", "tela.dbgr_dados"]]"#,
+            r#"[["soma", txt("tela.pv_ag_soma", "Soma")]]"#,
+            // Lista de identificadores nao e lista de rotulos.
+            r#"const Z = ["linhas", "colunas", "valor"];"#,
+            // `value` carrega dado e fica de fora de proposito.
+            r##"$("#s").value = "Sao Paulo";"##,
+        ] {
+            assert!(
+                fora(&varrer("teste", fonte)).is_empty(),
+                "{fonte} nao devia acusar nada, achou {:?}",
+                fora(&varrer("teste", fonte))
+            );
+        }
     }
 
     /// Codigo nao e texto. Sem este crivo o conferidor acusaria a pagina

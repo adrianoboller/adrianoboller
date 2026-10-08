@@ -123,11 +123,22 @@ fn senha_em_claro_de_fora_do_loopback_se_recusa_antes_do_cadastro() {
     tentar(&s, &com_senha, tls).expect("TLS da porta de dados");
     tentar(&s, &com_senha, Sessao::default()).expect("sem fio");
 
-    // O desafio-resposta nao leva a senha: entra de fora em claro.
+    // O desafio-resposta nao leva a senha: pela porta de dados entra de
+    // fora em claro. Pela WEB nao -- ali o desafio faz nascer o id de
+    // sessao, e o pedido 674 recusa a emissao dele em claro (a mesma regra
+    // fica provada pelo soquete em `tests/token-fora-do-loopback.rs`).
     let dk =
         phxsql_core::senha::derivado_do_hash(&s.cadastro().por_login("ana").unwrap().senha_hash)
             .unwrap();
-    let mut ses = web("192.168.0.20", false);
+    let e = s
+        .op_desafio(
+            &pedido(r#"{"usuario":"ana"}"#),
+            &mut web("192.168.0.20", false),
+        )
+        .expect_err("o desafio pela web em claro de fora emitiu sessao")
+        .to_string();
+    assert!(e.contains("sessao web em claro"), "{e}");
+    let mut ses = dados("192.168.0.20");
     let d = s
         .op_desafio(&pedido(r#"{"usuario":"ana"}"#), &mut ses)
         .unwrap();
@@ -146,6 +157,12 @@ fn senha_em_claro_de_fora_do_loopback_se_recusa_antes_do_cadastro() {
     c.cifra_fio.senha_em_claro_pela_rede = true;
     let s = Servidor::novo(c).unwrap();
     tentar(&s, &com_senha_b64, web("192.168.0.20", false)).expect("o escape nao valeu");
+    // O MESMO escape abre a emissao do id (pedido 674): um escape so.
+    s.op_desafio(
+        &pedido(r#"{"usuario":"ana"}"#),
+        &mut web("192.168.0.20", false),
+    )
+    .expect("o escape nao valeu para o desafio");
 }
 
 fn pedido(txt: &str) -> Json {

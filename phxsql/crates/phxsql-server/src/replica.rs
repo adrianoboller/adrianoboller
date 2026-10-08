@@ -57,14 +57,36 @@ const LOTE: u64 = 500;
 // ser dele. Um teto nesta camada voltaria a deixar o caminho cifrado sem
 // nenhum -- que foi exatamente o risco desta integracao.
 
+/// O soquete de quem conversa: claro ou TLS, pelo motor do core (pedido 572,
+/// T6b-2). O `Canal` por cima nao sabe qual dos dois e -- dentro do TLS ele
+/// fica `Claro`, porque a linha ja viaja protegida.
+use phxsql_core::tls::FioDeCliente as Fio;
+
 /// Uma conexao com o source, falando o JSON por linha da porta de dados.
 pub struct Cliente {
-    fluxo: ComPrazo,
-    leitor: BufReader<ComPrazo>,
+    fluxo: Fio,
+    leitor: BufReader<Fio>,
     token: String,
     /// Em claro (como sempre foi) ou dentro do tunel. Ver
     /// `docs/CIFRA-DO-FIO.md`.
     canal: Canal,
+    /// O `id_servidor` de quem puxa, quando ele quer SEGURAR o diario da
+    /// origem -- pedido 706. Viaja como `consumidor` em todo `replicar`; a
+    /// origem so o conta se ele estiver em `diario.consumidores` de la.
+    consumidor: Option<String>,
+    /// Ate onde o diario DESTA replica ja foi ao disco na tabela do proximo
+    /// `replicar` -- pedido 706. O `desde` conta a cauda aplicada nesta
+    /// rodada e ainda sem `fsync`; o `duravel` nao. Vale para UM pedido.
+    duravel: Option<u64>,
+}
+
+/// O `close_notify` sai no `Drop`, como no `fio_dados` do servidor: o
+/// cliente vive em lacos com dezenas de saidas, e a que alguem esquecesse
+/// fecharia sem ele -- o source veria um corte em vez de um adeus.
+impl Drop for Cliente {
+    fn drop(&mut self) {
+        self.fluxo.despedir();
+    }
 }
 
 impl Cliente {
@@ -154,13 +176,28 @@ impl Cliente {
         // O relogio do total comeca DEPOIS do `connect`, que tem prazo
         // proprio por endereco.
         let (leitura, fluxo) = ComPrazo::armar(fluxo, prazo.rearmado())?;
-        let leitor = BufReader::new(leitura);
+        let leitor = BufReader::new(Fio::Claro(leitura));
         Ok(Cliente {
-            fluxo,
+            fluxo: Fio::Claro(fluxo),
             leitor,
             token: token.to_string(),
             canal: Canal::Claro,
+            consumidor: None,
+            duravel: None,
         })
+    }
+
+    /// Diz a origem quem puxa, para ela segurar o diario ate este consumidor
+    /// confirmar -- pedido 706. Sem isto o `replicar` sai como sempre saiu.
+    pub fn dizer_quem_puxa(&mut self, id_servidor: &str) {
+        let id = id_servidor.trim();
+        self.consumidor = (!id.is_empty()).then(|| id.to_string());
+    }
+
+    /// Diz a origem, so no PROXIMO `replicar`, ate onde o diario daqui ja
+    /// esta no disco (pedido 706). Sem consumidor declarado nao viaja.
+    pub fn dizer_o_duravel(&mut self, duravel: u64) {
+        self.duravel = Some(duravel);
     }
 
     /// Pede o aperto de mao e passa a falar por dentro do tunel.
@@ -173,6 +210,7 @@ impl Cliente {
     ///
     /// Devolve a chave que o source apresentou, para quem quiser anota-la.
     pub fn cifrar(&mut self, pino: Option<[u8; 32]>) -> Result<[u8; 32]> {
+        self.so_uma_cifra()?;
         self.rearmar();
         let (iniciador, m1) = Iniciador::comecar(pino);
         let pedido = Json::objeto(vec![
@@ -221,19 +259,74 @@ impl Cliente {
         Ok(apresentada)
     }
 
+    /// Passa a falar TLS 1.3 com o source, autenticado pelo PINO do
+    /// certificado dele (`sha256//...` do SPKI, a forma do curl) -- pedido
+    /// 572, T6b-2. O lugar do [`Cliente::cifrar`] (Noise) para quem escreveu
+    /// `pino_tls` na configuracao: o servidor decide pelo primeiro byte
+    /// (`0x16`) e atende os dois na mesma porta.
+    ///
+    /// So por pino, e de proposito: entre dois PhxSql nao ha autoridade
+    /// certificadora a consultar, e TLS sem conferir quem responde protegeria
+    /// da escuta passiva e de nada mais -- que e o que o Noise sem pino ja da.
+    /// A cadeia e o nome sao a T6c, para falar com servidores de fora.
+    pub fn cifrar_tls(&mut self, pino: [u8; 32]) -> Result<()> {
+        self.so_uma_cifra()?;
+        Fio::passar_a_tls(&mut self.leitor, &mut self.fluxo, pino).map_err(prazo::reclassificar)?;
+        Ok(())
+    }
+
+    /// A decisao UNICA de como proteger a conexao, para todo iniciador que
+    /// usa este cliente (replica, pulso e propagacao do cluster, sonda):
+    /// com `pino_tls` e TLS 1.3 por aquele pino, e a `cifra` nao decide mais;
+    /// sem ele, o Noise de sempre quando `cifra` pede. Espalhar o `if` por
+    /// cada chamador deixaria o que alguem esquecesse falando Noise com o
+    /// pino TLS escrito na configuracao -- e o operador achando que nao.
+    pub fn proteger(
+        &mut self,
+        cifra: bool,
+        pino_do_fio: Option<[u8; 32]>,
+        pino_tls: Option<[u8; 32]>,
+    ) -> Result<()> {
+        match pino_tls {
+            Some(p) => self.cifrar_tls(p),
+            None if cifra => self.cifrar(pino_do_fio).map(|_| ()),
+            None => Ok(()),
+        }
+    }
+
+    /// Uma cifra por conexao: Noise dentro de TLS (ou o contrario) seria a
+    /// mesma protecao paga duas vezes, e um segundo aperto no meio de uma
+    /// conexao cifrada confundiria o servidor sobre qual transcricao amarrar.
+    fn so_uma_cifra(&self) -> Result<()> {
+        if self.canal.cifrado() || self.fluxo.tls() {
+            return Err(PhxError::Esquema(
+                "esta conexao ja esta cifrada: uma cifra por conexao".into(),
+            ));
+        }
+        Ok(())
+    }
+
+    /// `true` quando a conversa passa por TLS.
+    pub fn tls(&self) -> bool {
+        self.fluxo.tls()
+    }
+
     /// Cada pedido tem o prazo total inteiro, quando ha total -- pedido 578.
     /// Sem total e um `Copy` de tres campos, e o soquete nem e tocado.
     fn rearmar(&mut self) {
-        prazo::rearmar(self.leitor.get_mut(), &mut self.fluxo);
+        Fio::rearmar(self.leitor.get_mut(), &mut self.fluxo);
     }
 
-    /// A transcricao do aperto, quando esta conexao passou pelo tunel.
+    /// A transcricao do aperto, quando esta conexao passou pelo tunel -- ou,
+    /// no TLS, o `tls-exporter` da RFC 9266, que faz o mesmo papel.
     ///
     /// Quem a usa e a prova de identidade do pulso (pedido 278), pelo mesmo
     /// motivo que o desafio-resposta ja a usa: uma prova gravada numa conexao
     /// nao pode valer em outra.
     pub fn transcricao(&self) -> Option<[u8; 32]> {
-        self.canal.transcricao()
+        self.fluxo
+            .vinculo_do_canal()
+            .or_else(|| self.canal.transcricao())
     }
 
     /// Manda um pedido e devolve o `resultado`, ou o erro que o source disse.
@@ -346,7 +439,7 @@ impl Cliente {
         // contra a dele -- e o que derruba um homem-no-meio que tenha
         // terminado o tunel. Sem tunel (`None`), e a prova de sempre. Ver
         // `docs/CIFRA-DO-FIO.md` §10.
-        let transcricao = self.canal.transcricao();
+        let transcricao = self.transcricao();
         let canal_ref = transcricao.as_ref().map(|t| &t[..]);
 
         let prova = if !senha_hash.is_empty() {
@@ -477,6 +570,9 @@ pub struct PosicaoDoSource {
     /// que ele de fato grava (`bidirecional::numero_do_servidor`).
     pub numero_servidor: u16,
     pub tabelas: Vec<NoSource>,
+    /// O primeiro evento que a origem ainda guarda de cada tabela -- pedido
+    /// 706. Zero, ou ausente numa origem anterior, e «tudo desde o comeco».
+    pub bases: Vec<(String, u64)>,
 }
 
 /// Le a resposta de `posicao`.
@@ -487,8 +583,10 @@ pub fn posicao(cliente: &mut Cliente, database: &str) -> Result<PosicaoDoSource>
         ("com_esquema", Json::Bool(true)),
     ])?;
     let mut saida = Vec::new();
+    let mut bases = Vec::new();
     if let Some(Json::Objeto(pares)) = r.campo("tabelas") {
         for (nome, v) in pares {
+            bases.push((nome.clone(), v.inteiro_ou("base", 0).max(0) as u64));
             let hex = v.texto_ou("esquema", "");
             let esquema = if hex.is_empty() {
                 None
@@ -511,6 +609,7 @@ pub fn posicao(cliente: &mut Cliente, database: &str) -> Result<PosicaoDoSource>
         // corte pertenceria a outro servidor.
         numero_servidor: u16::try_from(r.inteiro_ou("numero_servidor", 0)).unwrap_or(0),
         tabelas: saida,
+        bases,
     })
 }
 
@@ -622,6 +721,12 @@ fn puxar_ate(
     if let Some((quem, numero)) = para {
         campos.push(("para", Json::texto_de(quem)));
         campos.push(("para_numero", Json::de_u64(numero as u64)));
+    }
+    if let Some(quem) = &cliente.consumidor {
+        campos.push(("consumidor", Json::texto_de(quem)));
+    }
+    if let (Some(_), Some(d)) = (&cliente.consumidor, cliente.duravel.take()) {
+        campos.push(("duravel", Json::de_u64(d)));
     }
     let r = cliente.pedir(campos)?;
     let eventos = eventos_do_fio(r.campo("eventos"))?;
@@ -1026,9 +1131,7 @@ pub fn ligar_com_prazo(
     )?;
     // O tunel ANTES do login, de proposito: e a prova do desafio-resposta e o
     // token que ele existe para esconder, e depois do login ja seria tarde.
-    if origem.cifra {
-        c.cifrar(origem.pino_do_fio()?)?;
-    }
+    c.proteger(origem.cifra, origem.pino_do_fio()?, origem.pino_tls()?)?;
     if !origem.usuario.is_empty() {
         c.autenticar(&origem.usuario, &origem.senha_hash, &origem.senha)?;
     }
@@ -1360,6 +1463,7 @@ mod testes_do_prazo_de_conexao {
             hora: String::new(),
             cifra: false,
             chave_do_fio: String::new(),
+            pino_tls: String::new(),
             espelho: false,
         }
     }
@@ -1570,6 +1674,7 @@ mod testes_do_prazo_total_da_conversa {
             hora: String::new(),
             cifra: false,
             chave_do_fio: String::new(),
+            pino_tls: String::new(),
             espelho: false,
         }
     }

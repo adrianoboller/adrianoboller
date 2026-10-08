@@ -128,10 +128,12 @@
 #fu_excluir
 #fu_salvar
 #fu_voltar
+#iaAprovar
 #iaCriar
 #iaDesfazer
 #iaExecutar
 #iaIr
+#iaNaoEnviar
 #iaRemover
 #iaSalvar
 #iaTestar
@@ -353,8 +355,8 @@
 [data-kill="19"]
 [data-kill="4"]
 [data-kill]
-[data-killweb="cdc06edb"]
-[data-killweb="dfb5793b"]
+[data-killweb="5a681aec"]
+[data-killweb="7055b10c"]
 [data-killweb]
 [data-login="fichausuc"]
 [data-login="fichausue"]
@@ -391,7 +393,7 @@
 [data-op="7"]
 [data-op="8"]
 [data-op]
-[data-origem="/tmp/phx-bateria-7ZhSuX/backups"]
+[data-origem="/tmp/phx-bateria-B81BDZ/backups"]
 [data-origem]
 [data-p="1"]
 [data-p="2"]
@@ -433,8 +435,8 @@
 [data-todos="abrir"]
 [data-todos="fechar"]
 [data-todos]
-[data-uuid="01a11c14-296c-70e5-b8ad-cf077eeb19cf"]
-[data-uuid="01a11c18-633f-7136-a2ef-dca6dccfebde"]
+[data-uuid="01a11c95-13e0-7756-8236-233a403a46d2"]
+[data-uuid="01a11c99-c17a-76ac-a1b9-9ab36ed53711"]
 [data-uuid]
 [data-x="0"]
 [data-x="1"]

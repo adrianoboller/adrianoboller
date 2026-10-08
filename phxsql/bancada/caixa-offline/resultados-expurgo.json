@@ -1,0 +1,732 @@
+{
+  "pedido": 706,
+  "quando": "2026-10-08 19:30",
+  "binario": {
+    "commit": "4d96a439",
+    "arvore_de_crates_suja": true,
+    "versao": "phxsqld 0.19.0 (4d96a43909a8-sujo) x86_64-unknown-linux-gnu",
+    "binario_compilado_em": "2026-10-08 19:23:53"
+  },
+  "maquina": "4 nucleos; 5 processos phxsqld em 127.0.0.1, no mesmo container",
+  "maquina_ocupada": true,
+  "ocupada_por": [
+    "1255\tcompilacao (cargo)\t/root/.rustup/toolchains/1.94.1-x86_64-unknown-linux-gnu/bin/cargo build -p phxsql-server ",
+    "13122\tcompilacao (cargo)\t/root/.rustup/toolchains/1.94.1-x86_64-unknown-linux-gnu/bin/cargo test --workspace --offl",
+    "15884\tbancada em python\tpython3 bancada/guardas/provar-guardas.py --so alter-espelho-para-tras ",
+    "23498\tcompilacao (cargo)\t/root/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo test --offline --no-fai",
+    "24802\tcompilacao (rustc)\t/root/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/rustc --crate-name phxsql_ser",
+    "24817\tcompilacao (rustc)\t/root/.rustup/toolchains/1.94.1-x86_64-unknown-linux-gnu/bin/rustc --crate-name teto_do_ap",
+    "31917\tbancada em python\tpython3 bancada/guardas/provar-guardas.py --so fio-sem-teto-de-registro --so fio-cifrado-m",
+    "6448\tcompilacao (cargo)\t/root/.rustup/toolchains/1.94.1-x86_64-unknown-linux-gnu/bin/cargo check -p phxsql-store -",
+    "7280\tcompilacao (rustc)\t/root/.rustup/toolchains/1.94.1-x86_64-unknown-linux-gnu/bin/rustc --crate-name phxsql_ser"
+  ],
+  "reconectar_em_s": 1,
+  "chegada_inclui": "o sono do laco da replica do central (1 s quando a rodada anterior nao achou nada) MAIS o transporte MAIS a resolucao do observador (rodada_do_observador_ms)",
+  "carga": {
+    "caixas": 4,
+    "segundos_por_fase": 120,
+    "itens_por_venda": "3 a 10",
+    "pausa_entre_vendas_s": [
+      0.1,
+      0.3
+    ],
+    "venda": "begin; 1 vendas; k itens (FK conferida); k atualizar estoque; commit"
+  },
+  "faixas": {
+    "chegada_com_o_central_no_ar_ms": {
+      "antes": {
+        "min": {
+          "min": 8.5,
+          "mediana": 8.5,
+          "max": 8.5,
+          "por_volta": [
+            8.5
+          ]
+        },
+        "mediana": {
+          "min": 531.8,
+          "mediana": 531.8,
+          "max": 531.8,
+          "por_volta": [
+            531.8
+          ]
+        },
+        "p95": {
+          "min": 1015.0,
+          "mediana": 1015.0,
+          "max": 1015.0,
+          "por_volta": [
+            1015.0
+          ]
+        },
+        "max": {
+          "min": 1672.5,
+          "mediana": 1672.5,
+          "max": 1672.5,
+          "por_volta": [
+            1672.5
+          ]
+        }
+      },
+      "depois": {
+        "min": {
+          "min": 16.4,
+          "mediana": 16.4,
+          "max": 16.4,
+          "por_volta": [
+            16.4
+          ]
+        },
+        "mediana": {
+          "min": 622.2,
+          "mediana": 622.2,
+          "max": 622.2,
+          "por_volta": [
+            622.2
+          ]
+        },
+        "p95": {
+          "min": 1426.0,
+          "mediana": 1426.0,
+          "max": 1426.0,
+          "por_volta": [
+            1426.0
+          ]
+        },
+        "max": {
+          "min": 8956.1,
+          "mediana": 8956.1,
+          "max": 8956.1,
+          "por_volta": [
+            8956.1
+          ]
+        }
+      }
+    },
+    "chegada_das_vendas_da_queda_max_ms": {
+      "min": 129112.3,
+      "mediana": 129112.3,
+      "max": 129112.3,
+      "por_volta": [
+        129112.3
+      ]
+    },
+    "vendas_pegas_pela_queda_antes_de_puxadas": {
+      "min": 12,
+      "mediana": 12,
+      "max": 12,
+      "por_volta": [
+        12
+      ]
+    },
+    "venda_no_caixa_mediana_ms": {
+      "antes": {
+        "min": 13.94,
+        "mediana": 13.94,
+        "max": 13.94,
+        "por_volta": [
+          13.94
+        ]
+      },
+      "durante": {
+        "min": 14.35,
+        "mediana": 14.35,
+        "max": 14.35,
+        "por_volta": [
+          14.35
+        ]
+      },
+      "depois": {
+        "min": 15.68,
+        "mediana": 15.68,
+        "max": 15.68,
+        "por_volta": [
+          15.68
+        ]
+      }
+    },
+    "venda_no_caixa_max_ms": {
+      "antes": {
+        "min": 647.19,
+        "mediana": 647.19,
+        "max": 647.19,
+        "por_volta": [
+          647.19
+        ]
+      },
+      "durante": {
+        "min": 869.37,
+        "mediana": 869.37,
+        "max": 869.37,
+        "por_volta": [
+          869.37
+        ]
+      },
+      "depois": {
+        "min": 284.52,
+        "mediana": 284.52,
+        "max": 284.52,
+        "por_volta": [
+          284.52
+        ]
+      }
+    },
+    "recusadas": {
+      "min": 0,
+      "mediana": 0,
+      "max": 0,
+      "por_volta": [
+        0
+      ]
+    },
+    "central_atende_s": {
+      "min": 0.143,
+      "mediana": 0.143,
+      "max": 0.143,
+      "por_volta": [
+        0.143
+      ]
+    },
+    "alcance_s": {
+      "min": 9.22,
+      "mediana": 9.22,
+      "max": 9.22,
+      "por_volta": [
+        9.22
+      ]
+    },
+    "vendas_no_religar": {
+      "min": 4333,
+      "mediana": 4333,
+      "max": 4333,
+      "por_volta": [
+        4333
+      ]
+    },
+    "sonda_varrer_max_ms": {
+      "ocioso": {
+        "min": 4.15,
+        "mediana": 4.15,
+        "max": 4.15,
+        "por_volta": [
+          4.15
+        ]
+      },
+      "antes": {
+        "min": 657.02,
+        "mediana": 657.02,
+        "max": 657.02,
+        "por_volta": [
+          657.02
+        ]
+      },
+      "depois": {
+        "min": 530.22,
+        "mediana": 530.22,
+        "max": 530.22,
+        "por_volta": [
+          530.22
+        ]
+      }
+    },
+    "sonda_varrer_mediana_ms": {
+      "ocioso": {
+        "min": 0.25,
+        "mediana": 0.25,
+        "max": 0.25,
+        "por_volta": [
+          0.25
+        ]
+      },
+      "antes": {
+        "min": 0.4,
+        "mediana": 0.4,
+        "max": 0.4,
+        "por_volta": [
+          0.4
+        ]
+      },
+      "depois": {
+        "min": 14.71,
+        "mediana": 14.71,
+        "max": 14.71,
+        "por_volta": [
+          14.71
+        ]
+      }
+    },
+    "sonda_ping_max_ms": {
+      "ocioso": {
+        "min": 3.99,
+        "mediana": 3.99,
+        "max": 3.99,
+        "por_volta": [
+          3.99
+        ]
+      },
+      "antes": {
+        "min": 17.48,
+        "mediana": 17.48,
+        "max": 17.48,
+        "por_volta": [
+          17.48
+        ]
+      },
+      "depois": {
+        "min": 368.85,
+        "mediana": 368.85,
+        "max": 368.85,
+        "por_volta": [
+          368.85
+        ]
+      }
+    },
+    "alcance_eventos_aplicados_pelo_central": {
+      "min": 28711,
+      "mediana": 28711,
+      "max": 28711,
+      "por_volta": [
+        28711
+      ]
+    },
+    "diario_bytes_por_venda_mediana": {
+      "min": 203.0,
+      "mediana": 203.0,
+      "max": 203.0,
+      "por_volta": [
+        203.0
+      ]
+    },
+    "meias_vendas_vistas": {
+      "min": 0,
+      "mediana": 0,
+      "max": 0,
+      "por_volta": [
+        0
+      ]
+    },
+    "tres_tabelas_iguais": [
+      true
+    ]
+  },
+  "diario_com_expurgo": [
+    {
+      "config": {
+        "expurgo": true,
+        "consumidores": [
+          "central"
+        ],
+        "volume_kib": 64,
+        "passada_s": 2,
+        "prazo_dias": 30,
+        "prazo_s": 30
+      },
+      "log_por_caixa_kib_por_fase": {
+        "ocioso": {
+          "n": 8,
+          "min": 5.1,
+          "mediana": 5.1,
+          "p95": 5.1,
+          "max": 5.1
+        },
+        "antes": {
+          "n": 480,
+          "min": 5.1,
+          "mediana": 235.2,
+          "p95": 304.3,
+          "max": 338.9
+        },
+        "durante": {
+          "n": 480,
+          "min": 263.1,
+          "mediana": 365.9,
+          "p95": 422.1,
+          "max": 448.2
+        },
+        "depois": {
+          "n": 484,
+          "min": 218.7,
+          "mediana": 312.1,
+          "p95": 383.2,
+          "max": 452.9
+        },
+        "fim": {
+          "n": 28,
+          "min": 304.9,
+          "mediana": 325.3,
+          "p95": 345.4,
+          "max": 345.4
+        }
+      },
+      "log_por_caixa_no_fim_kib": {
+        "n": 4,
+        "min": 304.9,
+        "mediana": 325.3,
+        "p95": 345.4,
+        "max": 345.4
+      },
+      "volumes_tirados_por_caixa": {
+        "n": 4,
+        "min": 33,
+        "mediana": 34.0,
+        "p95": 34,
+        "max": 34
+      },
+      "eventos_tirados_por_caixa": {
+        "n": 4,
+        "min": 19493,
+        "mediana": 19754.0,
+        "p95": 20016,
+        "max": 20016
+      },
+      "log_gerado_por_caixa_kib": {
+        "n": 4,
+        "min": 2440.5,
+        "mediana": 2463.1,
+        "p95": 2485.8,
+        "max": 2485.8
+      },
+      "central_refeito_por_retrato": 7,
+      "vendas_perdidas_no_central": 0
+    }
+  ],
+  "voltas": [
+    {
+      "caixas": 4,
+      "segundos_por_fase": 120,
+      "montagem_s": 0.42,
+      "central_morto_em": "19:25:59",
+      "vendas_no_religar": 4333,
+      "central_atende_s": 0.143,
+      "alcance_s": 9.22,
+      "convergiu_depois_da_ultima_venda_s": 0.41,
+      "conferencia": {
+        "tres_tabelas_iguais_caixa_e_central": true,
+        "caixas_com_contagem_de_vendas_diferente": 0,
+        "vendas_cometidas": 6480,
+        "vendas_no_central": 6480,
+        "itens_no_central": 42048,
+        "sanduiches_conferidos": 6889,
+        "meias_vendas_vistas": 0,
+        "meias_exemplos": [],
+        "divergentes": []
+      },
+      "replicacao_estado_central": {
+        "papel": "replica",
+        "papel_configurado": "replica",
+        "id_servidor": "central",
+        "somente_leitura": false,
+        "origens": {
+          "caixa01": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 19:30:07,658",
+            "aplicados": 7271,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa02": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 19:30:07,642",
+            "aplicados": 7039,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa03": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 19:30:07,880",
+            "aplicados": 7148,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          },
+          "caixa04": {
+            "modo": "streaming",
+            "ultima_rodada": "2026-10-08 19:30:07,472",
+            "aplicados": 7253,
+            "ultimo_erro": null,
+            "recusas": {},
+            "posicoes": {},
+            "paradas": {},
+            "proxima_janela": null,
+            "parada": null,
+            "religadas": 0,
+            "transacoes_em_pedacos": 0,
+            "origem_sem_id_de_transacao": false,
+            "falhas_de_rede_seguidas": 0,
+            "proxima_tentativa": null
+          }
+        },
+        "colisoes_de_sequencia": {},
+        "carimbos_do_futuro": {},
+        "recusas_por_unicidade": {},
+        "toques_no_mapa": {},
+        "orfas_na_replica": {},
+        "escritas_locais": {},
+        "ledger_marcado_recebido": 0,
+        "quorum": null,
+        "id_de_transacao": {
+          "recuos_do_relogio": 0,
+          "commits_mistos": 0,
+          "teto_da_transacao": 67108864
+        }
+      },
+      "aplicados_pelo_central": 28711,
+      "central_erros_por_origem": {},
+      "chegada_ms": {
+        "antes": {
+          "n": 2170,
+          "min": 8.5,
+          "mediana": 531.8,
+          "p95": 1015.0,
+          "max": 1672.5
+        },
+        "antes_pega_pela_queda": {
+          "n": 12,
+          "min": 120288.9,
+          "mediana": 123400.0,
+          "p95": 127129.7,
+          "max": 127129.7
+        },
+        "durante": {
+          "n": 2151,
+          "min": 3671.1,
+          "mediana": 66932.9,
+          "p95": 120198.7,
+          "max": 129112.3
+        },
+        "depois": {
+          "n": 2147,
+          "min": 16.4,
+          "mediana": 622.2,
+          "p95": 1426.0,
+          "max": 8956.1
+        }
+      },
+      "venda_no_caixa_ms": {
+        "antes": {
+          "n": 2182,
+          "min": 3.09,
+          "mediana": 13.94,
+          "p95": 39.87,
+          "max": 647.19
+        },
+        "durante": {
+          "n": 2151,
+          "min": 3.4,
+          "mediana": 14.35,
+          "p95": 43.06,
+          "max": 869.37
+        },
+        "depois": {
+          "n": 2147,
+          "min": 3.43,
+          "mediana": 15.68,
+          "p95": 47.0,
+          "max": 284.52
+        }
+      },
+      "vendas_por_fase": {
+        "antes": 2182,
+        "durante": 2151,
+        "depois": 2147
+      },
+      "recusadas": 0,
+      "recusadas_por_fase": {},
+      "recusadas_exemplos": [],
+      "sonda_central_ms": {
+        "ocioso": {
+          "ping": {
+            "n": 145,
+            "min": 0.07,
+            "mediana": 0.19,
+            "p95": 0.87,
+            "max": 3.99
+          },
+          "varrer": {
+            "n": 145,
+            "min": 0.14,
+            "mediana": 0.25,
+            "p95": 0.63,
+            "max": 4.15
+          }
+        },
+        "antes": {
+          "ping": {
+            "n": 4740,
+            "min": 0.06,
+            "mediana": 0.22,
+            "p95": 2.49,
+            "max": 17.48
+          },
+          "varrer": {
+            "n": 4740,
+            "min": 0.12,
+            "mediana": 0.4,
+            "p95": 23.58,
+            "max": 657.02
+          }
+        },
+        "depois": {
+          "ping": {
+            "n": 2512,
+            "min": 0.07,
+            "mediana": 0.22,
+            "p95": 3.81,
+            "max": 368.85
+          },
+          "varrer": {
+            "n": 2512,
+            "min": 0.15,
+            "mediana": 14.71,
+            "p95": 104.24,
+            "max": 530.22
+          }
+        },
+        "fim": {
+          "ping": {
+            "n": 197,
+            "min": 0.12,
+            "mediana": 0.22,
+            "p95": 3.45,
+            "max": 26.67
+          },
+          "varrer": {
+            "n": 197,
+            "min": 0.18,
+            "mediana": 16.56,
+            "p95": 43.68,
+            "max": 68.43
+          }
+        }
+      },
+      "rodada_do_observador_ms": {
+        "n": 10539,
+        "min": 0.42,
+        "mediana": 1.59,
+        "p95": 62.76,
+        "max": 963.32
+      },
+      "diario_bytes_por_venda": {
+        "n": 4,
+        "min": 189.0,
+        "mediana": 203.0,
+        "p95": 216.0,
+        "max": 216.0
+      },
+      "disco_do_database_bytes_por_venda": {
+        "n": 4,
+        "min": 1343.0,
+        "mediana": 1352.0,
+        "p95": 1365.0,
+        "max": 1365.0
+      },
+      "itens_por_venda_media": 6.49,
+      "diario_com_expurgo": {
+        "config": {
+          "expurgo": true,
+          "consumidores": [
+            "central"
+          ],
+          "volume_kib": 64,
+          "passada_s": 2,
+          "prazo_dias": 30,
+          "prazo_s": 30
+        },
+        "log_por_caixa_kib_por_fase": {
+          "ocioso": {
+            "n": 8,
+            "min": 5.1,
+            "mediana": 5.1,
+            "p95": 5.1,
+            "max": 5.1
+          },
+          "antes": {
+            "n": 480,
+            "min": 5.1,
+            "mediana": 235.2,
+            "p95": 304.3,
+            "max": 338.9
+          },
+          "durante": {
+            "n": 480,
+            "min": 263.1,
+            "mediana": 365.9,
+            "p95": 422.1,
+            "max": 448.2
+          },
+          "depois": {
+            "n": 484,
+            "min": 218.7,
+            "mediana": 312.1,
+            "p95": 383.2,
+            "max": 452.9
+          },
+          "fim": {
+            "n": 28,
+            "min": 304.9,
+            "mediana": 325.3,
+            "p95": 345.4,
+            "max": 345.4
+          }
+        },
+        "log_por_caixa_no_fim_kib": {
+          "n": 4,
+          "min": 304.9,
+          "mediana": 325.3,
+          "p95": 345.4,
+          "max": 345.4
+        },
+        "volumes_tirados_por_caixa": {
+          "n": 4,
+          "min": 33,
+          "mediana": 34.0,
+          "p95": 34,
+          "max": 34
+        },
+        "eventos_tirados_por_caixa": {
+          "n": 4,
+          "min": 19493,
+          "mediana": 19754.0,
+          "p95": 20016,
+          "max": 20016
+        },
+        "log_gerado_por_caixa_kib": {
+          "n": 4,
+          "min": 2440.5,
+          "mediana": 2463.1,
+          "p95": 2485.8,
+          "max": 2485.8
+        },
+        "central_refeito_por_retrato": 7,
+        "vendas_perdidas_no_central": 0
+      },
+      "bancada_bytes": 61360087
+    }
+  ]
+}

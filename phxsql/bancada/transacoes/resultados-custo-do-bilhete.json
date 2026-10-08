@@ -1,0 +1,98 @@
+{
+ "medido_em": "2026-10-08 20:07",
+ "pergunta": "us por COMMIT de 100 operacoes em K tabelas, so o pedido commit, antes e depois do bilhete posicional do 709",
+ "antes": "HEAD 4d96a439 (antes do 709), release",
+ "depois": "arvore de trabalho (inclui frentes paralelas; ver o controle de inclusao)",
+ "resultados": {
+  "1/alteracao": {
+   "antes": {
+    "mediana_us": 2432.1,
+    "min_us": 1694.5,
+    "max_us": 3904.7,
+    "corridas": 30
+   },
+   "depois": {
+    "mediana_us": 2567.2,
+    "min_us": 1966.7,
+    "max_us": 3371.1,
+    "corridas": 30
+   },
+   "faixas_se_cruzam": true
+  },
+  "1/inclusao": {
+   "antes": {
+    "mediana_us": 2245.0,
+    "min_us": 1741.3,
+    "max_us": 5478.5,
+    "corridas": 30
+   },
+   "depois": {
+    "mediana_us": 2205.2,
+    "min_us": 1311.8,
+    "max_us": 5063.9,
+    "corridas": 30
+   },
+   "faixas_se_cruzam": true
+  },
+  "4/alteracao": {
+   "antes": {
+    "mediana_us": 2902.4,
+    "min_us": 2190.8,
+    "max_us": 3778.5,
+    "corridas": 30
+   },
+   "depois": {
+    "mediana_us": 3579.5,
+    "min_us": 2345.6,
+    "max_us": 8688.1,
+    "corridas": 30
+   },
+   "faixas_se_cruzam": true
+  },
+  "4/inclusao": {
+   "antes": {
+    "mediana_us": 2573.5,
+    "min_us": 2085.9,
+    "max_us": 6724.3,
+    "corridas": 30
+   },
+   "depois": {
+    "mediana_us": 2979.1,
+    "min_us": 2013.1,
+    "max_us": 7002.7,
+    "corridas": 30
+   },
+   "faixas_se_cruzam": true
+  },
+  "16/alteracao": {
+   "antes": {
+    "mediana_us": 4842.8,
+    "min_us": 3507.0,
+    "max_us": 26903.9,
+    "corridas": 30
+   },
+   "depois": {
+    "mediana_us": 7286.8,
+    "min_us": 4586.1,
+    "max_us": 25668.6,
+    "corridas": 30
+   },
+   "faixas_se_cruzam": true
+  },
+  "16/inclusao": {
+   "antes": {
+    "mediana_us": 4674.8,
+    "min_us": 3281.4,
+    "max_us": 7657.1,
+    "corridas": 30
+   },
+   "depois": {
+    "mediana_us": 5251.1,
+    "min_us": 3599.6,
+    "max_us": 9298.7,
+    "corridas": 30
+   },
+   "faixas_se_cruzam": true
+  }
+ }
+}

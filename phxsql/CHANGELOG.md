@@ -59,6 +59,29 @@ da seção `## 0.19.0` mais abaixo, regravado por
   memória de até 1.024 pares), quem ainda chega por Noise, com a frase «o Noise
   será recusado na 0.20; use TLS». O Noise segue aceito na 0.19.
 
+**TLS 1.3 escrito aqui (572)**
+
+- **572, T6b-2 (08/10)** — os clientes que falam com outro PhxSql aceitam um
+  **pino TLS** (`sha256//<base64 do SPKI>`, o que o servidor imprime no
+  arranque): `replicacao.origens[].pino_tls`, `cluster.nos[].pino_tls`, a
+  ligação DbLink `phxsql`, `web.servidores[].pino_tls`, `phxsqlcmd --pino-tls`
+  e `PINO_TLS=` no ODBC. Sem o campo, o Noise de sempre; com ele, TLS 1.3
+  conferido pelo pino. O `amarrar_canal` do login e a prova do pulso passam a
+  valer pelo TLS, pelo `tls-exporter` da RFC 9266, conferido contra o
+  `openssl -keymatexport` na mesma conexão, nos dois sentidos.
+- **Mudança visível:** com `cifra_fio.exigir_amarra` ligado, um cliente que
+  chega por **TLS e não pede a amarração passa a ser recusado** — antes ele
+  passava, porque a sessão TLS não tinha vínculo a conferir, e isso era furo da
+  guarda que o operador ligou. E `encryption_neste_canal` deixou de responder
+  `false` numa conexão TLS.
+- **572, T6c-1 (08/10)** — o cliente TLS confere **RSA-PSS** e **ECDSA P-384**
+  (`rsa_pss_rsae_sha256/384/512`, `ecdsa_secp384r1_sha384`), com RSA PKCS#1
+  v1.5, SHA-384 e aritmética de inteiros grandes escritos aqui, só para
+  verificar. Conferidos contra NIST CAVP (`SigVer15`, `SigVerPSS`, ECDSA
+  `SigVer` P-384), Wycheproof, os vetores do PKCS#1 v2.1, RFC 6979 A.2.6,
+  RFC 6234 e os traços RSA-PSS da RFC 8448. Certificado RSA ou P-384 deixa de
+  ser recusado — ainda **só por pino**; cadeia e nome são a T6c-2.
+
 **Backup e durabilidade**
 
 - **513** — o backup copia em **duas passadas** e não segura a trava global
@@ -242,11 +265,11 @@ da seção `## 0.19.0` mais abaixo, regravado por
   ou `BEGIN ISOLATION LEVEL REPEATABLE READ`); e que **a atomicidade de um
   commit entre tabelas não atravessa o fio da réplica** (299, preço declarado).
   `SERIALIZABLE` não é reivindicado.
-- **TLS de cliente:** o PhxSql **tem** TLS 1.3 de **servidor** (portas web, REST
-  e de dados, `"tls": true`, `SEGURANCA.md` §7) e **não tem cliente TLS**: a
-  réplica, o cluster, o DbLink e o ODBC por TLS (SPR-07/08) não existem, e o
-  cliente SMTP dos alertas fala sem TLS (pedido 89), servindo a relé interno.
-  AES-128-GCM (a suíte obrigatória da RFC 8446 §9.1) não é oferecido.
+- **TLS com terceiros:** o cliente TLS desta casa confia **só por pino**
+  (572, T6b-2): não confere cadeia nem nome — falar TLS com servidor de fora
+  sem pino é a T6c-2. O TLS de saída para PostgreSQL,
+  MySQL e SMTP (T6d) não existe; o cliente SMTP dos alertas fala sem TLS
+  (pedido 89), servindo a relé interno.
 - **Sequência nomeada e contador:** a nomeada não replica (decisão da §C.5.3) e
   a promovida recusa pedir o `proximo`; `Inteiro(i64)` no `Json` não foi feito.
 - **Produtos que seguem planejados ☐/◐:** **325** (20 caixas sem servidor:

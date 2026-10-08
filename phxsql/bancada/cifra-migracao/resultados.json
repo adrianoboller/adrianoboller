@@ -196,5 +196,257 @@
       "criptografar": 20,
       "descriptografar": 20
     }
+  },
+  "grandes": {
+    "10000000_linhas_1_volume": {
+      "linhas": 10000000,
+      "por_volume": null,
+      "repeticoes": 3,
+      "cifrar": {
+        "slots": 10000000,
+        "volumes": 1,
+        "fase_a_ms": {
+          "min": 11290.6,
+          "mediana": 11460.7,
+          "max": 11696.7
+        },
+        "fase_b_ms": {
+          "min": 2.09,
+          "mediana": 2.56,
+          "max": 2.75
+        },
+        "us_por_slot": {
+          "min": 1.115,
+          "mediana": 1.13,
+          "max": 1.155
+        },
+        "bytes_depois": 1650001088,
+        "soltar_ms": {
+          "min": 971.66,
+          "mediana": 1036.36,
+          "max": 1090.47
+        }
+      },
+      "decifrar": {
+        "slots": 10000000,
+        "volumes": 1,
+        "fase_a_ms": {
+          "min": 13602.3,
+          "mediana": 13990.1,
+          "max": 14890.5
+        },
+        "fase_b_ms": {
+          "min": 0.59,
+          "mediana": 1.05,
+          "max": 7.56
+        },
+        "us_por_slot": {
+          "min": 1.36,
+          "mediana": 1.399,
+          "max": 1.489
+        },
+        "bytes_depois": 1490001024,
+        "soltar_ms": {
+          "min": 736.75,
+          "mediana": 756.33,
+          "max": 786.96
+        }
+      },
+      "quando": "2026-10-08T18:56:00",
+      "load_antes": [
+        5.03,
+        4.24,
+        4.45
+      ],
+      "load_depois": [
+        5.58,
+        4.91,
+        4.69
+      ],
+      "disco_livre_antes_gb": 20.8
+    },
+    "10000000_linhas_1000000_por_volume": {
+      "linhas": 10000000,
+      "por_volume": 1000000,
+      "repeticoes": 3,
+      "cifrar": {
+        "slots": 10000000,
+        "volumes": 10,
+        "fase_a_ms": {
+          "min": 11000.2,
+          "mediana": 11297.2,
+          "max": 11879.0
+        },
+        "fase_b_ms": {
+          "min": 3.16,
+          "mediana": 24.22,
+          "max": 29.38
+        },
+        "us_por_slot": {
+          "min": 1.087,
+          "mediana": 1.116,
+          "max": 1.172
+        },
+        "bytes_depois": 1650010880,
+        "soltar_ms": {
+          "min": 1112.56,
+          "mediana": 1134.59,
+          "max": 1286.25
+        }
+      },
+      "decifrar": {
+        "slots": 10000000,
+        "volumes": 10,
+        "fase_a_ms": {
+          "min": 15207.5,
+          "mediana": 15608.0,
+          "max": 16271.7
+        },
+        "fase_b_ms": {
+          "min": 2.34,
+          "mediana": 14.02,
+          "max": 39.84
+        },
+        "us_por_slot": {
+          "min": 1.521,
+          "mediana": 1.561,
+          "max": 1.627
+        },
+        "bytes_depois": 1490010240,
+        "soltar_ms": {
+          "min": 776.3,
+          "mediana": 820.7,
+          "max": 832.95
+        }
+      },
+      "quando": "2026-10-08T19:00:18",
+      "load_antes": [
+        5.58,
+        4.91,
+        4.69
+      ],
+      "load_depois": [
+        6.81,
+        5.83,
+        5.1
+      ],
+      "disco_livre_antes_gb": 20.8
+    }
+  },
+  "grandes_antes_do_647": {
+    "10000000_linhas_1_volume": {
+      "linhas": 10000000,
+      "por_volume": null,
+      "repeticoes": 3,
+      "cifrar": {
+        "slots": 10000000,
+        "volumes": 1,
+        "fase_a_ms": {
+          "min": 11650.3,
+          "mediana": 12515.6,
+          "max": 14720.0
+        },
+        "fase_b_ms": {
+          "min": 1050.47,
+          "mediana": 1163.87,
+          "max": 1498.12
+        },
+        "us_por_slot": {
+          "min": 1.153,
+          "mediana": 1.237,
+          "max": 1.458
+        },
+        "bytes_depois": 1650001088
+      },
+      "decifrar": {
+        "slots": 10000000,
+        "volumes": 1,
+        "fase_a_ms": {
+          "min": 13207.8,
+          "mediana": 14377.0,
+          "max": 16691.0
+        },
+        "fase_b_ms": {
+          "min": 728.07,
+          "mediana": 878.42,
+          "max": 938.8
+        },
+        "us_por_slot": {
+          "min": 1.321,
+          "mediana": 1.438,
+          "max": 1.669
+        },
+        "bytes_depois": 1490001024
+      },
+      "quando": "2026-10-08T17:31:28",
+      "load_antes": [
+        2.87,
+        4.29,
+        3.88
+      ],
+      "load_depois": [
+        5.45,
+        5.38,
+        4.46
+      ],
+      "disco_livre_antes_gb": 21.5
+    },
+    "10000000_linhas_1000000_por_volume": {
+      "linhas": 10000000,
+      "por_volume": 1000000,
+      "repeticoes": 3,
+      "cifrar": {
+        "slots": 10000000,
+        "volumes": 10,
+        "fase_a_ms": {
+          "min": 10656.4,
+          "mediana": 10855.6,
+          "max": 13298.2
+        },
+        "fase_b_ms": {
+          "min": 1100.46,
+          "mediana": 1339.36,
+          "max": 1343.54
+        },
+        "us_por_slot": {
+          "min": 1.05,
+          "mediana": 1.073,
+          "max": 1.316
+        },
+        "bytes_depois": 1650010880
+      },
+      "decifrar": {
+        "slots": 10000000,
+        "volumes": 10,
+        "fase_a_ms": {
+          "min": 14157.9,
+          "mediana": 14295.3,
+          "max": 19038.2
+        },
+        "fase_b_ms": {
+          "min": 764.28,
+          "mediana": 912.8,
+          "max": 1040.98
+        },
+        "us_por_slot": {
+          "min": 1.416,
+          "mediana": 1.43,
+          "max": 1.904
+        },
+        "bytes_depois": 1490010240
+      },
+      "quando": "2026-10-08T17:36:03",
+      "load_antes": [
+        4.47,
+        5.16,
+        4.4
+      ],
+      "load_depois": [
+        6.77,
+        5.44,
+        4.65
+      ],
+      "disco_livre_antes_gb": 21.6
+    }
   }
 }

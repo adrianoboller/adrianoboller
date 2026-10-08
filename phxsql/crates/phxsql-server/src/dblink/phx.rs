@@ -97,7 +97,12 @@ impl Conexao {
         // o token de servico nao vai no `connect`, vai no PRIMEIRO pedido que
         // sair deste cliente. Cifrar depois do login -- ou depois do `ping` --
         // protegeria so o que sobrou, com o token ja em claro no fio.
-        if d.cifra() {
+        // Com `pino_tls` e TLS 1.3 conferido (pedido 572, T6b-2) -- a mesma
+        // ordem do `replica::Cliente::proteger`, que aqui nao entra so porque
+        // a recusa do Noise ganha o conselho de desligar a cifra.
+        if let Some(p) = d.pino_tls()? {
+            cliente.cifrar_tls(p)?;
+        } else if d.cifra() {
             cliente
                 .cifrar(d.pino_do_fio()?)
                 .map_err(|e| ensinar_a_desligar_a_cifra(e, d))?;

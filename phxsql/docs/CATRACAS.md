@@ -721,10 +721,10 @@ A tabela abaixo sai de `python3 docs/geradores/catracas-do-trecho-vivo.py`, que 
 | `TETO_TESTE_FORA_DO_BINARIO` | teto | 0 | **0** | 16/09, nesta frente |
 | `TETO_TESTE_SEM_MODULO` | teto | 0 | **0** | 17/09, pedido 273 — depois do conserto dos três nomes da §15.7.7; §12.7 |
 | `TETO_NAO_JULGADA_ESCONDIDA` | teto | 0 | **0** | 16/09, pedido 269: nasceu medido em **26** e desceu para **0** no mesmo passo, republicando a corrida de 15:25 |
-| `PISO_DAS_ENTRADAS` | **piso** | 847 | **847** | 16/09 em 143, e sobe junto com o catálogo (145, 151, 160, 169, 170 e 177 em 16–17/09, e daí em diante — o valor de hoje é o da coluna «Valor»). Piso só sobe, e sobe no mesmo passo em que o catálogo cresce |
-| `TETO_SEGUEM_FALTANDO` | teto | 27 | **27** | guarda que derruba o binário sem nomear os vizinhos que seguem; o valor de hoje é o da coluna «Valor» |
+| `PISO_DAS_ENTRADAS` | **piso** | 859 | **859** | 16/09 em 143, e sobe junto com o catálogo (145, 151, 160, 169, 170 e 177 em 16–17/09, e daí em diante — o valor de hoje é o da coluna «Valor»). Piso só sobe, e sobe no mesmo passo em que o catálogo cresce |
+| `TETO_SEGUEM_FALTANDO` | teto | 0 | **0** | guarda que derruba o binário sem nomear os vizinhos que seguem; o valor de hoje é o da coluna «Valor» |
 | `TETO_VEREDITO_VELHO` | teto | 0 | **0** | nasceu em 119 (vereditos com mais de 14 dias); desceu a 0 em 08/10/2026 pela renovação das provas |
-| `TETO_MENSAGEM_AMBIGUA_COM_O_SERVIDOR_INTEIRO` | teto | 148 | **148** | 08/10/2026, pedido 718: aposenta `TETO_MENSAGEM_AMBIGUA` (81), que cortava a união do servidor na linha 21 e nunca viu a produção; não é subida de teto |
+| `TETO_MENSAGEM_AMBIGUA_COM_O_SERVIDOR_INTEIRO` | teto | 130 | **130** | 08/10/2026, pedido 718: aposenta `TETO_MENSAGEM_AMBIGUA` (81), que cortava a união do servidor na linha 21 e nunca viu a produção; não é subida de teto |
 <!-- /GERADO: catracas-do-trecho-vivo.py -->
 
 **Nenhum teto subiu e nenhuma catraca se aposentou, e isso é decisão.** A

@@ -136,6 +136,14 @@ fn o_processo_novo_manda_reconstruir_o_que_so_foi_fechado() {
         .map_err(|e| e.to_string())
         .unwrap_err();
     assert!(recado.contains("`reindexar`"), "recado: {recado}");
+    // Pedido 657: «`reindexar`» o `ndx.rs` escreve em mais de um ponto, e a
+    // escrita interrompida manda o mesmo comando. Quem guarda o byte 52 e a
+    // recusa da queda, e so ela diz «ficou para tras».
+    assert!(
+        recado.contains("ficou para tras numa queda e nao e confiavel"),
+        "recado: {recado}"
+    );
+    assert!(!recado.contains("parou no meio"), "recado: {recado}");
     t.reindexar().unwrap();
     todos_achados(&mut t, 1..=500);
 }

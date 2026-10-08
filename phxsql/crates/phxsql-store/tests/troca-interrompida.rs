@@ -287,6 +287,9 @@ fn a_fase_b_recusa_quando_um_novo_sumiu() {
         .acrescentar_coluna_fase_b(pendente)
         .expect_err("a FASE B trocou um conjunto sem uma das pecas");
     assert!(e.to_string().contains("ABORTADA"), "{e}");
+    // Pedido 657: «ABORTADA» sai de tres recusas do `reg.rs`; a do conjunto
+    // incompleto e a unica que diz «sumiu antes da troca».
+    assert!(e.to_string().contains("sumiu antes da troca"), "{e}");
     drop(t);
     conferir_inteira(&dir, "clientes", false);
 }

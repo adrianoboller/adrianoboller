@@ -107,6 +107,39 @@ A leitura que importa:
   (lacuna L3 do 325). Um caixa com 1.000 vendas por dia grava ~1,5 MB/dia de
   `.log`, ~2,7 MB/dia contando tudo. Conta derivada, não medida em um dia.
 
+## Com o expurgo do diário ligado (pedido 706)
+
+```bash
+python3 bancada/caixa-offline/medir.py 1 --caixas 4 --fase 120 --expurgo
+```
+
+Os caixas sobem com `"diario": {"expurgo": true, "consumidores":
+["central"], "volume_kib": 64, "passada_s": 2, "prazo_dias": 30}`: o volume
+no piso e uma passada a cada 2 s comprimem meses de loja em minutos. O prazo
+é o do dono (30 dias), que nenhuma volta alcança, então aqui só sai o que o
+central confirmou. O resultado vai para `resultados-expurgo.json`, ao lado, e
+o `resultados.json` do 678 fica como está.
+
+Com `--prazo-s N` (o `diario.prazo_s` de ensaio) e a fase maior que N, o
+central fica fora ALÉM do prazo: o caixa solta o diário que ele não puxou, e o
+central, ao voltar, se refaz pelo retrato do caixa sozinho
+(`central_refeito_por_retrato` conta as linhas que ele escreve no
+`servidor.log`). Ex.: `medir.py 1 --caixas 4 --fase 120 --expurgo --prazo-s 30`.
+
+O que a volta acrescenta, em `diario_com_expurgo`:
+
+- **`log_por_caixa_kib_por_fase`**: os bytes de `.log` de cada caixa, a cada
+  segundo, por fase. O disco estável é o `antes` e o `fim` limitados enquanto
+  o `log_gerado_por_caixa_kib` cresce. O `durante` mostra o diário segurando o
+  que o central caído não confirmou.
+- **`log_gerado_por_caixa_kib`**: o que ficou mais o que o próprio caixa
+  disse ter tirado, nas linhas `expurgo do diario: N volume(s), E evento(s),
+  B bytes` do `servidor.log`. É medido por quem apagou, e não estimado aqui.
+- **`vendas_perdidas_no_central`**: as cometidas menos as que o central tem
+  no fim. Junto da conferência de sempre (SHA-256 linha a linha das três
+  tabelas), é a prova de nenhuma venda perdida com o central voltando depois
+  do expurgo.
+
 ## Onde os números moram
 
 Saem do `resultados.json` desta pasta: data, commit, versão e hora da

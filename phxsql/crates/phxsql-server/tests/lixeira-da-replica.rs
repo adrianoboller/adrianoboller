@@ -189,6 +189,7 @@ fn a_replica_esvazia_a_propria_lixeira() {
         hora: String::new(),
         cifra: false,
         chave_do_fio: String::new(),
+        pino_tls: String::new(),
         espelho: false,
     }];
     let (_replica, porta_r) = subir(c);
@@ -486,6 +487,7 @@ fn a_lixeira_da_replica_e_do_no_e_o_motivo_do_source_nao_viaja() {
         hora: String::new(),
         cifra: false,
         chave_do_fio: String::new(),
+        pino_tls: String::new(),
         espelho: false,
     }];
     let (_replica, porta_r) = subir(c);

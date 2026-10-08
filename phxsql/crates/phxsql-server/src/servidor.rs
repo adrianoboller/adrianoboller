@@ -73,6 +73,7 @@ mod servico_composicao_01;
 mod servico_config_01;
 mod servico_consulta_01;
 mod servico_dblink_01;
+mod servico_diario_01;
 mod servico_escrita_01;
 mod servico_esquema_01;
 mod servico_jobs_01;
@@ -351,6 +352,7 @@ pub(crate) const OPS_NO_SPARE: &[&str] = &[
     // A replicacao inteira, que e a razao de o spare existir.
     "posicao",
     "replicar",
+    "retrato_da_replica",
     "aplicar",
     "replicacao_estado",
     "replicacao_testar",
@@ -387,6 +389,9 @@ pub(crate) const OPS_NO_SPARE: &[&str] = &[
 pub(crate) const OPS_DE_REPLICACAO: &[&str] = &[
     "posicao",
     "replicar",
+    // O retrato com que a replica se refaz depois do expurgo (pedido 706):
+    // e o dado inteiro, como o `replicar`, e a mesma lista o tranca.
+    "retrato_da_replica",
     "aplicar",
     "cluster_pulso",
     "replicar_aguardar",
@@ -769,6 +774,18 @@ pub struct Servidor {
     /// ao mesmo tempo -- e o rastro sairia duas vezes para um apagamento so.
     /// Nunca e tomada com a trava de dados na mao: o motor a pega ANTES.
     expurgo_da_trilha: Mutex<()>,
+    /// Um expurgo do diario por vez no processo (pedido 706), pelo mesmo
+    /// motivo do da trilha: o motor solta a trava entre planejar e apagar.
+    expurgo_do_diario: Mutex<()>,
+    /// O que cada consumidor declarado em `diario.consumidores` confirmou ter
+    /// do diario de cada tabela, por `consumidor` e chave `db/tabela`: o
+    /// maior `desde` que ele pediu (pedido 706). So na memoria, e de
+    /// proposito: perdido no reinicio, o expurgo SEGURA ate o consumidor
+    /// pedir de novo -- a falha cai do lado de guardar, nunca de soltar.
+    confirmados_do_diario: Mutex<HashMap<(String, String), u64>>,
+    /// O retrato que esta origem serve a uma replica que se refaz (pedido
+    /// 706): um por vez, e o seguinte apaga o anterior.
+    retrato_servido: Mutex<Option<servico_diario_01::RetratoServido>>,
     /// Quando o aviso de VIOLACAO GRAVE de cada IP saiu por e-mail, por chave
     /// `grave:<ip>` -- o mesmo silencio dos jobs e do disco.
     avisos_de_seguranca: Mutex<HashMap<String, i64>>,
@@ -2053,6 +2070,7 @@ impl Servidor {
             "profiler_limpar" => self.op_profiler_limpar(sessao),
             "posicao" => self.op_posicao(p, sessao),
             "replicar" => self.op_replicar(p, sessao),
+            "retrato_da_replica" => self.op_retrato_da_replica(p, sessao),
             "aplicar" => self.op_aplicar(p, sessao),
             "cluster_pulso" => self.op_cluster_pulso(p, sessao),
             "replicar_aguardar" => self.op_replicar_aguardar(p, sessao),
@@ -2506,6 +2524,7 @@ fontes_do_servidor! {
     "servidor/servico_config_01.rs",
     "servidor/servico_consulta_01.rs",
     "servidor/servico_dblink_01.rs",
+    "servidor/servico_diario_01.rs",
     "servidor/servico_escrita_01.rs",
     "servidor/servico_esquema_01.rs",
     "servidor/servico_jobs_01.rs",

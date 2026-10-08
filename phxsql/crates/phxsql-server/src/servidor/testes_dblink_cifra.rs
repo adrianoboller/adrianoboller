@@ -542,3 +542,101 @@ fn a_migracao_e_dita_na_resposta_do_salvar() {
         s.dblink.lock().unwrap().achar("loja").unwrap().senha().ok() == Some("CLARO-372-MIGRA")
     );
 }
+
+/// **O DbLink `phxsql` pelo TLS conferido (pedido 572, T6b-2), pelo soquete.**
+///
+/// O destino tem `"tls": true`, EXIGE cifra e NAO atende o Noise: a ligacao
+/// com `pino_tls` abre e faz o `ping` so se falar TLS. O salvar pela tela
+/// herda o pino TLS e a ficha so diz `tem_pino_tls`.
+#[test]
+fn a_ligacao_phxsql_fala_tls_pelo_pino_tls_e_o_salvar_o_herda() {
+    let dir_d = DirTemp::novo("dblink-tls-destino");
+    let mut c = Config {
+        base: dir_d.to_path_buf(),
+        log_acessos: dir_d.join("acessos.log"),
+        blacklist: dir_d.join("blacklist.json"),
+        dblink: dir_d.join("dblink.json"),
+        jobs: dir_d.join("jobs.json"),
+        token: "TOK".into(),
+        caminho: Some(dir_d.join("config.json")),
+        ..Config::default()
+    };
+    c.cifra_fio.arquivo = dir_d.join("chave-do-fio.hex");
+    // O Noise DESLIGADO no destino e a exigencia ligada: so o TLS atravessa.
+    // Uma ligacao que caisse no Noise (o defeito de ignorar o `pino_tls`)
+    // ouviria «aperto recusado» e nao abriria.
+    c.cifra_fio.ligada = false;
+    c.cifra_fio.exigir = true;
+    c.tls.ligado = true;
+    let destino = Servidor::novo(c).unwrap();
+    destino.preparar_tls_dos_dados().unwrap();
+    let ouvinte = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let porta = ouvinte.local_addr().unwrap().port();
+    let d2 = Arc::clone(&destino);
+    std::thread::spawn(move || {
+        for fluxo in ouvinte.incoming() {
+            let Ok(fluxo) = fluxo else { return };
+            let Ok(par) = fluxo.peer_addr() else { continue };
+            let s = Arc::clone(&d2);
+            std::thread::spawn(move || s.atender(fluxo, par));
+        }
+    });
+    let pem = std::fs::read_to_string(dir_d.join("tls-dados-certificado.pem")).unwrap();
+    let cert = phxsql_core::x509::blocos_pem(&pem, "CERTIFICATE").unwrap();
+    let pino = phxsql_core::tls::pino_em_texto(&phxsql_core::hash::sha256(
+        phxsql_core::x509::spki_do_certificado(&cert[0]).unwrap(),
+    ));
+
+    let dir = DirTemp::novo("dblink-tls-cadastro");
+    let s = servidor(&dir);
+    salvar(
+        &s,
+        &format!(
+            r#"{{"op":"dblink_salvar","nome":"irmao","motor":"phxsql","host":"127.0.0.1",
+                 "porta":{porta},"token_remoto":"TOK","cifra":false,"pino_tls":"{pino}"}}"#
+        ),
+    )
+    .unwrap();
+    let d = ligacao(&s, "irmao");
+    assert!(d.cifra(), "o pino TLS nao conta como cifra efetiva");
+    crate::dblink::phx::Conexao::abrir(&d, d.prazo())
+        .expect("a ligacao pelo TLS nao abriu contra o destino que exige cifra");
+
+    // A tela salva sem o pino: ele fica, e a ficha so diz que existe.
+    let r = salvar(
+        &s,
+        &format!(
+            r#"{{"op":"dblink_salvar","nome":"irmao","motor":"phxsql","host":"127.0.0.1",
+                 "porta":{porta},"cifra":false,"descricao":"editada"}}"#
+        ),
+    )
+    .unwrap();
+    assert_eq!(
+        ligacao(&s, "irmao").pino_tls,
+        pino,
+        "o salvar apagou o pino TLS"
+    );
+    let ficha = r.campo("ligacao").unwrap().escrever();
+    assert!(ficha.contains("\"tem_pino_tls\":true"), "{ficha}");
+    assert!(
+        !ficha.contains(&pino),
+        "o pino TLS vazou na resposta: {ficha}"
+    );
+    let lido = crate::dblink::Registro::abrir(&dir.join("dblink.json")).unwrap();
+    assert_eq!(
+        lido.achar("irmao").unwrap().pino_tls,
+        pino,
+        "o disco perdeu o pino TLS"
+    );
+
+    // O pino TLS no motor que nao fala o nosso protocolo recusa na declaracao.
+    let e = salvar(
+        &s,
+        &format!(
+            r#"{{"op":"dblink_salvar","nome":"m","motor":"mysql","host":"h","pino_tls":"{pino}"}}"#
+        ),
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(e.contains("pino_tls"), "{e}");
+}

@@ -233,7 +233,7 @@ fn a_copia_do_backup_e_a_restauracao_ficam_so_do_dono() {
         fora.join("\n")
     );
 
-    let p = Preparada::preparar(&zip, &raiz, "").unwrap();
+    let p = Preparada::preparar(&zip, &raiz, "", Default::default()).unwrap();
     p.confirmar(&raiz, "loja_restaurada", false).unwrap();
     let restaurada = raiz.join("loja_restaurada");
     assert!(restaurada.join("clientes.reg").is_file());

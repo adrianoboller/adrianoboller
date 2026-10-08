@@ -241,20 +241,21 @@ async function bateria1(navegador, servidor, falsa) {
       verdade(!cfg.chave, 'a chave deveria ter sido apagada');
       igual(cfg.ligado, false, 'o interruptor deveria ter desligado junto');
       const g = await lerGavetas(page);
-      verdade(!('chave' in g.aba), 'a chave nao deveria sobrar no sessionStorage');
+      verdade(!('chave' in g.memoria), 'a chave nao deveria sobrar na memoria');
       verdade(!/sk-ant/.test(g.discoCru), 'a chave NUNCA deveria estar no localStorage');
-      verdade(!('endpoint' in g.aba),
+      verdade(!/sk-ant/.test(g.abaCru), 'a chave NUNCA deveria estar no sessionStorage');
+      verdade(!('endpoint' in g.memoria),
         'remover deveria devolver o endereco ao oficial: endereco plantado que sobrevive '
         + 'a remocao e uma tubulacao pronta para a chave seguinte');
       const desabilitado = await page.$eval('#iaRemover', el => el.disabled);
       verdade(desabilitado, 'sem chave, o botao Remover deveria ficar desabilitado');
     });
 
-  // A gaveta da chave e do ENDERECO e o `sessionStorage`, e o resto e
-  // preferencia no `localStorage`. Prova propria porque e o que o pedido
-  // 339(a) mudou, e porque as outras provas leem a configuracao ja emendada.
-  await prova(1, 'a_chave_repousa_na_ABA_e_nunca_no_disco',
-    'Chave e endereco no sessionStorage (morrem com a aba); modelo e interruptor no localStorage.',
+  // A chave e o ENDERECO moram em MEMORIA (pedido 339(a), refeito em
+  // 08/10/2026), e o resto e preferencia no `localStorage`. Prova propria
+  // porque e o que o pedido mudou.
+  await prova(1, 'a_chave_fica_em_memoria_e_nunca_no_navegador',
+    'Chave e endereco so em memoria (nem localStorage nem sessionStorage); modelo e interruptor no localStorage.',
     async () => {
       // A CHAVE ENTRA PELA TELA, e nao pelo `definirIA`.
       //
@@ -273,7 +274,9 @@ async function bateria1(navegador, servidor, falsa) {
       const g = await lerGavetas(page);
       verdade(!/sk-ant/.test(g.discoCru),
         `a chave apareceu no localStorage: ${g.discoCru}`);
-      verdade(!!g.aba.chave, 'a chave deveria estar no sessionStorage');
+      verdade(!/sk-ant/.test(g.abaCru),
+        `a chave apareceu no sessionStorage: ${g.abaCru}`);
+      verdade(!!g.memoria.chave, 'a chave deveria estar na memoria do modulo');
       verdade(!('chave' in g.disco) && !('endpoint' in g.disco),
         'nem chave nem endereco podem morar no localStorage');
       igual(g.disco.ligado, true, 'o interruptor e preferencia: fica no localStorage');
@@ -382,6 +385,7 @@ async function bateria1(navegador, servidor, falsa) {
       falsa.definirRoteiro({ resposta: 'sucesso', texto: 'SELECT id, nome FROM clientes ORDER BY id', tokensEntrada: 20, tokensSaida: 10, pedacos: 5, atrasoMs: 60 });
       await page.fill('#iaPergunta', 'todos os clientes em ordem');
       await page.click('#iaIr');
+      await page.click('#iaAprovar', { timeout: 10000 });   // pedido 339(a)
       const vistos = await medirCrescimento(page, { janelaMs: 1200, passoMs: 15 });
       await page.waitForFunction(() => document.querySelector('#iaTokens')?.querySelector('b'), undefined, { timeout: 10000 });
       const distintos = [...new Set(vistos)].filter(n => n >= 0);
@@ -650,6 +654,7 @@ async function bateria2(navegador, servidor, falsa) {
   async function perguntarModelarEEsperarRevisao(texto, { timeout = 20000 } = {}) {
     await page.fill('#iaPergunta', texto);
     await page.click('#iaIr');
+    await page.click('#iaAprovar', { timeout });   // pedido 339(a)
     // NAO espera por qualquer `<h3>` -- `ir()` escreve um `<h3>Resposta</h3>`
     // de PLACEHOLDER antes mesmo do streaming comecar, e esse h3 casaria
     // primeiro, medindo a tela ainda vazia (a mesma licao do "relogio fixo
@@ -866,6 +871,7 @@ async function bateria2(navegador, servidor, falsa) {
         indices: [{ nome: 'porId', colunas: ['id'], unico: true, primario: true }] }], notas: [] }) });
     await pg.fill('#iaPergunta', 'uma tabela qualquer para a prova dupla');
     await pg.click('#iaIr');
+    await pg.click('#iaAprovar', { timeout: 10000 });   // pedido 339(a)
     return { ctx, pg, copia };
   }
 

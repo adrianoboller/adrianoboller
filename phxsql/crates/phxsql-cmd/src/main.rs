@@ -17,7 +17,7 @@ phxsqlcmd -- console do PhxSql (fala o protocolo JSON com um servidor)
 USO:
   phxsqlcmd [--host 127.0.0.1] [--porta 5000] [--token <t>]
             [--usuario <login>] [--database <banco>] [--comando '<linha>']
-            [--sem-cifra]
+            [--sem-cifra | --pino-tls sha256//<base64>]
 
 NA LINHA DO CONSOLE:
   bancos                              uma operacao sem argumento
@@ -43,6 +43,10 @@ qualquer pedido -- o servidor exige isso de fabrica desde 18/09/2026. Sem o
 PINO da chave do servidor (que o console ainda nao aceita), o tunel protege de
 escuta PASSIVA e nada mais. Para um servidor com \"cifra_fio\": {\"ligada\":
 false}, use --sem-cifra: e escolha escrita, e nao um rebaixamento automatico.
+
+COM --pino-tls a conexao e TLS 1.3 conferindo o pino do certificado do
+servidor -- o que ele imprime no arranque («tls da porta dados: pino ...»),
+com \"tls\": true no config dele. Ai quem esta no meio nao se passa por ele.
 
 A SENHA vem de PHXSQL_SENHA, ou e perguntada (e aparece na tela). Passar
 --senha funciona e e menos seguro: o argumento aparece no `ps` e fica no
@@ -105,12 +109,30 @@ fn main() -> ExitCode {
     // A conexao nasce CIFRADA (pedido 370); `--sem-cifra` e o escape escrito,
     // para o servidor que nao atende o aperto (`cifra_fio.ligada: false`).
     let em_claro = args.iter().any(|a| a == "--sem-cifra");
-    let ligar = if em_claro {
-        Console::ligar_em_claro
-    } else {
-        Console::ligar
+    // `--pino-tls` troca o Noise pelo TLS conferido (pedido 572, T6b-2). Junto
+    // do `--sem-cifra` e contradicao, e contradicao nao se resolve escolhendo
+    // um dos dois em silencio.
+    let pino_tls = match valor(&args, "--pino-tls") {
+        None => None,
+        Some(_) if em_claro => {
+            eprintln!("--pino-tls e --sem-cifra se contradizem: escolha um");
+            return ExitCode::FAILURE;
+        }
+        Some(t) => match phxsql_core::tls::pino_de_texto(&t) {
+            Ok(p) => Some(p),
+            Err(e) => {
+                eprintln!("--pino-tls: {e}");
+                return ExitCode::FAILURE;
+            }
+        },
     };
-    let mut console = match ligar(&host, porta, &token, Duration::from_secs(30)) {
+    let espera = Duration::from_secs(30);
+    let ligado = match pino_tls {
+        Some(p) => Console::ligar_por_tls(&host, porta, &token, espera, p),
+        None if em_claro => Console::ligar_em_claro(&host, porta, &token, espera),
+        None => Console::ligar(&host, porta, &token, espera),
+    };
+    let mut console = match ligado {
         Ok(c) => c,
         Err(e) => {
             eprintln!("nao conectei em {host}:{porta}: {e}");

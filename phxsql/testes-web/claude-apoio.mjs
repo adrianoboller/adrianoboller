@@ -7,54 +7,50 @@
  * segundo caminho de login nem uma segunda `api()` aqui. */
 import { abrirPeloMenu } from './apoio.mjs';
 
-/** Le/escreve as MESMAS DUAS gavetas que `claude.js` usa, partidas pelo tempo
- *  de vida desde o pedido 339(a):
+/** Le/escreve a configuracao pelo MESMO caminho que a tela usa. Desde
+ *  08/10/2026 (pedido 339(a), refeito) o segredo -- chave, endpoint e a
+ *  marca de confirmacao -- mora so em MEMORIA do modulo, e nenhum
+ *  armazenamento do navegador o guarda; a preferencia (modelo, ligado)
+ *  continua no `localStorage` `phxsql.ia`.
  *
- *    - `phxsql.ia`       no `localStorage`   -- preferencia (modelo, ligado)
- *    - `phxsql.ia.chave` no `sessionStorage` -- segredo (chave, endpoint)
- *
- *  O partidor e' a lista `SEGREDOS`, copia da do modulo -- e e' por isso que
- *  `SEGREDOS_DA_TELA` aparece aqui em vez de um `if (k === 'chave')`: campo
- *  novo entra numa das duas listas, nao num terceiro lugar.
- *
- *  Nao ha campo na tela para editar o `endpoint` (so' um `<code>` que MOSTRA
- *  ele). Escrever aqui e' o caminho que a propria tela usaria se tivesse um
- *  formulario para isso -- nunca um atalho por dentro do modulo. */
+ *  Por isso `definirIA` chama `PhxIA._gravar`, a funcao que o botao Salvar
+ *  chama -- nunca um atalho que escreva num armazem que a tela nao le mais.
+ *  Consequencia para quem escreve caso: a chave CAI no `page.reload()`,
+ *  como o login. Recarregou, entrou de novo, defina de novo. */
 export const SEGREDOS_DA_TELA = ['chave', 'endpoint', 'endpoint_confirmado'];
 
 export async function definirIA(page, parcial) {
-  await page.evaluate(([p, segredos]) => {
-    const ler = (a, k) => { try { return JSON.parse(a.getItem(k) || '{}') || {}; } catch { return {}; } };
-    const pref = ler(localStorage, 'phxsql.ia');
-    const cofre = ler(sessionStorage, 'phxsql.ia.chave');
-    for (const k of Object.keys(p)) (segredos.includes(k) ? cofre : pref)[k] = p[k];
+  await page.evaluate((p) => {
+    const m = Object.assign({}, p);
     // Quem troca o endereco aqui o troca POR QUERER -- e o servidor falso da
     // bateria --, e desde o pedido 436 (M5) a chave so sai para endereco nao
     // oficial com a marca de que a troca foi pedida, e para AQUELE endereco.
     // O plantio que o M5 recusa e escrito por fora deste ajudante, de
     // proposito (`prova-436-tela.mjs`).
-    if ('endpoint' in p && !('endpoint_confirmado' in p)) cofre.endpoint_confirmado = p.endpoint;
-    localStorage.setItem('phxsql.ia', JSON.stringify(pref));
-    sessionStorage.setItem('phxsql.ia.chave', JSON.stringify(cofre));
-  }, [parcial, SEGREDOS_DA_TELA]);
+    if ('endpoint' in m && !('endpoint_confirmado' in m)) m.endpoint_confirmado = m.endpoint;
+    window.PhxIA._gravar(m);
+  }, parcial);
 }
 
-/** A configuracao INTEIRA, como a tela a ve -- as duas gavetas emendadas. */
+/** A configuracao INTEIRA, como a tela a ve. */
 export async function lerIA(page) {
-  return page.evaluate(() => {
-    const ler = (a, k) => { try { return JSON.parse(a.getItem(k) || '{}') || {}; } catch { return {}; } };
-    return Object.assign({}, ler(localStorage, 'phxsql.ia'), ler(sessionStorage, 'phxsql.ia.chave'));
-  });
+  return page.evaluate(() => window.PhxIA._cfg());
 }
 
-/** Cada gaveta em separado. E' o que prova ONDE cada campo repousa -- a
- *  emenda do `lerIA` esconderia exatamente o que o pedido 339(a) mudou. */
+/** Onde cada campo repousa. `memoria` e o que o modulo tem; `disco` e
+ *  `abaCru` sao os DOIS armazenamentos do navegador, crus -- e e neles que a
+ *  prova procura a chave, porque o que o 339(a) promete e que ela NAO esta
+ *  la. */
 export async function lerGavetas(page) {
-  return page.evaluate(() => {
+  return page.evaluate((segredos) => {
     const ler = (a, k) => { try { return JSON.parse(a.getItem(k) || '{}') || {}; } catch { return {}; } };
-    return { disco: ler(localStorage, 'phxsql.ia'), aba: ler(sessionStorage, 'phxsql.ia.chave'),
-             discoCru: localStorage.getItem('phxsql.ia') || '' };
-  });
+    const c = window.PhxIA._cfg();
+    const memoria = {};
+    for (const k of segredos) if (c[k] && !(k === 'endpoint' && c[k] === window.PhxIA.ENDPOINT_OFICIAL)) memoria[k] = c[k];
+    const tudo = a => { let t = ''; for (let i = 0; i < a.length; i++) { const k = a.key(i); t += k + '=' + a.getItem(k) + '\n'; } return t; };
+    return { disco: ler(localStorage, 'phxsql.ia'), memoria,
+             discoCru: tudo(localStorage), abaCru: tudo(sessionStorage) };
+  }, SEGREDOS_DA_TELA);
 }
 
 export async function abrirConfigClaude(page) {
@@ -119,6 +115,10 @@ export async function verEnvio(page, { timeout = 15000 } = {}) {
 export async function perguntarEEsperar(page, texto, { timeout = 20000 } = {}) {
   await page.fill('#iaPergunta', texto);
   await page.click('#iaIr');
+  // Desde o pedido 339(a) o Perguntar so MOSTRA; quem envia e o clique de
+  // aprovacao. Erro antes da aprovacao (esquema que nao se le) nao a desenha.
+  await page.waitForSelector('#iaAprovar, #iaSaida .aviso.mal', { timeout });
+  if (await page.$('#iaAprovar')) await page.click('#iaAprovar');
   await page.waitForFunction(() => {
     const saida = document.querySelector('#iaSaida');
     if (saida && saida.querySelector('.aviso.mal')) return true;

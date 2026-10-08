@@ -95,14 +95,16 @@ export const caso = {
     await abrirConfigClaude(page);
     verdade(await page.$eval('#iaRemover', el => el.disabled), 'sem chave, o Remover devia estar desabilitado');
 
-    // Salvar PELA FORMA: a chave repousa na aba (sessionStorage), nunca no disco.
+    // Salvar PELA FORMA: a chave fica em MEMORIA, e em nenhum armazenamento
+    // do navegador (pedido 339(a), refeito em 08/10/2026).
     await page.fill('#iaChave', CHAVE);
     await page.check('#iaLigado');
     await page.click('#iaSalvar');
     await page.waitForSelector('#iaRemover:not([disabled])', { timeout: 8000 });
     let g = await lerGavetas(page);
-    igual(g.aba.chave, CHAVE, 'a chave devia repousar na gaveta da ABA');
+    igual(g.memoria.chave, CHAVE, 'a chave devia estar na memoria do modulo');
     verdade(!g.discoCru.includes('sk-ant'), 'a chave NUNCA pode estar no localStorage');
+    verdade(!g.abaCru.includes('sk-ant'), 'a chave NUNCA pode estar no sessionStorage');
     verdade(!(await page.content()).includes(CHAVE), 'a chave inteira nao pode aparecer na pagina depois de salva');
     await capturar(ctx, ctx.nomeCaptura('claude-configurada'));
 
@@ -120,7 +122,7 @@ export const caso = {
     await page.click('#iaRemover');
     await page.waitForSelector('#iaRemover[disabled]', { timeout: 8000 });
     g = await lerGavetas(page);
-    verdade(!g.aba.chave, 'depois de Remover a chave nao pode sobrar na aba');
+    verdade(!g.memoria.chave, 'depois de Remover a chave nao pode sobrar na memoria');
     igual(!!g.disco.ligado, false, 'Remover desliga o interruptor');
 
     // ---------------------------------------------- a tela de Query, ligada
@@ -147,14 +149,28 @@ export const caso = {
     contem(envio.corpo, 'os clientes cadastrados', 'o corpo mostrado devia trazer a pergunta');
     igual(subiram.length, antes, 'Ver o que vai subir nao pode subir nada');
 
-    // Perguntar: o SQL cai no editor e NAO executa sozinho.
+    // Perguntar NAO envia: mostra o corpo e pede aprovacao (pedido 339(a)).
+    // «Nao enviar» fecha sem subir nada.
+    await page.click('#iaIr');
+    await page.waitForSelector('#iaAprovar', { timeout: 15000 });
+    igual(subiram.length, antes, 'Perguntar sem aprovar nao pode subir nada');
+    await page.click('#iaNaoEnviar');
+    await page.waitForSelector('#iaNaoEnviado', { timeout: 8000 });
+    igual(subiram.length, antes, '«Nao enviar» nao pode subir nada');
+
+    // Perguntar e APROVAR: o SQL cai no editor e NAO executa sozinho.
     fila.push({ texto: 'SELECT nome, cidade FROM clientes' });
     await page.click('#iaIr');
+    await page.waitForSelector('#iaAprovar', { timeout: 15000 });
+    const mostrado = await page.$$eval('#iaEnvio pre.dado', p => p[1].textContent);
+    await page.click('#iaAprovar');
     await page.waitForFunction(() => document.querySelector('#iaTokens')?.querySelector('b'), undefined, { timeout: 15000 });
     igual(await page.inputValue('#iaSql'), 'SELECT nome, cidade FROM clientes', 'o SQL devia cair no editor');
     verdade(!(await page.$('#iaResultado table')) && !(await page.$('#iaGradeSql')), 'nada executa antes do clique em Executar');
     const doCorpo = JSON.parse(subiram.at(-1).corpo);
     contem(JSON.stringify(doCorpo), 'os clientes cadastrados', 'a pergunta devia ter subido no corpo');
+    igual(JSON.stringify(doCorpo), JSON.stringify(JSON.parse(mostrado)),
+      'o que subiu tem de ser EXATAMENTE o corpo que o painel mostrou para aprovar');
 
     // Executar: o motor de verdade responde com as linhas do cenario.
     await page.click('#iaExecutar');
@@ -175,6 +191,7 @@ export const caso = {
       await definirDb(page, db);
       await page.fill('#iaPergunta', 'modele ' + nomes.join(' e '));
       await page.click('#iaIr');
+      await page.click('#iaAprovar', { timeout: 15000 });
       await page.waitForSelector('#iaSaida .ia-item', { timeout: 15000 });
       await page.click('#iaCriar');
       await page.waitForSelector('#iaNascido #iaDesfazer', { timeout: 15000 });

@@ -205,6 +205,8 @@ pub const CLASSES: &[(&str, PorColuna)] = &[
     ("diario", PorColuna::Recusa),
     // O fluxo de eventos com a imagem: e o `diario` pela porta da replicacao.
     ("replicar", PorColuna::Recusa),
+    // Os arquivos da base inteira, com a coluna dentro (pedido 706).
+    ("retrato_da_replica", PorColuna::Recusa),
     // Grava a imagem inteira vinda de fora, sem passar por `valores`.
     ("aplicar", PorColuna::Recusa),
     // Copiam a tabela para um nome NOVO -- e a regra de coluna e por nome de
@@ -457,6 +459,7 @@ pub const SAIDAS: &[(&str, Saida)] = &[
     ("replicar", Saida::Historico),
     ("profiler", Saida::Historico),
     ("aplicar", Saida::TabelaInteira),
+    ("retrato_da_replica", Saida::TabelaInteira),
     ("duplicar_tabela", Saida::TabelaInteira),
     ("copiar_tabela", Saida::TabelaInteira),
     ("renomear_tabela", Saida::TabelaInteira),

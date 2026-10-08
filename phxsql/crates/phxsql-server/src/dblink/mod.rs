@@ -313,6 +313,12 @@ pub struct Definicao {
     /// atrapalharia o diagnostico de pino torto. O que ela NAO faz e sair no
     /// `para_json`: ver o motivo la.
     pub chave_do_fio: String,
+    /// O pino TLS do outro PhxSql (pedido 572, T6b-2), `sha256//<base64>` do
+    /// SPKI -- o que ele imprime no arranque. Escrito, a ligacao fala TLS 1.3
+    /// conferido no lugar do tunel Noise. Mesmas regras do `chave_do_fio`:
+    /// so o motor phxsql, torto e erro na declaracao, a tela so ve
+    /// `tem_pino_tls`, e o salvar que nao o manda o herda.
+    pub pino_tls: String,
     /// Qual GRAVACAO desta ligacao a memoria guarda -- pedido 609. So em
     /// memoria: nunca vai ao disco nem ao JSON.
     ///
@@ -368,6 +374,7 @@ impl std::fmt::Debug for Definicao {
             sincronias,
             cifra,
             chave_do_fio,
+            pino_tls,
             versao,
         } = self;
         f.debug_struct("Definicao")
@@ -399,6 +406,7 @@ impl std::fmt::Debug for Definicao {
             // que nao existe por um diagnostico cego de pino torto. Mesma
             // escolha do `Debug` da `Origem`.
             .field("chave_do_fio", chave_do_fio)
+            .field("pino_tls", pino_tls)
             .field("versao", versao)
             .finish()
     }
@@ -429,6 +437,7 @@ impl Default for Definicao {
             // verdade, em vez de herdar «claro», que seria rebaixamento.
             cifra: None,
             chave_do_fio: String::new(),
+            pino_tls: String::new(),
             versao: 0,
         }
     }
@@ -511,6 +520,7 @@ impl Definicao {
             },
             cifra,
             chave_do_fio: j.texto_ou("chave_do_fio", "").trim().to_string(),
+            pino_tls: j.texto_ou("pino_tls", "").trim().to_string(),
             versao: 0,
         };
         // A recusa acontece na DECLARACAO, e nao na conexao: uma ligacao nasce
@@ -521,6 +531,7 @@ impl Definicao {
         // hexadecimal errado gravado no cadastro so apareceria na primeira
         // conexao, e ate la a ligacao diria «cifrada com pino» na tela.
         d.pino_do_fio()?;
+        d.pino_tls()?;
         Ok(d)
     }
 
@@ -632,6 +643,9 @@ impl Definicao {
             if !self.chave_do_fio.is_empty() {
                 campos.push(("chave_do_fio", Json::texto_de(&self.chave_do_fio)));
             }
+            if !self.pino_tls.is_empty() {
+                campos.push(("pino_tls", Json::texto_de(&self.pino_tls)));
+            }
         }
         Ok(Json::objeto(campos))
     }
@@ -663,6 +677,8 @@ impl Definicao {
             // E e por isso que a tela nao tem como devolver o pino no salvar,
             // que e o que obriga a heranca em `op_dblink_salvar`.
             ("tem_pino", Json::Bool(!self.chave_do_fio.is_empty())),
+            // O irmao do de cima, pelo mesmo motivo: o fato, nunca o pino.
+            ("tem_pino_tls", Json::Bool(!self.pino_tls.is_empty())),
             ("senha_env", Json::texto_de(&self.senha_env)),
             ("token_remoto_env", Json::texto_de(&self.token_env)),
             (
@@ -779,7 +795,7 @@ impl Definicao {
         if !self.motor.cifra_o_fio() {
             return false;
         }
-        if !self.chave_do_fio.trim().is_empty() {
+        if !self.chave_do_fio.trim().is_empty() || !self.pino_tls.trim().is_empty() {
             return true;
         }
         self.cifra.unwrap_or(crate::config::CIFRA_DE_SAIDA_PADRAO)
@@ -815,6 +831,8 @@ impl Definicao {
             "cifra"
         } else if !self.chave_do_fio.trim().is_empty() {
             "chave_do_fio"
+        } else if !self.pino_tls.trim().is_empty() {
+            "pino_tls"
         } else {
             return Ok(());
         };
@@ -843,6 +861,11 @@ impl Definicao {
             &self.chave_do_fio,
             &format!("dblink[{}].chave_do_fio", self.nome),
         )?))
+    }
+
+    /// O pino TLS ja em bytes -- a regra do `Origem::pino_tls`.
+    pub fn pino_tls(&self) -> Result<Option<[u8; 32]>> {
+        crate::config::pino_tls_de(&self.pino_tls, &format!("dblink[{}].pino_tls", self.nome))
     }
 
     /// Recusa a operacao que so sabe falar SQL contra o motor que nao fala.
@@ -922,6 +945,10 @@ impl Definicao {
             .eq_ignore_ascii_case(outra.chave_do_fio.trim())
         {
             Some("chave_do_fio")
+        } else if self.pino_tls.trim() != outra.pino_tls.trim() {
+            // O pino TLS tambem decide a quem a credencial vai: base64
+            // distingue caixa, entao a comparacao e exata.
+            Some("pino_tls")
         } else {
             None
         }
@@ -1002,6 +1029,14 @@ impl Definicao {
     /// sem ancora, painel identico.
     pub fn com_o_pino_de(mut self, outra: &Definicao) -> Definicao {
         self.chave_do_fio = outra.chave_do_fio.clone();
+        self
+    }
+
+    /// Esta definicao, com o pino TLS de outra -- o irmao do
+    /// [`Definicao::com_o_pino_de`], separado pela mesma razao das outras
+    /// herancas: cada campo chega (ou nao) por conta propria no pedido.
+    pub fn com_o_pino_tls_de(mut self, outra: &Definicao) -> Definicao {
+        self.pino_tls = outra.pino_tls.clone();
         self
     }
 

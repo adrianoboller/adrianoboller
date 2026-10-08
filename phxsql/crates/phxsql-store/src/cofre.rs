@@ -849,7 +849,21 @@ pub struct Cabecalho {
     /// vai a disco no `sincronizar`; o que entrou depois a cura conta, porque
     /// ela ja anda evento a evento pela cauda.
     pub ultimo_tx: u64,
+    /// Quantos eventos o diario tinha ANTES deste volume -- so na versao 4
+    /// (pedido 706). E o que deixa a posicao de um evento continuar a mesma
+    /// depois que os volumes de antes sairem pelo expurgo: a contagem comeca
+    /// na base do primeiro volume que existe, e nao em zero.
+    ///
+    /// Zero no volume 1 e verdade. Zero num primeiro volume que nao e o 1 e
+    /// «nao sei» -- volume gravado antes do campo --, e quem le recusa em vez
+    /// de contar do zero: deslizar a posicao entregaria o evento errado a
+    /// replica sem erro nenhum.
+    pub base: u64,
 }
+
+/// Onde o [`Cabecalho::base`] mora no cabecalho de 128 bytes: nos bytes
+/// 104..112, que as versoes 3 e 4 reservavam e gravavam zero (pedido 706).
+const OFF_BASE: usize = 104;
 
 /// Onde o [`Cabecalho::ultimo_tx`] mora no cabecalho de 128 bytes: nos bytes
 /// 96..104, que as versoes 3 e 4 reservavam e gravavam zero. Zero le como
@@ -895,7 +909,16 @@ pub struct Marca {
     pub carimbo: i64,
     /// O primeiro byte nunca e zero numa marca de pe.
     pub bytes: [u8; MARCA_LEN],
+    /// O id de transacao que o evento devido levaria -- so no cabecalho da
+    /// versao 4, nos bytes 112..120 ([`OFF_TX_DO_DEVIDO`]); zero = nao sei
+    /// (volume 2/3, ou marca anterior ao pedido 715).
+    pub tx: u64,
 }
+
+/// Onde o [`Marca::tx`] mora no cabecalho de 128 bytes: nos bytes 112..120,
+/// que a versao 4 reservava e gravava zero (pedido 715). Ausencia benigna:
+/// zero le como «nao sei», e a abertura completa o devido como antes.
+const OFF_TX_DO_DEVIDO: usize = 112;
 
 impl Cabecalho {
     /// Um volume novo, com o material de cifra que o cofre mandar agora.
@@ -916,6 +939,7 @@ impl Cabecalho {
                 marca: None,
                 com_tx: false,
                 ultimo_tx: 0,
+                base: 0,
             });
         }
         let mut sal = [0u8; SAL_LEN];
@@ -933,6 +957,7 @@ impl Cabecalho {
             marca: None,
             com_tx: false,
             ultimo_tx: 0,
+            base: 0,
         })
     }
 
@@ -968,6 +993,11 @@ impl Cabecalho {
             ultimo_tx: self.ultimo_tx.max(tx),
             ..*self
         }
+    }
+
+    /// O mesmo cabecalho, com a base ordinal do volume (pedido 706).
+    pub fn com_base(&self, base: u64) -> Cabecalho {
+        Cabecalho { base, ..*self }
     }
 
     /// O mesmo cabecalho, com a marca do evento devido de pe ou baixada.
@@ -1117,9 +1147,11 @@ pub fn ler_cabecalho(
         marca: None,
         com_tx: versao >= VERSAO_COM_TX,
         ultimo_tx: 0,
+        base: 0,
     };
     if cab.com_tx {
         cab.ultimo_tx = c.u64(OFF_ULTIMO_TX);
+        cab.base = c.u64(OFF_BASE);
     }
     let om = off_marca(cab_len);
     if bruto[om] != 0 {
@@ -1128,6 +1160,11 @@ pub fn ler_cabecalho(
         cab.marca = Some(Marca {
             carimbo: c.u64(32) as i64,
             bytes,
+            tx: if cab.com_tx {
+                c.u64(OFF_TX_DO_DEVIDO)
+            } else {
+                0
+            },
         });
     }
     if versao >= 3 && bruto[40] & FLAG_CIFRADO != 0 {
@@ -1167,11 +1204,15 @@ pub fn gravar_cabecalho(cab: &Cabecalho, magic: &[u8; 8]) -> Vec<u8> {
             por_i64(&mut buf, 32, m.carimbo);
             let om = off_marca(cab.cab_len);
             buf[om..om + MARCA_LEN].copy_from_slice(&m.bytes);
+            if cab.com_tx {
+                por_u64(&mut buf, OFF_TX_DO_DEVIDO, m.tx);
+            }
         }
         None => por_i64(&mut buf, 32, crate::util::agora()),
     }
     if cab.com_tx {
         por_u64(&mut buf, OFF_ULTIMO_TX, cab.ultimo_tx);
+        por_u64(&mut buf, OFF_BASE, cab.base);
     }
     if let Some(chave) = cab.chave {
         buf[40] = FLAG_CIFRADO;

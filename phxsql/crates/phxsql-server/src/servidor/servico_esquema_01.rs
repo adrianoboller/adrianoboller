@@ -893,6 +893,9 @@ impl Servidor {
         let registros = t.registros();
         drop(dados);
         drop(congelada);
+        // Pedido 647: o inode velho morre AQUI, fora da trava global e do
+        // congelamento -- ninguem espera por ele.
+        t.soltar_volumes_velhos();
         let ms = inicio.elapsed().as_secs_f64() * 1e3;
 
         let pares = vec![
@@ -1064,6 +1067,10 @@ impl Servidor {
             }
             slots = t.migrar_v10_fase_b(pendente)?;
             drop(dados);
+            // Pedido 647, o IRMAO das outras FASES B: o inode velho morre fora
+            // da trava -- e a CADA passada, senao o disco seguraria uma copia
+            // morta da tabela por coluna migrada ate o fim do laco.
+            t.soltar_volumes_velhos();
         }
         drop(congelada);
         let ms = inicio.elapsed().as_secs_f64() * 1e3;

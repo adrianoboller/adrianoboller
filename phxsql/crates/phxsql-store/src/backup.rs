@@ -187,8 +187,7 @@ fn escrever_sem_sync(alvo: &Path, dados: &[u8]) -> Result<File> {
 fn sincronizar_arquivo(alvo: &Path, anotado: Option<(u64, u64)>, mostrar: &Path) -> Result<()> {
     let mut abrir = OpenOptions::new();
     abrir.read(true).write(true);
-    let arquivo = crate::util::sem_seguir_nem_esperar(&mut abrir)
-        .open(alvo)
+    let arquivo = crate::util::abrir_sem_seguir(&mut abrir, alvo)
         .map_err(|e| no_nome_real(e, alvo, mostrar))?;
     let aberto = arquivo.metadata()?;
     if !aberto.is_file() || identidade(&aberto) != anotado {
@@ -318,6 +317,8 @@ fn teto_de_abertos() -> usize {
 }
 
 /// Teto de descritores de copia seguros por corrida, mesmo com folga de sobra.
+/// Fora do Linux a folga nao se mede e o teto nao e lido (so os testes o usam).
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 const MAXIMO_DE_ABERTOS: usize = 1024;
 
 /// O teto quando a folga nao se mede.
@@ -2936,7 +2937,13 @@ mod tests {
             "o restaurar tinha de recusar o destino sem manifesto"
         );
         assert!(
-            crate::restaurar::Preparada::preparar(&destino, &base.join("base"), "").is_err(),
+            crate::restaurar::Preparada::preparar(
+                &destino,
+                &base.join("base"),
+                "",
+                crate::catalogo::PoliticaDoDiario::default()
+            )
+            .is_err(),
             "o restaurar tinha de recusar o destino sem manifesto"
         );
         assert!(conferir(&destino).is_err());

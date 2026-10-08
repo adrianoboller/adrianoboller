@@ -412,7 +412,28 @@ pub fn montar_resposta_fechada(codigo: u16, tipo: &str, corpo: &str) -> String {
 }
 
 fn montar_com_folga(codigo: u16, tipo: &str, corpo: &str, externo: bool) -> String {
-    montar_com_folga_e_extras(codigo, tipo, corpo, externo, "")
+    montar_com_folga_e_extras(codigo, tipo, corpo, externo, externo, "")
+}
+
+/// A pagina da interface, com a folga da Claude decidida pela config.
+///
+/// Pedido 339(a), o desligamento administrativo: com
+/// `web.integracao_claude: false` a origem da Anthropic SAI do `connect-src`,
+/// e quem barra a chamada e o navegador -- a tela nao precisa colaborar, e
+/// uma tela adulterada tambem nao passa. A fonte da marca continua: ela nao
+/// manda nada para fora.
+pub fn montar_resposta_da_interface(corpo: &str, claude: bool) -> String {
+    montar_com_folga_e_extras(200, "text/html; charset=utf-8", corpo, true, claude, "")
+}
+
+/// Envia a pagina da interface. Ver [`montar_resposta_da_interface`].
+pub fn responder_interface<F: Write + ?Sized>(
+    fluxo: &mut F,
+    corpo: &str,
+    claude: bool,
+) -> std::io::Result<()> {
+    fluxo.write_all(montar_resposta_da_interface(corpo, claude).as_bytes())?;
+    fluxo.flush()
 }
 
 /// A resposta 503 de «porta cheia»: todas as threads HTTP ocupadas e a fila
@@ -428,6 +449,7 @@ pub fn montar_resposta_cheia(segundos: u64, corpo: &str) -> String {
         503,
         "application/json; charset=utf-8",
         corpo,
+        false,
         false,
         &extras,
     )
@@ -457,6 +479,7 @@ fn montar_com_folga_e_extras(
     tipo: &str,
     corpo: &str,
     externo: bool,
+    claude: bool,
     extras: &str,
 ) -> String {
     let motivo = match codigo {
@@ -499,7 +522,7 @@ fn montar_com_folga_e_extras(
     } else {
         "style-src 'unsafe-inline'; "
     };
-    let conexao = if externo {
+    let conexao = if externo && claude {
         format!("connect-src 'self' {ORIGEM_ANTHROPIC}; ")
     } else {
         "connect-src 'self'; ".to_string()
@@ -1222,6 +1245,37 @@ mod testes_da_claude {
         // continua sendo so o que este binario carrega.
         assert!(csp.contains("script-src 'unsafe-inline';"));
         assert!(!csp.contains(&format!("script-src 'unsafe-inline' {ORIGEM_ANTHROPIC}")));
+    }
+
+    /// Pedido 339(a): o administrador desliga a Claude e o NAVEGADOR barra.
+    ///
+    /// Os dois sentidos: desligada, a origem some do `connect-src` e a fonte
+    /// da marca continua; ligada (o padrao), a pagina da interface sai
+    /// identica a de antes do pedido -- o teste do comportamento velho.
+    /// Reponha o `externo` sozinho na decisao do `connect-src` e o primeiro
+    /// bloco cai.
+    #[test]
+    fn desligada_pelo_administrador_a_pagina_nao_alcanca_a_anthropic() {
+        let csp = |r: &str| {
+            r.lines()
+                .find(|l| l.starts_with("Content-Security-Policy:"))
+                .expect("a pagina tem politica de seguranca")
+                .to_string()
+        };
+        let fora = csp(&montar_resposta_da_interface("x", false));
+        assert!(!fora.contains(ORIGEM_ANTHROPIC), "{fora}");
+        assert!(fora.contains("connect-src 'self';"), "{fora}");
+        assert!(
+            fora.contains("font-src data:"),
+            "a fonte da marca nao sai: {fora}"
+        );
+
+        let dentro = montar_resposta_da_interface("x", true);
+        assert_eq!(
+            dentro,
+            montar_resposta(200, "text/html; charset=utf-8", "x"),
+            "ligada, a pagina tem de sair igual a de antes"
+        );
     }
 
     /// A folga e da PAGINA, e nao das respostas de dados.

@@ -84,6 +84,43 @@ impl Servidor {
         }
     }
 
+    /// Este fio pode carregar uma CREDENCIAL em claro? (pedidos 667 e 674)
+    ///
+    /// UM predicado para os dois portoes que perguntam isso: a senha
+    /// (`conferir_o_fio_da_senha`) e a emissao do id de sessao HTTP
+    /// (`conferir_a_emissao_da_sessao`). Duas ideias de «pode credencial em
+    /// claro» divergiriam no primeiro conserto, e a que ficasse para tras
+    /// entregaria o ativo que a outra protege. Passa o loopback (nada sai da
+    /// maquina), o fio cifrado (a MESMA pergunta do dado pessoal) e o escape
+    /// escrito `cifra_fio.senha_em_claro_pela_rede` -- um escape so, porque
+    /// quem aceitou a senha em claro aceitou o ativo maior, e um segundo
+    /// interruptor deixaria a senha entrar com o id recusado: login inutil.
+    pub(super) fn fio_aceita_credencial(&self, sessao: &Sessao) -> bool {
+        let loopback = sessao
+            .ip
+            .trim()
+            .parse::<std::net::IpAddr>()
+            .is_ok_and(|ip| ip.to_canonical().is_loopback());
+        self.config.cifra_fio.senha_em_claro_pela_rede || loopback || self.fio_cifrado(sessao)
+    }
+
+    /// O id de sessao HTTP pode nascer neste fio? (pedido 674)
+    ///
+    /// O `desafio` e o `login` pela web devolvem um id que vale a identidade
+    /// inteira enquanto durar: quem o escuta na rede da loja entra no lugar
+    /// de quem logou, sem senha nenhuma. Por isso a recusa e da EMISSAO, e
+    /// so na entrada HTTP: na porta de dados a identidade e da conexao e o
+    /// login nao devolve portador. Vem antes do cadastro, e por isso nao diz
+    /// nada sobre o usuario.
+    pub(super) fn conferir_a_emissao_da_sessao(&self, sessao: &Sessao) -> Result<()> {
+        if sessao.entrada != Entrada::Http || self.fio_aceita_credencial(sessao) {
+            return Ok(());
+        }
+        Err(PhxError::Autorizacao(
+            self.msg("erro.sessao_em_claro_pela_rede", &[]),
+        ))
+    }
+
     /// A SENHA pode atravessar o fio desta sessao? (pedido 667)
     ///
     /// So quando o pedido traz `senha`/`senha_b64` -- o desafio-resposta
@@ -101,12 +138,7 @@ impl Servidor {
         if p.campo("senha").is_none() && p.campo("senha_b64").is_none() {
             return Ok(());
         }
-        let loopback = sessao
-            .ip
-            .trim()
-            .parse::<std::net::IpAddr>()
-            .is_ok_and(|ip| ip.to_canonical().is_loopback());
-        if self.config.cifra_fio.senha_em_claro_pela_rede || loopback || self.fio_cifrado(sessao) {
+        if self.fio_aceita_credencial(sessao) {
             return Ok(());
         }
         Err(PhxError::Autorizacao(
@@ -260,7 +292,17 @@ impl Servidor {
         }
         let total = t.eventos()?;
         let chave = Self::chave_do_diario(p.texto_ou("database", ""), p.texto_ou("tabela", ""));
-        let (lista, lidos) = self.eventos_para_o_fio(&mut t, &chave, desde, max, hash_para)?;
+        let (lista, lidos) = match self.eventos_para_o_fio(&mut t, &chave, desde, max, hash_para) {
+            Ok(x) => x,
+            Err(e) => {
+                return Err(self
+                    .recusa_do_diario_expurgado(&mut t, p, desde)
+                    .unwrap_or(e))
+            }
+        };
+        // Quem puxa confirmou ter tudo antes de `desde` (pedido 706). Depois
+        // da leitura, para a recusa de cima nunca contar como confirmacao.
+        self.anotar_confirmacao_do_diario(p, &chave, desde);
 
         // A trilha de dado pessoal, UM registro por lote (revisao SEC de
         // 17/09/2026, A8): a imagem viaja com o valor da coluna marcada
@@ -1058,6 +1100,7 @@ pub(super) fn origem_da_sonda(p: &Json, host: String) -> crate::config::Origem {
         hora: String::new(),
         cifra: p.booleano_ou("cifra", crate::config::CIFRA_DE_SAIDA_PADRAO),
         chave_do_fio: p.texto_ou("chave_do_fio", "").trim().to_string(),
+        pino_tls: p.texto_ou("pino_tls", "").trim().to_string(),
         espelho: false,
     }
 }

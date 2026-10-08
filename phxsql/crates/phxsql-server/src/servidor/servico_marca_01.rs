@@ -96,16 +96,40 @@ impl NomeDaPassada {
     };
 }
 
+/// So em `debug`: o numero de um gancho de prova `PHXSQL_TESTE_*` do
+/// ambiente. A leitura e UMA, para os ganchos do processo -- cada um era um
+/// `std::env::var` repetido, e o que esquecesse o `parse` armaria com lixo.
+#[cfg(debug_assertions)]
+pub(super) fn gancho_de_teste(nome: &str) -> Option<u64> {
+    gancho_de_teste_em_texto(nome).and_then(|v| v.parse().ok())
+}
+
+/// So em `debug`: o [`gancho_de_teste`] que nao e numero -- o
+/// `PHXSQL_TESTE_FALHAR_NO_EVENTO=<tabela>:<rowid>` do pedido 713.
+#[cfg(debug_assertions)]
+pub(super) fn gancho_de_teste_em_texto(nome: &str) -> Option<String> {
+    std::env::var(nome).ok().filter(|v| !v.is_empty())
+}
+
 /// So em `debug`: `PHXSQL_TESTE_PARAR_NO_COMMIT=N`, lido UMA vez -- a prova
 /// do pedido 702 (`tests/commit-inteiro-na-queda.rs`).
 #[cfg(debug_assertions)]
 fn parar_no_commit_de_teste() -> Option<u64> {
     static N: std::sync::OnceLock<Option<u64>> = std::sync::OnceLock::new();
-    *N.get_or_init(|| {
-        std::env::var("PHXSQL_TESTE_PARAR_NO_COMMIT")
-            .ok()
-            .and_then(|v| v.parse().ok())
-    })
+    *N.get_or_init(|| gancho_de_teste("PHXSQL_TESTE_PARAR_NO_COMMIT"))
+}
+
+/// So em `debug`: `PHXSQL_TESTE_PARAR_NO_REG_DO_COMMIT=N` -- a prova do
+/// pedido 710. A N-esima escrita da passada morre DENTRO dela: o slot no
+/// `.reg`, o evento fora do diario. Inclusao, alteracao (e a exclusao suave,
+/// que regrava pelo mesmo caminho) e exclusao de vez, cada uma no ponto dela.
+///
+/// Nome proprio, e nao o `PHXSQL_TESTE_PARAR_NO_REG` da replica: num servidor
+/// `multi` os dois caminhos se armariam juntos.
+#[cfg(debug_assertions)]
+fn parar_no_reg_do_commit_de_teste() -> Option<u64> {
+    static N: std::sync::OnceLock<Option<u64>> = std::sync::OnceLock::new();
+    *N.get_or_init(|| gancho_de_teste("PHXSQL_TESTE_PARAR_NO_REG_DO_COMMIT"))
 }
 
 impl Servidor {
@@ -162,6 +186,45 @@ impl Servidor {
             }
         }
         Ok(dir)
+    }
+
+    /// Grava a marca da lista com o BILHETE posicional (v7/v8, pedido 709): o
+    /// id de transacao reservado agora na unidade da tomada, e a versao que
+    /// cada slot tem antes da operacao que o toca. Com a trava na mao, depois
+    /// da pre-conferencia e antes da passada -- o unico ponto em que o disco
+    /// e o que a passada vai encontrar.
+    ///
+    /// O COMMIT e a cascata solta gravam por aqui: sao a mesma marca e a
+    /// mesma passada, e uma segunda porta seria a que esquece o bilhete.
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn gravar_a_marca_da_lista(
+        &self,
+        trava: &Instancia,
+        database: &str,
+        sessao: &Sessao,
+        dir: &Path,
+        id: u64,
+        carimbo: i64,
+        escritas: &[crate::transacao::Escrita],
+    ) -> Result<PathBuf> {
+        let mut abertas: HashMap<String, Table> = HashMap::new();
+        let versoes = crate::transacao::versoes_antes(escritas, |tabela, rowid, com_suave| {
+            if !abertas.contains_key(tabela) {
+                let ped = pedido_da_tabela(database, tabela);
+                let t = self.abrir_travada_sem_sobrepor(trava, &ped, sessao)?;
+                abertas.insert(tabela.to_string(), t);
+            }
+            let t = abertas
+                .get_mut(tabela)
+                .expect("a tabela acabou de entrar no mapa");
+            crate::transacao::estado_do_slot(t, rowid, com_suave)
+        })?;
+        drop(abertas);
+        let bilhete = crate::transacao::Bilhete {
+            tx: phxsql_store::log::reservar_tx_na_unidade(),
+            versoes_antes: &versoes,
+        };
+        crate::transacao::gravar_marca_posicional(dir, id, carimbo, escritas, bilhete)
     }
 
     /// **A pre-conferencia do COMMIT (pedido 448):** a lista inteira, na
@@ -935,7 +998,25 @@ impl Servidor {
                 Acao::Atualizar => phxsql_sql::rotina::Evento::Atualizar,
                 _ => phxsql_sql::rotina::Evento::Excluir,
             };
-            match e.acao {
+            #[cfg(debug_assertions)]
+            if parar_no_reg_do_commit_de_teste() == Some(*aplicadas as u64 + 1) {
+                use phxsql_store::ndx::panico_de_teste::{armar_gancho, Ponto};
+                let ponto = match e.acao {
+                    Acao::Inserir => Ponto::InserirDepoisDoContador,
+                    Acao::ExcluirDeVez => Ponto::ExcluirDepoisDoSlot,
+                    _ => Ponto::AtualizarDepoisDoReg,
+                };
+                armar_gancho(ponto, || {
+                    sigkill_de_teste("teste: COMMIT parado entre o .reg e o diario")
+                });
+            }
+            // E3 do desenho unico (pedido 724): UMA operacao da lista grava UM
+            // evento no diario da tabela dela -- e o que a recuperacao das
+            // duas faces (pedido 710) conta contra a versao do slot. So em
+            // `debug`: em producao a conta custaria uma leitura por escrita.
+            #[cfg(debug_assertions)]
+            let eventos_antes = t.eventos()?;
+            let gravou = match e.acao {
                 Acao::Inserir => {
                     let saiu = {
                         let mut maes = MaesAbertas {
@@ -955,6 +1036,7 @@ impl Servidor {
                         )));
                     }
                     self.residente_mut(&ped, |m| m.anotar_insercao(saiu, &e.linha));
+                    true
                 }
                 Acao::Atualizar => {
                     {
@@ -971,6 +1053,7 @@ impl Servidor {
                         }
                     }
                     self.residente_mut(&ped, |m| m.anotar_alteracao(e.rowid, &e.linha));
+                    true
                 }
                 // As exclusoes emprestam as FILHAS que a passada ja abriu, e a
                 // restauracao as MAES -- o irmao do conserto do P0 (pedido
@@ -988,6 +1071,7 @@ impl Servidor {
                     if apagou {
                         self.residente_mut(&ped, |m| m.anotar_exclusao(e.rowid));
                     }
+                    apagou
                 }
                 Acao::ExcluirDeVez => {
                     let apagou = {
@@ -999,14 +1083,30 @@ impl Servidor {
                     if apagou {
                         self.residente_mut(&ped, |m| m.anotar_exclusao(e.rowid));
                     }
+                    apagou
                 }
                 Acao::Restaurar => {
                     let mut maes = MaesAbertas {
                         abertas: &mut abertas,
                     };
-                    t.restaurar_com_maes(e.rowid, &e.motivo, &mut maes)?;
+                    t.restaurar_com_maes(e.rowid, &e.motivo, &mut maes)?
                 }
+            };
+            #[cfg(debug_assertions)]
+            {
+                let gravados = t.eventos()? - eventos_antes;
+                debug_assert_eq!(
+                    gravados,
+                    u64::from(gravou),
+                    "a escrita {} rowid {} em {} gravou {gravados} evento(s) no diario: \
+                     a recuperacao das duas faces conta uma operacao, um evento",
+                    e.acao.nome(),
+                    e.rowid,
+                    e.tabela
+                );
             }
+            #[cfg(not(debug_assertions))]
+            let _ = gravou;
             if dispara {
                 let nova = match e.acao {
                     Acao::ExcluirSuave | Acao::ExcluirDeVez => None,

@@ -1758,6 +1758,143 @@ impl Database {
     pub fn existe_tabela(&self, schema: Option<&str>, nome: &str) -> Result<bool> {
         Ok(self.tabelas(schema)?.iter().any(|t| t == nome))
     }
+
+    /// O que o retrato de uma replica leva de cada tabela -- pedido 706.
+    ///
+    /// As extensoes da COPIA menos o espelho `.bkp`: o espelho e decisao do
+    /// servidor que recebe (`espelho` no config dele), e nao da origem.
+    const EXTENSOES_DO_RETRATO: [&'static str; 5] = ["reg", "ndx", "bin", "memo", "log"];
+
+    /// Copia FIEL dos arquivos de uma tabela para `destino`, um arquivo por
+    /// nome `{prefixo}{n}` -- o retrato com que uma replica se refaz depois
+    /// que o diario que ela precisava saiu pelo expurgo (pedido 706).
+    ///
+    /// # Por que nao a copia de sempre
+    ///
+    /// O [`Self::copiar_tabela_para`] cunha uma LINHAGEM nova (pedido 601):
+    /// a copia e outra historia. Aqui e o contrario -- a replica refeita
+    /// continua a MESMA historia da origem, e o `aplicar` dela recusaria os
+    /// eventos seguintes se a linhagem mudasse. Entao os bytes vao como
+    /// estao, o `.log` inclusive: e a base dele (bytes 104..112) que faz a
+    /// posicao da replica refeita ser a da origem, sem conta nenhuma.
+    ///
+    /// Quem chama segura a trava e garante que a tabela nao deve nada ao
+    /// disco (cabecalhos escritos). Devolve `(arquivo, caminho da copia,
+    /// bytes)`, sem `fsync`: o retrato e passageiro.
+    pub fn retratar_tabela(
+        &self,
+        qualificado: &str,
+        destino: &Path,
+        prefixo: &str,
+    ) -> Result<Vec<(String, PathBuf, u64)>> {
+        self.exigir_motor_padrao()?;
+        let (schema, nome) = separar_qualificado(qualificado);
+        validar_nome("tabela", &nome)?;
+        let dir = self.diretorio(schema.as_deref())?;
+        let ha_novo_do_reg = std::fs::read_dir(&dir)?.flatten().any(|a| {
+            let f = a.file_name();
+            let f = f.to_string_lossy();
+            pertence_ou_sobra(&f, &nome, EXT_REG) && !pertence(&f, &nome, EXT_REG)
+        });
+        if ha_novo_do_reg {
+            crate::reg::RegFile::terminar_troca_antes_de_copiar(&dir, &nome)?;
+        }
+        let mut saida = Vec::new();
+        for ext in Self::EXTENSOES_DO_RETRATO {
+            for arq in std::fs::read_dir(&dir)?.flatten() {
+                let f = arq.file_name().to_string_lossy().to_string();
+                if pertence(&f, &nome, ext) {
+                    let copia = destino.join(format!("{prefixo}{}", saida.len()));
+                    crate::util::copiar_do_banco(&arq.path(), &copia)?;
+                    let bytes = std::fs::metadata(&copia)?.len();
+                    saida.push((f, copia, bytes));
+                }
+            }
+        }
+        Ok(saida)
+    }
+
+    /// Troca os arquivos de uma tabela pelos de um retrato -- pedido 706, o
+    /// lado da replica.
+    ///
+    /// Todo arquivo da tabela sai (inclusive a lixeira, os motivos e a
+    /// trilha, que eram desta replica e ja nao contam a historia do retrato)
+    /// e cada `(arquivo, copia)` entra pelo `rename`. O nome de cada um tem de
+    /// ser DESTA tabela e de uma extensao do retrato: o nome vem do fio, e um
+    /// `../` ou o arquivo de outra tabela nao pode entrar por aqui.
+    ///
+    /// Os dados das copias ja foram ao disco por quem as escreveu; o `fsync`
+    /// da pasta volta em [`PorSincronizar`], para depois de soltar a trava.
+    pub fn trocar_pelo_retrato(
+        &self,
+        qualificado: &str,
+        novos: &[(String, PathBuf)],
+    ) -> Result<PorSincronizar> {
+        self.exigir_motor_padrao()?;
+        let (schema, nome) = separar_qualificado(qualificado);
+        validar_nome("tabela", &nome)?;
+        for (arquivo, _) in novos {
+            let valido = !arquivo.contains(['/', '\\'])
+                && Self::EXTENSOES_DO_RETRATO
+                    .iter()
+                    .any(|ext| pertence(arquivo, &nome, ext));
+            if !valido {
+                return Err(PhxError::Esquema(format!(
+                    "o retrato da tabela {qualificado} traz o arquivo {arquivo:?}, que \
+                     nao e dela (pedido 706)"
+                )));
+            }
+        }
+        let dir = match schema.as_deref() {
+            None => self.caminho().to_path_buf(),
+            Some(sc) => {
+                let d = self.caminho().join(sc);
+                crate::util::criar_diretorio_do_banco(&d)?;
+                d
+            }
+        };
+        let mut mexidos = Vec::new();
+        for ext in Self::EXTENSOES_TODAS {
+            for arq in std::fs::read_dir(&dir)?.flatten() {
+                let f = arq.file_name();
+                if pertence_ou_sobra(&f.to_string_lossy(), &nome, ext) {
+                    std::fs::remove_file(arq.path())?;
+                    mexidos.push(arq.path());
+                }
+            }
+        }
+        crate::volume::mudar_pendentes_de_nome(&dir, &nome, None);
+        for (arquivo, copia) in novos {
+            let para = dir.join(arquivo);
+            std::fs::rename(copia, &para)?;
+            mexidos.push(para);
+        }
+        Ok(PorSincronizar::entradas_que_sairam(mexidos))
+    }
+}
+
+/// Grava um pedaco de um arquivo de retrato recebido pelo fio (pedido 706),
+/// no `offset` dele, pelo motor da permissao: o retrato e dado da tabela e
+/// nasce 0600 como ela. O primeiro pedaco (`offset` zero) recria o arquivo.
+pub fn gravar_pedaco_do_retrato(caminho: &Path, offset: u64, bytes: &[u8]) -> Result<()> {
+    use std::io::{Seek, SeekFrom, Write};
+    let mut f = crate::util::opcoes_do_banco()
+        .write(true)
+        .create(true)
+        .open(caminho)?;
+    if offset == 0 {
+        f.set_len(0)?;
+    }
+    f.seek(SeekFrom::Start(offset))?;
+    f.write_all(bytes)?;
+    Ok(())
+}
+
+/// Leva um arquivo de retrato inteiro ao disco, ANTES de ele virar arquivo de
+/// tabela pelo `rename` -- e fora da trava global.
+pub fn sincronizar_arquivo_do_retrato(caminho: &Path) -> Result<()> {
+    let f = std::fs::File::open(caminho)?;
+    crate::sincronia::sync_all(&f, caminho)
 }
 
 /// O que uma criacao ou copia de catalogo ja fez nos nomes novos e ainda deve

@@ -395,7 +395,12 @@ fn mostrar_log(args: &[String]) -> Result<()> {
     let total = t.eventos()?;
     let eventos = match rowid {
         Some(r) => t.historico(r)?,
-        None => t.diario(0, 0)?,
+        // Do primeiro evento que ainda existe: depois do expurgo (pedido
+        // 706), pedir o zero e recusa, e nao o diario inteiro.
+        None => {
+            let base = t.base_do_diario()?;
+            t.diario(base, 0)?
+        }
     };
 
     diga!("{} eventos no diario de {nome}", total);

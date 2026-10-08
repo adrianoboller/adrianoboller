@@ -7,6 +7,7 @@ use phxsql_core::error::PhxError;
 use phxsql_core::fio::{Canal as FioCanal, Iniciador, Recebido};
 use phxsql_core::json::Json;
 use phxsql_core::prazo::{self, ComPrazo};
+use phxsql_core::tls::FioDeCliente;
 use std::io::{BufReader, Write};
 use std::net::{TcpStream, ToSocketAddrs};
 use std::time::Duration;
@@ -62,6 +63,12 @@ pub struct Receita {
     /// deixar um pino invalido virar "sem pino" seria rebaixar a garantia sem
     /// ninguem pedir, a mesma armadilha que o `pino_torto_na_origem` guarda.
     pub chave_do_fio: String,
+    /// `PINO_TLS=sha256//<base64>` (pedido 572, T6b-2): o pino do certificado
+    /// TLS do servidor, o que ele imprime no arranque. Escrito, a conexao e
+    /// TLS 1.3 conferida por ele no lugar do tunel Noise, e `CIFRA` deixa de
+    /// decidir. Cru pelo mesmo motivo do `chave_do_fio`: torto e erro na hora
+    /// de conectar, nunca ausencia.
+    pub pino_tls: String,
 }
 
 /// O padrao da receita, e ele NAO e o zero do tipo em `cifra`.
@@ -89,6 +96,7 @@ impl Default for Receita {
             database: String::new(),
             cifra: true,
             chave_do_fio: String::new(),
+            pino_tls: String::new(),
         }
     }
 }
@@ -111,6 +119,7 @@ impl std::fmt::Debug for Receita {
             database,
             cifra,
             chave_do_fio,
+            pino_tls,
         } = self;
         f.debug_struct("Receita")
             .field("servidor", servidor)
@@ -121,6 +130,7 @@ impl std::fmt::Debug for Receita {
             .field("database", database)
             .field("cifra", cifra)
             .field("chave_do_fio", chave_do_fio)
+            .field("pino_tls", pino_tls)
             .finish()
     }
 }
@@ -177,6 +187,7 @@ pub fn analisar_receita(texto: &str) -> Receita {
                 }
             }
             "chave_do_fio" | "chavedofio" | "pino" => r.chave_do_fio = valor,
+            "pino_tls" | "pinotls" => r.pino_tls = valor,
             // "driver" e o que o gerenciador usou para nos achar; o resto e
             // ignorado de proposito -- recusar chave desconhecida quebraria
             // toda ferramenta que acrescenta as suas.
@@ -276,7 +287,7 @@ fn pino_da_receita(hex: &str) -> Result<Option<[u8; 32]>, Falha> {
 /// Ensinar a baixar a guarda ali seria ensinar o rebaixamento que o pino
 /// existe para impedir.
 fn com_a_saida_escrita(f: Falha, r: &Receita) -> Falha {
-    if !r.chave_do_fio.trim().is_empty() {
+    if !r.chave_do_fio.trim().is_empty() || !r.pino_tls.trim().is_empty() {
         return f;
     }
     Falha {
@@ -305,11 +316,20 @@ pub struct Canal {
     ///
     /// Os dois passam pelo `ComPrazo` do motor (pedido 585): o silencio de
     /// sempre e o total POR PEDIDO, rearmado em [`Canal::pedir`].
-    fluxo: ComPrazo,
-    leitor: BufReader<ComPrazo>,
+    fluxo: FioDeCliente,
+    leitor: BufReader<FioDeCliente>,
     token: String,
     /// `Claro` ate o aperto fechar; `Cifrado` da linha seguinte em diante.
     fio: FioCanal,
+}
+
+/// O `close_notify` do TLS sai no `Drop`: o `SQLDisconnect` e o aplicativo
+/// que morre sem chamar nada terminam do mesmo jeito, e o servidor ve um adeus
+/// em vez de um corte.
+impl Drop for Canal {
+    fn drop(&mut self) {
+        self.fluxo.despedir();
+    }
 }
 
 /// O silencio da conversa do driver: quanto um pedido pode ficar sem um byte.
@@ -321,7 +341,7 @@ impl Canal {
     /// `replica::Cliente`. Pela vida da conexao, um aplicativo que abre de
     /// manha e consulta a tarde cairia na primeira consulta depois do total.
     fn rearmar(&mut self) {
-        prazo::rearmar(self.leitor.get_mut(), &mut self.fluxo);
+        FioDeCliente::rearmar(self.leitor.get_mut(), &mut self.fluxo);
     }
 
     /// Abre o soquete, liga o tunel quando a receita pede, e faz o login
@@ -344,6 +364,13 @@ impl Canal {
         // O pino e conferido ANTES de tocar a rede: pino torto e um erro de
         // configuracao, e devolve-lo sem nem conectar e o retorno mais claro.
         let pino = pino_da_receita(&r.chave_do_fio)?;
+        let pino_tls = match r.pino_tls.trim() {
+            "" => None,
+            t => Some(
+                phxsql_core::tls::pino_de_texto(t)
+                    .map_err(|e| Falha::nova("08001", format!("PINO_TLS: {e}")))?,
+            ),
+        };
 
         let alvo = format!("{}:{}", r.servidor, r.porta);
         let enderecos = alvo
@@ -372,8 +399,8 @@ impl Canal {
         let (leitura, fluxo) = ComPrazo::armar(tcp, prazo::prazo_da_conversa(silencio))
             .map_err(|e| Falha::nova("08001", format!("nao armei o soquete de {alvo}: {e}")))?;
         let mut canal = Canal {
-            fluxo,
-            leitor: BufReader::new(leitura),
+            fluxo: FioDeCliente::Claro(fluxo),
+            leitor: BufReader::new(FioDeCliente::Claro(leitura)),
             token: r.token.clone(),
             fio: FioCanal::Claro,
         };
@@ -381,7 +408,15 @@ impl Canal {
         // O tunel ANTES do login, de proposito: e a senha e o token que ele
         // existe para esconder, e depois do login ja seria tarde. E o mesmo
         // que a `replica::Cliente` faz.
-        if r.cifra {
+        // Com `PINO_TLS` o canal e TLS 1.3 pelo MESMO motor da replica
+        // (`FioDeCliente::passar_a_tls`), e o Noise nao entra: uma cifra por
+        // conexao.
+        if let Some(p) = pino_tls {
+            FioDeCliente::passar_a_tls(&mut canal.leitor, &mut canal.fluxo, p).map_err(|e| {
+                let e = prazo::reclassificar(e);
+                Falha::nova("08001", format!("o TLS com o servidor nao fechou: {e}"))
+            })?;
+        } else if r.cifra {
             canal.cifrar(pino).map_err(|f| com_a_saida_escrita(f, r))?;
         }
 
@@ -444,7 +479,11 @@ impl Canal {
         // (`None`) a mensagem e byte a byte a de sempre -- pedida, nao
         // imposta. Mesmo caminho da `replica::Cliente`; ver
         // `docs/CIFRA-DO-FIO.md` §10.
-        let transcricao = self.fio.transcricao();
+        // Pelo TLS, o vinculo e o `tls-exporter` da RFC 9266.
+        let transcricao = self
+            .fluxo
+            .vinculo_do_canal()
+            .or_else(|| self.fio.transcricao());
         let canal_ref = transcricao.as_ref().map(|t| &t[..]);
 
         let nonce_cliente = phxsql_core::desafio::nonce();
@@ -645,6 +684,106 @@ mod testes {
             Ok(Recebido::Linha(l)) => Some(l),
             _ => None,
         }
+    }
+
+    /// Servidor TLS de UMA conexao, so com o motor do core: responde ao
+    /// `desafio` e confere a `prova` do `login` contra o `tls-exporter` DELE
+    /// (RFC 9266). Devolve a porta, o pino em texto e o que viu no login.
+    fn servidor_tls_de_login(senha: &'static str) -> (u16, String, mpsc::Receiver<String>) {
+        let id = phxsql_core::tls::Identidade::autoassinada(&["localhost"]).unwrap();
+        let pino = phxsql_core::tls::pino_em_texto(&id.pino().unwrap());
+        let escuta = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let porta = escuta.local_addr().unwrap().port();
+        let (visto, ver) = mpsc::channel();
+        std::thread::spawn(move || {
+            let Ok((soquete, _)) = escuta.accept() else {
+                return;
+            };
+            let _ = soquete.set_read_timeout(Some(Duration::from_secs(5)));
+            let Ok(t) = phxsql_core::tls::aceitar(soquete, &id, &[]) else {
+                let _ = visto.send("aperto recusado".to_string());
+                return;
+            };
+            let vinculo = t.vinculo_do_canal();
+            let mut leitor = BufReader::new(t);
+            let sal = "a1".repeat(16);
+            loop {
+                let Some(linha) = ler_pedido(&mut leitor) else {
+                    return;
+                };
+                let p = Json::analisar(&linha).unwrap();
+                let resultado = match p.texto_ou("op", "") {
+                    "desafio" => Json::objeto(vec![
+                        ("nonce", Json::texto_de("00ff")),
+                        ("sal", Json::texto_de(&sal)),
+                        ("iteracoes", Json::de_u64(10)),
+                    ]),
+                    "login" => {
+                        let esperada = phxsql_core::desafio::prova_de_senha(
+                            senha,
+                            &sal,
+                            10,
+                            "00ff",
+                            p.texto_ou("nonce_cliente", ""),
+                            p.texto_ou("usuario", ""),
+                            Some(&vinculo),
+                        )
+                        .unwrap();
+                        let amarrada = p.booleano_ou("amarrar_canal", false);
+                        let confere = p.texto_ou("prova", "") == esperada;
+                        let _ = visto.send(format!("amarrada={amarrada} confere={confere}"));
+                        Json::Nulo
+                    }
+                    _ => Json::texto_de("pong"),
+                };
+                let r = Json::objeto(vec![("ok", Json::Bool(true)), ("resultado", resultado)])
+                    .escrever();
+                let fluxo = leitor.get_mut();
+                if fluxo.write_all(format!("{r}\n").as_bytes()).is_err() {
+                    return;
+                }
+                let _ = fluxo.flush();
+            }
+        });
+        (porta, pino, ver)
+    }
+
+    /// `PINO_TLS` (pedido 572, T6b-2): o driver fecha o TLS pelo pino, e o
+    /// login amarra a prova ao `tls-exporter` -- o servidor de teste a confere
+    /// contra o DELE. Com o pino errado, 08001 antes de qualquer pedido.
+    #[test]
+    fn pino_tls_fecha_o_tls_e_amarra_o_login_ao_exporter() {
+        const SENHA: &str = "senha do odbc pelo tls";
+        let (porta, pino, visto) = servidor_tls_de_login(SENHA);
+        let r = analisar_receita(&format!(
+            "Server=127.0.0.1;Port={porta};UID=ana;PWD={SENHA};PINO_TLS={pino}"
+        ));
+        let mut canal = Canal::abrir(&r).expect("o TLS pelo pino nao abriu");
+        assert_eq!(
+            visto.recv_timeout(Duration::from_secs(5)).unwrap(),
+            "amarrada=true confere=true",
+            "a prova do login nao saiu presa ao tls-exporter"
+        );
+        let eco = canal.pedir(vec![("op", Json::texto_de("ping"))]).unwrap();
+        assert_eq!(eco.texto(), Some("pong"));
+
+        let (porta, _, visto) = servidor_tls_de_login(SENHA);
+        let torto = phxsql_core::tls::pino_em_texto(&[7u8; 32]);
+        let r = analisar_receita(&format!("Server=127.0.0.1;Port={porta};PINO_TLS={torto}"));
+        let f = match Canal::abrir(&r) {
+            Err(f) => f,
+            Ok(_) => panic!("o pino errado abriu o canal"),
+        };
+        assert_eq!(f.estado, "08001", "{}", f.mensagem);
+        assert!(
+            !f.mensagem.contains("CIFRA=0"),
+            "conselho de rebaixar: {}",
+            f.mensagem
+        );
+        assert_eq!(
+            visto.recv_timeout(Duration::from_secs(5)).unwrap(),
+            "aperto recusado"
+        );
     }
 
     #[test]

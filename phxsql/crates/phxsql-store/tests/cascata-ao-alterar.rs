@@ -1100,3 +1100,52 @@ fn a_fk_da_filha_para_outra_mae_recusa_antes_da_marca_no_embutido() {
         .collect();
     assert!(marcas.is_empty(), "sobrou marca: {marcas:?}");
 }
+
+/// **Pedido 716 (F7): a cascata do embutido e UMA transacao no diario.** A mae
+/// e as filhas que ela leva saem com o mesmo id de transacao, e a replica
+/// encadeada de uma base escrita pelo embutido recebe a cascata inteira.
+///
+/// Vermelho medido antes do conserto: fora de unidade cada evento ganhava um
+/// id so dele (`log::tx_do_evento`), e a mae e as duas filhas sairam com tres
+/// ids.
+#[test]
+fn a_cascata_do_embutido_sai_com_um_id_de_transacao() {
+    let d = dir("um-tx");
+    let mut m = mae(&d);
+    let r = m
+        .inserir(&[Value::Int(1), Value::Str("Ana".into())])
+        .unwrap();
+    m.sincronizar().unwrap();
+    let mut f = filha(&d, AcaoRi::Cascata);
+    f.inserir(&[Value::Int(10), Value::Int(1)]).unwrap();
+    f.inserir(&[Value::Int(11), Value::Int(1)]).unwrap();
+    f.sincronizar().unwrap();
+    drop(f);
+
+    m.atualizar(r, &[Value::Int(7), Value::Str("Ana".into())])
+        .unwrap();
+    drop(m);
+
+    let mut m = Table::abrir(&d, "clientes").unwrap();
+    let mut f = Table::abrir(&d, "pedidos").unwrap();
+    let total_m = m.eventos().unwrap();
+    let total_f = f.eventos().unwrap();
+    let mut ids: Vec<u64> = m
+        .diario(total_m - 1, 1)
+        .unwrap()
+        .iter()
+        .map(|e| e.tx)
+        .collect();
+    ids.extend(f.diario(total_f - 2, 2).unwrap().iter().map(|e| e.tx));
+    assert_eq!(ids.len(), 3);
+    assert!(
+        ids.iter().all(|&t| t == ids[0] && t != 0),
+        "a mae e as filhas da cascata sairam com ids diferentes: {ids:?}"
+    );
+    // E o id e da cascata, e nao o das inclusoes de antes.
+    let antes = f.diario(0, 1).unwrap()[0].tx;
+    assert_ne!(
+        ids[0], antes,
+        "a cascata herdou o id de uma escrita anterior"
+    );
+}

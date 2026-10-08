@@ -235,9 +235,68 @@ pub fn sha512(dados: &[u8]) -> [u8; SHA512_LEN] {
     h.finalizar()
 }
 
+pub const SHA384_LEN: usize = 48;
+
+impl Sha512 {
+    /// O SHA-384 (FIPS 180-4 §5.3.4 e §6.5): a MESMA compressao do SHA-512,
+    /// com outro estado inicial e a saida cortada em 48 bytes. Entra para a
+    /// verificacao de assinatura do TLS com terceiros (pedido 572, T6c):
+    /// `ecdsa_secp384r1_sha384` e o RSA com SHA-384. O estado inicial veio do
+    /// texto da RFC 6234 (`SHA384_H0`), que reproduz o do FIPS.
+    pub fn novo_384() -> Sha512 {
+        let mut h = Sha512::novo();
+        h.estado = [
+            0xcbbb9d5dc1059ed8,
+            0x629a292a367cd507,
+            0x9159015a3070dd17,
+            0x152fecd8f70e5939,
+            0x67332667ffc00b31,
+            0x8eb44a8768581511,
+            0xdb0c2e0d64f98fa7,
+            0x47b5481dbefa4fa4,
+        ];
+        h
+    }
+
+    /// Finaliza um hash nascido em [`Sha512::novo_384`].
+    pub fn finalizar_384(self) -> [u8; SHA384_LEN] {
+        let cheio = self.finalizar();
+        let mut r = [0u8; SHA384_LEN];
+        r.copy_from_slice(&cheio[..SHA384_LEN]);
+        r
+    }
+}
+
+pub fn sha384(dados: &[u8]) -> [u8; SHA384_LEN] {
+    let mut h = Sha512::novo_384();
+    h.atualizar(dados);
+    h.finalizar_384()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// RFC 6234 §8.5, os casos do SHA-384 que sao bytes inteiros (1, 2, 3, 4,
+    /// 6 e 8), copiados do texto oficial. Os casos 5, 7 e 9 sao de bits
+    /// soltos, que esta API nao fala.
+    #[test]
+    fn sha384_dos_vetores_da_rfc_6234() {
+        let t2 = "abcdefghbcdefghicdefghijdefghijkefghijklfghijklmghijklmn\
+                  hijklmnoijklmnopjklmnopqklmnopqrlmnopqrsmnopqrstnopqrstu";
+        let t4 = "01234567012345670123456701234567".repeat(2).repeat(10);
+        let casos: [(Vec<u8>, &str); 6] = [
+            (b"abc".to_vec(), "cb00753f45a35e8bb5a03d699ac65007272c32ab0eded1631a8b605a43ff5bed8086072ba1e7cc2358baeca134c825a7"),
+            (t2.as_bytes().to_vec(), "09330c33f71147e83d192fc782cd1b4753111b173b3b05d22fa08086e3b0f712fcc7c71a557e2db966c3e9fa91746039"),
+            (vec![b'a'; 1_000_000], "9d0e1809716474cb086e834e310a4a1ced149e9c00f248527972cec5704c2a5b07b8b3dc38ecc4ebae97ddd87f3d8985"),
+            (t4.into_bytes(), "2fc64a4f500ddb6828f6a3430b8dd72a368eb7f3a8322a70bc84275b9c0b3ab00d27a5cc3c2d224aa6b61a0d79fb4596"),
+            (vec![0xb9], "bc8089a19007c0b14195f4ecc74094fec64f01f90929282c2fb392881578208ad466828b1c6c283d2722cf0ad1ab6938"),
+            (vec![0xa4, 0x1c, 0x49, 0x77, 0x79, 0xc0, 0x37, 0x5f, 0xf1, 0x0a, 0x7f, 0x4e, 0x08, 0x59, 0x17, 0x39], "c9a68443a005812256b8ec76b00516f0dbb74fab26d665913f194b6ffb0e91ea9967566b58109cbc675cc208e4c823f7"),
+        ];
+        for (i, (m, esperado)) in casos.iter().enumerate() {
+            assert_eq!(hex(&sha384(m)), *esperado, "caso {i}");
+        }
+    }
 
     fn hex(b: &[u8]) -> String {
         b.iter().map(|x| format!("{x:02x}")).collect()

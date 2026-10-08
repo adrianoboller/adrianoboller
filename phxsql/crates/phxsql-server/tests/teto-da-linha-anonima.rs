@@ -445,6 +445,96 @@ fn a_conexao_aberta_antes_do_primeiro_cadastro_perde_o_teto_quando_ele_nasce() {
     recusada_pelo_teto_do_anonimo(&d, &r, "conexao aberta antes do cadastro");
 }
 
+/// **Excluido enquanto o PROPRIO pedido esperava: a linha seguinte ja e de
+/// anonimo** -- pedido 655, o teste que separa as duas guardas do 442 que o
+/// de cima nao separa.
+///
+/// O `despachar` refresca a ficha no COMECO do pedido. Aqui o cadastro muda
+/// DEPOIS disso e ANTES de a resposta sair: o pedido da ana fica parado numa
+/// trava de linha que o root segura, e o root a exclui por outra conexao
+/// nesse meio-tempo. Quando a resposta sai, a ficha da conexao ainda e a de
+/// quem a ana era.
+///
+/// * teto decidido ao armar a leitura, sem refrescar (`teto-decidido-antes-
+///   do-bloqueio`) e teto decidido na hora certa com a ficha velha (`teto-
+///   decidido-sem-refrescar-a-ficha`): a linha de 1 MiB entra -- caem;
+/// * ficha refrescada ao ARMAR a leitura (`teto-refrescado-antes-do-
+///   bloqueio`): a exclusao ja aconteceu quando a leitura se arma, entao o
+///   teto sai certo -- passa. E o que o teste de cima nao distingue: la a
+///   exclusao vem com a leitura ja armada, e as tres caem juntas.
+#[test]
+fn quem_e_excluido_enquanto_o_proprio_pedido_espera_perde_o_teto_na_linha_seguinte() {
+    let d = pasta("excluido-na-espera");
+    let (_s, porta) = subir_de_arquivo(
+        &d,
+        &format!(
+            "{}, {}",
+            ficha("root", SENHA, true),
+            ficha("ana", SENHA_DA_ANA, true)
+        ),
+    );
+    let mut root = Ligacao::entrar(porta);
+    let pede = |c: &mut Ligacao, corpo: &str| {
+        // Uma linha so: o protocolo e de linha, e o corpo aqui se escreve em
+        // varias para caber na tela.
+        let corpo = corpo.replace('\n', " ");
+        let r = c.mandar(&format!(r#"{{"token":"{TOKEN}",{corpo}}}"#));
+        assert!(r.booleano_ou("ok", false), "{corpo}: {}", r.escrever());
+        r
+    };
+    pede(&mut root, r#""op":"criar_database","database":"loja""#);
+    pede(
+        &mut root,
+        r#""op":"criar_tabela","database":"loja","tabela":"pedidos",
+           "colunas":[{"nome":"id","tipo":"Int8","obrigatoria":true},
+                      {"nome":"nome","tipo":"Str(20)"}]"#,
+    );
+    pede(
+        &mut root,
+        r#""op":"inserir","database":"loja","tabela":"pedidos","valores":{"id":1,"nome":"p1"}"#,
+    );
+    // O root segura a linha 1.
+    pede(&mut root, r#""op":"begin","database":"loja""#);
+    pede(
+        &mut root,
+        r#""op":"atualizar","database":"loja","tabela":"pedidos","rowid":1,
+           "linha":{"id":1,"nome":"do root"}"#,
+    );
+
+    let mut ana = Ligacao::nova(porta);
+    pede(
+        &mut ana,
+        &format!(r#""op":"login","usuario":"ana","senha":"{SENHA_DA_ANA}""#),
+    );
+    pede(
+        &mut ana,
+        r#""op":"begin","database":"loja","lock_timeout":5000"#,
+    );
+    let espera = std::thread::spawn(move || {
+        let r = ana.mandar(&format!(
+            r#"{{"token":"{TOKEN}","op":"atualizar","database":"loja","tabela":"pedidos","rowid":1,"linha":{{"id":1,"nome":"da ana"}}}}"#
+        ));
+        (ana, r)
+    });
+    std::thread::sleep(Duration::from_millis(400));
+    assert!(
+        !espera.is_finished(),
+        "premissa: o pedido da ana tinha de estar esperando a trava do root"
+    );
+    let mut outro = Ligacao::entrar(porta);
+    pede(&mut outro, r#""op":"usuario_excluir","login":"ana""#);
+    assert!(
+        !espera.is_finished(),
+        "premissa: a exclusao tinha de acontecer com o pedido da ana ainda \
+         esperando -- senao este teste mede o cenario do de cima"
+    );
+    pede(&mut root, r#""op":"rollback""#);
+    let (mut ana, _r) = espera.join().unwrap();
+
+    let r = ana.mandar(&linha_de_um_mib());
+    recusada_pelo_teto_do_anonimo(&d, &r, "excluido enquanto o proprio pedido esperava");
+}
+
 /// **O COMPORTAMENTO VELHO: quem continua no cadastro continua com o teto do
 /// registro** -- inclusive quando o cadastro muda por causa de OUTRO usuario.
 /// Um conserto que refrescasse a ficha errado derrubaria o lote de todo mundo

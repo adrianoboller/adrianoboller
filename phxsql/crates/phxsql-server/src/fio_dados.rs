@@ -45,6 +45,17 @@ impl Escrita {
     pub fn cifrado(&self) -> bool {
         matches!(self, Escrita::Tls(_))
     }
+
+    /// O `tls-exporter` da RFC 9266 desta conexao, quando ela e TLS: o que a
+    /// sessao guarda no lugar da transcricao do Noise, para o `amarrar_canal`
+    /// do login e a prova do pulso valerem pelo TLS tambem (pedido 572,
+    /// T6b-2). Em claro, `None` -- nao ha canal a que amarrar.
+    pub fn vinculo_do_canal(&self) -> Option<[u8; 32]> {
+        match self {
+            Escrita::Tls(t) => Some(t.borrow().vinculo_do_canal()),
+            Escrita::Claro(_) => None,
+        }
+    }
 }
 
 impl Read for Leitura {

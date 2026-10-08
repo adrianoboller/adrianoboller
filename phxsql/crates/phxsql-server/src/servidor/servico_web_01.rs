@@ -107,11 +107,11 @@ impl Servidor {
 
         match (pedido.metodo.as_str(), pedido.caminho.as_str()) {
             ("GET", "/") | ("GET", "/index.html") => {
-                let _ = http::responder(
+                // Pedido 339(a): a folga da Anthropic no CSP sai da config.
+                let _ = http::responder_interface(
                     &mut fluxo,
-                    200,
-                    "text/html; charset=utf-8",
                     &http::montar_pagina(),
+                    self.config.web.integracao_claude,
                 );
             }
             // Sem token de proposito: e so o sinal de vida que a pagina usa
@@ -184,6 +184,13 @@ impl Servidor {
                             // ouviria a recusa -- com a senha ja no fio.
                             "senha_em_claro_pela_rede",
                             Json::Bool(self.config.cifra_fio.senha_em_claro_pela_rede),
+                        ),
+                        (
+                            // Pedido 339(a): o desligamento administrativo da
+                            // Claude. Quem barra e o CSP da pagina; isto so
+                            // deixa a tela dizer o porque.
+                            "integracao_claude",
+                            Json::Bool(self.config.web.integracao_claude),
                         ),
                     ]),
                 );
@@ -547,6 +554,13 @@ impl Servidor {
         for a in avisos {
             eprintln!("aviso: {a}");
         }
+        // O pino e o que o outro PhxSql escreve no `pino_tls` dele (pedido
+        // 572, T6b-2). E publico -- o SHA-256 da chave PUBLICA --, e sem esta
+        // linha a unica receita seria o encadeamento de quatro `openssl`.
+        eprintln!(
+            "tls da porta {secao}: pino {}",
+            phxsql_core::tls::pino_em_texto(&id.pino()?)
+        );
         Ok(Some(Arc::new(id)))
     }
 
@@ -1197,7 +1211,11 @@ impl Servidor {
         // devolve Some porque `servidor_permitido` acima ja deixou passar; o
         // `if let` e cinto de seguranca, nao um caminho novo.
         if let Some(sv) = self.config.web.servidor(destino) {
-            if sv.cifra {
+            // O `pino_tls` decide antes da `cifra` (pedido 572, T6b-2): a mesma
+            // ordem do `replica::Cliente::proteger`.
+            if let Some(p) = sv.pino_tls().map_err(|e| (op.clone(), e))? {
+                remoto.cifrar_tls(p).map_err(|e| (op.clone(), e))?;
+            } else if sv.cifra {
                 let pino = sv.pino_do_fio().map_err(|e| (op.clone(), e))?;
                 remoto.cifrar(pino).map_err(|e| (op.clone(), e))?;
             }
@@ -1329,8 +1347,8 @@ impl Servidor {
     /// Acerta a sessao web depois de um despacho que deu certo.
     ///
     /// Tres operacoes mexem nela e nenhuma outra: o `desafio` cria a sessao
-    /// anonima que carrega o nonce, o `login` lhe da nome, e o `sair` a
-    /// encerra. Esta funcao e chamada pelos DOIS caminhos HTTP -- ver
+    /// anonima que carrega o nonce, o `login` a troca por uma NOVA com nome
+    /// (pedido 719 -- ver `girar_sessao`), e o `sair` a encerra. Esta funcao e chamada pelos DOIS caminhos HTTP -- ver
     /// `sessao_do_cabecalho` para o motivo de nao haver duas copias.
     fn acertar_sessao(&self, op: &str, sessao: &Sessao, id_sessao: &mut String, agora: i64) {
         let duracao = self.config.web.sessao_ms();
@@ -1345,14 +1363,7 @@ impl Servidor {
                     vivas.guardar_desafio(id_sessao, d);
                 }
             }
-            "login" => {
-                if let Ok(mut vivas) = self.sessoes.lock() {
-                    let login = sessao.login().to_string();
-                    if id_sessao.is_empty() || !vivas.definir_login(id_sessao, &login) {
-                        *id_sessao = vivas.nova(&login, duracao, agora);
-                    }
-                }
-            }
+            "login" => self.girar_sessao(id_sessao, sessao.login(), agora),
             "sair" => {
                 if let Ok(mut vivas) = self.sessoes.lock() {
                     vivas.encerrar(id_sessao);
@@ -1363,6 +1374,38 @@ impl Servidor {
                 id_sessao.clear();
             }
             _ => {}
+        }
+    }
+
+    /// O login troca o id de sessao: nasce um NOVO, e o anterior morre
+    /// (pedido 719, fixacao de sessao).
+    ///
+    /// O id do `desafio` nasce anonimo e cruza o fio antes da credencial;
+    /// promove-lo no login entregaria a identidade a quem o viu passar --
+    /// ou a quem o plantou no navegador da vitima. Vale tambem com TLS: a
+    /// fixacao nao depende de escutar o fio. O remoto, se havia, muda de
+    /// chave junto, porque o encaminhamento e procurado pelo id.
+    ///
+    /// UM lugar para os dois caminhos que fazem login pela web: o local (por
+    /// `acertar_sessao`) e o que vai para outro servidor, que nao passa por
+    /// ele.
+    fn girar_sessao(&self, id_sessao: &mut String, login: &str, agora: i64) {
+        let duracao = self.config.web.sessao_ms();
+        let velho = std::mem::take(id_sessao);
+        if let Ok(mut vivas) = self.sessoes.lock() {
+            *id_sessao = vivas.nova(login, duracao, agora);
+            if !velho.is_empty() {
+                vivas.encerrar(&velho);
+            }
+        }
+        if !velho.is_empty() {
+            if let Ok(mut r) = self.remotos.lock() {
+                if let Some(conexao) = r.remove(velho.as_str()) {
+                    if !id_sessao.is_empty() {
+                        r.insert(id_sessao.clone(), conexao);
+                    }
+                }
+            }
         }
     }
 
@@ -1436,10 +1479,24 @@ impl Servidor {
         // O login que vai para OUTRO servidor nao passa pelo `op_login`
         // daqui, mas a senha atravessou o fio ate aqui do mesmo jeito: o
         // mesmo portao, antes de abrir ou de encaminhar (pedido 667).
+        // E o id de sessao que o desafio e o login remotos fazem nascer aqui
+        // tambem nao sai por fio em claro (pedido 674): o remoto nao passa
+        // pelo `op_desafio` nem pelo `op_login` deste servidor, entao o
+        // portao e chamado no caminho dele.
         let fio_da_senha = if ja_remota.is_some() || !servidor_remoto.is_empty() {
-            Json::analisar(&pedido.corpo)
-                .ok()
-                .and_then(|j| self.conferir_o_fio_da_senha(&j, &sessao).err())
+            Json::analisar(&pedido.corpo).ok().and_then(|j| {
+                let op_pedida = j.texto_ou("op", "").trim();
+                let emite = op_pedida == "login" || op_pedida == "desafio";
+                self.conferir_o_fio_da_senha(&j, &sessao)
+                    .and_then(|()| {
+                        if emite {
+                            self.conferir_a_emissao_da_sessao(&sessao)
+                        } else {
+                            Ok(())
+                        }
+                    })
+                    .err()
+            })
         } else {
             None
         };
@@ -1447,13 +1504,23 @@ impl Servidor {
             match (fio_da_senha, &ja_remota, servidor_remoto.is_empty()) {
                 (Some(e), _, _) => ("login".to_string(), false, Err(e)),
                 // Sessao ja amarrada a um servidor remoto: tudo vai para la.
-                (None, Some(conexao), _) => self.encaminhar(conexao, &pedido.corpo, ip),
+                (None, Some(conexao), _) => {
+                    let saida = self.encaminhar(conexao, &pedido.corpo, ip);
+                    // O login que o remoto aceitou troca o id, como o local.
+                    if saida.0 == "login" && saida.2.is_ok() {
+                        self.girar_sessao(&mut id_sessao, "", agora);
+                    }
+                    saida
+                }
                 // Login novo pedindo servidor: abre, encaminha, e guarda se entrou.
                 (None, None, false) => {
                     let r = self.abrir_remoto(&servidor_remoto, &pedido.corpo, ip);
                     match r {
                         Ok((op, valor, conexao)) => {
-                            if id_sessao.is_empty() {
+                            if op == "login" {
+                                // Login aceito: id novo, o anterior morre.
+                                self.girar_sessao(&mut id_sessao, "", agora);
+                            } else if id_sessao.is_empty() {
                                 if let Ok(mut vivas) = self.sessoes.lock() {
                                     id_sessao = vivas.nova("", duracao, agora);
                                 }

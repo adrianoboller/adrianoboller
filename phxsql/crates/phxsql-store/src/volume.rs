@@ -1652,9 +1652,18 @@ mod tests {
         // `Banco` do motor do 542, que reusava o inode do nome, pelo modo
         // `Destino` depois de tirar o nome. Mesmo motor, mesma contagem no
         // `reg.rs`; a definicao conta 1 no `util.rs`.
+        // Pedido 706: `catalogo.rs` 4 -> 7 -- o retrato da replica. Na
+        // origem, `retratar_tabela` copia (`copiar_do_banco`) os arquivos da
+        // tabela para arquivos PASSAGEIROS na raiz, que nunca viram tabela
+        // la e saem no fim; na replica, `gravar_pedaco_do_retrato` escreve o
+        // que chega pelo fio (um abridor so, `opcoes_do_banco`) e
+        // `trocar_pelo_retrato` faz o `rename` para o nome da tabela -- DEPOIS
+        // do `sync_all` de cada arquivo (`sincronizar_arquivo_do_retrato`) e
+        // com o `fsync` da pasta devolvido em `PorSincronizar`. Nenhum e
+        // familia do `Volumes`: a tabela nao esta aberta enquanto troca.
         const HOJE: &[(&str, usize)] = &[
             ("backup.rs", 2),
-            ("catalogo.rs", 4),
+            ("catalogo.rs", 7),
             ("marca.rs", 1),
             ("ndx.rs", 2),
             ("pag.rs", 2),

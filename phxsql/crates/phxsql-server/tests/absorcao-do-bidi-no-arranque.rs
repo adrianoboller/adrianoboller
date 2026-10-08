@@ -230,6 +230,7 @@ fn a_primeira_rodada_nao_para_o_escritor() {
         hora: String::new(),
         cifra: false,
         chave_do_fio: String::new(),
+        pino_tls: String::new(),
         espelho: false,
     }];
     let b = subir(cb);

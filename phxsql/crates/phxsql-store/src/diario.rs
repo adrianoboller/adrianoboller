@@ -75,6 +75,36 @@ pub fn paginacao(esquema: Paginacao) -> Paginacao {
     }
 }
 
+/// Onde o volume do `.log` SEM paginacao corta, quando o expurgo do diario
+/// esta ligado -- pedido 706. Zero, o padrao, quer dizer que ele nunca vira
+/// de volume, como sempre foi: sem volume fechado nao ha o que expurgar, e
+/// guardar tudo e o padrao de fabrica pela regua (segurar 8 x soltar 2).
+static CORTE_DO_EXPURGO: AtomicU64 = AtomicU64::new(0);
+
+/// O corte padrao do diario sem paginacao com o expurgo ligado: 4 MiB, uns
+/// tres dias de vendas de um caixa pela bancada do 678 (1,5-1,6 KB por
+/// venda, 500 vendas por dia). O volume e a unidade do expurgo e a margem
+/// que ele guarda, entao o disco do diario fica entre o que nao foi
+/// confirmado e mais dois volumes.
+pub const CORTE_PADRAO_DO_EXPURGO: u64 = 4 * 1024 * 1024;
+
+/// Liga (bytes > 0) ou desliga (0) a virada de volume do `.log` sem
+/// paginacao. Abaixo do piso sobe ao piso, como o [`definir_bytes_por_volume`].
+/// So o `.log`: a `.trash` e o `.reason` nao tem quem os consuma pelo fio.
+pub fn definir_corte_do_expurgo(bytes: u64) {
+    let valor = if bytes == 0 {
+        0
+    } else {
+        bytes.max(CORTE_MINIMO)
+    };
+    CORTE_DO_EXPURGO.store(valor, Ordering::Relaxed);
+}
+
+/// O corte vigente do `.log` sem paginacao. Zero = nunca vira.
+pub fn corte_do_expurgo() -> u64 {
+    CORTE_DO_EXPURGO.load(Ordering::Relaxed)
+}
+
 #[cfg(test)]
 mod testes {
     use super::*;

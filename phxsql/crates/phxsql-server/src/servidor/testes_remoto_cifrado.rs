@@ -161,6 +161,7 @@ fn abrir_remoto_liga_o_tunel_quando_a_config_pede_cifra() {
         endereco: destino_n.clone(),
         cifra: false,
         chave_do_fio: String::new(),
+        pino_tls: String::new(),
     }]);
     let (op, _v, remoto) = s_claro
         .abrir_remoto(&destino_n, &linha_desafio(), ip)
@@ -177,6 +178,7 @@ fn abrir_remoto_liga_o_tunel_quando_a_config_pede_cifra() {
         endereco: destino_e.clone(),
         cifra: true,
         chave_do_fio: pino_e.clone(),
+        pino_tls: String::new(),
     }]);
     let (_op, _v, remoto) = s_cifra
         .abrir_remoto(&destino_e, &linha_desafio(), ip)
@@ -194,6 +196,7 @@ fn abrir_remoto_liga_o_tunel_quando_a_config_pede_cifra() {
         endereco: destino_e.clone(),
         cifra: false,
         chave_do_fio: String::new(),
+        pino_tls: String::new(),
     }]);
     // `unwrap_err` pediria `Debug` do `Remoto` do lado Ok; um `match`
     // evita isso e ainda diz o que falhou se por acaso ENTRAR.
@@ -203,5 +206,67 @@ fn abrir_remoto_liga_o_tunel_quando_a_config_pede_cifra() {
             e.to_string().contains("cifra do fio"),
             "a recusa tinha de nomear a cifra do fio: {e}"
         ),
+    }
+}
+
+/// **`pino_tls` no destino da interface (pedido 572, T6b-2), pelo caminho de
+/// producao.** O destino tem `"tls": true` e EXIGE cifra; a interface o tem
+/// com `cifra: false` e o pino TLS -- entao so o TLS pode fazer o desafio
+/// passar. Defeito reposto que isto derruba: `abrir_remoto` sem olhar o
+/// `pino_tls` manda o login em claro, e o destino recusa. O pino errado cai
+/// no aperto, antes do token.
+#[test]
+fn abrir_remoto_fala_tls_quando_o_destino_tem_pino_tls() {
+    let dir_d = DirTemp::novo("remoto-tls-destino");
+    let dir_i = DirTemp::novo("remoto-tls-interface");
+    let mut c = Config {
+        base: dir_d.to_path_buf(),
+        log_acessos: dir_d.join("acessos.log"),
+        blacklist: dir_d.join("blacklist.json"),
+        dblink: dir_d.join("dblink.json"),
+        token: "t".into(),
+        caminho: Some(dir_d.join("config.json")),
+        ..Config::default()
+    };
+    c.cifra_fio.arquivo = dir_d.join("chave-do-fio.hex");
+    c.cifra_fio.exigir = true;
+    c.tls.ligado = true;
+    let destino_s = Servidor::novo(c).unwrap();
+    destino_s.preparar_tls_dos_dados().unwrap();
+    let porta = porta_de_dados(&destino_s);
+    let destino = format!("127.0.0.1:{porta}");
+    let pem = std::fs::read_to_string(dir_d.join("tls-dados-certificado.pem")).unwrap();
+    let cert = phxsql_core::x509::blocos_pem(&pem, "CERTIFICATE").unwrap();
+    let pino = phxsql_core::tls::pino_em_texto(&phxsql_core::hash::sha256(
+        phxsql_core::x509::spki_do_certificado(&cert[0]).unwrap(),
+    ));
+
+    let interface = |pino_tls: String| -> Arc<Servidor> {
+        let mut c = Config {
+            base: dir_i.to_path_buf(),
+            log_acessos: dir_i.join("acessos.log"),
+            blacklist: dir_i.join("blacklist.json"),
+            dblink: dir_i.join("dblink.json"),
+            token: "t".into(),
+            ..Config::default()
+        };
+        c.web.servidores = vec![ServidorWeb {
+            endereco: destino.clone(),
+            cifra: false,
+            chave_do_fio: String::new(),
+            pino_tls,
+        }];
+        Servidor::novo(c).unwrap()
+    };
+    let (op, _v, remoto) = interface(pino.clone())
+        .abrir_remoto(&destino, &linha_desafio(), "127.0.0.1")
+        .unwrap_or_else(|(_, e)| panic!("o desafio pelo TLS nao passou: {e}"));
+    assert_eq!(op, "desafio");
+    assert!(remoto.lock().unwrap().tls(), "o pino_tls nao ligou o TLS");
+
+    let torto = phxsql_core::tls::pino_em_texto(&[9u8; 32]);
+    match interface(torto).abrir_remoto(&destino, &linha_desafio(), "127.0.0.1") {
+        Ok(_) => panic!("o pino TLS errado entrou"),
+        Err((_, e)) => assert!(e.to_string().contains(&pino), "{e}"),
     }
 }

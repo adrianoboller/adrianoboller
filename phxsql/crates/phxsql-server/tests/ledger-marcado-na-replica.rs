@@ -74,6 +74,7 @@ fn subir_replica(base: &std::path::Path, porta_do_source: u16) -> (Arc<Servidor>
         hora: String::new(),
         cifra: false,
         chave_do_fio: String::new(),
+        pino_tls: String::new(),
         espelho: false,
     }];
     subir(c)

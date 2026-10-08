@@ -152,6 +152,21 @@ fn no_reg(n: u64) -> Option<Parada> {
 /// O `phxsqld` bidirecional, puxando de `porta_outro`. `parar` liga o gancho
 /// de `debug` que o mata no meio do grupo.
 fn subir_central(dir: &Path, vez: u32, porta_outro: u16, parar: Option<Parada>) -> (Filho, u16) {
+    subir_central_com(dir, vez, porta_outro, parar, None)
+}
+
+/// Pedido 722: o evento `<tabela>:<rowid de la>` falha com erro do dado,
+/// sempre.
+const FALHAR_NO_EVENTO: &str = "PHXSQL_TESTE_FALHAR_NO_EVENTO";
+
+/// [`subir_central`] com o gancho do 722 ([`FALHAR_NO_EVENTO`]).
+fn subir_central_com(
+    dir: &Path,
+    vez: u32,
+    porta_outro: u16,
+    parar: Option<Parada>,
+    falhar_em: Option<&str>,
+) -> (Filho, u16) {
     let config = dir.join("config.json");
     std::fs::write(
         &config,
@@ -183,9 +198,13 @@ fn subir_central(dir: &Path, vez: u32, porta_outro: u16, parar: Option<Parada>) 
         .stdout(Stdio::null())
         .stderr(Stdio::from(std::fs::File::create(&erro_padrao).unwrap()));
     cmd.env_remove("PHXSQL_TESTE_PARAR_NO_GRUPO")
-        .env_remove("PHXSQL_TESTE_PARAR_NO_REG");
+        .env_remove("PHXSQL_TESTE_PARAR_NO_REG")
+        .env_remove(FALHAR_NO_EVENTO);
     if let Some((var, n, _)) = parar {
         cmd.env(var, n.to_string());
+    }
+    if let Some(evento) = falhar_em {
+        cmd.env(FALHAR_NO_EVENTO, evento);
     }
     let mut filho = Filho(cmd.spawn().expect("nao consegui iniciar o phxsqld"));
     let porta = porta_do_phxsqld(&mut filho, &erro_padrao).unwrap_or_else(|e| panic!("{e}"));
@@ -444,4 +463,140 @@ fn a_queda_entre_o_reg_e_o_diario_no_bidi_completa_a_inclusao() {
         std::thread::sleep(Duration::from_millis(50));
     }
     drop(filho);
+}
+
+fn marcas_do_bidi(pasta: &Path) -> Vec<String> {
+    std::fs::read_dir(pasta)
+        .map(|ls| {
+            ls.filter_map(|e| e.ok())
+                .map(|e| e.file_name().to_string_lossy().into_owned())
+                .filter(|n| n.starts_with("bidi_"))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// **A prova real do 722 (o 713 no bidirecional).** Um erro do DADO no
+/// segundo item, depois de parte do grupo entrar por chave. Vermelho medido
+/// antes do conserto: a saida pelo `?` deixava a marca na lista da rodada,
+/// que a apagava depois do `fsync` -- e o central reabria com a venda PELA
+/// METADE para sempre.
+///
+/// O erro injetado e permanente, e o conserto completa o grupo na hora pelo
+/// corpo da completacao do arranque -- que passa pelo mesmo aplicador e bate
+/// no mesmo erro. Entao a marca tem de FICAR no disco, e o arranque sem o
+/// gancho completa a venda inteira.
+#[test]
+fn o_erro_de_dado_no_meio_do_grupo_do_bidi_nao_deixa_a_venda_pela_metade() {
+    let base_o = DirTemp::novo("dado-bidi-caixa");
+    let base_c = DirTemp::novo("dado-bidi-central");
+    std::fs::create_dir_all(&base_c.0).unwrap();
+    let (_outro, porta_o) = subir_origem(&base_o.0);
+    criar_as_tabelas(porta_o);
+    vender(porta_o, 1);
+
+    let (filho, _) = subir_central_com(&base_c.0, 1, porta_o, None, Some("itens:2"));
+    let erro = base_c.0.join("stderr-1.txt");
+    let ate = Instant::now() + ESPERA;
+    while !std::fs::read_to_string(&erro)
+        .unwrap_or_default()
+        .contains("teste: erro de dado injetado no evento itens:2")
+    {
+        assert!(
+            Instant::now() < ate,
+            "o erro injetado nunca chegou ao evento"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    // Uma rodada inteira de folga: o `fsync` do alcance e a saida da marca.
+    std::thread::sleep(Duration::from_millis(1500));
+    let pasta = base_c.0.join("dados").join("loja");
+    let sobra = marcas_do_bidi(&pasta);
+    drop(filho);
+
+    let (filho, porta_c) = subir_central(&base_c.0, 2, comum::porta_fechada(), None);
+    let r = retrato(porta_c);
+    drop(filho);
+    assert_eq!(
+        r,
+        (1, ITENS, 1),
+        "o erro de dado no meio do grupo do bidirecional deixou a venda PELA METADE \
+         (vendas, itens, pagamentos) = {r:?}; marcas no disco antes do arranque: {sobra:?}"
+    );
+}
+
+/// **A prova real do 723.** A copia fria (o caminho da CLI) de um central que
+/// morreu no meio de um grupo do bidirecional, restaurada noutro servidor. O
+/// palco nao completa a marca `bidi_` -- quem casa pela chave e o servidor --,
+/// mas a confere: o grupo pela metade RECUSA a restauracao nomeando a marca.
+/// Vermelho medido antes do conserto: a restauracao passava e mostrava a
+/// venda pela metade ate o proximo arranque do destino.
+#[test]
+fn a_copia_do_central_caido_no_meio_do_grupo_nao_restaura_meia_venda() {
+    let base_o = DirTemp::novo("copia-bidi-caixa");
+    let base_c = DirTemp::novo("copia-bidi-central");
+    std::fs::create_dir_all(&base_c.0).unwrap();
+    let (_outro, porta_o) = subir_origem(&base_o.0);
+    criar_as_tabelas(porta_o);
+    vender(porta_o, 1);
+    let (mut filho, _) = subir_central(&base_c.0, 1, porta_o, no_grupo(3));
+    filho.0.kill().unwrap();
+    filho.0.wait().unwrap();
+    drop(filho);
+    assert_eq!(
+        marcas_do_bidi(&base_c.0.join("dados").join("loja")).len(),
+        1,
+        "premissa: a marca do grupo pela metade tinha de estar no disco caido"
+    );
+
+    let copias = base_c.0.join("copias");
+    let (zip, _) = phxsql_store::backup::executar_zip(
+        &base_c.0.join("dados"),
+        &copias,
+        "loja",
+        "teste",
+        phxsql_server::agora_ms(),
+    )
+    .unwrap();
+    phxsql_store::backup::finalizar_zip(&zip).unwrap();
+    let zip = std::fs::read_dir(&copias)
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .find(|p| p.extension().is_some_and(|x| x == "zip"))
+        .expect("a copia nao gerou .zip");
+
+    let base_d = DirTemp::novo("copia-bidi-destino");
+    let mut c = Config {
+        bind: "127.0.0.1:0".into(),
+        base: base_d.0.join("dados"),
+        log_acessos: base_d.0.join("acessos.log"),
+        blacklist: base_d.0.join("blacklist.json"),
+        dblink: base_d.0.join("dblink.json"),
+        jobs: base_d.0.join("jobs.json"),
+        token: TOKEN.into(),
+        ..Default::default()
+    };
+    c.cifra_fio.exigir = false;
+    c.cifra_fio.arquivo = base_d.0.join("chave-do-fio.hex");
+    c.web.ligado = false;
+    let (ouvinte, _) = comum::ouvinte_reservado();
+    let s = Servidor::novo(c).unwrap();
+    let porta_d = comum::no_ar_no_ouvinte(&s, ouvinte);
+    let r = Json::analisar(&pedir(
+        porta_d,
+        &format!(
+            r#"{{"token":"{TOKEN}","op":"restaurar_backup","origem":"{}","database":"loja"}}"#,
+            zip.display()
+        ),
+    ))
+    .unwrap();
+    let retrato = retrato(porta_d);
+    assert!(
+        !r.booleano_ou("ok", true) && r.texto_ou("erro", "").contains("bidi_"),
+        "a restauracao da copia com o grupo do bidi pela metade passou (retrato \
+         (vendas, itens, pagamentos) = {retrato:?}): {}",
+        r.escrever()
+    );
+    assert_eq!(retrato, (0, 0, 0), "o database pela metade entrou na raiz");
 }

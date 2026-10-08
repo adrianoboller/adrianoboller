@@ -6735,8 +6735,31 @@ mudou de trecho, porque o motor mudou de corpo.
 - **Fora do Linux** (e nas arquiteturas sem constante conferida, como mips e
   sparc) não há `O_NOFOLLOW` aqui nem `/proc/self/fd`: a `Pasta` cai no caminho
   real com o `lstat` de cada componente — fecha o link já plantado, e a janela da
-  troca fica. O crivo do dono cai para só o `nlink` fora do Linux. No Windows
-  vale o que valia.
+  troca fica. O crivo do dono cai para só o `nlink` fora do Linux.
+- **No Windows (pedido 662)** a frase de antes — «vale o que valia» — escondia
+  que há equivalente. `bandeiras()` dá `None`, e `mesmo_arquivo` e `um_nome_so`
+  respondem `true` sem olhar; a recusa de link do 648 sumia ali. Agora quem
+  reabre um nome que já existe (`recriar` e o `fsync` tardio do backup) passa
+  por `util::abrir_sem_seguir`, que abre com `FILE_FLAG_OPEN_REPARSE_POINT`
+  (`0x00200000`, pela `OpenOptionsExt::custom_flags` estável): o handle de um
+  link simbólico ou *junction* plantado na janela é **o próprio link**, o
+  `fstat` dele dá `is_symlink` e o `!is_file()` que os dois chamadores já
+  faziam recusa. O ponto de reparse que **não** é link (deduplicação, arquivo
+  de nuvem) reabre sem a bandeira, porque ela pula o filtro que hidrata o
+  conteúdo e truncar ali gravaria no esboço; para esse tipo a janela de antes
+  fica. **O que a `std` estável não alcança, dito:** (1) **link físico** — o
+  `number_of_links`, o `file_index` e o `volume_serial_number` só existem na
+  `std` instável (`windows_by_handle`), então `um_nome_so` e `mesmo_arquivo`
+  continuam `true` e o link físico plantado passa, como a troca por outro
+  arquivo regular na janela; (2) **`MOVEFILE_WRITE_THROUGH`** — o `rename` da
+  `std` é `MoveFileExW` sem essa bandeira, e o `sincronizar_diretorio` é vazio
+  no Windows (`sincronia.rs`): uma queda logo depois da troca pode devolver
+  volumes misturados, que `conferir_volumes_uniformes` recusa — sem perda
+  calada, mas a tabela não abre até alguém resolver. Fechar os dois pede FFI
+  (`unsafe`) ou a `std` instável. **Não provado contra o Windows:** o alvo
+  `x86_64-pc-windows-gnu` não está instalado nesta máquina (08/10/2026), então
+  nem o `cargo check` cruzado rodou; a prova contra o Windows real é impasse
+  de ambiente, não de código.
 - **Sem `/proc` montado** no Linux, o mesmo recuo da `Pasta`.
 - **O `fsync` das PASTAS e a faxina delas** — eram o resíduo desta lista e
   viraram o pedido 593, fechado na §33.5.

@@ -1047,6 +1047,9 @@ mod testes {
         let porta = servidor_falso(resultado_com(&lenenc_absurdo(), vec![]));
         let erro = conexao_com(porta).consultar("SELECT 1", 100).unwrap_err();
         assert!(erro.to_string().contains("malformado"), "{erro}");
+        // Pedido 657: «malformado» o arquivo escreve em mais de um ponto; a
+        // recusa do campo que passa do pacote e a unica que diz quanto diz.
+        assert!(erro.to_string().contains("um campo diz"), "{erro}");
     }
 
     /// **544: o mesmo numero numa CELULA.** A linha de 9 bytes nao e EOF (o
@@ -1056,6 +1059,7 @@ mod testes {
         let porta = servidor_falso(resultado_com(b"\x04nome", vec![lenenc_absurdo()]));
         let erro = conexao_com(porta).consultar("SELECT 1", 100).unwrap_err();
         assert!(erro.to_string().contains("malformado"), "{erro}");
+        assert!(erro.to_string().contains("um campo diz"), "{erro}");
     }
 
     /// **544: o campo que diz mais bytes do que o pacote tem e recusado, e

@@ -300,6 +300,14 @@ pub struct Origem {
     /// nao protege de quem esta no meio, porque o atacante apresenta a chave
     /// dele e nao ha com o que comparar. O arranque avisa exatamente isso.
     pub chave_do_fio: String,
+    /// O pino TLS do outro lado (pedido 572, T6b-2): `sha256//<base64>` do
+    /// SPKI do certificado dele, a forma do `--pinnedpubkey` do curl, e o que
+    /// o servidor imprime no arranque («tls da porta dados: pino ...»).
+    ///
+    /// Escrito, a conexao passa a ser TLS 1.3 com ESTE pino no lugar do
+    /// Noise, e a `cifra` deixa de decidir; vazio, tudo segue como era --
+    /// guarda nova entra pedida. O outro lado precisa de `"tls": true`.
+    pub pino_tls: String,
     /// Pedido 677: os `databases` desta origem sao ESPELHO aqui -- so leitura
     /// local, porque um escritor por database e o que impede os rowids de
     /// divergirem e a replicacao de parar.
@@ -338,6 +346,7 @@ impl std::fmt::Debug for Origem {
             hora,
             cifra,
             chave_do_fio,
+            pino_tls,
             espelho,
         } = self;
         f.debug_struct("Origem")
@@ -354,6 +363,7 @@ impl std::fmt::Debug for Origem {
             .field("hora", hora)
             .field("cifra", cifra)
             .field("chave_do_fio", chave_do_fio)
+            .field("pino_tls", pino_tls)
             .field("espelho", espelho)
             .finish()
     }
@@ -379,6 +389,12 @@ impl Origem {
             &self.chave_do_fio,
             &format!("origens[{}].chave_do_fio", self.nome),
         )?))
+    }
+
+    /// O pino TLS ja em bytes, ou `None` sem ele -- e torto e ERRO, pela mesma
+    /// razao do [`Origem::pino_do_fio`].
+    pub fn pino_tls(&self) -> Result<Option<[u8; 32]>> {
+        pino_tls_de(&self.pino_tls, &format!("origens[{}].pino_tls", self.nome))
     }
 }
 
@@ -532,7 +548,19 @@ pub struct NoCluster {
     /// Faz parte da igualdade de proposito: girar o pino de um no muda a
     /// entrada, e o supervisor do pulso reconecta com o pino novo, como ja faz
     /// quando um no muda de endereco.
+    ///
+    /// Continua sendo a IDENTIDADE do no mesmo com o `pino_tls` escrito: a
+    /// prova do pulso (pedido 278) sai do Diffie-Hellman com esta chave, e
+    /// nao do certificado TLS.
     pub chave_do_fio: String,
+    /// O pino TLS do outro lado (pedido 572, T6b-2): `sha256//<base64>` do
+    /// SPKI do certificado dele, a forma do `--pinnedpubkey` do curl, e o que
+    /// o servidor imprime no arranque («tls da porta dados: pino ...»).
+    ///
+    /// Escrito, a conexao passa a ser TLS 1.3 com ESTE pino no lugar do
+    /// Noise, e a `cifra` deixa de decidir; vazio, tudo segue como era --
+    /// guarda nova entra pedida. O outro lado precisa de `"tls": true`.
+    pub pino_tls: String,
 }
 
 impl NoCluster {
@@ -555,6 +583,14 @@ impl NoCluster {
             &self.chave_do_fio,
             &format!("cluster.nos[{}].chave_do_fio", self.id),
         )?))
+    }
+
+    /// O pino TLS deste no, ja em bytes -- a regra do [`Origem::pino_tls`].
+    pub fn pino_tls(&self) -> Result<Option<[u8; 32]>> {
+        pino_tls_de(
+            &self.pino_tls,
+            &format!("cluster.nos[{}].pino_tls", self.id),
+        )
     }
 }
 
@@ -746,6 +782,7 @@ impl Cluster {
                         endereco: n.texto_ou("endereco", "127.0.0.1").trim().to_string(),
                         porta: n.inteiro_ou("porta", PORTA_PADRAO as i64).clamp(1, 65_535) as u16,
                         chave_do_fio: n.texto_ou("chave_do_fio", "").trim().to_string(),
+                        pino_tls: n.texto_ou("pino_tls", "").trim().to_string(),
                     })
                     .collect()
             })
@@ -886,6 +923,7 @@ impl Cluster {
         // estar torto esperando o dia em que alguem ligue.
         for n in &self.nos {
             n.pino_do_fio()?;
+            n.pino_tls()?;
         }
         Ok(())
     }
@@ -2509,6 +2547,19 @@ impl CifraFio {
 }
 
 /// Le 32 bytes em hexadecimal, dizendo de onde vieram quando estao errados.
+/// O pino TLS de um campo do config: vazio e `None`; torto e erro que NOMEIA
+/// o campo, e nunca um `None` -- o pino escrito errado viraria em silencio
+/// a conexao sem TLS que ninguem pediu.
+pub(crate) fn pino_tls_de(texto: &str, de_onde: &str) -> Result<Option<[u8; 32]>> {
+    let t = texto.trim();
+    if t.is_empty() {
+        return Ok(None);
+    }
+    phxsql_core::tls::pino_de_texto(t)
+        .map(Some)
+        .map_err(|e| PhxError::Esquema(format!("{de_onde}: {e}")))
+}
+
 pub(crate) fn chave_de_hex(texto: &str, de_onde: &str) -> Result<[u8; 32]> {
     bytes32_de_hex(
         texto,
@@ -3254,6 +3305,10 @@ pub struct ServidorWeb {
     /// nao protege de quem esta no meio, porque o atacante apresenta a chave
     /// dele e nao ha com o que comparar. O arranque avisa exatamente isso.
     pub chave_do_fio: String,
+    /// O pino TLS do destino (pedido 572, T6b-2), `sha256//<base64>`. Escrito,
+    /// a interface fala TLS 1.3 conferido com ele no lugar do Noise, e a
+    /// `cifra` deixa de decidir. So no objeto: o texto solto nao tem onde.
+    pub pino_tls: String,
 }
 
 impl ServidorWeb {
@@ -3267,6 +3322,7 @@ impl ServidorWeb {
             cifra: saidas.sem_decisao_escrita(&format!("web.servidores[{endereco:?}]")),
             endereco,
             chave_do_fio: String::new(),
+            pino_tls: String::new(),
         }
     }
 
@@ -3278,6 +3334,7 @@ impl ServidorWeb {
             cifra: saidas.cifra(o, &format!("web.servidores[{endereco:?}]")),
             endereco,
             chave_do_fio: o.texto_ou("chave_do_fio", "").trim().to_string(),
+            pino_tls: o.texto_ou("pino_tls", "").trim().to_string(),
         }
     }
 
@@ -3296,6 +3353,14 @@ impl ServidorWeb {
             &self.chave_do_fio,
             &format!("web.servidores[{}].chave_do_fio", self.endereco),
         )?))
+    }
+
+    /// O pino TLS ja em bytes -- a regra do [`Origem::pino_tls`].
+    pub fn pino_tls(&self) -> Result<Option<[u8; 32]>> {
+        pino_tls_de(
+            &self.pino_tls,
+            &format!("web.servidores[{}].pino_tls", self.endereco),
+        )
     }
 }
 
@@ -3335,6 +3400,19 @@ pub struct Web {
     pub atras_de_proxy: bool,
     /// TLS nativo nesta porta -- ver [`TlsPorta`].
     pub tls: TlsPorta,
+    /// A integracao da tela com a Claude (API da Anthropic) pode existir
+    /// nesta instalacao? Pedido 339(a): o desligamento ADMINISTRATIVO.
+    ///
+    /// A chamada sai do navegador, e nao do servidor -- entao o servidor nao
+    /// tem chamada para recusar. O que ele tem e a politica da pagina: com
+    /// `false`, a origem da Anthropic SAI do `connect-src` da interface, e e
+    /// o proprio navegador quem barra o `fetch`, inclusive o de uma tela
+    /// adulterada. O `/saude` diz o mesmo para a tela explicar o porque.
+    ///
+    /// Nasce `true`: guarda nova entra pedida, nao imposta -- quem usa a
+    /// integracao hoje continua usando, e quem nao quer que o esquema saia
+    /// da empresa escreve `false`.
+    pub integracao_claude: bool,
 }
 
 /// TLS nativo numa porta HTTP (pedido 572): `tls`, `tls_certificado` e
@@ -3476,6 +3554,7 @@ impl Default for Web {
             servidores: Vec::new(),
             atras_de_proxy: false,
             tls: TlsPorta::default(),
+            integracao_claude: true,
         }
     }
 }
@@ -3494,6 +3573,7 @@ impl Web {
                 servidores: Web::servidores_de(w, saidas),
                 atras_de_proxy: w.booleano_ou("atras_de_proxy", padrao.atras_de_proxy),
                 tls: TlsPorta::de_json(w),
+                integracao_claude: w.booleano_ou("integracao_claude", padrao.integracao_claude),
             },
         }
     }
@@ -4263,6 +4343,128 @@ impl Lgpd {
     }
 }
 
+/// O expurgo do diario (`.log`) -- pedido 706, o caixa que fica meses no ar.
+///
+/// # Desligado por omissao, e o numero da regua
+///
+/// O padrao de fabrica e SEGURAR tudo: PostgreSQL 4 + MariaDB 3 + SQLite 1 =
+/// 8 contra MySQL 2 (`docs/propostas/expurgo-do-diario-706.md` §3). E e o
+/// «guarda nova entra pedida»: todo banco de hoje continua guardando o diario
+/// inteiro. Quem liga e o perfil caixa.
+///
+/// # O que sai, e quando
+///
+/// Volume fechado do `.log` sai quando todo consumidor de `consumidores`
+/// confirmou te-lo puxado (com a margem de um volume), ou -- decisao do dono,
+/// 08/10/2026 -- quando o evento mais novo dele passou de `prazo_dias`: o
+/// caixa nunca para de vender, e o central que ficou fora alem do prazo
+/// recebe a recusa dita e se refaz por copia.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExpurgoDoDiario {
+    /// Liga o expurgo, a passada periodica e a virada de volume do `.log`
+    /// sem paginacao.
+    pub expurgo: bool,
+    /// Dias que o diario NAO confirmado segura. Zero = so sai o confirmado.
+    pub prazo_dias: u32,
+    /// O mesmo prazo em SEGUNDOS, para ensaio: a bancada e a prova pelo
+    /// soquete nao esperam trinta dias. Zero, o padrao, = vale `prazo_dias`.
+    pub prazo_s: u64,
+    /// Os `id_servidor` que seguram o diario -- o analogo do slot do
+    /// PostgreSQL. Quem puxa sem estar aqui nao segura nada.
+    pub consumidores: Vec<String>,
+    /// Onde o volume do `.log` sem paginacao corta, em KiB (padrao 4096; o
+    /// piso e 64). E a unidade do expurgo.
+    pub volume_kib: u64,
+    /// De quantos em quantos segundos a passada roda (padrao 60).
+    pub passada_s: u64,
+}
+
+impl Default for ExpurgoDoDiario {
+    fn default() -> ExpurgoDoDiario {
+        ExpurgoDoDiario {
+            expurgo: false,
+            prazo_dias: 30,
+            prazo_s: 0,
+            consumidores: Vec::new(),
+            volume_kib: phxsql_store::diario::CORTE_PADRAO_DO_EXPURGO / 1024,
+            passada_s: 60,
+        }
+    }
+}
+
+/// Teto do prazo do diario, em dias: cem anos. Nao e politica, e a conta em
+/// milissegundos caber folgada num `i64`.
+pub const PRAZO_DO_DIARIO_MAX: i64 = 36_500;
+
+impl ExpurgoDoDiario {
+    fn de_json(j: &Json) -> Result<ExpurgoDoDiario> {
+        let padrao = ExpurgoDoDiario::default();
+        let Some(c) = j.campo("diario") else {
+            return Ok(padrao);
+        };
+        // O prazo APAGA dado: torto recusa o arranque, nunca cai calado no
+        // padrao -- o mesmo criterio do `lgpd.retencao_anos`.
+        let prazo_dias = match c.campo("prazo_dias") {
+            None => padrao.prazo_dias,
+            Some(v) => match v.inteiro() {
+                Some(n) if (0..=PRAZO_DO_DIARIO_MAX).contains(&n) => n as u32,
+                _ => {
+                    return Err(PhxError::Esquema(format!(
+                        "diario.prazo_dias invalido: {} (um inteiro de 0 a \
+                         {PRAZO_DO_DIARIO_MAX}, em dias; 0 = so sai o que todos \
+                         os consumidores confirmaram)",
+                        v.escrever()
+                    )))
+                }
+            },
+        };
+        Ok(ExpurgoDoDiario {
+            expurgo: c.booleano_ou("expurgo", padrao.expurgo),
+            prazo_dias,
+            prazo_s: match c.campo("prazo_s") {
+                None => 0,
+                Some(v) => match v.inteiro() {
+                    Some(n) if n >= 0 => n as u64,
+                    _ => {
+                        return Err(PhxError::Esquema(format!(
+                            "diario.prazo_s invalido: {} (um inteiro a partir de 0, em \
+                             segundos; 0 = vale diario.prazo_dias)",
+                            v.escrever()
+                        )))
+                    }
+                },
+            },
+            consumidores: c.textos("consumidores"),
+            volume_kib: c.inteiro_ou("volume_kib", padrao.volume_kib as i64).max(1) as u64,
+            passada_s: c.inteiro_ou("passada_s", padrao.passada_s as i64).max(1) as u64,
+        })
+    }
+
+    /// Leva o corte ao processo. Desligado, o corte e zero: o `.log` sem
+    /// paginacao nunca vira de volume, como sempre.
+    pub fn aplicar(&self) {
+        phxsql_store::diario::definir_corte_do_expurgo(if self.expurgo {
+            self.volume_kib.saturating_mul(1024)
+        } else {
+            0
+        });
+    }
+
+    pub fn para_json(&self) -> Json {
+        Json::objeto(vec![
+            ("expurgo", Json::Bool(self.expurgo)),
+            ("prazo_dias", Json::de_u64(self.prazo_dias as u64)),
+            ("prazo_s", Json::de_u64(self.prazo_s)),
+            (
+                "consumidores",
+                Json::Lista(self.consumidores.iter().map(Json::texto_de).collect()),
+            ),
+            ("volume_kib", Json::de_u64(self.volume_kib)),
+            ("passada_s", Json::de_u64(self.passada_s)),
+        ])
+    }
+}
+
 /// As cores das bolhas do painel de telemetria, e os limiares que decidem
 /// qual delas cada atividade recebe.
 ///
@@ -4626,6 +4828,8 @@ pub struct Config {
     pub desafio: Desafio,
     /// A trilha de dado pessoal. Ver [`Lgpd`].
     pub lgpd: Lgpd,
+    /// O expurgo do diario. Ver [`ExpurgoDoDiario`].
+    pub diario: ExpurgoDoDiario,
     /// As cores e os limiares do painel de bolhas. Ver [`Painel`].
     pub telemetria: Painel,
     /// O rodizio do `.txt` do Profiler. Ver [`PerfilEmDisco`].
@@ -4698,6 +4902,7 @@ impl std::fmt::Debug for Config {
             cifra_fio,
             desafio,
             lgpd,
+            diario,
             telemetria,
             profiler,
             acessos,
@@ -4736,6 +4941,7 @@ impl std::fmt::Debug for Config {
             .field("cifra_fio", cifra_fio)
             .field("desafio", desafio)
             .field("lgpd", lgpd)
+            .field("diario", diario)
             .field("telemetria", telemetria)
             .field("profiler", profiler)
             .field("acessos", acessos)
@@ -4757,7 +4963,7 @@ impl std::fmt::Debug for Config {
 // no primeiro nivel -- quem a escrevesse no arquivo levava um "campo que este
 // servidor nao conhece" sobre um campo que ele le e obedece. Aviso falso gasta
 // a confianca do aviso verdadeiro.
-const CAMPOS_CONHECIDOS: [&str; 34] = [
+const CAMPOS_CONHECIDOS: [&str; 35] = [
     "bind",
     "tls",
     "tls_certificado",
@@ -4788,6 +4994,7 @@ const CAMPOS_CONHECIDOS: [&str; 34] = [
     "cifra_fio",
     "idioma",
     "lgpd",
+    "diario",
     "telemetria",
     "profiler",
     "acessos",
@@ -4803,7 +5010,7 @@ const CAMPOS_CONHECIDOS: [&str; 34] = [
 /// as duas primeiras estao ganhando campos novos por outras frentes nesta
 /// rodada, e um aviso falso de "campo desconhecido" seria pior que a lacuna;
 /// as duas ultimas tem chaves livres (bases, tabelas).
-const SECOES_CONHECIDAS: [(&str, &[&str]); 17] = [
+const SECOES_CONHECIDAS: [(&str, &[&str]); 18] = [
     (
         "recursos",
         &[
@@ -4838,6 +5045,7 @@ const SECOES_CONHECIDAS: [(&str, &[&str]); 17] = [
             "tls",
             "tls_certificado",
             "tls_chave",
+            "integracao_claude",
         ],
     ),
     (
@@ -4968,6 +5176,17 @@ const SECOES_CONHECIDAS: [(&str, &[&str]); 17] = [
         ],
     ),
     (
+        "diario",
+        &[
+            "expurgo",
+            "prazo_dias",
+            "prazo_s",
+            "consumidores",
+            "volume_kib",
+            "passada_s",
+        ],
+    ),
+    (
         "telemetria",
         &[
             "cor_normal",
@@ -5059,6 +5278,7 @@ impl Default for Config {
             cifra_fio: CifraFio::default(),
             desafio: Desafio::default(),
             lgpd: Lgpd::default(),
+            diario: ExpurgoDoDiario::default(),
             telemetria: Painel::default(),
             profiler: PerfilEmDisco::default(),
             acessos: PerfilEmDisco::default(),
@@ -5140,6 +5360,7 @@ impl Config {
         c.cifra.aplicar()?;
         c.recursos.aplicar();
         c.lgpd.aplicar();
+        c.diario.aplicar();
         Ok(c)
     }
 
@@ -5209,6 +5430,7 @@ impl Config {
                                     hora: o.texto_ou("hora", "").trim().to_string(),
                                     cifra,
                                     chave_do_fio: o.texto_ou("chave_do_fio", "").trim().to_string(),
+                                    pino_tls: o.texto_ou("pino_tls", "").trim().to_string(),
                                     espelho: o.booleano_ou("espelho", false),
                                 }
                             })
@@ -5309,6 +5531,7 @@ impl Config {
             cifra_fio: CifraFio::de_json(j),
             desafio: Desafio::de_json(j),
             lgpd: Lgpd::de_json(j)?,
+            diario: ExpurgoDoDiario::de_json(j)?,
             telemetria: Painel::de_json(j, &mut avisos),
             profiler: PerfilEmDisco::de_json(j),
             acessos: PerfilEmDisco::de_secao(j, "acessos", PerfilEmDisco::default()),
@@ -5753,6 +5976,11 @@ impl Config {
             ));
         }
         self.endereco()?;
+        // Pino TLS torto derruba o arranque com a origem nomeada (pedido 572,
+        // T6b-2), em vez de esperar a primeira rodada da replica.
+        for o in &self.replicacao.origens {
+            o.pino_tls()?;
+        }
         if self.web.ligado {
             let web = self.web.endereco()?;
             if enderecos_colidem(web, self.endereco()?) {
@@ -5854,6 +6082,7 @@ impl Config {
         // do primeiro `Remoto`. `pino_do_fio` ja carrega essa disciplina.
         for s in &self.web.servidores {
             s.pino_do_fio()?;
+            s.pino_tls()?;
         }
         // A lista de tabelas sigilosas e conferida SEMPRE, e nao so com a
         // cifra ligada: quem escreve a lista antes de ligar a cifra -- que e a
@@ -6072,6 +6301,7 @@ impl Config {
                     ("bind", Json::texto_de(&self.web.bind)),
                     ("sessao_minutos", Json::de_u64(self.web.sessao_minutos)),
                     ("atras_de_proxy", Json::Bool(self.web.atras_de_proxy)),
+                    ("integracao_claude", Json::Bool(self.web.integracao_claude)),
                     ("tls", Json::Bool(self.web.tls.ligado)),
                     ("tls_certificado", Json::texto_de(&self.web.tls.certificado)),
                     ("tls_chave", Json::texto_de(&self.web.tls.chave)),
@@ -6144,6 +6374,7 @@ impl Config {
             ("cifra", self.cifra.para_json()),
             ("cifra_fio", self.cifra_fio.para_json()),
             ("lgpd", self.lgpd.para_json()),
+            ("diario", self.diario.para_json()),
             // As cores VAO para a tela por aqui -- o mesmo caminho de todo o
             // resto da configuracao. A tela de configuracao nao le arquivo, e
             // o painel de bolhas as recebe na propria resposta da telemetria,
@@ -6573,6 +6804,11 @@ impl Config {
                     if !n.chave_do_fio.is_empty() {
                         campos.push(("chave_do_fio", Json::texto_de(&n.chave_do_fio)));
                     }
+                    // O mesmo motivo, para o pino TLS: perde-lo ao reescrever
+                    // a lista devolveria o no ao Noise em silencio.
+                    if !n.pino_tls.is_empty() {
+                        campos.push(("pino_tls", Json::texto_de(&n.pino_tls)));
+                    }
                     Json::objeto(campos)
                 })
                 .collect(),
@@ -7000,6 +7236,7 @@ mod tests {
             hora: String::new(),
             cifra: true,
             chave_do_fio: String::new(),
+            pino_tls: String::new(),
             espelho: false,
         };
         assert!(o.pino_do_fio().unwrap().is_none());
@@ -7934,6 +8171,61 @@ mod tests {
             let j = Json::analisar(texto).unwrap();
             let c = Config::de_json(&j).unwrap();
             assert!(c.estranhas.is_empty(), "exemplo {n}: {:?}", c.estranhas);
+        }
+    }
+
+    /// `diario` (pedido 706): ausente, o expurgo nasce DESLIGADO (a regua,
+    /// segurar 8 x soltar 2) com o prazo de 30 dias do dono pronto; os cinco
+    /// campos voltam pela resposta de config; e o prazo torto RECUSA, porque
+    /// e ele que apaga diario sem confirmacao.
+    ///
+    /// **Defeito reposto** (ler o prazo com `inteiro_ou`): os tortos passam
+    /// calados e o laco do fim cai.
+    #[test]
+    fn o_expurgo_do_diario_nasce_desligado_e_recusa_o_prazo_torto() {
+        let ler = |t: &str| Config::de_json(&Json::analisar(t).unwrap());
+        let c = ler(r#"{"token":"t"}"#).unwrap();
+        assert!(!c.diario.expurgo);
+        assert_eq!(c.diario.prazo_dias, 30);
+        assert!(c.diario.consumidores.is_empty());
+        let c = ler(r#"{"token":"t","diario":{"expurgo":true,"prazo_dias":7,
+                "consumidores":["central"],"volume_kib":64,"passada_s":5}}"#)
+        .unwrap();
+        assert!(c.estranhas.is_empty(), "{:?}", c.estranhas);
+        let r = c.para_json();
+        let d = r.campo("diario").expect("sem a secao diario");
+        assert!(d.booleano_ou("expurgo", false));
+        assert_eq!(d.inteiro_ou("prazo_dias", 0), 7);
+        assert_eq!(d.textos("consumidores"), vec!["central"]);
+        assert_eq!(d.inteiro_ou("volume_kib", 0), 64);
+        assert_eq!(d.inteiro_ou("passada_s", 0), 5);
+        for torto in ["-1", "\"trinta\"", "36501", "1.5"] {
+            assert!(
+                ler(&format!(
+                    r#"{{"token":"t","diario":{{"prazo_dias":{torto}}}}}"#
+                ))
+                .is_err(),
+                "prazo_dias {torto} passou calado"
+            );
+        }
+        // O prazo de ENSAIO, em segundos: ausente e zero (vale o de dias), e
+        // torto recusa pelo mesmo motivo -- ele tambem apaga diario.
+        assert_eq!(ler(r#"{"token":"t"}"#).unwrap().diario.prazo_s, 0);
+        assert_eq!(
+            ler(r#"{"token":"t","diario":{"prazo_s":30}}"#)
+                .unwrap()
+                .diario
+                .prazo_s,
+            30
+        );
+        for torto in ["-1", "\"trinta\"", "1.5"] {
+            assert!(
+                ler(&format!(
+                    r#"{{"token":"t","diario":{{"prazo_s":{torto}}}}}"#
+                ))
+                .is_err(),
+                "prazo_s {torto} passou calado"
+            );
         }
     }
 
@@ -9147,6 +9439,19 @@ mod tests {
             "{:?}",
             c.avisos
         );
+    }
+
+    /// Pedido 339(a): `web.integracao_claude` e LIDO, nasce ligado e nao
+    /// vira campo estranho. Os dois sentidos: sem o campo, ligado (o
+    /// comportamento velho); com `false`, desligado.
+    #[test]
+    fn integracao_claude_e_lida_e_nasce_ligada() {
+        let velho = Config::de_json(&Json::analisar(r#"{"token":"x","web":{}}"#).unwrap()).unwrap();
+        assert!(velho.web.integracao_claude);
+        let txt = r#"{"token":"x","web":{"integracao_claude":false}}"#;
+        let c = Config::de_json(&Json::analisar(txt).unwrap()).unwrap();
+        assert!(!c.web.integracao_claude);
+        assert!(c.estranhas.is_empty(), "{:?}", c.estranhas);
     }
 
     /// Declarar o proxy cala o aviso -- e essa e a razao de o campo existir.

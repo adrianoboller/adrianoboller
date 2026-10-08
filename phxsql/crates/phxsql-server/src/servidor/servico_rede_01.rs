@@ -24,12 +24,21 @@ pub(super) fn mesmo_endereco_ip(a: &str, b: &str) -> bool {
 /// Uma conexao viva para outro PhxSql, do lado de ca da interface.
 pub struct Remoto {
     pub destino: String,
-    leitor: BufReader<TcpStream>,
-    escrita: TcpStream,
+    /// Claro ou TLS pelo motor do core (pedido 572, T6b-2) -- o mesmo fio do
+    /// `replica::Cliente` e do driver ODBC.
+    leitor: BufReader<phxsql_core::tls::FioDeCliente>,
+    escrita: phxsql_core::tls::FioDeCliente,
     /// Em claro (como sempre foi) ou dentro do tunel. O canal e UM so para que
     /// `conversar` nao repita `if cifrado` em toda escrita e leitura -- a
     /// mesma decisao que a `replica::Cliente` tomou. Ver `docs/CIFRA-DO-FIO.md`.
     pub(super) canal: Canal,
+}
+
+/// O `close_notify` do TLS no `Drop`, como no `replica::Cliente`.
+impl Drop for Remoto {
+    fn drop(&mut self) {
+        self.escrita.despedir();
+    }
 }
 
 impl Remoto {
@@ -45,14 +54,36 @@ impl Remoto {
         let fluxo =
             TcpStream::connect_timeout(&endereco, Duration::from_secs(timeout_s.min(10)))
                 .map_err(|e| PhxError::Esquema(format!("nao consegui falar com {destino}: {e}")))?;
-        fluxo.set_read_timeout(Some(Duration::from_secs(timeout_s)))?;
-        let escrita = fluxo.try_clone()?;
+        // So o silencio, como sempre foi -- agora pelo `ComPrazo`, que e o
+        // que o fio do core sabe passar para TLS.
+        let (leitura, escrita) = phxsql_core::prazo::ComPrazo::armar(
+            fluxo,
+            phxsql_core::prazo::Prazo::so_silencio(Duration::from_secs(timeout_s)),
+        )?;
         Ok(Remoto {
             destino: destino.to_string(),
-            leitor: BufReader::new(fluxo),
-            escrita,
+            leitor: BufReader::new(phxsql_core::tls::FioDeCliente::Claro(leitura)),
+            escrita: phxsql_core::tls::FioDeCliente::Claro(escrita),
             canal: Canal::Claro,
         })
+    }
+
+    /// Passa a falar TLS 1.3 com o destino, conferindo o pino do certificado
+    /// dele -- o lugar do [`Remoto::cifrar`] para quem escreveu `pino_tls`.
+    /// Pelo MESMO motor do `replica::Cliente::cifrar_tls`.
+    pub fn cifrar_tls(&mut self, pino: [u8; 32]) -> Result<()> {
+        if self.canal.cifrado() {
+            return Err(PhxError::Esquema(
+                "esta conexao ja esta cifrada: uma cifra por conexao".into(),
+            ));
+        }
+        phxsql_core::tls::FioDeCliente::passar_a_tls(&mut self.leitor, &mut self.escrita, pino)
+            .map_err(|e| PhxError::Esquema(format!("TLS com {}: {e}", self.destino)))
+    }
+
+    /// `true` quando a conversa com o destino passa por TLS.
+    pub fn tls(&self) -> bool {
+        self.escrita.tls()
     }
 
     /// Pede o aperto de mao e passa a falar por dentro do tunel.
@@ -67,6 +98,11 @@ impl Remoto {
     ///
     /// Devolve a chave que o destino apresentou, para quem quiser anota-la.
     pub fn cifrar(&mut self, pino: Option<[u8; 32]>) -> Result<[u8; 32]> {
+        if self.escrita.tls() || self.canal.cifrado() {
+            return Err(PhxError::Esquema(
+                "esta conexao ja esta cifrada: uma cifra por conexao".into(),
+            ));
+        }
         let (iniciador, m1) = phxsql_core::fio::Iniciador::comecar(pino);
         let pedido = Json::objeto(vec![
             ("op", Json::texto_de("cifrar")),
@@ -342,6 +378,7 @@ impl Servidor {
         self.subir_backup_agendado();
         self.subir_jobs();
         self.subir_retencao_da_trilha();
+        self.subir_expurgo_do_diario();
         self.ligar_relogio_de_gravacao();
         self.ligar_vigia_de_disco();
         self.ligar_sonda_de_disco();
@@ -630,6 +667,10 @@ impl Servidor {
             ip: ip.clone(),
             entrada: Entrada::Dados,
             fio_tls: saida.cifrado(),
+            // Pelo TLS a amarracao ja existe desde o aperto: o vinculo e o
+            // `tls-exporter`, e um Noise aberto por dentro o substitui
+            // (`responder_aperto`, abaixo).
+            transcricao_do_fio: saida.vinculo_do_canal(),
             ..Sessao::default()
         };
         // Sai do registro por qualquer caminho -- inclusive os `return` do
@@ -1294,6 +1335,10 @@ impl Servidor {
         if login.is_empty() {
             return Err(PhxError::Esquema("informe \"usuario\"".into()));
         }
+        // Pela web o desafio e quem faz nascer o id de sessao: em claro e de
+        // fora do loopback, quem escuta a rede o leva junto (pedido 674).
+        // Antes do cadastro e do sal, e politica do fio, nao do usuario.
+        self.conferir_a_emissao_da_sessao(sessao)?;
         // Os dois caminhos fazem as MESMAS contas, na mesma ordem -- o irmao
         // do pedido 520 que mora aqui. Antes, so quem nao existe pagava o
         // HMAC do sal falso, e so quem existe destrinchava um hash: medido em
@@ -1364,6 +1409,10 @@ impl Servidor {
         // Antes do cadastro e do PBKDF2: e politica do fio, nao «senha
         // errada», e por isso nao diz nada sobre o usuario (pedido 667).
         self.conferir_o_fio_da_senha(p, sessao)?;
+        // E o id de sessao que o login devolve pela web (pedido 674): a senha
+        // pode nem ter vindo -- o desafio-resposta nao a leva --, mas o
+        // portador que sai daqui vale a identidade inteira.
+        self.conferir_a_emissao_da_sessao(sessao)?;
 
         // Amarracao da credencial ao canal (channel binding), o gap da §10 da
         // `docs/CIFRA-DO-FIO.md`. Quem pede `amarrar_canal` prende a prova a

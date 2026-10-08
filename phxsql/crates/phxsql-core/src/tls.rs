@@ -607,6 +607,15 @@ fn conferir_ola(o: &Ola) -> Aperto<Conjunto> {
     Ok(conjunto)
 }
 
+/// O que o aperto deixa para o fluxo: o negociado e os tres segredos que
+/// sobrevivem a ele (os dois de trafego e o do exportador, §7.5).
+pub(crate) struct Segredos {
+    pub(crate) negociado: Negociado,
+    pub(crate) c_ap: [u8; RESUMO],
+    pub(crate) s_ap: [u8; RESUMO],
+    pub(crate) exp: [u8; RESUMO],
+}
+
 /// O que o aperto negociou, para quem usa o fluxo.
 #[derive(Debug, Clone, Default)]
 pub struct Negociado {
@@ -629,7 +638,7 @@ fn apertar<S: Read + Write>(
     r: &mut Registro<S>,
     id: &Identidade,
     alpn_aceitos: &[&[u8]],
-) -> Aperto<(Negociado, [u8; RESUMO], [u8; RESUMO])> {
+) -> Aperto<Segredos> {
     let mut transcricao = Transcricao::default();
     let m = r.mensagem(TETO_CLIENT_HELLO)?;
     if m[0] != hs::CLIENT_HELLO {
@@ -780,6 +789,7 @@ fn apertar<S: Read + Write>(
     let master = tls13::segredo_master(&segredo_hs);
     let c_ap = tls13::derivar_segredo(&master, "c ap traffic", &t_sf);
     let s_ap = tls13::derivar_segredo(&master, "s ap traffic", &t_sf);
+    let exp = tls13::derivar_segredo(&master, "exp master", &t_sf);
 
     let m = r.mensagem(TETO_MENSAGEM)?;
     if m[0] != hs::FINISHED {
@@ -801,7 +811,12 @@ fn apertar<S: Read + Write>(
         conjunto,
         pino: None,
     };
-    Ok((negociado, c_ap, s_ap))
+    Ok(Segredos {
+        negociado,
+        c_ap,
+        s_ap,
+        exp,
+    })
 }
 
 /// Faz o aperto de mao do servidor sobre `fluxo` e devolve o fluxo
@@ -823,7 +838,12 @@ pub fn aceitar<S: Read + Write>(
         pendente: Vec::new(),
     };
     match apertar(&mut r, id, alpn_aceitos) {
-        Ok((negociado, c_ap, s_ap)) => Ok(FluxoTls {
+        Ok(Segredos {
+            negociado,
+            c_ap,
+            s_ap,
+            exp,
+        }) => Ok(FluxoTls {
             r: Registro {
                 fluxo: r.fluxo,
                 envio: Some(Protecao::de_segredo_com(&s_ap, negociado.conjunto)),
@@ -832,6 +852,7 @@ pub fn aceitar<S: Read + Write>(
             },
             segredo_envio: s_ap,
             segredo_recebimento: c_ap,
+            segredo_exportador: exp,
             claro: Vec::new(),
             pos: 0,
             fechado: false,
@@ -847,6 +868,172 @@ pub fn aceitar<S: Read + Write>(
     }
 }
 
+/// Um [`FluxoTls`] para quem le por um `BufReader` e escreve por outra
+/// ponta -- o formato dos clientes desta casa (`replica::Cliente`, o
+/// `Remoto`, o driver ODBC), que nasceram com o soquete partido em dois.
+///
+/// O registro protegido tem estado (a sequencia de cada sentido) e nao se
+/// parte: as duas pontas sao a MESMA conexao atras de uma trava. A trava nao
+/// custa disputa, porque esses clientes sao pedido-resposta numa thread so;
+/// ela existe para o tipo continuar `Send` (a replica muda de thread com o
+/// cliente dentro), que o `Rc` do `fio_dados` do servidor nao seria.
+pub struct Compartilhado<S>(std::sync::Arc<std::sync::Mutex<FluxoTls<S>>>);
+
+impl<S> Clone for Compartilhado<S> {
+    fn clone(&self) -> Self {
+        Compartilhado(std::sync::Arc::clone(&self.0))
+    }
+}
+
+impl<S: Read + Write> Compartilhado<S> {
+    pub fn novo(fluxo: FluxoTls<S>) -> Compartilhado<S> {
+        Compartilhado(std::sync::Arc::new(std::sync::Mutex::new(fluxo)))
+    }
+
+    /// O fluxo, para o que nao e ler nem escrever (prazo, vinculo, adeus).
+    /// Trava envenenada nao derruba: o estado do registro so muda depois de
+    /// cada operacao inteira, e um panico no meio de uma deixa a conexao
+    /// inutil de qualquer jeito -- o proximo `read` diz isso.
+    pub fn com<R>(&self, f: impl FnOnce(&mut FluxoTls<S>) -> R) -> R {
+        let mut g = self.0.lock().unwrap_or_else(|p| p.into_inner());
+        f(&mut g)
+    }
+}
+
+impl<S: Read + Write> Read for Compartilhado<S> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        self.com(|t| t.read(buf))
+    }
+}
+
+impl<S: Read + Write> Write for Compartilhado<S> {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.com(|t| t.write(buf))
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.com(|t| t.flush())
+    }
+}
+
+/// O soquete de um CLIENTE desta casa (`replica::Cliente`, o driver ODBC):
+/// as duas pontas do [`ComPrazo`] em claro, ou o MESMO fluxo TLS dos dois
+/// lados -- pedido 572, T6b-2.
+///
+/// Mora aqui, e nao em cada cliente, porque a passagem para o TLS e uma
+/// decisao so (conferir o buffer vazio, uma terceira ponta com o mesmo prazo,
+/// o aperto pelo pino, o rearme por ponta unica) e os clientes nasceram com o
+/// mesmo formato: `BufReader` sobre uma ponta, escrita pela outra. Duas copias
+/// dela divergiriam no dia em que uma ganhasse um conserto.
+///
+/// [`ComPrazo`]: crate::prazo::ComPrazo
+pub enum FioDeCliente {
+    Claro(crate::prazo::ComPrazo),
+    Tls(Compartilhado<crate::prazo::ComPrazo>),
+}
+
+impl Read for FioDeCliente {
+    fn read(&mut self, b: &mut [u8]) -> std::io::Result<usize> {
+        match self {
+            FioDeCliente::Claro(c) => c.read(b),
+            FioDeCliente::Tls(t) => t.read(b),
+        }
+    }
+}
+
+impl Write for FioDeCliente {
+    fn write(&mut self, b: &[u8]) -> std::io::Result<usize> {
+        match self {
+            FioDeCliente::Claro(c) => c.write(b),
+            FioDeCliente::Tls(t) => t.write(b),
+        }
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        match self {
+            FioDeCliente::Claro(c) => c.flush(),
+            FioDeCliente::Tls(t) => t.flush(),
+        }
+    }
+}
+
+impl FioDeCliente {
+    /// `true` quando a conversa passa por TLS.
+    pub fn tls(&self) -> bool {
+        matches!(self, FioDeCliente::Tls(_))
+    }
+
+    /// O `tls-exporter` (RFC 9266) quando e TLS -- o vinculo que o
+    /// `amarrar_canal` do login e a prova do pulso usam no lugar da
+    /// transcricao do Noise.
+    pub fn vinculo_do_canal(&self) -> Option<[u8; 32]> {
+        match self {
+            FioDeCliente::Tls(t) => Some(t.com(|f| f.vinculo_do_canal())),
+            FioDeCliente::Claro(_) => None,
+        }
+    }
+
+    /// Recomeca o total por pedido (pedido 578): nas duas pontas em claro, ou
+    /// na unica do TLS -- a do `leitor` e a mesma.
+    pub fn rearmar(leitor: &mut FioDeCliente, escrita: &mut FioDeCliente) {
+        match (leitor, escrita) {
+            (FioDeCliente::Claro(l), FioDeCliente::Claro(e)) => crate::prazo::rearmar(l, e),
+            (_, FioDeCliente::Tls(t)) => t.com(|f| f.fio_mut().rearmar()),
+            (FioDeCliente::Tls(_), FioDeCliente::Claro(_)) => {}
+        }
+    }
+
+    /// Passa a conexao para TLS 1.3, conferindo o servidor pelo `pino`.
+    ///
+    /// So por pino, de proposito: entre dois PhxSql nao ha autoridade a
+    /// consultar, e TLS sem conferir quem responde protegeria da escuta
+    /// passiva e de nada mais. Nada lido pode estar no `BufReader`: o TLS
+    /// comeca no primeiro byte, e um byte em claro guardado ali seria lido
+    /// como se tivesse vindo pelo tunel.
+    pub fn passar_a_tls(
+        leitor: &mut std::io::BufReader<FioDeCliente>,
+        escrita: &mut FioDeCliente,
+        pino: [u8; 32],
+    ) -> Result<()> {
+        if !leitor.buffer().is_empty() {
+            return Err(PhxError::Esquema(
+                "o TLS so comeca numa conexao em que nada foi lido".into(),
+            ));
+        }
+        let FioDeCliente::Claro(e) = &*escrita else {
+            return Err(PhxError::Esquema(
+                "esta conexao ja esta em TLS: uma cifra por conexao".into(),
+            ));
+        };
+        let mut uma = e.clonar()?;
+        uma.rearmar();
+        let op = OpcoesCliente {
+            // SNI nao vai: o pino ja diz quem se espera, e o host (as vezes
+            // um IP, que a RFC 6066 §3 proibe no SNI) nao acrescenta.
+            nome: None,
+            alpn: &[],
+            confianca: Confianca::Pino(pino),
+        };
+        let t = Compartilhado::novo(conectar(uma, &op)?);
+        *leitor = std::io::BufReader::new(FioDeCliente::Tls(t.clone()));
+        *escrita = FioDeCliente::Tls(t);
+        Ok(())
+    }
+
+    /// O `close_notify`, para o `Drop` de quem e dono da conexao -- o
+    /// servidor ve um adeus em vez de um corte.
+    pub fn despedir(&self) {
+        if let FioDeCliente::Tls(t) = self {
+            t.com(|f| {
+                let _ = f.despedir();
+            });
+        }
+    }
+}
+
+/// O rotulo do vinculo ao canal (RFC 9266 §2).
+pub const ROTULO_DO_VINCULO: &str = "EXPORTER-Channel-Binding";
+
 // ------------------------------------------------------------ fluxo ----
 
 /// O fluxo de aplicacao protegido. Le e escreve bytes claros; os registros,
@@ -855,6 +1042,10 @@ pub struct FluxoTls<S> {
     r: Registro<S>,
     segredo_envio: [u8; RESUMO],
     segredo_recebimento: [u8; RESUMO],
+    /// O `exporter_master_secret` (§7.1). Guardado porque o vinculo ao canal
+    /// (RFC 9266) e pedido DEPOIS do aperto, no `login`; fica fora do `Debug`
+    /// como os outros segredos.
+    segredo_exportador: [u8; RESUMO],
     claro: Vec<u8>,
     pos: usize,
     fechado: bool,
@@ -891,9 +1082,38 @@ impl<S: Read + Write> FluxoTls<S> {
         &self.negociado
     }
 
+    /// `TLS-Exporter` (RFC 8446 §7.5) desta conexao: os dois lados chegam ao
+    /// mesmo valor so se ninguem terminou o TLS no meio.
+    pub fn exportar(&self, rotulo: &str, contexto: &[u8], tamanho: usize) -> Result<Vec<u8>> {
+        let mut saida = vec![0u8; tamanho];
+        tls13::exportar(&self.segredo_exportador, rotulo, contexto, &mut saida)?;
+        Ok(saida)
+    }
+
+    /// O vinculo ao canal `tls-exporter` da RFC 9266 §2: rotulo
+    /// `EXPORTER-Channel-Binding`, contexto vazio, 32 bytes.
+    ///
+    /// E o que faz o papel da transcricao do Noise no `amarrar_canal` do
+    /// login e na prova de identidade do pulso: a prova presa a ESTE valor nao
+    /// vale numa conexao que outro terminou. O `tls-unique` do TLS 1.2 nao
+    /// existe no 1.3 (RFC 9266 §1), e o `tls-server-end-point` so prende ao
+    /// certificado, que o homem-no-meio com o mesmo certificado repetiria.
+    pub fn vinculo_do_canal(&self) -> [u8; 32] {
+        let mut v = [0u8; 32];
+        tls13::exportar(&self.segredo_exportador, ROTULO_DO_VINCULO, &[], &mut v)
+            .expect("rotulo e tamanho fixos cabem no HKDF");
+        v
+    }
+
     /// O fio cru por baixo (para prazo de leitura, endereco do par...).
     pub fn fio(&self) -> &S {
         &self.r.fluxo
+    }
+
+    /// O fio cru por baixo, mutavel -- para rearmar o prazo de quem conversa
+    /// (`prazo::ComPrazo`) a cada pedido, sem tocar no registro.
+    pub fn fio_mut(&mut self) -> &mut S {
+        &mut self.r.fluxo
     }
 
     /// Manda o `close_notify` (§6.1). Depois dele nada mais se escreve.
@@ -1272,6 +1492,67 @@ mod testes {
         let (neg, _) = visto.expect("o servidor falhou");
         assert!(s.contains("ola!"), "{s}");
         assert_eq!(neg.conjunto, Conjunto::Chacha20Poly1305Sha256);
+    }
+
+    /// O que o `openssl` imprime como `Keying material:` -- em minusculas,
+    /// para comparar com o `para_hex` desta casa.
+    fn material_exportado(saida: &str) -> Option<String> {
+        saida
+            .lines()
+            .find_map(|l| l.trim().strip_prefix("Keying material: "))
+            .map(str::to_ascii_lowercase)
+    }
+
+    /// Um servidor de UMA conexao que manda o proprio `tls-exporter` em hex,
+    /// para o `openssl s_client` comparar com o que ele exportou.
+    fn servir_o_vinculo(id: Identidade) -> (u16, std::thread::JoinHandle<Resultado>) {
+        let ouvinte = TcpListener::bind("127.0.0.1:0").unwrap();
+        let porta = ouvinte.local_addr().unwrap().port();
+        let h = std::thread::spawn(move || {
+            let (fio, _) = ouvinte.accept().map_err(|e| e.to_string())?;
+            fio.set_read_timeout(Some(Duration::from_secs(20))).unwrap();
+            let mut t = aceitar(fio, &id, &[]).map_err(|e| e.to_string())?;
+            let v = crate::hash::para_hex(&t.vinculo_do_canal());
+            t.write_all(format!("vinculo={v}\n").as_bytes())
+                .map_err(|e| e.to_string())?;
+            t.despedir().map_err(|e| e.to_string())?;
+            Ok((t.negociado().clone(), v))
+        });
+        (porta, h)
+    }
+
+    #[test]
+    fn o_vinculo_do_canal_e_o_tls_exporter_que_o_openssl_exporta() {
+        // RFC 9266 §2 pela RFC 8446 §7.5: rotulo `EXPORTER-Channel-Binding`,
+        // contexto vazio, 32 bytes. Nao ha traco oficial deste valor (a RFC
+        // 8448 para no `exp master`, conferido no `tls13`), entao o vetor e o
+        // do OpenSSL na MESMA conexao -- nos dois conjuntos e nos dois grupos,
+        // porque o HRR muda a transcricao de que o `exp master` sai.
+        for (nome, extra) in [
+            ("vinc-chacha", vec![]),
+            (
+                "vinc-aes-hrr",
+                vec![
+                    "-ciphersuites",
+                    "TLS_AES_128_GCM_SHA256",
+                    "-groups",
+                    "P-384:P-256",
+                ],
+            ),
+        ] {
+            let (_d, id, pem) = com_certificado(nome);
+            let (porta, h) = servir_o_vinculo(id);
+            let mut args = vec!["-keymatexport", ROTULO_DO_VINCULO, "-keymatexportlen", "32"];
+            args.extend(extra);
+            let (s, visto) = s_client(porta, &pem, &args, &[], h);
+            let (_, nosso) = visto.expect("o servidor falhou");
+            assert!(s.contains(&format!("vinculo={nosso}")), "{s}");
+            assert_eq!(
+                material_exportado(&s).as_deref(),
+                Some(nosso.as_str()),
+                "{nome}: o exportador desta casa diverge do OpenSSL\n{s}"
+            );
+        }
     }
 
     #[test]

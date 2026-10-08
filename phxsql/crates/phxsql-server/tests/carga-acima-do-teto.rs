@@ -171,6 +171,7 @@ fn replica_de(base: &Path, porta: u16) -> NoAr {
         hora: String::new(),
         cifra: false,
         chave_do_fio: String::new(),
+        pino_tls: String::new(),
         espelho: false,
     }];
     subir(c)

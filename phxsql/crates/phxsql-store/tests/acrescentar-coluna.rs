@@ -859,6 +859,14 @@ fn padrao_que_viola_o_proprio_check_recusa_antes_de_tocar_no_reg() {
         .to_string();
     assert!(e.contains("CHECK"), "{e}");
     assert!(e.contains("atualizar"), "{e}");
+    // Pedido 657: «CHECK» e «atualizar» o `table.rs` escreve em dezenas de
+    // pontos. A recusa do CHECK que as linhas VELHAS violam e a unica que
+    // conta quantas -- e a contagem e o que so este caminho preenche.
+    assert!(
+        e.contains("1 das 1 linha(s) que ja existem o violam"),
+        "{e}"
+    );
+    assert!(e.contains("linha(s) que ja existem o"), "{e}");
     // E a tabela NAO foi tocada: a recusa e antes do `.reg`.
     assert_eq!(t.esquema().colunas().len(), 7);
     assert_eq!(

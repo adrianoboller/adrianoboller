@@ -1,5 +1,5 @@
 {
-  "quando": "2026-10-08 16:53",
+  "quando": "2026-10-08 20:17",
   "mais_antigo": "2026-09-16 15:25",
   "guardas": [
     {
@@ -300,17 +300,17 @@
       "id": "remoto-em-claro-para-quem-exige",
       "titulo": "o abrir_remoto manda o login em claro mesmo com cifra: true",
       "veredito": "PROVADA",
-      "segundos": 85.53,
+      "segundos": 115.15,
       "notas": [],
-      "quando": "2026-10-08 15:14"
+      "quando": "2026-10-08 20:11"
     },
     {
       "id": "fio-sem-teto-de-registro",
       "titulo": "a leitura do fio volta a ser ilimitada",
       "veredito": "PROVADA",
-      "segundos": 9.04,
+      "segundos": 8.36,
       "notas": [],
-      "quando": "2026-10-07 14:55"
+      "quando": "2026-10-08 19:25"
     },
     {
       "id": "teto-do-fio-sem-a-constante",
@@ -323,12 +323,10 @@
     {
       "id": "teto-do-fio-sem-a-constante-no-soquete",
       "titulo": "a mesma troca da constante por um teto quase infinito, vista pela rede",
-      "veredito": "NAO PEGOU",
-      "segundos": 19.86,
-      "notas": [
-        "PASSOU COM O DEFEITO REPOSTO: a_resposta_acima_do_teto_e_recusada_por_limite_e_a_rodada_seguinte_abre_outra"
-      ],
-      "quando": "2026-10-07 15:37"
+      "veredito": "PROVADA",
+      "segundos": 20.03,
+      "notas": [],
+      "quando": "2026-10-08 19:56"
     },
     {
       "id": "teto-da-linha-sem-a-constante-no-soquete",
@@ -342,9 +340,9 @@
       "id": "pulso-do-cluster-em-claro",
       "titulo": "o pulso da eleição saindo em claro com a cifra do cluster ligada",
       "veredito": "PROVADA",
-      "segundos": 37.16,
+      "segundos": 48.32,
       "notas": [],
-      "quando": "2026-10-08 15:14"
+      "quando": "2026-10-08 20:11"
     },
     {
       "id": "replicacao-do-cluster-em-claro",
@@ -546,11 +544,11 @@
       "id": "recuperar-sem-reindexar",
       "titulo": "a recuperação não reconstrói o `.ndx` que a queda deixou para trás",
       "veredito": "PROVADA",
-      "segundos": 60.89,
+      "segundos": 63.55,
       "notas": [
         "o binario abortou, que e como esta guarda pega"
       ],
-      "quando": "2026-10-07 12:51"
+      "quando": "2026-10-08 19:56"
     },
     {
       "id": "comum-anexa-no-fim-travado",
@@ -924,9 +922,9 @@
       "id": "sequencia-numero-cru-perde-precisao",
       "titulo": "id acima de 2⁵³ mandado como número cru é gravado trocado, calado",
       "veredito": "PROVADA",
-      "segundos": 92.69,
+      "segundos": 81.79,
       "notas": [],
-      "quando": "2026-10-02 01:16"
+      "quando": "2026-10-08 19:25"
     },
     {
       "id": "sequencia-grande-sai-numero-mentiroso",
@@ -1244,9 +1242,9 @@
       "id": "teto-de-64-bits-satura",
       "titulo": "número cru fora da faixa do `Int8` é GRAVADO saturado, e `1e21`, `1e30` e `1e300` viram todos o mesmo número",
       "veredito": "PROVADA",
-      "segundos": 96.67,
+      "segundos": 80.76,
       "notas": [],
-      "quando": "2026-10-02 01:12"
+      "quando": "2026-10-08 19:25"
     },
     {
       "id": "saida-do-direito-por-coluna",
@@ -1260,9 +1258,9 @@
       "id": "check-que-se-contradiz-no-alter",
       "titulo": "`acrescentar_coluna` aceita um `padrao` que viola o `check` declarado no MESMO comando, e todo `atualizar` da linha velha passa a recusar",
       "veredito": "PROVADA",
-      "segundos": 8.28,
+      "segundos": 8.24,
       "notas": [],
-      "quando": "2026-10-01 19:19"
+      "quando": "2026-10-08 19:25"
     },
     {
       "id": "upsert-parcial-vira-mescla",
@@ -1356,17 +1354,17 @@
       "id": "ficha-do-usuario-devolve-o-hash",
       "titulo": "a ficha do usuário passa a devolver o `senha_hash` junto",
       "veredito": "PROVADA",
-      "segundos": 83.66,
+      "segundos": 84.22,
       "notas": [],
-      "quando": "2026-10-07 15:51"
+      "quando": "2026-10-08 19:25"
     },
     {
       "id": "senha-em-claro-no-cadastro",
       "titulo": "a senha entra no config.json em texto puro: o `cifrar` sai do caminho de gravação",
       "veredito": "PROVADA",
-      "segundos": 70.59,
+      "segundos": 71.64,
       "notas": [],
-      "quando": "2026-10-07 15:51"
+      "quando": "2026-10-08 19:25"
     },
     {
       "id": "senha-velha-fica-no-arquivo",
@@ -1444,9 +1442,9 @@
       "id": "fio-cifrado-manda-o-claro-junto",
       "titulo": "o fio cifrado manda a linha em claro junto do registro selado",
       "veredito": "PROVADA",
-      "segundos": 3.11,
+      "segundos": 8.07,
       "notas": [],
-      "quando": "2026-09-24 04:34"
+      "quando": "2026-10-08 19:25"
     },
     {
       "id": "diario-das-diretivas-guarda-o-segredo-anterior",
@@ -1732,9 +1730,9 @@
       "id": "posicao-nao-encolhe-em-silencio",
       "titulo": "tabela que nao abre some da soma do diario sem marcar `incompleta`",
       "veredito": "PROVADA",
-      "segundos": 80.78,
+      "segundos": 81.22,
       "notas": [],
-      "quando": "2026-10-08 12:55"
+      "quando": "2026-10-08 19:25"
     },
     {
       "id": "eleicao-prefere-completa",
@@ -1939,12 +1937,20 @@
     {
       "id": "commit-sem-rede-antes-da-marca",
       "titulo": "o COMMIT grava a marca com uma tabela do alcance congelada",
-      "veredito": "NAO PEGOU",
-      "segundos": 23.94,
+      "veredito": "REDUNDANTE",
+      "segundos": 24.93,
       "notas": [
-        "PASSOU COM O DEFEITO REPOSTO: o_commit_contra_a_tabela_congelada_nao_sai_pela_metade"
+        "confirmado (pedido 720): sem a rede do 426, quem recusa o COMMIT antes da marca e a pre-conferencia do 448 -- EM_MIGRACAO 4006 sem a frase da rede, 0 de 2 linhas gravadas. Tirando as duas camadas, o teste CAI com 1 de 2 linhas no disco e o arranque aplicando a outra (`commit-sem-as-duas-recusas-antes-da-marca`)"
       ],
-      "quando": "2026-10-08 16:06"
+      "quando": "2026-10-08 20:17"
+    },
+    {
+      "id": "commit-sem-as-duas-recusas-antes-da-marca",
+      "titulo": "o COMMIT grava a marca com a tabela congelada quando a rede do 426 E a pre-conferencia do 448 somem",
+      "veredito": "PROVADA",
+      "segundos": 23.47,
+      "notas": [],
+      "quando": "2026-10-08 20:17"
     },
     {
       "id": "instrucao-na-vizinha-da-congelada",
@@ -2051,28 +2057,116 @@
       "quando": "2026-09-24 04:34"
     },
     {
+      "id": "leitura-fora-do-canal-na-web",
+      "titulo": "a porta HTTP le a linha do pedido por `read_line` cru, fora do `Canal` (o caso que fundou a lei, pedido 434)",
+      "veredito": "PROVADA",
+      "segundos": 22.31,
+      "notas": [],
+      "quando": "2026-10-08 19:25"
+    },
+    {
+      "id": "leitura-fora-do-canal-na-web-pela-catraca",
+      "titulo": "a leitura crua da linha do pedido HTTP volta e a catraca `TETO_LEITURA_FORA_DO_CANAL` nao sobe",
+      "veredito": "PROVADA",
+      "segundos": 83.99,
+      "notas": [],
+      "quando": "2026-10-08 19:25"
+    },
+    {
+      "id": "leitura-fora-do-canal-no-aperto-do-odbc",
+      "titulo": "o driver ODBC le a resposta do aperto por `read_line` cru, fora do `Canal` (o terceiro irmao do 312)",
+      "veredito": "PROVADA",
+      "segundos": 8.9,
+      "notas": [],
+      "quando": "2026-10-08 19:25"
+    },
+    {
+      "id": "leitura-fora-do-canal-no-aperto-do-odbc-pela-catraca",
+      "titulo": "a leitura crua do aperto do ODBC volta e a catraca `TETO_LEITURA_FORA_DO_CANAL` nao sobe",
+      "veredito": "PROVADA",
+      "segundos": 83.44,
+      "notas": [],
+      "quando": "2026-10-08 19:25"
+    },
+    {
+      "id": "conferidor-de-segredos-cala-por-engano",
+      "titulo": "o conferidor de segredos varre a arvore e nao acusa nada, nem a chave plantada",
+      "veredito": "PROVADA",
+      "segundos": 86.25,
+      "notas": [],
+      "quando": "2026-10-08 19:25"
+    },
+    {
+      "id": "conferidor-de-temporarios-cala-por-engano",
+      "titulo": "o conferidor dos temporarios deixa de casar o padrao e diz `ok 0` com o `temp_dir` cru na arvore",
+      "veredito": "PROVADA",
+      "segundos": 85.2,
+      "notas": [],
+      "quando": "2026-10-08 19:25"
+    },
+    {
+      "id": "conferidor-de-vermelhas-cala-por-engano",
+      "titulo": "o conferidor das provas vermelhas deixa de reconhecer o `#[ignore]` da vermelha e a catraca fica verde com qualquer uma solta",
+      "veredito": "PROVADA",
+      "segundos": 102.55,
+      "notas": [],
+      "quando": "2026-10-08 19:25"
+    },
+    {
+      "id": "conferidor-de-inventario-ve-tudo-por-engano",
+      "titulo": "o conferidor do inventario de extensoes acha toda extensao em qualquer figura e nunca acusa a copia que perdeu uma",
+      "veredito": "PROVADA",
+      "segundos": 96.2,
+      "notas": [],
+      "quando": "2026-10-08 19:25"
+    },
+    {
+      "id": "conferidor-de-grades-cala-por-engano",
+      "titulo": "o conferidor de grades deixa de ver o `<table` cru e so conta o ajudante",
+      "veredito": "PROVADA",
+      "segundos": 121.25,
+      "notas": [],
+      "quando": "2026-10-08 19:29"
+    },
+    {
+      "id": "conferidor-de-botoes-cala-por-engano",
+      "titulo": "o conferidor de botoes deixa de ver o `<button` e so conta o `role=button`",
+      "veredito": "PROVADA",
+      "segundos": 92.39,
+      "notas": [],
+      "quando": "2026-10-08 19:25"
+    },
+    {
+      "id": "conferidor-de-texto-cru-cala-por-engano",
+      "titulo": "o conferidor do texto cru deixa de achar o `${txt(` sem `esc` e a catraca fica verde",
+      "veredito": "PROVADA",
+      "segundos": 87.08,
+      "notas": [],
+      "quando": "2026-10-08 19:25"
+    },
+    {
       "id": "teto-decidido-antes-do-bloqueio",
       "titulo": "o teto da linha é decidido antes de a leitura bloquear, e o usuário excluído enquanto esperava manda 1 MiB",
       "veredito": "PROVADA",
-      "segundos": 22.53,
+      "segundos": 20.71,
       "notas": [],
-      "quando": "2026-10-08 16:06"
+      "quando": "2026-10-08 19:56"
     },
     {
       "id": "teto-decidido-sem-refrescar-a-ficha",
       "titulo": "o teto é perguntado na hora certa, mas com a ficha da sessão que nunca se refrescou",
       "veredito": "PROVADA",
-      "segundos": 23.88,
+      "segundos": 19.97,
       "notas": [],
-      "quando": "2026-10-08 16:06"
+      "quando": "2026-10-08 19:56"
     },
     {
       "id": "teto-refrescado-antes-do-bloqueio",
       "titulo": "a ficha é refrescada antes de a leitura bloquear, e o excluído enquanto esperava continua com 128 MiB",
       "veredito": "PROVADA",
-      "segundos": 21.3,
+      "segundos": 22.35,
       "notas": [],
-      "quando": "2026-10-08 16:06"
+      "quando": "2026-10-08 19:56"
     },
     {
       "id": "linha-residente-depois-da-resposta",
@@ -2382,17 +2476,17 @@
       "id": "panico-sob-a-trava-sem-reparo",
       "titulo": "um pânico com a trava global de dados na mão a envenena para sempre: toda conexão recebe «a trava suja» até reiniciar",
       "veredito": "PROVADA",
-      "segundos": 65.27,
+      "segundos": 131.26,
       "notas": [],
-      "quando": "2026-09-24 13:28"
+      "quando": "2026-10-08 19:56"
     },
     {
       "id": "trava-de-dados-recupera-sem-reparar",
       "titulo": "a trava de dados envenenada volta a atender sem reparo nenhum (a H2 ingênua): o disco rasgado e a cópia em RAM servidos como se nada tivesse havido",
       "veredito": "PROVADA",
-      "segundos": 61.45,
+      "segundos": 138.65,
       "notas": [],
-      "quando": "2026-09-24 13:28"
+      "quando": "2026-10-08 20:01"
     },
     {
       "id": "reparo-da-trava-sem-o-piso",
@@ -2406,9 +2500,9 @@
       "id": "reparo-da-trava-sem-as-marcas-orfas",
       "titulo": "o reparo da trava não completa a marca em voo: o COMMIT que morreu na passada sai pela metade, com as travas da transação já soltas",
       "veredito": "PROVADA",
-      "segundos": 92.63,
+      "segundos": 95.87,
       "notas": [],
-      "quando": "2026-10-08 16:53"
+      "quando": "2026-10-08 19:56"
     },
     {
       "id": "reparo-varre-todas-as-marcas",
@@ -2574,9 +2668,9 @@
       "id": "pagina-que-o-disco-recusou-sai-das-sujas",
       "titulo": "a página do `.ndx` que o disco cheio recusou sai da lista de sujas antes de ser gravada, e o segundo fecho baixa o byte 52 sobre ela",
       "veredito": "PROVADA",
-      "segundos": 4.81,
+      "segundos": 8.19,
       "notas": [],
-      "quando": "2026-09-24 15:15"
+      "quando": "2026-10-08 19:25"
     },
     {
       "id": "pagina-despejada-que-o-disco-recusou-some",
@@ -2822,9 +2916,9 @@
       "id": "pulso-que-morre-fica-marcado",
       "titulo": "a thread de pulso que morre em panico nao se desmarca do `pulsando`",
       "veredito": "PROVADA",
-      "segundos": 115.76,
+      "segundos": 117.33,
       "notas": [],
-      "quando": "2026-10-02 12:29"
+      "quando": "2026-10-08 19:25"
     },
     {
       "id": "pulso-em-panico-sem-recuo",
@@ -2838,49 +2932,49 @@
       "id": "relogio-de-jobs-morto-diz-que-esta-no-ar",
       "titulo": "o relogio de jobs que morre continua marcado como no ar",
       "veredito": "PROVADA",
-      "segundos": 86.86,
+      "segundos": 100.07,
       "notas": [],
-      "quando": "2026-10-08 14:10"
+      "quando": "2026-10-08 19:25"
     },
     {
       "id": "amostrador-morto-diz-que-esta-no-ar",
       "titulo": "o amostrador que morre continua marcado como no ar no retrato",
       "veredito": "PROVADA",
-      "segundos": 85.31,
+      "segundos": 89.74,
       "notas": [],
-      "quando": "2026-10-08 13:33"
+      "quando": "2026-10-08 19:25"
     },
     {
       "id": "job-corre-na-thread-de-servico",
       "titulo": "o job em panico com a trava na mao derruba o servidor",
       "veredito": "PROVADA",
-      "segundos": 87.21,
+      "segundos": 88.2,
       "notas": [],
-      "quando": "2026-10-08 14:10"
+      "quando": "2026-10-08 19:25"
     },
     {
       "id": "backup-corre-na-thread-de-servico",
       "titulo": "o backup agendado em panico com a trava na mao derruba o servidor",
       "veredito": "PROVADA",
-      "segundos": 89.02,
+      "segundos": 87.32,
       "notas": [],
-      "quando": "2026-10-08 13:33"
+      "quando": "2026-10-08 19:25"
     },
     {
       "id": "job-que-derrubou-roda-de-novo-no-arranque",
       "titulo": "a corrida de job que derrubou o processo roda de novo no arranque",
       "veredito": "PROVADA",
-      "segundos": 84.28,
+      "segundos": 82.2,
       "notas": [],
-      "quando": "2026-10-08 14:10"
+      "quando": "2026-10-08 19:25"
     },
     {
       "id": "backup-que-derrubou-roda-de-novo-no-arranque",
       "titulo": "o backup que derrubou o processo roda de novo no arranque",
       "veredito": "PROVADA",
-      "segundos": 96.55,
+      "segundos": 85.23,
       "notas": [],
-      "quando": "2026-10-08 13:33"
+      "quando": "2026-10-08 19:25"
     },
     {
       "id": "lapide-do-futuro-empurra-o-job",
@@ -2894,25 +2988,25 @@
       "id": "lapide-do-futuro-empurra-o-backup",
       "titulo": "a lapide do backup com hora no futuro vira a ultima corrida sem teto",
       "veredito": "PROVADA",
-      "segundos": 80.82,
+      "segundos": 88.79,
       "notas": [],
-      "quando": "2026-10-08 14:10"
+      "quando": "2026-10-08 19:25"
     },
     {
       "id": "corrida-interrompida-nao-avisa",
       "titulo": "a corrida de job fechada no arranque como FALHOU nao avisa por e-mail",
       "veredito": "PROVADA",
-      "segundos": 86.12,
+      "segundos": 111.55,
       "notas": [],
-      "quando": "2026-10-08 13:33"
+      "quando": "2026-10-08 19:25"
     },
     {
       "id": "backup-agendado-falha-calado",
       "titulo": "o backup agendado que falha so escreve no erro padrao",
       "veredito": "PROVADA",
-      "segundos": 84.31,
+      "segundos": 101.87,
       "notas": [],
-      "quando": "2026-10-08 13:33"
+      "quando": "2026-10-08 19:25"
     },
     {
       "id": "dblink-ilegivel-derruba-o-motor",
@@ -2998,9 +3092,9 @@
       "id": "fechar-baixa-o-byte-52-sem-fsync",
       "titulo": "o `fechar` grava o byte 52 em 0 sem `fsync`: o núcleo guarda o cabeçalho limpo e perde as páginas",
       "veredito": "PROVADA",
-      "segundos": 8.17,
+      "segundos": 8.86,
       "notas": [],
-      "quando": "2026-10-02 12:45"
+      "quando": "2026-10-08 19:25"
     },
     {
       "id": "atestado-sobrevive-a-escrita",
@@ -3174,9 +3268,9 @@
       "id": "familia-partida-por-grafia",
       "titulo": "a familia do `Volumes` se parte por symlink e `..`, e familia partida perde dado",
       "veredito": "PROVADA",
-      "segundos": 11.63,
+      "segundos": 12.5,
       "notas": [],
-      "quando": "2026-10-02 13:08"
+      "quando": "2026-10-08 19:25"
     },
     {
       "id": "inserir-sem-janela-do-texto",
@@ -3206,9 +3300,9 @@
       "id": "cascata-embutida-sem-pre-conferencia",
       "titulo": "a cascata do embutido grava a mae antes de conferir a FK da filha para OUTRA mae",
       "veredito": "PROVADA",
-      "segundos": 8.49,
+      "segundos": 9.32,
       "notas": [],
-      "quando": "2026-10-02 13:08"
+      "quando": "2026-10-08 19:25"
     },
     {
       "id": "jobs-devolve-a-coluna-negada",
@@ -3222,33 +3316,33 @@
       "id": "cabecalho-do-ndx-rasgado-trava-a-tabela",
       "titulo": "o cabecalho do `.ndx` rasgado impede a tabela de abrir, e nem o arranque nem o `reindexar` o refazem",
       "veredito": "PROVADA",
-      "segundos": 94.76,
+      "segundos": 102.93,
       "notas": [],
-      "quando": "2026-10-02 13:08"
+      "quando": "2026-10-08 19:25"
     },
     {
       "id": "diretiva-sigilosa-sai-crua-no-sql",
       "titulo": "`ALTER SERVER SET <campo sigiloso> = x` sai cru no perfil: a redacao do SQL so conhecia `PASSWORD`",
       "veredito": "PROVADA",
-      "segundos": 6.83,
+      "segundos": 6.3,
       "notas": [],
-      "quando": "2026-10-02 13:08"
+      "quando": "2026-10-08 19:25"
     },
     {
       "id": "diretiva-sigilosa-sai-crua-no-json",
       "titulo": "o `valor` do `diretiva_gravar` e a chave do `config_gravar` com caminho sigiloso saem crus no perfil",
       "veredito": "PROVADA",
-      "segundos": 94.77,
+      "segundos": 105.24,
       "notas": [],
-      "quando": "2026-10-02 13:08"
+      "quando": "2026-10-08 19:25"
     },
     {
       "id": "sal-falso-pelo-token",
       "titulo": "o sal falso do `desafio` sai do token que todo cliente tem, e quem o tem sabe quem nao existe",
       "veredito": "PROVADA",
-      "segundos": 83.49,
+      "segundos": 112.04,
       "notas": [],
-      "quando": "2026-10-08 14:10"
+      "quando": "2026-10-08 19:25"
     },
     {
       "id": "scram-sem-teto-de-iteracoes",
@@ -3262,9 +3356,9 @@
       "id": "recado-de-trava-entrega-o-login",
       "titulo": "o recado de trava mostra o login do dono dela a quem esbarrou, que pode nem ter direito na tabela",
       "veredito": "PROVADA",
-      "segundos": 96.94,
+      "segundos": 93.06,
       "notas": [],
-      "quando": "2026-10-02 13:08"
+      "quando": "2026-10-08 19:25"
     },
     {
       "id": "smtp-ecoa-a-credencial",
@@ -3278,9 +3372,9 @@
       "id": "arranque-reconstroi-calado",
       "titulo": "o arranque reconstroi indice marcado e so diz no `stderr`: quem opera nao fica sabendo da queda",
       "veredito": "PROVADA",
-      "segundos": 82.17,
+      "segundos": 104.86,
       "notas": [],
-      "quando": "2026-10-08 14:10"
+      "quando": "2026-10-08 19:25"
     },
     {
       "id": "reconstruir-fts-sem-janela",
@@ -3398,17 +3492,17 @@
       "id": "dblink-mysql-lenenc-embrulha",
       "titulo": "o DbLink MySQL(R) entra em pânico com `0xFE` + `u64::MAX` num campo `lenenc` do par, e corta calado o campo maior que o pacote",
       "veredito": "PROVADA",
-      "segundos": 154.46,
+      "segundos": 99.22,
       "notas": [],
-      "quando": "2026-10-06 21:27"
+      "quando": "2026-10-08 19:25"
     },
     {
       "id": "dblink-pg-contagem-negativa",
       "titulo": "o DbLink PostgreSQL(R) reserva `Vec::with_capacity` da contagem de campos `int16` do par: `-1` vira `usize::MAX` e pânico de `capacity overflow`",
       "veredito": "PROVADA",
-      "segundos": 138.54,
+      "segundos": 90.99,
       "notas": [],
-      "quando": "2026-10-06 21:27"
+      "quando": "2026-10-08 19:25"
     },
     {
       "id": "dblink-mysql-cadeia-alem-do-fim",
@@ -3960,9 +4054,9 @@
       "id": "painel-com-copia-do-analisador-de-volume",
       "titulo": "o painel soma os bytes do `.reg` por uma copia do nome do volume e mede zero em tabela de 4 digitos ou por letra",
       "veredito": "PROVADA",
-      "segundos": 38.6,
+      "segundos": 94.56,
       "notas": [],
-      "quando": "2026-09-30 13:25"
+      "quando": "2026-10-08 19:25"
     },
     {
       "id": "carga-adiada-solta-sem-reconstruir",
@@ -5082,9 +5176,9 @@
       "id": "replica-fiel-sem-conferir-a-linhagem",
       "titulo": "a replica fiel abre a tabela daqui sem conferir a linhagem do source: tabela de outra historia recebe os eventos no rowid de outra linha",
       "veredito": "PROVADA",
-      "segundos": 83.14,
+      "segundos": 81.36,
       "notas": [],
-      "quando": "2026-10-08 12:55"
+      "quando": "2026-10-08 19:25"
     },
     {
       "id": "aplicar-sem-conferir-a-linhagem",
@@ -5402,9 +5496,9 @@
       "id": "fase-b-troca-meio-conjunto",
       "titulo": "A fase B trocava o conjunto pela metade quando um *.novo tinha sumido",
       "veredito": "PROVADA",
-      "segundos": 7.25,
+      "segundos": 8.21,
       "notas": [],
-      "quando": "2026-10-01 19:03"
+      "quando": "2026-10-08 19:25"
     },
     {
       "id": "calculada-acrescentada-nula-na-linha-velha",
@@ -5634,17 +5728,17 @@
       "id": "retrato-da-fase-a-nao-ve-volume-que-nasce-427",
       "titulo": "o retrato da FASE A fotografa so os volumes que existem, e o volume que nasce no meio dela fica na geometria velha",
       "veredito": "PROVADA",
-      "segundos": 7.66,
+      "segundos": 7.72,
       "notas": [],
-      "quando": "2026-10-01 21:56"
+      "quando": "2026-10-08 19:25"
     },
     {
       "id": "retrato-da-fase-a-sem-selo-634",
       "titulo": "o retrato da FASE A guarda o `mtime` real, e a atualizacao no mesmo tique passa e e desfeita pela troca",
       "veredito": "PROVADA",
-      "segundos": 9.19,
+      "segundos": 9.03,
       "notas": [],
-      "quando": "2026-10-01 23:32"
+      "quando": "2026-10-08 19:25"
     },
     {
       "id": "selo-do-retrato-nao-devolve-o-mtime-634",
@@ -5754,9 +5848,9 @@
       "id": "faixa-imprecisa-no-int8",
       "titulo": "número cru entre 2⁵³ e o teto do `Int8`/`UInt8` era gravado como o VIZINHO, calado — `9007199254740993` virava `9007199254740992`",
       "veredito": "PROVADA",
-      "segundos": 96.43,
+      "segundos": 88.87,
       "notas": [],
-      "quando": "2026-10-02 01:12"
+      "quando": "2026-10-08 19:25"
     },
     {
       "id": "sequencia-nomeada-proximo-sem-durar",
@@ -6034,17 +6128,17 @@
       "id": "gancho-sem-kill-no-prazo",
       "titulo": "o gancho que passa de `timeout_s` continua vivo",
       "veredito": "PROVADA",
-      "segundos": 79.85,
+      "segundos": 93.75,
       "notas": [],
-      "quando": "2026-10-02 08:27"
+      "quando": "2026-10-08 19:25"
     },
     {
       "id": "gancho-zumbi",
       "titulo": "o gancho morto por prazo vira zumbi (kill sem wait)",
       "veredito": "PROVADA",
-      "segundos": 80.04,
+      "segundos": 91.53,
       "notas": [],
-      "quando": "2026-10-02 06:32"
+      "quando": "2026-10-08 19:25"
     },
     {
       "id": "gancho-saida-do-filho-vaza",
@@ -6106,41 +6200,41 @@
       "id": "gancho-programa-gravavel-pelo-grupo",
       "titulo": "o programa do gancho 0775 (gravavel pelo grupo) passa na conferencia (pedido 639)",
       "veredito": "PROVADA",
-      "segundos": 80.16,
+      "segundos": 119.9,
       "notas": [],
-      "quando": "2026-10-02 08:27"
+      "quando": "2026-10-08 19:25"
     },
     {
       "id": "gancho-programa-em-diretorio-gravavel",
       "titulo": "o programa do gancho em diretorio 0777 sem sticky passa na conferencia (pedido 639)",
       "veredito": "PROVADA",
-      "segundos": 79.64,
+      "segundos": 125.38,
       "notas": [],
-      "quando": "2026-10-02 08:27"
+      "quando": "2026-10-08 19:25"
     },
     {
       "id": "gancho-programa-por-link-simbolico",
       "titulo": "o link do programa do gancho nao e seguido: julga-se o modo do proprio link (pedido 639)",
       "veredito": "PROVADA",
-      "segundos": 79.44,
+      "segundos": 138.1,
       "notas": [],
-      "quando": "2026-10-02 08:27"
+      "quando": "2026-10-08 19:25"
     },
     {
       "id": "gancho-programa-de-outro-dono",
       "titulo": "o programa do gancho pertence a outro usuario e passa (pedido 639)",
       "veredito": "PROVADA",
-      "segundos": 77.39,
+      "segundos": 150.17,
       "notas": [],
-      "quando": "2026-10-02 08:27"
+      "quando": "2026-10-08 19:25"
     },
     {
       "id": "gancho-diretorio-de-outro-dono",
       "titulo": "o diretorio do programa do gancho pertence a outro usuario e passa (pedido 639)",
       "veredito": "PROVADA",
-      "segundos": 79.41,
+      "segundos": 112.9,
       "notas": [],
-      "quando": "2026-10-02 08:27"
+      "quando": "2026-10-08 19:25"
     },
     {
       "id": "gancho-linha-so-troca-crlf",
@@ -6426,9 +6520,9 @@
       "id": "senha-em-claro-pelo-login-remoto-da-web",
       "titulo": "O login da web que vai para OUTRO servidor leva a senha em claro de fora do loopback sem passar pelo portao (pedido 667)",
       "veredito": "PROVADA",
-      "segundos": 21.11,
+      "segundos": 21.69,
       "notas": [],
-      "quando": "2026-10-08 16:19"
+      "quando": "2026-10-08 20:14"
     },
     {
       "id": "backup-manifesto-antes-do-fsync-com-faxina-total",
@@ -6714,9 +6808,9 @@
       "id": "commit-completado-no-arranque-com-outro-id",
       "titulo": "A marca do COMMIT completada no arranque dá ao resto um id de transação novo: a réplica encadeada recebe a venda em dois pedaços (pedido 702)",
       "veredito": "PROVADA",
-      "segundos": 22.39,
+      "segundos": 20.4,
       "notas": [],
-      "quando": "2026-10-08 08:02"
+      "quando": "2026-10-08 20:01"
     },
     {
       "id": "metade-adotada-na-marca-inteira",

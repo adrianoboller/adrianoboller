@@ -199,9 +199,10 @@ export const caso = {
       // aviso e mascara para medir.
       ['integracao com a Claude', async () => {
         await page.evaluate(() => {
-          sessionStorage.setItem('phxsql.ia.chave', JSON.stringify(
-            { chave: 'sk-ant-api03-ZZZZ-bateria-css-global-nao-e-chave-real-AB12' }));
-          localStorage.setItem('phxsql.ia', JSON.stringify({ ligado: true, modelo: 'claude-opus-5' }));
+          // Pelo `_gravar`, o caminho do Salvar: a chave mora so em memoria
+          // desde o 339(a) refeito, e nenhum armazem do navegador a guarda.
+          PhxIA._gravar({ chave: 'sk-ant-api03-ZZZZ-bateria-css-global-nao-e-chave-real-AB12',
+                          ligado: true, modelo: 'claude-opus-5' });
           PhxIA.telaConfig();
         });
       }],

@@ -41,6 +41,9 @@ use phxsql_store::catalogo::Instancia;
 const TOKEN: &str = "commit-inteiro-na-queda";
 const ITENS: u64 = 5;
 const GANCHO: &str = "PHXSQL_TESTE_PARAR_NO_COMMIT";
+/// Pedido 710: o processo morre DENTRO da N-esima escrita da passada, quando
+/// ela e uma inclusao -- com o slot e o contador no `.reg` e sem o evento.
+const GANCHO_DO_REG: &str = "PHXSQL_TESTE_PARAR_NO_REG_DO_COMMIT";
 
 struct Ligacao {
     escrita: TcpStream,
@@ -77,6 +80,13 @@ impl Ligacao {
 }
 
 fn subir(dir: &Path, vez: u32, parar_em: Option<u64>) -> (Filho, u16) {
+    subir_com(dir, vez, parar_em.map(|n| (GANCHO, n)))
+}
+
+/// O gancho que se nomeia: o do 702 ([`GANCHO`]) ou o do 710
+/// ([`GANCHO_DO_REG`]). Os dois saem do ambiente antes, para um nao herdar o
+/// outro.
+fn subir_com(dir: &Path, vez: u32, gancho: Option<(&str, u64)>) -> (Filho, u16) {
     let config = dir.join("config.json");
     std::fs::write(
         &config,
@@ -102,9 +112,10 @@ fn subir(dir: &Path, vez: u32, parar_em: Option<u64>) -> (Filho, u16) {
         .current_dir(dir)
         .stdout(Stdio::null())
         .stderr(Stdio::from(std::fs::File::create(&erro_padrao).unwrap()))
-        .env_remove(GANCHO);
-    if let Some(n) = parar_em {
-        cmd.env(GANCHO, n.to_string());
+        .env_remove(GANCHO)
+        .env_remove(GANCHO_DO_REG);
+    if let Some((nome, n)) = gancho {
+        cmd.env(nome, n.to_string());
     }
     let mut filho = Filho(cmd.spawn().expect("nao consegui iniciar o phxsqld"));
     let porta = porta_do_phxsqld(&mut filho, &erro_padrao).unwrap_or_else(|e| panic!("{e}"));
@@ -218,4 +229,210 @@ fn o_commit_completado_no_arranque_leva_o_id_da_metade_que_entrou() {
         ids[0], ids[1],
         "a recuperacao juntou a segunda venda a primeira"
     );
+}
+
+/// As inclusoes de cada rowid de `tabela`, lidas do diario no disco, e os
+/// rowids com slot vivo.
+fn inclusoes_e_slots(dados: &Path, tabela: &str) -> (Vec<u64>, Vec<u64>) {
+    let inst = Instancia::nova(dados).unwrap();
+    let db = inst.abrir_database("loja").unwrap();
+    let mut t = db.abrir_qualificada(tabela).unwrap();
+    let total = t.eventos().unwrap();
+    let inclusoes = t
+        .diario(0, total)
+        .unwrap()
+        .iter()
+        .filter(|e| e.operacao == phxsql_store::log::Operacao::Inclusao)
+        .map(|e| e.rowid)
+        .collect();
+    let vivos = (1..=t.slots())
+        .filter(|&r| t.ler(r).unwrap().is_some())
+        .collect();
+    (inclusoes, vivos)
+}
+
+/// **A prova real do 710 (F2).** O processo morre DENTRO da terceira escrita
+/// da passada -- a inclusao do segundo item --, com o slot no `.reg` e sem o
+/// evento. Vermelho medido antes do conserto: o arranque via o slot consumido,
+/// respondia «ja estava» e a linha ficava sem inclusao no diario -- nunca
+/// chegaria a replica, e o `verificar` nao acusa.
+#[test]
+fn a_inclusao_do_commit_com_o_slot_e_sem_o_evento_completa_o_diario() {
+    let base = DirTemp::novo("commit-710");
+    std::fs::create_dir_all(&base.0).unwrap();
+    let (filho, porta) = subir(&base.0, 1, None);
+    let mut b = Ligacao::nova(porta);
+    b.exigir(r#""op":"criar_database","database":"loja""#);
+    for tabela in ["vendas", "itens", "pagamentos"] {
+        b.exigir(&format!(
+            r#""op":"criar_tabela","database":"loja","tabela":"{tabela}",
+               "colunas":[{{"nome":"id","tipo":"Int8","obrigatoria":true}},
+                          {{"nome":"venda","tipo":"Int8"}}],
+               "indices":[{{"nome":"pk_id","colunas":["id"],"unico":true,"primario":true}}]"#
+        ));
+    }
+    drop(b);
+    drop(filho);
+
+    let (filho, porta) = subir_com(&base.0, 2, Some((GANCHO_DO_REG, 3)));
+    assert!(
+        !vender(porta, 1),
+        "o COMMIT respondeu: o gancho do 710 nao matou o processo"
+    );
+    let ate = Instant::now() + Duration::from_secs(20);
+    let erro = base.0.join("stderr-2.txt");
+    while !std::fs::read_to_string(&erro)
+        .unwrap_or_default()
+        .contains("teste: COMMIT parado entre o .reg e o diario")
+    {
+        assert!(
+            Instant::now() < ate,
+            "o processo nao parou dentro da inclusao"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    drop(filho);
+    // Premissa: o slot do item 2 esta no `.reg` e o diario nao o tem.
+    let (inclusoes, vivos) = inclusoes_e_slots(&base.0.join("dados"), "itens");
+    assert_eq!(
+        (inclusoes.clone(), vivos.clone()),
+        (vec![1], vec![1, 2]),
+        "premissa: a queda nao deixou o slot sem o evento"
+    );
+
+    let (filho, _) = subir(&base.0, 3, None);
+    drop(filho);
+    let dados = base.0.join("dados");
+    let (inclusoes, vivos) = inclusoes_e_slots(&dados, "itens");
+    assert_eq!(vivos, (1..=ITENS).collect::<Vec<_>>());
+    assert_eq!(
+        inclusoes, vivos,
+        "o diario de itens nao tem a inclusao de cada slot vivo: a linha sem evento \
+         nunca chega a replica"
+    );
+    for tabela in ["vendas", "pagamentos"] {
+        let (inclusoes, vivos) = inclusoes_e_slots(&dados, tabela);
+        assert_eq!((inclusoes, vivos), (vec![1], vec![1]), "{tabela}");
+    }
+    // E a venda inteira com UM id de transacao: o evento completado entra no
+    // id da metade que entrou.
+    let ids = ids_por_venda(&dados);
+    assert_eq!(ids[0].len(), 1, "a venda saiu partida: {:?}", ids[0]);
+}
+
+/// Os eventos de `tabela` no diario, do disco: `(operacao, rowid, coluna venda
+/// da imagem)`, e a versao do slot 1.
+/// `(operacao, rowid, coluna venda da imagem)` de cada evento do diario.
+type Eventos = Vec<(String, u64, Option<i64>)>;
+
+fn eventos_de(dados: &Path, tabela: &str) -> (Eventos, Option<u64>) {
+    let inst = Instancia::nova(dados).unwrap();
+    let db = inst.abrir_database("loja").unwrap();
+    let mut t = db.abrir_qualificada(tabela).unwrap();
+    let total = t.eventos().unwrap();
+    let mut saida = Vec::new();
+    for (ev, imagem) in t.diario_com_imagem(0, total).unwrap() {
+        let venda = if imagem.is_empty() {
+            None
+        } else {
+            match t.valores_da_imagem(&imagem).unwrap().get(1) {
+                Some(phxsql_core::value::Value::Int(n)) => Some(*n),
+                _ => None,
+            }
+        };
+        saida.push((ev.operacao.nome().to_string(), ev.rowid, venda));
+    }
+    let versao = if t.slots() >= 1 {
+        t.versao(1).unwrap()
+    } else {
+        None
+    };
+    (saida, versao)
+}
+
+/// O irmao do 710 que a mesma regra cobre: a ALTERACAO e a EXCLUSAO DE VEZ do
+/// `COMMIT` mortas entre o `.reg` e o diario. Vermelho medido com o braco da
+/// alteracao e o da exclusao tirados do `so_o_diario` (store): o diario fica
+/// sem o evento, e a replica com a linha velha.
+#[test]
+fn a_alteracao_e_a_exclusao_do_commit_sem_o_evento_completam_o_diario() {
+    for (rotulo, corpo, esperado) in [
+        (
+            "alteracao",
+            r#""op":"atualizar","database":"loja","tabela":"vendas","rowid":1,
+               "valores":{"id":1,"venda":2}"#,
+            vec![
+                ("inclusao".to_string(), 1, Some(1)),
+                ("alteracao".to_string(), 1, Some(2)),
+            ],
+        ),
+        (
+            "exclusao",
+            r#""op":"excluir","database":"loja","tabela":"vendas","rowid":1,
+               "fisico":true,"motivo":"teste""#,
+            vec![
+                ("inclusao".to_string(), 1, Some(1)),
+                ("exclusao".to_string(), 1, Some(1)),
+            ],
+        ),
+    ] {
+        let base = DirTemp::novo(&format!("commit-710-{rotulo}"));
+        std::fs::create_dir_all(&base.0).unwrap();
+        let (filho, porta) = subir(&base.0, 1, None);
+        let mut b = Ligacao::nova(porta);
+        b.exigir(r#""op":"criar_database","database":"loja""#);
+        b.exigir(
+            r#""op":"criar_tabela","database":"loja","tabela":"vendas",
+               "colunas":[{"nome":"id","tipo":"Int8","obrigatoria":true},
+                          {"nome":"venda","tipo":"Int8"}],
+               "indices":[{"nome":"pk_id","colunas":["id"],"unico":true,"primario":true}]"#,
+        );
+        b.exigir(
+            r#""op":"inserir","database":"loja","tabela":"vendas","linha":{"id":1,"venda":1}"#,
+        );
+        drop(b);
+        drop(filho);
+
+        let (filho, porta) = subir_com(&base.0, 2, Some((GANCHO_DO_REG, 1)));
+        let mut b = Ligacao::nova(porta);
+        b.exigir(r#""op":"begin","database":"loja""#);
+        b.exigir(corpo);
+        assert!(
+            b.pedir(r#""op":"commit""#).is_none(),
+            "{rotulo}: o COMMIT respondeu, e o gancho nao matou o processo"
+        );
+        let ate = Instant::now() + Duration::from_secs(20);
+        let erro = base.0.join("stderr-2.txt");
+        while !std::fs::read_to_string(&erro)
+            .unwrap_or_default()
+            .contains("teste: COMMIT parado entre o .reg e o diario")
+        {
+            assert!(Instant::now() < ate, "{rotulo}: o processo nao parou");
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        drop(b);
+        drop(filho);
+        let dados = base.0.join("dados");
+        let (antes, _) = eventos_de(&dados, "vendas");
+        assert_eq!(
+            antes.len(),
+            1,
+            "{rotulo}: premissa -- o evento nao podia ter entrado"
+        );
+
+        let (filho, _) = subir(&base.0, 3, None);
+        drop(filho);
+        let (eventos, versao) = eventos_de(&dados, "vendas");
+        assert_eq!(
+            eventos, esperado,
+            "{rotulo}: o diario nao tem o evento que o .reg ja tem"
+        );
+        if rotulo == "alteracao" {
+            assert_eq!(
+                versao,
+                Some(2),
+                "a alteracao foi reaplicada em vez de completada"
+            );
+        }
+    }
 }

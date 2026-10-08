@@ -4,6 +4,7 @@ e FASE B, e o `fsync` -- com N e a faixa min-max.
 
     cargo build --release -p phxsql-store --example custo-da-migracao-da-cifra
     python3 bancada/cifra-migracao/medir.py [--rapido]
+    python3 bancada/cifra-migracao/medir.py --grande 10000000 [--voltas 3] [--por-volume N]
 
 O parecer do papel C estimou 1,3-1,6 us/slot compondo numeros de outros dias e
 disse que o `fsync` NAO foi medido. Aqui os dois saem de uma corrida so, do
@@ -36,6 +37,7 @@ import datetime
 import json
 import os
 import re
+import shutil
 import statistics
 import subprocess
 import sys
@@ -57,6 +59,9 @@ GRADE_RAPIDA = [(20_000, None, 3), (20_000, 2_000, 3)]
 LINHA = re.compile(
     r"^(cifrar|decifrar): slots=(\d+) fase_a_ms=([\d.]+) fase_b_ms=([\d.]+) "
     r"us_por_slot=([\d.]+) volumes=(\d+) bytes_depois=(\d+)"
+    # Pedido 647: o `close` dos volumes velhos, FORA da trava. Opcional para
+    # o binario de antes do conserto continuar legivel.
+    r"(?: soltar_ms=([\d.]+))?"
 )
 
 
@@ -108,6 +113,7 @@ def medir(n, por_volume, repeticoes):
                         "us_por_slot": float(m.group(5)),
                         "volumes": int(m.group(6)),
                         "bytes_depois": int(m.group(7)),
+                        "soltar_ms": float(m.group(8)) if m.group(8) else None,
                     }
                 )
     saida = {"linhas": n, "por_volume": por_volume, "repeticoes": repeticoes}
@@ -121,7 +127,66 @@ def medir(n, por_volume, repeticoes):
             "us_por_slot": faixa([x["us_por_slot"] for x in medidas]),
             "bytes_depois": medidas[0]["bytes_depois"],
         }
+        soltar = [x["soltar_ms"] for x in medidas if x["soltar_ms"] is not None]
+        if soltar:
+            saida[sentido]["soltar_ms"] = faixa(soltar)
     return saida
+
+
+def grande(argv):
+    """`--grande N [--voltas R] [--por-volume V]` -- pedido 647: o ponto GRANDE
+    da reta, MEDIDO e nao extrapolado. Vai para `grandes` no mesmo
+    `resultados.json`, por chave (linhas, por_volume), e NUNCA sobrescreve a
+    grade de baixo nem o vizinho: a corrida grande e cara (minutos e GB de
+    disco), e refaze-la para nao perder a pequena seria o desperdicio que
+    leva alguem a pular uma das duas. Grava o `load` antes e depois, porque
+    esta maquina mede com outras frentes no ar e a FASE B e so `rename` e
+    `fsync` -- o que mais sente o vizinho."""
+    n = int(valor(argv, "--grande"))
+    voltas = int(valor(argv, "--voltas") or 3)
+    por_volume = valor(argv, "--por-volume")
+    por_volume = int(por_volume) if por_volume else None
+    livre = shutil.disk_usage(tempfile.gettempdir()).free
+    load_antes = os.getloadavg()
+    m = medir(n, por_volume, voltas)
+    m["quando"] = datetime.datetime.now().isoformat(timespec="seconds")
+    m["load_antes"] = [round(x, 2) for x in load_antes]
+    m["load_depois"] = [round(x, 2) for x in os.getloadavg()]
+    m["disco_livre_antes_gb"] = round(livre / 1e9, 1)
+    caminho = os.path.join(AQUI, "resultados.json")
+    with open(caminho) as f:
+        resultado = json.load(f)
+    chave = f"{n}_linhas_{'1_volume' if por_volume is None else f'{por_volume}_por_volume'}"
+    # A medida de ANTES do conserto do 647 (sem `soltar_ms`) nao se perde: e a
+    # outra ponta da comparacao, e refaze-la pediria o binario velho.
+    velho = resultado.get("grandes", {}).get(chave)
+    if velho and "soltar_ms" not in velho.get("cifrar", {}):
+        resultado.setdefault("grandes_antes_do_647", {}).setdefault(chave, velho)
+    resultado.setdefault("grandes", {})[chave] = m
+    with open(caminho, "w") as f:
+        json.dump(resultado, f, indent=2)
+        f.write("\n")
+    for sentido in ("cifrar", "decifrar"):
+        x = m[sentido]
+        print(
+            f"{chave} {sentido}: volumes={x['volumes']} "
+            f"FASE A {x['fase_a_ms']['mediana']:.0f} ms "
+            f"[{x['fase_a_ms']['min']:.0f}-{x['fase_a_ms']['max']:.0f}]  "
+            f"FASE B {x['fase_b_ms']['mediana']:.1f} ms "
+            f"[{x['fase_b_ms']['min']:.1f}-{x['fase_b_ms']['max']:.1f}]  "
+            + (
+                f"soltar {x['soltar_ms']['mediana']:.1f} ms "
+                f"[{x['soltar_ms']['min']:.1f}-{x['soltar_ms']['max']:.1f}]  "
+                if "soltar_ms" in x
+                else ""
+            )
+            + f"(x{voltas})"
+        )
+    print("RESULTADO", caminho, "grandes." + chave)
+
+
+def valor(argv, nome):
+    return argv[argv.index(nome) + 1] if nome in argv else None
 
 
 def main():
@@ -130,6 +195,8 @@ def main():
             "falta o medidor: cargo build --release -p phxsql-store "
             "--example custo-da-migracao-da-cifra  (binario velho mede o passado)"
         )
+    if "--grande" in sys.argv:
+        return grande(sys.argv)
     medindo = subprocess.run([os.path.join(RAIZ, "bancada", "esta-medindo.sh")],
                              capture_output=True, text=True)
     grade = GRADE_RAPIDA if "--rapido" in sys.argv else GRADE
