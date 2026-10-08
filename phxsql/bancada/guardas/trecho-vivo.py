@@ -893,7 +893,13 @@ TETO_TESTE_SEM_MODULO = 0
 # contada orfa). RED medido a mao (troca do catalogo aplicada, `caem` cairam
 # e `seguem` verdes, restaurado); provador NAO rodou. Medido por `--numeros`
 # (814).
-PISO_DAS_ENTRADAS = 814
+# 814 -> 820 (pedidos 684 e 685, 08/10/2026 -- o id que some calado e o teto
+# recusado na origem): nascem `diario-sem-piso-do-disco-para-o-id`,
+# `cura-sem-o-id-da-cauda`, `cabecalho-do-log-sem-o-maior-id`,
+# `commit-misto-sem-contar`, `commit-acima-do-teto-aceito` e
+# `custo-da-transacao-sem-a-imagem`. RED medido a mao (troca do catalogo
+# aplicada, `caem` cairam e `seguem` verdes, restaurado); provador NAO rodou.
+PISO_DAS_ENTRADAS = 820
 
 # ------------------------------------------------------------- APOSENTADAS
 #

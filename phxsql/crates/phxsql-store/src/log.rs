@@ -559,10 +559,15 @@ thread_local! {
     /// `Some(0)` aberta e ainda sem evento -- o id so se tira no primeiro
     /// evento, para que tomada que so le nao gaste numero.
     static UNIDADE: std::cell::Cell<Option<u64>> = const { std::cell::Cell::new(None) };
+    /// O que a unidade aberta ja gravou: `(evento com id, evento sem id)`.
+    /// Os dois juntos = o commit misto do pedido 684 (b).
+    static MISTURA: std::cell::Cell<(bool, bool)> = const { std::cell::Cell::new((false, false)) };
 }
 
 /// O proximo id de transacao: estritamente maior que todos os anteriores
-/// deste processo, e maior que o relogio em milissegundos deslocado 16 bits.
+/// deste processo -- e, desde o pedido 684, que o ultimo de cada diario que
+/// este processo ja abriu --, e maior que o relogio em milissegundos
+/// deslocado 16 bits.
 ///
 /// # Por que o relogio, e nao um contador gravado
 ///
@@ -573,12 +578,16 @@ thread_local! {
 /// graca: 65.536 ids por milissegundo antes de o contador passar a frente
 /// dele, e passar a frente nao quebra nada (so deixa de usar o relogio).
 ///
-/// O preco, escrito: um relogio que RECUA alem do que o contador andou entre
-/// um arranque e outro emite id menor que o da vida anterior. A replica nao
-/// perde dado por isso -- cada tabela continua na ordem do proprio diario --,
-/// mas a transacao daquele trecho pode chegar em pedacos.
+/// # E o relogio que recua (pedido 684)
+///
+/// Sozinho, um relogio que RECUA entre um arranque e outro emitiria id menor
+/// que o da vida anterior, e o diario daquela tabela sairia de ordem -- a
+/// venda do trecho chegaria partida na replica sem ninguem contar. O piso do
+/// DISCO fecha isso: cada `.log` que abre semeia o `ULTIMO_TX` com o maior id
+/// que ele guarda ([`semear_tx`]), e o recuo vira numero
+/// ([`recuos_do_relogio`]) em vez de silencio.
 pub fn proximo_tx() -> u64 {
-    let piso = (agora_ms().max(0) as u64) << 16;
+    let piso = (relogio_do_tx().max(0) as u64) << 16;
     let anterior = ULTIMO_TX
         .fetch_update(
             std::sync::atomic::Ordering::SeqCst,
@@ -589,6 +598,119 @@ pub fn proximo_tx() -> u64 {
     anterior.saturating_add(1).max(piso)
 }
 
+/// Quantos milissegundos o relogio do id anda deslocado do relogio do
+/// sistema. Zero fora das provas: e a injecao que deixa o teste recuar o
+/// relogio entre dois «arranques» sem dormir nem mexer no relogio da maquina.
+static DESVIO_DO_RELOGIO: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(0);
+
+/// Quantas vezes um diario aberto trouxe um id A FRENTE do relogio -- o
+/// relogio recuou desde que aquele id foi emitido (pedido 684).
+static RECUOS_DO_RELOGIO: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Quantas tomadas gravaram evento SEM id (volume 2/3) e COM id (volume 4)
+/// juntas -- o commit que a replica recebe partido (pedido 684, b).
+static COMMITS_MISTOS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+fn relogio_do_tx() -> i64 {
+    agora_ms().saturating_add(DESVIO_DO_RELOGIO.load(std::sync::atomic::Ordering::Relaxed))
+}
+
+/// Sobe o `ULTIMO_TX` do processo ate `tx`, o maior id que um diario guarda
+/// -- pedido 684. Nunca desce (`fetch_max`): duas tabelas abrindo em
+/// qualquer ordem dao o mesmo piso.
+///
+/// Conta o recuo quando o id do disco esta a frente do relogio de agora E
+/// foi ele que subiu o piso: a segunda tabela da mesma vida, ja coberta pela
+/// primeira, nao conta de novo o mesmo recuo.
+pub fn semear_tx(tx: u64) {
+    if tx == 0 {
+        return;
+    }
+    let antes = ULTIMO_TX.fetch_max(tx, std::sync::atomic::Ordering::SeqCst);
+    let agora = (relogio_do_tx().max(0) as u64) << 16;
+    if tx > antes && tx > agora {
+        RECUOS_DO_RELOGIO.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+}
+
+/// Ver [`RECUOS_DO_RELOGIO`]. Vai ao `replicacao_estado`.
+pub fn recuos_do_relogio() -> u64 {
+    RECUOS_DO_RELOGIO.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Ver [`COMMITS_MISTOS`]. Vai ao `replicacao_estado`.
+pub fn commits_mistos() -> u64 {
+    COMMITS_MISTOS.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// PROVA: desloca o relogio do id em `ms` (negativo = recua). Ver
+/// [`DESVIO_DO_RELOGIO`].
+#[doc(hidden)]
+pub fn desviar_relogio_do_tx_para_teste(ms: i64) {
+    DESVIO_DO_RELOGIO.store(ms, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// PROVA: esquece o `ULTIMO_TX`, que e o que um processo novo tem -- o
+/// «segundo arranque» dentro do mesmo binario de teste.
+#[doc(hidden)]
+pub fn esquecer_ultimo_tx_para_teste() {
+    ULTIMO_TX.store(0, std::sync::atomic::Ordering::SeqCst);
+}
+
+// ------------------------------------- o teto da transacao (676, 685)
+
+/// Quanto UMA transacao pode ocupar -- a constante UNICA da origem e da
+/// replica (pedido 685).
+///
+/// # Por que um teto
+///
+/// A replica aplica a transacao da origem inteira ou nada (pedido 676), e
+/// para isso a tem inteira na memoria antes de tomar a trava. Os maduros nao
+/// tem este teto porque derramam em disco (o `relay log` do MySQL e do
+/// MariaDB, o `logical_decoding_work_mem` do PostgreSQL); aqui ainda nao ha
+/// onde derramar.
+///
+/// # Por que a ORIGEM recusa (decisao do dono, 07/10/2026)
+///
+/// Ate o 685 a transacao acima do teto chegava a replica em pedacos, contada.
+/// O dono decidiu que «a venda chega inteira ou nao chega» vale sem excecao:
+/// o `COMMIT` que passaria do teto e recusado na origem, antes da marca, com
+/// nada gravado, dizendo o tamanho e que a carga deve ser dividida. E a mesma
+/// constante dos dois lados, e por isso ela mora aqui, onde os dois a leem:
+/// duas copias divergiriam no dia em que alguem mexesse numa.
+///
+/// 64 MiB: uma venda de supermercado sao alguns KiB; o teto existe para a
+/// carga em massa, nao para o caso que o 325 descreve.
+pub const TETO_DA_TRANSACAO: usize = 64 * 1024 * 1024;
+
+/// O que um evento custa na conta do teto, alem da imagem: a `struct` e o
+/// que o `VecDeque` da replica guarda dele. Conta folgada de proposito.
+pub const CUSTO_DO_EVENTO: usize = 128;
+
+/// O teto injetado pela prova; zero = o [`TETO_DA_TRANSACAO`].
+static TETO_DE_TESTE: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// O teto vigente: o [`TETO_DA_TRANSACAO`], ou o que a prova injetou.
+pub fn teto_da_transacao() -> usize {
+    match TETO_DE_TESTE.load(std::sync::atomic::Ordering::Relaxed) {
+        0 => TETO_DA_TRANSACAO,
+        t => t,
+    }
+}
+
+/// PROVA: um teto pequeno no lugar dos 64 MiB, para o mesmo processo que
+/// sobe a origem e a replica. Zero volta ao de fabrica.
+#[doc(hidden)]
+pub fn definir_teto_da_transacao_para_teste(bytes: usize) {
+    TETO_DE_TESTE.store(bytes, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// O custo de um evento de imagem com `tam_imagem` bytes na conta do teto --
+/// a MESMA conta na origem (que recusa) e na replica (que junta).
+pub fn custo_na_transacao(tam_imagem: usize) -> usize {
+    tam_imagem.saturating_add(CUSTO_DO_EVENTO)
+}
+
 /// Abre a unidade de transacao desta thread: todo evento gravado ate
 /// [`fechar_unidade`] leva o mesmo id. Quem abre e a tomada da trava de
 /// escrita do servidor -- que e uma por commit, e de uma thread so.
@@ -597,12 +719,28 @@ pub fn proximo_tx() -> u64 {
 /// nenhum nao gasta id.
 pub fn abrir_unidade() {
     UNIDADE.with(|u| u.set(Some(0)));
+    MISTURA.with(|m| m.set((false, false)));
 }
 
 /// Fecha a unidade desta thread. O evento gravado fora de unidade (a CLI, a
 /// FFI, o `phxsql-store` usado direto) ganha um id so dele.
 pub fn fechar_unidade() {
     UNIDADE.with(|u| u.set(None));
+    if MISTURA.with(|m| m.replace((false, false))) == (true, true) {
+        COMMITS_MISTOS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+}
+
+/// Anota na unidade aberta se o evento foi com id ou sem -- pedido 684 (b).
+/// Fora de unidade nao ha commit para misturar.
+fn anotar_mistura(com_id: bool) {
+    if UNIDADE.with(std::cell::Cell::get).is_none() {
+        return;
+    }
+    MISTURA.with(|m| {
+        let (a, b) = m.get();
+        m.set((a || com_id, b || !com_id));
+    });
 }
 
 /// O id do evento que vai ser gravado agora.
@@ -688,6 +826,11 @@ impl LogFile {
         // hora.
         l.curar(volume_atual, true)?;
         l.devendo = l.devido_no(&primeiro)?;
+        // O piso do DISCO para o id de transacao (pedido 684): depois da
+        // cura, que conta o que entrou desde o ultimo `sincronizar`. So na
+        // abertura com escrita -- e ela que precede todo evento novo desta
+        // tabela, entao o diario dela nunca recebe id menor que o ultimo.
+        semear_tx(l.cab(volume_atual)?.ultimo_tx);
         Ok(l)
     }
 
@@ -839,7 +982,9 @@ impl LogFile {
             tx: tx_do_evento(),
             largo: atual.com_tx,
         };
-        self.anexar(evento, imagem)?;
+        // O evento como FOI gravado: o volume velho zera o `tx` e encurta o
+        // evento, e devolver o de antes diria um id que o disco nao tem.
+        let evento = self.anexar(evento, imagem)?;
         // O PONTO UNICO onde o diario cresce (pedido 207): e aqui, e nao em
         // cada familia de escrita do servidor, que a tabela tocada se anota --
         // uma familia esquecida seria um commit que responde «gravei» sem
@@ -1074,7 +1219,7 @@ impl LogFile {
         self.gravar_cab(c.com_marca(None))
     }
 
-    fn anexar(&mut self, mut evento: Evento, imagem: &[u8]) -> Result<()> {
+    fn anexar(&mut self, mut evento: Evento, imagem: &[u8]) -> Result<Evento> {
         let (volume, virou, atual) = self.destino(evento.ocupa())?;
 
         let cab = if virou {
@@ -1082,7 +1227,11 @@ impl LogFile {
             // O volume NOVO sorteia o proprio sal, e por isso tem a propria
             // chave: e o que deixa o numero de ordem do nonce ser o offset
             // dentro do volume sem nunca repetir o par (chave, nonce).
-            let novo = Cabecalho::novo_do_diario(volume)?;
+            // O volume novo herda o maior id do anterior (pedido 684): sem
+            // isto, a virada seguida de uma queda antes do primeiro
+            // `sincronizar` deixaria o volume corrente dizendo «nenhum id», e
+            // a abertura nao teria piso nenhum.
+            let novo = Cabecalho::novo_do_diario(volume)?.com_tx_visto(atual.ultimo_tx);
             self.gravar_cab(novo)?;
             self.volume_atual = volume;
             novo
@@ -1098,6 +1247,7 @@ impl LogFile {
         if !evento.largo {
             evento.tx = 0;
         }
+        anotar_mistura(evento.largo);
 
         let tempero = tempero_novo(&cab);
         let mut cheio = [0u8; EVENTO_CAB_TX];
@@ -1137,9 +1287,12 @@ impl LogFile {
         // Indice perdido se reconstroi do `.reg`; evento perdido nao se
         // reconstroi -- ele e a historia, e e a posicao de que a replicacao
         // depende.
-        self.cabs
-            .insert(volume, cab.com(cab.fim + evento.ocupa(), cab.quantos + 1));
-        Ok(())
+        self.cabs.insert(
+            volume,
+            cab.com(cab.fim + evento.ocupa(), cab.quantos + 1)
+                .com_tx_visto(evento.tx),
+        );
+        Ok(evento)
     }
 
     /// Varre para a frente a partir do `fim` gravado e conserta o cabecalho.
@@ -1209,7 +1362,9 @@ impl LogFile {
             // A cura anda pelo CRC, e nao pela chave: um volume cifrado tem de
             // se curar do mesmo jeito, e decifrar aqui obrigaria a ter a chave
             // so para saber onde o arquivo acaba.
-            cab = cab.com(cab.fim + evento.ocupa(), cab.quantos + 1);
+            cab = cab
+                .com(cab.fim + evento.ocupa(), cab.quantos + 1)
+                .com_tx_visto(evento.tx);
             achados += 1;
         }
         Ok((achados, cab))
@@ -1999,6 +2154,68 @@ mod tests {
         let ultimo = *v.existentes().last().unwrap();
         let cab = cofre::ler_cabecalho_do_volume(&mut v, ultimo, MAGIC_LOG, 4).unwrap();
         assert!(cab.com_tx && cab.cab_len == cofre::CAB_V3);
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    /// **Pedido 684 (b): o commit que mistura volume sem id e volume com id
+    /// e CONTADO.** A tomada que grava numa tabela ainda no volume 2/3 (tx
+    /// zero) e numa ja na 4 chega partida a replica, e ate aqui sem aviso.
+    /// A tomada so com volume novo nao conta: o numero e o do defeito.
+    #[test]
+    fn o_commit_que_mistura_volume_sem_id_e_com_id_e_contado() {
+        let d = dir_temp("misto");
+        diario_da_versao_2(&d, Paginacao::DESLIGADA, &[b"um"]);
+        let mut velho = LogFile::abrir(&d, "t", Paginacao::DESLIGADA).unwrap();
+        let mut novo = LogFile::criar(&d, "u", Paginacao::DESLIGADA).unwrap();
+
+        let antes = commits_mistos();
+        abrir_unidade();
+        novo.registrar(Operacao::Inclusao, 1, 1).unwrap();
+        novo.registrar(Operacao::Inclusao, 2, 1).unwrap();
+        fechar_unidade();
+        assert_eq!(commits_mistos(), antes, "tomada so com id nao e mista");
+
+        abrir_unidade();
+        let e_novo = novo.registrar(Operacao::Inclusao, 3, 1).unwrap();
+        let e_velho = velho.registrar(Operacao::Inclusao, 2, 1).unwrap();
+        fechar_unidade();
+        assert!(e_novo.tx > 0 && e_velho.tx == 0);
+        assert_eq!(
+            commits_mistos(),
+            antes + 1,
+            "a tomada gravou com id e sem id e o commit misto nao foi contado"
+        );
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    /// **Pedido 684: o maior id vai ao cabecalho, e o volume novo o herda.**
+    /// E o que a abertura le para semear o piso sem caminhar o volume -- e a
+    /// virada seguida de queda antes do primeiro evento do volume novo nao
+    /// pode deixa-lo dizendo «nenhum id».
+    #[test]
+    fn o_maior_id_vai_ao_cabecalho_e_o_volume_novo_o_herda() {
+        let d = dir_temp("ultimo-tx");
+        let pag = Paginacao::nova(10, 99)
+            .unwrap()
+            .com_bytes_por_arquivo(200)
+            .unwrap();
+        let mut l = LogFile::criar(&d, "t", pag).unwrap();
+        let mut ultimo = 0;
+        for i in 1..=12u64 {
+            ultimo = l.registrar(Operacao::Inclusao, i, 1).unwrap().tx;
+        }
+        l.sincronizar().unwrap();
+        assert!(l.volumes().len() > 1);
+        let mut v = Volumes::novo(&d, "t", EXT_LOG, pag);
+        let n = *v.existentes().last().unwrap();
+        let cab = cofre::ler_cabecalho_do_volume(&mut v, n, MAGIC_LOG, 4).unwrap();
+        assert_eq!(cab.ultimo_tx, ultimo, "o cabecalho nao guardou o maior id");
+        // O volume recem-virado, ainda sem evento, ja nasce com o id do
+        // anterior.
+        let novo = cofre::Cabecalho::novo_do_diario(n + 1)
+            .unwrap()
+            .com_tx_visto(cab.ultimo_tx);
+        assert_eq!(novo.ultimo_tx, ultimo);
         std::fs::remove_dir_all(&d).unwrap();
     }
 

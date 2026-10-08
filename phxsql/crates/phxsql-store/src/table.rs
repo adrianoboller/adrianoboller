@@ -820,6 +820,10 @@ pub struct Table {
     /// senao o conflito "mais recente vence" elegeria sempre quem sincronizou
     /// por ultimo. `None` = escrita local, relogio local, origem zero.
     evento_forcado: Option<(i64, u16)>,
+    /// O que as escritas que passaram pela [`Table::pre_conferir`] vao
+    /// custar no diario, na conta do teto da transacao -- pedido 685. Ver
+    /// [`Table::custo_previsto_no_diario`].
+    custo_no_diario: usize,
     /// O que a transacao de quem abriu este handle ja pediu e ainda nao gravou.
     ///
     /// `None` no caminho comum, que e o de todo mundo que nao esta dentro de
@@ -1433,6 +1437,7 @@ impl Table {
             reconstruir_indice_da_filha: false,
             indices_da_cascata_reconstruidos: 0,
             evento_forcado: None,
+            custo_no_diario: 0,
             sobreposta: None,
             como_replica: false,
             honrar_rownum: false,
@@ -2638,6 +2643,7 @@ impl Table {
             reconstruir_indice_da_filha: false,
             indices_da_cascata_reconstruidos: 0,
             evento_forcado: None,
+            custo_no_diario: 0,
             sobreposta: None,
             como_replica: false,
             honrar_rownum: false,
@@ -4308,6 +4314,68 @@ impl Table {
         self.imagem_no_diario
     }
 
+    /// Quanto as escritas pre-conferidas por esta tabela vao custar no
+    /// diario, na conta do [`crate::log::teto_da_transacao`] -- pedido 685.
+    ///
+    /// E um TETO da conta, e nao a conta: a imagem de verdade so existe
+    /// depois de os externos irem ao `.memo`, e o COMMIT tem de decidir antes
+    /// de gravar a marca, com o disco intocado. Entao cada parcela pega o maior que
+    /// a imagem pode ser (o selo de todo externo, o «antes» de toda
+    /// alteracao). Errar para cima recusa uma transacao que talvez coubesse;
+    /// errar para baixo deixaria passar uma que a replica receberia partida
+    /// -- e e essa que a decisao do dono proibe.
+    pub fn custo_previsto_no_diario(&self) -> usize {
+        self.custo_no_diario
+    }
+
+    /// O teto do custo de UM evento com a imagem destes `valores` --
+    /// [`crate::log::custo_na_transacao`] sobre o maior tamanho que a imagem
+    /// de [`Table::imagem_da_linha`] pode ter. Sem imagem no diario, o
+    /// evento so custa o fixo.
+    fn custo_da_linha(&self, valores: &[Value], com_o_antes: bool) -> usize {
+        if !self.imagem_no_diario {
+            return crate::log::custo_na_transacao(0);
+        }
+        let p = self.esquema.payload_len();
+        let selo = if self.reg.cifrada() {
+            phxsql_core::cifra::XNONCE_LEN + phxsql_core::cifra::TAG_LEN
+        } else {
+            0
+        };
+        // `montar_imagem`: [u32 payload][payload][u16 quantos] e, por
+        // externo, [u16 coluna][u32 tamanho][conteudo].
+        let mut imagem = 4 + p + 2;
+        for (col, v) in self.esquema.colunas().iter().zip(valores) {
+            if !col.ty.externo() {
+                continue;
+            }
+            let n = match v {
+                Value::Bin(b) => b.len(),
+                Value::Memo(t) | Value::Str(t) => t.len(),
+                _ => continue,
+            };
+            imagem += 6 + n + selo;
+        }
+        // `anexar_o_antes`: [u8 marca][u32 tamanho][payload antigo].
+        if com_o_antes {
+            imagem += 5 + p;
+        }
+        crate::log::custo_na_transacao(imagem)
+    }
+
+    /// O custo do evento da linha `rowid` como ela esta para quem le (o
+    /// disco com a sobreposicao) -- a marca, a restauracao e a exclusao
+    /// levam a linha inteira.
+    fn custo_da_linha_atual(&mut self, rowid: RowId, com_imagem: bool) -> Result<usize> {
+        if !com_imagem || !self.imagem_no_diario {
+            return Ok(crate::log::custo_na_transacao(0));
+        }
+        Ok(match self.resolver(rowid)? {
+            Some(l) => self.custo_da_linha(&l, false),
+            None => crate::log::custo_na_transacao(0),
+        })
+    }
+
     /// Liga a imagem da linha tambem no evento de EXCLUSAO fisica.
     ///
     /// So faz efeito com [`Table::ligar_imagem_no_diario`] ligada tambem. E o
@@ -4961,6 +5029,7 @@ impl Table {
                 let (linha, _) = self.linha_final(l, None, Some(&mut previsao), Some(maes))?;
                 self.conferir_unicidade(&linha, None)?;
                 self.guardar_previsao(previsao);
+                self.custo_no_diario += self.custo_da_linha(&linha, false);
                 self.dobrar(rowid, Pendente::Insercao(&linha));
                 Ok(Vec::new())
             }
@@ -4975,16 +5044,19 @@ impl Table {
                 self.conferir_unicidade(&depois, Some(rowid))?;
                 let plano = self.planejar_cascata_com(&antes, &depois, Some(&*maes))?;
                 self.guardar_previsao(previsao);
+                self.custo_no_diario += self.custo_da_linha(&depois, true);
                 self.dobrar(rowid, Pendente::Alteracao(&depois, antiga));
                 Ok(plano)
             }
             Pendente::Marca(true) => {
                 self.conferir_exclusao_suave(rowid, motivo, Some(maes))?;
+                self.custo_no_diario += self.custo_da_linha_atual(rowid, true)?;
                 self.dobrar(rowid, p);
                 Ok(Vec::new())
             }
             Pendente::Marca(false) => {
                 self.conferir_restauracao(rowid, Some(maes))?;
+                self.custo_no_diario += self.custo_da_linha_atual(rowid, true)?;
                 self.dobrar(rowid, p);
                 Ok(Vec::new())
             }
@@ -4994,6 +5066,8 @@ impl Table {
                 // visao do prefixo, que e o disco que a passada tera.
                 if self.visivel(rowid, None, Visao::Todas)? {
                     self.conferir_exclusao_de_vez(rowid, None, motivo, Some(maes))?;
+                    let com_imagem = self.imagem_na_exclusao;
+                    self.custo_no_diario += self.custo_da_linha_atual(rowid, com_imagem)?;
                 }
                 self.dobrar(rowid, p);
                 Ok(Vec::new())

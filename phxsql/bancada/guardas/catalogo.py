@@ -25812,4 +25812,148 @@ fn anotar(""",
             "com_a_mae_primeiro_nada_e_contado",
         ],
     },
+    {
+        "id": "diario-sem-piso-do-disco-para-o-id",
+        "titulo": "A abertura do `.log` deixa de semear o id de transação pelo disco: com o relógio recuado entre dois arranques o diário recebe id menor que o da vida anterior (pedido 684)",
+        "porque": (
+            "pedido 684 (a), parecer do papel C na revisao do 676: o id sai do "
+            "relogio e do `ULTIMO_TX` em memoria, e o processo novo comeca do "
+            "zero. Medido com o defeito reposto e o relogio recuado uma hora "
+            "por injecao: o diario da tabela recebeu 117402826791649280 depois "
+            "de 117403062721183744 -- fora de ordem, e o `Juntador` partiria a "
+            "venda sem contar."
+        ),
+        "arquivo": "crates/phxsql-store/src/log.rs",
+        "trecho": """        semear_tx(l.cab(volume_atual)?.ultimo_tx);
+""",
+        "troca": """        // DEFEITO REPOSTO (684): a abertura nao semeia o piso do disco.
+        let _ = l.cab(volume_atual)?.ultimo_tx;
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "id-de-transacao-com-o-relogio-recuado"],
+        "caem": [
+            "o_id_de_transacao_nao_recua_quando_o_relogio_recua_entre_dois_arranques",
+        ],
+        "seguem": [],
+    },
+    {
+        "id": "cura-sem-o-id-da-cauda",
+        "titulo": "A cura do `.log` deixa de contar o id dos eventos da cauda: o evento gravado depois do último `sincronizar` some do piso, e o id novo sai menor que ele (pedido 684)",
+        "porque": (
+            "pedido 684 (a): o cabecalho so vai a disco no `sincronizar`, entao "
+            "o maior id de um diario que caiu antes dele esta na CAUDA, que a "
+            "cura ja anda evento a evento. Medido com o defeito reposto: o id "
+            "novo 117402827245813760 saiu menor que o 117403063175413760 do "
+            "evento da cauda."
+        ),
+        "arquivo": "crates/phxsql-store/src/log.rs",
+        "trecho": """            cab = cab
+                .com(cab.fim + evento.ocupa(), cab.quantos + 1)
+                .com_tx_visto(evento.tx);
+            achados += 1;""",
+        "troca": """            // DEFEITO REPOSTO (684): a cura nao conta o id da cauda.
+            cab = cab.com(cab.fim + evento.ocupa(), cab.quantos + 1);
+            achados += 1;""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "id-de-transacao-com-o-relogio-recuado"],
+        "caem": [
+            "o_id_de_transacao_nao_recua_quando_o_relogio_recua_entre_dois_arranques",
+        ],
+        "seguem": [],
+    },
+    {
+        "id": "cabecalho-do-log-sem-o-maior-id",
+        "titulo": "O cabeçalho da versão 4 do `.log` deixa de gravar o maior id de transação: a abertura não tem piso sem caminhar o volume inteiro (pedido 684)",
+        "porque": (
+            "pedido 684 (a): o evento nao tem largura fixa, e achar o ultimo "
+            "seria ler o volume inteiro -- 1 GiB por tabela no corte de "
+            "fabrica. O maior id mora nos bytes 96..104 do cabecalho de 128 "
+            "(FORMATO.md §4). Medido com o defeito reposto: o cabecalho lido "
+            "do disco devolve zero."
+        ),
+        "arquivo": "crates/phxsql-store/src/cofre.rs",
+        "trecho": """        por_u64(&mut buf, OFF_ULTIMO_TX, cab.ultimo_tx);
+""",
+        "troca": """        // DEFEITO REPOSTO (684): o maior id nao vai ao cabecalho.
+        let _ = cab.ultimo_tx;
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--lib"],
+        "caem": [
+            "log::tests::o_maior_id_vai_ao_cabecalho_e_o_volume_novo_o_herda",
+        ],
+        "seguem": [
+            "log::tests::o_diario_da_versao_2_continua_abrindo_e_crescendo_com_44_bytes",
+        ],
+    },
+    {
+        "id": "commit-misto-sem-contar",
+        "titulo": "A tomada que grava em volume sem id (2/3) e em volume com id (4) volta a passar calada: a réplica recebe o commit partido e ninguém conta (pedido 684)",
+        "porque": (
+            "pedido 684 (b): no mesmo database, tabela ainda no volume velho "
+            "(tx zero) e tabela ja na versao 4 partem o commit. O conserto e "
+            "contar e mostrar em `replicacao_estado.id_de_transacao."
+            "commits_mistos`. Medido com o defeito reposto: o contador nao "
+            "anda."
+        ),
+        "arquivo": "crates/phxsql-store/src/log.rs",
+        "trecho": """        anotar_mistura(evento.largo);
+""",
+        "troca": """        // DEFEITO REPOSTO (684): o commit misto nao se anota.
+        let _ = evento.largo;
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--lib"],
+        "caem": [
+            "log::tests::o_commit_que_mistura_volume_sem_id_e_com_id_e_contado",
+        ],
+        "seguem": [
+            "log::tests::o_diario_da_versao_2_continua_abrindo_e_crescendo_com_44_bytes",
+        ],
+    },
+    {
+        "id": "commit-acima-do-teto-aceito",
+        "titulo": "O COMMIT acima do teto da transação volta a ser aceito na origem: a réplica o recebe em pedaços (pedido 685)",
+        "porque": (
+            "pedido 685, decisao do dono (07/10/2026): «a venda chega inteira "
+            "ou nao chega» vale sem excecao, e a origem recusa no COMMIT, "
+            "antes da marca e com nada gravado, a transacao que passaria do "
+            "`TETO_DA_TRANSACAO`. Medido pelo soquete com o defeito reposto e "
+            "o teto de teste em S-1: `COMMITTED`, 601 gravadas."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        if custo > teto {
+""",
+        "troca": """        // DEFEITO REPOSTO (685): o teto nao se confere no COMMIT.
+        if custo > teto && false {
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "transacao-acima-do-teto"],
+        "caem": [
+            "a_transacao_acima_do_teto_e_recusada_no_commit_e_a_que_cabe_chega_inteira",
+        ],
+        "seguem": [],
+    },
+    {
+        "id": "custo-da-transacao-sem-a-imagem",
+        "titulo": "A conta da origem esquece a imagem da linha: aceita a transação que a réplica mede acima do teto, e ela chega em pedaços (pedido 685)",
+        "porque": (
+            "pedido 685: a conta da origem tem de ficar POR CIMA da conta da "
+            "replica (a mesma `custo_na_transacao`), senao o COMMIT aceito "
+            "abaixo do teto chega partido. Medido pelo soquete com o defeito "
+            "reposto (so o custo fixo por evento): `transacoes_em_pedacos` = 1."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """    fn custo_da_linha(&self, valores: &[Value], com_o_antes: bool) -> usize {
+        if !self.imagem_no_diario {""",
+        "troca": """    fn custo_da_linha(&self, valores: &[Value], com_o_antes: bool) -> usize {
+        // DEFEITO REPOSTO (685): a conta so ve o custo fixo do evento.
+        if !self.imagem_no_diario || valores.len() < usize::MAX {""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "transacao-acima-do-teto"],
+        "caem": [
+            "a_transacao_acima_do_teto_e_recusada_no_commit_e_a_que_cabe_chega_inteira",
+        ],
+        "seguem": [],
+    },
 ]

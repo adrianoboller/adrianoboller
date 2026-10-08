@@ -667,28 +667,10 @@ pub fn eventos_do_fio(lista: Option<&Json>) -> Result<Vec<EventoRecebido>> {
 
 // ------------------------------------------- a transacao inteira (676)
 
-/// Quanto UMA transacao da origem pode ocupar na memoria da replica antes de
-/// ir em pedacos -- pedido 676.
-///
-/// # Por que um teto, e o que acontece acima dele
-///
-/// Aplicar a transacao inteira ou nada pede te-la inteira na mao antes de
-/// tomar a trava, e uma carga de um milhao de linhas num commit so nao cabe.
-/// Os maduros nao tem este teto porque derramam em disco (o `relay log` do
-/// MySQL e do MariaDB, o `logical_decoding_work_mem` do PostgreSQL); aqui
-/// ainda nao ha onde derramar. Acima do teto a transacao vai EM PEDACOS --
-/// cada pedaco sob uma tomada, como era tudo antes do 676 -- e isso e
-/// CONTADO (`transacoes_em_pedacos` no `replicacao_estado`) e dito no log do
-/// processo. Parar a replicacao no lugar seria trocar uma garantia que nao
-/// vale para uma carga grande por uma replica parada para sempre.
-///
-/// 64 MiB: uma venda de supermercado sao alguns KiB; o teto existe para a
-/// carga em massa, nao para o caso que o 325 descreve.
-pub const TETO_DA_TRANSACAO: usize = 64 * 1024 * 1024;
-
-/// O que um evento custa na conta do teto, alem da imagem: a `struct` e o
-/// que o `VecDeque` guarda dele. Conta folgada de proposito.
-const CUSTO_DO_EVENTO: usize = 128;
+// O teto e o custo de um evento moram no `phxsql_store::log` desde o pedido
+// 685: a ORIGEM recusa no COMMIT a transacao que passaria dele, e a constante
+// tem de ser UMA so dos dois lados. Reexportados para os chamadores de sempre.
+pub use phxsql_store::log::{CUSTO_DO_EVENTO, TETO_DA_TRANSACAO};
 
 /// Quantos eventos uma tomada da trava aplica de uma vez, somando as
 /// transacoes inteiras que cabem: o mesmo [`LOTE`] de antes, para que o
@@ -817,7 +799,7 @@ impl Juntador {
         self.filas
             .iter()
             .flat_map(|f| f.eventos.iter().take_while(|e| e.tx == tx))
-            .map(|e| e.imagem.len() + CUSTO_DO_EVENTO)
+            .map(|e| phxsql_store::log::custo_na_transacao(e.imagem.len()))
             .sum()
     }
 
