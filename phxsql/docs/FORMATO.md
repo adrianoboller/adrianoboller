@@ -4194,6 +4194,21 @@ lugar do objeto também é aceita. `"formato": 1` escrito é o mesmo formato.
 | `senha_cifrada` | ligação | o envelope da senha — **mutuamente exclusivo** com `senha` e com `senha_env` |
 | `token_remoto_cifrado` | ligação | o envelope do token — mutuamente exclusivo com `token_remoto` e `token_remoto_env` |
 
+**Os campos do fio de cada ligação** (valem nos dois formatos, e só vão ao
+disco quando escritos -- um cadastro de antes regrava igual):
+
+| campo | motor | o que é |
+|---|---|---|
+| `cifra`, `chave_do_fio` | phxsql | o túnel Noise e o pino dele (pedido 378) |
+| `pino_tls` | phxsql, postgres, mysql | `sha256//<base64>` do SPKI do outro lado: TLS 1.3 conferido pela chave (pedido 572, T6b-2 e T6d) |
+| `tls` | postgres, mysql | `desligado` (ausente), `exigir` ou `verificar` -- o `sslmode` do libpq (pedido 572, T6d) |
+| `tls_ca` | postgres, mysql | as âncoras do `verificar`: caminho de um PEM, ou `sistema`; ausente é o sistema |
+
+Campo de um motor escrito em outro é **recusado na declaração** (`tls` numa
+ligação phxsql, `chave_do_fio` numa postgres), e o salvar que não manda
+`pino_tls`, `tls` ou `tls_ca` **herda** o que estava gravado. Trocar qualquer
+um dos três conta como troca de destino: o salvar exige a credencial de novo.
+
 **Material único, e não um por ligação**, por número: uma derivação de
 210.000 iterações custa **290,3 ms** medidos (`SEGURANCA.md`), e o cadastro é
 lido inteiro a cada arranque e reescrito inteiro a cada salvar — dez ligações

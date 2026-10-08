@@ -1152,6 +1152,7 @@ impl Definicao {
                 self.senha()?,
                 &self.database,
                 prazo,
+                &self.tls_de_saida()?,
             )
             .map(|mut c| {
                 c.teto_de_bytes = self.teto_de_bytes();

@@ -2582,10 +2582,23 @@ pub const OPERACOES: &[Operacao] = &[
             opc(
                 "pino_tls",
                 "string",
-                "só para `phxsql`: o pino TLS do outro lado, `sha256//<base64>` \
+                "para `phxsql`, `postgres` e `mysql`: o pino TLS do outro lado, `sha256//<base64>` \
                  do SPKI (o que ele imprime no arranque). Escrito, a ligação fala \
                  TLS 1.3 conferido no lugar do túnel. A resposta devolve \
                  `tem_pino_tls`, nunca o pino",
+            ),
+            opc(
+                "tls",
+                "string",
+                "só para `postgres` e `mysql`: `desligado` (padrão), `exigir` \
+                 (cifra sem conferir) ou `verificar` (cadeia até o `tls_ca` e o \
+                 nome do host) -- o `sslmode` do libpq",
+            ),
+            opc(
+                "tls_ca",
+                "string",
+                "só para `postgres` e `mysql`: as âncoras do `verificar`, um PEM \
+                 ou `sistema`; vazio é o sistema",
             ),
         ],
         exemplo: r#"{"op":"dblink_salvar","nome":"erp","motor":"mysql","host":"10.1.1.9","usuario":"leitor","senha_env":"ERP_SENHA","database":"producao"}"#,

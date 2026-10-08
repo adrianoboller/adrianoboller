@@ -45,15 +45,20 @@ use std::time::Duration;
 use phxsql_core::error::{PhxError, Result};
 
 use crate::prazo::{self, ComPrazo, Prazo};
+use crate::tls_saida::TlsDeSaida;
 use phxsql_core::fio::TETO_DO_REGISTRO;
 use phxsql_core::hash::sha256;
 use phxsql_core::sha1::sha1;
+use phxsql_core::tls::FioDeCliente;
 
 // Capacidades pedidas ao servidor. Cada uma esta aqui por um motivo:
 const LONG_PASSWORD: u32 = 0x0000_0001;
 const LONG_FLAG: u32 = 0x0000_0004;
 const CONNECT_WITH_DB: u32 = 0x0000_0008;
 const PROTOCOL_41: u32 = 0x0000_0200;
+/// `CLIENT_SSL` (pedido 572, T6d): o cliente vai pedir TLS antes da
+/// credencial.
+const CLIENT_SSL: u32 = 0x0000_0800;
 const TRANSACTIONS: u32 = 0x0000_2000;
 const SECURE_CONNECTION: u32 = 0x0000_8000;
 const PLUGIN_AUTH: u32 = 0x0008_0000;
@@ -113,8 +118,11 @@ pub struct Resultado {
 }
 
 pub struct Conexao {
-    fluxo: BufReader<ComPrazo>,
-    escrita: ComPrazo,
+    /// Claro ou TLS pelo motor do core (pedido 572, T6d).
+    fluxo: BufReader<FioDeCliente>,
+    escrita: FioDeCliente,
+    /// As capacidades que o servidor anunciou na saudacao.
+    capacidades_do_servidor: u32,
     sequencia: u8,
     /// Versao anunciada no aperto de mao, para o teste de ligacao mostrar.
     pub versao: String,
@@ -135,6 +143,7 @@ impl Conexao {
         senha: &str,
         database: &str,
         prazo: Prazo,
+        tls: &TlsDeSaida,
     ) -> Result<Conexao> {
         let soquete = conectar(host, porta, prazo.silencio())?;
         // O relogio do total comeca DEPOIS do `connect`, que tem prazo
@@ -144,34 +153,54 @@ impl Conexao {
             .and_then(|_| ComPrazo::armar(soquete, prazo.rearmado()))
             .map_err(|e| erro(format!("nao consegui armar a conexao: {e}")))?;
         let mut c = Conexao {
-            fluxo: BufReader::new(leitura),
-            escrita,
+            fluxo: BufReader::new(FioDeCliente::Claro(leitura)),
+            escrita: FioDeCliente::Claro(escrita),
+            capacidades_do_servidor: 0,
             sequencia: 0,
             versao: String::new(),
             conexao_id: 0,
             teto_de_bytes: TETO_DE_BYTES_DO_RESULTADO,
         };
-        c.apertar_a_mao(usuario, senha, database)?;
+        c.apertar_a_mao(usuario, senha, database, tls, host)?;
         Ok(c)
     }
 
-    fn apertar_a_mao(&mut self, usuario: &str, senha: &str, database: &str) -> Result<()> {
+    fn apertar_a_mao(
+        &mut self,
+        usuario: &str,
+        senha: &str,
+        database: &str,
+        tls: &TlsDeSaida,
+        host: &str,
+    ) -> Result<()> {
         let saudacao = self.ler_quadro()?;
         let (sal, plugin) = self.ler_saudacao(&saudacao)?;
+        // O TLS vem ANTES da credencial (o `SSLRequest` do protocolo, §
+        // Connection Phase): a resposta com o usuario e a prova so sai depois
+        // do aperto, e por dentro. O servidor que nao anuncia `CLIENT_SSL`
+        // nao tem TLS, e quem pediu nao cai para o claro calado.
+        let com_tls = tls.ligado();
+        if com_tls {
+            if self.capacidades_do_servidor & CLIENT_SSL == 0 {
+                return Err(PhxError::Autorizacao(format!(
+                    "dblink mysql: {host} nao oferece TLS (have_ssl = DISABLED?) e a \
+                     ligacao pede tls -- nao se cai para o claro calado"
+                )));
+            }
+            let mut p = Vec::with_capacity(32);
+            p.extend_from_slice(&(Self::capacidades(database) | CLIENT_SSL).to_le_bytes());
+            p.extend_from_slice(&0x0100_0000u32.to_le_bytes());
+            p.push(45);
+            p.extend_from_slice(&[0u8; 23]);
+            self.escrever_quadro(&p)?;
+            tls.passar(&mut self.fluxo, &mut self.escrita, host)
+                .map_err(|e| {
+                    PhxError::Autorizacao(format!("dblink mysql: o TLS com {host} nao fechou: {e}"))
+                })?;
+        }
 
         let resposta = embaralhar(&plugin, senha, &sal)?;
-        let capacidades = LONG_PASSWORD
-            | LONG_FLAG
-            | PROTOCOL_41
-            | TRANSACTIONS
-            | SECURE_CONNECTION
-            | PLUGIN_AUTH
-            | PLUGIN_AUTH_LENENC
-            | if database.is_empty() {
-                0
-            } else {
-                CONNECT_WITH_DB
-            };
+        let capacidades = Self::capacidades(database) | if com_tls { CLIENT_SSL } else { 0 };
 
         let mut p = Vec::with_capacity(64);
         p.extend_from_slice(&capacidades.to_le_bytes());
@@ -209,15 +238,23 @@ impl Conexao {
                 Some(0x01) => match r.get(1) {
                     // 3 = a senha ja estava no cache; o OK vem no proximo.
                     Some(0x03) => continue,
-                    // 4 = caminho completo. Exige TLS ou a chave RSA, e nenhum
-                    // dos dois cabe na std. Dizer isso, com a saida, e melhor
-                    // do que um "acesso negado" que manda o operador procurar
-                    // senha errada.
+                    // 4 = caminho completo. Por dentro do TLS a senha vai
+                    // inteira, terminada em NUL -- e o que o cliente oficial
+                    // faz, e e seguro justamente porque o canal e cifrado.
+                    Some(0x04) if com_tls => {
+                        let mut s = senha.as_bytes().to_vec();
+                        s.push(0);
+                        self.escrever_quadro(&s)?;
+                    }
+                    // Sem TLS, o caminho completo pede a chave RSA do
+                    // servidor (cifragem OAEP), que nao esta escrita aqui.
+                    // Dizer isso, com a saida, e melhor do que um "acesso
+                    // negado" que manda o operador procurar senha errada.
                     Some(0x04) => {
                         return Err(erro(format!(
                             "o servidor pediu autenticacao completa do caching_sha2_password para {usuario:?}, \
-                             que exige TLS ou a chave RSA -- nenhum dos dois cabe sem dependencia externa. \
-                             Saidas: criar o usuario com  ALTER USER '{usuario}'@'%' IDENTIFIED WITH mysql_native_password BY '...'  \
+                             que fora do TLS exige a chave RSA do servidor. \
+                             Saidas: ligar \"tls\" na ligacao, criar o usuario com  ALTER USER '{usuario}'@'%' IDENTIFIED WITH mysql_native_password BY '...'  \
                              ou conectar uma vez com o cliente oficial, o que deixa a senha em cache e libera o caminho rapido \
                              ate o servidor reiniciar"
                         )))
@@ -237,6 +274,22 @@ impl Conexao {
                 }
             }
         }
+    }
+
+    /// As capacidades que este cliente sempre pede.
+    fn capacidades(database: &str) -> u32 {
+        LONG_PASSWORD
+            | LONG_FLAG
+            | PROTOCOL_41
+            | TRANSACTIONS
+            | SECURE_CONNECTION
+            | PLUGIN_AUTH
+            | PLUGIN_AUTH_LENENC
+            | if database.is_empty() {
+                0
+            } else {
+                CONNECT_WITH_DB
+            }
     }
 
     /// Le o pacote de saudacao e devolve `(sal, nome do plugin)`.
@@ -260,7 +313,15 @@ impl Conexao {
             .ok_or_else(|| erro("saudacao curta demais".into()))?
             .to_vec();
         i += 8 + 1; // + o byte de enchimento
-        i += 2 + 1 + 2 + 2; // capacidades baixas, charset, estado, capacidades altas
+                    // Capacidades baixas, charset, estado, capacidades altas.
+        let baixa = p
+            .get(i..i + 2)
+            .map_or(0, |b| u16::from_le_bytes([b[0], b[1]]));
+        let alta = p
+            .get(i + 5..i + 7)
+            .map_or(0, |b| u16::from_le_bytes([b[0], b[1]]));
+        self.capacidades_do_servidor = baixa as u32 | (alta as u32) << 16;
+        i += 2 + 1 + 2 + 2;
         let tamanho_sal = *p.get(i).unwrap_or(&0) as usize;
         i += 1 + 10; // + os 10 reservados
         if tamanho_sal > 8 {
@@ -390,7 +451,7 @@ impl Conexao {
     /// mesma conexao para dezenas de instrucoes, e o relogio de uma nao pode
     /// cortar a seguinte.
     fn rearmar(&mut self) {
-        prazo::rearmar(self.fluxo.get_mut(), &mut self.escrita);
+        FioDeCliente::rearmar(self.fluxo.get_mut(), &mut self.escrita);
     }
 
     // ------------------------------------------------------------- quadros
@@ -882,8 +943,9 @@ mod testes {
         let (leitura, escrita) =
             ComPrazo::armar(fluxo, Prazo::so_silencio(Duration::from_secs(5))).unwrap();
         Conexao {
-            fluxo: BufReader::new(leitura),
-            escrita,
+            fluxo: BufReader::new(FioDeCliente::Claro(leitura)),
+            escrita: FioDeCliente::Claro(escrita),
+            capacidades_do_servidor: 0,
             sequencia: 0,
             versao: String::new(),
             conexao_id: 0,
@@ -1093,6 +1155,158 @@ mod testes {
         );
     }
 
+    // ------------------------------------------- TLS de saida (572, T6d) ----
+    //
+    // NAO e um MySQL(R) de verdade: nao ha `mysqld` nesta maquina. O servidor
+    // falso fala o protocolo ate o `SSLRequest`, entrega a ponta ao servidor
+    // TLS 1.3 desta casa (`tls::aceitar`, provado contra o `openssl s_client`
+    // e o Chromium) e segue o `caching_sha2_password` pelo caminho completo
+    // por dentro. O limite esta escrito na linha 572 do `PENDENCIAS.md`.
+
+    /// A saudacao v10 com `caching_sha2_password` e as capacidades dadas.
+    fn saudacao_com(capacidades: u32) -> Vec<u8> {
+        let mut p = vec![10];
+        p.extend_from_slice(b"8.0.36\0");
+        p.extend_from_slice(&7u32.to_le_bytes());
+        p.extend_from_slice(&[1, 2, 3, 4, 5, 6, 7, 8]);
+        p.push(0);
+        p.extend_from_slice(&(capacidades as u16).to_le_bytes());
+        p.extend_from_slice(&[45, 2, 0]);
+        p.extend_from_slice(&((capacidades >> 16) as u16).to_le_bytes());
+        p.push(21);
+        p.extend_from_slice(&[0; 10]);
+        p.extend_from_slice(&[9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 0]);
+        p.extend_from_slice(b"caching_sha2_password\0");
+        p
+    }
+
+    fn quadro(seq: u8, carga: &[u8]) -> Vec<u8> {
+        let mut q = (carga.len() as u32).to_le_bytes()[..3].to_vec();
+        q.push(seq);
+        q.extend_from_slice(carga);
+        q
+    }
+
+    fn ler_quadro_de(f: &mut impl Read) -> std::io::Result<(u8, Vec<u8>)> {
+        let mut c = [0u8; 4];
+        f.read_exact(&mut c)?;
+        let n = u32::from_le_bytes([c[0], c[1], c[2], 0]) as usize;
+        let mut carga = vec![0u8; n];
+        f.read_exact(&mut carga)?;
+        Ok((c[3], carga))
+    }
+
+    /// O que o servidor falso viu: os bytes em claro depois da saudacao e,
+    /// com TLS, o usuario e a senha que chegaram por dentro.
+    struct Visto {
+        claro: Vec<u8>,
+        usuario: String,
+        senha: String,
+    }
+
+    fn servidor_mysql_tls(com_ssl: bool) -> (u16, std::thread::JoinHandle<Visto>) {
+        let ouvinte = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let porta = ouvinte.local_addr().unwrap().port();
+        let h = std::thread::spawn(move || {
+            let (mut s, _) = ouvinte.accept().unwrap();
+            s.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+            let caps = Conexao::capacidades("") | if com_ssl { CLIENT_SSL } else { 0 };
+            s.write_all(&quadro(0, &saudacao_com(caps))).unwrap();
+            let mut visto = Visto {
+                claro: Vec::new(),
+                usuario: String::new(),
+                senha: String::new(),
+            };
+            if !com_ssl {
+                let _ = s.read_to_end(&mut visto.claro);
+                return visto;
+            }
+            let (seq, pedido) = ler_quadro_de(&mut s).unwrap();
+            visto.claro = quadro(seq, &pedido);
+            if pedido.len() != 32
+                || u32::from_le_bytes(pedido[..4].try_into().unwrap()) & CLIENT_SSL == 0
+            {
+                // Nao foi um SSLRequest: o resto em claro e o que se prova.
+                let _ = s.read_to_end(&mut visto.claro);
+                return visto;
+            }
+            let id = phxsql_core::tls::Identidade::autoassinada(&["localhost"]).unwrap();
+            let mut t = phxsql_core::tls::aceitar(s, &id, &[]).unwrap();
+            let (_, resposta) = ler_quadro_de(&mut t).unwrap();
+            let mut i = 32;
+            visto.usuario = cadeia_ate_nulo(&resposta, &mut i);
+            // O caminho COMPLETO: so por dentro do TLS a senha vem inteira.
+            t.write_all(&quadro(3, &[0x01, 0x04])).unwrap();
+            let (_, senha) = ler_quadro_de(&mut t).unwrap();
+            visto.senha =
+                String::from_utf8_lossy(senha.strip_suffix(&[0]).unwrap_or(&senha)).into_owned();
+            t.write_all(&quadro(5, &[0, 0, 0, 2, 0, 0, 0])).unwrap();
+            let _ = t.flush();
+            visto
+        });
+        (porta, h)
+    }
+
+    fn abrir_tls(porta: u16, tls: &TlsDeSaida) -> Result<Conexao> {
+        Conexao::abrir(
+            "localhost",
+            porta,
+            "ana",
+            "a senha do mysql",
+            "",
+            Prazo::so_silencio(Duration::from_secs(5)),
+            tls,
+        )
+    }
+
+    #[test]
+    fn tls_antes_da_credencial_e_o_caminho_completo_por_dentro() {
+        let (porta, h) = servidor_mysql_tls(true);
+        abrir_tls(porta, &TlsDeSaida::Exigir).expect("o TLS com o servidor falso nao fechou");
+        let v = h.join().unwrap();
+        assert_eq!(v.usuario, "ana");
+        assert_eq!(
+            v.senha, "a senha do mysql",
+            "o caminho completo nao veio por dentro"
+        );
+        // Em claro so a saudacao e o SSLRequest: nem o usuario.
+        assert_eq!(v.claro.len(), 4 + 32, "{:?}", v.claro);
+        assert!(!String::from_utf8_lossy(&v.claro).contains("ana"));
+    }
+
+    #[test]
+    fn servidor_sem_client_ssl_e_recusado_sem_mandar_nada() {
+        let (porta, h) = servidor_mysql_tls(false);
+        let e = abrir_tls(porta, &TlsDeSaida::Exigir)
+            .err()
+            .expect("entrou num servidor sem TLS")
+            .to_string();
+        assert!(e.contains("nao oferece TLS"), "{e}");
+        let v = h.join().unwrap();
+        assert!(
+            v.claro.is_empty(),
+            "mandou {} bytes em claro",
+            v.claro.len()
+        );
+    }
+
+    #[test]
+    fn verificar_pela_cadeia_contra_o_servidor_falso_recusa_a_raiz_alheia() {
+        // O certificado do falso e autoassinado e NOVO a cada corrida: uma
+        // raiz qualquer nao o emitiu, e a recusa vem antes da credencial.
+        let (porta, h) = servidor_mysql_tls(true);
+        let alheia = phxsql_core::tls::Identidade::autoassinada(&["localhost"]).unwrap();
+        let e = abrir_tls(
+            porta,
+            &TlsDeSaida::Verificar(vec![alheia.certificado().to_vec()]),
+        )
+        .err()
+        .expect("raiz alheia entrou")
+        .to_string();
+        assert!(e.contains("cadeia X.509"), "{e}");
+        drop(h);
+    }
+
     /// A saudacao completa de um MySQL(R) 8 com `mysql_native_password`.
     fn saudacao() -> Vec<u8> {
         let mut p = vec![10];
@@ -1116,6 +1330,7 @@ mod testes {
             "s",
             "",
             Prazo::so_silencio(Duration::from_secs(5)),
+            &TlsDeSaida::Desligado,
         )
     }
 

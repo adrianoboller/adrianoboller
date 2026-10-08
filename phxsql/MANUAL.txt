@@ -3643,9 +3643,20 @@ AGENDADO
 
     Opt-in, no bloco de e-mail que ja existe no config.json -- o mesmo do
     aviso de disco apertado (ver o "alertas" no Config_exemplo_01.json,
-    inclusive o limite honesto: o cliente SMTP nao fala TLS, o rele tem de ser seu):
+    sem TLS, o rele tem de ser seu; com senha, ligue o TLS -- abaixo):
 
         "alertas": { "email": { "ligado": true, "avisar_jobs": true, ... } }
+
+    TLS COM O RELE (pedido 572). Pedido, nao imposto:
+
+        "email": { ..., "tls": "verificar", "tls_ca": "/etc/phxsql/raiz.pem" }
+
+    "exigir" cifra sem conferir quem responde; "verificar" confere a cadeia
+    ate o tls_ca (vazio = as raizes do sistema) e o nome do "servidor"
+    contra o certificado. Na porta 465 o TLS e desde o primeiro byte (smtps);
+    nas outras e STARTTLS -- "tls_implicito": true/false decide quando a
+    porta nao diz. O rele que nao anuncia STARTTLS faz o envio PARAR antes do
+    remetente: quem pediu TLS nao cai para o claro.
 
     Com "avisar_jobs" ligado, saem dois avisos, para os MESMOS destinatarios
     do aviso de disco:
@@ -4631,6 +4642,25 @@ telefone, supervisor e o poder sobre cada base. A SENHA E GUARDADA COMO HASH.
     ligacoes cifradas ficam trancadas ate a velha voltar.
 
     Detalhes em docs/DBLINK.md; o formato em docs/FORMATO.md secao 19.
+
+15.9 O TLS do DbLink com PostgreSQL(R) e MySQL(R)  (pedido 572)
+
+    Pedido, nao imposto -- sem o campo, a ligacao fala como sempre falou:
+
+        {"op":"dblink_salvar","nome":"erp","motor":"postgres","host":"db.exemplo",
+         "tls":"verificar","tls_ca":"/etc/phxsql/raiz-do-erp.pem", ...}
+
+    "exigir" cifra sem conferir quem responde (o sslmode=require); "verificar"
+    confere a cadeia ate o tls_ca (vazio = as raizes do sistema) e o nome do
+    host (o verify-full); "pino_tls" confere a chave do servidor. O servidor
+    que recusa o TLS (o "N" do PostgreSQL, o MySQL sem CLIENT_SSL) faz a
+    ligacao PARAR: nao se cai para o claro. Pelo TLS, o PostgreSQL entra por
+    SCRAM-SHA-256-PLUS (a senha presa a esta conexao) e o MySQL faz o caminho
+    completo do caching_sha2_password por dentro.
+
+    Limite: a prova do MySQL e contra um servidor falso que fala o protocolo
+    ate o SSLRequest -- nao ha mysqld nesta maquina. A do PostgreSQL e contra
+    o PostgreSQL 16 de verdade.
 
 
 16. REPLICACAO

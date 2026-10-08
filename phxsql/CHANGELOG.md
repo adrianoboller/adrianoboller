@@ -86,6 +86,12 @@ da seção `## 0.19.0` mais abaixo, regravado por
   recorte declarado) e contra o `openssl verify`/`-checkhost`. Raízes de um PEM
   ou do pacote do sistema (153 lidas). **Fora, decidido:** revogação e
   políticas de certificado, como no Go e no `webpki`.
+- **572, T6d (08/10)** — TLS de **saída**, pedido por config (`tls`:
+  `desligado`/`exigir`/`verificar`, `tls_ca`, `pino_tls`): DbLink para
+  PostgreSQL(R) (com `SCRAM-SHA-256-PLUS`), DbLink para MySQL(R) (o caminho
+  completo do `caching_sha2_password` por dentro) e o rele SMTP (`STARTTLS` e
+  465). Provado contra o PostgreSQL 16 real e um rele em Python; o MySQL só
+  contra servidor falso — não há `mysqld` na máquina.
 
 **Backup e durabilidade**
 
@@ -270,9 +276,8 @@ da seção `## 0.19.0` mais abaixo, regravado por
   ou `BEGIN ISOLATION LEVEL REPEATABLE READ`); e que **a atomicidade de um
   commit entre tabelas não atravessa o fio da réplica** (299, preço declarado).
   `SERIALIZABLE` não é reivindicado.
-- **TLS com terceiros:** o motor confere cadeia e nome (T6c-2), mas nenhum
-  cliente de fora o usa ainda: o TLS de saída para PostgreSQL, MySQL e SMTP é
-  a T6d. Revogação (CRL/OCSP) não é conferida. O TLS de saída para PostgreSQL,
+- **TLS com terceiros:** revogação (CRL/OCSP) não é conferida, e o TLS do
+  MySQL(R) só foi provado contra servidor falso. O TLS de saída para PostgreSQL,
   MySQL e SMTP (T6d) não existe; o cliente SMTP dos alertas fala sem TLS
   (pedido 89), servindo a relé interno.
 - **Sequência nomeada e contador:** a nomeada não replica (decisão da §C.5.3) e

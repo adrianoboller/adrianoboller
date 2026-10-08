@@ -1839,6 +1839,16 @@ pub struct Email {
     senha: Segredo,
     pub assunto: String,
     pub timeout_s: u64,
+    /// O TLS com o rele (pedido 572, T6d): `desligado` (o padrao, como
+    /// sempre foi), `exigir` ou `verificar` -- os modos do
+    /// [`crate::tls_saida`]. Na porta 465 o TLS e IMPLICITO (RFC 8314 §3.3);
+    /// nas outras, `STARTTLS` (RFC 3207).
+    pub tls: String,
+    pub tls_ca: String,
+    pub pino_tls: String,
+    /// TLS desde o primeiro byte (o `smtps`) em vez de `STARTTLS`. Ausente,
+    /// e a porta que decide: 465 sim, as outras nao (RFC 8314 §3.3).
+    pub tls_implicito: Option<bool>,
 }
 
 /// `Debug` a mao: a senha do rele. O comentario do campo dizia «o `para_json`
@@ -1860,6 +1870,10 @@ impl std::fmt::Debug for Email {
             senha: _,
             assunto,
             timeout_s,
+            tls,
+            tls_ca,
+            pino_tls,
+            tls_implicito,
         } = self;
         f.debug_struct("Email")
             .field("ligado", ligado)
@@ -1873,6 +1887,10 @@ impl std::fmt::Debug for Email {
             .field("senha", &"(oculta)")
             .field("assunto", assunto)
             .field("timeout_s", timeout_s)
+            .field("tls", tls)
+            .field("tls_ca", tls_ca)
+            .field("pino_tls", pino_tls)
+            .field("tls_implicito", tls_implicito)
             .finish()
     }
 }
@@ -1902,7 +1920,26 @@ impl Email {
                 .trim()
                 .to_string(),
             timeout_s: e.inteiro_ou("timeout_s", 10).max(1) as u64,
+            tls: e.texto_ou("tls", "").trim().to_string(),
+            tls_ca: e.texto_ou("tls_ca", "").trim().to_string(),
+            pino_tls: e.texto_ou("pino_tls", "").trim().to_string(),
+            tls_implicito: e.campo("tls_implicito").and_then(Json::booleano),
         })
+    }
+
+    /// O TLS deste rele e implicito (desde o primeiro byte)?
+    pub fn tls_implicito(&self) -> bool {
+        self.tls_implicito.unwrap_or(self.porta == 465)
+    }
+
+    /// O TLS pedido para o rele, ja lido (o PEM do `tls_ca` inclusive).
+    pub fn tls_de_saida(&self) -> Result<crate::tls_saida::TlsDeSaida> {
+        crate::tls_saida::TlsDeSaida::de_config(
+            &self.tls,
+            &self.tls_ca,
+            &self.pino_tls,
+            "alertas.email",
+        )
     }
 
     /// A senha do rele. O unico caminho de leitura -- e nao aparece em JSON.
@@ -1919,6 +1956,9 @@ impl Email {
                 "alertas.email ligado sem \"servidor\"".into(),
             ));
         }
+        // Modo torto ou `tls_ca` que nao abre derrubam o arranque, e nao o
+        // primeiro aviso -- que seria justamente o que nao chegaria.
+        self.tls_de_saida()?;
         if self.de.is_empty() {
             return Err(PhxError::Esquema(
                 "alertas.email ligado sem \"de\": o rele recusa mensagem sem remetente".into(),
@@ -1971,7 +2011,16 @@ impl Email {
                 Json::texto_de(self.senha.rotulo("(vazia)", "(oculta)", "(oculta)")),
             ),
             ("assunto", Json::texto_de(&self.assunto)),
-            ("tls", Json::Bool(false)),
+            // Bool como sempre foi (a tela le assim); o modo vai ao lado.
+            (
+                "tls",
+                Json::Bool(
+                    !matches!(self.tls.as_str(), "" | "desligado") || !self.pino_tls.is_empty(),
+                ),
+            ),
+            ("tls_modo", Json::texto_de(&self.tls)),
+            ("tls_ca", Json::texto_de(&self.tls_ca)),
+            ("tem_pino_tls", Json::Bool(!self.pino_tls.is_empty())),
         ])
     }
 }

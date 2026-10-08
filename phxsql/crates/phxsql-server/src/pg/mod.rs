@@ -1006,6 +1006,50 @@ mod testes {
         porta
     }
 
+    /// **O `N` ao `SSLRequest` nao vira conversa em claro** (pedido 572, T6d).
+    ///
+    /// Um servidor falso responde `N` -- o que o PostgreSQL(R) faz com
+    /// `ssl = off`, e o que um intermediario faz para rebaixar. O cliente que
+    /// pediu TLS tem de PARAR ali: a prova e o que o servidor viu depois do
+    /// `N`, e nao so o erro -- seguir em claro mandaria a mensagem de startup
+    /// (usuario e base) e depois a prova da senha legiveis.
+    #[test]
+    fn o_n_ao_pedido_de_tls_para_a_conexao_e_nada_vai_em_claro() {
+        let ouvinte = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let porta = ouvinte.local_addr().unwrap().port();
+        let h = std::thread::spawn(move || {
+            let (mut s, _) = ouvinte.accept().unwrap();
+            s.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+            let mut pedido = [0u8; 8];
+            s.read_exact(&mut pedido).unwrap();
+            s.write_all(b"N").unwrap();
+            let mut depois = Vec::new();
+            let _ = s.read_to_end(&mut depois);
+            (pedido, depois)
+        });
+        let e = Conexao::abrir(
+            "127.0.0.1",
+            porta,
+            "ana",
+            "segredo",
+            "loja",
+            Prazo::so_silencio(Duration::from_secs(5)),
+            &TlsDeSaida::Exigir,
+        )
+        .err()
+        .expect("o N virou conexao")
+        .to_string();
+        assert!(e.contains("recusou o TLS"), "{e}");
+        let (pedido, depois) = h.join().unwrap();
+        assert_eq!(&pedido[4..], &PEDIDO_DE_TLS.to_be_bytes(), "o SSLRequest");
+        assert!(
+            depois.is_empty(),
+            "depois do N o cliente mandou {} bytes em claro: {:?}",
+            depois.len(),
+            String::from_utf8_lossy(&depois)
+        );
+    }
+
     /// Uma `Conexao` sobre o soquete de verdade, sem o aperto de mao: o que
     /// se prova aqui e a leitura do resultado.
     fn conexao_com(porta: u16) -> Conexao {

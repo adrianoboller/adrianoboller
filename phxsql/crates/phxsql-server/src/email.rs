@@ -6,22 +6,19 @@
 //! linhas de texto sobre TCP, e `TcpStream` mais `BufReader` dao conta. Nao ha
 //! crate a acrescentar.
 //!
-//! # O limite honesto: nao ha TLS
+//! # TLS com o rele -- pedido, nao imposto (pedido 572, T6d)
 //!
-//! A `std` nao traz TLS, e sem crate nao ha como falar `STARTTLS` nem a porta
-//! 465. Entao este cliente conversa em TEXTO CLARO, e isso decide para quem
-//! ele serve:
+//! Ate a 0.19 este cliente so falava em TEXTO CLARO: a `std` nao traz TLS. O
+//! TLS 1.3 escrito nesta casa mudou isso. Com `"tls": "exigir"` ou
+//! `"verificar"` em `alertas.email`, a conversa passa a TLS pelo `STARTTLS`
+//! (RFC 3207) -- ou desde o primeiro byte na porta 465 ou com
+//! `"tls_implicito": true` (RFC 8314). O rele que nao anuncia `STARTTLS` faz
+//! o envio parar antes do remetente: quem pediu TLS nao cai para o claro.
 //!
-//! - **Serve** para um rele que voce controla -- `postfix`, `exim` ou o
-//!   servidor de e-mail da empresa -- na porta 25 da rede interna. Ele recebe
-//!   em texto claro e cuida do TLS para fora.
-//! - **Nao serve** para entregar direto num provedor publico, que exige TLS.
-//!
-//! Se `usuario` e `senha` estiverem preenchidos, o `AUTH LOGIN` manda os dois
-//! em base64 -- que e codificacao, nao cifra, e qualquer um no caminho le. Por
-//! isso o conselho no `config.json` e liberar o IP no rele em vez de mandar
-//! senha.
-//!
+//! Sem `tls`, tudo segue como era -- serve para o rele interno que voce
+//! controla, e o `AUTH LOGIN` em base64 continua legivel no fio: com senha,
+//! ligue o TLS.
+
 //! # Acento no cabecalho, e o corpo em base64
 //!
 //! Cabecalho de e-mail e ASCII por definicao (RFC 5322). Um assunto com `ç`
@@ -52,6 +49,7 @@ use phxsql_core::fio::{Canal, Recebido, TETO_DO_APERTO};
 
 use crate::config::Email;
 use crate::prazo::{self, ComPrazo, Prazo, Rotulo};
+use phxsql_core::tls::FioDeCliente;
 
 /// Teto de linhas de CONTINUACAO (`250-...`) que uma resposta aceita --
 /// pedido 463.
@@ -83,7 +81,13 @@ pub fn enviar(cfg: &Email, assunto: &str, corpo: &str) -> Result<String> {
 /// passaria no prazo de silencio de antes.
 fn passos_da_conversa(cfg: &Email) -> u32 {
     let login = if cfg.usuario.is_empty() { 0 } else { 3 };
-    let passos = 1 + 2 + login + 1 + cfg.para.len() + 1 + 1 + 1;
+    // Com TLS: o aperto, o `STARTTLS` e o segundo `EHLO` (pedido 572, T6d).
+    let tls = if matches!(cfg.tls.as_str(), "" | "desligado") && cfg.pino_tls.is_empty() {
+        0
+    } else {
+        3
+    };
+    let passos = 1 + 2 + login + 1 + cfg.para.len() + 1 + 1 + 1 + tls;
     u32::try_from(passos).unwrap_or(u32::MAX)
 }
 
@@ -128,17 +132,41 @@ fn enviar_com(cfg: &Email, assunto: &str, corpo: &str, silencio: Duration) -> Re
         ComPrazo::armar(fluxo, Prazo::com_total(silencio, total, &ROTULO_SMTP))
             .map_err(|e| PhxError::Esquema(format!("smtp: nao consegui armar: {e}")))?;
     let mut sessao = Sessao {
-        leitor: BufReader::new(leitura),
-        escrita,
+        leitor: BufReader::new(FioDeCliente::Claro(leitura)),
+        escrita: FioDeCliente::Claro(escrita),
     };
+    let tls = cfg.tls_de_saida()?;
 
+    // RFC 8314 §3.3: a 465 e TLS desde o primeiro byte (ou quem o disser).
+    let implicito = tls.ligado() && cfg.tls_implicito();
+    if implicito {
+        sessao.passar_a_tls(&tls, &cfg.servidor)?;
+    }
     sessao.esperar(&[220])?;
     // EHLO primeiro: e o que anuncia AUTH. Rele antigo so entende HELO, e
     // insistir no EHLO faria o envio falhar em servidor que funciona.
-    if sessao
-        .comando(&format!("EHLO {}", nome_da_maquina()), &[250])
-        .is_err()
-    {
+    sessao.cru(&format!("EHLO {}\r\n", nome_da_maquina()))?;
+    let ehlo = ler_resposta_inteira(&mut sessao.leitor, &[250]);
+    if tls.ligado() && !implicito {
+        // STARTTLS (RFC 3207): so o rele que o ANUNCIA no EHLO. Quem pediu
+        // TLS e nao o achou para aqui -- nem HELO, nem credencial, nem dado.
+        let anuncia = ehlo.as_ref().is_ok_and(|linhas| {
+            linhas.iter().any(|l| {
+                l.get(4..)
+                    .is_some_and(|x| x.trim().eq_ignore_ascii_case("STARTTLS"))
+            })
+        });
+        if !anuncia {
+            return Err(PhxError::Autorizacao(format!(
+                "smtp: o rele {alvo} nao anuncia STARTTLS e alertas.email pede tls \
+                 -- nao se cai para o claro calado"
+            )));
+        }
+        sessao.comando("STARTTLS", &[220])?;
+        sessao.passar_a_tls(&tls, &cfg.servidor)?;
+        // §4.2: depois do TLS o cliente esquece o que soube e repete o EHLO.
+        sessao.comando(&format!("EHLO {}", nome_da_maquina()), &[250])?;
+    } else if ehlo.is_err() {
         sessao.comando(&format!("HELO {}", nome_da_maquina()), &[250])?;
     }
 
@@ -200,11 +228,21 @@ fn erro_de_io(o_que: &str, e: io::Error) -> PhxError {
 }
 
 struct Sessao {
-    leitor: BufReader<ComPrazo>,
-    escrita: ComPrazo,
+    /// Claro ou TLS pelo motor do core (pedido 572, T6d).
+    leitor: BufReader<FioDeCliente>,
+    escrita: FioDeCliente,
 }
 
 impl Sessao {
+    /// Passa a conversa para TLS. O buffer de leitura tem de estar vazio --
+    /// rele que manda linha grudada no `220` do STARTTLS a faria passar por
+    /// protegida (a injecao de comando do CVE-2011-0411, do lado do
+    /// cliente); o `passar_a_tls_com` do core recusa o buffer com sobra.
+    fn passar_a_tls(&mut self, tls: &crate::tls_saida::TlsDeSaida, host: &str) -> Result<()> {
+        tls.passar(&mut self.leitor, &mut self.escrita, host)
+            .map_err(|e| PhxError::Autorizacao(format!("smtp: o TLS com o rele nao fechou: {e}")))
+    }
+
     fn cru(&mut self, texto: &str) -> Result<()> {
         self.escrita
             .write_all(texto.as_bytes())
@@ -336,8 +374,15 @@ fn redigir_erro(e: PhxError) -> PhxError {
 /// leitor de [`enviar_com`] traz por baixo -- aqui ele chega como erro de
 /// leitura, e sai como `LimiteExcedido`.
 fn ler_resposta<L: BufRead>(leitor: &mut L, esperados: &[u16]) -> Result<String> {
+    ler_resposta_inteira(leitor, esperados).map(|mut l| l.pop().unwrap_or_default())
+}
+
+/// A resposta com TODAS as linhas -- a do `EHLO` traz as extensoes nas
+/// linhas de continuacao, e e la que o `STARTTLS` se anuncia.
+fn ler_resposta_inteira<L: BufRead>(leitor: &mut L, esperados: &[u16]) -> Result<Vec<String>> {
     let mut fio = Canal::Claro;
     let mut continuacoes = 0usize;
+    let mut linhas = Vec::new();
     let ultima = loop {
         let linha = match fio.ler_ate(leitor, TETO_DO_APERTO) {
             Ok(Recebido::Linha(l)) => l,
@@ -358,6 +403,7 @@ fn ler_resposta<L: BufRead>(leitor: &mut L, esperados: &[u16]) -> Result<String>
         if limpa.as_bytes().get(3) != Some(&b'-') {
             break limpa;
         }
+        linhas.push(limpa);
         continuacoes += 1;
         if continuacoes > TETO_DE_LINHAS_DE_CONTINUACAO {
             return Err(PhxError::LimiteExcedido(format!(
@@ -371,7 +417,8 @@ fn ler_resposta<L: BufRead>(leitor: &mut L, esperados: &[u16]) -> Result<String>
         .and_then(|c| c.parse().ok())
         .ok_or_else(|| PhxError::Esquema(format!("smtp: resposta sem codigo: {ultima:?}")))?;
     if esperados.contains(&codigo) {
-        Ok(ultima)
+        linhas.push(ultima);
+        Ok(linhas)
     } else {
         Err(PhxError::Esquema(format!("smtp recusou: {ultima}")))
     }
@@ -944,5 +991,282 @@ mod testes {
         c.porta = rele_bem_educado(Duration::from_millis(200));
         let recibo = enviar_com(&c, "assunto", "corpo", Duration::from_millis(300)).unwrap();
         assert_eq!(recibo, "250 2.0.0 na fila como X463");
+    }
+}
+
+// ----------------------------------------------- TLS com o rele (572, T6d) ----
+//
+// O rele de verdade aqui e um falso escrito em PYTHON, com o modulo `ssl` da
+// biblioteca padrao dele -- que e o OpenSSL do sistema: outra mao, outra pilha
+// TLS. Ele fala SMTP o bastante para um envio inteiro, com `STARTTLS` (RFC
+// 3207) ou TLS desde o primeiro byte (RFC 8314), e diz o que viu.
+#[cfg(test)]
+mod testes_tls {
+    use super::*;
+    use crate::apoio_teste::DirTemp;
+    use phxsql_core::json::Json;
+    use std::io::Read;
+    use std::process::{Command, Stdio};
+
+    const RELE_PY: &str = r#"
+import socket, ssl, sys, json
+modo, cert, chave = sys.argv[1], sys.argv[2], sys.argv[3]
+ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+ctx.minimum_version = ssl.TLSVersion.TLSv1_3
+ctx.load_cert_chain(cert, chave)
+s = socket.socket(); s.bind(("127.0.0.1", 0)); s.listen(1)
+print(s.getsockname()[1], flush=True)
+c, _ = s.accept(); c.settimeout(10)
+visto = {"claro": [], "tls": [], "versao": None}
+if modo == "implicito":
+    c = ctx.wrap_socket(c, server_side=True); visto["versao"] = c.version()
+f = c.makefile("rb")
+def linha():
+    l = f.readline().decode().rstrip("\r\n")
+    visto["tls" if visto["versao"] else "claro"].append(l)
+    return l
+def manda(t):
+    c.sendall((t + "\r\n").encode())
+manda("220 rele de teste")
+while True:
+    l = linha()
+    if not l: break
+    v = l.upper()
+    if v.startswith("EHLO"):
+        if modo == "sem_starttls" or visto["versao"]:
+            manda("250-rele\r\n250 OK")
+        else:
+            manda("250-rele\r\n250-STARTTLS\r\n250 OK")
+    elif v == "STARTTLS":
+        manda("220 vai")
+        f.close()
+        c = ctx.wrap_socket(c, server_side=True); visto["versao"] = c.version()
+        f = c.makefile("rb")
+    elif v.startswith("MAIL") or v.startswith("RCPT"):
+        manda("250 ok")
+    elif v == "DATA":
+        manda("354 manda")
+        while linha() != ".": pass
+        manda("250 aceita")
+    elif v == "QUIT":
+        manda("221 tchau"); break
+    else:
+        manda("502 nao")
+print(json.dumps(visto), flush=True)
+"#;
+
+    /// Raiz e folha (`localhost`) pelo openssl, na pasta dada.
+    fn certificados(d: &std::path::Path) {
+        let ok = |args: &[&str]| {
+            let s = Command::new("openssl")
+                .current_dir(d)
+                .args(args)
+                .output()
+                .unwrap();
+            assert!(s.status.success(), "{}", String::from_utf8_lossy(&s.stderr));
+        };
+        ok(&[
+            "req",
+            "-x509",
+            "-newkey",
+            "ec",
+            "-pkeyopt",
+            "ec_paramgen_curve:P-256",
+            "-nodes",
+            "-keyout",
+            "raiz.key",
+            "-out",
+            "raiz.pem",
+            "-days",
+            "2",
+            "-subj",
+            "/CN=Raiz do rele",
+            "-addext",
+            "basicConstraints=critical,CA:TRUE",
+            "-addext",
+            "keyUsage=critical,keyCertSign",
+        ]);
+        std::fs::write(
+            d.join("ext"),
+            "[f]\nbasicConstraints=CA:FALSE\nextendedKeyUsage=serverAuth\nsubjectAltName=DNS:localhost\n",
+        )
+        .unwrap();
+        ok(&[
+            "genpkey",
+            "-algorithm",
+            "EC",
+            "-pkeyopt",
+            "ec_paramgen_curve:P-256",
+            "-out",
+            "rele.key",
+        ]);
+        ok(&[
+            "req",
+            "-new",
+            "-key",
+            "rele.key",
+            "-subj",
+            "/CN=localhost",
+            "-out",
+            "rele.csr",
+        ]);
+        ok(&[
+            "x509",
+            "-req",
+            "-in",
+            "rele.csr",
+            "-CA",
+            "raiz.pem",
+            "-CAkey",
+            "raiz.key",
+            "-CAcreateserial",
+            "-days",
+            "1",
+            "-extfile",
+            "ext",
+            "-extensions",
+            "f",
+            "-out",
+            "rele.pem",
+        ]);
+    }
+
+    fn cfg(porta: u16, extra: &str) -> Email {
+        let j = Json::analisar(&format!(
+            r#"{{"alertas":{{"ligado":true,"email":{{"ligado":true,
+                "servidor":"localhost","porta":{porta},"de":"phx@exemplo.com",
+                "para":["a@exemplo.com"]{extra}}}}}}}"#
+        ))
+        .unwrap();
+        crate::config::Config::de_json(&j).unwrap().alertas.email
+    }
+
+    /// Sobe o rele em Python e devolve (processo, porta).
+    fn rele(d: &std::path::Path, modo: &str) -> (std::process::Child, u16) {
+        let mut filho = Command::new("python3")
+            .args(["-I", "-c", RELE_PY, modo])
+            .arg(d.join("rele.pem"))
+            .arg(d.join("rele.key"))
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        let mut saida = filho.stdout.take().unwrap();
+        let mut b = Vec::new();
+        let mut um = [0u8; 1];
+        while saida.read(&mut um).unwrap() == 1 && um[0] != b'\n' {
+            b.push(um[0]);
+        }
+        filho.stdout = Some(saida);
+        (filho, String::from_utf8(b).unwrap().trim().parse().unwrap())
+    }
+
+    fn o_que_viu(mut filho: std::process::Child) -> Json {
+        let mut s = String::new();
+        filho.stdout.take().unwrap().read_to_string(&mut s).unwrap();
+        let _ = filho.wait();
+        Json::analisar(s.trim()).unwrap_or(Json::Nulo)
+    }
+
+    fn textos(j: &Json, campo: &str) -> Vec<String> {
+        j.campo(campo)
+            .and_then(Json::lista)
+            // A linha vazia e o fim da conexao que o `readline` do Python
+            // devolve, e nao algo que o cliente mandou.
+            .map(|l| {
+                l.iter()
+                    .filter_map(|x| x.texto().filter(|t| !t.is_empty()).map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    #[test]
+    fn starttls_e_implicito_contra_o_ssl_do_python_conferindo_a_cadeia() {
+        let d = DirTemp::novo("smtp-tls");
+        certificados(&d.0);
+        let ca = format!(
+            r#","tls":"verificar","tls_ca":"{}""#,
+            d.0.join("raiz.pem").display()
+        );
+        for modo in ["starttls", "implicito"] {
+            let (filho, porta) = rele(&d.0, modo);
+            let extra = if modo == "implicito" {
+                format!(r#"{ca},"tls_implicito":true"#)
+            } else {
+                ca.clone()
+            };
+            let recibo = enviar(&cfg(porta, &extra), "teste do TLS", "corpo secreto")
+                .unwrap_or_else(|e| panic!("{modo}: {e}"));
+            assert!(recibo.contains("250"), "{recibo}");
+            let v = o_que_viu(filho);
+            assert_eq!(v.texto_ou("versao", ""), "TLSv1.3", "{modo}: {v:?}");
+            let claro = textos(&v, "claro");
+            let tls = textos(&v, "tls");
+            // Em claro so o EHLO e o STARTTLS; o remetente e o corpo, nunca.
+            let esperado_claro = if modo == "implicito" { 0 } else { 2 };
+            assert_eq!(claro.len(), esperado_claro, "{modo}: {claro:?}");
+            assert!(claro.iter().all(|l| !l.contains("MAIL")), "{claro:?}");
+            assert!(tls.iter().any(|l| l.starts_with("MAIL FROM")), "{tls:?}");
+        }
+    }
+
+    #[test]
+    fn rele_sem_starttls_para_antes_do_remetente() {
+        let d = DirTemp::novo("smtp-sem-starttls");
+        certificados(&d.0);
+        let (filho, porta) = rele(&d.0, "sem_starttls");
+        let e = enviar(&cfg(porta, r#","tls":"exigir""#), "x", "corpo")
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("nao anuncia STARTTLS"), "{e}");
+        let v = o_que_viu(filho);
+        let claro = textos(&v, "claro");
+        assert_eq!(claro.len(), 1, "so o EHLO, e nada depois: {claro:?}");
+    }
+
+    #[test]
+    fn raiz_alheia_recusa_o_rele_antes_do_remetente() {
+        let d = DirTemp::novo("smtp-raiz-alheia");
+        certificados(&d.0);
+        let outra = DirTemp::novo("smtp-raiz-alheia-2");
+        certificados(&outra.0);
+        let (filho, porta) = rele(&d.0, "starttls");
+        let extra = format!(
+            r#","tls":"verificar","tls_ca":"{}""#,
+            outra.0.join("raiz.pem").display()
+        );
+        let e = enviar(&cfg(porta, &extra), "x", "corpo")
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("cadeia X.509"), "{e}");
+        let v = o_que_viu(filho);
+        assert!(textos(&v, "tls").is_empty(), "{v:?}");
+    }
+
+    /// Linha grudada no `220` do STARTTLS: o rele (ou quem esta no meio)
+    /// manda um comando em claro que o cliente leria como se viesse pelo TLS
+    /// (o CVE-2011-0411, do lado do cliente). O buffer com sobra recusa.
+    #[test]
+    fn linha_grudada_no_220_do_starttls_recusa() {
+        let ouvinte = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let porta = ouvinte.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            let (mut s, _) = ouvinte.accept().unwrap();
+            let mut l = BufReader::new(s.try_clone().unwrap());
+            // Pelo `Canal` do motor, como toda leitura de linha de soquete.
+            let mut canal = Canal::Claro;
+            s.write_all(b"220 oi\r\n").unwrap();
+            canal.ler_ate(&mut l, TETO_DO_APERTO).unwrap();
+            s.write_all(b"250-rele\r\n250 STARTTLS\r\n").unwrap();
+            canal.ler_ate(&mut l, TETO_DO_APERTO).unwrap();
+            s.write_all(b"220 vai\r\n250 injetada\r\n").unwrap();
+            let mut resto = Vec::new();
+            let _ = l.read_to_end(&mut resto);
+        });
+        let e = enviar(&cfg(porta, r#","tls":"exigir""#), "x", "corpo")
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("nada foi lido"), "{e}");
     }
 }
