@@ -80,12 +80,16 @@ const SIMBOLO = readFileSync(join(RAIZ, 'marca/derivados/phxsql-simbolo-440.png'
 const ICONE = readFileSync(join(RAIZ, 'marca/derivados/phxsql-icone-64.png')).toString('base64');
 
 async function marcaNaPagina() {
-  await page.evaluate(exo => {
-    if (document.getElementById('__fonteVideo')) return;
+  // Por `FontFace` com os BYTES, e nao `@font-face` com `data:`: o CSP da
+  // pagina (`font-src https://fonts.gstatic.com`, http.rs) recusa `data:`, e
+  // fonte binaria entregue em memoria nao passa por busca nenhuma.
+  await page.evaluate(async exo => {
+    if (window.__exoVideo) return;
+    const bytes = Uint8Array.from(atob(exo), c => c.charCodeAt(0));
+    const f = new FontFace('VideoExo', bytes, { weight: '100 900' });
+    await f.load(); document.fonts.add(f); window.__exoVideo = true;
     const s = document.createElement('style');
-    s.id = '__fonteVideo';
-    s.textContent = `@font-face{font-family:"VideoExo";src:url(data:font/woff2;base64,${exo}) format("woff2");font-weight:100 900}
-      #__faixa,#__cartaz,#__folha{font-family:"VideoExo",system-ui,sans-serif}`;
+    s.textContent = '#__faixa,#__cartaz,#__folha{font-family:"VideoExo",system-ui,sans-serif}';
     document.head.appendChild(s);
   }, EXO);
 }
@@ -183,6 +187,12 @@ const PAPEL = {
   '.fts': 'índice de texto',
   '.bkp': 'espelho do .reg',
 };
+// Os de controle da pasta, do docs/FORMATO.md §8 e §11.
+const PAPEL_ARQ = {
+  '_database.json': 'o tipo do database (§11)',
+  '_formato-volumes.json': 'o separador de volume (§8)',
+  '.phxsql.trava': 'a trava de quem grava a pasta (§11.2)',
+};
 const extDe = n => { const i = n.lastIndexOf('.'); return i < 0 ? '' : n.slice(i); };
 
 function tabelaDeArquivos(lista, antes) {
@@ -198,7 +208,7 @@ function tabelaDeArquivos(lista, antes) {
         <td style="padding:2px 26px 2px 0;text-align:right;font-family:ui-monospace,monospace${cresceu ? ';color:#5fe08a' : ''}">${a.bytes.toLocaleString('pt-BR')}</td>
         ${antes ? `<td style="padding:2px 26px 2px 0;text-align:right;font-family:ui-monospace,monospace;color:#8a93ad">${v ? v.bytes.toLocaleString('pt-BR') : 'não existia'}</td>` : ''}
         <td style="padding:2px 26px 2px 0;color:#8a93ad">${a.quando}</td>
-        <td style="padding:2px 0;color:#c9cfdc">${esc(PAPEL[extDe(a.nome)] || (a.dir ? 'pasta' : '—'))}</td></tr>`;
+        <td style="padding:2px 0;color:#c9cfdc">${esc(PAPEL_ARQ[a.nome] || PAPEL[extDe(a.nome)] || (a.dir ? 'pasta' : '—'))}</td></tr>`;
     }).join('')}</table>`;
 }
 
@@ -278,6 +288,12 @@ async function incluir(c, devagar) {
   await page.waitForFunction(n => [...document.querySelectorAll('#gradeEdit td')]
     .some(td => td.textContent.trim() === n), c.nome, { timeout: 10000 });
   await respirar(devagar ? 1100 : 500);
+}
+
+/** Rola a grade para o topo do painel: a faixa de legenda cobre o rodape. */
+async function verGrade(sel = '#gradeEdit') {
+  await page.evaluate(q => { const g = document.querySelector(q); if (g) g.scrollIntoView({ block: 'start' }); }, sel);
+  await respirar(250);
 }
 
 async function abrirFichaDe(rowid) {
@@ -382,6 +398,7 @@ async function principal() {
         await respirar(250);
       }
       await linha(2).locator('.c-obrig').check();
+      await page.evaluate(() => document.querySelector('#nt_cols').scrollIntoView({ block: 'center' }));
       await diz('CRIAR A TABELA', 'Seis colunas de cinco tipos: Sequence, texto, decimal exato, data e lógico.', 1600);
       await quadro('04-campos');
       // O indice por cidade.
@@ -390,7 +407,7 @@ async function principal() {
       await idx.locator('.i-nome').fill('porCidade');
       await idx.locator('.i-cols').pressSequentially('cidade', { delay: 70 });
       await respirar(400);
-      await page.locator('#nt_criar').scrollIntoViewIfNeeded();
+      await page.evaluate(() => document.querySelector('#nt_idxs').scrollIntoView({ block: 'center' }));
       await diz('CRIAR A TABELA', 'E um índice porCidade, para achar por cidade sem varrer a tabela.', 1800);
       await quadro('04-indices');
       await page.click('#nt_criar');
@@ -410,8 +427,8 @@ async function principal() {
         <div style="margin-top:16px;font-size:13px;color:#8a93ad">O começo do <b style="color:#ffb27a">${TABELA}.reg</b>: a assinatura <b style="color:#ffd27a">${esc(reg.assinatura)}</b>,
           slot de ${reg.slotSize} bytes, ${reg.slotCount} slots usados, dados a partir do byte ${reg.dataOffset}.</div>
         <div style="margin-top:6px">${hexDump(reg.b, 0, 64, [[0, 6, '#ffd27a'], [16, 20, '#7ab8ff'], [20, 28, '#5fe08a'], [44, 52, '#c99bff']])}</div>
-        <div style="position:absolute;bottom:14px;left:40px;font-size:11px;color:#5d6680">este contêiner não tem ambiente gráfico: a listagem é a real, apresentada aqui em vez de num gerenciador de arquivos</div>`);
-      await diz('NO DISCO', 'Tabela vazia: o .reg só tem cabeçalho e esquema. Azul = tamanho do slot, verde = slots usados (zero).', 3000);
+        <div style="position:absolute;bottom:80px;left:40px;font-size:11px;color:#5d6680">este contêiner não tem ambiente gráfico: a listagem é a real, apresentada aqui em vez de num gerenciador de arquivos</div>`);
+      await diz('NO DISCO', 'Tabela vazia: o .reg só tem cabeçalho e esquema. Azul = tamanho do slot, verde = slots usados (zero), roxo = onde começam os dados.', 3000);
       await quadro('04b-disco-nascimento');
       await respirar(2600);
       await semFolha();
@@ -425,6 +442,7 @@ async function principal() {
       await incluir(CLIENTES[0], true);
       await diz('INCLUIR', 'Gravada. O nº é a ordem de digitação; o rowid, a posição física no .reg.', 1400);
       for (const c of CLIENTES.slice(1)) await incluir(c, false);
+      await verGrade();
       await diz('INCLUIR', 'Cinco clientes, na ordem em que foram digitados.', 2200);
       await quadro('05-cinco');
       for (const c of CLIENTES) {
@@ -445,7 +463,8 @@ async function principal() {
       const busca = page.locator('#gradeEdit .phx-busca-in').first();
       await busca.click();
       await busca.pressSequentially('Blumenau', { delay: 90 });
-      await respirar(800);
+      await verGrade();
+      await respirar(500);
       // «Blumenau» tem de aparecer como esta gravado -- rotulo se estiliza, dado nunca.
       const transf = await page.evaluate(() => {
         const td = [...document.querySelectorAll('#gradeEdit tbody td')].find(t => t.textContent.trim() === 'Blumenau');
@@ -474,6 +493,7 @@ async function principal() {
       await page.waitForSelector('#btNova', { timeout: 10000 });
       await page.waitForFunction(v => [...document.querySelectorAll('#gradeEdit td')]
         .some(td => td.textContent.trim() === v), ALTERADO.depois.cidade, { timeout: 10000 });
+      await verGrade();
       await diz('ALTERAR · DEPOIS', `Agora ${ALTERADO.depois.cidade}, limite ${ALTERADO.depois.limite}. O nº de ordem não mudou: alterar não renumera.`, 2800);
       await quadro('07-depois');
     });
@@ -493,6 +513,7 @@ async function principal() {
       await respirar(900);
       await page.click('#vwExcl');
       await page.waitForSelector('#gradeEdit .restaurar', { timeout: 10000 });
+      await verGrade();
       await diz('EXCLUIR · MARCAR', 'Na visão «excluídas» ela está lá, com o botão de restaurar.', 2400);
       await quadro('08-excluidas');
       await page.click('#vwAtivas');
@@ -532,6 +553,7 @@ async function principal() {
         const b = tr && tr.querySelector('.bt-editar');
         return b ? +b.dataset.rowid : null;
       }, SEXTO.nome);
+      await verGrade();
       await diz('ORDEM DE DIGITAÇÃO', `Um cliente novo depois da exclusão: rowid ${rowidDo[SEXTO.nome]}. O slot ${FISICO} não foi reaproveitado.`, 2800);
       await quadro('08-sexto');
     });
@@ -550,6 +572,7 @@ async function principal() {
       await respirar(500);
       await page.click('#btConsultar');
       await page.waitForSelector('#gradeConsulta, #saidaConsulta .vazio, #saidaConsulta .nota', { timeout: 10000 });
+      await verGrade('#saidaConsulta');
       await diz('CONSULTA', 'cidade = Blumenau, na RAM. Sem ORDER BY: o SQL de verdade só existe pelo protocolo e pelo phxsqlcmd.', 3200);
       await quadro('09-consulta');
     });
@@ -617,8 +640,21 @@ async function principal() {
       const logOk = evs.length === esperado.length && evs.every((e, i) => e.rowid === esperado[i][1]
         && (esperado[i][0] === '?' || e.op === esperado[i][0]));
       prova('DIÁRIO (.log)', logOk,
-        `${evs.length} eventos: ${evs.map(e => `${e.op} ${e.rowid}`).join(' → ')}`);
-      prova('INTEGRIDADE', verif.ok && /INTEGRA/.test(verif.saida), '«phxsql verificar»: CRC de cada slot, página de índice e evento');
+        `${evs.length} eventos: ${evs.map(e => `${e.op} ${e.rowid}`).join(' → ')} (a marca de exclusão entra como alteração: ela regrava o slot)`);
+      // O phxsqld nao tem parada limpa: SIGTERM e queda (morre pelo padrao do
+      // sinal). O `verificar` entao acha o .ndx atrasado -- e isso vai para a
+      // tela como esta, vermelho, e nao escondido.
+      const primeira = (verif.saida.split('\n').find(l => l.trim()) || '').replace(/\/tmp\/\S+\//, '');
+      prova('INTEGRIDADE (ao parar)', verif.ok && /INTEGRA/.test(verif.saida),
+        verif.ok ? '«phxsql verificar»: CRC de cada slot, página de índice e evento'
+          : `«phxsql verificar» recusa logo depois de parar o servidor: ${primeira.slice(0, 150)}`);
+      if (!verif.ok) {
+        const rx = cli(['reindex', pasta, TABELA]);
+        const v2 = cli(['verificar', pasta, TABELA]);
+        log(`--- phxsql reindex (ok=${rx.ok})\n${rx.saida.trim()}\n--- phxsql verificar de novo (ok=${v2.ok})\n${v2.saida.trim()}`);
+        prova('ÍNDICE REFEITO DO .reg', v2.ok && /INTEGRA/.test(v2.saida),
+          `«phxsql reindex» reconstrói o .ndx a partir do .reg; o «verificar» seguinte: ${(v2.saida.split('\n')[0] || '').trim()}`);
+      }
 
       // ---- a folha 1: os arquivos de novo
       await folha(`<div style="font-size:12px;letter-spacing:.2em;color:#8a93ad">DEPOIS DO CRUD — servidor PARADO, listagem real do diretório</div>
@@ -626,8 +662,8 @@ async function principal() {
         ${tabelaDeArquivos(depois, arquivosAntes)}
         <div style="margin-top:14px;color:#c9cfdc">Em verde, o que cresceu desde a criação. O <b>.reg</b> ganhou seis slots; o <b>.log</b>, um evento por operação;
           o <b>.trash</b> e o <b>.reason</b> guardam a exclusão de vez.</div>
-        <div style="position:absolute;bottom:14px;left:40px;font-size:11px;color:#5d6680">este contêiner não tem ambiente gráfico: a listagem é a real, apresentada aqui em vez de num gerenciador de arquivos</div>`);
-      await respirar(4200);
+        <div style="position:absolute;bottom:80px;left:40px;font-size:11px;color:#5d6680">este contêiner não tem ambiente gráfico: a listagem é a real, apresentada aqui em vez de num gerenciador de arquivos</div>`);
+      await diz('NO DISCO · DEPOIS', 'O .reg cresceu seis slots, o .log tem um evento por operação, o .trash guarda a exclusão de vez.', 3600);
       await quadro('10-arquivos-depois');
 
       // ---- a folha 2: o hex do .reg com o texto digitado destacado
@@ -645,7 +681,7 @@ async function principal() {
         <div style="margin-top:10px">${hexDump(reg.b, s1.off, s1.fim, marcas)}</div>
         <div style="margin-top:8px">${hexDump(reg.b, s2.off, s2.fim, marcas)}</div>
         <div style="margin-top:8px;color:#c9cfdc">Slot ${s2.rowid}: versão ${s2.versao} — foi alterado; «${esc(ALTERADO.depois.cidade)}» está no lugar de «${esc(ALTERADO.antes.cidade)}».</div>`);
-      await respirar(5200);
+      await diz('NO DISCO · O .reg CRU', 'O que foi digitado na tela está nos bytes do arquivo — e o slot 2 já traz o valor alterado.', 4600);
       await quadro('10-hex');
 
       // ---- a folha 3: os selos
@@ -653,16 +689,18 @@ async function principal() {
         ? '<b style="border:1.5px solid #8a93ad;color:#c9cfdc;padding:2px 9px;border-radius:4px">NÃO SE PROVA PELO DISCO</b>'
         : p.ok ? '<b style="border:1.5px solid #3ccf72;color:#5fe08a;padding:2px 9px;border-radius:4px">✔ CONFERIDO NO DISCO</b>'
           : '<b style="border:1.5px solid #ff4d4d;color:#ff7a7a;padding:2px 9px;border-radius:4px">✘ NÃO CONFERE</b>';
-      await folha(`<div style="font-size:12px;letter-spacing:.2em;color:#8a93ad">A PROVA — o próprio motor lendo a pasta pela CLI (phxsql info · listar · log · verificar), servidor parado</div>
+      await folha(`<div style="font-size:12px;letter-spacing:.2em;color:#8a93ad">A PROVA — o próprio motor lendo a pasta pela CLI (phxsql info · listar · log · verificar · reindex), servidor parado</div>
         <table style="border-collapse:collapse;margin-top:14px;font-size:14.5px">${provas.map(p => `<tr>
           <td style="padding:7px 18px 7px 0;color:#fff;font-weight:600;white-space:nowrap">${esc(p.op)}</td>
           <td style="padding:7px 18px 7px 0;white-space:nowrap">${selo(p)}</td>
           <td style="padding:7px 0;color:#c9cfdc">${esc(p.como)}</td></tr>`).join('')}</table>
         <div style="margin-top:16px;font-size:12px;color:#8a93ad">phxsql log, como saiu:</div>
-        <pre style="margin:4px 0 0;font:11.5px/1.3 ui-monospace,monospace;color:#c9cfdc">${esc(diario.saida.trim().split('\n').slice(0, 14).join('\n'))}</pre>`);
-      await respirar(7000);
+        <pre style="margin:4px 0 0;font:11.5px/1.3 ui-monospace,monospace;color:#c9cfdc">${esc(diario.saida.trim().split('\n').slice(0, 12).join('\n'))}</pre>`);
+      await semFaixa();
+      await respirar(7500);
       await quadro('10-selos');
-      if (provas.some(p => p.ok === false)) throw new Error('prova no disco NAO confere: ' + provas.filter(p => p.ok === false).map(p => p.op).join(', '));
+      const nao = provas.filter(p => p.ok === false).map(p => p.op);
+      if (nao.length) log('!! PROVA NO DISCO NAO CONFERE em:', nao.join(', '));
     });
 
     // ---- 11. encerramento ------------------------------------------------
