@@ -4328,6 +4328,35 @@ impl Table {
         self.custo_no_diario
     }
 
+    /// O custo no diario de INSERIR `linhas` numa tomada so -- pedido 686: a
+    /// carga fora de transacao (`inserir_lote`, `importar`, `carga`) e uma
+    /// transacao para a replica, e passa pelo mesmo teto do COMMIT.
+    ///
+    /// A MESMA conta da [`Table::pre_conferir`]: a linha prevista por
+    /// [`Table::prever_linha`] (DEFAULT e sequencia preenchidos -- e o que vai
+    /// para a imagem) no [`Table::custo_da_linha`]. A linha que nem se preve
+    /// (o CHECK que a recusa) entra pela crua: ela vai ser recusada, e contar
+    /// a mais so pode recusar a carga, nunca deixa-la chegar partida.
+    pub fn custo_previsto_da_carga(&self, linhas: &[Linha]) -> usize {
+        // Sem imagem, ou sem coluna externa, a imagem tem tamanho fixo: a
+        // conta nao depende do valor e nao precisa prever linha nenhuma.
+        let fixo = !self.imagem_no_diario || !self.esquema.colunas().iter().any(|c| c.ty.externo());
+        if fixo {
+            return linhas
+                .first()
+                .map_or(0, |l| self.custo_da_linha(l, false))
+                .saturating_mul(linhas.len());
+        }
+        let mut previsao = self.previsao_atual();
+        linhas
+            .iter()
+            .map(|l| match self.prever_linha(l, None, &mut previsao) {
+                Ok(prevista) => self.custo_da_linha(&prevista, false),
+                Err(_) => self.custo_da_linha(l, false),
+            })
+            .fold(0usize, usize::saturating_add)
+    }
+
     /// O teto do custo de UM evento com a imagem destes `valores` --
     /// [`crate::log::custo_na_transacao`] sobre o maior tamanho que a imagem
     /// de [`Table::imagem_da_linha`] pode ter. Sem imagem no diario, o

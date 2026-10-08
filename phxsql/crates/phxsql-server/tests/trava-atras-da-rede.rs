@@ -172,6 +172,7 @@ fn subir_replica(base: &std::path::Path, fonte: &FonteFalsa) -> (Arc<Servidor>, 
         // deixar como estava.
         cifra: false,
         chave_do_fio: String::new(),
+        espelho: false,
         nome: "fonte-falsa".into(),
         host: "127.0.0.1".into(),
         porta: fonte.porta,

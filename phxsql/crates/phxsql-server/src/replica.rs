@@ -786,6 +786,50 @@ impl Juntador {
         }
     }
 
+    /// O lote do bidirecional (pedido 681): o source SUPRIME os eventos que
+    /// nasceram em quem pede, e a posicao anda por cima deles ate `ate`. A
+    /// conta por quantidade do [`Juntador::receber`] deixaria a fila atras do
+    /// source para sempre; aqui o que manda e a posicao de cada evento.
+    ///
+    /// Nada andou (`ate` nao passa do que se pediu e nada veio): a tabela sai
+    /// da rodada, como o lote vazio do `receber`.
+    pub fn receber_ate(&mut self, fila: usize, eventos: Vec<EventoRecebido>, ate: u64) {
+        let f = &mut self.filas[fila];
+        if eventos.is_empty() && ate <= f.proximo {
+            f.esgotada = true;
+            return;
+        }
+        let alvo = f.alvo;
+        for e in eventos {
+            // O evento sem posicao (source velho) conta pela ordem, como no
+            // `receber`.
+            let onde = if e.posicao == POSICAO_DESCONHECIDA {
+                f.proximo
+            } else {
+                e.posicao
+            };
+            if onde >= alvo {
+                break;
+            }
+            f.eventos.push_back(e);
+            f.proximo = onde + 1;
+        }
+        f.proximo = f.proximo.max(ate.min(alvo));
+    }
+
+    /// Ate onde a fila `fila` esta CONSUMIDA: a posicao do primeiro evento na
+    /// mao que ainda nao se aplicou, ou, com a mao vazia, a proxima a puxar.
+    /// E a posicao que o bidirecional grava (pedido 681) -- nunca a frente
+    /// de uma transacao que esperou na mao.
+    pub fn consumido(&self, fila: usize) -> u64 {
+        let f = &self.filas[fila];
+        match f.eventos.front() {
+            Some(e) if e.posicao != POSICAO_DESCONHECIDA => e.posicao,
+            Some(_) => f.proximo - f.eventos.len() as u64,
+            None => f.proximo,
+        }
+    }
+
     /// A tabela rompeu (a continuidade nao confere): o que esta na mao dela
     /// se descarta e ela nao e mais puxada nesta rodada.
     pub fn largar(&mut self, fila: usize) {
@@ -1316,6 +1360,7 @@ mod testes_do_prazo_de_conexao {
             hora: String::new(),
             cifra: false,
             chave_do_fio: String::new(),
+            espelho: false,
         }
     }
 
@@ -1525,6 +1570,7 @@ mod testes_do_prazo_total_da_conversa {
             hora: String::new(),
             cifra: false,
             chave_do_fio: String::new(),
+            espelho: false,
         }
     }
 
@@ -1929,6 +1975,55 @@ mod testes_do_juntador {
         j.receber(1, vec![ev(1, 1)]);
         j.largar(1);
         assert!(matches!(j.passo(), Passo::Fim));
+    }
+
+    fn ev_em(tx: u64, posicao: u64) -> EventoRecebido {
+        EventoRecebido {
+            posicao,
+            ..ev(tx, 1)
+        }
+    }
+
+    /// **O lote do bidirecional anda pela posicao, nao pela contagem**
+    /// (pedido 681). O source suprimiu os eventos 1 e 2 (nasceram aqui): a
+    /// fila vai a 4, e a transacao 5 -- que tem o evento 3 da fila 0 e o
+    /// unico da fila 1 -- so se aplica com as duas na mao. O consumido de
+    /// cada fila e onde a gravacao da posicao pode chegar.
+    #[test]
+    fn o_lote_com_eventos_suprimidos_anda_pela_posicao() {
+        let mut j = Juntador::novo(&[(0, 4), (0, 1)], TETO_DA_TRANSACAO);
+        assert_eq!(puxar(&mut j), (0, 0));
+        j.receber_ate(0, vec![ev_em(4, 0), ev_em(5, 3)], 4);
+        assert_eq!(j.consumido(0), 0);
+        // A 4 esta inteira (a fila 0 ja passou dela); a 5 espera a fila 1.
+        assert_eq!(puxar(&mut j), (1, 0));
+        j.receber_ate(1, vec![ev_em(5, 0)], 1);
+        let (g, inteiro) = aplicar(&mut j);
+        assert!(inteiro);
+        assert_eq!(g, vec![(0, vec![4, 5]), (1, vec![5])]);
+        assert_eq!((j.consumido(0), j.consumido(1)), (4, 1));
+        assert!(matches!(j.passo(), Passo::Fim));
+    }
+
+    /// Com a transacao esperando na mao, o consumido NAO passa dela: gravar
+    /// a posicao alem faria o evento nunca mais ser pedido.
+    #[test]
+    fn o_consumido_nao_passa_da_transacao_que_espera() {
+        let mut j = Juntador::novo(&[(10, 14), (0, 2)], TETO_DA_TRANSACAO);
+        puxar(&mut j);
+        j.receber_ate(0, vec![ev_em(2, 10), ev_em(7, 13)], 14);
+        assert_eq!(puxar(&mut j), (1, 0));
+        j.receber_ate(1, vec![ev_em(7, 0)], 1);
+        // A 2 entra; a 7 ainda pode continuar na fila 1, e espera na mao --
+        // o consumido da fila 0 e o 13 dela, nao o 14.
+        let (g, _) = aplicar(&mut j);
+        assert_eq!(g, vec![(0, vec![2])]);
+        assert_eq!(j.consumido(0), 13);
+        assert_eq!(puxar(&mut j), (1, 1));
+        j.receber_ate(1, vec![], 1);
+        let (g, _) = aplicar(&mut j);
+        assert_eq!(g, vec![(0, vec![7]), (1, vec![7])]);
+        assert_eq!(j.consumido(0), 14);
     }
 
     #[test]

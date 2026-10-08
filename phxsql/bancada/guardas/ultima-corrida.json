@@ -1,5 +1,5 @@
 {
-  "quando": "2026-10-08 03:24",
+  "quando": "2026-10-08 04:44",
   "mais_antigo": "2026-09-16 15:25",
   "guardas": [
     {
@@ -4400,9 +4400,9 @@
       "id": "posicao-bidi-antes-do-dado",
       "titulo": "A posição do bidirecional ia ao disco a cada lote, antes do `fsync` do dado: numa queda, os eventos entre o dado perdido e a posição gravada nunca mais eram pedidos",
       "veredito": "PROVADA",
-      "segundos": 18.8,
+      "segundos": 25.48,
       "notas": [],
-      "quando": "2026-10-01 00:59"
+      "quando": "2026-10-08 04:24"
     },
     {
       "id": "posicao-bidi-sem-troca-duravel",
@@ -5266,9 +5266,9 @@
       "id": "replica-grava-filha-sem-mae-calada",
       "titulo": "A réplica gravava a filha sem a mãe e nada contava: o invariante «só existe filho se o pai existir» caía calado",
       "veredito": "PROVADA",
-      "segundos": 27.85,
+      "segundos": 19.61,
       "notas": [],
-      "quando": "2026-10-08 00:12"
+      "quando": "2026-10-08 04:24"
     },
     {
       "id": "bidi-grava-filha-sem-mae-calada",
@@ -5698,9 +5698,9 @@
       "id": "quorum-ack-antes-do-fsync",
       "titulo": "a réplica confirmando o lote do quórum sem levá-lo ao disco: o «ok» vira «recebi», a garantia que o Cassandra chama de QUORUM",
       "veredito": "PROVADA",
-      "segundos": 26.4,
+      "segundos": 21.17,
       "notas": [],
-      "quando": "2026-10-02 00:00"
+      "quando": "2026-10-08 04:24"
     },
     {
       "id": "quorum-de-epoca-velha",
@@ -6490,9 +6490,9 @@
       "id": "replica-aplica-o-que-chegou-sem-esperar-a-transacao",
       "titulo": "A réplica volta a aplicar o que chegou, lote a lote e tabela a tabela: com o fio caído no meio do envio o central mostra a venda pela metade (pedido 676)",
       "veredito": "PROVADA",
-      "segundos": 28.82,
+      "segundos": 20.03,
       "notas": [],
-      "quando": "2026-10-08 00:12"
+      "quando": "2026-10-08 04:24"
     },
     {
       "id": "tomada-da-trava-sem-unidade-do-diario",
@@ -6565,6 +6565,54 @@
       "segundos": 19.48,
       "notas": [],
       "quando": "2026-10-08 03:24"
+    },
+    {
+      "id": "escrita-local-na-base-recebida-por-replica",
+      "titulo": "A base que o nó recebe por réplica volta a aceitar escrita local: o caixa cadastra no database do central (pedido 677)",
+      "veredito": "PROVADA",
+      "segundos": 19.14,
+      "notas": [],
+      "quando": "2026-10-08 04:44"
+    },
+    {
+      "id": "espelho-imposto-a-quem-nao-pediu",
+      "titulo": "A guarda do 677 volta a valer sem `\"espelho\": true`: config antigo passa a recusar a escrita local que fazia",
+      "veredito": "PROVADA",
+      "segundos": 19.03,
+      "notas": [],
+      "quando": "2026-10-08 04:44"
+    },
+    {
+      "id": "quorum-aplica-lote-a-lote",
+      "titulo": "O lote do quórum volta a ser aplicado tabela a tabela: o leitor da réplica vê a venda pela metade (pedido 681)",
+      "veredito": "PROVADA",
+      "segundos": 21.17,
+      "notas": [],
+      "quando": "2026-10-08 04:24"
+    },
+    {
+      "id": "quorum-entrega-parte-o-commit",
+      "titulo": "A entrega do quórum volta a cortar no meio de um commit: a réplica recebe uma tabela da venda sem a outra (pedido 681)",
+      "veredito": "PROVADA",
+      "segundos": 77.51,
+      "notas": [],
+      "quando": "2026-10-08 04:24"
+    },
+    {
+      "id": "bidi-alcanca-tabela-a-tabela",
+      "titulo": "O bidirecional volta a alcançar tabela a tabela: o par vê os itens sem a venda quando o fio cai (pedido 681)",
+      "veredito": "PROVADA",
+      "segundos": 22.41,
+      "notas": [],
+      "quando": "2026-10-08 04:24"
+    },
+    {
+      "id": "carga-acima-do-teto-aceita",
+      "titulo": "A carga fora de transação acima do teto volta a ser aceita: a réplica a recebe em pedaços (pedido 686)",
+      "veredito": "PROVADA",
+      "segundos": 19.76,
+      "notas": [],
+      "quando": "2026-10-08 04:24"
     },
     {
       "id": "alter-com-regra-sem-aviso",

@@ -268,6 +268,7 @@ fn terreno_com(
         // muda.
         cifra: marcado,
         chave_do_fio: String::new(),
+        espelho: false,
     }];
     let a = subir(c, ouvinte_a);
     criar_clientes(porta_a, marcado);

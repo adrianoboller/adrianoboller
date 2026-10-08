@@ -29,6 +29,15 @@
 //!
 //! Em todos, o central parado com o fio caido tem de mostrar a venda inteira
 //! ou nada -- e depois que o fio volta, inteira.
+//!
+//! # O irmao, no bidirecional (pedido 681)
+//!
+//! O par `multi` aplica pela chave e nao pelo rowid, mas puxava pelo mesmo
+//! `replicar`, tabela a tabela -- o caminho que o 676 deixou para tras. As
+//! mesmas tres provas rodam com os dois nos em `multi`: o alcance do
+//! bidirecional passou a juntar as tabelas pelo mesmo `replica::Juntador`.
+//! As tabelas tem chave unica porque o bidirecional exige (e a replica fiel
+//! nao se importa).
 
 mod comum;
 use comum::DirTemp;
@@ -149,7 +158,8 @@ fn origem_com_a_venda(porta: u16, itens: usize) {
         b.exigir(&format!(
             r#""op":"criar_tabela","database":"loja","tabela":"{tabela}",
                "colunas":[{{"nome":"id","tipo":"Int8","obrigatoria":true}},
-                          {{"nome":"venda","tipo":"Int8"}}]"#
+                          {{"nome":"venda","tipo":"Int8"}}],
+               "indices":[{{"nome":"pk_id","colunas":["id"],"unico":true,"primario":true}}]"#
         ));
     }
     b.exigir(r#""op":"begin","database":"loja""#);
@@ -250,9 +260,12 @@ impl Repasse {
     }
 }
 
-fn replica_por(base: &Path, porta: u16) -> NoAr {
-    let mut c = config(base, "central", Papel::Replica);
-    c.somente_leitura = true;
+fn replica_por(base: &Path, porta: u16, bidi: bool) -> NoAr {
+    let papel = if bidi { Papel::Multi } else { Papel::Replica };
+    let mut c = config(base, "central", papel);
+    // O multi existe para ser escrito: `somente_leitura` nele e contradicao
+    // que o `validar` recusa.
+    c.somente_leitura = !bidi;
     c.replicacao.origens = vec![Origem {
         nome: "caixa01".into(),
         host: "127.0.0.1".into(),
@@ -267,6 +280,7 @@ fn replica_por(base: &Path, porta: u16) -> NoAr {
         hora: String::new(),
         cifra: false,
         chave_do_fio: String::new(),
+        espelho: false,
     }];
     subir(c)
 }
@@ -292,14 +306,15 @@ fn retrato(porta: u16) -> (usize, usize, usize) {
     }
 }
 
-fn a_venda_chega_inteira_ou_nao_chega(nome: &str, itens: usize, corte: u64) {
+fn a_venda_chega_inteira_ou_nao_chega(nome: &str, itens: usize, corte: u64, bidi: bool) {
     let base_o = DirTemp::novo(&format!("venda-inteira-origem-{nome}"));
     let base_c = DirTemp::novo(&format!("venda-inteira-central-{nome}"));
-    let caixa = subir(config(&base_o.0, "caixa01", Papel::Source));
+    let papel = if bidi { Papel::Multi } else { Papel::Source };
+    let caixa = subir(config(&base_o.0, "caixa01", papel));
     origem_com_a_venda(caixa.porta, itens);
 
     let repasse = Repasse::subir(caixa.porta, corte);
-    let central = replica_por(&base_c.0, repasse.porta);
+    let central = replica_por(&base_c.0, repasse.porta, bidi);
 
     let ate = Instant::now() + ESPERA;
     while !repasse.cortou.load(Ordering::SeqCst) {
@@ -350,7 +365,7 @@ fn a_venda_chega_inteira_ou_nao_chega(nome: &str, itens: usize, corte: u64) {
 /// tabela reposta, o central fica com `(0, 3, 0)`: itens sem venda.
 #[test]
 fn a_venda_de_varias_tabelas_nao_aparece_pela_metade_quando_o_fio_cai() {
-    a_venda_chega_inteira_ou_nao_chega("tabelas", 3, 2);
+    a_venda_chega_inteira_ou_nao_chega("tabelas", 3, 2, false);
 }
 
 /// **A prova real do 676, dentro da tabela.** Seiscentos itens nao cabem num
@@ -358,7 +373,7 @@ fn a_venda_de_varias_tabelas_nao_aparece_pela_metade_quando_o_fio_cai() {
 /// o central fica com `(0, 500, 0)`.
 #[test]
 fn a_venda_maior_que_um_lote_nao_aparece_pela_metade_quando_o_fio_cai() {
-    a_venda_chega_inteira_ou_nao_chega("lotes", 600, 2);
+    a_venda_chega_inteira_ou_nao_chega("lotes", 600, 2, false);
 }
 
 /// **O id de transacao, e nao so a ordem de puxar.** O fio cai no QUARTO
@@ -369,5 +384,26 @@ fn a_venda_maior_que_um_lote_nao_aparece_pela_metade_quando_o_fio_cai() {
 /// aplicacao por lote reposta, `(0, 600, 1)`.
 #[test]
 fn a_venda_nao_aparece_pela_metade_mesmo_com_as_tres_tabelas_na_mao() {
-    a_venda_chega_inteira_ou_nao_chega("id", 600, 4);
+    a_venda_chega_inteira_ou_nao_chega("id", 600, 4, false);
+}
+
+/// **Pedido 681, entre tabelas, no bidirecional.** Com o alcance tabela a
+/// tabela reposto, o par fica com `(0, 3, 0)`: os itens sem a venda.
+#[test]
+fn no_bidirecional_a_venda_de_varias_tabelas_nao_aparece_pela_metade() {
+    a_venda_chega_inteira_ou_nao_chega("bidi-tabelas", 3, 2, true);
+}
+
+/// **Pedido 681, dentro da tabela, no bidirecional.** O lote de 500 itens nao
+/// e a transacao inteira: nada se aplica antes do resto chegar.
+#[test]
+fn no_bidirecional_a_venda_maior_que_um_lote_nao_aparece_pela_metade() {
+    a_venda_chega_inteira_ou_nao_chega("bidi-lotes", 600, 2, true);
+}
+
+/// **Pedido 681, com as tres tabelas na mao, no bidirecional.** Com o alcance
+/// tabela a tabela reposto, `(0, 600, 1)`.
+#[test]
+fn no_bidirecional_a_venda_nao_aparece_pela_metade_com_as_tres_na_mao() {
+    a_venda_chega_inteira_ou_nao_chega("bidi-id", 600, 4, true);
 }

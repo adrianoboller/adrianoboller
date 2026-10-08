@@ -84,6 +84,7 @@ fn origem(porta: u16) -> Origem {
         hora: String::new(),
         cifra: false,
         chave_do_fio: String::new(),
+        espelho: false,
     }
 }
 

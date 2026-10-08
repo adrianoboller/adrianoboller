@@ -239,6 +239,7 @@ fn par(nome: &str) -> Par {
         hora: String::new(),
         cifra: false,
         chave_do_fio: String::new(),
+        espelho: false,
     }];
     let (r, porta_replica) = subir(cr);
     Par {

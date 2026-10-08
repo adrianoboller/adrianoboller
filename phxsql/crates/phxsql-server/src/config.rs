@@ -300,6 +300,16 @@ pub struct Origem {
     /// nao protege de quem esta no meio, porque o atacante apresenta a chave
     /// dele e nao ha com o que comparar. O arranque avisa exatamente isso.
     pub chave_do_fio: String,
+    /// Pedido 677: os `databases` desta origem sao ESPELHO aqui -- so leitura
+    /// local, porque um escritor por database e o que impede os rowids de
+    /// divergirem e a replicacao de parar.
+    ///
+    /// Nasce DESLIGADO, e e a guarda entrando pedida e nao imposta: config
+    /// escrito antes dela continua gravando onde gravava (ha arranjo legitimo
+    /// que escreve num database recebido, e um erro que ele nao sabe tratar
+    /// trocaria um risco declarado por um estrago certo). Quem quer a garantia
+    /// escreve `"espelho": true`, como o caixa offline do 325.
+    pub espelho: bool,
 }
 
 /// `Debug` a mao, pelo mesmo motivo do da [`Cifra`]: o derivado imprimiria o
@@ -328,6 +338,7 @@ impl std::fmt::Debug for Origem {
             hora,
             cifra,
             chave_do_fio,
+            espelho,
         } = self;
         f.debug_struct("Origem")
             .field("nome", nome)
@@ -343,6 +354,7 @@ impl std::fmt::Debug for Origem {
             .field("hora", hora)
             .field("cifra", cifra)
             .field("chave_do_fio", chave_do_fio)
+            .field("espelho", espelho)
             .finish()
     }
 }
@@ -5197,6 +5209,7 @@ impl Config {
                                     hora: o.texto_ou("hora", "").trim().to_string(),
                                     cifra,
                                     chave_do_fio: o.texto_ou("chave_do_fio", "").trim().to_string(),
+                                    espelho: o.booleano_ou("espelho", false),
                                 }
                             })
                             .collect()
@@ -6987,6 +7000,7 @@ mod tests {
             hora: String::new(),
             cifra: true,
             chave_do_fio: String::new(),
+            espelho: false,
         };
         assert!(o.pino_do_fio().unwrap().is_none());
         o.chave_do_fio = "abacaxi".into();
@@ -8091,6 +8105,19 @@ mod tests {
             c.validar()
                 .unwrap_or_else(|e| panic!("{nome} deixou de subir: {e}"));
         }
+    }
+
+    /// Pedido 677: o `espelho` nasce DESLIGADO no config que nao o escreve --
+    /// e o que faz a guarda entrar pedida. Lido como `true` por omissao, todo
+    /// config anterior passaria a recusar escrita local sem ninguem pedir.
+    #[test]
+    fn espelho_ausente_nasce_desligado() {
+        let txt = r#"{"token":"x","replicacao":{"papel":"replica","origens":[
+            {"nome":"a","host":"10.1.1.1","token":"t1","databases":["vendas"]},
+            {"nome":"b","host":"10.1.1.2","token":"t2","databases":["loja"],"espelho":true}]}}"#;
+        let c = Config::de_json(&Json::analisar(txt).unwrap()).unwrap();
+        assert!(!c.replicacao.origens[0].espelho);
+        assert!(c.replicacao.origens[1].espelho);
     }
 
     /// **ALTO-1 da revisao adversaria do 406.** O campo `"nome"` e opcional e

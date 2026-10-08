@@ -102,7 +102,11 @@ fn config_da_replica(
         host: "127.0.0.1".into(),
         porta: porta_do_source,
         token: TOKEN.into(),
-        databases: vec!["loja".into()],
+        // Lista VAZIA, «o que vier»: desde o pedido 677 o database DECLARADO
+        // recusa escrita local, e o que esta bateria prova -- a escrita
+        // local que rompe a continuidade, pedido 300 (4) -- so continua
+        // possivel na origem que nao declarou o que traz.
+        databases: vec![],
         reconectar_em: 1,
         usuario: String::new(),
         senha_hash: String::new(),
@@ -111,6 +115,7 @@ fn config_da_replica(
         hora: String::new(),
         cifra: false,
         chave_do_fio: String::new(),
+        espelho: false,
     }];
     c
 }

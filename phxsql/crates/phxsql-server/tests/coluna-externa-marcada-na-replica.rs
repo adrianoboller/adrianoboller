@@ -111,6 +111,7 @@ fn subir_replica(base: &Path, porta_origem: u16) -> (Arc<Servidor>, u16) {
         hora: String::new(),
         cifra: true,
         chave_do_fio: String::new(),
+        espelho: false,
     }];
     let s = Servidor::novo(c).unwrap();
     let copia = Arc::clone(&s);

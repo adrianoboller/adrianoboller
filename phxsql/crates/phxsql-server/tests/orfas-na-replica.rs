@@ -110,6 +110,13 @@ const CLIENTES: &str = r#""op":"criar_tabela","database":"loja","tabela":"client
    "colunas":[{"nome":"id","tipo":"Int8","obrigatoria":true}],
    "indices":[{"nome":"pk_id","colunas":["id"],"unico":true,"primario":true}]"#;
 
+/// A mae de OUTRA forma: o mesmo nome, indice sem unicidade -- o
+/// bidirecional a recusa, e a conferencia da filha continua tendo onde
+/// procurar.
+const CLIENTES_SEM_CHAVE: &str = r#""op":"criar_tabela","database":"loja","tabela":"clientes",
+   "colunas":[{"nome":"id","tipo":"Int8","obrigatoria":true}],
+   "indices":[{"nome":"pk_id","colunas":["id"]}]"#;
+
 /// O source com a mae `clientes` e a filha `filha`, as duas com [`LINHAS`]
 /// linhas -- a filha apontando para mae que EXISTE (o source julga).
 fn source_com(porta: u16, filha: &str) {
@@ -168,6 +175,7 @@ fn replica_de(base: &Path, porta: u16, bidi: bool) -> NoAr {
         hora: String::new(),
         cifra: false,
         chave_do_fio: String::new(),
+        espelho: false,
     }];
     subir(cr)
 }
@@ -344,11 +352,37 @@ fn com_a_mae_primeiro_nada_e_contado() {
 
 /// **O irmao, no bidirecional.** O `inserir_replicado` tambem nao julga, e
 /// passa pela MESMA conferencia que conta. Sem a contagem ligada no laco do
-/// bidirecional (`contar_orfas` em `aplicar_lote_bidi`), a replica fiel conta
-/// e este caminho fica calado -- e e esse o defeito que a prova repoe.
+/// bidirecional (`contar_orfas` em `aplicar_tabela_bidi`), a replica fiel
+/// conta e este caminho fica calado -- e e esse o defeito que a prova repoe.
+///
+/// A fabrica e a da replica fiel desde o 676, e pelo mesmo motivo: desde o
+/// pedido 681 o bidirecional tambem junta as tabelas pelo id de transacao, e
+/// a mae gravada antes entra antes -- a filha que so chegava primeiro pelo
+/// NOME deixou de ser orfa. A orfa de verdade e a mae que NAO chega: a
+/// `clientes` desta ponta foi criada por conta, SEM chave unica, e o
+/// bidirecional a recusa (sem chave nao ha identidade entre servidores).
 #[test]
 fn no_bidirecional_a_filha_antes_da_mae_tambem_e_contada() {
-    let (_s, r, _bs, _br) = par_em("bidi", "a_itens", true);
+    let base_x = DirTemp::novo("orfas-bidi-sem-chave");
+    {
+        let x = subir(config(&base_x.0, "outro", Papel::Source));
+        exigir(x.porta, r#""op":"criar_database","database":"loja""#);
+        exigir(x.porta, CLIENTES_SEM_CHAVE);
+    }
+    let base_s = DirTemp::novo("orfas-source-bidi");
+    let base_r = DirTemp::novo("orfas-replica-bidi");
+    copiar(&base_x.0.join("loja"), &base_r.0.join("loja"));
+    let s = subir(config(&base_s.0, "fonte", Papel::Multi));
+    source_com(s.porta, "a_itens");
+    let r = replica_de(&base_r.0, s.porta, true);
+    esperar("a filha chegar", || {
+        contar(r.porta, "a_itens") >= LINHAS as usize
+    });
+    assert_eq!(
+        contar(r.porta, "clientes"),
+        0,
+        "a mae sem chave recebeu linha pelo bidirecional"
+    );
     let o = orfas(r.porta);
     let n = o
         .campo("loja/a_itens")
