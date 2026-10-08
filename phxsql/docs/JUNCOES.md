@@ -180,7 +180,7 @@ mesmo que o `UNION ALL` anunciando `repetidas: 0`.
 
 **O teto muda de alvo.** No caminho `tabelas` o `TETO_JUNCAO` (500.000) se
 aplica à TABELA, então unir duas de dois milhões é impossível mesmo para pegar
-dez linhas. No caminho `partes` o teto que vale é o `recursos.max_linhas` de
+dez linhas. No caminho `partes` o teto que vale é o `max_linhas` de
 cada braço, e ele se aplica ao **recorte**.
 
 **O que os braços-pedido CUSTAM, e é decisão do papel C (DBA).** O caminho
@@ -217,7 +217,7 @@ continua sendo teto de leitura com `truncado`, não um `LIMIT`.
 
 Todo sub-pedido de uma composição (`consultar` com `de`, `juntar[].de`,
 `escalar[].de`, `existe[].de`, `em[].de`, e o braço-pedido do `unir`) para em
-`recursos.max_linhas`. Quando para, a composição responde sobre um **pedaço**:
+`max_linhas`. Quando para, a composição responde sobre um **pedaço**:
 o `IN` diz «não casa» à chave que casava, o `EXISTS` diz «não existe» à linha
 que existia, e a conta sai com cara de resposta. Desde o pedido 419 o
 `consultar` publica **`truncado`**, e o `unir` com `partes` soma o corte do

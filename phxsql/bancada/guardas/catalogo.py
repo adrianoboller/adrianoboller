@@ -472,7 +472,7 @@ GUARDAS = [
             "portao geral pergunta pela base VAZIA e quem tem "
             '`bases:{\"*\":{administrar:true}}` responde sim sem ser admin.'
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_telemetria_01.rs",
         "trecho": """        match &sessao.usuario {
             None => Ok(()),
             Some(u) if u.e_admin() => Ok(()),
@@ -510,7 +510,7 @@ GUARDAS = [
             "dentro de `juntar` o portao geral nao alcanca. Os rotulos das "
             "linhas do cruzamento SAO os valores da tabela negada."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_composicao_01.rs",
         "trecho": """        if let Some(u) = &sessao.usuario {
             let base = p.texto_ou("database", "");
             for j in p.campo("juntar").and_then(Json::lista).unwrap_or(&[]) {
@@ -556,7 +556,7 @@ GUARDAS = [
             "esconde. Nome, contador e quantas linhas ja bastam para saber que "
             "a folha existe e quanto ela cresceu no mes."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_esquema_01.rs",
         "trecho": """            // Ela varre a base inteira e NAO tem campo `tabela`, entao o
             // portao geral nao a alcanca: e o mesmo desenho do
             // `dados_pessoais`, que filtra tabela a tabela por dentro.
@@ -586,7 +586,7 @@ GUARDAS = [
             "e de `replicar`, e nao de `ler`: e o direito que o portao aplicou "
             "a operacao."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_telemetria_01.rs",
         "trecho": """            if !replica_alcanca(sessao.usuario.as_ref(), &database, &nome) {
                 continue;
             }
@@ -613,7 +613,7 @@ GUARDAS = [
             "`tabela`, que ali e a ORIGEM; a tabela que nasce tem o nome do "
             "campo `destino`."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_esquema_01.rs",
         "trecho": """        if let Some(u) = &sessao.usuario {
             if !u.pode_em(database, destino, Atividade::Criar) {
                 return Err(PhxError::Autorizacao(format!(
@@ -706,7 +706,7 @@ GUARDAS = [
             "por um erro engolido ENFRAQUECE esses testes, e tem de olhar a "
             "consequencia no lugar."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_marca_01.rs",
         "trecho": """        self.descarregar_sujas_com(dados);
         Ok(())
     }
@@ -745,7 +745,7 @@ GUARDAS = [
             "o corpo mora no `gatilhos.json`, ele derrubava de novo a cada "
             "tentativa."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_sql_01.rs",
         "trecho": """        let nivel = PROFUNDIDADE_DA_CADEIA.with(|c| c.get());
         if nivel >= CADEIA_MAXIMA {
 """,
@@ -1116,7 +1116,7 @@ GUARDAS = [
             "fonte, pelo mesmo `include_str!` do conferidor de textos, para "
             "nao haver como contar um arquivo e compilar outro."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_admin_01.rs",
         "trecho": """        let dados = self.travar_dados()?;
         Ok(idiomas::estado(&dados, idioma))
 """,
@@ -1404,7 +1404,7 @@ GUARDAS = [
             "A regra que sai daqui: nenhuma leitura de rede acontece com a "
             "trava de dados na mao."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_replicacao_01.rs",
         "trecho": HOJE_ALCANCAR_TABELA,
         "troca": DEFEITO_ALCANCAR_TABELA,
         "pacote": "phxsql-server",
@@ -1606,7 +1606,7 @@ GUARDAS = [
             "entram as tres portas HTTP e o endpoint `/mcp`, que viaja na porta "
             "do REST. Repor o defeito e apagar essa conferencia."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_web_01.rs",
         "trecho": """        if self.config.cifra_fio.exigir && !fluxo.cifrado() && !self.proxy_desta_porta_http(op).0 {
             self.recusar_http_em_claro(fluxo, ip, porta, op, agora);
             return false;
@@ -1674,7 +1674,7 @@ GUARDAS = [
             "reposto o cliente honesto para de entrar, e e por ele que o teste "
             "cai."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_rede_01.rs",
         "trecho": """        let canal_ref = canal_amarrado.as_ref().map(|t| &t[..]);
 """,
         "troca": """        // DEFEITO REPOSTO: o login ignora a transcricao do tunel. A prova
@@ -1708,7 +1708,7 @@ GUARDAS = [
             "`cifra_fio.exigir_amarra` e quem nao amarra volta a entrar: o caso "
             "(a) do teste cai na `unwrap_err` da recusa nomeada."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_rede_01.rs",
         "trecho": """        if self.config.cifra_fio.exigir_amarra && sessao.transcricao_do_fio.is_some() && !amarrar {
             return Err(PhxError::Autorizacao(self.msg("erro.amarra_exigida", &[])));
         }
@@ -1745,7 +1745,7 @@ GUARDAS = [
             "LEITURA do codigo nao pega, porque em claro contra um destino que "
             "NAO exige tudo continua funcionando."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_web_01.rs",
         "trecho": """        if let Some(sv) = self.config.web.servidor(destino) {
             if sv.cifra {
                 let pino = sv.pino_do_fio().map_err(|e| (op.clone(), e))?;
@@ -1942,7 +1942,7 @@ GUARDAS = [
             "dita duas vezes na mesma funcao; o servidor da prova e o sem "
             "cadastro."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_rede_01.rs",
         "trecho": """    fn teto_da_linha(&self, sessao: &Sessao, cifrado: bool) -> u64 {
         if sessao.usuario.is_some() {
             return TETO_DO_REGISTRO;
@@ -2002,7 +2002,7 @@ GUARDAS = [
             "`cifra_fio.exigir` do outro no e cai, e o no some do `cluster_estado` "
             "-- so o tunel real faz os dois nos se enxergarem."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_cluster_01.rs",
         "trecho": """        if c.cifra {
             cliente.cifrar(no.pino_do_fio()?)?;
         }
@@ -2031,7 +2031,7 @@ GUARDAS = [
             "que a linha `cifra: c.cifra` sumiu -- coisa que a leitura do laco "
             "vivo nao pega."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_cluster_01.rs",
         "trecho": """        // A replicacao do cluster viaja pela MESMA cifra do pulso -- ligar
         // `cluster.cifra` protege o trafego INTEIRO do cluster, nunca so metade.
         cifra: c.cifra,
@@ -2685,7 +2685,7 @@ pub fn limpar() {
             "quem mais precisava dela. Vale para as tres portas HTTP, e valia "
             "desde que a interface web existe."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_web_01.rs",
         "trecho": """            let _ = http::erro_json(fluxo, 403, &self.recado_de_bloqueio(&b));
             http::escoar(fluxo);
 """,
@@ -2721,7 +2721,7 @@ pub fn limpar() {
             "receber a transacao revertida para queimar o mesmo slot do outro "
             "lado."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_transacao_01.rs",
         "trecho": """        if OPS_EMPILHAVEIS.contains(&op) {
             self.por_prazo_na_operacao(sessao);
             return Some(self.empilhar(op, p, sessao));
@@ -2759,7 +2759,7 @@ pub fn limpar() {
             "O `XACT_STATE()` do SQL Server e o estado abortado do "
             "PostgreSQL(R) existem exatamente para isto."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_transacao_01.rs",
         # O ramo inteiro, para a troca fechar as chaves e os parenteses: uma
         # troca que so tira o `return Err(` deixa dois fechamentos sobrando, e
         # a guarda vira QUEBRADA -- que nao prova nada.
@@ -2801,7 +2801,7 @@ pub fn limpar() {
             "que o dado nao esta no disco e nao ha bilhete nenhum -- a mesma "
             "janela sem conserto da lixeira, pelo outro lado."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_marca_01.rs",
         # Trecho movido em 24/09/2026 pelo pedido 426: o que vem depois da
         # marca passou a morar em `depois_da_marca`. O defeito e o mesmo.
         # E de novo no mesmo dia (pedido 540): o miolo saiu para
@@ -2842,7 +2842,7 @@ pub fn limpar() {
             "o MESMO slot, e a segunda descobre isso na passada de commit, com "
             "metade do trabalho gravado."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_transacao_01.rs",
         "trecho": """        let rowid_pedido = match acao {
             Acao::Inserir => crate::travas::FIM_DA_TABELA,
             _ => self.rowid(p)?,
@@ -2935,7 +2935,7 @@ pub fn limpar() {
             "RECUPERACAO encontrar o slot ocupado pela linha do outro, trata-lo "
             "como «ja aplicado» e descartar a nossa em silencio."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_transacao_01.rs",
         "trecho": """                // Anexar disputa o FIM da tabela: o proximo slot e um so.
                 "inserir" | "inserir_lote" | "importar" | "carga" | "duplicar_tabela"
                 | "copiar_tabela" => {
@@ -3063,7 +3063,7 @@ pub fn limpar() {
             "dele, citando-o como motivo. O unico teste que tocava o campo "
             "conferia o `Config` em memoria, nao o motor."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_nucleo_01.rs",
         "trecho": """        phxsql_store::ndx::definir_cache_paginas(config.recursos.cache_paginas);
 """,
         "troca": """        // DEFEITO REPOSTO: a armadilha do cache_paginas, de volta.
@@ -3336,7 +3336,7 @@ pub fn limpar() {
             "na mao. O prazo de parede e o unico dos tres tetos que limita a "
             "trava."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_sql_01.rs",
         "trecho": """            let mut ctx = Contexto::de_gatilho(nova_json.take(), gravavel, velha_json.clone())
                 .com_prazo(PRAZO_DO_GATILHO_ANTES);
 """,
@@ -3758,7 +3758,7 @@ pub fn limpar() {
                   "tabela, em vez de atende-la calada. Trilha que perde registro em "
                   "silencio e pior que trilha nenhuma: ela PARECE completa, e quem "
                   "audita seis meses depois conclui que ninguem leu aquela ficha.",
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_nucleo_01.rs",
         "trecho": "        if (self.espelho() && !t.tem_espelho()) || t.tem_dado_pessoal() {",
         "troca": "        // DEFEITO REPOSTO: a pista de leitura aceita a tabela com\n"
                  "        // coluna marcada, e o registro de acesso nunca e gravado.\n"
@@ -3783,7 +3783,7 @@ pub fn limpar() {
                   "e criar arquivo e escrever. E a segunda das duas escritas que moram "
                   "fora do construtor, e a que some sem ninguem perceber: a tabela "
                   "continua respondendo, so fica sem a copia que o `reparar` usa.",
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_nucleo_01.rs",
         "trecho": "        if (self.espelho() && !t.tem_espelho()) || t.tem_dado_pessoal() {",
         "troca": "        // DEFEITO REPOSTO: a pista de leitura aceita a tabela que\n"
                  "        // ainda precisa ser espelhada, e o `.bkp` nunca nasce.\n"
@@ -3807,7 +3807,7 @@ pub fn limpar() {
                   "o comportamento visto de fora nao mudar para tabela nenhuma -- e sem "
                   "ele, toda tabela nascida antes do `.trash` para de responder ao "
                   "`varrer`.",
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_nucleo_01.rs",
         "trecho": "        let Aberta::Pronta(mut t) = raiz.abrir_para_ler(database, tabela)? else {\n"
                   "            return Ok(None);\n"
                   "        };",
@@ -4020,7 +4020,7 @@ pub fn limpar() {
         # volta para o `faltaram`. O `None::<usize>.map(...)` sobrevive de
         # proposito -- ele engole sem que o compilador reclame de braco
         # inalcancavel, e mantem visivel que o `i` existia e foi jogado fora.
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_marca_01.rs",
         "trecho": """                    .filter_map(|(i, f)| match f.join() {
                         Ok(Ok(())) => None,
                         Ok(Err(e)) => Some((i, Some(e))),
@@ -4057,7 +4057,7 @@ pub fn limpar() {
             "do laco e passariam -- foi assim que o pedido 186 escapou de um "
             "teste."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_marca_01.rs",
         "trecho": """                let fios: Vec<_> = abertas
                     .iter_mut()
                     .map(|t| escopo.spawn(move || t.sincronizar()))
@@ -4238,7 +4238,7 @@ pub fn limpar() {
             "mesmos definem a raiz -- e o perfil.txt de um servidor de verdade "
             "volta a gravar em claro, calado."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_telemetria_01.rs",
         "trecho": TRECHO_RAIZ_NO_LIGAR,
         "troca": TROCA_RAIZ_NO_LIGAR,
         "pacote": "phxsql-server",
@@ -4290,7 +4290,7 @@ pub fn limpar() {
             "que nao tem portao de tabela nenhum. A guarda le o FONTE e exige "
             "que o argumento comece com aspas."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_backup_01.rs",
         "trecho": TRECHO_FASE_FIXA,
         "troca": TROCA_FASE_FIXA,
         "pacote": "phxsql-server",
@@ -4821,7 +4821,7 @@ pub fn limpar() {
         "porque": (
             "Achado A1 da revisao do motor (09/09/2026, p01_upsert_direito_coluna.py): `escrita_sob_direito_por_coluna` so repunha o gravado quando `op == \"atualizar\"`, e o upsert grava a linha inteira pelo MESMO `Table::atualizar` com `op == \"inserir\"`. O defeito que motivou o direito por coluna, de volta pela porta do `se_existir`. Repor o defeito e a regra deixar de enxergar o upsert como um atualizar."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_permissao_01.rs",
         "trecho": """        let upsert = op == "inserir"
             && crate::upsert::SeExistir::de_texto(pedido.texto_ou("se_existir", ""))
                 .ok()
@@ -4851,7 +4851,7 @@ pub fn limpar() {
         "porque": (
             "Acrescimo do orquestrador a revisao do motor (09/09/2026), provado na tela: um usuario com QUALQUER regra de coluna nao conseguia incluir nem salvar pela ficha, mesmo mexendo so no permitido. «Protecao que quebra todo cliente nao e protecao, e estrago» (CLAUDE.md). Decisao do dono: a coluna que nao se altera e MANTIDA, nunca recusada, e a resposta diz em `colunas_mantidas`. Repor o defeito e voltar a recusar quando a coluna esta presente."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_permissao_01.rs",
         "trecho": """                    Some(v) => {
                         if direito.alterar {
                             continue;
@@ -4894,7 +4894,7 @@ pub fn limpar() {
         "porque": (
             "Achado A2 da revisao do motor (09/09/2026, p02_sql_on_conflict_set.py): o tradutor punha o SET em `atualizar`, `op_inserir` nunca o lia. Campo de protocolo sem leitor e primo do `recursos.cache_paginas` -- «configuracao que nao e lida mente». Repor o defeito e o `op_inserir` voltar a chamar o upsert sem o SET."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_escrita_01.rs",
         # ATUALIZADO em 24/09/2026 (pedido 492): a chamada ganhou o
         # `herda_marca` e passou a quebrar linha; o ponto de reposicao e o
         # mesmo argumento. E de novo no mesmo dia (pedido 540): ganhou o
@@ -4942,7 +4942,7 @@ pub fn limpar() {
         "porque": (
             "Achado A3 da revisao do motor (09/09/2026, p03_indice_parcial_oraculo.py): `colunas_do_indice` lia so `indices[].colunas[].coluna`; o `onde` do indice saia no `esquema` e ninguem olhava. Repor o defeito e voltar a ignorar o filtro."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_permissao_01.rs",
         "trecho": """            if let Some(onde) = i.campo("onde").and_then(Json::texto) {
                 if !onde.trim().is_empty() {
                     let e = phxsql_core::expressao::Expressao::analisar(onde)?;
@@ -5005,7 +5005,7 @@ pub fn limpar() {
         "porque": (
             "Achado A8 da revisao do motor (09/09/2026, p04_agrupar_consultar_direito.py): o `varrer` do plano Simples saia peneirado e `projetar` punha `null` na coluna que a linha nao tinha -- certo cada um sozinho, mentira sobre o dado os dois juntos. O `consultar` (visao, juncao) ja recusava; este era o irmao. Repor o defeito e nao conferir a projecao contra o `colunas_sem_leitura` do esquema."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_sql_01.rs",
         "trecho": """        recusar_projecao_sobre_coluna_negada(&plano, &esquema, &base, &tabela)?;
 """,
         "troca": """        // DEFEITO REPOSTO: a projecao do plano Simples nao e conferida.
@@ -5030,7 +5030,7 @@ pub fn limpar() {
         "porque": (
             "Achado A14 da revisao do motor (09/09/2026, p04 e p11_consultar_contratos.py): o `filter_map` engolia a ausencia e o conjunto vazio virava «nenhum casa». `escalar` e `existe` ja resolviam o campo contra o modelo do sub-pedido; o `em` era o irmao. Repor o defeito e voltar a usar o nome cru sem resolver."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_consulta_01.rs",
         "trecho": """            let campo_real = resolver_ou_recusar(
                 &modelo_dentro,
                 &campo_alvo,
@@ -5167,7 +5167,7 @@ pub fn limpar() {
             "pula. A prova usa o laco de aceitacao DE PRODUCAO e um panico de "
             "verdade dentro da thread da conexao (`panicos_de_teste`)."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_rede_01.rs",
         "trecho": """                        move |fio| {
                             // A vaga mora na thread da conexao e morre com
                             // ela -- pelo fim do `atender` ou por um panico
@@ -5209,7 +5209,7 @@ pub fn limpar() {
             "nenhum. O teste do comportamento VELHO (abaixo do teto nada muda) "
             "tem de continuar passando -- guarda nova entra pedida, nao imposta."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_web_01.rs",
         "trecho": """                    let Some(vaga) = servidor.vaga_http() else {
                         servidor.recusar_http_cheio(&mut fluxo, par, familia, tls.is_none());
                         continue;
@@ -5274,7 +5274,7 @@ pub fn limpar() {
             "comparacao de inteiro ANTES de qualquer trabalho. Repor o "
             "defeito e comparar com um codigo que nunca chega."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_avisos_01.rs",
         "trecho": """        if acesso.codigo == CODIGO_DE_ES {
 """,
         "troca": """        // DEFEITO REPOSTO (pedido 249): o gancho compara com um codigo
@@ -5603,7 +5603,7 @@ pub fn limpar() {
             "linha: e marca que sobrevive a mais do que devia. O conserto e "
             "chamar a MESMA drenagem, na mesma ordem, sob a mesma trava."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_escrita_01.rs",
         # ATUALIZADO em 30/09/2026 (pedido 324): o `bulkinsert` passou a ter
         # UMA secao critica para reservar e soltar (o indice adiado precisa da
         # tabela aberta nos dois pontos), e o bloco proprio do soltar sumiu --
@@ -5654,7 +5654,7 @@ pub fn limpar() {
             "defeito reposto derruba OS DOIS testes, porque o "
             "`bulkinsert(false)` consertado passa por este mesmo fecho."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_marca_01.rs",
         "trecho": """        // fundo nao a alcancava porque ele tambem volta sem tabela suja.
         let mut faltaram = Vec::new();
 """,
@@ -5870,7 +5870,7 @@ pub fn limpar() {
 """,
             },
             {
-                "arquivo": "crates/phxsql-server/src/servidor.rs",
+                "arquivo": "crates/phxsql-server/src/servidor/servico_escrita_01.rs",
                 # ATUALIZADO em 24/09/2026 (pedido 540): a cascata que a
                 # recuperacao completou tambem nao roda AFTER; o ponto de
                 # reposicao e o mesmo `if`.
@@ -5895,7 +5895,7 @@ pub fn limpar() {
 """,
             },
             {
-                "arquivo": "crates/phxsql-server/src/servidor.rs",
+                "arquivo": "crates/phxsql-server/src/servidor/servico_transacao_01.rs",
                 # ATUALIZADO em 24/09/2026 (pedido 538): o OLD deixou de ser
                 # a `velha` do disco e passou a ser a `vista` da transacao; o
                 # ponto de reposicao e o mesmo bloco.
@@ -6621,7 +6621,7 @@ pub fn limpar() {
             "NAO cobre este caminho, e quem confiasse nele estaria coberto "
             "por um teste que nao passa por aqui."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_composicao_01.rs",
         "trecho": """        // O portao geral confere o campo `tabela` do pedido -- e uma junção
         // NAO TEM esse campo: as duas tabelas moram em `a.tabela` e
         // `b.tabela`. Sem esta conferencia, juntar seria a porta dos fundos
@@ -6675,7 +6675,7 @@ pub fn limpar() {
             "As duas arrumacoes compilam, e as duas passam em todo teste que "
             "nao seja este."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_composicao_01.rs",
         "trecho": """        // A conferencia vem DEPOIS de ler a lista, e nao antes, porque e a
         // lista que diz o que precisa ser conferido: o campo `tabela` que o
         // portao geral olha nao existe numa união. Cada tabela do pedido
@@ -6723,7 +6723,7 @@ pub fn limpar() {
             "troca estaria provando duas coisas ao mesmo tempo e nao "
             "provaria nenhuma."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_composicao_01.rs",
         "trecho": """        // A CONFERENCIA PROPRIA -- ver a nota do cabecalho.
         if let Some(u) = &sessao.usuario {
             for alvo in [&na, &nb] {
@@ -6779,7 +6779,7 @@ pub fn limpar() {
             "dele -- o que prova que a troca e cirurgica e que as duas "
             "familias de guarda sao mesmo independentes."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_permissao_01.rs",
         "trecho": """        self.politica_do_pedido(op, pedido)?;
         self.portoes_do_pedido(op, pedido, sessao)?;
 """,
@@ -8633,7 +8633,7 @@ pub fn limpar() {
             "incompleta e sempre menor que a real, e sem a bandeira ninguem sabia por que. "
             "`posicao_do_diario` passou a devolver `(total, incompleta)` em vez de so `u64`."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_cluster_01.rs",
         "trecho": """            let Ok(tabelas) = db.todas_as_tabelas() else {
                 incompleta = true;
                 continue;
@@ -8930,7 +8930,7 @@ pub fn limpar() {
             "indice, o valor da chave e as duas linhas, e a saida e humana "
             "(`replicacao_pular`). Por isso os testes que caem mudaram de nome."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_bidirecional_01.rs",
         "trecho": """        if let Err(PhxError::Duplicado(qual)) = &escrita {""",
         # O padrao nunca casa (`false` contra `true`), entao o bloco inteiro
         # fica inalcancavel e o `escrita?;` logo abaixo volta a subir o erro --
@@ -8977,7 +8977,7 @@ pub fn limpar() {
             "contadas do lado de ca subiram de 2 para 12 no mesmo intervalo, "
             "ou seja, uma linha de log por segundo para sempre."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_bidirecional_01.rs",
         "trecho": """        if self.esta_parada(&origem.nome, &chave_tab) {""",
         "troca": """        // DEFEITO REPOSTO: o portao sai, e a tabela parada volta a ser
         // puxada a cada rodada -- rede, trava e grito, sem nada mudar.
@@ -9048,7 +9048,7 @@ pub fn limpar() {
             "so um contador de chamadas no fonte -- e nao um teste de resultado "
             "-- consegue pega-lo."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_transacao_01.rs",
         # A ancora leva os tres comentarios junto porque a chamada sozinha
         # aparece DUAS vezes no arquivo (o irmao da cascata). Com o comentario,
         # ocorre uma so -- conferido antes de gravar.
@@ -9157,7 +9157,7 @@ pub fn limpar() {
             "pulso cobre a causa. Reposto o defeito, o forjado passa de novo, o "
             "repetido conta duas vezes e o TOFU para de morder."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_cluster_01.rs",
         # REANCORADO em 24/09/2026 (pedido 441): a chamada virou um `match`
         # sobre a recusa do motor, que agora traz o crivo da lista junto. O
         # defeito continua o de origem -- o motor nao e chamado --, e o
@@ -9765,7 +9765,7 @@ pub fn limpar() {
             "marca aplicando o resto no arranque. Medido pelo soquete, sem "
             "corrida nenhuma. Quem cede e a reescrita (D5 dos quatro motores)."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_esquema_01.rs",
         "trecho": """        if let Some(recado) = self.transacao_na_vizinhanca(&dados, &database, &tabela, &t)? {
             return Err(PhxError::EmTransacao(recado));
         }
@@ -9797,7 +9797,7 @@ pub fn limpar() {
             "trava, na mesma ordem do `op_migrar_esquema`. Conserto que "
             "entrasse so na migracao deixaria este com o defeito inteiro."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_esquema_01.rs",
         # ATUALIZADO em 30/09/2026 (pedido 422): o `marcar_lgpd` passou a
         # fazer a MESMA pergunta com o mesmo texto, e o trecho ficou ambiguo.
         # A linha do comentario de cima e so do `acrescentar_coluna`.
@@ -9836,7 +9836,7 @@ pub fn limpar() {
             "a outra. Com ela, a recusa vem antes da marca e a transacao "
             "continua ativa (o `SQLITE_BUSY` no COMMIT)."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_marca_01.rs",
         "trecho": """        let dir = trava.abrir_database(database)?.caminho().to_path_buf();
         if phxsql_store::congelamento::quantas() == 0 {
             return Ok(dir);
@@ -9869,7 +9869,7 @@ pub fn limpar() {
             "`empilhar` nao confere chave estrangeira, entao a filha de uma "
             "mae congelada entrava na lista e o problema so aparecia no COMMIT."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_transacao_01.rs",
         "trecho": """        if let Some(recado) = self.congelada_no_alcance(
             &trava,
             &database,
@@ -9906,7 +9906,7 @@ pub fn limpar() {
             "comentario acima dizia que rodava. Envolver nao e substituir. O "
             "conserto completa com a MESMA trava."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_marca_01.rs",
         # ATUALIZADO em 24/09/2026 (pedido 540): o braco mora no
         # `passada_sob_a_marca`, que recebe a trava emprestada e nao a solta
         # -- quem chama solta. O ponto de reposicao e a mesma chamada.
@@ -9977,7 +9977,7 @@ pub fn limpar() {
             "auditoria vazia, nenhum `gatilhos_avisos`. Calado no sucesso, "
             "barulhento so no erro. Trocar o estado para `Ativa` mediria zero."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_transacao_01.rs",
         "trecho": """        if estado == crate::transacao::Estado::Confirmando
             && (OPS_EMPILHAVEIS.contains(&op) || OPS_ESCRITA.contains(&op))
 """,
@@ -10010,7 +10010,7 @@ pub fn limpar() {
             "ramo, a recuperacao completaria por baixo e o cliente ouviria "
             "COMMITTED de uma transacao cuja escrita bateu numa tabela fechada."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_marca_01.rs",
         "trecho": """                if do_pedido && aplicadas == 0 && std::fs::remove_file(marca).is_ok() {
 """,
         "troca": """                // DEFEITO REPOSTO (426): sem o ramo do zero aplicado.
@@ -10038,7 +10038,7 @@ pub fn limpar() {
             "invalida; com ele, a marca sai, a resposta diz quantas ficaram e "
             "o arranque nao muda o passado."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_marca_01.rs",
         "trecho": """                if do_pedido && !de_acesso {
                     let _ = std::fs::remove_file(marca);
 """,
@@ -10414,7 +10414,7 @@ pub fn limpar() {
             "tambem. O conserto pergunta QUANDO a linha passa do teto de todos "
             "(`Canal::ler_decidindo`), e nao antes."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_rede_01.rs",
         "trecho": """            let lida = canal.ler_decidindo(&mut leitor, TETO_DO_APERTO, &mut || {
                 self.refrescar_a_sessao(&mut sessao);
                 teto = self.teto_da_linha(&sessao, cifrado);
@@ -10453,7 +10453,7 @@ pub fn limpar() {
             "continua recusada, porque o cadastro vazio e lido vivo. E isso que "
             "a lista `seguem` afirma, e e o que separa esta entrada da de cima."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_rede_01.rs",
         "trecho": """                self.refrescar_a_sessao(&mut sessao);
                 teto = self.teto_da_linha(&sessao, cifrado);
 """,
@@ -10484,7 +10484,7 @@ pub fn limpar() {
             "passa a vida ali. A entrada existe para que ninguem troque a "
             "leitura decidida por este atalho sem ver o vermelho."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_rede_01.rs",
         "trecho": """            let lida = canal.ler_decidindo(&mut leitor, TETO_DO_APERTO, &mut || {
                 self.refrescar_a_sessao(&mut sessao);
                 teto = self.teto_da_linha(&sessao, cifrado);
@@ -10525,7 +10525,7 @@ pub fn limpar() {
         ),
         "trocas": [
             {
-                "arquivo": "crates/phxsql-server/src/servidor.rs",
+                "arquivo": "crates/phxsql-server/src/servidor/servico_rede_01.rs",
                 "trecho": """        let mut canal = Canal::Claro;
         loop {
             // QUANTO ESTE LADO RESERVA ANTES DE SABER QUEM FALA -- pedido 434.
@@ -10538,7 +10538,7 @@ pub fn limpar() {
 """,
             },
             {
-                "arquivo": "crates/phxsql-server/src/servidor.rs",
+                "arquivo": "crates/phxsql-server/src/servidor/servico_rede_01.rs",
                 "trecho": """            let linha = match lida {
 """,
                 "troca": """            // DEFEITO REPOSTO (442, 2/2): atribuida, e nao declarada aqui.
@@ -11901,7 +11901,7 @@ pub const ITERACOES_MINIMAS_DO_CADASTRO: u32 = phxsql_store::cofre::ITERACOES_MI
             "uma frase melhor. A prova e um processo FILHO (o proprio binario de "
             "testes reexecutado), porque o que se prova e a queda do processo."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_marca_01.rs",
         "trecho": """                std::process::abort();
 """,
         "troca": """                // DEFEITO REPOSTO (451): o reparo que falha segue de pe.
@@ -11932,7 +11932,7 @@ pub const ITERACOES_MINIMAS_DO_CADASTRO: u32 = phxsql_store::cofre::ITERACOES_MI
             "transacao confirmada pela metade: medido, OUTRA conexao viu "
             "[1..5, 10] em vez de [1..5, 10, 11, 12]."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_marca_01.rs",
         "trecho": """        if let Some(em_voo) = marca_em_voo {
             let caminho = &em_voo.caminho;
 """,
@@ -11968,7 +11968,7 @@ pub const ITERACOES_MINIMAS_DO_CADASTRO: u32 = phxsql_store::cofre::ITERACOES_MI
             "bilhete. O conserto completa so a marca em voo desta tomada, em "
             "O(1); o defeito reposto e a varredura, pelo proprio `recuperar`."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_marca_01.rs",
         "trecho": """        if let Some(em_voo) = marca_em_voo {
             let caminho = &em_voo.caminho;
             #[cfg(test)]
@@ -12001,9 +12001,15 @@ pub const ITERACOES_MINIMAS_DO_CADASTRO: u32 = phxsql_store::cofre::ITERACOES_MI
             "servidor::testes_do_panico_sob_a_trava::o_reparo_completa_so_a_marca_em_voo",
             "servidor::testes_do_panico_sob_a_trava::panico_no_fecho_da_janela_nao_apaga_a_marca_de_quem_nao_foi_ao_disco",
         ],
+        # REMEDIDO em 08/10/2026: o `recuperar` inteiro hoje tambem reconstroi
+        # o `.ndx` rasgado, e o `panico_no_meio_do_inserir...` exige que o
+        # indice rasgado RECUSE ate o `reindexar` -- com a varredura reposta
+        # ele responde, e o teste cai (medido igual na arvore de antes da
+        # divisao). Depende do mesmo codigo, entao nao pode seguir; fica a
+        # cascata solta, que o reparo completa pela marca em voo.
         "seguem": [
             "servidor::testes_do_panico_sob_a_trava::panico_na_passada_do_commit_sai_com_a_transacao_inteira_na_hora",
-            "servidor::testes_do_panico_sob_a_trava::panico_no_meio_do_inserir_nao_fecha_a_base_e_nao_deixa_fantasma",
+            "servidor::testes_do_panico_sob_a_trava::panico_no_meio_da_cascata_fora_da_transacao_sai_com_a_cascata_inteira",
         ],
         "prazo": 600,
     },
@@ -12019,7 +12025,7 @@ pub const ITERACOES_MINIMAS_DO_CADASTRO: u32 = phxsql_store::cofre::ITERACOES_MI
             "errado e a copia residente, anotada DEPOIS do disco: medido, o "
             "`selecionar_memoria` devolveu 5 linhas com o `.reg` em 6."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_marca_01.rs",
         "trecho": """        let soltas = match self.residentes.lock() {
             Ok(mut m) => {
                 let n = m.len();
@@ -12060,7 +12066,7 @@ pub const ITERACOES_MINIMAS_DO_CADASTRO: u32 = phxsql_store::cofre::ITERACOES_MI
         ),
         "trocas": [
             {
-                "arquivo": "crates/phxsql-server/src/servidor.rs",
+                "arquivo": "crates/phxsql-server/src/servidor/servico_marca_01.rs",
                 "trecho": """            Ok(s) => s.iter().cloned().collect(),
 """,
                 "troca": """            // DEFEITO REPOSTO (451, A1): a lista sai DRENADA, antes do fsync.
@@ -12068,7 +12074,7 @@ pub const ITERACOES_MINIMAS_DO_CADASTRO: u32 = phxsql_store::cofre::ITERACOES_MI
 """,
             },
             {
-                "arquivo": "crates/phxsql-server/src/servidor.rs",
+                "arquivo": "crates/phxsql-server/src/servidor/servico_marca_01.rs",
                 "trecho": """        if !faltaram.is_empty() {
             // Alguma tabela nao sincronizou""",
                 "troca": """        if !faltaram.is_empty() {
@@ -12105,7 +12111,7 @@ pub const ITERACOES_MINIMAS_DO_CADASTRO: u32 = phxsql_store::cofre::ITERACOES_MI
             "processo de pe (defeito) -- o prazo de 2 s para o relogio de 150 ms "
             "caia sob a suite sem o panico ter acontecido."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_marca_01.rs",
         "trecho": """        if crate::telemetria::familia_desta_thread() == Some("servico") {
 """,
         "troca": """        // DEFEITO REPOSTO (451, A2): a thread de servico repara e segue.
@@ -12165,7 +12171,7 @@ pub const ITERACOES_MINIMAS_DO_CADASTRO: u32 = phxsql_store::cofre::ITERACOES_MI
             "impossivel e parada como o braco de erro do `COMMIT` trata "
             "«pendente», e cai (H5)."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_marca_01.rs",
         "trecho": """            if !r.impossiveis.is_empty()
                 || !r.paradas.is_empty()
 """,
@@ -12198,7 +12204,7 @@ pub const ITERACOES_MINIMAS_DO_CADASTRO: u32 = phxsql_store::cofre::ITERACOES_MI
             "marca que este processo gravou fica, e a falha vai para as "
             "impossiveis. O defeito reposto e a marca tratada como nao gravada."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_marca_01.rs",
         "trecho": """                caminho,
                 em_voo.gravada,
             );
@@ -12231,7 +12237,7 @@ pub const ITERACOES_MINIMAS_DO_CADASTRO: u32 = phxsql_store::cofre::ITERACOES_MI
             "processo fica de pe respondendo «1 panico e 0 reparos» -- a H1 de "
             "volta, por dentro do conserto."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_marca_01.rs",
         "trecho": """        match self.reparo_da_trava(dados, marca_em_voo) {
 """,
         "troca": """        // DEFEITO REPOSTO (451, M3): o panico do reparo engolido.
@@ -12267,7 +12273,7 @@ pub const ITERACOES_MINIMAS_DO_CADASTRO: u32 = phxsql_store::cofre::ITERACOES_MI
             "aviso. Fere o D2 do parecer do 426: a transacao confirmada e "
             "inteira ou nao e."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_transacao_01.rs",
         # ATUALIZADO em 24/09/2026 (pedido 537): a lista passa por
         # referencia MUTAVEL, porque a pre-conferencia refaz o elo do
         # `empilhar` sobre a linha atual; o ponto de reposicao e o mesmo `if`.
@@ -12403,20 +12409,37 @@ pub const ITERACOES_MINIMAS_DO_CADASTRO: u32 = phxsql_store::cofre::ITERACOES_MI
             "mesmo com o plano vazio. O planejador passou a ser UM, o da "
             "pre-conferencia: os elos entram na lista antes da marca."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_transacao_01.rs",
         "trecho": """        let escritas = if pre_conferir {
             costurar_os_elos(escritas, elos)
         } else {
             escritas
         };
 """,
+        # REMEDIDO em 08/10/2026: desde o pedido 516 o `empilhar` ja poe os
+        # elos na lista e marca a mae `cascata_na_lista`, entao so pular a
+        # costura nao repunha mais o A1 quando a filha esta na lista -- o
+        # `a1_a_filha...` passava com o «defeito». O A1 e a passada que
+        # REPLANEJA, e quem diz «nao replaneje» e o `cascata_na_lista`: a troca
+        # o apaga. Medido tambem antes da divisao do `servidor.rs` (arvore do
+        # HEAD): o mesmo verde com a troca velha, nao foi a divisao.
+        # O `a_ordem_certa...` saiu do `seguem`: e o proprio cenario do A1
+        # (pedido na lista, mae muda de chave) e cai com o defeito de verdade;
+        # o vizinho que fica e o ACID-C, a cascata da transacao que nao passa
+        # por aqui.
         "troca": """        // DEFEITO REPOSTO (448-A1): a lista vai para a marca sem os elos, e a
         // passada volta a planejar a cascata por conta propria.
-        let escritas = if false && pre_conferir {
+        let escritas: Vec<crate::transacao::Escrita> = if false && pre_conferir {
             costurar_os_elos(escritas, elos)
         } else {
             let _ = elos;
             escritas
+                .into_iter()
+                .map(|mut e| {
+                    e.cascata_na_lista = false;
+                    e
+                })
+                .collect()
         };
 """,
         "pacote": "phxsql-server",
@@ -12426,7 +12449,7 @@ pub const ITERACOES_MINIMAS_DO_CADASTRO: u32 = phxsql_store::cofre::ITERACOES_MI
             "servidor::testes_transacoes::revisao_do_dba_448::a1_a_filha_da_propria_lista_acompanha_a_chave_nova_da_mae",
         ],
         "seguem": [
-            "servidor::testes_transacoes::pre_conferencia_448::a_ordem_certa_continua_committed_e_inteira",
+            "servidor::testes_transacoes::acidc_a_cascata_entra_no_conjunto_de_escrita_da_transacao",
             "servidor::testes_transacoes::p0_pai_empilhado_e_visivel_a_fk_da_filha_no_mesmo_commit",
         ],
     },
@@ -12708,7 +12731,7 @@ pub const ITERACOES_MINIMAS_DO_CADASTRO: u32 = phxsql_store::cofre::ITERACOES_MI
             "do arranque. Medido com o defeito: o filho segue de pe e o "
             "`inserir` na tabela vizinha responde com a recusa depois de gravar."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_nucleo_01.rs",
         "trecho": """        phxsql_store::sincronia::ao_recusar(fsync_recusado_derruba_o_processo);
 """,
         "troca": """        // DEFEITO REPOSTO (509): o processo nao cai na recusa.
@@ -13252,7 +13275,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "o texto como veio -- senha em resposta do protocolo. O eco passa "
             "pelo mesmo motor do Profiler (`sem_a_senha_se_mencionada`)."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_sql_01.rs",
         "trecho": """        phxsql_sql::usuario::sem_a_senha_se_mencionada(texto).unwrap_or_else(|| texto.to_string()),
 """,
         "troca": """        // DEFEITO REPOSTO (497, 3a volta): o eco cru.
@@ -13299,7 +13322,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "passam a agenda e a tela. Desligar nao seguraria: o `job_ligar` "
             "vira a chave sem reler o pedido."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_jobs_01.rs",
         "trecho": """        if let Some(e) = job.recusa_de_credencial() {
             return Err(e);
         }
@@ -13483,7 +13506,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "a menos. O teste de channel binding segue verde com o defeito: "
             "ele so pergunta a quem existe."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_rede_01.rs",
         "trecho": """            let confere = phxsql_core::desafio::conferir_prova(
                 &dk,
                 &nonce,
@@ -13526,7 +13549,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "quem mandou nao sabe o que corrigir. Medido pela porta web depois "
             "do conserto: 1 MB recusado em 279 ms, 70 KB em 20 ms."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_rede_01.rs",
         "trecho": """            phxsql_core::senha::caber_no_teto(&clara)?;
 """,
         "troca": """            // DEFEITO REPOSTO (521): o login nao confere o teto.
@@ -13633,7 +13656,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "que ninguem ia rodar. Medido com a troca: o `relogio_no_ar` seguiu "
             "verdadeiro 3 s depois da morte da thread."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_avisos_01.rs",
         "trecho": """        self.0.relogio_de_jobs.store(false, Ordering::SeqCst);
 """,
         "troca": """        // DEFEITO REPOSTO (irmao do 452): a marca nunca sai.
@@ -13654,7 +13677,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "retrato da telemetria dizia `amostrador: true` de uma thread "
             "morta. Medido com a troca: a marca seguiu verdadeira 3 s depois."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_avisos_01.rs",
         "trecho": """        self.0.desmarcar_amostrador();
 """,
         "troca": """        // DEFEITO REPOSTO (irmao do 452): a marca nunca sai.
@@ -13676,7 +13699,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "job de novo no arranque. Medido com a troca: SIGABRT na primeira "
             "volta do relogio."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_jobs_01.rs",
         "trecho": """        let resultado = self.executar_job_na_filha(&job, &op, inicio);
 """,
         "troca": """        // DEFEITO REPOSTO (502): a corrida na thread de servico.
@@ -13698,7 +13721,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "`backup-agendado` ia ao piso e abortava. Medido com a troca: "
             "SIGABRT na primeira volta."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_backup_01.rs",
         "trecho": """        let corrida = self.telemetria.rodar_em_filha(
             "backup-corrida",
             "executa UMA corrida do backup agendado e morre: o panico dela volta \\
@@ -13733,7 +13756,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "MariaDB gravam o `LAST_EXECUTED` antes de executar. Medido com a "
             "troca: LACO DE QUEDAS, SIGABRT no segundo arranque."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_nucleo_01.rs",
         "trecho": """        let interrompidas = jobs.fechar_interrompidas(crate::agora_ms());
 """,
         "troca": """        // DEFEITO REPOSTO (502): a lapide fica sem leitor.
@@ -13755,7 +13778,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "backup comeca em `ultimo = 0` e vence na partida. Medido com a "
             "troca: LACO DE QUEDAS, SIGABRT no segundo arranque."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_backup_01.rs",
         "trecho": """                let mut ultimo = servidor.lapide_do_backup_no_arranque();
 """,
         "troca": """                // DEFEITO REPOSTO (502): o backup comeca do zero.
@@ -13801,7 +13824,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "DBA, 0 copias na partida e a proxima so depois da data da lapide. "
             "Medido com a troca: o arranque devolve a hora de daqui a um ano."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_backup_01.rs",
         "trecho": """        quando.min(agora)
     }
 """,
@@ -13825,7 +13848,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "vale para qualquer queda no meio de um job. Medido com a troca: "
             "nenhum e-mail em 10 s."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_jobs_01.rs",
         "trecho": """        self.avisar_corridas_interrompidas();
 """,
         "troca": """        // DEFEITO REPOSTO (C2 do 502): a interrompida fica calada.
@@ -13846,7 +13869,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "restaurar. Medido com a troca, e a falha e do sistema (ENOTDIR): "
             "nenhum e-mail em 10 s."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_backup_01.rs",
         "trecho": """                self.avisar_backup_que_falhou(agora, &e.to_string());
 """,
         "troca": """                // DEFEITO REPOSTO (510): so o erro padrao.
@@ -13868,7 +13891,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "por causa de uma ligacao remota. Medido com a troca: SAIU (exit "
             "1) nos quatro cadastros tortos."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_nucleo_01.rs",
         "trecho": """        let dblink =
             crate::dblink::Registro::abrir_ou_trancar(&config.dblink, &config.cifra_do_dblink);
 """,
@@ -13918,7 +13941,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "o irmao do pedido 466: o `jobs.json` era aberto logo depois do "
             "`dblink.json`, pelo mesmo `?`. Medido com a troca: SAIU (exit 1)."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_nucleo_01.rs",
         "trecho": """        let mut jobs = crate::jobs::Registro::abrir_ou_trancar(&config.jobs);
 """,
         "troca": """        // DEFEITO REPOSTO (irmao do 466): o acessorio derruba o motor.
@@ -14004,7 +14027,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "coluna -- certo para nome, tipo e indice, errado para a "
             "CONTAGEM de linhas por balde, que e agregado do dado."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_permissao_01.rs",
         # Pedido 543: a peneira do 369 virou a do oraculo do rowid inteiro
         # (contagem, `existe`, `slots`, `volumes`, `arquivos`), e por isso o
         # teste do 543 cai junto quando ela some do `esquema`.
@@ -14577,7 +14600,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "`[excluir suave M, atualizar M.nome]` confirmava com M viva. A "
             "linha nascida na propria transacao nao herdava marca nenhuma."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_transacao_01.rs",
         "trecho": """                if let Some(atual) = vista.as_deref() {
 """,
         "troca": """                // DEFEITO REPOSTO (492): a marca herdada do DISCO.
@@ -14602,7 +14625,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "no `upsert::aplicar`, e `json_para_linha` preenche `false`. "
             "Medido: `[excluir suave M, upsert M]` solto terminava com M viva."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_escrita_01.rs",
         "trecho": """                let herda_marca = crate::valores::herda_a_marca(&valores_json, t.esquema());
 """,
         "troca": """                // DEFEITO REPOSTO (492, irmao): o upsert solto nao herda a marca.
@@ -14625,7 +14648,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "marca de excluida que a lista tinha posto se perdia com o resto "
             "do que ela ja tinha escrito na linha. Medido: `Fabi II` viva."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_transacao_01.rs",
         "trecho": """                                linha = crate::upsert::mesclar(&vista, set, t.esquema())?;
 """,
         "troca": """                                // DEFEITO REPOSTO (492): o SET mescla sobre o disco.
@@ -14650,7 +14673,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "ressuscitava a filha. A pre-conferencia tinha o plano certo e o "
             "descartava como «adiante»."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_nucleo_01.rs",
         "trecho": """        t.planejar_cascata_da_alteracao(antes, crua, Some(&prefixo))
 """,
         "troca": """        // DEFEITO REPOSTO (515): o plano do empilhar so ve o disco.
@@ -14676,7 +14699,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "ate o processo cair, e o arranque reaplica `Atualizar` velho por "
             "cima de dado novo. Medido antes do conserto: sujas `b/a`, `b/b`."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_marca_01.rs",
         "trecho": """        if sujas.remove(&format!("{database}/{tabela}")) {
 """,
         "troca": """        if false && sujas.remove(&format!("{database}/{tabela}")) {
@@ -14905,7 +14928,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "pedido 528, frente do 520 e SEC: `HMAC(token, login)`, 6 de 6 "
             "logins classificados, um pedido cada."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_rede_01.rs",
         "trecho": """        let falso = phxsql_core::hash::hmac_sha256(&self.segredo_do_desafio, login.as_bytes());
 """,
         "troca": """        let falso = phxsql_core::hash::hmac_sha256(self.config.token.as_bytes(), login.as_bytes());
@@ -14975,7 +14998,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "avisar. Medido antes: a fila do carteiro da saude do disco saia "
             "vazia com o indice reconstruido."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_nucleo_01.rs",
         "trecho": """        ) {
             saude.entregar(evento);
         }
@@ -15049,7 +15072,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "pergunta pelo fim da tabela; o upsert solto na linha que T1 segura "
             "respondia OK, e o COMMIT de T1 o apagava -- update perdido."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_escrita_01.rs",
         "trecho": """            std::iter::once((p.texto_ou("tabela", "").trim(), rowid)),
 """,
         "troca": """            std::iter::once((p.texto_ou("tabela", "").trim(), rowid)).take(0),
@@ -15071,7 +15094,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "solta nao esta no pedido, e o portao nao a via; o COMMIT de T1 "
             "recusava por `fk_vend` ou apontava a filha para a mae errada."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_escrita_01.rs",
         "trecho": """            plano.iter().map(|e| (e.tabela.as_str(), e.rowid)),
 """,
         "troca": """            plano.iter().map(|e| (e.tabela.as_str(), e.rowid)).take(0),
@@ -15094,7 +15117,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "`ParouNoMeio` com a mae em 6 e as filhas em 5 -- duas orfas. "
             "Fere a regra primordial da integridade."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_escrita_01.rs",
         "trecho": """        let elos = conferida.map_err(|recusa| {
 """,
         "troca": """        // DEFEITO REPOSTO (567): a recusa da pre-conferencia e ignorada.
@@ -15118,7 +15141,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "`leitura_repetivel` le 5. O COMMIT de T1 levava o elo implicito "
             "por cima da trava compartilhada de T3, que relia 6."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_marca_01.rs",
         # ATUALIZADO em 30/09/2026 (pedido 567): a trava dos elos saiu da
         # pre-conferencia para o `travar_os_elos`, que so o COMMIT passa.
         "trecho": """        for elo in elos {
@@ -15174,7 +15197,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "estourado). Devolver a lista como a recusa comum devolve manteria "
             "o ciclo que o desempate existe para quebrar."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_transacao_01.rs",
         "trecho": """                    let _ = self.abortar_soltando(sessao.ligacao, |_| m.clone());
 """,
         "troca": """                    // DEFEITO REPOSTO (516, C1): quem cede volta com as travas.
@@ -15201,7 +15224,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "T1» e cedia, e T1 confirmava logo depois sem precisar de nada de "
             "T2 -- aborto sem ciclo."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_transacao_01.rs",
         "trecho": """            // desta a refaz, se ainda for barrado.
             tx.commit_barrado_por = None;
 """,
@@ -15480,7 +15503,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "fundo com o defeito de pe, e rodar o binario inteiro reposto "
             "empilharia threads ate o limite da maquina."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_jobs_01.rs",
         "trecho": """        if crate::telemetria::familia_desta_thread() == Some("corrida") {
             return Err(PhxError::LimiteExcedido(
 """,
@@ -16762,7 +16785,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "desfecho dependia de uma TERCEIRA conexao. E sem ele o desempate "
             "do 516 nao tem teto."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_transacao_01.rs",
         "trecho": """            if tx.expira_ms <= crate::agora_ms() {
                 None
 """,
@@ -16790,7 +16813,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "`linha_na_transacao` do 492 -- um motor so para «a linha que "
             "esta transacao ve»."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_transacao_01.rs",
         "trecho": """                        vista_da_alteracao.as_deref(),
 """,
         "troca": """                        // DEFEITO REPOSTO (538): o OLD e o do disco.
@@ -16814,7 +16837,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "`[qtd 1->3, upsert SET qtd=0]` dava delta -1 (0 - o 1 do disco) "
             "onde e -3 (0 - o 3 que a lista ja escreveu)."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_transacao_01.rs",
         "trecho": """                                    Some(&mut linha),
                                     Some(&vista),
 """,
@@ -16841,7 +16864,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "dizia 5), e a linha nascida na propria transacao saia sem gatilho "
             "nenhum, porque pelo disco ela nao existe."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_transacao_01.rs",
         "trecho": """                    let vista =
                         self.linha_na_transacao(&mut t, &database, &tabela, rowid, sessao)?;
 """,
@@ -16867,7 +16890,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "tabela filha e o FIM dela, e o comentario da fase 3 dizia que o "
             "retrato nao mudava mais."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_transacao_01.rs",
         "trecho": """                self.travar_para_empilhar(sessao, &chave_filha, *rowid)?;
 """,
         "troca": """                // DEFEITO REPOSTO (537): a linha da filha fica livre.
@@ -16894,7 +16917,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "o COMMIT recusava pela `fk_vend`. O elo se refaz sobre a linha "
             "atual, levando so a chave."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_marca_01.rs",
         "trecho": """            if e.elo_do_empilhar {
 """,
         "troca": """            // DEFEITO REPOSTO (537): o elo vai como o empilhar o viu.
@@ -16921,7 +16944,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "indice marcado com a orfa dentro. Agora ela e uma transacao de uma "
             "instrucao: a marca vai antes, pela passada do COMMIT."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_escrita_01.rs",
         "trecho": """        if plano.is_empty() {
             // O mesmo plano que o `atualizar` refaria por dentro, e ele saiu
             // vazio: refaze-lo repetiria a varredura das irmas.
@@ -16974,7 +16997,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "VOO do servidor, e a do store fica para a abertura seguinte -- "
             "filha na chave velha servida enquanto isso."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_escrita_01.rs",
         "trecho": """        if plano.is_empty() {
             // O mesmo plano que o `atualizar` refaria por dentro, e ele saiu
             // vazio: refaze-lo repetiria a varredura das irmas.
@@ -17041,7 +17064,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "passava -- 5 de 5 na sonda do DBA e 5 de 5 no teste. O `t` desce "
             "ao nucleo, sem `fsync`, antes da marca."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_escrita_01.rs",
         "trecho": """        t.descer_ao_nucleo()?;
         let aviso = self.atualizar_com_a_marca(
 """,
@@ -17123,7 +17146,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "meio do COMMIT -- travas ja soltas -- voltava ativa com a lista, "
             "para um COMMIT seguinte gravar sem trava nenhuma."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_marca_01.rs",
         "trecho": """            if tx.estado == crate::transacao::Estado::Confirmando {
                 tx.escritas = escritas;
 """,
@@ -17332,7 +17355,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "cria nao alerta, e a mesma base afrouxada para `644`/`755` alerta "
             "UMA vez e continua `644`."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_nucleo_01.rs",
         "trecho": """        if let Some(aviso) = phxsql_store::permissao::permissao_larga(&config.base) {
             eprintln!("AVISO: {aviso}");
         }
@@ -17586,7 +17609,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "volta aos outros recusando toda busca -- medido: a primeira "
             "`buscar` depois de soltar cai com EM_CARGA."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_escrita_01.rs",
         "trecho": """            t.reindexar()?;
             Some(inicio.elapsed().as_millis() as u64)
 """,
@@ -17631,7 +17654,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "`bulkinsert(false)`. O fecho da janela e o irmao que alcanca os "
             "outros dois; sem ele, a busca do vizinho recusa ate reiniciar."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_marca_01.rs",
         "trecho": """                    Ok(mut t) if t.indice_suspenso() && !self.reservada(db, tab) => {
 """,
         "troca": """                    Ok(mut t) if false && t.indice_suspenso() && !self.reservada(db, tab) => {
@@ -17745,7 +17768,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "disco cheio ele nao mente, e quem nao sobe deixa a linha sem "
             "evento ate alguem reiniciar a maquina."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_marca_01.rs",
         "trecho": """    if queda == phxsql_store::sincronia::Queda::DiarioSemEvento {
 """,
         "troca": """    // DEFEITO REPOSTO (498): toda queda vira a do 509.
@@ -18070,7 +18093,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "cascata dava auditoria diferente com e sem BEGIN. A decisao mora "
             "na passada (`aplicar_conjunto`), um lugar so para os dois."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_marca_01.rs",
         "trecho": """            let dispara = ha_gatilhos && !e.elo_da_cascata;
 """,
         "troca": """            // DEFEITO REPOSTO (562): a passada junta o AFTER do elo.
@@ -18135,7 +18158,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         ),
         "trocas": [
             {
-                "arquivo": "crates/phxsql-server/src/servidor.rs",
+                "arquivo": "crates/phxsql-server/src/servidor/servico_dblink_01.rs",
                 "trecho": """        let mut buscadas = Vec::with_capacity(pedidos.len());
 """,
                 "troca": """        // DEFEITO REPOSTO (545, 1/3): a trava antes do fio do ligar.
@@ -18144,7 +18167,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
 """,
             },
             {
-                "arquivo": "crates/phxsql-server/src/servidor.rs",
+                "arquivo": "crates/phxsql-server/src/servidor/servico_dblink_01.rs",
                 "trecho": """        let dados = self.travar_dados()?;
         let mut ligadas = Vec::new();
 """,
@@ -18153,7 +18176,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
 """,
             },
             {
-                "arquivo": "crates/phxsql-server/src/servidor.rs",
+                "arquivo": "crates/phxsql-server/src/servidor/servico_dblink_01.rs",
                 "trecho": """            let teto = d.max_linhas;
 """,
                 "troca": """            // DEFEITO REPOSTO (545, 2/3): a trava antes do SELECT remoto.
@@ -18162,7 +18185,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
 """,
             },
             {
-                "arquivo": "crates/phxsql-server/src/servidor.rs",
+                "arquivo": "crates/phxsql-server/src/servidor/servico_dblink_01.rs",
                 "trecho": """            let mut dados = self.travar_dados()?;
             let db = dados.abrir_database(&sinc.local_database)?;
 """,
@@ -18170,7 +18193,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
 """,
             },
             {
-                "arquivo": "crates/phxsql-server/src/servidor.rs",
+                "arquivo": "crates/phxsql-server/src/servidor/servico_dblink_01.rs",
                 "trecho": """            drop(t);
             drop(dados);
 """,
@@ -18432,7 +18455,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "e o segundo intervalo sai ~1 s em vez de ~2 s. A falha unica e o "
             "eleito procurado em ate ~1 s seguem nos dois estados."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_cluster_01.rs",
         "trecho": """                    let master = no.id.clone();
                     self.apos_a_falha_vigiando(&origem.nome, &mut ritmo, falha, &|| {""",
         "troca": """                    let master = no.id.clone();
@@ -18582,7 +18605,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "porta. O `anunciar` monta a linha e a escreve de uma vez; o "
             "`strace -e write` do `phxsqld` ve a linha inteira num `write`."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_rede_01.rs",
         "trecho": """            anunciar(&format!("porta de dados escutando em {e}"));""",
         "troca": """            // DEFEITO REPOSTO (586): a linha sai em pedacos.
             eprintln!("porta de dados escutando em {e}");""",
@@ -19053,7 +19076,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "depois dele (o mapa e gravado inteiro, e outra origem o "
             "levaria ao disco)."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_bidirecional_01.rs",
         "trecho": """                        f.desde = juntador.consumido(i);
                         self.anotar_estado(&origem.nome, |est| {
 """,
@@ -19151,7 +19174,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "Na ordem certa a queda devolve, no maximo, a tabela sem os "
             "gatilhos de uma exclusao que o cliente nunca ouviu terminar."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_esquema_01.rs",
         "trecho": """        let gravou = rotinas.and_then(|()| self.gravar_rotinas(gatilhos_por_gravar));
         // O `fsync` da pasta vem mesmo se o cadastro falhou: os nomes ja
         // sairam do disco, e devolve-los numa queda e o defeito do 591.
@@ -19238,7 +19261,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "grava antes, devolve a falha e repoe o mapa. Reposto o defeito, a "
             "operacao responde Ok com o arquivo ausente."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_replicacao_02.rs",
         "trecho": """            if let Err(e) = bidirecional::gravar_posicoes(
                 &self.config.base.join("replicacao-posicoes.json"),
                 &pos,
@@ -19365,7 +19388,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "depois dele; cursor expurgado sai pela comparacao dos UUIDs e "
             "diz `cursor_achado: false`. O defeito reposto e o cursor ignorado."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_escrita_01.rs",
         "trecho": """        } else if let Some(c) = &cursor {
 """,
         "troca": """        // DEFEITO REPOSTO (487): o cursor e ignorado, so o `pular` pagina.
@@ -19508,7 +19531,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "cofre gravava 68 bytes de lixo; com a mesma senha parava com "
             "«a etiqueta nao confere»."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_replicacao_02.rs",
         # O trecho ganhou o `map_err` do pedido 603 (a recusa do evento pre-344
         # nomeia a posicao); o defeito reposto e o mesmo.
         "trecho": """            let imagem = t.imagem_para_o_fio(&imagem).map_err(|e| {
@@ -19540,7 +19563,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "do Profiler): literal vira `?`, comentario some, o que nao se "
             "analisa vira o tamanho em bytes."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_consulta_01.rs",
         "trecho": """                            if administra || autor {
                                 x.para_json()
                             } else {
@@ -19722,7 +19745,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "recusas do `cluster.rs` deixaria esta linha afogando o journal "
             "pelo mesmo caminho."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_cluster_01.rs",
         "trecho": """                    estado.diagnosticar_contido("este_no", &id, || {
                         format!(
                             "cluster: pulso com o id DESTE servidor ({id}) vindo de {:?} -- \\
@@ -19755,7 +19778,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "conexao (a amplificacao do 444). Para ganhar uma linha, mais de "
             "16 KiB."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_web_01.rs",
         "trecho": """            http::PedidoLido::GrandeDemais(m) => Some(m),
 """,
         "troca": """            // DEFEITO REPOSTO (445 B6): a recusa por tamanho sai calada.
@@ -20034,7 +20057,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "perdido) passam por `rebaixar_dizendo`, e a falha vira motivo de "
             "degradacao -- e, por ela, linha de log do laco do arbitro."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_cluster_01.rs",
         "trecho": """        estado.rebaixar(epoca).err().map(|e| {
 """,
         "troca": """        // DEFEITO REPOSTO (599): a falha de gravar o papel e engolida.
@@ -20156,7 +20179,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "balde mais alto. A pergunta e a mesma (`coluna_do_rowid_negada`); "
             "o defeito reposto e a resposta que nao e peneirada."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_permissao_01.rs",
         "trecho": """                Ok(if negada {
                     dc::peneirar_marca_dagua(r)
 """,
@@ -20273,7 +20296,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "copia parada 1,5 s: leitura de 1.358 ms com a troca, 1 ms com o "
             "conserto; a escrita espera 1,5 s nos dois."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_backup_01.rs",
         "trecho": """        let _retrato = self.retrato.tirar_retrato();
         let _trava = self.travar_dados_para_ler()?;
 """,
@@ -20301,7 +20324,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "leitura de 1.373 ms com a troca (escritor na fila), 1 ms com o "
             "portao."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_backup_01.rs",
         "trecho": """        let _retrato = self.retrato.tirar_retrato();
         let _trava = self.travar_dados_para_ler()?;
 """,
@@ -20328,7 +20351,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "e aplicado no `Servidor::novo`, antes da primeira tabela abrir. "
             "Configuracao que nao e lida mente."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_nucleo_01.rs",
         "trecho": """        phxsql_store::no::definir_inicio_da_sequencia(config.replicacao.inicio_da_sequencia);
 """,
         "troca": """        // DEFEITO REPOSTO (290): o campo do config nao chega ao motor.
@@ -20583,7 +20606,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "A conferencia vem ANTES da existencia, para a recusa nao "
             "distinguir a tabela que existe da que nao existe."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_transacao_01.rs",
         "trecho": """                if !pede.iter().any(|a| u.pode_em(database, nome, *a)) {
 """,
         "troca": """                // DEFEITO REPOSTO (607): o escopo nao confere direito.
@@ -20605,7 +20628,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "presa. O teto e o `recursos.transacao_prazo_min` do config.json "
             "(5 min de fabrica); pedir menos continua valendo."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_transacao_01.rs",
         "trecho": """            transacao_ms: duracao_ms(p, "timeout", teto_ms)?.min(teto_ms),
 """,
         "troca": """            // DEFEITO REPOSTO (607): o prazo que o cliente quiser.
@@ -20668,7 +20691,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         ),
         "trocas": [
             {
-                "arquivo": "crates/phxsql-server/src/servidor.rs",
+                "arquivo": "crates/phxsql-server/src/servidor/servico_dblink_01.rs",
                 "trecho": """            .conferir_que_nao_mudou(&d, "dblink_ligar")?;
 """,
                 "troca": """            // DEFEITO REPOSTO (609, 1/2): sem conferir antes do espelho.
@@ -20676,7 +20699,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
 """,
             },
             {
-                "arquivo": "crates/phxsql-server/src/servidor.rs",
+                "arquivo": "crates/phxsql-server/src/servidor/servico_dblink_01.rs",
                 "trecho": """        r.conferir_que_nao_mudou(&d, "dblink_ligar")?;
 """,
                 "troca": """        // DEFEITO REPOSTO (609, 2/2): grava a copia velha por cima.
@@ -20776,7 +20799,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "(`replicacao.numero_servidor`), como o `RepOriginId` do "
             "PostgreSQL e o `server_id` do MySQL e da MariaDB."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_cluster_01.rs",
         "trecho": """        novo |= bidirecional::conferir_numero(&mut copia, numero, id).map_err(PhxError::Esquema)?;
 """,
         "troca": """        // DEFEITO REPOSTO (329): so o par -- o numero do outro contra o MEU.
@@ -20919,7 +20942,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "ambiguidade nos `.log`. A conta e numa copia, e a memoria so "
             "recebe depois do `Ok` da troca duravel."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_cluster_01.rs",
         "trecho": """        if novo {
             // Raro: so na primeira vez de cada par.
             bidirecional::gravar_numeros(
@@ -21114,7 +21137,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "instante da copia com «Falta o cofre» e a linha de depois nao "
             "volta."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_backup_01.rs",
         "trecho": """                                td.reaplicar_evento_do_proprio_diario(e.operacao, e.rowid, &i)""",
         "troca": """                                // DEFEITO REPOSTO (613): a restauracao recusa como replica.
                                 td.aplicar_evento(e.operacao, e.rowid, &i)""",
@@ -21316,7 +21339,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "recusa tem de vir ANTES do primeiro evento -- inclusive insercao, "
             "que a conferencia do carimbo nunca pega."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_replicacao_02.rs",
         "trecho": """    let la = no.esquema.as_ref()?.linhagem();
 """,
         "troca": """    // DEFEITO REPOSTO (601): a replica nao confere a historia.
@@ -21340,7 +21363,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "carimbo 1 e `conferir_identidade` ve 1 == 1. Medido pelo soquete: "
             "sem a linhagem, `aplicados: 1` e a linha de A some."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_replicacao_02.rs",
         "trecho": """        let recusa_da_linhagem = match p.texto_ou("linhagem", "").trim() {
 """,
         "troca": """        // DEFEITO REPOSTO (601): o campo `linhagem` e ignorado.
@@ -21417,7 +21440,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "`b.tabela` reservada responde `ok` e devolve a linha da tabela em "
             "carga; o `diferencas` tambem."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_escrita_01.rs",
         "trecho": """        crate::direito_coluna::tabelas_do_pedido(op, pedido)
             .iter()
             .find_map(|t| cargas.barra(database, t, ligacao, agora))""",
@@ -21448,7 +21471,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "de servidor parado num diario de 1 M. Reposto, os 3.000 eventos do "
             "teste passam todos pela exclusiva."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_bidirecional_01.rs",
         "trecho": """        self.pre_absorver_sob_leitura(
             database,
             &no.nome,
@@ -21478,7 +21501,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "`inserir` que terminaram (o fim carrega o disco). Reposto, nao ha "
             "fatia: `sob_a_exclusiva` vira os 300.000 e ninguem entra entre fatias."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_bidirecional_01.rs",
         "trecho": """        self.pre_absorver_sob_leitura(
             database,
             &no.nome,
@@ -21505,7 +21528,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "a absorcao -- o floco do pedido 623. Reposto (sem o `ceder` entre "
             "as fatias), `fatias_que_furaram_a_fila` sai de zero."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_bidirecional_01.rs",
         "trecho": """            self.retrato.ceder(foto, TETO_DA_VEZ_CEDIDA);""",
         "troca": """            // DEFEITO REPOSTO (623): o leitor em laco nao cede a vez.
             let _ = TETO_DA_VEZ_CEDIDA;""",
@@ -21551,7 +21574,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "211.060 eventos sob a exclusiva e 3,3 s de escritor parado. Reposto, "
             "a fatia com o prazo vencido absorve zero em vez de um lote."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_bidirecional_01.rs",
         "trecho": """        while mapa.vistos < total {
             let lote = tabela.diario_com_imagem_ate(""",
         "troca": """        while mapa.vistos < total {
@@ -21603,7 +21626,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "rodada num diario de 1 M, contra 0,1 ms com a marca guardada no "
             "mapa (`--example custo-da-absorcao-do-bidi`)."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_bidirecional_01.rs",
         "trecho": """            mapa.marca = tabela.marca_do_diario();""",
         "troca": """            // DEFEITO REPOSTO (330): a marca nao fica guardada.
             let _ = tabela.marca_do_diario();""",
@@ -21612,8 +21635,14 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         "caem": [
             "servidor::testes_da_absorcao_do_bidi::a_rodada_seguinte_comeca_da_marca_guardada",
         ],
+        # REMEDIDO em 08/10/2026: desde o pedido 620 a marca guardada e tambem
+        # a ancora da «mesma vida» do mapa; sem ela a rodada seguinte recomeca
+        # o mapa e reabsorve tudo sob a EXCLUSIVA, entao o
+        # `a_primeira_rodada...` passou a cair com o defeito (medido igual na
+        # arvore de antes da divisao). O vizinho que fica e o da fatia: UMA
+        # chamada ao mesmo laco de lotes, sem rodada seguinte.
         "seguem": [
-            "servidor::testes_da_absorcao_do_bidi::a_primeira_rodada_absorve_o_grosso_fora_da_exclusiva",
+            "servidor::testes_da_absorcao_do_bidi::a_fatia_com_o_prazo_ja_vencido_ainda_absorve_um_lote",
         ],
         "prazo": 1800,
     },
@@ -21625,7 +21654,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "replicadas»; o codigo somava todo database do disco. Reposto, a "
             "replica que tem 5 eventos replicados e 8 locais publica 13."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_cluster_01.rs",
         "trecho": """            (crate::cluster::PapelVivo::Master, _) => {
                 EscopoDaPosicao::DoQueSeServe(usuario.as_ref())
             }""",
@@ -21653,7 +21682,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "cria -- e grita e conta. Reposto, o contador "
             "`ledger_marcado_recebido` fica em 0 com a cadeia marcada criada."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_replicacao_01.rs",
         "trecho": """                let (e_ledger, marcadas) = phxsql_store::ledger::recensear(e);""",
         "troca": """                // DEFEITO REPOSTO (424): a replica nao olha o que cria.
                 let (e_ledger, marcadas) = (false, Vec::<String>::new());""",
@@ -21696,7 +21725,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "linha sem filha. O exemplo do `MANUAL.txt` caia nisso. Reposto, "
             "a linha 7 (sem filha) nao sai."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_esquema_01.rs",
         "trecho": """        let criados = esquema.indices_que_as_chaves_pedem();""",
         "troca": """        // DEFEITO REPOSTO (175): a chave nasce sem o indice da filha.
         let criados: Vec<phxsql_core::schema::IndexDef> = Vec::new();""",
@@ -21718,7 +21747,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "dado -- o indice tem de nascer E ser montado do `.reg`. Reposto, "
             "a linha 7 (sem filha) nao sai."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_esquema_01.rs",
         "trecho": """        let novo_indice = t.esquema().indice_que_a_chave_pede(&fk_nova);""",
         "troca": """        // DEFEITO REPOSTO (175): a chave declarada nao cria o indice.
         let novo_indice: Option<phxsql_core::schema::IndexDef> = None;""",
@@ -21862,7 +21891,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "e somada ela punha o master 5 eventos a frente de toda replica por "
             "dado que nao viaja. Reposto, a posicao sai 13 em vez de 8."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_cluster_01.rs",
         "trecho": """                EscopoDaPosicao::DoQueSeServe(usuario.as_ref())""",
         "troca": """                // DEFEITO REPOSTO (300): o master soma o que nao serve.
                 EscopoDaPosicao::DoQueSeServe(None)""",
@@ -21908,7 +21937,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "pedido 300 §2.7, o caminho irmao: `inserir_replicado` tambem nao "
             "julga. Reposto, a replica fiel conta e o bidirecional publica zero."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_bidirecional_01.rs",
         "trecho": """        // conferencia que conta.
         tabela.contar_orfas();""",
         "troca": """        // conferencia que conta.
@@ -21931,7 +21960,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "recriada no source». Reposto, nada se conta e a recusa volta a "
             "culpar o source."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_nucleo_01.rs",
         "trecho": """        *m.entry(chave.clone()).or_default() += 1;""",
         "troca": """        // DEFEITO REPOSTO (300 (4)): a escrita local passa calada.
         let _ = &mut m;""",
@@ -22131,7 +22160,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "comporta TCP que fixa a ordem. Reposto, a chave 1 de B termina "
             "com o nome de A nos tres cenarios (menor, maior, restaurada)."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_bidirecional_01.rs",
         "trecho": """            if !mesma_vida {""",
         "troca": """            // DEFEITO REPOSTO (620): o mapa nunca recomeca.
             if !mesma_vida && false {""",
@@ -22155,7 +22184,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "a rodada de 1 s caia entre a escrita local e a do source. Reposto, "
             "a escrita local com o source parado sai culpando o source."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_replicacao_01.rs",
         "trecho": """                        self.por_que_nao_continua(&chave, no.eventos),""",
         "troca": """                        // DEFEITO REPOSTO (626): a frase fixa culpa o source.
                         String::from("a tabela foi apagada e recriada no source"),""",
@@ -22428,7 +22457,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "que o `varrer` devolve; o CHECK que cita `cpf` contaria as linhas por "
             "ele. Recusa na declaracao, pelo `direito_coluna::definicao_cita_negada`."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_permissao_01.rs",
         "trecho": """                        if let Some(citada) = dc::definicao_cita_negada(&c, &sem_ler) {
 """,
         "troca": """                        // DEFEITO REPOSTO (SEC A1): a definicao passa sem conferir.
@@ -22660,7 +22689,7 @@ pub const PRAZO_SOB_A_TRAVA: Duration = Duration::from_secs(3600);""",
             "a conta deixaria a escrita local por ele tomar o lugar do evento "
             "do source sem ninguem nomear a causa."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_permissao_01.rs",
         "trecho": """        // nula. Ver `aplicar_direito_por_coluna`.
         self.executar_e_contar_escrita_local(op, pedido, sessao)
 """,
@@ -22865,7 +22894,7 @@ pub const PRAZO_SOB_A_TRAVA: Duration = Duration::from_secs(3600);""",
             "quebra todo cliente antigo nao e protecao, e estrago -- e o "
             "teste que a trava e o do comportamento VELHO. Pedido 622."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_escrita_01.rs",
         "trecho": """    let esperada = p.inteiro_ou("versao", 0).max(0) as u64;
     if esperada == 0 {
         return Ok(());
@@ -22895,7 +22924,7 @@ pub const PRAZO_SOB_A_TRAVA: Duration = Duration::from_secs(3600);""",
             "exatamente a distracao que o comentario dela descreve: o `ler` "
             "ganhando o caminho rapido sem medir. Pedido 622."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_leitura_01.rs",
         "trecho": """        let com_versao = p.booleano_ou("com_versao", false);
         let _trava = self.travar_dados()?;
 """,
@@ -23109,7 +23138,7 @@ pub const PRAZO_SOB_A_TRAVA: Duration = Duration::from_secs(3600);""",
             "fica presa o prazo inteiro em todo commit enquanto a replica "
             "estiver fora -- o servidor inteiro parado, nao so a sessao."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_quorum_01.rs",
         "trecho": """        if cubo.modo() == crate::quorum::Modo::Degradado {""",
         "troca": """        // DEFEITO REPOSTO (207): esperar sempre, sem o degradado.
         if false {""",
@@ -23131,7 +23160,7 @@ pub const PRAZO_SOB_A_TRAVA: Duration = Duration::from_secs(3600);""",
         ),
         "trocas": [
             {
-                "arquivo": "crates/phxsql-server/src/servidor.rs",
+                "arquivo": "crates/phxsql-server/src/servidor/servico_quorum_01.rs",
                 "trecho": """            cubo.esperar(lotes, &esperar_por)
 """,
                 "troca": """            // DEFEITO REPOSTO (207 1/3): a espera adiada para depois da trava.
@@ -23188,7 +23217,7 @@ pub const PRAZO_SOB_A_TRAVA: Duration = Duration::from_secs(3600);""",
             "materializados no cubo do quorum. Com a trava no ack, o primeiro "
             "commit com quorum ja volta pelo prazo com alcancado:false."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_quorum_01.rs",
         # Trecho atualizado em 06/10/2026 (pedido 649): a ficha passou a ser
         # a da sessao do cluster, e nao a de qualquer sessao. Defeito igual.
         "trecho": """        let entrega = cubo.aguardar(&id, ficha, &confirmados, esperar);
@@ -23212,7 +23241,7 @@ pub const PRAZO_SOB_A_TRAVA: Duration = Duration::from_secs(3600);""",
             "da confirmacao, N copias em page cache somem juntas na queda de "
             "energia -- e o nome continua o mesmo."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_quorum_01.rs",
         "trecho": """                self.sincronizar_replicada_contando(database, &f.no.nome)?
 """,
         "troca": """                // DEFEITO REPOSTO (207): confirma sem o fsync.
@@ -23257,7 +23286,7 @@ pub const PRAZO_SOB_A_TRAVA: Duration = Duration::from_secs(3600);""",
             "fica ATRAS das replicas, e o rowid diverge (a guarda do rowid do "
             "`aplicar_evento`)."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_quorum_01.rs",
         "trecho": """        let ja = t.arquivos_sincronizados();
         t.sincronizar()?;
 """,
@@ -23477,7 +23506,7 @@ fn anotar(""",
             "isso que o aceite da bancada `bancada/backup/retrato-com-escritor.py` "
             "mede num banco de verdade."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_backup_01.rs",
         "trecho": """        let em_curso = phxsql_store::congelamento::comecar_retrato(&self.config.base)?;
         let pronto = fase_1()?;
         #[cfg(test)]
@@ -23516,7 +23545,7 @@ fn anotar(""",
             "depois da escrita com o copiado: sem a fase 2, o copiado e' o de "
             "antes da escrita."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_backup_01.rs",
         "trecho": """                    Pronto::Arvore(mut fase) => {
                         let acerto = phxsql_store::backup::acertar_fase_2(&mut fase, eventos)?;
                         (Pronto::Arvore(fase), Some(acerto))
@@ -23800,7 +23829,7 @@ fn anotar(""",
             "inteira e devolve o erro «veio ?» a todo cliente ODBC. So o "
             "teste que despacha o pedido pela op ve."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_sql_01.rs",
         "trecho": """phxsql_sql::rotina::comando_com(&texto, &parametros)?""",
         "troca": """phxsql_sql::rotina::comando_com(&texto, &[])?""",
         "pacote": "phxsql-server",
@@ -23841,7 +23870,7 @@ fn anotar(""",
             "`abrir_para_replicar` e o ponto unico do laco de pull E do lote "
             "do quorum, entao a adocao mora ali e nao em dois lugares."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_replicacao_01.rs",
         "trecho": """tabela.adotar_sequencia_do_source(no.proxima_sequencia)""",
         "troca": """tabela.adotar_sequencia_do_source(0)""",
         "pacote": "phxsql-server",
@@ -23864,7 +23893,7 @@ fn anotar(""",
             "chegaram. Sem o campo, a adocao recebe zero (`nao disse`) e a "
             "promocao volta a reemitir."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_telemetria_01.rs",
         "trecho": """if t.esquema().coluna_sequencia().is_some() && t.sequencia_atual() > 0 {""",
         "troca": """if false && t.esquema().coluna_sequencia().is_some() && t.sequencia_atual() > 0 {""",
         "pacote": "phxsql-server",
@@ -24086,7 +24115,7 @@ fn anotar(""",
             "`executar_derivado` abre a porta dos fundos -- o pedido 'op' "
             "continua recusado, e o teste do op sozinho passa."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_sql_01.rs",
         "trecho": """                self.executar_derivado(&c.op, &pedido, sessao)?
             } else {
                 self.executar(&c.op, &pedido, sessao)?""",
@@ -24108,7 +24137,7 @@ fn anotar(""",
             "congelamento barra o commit no meio e a recuperacao do "
             "arranque e quem acha o estrago."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_escrita_01.rs",
         "trecho": """            return Err(PhxError::Esquema(self.recusa_da_migracao(&r, t.nome())));
         }
         if let Some(recado) = self.transacao_na_vizinhanca(
@@ -24138,7 +24167,7 @@ fn anotar(""",
             "localmente» onde o teste esperava «escrita LOCAL». O gancho de "
             "teste abre a janela de proposito e a torna deterministica."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_permissao_01.rs",
         "trecho": """        let contada = if grava_dado_replicado(op) {
             self.anotar_escrita_local(pedido)
         } else {
@@ -24180,7 +24209,7 @@ fn anotar(""",
             "que nunca sai -- configuracao que nao e lida mente. O erro de E/S "
             "pelo soquete precisa chegar ao script, com o e-mail desligado."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_avisos_01.rs",
         "trecho": """        self.avisar_pelo_gancho(fio, &evento);
 """,
         "troca": """        // DEFEITO REPOSTO (pedido 249): o gancho nunca e chamado.
@@ -24207,7 +24236,7 @@ fn anotar(""",
             "de montar texto ou chamar `executar`, e e a unica copia dessa "
             "decisao (a lei da casa: decisao escrita duas vezes envelhece)."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_avisos_01.rs",
         "trecho": """        if !g.ligado {
             return;
         }
@@ -24625,7 +24654,7 @@ fn anotar(""",
         "porque": (
             "database e tabela chegam do pedido de um usuario: ESC, NUL, DEL e os C1 atravessavam para o terminal do operador e para um eval descuidado do script dele. O ajudante unico troca todo controle por espaco."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_telemetria_01.rs",
         "trecho": """        crate::gancho::linha_limpa(&linha, 160)
 """,
         "troca": """        // DEFEITO REPOSTO (pedido 643): so CR e LF.
@@ -24671,7 +24700,7 @@ fn anotar(""",
         "porque": (
             "`anotar` dispara o aviso e o gancho por todo `PhxError::Io` (5001). Um `destino` inexistente ou sem permissao, de um usuario autenticado, nao e disco doente e gastaria o aviso (e o SMS pago) a cada erro de digitacao. EIO, ENOSPC, EROFS e EDQUOT continuam avisando."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_backup_01.rs",
         "trecho": """            PhxError::Io(io)
                 if qualquer_io
 """,
@@ -24715,7 +24744,7 @@ fn anotar(""",
         "porque": (
             "o id web tem 8 digitos hex e 2,3% saem so com algarismos: adivinhar pela forma do texto toma a sessao web por numero de conexao e derruba a conexao de mesmo numero."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_admin_01.rs",
         "trecho": """            Some("web") => true,
             Some("conexao") => false,
 """,
@@ -24782,7 +24811,7 @@ fn anotar(""",
         "porque": (
             "um `Replicar` so da base A confirmava B e o quorum de B fechava sem nenhuma replica ter gravado B -- a durabilidade anunciada vira mentira."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_quorum_01.rs",
         "trecho": """                .filter(|c| replica_alcanca(sessao.usuario.as_ref(), &c.database, &c.tabela))
 """,
         "troca": """                // DEFEITO REPOSTO (pedido 649): toda confirmacao conta.
@@ -24803,7 +24832,7 @@ fn anotar(""",
         "porque": (
             "ultimo-a-chegar-vence deixava um `Replicar` fraco estreitar o alcance que o commit consulta e degradar o servidor."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_quorum_01.rs",
         "trecho": """        let ficha = if sessao_e_do_cluster(&estado.config, sessao) {
 """,
         "troca": """        // DEFEITO REPOSTO (pedido 649): qualquer sessao grava a ficha.
@@ -24867,7 +24896,7 @@ fn anotar(""",
         "porque": (
             "decisao do dono de 01/10/2026: na 0.19 o Noise entra e fica registrado; sem a linha, a 0.20 recusa nos que ninguem sabia que ainda falavam Noise."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_rede_01.rs",
         "trecho": """                if !saida.cifrado() {
                     self.avisar_que_o_noise_acaba(ip);
 """,
@@ -24932,7 +24961,7 @@ fn anotar(""",
         "porque": (
             "o fsync recusado derruba o processo e o carteiro morre junto; sem o aviso do arranque seguinte, o operador so descobre lendo o journal."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_nucleo_01.rs",
         "trecho": """    avisar(caminho, erro);
 """,
         "troca": """    // DEFEITO REPOSTO (pedido 573): recusa calada.
@@ -25445,7 +25474,7 @@ fn anotar(""",
         "porque": (
             "pedido 667, 07/10/2026: a tela aberta por http:// na LAN cai na reserva Base64 e quem escuta a rede decodifica a senha; o portao recusa antes do cadastro, com o escape escrito na config."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_rede_01.rs",
         "trecho": """        self.conferir_o_fio_da_senha(p, sessao)?;
 """,
         "troca": """        // DEFEITO REPOSTO (667): a senha em claro de fora entra.
@@ -25465,7 +25494,7 @@ fn anotar(""",
         "porque": (
             "pedido 667, 07/10/2026: o login com servidor no pedido nao passa pelo op_login daqui, e a senha ja atravessou o fio ate aqui; e o caminho irmao do portao."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_web_01.rs",
         "trecho": """                .and_then(|j| self.conferir_o_fio_da_senha(&j, &sessao).err())
 """,
         "troca": """                // DEFEITO REPOSTO (667): o login remoto sem o portao.
@@ -25805,7 +25834,7 @@ fn anotar(""",
             "reposto: `{\"loja/a_itens\":{\"orfas\":1}}` para um commit que "
             "grava a mae e a filha juntas -- alarme falso."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_replicacao_01.rs",
         "trecho": """        grupo.sort_by_key(|(i, _)| filas[*i].ordem);""",
         "troca": """        // DEFEITO REPOSTO (676): a ordem da chegada, sem a vez das maes.
         let _ = &filas;""",
@@ -25926,7 +25955,7 @@ fn anotar(""",
             "`TETO_DA_TRANSACAO`. Medido pelo soquete com o defeito reposto e "
             "o teto de teste em S-1: `COMMITTED`, 601 gravadas."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_marca_01.rs",
         "trecho": """        if custo > teto {
 """,
         "troca": """        // DEFEITO REPOSTO (685): o teto nao se confere no COMMIT.
@@ -26001,7 +26030,7 @@ fn anotar(""",
             "recebido. Medido com o campo ignorado (sempre true): "
             "`sem_espelho_a_escrita_local_continua_como_antes` cai."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_nucleo_01.rs",
         "trecho": """            .find(|o| o.espelho && o.databases.iter().any(|d| d == base))
 """,
         "troca": """            // DEFEITO REPOSTO (677): o espelho vale para quem nao pediu.
@@ -26028,7 +26057,7 @@ fn anotar(""",
             "em laco), entao uma corrida limpa com o defeito e possivel, "
             "embora nao vista nas cinco."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_quorum_01.rs",
         "trecho": """        for (database, tabelas) in bases {
 """,
         "troca": """        // DEFEITO REPOSTO (681): cada lote do quorum aplicado sozinho.
@@ -26078,7 +26107,7 @@ fn anotar(""",
             "(0, 3, 0) com o fio caido; (0, 600, 1) com as tres na mao; e a de "
             "600 itens pela metade depois de o fio voltar."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_bidirecional_01.rs",
         "trecho": """            aplicados += self.alcancar_database_bidi(
                 &mut cliente,
                 &database,
@@ -26124,7 +26153,7 @@ fn anotar(""",
             "so, que e uma transacao para a replica. Medido pelo soquete com o "
             "defeito reposto: com teto 1, a carga de 600 linhas grava as 600."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_escrita_01.rs",
         "trecho": """        let custo = t.custo_previsto_da_carga(&linhas);
 """,
         "troca": """        // DEFEITO REPOSTO (686): a carga nao passa pelo teto.
@@ -26148,7 +26177,7 @@ fn anotar(""",
             "3.o de 7 eventos do grupo, reabertura com a origem inalcancavel, "
             "retrato (0, 3, 0) -- itens sem venda. Com a marca, (1, 5, 1)."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_replicacao_01.rs",
         "trecho": """        let marca = self.marcar_o_grupo(database, filas, &grupo, &rompidas)?;
 """,
         "troca": """        // DEFEITO REPOSTO (682): o grupo nao grava marca.
@@ -26230,7 +26259,7 @@ fn anotar(""",
             "por chave, reabertura com o outro lado inalcancavel, retrato "
             "(0, 3, 0). Com a marca, (1, 5, 1)."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_bidirecional_01.rs",
         "trecho": """        let marca = self.marcar_o_grupo_bidi(database, filas, &grupo, hash_dele)?;
 """,
         "troca": """        // DEFEITO REPOSTO (698): o grupo do bidirecional nao grava marca.
@@ -26255,7 +26284,7 @@ fn anotar(""",
             "defeito reposto: o mesmo SIGKILL no 3.o de 7 eventos, retrato "
             "(0, 3, 0) com a marca intacta no disco."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_nucleo_01.rs",
         "trecho": """        servidor.completar_marcas_do_bidi();
 """,
         "troca": """        // DEFEITO REPOSTO (698): o arranque nao completa a marca do bidi.
@@ -26285,7 +26314,7 @@ fn anotar(""",
             "alteracao 3, inclusao 4, inclusao 5]. Com a guarda, uma inclusao "
             "por linha."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_bidirecional_01.rs",
         "trecho": """                    if achada.is_some() && achada == *orfa {
 """,
         "troca": """                    // DEFEITO REPOSTO (700): a linha orfa vira alteracao.
@@ -26311,7 +26340,7 @@ fn anotar(""",
             "reposto: o mesmo SIGKILL dentro da 3.a inclusao, e os 7 eventos do "
             "grupo saem com dois ids (2 + 5)."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_bidirecional_01.rs",
         "trecho": """                    Self::adotar_o_id_do_grupo(&mut t, it.eventos)?;
 """,
         "troca": """                    // DEFEITO REPOSTO (701 b): o resto do grupo leva outro id.
@@ -26337,7 +26366,7 @@ fn anotar(""",
             "pelo rowid. Medido com o defeito reposto: o reparo devolve `Ok`, a "
             "marca sai do disco e o cliente 1 vira «novo» por cima de «C1»."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_marca_01.rs",
         "trecho": """        if let Some(bidi) = marca_em_voo.filter(|m| crate::transacao::e_marca_do_bidi(&m.caminho)) {
 """,
         "troca": """        // DEFEITO REPOSTO (700): o reparo trata a marca do bidi pelo rowid.
@@ -26362,7 +26391,7 @@ fn anotar(""",
             "lugar de dentro da primeira inclusao, o grupo devolve o erro e a "
             "lista sai vazia."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_replicacao_01.rs",
         "trecho": """                    gravada: true,
                 });
                 marcas.push(m.clone());
@@ -26535,7 +26564,7 @@ fn anotar(""",
             "com o defeito reposto (o braco herda sempre o database de fora): "
             "as tres linhas saem [4, 100] -- o caixa01 tres vezes."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_consulta_01.rs",
         "trecho": """        let sem_base = sub.texto_ou("database", "").trim().is_empty();
 """,
         "troca": """        // DEFEITO REPOSTO (679): o braco herda sempre o database de fora.
@@ -26556,7 +26585,7 @@ fn anotar(""",
             "no braco `varrer`. Medido com o defeito reposto (so o corte da "
             "propria uniao conta): por_parte [4, 2, 5] e `truncado: false`."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_composicao_01.rs",
         "trecho": """            ("truncado", Json::Bool(r.truncado || cortou_braco)),
 """,
         "troca": """            // DEFEITO REPOSTO (679): o braco cortado nao conta.
@@ -26609,7 +26638,7 @@ fn anotar(""",
         ),
         "trocas": [
             {
-                "arquivo": "crates/phxsql-server/src/servidor.rs",
+                "arquivo": "crates/phxsql-server/src/servidor/servico_marca_01.rs",
                 "trecho": """            self.descarregar_sujas();
             let trava = self.travar_dados();
 """,
@@ -26618,7 +26647,7 @@ fn anotar(""",
 """,
             },
             {
-                "arquivo": "crates/phxsql-server/src/servidor.rs",
+                "arquivo": "crates/phxsql-server/src/servidor/servico_marca_01.rs",
                 "trecho": """                |lista| lista.iter().cloned().collect(),
 """,
                 "troca": """                // DEFEITO REPOSTO (687, 2/2): e afirma que nada ficou.

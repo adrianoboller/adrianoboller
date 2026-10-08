@@ -1,24 +1,14 @@
 <title data-txt="tela.titulo_pagina">PhxSql — Centro de Controle</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="icon" type="image/png" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACgAAAAiCAMAAAAau2s5AAABIFBMVEX/ZAD/owP91g7/lwf/nQr/aAD/ogL/FAD/1iL/EAD/zyBEnf//LQAjo/+Q/6r/cQv2/Jj/XgBc7vT/xhf/n00AM///AP//oYj04lb/2lIi1/9VVf+cqv////IA/wD/AID/U5YzZv+qVf+M6eX/tP8A/4BVAP9V/6q5/wD/Kir/bUn/Zsz/vlcAZv8AAP8AgP8AAAAAVf//AAAAQP//VQD/NQD/RwD/hAD/BAD/NgD/WAL/BAD/RwD/SAD/ZgL/iQD/mAD/dwD/tgL/KAD/agL/pQH/GgH/JgD/NwD/VwD/ZwD/xQr/AgD/FQD/JwD/OAD/dQP/dQD/qAL/CAD/KgD/OQD/NgD/WAD/uAH//wAAqP+D//ut////FQD/JwD/RADIXQuSAAAAYHRSTlObHh5ammrPpOnVXQNqCgMmGtMGqwcFAQMtVQYDCAIBAgQFAwUDBAMGCwYHBV4FAgMAAwwEKxP2EC4uEU4VLzD29vX5FRP4Ek7w/fX5a20xUhRNNZD6qs5LbwUEBAMxzkq5EUlEAAAEBElEQVR42k2Uh3LjOAyGqS7LdlzS2yZbrp9Biurdvffe/f5vcbST21nOUOIAHwFQIn603WKMt1cEtgbGpVLpPEvYMIzzm5ngSteZDSOMdV3fE167uyCf43OdBU0ju0sABhr6FdHUG/iIlWUPXWeTrXH2mVM1kt8yF9IZB2v1X1I0cIlFh5cPkmViix3h1TXLjjHSGcf1VKqzupgzz5Pn/e579hKVFQlf1B4He52B+AsR1WvCambgnggaABDy9Flsmlyra+bEqAg8L5/B3M09TsNUkK817TEPu+JPUOR5UkQ7IvJyT/YhHE8gbfiimPR6KjvC5XAY+Kp6zV8zEPiyL/aqU9BDE9K3zkQsN6qi1lMfyZNe+g7CGZQtQDBtSOtqQ4b7m28Yp/+ZICRXe9VElnkope84uapq6yrHQK4h1xuNxpo81N91wwAiVqvJghKfB3wPLL68aZQ5gmAjN8RpOSlr4MTj+i0rJal2a1AEwD9gXS6Xp2JDJhzKhUI5kYSkkghgmu/3f4uFMovwrZTN/oCLWUzKAj9FMSKoUkFSpVsRiB++xZJckXtTeGUfW+p2KxKqJIiIOeR3EUXdToHNjuTrv0lJgnpVmQNsoQ4zF7oMECv0HA9FK2S3l7Ztm4dlp5BZy3JSkayobdvLto1WUaEiAaIUdexFJnO07YJHB5motuE4zvFGw7ch27vMZBZ2B9EbhF9pZjlPKcwYQdOM4ymfzz9wk2h4A17bVpR5u53hYkDpu1Gr2RrM2u0FgSgK/3jKPjy+FHc33hCTRbs9G7RqJ8n/He2fa8pxEATHeWvUPJ2sq202n89mi/VWywpb82MwUI4LCq+IXSoYpFJKKnXI1KzTaiJoj4+asBqtzMPgcHEMwABAuXoddOIGs1QQ0PeV5HP8wwPvOCQf0yBIzQKXAh47HJJi028edHeW6lNKXc88X1s2LS+ktK/0D3AK62ZOQM44NE3PJVZfcZ3asDWaCKIoSKPAjIAqfYsOvVWccxzk1E3f94d0nHP7r9YqNsdTQeDqG8jHb4HL89QLQz9mICG+GXlWk0pjWmu6Q5NcBq1F9RrlBRqFpmeSDaCJFEWUeE0aiU8QepmWdEndck2T8MhnG4gVm2iCOGdz58SWVQNRrIcn0/S5c2pC8mOuIBHLsnLO3W58jwwjDTmpFg6btIvA7Y/4c+aNw0mog85nt1DMeukWsWbGAKwHtuDZI3BnygIJf25ibjFXyIsOcMuuOhMYdFYqnMalr8YevKXiNIPZvFOYUJcqB3g+y0z20uAM/Clxe7AG7E9kRsrczrgB/GX8om9Mzc6Nrn/Igg5NlwbHUz8199ymfgH1/0HjQ0Av4+uLXkpDcPzSTykkh3/xlP4DLAPwBRpxba0AAAAASUVORK5CYII=">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<!-- A folha da fonte da marca NAO bloqueia a pintura, e o motivo e medido.
-     Bloqueante, ela para o parser ate a resposta chegar -- e a resposta que
-     nunca chega e o caso normal de um servidor de banco: rede que DESCARTA o
-     pacote (firewall com DROP, proxy que so responde reset depois do prazo)
-     em vez de recusar na hora. Medido nas duas redes, tres rodadas cada:
-     12,7 s de tela BRANCA quando o pedido e engolido, contra 0,12 s quando a
-     recusa e imediata -- 103x, e o usuario olhando o nada.
-     `media="print"` faz o navegador buscar SEM bloquear; o `onload` promove a
-     folha quando ela chega. Sem internet, a pilha de reserva assume e a
-     pagina continua inteira -- como ja continuava, so que na hora.
-     O `noscript` devolve o caminho antigo para quem desligou o script: ali a
-     pagina nao funciona mesmo, e a fonte bonita nao custa nada. -->
-<link rel="stylesheet" media="print" onload="this.media='all';this.onload=null"
-      href="https://fonts.googleapis.com/css2?family=Exo+2:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
-<noscript><link rel="stylesheet"
-  href="https://fonts.googleapis.com/css2?family=Exo+2:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap"></noscript>
+<!-- A FONTE DA MARCA VEM DO PROPRIO BINARIO (pedido 691). O `http.rs` poe a
+     Exo 2 num `@font-face` com a fonte embutida (`data:`), antes desta folha:
+     a tela de um servidor de banco nao depende de internet, e ate aqui a Exo 2
+     so chegava pelo Google Fonts -- que o CSP permitia e a rede quase nunca.
+     Nada se busca fora: o CSP da pagina nao abre host de fonte nenhum. A
+     IBM Plex Mono saiu junto e nao voltou, porque nao e da marca: o codigo cai
+     no `ui-monospace` do sistema. Publicada como artefato, sem o cabecalho do
+     servidor, a pagina usa a pilha de reserva -- como ja usava sem internet. -->
 
 <style>
 /* A marca do PhxSql e escura por natureza, e um console de banco se usa em
@@ -156,6 +146,11 @@ label{display:block;font-size:11px;letter-spacing:.1em;text-transform:uppercase;
   color:var(--texto-3);margin:0 0 6px}
 label .opc{text-transform:none;letter-spacing:0;font-size:10.5px;
   font-style:italic}
+/* Pedido 690: o rotulo se estiliza; o que esta DENTRO dele e e dado, nunca.
+   A legenda do motivo dizia «.REASON» -- e o arquivo se chama `.reason`, e
+   quem le nao sabe qual dos dois esta no disco. `code` e nome de arquivo, de
+   coluna ou de tipo; `.leg` e frase, e frase em caixa alta e grito. */
+label code,label kbd,label samp,label .dado,label .leg{text-transform:none;letter-spacing:0}
 .onde{display:grid;grid-template-columns:1fr 88px;gap:10px}
 input,select{
   width:100%;background:var(--fundo);border:1px solid var(--linha-forte);
@@ -504,7 +499,12 @@ tr.prof-mal td{background:color-mix(in srgb,var(--log) 8%,transparent)}
   background:var(--painel-2);border:1px solid var(--linha);
   border-radius:7px;padding:16px;
 }
-.ficha-edit label{display:flex;flex-direction:column;gap:5px;font-size:11.5px}
+/* O rotulo do campo da ficha e o NOME ou a CAPTION que o dono da tabela
+   declarou -- dado do esquema, e nao texto nosso. Em caixa alta, a caption
+   «Limite de crédito» saia «LIMITE DE CRÉDITO» e o nome `cidadeUF` saia
+   `CIDADEUF`, que nao existe (pedidos 690/692). */
+.ficha-edit label{display:flex;flex-direction:column;gap:5px;font-size:11.5px;
+  text-transform:none;letter-spacing:0}
 .ficha-edit label.largo{grid-column:1/-1}
 .ficha-edit label > span{color:var(--texto-3);display:flex;align-items:center;gap:6px}
 .ficha-edit .obrig{color:var(--log);font-weight:700}
@@ -1424,6 +1424,21 @@ table.conf td .leg{font-size:10.5px;color:var(--texto-3)}
 .phx-grid{
   --phx-bg:var(--painel); --phx-bg2:var(--painel-2); --phx-fg:var(--texto);
   --phx-meta:var(--texto-3); --phx-borda:var(--linha); --phx-acc:var(--laranja);
+  /* Pedido 689: o resto das cores da grade, que ela trazia cravadas para o
+     papel. Sem estas linhas o rowid em hover media 1,11:1 no tema escuro.
+     Todas apontam para tokens do console, entao o sol/lua leva as duas. O
+     chip de filtro e uma CONSULTA, e as pastilhas sao estado: contorno na
+     cor da acao, nunca fundo cheio. */
+  --phx-hover:var(--painel-3); --phx-hover-fixa:var(--realce);
+  --phx-linha:var(--linha); --phx-trilho:var(--linha); --phx-funil:var(--texto-3);
+  --phx-sobre-acc:var(--tinta-botao); --phx-anel:var(--linha-forte); --phx-perigo:var(--acao-excluir);
+  --phx-chip-bg:transparent; --phx-chip-fg:var(--acao-consultar); --phx-chip-borda:var(--acao-consultar);
+  --phx-solta:var(--realce);
+  --phx-verde-bg:transparent; --phx-verde-fg:var(--ok); --phx-verde-borda:var(--ok);
+  --phx-ambar-bg:transparent; --phx-ambar-fg:var(--aviso); --phx-ambar-borda:var(--aviso);
+  --phx-azul-bg:transparent; --phx-azul-fg:var(--acao-consultar); --phx-azul-borda:var(--acao-consultar);
+  --phx-vermelho-bg:transparent; --phx-vermelho-fg:var(--acao-excluir); --phx-vermelho-borda:var(--acao-excluir);
+  --phx-cinza-bg:transparent; --phx-cinza-fg:var(--texto-3); --phx-cinza-borda:var(--linha-forte);
   font-family:"Exo 2","Helvetica Neue",Arial,sans-serif;
 }
 .phx-grid input,.phx-grid select,.phx-grid button{
@@ -1448,6 +1463,11 @@ table.conf td .leg{font-size:10.5px;color:var(--texto-3)}
 }
 /* Rotulo dentro da grade mostra DADO (o valor da coluna no funil) ou o nome
    da coluna. Nos dois casos ele sai como esta escrito. */
+/* O mesmo vale para o CABECALHO da grade: o `thead th` global poe tudo em
+   caixa alta, e ali mora o nome da coluna ou a caption que o dono declarou
+   (pedido 692) -- «Limite de crédito» saia «LIMITE DE CRÉDITO», e `cidadeUF`
+   saia `CIDADEUF`, que nao existe. */
+.phx-grid .phx-th{text-transform:none;letter-spacing:.02em;font-size:11px}
 .phx-grid label{
   display:block;text-transform:none;letter-spacing:0;font-size:12.5px;
   color:var(--texto);margin:0;font-weight:400;
@@ -3366,7 +3386,8 @@ function ligarConteudo() {
   const colunas = [{ campo:"rowid", titulo:"rowid", tipo:"numero", largura:90 }]
     .concat(est.esquemaAtual.colunas.map(c => ({
       campo: c.nome,
-      titulo: c.nome,
+      titulo: tituloDaColuna(c),
+      dica: dicaDaColuna(c),
       tipo: tipoDoGrid(c.tipo),
       // Somar sequencia ou id nao significa nada; so quantidade soma.
       agregador: c.tipo !== "Sequence" && /^Int|^UInt|^Decimal/.test(c.tipo) ? "sum" : null
@@ -5008,7 +5029,10 @@ async function verConteudoEditavel(db, tab, verExcluidos = false, cursor = null)
     if (temRownum) colunas.push({ campo:"rownum", titulo:txt("tela.col_ordem","nº"),
       tipo:"numero", largura:70, formato:v => v ?? "—" });
     colunas.push({ campo:"rowid", titulo:"rowid", tipo:"numero", largura:90, fixa:"esq" });
-    cols.forEach(c => colunas.push({ campo:c, titulo:c }));
+    cols.forEach(c => {
+      const col = e.colunas.find(x => x.nome === c);
+      colunas.push({ campo:c, titulo:tituloDaColuna(col), dica:dicaDaColuna(col) });
+    });
     colunas.push({ campo:"__acao", titulo:"", ordenavel:false, filtravel:false, largura:110,
       formato:(_, l) => verExcluidos
         ? `<button class="botao mini incluir restaurar" data-rowid="${esc(String(l.rowid))}"
@@ -5124,7 +5148,14 @@ function campoDaColuna(c, valor, soLeitura = false, novo = false) {
     ? (novo && ehIdentidade ? "novo" : "")
     : String(valor);
   const obrig = c.nullable ? "" : ` <span class="obrig">*</span>`;
-  const dica = `<span class="tipo">${esc(c.tipo)}</span>`;
+  // O tipo sai pelo MESMO formatador da aba Estrutura e do diagrama
+  // (`tipoCurto`), e nao como o servidor o manda -- o `esquema` serve o
+  // `Debug` do Rust, «Decimal { precisao: 15, escala: 2 }» (pedido 693).
+  const dica = `<span class="tipo">${esc(tipoCurto(c.tipo))}</span>`;
+  // A caption declarada e o rotulo; o nome de verdade fica no `title`
+  // (pedido 692). Sem caption, o nome -- como sempre foi.
+  const rotulo = tituloDaColuna(c) === c.nome ? esc(c.nome)
+    : `<span title="${esc(c.nome)}">${esc(tituloDaColuna(c))}</span>`;
 
   // readonly, e não disabled: o valor continua indo no salvar — a linha
   // inteira é gravada, e sumir com a coluna apagaria o que não se pode mudar.
@@ -5133,7 +5164,7 @@ function campoDaColuna(c, valor, soLeitura = false, novo = false) {
   // comentário lá) — mandar de volta um valor que nunca vai ser usado seria
   // a mesma mentira que este campo readonly existe para não contar.
   if (soLeitura) {
-    const rotulo = soLeitura === "sem_alteracao" ? txt("tela.cf_sem_alteracao","sem alterar")
+    const porque = soLeitura === "sem_alteracao" ? txt("tela.cf_sem_alteracao","sem alterar")
                  : soLeitura === "calculada" ? txt("tela.cf_calculada","calculada")
                  : txt("tela.cf_fixo","fixo");
     const dicaTitulo = soLeitura === "sem_alteracao"
@@ -5141,17 +5172,17 @@ function campoDaColuna(c, valor, soLeitura = false, novo = false) {
       : soLeitura === "calculada"
       ? txt("tela.cf_calculada_dica","o servidor recalcula este valor a cada gravação; o que se digitar aqui é descartado")
       : txt("tela.cf_usado_programacao_busca","usado na programação e na busca; não muda depois de criado");
-    return `<label><span>${esc(c.nome)} <span class="tipo">${esc(rotulo)}</span> ${dica}</span>
+    return `<label><span>${rotulo} <span class="tipo">${esc(porque)}</span> ${dica}</span>
       <input id="${id}" value="${esc(v)}" readonly style="opacity:.6"
         title="${esc(dicaTitulo)}"></label>`;
   }
 
   if (c.tipo === "Memo")
-    return `<label class="largo"><span>${esc(c.nome)}${obrig} ${dica}</span>
+    return `<label class="largo"><span>${rotulo}${obrig} ${dica}</span>
       <textarea id="${id}" rows="4">${esc(v)}</textarea></label>`;
 
   if (c.tipo === "Bool")
-    return `<label><span>${esc(c.nome)}${obrig} ${dica}</span>
+    return `<label><span>${rotulo}${obrig} ${dica}</span>
       <select id="${id}"><option value="">—</option>
         <option value="true"${v === "true" ? " selected" : ""}>${esc(txt("tela.cf_verdadeiro","verdadeiro"))}</option>
         <option value="false"${v === "false" ? " selected" : ""}>${esc(txt("tela.cf_falso","falso"))}</option>
@@ -5165,7 +5196,7 @@ function campoDaColuna(c, valor, soLeitura = false, novo = false) {
            : c.tipo === "Date" ? "2026-08-28"
            : c.tipo.startsWith("Decimal") ? txt("tela.cf_ph_decimal","12.34 (texto, para não perder centavo)")
            : "";
-  return `<label><span>${esc(c.nome)}${obrig} ${dica}</span>
+  return `<label><span>${rotulo}${obrig} ${dica}</span>
     <input id="${id}" value="${esc(v)}" placeholder="${esc(ph)}"></label>`;
 }
 
@@ -5498,7 +5529,7 @@ async function gerirTabela(db, tab) {
      "Em que volume cada rowid cai, e qual arquivo do disco guarda cada faixa.",
      () => verParticoes(db, tab)],
     ["duplicar", "⧉", "Duplicar tabela",
-     "Copia os cinco arquivos para outro nome, aqui mesmo. A cópia nasce com os mesmos rowids e a mesma ordem.",
+     "Copia os arquivos da tabela para outro nome, aqui mesmo. A cópia nasce com os mesmos rowids e a mesma ordem.",
      () => duplicarTabelaPara(db, tab)],
     ["copiar", "⎘", "Copiar tabela",
      "Põe esta tabela na área de transferência, para colar em outro banco ou schema.",
@@ -5525,7 +5556,7 @@ async function gerirTabela(db, tab) {
      "Por que cada linha foi excluída, por quem e quando. Só administrador.",
      () => telaMotivos(db, tab)],
     ["excluir", "🗑", "Excluir tabela",
-     "Apaga os sete arquivos da tabela de uma vez. Não há desfazer.",
+     "Apaga todos os arquivos da tabela de uma vez. Não há desfazer.",
      () => excluirTabelaDe(db, tab)],
   ];
 
@@ -5731,7 +5762,7 @@ function ligarVoltarGestao(db, tab) {
 async function duplicarTabelaPara(db, tab) {
   const destino = prompt(
     preencher(txt("tela.g_prompt_duplicar_nome",
-      "Duplicar {tab} com que nome?\n\nOs cinco arquivos são copiados byte a byte: a cópia nasce com os MESMOS rowids e na MESMA ordem de digitação."), {tab}),
+      "Duplicar {tab} com que nome?\n\nOs arquivos da tabela são copiados byte a byte: a cópia nasce com os MESMOS rowids e na MESMA ordem de digitação."), {tab}),
     preencher(txt("tela.g_sufixo_copia","{tab}_copia"), {tab}));
   if (!destino || !destino.trim()) return;
   const r = await api("duplicar_tabela",
@@ -5881,7 +5912,7 @@ function desenharNovaTabela(db) {
   const pk = r.indices.find(x => x.primario && x.nome);
   const colsDaPk = pk ? pk.colunas.split(",").map(s => s.trim().split(/\s+/)[0]).filter(Boolean) : [];
 
-  folha(txt("tela.tt_nova_tabela","Nova tabela"), preencher(txt("tela.nt_sete_arquivos","{db} · sete arquivos nascem juntos"), {db}),
+  folha(txt("tela.tt_nova_tabela","Nova tabela"), preencher(txt("tela.nt_arquivos_nascem_juntos","{db} · os arquivos da tabela nascem juntos"), {db}),
     `<form class="criar" id="formNovaTab" autocomplete="off">
        <div class="bloco">
          <label class="largo"><span>${esc(txt("tela.nt_nome_da_tabela","nome da tabela"))}</span>
@@ -6554,7 +6585,7 @@ async function pivotPasso2() {
         <div class="pv-zona-cab"><b>Campos</b><span>arraste, ou clique para mandar às linhas</span></div>
         <div class="pv-paleta-lista">${campos.map(c => `
           <span class="pv-campo${usado(c.campo) ? " usado" : ""}" draggable="true"
-                data-campo="${esc(c.campo)}" title="${esc(c.de)} · ${esc(c.tipo)}">
+                data-campo="${esc(c.campo)}" title="${esc(c.de)} · ${esc(tipoCurto(c.tipo))}">
             <span class="pv-campo-ico">${c.data ? "◷" : c.numero ? "#" : "A"}</span>
             ${esc(c.rotulo)}${c.campo.includes(".") ? `<em>${esc(c.campo.split(".")[0])}</em>` : ""}
           </span>`).join("")}</div>
@@ -8635,10 +8666,32 @@ async function verSysColumns(db, tabela_) {
   });
 }
 
-/** `Decimal { precisao: 15, escala: 2 }` cansa a vista numa grade. */
+/** `Decimal { precisao: 15, escala: 2 }` cansa a vista numa grade.
+ *
+ * UM formatador so: esta funcao tinha uma copia propria (um regex que
+ * recortava) ao lado do `PhxER.tipoCurto`, que ANALISA. Agora delega -- a
+ * ficha, a Estrutura, o cruzamento e o diagrama dizem o tipo do mesmo jeito.
+ * O formatador do motor (`dblink/dialeto.rs`, `Motor::Phx`) escreve o mesmo
+ * texto, mas o `esquema` nao o usa: serve o `Debug`. Sem o `PhxER` (a pagina
+ * publicada como artefato, sem o cabecalho), o texto vai como veio. */
 function tipoCurto(t) {
-  const m = /^Decimal.*?precisao:\s*(\d+).*?escala:\s*(\d+)/.exec(t || "");
-  return m ? `Decimal(${m[1]},${m[2]})` : (t || "");
+  return window.PhxER ? PhxER.tipoCurto({ tipo: t }) : String(t || "");
+}
+
+/** O titulo de uma coluna na tela: a caption que o dono da tabela declarou,
+ *  ou o nome. E DADO do esquema -- nao passa por `txt()` (pedido 692). */
+function tituloDaColuna(c) {
+  // A coluna de SISTEMA fica com o nome: a caption dela e do motor, em
+  // portugues sem acento («Ordem de criacao»), e nao passa pela fabrica --
+  // e `rowstamp`/`softdeleted` sao os nomes que a documentacao usa.
+  if (c.sistema) return c.nome;
+  return (c.caption && String(c.caption).trim()) || c.nome;
+}
+
+/** As colunas da grade com o titulo certo: caption no cabecalho e o nome no
+ *  `title` -- quem filtra ou escreve consulta precisa do nome. */
+function dicaDaColuna(c) {
+  return tituloDaColuna(c) === c.nome ? null : c.nome;
 }
 
 function chaveEmPino(c) {
@@ -9256,12 +9309,11 @@ async function dialogoExcluir(db, tab, rowid, aoTerminar, versao) {
               lê — e o slot não é reaproveitado.</span></span>
         </button>
       </div>
-      <label class="cmp"><span>Motivo${exige ? " <b>(obrigatório)</b>" : ""}</span>
+      <label class="cmp"><span>${esc(txt("tela.rot_motivo","Motivo"))}${exige ? ` <b>${esc(txt("tela.exc_obrigatorio","(obrigatório)"))}</b>` : ""}</span>
         <input id="excMotivo" class="campo" maxlength="2000"
                placeholder="${exige ? "esta tabela exige o motivo escrito"
                                     : "opcional, mas fica registrado no .reason"}">
-        <span class="leg">Vai para o <code>.reason</code> com a data, a hora e
-          quem você é. Sobrevive à linha.</span></label>
+        <span class="leg">${marcado(txt("tela.exc_leg_reason","Vai para o `.reason` com a data, a hora e quem você é. Sobrevive à linha."))}</span></label>
       <div id="excRecado"></div>
       <div class="acoes">
         <button class="botao secundario" id="btExcNao">${esc(txt("tela.cancelar", "Cancelar"))}</button>
@@ -12248,15 +12300,14 @@ function cartaoNovaTabelaER(db) {
   const c = cartaoER("");
   const desenhar = () => {
     c.corpo.innerHTML = `
-      <h3>Nova tabela em ${esc(db)}</h3>
-      <div class="sub">sete arquivos nascem juntos · o cadastro completo
-        (partição, índices, máscaras) fica na tela «Nova tabela»</div>
+      <h3>${esc(preencher(txt("tela.ner_nova_tabela_em","Nova tabela em {db}"), {db}))}</h3>
+      <div class="sub">${esc(txt("tela.ner_sub","os arquivos da tabela nascem juntos · o cadastro completo (partição, índices, máscaras) fica na tela «Nova tabela»"))}</div>
       <div class="form-dbl" style="margin-bottom:10px">
-        <label class="cmp"><span>nome da tabela</span>
+        <label class="cmp"><span>${esc(txt("tela.nt_nome_da_tabela","nome da tabela"))}</span>
           <input id="ntNome" placeholder="cadastroClientes"></label>
       </div>
       <table class="er-campos"><thead><tr>
-        <th>campo</th><th>tipo</th><th class="num">obrig.</th>
+        <th>${esc(txt("tela.nt_campo","campo"))}</th><th>${esc(txt("tela.col_tipo","tipo"))}</th><th class="num">${esc(txt("tela.col_obrig","obrig."))}</th>
         <th class="num">PK</th><th></th></tr></thead>
       <tbody>${linhas.map((l, i) => `<tr>
         <td><input class="nt-nome" data-i="${i}" value="${esc(l.nome)}"
@@ -12269,17 +12320,17 @@ function cartaoNovaTabelaER(db) {
         <td class="num"><input type="radio" name="ntPk" class="nt-pk"
           data-i="${i}" ${l.pk ? "checked" : ""}></td>
         <td><button type="button" class="mini perigo nt-rm" data-i="${i}"
-          >remover</button></td>
+          >${esc(txt("tela.nt_remover","remover"))}</button></td>
       </tr>`).join("")}</tbody></table>
       <div class="acoes" style="margin:8px 0 0">
-        <button type="button" class="mini" id="ntMais">+ campo</button>
+        <button type="button" class="mini" id="ntMais">+ ${esc(txt("tela.nt_campo","campo"))}</button>
         <span class="leg">a chave primária vira o índice único
           <code>pk_&lt;campo&gt;</code> — é para ela que as chaves das outras
           tabelas apontam</span>
       </div>
       <div id="ntRecado"></div>
       <div class="acoes">
-        <button class="botao incluir" id="ntCriar">Criar tabela</button>
+        <button class="botao incluir" id="ntCriar">${esc(txt("tela.nt_criar_tabela","Criar tabela"))}</button>
         <button class="botao secundario" id="ntCompleto">Cadastro completo…</button>
         <button class="botao secundario" id="ntFechar">${esc(txt("tela.cancelar", "Cancelar"))}</button>
       </div>`;

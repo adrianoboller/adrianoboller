@@ -463,7 +463,7 @@ fn distinct_respeita_a_ordem_e_o_limite() {
 ///
 /// Os grupos ficam TODOS em memoria ao mesmo tempo -- e o grupo de um
 /// DISTINCT e uma linha do resultado. Uma coluna de alta cardinalidade
-/// para no teto, e a recusa nomeia `recursos.max_linhas` e o que fazer,
+/// para no teto, e a recusa nomeia `max_linhas` e o que fazer,
 /// em vez de o servidor encher a memoria calado.
 #[test]
 fn o_distinct_herda_o_teto_do_agrupar_e_a_recusa_o_nomeia() {
@@ -507,7 +507,10 @@ fn o_distinct_herda_o_teto_do_agrupar_e_a_recusa_o_nomeia() {
     let e = sql(&s, "SELECT DISTINCT cidade FROM clientes")
         .unwrap_err()
         .to_string();
-    assert!(e.contains("recursos.max_linhas"), "{e}");
+    assert!(e.contains("max_linhas"), "{e}");
+    // Pedido 704: o campo lido e `max_linhas` no topo do config; mandar
+    // ajustar `recursos.max_linhas` e dar uma ordem que nao tem efeito.
+    assert!(!e.contains("recursos.max_linhas"), "{e}");
     assert!(e.contains("memoria"), "{e}");
 }
 

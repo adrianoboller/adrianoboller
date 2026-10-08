@@ -1,5 +1,5 @@
 {
-  "quando": "2026-10-08 10:46",
+  "quando": "2026-10-08 16:53",
   "mais_antigo": "2026-09-16 15:25",
   "guardas": [
     {
@@ -30,41 +30,41 @@
       "id": "profiler-sem-portao",
       "titulo": "o portão próprio do Profiler não existe; o leitor lê o pedido alheio",
       "veredito": "PROVADA",
-      "segundos": 82.08,
+      "segundos": 84.15,
       "notas": [],
-      "quando": "2026-10-07 12:11"
+      "quando": "2026-10-08 14:51"
     },
     {
       "id": "pivotar-sem-portao",
       "titulo": "`pivotar` sem conferência própria: a junção vira a porta dos fundos",
       "veredito": "PROVADA",
-      "segundos": 82.74,
+      "segundos": 85.11,
       "notas": [],
-      "quando": "2026-10-08 10:46"
+      "quando": "2026-10-08 16:38"
     },
     {
       "id": "sequencias-sem-portao",
       "titulo": "`sequencias` mostra o contador de toda tabela, inclusive a negada",
       "veredito": "PROVADA",
-      "segundos": 88.67,
+      "segundos": 85.17,
       "notas": [],
-      "quando": "2026-10-07 12:11"
+      "quando": "2026-10-08 14:51"
     },
     {
       "id": "posicao-sem-portao",
       "titulo": "`posicao` entrega eventos e o esquema cru de toda tabela",
       "veredito": "PROVADA",
-      "segundos": 79.86,
+      "segundos": 80.83,
       "notas": [],
-      "quando": "2026-10-01 17:01"
+      "quando": "2026-10-08 12:55"
     },
     {
       "id": "duplicar-sem-destino",
       "titulo": "`duplicar_tabela` confere a origem e não o destino",
       "veredito": "PROVADA",
-      "segundos": 92.0,
+      "segundos": 83.31,
       "notas": [],
-      "quando": "2026-10-07 12:11"
+      "quando": "2026-10-08 14:51"
     },
     {
       "id": "regra-de-tabela-imposta",
@@ -78,19 +78,19 @@
       "id": "sujas-com-a-trava",
       "titulo": "`descarregar_sujas()` chamado com a trava de dados já na mão",
       "veredito": "PROVADA",
-      "segundos": 57.82,
+      "segundos": 84.56,
       "notas": [],
-      "quando": "2026-09-24 13:28"
+      "quando": "2026-10-08 16:53"
     },
     {
       "id": "cadeia-sem-teto",
       "titulo": "a cadeia de gatilhos sem fundo: o binário aborta com stack overflow",
       "veredito": "PROVADA",
-      "segundos": 79.27,
+      "segundos": 79.79,
       "notas": [
         "o binario abortou, que e como esta guarda pega"
       ],
-      "quando": "2026-10-07 12:11"
+      "quando": "2026-10-08 14:51"
     },
     {
       "id": "excluir-tabela-lista-curta",
@@ -164,9 +164,9 @@
       "id": "trava-fora-do-ponto-unico",
       "titulo": "uma tomada da trava de dados fora do `travar_dados()`",
       "veredito": "PROVADA",
-      "segundos": 80.56,
+      "segundos": 87.56,
       "notas": [],
-      "quando": "2026-10-08 10:46"
+      "quando": "2026-10-08 16:38"
     },
     {
       "id": "trava-sem-guarda-de-reentrancia",
@@ -228,9 +228,9 @@
       "id": "trava-atras-da-rede",
       "titulo": "o laço da réplica segura a trava de dados enquanto lê do soquete",
       "veredito": "PROVADA",
-      "segundos": 29.9,
+      "segundos": 31.08,
       "notas": [],
-      "quando": "2026-10-07 14:26"
+      "quando": "2026-10-08 15:34"
     },
     {
       "id": "ordem-pequena-aceita",
@@ -268,9 +268,9 @@
       "id": "portas-http-sem-o-portao-da-cifra",
       "titulo": "as portas HTTP atendendo em claro com a cifra exigida",
       "veredito": "PROVADA",
-      "segundos": 21.24,
+      "segundos": 21.85,
       "notas": [],
-      "quando": "2026-10-07 14:26"
+      "quando": "2026-10-08 15:34"
     },
     {
       "id": "transcricao-sem-o-cifrado",
@@ -284,25 +284,25 @@
       "id": "amarra-ao-canal-ignorada",
       "titulo": "o login amarrado ao canal conferido SEM a transcricao",
       "veredito": "PROVADA",
-      "segundos": 84.5,
+      "segundos": 83.0,
       "notas": [],
-      "quando": "2026-10-07 12:25"
+      "quando": "2026-10-08 14:51"
     },
     {
       "id": "amarra-exigida-ignorada",
       "titulo": "o servidor exige a amarracao ao canal, mas o login nao a cobra",
       "veredito": "PROVADA",
-      "segundos": 81.47,
+      "segundos": 89.03,
       "notas": [],
-      "quando": "2026-10-07 12:25"
+      "quando": "2026-10-08 15:14"
     },
     {
       "id": "remoto-em-claro-para-quem-exige",
       "titulo": "o abrir_remoto manda o login em claro mesmo com cifra: true",
       "veredito": "PROVADA",
-      "segundos": 78.86,
+      "segundos": 85.53,
       "notas": [],
-      "quando": "2026-10-07 12:25"
+      "quando": "2026-10-08 15:14"
     },
     {
       "id": "fio-sem-teto-de-registro",
@@ -334,25 +334,25 @@
       "id": "teto-da-linha-sem-a-constante-no-soquete",
       "titulo": "o `teto_da_linha` do servidor troca `TETO_DO_REGISTRO` por um teto quase infinito, visto pela rede",
       "veredito": "PROVADA",
-      "segundos": 6.58,
+      "segundos": 21.3,
       "notas": [],
-      "quando": "2026-09-24 04:58"
+      "quando": "2026-10-08 16:53"
     },
     {
       "id": "pulso-do-cluster-em-claro",
       "titulo": "o pulso da eleição saindo em claro com a cifra do cluster ligada",
       "veredito": "PROVADA",
-      "segundos": 35.64,
+      "segundos": 37.16,
       "notas": [],
-      "quando": "2026-10-07 12:36"
+      "quando": "2026-10-08 15:14"
     },
     {
       "id": "replicacao-do-cluster-em-claro",
       "titulo": "a replicação entre os nós do cluster saindo em claro",
       "veredito": "PROVADA",
-      "segundos": 82.55,
+      "segundos": 90.8,
       "notas": [],
-      "quando": "2026-10-07 14:26"
+      "quando": "2026-10-08 15:34"
     },
     {
       "id": "alter-compacta-o-buraco",
@@ -504,43 +504,43 @@
       "id": "rest-fecha-sem-escoar",
       "titulo": "a recusa por lista negra é engolida por um RST, e quem foi barrado vê «connection reset»",
       "veredito": "REDUNDANTE",
-      "segundos": 86.68,
+      "segundos": 86.21,
       "notas": [
         "confirmado: nenhum teste de unidade sente isto, e nao poderia -- o RST e do sistema operacional, e so aparece com um soquete de verdade. Quem pega e o passo 13 de `bancada/rest/provar.py`, e esta entrada existe para dizer, com o numero da rodada, que a cobertura mora la e nao aqui"
       ],
-      "quando": "2026-10-07 12:51"
+      "quando": "2026-10-08 15:14"
     },
     {
       "id": "transacao-nao-empilha",
       "titulo": "a transação escreve direto no disco em vez de empilhar",
       "veredito": "PROVADA",
-      "segundos": 82.63,
+      "segundos": 91.65,
       "notas": [],
-      "quando": "2026-10-07 12:51"
+      "quando": "2026-10-08 15:14"
     },
     {
       "id": "commit-confirma-abortada",
       "titulo": "o COMMIT confirma uma transação que já estava em ABORT_ONLY",
       "veredito": "PROVADA",
-      "segundos": 85.2,
+      "segundos": 87.33,
       "notas": [],
-      "quando": "2026-10-07 12:51"
+      "quando": "2026-10-08 15:14"
     },
     {
       "id": "marca-antes-do-fsync",
       "titulo": "a marca `.tx` é apagada antes de a tabela sincronizar",
       "veredito": "PROVADA",
-      "segundos": 83.36,
+      "segundos": 83.0,
       "notas": [],
-      "quando": "2026-10-07 14:39"
+      "quando": "2026-10-08 16:06"
     },
     {
       "id": "insert-sem-travar-o-fim",
       "titulo": "duas transações que anexam preveem o mesmo rowid",
       "veredito": "PROVADA",
-      "segundos": 81.35,
+      "segundos": 93.73,
       "notas": [],
-      "quando": "2026-10-07 12:51"
+      "quando": "2026-10-08 15:14"
     },
     {
       "id": "recuperar-sem-reindexar",
@@ -556,9 +556,9 @@
       "id": "comum-anexa-no-fim-travado",
       "titulo": "a escrita comum que anexa não olha o fim travado",
       "veredito": "PROVADA",
-      "segundos": 81.05,
+      "segundos": 89.49,
       "notas": [],
-      "quando": "2026-10-07 12:51"
+      "quando": "2026-10-08 15:14"
     },
     {
       "id": "dependencia-de-fora-fica-invisivel",
@@ -580,9 +580,9 @@
       "id": "cache-paginas-nao-chega-ao-motor",
       "titulo": "`cache_paginas` do config.json deixa de chegar ao motor",
       "veredito": "PROVADA",
-      "segundos": 18.81,
+      "segundos": 20.25,
       "notas": [],
-      "quando": "2026-10-07 12:51"
+      "quando": "2026-10-08 15:14"
     },
     {
       "id": "replica-julga-fk",
@@ -636,9 +636,9 @@
       "id": "before-sem-prazo-de-parede",
       "titulo": "o corpo do gatilho BEFORE volta a rodar sem prazo, com a trava global na mão",
       "veredito": "PROVADA",
-      "segundos": 80.68,
+      "segundos": 88.24,
       "notas": [],
-      "quando": "2026-10-07 13:03"
+      "quando": "2026-10-08 15:14"
     },
     {
       "id": "declara-conferida-sobre-orfa",
@@ -724,25 +724,25 @@
       "id": "pista-de-leitura-engole-a-trilha",
       "titulo": "a pista de leitura aceita tabela com dado pessoal, e a trilha fica sem o registro",
       "veredito": "PROVADA",
-      "segundos": 82.28,
+      "segundos": 93.74,
       "notas": [],
-      "quando": "2026-10-07 13:03"
+      "quando": "2026-10-08 15:14"
     },
     {
       "id": "pista-de-leitura-nao-espelha",
       "titulo": "a pista de leitura aceita tabela sem `.bkp` e o espelho deixa de nascer",
       "veredito": "PROVADA",
-      "segundos": 83.64,
+      "segundos": 94.28,
       "notas": [],
-      "quando": "2026-10-07 13:03"
+      "quando": "2026-10-08 15:14"
     },
     {
       "id": "leitura-sem-recuo-para-a-exclusiva",
       "titulo": "a tabela que pede a ficha exclusiva vira erro em vez de recuo",
       "veredito": "PROVADA",
-      "segundos": 84.2,
+      "segundos": 84.82,
       "notas": [],
-      "quando": "2026-10-07 13:03"
+      "quando": "2026-10-08 15:14"
     },
     {
       "id": "abrir-para-ler-cria-a-lixeira",
@@ -788,17 +788,17 @@
       "id": "fecho-em-paralelo-engole-o-erro",
       "titulo": "o `fsync` que falha dentro do fio, e o `join` que engole o erro",
       "veredito": "PROVADA",
-      "segundos": 55.96,
+      "segundos": 84.49,
       "notas": [],
-      "quando": "2026-09-24 13:28"
+      "quando": "2026-10-08 16:38"
     },
     {
       "id": "fecho-em-paralelo-fio-que-nao-sobe",
       "titulo": "uma tabela do fecho fica sem fio, e ninguém percebe",
       "veredito": "PROVADA",
-      "segundos": 53.61,
+      "segundos": 82.39,
       "notas": [],
-      "quando": "2026-09-24 13:28"
+      "quando": "2026-10-08 16:38"
     },
     {
       "id": "pagina-ordenada-varre-o-indice-inteiro",
@@ -844,9 +844,9 @@
       "id": "profiler-ligado-sem-a-raiz-dos-dados",
       "titulo": "o Profiler liga sem a raiz de dados e volta a decidir por um campo só",
       "veredito": "PROVADA",
-      "segundos": 81.48,
+      "segundos": 85.08,
       "notas": [],
-      "quando": "2026-10-07 15:37"
+      "quando": "2026-10-08 16:06"
     },
     {
       "id": "perfil-so-olha-a-tabela-do-primeiro-nivel",
@@ -860,9 +860,9 @@
       "id": "fase-da-telemetria-com-dado-do-usuario",
       "titulo": "a fase do SQL Check passa a carregar dado do usuário, e o furo nasce calado",
       "veredito": "PROVADA",
-      "segundos": 83.99,
+      "segundos": 82.24,
       "notas": [],
-      "quando": "2026-10-07 13:19"
+      "quando": "2026-10-08 15:14"
     },
     {
       "id": "cache-de-derivadas-sobrevive-a-troca-de-senha",
@@ -1004,33 +1004,33 @@
       "id": "upsert-zera-a-coluna-negada",
       "titulo": "o upsert (`inserir` com `se_existir: \"atualizar\"`) zerava a coluna que o usuário não altera — para quem não lê, para quem lê e não altera, pelo SQL `ON CONFLICT DO UPDATE` e em transação",
       "veredito": "PROVADA",
-      "segundos": 87.62,
+      "segundos": 87.95,
       "notas": [],
-      "quando": "2026-10-07 13:19"
+      "quando": "2026-10-08 15:14"
     },
     {
       "id": "presenca-da-coluna-negada-recusa-a-ficha",
       "titulo": "a presença da coluna que o usuário não altera recusava a operação inteira — e a ficha, que manda a linha inteira com a coluna como `null`, não incluía nem salvava nada",
       "veredito": "PROVADA",
-      "segundos": 85.36,
+      "segundos": 85.2,
       "notas": [],
-      "quando": "2026-10-07 13:39"
+      "quando": "2026-10-08 15:34"
     },
     {
       "id": "set-do-on-conflict-ignorado",
       "titulo": "o `SET` do `INSERT … ON CONFLICT DO UPDATE` / `ON DUPLICATE KEY UPDATE` (o campo `atualizar`) era ignorado calado, e o `VALUES` ia por cima da linha com NULL no que ele não trazia",
       "veredito": "PROVADA",
-      "segundos": 88.52,
+      "segundos": 82.27,
       "notas": [],
-      "quando": "2026-10-07 13:39"
+      "quando": "2026-10-08 15:34"
     },
     {
       "id": "filtro-do-indice-parcial-e-oraculo",
       "titulo": "o índice parcial cujo `onde` cita a coluna negada respondia sobre ela: varrer por ele devolvia exatamente quem tem `salario > 5000`",
       "veredito": "PROVADA",
-      "segundos": 87.46,
+      "segundos": 81.86,
       "notas": [],
-      "quando": "2026-10-07 13:39"
+      "quando": "2026-10-08 15:34"
     },
     {
       "id": "juncao-materializa-antes-do-teto",
@@ -1044,17 +1044,17 @@
       "id": "select-da-coluna-negada-devolve-nulo",
       "titulo": "`SELECT salario FROM folha` por quem não lê `salario` devolvia `{\"salario\": null}` em toda linha, em vez de recusar",
       "veredito": "PROVADA",
-      "segundos": 87.59,
+      "segundos": 81.34,
       "notas": [],
-      "quando": "2026-10-07 13:39"
+      "quando": "2026-10-08 15:34"
     },
     {
       "id": "em-engole-o-campo-ausente",
       "titulo": "`consultar.em` com `campo` que o sub-pedido não devolve — inclusive a coluna negada — respondia zero linhas com `ok: true`",
       "veredito": "PROVADA",
-      "segundos": 87.84,
+      "segundos": 84.69,
       "notas": [],
-      "quando": "2026-10-07 13:39"
+      "quando": "2026-10-08 15:34"
     },
     {
       "id": "literal-negativo-nao-parseia",
@@ -1084,17 +1084,17 @@
       "id": "permissao-de-dados-sem-raii",
       "titulo": "a vaga da porta de dados só volta no caminho feliz — um pânico no `atender` a leva junto",
       "veredito": "PROVADA",
-      "segundos": 88.75,
+      "segundos": 90.69,
       "notas": [],
-      "quando": "2026-10-07 13:39"
+      "quando": "2026-10-08 15:34"
     },
     {
       "id": "web-sem-teto",
       "titulo": "a porta web volta a nascer sem teto — uma thread por pedido, como até a 0.18",
       "veredito": "PROVADA",
-      "segundos": 88.98,
+      "segundos": 84.63,
       "notas": [],
-      "quando": "2026-10-07 13:39"
+      "quando": "2026-10-08 15:34"
     },
     {
       "id": "ficha-do-fio-pulada-no-panico",
@@ -1108,9 +1108,9 @@
       "id": "disco-erro-de-es-sem-aviso",
       "titulo": "o erro de E/S respondido ao cliente não avisa ninguém",
       "veredito": "PROVADA",
-      "segundos": 105.75,
+      "segundos": 100.77,
       "notas": [],
-      "quando": "2026-10-07 13:39"
+      "quando": "2026-10-08 15:34"
     },
     {
       "id": "disco-sonda-cega-ao-erro",
@@ -1172,17 +1172,17 @@
       "id": "bulkinsert-false-nao-drena-a-marca",
       "titulo": "o `bulkinsert(false)` sincroniza a tabela e deixa a marca `.tx` do COMMIT no disco",
       "veredito": "PROVADA",
-      "segundos": 54.16,
+      "segundos": 84.22,
       "notas": [],
-      "quando": "2026-09-30 15:59"
+      "quando": "2026-10-08 12:18"
     },
     {
       "id": "fecho-sem-suja-nao-drena-a-marca",
       "titulo": "o fecho da janela volta antes de drenar as marcas quando não há tabela suja",
       "veredito": "PROVADA",
-      "segundos": 55.47,
+      "segundos": 83.54,
       "notas": [],
-      "quando": "2026-09-24 13:28"
+      "quando": "2026-10-08 16:38"
     },
     {
       "id": "fsync-do-arquivo-limpo",
@@ -1212,9 +1212,9 @@
       "id": "upsert-gatilho-do-ramo",
       "titulo": "no upsert que atualiza, o BEFORE UPDATE vê a linha mesclada e o AFTER é o do ramo que ele virou",
       "veredito": "PROVADA",
-      "segundos": 84.81,
+      "segundos": 81.82,
       "notas": [],
-      "quando": "2026-10-07 14:26"
+      "quando": "2026-10-08 15:34"
     },
     {
       "id": "threads-do-so-pela-diferenca",
@@ -1324,33 +1324,33 @@
       "id": "juntar-sem-portao",
       "titulo": "`juntar` sem conferência própria: a tabela negada entra como lado B",
       "veredito": "PROVADA",
-      "segundos": 82.26,
+      "segundos": 82.73,
       "notas": [],
-      "quando": "2026-10-08 10:46"
+      "quando": "2026-10-08 16:38"
     },
     {
       "id": "unir-sem-portao",
       "titulo": "`unir` sem conferência própria: a tabela negada entra na LISTA",
       "veredito": "PROVADA",
-      "segundos": 81.28,
+      "segundos": 82.82,
       "notas": [],
-      "quando": "2026-10-08 10:46"
+      "quando": "2026-10-08 16:38"
     },
     {
       "id": "diferencas-sem-portao",
       "titulo": "`diferencas` sem conferência própria: a tabela negada entra em `a` ou em `b`",
       "veredito": "PROVADA",
-      "segundos": 84.45,
+      "segundos": 82.0,
       "notas": [],
-      "quando": "2026-10-07 15:51"
+      "quando": "2026-10-08 16:06"
     },
     {
       "id": "derivado-sem-portao",
       "titulo": "o portão some do irmão `executar_derivado`: o SQL inteiro vira a porta dos fundos",
       "veredito": "PROVADA",
-      "segundos": 89.49,
+      "segundos": 85.87,
       "notas": [],
-      "quando": "2026-10-07 15:51"
+      "quando": "2026-10-08 16:06"
     },
     {
       "id": "ficha-do-usuario-devolve-o-hash",
@@ -1732,9 +1732,9 @@
       "id": "posicao-nao-encolhe-em-silencio",
       "titulo": "tabela que nao abre some da soma do diario sem marcar `incompleta`",
       "veredito": "PROVADA",
-      "segundos": 83.37,
+      "segundos": 80.78,
       "notas": [],
-      "quando": "2026-10-01 17:01"
+      "quando": "2026-10-08 12:55"
     },
     {
       "id": "eleicao-prefere-completa",
@@ -1780,17 +1780,17 @@
       "id": "laco-preso-no-unico-secundario",
       "titulo": "chave duplicada num índice único secundário prende o laço do bidirecional para sempre",
       "veredito": "PROVADA",
-      "segundos": 61.86,
+      "segundos": 81.62,
       "notas": [],
-      "quando": "2026-10-01 12:24"
+      "quando": "2026-10-08 12:38"
     },
     {
       "id": "par-parado-reapresentado-a-cada-rodada",
       "titulo": "a tabela parada por conflito volta a ser puxada a cada rodada, e o grito se repete para sempre",
       "veredito": "PROVADA",
-      "segundos": 12.35,
+      "segundos": 27.44,
       "notas": [],
-      "quando": "2026-09-24 04:34"
+      "quando": "2026-10-08 16:53"
     },
     {
       "id": "dado-pessoal-no-grito-do-conflito",
@@ -1804,9 +1804,9 @@
       "id": "so-o-disco-vem-da-porta-e-nao-de-desligar-depois",
       "titulo": "o empilhar volta a abrir pela porta de sempre e desligar a sobreposicao na linha seguinte",
       "veredito": "PROVADA",
-      "segundos": 41.97,
+      "segundos": 82.07,
       "notas": [],
-      "quando": "2026-09-24 04:34"
+      "quando": "2026-10-08 16:53"
     },
     {
       "id": "slot-de-outro-reg",
@@ -1820,9 +1820,9 @@
       "id": "pulso-sem-prova-de-identidade",
       "titulo": "o pulso do cluster aceitando identidade auto-declarada",
       "veredito": "PROVADA",
-      "segundos": 25.02,
+      "segundos": 24.67,
       "notas": [],
-      "quando": "2026-10-01 03:27"
+      "quando": "2026-10-08 12:18"
     },
     {
       "id": "aperto-de-mao-sem-teto",
@@ -1924,43 +1924,43 @@
       "id": "reescrita-sem-portao-na-trava",
       "titulo": "a migração congela a tabela que o COMMIT de uma transação aberta vai abrir",
       "veredito": "PROVADA",
-      "segundos": 21.01,
+      "segundos": 23.26,
       "notas": [],
-      "quando": "2026-10-07 14:39"
+      "quando": "2026-10-08 16:06"
     },
     {
       "id": "acrescentar-coluna-sem-portao",
       "titulo": "o acrescentar_coluna congela a tabela que o COMMIT de uma transação aberta vai abrir",
       "veredito": "PROVADA",
-      "segundos": 23.1,
+      "segundos": 22.02,
       "notas": [],
-      "quando": "2026-10-07 14:39"
+      "quando": "2026-10-08 15:34"
     },
     {
       "id": "commit-sem-rede-antes-da-marca",
       "titulo": "o COMMIT grava a marca com uma tabela do alcance congelada",
       "veredito": "NAO PEGOU",
-      "segundos": 24.08,
+      "segundos": 23.94,
       "notas": [
         "PASSOU COM O DEFEITO REPOSTO: o_commit_contra_a_tabela_congelada_nao_sai_pela_metade"
       ],
-      "quando": "2026-10-07 14:39"
+      "quando": "2026-10-08 16:06"
     },
     {
       "id": "instrucao-na-vizinha-da-congelada",
       "titulo": "a escrita ligada pela chave a uma tabela congelada entra na lista da transação",
       "veredito": "PROVADA",
-      "segundos": 23.45,
+      "segundos": 23.75,
       "notas": [],
-      "quando": "2026-10-07 14:39"
+      "quando": "2026-10-08 16:06"
     },
     {
       "id": "braco-de-erro-retrava",
       "titulo": "a passada do COMMIT quebra depois da marca e a recuperação da hora não roda",
       "veredito": "PROVADA",
-      "segundos": 84.93,
+      "segundos": 84.02,
       "notas": [],
-      "quando": "2026-10-07 14:55"
+      "quando": "2026-10-08 16:06"
     },
     {
       "id": "completar-apaga-a-marca-impossivel",
@@ -1974,25 +1974,25 @@
       "id": "after-no-commit-some-calado",
       "titulo": "o AFTER disparado no COMMIT grava numa lista já descartada e some sem aviso",
       "veredito": "PROVADA",
-      "segundos": 23.74,
+      "segundos": 23.23,
       "notas": [],
-      "quando": "2026-10-07 14:55"
+      "quando": "2026-10-08 16:06"
     },
     {
       "id": "commit-zero-aplicado-vira-committed",
       "titulo": "a passada que quebra antes de qualquer byte da lista responde COMMITTED",
       "veredito": "PROVADA",
-      "segundos": 81.82,
+      "segundos": 83.36,
       "notas": [],
-      "quando": "2026-10-07 14:55"
+      "quando": "2026-10-08 16:06"
     },
     {
       "id": "commit-meio-sem-dizer-o-que-ficou",
       "titulo": "a chave que falha no meio da passada vira COMMITTED sem a escrita que falhou",
       "veredito": "PROVADA",
-      "segundos": 52.16,
+      "segundos": 82.46,
       "notas": [],
-      "quando": "2026-09-24 13:44"
+      "quando": "2026-10-08 16:38"
     },
     {
       "id": "de-hex-fatia-texto-por-byte",
@@ -2054,33 +2054,33 @@
       "id": "teto-decidido-antes-do-bloqueio",
       "titulo": "o teto da linha é decidido antes de a leitura bloquear, e o usuário excluído enquanto esperava manda 1 MiB",
       "veredito": "PROVADA",
-      "segundos": 24.01,
+      "segundos": 22.53,
       "notas": [],
-      "quando": "2026-10-07 14:55"
+      "quando": "2026-10-08 16:06"
     },
     {
       "id": "teto-decidido-sem-refrescar-a-ficha",
       "titulo": "o teto é perguntado na hora certa, mas com a ficha da sessão que nunca se refrescou",
       "veredito": "PROVADA",
-      "segundos": 22.64,
+      "segundos": 23.88,
       "notas": [],
-      "quando": "2026-10-07 14:55"
+      "quando": "2026-10-08 16:06"
     },
     {
       "id": "teto-refrescado-antes-do-bloqueio",
       "titulo": "a ficha é refrescada antes de a leitura bloquear, e o excluído enquanto esperava continua com 128 MiB",
       "veredito": "PROVADA",
-      "segundos": 21.87,
+      "segundos": 21.3,
       "notas": [],
-      "quando": "2026-10-07 15:08"
+      "quando": "2026-10-08 16:06"
     },
     {
       "id": "linha-residente-depois-da-resposta",
       "titulo": "a linha já respondida fica residente enquanto a conexão espera a próxima",
       "veredito": "PROVADA",
-      "segundos": 51.05,
+      "segundos": 46.58,
       "notas": [],
-      "quando": "2026-10-07 15:08"
+      "quando": "2026-10-08 16:06"
     },
     {
       "id": "hexadecimal-ecoa-o-valor",
@@ -2398,49 +2398,49 @@
       "id": "reparo-da-trava-sem-o-piso",
       "titulo": "o reparo da trava que falha deixa o processo de pé, servindo de estado incerto, em vez de abortar",
       "veredito": "PROVADA",
-      "segundos": 88.51,
+      "segundos": 95.82,
       "notas": [],
-      "quando": "2026-10-08 05:45"
+      "quando": "2026-10-08 16:19"
     },
     {
       "id": "reparo-da-trava-sem-as-marcas-orfas",
       "titulo": "o reparo da trava não completa a marca em voo: o COMMIT que morreu na passada sai pela metade, com as travas da transação já soltas",
       "veredito": "PROVADA",
-      "segundos": 66.36,
+      "segundos": 92.63,
       "notas": [],
-      "quando": "2026-09-24 14:11"
+      "quando": "2026-10-08 16:53"
     },
     {
       "id": "reparo-varre-todas-as-marcas",
       "titulo": "o reparo da trava completa marca que não é do pânico: reaplica um `atualizar` velho por cima da gravação mais nova",
       "veredito": "PROVADA",
-      "segundos": 67.59,
+      "segundos": 84.72,
       "notas": [],
-      "quando": "2026-09-24 14:11"
+      "quando": "2026-10-08 16:53"
     },
     {
       "id": "reparo-da-trava-deixa-o-residente",
       "titulo": "o reparo da trava deixa a cópia residente de pé: a memória serve a tabela atrás do disco depois do pânico",
       "veredito": "PROVADA",
-      "segundos": 59.81,
+      "segundos": 81.6,
       "notas": [],
-      "quando": "2026-09-24 13:28"
+      "quando": "2026-10-08 16:53"
     },
     {
       "id": "fecho-drena-as-sujas-antes-do-fsync",
       "titulo": "o fecho da janela esvazia a lista das tabelas sujas antes de sincronizar: um pânico no meio apaga a marca de commit cujo dado não foi ao disco",
       "veredito": "PROVADA",
-      "segundos": 56.58,
+      "segundos": 79.66,
       "notas": [],
-      "quando": "2026-09-24 13:28"
+      "quando": "2026-10-08 16:38"
     },
     {
       "id": "panico-em-thread-de-servico-morre-calado",
       "titulo": "o pânico com a trava na mão numa thread de serviço é reparado e a thread morre calada: a janela de gravação para de fechar sozinha",
       "veredito": "PROVADA",
-      "segundos": 80.06,
+      "segundos": 81.59,
       "notas": [],
-      "quando": "2026-10-01 16:40"
+      "quando": "2026-10-08 12:55"
     },
     {
       "id": "reparo-no-desenrolar-de-panico-de-fora",
@@ -2454,33 +2454,33 @@
       "id": "reparo-ignora-a-operacao-impossivel",
       "titulo": "a marca em voo com operação impossível fica no disco e o processo segue de pé, com as travas da transação soltas",
       "veredito": "PROVADA",
-      "segundos": 59.54,
+      "segundos": 82.43,
       "notas": [],
-      "quando": "2026-09-24 14:11"
+      "quando": "2026-10-08 12:18"
     },
     {
       "id": "reparo-apaga-a-marca-gravada-que-nao-se-rele",
       "titulo": "a marca em voo JÁ GRAVADA que não se relê no reparo sai do disco como «não confere»: a transação confirmada fica pela metade, ou sem bilhete para o arranque",
       "veredito": "PROVADA",
-      "segundos": 54.23,
+      "segundos": 82.02,
       "notas": [],
-      "quando": "2026-09-24 14:11"
+      "quando": "2026-10-08 16:53"
     },
     {
       "id": "reparo-com-panico-engolido",
       "titulo": "um `catch_unwind` em volta do reparo engole o pânico duplo: a trava fica fechada com o processo de pé",
       "veredito": "PROVADA",
-      "segundos": 60.67,
+      "segundos": 82.35,
       "notas": [],
-      "quando": "2026-09-24 13:28"
+      "quando": "2026-10-08 16:53"
     },
     {
       "id": "commit-sem-pre-conferencia",
       "titulo": "o COMMIT confere a chave estrangeira so na passada, depois da marca, e grava a parte da frente",
       "veredito": "PROVADA",
-      "segundos": 62.53,
+      "segundos": 88.14,
       "notas": [],
-      "quando": "2026-09-24 13:47"
+      "quando": "2026-10-08 16:38"
     },
     {
       "id": "sobreposicao-acha-pela-chave-velha",
@@ -2510,9 +2510,9 @@
       "id": "passada-replaneja-a-cascata",
       "titulo": "a passada replaneja a cascata depois da marca, e a lista valida sai pela metade",
       "veredito": "PROVADA",
-      "segundos": 62.24,
+      "segundos": 79.53,
       "notas": [],
-      "quando": "2026-09-24 13:44"
+      "quando": "2026-10-08 16:53"
     },
     {
       "id": "prefixo-copia-a-sobreposicao",
@@ -2590,9 +2590,9 @@
       "id": "servidor-segue-de-pe-depois-do-fsync-recusado",
       "titulo": "o servidor segue de pé depois de um `fsync` recusado, gravando num disco que já se sabe que mente",
       "veredito": "PROVADA",
-      "segundos": 63.13,
+      "segundos": 86.63,
       "notas": [],
-      "quando": "2026-09-24 15:15"
+      "quando": "2026-10-08 12:18"
     },
     {
       "id": "completar-engole-a-tabela-que-nao-foi-ao-disco",
@@ -2734,9 +2734,9 @@
       "id": "eco-do-sql-com-a-senha",
       "titulo": "o roteiro com a senha numa linha comentada roda, e a resposta da op `sql` ecoa o texto inteiro no campo `sql`",
       "veredito": "PROVADA",
-      "segundos": 34.57,
+      "segundos": 30.53,
       "notas": [],
-      "quando": "2026-10-02 11:56"
+      "quando": "2026-10-08 13:33"
     },
     {
       "id": "jobs-json-antigo-derruba-o-arranque",
@@ -2750,9 +2750,9 @@
       "id": "job-recusado-roda-mesmo-assim",
       "titulo": "o job que voltou do disco com credencial sobe e RODA -- pela agenda, pela tela, ou religado",
       "veredito": "PROVADA",
-      "segundos": 23.0,
+      "segundos": 22.13,
       "notas": [],
-      "quando": "2026-10-02 11:56"
+      "quando": "2026-10-08 13:33"
     },
     {
       "id": "ficha-do-job-devolve-a-senha-do-disco",
@@ -2798,17 +2798,17 @@
       "id": "prova-de-quem-nao-existe-sai-sem-conferir",
       "titulo": "o login por desafio-resposta de quem não existe, ou está inativo, sai sem conferir a prova",
       "veredito": "PROVADA",
-      "segundos": 136.33,
+      "segundos": 86.81,
       "notas": [],
-      "quando": "2026-10-02 12:29"
+      "quando": "2026-10-08 14:10"
     },
     {
       "id": "login-sem-o-teto-da-senha",
       "titulo": "o login recebe senha acima do teto e recusa como «credencial inválida»",
       "veredito": "PROVADA",
-      "segundos": 125.91,
+      "segundos": 85.76,
       "notas": [],
-      "quando": "2026-10-02 12:29"
+      "quando": "2026-10-08 14:10"
     },
     {
       "id": "criar-usuario-sem-o-teto-da-senha",
@@ -2838,49 +2838,49 @@
       "id": "relogio-de-jobs-morto-diz-que-esta-no-ar",
       "titulo": "o relogio de jobs que morre continua marcado como no ar",
       "veredito": "PROVADA",
-      "segundos": 93.06,
+      "segundos": 86.86,
       "notas": [],
-      "quando": "2026-10-02 12:29"
+      "quando": "2026-10-08 14:10"
     },
     {
       "id": "amostrador-morto-diz-que-esta-no-ar",
       "titulo": "o amostrador que morre continua marcado como no ar no retrato",
       "veredito": "PROVADA",
-      "segundos": 94.98,
+      "segundos": 85.31,
       "notas": [],
-      "quando": "2026-10-02 12:29"
+      "quando": "2026-10-08 13:33"
     },
     {
       "id": "job-corre-na-thread-de-servico",
       "titulo": "o job em panico com a trava na mao derruba o servidor",
       "veredito": "PROVADA",
-      "segundos": 93.7,
+      "segundos": 87.21,
       "notas": [],
-      "quando": "2026-10-02 12:29"
+      "quando": "2026-10-08 14:10"
     },
     {
       "id": "backup-corre-na-thread-de-servico",
       "titulo": "o backup agendado em panico com a trava na mao derruba o servidor",
       "veredito": "PROVADA",
-      "segundos": 100.17,
+      "segundos": 89.02,
       "notas": [],
-      "quando": "2026-10-02 12:29"
+      "quando": "2026-10-08 13:33"
     },
     {
       "id": "job-que-derrubou-roda-de-novo-no-arranque",
       "titulo": "a corrida de job que derrubou o processo roda de novo no arranque",
       "veredito": "PROVADA",
-      "segundos": 91.03,
+      "segundos": 84.28,
       "notas": [],
-      "quando": "2026-10-02 12:29"
+      "quando": "2026-10-08 14:10"
     },
     {
       "id": "backup-que-derrubou-roda-de-novo-no-arranque",
       "titulo": "o backup que derrubou o processo roda de novo no arranque",
       "veredito": "PROVADA",
-      "segundos": 92.07,
+      "segundos": 96.55,
       "notas": [],
-      "quando": "2026-10-02 12:29"
+      "quando": "2026-10-08 13:33"
     },
     {
       "id": "lapide-do-futuro-empurra-o-job",
@@ -2894,33 +2894,33 @@
       "id": "lapide-do-futuro-empurra-o-backup",
       "titulo": "a lapide do backup com hora no futuro vira a ultima corrida sem teto",
       "veredito": "PROVADA",
-      "segundos": 91.32,
+      "segundos": 80.82,
       "notas": [],
-      "quando": "2026-10-02 12:29"
+      "quando": "2026-10-08 14:10"
     },
     {
       "id": "corrida-interrompida-nao-avisa",
       "titulo": "a corrida de job fechada no arranque como FALHOU nao avisa por e-mail",
       "veredito": "PROVADA",
-      "segundos": 96.13,
+      "segundos": 86.12,
       "notas": [],
-      "quando": "2026-10-02 12:29"
+      "quando": "2026-10-08 13:33"
     },
     {
       "id": "backup-agendado-falha-calado",
       "titulo": "o backup agendado que falha so escreve no erro padrao",
       "veredito": "PROVADA",
-      "segundos": 91.29,
+      "segundos": 84.31,
       "notas": [],
-      "quando": "2026-10-02 12:29"
+      "quando": "2026-10-08 13:33"
     },
     {
       "id": "dblink-ilegivel-derruba-o-motor",
       "titulo": "o cadastro do DbLink ilegivel derruba o motor inteiro",
       "veredito": "PROVADA",
-      "segundos": 20.38,
+      "segundos": 18.17,
       "notas": [],
-      "quando": "2026-10-02 12:29"
+      "quando": "2026-10-08 14:10"
     },
     {
       "id": "dblink-que-nao-se-le-abre-vazio",
@@ -2934,9 +2934,9 @@
       "id": "jobs-ilegivel-derruba-o-motor",
       "titulo": "o cadastro de jobs ilegivel derruba o motor inteiro",
       "veredito": "PROVADA",
-      "segundos": 23.32,
+      "segundos": 21.44,
       "notas": [],
-      "quando": "2026-10-02 12:45"
+      "quando": "2026-10-08 14:10"
     },
     {
       "id": "core-leva-a-senha-do-cofre",
@@ -2958,9 +2958,9 @@
       "id": "esquema-vaza-o-histograma-da-particao",
       "titulo": "`op_esquema` publica `baldes[].registros` mesmo com a coluna da partição negada ao usuário",
       "veredito": "PROVADA",
-      "segundos": 67.42,
+      "segundos": 84.53,
       "notas": [],
-      "quando": "2026-10-01 03:03"
+      "quando": "2026-10-08 12:18"
     },
     {
       "id": "dblink-mysql-sem-teto-de-colunas",
@@ -3126,41 +3126,41 @@
       "id": "marca-do-disco-no-empilhar",
       "titulo": "dentro da transação, alterar a linha excluída suave a ressuscita; fora, ela continua excluída",
       "veredito": "PROVADA",
-      "segundos": 103.93,
+      "segundos": 83.49,
       "notas": [],
-      "quando": "2026-10-02 13:08"
+      "quando": "2026-10-08 14:10"
     },
     {
       "id": "upsert-solto-ressuscita-a-excluida",
       "titulo": "o upsert fora de transação ressuscita a linha excluída suave; o mesmo upsert dentro a mantém excluída",
       "veredito": "PROVADA",
-      "segundos": 94.82,
+      "segundos": 84.13,
       "notas": [],
-      "quando": "2026-10-02 13:08"
+      "quando": "2026-10-08 14:10"
     },
     {
       "id": "mescla-do-upsert-sobre-o-disco",
       "titulo": "o upsert com SET dentro da transação mescla sobre a linha do disco, e a excluída na lista ressuscita",
       "veredito": "PROVADA",
-      "segundos": 92.27,
+      "segundos": 89.1,
       "notas": [],
-      "quando": "2026-10-02 13:08"
+      "quando": "2026-10-08 14:10"
     },
     {
       "id": "elo-do-empilhar-pelo-disco",
       "titulo": "o elo que o `empilhar` planeja pelo disco sobrescreve o que a própria lista já escreveu na filha",
       "veredito": "PROVADA",
-      "segundos": 86.65,
+      "segundos": 83.9,
       "notas": [],
-      "quando": "2026-10-06 22:42"
+      "quando": "2026-10-08 14:30"
     },
     {
       "id": "tabela-que-some-segura-as-marcas",
       "titulo": "a tabela escrita na janela e excluida ou renomeada fica nas sujas pelo nome velho e segura todas as marcas de COMMIT",
       "veredito": "PROVADA",
-      "segundos": 91.68,
+      "segundos": 83.48,
       "notas": [],
-      "quando": "2026-10-02 13:08"
+      "quando": "2026-10-08 14:10"
     },
     {
       "id": "renomear-deixa-o-registro-no-nome-velho",
@@ -3246,9 +3246,9 @@
       "id": "sal-falso-pelo-token",
       "titulo": "o sal falso do `desafio` sai do token que todo cliente tem, e quem o tem sabe quem nao existe",
       "veredito": "PROVADA",
-      "segundos": 97.25,
+      "segundos": 83.49,
       "notas": [],
-      "quando": "2026-10-02 13:08"
+      "quando": "2026-10-08 14:10"
     },
     {
       "id": "scram-sem-teto-de-iteracoes",
@@ -3278,9 +3278,9 @@
       "id": "arranque-reconstroi-calado",
       "titulo": "o arranque reconstroi indice marcado e so diz no `stderr`: quem opera nao fica sabendo da queda",
       "veredito": "PROVADA",
-      "segundos": 124.16,
+      "segundos": 82.17,
       "notas": [],
-      "quando": "2026-10-06 20:58"
+      "quando": "2026-10-08 14:10"
     },
     {
       "id": "reconstruir-fts-sem-janela",
@@ -3302,33 +3302,33 @@
       "id": "upsert-solto-sem-trava-da-linha",
       "titulo": "o upsert solto altera a linha que uma transacao segura, e o COMMIT dela apaga a escrita",
       "veredito": "PROVADA",
-      "segundos": 104.54,
+      "segundos": 85.23,
       "notas": [],
-      "quando": "2026-10-06 20:58"
+      "quando": "2026-10-08 14:30"
     },
     {
       "id": "cascata-solta-sem-trava-da-filha",
       "titulo": "a cascata solta grava a filha que uma transacao segura, por cima do X dela",
       "veredito": "PROVADA",
-      "segundos": 115.46,
+      "segundos": 86.21,
       "notas": [],
-      "quando": "2026-10-06 20:58"
+      "quando": "2026-10-08 14:30"
     },
     {
       "id": "cascata-solta-sem-pre-conferencia",
       "titulo": "a cascata solta grava a mae antes de conferir a FK da filha para OUTRA mae, e deixa filhas orfas",
       "veredito": "PROVADA",
-      "segundos": 166.79,
+      "segundos": 85.7,
       "notas": [],
-      "quando": "2026-10-06 20:58"
+      "quando": "2026-10-08 14:30"
     },
     {
       "id": "elo-implicito-sem-trava",
       "titulo": "o elo que só o COMMIT descobre escreve sem trava, e a leitura repetível de outra transação lê 5 e depois 6",
       "veredito": "PROVADA",
-      "segundos": 82.86,
+      "segundos": 85.61,
       "notas": [],
-      "quando": "2026-10-01 21:28"
+      "quando": "2026-10-08 13:11"
     },
     {
       "id": "ciclo-de-commits-sem-desempate",
@@ -3342,17 +3342,17 @@
       "id": "quem-cede-no-ciclo-segura-as-travas",
       "titulo": "a transação que cede no ciclo de COMMITs volta ativa com as travas, e a mais velha continua barrada",
       "veredito": "PROVADA",
-      "segundos": 153.66,
+      "segundos": 86.57,
       "notas": [],
-      "quando": "2026-10-06 20:58"
+      "quando": "2026-10-08 14:30"
     },
     {
       "id": "aresta-velha-depois-do-savepoint",
       "titulo": "a transação barrada volta ao SAVEPOINT e a aresta velha faz a outra ceder num ciclo que não existe mais",
       "veredito": "PROVADA",
-      "segundos": 96.0,
+      "segundos": 83.71,
       "notas": [],
-      "quando": "2026-10-06 20:58"
+      "quando": "2026-10-08 14:10"
     },
     {
       "id": "corrente-do-ciclo-atravessa-quem-nao-confirma",
@@ -3422,9 +3422,9 @@
       "id": "job-dispara-job",
       "titulo": "um job cujo pedido é `job_rodar` sobe uma corrida aninhada por nível, sem teto: o job de si mesmo empilha threads até o processo cair",
       "veredito": "PROVADA",
-      "segundos": 26.72,
+      "segundos": 21.97,
       "notas": [],
-      "quando": "2026-10-06 21:27"
+      "quando": "2026-10-08 14:30"
     },
     {
       "id": "smtp-sem-prazo-total-da-conversa",
@@ -3744,65 +3744,65 @@
       "id": "commit-ignora-o-prazo",
       "titulo": "o COMMIT depois do prazo da transação grava a lista inteira",
       "veredito": "PROVADA",
-      "segundos": 83.5,
+      "segundos": 83.56,
       "notas": [],
-      "quando": "2026-10-07 11:33"
+      "quando": "2026-10-08 14:30"
     },
     {
       "id": "old-do-before-update-pelo-disco",
       "titulo": "dentro da transação o OLD do BEFORE UPDATE é a linha do disco, e o delta de estoque sai -4 onde é -2",
       "veredito": "PROVADA",
-      "segundos": 84.18,
+      "segundos": 86.3,
       "notas": [],
-      "quando": "2026-10-07 11:33"
+      "quando": "2026-10-08 14:51"
     },
     {
       "id": "old-do-upsert-pelo-disco",
       "titulo": "o upsert que vira alteração na transação dá ao BEFORE UPDATE o OLD do disco",
       "veredito": "PROVADA",
-      "segundos": 83.74,
+      "segundos": 82.35,
       "notas": [],
-      "quando": "2026-10-07 11:33"
+      "quando": "2026-10-08 14:51"
     },
     {
       "id": "old-do-before-delete-pelo-disco",
       "titulo": "dentro da transação o BEFORE DELETE vê a linha do disco, e a nascida na transação nem dispara",
       "veredito": "PROVADA",
-      "segundos": 86.79,
+      "segundos": 84.63,
       "notas": [],
-      "quando": "2026-10-07 11:33"
+      "quando": "2026-10-08 14:51"
     },
     {
       "id": "elo-do-empilhar-sem-trava-de-linha",
       "titulo": "o elo que o empilhar planeja não trava a linha da filha, e a escrita de outra conexão nela passa",
       "veredito": "PROVADA",
-      "segundos": 83.15,
+      "segundos": 83.92,
       "notas": [],
-      "quando": "2026-10-07 11:33"
+      "quando": "2026-10-08 14:51"
     },
     {
       "id": "elo-do-empilhar-regrava-a-linha-inteira",
       "titulo": "o COMMIT regrava a filha inteira que o empilhar viu, e desfaz a cascata solta de outra mãe dela",
       "veredito": "PROVADA",
-      "segundos": 83.16,
+      "segundos": 82.6,
       "notas": [],
-      "quando": "2026-10-07 11:33"
+      "quando": "2026-10-08 14:30"
     },
     {
       "id": "cascata-solta-sem-marca",
       "titulo": "a alteração solta que cascateia grava sem marca, e a queda no meio deixa filha na chave velha",
       "veredito": "PROVADA",
-      "segundos": 84.49,
+      "segundos": 80.89,
       "notas": [],
-      "quando": "2026-10-07 14:00"
+      "quando": "2026-10-08 15:34"
     },
     {
       "id": "cascata-solta-pela-marca-do-embutido",
       "titulo": "a alteração solta que cascateia volta ao `Table::atualizar`: a marca do store não se completa no reparo da trava",
       "veredito": "PROVADA",
-      "segundos": 85.15,
+      "segundos": 81.74,
       "notas": [],
-      "quando": "2026-10-07 14:00"
+      "quando": "2026-10-08 15:34"
     },
     {
       "id": "upsert-solto-cascateia-sem-marca",
@@ -3816,9 +3816,9 @@
       "id": "cascata-solta-com-o-punho-de-quem-chama-sujo",
       "titulo": "a cascata solta abre o punho da passada com o `t` de quem chama ainda sujo, e o `Drop` dele desfaz o índice da mãe",
       "veredito": "PROVADA",
-      "segundos": 86.32,
+      "segundos": 85.62,
       "notas": [],
-      "quando": "2026-10-07 11:33"
+      "quando": "2026-10-08 14:30"
     },
     {
       "id": "descida-do-punho-sem-o-fts",
@@ -3840,9 +3840,9 @@
       "id": "devolver-desfaz-o-abort-only",
       "titulo": "a lista devolvida ao fim de um COMMIT recusado desfaz o ABORT_ONLY que chegou no meio",
       "veredito": "PROVADA",
-      "segundos": 81.04,
+      "segundos": 82.31,
       "notas": [],
-      "quando": "2026-10-07 11:33"
+      "quando": "2026-10-08 14:30"
     },
     {
       "id": "subida-do-byte-52-sem-fsync",
@@ -3904,9 +3904,9 @@
       "id": "arranque-nao-alerta-a-base-antiga",
       "titulo": "o `phxsqld` sobe numa base `644`/`755` sem dizer nada",
       "veredito": "PROVADA",
-      "segundos": 20.3,
+      "segundos": 22.57,
       "notas": [],
-      "quando": "2026-10-07 11:40"
+      "quando": "2026-10-08 14:51"
     },
     {
       "id": "backup-atravessa-link-plantado",
@@ -3968,9 +3968,9 @@
       "id": "carga-adiada-solta-sem-reconstruir",
       "titulo": "o `bulkinsert(false)` da carga com o índice adiado solta a reserva com a árvore suspensa",
       "veredito": "PROVADA",
-      "segundos": 47.29,
+      "segundos": 83.0,
       "notas": [],
-      "quando": "2026-09-30 15:52"
+      "quando": "2026-10-08 12:18"
     },
     {
       "id": "suspensao-do-indice-so-na-ram",
@@ -3984,9 +3984,9 @@
       "id": "carga-adiada-orfa-sem-reconstruir",
       "titulo": "a carga adiada que sai sem o `bulkinsert(false)` (conexão caída, reserva vencida) deixa o índice suspenso até o próximo arranque",
       "veredito": "PROVADA",
-      "segundos": 38.99,
+      "segundos": 82.54,
       "notas": [],
-      "quando": "2026-09-30 15:55"
+      "quando": "2026-10-08 12:18"
     },
     {
       "id": "diario-que-falha-sem-marca-do-evento-devido",
@@ -4016,9 +4016,9 @@
       "id": "disco-cheio-deixa-a-sentinela-do-509",
       "titulo": "o disco cheio que derruba pelo `.log` grava a sentinela do `fsync` recusado, e o servidor não sobe no mesmo boot",
       "veredito": "PROVADA",
-      "segundos": 83.13,
+      "segundos": 85.27,
       "notas": [],
-      "quando": "2026-10-07 11:40"
+      "quando": "2026-10-08 14:51"
     },
     {
       "id": "exclusao-de-vez-sem-conferir-o-teto-do-diario",
@@ -4120,9 +4120,9 @@
       "id": "cascata-dispara-after-do-elo-so-no-commit",
       "titulo": "a mesma cascata do `ao_alterar` dispara o AFTER da filha no COMMIT e não na alteração solta",
       "veredito": "PROVADA",
-      "segundos": 84.87,
+      "segundos": 85.16,
       "notas": [],
-      "quando": "2026-10-07 11:53"
+      "quando": "2026-10-08 14:51"
     },
     {
       "id": "dblink-troca-o-host-e-herda-a-senha",
@@ -4136,9 +4136,9 @@
       "id": "dblink-no-fio-com-a-trava-de-dados",
       "titulo": "`dblink_ligar` e `dblink_sincronizar` vão ao fio com a trava de dados global na mão: um par que goteja abaixo do prazo por leitura prende todo pedido de todo cliente",
       "veredito": "PROVADA",
-      "segundos": 83.17,
+      "segundos": 85.7,
       "notas": [],
-      "quando": "2026-10-07 11:53"
+      "quando": "2026-10-08 14:51"
     },
     {
       "id": "dblink-sem-prazo-total",
@@ -4200,9 +4200,9 @@
       "id": "cluster-replica-sem-recuo",
       "titulo": "O laço da réplica do CLUSTER retentava a cada pulso sem o `Ritmo`: sem recuo nem para rede nem para limite",
       "veredito": "PROVADA",
-      "segundos": 83.91,
+      "segundos": 81.82,
       "notas": [],
-      "quando": "2026-10-07 11:53"
+      "quando": "2026-10-08 14:51"
     },
     {
       "id": "odbc-sem-prazo-total",
@@ -4248,9 +4248,9 @@
       "id": "porta-anunciada-em-pedacos",
       "titulo": "A linha «porta de dados escutando em …» saía em várias escritas: quem lia o log no meio via a porta pela metade",
       "veredito": "PROVADA",
-      "segundos": 20.26,
+      "segundos": 20.42,
       "notas": [],
-      "quando": "2026-10-07 11:53"
+      "quando": "2026-10-08 14:51"
     },
     {
       "id": "criar-tabela-sem-fsync-dos-arquivos",
@@ -4400,9 +4400,9 @@
       "id": "posicao-bidi-antes-do-dado",
       "titulo": "A posição do bidirecional ia ao disco a cada lote, antes do `fsync` do dado: numa queda, os eventos entre o dado perdido e a posição gravada nunca mais eram pedidos",
       "veredito": "PROVADA",
-      "segundos": 25.48,
+      "segundos": 28.48,
       "notas": [],
-      "quando": "2026-10-08 04:24"
+      "quando": "2026-10-08 16:19"
     },
     {
       "id": "posicao-bidi-sem-troca-duravel",
@@ -4432,9 +4432,9 @@
       "id": "gatilho-orfao-na-queda-do-excluir-tabela",
       "titulo": "`excluir_tabela` levava ao disco o sumiço da tabela ANTES do `gatilhos.json`: a queda entre os dois deixava o gatilho de uma tabela que não existe mais",
       "veredito": "PROVADA",
-      "segundos": 53.41,
+      "segundos": 85.72,
       "notas": [],
-      "quando": "2026-10-01 01:11"
+      "quando": "2026-10-08 12:18"
     },
     {
       "id": "erro-no-meio-da-exclusao-sem-fsync",
@@ -4458,9 +4458,9 @@
       "id": "pular-engole-a-posicao",
       "titulo": "o `replicacao_pular` respondia «pulou» por uma posição que não foi ao disco: um reinício devolvia o par ao evento descartado",
       "veredito": "PROVADA",
-      "segundos": 68.75,
+      "segundos": 80.85,
       "notas": [],
-      "quando": "2026-10-01 02:40"
+      "quando": "2026-10-08 12:18"
     },
     {
       "id": "registrar-engole-a-epoca-espelhada",
@@ -4498,9 +4498,9 @@
       "id": "trilha-pagina-por-contagem",
       "titulo": "A exportação da trilha paginava só por `pular`: um expurgo entre duas páginas fazia o auditor pular registro vivo sem aviso",
       "veredito": "PROVADA",
-      "segundos": 74.32,
+      "segundos": 79.79,
       "notas": [],
-      "quando": "2026-10-01 02:57"
+      "quando": "2026-10-08 12:18"
     },
     {
       "id": "rowid-revela-coluna-negada",
@@ -4530,17 +4530,17 @@
       "id": "replicar-manda-o-externo-selado",
       "titulo": "O `replicar` mandava ao fio o externo marcado selado com a chave do `.reg` da origem: nenhuma réplica o abria, nem com a mesma senha, porque o sal é por arquivo",
       "veredito": "PROVADA",
-      "segundos": 41.06,
+      "segundos": 41.45,
       "notas": [],
-      "quando": "2026-10-01 11:35"
+      "quando": "2026-10-08 12:38"
     },
     {
       "id": "visoes-entrega-o-literal",
       "titulo": "A op `visoes` pede só `ler` e devolvia o SQL da visão verbatim: o literal do `WHERE` e o comentário saíam para quem tinha a coluna negada",
       "veredito": "PROVADA",
-      "segundos": 73.55,
+      "segundos": 79.95,
       "notas": [],
-      "quando": "2026-10-01 03:18"
+      "quando": "2026-10-08 12:18"
     },
     {
       "id": "congelamento-sensivel-a-caixa",
@@ -4594,17 +4594,17 @@
       "id": "pulso-com-o-id-deste-no-uma-linha-por-envio",
       "titulo": "o pulso com o id DESTE nó escrevia uma linha no stderr por envio — o irmão do B2 no `op_cluster_pulso`",
       "veredito": "PROVADA",
-      "segundos": 24.21,
+      "segundos": 24.3,
       "notas": [],
-      "quando": "2026-10-01 04:30"
+      "quando": "2026-10-08 12:18"
     },
     {
       "id": "web-acima-do-teto-sem-rastro",
       "titulo": "as três portas HTTP recusavam o pedido acima do teto sem linha no `acessos.log` — o irmão do 216 na web",
       "veredito": "PROVADA",
-      "segundos": 27.96,
+      "segundos": 25.32,
       "notas": [],
-      "quando": "2026-10-01 03:38"
+      "quando": "2026-10-08 12:18"
     },
     {
       "id": "operacao-anonima-fora-do-inventario",
@@ -4682,9 +4682,9 @@
       "id": "arbitro-engole-o-rebaixar",
       "titulo": "o árbitro do cluster engolia a falha de gravar o rebaixamento (`let _ = estado.rebaixar(...)`): o nó voltava mandando num reinício, sem pista nenhuma",
       "veredito": "PROVADA",
-      "segundos": 75.64,
+      "segundos": 80.35,
       "notas": [],
-      "quando": "2026-10-01 04:18"
+      "quando": "2026-10-08 12:18"
     },
     {
       "id": "replica-atras-de-proxy-passa-pela-lista",
@@ -4722,9 +4722,9 @@
       "id": "marca-dagua-da-particao-negada",
       "titulo": "com a coluna que particiona negada pelo direito, `verificar`, `migrar_esquema`, `acrescentar_coluna` e `memoria_carregar` devolviam a marca d'agua da tabela",
       "veredito": "PROVADA",
-      "segundos": 72.01,
+      "segundos": 82.81,
       "notas": [],
-      "quando": "2026-10-01 05:19"
+      "quando": "2026-10-08 12:38"
     },
     {
       "id": "recuperacao-do-embutido-sem-politica",
@@ -4754,25 +4754,25 @@
       "id": "backup-copia-sob-a-exclusiva",
       "titulo": "O backup copiava com a ficha EXCLUSIVA da trava de dados: a leitura parava a cópia inteira (100 GB = 50 a 64 min sem ler nada)",
       "veredito": "PROVADA",
-      "segundos": 74.37,
+      "segundos": 84.14,
       "notas": [],
-      "quando": "2026-10-01 05:46"
+      "quando": "2026-10-08 12:38"
     },
     {
       "id": "backup-sem-portao-do-retrato",
       "titulo": "A cópia do backup com a ficha COMPARTILHADA e sem o portão do retrato: o primeiro escritor na fila do `RwLock` fazia toda leitura nova esperar a cópia inteira",
       "veredito": "PROVADA",
-      "segundos": 78.7,
+      "segundos": 83.05,
       "notas": [],
-      "quando": "2026-10-01 06:32"
+      "quando": "2026-10-08 12:38"
     },
     {
       "id": "faixa-do-config-nao-lida",
       "titulo": "o `inicio` da faixa da `Sequence` não tinha porta de produção: todo servidor numerava na faixa 0 e vinte caixas com passo 20 colidiam 100%",
       "veredito": "PROVADA",
-      "segundos": 19.76,
+      "segundos": 22.58,
       "notas": [],
-      "quando": "2026-10-01 11:21"
+      "quando": "2026-10-08 12:38"
     },
     {
       "id": "faixa-sai-da-classe",
@@ -4850,17 +4850,17 @@
       "id": "escopo-do-begin-sem-direito",
       "titulo": "o `SCOPE` do `begin` travava tabela sem conferir o direito de quem pedia (`declarar_escopo` sem `pode_em`): o leitor de outra base travava `rh.salarios`",
       "veredito": "PROVADA",
-      "segundos": 80.07,
+      "segundos": 84.72,
       "notas": [],
-      "quando": "2026-10-01 06:15"
+      "quando": "2026-10-08 12:38"
     },
     {
       "id": "prazo-da-transacao-sem-teto",
       "titulo": "o `timeout_ms` do `begin` não tinha teto: 10^12 ms abria uma transação de 31 anos",
       "veredito": "PROVADA",
-      "segundos": 80.7,
+      "segundos": 85.35,
       "notas": [],
-      "quando": "2026-10-01 06:18"
+      "quando": "2026-10-08 12:38"
     },
     {
       "id": "datarow-curta-do-postgres",
@@ -4882,9 +4882,9 @@
       "id": "dblink-ligar-grava-copia-velha",
       "titulo": "o `dblink_ligar` gravava no fim a cópia da ligação lida antes da rede: a excluída no meio voltava com a senha antiga, e a troca de senha feita no meio era desfeita",
       "veredito": "PROVADA",
-      "segundos": 86.12,
+      "segundos": 80.51,
       "notas": [],
-      "quando": "2026-10-01 06:27"
+      "quando": "2026-10-08 12:38"
     },
     {
       "id": "troca-de-chave-vira-linha-nova",
@@ -4914,9 +4914,9 @@
       "id": "numero-de-origem-conferido-so-no-par",
       "titulo": "O número de origem do bidirecional conferido só contra o próprio: dois caixas com o mesmo número entre si não eram vistos, e o central suprimia os eventos de um ao servir o outro",
       "veredito": "PROVADA",
-      "segundos": 42.72,
+      "segundos": 43.44,
       "notas": [],
-      "quando": "2026-10-01 06:50"
+      "quando": "2026-10-08 12:38"
     },
     {
       "id": "numero-de-origem-atribuido-ignorado",
@@ -4962,9 +4962,9 @@
       "id": "numero-aceito-antes-do-disco",
       "titulo": "O par novo de número de origem entrava na memória antes de o registro ir ao disco: com o disco recusando, a chamada seguinte o aceitava sem nunca ter gravado",
       "veredito": "PROVADA",
-      "segundos": 78.15,
+      "segundos": 83.38,
       "notas": [],
-      "quando": "2026-10-01 06:50"
+      "quando": "2026-10-08 12:38"
     },
     {
       "id": "manifesto-velho-apagado-pelo-nome",
@@ -5018,9 +5018,9 @@
       "id": "restauracao-recusa-como-replica-sem-cofre",
       "titulo": "A restauração do PRÓPRIO diário passaria pela recusa da réplica sem cofre: o servidor sem cofre deixaria de restaurar toda tabela com anexo marcado, sem proteger um byte",
       "veredito": "PROVADA",
-      "segundos": 103.67,
+      "segundos": 81.84,
       "notas": [],
-      "quando": "2026-10-01 12:14"
+      "quando": "2026-10-08 12:38"
     },
     {
       "id": "replica-sem-cofre-grava-inline-marcado-em-claro",
@@ -5082,17 +5082,17 @@
       "id": "replica-fiel-sem-conferir-a-linhagem",
       "titulo": "a replica fiel abre a tabela daqui sem conferir a linhagem do source: tabela de outra historia recebe os eventos no rowid de outra linha",
       "veredito": "PROVADA",
-      "segundos": 97.12,
+      "segundos": 83.14,
       "notas": [],
-      "quando": "2026-10-01 13:06"
+      "quando": "2026-10-08 12:55"
     },
     {
       "id": "aplicar-sem-conferir-a-linhagem",
       "titulo": "o `aplicar` ignora a linhagem que veio no pedido: a exclusao de uma caixa recem-nascida apaga a linha de outra com o carimbo empatado",
       "veredito": "PROVADA",
-      "segundos": 26.45,
+      "segundos": 23.62,
       "notas": [],
-      "quando": "2026-10-01 11:35"
+      "quando": "2026-10-08 12:38"
     },
     {
       "id": "teto-de-colunas-sem-o-bit-do-selo",
@@ -5114,33 +5114,33 @@
       "id": "portao-da-carga-le-um-campo-so",
       "titulo": "O portão da carga (Portão 4) lia só `\"tabela\"`: a tabela reservada pelo `BULKINSERT` se lia como o lado B de um `juntar`",
       "veredito": "PROVADA",
-      "segundos": 24.37,
+      "segundos": 21.35,
       "notas": [],
-      "quando": "2026-10-01 12:24"
+      "quando": "2026-10-08 12:38"
     },
     {
       "id": "bidi-absorve-o-diario-sob-a-exclusiva",
       "titulo": "A primeira rodada do bidirecional depois do arranque absorvia o diário local inteiro com a trava exclusiva na mão",
       "veredito": "PROVADA",
-      "segundos": 79.44,
+      "segundos": 84.49,
       "notas": [],
-      "quando": "2026-10-01 16:40"
+      "quando": "2026-10-08 12:55"
     },
     {
       "id": "bidi-absorve-o-diario-sob-a-exclusiva-pelo-soquete",
       "titulo": "A primeira rodada do bidirecional depois do arranque absorvia o diário local inteiro com a trava exclusiva na mão — a prova pelo soquete, com o escritor de cliente gravando",
       "veredito": "PROVADA",
-      "segundos": 33.36,
+      "segundos": 29.94,
       "notas": [],
-      "quando": "2026-10-01 18:41"
+      "quando": "2026-10-08 12:55"
     },
     {
       "id": "pre-absorcao-fura-a-fila-do-escritor",
       "titulo": "A absorção do bidirecional retomava a trava de leitura entre as fatias antes de o escritor acordado entrar, e o escritor esperava dezenas de fatias",
       "veredito": "PROVADA",
-      "segundos": 33.99,
+      "segundos": 29.6,
       "notas": [],
-      "quando": "2026-10-01 17:01"
+      "quando": "2026-10-08 12:55"
     },
     {
       "id": "leitor-que-cede-volta-na-hora",
@@ -5154,9 +5154,9 @@
       "id": "fatia-com-o-prazo-vencido-nao-anda",
       "titulo": "A fatia da absorção que chegava com o prazo já vencido saía sem lote nenhum, e a pré-absorção entregava o resto à trava exclusiva",
       "veredito": "PROVADA",
-      "segundos": 78.26,
+      "segundos": 83.23,
       "notas": [],
-      "quando": "2026-10-01 16:40"
+      "quando": "2026-10-08 12:55"
     },
     {
       "id": "diario-sob-a-compartilhada-recusa-a-cauda",
@@ -5170,25 +5170,25 @@
       "id": "bidi-rodada-seguinte-sem-a-marca-do-diario",
       "titulo": "Cada rodada do bidirecional com um evento local novo caminhava o diário desde o começo do volume para lê-lo",
       "veredito": "PROVADA",
-      "segundos": 91.49,
+      "segundos": 81.71,
       "notas": [],
-      "quando": "2026-10-01 13:06"
+      "quando": "2026-10-08 16:53"
     },
     {
       "id": "posicao-do-cluster-conta-tabela-que-nao-replica",
       "titulo": "A posição somada do cluster contava tabela que não é replicada, e o nó com dado local ganhava a eleição",
       "veredito": "PROVADA",
-      "segundos": 80.77,
+      "segundos": 83.08,
       "notas": [],
-      "quando": "2026-10-01 17:01"
+      "quando": "2026-10-08 12:55"
     },
     {
       "id": "ledger-marcado-recebido-calado",
       "titulo": "A réplica criava a cadeia de ledger com coluna marcada sem gritar nem contar",
       "veredito": "PROVADA",
-      "segundos": 30.3,
+      "segundos": 21.1,
       "notas": [],
-      "quando": "2026-10-01 13:06"
+      "quando": "2026-10-08 12:55"
     },
     {
       "id": "censo-do-ledger-le-a-forma-e-nao-a-marca",
@@ -5202,17 +5202,17 @@
       "id": "indice-da-chave-nao-nasce-no-criar-tabela",
       "titulo": "A chave conferida nascia no criar_tabela sem o índice da filha, e a mãe perdia todo excluir",
       "veredito": "PROVADA",
-      "segundos": 24.26,
+      "segundos": 21.12,
       "notas": [],
-      "quando": "2026-10-01 14:51"
+      "quando": "2026-10-08 12:55"
     },
     {
       "id": "indice-da-chave-nao-nasce-no-declarar-fk",
       "titulo": "A chave declarada numa filha que já existe não ganhava o índice, e a mãe perdia todo excluir",
       "veredito": "PROVADA",
-      "segundos": 22.95,
+      "segundos": 21.37,
       "notas": [],
-      "quando": "2026-10-01 14:51"
+      "quando": "2026-10-08 12:55"
     },
     {
       "id": "fts-orfao-reaproveitado-na-redeclaracao",
@@ -5258,9 +5258,9 @@
       "id": "master-conta-tabela-negada-ao-cluster",
       "titulo": "O master somava na posição do cluster a tabela que o usuário do cluster não pode replicar",
       "veredito": "PROVADA",
-      "segundos": 77.75,
+      "segundos": 84.37,
       "notas": [],
-      "quando": "2026-10-01 17:01"
+      "quando": "2026-10-08 12:55"
     },
     {
       "id": "replica-grava-filha-sem-mae-calada",
@@ -5274,17 +5274,17 @@
       "id": "bidi-grava-filha-sem-mae-calada",
       "titulo": "O bidirecional gravava a filha sem a mãe calado, enquanto a réplica fiel já contava",
       "veredito": "PROVADA",
-      "segundos": 20.86,
+      "segundos": 22.5,
       "notas": [],
-      "quando": "2026-10-01 17:01"
+      "quando": "2026-10-08 12:55"
     },
     {
       "id": "escrita-local-na-replica-calada",
       "titulo": "A réplica aceitava escrita local calada, e a ruptura que ela causava culpava o source",
       "veredito": "PROVADA",
-      "segundos": 19.63,
+      "segundos": 25.09,
       "notas": [],
-      "quando": "2026-10-02 05:52"
+      "quando": "2026-10-08 13:33"
     },
     {
       "id": "novo-orfao-sobrevive-ao-excluir-tabela",
@@ -5354,17 +5354,17 @@
       "id": "mapa-de-toques-de-outra-vida-620",
       "titulo": "O mapa de toques do bidirecional não zerava com a tabela recriada ou restaurada: o remoto mais velho sobrescrevia a escrita local nova",
       "veredito": "PROVADA",
-      "segundos": 22.76,
+      "segundos": 24.05,
       "notas": [],
-      "quando": "2026-10-01 18:41"
+      "quando": "2026-10-08 12:55"
     },
     {
       "id": "replica-culpa-o-source-pela-contagem-626",
       "titulo": "A réplica fiel culpava o source («apagada e recriada») pelo ramo da contagem mesmo quando a causa era escrita local",
       "veredito": "PROVADA",
-      "segundos": 22.6,
+      "segundos": 23.6,
       "notas": [],
-      "quando": "2026-10-01 18:41"
+      "quando": "2026-10-08 13:11"
     },
     {
       "id": "copia-leva-volumes-de-duas-versoes",
@@ -5458,9 +5458,9 @@
       "id": "calculada-cita-coluna-negada-na-declaracao",
       "titulo": "`acrescentar_coluna` com calculada (ou CHECK) que cita coluna negada ao usuario e aceito, e a coluna negada passa a ser lida por outro nome",
       "veredito": "PROVADA",
-      "segundos": 80.98,
+      "segundos": 85.68,
       "notas": [],
-      "quando": "2026-10-01 19:19"
+      "quando": "2026-10-08 13:11"
     },
     {
       "id": "calculada-derivada-de-negada-se-le",
@@ -5538,9 +5538,9 @@
       "id": "escrita-local-pelo-sql-nao-conta",
       "titulo": "o `executar_derivado` chama o direito por coluna sem a conta da escrita local, e o `INSERT` pelo SQL numa replica fiel volta a ser calado",
       "veredito": "PROVADA",
-      "segundos": 23.03,
+      "segundos": 24.48,
       "notas": [],
-      "quando": "2026-10-01 20:30"
+      "quando": "2026-10-08 13:11"
     },
     {
       "id": "regravar-esquema-troca-volume-a-volume-632",
@@ -5602,17 +5602,17 @@
       "id": "versao-imposta-ao-cliente-antigo",
       "titulo": "a guarda de conflito passa a exigir `versao`, e todo cliente antigo para de gravar",
       "veredito": "PROVADA",
-      "segundos": 78.84,
+      "segundos": 84.98,
       "notas": [],
-      "quando": "2026-10-01 21:28"
+      "quando": "2026-10-08 13:11"
     },
     {
       "id": "quinta-operacao-na-ficha-compartilhada",
       "titulo": "o `ler` entra na pista de leitura sem a varredura de escrita escondida, e a catraca da ficha compartilhada tem de acusar",
       "veredito": "PROVADA",
-      "segundos": 82.87,
+      "segundos": 83.04,
       "notas": [],
-      "quando": "2026-10-01 21:28"
+      "quando": "2026-10-08 13:11"
     },
     {
       "id": "operacao-cancelavel-fora-da-lista",
@@ -5674,33 +5674,33 @@
       "id": "quorum-espera-sem-degradar",
       "titulo": "o commit com quórum esperando o prazo inteiro a cada gravação, sem o modo degradado: uma réplica caída para o servidor 10 s por commit",
       "veredito": "PROVADA",
-      "segundos": 27.61,
+      "segundos": 25.43,
       "notas": [],
-      "quando": "2026-10-02 00:00"
+      "quando": "2026-10-08 13:11"
     },
     {
       "id": "quorum-espera-fora-da-trava",
       "titulo": "a espera do quórum depois de soltar a trava de dados: a linha fica visível antes de qualquer réplica ter confirmado",
       "veredito": "PROVADA",
-      "segundos": 26.88,
+      "segundos": 21.56,
       "notas": [],
-      "quando": "2026-10-02 00:00"
+      "quando": "2026-10-08 13:11"
     },
     {
       "id": "quorum-ack-pede-a-trava",
       "titulo": "o `replicar_aguardar` tomando a trava de dados do master: a réplica espera o commit que espera por ela, e todo commit estoura o prazo",
       "veredito": "PROVADA",
-      "segundos": 38.19,
+      "segundos": 36.35,
       "notas": [],
-      "quando": "2026-10-06 22:14"
+      "quando": "2026-10-08 14:30"
     },
     {
       "id": "quorum-ack-antes-do-fsync",
       "titulo": "a réplica confirmando o lote do quórum sem levá-lo ao disco: o «ok» vira «recebi», a garantia que o Cassandra chama de QUORUM",
       "veredito": "PROVADA",
-      "segundos": 21.17,
+      "segundos": 23.41,
       "notas": [],
-      "quando": "2026-10-08 04:24"
+      "quando": "2026-10-08 16:19"
     },
     {
       "id": "quorum-de-epoca-velha",
@@ -5714,9 +5714,9 @@
       "id": "quorum-sem-fsync-local",
       "titulo": "o master esperando o quórum sem ter sincronizado a própria gravação: volta como master atrás das réplicas que confirmaram",
       "veredito": "PROVADA",
-      "segundos": 25.76,
+      "segundos": 23.29,
       "notas": [],
-      "quando": "2026-10-02 00:00"
+      "quando": "2026-10-08 13:11"
     },
     {
       "id": "quorum-escritor-sem-espera",
@@ -5778,17 +5778,17 @@
       "id": "backup-fase-1-sob-a-trava",
       "titulo": "A fase 1 do backup (a cópia inteira) sob a ficha de leitura: a escrita esperava a cópia inteira, como no passo 1",
       "veredito": "PROVADA",
-      "segundos": 68.82,
+      "segundos": 86.54,
       "notas": [],
-      "quando": "2026-10-02 02:03"
+      "quando": "2026-10-08 13:11"
     },
     {
       "id": "backup-sem-fase-2",
       "titulo": "O backup em duas passadas SEM a fase 2: a cópia sai da fase 1, e a escrita feita durante ela não está no backup -- e o `conferir` aprova o retrato errado",
       "veredito": "PROVADA",
-      "segundos": 69.55,
+      "segundos": 83.06,
       "notas": [],
-      "quando": "2026-10-02 02:03"
+      "quando": "2026-10-08 13:11"
     },
     {
       "id": "backup-fase-2-nao-acerta",
@@ -5874,9 +5874,9 @@
       "id": "servidor-call-nao-passa-parametros-a-rotina",
       "titulo": "a op `sql` chamava a rotina SEM os `parametros` do pedido",
       "veredito": "PROVADA",
-      "segundos": 70.4,
+      "segundos": 83.02,
       "notas": [],
-      "quando": "2026-10-02 03:42"
+      "quando": "2026-10-08 13:11"
     },
     {
       "id": "zip-sem-a-guarda-de-espaco-da-arvore-temporaria",
@@ -5890,17 +5890,17 @@
       "id": "contador-do-source-nao-adotado",
       "titulo": "a replica abria a tabela sem adotar o contador da `Sequence` do source: promovida atrasada, reemitia o numero que o master ja tinha entregue",
       "veredito": "PROVADA",
-      "segundos": 24.51,
+      "segundos": 26.14,
       "notas": [],
-      "quando": "2026-10-02 04:52"
+      "quando": "2026-10-08 13:11"
     },
     {
       "id": "posicao-sem-o-contador-da-sequencia",
       "titulo": "o `posicao` do source nao dizia onde a `Sequence` estava: a replica nao tinha de onde adotar o contador",
       "veredito": "PROVADA",
-      "segundos": 23.57,
+      "segundos": 25.55,
       "notas": [],
-      "quando": "2026-10-02 04:52"
+      "quando": "2026-10-08 13:11"
     },
     {
       "id": "lote-do-quorum-sem-o-contador-da-sequencia",
@@ -5978,41 +5978,41 @@
       "id": "migracao-da-cifra-pelo-sql-sem-portao",
       "titulo": "ALTER TABLE ... ENCRYPT pelo SQL passava pela permissao da op `sql` (ler) e cifrava a tabela",
       "veredito": "PROVADA",
-      "segundos": 24.45,
+      "segundos": 31.28,
       "notas": [],
-      "quando": "2026-10-02 05:07"
+      "quando": "2026-10-08 13:11"
     },
     {
       "id": "migracao-da-cifra-sem-pergunta-de-transacao",
       "titulo": "a migracao congelava a tabela debaixo de uma transacao viva e o COMMIT dela saia pela metade",
       "veredito": "PROVADA",
-      "segundos": 23.78,
+      "segundos": 30.9,
       "notas": [],
-      "quando": "2026-10-02 05:07"
+      "quando": "2026-10-08 13:33"
     },
     {
       "id": "escrita-local-contada-depois-da-escrita-630",
       "titulo": "a escrita local na replica se conta DEPOIS de gravar: na janela entre uma coisa e outra a rodada da replica nomeia as duas causas e a recusa fica guardada por posicao",
       "veredito": "PROVADA",
-      "segundos": 70.33,
+      "segundos": 85.48,
       "notas": [],
-      "quando": "2026-10-02 05:52"
+      "quando": "2026-10-08 13:33"
     },
     {
       "id": "gancho-nunca-chamado",
       "titulo": "o carteiro da saúde não chama o gancho do operador",
       "veredito": "PROVADA",
-      "segundos": 90.4,
+      "segundos": 105.33,
       "notas": [],
-      "quando": "2026-10-02 06:32"
+      "quando": "2026-10-08 13:33"
     },
     {
       "id": "gancho-sem-portao-ligado",
       "titulo": "o gancho executa mesmo com `alertas.gancho.ligado` falso",
       "veredito": "PROVADA",
-      "segundos": 79.39,
+      "segundos": 86.36,
       "notas": [],
-      "quando": "2026-10-02 06:32"
+      "quando": "2026-10-08 13:33"
     },
     {
       "id": "gancho-por-shell",
@@ -6146,9 +6146,9 @@
       "id": "gancho-linha-so-troca-crlf",
       "titulo": "a linha do SMS e do stdin do gancho so troca CR e LF (pedido 643)",
       "veredito": "PROVADA",
-      "segundos": 76.26,
+      "segundos": 83.4,
       "notas": [],
-      "quando": "2026-10-02 08:27"
+      "quando": "2026-10-08 13:33"
     },
     {
       "id": "json-texto-sem-escapar-a-aspa",
@@ -6162,9 +6162,9 @@
       "id": "io-do-caminho-pedido-avisa-o-disco",
       "titulo": "o Io de um caminho digitado pelo usuario dispara o aviso de saude do disco (pedido 641)",
       "veredito": "PROVADA",
-      "segundos": 75.99,
+      "segundos": 85.28,
       "notas": [],
-      "quando": "2026-10-02 08:27"
+      "quando": "2026-10-08 13:33"
     },
     {
       "id": "profiler-caminho-pedido-como-io",
@@ -6178,9 +6178,9 @@
       "id": "encerrar-sessao-adivinha-web-pela-forma",
       "titulo": "o encerrar_sessao decide web x conexao pela forma do id e ignora o `tipo` do pedido (pedido 644)",
       "veredito": "PROVADA",
-      "segundos": 76.31,
+      "segundos": 83.51,
       "notas": [],
-      "quando": "2026-10-02 10:14"
+      "quando": "2026-10-08 13:33"
     },
     {
       "id": "ping-crava-a-porta-5000",
@@ -6202,17 +6202,17 @@
       "id": "ack-do-quorum-sem-alcance",
       "titulo": "o ack do quorum vale para tabela que a sessao nao alcanca (pedido 649)",
       "veredito": "PROVADA",
-      "segundos": 89.66,
+      "segundos": 83.75,
       "notas": [],
-      "quando": "2026-10-06 22:14"
+      "quando": "2026-10-08 14:30"
     },
     {
       "id": "ficha-do-quorum-ultimo-a-chegar",
       "titulo": "a ficha do cubo do quorum e gravada por qualquer credencial `Replicar` (pedido 649)",
       "veredito": "PROVADA",
-      "segundos": 92.15,
+      "segundos": 83.06,
       "notas": [],
-      "quando": "2026-10-06 22:14"
+      "quando": "2026-10-08 14:30"
     },
     {
       "id": "sequencia-do-source-sem-teto",
@@ -6234,9 +6234,9 @@
       "id": "noise-entra-sem-registro",
       "titulo": "quem chega pelo Noise entra sem a linha de log da transicao para o TLS (pedido 652)",
       "veredito": "PROVADA",
-      "segundos": 28.55,
+      "segundos": 26.31,
       "notas": [],
-      "quando": "2026-10-06 22:14"
+      "quando": "2026-10-08 14:30"
     },
     {
       "id": "noise-sem-silencio-por-par",
@@ -6258,9 +6258,9 @@
       "id": "arranque-recusado-calado",
       "titulo": "o arranque recusado pela sentinela do 509 nao avisa o operador (pedido 573)",
       "veredito": "PROVADA",
-      "segundos": 24.38,
+      "segundos": 20.58,
       "notas": [],
-      "quando": "2026-10-06 22:14"
+      "quando": "2026-10-08 14:30"
     },
     {
       "id": "veneno-permanente-recusa",
@@ -6418,17 +6418,17 @@
       "id": "senha-em-claro-de-fora-do-loopback",
       "titulo": "O `op_login` aceita `senha`/`senha_b64` de fora do loopback por fio sem cifra (pedido 667)",
       "veredito": "PROVADA",
-      "segundos": 81.88,
+      "segundos": 82.44,
       "notas": [],
-      "quando": "2026-10-07 16:06"
+      "quando": "2026-10-08 16:06"
     },
     {
       "id": "senha-em-claro-pelo-login-remoto-da-web",
       "titulo": "O login da web que vai para OUTRO servidor leva a senha em claro de fora do loopback sem passar pelo portao (pedido 667)",
       "veredito": "PROVADA",
-      "segundos": 19.43,
+      "segundos": 21.11,
       "notas": [],
-      "quando": "2026-10-07 16:06"
+      "quando": "2026-10-08 16:19"
     },
     {
       "id": "backup-manifesto-antes-do-fsync-com-faxina-total",
@@ -6514,9 +6514,9 @@
       "id": "grupo-sem-a-vez-das-maes",
       "titulo": "O grupo da réplica volta a aplicar as tabelas na ordem da chegada: a filha do mesmo commit entra antes da mãe e é contada órfã sem nunca ter sido visível sem ela (pedido 676)",
       "veredito": "PROVADA",
-      "segundos": 28.16,
+      "segundos": 19.88,
       "notas": [],
-      "quando": "2026-10-08 00:12"
+      "quando": "2026-10-08 16:19"
     },
     {
       "id": "diario-sem-piso-do-disco-para-o-id",
@@ -6554,9 +6554,9 @@
       "id": "commit-acima-do-teto-aceito",
       "titulo": "O COMMIT acima do teto da transação volta a ser aceito na origem: a réplica o recebe em pedaços (pedido 685)",
       "veredito": "PROVADA",
-      "segundos": 19.04,
+      "segundos": 21.87,
       "notas": [],
-      "quando": "2026-10-08 03:24"
+      "quando": "2026-10-08 16:19"
     },
     {
       "id": "custo-da-transacao-sem-a-imagem",
@@ -6578,17 +6578,17 @@
       "id": "espelho-imposto-a-quem-nao-pediu",
       "titulo": "A guarda do 677 volta a valer sem `\"espelho\": true`: config antigo passa a recusar a escrita local que fazia",
       "veredito": "PROVADA",
-      "segundos": 19.03,
+      "segundos": 20.53,
       "notas": [],
-      "quando": "2026-10-08 04:44"
+      "quando": "2026-10-08 16:19"
     },
     {
       "id": "quorum-aplica-lote-a-lote",
       "titulo": "O lote do quórum volta a ser aplicado tabela a tabela: o leitor da réplica vê a venda pela metade (pedido 681)",
       "veredito": "PROVADA",
-      "segundos": 21.17,
+      "segundos": 22.24,
       "notas": [],
-      "quando": "2026-10-08 04:24"
+      "quando": "2026-10-08 16:19"
     },
     {
       "id": "quorum-entrega-parte-o-commit",
@@ -6602,25 +6602,25 @@
       "id": "bidi-alcanca-tabela-a-tabela",
       "titulo": "O bidirecional volta a alcançar tabela a tabela: o par vê os itens sem a venda quando o fio cai (pedido 681)",
       "veredito": "PROVADA",
-      "segundos": 22.41,
+      "segundos": 24.19,
       "notas": [],
-      "quando": "2026-10-08 04:24"
+      "quando": "2026-10-08 16:19"
     },
     {
       "id": "carga-acima-do-teto-aceita",
       "titulo": "A carga fora de transação acima do teto volta a ser aceita: a réplica a recebe em pedaços (pedido 686)",
       "veredito": "PROVADA",
-      "segundos": 19.76,
+      "segundos": 18.63,
       "notas": [],
-      "quando": "2026-10-08 04:24"
+      "quando": "2026-10-08 16:19"
     },
     {
       "id": "grupo-da-replica-sem-marca",
       "titulo": "O grupo da réplica deixa de gravar a marca `.tx`: o SIGKILL no meio dele reabre a réplica com a venda pela metade (pedido 682)",
       "veredito": "PROVADA",
-      "segundos": 20.22,
+      "segundos": 28.02,
       "notas": [],
-      "quando": "2026-10-08 10:46"
+      "quando": "2026-10-08 16:38"
     },
     {
       "id": "replica-reaplica-inclusao-sem-olhar-o-reg",
@@ -6642,49 +6642,49 @@
       "id": "grupo-do-bidi-sem-marca",
       "titulo": "O grupo do bidirecional deixa de gravar a marca: o SIGKILL no meio dele reabre com a venda pela metade (pedido 698)",
       "veredito": "PROVADA",
-      "segundos": 20.48,
+      "segundos": 19.4,
       "notas": [],
-      "quando": "2026-10-08 06:25"
+      "quando": "2026-10-08 16:19"
     },
     {
       "id": "marca-do-bidi-sem-completar-no-arranque",
       "titulo": "A marca do grupo do bidirecional é gravada e o arranque não a completa: a venda reabre pela metade (pedido 698)",
       "veredito": "PROVADA",
-      "segundos": 19.47,
+      "segundos": 20.97,
       "notas": [],
-      "quando": "2026-10-08 06:25"
+      "quando": "2026-10-08 16:19"
     },
     {
       "id": "bidi-grava-alteracao-por-cima-da-inclusao-orfa",
       "titulo": "O arranque do bidirecional grava uma ALTERAÇÃO pela chave de um rowid cuja inclusão a queda deixou fora do diário (pedido 700)",
       "veredito": "PROVADA",
-      "segundos": 22.64,
+      "segundos": 20.94,
       "notas": [],
-      "quando": "2026-10-08 07:25"
+      "quando": "2026-10-08 16:19"
     },
     {
       "id": "bidi-completa-o-grupo-com-outro-id",
       "titulo": "O arranque completa o grupo do bidirecional com um id de transação novo: a réplica encadeada recebe a venda em dois pedaços (pedido 701 b)",
       "veredito": "PROVADA",
-      "segundos": 22.75,
+      "segundos": 22.02,
       "notas": [],
-      "quando": "2026-10-08 07:25"
+      "quando": "2026-10-08 16:19"
     },
     {
       "id": "reparo-completa-pelo-rowid-a-marca-do-bidi",
       "titulo": "O reparo da trava completa pelo rowid a marca em voo do grupo do bidirecional, que casa pela chave (pedido 700)",
       "veredito": "PROVADA",
-      "segundos": 83.85,
+      "segundos": 83.81,
       "notas": [],
-      "quando": "2026-10-08 07:25"
+      "quando": "2026-10-08 16:38"
     },
     {
       "id": "erro-no-meio-do-grupo-tira-a-marca-da-lista",
       "titulo": "O `?` no meio do grupo da réplica devolve o erro com a marca fora da lista da rodada: ela fica no disco até o próximo arranque (pedido 701 d)",
       "veredito": "PROVADA",
-      "segundos": 83.76,
+      "segundos": 81.67,
       "notas": [],
-      "quando": "2026-10-08 07:25"
+      "quando": "2026-10-08 16:19"
     },
     {
       "id": "alteracao-ja-aplicada-sem-olhar-o-conteudo",
@@ -6738,17 +6738,17 @@
       "id": "braco-da-uniao-perde-o-database-dele",
       "titulo": "O braço do `unir` deixa de ler o próprio `database`: a visão da loja lê o mesmo caixa N vezes (pedido 679)",
       "veredito": "PROVADA",
-      "segundos": 26.23,
+      "segundos": 19.82,
       "notas": [],
-      "quando": "2026-10-08 08:02"
+      "quando": "2026-10-08 16:38"
     },
     {
       "id": "uniao-cala-o-braco-cortado-no-teto",
       "titulo": "O `unir` responde `truncado: false` com um braço parado no teto de linhas: a loja aparece inteira sem estar (pedido 679)",
       "veredito": "PROVADA",
-      "segundos": 26.22,
+      "segundos": 18.62,
       "notas": [],
-      "quando": "2026-10-08 08:02"
+      "quando": "2026-10-08 16:38"
     },
     {
       "id": "sinal-mata-sem-fechar-a-janela",
@@ -6762,9 +6762,9 @@
       "id": "parada-afirma-sem-levar-ao-disco",
       "titulo": "A parada em ordem sai com código 0 sem ter sincronizado as tabelas sujas (pedido 687)",
       "veredito": "PROVADA",
-      "segundos": 17.97,
+      "segundos": 21.09,
       "notas": [],
-      "quando": "2026-10-08 10:00"
+      "quando": "2026-10-08 16:38"
     },
     {
       "id": "ponte-mcp-sai-sem-fechar-a-janela",

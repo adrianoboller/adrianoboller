@@ -299,7 +299,7 @@ consulta:
 
 - **O `agrupar` não virou açúcar do `consultar`, e a diferença é numérica.** O
   `agrupar` flui do disco e vê a tabela INTEIRA; o `consultar` resume o que a
-  composição materializou, e ela pára em `recursos.max_linhas` (nasce 1.000).
+  composição materializou, e ela pára em `max_linhas` (nasce 1.000).
   `SELECT COUNT(*) FROM t` (uma tabela, sem junção) continua indo pelo
   `agrupar` e conta tudo. Agregar por composição sobre uma tabela grande conta
   o que coube.
@@ -1049,7 +1049,7 @@ as colunas da direita, presentes e nulas. A ordem das colunas é sempre
 esquerda e depois direita, nos dois sentidos. O `cruzado` é o produto e **não**
 leva `em` — a chave sai **omitida** do JSON (nunca `[]`, que teria cara de
 junção comum sem par nenhum); se vier, recusa nomeando. Seu teto
-`recursos.max_linhas` é conferido **antes** de materializar, e esquerda ×
+`max_linhas` é conferido **antes** de materializar, e esquerda ×
 direita acima do teto recusa nomeando os dois tamanhos. As outras quatro
 param **na linha `teto + 1`**, dentro do próprio laço (`consultar::juntar`
 devolve `None`): antes, o teto era conferido sobre a lista pronta, e um
@@ -1224,6 +1224,6 @@ segue é o que continua sem substrato depois dessa rodada, por decisão:
   não tem substrato.
 - ~~**`COUNT(*)` sobre visão**~~ — **resolvido em 23/09/2026** (pedido 394):
   `SELECT COUNT(*) FROM v_c` e `SELECT uf, COUNT(*) FROM v_c GROUP BY uf`
-  traduzem e rodam. O teto é o da composição (`recursos.max_linhas`), e não o
+  traduzem e rodam. O teto é o da composição (`max_linhas`), e não o
   da tabela — para contar uma tabela INTEIRA, sem visão, o caminho continua
   sendo o `agrupar`.

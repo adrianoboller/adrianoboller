@@ -1490,11 +1490,11 @@ Regras que o PhxSql impõe e que a proposta tem de respeitar:
       // mesmo peso visual em toda linha, e quem lê para na primeira. O corte
       // é o que a tela existe para ninguém deixar passar batido -- por isso
       // `unshift`, e não `push`, e o rótulo vem em negrito (`**...**`) na
-      // própria fábrica; o dado (`recursos.max_linhas`) continua só marcado
+      // própria fábrica; o dado (`max_linhas`) continua só marcado
       // como código, nunca estilizado feito rótulo.
       const avisos = (r.notas || []).map(E);
       if (r.truncado) avisos.unshift(marcado(txt("tela.ia_res_truncado",
-        "**Resultado cortado:** o teto de linhas do servidor (`recursos.max_linhas`) parou este sub-pedido antes do fim — pode haver mais dados do que os que vieram")));
+        "**Resultado cortado:** o teto de linhas do servidor (`max_linhas`) parou este sub-pedido antes do fim — pode haver mais dados do que os que vieram")));
       alvo.innerHTML =
         `<p class="leg">${marcado(txt("tela.ia_res_op", "operação `{op}` · {n} linha(s)"),
           { op: r.op || "?", n: r.devolvidas ?? r.afetadas ?? linhas.length })}${

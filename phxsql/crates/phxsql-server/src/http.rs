@@ -184,6 +184,31 @@ const MULTITELA_JS: &str = include_str!("../ui/multitela.js");
 /// nao participa da chamada: ele so entrega o arquivo.
 const CLAUDE_JS: &str = include_str!("../ui/claude.js");
 
+/// A Exo 2, a tipografia da marca, embutida no binario (pedido 691).
+///
+/// Ate aqui ela vinha do Google Fonts, e a tela de um servidor de banco quase
+/// nunca tem internet: o video do CRUD mostrou a pagina inteira na pilha de
+/// reserva. O arquivo e o MESMO que a interface do PhxZip serve
+/// (`crates/phxzip-web/ui/fonte/`, com a licenca OFL ao lado), 40 KiB do
+/// recorte latino, pesos 400 a 700 -- um so no repositorio, para nao divergir.
+///
+/// Vai num `@font-face` com `data:` dentro do cabecalho, e nao numa rota
+/// propria: a pagina continua um documento so, sem um segundo pedido que
+/// possa falhar, e o CSP abre `font-src data:` e mais nada.
+const EXO2_WOFF2: &[u8] = include_bytes!("../../phxzip-web/ui/fonte/exo2-latin.woff2");
+
+/// A folha `@font-face` da Exo 2, montada uma vez por processo.
+fn folha_da_fonte() -> &'static str {
+    static FOLHA: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    FOLHA.get_or_init(|| {
+        format!(
+            "@font-face{{font-family:\"Exo 2\";font-style:normal;font-weight:400 700;\
+             font-display:swap;src:url(data:font/woff2;base64,{}) format(\"woff2\")}}",
+            phxsql_core::base64::codificar(EXO2_WOFF2)
+        )
+    })
+}
+
 /// A origem da API da Anthropic, para a politica de seguranca da pagina.
 ///
 /// A chamada sai do NAVEGADOR (a `std` nao tem TLS, e a casa nao acrescenta
@@ -200,9 +225,10 @@ pub const ORIGEM_ANTHROPIC: &str = "https://api.anthropic.com";
 /// cabecalho pelo proprio analisador de HTML, exatamente como acontece quando
 /// a pagina e publicada como artefato.
 pub fn montar_pagina() -> String {
+    let fonte = folha_da_fonte();
     format!(
         "<!doctype html>\n<html lang=\"pt-BR\">\n<head>\n<meta charset=\"utf-8\">\n\
-         <style>\n{GRID_CSS}\n</style>\n<script>\n{GRID_JS}\n</script>\n\
+         <style>\n{fonte}\n</style>\n<style>\n{GRID_CSS}\n</style>\n<script>\n{GRID_JS}\n</script>\n\
          <script>\n{DIAGRAMA_JS}\n</script>\n\
          <style>\n{TELEMETRIA_CSS}\n</style>\n\
          <script>\n{TELEMETRIA_JS}\n</script>\n\
@@ -457,10 +483,9 @@ fn montar_com_folga_e_extras(
     // Cabecalhos de seguranca: a pagina nao vai para dentro de um quadro
     // alheio, nao adivinha tipo de conteudo e so conversa com esta origem.
     //
-    // A unica coisa que ela busca fora e a fonte da marca, e so no HTML --
-    // por isso a folga do `style-src`/`font-src` nao existe nas respostas de
-    // dados. Servidor sem internet: a fonte nao carrega, a pilha de reserva
-    // assume e a pagina continua inteira.
+    // A fonte da marca vem embutida na propria pagina (pedido 691): a folga
+    // e `font-src data:`, so no HTML, e nenhum host de fora. Antes era o
+    // Google Fonts, e servidor sem internet ficava sem a Exo 2.
     //
     // O `connect-src` da PAGINA ganhou uma segunda origem pelo mesmo desenho:
     // a integracao com a Claude chama `api.anthropic.com` do navegador, porque
@@ -470,8 +495,7 @@ fn montar_com_folga_e_extras(
     // continuam com `connect-src 'self'`, e nenhum `script-src` novo entra --
     // nenhum script de fora roda nesta pagina.
     let estilo = if externo {
-        "style-src 'unsafe-inline' https://fonts.googleapis.com; \
-         font-src https://fonts.gstatic.com; "
+        "style-src 'unsafe-inline'; font-src data:; "
     } else {
         "style-src 'unsafe-inline'; "
     };
@@ -1055,18 +1079,48 @@ mod tests {
         );
     }
 
+    /// Pedido 691: a fonte da marca e da PAGINA, e vem de dentro dela.
+    ///
+    /// O HTML abre `font-src data:` e nenhum host de fora; a resposta de dados
+    /// nao abre nem isso. Reponha o Google Fonts no CSP e a primeira afirmacao
+    /// cai; tire o `@font-face` do `montar_pagina` e cai a ultima.
     #[test]
-    fn so_o_html_pode_buscar_a_fonte_da_marca() {
+    fn so_o_html_carrega_a_fonte_da_marca_e_de_dentro() {
         let pagina = montar_resposta(200, "text/html; charset=utf-8", "x");
-        assert!(pagina.contains("https://fonts.googleapis.com"));
-        assert!(pagina.contains("font-src https://fonts.gstatic.com"));
+        let csp = pagina
+            .lines()
+            .find(|l| l.starts_with("Content-Security-Policy:"))
+            .expect("a pagina tem politica de seguranca");
+        assert!(csp.contains("font-src data:;"), "veio: {csp}");
+        assert!(
+            !csp.contains("fonts.g"),
+            "nenhum host de fonte de fora: {csp}"
+        );
 
         let dados = montar_resposta(200, "application/json; charset=utf-8", "{}");
         assert!(
-            !dados.contains("fonts.g"),
-            "resposta de dados nao abre excecao para host nenhum"
+            !dados.contains("font-src"),
+            "resposta de dados nao carrega fonte"
         );
         assert!(dados.contains("default-src 'none'"));
+
+        let inteira = montar_pagina();
+        assert!(
+            !inteira.contains("fonts.googleapis.com"),
+            "a pagina nao busca fonte fora"
+        );
+        let i = inteira
+            .find("@font-face{font-family:\"Exo 2\"")
+            .expect("a Exo 2 entra embutida");
+        assert!(inteira[i..].starts_with(&format!(
+            "@font-face{{font-family:\"Exo 2\";font-style:normal;font-weight:400 700;\
+             font-display:swap;src:url(data:font/woff2;base64,{}",
+            &phxsql_core::base64::codificar(EXO2_WOFF2)[..64]
+        )));
+        assert!(
+            EXO2_WOFF2.starts_with(b"wOF2"),
+            "o arquivo embutido e WOFF2"
+        );
     }
 
     #[test]

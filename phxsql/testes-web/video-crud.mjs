@@ -80,9 +80,11 @@ const SIMBOLO = readFileSync(join(RAIZ, 'marca/derivados/phxsql-simbolo-440.png'
 const ICONE = readFileSync(join(RAIZ, 'marca/derivados/phxsql-icone-64.png')).toString('base64');
 
 async function marcaNaPagina() {
-  // Por `FontFace` com os BYTES, e nao `@font-face` com `data:`: o CSP da
-  // pagina (`font-src https://fonts.gstatic.com`, http.rs) recusa `data:`, e
-  // fonte binaria entregue em memoria nao passa por busca nenhuma.
+  // Por `FontFace` com os BYTES, e nao `@font-face` com `data:`: quando o
+  // video nasceu, o CSP da pagina (`font-src https://fonts.gstatic.com`)
+  // recusava `data:`. Desde o pedido 691 a tela traz a Exo 2 embutida e o CSP
+  // e `font-src data:`; o nome proprio `VideoExo` continua para as camadas do
+  // video nao se confundirem com a fonte da tela.
   await page.evaluate(async exo => {
     if (window.__exoVideo) return;
     const bytes = Uint8Array.from(atob(exo), c => c.charCodeAt(0));

@@ -721,7 +721,10 @@ A tabela abaixo sai de `python3 docs/geradores/catracas-do-trecho-vivo.py`, que 
 | `TETO_TESTE_FORA_DO_BINARIO` | teto | 0 | **0** | 16/09, nesta frente |
 | `TETO_TESTE_SEM_MODULO` | teto | 0 | **0** | 17/09, pedido 273 — depois do conserto dos três nomes da §15.7.7; §12.7 |
 | `TETO_NAO_JULGADA_ESCONDIDA` | teto | 0 | **0** | 16/09, pedido 269: nasceu medido em **26** e desceu para **0** no mesmo passo, republicando a corrida de 15:25 |
-| `PISO_DAS_ENTRADAS` | **piso** | 789 | **789** | 16/09 em 143, e sobe junto com o catálogo (145, 151, 160, 169, 170 e 177 em 16–17/09, e daí em diante — o valor de hoje é o da coluna «Valor»). Piso só sobe, e sobe no mesmo passo em que o catálogo cresce |
+| `PISO_DAS_ENTRADAS` | **piso** | 847 | **847** | 16/09 em 143, e sobe junto com o catálogo (145, 151, 160, 169, 170 e 177 em 16–17/09, e daí em diante — o valor de hoje é o da coluna «Valor»). Piso só sobe, e sobe no mesmo passo em que o catálogo cresce |
+| `TETO_SEGUEM_FALTANDO` | teto | 27 | **27** | guarda que derruba o binário sem nomear os vizinhos que seguem; o valor de hoje é o da coluna «Valor» |
+| `TETO_VEREDITO_VELHO` | teto | 0 | **0** | nasceu em 119 (vereditos com mais de 14 dias); desceu a 0 em 08/10/2026 pela renovação das provas |
+| `TETO_MENSAGEM_AMBIGUA_COM_O_SERVIDOR_INTEIRO` | teto | 148 | **148** | 08/10/2026, pedido 718: aposenta `TETO_MENSAGEM_AMBIGUA` (81), que cortava a união do servidor na linha 21 e nunca viu a produção; não é subida de teto |
 <!-- /GERADO: catracas-do-trecho-vivo.py -->
 
 **Nenhum teto subiu e nenhuma catraca se aposentou, e isso é decisão.** A
@@ -1699,7 +1702,7 @@ guarda estão listadas pela própria receita (`--lista`); as mais próximas de
 uma entrada são `a_senha_do_rele_nunca_aparece_no_json` (mesma saída da
 `cifra-reserializa-a-senha`, e por isso não entrou — seria a segunda por
 struct), `o_show_server_settings_nao_vaza_segredo` (SQL, custa 30 s por
-prova no `servidor.rs`) e `a_senha_nao_vai_para_o_disco` (§15.7.6: é
+prova, em `servidor/testes_diretivas.rs`) e `a_senha_nao_vai_para_o_disco` (§15.7.6: é
 território da §15.2).
 
 ### 15.8 As nove pétreas que tinham teste e nenhum defeito reposto (pedido 622)
@@ -1853,16 +1856,16 @@ Nenhum tem "folga" porque nenhum é contado contra o código-fonte.
 |---|---|---:|---|
 | `TETO_DA_CASCATA` | `phxsql-store/src/table.rs:81` | 16 níveis | recursão sem fundo em `ao_alterar` cascateado |
 | `TETO_DO_REGISTRO` | `phxsql-core/src/fio.rs:494` | 128 MiB | tamanho corrompido de registro não aloca a memória toda da máquina |
-| `TETO_PIVOT` | `phxsql-server/src/servidor.rs:15690` | 5.000.000 | teto do `max` de linhas pedido num pivot |
-| `TETO_JUNCAO` | `phxsql-server/src/servidor.rs:15692` | 500.000 | linhas do lado que entra inteiro na memória numa junção |
-| `TETO_DO_LOTE_SERVIDO` | `phxsql-server/src/servidor.rs:436` | 16 MiB | tamanho do lote de eventos servido de uma vez à réplica |
+| `TETO_PIVOT` | `phxsql-server/src/servidor/servico_composicao_01.rs` (`TETO_PIVOT`) | 5.000.000 | teto do `max` de linhas pedido num pivot |
+| `TETO_JUNCAO` | `phxsql-server/src/servidor/servico_composicao_01.rs` (`TETO_JUNCAO`) | 500.000 | linhas do lado que entra inteiro na memória numa junção |
+| `TETO_DO_LOTE_SERVIDO` | `phxsql-server/src/servidor/servico_replicacao_02.rs` (`TETO_DO_LOTE_SERVIDO`) | 16 MiB | tamanho do lote de eventos servido de uma vez à réplica |
 | `TETO_DO_CAMPO` | `phxsql-server/src/profiler.rs:118` | 120 bytes | truncamento de campo (`op`, `database`, `tabela`, `usuario`) na linha do profiler |
 | `TETO_DO_ERRO` | `phxsql-server/src/profiler.rs:122` | 500 bytes | truncamento do texto de erro no profiler |
 | `TETO_DO_CABECALHO` | `phxsql-server/src/profiler.rs:128` | 400 bytes | truncamento da descrição do filtro no cabeçalho/rodapé do profiler |
 | `MAX_ARQUIVOS_ANTIGOS` | `phxsql-server/src/profiler.rs:134` | 32 arquivos | teto de rodízio do profiler (32 × 64 MiB = 2 GiB) |
 | `MAX_CABECALHO` | `phxsql-server/src/http.rs:121` | 16 KiB | pedido HTTP malformado não consome memória |
 | `MAX_CORPO` | `phxsql-server/src/http.rs:123` | 4 MiB | corpo do pedido HTTP |
-| `CADEIA_MAXIMA` | `phxsql-server/src/servidor.rs:15585` | 8 | corrente de gatilhos (`AFTER INSERT ON t` gravando em `t`) sem fim |
+| `CADEIA_MAXIMA` | `phxsql-server/src/servidor/servico_sql_01.rs` (`CADEIA_MAXIMA`) | 8 | corrente de gatilhos (`AFTER INSERT ON t` gravando em `t`) sem fim |
 | `LIMITE_ABERTOS_PADRAO` | `phxsql-store/src/volume.rs:24` | 64 volumes | descritores de arquivo abertos ao mesmo tempo |
 | `VALOR_MAX` | `phxsql-store/src/trilha.rs:107` | 1.024 bytes | tamanho do valor antes/depois gravado na trilha LGPD |
 | `COLUNA_MAX` | `phxsql-store/src/trilha.rs:109` | 2.000 bytes | nome (ou lista) de coluna na trilha LGPD |
@@ -1934,9 +1937,9 @@ contado contra o código-fonte, e nenhum entra na tabela de catracas.
 - **As catracas de CONTAGEM NO FONTE dentro de `#[test]`** — hoje
   `so_um_lugar_toma_a_trava` (uma `write()` e uma `read()` da trava de dados,
   cada uma dentro da função que a batiza) e
-  `so_uma_operacao_usa_a_ficha_compartilhada` (teto **1**: só o `varrer` toma
-  a ficha de leitura; a segunda leva entra medida), ambas em
-  `phxsql-server/src/servidor.rs`. Contam ocorrências no próprio fonte pelo
+  `so_as_duas_operacoes_medidas_usam_a_ficha_compartilhada` (antes
+  `so_uma_operacao_…`; o nome atual diz o teto vigente), ambas em
+  `phxsql-server/src/servidor/testes_janela_e_cadeia.rs`. Contam ocorrências no próprio fonte pelo
   `include_str!`, como as catracas acima, mas não moram numa constante `TETO*`
   e por isso o `grep` da metodologia não as acha. **Ficam nomeadas aqui para
   que este inventário não seja lido como completo** — lei que lista menos

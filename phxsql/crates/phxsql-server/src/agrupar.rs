@@ -133,7 +133,7 @@ pub fn agrupar(
                 if ordem_de_chegada.len() as u64 >= teto_grupos {
                     return Err(PhxError::LimiteExcedido(format!(
                         "o agrupamento passou de {teto_grupos} grupos, que e o \
-                         teto de `recursos.max_linhas` deste servidor. Os grupos \
+                         teto de `max_linhas` deste servidor. Os grupos \
                          ficam TODOS em memoria ao mesmo tempo: agrupe por uma \
                          coluna com menos valores distintos, ou filtre antes com \
                          \"onde\"/\"expressao\""

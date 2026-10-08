@@ -1339,7 +1339,13 @@ def seguem_faltando(entradas, testes_de=None):
 # Frase com menos de 5 caracteres ou sem letra nao conta (`" = "`, `"x"`,
 # `"554"`): medido, eram elas que enchiam a lista de entradas que conferem
 # saida de `strace` ou um valor de linha, e nao mensagem nenhuma.
-TETO_MENSAGEM_AMBIGUA = 81
+#
+# APOSENTADA: `TETO_MENSAGEM_AMBIGUA` (81). Substituida por
+# `TETO_MENSAGEM_AMBIGUA_COM_O_SERVIDOR_INTEIRO` (pedido 718): aquela cortava
+# a uniao do servidor na linha 21 (`#[cfg(test)] mod testes_x;`, sem corpo) e
+# nunca viu a producao do servidor.rs; a serie com o passado se perde de
+# proposito, como em TETO_TABELA_NA_MAO. Nao e subida de teto.
+TETO_MENSAGEM_AMBIGUA_COM_O_SERVIDOR_INTEIRO = 148  # medido em 08/10/2026 (o --numeros)
 
 FRASE = re.compile(r'contains\(\s*"((?:[^"\\]|\\.)*)"\s*\)')
 
@@ -1378,10 +1384,17 @@ def corpo_de(nome):
     return corpos
 
 
+# So `#[cfg(test)] mod x {` COM corpo encerra a producao: `mod x;` (sem corpo)
+# e a declaracao de um arquivo de teste e nao diz nada do que vem depois.
+MODULO_DE_TESTE_COM_CORPO = re.compile(
+    r"#\[cfg\(test\)\]\s*(?:#\[[^\]]*\]\s*)*"
+    r"(?:pub(?:\([^)]*\))?\s+)?mod\s+\w+\s*\{")
+
+
 def producao(texto):
-    """O codigo antes do primeiro `#[cfg(test)]` -- e onde a mensagem nasce."""
-    k = texto.find("#[cfg(test)]")
-    return texto if k < 0 else texto[:k]
+    """O codigo antes do primeiro `#[cfg(test)] mod x {` -- onde a mensagem nasce."""
+    m = MODULO_DE_TESTE_COM_CORPO.search(texto)
+    return texto if m is None else texto[:m.start()]
 
 
 def mensagem_ambigua(entradas, ler_arquivo=None, corpos=None):
@@ -1389,8 +1402,23 @@ def mensagem_ambigua(entradas, ler_arquivo=None, corpos=None):
     so aparecem repetidas no codigo de producao que ela troca."""
     if ler_arquivo is None:
         fontes()
+        # A divisao do `servidor.rs` (`docs/propostas/divisao-do-servidor.md`
+        # §3): para as fontes do servidor esta regua le a UNIAO, como todo
+        # leitor do servidor, e nao o pedaco onde o trecho caiu -- senao a
+        # mesma frase, repetida em dois dominios, deixaria de contar como
+        # repetida so porque o texto mudou de arquivo.
+        sys.path.insert(0, os.path.join(RAIZ, "bancada"))
+        import fontes_do_servidor
+        do_servidor = {fontes_do_servidor.relativo(f)
+                       for f in fontes_do_servidor.todas()}
+        # Corta POR arquivo, e os de teste inteiro ficam fora: cortar a uniao
+        # no primeiro marcador era o defeito do pedido 718.
+        uniao = "".join(producao(a.read_text(encoding="utf-8"))
+                        for a in fontes_do_servidor.producao())
 
         def ler_arquivo(rel):
+            if rel in do_servidor:
+                return uniao
             return _TEXTOS.get(os.path.join(RAIZ, rel), "")
     corpos = corpos or corpo_de
     achadas = []
@@ -1624,7 +1652,7 @@ def medido(dados=None):
         "TETO_TESTE_SEM_MODULO": len(sem_modulo(catalogo())),
         "TETO_NAO_JULGADA_ESCONDIDA": len(escondidas()["escondidas"]),
         "TETO_SEGUEM_FALTANDO": len(seguem_faltando(catalogo())),
-        "TETO_MENSAGEM_AMBIGUA": len(mensagem_ambigua(catalogo())),
+        "TETO_MENSAGEM_AMBIGUA_COM_O_SERVIDOR_INTEIRO": len(mensagem_ambigua(catalogo())),
         "TETO_VEREDITO_VELHO": len(velhos_hoje()[0]),
         "PISO_DAS_ENTRADAS": len(catalogo()) + len(APOSENTADAS),
     }
@@ -1680,7 +1708,8 @@ AS_CATRACAS = [
      "sem `seguem`, uma troca que quebre o arquivo inteiro sai PROVADA. "
      "Nomeie no `seguem` um teste do MESMO binario que tem de seguir de pe "
      "com o defeito reposto, e prove com `provar-guardas.py --so <id>`."),
-    ("TETO_MENSAGEM_AMBIGUA", TETO_MENSAGEM_AMBIGUA, "teto",
+    ("TETO_MENSAGEM_AMBIGUA_COM_O_SERVIDOR_INTEIRO",
+     TETO_MENSAGEM_AMBIGUA_COM_O_SERVIDOR_INTEIRO, "teto",
      "entradas cujos `caem` so conferem frases repetidas no codigo trocado",
      "o teste confere uma frase que outro caminho do MESMO arquivo tambem "
      "produz -- o risco que deixou a `sequencia-numero-cru-perde-precisao` "
@@ -2054,7 +2083,33 @@ def autoteste_das_tres_novas():
              "sequencia-numero-cru-perde-precisao"
              in {i for i, _f in mensagem_ambigua(reais)})
     conferir("ambigua: o catalogo de hoje mede o teto",
-             len(mensagem_ambigua(reais)) == TETO_MENSAGEM_AMBIGUA)
+             len(mensagem_ambigua(reais)) == TETO_MENSAGEM_AMBIGUA_COM_O_SERVIDOR_INTEIRO)
+
+    # pedido 718, nos dois sentidos: o corte antigo (1o `#[cfg(test)]`, ate o
+    # `mod x;` sem corpo) reposto faz o numero CAIR (a regua volta a ficar
+    # cega ao servidor); uma mensagem ambigua plantada o faz SUBIR.
+    sem_corpo = 'erro("perde precisao"); outro("perde precisao");'
+    conferir("ambigua 718: `mod x;` sem corpo nao corta a producao",
+             producao('#[cfg(test)]\nmod t;\n' + sem_corpo) ==
+             '#[cfg(test)]\nmod t;\n' + sem_corpo)
+    conferir("ambigua 718: `mod x {` com corpo corta",
+             producao('a;\n#[cfg(test)]\nmod t {\n}') == 'a;\n')
+    original = producao
+    try:
+        globals()["producao"] = lambda t: (
+            t if t.find("#[cfg(test)]") < 0 else t[:t.find("#[cfg(test)]")])
+        antigo = len(mensagem_ambigua(reais))
+    finally:
+        globals()["producao"] = original
+    conferir("ambigua 718: o corte antigo reposto faz o numero cair (%d < %d)"
+             % (antigo, TETO_MENSAGEM_AMBIGUA_COM_O_SERVIDOR_INTEIRO),
+             antigo < TETO_MENSAGEM_AMBIGUA_COM_O_SERVIDOR_INTEIRO)
+    plantada = {"id": "plantada", "arquivo": "a.rs", "trecho": "x", "caem": ["t"]}
+    leitor = lambda rel: sem_corpo if rel == "a.rs" else ""
+    quadro = lambda n: ["{ e.contains(\"perde precisao\") }"]
+    conferir("ambigua 718: uma ambigua plantada faz o numero subir",
+             len(mensagem_ambigua(reais + [plantada], leitor, quadro)) ==
+             len(mensagem_ambigua(reais, leitor, quadro)) + 1)
 
     # ---- nona: idade do veredito
     hoje = datetime.date(2026, 10, 7)

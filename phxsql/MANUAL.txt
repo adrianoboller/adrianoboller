@@ -2495,7 +2495,7 @@ AGRUPAR: O GROUP BY
     apelidos -- e so eles. "grupos" conta o que sobrou depois do "tendo".
 
     Grupo sem valor nenhum sai NULO, e nao zero: somar "nada" nao da zero
-    reais. E o teto conta GRUPOS (recursos.max_linhas), porque e o numero
+    reais. E o teto conta GRUPOS (max_linhas), porque e o numero
     deles que fica todo em memoria ao mesmo tempo.
 
 CONSULTAR: A COMPOSICAO
@@ -2524,7 +2524,7 @@ CONSULTAR: A COMPOSICAO
 
     "truncado" diz que esta resposta fala de um PEDACO: algum sub-pedido (o
     "de", um lado de "juntar", o "escalar", o "existe" ou o "em") -- ou o
-    recorte deste nivel -- parou em recursos.max_linhas. Sem ele um IN sobre
+    recorte deste nivel -- parou em max_linhas. Sem ele um IN sobre
     meio conjunto responde "nao casa" a chave que casava, e o numero sai com
     cara de resposta. O "max" que VOCE pediu no sub-pedido nao acende a
     bandeira: ele e um LIMIT, e voce recebeu o que pediu. O corte nao recusa
@@ -2550,7 +2550,7 @@ CONSULTAR: A COMPOSICAO
     da esquerda nulas), "completo" (os dois) ou "cruzado" (o produto). "em" e
     igualdade entre colunas; o resto da condicao vai para "expressao". Fora do
     "cruzado", junção sem par recusa: seria produto cartesiano. O "cruzado"
-    nao leva "em", e seu teto (recursos.max_linhas) e conferido ANTES de
+    nao leva "em", e seu teto (max_linhas) e conferido ANTES de
     materializar -- esquerda x direita acima do teto recusa nomeando os dois
     tamanhos.
 

@@ -610,7 +610,7 @@ fn o_sql_de_relatorio_atravessa_as_duas_metades() {
 ///
 /// O `agrupar` flui do disco e ve a tabela INTEIRA; a composicao agrega o
 /// que ela materializou, e o que ela materializa tem o teto de
-/// `recursos.max_linhas` -- que nasce 1.000. Com o teto em 2 e quatro
+/// `max_linhas` -- que nasce 1.000. Com o teto em 2 e quatro
 /// pedidos, a mesma pergunta responde **4** por uma porta e **2** pela
 /// outra. Transformar o `agrupar` em acucar do `consultar` trocaria o 4
 /// pelo 2 calado, e e a medida que matou aquela proposta (parecer do papel

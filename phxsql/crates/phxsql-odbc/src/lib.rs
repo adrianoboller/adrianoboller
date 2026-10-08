@@ -740,7 +740,7 @@ fn executar_sql(id: usize, sql: String) -> SqlReturn {
                     && !sem_grade(&resposta);
                 // O `"truncado"` da resposta (pedido 419/438): algum sub-pedido da
                 // composicao -- ou a propria consulta -- parou no teto de
-                // `recursos.max_linhas` do servidor, e quem so olha o `SQL_SUCCESS`
+                // `max_linhas` do servidor, e quem so olha o `SQL_SUCCESS`
                 // acha que recebeu a tabela inteira. NAO e `01004`: aquele SQLSTATE
                 // ja tem dono neste driver (o valor de uma CELULA cortado pelo
                 // buffer curto, linha 462 e 1179) e o padrao ISO/PostgreSQL o define
@@ -808,7 +808,7 @@ fn executar_sql(id: usize, sql: String) -> SqlReturn {
                             id,
                             "01000",
                             "o resultado foi cortado pelo teto de linhas do servidor \
-                             (recursos.max_linhas); ha sub-pedido que nao veio inteiro",
+                             (max_linhas); ha sub-pedido que nao veio inteiro",
                         );
                         return SQL_SUCCESS_WITH_INFO;
                     }
@@ -833,7 +833,7 @@ fn executar_sql(id: usize, sql: String) -> SqlReturn {
                         id,
                         "01000",
                         "o resultado foi cortado pelo teto de linhas do servidor \
-                         (recursos.max_linhas); ha sub-pedido que nao veio inteiro",
+                         (max_linhas); ha sub-pedido que nao veio inteiro",
                     );
                     houve_aviso = true;
                 }

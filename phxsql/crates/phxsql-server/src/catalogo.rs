@@ -687,7 +687,7 @@ pub const OPERACOES: &[Operacao] = &[
                  com `agregados` é o agregado global -- uma linha só. Depois \
                  de agrupar, a linha tem apenas estas colunas e os apelidos \
                  dos agregados. Ele resume o que a COMPOSIÇÃO produziu, e a \
-                 composição pára em `recursos.max_linhas`: para o `GROUP BY` \
+                 composição pára em `max_linhas`: para o `GROUP BY` \
                  da tabela INTEIRA, de uma tabela só, use `agrupar`",
             ),
             opc(

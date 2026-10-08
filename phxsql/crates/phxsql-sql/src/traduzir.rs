@@ -560,12 +560,12 @@ fn plano_agrupar(s: &Selecao, database: &str, mut notas: Vec<String>) -> Result<
     }
     // O teto e o do `agrupar`, e o DISTINCT o herda inteiro: os grupos ficam
     // TODOS em memoria ao mesmo tempo, e o motor recusa acima de
-    // `recursos.max_linhas` nomeando o teto. Quem pede DISTINCT de uma coluna
+    // `max_linhas` nomeando o teto. Quem pede DISTINCT de uma coluna
     // de alta cardinalidade paga isso, e a recusa diz o que fazer.
     if s.distinto {
         notas.push(
             "o teto e o do `agrupar`: os grupos ficam TODOS em memoria ao mesmo tempo, e \
-             acima de `recursos.max_linhas` o motor recusa nomeando o teto -- um DISTINCT \
+             acima de `max_linhas` o motor recusa nomeando o teto -- um DISTINCT \
              de coluna com muitos valores distintos para ali"
                 .into(),
         );

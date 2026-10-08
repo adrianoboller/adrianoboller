@@ -2,6 +2,22 @@
 
 Formato baseado em *Keep a Changelog*. Versionamento semântico.
 
+## [0.9.5] — 2026-10-08 · **TODA COR SAI DE UM TOKEN, E A COLUNA GANHA `dica`**
+
+Seis cores estavam cravadas para o papel (o hover da linha, o da coluna
+congelada, a borda da célula, o trilho da barra, o funil e o texto sobre o
+acento), além do chip e das cinco pastilhas. Quem levava a grade para um tema
+escuro trocava `--phx-bg`/`--phx-fg` e ficava com elas: medido no console do
+PhxSql, o `rowid` em hover dava **1,11:1** e a célula comum **2,87:1** (pedido
+689). Agora são tokens (`--phx-hover`, `--phx-hover-fixa`, `--phx-linha`,
+`--phx-trilho`, `--phx-funil`, `--phx-sobre-acc`, `--phx-anel`, `--phx-perigo`,
+`--phx-chip-*`, `--phx-solta`, `--phx-<cor>-bg|fg|borda`), com os valores de
+sempre no tema claro. O popover do JSON continua escuro nos dois temas, de
+propósito.
+
+`colunas[i].dica` vira o `title` do cabeçalho: quando o título é o rótulo de
+tela da coluna (pedido 692), o nome de verdade fica a um passar de mouse.
+
 ## [0.9.4] — 2026-10-01 · **ALVO DE TOQUE NO DEDO GROSSO**
 
 Só no `@media (pointer:coarse)`: o botão do filtro do cabeçalho (`.phx-fbtn`,

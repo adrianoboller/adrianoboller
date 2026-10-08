@@ -1208,7 +1208,12 @@ pub fn numeros_cravados() -> Vec<(String, String)> {
 /// Numeros cravados em texto de tela -- catraca NOVA do pedido 645, no numero
 /// medido do dia em que a regua nasceu. **So desce.** Nao substitui nenhuma
 /// outra: e uma pergunta que nenhuma catraca fazia.
-pub const TETO_NUMERO_CRAVADO_EM_TELA: usize = 6;
+///
+/// Desceu 6 -> **3** no pedido 694 (08/10/2026): «sete arquivos nascem
+/// juntos» (eram oito no disco) e «os cinco arquivos sao copiados» deixaram
+/// de afirmar numero -- quantos sao depende de memo, bin, fts e particao, e o
+/// `duplicar_tabela` ja devolve a contagem real depois de copiar.
+pub const TETO_NUMERO_CRAVADO_EM_TELA: usize = 3;
 
 /// Chaves com os seis idiomas iguais. **So desce**, e hoje e zero.
 pub const TETO_COLADO: usize = 0;
@@ -1485,7 +1490,12 @@ pub fn token_sem_definicao_e_sem_fallback() -> Vec<(&'static str, String)> {
 /// que diziam «declarada, nao imposta», o contrario da decisao do dono --
 /// foram reescritos E entraram pela fabrica, em seis chaves de frase inteira
 /// (`tela.fk_card_*`, `tela.er_nota_fk_*`): oito literais cravados a menos.
-pub const TETO_ROTULOS_E_CRASE: usize = 861;
+///
+/// Desceu para **849** nos pedidos 690/694 (08/10/2026): o dialogo de excluir
+/// (motivo, «(obrigatório)» e a legenda do `.reason`, agora pelo `marcado()`)
+/// e o cartao de criar tabela do diagrama entraram pela fabrica -- doze
+/// literais a menos, medidos pelo conferidor (861 -> 849).
+pub const TETO_ROTULOS_E_CRASE: usize = 849;
 #[cfg(test)]
 mod testes {
     use std::collections::HashSet;

@@ -2,7 +2,7 @@
 //!
 //! A premissa que estes testes medem, e que desmente o diagnostico do pedido:
 //! nenhuma das cinco operacoes de `OPS_QUE_DEVOLVEM_LINHAS` consegue devolver
-//! MAIS que `recursos.max_linhas`, porque as quatro funcoes que as atendem
+//! MAIS que `max_linhas`, porque as quatro funcoes que as atendem
 //! recortam por `self.limite(p)`, que ja e `min(max pedido, teto)`. Entao o
 //! `if lista.len() as u64 > teto` de `linhas_do_sub_pedido` nunca dispara --
 //! e trocar o `>` por `>=`, como o pedido prescrevia, nao acusaria o empate:

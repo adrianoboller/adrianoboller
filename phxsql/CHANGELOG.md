@@ -192,7 +192,31 @@ da seção `## 0.19.0` mais abaixo, regravado por
   mesma pasta se trancam no `excluir_tabela`; a saída é `reparar`.
 - **632**, **427**, **524** — acima, em «Backup e durabilidade».
 
+**Caixa offline (325) e fechos de 08/10**
+
+- **325** — o caixa como espelho está entregue e medido (21 `phxsqld`, 20 caixas e 1
+  central): **676** id de transação no `.log` v4 (evento de 44 para 52 bytes; a venda
+  chega à réplica inteira ou não chega), **677** um escritor por database (campo
+  `espelho`), **678** bancada (zero meia venda, central religado alcança as 20 origens
+  em 1,38–1,86 s, `vendas`/`itens`/`estoque` iguais por SHA-256), **679** visão da loja
+  pelo `unir`, **680** contrato no MANUAL e no CONTRATO.
+- **681, 682, 684–686, 698–702** — quórum e bidirecional por transação, o grupo da
+  réplica e o do bidi gravam a marca `.tx`, a recuperação confere o `.reg` e nunca
+  duplica linha, e a marca completada no arranque adota o id da metade que entrou;
+  carga acima do teto é recusada na origem.
+- **687, 688** — o `phxsqld` para limpo no SIGTERM/SIGINT e a recusa do índice nomeia o
+  comando que existe; achados pelo vídeo do CRUD (`testes-web/video-crud.mjs`, 7 de 9
+  itens conferem; nove defeitos de tela).
+- **Em curso, não commitada:** a divisão do `servidor.rs` (etapa 1, os testes saem para
+  arquivos próprios: 77.631 para 36.860 linhas, commit `68ad47da`; o restante ainda na árvore).
+
 ### O que NÃO está nesta versão
+
+- **Expurgo do diário do caixa (706, ☐):** sem expurgo o `.log` cresce 1.454–1.629 B por
+  venda; decisão do dono de 08/10: segurar no máximo 30 dias com o central fora.
+- **Aquário de monitoramento (707, ☐):** só protótipo.
+- **Desenho único da recuperação (708–717):** furos lidos no código, não medidos; a
+  etapa E0 os confirma ou mata contra o SO.
 
 - **TLS obrigatório (660, ⏸):** decisão do dono de 07/10 — opcional na 0.19, **obrigatório
   por padrão na 1.0**; o aviso no `ping` para conexão não cifrada ainda **não

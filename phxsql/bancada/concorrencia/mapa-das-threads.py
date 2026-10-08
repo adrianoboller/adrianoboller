@@ -123,7 +123,7 @@ CATALOGO = [
     },
     # ------------------------------------------------ atendimento, com semaforo
     {
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_rede_01.rs",
         "agulha": 'format!("dados-{}", endereco.port())',
         "nome": "dados-<porta>",
         "teto": "`recursos.conexoes_max` (64) pelo `Semaforo permissoes_de_dados`: "
@@ -132,7 +132,7 @@ CATALOGO = [
                 "morre com ela, inclusive em panico (pedido 248).",
     },
     {
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_web_01.rs",
         "agulha": 'format!("{familia}-{}", par.port())',
         "nome": "web-/rest-/swagger-<porta>",
         "teto": "`recursos.conexoes_web_max` (64; 0 = sem teto) pelo `Semaforo "
@@ -142,7 +142,7 @@ CATALOGO = [
                 "(pedido 248).",
     },
     {
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_web_01.rs",
         "agulha": 'format!("ouvinte-{familia}")',
         "nome": "ouvinte-web / ouvinte-rest / ouvinte-swagger",
         "teto": "uma por porta HTTP ligada (ate 3): so aceita, nunca atende. "
@@ -151,7 +151,7 @@ CATALOGO = [
     },
     # ------------------------------------------------ paralelismo com teto medido
     {
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_marca_01.rs",
         "agulha": "std::thread::scope(|escopo| {",
         "nome": "fecho da janela (um fio por tabela suja)",
         "teto": "`FIOS_DO_FECHO = 16` por pedaco (`lista.chunks(FIOS_DO_FECHO)`, "
@@ -183,61 +183,61 @@ CATALOGO = [
     },
     # ------------------------------------------------ servicos, um de cada
     {
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_avisos_01.rs",
         "agulha": '"relogio-gravacao"',
         "nome": "relogio-gravacao",
         "teto": "1 (sobe uma vez no arranque)",
     },
     {
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_marca_01.rs",
         "agulha": '"vigia-de-sinais"',
         "nome": "vigia-de-sinais",
         "teto": "1 por processo (`sinais::instalar` so devolve true na primeira chamada; pedido 687)",
     },
     {
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_avisos_01.rs",
         "agulha": '"amostrador"',
         "nome": "amostrador",
         "teto": "1 (sobe uma vez no arranque)",
     },
     {
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_cluster_01.rs",
         "agulha": '"pulso-supervisor"',
         "nome": "pulso-supervisor",
         "teto": "1 (sobe uma vez, so com `cluster` no config)",
     },
     {
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_cluster_01.rs",
         "agulha": '"arbitro-cluster"',
         "nome": "arbitro-cluster",
         "teto": "1 (sobe uma vez, so com `cluster` no config)",
     },
     {
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_cluster_01.rs",
         "agulha": '"replica-cluster"',
         "nome": "replica-cluster",
         "teto": "1 (sobe uma vez, so com `cluster` no config)",
     },
     {
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_cluster_01.rs",
         "agulha": 'format!("pulso-{}", no.id)',
         "nome": "pulso-<no>",
         "teto": "uma por no' declarado em `cluster.nos` (lista fixa do config)",
     },
     {
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_replicacao_01.rs",
         "agulha": 'format!("replica-{}", origem.nome)',
         "nome": "replica-<origem>",
         "teto": "uma por origem em `replicacao.origens` (lista fixa do config)",
     },
     {
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_backup_01.rs",
         "agulha": '"backup-agendado"',
         "nome": "backup-agendado",
         "teto": "1 (sobe uma vez, so com `backup.agendado`)",
     },
     {
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_escrita_01.rs",
         "agulha": '"retencao-trilha"',
         "nome": "retencao-trilha",
         "teto": "1 (sobe uma vez no arranque, so com `lgpd.retencao_anos` > 0; "
@@ -245,26 +245,26 @@ CATALOGO = [
                 "Pedido 368.",
     },
     {
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_jobs_01.rs",
         "agulha": '"relogio-jobs"',
         "nome": "relogio-jobs",
         "teto": "1 (sobe uma vez; `relogio_de_jobs` e' um `AtomicBool` que "
                 "impede a segunda)",
     },
     {
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_jobs_01.rs",
         "agulha": '"vigia-jobs"',
         "nome": "vigia-jobs",
         "teto": "1 (sobe uma vez no arranque)",
     },
     {
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_telemetria_01.rs",
         "agulha": '"vigia-disco"',
         "nome": "vigia-disco",
         "teto": "1 (sobe uma vez no arranque)",
     },
     {
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_telemetria_01.rs",
         "agulha": '"sonda-disco"',
         "nome": "sonda-disco",
         "teto": "1 (sobe uma vez no arranque, com `alertas.disco.ligado` ou "
@@ -281,7 +281,7 @@ CATALOGO = [
     },
     # ------------------------------------------------ uma por EVENTO, com silencio
     {
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_avisos_01.rs",
         "agulha": '"aviso-seguranca"',
         "nome": "aviso-seguranca",
         "teto": "uma por IP bloqueado a cada `alertas.repetir_horas` (6 h), "
@@ -290,7 +290,7 @@ CATALOGO = [
                 "quem o apertar mede o rele antes.",
     },
     {
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "arquivo": "crates/phxsql-server/src/servidor/servico_jobs_01.rs",
         "agulha": '"aviso-job"',
         "nome": "aviso-job",
         "teto": "uma por job que falhou a cada `alertas.repetir_horas` (6 h), "

@@ -163,7 +163,7 @@ motivo no `title`); na inclusão continuam editáveis, porque é ali que nascem.
 
 ## O que os testes provam, e a prova real
 
-Em `mensagens.rs` e `servidor.rs` (`testes_firewall_e_mensagens`):
+Em `mensagens.rs` e `servidor/testes_firewall_e_mensagens.rs`:
 
 | o que se prova | como |
 |---|---|

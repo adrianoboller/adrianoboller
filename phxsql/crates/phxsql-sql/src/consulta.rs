@@ -75,7 +75,7 @@
 //!
 //!   O `agrupar` NAO virou acucar disto: ele flui do disco e ve a tabela
 //!   inteira, enquanto a composicao resume o que materializou sob
-//!   `recursos.max_linhas`. Uma porta so trocaria um `COUNT(*)` de um milhao
+//!   `max_linhas`. Uma porta so trocaria um `COUNT(*)` de um milhao
 //!   por mil, calado.
 //!
 //! E o WHERE composto so reconhece subconsulta (IN, escalar ou EXISTS)
@@ -485,7 +485,7 @@ pub fn traduzir_consulta(
         notas.push(format!(
             "GROUP BY sobre composicao: {} coluna(s) de agrupamento e {} agregado(s) -- \
              o `consultar` resume o que a COMPOSICAO produziu, e ela para em \
-             `recursos.max_linhas`. Para agregar uma tabela INTEIRA, sem junção, o \
+             `max_linhas`. Para agregar uma tabela INTEIRA, sem junção, o \
              caminho e a op `agrupar`",
             c.por.len(),
             c.agregados.len()

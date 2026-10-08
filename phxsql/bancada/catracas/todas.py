@@ -101,6 +101,8 @@ import time
 from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parent.parent.parent
+sys.path.insert(0, str(RAIZ / "bancada"))
+import fontes_do_servidor  # noqa: E402
 ESTE_ARQUIVO = Path(__file__).resolve()
 TIMEOUT_PADRAO_S = 120
 
@@ -211,6 +213,13 @@ def teste_que_confere(nome_const, arquivo):
     filhos = arquivo.parent / arquivo.stem
     if arquivo.stem not in ("lib", "main", "mod") and filhos.is_dir():
         proprios += sorted(filhos.rglob("*.rs"))
+    # E a constante que o passo seguinte da divisao levou para um
+    # `servidor/servico_*.rs` tem o teste num IRMAO (`servidor/testes_*`), nao
+    # num filho: para as fontes do servidor o crivo le a uniao, a mesma lista
+    # de todo leitor do servidor (`bancada/fontes_do_servidor.py`).
+    do_servidor = fontes_do_servidor.todas()
+    if arquivo.resolve() in {f.resolve() for f in do_servidor}:
+        proprios = do_servidor
     for f in proprios:
         for nome_teste, corpo in _testes_cacheados(f):
             if padrao.search(corpo):

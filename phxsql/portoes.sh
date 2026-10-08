@@ -58,7 +58,33 @@ passo "fmt"      $cargo_cmd fmt --all --check
 # `-D warnings` e o que faz o «zero avisos» virar codigo de saida: sem ele o
 # clippy imprime o aviso e sai 0, e o portao voltaria a depender de alguem ler.
 passo "clippy"   $cargo_cmd clippy --workspace --all-targets --offline -- -D warnings
-passo "suite"    $cargo_cmd test --workspace --offline --no-fail-fast
+# A suite grava log (pedido 675): um VERMELHO sem nome de teste custou uma
+# rodada inteira em 08/10/2026, porque a saida rolou para fora da tela. O
+# `tee` engoliria o codigo do cargo; o `PIPESTATUS` o devolve. O cabecalho leva
+# HEAD, nproc e loadavg porque teste de relogio cai por carga, e sem a carga
+# escrita ninguem distingue defeito de maquina cheia.
+suite() {
+  mkdir -p target/portoes
+  log="target/portoes/suite-$(date +%Y%m%d-%H%M%S).log"
+  {
+    echo "# HEAD $(git rev-parse --short HEAD 2>/dev/null || echo sem-git)"
+    echo "# nproc $(nproc)  loadavg $(cut -d' ' -f1-3 /proc/loadavg 2>/dev/null)"
+  } > "$log"
+  $cargo_cmd test --workspace --offline --no-fail-fast 2>&1 | tee -a "$log"
+  local rc=${PIPESTATUS[0]}
+  if [ "$rc" != 0 ]; then
+    echo "   log: $log"
+    if grep -q -- '--- FAILED\| FAILED$\|^test .* FAILED' "$log"; then
+      grep -- ' \.\.\. FAILED$' "$log" | sed 's/^test \(.*\) \.\.\. FAILED$/   caiu: \1/' | sort -u
+      sed -n '/^error: [0-9]* targets\? failed:/,/^$/p' "$log"
+      echo "   rode um sozinho: cargo test --workspace --offline -- --exact <nome>"
+    else
+      echo "   saiu $rc SEM nenhum FAILED no log: falha de compilacao ou binario que caiu inteiro -- leia o fim de $log"
+    fi
+  fi
+  return "$rc"
+}
+passo "suite"    suite
 passo "catracas" python3 bancada/catracas/todas.py
 
 echo

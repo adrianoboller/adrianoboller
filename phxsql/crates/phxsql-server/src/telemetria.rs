@@ -2274,9 +2274,12 @@ mod testes {
     /// para o mesmo trabalho por outro nome.
     #[test]
     fn toda_operacao_com_ponto_de_cancelamento_esta_na_lista() {
-        const FONTE: &str = crate::servidor::FONTE_DO_SERVIDOR;
+        // A divisao do `servidor.rs` pos `pub(super)` nas `op_*` que o
+        // `executar` chama de outro arquivo: sem tirar o prefixo, o corte por
+        // `    fn op_` acharia zero e a guarda cairia por cegueira.
+        let fonte = crate::servidor::FONTE_DO_SERVIDOR.replace("pub(super) fn op_", "fn op_");
         let mut achadas = Vec::new();
-        for pedaco in FONTE.split("    fn op_").skip(1) {
+        for pedaco in fonte.split("    fn op_").skip(1) {
             let Some((nome, corpo)) = pedaco.split_once('(') else {
                 continue;
             };

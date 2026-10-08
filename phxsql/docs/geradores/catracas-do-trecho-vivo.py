@@ -42,6 +42,10 @@ NASCEU = [
     ("PISO_DAS_ENTRADAS",
      "16/09 em 143, e sobe junto com o catálogo (145, 151, 160, 169, 170 e 177 em 16–17/09, e daí em diante — o valor de hoje é o da coluna «Valor»). "
      "Piso só sobe, e sobe no mesmo passo em que o catálogo cresce"),
+    ("TETO_SEGUEM_FALTANDO", "guarda que derruba o binário sem nomear os vizinhos que seguem; o valor de hoje é o da coluna «Valor»"),
+    ("TETO_VEREDITO_VELHO", "nasceu em 119 (vereditos com mais de 14 dias); desceu a 0 em 08/10/2026 pela renovação das provas"),
+    ("TETO_MENSAGEM_AMBIGUA_COM_O_SERVIDOR_INTEIRO",
+     "08/10/2026, pedido 718: aposenta `TETO_MENSAGEM_AMBIGUA` (81), que cortava a união do servidor na linha 21 e nunca viu a produção; não é subida de teto"),
 ]
 
 

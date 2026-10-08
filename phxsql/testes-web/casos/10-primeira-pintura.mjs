@@ -10,9 +10,12 @@
  * medir a maquina, e sim para falhar redondo no dia em que a folha voltar a
  * bloquear.
  *
- * Este caso tambem PROVA que a fonte continua sendo pedida: um conserto que
- * simplesmente removesse a fonte da marca passaria no tempo e reprovaria a
- * marca, que manda. */
+ * Desde o pedido 691 a Exo 2 vem EMBUTIDA na pagina (`http.rs`,
+ * `folha_da_fonte`), e o caso mudou de pergunta: ele prova que a pagina nao
+ * pede NADA aos hosts de fonte (o buraco negro continua armado, para o dia em
+ * que alguem devolver o `<link>` ao Google) e que a Exo 2 esta CARREGADA --
+ * um conserto que simplesmente removesse a fonte da marca passaria no tempo e
+ * reprovaria a marca, que manda. */
 import { verdade } from '../apoio.mjs';
 
 const TETO_MS = 3000;
@@ -51,9 +54,16 @@ export const caso = {
       `a tela de entrada levou ${ate} ms para aparecer com o pedido da fonte pendurado — `
       + 'a folha da fonte voltou a bloquear a pintura');
 
-    verdade(pediuAFonte,
-      'a pagina nao pediu a fonte da marca: rapida e sem Exo 2 nao e o conserto, '
-      + 'e a marca manda sobre a paleta');
+    verdade(!pediuAFonte,
+      'a pagina voltou a pedir a fonte ao Google: a Exo 2 vem embutida desde o '
+      + 'pedido 691, e servidor de banco sem internet ficava sem ela');
+
+    // A marca manda: rapida e sem Exo 2 nao e o conserto.
+    const exo = await page.evaluate(async () => {
+      await document.fonts.load('600 16px "Exo 2"').catch(() => {});
+      return document.fonts.check('600 16px "Exo 2"');
+    });
+    verdade(exo, 'a Exo 2 nao carregou da propria pagina');
 
     // E a pilha de reserva assume, em vez de a pagina ficar sem fonte nenhuma.
     const pilha = await page.evaluate(() => getComputedStyle(document.body).fontFamily);
