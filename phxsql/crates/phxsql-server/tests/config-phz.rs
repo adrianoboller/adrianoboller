@@ -276,6 +276,16 @@ fn o_roteiro_documentado_empacota_o_exemplo_de_verdade_e_sobe_do_phz() {
             &Json::texto_de(d.join("dados").display().to_string()),
         )
         .unwrap_or_else(|| panic!("exemplo {exemplo} nao tem \"base\" de primeiro nivel"));
+        // O irmao do `base`: o exemplo do source manda o log de acessos para
+        // `/var/log/phxsql`, que so o root cria -- no CI, que nao e root, o
+        // arranque caia com «Permission denied» e o teste so passava aqui
+        // porque aqui se roda como root. Exemplo sem o campo fica como esta.
+        let texto = Json::texto_trocar(
+            &texto,
+            &["log_acessos"],
+            &Json::texto_de(d.join("acessos.log").display().to_string()),
+        )
+        .unwrap_or(texto);
         std::fs::write(&claro, &texto).unwrap();
 
         let (ok, saida) = rodar(&["--empacotar-config"], &claro);
