@@ -78,7 +78,7 @@ const TETO_CERTIFICADO: usize = 64 * 1024;
 
 /// Como o cliente decide se confia no servidor.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Confianca {
+pub enum Confianca<'a> {
     /// So o servidor cujo SPKI tem este `SHA-256`.
     Pino([u8; 32]),
     /// Qualquer chave, desde que o servidor prove ter a privada dela; o pino
@@ -86,6 +86,11 @@ pub enum Confianca {
     /// (TOFU), e o `sslmode=require` do PostgreSQL: cifra contra quem escuta,
     /// nao contra quem se poe no meio.
     AnotarNoPrimeiroContato,
+    /// A cadeia do servidor descende de uma destas ancoras (DER) e a folha
+    /// vale para o `nome` das opcoes -- RFC 5280 §6.1 e RFC 9525
+    /// ([`crate::cadeia`]). E como se fala com servidor de FORA (T6c-2): o
+    /// `sslmode=verify-full` do PostgreSQL.
+    Cadeia(&'a [Vec<u8>]),
 }
 
 /// O que o cliente pede.
@@ -96,7 +101,7 @@ pub struct OpcoesCliente<'a> {
     pub nome: Option<&'a str>,
     /// Os protocolos de aplicacao oferecidos (ALPN), na ordem da preferencia.
     pub alpn: &'a [&'a [u8]],
-    pub confianca: Confianca,
+    pub confianca: Confianca<'a>,
 }
 
 /// `sha256//<base64>` -> pino. A forma do `--pinnedpubkey` do curl, para o
@@ -352,9 +357,9 @@ fn analisar_extensoes_cifradas(corpo: &[u8], op: &OpcoesCliente) -> Aperto<Optio
     Ok(alpn)
 }
 
-/// A folha do `Certificate` (§4.4.2), em DER. O resto da cadeia so serviria
-/// a quem confere cadeia (T6c).
-fn folha_do_certificado(corpo: &[u8]) -> Aperto<Vec<u8>> {
+/// Os certificados do `Certificate` (§4.4.2), em DER, a folha primeiro. As
+/// extensoes de cada entrada se leem e se jogam fora.
+fn cadeia_do_certificado(corpo: &[u8]) -> Aperto<Vec<Vec<u8>>> {
     let mut l = Leitor { b: corpo };
     if !l.vetor8()?.is_empty() {
         return falha(
@@ -372,13 +377,24 @@ fn folha_do_certificado(corpo: &[u8]) -> Aperto<Vec<u8>> {
         // §4.4.2.4: servidor sem certificado e `decode_error`.
         return falha(alerta::DECODE_ERROR, "o servidor nao mandou certificado");
     }
-    let n = {
-        let b = lista.bytes(3)?;
-        u32::from_be_bytes([0, b[0], b[1], b[2]]) as usize
-    };
-    let folha = lista.bytes(n)?.to_vec();
-    lista.vetor16()?;
-    Ok(folha)
+    let mut cadeia = Vec::new();
+    while !lista.b.is_empty() {
+        let n = {
+            let b = lista.bytes(3)?;
+            u32::from_be_bytes([0, b[0], b[1], b[2]]) as usize
+        };
+        cadeia.push(lista.bytes(n)?.to_vec());
+        lista.vetor16()?;
+    }
+    Ok(cadeia)
+}
+
+/// Segundos desde a epoca, para a validade dos certificados.
+fn agora_s() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
 }
 
 /// Confere uma assinatura do `CertificateVerify` contra o SPKI da folha.
@@ -576,7 +592,21 @@ pub(super) fn apertar_cliente<S: Read + Write>(
         m = r.mensagem(TETO_CERTIFICADO)?;
     }
     exigir(&m, hs::CERTIFICADO, "Certificate")?;
-    let folha = folha_do_certificado(&m[4..])?;
+    let cadeia = cadeia_do_certificado(&m[4..])?;
+    let folha = cadeia[0].clone();
+    if let Confianca::Cadeia(ancoras) = op.confianca {
+        // A cadeia se confere ANTES do CertificateVerify, como o pino: a
+        // posse da chave so importa depois de se saber de quem e a chave.
+        let Some(nome) = op.nome else {
+            return falha(
+                alerta::INTERNAL_ERROR,
+                "conferir a cadeia pede o nome do servidor",
+            );
+        };
+        if let Err(e) = crate::cadeia::validar_servidor_tls(&cadeia, ancoras, nome, agora_s()) {
+            return Err(Falha(alerta::BAD_CERTIFICATE, e));
+        }
+    }
     let spki = match crate::x509::spki_do_certificado(&folha) {
         Ok(s) => s.to_vec(),
         Err(e) => return Err(Falha(alerta::BAD_CERTIFICATE, e)),
@@ -652,6 +682,7 @@ pub(super) fn apertar_cliente<S: Read + Write>(
         grupo,
         conjunto,
         pino: Some(pino),
+        certificado: Some(folha),
     };
     Ok(super::Segredos {
         negociado,
@@ -813,7 +844,7 @@ mod testes {
         }
     }
 
-    fn op(confianca: Confianca) -> OpcoesCliente<'static> {
+    fn op(confianca: Confianca<'static>) -> OpcoesCliente<'static> {
         OpcoesCliente {
             nome: Some("server"),
             alpn: &[],
@@ -825,7 +856,7 @@ mod testes {
     /// no lugar do voo cifrado oficial.
     fn cliente_da_secao_3(
         voo: &str,
-        confianca: Confianca,
+        confianca: Confianca<'static>,
     ) -> (Result<FluxoTls<Roteiro>>, OfertaDoTraco) {
         let mut oferta = oferta_da_secao_3();
         let fio = roteiro(&[R3_SH, voo, R3_NST, R3_SDADOS, R3_SALERTA]);
@@ -1260,6 +1291,53 @@ mod testes {
                 "{extra:?}: o exportador do cliente diverge do OpenSSL\n{saida}"
             );
         }
+    }
+
+    /// T6c-2: confianca por CADEIA, contra o `openssl s_server` com a cadeia
+    /// raiz RSA -> intermediaria P-384 -> folha P-256 gerada pelo openssl. Os
+    /// dois sentidos: a raiz certa e o nome do SAN passam; nome errado, raiz
+    /// alheia e servidor que nao manda a intermediaria recusam com
+    /// `bad_certificate`, antes de qualquer dado.
+    #[test]
+    fn com_o_openssl_s_server_pela_cadeia_e_pelo_nome() {
+        use crate::cadeia::testes::{cadeia_do_openssl, EXT_FOLHA, EXT_INTER};
+        let d = dir("cadeia");
+        let (raiz, _, _) = cadeia_do_openssl(&d.0, EXT_INTER, EXT_FOLHA, "2");
+        let d2 = dir("cadeia-alheia");
+        let (alheia, _, _) = cadeia_do_openssl(&d2.0, EXT_INTER, EXT_FOLHA, "2");
+        let pedir = |porta: u16, ancoras: &[Vec<u8>], nome: &str| -> Result<String> {
+            let op = OpcoesCliente {
+                nome: Some(nome),
+                alpn: &[],
+                confianca: Confianca::Cadeia(ancoras),
+            };
+            let mut t = conectar(fio(porta), &op)?;
+            t.write_all(b"GET / HTTP/1.0\r\n\r\n")?;
+            let mut v = Vec::new();
+            t.read_to_end(&mut v)?;
+            Ok(String::from_utf8_lossy(&v).into_owned())
+        };
+        let raizes = [raiz];
+        let s = s_server(
+            &d.0.join("folha.pem"),
+            &d.0.join("folha.key"),
+            &["-cert_chain", d.0.join("inter.pem").to_str().unwrap()],
+        );
+        let pagina = pedir(s.1, &raizes, "localhost").expect("a cadeia boa nao fechou");
+        assert!(pagina.contains("HTTP/1.0 200 ok"), "{pagina}");
+        assert!(pedir(s.1, &raizes, "127.0.0.1").is_ok(), "o IP do SAN");
+        let e = pedir(s.1, &raizes, "outro.exemplo")
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("nao vale para o nome"), "{e}");
+        let e = pedir(s.1, &[alheia], "localhost").unwrap_err().to_string();
+        assert!(e.contains("cadeia X.509"), "{e}");
+        drop(s);
+        let sem_inter = s_server(&d.0.join("folha.pem"), &d.0.join("folha.key"), &[]);
+        let e = pedir(sem_inter.1, &raizes, "localhost")
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("cadeia X.509"), "{e}");
     }
 
     #[test]

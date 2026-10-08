@@ -632,6 +632,10 @@ pub struct Negociado {
     /// que ele mostrou e cuja chave assinou o aperto. Quem conectou sem pino
     /// (primeiro contato) le daqui o que anotar. Do lado servidor, `None`.
     pub pino: Option<[u8; 32]>,
+    /// Do lado CLIENTE: a folha que o servidor mostrou, em DER (o vinculo
+    /// `tls-server-end-point` do SCRAM-PLUS a resume). Do lado servidor,
+    /// `None`.
+    pub certificado: Option<Vec<u8>>,
 }
 
 fn apertar<S: Read + Write>(
@@ -810,6 +814,7 @@ fn apertar<S: Read + Write>(
         grupo,
         conjunto,
         pino: None,
+        certificado: None,
     };
     Ok(Segredos {
         negociado,
@@ -987,13 +992,30 @@ impl FioDeCliente {
     ///
     /// So por pino, de proposito: entre dois PhxSql nao ha autoridade a
     /// consultar, e TLS sem conferir quem responde protegeria da escuta
-    /// passiva e de nada mais. Nada lido pode estar no `BufReader`: o TLS
-    /// comeca no primeiro byte, e um byte em claro guardado ali seria lido
-    /// como se tivesse vindo pelo tunel.
+    /// passiva e de nada mais.
     pub fn passar_a_tls(
         leitor: &mut std::io::BufReader<FioDeCliente>,
         escrita: &mut FioDeCliente,
         pino: [u8; 32],
+    ) -> Result<()> {
+        let op = OpcoesCliente {
+            // SNI nao vai: o pino ja diz quem se espera, e o host (as vezes
+            // um IP, que a RFC 6066 §3 proibe no SNI) nao acrescenta.
+            nome: None,
+            alpn: &[],
+            confianca: Confianca::Pino(pino),
+        };
+        FioDeCliente::passar_a_tls_com(leitor, escrita, &op)
+    }
+
+    /// O mesmo, com as opcoes inteiras -- o caminho dos clientes de saida
+    /// para servidor de fora (T6d), que conferem por cadeia e nome. Nada lido
+    /// pode estar no `BufReader`: o TLS comeca no proximo byte, e um byte em
+    /// claro guardado ali seria lido como se tivesse vindo pelo tunel.
+    pub fn passar_a_tls_com(
+        leitor: &mut std::io::BufReader<FioDeCliente>,
+        escrita: &mut FioDeCliente,
+        op: &OpcoesCliente,
     ) -> Result<()> {
         if !leitor.buffer().is_empty() {
             return Err(PhxError::Esquema(
@@ -1007,17 +1029,19 @@ impl FioDeCliente {
         };
         let mut uma = e.clonar()?;
         uma.rearmar();
-        let op = OpcoesCliente {
-            // SNI nao vai: o pino ja diz quem se espera, e o host (as vezes
-            // um IP, que a RFC 6066 §3 proibe no SNI) nao acrescenta.
-            nome: None,
-            alpn: &[],
-            confianca: Confianca::Pino(pino),
-        };
-        let t = Compartilhado::novo(conectar(uma, &op)?);
+        let t = Compartilhado::novo(conectar(uma, op)?);
         *leitor = std::io::BufReader::new(FioDeCliente::Tls(t.clone()));
         *escrita = FioDeCliente::Tls(t);
         Ok(())
+    }
+
+    /// O certificado (folha) que o servidor mostrou, quando e TLS -- o que o
+    /// `tls-server-end-point` (RFC 5929 §4) resume.
+    pub fn certificado_do_servidor(&self) -> Option<Vec<u8>> {
+        match self {
+            FioDeCliente::Tls(t) => t.com(|f| f.negociado().certificado.clone()),
+            FioDeCliente::Claro(_) => None,
+        }
     }
 
     /// O `close_notify`, para o `Drop` de quem e dono da conexao -- o
@@ -1232,7 +1256,7 @@ impl<S: Read + Write> Write for FluxoTls<S> {
 }
 
 #[cfg(test)]
-mod testes {
+pub(crate) mod testes {
     use super::*;
     use std::net::{TcpListener, TcpStream};
     use std::process::{Command, Stdio};
@@ -1242,9 +1266,10 @@ mod testes {
     /// `apoio_teste`.
     /// Tambem e o guarda dos testes do cliente (`tls::cliente::testes`):
     /// um segundo guarda la seria um segundo `temp_dir` fora do catalogo.
-    pub(super) struct Dir(pub(super) std::path::PathBuf);
+    /// E desde a T6c-2 tambem o da `cadeia::testes`, pelo mesmo motivo.
+    pub(crate) struct Dir(pub(crate) std::path::PathBuf);
     impl Dir {
-        pub(super) fn novo(nome: &str) -> Dir {
+        pub(crate) fn novo(nome: &str) -> Dir {
             let d = std::env::temp_dir().join(format!("phx-tls-{nome}-{}", std::process::id()));
             let _ = std::fs::remove_dir_all(&d);
             std::fs::create_dir_all(&d).unwrap();

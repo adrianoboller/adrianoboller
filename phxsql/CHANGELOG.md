@@ -81,6 +81,11 @@ da seção `## 0.19.0` mais abaixo, regravado por
   `SigVer` P-384), Wycheproof, os vetores do PKCS#1 v2.1, RFC 6979 A.2.6,
   RFC 6234 e os traços RSA-PSS da RFC 8448. Certificado RSA ou P-384 deixa de
   ser recusado — ainda **só por pino**; cadeia e nome são a T6c-2.
+- **572, T6c-2 (08/10)** — validação de cadeia X.509 (RFC 5280 §6.1) e do
+  nome do servidor (RFC 9525), conferida contra o NIST PKITS (86 de 86 no
+  recorte declarado) e contra o `openssl verify`/`-checkhost`. Raízes de um PEM
+  ou do pacote do sistema (153 lidas). **Fora, decidido:** revogação e
+  políticas de certificado, como no Go e no `webpki`.
 
 **Backup e durabilidade**
 
@@ -265,9 +270,9 @@ da seção `## 0.19.0` mais abaixo, regravado por
   ou `BEGIN ISOLATION LEVEL REPEATABLE READ`); e que **a atomicidade de um
   commit entre tabelas não atravessa o fio da réplica** (299, preço declarado).
   `SERIALIZABLE` não é reivindicado.
-- **TLS com terceiros:** o cliente TLS desta casa confia **só por pino**
-  (572, T6b-2): não confere cadeia nem nome — falar TLS com servidor de fora
-  sem pino é a T6c-2. O TLS de saída para PostgreSQL,
+- **TLS com terceiros:** o motor confere cadeia e nome (T6c-2), mas nenhum
+  cliente de fora o usa ainda: o TLS de saída para PostgreSQL, MySQL e SMTP é
+  a T6d. Revogação (CRL/OCSP) não é conferida. O TLS de saída para PostgreSQL,
   MySQL e SMTP (T6d) não existe; o cliente SMTP dos alertas fala sem TLS
   (pedido 89), servindo a relé interno.
 - **Sequência nomeada e contador:** a nomeada não replica (decisão da §C.5.3) e

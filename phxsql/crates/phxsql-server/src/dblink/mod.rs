@@ -236,6 +236,11 @@ impl Motor {
     pub fn cifra_o_fio(self) -> bool {
         matches!(self, Motor::Phx)
     }
+
+    /// Este motor tem TLS de saida pelo protocolo dele (pedido 572, T6d)?
+    pub fn fala_tls(self) -> bool {
+        matches!(self, Motor::Postgres | Motor::MySql)
+    }
 }
 
 /// Uma ligacao cadastrada.
@@ -319,6 +324,13 @@ pub struct Definicao {
     /// so o motor phxsql, torto e erro na declaracao, a tela so ve
     /// `tem_pino_tls`, e o salvar que nao o manda o herda.
     pub pino_tls: String,
+    /// O TLS de saida dos motores de FORA (PostgreSQL(R), MySQL(R)) --
+    /// pedido 572, T6d: `desligado` (o padrao, como sempre foi), `exigir` ou
+    /// `verificar`, com o sentido do `sslmode` do libpq. Ver
+    /// [`crate::tls_saida`].
+    pub tls: String,
+    /// As ancoras do `verificar`: um PEM, ou `"sistema"`; vazio e o sistema.
+    pub tls_ca: String,
     /// Qual GRAVACAO desta ligacao a memoria guarda -- pedido 609. So em
     /// memoria: nunca vai ao disco nem ao JSON.
     ///
@@ -375,6 +387,8 @@ impl std::fmt::Debug for Definicao {
             cifra,
             chave_do_fio,
             pino_tls,
+            tls,
+            tls_ca,
             versao,
         } = self;
         f.debug_struct("Definicao")
@@ -407,6 +421,8 @@ impl std::fmt::Debug for Definicao {
             // escolha do `Debug` da `Origem`.
             .field("chave_do_fio", chave_do_fio)
             .field("pino_tls", pino_tls)
+            .field("tls", tls)
+            .field("tls_ca", tls_ca)
             .field("versao", versao)
             .finish()
     }
@@ -438,6 +454,8 @@ impl Default for Definicao {
             cifra: None,
             chave_do_fio: String::new(),
             pino_tls: String::new(),
+            tls: String::new(),
+            tls_ca: String::new(),
             versao: 0,
         }
     }
@@ -521,6 +539,8 @@ impl Definicao {
             cifra,
             chave_do_fio: j.texto_ou("chave_do_fio", "").trim().to_string(),
             pino_tls: j.texto_ou("pino_tls", "").trim().to_string(),
+            tls: j.texto_ou("tls", "").trim().to_string(),
+            tls_ca: j.texto_ou("tls_ca", "").trim().to_string(),
             versao: 0,
         };
         // A recusa acontece na DECLARACAO, e nao na conexao: uma ligacao nasce
@@ -532,6 +552,9 @@ impl Definicao {
         // conexao, e ate la a ligacao diria «cifrada com pino» na tela.
         d.pino_do_fio()?;
         d.pino_tls()?;
+        // O TLS de saida se le na declaracao (inclusive o PEM do `tls_ca`):
+        // modo torto ou arquivo que nao abre aparecem enquanto se cadastra.
+        d.tls_de_saida()?;
         Ok(d)
     }
 
@@ -646,6 +669,16 @@ impl Definicao {
             if !self.pino_tls.is_empty() {
                 campos.push(("pino_tls", Json::texto_de(&self.pino_tls)));
             }
+        } else if self.motor.fala_tls() {
+            for (campo, valor) in [
+                ("tls", &self.tls),
+                ("tls_ca", &self.tls_ca),
+                ("pino_tls", &self.pino_tls),
+            ] {
+                if !valor.is_empty() {
+                    campos.push((campo, Json::texto_de(valor)));
+                }
+            }
         }
         Ok(Json::objeto(campos))
     }
@@ -679,6 +712,10 @@ impl Definicao {
             ("tem_pino", Json::Bool(!self.chave_do_fio.is_empty())),
             // O irmao do de cima, pelo mesmo motivo: o fato, nunca o pino.
             ("tem_pino_tls", Json::Bool(!self.pino_tls.is_empty())),
+            // O modo e as ancoras nao sao segredo nem mapa: dizem COMO se
+            // fala, e a tela precisa mostra-los para alguem os conferir.
+            ("tls", Json::texto_de(&self.tls)),
+            ("tls_ca", Json::texto_de(&self.tls_ca)),
             ("senha_env", Json::texto_de(&self.senha_env)),
             ("token_remoto_env", Json::texto_de(&self.token_env)),
             (
@@ -825,14 +862,32 @@ impl Definicao {
     /// tunel de fora --, em vez de so dizer nao.
     pub fn conferir_cifra_do_motor(&self) -> Result<()> {
         if self.motor.cifra_o_fio() {
+            // O PhxSql fala Noise ou TLS pelo `pino_tls`; o `tls`/`tls_ca`
+            // dos motores de fora nao tem leitor aqui.
+            if let Some(campo) = [("tls", &self.tls), ("tls_ca", &self.tls_ca)]
+                .iter()
+                .find(|(_, v)| !v.trim().is_empty())
+                .map(|(c, _)| *c)
+            {
+                return Err(PhxError::Esquema(format!(
+                    "{campo} nao vale para o motor phxsql: entre dois PhxSql o TLS \
+                     confere por pino -- use pino_tls na ligacao {:?}",
+                    self.nome
+                )));
+            }
             return Ok(());
         }
+        let tls_aqui = self.motor.fala_tls();
         let campo = if self.cifra == Some(true) {
             "cifra"
         } else if !self.chave_do_fio.trim().is_empty() {
             "chave_do_fio"
-        } else if !self.pino_tls.trim().is_empty() {
+        } else if !tls_aqui && !self.pino_tls.trim().is_empty() {
             "pino_tls"
+        } else if !tls_aqui && !self.tls.trim().is_empty() {
+            "tls"
+        } else if !tls_aqui && !self.tls_ca.trim().is_empty() {
+            "tls_ca"
         } else {
             return Ok(());
         };
@@ -861,6 +916,20 @@ impl Definicao {
             &self.chave_do_fio,
             &format!("dblink[{}].chave_do_fio", self.nome),
         )?))
+    }
+
+    /// O TLS de saida pedido -- `Desligado` no motor phxsql, que tem o
+    /// caminho proprio ([`Definicao::pino_tls`]).
+    pub fn tls_de_saida(&self) -> Result<crate::tls_saida::TlsDeSaida> {
+        if !self.motor.fala_tls() {
+            return Ok(crate::tls_saida::TlsDeSaida::Desligado);
+        }
+        crate::tls_saida::TlsDeSaida::de_config(
+            &self.tls,
+            &self.tls_ca,
+            &self.pino_tls,
+            &format!("dblink[{}]", self.nome),
+        )
     }
 
     /// O pino TLS ja em bytes -- a regra do `Origem::pino_tls`.
@@ -949,6 +1018,13 @@ impl Definicao {
             // O pino TLS tambem decide a quem a credencial vai: base64
             // distingue caixa, entao a comparacao e exata.
             Some("pino_tls")
+        } else if self.tls.trim() != outra.tls.trim() {
+            // Rebaixar `verificar` para `desligado` manda a senha a quem
+            // estiver no meio -- e mudanca de destino como trocar o host.
+            Some("tls")
+        } else if self.tls_ca.trim() != outra.tls_ca.trim() {
+            // Trocar a ancora e trocar em quem se confia.
+            Some("tls_ca")
         } else {
             None
         }
@@ -1040,6 +1116,19 @@ impl Definicao {
         self
     }
 
+    /// O modo e as ancoras do TLS de saida de outra -- herdados pelo salvar
+    /// que nao os manda, pela mesma razao do pino: um salvar comum pela tela
+    /// nao pode desligar o TLS em silencio.
+    pub fn com_o_tls_de(mut self, outra: &Definicao, modo: bool, ca: bool) -> Definicao {
+        if modo {
+            self.tls = outra.tls.clone();
+        }
+        if ca {
+            self.tls_ca = outra.tls_ca.clone();
+        }
+        self
+    }
+
     /// Abre a ligacao pelo cliente MySQL(R), com o tipo concreto.
     ///
     /// O caminho normal e [`Definicao::abrir`], que devolve a conexao comum aos
@@ -1097,6 +1186,7 @@ impl Definicao {
                 self.senha()?,
                 &self.database,
                 prazo,
+                &self.tls_de_saida()?,
             )
             .map(|mut c| {
                 c.teto_de_bytes = self.teto_de_bytes();

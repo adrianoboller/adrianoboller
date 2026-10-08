@@ -61,6 +61,12 @@ use phxsql_core::error::{PhxError, Result};
 use crate::dblink::conexao::{Acumulador, TETO_DE_BYTES_DO_RESULTADO};
 use crate::dblink::TETO_DE_COLUNAS;
 use crate::prazo::{self, ComPrazo, Prazo};
+use crate::tls_saida::TlsDeSaida;
+use phxsql_core::tls::FioDeCliente;
+
+/// O codigo do `SSLRequest` (protocolo do PostgreSQL, §55.2.10): 1234 no alto,
+/// 5679 no baixo.
+const PEDIDO_DE_TLS: i32 = 80_877_103;
 
 /// Versao 3.0 do protocolo, a mesma desde o PostgreSQL(R) 7.4.
 const PROTOCOLO_3: i32 = 196_608;
@@ -103,8 +109,9 @@ pub struct Resultado {
 }
 
 pub struct Conexao {
-    fluxo: BufReader<ComPrazo>,
-    escrita: ComPrazo,
+    /// Claro ou TLS pelo motor do core (pedido 572, T6d).
+    fluxo: BufReader<FioDeCliente>,
+    escrita: FioDeCliente,
     /// `server_version` anunciado no `ParameterStatus`, para o teste mostrar.
     pub versao: String,
     /// PID do processo do servidor que atende esta conexao.
@@ -129,6 +136,7 @@ impl Conexao {
         senha: &str,
         database: &str,
         prazo: Prazo,
+        tls: &TlsDeSaida,
     ) -> Result<Conexao> {
         let soquete = conectar(host, porta, prazo.silencio())?;
         // O relogio do total comeca DEPOIS do `connect`, que tem prazo
@@ -139,14 +147,55 @@ impl Conexao {
             .map_err(|e| erro(format!("nao consegui armar a conexao: {e}")))?;
 
         let mut c = Conexao {
-            fluxo: BufReader::new(leitura),
-            escrita,
+            fluxo: BufReader::new(FioDeCliente::Claro(leitura)),
+            escrita: FioDeCliente::Claro(escrita),
             versao: String::new(),
             conexao_id: 0,
             teto_de_bytes: TETO_DE_BYTES_DO_RESULTADO,
         };
+        if tls.ligado() {
+            c.pedir_tls(tls, host)?;
+        }
         c.apertar_a_mao(usuario, senha, database)?;
         Ok(c)
+    }
+
+    /// O `SSLRequest`: oito bytes em claro, um byte de volta (`S` aceita,
+    /// `N` recusa), e o aperto TLS comeca no byte seguinte.
+    ///
+    /// O byte se le SOZINHO, direto do soquete, e o buffer tem de estar
+    /// vazio depois dele -- um servidor que mandasse dado em claro grudado no
+    /// `S` o faria passar por dado protegido (o CVE-2021-23222 do libpq). O
+    /// `passar_a_tls_com` recusa o buffer com sobra.
+    fn pedir_tls(&mut self, tls: &TlsDeSaida, host: &str) -> Result<()> {
+        let mut p = Vec::with_capacity(8);
+        p.extend_from_slice(&8i32.to_be_bytes());
+        p.extend_from_slice(&PEDIDO_DE_TLS.to_be_bytes());
+        self.escrita
+            .write_all(&p)
+            .and_then(|_| self.escrita.flush())
+            .map_err(|e| prazo::classificar(e, |e| erro(format!("nao consegui pedir TLS: {e}"))))?;
+        let mut resposta = [0u8; 1];
+        self.fluxo
+            .get_mut()
+            .read_exact(&mut resposta)
+            .map_err(|e| {
+                prazo::classificar(e, |e| {
+                    erro(format!("o servidor nao respondeu ao pedido de TLS: {e}"))
+                })
+            })?;
+        match resposta[0] {
+            b'S' => tls.passar(&mut self.fluxo, &mut self.escrita, host).map_err(|e| {
+                PhxError::Autorizacao(format!("dblink postgres: o TLS com {host} nao fechou: {e}"))
+            }),
+            b'N' => Err(PhxError::Autorizacao(format!(
+                "dblink postgres: {host} recusou o TLS (ssl = off no postgresql.conf?) e a                  ligacao pede tls -- nao se cai para o claro calado"
+            ))),
+            outro => Err(erro(format!(
+                "resposta inesperada ao pedido de TLS: {:?}",
+                outro as char
+            ))),
+        }
     }
 
     fn apertar_a_mao(&mut self, usuario: &str, senha: &str, database: &str) -> Result<()> {
@@ -248,13 +297,26 @@ impl Conexao {
             // SASL: a lista de mecanismos, cada um terminado em NUL.
             10 => {
                 let mecanismos = cadeias_nulas(&corpo[4..]);
-                if !mecanismos.iter().any(|m| m == "SCRAM-SHA-256") {
+                // Com TLS, o `-PLUS` amarra a senha a ESTA conexao: quem
+                // terminou o TLS no meio nao consegue reapresentar a prova
+                // (RFC 5929 §4; o `channel_binding=prefer` do libpq).
+                let vinculo = match self.escrita.certificado_do_servidor() {
+                    None => scram::Vinculo::SemTls,
+                    Some(cert) => match scram::ponta_do_servidor(&cert) {
+                        Some(d) if mecanismos.iter().any(|m| m == "SCRAM-SHA-256-PLUS") => {
+                            scram::Vinculo::PontaDoServidor(d)
+                        }
+                        _ => scram::Vinculo::ServidorSemPlus,
+                    },
+                };
+                let plus = matches!(vinculo, scram::Vinculo::PontaDoServidor(_));
+                if !plus && !mecanismos.iter().any(|m| m == "SCRAM-SHA-256") {
                     return Err(PhxError::Autorizacao(format!(
                         "o servidor so oferece {mecanismos:?}, e este cliente faz \
-                         SCRAM-SHA-256. (`SCRAM-SHA-256-PLUS` exige TLS.)"
+                         SCRAM-SHA-256 (e o -PLUS so com TLS)"
                     )));
                 }
-                self.negociar_scram(usuario, senha)?;
+                self.negociar_scram(usuario, senha, vinculo)?;
                 *scram_conferido = true;
                 Ok(true)
             }
@@ -265,12 +327,22 @@ impl Conexao {
     }
 
     /// A troca de tres mensagens do SCRAM, ja dentro do envelope do PostgreSQL.
-    fn negociar_scram(&mut self, _usuario: &str, senha: &str) -> Result<()> {
-        let (mut s, primeira) = scram::Scram::comecar(&scram::nonce());
+    fn negociar_scram(
+        &mut self,
+        _usuario: &str,
+        senha: &str,
+        vinculo: scram::Vinculo,
+    ) -> Result<()> {
+        let mecanismo = if matches!(vinculo, scram::Vinculo::PontaDoServidor(_)) {
+            "SCRAM-SHA-256-PLUS"
+        } else {
+            "SCRAM-SHA-256"
+        };
+        let (mut s, primeira) = scram::Scram::comecar_com(&scram::nonce(), vinculo);
 
         // SASLInitialResponse: nome do mecanismo, tamanho da resposta, resposta.
         let mut p = Vec::with_capacity(64 + primeira.len());
-        cadeia_nula(&mut p, "SCRAM-SHA-256");
+        cadeia_nula(&mut p, mecanismo);
         p.extend_from_slice(&(primeira.len() as i32).to_be_bytes());
         p.extend_from_slice(primeira.as_bytes());
         self.escrever(b'p', &p)?;
@@ -377,7 +449,7 @@ impl Conexao {
     /// Cada operacao publica tem o prazo total inteiro -- pedido 578. O
     /// `ping` passa pelo `consultar`, e por isso nao rearma de novo.
     fn rearmar(&mut self) {
-        prazo::rearmar(self.fluxo.get_mut(), &mut self.escrita);
+        FioDeCliente::rearmar(self.fluxo.get_mut(), &mut self.escrita);
     }
 
     // ------------------------------------------------------------ mensagens
@@ -941,8 +1013,8 @@ mod testes {
         let (leitura, escrita) =
             ComPrazo::armar(fluxo, Prazo::so_silencio(Duration::from_secs(5))).unwrap();
         Conexao {
-            fluxo: BufReader::new(leitura),
-            escrita,
+            fluxo: BufReader::new(FioDeCliente::Claro(leitura)),
+            escrita: FioDeCliente::Claro(escrita),
             versao: String::new(),
             conexao_id: 0,
             teto_de_bytes: TETO_DE_BYTES_DO_RESULTADO,

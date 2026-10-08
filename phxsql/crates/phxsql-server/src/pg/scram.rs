@@ -37,10 +37,42 @@ fn erro(msg: String) -> PhxError {
     PhxError::Autorizacao(msg)
 }
 
+/// O vinculo ao canal pedido no SCRAM (RFC 5802 §6, RFC 5929 §4).
+pub enum Vinculo {
+    SemTls,
+    ServidorSemPlus,
+    /// O `tls-server-end-point`: o resumo do certificado do servidor.
+    PontaDoServidor(Vec<u8>),
+}
+
+/// O `tls-server-end-point` de um certificado (RFC 5929 §4.1): o resumo do
+/// certificado inteiro com o hash da ASSINATURA dele -- e SHA-256 quando ela
+/// e MD5 ou SHA-1. `None` quando o algoritmo nao diz o hash (Ed25519): a RFC
+/// nao o define, e sem vinculo definido o cliente cai no `y,,`.
+pub fn ponta_do_servidor(cert: &[u8]) -> Option<Vec<u8>> {
+    use phxsql_core::rsa::Resumo;
+    let c = phxsql_core::cadeia::Certificado::analisar(cert).ok()?;
+    let r = match c.alg.as_slice() {
+        [1, 2, 840, 113549, 1, 1, 12] | [1, 2, 840, 10045, 4, 3, 3] => Resumo::Sha384,
+        [1, 2, 840, 113549, 1, 1, 13] | [1, 2, 840, 10045, 4, 3, 4] => Resumo::Sha512,
+        // SHA-256, e os de MD5/SHA-1 que a §4.1 sobe para SHA-256.
+        [1, 2, 840, 113549, 1, 1, 4 | 5 | 11]
+        | [1, 2, 840, 10045, 4, 1]
+        | [1, 2, 840, 10045, 4, 3, 2] => Resumo::Sha256,
+        _ => return None,
+    };
+    Some(r.calcular(cert))
+}
+
 /// O estado de uma negociacao SCRAM em andamento.
 pub struct Scram {
     /// `n=user,r=nonce` -- a primeira mensagem SEM o cabecalho `n,,`.
     primeira_sem_cabecalho: String,
+    /// O cabecalho GS2 e o dado do vinculo, que voltam juntos no `c=` da
+    /// ultima mensagem (RFC 5802 §7: `c=` e o Base64 de `gs2-header ||
+    /// cbind-data`).
+    cabecalho_gs2: String,
+    dado_do_vinculo: Vec<u8>,
     nonce_cliente: String,
     /// Guardada entre a segunda e a terceira mensagem, para a assinatura.
     chave_do_servidor: Vec<u8>,
@@ -50,16 +82,32 @@ pub struct Scram {
 impl Scram {
     /// Comeca a conversa. Devolve o estado e a `client-first-message`.
     pub fn comecar(nonce_cliente: &str) -> (Scram, String) {
+        Scram::comecar_com(nonce_cliente, Vinculo::SemTls)
+    }
+
+    /// Comeca a conversa com o vinculo ao canal decidido (pedido 572, T6d):
+    /// `n,,` sem TLS; `y,,` com TLS e servidor sem o `-PLUS` (diz ao servidor
+    /// que o cliente sabe vincular, e um intermediario que apagou o `-PLUS`
+    /// da lista e pego por isso -- RFC 5802 §6); `p=tls-server-end-point,,`
+    /// com o resumo do certificado do servidor.
+    pub fn comecar_com(nonce_cliente: &str, vinculo: Vinculo) -> (Scram, String) {
+        let (cabecalho_gs2, dado_do_vinculo) = match vinculo {
+            Vinculo::SemTls => ("n,,".to_string(), Vec::new()),
+            Vinculo::ServidorSemPlus => ("y,,".to_string(), Vec::new()),
+            Vinculo::PontaDoServidor(d) => ("p=tls-server-end-point,,".to_string(), d),
+        };
         // O nome do usuario vai VAZIO de proposito: no PostgreSQL(R) quem diz
         // quem esta entrando e o campo `user` da mensagem de startup, e o RFC
         // 5802 manda ignorar o `n=` quando o transporte ja carrega a
         // identidade. Mandar o nome duas vezes so abriria a chance de as duas
         // discordarem.
         let sem_cabecalho = format!("n=,r={nonce_cliente}");
-        let primeira = format!("n,,{sem_cabecalho}");
+        let primeira = format!("{cabecalho_gs2}{sem_cabecalho}");
         (
             Scram {
                 primeira_sem_cabecalho: sem_cabecalho,
+                cabecalho_gs2,
+                dado_do_vinculo,
                 nonce_cliente: nonce_cliente.to_string(),
                 chave_do_servidor: Vec::new(),
                 assinatura_esperada: Vec::new(),
@@ -90,9 +138,12 @@ impl Scram {
         let chave_guardada = sha256(&chave_cliente);
         self.chave_do_servidor = hmac_sha256(&senha_salgada, b"Server Key").to_vec();
 
-        // `biws` e o Base64 de "n,," -- o cabecalho GS2 volta para o servidor
-        // conferir que ninguem o trocou no caminho.
-        let final_sem_prova = format!("c=biws,r={nonce}");
+        // O cabecalho GS2 (e o vinculo, quando ha) volta para o servidor
+        // conferir que ninguem o trocou no caminho. Sem TLS, `biws` -- o
+        // Base64 de "n,,".
+        let mut c = self.cabecalho_gs2.as_bytes().to_vec();
+        c.extend_from_slice(&self.dado_do_vinculo);
+        let final_sem_prova = format!("c={},r={nonce}", base64::codificar(&c));
         let mensagem = format!(
             "{},{},{}",
             self.primeira_sem_cabecalho, servidor_primeira, final_sem_prova
@@ -218,6 +269,8 @@ mod testes {
         // (ver o comentario la). Para conferir contra o vetor, o estado e
         // montado com o `n=user` do RFC.
         let mut s = Scram {
+            cabecalho_gs2: "n,,".into(),
+            dado_do_vinculo: Vec::new(),
             primeira_sem_cabecalho: format!("n=user,r={nonce_cliente}"),
             nonce_cliente: nonce_cliente.to_string(),
             chave_do_servidor: Vec::new(),
@@ -242,6 +295,8 @@ mod testes {
     fn assinatura_do_servidor_errada_recusa() {
         let nonce_cliente = "rOprNGfwEbeRWgbNEkqO";
         let mut s = Scram {
+            cabecalho_gs2: "n,,".into(),
+            dado_do_vinculo: Vec::new(),
             primeira_sem_cabecalho: format!("n=user,r={nonce_cliente}"),
             nonce_cliente: nonce_cliente.to_string(),
             chave_do_servidor: Vec::new(),

@@ -62,6 +62,11 @@ impl Servidor {
             if p.campo("pino_tls").is_none() {
                 d = d.com_o_pino_tls_de(antiga);
             }
+            d = d.com_o_tls_de(
+                antiga,
+                p.campo("tls").is_none(),
+                p.campo("tls_ca").is_none(),
+            );
             if p.campo("senha").is_none() && d.senha_env.is_empty() {
                 d = d.com_a_senha_de(antiga)?;
             }

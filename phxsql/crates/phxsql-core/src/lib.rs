@@ -19,6 +19,7 @@ pub mod aes;
 pub mod asn1;
 pub mod base64;
 pub mod bigint;
+pub mod cadeia;
 pub mod carga;
 pub mod cifra;
 pub mod crc;

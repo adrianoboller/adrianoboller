@@ -629,12 +629,12 @@ fn a_ligacao_phxsql_fala_tls_pelo_pino_tls_e_o_salvar_o_herda() {
         "o disco perdeu o pino TLS"
     );
 
-    // O pino TLS no motor que nao fala o nosso protocolo recusa na declaracao.
+    // O `tls` dos motores de fora no motor phxsql recusa na declaracao:
+    // entre dois PhxSql o TLS confere por pino (T6d; antes da T6d, a recusa
+    // era a do `pino_tls` no mysql, que agora fala TLS).
     let e = salvar(
         &s,
-        &format!(
-            r#"{{"op":"dblink_salvar","nome":"m","motor":"mysql","host":"h","pino_tls":"{pino}"}}"#
-        ),
+        r#"{"op":"dblink_salvar","nome":"m","motor":"phxsql","host":"h","tls":"exigir"}"#,
     )
     .unwrap_err()
     .to_string();

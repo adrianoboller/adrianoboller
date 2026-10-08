@@ -60,6 +60,7 @@ pub mod servidor;
 pub mod sinais;
 pub mod sistema;
 pub mod telemetria;
+pub mod tls_saida;
 pub mod transacao;
 pub mod travas;
 pub mod upsert;
