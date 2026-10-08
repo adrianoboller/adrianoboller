@@ -19054,19 +19054,19 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "levaria ao disco)."
         ),
         "arquivo": "crates/phxsql-server/src/servidor.rs",
-        "trecho": """            desde = lote.ate;
-            self.anotar_estado(&origem.nome, |est| {
+        "trecho": """                        f.desde = juntador.consumido(i);
+                        self.anotar_estado(&origem.nome, |est| {
 """,
-        "troca": """            desde = lote.ate;
-            // DEFEITO REPOSTO (535): a posicao a cada lote, antes do fsync do dado.
-            if let Ok(mut p) = self.posicoes_bidi.lock() {
-                p.insert(chave_pos.clone(), desde);
-                let _ = bidirecional::gravar_posicoes(
-                    &self.config.base.join("replicacao-posicoes.json"),
-                    &p,
-                );
-            }
-            self.anotar_estado(&origem.nome, |est| {
+        "troca": """                        f.desde = juntador.consumido(i);
+                        // DEFEITO REPOSTO (535): a posicao a cada grupo, antes do fsync do dado.
+                        if let Ok(mut p) = self.posicoes_bidi.lock() {
+                            p.insert(f.chave_pos.clone(), f.desde);
+                            let _ = bidirecional::gravar_posicoes(
+                                &self.config.base.join("replicacao-posicoes.json"),
+                                &p,
+                            );
+                        }
+                        self.anotar_estado(&origem.nome, |est| {
 """,
         "pacote": "phxsql-server",
         "alvo": ["--test", "laco-do-unico-secundario"],
@@ -23213,10 +23213,10 @@ pub const PRAZO_SOB_A_TRAVA: Duration = Duration::from_secs(3600);""",
             "energia -- e o nome continua o mesmo."
         ),
         "arquivo": "crates/phxsql-server/src/servidor.rs",
-        "trecho": """                let arquivos = self.sincronizar_replicada_contando(&database, &tabela)?;
+        "trecho": """                self.sincronizar_replicada_contando(database, &f.no.nome)?
 """,
         "troca": """                // DEFEITO REPOSTO (207): confirma sem o fsync.
-                let arquivos = 0u64;
+                0u64
 """,
         "pacote": "phxsql-server",
         "alvo": ["--test", "quorum-de-escrita"],
@@ -25734,6 +25734,11 @@ fn anotar(""",
             "a_venda_de_varias_tabelas_nao_aparece_pela_metade_quando_o_fio_cai",
             "a_venda_maior_que_um_lote_nao_aparece_pela_metade_quando_o_fio_cai",
             "a_venda_nao_aparece_pela_metade_mesmo_com_as_tres_tabelas_na_mao",
+            # Pedido 681: o bidirecional junta pelo mesmo `Juntador`, e cai
+            # junto (medido: (0, 3, 0), (0, 500, 0), (0, 600, 1)).
+            "no_bidirecional_a_venda_de_varias_tabelas_nao_aparece_pela_metade",
+            "no_bidirecional_a_venda_maior_que_um_lote_nao_aparece_pela_metade",
+            "no_bidirecional_a_venda_nao_aparece_pela_metade_com_as_tres_na_mao",
         ],
         "seguem": [],
     },
@@ -25953,6 +25958,156 @@ fn anotar(""",
         "alvo": ["--test", "transacao-acima-do-teto"],
         "caem": [
             "a_transacao_acima_do_teto_e_recusada_no_commit_e_a_que_cabe_chega_inteira",
+        ],
+        "seguem": [],
+    },
+    {
+        "id": "escrita-local-na-base-recebida-por-replica",
+        "titulo": "A base que o nó recebe por réplica volta a aceitar escrita local: o caixa cadastra no database do central (pedido 677)",
+        "porque": (
+            "pedido 677 (325 F1), decisao do dono de 07/10/2026: um escritor "
+            "por database. O database declarado em "
+            "`replicacao.origens[].databases` e so leitura no no que o recebe. "
+            "Medido pelo soquete com o defeito reposto: o `inserir` em "
+            "`loja/clientes` no caixa grava (rowid 4) e o `criar_database` do "
+            "database do central passa."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """            } else if let Some(origem) = self.origem_que_traz(pedido.texto_ou("database", "")) {
+""",
+        "troca": """            // DEFEITO REPOSTO (677): a base recebida por replicacao aceita escrita local.
+            } else if let Some(origem) = self
+                .origem_que_traz(pedido.texto_ou("database", ""))
+                .filter(|_| false)
+            {
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "um-escritor-por-database"],
+        "caem": [
+            "o_caixa_vende_no_dele_e_nao_cadastra_no_do_central",
+            "com_o_central_caido_o_caixa_vende_e_nao_cadastra",
+            "no_central_o_caixa_e_so_leitura",
+        ],
+        "seguem": [],
+    },
+    {
+        "id": "quorum-aplica-lote-a-lote",
+        "titulo": "O lote do quórum volta a ser aplicado tabela a tabela: o leitor da réplica vê a venda pela metade (pedido 681)",
+        "porque": (
+            "pedido 681, o irmao do 676: a resposta do `replicar_aguardar` "
+            "traz um lote por tabela do commit, e cada um sob a propria tomada "
+            "da trava deixa um leitor entrar entre eles. Medido pelo soquete "
+            "com o defeito reposto, 5 de 5 corridas: 1 a 3 fotos pela metade "
+            "por corrida, ex. (15, 150, 14). A prova e por amostragem (leitor "
+            "em laco), entao uma corrida limpa com o defeito e possivel, "
+            "embora nao vista nas cinco."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        for (database, tabelas) in bases {
+""",
+        "troca": """        // DEFEITO REPOSTO (681): cada lote do quorum aplicado sozinho.
+        let bases: Vec<(String, Vec<LotesDaTabela>)> = bases
+            .into_iter()
+            .flat_map(|(d, ts)| ts.into_iter().map(move |t| (d.clone(), vec![t])))
+            .collect();
+        for (database, tabelas) in bases {
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "venda-inteira-pelo-quorum"],
+        "caem": [
+            "a_venda_pelo_quorum_nunca_aparece_pela_metade",
+        ],
+        "seguem": [],
+    },
+    {
+        "id": "quorum-entrega-parte-o-commit",
+        "titulo": "A entrega do quórum volta a cortar no meio de um commit: a réplica recebe uma tabela da venda sem a outra (pedido 681)",
+        "porque": (
+            "pedido 681: a replica junta por transacao o que chega numa "
+            "resposta, entao a resposta tem de trazer cada commit inteiro. "
+            "Reposto o corte por lote, a primeira entrega leva so `a`."
+        ),
+        "arquivo": "crates/phxsql-server/src/quorum.rs",
+        "trecho": """                    if comeca_outro && usados + l.bytes > ORCAMENTO_DA_ENTREGA {
+""",
+        "troca": """                    // DEFEITO REPOSTO (681): o corte por lote, no meio do commit.
+                    if (comeca_outro || quantos > 0) && usados + l.bytes > ORCAMENTO_DA_ENTREGA {
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "quorum::testes::a_entrega_nao_parte_um_commit_entre_duas_respostas",
+        ],
+        "seguem": [
+            "quorum::testes::o_quorum_conta_so_replicas",
+        ],
+    },
+    {
+        "id": "bidi-alcanca-tabela-a-tabela",
+        "titulo": "O bidirecional volta a alcançar tabela a tabela: o par vê os itens sem a venda quando o fio cai (pedido 681)",
+        "porque": (
+            "pedido 681, o outro irmao do 676: o alcance do bidirecional "
+            "passou a juntar as tabelas de um database pelo mesmo "
+            "`replica::Juntador`. Medido pelo soquete com o defeito reposto: "
+            "(0, 3, 0) com o fio caido; (0, 600, 1) com as tres na mao; e a de "
+            "600 itens pela metade depois de o fio voltar."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """            aplicados += self.alcancar_database_bidi(
+                &mut cliente,
+                &database,
+                p.tabelas,
+                origem,
+                &meu_id,
+                meu_hash,
+                hash_dele,
+            )?;
+""",
+        "troca": """            // DEFEITO REPOSTO (681): o bidirecional alcanca tabela a tabela.
+            for no in p.tabelas {
+            aplicados += self.alcancar_database_bidi(
+                &mut cliente,
+                &database,
+                vec![no],
+                origem,
+                &meu_id,
+                meu_hash,
+                hash_dele,
+            )?;
+            }
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "venda-inteira-na-replica"],
+        "caem": [
+            "no_bidirecional_a_venda_de_varias_tabelas_nao_aparece_pela_metade",
+            "no_bidirecional_a_venda_maior_que_um_lote_nao_aparece_pela_metade",
+            "no_bidirecional_a_venda_nao_aparece_pela_metade_com_as_tres_na_mao",
+        ],
+        "seguem": [
+            "a_venda_de_varias_tabelas_nao_aparece_pela_metade_quando_o_fio_cai",
+            "a_venda_maior_que_um_lote_nao_aparece_pela_metade_quando_o_fio_cai",
+            "a_venda_nao_aparece_pela_metade_mesmo_com_as_tres_tabelas_na_mao",
+        ],
+    },
+    {
+        "id": "carga-acima-do-teto-aceita",
+        "titulo": "A carga fora de transação acima do teto volta a ser aceita: a réplica a recebe em pedaços (pedido 686)",
+        "porque": (
+            "pedido 686, a decisao do dono do 685 («inteira ou nao chega») na "
+            "carga: `inserir_lote`, `importar` e `carga` gravam numa tomada "
+            "so, que e uma transacao para a replica. Medido pelo soquete com o "
+            "defeito reposto: com teto 1, a carga de 600 linhas grava as 600."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        let custo = t.custo_previsto_da_carga(&linhas);
+""",
+        "troca": """        // DEFEITO REPOSTO (686): a carga nao passa pelo teto.
+        let custo = t.custo_previsto_da_carga(&linhas).min(0);
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "carga-acima-do-teto"],
+        "caem": [
+            "a_carga_acima_do_teto_e_recusada_antes_de_gravar_e_a_que_cabe_chega_inteira",
         ],
         "seguem": [],
     },

@@ -117,6 +117,11 @@ pub struct LoteDoQuorum {
     pub esquema: String,
     /// O tamanho estimado no fio, para o [`ORCAMENTO_DA_ENTREGA`].
     pub bytes: usize,
+    /// De que commit do master este lote e -- pedido 681. Quem preenche e o
+    /// [`Cubo::esperar`]; a entrega corta so ENTRE commits, para a replica
+    /// receber cada transacao inteira numa resposta e junta-la pelo mesmo
+    /// `replica::Juntador` do pull.
+    pub commit: u64,
 }
 
 impl LoteDoQuorum {
@@ -338,8 +343,15 @@ impl Cubo {
     pub fn esperar(&self, lotes: Vec<LoteDoQuorum>, exigencias: &[Exigencia]) -> Resultado {
         let comeco = Instant::now();
         let prazo = self.prazo();
-        let lotes: Vec<Arc<LoteDoQuorum>> = lotes.into_iter().map(Arc::new).collect();
         let mut e = self.travar();
+        let commit = e.esperas + 1;
+        let lotes: Vec<Arc<LoteDoQuorum>> = lotes
+            .into_iter()
+            .map(|mut l| {
+                l.commit = commit;
+                Arc::new(l)
+            })
+            .collect();
         anotar(&mut e, exigencias);
         for r in e.replicas.values_mut() {
             r.pendentes.extend(lotes.iter().cloned());
@@ -416,13 +428,17 @@ impl Cubo {
         loop {
             let r = e.replicas.get_mut(id).expect("inserida acima");
             if !r.pendentes.is_empty() {
-                // Ao menos um, e depois so o que cabe no orcamento: o resto
-                // fica para a volta seguinte, que vem logo -- a replica
-                // confirma o que aplicou e pede de novo.
+                // Ao menos um COMMIT, e depois so o que cabe no orcamento: o
+                // resto fica para a volta seguinte, que vem logo -- a replica
+                // confirma o que aplicou e pede de novo. O corte so acontece
+                // na fronteira de um commit (pedido 681): partir um commit
+                // entre duas respostas faria a replica aplicar a tabela que
+                // chegou sem a que ficou para a volta seguinte.
                 let mut usados = 0usize;
                 let mut quantos = 0usize;
                 for l in &r.pendentes {
-                    if quantos > 0 && usados + l.bytes > ORCAMENTO_DA_ENTREGA {
+                    let comeca_outro = quantos > 0 && l.commit != r.pendentes[quantos - 1].commit;
+                    if comeca_outro && usados + l.bytes > ORCAMENTO_DA_ENTREGA {
                         break;
                     }
                     usados += l.bytes;
@@ -626,7 +642,47 @@ mod testes {
             linhagem: Json::Nulo,
             esquema: String::new(),
             bytes: 10,
+            commit: 0,
         }
+    }
+
+    /// Pedido 681: a entrega corta so ENTRE commits. Um commit de duas
+    /// tabelas que juntas passam do orcamento vai inteiro numa resposta, e o
+    /// commit seguinte fica para a volta seguinte. Defeito reposto (o corte
+    /// por lote, de antes): a resposta leva so `a`, e a replica aplicaria a
+    /// metade do commit.
+    #[test]
+    fn a_entrega_nao_parte_um_commit_entre_duas_respostas() {
+        // Prazo longo: o commit degradado limpa o que estava pendente, e o
+        // que se quer ver e a entrega com os dois commits esperando.
+        let c = Arc::new(Cubo::novo(1, 10_000, Duration::from_secs(1)));
+        c.aguardar("no2", None, &[], Duration::ZERO);
+        let grande = |t: &str| {
+            let mut l = lote("loja", t, 1);
+            l.bytes = ORCAMENTO_DA_ENTREGA / 2 + 1;
+            l
+        };
+        let mut commits = Vec::new();
+        for lotes in [vec![grande("a"), grande("b")], vec![lote("loja", "c", 1)]] {
+            let c2 = Arc::clone(&c);
+            let exige: Vec<Exigencia> = lotes.iter().map(|l| x("loja", &l.tabela, 1)).collect();
+            commits.push(std::thread::spawn(move || c2.esperar(lotes, &exige)));
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        let tabelas =
+            |e: &Entrega| -> Vec<String> { e.lotes.iter().map(|l| l.tabela.clone()).collect() };
+        let primeira = c.aguardar("no2", None, &[], Duration::ZERO);
+        let segunda = c.aguardar(
+            "no2",
+            None,
+            &[x("loja", "a", 1), x("loja", "b", 1), x("loja", "c", 1)],
+            Duration::ZERO,
+        );
+        for h in commits {
+            assert!(h.join().unwrap().alcancado);
+        }
+        assert_eq!(tabelas(&primeira), vec!["a", "b"]);
+        assert_eq!(tabelas(&segunda), vec!["c"]);
     }
 
     fn x(db: &str, t: &str, posicao: u64) -> Exigencia {

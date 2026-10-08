@@ -978,6 +978,20 @@ pub const FABRICA: &[MensagemFabrica] = &[
             "la operación {op} está prohibida en la base {base}",
         ],
     },
+    // Pedido 677. A segunda frase e o contrato do espelho (MANUAL 16.1), e
+    // vai na recusa porque e ali que o operador do caixa a encontra: o
+    // cadastro que ele tentou nao e defeito, e a regra.
+    MensagemFabrica {
+        nome: "erro.base_recebida_por_replica",
+        textos: [
+            "o database {base} vem da origem {origem} ({onde}) por replicacao e aqui e so leitura: um escritor por database, grave na origem. Cliente novo e produto novo so se cadastram com o central no ar",
+            "la base {base} vient de l'origine {origem} ({onde}) par réplication et ici elle est en lecture seule : un seul écrivain par base, écrivez à l'origine. Un nouveau client ou un nouveau produit ne s'enregistre qu'avec le serveur central en ligne",
+            "database {base} comes from origin {origem} ({onde}) by replication and is read-only here: one writer per database, write at the origin. New customers and new products are only registered with the central server online",
+            "il database {base} arriva dall'origine {origem} ({onde}) per replica e qui è di sola lettura: un solo scrittore per database, scrivi all'origine. Nuovi clienti e nuovi prodotti si registrano solo con il server centrale in linea",
+            "die Datenbank {base} kommt per Replikation vom Ursprung {origem} ({onde}) und ist hier nur lesbar: ein Schreiber pro Datenbank, schreiben Sie am Ursprung. Neue Kunden und neue Produkte werden nur bei erreichbarem Zentralserver angelegt",
+            "la base {base} viene del origen {origem} ({onde}) por replicación y aquí es de solo lectura: un escritor por base, escriba en el origen. Cliente nuevo y producto nuevo solo se registran con el servidor central en línea",
+        ],
+    },
     MensagemFabrica {
         nome: "erro.nome_hostil",
         textos: [
@@ -1063,6 +1077,20 @@ pub const FABRICA: &[MensagemFabrica] = &[
             "la transazione arriva a {bytes} byte nel diario, oltre il tetto di {teto} byte che la replica applica per intero: nulla è stato scritto ed è terminata; dividi il carico in transazioni più piccole",
             "die Transaktion erreicht {bytes} Bytes im Journal, über der Grenze von {teto} Bytes, die die Replik ganz anwendet: nichts wurde geschrieben und sie ist beendet; teilen Sie die Last in kleinere Transaktionen",
             "la transacción llega a {bytes} bytes en el diario, por encima del techo de {teto} bytes que la réplica aplica entero: no se grabó nada y terminó; divida la carga en transacciones más pequeñas",
+        ],
+    },
+    // Pedido 686: a carga fora de transacao e uma tomada so, e a replica a
+    // recebe como UMA transacao -- o mesmo teto, a mesma recusa antes de
+    // gravar.
+    MensagemFabrica {
+        nome: "erro.carga_acima_do_teto",
+        textos: [
+            "a carga de {linhas} linha(s) chega a {bytes} bytes no diário, acima do teto de {teto} bytes que a réplica aplica inteiro: nada foi gravado; divida a carga em lotes menores",
+            "la charge de {linhas} ligne(s) atteint {bytes} octets dans le journal, au-delà du plafond de {teto} octets que la réplique applique en entier : rien n'a été écrit ; divisez la charge en lots plus petits",
+            "the load of {linhas} row(s) reaches {bytes} bytes in the journal, above the {teto}-byte ceiling the replica applies whole: nothing was written; split the load into smaller batches",
+            "il carico di {linhas} riga/righe arriva a {bytes} byte nel diario, oltre il tetto di {teto} byte che la replica applica per intero: nulla è stato scritto; dividi il carico in lotti più piccoli",
+            "die Last von {linhas} Zeile(n) erreicht {bytes} Bytes im Journal, über der Grenze von {teto} Bytes, die die Replik ganz anwendet: nichts wurde geschrieben; teilen Sie die Last in kleinere Stapel",
+            "la carga de {linhas} fila(s) llega a {bytes} bytes en el diario, por encima del techo de {teto} bytes que la réplica aplica entero: no se grabó nada; divida la carga en lotes más pequeños",
         ],
     },
 ];

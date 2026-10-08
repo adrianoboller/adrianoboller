@@ -745,8 +745,8 @@ struct DonoDoDatabase {
 
 /// O que a fase 3 de um alcance de tabela devolveu.
 enum Lote {
-    /// Aplicou o lote, e a posicao local ficou em `nova`.
-    Aplicado { nova: u64 },
+    /// Aplicou o lote (a posicao local andou, ou ja estava em outra).
+    Aplicado,
     /// O diario do source nao continua o daqui -- o motivo, para o estado.
     Rompido(String),
 }
@@ -771,6 +771,96 @@ struct FilaDaReplica {
     ordem: usize,
 }
 
+/// Uma tabela no alcance BIDIRECIONAL de um database -- pedido 681. O que o
+/// [`crate::replica::Juntador`] nao sabe: a identidade por chave e a posicao
+/// consumida, que no bidirecional e estado proprio (o diario daqui mistura
+/// escrita local com aplicada).
+struct FilaBidi {
+    no: crate::replica::NoSource,
+    indice: String,
+    pos_chave: Vec<usize>,
+    chave_tab: String,
+    chave_pos: String,
+    /// A posicao consumida no comeco do alcance, e a de agora.
+    inicio: u64,
+    desde: u64,
+    /// Algum grupo passou por ela: vai ao `fsync` no fim, mesmo saindo pelo
+    /// erro.
+    tocada: bool,
+    /// O par parou nela neste alcance: a posicao nao anda mais.
+    parada: bool,
+    /// A vez dela num grupo: a mae antes da filha ([`ordem_das_maes`]).
+    vez: usize,
+}
+
+/// Os lotes de UMA tabela numa resposta do quorum, emendados -- pedido 681.
+struct LotesDaTabela {
+    no: crate::replica::NoSource,
+    /// A posicao que a replica tem de ter: a do PRIMEIRO lote.
+    posicao: u64,
+    /// Com `posicao > 0`, o primeiro e o de conferencia (o `posicao - 1`).
+    eventos: Vec<crate::replica::EventoRecebido>,
+    /// Onde o ultimo lote emendado termina.
+    fim: u64,
+    descontinuo: bool,
+}
+
+impl LotesDaTabela {
+    fn do_fio(l: &Json) -> Result<(String, LotesDaTabela)> {
+        let database = l.texto_ou("database", "").to_string();
+        let posicao = l.inteiro_ou("posicao", 0).max(0) as u64;
+        let eventos = crate::replica::eventos_do_fio(l.campo("eventos"))?;
+        let esquema = match l.texto_ou("esquema", "") {
+            "" => None,
+            hex => Some(phxsql_core::schema::Schema::desserializar(
+                &hex_para_bytes(hex)?,
+            )?),
+        };
+        let no = crate::replica::NoSource {
+            nome: l.texto_ou("tabela", "").to_string(),
+            eventos: l.inteiro_ou("eventos_do_master", 0).max(0) as u64,
+            esquema,
+            proxima_sequencia: crate::replica::proxima_sequencia_do_fio(
+                l.campo("proxima_sequencia"),
+            ),
+        };
+        // Onde o lote termina: o primeiro evento e o de conferencia quando
+        // `posicao > 0`.
+        let fim = if posicao == 0 {
+            eventos.len() as u64
+        } else {
+            posicao + (eventos.len() as u64).saturating_sub(1)
+        };
+        Ok((
+            database,
+            LotesDaTabela {
+                no,
+                posicao,
+                eventos,
+                fim,
+                descontinuo: false,
+            },
+        ))
+    }
+
+    /// Emenda o lote seguinte da mesma tabela. O de conferencia dele repete
+    /// o ultimo deste e sai. `false` = nao continua daqui.
+    fn emendar(&mut self, mut outro: LotesDaTabela) -> bool {
+        if outro.posicao != self.fim {
+            return false;
+        }
+        if outro.posicao > 0 && !outro.eventos.is_empty() {
+            outro.eventos.remove(0);
+        }
+        self.eventos.append(&mut outro.eventos);
+        self.fim = outro.fim;
+        // O lote de depois sabe mais: a contagem e o contador dele valem.
+        self.no.eventos = self.no.eventos.max(outro.no.eventos);
+        self.no.proxima_sequencia = outro.no.proxima_sequencia;
+        true
+    }
+}
+
 /// A vez de cada tabela dentro de um grupo do alcance -- pedido 676.
 ///
 /// O grupo aplica tabela por tabela sob uma tomada so: quem le a replica nao
@@ -780,14 +870,14 @@ struct FilaDaReplica {
 /// a vez de uma tabela e um a mais que a maior vez das maes dela que estao
 /// no alcance. O ciclo (a tabela que aponta para si, ou duas que se apontam)
 /// para no numero de tabelas, e ali a ordem volta a ser a da chegada.
-fn ordem_das_maes(filas: &[FilaDaReplica]) -> Vec<usize> {
+fn ordem_das_maes(filas: &[&crate::replica::NoSource]) -> Vec<usize> {
     let nome = |s: &str| phxsql_store::table::nome_simples(s).to_lowercase();
-    let nomes: Vec<String> = filas.iter().map(|f| nome(&f.no.nome)).collect();
+    let nomes: Vec<String> = filas.iter().map(|no| nome(&no.nome)).collect();
     let maes: Vec<Vec<usize>> = filas
         .iter()
         .enumerate()
-        .map(|(i, f)| {
-            f.no.esquema
+        .map(|(i, no)| {
+            no.esquema
                 .as_ref()
                 .map(|e| {
                     e.chaves_estrangeiras()
@@ -2320,6 +2410,36 @@ impl Servidor {
         u8_para_papel(self.papel_vivo.load(Ordering::Relaxed))
     }
 
+    /// A origem que traz `base` por replicacao, se alguma a DECLAROU -- pedido
+    /// 677, «um escritor por database».
+    ///
+    /// O campo e o que ja dizia isso: `replicacao.origens[].databases`, o
+    /// mesmo que o laco le para saber o que puxar e a guarda do 406 le para
+    /// saber de quem e cada nome. Um segundo campo («bases so leitura») seria
+    /// a mesma pergunta em dois lugares, e o dia em que divergissem a replica
+    /// puxaria o que a aplicacao tambem escreve.
+    ///
+    /// So a lista DECLARADA reivindica, e e a guarda entrando pedida: lista
+    /// vazia quer dizer «o que vier», ninguem escreveu o nome, e esse caso
+    /// segue com o aviso do arranque e a conta do pedido 300 (4). O multi fica
+    /// fora (existe para ser escrito, e casa pela chave), e o cluster tambem
+    /// (quem recusa ali e o papel vivo dele, no mesmo portao, antes).
+    fn origem_que_traz(&self, base: &str) -> Option<&crate::config::Origem> {
+        let base = base.trim();
+        if base.is_empty() || self.cluster.is_some() {
+            return None;
+        }
+        let papel = self.papel_atual();
+        if !papel.puxa_de_origem() || papel == Papel::Multi {
+            return None;
+        }
+        self.config
+            .replicacao
+            .origens
+            .iter()
+            .find(|o| o.databases.iter().any(|d| d == base))
+    }
+
     /// O primeiro endereco de origem, para o erro de recusa apontar o lugar
     /// certo em vez de so dizer "nao".
     fn primario(&self) -> String {
@@ -3746,10 +3866,29 @@ impl Servidor {
             // proxima inclusao vinda do source para a replicacao inteira.
             // O multi fica de fora: ele EXISTE para ser escrito, e casa as
             // linhas pela chave, nao pelo rowid.
-            eprintln!(
-                "ATENCAO: replica sem somente_leitura. Se a aplicacao escrever \
-                 aqui, os rowids divergem e a replicacao para."
-            );
+            // Pedido 677: o database DECLARADO numa origem ja recusa escrita
+            // local (`origem_que_traz`), entao o aviso nomeia so o que
+            // continua exposto -- a origem de lista vazia, «o que vier».
+            for o in &self.config.replicacao.origens {
+                if o.databases.is_empty() {
+                    eprintln!(
+                        "ATENCAO: replica sem somente_leitura e a origem {} sem \
+                         databases declarados. Se a aplicacao escrever num \
+                         database que vem dela, os rowids divergem e a \
+                         replicacao para; declare-os em \
+                         replicacao.origens[].databases para a escrita local \
+                         neles ser recusada.",
+                        o.nome
+                    );
+                } else {
+                    eprintln!(
+                        "replicacao [{}]: {} so leitura aqui (vem por \
+                         replicacao, um escritor por database)",
+                        o.nome,
+                        o.databases.join(", ")
+                    );
+                }
+            }
         }
         for origem in self.config.replicacao.origens.clone() {
             if !origem.senha.is_empty() && origem.senha_hash.is_empty() {
@@ -4251,13 +4390,13 @@ impl Servidor {
         // custa uma ida e volta, aplicar torto custaria o dado.
         let agora = tabela.eventos()?;
         if agora != posicao {
-            return Ok(Lote::Aplicado { nova: agora });
+            return Ok(Lote::Aplicado);
         }
         let para_aplicar = if posicao == 0 {
             eventos
         } else {
             let Some(primeiro) = eventos.first() else {
-                return Ok(Lote::Aplicado { nova: agora });
+                return Ok(Lote::Aplicado);
             };
             let chave = Self::chave_do_diario(database, &no.nome);
             if let Err(motivo) = self.diario_local_continua(&mut tabela, &chave, posicao, primeiro)
@@ -4317,7 +4456,7 @@ impl Servidor {
         // e a mesma garantia de sempre contra queda do PROCESSO; a garantia
         // contra queda da MAQUINA vem do `sincronizar` unico no fim do
         // alcance, exatamente onde ela estava antes.
-        Ok(Lote::Aplicado { nova })
+        Ok(Lote::Aplicado)
     }
 
     /// O diario LOCAL continua o do source?
@@ -4773,7 +4912,7 @@ impl Servidor {
                 std::slice::from_ref(&dele),
             )? {
                 Lote::Rompido(motivo) => self.romper_continuidade(origem, &chave, posicao, motivo),
-                Lote::Aplicado { .. } => self.confirmar_continuidade(origem, &chave, posicao),
+                Lote::Aplicado => self.confirmar_continuidade(origem, &chave, posicao),
             }
             return Ok(None);
         }
@@ -4827,7 +4966,7 @@ impl Servidor {
         if filas.is_empty() {
             return Ok(0);
         }
-        let vezes = ordem_das_maes(&filas);
+        let vezes = ordem_das_maes(&filas.iter().map(|f| &f.no).collect::<Vec<_>>());
         for (f, vez) in filas.iter_mut().zip(vezes) {
             f.ordem = vez;
         }
@@ -6579,17 +6718,15 @@ impl Servidor {
             // vale o hash do id, que e o numero que ele de fato usa.
             let hash_dele = bidirecional::numero_do_servidor(p.numero_servidor, &id_dele);
             self.conferir_numero_do_par(hash_dele, &id_dele)?;
-            for no in p.tabelas {
-                aplicados += self.alcancar_tabela_bidi(
-                    &mut cliente,
-                    &database,
-                    &no,
-                    origem,
-                    &meu_id,
-                    meu_hash,
-                    hash_dele,
-                )?;
-            }
+            aplicados += self.alcancar_database_bidi(
+                &mut cliente,
+                &database,
+                p.tabelas,
+                origem,
+                &meu_id,
+                meu_hash,
+                hash_dele,
+            )?;
         }
         Ok(aplicados)
     }
@@ -6661,46 +6798,43 @@ impl Servidor {
         Ok((Some((indice, pos_chave)), pendente))
     }
 
-    /// Aplica UM lote bidirecional ja lido do soquete. Fase 3.
+    /// Aplica numa tabela os eventos dela que vieram num grupo do
+    /// bidirecional, com a trava ja na mao de quem chama -- fase 3, por
+    /// [`Self::aplicar_grupo_bidi`] (pedido 681).
     #[allow(
         clippy::too_many_arguments,
         reason = "o laco de uma tabela junta as identidades dos dois lados"
     )]
-    fn aplicar_lote_bidi(
+    fn aplicar_tabela_bidi(
         &self,
-        database: &str,
-        no: &crate::replica::NoSource,
-        indice: &str,
-        pos_chave: &[usize],
+        db: &phxsql_store::catalogo::Database,
+        f: &FilaBidi,
         eventos: &[crate::replica::EventoRecebido],
         meu_hash: u16,
         hash_dele: u16,
     ) -> Result<LoteBidi> {
-        let trava = self.travar_dados()?;
-        let db = trava.abrir_database(database)?;
         // No multi as duas imagens sao obrigatorias -- a chave mora nela, e
         // exclusao tambem viaja por chave --, e quem as liga e a politica do
         // diario herdada do `Database` (`politica_do_diario`, pedido 564).
-        let mut tabela = db.abrir_qualificada(&no.nome)?;
-        let chave_tab = format!("{database}/{}", no.nome);
+        let mut tabela = db.abrir_qualificada(&f.no.nome)?;
         // O irmao da replica fiel (pedido 300 §2.7): o `inserir_replicado` e o
         // `atualizar_replicado` tambem nao julgam, e passam pela MESMA
         // conferencia que conta.
         tabela.contar_orfas();
         let saida = self.aplicar_eventos_bidi(
             &mut tabela,
-            &chave_tab,
-            indice,
-            pos_chave,
+            &f.chave_tab,
+            &f.indice,
+            &f.pos_chave,
             eventos,
             meu_hash,
             hash_dele,
         );
-        self.anotar_orfas(&chave_tab, tabela.orfas_contadas());
+        self.anotar_orfas(&f.chave_tab, tabela.orfas_contadas());
         saida
     }
 
-    /// O laco de [`Self::aplicar_lote_bidi`], separado para a contagem de
+    /// O laco de [`Self::aplicar_tabela_bidi`], separado para a contagem de
     /// orfas ser colhida tambem quando ele sai pelo erro.
     #[allow(
         clippy::too_many_arguments,
@@ -6762,31 +6896,16 @@ impl Servidor {
         Ok(saida)
     }
 
-    /// Traz UMA tabela ate a posicao do outro lado, casando pela chave.
-    ///
-    /// Partida nas mesmas tres fases de [`Self::alcancar_tabela`], e aqui o
-    /// motivo e mais duro: no bidirecional os DOIS lados rodam este laco. Com
-    /// a trava na mao durante o `puxar_lote`, cada um segurava a propria trava
-    /// esperando a resposta do outro -- que so podia vir depois de o outro
-    /// soltar a dele. E um abraco mortal de verdade, e ele so se desfazia no
-    /// prazo de leitura de 30 s dos dois lados, deixando `EAGAIN` no diario de
-    /// cada um. Medido antes do conserto, com 200.000 linhas escritas nos dois
-    /// lados ao mesmo tempo: 33,0 s contra 2,4 s de um servidor sozinho -- 14×
-    /// -- e pior `varrer` de 31.375 ms enquanto o `ping` respondia em 5 ms.
-    #[allow(
-        clippy::too_many_arguments,
-        reason = "o laco de uma tabela junta as identidades dos dois lados"
-    )]
-    fn alcancar_tabela_bidi(
+    /// Fase 1 do bidirecional para UMA tabela: o portao da parada, a tabela
+    /// aberta com a identidade, e a posicao consumida. `None` = nada a fazer
+    /// nesta tabela nesta rodada.
+    fn preparar_para_bidi(
         &self,
-        cliente: &mut crate::replica::Cliente,
         database: &str,
-        no: &crate::replica::NoSource,
+        no: crate::replica::NoSource,
         origem: &crate::config::Origem,
-        meu_id: &str,
         meu_hash: u16,
-        hash_dele: u16,
-    ) -> Result<u64> {
+    ) -> Result<Option<FilaBidi>> {
         let chave_tab = format!("{database}/{}", no.nome);
         // O PORTAO VEM ANTES DO TRABALHO: a tabela parada sai daqui sem tomar
         // a trava de dados, sem absorver o diario local e sem uma unica ida e
@@ -6795,74 +6914,160 @@ impl Servidor {
         // rodada, e aqui isso seria o laco apertado que o pedido 292 existe
         // para matar. Ver `bidirecional::ParadaDaTabela`.
         if self.esta_parada(&origem.nome, &chave_tab) {
-            return Ok(0);
+            return Ok(None);
         }
-        let Some((indice, pos_chave)) = self.abrir_para_bidi(database, no, origem, meu_hash)?
+        let Some((indice, pos_chave)) = self.abrir_para_bidi(database, &no, origem, meu_hash)?
         else {
-            return Ok(0);
+            return Ok(None);
         };
         let chave_pos = format!("{}|{}", origem.nome, chave_tab);
-        let mut desde = self
+        let desde = self
             .posicoes_bidi
             .lock()
             .ok()
             .and_then(|p| p.get(&chave_pos).copied())
             .unwrap_or(0);
         if desde >= no.eventos {
+            return Ok(None);
+        }
+        Ok(Some(FilaBidi {
+            no,
+            indice,
+            pos_chave,
+            chave_tab,
+            chave_pos,
+            inicio: desde,
+            desde,
+            tocada: false,
+            parada: false,
+            vez: 0,
+        }))
+    }
+
+    /// Traz um DATABASE inteiro do outro lado, casando pela chave, e aplica
+    /// cada transacao de la inteira ou nada -- pedido 681, o irmao do 676.
+    ///
+    /// # Por que por database, e nao mais tabela a tabela
+    ///
+    /// O diario e por tabela, e a venda de la (venda, itens, pagamento) e um
+    /// commit so. Tabela a tabela, um leitor daqui via os itens sem a venda
+    /// entre um alcance e o seguinte, e o fio que caisse no meio deixava assim
+    /// ate voltar. A decisao de QUANDO uma transacao esta inteira e a do pull,
+    /// e mora num lugar so: o [`crate::replica::Juntador`]. O que muda aqui e
+    /// so o COMO aplicar -- por chave, com o «mais recente vence» e a parada
+    /// do par, que e decisao diferente do rowid da replica fiel e por isso
+    /// nao passa pelo `aplicar_grupo_da_replica`.
+    ///
+    /// # As tres fases, como antes
+    ///
+    /// Puxar FORA da trava (o abraco mortal dos dois lados, medido: 33,0 s
+    /// contra 2,4 s), e aplicar cada grupo sob UMA tomada. Partidas assim
+    /// desde o pedido do laco do bidirecional, e o motivo continua: aqui os
+    /// DOIS lados rodam este laco.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "o alcance de um database junta as identidades dos dois lados"
+    )]
+    fn alcancar_database_bidi(
+        &self,
+        cliente: &mut crate::replica::Cliente,
+        database: &str,
+        nos: Vec<crate::replica::NoSource>,
+        origem: &crate::config::Origem,
+        meu_id: &str,
+        meu_hash: u16,
+        hash_dele: u16,
+    ) -> Result<u64> {
+        let mut filas: Vec<FilaBidi> = Vec::new();
+        for no in nos {
+            if let Some(f) = self.preparar_para_bidi(database, no, origem, meu_hash)? {
+                filas.push(f);
+            }
+        }
+        if filas.is_empty() {
             return Ok(0);
         }
-        let inicio = desde;
-
+        let vezes = ordem_das_maes(&filas.iter().map(|f| &f.no).collect::<Vec<_>>());
+        for (f, vez) in filas.iter_mut().zip(vezes) {
+            f.vez = vez;
+        }
+        let alvos: Vec<(u64, u64)> = filas.iter().map(|f| (f.desde, f.no.eventos)).collect();
+        let mut juntador =
+            crate::replica::Juntador::novo(&alvos, phxsql_store::log::teto_da_transacao());
         let mut aplicados = 0u64;
-        loop {
-            // FORA da trava -- ver a nota da funcao.
-            let lote = crate::replica::puxar_lote(
-                cliente,
-                database,
-                &no.nome,
-                desde,
-                Some((meu_id, meu_hash)),
-            )?;
-            if lote.ate <= desde {
-                break;
+        let saida = loop {
+            match juntador.passo() {
+                crate::replica::Passo::Puxar { fila, desde } => {
+                    // FORA da trava -- ver a nota da funcao.
+                    match crate::replica::puxar_lote(
+                        cliente,
+                        database,
+                        &filas[fila].no.nome,
+                        desde,
+                        Some((meu_id, meu_hash)),
+                    ) {
+                        Ok(lote) => juntador.receber_ate(fila, lote.eventos, lote.ate),
+                        Err(e) => break Err(e),
+                    }
+                }
+                crate::replica::Passo::Aplicar { grupo, .. } => {
+                    for (i, _) in &grupo {
+                        filas[*i].tocada = true;
+                    }
+                    let (n, paradas) = match self
+                        .aplicar_grupo_bidi(database, &filas, grupo, meu_hash, hash_dele)
+                    {
+                        Ok(x) => x,
+                        Err(e) => break Err(e),
+                    };
+                    aplicados += n;
+                    // O conflito de unicidade PARA o par nesta tabela, e a
+                    // posicao NAO anda -- e a mesma decisao escrita no
+                    // `worker.c` do PostgreSQL: nao avancar a origem e o que
+                    // impede perder o evento. Reaplicar os que entraram antes
+                    // dele, quando o par for solto, e inofensivo: o casamento
+                    // e por chave e a regra e "mais recente vence".
+                    for (i, (posicao, motivo, detalhe)) in paradas {
+                        juntador.largar(i);
+                        let f = &filas[i];
+                        self.parar_o_par(
+                            &origem.nome,
+                            &f.chave_tab,
+                            &f.chave_pos,
+                            posicao,
+                            motivo,
+                            detalhe,
+                        );
+                        filas[i].tocada = true;
+                        filas[i].parada = true;
+                    }
+                    // Aqui a posicao anda so na MEMORIA deste laco. Ela vai ao
+                    // mapa compartilhado e ao disco no fim do alcance, depois
+                    // do `fsync` do dado -- ver a nota abaixo.
+                    for (i, f) in filas.iter_mut().enumerate() {
+                        if f.parada {
+                            continue;
+                        }
+                        f.desde = juntador.consumido(i);
+                        self.anotar_estado(&origem.nome, |est| {
+                            est.posicoes.insert(f.chave_tab.clone(), f.desde);
+                        });
+                    }
+                }
+                crate::replica::Passo::Fim => break Ok(()),
             }
-            let feito = self.aplicar_lote_bidi(
-                database,
-                no,
-                &indice,
-                &pos_chave,
-                &lote.eventos,
-                meu_hash,
-                hash_dele,
-            )?;
-            aplicados += feito.aplicados;
-            // O conflito de unicidade PARA o par nesta tabela, e a posicao
-            // NAO anda -- e a mesma decisao escrita no `worker.c` do
-            // PostgreSQL: nao avancar a origem e o que impede perder o evento.
-            // Reaplicar os que entraram antes dele, quando o par for solto, e
-            // inofensivo: o casamento e por chave e a regra e "mais recente
-            // vence".
-            if let Some((posicao, motivo, detalhe)) = feito.parou_em {
-                self.parar_o_par(
-                    &origem.nome,
-                    &chave_tab,
-                    &chave_pos,
-                    posicao,
-                    motivo,
-                    detalhe,
-                );
-                break;
+        };
+        // O que passou so por eventos suprimidos (nasceram aqui) tambem anda.
+        if saida.is_ok() {
+            for (i, f) in filas.iter_mut().enumerate() {
+                if !f.parada {
+                    f.desde = juntador.consumido(i);
+                }
             }
-            // Aqui a posicao anda so na MEMORIA deste laco. Ela vai ao mapa
-            // compartilhado e ao disco no fim do alcance, depois do `fsync`
-            // do dado -- ver a nota abaixo.
-            desde = lote.ate;
-            self.anotar_estado(&origem.nome, |est| {
-                est.posicoes.insert(chave_tab.clone(), desde);
-            });
-            if lote.fim {
-                break;
-            }
+        }
+        if juntador.em_pedacos > 0 {
+            let partidas = juntador.em_pedacos;
+            self.anotar_estado(&origem.nome, |e| e.transacoes_em_pedacos += partidas);
         }
         // Pedido 535: DADO DURAVEL PRIMEIRO, POSICAO DEPOIS.
         //
@@ -6892,10 +7097,16 @@ impl Servidor {
         // alcance anterior que caiu no meio (erro de rede depois de aplicar)
         // deixou dado sem `fsync`, e o lote repetido agora chega todo
         // «ignorado» -- gravar a posicao sem o `fsync` passaria por cima dele.
-        if aplicados > 0 || desde > inicio {
-            self.sincronizar_replicada(database, &no.nome)?;
+        //
+        // E vale tambem na saida pelo erro (o fio que caiu no meio, 681): o
+        // que ja foi aplicado eram transacoes inteiras, e a posicao delas so
+        // vai ao disco depois do `fsync` delas.
+        for f in &filas {
+            if f.tocada || f.desde > f.inicio {
+                self.sincronizar_replicada(database, &f.no.nome)?;
+            }
         }
-        if desde > inicio {
+        if filas.iter().any(|f| f.desde > f.inicio) {
             // A troca duravel (temporario, `fsync`, `rename`, `fsync` da
             // pasta) roda FORA da trava global de dados -- so com a do mapa
             // de posicoes, que nenhuma escrita de cliente toma.
@@ -6903,10 +7114,49 @@ impl Servidor {
                 .posicoes_bidi
                 .lock()
                 .map_err(|_| PhxError::Io(std::io::Error::other("posicoes_bidi envenenado")))?;
-            p.insert(chave_pos.clone(), desde);
+            for f in filas.iter().filter(|f| f.desde > f.inicio) {
+                p.insert(f.chave_pos.clone(), f.desde);
+            }
             bidirecional::gravar_posicoes(&self.config.base.join("replicacao-posicoes.json"), &p)?;
         }
-        Ok(aplicados)
+        saida.map(|()| aplicados)
+    }
+
+    /// Um grupo do [`crate::replica::Juntador`] no bidirecional, sob UMA
+    /// tomada da trava: a mae antes da filha, e cada tabela pelo casamento por
+    /// chave. Devolve quantos eventos entraram e as tabelas que PARARAM o par
+    /// (conflito de unicidade ou toque esquecido), com onde e por que.
+    ///
+    /// O que NAO e atomico, e e de proposito, como no grupo da replica fiel:
+    /// a tabela que para no meio de uma transacao deixa o que entrou antes
+    /// dela. Desfazer pediria a Sombra, parada por decisao do dono; a parada
+    /// e nominal e a posicao dela nao anda.
+    #[allow(
+        clippy::type_complexity,
+        reason = "a parada carrega posicao, motivo e detalhe, como `LoteBidi`"
+    )]
+    fn aplicar_grupo_bidi(
+        &self,
+        database: &str,
+        filas: &[FilaBidi],
+        mut grupo: Vec<(usize, Vec<crate::replica::EventoRecebido>)>,
+        meu_hash: u16,
+        hash_dele: u16,
+    ) -> Result<(u64, Vec<(usize, (u64, &'static str, String))>)> {
+        // A vez das maes, a mesma do grupo da replica fiel (`ordem_das_maes`).
+        grupo.sort_by_key(|(i, _)| filas[*i].vez);
+        let mut n = 0u64;
+        let mut paradas = Vec::new();
+        let trava = self.travar_dados()?;
+        let db = trava.abrir_database(database)?;
+        for (i, eventos) in &grupo {
+            let feito = self.aplicar_tabela_bidi(&db, &filas[*i], eventos, meu_hash, hash_dele)?;
+            n += feito.aplicados;
+            if let Some(p) = feito.parou_em {
+                paradas.push((*i, p));
+            }
+        }
+        Ok((n, paradas))
     }
 
     /// Poe no mapa de toques os eventos locais que ele ainda nao viu.
@@ -13774,6 +14024,19 @@ impl Servidor {
                 // Le o valor VIVO, que dois caminhos escrevem: a promocao de um
                 // spare e a gravacao pela tela de configuracao.
                 return Err(PhxError::Autorizacao(self.msg("erro.somente_leitura", &[])));
+            } else if let Some(origem) = self.origem_que_traz(pedido.texto_ou("database", "")) {
+                // Pedido 677: um escritor por database. O que vem de uma
+                // origem por replicacao e so leitura aqui, mesmo sem
+                // `somente_leitura` -- que tranca o servidor inteiro, e no
+                // espelho do 325 o caixa PRECISA escrever no database dele.
+                return Err(PhxError::Autorizacao(self.msg(
+                    "erro.base_recebida_por_replica",
+                    &[
+                        ("base", pedido.texto_ou("database", "")),
+                        ("origem", origem.nome.as_str()),
+                        ("onde", &format!("{}:{}", origem.host, origem.porta)),
+                    ],
+                )));
             }
             // A escrita local que passou daqui NAO se conta aqui (pedido 630):
             // os portoes 3 a 5 ainda nao julgaram, e a tabela nem abriu. A
@@ -25060,6 +25323,25 @@ impl Servidor {
         // Daqui para baixo NAO ha ponto de cancelamento: a fase fecha aqui, e
         // a gravacao vai ate o fim.
         drop(_fase);
+        // PEDIDO 686, a decisao do dono do 685 («inteira ou nao chega») na
+        // carga: o lote inteiro vai numa tomada so, e a tomada e UMA transacao
+        // para a replica. Acima do teto ela chegaria em pedacos, entao e
+        // recusada aqui, antes de gravar -- pela mesma conta do COMMIT
+        // (`custo_na_transacao`, via `Table::custo_previsto_da_carga`).
+        // Partir a carga em transacoes menores seria decidir por quem mandou
+        // onde ela pode ficar pela metade; quem manda divide, sabendo.
+        let custo = t.custo_previsto_da_carga(&linhas);
+        let teto = phxsql_store::log::teto_da_transacao();
+        if teto < custo {
+            return Err(PhxError::LimiteExcedido(self.msg(
+                "erro.carga_acima_do_teto",
+                &[
+                    ("linhas", &linhas.len().to_string()),
+                    ("bytes", &custo.to_string()),
+                    ("teto", &teto.to_string()),
+                ],
+            )));
+        }
         let lote = t.inserir_lote(&linhas, parar)?;
         // Uma carga inteira e um `sincronizar`, e nao um por linha.
         t.sincronizar()?;
@@ -31364,6 +31646,8 @@ impl Servidor {
                 linhagem: linhagem.clone(),
                 esquema: esquema.clone(),
                 bytes,
+                // O cubo numera ao entregar: um commit, um numero.
+                commit: 0,
             });
             ini = fim;
         }
@@ -31526,19 +31810,10 @@ impl Servidor {
                 return;
             }
             let lotes = r.campo("lotes").and_then(Json::lista).unwrap_or(&[]);
-            let mut atras = false;
-            for l in lotes {
-                match self.aplicar_lote_do_quorum(&origem.nome, l) {
-                    Ok(Some(x)) => {
-                        confirmar.retain(|c| c.chave() != x.chave());
-                        confirmar.push(x);
-                    }
-                    Ok(None) => atras = true,
-                    Err(e) => {
-                        eprintln!("cluster: lote do quorum de {master}: {e}");
-                        atras = true;
-                    }
-                }
+            let (feitos, atras) = self.aplicar_lotes_do_quorum(&origem.nome, lotes, master);
+            for x in feitos {
+                confirmar.retain(|c| c.chave() != x.chave());
+                confirmar.push(x);
             }
             if atras {
                 return;
@@ -31560,73 +31835,199 @@ impl Servidor {
         }
     }
 
-    /// Aplica UM lote do quorum: o mesmo motor do pull -- abrir (criando pelo
-    /// esquema, se preciso), aplicar com a conferencia de continuidade, e
-    /// sincronizar -- e devolve a confirmacao, ou `None` quando esta replica
-    /// nao esta onde o lote comeca.
-    fn aplicar_lote_do_quorum(
+    /// Aplica os lotes de UMA resposta do quorum por transacao -- pedido 681.
+    ///
+    /// # Por que nao lote a lote
+    ///
+    /// Era assim ate o 681: cada lote (uma tabela de um commit) ia ao disco
+    /// sob a propria tomada da trava, e entre o lote dos itens e o da venda um
+    /// leitor desta replica via a venda pela metade -- o defeito que o 676
+    /// fechou no pull e que ficou aqui, no irmao. Agora o caminho e o MESMO do
+    /// pull: os lotes de cada database viram as filas de um
+    /// [`crate::replica::Juntador`], e cada grupo de transacoes inteiras vai
+    /// ao disco por [`Self::aplicar_grupo_da_replica`], numa tomada so.
+    ///
+    /// # O que garante que a transacao esta inteira na resposta
+    ///
+    /// O cubo so corta a entrega entre commits (`quorum::Cubo::aguardar`),
+    /// entao a fronteira de cada tabela e o fim do ultimo lote dela, e o
+    /// `Juntador` nunca precisa puxar. Se pedir, o database fica para o pull.
+    ///
+    /// # O que volta
+    ///
+    /// As confirmacoes das tabelas que chegaram ao fim do lote E foram ao
+    /// disco (o «ok» e aplicou e gravou, dono 17/09/2026), e `true` quando
+    /// alguma ficou atras -- o chamador entao nao confirma o degradado e o
+    /// pull alcanca.
+    fn aplicar_lotes_do_quorum(
         &self,
         origem: &str,
-        l: &Json,
-    ) -> Result<Option<crate::quorum::Exigencia>> {
-        let database = l.texto_ou("database", "").to_string();
-        let tabela = l.texto_ou("tabela", "").to_string();
-        let posicao = l.inteiro_ou("posicao", 0).max(0) as u64;
-        let eventos = crate::replica::eventos_do_fio(l.campo("eventos"))?;
-        let esquema = match l.texto_ou("esquema", "") {
-            "" => None,
-            hex => Some(phxsql_core::schema::Schema::desserializar(
-                &hex_para_bytes(hex)?,
-            )?),
-        };
-        let no = crate::replica::NoSource {
-            nome: tabela.clone(),
-            eventos: l.inteiro_ou("eventos_do_master", 0).max(0) as u64,
-            esquema,
-            proxima_sequencia: crate::replica::proxima_sequencia_do_fio(
-                l.campo("proxima_sequencia"),
-            ),
-        };
-        let Some((local, outra_historia)) = self.abrir_para_replicar(&database, &no)? else {
-            return Ok(None);
-        };
-        if let Some(motivo) = outra_historia {
-            eprintln!("cluster: {database}/{tabela}: {motivo}");
-            return Ok(None);
-        }
-        if local != posicao {
-            return Ok(None);
-        }
-        // Onde o lote termina: o primeiro evento e o de conferencia quando
-        // `posicao > 0`.
-        let fim = if posicao == 0 {
-            eventos.len() as u64
-        } else {
-            posicao + (eventos.len() as u64).saturating_sub(1)
-        };
-        match self.aplicar_lote_da_replica(&database, &no, posicao, &eventos)? {
-            Lote::Rompido(motivo) => {
-                let chave = Self::chave_do_diario(&database, &tabela);
-                self.romper_continuidade(origem, &chave, posicao, motivo);
-                Ok(None)
-            }
-            Lote::Aplicado { nova, .. } if nova >= fim => {
-                // O «ok» e APLICOU E GRAVOU EM DISCO (dono, 17/09/2026): o
-                // `fsync` vem antes de a confirmacao existir.
-                let arquivos = self.sincronizar_replicada_contando(&database, &tabela)?;
-                if let Some(cubo) = &self.quorum {
-                    cubo.contar_ack(arquivos);
+        lotes: &[Json],
+        master: &str,
+    ) -> (Vec<crate::quorum::Exigencia>, bool) {
+        // Os lotes por database e, dentro dele, por tabela, na ordem do fio.
+        let mut bases: Vec<(String, Vec<LotesDaTabela>)> = Vec::new();
+        let mut atras = false;
+        for l in lotes {
+            let (database, novo) = match LotesDaTabela::do_fio(l) {
+                Ok(x) => x,
+                Err(e) => {
+                    eprintln!("cluster: lote do quorum de {master}: {e}");
+                    atras = true;
+                    continue;
                 }
-                let chave = Self::chave_do_diario(&database, &tabela);
-                self.confirmar_continuidade(origem, &chave, nova);
-                Ok(Some(crate::quorum::Exigencia {
-                    database,
-                    tabela,
-                    posicao: nova,
-                }))
+            };
+            let posicao = match bases.iter().position(|(d, _)| *d == database) {
+                Some(i) => i,
+                None => {
+                    bases.push((database, Vec::new()));
+                    bases.len() - 1
+                }
+            };
+            let tabelas = &mut bases[posicao].1;
+            match tabelas.iter_mut().find(|t| t.no.nome == novo.no.nome) {
+                // Dois lotes da mesma tabela que nao se continuam: o database
+                // inteiro fica para o pull, e nada dele se aplica pela metade.
+                Some(t) => {
+                    if !t.emendar(novo) {
+                        t.descontinuo = true;
+                    }
+                }
+                None => tabelas.push(novo),
             }
-            Lote::Aplicado { .. } => Ok(None),
         }
+        let mut feitos = Vec::new();
+        for (database, tabelas) in bases {
+            match self.aplicar_database_do_quorum(origem, &database, tabelas) {
+                Ok((mut x, a)) => {
+                    feitos.append(&mut x);
+                    atras |= a;
+                }
+                Err(e) => {
+                    eprintln!("cluster: lote do quorum de {master} ({database}): {e}");
+                    atras = true;
+                }
+            }
+        }
+        (feitos, atras)
+    }
+
+    /// Um database de uma resposta do quorum, pelo motor do pull (681).
+    fn aplicar_database_do_quorum(
+        &self,
+        origem: &str,
+        database: &str,
+        tabelas: Vec<LotesDaTabela>,
+    ) -> Result<(Vec<crate::quorum::Exigencia>, bool)> {
+        if tabelas.iter().any(|t| t.descontinuo) {
+            return Ok((Vec::new(), true));
+        }
+        // Fase 1, como no pull: abrir (criando pelo esquema) e conferir que a
+        // replica esta onde cada lote comeca. Uma tabela fora do lugar deixa
+        // o database inteiro para o pull -- aplicar as outras partiria o
+        // commit que a inclui.
+        let mut filas: Vec<FilaDaReplica> = Vec::new();
+        let mut eventos: Vec<Vec<crate::replica::EventoRecebido>> = Vec::new();
+        let mut fins: Vec<u64> = Vec::new();
+        for t in tabelas {
+            let Some((local, outra_historia)) = self.abrir_para_replicar(database, &t.no)? else {
+                return Ok((Vec::new(), true));
+            };
+            if let Some(motivo) = outra_historia {
+                eprintln!("cluster: {database}/{}: {motivo}", t.no.nome);
+                return Ok((Vec::new(), true));
+            }
+            if local != t.posicao {
+                return Ok((Vec::new(), true));
+            }
+            let mut lista = t.eventos;
+            let conferencia = if t.posicao > 0 && !lista.is_empty() {
+                Some(lista.remove(0))
+            } else {
+                None
+            };
+            fins.push(t.posicao + lista.len() as u64);
+            eventos.push(lista);
+            filas.push(FilaDaReplica {
+                chave: Self::chave_do_diario(database, &t.no.nome),
+                conferir: conferencia.is_some(),
+                conferencia,
+                posicao: t.posicao,
+                aplicados: 0,
+                ordem: 0,
+                no: t.no,
+            });
+        }
+        let vezes = ordem_das_maes(&filas.iter().map(|f| &f.no).collect::<Vec<_>>());
+        for (f, vez) in filas.iter_mut().zip(vezes) {
+            f.ordem = vez;
+        }
+        let alvos: Vec<(u64, u64)> = filas
+            .iter()
+            .zip(&fins)
+            .map(|(f, &fim)| (f.posicao, fim))
+            .collect();
+        let mut juntador =
+            crate::replica::Juntador::novo(&alvos, phxsql_store::log::teto_da_transacao());
+        for (i, lista) in eventos.into_iter().enumerate() {
+            if !lista.is_empty() {
+                juntador.receber(i, lista);
+            }
+        }
+        let mut atras = false;
+        let saida = loop {
+            match juntador.passo() {
+                // Tudo ja esta na mao; pedir mais e sinal de resposta partida.
+                crate::replica::Passo::Puxar { .. } => {
+                    atras = true;
+                    break Ok(());
+                }
+                crate::replica::Passo::Aplicar { grupo, .. } => {
+                    match self.aplicar_grupo_da_replica(database, &mut filas, grupo, origem) {
+                        Ok(Grupo::Aplicado { rompidas, .. }) => {
+                            for i in rompidas {
+                                juntador.largar(i);
+                                atras = true;
+                            }
+                        }
+                        Ok(Grupo::Andou) => {
+                            atras = true;
+                            break Ok(());
+                        }
+                        Err(e) => break Err(e),
+                    }
+                }
+                crate::replica::Passo::Fim => break Ok(()),
+            }
+        };
+        if juntador.em_pedacos > 0 {
+            let partidas = juntador.em_pedacos;
+            self.anotar_estado(origem, |e| e.transacoes_em_pedacos += partidas);
+        }
+        // O «ok» e APLICOU E GRAVOU EM DISCO (dono, 17/09/2026): o `fsync`
+        // vem antes de a confirmacao existir. O que entrou e nao chegou ao
+        // fim tambem vai ao disco -- sem confirmar.
+        let mut feitos = Vec::new();
+        for (f, &fim) in filas.iter().zip(&fins) {
+            let arquivos = if f.aplicados > 0 {
+                self.sincronizar_replicada_contando(database, &f.no.nome)?
+            } else {
+                0
+            };
+            if f.posicao < fim {
+                atras = true;
+                continue;
+            }
+            if let Some(cubo) = &self.quorum {
+                cubo.contar_ack(arquivos);
+            }
+            feitos.push(crate::quorum::Exigencia {
+                database: database.to_string(),
+                tabela: f.no.nome.clone(),
+                posicao: f.posicao,
+            });
+        }
+        saida.map(|()| (feitos, atras))
     }
 
     /// Quantos eventos o diario LOCAL desta tabela tem -- zero se ela nao

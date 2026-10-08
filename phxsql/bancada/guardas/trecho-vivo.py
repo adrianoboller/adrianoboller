@@ -899,7 +899,15 @@ TETO_TESTE_SEM_MODULO = 0
 # `commit-misto-sem-contar`, `commit-acima-do-teto-aceito` e
 # `custo-da-transacao-sem-a-imagem`. RED medido a mao (troca do catalogo
 # aplicada, `caem` cairam e `seguem` verdes, restaurado); provador NAO rodou.
-PISO_DAS_ENTRADAS = 820
+# 820 -> 825 (pedidos 677, 681 e 686, 08/10/2026 -- um escritor por database,
+# os irmaos do 676 por transacao e a carga pelo teto): nascem
+# `escrita-local-na-base-recebida-por-replica`, `quorum-aplica-lote-a-lote`,
+# `quorum-entrega-parte-o-commit`, `bidi-alcanca-tabela-a-tabela` e
+# `carga-acima-do-teto-aceita`; a `posicao-bidi-antes-do-dado` (535) foi
+# reancorada no laco por grupo do bidirecional. RED medido a mao (troca do
+# catalogo aplicada, `caem` cairam, restaurado; a do quorum e por amostragem,
+# 5 de 5); provador NAO rodou.
+PISO_DAS_ENTRADAS = 825
 
 # ------------------------------------------------------------- APOSENTADAS
 #

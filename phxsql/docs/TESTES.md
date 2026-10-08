@@ -1450,23 +1450,28 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `fase-b-aceita-novo-que-cresceu` | A FASE B deixa de comparar o tamanho do `*.novo`: o que cresceu entre as fases, com a data reposta, é publicado (pedido 672) | 1 | ✅ provada |
 | `fase-b-aceita-novo-escrito-por-fora` | A FASE B deixa de comparar a data do `*.novo`: a escrita pelo nome entre as fases, no mesmo tamanho, é publicada (pedido 672) | 1 | ✅ provada |
 | `fase-b-segue-com-o-novo-que-nao-se-le` | O `conferir_novos` segue em frente quando o `lstat` do `*.novo` falha: o `.novo` do espelho apagado entre as fases deixa o `.bkp` velho atrás do `.reg` novo, com Ok (pedido 672) | 1 | ✅ provada |
-| `replica-aplica-o-que-chegou-sem-esperar-a-transacao` | A réplica volta a aplicar o que chegou, lote a lote e tabela a tabela: com o fio caído no meio do envio o central mostra a venda pela metade (pedido 676) | 3 | ✅ provada |
+| `replica-aplica-o-que-chegou-sem-esperar-a-transacao` | A réplica volta a aplicar o que chegou, lote a lote e tabela a tabela: com o fio caído no meio do envio o central mostra a venda pela metade (pedido 676) | 6 | ✅ provada |
 | `tomada-da-trava-sem-unidade-do-diario` | A tomada da trava de escrita deixa de abrir a unidade do diário: cada evento de um COMMIT ganha id próprio e a réplica aplica a venda em pedaços (pedido 676) | 2 | ✅ provada |
 | `crc-do-evento-sem-o-id-de-transacao` | O CRC do evento da versão 4 do `.log` deixa de cobrir o id de transação: um `tx` trocado no disco passa no `verificar` (pedido 676) | 1 | ✅ provada |
 | `grupo-sem-a-vez-das-maes` | O grupo da réplica volta a aplicar as tabelas na ordem da chegada: a filha do mesmo commit entra antes da mãe e é contada órfã sem nunca ter sido visível sem ela (pedido 676) | 1 | ✅ provada |
+| `diario-sem-piso-do-disco-para-o-id` | A abertura do `.log` deixa de semear o id de transação pelo disco: com o relógio recuado entre dois arranques o diário recebe id menor que o da vida anterior (pedido 684) | 1 | ✅ provada |
+| `cura-sem-o-id-da-cauda` | A cura do `.log` deixa de contar o id dos eventos da cauda: o evento gravado depois do último `sincronizar` some do piso, e o id novo sai menor que ele (pedido 684) | 1 | ✅ provada |
+| `cabecalho-do-log-sem-o-maior-id` | O cabeçalho da versão 4 do `.log` deixa de gravar o maior id de transação: a abertura não tem piso sem caminhar o volume inteiro (pedido 684) | 1 | ✅ provada |
+| `commit-misto-sem-contar` | A tomada que grava em volume sem id (2/3) e em volume com id (4) volta a passar calada: a réplica recebe o commit partido e ninguém conta (pedido 684) | 1 | ✅ provada |
+| `commit-acima-do-teto-aceito` | O COMMIT acima do teto da transação volta a ser aceito na origem: a réplica o recebe em pedaços (pedido 685) | 1 | ✅ provada |
+| `custo-da-transacao-sem-a-imagem` | A conta da origem esquece a imagem da linha: aceita a transação que a réplica mede acima do teto, e ela chega em pedaços (pedido 685) | 1 | ✅ provada |
 | `alter-com-regra-sem-aviso` | `acrescentar_coluna` com `check` ou `calculada` numa tabela com linha é aceito SEM AVISO, e a linha velha fica fora da regra | — | 🪦 aposentada (01/10/2026) |
 | `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | — | 🪦 aposentada (18/09/2026) |
 
-**814 das 818 guardas do catálogo: 2 aposentadas, 2 não pegaram, 806 provadas, 4 redundantes** — 36513 s de mutação, medido de 2026-09-16 15:25 a 2026-10-08 00:12, em 8 datas (2026-09-16: 1, 2026-09-24: 84, 2026-09-30: 34, 2026-10-01: 191, 2026-10-02: 153, 2026-10-06: 51, 2026-10-07: 295, 2026-10-08: 5).
+**820 das 823 guardas do catálogo: 2 aposentadas, 2 não pegaram, 812 provadas, 4 redundantes** — 36587 s de mutação, medido de 2026-09-16 15:25 a 2026-10-08 03:24, em 8 datas (2026-09-16: 1, 2026-09-24: 84, 2026-09-30: 34, 2026-10-01: 191, 2026-10-02: 153, 2026-10-06: 51, 2026-10-07: 295, 2026-10-08: 11).
 
-> **Esta rodada NÃO julgou 6 das 818 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 6 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 5 das 823 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 5 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
-- `diario-sem-piso-do-disco-para-o-id` — A abertura do `.log` deixa de semear o id de transação pelo disco: com o relógio recuado entre dois arranques o diário recebe id menor que o da vida anterior (pedido 684)
-- `cura-sem-o-id-da-cauda` — A cura do `.log` deixa de contar o id dos eventos da cauda: o evento gravado depois do último `sincronizar` some do piso, e o id novo sai menor que ele (pedido 684)
-- `cabecalho-do-log-sem-o-maior-id` — O cabeçalho da versão 4 do `.log` deixa de gravar o maior id de transação: a abertura não tem piso sem caminhar o volume inteiro (pedido 684)
-- `commit-misto-sem-contar` — A tomada que grava em volume sem id (2/3) e em volume com id (4) volta a passar calada: a réplica recebe o commit partido e ninguém conta (pedido 684)
-- `commit-acima-do-teto-aceito` — O COMMIT acima do teto da transação volta a ser aceito na origem: a réplica o recebe em pedaços (pedido 685)
-- `custo-da-transacao-sem-a-imagem` — A conta da origem esquece a imagem da linha: aceita a transação que a réplica mede acima do teto, e ela chega em pedaços (pedido 685)
+- `escrita-local-na-base-recebida-por-replica` — A base que o nó recebe por réplica volta a aceitar escrita local: o caixa cadastra no database do central (pedido 677)
+- `quorum-aplica-lote-a-lote` — O lote do quórum volta a ser aplicado tabela a tabela: o leitor da réplica vê a venda pela metade (pedido 681)
+- `quorum-entrega-parte-o-commit` — A entrega do quórum volta a cortar no meio de um commit: a réplica recebe uma tabela da venda sem a outra (pedido 681)
+- `bidi-alcanca-tabela-a-tabela` — O bidirecional volta a alcançar tabela a tabela: o par vê os itens sem a venda quando o fio cai (pedido 681)
+- `carga-acima-do-teto-aceita` — A carga fora de transação acima do teto volta a ser aceita: a réplica a recebe em pedaços (pedido 686)
 
 As guardas que esta corrida ainda cita, hoje aposentadas:
 

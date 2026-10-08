@@ -815,17 +815,49 @@ restaurado — recusa com `VERSAO_NAO_SUPORTADA` nomeando o arquivo.
 - a **queda do processo** da réplica no meio de um grupo deixa o grupo pela
   metade no disco até a próxima rodada completá-lo — a garantia comprada aqui é
   a do fio, não a da queda;
-- **os caminhos irmãos** que aplicam o mesmo diário continuam por tabela: o
-  lote do quórum do cluster (`aplicar_lote_do_quorum`, uma tomada por lote) e o
-  bidirecional (`rodada_bidirecional`). O id viaja nos dois; juntá-los pelo id
-  é a próxima frente.
+- **os caminhos irmãos juntaram-se no pedido 681** (08/10/2026), pelo MESMO
+  `replica::Juntador`: o lote do quórum (`aplicar_lotes_do_quorum`) junta os
+  lotes de uma resposta por database e aplica cada grupo por
+  `aplicar_grupo_da_replica`, e o cubo só corta a entrega **entre commits**
+  (`LoteDoQuorum::commit`), para a resposta trazer cada transação inteira; o
+  bidirecional (`alcancar_database_bidi`) alcança o database inteiro, com o
+  `Juntador` andando pela **posição** do evento (`receber_ate` — o source
+  suprime os eventos de quem pede) e gravando a posição consumida
+  (`consumido`), nunca à frente de uma transação que espera na mão. O COMO
+  aplicar continua diferente — por chave, com «mais recente vence» e a
+  parada do par —, e por isso o bidirecional tem o grupo dele
+  (`aplicar_grupo_bidi`) e não passa pelo rowid. A tabela que PARA o par no
+  meio de uma transação deixa o que entrou antes dela, como o *fail-stop* do
+  grupo da réplica fiel. Lote barrado na entrega do quórum (alcance do
+  usuário, cifra do 342) continua não indo, e o commit degrada dizendo;
 
 Provado pelo soquete (`tests/venda-inteira-na-replica.rs`): uma venda de 3 e de
 600 itens em três tabelas, o fio derrubado no 2.º e no 4.º `replicar`, e o
 central **nunca** mostra `(vendas, itens, pagamentos)` diferente de `(0,0,0)` ou
 `(1,N,1)`. Com a aplicação por lote reposta o central fica com `(0,3,0)`,
 `(0,500,0)` e `(0,600,1)`; sem a unidade do diário na tomada da trava, com
-`(1,499,0)`.
+`(1,499,0)`. As mesmas três provas rodam no bidirecional (pedido 681), e com o
+alcance tabela a tabela reposto dão `(0,3,0)` e `(0,600,1)`. O quórum se prova
+em `tests/venda-inteira-pelo-quorum.rs`: um leitor em laco fotografa a réplica
+(o sanduíche de `vendas`) enquanto o master grava sessenta vendas; com os
+lotes aplicados um a um, 1 a 3 fotos pela metade por corrida (5 de 5).
+
+**Um escritor por database (pedido 677).** O database DECLARADO em
+`replicacao.origens[].databases` é só leitura no nó que o recebe, mesmo sem
+`somente_leitura`: a escrita local nele é recusada no portão único da escrita
+(`erro.base_recebida_por_replica`), dizendo de que origem ele vem. É o que o
+espelho do 325 pede — o caixa escreve no `caixaNN` dele e não cadastra no
+database do central; o central não escreve no `caixaNN`. Origem de lista
+**vazia** («o que vier») não reivindica nada: segue com o aviso do arranque e
+a conta do pedido 300 (4). O `multi` e o cluster ficam de fora (o multi existe
+para ser escrito; o cluster recusa pelo papel vivo).
+
+**A carga pelo teto (pedido 686).** `inserir_lote`, `importar` e `carga` fora
+de transação gravam numa tomada só — uma transação para a réplica — e passam
+pela mesma conta do COMMIT (`Table::custo_previsto_da_carga`, sobre
+`custo_na_transacao`): acima do teto, recusam antes de gravar
+(`erro.carga_acima_do_teto`). O motor não divide a carga sozinho: dividir é
+decidir onde ela pode ficar pela metade, e quem decide é quem manda.
 
 ---
 

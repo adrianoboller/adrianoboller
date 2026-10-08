@@ -4609,6 +4609,9 @@ incluindo multi-source e failover.
       - BAIXA o estoque LOCAL.
       - NAO cadastra: cliente novo e produto novo so se cadastram com o
         central NO AR. E de proposito -- assim nao existe cadastro duplicado.
+        O servidor do caixa recusa a gravacao no database que recebe do
+        central (o que esta em replicacao.origens[].databases), com o
+        central no ar ou caido, dizendo de que origem ele vem (pedido 677).
       - O central ve a loja ATRASADA ate o caixa voltar; nao ve a venda
         enquanto ela nao chegou.
       - A venda chega ao central INTEIRA, ou nao chega: a PARTIR DO pedido
