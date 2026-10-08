@@ -3497,7 +3497,7 @@ operação   [tam_tabela u16][tabela bytes][op u8][rowid alvo u64]
 | campo | tamanho | o que é |
 |---|---|---|
 | `magic` | 8 | `PHXTX\0\0\0`, como todo arquivo do motor |
-| `versao` | 4 | 4 com o cofre ligado, 3 sem ele (a 2 e a 1 continuam sendo **lidas**) |
+| `versao` | 4 | 4 com o cofre ligado, 3 sem ele (a 2 e a 1 continuam sendo **lidas**); **6/5** na marca do grupo da réplica, com e sem cofre (pedido 682) |
 | `id` | 8 | o identificador da transação, o mesmo do nome do arquivo |
 | `carimbo` | 8 | ms desde a época, quando a marca foi escrita |
 | `n_operacoes` | 4 | quantas operações vêm a seguir |
@@ -3621,6 +3621,50 @@ por marca cobraria 236 ms **por `COMMIT`** — 740× o custo da marca — e a ma
 é o ponto de compromisso da transação. Com a chave derivada, a marca cifrada
 custa **0,298 ms** contra os **0,317 ms** da mesma marca em claro: dentro do
 ruído. O que aparecia era o PBKDF2, nunca o selo.
+
+### v5/v6: o grupo da réplica (pedido 682, 08/10/2026)
+
+**A migração para a v5/v6 só vai para frente** (parecer do papel C, 08/10/2026): um binário anterior ao 682 lê a marca v5/v6 como `NaoConfere` e a apaga sem aviso, devolvendo a janela da venda sem os itens até a rodada seguinte. Não volte o binário da réplica depois de atualizá-lo.
+
+**Quem mais grava uma marca:** a réplica fiel, antes do primeiro evento de cada
+grupo do `Juntador` (`Servidor::aplicar_grupo_da_replica`, pelo pull e pelo
+quorum). A tomada única da trava (676) protege o leitor vivo; o processo que
+morria no meio do grupo deixava no disco a venda sem os itens, servida pelo
+arranque até a rodada seguinte completar. Agora o arranque a completa pela
+**mesma** `Database::recuperar_marcas`, com a porta fechada. É a marca de
+sempre — mesmo arquivo, mesmo `id` do contador das transações, mesmo selo,
+mesmo 0600 —, e o que muda é só a operação:
+
+- **cabeçalho:** o da v3 (v5, em claro) ou o da v4 (v6, com o material de
+  cifra). A versão própria existe para o leitor anterior **descartar**
+  (`NaoConfere`) em vez de ler o evento como um `inserir` de linha vazia — ele
+  pula o que sobra do payload depois do byte da cascata.
+- **`op`:** 1 inclusão, 2 alteração, 4 exclusão física — a do diário, e não a
+  do `COMMIT` (a exclusão suave chega como alteração, que é o que ela é no
+  `.reg`). 3 e 5 numa v5/v6 não conferem.
+- **payload:** o da v3 com linha, motivo e linha antiga **vazios** e o byte da
+  cascata em 0, seguido de `[carimbo_de_la i64][origem u16][posicao u64]
+  [tam_imagem u32][imagem]`. Selado na v6 como na v4: a imagem traz o dado de
+  lá aberto.
+
+**A idempotência é pela posição do diário, conferida — não pelo rowid.** A
+alteração reaplicada grava a mesma linha e acrescenta um evento que a origem
+não tem, e o diário daqui deixaria de continuar o de lá. A recuperação aplica
+quando o diário tem exatamente `posicao` eventos; com mais, confere que o
+evento em `posicao` é **este** (carimbo, operação, rowid — os campos da
+conferência de continuidade) e passa adiante, ou recusa se for outro (a tabela
+mudou de história depois da queda); com menos, recusa. A primeira recusa
+**para** o resto da marca. O aplicador é o da réplica (`Table::aplicar_evento`,
+com o carimbo e a origem de lá e sem julgar a chave estrangeira), para o diário
+completado continuar o da origem.
+
+**Quem apaga:** a rodada, depois do `fsync` de cada tabela que aplicou — a
+ordem do group commit. O grupo que para no meio por erro do dado (a réplica
+divergiu) apaga a marca na hora: completar no arranque bateria no mesmo evento.
+Custo: uma marca com `fsync` por grupo, do tamanho das imagens do grupo.
+
+**Fora do alcance, dito:** o bidirecional (`aplicar_grupo_bidi`) aplica pela
+chave, com «mais recente vence», e não grava marca.
 
 ### O arquivo nasce 0600 — em toda versão, cifrada ou não
 

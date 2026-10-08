@@ -47,9 +47,11 @@ use phxsql_store::catalogo::Instancia;
 // copiar: dois motores de marca seriam a copia que diverge.
 pub use phxsql_store::marca::{
     caminho_da_marca, codificar_linha, decodificar_linha, decodificar_linha_em,
-    falhar_a_proxima_leitura_de_teste, gravar_marca, ler_marca, tratar_marca, Acao, Escrita,
-    Leitura, Marca, NoArranque, OperacaoDaMarca, Relatorio, EXTENSAO, MAGIC, PREFIXO, VERSAO,
-    VERSAO_CASCATA_EM_CLARO, VERSAO_LINHA_ANTIGA_SEM_CASCATA, VERSAO_SEM_LINHA_ANTIGA,
+    falhar_a_proxima_leitura_de_teste, gravar_marca, gravar_marca_da_replica, ler_marca,
+    tratar_marca, Acao, Escrita, EventoDaReplica, EventoDoGrupo, Leitura, Marca, NoArranque,
+    OperacaoDaMarca, Relatorio, EXTENSAO, MAGIC, PREFIXO, VERSAO, VERSAO_CASCATA_EM_CLARO,
+    VERSAO_LINHA_ANTIGA_SEM_CASCATA, VERSAO_REPLICA_CIFRADA, VERSAO_REPLICA_EM_CLARO,
+    VERSAO_SEM_LINHA_ANTIGA,
 };
 
 // --------------------------------------------------------------- os estados

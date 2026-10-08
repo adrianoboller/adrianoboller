@@ -914,7 +914,13 @@ fn ordem_das_maes(filas: &[&crate::replica::NoSource]) -> Vec<usize> {
 /// O que um grupo do alcance deu. Ver `Servidor::aplicar_grupo_da_replica`.
 enum Grupo {
     /// Aplicou `n` eventos; as tabelas em `rompidas` sairam da rodada.
-    Aplicado { n: u64, rompidas: Vec<usize> },
+    /// `marca` e o bilhete do grupo (pedido 682): quem chama o apaga so
+    /// DEPOIS do `fsync` das tabelas -- ver `soltar_marcas_da_replica`.
+    Aplicado {
+        n: u64,
+        rompidas: Vec<usize>,
+        marca: Option<PathBuf>,
+    },
     /// A posicao local de alguma tabela andou com a trava solta: nada se
     /// aplicou.
     Andou,
@@ -4990,6 +4996,7 @@ impl Servidor {
             crate::replica::Juntador::novo(&alvos, phxsql_store::log::teto_da_transacao());
         let mut aplicados = 0u64;
         let mut avisadas = 0u64;
+        let mut marcas: Vec<PathBuf> = Vec::new();
         let saida = loop {
             match juntador.passo() {
                 crate::replica::Passo::Puxar { fila, desde } => {
@@ -5038,7 +5045,8 @@ impl Servidor {
                         );
                     }
                     match self.aplicar_grupo_da_replica(database, &mut filas, grupo, origem) {
-                        Ok(Grupo::Aplicado { n, rompidas }) => {
+                        Ok(Grupo::Aplicado { n, rompidas, marca }) => {
+                            marcas.extend(marca);
                             aplicados += n;
                             for i in rompidas {
                                 juntador.largar(i);
@@ -5063,6 +5071,7 @@ impl Servidor {
                 self.sincronizar_replicada(database, &f.no.nome)?;
             }
         }
+        Self::soltar_marcas_da_replica(marcas);
         saida.map(|()| aplicados)
     }
 
@@ -5076,10 +5085,27 @@ impl Servidor {
     /// do grupo e da rodada -- ela ja parou de ser seguida, e as outras
     /// continuam, como sempre foi.
     ///
+    /// # A queda do PROCESSO no meio -- pedido 682
+    ///
+    /// A tomada unica da trava protege o LEITOR vivo; o processo que morre no
+    /// meio do grupo deixava no disco a venda sem os itens, e o arranque a
+    /// servia ate a rodada seguinte completar -- ou para sempre, se a origem
+    /// nao voltasse. O grupo agora grava a MESMA marca `.tx` da cascata e do
+    /// `COMMIT` antes do primeiro evento (`gravar_marca_da_replica`), e o
+    /// arranque a completa pela mesma recuperacao, com a porta fechada. Anda
+    /// para a frente, e nunca para tras: desfazer devolveria slot, e o `.reg`
+    /// nao reaproveita slot.
+    ///
+    /// A marca sai so depois do `fsync` das tabelas, no fim da rodada
+    /// (`soltar_marcas_da_replica`), pela regra do group commit: apagar
+    /// antes abriria a janela em que o dado nao esta no disco e nao ha
+    /// bilhete para traze-lo.
+    ///
     /// O que NAO e atomico, e e de proposito: o `aplicar_evento` que falha no
     /// meio (rowid que nao bate -- a replica ja divergiu) deixa o que entrou
-    /// antes dele e devolve o erro, o fail-stop de sempre. Desfazer pediria a
-    /// Sombra, que esta parada por decisao do dono.
+    /// antes dele e devolve o erro, o fail-stop de sempre, e a marca sai ali
+    /// mesmo -- completar no arranque bateria no mesmo erro. Desfazer pediria
+    /// a Sombra, que esta parada por decisao do dono.
     fn aplicar_grupo_da_replica(
         &self,
         database: &str,
@@ -5093,7 +5119,13 @@ impl Servidor {
         let mut rompidas: Vec<(usize, String)> = Vec::new();
         let mut aplicadas: Vec<usize> = Vec::new();
         let mut total = 0u64;
-        {
+        // A conferencia de continuidade so existe no primeiro grupo depois de
+        // (re)ligar, e ela tem de vir ANTES da marca: a tabela rompida nao
+        // pode entrar no bilhete, senao o arranque que completasse a marca
+        // aplicaria eventos de la por cima de um diario que ja divergiu. Por
+        // isso uma passada propria com a trava, so quando ha o que conferir;
+        // o grupo comum toma a trava uma vez so.
+        if grupo.iter().any(|(i, _)| filas[*i].conferencia.is_some()) {
             let trava = self.travar_dados()?;
             let db = trava.abrir_database(database)?;
             for (i, _) in &grupo {
@@ -5108,6 +5140,79 @@ impl Servidor {
                     }
                 }
             }
+        }
+        // O bilhete do grupo, gravado e sincronizado ANTES do primeiro evento
+        // (pedido 682) -- e ANTES da trava: o `fsync` da marca com a trava
+        // global na mao parava todo leitor e todo escritor do servidor pelo
+        // tempo de um disco (catraca `alcancam-fsync`). O conteudo ja e
+        // conhecido aqui; o que a trava confere depois so pode RECUSAR o
+        // grupo, e ai a marca sai. A queda entre a marca e o primeiro evento
+        // deixa um bilhete que o arranque completa pela posicao
+        // (`aplicar_evento_da_marca`): diario na posicao, aplica; diario que
+        // andou por escrita local, o evento nao confere e a marca sai como
+        // impossivel, sem gravar nada.
+        let marca = self.marcar_o_grupo(database, filas, &grupo, &rompidas)?;
+        let soltar = |marca: &Option<PathBuf>| {
+            if let Some(m) = marca {
+                let _ = std::fs::remove_file(m);
+            }
+        };
+        {
+            let mut trava = match self.travar_dados() {
+                Ok(t) => t,
+                Err(e) => {
+                    soltar(&marca);
+                    return Err(e);
+                }
+            };
+            // Ninguem pode ter escrito entre a marca e a trava: a posicao
+            // local de cada tabela e reconferida, e o grupo que andou sai
+            // levando a marca junto -- nenhum evento dele entrou.
+            let conferido = (|| -> Result<Option<phxsql_store::catalogo::Database>> {
+                let db = trava.abrir_database(database)?;
+                if let Some(m) = &marca {
+                    if m.parent() != Some(db.caminho()) {
+                        return Err(PhxError::Corrompido(format!(
+                            "a marca do grupo da replica de {database} foi gravada em {} \
+                             e o database esta em {}",
+                            m.display(),
+                            db.caminho().display()
+                        )));
+                    }
+                }
+                for (i, _) in &grupo {
+                    let f = &filas[*i];
+                    if db.abrir_qualificada(&f.no.nome)?.eventos()? != f.posicao {
+                        return Ok(None);
+                    }
+                }
+                Ok(Some(db))
+            })();
+            let db = match conferido {
+                Ok(Some(db)) => db,
+                Ok(None) => {
+                    soltar(&marca);
+                    return Ok(Grupo::Andou);
+                }
+                Err(e) => {
+                    soltar(&marca);
+                    return Err(e);
+                }
+            };
+            // EM VOO so agora, com a trava na mao: um panico no meio do grupo
+            // e reparado completando ESTA marca (pedido 451, M1).
+            if let Some(m) = &marca {
+                trava.marca_em_voo = Some(MarcaEmVoo {
+                    database: database.to_string(),
+                    caminho: m.clone(),
+                    gravada: true,
+                });
+            }
+            #[cfg(debug_assertions)]
+            let parar_em: Option<u64> = std::env::var("PHXSQL_TESTE_PARAR_NO_GRUPO")
+                .ok()
+                .and_then(|v| v.parse().ok());
+            let mut aplicou = false;
             for (i, eventos) in &grupo {
                 if rompidas.iter().any(|(j, _)| j == i) {
                     continue;
@@ -5129,11 +5234,33 @@ impl Servidor {
                         break;
                     }
                     n += 1;
+                    // So em `debug`: a prova do 682 mata o PROCESSO aqui, com
+                    // parte do grupo no disco, por SIGKILL de verdade. O sinal
+                    // vem do proprio processo em vez de um `sleep` esperando o
+                    // teste: dormir com a trava global na mao subia a catraca
+                    // `rede-ou-espera` (11 -> 12), e catraca nao sobe. Sem o
+                    // `kill`, `exit(137)` -- sai sem rodar destrutor nenhum.
+                    #[cfg(debug_assertions)]
+                    if parar_em == Some(total + n) {
+                        eprintln!("teste: parado no meio do grupo da replica");
+                        let _ = std::process::Command::new("kill")
+                            .args(["-KILL", &std::process::id().to_string()])
+                            .status();
+                        std::process::exit(137);
+                    }
                 }
                 self.anotar_orfas(&format!("{database}/{}", f.no.nome), t.orfas_contadas());
                 f.aplicados += n;
                 total += n;
+                aplicou |= n > 0;
                 if let Some(erro) = falhou {
+                    // Fail-stop: a replica divergiu, e completar no arranque
+                    // bateria no mesmo evento. A marca sai com o erro, como a
+                    // do `COMMIT` que para no meio por erro do dado.
+                    trava.marca_em_voo = None;
+                    if let Some(m) = &marca {
+                        let _ = std::fs::remove_file(m);
+                    }
                     return Err(erro);
                 }
                 let nova = t.eventos()?;
@@ -5149,6 +5276,16 @@ impl Servidor {
                 f.conferir = false;
                 aplicadas.push(*i);
             }
+            // O grupo terminou: a marca deixa de estar EM VOO (o reparo de um
+            // panico daqui em diante nao a completa) e espera o `fsync` da
+            // rodada. Um grupo em que nada entrou nao tem o que trazer de
+            // volta.
+            trava.marca_em_voo = None;
+            if !aplicou {
+                if let Some(m) = &marca {
+                    let _ = std::fs::remove_file(m);
+                }
+            }
         }
         // Os recados saem com a trava SOLTA: sao mutex de replicacao, e
         // empilha-los sob a trava de dados nao compra nada.
@@ -5163,7 +5300,62 @@ impl Servidor {
         Ok(Grupo::Aplicado {
             n: total,
             rompidas: rompidas.into_iter().map(|(i, _)| i).collect(),
+            marca: if total > 0 { marca } else { None },
         })
+    }
+
+    /// Grava e sincroniza a marca do grupo da replica (pedido 682), SEM a
+    /// trava de dados: quem chama a toma depois e so entao a poe EM VOO.
+    /// `None` quando o grupo nao tem evento a aplicar.
+    ///
+    /// O diretorio sai da mesma base que a `Raiz` abriu (`config.base`), e o
+    /// chamador confere, ja com a trava, que e o do database aberto.
+    ///
+    /// O id sai do mesmo contador das marcas de `COMMIT`, e por isso nunca
+    /// colide com a de uma transacao no mesmo diretorio. Tomar so a trava das
+    /// transacoes, sem a de dados, nao inverte a ordem unica (dados antes de
+    /// transacoes): a ordem vale para quem segura as duas.
+    fn marcar_o_grupo(
+        &self,
+        database: &str,
+        filas: &[FilaDaReplica],
+        grupo: &[(usize, Vec<crate::replica::EventoRecebido>)],
+        rompidas: &[(usize, String)],
+    ) -> Result<Option<PathBuf>> {
+        let mut eventos = Vec::new();
+        for (i, lista) in grupo {
+            if rompidas.iter().any(|(j, _)| j == i) {
+                continue;
+            }
+            let f = &filas[*i];
+            for (k, e) in lista.iter().enumerate() {
+                eventos.push(crate::transacao::EventoDoGrupo {
+                    tabela: &f.no.nome,
+                    operacao: e.operacao,
+                    rowid: e.rowid,
+                    carimbo_ms: e.carimbo_ms,
+                    origem: e.origem,
+                    posicao: f.posicao + k as u64,
+                    imagem: &e.imagem,
+                });
+            }
+        }
+        if eventos.is_empty() {
+            return Ok(None);
+        }
+        let dir = self.config.base.join(database);
+        let id = self.transacoes.travar().numero_de_marca();
+        crate::transacao::gravar_marca_da_replica(&dir, id, crate::agora_ms(), &eventos).map(Some)
+    }
+
+    /// Apaga as marcas dos grupos da replica de uma rodada -- pedido 682.
+    /// Quem chama ja sincronizou toda tabela que elas nomeiam: e a ordem do
+    /// group commit (dado no disco, depois o bilhete sai), e ela nao se
+    /// inverte.
+    fn soltar_marcas_da_replica(marcas: Vec<PathBuf>) {
+        for m in marcas {
+            let _ = std::fs::remove_file(m);
+        }
     }
 
     // -------------------------------------------------------------- cluster
@@ -31990,6 +32182,7 @@ impl Servidor {
             }
         }
         let mut atras = false;
+        let mut marcas: Vec<PathBuf> = Vec::new();
         let saida = loop {
             match juntador.passo() {
                 // Tudo ja esta na mao; pedir mais e sinal de resposta partida.
@@ -31999,7 +32192,10 @@ impl Servidor {
                 }
                 crate::replica::Passo::Aplicar { grupo, .. } => {
                     match self.aplicar_grupo_da_replica(database, &mut filas, grupo, origem) {
-                        Ok(Grupo::Aplicado { rompidas, .. }) => {
+                        Ok(Grupo::Aplicado {
+                            rompidas, marca, ..
+                        }) => {
+                            marcas.extend(marca);
                             for i in rompidas {
                                 juntador.largar(i);
                                 atras = true;
@@ -32042,6 +32238,7 @@ impl Servidor {
                 posicao: f.posicao,
             });
         }
+        Self::soltar_marcas_da_replica(marcas);
         saida.map(|()| (feitos, atras))
     }
 

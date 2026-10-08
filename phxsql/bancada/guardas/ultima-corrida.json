@@ -1,5 +1,5 @@
 {
-  "quando": "2026-10-08 04:44",
+  "quando": "2026-10-08 05:45",
   "mais_antigo": "2026-09-16 15:25",
   "guardas": [
     {
@@ -2398,9 +2398,9 @@
       "id": "reparo-da-trava-sem-o-piso",
       "titulo": "o reparo da trava que falha deixa o processo de pé, servindo de estado incerto, em vez de abortar",
       "veredito": "PROVADA",
-      "segundos": 85.33,
+      "segundos": 88.51,
       "notas": [],
-      "quando": "2026-10-01 16:40"
+      "quando": "2026-10-08 05:45"
     },
     {
       "id": "reparo-da-trava-sem-as-marcas-orfas",
@@ -6490,9 +6490,9 @@
       "id": "replica-aplica-o-que-chegou-sem-esperar-a-transacao",
       "titulo": "A réplica volta a aplicar o que chegou, lote a lote e tabela a tabela: com o fio caído no meio do envio o central mostra a venda pela metade (pedido 676)",
       "veredito": "PROVADA",
-      "segundos": 20.03,
+      "segundos": 19.81,
       "notas": [],
-      "quando": "2026-10-08 04:24"
+      "quando": "2026-10-08 05:10"
     },
     {
       "id": "tomada-da-trava-sem-unidade-do-diario",
@@ -6613,6 +6613,14 @@
       "segundos": 19.76,
       "notas": [],
       "quando": "2026-10-08 04:24"
+    },
+    {
+      "id": "grupo-da-replica-sem-marca",
+      "titulo": "O grupo da réplica deixa de gravar a marca `.tx`: o SIGKILL no meio dele reabre a réplica com a venda pela metade (pedido 682)",
+      "veredito": "PROVADA",
+      "segundos": 18.73,
+      "notas": [],
+      "quando": "2026-10-08 05:45"
     },
     {
       "id": "alter-com-regra-sem-aviso",

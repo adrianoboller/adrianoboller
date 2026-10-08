@@ -62,6 +62,26 @@ pub const VERSAO_LINHA_ANTIGA_SEM_CASCATA: u32 = 2;
 /// A primeira versao do formato, ainda aceita na leitura.
 pub const VERSAO_SEM_LINHA_ANTIGA: u32 = 1;
 
+/// A v5 (pedido 682): o GRUPO DA REPLICA, em claro. Cabecalho da v3; cada
+/// operacao e um evento vindo da origem, e o payload da v3 ganha no fim o
+/// carimbo e a origem de la, a posicao local do evento e a imagem.
+///
+/// # Por que uma versao propria, e nao um byte novo na v3
+///
+/// Porque o leitor de antes PULA o que sobra do payload depois do byte da
+/// cascata: com um byte novo na v3 ele leria o evento como um `inserir` de
+/// linha vazia e o gravaria. Com a versao nova ele cai em
+/// [`Leitura::NaoConfere`] e descarta -- o que um servidor anterior fazia com
+/// o grupo partido de qualquer jeito, porque nem marca havia. E a v3 continua
+/// nascendo byte por byte igual para todo `COMMIT`: a versao nova so existe
+/// na marca que a replica grava.
+pub const VERSAO_REPLICA_EM_CLARO: u32 = 5;
+
+/// A v6: o grupo da replica com o cofre ligado -- cabecalho da v4, payload
+/// selado como o dela. A imagem traz o dado de la aberto (o 613 so deixa
+/// replicar coluna marcada com cofre), e marca em claro o poria no disco.
+pub const VERSAO_REPLICA_CIFRADA: u32 = 6;
+
 /// Quanto o cabecalho ocupa ate o CRC, nas versoes 1 a 3: magic, versao, id,
 /// carimbo e o numero de operacoes.
 const CAB_ATE_CRC: usize = 8 + 4 + 8 + 8 + 4;
@@ -392,6 +412,52 @@ pub struct OperacaoDaMarca {
     /// dela ja sao operacoes proprias desta marca. Falso em marca v1/v2 -- ali
     /// a cascata e IMPLICITA e o `recascatear` da reaplicacao a refaz.
     pub cascata_na_lista: bool,
+    /// Pedido 682: esta operacao e um evento que a replica recebeu da origem
+    /// (marca v5/v6). `None` em toda marca de `COMMIT`.
+    pub replica: Option<EventoDaReplica>,
+}
+
+/// O que a marca do grupo da replica guarda de cada evento, alem de tabela,
+/// acao e rowid -- pedido 682.
+///
+/// # Por que o evento, e nao a linha
+///
+/// Porque a recuperacao tem de reaplicar pelo MESMO caminho da replica
+/// ([`Table::aplicar_evento`]), e nao pelo `inserir` de um `COMMIT`: o diario
+/// daqui tem de continuar o de la evento a evento -- carimbo, operacao, rowid
+/// --, senao a conferencia de continuidade da rodada seguinte rompe a tabela.
+/// E a replica nao julga a chave estrangeira (pedido 300 §2.7); o `inserir`
+/// do `COMMIT` julga.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EventoDaReplica {
+    pub operacao: crate::log::Operacao,
+    /// O instante em que a escrita nasceu, no relogio de LA.
+    pub carimbo_ms: i64,
+    /// O hash do servidor onde ela nasceu.
+    pub origem: u16,
+    /// Quantos eventos o diario DAQUI tinha antes deste. E a idempotencia da
+    /// recuperacao: o rowid nao basta, porque uma alteracao reaplicada
+    /// grava a mesma linha e acrescenta um evento que a origem nao tem.
+    pub posicao: u64,
+    /// A imagem como chegou pelo fio.
+    pub imagem: Vec<u8>,
+}
+
+/// Um evento do grupo da replica, como o servidor o entrega a
+/// [`gravar_marca_da_replica`]. Emprestado, e nao copiado: o grupo pode ter
+/// o tamanho do teto da transacao, e a marca so precisa dos bytes ate o
+/// `write`.
+#[derive(Debug, Clone, Copy)]
+pub struct EventoDoGrupo<'a> {
+    /// O nome qualificado, o mesmo que `Database::abrir_qualificada` recebe.
+    pub tabela: &'a str,
+    pub operacao: crate::log::Operacao,
+    pub rowid: u64,
+    pub carimbo_ms: i64,
+    pub origem: u16,
+    /// Ver [`EventoDaReplica::posicao`].
+    pub posicao: u64,
+    pub imagem: &'a [u8],
 }
 
 /// A marca inteira, lida de volta.
@@ -552,14 +618,81 @@ pub fn gravar_marca(
     carimbo_ms: i64,
     ops: &[Escrita],
 ) -> Result<PathBuf> {
+    gravar_com(diretorio, id, carimbo_ms, ops, None)
+}
+
+/// A acao da marca que corresponde a um evento do diario. A exclusao da
+/// replica e FISICA porque foi fisica na origem -- a suave chega como
+/// alteracao, que e o que ela e no `.reg`.
+fn acao_do_evento(op: crate::log::Operacao) -> Acao {
+    match op {
+        crate::log::Operacao::Inclusao => Acao::Inserir,
+        crate::log::Operacao::Alteracao => Acao::Atualizar,
+        crate::log::Operacao::Exclusao => Acao::ExcluirDeVez,
+    }
+}
+
+/// O caminho de volta de [`acao_do_evento`]. `None` = a acao nao vem de um
+/// evento, e a marca que a traz como evento da replica nao confere.
+fn evento_da_acao(acao: Acao) -> Option<crate::log::Operacao> {
+    match acao {
+        Acao::Inserir => Some(crate::log::Operacao::Inclusao),
+        Acao::Atualizar => Some(crate::log::Operacao::Alteracao),
+        Acao::ExcluirDeVez => Some(crate::log::Operacao::Exclusao),
+        Acao::ExcluirSuave | Acao::Restaurar => None,
+    }
+}
+
+/// Grava a marca do GRUPO DA REPLICA e sincroniza, antes do primeiro evento
+/// do grupo tocar em arquivo de dado -- pedido 682.
+///
+/// E a marca da cascata e do `COMMIT`, e nao uma segunda: o mesmo arquivo
+/// `transacao_<id>.tx`, o mesmo selo, o mesmo `create_new` 0600, o mesmo
+/// `fsync` pelo motor do 509, e a mesma recuperacao do arranque
+/// ([`Database::recuperar_marcas`]) que completa o grupo antes de a porta
+/// abrir. Muda so o que cada operacao carrega -- ver [`EventoDaReplica`].
+pub fn gravar_marca_da_replica(
+    diretorio: &Path,
+    id: u64,
+    carimbo_ms: i64,
+    eventos: &[EventoDoGrupo<'_>],
+) -> Result<PathBuf> {
+    let ops: Vec<Escrita> = eventos
+        .iter()
+        .map(|e| Escrita {
+            database: String::new(),
+            tabela: e.tabela.to_string(),
+            acao: acao_do_evento(e.operacao),
+            rowid: e.rowid,
+            linha: Vec::new(),
+            linha_antiga: Vec::new(),
+            motivo: String::new(),
+            cascata_na_lista: false,
+            elo_do_empilhar: false,
+            elo_da_cascata: false,
+        })
+        .collect();
+    gravar_com(diretorio, id, carimbo_ms, &ops, Some(eventos))
+}
+
+/// O corpo unico das duas portas de gravacao. `replica`, quando vem, tem um
+/// evento por operacao, na mesma ordem.
+fn gravar_com(
+    diretorio: &Path,
+    id: u64,
+    carimbo_ms: i64,
+    ops: &[Escrita],
+    replica: Option<&[EventoDoGrupo<'_>]>,
+) -> Result<PathBuf> {
     // O material e conferido AQUI, na criacao, e vale para a marca inteira.
     // Com o cofre desligado ele e `EM_CLARO`, e ai a marca nasce v3 -- os
     // mesmos bytes de antes, para quem nunca pediu cifra.
     let material = material_da_marca()?;
-    let versao = if material.cifrado() {
-        VERSAO
-    } else {
-        VERSAO_CASCATA_EM_CLARO
+    let versao = match (material.cifrado(), replica.is_some()) {
+        (true, false) => VERSAO,
+        (false, false) => VERSAO_CASCATA_EM_CLARO,
+        (true, true) => VERSAO_REPLICA_CIFRADA,
+        (false, true) => VERSAO_REPLICA_EM_CLARO,
     };
 
     let mut b = Vec::with_capacity(4096);
@@ -596,6 +729,16 @@ pub fn gravar_marca(
         // motivo -- o leitor da v1/v2 nunca chega ate aqui, e o CRC continua
         // cobrindo o payload inteiro de uma vez.
         payload.push(u8::from(e.cascata_na_lista));
+        // Pedido 682 (v5/v6): o evento da replica vai DEPOIS do byte da
+        // cascata, dentro do payload -- o selo e o CRC o cobrem junto, e a
+        // unidade de dano continua sendo a operacao.
+        if let Some(ev) = replica.and_then(|r| r.get(i)) {
+            payload.extend_from_slice(&ev.carimbo_ms.to_le_bytes());
+            payload.extend_from_slice(&ev.origem.to_le_bytes());
+            payload.extend_from_slice(&ev.posicao.to_le_bytes());
+            payload.extend_from_slice(&(ev.imagem.len() as u32).to_le_bytes());
+            payload.extend_from_slice(ev.imagem);
+        }
         // O selo e POR OPERACAO, no MESMO bloco que o CRC ja cobria: a unidade
         // de dano continua sendo a operacao, e nao o arquivo. Selar a marca
         // inteira criaria uma segunda unidade de falha, maior do que a que o
@@ -688,10 +831,11 @@ pub fn ler_marca(caminho: &Path) -> Result<Leitura> {
     // que diz onde o CRC esta.
     let versao = u32::from_le_bytes([b[8], b[9], b[10], b[11]]);
     let ate_crc = match versao {
-        VERSAO => CAB_ATE_CRC_CIFRADA,
-        VERSAO_CASCATA_EM_CLARO | VERSAO_LINHA_ANTIGA_SEM_CASCATA | VERSAO_SEM_LINHA_ANTIGA => {
-            CAB_ATE_CRC
-        }
+        VERSAO | VERSAO_REPLICA_CIFRADA => CAB_ATE_CRC_CIFRADA,
+        VERSAO_CASCATA_EM_CLARO
+        | VERSAO_LINHA_ANTIGA_SEM_CASCATA
+        | VERSAO_SEM_LINHA_ANTIGA
+        | VERSAO_REPLICA_EM_CLARO => CAB_ATE_CRC,
         _ => return Ok(Leitura::NaoConfere),
     };
     if b.len() < ate_crc + 4 {
@@ -702,7 +846,8 @@ pub fn ler_marca(caminho: &Path) -> Result<Leitura> {
         return Ok(Leitura::NaoConfere);
     }
     let nome_do_arquivo = caminho.display().to_string();
-    let material = if versao == VERSAO {
+    let da_replica = matches!(versao, VERSAO_REPLICA_EM_CLARO | VERSAO_REPLICA_CIFRADA);
+    let material = if matches!(versao, VERSAO | VERSAO_REPLICA_CIFRADA) {
         match Material::ler(&b, MATERIAL_EM, &nome_do_arquivo, &b[..ROTULO]) {
             Ok(m) => m,
             // A terceira resposta. Qualquer recusa daqui vem de uma marca que
@@ -795,7 +940,39 @@ pub fn ler_marca(caminho: &Path) -> Result<Leitura> {
         // `recascatear` da reaplicacao a refaz).
         let cascata_na_lista = versao >= VERSAO_CASCATA_EM_CLARO
             && payload.get(apos_antiga).is_some_and(|&byte| byte != 0);
+        // Pedido 682: o evento da replica, logo depois do byte da cascata.
+        // Faltar qualquer pedaco dele e marca que nao confere -- o mesmo que
+        // o CRC quebrado, porque a operacao inteira esta sob o mesmo CRC.
+        let replica = if da_replica {
+            let Some(operacao) = evento_da_acao(acao) else {
+                return Ok(Leitura::NaoConfere);
+            };
+            let mut r = Leitor {
+                b: &payload,
+                i: apos_antiga + 1,
+            };
+            let lido = (|| -> Result<EventoDaReplica> {
+                let carimbo_ms = i64::from_le_bytes(r.fixo::<8>()?);
+                let origem = r.u16()?;
+                let posicao = r.u64()?;
+                let imagem = r.bytes()?.to_vec();
+                Ok(EventoDaReplica {
+                    operacao,
+                    carimbo_ms,
+                    origem,
+                    posicao,
+                    imagem,
+                })
+            })();
+            match lido {
+                Ok(e) => Some(e),
+                Err(_) => return Ok(Leitura::NaoConfere),
+            }
+        } else {
+            None
+        };
         operacoes.push(OperacaoDaMarca {
+            replica,
             tabela,
             acao,
             rowid,
@@ -985,6 +1162,7 @@ impl Escrita {
             linha_antiga: self.linha_antiga.clone(),
             motivo: self.motivo.clone(),
             cascata_na_lista: self.cascata_na_lista,
+            replica: None,
         }
     }
 }
@@ -1183,6 +1361,7 @@ pub fn tratar_marca(
 /// disco -- e so entao a marca pode sair, em qualquer [`NoArranque`].
 fn completar(db: &Database, marca: &Marca, r: &mut Relatorio) -> bool {
     let mut tabelas: HashMap<String, Table> = HashMap::new();
+    let mut replica_parou = false;
     for op in &marca.operacoes {
         // Garante o handle no mapa, aberto e preparado UMA vez.
         if !tabelas.contains_key(&op.tabela) {
@@ -1214,6 +1393,7 @@ fn completar(db: &Database, marca: &Marca, r: &mut Relatorio) -> bool {
                                      e nao reconstruiu ({erro})",
                                     marca.id, op.tabela
                                 ));
+                                replica_parou |= op.replica.is_some();
                                 continue;
                             }
                         }
@@ -1240,9 +1420,25 @@ fn completar(db: &Database, marca: &Marca, r: &mut Relatorio) -> bool {
                         "transacao {}: nao consegui abrir {} ({erro})",
                         marca.id, op.tabela
                     ));
+                    replica_parou |= op.replica.is_some();
                     continue;
                 }
             }
+        }
+        // Pedido 682: na marca do grupo da replica, a primeira operacao que
+        // nao entra PARA as seguintes. Elas viriam depois de um evento que o
+        // diario nao tem -- e a recusa de posicao so olha o comprimento, que
+        // a operacao seguinte ja acharia «certo» por cima de outra historia.
+        if op.replica.is_some() && replica_parou {
+            r.impossiveis.push(format!(
+                "transacao {}: {} rowid {} em {} nao foi reaplicada -- um evento \
+                 anterior do mesmo grupo da replica nao entrou",
+                marca.id,
+                op.acao.nome(),
+                op.rowid,
+                op.tabela
+            ));
+            continue;
         }
         // Retira a tabela do mapa enquanto reaplica, para que a conferencia de
         // FK possa emprestar as MAES que a MESMA marca ja reaplicou -- o mesmo
@@ -1260,13 +1456,16 @@ fn completar(db: &Database, marca: &Marca, r: &mut Relatorio) -> bool {
             match aplicar_uma(&mut t, op, &mut maes) {
                 Ok(true) => r.reaplicadas += 1,
                 Ok(false) => r.ja_aplicadas += 1,
-                Err(e) => r.impossiveis.push(format!(
-                    "transacao {}: {} rowid {} em {} ({e})",
-                    marca.id,
-                    op.acao.nome(),
-                    op.rowid,
-                    op.tabela
-                )),
+                Err(e) => {
+                    replica_parou |= op.replica.is_some();
+                    r.impossiveis.push(format!(
+                        "transacao {}: {} rowid {} em {} ({e})",
+                        marca.id,
+                        op.acao.nome(),
+                        op.rowid,
+                        op.tabela
+                    ))
+                }
             }
         }
         tabelas.insert(op.tabela.clone(), t);
@@ -1307,6 +1506,9 @@ pub(crate) fn aplicar_uma(
     op: &OperacaoDaMarca,
     maes: &mut dyn MaesEmProgresso,
 ) -> Result<bool> {
+    if let Some(ev) = &op.replica {
+        return aplicar_evento_da_marca(t, op.rowid, ev);
+    }
     match op.acao {
         Acao::Inserir => {
             // O slot ja existe? Entao a passada chegou nele e nao ha o que
@@ -1376,6 +1578,61 @@ pub(crate) fn aplicar_uma(
         Acao::ExcluirDeVez => Ok(t.excluir_de_vez_com_maes(op.rowid, &op.motivo, maes)?),
         Acao::Restaurar => Ok(t.restaurar_com_maes(op.rowid, &op.motivo, maes)?),
     }
+}
+
+/// Reaplica um evento do grupo da replica -- pedido 682. `Ok(false)` = ja
+/// estava aplicado.
+///
+/// # A idempotencia e pela POSICAO do diario, conferida
+///
+/// O rowid da `aplicar_uma` nao basta aqui: a alteracao reaplicada grava a
+/// mesma linha e acrescenta um evento que a origem nao tem, e o diario daqui
+/// deixaria de continuar o de la. Entao:
+///
+/// - o diario tem exatamente `posicao` eventos: este e o proximo, aplica;
+/// - tem mais: o evento em `posicao` tem de ser ESTE (carimbo, operacao e
+///   rowid, os campos da conferencia de continuidade da replica). Sendo,
+///   ja entrou; nao sendo, a marca e de outra historia da tabela -- recriada
+///   depois da queda, ou escrita por fora -- e reaplicar por cima seria
+///   gravar dado alheio. Recusa, e o relatorio a conta como impossivel;
+/// - tem menos: falta evento ANTES deste, e aplicar abriria um buraco que o
+///   diario nao tem como representar. Recusa tambem.
+///
+/// O aplicador e o da replica ([`Table::aplicar_evento`]), com o carimbo e a
+/// origem de la, e sem julgar a chave estrangeira -- conta a orfa, como a
+/// rodada conta.
+fn aplicar_evento_da_marca(t: &mut Table, rowid: u64, ev: &EventoDaReplica) -> Result<bool> {
+    let tem = t.eventos()?;
+    if tem > ev.posicao {
+        let la = t.diario(ev.posicao, 1)?;
+        return match la.first() {
+            Some(e)
+                if e.carimbo == ev.carimbo_ms && e.operacao == ev.operacao && e.rowid == rowid =>
+            {
+                Ok(false)
+            }
+            _ => Err(PhxError::Corrompido(format!(
+                "o evento {} do diario de {} nao e o que a marca do grupo da replica \
+                 traz ({} rowid {rowid}): a tabela mudou de historia depois da queda, \
+                 e reaplicar gravaria por cima de dado de outra historia",
+                ev.posicao,
+                t.nome(),
+                ev.operacao.nome()
+            ))),
+        };
+    }
+    if tem < ev.posicao {
+        return Err(PhxError::Corrompido(format!(
+            "o diario de {} tem {tem} evento(s) e a marca do grupo da replica traz o \
+             evento {}: faltam os do meio, e a replicacao os pede de novo da origem",
+            t.nome(),
+            ev.posicao
+        )));
+    }
+    t.contar_orfas();
+    t.forcar_proximo_evento(ev.carimbo_ms, ev.origem);
+    t.aplicar_evento(ev.operacao, rowid, &ev.imagem)?;
+    Ok(true)
 }
 
 // ------------------------------------------------------------ a recuperacao
@@ -1730,5 +1987,135 @@ mod testes {
         // o CRC. Se o material tivesse entrado, seriam 76.
         let primeira_op = u16::from_le_bytes([b[CAB_ATE_CRC + 4], b[CAB_ATE_CRC + 5]]);
         assert_eq!(primeira_op as usize, "clientes".len());
+    }
+
+    // ------------------------------------------- o grupo da replica (682)
+
+    use crate::catalogo::PoliticaDoDiario;
+    use crate::log::Operacao;
+    use phxsql_core::schema::{Column, IndexColumn, IndexDef, Schema};
+    use phxsql_core::types::ColumnType;
+
+    fn base_com_imagem(d: &Path) -> Database {
+        std::fs::create_dir_all(d).unwrap();
+        Database::no_diretorio_com_politica(d, PoliticaDoDiario::com_imagem(true))
+    }
+
+    fn itens(db: &Database) -> Table {
+        let e = Schema::new(
+            "itens",
+            vec![
+                Column::new("id", ColumnType::Int8).obrigatoria(),
+                Column::new("venda", ColumnType::Int8),
+            ],
+            vec![IndexDef::new("pk", vec![IndexColumn::asc(0)]).unico()],
+        )
+        .unwrap();
+        db.criar_tabela(None, e).unwrap()
+    }
+
+    /// `n` eventos de inclusao, com imagem, tirados do diario de uma origem.
+    fn eventos_da_origem(d: &Path, n: i64) -> Vec<(crate::log::Evento, Vec<u8>)> {
+        let db = base_com_imagem(d);
+        let mut t = itens(&db);
+        for i in 1..=n {
+            t.inserir(&[Value::Int(i), Value::Int(1)]).unwrap();
+        }
+        let mut t = db.abrir_qualificada("itens").unwrap();
+        t.diario_com_imagem(0, 0).unwrap()
+    }
+
+    fn grupo<'a>(ev: &'a [(crate::log::Evento, Vec<u8>)]) -> Vec<EventoDoGrupo<'a>> {
+        ev.iter()
+            .enumerate()
+            .map(|(k, (e, img))| EventoDoGrupo {
+                tabela: "itens",
+                operacao: e.operacao,
+                rowid: e.rowid,
+                carimbo_ms: e.carimbo,
+                origem: 7,
+                posicao: k as u64,
+                imagem: img,
+            })
+            .collect()
+    }
+
+    /// A ida e volta da v5: a versao propria (o leitor anterior descarta em
+    /// vez de ler um `inserir` de linha vazia) e cada campo do evento.
+    #[test]
+    fn a_marca_do_grupo_da_replica_volta_com_o_evento_inteiro() {
+        let d = dir("replica-ida-e-volta");
+        let ev = eventos_da_origem(&d.join("origem"), 3);
+        let g = grupo(&ev);
+        let caminho = gravar_marca_da_replica(&d, 41, 5, &g).unwrap();
+        let b = std::fs::read(&caminho).unwrap();
+        assert_eq!(
+            u32::from_le_bytes([b[8], b[9], b[10], b[11]]),
+            VERSAO_REPLICA_EM_CLARO
+        );
+        let m = ler_marca(&caminho).unwrap().marca().expect("tem de abrir");
+        assert_eq!(m.operacoes.len(), 3);
+        for (k, op) in m.operacoes.iter().enumerate() {
+            let r = op.replica.as_ref().expect("evento da replica");
+            assert_eq!(op.acao, Acao::Inserir);
+            assert_eq!(op.rowid, ev[k].0.rowid);
+            assert_eq!(r.operacao, Operacao::Inclusao);
+            assert_eq!(r.carimbo_ms, ev[k].0.carimbo);
+            assert_eq!(r.origem, 7);
+            assert_eq!(r.posicao, k as u64);
+            assert_eq!(r.imagem, ev[k].1);
+        }
+    }
+
+    /// A recuperacao COMPLETA o grupo que a queda partiu, pelo aplicador da
+    /// replica: o diario daqui sai com o carimbo de LA em cada evento, e o
+    /// que ja tinha entrado nao entra de novo.
+    #[test]
+    fn a_recuperacao_completa_o_grupo_da_replica_pela_posicao() {
+        let d = dir("replica-completa");
+        let ev = eventos_da_origem(&d.join("origem"), 4);
+        let db = base_com_imagem(&d.join("central"));
+        let mut t = itens(&db);
+        // A queda: o primeiro evento entrou, os outros tres nao.
+        t.forcar_proximo_evento(ev[0].0.carimbo, 7);
+        t.aplicar_evento(ev[0].0.operacao, ev[0].0.rowid, &ev[0].1)
+            .unwrap();
+        t.sincronizar().unwrap();
+        drop(t);
+        gravar_marca_da_replica(db.caminho(), 42, 0, &grupo(&ev)).unwrap();
+        let r = db.recuperar_marcas();
+        assert_eq!((r.reaplicadas, r.ja_aplicadas), (3, 1), "{r:?}");
+        assert!(r.impossiveis.is_empty(), "{r:?}");
+        assert!(marcas_em(db.caminho()).is_empty(), "a marca completada sai");
+        let mut t = db.abrir_qualificada("itens").unwrap();
+        let meu = t.diario(0, 0).unwrap();
+        assert_eq!(meu.len(), 4);
+        for (m, (la, _)) in meu.iter().zip(&ev) {
+            assert_eq!(
+                (m.carimbo, m.operacao, m.rowid),
+                (la.carimbo, la.operacao, la.rowid)
+            );
+            assert_eq!(m.origem, 7);
+        }
+    }
+
+    /// O outro sentido da idempotencia: o diario que ja tem um evento
+    /// DIFERENTE naquela posicao e de outra historia da tabela, e a marca nao
+    /// grava por cima -- conta como impossivel.
+    #[test]
+    fn a_marca_do_grupo_nao_grava_por_cima_de_outra_historia() {
+        let d = dir("replica-outra-historia");
+        let ev = eventos_da_origem(&d.join("origem"), 2);
+        let db = base_com_imagem(&d.join("central"));
+        let mut t = itens(&db);
+        t.inserir(&[Value::Int(99), Value::Int(9)]).unwrap();
+        t.sincronizar().unwrap();
+        drop(t);
+        gravar_marca_da_replica(db.caminho(), 43, 0, &grupo(&ev)).unwrap();
+        let r = db.recuperar_marcas();
+        assert_eq!(r.reaplicadas, 0, "{r:?}");
+        assert_eq!(r.impossiveis.len(), 2, "{r:?}");
+        let mut t = db.abrir_qualificada("itens").unwrap();
+        assert_eq!(t.eventos().unwrap(), 1, "nada entrou por cima");
     }
 }

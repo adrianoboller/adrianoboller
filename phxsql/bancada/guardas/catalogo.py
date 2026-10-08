@@ -26137,4 +26137,28 @@ fn anotar(""",
         ],
         "seguem": [],
     },
+    {
+        "id": "grupo-da-replica-sem-marca",
+        "titulo": "O grupo da réplica deixa de gravar a marca `.tx`: o SIGKILL no meio dele reabre a réplica com a venda pela metade (pedido 682)",
+        "porque": (
+            "pedido 682, a decisao do dono «a venda chega inteira ou nao "
+            "chega» valendo tambem para a queda do PROCESSO da replica: a "
+            "tomada unica da trava protege so o leitor vivo. Medido contra o "
+            "SO com o defeito reposto: SIGKILL do `phxsqld` replica parado no "
+            "3.o de 7 eventos do grupo, reabertura com a origem inalcancavel, "
+            "retrato (0, 3, 0) -- itens sem venda. Com a marca, (1, 5, 1)."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        let marca = self.marcar_o_grupo(database, filas, &grupo, &rompidas)?;
+""",
+        "troca": """        // DEFEITO REPOSTO (682): o grupo nao grava marca.
+        let marca: Option<PathBuf> = None;
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "venda-inteira-na-queda-da-replica"],
+        "caem": [
+            "o_sigkill_no_meio_do_grupo_nao_deixa_a_venda_pela_metade",
+        ],
+        "seguem": [],
+    },
 ]

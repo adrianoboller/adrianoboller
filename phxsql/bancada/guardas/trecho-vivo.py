@@ -910,7 +910,11 @@ TETO_TESTE_SEM_MODULO = 0
 # 825 -> 826 (08/10/2026, integrador): nasce `espelho-imposto-a-quem-nao-pediu`,
 # que guarda a petrea «guarda nova entra pedida»: o 677 tinha virado imposto e
 # derrubou `trava-atras-da-rede`. Medido por `--numeros` (826).
-PISO_DAS_ENTRADAS = 826
+# 826 -> 827 (pedido 682, 08/10/2026 -- a queda do PROCESSO da replica no
+# meio do grupo): nasce `grupo-da-replica-sem-marca`. RED medido a mao contra
+# o SO (troca do catalogo aplicada, SIGKILL no meio do grupo, retrato
+# (0, 3, 0); restaurado, (1, 5, 1)); provador NAO rodou.
+PISO_DAS_ENTRADAS = 827
 
 # ------------------------------------------------------------- APOSENTADAS
 #
