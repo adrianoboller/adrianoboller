@@ -840,7 +840,21 @@ pub struct Cabecalho {
     /// 676) e o cabecalho do arquivo tem 128 bytes, cifrado ou nao. So o
     /// `.log` nasce assim -- ver [`Cabecalho::novo_do_diario`].
     pub com_tx: bool,
+    /// O maior id de transacao gravado NESTE volume -- so na versao 4 (pedido
+    /// 684). Zero = nenhum, ou volume gravado antes do campo.
+    ///
+    /// Existe para a abertura semear o `ULTIMO_TX` do processo sem caminhar o
+    /// volume: o evento nao tem largura fixa, e achar o ultimo seria ler o
+    /// arquivo inteiro -- 1 GiB por tabela no corte de fabrica. O cabecalho
+    /// vai a disco no `sincronizar`; o que entrou depois a cura conta, porque
+    /// ela ja anda evento a evento pela cauda.
+    pub ultimo_tx: u64,
 }
+
+/// Onde o [`Cabecalho::ultimo_tx`] mora no cabecalho de 128 bytes: nos bytes
+/// 96..104, que as versoes 3 e 4 reservavam e gravavam zero. Zero le como
+/// «nao sei», que e verdade para todo volume anterior ao pedido 684.
+const OFF_ULTIMO_TX: usize = 96;
 
 /// A versao do cabecalho de volume do `.log` com o id de transacao no evento
 /// (pedido 676). Um binario anterior le a versao no offset 8, ve 4 acima da
@@ -901,6 +915,7 @@ impl Cabecalho {
                 chave: None,
                 marca: None,
                 com_tx: false,
+                ultimo_tx: 0,
             });
         }
         let mut sal = [0u8; SAL_LEN];
@@ -917,6 +932,7 @@ impl Cabecalho {
             chave: Some(chave),
             marca: None,
             com_tx: false,
+            ultimo_tx: 0,
         })
     }
 
@@ -941,6 +957,15 @@ impl Cabecalho {
         Cabecalho {
             fim,
             quantos,
+            ..*self
+        }
+    }
+
+    /// O mesmo cabecalho, contando mais um evento de id `tx` (pedido 684):
+    /// o `ultimo_tx` so sobe -- o evento sem id (zero) nao o mexe.
+    pub fn com_tx_visto(&self, tx: u64) -> Cabecalho {
+        Cabecalho {
+            ultimo_tx: self.ultimo_tx.max(tx),
             ..*self
         }
     }
@@ -1091,7 +1116,11 @@ pub fn ler_cabecalho(
         chave: None,
         marca: None,
         com_tx: versao >= VERSAO_COM_TX,
+        ultimo_tx: 0,
     };
+    if cab.com_tx {
+        cab.ultimo_tx = c.u64(OFF_ULTIMO_TX);
+    }
     let om = off_marca(cab_len);
     if bruto[om] != 0 {
         let mut bytes = [0u8; MARCA_LEN];
@@ -1140,6 +1169,9 @@ pub fn gravar_cabecalho(cab: &Cabecalho, magic: &[u8; 8]) -> Vec<u8> {
             buf[om..om + MARCA_LEN].copy_from_slice(&m.bytes);
         }
         None => por_i64(&mut buf, 32, crate::util::agora()),
+    }
+    if cab.com_tx {
+        por_u64(&mut buf, OFF_ULTIMO_TX, cab.ultimo_tx);
     }
     if let Some(chave) = cab.chave {
         buf[40] = FLAG_CIFRADO;

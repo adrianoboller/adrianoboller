@@ -1766,7 +1766,7 @@ corrompido.
 Toda inclusão, alteração e exclusão é registrada com data e hora. O arquivo é
 append-only e sem índice: é um diário, não uma tabela.
 
-**A migração para a v4 só vai para frente** (parecer do papel C, 07/10/2026, pedido 676). Um volume v4 é recusado pelo binário anterior com `VersaoNaoSuportada`; depois de virar o volume, voltar de versão deixa a tabela ilegível para o binário velho. Atualize origem e réplicas juntas e não volte o binário depois da primeira virada.
+**A migração para a v4 só vai para frente** (parecer do papel C, 07/10/2026, pedido 676). Um volume v4 é recusado pelo binário anterior com `VersaoNaoSuportada`; depois de virar o volume, voltar de versão deixa a tabela ilegível para o binário velho. Atualize origem e réplicas juntas e não volte o binário depois da primeira virada. E o mesmo vale para o maior id de transação nos bytes 96..104 do cabeçalho (pedido 684; parecer do papel C, 08/10/2026): um binário entre o 676 e o 683 abre o volume em paz, mas regrava o cabeçalho com zero ali, e o campo se perde; ao voltar o binário novo, o piso do id sai só da cauda, e um relógio recuado antes disso passa sem contar. Nenhum desses binários foi selado.
 
 ### Cabeçalho (64 bytes na versão 2, 128 na 3 e na 4)
 
@@ -1793,7 +1793,25 @@ flag ligada):
 | 48 | 16 | sal do PBKDF2, em claro |
 | 64 | 16 | prova da chave — etiqueta Poly1305 de mensagem vazia |
 | 80 | 16 | **marca do evento devido** — só no volume 1 (ver abaixo) |
+| 96 | 8 | **maior id de transação gravado no volume** — só na versão 4 (pedido 684); zero = nenhum, ou volume anterior ao campo |
 | 120 | 4 | CRC-32 dos bytes 0..120 |
+
+**O maior id de transação no cabeçalho (pedido 684, 08/10/2026).** O id sai do
+relógio e de um contador em memória, e um processo novo começa com o contador
+zerado: com o relógio recuado entre dois arranques, o primeiro id da vida nova
+sairia **menor** que o último gravado, e o diário da tabela ficaria fora de
+ordem — a réplica, que junta pela ordem dos ids, entregaria a venda daquele
+trecho partida sem contar. A abertura com escrita lê este campo e sobe o piso
+do processo até ele (`fetch_max`); o recuo é contado em
+`replicacao_estado.id_de_transacao.recuos_do_relogio`. O campo existe porque o
+evento não tem largura fixa: achar o último seria caminhar o volume inteiro
+(1 GiB por tabela no corte de fábrica). Ele vai a disco junto com o `fim`, no
+`sincronizar`; o evento gravado depois do último `sincronizar` está na cauda,
+que a cura já anda evento a evento, e ela conta o id dele também. O volume que
+nasce na virada **herda** o maior id do anterior, para que uma queda antes do
+primeiro evento dele não o deixe dizendo «nenhum». Ausência benigna: os bytes
+96..104 eram reservados e gravados zero, e zero lê como «não sei» — por isso
+o campo **não sobe a versão**.
 
 O CRC muda de lugar porque o cabeçalho muda de tamanho; ele fica sempre nos
 8 bytes antes do fim. **O tamanho do cabeçalho está no próprio cabeçalho**

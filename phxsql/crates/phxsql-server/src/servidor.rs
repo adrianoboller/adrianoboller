@@ -4833,7 +4833,7 @@ impl Servidor {
         }
         let alvos: Vec<(u64, u64)> = filas.iter().map(|f| (f.posicao, f.no.eventos)).collect();
         let mut juntador =
-            crate::replica::Juntador::novo(&alvos, crate::replica::TETO_DA_TRANSACAO);
+            crate::replica::Juntador::novo(&alvos, phxsql_store::log::teto_da_transacao());
         let mut aplicados = 0u64;
         let mut avisadas = 0u64;
         let saida = loop {
@@ -4876,8 +4876,11 @@ impl Servidor {
                              passou do teto de {} MiB na memoria desta replica e vai em \
                              PEDACOS -- ate o ultimo chegar, um leitor daqui pode ve-la \
                              pela metade (pedido 676; contada em \
-                             replicacao_estado.transacoes_em_pedacos)",
-                            crate::replica::TETO_DA_TRANSACAO / (1024 * 1024)
+                             replicacao_estado.transacoes_em_pedacos). Desde o pedido \
+                             685 a origem recusa o COMMIT acima do teto: o que chega \
+                             partido e de uma origem anterior ou de uma escrita fora \
+                             de transacao",
+                            phxsql_store::log::teto_da_transacao() / (1024 * 1024)
                         );
                     }
                     match self.aplicar_grupo_da_replica(database, &mut filas, grupo, origem) {
@@ -19826,6 +19829,13 @@ impl Servidor {
                     let _ = self.abortar_soltando(sessao.ligacao, |_| m.clone());
                     return Err(recusa.erro);
                 }
+                // A LISTA INTEIRA recusada (pedido 685, acima do teto): nenhuma
+                // escrita e a culpada, e a mensagem ja diz que nada foi gravado
+                // e que a transacao terminou. Repetir daria o mesmo tamanho.
+                if recusa.posicao >= escritas.len() {
+                    self.descartar_transacao(sessao.ligacao);
+                    return Err(recusa.erro);
+                }
                 if matches!(recusa.erro.codigo() / 1000, 2 | 3) {
                     let w = &escritas[recusa.posicao];
                     self.descartar_transacao(sessao.ligacao);
@@ -20107,6 +20117,28 @@ impl Servidor {
                 }
             }
             elos_da_lista.push((i, elos));
+        }
+        // PEDIDO 685, decisao do dono: a transacao que a replica nao
+        // aplicaria inteira e recusada AQUI, antes da marca, com nada
+        // gravado. A conta e a soma do que cada escrita -- elos da cascata
+        // inclusive, que passaram pela mesma `pre_conferir` -- custara no
+        // diario, com o MESMO teto e o mesmo custo por evento que o
+        // `replica::Juntador` usa (`phxsql_store::log`). Uma conta so,
+        // nenhuma releitura: cada tabela somou a dela ao conferir.
+        let custo: usize = abertas
+            .values()
+            .map(Table::custo_previsto_no_diario)
+            .fold(0usize, usize::saturating_add);
+        let teto = phxsql_store::log::teto_da_transacao();
+        if custo > teto {
+            return Err(recusa(
+                escritas.len(),
+                None,
+                PhxError::LimiteExcedido(self.msg(
+                    "erro.transacao_acima_do_teto",
+                    &[("bytes", &custo.to_string()), ("teto", &teto.to_string())],
+                )),
+            ));
         }
         Ok(elos_da_lista)
     }
@@ -25522,7 +25554,9 @@ impl Servidor {
                 Some((t, r)) => format!(", no elo da cascata que ela leva a {t} rowid {r}"),
                 None => String::new(),
             };
-            let w = &escritas[recusa.posicao];
+            // A lista inteira acima do teto (pedido 685) nao tem escrita
+            // culpada: nomeia a mae, que e quem o cliente pediu.
+            let w = escritas.get(recusa.posicao).unwrap_or(&escritas[0]);
             com_nota(
                 recusa.erro,
                 &format!(
@@ -31976,6 +32010,30 @@ impl Servidor {
             (
                 "quorum",
                 self.quorum.as_ref().map_or(Json::Nulo, |q| q.para_json()),
+            ),
+            // Pedido 684: os dois jeitos de o id de transacao sumir calado
+            // NESTE processo, como origem. `recuos_do_relogio`: um `.log`
+            // aberto trouxe id a frente do relogio, e o piso do disco o
+            // segurou. `commits_mistos`: uma tomada gravou em volume sem id
+            // (2/3) e em volume com id (4) -- a replica recebe esse commit
+            // partido, e so a virada do volume velho fecha isso. E o teto
+            // da transacao vigente (685), o mesmo dos dois lados.
+            (
+                "id_de_transacao",
+                Json::objeto(vec![
+                    (
+                        "recuos_do_relogio",
+                        Json::de_u64(phxsql_store::log::recuos_do_relogio()),
+                    ),
+                    (
+                        "commits_mistos",
+                        Json::de_u64(phxsql_store::log::commits_mistos()),
+                    ),
+                    (
+                        "teto_da_transacao",
+                        Json::de_u64(phxsql_store::log::teto_da_transacao() as u64),
+                    ),
+                ]),
             ),
         ]))
     }

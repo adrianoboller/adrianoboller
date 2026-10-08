@@ -1,5 +1,5 @@
 {
-  "quando": "2026-10-08 00:12",
+  "quando": "2026-10-08 03:24",
   "mais_antigo": "2026-09-16 15:25",
   "guardas": [
     {
@@ -6517,6 +6517,54 @@
       "segundos": 28.16,
       "notas": [],
       "quando": "2026-10-08 00:12"
+    },
+    {
+      "id": "diario-sem-piso-do-disco-para-o-id",
+      "titulo": "A abertura do `.log` deixa de semear o id de transação pelo disco: com o relógio recuado entre dois arranques o diário recebe id menor que o da vida anterior (pedido 684)",
+      "veredito": "PROVADA",
+      "segundos": 7.01,
+      "notas": [],
+      "quando": "2026-10-08 03:24"
+    },
+    {
+      "id": "cura-sem-o-id-da-cauda",
+      "titulo": "A cura do `.log` deixa de contar o id dos eventos da cauda: o evento gravado depois do último `sincronizar` some do piso, e o id novo sai menor que ele (pedido 684)",
+      "veredito": "PROVADA",
+      "segundos": 6.94,
+      "notas": [],
+      "quando": "2026-10-08 03:24"
+    },
+    {
+      "id": "cabecalho-do-log-sem-o-maior-id",
+      "titulo": "O cabeçalho da versão 4 do `.log` deixa de gravar o maior id de transação: a abertura não tem piso sem caminhar o volume inteiro (pedido 684)",
+      "veredito": "PROVADA",
+      "segundos": 10.38,
+      "notas": [],
+      "quando": "2026-10-08 03:24"
+    },
+    {
+      "id": "commit-misto-sem-contar",
+      "titulo": "A tomada que grava em volume sem id (2/3) e em volume com id (4) volta a passar calada: a réplica recebe o commit partido e ninguém conta (pedido 684)",
+      "veredito": "PROVADA",
+      "segundos": 10.96,
+      "notas": [],
+      "quando": "2026-10-08 03:24"
+    },
+    {
+      "id": "commit-acima-do-teto-aceito",
+      "titulo": "O COMMIT acima do teto da transação volta a ser aceito na origem: a réplica o recebe em pedaços (pedido 685)",
+      "veredito": "PROVADA",
+      "segundos": 19.04,
+      "notas": [],
+      "quando": "2026-10-08 03:24"
+    },
+    {
+      "id": "custo-da-transacao-sem-a-imagem",
+      "titulo": "A conta da origem esquece a imagem da linha: aceita a transação que a réplica mede acima do teto, e ela chega em pedaços (pedido 685)",
+      "veredito": "PROVADA",
+      "segundos": 19.48,
+      "notas": [],
+      "quando": "2026-10-08 03:24"
     },
     {
       "id": "alter-com-regra-sem-aviso",

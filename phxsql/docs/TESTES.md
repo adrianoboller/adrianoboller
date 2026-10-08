@@ -1450,17 +1450,23 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `fase-b-aceita-novo-que-cresceu` | A FASE B deixa de comparar o tamanho do `*.novo`: o que cresceu entre as fases, com a data reposta, é publicado (pedido 672) | 1 | ✅ provada |
 | `fase-b-aceita-novo-escrito-por-fora` | A FASE B deixa de comparar a data do `*.novo`: a escrita pelo nome entre as fases, no mesmo tamanho, é publicada (pedido 672) | 1 | ✅ provada |
 | `fase-b-segue-com-o-novo-que-nao-se-le` | O `conferir_novos` segue em frente quando o `lstat` do `*.novo` falha: o `.novo` do espelho apagado entre as fases deixa o `.bkp` velho atrás do `.reg` novo, com Ok (pedido 672) | 1 | ✅ provada |
+| `replica-aplica-o-que-chegou-sem-esperar-a-transacao` | A réplica volta a aplicar o que chegou, lote a lote e tabela a tabela: com o fio caído no meio do envio o central mostra a venda pela metade (pedido 676) | 3 | ✅ provada |
+| `tomada-da-trava-sem-unidade-do-diario` | A tomada da trava de escrita deixa de abrir a unidade do diário: cada evento de um COMMIT ganha id próprio e a réplica aplica a venda em pedaços (pedido 676) | 2 | ✅ provada |
+| `crc-do-evento-sem-o-id-de-transacao` | O CRC do evento da versão 4 do `.log` deixa de cobrir o id de transação: um `tx` trocado no disco passa no `verificar` (pedido 676) | 1 | ✅ provada |
+| `grupo-sem-a-vez-das-maes` | O grupo da réplica volta a aplicar as tabelas na ordem da chegada: a filha do mesmo commit entra antes da mãe e é contada órfã sem nunca ter sido visível sem ela (pedido 676) | 1 | ✅ provada |
 | `alter-com-regra-sem-aviso` | `acrescentar_coluna` com `check` ou `calculada` numa tabela com linha é aceito SEM AVISO, e a linha velha fica fora da regra | — | 🪦 aposentada (01/10/2026) |
 | `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | — | 🪦 aposentada (18/09/2026) |
 
-**810 das 812 guardas do catálogo: 2 aposentadas, 2 não pegaram, 802 provadas, 4 redundantes** — 36404 s de mutação, medido de 2026-09-16 15:25 a 2026-10-07 16:41, em 7 datas (2026-09-16: 1, 2026-09-24: 84, 2026-09-30: 34, 2026-10-01: 192, 2026-10-02: 153, 2026-10-06: 51, 2026-10-07: 295).
+**814 das 818 guardas do catálogo: 2 aposentadas, 2 não pegaram, 806 provadas, 4 redundantes** — 36513 s de mutação, medido de 2026-09-16 15:25 a 2026-10-08 00:12, em 8 datas (2026-09-16: 1, 2026-09-24: 84, 2026-09-30: 34, 2026-10-01: 191, 2026-10-02: 153, 2026-10-06: 51, 2026-10-07: 295, 2026-10-08: 5).
 
-> **Esta rodada NÃO julgou 4 das 812 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 4 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 6 das 818 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 6 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
-- `replica-aplica-o-que-chegou-sem-esperar-a-transacao` — A réplica volta a aplicar o que chegou, lote a lote e tabela a tabela: com o fio caído no meio do envio o central mostra a venda pela metade (pedido 676)
-- `tomada-da-trava-sem-unidade-do-diario` — A tomada da trava de escrita deixa de abrir a unidade do diário: cada evento de um COMMIT ganha id próprio e a réplica aplica a venda em pedaços (pedido 676)
-- `crc-do-evento-sem-o-id-de-transacao` — O CRC do evento da versão 4 do `.log` deixa de cobrir o id de transação: um `tx` trocado no disco passa no `verificar` (pedido 676)
-- `grupo-sem-a-vez-das-maes` — O grupo da réplica volta a aplicar as tabelas na ordem da chegada: a filha do mesmo commit entra antes da mãe e é contada órfã sem nunca ter sido visível sem ela (pedido 676)
+- `diario-sem-piso-do-disco-para-o-id` — A abertura do `.log` deixa de semear o id de transação pelo disco: com o relógio recuado entre dois arranques o diário recebe id menor que o da vida anterior (pedido 684)
+- `cura-sem-o-id-da-cauda` — A cura do `.log` deixa de contar o id dos eventos da cauda: o evento gravado depois do último `sincronizar` some do piso, e o id novo sai menor que ele (pedido 684)
+- `cabecalho-do-log-sem-o-maior-id` — O cabeçalho da versão 4 do `.log` deixa de gravar o maior id de transação: a abertura não tem piso sem caminhar o volume inteiro (pedido 684)
+- `commit-misto-sem-contar` — A tomada que grava em volume sem id (2/3) e em volume com id (4) volta a passar calada: a réplica recebe o commit partido e ninguém conta (pedido 684)
+- `commit-acima-do-teto-aceito` — O COMMIT acima do teto da transação volta a ser aceito na origem: a réplica o recebe em pedaços (pedido 685)
+- `custo-da-transacao-sem-a-imagem` — A conta da origem esquece a imagem da linha: aceita a transação que a réplica mede acima do teto, e ela chega em pedaços (pedido 685)
 
 As guardas que esta corrida ainda cita, hoje aposentadas:
 

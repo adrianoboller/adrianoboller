@@ -767,12 +767,37 @@ nosso:
 **O teto, e o que acontece acima dele.** Ter a transação inteira na mão antes
 de aplicar custa memória, e uma carga de um milhão de linhas num commit não
 cabe. Os maduros derramam em disco (`relay log`, `logical_decoding_work_mem`);
-aqui ainda não há onde. Acima de **64 MiB** na memória da réplica
-(`TETO_DA_TRANSACAO`) a transação vai **em pedaços**, cada um sob uma tomada,
-como tudo ia antes — e isso é **contado** em `replicacao_estado` →
-`transacoes_em_pedacos` e dito no log do processo. Parar a réplica no lugar
-trocaria uma garantia que não vale para a carga grande por uma réplica parada
-para sempre. Uma venda são alguns KiB.
+aqui ainda não há onde. O teto é **64 MiB** (`TETO_DA_TRANSACAO`), uma
+constante **única** que mora em `phxsql_store::log` e vale para os dois lados,
+com o mesmo custo por evento (`custo_na_transacao`: imagem + 128 bytes).
+
+**Desde o pedido 685 (decisão do dono, 07/10/2026) a origem RECUSA no `COMMIT`
+a transação que passaria do teto**, antes da marca e com nada gravado: a
+pré-conferência soma o que cada escrita — e cada elo da cascata — vai custar no
+diário e devolve `LIMITE_EXCEDIDO` com o tamanho e o teto, pela fábrica de
+idiomas (`erro.transacao_acima_do_teto`), dizendo que a carga deve ser
+dividida. A conta da origem é um **teto** da conta da réplica (o selo de todo
+externo, o «antes» de toda alteração), porque errar para baixo deixaria passar
+uma transação que chegaria partida. Provado pelo soquete
+(`tests/transacao-acima-do-teto.rs`): com o teto de teste em `S − 1` o `COMMIT`
+recusa e nada fica na origem; em `S + 1` a venda de 601 eventos chega ao
+central inteira, com `transacoes_em_pedacos` zero.
+
+O caminho em pedaços da réplica **continua no código, como cinto**: acima do
+teto ela aplica cada pedaço sob uma tomada, conta em `transacoes_em_pedacos` e
+diz no log. Ele só é alcançado por uma origem anterior ao 685 ou por uma
+tomada que **não é `COMMIT`** — o `inserir_lote` (e `importar`, `carga`) fora de transação,
+que gravam numa tomada só e não passam pela pré-conferência (resto nomeado no
+`PENDENCIAS.md`). Parar a réplica no lugar trocaria uma garantia que não vale
+para a carga grande por uma réplica parada para sempre. Uma venda são alguns
+KiB.
+
+**O id que some calado (pedido 684).** Dois casos, os dois agora contados em
+`replicacao_estado.id_de_transacao`: o relógio que recua entre dois arranques
+(o piso do disco o segura — `docs/FORMATO.md` §4 — e `recuos_do_relogio`
+conta) e o commit que grava numa tabela ainda em volume 2/3 (sem id) e noutra
+já na versão 4 (`commits_mistos`): a réplica recebe esse commit partido, e só
+a virada do volume velho fecha isso.
 
 **Origem e réplica sobem juntas.** A réplica anterior ao 676 ignora o campo
 `tx` e continua aplicando evento a evento (não há como ela recusar: ela não

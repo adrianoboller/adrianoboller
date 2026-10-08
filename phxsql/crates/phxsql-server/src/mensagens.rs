@@ -1052,6 +1052,19 @@ pub const FABRICA: &[MensagemFabrica] = &[
             "puerto HTTP lleno: {teto} hilos ocupados y la cola de {ms} ms se agotó; inténtelo de nuevo en unos instantes",
         ],
     },
+    // Pedido 685: a origem recusa no COMMIT a transacao que a replica nao
+    // conseguiria aplicar inteira. Nada foi gravado, e o remedio e do cliente.
+    MensagemFabrica {
+        nome: "erro.transacao_acima_do_teto",
+        textos: [
+            "a transação chega a {bytes} bytes no diário, acima do teto de {teto} bytes que a réplica aplica inteiro: nada foi gravado e ela terminou; divida a carga em transações menores",
+            "la transaction atteint {bytes} octets dans le journal, au-delà du plafond de {teto} octets que la réplique applique en entier : rien n'a été écrit et elle est terminée ; divisez la charge en transactions plus petites",
+            "the transaction reaches {bytes} bytes in the journal, above the {teto}-byte ceiling the replica applies whole: nothing was written and it has ended; split the load into smaller transactions",
+            "la transazione arriva a {bytes} byte nel diario, oltre il tetto di {teto} byte che la replica applica per intero: nulla è stato scritto ed è terminata; dividi il carico in transazioni più piccole",
+            "die Transaktion erreicht {bytes} Bytes im Journal, über der Grenze von {teto} Bytes, die die Replik ganz anwendet: nichts wurde geschrieben und sie ist beendet; teilen Sie die Last in kleinere Transaktionen",
+            "la transacción llega a {bytes} bytes en el diario, por encima del techo de {teto} bytes que la réplica aplica entero: no se grabó nada y terminó; divida la carga en transacciones más pequeñas",
+        ],
+    },
 ];
 
 /// O texto de fabrica (Portugues) de um TextName conhecido.
