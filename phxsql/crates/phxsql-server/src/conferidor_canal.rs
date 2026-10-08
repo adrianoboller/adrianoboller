@@ -99,7 +99,7 @@ pub const ISENTOS: &[(&str, usize, &str)] = &[
          e o `servidor.rs` desceu de 4 para 1: a soma dos dois foi de 6 para 4",
     ),
     (
-        "crates/phxsql-server/src/servidor.rs",
+        "crates/phxsql-server/src/servidor/testes_firewall_e_mensagens.rs",
         1,
         "a prova da drenagem do pedido 216 em `testes_firewall_e_mensagens`: \
          le o que sobrou num `BufReader` sobre bytes em memoria, e nao um \

@@ -97,6 +97,8 @@ PORTA = 7731
 PHXSQLD_BIN = RAIZ / "target" / "release" / "phxsqld"
 
 sys.path.insert(0, str(RAIZ / "bancada" / "utilizacao-padrao"))
+sys.path.insert(0, str(RAIZ / "bancada"))
+import fontes_do_servidor  # noqa: E402
 
 TEM, MEIO, NAO, CITADO, SEM = "tem", "meio", "nao", "citado", "sem-motor"
 
@@ -367,6 +369,18 @@ def cru_de(texto):
 # contagem de `grep` nao e veredito.
 def sonda_codigo():
     def tem(rel, padrao):
+        # O servidor se divide em `servidor/*.rs`: quem pergunta por ele
+        # pergunta pela lista unica (`bancada/fontes_do_servidor.py`), e a
+        # resposta nomeia o arquivo onde achou.
+        if rel == "crates/phxsql-server/src/servidor.rs":
+            for f in fontes_do_servidor.todas():
+                achou = tem_em(fontes_do_servidor.relativo(f), padrao)
+                if achou:
+                    return achou
+            return None
+        return tem_em(rel, padrao)
+
+    def tem_em(rel, padrao):
         p = RAIZ / rel
         if not p.exists():
             return None

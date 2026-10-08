@@ -40,7 +40,10 @@ from dossie_da_pasta import achar_o_dossie  # noqa: E402
 
 AQUI = pathlib.Path(__file__).resolve().parent
 RAIZ = AQUI.parent.parent
-SERVIDOR = RAIZ / "crates/phxsql-server/src/servidor.rs"
+# O servidor se divide em `servidor/*.rs`: os portoes se leem da lista unica
+# (`bancada/fontes_do_servidor.py`), e nao de um caminho digitado.
+sys.path.insert(0, str(RAIZ / "bancada"))
+import fontes_do_servidor  # noqa: E402
 TABLE = RAIZ / "crates/phxsql-store/src/table.rs"
 CATALOGO = RAIZ / "crates/phxsql-server/src/catalogo.rs"
 
@@ -97,7 +100,7 @@ PASSOS_GRAVAR = [
 # ------------------------------------------------------------- o que o codigo diz
 def portoes_do_codigo():
     """A lista ORDENADA dos portoes, lida dos comentarios que os numeram."""
-    fonte = SERVIDOR.read_text(encoding="utf-8")
+    fonte = fontes_do_servidor.texto()
     achados = re.findall(r"^\s*// Portao ([0-9a-z-]+) -- ", fonte, re.M)
     if len(achados) < 5:
         sys.exit(f"SONDA QUEBRADA: so {len(achados)} portoes no servidor.rs -- "

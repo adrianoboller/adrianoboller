@@ -757,7 +757,7 @@ mod testes {
     /// `catalogo.rs` ja escreveu: Rust nao deixa perguntar a um `match` quais
     /// bracos ele tem, e a alternativa -- a lista escrita a mao num segundo
     /// lugar -- e exatamente a duplicacao que esta frente existe para nao ter.
-    const FONTE: &str = include_str!("servidor.rs");
+    const FONTE: &str = crate::servidor::FONTE_DO_SERVIDOR;
 
     fn nomes_dos_bracos(trecho: &str) -> Vec<String> {
         let mut saida = Vec::new();

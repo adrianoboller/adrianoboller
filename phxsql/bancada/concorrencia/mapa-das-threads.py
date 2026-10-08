@@ -30,7 +30,9 @@ CONTA: `thread::spawn(`, `thread::Builder::new(`, `thread::scope(` e
 `.subir(` (o registro da telemetria, que com o `rodar_em_filha` do pedido 502
 sao os unicos caminhos de producao ate o `Builder`) em `crates/*/src`, fora do modulo de testes de cada arquivo
 (`#[cfg(test)] mod ...` em diante) e fora dos arquivos que so existem em teste
-(`#[cfg(test)] mod x;` no `lib.rs`). Comentario e literal de texto viram
+(`#[cfg(test)] mod x;`, ou `cfg(all(test, ...))`, em QUALQUER `.rs` do crate,
+e tudo debaixo da pasta desse modulo -- a regra do `bancada/
+fontes_do_servidor.py`, que e de onde ela vem). Comentario e literal de texto viram
 espaco antes da varredura, com a mesma funcao do `mapa-da-trava.py`.
 
 NAO CONTA: threads que nascem em `examples/`, `tests/` e `bancada/` -- sao
@@ -72,8 +74,13 @@ NASCIMENTOS = {
 }
 # Daqui em diante e teste: `#[cfg(test)]` seguido de `mod x {`.
 MODULO_DE_TESTE = re.compile(r"#\[cfg\(test\)\]\s*(?:pub(?:\([^)]*\))?\s+)?mod\s+\w+\s*\{")
-# `#[cfg(test)] mod x;` no lib.rs: o arquivo `x.rs` inteiro so existe em teste.
-ARQUIVO_DE_TESTE = re.compile(r"#\[cfg\(test\)\]\s*(?:pub(?:\([^)]*\))?\s+)?mod\s+(\w+)\s*;")
+# `#[cfg(test)] mod x;`: o arquivo `x.rs` inteiro so existe em teste. A regra
+# mora no `bancada/fontes_do_servidor.py` (`so_de_teste`), e nao aqui: o
+# servidor dividido declara os testes no `servidor.rs`, e nao no `lib.rs`, e
+# uma segunda copia da regra que so olhasse o `lib.rs` contaria os
+# `servidor/testes_*.rs` como producao.
+sys.path.insert(0, str(RAIZ / "bancada"))
+import fontes_do_servidor  # noqa: E402
 # Quantas linhas em volta do sitio a agulha do catalogo pode estar: o nome da
 # thread vem 1-2 linhas depois do `subir(`, e o `let nome = format!(...)`
 # da replica vem 2 linhas antes.
@@ -295,15 +302,10 @@ CATALOGO = [
 # --------------------------------------------------------------- a varredura
 
 
-def arquivos_so_de_teste(raiz_do_crate):
-    """Os `x.rs` que o `lib.rs`/`main.rs` declara com `#[cfg(test)] mod x;`."""
-    nomes = set()
-    for entrada in ("lib.rs", "main.rs"):
-        f = raiz_do_crate / "src" / entrada
-        if f.exists():
-            for m in ARQUIVO_DE_TESTE.finditer(f.read_text(encoding="utf-8")):
-                nomes.add(m.group(1))
-    return nomes
+def arquivos_so_de_teste(arquivos):
+    """Os `.rs` que algum `.rs` do crate declara com `#[cfg(test)] mod x;`,
+    resolvidos pelo caminho como o compilador resolve."""
+    return fontes_do_servidor.so_de_teste(arquivos)
 
 
 def fontes():
@@ -313,9 +315,10 @@ def fontes():
         src = crate / "src"
         if not src.is_dir():
             continue
-        de_teste = arquivos_so_de_teste(crate)
-        for rs in sorted(src.rglob("*.rs")):
-            if rs.stem in de_teste:
+        todos = sorted(src.rglob("*.rs"))
+        de_teste = arquivos_so_de_teste(todos)
+        for rs in todos:
+            if rs in de_teste:
                 continue
             saida.append(rs)
     return saida
@@ -505,6 +508,23 @@ def autoteste():
         confere("`fn subir(` e' o mecanismo, nao um sitio; a chamada e'",
                 len(sitios) == 1 and sitios[0]["linha"] == 4)
 
+        # 8. Arquivo de teste declarado FORA do `lib.rs`, com `cfg(all(test,
+        #    ...))`, e o que mora debaixo dele, nao e producao. O defeito (a
+        #    divisao do servidor): a regra olhava so o `lib.rs`/`main.rs` e
+        #    pelo NOME, e os `servidor/testes_*.rs` entrariam como producao.
+        (d / "s" / "t").mkdir(parents=True)
+        s = d / "s.rs"
+        s.write_text("#[cfg(all(test, debug_assertions))]\nmod t;\nmod p;\n")
+        t1 = d / "s" / "t.rs"
+        t1.write_text("mod u;\n")
+        u = d / "s" / "t" / "u.rs"
+        u.write_text("fn y() { std::thread::spawn(|| {}); }\n")
+        p = d / "s" / "p.rs"
+        p.write_text("fn x() {}\n")
+        so = arquivos_so_de_teste([s, t1, u, p])
+        confere("arquivo de teste declarado em qualquer `.rs` sai, com a pasta dele",
+                so == {t1, u})
+
     # 7. E contra o fonte de verdade: a catraca do repositorio esta em zero.
     sitios, envelhecidas = mapear()
     m = medir_para_a_catraca(sitios, envelhecidas)
@@ -515,7 +535,7 @@ def autoteste():
     if falhas:
         print(f"REPROVADO: {', '.join(falhas)}")
         return 1
-    print("as sete guardas passaram")
+    print("as oito guardas passaram")
     return 0
 
 

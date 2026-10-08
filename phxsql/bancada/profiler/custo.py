@@ -66,15 +66,32 @@ import time
 
 from comum import PHXSQLD, RAIZ, Conexao, baixar, subir
 
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(
+    os.path.abspath(__file__)))))
+import fontes_do_servidor  # noqa: E402
+
 AQUI = os.path.dirname(os.path.abspath(__file__))
 BIN = os.path.join(AQUI, "bin")
-SERV = os.path.join(RAIZ, "crates", "phxsql-server", "src", "servidor.rs")
 PORTAS = (6270, 6272)
 PEDACOS = 15
 LOTE = 5_000
 UMA_A_UMA = 1_500
 
 PORTAO = "self.profiler_ligado.load(Ordering::Relaxed)"
+
+
+def arquivo_do_portao():
+    """A fonte do servidor onde o portao mora: o `servidor.rs` se divide em
+    `servidor/*.rs`, e o arquivo que este medidor REESCREVE sai da lista unica
+    (`bancada/fontes_do_servidor.py`), e nao de um caminho digitado. Zero ou
+    dois arquivos com o portao param a medicao: reescrever o errado mediria
+    outra coisa."""
+    achados = [str(a) for a in fontes_do_servidor.producao()
+               if PORTAO in io.open(a, encoding="utf-8").read()]
+    if len(achados) != 1:
+        sys.exit("o portao do profiler esta em %d fontes do servidor: %s"
+                 % (len(achados), achados))
+    return achados[0]
 VARIANTES = [("atual", PORTAO), ("sem", "false"), ("antigo", "true")]
 
 CIDADES = ["Blumenau", "Joinville", "Itajai", "Curitiba",
@@ -150,11 +167,12 @@ def compilar():
     rodada inteira de ganhos ficou invisível porque o executável era de antes.
     """
     os.makedirs(BIN, exist_ok=True)
-    original = io.open(SERV, encoding="utf-8").read()
+    serv = arquivo_do_portao()
+    original = io.open(serv, encoding="utf-8").read()
     assert original.count(PORTAO) == 2, original.count(PORTAO)
     try:
         for nome, portao in VARIANTES:
-            io.open(SERV, "w", encoding="utf-8").write(
+            io.open(serv, "w", encoding="utf-8").write(
                 original.replace(PORTAO, portao))
             print("  compilando %s ..." % nome, flush=True)
             r = subprocess.run(
@@ -165,7 +183,7 @@ def compilar():
                 sys.exit(r.stdout + r.stderr)
             shutil.copy2(PHXSQLD, os.path.join(BIN, nome))
     finally:
-        io.open(SERV, "w", encoding="utf-8").write(original)
+        io.open(serv, "w", encoding="utf-8").write(original)
     # Devolve o `target/` ao código de verdade: um defeito esquecido lá
     # dentro seria o próximo binário velho.
     subprocess.run(["cargo", "build", "--release", "--offline",

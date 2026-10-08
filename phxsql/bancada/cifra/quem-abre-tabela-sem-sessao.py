@@ -13,7 +13,12 @@ import pathlib
 import sys
 
 RAIZ = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else "/home/user/adrianoboller/phxsql")
-ALVOS = ["crates/phxsql-server/src/servidor.rs",
+# O servidor se divide em `servidor/*.rs`: as fontes dele saem da lista unica
+# (`bancada/fontes_do_servidor.py`), e nao de um caminho digitado.
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
+import fontes_do_servidor  # noqa: E402
+
+ALVOS = [fontes_do_servidor.relativo(f) for f in fontes_do_servidor.todas()] + [
          "crates/phxsql-server/src/transacao.rs",
          "crates/phxsql-server/src/idiomas.rs"]
 

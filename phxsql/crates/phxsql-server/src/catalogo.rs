@@ -2689,7 +2689,7 @@ mod testes {
     /// a duplicação que este módulo existe para acabar. Ler o fonte é feio e é
     /// honesto: se o `despachar` ganhar uma operação, o teste falha aqui, e
     /// não seis meses depois quando alguém procurar a descrição que não existe.
-    const FONTE: &str = include_str!("servidor.rs");
+    const FONTE: &str = crate::servidor::FONTE_DO_SERVIDOR;
 
     /// Extrai os nomes de operação dos braços de um trecho de `match`.
     fn nomes_dos_bracos(trecho: &str) -> Vec<String> {

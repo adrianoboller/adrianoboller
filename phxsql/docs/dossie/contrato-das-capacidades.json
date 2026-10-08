@@ -19,8 +19,8 @@
         "estado": "implementado",
         "motivo": "a chave declarada nasce conferida e todas as portas locais de escrita conferem (docs/INTEGRIDADE.md §1)",
         "prova": [
-          {"arquivo": "crates/phxsql-server/src/servidor.rs", "contem": "fn a_chave_declarada_nasce_conferida("},
-          {"arquivo": "crates/phxsql-server/src/servidor.rs", "contem": "fn o_gatilho_entra_no_escopo_efetivo_e_a_fk_nao("}
+          {"arquivo": "crates/phxsql-server/src/servidor/testes_chave_estrangeira.rs", "contem": "fn a_chave_declarada_nasce_conferida("},
+          {"arquivo": "crates/phxsql-server/src/servidor/testes_transacoes.rs", "contem": "fn o_gatilho_entra_no_escopo_efetivo_e_a_fk_nao("}
         ]
       },
       "contradiz": {
@@ -45,7 +45,7 @@
         "estado": "implementado",
         "motivo": "read-your-own-writes desde o pedido 162",
         "prova": [
-          {"arquivo": "crates/phxsql-server/src/servidor.rs", "contem": "fn a_transacao_enxerga_o_que_ela_mesma_escreveu("}
+          {"arquivo": "crates/phxsql-server/src/servidor/testes_transacoes.rs", "contem": "fn a_transacao_enxerga_o_que_ela_mesma_escreveu("}
         ]
       },
       "contradiz": {

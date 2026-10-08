@@ -1,5 +1,5 @@
 {
-  "quando": "2026-10-08 10:10",
+  "quando": "2026-10-08 10:46",
   "mais_antigo": "2026-09-16 15:25",
   "guardas": [
     {
@@ -38,9 +38,9 @@
       "id": "pivotar-sem-portao",
       "titulo": "`pivotar` sem conferência própria: a junção vira a porta dos fundos",
       "veredito": "PROVADA",
-      "segundos": 80.16,
+      "segundos": 82.74,
       "notas": [],
-      "quando": "2026-10-07 12:11"
+      "quando": "2026-10-08 10:46"
     },
     {
       "id": "sequencias-sem-portao",
@@ -164,9 +164,9 @@
       "id": "trava-fora-do-ponto-unico",
       "titulo": "uma tomada da trava de dados fora do `travar_dados()`",
       "veredito": "PROVADA",
-      "segundos": 81.62,
+      "segundos": 80.56,
       "notas": [],
-      "quando": "2026-10-07 14:10"
+      "quando": "2026-10-08 10:46"
     },
     {
       "id": "trava-sem-guarda-de-reentrancia",
@@ -1324,17 +1324,17 @@
       "id": "juntar-sem-portao",
       "titulo": "`juntar` sem conferência própria: a tabela negada entra como lado B",
       "veredito": "PROVADA",
-      "segundos": 87.95,
+      "segundos": 82.26,
       "notas": [],
-      "quando": "2026-10-07 15:51"
+      "quando": "2026-10-08 10:46"
     },
     {
       "id": "unir-sem-portao",
       "titulo": "`unir` sem conferência própria: a tabela negada entra na LISTA",
       "veredito": "PROVADA",
-      "segundos": 79.96,
+      "segundos": 81.28,
       "notas": [],
-      "quando": "2026-10-07 15:51"
+      "quando": "2026-10-08 10:46"
     },
     {
       "id": "diferencas-sem-portao",
@@ -6618,9 +6618,9 @@
       "id": "grupo-da-replica-sem-marca",
       "titulo": "O grupo da réplica deixa de gravar a marca `.tx`: o SIGKILL no meio dele reabre a réplica com a venda pela metade (pedido 682)",
       "veredito": "PROVADA",
-      "segundos": 20.76,
+      "segundos": 20.22,
       "notas": [],
-      "quando": "2026-10-08 06:25"
+      "quando": "2026-10-08 10:46"
     },
     {
       "id": "replica-reaplica-inclusao-sem-olhar-o-reg",
@@ -6754,9 +6754,9 @@
       "id": "sinal-mata-sem-fechar-a-janela",
       "titulo": "O `phxsqld` morre pelo padrão do núcleo no SIGTERM/SIGINT: a janela não vai ao disco e o `.ndx` fica «para trás numa queda» (pedido 687)",
       "veredito": "PROVADA",
-      "segundos": 18.95,
+      "segundos": 20.74,
       "notas": [],
-      "quando": "2026-10-08 10:00"
+      "quando": "2026-10-08 10:46"
     },
     {
       "id": "parada-afirma-sem-levar-ao-disco",

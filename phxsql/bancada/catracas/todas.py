@@ -203,9 +203,18 @@ def teste_que_confere(nome_const, arquivo):
     `docs/CATRACAS.md`)."""
     padrao = re.compile(r"\b" + re.escape(nome_const) + r"\b")
     achados = []
-    for nome_teste, corpo in _testes_cacheados(arquivo):
-        if padrao.search(corpo):
-            achados.append(f"{arquivo.relative_to(RAIZ)}::{nome_teste}")
+    # O proprio arquivo e os modulos FILHOS dele (`x/**/*.rs`): e onde mora o
+    # teste que saiu do arquivo para um `#[cfg(test)] mod testes_y;` -- a
+    # divisao do `servidor.rs` fez isso com 79 modulos, e sem os filhos a
+    # constante dele passaria a «sem teste candidato» sem nada ter mudado.
+    proprios = [arquivo]
+    filhos = arquivo.parent / arquivo.stem
+    if arquivo.stem not in ("lib", "main", "mod") and filhos.is_dir():
+        proprios += sorted(filhos.rglob("*.rs"))
+    for f in proprios:
+        for nome_teste, corpo in _testes_cacheados(f):
+            if padrao.search(corpo):
+                achados.append(f"{f.relative_to(RAIZ)}::{nome_teste}")
     tdir = RAIZ / "crates" / crate_de(arquivo) / "tests"
     if tdir.is_dir():
         for f in sorted(tdir.rglob("*.rs")):

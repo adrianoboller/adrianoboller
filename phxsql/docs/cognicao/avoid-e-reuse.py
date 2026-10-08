@@ -305,8 +305,19 @@ def existe_teste(ref):
         arq = _resolve_em_alguma_raiz(caminho_texto.strip())
         if arq is None:
             return False
-        texto = arq.read_text(encoding="utf-8", errors="replace")
-        return any(n == nome for n, _c in motor()._testes_do_arquivo(texto))
+        # O arquivo e os modulos FILHOS dele (`x/**/*.rs`): o teste que saiu
+        # para um `#[cfg(test)] mod testes_y;` continua sendo «do x.rs» -- a
+        # divisao do `servidor.rs` moveu 80 modulos assim, e a evidencia
+        # escrita antes dela nao envelhece por isso.
+        candidatos = [arq]
+        filhos = arq.parent / arq.stem
+        if arq.stem not in ("lib", "main", "mod") and filhos.is_dir():
+            candidatos += sorted(filhos.rglob("*.rs"))
+        for f in candidatos:
+            texto = f.read_text(encoding="utf-8", errors="replace")
+            if any(n == nome for n, _c in motor()._testes_do_arquivo(texto)):
+                return True
+        return False
     return nome in nomes_de_teste_no_repo()
 
 

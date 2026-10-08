@@ -125,6 +125,10 @@ def area_de(crate, rel):
         return TESTES_DO_SERVER.get(nome, DO_SERVIDOR.get(nome, "Servidor (outros)"))
     if rel.startswith(os.path.join("src", "dblink")) or rel.startswith(os.path.join("src", "pg")):
         return "DbLink"
+    # Os filhos do `servidor.rs` dividido (`src/servidor/**`) sao o mesmo
+    # modulo: contam na area dele, e nao em «Servidor (outros)».
+    if rel.startswith(os.path.join("src", "servidor") + os.sep):
+        return DO_SERVIDOR["servidor.rs"]
     return DO_SERVIDOR.get(nome, "Servidor (outros)")
 
 

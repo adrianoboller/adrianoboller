@@ -63,7 +63,16 @@ FONTES = [
     RAIZ / "crates/phxsql-store/src",
     RAIZ / "crates/phxsql-core/src",
 ]
-ALVO = RAIZ / "crates/phxsql-server/src/servidor.rs"
+# As fontes de PRODUCAO do servidor, pela lista unica (`bancada/
+# fontes_do_servidor.py`): o `servidor.rs` se divide em `servidor/*.rs`, e
+# um `ALVO` de um arquivo so passaria a medir um pedaco dizendo que mediu o
+# todo. Os arquivos de teste (`#[cfg(test)] mod x;`) ficam de fora pela
+# declaracao, e nao pelo nome.
+sys.path.insert(0, str(RAIZ / "bancada"))
+import fontes_do_servidor  # noqa: E402
+
+ALVOS = fontes_do_servidor.producao()
+ALVO = ALVOS[0]
 SALTOS = 5
 # A pergunta do `fsync` olha UM salto mais fundo que as outras, e por medida
 # (pedido 633, 01/10/2026). O `sync_all` mora atras da familia `sincronizar`:
@@ -253,6 +262,11 @@ def sem_comentario_nem_texto(fonte: str) -> str:
         saida.append(c)
         i += 1
     return "".join(saida)
+
+
+# Depois de um `#[cfg(test)]`: outros atributos e um `mod x;` sem corpo.
+MOD_SEM_CORPO = re.compile(
+    r"\s*(?:#\s*\[[^\]]*\]\s*)*(?:pub(?:\s*\([^)]*\))?\s+)?mod\s+\w+\s*;")
 
 
 def fim_do_bloco(limpo: str, abre: int) -> int:
@@ -486,8 +500,37 @@ def classificar(classes, lacos):
     return "leitura-curta"
 
 
+def rotulo_do_arquivo(caminho):
+    """O nome que o mapa imprime ao lado da linha: nada para o `servidor.rs`
+    (a saida de antes da divisao, igual), o caminho a partir de `src/` para
+    os filhos."""
+    if caminho == ALVO:
+        return ""
+    try:
+        return caminho.relative_to(ALVO.parent).as_posix() + ":"
+    except ValueError:
+        return caminho.name + ":"
+
+
 def mapear(alvo=None):
-    alvo = alvo or ALVO
+    """As secoes de todas as fontes de producao (ou so de `alvo`, um caminho
+    ou uma lista, como o autoteste usa). Uma tomada so se resolve dentro do
+    proprio arquivo: a funcao dona e o bloco nunca atravessam a fronteira."""
+    if alvo is None:
+        alvos = ALVOS
+    elif isinstance(alvo, (list, tuple)):
+        alvos = list(alvo)
+    else:
+        alvos = [alvo]
+    indice = indexar_funcoes(sorted(p for d in FONTES for p in d.rglob("*.rs")))
+    memo = {}
+    secoes = []
+    for um in alvos:
+        secoes.extend(secoes_de(um, indice, memo))
+    return depois_de_mapear(secoes)
+
+
+def secoes_de(alvo, indice, memo):
     bruto = alvo.read_text(encoding="utf-8")
     limpo = sem_comentario_nem_texto(bruto)
     linha_de = lambda pos: limpo.count("\n", 0, pos) + 1
@@ -502,20 +545,24 @@ def mapear(alvo=None):
     # `cfg(test)` cru contava as tomadas dos testes dele como producao -- a
     # primeira que entrou la subiu `alcancam-fsync` sem nenhuma linha de
     # servidor mudar.
+    #
+    # E o `#[cfg(test)] mod x;` SEM corpo (a divisao do servidor): ele
+    # declara um arquivo de teste, que ja fica fora por `fontes_do_servidor`.
+    # Procurar o `{` depois dele acharia o da PROXIMA coisa e engoliria
+    # producao como teste -- a catraca desceria sem melhora nenhuma.
     proibido = []
     for t in re.finditer(
         r"#\s*\[\s*cfg\s*\(\s*(?:test|all\s*\(\s*test\b[^\]]*\))\s*\)\s*\]", limpo
     ):
+        if MOD_SEM_CORPO.match(limpo, t.end()):
+            continue
         a = limpo.find("{", t.end())
         if a >= 0:
             proibido.append((t.start(), fim_do_bloco(limpo, a)))
     em_teste = lambda pos: any(a <= pos <= b for a, b in proibido)
 
-    indice = indexar_funcoes(sorted(p for d in FONTES for p in d.rglob("*.rs")))
-
     # A definicao, para nao contar a si mesma.
     defin = limpo.find("fn travar_dados(&self)")
-    memo = {}
 
     secoes = []
     for m in re.finditer(r"\btravar_dados\s*\(\s*\)", limpo):
@@ -554,6 +601,7 @@ def mapear(alvo=None):
         secao = limpo[pos:fim]
         alc = alcance_da_secao(secao, indice, memo)
         secoes.append({
+            "arquivo": rotulo_do_arquivo(alvo),
             "linha": linha_de(pos),
             "fim": linha_de(fim),
             "funcao": dona,
@@ -566,6 +614,10 @@ def mapear(alvo=None):
                         for k, v in alc.items()
                         if any(cf >= PISO_DE_CONFIANCA for _, cf in v)},
         })
+    return secoes
+
+
+def depois_de_mapear(secoes):
     # A PORTA COMUM, medida: caminho que e a melhor prova em quase toda secao
     # nao separa secao nenhuma. `abrir_travada -> espelhar -> sincronizar` e
     # uma: TODA operacao de tabela passa por ela, e enquanto ela contava, 35
@@ -656,7 +708,7 @@ def autoteste():
     """A prova real, nos dois sentidos: cada guarda FALHA com o defeito reposto.
 
     Medidor estatico e facil de acreditar e dificil de conferir -- ele nunca
-    quebra, so passa a responder outra coisa. Estas nove provas repoem, uma a
+    quebra, so passa a responder outra coisa. Estas dez provas repoem, uma a
     uma, os defeitos que este arquivo ja teve, e cada uma trava o conserto.
     """
     import tempfile
@@ -781,11 +833,27 @@ def autoteste():
             f"fundo +1 -> {certo(novo, 'durabilidade')}, mesmo fundo -> "
             f"{certo(velho, 'durabilidade')}")
 
+    # 10. `#[cfg(test)] mod x;` sem corpo nao engole producao. O defeito (a
+    #     divisao do servidor, 08/10/2026): o `find("{")` depois do atributo
+    #     achava o `{` do `impl` seguinte, e a tomada dele saia como teste --
+    #     a catraca desceria sem nada ter melhorado.
+    with tempfile.NamedTemporaryFile("w", suffix=".rs", delete=False) as f:
+        f.write("#[cfg(test)]\nmod testes_x;\n"
+                "#[cfg(all(test, debug_assertions))]\npub(super) mod testes_y;\n"
+                "impl S {\n    fn op(&self) {\n        let d = self.travar_dados()?;\n"
+                "    }\n}\n")
+        caminho = pathlib.Path(f.name)
+    secoes, _, _ = mapear(caminho)
+    caminho.unlink()
+    confere("`#[cfg(test)] mod x;` sem corpo nao esconde producao",
+            len(secoes) == 1 and secoes[0]["funcao"] == "op",
+            f"achou {[s['funcao'] for s in secoes]}")
+
     print()
     if falhas:
         print(f"REPROVADO: {', '.join(falhas)}")
         return 1
-    print("as nove guardas passaram")
+    print("as dez guardas passaram")
     return 0
 
 
@@ -954,11 +1022,17 @@ def medir_para_a_catraca(secoes):
     }
 
 
+def onde_impresso():
+    if len(ALVOS) == 1:
+        return f"no {ALVO.name}"
+    return f"nas {len(ALVOS)} fontes de producao do servidor"
+
+
 def catraca():
     secoes, _, _ = mapear()
     medido = medir_para_a_catraca(secoes)
     print("=== a catraca do mapa da trava ===")
-    print(f"    {len(secoes)} secoes criticas no {ALVO.name}\n")
+    print(f"    {len(secoes)} secoes criticas {onde_impresso()}\n")
     reprovou = False
     for nome, teto, porque, _mede in CATRACAS:
         agora = medido[nome]
@@ -1031,7 +1105,7 @@ def principal():
         so = sys.argv[sys.argv.index("--classe") + 1]
 
     print("=== o mapa da trava global de dados ===")
-    print(f"    fonte: {ALVO.relative_to(RAIZ)}")
+    print(f"    fonte: {', '.join(str(a.relative_to(RAIZ)) for a in ALVOS)}")
     print(f"    {len(secoes)} secoes criticas fora da definicao e fora dos testes")
     print(f"    profundidade: {SALTOS} saltos ({SALTOS_DURABILIDADE} para o `fsync`), "
           "resolucao por nome\n")
@@ -1051,7 +1125,7 @@ def principal():
         print(f"-- {classe}: {len(desta)}")
         for s in sorted(desta, key=lambda x: -x["linhas"]):
             extra = " (solta cedo)" if s["solta_cedo"] else ""
-            print(f"   {s['linha']:>6}  {s['funcao']:<38} "
+            print(f"   {s['arquivo'] + str(s['linha']):>6}  {s['funcao']:<38} "
                   f"{s['linhas']:>5} linhas{extra}")
             for k, v in sorted(s["proprias"].items()):
                 c = v[0]

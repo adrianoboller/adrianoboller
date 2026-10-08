@@ -2274,7 +2274,7 @@ mod testes {
     /// para o mesmo trabalho por outro nome.
     #[test]
     fn toda_operacao_com_ponto_de_cancelamento_esta_na_lista() {
-        const FONTE: &str = include_str!("servidor.rs");
+        const FONTE: &str = crate::servidor::FONTE_DO_SERVIDOR;
         let mut achadas = Vec::new();
         for pedaco in FONTE.split("    fn op_").skip(1) {
             let Some((nome, corpo)) = pedaco.split_once('(') else {
@@ -2328,12 +2328,12 @@ mod testes {
     /// vendo zero.
     #[test]
     fn a_fase_da_telemetria_so_aceita_frase_fixa() {
-        const FONTES: [(&str, &str); 2] = [
-            ("servidor.rs", include_str!("servidor.rs")),
-            ("telemetria.rs", include_str!("telemetria.rs")),
-        ];
+        let fontes = crate::servidor::FONTES_DO_SERVIDOR
+            .iter()
+            .copied()
+            .chain([("telemetria.rs", include_str!("telemetria.rs"))]);
         let mut achadas = 0usize;
-        for (arquivo, fonte) in FONTES {
+        for (arquivo, fonte) in fontes {
             for (n, linha) in fonte.lines().enumerate() {
                 // A propria declaracao do metodo nao e chamada.
                 if linha.contains("pub fn fase_cancelavel(") {
