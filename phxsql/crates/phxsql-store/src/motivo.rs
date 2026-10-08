@@ -382,7 +382,7 @@ impl MotivoFile {
         if let Some(c) = self.cabs.get(&volume) {
             return Ok(*c);
         }
-        let cab = cofre::ler_cabecalho_do_volume(&mut self.volumes, volume, MAGIC_MOTIVO)?;
+        let cab = cofre::ler_cabecalho_do_volume(&mut self.volumes, volume, MAGIC_MOTIVO, 3)?;
         self.cabs.insert(volume, cab);
         Ok(cab)
     }

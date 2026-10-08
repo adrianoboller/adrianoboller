@@ -44,6 +44,29 @@ fn bytes_do_arquivo(d: &std::path::Path, nome: &str, ext: &str) -> Vec<u8> {
     std::fs::read(d.join(format!("{nome}.{ext}"))).unwrap()
 }
 
+/// Largura do cabecalho do evento num `.log` novo: a versao 4 leva o id de
+/// transacao em 44..52 (pedido 676).
+const EVENTO: usize = 52;
+
+/// A versao que cada diario novo tem de ter com a cifra ligada: o `.log` vai
+/// para a 4 (o id de transacao, pedido 676), cifrado pela flag; a `.trash` e
+/// o `.reason` continuam na 3.
+fn versao_cifrada(ext: &str) -> u16 {
+    if ext == "log" {
+        cofre::VERSAO_COM_TX
+    } else {
+        3
+    }
+}
+
+/// O CRC do cabecalho de um evento da versao 4, recalculado por quem adultera
+/// o arquivo: os bytes 0..36 e o id de transacao (44..52).
+fn crc_do_cabecalho(cab: &[u8]) -> u32 {
+    let mut b = cab[..36].to_vec();
+    b.extend_from_slice(&cab[44..52]);
+    phxsql_core::crc::crc32(&b)
+}
+
 fn contem(agulha: &[u8], palheiro: &[u8]) -> bool {
     palheiro.windows(agulha.len()).any(|j| j == agulha)
 }
@@ -116,19 +139,24 @@ fn sem_configuracao_nada_muda_no_disco() {
         .unwrap();
     l.sincronizar().unwrap();
 
+    // Desde o pedido 676 o `.log` nasce na versao 4 (o id de transacao no
+    // evento), com o cabecalho de 128 bytes que a versao 4 tem sempre. O que
+    // este teste guarda continua valendo: sem cofre, nada se cifra -- a flag
+    // de cifra (byte 40) fica zerada e a imagem vai crua.
     let bruto = bytes_do_arquivo(&d, "t", "log");
     assert_eq!(
         u16::from_le_bytes([bruto[8], bruto[9]]),
-        2,
-        "sem cifra o .log nasceu numa versao nova"
+        cofre::VERSAO_COM_TX,
+        "o .log novo tem de nascer na versao do id de transacao"
     );
     assert_eq!(
         u16::from_le_bytes([bruto[10], bruto[11]]),
-        cofre::CAB_V2 as u16,
-        "o cabecalho velho mudou de tamanho"
+        cofre::CAB_V3 as u16,
+        "o cabecalho da versao 4 tem 128 bytes, cifrado ou nao"
     );
-    // O evento sem cifra tem 44 bytes de cabecalho e a imagem crua atras.
-    assert_eq!(bruto.len(), cofre::CAB_V2 + 44 + 8);
+    assert_eq!(bruto[40] & 1, 0, "sem cofre o volume saiu marcado cifrado");
+    // O evento sem cifra tem 52 bytes de cabecalho e a imagem crua atras.
+    assert_eq!(bruto.len(), cofre::CAB_V3 + 52 + 8);
     assert!(
         contem(b"Blumenau", &bruto),
         "a imagem deveria estar em claro"
@@ -172,9 +200,10 @@ fn o_dado_some_do_disco_e_volta_pela_leitura() {
         let bruto = bytes_do_arquivo(&d, "t", ext);
         assert_eq!(
             u16::from_le_bytes([bruto[8], bruto[9]]),
-            3,
-            "o .{ext} nao subiu para a versao 3"
+            versao_cifrada(ext),
+            "o .{ext} nao subiu para a versao cifrada"
         );
+        assert_eq!(bruto[40] & 1, 1, "o .{ext} nao ficou marcado cifrado");
         assert_eq!(u16::from_le_bytes([bruto[10], bruto[11]]), 128);
         assert!(
             !contem(b"Blumenau", &bruto) && !contem(b"titular", &bruto),
@@ -271,11 +300,11 @@ fn corpo_adulterado_nao_decifra() {
     // exercite a ETIQUETA e nao o CRC -- que ja tem teste proprio.
     let caminho = d.join("t.log");
     let mut bruto = std::fs::read(&caminho).unwrap();
-    let corpo = cofre::CAB_V3 + 44;
+    let corpo = cofre::CAB_V3 + EVENTO;
     bruto[corpo] ^= 0x01;
     let novo_crc = {
-        let cab = &bruto[cofre::CAB_V3..cofre::CAB_V3 + 44];
-        let mut crc = phxsql_core::crc::crc32(&cab[..36]);
+        let cab = &bruto[cofre::CAB_V3..cofre::CAB_V3 + EVENTO];
+        let mut crc = crc_do_cabecalho(cab);
         crc ^= phxsql_core::crc::crc32(&bruto[corpo..]);
         crc
     };
@@ -333,7 +362,7 @@ fn o_nonce_nunca_se_repete_no_arquivo() {
         // dois volumes dividissem sal, isto acusaria.
         let sal = bruto[48..64].to_vec();
         let mut offset = cofre::CAB_V3;
-        while offset + 44 <= bruto.len() {
+        while offset + EVENTO <= bruto.len() {
             let tam = u32::from_le_bytes(bruto[offset + 32..offset + 36].try_into().unwrap());
             let tempero = bruto[offset + 40..offset + 44].to_vec();
             if tam > 0 {
@@ -342,7 +371,7 @@ fn o_nonce_nunca_se_repete_no_arquivo() {
                     "nonce repetido no volume {v}, offset {offset}"
                 );
             }
-            offset += 44 + tam as usize;
+            offset += EVENTO + tam as usize;
         }
     }
     // Os eventos de imagem VAZIA nao tem corpo para cifrar, entao nao gastam
@@ -569,8 +598,8 @@ fn trocar_o_cabecalho_de_um_evento_cifrado_nao_passa() {
     bruto[cab + 12..cab + 20].copy_from_slice(&7u64.to_le_bytes());
     // E o CRC e consertado, porque quem adultera o arquivo sabe recalcula-lo.
     let novo_crc = {
-        let mut crc = phxsql_core::crc::crc32(&bruto[cab..cab + 36]);
-        crc ^= phxsql_core::crc::crc32(&bruto[cab + 44..]);
+        let mut crc = crc_do_cabecalho(&bruto[cab..cab + EVENTO]);
+        crc ^= phxsql_core::crc::crc32(&bruto[cab + EVENTO..]);
         crc
     };
     bruto[cab + 36..cab + 40].copy_from_slice(&novo_crc.to_le_bytes());
@@ -637,7 +666,7 @@ fn a_tabela_inteira_nasce_com_os_tres_diarios_cifrados() {
         let bruto = bytes_do_arquivo(&d, "clientes", ext);
         assert_eq!(
             u16::from_le_bytes([bruto[8], bruto[9]]),
-            3,
+            versao_cifrada(ext),
             "o .{ext} da tabela nasceu na versao velha"
         );
         assert!(

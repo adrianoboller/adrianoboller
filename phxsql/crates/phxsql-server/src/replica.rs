@@ -446,8 +446,28 @@ pub fn proxima_sequencia_do_fio(v: Option<&Json>) -> u64 {
     }
 }
 
+/// O id de transacao como vai ao fio: SEMPRE texto. Ele passa de 2^53 desde
+/// o primeiro numero (o piso e o relogio em ms deslocado 16 bits), e o `Json`
+/// da casa so tem `f64` -- um id arredondado juntaria transacoes vizinhas.
+pub fn tx_para_o_fio(tx: u64) -> Json {
+    Json::texto_de(tx.to_string())
+}
+
+/// O inverso de [`tx_para_o_fio`]. Ausente, torto ou zero = «sem id».
+pub fn tx_do_fio(v: Option<&Json>) -> u64 {
+    match v {
+        Some(Json::Texto(t)) => t.parse().unwrap_or(0),
+        Some(j) => j.inteiro().filter(|n| *n > 0).unwrap_or(0) as u64,
+        None => 0,
+    }
+}
+
 /// O que o source diz sobre um database inteiro.
 pub struct PosicaoDoSource {
+    /// O source grava o id de transacao no diario e o manda no fio (pedido
+    /// 676). Falso = source anterior: a replica aplica evento a evento, e a
+    /// venda de varias tabelas pode aparecer pela metade enquanto chega.
+    pub com_tx: bool,
     pub com_imagem: bool,
     /// O `id_servidor` do source -- e com ele que o bidirecional confere a
     /// colisao de hash antes de confiar na supressao de origem.
@@ -484,6 +504,7 @@ pub fn posicao(cliente: &mut Cliente, database: &str) -> Result<PosicaoDoSource>
         }
     }
     Ok(PosicaoDoSource {
+        com_tx: r.booleano_ou("tx_no_diario", false),
         com_imagem: r.booleano_ou("imagem_da_linha", false),
         id_servidor: r.texto_ou("id_servidor", "").to_string(),
         // Fora da faixa vira zero, que e «nao disse»: um numero inventado por
@@ -520,6 +541,10 @@ pub struct EventoRecebido {
     /// operacao de pular RECUSA nesse caso, nomeando: adivinhar a posicao e
     /// pular dado alheio em silencio.
     pub posicao: u64,
+    /// O id da transacao que gravou o evento NA ORIGEM -- pedido 676. Zero =
+    /// sem id (volume velho do `.log`, ou source anterior ao campo): o evento
+    /// e aplicado sozinho, como sempre foi.
+    pub tx: u64,
 }
 
 /// O valor de [`EventoRecebido::posicao`] quando o source nao a informa.
@@ -634,9 +659,279 @@ pub fn eventos_do_fio(lista: Option<&Json>) -> Result<Vec<EventoRecebido>> {
                 Some(n) if n >= 0 => n as u64,
                 _ => POSICAO_DESCONHECIDA,
             },
+            tx: tx_do_fio(e.campo("tx")),
         });
     }
     Ok(eventos)
+}
+
+// ------------------------------------------- a transacao inteira (676)
+
+/// Quanto UMA transacao da origem pode ocupar na memoria da replica antes de
+/// ir em pedacos -- pedido 676.
+///
+/// # Por que um teto, e o que acontece acima dele
+///
+/// Aplicar a transacao inteira ou nada pede te-la inteira na mao antes de
+/// tomar a trava, e uma carga de um milhao de linhas num commit so nao cabe.
+/// Os maduros nao tem este teto porque derramam em disco (o `relay log` do
+/// MySQL e do MariaDB, o `logical_decoding_work_mem` do PostgreSQL); aqui
+/// ainda nao ha onde derramar. Acima do teto a transacao vai EM PEDACOS --
+/// cada pedaco sob uma tomada, como era tudo antes do 676 -- e isso e
+/// CONTADO (`transacoes_em_pedacos` no `replicacao_estado`) e dito no log do
+/// processo. Parar a replicacao no lugar seria trocar uma garantia que nao
+/// vale para uma carga grande por uma replica parada para sempre.
+///
+/// 64 MiB: uma venda de supermercado sao alguns KiB; o teto existe para a
+/// carga em massa, nao para o caso que o 325 descreve.
+pub const TETO_DA_TRANSACAO: usize = 64 * 1024 * 1024;
+
+/// O que um evento custa na conta do teto, alem da imagem: a `struct` e o
+/// que o `VecDeque` guarda dele. Conta folgada de proposito.
+const CUSTO_DO_EVENTO: usize = 128;
+
+/// Quantos eventos uma tomada da trava aplica de uma vez, somando as
+/// transacoes inteiras que cabem: o mesmo [`LOTE`] de antes, para que o
+/// alcance de um diario de autocommits nao pague uma tomada por evento.
+const EVENTOS_POR_TOMADA: usize = LOTE as usize;
+
+/// Uma tabela no [`Juntador`]: o que ja chegou e ainda nao se aplicou, e ate
+/// onde puxar.
+struct FilaDoJuntador {
+    eventos: std::collections::VecDeque<EventoRecebido>,
+    /// A posicao, no diario do source, do proximo evento a puxar.
+    proximo: u64,
+    /// Ate onde puxar: a contagem que o `posicao` deu. O `posicao` e lido
+    /// com a trava de escrita do source na mao, entao esse vetor e uma
+    /// FRONTEIRA DE COMMIT -- toda transacao antes dele esta inteira antes
+    /// dele, em todas as tabelas. Puxar alem dele traria o comeco de uma
+    /// transacao cujo resto, noutra tabela, nao entrou na conta.
+    alvo: u64,
+    /// O source devolveu menos do que a contagem prometia (encolheu entre o
+    /// `posicao` e o `replicar`), ou a tabela rompeu: nada mais dela.
+    esgotada: bool,
+}
+
+impl FilaDoJuntador {
+    fn pode_puxar(&self) -> bool {
+        !self.esgotada && self.proximo < self.alvo
+    }
+
+    /// A transacao `tx` pode continuar alem do que ja chegou desta tabela?
+    fn tx_continua(&self, tx: u64) -> bool {
+        self.pode_puxar() && self.eventos.back().is_some_and(|e| e.tx == tx)
+    }
+}
+
+/// O proximo passo do alcance de um database. Ver [`Juntador`].
+pub enum Passo {
+    /// Puxe a tabela `fila` a partir de `desde` (fora da trava) e devolva o
+    /// lote em [`Juntador::receber`].
+    Puxar { fila: usize, desde: u64 },
+    /// Aplique estes eventos, de varias tabelas, sob UMA tomada da trava.
+    /// `inteiro` falso = pedaco de uma transacao acima do
+    /// [`TETO_DA_TRANSACAO`].
+    Aplicar {
+        grupo: Vec<(usize, Vec<EventoRecebido>)>,
+        inteiro: bool,
+    },
+    /// Nada mais a fazer nesta rodada.
+    Fim,
+}
+
+/// Junta os eventos de VARIAS tabelas de um database pelo id de transacao, e
+/// diz o que aplicar de cada vez -- pedido 676.
+///
+/// # O desenho
+///
+/// O diario e por tabela, e um commit entre tabelas tem eventos em diarios
+/// diferentes. O id de transacao de cada evento (o mesmo para a tomada
+/// inteira da trava na origem) e ESTRITAMENTE crescente no processo da
+/// origem, entao cada diario esta em ordem de id, e a transacao `T` esta
+/// inteira na mao quando, em toda tabela, ou o ultimo evento que chegou ja e
+/// de outra transacao, ou a tabela chegou a fronteira do `posicao`. E a fusao
+/// de listas ordenadas, com a menor cabeca na frente.
+///
+/// Sem rede e sem disco, de proposito: a decisao se prova aqui com listas na
+/// mao, e o servidor so executa os passos.
+///
+/// # O que ele NAO resolve
+///
+/// Ordem entre transacoes que nao dividem tabela nenhuma: elas comutam na
+/// replica (cada `.reg` so recebe o proprio diario), e a fusao as aplica na
+/// ordem dos ids. E o evento sem id (zero) vai sozinho, como sempre foi.
+pub struct Juntador {
+    filas: Vec<FilaDoJuntador>,
+    teto: usize,
+    /// A transacao que esta indo em pedacos, para conta-la uma vez so.
+    partida: Option<u64>,
+    /// Quantas transacoes passaram do teto nesta rodada.
+    pub em_pedacos: u64,
+}
+
+impl Juntador {
+    /// `alvos` e, por tabela, `(posicao local, contagem do source)`.
+    pub fn novo(alvos: &[(u64, u64)], teto: usize) -> Juntador {
+        Juntador {
+            filas: alvos
+                .iter()
+                .map(|&(proximo, alvo)| FilaDoJuntador {
+                    eventos: Default::default(),
+                    proximo,
+                    alvo,
+                    esgotada: false,
+                })
+                .collect(),
+            teto,
+            partida: None,
+            em_pedacos: 0,
+        }
+    }
+
+    /// O lote que chegou para a tabela `fila`, a partir do `desde` que o
+    /// [`Passo::Puxar`] pediu. Corta na fronteira do `posicao`; vazio quer
+    /// dizer que o source encolheu, e a tabela sai da rodada.
+    pub fn receber(&mut self, fila: usize, eventos: Vec<EventoRecebido>) {
+        let f = &mut self.filas[fila];
+        if eventos.is_empty() {
+            f.esgotada = true;
+            return;
+        }
+        let cabem = f.alvo.saturating_sub(f.proximo) as usize;
+        for e in eventos.into_iter().take(cabem) {
+            f.eventos.push_back(e);
+            f.proximo += 1;
+        }
+    }
+
+    /// A tabela rompeu (a continuidade nao confere): o que esta na mao dela
+    /// se descarta e ela nao e mais puxada nesta rodada.
+    pub fn largar(&mut self, fila: usize) {
+        let f = &mut self.filas[fila];
+        f.eventos.clear();
+        f.esgotada = true;
+    }
+
+    /// Bytes de `tx` ja na mao, somando todas as tabelas.
+    fn bytes_de(&self, tx: u64) -> usize {
+        self.filas
+            .iter()
+            .flat_map(|f| f.eventos.iter().take_while(|e| e.tx == tx))
+            .map(|e| e.imagem.len() + CUSTO_DO_EVENTO)
+            .sum()
+    }
+
+    /// Tira das cabecas os eventos de `tx` (de todas as tabelas) e os poe
+    /// no grupo, tabela por tabela, na ordem de cada diario.
+    fn tirar(&mut self, tx: u64, grupo: &mut Vec<(usize, Vec<EventoRecebido>)>) -> usize {
+        let mut n = 0;
+        for (i, f) in self.filas.iter_mut().enumerate() {
+            while f.eventos.front().is_some_and(|e| e.tx == tx) {
+                let e = f.eventos.pop_front().expect("ha cabeca");
+                match grupo.iter_mut().find(|(j, _)| *j == i) {
+                    Some((_, v)) => v.push(e),
+                    None => grupo.push((i, vec![e])),
+                }
+                n += 1;
+                // O evento sem id e uma transacao de UM evento: zero nao
+                // junta nada com nada.
+                if tx == 0 {
+                    break;
+                }
+            }
+        }
+        n
+    }
+
+    /// O proximo passo.
+    pub fn passo(&mut self) -> Passo {
+        let mut grupo: Vec<(usize, Vec<EventoRecebido>)> = Vec::new();
+        let mut eventos = 0usize;
+        let mut bytes = 0usize;
+        loop {
+            // Uma tabela vazia que ainda tem o que puxar pode trazer uma
+            // transacao MENOR que todas as cabecas: nada se decide sem ela.
+            if let Some(i) = self
+                .filas
+                .iter()
+                .position(|f| f.eventos.is_empty() && f.pode_puxar())
+            {
+                if grupo.is_empty() {
+                    return Passo::Puxar {
+                        fila: i,
+                        desde: self.filas[i].proximo,
+                    };
+                }
+                break;
+            }
+            // A menor cabeca. Zero (sem id) e a menor de todas, e o evento
+            // sem id so existe ANTES dos com id no mesmo diario -- o volume
+            // velho vem primeiro.
+            let Some(tx) = self
+                .filas
+                .iter()
+                .filter_map(|f| f.eventos.front().map(|e| e.tx))
+                .min()
+            else {
+                break;
+            };
+            let incompleta = if tx == 0 {
+                None
+            } else {
+                self.filas.iter().position(|f| f.tx_continua(tx))
+            };
+            let custo = self.bytes_de(tx);
+            if let Some(i) = incompleta {
+                if !grupo.is_empty() {
+                    break;
+                }
+                if custo <= self.teto {
+                    return Passo::Puxar {
+                        fila: i,
+                        desde: self.filas[i].proximo,
+                    };
+                }
+                // Acima do teto: vai o que esta na mao, e a transacao fica
+                // contada como partida.
+                if self.partida != Some(tx) {
+                    self.partida = Some(tx);
+                    self.em_pedacos += 1;
+                }
+                self.tirar(tx, &mut grupo);
+                return Passo::Aplicar {
+                    grupo,
+                    inteiro: false,
+                };
+            }
+            // Inteira. Entra no grupo se couber -- a primeira entra sempre.
+            if !grupo.is_empty()
+                && (eventos >= EVENTOS_POR_TOMADA || bytes.saturating_add(custo) > self.teto)
+            {
+                break;
+            }
+            let pedaco_final = self.partida == Some(tx);
+            eventos += self.tirar(tx, &mut grupo);
+            bytes = bytes.saturating_add(custo);
+            if pedaco_final {
+                // O ultimo pedaco de uma transacao partida vai SOZINHO e
+                // marcado: juntar transacoes inteiras a ele faria a conta
+                // de quem esta inteiro mentir.
+                self.partida = None;
+                return Passo::Aplicar {
+                    grupo,
+                    inteiro: false,
+                };
+            }
+        }
+        if grupo.is_empty() {
+            Passo::Fim
+        } else {
+            Passo::Aplicar {
+                grupo,
+                inteiro: true,
+            }
+        }
+    }
 }
 
 /// Quanto tempo [`ligar`] espera o `connect` antes de desistir.
@@ -1498,5 +1793,169 @@ mod testes_da_sequencia_no_fio {
         assert_eq!(proxima_sequencia_do_fio(Some(&Json::Nulo)), 0);
         assert_eq!(proxima_sequencia_do_fio(Some(&Json::texto_de("abc"))), 0);
         assert_eq!(proxima_sequencia_do_fio(Some(&Json::Numero(-5.0))), 0);
+    }
+}
+
+/// Pedido 676: o [`Juntador`] provado com listas na mao -- sem rede e sem
+/// disco, que e onde a decisao mora.
+#[cfg(test)]
+mod testes_do_juntador {
+    use super::*;
+
+    fn ev(tx: u64, tamanho: usize) -> EventoRecebido {
+        EventoRecebido {
+            operacao: Operacao::Inclusao,
+            rowid: 1,
+            versao: 1,
+            imagem: vec![7u8; tamanho],
+            carimbo_ms: 0,
+            origem: 0,
+            posicao: POSICAO_DESCONHECIDA,
+            tx,
+        }
+    }
+
+    /// O grupo como `(fila, [tx...])`, para comparar.
+    fn forma(grupo: &[(usize, Vec<EventoRecebido>)]) -> Vec<(usize, Vec<u64>)> {
+        let mut v: Vec<(usize, Vec<u64>)> = grupo
+            .iter()
+            .map(|(i, es)| (*i, es.iter().map(|e| e.tx).collect()))
+            .collect();
+        v.sort();
+        v
+    }
+
+    fn aplicar(j: &mut Juntador) -> (Vec<(usize, Vec<u64>)>, bool) {
+        match j.passo() {
+            Passo::Aplicar { grupo, inteiro } => (forma(&grupo), inteiro),
+            Passo::Puxar { fila, desde } => panic!("pediu puxar {fila} desde {desde}"),
+            Passo::Fim => panic!("acabou cedo"),
+        }
+    }
+
+    fn puxar(j: &mut Juntador) -> (usize, u64) {
+        match j.passo() {
+            Passo::Puxar { fila, desde } => (fila, desde),
+            Passo::Aplicar { grupo, .. } => panic!("aplicou {:?}", forma(&grupo)),
+            Passo::Fim => panic!("acabou cedo"),
+        }
+    }
+
+    /// **A venda que chega por partes nao se aplica por partes.** Os itens
+    /// (fila 0) vem em dois lotes; a venda (fila 1) num so. Com o primeiro
+    /// lote dos itens na mao a transacao 5 NAO esta inteira -- o ultimo item
+    /// que chegou ainda e dela, e a tabela tem mais para dar --, entao o
+    /// passo e puxar, e nunca aplicar.
+    #[test]
+    fn a_transacao_so_se_aplica_inteira_mesmo_vindo_em_dois_lotes() {
+        let mut j = Juntador::novo(&[(0, 4), (0, 1)], TETO_DA_TRANSACAO);
+        assert_eq!(puxar(&mut j), (0, 0));
+        j.receber(0, vec![ev(5, 10), ev(5, 10)]);
+        assert_eq!(puxar(&mut j), (1, 0));
+        j.receber(1, vec![ev(5, 10)]);
+        // O resto dos itens ainda nao chegou: aplicar aqui seria a venda com
+        // metade dos itens.
+        assert_eq!(puxar(&mut j), (0, 2));
+        j.receber(0, vec![ev(5, 10), ev(9, 10)]);
+        let (g, inteiro) = aplicar(&mut j);
+        assert!(inteiro);
+        assert_eq!(g, vec![(0, vec![5, 5, 5, 9]), (1, vec![5])]);
+        assert!(matches!(j.passo(), Passo::Fim));
+    }
+
+    /// Transacoes inteiras seguidas dividem a tomada: o alcance de um diario
+    /// de autocommits nao paga uma tomada por evento.
+    #[test]
+    fn transacoes_inteiras_seguidas_vao_na_mesma_tomada() {
+        let mut j = Juntador::novo(&[(10, 13), (20, 22)], TETO_DA_TRANSACAO);
+        assert_eq!(puxar(&mut j), (0, 10));
+        j.receber(0, vec![ev(1, 1), ev(3, 1), ev(4, 1)]);
+        assert_eq!(puxar(&mut j), (1, 20));
+        j.receber(1, vec![ev(2, 1), ev(4, 1)]);
+        let (g, inteiro) = aplicar(&mut j);
+        assert!(inteiro);
+        assert_eq!(g, vec![(0, vec![1, 3, 4]), (1, vec![2, 4])]);
+    }
+
+    /// A fronteira do `posicao` e de commit: o que vem depois dela fica para
+    /// a proxima rodada, mesmo que o source o mande.
+    #[test]
+    fn o_que_passa_da_fronteira_do_posicao_nao_entra() {
+        let mut j = Juntador::novo(&[(0, 2)], TETO_DA_TRANSACAO);
+        puxar(&mut j);
+        j.receber(0, vec![ev(1, 1), ev(1, 1), ev(2, 1)]);
+        let (g, _) = aplicar(&mut j);
+        assert_eq!(g, vec![(0, vec![1, 1])]);
+        assert!(matches!(j.passo(), Passo::Fim));
+    }
+
+    /// O evento sem id (volume velho, source anterior ao 676) vai sozinho,
+    /// como sempre foi -- e nao segura nada esperando.
+    #[test]
+    fn o_evento_sem_id_nao_espera_ninguem() {
+        let mut j = Juntador::novo(&[(0, 3), (0, 1)], TETO_DA_TRANSACAO);
+        puxar(&mut j);
+        j.receber(0, vec![ev(0, 1), ev(0, 1)]);
+        puxar(&mut j);
+        j.receber(1, vec![ev(0, 1)]);
+        // A fila 0 ainda tem um evento a puxar e esta com dois na mao: os
+        // dois sem id se aplicam sem esperar o terceiro.
+        let (g, inteiro) = aplicar(&mut j);
+        assert!(inteiro);
+        assert_eq!(g, vec![(0, vec![0, 0]), (1, vec![0])]);
+    }
+
+    /// **Acima do teto, em pedacos -- contados.** A transacao 7 nao cabe:
+    /// vai o que esta na mao, `inteiro` falso, e a conta sobe UMA vez. O
+    /// ultimo pedaco tambem sai marcado, e a transacao seguinte volta a ser
+    /// inteira.
+    #[test]
+    fn a_transacao_acima_do_teto_vai_em_pedacos_e_e_contada_uma_vez() {
+        let mut j = Juntador::novo(&[(0, 6), (0, 1)], 1_000);
+        puxar(&mut j);
+        j.receber(0, vec![ev(7, 400), ev(7, 400)]);
+        puxar(&mut j);
+        j.receber(1, vec![ev(7, 400)]);
+        let (g, inteiro) = aplicar(&mut j);
+        assert!(!inteiro);
+        assert_eq!(g, vec![(0, vec![7, 7]), (1, vec![7])]);
+        assert_eq!(j.em_pedacos, 1);
+        assert_eq!(puxar(&mut j), (0, 2));
+        j.receber(0, vec![ev(7, 400), ev(7, 400)]);
+        let (_, inteiro) = aplicar(&mut j);
+        assert!(!inteiro);
+        assert_eq!(j.em_pedacos, 1, "a mesma transacao contou duas vezes");
+        puxar(&mut j);
+        j.receber(0, vec![ev(7, 1), ev(8, 1)]);
+        let (g, inteiro) = aplicar(&mut j);
+        assert!(!inteiro, "o ultimo pedaco da partida saiu como inteiro");
+        assert_eq!(g, vec![(0, vec![7])]);
+        let (g, inteiro) = aplicar(&mut j);
+        assert!(inteiro);
+        assert_eq!(g, vec![(0, vec![8])]);
+        assert_eq!(j.em_pedacos, 1);
+    }
+
+    /// O source que encolheu entre o `posicao` e o `replicar` (lote vazio)
+    /// e a tabela que rompeu saem da rodada sem pendurar o laco.
+    #[test]
+    fn a_tabela_vazia_ou_rompida_nao_pendura_a_rodada() {
+        let mut j = Juntador::novo(&[(0, 5), (0, 2)], TETO_DA_TRANSACAO);
+        puxar(&mut j);
+        j.receber(0, vec![]);
+        puxar(&mut j);
+        j.receber(1, vec![ev(1, 1)]);
+        j.largar(1);
+        assert!(matches!(j.passo(), Passo::Fim));
+    }
+
+    #[test]
+    fn o_id_vai_e_volta_pelo_fio_inteiro() {
+        for tx in [1u64, (1 << 53) + 1, u64::MAX - 1] {
+            let fio = tx_para_o_fio(tx).escrever();
+            assert_eq!(tx_do_fio(Some(&Json::analisar(&fio).unwrap())), tx);
+        }
+        assert_eq!(tx_do_fio(None), 0);
+        assert_eq!(tx_do_fio(Some(&Json::texto_de("x"))), 0);
     }
 }

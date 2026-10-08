@@ -7,14 +7,31 @@
 //! cadastroClientes.reg + .ndx + .bin + .memo + .log = cadastroClientes
 //! ```
 //!
-//! # Evento: 44 bytes de cabecalho, e talvez um corpo
+//! # Evento: 52 bytes de cabecalho (44 ate a versao 3), e talvez um corpo
 //!
 //! ```text
-//! [carimbo i64 ms][operacao u8][flags u8][res u16]
+//! [carimbo i64 ms][operacao u8][flags u8][origem u16]
 //! [rowid u64][versao u64][usuario u32]
-//! [tam_imagem u32][crc32 u32][res u32]
+//! [tam_imagem u32][crc32 u32][tempero u32]
+//! [tx u64]                                  <- so na versao 4 (pedido 676)
 //! [imagem ... tam_imagem bytes]
 //! ```
+//!
+//! # O id de transacao (versao 4, pedido 676)
+//!
+//! Todo evento gravado numa mesma tomada da trava de escrita do servidor leva
+//! o MESMO `tx` -- e um commit entre tabelas e uma tomada so. E com ele que a
+//! replica junta os eventos de varias tabelas e aplica a transacao da origem
+//! inteira, ou nada (`docs/FORMATO.md` §4, `docs/REPLICACAO.md`). O numero e
+//! do PROCESSO, estritamente crescente: `max(ultimo + 1, relogio_ms << 16)`.
+//! O relogio entra para que um processo que reinicia nao emita numero menor
+//! que o de antes sem precisar persistir contador nenhum -- o mesmo motivo
+//! do nonce sair do offset, e nao de um contador gravado a cada evento.
+//!
+//! A versao e por VOLUME, como a da cifra: um volume gravado na 2 ou na 3
+//! continua com eventos de 44 bytes e `tx` zero ate a paginacao virar, porque
+//! um arquivo append-only nao se reescreve. Zero quer dizer «sem id», e a
+//! replica aplica esse evento sozinho, como sempre aplicou.
 //!
 //! O carimbo e em milissegundos desde 1970-01-01T00:00:00Z, o que da
 //! resolucao suficiente para ordenar operacoes dentro do mesmo segundo.
@@ -77,8 +94,14 @@ use crate::volume::Volumes;
 pub const MAGIC_LOG: &[u8; 8] = b"PHXLOG\0\0";
 pub const EXT_LOG: &str = "log";
 
-/// Bytes do CABECALHO de cada evento. O corpo vem depois, se houver.
+/// Bytes do CABECALHO de cada evento nos volumes das versoes 2 e 3. O corpo
+/// vem depois, se houver.
 pub const EVENTO_CAB: usize = 44;
+/// Bytes do cabecalho do evento nos volumes da versao 4: os 44 de sempre e o
+/// id de transacao (pedido 676).
+pub const EVENTO_CAB_TX: usize = 52;
+/// Onde o id de transacao mora no evento da versao 4.
+const OFF_TX: usize = 44;
 /// Onde ficam os quatro bytes de tempero do nonce. Zerados no volume em claro.
 const OFF_TEMPERO: usize = 40;
 /// Teto da imagem de uma linha, para um tamanho corrompido nao pedir 4 GiB.
@@ -155,6 +178,39 @@ pub struct Evento {
     /// pelo arquivo precisa saber onde o proximo evento comeca sem ter a
     /// chave, e a imagem que a leitura devolve ja vem decifrada.
     pub tam_imagem: u32,
+    /// O id da transacao que gravou este evento -- pedido 676. Zero = sem
+    /// id: o evento mora num volume das versoes 2 ou 3, que nao tem onde
+    /// guarda-lo.
+    pub tx: u64,
+    /// O volume onde ele mora e da versao 4 (cabecalho de 52 bytes). Diz
+    /// quanto o evento ocupa; quem le de fora nao precisa dele.
+    largo: bool,
+}
+
+/// A largura do cabecalho do evento num volume.
+fn largura(cab: &Cabecalho) -> usize {
+    if cab.com_tx {
+        EVENTO_CAB_TX
+    } else {
+        EVENTO_CAB
+    }
+}
+
+/// O CRC do cabecalho do evento: os bytes 0..36 de sempre e, na versao 4, o
+/// id de transacao tambem -- um `tx` trocado no disco juntaria eventos de
+/// transacoes diferentes na replica, e ninguem perceberia.
+///
+/// O tempero (40..44) continua fora, como sempre esteve: no volume em claro
+/// ele e zero, e no cifrado ele ja entra no dado associado da etiqueta.
+fn crc_do_cabecalho(cab: &[u8]) -> u32 {
+    if cab.len() >= EVENTO_CAB_TX {
+        let mut b = [0u8; 44];
+        b[..36].copy_from_slice(&cab[..36]);
+        b[36..44].copy_from_slice(&cab[OFF_TX..OFF_TX + 8]);
+        crc32(&b)
+    } else {
+        crc32(&cab[..36])
+    }
 }
 
 impl Evento {
@@ -165,7 +221,15 @@ impl Evento {
 
     /// O evento ocupa isto no arquivo, cabecalho mais corpo.
     pub fn ocupa(&self) -> u64 {
-        EVENTO_CAB as u64 + self.tam_imagem as u64
+        self.largura() as u64 + self.tam_imagem as u64
+    }
+
+    fn largura(&self) -> usize {
+        if self.largo {
+            EVENTO_CAB_TX
+        } else {
+            EVENTO_CAB
+        }
     }
 
     /// O CRC cobre o cabecalho E a imagem.
@@ -173,7 +237,8 @@ impl Evento {
     /// Cobrir so o cabecalho deixaria a imagem sem conferencia -- e a imagem e
     /// justamente o que a replica vai gravar como dado. Um byte trocado ali
     /// entraria na replica sem ninguem notar.
-    fn escrever(&self, dst: &mut [u8; EVENTO_CAB], tempero: [u8; 4]) {
+    fn escrever(&self, dst: &mut [u8], tempero: [u8; 4]) {
+        debug_assert_eq!(dst.len(), self.largura());
         dst.fill(0);
         por_i64(dst, 0, self.carimbo);
         dst[8] = self.operacao.tag();
@@ -184,6 +249,9 @@ impl Evento {
         por_u32(dst, 28, self.usuario);
         por_u32(dst, 32, self.tam_imagem);
         dst[OFF_TEMPERO..OFF_TEMPERO + 4].copy_from_slice(&tempero);
+        if self.largo {
+            por_u64(dst, OFF_TX, self.tx);
+        }
     }
 
     /// O dado associado da etiqueta: o cabecalho inteiro, menos o CRC.
@@ -191,9 +259,11 @@ impl Evento {
     /// O CRC fica de fora porque ele depende do corpo, e o corpo depende da
     /// etiqueta, que depende do dado associado -- incluir os quatro bytes
     /// fecharia um circulo que nao se resolve.
-    fn associado(cab: &[u8]) -> [u8; EVENTO_CAB] {
-        let mut aad = [0u8; EVENTO_CAB];
-        aad.copy_from_slice(&cab[..EVENTO_CAB]);
+    ///
+    /// Na versao 4 o id de transacao entra junto: e cabecalho, e trocar o
+    /// `tx` de um evento cifrado derruba a etiqueta como trocar o rowid.
+    fn associado(cab: &[u8]) -> Vec<u8> {
+        let mut aad = cab.to_vec();
         aad[36..40].fill(0);
         aad
     }
@@ -205,8 +275,8 @@ impl Evento {
     }
 
     /// Fecha o CRC, que so pode ser calculado com o corpo ja pronto.
-    fn conferir_e_fechar(&self, dst: &mut [u8; EVENTO_CAB], corpo: &[u8]) {
-        let mut crc = crc32(&dst[..36]);
+    fn conferir_e_fechar(&self, dst: &mut [u8], corpo: &[u8]) {
+        let mut crc = crc_do_cabecalho(dst);
         if !corpo.is_empty() {
             crc ^= crc32(corpo);
         }
@@ -215,10 +285,15 @@ impl Evento {
 
     /// Le o cabecalho. `imagem` e `None` quando quem chama ainda nao a leu --
     /// e ai o CRC so pode ser conferido depois, com [`Evento::conferir`].
-    fn ler(src: &[u8]) -> Result<Evento> {
-        if src.len() < EVENTO_CAB {
+    ///
+    /// `largo` diz se o volume e da versao 4 -- e o cabecalho do VOLUME que
+    /// sabe, nao o evento.
+    fn ler(src: &[u8], largo: bool) -> Result<Evento> {
+        let largura = if largo { EVENTO_CAB_TX } else { EVENTO_CAB };
+        if src.len() < largura {
             return Err(PhxError::Corrompido("evento de log truncado".into()));
         }
+        let src = &src[..largura];
         let c = Campos(src);
         let tam_imagem = c.u32(32);
         if tam_imagem > IMAGEM_MAX {
@@ -234,6 +309,8 @@ impl Evento {
             usuario: c.u32(28),
             origem: c.u16(10),
             tam_imagem,
+            tx: if largo { c.u64(OFF_TX) } else { 0 },
+            largo,
         };
         if tam_imagem == 0 {
             evento.conferir(src, &[])?;
@@ -248,7 +325,7 @@ impl Evento {
     /// o corpo cifrado, que e o que esta no disco: e o que deixa a cura e o
     /// `verificar` andarem pelo arquivo inteiro SEM a chave.
     fn conferir(&self, cab: &[u8], imagem: &[u8]) -> Result<()> {
-        let mut crc = crc32(&cab[..36]);
+        let mut crc = crc_do_cabecalho(&cab[..self.largura()]);
         if !imagem.is_empty() {
             crc ^= crc32(imagem);
         }
@@ -322,9 +399,9 @@ pub struct MarcaDoDiario {
 ///
 /// O cabecalho do `.log` nao tem identidade nenhuma (o sal so existe cifrado),
 /// e inventar uma seria mudar o formato para responder uma pergunta que o
-/// proprio diario ja responde: os 44 bytes de um evento levam o carimbo em
+/// proprio diario ja responde: o cabecalho de um evento leva o carimbo em
 /// milissegundos, o rowid, a versao, o tempero e o CRC da imagem. Outra vida
-/// da tabela no mesmo `offset` com os mesmos 44 bytes nao acontece -- e a
+/// da tabela no mesmo `offset` com o mesmo cabecalho nao acontece -- e a
 /// restauracao de um backup da MESMA vida, cujo diario e um prefixo
 /// byte a byte deste, passa na conferencia e esta certa em passar: ate ali o
 /// que a marca resume continua verdade.
@@ -332,7 +409,7 @@ pub struct MarcaDoDiario {
 pub struct AncoraDaMarca {
     pub volume: u32,
     pub offset: u64,
-    /// CRC-32 dos 44 bytes do cabecalho do evento.
+    /// CRC-32 do cabecalho do evento: 44 bytes nas versoes 2 e 3, 52 na 4.
     pub selo: u32,
 }
 
@@ -472,6 +549,75 @@ pub fn anotando_tocadas() -> bool {
     ANOTANDO.with(std::cell::Cell::get)
 }
 
+// ------------------------------------------------- o id de transacao (676)
+
+/// O ultimo id de transacao emitido por este processo. 0 = nenhum ainda.
+static ULTIMO_TX: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+thread_local! {
+    /// A unidade de transacao aberta NESTA thread: `None` fora de uma, e
+    /// `Some(0)` aberta e ainda sem evento -- o id so se tira no primeiro
+    /// evento, para que tomada que so le nao gaste numero.
+    static UNIDADE: std::cell::Cell<Option<u64>> = const { std::cell::Cell::new(None) };
+}
+
+/// O proximo id de transacao: estritamente maior que todos os anteriores
+/// deste processo, e maior que o relogio em milissegundos deslocado 16 bits.
+///
+/// # Por que o relogio, e nao um contador gravado
+///
+/// A replica junta as tabelas pela ORDEM dos ids (`replica::Juntador`), entao
+/// um processo que reinicia nao pode recomecar do zero. Gravar o contador
+/// seria uma escrita a mais por commit -- a mesma que o `.log` tirou do
+/// caminho ao levar o cabecalho so no `sincronizar`. O relogio da o piso de
+/// graca: 65.536 ids por milissegundo antes de o contador passar a frente
+/// dele, e passar a frente nao quebra nada (so deixa de usar o relogio).
+///
+/// O preco, escrito: um relogio que RECUA alem do que o contador andou entre
+/// um arranque e outro emite id menor que o da vida anterior. A replica nao
+/// perde dado por isso -- cada tabela continua na ordem do proprio diario --,
+/// mas a transacao daquele trecho pode chegar em pedacos.
+pub fn proximo_tx() -> u64 {
+    let piso = (agora_ms().max(0) as u64) << 16;
+    let anterior = ULTIMO_TX
+        .fetch_update(
+            std::sync::atomic::Ordering::SeqCst,
+            std::sync::atomic::Ordering::SeqCst,
+            |u| Some(u.saturating_add(1).max(piso)),
+        )
+        .unwrap_or_else(|u| u);
+    anterior.saturating_add(1).max(piso)
+}
+
+/// Abre a unidade de transacao desta thread: todo evento gravado ate
+/// [`fechar_unidade`] leva o mesmo id. Quem abre e a tomada da trava de
+/// escrita do servidor -- que e uma por commit, e de uma thread so.
+///
+/// Custa uma escrita numa `Cell` de thread; a tomada que nao grava evento
+/// nenhum nao gasta id.
+pub fn abrir_unidade() {
+    UNIDADE.with(|u| u.set(Some(0)));
+}
+
+/// Fecha a unidade desta thread. O evento gravado fora de unidade (a CLI, a
+/// FFI, o `phxsql-store` usado direto) ganha um id so dele.
+pub fn fechar_unidade() {
+    UNIDADE.with(|u| u.set(None));
+}
+
+/// O id do evento que vai ser gravado agora.
+fn tx_do_evento() -> u64 {
+    UNIDADE.with(|u| match u.get() {
+        Some(0) => {
+            let t = proximo_tx();
+            u.set(Some(t));
+            t
+        }
+        Some(t) => t,
+        None => proximo_tx(),
+    })
+}
+
 pub struct LogFile {
     volumes: Volumes,
     cabs: HashMap<u32, Cabecalho>,
@@ -504,7 +650,7 @@ impl LogFile {
             devendo: None,
         };
         l.volumes.criar(1)?;
-        l.gravar_cab(Cabecalho::novo(1)?)?;
+        l.gravar_cab(Cabecalho::novo_do_diario(1)?)?;
         Ok(l)
     }
 
@@ -624,7 +770,12 @@ impl LogFile {
         if let Some(c) = self.cabs.get(&volume) {
             return Ok(*c);
         }
-        let cab = cofre::ler_cabecalho_do_volume(&mut self.volumes, volume, MAGIC_LOG)?;
+        let cab = cofre::ler_cabecalho_do_volume(
+            &mut self.volumes,
+            volume,
+            MAGIC_LOG,
+            cofre::VERSAO_COM_TX,
+        )?;
         self.cabs.insert(volume, cab);
         Ok(cab)
     }
@@ -685,6 +836,8 @@ impl LogFile {
             usuario: self.usuario,
             origem,
             tam_imagem: atual.ocupa(imagem.len()) as u32,
+            tx: tx_do_evento(),
+            largo: atual.com_tx,
         };
         self.anexar(evento, imagem)?;
         // O PONTO UNICO onde o diario cresce (pedido 207): e aqui, e nao em
@@ -762,7 +915,7 @@ impl LogFile {
         self.conferir_devendo()?;
         conferir_imagem(tam_imagem)?;
         let atual = self.cab(self.volume_atual)?;
-        let ocupa = EVENTO_CAB as u64 + atual.ocupa(tam_imagem) as u64;
+        let ocupa = largura(&atual) as u64 + atual.ocupa(tam_imagem) as u64;
         self.destino(ocupa).map(|_| ())
     }
 
@@ -929,7 +1082,7 @@ impl LogFile {
             // O volume NOVO sorteia o proprio sal, e por isso tem a propria
             // chave: e o que deixa o numero de ordem do nonce ser o offset
             // dentro do volume sem nunca repetir o par (chave, nonce).
-            let novo = Cabecalho::novo(volume)?;
+            let novo = Cabecalho::novo_do_diario(volume)?;
             self.gravar_cab(novo)?;
             self.volume_atual = volume;
             novo
@@ -939,12 +1092,19 @@ impl LogFile {
         // Virar de volume pode ter trocado a cifra (o volume velho em claro, o
         // novo cifrado): o tamanho que vai ao cabecalho e o do volume DESTINO.
         evento.tam_imagem = cab.ocupa(imagem.len()) as u32;
+        // E a largura do evento tambem: o volume velho (2 ou 3) nao tem onde
+        // guardar o id, e o evento entra nele com 44 bytes e `tx` zero.
+        evento.largo = cab.com_tx;
+        if !evento.largo {
+            evento.tx = 0;
+        }
 
         let tempero = tempero_novo(&cab);
-        let mut buf = [0u8; EVENTO_CAB];
-        evento.escrever(&mut buf, tempero);
-        let corpo = cab.selar(tempero, cab.fim, &Evento::associado(&buf), imagem);
-        evento.conferir_e_fechar(&mut buf, &corpo);
+        let mut cheio = [0u8; EVENTO_CAB_TX];
+        let buf = &mut cheio[..largura(&cab)];
+        evento.escrever(buf, tempero);
+        let corpo = cab.selar(tempero, cab.fim, &Evento::associado(buf), imagem);
+        evento.conferir_e_fechar(buf, &corpo);
         #[cfg(debug_assertions)]
         if let Some(erro) = crate::sincronia::falha_de_teste::disparar(
             &self.volumes.caminho(volume),
@@ -952,10 +1112,10 @@ impl LogFile {
         ) {
             return Err(PhxError::Io(erro));
         }
-        self.volumes.escrever(volume, cab.fim, &buf)?;
+        self.volumes.escrever(volume, cab.fim, buf)?;
         if !corpo.is_empty() {
             self.volumes
-                .escrever(volume, cab.fim + EVENTO_CAB as u64, &corpo)?;
+                .escrever(volume, cab.fim + buf.len() as u64, &corpo)?;
         }
         // O CABECALHO NAO VAI A DISCO AQUI, e essa e a diferenca que faz o
         // diario nao atrasar o `.reg`.
@@ -1026,10 +1186,12 @@ impl LogFile {
         let tamanho = self.volumes.tamanho(volume)?;
         let mut achados = 0u64;
 
-        while cab.fim + EVENTO_CAB as u64 <= tamanho {
-            let mut buf = [0u8; EVENTO_CAB];
-            self.volumes.ler(volume, cab.fim, &mut buf)?;
-            let evento = match Evento::ler(&buf) {
+        let larg = largura(&cab);
+        while cab.fim + larg as u64 <= tamanho {
+            let mut cheio = [0u8; EVENTO_CAB_TX];
+            let buf = &mut cheio[..larg];
+            self.volumes.ler(volume, cab.fim, buf)?;
+            let evento = match Evento::ler(buf, cab.com_tx) {
                 Ok(e) => e,
                 Err(_) => break,
             };
@@ -1039,8 +1201,8 @@ impl LogFile {
             if evento.tam_imagem > 0 {
                 let mut imagem = vec![0u8; evento.tam_imagem as usize];
                 self.volumes
-                    .ler(volume, cab.fim + EVENTO_CAB as u64, &mut imagem)?;
-                if evento.conferir(&buf, &imagem).is_err() {
+                    .ler(volume, cab.fim + larg as u64, &mut imagem)?;
+                if evento.conferir(buf, &imagem).is_err() {
                     break;
                 }
             }
@@ -1159,10 +1321,12 @@ impl LogFile {
                 _ => cab.cab_len as u64,
             };
             let nome = self.volumes.caminho(volume).display().to_string();
-            while offset + EVENTO_CAB as u64 <= cab.fim {
-                let mut buf = [0u8; EVENTO_CAB];
-                self.volumes.ler(volume, offset, &mut buf)?;
-                let evento = Evento::ler(&buf)?;
+            let larg = largura(&cab);
+            while offset + larg as u64 <= cab.fim {
+                let mut cheio = [0u8; EVENTO_CAB_TX];
+                let buf = &mut cheio[..larg];
+                self.volumes.ler(volume, offset, buf)?;
+                let evento = Evento::ler(buf, cab.com_tx)?;
                 if vistos >= pular {
                     // O teto de BYTES, respondido pelo cabecalho antes de
                     // qualquer alocacao. O primeiro evento entra sempre.
@@ -1184,16 +1348,16 @@ impl LogFile {
                     if evento.tam_imagem > 0 {
                         imagem = vec![0u8; evento.tam_imagem as usize];
                         self.volumes
-                            .ler(volume, offset + EVENTO_CAB as u64, &mut imagem)?;
-                        evento.conferir(&buf, &imagem)?;
+                            .ler(volume, offset + larg as u64, &mut imagem)?;
+                        evento.conferir(buf, &imagem)?;
                         if com_imagem {
                             // O nonce sai do offset do evento no volume, que
                             // e a ordem que um arquivo append-only nunca
                             // reaproveita. Ver `cofre::nonce_de`.
                             imagem = cab.abrir(
-                                Evento::tempero(&buf),
+                                Evento::tempero(buf),
                                 offset,
-                                &Evento::associado(&buf),
+                                &Evento::associado(buf),
                                 &imagem,
                                 &nome,
                             )?;
@@ -1205,7 +1369,7 @@ impl LogFile {
                     let ancora = AncoraDaMarca {
                         volume,
                         offset,
-                        selo: crc32(&buf),
+                        selo: crc32(buf),
                     };
                     ultimo = Some(ancora);
                     if limite > 0 && saida.len() as u64 >= limite {
@@ -1242,7 +1406,7 @@ impl LogFile {
 
     /// A marca e DESTE diario? -- pedido 620.
     ///
-    /// Confere os 44 bytes do evento ancora contra o selo que a marca levou.
+    /// Confere o cabecalho do evento ancora contra o selo que a marca levou.
     /// Volume que nao existe, ancora depois do `fim` ou leitura que falha
     /// respondem `false`: a pergunta e «posso confiar nela», e na duvida a
     /// resposta custa uma varredura, nunca um evento.
@@ -1254,19 +1418,21 @@ impl LogFile {
         let Ok(cab) = self.cab(a.volume) else {
             return false;
         };
-        if a.offset < cab.cab_len as u64 || a.offset + EVENTO_CAB as u64 > cab.fim {
+        let larg = largura(&cab);
+        if a.offset < cab.cab_len as u64 || a.offset + larg as u64 > cab.fim {
             return false;
         }
-        let mut buf = [0u8; EVENTO_CAB];
-        if self.volumes.ler(a.volume, a.offset, &mut buf).is_err() {
+        let mut cheio = [0u8; EVENTO_CAB_TX];
+        let buf = &mut cheio[..larg];
+        if self.volumes.ler(a.volume, a.offset, buf).is_err() {
             return false;
         }
-        if crc32(&buf) != a.selo {
+        if crc32(buf) != a.selo {
             return false;
         }
         // A posicao da marca tem de ser o fim do evento ancora (mesmo volume)
         // ou o comeco do volume seguinte -- senao a marca foi montada a mao.
-        let Ok(ev) = Evento::ler(&buf) else {
+        let Ok(ev) = Evento::ler(buf, cab.com_tx) else {
             return false;
         };
         let depois = a.offset + ev.ocupa();
@@ -1321,18 +1487,20 @@ impl LogFile {
             let cab = self.cab(volume)?;
             let mut offset = cab.cab_len as u64;
             let mut no_volume = 0u64;
-            while offset + EVENTO_CAB as u64 <= cab.fim {
-                let mut buf = [0u8; EVENTO_CAB];
-                self.volumes.ler(volume, offset, &mut buf)?;
-                let evento = Evento::ler(&buf)?; // confere a operacao, e o CRC se nao ha imagem
+            let larg = largura(&cab);
+            while offset + larg as u64 <= cab.fim {
+                let mut cheio = [0u8; EVENTO_CAB_TX];
+                let buf = &mut cheio[..larg];
+                self.volumes.ler(volume, offset, buf)?;
+                let evento = Evento::ler(buf, cab.com_tx)?; // confere a operacao, e o CRC se nao ha imagem
                 if evento.tam_imagem > 0 {
                     // Com imagem o CRC so fecha depois de le-la. Conferir so o
                     // cabecalho aqui deixaria de fora justamente os bytes que
                     // a replica grava como dado.
                     let mut imagem = vec![0u8; evento.tam_imagem as usize];
                     self.volumes
-                        .ler(volume, offset + EVENTO_CAB as u64, &mut imagem)?;
-                    evento.conferir(&buf, &imagem)?;
+                        .ler(volume, offset + larg as u64, &mut imagem)?;
+                    evento.conferir(buf, &imagem)?;
                 }
                 no_volume += 1;
                 offset += evento.ocupa();
@@ -1658,7 +1826,9 @@ mod tests {
         }
         {
             let mut v = Volumes::novo(&d, "t", EXT_LOG, Paginacao::DESLIGADA);
-            v.escrever(1, cofre::CAB_V2 as u64 + 12, &[9u8; 8]).unwrap();
+            // O rowid do primeiro evento: o volume da versao 4 tem cabecalho
+            // de 128 bytes, em claro ou cifrado (pedido 676).
+            v.escrever(1, cofre::CAB_V3 as u64 + 12, &[9u8; 8]).unwrap();
         }
         let mut l = LogFile::abrir(&d, "t", Paginacao::DESLIGADA).unwrap();
         assert!(l.verificar().is_err());
@@ -1723,6 +1893,179 @@ mod tests {
         assert_eq!(l.ler_com_imagem_ate(0, 1, usize::MAX).unwrap().len(), 1);
         // Sem imagem, o mesmo diario inteiro passa por um teto de 1 byte.
         assert_eq!(l.ler(0, 0).unwrap().len(), 2);
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    // ------------------------------------------- o id de transacao (676)
+
+    /// Um volume da VERSAO 2 montado byte a byte, sem passar pelo
+    /// `anexar` de hoje: cabecalho de 64 bytes e eventos de 44, com o CRC
+    /// da formula de sempre (bytes 0..36 e o corpo). E o `.log` que um
+    /// binario anterior ao 676 deixou no disco.
+    fn diario_da_versao_2(d: &std::path::Path, pag: Paginacao, imagens: &[&[u8]]) {
+        let mut v = Volumes::novo(d, "t", EXT_LOG, pag);
+        v.criar(1).unwrap();
+        let mut fim = cofre::CAB_V2 as u64;
+        for (i, imagem) in imagens.iter().enumerate() {
+            let mut e = [0u8; EVENTO_CAB];
+            por_i64(&mut e, 0, 1_700_000_000_000 + i as i64);
+            e[8] = 1; // inclusao
+            e[9] = u8::from(!imagem.is_empty());
+            por_u64(&mut e, 12, i as u64 + 1);
+            por_u64(&mut e, 20, 1);
+            por_u32(&mut e, 32, imagem.len() as u32);
+            let mut crc = crc32(&e[..36]);
+            if !imagem.is_empty() {
+                crc ^= crc32(imagem);
+            }
+            por_u32(&mut e, 36, crc);
+            v.escrever(1, fim, &e).unwrap();
+            v.escrever(1, fim + EVENTO_CAB as u64, imagem).unwrap();
+            fim += EVENTO_CAB as u64 + imagem.len() as u64;
+        }
+        let cab = Cabecalho::novo(1).unwrap().com(fim, imagens.len() as u64);
+        assert!(!cab.com_tx && cab.cab_len == cofre::CAB_V2);
+        cofre::gravar_cabecalho_no_volume(&mut v, &cab, MAGIC_LOG).unwrap();
+    }
+
+    /// **Pedido 676: o `.log` velho continua legivel, e gravavel.** O volume
+    /// da versao 2 abre, entrega os eventos com a imagem e `tx` zero, passa
+    /// no `verificar`, e o evento novo entra nele com 44 bytes -- um arquivo
+    /// append-only nao se reescreve, entao o volume velho nao vira de versao
+    /// no meio.
+    #[test]
+    fn o_diario_da_versao_2_continua_abrindo_e_crescendo_com_44_bytes() {
+        let d = dir_temp("v2");
+        diario_da_versao_2(&d, Paginacao::DESLIGADA, &[b"Blumenau", b"", b"Joinville"]);
+        let tamanho = |d: &std::path::Path| std::fs::metadata(d.join("t.log")).unwrap().len();
+        let antes = tamanho(&d);
+
+        let mut l = LogFile::abrir(&d, "t", Paginacao::DESLIGADA).unwrap();
+        assert_eq!(l.verificar().unwrap(), 3);
+        let lidos = l.ler_com_imagem(0, 0).unwrap();
+        assert_eq!(lidos.len(), 3);
+        assert_eq!(lidos[0].1, b"Blumenau");
+        assert_eq!(lidos[2].1, b"Joinville");
+        assert_eq!(lidos[2].0.rowid, 3);
+        assert!(
+            lidos.iter().all(|(e, _)| e.tx == 0),
+            "evento da versao 2 sem id"
+        );
+
+        l.registrar_com_imagem(Operacao::Alteracao, 2, 2, b"Itajai")
+            .unwrap();
+        l.sincronizar().unwrap();
+        assert_eq!(
+            tamanho(&d) - antes,
+            EVENTO_CAB as u64 + 6,
+            "o evento novo no volume velho tem de ter 44 bytes"
+        );
+        drop(l);
+        let mut l = LogFile::abrir(&d, "t", Paginacao::DESLIGADA).unwrap();
+        assert_eq!(l.verificar().unwrap(), 4);
+        let ultimo = l.ler_com_imagem(3, 1).unwrap();
+        assert_eq!(ultimo[0].1, b"Itajai");
+        assert_eq!(
+            ultimo[0].0.tx, 0,
+            "o volume velho nao tem onde guardar o id"
+        );
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    /// O volume que vira a partir de um velho nasce na versao 4: e assim que
+    /// uma tabela antiga ganha o id de transacao, sem conversao.
+    #[test]
+    fn o_volume_seguinte_ao_velho_nasce_na_versao_4() {
+        let d = dir_temp("v2-vira");
+        let pag = Paginacao::nova(10, 99)
+            .unwrap()
+            .com_bytes_por_arquivo(200)
+            .unwrap();
+        diario_da_versao_2(&d, pag, &[b"um", b"dois"]);
+        let mut l = LogFile::abrir(&d, "t", pag).unwrap();
+        for i in 3..=12u64 {
+            l.registrar(Operacao::Inclusao, i, 1).unwrap();
+        }
+        l.sincronizar().unwrap();
+        assert!(l.volumes().len() > 1);
+        assert_eq!(l.verificar().unwrap(), 12);
+        let todos = l.ler(0, 0).unwrap();
+        assert!(todos[..2].iter().all(|e| e.tx == 0));
+        assert!(
+            todos.last().unwrap().tx > 0,
+            "o volume novo tem de levar o id"
+        );
+        let mut v = Volumes::novo(&d, "t", EXT_LOG, pag);
+        let ultimo = *v.existentes().last().unwrap();
+        let cab = cofre::ler_cabecalho_do_volume(&mut v, ultimo, MAGIC_LOG, 4).unwrap();
+        assert!(cab.com_tx && cab.cab_len == cofre::CAB_V3);
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    /// O binario ANTERIOR ao 676 le o cabecalho com versao maxima 3: o
+    /// volume da versao 4 e recusado nomeando o arquivo e as duas versoes --
+    /// e nao com «arquivo truncado», porque o cabecalho da 4 tem sempre 128
+    /// bytes e o leitor velho volta com 128 quando ve versao >= 3.
+    #[test]
+    fn o_leitor_anterior_recusa_a_versao_4_dizendo_qual() {
+        let d = dir_temp("v4-velho");
+        LogFile::criar(&d, "t", Paginacao::DESLIGADA).unwrap();
+        let mut v = Volumes::novo(&d, "t", EXT_LOG, Paginacao::DESLIGADA);
+        match cofre::ler_cabecalho_do_volume(&mut v, 1, MAGIC_LOG, 3) {
+            Err(PhxError::VersaoNaoSuportada {
+                arquivo,
+                encontrada,
+                suportada,
+            }) => {
+                assert_eq!((encontrada, suportada), (4, 3));
+                assert!(arquivo.ends_with("t.log"), "{arquivo}");
+            }
+            outro => panic!("o leitor da versao 3 tinha de recusar a 4: {outro:?}"),
+        }
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    /// O CRC cobre o id: um `tx` trocado no disco juntaria na replica
+    /// eventos de transacoes diferentes, e tem de derrubar a leitura.
+    #[test]
+    fn o_id_de_transacao_adulterado_falha_no_crc() {
+        let d = dir_temp("tx-crc");
+        {
+            let mut l = LogFile::criar(&d, "t", Paginacao::DESLIGADA).unwrap();
+            l.registrar(Operacao::Inclusao, 1, 1).unwrap();
+            l.sincronizar().unwrap();
+        }
+        {
+            let mut v = Volumes::novo(&d, "t", EXT_LOG, Paginacao::DESLIGADA);
+            v.escrever(1, cofre::CAB_V3 as u64 + OFF_TX as u64, &[7u8; 8])
+                .unwrap();
+        }
+        let mut l = LogFile::abrir(&d, "t", Paginacao::DESLIGADA).unwrap();
+        assert!(l.verificar().is_err(), "o tx adulterado passou no CRC");
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    /// Uma unidade, um id -- em quantas tabelas for. Fora dela, cada evento
+    /// tem o seu, e os ids so crescem.
+    #[test]
+    fn a_unidade_da_o_mesmo_id_as_tabelas_e_fora_dela_cada_evento_tem_o_seu() {
+        let d = dir_temp("tx-unidade");
+        let mut a = LogFile::criar(&d, "a", Paginacao::DESLIGADA).unwrap();
+        let mut b = LogFile::criar(&d, "b", Paginacao::DESLIGADA).unwrap();
+        let solto = a.registrar(Operacao::Inclusao, 1, 1).unwrap().tx;
+        abrir_unidade();
+        let x = a.registrar(Operacao::Inclusao, 2, 1).unwrap().tx;
+        let y = b.registrar(Operacao::Inclusao, 1, 1).unwrap().tx;
+        let z = b.registrar(Operacao::Inclusao, 2, 1).unwrap().tx;
+        fechar_unidade();
+        let depois = a.registrar(Operacao::Inclusao, 3, 1).unwrap().tx;
+        let de_novo = b.registrar(Operacao::Inclusao, 3, 1).unwrap().tx;
+        assert!(solto > 0);
+        assert_eq!((x, y), (z, z), "a unidade deu ids diferentes");
+        assert!(solto < x && x < depois && depois < de_novo);
+        // E o que vai ao disco e o que voltou do registro.
+        let lidos: Vec<u64> = b.ler(0, 0).unwrap().iter().map(|e| e.tx).collect();
+        assert_eq!(lidos, vec![x, x, de_novo]);
         std::fs::remove_dir_all(&d).unwrap();
     }
 }

@@ -1274,7 +1274,7 @@ AEAD com dado associado (§2.8.2). Nada foi aceito por parecer certo.
 Os três são *append-only*, e isso decide quase tudo.
 
 **Cifra-se o corpo, não o cabeçalho.** No `.log` o evento é 44 bytes de
-cabeçalho mais um corpo opcional — e é o corpo que carrega a imagem da linha,
+cabeçalho (52 na versão 4, com o id de transação — pedido 676) mais um corpo opcional — e é o corpo que carrega a imagem da linha,
 que é o dado do cliente. O cabeçalho carrega carimbo, rowid, versão e usuário.
 Se o cabeçalho fosse cifrado, **ninguém caminharia pelo arquivo sem a chave**:
 é o `tam_imagem` dele que diz onde começa o próximo evento. Reindexar, contar

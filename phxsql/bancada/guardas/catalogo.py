@@ -129,20 +129,18 @@ TROCA_CURSOR = """        // DEFEITO REPOSTO (pedido 188): o cursor sem o `+1` d
             pos += 1;
         }"""
 
-DEFEITO_ALCANCAR_TABELA = """        let mut aplicados = 0u64;
-        while posicao < no.eventos {
-            // DEFEITO REPOSTO: a trava de dados e tomada ANTES da leitura de
-            // rede e segurada durante ela -- e no meio do laco mora
-            // `replica::puxar`, que e uma ida e volta de rede. Rede sa
-            // esconde; source mudo prende o servidor inteiro ate o prazo de
-            // leitura de 30 s estourar.
-            let presa_atras_da_rede = self.travar_dados()?;
-            let desde = posicao.saturating_sub(1);
-            let eventos = crate::replica::puxar(cliente, database, &no.nome, desde)?;
-            drop(presa_atras_da_rede);
-            if eventos.is_empty() {
-                break;
-            }
+DEFEITO_ALCANCAR_TABELA = """                    // DEFEITO REPOSTO: a trava de dados e tomada ANTES da
+                    // leitura de rede e segurada durante ela -- e ali mora
+                    // `replica::puxar`, que e uma ida e volta de rede. Rede sa
+                    // esconde; source mudo prende o servidor inteiro ate o
+                    // prazo de leitura de 30 s estourar.
+                    let presa_atras_da_rede = self.travar_dados()?;
+                    let mut eventos =
+                        match crate::replica::puxar(cliente, database, &f.no.nome, pedir) {
+                            Ok(e) => e,
+                            Err(e) => break Err(e),
+                        };
+                    drop(presa_atras_da_rede);
 """
 
 # REANCORADO em 17/09/2026 (onda 3, papel G): o commit `49a3af7` (papel B,
@@ -154,19 +152,16 @@ DEFEITO_ALCANCAR_TABELA = """        let mut aplicados = 0u64;
 # dentro do laco. A entrada foi reancorada ali, e nao na funcao inteira --
 # o resto da funcao (a checagem de continuidade, o ramo `posicao >=
 # no.eventos`) nao toca o defeito que esta guarda prova.
-HOJE_ALCANCAR_TABELA = """        let mut aplicados = 0u64;
-        while posicao < no.eventos {
-            // FORA da trava. Se a conexao cair aqui, o lote se perde e nada
-            // foi gravado: a posicao local nao andou, e a proxima rodada pede
-            // exatamente os mesmos eventos. Nao ha meio-lote possivel porque
-            // o lote inteiro chega antes de a trava ser pedida.
-            //
-            // A partir de `posicao - 1`: o primeiro evento e a conferencia.
-            let desde = posicao.saturating_sub(1);
-            let eventos = crate::replica::puxar(cliente, database, &no.nome, desde)?;
-            if eventos.is_empty() {
-                break;
-            }
+# REANCORADO de novo em 07/10/2026 (pedido 676): o laco que puxa saiu de
+# `alcancar_tabela` (hoje `preparar_para_alcancar`) para
+# `alcancar_database`, que junta as tabelas pelo id de transacao. O `puxar`
+# continua FORA da trava -- e o mesmo ponto onde ela pode voltar a prender a
+# leitura de rede, e o defeito reposto e o mesmo.
+HOJE_ALCANCAR_TABELA = """                    let mut eventos =
+                        match crate::replica::puxar(cliente, database, &f.no.nome, pedir) {
+                            Ok(e) => e,
+                            Err(e) => break Err(e),
+                        };
 """
 
 # O ponto de reposicao ANDOU em 18/09/2026 (pedido 356): o `if self.sigiloso`
@@ -21888,7 +21883,10 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         "porque": (
             "pedido 300 §2.7. A replica aplica e nao julga (medido), e os tres "
             "maduros CONTAM a divergencia do aplicador. Reposto, as tres filhas "
-            "que chegam antes da mae entram e `orfas_na_replica` fica vazio."
+            "que chegam antes da mae entram e `orfas_na_replica` fica vazio. "
+            "Desde o 676 a prova fabrica a mae que NAO chega (de outra "
+            "historia): a filha que so chegava antes pelo nome deixou de ser "
+            "orfa."
         ),
         "arquivo": "crates/phxsql-store/src/table.rs",
         "trecho": """                Err(PhxError::Integridade(_)) => Some(true),""",
@@ -21897,7 +21895,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         "pacote": "phxsql-server",
         "alvo": ["--test", "orfas-na-replica"],
         "caem": [
-            "a_filha_que_chega_antes_da_mae_e_contada",
+            "a_filha_cuja_mae_nao_chega_e_contada",
             "no_bidirecional_a_filha_antes_da_mae_tambem_e_contada",
         ],
         "seguem": ["com_a_mae_primeiro_nada_e_contado"],
@@ -21919,7 +21917,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         "alvo": ["--test", "orfas-na-replica"],
         "caem": ["no_bidirecional_a_filha_antes_da_mae_tambem_e_contada"],
         "seguem": [
-            "a_filha_que_chega_antes_da_mae_e_contada",
+            "a_filha_cuja_mae_nao_chega_e_contada",
             "com_a_mae_primeiro_nada_e_contado",
         ],
         "prazo": 1800,
@@ -25695,6 +25693,123 @@ fn anotar(""",
         "seguem": [
             "o_novo_trocado_entre_as_fases_e_recusado",
             "round_trip_devolve_o_payload_byte_a_byte",
+        ],
+    },
+    {
+        "id": "replica-aplica-o-que-chegou-sem-esperar-a-transacao",
+        "titulo": "A réplica volta a aplicar o que chegou, lote a lote e tabela a tabela: com o fio caído no meio do envio o central mostra a venda pela metade (pedido 676)",
+        "porque": (
+            "pedido 676 (o 299 pago pelo 325): o diario e por tabela, e a "
+            "replica alcancava uma tabela de cada vez, cada lote sob a propria "
+            "tomada. Medido pelo soquete com o defeito reposto: o central parado "
+            "com o fio caido mostra (vendas, itens, pagamentos) = (0, 3, 0), "
+            "(0, 500, 0) e (0, 600, 1). O `Juntador` so solta a transacao "
+            "inteira na mao."
+        ),
+        "arquivo": "crates/phxsql-server/src/replica.rs",
+        "trecho": """    pub fn passo(&mut self) -> Passo {
+        let mut grupo: Vec<(usize, Vec<EventoRecebido>)> = Vec::new();
+""",
+        "troca": """    pub fn passo(&mut self) -> Passo {
+        // DEFEITO REPOSTO (676): aplica o que chegou, lote a lote e tabela a
+        // tabela, sem esperar a transacao inteira -- o alcance de antes.
+        let chegou: Vec<(usize, Vec<EventoRecebido>)> = self
+            .filas
+            .iter_mut()
+            .enumerate()
+            .filter(|(_, f)| !f.eventos.is_empty())
+            .map(|(i, f)| (i, f.eventos.drain(..).collect()))
+            .collect();
+        if !chegou.is_empty() {
+            return Passo::Aplicar {
+                grupo: chegou,
+                inteiro: true,
+            };
+        }
+        let mut grupo: Vec<(usize, Vec<EventoRecebido>)> = Vec::new();
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "venda-inteira-na-replica"],
+        "caem": [
+            "a_venda_de_varias_tabelas_nao_aparece_pela_metade_quando_o_fio_cai",
+            "a_venda_maior_que_um_lote_nao_aparece_pela_metade_quando_o_fio_cai",
+            "a_venda_nao_aparece_pela_metade_mesmo_com_as_tres_tabelas_na_mao",
+        ],
+        "seguem": [],
+    },
+    {
+        "id": "tomada-da-trava-sem-unidade-do-diario",
+        "titulo": "A tomada da trava de escrita deixa de abrir a unidade do diário: cada evento de um COMMIT ganha id próprio e a réplica aplica a venda em pedaços (pedido 676)",
+        "porque": (
+            "pedido 676: o id de transacao e o mesmo para a tomada inteira "
+            "porque a tomada e o commit. Sem a unidade, cada evento e uma "
+            "transacao de um evento so, e o `Juntador` solta a venda e os "
+            "itens que chegaram sem esperar o resto. Medido pelo soquete com "
+            "o defeito reposto: (1, 499, 0) com o fio caido. A prova do corte "
+            "no 2.o `replicar` entre tabelas NAO pega este defeito (o "
+            "`Juntador` puxa todas as tabelas antes de aplicar), e por isso "
+            "esta no `seguem`."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        // que toma a trava de escrita. Custa uma `Cell` de thread.
+        phxsql_store::log::abrir_unidade();""",
+        "troca": """        // que toma a trava de escrita. Custa uma `Cell` de thread.
+        // DEFEITO REPOSTO (676): a tomada nao abre a unidade do diario.
+        // phxsql_store::log::abrir_unidade();""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "venda-inteira-na-replica"],
+        "caem": [
+            "a_venda_maior_que_um_lote_nao_aparece_pela_metade_quando_o_fio_cai",
+            "a_venda_nao_aparece_pela_metade_mesmo_com_as_tres_tabelas_na_mao",
+        ],
+        "seguem": [
+            "a_venda_de_varias_tabelas_nao_aparece_pela_metade_quando_o_fio_cai",
+        ],
+    },
+    {
+        "id": "crc-do-evento-sem-o-id-de-transacao",
+        "titulo": "O CRC do evento da versão 4 do `.log` deixa de cobrir o id de transação: um `tx` trocado no disco passa no `verificar` (pedido 676)",
+        "porque": (
+            "pedido 676: o id de transacao decide o que a replica junta. Um "
+            "`tx` adulterado juntaria eventos de transacoes diferentes sem "
+            "ninguem perceber; o CRC do cabecalho tem de cobri-lo como cobre o "
+            "rowid."
+        ),
+        "arquivo": "crates/phxsql-store/src/log.rs",
+        "trecho": """        b[36..44].copy_from_slice(&cab[OFF_TX..OFF_TX + 8]);
+""",
+        "troca": """        // DEFEITO REPOSTO (676): o id fica fora do CRC.
+        let _ = &cab[OFF_TX..OFF_TX + 8];
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--lib"],
+        "caem": [
+            "log::tests::o_id_de_transacao_adulterado_falha_no_crc",
+        ],
+        "seguem": [
+            "log::tests::evento_adulterado_falha_no_crc",
+            "log::tests::o_diario_da_versao_2_continua_abrindo_e_crescendo_com_44_bytes",
+        ],
+    },
+    {
+        "id": "grupo-sem-a-vez-das-maes",
+        "titulo": "O grupo da réplica volta a aplicar as tabelas na ordem da chegada: a filha do mesmo commit entra antes da mãe e é contada órfã sem nunca ter sido visível sem ela (pedido 676)",
+        "porque": (
+            "pedido 676: o grupo vai sob uma tomada, mas tabela por tabela, e "
+            "a contagem de orfas (300 §2.7) ve a ordem. Medido com o defeito "
+            "reposto: `{\"loja/a_itens\":{\"orfas\":1}}` para um commit que "
+            "grava a mae e a filha juntas -- alarme falso."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        grupo.sort_by_key(|(i, _)| filas[*i].ordem);""",
+        "troca": """        // DEFEITO REPOSTO (676): a ordem da chegada, sem a vez das maes.
+        let _ = &filas;""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "orfas-na-replica"],
+        "caem": ["a_mae_do_mesmo_commit_entra_antes_da_filha"],
+        "seguem": [
+            "a_filha_cuja_mae_nao_chega_e_contada",
+            "com_a_mae_primeiro_nada_e_contado",
         ],
     },
 ]

@@ -1,5 +1,5 @@
 {
-  "quando": "2026-10-07 16:41",
+  "quando": "2026-10-08 00:12",
   "mais_antigo": "2026-09-16 15:25",
   "guardas": [
     {
@@ -5266,9 +5266,9 @@
       "id": "replica-grava-filha-sem-mae-calada",
       "titulo": "A réplica gravava a filha sem a mãe e nada contava: o invariante «só existe filho se o pai existir» caía calado",
       "veredito": "PROVADA",
-      "segundos": 20.56,
+      "segundos": 27.85,
       "notas": [],
-      "quando": "2026-10-01 17:01"
+      "quando": "2026-10-08 00:12"
     },
     {
       "id": "bidi-grava-filha-sem-mae-calada",
@@ -6485,6 +6485,38 @@
       "segundos": 10.11,
       "notas": [],
       "quando": "2026-10-07 16:41"
+    },
+    {
+      "id": "replica-aplica-o-que-chegou-sem-esperar-a-transacao",
+      "titulo": "A réplica volta a aplicar o que chegou, lote a lote e tabela a tabela: com o fio caído no meio do envio o central mostra a venda pela metade (pedido 676)",
+      "veredito": "PROVADA",
+      "segundos": 28.82,
+      "notas": [],
+      "quando": "2026-10-08 00:12"
+    },
+    {
+      "id": "tomada-da-trava-sem-unidade-do-diario",
+      "titulo": "A tomada da trava de escrita deixa de abrir a unidade do diário: cada evento de um COMMIT ganha id próprio e a réplica aplica a venda em pedaços (pedido 676)",
+      "veredito": "PROVADA",
+      "segundos": 30.28,
+      "notas": [],
+      "quando": "2026-10-08 00:12"
+    },
+    {
+      "id": "crc-do-evento-sem-o-id-de-transacao",
+      "titulo": "O CRC do evento da versão 4 do `.log` deixa de cobrir o id de transação: um `tx` trocado no disco passa no `verificar` (pedido 676)",
+      "veredito": "PROVADA",
+      "segundos": 14.79,
+      "notas": [],
+      "quando": "2026-10-08 00:12"
+    },
+    {
+      "id": "grupo-sem-a-vez-das-maes",
+      "titulo": "O grupo da réplica volta a aplicar as tabelas na ordem da chegada: a filha do mesmo commit entra antes da mãe e é contada órfã sem nunca ter sido visível sem ela (pedido 676)",
+      "veredito": "PROVADA",
+      "segundos": 28.16,
+      "notas": [],
+      "quando": "2026-10-08 00:12"
     },
     {
       "id": "alter-com-regra-sem-aviso",
