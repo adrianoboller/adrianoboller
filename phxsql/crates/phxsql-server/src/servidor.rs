@@ -21860,6 +21860,120 @@ impl Servidor {
         self.descarregar_sujas_com(&dados);
     }
 
+    /// A parada pedida (pedido 687): leva ao disco o que a janela de
+    /// durabilidade segurava e FECHA a porta da escrita para sempre.
+    ///
+    /// # Por que e o fecho da janela, e nao um caminho novo
+    ///
+    /// O `.ndx` so baixa a marca de «ficou para tras numa queda» no
+    /// `sincronizar` -- o `fechar` nunca baixa (pedido 522). Toda tabela
+    /// escrita desde o ultimo fecho esta nas `sujas`, e e o
+    /// `descarregar_sujas` que as sincroniza e apaga as marcas pendentes na
+    /// ordem que a §12.6 do `docs/CONCORRENCIA.md` exige. A parada e esse
+    /// mesmo fecho chamado uma ultima vez: um segundo caminho de «fechar
+    /// tudo» seria a mesma decisao escrita duas vezes, e a que alguem
+    /// esquecesse de atualizar deixaria a parada mais fraca que o relogio.
+    ///
+    /// # Por que a trava fica PRESA no fim
+    ///
+    /// Entre o fecho soltar a trava e o processo sair, um escritor que
+    /// estava na fila entraria e sujaria uma tabela de novo, com a marca no
+    /// disco em 1 e ninguem mais para baixa-la. Entao a trava se toma de
+    /// volta e se confere a lista: vazia, a guarda e esquecida de proposito
+    /// e a escrita nao volta a entrar; cheia, o fecho roda outra vez. Por
+    /// isso esta funcao e TERMINAL -- quem a chama sai do processo depois.
+    ///
+    /// A conferencia sob a trava so le a lista: o `fsync` fica no fecho de
+    /// sempre, fora de secao critica nova (a catraca `alcancam-fsync`).
+    ///
+    /// Devolve as chaves que NAO sincronizaram (disco recusando, trava
+    /// envenenada). Vazio e a parada limpa; cheio, a marca continua em 1 e o
+    /// arranque seguinte reconstroi -- que e o lado seguro, e e dito.
+    pub fn parar_em_ordem(&self) -> Vec<String> {
+        // A janela de `por_lote` passa a contar do zero: o fecho abaixo e o
+        // dela, e o relogio nao precisa acordar para mais nada.
+        self.janela.fechar();
+        let mut ficaram = Vec::new();
+        for _ in 0..5 {
+            self.descarregar_sujas();
+            let trava = self.travar_dados();
+            // Lista envenenada: le-se o que ela tem, e nao se afirma que a
+            // janela fechou.
+            ficaram = self.sujas.lock().map_or_else(
+                |e| e.into_inner().iter().cloned().collect(),
+                |lista| lista.iter().cloned().collect(),
+            );
+            if ficaram.is_empty() {
+                if let Ok(t) = trava {
+                    // A porta da escrita fecha aqui e nao reabre: ninguem
+                    // mais grava depois do ultimo `fsync`.
+                    std::mem::forget(t);
+                }
+                break;
+            }
+            drop(trava);
+        }
+        ficaram.sort();
+        ficaram
+    }
+
+    /// Liga a parada pelo `SIGTERM`/`SIGINT` (pedido 687): uma thread olha o
+    /// pedido que o tratador grava (`crate::sinais`) e, quando ele chega,
+    /// chama [`Servidor::parar_em_ordem`] e sai do processo.
+    ///
+    /// Um olhar a cada 100 ms, e nao um despertador: o tratador de sinal nao
+    /// pode tomar mutex nem escrever em soquete, e o custo do olhar e um
+    /// `load` atomico -- o da parada e no maximo um decimo de segundo a mais,
+    /// uma vez por vida do processo.
+    ///
+    /// Chamada pelo `phxsqld` (servidor e ponte MCP), nunca pelo `escutar`: o
+    /// servidor embutido num teste ou num app nao e dono do processo, e
+    /// instalar tratador de sinal no processo alheio seria tomar uma decisao
+    /// que nao e dele.
+    pub fn parar_ao_sinal(self: &Arc<Self>) -> bool {
+        if !crate::sinais::instalar() {
+            return false;
+        }
+        let servidor = Arc::clone(self);
+        self.telemetria.subir(
+            "vigia-de-sinais",
+            "espera o SIGTERM/SIGINT da parada pedida para levar a janela de \
+             durabilidade ao disco antes de sair, em vez de morrer pelo padrao \
+             do nucleo com o .ndx marcado",
+            "servico",
+            crate::agora_ms(),
+            move |fio| {
+                fio.fazendo("esperando SIGTERM ou SIGINT");
+                let sinal = loop {
+                    if let Some(s) = crate::sinais::pedido() {
+                        break s;
+                    }
+                    std::thread::sleep(Duration::from_millis(100));
+                };
+                crate::sinais::devolver_ao_padrao();
+                fio.fazendo("parada pedida: levando a janela ao disco");
+                eprintln!(
+                    "{} recebido: parada em ordem (um segundo sinal derruba sem esperar)",
+                    crate::sinais::nome(sinal)
+                );
+                let ficaram = servidor.parar_em_ordem();
+                if ficaram.is_empty() {
+                    eprintln!("parada em ordem concluida: o que estava escrito foi ao disco");
+                    std::process::exit(0);
+                }
+                eprintln!(
+                    "ATENCAO: {} tabela(s) nao sincronizaram na parada ({}): o \
+                     indice delas continua marcado, e o proximo arranque o \
+                     reconstroi a partir do .reg",
+                    ficaram.len(),
+                    ficaram.join(", ")
+                );
+                std::process::exit(1);
+            },
+        );
+        true
+    }
+
     /// O mesmo, com a trava de dados JA na mao.
     ///
     /// Reabre cada tabela suja so para sincronizar. Custa um `open` por tabela,
@@ -43848,7 +43962,7 @@ mod testes_bulkinsert {
         assert_eq!(e.nome(), "EM_CARGA", "{e}");
         assert!(e.to_string().contains("suspenso"), "{e}");
         assert!(
-            !e.to_string().contains("reparar indice"),
+            !e.to_string().contains("reindex"),
             "mandou reparar um indice que a carga reconstroi: {e}"
         );
         // ...nem o `verificar`, que contaria «0 chaves para N registros»...
@@ -71131,7 +71245,7 @@ mod testes_do_panico_sob_a_trava {
             "a recusa nao nomeou o indice: {texto}"
         );
         assert!(
-            texto.contains("reparar indice") && !texto.contains("trava suja"),
+            texto.contains("`reindexar`") && !texto.contains("trava suja"),
             "a recusa nao mandou reconstruir o indice: {texto}"
         );
 

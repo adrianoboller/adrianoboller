@@ -183,6 +183,12 @@ CATALOGO = [
     },
     {
         "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "agulha": '"vigia-de-sinais"',
+        "nome": "vigia-de-sinais",
+        "teto": "1 por processo (`sinais::instalar` so devolve true na primeira chamada; pedido 687)",
+    },
+    {
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
         "agulha": '"amostrador"',
         "nome": "amostrador",
         "teto": "1 (sobe uma vez no arranque)",

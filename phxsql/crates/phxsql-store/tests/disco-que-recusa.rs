@@ -241,7 +241,7 @@ fn disco_ainda_cheio_deixa_a_marca_e_o_recado_certo() {
         .map_err(|e| e.to_string())
         .unwrap_err();
     assert!(
-        recado.contains("reparar indice"),
+        recado.contains("`reindexar`"),
         "o recado tinha de mandar reconstruir, e disse: {recado}"
     );
     t.reindexar().unwrap();

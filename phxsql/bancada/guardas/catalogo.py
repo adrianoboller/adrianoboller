@@ -15584,7 +15584,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
                      esta marcado e nao e confiavel: se {} tem escrita \\
                      pendente nesta mesma transacao, confirme a mae antes da \\
                      filha; se a marca ficou de uma queda ou panico anterior, \\
-                     sem ninguem mais escrevendo ali, rode `reparar indice`",
+                     sem ninguem mais escrevendo ali, rode {COMO_RECONSTRUIR}",
                     fk.nome,
                     fk.tabela_ref,
                     ndx.display(),
@@ -15633,7 +15633,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
                              se {irma} tem escrita pendente nesta mesma transacao, \\
                              confirme-a antes de alterar a mae; se a marca ficou de \\
                              uma queda ou panico anterior, sem ninguem mais escrevendo \\
-                             ali, rode `reparar indice`",
+                             ali, rode {COMO_RECONSTRUIR}",
                             fk.nome,
                             ndx.display()
                         ));
@@ -26568,5 +26568,123 @@ fn anotar(""",
             "a_loja_se_le_pelos_tres_caixas_sem_juntar_as_fontes",
         ],
         "seguem": [],
+    },
+    {
+        "id": "sinal-mata-sem-fechar-a-janela",
+        "titulo": "O `phxsqld` morre pelo padrão do núcleo no SIGTERM/SIGINT: a janela não vai ao disco e o `.ndx` fica «para trás numa queda» (pedido 687)",
+        "porque": (
+            "pedido 687, achado pelo video do CRUD: a parada comum matava o "
+            "processo sem fechar. Medido contra o SO em 08/10/2026 com o "
+            "tratamento tirado: em `sistema` e `por_lote` o processo sai pelo "
+            "sinal 15 e o `verificar` recusa com «ficou para tras numa queda»; "
+            "`por_operacao` sai INTEGRA (o controle)."
+        ),
+        "arquivo": "crates/phxsql-server/src/main.rs",
+        "trecho": """    servidor.parar_ao_sinal();
+    match servidor.escutar() {
+""",
+        "troca": """    // DEFEITO REPOSTO (687): sem tratador, o sinal mata pelo padrao.
+    match servidor.escutar() {
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "parada-pelo-sinal"],
+        "caem": [
+            "sigterm_em_sistema_sai_integra_sem_reindex",
+            "sigterm_em_por_lote_sai_integra_sem_reindex",
+            "sigint_sai_integra_sem_reindex",
+        ],
+        "seguem": [
+            "sigkill_continua_deixando_o_indice_marcado",
+        ],
+    },
+    {
+        "id": "parada-afirma-sem-levar-ao-disco",
+        "titulo": "A parada em ordem sai com código 0 sem ter sincronizado as tabelas sujas (pedido 687)",
+        "porque": (
+            "pedido 687: a parada so vale se o fecho da janela roda. Uma "
+            "parada que sai limpa sem o `descarregar_sujas` deixa o byte 52 "
+            "em 1 e AFIRMA o contrario pelo codigo de saida. Medido: o "
+            "processo sai 0 e o `verificar` recusa com «ficou para tras numa "
+            "queda» nos tres casos de sinal."
+        ),
+        "trocas": [
+            {
+                "arquivo": "crates/phxsql-server/src/servidor.rs",
+                "trecho": """            self.descarregar_sujas();
+            let trava = self.travar_dados();
+""",
+                "troca": """            // DEFEITO REPOSTO (687, 1/2): a parada nao leva a janela ao disco.
+            let trava = self.travar_dados();
+""",
+            },
+            {
+                "arquivo": "crates/phxsql-server/src/servidor.rs",
+                "trecho": """                |lista| lista.iter().cloned().collect(),
+""",
+                "troca": """                // DEFEITO REPOSTO (687, 2/2): e afirma que nada ficou.
+                |_lista| Vec::new(),
+""",
+            },
+        ],
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "parada-pelo-sinal"],
+        "caem": [
+            "sigterm_em_sistema_sai_integra_sem_reindex",
+            "sigterm_em_por_lote_sai_integra_sem_reindex",
+            "sigint_sai_integra_sem_reindex",
+        ],
+        "seguem": [
+            "sigkill_continua_deixando_o_indice_marcado",
+        ],
+    },
+    {
+        "id": "ponte-mcp-sai-sem-fechar-a-janela",
+        "titulo": "A ponte MCP termina no fim da entrada sem fechar a janela: o `.ndx` do que ela gravou fica marcado (irmão do 687)",
+        "porque": (
+            "o IRMAO do 687: a ponte escreve pelo mesmo `Servidor`, e o "
+            "relogio de gravacao so sobe no `escutar` -- na ponte a janela "
+            "nunca fechava, nem no fim normal. Medido com o defeito reposto: "
+            "5 insercoes pela ponte em `sistema`, EOF, e o `verificar` recusa "
+            "com «ficou para tras numa queda»."
+        ),
+        "arquivo": "crates/phxsql-server/src/main.rs",
+        "trecho": """    let ficaram = para_parar.parar_em_ordem();
+""",
+        "troca": """    // DEFEITO REPOSTO (687, irmao): a ponte sai sem o fecho da janela.
+    let ficaram: Vec<String> = { let _ = &para_parar; Vec::new() };
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "parada-pelo-sinal"],
+        "caem": [
+            "a_ponte_mcp_fecha_a_janela_no_fim_da_entrada",
+        ],
+        "seguem": [
+            "sigterm_em_sistema_sai_integra_sem_reindex",
+        ],
+    },
+    {
+        "id": "recusa-manda-comando-que-nao-existe",
+        "titulo": "A recusa do índice marcado manda rodar «`reparar indice`», comando que não existe em porta nenhuma (pedido 688)",
+        "porque": (
+            "pedido 688, achado pelo video do CRUD: a CLI chama `reindex`, o "
+            "protocolo `reindexar`, e so o menu da tela se chama «Reparar "
+            "indice». Erro com imperativo que manda fazer o impossivel. O "
+            "texto mora num lugar so (`ndx::COMO_RECONSTRUIR`) e as cinco "
+            "recusas o usam."
+        ),
+        "arquivo": "crates/phxsql-store/src/ndx.rs",
+        "trecho": """    "`reindexar` (no protocolo; `phxsql reindex <dir> <tabela>` na CLI, o menu Reparar indice na tela)";
+""",
+        "troca": """    // DEFEITO REPOSTO (688): o comando que nao existe.
+    "`reparar indice`";
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "ndx"],
+        "caem": [
+            "a_queda_sem_sincronizar_e_detectada_e_nao_silenciosa",
+        ],
+        "seguem": [
+            "intervalo_respeita_os_limites",
+        ],
     },
 ]

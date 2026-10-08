@@ -57,6 +57,7 @@ pub mod rotinas;
 pub mod saude_do_disco;
 pub mod segredos;
 pub mod servidor;
+pub mod sinais;
 pub mod sistema;
 pub mod telemetria;
 pub mod transacao;

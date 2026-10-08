@@ -942,7 +942,15 @@ TETO_TESTE_SEM_MODULO = 0
 # database-dele` e `uniao-cala-o-braco-cortado-no-teto`. RED medido a mao
 # (troca de cada uma aplicada, `caem` cairam, restaurado, verdes); provador
 # NAO rodou.
-PISO_DAS_ENTRADAS = 843
+# 843 -> 847 (pedidos 687 e 688, 08/10/2026 -- a parada pedida pelo sinal e o
+# comando que a recusa do indice manda rodar): nascem
+# `sinal-mata-sem-fechar-a-janela`, `parada-afirma-sem-levar-ao-disco`,
+# `ponte-mcp-sai-sem-fechar-a-janela` (as tres contra o SO: `kill -TERM`/
+# `-INT` e EOF da ponte, o `verificar` de outro processo recusando com
+# «ficou para tras numa queda») e `recusa-manda-comando-que-nao-existe`. RED
+# medido a mao (troca de cada uma aplicada, `caem` cairam, restaurado,
+# verdes); provador NAO rodou.
+PISO_DAS_ENTRADAS = 847
 
 # ------------------------------------------------------------- APOSENTADAS
 #
@@ -1331,7 +1339,7 @@ def seguem_faltando(entradas, testes_de=None):
 # Frase com menos de 5 caracteres ou sem letra nao conta (`" = "`, `"x"`,
 # `"554"`): medido, eram elas que enchiam a lista de entradas que conferem
 # saida de `strace` ou um valor de linha, e nao mensagem nenhuma.
-TETO_MENSAGEM_AMBIGUA = 82
+TETO_MENSAGEM_AMBIGUA = 81
 
 FRASE = re.compile(r'contains\(\s*"((?:[^"\\]|\\.)*)"\s*\)')
 

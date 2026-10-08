@@ -58,6 +58,20 @@ use phxsql_core::error::{PhxError, Result};
 use phxsql_core::schema::Schema;
 use phxsql_core::RowId;
 
+/// O comando que reconstroi um `.ndx`, como cada porta o chama -- pedido 688.
+///
+/// A recusa dizia «reconstrua com `reparar indice`», e esse comando nao
+/// existe em porta nenhuma: o protocolo chama `reindexar`, a CLI `reindex`, e
+/// so o menu da tela se chama «Reparar indice». Erro que manda fazer o
+/// impossivel e o defeito que a lei do caminho irmao descreve, e quem o le
+/// numa madrugada perde tempo procurando o comando em vez de rodar o certo.
+///
+/// UM texto para as cinco recusas que mandam reconstruir (as duas daqui e as
+/// tres do `table.rs`): o nome do comando escrito cinco vezes e o nome que
+/// diverge de si mesmo no dia em que um deles mudar.
+pub const COMO_RECONSTRUIR: &str =
+    "`reindexar` (no protocolo; `phxsql reindex <dir> <tabela>` na CLI, o menu Reparar indice na tela)";
+
 use crate::cofre;
 use crate::util::{
     agora, conferir_magic, escrever_em, ler_exato, por_i64, por_u16, por_u32, por_u64, Campos,
@@ -1802,7 +1816,7 @@ impl NdxFile {
         if self.precisa_reconstruir {
             return Err(PhxError::Corrompido(format!(
                 "o indice de {} ficou para tras numa queda e nao e confiavel: \
-                 reconstrua com `reparar indice` antes de usar",
+                 reconstrua com {COMO_RECONSTRUIR} antes de usar",
                 self.caminho.display()
             )));
         }
@@ -1813,7 +1827,7 @@ impl NdxFile {
         if self.escrita_interrompida {
             return Err(PhxError::Corrompido(format!(
                 "uma escrita no indice de {} parou no meio e a arvore nao e \
-                 confiavel: reconstrua com `reparar indice` antes de usar",
+                 confiavel: reconstrua com {COMO_RECONSTRUIR} antes de usar",
                 self.caminho.display()
             )));
         }

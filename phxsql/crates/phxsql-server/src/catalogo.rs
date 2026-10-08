@@ -2664,6 +2664,24 @@ pub const OPERACOES: &[Operacao] = &[
 mod testes {
     use super::*;
 
+    /// Pedido 688: a recusa do indice marcado manda rodar um comando, e pelo
+    /// protocolo ele tem de ser uma operacao que este servidor TEM -- a
+    /// recusa dizia «`reparar indice`», que nao existe em porta nenhuma. O
+    /// nome sai do texto do motor (o primeiro entre crases) e se confere
+    /// contra este catalogo, que espelha o `despachar`.
+    #[test]
+    fn a_recusa_do_indice_manda_uma_operacao_que_existe() {
+        let recado = phxsql_store::ndx::COMO_RECONSTRUIR;
+        let op = recado
+            .split('`')
+            .nth(1)
+            .unwrap_or_else(|| panic!("o recado nao nomeia operacao: {recado}"));
+        assert!(
+            por_nome(op).is_some(),
+            "o recado manda rodar `{op}`, que nao e operacao do servidor: {recado}"
+        );
+    }
+
     /// O TEXTO do `servidor.rs`, para derivar dele a lista de operações.
     ///
     /// Rust não deixa perguntar a um `match` quais braços ele tem, e a

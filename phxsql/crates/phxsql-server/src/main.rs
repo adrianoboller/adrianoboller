@@ -307,6 +307,12 @@ fn servir_mcp(args: &[String], config: phxsql_server::Config) -> ExitCode {
     // "stdio" no lugar do IP: nao ha endereco, e o log de acessos tem de dizer
     // que a operacao veio da ponte. Leitura pelo MCP que nao deixa rastro
     // seria um buraco na auditoria justamente na origem mais nova.
+    // O irmao do pedido 687: a ponte escreve pelo mesmo `Servidor`, e sem
+    // relogio de gravacao (ele sobe so no `escutar`) a janela dela so fechava
+    // por acaso. A parada pelo sinal e o fim da entrada passam pelo mesmo
+    // fecho que o servidor de rede.
+    servidor.parar_ao_sinal();
+    let para_parar = std::sync::Arc::clone(&servidor);
     let executor = phxsql_server::servidor::ExecutorLocal::novo(servidor, "stdio");
 
     if !usuario.is_empty() {
@@ -349,13 +355,29 @@ fn servir_mcp(args: &[String], config: phxsql_server::Config) -> ExitCode {
 
     let entrada = std::io::stdin().lock();
     let mut saida = std::io::stdout().lock();
-    match phxsql_server::mcp::servir(&ponte, entrada, &mut saida) {
-        Ok(()) => ExitCode::SUCCESS,
+    let servida = phxsql_server::mcp::servir(&ponte, entrada, &mut saida);
+    let ficaram = para_parar.parar_em_ordem();
+    if !ficaram.is_empty() {
+        eprintln!(
+            "ATENCAO: {} tabela(s) nao sincronizaram ao fechar a ponte ({}): o \
+             proximo arranque reconstroi o indice delas",
+            ficaram.len(),
+            ficaram.join(", ")
+        );
+    }
+    let codigo = match servida {
+        Ok(()) if ficaram.is_empty() => 0,
+        Ok(()) => 1,
         Err(e) => {
             eprintln!("a ponte MCP terminou: {e}");
-            ExitCode::FAILURE
+            1
         }
-    }
+    };
+    // Sai daqui, e nao pelo `return`: a parada deixou a trava de dados presa
+    // de proposito, e o `Drop` da ponte e do executor que viria depois do
+    // `return` nao pode ser quem descobre isso esperando por ela.
+    let _ = std::io::Write::flush(&mut saida);
+    std::process::exit(codigo);
 }
 
 /// `--empacotar-config` e `--desempacotar-config`: o `config.json` vira
@@ -802,6 +824,10 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
+    // A parada pedida (`systemctl stop`, Ctrl-C) passa pelo fecho da janela
+    // de durabilidade antes de sair -- pedido 687. Sem isto o sinal mata pelo
+    // padrao do nucleo e o `.ndx` fica marcado como depois de uma queda.
+    servidor.parar_ao_sinal();
     match servidor.escutar() {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {

@@ -135,7 +135,7 @@ fn o_processo_novo_manda_reconstruir_o_que_so_foi_fechado() {
         .buscar("porId", &[Value::Int(1)])
         .map_err(|e| e.to_string())
         .unwrap_err();
-    assert!(recado.contains("reparar indice"), "recado: {recado}");
+    assert!(recado.contains("`reindexar`"), "recado: {recado}");
     t.reindexar().unwrap();
     todos_achados(&mut t, 1..=500);
 }

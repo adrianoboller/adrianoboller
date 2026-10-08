@@ -1088,6 +1088,26 @@ mod testes {
     use super::*;
     use std::path::PathBuf;
 
+    /// Pedido 688: a recusa do indice marcado manda rodar um comando da CLI,
+    /// e esse comando tem de ser um que ESTA CLI aceita -- a recusa dizia
+    /// «`reparar indice`», que nao existe em porta nenhuma. O nome sai do
+    /// texto do motor e se confere contra o `USO`.
+    #[test]
+    fn a_recusa_do_indice_manda_um_comando_que_a_cli_tem() {
+        let recado = phxsql_store::ndx::COMO_RECONSTRUIR;
+        let comando = recado
+            .split("`phxsql ")
+            .nth(1)
+            .and_then(|r| r.split_whitespace().next())
+            .unwrap_or_else(|| panic!("o recado nao nomeia comando da CLI: {recado}"));
+        assert_eq!(comando, "reindex", "{recado}");
+        assert!(
+            USO.lines()
+                .any(|l| l.trim_start().starts_with(&format!("phxsql {comando} "))),
+            "o `USO` nao tem o comando que o recado manda rodar: {comando}"
+        );
+    }
+
     /// Diretorio temporario que se apaga no `Drop` -- pedido 150.
     ///
     /// Copia curta do guarda dos outros crates: este e um BINARIO, nao tem

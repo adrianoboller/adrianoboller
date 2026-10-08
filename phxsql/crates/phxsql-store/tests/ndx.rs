@@ -359,7 +359,8 @@ fn a_queda_sem_sincronizar_e_detectada_e_nao_silenciosa() {
         ("inserir", n.inserir(0, &chave(999_999), 1).unwrap_err()),
     ] {
         assert!(
-            e.to_string().contains("reparar indice"),
+            e.to_string().contains("phxsql reindex <dir> <tabela>")
+                && !e.to_string().contains("reparar indice"),
             "{rotulo} devia mandar reconstruir, e disse: {e}"
         );
     }

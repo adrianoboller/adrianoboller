@@ -1,5 +1,5 @@
 {
-  "quando": "2026-10-08 08:02",
+  "quando": "2026-10-08 10:10",
   "mais_antigo": "2026-09-16 15:25",
   "guardas": [
     {
@@ -6749,6 +6749,38 @@
       "segundos": 26.22,
       "notas": [],
       "quando": "2026-10-08 08:02"
+    },
+    {
+      "id": "sinal-mata-sem-fechar-a-janela",
+      "titulo": "O `phxsqld` morre pelo padrão do núcleo no SIGTERM/SIGINT: a janela não vai ao disco e o `.ndx` fica «para trás numa queda» (pedido 687)",
+      "veredito": "PROVADA",
+      "segundos": 18.95,
+      "notas": [],
+      "quando": "2026-10-08 10:00"
+    },
+    {
+      "id": "parada-afirma-sem-levar-ao-disco",
+      "titulo": "A parada em ordem sai com código 0 sem ter sincronizado as tabelas sujas (pedido 687)",
+      "veredito": "PROVADA",
+      "segundos": 17.97,
+      "notas": [],
+      "quando": "2026-10-08 10:00"
+    },
+    {
+      "id": "ponte-mcp-sai-sem-fechar-a-janela",
+      "titulo": "A ponte MCP termina no fim da entrada sem fechar a janela: o `.ndx` do que ela gravou fica marcado (irmão do 687)",
+      "veredito": "PROVADA",
+      "segundos": 19.21,
+      "notas": [],
+      "quando": "2026-10-08 10:00"
+    },
+    {
+      "id": "recusa-manda-comando-que-nao-existe",
+      "titulo": "A recusa do índice marcado manda rodar «`reparar indice`», comando que não existe em porta nenhuma (pedido 688)",
+      "veredito": "PROVADA",
+      "segundos": 7.54,
+      "notas": [],
+      "quando": "2026-10-08 10:10"
     },
     {
       "id": "alter-com-regra-sem-aviso",

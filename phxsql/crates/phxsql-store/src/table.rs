@@ -29,7 +29,7 @@ use crate::fts::{Achado, FtsFile, EXT_FTS};
 use crate::lixeira::{Descartada, LixeiraFile, EXT_TRASH};
 use crate::log::{Evento, LogFile, Operacao, EXT_LOG};
 use crate::motivo::{Motivo, MotivoFile, Tipo, EXT_REASON};
-use crate::ndx::{panico_de_teste, NdxFile};
+use crate::ndx::{panico_de_teste, NdxFile, COMO_RECONSTRUIR};
 use crate::reg::RegFile;
 use crate::reg::TrocaDaCifra;
 use crate::reg::TrocaDoEsquema;
@@ -3100,7 +3100,7 @@ impl Table {
                      esta marcado e nao e confiavel: se {} tem escrita \
                      pendente nesta mesma transacao, confirme a mae antes da \
                      filha; se a marca ficou de uma queda ou panico anterior, \
-                     sem ninguem mais escrevendo ali, rode `reparar indice`",
+                     sem ninguem mais escrevendo ali, rode {COMO_RECONSTRUIR}",
                     fk.nome,
                     fk.tabela_ref,
                     ndx.display(),
@@ -3903,7 +3903,7 @@ impl Table {
                              se {irma} tem escrita pendente nesta mesma transacao, \
                              confirme-a antes de alterar a mae; se a marca ficou de \
                              uma queda ou panico anterior, sem ninguem mais escrevendo \
-                             ali, rode `reparar indice`",
+                             ali, rode {COMO_RECONSTRUIR}",
                             fk.nome,
                             ndx.display()
                         ));
@@ -9526,7 +9526,7 @@ impl Table {
         if self.indice_precisa_reconstruir() {
             return Err(PhxError::Corrompido(format!(
                 "o indice de {eu} ficou para tras numa queda e nao e confiavel: \
-                 reconstrua com `reparar indice` antes de comecar a carga -- adiar \
+                 reconstrua com {COMO_RECONSTRUIR} antes de comecar a carga -- adiar \
                  sobre um indice que ja nao presta apaga a unica marca que diz isso"
             )));
         }
