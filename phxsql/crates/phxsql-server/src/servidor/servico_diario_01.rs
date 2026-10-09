@@ -881,6 +881,9 @@ impl Servidor {
                 }
                 self.anotar_estado(origem, |e| {
                     e.recusas.remove(&chave);
+                    // Pedido 496, F7 (4b): a tabela trocada pelo retrato
+                    // recomeca a serie do atraso, como recomeca a recusa.
+                    e.atrasos.remove(&format!("{database}/{tabela}"));
                 });
             }
             // Pedido 737: a tabela que chegou pelo retrato nao passou pelo

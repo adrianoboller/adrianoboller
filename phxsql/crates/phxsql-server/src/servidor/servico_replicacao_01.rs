@@ -609,6 +609,8 @@ impl Servidor {
                 self.refazer_por_retrato(&mut cliente, &database, &origem.nome)?;
                 p = crate::replica::posicao(&mut cliente, &database)?;
             }
+            // Pedido 496, F7 (4b): a tabela que sumiu da origem sai do atraso.
+            self.anotar_estado(&origem.nome, |e| e.podar_atrasos(&database, &p.tabelas));
             if let Some(e) = do_cluster {
                 e.anunciar_tabelas(
                     &database,
@@ -879,6 +881,71 @@ impl Servidor {
              somente_leitura) foi escrita localmente e a escrita tomou o lugar de \
              um evento do source"
                 .to_string()
+        }
+    }
+
+    /// Uma amostra do atraso de UMA tabela numa origem (pedido 496, F7), e o
+    /// alarme pelo produtor unico enquanto a regra valer.
+    ///
+    /// O MESMO motor para a replica fiel e o bidirecional: os dois lacos
+    /// sabem a contagem da origem (o `posicao`) e a posicao consumida no
+    /// mesmo ponto -- o comeco do alcance da tabela --, e duas contas do
+    /// atraso divergiriam no dia em que uma aprendesse um caso a mais.
+    ///
+    /// Custa um mutex que a rodada ja toma varias vezes, por tabela por
+    /// rodada. Nao ha portao: e o vigia, que amostra sempre (desenho §4).
+    pub(super) fn amostrar_atraso(
+        &self,
+        origem: &str,
+        database: &str,
+        tabela: &str,
+        na_origem: u64,
+        consumida: u64,
+    ) {
+        let chave_tab = format!("{database}/{tabela}");
+        let chave_tab = chave_tab.as_str();
+        let agora = crate::agora_ms();
+        let mut saida = None;
+        let mut voltou = false;
+        self.anotar_estado(origem, |e| {
+            let vigia = e.vigia_do_atraso(chave_tab);
+            let a = e.atrasos.entry(chave_tab.to_string()).or_default();
+            let antes = a.alarme;
+            let agora_vale = a.amostrar(agora, na_origem, consumida, vigia);
+            voltou = antes.is_some() && agora_vale.is_none();
+            saida = agora_vale.map(|m| (m, antes.is_none(), a.atraso, a.atraso_ms));
+        });
+        if voltou {
+            eprintln!("replicacao [{origem}]: {chave_tab} voltou a ficar em dia com a origem");
+        }
+        // FORA do mutex do estado: o `replicacao_estado` nao espera a
+        // redacao da ocorrencia.
+        let Some((motivo, mudou, atraso, ms)) = saida else {
+            return;
+        };
+        // Em PEDIDO JSON, e nao em frase: a camada redige analisando, e
+        // texto que nao e SQL vira so o tamanho. Como pedido, o `database` e
+        // a `tabela` sobrevivem como FORMA e a ocorrencia nomeia a tabela
+        // pela arvore; os numeros viram `?` -- moram no `replicacao_estado`,
+        // que e a `op` citada aqui.
+        let dados = Json::objeto(vec![
+            ("op", Json::texto_de("replicacao_estado")),
+            ("database", Json::texto_de(database)),
+            ("tabela", Json::texto_de(tabela)),
+            ("origem", Json::texto_de(origem)),
+            ("atraso", Json::de_u64(atraso)),
+            ("atraso_ms", Json::de_u64(ms.max(0) as u64)),
+            ("motivo", Json::texto_de(motivo.nome())),
+        ])
+        .escrever();
+        crate::telemetria::sinal(crate::aquario::Alarme::ReplicaAtrasada, &dados);
+        if mudou {
+            eprintln!(
+                "REPLICA ATRASADA [{origem}]: {chave_tab} esta {atraso} evento(s) atras da \
+                 origem, o mais velho esperando ha {} s ({})",
+                ms / 1_000,
+                motivo.nome()
+            );
         }
     }
 
@@ -1191,6 +1258,10 @@ impl Servidor {
         let Some((posicao, outra_historia)) = self.abrir_para_replicar(database, no)? else {
             return Ok(None);
         };
+        // Pedido 496, F7: a amostra vem ANTES de toda saida daqui -- a tabela
+        // de continuidade rompida e a que fica parada com a origem gravando,
+        // e e justamente ela que o atraso tem de ver.
+        self.amostrar_atraso(origem, database, &no.nome, no.eventos, posicao);
         let chave = Self::chave_do_diario(database, &no.nome);
         // Pedido 601: de OUTRA historia, nada se aplica -- e a recusa vai pelo
         // MESMO canal da tabela apagada e recriada, que e um dos dois casos

@@ -433,7 +433,8 @@ Mais quatro campos e três operações que os modos novos trouxeram:
        "chave_colunas" (a lista)
 
 {"token":"...","op":"replicacao_estado"}          → papel vivo, posição por
-   origem e tabela, última rodada, último erro, recusas com o motivo
+   origem e tabela, última rodada, último erro, recusas com o motivo, e o
+   atraso por tabela em "atrasos" (pedido 496, F7 — seção própria abaixo)
 {"token":"...","op":"replicacao_testar","origem":"curitiba"}  → prova a ligação
    pela MESMA conexão e autenticação do laço, e lista os impedimentos por modo
 {"token":"...","op":"spare_promover","motivo":"..."}          → a promoção manual
@@ -3118,3 +3119,83 @@ Guardas no catálogo (`bancada/guardas/catalogo.py`):
 `laco-preso-no-unico-secundario` (PROVADA 3/3),
 `par-parado-reapresentado-a-cada-rodada` (PROVADA 1/1) e
 `dado-pessoal-no-grito-do-conflito` (PROVADA 1/1).
+
+## O atraso da réplica, por tabela (pedido 496, F7)
+
+Os três maduros convergem em **expor** o atraso — `replay_lag` no PostgreSQL,
+`Seconds_Behind_Master` na MariaDB, `Seconds_Behind_Source` no MySQL (9 × 0,
+aceite automático). Réplica para trás é o RPO de uma promoção feita agora.
+
+`replicacao_estado` → `origens.<origem>.atrasos["db/tabela"]`:
+
+| campo | o que é |
+|---|---|
+| `na_origem` | eventos da tabela na origem, pelo último `posicao` |
+| `consumida` | a posição consumida aqui, na mesma amostra |
+| `atraso` | `na_origem − consumida` (zero quando a consumida passa: suprimidos no bidirecional, escrita local na fiel) |
+| `atraso_ms` | há quanto o evento mais velho ainda não consumido foi **visto** na origem; `null` sem relógio (abaixo) |
+| `alarme` | `"crescendo"`, `"acima_de_60s"` ou `null`; `null` sem relógio |
+| `na_ultima_amostra` | `true` quando não há medida viva: `atraso` e `amostra` são os da última amostra |
+| `sem_relogio` | por que não há medida viva: `"fio_caido"`, `"laco_parado"`, `"agendado"`, `"tabela_parada"`, ou `null` |
+| `amostra` | quando a amostra foi tirada |
+
+**Sem relógio, `atraso_ms` e `alarme` saem `null`** — revisão do papel C,
+aceite automático: o `Seconds_Behind_Source` do MySQL sai NULL com a thread de
+E/S ou de aplicação parada, e o `replay_lag` do PostgreSQL some sem reporte da
+standby. Número congelado mentiria que a medida continua. Os quatro casos:
+
+- **fio caído** (`falhas_de_rede_seguidas > 0`) e **laço estacionado**
+  (`parada`): nenhuma rodada amostra;
+- **tabela parada** pelo conflito do bidirecional (`paradas`): ela continua
+  amostrada — o `atraso` em eventos cresce e se lê —, mas não alarma, porque a
+  parada já gritou;
+- **fora do streaming** (`cada_15min`, `diaria_HH:MM`): uma rodada pode ser
+  24 h, e o evento mais velho espera a janela por desenho. O `atraso_ms` sai
+  `null` e o limiar de 60 s não vale; a tendência vale, porque o resíduo de
+  uma janela sadia é zero do mesmo jeito.
+
+A tabela que some do `posicao` da origem sai de `atrasos` na mesma rodada
+(e a trocada pelo retrato recomeça a série, no mesmo ponto em que sai a
+recusa dela).
+
+Uma amostra por tabela por rodada, no começo do alcance dela, pelo **mesmo**
+motor nos dois laços (`Servidor::amostrar_atraso`, a fiel e o bidirecional).
+No bidirecional a amostra vem **antes** do portão da parada: a tabela parada
+com a origem gravando é justamente a que o atraso tem de ver.
+
+Duas regras viram o alarme `replica_atrasada` (amarelo, grupo `replica`, de
+servidor: vai ao sedimento do aquário e ao `ocorrencias.log` pelo produtor
+único):
+
+- **3 amostras crescendo** — sobre o **resíduo** (o que a origem já tinha na
+  rodada anterior e a réplica ainda não consumiu), e não sobre o atraso cru. O
+  cru de uma réplica sadia em streaming sobe e desce com a vazão de quem
+  escreve, e três subidas seguidas numa rajada seriam alarme mentiroso; o
+  resíduo dela é zero, porque toda rodada alcança a fronteira do `posicao`.
+- **mais de 60 s** — o evento mais velho não consumido esperando há mais de
+  60 s (estritamente). Pega também a réplica que anda, mas mais devagar que a
+  origem: o resíduo dela é **constante**, nunca crescendo, e a tendência não a
+  vê — o mais velho envelhecendo, sim.
+
+**Onde diverge dos três, e por quê:** eles medem pelo carimbo do evento que
+viaja; aqui o tempo é o de quando a réplica **viu** a contagem crescer, e o
+`atraso_ms` sai para menos até uma rodada. Trazer a hora do commit pediria um
+campo novo no fio do `posicao` para comprar a precisão de uma rodada. Nada
+disso vai ao disco: é derivado, e a rodada seguinte o remede.
+
+A série das contagens vistas e ainda não consumidas tem teto de 64; acima
+dele funde-se o par vizinho cujo balde fundido sai mais estreito. O erro é
+sempre para mais (o evento parece mais velho, nunca mais novo) e medido numa
+hora parada, com o alcance varrido: pior 79 s, 1,4 × duração/64. A fusão
+anterior, sempre na segunda posição, dava 3.599 s onde o real era ~110 s e
+prendia o alarme durante o alcance inteiro.
+
+Provas: `tests/atraso-da-replica-parada.rs` (a tabela parada pela escrita
+local, o mestre gravando: ocorrência pela tendência em ~3 s; vermelho sem a
+tendência, só o limiar, a 40 s sem aviso) e `tests/atraso-da-replica-em-dia.rs`
+(o comportamento velho: réplica em dia, mestre gravando, nenhuma ocorrência;
+e a tabela apagada na origem saindo de `atrasos`),
+`tests/atraso-da-replica-fio-caido.rs` (a ponte cortada: `atraso_ms` e
+`alarme` nulos, não congelados) e, no bidirecional,
+`o_par_parado_com_o_parceiro_gravando_acusa_o_atraso` em
+`tests/laco-do-unico-secundario.rs`.

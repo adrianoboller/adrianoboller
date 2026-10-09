@@ -175,6 +175,8 @@ impl Servidor {
             // par que este no ja viu (pedido 329). O numero do outro e o que
             // ele diz no `posicao`; um source de antes do campo nao diz, e ai
             // vale o hash do id, que e o numero que ele de fato usa.
+            // Pedido 496, F7 (4b): o irmao da poda da replica fiel.
+            self.anotar_estado(&origem.nome, |e| e.podar_atrasos(&database, &p.tabelas));
             let hash_dele = bidirecional::numero_do_servidor(p.numero_servidor, &id_dele);
             self.conferir_numero_do_par(hash_dele, &id_dele)?;
             aplicados += self.alcancar_database_bidi(
@@ -404,6 +406,16 @@ impl Servidor {
         Ok(saida)
     }
 
+    /// A posicao consumida de `origem|db/tab` no mapa do bidirecional; zero
+    /// quando nunca andou.
+    fn posicao_bidi(&self, chave_pos: &str) -> u64 {
+        self.posicoes_bidi
+            .lock()
+            .ok()
+            .and_then(|p| p.get(chave_pos).copied())
+            .unwrap_or(0)
+    }
+
     /// Fase 1 do bidirecional para UMA tabela: o portao da parada, a tabela
     /// aberta com a identidade, e a posicao consumida. `None` = nada a fazer
     /// nesta tabela nesta rodada.
@@ -415,6 +427,7 @@ impl Servidor {
         meu_hash: u16,
     ) -> Result<Option<FilaBidi>> {
         let chave_tab = format!("{database}/{}", no.nome);
+        let chave_pos = format!("{}|{}", origem.nome, chave_tab);
         // O PORTAO VEM ANTES DO TRABALHO: a tabela parada sai daqui sem tomar
         // a trava de dados, sem absorver o diario local e sem uma unica ida e
         // volta de rede. E a licao do Profiler aplicada a uma parada: quem
@@ -422,19 +435,24 @@ impl Servidor {
         // rodada, e aqui isso seria o laco apertado que o pedido 292 existe
         // para matar. Ver `bidirecional::ParadaDaTabela`.
         if self.esta_parada(&origem.nome, &chave_tab) {
+            // Pedido 496, F7: a parada com a origem gravando e justamente a
+            // tabela que o atraso tem de ver, e a amostra nao e trabalho que
+            // o portao poupa -- a posicao e uma busca no mapa em memoria, e o
+            // `no.eventos` veio no `posicao`.
+            let consumida = self.posicao_bidi(&chave_pos);
+            self.amostrar_atraso(&origem.nome, database, &no.nome, no.eventos, consumida);
             return Ok(None);
         }
+        // A recusada (sem chave unica) NAO se amostra: ela nao replica por
+        // decisao de modelagem, ja diz por que em `recusas`, e um atraso que
+        // cresce para sempre ali seria o mesmo recado em forma de alarme.
         let Some((indice, pos_chave)) = self.abrir_para_bidi(database, &no, origem, meu_hash)?
         else {
             return Ok(None);
         };
-        let chave_pos = format!("{}|{}", origem.nome, chave_tab);
-        let desde = self
-            .posicoes_bidi
-            .lock()
-            .ok()
-            .and_then(|p| p.get(&chave_pos).copied())
-            .unwrap_or(0);
+        let desde = self.posicao_bidi(&chave_pos);
+        // O mesmo motor da replica fiel, no mesmo ponto: o comeco do alcance.
+        self.amostrar_atraso(&origem.nome, database, &no.nome, no.eventos, desde);
         if desde >= no.eventos {
             return Ok(None);
         }

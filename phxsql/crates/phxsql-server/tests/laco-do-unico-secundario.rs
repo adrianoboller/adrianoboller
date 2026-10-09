@@ -402,6 +402,76 @@ fn o_pular_manual_solta_o_par_e_a_linha_seguinte_chega() {
 /// resposta e `paradas` fica vazio -- campo que aparece cheio em toda
 /// instalacao sa e campo que ninguem olha quando enche.
 ///
+/// **Pedido 496, F7 -- o irmao bidirecional do atraso.** O par parado pelo
+/// conflito, com o parceiro gravando: o `replicacao_estado` deste lado expoe
+/// o atraso de `loja/clientes` crescendo, em eventos. Sem alarme e sem
+/// `atraso_ms` (revisao do papel C, 4a): a parada ja gritou em `paradas`, e
+/// os tres maduros dao NULL com a aplicacao parada.
+///
+/// **Defeito reposto (1)**: a amostra so depois do portao da parada (o lugar
+/// natural dela, junto da posicao relida) -- a tabela parada nunca e
+/// amostrada, o atraso nao cresce, e a espera de 30 s cai.
+///
+/// **Defeito reposto (2)**: a parada amostrada com `Vigia::Completo` -- o
+/// alarme da tendencia aparece e a asercao do nulo cai.
+#[test]
+fn o_par_parado_com_o_parceiro_gravando_acusa_o_atraso() {
+    let _c = COFRE.read().unwrap_or_else(|e| e.into_inner());
+    let (_a, _b, porta_a, porta_b, _da, _db) = terreno("atraso");
+    inserir(porta_b, 2, "a@x");
+    esperar("a parada do par", || parada(porta_a).is_some());
+
+    let atraso = || {
+        estado(porta_a)
+            .campo("origens")
+            .and_then(|o| o.campo("parceiro"))
+            .and_then(|p| p.campo("atrasos"))
+            .and_then(|a| a.campo("loja/clientes"))
+            .cloned()
+    };
+    let inicio = Instant::now();
+    let mut id = 3;
+    let a = loop {
+        inserir(porta_b, id, &format!("{id}@x"));
+        id += 1;
+        if let Some(a) = atraso() {
+            assert!(
+                matches!(a.campo("alarme"), Some(Json::Nulo)),
+                "a parada alarmou de novo pelo atraso: {}",
+                a.escrever()
+            );
+            // Cinco rodadas de atraso crescendo: tres amostras bastariam
+            // para a tendencia, se ela valesse aqui.
+            if a.inteiro_ou("atraso", 0) >= 5 {
+                break a;
+            }
+        }
+        assert!(
+            inicio.elapsed() < Duration::from_secs(30),
+            "o atraso do par parado nao cresceu em 30 s: {:?}",
+            atraso().map(|a| a.escrever())
+        );
+        std::thread::sleep(Duration::from_millis(250));
+    };
+    assert!(
+        matches!(a.campo("atraso_ms"), Some(Json::Nulo)),
+        "{}",
+        a.escrever()
+    );
+    assert_eq!(
+        a.texto_ou("sem_relogio", ""),
+        "tabela_parada",
+        "{}",
+        a.escrever()
+    );
+    assert_eq!(
+        a.inteiro_ou("consumida", -1),
+        0,
+        "a posicao do par parado andou: {}",
+        a.escrever()
+    );
+}
+
 /// E a petrea que derrubou a forma antiga deste pedido -- «guarda nova entra
 /// pedida, nao imposta»: o par que NAO colide continua replicando, e e ele que
 /// a recusa na declaracao teria tirado do ar.

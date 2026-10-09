@@ -486,6 +486,235 @@ pub fn leituras_da_maquina() -> Vec<Leitura> {
     v
 }
 
+// ------------------------------------------------------------------ F7
+//
+// O atraso da replica por tabela (C8): quanto da origem esta replica ainda
+// nao consumiu. Os tres maduros convergem em EXPOR o atraso -- `replay_lag`
+// no PostgreSQL, `Seconds_Behind_Master` na MariaDB, `Seconds_Behind_Source`
+// no MySQL (9 × 0) --, e a pergunta util e a deles: ha quanto tempo o evento
+// mais velho que ainda nao chegou aqui esta esperando? Replica para tras e o
+// RPO da promocao: o que ela nao tem e o que se perde se ela virar primario.
+//
+// # Onde diverge da origem, e por que
+//
+// Os tres medem pelo carimbo de hora do evento que viaja no fio. Aqui o laco
+// SABE a contagem que o `posicao` da origem devolve a cada rodada, e o tempo
+// e o de quando a replica VIU a contagem crescer, nao o do commit la: o
+// atraso em ms sai para menos ate uma rodada (o intervalo entre duas
+// perguntas), nunca para mais por isso. Trazer a hora do commit pediria um
+// campo novo no fio do `posicao`, para comprar a precisao de uma rodada.
+//
+// # As duas regras, e por que a tendencia e sobre o RESIDUO
+//
+// * **mais de 60 s**: o evento mais velho nao consumido espera ha mais de
+//   [`SEGUNDOS_DO_LIMIAR`]. Pega a replica parada E a que anda mais devagar
+//   que a origem (residuo CONSTANTE, nunca crescendo), porque as duas deixam
+//   o mais velho envelhecer.
+// * **3 amostras crescendo**: pega a parada ANTES dos 60 s. A serie e o
+//   RESIDUO -- o que a origem ja tinha na rodada ANTERIOR e a replica ainda
+//   nao consumiu --, e nao o `na_origem - consumida` cru. O cru de uma
+//   replica sadia em streaming e «o que a origem gravou desde a ultima
+//   pergunta», que sobe e desce com a vazao de quem escreve: tres subidas
+//   seguidas acontecem por acaso numa rajada, e o alarme seria mentira. O
+//   residuo de uma replica sadia e zero, porque toda rodada alcanca a
+//   fronteira que o `posicao` deu; so cresce quando ela NAO alcanca.
+//
+// # Quando NAO ha relogio (revisao do papel C, convergencia dos tres)
+//
+// O `Seconds_Behind_Source` do MySQL sai NULL com a thread de E/S ou a de
+// aplicacao paradas, e o `replay_lag` do PostgreSQL some quando a standby nao
+// reporta: numero congelado mente que a medida continua. Aqui o `atraso_ms`
+// e o `alarme` saem nulos com o fio caido, com o laco estacionado e com a
+// tabela PARADA pelo conflito do bidirecional (essa ja gritou, em `paradas`);
+// o `atraso` e a `amostra` ficam, rotulados como da ultima amostra.
+//
+// FORA do streaming (`cada_15min`, `diaria_HH:MM`) o `atraso_ms` tambem sai
+// nulo, e o limiar de 60 s nao vale: uma rodada pode ser 24 h, e o evento
+// mais velho espera a janela por desenho, nao por defeito. A tendencia
+// continua -- o residuo de uma janela sadia e zero do mesmo jeito.
+
+/// Amostras seguidas crescendo que viram alarme.
+pub const AMOSTRAS_DA_TENDENCIA: usize = 3;
+/// Acima disto (estritamente) o evento mais velho nao consumido e alarme.
+pub const SEGUNDOS_DO_LIMIAR: i64 = 60;
+/// Quantas contagens vistas e ainda nao consumidas a serie guarda. Uma
+/// replica parada uma hora com a origem gravando pediria uma por rodada;
+/// acima do teto o par vizinho de MENOR intervalo se funde, para o lado
+/// pessimista (ver [`AtrasoDaReplica::amostrar`]).
+const TETO_DAS_VISTAS: usize = 64;
+
+/// Quais regras valem nesta amostra -- decidido por quem conhece o laco.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Vigia {
+    /// Streaming, tabela andando: tendencia e limiar.
+    Completo,
+    /// Fora do streaming: so a tendencia (uma rodada pode ser 24 h).
+    SoTendencia,
+    /// Tabela parada pelo conflito: amostra sem alarme -- a parada ja gritou.
+    Nenhum,
+}
+
+/// Por que o atraso virou alarme.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MotivoDoAtraso {
+    /// O residuo cresceu em [`AMOSTRAS_DA_TENDENCIA`] amostras seguidas.
+    Crescendo,
+    /// O evento mais velho nao consumido espera ha mais de 60 s.
+    Limiar,
+}
+
+impl MotivoDoAtraso {
+    /// Em chave, e nao em frase: quem decide compara por chave.
+    pub fn nome(self) -> &'static str {
+        match self {
+            MotivoDoAtraso::Crescendo => "crescendo",
+            MotivoDoAtraso::Limiar => "acima_de_60s",
+        }
+    }
+}
+
+/// O atraso de UMA tabela numa origem, amostrado a cada rodada do laco.
+///
+/// Vive em memoria, no `EstadoOrigem`, e nao vai ao disco pelo mesmo motivo
+/// da `ParadaDaTabela`: e derivado -- a rodada seguinte o remede. Perder no
+/// arranque custa as tres amostras da tendencia, nunca um dado.
+#[derive(Debug, Clone, Default)]
+pub struct AtrasoDaReplica {
+    /// Eventos da tabela na origem, pelo ultimo `posicao`.
+    pub na_origem: u64,
+    /// A posicao consumida aqui, na mesma amostra.
+    pub consumida: u64,
+    /// `na_origem - consumida`: a formula do C8, o numero que se expoe.
+    pub atraso: u64,
+    /// Ha quanto o evento mais velho nao consumido foi visto na origem.
+    pub atraso_ms: i64,
+    /// A regra que vale AGORA, ou `None` com a replica em dia.
+    pub alarme: Option<MotivoDoAtraso>,
+    pub amostra_ms: i64,
+    /// A contagem da rodada anterior: a fronteira que a replica tinha de
+    /// alcancar.
+    anterior: Option<u64>,
+    /// Os residuos das ultimas amostras, o mais velho na frente.
+    residuos: VecDeque<u64>,
+    /// `(quando foi vista, contagem)` crescentes, so as que ainda tem evento
+    /// nao consumido. A frente e o evento mais velho que falta.
+    vistas: VecDeque<(i64, u64)>,
+}
+
+impl AtrasoDaReplica {
+    /// Uma amostra. Devolve o motivo enquanto a regra vale -- a cada
+    /// amostra, e nao so na mudanca, no molde da F5: o sedimento precisa do
+    /// `visto_ms` para dizer que o atraso CONTINUA.
+    pub fn amostrar(
+        &mut self,
+        agora_ms: i64,
+        na_origem: u64,
+        consumida: u64,
+        vigia: Vigia,
+    ) -> Option<MotivoDoAtraso> {
+        // A consumida pode passar da contagem da origem: no bidirecional os
+        // eventos suprimidos andam a posicao, e na replica fiel a escrita
+        // local aceita entra no diario daqui. Nada a frente e atraso zero.
+        if let Some(antes) = self.anterior {
+            self.residuos.push_back(antes.saturating_sub(consumida));
+            while self.residuos.len() > AMOSTRAS_DA_TENDENCIA {
+                self.residuos.pop_front();
+            }
+        }
+        self.anterior = Some(na_origem);
+        if na_origem > consumida && self.vistas.back().is_none_or(|v| na_origem > v.1) {
+            self.vistas.push_back((agora_ms, na_origem));
+        }
+        while self.vistas.front().is_some_and(|v| v.1 <= consumida) {
+            self.vistas.pop_front();
+        }
+        if self.vistas.len() > TETO_DAS_VISTAS {
+            // Funde o par vizinho cujo balde FUNDIDO sai mais estreito (da [i]
+            // ate a [i+2]; o mais velho no empate), guardando a hora da [i]:
+            // o evento entre as duas contagens passa a parecer mais velho do
+            // que e, nunca mais novo, e o erro e a largura do balde que o
+            // guarda. Medido numa hora parada e o alcance varrido: pior erro
+            // 79 s (1,4 × duracao/64), e nos dois casos do papel C abaixo de
+            // duracao/64. Escolher pelo intervalo do PAR, e nao do balde
+            // fundido, deixava vizinhos com o dobro da largura: 62 s num dos
+            // casos, contra 56 de duracao/64.
+            //
+            // A versao anterior fundia sempre na [1]: a [1] engolia a serie
+            // e, no meio do alcance, o mais velho que faltava parecia tao
+            // velho quanto a parada -- 3.599 s onde o real era ~110 s, e o
+            // alarme preso ate o fim (papel C, 4c).
+            let i = (0..self.vistas.len() - 2)
+                .min_by_key(|&i| self.vistas[i + 2].0 - self.vistas[i].0)
+                .unwrap_or(0);
+            if let Some((_, n)) = self.vistas.remove(i + 1) {
+                self.vistas[i].1 = n;
+            }
+        }
+        self.na_origem = na_origem;
+        self.consumida = consumida;
+        self.atraso = na_origem.saturating_sub(consumida);
+        self.atraso_ms = self
+            .vistas
+            .front()
+            .map_or(0, |v| agora_ms.saturating_sub(v.0).max(0));
+        self.amostra_ms = agora_ms;
+        let crescendo = self.residuos.len() == AMOSTRAS_DA_TENDENCIA
+            && self
+                .residuos
+                .iter()
+                .zip(self.residuos.iter().skip(1))
+                .all(|(a, b)| a < b);
+        let limiar = vigia == Vigia::Completo;
+        let tendencia = vigia != Vigia::Nenhum;
+        self.alarme = if limiar && self.atraso_ms > SEGUNDOS_DO_LIMIAR * 1_000 {
+            Some(MotivoDoAtraso::Limiar)
+        } else if tendencia && crescendo && self.atraso > 0 {
+            Some(MotivoDoAtraso::Crescendo)
+        } else {
+            None
+        };
+        self.alarme
+    }
+
+    /// `sem_relogio` diz por que nao ha medida viva (`"fio_caido"`,
+    /// `"laco_parado"`, `"tabela_parada"`, `"agendado"`): ai o `atraso_ms` e
+    /// o `alarme` saem nulos, e o resto e o da ULTIMA amostra -- congelado
+    /// seria mentir que a medida continua.
+    pub fn para_json(&self, sem_relogio: Option<&str>) -> phxsql_core::json::Json {
+        use phxsql_core::json::Json;
+        let viva = sem_relogio.is_none();
+        Json::objeto(vec![
+            ("na_origem", Json::de_u64(self.na_origem)),
+            ("consumida", Json::de_u64(self.consumida)),
+            ("atraso", Json::de_u64(self.atraso)),
+            (
+                "atraso_ms",
+                if viva {
+                    Json::de_u64(self.atraso_ms.max(0) as u64)
+                } else {
+                    Json::Nulo
+                },
+            ),
+            (
+                "alarme",
+                match self.alarme {
+                    Some(m) if viva => Json::texto_de(m.nome()),
+                    _ => Json::Nulo,
+                },
+            ),
+            ("na_ultima_amostra", Json::Bool(!viva)),
+            (
+                "sem_relogio",
+                sem_relogio.map_or(Json::Nulo, Json::texto_de),
+            ),
+            (
+                "amostra",
+                Json::texto_de(phxsql_core::datahora::instante_iso(self.amostra_ms)),
+            ),
+        ])
+    }
+}
+
 #[cfg(test)]
 mod testes {
     use super::*;
@@ -812,6 +1041,175 @@ mod testes {
         // `descritores` pode faltar quando o limite e `unlimited`.
         if let Some(d) = l.iter().find(|l| l.recurso == "descritores") {
             assert!(d.resta > 0, "{d:?}");
+        }
+    }
+
+    // ---------------------------------------------------------------- F7
+
+    const S: i64 = 1_000;
+    const C: Vigia = Vigia::Completo;
+
+    /// A parada com a origem gravando: a consumida nao anda, a contagem la
+    /// sobe. Tres residuos crescendo (0, 1, 2) -- a quarta amostra, porque a
+    /// primeira nao tem rodada anterior -- e o alarme e da TENDENCIA, a 3 s.
+    #[test]
+    fn a_parada_com_a_origem_gravando_cresce_e_avisa_antes_dos_60_s() {
+        let mut a = AtrasoDaReplica::default();
+        assert_eq!(a.amostrar(0, 10, 10, C), None);
+        assert_eq!(a.amostrar(S, 11, 10, C), None);
+        assert_eq!(a.amostrar(2 * S, 12, 10, C), None);
+        assert_eq!(
+            a.amostrar(3 * S, 13, 10, C),
+            Some(MotivoDoAtraso::Crescendo)
+        );
+        assert_eq!(a.atraso, 3);
+        // O evento 11 foi visto a 1 s: espera ha 2 s.
+        assert_eq!(a.atraso_ms, 2 * S);
+    }
+
+    /// O comportamento velho, e a divergencia escrita no cabecalho da F7: a
+    /// replica sadia em streaming, com a origem ACELERANDO. O atraso cru
+    /// sobe 0, 5, 7, 18 -- tres subidas seguidas, que alarmariam se a
+    /// tendencia fosse sobre ele --, e o residuo e zero o tempo todo.
+    #[test]
+    fn a_replica_em_dia_com_a_origem_acelerando_nao_avisa() {
+        let mut a = AtrasoDaReplica::default();
+        let serie = [(10, 10), (15, 10), (22, 15), (40, 22), (41, 40)];
+        let mut crus = Vec::new();
+        for (i, (na, c)) in serie.into_iter().enumerate() {
+            assert_eq!(a.amostrar(i as i64 * S, na, c, C), None, "amostra {i}");
+            crus.push(a.atraso);
+            assert!(a.atraso_ms < S, "amostra {i}: {}", a.atraso_ms);
+        }
+        assert_eq!(crus, vec![0, 5, 7, 18, 1]);
+    }
+
+    /// O limiar: a replica que anda devagar, residuo constante (nunca
+    /// crescendo), avisa quando o mais velho passa de 60 s -- e 60 s exatos
+    /// ainda nao, o teste de fronteira trava o `>` contra o `>=`.
+    #[test]
+    fn o_mais_velho_acima_de_60_s_avisa_e_60_exatos_nao() {
+        let mut a = AtrasoDaReplica::default();
+        assert_eq!(a.amostrar(0, 10, 5, C), None);
+        assert_eq!(a.amostrar(30 * S, 10, 5, C), None);
+        assert_eq!(a.amostrar(60 * S, 10, 5, C), None);
+        assert_eq!(
+            a.amostrar(60 * S + 1, 10, 5, C),
+            Some(MotivoDoAtraso::Limiar)
+        );
+    }
+
+    /// Alcancou: o alarme cai e a serie de vistas esvazia -- o proximo
+    /// atraso conta do zero, e nao da parada de ontem.
+    #[test]
+    fn ao_alcancar_o_alarme_cai_e_o_relogio_recomeca() {
+        let mut a = AtrasoDaReplica::default();
+        a.amostrar(0, 10, 5, C);
+        assert!(a.amostrar(61 * S, 10, 5, C).is_some());
+        assert_eq!(a.amostrar(62 * S, 10, 10, C), None);
+        assert_eq!((a.atraso, a.atraso_ms), (0, 0));
+        a.amostrar(63 * S, 12, 10, C);
+        assert_eq!(a.atraso_ms, 0, "o relogio nao recomecou");
+    }
+
+    /// Uma hora parada com a origem gravando a cada amostra: a serie de
+    /// vistas fica no teto, e a FRENTE -- o evento mais velho -- continua
+    /// exata. E o que diz o atraso em ms enquanto a replica nao anda.
+    #[test]
+    fn a_serie_de_vistas_tem_teto_e_a_frente_fica_exata() {
+        let mut a = AtrasoDaReplica::default();
+        for i in 0..3_600 {
+            a.amostrar(i * S, 11 + i as u64, 10, C);
+        }
+        assert!(a.vistas.len() <= TETO_DAS_VISTAS, "{}", a.vistas.len());
+        assert_eq!(a.atraso_ms, 3_599 * S);
+        // E quando a replica anda, o mais velho que falta nunca parece MAIS
+        // NOVO do que e (a fusao e pessimista) -- e o erro tem TETO. Sem o
+        // teto, a fusao sempre na [1] passava: dava 3.599 s nos dois casos do
+        // papel C (4c), e o alarme ficava preso durante o alcance.
+        //
+        // O teto de um ponto qualquer e a largura do balde que o guarda. Com
+        // 64 baldes ela fica entre duracao/64 e o dobro (os baldes nao saem
+        // todos iguais); nos dois casos do papel C, abaixo de duracao/64.
+        const DURACAO: i64 = 3_600 * S;
+        let fino = DURACAO / TETO_DAS_VISTAS as i64;
+        let erro = |consumida: u64, real: i64| {
+            let mut b = a.clone();
+            b.amostrar(3_600 * S, 3_611, consumida, C);
+            assert!(
+                b.atraso_ms >= real,
+                "consumida {consumida}: {}",
+                b.atraso_ms
+            );
+            b.atraso_ms - real
+        };
+        for (consumida, real) in [(1_800u64, 1_810 * S), (3_500, 110 * S)] {
+            let e = erro(consumida, real);
+            assert!(e <= fino, "consumida {consumida}: erro de {e} ms");
+        }
+        // A varredura do alcance inteiro: o evento `c + 1` foi visto na
+        // amostra `c - 10`, entao o real e `3.600 - (c - 10)` s.
+        let pior = (20u64..3_600)
+            .map(|c| erro(c, (3_600 - (c as i64 - 10)) * S))
+            .max()
+            .unwrap_or(0);
+        assert!(pior <= 2 * fino, "pior erro do alcance: {pior} ms");
+    }
+
+    /// Fora do streaming o limiar nao vale (a janela pode ser 24 h), e a
+    /// tendencia sim; a tabela parada pelo conflito amostra sem alarme.
+    #[test]
+    fn o_vigia_decide_quais_regras_valem() {
+        let mut a = AtrasoDaReplica::default();
+        a.amostrar(0, 10, 5, Vigia::SoTendencia);
+        assert_eq!(a.amostrar(3_600 * S, 10, 5, Vigia::SoTendencia), None);
+        let mut b = AtrasoDaReplica::default();
+        for (i, na) in [10u64, 11, 12].into_iter().enumerate() {
+            assert_eq!(b.amostrar(i as i64 * S, na, 10, Vigia::SoTendencia), None);
+        }
+        assert_eq!(
+            b.amostrar(3 * S, 13, 10, Vigia::SoTendencia),
+            Some(MotivoDoAtraso::Crescendo)
+        );
+        let mut c = AtrasoDaReplica::default();
+        for i in 0..100 {
+            assert_eq!(c.amostrar(i * S, 10 + i as u64, 10, Vigia::Nenhum), None);
+        }
+        assert_eq!(c.atraso, 99, "a parada amostra o atraso, so nao alarma");
+    }
+
+    /// Sem relogio, o `atraso_ms` e o `alarme` saem NULOS no JSON -- e nao o
+    /// numero congelado da ultima amostra. Vermelho com o `para_json` antigo.
+    #[test]
+    fn sem_relogio_o_json_nao_congela_o_tempo() {
+        let mut a = AtrasoDaReplica::default();
+        a.amostrar(0, 10, 5, C);
+        a.amostrar(61 * S, 10, 5, C);
+        let viva = a.para_json(None);
+        assert_eq!(viva.inteiro_ou("atraso_ms", -1), 61 * S);
+        assert_eq!(viva.texto_ou("alarme", ""), "acima_de_60s");
+        let morta = a.para_json(Some("fio_caido"));
+        assert!(matches!(
+            morta.campo("atraso_ms"),
+            Some(phxsql_core::json::Json::Nulo)
+        ));
+        assert!(matches!(
+            morta.campo("alarme"),
+            Some(phxsql_core::json::Json::Nulo)
+        ));
+        assert_eq!(morta.inteiro_ou("atraso", -1), 5);
+        assert!(morta.booleano_ou("na_ultima_amostra", false));
+        assert_eq!(morta.texto_ou("sem_relogio", ""), "fio_caido");
+    }
+
+    /// A consumida a frente da origem (suprimidos no bidirecional, escrita
+    /// local na fiel) e atraso zero, e nao um `u64` dando a volta.
+    #[test]
+    fn consumida_a_frente_da_origem_e_zero() {
+        let mut a = AtrasoDaReplica::default();
+        for i in 0..5 {
+            assert_eq!(a.amostrar(i * S, 10, 12 + i as u64, C), None);
+            assert_eq!(a.atraso, 0);
         }
     }
 }

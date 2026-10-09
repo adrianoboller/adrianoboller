@@ -810,6 +810,12 @@ pub struct EstadoOrigem {
     pub recusas: BTreeMap<String, String>,
     /// "database/tabela" -> posicao consumida na origem.
     pub posicoes: BTreeMap<String, u64>,
+    /// "database/tabela" -> o atraso dela em relacao a origem (pedido 496,
+    /// F7): a contagem la, a consumida aqui, a diferenca, ha quanto o evento
+    /// mais velho que falta espera, e o alarme quando ha. E o `replay_lag` /
+    /// `Seconds_Behind_Source` daqui, por tabela -- o diario e por tabela, e
+    /// uma tabela parada atras de nove em dia sumiria numa soma.
+    pub atrasos: BTreeMap<String, crate::previsao::AtrasoDaReplica>,
     /// "database/tabela" -> por que a replicacao DAQUELA tabela neste par
     /// esta parada. Vazio no caso comum, e e o que faz o campo servir: mapa
     /// que aparece cheio em toda instalacao sa e mapa que ninguem le quando
@@ -849,6 +855,54 @@ pub struct EstadoOrigem {
 }
 
 impl EstadoOrigem {
+    /// Por que o atraso de `chave_tab` nao tem medida VIVA agora, ou `None`
+    /// quando tem (pedido 496, F7; revisao do papel C). O laco vem antes da
+    /// tabela: com o fio caido, nem a tabela andando se mede.
+    pub fn sem_relogio(&self, chave_tab: &str) -> Option<&'static str> {
+        if self.falhas_de_rede_seguidas > 0 {
+            Some("fio_caido")
+        } else if !self.parada.is_empty() {
+            Some("laco_parado")
+        } else if self.agendado() {
+            Some("agendado")
+        } else if self.paradas.contains_key(chave_tab) {
+            Some("tabela_parada")
+        } else {
+            None
+        }
+    }
+
+    /// Fora do streaming: `cada_Nmin` ou `diaria_HH:MM`. O `modo` vazio e o
+    /// laco que ainda nao anotou o dele -- streaming, o padrao.
+    pub fn agendado(&self) -> bool {
+        !self.modo.is_empty() && self.modo != "streaming"
+    }
+
+    /// As regras do atraso que valem para `chave_tab` NA AMOSTRA: a parada
+    /// ja gritou e nao alarma de novo; fora do streaming, so a tendencia.
+    pub fn vigia_do_atraso(&self, chave_tab: &str) -> crate::previsao::Vigia {
+        if self.paradas.contains_key(chave_tab) {
+            crate::previsao::Vigia::Nenhum
+        } else if self.agendado() {
+            crate::previsao::Vigia::SoTendencia
+        } else {
+            crate::previsao::Vigia::Completo
+        }
+    }
+
+    /// Pedido 496, F7 (4b): so ficam as tabelas de `database` que vieram no
+    /// `posicao` desta rodada. A apagada na origem sai -- atraso de tabela
+    /// que nao existe mais e um alarme que ninguem consegue resolver.
+    pub fn podar_atrasos(&mut self, database: &str, vieram: &[crate::replica::NoSource]) {
+        let prefixo = format!("{database}/");
+        let vivas: std::collections::HashSet<String> = vieram
+            .iter()
+            .map(|n| format!("{prefixo}{}", n.nome))
+            .collect();
+        self.atrasos
+            .retain(|k, _| !k.starts_with(&prefixo) || vivas.contains(k));
+    }
+
     pub fn para_json(&self) -> Json {
         Json::objeto(vec![
             ("modo", Json::texto_de(&self.modo)),
@@ -884,6 +938,15 @@ impl EstadoOrigem {
                     self.posicoes
                         .iter()
                         .map(|(k, v)| (k.clone(), Json::de_u64(*v)))
+                        .collect(),
+                ),
+            ),
+            (
+                "atrasos",
+                Json::Objeto(
+                    self.atrasos
+                        .iter()
+                        .map(|(k, v)| (k.clone(), v.para_json(self.sem_relogio(k))))
                         .collect(),
                 ),
             ),

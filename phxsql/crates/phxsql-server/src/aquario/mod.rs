@@ -176,12 +176,17 @@ pub enum Alarme {
     EsgotamentoPrevisto,
     /// O mesmo, em menos de 2 h: o degrau critico.
     EsgotamentoIminente,
+    /// Pedido 496, F7: uma tabela da replica ficando para tras da origem --
+    /// o residuo crescendo em 3 amostras, ou o evento mais velho nao
+    /// consumido esperando mais de 60 s. Amarelo: nada se perdeu ainda, mas
+    /// e o RPO de uma promocao feita agora.
+    ReplicaAtrasada,
 }
 
 impl Alarme {
     /// Todos, na ordem da declaracao. Os testes conferem que nenhum fica de
     /// fora, pelo `match` exaustivo do [`Alarme::chave`].
-    pub const TODOS: [Alarme; 21] = [
+    pub const TODOS: [Alarme; 22] = [
         Alarme::TravaReentrante,
         Alarme::TravaEnvenenada,
         Alarme::ErroDeDisco,
@@ -203,6 +208,7 @@ impl Alarme {
         Alarme::DiscoLento,
         Alarme::EsgotamentoPrevisto,
         Alarme::EsgotamentoIminente,
+        Alarme::ReplicaAtrasada,
     ];
 
     /// A chave da fabrica de idiomas. E o MESMO texto da bolha e do e-mail,
@@ -233,6 +239,7 @@ impl Alarme {
             Alarme::DiscoLento => "aquario.motivo.disco_lento",
             Alarme::EsgotamentoPrevisto => "aquario.motivo.esgotamento_previsto",
             Alarme::EsgotamentoIminente => "aquario.motivo.esgotamento_iminente",
+            Alarme::ReplicaAtrasada => "aquario.motivo.replica_atrasada",
         }
     }
 
@@ -253,7 +260,8 @@ impl Alarme {
             Alarme::ForaDoHabitual
             | Alarme::IntegridadeRecusada
             | Alarme::DiscoLento
-            | Alarme::EsgotamentoPrevisto => Gravidade::Amarelo,
+            | Alarme::EsgotamentoPrevisto
+            | Alarme::ReplicaAtrasada => Gravidade::Amarelo,
             _ => Gravidade::Vermelho,
         }
     }
@@ -271,7 +279,8 @@ impl Alarme {
             | Alarme::IndiceAtrasado => Grupo::Dado,
             Alarme::TransacaoAcimaDoTeto
             | Alarme::ContinuidadeRompida
-            | Alarme::OrigemInalcancavel => Grupo::Replica,
+            | Alarme::OrigemInalcancavel
+            | Alarme::ReplicaAtrasada => Grupo::Replica,
             Alarme::ForcaBruta | Alarme::SenhaEmClaro | Alarme::FirewallBloqueou => {
                 Grupo::Seguranca
             }
@@ -317,7 +326,8 @@ impl Alarme {
             | Alarme::FirewallBloqueou
             | Alarme::DiscoLento
             | Alarme::EsgotamentoPrevisto
-            | Alarme::EsgotamentoIminente => return 0,
+            | Alarme::EsgotamentoIminente
+            | Alarme::ReplicaAtrasada => return 0,
         };
         1 << posicao
     }

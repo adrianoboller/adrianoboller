@@ -113,6 +113,7 @@ window.PhxAquario = (function () {
     "aquario.motivo.disco_lento": () => txt("tela.sd_tipo_lento", "disco lento"),
     "aquario.motivo.esgotamento_previsto": () => txt("tela.aq_m_esgotamento_previsto", "um recurso esgota em menos de um dia"),
     "aquario.motivo.esgotamento_iminente": () => txt("tela.aq_m_esgotamento_iminente", "um recurso esgota em menos de duas horas"),
+    "aquario.motivo.replica_atrasada": () => txt("tela.aq_m_replica_atrasada", "uma tabela da réplica está ficando para trás da origem"),
   };
   /* Chave que esta versao da tela nao conhece (servidor mais novo): sai a
    * chave crua, que e honesta — inventar uma frase seria pior. */
