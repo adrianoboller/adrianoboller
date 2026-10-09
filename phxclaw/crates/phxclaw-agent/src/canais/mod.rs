@@ -34,6 +34,7 @@ pub mod mastodon;
 pub mod matrix;
 pub mod mattermost;
 pub mod meta;
+pub mod nip44;
 pub mod nostr;
 pub mod reddit;
 pub mod rocketchat;

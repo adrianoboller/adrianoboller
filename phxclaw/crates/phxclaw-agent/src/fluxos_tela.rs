@@ -19,8 +19,12 @@
 //!   (409 com a atual, senao a gravacao de outra aba se perderia calada).
 //! - `POST /v1/fluxos/rodar` `{"nome": REL, "ate": PASSO?}`: a tarefa do fluxo (202 + id),
 //!   carimbada com o projeto do cabecalho `X-PhxClaw-Projeto` quando ha usuarios.
+//! - `POST /v1/fluxos/assistente` `{"descricao": ..., "tentativas": N?}`: o assistente
+//!   (`fluxo_assistente`) monta o fluxo pelo modelo padrao, o motor confere em laco e o
+//!   RASCUNHO nasce na pasta (201 com o nome relativo); sem fluxo valido, 422 com o erro de
+//!   cada tentativa. Nada e publicado.
 //!
-//! Com usuarios (`rbac.rs`), gravar e rodar sao do `admin`: o arquivo gravado aqui e o que
+//! Com usuarios (`rbac.rs`), gravar, rodar e o assistente sao do `admin`: o arquivo gravado aqui e o que
 //! o webhook, a agenda e o poll rodam com as credenciais do operador.
 //!
 //! A posicao dos nos mora no campo `ui` do proprio JSON. O `Fluxo` nao tem esse campo:
@@ -47,6 +51,7 @@ pub fn rotas() -> Router<ApiState> {
         .route("/v1/fluxos/arquivo", get(ler).put(gravar))
         .route("/v1/fluxos/validar", post(validar))
         .route("/v1/fluxos/rodar", post(rodar))
+        .route("/v1/fluxos/assistente", post(assistente))
 }
 
 type Erro = (StatusCode, Json<Value>);
@@ -316,6 +321,60 @@ async fn rodar(
     )
     .map_err(|r| erro(r.status, r.erro))?;
     Ok((StatusCode::ACCEPTED, Json(json!({"id": c.id}))).into_response())
+}
+
+#[derive(Deserialize)]
+struct PedidoAoAssistente {
+    descricao: String,
+    #[serde(default)]
+    tentativas: Option<usize>,
+}
+
+async fn assistente(
+    State(s): State<ApiState>,
+    h: HeaderMap,
+    Json(p): Json<PedidoAoAssistente>,
+) -> Result<Response, Erro> {
+    auth(&s, &h)?;
+    // O modelo e o da instancia (o mesmo do `POST /v1/tasks` sem modelo): o assistente nao
+    // escolhe provedor, so pede o fluxo a quem ja atende.
+    let agente = (s.factory)(&s.default_model)
+        .map_err(|e| erro(StatusCode::SERVICE_UNAVAILABLE, format!("sem modelo: {e}")))?;
+    let pasta = pasta_dos_fluxos(&s);
+    let r = crate::fluxo_assistente::criar(
+        agente.llm.as_ref(),
+        crate::fluxo_assistente::Pedido {
+            descricao: &p.descricao,
+            pasta: &pasta,
+            destino: None,
+            tentativas: p
+                .tentativas
+                .unwrap_or(crate::fluxo_assistente::TENTATIVAS_PADRAO),
+        },
+    )
+    .await;
+    match r {
+        Ok(r) => Ok((
+            StatusCode::CREATED,
+            Json(json!({
+                "arquivo": relativo(&pasta, &r.arquivo),
+                "nome": r.nome,
+                "passos": r.passos,
+                "tentativas": r.tentativas,
+                "credenciais": r.credenciais,
+                "publicado": false,
+            })),
+        )
+            .into_response()),
+        Err(f) => Err((
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Json(json!({
+                "error": f.to_string(),
+                "tentativas": f.tentativas,
+                "erros": f.erros,
+            })),
+        )),
+    }
 }
 
 #[cfg(test)]

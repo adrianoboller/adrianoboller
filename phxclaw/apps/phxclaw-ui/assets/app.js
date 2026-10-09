@@ -1,4 +1,15 @@
 const params = new URLSearchParams(location.search);
+// Convite do terminal compartilhado (#convite=SESSAO.TOKEN, ide.js): sai da URL ANTES de a
+// navegacao reescrever o # (mostrarTela troca o fragmento pelo nome da tela) e fica so nesta
+// aba ate o ide.js o consumir. Fragmento nao vai ao servidor nem aos logs; o replaceState o
+// tira tambem do historico.
+{
+  const c = /^#convite=([0-9a-f-]{36}\.[0-9a-f]{64})$/.exec(location.hash);
+  if (c) {
+    try { sessionStorage.setItem('phxclaw.convite', c[1]); } catch { /* sem armazenamento: o convite se perde */ }
+    history.replaceState(null, '', `${location.pathname}${location.search}#ide`);
+  }
+}
 const forced = params.get('screen');
 const splash = document.getElementById('splash');
 const app = document.getElementById('app');

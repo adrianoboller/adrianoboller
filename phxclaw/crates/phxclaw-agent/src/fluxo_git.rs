@@ -14,6 +14,17 @@
 //!   `GitTool` de escrita (mesmo sandbox, mesma varredura de segredos no `add` e no `commit`,
 //!   mesmo autor), e a historia, o diff e o ramo sao os dele. Aqui mora so o que o git nao
 //!   sabe: o que e um fluxo, e o que e o dev e o prod dele.
+//! - **Push e pull pelo mesmo git** (`empurrar`/`puxar` -> `GitTool::empurrar`/`puxar`):
+//!   so avanco rapido e so com a pasta registrada. Remoto LOCAL (bare, `file://` ou caminho)
+//!   pelo nome do `.git/config` ou pelo `--remoto`; remoto de REDE (https) SO pela chave
+//!   `fluxos.git.remoto` da configuracao do operador, com a credencial por nome em
+//!   `fluxos.git.credencial_nome` (`empurrar_pela_rede`/`puxar_pela_rede` ->
+//!   `git::RemotoDeRede`).
+//!   O `.git/config` e escrevivel pelo modelo: ele nunca escolhe para onde a rede vai. E a
+//!   rede e so destes dois comandos do operador -- a ferramenta que o modelo chama continua
+//!   sem acao de rede e sem rede no sandbox. Conflito e recusa dizendo, nos dois niveis: o
+//!   git que divergiu nao funde, e o `importar` depois do pull nao troca rascunho diferente
+//!   sem `--sobrescrever`.
 //! - **Arquivo canonico = diff estavel.** `fluxo_versoes::canonico`: chaves em ordem em
 //!   qualquer profundidade, indentado, quebra final, sem data nem nome de maquina. Exportar
 //!   duas vezes o mesmo fluxo gera os mesmos bytes (e nao reescreve o arquivo), entao o
@@ -392,6 +403,106 @@ fn gravar_rascunho(p: &Plano) -> Result<(), String> {
         }
         _ => Ok(()),
     }
+}
+
+/// O remoto quando o operador nao diz outro.
+pub const REMOTO_PADRAO: &str = "origin";
+
+/// Envia o repositorio de fluxos ao remoto (`exportar --push`), pelo `GitTool` de escrita:
+/// so o ultimo commit, so por avanco rapido, e so com a pasta registrada (`--commit`) -- o
+/// que esta fora do commit nao viaja calado. Ver `GitTool::empurrar`.
+pub async fn empurrar(g: &GitTool, repo: &Path, remoto: &str) -> Result<Value, String> {
+    g.empurrar(repo, remoto, None)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Traz o remoto para o repositorio de fluxos (`importar --pull`), pelo `GitTool` de
+/// escrita: so por avanco rapido e com a pasta limpa; divergencia e recusa dizendo. O
+/// projeto so muda depois, pelo `importar` -- que continua recusando trocar rascunho que
+/// difere sem `--sobrescrever`: o pull traz o arquivo, nunca passa por cima de quem edita.
+pub async fn puxar(g: &GitTool, repo: &Path, remoto: &str) -> Result<Value, String> {
+    g.puxar(repo, remoto, None).await.map_err(|e| e.to_string())
+}
+
+/// A chave do remoto de rede: so do operador (`SO_DO_OPERADOR`, motivo DESTINO).
+pub const CHAVE_REMOTO: &str = "fluxos.git.remoto";
+/// A chave do NOME da credencial do remoto de rede (declarada em `http.json`, segredo no
+/// broker: `phxclaw credencial guardar NOME`).
+pub const CHAVE_CREDENCIAL: &str = "fluxos.git.credencial_nome";
+
+/// O ramo a que a INSTANCIA esta ligada (o «connect to branch» do n8n): o dev de uma maquina
+/// num ramo, o prod de outra em outro. Vazio = o ramo em que o repositorio estiver.
+pub const CHAVE_RAMO: &str = "fluxos.git.ramo";
+
+/// Liga o repositorio de fluxos ao ramo da instancia ANTES de qualquer git do comando:
+/// repositorio novo nasce nele; repositorio em outro ramo e RECUSA dizendo, nunca `checkout`
+/// calado -- trocar de ramo por baixo do operador trocaria os arquivos da pasta (e o que o
+/// `importar --ambiente prod` publicaria) sem ninguem pedir.
+pub async fn ligar_ramo(g: &GitTool, repo: &Path, ramo: &str) -> Result<(), String> {
+    let ramo = crate::git::nome_de_ramo(ramo.trim()).map_err(|e| e.to_string())?;
+    if !repo.join(".git").exists() {
+        std::fs::create_dir_all(repo).map_err(|e| format!("{}: {e}", repo.display()))?;
+        let ctx = ToolContext {
+            task_id: "fluxo-git".into(),
+            workdir: repo.to_path_buf(),
+            timeout: Duration::from_secs(60),
+        };
+        g.run(json!({"action": "init", "branch": ramo}), &ctx)
+            .await
+            .map_err(|e| e.to_string())?;
+        return Ok(());
+    }
+    match g.ramo_atual(repo).await.map_err(|e| e.to_string())? {
+        Some(r) if r == ramo => Ok(()),
+        atual => Err(format!(
+            "{} esta no ramo {} e esta instancia esta ligada ao ramo {ramo} ({CHAVE_RAMO}): nada \
+foi feito; troque o ramo no git (git -C {} checkout {ramo}) ou a chave",
+            repo.display(),
+            atual.as_deref().unwrap_or("(HEAD destacado)"),
+            repo.display()
+        )),
+    }
+}
+
+/// O remoto de rede do operador: a URL conferida (`git::conferir_url_de_rede`) e, com
+/// `credencial`, o cabecalho dela -- resolvido pelo no HTTP, que recusa a credencial cuja
+/// lista de origens nao tem a do remoto. Nada disso toca a rede ainda.
+pub async fn remoto_de_rede(
+    raiz_do_agente: &Path,
+    url: &str,
+    credencial: Option<&str>,
+) -> Result<crate::git::RemotoDeRede, String> {
+    let u = crate::git::conferir_url_de_rede(url)?;
+    let cab = match credencial.map(str::trim).filter(|c| !c.is_empty()) {
+        Some(nome) => Some(
+            crate::fluxo_http::cabecalho_da_credencial(raiz_do_agente, nome, u.as_str()).await?,
+        ),
+        None => None,
+    };
+    crate::git::RemotoDeRede::novo(u.as_str(), cab)
+}
+
+/// `exportar --push` para o remoto de rede do operador. Ver `GitTool::empurrar_pela_rede`.
+pub async fn empurrar_pela_rede(
+    g: &GitTool,
+    repo: &Path,
+    r: &crate::git::RemotoDeRede,
+) -> Result<Value, String> {
+    g.empurrar_pela_rede(repo, r, None)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// `importar --pull` do remoto de rede do operador. Ver `GitTool::puxar_pela_rede`.
+pub async fn puxar_pela_rede(
+    g: &GitTool,
+    repo: &Path,
+    r: &crate::git::RemotoDeRede,
+) -> Result<Value, String> {
+    g.puxar_pela_rede(repo, r, None)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// Registra o repositorio de fluxos no git (`init` se faltar, `add`, `commit`), pelo

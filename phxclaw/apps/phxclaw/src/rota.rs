@@ -32,7 +32,16 @@ pub fn tabela(cli: &str) -> String {
     let largura_da_tela = crate::ajuda::LARGURA;
     for r in ROTAS {
         let alvo = format!("{} {}", r.metodo, r.caminho);
-        s.push_str(&format!("  {alvo:<largura$}  {}\n", r.resumo));
+        // Resumo na mesma linha so quando cabe na tela; senao o alvo fica so e o resumo
+        // quebra no recuo, como as notas -- a catraca exige toda linha <= largura.
+        let inteira = format!("  {alvo:<largura$}  {}", r.resumo);
+        if inteira.chars().count() <= largura_da_tela {
+            s.push_str(&inteira);
+            s.push('\n');
+        } else {
+            s.push_str(&format!("  {alvo}\n"));
+            s.push_str(&crate::ajuda::quebrar(r.resumo, &recuo, largura_da_tela));
+        }
         let mut nota = |t: String| s.push_str(&crate::ajuda::quebrar(&t, &recuo, largura_da_tela));
         if !r.parametros.is_empty() {
             nota(r.parametros.to_string());

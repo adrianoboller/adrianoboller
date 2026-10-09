@@ -273,6 +273,10 @@ pub struct Passo {
     pub se: Option<Condicao>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub juntar: Option<Juncao>,
+    /// No de politica (`fluxo_politica`): cada item da entrada vai para a porta
+    /// `aprovado` ou `reprovado`, com o motivo.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub politica: Option<crate::fluxo_politica::Politica>,
     /// Tamanho do lote: a entrada vira itens-lote de ate N itens cada.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lote: Option<usize>,
@@ -395,7 +399,8 @@ pub struct Resultado {
     /// A saida como itens.
     #[serde(default)]
     pub itens: Vec<Value>,
-    /// Portas nomeadas (`verdadeiro`/`falso` do `se`, `erro` do `saida_de_erro`).
+    /// Portas nomeadas (`verdadeiro`/`falso` do `se`, `aprovado`/`reprovado` da `politica`,
+    /// `erro` do `saida_de_erro`).
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub portas: BTreeMap<String, Vec<Value>>,
     /// Tarefa filha, quando o passo e de agente.
@@ -615,6 +620,7 @@ enum Tipo<'a> {
     Lote(usize),
     Parar(&'a str),
     Esperar(&'a Espera),
+    Politica(&'a crate::fluxo_politica::Politica),
 }
 
 impl Tipo<'_> {
@@ -665,10 +671,13 @@ fn tipo(p: &Passo) -> Result<Tipo<'_>, String> {
     if let Some(e) = &p.esperar {
         tipos.push(Tipo::Esperar(e));
     }
+    if let Some(pol) = &p.politica {
+        tipos.push(Tipo::Politica(pol));
+    }
     if tipos.len() != 1 {
         return Err(format!(
             "passo {}: diga 'tarefa', 'ferramenta', 'skill', 'mcp', 'comando', 'http', 'se', \
-'juntar', 'lote', 'parar_com_erro' OU 'esperar' (exatamente um)",
+'juntar', 'lote', 'parar_com_erro', 'esperar' OU 'politica' (exatamente um)",
             p.id
         ));
     }
@@ -930,10 +939,20 @@ ou {id}:falso)",
                         p.id
                     ));
                 }
+                // A saida principal da politica junta as duas portas: depender dela seria
+                // passar adiante o que a politica reprovou.
+                None if dep.politica.is_some() => {
+                    return Err(format!(
+                        "passo {} depende de '{id}', que e uma 'politica': diga a porta \
+({id}:aprovado ou {id}:reprovado)",
+                        p.id
+                    ));
+                }
                 _ => {}
             }
         }
-        let precisa_entrada = p.por_item || matches!(t, Tipo::Se(_) | Tipo::Lote(_));
+        let precisa_entrada =
+            p.por_item || matches!(t, Tipo::Se(_) | Tipo::Lote(_) | Tipo::Politica(_));
         if precisa_entrada && entrada_de(p).is_none() {
             return Err(format!(
                 "passo {}: por_item, se e lote precisam de uma dependencia como entrada (ou \
@@ -981,9 +1000,26 @@ ou {id}:falso)",
             },
             Tipo::Lote(0) => return Err(format!("passo {}: lote comeca em 1", p.id)),
             Tipo::Esperar(e) => validar_espera(p, e)?,
+            Tipo::Politica(pol) => {
+                if p.por_item {
+                    return Err(format!(
+                        "passo {}: a politica ja avalia item por item (sem por_item)",
+                        p.id
+                    ));
+                }
+                crate::fluxo_politica::validar(pol).map_err(|e| format!("passo {}: {e}", p.id))?;
+            }
             _ => {}
         }
         if let Some(pin) = &p.pin {
+            if p.politica.is_some() {
+                // Pinar a politica seria a porta de pular a guarda inteira, e as portas
+                // `aprovado`/`reprovado` nao viriam do pin.
+                return Err(format!(
+                    "passo {}: 'politica' nao aceita pin (a guarda e o que o fluxo declarou)",
+                    p.id
+                ));
+            }
             if p.se.is_some() {
                 // O `se` reparte itens em portas; um pin so tem a saida principal, e quem
                 // depende de `x:verdadeiro` leria uma porta que o pin nao sabe encher.
@@ -1279,6 +1315,9 @@ fn portas_de(p: &Passo) -> Vec<&'static str> {
     let mut v = Vec::new();
     if p.se.is_some() {
         v.extend(["verdadeiro", "falso"]);
+    }
+    if p.politica.is_some() {
+        v.extend(crate::fluxo_politica::PORTAS);
     }
     if p.ao_errar == AoErrar::SaidaDeErro {
         v.push("erro");
@@ -2103,7 +2142,8 @@ fn controle(
         | Tipo::Ferramenta(_)
         | Tipo::Skill(_)
         | Tipo::Comando(_)
-        | Tipo::Esperar(_) => {
+        | Tipo::Esperar(_)
+        | Tipo::Politica(_) => {
             unreachable!("nao e no de controle")
         }
     })
@@ -2466,6 +2506,48 @@ velhas a passos novos; rode de novo"
                 repetivel,
                 passadas: vec![],
             };
+            // A politica e um no de controle que pode perguntar ao decisor (assincrono): roda
+            // aqui, sob a conta do fluxo -- o modelo que a decisao chamar cobra esta tarefa.
+            if let Tipo::Politica(pol) = &t {
+                let itens = entrada_de(p)
+                    .and_then(|e| visao.get(e))
+                    .map(|s| s.itens.clone())
+                    .unwrap_or_default();
+                let avaliado = if itens.len() > p.max_itens {
+                    Err(format!(
+                        "politica: {} itens na entrada passam do teto de {} (max_itens)",
+                        itens.len(),
+                        p.max_itens
+                    ))
+                } else {
+                    let llm = pol
+                        .decisao
+                        .as_ref()
+                        .filter(|d| d.modelo)
+                        .map(|_| crate::orcamento::LlmDaTarefa::por_dentro(agente.llm.clone()));
+                    crate::orcamento::sob_a_conta(
+                        &mae.id,
+                        agente.config.precos.clone(),
+                        crate::fluxo_politica::avaliar(pol, &itens, llm),
+                    )
+                    .await
+                };
+                prontos.push(match avaliado {
+                    Ok((todos, portas)) => Desfecho {
+                        run: r.uuid,
+                        tentativa: r.attempt,
+                        id: p.id.clone(),
+                        ok: true,
+                        saida: Saida::de_itens(todos),
+                        portas,
+                        tarefa: None,
+                        repetivel: false,
+                        passadas: vec![],
+                    },
+                    Err(e) => desfecho_de_erro(false, e, false),
+                });
+                continue;
+            }
             if !t.e_trabalho() {
                 {
                     let outro = &t;

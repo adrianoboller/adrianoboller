@@ -953,15 +953,13 @@
  },
  "vscode": {
   "total": 52,
-  "no_agente": 49,
+  "no_agente": 51,
   "parcial": 0,
-  "nao": 3,
-  "pct_agente": 94.2,
-  "pct_com_bibliotecas": 94.2,
+  "nao": 1,
+  "pct_agente": 98.1,
+  "pct_com_bibliotecas": 98.1,
   "falta": [
-   "dobra_codigo",
-   "remoto_ssh_containers",
-   "live_share"
+   "remoto_ssh_containers"
   ],
   "pela_metade": [],
   "lido_em": "01/10/2026",
@@ -988,7 +986,7 @@
    },
    {
     "id": "dobra_codigo",
-    "estado": "nao"
+    "estado": "agente"
    },
    {
     "id": "lsp",
@@ -1108,7 +1106,7 @@
    },
    {
     "id": "live_share",
-    "estado": "nao"
+    "estado": "agente"
    },
    {
     "id": "notebook",
@@ -1178,19 +1176,15 @@
  },
  "n8n": {
   "total": 59,
-  "no_agente": 52,
-  "parcial": 6,
-  "nao": 1,
-  "pct_agente": 88.1,
-  "pct_com_bibliotecas": 93.2,
-  "falta": [
-   "segredos_externos"
-  ],
+  "no_agente": 55,
+  "parcial": 4,
+  "nao": 0,
+  "pct_agente": 93.2,
+  "pct_com_bibliotecas": 96.6,
+  "falta": [],
   "pela_metade": [
+   "segredos_externos",
    "fila_workers",
-   "controle_versao_git_fluxos",
-   "assistente_construtor_ia",
-   "guardrails",
    "observabilidade_insights",
    "instalacao_docker_k8s"
   ],
@@ -1314,7 +1308,7 @@
    },
    {
     "id": "segredos_externos",
-    "estado": "nao"
+    "estado": "parcial"
    },
    {
     "id": "redacao_dados_execucao",
@@ -1362,11 +1356,11 @@
    },
    {
     "id": "controle_versao_git_fluxos",
-    "estado": "parcial"
+    "estado": "agente"
    },
    {
     "id": "assistente_construtor_ia",
-    "estado": "parcial"
+    "estado": "agente"
    },
    {
     "id": "plugins",
@@ -1398,7 +1392,7 @@
    },
    {
     "id": "guardrails",
-    "estado": "parcial"
+    "estado": "agente"
    },
    {
     "id": "avaliacao_modelos",

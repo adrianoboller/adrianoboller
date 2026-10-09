@@ -49,7 +49,9 @@ use phxclaw_browser::BrowserPolicy;
 use phxclaw_egress_broker::{EgressError, request_checked};
 use phxclaw_http_client::{HttpOptions, HttpRequestSpec, HttpResult};
 use phxclaw_mcp_lsp_runtime::AuthorizationSource;
-use phxclaw_secret_broker::{SecretBroker, SecretValue, scrub_secret_like, scrub_text};
+use phxclaw_secret_broker::{
+    ReferenciaExterna, SecretBroker, SecretValue, scrub_secret_like, scrub_text,
+};
 use reqwest::Url;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -131,6 +133,10 @@ pub struct DeclCredencial {
     pub cabecalho: Option<String>,
     #[serde(default)]
     pub oauth2: Option<ConfigOauth>,
+    /// O segredo mora num cofre EXTERNO (`cofres/`: Vault, AWS, Azure, GCP), lido sob demanda
+    /// e so em memoria, em vez do envelope local. O tipo e as origens continuam valendo.
+    #[serde(default)]
+    pub cofre: Option<ReferenciaExterna>,
 }
 
 impl ConfigHttp {
@@ -192,6 +198,18 @@ impl DeclCredencial {
         }
         if self.tipo != TipoCredencial::Oauth2 && self.oauth2.is_some() {
             return Err("bloco 'oauth2' so no tipo oauth2".into());
+        }
+        if let Some(r) = &self.cofre {
+            // No oauth2 o segredo do cliente troca por acesso e a renovacao guarda o acesso no
+            // broker: lido de fora, um dos dois iria ao disco. Fica para quando houver motivo.
+            if self.tipo == TipoCredencial::Oauth2 {
+                return Err(
+                    "'cofre' vale para bearer, basico e cabecalho; no oauth2 o segredo \
+do cliente fica no broker local"
+                        .into(),
+                );
+            }
+            r.validar()?;
         }
         Ok(())
     }
@@ -655,6 +673,15 @@ enum Autenticacao {
         nome: String,
         cred: crate::canais::http::Credencial,
     },
+    /// O segredo vem de um cofre externo pelo broker (`resolver_externo`), a cada pedido (o
+    /// cache curto e do broker). `usuario` no basico, `cabecalho` no cabecalho.
+    Externa {
+        broker: Arc<SecretBroker>,
+        referencia: ReferenciaExterna,
+        tipo: TipoCredencial,
+        usuario: String,
+        cabecalho: String,
+    },
 }
 
 struct Credenciada {
@@ -674,6 +701,27 @@ impl Credenciada {
                 "credencial {nome} sem segredo guardado: rode `phxclaw credencial guardar {nome}`"
             )
         };
+        if let Some(r) = &d.cofre {
+            // O broker das credenciais e o consumidor dos cofres: a evidencia da leitura
+            // externa fica no livro dele, ao lado da dos segredos locais.
+            let b = broker(raiz, true)?.ok_or("sem broker")?;
+            crate::cofres::ligar(&b, raiz)?;
+            return Ok(Self {
+                nome: nome.to_string(),
+                origens: d
+                    .origens
+                    .iter()
+                    .filter_map(|o| origem_canonica(o).ok())
+                    .collect(),
+                aut: Autenticacao::Externa {
+                    broker: b,
+                    referencia: r.clone(),
+                    tipo: d.tipo,
+                    usuario: d.usuario.clone().unwrap_or_default(),
+                    cabecalho: d.cabecalho.clone().unwrap_or_default(),
+                },
+            });
+        }
         let b = broker(raiz, false)?.ok_or_else(falta)?;
         let alvo = d.alvo(nome);
         let aut = match d.tipo {
@@ -740,6 +788,33 @@ impl Credenciada {
                     vec![SecretValue::new(v.to_string())],
                 ))
             })?,
+            Autenticacao::Externa {
+                broker,
+                referencia,
+                tipo,
+                usuario,
+                cabecalho,
+            } => {
+                let v = broker
+                    .resolver_externo(&self.nome, referencia, "phxclaw.agent.http")
+                    .await
+                    .map_err(|e| e.to_string())?;
+                let s = v.expose().to_string();
+                match tipo {
+                    TipoCredencial::Basico => {
+                        use base64::Engine;
+                        let b = base64::engine::general_purpose::STANDARD
+                            .encode(format!("{usuario}:{s}"));
+                        (
+                            "Authorization".into(),
+                            format!("Basic {b}"),
+                            vec![SecretValue::new(b), v],
+                        )
+                    }
+                    TipoCredencial::Cabecalho => (cabecalho.clone(), s, vec![v]),
+                    _ => ("Authorization".into(), format!("Bearer {s}"), vec![v]),
+                }
+            }
         })
     }
 
@@ -747,6 +822,16 @@ impl Credenciada {
     async fn invalidar(&self) -> bool {
         match &self.aut {
             Autenticacao::Fonte(f) => f.invalidar().await,
+            // O valor do cache pode ter sido girado no cofre: esquece e le de novo, uma vez.
+            Autenticacao::Externa {
+                broker, referencia, ..
+            } => match broker.cofres() {
+                Some(c) => {
+                    c.esquecer(referencia);
+                    true
+                }
+                None => false,
+            },
             _ => false,
         }
     }
@@ -760,8 +845,35 @@ impl Credenciada {
                     Err(_) => t,
                 }
             }
+            // O valor do cofre que foi no pedido ja esta em `conhecidos` (a tarja de tudo o
+            // que sai); aqui nao se le o cofre de novo so para limpar.
+            Autenticacao::Externa { .. } => t,
         }
     }
+}
+
+/// O cabecalho de uma credencial nomeada para quem NAO e o no HTTP: o push/pull de rede do
+/// git dos fluxos (`git::RemotoDeRede`), que entrega o cabecalho ao git do sandbox. A MESMA
+/// resolucao do no (declaracao em `http.json`, segredo no broker ou no cofre externo) e a
+/// MESMA regra das origens: a credencial so sai para a origem declarada com ela -- uma
+/// segunda conferencia mais frouxa seria o caminho pelo qual o token iria embora.
+/// Devolve (nome do cabecalho, valor, segredos para a tarja).
+pub async fn cabecalho_da_credencial(
+    raiz_do_agente: &Path,
+    nome: &str,
+    url: &str,
+) -> Result<(String, String, Vec<SecretValue>), String> {
+    let u = Url::parse(url).map_err(|e| format!("{url:?}: {e}"))?;
+    let cfg = ConfigHttp::carregar(raiz_do_agente)?;
+    let c = Credenciada::resolver(raiz_do_agente, &cfg, nome)?;
+    if !c.alcanca(&u) {
+        return Err(format!(
+            "a credencial {nome} nao vale para {} (origens declaradas em {ARQUIVO}: {})",
+            u.origin().ascii_serialization(),
+            c.origens.iter().cloned().collect::<Vec<_>>().join(", ")
+        ));
+    }
+    c.cabecalho().await
 }
 
 // ------------------------------------------------------------------ a execucao
@@ -778,10 +890,13 @@ enum Pinagem {
 
 /// A decisao entre o IP preso e o proxy do ambiente. `ambiente` le as variaveis (o teste
 /// passa as suas: mexer no ambiente do processo mudaria o dos testes em paralelo).
+/// `opcao` diz onde se liga a saida pelo proxy (o `http.json` do no, o `config.json` dos
+/// cofres), para a recusa e o aviso nomearem o lugar certo.
 fn pinagem(
     u: &Url,
     enderecos: Vec<std::net::SocketAddr>,
     usar_proxy: bool,
+    opcao: &str,
     ambiente: impl Fn(&str) -> Option<String>,
 ) -> Result<Pinagem, String> {
     let resolve = match (u.host_str(), enderecos.is_empty()) {
@@ -794,12 +909,67 @@ fn pinagem(
     let origem = u.origin().ascii_serialization();
     if !usar_proxy {
         return Err(format!(
-            "ha proxy no ambiente ({var}) para {origem}: por ele o nome seria resolvido de novo e o IP conferido nao valeria (DNS rebinding). Para sair pelo proxy, escreva \"usar_proxy_do_ambiente\": true em {ARQUIVO} (o nome continua conferido; o IP deixa de ficar preso); ou tire {origem} do proxy pelo NO_PROXY"
+            "ha proxy no ambiente ({var}) para {origem}: por ele o nome seria resolvido de novo e o IP conferido nao valeria (DNS rebinding). Para sair pelo proxy, ligue {opcao} (o nome continua conferido; o IP deixa de ficar preso); ou tire {origem} do proxy pelo NO_PROXY"
         ));
     }
     Ok(Pinagem::PeloProxy(format!(
-        "{origem} saiu pelo proxy do ambiente ({var}), por usar_proxy_do_ambiente em {ARQUIVO}: o nome foi conferido, mas a conexao NAO ficou presa no IP conferido"
+        "{origem} saiu pelo proxy do ambiente ({var}), por {opcao}: o nome foi conferido, mas a conexao NAO ficou presa no IP conferido"
     )))
+}
+
+/// Onde o no HTTP liga a saida pelo proxy.
+const OPCAO_DO_PROXY: &str = "\"usar_proxy_do_ambiente\": true em http.json";
+
+/// A politica de saida da casa para um pedido: a lista de IPs internos do navegador, o IP
+/// conferido PRESO na conexao, a decisao do proxy e o teto de bytes de todos os saltos. O no
+/// HTTP e os cofres externos (`cofres/`) saem por aqui -- uma conferencia so, para o
+/// destino que recebe credencial nunca ganhar um segundo caminho mais frouxo.
+pub(crate) struct PoliticaDeSaida<'a> {
+    pub(crate) politica: &'a BrowserPolicy,
+    pub(crate) usar_proxy: bool,
+    pub(crate) opcao_do_proxy: &'a str,
+    pub(crate) teto: usize,
+    pub(crate) gastos: &'a Arc<std::sync::atomic::AtomicUsize>,
+    pub(crate) avisos: &'a std::sync::Mutex<BTreeSet<String>>,
+}
+
+impl PoliticaDeSaida<'_> {
+    /// As opcoes do cliente para o salto `u` (o primeiro e cada redirecionamento), ou a recusa.
+    pub(crate) async fn opcoes(&self, u: Url) -> Result<HttpOptions, EgressError> {
+        // O resto do teto a cada salto: o corpo do 302 anterior ja foi pago.
+        let resta = self
+            .teto
+            .saturating_sub(self.gastos.load(std::sync::atomic::Ordering::SeqCst));
+        if resta == 0 {
+            return Err(EgressError::Http(
+                phxclaw_http_client::HttpClientError::BodyTooLarge(self.teto),
+            ));
+        }
+        let (_, enderecos) = self
+            .politica
+            .check_url_resolved(u.as_str())
+            .await
+            .map_err(|e| EgressError::Refused(e.to_string()))?;
+        let resolve = match pinagem(&u, enderecos, self.usar_proxy, self.opcao_do_proxy, |k| {
+            std::env::var(k).ok()
+        })
+        .map_err(EgressError::Refused)?
+        {
+            Pinagem::Direta(r) => r,
+            Pinagem::PeloProxy(aviso) => {
+                self.avisos
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner())
+                    .insert(aviso);
+                vec![]
+            }
+        };
+        Ok(HttpOptions {
+            max_body_bytes: Some(resta),
+            resolve,
+            contador: Some(Arc::clone(self.gastos)),
+        })
+    }
 }
 
 /// Toda string (chave e valor) de um JSON, tarjada.
@@ -884,39 +1054,15 @@ impl Execucao<'_> {
                 spec.headers.retain(|k, _| !k.eq_ignore_ascii_case(&nome));
                 spec.headers.insert(nome, valor);
             }
-            let (politica, gastos, teto) = (&self.politica, &self.gastos, self.teto_bytes);
-            let (usar_proxy, avisos) = (self.usar_proxy, &self.avisos);
-            let r = request_checked(&spec, |u| async move {
-                // O resto do teto a cada salto: o corpo do 302 anterior ja foi pago.
-                let resta = teto.saturating_sub(gastos.load(std::sync::atomic::Ordering::SeqCst));
-                if resta == 0 {
-                    return Err(EgressError::Http(
-                        phxclaw_http_client::HttpClientError::BodyTooLarge(teto),
-                    ));
-                }
-                let (_, enderecos) = politica
-                    .check_url_resolved(u.as_str())
-                    .await
-                    .map_err(|e| EgressError::Refused(e.to_string()))?;
-                let resolve = match pinagem(&u, enderecos, usar_proxy, |k| std::env::var(k).ok())
-                    .map_err(EgressError::Refused)?
-                {
-                    Pinagem::Direta(r) => r,
-                    Pinagem::PeloProxy(aviso) => {
-                        avisos
-                            .lock()
-                            .unwrap_or_else(|p| p.into_inner())
-                            .insert(aviso);
-                        vec![]
-                    }
-                };
-                Ok(HttpOptions {
-                    max_body_bytes: Some(resta),
-                    resolve,
-                    contador: Some(Arc::clone(gastos)),
-                })
-            })
-            .await;
+            let saida = PoliticaDeSaida {
+                politica: &self.politica,
+                usar_proxy: self.usar_proxy,
+                opcao_do_proxy: OPCAO_DO_PROXY,
+                teto: self.teto_bytes,
+                gastos: &self.gastos,
+                avisos: &self.avisos,
+            };
+            let r = request_checked(&spec, |u| saida.opcoes(u)).await;
             let r = match r {
                 Ok(r) => r,
                 Err(EgressError::Http(phxclaw_http_client::HttpClientError::BodyTooLarge(_))) => {
@@ -1333,8 +1479,11 @@ mod tests {
         let sem_proxy = |_: &str| None;
         let com_proxy =
             |k: &str| (k == "HTTPS_PROXY").then(|| "http://usuario:senha@127.0.0.1:3128".into());
-        assert_eq!(pinagem(&u, vec![ip], false, sem_proxy), Ok(preso));
-        let e = pinagem(&u, vec![ip], false, com_proxy).unwrap_err();
+        assert_eq!(
+            pinagem(&u, vec![ip], false, OPCAO_DO_PROXY, sem_proxy),
+            Ok(preso)
+        );
+        let e = pinagem(&u, vec![ip], false, OPCAO_DO_PROXY, com_proxy).unwrap_err();
         assert!(
             e.contains("HTTPS_PROXY") && e.contains("usar_proxy_do_ambiente"),
             "{e}"
@@ -1343,7 +1492,7 @@ mod tests {
             !e.contains("senha") && !e.contains("3128"),
             "o valor do proxy vazou: {e}"
         );
-        match pinagem(&u, vec![ip], true, com_proxy) {
+        match pinagem(&u, vec![ip], true, OPCAO_DO_PROXY, com_proxy) {
             Ok(Pinagem::PeloProxy(a)) => {
                 assert!(
                     a.contains("NAO ficou presa") && a.contains("HTTPS_PROXY"),
@@ -1359,11 +1508,11 @@ mod tests {
             _ => None,
         };
         assert!(
-            matches!(pinagem(&u, vec![ip], false, excluido), Ok(Pinagem::Direta(r)) if r.len() == 1)
+            matches!(pinagem(&u, vec![ip], false, OPCAO_DO_PROXY, excluido), Ok(Pinagem::Direta(r)) if r.len() == 1)
         );
         // Sem nome resolvido (IP literal, origem liberada) nao ha o que prender.
         assert_eq!(
-            pinagem(&u, vec![], false, com_proxy),
+            pinagem(&u, vec![], false, OPCAO_DO_PROXY, com_proxy),
             Ok(Pinagem::Direta(vec![]))
         );
         // A opcao e de `http.json`, e o arquivo com ela carrega.

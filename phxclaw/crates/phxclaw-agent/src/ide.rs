@@ -46,13 +46,17 @@ use std::time::Duration;
 /// A rota do terminal: a mesma constante no `route` e na conferencia do token, para a
 /// linha da matriz que a sessao consulta ser a da rota que o navegador abriu.
 pub const ROTA_TERMINAL: &str = "/v1/ide/terminal";
+/// A rota da completacao por IA: a UNICA que a credencial do terminal alcanca
+/// (`rbac::CredencialDoTerminal`), porque e a unica para a qual o `hx` usa token.
+pub const ROTA_COMPLETAR: &str = "/v1/ide/completar";
 
 pub fn rotas() -> Router<ApiState> {
     Router::new()
         .route(ROTA_TERMINAL, get(terminal))
         .route("/v1/ide/simbolos", get(simbolos))
         .route("/v1/ide/arquivo", get(arquivo))
-        .route("/v1/ide/completar", post(completar))
+        .route("/v1/ide/dobras", get(dobras))
+        .route(ROTA_COMPLETAR, post(completar))
         // O explorador de testes e a loja de plugins da tela: as MESMAS funcoes da CLI
         // (`phxclaw testes`, `phxclaw plugins`) e das ferramentas test_list/test_run e
         // plugin_catalog -- ExploradorDeTestes e Loja, sem segunda montagem.
@@ -60,6 +64,8 @@ pub fn rotas() -> Router<ApiState> {
         .route("/v1/ide/testes/rodar", post(testes_rodar))
         .route("/v1/plugins/catalogo", get(plugins_catalogo))
         .route("/v1/plugins/instalar", post(plugins_instalar))
+        // O terminal compartilhado: criar e revogar (do dono) e o websocket do convidado.
+        .merge(crate::compartilhar::rotas())
 }
 
 type Erro = (StatusCode, Json<Value>);
@@ -89,7 +95,8 @@ fn vivas() -> &'static Mutex<HashMap<String, Arc<AtomicBool>>> {
     V.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-fn chave_do_usuario(token: &str) -> String {
+/// A chave do usuario nos mapas de sessao (esta e a do compartilhamento): o resumo do token.
+pub(crate) fn chave_do_usuario(token: &str) -> String {
     use sha2::{Digest, Sha256};
     let mut h = Sha256::new();
     h.update(token.as_bytes());
@@ -106,6 +113,9 @@ enum Pedido {
         programa: String,
         colunas: u16,
         linhas: u16,
+        /// Abrir SEM a credencial da completacao por IA, para poder compartilhar (R1).
+        #[serde(default)]
+        compartilhavel: bool,
     },
     Tecla {
         tecla: Tecla,
@@ -179,9 +189,19 @@ async fn sessao(s: ApiState, mut sock: WebSocket, api: Option<String>) {
     let _ = mandar(&mut sock, json!({"ev": "pronto"})).await;
 
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Atualizacao>();
-    let mut term: Option<(String, Terminal)> = None;
+    // (id, terminal, nasceu sem a credencial da completacao)
+    let mut term: Option<(String, Terminal, bool)> = None;
+    // A credencial de sessao que o `hx` do terminal aberto leva (nunca o `api.token`): vive
+    // com o terminal e morre com ele (o `Drop` a revoga).
+    let mut credencial: Option<crate::rbac::CredencialDoTerminal> = None;
+    // O lado do anfitriao do terminal compartilhado: sem convite, nao custa nada alem de
+    // dois canais vazios; com convite, a grade ja serializada vai tambem a quem assiste.
+    let (mut anfitriao, mut escuta) = crate::compartilhar::Anfitriao::novo(chave.clone());
     let mut relogio = tokio::time::interval(Duration::from_millis(250));
     loop {
+        // O aviso para a tela do anfitriao quando o compartilhamento muda (entrou, saiu,
+        // venceu, revogado): mandado depois do `select!`, num lugar so.
+        let mut aviso: Option<Value> = None;
         tokio::select! {
             m = sock.recv() => {
                 let Some(Ok(m)) = m else { break };
@@ -199,46 +219,82 @@ async fn sessao(s: ApiState, mut sock: WebSocket, api: Option<String>) {
                 };
                 match pedido {
                     Pedido::Auth { .. } => {}
-                    Pedido::Abrir { programa, colunas, linhas } => {
-                        let r = abrir(&programa, colunas, linhas, &s.token, api.as_deref(), tx.clone());
+                    Pedido::Abrir { programa, colunas, linhas, compartilhavel } => {
+                        // Terminal novo: quem assistia ao anterior nao passa a assistir a este.
+                        aviso = anfitriao.encerrar("terminal reaberto");
+                        // O compartilhavel e o sem API nao levam credencial nenhuma: nao ha
+                        // completacao por IA para usa-la.
+                        let nova = match (compartilhavel, api.as_deref()) {
+                            (false, Some(_)) => crate::rbac::CredencialDoTerminal::emitir(&s, &token, "POST", ROTA_COMPLETAR).map(Some),
+                            _ => Ok(None),
+                        };
+                        let r = nova.and_then(|c| {
+                            abrir(&programa, colunas, linhas, c.as_ref().map(|c| c.token()), api.as_deref(), compartilhavel, tx.clone())
+                                .map(|(id, t)| (id, t, c))
+                        });
                         match r {
-                            Ok((id, t)) => {
+                            Ok((id, t, c)) => {
                                 let aberto = json!({"ev": "aberto", "id": id, "pid": t.pid(), "programa": "helix",
-                                                    "cwd": t_cwd()});
-                                term = Some((id, t));
+                                                    "cwd": t_cwd(), "compartilhavel": compartilhavel});
+                                term = Some((id, t, compartilhavel));
+                                credencial = c;
                                 if !mandar(&mut sock, aberto).await { break }
                             }
                             Err(e) => { if !mandar(&mut sock, json!({"ev": "erro", "erro": e})).await { break } }
                         }
                     }
-                    Pedido::Tecla { tecla } => { if let Some((_, t)) = &term { let _ = t.tecla(&tecla); } }
-                    Pedido::Colar { texto } => { if let Some((_, t)) = &term { let _ = t.colar(&texto); } }
-                    Pedido::Texto { texto } => { if let Some((_, t)) = &term { let _ = t.escrever(texto.as_bytes()); } }
+                    Pedido::Tecla { tecla } => { if let Some((_, t, _)) = &term { let _ = t.tecla(&tecla); } }
+                    Pedido::Colar { texto } => { if let Some((_, t, _)) = &term { let _ = t.colar(&texto); } }
+                    Pedido::Texto { texto } => { if let Some((_, t, _)) = &term { let _ = t.escrever(texto.as_bytes()); } }
                     Pedido::Redimensionar { colunas, linhas } => {
-                        if let Some((_, t)) = &term { let _ = t.redimensionar(Tamanho { colunas, linhas }); }
+                        if let Some((_, t, _)) = &term { let _ = t.redimensionar(Tamanho { colunas, linhas }); }
                     }
-                    Pedido::Rolar { linhas } => { if let Some((_, t)) = &term { t.rolar(linhas); } }
-                    Pedido::Fechar => { term = None; }
+                    Pedido::Rolar { linhas } => { if let Some((_, t, _)) = &term { t.rolar(linhas); } }
+                    Pedido::Fechar => { aviso = anfitriao.encerrar("terminal fechado"); term = None; credencial = None; }
                 }
             }
             g = rx.recv() => {
                 let Some(g) = g else { break };
-                let Some((id, _)) = &term else { continue };
+                let Some((id, _, _)) = &term else { continue };
                 let mut v = serde_json::to_value(&g).unwrap_or(Value::Null);
                 v["ev"] = json!("grade");
                 v["id"] = json!(id);
-                if !mandar(&mut sock, v).await { break }
+                // Serializada UMA vez: o anfitriao e cada convidado recebem o mesmo texto.
+                let texto: Arc<str> = v.to_string().into();
+                aviso = anfitriao.difundir(&texto);
+                if sock.send(Message::Text(texto.as_ref().into())).await.is_err() { break }
+            }
+            c = escuta.controle.recv() => {
+                if let Some(c) = c { aviso = anfitriao.tratar(c, emprestado(&term), &s); }
+            }
+            c = escuta.entrou.recv() => {
+                if let Some(c) = c { aviso = anfitriao.receber(c, emprestado(&term)); }
             }
             _ = relogio.tick() => {
                 if minha.load(Ordering::SeqCst) {
                     let _ = mandar(&mut sock, json!({"ev": "erro", "erro": "sessao substituida por outra conexao do mesmo usuario"})).await;
                     break;
                 }
+                // A MESMA decisao da entrada, de novo: usuario revogado, chave trocada ou papel
+                // rebaixado fecha o terminal aberto -- a credencial dele ja morreu no portao.
+                if crate::rbac::conferir_rota(&s, axum::http::Method::GET, ROTA_TERMINAL, &h).is_err() {
+                    let _ = mandar(&mut sock, json!({"ev": "erro", "erro": "acesso revogado: terminal fechado"})).await;
+                    break;
+                }
+                aviso = anfitriao.vigiar();
             }
         }
+        if let Some(a) = aviso
+            && !mandar(&mut sock, a).await
+        {
+            break;
+        }
     }
+    // O compartilhamento cai com a sessao (o Drop do anfitriao), antes do terminal.
+    drop(anfitriao);
     // Soltar o terminal mata o hx; a entrada do mapa so sai se ainda for a minha.
     drop(term);
+    drop(credencial);
     if let Ok(mut v) = vivas().lock()
         && v.get(&chave).is_some_and(|b| Arc::ptr_eq(b, &minha))
     {
@@ -247,19 +303,57 @@ async fn sessao(s: ApiState, mut sock: WebSocket, api: Option<String>) {
     let _ = sock.close().await;
 }
 
+/// O terminal aberto emprestado ao lado do anfitriao (grade para quem entra, entrada de quem
+/// escreve, e se pode ser compartilhado).
+fn emprestado(term: &Option<(String, Terminal, bool)>) -> Option<crate::compartilhar::Aberto<'_>> {
+    term.as_ref().map(|(id, t, c)| crate::compartilhar::Aberto {
+        id: id.as_str(),
+        t,
+        compartilhavel: *c,
+    })
+}
+
 fn t_cwd() -> String {
     raiz_do_ide()
         .map(|p| p.display().to_string())
         .unwrap_or_default()
 }
 
-/// So o Helix, pelo nome: a tela nao escolhe executavel.
+/// O ambiente do `hx` do IDE. A completacao por IA do snippet-ls fala com este agente por
+/// token, entao um token vai no ambiente -- e e a CREDENCIAL DO TERMINAL
+/// (`rbac::CredencialDoTerminal`: so a rota da completacao, do papel de quem abriu, morre com
+/// ele), nunca o `api.token` mestre, que um `:sh printenv` entregaria inteiro. E nenhuma no
+/// terminal compartilhavel: o `printenv` a desenharia na grade de todos os convidados (R1 de
+/// `docs/propostas/live-share-terminal.md`). Ali a completacao por IA fica indisponivel,
+/// declarado na tela; o resto do Helix (LSP, snippets) segue igual.
+pub(crate) fn ambiente_do_helix(
+    raizes: &[PathBuf],
+    api: Option<&str>,
+    token: Option<&str>,
+    compartilhavel: bool,
+) -> Vec<(String, String)> {
+    let mut env = vec![];
+    if !raizes.is_empty() {
+        env.push(("PHXCLAW_RAIZES".into(), phxclaw_workspace::variavel(raizes)));
+    }
+    if let (Some(api), Some(token)) = (api.filter(|_| !compartilhavel), token) {
+        // Numa linha so: e a forma de «exportar ao filho» que a catraca do catalogo reconhece.
+        let url = format!("{api}{ROTA_COMPLETAR}");
+        env.push(("PHXCLAW_IA_COMPLETAR".into(), url));
+        env.push(("PHXCLAW_API_TOKEN".into(), token.to_string()));
+    }
+    env
+}
+
+/// So o Helix, pelo nome: a tela nao escolhe executavel. `token`: a credencial do terminal
+/// (nunca o `api.token`).
 fn abrir(
     programa: &str,
     colunas: u16,
     linhas: u16,
-    token: &str,
+    token: Option<&str>,
     api: Option<&str>,
+    compartilhavel: bool,
     tx: tokio::sync::mpsc::UnboundedSender<Atualizacao>,
 ) -> Result<(String, Terminal), String> {
     if programa != "helix" {
@@ -269,18 +363,7 @@ fn abrir(
     }
     let cwd = raiz_do_ide()?;
     let raizes = crate::workspace::raizes_do_projeto()?;
-    let mut env = vec![];
-    if !raizes.is_empty() {
-        let lista = phxclaw_workspace::variavel(&raizes);
-        env.push(("PHXCLAW_RAIZES".into(), lista));
-    }
-    // A completacao por IA do snippet-ls fala com este agente pelo mesmo token de quem
-    // abriu o terminal: e o token dele, nao um segredo novo.
-    if let Some(api) = api {
-        let url = format!("{api}/v1/ide/completar");
-        env.push(("PHXCLAW_IA_COMPLETAR".into(), url));
-        env.push(("PHXCLAW_API_TOKEN".into(), token.to_string()));
-    }
+    let env = ambiente_do_helix(&raizes, api, token, compartilhavel);
     let pedido = crate::config::texto("desktop.hx")
         .ok()
         .flatten()
@@ -385,24 +468,85 @@ async fn arquivo(
 ) -> Result<Json<Value>, Erro> {
     auth(&s, &h)?;
     let cwd = raiz_do_ide().map_err(|e| erro(StatusCode::SERVICE_UNAVAILABLE, e))?;
+    let (bytes, texto) = texto_do_projeto(&cwd, &q.caminho).await?;
+    Ok(Json(json!({
+        "caminho": q.caminho,
+        "bytes": bytes,
+        "linhas": texto.lines().count(),
+        "texto": texto,
+    })))
+}
+
+/// O texto de um arquivo do projeto para a tela (minimapa e painel de leitura): a MESMA
+/// leitura confinada e com teto, e a mesma recusa de binario -- as duas rotas nao podem
+/// discordar sobre o que se le.
+async fn texto_do_projeto(cwd: &std::path::Path, caminho: &str) -> Result<(usize, String), Erro> {
     // Disco fora do laco assincrono: um disco lento (ou o que sobrar de espera no `open`)
     // prende uma thread do pool de bloqueio, nunca o worker que atende as outras rotas.
-    let caminho = q.caminho.clone();
-    let bytes = tokio::task::spawn_blocking(move || ler_para_o_minimapa(&cwd, &caminho))
+    let (c, k) = (cwd.to_path_buf(), caminho.to_string());
+    let bytes = tokio::task::spawn_blocking(move || ler_para_o_minimapa(&c, &k))
         .await
         .map_err(|e| erro(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))??;
     if bytes.iter().take(8192).any(|b| *b == 0) {
         return Err(erro(
             StatusCode::UNSUPPORTED_MEDIA_TYPE,
-            format!("{}: arquivo binario, sem minimapa", q.caminho),
+            format!("{caminho}: arquivo binario, sem minimapa"),
         ));
     }
-    let texto = String::from_utf8_lossy(&bytes);
+    Ok((bytes.len(), String::from_utf8_lossy(&bytes).into_owned()))
+}
+
+// ---------------------------------------------------------------- dobras (painel de leitura)
+
+#[derive(Deserialize)]
+pub struct ConsultaDeDobras {
+    arquivo: String,
+    /// Segundos de espera pelo servidor de linguagem (padrao 10; teto 120; 0 = so a reserva).
+    prazo: Option<u64>,
+}
+
+/// O texto do arquivo e as regioes dobraveis dele, numa resposta so: as regioes valem para
+/// AQUELE texto, e duas leituras separadas poderiam pegar o arquivo antes e depois de um `:w`.
+/// A fonte das regioes vai dita (`lsp`, `chaves`, `indentacao`), e quando o servidor existia e
+/// nao respondeu o `aviso` diz por que a tela esta na reserva -- nunca uma reserva calada.
+async fn dobras(
+    State(s): State<ApiState>,
+    h: HeaderMap,
+    Query(q): Query<ConsultaDeDobras>,
+) -> Result<Json<Value>, Erro> {
+    auth(&s, &h)?;
+    let cwd = raiz_do_ide().map_err(|e| erro(StatusCode::SERVICE_UNAVAILABLE, e))?;
+    let (bytes, texto) = texto_do_projeto(&cwd, &q.arquivo).await?;
+    let total = texto.lines().count() as u32;
+    let prazo = Duration::from_secs(q.prazo.unwrap_or(10).min(120));
+    let mut aviso: Option<String> = None;
+    let mut do_lsp = None;
+    if let Some(l) = lsp().filter(|l| l.servidor_de(&q.arquivo).is_some())
+        && !prazo.is_zero()
+    {
+        match l.dobras_do_arquivo(&cwd, &q.arquivo, prazo).await {
+            Ok(Some(v)) => do_lsp = Some(crate::dobras::do_lsp(&v, total)),
+            Ok(None) => {
+                aviso = Some(format!(
+                    "o servidor de linguagem ainda esta indexando o projeto ({} s)",
+                    prazo.as_secs()
+                ))
+            }
+            Err(e) => aviso = Some(format!("servidor de linguagem: {e}")),
+        }
+    }
+    let (fonte, regioes) = match do_lsp {
+        Some(r) => ("lsp", r),
+        None => crate::dobras::reserva(&q.arquivo, &texto),
+    };
     Ok(Json(json!({
-        "caminho": q.caminho,
-        "bytes": bytes.len(),
-        "linhas": texto.lines().count(),
+        "arquivo": q.arquivo,
+        "bytes": bytes,
+        "linhas": total,
         "texto": texto,
+        "fonte": fonte,
+        "regioes": regioes,
+        "aviso": aviso,
     })))
 }
 
@@ -647,7 +791,15 @@ async fn completar(
     h: HeaderMap,
     Json(p): Json<PedidoDeCompletacao>,
 ) -> Result<Json<Value>, Erro> {
-    auth(&s, &h)?;
+    // O `hx` do terminal chega com a credencial do terminal, que o `auth` geral NAO aceita
+    // (ela nao e de rota nenhuma alem desta): so aqui ela vale.
+    auth(&s, &h).or_else(|e| {
+        if crate::rbac::sessao_alcanca(&s, &h, &axum::http::Method::POST, ROTA_COMPLETAR) {
+            Ok(())
+        } else {
+            Err(e)
+        }
+    })?;
     let agente = (s.factory)(&s.default_model)
         .map_err(|e| erro(StatusCode::SERVICE_UNAVAILABLE, format!("modelo: {e}")))?;
     let (tokens, prazo) = tetos();
@@ -903,8 +1055,30 @@ mod testes {
     #[test]
     fn so_o_helix_abre_pelo_navegador() {
         let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
-        let e = abrir("bash", 80, 24, "t", None, tx).err().expect("recusa");
+        let e = abrir("bash", 80, 24, Some("t"), None, false, tx)
+            .err()
+            .expect("recusa");
         assert!(e.contains("so o Helix"), "{e}");
+    }
+
+    /// R1 do terminal compartilhado: o `hx` compartilhavel nasce SEM a credencial da API no
+    /// ambiente (um `:sh` a mostraria aos convidados), e o comum continua com ela (a
+    /// completacao por IA nao pode sumir de quem nao compartilha).
+    ///
+    /// RED medido: com `api.filter(|_| !compartilhavel)` trocado por `api` (`// REPOSTO`), o
+    /// compartilhavel levou o token e a primeira asserção caiu.
+    #[test]
+    fn o_terminal_compartilhavel_nao_herda_o_token() {
+        let tem_token = |env: &[(String, String)]| {
+            env.iter()
+                .any(|(k, v)| k == "PHXCLAW_API_TOKEN" || v.contains("segredo-da-api"))
+        };
+        let api = Some("http://127.0.0.1:1");
+        let comp = ambiente_do_helix(&[], api, Some("segredo-da-api"), true);
+        assert!(!tem_token(&comp), "{comp:?}");
+        assert!(!comp.iter().any(|(k, _)| k == "PHXCLAW_IA_COMPLETAR"));
+        let comum = ambiente_do_helix(&[], api, Some("segredo-da-api"), false);
+        assert!(tem_token(&comum), "{comum:?}");
     }
 
     #[test]

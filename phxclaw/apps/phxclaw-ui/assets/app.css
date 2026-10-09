@@ -203,7 +203,42 @@ body.force-dashboard .splash{display:none}body.force-dashboard .app-shell{opacit
 .minimapa-estado[data-aviso]{color:var(--acao-alterar)}
 .minimapa canvas{flex:1;min-height:80px;width:100%;display:block;cursor:pointer;border-radius:4px;outline:none}
 .minimapa canvas:focus-visible{outline:2px solid var(--laranja);outline-offset:2px}
-@media(max-width:900px){.ide-corpo{flex-direction:column}.minimapa{display:none}.painel-lateral{max-width:none}.painel-lateral[open]{flex-basis:auto;max-height:40%}}
+/* Leitura com dobra: o arquivo em disco em linhas de texto (textContent), com a alca de dobra
+   entre o numero e o codigo. A alca e botao (Tab/Enter/setas); a linha escondida usa [hidden]. */
+.painel-leitura[hidden],.painel-compartilhar[hidden]{display:none}
+.ide-lado{display:flex;flex-direction:column;gap:8px;flex:0 0 250px;min-height:0;min-width:0;overflow:auto}
+.ide-lado:has(>.painel-lateral[open]){flex-basis:340px}
+.ide-lado:has(>.painel-leitura[open]){flex-basis:min(480px,42%)}
+.ide-lado>.painel-lateral{flex:0 0 auto;max-width:none}
+.ide-lado>.painel-lateral[open]{flex:1 1 0;min-height:140px}
+.painel-leitura[open]{display:flex;flex-direction:column}
+.leitura-codigo{flex:1;min-height:120px;overflow:auto;font-family:var(--mono,"IBM Plex Mono",ui-monospace,monospace);font-size:var(--fs-1);background:var(--fundo);border:1px solid var(--linha);border-radius:6px;padding:6px 0}
+.leitura-codigo .ll{display:flex;align-items:baseline;white-space:pre;line-height:1.5}
+.leitura-codigo .ll[hidden]{display:none}
+.leitura-codigo .ll-n{flex:0 0 3.2em;text-align:right;color:var(--texto-2);padding-right:4px;user-select:none}
+.leitura-codigo .ll-dobra{flex:0 0 1.6em;text-align:center}
+.leitura-codigo button.ll-dobra{background:transparent;border:1px solid transparent;border-radius:3px;color:var(--acao-consultar);font:inherit;line-height:1.2;padding:0;cursor:pointer}
+.leitura-codigo button.ll-dobra:hover{border-color:var(--linha-forte)}
+.leitura-codigo button.ll-dobra:focus-visible{outline:2px solid var(--laranja);outline-offset:1px}
+.leitura-codigo .ll-t{color:var(--texto);font:inherit;background:none;padding:0 8px 0 2px}
+.leitura-codigo .ll-oculto{color:var(--texto-2);border:1px solid var(--linha-forte);border-radius:3px;padding:0 4px;margin-left:4px;font-size:.92em}
+.leitura-codigo .ll-oculto:empty{display:none}
+/* Compartilhar: o aviso em ambar (alterar), o convite num campo so de leitura, e o indicador
+   permanente ao lado das abas -- contorno, nunca fundo cheio. */
+.aviso-compartilhar{color:var(--acao-alterar)}
+.comp-opcoes{align-items:flex-end}
+.comp-campo{display:flex;flex-direction:column;gap:4px;font-size:var(--fs-1);color:var(--texto-2)}
+.comp-campo.comp-marca{flex-direction:row;align-items:center}
+.comp-campo select,.comp-campo input[type=number],.comp-convite input{background:var(--fundo);color:var(--texto);border:1px solid var(--linha-forte);border-radius:4px;padding:4px 6px;font:inherit;font-size:var(--fs-1)}
+.comp-campo input[type=number]{width:5em}
+.comp-convite{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:8px 0}
+.comp-convite input{flex:1;min-width:12em;font-family:var(--mono,ui-monospace,monospace)}
+.comp-convidados{list-style:none;margin:6px 0 0;padding:0;display:flex;flex-direction:column;gap:4px;font-size:var(--fs-1)}
+.comp-convidados li{display:flex;align-items:center;justify-content:space-between;gap:8px;color:var(--texto-2)}
+.comp-convidados .acao{padding:1px 6px;font-size:var(--fs-1);min-height:0}
+.selo-compartilhado{margin:0 0 8px;padding:4px 10px;border:1px solid var(--acao-alterar);border-radius:6px;color:var(--acao-alterar);font-size:var(--fs-1);flex-shrink:0;align-self:flex-start}
+.selo-compartilhado[hidden]{display:none}
+@media(max-width:900px){.ide-corpo{flex-direction:column}.minimapa{display:none}.painel-lateral{max-width:none}.painel-lateral[open]{flex-basis:auto;max-height:40%}.ide-lado,.ide-lado:has(>.painel-lateral[open]),.ide-lado:has(>.painel-leitura[open]){flex:0 1 auto;max-height:55%}.ide-lado>.painel-lateral[open]{flex:0 0 auto;max-height:none}.leitura-codigo{max-height:40vh}}
 
 /* ABSORCAO */
 .absorcao{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:12px}
@@ -478,3 +513,26 @@ code,#brandVersion,#kernelVersion,#hostSession,#liveReceivers,#apiEndpoint,.cfg-
   .execucao{grid-template-columns:minmax(0,1fr) auto;grid-template-rows:auto auto}
   .execucao .objetivo{grid-column:1/-1;white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
 }
+
+/* Tela Insights (insights.js): cartoes da Visao geral (metric) e barras horizontais em HTML.
+   O nome de fluxo, o motivo e o dia sao DADO: .dado desliga qualquer caixa-alta herdada. */
+.insights-filtros{display:flex;flex-wrap:wrap;align-items:flex-end;gap:10px}
+.insights-filtros label{display:flex;flex-direction:column;gap:4px;font-size:var(--fs-1);color:var(--texto-2);letter-spacing:.08em}
+.insights-filtros select{background:var(--painel-2);color:var(--texto);border:1px solid var(--linha-forte);border-radius:6px;padding:6px 8px;font:inherit;font-size:var(--fs-2);min-width:160px}
+.insights-kpis .insights-valor{font-size:var(--fs-5)}
+.insights-grade{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.insights-painel{padding-bottom:10px}
+.insights-painel h2{font-size:var(--fs-4);margin:0}
+.insights-barras{list-style:none;margin:0;padding:8px 13px;display:grid;gap:7px}
+.insights-barras li{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(60px,1fr) auto;align-items:center;gap:10px;font-size:var(--fs-2)}
+.insights-rotulo{color:var(--texto);overflow-wrap:anywhere}
+.insights-barra{height:8px;background:var(--realce);border-radius:4px;overflow:hidden}
+.insights-barra>span{display:block;height:100%;background:var(--acao-consultar)}
+.insights-barra>span.erro{background:var(--acao-excluir)}
+.insights-n{color:var(--texto);font-variant-numeric:tabular-nums}
+.insights-fluxos{list-style:none;margin:0;padding:8px 13px;display:grid;gap:8px}
+.insights-fluxos li{display:flex;flex-direction:column;gap:2px;font-size:var(--fs-2);color:var(--texto-2)}
+.insights-fluxos b{color:var(--texto)}
+.insights .dado,.insights-filtros .dado{text-transform:none;letter-spacing:normal}
+.insights .vazio{color:var(--texto-3)}
+@media(max-width:900px){.insights-grade{grid-template-columns:1fr}.insights-kpis{grid-template-columns:repeat(2,1fr)}.insights-filtros select{min-width:0}}

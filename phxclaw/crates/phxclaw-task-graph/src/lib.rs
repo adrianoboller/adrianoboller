@@ -1,6 +1,6 @@
 use chrono::{DateTime, Duration, Utc};
 use phxclaw_types::{PermissionClaim, is_uuid_v7, new_uuid_v7};
-use postgres::Client;
+use postgres::{Client, Transaction};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
@@ -650,6 +650,326 @@ impl PostgresTaskJournal {
         transaction.commit()?;
         Ok(())
     }
+
+    /// As tres tabelas da migracao 0004 existem? A fila nao cria esquema: o DDL mora nas
+    /// migracoes (e no FULL_INSTALL), e uma segunda copia dele aqui seria a que envelhece
+    /// calada no dia em que a migracao mudar.
+    pub fn queue_schema_ready(client: &mut Client) -> Result<bool, TaskGraphError> {
+        let row = client.query_one(
+            "SELECT to_regclass('phoenix_tasks') IS NOT NULL \
+               AND to_regclass('phoenix_task_runs') IS NOT NULL \
+               AND to_regclass('phoenix_task_events') IS NOT NULL",
+            &[],
+        )?;
+        Ok(row.get(0))
+    }
+
+    /// Poe UMA execucao na fila, ja `ready`. A chave de idempotencia decide: a mesma chave
+    /// de novo nao vira segunda execucao (`None`), que e o que deixa o laco que reenfileira
+    /// a cada volta (a espera vencida que ninguem pegou ainda) ser chamado sem medo.
+    pub fn enqueue(client: &mut Client, task: &TaskSpec) -> Result<Option<Uuid>, TaskGraphError> {
+        let row = client.query_opt(
+            "INSERT INTO phoenix_tasks \
+             (uuid, name, capability, payload, dependencies, requested_permissions, retry_policy, approval_gate, idempotency_key, priority, status, next_eligible_at, created_at, updated_at) \
+             VALUES ($1,$2,$3,$4,'[]'::jsonb,'[]'::jsonb,$5,NULL,$6,$7,'ready',now(),now(),now()) \
+             ON CONFLICT (idempotency_key) DO NOTHING RETURNING uuid",
+            &[
+                &task.uuid,
+                &task.name,
+                &task.capability,
+                &task.payload,
+                &serde_json::to_value(&task.retry).expect("serializable retry"),
+                &task.idempotency_key,
+                &(task.priority as i32),
+            ],
+        )?;
+        Ok(row.map(|r| r.get(0)))
+    }
+
+    /// Toma a proxima execucao: `client.transaction()` + [`Self::claim_in`] + commit.
+    pub fn claim(
+        client: &mut Client,
+        worker: &str,
+        capabilities: &[String],
+        lease_ms: i64,
+    ) -> Result<Option<QueueClaim>, TaskGraphError> {
+        let mut tx = client.transaction()?;
+        let c = Self::claim_in(&mut tx, worker, capabilities, lease_ms)?;
+        tx.commit()?;
+        Ok(c)
+    }
+
+    /// A tomada dentro de uma transacao de quem chama (o teste segura uma aberta para
+    /// provar que a segunda tomada pula a linha travada).
+    ///
+    /// A posse e o `next_eligible_at` da linha `running`: o instante a partir do qual outro
+    /// worker pode toma-la. O batimento empurra o instante para frente; worker morto para de
+    /// empurrar, a posse vence e a linha volta a ser elegivel -- sem coluna nova, porque e
+    /// exatamente o que a coluna ja dizia («quando esta linha pode ser tomada de novo»). O
+    /// `active_run_uuid` e a cerca: batimento e fim so valem para o run que tomou.
+    ///
+    /// `FOR UPDATE SKIP LOCKED` e o que impede dois workers de levarem a mesma linha: a
+    /// segunda tomada nao espera a primeira, pula a linha travada e leva a proxima.
+    pub fn claim_in(
+        tx: &mut Transaction<'_>,
+        worker: &str,
+        capabilities: &[String],
+        lease_ms: i64,
+    ) -> Result<Option<QueueClaim>, TaskGraphError> {
+        let Some(row) = tx.query_opt(
+            "SELECT uuid, name, capability, payload, idempotency_key, attempts, status, active_run_uuid, \
+                    COALESCE((retry_policy->>'max_attempts')::int, 3) AS max_attempts \
+               FROM phoenix_tasks \
+              WHERE status IN ('ready','running') \
+                AND next_eligible_at <= now() \
+                AND capability = ANY($1) \
+              ORDER BY priority DESC, next_eligible_at, uuid \
+              FOR UPDATE SKIP LOCKED \
+              LIMIT 1",
+            &[&capabilities],
+        )?
+        else {
+            return Ok(None);
+        };
+        let task_uuid: Uuid = row.get("uuid");
+        let attempts: i32 = row.get("attempts");
+        let max_attempts: i32 = row.get("max_attempts");
+        let status: String = row.get("status");
+        let previous: Option<Uuid> = row.get("active_run_uuid");
+        let reclaimed = status == "running";
+        if let Some(run) = previous.filter(|_| reclaimed) {
+            tx.execute(
+                "UPDATE phoenix_task_runs SET status='failed', finished_at=now(), \
+                 error='posse vencida: o worker parou de bater' WHERE uuid=$1 AND status='running'",
+                &[&run],
+            )?;
+        }
+        let payload: Value = row.get("payload");
+        let idempotency_key: String = row.get("idempotency_key");
+        if attempts >= max_attempts.max(1) {
+            let error = format!(
+                "a execucao foi tomada {attempts} vez(es) e a posse venceu em todas (teto {max_attempts})"
+            );
+            tx.execute(
+                "UPDATE phoenix_tasks SET status='dead_letter', last_error=$2, updated_at=now() WHERE uuid=$1",
+                &[&task_uuid, &error],
+            )?;
+            insert_event(
+                tx,
+                task_uuid,
+                previous,
+                "dead_letter",
+                serde_json::json!({"worker": worker, "attempts": attempts}),
+            )?;
+            return Ok(Some(QueueClaim::DeadLetter(DeadLetter {
+                task_uuid,
+                idempotency_key,
+                payload,
+                attempts,
+                error,
+            })));
+        }
+        let run_uuid = new_uuid_v7();
+        let attempt = attempts + 1;
+        tx.execute(
+            "INSERT INTO phoenix_task_runs (uuid, task_uuid, attempt, status, started_at) \
+             VALUES ($1,$2,$3,'running',now())",
+            &[&run_uuid, &task_uuid, &attempt],
+        )?;
+        tx.execute(
+            "UPDATE phoenix_tasks SET status='running', attempts=$2, active_run_uuid=$3, \
+             next_eligible_at = now() + ($4::bigint * interval '1 millisecond'), updated_at=now() \
+             WHERE uuid=$1",
+            &[&task_uuid, &attempt, &run_uuid, &lease_ms],
+        )?;
+        insert_event(
+            tx,
+            task_uuid,
+            Some(run_uuid),
+            "claimed",
+            serde_json::json!({"worker": worker, "attempt": attempt, "reclaimed": reclaimed}),
+        )?;
+        Ok(Some(QueueClaim::Run(QueueLease {
+            task_uuid,
+            run_uuid,
+            attempt,
+            name: row.get("name"),
+            capability: row.get("capability"),
+            payload,
+            idempotency_key,
+            reclaimed,
+        })))
+    }
+
+    /// O batimento: empurra a posse para `agora + lease_ms`, so se ela ainda e deste run.
+    /// `Lost` = outro worker tomou (este ficou parado mais que o prazo): quem bate tem de
+    /// parar, porque o resultado dele nao vai mais valer.
+    pub fn renew(
+        client: &mut Client,
+        lease: &QueueLease,
+        lease_ms: i64,
+    ) -> Result<Heartbeat, TaskGraphError> {
+        let n = client.execute(
+            "UPDATE phoenix_tasks SET next_eligible_at = now() + ($3::bigint * interval '1 millisecond'), \
+             updated_at=now() WHERE uuid=$1 AND active_run_uuid=$2 AND status='running'",
+            &[&lease.task_uuid, &lease.run_uuid, &lease_ms],
+        )?;
+        if n == 0 {
+            return Ok(Heartbeat::Lost);
+        }
+        let cancel: bool = client
+            .query_one(
+                "SELECT EXISTS (SELECT 1 FROM phoenix_task_events WHERE task_uuid=$1 AND event_type='cancel_requested')",
+                &[&lease.task_uuid],
+            )?
+            .get(0);
+        Ok(Heartbeat::Held {
+            cancel_requested: cancel,
+        })
+    }
+
+    /// Fecha o run com o resultado. `false` = a posse ja nao era deste run (venceu e outro
+    /// tomou): o resultado e descartado, e nada na linha muda.
+    pub fn finish(
+        client: &mut Client,
+        lease: &QueueLease,
+        outcome: &RunOutcome,
+    ) -> Result<bool, TaskGraphError> {
+        let status = match outcome.status {
+            TaskStatus::Succeeded => "succeeded",
+            TaskStatus::Cancelled => "cancelled",
+            _ => "failed",
+        };
+        let mut tx = client.transaction()?;
+        let n = tx.execute(
+            "UPDATE phoenix_tasks SET status=$3, last_error=$4, updated_at=now() \
+             WHERE uuid=$1 AND active_run_uuid=$2 AND status='running'",
+            &[&lease.task_uuid, &lease.run_uuid, &status, &outcome.error],
+        )?;
+        if n == 0 {
+            return Ok(false);
+        }
+        tx.execute(
+            "UPDATE phoenix_task_runs SET status=$2, result=$3, error=$4, finished_at=now() WHERE uuid=$1",
+            &[&lease.run_uuid, &status, &outcome.result, &outcome.error],
+        )?;
+        insert_event(
+            &mut tx,
+            lease.task_uuid,
+            Some(lease.run_uuid),
+            "finished",
+            serde_json::json!({"status": status}),
+        )?;
+        tx.commit()?;
+        Ok(true)
+    }
+
+    /// Cancelamento pela chave: a que nao comecou sai `cancelled` aqui; a que corre ganha
+    /// um evento que o batimento do worker le.
+    pub fn request_cancel(
+        client: &mut Client,
+        idempotency_key: &str,
+    ) -> Result<CancelRequest, TaskGraphError> {
+        if client
+            .query_opt(
+                "UPDATE phoenix_tasks SET status='cancelled', updated_at=now() \
+                 WHERE idempotency_key=$1 AND status='ready' RETURNING uuid",
+                &[&idempotency_key],
+            )?
+            .is_some()
+        {
+            return Ok(CancelRequest::CancelledBeforeStart);
+        }
+        let Some(row) = client.query_opt(
+            "SELECT uuid, status, active_run_uuid FROM phoenix_tasks WHERE idempotency_key=$1",
+            &[&idempotency_key],
+        )?
+        else {
+            return Ok(CancelRequest::NotFound);
+        };
+        let status: String = row.get("status");
+        if status != "running" {
+            return Ok(CancelRequest::AlreadyFinished);
+        }
+        let mut tx = client.transaction()?;
+        insert_event(
+            &mut tx,
+            row.get("uuid"),
+            row.get("active_run_uuid"),
+            "cancel_requested",
+            Value::Object(Default::default()),
+        )?;
+        tx.commit()?;
+        Ok(CancelRequest::Requested)
+    }
+}
+
+fn insert_event(
+    tx: &mut Transaction<'_>,
+    task_uuid: Uuid,
+    run_uuid: Option<Uuid>,
+    event_type: &str,
+    payload: Value,
+) -> Result<(), TaskGraphError> {
+    tx.execute(
+        "INSERT INTO phoenix_task_events (uuid, task_uuid, run_uuid, event_type, payload, occurred_at) \
+         VALUES ($1,$2,$3,$4,$5,now())",
+        &[&new_uuid_v7(), &task_uuid, &run_uuid, &event_type, &payload],
+    )?;
+    Ok(())
+}
+
+/// Uma execucao tomada da fila.
+#[derive(Debug, Clone)]
+pub struct QueueLease {
+    pub task_uuid: Uuid,
+    /// A cerca: batimento e fim so valem com este run ainda ativo na linha.
+    pub run_uuid: Uuid,
+    pub attempt: i32,
+    pub name: String,
+    pub capability: String,
+    pub payload: Value,
+    pub idempotency_key: String,
+    /// A posse anterior venceu sem batimento: esta tomada e uma retomada.
+    pub reclaimed: bool,
+}
+
+/// A linha cuja posse venceu vezes demais: vai para `dead_letter`, e quem tomou avisa.
+#[derive(Debug, Clone)]
+pub struct DeadLetter {
+    pub task_uuid: Uuid,
+    pub idempotency_key: String,
+    pub payload: Value,
+    pub attempts: i32,
+    pub error: String,
+}
+
+#[derive(Debug, Clone)]
+pub enum QueueClaim {
+    Run(QueueLease),
+    DeadLetter(DeadLetter),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Heartbeat {
+    Held { cancel_requested: bool },
+    Lost,
+}
+
+#[derive(Debug, Clone)]
+pub struct RunOutcome {
+    /// `Succeeded`, `Failed` ou `Cancelled`; outro estado conta como `Failed`.
+    pub status: TaskStatus,
+    pub result: Value,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CancelRequest {
+    NotFound,
+    CancelledBeforeStart,
+    Requested,
+    AlreadyFinished,
 }
 
 #[cfg(test)]

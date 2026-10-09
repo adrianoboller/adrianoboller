@@ -1,4 +1,26 @@
-# Live Share = terminal compartilhado (proposta, NÃO implementada)
+# Live Share = terminal compartilhado (implementado em 09/10/2026)
+
+**Estado:** implementado em `crates/phxclaw-agent/src/compartilhar.rs` (+ `ide.rs`, `rbac.rs`,
+`ide.js`), provado por `crates/phxclaw-agent/tests/ide_compartilhar.rs` e
+`tests/desktop/ide_compartilhar.mjs` (dois navegadores). Onde o código divergiu deste desenho,
+e por quê:
+
+- **Criar e revogar são rotas HTTP** (`POST /v1/ide/compartilhar`, `/revogar`), não mensagens
+  do websocket: a ordem do dono pediu «rota atrás do RBAC», e a rota entra na matriz (dono) e
+  na `rotas::ROTAS`. O laço do anfitrião continua dono do terminal: a rota manda a ordem a ele
+  e responde depois que ele cumpriu (é o que torna a revogação imediata).
+- **R1 resolvido por construção**: o Helix só se compartilha se foi aberto com
+  `compartilhavel: true`, que nasce sem `PHXCLAW_API_TOKEN` nem `PHXCLAW_IA_COMPLETAR`
+  (`ide::ambiente_do_helix`); o comum recusa (409, `reabrir`). Um processo vivo não perde o que
+  tem no ambiente, então «envolver» não bastava.
+- **Escrita** (aqui era «sem escrita»): entrou porque o dono pediu «só se o anfitrião conceder
+  e pelo RBAC» — convite com `escrita: true` **e** a credencial do convidado passando a mesma
+  `conferir_rota` do terminal (dono). O convidado de leitura não recebe canal até o terminal.
+- **Não feito, declarado**: a chave de opt-in `ide.compartilhar` (§3.6) — a porta é a rota do
+  dono e o gesto explícito por sessão, e uma segunda chave no catálogo seria outro interruptor
+  para a mesma decisão; e o balde de tentativas por IP (§3.4) — 256 bits tornam a força bruta
+  inviável, e o prazo de 10 s da primeira mensagem segue valendo.
+
 
 Gap `live_share` do VS Code. Decisão do dono, 09/10/2026 (item 6): **terminal compartilhado —
 um anfitrião, N convidados, cursor do anfitrião; edição simultânea fica declarada como limite.**
@@ -97,5 +119,4 @@ do convidado só de leitura, (4) opt-in no catálogo de configuração, (5) bot�
 tela do IDE (texto pela fábrica de idiomas). Pré-requisito: resolver **R1** primeiro.
 Nada disto toca o formato de nenhum arquivo em disco: o estado é só memória.
 
-**Estado do gap:** continua `nao` até existir código e teste; esta proposta só reduz o risco do
-desenho.
+**Estado do gap:** `agente` desde 09/10/2026 (ver o topo).

@@ -29,7 +29,7 @@ sem SMTP não há `send_email`, sem token não há `github` — e por isso há d
 montou aqui e o que existe no código mas não montou.
 
 <!-- gerado:ferramentas:inicio -->
-Medido em 2026-10-09 por `python3 tools/gerar_doc_agente.py`, de `phxclaw ferramentas` (versao 0.70.0, binario de 2026-10-09 19:15), com `PHXCLAW_CAPACIDADES` no padrao. **74 ferramentas montadas nesta maquina**, 61 concedidas por padrao.
+Medido em 2026-10-09 por `python3 tools/gerar_doc_agente.py`, de `phxclaw ferramentas` (versao 0.70.0, binario de 2026-10-09 22:16), com `PHXCLAW_CAPACIDADES` no padrao. **74 ferramentas montadas nesta maquina**, 61 concedidas por padrao.
 
 | Capacidade | Padrao | Ferramentas |
 |---|---|---|
@@ -230,7 +230,7 @@ EQUIPE E FLUXOS:
                 phxclaw gonogo abrir INTEGRACAO --integradores a,b | registrar INTEGRACAO INTEGRADOR
                 OK|NOGO [--erro "..."]... [--credencial TOKEN|-] | ver INTEGRACAO
                 | decidir INTEGRACAO [--pasta DIR]
-  fluxo         Fluxo em DAG: rodar, retomar, responder esperas, pinar, podar, exportar e listar
+  fluxo         Fluxo em DAG: rodar, retomar, responder esperas, pinar, podar, exportar, listar e criar
                 phxclaw fluxo rodar ARQ.json [--ate PASSO] [--pins] [--publicada]
                 | retomar TAREFA [ARQ.json] | responder TAREFA TEXTO | esperas
                 | pinar ARQ.json PASSO (--json V | --tarefa T) | despinar ARQ.json PASSO
@@ -238,9 +238,10 @@ EQUIPE E FLUXOS:
                 | importar PACOTE.json DESTINO.json | listar [DIR] [--etiqueta E] [--subpasta P]
                 | modelos | usar MODELO DESTINO.json | publicar ARQ.json [--nota T]
                 | versoes ARQ.json | voltar ARQ.json N | restaurar ARQ.json N [--forcar]
-                | exportar --ambiente dev|prod [--fluxos DIR] [--repo DIR] [--commit MSG]
-                | importar --ambiente dev|prod [--fluxos DIR] [--repo DIR] [--sobrescrever] [--modelo M]
-                [--pasta DIR]
+                | exportar --ambiente dev|prod [--fluxos DIR] [--repo DIR] [--commit MSG] [--push
+                [--remoto R]] | importar --ambiente dev|prod [--fluxos DIR] [--repo DIR] [--pull [--remoto
+                R]] [--sobrescrever] | criar --descricao TEXTO [--destino ARQ.json] [--tentativas N]
+                [--modelo M] [--pasta DIR]
   agenda        Agenda: listar, adicionar (modelo ou fluxo) e disparar o que venceu
                 phxclaw agenda listar | adicionar NOME "OBJETIVO" (--cada SEG
                 | --cron EXPR) | disparar [--modelo M] [--pasta DIR]
@@ -259,9 +260,13 @@ CODIGO:
 
 SERVICOS (API, CANAIS, EDITORES, DISPOSITIVOS):
   servir        API de tarefas, UI web (PWA), gatilhos e heartbeat
-                phxclaw servir [--porta 8787] [--pasta DIR] [--canal NOME] [--dispositivos --cert C
-                --chave K --tokens F [--porta-dispositivos 8788]] [--ponte wss://H:P/ [--ponte-ca PEM]
-                [--ponte-tenant U] [--ponte-no U] [--sem-porta]]
+                phxclaw servir [--porta 8787] [--pasta DIR] [--modo normal|fila] [--canal NOME]
+                [--dispositivos --cert C --chave K --tokens F [--porta-dispositivos 8788]] [--ponte
+                wss://H:P/ [--ponte-ca PEM] [--ponte-tenant U] [--ponte-no U] [--sem-porta]]
+  worker        Tira execucoes da fila do `servir --modo fila` e as roda
+                phxclaw worker [--pasta DIR] [--concorrencia N] [--prazo SEGUNDOS] [--nome NOME]
+  fila          Senha do PostgreSQL da fila para o broker
+                phxclaw fila senha [--pasta DIR]
   canal         Canal de mensagens como entrada do agente (25 canais)
                 phxclaw canal NOME [--pasta DIR] [--escuta ENDERECO]
   mcp-serve     Ferramentas do agente como servidor MCP (stdio)
@@ -282,6 +287,10 @@ CREDENCIAIS (vao para o SecretBroker, nunca para arquivo):
                 phxclaw mcp token|login NOME [--pasta DIR]
   credencial    Segredo de uma credencial nomeada do no HTTP (http_request)
                 phxclaw credencial guardar|renovacao|login NOME [--pasta DIR]
+  cofre         Credencial base de um cofre externo (Vault, AWS, Azure, GCP)
+                phxclaw cofre
+                vault-token|vault-secret-id|aws-segredo|aws-token-sessao|azure-segredo|gcp-conta [--pasta
+                DIR]
   elevenlabs    Guarda a chave da ElevenLabs ou lista as vozes da conta
                 phxclaw elevenlabs chave|vozes [--busca TEXTO] [--pasta DIR]
   gemini        Guarda a chave da Gemini API (Nano Banana no image_generate)
@@ -456,7 +465,7 @@ FERRAMENTAS (`ferramenta NOME --ajuda` traz tipo, opcoes e padrao):
   [capacidade nao concedida]
 
 ROTAS DA API (`api METODO ROTA`):
-46 rotas do `phxclaw servir`. Chame qualquer uma com `phxclaw api METODO ROTA`.
+52 rotas do `phxclaw servir`. Chame qualquer uma com `phxclaw api METODO ROTA`.
 
   GET /health                           Saude do servidor
   GET /metrics                          Exposicao Prometheus (so com api.metricas)
@@ -518,6 +527,14 @@ ROTAS DA API (`api METODO ROTA`):
                                           consulta: arquivo, prazo?
   GET /v1/ide/arquivo                   Conteudo de um arquivo do projeto
                                           consulta: caminho
+  GET /v1/ide/dobras                    Texto e regioes dobraveis de um arquivo do projeto (LSP, chaves ou indentacao)
+                                          consulta: arquivo, prazo?
+  POST /v1/ide/compartilhar             Compartilha o terminal do IDE aberto (convite de leitura, expira, teto de convidados)
+                                          corpo: {expira_em_s?, max_convidados?, escrita?}
+  POST /v1/ide/compartilhar/revogar     Revoga um convidado ou o compartilhamento inteiro
+                                          corpo: {convidado?}
+  GET /v1/ide/compartilhado             Terminal compartilhado, lado do convidado
+                                          websocket: fio do convidado: o convite vai na primeira mensagem
   POST /v1/ide/completar                Completacao de codigo pelo modelo
                                           corpo: {antes, depois?, arquivo?, linguagem?}
   GET /v1/ide/testes                    Arvore de testes do projeto
@@ -546,6 +563,10 @@ ROTAS DA API (`api METODO ROTA`):
                                           corpo: {texto}
   POST /v1/fluxos/rodar                 Roda um fluxo (com --ate)
                                           corpo: {nome, ate?, orcamento?}
+  POST /v1/fluxos/assistente            Monta um fluxo pela descricao e grava rascunho
+                                          corpo: {descricao, tentativas?}
+  GET /v1/insights                      Insights: estado, p50/p95, custo, falhas, por fluxo e dia
+                                          consulta: periodo (24h|7d|30d|tudo), fluxo
   POST /v1/triggers/{nome}              Dispara o gatilho de webhook de um fluxo
                                           corpo: o evento; credencial do gatilho
   GET /v1/triggers/{nome}               Formulario do gatilho, quando o fluxo declara um

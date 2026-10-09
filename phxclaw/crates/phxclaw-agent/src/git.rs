@@ -117,8 +117,50 @@ pub async fn rodar_roteiro_git(
     timeout: Duration,
     max_output_bytes: usize,
 ) -> Result<WorkdirOutput, ToolError> {
+    rodar_roteiro_git_com(
+        bwrap,
+        workdir,
+        repo,
+        corpo,
+        timeout,
+        max_output_bytes,
+        Extra::default(),
+    )
+    .await
+}
+
+/// O que uma chamada do motor pede a mais que a do modelo. O padrao e o da ferramenta do
+/// modelo: nada montado alem do /work, nenhuma configuracao a mais, SEM rede.
+#[derive(Default)]
+struct Extra {
+    /// O OUTRO repositorio, montado so leitura.
+    ro_binds: Vec<(PathBuf, String)>,
+    /// `-c` depois da `CONFIG_SEGURA` (a regra por protocolo vale sobre a geral).
+    config: Vec<String>,
+    /// Rede no sandbox: so o push/pull de rede do OPERADOR (`RemotoDeRede`) liga.
+    rede: bool,
+    /// Ambiente a mais. A credencial do remoto de rede entra aqui (`GIT_CONFIG_*`), nunca
+    /// no argv: o argv de qualquer processo e legivel por qualquer usuario da maquina.
+    env: Vec<(String, String)>,
+}
+
+/// O motor, com o que o push/pull precisa a mais (`Extra`): o OUTRO repositorio montado so
+/// leitura e a configuracao que libera um transporte (`protocol.file.allow`,
+/// `protocol.https.allow`), entrando DEPOIS da `CONFIG_SEGURA` -- a regra por protocolo vale
+/// sobre o `protocol.allow=never` geral, e so nesta chamada.
+async fn rodar_roteiro_git_com(
+    bwrap: &Path,
+    workdir: &Path,
+    repo: &str,
+    corpo: impl FnOnce(&str) -> String,
+    timeout: Duration,
+    max_output_bytes: usize,
+    extra: Extra,
+) -> Result<WorkdirOutput, ToolError> {
     let seguras: String = CONFIG_SEGURA
         .iter()
+        .copied()
+        .chain(extra.config.iter().map(String::as_str))
         .map(|c| format!(" -c {}", aspas(c)))
         .collect();
     let repo_c = if repo.is_empty() {
@@ -132,11 +174,11 @@ pub async fn rodar_roteiro_git(
         workdir: workdir.to_path_buf(),
         script,
         timeout,
-        network: false,
+        network: extra.rede,
         max_output_bytes,
     };
     let extras = SandboxExtras {
-        ro_binds: vec![],
+        ro_binds: extra.ro_binds,
         env: [
             ("GIT_CONFIG_NOSYSTEM", "1"),
             ("GIT_CONFIG_GLOBAL", "/dev/null"),
@@ -152,6 +194,7 @@ pub async fn rodar_roteiro_git(
         ]
         .iter()
         .map(|(k, v)| (k.to_string(), v.to_string()))
+        .chain(extra.env)
         .collect(),
     };
     let bwrap = bwrap.to_path_buf();
@@ -1461,6 +1504,779 @@ impl GitTool {
         };
         let p = crate::tarefa::confine(&ctx.workdir, &rel).map_err(ToolError::Denied)?;
         std::fs::read_to_string(&p).map_err(|e| ToolError::Failed(format!("{rel}: {e}")))
+    }
+}
+
+// ---------------------------------------------------------------- remoto (push e pull)
+
+/// Onde o OUTRO repositorio aparece dentro do sandbox, so leitura (sob o /tmp do sandbox).
+const OUTRO_NO_SANDBOX: &str = "/tmp/phxclaw-outro-repositorio";
+
+/// So o transporte local, e so na chamada que o pede.
+const TRANSPORTE_LOCAL: &[&str] = &["protocol.file.allow=always"];
+
+/// Um remoto resolvido: o nome (o do ramo de acompanhamento `refs/remotes/<nome>/`), a URL
+/// como estava escrita e o repositorio bare no hospedeiro.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Remoto {
+    pub nome: String,
+    pub url: String,
+    pub caminho: PathBuf,
+}
+
+/// A URL de um remoto -> o caminho LOCAL dela. So repositorio local (`file:///...` ou caminho
+/// absoluto): o remoto que vem do `.git/config` ou do `--remoto` nunca abre rede. O de rede
+/// (https) e so o que o operador declara na configuracao (`fluxos.git.remoto`) e vai por
+/// `RemotoDeRede` -- o `.git/config` e escrevivel pelo modelo e nao escolhe para onde a rede vai.
+pub fn caminho_do_remoto(url: &str) -> Result<PathBuf, String> {
+    let u = url.trim();
+    let caminho = u.strip_prefix("file://").unwrap_or(u);
+    if !caminho.starts_with('/') {
+        return Err(format!(
+            "remoto {u:?}: so repositorio local aqui (file:///caminho ou /caminho) -- remoto de \
+rede (https) so pela chave fluxos.git.remoto da configuracao do operador, nunca pelo .git/config"
+        ));
+    }
+    Ok(PathBuf::from(caminho))
+}
+
+fn nome_de_remoto(s: &str) -> Result<String, ToolError> {
+    let ok = !s.is_empty()
+        && !s.starts_with(['-', '.'])
+        && s.chars()
+            .all(|c| c.is_ascii_alphanumeric() || "._-".contains(c));
+    if ok {
+        Ok(s.to_string())
+    } else {
+        Err(ToolError::InvalidArguments(format!(
+            "nome de remoto invalido: {s:?} (letras, digitos e ._-)"
+        )))
+    }
+}
+
+/// `push` e `pull` do git de escrita, para o OPERADOR (`phxclaw fluxo exportar --push`,
+/// `importar --pull`): NAO entram nas acoes da ferramenta que o modelo chama. O remoto vem do
+/// `.git/config`, e o modelo escreve arquivo no /work: a acao `push` na mao dele faria o
+/// sandbox montar com escrita QUALQUER repositorio do disco que ele apontasse. Na mao do
+/// operador, o repositorio e o dele (`fluxos-git`, fora da pasta das tarefas).
+///
+/// O mesmo motor de sempre (`rodar_roteiro_git`: sandbox sem rede, configuracao segura,
+/// filtros neutralizados), com o outro repositorio montado SO LEITURA. Por isso o push e um
+/// `fetch` rodado DENTRO do remoto (o remoto e o /work, com escrita; o local, so leitura) e o
+/// pull e um `fetch` dentro do local seguido de `merge --ff-only`: nenhum dos dois lados
+/// ganha escrita no outro, e ganho de historia so por avanco rapido -- o git recusa o
+/// `fetch` que nao e avanco (`non-fast-forward`) e o `merge --ff-only` que exigiria fundir.
+impl GitTool {
+    async fn git_cru(
+        &self,
+        workdir: &Path,
+        args: Vec<String>,
+        outro: Option<&Path>,
+    ) -> Result<WorkdirOutput, ToolError> {
+        let extra = match outro {
+            Some(p) => Extra {
+                ro_binds: vec![(p.to_path_buf(), OUTRO_NO_SANDBOX.to_string())],
+                config: TRANSPORTE_LOCAL.iter().map(|c| c.to_string()).collect(),
+                ..Extra::default()
+            },
+            None => Extra::default(),
+        };
+        self.git_com(workdir, args, extra).await
+    }
+
+    async fn git_com(
+        &self,
+        workdir: &Path,
+        args: Vec<String>,
+        extra: Extra,
+    ) -> Result<WorkdirOutput, ToolError> {
+        let argv: String = args.iter().map(|a| format!(" {}", aspas(a))).collect();
+        rodar_roteiro_git_com(
+            &self.bwrap,
+            workdir,
+            "",
+            |git| format!("exec {git}{argv}"),
+            self.timeout,
+            4 * 1024 * 1024,
+            extra,
+        )
+        .await
+    }
+
+    async fn git_ok(
+        &self,
+        workdir: &Path,
+        args: &[&str],
+        outro: Option<&Path>,
+    ) -> Result<String, ToolError> {
+        let acao = args.first().copied().unwrap_or_default().to_string();
+        let s = self
+            .git_cru(workdir, args.iter().map(|x| x.to_string()).collect(), outro)
+            .await?;
+        exigir_sucesso(&acao, s).map(|o| o.trim().to_string())
+    }
+
+    /// O commit de uma referencia, ou `None` se ela nao existe.
+    async fn commit_de(&self, workdir: &Path, refe: &str) -> Result<Option<String>, ToolError> {
+        let s = self
+            .git_cru(
+                workdir,
+                vec![
+                    "rev-parse".into(),
+                    "--verify".into(),
+                    "-q".into(),
+                    format!("{refe}^{{commit}}"),
+                ],
+                None,
+            )
+            .await?;
+        Ok((s.exit_code == Some(0)).then(|| s.stdout.trim().to_string()))
+    }
+
+    /// O nome e o repositorio bare de `nome_ou_url` (um remoto do `.git/config` de `repo`, ou
+    /// a URL direto, que fica com o nome `remoto`).
+    pub async fn remoto(&self, repo: &Path, nome_ou_url: &str) -> Result<Remoto, ToolError> {
+        let s = nome_ou_url.trim();
+        let (nome, url) = if s.starts_with('/') || s.contains("://") {
+            ("remoto".to_string(), s.to_string())
+        } else {
+            let nome = nome_de_remoto(s)?;
+            let o = self
+                .git_cru(
+                    repo,
+                    vec![
+                        "config".into(),
+                        "--get".into(),
+                        format!("remote.{nome}.url"),
+                    ],
+                    None,
+                )
+                .await?;
+            if o.exit_code != Some(0) || o.stdout.trim().is_empty() {
+                return Err(ToolError::Failed(format!(
+                    "o remoto {nome:?} nao esta configurado em {} (git -C {} remote add {nome} \
+file:///caminho/do/repositorio.git)",
+                    repo.display(),
+                    repo.display()
+                )));
+            }
+            (nome, o.stdout.trim().to_string())
+        };
+        let cru = caminho_do_remoto(&url).map_err(ToolError::Denied)?;
+        // Canonico ANTES do sandbox: o motor cria a pasta de trabalho que nao existe, e um
+        // remoto com erro de digitacao viraria uma pasta vazia nova em vez de um erro.
+        let caminho = std::fs::canonicalize(&cru)
+            .map_err(|e| ToolError::Failed(format!("remoto {url}: {e}")))?;
+        let bare = self
+            .git_ok(&caminho, &["rev-parse", "--is-bare-repository"], None)
+            .await
+            .unwrap_or_default();
+        if bare != "true" {
+            return Err(ToolError::Failed(format!(
+                "remoto {url}: nao e um repositorio bare (git init --bare): empurrar para uma \
+arvore de trabalho trocaria os arquivos de alguem por baixo dele"
+            )));
+        }
+        Ok(Remoto { nome, url, caminho })
+    }
+
+    async fn ramo(&self, repo: &Path, ramo: Option<&str>) -> Result<String, ToolError> {
+        match ramo {
+            Some(r) => nome_de_ramo(r),
+            None => {
+                let r = self
+                    .git_ok(repo, &["symbolic-ref", "--short", "HEAD"], None)
+                    .await?;
+                nome_de_ramo(&r)
+            }
+        }
+    }
+
+    fn so_escrita(&self) -> Result<(), ToolError> {
+        if self.escrita {
+            Ok(())
+        } else {
+            Err(ToolError::Denied(
+                "push e pull sao do git de escrita (git.write)".into(),
+            ))
+        }
+    }
+
+    /// Envia o ramo (padrao: o atual) de `repo` ao remoto, so por avanco rapido. Devolve
+    /// `{"remoto", "ramo", "antes", "depois", "enviado"}`.
+    pub async fn empurrar(
+        &self,
+        repo: &Path,
+        remoto: &str,
+        ramo: Option<&str>,
+    ) -> Result<Value, ToolError> {
+        self.so_escrita()?;
+        let r = self.remoto(repo, remoto).await?;
+        let ramo = self.ramo(repo, ramo).await?;
+        let refe = format!("refs/heads/{ramo}");
+        let Some(local) = self.commit_de(repo, &refe).await? else {
+            return Err(ToolError::Failed(format!(
+                "o ramo {ramo} nao tem commit em {}: registre antes (--commit)",
+                repo.display()
+            )));
+        };
+        // O push leva o ULTIMO COMMIT: com mudanca fora dele, o remoto receberia um estado
+        // que nao e o que o operador acabou de exportar, e ninguem saberia.
+        let sujo = self
+            .git_ok(
+                repo,
+                &["status", "--porcelain", "--untracked-files=all"],
+                None,
+            )
+            .await?;
+        if !sujo.is_empty() {
+            return Err(ToolError::Failed(format!(
+                "{} tem mudanca nao registrada: nada foi enviado (o push levaria o ultimo commit, \
+nao o que esta na pasta); registre com --commit",
+                repo.display()
+            )));
+        }
+        let antes = self.commit_de(&r.caminho, &refe).await?;
+        if antes.as_deref() != Some(local.as_str()) {
+            let s = self
+                .git_cru(
+                    &r.caminho,
+                    vec![
+                        "fetch".into(),
+                        "--no-tags".into(),
+                        "--no-write-fetch-head".into(),
+                        OUTRO_NO_SANDBOX.into(),
+                        format!("{refe}:{refe}"),
+                    ],
+                    Some(repo),
+                )
+                .await?;
+            if s.exit_code != Some(0) {
+                if s.stderr.contains("non-fast-forward") || s.stderr.contains("rejected") {
+                    return Err(ToolError::Failed(format!(
+                        "o remoto {} tem commit no ramo {ramo} que este repositorio nao tem: \
+nada foi enviado; traga antes (importar --pull)",
+                        r.url
+                    )));
+                }
+                exigir_sucesso("push", s)?;
+            }
+        }
+        // O ramo de acompanhamento local passa a dizer o que o remoto tem: o `status` e o
+        // proximo pull partem dele.
+        self.git_ok(
+            repo,
+            &[
+                "fetch",
+                "--no-tags",
+                "--no-write-fetch-head",
+                OUTRO_NO_SANDBOX,
+                &format!("+{refe}:refs/remotes/{}/{ramo}", r.nome),
+            ],
+            Some(&r.caminho),
+        )
+        .await?;
+        Ok(
+            json!({"remoto": r.url, "ramo": ramo, "antes": antes, "depois": local,
+                  "enviado": antes.as_deref() != Some(local.as_str())}),
+        )
+    }
+
+    /// Traz o ramo (padrao: o atual) do remoto para `repo`, so por avanco rapido, e so com a
+    /// arvore limpa. Divergencia e recusa dizendo, nunca fusao calada. `repo` sem `.git` e
+    /// iniciado no ramo (e entao o remoto tem de vir pela URL). Devolve `{"remoto", "ramo",
+    /// "antes", "depois", "trazido"}`.
+    pub async fn puxar(
+        &self,
+        repo: &Path,
+        remoto: &str,
+        ramo: Option<&str>,
+    ) -> Result<Value, ToolError> {
+        self.so_escrita()?;
+        if !repo.join(".git").exists() {
+            let r = nome_de_ramo(ramo.unwrap_or("main"))?;
+            std::fs::create_dir_all(repo)
+                .map_err(|e| ToolError::Failed(format!("{}: {e}", repo.display())))?;
+            self.git_ok(repo, &["init", "-q", "-b", &r], None).await?;
+        }
+        let r = self.remoto(repo, remoto).await?;
+        let ramo = self.ramo(repo, ramo).await?;
+        let sujo = self
+            .git_ok(
+                repo,
+                &["status", "--porcelain", "--untracked-files=all"],
+                None,
+            )
+            .await?;
+        if !sujo.is_empty() {
+            return Err(ToolError::Failed(format!(
+                "{} tem mudanca nao registrada: nada foi trazido (registre com --commit, ou \
+descarte, antes do --pull)",
+                repo.display()
+            )));
+        }
+        let acompanha = format!("refs/remotes/{}/{ramo}", r.nome);
+        let s = self
+            .git_cru(
+                repo,
+                vec![
+                    "fetch".into(),
+                    "--no-tags".into(),
+                    "--no-write-fetch-head".into(),
+                    OUTRO_NO_SANDBOX.into(),
+                    format!("+refs/heads/{ramo}:{acompanha}"),
+                ],
+                Some(&r.caminho),
+            )
+            .await?;
+        if s.exit_code != Some(0) {
+            if s.stderr.contains("couldn't find remote ref") {
+                return Err(ToolError::Failed(format!(
+                    "o remoto {} nao tem o ramo {ramo}",
+                    r.url
+                )));
+            }
+            exigir_sucesso("pull", s)?;
+        }
+        self.avancar(repo, &acompanha, &r.url, &ramo).await
+    }
+
+    /// O fim do pull, local ou de rede: o ramo de acompanhamento ja tem o que o remoto tem, e
+    /// o repositorio so avanca ate ele (`merge --ff-only`); divergencia e recusa dizendo.
+    async fn avancar(
+        &self,
+        repo: &Path,
+        acompanha: &str,
+        url: &str,
+        ramo: &str,
+    ) -> Result<Value, ToolError> {
+        let antes = self.commit_de(repo, "HEAD").await?;
+        let m = self
+            .git_cru(
+                repo,
+                vec![
+                    "merge".into(),
+                    "--ff-only".into(),
+                    "-q".into(),
+                    acompanha.to_string(),
+                ],
+                None,
+            )
+            .await?;
+        if m.exit_code != Some(0) {
+            return Err(ToolError::Failed(format!(
+                "o remoto {url} e {} divergiram no ramo {ramo} (cada lado tem commit que o outro \
+nao tem): nada foi trazido; junte os dois no git e exporte de novo",
+                repo.display()
+            )));
+        }
+        let depois = self.commit_de(repo, "HEAD").await?;
+        Ok(
+            json!({"remoto": url, "ramo": ramo, "antes": antes, "depois": depois,
+                  "trazido": antes != depois}),
+        )
+    }
+
+    /// O ramo em que `repo` esta (`None`: HEAD destacado). Vale no repositorio recem-iniciado,
+    /// ainda sem commit.
+    pub async fn ramo_atual(&self, repo: &Path) -> Result<Option<String>, ToolError> {
+        let s = self
+            .git_cru(
+                repo,
+                vec![
+                    "symbolic-ref".into(),
+                    "--short".into(),
+                    "-q".into(),
+                    "HEAD".into(),
+                ],
+                None,
+            )
+            .await?;
+        Ok((s.exit_code == Some(0)).then(|| s.stdout.trim().to_string()))
+    }
+
+    /// Mudanca fora do ultimo commit (arquivo novo inclusive).
+    async fn sujo(&self, repo: &Path) -> Result<bool, ToolError> {
+        let s = self
+            .git_ok(
+                repo,
+                &["status", "--porcelain", "--untracked-files=all"],
+                None,
+            )
+            .await?;
+        Ok(!s.is_empty())
+    }
+
+    /// Um git do push/pull de REDE: no espelho (nunca no repositorio do operador), com rede
+    /// no sandbox, so o transporte da URL conferida, sem redirecionamento e com a credencial
+    /// pelo AMBIENTE (`GIT_CONFIG_*`), presa a URL do remoto (`http.<url>.extraHeader`). Tudo
+    /// o que volta do git passa pela tarja dos segredos.
+    async fn git_na_rede(
+        &self,
+        espelho: &Path,
+        args: Vec<String>,
+        r: &RemotoDeRede,
+    ) -> Result<WorkdirOutput, ToolError> {
+        let config: Vec<String> = vec![
+            format!("protocol.{}.allow=always", r.url.scheme()),
+            // Redirecionamento levaria o pedido (e o pacote) a um destino que ninguem
+            // conferiu. `false` e o unico valor que nao segue nenhum.
+            "http.followRedirects=false".into(),
+            "http.sslVerify=true".into(),
+            "core.askPass=/bin/false".into(),
+            "submodule.recurse=false".into(),
+            "fetch.recurseSubmodules=false".into(),
+            "push.recurseSubmodules=no".into(),
+            // O que chega pela rede e conferido antes de entrar no espelho.
+            "transfer.fsckObjects=true".into(),
+        ];
+        let mut env: Vec<(String, String)> = vec![("GIT_ASKPASS".into(), "/bin/false".into())];
+        if let Some((nome, valor)) = &r.cabecalho {
+            env.extend([
+                ("GIT_CONFIG_COUNT".into(), "1".into()),
+                (
+                    "GIT_CONFIG_KEY_0".into(),
+                    format!("http.{}.extraHeader", r.url),
+                ),
+                ("GIT_CONFIG_VALUE_0".into(), format!("{nome}: {valor}")),
+            ]);
+        }
+        let mut s = self
+            .git_com(
+                espelho,
+                args,
+                Extra {
+                    config,
+                    rede: true,
+                    env,
+                    ..Extra::default()
+                },
+            )
+            .await?;
+        s.stdout = r.tarjar(&s.stdout);
+        s.stderr = r.tarjar(&s.stderr);
+        Ok(s)
+    }
+
+    /// Envia o ramo (padrao: o atual) ao remoto de REDE do operador, so por avanco rapido e
+    /// so o ultimo commit -- as mesmas regras do `empurrar` local. O git que fala com a rede
+    /// roda num ESPELHO bare temporario, nunca no repositorio: o `.git/config` dele (que o
+    /// modelo pode escrever) nao escolhe destino, proxy, `insteadOf` nem cabecalho. Devolve
+    /// `{"remoto", "ramo", "antes", "depois", "enviado"}`.
+    pub async fn empurrar_pela_rede(
+        &self,
+        repo: &Path,
+        r: &RemotoDeRede,
+        ramo: Option<&str>,
+    ) -> Result<Value, ToolError> {
+        self.so_escrita()?;
+        let ramo = self.ramo(repo, ramo).await?;
+        let refe = format!("refs/heads/{ramo}");
+        let Some(local) = self.commit_de(repo, &refe).await? else {
+            return Err(ToolError::Failed(format!(
+                "o ramo {ramo} nao tem commit em {}: registre antes (--commit)",
+                repo.display()
+            )));
+        };
+        if self.sujo(repo).await? {
+            return Err(ToolError::Failed(format!(
+                "{} tem mudanca nao registrada: nada foi enviado (o push levaria o ultimo commit, \
+nao o que esta na pasta); registre com --commit",
+                repo.display()
+            )));
+        }
+        let espelho = Espelho::novo()?;
+        let url = r.url.to_string();
+        let ls = self
+            .git_na_rede(
+                &espelho.0,
+                vec!["ls-remote".into(), url.clone(), refe.clone()],
+                r,
+            )
+            .await?;
+        let ls = exigir_sucesso("push", ls)?;
+        let antes = ls
+            .lines()
+            .find_map(|l| l.split_once('\t').filter(|(_, n)| *n == refe))
+            .map(|(c, _)| c.to_string());
+        if antes.as_deref() != Some(local.as_str()) {
+            self.git_ok(&espelho.0, &["init", "-q", "--bare"], None)
+                .await?;
+            self.git_ok(
+                &espelho.0,
+                &[
+                    "fetch",
+                    "--no-tags",
+                    "--no-write-fetch-head",
+                    OUTRO_NO_SANDBOX,
+                    &format!("{refe}:{refe}"),
+                ],
+                Some(repo),
+            )
+            .await?;
+            // Sem `+` e sem `--force`: o servidor recusa o que nao e avanco rapido.
+            let s = self
+                .git_na_rede(
+                    &espelho.0,
+                    vec!["push".into(), url.clone(), format!("{refe}:{refe}")],
+                    r,
+                )
+                .await?;
+            if s.exit_code != Some(0) {
+                if ["non-fast-forward", "rejected", "fetch first"]
+                    .iter()
+                    .any(|x| s.stderr.contains(x))
+                {
+                    return Err(ToolError::Failed(format!(
+                        "o remoto {url} tem commit no ramo {ramo} que este repositorio nao tem: \
+nada foi enviado; traga antes (importar --pull)"
+                    )));
+                }
+                exigir_sucesso("push", s)?;
+            }
+        }
+        // O ramo de acompanhamento diz o que o remoto tem agora: o commit que acabou de ir.
+        self.git_ok(
+            repo,
+            &[
+                "update-ref",
+                &format!("refs/remotes/{NOME_DO_REMOTO_DE_REDE}/{ramo}"),
+                &local,
+            ],
+            None,
+        )
+        .await?;
+        Ok(
+            json!({"remoto": url, "ramo": ramo, "antes": antes, "depois": local,
+                  "enviado": antes.as_deref() != Some(local.as_str())}),
+        )
+    }
+
+    /// Traz o ramo (padrao: o atual) do remoto de REDE do operador, so por avanco rapido e
+    /// so com a arvore limpa -- as regras do `puxar` local. O git da rede baixa num ESPELHO
+    /// bare temporario (com `transfer.fsckObjects`); o repositorio busca do espelho, sem
+    /// rede. `repo` sem `.git` e iniciado no ramo.
+    pub async fn puxar_pela_rede(
+        &self,
+        repo: &Path,
+        r: &RemotoDeRede,
+        ramo: Option<&str>,
+    ) -> Result<Value, ToolError> {
+        self.so_escrita()?;
+        if !repo.join(".git").exists() {
+            let r = nome_de_ramo(ramo.unwrap_or("main"))?;
+            std::fs::create_dir_all(repo)
+                .map_err(|e| ToolError::Failed(format!("{}: {e}", repo.display())))?;
+            self.git_ok(repo, &["init", "-q", "-b", &r], None).await?;
+        }
+        let ramo = self.ramo(repo, ramo).await?;
+        if self.sujo(repo).await? {
+            return Err(ToolError::Failed(format!(
+                "{} tem mudanca nao registrada: nada foi trazido (registre com --commit, ou \
+descarte, antes do --pull)",
+                repo.display()
+            )));
+        }
+        let url = r.url.to_string();
+        let espelho = Espelho::novo()?;
+        self.git_ok(&espelho.0, &["init", "-q", "--bare"], None)
+            .await?;
+        let s = self
+            .git_na_rede(
+                &espelho.0,
+                vec![
+                    "fetch".into(),
+                    "--no-tags".into(),
+                    "--no-write-fetch-head".into(),
+                    url.clone(),
+                    format!("+refs/heads/{ramo}:refs/heads/{ramo}"),
+                ],
+                r,
+            )
+            .await?;
+        if s.exit_code != Some(0) {
+            if s.stderr.contains("couldn't find remote ref") {
+                return Err(ToolError::Failed(format!(
+                    "o remoto {url} nao tem o ramo {ramo}"
+                )));
+            }
+            exigir_sucesso("pull", s)?;
+        }
+        let acompanha = format!("refs/remotes/{NOME_DO_REMOTO_DE_REDE}/{ramo}");
+        self.git_ok(
+            repo,
+            &[
+                "fetch",
+                "--no-tags",
+                "--no-write-fetch-head",
+                OUTRO_NO_SANDBOX,
+                &format!("+refs/heads/{ramo}:{acompanha}"),
+            ],
+            Some(&espelho.0),
+        )
+        .await?;
+        self.avancar(repo, &acompanha, &url, &ramo).await
+    }
+}
+
+/// O nome do ramo de acompanhamento do remoto de rede (`refs/remotes/remoto/<ramo>`): o mesmo
+/// do remoto dado pela URL no caminho local.
+pub const NOME_DO_REMOTO_DE_REDE: &str = "remoto";
+
+/// O remoto de REDE dos fluxos: a URL que o OPERADOR declarou (`fluxos.git.remoto`, chave so
+/// do operador) e, se houver, o cabecalho da credencial nomeada (o `http.json` e o broker do
+/// no HTTP: `fluxo_http::cabecalho_da_credencial`).
+///
+/// O que vale saber:
+/// - **So o operador chega aqui.** `GitTool::run` (a ferramenta do modelo) nao tem acao de
+///   rede; quem constroi isto e a CLI (`phxclaw fluxo exportar --push`, `importar --pull`).
+/// - **https, e http so em loopback** (`conferir_url_de_rede`). ssh fica fora: pediria chave
+///   privada no sandbox e um `known_hosts` que alguem tem de confiar, e nada disso existe.
+/// - **O bwrap so liga ou desliga a rede INTEIRA** (`--share-net`): nao ha como prender o
+///   sandbox ao host do remoto. O que se faz no lugar: rede so nestes dois comandos do
+///   operador, destino conferido antes, so o protocolo dele (`protocol.allow=never` mais
+///   `protocol.<esquema>.allow`), sem redirecionamento, sem gancho, sem submodulo, e o git
+///   da rede rodando num espelho limpo -- nao no repositorio, cujo `.git/config` o modelo
+///   pode ter escrito (`url.*.insteadOf`, `http.proxy`, `http.sslVerify`...).
+/// - **A credencial vai pelo AMBIENTE** (`GIT_CONFIG_COUNT/KEY/VALUE`, git >= 2.31) como
+///   `http.<url>.extraHeader`: nada em disco (nem `.git/config`, nem arquivo de askpass), nada
+///   no argv (que `ps` mostra a qualquer usuario), e o cabecalho so vale para a URL do
+///   remoto. O ambiente do processo e legivel so pelo mesmo usuario (`/proc/<pid>/environ`
+///   0400) -- o mesmo que ja le a chave-mestra do broker. O `GIT_ASKPASS` foi recusado: pede
+///   um programa e o segredo em algum lugar que ele leia (arquivo ou ambiente), dois lugares
+///   em vez de um.
+pub struct RemotoDeRede {
+    url: reqwest::Url,
+    cabecalho: Option<(String, String)>,
+    segredos: Vec<phxclaw_secret_broker::SecretValue>,
+}
+
+// A mao: `{:?}` num erro ou num log nao pode levar o cabecalho.
+impl std::fmt::Debug for RemotoDeRede {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RemotoDeRede")
+            .field("url", &self.url.as_str())
+            .field(
+                "cabecalho",
+                &self
+                    .cabecalho
+                    .as_ref()
+                    .map(|(n, _)| format!("{n}: <redigido>")),
+            )
+            .finish()
+    }
+}
+
+impl RemotoDeRede {
+    /// `credencial`: (nome do cabecalho, valor, segredos para a tarja), como o
+    /// `fluxo_http::cabecalho_da_credencial` devolve.
+    pub fn novo(
+        url: &str,
+        credencial: Option<(String, String, Vec<phxclaw_secret_broker::SecretValue>)>,
+    ) -> Result<Self, String> {
+        let url = conferir_url_de_rede(url)?;
+        let (cabecalho, segredos) = match credencial {
+            Some((n, v, s)) => {
+                if n.contains(['\r', '\n', ':']) || v.contains(['\r', '\n']) {
+                    return Err("cabecalho da credencial com quebra de linha".into());
+                }
+                (Some((n, v)), s)
+            }
+            None => (None, vec![]),
+        };
+        Ok(Self {
+            url,
+            cabecalho,
+            segredos,
+        })
+    }
+
+    pub fn url(&self) -> &str {
+        self.url.as_str()
+    }
+
+    fn tarjar(&self, t: &str) -> String {
+        let mut t = phxclaw_secret_broker::scrub_text(t, &self.segredos);
+        if let Some((_, v)) = &self.cabecalho {
+            t = t.replace(v.as_str(), "[REDACTED]");
+        }
+        t
+    }
+}
+
+/// A URL de um remoto de rede, conferida ANTES de qualquer processo: `https://host/caminho`,
+/// ou `http://` so para IP de loopback (a prova local; nada sai da maquina). Recusa usuario
+/// ou senha na URL (a credencial e por nome, no broker, e a URL aparece em toda saida),
+/// query, fragmento, e qualquer outro esquema -- `ssh`, `git://`, `file://` (o local tem o
+/// caminho dele, `caminho_do_remoto`).
+pub fn conferir_url_de_rede(url: &str) -> Result<reqwest::Url, String> {
+    let u = reqwest::Url::parse(url.trim())
+        .map_err(|e| format!("remoto de rede {url:?}: URL invalida ({e})"))?;
+    // So IP literal: um NOME que resolve para loopback hoje pode resolver para fora amanha.
+    let loopback = u
+        .host_str()
+        .map(|h| h.trim_start_matches('[').trim_end_matches(']'))
+        .and_then(|h| h.parse::<std::net::IpAddr>().ok())
+        .is_some_and(|ip| ip.is_loopback());
+    match u.scheme() {
+        "https" => {}
+        "http" if loopback => {}
+        "http" => {
+            return Err(format!(
+                "remoto de rede {url:?}: http so em loopback (127.0.0.1, ::1); fora da maquina, \
+https -- em http a credencial e o pacote iriam em claro"
+            ));
+        }
+        outro => {
+            return Err(format!(
+                "remoto de rede {url:?}: esquema {outro:?} recusado (so https; ssh pediria chave \
+privada e known_hosts no sandbox, e nao ha)"
+            ));
+        }
+    }
+    if u.host_str().is_none_or(str::is_empty) {
+        return Err(format!("remoto de rede {url:?}: sem host"));
+    }
+    if !u.username().is_empty() || u.password().is_some() {
+        return Err(format!(
+            "remoto de rede {url:?}: usuario/senha na URL recusados -- a URL aparece em toda \
+saida; a credencial vai por nome (fluxos.git.credencial_nome)"
+        ));
+    }
+    if u.query().is_some() || u.fragment().is_some() {
+        return Err(format!(
+            "remoto de rede {url:?}: query ou fragmento na URL recusados"
+        ));
+    }
+    if u.path().trim_matches('/').is_empty() {
+        return Err(format!(
+            "remoto de rede {url:?}: falta o caminho do repositorio"
+        ));
+    }
+    Ok(u)
+}
+
+/// O espelho bare temporario do push/pull de rede: uma pasta 0700 na pasta temporaria do
+/// sistema, apagada na saida (o `Drop`), com sucesso ou erro. Guarda os objetos do
+/// repositorio de fluxos, nunca a credencial.
+struct Espelho(PathBuf);
+
+impl Espelho {
+    fn novo() -> Result<Self, ToolError> {
+        let p =
+            std::env::temp_dir().join(format!("phxclaw-git-rede-{}", phxclaw_types::new_uuid_v7()));
+        let mut b = std::fs::DirBuilder::new();
+        #[cfg(unix)]
+        std::os::unix::fs::DirBuilderExt::mode(&mut b, 0o700);
+        b.create(&p)
+            .map_err(|e| ToolError::Failed(format!("{}: {e}", p.display())))?;
+        Ok(Self(p))
+    }
+}
+
+impl Drop for Espelho {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
     }
 }
 

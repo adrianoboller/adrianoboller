@@ -110,6 +110,7 @@
         <span class="nav-grupo" data-txt="casca.menu.trabalho">TRABALHO</span>
         <button class="nav" data-tela="tarefas"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M10 6h10M10 12h10M10 18h10"/><path d="m3.5 6 1.5 1.5L7.5 5M3.5 12l1.5 1.5 2.5-2.5M3.5 18l1.5 1.5 2.5-2.5"/></svg></span><em data-txt="menu.tarefas">Tarefas</em></button>
         <button class="nav" data-tela="fluxos"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><rect x="2.5" y="4" width="6" height="5" rx="1.2"/><rect x="15.5" y="3" width="6" height="5" rx="1.2"/><rect x="15.5" y="16" width="6" height="5" rx="1.2"/><path d="M8.5 6.5c3.5 0 3.5-1 7-1M8.5 6.5c3.5 0 3.5 12 7 12"/></svg></span><em data-txt="menu.fluxos">Fluxos</em></button>
+        <button class="nav" data-tela="insights"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M3.5 20.5h17"/><rect x="5" y="12" width="3.2" height="6" rx=".8"/><rect x="10.4" y="7" width="3.2" height="11" rx=".8"/><rect x="15.8" y="4" width="3.2" height="14" rx=".8"/></svg></span><em data-txt="menu.insights">Insights</em></button>
         <button class="nav" data-tela="ide"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><rect x="2.5" y="4" width="19" height="16" rx="2"/><path d="m6.5 9 3.5 3-3.5 3M12.5 15h5"/></svg></span><em>IDE</em><b id="seloIde"></b></button>
         <span class="nav-grupo" data-txt="casca.menu.capacidades">CAPACIDADES</span>
         <button class="nav" data-tela="agentes"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.6 3.4-5.5 6.5-5.5s5.7 1.9 6.5 5.5"/><path d="M15.5 4.7a3.5 3.5 0 0 1 0 6.6M18 14.8c1.9.7 3.1 2.4 3.5 5.2"/></svg></span><em data-txt="menu.agentes">Agentes</em><b id="seloAgentes"></b></button>
@@ -222,6 +223,9 @@
         </div>
       </header>
       <nav id="ideAbas" class="abas" aria-label="Terminais abertos" data-txt-al="ide.abas"></nav>
+      <!-- Indicador permanente do terminal compartilhado: o anfitriao ve quantos assistem; o
+           convidado ve que assiste e em que modo (R2 da proposta: o aviso e o controle principal). -->
+      <p id="ideCompartilhado" class="selo-compartilhado" role="status" aria-live="polite" hidden></p>
       <!-- Trilha: o arquivo aberto no Helix (lido da linha de estado dele) e os simbolos
            (documentSymbol pelo agente). Clique leva o Helix la (:open / :goto). -->
       <nav id="ideTrilha" class="trilha" aria-label="Caminho e símbolos do arquivo aberto" data-txt-al="ide.trilha" hidden></nav>
@@ -242,6 +246,51 @@
         <canvas id="minimapaCanvas" tabindex="0" role="slider" aria-orientation="vertical" aria-label="Linha do arquivo" data-txt-al="ide.minimapa_slider"></canvas>
         <p id="minimapaEstado" class="minimapa-estado" role="status" aria-live="polite"></p>
       </aside>
+      <!-- Os paineis dobraveis ao lado do terminal numa coluna so: lado a lado, tres paineis
+           fechados ja comiam a largura do terminal (medido em 1280 px: o Helix caiu para 5
+           colunas e perdeu a linha de estado). -->
+      <div class="ide-lado">
+      <!-- Leitura com dobra: o arquivo aberto no Helix lido EM DISCO, com as regioes do servidor
+           de linguagem (/v1/ide/dobras: foldingRange; reserva por chaves ou indentacao, dita).
+           O Helix 25.07 nao dobra: quem dobra e este painel, e o editor continua sendo o Helix.
+           Fechado, nao pede nada ao agente. -->
+      <details id="ideLeitura" class="painel-lateral painel-leitura" data-fonte="api /v1/ide/dobras" hidden>
+        <summary data-txt="ide.leitura_titulo">Leitura com dobra</summary>
+        <div class="painel-acoes">
+          <button id="leituraDobrarTudo" class="acao consulta" type="button" data-txt="ide.leitura_dobrar_tudo">DOBRAR TUDO</button>
+          <button id="leituraDesdobrarTudo" class="acao consulta" type="button" data-txt="ide.leitura_desdobrar_tudo">DESDOBRAR TUDO</button>
+          <button id="leituraReler" class="acao consulta" type="button" data-txt="ide.minimapa_reler">RELER</button>
+        </div>
+        <p class="minimapa-nota" data-txt="ide.leitura_limite">Lido do arquivo salvo em disco; o editor é o Helix, que não dobra.</p>
+        <p class="minimapa-nota" id="leituraAjuda" data-txt="ide.leitura_ajuda">Teclado: ↑ e ↓ andam entre as regiões, ← dobra, → desdobra, Enter alterna; Ctrl+Shift+[ e Ctrl+Shift+] também dobram e desdobram.</p>
+        <p id="leituraEstado" class="painel-status" role="status" aria-live="polite"></p>
+        <div id="leituraCodigo" class="leitura-codigo" role="group" aria-label="Código do arquivo aberto, com regiões dobráveis" data-txt-al="ide.leitura_codigo" aria-describedby="leituraAjuda"></div>
+      </details>
+      <!-- Terminal compartilhado: o anfitriao cria o convite (rota do dono), ve quem assiste e
+           revoga. O convidado so le; escrever exige o convite com escrita E o papel de dono. -->
+      <details id="ideCompartilhar" class="painel-lateral painel-compartilhar" data-fonte="api /v1/ide/compartilhar">
+        <summary data-txt="ide.comp_titulo">Compartilhar terminal</summary>
+        <p class="minimapa-nota aviso-compartilhar" data-txt="ide.comp_aviso">Quem tiver o convite vê tudo o que aparece neste terminal, inclusive segredos exibidos. O convidado só lê; escrever exige marcar abaixo e o convidado ter o papel de dono.</p>
+        <div class="painel-acoes comp-opcoes">
+          <label class="comp-campo"><span data-txt="ide.comp_expira">Expira em</span>
+            <select id="compExpira"><option value="900" data-txt="ide.comp_15min">15 minutos</option><option value="3600" selected data-txt="ide.comp_1h">1 hora</option><option value="28800" data-txt="ide.comp_8h">8 horas</option></select></label>
+          <label class="comp-campo"><span data-txt="ide.comp_max">Convidados (máx.)</span>
+            <input id="compMax" type="number" min="1" max="16" value="4" /></label>
+          <label class="comp-campo comp-marca"><input id="compEscrita" type="checkbox" /> <span data-txt="ide.comp_escrita">Permitir escrita a convidado dono (RBAC)</span></label>
+        </div>
+        <div class="painel-acoes">
+          <button id="compCriar" class="acao inclui" type="button" data-txt="ide.comp_criar">COMPARTILHAR</button>
+          <button id="compReabrir" class="acao altera" type="button" hidden data-txt="ide.comp_reabrir">REABRIR SEM A CREDENCIAL DA IA</button>
+          <button id="compRevogar" class="acao exclui" type="button" disabled data-txt="ide.comp_revogar">REVOGAR TODOS</button>
+        </div>
+        <p id="compEstado" class="painel-status" role="status" aria-live="polite"></p>
+        <div id="compConvite" class="comp-convite" hidden>
+          <label class="comp-campo" for="compLink"><span data-txt="ide.comp_link">Convite (mostrado uma vez)</span></label>
+          <input id="compLink" type="text" readonly />
+          <button id="compCopiar" class="acao consulta" type="button" data-txt="ide.comp_copiar">COPIAR</button>
+        </div>
+        <ul id="compConvidados" class="comp-convidados" aria-label="Convidados conectados" data-txt-al="ide.comp_convidados"></ul>
+      </details>
       <!-- Explorador de testes: a arvore do test_list e o rodar de UM no (test_run), pela API. -->
       <details id="ideTestes" class="painel-lateral">
         <summary data-txt="testes.titulo">Explorador de testes</summary>
@@ -252,6 +301,7 @@
         <div id="testesArvore" class="testes-arvore" data-fonte="api /v1/ide/testes"></div>
         <pre id="testesResultado" class="painel-saida" hidden></pre>
       </details>
+      </div>
       </div>
      </section>
 
@@ -327,6 +377,15 @@
           <p id="fluxosStatus" class="tela-sub" data-fonte="api /v1/fluxos" role="status" aria-live="polite"></p><button class="acao consulta tentar" type="button" data-tentar hidden data-txt="erro.tentar">TENTAR DE NOVO</button></div>
         <button id="fluxosRecarregar" class="acao consulta" type="button" data-txt="fluxos.recarregar">RECARREGAR LISTA</button>
       </header>
+      <!-- O assistente (POST /v1/fluxos/assistente, fluxo_assistente.rs): a descricao vira um
+           RASCUNHO conferido pelo motor; nada e publicado, e o rascunho abre no editor. -->
+      <form id="fluxosAssistente" class="fluxos-assistente" aria-label="Assistente de fluxos" data-txt-al="fluxos.assistente">
+        <label class="fp-rotulo" for="fluxosDescricao" data-txt="fluxos.assistente_rotulo">Descreva o fluxo: o assistente monta um rascunho, o motor confere e nada é publicado.</label>
+        <div class="fluxos-assistente-linha">
+          <textarea id="fluxosDescricao" class="fluxos-descricao" rows="2" maxlength="4000"></textarea>
+          <button id="fluxosCriar" class="acao inclui" type="submit" data-txt="fluxos.assistente_criar">+ CRIAR COM ASSISTENTE</button>
+        </div>
+      </form>
       <div class="fluxos-corpo">
         <nav id="fluxosLista" class="fluxos-lista" aria-label="Fluxos da pasta" data-txt-al="fluxos.lista" data-fonte="api /v1/fluxos"></nav>
         <section id="fluxosEditor" class="fluxos-editor" aria-labelledby="fluxosNome" hidden>
@@ -361,6 +420,29 @@
           <ul id="fluxosLegenda" class="fluxos-legenda" aria-label="Estados da execução" data-txt-al="fluxos.legenda" hidden></ul>
         </section>
       </div>
+     </section>
+
+     <!-- Insights (insights.js): execucoes por estado, p50/p95, custo, falhas mais comuns, por
+          fluxo e por dia, de GET /v1/insights -- que le o disco das tarefas cortado pelo projeto
+          do RBAC. Nenhum numero desta tela e digitado ou contado aqui. -->
+     <section class="tela" id="tela-insights" data-tela="insights" aria-label="Insights" data-txt-al="menu.insights" hidden>
+      <header class="tela-head">
+        <div><span class="eyebrow" data-txt="insights.sobretitulo">INSIGHTS / EXECUÇÕES DO AGENTE</span><h1 data-txt="menu.insights">Insights</h1>
+          <p id="insightsStatus" class="tela-sub" role="status" aria-live="polite"></p><button class="acao consulta tentar" type="button" data-tentar hidden data-txt="erro.tentar">TENTAR DE NOVO</button></div>
+        <div class="insights-filtros">
+          <label><span data-txt="insights.periodo">Período</span>
+            <select id="insightsPeriodo">
+              <option value="24h" data-txt="insights.p24h">Últimas 24 horas</option>
+              <option value="7d" selected data-txt="insights.p7d">Últimos 7 dias</option>
+              <option value="30d" data-txt="insights.p30d">Últimos 30 dias</option>
+              <option value="tudo" data-txt="insights.ptudo">Tudo</option>
+            </select></label>
+          <label><span data-txt="insights.fluxo">Fluxo</span>
+            <select id="insightsFluxo"><option value="" data-txt="insights.todos_fluxos">Todos os fluxos</option></select></label>
+          <button class="acao consulta" type="button" id="insightsAtualizar" data-txt="insights.atualizar">ATUALIZAR</button>
+        </div>
+      </header>
+      <div id="insightsConteudo" class="insights" data-fonte="api /v1/insights"></div>
      </section>
 
      <section class="tela" id="tela-config" data-tela="config" aria-label="Configuração" data-txt-al="menu.config" hidden>
@@ -425,6 +507,7 @@
   <script src="./assets/app.js"></script>
   <script src="./assets/tarefas.js"></script>
   <script src="./assets/fluxos.js"></script>
+  <script src="./assets/insights.js"></script>
   <script src="./assets/config.js"></script>
   <!-- async: o IDE e os paineis ficam fora do caminho do DOMContentLoaded do celular. -->
   <script src="./assets/ide.js" async></script>
