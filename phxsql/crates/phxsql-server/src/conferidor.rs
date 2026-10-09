@@ -81,6 +81,46 @@ pub const FONTES: &[(&str, &str)] = &[
     ("ui/explorador.js", include_str!("../ui/explorador.js")),
 ];
 
+/// A tela do PhxZipWeb, medida pela MESMA regua (`varrer`) mas contada a
+/// parte (pedido 454, fatia Z10, `docs/PHXZIP-WEB.md` §5 item 5).
+///
+/// Lista PROPRIA, e nao mais duas linhas na `FONTES`: ampliar a `FONTES`
+/// moveria `TETO_ROTULOS_CRASE_E_JS`, e subir aquele teto e proibido. O
+/// PhxZipWeb e produto a parte (pacote so dele) e tem catraca propria,
+/// [`TETO_ZIP_WEB`]. O `include_str!` atravessa para a pasta do outro crate
+/// so no fonte -- nao ha dependencia de pacote, a regra da `std` fica.
+pub const FONTES_ZIP: &[(&str, &str)] = &[
+    (
+        "phxzip-web/ui/index.html",
+        include_str!("../../phxzip-web/ui/index.html"),
+    ),
+    (
+        "phxzip-web/ui/phxzip.js",
+        include_str!("../../phxzip-web/ui/phxzip.js"),
+    ),
+];
+
+/// A varredura da tela do PhxZipWeb.
+///
+/// A marca `Ph<span>x</span>Zip` chega partida, e o pedaco «Zip» e isento
+/// como «Sql» e. Fica numa dispensa PROPRIA daqui e nao no [`ISENTOS`]:
+/// aquela lista tem catraca que so desce (`TETO_ISENTOS_DE_TRADUCAO`), e
+/// crescer a lista para caber outro produto seria subir o teto pela porta
+/// dos fundos.
+pub fn conferir_zip() -> Vec<Achado> {
+    FONTES_ZIP
+        .iter()
+        .flat_map(|(nome, fonte)| varrer(nome, fonte))
+        .map(|mut a| {
+            if a.situacao == Situacao::Fora && a.texto == "Zip" {
+                a.situacao = Situacao::Isento;
+                a.porque = "a marca partida em pedacos pelo <span> do X, como Sql";
+            }
+            a
+        })
+        .collect()
+}
+
 /// Marcador que ocupa o lugar do que foi retirado antes da varredura: um
 /// `${…}` (dado interpolado) ou uma chamada `txt(…)` (texto ja da fabrica).
 /// Nao e letra, entao ele nunca faz um trecho parecer texto humano.
@@ -1724,6 +1764,16 @@ pub fn token_sem_definicao_e_sem_fallback() -> Vec<(&'static str, String)> {
 /// TLS» -- que tinham deixado de ser verdade -- e a dica do e-mail que dizia
 /// o mesmo.
 pub const TETO_ROTULOS_CRASE_E_JS: usize = 798;
+/// A catraca do PhxZipWeb (pedido 454, Z10): textos cravados na `ui/` dele.
+///
+/// Nasce em **0** no dia da fatia, medido: a Z6 ja entregou a tela inteira
+/// por chave (`zip.*` do `textos.json`). E catraca SEPARADA de
+/// [`TETO_ROTULOS_CRASE_E_JS`] de proposito -- a regua passou a medir mais
+/// (mais dois arquivos), e a regra da casa e nao subir o teto antigo; aqui
+/// nao ha antigo a aposentar, a outra segue em 798 intacta. Em 0, qualquer
+/// texto cravado novo na tela do PhxZipWeb reprova.
+pub const TETO_ZIP_WEB: usize = 0;
+
 #[cfg(test)]
 mod testes {
     use std::collections::HashSet;
@@ -1761,6 +1811,67 @@ mod testes {
              commit da traducao, senao ela deixa de segurar",
             faltando.len()
         );
+    }
+
+    /// A catraca do PhxZipWeb. Em zero, nao ha folga a baixar: o RED e qualquer
+    /// texto cravado novo em `phxzip-web/ui/`.
+    #[test]
+    fn a_catraca_dos_textos_fora_da_fabrica_do_phxzip_web() {
+        let achados = conferir_zip();
+        let faltando = fora(&achados);
+        let mostra: Vec<String> = faltando
+            .iter()
+            .take(40)
+            .map(|a| format!("  {}:{} {:?}", a.arquivo, a.linha, a.texto))
+            .collect();
+        // `==` e nao o par `<=`/`>=` das irmas: com o teto em 0 o `>=` e sempre
+        // verdadeiro (clippy acusa), e a igualdade ja cobre os dois sentidos --
+        // acrescentou reprova, e se um dia o teto subir de 0 sem medida, tambem.
+        assert!(
+            faltando.len() == TETO_ZIP_WEB,
+            "{} textos cravados na tela do PhxZipWeb, e a catraca esta em {TETO_ZIP_WEB}:\n{}\n\
+             Passe por chave no ui/textos.json (6 idiomas), `data-txt` ou `t(\"zip.…\")`.",
+            faltando.len(),
+            mostra.join("\n")
+        );
+    }
+
+    /// A lista `FONTES_ZIP` e digitada: cobra de volta cada arquivo de tela que
+    /// o crate do PhxZipWeb embute, para a tela nova nao nascer fora da catraca.
+    #[test]
+    fn a_lista_do_phxzip_web_cobre_o_que_ele_embute() {
+        const EMBUTE: &str = include_str!("../../phxzip-web/src/textos.rs");
+        let medidos: HashSet<&str> = FONTES_ZIP.iter().map(|(n, _)| *n).collect();
+        let mut vistos = 0;
+        for (i, _) in EMBUTE.match_indices("include_str!(\"../ui/") {
+            let resto = &EMBUTE[i + "include_str!(\"../".len()..];
+            let caminho = &resto[..resto.find('"').unwrap()];
+            if caminho.ends_with(".js") || caminho.ends_with(".html") {
+                vistos += 1;
+                assert!(
+                    medidos.contains(format!("phxzip-web/{caminho}").as_str()),
+                    "o PhxZipWeb embute {caminho} e o FONTES_ZIP nao mede"
+                );
+            }
+        }
+        assert!(
+            vistos > 0,
+            "a guarda ficou cega: nenhum include_str! de tela"
+        );
+    }
+
+    /// Prova real da catraca nova, com o defeito reposto: o mesmo rotulo
+    /// cravado reprova, e pela chave `data-txt` passa.
+    #[test]
+    fn reprova_o_cravado_na_tela_do_phxzip_e_aprova_o_da_chave() {
+        let cravado = r#"<button class="botao">Compactar tudo agora</button>"#;
+        assert_eq!(fora(&varrer("zip", cravado)).len(), 1);
+        let chave = r#"<button class="botao" data-txt="zip.compactar"></button>"#;
+        assert!(fora(&varrer("zip", chave)).is_empty());
+        // A marca do PhxZip passa, mas so pela dispensa propria de `conferir_zip`.
+        assert!(conferir_zip()
+            .iter()
+            .all(|a| a.texto != "Zip" || a.situacao == Situacao::Isento));
     }
 
     /// A lista do `FONTES` e digitada, e lista digitada envelhece calada: o

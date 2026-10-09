@@ -63,6 +63,12 @@ fn main() {
         // digitado, e o gerador as acusou como «promessa» na primeira corrida.
         // Catraca que ninguem mede nao segura nada, e ainda parece que segura.
         println!(
+            "catraca:nome=TETO_ZIP_WEB;onde=crates/phxsql-server/src/conferidor.rs;\
+             valor={};medido={};mede=textos cravados fora da fabrica na tela do PhxZipWeb",
+            conferidor::TETO_ZIP_WEB,
+            conferidor::fora(&conferidor::conferir_zip()).len()
+        );
+        println!(
             "catraca:nome=TETO_COLADO;onde=crates/phxsql-server/src/conferidor.rs;\
              valor={};medido={};mede=chaves com os seis idiomas identicos",
             conferidor::TETO_COLADO,
