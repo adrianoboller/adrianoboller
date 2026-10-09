@@ -87,12 +87,16 @@
     },
     "googlechat": {
       "//": [
+        "audiencia: Audiência do token: número do projeto, ou URL https:// do endpoint (ID token) [texto; ambiente PHXCLAW_GOOGLECHAT_AUDIENCIA]",
         "base: Base do serviço; vazio = a oficial [texto; ambiente PHXCLAW_GOOGLECHAT_BASE]",
         "espaco: Espaço do Google Chat [texto; ambiente PHXCLAW_GOOGLECHAT_ESPACO]",
+        "jwks: URL das chaves (JWKS); vazio = a oficial do modo [texto; ambiente PHXCLAW_GOOGLECHAT_JWKS]",
         "permitidos: Conversas de googlechat que podem falar com o agente (obrigatória) [lista; ambiente PHXCLAW_GOOGLECHAT_PERMITIDOS]"
       ],
+      "audiencia": null,
       "base": null,
       "espaco": null,
+      "jwks": null,
       "permitidos": null
     },
     "irc": {
@@ -221,12 +225,14 @@
     },
     "teams": {
       "//": [
-        "app_id: ID do app [texto; ambiente PHXCLAW_TEAMS_APP_ID]",
+        "app_id: ID do app (audiência do token) [texto; ambiente PHXCLAW_TEAMS_APP_ID]",
+        "jwks: URL das chaves do Bot Framework (JWKS); vazio = a oficial [texto; ambiente PHXCLAW_TEAMS_JWKS]",
         "login: Endpoint de login; vazio = o oficial [texto; ambiente PHXCLAW_TEAMS_LOGIN]",
         "permitidos: Conversas de teams que podem falar com o agente (obrigatória) [lista; ambiente PHXCLAW_TEAMS_PERMITIDOS]",
         "servicos: Origens de serviço aceitas; vazio = a oficial [lista; ambiente PHXCLAW_TEAMS_SERVICOS]"
       ],
       "app_id": null,
+      "jwks": null,
       "login": null,
       "permitidos": null,
       "servicos": null
@@ -405,6 +411,16 @@
       "seguranca": "tls",
       "usuario": null
     }
+  },
+  "fluxos": {
+    "//": [
+      "max_simultaneos: Fluxos rodando ao mesmo tempo na instância; vazio ou 0 = sem limite (o excedente espera a vez) [inteiro; ambiente PHXCLAW_FLUXOS_MAX_SIMULTANEOS]",
+      "poda_dias: Apaga execuções de fluxo terminadas há mais de N dias; vazio ou 0 = nunca [inteiro; ambiente PHXCLAW_FLUXOS_PODA_DIAS]",
+      "poda_max: Mantém só as N execuções de fluxo terminadas mais novas; vazio ou 0 = todas [inteiro; ambiente PHXCLAW_FLUXOS_PODA_MAX]"
+    ],
+    "max_simultaneos": null,
+    "poda_dias": null,
+    "poda_max": null
   },
   "forja": {
     "github": {

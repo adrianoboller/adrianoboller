@@ -192,7 +192,18 @@ body.force-dashboard .splash{display:none}body.force-dashboard .app-shell{opacit
 .testes-arvore button:focus-visible{outline:2px solid var(--laranja);outline-offset:1px}
 .testes-arvore .ok{color:var(--ok)}.testes-arvore .erro{color:var(--acao-excluir)}
 .painel-saida{max-height:200px;overflow:auto;font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:var(--fs-1);color:var(--texto-2);background:var(--fundo);border:1px solid var(--linha);border-radius:6px;padding:8px;white-space:pre-wrap}
-@media(max-width:900px){.ide-corpo{flex-direction:column}.painel-lateral{max-width:none}.painel-lateral[open]{flex-basis:auto;max-height:40%}}
+/* Minimapa ao lado do terminal: 1 px por caractere, a faixa visivel e o cursor em contorno.
+   Some abaixo de 900 px (a tela IDE nao e de celular, e uma tira de 132 px empilhada nao mapeia nada). */
+.minimapa{flex:0 0 132px;display:flex;flex-direction:column;gap:6px;min-height:0;border:1px solid var(--linha);border-radius:8px;background:var(--painel);padding:8px}
+.minimapa[hidden]{display:none}
+.minimapa-topo{display:flex;align-items:center;justify-content:space-between;gap:6px}
+.minimapa-topo b{color:var(--texto-2);font-size:var(--fs-1);letter-spacing:.12em}
+.minimapa-topo .acao{padding:2px 6px;font-size:var(--fs-1);min-height:0}
+.minimapa-nota,.minimapa-estado{margin:0;color:var(--texto-3);font-size:var(--fs-1);line-height:1.3;overflow-wrap:anywhere}
+.minimapa-estado[data-aviso]{color:var(--acao-alterar)}
+.minimapa canvas{flex:1;min-height:80px;width:100%;display:block;cursor:pointer;border-radius:4px;outline:none}
+.minimapa canvas:focus-visible{outline:2px solid var(--laranja);outline-offset:2px}
+@media(max-width:900px){.ide-corpo{flex-direction:column}.minimapa{display:none}.painel-lateral{max-width:none}.painel-lateral[open]{flex-basis:auto;max-height:40%}}
 
 /* ABSORCAO */
 .absorcao{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:12px}

@@ -11,6 +11,10 @@
 //!   politica dele. O que o Helix roda com `:sh` continua sendo o que ele ja rodava na mesa.
 //! - `GET /v1/ide/simbolos?arquivo=`: os simbolos do arquivo (documentSymbol) pelo `lsp.rs`,
 //!   para a barra de caminho acima do editor.
+//! - `GET /v1/ide/arquivo?caminho=`: o texto do arquivo aberto no Helix, para o minimapa da
+//!   tela. Pelo MESMO `confine` das ferramentas e do `simbolos` (pasta do projeto, ou absoluto
+//!   dentro de uma raiz do workspace) e com teto de bytes. E o arquivo EM DISCO: o buffer e do
+//!   Helix, outro processo, e o que nao foi salvo nao aparece (limite declarado na tela).
 //! - `POST /v1/ide/completar`: uma continuacao de codigo pelo modelo configurado do agente
 //!   (o mesmo provedor das tarefas), que o `phxclaw-snippet-ls` oferece ao Helix como item
 //!   «IA». Teto de tokens e de tempo vindos do ambiente, com padrao curto: completacao que
@@ -38,6 +42,7 @@ pub fn rotas() -> Router<ApiState> {
     Router::new()
         .route("/v1/ide/terminal", get(terminal))
         .route("/v1/ide/simbolos", get(simbolos))
+        .route("/v1/ide/arquivo", get(arquivo))
         .route("/v1/ide/completar", post(completar))
         // O explorador de testes e a loja de plugins da tela: as MESMAS funcoes da CLI
         // (`phxclaw testes`, `phxclaw plugins`) e das ferramentas test_list/test_run e
@@ -345,6 +350,74 @@ async fn simbolos(
         .map(|a| a.iter().map(simbolo_da_barra).collect())
         .unwrap_or_default();
     Ok(Json(json!({"arquivo": q.arquivo, "simbolos": lista})))
+}
+
+// ---------------------------------------------------------------- arquivo (minimapa)
+
+/// Teto do arquivo que o minimapa le: 2 MiB. O minimapa desenha 1 px por caractere; acima
+/// disso nao e codigo-fonte que alguem le pelo mapa, e a resposta inteira iria pela rede a
+/// cada troca de arquivo.
+pub const TETO_DO_ARQUIVO: u64 = 2 * 1024 * 1024;
+
+#[derive(Deserialize)]
+pub struct ConsultaDeArquivo {
+    #[serde(alias = "arquivo")]
+    caminho: String,
+}
+
+async fn arquivo(
+    State(s): State<ApiState>,
+    h: HeaderMap,
+    Query(q): Query<ConsultaDeArquivo>,
+) -> Result<Json<Value>, Erro> {
+    auth(&s, &h)?;
+    let cwd = pasta_do_projeto().map_err(|e| erro(StatusCode::SERVICE_UNAVAILABLE, e))?;
+    // A unica porta de disco: a mesma das ferramentas de arquivo e do `simbolos`. Recusa
+    // `..`, absoluto fora das raizes e symlink que aponte para fora.
+    let alvo =
+        crate::tarefa::confine(&cwd, &q.caminho).map_err(|e| erro(StatusCode::FORBIDDEN, e))?;
+    let m = std::fs::metadata(&alvo)
+        .map_err(|e| erro(StatusCode::NOT_FOUND, format!("{}: {e}", q.caminho)))?;
+    if !m.is_file() {
+        return Err(erro(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            format!("{}: nao e arquivo", q.caminho),
+        ));
+    }
+    // O teto vale no que se LE, nao so no tamanho dito antes: o arquivo pode crescer entre
+    // o `metadata` e a leitura.
+    use std::io::Read;
+    let mut bytes = Vec::new();
+    std::fs::File::open(&alvo)
+        .and_then(|f| f.take(TETO_DO_ARQUIVO + 1).read_to_end(&mut bytes))
+        .map_err(|e| {
+            erro(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                format!("{}: {e}", q.caminho),
+            )
+        })?;
+    if bytes.len() as u64 > TETO_DO_ARQUIVO {
+        return Err(erro(
+            StatusCode::PAYLOAD_TOO_LARGE,
+            format!(
+                "{}: acima do teto de {TETO_DO_ARQUIVO} bytes do minimapa",
+                q.caminho
+            ),
+        ));
+    }
+    if bytes.iter().take(8192).any(|b| *b == 0) {
+        return Err(erro(
+            StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            format!("{}: arquivo binario, sem minimapa", q.caminho),
+        ));
+    }
+    let texto = String::from_utf8_lossy(&bytes);
+    Ok(Json(json!({
+        "caminho": q.caminho,
+        "bytes": bytes.len(),
+        "linhas": texto.lines().count(),
+        "texto": texto,
+    })))
 }
 
 // ---------------------------------------------------------------- completar

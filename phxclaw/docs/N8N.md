@@ -360,3 +360,74 @@ mode pede Redis) estao la, com o numero de cada uma.
 O que fica para as ondas 2-5 (SPRINTS.md): `skill`/`mcp`/`comando` como tipos de passo,
 sub-fluxo e `rodar --ate`, gatilho apontando para fluxo; `esperar` e dados pinados; fila com
 workers so com numero de bancada; editor visual em SVG proprio -- **xyflow recusado (R20)**.
+
+### 8e. Onda 3 (09/10/2026): espera, pin, poda, formulario, binario -- e tres da onda 4
+
+Medido pelo gerador: n8n **76,3% no agente | 83,9% com bibliotecas** (45 sim, 9 pela metade, 5
+nao, de 59); eram 62,7% depois da onda 2. Prova em `crates/phxclaw-agent/tests/fluxo_onda3.rs`,
+11 testes nomeados pelo id, RED medido em 7 (ver SPRINTS.md, SP000035).
+
+**Campos novos** (todos com padrao que nao muda a assinatura de fluxo velho):
+
+| Onde | Campo | O que e | Regra do `validar` |
+| --- | --- | --- | --- |
+| passo | `esperar` | `{ms}` \| `{ate}` (RFC 3339) \| `{webhook: {segredo_sha256}}` \| `{pergunta}` | exatamente um; sem `por_item`; `ms` > 0; `segredo_sha256` e 64 hex (nunca o segredo); `pergunta` aceita `{{x}}` de dependencia |
+| passo | `pin` | valor que SUBSTITUI a execucao (array = N itens) | nao em `se`; recusado se parece segredo; entra na assinatura |
+| fluxo | `formulario` | `{titulo, descricao?, botao?, campos: [{nome, rotulo?, tipo?, obrigatorio?}]}` | 1 a 32 campos; `tipo` em texto, area, numero, email, data; nome de segredo recusado |
+| fluxo | `etiquetas` | lista de textos | ate 16, letra/digito/`-`/`_`; FORA da assinatura |
+
+**Como a espera funciona.** O passo `esperar` abre a espera (o vencimento de `ms` e calculado
+uma vez e gravado), o fluxo termina a onda, grava o relatorio e a definicao (`fluxo.json` na
+pasta da tarefa, fora de `work/`), e a tarefa vai para `AwaitingInput` com o `question` dizendo
+o que espera. Os passos que nao rodaram saem `pendente`. Quem retoma:
+
+| Espera | Por onde chega | Quem retoma |
+| --- | --- | --- |
+| `ms`/`ate` | o relogio | o laco do servidor a cada 20 s (`api::manter_fluxos`) ou `phxclaw fluxo esperas` |
+| `pergunta` | `POST /v1/tasks/{id}/answer` (a rota da SP000029) ou `phxclaw fluxo responder TAREFA TEXTO` | a propria entrega |
+| `webhook` | `POST /v1/flows/{tarefa}/resume`, com o token da API ou `X-PhxClaw-Segredo` cujo sha256 bate | a propria entrega |
+
+A entrega GRAVA a resposta no passo (vira `ok` com `{"resposta": ...}` ou os itens do corpo)
+antes de retomar; resposta com forma de segredo e recusada. A retomada le so o disco
+(`fluxos::retomar_do_disco`) e confere a assinatura como sempre. O `teto_ms` do fluxo conta o
+tempo de execucao, nao o de espera.
+
+**Pins.** No proprio passo (`"pin": ...`) ou no `ARQ.pins.json` ao lado (o mesmo passo nos dois
+e recusado). `phxclaw fluxo pinar ARQ PASSO --json V` (ou `--tarefa T`, a saida de uma execucao)
+e `despinar`. `--ate` nao roda o que so alimentava um passo pinado; a retomada respeita o pin; e
+trocar o pin recusa a retomada da execucao feita com o pin velho.
+
+**Formulario.** O gatilho de webhook (`gatilhos.json`) cujo `fluxo` declara `formulario` serve
+`GET /v1/triggers/{nome}` (HTML minimo, sem script) e aceita `POST` urlencoded pelo mesmo portao
+do webhook -- o segredo do gatilho chega no campo `_segredo`, que nao vira item. Corpo acima de
+16 KiB e 413; campo nao declarado, obrigatorio vazio, numero/e-mail/data invalidos e valor com
+forma de segredo sao 400. O fluxo recebe UM item com os campos (`{{entrada.nome}}`).
+
+**Binario e teto por passo (DBA).** Item `{"base64": ..., "mime": ...}` (as duas chaves) vira
+arquivo em `work/binarios/<sha>.<ext>` e o item fica com `{"binario": {caminho, sha256, bytes,
+mime}}` -- o passo seguinte le pelo caminho (`{{x.binario.caminho}}`). Passo cujo JSON passa de
+64 KiB (`TETO_BYTES_PASSO`) vai para `saidas/<passo>-<sha>.json` na pasta da tarefa, e o
+`task.json` guarda `externo: {caminho, sha256, bytes}`. A retomada confere os dois sha256 e
+recusa arquivo adulterado.
+
+**Formato do relatorio.** 3 so quando o relatorio usa espera ou saida externa; senao continua 2
+(o binario anterior le). Este binario retoma ate o 3 (`FORMATO_LIDO_MAX`).
+
+**Gestao (onda 4, os simples).** `fluxos.poda_dias` / `fluxos.poda_max` (vazio = nada se apaga;
+so execucao de cima terminada, com as filhas; esperando ou em andamento nunca);
+`fluxos.max_simultaneos` (o excedente espera a vaga; o sub-fluxo usa a vaga do pai);
+`phxclaw fluxo exportar|importar` (pacote com pins e assinatura conferida) e
+`phxclaw fluxo listar [DIR] [--etiqueta E] [--subpasta P]` (a subpasta de `fluxos/` e a pasta).
+
+**Onde diverge do n8n, e a restricao nossa:**
+
+| Divergencia | Restricao nossa |
+| --- | --- |
+| Toda espera descarrega (o `Wait` do n8n segura em memoria a de menos de 65 s) | a promessa e sobreviver ao reinicio; espera em memoria e a que o reinicio perde |
+| O segredo da espera de webhook nao existe no fluxo, so o sha256 | segredo so pelo broker; o fluxo e arquivo do projeto |
+| Formulario e o mesmo gatilho de webhook, nao um no de gatilho a parte | portao unico: uma segunda porta HTTP seria a segunda copia da politica |
+| Pin entra na assinatura (o n8n deixa editar o pin e seguir) | saida velha nunca se aplica a definicao nova |
+| Binario por arquivo na pasta da tarefa, nao modo `filesystem`/S3 configuravel | a pasta da tarefa ja e a porta de disco das ferramentas (`confine`) |
+
+Fora, com o motivo: prazo da espera humana, upload de arquivo no formulario (multipart),
+fila com workers e `/metrics` (pedem numero de bancada).

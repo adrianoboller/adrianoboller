@@ -621,6 +621,21 @@
       "variavel": "PHXCLAW_FEISHU_VERIFICACAO"
     },
     {
+      "chave": "canais.googlechat.audiencia",
+      "comando_do_segredo": null,
+      "descricao": "Audiência do token: número do projeto, ou URL https:// do endpoint (ID token)",
+      "descricao_en": "Token audience: project number, or the endpoint https:// URL (ID token)",
+      "motivo_so_ambiente": null,
+      "motivo_so_ambiente_en": null,
+      "natureza": "config",
+      "opcoes": null,
+      "padrao": null,
+      "secao": "canais",
+      "segredo": false,
+      "tipo": "texto",
+      "variavel": "PHXCLAW_GOOGLECHAT_AUDIENCIA"
+    },
+    {
       "chave": "canais.googlechat.base",
       "comando_do_segredo": null,
       "descricao": "Base do serviço; vazio = a oficial",
@@ -638,8 +653,8 @@
     {
       "chave": "canais.googlechat.chave_url",
       "comando_do_segredo": "PHXCLAW_GOOGLECHAT_CHAVE_URL=... phxclaw canal googlechat (vai ao broker na primeira vez)",
-      "descricao": "Chave da URL de entrada (googlechat)",
-      "descricao_en": "Inbound URL key (googlechat)",
+      "descricao": "Chave da URL de entrada (opcional; o JWT RS256 é conferido sempre) (googlechat)",
+      "descricao_en": "Inbound URL key (optional; the RS256 JWT is always verified) (googlechat)",
       "motivo_so_ambiente": null,
       "motivo_so_ambiente_en": null,
       "natureza": "segredo",
@@ -664,6 +679,21 @@
       "segredo": false,
       "tipo": "texto",
       "variavel": "PHXCLAW_GOOGLECHAT_ESPACO"
+    },
+    {
+      "chave": "canais.googlechat.jwks",
+      "comando_do_segredo": null,
+      "descricao": "URL das chaves (JWKS); vazio = a oficial do modo",
+      "descricao_en": "Key set (JWKS) URL; empty = the mode's official one",
+      "motivo_so_ambiente": null,
+      "motivo_so_ambiente_en": null,
+      "natureza": "config",
+      "opcoes": null,
+      "padrao": null,
+      "secao": "canais",
+      "segredo": false,
+      "tipo": "texto",
+      "variavel": "PHXCLAW_GOOGLECHAT_JWKS"
     },
     {
       "chave": "canais.googlechat.permitidos",
@@ -1521,8 +1551,8 @@
     {
       "chave": "canais.teams.app_id",
       "comando_do_segredo": null,
-      "descricao": "ID do app",
-      "descricao_en": "App ID",
+      "descricao": "ID do app (audiência do token)",
+      "descricao_en": "App ID (token audience)",
       "motivo_so_ambiente": null,
       "motivo_so_ambiente_en": null,
       "natureza": "config",
@@ -1551,8 +1581,8 @@
     {
       "chave": "canais.teams.chave_url",
       "comando_do_segredo": "PHXCLAW_TEAMS_CHAVE_URL=... phxclaw canal teams (vai ao broker na primeira vez)",
-      "descricao": "Chave da URL de entrada (teams)",
-      "descricao_en": "Inbound URL key (teams)",
+      "descricao": "Chave da URL de entrada (opcional; o JWT RS256 é conferido sempre) (teams)",
+      "descricao_en": "Inbound URL key (optional; the RS256 JWT is always verified) (teams)",
       "motivo_so_ambiente": null,
       "motivo_so_ambiente_en": null,
       "natureza": "segredo",
@@ -1562,6 +1592,21 @@
       "segredo": true,
       "tipo": "texto",
       "variavel": "PHXCLAW_TEAMS_CHAVE_URL"
+    },
+    {
+      "chave": "canais.teams.jwks",
+      "comando_do_segredo": null,
+      "descricao": "URL das chaves do Bot Framework (JWKS); vazio = a oficial",
+      "descricao_en": "Bot Framework key set (JWKS) URL; empty = the official one",
+      "motivo_so_ambiente": null,
+      "motivo_so_ambiente_en": null,
+      "natureza": "config",
+      "opcoes": null,
+      "padrao": null,
+      "secao": "canais",
+      "segredo": false,
+      "tipo": "texto",
+      "variavel": "PHXCLAW_TEAMS_JWKS"
     },
     {
       "chave": "canais.teams.login",
@@ -2809,6 +2854,51 @@
       "segredo": false,
       "tipo": "texto",
       "variavel": "PHXCLAW_REPL_MARCA"
+    },
+    {
+      "chave": "fluxos.max_simultaneos",
+      "comando_do_segredo": null,
+      "descricao": "Fluxos rodando ao mesmo tempo na instância; vazio ou 0 = sem limite (o excedente espera a vez)",
+      "descricao_en": "Flows running at the same time in the instance; empty or 0 = no limit (the excess waits its turn)",
+      "motivo_so_ambiente": null,
+      "motivo_so_ambiente_en": null,
+      "natureza": "config",
+      "opcoes": null,
+      "padrao": null,
+      "secao": "fluxos",
+      "segredo": false,
+      "tipo": "inteiro",
+      "variavel": "PHXCLAW_FLUXOS_MAX_SIMULTANEOS"
+    },
+    {
+      "chave": "fluxos.poda_dias",
+      "comando_do_segredo": null,
+      "descricao": "Apaga execuções de fluxo terminadas há mais de N dias; vazio ou 0 = nunca",
+      "descricao_en": "Deletes flow executions finished more than N days ago; empty or 0 = never",
+      "motivo_so_ambiente": null,
+      "motivo_so_ambiente_en": null,
+      "natureza": "config",
+      "opcoes": null,
+      "padrao": null,
+      "secao": "fluxos",
+      "segredo": false,
+      "tipo": "inteiro",
+      "variavel": "PHXCLAW_FLUXOS_PODA_DIAS"
+    },
+    {
+      "chave": "fluxos.poda_max",
+      "comando_do_segredo": null,
+      "descricao": "Mantém só as N execuções de fluxo terminadas mais novas; vazio ou 0 = todas",
+      "descricao_en": "Keeps only the N newest finished flow executions; empty or 0 = all of them",
+      "motivo_so_ambiente": null,
+      "motivo_so_ambiente_en": null,
+      "natureza": "config",
+      "opcoes": null,
+      "padrao": null,
+      "secao": "fluxos",
+      "segredo": false,
+      "tipo": "inteiro",
+      "variavel": "PHXCLAW_FLUXOS_PODA_MAX"
     },
     {
       "chave": "forja.github.api",

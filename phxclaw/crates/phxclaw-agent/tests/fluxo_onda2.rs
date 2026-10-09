@@ -1023,7 +1023,7 @@ async fn retomada_reaproveita_definicao_gravada_antes_do_campo_novo() {
 ///
 /// Reposta que derruba: em `From<Resultado> for ResultadoDisco`, `saida` sempre
 /// `Some(r.saida)` (a chave volta ao disco no passo `obj`); a conferencia
-/// `r.formato > FORMATO_RELATORIO` removida (o formato 3 e retomado).
+/// `r.formato > FORMATO_LIDO_MAX` removida (o formato do futuro e retomado).
 #[tokio::test]
 async fn relatorio_grava_uma_copia_e_diz_o_formato() {
     let b = banca(&["fs.read"], None);
@@ -1061,13 +1061,16 @@ async fn relatorio_grava_uma_copia_e_diz_o_formato() {
         serde_json::from_value(json!({"tarefa":"x","fluxo_sha256":"y","sucesso":true,"passos":[]}))
             .unwrap();
     assert_eq!(velho.formato, 1);
-    // formato do futuro: recusado
+    // formato do futuro: recusado (o 3 virou o da onda 3; futuro e o seguinte ao lido)
     let mut futuro = cru.clone();
-    futuro["formato"] = json!(3);
+    futuro["formato"] = json!(fluxos::FORMATO_LIDO_MAX + 1);
     t.answer = Some(futuro.to_string());
     b.a.store.save(&t).unwrap();
     let e = fluxos::retomar(&b.a, &f, &t.id).await.unwrap_err();
-    assert!(e.contains("formato 3"), "{e}");
+    assert!(
+        e.contains(&format!("formato {}", fluxos::FORMATO_LIDO_MAX + 1)),
+        "{e}"
+    );
 }
 
 /// O progresso que o disco recusa NAO e engolido: vai para a evidencia da tarefa (outro

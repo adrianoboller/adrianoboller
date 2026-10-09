@@ -429,9 +429,9 @@ pub fn conferir_hmac_hex(
     }
 }
 
-/// O segredo que a URL carrega (`?chave=`), para o servico que assina com JWT RS256
-/// (Teams, Google Chat) -- conferir o JWT pede RSA, que o agente nao tem. Comparado em tempo
-/// constante.
+/// O segredo que a URL carrega (`?chave=`), comparado em tempo constante. No Teams e no
+/// Google Chat e guarda OPCIONAL a mais: a que vale e o JWT RS256 (`jwt.rs`), conferido
+/// sempre; esta so soma quando o operador configura a chave.
 pub fn conferir_chave_na_url(p: &PedidoWebhook, segredo: &str) -> Result<(), Recusa> {
     let dada = p.parametro("chave").unwrap_or_default();
     if !dada.is_empty() && super::cripto::iguais(dada.as_bytes(), segredo.as_bytes()) {

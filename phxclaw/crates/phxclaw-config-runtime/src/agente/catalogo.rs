@@ -1135,6 +1135,37 @@ const FIXAS: &[L] = &[
             "State folder of the mission CLI",
         ),
     ),
+    // --- motor de fluxo (SP000035, onda 3) ---
+    c(
+        "fluxos.max_simultaneos",
+        "PHXCLAW_FLUXOS_MAX_SIMULTANEOS",
+        I,
+        None,
+        (
+            "Fluxos rodando ao mesmo tempo na instância; vazio ou 0 = sem limite (o excedente espera a vez)",
+            "Flows running at the same time in the instance; empty or 0 = no limit (the excess waits its turn)",
+        ),
+    ),
+    c(
+        "fluxos.poda_dias",
+        "PHXCLAW_FLUXOS_PODA_DIAS",
+        I,
+        None,
+        (
+            "Apaga execuções de fluxo terminadas há mais de N dias; vazio ou 0 = nunca",
+            "Deletes flow executions finished more than N days ago; empty or 0 = never",
+        ),
+    ),
+    c(
+        "fluxos.poda_max",
+        "PHXCLAW_FLUXOS_PODA_MAX",
+        I,
+        None,
+        (
+            "Mantém só as N execuções de fluxo terminadas mais novas; vazio ou 0 = todas",
+            "Keeps only the N newest finished flow executions; empty or 0 = all of them",
+        ),
+    ),
     // --- canal do Telegram (os demais saem de CANAIS) ---
     s(
         "canais.telegram.bot_token",
@@ -1764,10 +1795,23 @@ const CANAIS: &[CanalDef] = &[
             ),
             (
                 "CHAVE_URL",
-                K::S(("Chave da URL de entrada", "Inbound URL key")),
+                K::S((
+                    "Chave da URL de entrada (opcional; o JWT RS256 é conferido sempre)",
+                    "Inbound URL key (optional; the RS256 JWT is always verified)",
+                )),
             ),
             ("APP_SECRET", K::S(("Segredo do app", "App secret"))),
-            ("APP_ID", K::T(("ID do app", "App ID"))),
+            (
+                "APP_ID",
+                K::T(("ID do app (audiência do token)", "App ID (token audience)")),
+            ),
+            (
+                "JWKS",
+                K::T((
+                    "URL das chaves do Bot Framework (JWKS); vazio = a oficial",
+                    "Bot Framework key set (JWKS) URL; empty = the official one",
+                )),
+            ),
         ],
     },
     CanalDef {
@@ -1848,7 +1892,24 @@ const CANAIS: &[CanalDef] = &[
             ("BASE", K::Base(Some(None))),
             (
                 "CHAVE_URL",
-                K::S(("Chave da URL de entrada", "Inbound URL key")),
+                K::S((
+                    "Chave da URL de entrada (opcional; o JWT RS256 é conferido sempre)",
+                    "Inbound URL key (optional; the RS256 JWT is always verified)",
+                )),
+            ),
+            (
+                "AUDIENCIA",
+                K::T((
+                    "Audiência do token: número do projeto, ou URL https:// do endpoint (ID token)",
+                    "Token audience: project number, or the endpoint https:// URL (ID token)",
+                )),
+            ),
+            (
+                "JWKS",
+                K::T((
+                    "URL das chaves (JWKS); vazio = a oficial do modo",
+                    "Key set (JWKS) URL; empty = the mode's official one",
+                )),
             ),
             (
                 "SAIDA_WEBHOOK",

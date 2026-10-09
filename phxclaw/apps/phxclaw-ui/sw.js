@@ -24,7 +24,10 @@
 // Casca 11: a lista de Tarefas ganhou piso min-content (grades.css: a «Criada em» saia cortada a
 // 1536 px) e o #brandVersion declara a fonte (index.html) -- nenhum arquivo a mais; sem trocar o
 // nome, o instalado sem rede ficaria com a coluna cortada.
-const CACHE = 'phxclaw-casca-11';
+// Casca 12: o minimapa do IDE (SP000032 R5) -- nenhum arquivo a mais, mas index.html, app.css,
+// ide.js e textos.json mudaram juntos: um ide.js novo sobre um index.html velho nao acha o
+// #ideMinimapa, e um textos.json velho mostraria as chaves cruas do painel.
+const CACHE = 'phxclaw-casca-12';
 const CASCA = [
   './', './index.html', './manifest.webmanifest',
   './assets/app.css', './assets/app.js', './assets/tema.js', './assets/idiomas.js', './assets/tarefas.js', './assets/tarefas.css',

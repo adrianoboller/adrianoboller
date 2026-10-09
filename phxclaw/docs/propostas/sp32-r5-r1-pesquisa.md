@@ -102,6 +102,21 @@ medido**, não `parcial`. Três números matam as outras duas:
 - (a) patch no Helix: **+6.314/−390 em 40 arquivos, 7 arquivos em conflito com 25.07.1, 0 PRs
   aceitos em 4 anos de issue aberta.**
 
+### Execução do minimapa (papel E, 09/10/2026)
+
+- Rota `GET /v1/ide/arquivo?caminho=` em `ide.rs` (aceita também `arquivo=`): Bearer, o mesmo
+  `tarefa::confine` do `simbolos`, teto `TETO_DO_ARQUIVO` de 2 MiB (413), binário recusado (415).
+- Painel `#ideMinimapa` em `ide.js`. **Limite declarado na tela e aqui:** o mapa é o arquivo
+  **em disco**; texto não salvo não aparece — com `[+]` na linha de estado o painel avisa, e
+  ao salvar ele relê sozinho.
+- **Correção de nome:** a chave do Helix é `line-number` (singular), não `line-numbers`
+  (medido: `:set line-numbers relative` não muda nada no 25.07.1; `:set line-number relative`
+  muda). Com ela relativa, ou a calha desligada, o painel cai para «só cursor»: a faixa só se
+  desenha se os números da calha forem crescentes, alinhados na mesma coluna e contiverem o
+  cursor da linha de estado.
+- Provas: `crates/phxclaw-agent/tests/ide_web.rs` (rota, RED do `../`) e
+  `tests/desktop/ide_minimapa.mjs` (agente e Helix reais, `out/ide_minimapa.json`).
+
 ---
 
 ## R1 — RSA PKCS#1 v1.5 + SHA-256 para conferir JWT RS256 (Teams, Google Chat)

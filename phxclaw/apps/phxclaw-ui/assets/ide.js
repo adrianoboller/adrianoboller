@@ -164,7 +164,7 @@ const ide = (() => {
     desenhar(s, g.completa ? null : tocadas);
     // O status mostra o tamanho que o MOTOR confirmou, nao o que a tela pediu.
     if (g.titulo != null || g.encerrado || mudouTamanho) atualizarAbas();
-    if (s === ativa) { espelhar(); lerArquivo(s); }
+    if (s === ativa) { espelhar(); lerArquivo(s); minimapa.grade(s); }
   }
 
   // ACESSIBILIDADE: o canvas e invisivel ao leitor de tela. O espelho (#termEspelho,
@@ -201,6 +201,10 @@ const ide = (() => {
   const trilha = document.getElementById('ideTrilha');
   let arquivoAberto = null;
   let simbolos = { arquivo: null, lista: null, erro: null, lendo: false };
+  const linhaDeEstado = s => {
+    for (let y = (s.linhas || 0) - 1; y >= 0; y--) if (/^\s*(NOR|INS|SEL)\s/.test(textoDaLinha(s, y))) return y;
+    return -1;
+  };
   function arquivoDaGrade(s) {
     for (let y = s.linhas - 1; y >= 0; y--) {
       const partes = textoDaLinha(s, y).trim().split(/\s+/);
@@ -215,11 +219,16 @@ const ide = (() => {
   }
   function lerArquivo(s) {
     const a = s.programa === 'helix' ? arquivoDaGrade(s) : null;
+    // O menu de completar do `:` cobre a linha de estado enquanto se digita um comando: sem
+    // linha de estado nao ha «nenhum arquivo», ha linha coberta. Sem isto cada comando
+    // digitado zerava a trilha e o minimapa e os pedia de novo ao agente (medido no Helix real).
+    if (!a && s.programa === 'helix' && s.grade?.length && linhaDeEstado(s) < 0) return;
     if (a === arquivoAberto) return;
     arquivoAberto = a;
     simbolos = { arquivo: a, lista: null, erro: null, lendo: false };
     desenharTrilha();
     if (a && comHttp) buscarSimbolos(a);
+    minimapa.arquivo(a);
   }
   async function buscarSimbolos(arquivo) {
     simbolos.lendo = true;
@@ -239,12 +248,12 @@ const ide = (() => {
   // Clique na trilha manda um comando ao Helix: Esc (volta ao modo normal), o comando, Enter.
   // O Esc vai SOZINHO e o comando depois: ESC seguido de byte no mesmo lote e Alt+tecla
   // para o Helix (crossterm), e `Alt+:` nao abre a linha de comando.
-  function comandoHelix(cmd) {
+  function comandoHelix(cmd, focar = true) {
     if (!ativa || ativa.encerrado) return;
     const s = ativa;
     transporte.escrever(s.id, { texto: '\u001b' }).catch(err => console.error(err));
     setTimeout(() => { if (ativa === s && !s.encerrado) transporte.escrever(s.id, { texto: `:${cmd}\r` }).catch(err => console.error(err)); }, 80);
-    canvas.focus();
+    if (focar) canvas.focus();
   }
   function desenharTrilha() {
     if (!trilha) return;
@@ -287,6 +296,160 @@ const ide = (() => {
     }
     trilha.append(ul);
   }
+
+  // MINIMAPA: o arquivo aberto no Helix em 1 px por caractere, com a faixa visivel e o
+  // cursor. O Helix 25.07 nao tem minimapa (0 ocorrencias no fonte) e o buffer dele e de OUTRO
+  // processo, entao o texto vem do DISCO pelo agente (/v1/ide/arquivo) e a janela vem da
+  // grade: a faixa e o primeiro e o ultimo numero da calha, o cursor e o `linha:coluna` da
+  // linha de estado. Com `line-number = "relative"` (ou calha desligada) os numeros nao sao
+  // a linha do arquivo: o painel cai para «so cursor» em vez de desenhar uma faixa mentirosa.
+  // Limite declarado na propria tela: o que nao foi salvo nao aparece.
+  const minimapa = (() => {
+    const painel = document.getElementById('ideMinimapa');
+    const tela = document.getElementById('minimapaCanvas');
+    const estadoEl = document.getElementById('minimapaEstado');
+    if (!painel || !tela) return { arquivo() {}, grade() {}, estado() {}, pintar() {} };
+    const c2 = tela.getContext('2d');
+    let arq = null, linhas = null, erro = null, lendo = false;
+    let janela = { cursor: null, de: null, ate: null, modificado: false };
+    let pedido = 0, quadro = 0;
+    // A linha da grade com cada trecho na coluna dele: a calha e alinhada a direita, e a
+    // coluna onde o numero termina e o que separa calha de texto que comeca com digito.
+    const posicional = (s, y) => { let o = ''; for (const t of s.grade[y] || []) { if (t.x > o.length) o = o.padEnd(t.x); o += t.texto; } return o; };
+    function lerJanela(s) {
+      const est = linhaDeEstado(s);
+      if (est < 0) return null;
+      const linhaEst = textoDaLinha(s, est);
+      const pos = linhaEst.trim().split(/\s+/).reverse().find(t => /^\d+:\d+$/.test(t));
+      const cursor = pos ? Number(pos.split(':')[0]) : null;
+      const nums = [];
+      for (let y = 0; y < est; y++) {
+        const m = /^(\S?\s*)(\d+)\s/.exec(posicional(s, y) + ' ');
+        if (m) nums.push({ n: Number(m[2]), fim: m[1].length + m[2].length });
+      }
+      // Absoluta: crescente, todos terminando na mesma coluna, e o cursor dentro da faixa.
+      const ok = nums.length > 0 && nums.every((x, i) => x.fim === nums[0].fim && (i === 0 || x.n > nums[i - 1].n))
+        && (cursor === null || (cursor >= nums[0].n && cursor <= nums.at(-1).n));
+      return { cursor, de: ok ? nums[0].n : null, ate: ok ? nums.at(-1).n : null, modificado: /\[\+\]/.test(linhaEst) };
+    }
+    async function buscar(a) {
+      const meu = ++pedido;
+      lendo = true; erro = null; estado();
+      try {
+        const r = await fetch(`./v1/ide/arquivo?caminho=${encodeURIComponent(a)}`, { headers: { Authorization: `Bearer ${token()}` }, cache: 'no-store' });
+        const v = await r.json().catch(() => ({}));
+        if (meu !== pedido) return;
+        if (r.ok) { linhas = String(v.texto ?? '').replace(/\n$/, '').split('\n'); erro = null; } else { linhas = null; erro = v.error || `HTTP ${r.status}`; }
+      } catch {
+        if (meu !== pedido) return;
+        linhas = null; erro = txt('erro.sem_rede', 'Sem conexão com o agente — confira a rede e toque em TENTAR DE NOVO.');
+      }
+      lendo = false;
+      estado(); pintar();
+    }
+    function arquivo(a) {
+      const helix = ativa?.programa === 'helix';
+      painel.hidden = !helix;
+      if (a === arq) return;
+      arq = a; linhas = null; erro = null; pedido++;
+      if (a && comHttp) buscar(a); else { lendo = false; estado(); pintar(); }
+    }
+    function grade(s) {
+      const j = lerJanela(s);
+      if (!j) return;
+      // Salvou (o `[+]` sumiu): o disco mudou, o mapa rele.
+      if (janela.modificado && !j.modificado && arq && comHttp) buscar(arq);
+      const mudou = j.cursor !== janela.cursor || j.de !== janela.de || j.ate !== janela.ate || j.modificado !== janela.modificado;
+      janela = j;
+      if (!mudou) return;
+      estado();
+      if (!quadro) quadro = requestAnimationFrame(() => { quadro = 0; pintar(); });
+    }
+    function estado() {
+      const total = linhas ? linhas.length : 0;
+      const modo = !arq ? 'nenhum' : !comHttp ? 'sem_rede' : lendo ? 'lendo' : erro ? 'erro' : janela.de !== null ? 'faixa' : 'cursor';
+      painel.dataset.modo = modo;
+      painel.dataset.de = janela.de ?? '';
+      painel.dataset.ate = janela.ate ?? '';
+      painel.dataset.cursor = janela.cursor ?? '';
+      const linha = janela.cursor ?? '?';
+      estadoEl.textContent = modo === 'nenhum' ? txt('ide.trilha_nenhum', 'Nenhum arquivo aberto no Helix.')
+        : modo === 'sem_rede' ? txt('ide.minimapa_so_rede', 'O minimapa lê o arquivo pelo agente: só no navegador.')
+        : modo === 'lendo' ? txt('ide.minimapa_lendo', 'Lendo o arquivo…')
+        : modo === 'erro' ? txt('ide.minimapa_erro', 'Minimapa indisponível: {erro}', { erro })
+        : modo === 'faixa' ? txt('ide.minimapa_faixa', 'Linhas {de}–{ate} de {total}; cursor na {linha}.', { de: janela.de, ate: janela.ate, total, linha })
+        : txt('ide.minimapa_so_cursor', 'Só cursor (linha {linha} de {total}): a calha do Helix não mostra a numeração absoluta (line-number = "relative" ou calha desligada).', { linha, total });
+      if (janela.modificado && linhas) estadoEl.textContent += ` ${txt('ide.minimapa_nao_salvo', 'Há alterações não salvas: o mapa mostra a versão em disco.')}`;
+      estadoEl.toggleAttribute('data-aviso', modo === 'cursor' || modo === 'erro' || (janela.modificado && !!linhas));
+      tela.setAttribute('aria-valuemin', '1');
+      tela.setAttribute('aria-valuemax', String(Math.max(1, total)));
+      tela.setAttribute('aria-valuenow', String(janela.cursor ?? 1));
+      tela.setAttribute('aria-valuetext', txt('ide.minimapa_valor', 'Linha {linha} de {total}', { linha, total }));
+    }
+    // Pixels por linha do arquivo: ate 3 quando cabe, e o arquivo inteiro na altura quando nao.
+    const passo = (H, n) => Math.min(3, H / Math.max(1, n));
+    function pintar() {
+      if (painel.hidden) return;
+      const r = tela.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      const w = Math.round(r.width * dpr), h = Math.round(r.height * dpr);
+      if (tela.width !== w || tela.height !== h) { tela.width = w; tela.height = h; }
+      c2.setTransform(dpr, 0, 0, dpr, 0, 0);
+      c2.clearRect(0, 0, r.width, r.height);
+      if (!linhas) return;
+      const cs = getComputedStyle(document.documentElement);
+      const tinta = n => cs.getPropertyValue(n).trim();
+      const p = passo(r.height, linhas.length);
+      const alto = Math.max(0.5, p * 0.7);
+      // 1 a 2 px por caractere: arquivo de linhas curtas usa a largura do painel, o de linhas
+      // longas corta na borda (como o minimapa do VS Code).
+      const textos = linhas.map(l => l.replace(/\t/g, '    '));
+      const larg = Math.max(1, Math.min(2, r.width / Math.max(1, ...textos.slice(0, 5000).map(t => t.length))));
+      c2.fillStyle = tinta('--texto-2');
+      c2.globalAlpha = 0.65;
+      textos.forEach((t, i) => {
+        for (const m of t.matchAll(/\S+/g)) {
+          const x = m.index * larg;
+          if (x >= r.width) break;
+          c2.fillRect(x, i * p, Math.min(m[0].length * larg, r.width - x), alto);
+        }
+      });
+      c2.globalAlpha = 1;
+      // A faixa visivel: contorno, nunca fundo cheio.
+      if (janela.de !== null) {
+        c2.strokeStyle = tinta('--acao-consultar');
+        c2.lineWidth = 1.5;
+        c2.strokeRect(0.75, (janela.de - 1) * p + 0.75, r.width - 1.5, Math.max(4, (janela.ate - janela.de + 1) * p) - 1.5);
+      }
+      if (janela.cursor !== null) {
+        c2.fillStyle = tinta('--ambar');
+        c2.fillRect(0, Math.min(r.height - 2, (janela.cursor - 1) * p), r.width, 2);
+      }
+    }
+    const irPara = (n, focar) => {
+      if (!linhas) return;
+      const alvo = Math.max(1, Math.min(linhas.length, Math.round(n)));
+      tela.dataset.goto = String(alvo);
+      comandoHelix(`goto ${alvo}`, focar);
+    };
+    tela.addEventListener('click', e => {
+      const r = tela.getBoundingClientRect();
+      irPara(Math.floor((e.clientY - r.top) / passo(r.height, linhas?.length || 1)) + 1, true);
+    });
+    // Pelo teclado, o mesmo slider: setas uma linha, paginas uma janela, Home/End as pontas.
+    tela.addEventListener('keydown', e => {
+      if (!linhas) return;
+      const atual = janela.cursor ?? 1;
+      const pagina = janela.de !== null ? janela.ate - janela.de + 1 : 20;
+      const n = { ArrowUp: atual - 1, ArrowDown: atual + 1, PageUp: atual - pagina, PageDown: atual + pagina, Home: 1, End: linhas.length }[e.key];
+      if (n === undefined) return;
+      e.preventDefault();
+      irPara(n, false);
+    });
+    document.getElementById('minimapaReler')?.addEventListener('click', () => { if (arq && comHttp) buscar(arq); });
+    new ResizeObserver(() => pintar()).observe(tela);
+    return { arquivo, grade, estado, pintar };
+  })();
 
   function aoGrade(payload) {
     const s = sessoes.get(payload.id);
@@ -382,6 +545,7 @@ const ide = (() => {
     else if (avisoFixo) status.textContent = avisoFixo();
     espelhar();
     desenharTrilha();
+    minimapa.estado();
   });
 
   function ativar(s) {
@@ -487,7 +651,7 @@ const ide = (() => {
   transporte?.ouvir(aoGrade);
 
   // Trocou o tema: as tintas se releem e a tela inteira do terminal se repinta.
-  tema.aoTrocar(() => { lerTintas(); if (ativa) desenhar(ativa, null); });
+  tema.aoTrocar(() => { lerTintas(); if (ativa) desenhar(ativa, null); minimapa.pintar(); });
   return { aoMostrar: () => { if (ativa) { redimensionar(); desenhar(ativa, null); canvas.focus(); } } };
 })();
 carregadores.ide = ide.aoMostrar;

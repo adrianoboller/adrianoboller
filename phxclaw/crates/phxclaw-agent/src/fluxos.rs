@@ -70,6 +70,16 @@
 //! portao (esquema, capacidade, regra, hook) confere cada chamada como sempre, mas nao sabe
 //! que o argumento veio de um item externo. Marcar a origem do item para o portao poder
 //! recusar `args` inteiros vindos de fora e pendencia registrada (SP000035, onda 3).
+//!
+//! Onda 3 (SP000035): `esperar` DESCARREGA a execucao para o disco (definicao em
+//! `fluxo.json` na pasta da tarefa, progresso no `task.json`, tarefa em `AwaitingInput` com
+//! o `question` da SP000029) e quem retoma -- a resposta, o webhook, o laco do servidor
+//! para o tempo -- le tudo do disco, mesmo depois de o processo reiniciar. Diverge do `Wait`
+//! do n8n, que segura em memoria a espera de menos de 65 s: aqui nenhuma espera segura
+//! thread, porque a promessa e «sobrevive ao reinicio», e espera curta em memoria e a que
+//! um reinicio perde. `pin` substitui a execucao e entra na assinatura; a saida de um passo
+//! acima de `TETO_BYTES_PASSO` vai para `saidas/` com sha256; binario em item vira arquivo
+//! em `binarios/` com caminho, sha256, tamanho e mime -- nunca base64 no `task.json`.
 
 use crate::ferramentas::{config_de_subagente, corpo_do_subagente, rodar_filhas};
 use crate::motor::Agent;
@@ -81,6 +91,7 @@ use phxclaw_task_graph::{RetryPolicy, TaskGraph, TaskScheduler, TaskSpec, TaskSt
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
+use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use uuid::Uuid;
@@ -138,6 +149,71 @@ pub struct Juncao {
     #[serde(default)]
     pub chave: String,
 }
+
+/// Passo `esperar` (onda 3): o fluxo DESCARREGA para o disco e a execucao termina --
+/// nenhuma thread, nenhum futuro e nenhuma memoria seguram a espera; quem retoma le a
+/// definicao e o progresso do disco (`retomar_do_disco`). Exatamente um de `ms` (contado
+/// de quando a espera abriu, e o vencimento e gravado: reiniciar o processo nao zera o
+/// relogio), `ate` (data e hora RFC 3339), `webhook` (POST em `/v1/flows/{tarefa}/resume`)
+/// ou `pergunta` (a resposta humana pela rota `/v1/tasks/{id}/answer` da SP000029).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct Espera {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ate: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub webhook: Option<EsperaWebhook>,
+    /// Aceita `{{x}}` de dependencia declarada, como a `tarefa`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pergunta: Option<String>,
+}
+
+/// Quem pode retomar a espera por webhook: o token da API sempre; e, se dado, quem manda
+/// em `X-PhxClaw-Segredo` o segredo cujo sha256 e este. So o hash mora no fluxo -- o
+/// segredo nunca e gravado aqui, nem no relatorio.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct EsperaWebhook {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub segredo_sha256: Option<String>,
+}
+
+/// O formulario que um gatilho de webhook serve quando o fluxo o declara: `GET` mostra os
+/// campos, `POST` valida e dispara o fluxo com os campos como UM item.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct Formulario {
+    pub titulo: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub descricao: Option<String>,
+    pub campos: Vec<Campo>,
+    /// Rotulo do botao de envio; ausente, `Enviar`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub botao: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct Campo {
+    pub nome: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rotulo: Option<String>,
+    /// `texto` (padrao), `area`, `numero`, `email` ou `data`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tipo: Option<String>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub obrigatorio: bool,
+}
+
+/// Tipos de campo do formulario.
+pub const TIPOS_DE_CAMPO: [&str; 5] = ["texto", "area", "numero", "email", "data"];
+
+/// Teto de campos por formulario.
+pub const MAX_CAMPOS: usize = 32;
+
+/// Teto de bytes por valor de campo do formulario.
+pub const MAX_BYTES_CAMPO: usize = 4 * 1024;
+
+/// Teto de etiquetas por fluxo.
+pub const MAX_ETIQUETAS: usize = 16;
 
 /// O que fazer quando o passo esgota as tentativas sem terminar bem.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -207,6 +283,14 @@ pub struct Passo {
     /// falha dizendo quantos vieram, em vez de virar N chamadas.
     #[serde(default = "max_itens", skip_serializing_if = "e_max_itens")]
     pub max_itens: usize,
+    /// Passo de espera (onda 3): ver `Espera`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub esperar: Option<Espera>,
+    /// Dado pinado: SUBSTITUI a execucao do passo (array vira N itens, o resto um item).
+    /// Entra na assinatura -- editar o pin e mudar a definicao, e a retomada de uma
+    /// execucao com o pin velho e recusada. Tambem pode morar em `ARQ.pins.json`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pin: Option<Value>,
 }
 
 /// Teto padrao de itens por passada `por_item`.
@@ -265,6 +349,13 @@ pub struct Fluxo {
     /// Segredo nao entra aqui, nem por nome nem por forma: e recusado na leitura.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub variaveis: BTreeMap<String, Value>,
+    /// O formulario que um gatilho de webhook apontando para este fluxo serve.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub formulario: Option<Formulario>,
+    /// Etiquetas para a listagem (`listar`). FICAM FORA da assinatura: etiqueta e
+    /// arrumacao do operador, e reetiquetar nao pode invalidar uma execucao esperando.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub etiquetas: Vec<String>,
 }
 
 fn quatro() -> usize {
@@ -299,6 +390,41 @@ pub struct Resultado {
     /// Veio de uma execucao anterior do mesmo fluxo (retomada), sem rodar de novo.
     #[serde(default)]
     pub reaproveitado: bool,
+    /// Estado `esperando`: o que a espera aguarda (gravado, para a retomada saber).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub espera: Option<EstadoEspera>,
+    /// A saida veio do `pin`, nao de uma execucao.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub pinado: bool,
+    /// So no `task.json`: a saida passou do teto de bytes por passo e mora num arquivo
+    /// separado. Em memoria (e na retomada, depois de conferida) a saida volta inteira.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub externo: Option<Externo>,
+}
+
+/// O que uma espera aberta aguarda.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EstadoEspera {
+    /// `tempo`, `webhook` ou `pergunta`.
+    pub tipo: String,
+    /// `tempo`: o vencimento, RFC 3339.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ate: Option<String>,
+    /// `pergunta`: o texto ja com as expressoes resolvidas.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pergunta: Option<String>,
+    /// `webhook`: o sha256 do segredo aceito alem do token da API.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub segredo_sha256: Option<String>,
+}
+
+/// A saida de um passo gravada fora do `task.json`: caminho relativo a pasta da tarefa,
+/// sha256 e tamanho do arquivo. A retomada confere o sha antes de reaproveitar.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Externo {
+    pub caminho: String,
+    pub sha256: String,
+    pub bytes: u64,
 }
 
 /// A forma do `Resultado` no `task.json`: `saida` ausente quer dizer «derive de `itens`».
@@ -319,13 +445,21 @@ struct ResultadoDisco {
     tentativas: u16,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     reaproveitado: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    espera: Option<EstadoEspera>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pinado: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    externo: Option<Externo>,
 }
 
 impl From<ResultadoDisco> for Resultado {
     fn from(d: ResultadoDisco) -> Self {
-        let saida = match d.saida {
-            Some(s) => s,
-            None => texto_de_itens(&d.itens),
+        let saida = match (d.saida, &d.externo) {
+            // A saida mora no arquivo: so a retomada a traz de volta, conferida.
+            (_, Some(_)) => String::new(),
+            (Some(s), None) => s,
+            (None, None) => texto_de_itens(&d.itens),
         };
         Self {
             id: d.id,
@@ -336,6 +470,9 @@ impl From<ResultadoDisco> for Resultado {
             tarefa: d.tarefa,
             tentativas: d.tentativas,
             reaproveitado: d.reaproveitado,
+            espera: d.espera,
+            pinado: d.pinado,
+            externo: d.externo,
         }
     }
 }
@@ -343,28 +480,79 @@ impl From<ResultadoDisco> for Resultado {
 impl From<Resultado> for ResultadoDisco {
     fn from(r: Resultado) -> Self {
         // Derivavel = o texto que `itens` reconstroi e exatamente o texto cru. Texto JSON
-        // com espacos ou erro de passo (sem itens) nao e, e vai gravado.
-        let saida = if !r.itens.is_empty() && texto_de_itens(&r.itens) == r.saida {
+        // com espacos ou erro de passo (sem itens) nao e, e vai gravado. Com `externo`, o
+        // dado inteiro esta no arquivo e nada dele fica aqui: UMA copia.
+        let saida = if r.externo.is_some()
+            || (!r.itens.is_empty() && texto_de_itens(&r.itens) == r.saida)
+        {
             None
         } else {
             Some(r.saida)
         };
+        let externo = r.externo.is_some();
         Self {
             id: r.id,
             estado: r.estado,
             saida,
-            itens: r.itens,
-            portas: r.portas,
+            itens: if externo { vec![] } else { r.itens },
+            portas: if externo { BTreeMap::new() } else { r.portas },
             tarefa: r.tarefa,
             tentativas: r.tentativas,
             reaproveitado: r.reaproveitado,
+            espera: r.espera,
+            pinado: r.pinado,
+            externo: r.externo,
+        }
+    }
+}
+
+impl Resultado {
+    /// Um resultado sem saida: a base dos estados que nao produziram nada.
+    fn vazio(id: &str, estado: &str) -> Self {
+        Self {
+            id: id.to_string(),
+            estado: estado.to_string(),
+            saida: String::new(),
+            itens: vec![],
+            portas: BTreeMap::new(),
+            tarefa: None,
+            tentativas: 0,
+            reaproveitado: false,
+            espera: None,
+            pinado: false,
+            externo: None,
         }
     }
 }
 
 /// Formato do relatorio gravado no `task.json`. 1: onda 1 (`saida` e `itens` sempre os
-/// dois). 2: `saida` so quando nao deriva de `itens`, `ate`, `formato` escrito.
+/// dois). 2: `saida` so quando nao deriva de `itens`, `ate`, `formato` escrito. E o que
+/// todo relatorio SEM os recursos da onda 3 continua gravando: o binario anterior ainda o
+/// retoma.
 pub const FORMATO_RELATORIO: u8 = 2;
+
+/// Formato 3 (onda 3): passo `esperando` (com `espera`) ou saida em arquivo separado
+/// (`externo`). So se grava quando o relatorio USA um dos dois -- o binario anterior le um
+/// passo esperando como falho e uma saida externa como vazia, e por isso tem de recusar.
+pub const FORMATO_ONDA3: u8 = 3;
+
+/// O maior formato que este binario retoma.
+pub const FORMATO_LIDO_MAX: u8 = FORMATO_ONDA3;
+
+/// Teto de bytes de UM passo no `task.json` (parecer do DBA): acima disso a saida vai
+/// para `saidas/` na pasta da tarefa, com sha256 e tamanho, e o `task.json` -- regravado a
+/// cada onda -- nao carrega megabytes por passo.
+pub const TETO_BYTES_PASSO: usize = 64 * 1024;
+
+/// A definicao do fluxo, gravada na pasta da TAREFA (fora de `work/`, que as ferramentas
+/// tocam) quando ele descarrega numa espera: a retomada sem o arquivo de origem a le daqui.
+pub const ARQUIVO_DEFINICAO: &str = "fluxo.json";
+
+/// Onde mora a saida que passou do teto, na pasta da tarefa.
+pub const PASTA_SAIDAS: &str = "saidas";
+
+/// Onde o binario de um item vai, na pasta de trabalho (as ferramentas o alcancam).
+pub const PASTA_BINARIOS: &str = "binarios";
 
 fn formato_um() -> u8 {
     1
@@ -402,6 +590,7 @@ enum Tipo<'a> {
     Juntar(&'a Juncao),
     Lote(usize),
     Parar(&'a str),
+    Esperar(&'a Espera),
 }
 
 impl Tipo<'_> {
@@ -446,10 +635,13 @@ fn tipo(p: &Passo) -> Result<Tipo<'_>, String> {
     if let Some(m) = &p.parar_com_erro {
         tipos.push(Tipo::Parar(m));
     }
+    if let Some(e) = &p.esperar {
+        tipos.push(Tipo::Esperar(e));
+    }
     if tipos.len() != 1 {
         return Err(format!(
             "passo {}: diga 'tarefa', 'ferramenta', 'skill', 'mcp', 'comando', 'se', 'juntar', \
-'lote' OU 'parar_com_erro' (exatamente um)",
+'lote', 'parar_com_erro' OU 'esperar' (exatamente um)",
             p.id
         ));
     }
@@ -482,7 +674,7 @@ fn e_dependencia_de_passo(d: &str) -> bool {
 /// ou pela forma do valor (a tarja do broker mudaria o texto). O segredo entra pelo
 /// broker e pelo lease; uma variavel de fluxo gravada em JSON no projeto seria o segredo
 /// em texto claro no disco e em todo relatorio.
-fn variavel_parece_segredo(nome: &str, v: &Value) -> bool {
+pub(crate) fn variavel_parece_segredo(nome: &str, v: &Value) -> bool {
     if crate::gravacao::chave_secreta(nome) {
         return true;
     }
@@ -617,6 +809,10 @@ variavel de fluxo, so pelo broker"
             ));
         }
     }
+    validar_etiquetas(&f.etiquetas)?;
+    if let Some(form) = &f.formulario {
+        validar_formulario(form)?;
+    }
     let por_id: BTreeMap<&str, &Passo> = f.passos.iter().map(|p| (p.id.as_str(), p)).collect();
     for p in &f.passos {
         if p.id.is_empty()
@@ -745,7 +941,25 @@ ou {id}:falso)",
                 }
             },
             Tipo::Lote(0) => return Err(format!("passo {}: lote comeca em 1", p.id)),
+            Tipo::Esperar(e) => validar_espera(p, e)?,
             _ => {}
+        }
+        if let Some(pin) = &p.pin {
+            if p.se.is_some() {
+                // O `se` reparte itens em portas; um pin so tem a saida principal, e quem
+                // depende de `x:verdadeiro` leria uma porta que o pin nao sabe encher.
+                return Err(format!(
+                    "passo {}: 'se' nao aceita pin (as portas nao viriam do pin)",
+                    p.id
+                ));
+            }
+            if variavel_parece_segredo("pin", pin) {
+                return Err(format!(
+                    "passo {}: o pin parece segredo (nome ou forma do valor): segredo nao \
+entra em dado pinado, so pelo broker",
+                    p.id
+                ));
+            }
         }
         let mut textos = Vec::new();
         if let Some(t) = &p.tarefa {
@@ -756,6 +970,9 @@ ou {id}:falso)",
         }
         if let Some(m) = &p.parar_com_erro {
             textos.push(m.clone());
+        }
+        if let Some(q) = p.esperar.as_ref().and_then(|e| e.pergunta.as_ref()) {
+            textos.push(q.clone());
         }
         if let Some(c) = &p.se {
             juntar_textos(&c.valor, &mut textos);
@@ -796,6 +1013,179 @@ ou {id}:falso)",
 
 const OPERADORES: [&str; 6] = ["igual", "diferente", "contem", "maior", "menor", "existe"];
 
+/// Um passo `esperar`: exatamente um modo, sem `por_item` (uma espera por item seria N
+/// execucoes paradas para uma pergunta so), e nada que vire segredo gravado.
+fn validar_espera(p: &Passo, e: &Espera) -> Result<(), String> {
+    let modos = usize::from(e.ms.is_some())
+        + usize::from(e.ate.is_some())
+        + usize::from(e.webhook.is_some())
+        + usize::from(e.pergunta.is_some());
+    if modos != 1 {
+        return Err(format!(
+            "passo {}: esperar pede 'ms', 'ate', 'webhook' OU 'pergunta' (exatamente um)",
+            p.id
+        ));
+    }
+    if p.por_item {
+        return Err(format!("passo {}: esperar nao roda por_item", p.id));
+    }
+    if e.ms == Some(0) {
+        return Err(format!(
+            "passo {}: esperar.ms precisa ser maior que zero",
+            p.id
+        ));
+    }
+    if let Some(a) = &e.ate
+        && chrono::DateTime::parse_from_rfc3339(a).is_err()
+    {
+        return Err(format!(
+            "passo {}: esperar.ate '{a}' nao e data e hora RFC 3339 (2026-10-09T12:00:00Z)",
+            p.id
+        ));
+    }
+    if let Some(h) = e.webhook.as_ref().and_then(|w| w.segredo_sha256.as_ref())
+        && (h.len() != 64 || !h.chars().all(|c| c.is_ascii_hexdigit()))
+    {
+        return Err(format!(
+            "passo {}: esperar.webhook.segredo_sha256 e o sha256 em hexadecimal (64 \
+caracteres), nunca o segredo",
+            p.id
+        ));
+    }
+    if e.pergunta.as_deref().is_some_and(|q| q.trim().is_empty()) {
+        return Err(format!("passo {}: esperar.pergunta vazia", p.id));
+    }
+    Ok(())
+}
+
+fn validar_etiquetas(etiquetas: &[String]) -> Result<(), String> {
+    if etiquetas.len() > MAX_ETIQUETAS {
+        return Err(format!(
+            "{} etiquetas passam do teto de {MAX_ETIQUETAS}",
+            etiquetas.len()
+        ));
+    }
+    for e in etiquetas {
+        if e.is_empty()
+            || e.len() > 64
+            || !e
+                .chars()
+                .all(|c| c.is_alphanumeric() || matches!(c, '-' | '_'))
+        {
+            return Err(format!(
+                "etiqueta invalida: {e:?} (letra, digito, '-' e '_', ate 64)"
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// O formulario declarado: campos com nome valido e unico, tipo conhecido, e nenhum campo
+/// com nome de segredo -- o que o formulario recebe vira item gravado no `task.json`.
+fn validar_formulario(form: &Formulario) -> Result<(), String> {
+    if form.titulo.trim().is_empty() {
+        return Err("formulario sem titulo".into());
+    }
+    if form.campos.is_empty() || form.campos.len() > MAX_CAMPOS {
+        return Err(format!("o formulario precisa de 1 a {MAX_CAMPOS} campos"));
+    }
+    let mut vistos = BTreeSet::new();
+    for c in &form.campos {
+        if c.nome.is_empty()
+            || c.nome.starts_with('_')
+            || !c
+                .nome
+                .chars()
+                .all(|x| x.is_ascii_alphanumeric() || x == '_')
+        {
+            return Err(format!(
+                "campo de formulario invalido: {:?} (letra, digito e '_', sem '_' no comeco)",
+                c.nome
+            ));
+        }
+        if !vistos.insert(c.nome.as_str()) {
+            return Err(format!("campo de formulario repetido: {}", c.nome));
+        }
+        if crate::gravacao::chave_secreta(&c.nome) {
+            return Err(format!(
+                "campo de formulario {} tem nome de segredo: o que o formulario recebe vira \
+item gravado, e segredo so entra pelo broker",
+                c.nome
+            ));
+        }
+        if let Some(t) = &c.tipo
+            && !TIPOS_DE_CAMPO.contains(&t.as_str())
+        {
+            return Err(format!(
+                "campo {}: tipo '{t}' desconhecido (use {})",
+                c.nome,
+                TIPOS_DE_CAMPO.join(", ")
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Os campos recebidos (`nome=valor`, na ordem do envio) viram UM item, conferido contra
+/// o formulario declarado: campo que o fluxo nao declarou e recusado (o item e o contrato
+/// do fluxo, nao o que o navegador mandou), obrigatorio vazio tambem, `numero` vira
+/// numero, e valor com forma de segredo e recusado antes de virar item gravado.
+pub fn item_do_formulario(form: &Formulario, pares: &[(String, String)]) -> Result<Value, String> {
+    let mut item = serde_json::Map::new();
+    for (k, v) in pares {
+        let Some(c) = form.campos.iter().find(|c| &c.nome == k) else {
+            return Err(format!("campo '{k}' nao esta no formulario"));
+        };
+        if item.contains_key(k) {
+            return Err(format!("campo '{k}' veio repetido"));
+        }
+        if v.len() > MAX_BYTES_CAMPO {
+            return Err(format!(
+                "campo '{k}': {} bytes passam do teto de {MAX_BYTES_CAMPO}",
+                v.len()
+            ));
+        }
+        let v = v.trim();
+        let valor = match c.tipo.as_deref().unwrap_or("texto") {
+            _ if v.is_empty() => continue,
+            "numero" => {
+                // Inteiro fica inteiro: `31` que vira `31.0` mudaria o texto que o passo
+                // seguinte le pela expressao.
+                if let Ok(i) = v.parse::<i64>() {
+                    Value::from(i)
+                } else {
+                    let n: f64 = v
+                        .replace(',', ".")
+                        .parse()
+                        .map_err(|_| format!("campo '{k}': '{v}' nao e numero"))?;
+                    serde_json::Number::from_f64(n)
+                        .map(Value::Number)
+                        .ok_or_else(|| format!("campo '{k}': '{v}' nao e numero finito"))?
+                }
+            }
+            "email" if !v.contains('@') || v.contains(char::is_whitespace) => {
+                return Err(format!("campo '{k}': '{v}' nao e e-mail"));
+            }
+            "data" if chrono::NaiveDate::parse_from_str(v, "%Y-%m-%d").is_err() => {
+                return Err(format!("campo '{k}': '{v}' nao e data (AAAA-MM-DD)"));
+            }
+            _ => Value::String(v.to_string()),
+        };
+        if variavel_parece_segredo(k, &valor) {
+            return Err(format!(
+                "campo '{k}' parece segredo: segredo nao entra em formulario gravado"
+            ));
+        }
+        item.insert(k.clone(), valor);
+    }
+    for c in &form.campos {
+        if c.obrigatorio && !item.contains_key(&c.nome) {
+            return Err(format!("campo obrigatorio '{}' vazio", c.nome));
+        }
+    }
+    Ok(Value::Object(item))
+}
+
 /// As portas nomeadas que um passo oferece alem da saida principal.
 fn portas_de(p: &Passo) -> Vec<&'static str> {
     let mut v = Vec::new();
@@ -809,7 +1199,9 @@ fn portas_de(p: &Passo) -> Vec<&'static str> {
 }
 
 /// Os ancestrais de `ate` (com ele): o corte do grafo de `rodar --ate`. Fechado por
-/// dependencia, entao o grafo cortado continua valido.
+/// dependencia, entao o grafo cortado continua valido -- MENOS atras de um passo pinado:
+/// o pin substitui a execucao, entao o que so alimentava o passo pinado nao precisa rodar
+/// (o `runPartialWorkflow2` do n8n comeca no no pinado pelo mesmo motivo).
 fn ancestrais(f: &Fluxo, ate: &str) -> Result<BTreeSet<String>, String> {
     let por_id: BTreeMap<&str, &Passo> = f.passos.iter().map(|p| (p.id.as_str(), p)).collect();
     if !por_id.contains_key(ate) || f.fluxo_de_erro.as_deref() == Some(ate) {
@@ -818,7 +1210,7 @@ fn ancestrais(f: &Fluxo, ate: &str) -> Result<BTreeSet<String>, String> {
     let mut v = BTreeSet::new();
     let mut fila = vec![ate.to_string()];
     while let Some(id) = fila.pop() {
-        if !v.insert(id.clone()) {
+        if !v.insert(id.clone()) || por_id[id.as_str()].pin.is_some() {
             continue;
         }
         for d in &por_id[id.as_str()].depende {
@@ -870,6 +1262,8 @@ fn grafo(
             .depende
             .iter()
             .filter(|d| e_dependencia_de_passo(d))
+            // No corte, o passo pinado entra sem as dependencias que ficaram de fora.
+            .filter(|d| alvo.is_none_or(|a| a.contains(dep_e_porta(d).0)))
             .map(|d| {
                 let id = dep_e_porta(d).0;
                 uuids
@@ -1384,15 +1778,19 @@ pub async fn retomar(agente: &Agent, fluxo: &Fluxo, tarefa: &str) -> Result<Rela
 /// Diverge do «sha do texto do usuario» por uma restricao nossa: o `Fluxo` em memoria e o
 /// que se roda (a CLI e os testes o alteram depois de `ler`), e o texto nao viaja com ele;
 /// assinar o texto deixaria a alteracao em memoria sem assinatura.
+///
+/// As `etiquetas` ficam FORA: sao arrumacao do operador, nao definicao do que roda, e
+/// reetiquetar um fluxo nao pode invalidar a execucao que esta parada numa espera.
 pub fn assinatura(f: &Fluxo) -> String {
-    use sha2::Digest;
     let canonico = serde_json::to_value(f)
-        .map(|v| ordenado(&v).to_string())
+        .map(|mut v| {
+            if let Some(o) = v.as_object_mut() {
+                o.remove("etiquetas");
+            }
+            ordenado(&v).to_string()
+        })
         .unwrap_or_default();
-    sha2::Sha256::digest(canonico.as_bytes())
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect()
+    sha256_hex(canonico.as_bytes())
 }
 
 /// O valor com as chaves de todo objeto em ordem, em qualquer profundidade. Ordenar aqui,
@@ -1540,7 +1938,11 @@ fn controle(
             (Saida::de_itens(itens), BTreeMap::new())
         }
         Tipo::Parar(m) => return Err(substituir(m, visao)?),
-        Tipo::Tarefa(_) | Tipo::Ferramenta(_) | Tipo::Skill(_) | Tipo::Comando(_) => {
+        Tipo::Tarefa(_)
+        | Tipo::Ferramenta(_)
+        | Tipo::Skill(_)
+        | Tipo::Comando(_)
+        | Tipo::Esperar(_) => {
             unreachable!("nao e no de controle")
         }
     })
@@ -1594,6 +1996,17 @@ async fn executar(
     } = opcoes;
     let alvo = ate.map(|a| ancestrais(fluxo, a)).transpose()?;
     let (g, indice) = grafo(fluxo, alvo.as_ref())?;
+    // O limite de fluxos simultaneos da instancia: so o fluxo de CIMA toma vaga. O
+    // sub-fluxo roda dentro da vaga de quem o chamou -- se tomasse outra, um limite de 1
+    // com um sub-fluxo seria um impasse.
+    let _vaga_da_instancia = match (pai, limite_de(agente.store.root())) {
+        (None, Some(sem)) => Some(
+            sem.acquire_owned()
+                .await
+                .map_err(|_| "limite de fluxos fechado".to_string())?,
+        ),
+        _ => None,
+    };
     let mut fila = TaskScheduler::new(g);
     let hash = assinatura(fluxo);
     // As variaveis se resolvem no disparo, antes de qualquer passo: a chave de config que
@@ -1605,6 +2018,9 @@ async fn executar(
     conferir_cadeia(agente, pai, &hash, &fluxo.nome)?;
     // passo id -> saida, do que ja terminou bem na execucao anterior
     let mut anteriores: BTreeMap<String, Resultado> = BTreeMap::new();
+    // passo id -> a espera que ficou aberta: a retomada nao reabre (o vencimento de `ms`
+    // e o que foi gravado, nao agora + ms de novo).
+    let mut esperas_abertas: BTreeMap<String, EstadoEspera> = BTreeMap::new();
     let mut mae = match retomada {
         None => {
             let mut t = mae_pronta.unwrap_or_else(|| tarefa_do_fluxo(fluxo, &agente.llm.id()));
@@ -1627,13 +2043,13 @@ async fn executar(
                 .store
                 .load(id)
                 .map_err(|e| format!("tarefa do fluxo {id}: {e}"))?;
-            let r: Relatorio = serde_json::from_str(t.answer.as_deref().unwrap_or(""))
+            let mut r: Relatorio = serde_json::from_str(t.answer.as_deref().unwrap_or(""))
                 .map_err(|_| format!("tarefa {id} nao tem progresso de fluxo gravado"))?;
-            if r.formato > FORMATO_RELATORIO {
+            if r.formato > FORMATO_LIDO_MAX {
                 return Err(format!(
                     "tarefa {id}: relatorio no formato {}, e este binario le ate o {}; atualize \
 o phxclaw antes de retomar",
-                    r.formato, FORMATO_RELATORIO
+                    r.formato, FORMATO_LIDO_MAX
                 ));
             }
             if r.fluxo_sha256 != hash {
@@ -1642,18 +2058,31 @@ o phxclaw antes de retomar",
 velhas a passos novos; rode de novo"
                 ));
             }
-            for p in r
-                .passos
-                .into_iter()
-                .filter(|p| p.estado == "ok" || p.estado == "continuou")
-            {
-                anteriores.insert(p.id.clone(), p);
+            // A saida grande volta do arquivo, conferida; e o binario de cada item tem de
+            // estar la com o mesmo sha -- reaproveitar referencia quebrada daria ao passo
+            // seguinte um arquivo que nao e o que o passo anterior produziu.
+            restaurar_externos(&mut r, &agente.store.dir(id))?;
+            for p in r.passos {
+                match p.estado.as_str() {
+                    "ok" | "continuou" => {
+                        conferir_binarios(&agente.store.workdir(id), &p.itens)
+                            .map_err(|e| format!("tarefa {id}, passo {}: {e}", p.id))?;
+                        anteriores.insert(p.id.clone(), p);
+                    }
+                    "esperando" => {
+                        if let Some(e) = p.espera {
+                            esperas_abertas.insert(p.id, e);
+                        }
+                    }
+                    _ => {}
+                }
             }
             t
         }
     };
     mae.status = TaskStatus::Running;
     mae.error = None;
+    mae.question = None;
     agente
         .store
         .save(&mae)
@@ -1679,7 +2108,9 @@ velhas a passos novos; rode de novo"
     ));
     // UM semaforo para a onda inteira: chamadas de ferramenta e subagentes, por item ou
     // nao, nunca passam de `max_paralelo` em voo ao mesmo tempo.
-    let vagas = Arc::new(tokio::sync::Semaphore::new(fluxo.max_paralelo));
+    // Pelo mesmo `semaforo` do limite da instancia: `max_paralelo` vem do JSON do fluxo, e
+    // acima do teto do tokio o `Semaphore::new` entraria em panico (medido: rc 101).
+    let vagas = semaforo(fluxo.max_paralelo);
     let mut mem = Memoria::default();
     mem.fixos.insert(
         "var".into(),
@@ -1689,6 +2120,8 @@ velhas a passos novos; rode de novo"
     let mut feitos: Vec<Resultado> = Vec::new();
     let mut tentativas: BTreeMap<String, u16> = BTreeMap::new();
     let mut estourou = false;
+    // Um passo `esperar` nao vencido para o fluxo no fim da onda em que apareceu.
+    let mut parou_esperando = false;
     loop {
         if fim_do_fluxo.is_some_and(|(fim, _)| Instant::now() >= fim) {
             estourou = true;
@@ -1713,6 +2146,7 @@ velhas a passos novos; rode de novo"
         // (run, tentativa, id, visoes por item, tarefas filhas)
         let mut grupos_de_filhas: Vec<Passada<Filhas>> = Vec::new();
         let mut chamadas: Vec<Passada<ToolCall>> = Vec::new();
+        let mut esperando: Vec<Resultado> = Vec::new();
         for r in &runs {
             let p = &fluxo.passos[indice[&r.task_uuid]];
             let t = tipo(p)?;
@@ -1741,21 +2175,75 @@ velhas a passos novos; rode de novo"
                 });
                 continue;
             }
+            if let Some(pin) = &p.pin {
+                // O pin SUBSTITUI a execucao: nada passa pelo portao, e o relatorio diz que
+                // a saida veio do pin.
+                let saida = Saida::de_itens(itens_do_valor(pin));
+                fila.succeed(r.uuid, json!({"pinado": true}), Utc::now())
+                    .map_err(|e| e.to_string())?;
+                let mut portas = BTreeMap::new();
+                if p.ao_errar == AoErrar::SaidaDeErro {
+                    portas.insert("erro".to_string(), vec![]);
+                }
+                mem.guardar(&p.id, saida.clone(), portas.clone());
+                feitos.push(Resultado {
+                    saida: saida.texto,
+                    itens: saida.itens,
+                    portas,
+                    pinado: true,
+                    ..Resultado::vazio(&p.id, "ok")
+                });
+                continue;
+            }
             let (visao, mortas) = mem.visao(p);
             if pula(p, &mortas) {
                 fila.succeed(r.uuid, json!({"pulado": true}), Utc::now())
                     .map_err(|e| e.to_string())?;
                 mem.matar(p);
-                feitos.push(Resultado {
-                    id: p.id.clone(),
-                    estado: "pulado".into(),
-                    saida: String::new(),
-                    itens: vec![],
-                    portas: BTreeMap::new(),
-                    tarefa: None,
-                    tentativas: 0,
-                    reaproveitado: false,
-                });
+                feitos.push(Resultado::vazio(&p.id, "pulado"));
+                continue;
+            }
+            if let Tipo::Esperar(e) = &t {
+                let aberta = match esperas_abertas.remove(&p.id) {
+                    Some(a) => Ok(a),
+                    None => abrir_espera(e, &visao, Utc::now()),
+                };
+                match aberta {
+                    Err(motivo) => {
+                        *tentativas.entry(p.id.clone()).or_default() += 1;
+                        prontos.push(Desfecho {
+                            run: r.uuid,
+                            tentativa: r.attempt,
+                            id: p.id.clone(),
+                            ok: false,
+                            saida: Saida::de_texto(motivo),
+                            portas: BTreeMap::new(),
+                            tarefa: None,
+                            repetivel: false,
+                            passadas: vec![],
+                        });
+                    }
+                    // So o tempo vence sozinho; webhook e pergunta so saem daqui pelo
+                    // `entregar`, que grava o passo como `ok` antes de a retomada rodar.
+                    Ok(a) if espera_vencida(&a, Utc::now()) => {
+                        *tentativas.entry(p.id.clone()).or_default() += 1;
+                        prontos.push(Desfecho {
+                            run: r.uuid,
+                            tentativa: r.attempt,
+                            id: p.id.clone(),
+                            ok: true,
+                            saida: Saida::de_itens(vec![json!({"esperou_ate": a.ate})]),
+                            portas: BTreeMap::new(),
+                            tarefa: None,
+                            repetivel: false,
+                            passadas: vec![],
+                        });
+                    }
+                    Ok(a) => esperando.push(Resultado {
+                        espera: Some(a),
+                        ..Resultado::vazio(&p.id, "esperando")
+                    }),
+                }
                 continue;
             }
             *tentativas.entry(p.id.clone()).or_default() += 1;
@@ -2065,18 +2553,21 @@ velhas a passos novos; rode de novo"
                 if p.ao_errar == AoErrar::SaidaDeErro {
                     d.portas.insert("erro".into(), vec![]);
                 }
+                // Binario em item (`{"base64", "mime"}`) vai para um arquivo em `binarios/`
+                // e o item guarda so a referencia: nunca base64 inteiro no `task.json`.
+                if let Some(itens) = extrair_binarios(&d.saida.itens, &ctx.workdir) {
+                    d.saida = Saida::de_itens(itens);
+                }
                 fila.succeed(d.run, json!({"saida": d.saida.texto}), agora)
                     .map_err(|e| e.to_string())?;
                 mem.guardar(&d.id, d.saida.clone(), d.portas.clone());
                 feitos.push(Resultado {
-                    id: d.id,
-                    estado: "ok".into(),
                     saida: d.saida.texto,
                     itens: d.saida.itens,
                     portas: d.portas,
                     tarefa: d.tarefa,
                     tentativas: n,
-                    reaproveitado: false,
+                    ..Resultado::vazio(&d.id, "ok")
                 });
                 continue;
             }
@@ -2146,39 +2637,48 @@ velhas a passos novos; rode de novo"
                 }
             };
             feitos.push(Resultado {
-                id: d.id,
-                estado: estado.into(),
                 saida: saida.texto,
                 itens: saida.itens,
                 portas,
                 tarefa: d.tarefa,
                 tentativas: n,
-                reaproveitado: false,
+                ..Resultado::vazio(&d.id, estado)
             });
+        }
+        if !esperando.is_empty() {
+            parou_esperando = true;
+            feitos.append(&mut esperando);
         }
         // O ponto de retomada: o progresso vai para o disco a cada onda, e um processo
         // que cair no meio deixa o que ja terminou bem gravado.
-        mae.answer = serde_json::to_string_pretty(&Relatorio {
+        let progresso = Relatorio {
             tarefa: mae.id.clone(),
             fluxo_sha256: hash.clone(),
             sucesso: false,
             passos: feitos.clone(),
             formato: FORMATO_RELATORIO,
             ate: ate.map(str::to_string),
-        })
-        .ok();
-        mae.updated_at = Utc::now();
-        gravar_progresso(agente, &ledger, &mae);
+        };
+        gravar_relatorio(agente, &ledger, &mut mae, &progresso);
+        if parou_esperando {
+            break;
+        }
     }
     // O que nunca rodou: ficou bloqueado por uma dependencia que nao terminou bem, ou o
     // teto do fluxo estourou antes da vez dele -- e o relatorio diz qual dos dois.
+    // Com o fluxo parado numa espera, o que nao rodou e `pendente`: a retomada o roda.
     for t in fila.graph().tasks() {
         let p = &fluxo.passos[indice[&t.uuid]];
         if !feitos.iter().any(|r| r.id == p.id) {
+            let estado = if parou_esperando {
+                "pendente"
+            } else if estourou {
+                "falhou"
+            } else {
+                "bloqueado"
+            };
             feitos.push(Resultado {
-                id: p.id.clone(),
-                estado: if estourou { "falhou" } else { "bloqueado" }.into(),
-                saida: if estourou {
+                saida: if estourou && !parou_esperando {
                     format!(
                         "teto do fluxo ({} ms) estourou antes de rodar",
                         fluxo.teto_ms
@@ -2186,11 +2686,7 @@ velhas a passos novos; rode de novo"
                 } else {
                     String::new()
                 },
-                itens: vec![],
-                portas: BTreeMap::new(),
-                tarefa: None,
-                tentativas: 0,
-                reaproveitado: false,
+                ..Resultado::vazio(&p.id, estado)
             });
         }
     }
@@ -2201,16 +2697,7 @@ velhas a passos novos; rode de novo"
             && fluxo.fluxo_de_erro.as_deref() != Some(p.id.as_str())
             && !feitos.iter().any(|r| r.id == p.id)
         {
-            feitos.push(Resultado {
-                id: p.id.clone(),
-                estado: "nao_pedido".into(),
-                saida: String::new(),
-                itens: vec![],
-                portas: BTreeMap::new(),
-                tarefa: None,
-                tentativas: 0,
-                reaproveitado: false,
-            });
+            feitos.push(Resultado::vazio(&p.id, "nao_pedido"));
         }
     }
     let sucesso = feitos.iter().all(|r| {
@@ -2221,7 +2708,11 @@ velhas a passos novos; rode de novo"
     });
     // O fluxo de erro: roda pelo MESMO portao e laco dos outros passos, com `{{erro}}` =
     // `{fluxo, passos: [{passo, motivo}], bloqueados: [id]}`. O fluxo continua falho.
-    if !sucesso && let Some(id) = &fluxo.fluxo_de_erro {
+    // Parado numa espera nao e falha: o fluxo de erro so roda quando o fluxo FALHA.
+    if !sucesso
+        && !parou_esperando
+        && let Some(id) = &fluxo.fluxo_de_erro
+    {
         let p = fluxo.passos.iter().find(|p| &p.id == id).expect("validado");
         let falhos: Vec<Value> = feitos
             .iter()
@@ -2283,31 +2774,46 @@ velhas a passos novos; rode de novo"
         };
         let s = Saida::de_texto(texto);
         feitos.push(Resultado {
-            id: id.clone(),
-            estado: if ok { "ok" } else { "falhou" }.into(),
             saida: s.texto,
             itens: s.itens,
-            portas: BTreeMap::new(),
             tarefa,
             tentativas: 1,
-            reaproveitado: false,
+            ..Resultado::vazio(id, if ok { "ok" } else { "falhou" })
         });
     }
     let relatorio = Relatorio {
         tarefa: mae.id.clone(),
         fluxo_sha256: hash,
         sucesso,
+        formato: formato_de(&feitos),
         passos: feitos,
-        formato: FORMATO_RELATORIO,
         ate: ate.map(str::to_string),
     };
-    mae.status = if sucesso {
+    mae.status = if parou_esperando {
+        TaskStatus::AwaitingInput
+    } else if sucesso {
         TaskStatus::Completed
     } else {
         TaskStatus::Failed
     };
-    mae.answer = serde_json::to_string_pretty(&relatorio).ok();
-    if !sucesso {
+    if parou_esperando {
+        // O alicerce da SP000029: `AwaitingInput` com a pergunta em `question` e o que a
+        // API, a tela e os canais ja sabem mostrar. A definicao vai para a pasta da tarefa:
+        // e dela que a retomada parte quando o processo que rodou ja nao existe.
+        mae.question = Some(descrever_esperas(&mae.id, &relatorio.passos));
+        let def = serde_json::to_vec_pretty(fluxo).map_err(|e| e.to_string())?;
+        if let Err(e) = phxclaw_types::arquivo::gravar_atomico(
+            &agente.store.dir(&mae.id).join(ARQUIVO_DEFINICAO),
+            &def,
+        ) {
+            // Sem a definicao no disco a retomada so acontece com o arquivo de origem na
+            // mao (`fluxo retomar TAREFA ARQ`): isso tem de aparecer, nao sumir.
+            mae.error = Some(format!(
+                "definicao do fluxo nao gravada ({e}): retome com o arquivo de origem"
+            ));
+            eprintln!("fluxo {}: definicao nao gravada: {e}", mae.id);
+        }
+    } else if !sucesso {
         mae.error = Some(if estourou {
             format!("teto do fluxo ({} ms) estourou", fluxo.teto_ms)
         } else {
@@ -2315,7 +2821,7 @@ velhas a passos novos; rode de novo"
         });
     }
     mae.updated_at = Utc::now();
-    gravar_progresso(agente, &ledger, &mae);
+    gravar_relatorio(agente, &ledger, &mut mae, &relatorio);
     Ok(relatorio)
 }
 
@@ -2325,18 +2831,887 @@ velhas a passos novos; rode de novo"
 fn gravar_progresso(agente: &Agent, ledger: &EvidenceLedger, mae: &Task) {
     if let Err(e) = agente.store.save(mae) {
         eprintln!("fluxo {}: progresso nao gravado: {e}", mae.id);
-        let _ = ledger.append(phxclaw_evidence_ledger::EvidenceDraft {
-            action_uuid: phxclaw_types::new_uuid_v7(),
-            correlation_uuid: mae.id.parse().ok(),
-            actor: "phxclaw-agent".into(),
-            capability: "fs.write".into(),
-            action: "fluxo.progresso".into(),
-            outcome: phxclaw_evidence_ledger::EvidenceOutcome::Failed,
-            request_summary: json!({"tarefa": mae.id}),
-            result_summary: json!({"erro": e.to_string()}),
-            artifact_uris: vec![],
+        anotar_falha_de_disco(ledger, &mae.id, "fluxo.progresso", &e.to_string());
+    }
+}
+
+fn anotar_falha_de_disco(ledger: &EvidenceLedger, tarefa: &str, acao: &str, erro: &str) {
+    let _ = ledger.append(phxclaw_evidence_ledger::EvidenceDraft {
+        action_uuid: phxclaw_types::new_uuid_v7(),
+        correlation_uuid: tarefa.parse().ok(),
+        actor: "phxclaw-agent".into(),
+        capability: "fs.write".into(),
+        action: acao.into(),
+        outcome: phxclaw_evidence_ledger::EvidenceOutcome::Failed,
+        request_summary: json!({"tarefa": tarefa}),
+        result_summary: json!({"erro": erro}),
+        artifact_uris: vec![],
+    });
+}
+
+/// O relatorio no `task.json`: com a saida grande em `saidas/` (teto do DBA) e o formato
+/// que ele de fato usa. O relatorio em memoria continua inteiro.
+fn gravar_relatorio(agente: &Agent, ledger: &EvidenceLedger, mae: &mut Task, r: &Relatorio) {
+    let (disco, erros) = relatorio_para_disco(r, &agente.store.dir(&mae.id));
+    for e in erros {
+        // A saida fica inteira no task.json (nada se perde), e a falha aparece.
+        eprintln!("fluxo {}: saida grande nao gravada a parte: {e}", mae.id);
+        anotar_falha_de_disco(ledger, &mae.id, "fluxo.saida_externa", &e);
+    }
+    mae.answer = serde_json::to_string_pretty(&disco).ok();
+    mae.updated_at = Utc::now();
+    gravar_progresso(agente, ledger, mae);
+}
+
+/// 3 quando o relatorio usa espera ou saida externa; senao o formato de sempre.
+fn formato_de(passos: &[Resultado]) -> u8 {
+    if passos
+        .iter()
+        .any(|p| p.espera.is_some() || p.externo.is_some())
+    {
+        FORMATO_ONDA3
+    } else {
+        FORMATO_RELATORIO
+    }
+}
+
+pub(crate) fn sha256_hex(bytes: &[u8]) -> String {
+    use sha2::Digest;
+    sha2::Sha256::digest(bytes)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
+}
+
+/// A copia do relatorio que vai ao disco: passo cujo JSON passa de `TETO_BYTES_PASSO` vira
+/// referencia (`externo`) a um arquivo `saidas/<passo>-<sha>.json`, gravado uma vez so (o
+/// nome sai do conteudo; a regravacao de cada onda acha o arquivo pronto). Falha ao gravar
+/// deixa o passo inteiro e volta como erro, para quem chamou mostrar.
+fn relatorio_para_disco(r: &Relatorio, dir_da_tarefa: &Path) -> (Relatorio, Vec<String>) {
+    let mut erros = Vec::new();
+    let mut passos = Vec::with_capacity(r.passos.len());
+    for p in &r.passos {
+        let tamanho = serde_json::to_string(p).map(|t| t.len()).unwrap_or(0);
+        if p.externo.is_some() || tamanho <= TETO_BYTES_PASSO {
+            passos.push(p.clone());
+            continue;
+        }
+        let corpo = json!({"saida": p.saida, "itens": p.itens, "portas": p.portas}).to_string();
+        let sha = sha256_hex(corpo.as_bytes());
+        let id_seguro: String =
+            p.id.chars()
+                .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_'))
+                .collect();
+        let rel = format!("{PASTA_SAIDAS}/{id_seguro}-{}.json", &sha[..16]);
+        let arq = dir_da_tarefa.join(&rel);
+        let gravou = if arq.is_file() {
+            Ok(())
+        } else {
+            phxclaw_types::arquivo::gravar_atomico(&arq, corpo.as_bytes())
+        };
+        match gravou {
+            Ok(()) => passos.push(Resultado {
+                externo: Some(Externo {
+                    caminho: rel,
+                    sha256: sha,
+                    bytes: corpo.len() as u64,
+                }),
+                ..p.clone()
+            }),
+            Err(e) => {
+                erros.push(format!("passo {}: {}: {e}", p.id, arq.display()));
+                passos.push(p.clone());
+            }
+        }
+    }
+    let disco = Relatorio {
+        passos,
+        tarefa: r.tarefa.clone(),
+        fluxo_sha256: r.fluxo_sha256.clone(),
+        sucesso: r.sucesso,
+        formato: 0,
+        ate: r.ate.clone(),
+    };
+    (
+        Relatorio {
+            formato: formato_de(&disco.passos),
+            ..disco
+        },
+        erros,
+    )
+}
+
+/// Traz de volta a saida de cada passo `externo`, conferindo o sha256 e o tamanho: arquivo
+/// que sumiu ou mudou e recusa da retomada, nunca saida vazia aplicada em silencio.
+fn restaurar_externos(r: &mut Relatorio, dir_da_tarefa: &Path) -> Result<(), String> {
+    for p in &mut r.passos {
+        let Some(x) = p.externo.take() else { continue };
+        let arq = crate::tarefa::confine(dir_da_tarefa, &x.caminho)
+            .map_err(|e| format!("passo {}: saida externa {}: {e}", p.id, x.caminho))?;
+        let bytes = std::fs::read(&arq)
+            .map_err(|e| format!("passo {}: saida externa {}: {e}", p.id, x.caminho))?;
+        if bytes.len() as u64 != x.bytes || sha256_hex(&bytes) != x.sha256 {
+            return Err(format!(
+                "passo {}: a saida gravada em {} nao confere com o sha256 do relatorio; rode \
+de novo",
+                p.id, x.caminho
+            ));
+        }
+        let v: Value = serde_json::from_slice(&bytes)
+            .map_err(|e| format!("passo {}: saida externa {}: {e}", p.id, x.caminho))?;
+        p.saida = v["saida"].as_str().unwrap_or_default().to_string();
+        p.itens = v["itens"].as_array().cloned().unwrap_or_default();
+        p.portas = serde_json::from_value(v["portas"].clone()).unwrap_or_default();
+    }
+    Ok(())
+}
+
+/// O valor de um pin como itens: array vira N itens, o resto um item.
+fn itens_do_valor(v: &Value) -> Vec<Value> {
+    match v {
+        Value::Array(a) => a.clone(),
+        outro => vec![outro.clone()],
+    }
+}
+
+// ------------------------------------------------------------------ binarios
+
+/// Extensao pelo mime, para o arquivo abrir com o programa certo; o resto e `.bin`.
+fn extensao_do_mime(mime: &str) -> &'static str {
+    match mime.split(';').next().unwrap_or("").trim() {
+        "image/png" => "png",
+        "image/jpeg" => "jpg",
+        "image/gif" => "gif",
+        "image/webp" => "webp",
+        "application/pdf" => "pdf",
+        "application/json" => "json",
+        "text/plain" => "txt",
+        "text/csv" => "csv",
+        _ => "bin",
+    }
+}
+
+/// A referencia de um binario que ja esta na pasta de trabalho: caminho relativo, sha256,
+/// tamanho e mime. E a forma de todo item binario do fluxo.
+pub fn referencia_binaria(workdir: &Path, rel: &str, mime: &str) -> Result<Value, String> {
+    let arq = crate::tarefa::confine(workdir, rel)?;
+    let bytes = std::fs::read(&arq).map_err(|e| format!("{rel}: {e}"))?;
+    Ok(json!({
+        "caminho": rel,
+        "sha256": sha256_hex(&bytes),
+        "bytes": bytes.len(),
+        "mime": mime,
+    }))
+}
+
+/// Os itens com binario embutido (`{"base64": ..., "mime": ...}`, as duas chaves) viram
+/// referencia: os bytes vao para `binarios/<sha>.<ext>` na pasta de trabalho, e o item
+/// fica com `{"binario": {caminho, sha256, bytes, mime}}` e os outros campos. `None` quando
+/// nenhum item tinha binario (o caso comum nao copia nada). Base64 que nao decodifica fica
+/// como veio -- o teto de bytes do passo segura o tamanho.
+fn extrair_binarios(itens: &[Value], workdir: &Path) -> Option<Vec<Value>> {
+    use base64::Engine as _;
+    let tem = |v: &Value| {
+        v.get("base64").is_some_and(Value::is_string) && v.get("mime").is_some_and(Value::is_string)
+    };
+    if !itens.iter().any(tem) {
+        return None;
+    }
+    let mut saida = Vec::with_capacity(itens.len());
+    for item in itens {
+        if !tem(item) {
+            saida.push(item.clone());
+            continue;
+        }
+        let b64 = item["base64"].as_str().unwrap_or_default();
+        let mime = item["mime"].as_str().unwrap_or_default().to_string();
+        let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(b64.trim()) else {
+            saida.push(item.clone());
+            continue;
+        };
+        let sha = sha256_hex(&bytes);
+        let rel = format!(
+            "{PASTA_BINARIOS}/{}.{}",
+            &sha[..16],
+            extensao_do_mime(&mime)
+        );
+        let arq = workdir.join(&rel);
+        if !arq.is_file()
+            && let Err(e) = phxclaw_types::arquivo::gravar_atomico(&arq, &bytes)
+        {
+            eprintln!("fluxo: binario nao gravado em {}: {e}", arq.display());
+            saida.push(item.clone());
+            continue;
+        }
+        let mut novo = item.as_object().cloned().unwrap_or_default();
+        novo.remove("base64");
+        novo.remove("mime");
+        novo.insert(
+            "binario".into(),
+            json!({"caminho": rel, "sha256": sha, "bytes": bytes.len(), "mime": mime}),
+        );
+        saida.push(Value::Object(novo));
+    }
+    Some(saida)
+}
+
+/// Cada `{"binario": {caminho, sha256}}` dos itens existe na pasta de trabalho com o mesmo
+/// sha256. Conferido na retomada, antes de reaproveitar o passo.
+fn conferir_binarios(workdir: &Path, itens: &[Value]) -> Result<(), String> {
+    fn refs<'a>(v: &'a Value, saida: &mut Vec<&'a Value>) {
+        match v {
+            Value::Object(o) => {
+                if let Some(b) = o.get("binario").filter(|b| {
+                    b.get("caminho").is_some_and(Value::is_string)
+                        && b.get("sha256").is_some_and(Value::is_string)
+                }) {
+                    saida.push(b);
+                }
+                o.values().for_each(|x| refs(x, saida));
+            }
+            Value::Array(a) => a.iter().for_each(|x| refs(x, saida)),
+            _ => {}
+        }
+    }
+    let mut v = Vec::new();
+    itens.iter().for_each(|i| refs(i, &mut v));
+    for b in v {
+        let rel = b["caminho"].as_str().unwrap_or_default();
+        let arq = crate::tarefa::confine(workdir, rel)?;
+        let bytes = std::fs::read(&arq).map_err(|e| format!("binario {rel}: {e}"))?;
+        if sha256_hex(&bytes) != b["sha256"].as_str().unwrap_or_default() {
+            return Err(format!(
+                "binario {rel} nao confere com o sha256 do item; rode de novo"
+            ));
+        }
+    }
+    Ok(())
+}
+
+// ------------------------------------------------------------------ esperas
+
+/// O relogio das esperas e da poda, para quem nao tem o `chrono` (a CLI).
+pub fn agora() -> chrono::DateTime<Utc> {
+    Utc::now()
+}
+
+/// A espera que abre agora: o vencimento de `ms` e calculado UMA vez e gravado.
+fn abrir_espera(
+    e: &Espera,
+    visao: &Visao,
+    agora: chrono::DateTime<Utc>,
+) -> Result<EstadoEspera, String> {
+    let mut a = EstadoEspera {
+        tipo: String::new(),
+        ate: None,
+        pergunta: None,
+        segredo_sha256: None,
+    };
+    if let Some(ms) = e.ms {
+        a.tipo = "tempo".into();
+        let vence =
+            agora + chrono::Duration::milliseconds(i64::try_from(ms).unwrap_or(i64::MAX / 2));
+        a.ate = Some(vence.to_rfc3339_opts(chrono::SecondsFormat::Millis, true));
+    } else if let Some(ate) = &e.ate {
+        a.tipo = "tempo".into();
+        let d =
+            chrono::DateTime::parse_from_rfc3339(ate).map_err(|x| format!("esperar.ate: {x}"))?;
+        a.ate = Some(
+            d.with_timezone(&Utc)
+                .to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+        );
+    } else if let Some(w) = &e.webhook {
+        a.tipo = "webhook".into();
+        a.segredo_sha256 = w.segredo_sha256.as_ref().map(|h| h.to_ascii_lowercase());
+    } else if let Some(q) = &e.pergunta {
+        a.tipo = "pergunta".into();
+        a.pergunta = Some(substituir(q, visao)?);
+    }
+    Ok(a)
+}
+
+fn espera_vencida(a: &EstadoEspera, agora: chrono::DateTime<Utc>) -> bool {
+    a.tipo == "tempo"
+        && a.ate
+            .as_deref()
+            .and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok())
+            .is_some_and(|t| t.with_timezone(&Utc) <= agora)
+}
+
+/// O texto do `question` da tarefa parada: o que ela espera e como seguir.
+fn descrever_esperas(tarefa: &str, passos: &[Resultado]) -> String {
+    let mut v = Vec::new();
+    for p in passos {
+        let Some(a) = &p.espera else { continue };
+        if p.estado != "esperando" {
+            continue;
+        }
+        v.push(match a.tipo.as_str() {
+            "pergunta" => a.pergunta.clone().unwrap_or_default(),
+            "webhook" => format!("passo {}: esperando POST /v1/flows/{tarefa}/resume", p.id),
+            _ => format!(
+                "passo {}: esperando ate {}",
+                p.id,
+                a.ate.as_deref().unwrap_or("?")
+            ),
         });
     }
+    v.join("\n")
+}
+
+/// Por onde chega o que a espera aguarda.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Via {
+    Pergunta,
+    Webhook,
+}
+
+impl Via {
+    fn tipo(self) -> &'static str {
+        match self {
+            Via::Pergunta => "pergunta",
+            Via::Webhook => "webhook",
+        }
+    }
+}
+
+fn relatorio_da_tarefa(t: &Task) -> Option<Relatorio> {
+    if !t.objective.starts_with(PREFIXO_TAREFA) {
+        return None;
+    }
+    serde_json::from_str(t.answer.as_deref()?).ok()
+}
+
+/// A primeira espera aberta da tarefa de fluxo, se a tarefa esta parada numa.
+pub fn espera_aberta(t: &Task) -> Option<(String, EstadoEspera)> {
+    if t.status != TaskStatus::AwaitingInput {
+        return None;
+    }
+    relatorio_da_tarefa(t)?
+        .passos
+        .into_iter()
+        .find(|p| p.estado == "esperando")
+        .and_then(|p| Some((p.id, p.espera?)))
+}
+
+/// O segredo mandado confere com o hash gravado na espera de webhook (comparacao em tempo
+/// constante, sobre os hashes).
+pub fn segredo_da_espera_confere(a: &EstadoEspera, segredo: &str) -> bool {
+    a.segredo_sha256.as_deref().is_some_and(|h| {
+        crate::canais::cripto::iguais(sha256_hex(segredo.as_bytes()).as_bytes(), h.as_bytes())
+    })
+}
+
+/// Uma entrega por vez no processo: duas respostas na mesma espera nao podem as duas
+/// virar `ok`.
+static ENTREGANDO: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// Grava no disco o que a espera aguardava -- a espera vira passo `ok` com estes itens --
+/// e devolve o id do passo. Quem chama retoma depois (`retomar_do_disco`): gravar ANTES de
+/// retomar e o que faz a resposta sobreviver a um processo que cai no meio. Item com forma
+/// de segredo e recusado: ele iria para o `task.json`.
+pub fn entregar(
+    store: &crate::tarefa::TaskStore,
+    tarefa: &str,
+    via: Via,
+    itens: Vec<Value>,
+) -> Result<String, String> {
+    let _vez = ENTREGANDO.lock().unwrap_or_else(|p| p.into_inner());
+    let mut t = store
+        .load(tarefa)
+        .map_err(|e| format!("tarefa {tarefa}: {e}"))?;
+    if t.status != TaskStatus::AwaitingInput {
+        return Err(format!("tarefa {tarefa} nao esta esperando"));
+    }
+    if variavel_parece_segredo("entrada", &Value::Array(itens.clone())) {
+        return Err("o que chegou parece segredo: segredo nao entra em item gravado".into());
+    }
+    let mut r = relatorio_da_tarefa(&t).ok_or_else(|| format!("tarefa {tarefa} nao e fluxo"))?;
+    let p = r
+        .passos
+        .iter_mut()
+        .find(|p| {
+            p.estado == "esperando" && p.espera.as_ref().is_some_and(|a| a.tipo == via.tipo())
+        })
+        .ok_or_else(|| format!("tarefa {tarefa}: nenhum passo esperando {}", via.tipo()))?;
+    let s = Saida::de_itens(itens);
+    p.estado = "ok".into();
+    p.saida = s.texto;
+    p.itens = s.itens;
+    p.tentativas = 1;
+    let id = p.id.clone();
+    // Nada de `saidas/` aqui: o que chega por formulario, webhook ou resposta ja passou
+    // pelo teto de corpo de quem recebeu; o teto do passo vale na proxima onda gravada.
+    t.answer = serde_json::to_string_pretty(&r).ok();
+    t.updated_at = Utc::now();
+    store
+        .save(&t)
+        .map_err(|e| format!("tarefa {tarefa}: resposta nao gravada: {e}"))?;
+    Ok(id)
+}
+
+/// As tarefas de fluxo paradas numa espera de tempo que ja venceu: quem as retoma e o laco
+/// do servidor (o mesmo da agenda) ou `phxclaw fluxo esperas`.
+pub fn esperas_vencidas(
+    store: &crate::tarefa::TaskStore,
+    agora: chrono::DateTime<Utc>,
+) -> Vec<String> {
+    store
+        .list()
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|t| {
+            t.status == TaskStatus::AwaitingInput
+                && relatorio_da_tarefa(t).is_some_and(|r| {
+                    r.passos.iter().any(|p| {
+                        p.estado == "esperando"
+                            && p.espera.as_ref().is_some_and(|a| espera_vencida(a, agora))
+                    })
+                })
+        })
+        .map(|t| t.id)
+        .collect()
+}
+
+/// Tarefas sendo retomadas do disco neste processo: o laco do servidor e a resposta podem
+/// chegar ao mesmo tempo.
+static RETOMANDO: std::sync::Mutex<BTreeSet<String>> = std::sync::Mutex::new(BTreeSet::new());
+
+/// Retoma um fluxo parado numa espera SO pelo disco: a definicao gravada na pasta da
+/// tarefa (`ARQUIVO_DEFINICAO`) e o progresso do `task.json`. E o caminho de quem nao tem
+/// o arquivo de origem nem o processo que rodou: o servidor depois de reiniciar, a
+/// resposta que chega dias depois. A assinatura e conferida pelo `retomar` de sempre.
+pub async fn retomar_do_disco(agente: &Agent, tarefa: &str) -> Result<Relatorio, String> {
+    {
+        let mut r = RETOMANDO.lock().unwrap_or_else(|p| p.into_inner());
+        if !r.insert(tarefa.to_string()) {
+            return Err(format!("tarefa {tarefa} ja esta sendo retomada"));
+        }
+    }
+    struct Solta<'a>(&'a str);
+    impl Drop for Solta<'_> {
+        fn drop(&mut self) {
+            RETOMANDO
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .remove(self.0);
+        }
+    }
+    let _solta = Solta(tarefa);
+    let t = agente
+        .store
+        .load(tarefa)
+        .map_err(|e| format!("tarefa {tarefa}: {e}"))?;
+    if t.status != TaskStatus::AwaitingInput {
+        return Err(format!(
+            "tarefa {tarefa} nao esta parada numa espera ({:?})",
+            t.status
+        ));
+    }
+    let arq = agente.store.dir(tarefa).join(ARQUIVO_DEFINICAO);
+    let texto = std::fs::read_to_string(&arq).map_err(|e| {
+        format!(
+            "tarefa {tarefa}: definicao do fluxo ({}): {e}",
+            arq.display()
+        )
+    })?;
+    let f = ler(&texto).map_err(|e| format!("tarefa {tarefa}: {e}"))?;
+    retomar(agente, &f, tarefa).await
+}
+
+// ------------------------------------------------------------------ limite da instancia
+
+/// Limite de fluxos simultaneos por instancia (a raiz das tarefas): a mesma pasta e o mesmo
+/// limite, e duas instancias no mesmo processo (os testes) nao se atrapalham. `None` na
+/// tabela = sem limite.
+static LIMITES: std::sync::Mutex<
+    BTreeMap<std::path::PathBuf, Option<Arc<tokio::sync::Semaphore>>>,
+> = std::sync::Mutex::new(BTreeMap::new());
+
+/// Fixa o limite da instancia (`None` tira). Sem chamada, vale `fluxos.max_simultaneos`
+/// do `config.json`, lido no primeiro fluxo da instancia.
+pub fn definir_limite(raiz: &Path, n: Option<usize>) {
+    LIMITES
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .insert(raiz.to_path_buf(), n.filter(|n| *n > 0).map(semaforo));
+}
+
+/// `Semaphore::new` entra em panico acima de `MAX_PERMITS`; um limite maior que isso e,
+/// na pratica, «sem limite», e vale o teto do tokio em vez de derrubar o processo.
+fn semaforo(n: usize) -> Arc<tokio::sync::Semaphore> {
+    Arc::new(tokio::sync::Semaphore::new(
+        n.min(tokio::sync::Semaphore::MAX_PERMITS),
+    ))
+}
+
+fn limite_de(raiz: &Path) -> Option<Arc<tokio::sync::Semaphore>> {
+    let mut m = LIMITES.lock().unwrap_or_else(|p| p.into_inner());
+    m.entry(raiz.to_path_buf())
+        .or_insert_with(|| {
+            crate::config::inteiro_de("fluxos.max_simultaneos")
+                .and_then(|n| usize::try_from(n).ok())
+                .filter(|n| *n > 0)
+                .map(semaforo)
+        })
+        .clone()
+}
+
+// ------------------------------------------------------------------ poda
+
+/// Poda das execucoes de fluxo: por idade (`dias`) e por contagem (`max`, as mais novas
+/// ficam). Sem nenhum dos dois, NADA se apaga -- e o padrao.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Poda {
+    pub dias: Option<u64>,
+    pub max: Option<usize>,
+}
+
+impl Poda {
+    /// `fluxos.poda_dias` e `fluxos.poda_max` do `config.json`; 0 ou ausente desliga.
+    pub fn do_config() -> Self {
+        Self {
+            dias: crate::config::inteiro_de("fluxos.poda_dias")
+                .and_then(|n| u64::try_from(n).ok())
+                .filter(|n| *n > 0),
+            max: crate::config::inteiro_de("fluxos.poda_max")
+                .and_then(|n| usize::try_from(n).ok())
+                .filter(|n| *n > 0),
+        }
+    }
+
+    pub fn ligada(&self) -> bool {
+        self.dias.is_some() || self.max.is_some()
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct Podadas {
+    pub removidas: Vec<String>,
+    pub erros: Vec<String>,
+}
+
+/// Apaga execucoes de fluxo de CIMA (sem `parent`) que terminaram -- `Completed`, `Failed`
+/// ou `Cancelled`, e com toda a descendencia terminada --, junto com as tarefas filhas
+/// delas (subagentes, sub-fluxos). Execucao em andamento ou esperando NUNCA sai: e o
+/// progresso de que a retomada precisa. Por contagem, as `max` terminadas mais novas ficam.
+pub fn podar(
+    store: &crate::tarefa::TaskStore,
+    poda: Poda,
+    agora: chrono::DateTime<Utc>,
+) -> Podadas {
+    let mut feito = Podadas::default();
+    if !poda.ligada() {
+        return feito;
+    }
+    let tarefas = match store.list() {
+        Ok(t) => t,
+        Err(e) => {
+            feito.erros.push(format!("listar tarefas: {e}"));
+            return feito;
+        }
+    };
+    let mut filhos: BTreeMap<&str, Vec<&Task>> = BTreeMap::new();
+    for t in &tarefas {
+        if let Some(p) = &t.parent {
+            filhos.entry(p.as_str()).or_default().push(t);
+        }
+    }
+    // A descendencia inteira (cadeia de `parent`), com teto contra disco corrompido.
+    let descendencia = |raiz: &str| -> Vec<&Task> {
+        let mut v = Vec::new();
+        let mut fila = vec![raiz.to_string()];
+        while let Some(id) = fila.pop() {
+            for f in filhos.get(id.as_str()).into_iter().flatten() {
+                if v.len() < 10_000 {
+                    v.push(*f);
+                    fila.push(f.id.clone());
+                }
+            }
+        }
+        v
+    };
+    // `Duration::days` e a subtracao de data entram em panico fora do intervalo, e o
+    // «infinito» que um operador digita (999999999 dias) cai la. Esta funcao roda na tarefa
+    // da agenda: um panico aqui para a agenda e a retomada das esperas em silencio. Fora do
+    // intervalo, nada e velho o bastante -- o lado que nao apaga.
+    let limite: Option<Option<chrono::DateTime<Utc>>> = poda.dias.map(|d| {
+        i64::try_from(d)
+            .ok()
+            .and_then(chrono::TimeDelta::try_days)
+            .and_then(|td| agora.checked_sub_signed(td))
+    });
+    // Mais novas primeiro (o `list` ja ordena pelo UUIDv7).
+    let mut terminadas = 0usize;
+    for t in tarefas
+        .iter()
+        .filter(|t| t.parent.is_none() && t.objective.starts_with(PREFIXO_TAREFA))
+    {
+        let desc = descendencia(&t.id);
+        if !t.status.is_final() || desc.iter().any(|d| !d.status.is_final()) {
+            continue;
+        }
+        terminadas += 1;
+        let velha = limite.flatten().is_some_and(|l| t.updated_at < l);
+        let excedente = poda.max.is_some_and(|m| terminadas > m);
+        if !velha && !excedente {
+            continue;
+        }
+        for alvo in desc.iter().map(|d| d.id.as_str()).chain([t.id.as_str()]) {
+            match std::fs::remove_dir_all(store.dir(alvo)) {
+                Ok(()) => feito.removidas.push(alvo.to_string()),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(e) => feito.erros.push(format!("{alvo}: {e}")),
+            }
+        }
+    }
+    feito
+}
+
+// ------------------------------------------------------------------ pins
+
+/// `x.json` -> `x.pins.json`: o arquivo de pins ao lado do fluxo.
+pub fn arquivo_de_pins(fluxo: &Path) -> std::path::PathBuf {
+    let base = fluxo
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    fluxo.with_file_name(format!("{base}.pins.json"))
+}
+
+fn ler_pins(arq: &Path) -> Result<BTreeMap<String, Value>, String> {
+    match std::fs::read_to_string(arq) {
+        Ok(t) => serde_json::from_str(&t).map_err(|e| format!("{}: {e}", arq.display())),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(BTreeMap::new()),
+        Err(e) => Err(format!("{}: {e}", arq.display())),
+    }
+}
+
+/// Le um fluxo de ARQUIVO: o JSON e, se existir, o `ARQ.pins.json` ao lado (passo -> valor
+/// pinado). Pin que aponta para passo que nao existe, ou o mesmo passo pinado no fluxo E no
+/// arquivo (duas fontes, e ninguem saberia qual vale), sao recusados. Todo leitor de fluxo
+/// em arquivo (CLI, gatilho, agenda, sub-fluxo) passa por aqui -- o pin vale igual em todos.
+pub fn ler_arquivo(caminho: &Path) -> Result<Fluxo, String> {
+    let texto =
+        std::fs::read_to_string(caminho).map_err(|e| format!("{}: {e}", caminho.display()))?;
+    let mut f: Fluxo = serde_json::from_str(&texto).map_err(|e| format!("fluxo invalido: {e}"))?;
+    let arq = arquivo_de_pins(caminho);
+    for (id, v) in ler_pins(&arq)? {
+        let p = f
+            .passos
+            .iter_mut()
+            .find(|p| p.id == id)
+            .ok_or_else(|| format!("{}: pin do passo '{id}', que nao existe", arq.display()))?;
+        if p.pin.is_some() {
+            return Err(format!(
+                "passo {id}: pinado no fluxo e em {} (deixe um so)",
+                arq.display()
+            ));
+        }
+        p.pin = Some(v);
+    }
+    validar(&f)?;
+    Ok(f)
+}
+
+/// Pina (ou, com `None`, despina) um passo no arquivo de pins ao lado do fluxo. O fluxo
+/// com o pin novo e validado ANTES de gravar: pin com forma de segredo, em `se` ou em
+/// passo que nao existe nunca chega ao disco.
+pub fn pinar(fluxo: &Path, passo: &str, valor: Option<Value>) -> Result<(), String> {
+    let texto = std::fs::read_to_string(fluxo).map_err(|e| format!("{}: {e}", fluxo.display()))?;
+    let f: Fluxo = serde_json::from_str(&texto).map_err(|e| format!("fluxo invalido: {e}"))?;
+    let Some(p) = f.passos.iter().find(|p| p.id == passo) else {
+        return Err(format!("passo '{passo}' nao existe no fluxo"));
+    };
+    if p.pin.is_some() {
+        return Err(format!(
+            "passo {passo}: o pin esta no proprio fluxo; edite o fluxo"
+        ));
+    }
+    let arq = arquivo_de_pins(fluxo);
+    let mut pins = ler_pins(&arq)?;
+    match valor {
+        Some(v) => {
+            pins.insert(passo.to_string(), v);
+        }
+        None => {
+            pins.remove(passo);
+        }
+    }
+    let mut conferir = f.clone();
+    for (id, v) in &pins {
+        if let Some(p) = conferir.passos.iter_mut().find(|p| &p.id == id) {
+            p.pin = Some(v.clone());
+        }
+    }
+    validar(&conferir)?;
+    if pins.is_empty() {
+        return match std::fs::remove_file(&arq) {
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
+                Err(format!("{}: {e}", arq.display()))
+            }
+            _ => Ok(()),
+        };
+    }
+    let corpo = serde_json::to_vec_pretty(&pins).map_err(|e| e.to_string())?;
+    phxclaw_types::arquivo::gravar_atomico(&arq, &corpo)
+        .map_err(|e| format!("{}: {e}", arq.display()))
+}
+
+/// Os itens que um passo produziu numa execucao, para pinar («pin this output» do n8n).
+pub fn saida_para_pin(
+    store: &crate::tarefa::TaskStore,
+    tarefa: &str,
+    passo: &str,
+) -> Result<Value, String> {
+    let t = store
+        .load(tarefa)
+        .map_err(|e| format!("tarefa {tarefa}: {e}"))?;
+    let mut r = relatorio_da_tarefa(&t).ok_or_else(|| format!("tarefa {tarefa} nao e fluxo"))?;
+    restaurar_externos(&mut r, &store.dir(tarefa))?;
+    let p = r
+        .passos
+        .into_iter()
+        .find(|p| p.id == passo && (p.estado == "ok" || p.estado == "continuou"))
+        .ok_or_else(|| format!("tarefa {tarefa}: o passo '{passo}' nao terminou bem"))?;
+    Ok(Value::Array(p.itens))
+}
+
+// ------------------------------------------------------------------ exportar e importar
+
+/// Formato do pacote de fluxo (`exportar`).
+pub const FORMATO_PACOTE: u8 = 1;
+
+/// O pacote de um fluxo: a definicao com os pins, a assinatura e o formato. Credencial nao
+/// viaja porque nao mora no fluxo (`validar` recusa variavel e pin com forma de segredo).
+pub fn exportar(f: &Fluxo) -> Value {
+    json!({
+        "phxclaw_fluxo": FORMATO_PACOTE,
+        "sha256": assinatura(f),
+        "fluxo": serde_json::to_value(f).unwrap_or(Value::Null),
+    })
+}
+
+/// Le um pacote: formato conhecido, fluxo valido e a assinatura conferida -- pacote
+/// editado no caminho (pin trocado, passo novo) e recusado em vez de importado calado.
+pub fn importar(texto: &str) -> Result<Fluxo, String> {
+    let v: Value = serde_json::from_str(texto).map_err(|e| format!("pacote invalido: {e}"))?;
+    match v.get("phxclaw_fluxo").and_then(Value::as_u64) {
+        Some(n) if n == u64::from(FORMATO_PACOTE) => {}
+        Some(n) => {
+            return Err(format!(
+                "pacote no formato {n}, e este binario le o {FORMATO_PACOTE}"
+            ));
+        }
+        None => return Err("nao e um pacote de fluxo do phxclaw (falta 'phxclaw_fluxo')".into()),
+    }
+    let f: Fluxo = serde_json::from_value(v.get("fluxo").cloned().unwrap_or(Value::Null))
+        .map_err(|e| format!("pacote: fluxo invalido: {e}"))?;
+    validar(&f)?;
+    if v.get("sha256").and_then(Value::as_str) != Some(assinatura(&f).as_str()) {
+        return Err(
+            "pacote: a assinatura nao confere com o fluxo (editado depois de exportado?)".into(),
+        );
+    }
+    Ok(f)
+}
+
+/// Grava o fluxo importado em `destino` e os pins em `destino.pins.json` (onde o `pinar`
+/// os edita). Nao sobrescreve: importar por cima de um fluxo e perder o outro calado.
+pub fn gravar_importado(f: &Fluxo, destino: &Path) -> Result<(), String> {
+    let pins_arq = arquivo_de_pins(destino);
+    if destino.exists() || pins_arq.exists() {
+        return Err(format!(
+            "{} ja existe; importe com outro nome",
+            destino.display()
+        ));
+    }
+    let mut sem_pins = f.clone();
+    let mut pins = BTreeMap::new();
+    for p in &mut sem_pins.passos {
+        if let Some(v) = p.pin.take() {
+            pins.insert(p.id.clone(), v);
+        }
+    }
+    let corpo = serde_json::to_vec_pretty(&sem_pins).map_err(|e| e.to_string())?;
+    phxclaw_types::arquivo::gravar_atomico(destino, &corpo)
+        .map_err(|e| format!("{}: {e}", destino.display()))?;
+    if !pins.is_empty() {
+        let corpo = serde_json::to_vec_pretty(&pins).map_err(|e| e.to_string())?;
+        phxclaw_types::arquivo::gravar_atomico(&pins_arq, &corpo)
+            .map_err(|e| format!("{}: {e}", pins_arq.display()))?;
+    }
+    Ok(())
+}
+
+// ------------------------------------------------------------------ listagem
+
+/// Um fluxo achado na pasta: o nome, o arquivo, a pasta (subpasta relativa; vazia na raiz)
+/// e as etiquetas.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct FluxoListado {
+    pub nome: String,
+    pub arquivo: std::path::PathBuf,
+    pub pasta: String,
+    pub etiquetas: Vec<String>,
+    pub passos: usize,
+}
+
+/// Os fluxos de uma pasta e das subpastas DIRETAS (a pasta e a «pasta» do n8n), filtrados
+/// por etiqueta e por pasta. Arquivo que nao e fluxo valido vai para os erros com o
+/// motivo, em vez de sumir da lista.
+pub fn listar(
+    dir: &Path,
+    etiqueta: Option<&str>,
+    pasta: Option<&str>,
+) -> (Vec<FluxoListado>, Vec<String>) {
+    let mut achados = Vec::new();
+    let mut erros = Vec::new();
+    let mut pastas = vec![(dir.to_path_buf(), String::new())];
+    if let Ok(rd) = std::fs::read_dir(dir) {
+        for e in rd.flatten() {
+            let nome = e.file_name().to_string_lossy().into_owned();
+            if e.path().is_dir() && !nome.starts_with('.') {
+                pastas.push((e.path(), nome));
+            }
+        }
+    }
+    for (d, rel) in pastas {
+        if pasta.is_some_and(|p| p != rel) {
+            continue;
+        }
+        let Ok(rd) = std::fs::read_dir(&d) else {
+            continue;
+        };
+        let mut arqs: Vec<_> = rd
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| {
+                p.is_file()
+                    && p.extension().is_some_and(|x| x == "json")
+                    && !p.to_string_lossy().ends_with(".pins.json")
+            })
+            .collect();
+        arqs.sort();
+        for a in arqs {
+            match ler_arquivo(&a) {
+                Ok(f) => {
+                    if etiqueta.is_some_and(|e| !f.etiquetas.iter().any(|x| x == e)) {
+                        continue;
+                    }
+                    achados.push(FluxoListado {
+                        nome: f.nome,
+                        arquivo: a,
+                        pasta: rel.clone(),
+                        etiquetas: f.etiquetas,
+                        passos: f.passos.len(),
+                    });
+                }
+                Err(e) => erros.push(format!("{}: {e}", a.display())),
+            }
+        }
+    }
+    (achados, erros)
 }
 
 #[cfg(test)]

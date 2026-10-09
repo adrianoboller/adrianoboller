@@ -79,3 +79,15 @@ Os dois WOFF2 sao os PUBLICADOS PELA IBM, sem alteracao: pacote npm `@ibm/plex-m
 (sha256 5788454f...6a235d). Uma conversao nossa a partir do TTF foi descartada antes do commit:
 o nome «Plex» e reservado pela OFL e a garantia explicita do FAQ sobre conversao de formato
 nao cobre o WOFF2 -- usar o arquivo da propria IBM tira a duvida em vez de interpreta-la.
+
+## Wycheproof test vectors — Apache-2.0
+
+`crates/phxclaw-agent/tests/dados/rsa/wycheproof_rsa_2048_sha256.txt` is extracted from
+`testvectors_v1/rsa_signature_2048_sha256_test.json` of https://github.com/C2SP/wycheproof
+(Apache License 2.0). The file header records the upstream commit and the SHA-256 of the original.
+Used only as test data for the RSA PKCS#1 v1.5 verifier; no code is copied.
+
+## NIST CAVP SigVer15 test vectors — public domain
+
+`crates/phxclaw-agent/tests/dados/rsa/nist_sigver15_sha256.txt` is extracted from the NIST CAVP
+`186-3rsatestvectors.zip` (U.S. Government work, public domain). Test data only.

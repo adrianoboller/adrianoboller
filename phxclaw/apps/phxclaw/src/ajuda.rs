@@ -161,12 +161,20 @@ pub const COMANDOS: &[Comando] = &[
     Comando {
         grupo: Grupo::EquipeEFluxos,
         nome: "fluxo",
-        resumo: "Fluxo em DAG: rodar e retomar",
+        resumo: "Fluxo em DAG: rodar, retomar, responder esperas, pinar, podar, exportar e listar",
         apelidos: &["workflow"],
-        uso: "fluxo rodar ARQ.json [--ate PASSO] | retomar TAREFA ARQ.json [--modelo M] [--pasta DIR]",
+        uso: "fluxo rodar ARQ.json [--ate PASSO] | retomar TAREFA [ARQ.json] | responder TAREFA \
+              TEXTO | esperas | pinar ARQ.json PASSO (--json V | --tarefa T) | despinar ARQ.json \
+              PASSO | podar [--dias N] [--max N] | exportar ARQ.json [--saida P] | importar \
+              PACOTE.json DESTINO.json | listar [DIR] [--etiqueta E] [--subpasta P] [--modelo M] \
+              [--pasta DIR]",
         descricao: "Fluxo declarativo em DAG; cada passo e tarefa, ferramenta, skill, mcp, comando \
                     ou no de controle, pelo mesmo portao. --ate para no passo (inclusive) e grava; \
-                    retomar continua dali e pula os passos que deram certo.",
+                    retomar continua dali e pula os passos que deram certo (sem ARQ, pela \
+                    definicao que a espera gravou). O passo esperar descarrega o fluxo para o \
+                    disco: responder entrega a resposta, esperas retoma as de tempo vencidas. \
+                    pinar troca a execucao de um passo pelo dado do ARQ.pins.json; podar segue \
+                    fluxos.poda_dias/poda_max (sem eles, nada se apaga).",
     },
     Comando {
         grupo: Grupo::EquipeEFluxos,

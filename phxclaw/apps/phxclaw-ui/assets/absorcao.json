@@ -1,17 +1,15 @@
 {
  "openclaw": {
   "total": 39,
-  "no_agente": 35,
-  "parcial": 3,
+  "no_agente": 37,
+  "parcial": 1,
   "nao": 1,
-  "pct_agente": 89.7,
-  "pct_com_bibliotecas": 93.6,
+  "pct_agente": 94.9,
+  "pct_com_bibliotecas": 96.2,
   "falta": [
    "canal_imessage"
   ],
   "pela_metade": [
-   "canal_teams",
-   "canal_googlechat",
    "voz_wake"
   ],
   "lido_em": "01/10/2026",
@@ -74,11 +72,11 @@
    },
    {
     "id": "canal_teams",
-    "estado": "parcial"
+    "estado": "agente"
    },
    {
     "id": "canal_googlechat",
-    "estado": "parcial"
+    "estado": "agente"
    },
    {
     "id": "canal_matrix",
@@ -176,17 +174,15 @@
  },
  "hermes": {
   "total": 40,
-  "no_agente": 36,
-  "parcial": 3,
+  "no_agente": 38,
+  "parcial": 1,
   "nao": 1,
-  "pct_agente": 90.0,
-  "pct_com_bibliotecas": 93.8,
+  "pct_agente": 95.0,
+  "pct_com_bibliotecas": 96.2,
   "falta": [
    "canal_imessage"
   ],
   "pela_metade": [
-   "canal_teams",
-   "canal_googlechat",
    "voz_wake"
   ],
   "lido_em": "01/10/2026",
@@ -245,11 +241,11 @@
    },
    {
     "id": "canal_teams",
-    "estado": "parcial"
+    "estado": "agente"
    },
    {
     "id": "canal_googlechat",
-    "estado": "parcial"
+    "estado": "agente"
    },
    {
     "id": "canal_matrix",
@@ -719,18 +715,16 @@
  },
  "openjarvis": {
   "total": 55,
-  "no_agente": 50,
-  "parcial": 4,
+  "no_agente": 52,
+  "parcial": 2,
   "nao": 1,
-  "pct_agente": 90.9,
-  "pct_com_bibliotecas": 94.5,
+  "pct_agente": 94.5,
+  "pct_com_bibliotecas": 96.4,
   "falta": [
    "canal_imessage"
   ],
   "pela_metade": [
    "telemetria_energia",
-   "canal_googlechat",
-   "canal_teams",
    "canal_nostr"
   ],
   "lido_em": "01/10/2026",
@@ -885,11 +879,11 @@
    },
    {
     "id": "canal_googlechat",
-    "estado": "parcial"
+    "estado": "agente"
    },
    {
     "id": "canal_teams",
-    "estado": "parcial"
+    "estado": "agente"
    },
    {
     "id": "canal_matrix",
@@ -959,13 +953,12 @@
  },
  "vscode": {
   "total": 52,
-  "no_agente": 48,
+  "no_agente": 49,
   "parcial": 0,
-  "nao": 4,
-  "pct_agente": 92.3,
-  "pct_com_bibliotecas": 92.3,
+  "nao": 3,
+  "pct_agente": 94.2,
+  "pct_com_bibliotecas": 94.2,
   "falta": [
-   "minimapa",
    "dobra_codigo",
    "remoto_ssh_containers",
    "live_share"
@@ -991,7 +984,7 @@
    },
    {
     "id": "minimapa",
-    "estado": "nao"
+    "estado": "agente"
    },
    {
     "id": "dobra_codigo",
@@ -1185,36 +1178,28 @@
  },
  "n8n": {
   "total": 59,
-  "no_agente": 37,
-  "parcial": 13,
-  "nao": 9,
-  "pct_agente": 62.7,
-  "pct_com_bibliotecas": 73.7,
+  "no_agente": 45,
+  "parcial": 9,
+  "nao": 5,
+  "pct_agente": 76.3,
+  "pct_com_bibliotecas": 83.9,
   "falta": [
-   "espera_wait",
-   "gatilho_formulario",
    "segredos_externos",
-   "poda_execucoes",
    "editor_canvas",
    "modelos_fluxo",
-   "etiquetas_pastas",
    "projetos_rbac",
    "instalacao_docker_k8s"
   ],
   "pela_metade": [
-   "dados_pinados",
    "versionamento_fluxo",
    "gatilho_poll",
    "oauth2_generico",
-   "dados_binarios",
    "fila_workers",
-   "concorrencia_limite",
    "controle_versao_git_fluxos",
    "assistente_construtor_ia",
    "guardrails",
    "requisicao_http",
-   "observabilidade_insights",
-   "cli_importar_exportar"
+   "observabilidade_insights"
   ],
   "lido_em": "02/10/2026",
   "capacidades": [
@@ -1252,7 +1237,7 @@
    },
    {
     "id": "espera_wait",
-    "estado": "nao"
+    "estado": "agente"
    },
    {
     "id": "tentativas_por_no",
@@ -1280,7 +1265,7 @@
    },
    {
     "id": "dados_pinados",
-    "estado": "parcial"
+    "estado": "agente"
    },
    {
     "id": "subfluxo",
@@ -1316,7 +1301,7 @@
    },
    {
     "id": "gatilho_formulario",
-    "estado": "nao"
+    "estado": "agente"
    },
    {
     "id": "mcp_servidor",
@@ -1348,11 +1333,11 @@
    },
    {
     "id": "dados_binarios",
-    "estado": "parcial"
+    "estado": "agente"
    },
    {
     "id": "poda_execucoes",
-    "estado": "nao"
+    "estado": "agente"
    },
    {
     "id": "fila_workers",
@@ -1360,7 +1345,7 @@
    },
    {
     "id": "concorrencia_limite",
-    "estado": "parcial"
+    "estado": "agente"
    },
    {
     "id": "sandbox",
@@ -1376,7 +1361,7 @@
    },
    {
     "id": "etiquetas_pastas",
-    "estado": "nao"
+    "estado": "agente"
    },
    {
     "id": "projetos_rbac",
@@ -1448,7 +1433,7 @@
    },
    {
     "id": "cli_importar_exportar",
-    "estado": "parcial"
+    "estado": "agente"
    },
    {
     "id": "instalacao_docker_k8s",

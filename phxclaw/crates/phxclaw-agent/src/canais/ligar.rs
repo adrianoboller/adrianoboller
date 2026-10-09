@@ -255,13 +255,18 @@ pub async fn ligar(
                 let u = reqwest::Url::parse(&s).map_err(|e| format!("{s}: {e}"))?;
                 p = p.with_origin(u.origin().ascii_serialization());
             }
+            // O JWT RS256 e conferido sempre; a chave da URL so soma, se configurada.
+            let jwks = super::jwt::Jwks::novo(
+                &ctx.cfg("JWKS").unwrap_or_else(|| super::teams::JWKS.into()),
+            )?;
             let x = Arc::new(super::teams::Teams::novo(
                 ctx.caixa("")?,
-                ctx.segredo("CHAVE_URL")?,
+                ctx.segredo_opcional("CHAVE_URL")?,
                 ctx.segredo("APP_SECRET")?,
                 ctx.exigir("APP_ID")?,
                 &login,
                 p,
+                jwks,
             )?);
             (x.clone(), recebedor(&x))
         }
@@ -319,13 +324,19 @@ pub async fn ligar(
         }
         "googlechat" => {
             let (b, p) = ctx.base(Some(super::googlechat::BASE))?;
+            // Sem audiencia nao ha token que se confira: o canal nao sobe, dizendo o que falta.
+            let verificacao = super::googlechat::Verificacao::nova(
+                ctx.exigir("AUDIENCIA")?,
+                ctx.cfg("JWKS").as_deref(),
+            )?;
             let x = Arc::new(super::googlechat::GoogleChat::novo(
                 ctx.caixa("")?,
-                ctx.segredo("CHAVE_URL")?,
+                ctx.segredo_opcional("CHAVE_URL")?,
                 ctx.segredo("SAIDA_WEBHOOK")?,
                 ctx.exigir("ESPACO")?,
                 &b,
                 p,
+                verificacao,
             )?);
             (x.clone(), recebedor(&x))
         }

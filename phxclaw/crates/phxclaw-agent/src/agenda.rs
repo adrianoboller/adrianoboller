@@ -68,8 +68,8 @@ impl Agenda {
         spec: ScheduleSpec,
         now: DateTime<Utc>,
     ) -> Result<Schedule, String> {
-        let texto = std::fs::read_to_string(caminho).map_err(|e| format!("{caminho}: {e}"))?;
-        let f = crate::fluxos::ler(&texto)?;
+        // Pelo leitor de arquivo: os pins ao lado do fluxo valem no disparo da agenda.
+        let f = crate::fluxos::ler_arquivo(std::path::Path::new(caminho))?;
         self.add_com(
             name,
             &format!("{}{}", crate::api::PREFIXO_FLUXO, f.nome),

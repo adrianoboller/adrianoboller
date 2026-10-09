@@ -352,6 +352,13 @@
                 "array"
               ]
             },
+            "audiencia": {
+              "description": "Audiência do token: número do projeto, ou URL https:// do endpoint (ID token) (ambiente: PHXCLAW_GOOGLECHAT_AUDIENCIA)",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
             "base": {
               "description": "Base do serviço; vazio = a oficial (ambiente: PHXCLAW_GOOGLECHAT_BASE)",
               "type": [
@@ -361,6 +368,13 @@
             },
             "espaco": {
               "description": "Espaço do Google Chat (ambiente: PHXCLAW_GOOGLECHAT_ESPACO)",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "jwks": {
+              "description": "URL das chaves (JWKS); vazio = a oficial do modo (ambiente: PHXCLAW_GOOGLECHAT_JWKS)",
               "type": [
                 "string",
                 "null"
@@ -877,7 +891,14 @@
               ]
             },
             "app_id": {
-              "description": "ID do app (ambiente: PHXCLAW_TEAMS_APP_ID)",
+              "description": "ID do app (audiência do token) (ambiente: PHXCLAW_TEAMS_APP_ID)",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "jwks": {
+              "description": "URL das chaves do Bot Framework (JWKS); vazio = a oficial (ambiente: PHXCLAW_TEAMS_JWKS)",
               "type": [
                 "string",
                 "null"
@@ -1587,6 +1608,42 @@
             }
           },
           "type": "object"
+        }
+      },
+      "type": "object"
+    },
+    "fluxos": {
+      "additionalProperties": false,
+      "properties": {
+        "//": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "string",
+            "array"
+          ]
+        },
+        "max_simultaneos": {
+          "description": "Fluxos rodando ao mesmo tempo na instância; vazio ou 0 = sem limite (o excedente espera a vez) (ambiente: PHXCLAW_FLUXOS_MAX_SIMULTANEOS)",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "poda_dias": {
+          "description": "Apaga execuções de fluxo terminadas há mais de N dias; vazio ou 0 = nunca (ambiente: PHXCLAW_FLUXOS_PODA_DIAS)",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "poda_max": {
+          "description": "Mantém só as N execuções de fluxo terminadas mais novas; vazio ou 0 = todas (ambiente: PHXCLAW_FLUXOS_PODA_MAX)",
+          "type": [
+            "integer",
+            "null"
+          ]
         }
       },
       "type": "object"

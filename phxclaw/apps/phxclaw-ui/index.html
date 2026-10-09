@@ -227,6 +227,16 @@
         <div id="termEspelho" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
         <div id="ideVazio" class="term-vazio" data-txt="ide.vazio">Abra o Helix na pasta do projeto ou um terminal bash.</div>
       </div>
+      <!-- Minimapa: o arquivo aberto no Helix lido EM DISCO pelo agente (/v1/ide/arquivo), a
+           faixa visivel lida da calha do Helix na grade e o cursor da linha de estado. Clique
+           ou seta leva o Helix la (:goto N). O buffer e de outro processo: nao salvo nao aparece. -->
+      <aside id="ideMinimapa" class="minimapa" aria-label="Minimapa do arquivo aberto" data-txt-al="ide.minimapa" data-fonte="api /v1/ide/arquivo + calha e linha de estado do Helix" hidden>
+        <div class="minimapa-topo"><b data-txt="ide.minimapa_titulo">MINIMAPA</b>
+          <button id="minimapaReler" class="acao consulta" type="button" data-txt="ide.minimapa_reler">RELER</button></div>
+        <p class="minimapa-nota" data-txt="ide.minimapa_limite">Do arquivo salvo em disco: o que ainda não foi salvo não aparece.</p>
+        <canvas id="minimapaCanvas" tabindex="0" role="slider" aria-orientation="vertical" aria-label="Linha do arquivo" data-txt-al="ide.minimapa_slider"></canvas>
+        <p id="minimapaEstado" class="minimapa-estado" role="status" aria-live="polite"></p>
+      </aside>
       <!-- Explorador de testes: a arvore do test_list e o rodar de UM no (test_run), pela API. -->
       <details id="ideTestes" class="painel-lateral">
         <summary data-txt="testes.titulo">Explorador de testes</summary>

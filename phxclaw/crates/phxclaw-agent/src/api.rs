@@ -334,9 +334,7 @@ pub fn criar_fluxo_com(
         erro: e,
         retry_after: None,
     };
-    let f = std::fs::read_to_string(caminho)
-        .map_err(|e| format!("{caminho}: {e}"))
-        .and_then(|t| crate::fluxos::ler(&t))
+    let f = crate::fluxos::ler_arquivo(std::path::Path::new(caminho))
         .map_err(|e| recusa(StatusCode::BAD_REQUEST, format!("fluxo: {e}")))?;
     let agente = (s.factory)(&s.default_model).map_err(|e| recusa(StatusCode::BAD_REQUEST, e))?;
     if let Err(seg) = s.limite.tomar() {
@@ -397,6 +395,52 @@ pub fn criar_fluxo_com(
         }
     });
     Ok(Criada { id, fim })
+}
+
+/// Retoma em segundo plano um fluxo parado numa espera, SO pelo disco
+/// (`fluxos::retomar_do_disco`): e o caminho da resposta, do webhook de retomada e da espera
+/// de tempo que venceu. A recusa antes do primeiro passo (definicao trocada, arquivo que
+/// sumiu) vira `Failed` com o motivo: a tarefa nao fica esperando o que nunca vem.
+pub fn retomar_fluxo(s: &ApiState, id: &str) -> Result<tokio::task::JoinHandle<()>, Recusa> {
+    let agente = (s.factory)(&s.default_model).map_err(|e| Recusa {
+        status: StatusCode::INTERNAL_SERVER_ERROR,
+        erro: e,
+        retry_after: None,
+    })?;
+    let (store, id) = (s.store.clone(), id.to_string());
+    Ok(tokio::spawn(async move {
+        if let Err(e) = crate::fluxos::retomar_do_disco(&agente, &id).await
+            && let Ok(mut t) = store.load(&id)
+            && t.status == TaskStatus::AwaitingInput
+            && !e.contains("ja esta sendo retomada")
+        {
+            t.status = TaskStatus::Failed;
+            t.error = Some(e);
+            t.updated_at = Utc::now();
+            let _ = store.save(&t);
+        }
+    }))
+}
+
+/// A manutencao dos fluxos, no laco do servidor (o mesmo da agenda): retoma as esperas de
+/// tempo vencidas e poda as execucoes velhas pela configuracao (`fluxos.poda_*`; sem ela,
+/// nada se apaga). Devolve as retomadas, para quem quiser esperar.
+pub fn manter_fluxos(s: &ApiState) -> Vec<tokio::task::JoinHandle<()>> {
+    let mut v = Vec::new();
+    for id in crate::fluxos::esperas_vencidas(&s.store, Utc::now()) {
+        match retomar_fluxo(s, &id) {
+            Ok(h) => v.push(h),
+            Err(e) => eprintln!("fluxo {id}: espera vencida nao retomada: {}", e.erro),
+        }
+    }
+    let p = crate::fluxos::podar(&s.store, crate::fluxos::Poda::do_config(), Utc::now());
+    if !p.removidas.is_empty() {
+        println!("poda de fluxos: {} tarefa(s) apagada(s)", p.removidas.len());
+    }
+    for e in p.erros {
+        eprintln!("poda de fluxos: {e}");
+    }
+    v
 }
 
 /// Roda em segundo plano, registra o cancelamento e chama o webhook no fim.
@@ -547,6 +591,30 @@ async fn responder(
             StatusCode::CONFLICT,
             "tarefa nao esta esperando resposta",
         ));
+    }
+    // Fluxo parado num passo `esperar` com pergunta: ninguem segura a espera em memoria
+    // (ela descarregou para o disco), entao a resposta e GRAVADA no passo e o fluxo e
+    // retomado do disco -- a mesma rota, para a tela e os canais nao saberem a diferenca.
+    if !crate::perguntas::esperando(&t.id)
+        && crate::fluxos::espera_aberta(&t).is_some_and(|(_, a)| a.tipo == "pergunta")
+    {
+        let resposta = r.answer.trim();
+        if resposta.is_empty() {
+            return Err(erro(StatusCode::BAD_REQUEST, "resposta vazia"));
+        }
+        crate::fluxos::entregar(
+            &s.store,
+            &t.id,
+            crate::fluxos::Via::Pergunta,
+            vec![json!({"resposta": resposta})],
+        )
+        .map_err(|e| erro(StatusCode::CONFLICT, e))?;
+        retomar_fluxo(&s, &t.id).map_err(|r| erro(r.status, r.erro))?;
+        return Ok((
+            StatusCode::ACCEPTED,
+            Json(json!({"id": t.id, "status": "running"})),
+        )
+            .into_response());
     }
     crate::perguntas::responder(&t.id, &r.answer).map_err(|e| erro(StatusCode::CONFLICT, e))?;
     Ok((

@@ -684,11 +684,12 @@ async fn nenhum_provedor_devolve_segredo_ou_token_derivado_no_erro() {
             Arc::new(
                 teams::Teams::novo(
                     teams_cx,
-                    c("teams", "tk"),
+                    Some(c("teams", "tk")),
                     c("teams", "ts"),
                     "app".into(),
                     &base,
                     p(),
+                    jwt::Jwks::novo(&base).unwrap(),
                 )
                 .unwrap(),
             ),
@@ -699,11 +700,12 @@ async fn nenhum_provedor_devolve_segredo_ou_token_derivado_no_erro() {
             Arc::new(
                 googlechat::GoogleChat::novo(
                     cx("gc"),
-                    c("googlechat", "gk"),
+                    Some(c("googlechat", "gk")),
                     gs,
                     "c".into(),
                     &base,
                     p(),
+                    googlechat::Verificacao::nova("123".into(), Some(&base)).unwrap(),
                 )
                 .unwrap(),
             ),
@@ -1721,7 +1723,8 @@ async fn messenger_ignora_eco_e_responde_pela_send_api() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn teams_responde_so_a_service_url_permitida() {
-    use phxclaw_agent::canais::teams::Teams;
+    use phxclaw_agent::canais::jwt::Jwks;
+    use phxclaw_agent::canais::teams::{Teams, mensagem_da_activity};
     let dir = tmp();
     let b = broker_em(&dir).unwrap();
     let (base, log) = falso(|r| {
@@ -1731,40 +1734,30 @@ async fn teams_responde_so_a_service_url_permitida() {
         (200, json!({"id": "act9"}).to_string())
     })
     .await;
+    let caixa = Caixa::abrir(dir.join("teams.caixa.jsonl")).unwrap();
     let t = Arc::new(
         Teams::novo(
-            Caixa::abrir(dir.join("teams.caixa.jsonl")).unwrap(),
-            cred(&b, "teams", "teams-chave_url", "CHAVE-URL"),
+            caixa.clone(),
+            None,
             cred(&b, "teams", "teams-app_secret", TOKEN),
             "app-1".into(),
             &base,
             politica_para(&base).unwrap(),
+            Jwks::novo(&base).unwrap(),
         )
         .unwrap(),
     );
+    // A entrada (JWT) tem prova propria em `teams_confere_o_jwt_rs256_do_bot_framework`;
+    // aqui a Activity entra na caixa como o `post` a deixaria, e o que se prova e a saida.
     let act = |conv: &str, url: &str| {
         json!({"type": "message", "id": format!("a-{conv}"), "text": "<at>Agente</at> faca X",
             "from": {"id": "29:u"}, "conversation": {"id": conv}, "serviceUrl": url})
-        .to_string()
     };
-    let x = t.clone();
-    let c = act("19:c1", &format!("{base}/amer/"));
-    assert_eq!(
-        bloq(move || x.post(&pedido(&[], "chave=ERRADA", &c)))
-            .await
-            .unwrap_err()
-            .0,
-        401
-    );
-    let x = t.clone();
-    let c = act("19:c1", &format!("{base}/amer/"));
-    bloq(move || x.post(&pedido(&[], "chave=CHAVE-URL", &c)))
-        .await
-        .unwrap();
-    let x = t.clone();
-    let c = act("19:mal", "https://evil.example.com/");
-    bloq(move || x.post(&pedido(&[], "chave=CHAVE-URL", &c)))
-        .await
+    caixa
+        .anexar(vec![
+            mensagem_da_activity(&act("19:c1", &format!("{base}/amer/"))).unwrap(),
+            mensagem_da_activity(&act("19:mal", "https://evil.example.com/")).unwrap(),
+        ])
         .unwrap();
     let x = t.clone();
     let l = bloq(move || x.receber(None, 0)).await.unwrap();
@@ -1788,50 +1781,6 @@ async fn teams_responde_so_a_service_url_permitida() {
         log.len(),
         2,
         "a serviceUrl de fora nao recebe nem o pedido de token"
-    );
-    let _ = std::fs::remove_dir_all(dir);
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn googlechat_entra_por_chave_e_sai_pelo_webhook_do_espaco() {
-    use phxclaw_agent::canais::googlechat::GoogleChat;
-    let dir = tmp();
-    let b = broker_em(&dir).unwrap();
-    let (base, log) = falso(|_| (200, json!({"name": "spaces/S/messages/9"}).to_string())).await;
-    let saida = format!("{base}/v1/spaces/S/messages?key=K&token={TOKEN}");
-    let g = Arc::new(
-        GoogleChat::novo(
-            Caixa::abrir(dir.join("gc.caixa.jsonl")).unwrap(),
-            cred(&b, "googlechat", "googlechat-chave_url", "CHAVE-URL"),
-            cred(&b, "googlechat", "googlechat-saida_webhook", &saida),
-            "spaces/S".into(),
-            &base,
-            politica_para(&base).unwrap(),
-        )
-        .unwrap(),
-    );
-    let ev =
-        json!({"type": "MESSAGE", "message": {"name": "spaces/S/messages/1", "text": "@App oi",
-        "argumentText": " oi ", "sender": {"name": "users/1"}, "space": {"name": "spaces/S"}}})
-        .to_string();
-    let x = g.clone();
-    bloq(move || x.post(&pedido(&[], "chave=CHAVE-URL", &ev)))
-        .await
-        .unwrap();
-    let x = g.clone();
-    let l = bloq(move || x.receber(None, 0)).await.unwrap();
-    assert_eq!(so_mensagens(&l)[0].texto.as_deref(), Some("oi"));
-    let x = g.clone();
-    bloq(move || x.enviar("spaces/S", "ola")).await.unwrap();
-    let x = g.clone();
-    assert!(bloq(move || x.enviar("spaces/OUTRO", "ola")).await.is_err());
-    let log = log.lock().unwrap();
-    assert_eq!(log.len(), 1);
-    assert_eq!(log[0].param("token").as_deref(), Some(TOKEN));
-    assert_eq!(log[0].json(), json!({"text": "ola"}));
-    assert!(
-        arquivos_com(&dir, TOKEN).is_empty(),
-        "URL do webhook so no broker"
     );
     let _ = std::fs::remove_dir_all(dir);
 }
@@ -3134,5 +3083,720 @@ async fn ligar_pelo_ambiente_guarda_o_segredo_no_broker_e_recusa_lista_vazia() {
             );
         }
     }
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+// ---------------------------------------------------------------- RSA e o JWT RS256
+
+/// Um registro dos arquivos de `tests/dados/rsa` (o formato esta no `extrair.py` de la).
+struct CasoRsa {
+    id: String,
+    veredito: String,
+    flags: String,
+    n: Vec<u8>,
+    e: Vec<u8>,
+    msg: Vec<u8>,
+    sig: Vec<u8>,
+}
+
+fn de_hex(s: &str) -> Vec<u8> {
+    if s == "-" {
+        return vec![];
+    }
+    (0..s.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap())
+        .collect()
+}
+
+fn b64url(b: &[u8]) -> String {
+    use base64::Engine;
+    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(b)
+}
+
+fn vetores_rsa(arquivo: &str) -> Vec<CasoRsa> {
+    let caminho = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/dados/rsa")
+        .join(arquivo);
+    let texto = std::fs::read_to_string(&caminho).unwrap();
+    let mut chave = (vec![], vec![]);
+    let mut casos = Vec::new();
+    for l in texto.lines().filter(|l| !l.starts_with('#')) {
+        let c: Vec<&str> = l.split(' ').collect();
+        match c[0] {
+            "chave" => chave = (de_hex(c[1]), de_hex(c[2])),
+            "caso" => casos.push(CasoRsa {
+                id: c[1].into(),
+                veredito: c[2].into(),
+                flags: c[3].into(),
+                n: chave.0.clone(),
+                e: chave.1.clone(),
+                msg: de_hex(c[4]),
+                sig: de_hex(c[5]),
+            }),
+            outro => panic!("{arquivo}: registro desconhecido {outro}"),
+        }
+    }
+    casos
+}
+
+/// Roda os casos e devolve (validos aceitos, invalidos recusados, recusas por flag, erros).
+/// `aceitavel` do Wycheproof conta como invalido: o EMSA daqui e DER estrito de proposito.
+/// Chave com `e = 65537` e 2048+ bits passa pelo caminho do JWKS (`ChavePublica::de_jwk`),
+/// que e o que o token usa; as outras, pelo primitivo sem politica.
+fn rodar_rsa(casos: &[CasoRsa]) -> (usize, usize, BTreeMap<String, usize>, Vec<String>) {
+    use phxclaw_agent::canais::rsa::{ChavePublica, verificar_pkcs1_sha256};
+    let (mut aceitos, mut recusados) = (0, 0);
+    let mut por_flag = BTreeMap::new();
+    let mut erros = Vec::new();
+    for c in casos {
+        let aceito = match ChavePublica::de_jwk(&b64url(&c.n), &b64url(&c.e)) {
+            Ok(k) => k.verificar(&c.msg, &c.sig),
+            Err(_) => verificar_pkcs1_sha256(&c.n, &c.e, &c.msg, &c.sig),
+        };
+        match (c.veredito.as_str(), aceito) {
+            ("valido", true) => aceitos += 1,
+            ("valido", false) => erros.push(format!("caso {}: valido recusado", c.id)),
+            (_, false) => {
+                recusados += 1;
+                for f in c.flags.split(',') {
+                    *por_flag.entry(f.to_string()).or_insert(0) += 1;
+                }
+            }
+            (v, true) => erros.push(format!("caso {} ({v}, {}): aceito", c.id, c.flags)),
+        }
+    }
+    (aceitos, recusados, por_flag, erros)
+}
+
+/// Wycheproof `rsa_signature_2048_sha256_test.json` inteiro: 9 validos aceitos e os 250
+/// outros (249 invalidos + 1 «acceptable» de BER) recusados. Com a comparacao do bloco
+/// trocada por «acha o hash no fim», os casos de padding passam a ser aceitos e isto
+/// reprova (RED medido, ver o comentario do `rsa.rs`).
+#[test]
+fn rsa_pkcs1_sha256_contra_o_wycheproof() {
+    let casos = vetores_rsa("wycheproof_rsa_2048_sha256.txt");
+    assert_eq!(casos.len(), 259);
+    let (aceitos, recusados, por_flag, erros) = rodar_rsa(&casos);
+    println!(
+        "wycheproof: {aceitos} validos aceitos, {recusados} invalidos recusados; {por_flag:?}"
+    );
+    assert!(erros.is_empty(), "{} erros: {erros:?}", erros.len());
+    assert_eq!((aceitos, recusados), (9, 250));
+}
+
+/// NIST CAVP SigVer15 (186-3), so SHA-256: 3 P e 15 F por modulo (1024, 2048, 3072). Os
+/// expoentes do NIST sao aleatorios, entao estes passam pelo primitivo sem politica.
+#[test]
+fn rsa_pkcs1_sha256_contra_o_nist_sigver15() {
+    let casos = vetores_rsa("nist_sigver15_sha256.txt");
+    assert_eq!(casos.len(), 54);
+    let (aceitos, recusados, por_mod, erros) = rodar_rsa(&casos);
+    println!("nist: {aceitos} validos aceitos, {recusados} invalidos recusados; {por_mod:?}");
+    assert!(erros.is_empty(), "{} erros: {erros:?}", erros.len());
+    assert_eq!((aceitos, recusados), (9, 45));
+}
+
+#[test]
+fn chave_do_jwks_so_entra_com_2048_a_4096_bits_e_expoente_65537() {
+    use phxclaw_agent::canais::rsa::ChavePublica;
+    let wy = vetores_rsa("wycheproof_rsa_2048_sha256.txt");
+    let nist = vetores_rsa("nist_sigver15_sha256.txt");
+    let aqab = [1u8, 0, 1];
+    // A chave de 2048 do Wycheproof entra com 65537 e nao entra com o e = 3 dela mesma.
+    let k = ChavePublica::nova(&wy[0].n, &aqab).unwrap();
+    assert_eq!(k.bits(), 2048);
+    let e3 = wy.iter().find(|c| c.e == [3]).unwrap();
+    assert!(ChavePublica::nova(&e3.n, &e3.e).is_err(), "e = 3");
+    assert!(
+        ChavePublica::nova(&wy[0].n, &[1, 0, 0, 1]).is_err(),
+        "e = 2^24+1"
+    );
+    // 1024 (NIST) fica fora; 3072 (NIST) entra.
+    let n1024 = &nist.iter().find(|c| c.flags == "mod1024").unwrap().n;
+    assert!(ChavePublica::nova(n1024, &aqab).is_err(), "1024 bits");
+    let n3072 = &nist.iter().find(|c| c.flags == "mod3072").unwrap().n;
+    assert_eq!(ChavePublica::nova(n3072, &aqab).unwrap().bits(), 3072);
+    // 4096 entra, 4097 nao; modulo par nao e RSA.
+    let mut n4096 = vec![0u8; 512];
+    n4096[0] = 0x80;
+    n4096[511] = 1;
+    assert_eq!(ChavePublica::nova(&n4096, &aqab).unwrap().bits(), 4096);
+    let mut n4097 = vec![1u8];
+    n4097.extend(vec![0u8; 512]);
+    n4097[512] = 1;
+    assert!(ChavePublica::nova(&n4097, &aqab).is_err(), "4097 bits");
+    let mut par = wy[0].n.clone();
+    *par.last_mut().unwrap() &= 0xfe;
+    assert!(ChavePublica::nova(&par, &aqab).is_err(), "modulo par");
+    // JWK com base64 comum (`+`/`/`) ou com preenchimento nao e base64url.
+    assert!(ChavePublica::de_jwk("ab+/", "AQAB").is_err());
+    assert!(ChavePublica::de_jwk(&b64url(&wy[0].n), "AQAB==").is_err());
+}
+
+/// Par RSA-2048 de TESTE, gerado agora pelo `openssl` do sistema e apagado com a pasta:
+/// nenhuma chave privada mora no repositorio. `None` sem `openssl`.
+struct ParRsa {
+    pem: PathBuf,
+    n: String,
+}
+
+fn par_rsa(dir: &Path, nome: &str) -> Option<ParRsa> {
+    use std::process::Command;
+    std::fs::create_dir_all(dir).ok()?;
+    let pem = dir.join(format!("{nome}.pem"));
+    let g = Command::new("openssl")
+        .args([
+            "genpkey",
+            "-algorithm",
+            "RSA",
+            "-pkeyopt",
+            "rsa_keygen_bits:2048",
+            "-out",
+        ])
+        .arg(&pem)
+        .output()
+        .ok()?;
+    if !g.status.success() {
+        return None;
+    }
+    let m = Command::new("openssl")
+        .args(["rsa", "-noout", "-modulus", "-in"])
+        .arg(&pem)
+        .output()
+        .ok()?;
+    let texto = String::from_utf8(m.stdout).ok()?;
+    let hexa = texto.trim().strip_prefix("Modulus=")?.to_ascii_lowercase();
+    Some(ParRsa {
+        pem,
+        n: b64url(&de_hex(&hexa)),
+    })
+}
+
+/// JWT assinado com RS256 pelo `openssl dgst -sha256 -sign` (PKCS#1 v1.5).
+fn jwt_assinado(par: &ParRsa, cab: &Value, claims: &Value) -> String {
+    use std::process::{Command, Stdio};
+    let entrada = format!(
+        "{}.{}",
+        b64url(cab.to_string().as_bytes()),
+        b64url(claims.to_string().as_bytes())
+    );
+    let mut f = Command::new("openssl")
+        .args(["dgst", "-sha256", "-sign"])
+        .arg(&par.pem)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    f.stdin
+        .take()
+        .unwrap()
+        .write_all(entrada.as_bytes())
+        .unwrap();
+    let out = f.wait_with_output().unwrap();
+    assert!(out.status.success());
+    format!("{entrada}.{}", b64url(&out.stdout))
+}
+
+fn com_bearer(token: &str, corpo: &str, consulta: &str) -> PedidoWebhook {
+    pedido(
+        &[("Authorization", &format!("Bearer {token}"))],
+        consulta,
+        corpo,
+    )
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn teams_confere_o_jwt_rs256_do_bot_framework() {
+    use phxclaw_agent::canais::jwt::{self, Exigido, Jwks, Motivo};
+    use phxclaw_agent::canais::teams::{EMISSOR, Teams, conferir_activity};
+    use phxclaw_test_support::pulado;
+    let dir = tmp();
+    let (Some(bf), Some(intruso)) = (par_rsa(&dir, "bf"), par_rsa(&dir, "intruso")) else {
+        pulado::pular(
+            "openssl",
+            "sem openssl nao ha como assinar o token de teste",
+        );
+        return;
+    };
+    let jwks = json!({"keys": [
+        {"kty": "RSA", "use": "sig", "kid": "k1", "n": bf.n, "e": "AQAB",
+         "endorsements": ["msteams"]},
+        {"kty": "RSA", "use": "sig", "kid": "k-sem-endosso", "n": bf.n, "e": "AQAB"},
+        // Fora da politica (e = 3): pulada na leitura, entao o kid fica desconhecido.
+        {"kty": "RSA", "use": "sig", "kid": "k-e3", "n": bf.n, "e": "Aw"},
+    ]});
+    let (jwks_url, jwks_log) = falso(move |_| (200, jwks.to_string())).await;
+    let b = broker_em(&dir).unwrap();
+    let (base, _) = falso(|_| (200, "{}".into())).await;
+    let t = Arc::new(
+        Teams::novo(
+            Caixa::abrir(dir.join("teams.caixa.jsonl")).unwrap(),
+            Some(cred(&b, "teams", "teams-chave_url", "CHAVE-URL")),
+            cred(&b, "teams", "teams-app_secret", TOKEN),
+            "app-1".into(),
+            &base,
+            politica_para(&base).unwrap(),
+            Jwks::novo(&format!("{jwks_url}/keys")).unwrap(),
+        )
+        .unwrap(),
+    );
+    let agora = jwt::agora();
+    let servico = format!("{base}/amer/");
+    let claims = json!({"iss": EMISSOR, "aud": "app-1", "exp": agora + 600,
+        "nbf": agora - 10, "serviceUrl": servico});
+    let act = |canal: &str, url: &str| {
+        json!({"type": "message", "channelId": canal, "id": "a1", "text": "faca X",
+            "from": {"id": "29:u"}, "conversation": {"id": "19:c1"}, "serviceUrl": url})
+        .to_string()
+    };
+    let rs256 = |kid: &str| json!({"alg": "RS256", "typ": "JWT", "kid": kid});
+    let com = |muda: &dyn Fn(&mut Value)| {
+        let mut c = claims.clone();
+        muda(&mut c);
+        c
+    };
+    let tk = |par: &ParRsa, kid: &str, c: &Value| jwt_assinado(par, &rs256(kid), c);
+    let bom = tk(&bf, "k1", &claims);
+
+    // Cada caso: o token, o corpo, o status esperado e -- quando a recusa e do token -- o
+    // motivo, conferido direto no `jwt::conferir` para provar que recusou PELO motivo certo.
+    let mut tokens_ruins: Vec<(&str, String, Motivo)> = vec![
+        (
+            "emissor",
+            tk(
+                &bf,
+                "k1",
+                &com(&|c| c["iss"] = json!("https://outro.example.com")),
+            ),
+            Motivo::Emissor,
+        ),
+        (
+            "audiencia",
+            tk(&bf, "k1", &com(&|c| c["aud"] = json!("app-2"))),
+            Motivo::Audiencia,
+        ),
+        (
+            "vencido ha 400 s",
+            tk(&bf, "k1", &com(&|c| c["exp"] = json!(agora - 400))),
+            Motivo::Vencido,
+        ),
+        (
+            "nbf daqui a 400 s",
+            tk(&bf, "k1", &com(&|c| c["nbf"] = json!(agora + 400))),
+            Motivo::AindaNaoVale,
+        ),
+        (
+            "sem exp",
+            tk(
+                &bf,
+                "k1",
+                &com(&|c| {
+                    c.as_object_mut().unwrap().remove("exp");
+                }),
+            ),
+            Motivo::SemValidade,
+        ),
+        (
+            "assinado por outra chave com o mesmo kid",
+            tk(&intruso, "k1", &claims),
+            Motivo::Assinatura,
+        ),
+        (
+            "kid de chave fora da politica",
+            tk(&bf, "k-e3", &claims),
+            Motivo::KidDesconhecido,
+        ),
+        (
+            "alg HS256",
+            jwt_assinado(&bf, &json!({"alg": "HS256", "kid": "k1"}), &claims),
+            Motivo::Algoritmo,
+        ),
+        (
+            "alg none",
+            format!(
+                "{}.{}.",
+                b64url(json!({"alg": "none", "kid": "k1"}).to_string().as_bytes()),
+                b64url(claims.to_string().as_bytes())
+            ),
+            Motivo::Algoritmo,
+        ),
+        (
+            "sem kid",
+            jwt_assinado(&bf, &json!({"alg": "RS256"}), &claims),
+            Motivo::SemKid,
+        ),
+        ("duas partes", "a.b".into(), Motivo::Formato),
+    ];
+    // Corpo trocado sob a assinatura de um token bom: o `aud` outro, a assinatura a mesma.
+    let mut partes: Vec<String> = bom.split('.').map(str::to_string).collect();
+    partes[1] = b64url(com(&|c| c["aud"] = json!("app-2")).to_string().as_bytes());
+    tokens_ruins.push(("corpo trocado", partes.join("."), Motivo::Assinatura));
+
+    let exigido = Exigido {
+        emissores: &[EMISSOR],
+        audiencia: "app-1",
+    };
+    let jw = Jwks::novo(&format!("{jwks_url}/keys")).unwrap();
+    for (nome, token, motivo) in tokens_ruins.clone() {
+        let jw2 = &jw;
+        let ex = &exigido;
+        let r = std::thread::scope(|s| {
+            s.spawn(move || jwt::conferir(&token, jw2, ex, agora))
+                .join()
+                .unwrap()
+        });
+        assert_eq!(r.unwrap_err(), motivo, "{nome}");
+    }
+    // A folga de 5 min vale nos dois lados.
+    for c in [
+        com(&|c| c["exp"] = json!(agora - 200)),
+        com(&|c| c["nbf"] = json!(agora + 200)),
+    ] {
+        let token = tk(&bf, "k1", &c);
+        let jw2 = &jw;
+        let ex = &exigido;
+        std::thread::scope(|s| {
+            s.spawn(move || jwt::conferir(&token, jw2, ex, agora))
+                .join()
+        })
+        .unwrap()
+        .expect("dentro da folga de 5 min");
+    }
+
+    let post = |p: PedidoWebhook| {
+        let x = t.clone();
+        bloq(move || x.post(&p))
+    };
+    let corpo_bom = act("msteams", &servico);
+    // O token bom passa e a mensagem vai para a caixa.
+    post(com_bearer(&bom, &corpo_bom, "chave=CHAVE-URL"))
+        .await
+        .unwrap();
+    let x = t.clone();
+    let l = bloq(move || x.receber(None, 0)).await.unwrap();
+    assert_eq!(so_mensagens(&l)[0].texto.as_deref(), Some("faca X"));
+    // Sem token, com outro esquema, ou com a chave da URL errada: 401.
+    for p in [
+        pedido(&[], "chave=CHAVE-URL", &corpo_bom),
+        pedido(
+            &[("Authorization", &format!("Basic {bom}"))],
+            "chave=CHAVE-URL",
+            &corpo_bom,
+        ),
+        com_bearer(&bom, &corpo_bom, "chave=ERRADA"),
+    ] {
+        assert_eq!(post(p).await.unwrap_err().0, 401);
+    }
+    // Todo token ruim e 401, e a resposta nao diz o que errou.
+    for (nome, token, _) in tokens_ruins {
+        let e = post(com_bearer(&token, &corpo_bom, "chave=CHAVE-URL"))
+            .await
+            .unwrap_err();
+        assert_eq!(e, (401, "token nao confere".to_string()), "{nome}");
+    }
+    // Token bom que nao vale para ESTA Activity: 403.
+    let outro_servico = act("msteams", &format!("{base}/emea/"));
+    let canal_sem_endosso = act("skype", &servico);
+    let sem_endosso = tk(&bf, "k-sem-endosso", &claims);
+    for (token, corpo) in [
+        (&bom, &outro_servico),
+        (&bom, &canal_sem_endosso),
+        (&sem_endosso, &corpo_bom),
+    ] {
+        let e = post(com_bearer(token, corpo, "chave=CHAVE-URL"))
+            .await
+            .unwrap_err();
+        assert_eq!(e.0, 403, "{corpo}");
+    }
+    let x = t.clone();
+    assert_eq!(
+        so_mensagens(&bloq(move || x.receber(None, 0)).await.unwrap()).len(),
+        1,
+        "so o pedido bom entrou na caixa"
+    );
+    // O `conferir_activity` sozinho: claim sem serviceUrl tambem e 403.
+    let sem_claim = jwt::Conferido {
+        claims: json!({}),
+        endossos: vec!["msteams".into()],
+    };
+    assert_eq!(
+        conferir_activity(&sem_claim, &serde_json::from_str(&corpo_bom).unwrap()),
+        Err(Motivo::NaoVaiAqui)
+    );
+    // O canal baixou o JWKS UMA vez: o `kid` fora da politica nao forcou recarga dentro do
+    // intervalo minimo (sem o teto, cada kid inventado seria um pedido nosso a Microsoft).
+    assert_eq!(
+        jwks_log.lock().unwrap().len(),
+        2,
+        "1 do canal + 1 do `jw` do teste"
+    );
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+/// O cache do JWKS: 24 h viram 300 ms aqui. Le uma vez, reusa, recarrega no `kid` novo e no
+/// vencimento, e com o servico fora depois de vencer RECUSA em vez de usar a chave velha.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn jwks_recarrega_no_kid_novo_e_no_vencimento_e_falha_fechado() {
+    use phxclaw_agent::canais::jwt::{self, Exigido, Jwks, Motivo};
+    use phxclaw_test_support::pulado;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let dir = tmp();
+    let Some(par) = par_rsa(&dir, "rot") else {
+        pulado::pular(
+            "openssl",
+            "sem openssl nao ha como assinar o token de teste",
+        );
+        return;
+    };
+    // fase 0: so k1; fase 1: k1 e k2; fase 2: servico fora (500).
+    let fase = Arc::new(AtomicUsize::new(0));
+    let (f2, n) = (fase.clone(), par.n.clone());
+    let (url, log) = falso(move |_| {
+        let chave = |kid: &str| json!({"kty": "RSA", "kid": kid, "n": n, "e": "AQAB"});
+        match f2.load(Ordering::SeqCst) {
+            0 => (200, json!({"keys": [chave("k1")]}).to_string()),
+            1 => (200, json!({"keys": [chave("k1"), chave("k2")]}).to_string()),
+            _ => (500, "{}".into()),
+        }
+    })
+    .await;
+    let jw = Arc::new(
+        Jwks::com_prazos(&url, Duration::from_millis(300), Duration::from_millis(0)).unwrap(),
+    );
+    let agora = jwt::agora();
+    let claims = json!({"iss": "emissor", "aud": "aud", "exp": agora + 600});
+    let tk = |kid: &str| jwt_assinado(&par, &json!({"alg": "RS256", "kid": kid}), &claims);
+    let conferir = |token: String| {
+        let j = jw.clone();
+        bloq(move || {
+            let ex = Exigido {
+                emissores: &["emissor"],
+                audiencia: "aud",
+            };
+            jwt::conferir(&token, &j, &ex, agora).map(|_| ())
+        })
+    };
+    let pedidos = || log.lock().unwrap().len();
+    conferir(tk("k1")).await.unwrap();
+    conferir(tk("k1")).await.unwrap();
+    assert_eq!(pedidos(), 1, "o segundo usa o cache");
+    assert_eq!(conferir(tk("k2")).await, Err(Motivo::KidDesconhecido));
+    assert_eq!(pedidos(), 2, "kid novo forca uma recarga");
+    fase.store(1, Ordering::SeqCst);
+    conferir(tk("k2")).await.unwrap();
+    assert_eq!(pedidos(), 3, "a chave nova chegou na recarga");
+    tokio::time::sleep(Duration::from_millis(350)).await;
+    conferir(tk("k1")).await.unwrap();
+    assert_eq!(pedidos(), 4, "o vencimento recarrega");
+    fase.store(2, Ordering::SeqCst);
+    tokio::time::sleep(Duration::from_millis(350)).await;
+    assert_eq!(
+        conferir(tk("k1")).await,
+        Err(Motivo::ChavesIndisponiveis),
+        "vencido e sem servico: recusa, nao usa a chave velha"
+    );
+    assert_eq!(Motivo::ChavesIndisponiveis.recusa().0, 503);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn googlechat_confere_o_jwt_nos_dois_modos_e_sai_pelo_webhook_do_espaco() {
+    use phxclaw_agent::canais::googlechat::{
+        CONTA_DO_CHAT, GoogleChat, JWKS_OIDC, JWKS_PROJETO, Verificacao,
+    };
+    use phxclaw_agent::canais::jwt::{self, Jwks};
+    use phxclaw_test_support::pulado;
+    let dir = tmp();
+    let Some(par) = par_rsa(&dir, "gc") else {
+        pulado::pular(
+            "openssl",
+            "sem openssl nao ha como assinar o token de teste",
+        );
+        return;
+    };
+    let jwks = json!({"keys": [{"kty": "RSA", "use": "sig", "alg": "RS256", "kid": "g1",
+        "n": par.n, "e": "AQAB"}]});
+    let (jwks_url, _) = falso(move |_| (200, jwks.to_string())).await;
+    let b = broker_em(&dir).unwrap();
+    let (base, log) = falso(|_| (200, json!({"name": "spaces/S/messages/9"}).to_string())).await;
+    let saida = format!("{base}/v1/spaces/S/messages?key=K&token={TOKEN}");
+    // O modo sai da audiencia, e o JWKS padrao do modo junto.
+    let padrao = |aud: &str| {
+        let mut visto = String::new();
+        let _ = Verificacao::com_jwks(aud.into(), |p| {
+            visto = p.to_string();
+            Err("so olhando".into())
+        });
+        visto
+    };
+    assert_eq!(padrao("123456789012"), JWKS_PROJETO);
+    assert_eq!(
+        padrao("https://agente.exemplo.com/canais/googlechat/webhook"),
+        JWKS_OIDC
+    );
+    assert!(
+        Verificacao::nova("  ".into(), None).is_err(),
+        "audiencia vazia"
+    );
+    let monta = |aud: &str, chave: bool| {
+        let u = jwks_url.clone();
+        Arc::new(
+            GoogleChat::novo(
+                Caixa::abrir(dir.join(format!("gc-{}.caixa.jsonl", chave as u8))).unwrap(),
+                chave.then(|| cred(&b, "googlechat", "googlechat-chave_url", "CHAVE-URL")),
+                cred(&b, "googlechat", "googlechat-saida_webhook", &saida),
+                "spaces/S".into(),
+                &base,
+                politica_para(&base).unwrap(),
+                Verificacao::com_jwks(aud.into(), move |_| Jwks::novo(&u)).unwrap(),
+            )
+            .unwrap(),
+        )
+    };
+    let ev = json!({"type": "MESSAGE", "message": {"name": "spaces/S/messages/1",
+        "text": "@App oi", "argumentText": " oi ", "sender": {"name": "users/1"},
+        "space": {"name": "spaces/S"}}})
+    .to_string();
+    let agora = jwt::agora();
+    let tk = |c: Value| jwt_assinado(&par, &json!({"alg": "RS256", "kid": "g1"}), &c);
+    let post = |g: Arc<GoogleChat>, p: PedidoWebhook| bloq(move || g.post(&p).map(|_| ()));
+
+    // Modo numero do projeto (e a chave da URL configurada, que soma).
+    let g = monta("123456789012", true);
+    let projeto = json!({"iss": CONTA_DO_CHAT, "aud": "123456789012", "exp": agora + 600});
+    post(
+        g.clone(),
+        com_bearer(&tk(projeto.clone()), &ev, "chave=CHAVE-URL"),
+    )
+    .await
+    .unwrap();
+    let mut ruins = vec![
+        ("sem token", pedido(&[], "chave=CHAVE-URL", &ev)),
+        (
+            "chave da URL errada",
+            com_bearer(&tk(projeto.clone()), &ev, "chave=ERRADA"),
+        ),
+    ];
+    for (nome, c) in [
+        (
+            "outra audiencia",
+            json!({"iss": CONTA_DO_CHAT, "aud": "999", "exp": agora + 600}),
+        ),
+        (
+            "emissor do outro modo",
+            json!({"iss": "https://accounts.google.com", "aud": "123456789012", "exp": agora + 600}),
+        ),
+        (
+            "vencido",
+            json!({"iss": CONTA_DO_CHAT, "aud": "123456789012", "exp": agora - 400}),
+        ),
+    ] {
+        ruins.push((nome, com_bearer(&tk(c), &ev, "chave=CHAVE-URL")));
+    }
+    for (nome, p) in ruins {
+        assert_eq!(post(g.clone(), p).await.unwrap_err().0, 401, "{nome}");
+    }
+    let x = g.clone();
+    let l = bloq(move || x.receber(None, 0)).await.unwrap();
+    assert_eq!(so_mensagens(&l).len(), 1, "so o pedido bom entrou");
+    assert_eq!(so_mensagens(&l)[0].texto.as_deref(), Some("oi"));
+
+    // Modo URL do endpoint (ID token): o `email` assinado tem de ser o do Chat, verificado.
+    let url_ep = "https://agente.exemplo.com/canais/googlechat/webhook";
+    let g2 = monta(url_ep, false);
+    let oidc = |email: &str, verificado: bool| {
+        json!({"iss": "https://accounts.google.com", "aud": url_ep, "exp": agora + 600,
+            "email": email, "email_verified": verificado})
+    };
+    post(
+        g2.clone(),
+        com_bearer(&tk(oidc(CONTA_DO_CHAT, true)), &ev, ""),
+    )
+    .await
+    .unwrap();
+    for (nome, c) in [
+        ("outro email", oidc("alguem@gmail.com", true)),
+        ("email nao verificado", oidc(CONTA_DO_CHAT, false)),
+        (
+            "emissor do modo projeto",
+            json!({"iss": CONTA_DO_CHAT, "aud": url_ep, "exp": agora + 600}),
+        ),
+    ] {
+        let e = post(g2.clone(), com_bearer(&tk(c), &ev, ""))
+            .await
+            .unwrap_err();
+        assert_eq!(e, (401, "token nao confere".to_string()), "{nome}");
+    }
+
+    // A saida continua pelo webhook do espaco, e so dele.
+    let x = g.clone();
+    bloq(move || x.enviar("spaces/S", "ola")).await.unwrap();
+    let x = g.clone();
+    assert!(bloq(move || x.enviar("spaces/OUTRO", "ola")).await.is_err());
+    let log = log.lock().unwrap();
+    assert_eq!(log.len(), 1);
+    assert_eq!(log[0].param("token").as_deref(), Some(TOKEN));
+    assert_eq!(log[0].json(), json!({"text": "ola"}));
+    assert!(
+        arquivos_com(&dir, TOKEN).is_empty(),
+        "URL do webhook so no broker"
+    );
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+/// A montagem pelo ambiente: o Teams sobe sem a chave da URL (o JWT e a guarda), e o Google
+/// Chat NAO sobe sem audiencia -- dizendo qual variavel falta, em vez de subir sem conferir.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn teams_e_googlechat_montam_pelo_ambiente_com_o_jwt() {
+    use phxclaw_agent::canais::ligar::ligar;
+    let dir = tmp();
+    let amb: HashMap<String, String> = [
+        ("PHXCLAW_TEAMS_APP_ID", "app-1"),
+        ("PHXCLAW_TEAMS_APP_SECRET", TOKEN),
+        ("PHXCLAW_TEAMS_PERMITIDOS", "19:c1"),
+        (
+            "PHXCLAW_GOOGLECHAT_SAIDA_WEBHOOK",
+            "https://chat.googleapis.com/v1/x?key=K",
+        ),
+        ("PHXCLAW_GOOGLECHAT_ESPACO", "spaces/S"),
+        ("PHXCLAW_GOOGLECHAT_PERMITIDOS", "spaces/S"),
+    ]
+    .into_iter()
+    .map(|(a, b)| (a.to_string(), b.to_string()))
+    .collect();
+    let a = amb.clone();
+    let l = ligar(
+        "teams",
+        &dir.join("t"),
+        &move |k| a.get(k).cloned(),
+        registro().0,
+    )
+    .await
+    .unwrap();
+    assert!(l.rotas.is_some());
+    let a = amb.clone();
+    let e = ligar(
+        "googlechat",
+        &dir.join("g"),
+        &move |k| a.get(k).cloned(),
+        registro().0,
+    )
+    .await
+    .err()
+    .unwrap();
+    assert!(e.contains("PHXCLAW_GOOGLECHAT_AUDIENCIA"), "{e}");
+    let mut a = amb.clone();
+    a.insert("PHXCLAW_GOOGLECHAT_AUDIENCIA".into(), "123456789012".into());
+    assert!(
+        ligar(
+            "googlechat",
+            &dir.join("g"),
+            &move |k| a.get(k).cloned(),
+            registro().0
+        )
+        .await
+        .is_ok()
+    );
     let _ = std::fs::remove_dir_all(dir);
 }

@@ -244,6 +244,51 @@ Prova, contra um servidor XMPP falso (nenhum servidor MUC real foi exercitado):
 `na_sala_so_quem_abriu_a_tarefa_responde_a_pergunta_dela`) e os testes de unidade do
 `xmpp.rs` e do `canais/mod.rs`.
 
+### Canais Teams e Google Chat: o JWT RS256 de entrada
+
+Desde a SP000032 R1 (09/10/2026) a entrada dos dois canais confere o JWT RS256 que o serviço
+põe no `Authorization: Bearer` — a assinatura pela chave do JWKS do serviço, o emissor, a
+audiência e a validade (5 min de folga nos dois lados). **Não há como desligar**: sem token
+válido, o webhook responde 401 sem dizer o que errou. O RSA (só verificação, PKCS#1 v1.5 +
+SHA-256) é escrito aqui, sem crate nova: `crates/phxclaw-agent/src/canais/rsa.rs`, e o JWT em
+`canais/jwt.rs`.
+
+| Chave do catálogo | Variável | O que faz |
+| --- | --- | --- |
+| `canais.teams.app_id` | `PHXCLAW_TEAMS_APP_ID` | o App ID do bot; é a audiência (`aud`) exigida no token. |
+| `canais.teams.jwks` | `PHXCLAW_TEAMS_JWKS` | URL das chaves; vazio = `https://login.botframework.com/v1/.well-known/keys`. |
+| `canais.googlechat.audiencia` | `PHXCLAW_GOOGLECHAT_AUDIENCIA` | **obrigatória.** O número do projeto (token da conta `chat@system.gserviceaccount.com`) **ou** a URL `https://` do endpoint (ID token OIDC de `accounts.google.com`, com `email` = a conta do Chat e `email_verified`). O modo sai daqui, um só. |
+| `canais.googlechat.jwks` | `PHXCLAW_GOOGLECHAT_JWKS` | URL das chaves; vazio = a oficial do modo (`service_accounts/v1/jwk/chat@…` ou `oauth2/v3/certs`). |
+| `canais.teams.chave_url`, `canais.googlechat.chave_url` | `PHXCLAW_*_CHAVE_URL` | **agora opcional**: se configurada, a `?chave=` da URL continua conferida, **além** do token. |
+
+No Teams, além disso, o claim `serviceUrl` assinado tem de ser **igual** ao `serviceUrl` da
+Activity e a chave tem de estar endossada para o `channelId` dela; se não, 403 (o token é bom,
+mas não vale para aquele pedido). O caminho do Bot Framework Emulator (outro emissor) fica fora.
+
+**O que mudou para quem já tinha o canal ligado:** o Teams sobe como antes (o `APP_ID` já era
+obrigatório) e passa a recusar o webhook sem JWT válido — o Bot Framework sempre o manda. O
+Google Chat **não sobe** sem `PHXCLAW_GOOGLECHAT_AUDIENCIA` e diz que é ela que falta: subir
+sem audiência seria subir sem conferir.
+
+O JWKS fica em memória e se recarrega a cada 24 h e quando chega um `kid` desconhecido (no
+máximo uma vez por minuto — sem esse teto, cada `kid` inventado seria um pedido nosso ao
+serviço). JWKS vencido que não recarrega recusa com 503: a chave velha não é usada. Chave fora
+da política é pulada: só RSA de 2048 a 4096 bits com `e = 65537`.
+
+Prova: vetores oficiais em `crates/phxclaw-agent/tests/dados/rsa/` (Wycheproof
+`rsa_signature_2048_sha256_test.json`, 259 casos, e NIST CAVP SigVer15 SHA-256, 54 casos; o
+`extrair.py` de lá refaz os arquivos a partir dos originais e o cabeçalho de cada um traz a
+fonte, o SHA-256 do original e a licença) e, em `tests/canais.rs`,
+`rsa_pkcs1_sha256_contra_o_wycheproof`, `rsa_pkcs1_sha256_contra_o_nist_sigver15`,
+`chave_do_jwks_so_entra_com_2048_a_4096_bits_e_expoente_65537`,
+`teams_confere_o_jwt_rs256_do_bot_framework`,
+`jwks_recarrega_no_kid_novo_e_no_vencimento_e_falha_fechado`,
+`googlechat_confere_o_jwt_nos_dois_modos_e_sai_pelo_webhook_do_espaco` e
+`teams_e_googlechat_montam_pelo_ambiente_com_o_jwt`. Os tokens dos testes são assinados por
+um par RSA gerado na hora pelo `openssl` do sistema (nenhuma chave privada no repositório);
+sem `openssl`, esses testes registram o pulo. Nenhum token real da Microsoft ou do Google foi
+conferido ainda: a prova é contra servidor falso.
+
 ### Forjas (GitHub, GitLab)
 
 As ferramentas `github`/`gitlab` **não existem** antes do token guardado; `GITHUB_TOKEN` e

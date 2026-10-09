@@ -47,10 +47,10 @@ abaixo aparece em exatamente uma sprint.
 | SP000029 | 7 | Retomar e bifurcar pela gravação: `retomar --do-passo N`, passo humano no fluxo, pergunta pendente que sobrevive a reinício | — | PLANEJADA |
 | SP000030 | 7 | Medir melhor: nota parcial (LCS, conjunto) no avaliar, duração/tokens/passo-pai por passo, SHA do prompt, memória com invalid_at | — | CONCLUÍDA (02/10) |
 | SP000031 | 9 | VS Code de 53,8% a ≥ 90% (dono, 02/10): os 21 itens «não»/«pela metade» da fonte vscode, em ondas (git e projeto; editor e LSP; UI e remoto); os de produto sobem ao dono | 24 | CONCLUÍDA (02/10: VS Code 92,3%; os 4 «não» são de produto) |
-| SP000032 | 9 | Fechar em 100% (dono, 02/10): RSA para Teams/Google Chat, pacotes de plugin completos, XMPP MUC, Nostr DM, VS Code onda 2, minimapa/dobra, SSH local, Live Share; iMessage, voz ao vivo, RAPL e nuvem dependem de recurso do dono | 32 | PLANEJADA |
+| SP000032 | 9 | Fechar em 100% (dono, 02/10): RSA para Teams/Google Chat, pacotes de plugin completos, XMPP MUC, Nostr DM, VS Code onda 2, minimapa/dobra, SSH local, Live Share; iMessage, voz ao vivo, RAPL e nuvem dependem de recurso do dono | 32 | EM EXECUÇÃO (R1 RSA 09/10, R3 XMPP 02/10, R5 minimapa 09/10 feitos; dobra recusada com número) |
 | SP000033 | 9 | Integração total com o n8n (dono, 02/10): PhxClaw chama fluxos do n8n (webhook/REST, chave no broker) e o n8n chama o PhxClaw (nó da comunidade + MCP nos dois sentidos); prova real com n8n de verdade | — | EM EXECUÇÃO (código entregue 02/10; prova com n8n real NÃO VALIDADA: depende da máquina do dono) |
 | SP000034 | 9 | Prova de uso fora de desenvolvimento (dono, 02/10): monitor de passagens aéreas para a China — fluxo agendado, navegador/API, memória, aviso por canal; medido de verdade | — | EM EXECUÇÃO (prova no Google Flights VERIFICADA 02/10; aviso real depende da credencial do dono) |
-| SP000035 | 9 | PHX Flow Engine (dono, 02/10): o fluxos.rs vira motor de nós (ferramenta, agente, skill, MCP, comando, comportamento) com itens, condição, laço, espera e erro tratado — n8n como 7ª fonte, medido em 40,7%; editor visual é onda à parte | 35 | EM EXECUÇÃO (onda 1 entregue 02/10: itens, se/juntar/lote/parar_com_erro, ao_errar, tetos, expressões por caminho, fluxo_de_erro; onda 2 entregue 06/10: skill/mcp/comando como passo, sub-fluxo, --ate, gatilho→fluxo, variáveis; ondas 3–5 por fazer) |
+| SP000035 | 9 | PHX Flow Engine (dono, 02/10): o fluxos.rs vira motor de nós (ferramenta, agente, skill, MCP, comando, comportamento) com itens, condição, laço, espera e erro tratado — n8n como 7ª fonte, medido em 40,7%; editor visual é onda à parte | 35 | EM EXECUÇÃO (onda 1 entregue 02/10: itens, se/juntar/lote/parar_com_erro, ao_errar, tetos, expressões por caminho, fluxo_de_erro; onda 2 entregue 06/10: skill/mcp/comando como passo, sub-fluxo, --ate, gatilho→fluxo, variáveis; onda 3 entregue 09/10: esperar que descarrega, pin, poda, formulário, binário e teto por passo, mais 3 simples da onda 4; ondas 4 (resto) e 5 por fazer) |
 | SP000036 | 9 | Painel no molde do mockup do dono (02/10): paleta de comandos, menu por áreas, cartões de ação, projetos, modelos (só medido), skills, execuções, agenda, notificações, assistente; tokens da marca; nenhum número digitado | — | EM EXECUÇÃO (fase 1 entregue; fase 2 em lotes) |
 | UI-R01 | 8 | Phx Responsive UI — contratos e layout: intenção responsiva no UI-IR (janela e contêiner), breakpoints num JSON único, motor que compila para Grid/Flexbox/container queries, sem perder estado ao redimensionar | — | CONCLUÍDA (onda 7) |
 | UI-R02 | 8 | Adaptador Bootstrap substituível: componentes semânticos → Bootstrap 5.3, tokens do PhxClaw nas variáveis do Bootstrap, arquivo local com versão fixada, sem o JS do Bootstrap mexer no DOM controlado | — | CONCLUÍDA (onda 7) |
@@ -439,6 +439,16 @@ de 270). O que falta, por fonte, sai de `phxclaw.json` (estado ≠ agente):
 - **R1 criptografia RSA** — conferir o JWT RS256 do Bot Framework (Teams) e do Google Chat: RSA
   PKCS#1 v1.5 + SHA-256 escritos aqui (zero crate), provados contra vetor oficial (RFC 8017 / NIST
   CAVP), chave pública lida do JWKS; fecha `canal_teams` e `canal_googlechat` (3 fontes cada).
+  — **FEITO 09/10** (`canais/rsa.rs`, `canais/jwt.rs`, ligado em `teams.rs` e `googlechat.rs`):
+  Wycheproof `rsa_signature_2048_sha256` 9/9 válidos aceitos e 250/250 inválidos recusados (o 1
+  «acceptable» de BER conta como inválido: DER estrito), NIST SigVer15 SHA-256 9/9 e 45/45; RED com
+  a comparação do EM trocada por «acha o hash no fim»: 183 inválidos do Wycheproof e 9 do NIST
+  passam a ser aceitos. Custo: 1,4 ms por verificação de 2048 bits em release (o parecer
+  estimava ~7 ms), medido num banco descartável sobre os 259 casos — não há `--example` no
+  repositório que o refaça ainda. Os dois ids viram «agente»; o gerador imprimiu openclaw 94,9% (era 89,7),
+  hermes 95,0% (era 90,0), openjarvis 94,5% (era 90,9) no agente. Nenhum token real conferido
+  ainda (prova contra servidor falso); o Emulador do Bot Framework e a saída do Google Chat pela API
+  (que ASSINA RS256) ficam fora, com o motivo no `teams.rs` e no `googlechat.rs`.
 - **R2 pacotes de plugin completos** — `.claude-plugin`/`.codex-plugin` com comandos, skills, hooks e
   agentes, não só os servidores MCP; assinados, no bwrap; fecha `plugins` em 4 fontes.
 - **R3 canais** — `canal_xmpp` sala multiusuário (XEP-0045) — FEITO 02/10 (`canais/xmpp.rs`, `SALAS`/`APELIDO`); `canal_nostr` mensagem direta cifrada
@@ -448,6 +458,9 @@ de 270). O que falta, por fonte, sai de `phxclaw.json` (estado ≠ agente):
 - **R5 editor** — minimapa e dobra_codigo: patch próprio no Helix (arquivo `.patch` aplicado pelo
   `tools/instalar_helix.sh`, com teste de que aplica limpo no commit fixado), ou painel do IDE;
   o pesquisador decide com número. `remoto_ssh_containers` provado contra um sshd local.
+  **Minimapa FEITO 09/10** (painel no IDE web, `GET /v1/ide/arquivo` confinado à pasta;
+  `tests/ide_web.rs`, `tests/desktop/ide_minimapa.mjs`). **Dobra recusada com número**: o patch do
+  Helix (PR #14593) não aplica no 25.07.1 e o #16305 foi fechado (`docs/propostas/sp32-r5-r1-pesquisa.md`).
 - **R6 live_share** — edição colaborativa pela ponte: sessão compartilhada do terminal do IDE
   (um host, N convidados, cursor e edição do host visíveis). Edição simultânea (CRDT) fica declarada
   como limite se não couber.
@@ -462,7 +475,7 @@ de 270). O que falta, por fonte, sai de `phxclaw.json` (estado ≠ agente):
 imprime 100% por fonte. Nada digitado.
 
 
-## SP000035 — PHX Flow Engine (ordem do dono, 02/10/2026) — EM EXECUÇÃO (ondas 1 e 2 entregues)
+## SP000035 — PHX Flow Engine (ordem do dono, 02/10/2026) — EM EXECUÇÃO (ondas 1, 2 e 3 entregues)
 
 **Fonte primária.** `git clone --depth 1 --filter=blob:none --sparse` de `github.com/n8n-io/n8n`
 funcionou de primeira pelo proxy (commit `56aa3d8`, `packages/workflow` 2.42.0, 23 MB) e o mesmo para
@@ -501,6 +514,43 @@ com as boas e marcam a que falhou (o `continueOnFail` do n8n). Achado na escrita
 `{"config": "chave.inexistente"}` numa variável derrubava o processo em pânico (o
 `Configuracao::valor` trata chave desconhecida como erro de programação) — hoje é recusa na
 leitura. RED medido em 9 testes (8 da onda 2 + `laco_lotes`).
+
+**Medido depois da onda 3 (gerar_absorcao.py, 09/10):** n8n **76,3% no agente | 83,9% com
+bibliotecas** (45 sim, 9 pela metade, 5 não, de 59). +13,6 pp = 8 ids × 1,69: os 5 da onda 3
+(espera_wait, dados_pinados, poda_execucoes, gatilho_formulario, dados_binarios) e 3 simples da
+onda 4 (cli_importar_exportar, etiquetas_pastas, concorrencia_limite), cada um com teste nomeado
+pelo id em `tests/fluxo_onda3.rs` (11 testes, um deles o comportamento VELHO e outro a poda sem
+configuração). RED medido em 7 (espera_wait, dados_pinados, poda_execucoes, gatilho_formulario,
+dados_binarios, cli_importar_exportar, concorrencia_limite), com o defeito reposto e o motivo da
+queda conferido; etiquetas_pastas diz a linha e não foi reposto.
+
+Decisões da onda 3, com a restrição nossa que as causou:
+- **A espera descarrega SEMPRE** (o `Wait` do n8n segura em memória a de menos de 65 s): a
+  promessa é sobreviver ao reinício, e a espera curta em memória é a que o reinício perde. O
+  alicerce é o da SP000029 — `AwaitingInput`, o `question` e a rota `/v1/tasks/{id}/answer` —,
+  mas a resposta é GRAVADA no passo antes de retomar, porque o `perguntas::responder` vive em
+  memória e não acha ninguém depois do reinício. A definição vai para `fluxo.json` na pasta da
+  tarefa (fora de `work/`), e o vencimento de `ms` é gravado na abertura.
+- **Segredo da espera de webhook: só o sha256 mora no fluxo.** O operador dá o segredo a quem
+  chama e grava o hash; nem o fluxo, nem o relatório, nem o `fluxo.json` o carregam.
+- **Formulário é o gatilho de webhook cujo fluxo declara `formulario`** — mesma rota, mesmo
+  portão (o segredo chega pelo campo `_segredo`, que o navegador sabe mandar e que não vira
+  item). HTML mínimo do servidor, sem script; os textos são os que o fluxo declara.
+- **Formato 3 só quando usado** (passo esperando ou saída externa): relatório sem os recursos
+  novos continua formato 2, e o binário anterior o retoma.
+- **Etiqueta fica fora da assinatura; pin entra.** Reetiquetar não invalida execução esperando;
+  trocar o pin é trocar o que o passo devolve.
+
+Hipótese que morreu: **«reusar o `perguntas::registrar`/`responder` para a espera humana»**. Ele
+é um `oneshot` em memória; um fluxo que descarrega não tem quem segure o receptor, e a resposta
+que chega depois do reinício cairia em «nenhuma execução esperando neste processo». O que se
+reusa da SP000029 é o estado (`AwaitingInput` + `question`) e a rota; o canal em memória fica
+para o laço do modelo, que ainda segura a conversa viva.
+
+Fora da onda 3, com o motivo: marcar a origem do item para o portão recusar `args` inteiros
+vindos de fora (pendência da onda 1, não é id do n8n); `prazo` da espera humana (a pergunta pode
+esperar para sempre; hoje só a poda não a toca, de propósito); upload de arquivo no formulário
+(multipart); fila_workers e observabilidade_insights da onda 4 (pedem número de bancada).
 
 ### O que o `fluxos.rs` já é (470 linhas, lido)
 
@@ -542,9 +592,11 @@ ferramenta pelo `Agent::call_tool` — **o portão único**. Progresso gravado n
 3. **Espera, humano e dados pinados:** passo `esperar` (tempo, webhook, resposta) que descarrega para o
    disco — depende da SP000029; pin escolhido; poda de tarefas por idade/contagem; formulário servido.
    Fecha: espera_wait, dados_pinados, poda_execucoes, gatilho_formulario, dados_binarios (5 ids).
+   **Entregue 09/10** (+ os 3 simples da onda 4 abaixo).
 4. **Escala e gestão (só com número da bancada):** fila com workers pelas bibliotecas que já existem;
    limite global; etiquetas/pastas; export/import; `/metrics`. Fecha: fila_workers, concorrencia_limite,
-   etiquetas_pastas, cli_importar_exportar, observabilidade_insights.
+   etiquetas_pastas, cli_importar_exportar, observabilidade_insights. **Entregues 09/10, junto da
+   onda 3:** concorrencia_limite, etiquetas_pastas, cli_importar_exportar.
 5. **Editor visual — onda à parte, declarada e não iniciada:** xyflow recusado (R20); a opção é canvas
    próprio em SVG como o UI-IR já faz, lendo o mesmo JSON do fluxo e mostrando o relatório da execução
    (passo ok/falhou/bloqueado/reaproveitado). Entra depois da onda 1, porque desenhar um motor de

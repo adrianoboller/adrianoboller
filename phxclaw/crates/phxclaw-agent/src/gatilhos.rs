@@ -28,6 +28,7 @@
 use crate::api::{ApiState, Criada, Recusa, criar_fluxo_com, criar_tarefa_com};
 use axum::extract::{Path as Caminho, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
+use axum::response::Html;
 use axum::response::{IntoResponse, Response};
 use axum::routing::post;
 use axum::{Json, Router};
@@ -230,10 +231,9 @@ impl Gatilhos {
             } else {
                 PathBuf::from(f)
             };
-            // Lido ao carregar: fluxo invalido para aqui, nao no primeiro disparo.
-            let t = std::fs::read_to_string(&caminho)
-                .map_err(|e| format!("{}: gatilho: fluxo {f}: {e}", arq.display()))?;
-            crate::fluxos::ler(&t)
+            // Lido ao carregar (com os pins ao lado): fluxo invalido para aqui, nao no
+            // primeiro disparo.
+            crate::fluxos::ler_arquivo(&caminho)
                 .map_err(|e| format!("{}: gatilho: fluxo {f}: {e}", arq.display()))?;
         }
         for a in &mut g.arquivos {
@@ -437,11 +437,212 @@ struct EstadoWebhook {
     gatilhos: Arc<Gatilhos>,
 }
 
-/// `POST /v1/triggers/{nome}`: some no `router` da API pelo `merge`.
+/// `POST /v1/triggers/{nome}` (e o `GET` do formulario, quando o fluxo declara um) e
+/// `POST /v1/flows/{tarefa}/resume` (a espera de webhook): somem no `router` da API pelo
+/// `merge`.
 pub fn router(api: ApiState, gatilhos: Arc<Gatilhos>) -> Router {
     Router::new()
-        .route("/v1/triggers/{nome}", post(webhook))
+        .route("/v1/triggers/{nome}", post(webhook).get(formulario))
+        .route("/v1/flows/{tarefa}/resume", post(retomar_espera))
         .with_state(EstadoWebhook { api, gatilhos })
+}
+
+/// O portao UNICO dos gatilhos: o token da API, ou o segredo do gatilho em claro
+/// (`X-PhxClaw-Segredo`, ou o campo `_segredo` de um formulario, que o navegador nao sabe
+/// mandar em cabecalho), ou a assinatura sobre o corpo cru. O segredo passa pela MESMA
+/// conferencia de tempo constante do Bearer.
+fn portao(
+    segredo_do_gatilho: Option<&str>,
+    token: &str,
+    h: &HeaderMap,
+    corpo: &[u8],
+    segredo_no_corpo: Option<&str>,
+) -> bool {
+    let pelo_segredo = segredo_do_gatilho.is_some_and(|seg| {
+        let mandado = h
+            .get("x-phxclaw-segredo")
+            .and_then(|v| v.to_str().ok())
+            .or(segredo_no_corpo);
+        let mut falso = HeaderMap::new();
+        mandado
+            .and_then(|v| HeaderValue::from_str(&format!("Bearer {v}")).ok())
+            .map(|v| falso.insert(header::AUTHORIZATION, v));
+        phxclaw_api_gateway::authorized(&falso, seg)
+    });
+    let pela_assinatura = segredo_do_gatilho.is_some_and(|seg| assinatura_confere(seg, h, corpo));
+    pelo_segredo || pela_assinatura || phxclaw_api_gateway::authorized(h, token)
+}
+
+/// O fluxo do gatilho, quando ele declara formulario.
+fn fluxo_com_formulario(g: &GatilhoDeWebhook) -> Option<crate::fluxos::Fluxo> {
+    let f = crate::fluxos::ler_arquivo(Path::new(g.fluxo.as_deref()?)).ok()?;
+    f.formulario.is_some().then_some(f)
+}
+
+fn escapar(t: &str) -> String {
+    t.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&#39;")
+}
+
+/// O HTML minimo do formulario: so os textos que o fluxo declarou (titulo, rotulos, botao)
+/// e nenhum script -- de terceiros ou nosso. Sem pagina da fabrica de idiomas para ele: o
+/// texto e do operador que escreveu o fluxo, como o objetivo de um gatilho.
+pub fn html_do_formulario(
+    form: &crate::fluxos::Formulario,
+    acao: &str,
+    pede_segredo: bool,
+) -> String {
+    let mut h = String::new();
+    h.push_str("<!doctype html><html><head><meta charset=\"utf-8\">");
+    h.push_str("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">");
+    h.push_str(&format!(
+        "<title>{}</title></head><body>",
+        escapar(&form.titulo)
+    ));
+    h.push_str(&format!("<h1>{}</h1>", escapar(&form.titulo)));
+    if let Some(d) = &form.descricao {
+        h.push_str(&format!("<p>{}</p>", escapar(d)));
+    }
+    h.push_str(&format!(
+        "<form method=\"post\" action=\"{}\" accept-charset=\"utf-8\">",
+        escapar(acao)
+    ));
+    for c in &form.campos {
+        let rotulo = escapar(c.rotulo.as_deref().unwrap_or(&c.nome));
+        let nome = escapar(&c.nome);
+        let req = if c.obrigatorio { " required" } else { "" };
+        h.push_str(&format!("<p><label for=\"{nome}\">{rotulo}</label><br>"));
+        match c.tipo.as_deref().unwrap_or("texto") {
+            "area" => h.push_str(&format!(
+                "<textarea id=\"{nome}\" name=\"{nome}\"{req}></textarea>"
+            )),
+            t => {
+                let tipo = match t {
+                    "numero" => "number\" step=\"any",
+                    "email" => "email",
+                    "data" => "date",
+                    _ => "text",
+                };
+                h.push_str(&format!(
+                    "<input id=\"{nome}\" name=\"{nome}\" type=\"{tipo}\"{req}>"
+                ));
+            }
+        }
+        h.push_str("</p>");
+    }
+    if pede_segredo {
+        h.push_str("<p><label for=\"_segredo\">segredo</label><br>");
+        h.push_str("<input id=\"_segredo\" name=\"_segredo\" type=\"password\" required></p>");
+    }
+    h.push_str(&format!(
+        "<p><button type=\"submit\">{}</button></p></form></body></html>",
+        escapar(form.botao.as_deref().unwrap_or("Enviar"))
+    ));
+    h
+}
+
+/// `application/x-www-form-urlencoded` -> pares, na ordem. `+` e espaco; `%XX` e byte.
+pub fn decodificar_formulario(corpo: &str) -> Vec<(String, String)> {
+    fn dec(t: &str) -> String {
+        let b = t.as_bytes();
+        let mut v = Vec::with_capacity(b.len());
+        let mut i = 0;
+        while i < b.len() {
+            match b[i] {
+                b'+' => v.push(b' '),
+                // Pelos bytes, nunca fatiando o texto: `%` seguido de caractere de varios
+                // bytes cortaria no meio dele.
+                b'%' if i + 2 < b.len() => {
+                    let hex = |c: u8| (c as char).to_digit(16);
+                    match (hex(b[i + 1]), hex(b[i + 2])) {
+                        (Some(a), Some(z)) => {
+                            v.push((a * 16 + z) as u8);
+                            i += 2;
+                        }
+                        _ => v.push(b'%'),
+                    }
+                }
+                x => v.push(x),
+            }
+            i += 1;
+        }
+        String::from_utf8_lossy(&v).into_owned()
+    }
+    corpo
+        .split('&')
+        .filter(|p| !p.is_empty())
+        .map(|p| match p.split_once('=') {
+            Some((k, v)) => (dec(k), dec(v)),
+            None => (dec(p), String::new()),
+        })
+        .collect()
+}
+
+/// `GET /v1/triggers/{nome}`: o formulario que o fluxo do gatilho declara. A pagina so
+/// mostra os rotulos que o operador escreveu; DISPARAR passa pelo portao, no `POST`.
+async fn formulario(State(e): State<EstadoWebhook>, Caminho(nome): Caminho<String>) -> Response {
+    let Some(g) = e.gatilhos.webhooks.iter().find(|w| w.nome == nome) else {
+        return (StatusCode::NOT_FOUND, "gatilho inexistente").into_response();
+    };
+    let Some(f) = fluxo_com_formulario(g) else {
+        return (StatusCode::NOT_FOUND, "gatilho sem formulario").into_response();
+    };
+    let form = f.formulario.as_ref().expect("conferido acima");
+    Html(html_do_formulario(
+        form,
+        &format!("/v1/triggers/{nome}"),
+        g.segredo.is_some(),
+    ))
+    .into_response()
+}
+
+/// `POST /v1/flows/{tarefa}/resume`: entrega o corpo a espera de webhook e retoma o fluxo
+/// do disco. Passa pelo token da API ou pelo segredo cujo sha256 a espera guarda.
+async fn retomar_espera(
+    State(e): State<EstadoWebhook>,
+    Caminho(tarefa): Caminho<String>,
+    h: HeaderMap,
+    corpo: String,
+) -> Response {
+    let resp = |st: StatusCode, msg: &str| (st, Json(json!({"error": msg}))).into_response();
+    let Some(t) = e.api.store.load(&tarefa).ok() else {
+        return resp(StatusCode::NOT_FOUND, "tarefa inexistente");
+    };
+    let Some((_, a)) = crate::fluxos::espera_aberta(&t).filter(|(_, a)| a.tipo == "webhook") else {
+        // A mesma resposta para «nao existe espera» e «nao autorizado» seria mais opaca,
+        // mas a existencia da tarefa ja e publica pelo id que o chamador tem.
+        return resp(StatusCode::CONFLICT, "tarefa sem espera de webhook aberta");
+    };
+    let pelo_segredo = h
+        .get("x-phxclaw-segredo")
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|s| crate::fluxos::segredo_da_espera_confere(&a, s));
+    if !pelo_segredo && !phxclaw_api_gateway::authorized(&h, &e.api.token) {
+        return resp(
+            StatusCode::UNAUTHORIZED,
+            "token ou segredo ausente ou invalido",
+        );
+    }
+    if corpo.len() > CORPO_MAX {
+        return resp(StatusCode::PAYLOAD_TOO_LARGE, "corpo passa do teto");
+    }
+    let itens = if corpo.trim().is_empty() {
+        vec![json!({})]
+    } else {
+        crate::fluxos::itens_de_texto(&corpo)
+    };
+    if let Err(x) =
+        crate::fluxos::entregar(&e.api.store, &tarefa, crate::fluxos::Via::Webhook, itens)
+    {
+        return resp(StatusCode::BAD_REQUEST, &x);
+    }
+    match crate::api::retomar_fluxo(&e.api, &tarefa) {
+        Ok(_) => (StatusCode::ACCEPTED, Json(json!({"id": tarefa}))).into_response(),
+        Err(r) => resp(r.status, &r.erro),
+    }
 }
 
 async fn webhook(
@@ -454,20 +655,61 @@ async fn webhook(
     let Some(g) = e.gatilhos.webhooks.iter().find(|w| w.nome == nome) else {
         return resp(StatusCode::NOT_FOUND, "gatilho inexistente");
     };
-    // O segredo do gatilho passa pela MESMA conferencia de tempo constante do Bearer.
-    let pelo_segredo = g.segredo.as_deref().is_some_and(|seg| {
-        let mut falso = HeaderMap::new();
-        h.get("x-phxclaw-segredo")
-            .and_then(|v| v.to_str().ok())
-            .and_then(|v| HeaderValue::from_str(&format!("Bearer {v}")).ok())
-            .map(|v| falso.insert(header::AUTHORIZATION, v));
-        phxclaw_api_gateway::authorized(&falso, seg)
-    });
-    let pela_assinatura = g
-        .segredo
-        .as_deref()
-        .is_some_and(|seg| assinatura_confere(seg, &h, corpo.as_bytes()));
-    if !pelo_segredo && !pela_assinatura && !phxclaw_api_gateway::authorized(&h, &e.api.token) {
+    // O formulario: o mesmo gatilho, o mesmo portao e o mesmo `criar_fluxo_com`; o que
+    // muda e que o corpo e conferido contra os campos que o fluxo declarou, e o que passa
+    // do teto e recusado inteiro (cortar um formulario e mudar o que a pessoa escreveu).
+    let e_formulario = h
+        .get(header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|c| c.starts_with("application/x-www-form-urlencoded"));
+    if e_formulario && let Some(f) = fluxo_com_formulario(g) {
+        if corpo.len() > CORPO_MAX {
+            return resp(StatusCode::PAYLOAD_TOO_LARGE, "formulario passa do teto");
+        }
+        let mut pares = decodificar_formulario(&corpo);
+        let segredo = pares
+            .iter()
+            .position(|(k, _)| k == "_segredo")
+            .map(|i| pares.remove(i).1);
+        if !portao(
+            g.segredo.as_deref(),
+            &e.api.token,
+            &h,
+            corpo.as_bytes(),
+            segredo.as_deref(),
+        ) {
+            return resp(
+                StatusCode::UNAUTHORIZED,
+                "token ou segredo ausente ou invalido",
+            );
+        }
+        let form = f.formulario.as_ref().expect("conferido acima");
+        let item = match crate::fluxos::item_do_formulario(form, &pares) {
+            Ok(i) => i,
+            Err(x) => return resp(StatusCode::BAD_REQUEST, &x),
+        };
+        let arq = g.fluxo.as_deref().unwrap_or_default();
+        return match criar_fluxo_com(&e.api, arq, vec![item], |_| Ok(())) {
+            Ok(c) => (
+                StatusCode::ACCEPTED,
+                Html(format!(
+                    "<!doctype html><html><head><meta charset=\"utf-8\"><title>{t}</title></head>\
+<body><h1>{t}</h1><p>{id}</p></body></html>",
+                    t = escapar(&form.titulo),
+                    id = escapar(&c.id)
+                )),
+            )
+                .into_response(),
+            Err(r) => resp(r.status, &r.erro),
+        };
+    }
+    if !portao(
+        g.segredo.as_deref(),
+        &e.api.token,
+        &h,
+        corpo.as_bytes(),
+        None,
+    ) {
         return resp(
             StatusCode::UNAUTHORIZED,
             "token ou segredo ausente ou invalido",

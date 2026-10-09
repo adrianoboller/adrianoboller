@@ -417,3 +417,92 @@ async fn a_completacao_por_ia_vem_do_modelo_do_agente_e_exige_bearer() {
         401
     );
 }
+
+/// O minimapa da tela le o arquivo aberto no Helix pelo agente: so dentro da pasta do projeto
+/// (o MESMO `confine` das ferramentas), so com o Bearer, e com teto de bytes.
+#[tokio::test(flavor = "multi_thread")]
+async fn o_arquivo_do_minimapa_fica_na_pasta_do_projeto_exige_bearer_e_tem_teto() {
+    use phxclaw_agent::ide::TETO_DO_ARQUIVO;
+    let _serial = UM_DE_CADA_VEZ.lock().await;
+    let proj = projeto_de_teste("minimapa");
+    // O segredo mora AO LADO do projeto: e o alvo do `../`.
+    let fora = Pasta::nova("minimapa-fora");
+    std::fs::write(fora.path().join("segredo.txt"), "nao sai daqui\n").unwrap();
+    let rel_fora = format!(
+        "../{}/segredo.txt",
+        fora.path().file_name().unwrap().to_string_lossy()
+    );
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(
+        fora.path().join("segredo.txt"),
+        proj.path().join("atalho.txt"),
+    )
+    .unwrap();
+    let (base, _dir) = subir(proj.path(), "minimapa").await;
+    let c = reqwest::Client::new();
+    let pedir = |q: String| {
+        let c = c.clone();
+        let url = format!("http://{base}/v1/ide/arquivo?caminho={q}");
+        async move { c.get(url).bearer_auth(TOKEN).send().await.unwrap() }
+    };
+
+    // Sem Bearer: 401, antes de tocar no disco.
+    let r = c
+        .get(format!("http://{base}/v1/ide/arquivo?caminho=src/main.rs"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 401);
+
+    // Dentro da pasta: o texto como esta em disco e a contagem de linhas.
+    let r = pedir("src/main.rs".into()).await;
+    assert_eq!(r.status(), 200);
+    let v: Value = r.json().await.unwrap();
+    assert_eq!(v["linhas"], 4, "{v}");
+    assert!(v["texto"].as_str().unwrap().starts_with("fn soma("), "{v}");
+
+    // Fora da pasta, por tres portas: `../`, absoluto e symlink. Nenhuma devolve o texto.
+    let absoluto = fora.path().join("segredo.txt").display().to_string();
+    let mut portas = vec![
+        rel_fora.clone(),
+        format!("src/../{rel_fora}"),
+        absoluto,
+        "/etc/passwd".into(),
+    ];
+    if cfg!(unix) {
+        portas.push("atalho.txt".into());
+    }
+    for q in portas {
+        let r = pedir(q.clone()).await;
+        let st = r.status();
+        let corpo = r.text().await.unwrap();
+        assert_eq!(st, 403, "{q}: {corpo}");
+        assert!(!corpo.contains("nao sai daqui"), "{q}: {corpo}");
+    }
+
+    // Pasta nao e arquivo; binario nao vira minimapa.
+    assert_eq!(pedir("src".into()).await.status(), 422);
+    std::fs::write(proj.path().join("bin.dat"), [0u8, 1, 2, 3]).unwrap();
+    assert_eq!(pedir("bin.dat".into()).await.status(), 415);
+
+    // O teto: exatamente o teto passa; um byte acima e 413.
+    let linha = "x".repeat(63) + "\n";
+    let cheio = linha.repeat((TETO_DO_ARQUIVO / 64) as usize);
+    assert_eq!(cheio.len() as u64, TETO_DO_ARQUIVO);
+    std::fs::write(proj.path().join("no_teto.txt"), &cheio).unwrap();
+    std::fs::write(proj.path().join("acima.txt"), cheio + "y").unwrap();
+    assert_eq!(pedir("no_teto.txt".into()).await.status(), 200);
+    let r = pedir("acima.txt".into()).await;
+    assert_eq!(r.status(), 413);
+    let v: Value = r.json().await.unwrap();
+    assert!(v["error"].as_str().unwrap().contains("teto"), "{v}");
+
+    // O nome antigo do parametro (o do `simbolos`) tambem serve.
+    let r = c
+        .get(format!("http://{base}/v1/ide/arquivo?arquivo=src/main.rs"))
+        .bearer_auth(TOKEN)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 200);
+}

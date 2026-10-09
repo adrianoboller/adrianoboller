@@ -459,6 +459,11 @@ async fn servir(args: &[String]) -> Result<()> {
             if n > 0 {
                 println!("agenda: {n} tarefa(s) disparada(s)");
             }
+            // Esperas de tempo vencidas e poda das execucoes: o mesmo laco, sem outro relogio.
+            let r = phxclaw_agent::api::manter_fluxos(&agenda_state);
+            if !r.is_empty() {
+                println!("fluxos: {} espera(s) vencida(s) retomada(s)", r.len());
+            }
         }
     });
     let gatilhos = armar_gatilhos(&raiz, &state)?;
@@ -951,47 +956,194 @@ async fn subir_dispositivos(
 }
 
 /// `phxclaw fluxo rodar ARQ`: o fluxo declarativo pelo motor do agente
-/// (`phxclaw_agent::fluxos`), o mesmo que qualquer outra entrada usaria.
+/// (`phxclaw_agent::fluxos`), o mesmo que qualquer outra entrada usaria. Os subcomandos de
+/// gestao (onda 3 e 4 da SP000035) sao porta fina para as funcoes do motor: nenhum decide
+/// nada que a API ou o servidor decidam de outro jeito.
 async fn fluxo(args: &[String]) -> Result<()> {
-    const USO: &str = "uso: phxclaw fluxo rodar ARQ.json [--ate PASSO] | retomar TAREFA ARQ.json \
-[--modelo M] [--pasta DIR]";
-    let (arq, retomada) = match (args.first().map(String::as_str), args.get(1), args.get(2)) {
-        (Some("rodar" | "run"), Some(arq), _) => (arq, None),
-        (Some("retomar" | "resume"), Some(t), Some(arq)) => (arq, Some(t.clone())),
-        _ => bail!("{USO}"),
-    };
-    // `--ate PASSO`: so ate o passo (inclusive), com o progresso gravado como a retomada
-    // ja grava -- `retomar` continua dali. So no `rodar`: retomar ja sabe onde parou.
-    let ate = opcao(args, "--ate");
-    if ate.is_some() && retomada.is_some() {
-        bail!("--ate so vale no rodar; retomar continua de onde o rodar parou");
+    use phxclaw_agent::fluxos;
+    const USO: &str = "uso: phxclaw fluxo rodar ARQ.json [--ate PASSO] | retomar TAREFA [ARQ.json] \
+| responder TAREFA TEXTO | esperas | pinar ARQ.json PASSO (--json VALOR | --tarefa T) | despinar \
+ARQ.json PASSO | podar [--dias N] [--max N] | exportar ARQ.json [--saida PACOTE.json] | importar \
+PACOTE.json DESTINO.json | listar [DIR] [--etiqueta E] [--subpasta P]  [--modelo M] [--pasta DIR]";
+    let sub = args.first().map(String::as_str).unwrap_or_default();
+    let posicional = |i: usize| -> Option<&String> { args.get(i).filter(|a| !a.starts_with("--")) };
+    match sub {
+        "pinar" | "pin" | "despinar" | "unpin" => {
+            let (Some(arq), Some(passo)) = (posicional(1), posicional(2)) else {
+                bail!("{USO}");
+            };
+            let valor = if matches!(sub, "despinar" | "unpin") {
+                None
+            } else if let Some(j) = opcao(args, "--json") {
+                Some(serde_json::from_str(&j).map_err(|e| anyhow::anyhow!("--json: {e}"))?)
+            } else if let Some(t) = opcao(args, "--tarefa") {
+                let store = TaskStore::new(pasta(args).join("tasks"))?;
+                Some(fluxos::saida_para_pin(&store, &t, passo).map_err(anyhow::Error::msg)?)
+            } else {
+                bail!("{USO}");
+            };
+            let pinou = valor.is_some();
+            fluxos::pinar(Path::new(arq), passo, valor).map_err(anyhow::Error::msg)?;
+            println!(
+                "{} {passo} em {}",
+                if pinou { "pinado" } else { "despinado" },
+                fluxos::arquivo_de_pins(Path::new(arq)).display()
+            );
+            return Ok(());
+        }
+        "podar" | "prune" => {
+            let num = |k: &str| -> Result<Option<u64>> {
+                opcao(args, k)
+                    .map(|v| v.parse::<u64>())
+                    .transpose()
+                    .map_err(Into::into)
+            };
+            let mut poda = fluxos::Poda::do_config();
+            if let Some(d) = num("--dias")? {
+                poda.dias = Some(d).filter(|d| *d > 0);
+            }
+            if let Some(m) = num("--max")? {
+                poda.max = usize::try_from(m).ok().filter(|m| *m > 0);
+            }
+            if !poda.ligada() {
+                println!(
+                    "poda desligada (fluxos.poda_dias e fluxos.poda_max vazios): nada apagado"
+                );
+                return Ok(());
+            }
+            let store = TaskStore::new(pasta(args).join("tasks"))?;
+            let p = fluxos::podar(&store, poda, fluxos::agora());
+            println!("{} tarefa(s) apagada(s)", p.removidas.len());
+            for e in &p.erros {
+                eprintln!("  erro: {e}");
+            }
+            if !p.erros.is_empty() {
+                std::process::exit(2);
+            }
+            return Ok(());
+        }
+        "exportar" | "export" => {
+            let Some(arq) = posicional(1) else {
+                bail!("{USO}")
+            };
+            let f = fluxos::ler_arquivo(Path::new(arq)).map_err(anyhow::Error::msg)?;
+            let pacote = serde_json::to_string_pretty(&fluxos::exportar(&f))?;
+            match opcao(args, "--saida") {
+                Some(s) => {
+                    std::fs::write(&s, pacote)?;
+                    println!("pacote do fluxo {} em {s}", f.nome);
+                }
+                None => println!("{pacote}"),
+            }
+            return Ok(());
+        }
+        "importar" | "import" => {
+            let (Some(pacote), Some(destino)) = (posicional(1), posicional(2)) else {
+                bail!("{USO}");
+            };
+            let f =
+                fluxos::importar(&std::fs::read_to_string(pacote)?).map_err(anyhow::Error::msg)?;
+            fluxos::gravar_importado(&f, Path::new(destino)).map_err(anyhow::Error::msg)?;
+            println!("fluxo {} importado em {destino}", f.nome);
+            return Ok(());
+        }
+        "listar" | "list" => {
+            let dir = posicional(1)
+                .map(PathBuf::from)
+                .unwrap_or_else(|| pasta(args).join("fluxos"));
+            let (achados, erros) = fluxos::listar(
+                &dir,
+                opcao(args, "--etiqueta").as_deref(),
+                opcao(args, "--subpasta").as_deref(),
+            );
+            for f in &achados {
+                println!(
+                    "  {:<24} {:<12} [{}]  {}",
+                    f.nome,
+                    f.pasta,
+                    f.etiquetas.join(", "),
+                    f.arquivo.display()
+                );
+            }
+            for e in &erros {
+                eprintln!("  invalido: {e}");
+            }
+            println!("{} fluxo(s)", achados.len());
+            return Ok(());
+        }
+        _ => {}
     }
-    let f =
-        phxclaw_agent::fluxos::ler(&std::fs::read_to_string(arq)?).map_err(anyhow::Error::msg)?;
     let modelo = opcao(args, "--modelo").unwrap_or_else(|| MODELO_PADRAO.into());
     let store = TaskStore::new(pasta(args).join("tasks"))?;
-    let agente = Montagem::new(store)
-        .agent(&modelo)
-        .map_err(anyhow::Error::msg)?;
-    println!(
-        "fluxo {} ({} passos), modelo {modelo}",
-        f.nome,
-        f.passos.len()
-    );
-    let r = match (&retomada, &ate) {
-        (None, None) => phxclaw_agent::fluxos::rodar(&agente, &f).await,
-        (None, Some(a)) => {
-            phxclaw_agent::fluxos::rodar_com(
-                &agente,
+    let agente = || {
+        Montagem::new(store.clone())
+            .agent(&modelo)
+            .map_err(anyhow::Error::msg)
+    };
+    let r = match sub {
+        "rodar" | "run" => {
+            let Some(arq) = posicional(1) else {
+                bail!("{USO}")
+            };
+            let f = fluxos::ler_arquivo(Path::new(arq)).map_err(anyhow::Error::msg)?;
+            println!(
+                "fluxo {} ({} passos), modelo {modelo}",
+                f.nome,
+                f.passos.len()
+            );
+            // `--ate PASSO`: so ate o passo (inclusive), com o progresso gravado como a
+            // retomada ja grava -- `retomar` continua dali.
+            fluxos::rodar_com(
+                &agente()?,
                 &f,
-                phxclaw_agent::fluxos::Execucao {
-                    ate: Some(a),
-                    ..phxclaw_agent::fluxos::Execucao::default()
+                fluxos::Execucao {
+                    ate: opcao(args, "--ate").as_deref(),
+                    ..fluxos::Execucao::default()
                 },
             )
             .await
         }
-        (Some(t), _) => phxclaw_agent::fluxos::retomar(&agente, &f, t).await,
+        "retomar" | "resume" => {
+            let Some(t) = posicional(1) else {
+                bail!("{USO}")
+            };
+            if opcao(args, "--ate").is_some() {
+                bail!("--ate so vale no rodar; retomar continua de onde o rodar parou");
+            }
+            match posicional(2) {
+                Some(arq) => {
+                    let f = fluxos::ler_arquivo(Path::new(arq)).map_err(anyhow::Error::msg)?;
+                    fluxos::retomar(&agente()?, &f, t).await
+                }
+                // Sem o arquivo: a definicao que a espera gravou na pasta da tarefa.
+                None => fluxos::retomar_do_disco(&agente()?, t).await,
+            }
+        }
+        "responder" | "answer" => {
+            let (Some(t), Some(texto)) = (posicional(1), posicional(2)) else {
+                bail!("{USO}");
+            };
+            fluxos::entregar(
+                &store,
+                t,
+                fluxos::Via::Pergunta,
+                vec![serde_json::json!({"resposta": texto.trim()})],
+            )
+            .map_err(anyhow::Error::msg)?;
+            fluxos::retomar_do_disco(&agente()?, t).await
+        }
+        "esperas" | "waits" => {
+            let vencidas = fluxos::esperas_vencidas(&store, fluxos::agora());
+            println!("{} espera(s) de tempo vencida(s)", vencidas.len());
+            for t in vencidas {
+                match fluxos::retomar_do_disco(&agente()?, &t).await {
+                    Ok(r) => println!("  {t}: {}", if r.sucesso { "ok" } else { "nao terminou" }),
+                    Err(e) => eprintln!("  {t}: {e}"),
+                }
+            }
+            return Ok(());
+        }
+        _ => bail!("{USO}"),
     }
     .map_err(anyhow::Error::msg)?;
     for p in &r.passos {
@@ -1000,12 +1152,29 @@ async fn fluxo(args: &[String]) -> Result<()> {
             "  {:<8} {}  {}",
             if p.reaproveitado {
                 "retomado"
+            } else if p.pinado {
+                "pinado"
             } else {
                 p.estado.as_str()
             },
             p.id,
             resumo.chars().take(140).collect::<String>()
         );
+    }
+    if let Some(q) = r
+        .passos
+        .iter()
+        .any(|p| p.estado == "esperando")
+        .then(|| store.load(&r.tarefa).ok().and_then(|t| t.question))
+        .flatten()
+    {
+        println!("esperando: {q}");
+        println!(
+            "tarefa do fluxo: {} (responda com: fluxo responder {} TEXTO; tempo vencido: fluxo \
+esperas)",
+            r.tarefa, r.tarefa
+        );
+        return Ok(());
     }
     println!(
         "tarefa do fluxo: {} (retome com: fluxo retomar {} ARQ)",

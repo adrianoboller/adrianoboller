@@ -29,7 +29,7 @@ sem SMTP não há `send_email`, sem token não há `github` — e por isso há d
 montou aqui e o que existe no código mas não montou.
 
 <!-- gerado:ferramentas:inicio -->
-Medido em 2026-10-06 por `python3 tools/gerar_doc_agente.py`, de `phxclaw ferramentas` (versao 0.70.0, binario de 2026-10-06 21:16), com `PHXCLAW_CAPACIDADES` no padrao. **73 ferramentas montadas nesta maquina**, 61 concedidas por padrao.
+Medido em 2026-10-09 por `python3 tools/gerar_doc_agente.py`, de `phxclaw ferramentas` (versao 0.70.0, binario de 2026-10-09 05:52), com `PHXCLAW_CAPACIDADES` no padrao. **73 ferramentas montadas nesta maquina**, 61 concedidas por padrao.
 
 | Capacidade | Padrao | Ferramentas |
 |---|---|---|
@@ -150,7 +150,7 @@ Medido em 2026-10-06 por `python3 tools/gerar_doc_agente.py`, de `phxclaw ferram
 ### Existem no fonte, não montadas nesta máquina
 
 <!-- gerado:condicionais:inicio -->
-Medido em 2026-10-06: **15 ferramentas existem no fonte e nao montaram nesta maquina** (dependem de configuracao, token, canal ou feature de compilacao; a condicao de cada uma esta em `crates/phxclaw-agent/src/montagem.rs`).
+Medido em 2026-10-09: **15 ferramentas existem no fonte e nao montaram nesta maquina** (dependem de configuracao, token, canal ou feature de compilacao; a condicao de cada uma esta em `crates/phxclaw-agent/src/montagem.rs`).
 
 | Ferramenta | Definida em |
 |---|---|
@@ -182,7 +182,7 @@ A referência é a ajuda do próprio binário, copiada aqui pelo gerador (os `CL
 antigos não cobrem o agente).
 
 <!-- gerado:cli:inicio -->
-Saida de `phxclaw --help`, gerada em 2026-10-06:
+Saida de `phxclaw --help`, gerada em 2026-10-09:
 
 ```text
 PhxClaw 0.70.0
@@ -204,7 +204,7 @@ AGENTE:
 EQUIPE E FLUXOS:
   equipe        Os papeis da equipe: listar, mostrar, delegar
   gonogo        Conselho de integradores: abrir, registrar parecer, ver, decidir Go/NoGo
-  fluxo         Fluxo em DAG: rodar e retomar
+  fluxo         Fluxo em DAG: rodar, retomar, responder esperas, pinar, podar, exportar e listar
   agenda        Agenda: listar, adicionar (modelo ou fluxo) e disparar o que venceu
 
 CODIGO:
@@ -287,7 +287,7 @@ POLITICA: PHXCLAW_CAPACIDADES=web.search,web.browse,fs.read,fs.write,... (padrao
 ## Equipe de papéis
 
 <!-- gerado:equipe:inicio -->
-**111 papeis** carregados de `config/agents` (medido em 2026-10-06 por `phxclaw equipe listar`).
+**111 papeis** carregados de `config/agents` (medido em 2026-10-09 por `phxclaw equipe listar`).
 <!-- gerado:equipe:fim -->
 
 - **`team_list`** (`team.read`) lista os papéis (id, nome, macroárea, tipo, criticidade,

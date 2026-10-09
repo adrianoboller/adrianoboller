@@ -58,8 +58,8 @@
    "evidencia": "canais/slack.rs pelo laco unico Canal::rodada (provado contra servidor falso; falta credencial real)"
   },
   "canal_teams": {
-   "estado": "parcial",
-   "evidencia": "canais/teams.rs: sem conferir o JWT RS256 do Bot Framework (falta RSA)"
+   "estado": "agente",
+   "evidencia": "canais/teams.rs confere o JWT RS256 do Bot Framework (canais/jwt.rs + canais/rsa.rs: iss, aud = App ID, exp/nbf +-5 min, kid no JWKS com recarga de 24 h, serviceUrl assinado = o da Activity, endosso do channelId -> 403); RSA PKCS#1 v1.5 escrito aqui contra Wycheproof 259 e NIST SigVer15 54; tests/canais.rs teams_confere_o_jwt_rs256_do_bot_framework (provado contra servidor falso; falta token real)"
   },
   "canais_push": {
    "estado": "agente",
@@ -74,8 +74,8 @@
    "evidencia": ""
   },
   "canal_googlechat": {
-   "estado": "parcial",
-   "evidencia": "sem conferir o JWT (falta RSA)"
+   "estado": "agente",
+   "evidencia": "canais/googlechat.rs confere o JWT RS256 (canais/jwt.rs + canais/rsa.rs) no modo da audiencia: numero do projeto (iss chat@system.gserviceaccount.com) ou URL do endpoint (ID token, email do Chat verificado); tests/canais.rs googlechat_confere_o_jwt_nos_dois_modos_e_sai_pelo_webhook_do_espaco (provado contra servidor falso; falta token real; saida pelo webhook do espaco)"
   },
   "canal_matrix": {
    "estado": "agente",
@@ -430,12 +430,13 @@
    "evidencia": "Helix 25.07.1 no IDE do desktop (apps/phxclaw-desktop/src-tauri/src/terminal.rs): selecao multipla nativa do Helix"
   },
   "minimapa": {
-   "estado": "nao",
-   "evidencia": "Helix 25.07.1 nao tem minimapa; a tela do IDE e so a grade do terminal"
+   "estado": "agente",
+   "evidencia": "apps/phxclaw-ui: painel #ideMinimapa ao lado do Helix (ide.js, canvas 1 px por caractere) -- o texto vem do DISCO pela rota GET /v1/ide/arquivo?caminho= (ide.rs: Bearer, o mesmo tarefa::confine das ferramentas e do /v1/ide/simbolos, teto de 2 MiB, binario recusado); a faixa visivel e o primeiro e o ultimo numero da calha do Helix lidos da grade, o cursor e o linha:coluna da linha de estado; clique e setas/Home/End mandam :goto N pelo mesmo caminho da trilha. Hipotese (b) do pesquisador (docs/propostas/sp32-r5-r1-pesquisa.md: Helix 25.07.1 tem 0 ocorrencias de minimap, issue #2210 sem PR). LIMITE declarado na tela: o buffer e do Helix (outro processo), o texto nao salvo NAO aparece -- o painel avisa quando ha [+] e rele ao salvar. Com line-number = \"relative\" (ou calha desligada) cai para so cursor, sem faixa",
+   "teste": "crates/phxclaw-agent/tests/ide_web.rs::o_arquivo_do_minimapa_fica_na_pasta_do_projeto_exige_bearer_e_tem_teto (401 sem Bearer; ../, src/../../, absoluto e symlink para fora = 403 sem vazar; pasta 422; binario 415; teto exato 200 e +1 byte 413; RED medido: sem o confine o ../ devolveu 200 com o texto de fora); tests/desktop/ide_minimapa.mjs com o agente e o Helix reais (out/ide_minimapa.json): desenha, clique -> :goto N e o Helix vai, faixa acompanha, End pelo teclado, relativo -> so cursor, nao salvo avisa e :w rele, dois temas"
   },
   "dobra_codigo": {
    "estado": "nao",
-   "evidencia": "Helix 25.07.1 nao tem dobra de codigo (nenhum comando fold em helix-term/src/commands.rs)"
+   "evidencia": "Fora por decisao do pesquisador (docs/propostas/sp32-r5-r1-pesquisa.md, hipotese (c)): o Helix 25.07.1 nao tem dobra (0 comandos fold; foldingRange 0 no cliente LSP). Patch (a) morreu: o PR #14593 (+6.314/-390 em 40 arquivos, 27 hunks no commands.rs) NAO aplica em 25.07.1 (16 erros em 7 arquivos), o #16305 foi fechado pelo autor e nao aplica (8 erros em 4 arquivos), 0 aceitos em 4 anos da issue #1840 -- e fork quebraria a decisao do instalar_helix.sh (processo separado e sem modificacao). Painel (b) nao dobra: foldingRange devolve faixas, quem esconde linha e o editor, e o Helix nao tem o comando; chamar a trilha hierarquica de dobra seria numero mentindo. Volta subindo a TAG do instalar_helix.sh quando o upstream fundir"
   },
   "ir_para_definicao": {
    "estado": "agente",
@@ -628,8 +629,9 @@
    "evidencia": "fluxos.rs no `lote` N: itens-lote; o passo seguinte com por_item faz uma passada por lote (laco sem ciclo no grafo, TaskGraphError::Cycle fica). tests/fluxo_motor.rs::laco_lotes (inclui se + lote + continuar_em_erro)"
   },
   "espera_wait": {
-   "estado": "nao",
-   "evidencia": "fluxos.rs: passo de agente roda pelo config_de_subagente (sem perguntar) e nao ha passo de espera por tempo, webhook ou formulario; o passo humano e a SP000029 (PLANEJADA)"
+   "estado": "agente",
+   "evidencia": "fluxos.rs:160 passo `esperar` (ms, ate RFC 3339, webhook com sha256 do segredo, pergunta): fluxos.rs:2204 abre a espera e o fluxo DESCARREGA (tarefa em AwaitingInput com o `question` da SP000029, definicao em fluxo.json na pasta da tarefa, vencimento gravado), :2790 para a execucao; :3282 retomar_do_disco retoma so pelo disco, :3211 entregar grava a resposta antes de retomar, :3253 esperas_vencidas para o laco do servidor (api.rs:428 manter_fluxos, main.rs:463); resposta pela rota POST /v1/tasks/{id}/answer (api.rs:581) e webhook em POST /v1/flows/{tarefa}/resume (gatilhos.rs:604); CLI `phxclaw fluxo responder|esperas|retomar TAREFA`",
+   "teste": "crates/phxclaw-agent/tests/fluxo_onda3.rs::espera_wait (RED medido: a retomada reabrindo a espera com agora+ms em vez do vencimento gravado -> esperas_vencidas vazia aos 900 ms; o processo e simulado soltando agente, eco e store e montando outro na mesma pasta) e ::espera_wait_pergunta_e_webhook_pela_api"
   },
   "tentativas_por_no": {
    "estado": "agente",
@@ -656,8 +658,9 @@
    "evidencia": "fluxos.rs retomar(): progresso gravado no task.json a cada onda, sha256 da definicao conferido, passos ok reaproveitados; teste orquestracao.rs:264"
   },
   "dados_pinados": {
-   "estado": "parcial",
-   "evidencia": "fluxos.rs:298 anteriores: a saida gravada de um passo ok substitui a execucao na retomada (e o mecanismo do pin); falta escolher e editar o dado pinado"
+   "estado": "agente",
+   "evidencia": "fluxos.rs Passo.pin e o ARQ.pins.json ao lado (fluxos.rs:3478 ler_arquivo, o leitor de todo fluxo em arquivo: CLI, gatilho, agenda, sub-fluxo); fluxos.rs:2176 o pin substitui a execucao (nada passa pelo portao, `pinado` no relatorio); `--ate` para atras do passo pinado (ancestrais) e a retomada o respeita; o pin entra na assinatura; fluxos.rs:3504 pinar/despinar validam antes de gravar (segredo, `se`, passo inexistente recusados); saida_para_pin pina a saida de uma execucao; CLI `phxclaw fluxo pinar|despinar`",
+   "teste": "crates/phxclaw-agent/tests/fluxo_onda3.rs::dados_pinados (RED medido: sem o bloco do pin o b roda pelo portao e o fluxo quebra)"
   },
   "subfluxo": {
    "estado": "agente",
@@ -676,8 +679,9 @@
    "evidencia": "gatilhos.rs Observador: pasta observada por mtime (arquivo estavel); canais/ IMAP por laco; sem poll generico de API ou banco (RSS, Postgres Trigger)"
   },
   "gatilho_formulario": {
-   "estado": "nao",
-   "evidencia": "nenhum formulario servido pelo agente que vire tarefa ou retome fluxo; a UI tem so o formulario de nova tarefa"
+   "estado": "agente",
+   "evidencia": "o fluxo declara `formulario` (fluxos.rs Formulario/Campo, validado: nome de segredo recusado) e o gatilho de webhook que aponta para ele serve GET /v1/triggers/{nome} (gatilhos.rs:586, HTML minimo sem script, gatilhos.rs:493) e aceita POST urlencoded (gatilhos.rs:661) pelo MESMO portao do webhook (gatilhos.rs:454, segredo pelo campo _segredo que nao vira item), teto de 16 KiB (413), fluxos.rs:1133 item_do_formulario confere campos declarados, obrigatorio, numero, e-mail, data e forma de segredo; dispara por api::criar_fluxo_com",
+   "teste": "crates/phxclaw-agent/tests/fluxo_onda3.rs::gatilho_formulario (RED medido: sem o _segredo no portao o formulario do navegador nunca autentica)"
   },
   "gatilho_dispara_fluxo": {
    "estado": "agente",
@@ -704,20 +708,23 @@
    "evidencia": "o fluxo e uma Task com task.json, pasta e EvidenceLedger (fluxos.rs:310); GET /v1/tasks e /v1/tasks/{id}/artifacts; tela de tarefas da UI"
   },
   "dados_binarios": {
-   "estado": "parcial",
-   "evidencia": "passos de ferramenta rodam na pasta da tarefa (ToolContext.workdir) e os artefatos saem por /v1/tasks/{id}/artifacts; sem binario tipado entre passos nem modo filesystem/S3"
+   "estado": "agente",
+   "evidencia": "item {base64, mime} vira arquivo em binarios/<sha>.<ext> na pasta de trabalho e o item guarda {binario:{caminho,sha256,bytes,mime}} (fluxos.rs:3010 extrair_binarios), conferido na retomada; teto de 64 KiB por passo no task.json (fluxos.rs:545 TETO_BYTES_PASSO): a saida grande vai para saidas/<passo>-<sha>.json com sha256 e tamanho (fluxos.rs:2888) e volta conferida na retomada; formato 3 so quando usado",
+   "teste": "crates/phxclaw-agent/tests/fluxo_onda3.rs::dados_binarios (RED medido: sem o teto o task.json passou de 100 KiB)"
   },
   "poda_execucoes": {
-   "estado": "nao",
-   "evidencia": "TaskStore nao poda tarefas por idade ou contagem; historico.rs poda so o historico de arquivos"
+   "estado": "agente",
+   "evidencia": "fluxos.rs:3389 podar(Poda{dias,max}): so execucao de fluxo de cima terminada (Completed/Failed/Cancelled, com a descendencia terminada) sai, junto com as filhas; em andamento ou esperando nunca; config fluxos.poda_dias e fluxos.poda_max (catalogo), sem elas nada se apaga; roda no laco do servidor (api.rs:428) e em `phxclaw fluxo podar`",
+   "teste": "crates/phxclaw-agent/tests/fluxo_onda3.rs::poda_execucoes (RED medido: sem o filtro de estado final a execucao esperando e a em andamento entram na conta) e ::poda_sem_configuracao_nada_apagado"
   },
   "fila_workers": {
    "estado": "parcial",
    "evidencia": "bibliotecas fora do agente: phxclaw-task-graph PostgresTaskJournal, phxclaw-event-bus PostgresOutbox.claim_batch, phxclaw-bpm BpmStore.claim_ready_token; o agente roda tudo em um processo"
   },
   "concorrencia_limite": {
-   "estado": "parcial",
-   "evidencia": "fluxos.rs max_paralelo por fluxo e ferramentas.rs max_parallel por lote de subagentes; sem limite global de execucoes da instancia"
+   "estado": "agente",
+   "evidencia": "limite de fluxos simultaneos por instancia (raiz das tarefas): fluxos.rs:2002 o fluxo de cima toma uma vaga e o excedente espera; o sub-fluxo roda na vaga do pai (sem impasse com limite 1); config fluxos.max_simultaneos, ou fluxos.rs:3331 definir_limite",
+   "teste": "crates/phxclaw-agent/tests/fluxo_onda3.rs::concorrencia_limite (RED medido: sem a vaga os tres fluxos entram juntos, maximo em voo 3)"
   },
   "editor_canvas": {
    "estado": "nao",
@@ -728,8 +735,9 @@
    "evidencia": "sem galeria de fluxos prontos; importar_skills.rs importa SKILL.md, nao fluxos"
   },
   "etiquetas_pastas": {
-   "estado": "nao",
-   "evidencia": "Task nao tem tags, pastas nem favoritos; a listagem /v1/tasks e plana"
+   "estado": "agente",
+   "evidencia": "Fluxo.etiquetas (validadas, fora da assinatura: fluxos.rs:1788) e a subpasta de fluxos/ como pasta; fluxos.rs:3647 listar filtra por etiqueta e pasta e devolve o invalido como erro; CLI `phxclaw fluxo listar [DIR] [--etiqueta E] [--subpasta P]`. Tarefas (execucoes) continuam sem etiqueta",
+   "teste": "crates/phxclaw-agent/tests/fluxo_onda3.rs::etiquetas_pastas (nao reposto um a um)"
   },
   "projetos_rbac": {
    "estado": "nao",
@@ -768,8 +776,9 @@
    "evidencia": "EvidenceLedger por tarefa, avaliacao.rs p50/p95 e tokens, gravacao.rs MedidasDoPasso; sem /metrics Prometheus, OTel nem painel de insights"
   },
   "cli_importar_exportar": {
-   "estado": "parcial",
-   "evidencia": "`phxclaw fluxo rodar|retomar ARQ.json`: o fluxo ja e arquivo, mas nao ha export/import de execucoes, credenciais nem pacote de fluxo"
+   "estado": "agente",
+   "evidencia": "fluxos.rs:3571 exportar (pacote com definicao, pins e assinatura) e :3581 importar (formato, validade, assinatura conferida, segredo recusado; grava fluxo e .pins.json sem sobrescrever); CLI `phxclaw fluxo exportar ARQ [--saida P] | importar PACOTE DESTINO` (main.rs:962). Execucoes e credenciais nao viajam: execucao e a pasta da tarefa, credencial mora no broker",
+   "teste": "crates/phxclaw-agent/tests/fluxo_onda3.rs::cli_importar_exportar (RED medido: sem a conferencia da assinatura o pacote com o pin trocado foi importado)"
   },
   "instalacao_docker_k8s": {
    "estado": "nao",

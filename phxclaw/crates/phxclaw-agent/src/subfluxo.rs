@@ -73,9 +73,7 @@ impl FluxoTool {
 }
 
 fn ler_fluxo(arq: &Path) -> Result<Fluxo, ToolError> {
-    let texto = std::fs::read_to_string(arq)
-        .map_err(|e| ToolError::InvalidArguments(format!("fluxo {}: {e}", arq.display())))?;
-    fluxos::ler(&texto)
+    fluxos::ler_arquivo(arq)
         .map_err(|e| ToolError::InvalidArguments(format!("fluxo {}: {e}", arq.display())))
 }
 
@@ -153,6 +151,16 @@ Every step of the sub-flow goes through the same policy as your own tool calls."
                 )
                 .await
                 .map_err(ToolError::Failed)?;
+                if let Some(p) = r.passos.iter().find(|p| p.estado == "esperando") {
+                    // A espera descarrega a execucao inteira; dentro de uma ferramenta, o
+                    // fluxo de cima ficaria segurando o passo que chamou -- o contrario do
+                    // que a espera promete.
+                    return Err(ToolError::Failed(format!(
+                        "sub-fluxo {} parou no passo esperar '{}' (tarefa {}): espera so no \
+fluxo de cima",
+                        f.nome, p.id, r.tarefa
+                    )));
+                }
                 if !r.sucesso {
                     let falhos: Vec<String> = r
                         .passos

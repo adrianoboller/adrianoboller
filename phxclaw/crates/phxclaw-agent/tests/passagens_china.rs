@@ -125,6 +125,9 @@ fn corrida_com_navegador_pronto(a: &Agent, f: &Fluxo) -> String {
                 tarefa: None,
                 tentativas: 1,
                 reaproveitado: false,
+                espera: None,
+                pinado: false,
+                externo: None,
             });
         }
     }
