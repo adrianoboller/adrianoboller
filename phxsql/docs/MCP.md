@@ -32,6 +32,22 @@ ponte há um modelo de linguagem, não uma pessoa.** Quando recusa, a ponte diz
 *por que* recusou — «a ferramenta escreve, e esta ponte é somente de leitura» —
 em vez de fingir que ela não existe, que deixaria o modelo tentando de novo.
 
+**E o `phx_sql` não escreve pela ponte de leitura** (pedido 781, 09/10/2026).
+Filtrar as ferramentas que escrevem não bastava: o `phx_sql` lê **e** escreve
+conforme o texto, e medido, um `DELETE` por ele apagou 1.500 linhas pela ponte
+«somente de leitura». A ponte **não** classifica o SQL — seria um segundo
+classificador, que divergiria do despacho no primeiro verbo novo. Ela carimba
+`"so_leitura": true` em todo pedido (o modelo não o tira: o argumento de mesmo
+nome é descartado), e o `op_sql` do servidor pergunta ao **analisador de cada
+ramo** se o comando só lê, antes de executar qualquer coisa: `SELECT` (simples,
+composto, união, visão), `SHOW TRIGGERS|PROCEDURES` e `SHOW … SETTINGS` passam;
+`INSERT`, `UPDATE`, `DELETE`, `CREATE|DROP VIEW`, rotina (criar, excluir,
+`CALL`), transação (`BEGIN`…), `CREATE|ALTER|DROP USER` e `ALTER … SET|ENCRYPT`
+voltam com `erro.mcp_so_leitura`. O `so_le` de cada `Comando` é um `match` sem
+`_ =>`: variante nova não compila até alguém decidir. Testes:
+`a_ponte_de_leitura_recusa_o_sql_que_escreve_antes_do_trabalho` e
+`a_ponte_de_leitura_continua_lendo_pelo_phx_sql`.
+
 ## O token não é argumento
 
 O que a ponte carimba em todo pedido (`token`, tipicamente) mora na ponte, e

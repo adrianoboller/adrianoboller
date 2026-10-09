@@ -769,6 +769,23 @@ pub enum Comando {
     },
 }
 
+impl Comando {
+    /// So os `SHOW` leem: criar e excluir mexem no catalogo, e o `CALL` roda
+    /// um corpo que pode gravar -- e a ponte somente de leitura (pedido 781)
+    /// nao tem como saber o que o corpo faz antes de rodar. Sem `_ =>`, pelo
+    /// mesmo motivo do `sintaxe::Comando::so_le`.
+    pub fn so_le(&self) -> bool {
+        match self {
+            Comando::MostrarGatilhos | Comando::MostrarProcedimentos => true,
+            Comando::CriarGatilho(_)
+            | Comando::ExcluirGatilho { .. }
+            | Comando::CriarProcedimento(_)
+            | Comando::ExcluirProcedimento { .. }
+            | Comando::Chamar { .. } => false,
+        }
+    }
+}
+
 /// Reconhece um comando de rotina. `Ok(None)` = nao e daqui — o texto segue
 /// para a camada SELECT de sempre. Os verbos vizinhos que NAO cabem recusam
 /// com o caminho certo, em vez de "sintaxe invalida".

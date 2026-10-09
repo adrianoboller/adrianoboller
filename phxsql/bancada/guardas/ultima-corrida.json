@@ -1,5 +1,5 @@
 {
-  "quando": "2026-10-09 20:18",
+  "quando": "2026-10-09 21:52",
   "mais_antigo": "2026-09-16 15:25",
   "guardas": [
     {
@@ -7064,9 +7064,9 @@
       "id": "camada-de-protecao-fora-do-ponto-unico",
       "titulo": "sem a camada no ponto dos três irmãos, o DROP passava pela rede, pelo MCP, pelo job e pelo motor das rotinas (765, P4/P5)",
       "veredito": "PROVADA",
-      "segundos": 101.08,
+      "segundos": 132.26,
       "notas": [],
-      "quando": "2026-10-09 20:18"
+      "quando": "2026-10-09 21:52"
     },
     {
       "id": "motor-da-rotina-pula-a-camada",
@@ -7083,6 +7083,78 @@
       "segundos": 96.92,
       "notas": [],
       "quando": "2026-10-09 20:18"
+    },
+    {
+      "id": "mcp-ponte-de-leitura-sem-carimbo",
+      "titulo": "a ponte MCP somente de leitura deixava o phx_sql escrever: DELETE apagou 1.500 linhas (pedido 781)",
+      "veredito": "PROVADA",
+      "segundos": 116.68,
+      "notas": [],
+      "quando": "2026-10-09 21:52"
+    },
+    {
+      "id": "mcp-sql-dml-passa-na-ponte-de-leitura",
+      "titulo": "o op_sql nao perguntava ao analisador se o comando so le: INSERT/UPDATE/DELETE e VIEW passavam pela ponte de leitura (781)",
+      "veredito": "PROVADA",
+      "segundos": 117.63,
+      "notas": [],
+      "quando": "2026-10-09 21:52"
+    },
+    {
+      "id": "mcp-sql-rotina-passa-na-ponte-de-leitura",
+      "titulo": "CREATE PROCEDURE e CALL passavam pela ponte MCP de leitura (781)",
+      "veredito": "PROVADA",
+      "segundos": 161.61,
+      "notas": [],
+      "quando": "2026-10-09 21:52"
+    },
+    {
+      "id": "mcp-ponte-de-leitura-recusa-o-select",
+      "titulo": "o conserto do 781 nao pode tirar a leitura: SELECT pela ponte de leitura continua saindo",
+      "veredito": "PROVADA",
+      "segundos": 124.99,
+      "notas": [],
+      "quando": "2026-10-09 21:52"
+    },
+    {
+      "id": "aquario-nasceu-repete",
+      "titulo": "a mesma bolha nascia de novo a cada volta do amostrador (707, A15)",
+      "veredito": "PROVADA",
+      "segundos": 136.74,
+      "notas": [],
+      "quando": "2026-10-09 21:52"
+    },
+    {
+      "id": "aquario-morta-sem-linha",
+      "titulo": "encerrar uma tarefa pela telemetria nao deixava a linha morta no aquario.log (707, A15)",
+      "veredito": "PROVADA",
+      "segundos": 154.77,
+      "notas": [],
+      "quando": "2026-10-09 21:52"
+    },
+    {
+      "id": "aquario-derrubada-sem-linha",
+      "titulo": "derrubar a conexao que executava nao deixava a linha morta (derrubada) no aquario.log (707, A15)",
+      "veredito": "PROVADA",
+      "segundos": 121.01,
+      "notas": [],
+      "quando": "2026-10-09 21:52"
+    },
+    {
+      "id": "aquario-morta-trabalha-desligada",
+      "titulo": "com a telemetria desligada o retrato da morta achava a atividade antes do portao (707, A15)",
+      "veredito": "PROVADA",
+      "segundos": 113.64,
+      "notas": [],
+      "quando": "2026-10-09 21:52"
+    },
+    {
+      "id": "aquario-graficos-contam-a-morta",
+      "titulo": "os graficos de dia/semana/mes contariam a linha morta como minuto (707, A15)",
+      "veredito": "PROVADA",
+      "segundos": 130.99,
+      "notas": [],
+      "quando": "2026-10-09 21:52"
     },
     {
       "id": "alter-com-regra-sem-aviso",

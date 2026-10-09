@@ -94,6 +94,10 @@ pub trait Executor {
 /// os parâmetros já vêm prontos e já estão certos.
 pub use crate::catalogo::{ferramentas_mcp, Operacao as Ferramenta};
 
+/// O campo que a ponte somente de leitura carimba em todo pedido, e que o
+/// `op_sql` do servidor honra (pedido 781).
+pub const CAMPO_SO_LEITURA: &str = "so_leitura";
+
 /// A ponte entre o MCP e o protocolo do PhxSql.
 pub struct Ponte<E: Executor> {
     executor: E,
@@ -293,7 +297,7 @@ impl<E: Executor> Ponte<E> {
                 // ponte carimba, e aí o modelo escolheria a operação e a
                 // credencial. Os fixos entram DEPOIS, mas filtrar aqui deixa
                 // a intenção escrita em vez de dependente da ordem.
-                if k == "op" || self.fixos.iter().any(|(f, _)| f == k) {
+                if k == "op" || k == CAMPO_SO_LEITURA || self.fixos.iter().any(|(f, _)| f == k) {
                     continue;
                 }
                 pedido.push((k.clone(), v.clone()));
@@ -301,6 +305,16 @@ impl<E: Executor> Ponte<E> {
         }
         for (k, v) in &self.fixos {
             pedido.push((k.clone(), v.clone()));
+        }
+        // Pedido 781: filtrar as ferramentas que escrevem nao bastava, porque
+        // o `phx_sql` le E escreve conforme o texto -- medido, um DELETE por
+        // ele apagou 1.500 linhas pela ponte «somente de leitura». A ponte
+        // nao classifica o SQL (seria o segundo classificador): ela so diz ao
+        // servidor que e de leitura, e o `op_sql` recusa pelo analisador dele,
+        // antes do trabalho. Vai em todo pedido, e nao so no do `phx_sql`,
+        // para nao depender de saber qual ferramenta mistura as duas coisas.
+        if self.somente_leitura {
+            pedido.push((CAMPO_SO_LEITURA.into(), Json::Bool(true)));
         }
 
         // Daqui para baixo, quem manda é o servidor: mesmos portões, mesmos
@@ -739,6 +753,35 @@ mod testes {
         assert_eq!(pedido.texto_ou("token", ""), "o-token-de-verdade");
         // E o campo não pode aparecer duas vezes, com o errado antes.
         assert_eq!(pedido.chaves().iter().filter(|k| **k == "token").count(), 1);
+    }
+
+    /// Pedido 781: a ponte de leitura carimba `so_leitura` em todo pedido, e
+    /// o modelo nao o desliga mandando o argumento; a de escrita nao carimba.
+    ///
+    /// RED: sem o `k == CAMPO_SO_LEITURA` no filtro, o `false` do modelo
+    /// entra antes e o pedido leva o campo duas vezes.
+    #[test]
+    fn a_ponte_de_leitura_carimba_o_so_leitura_e_o_modelo_nao_tira() {
+        let chamada = r#"{"jsonrpc":"2.0","id":7,"method":"tools/call",
+            "params":{"name":"phx_sql",
+                      "arguments":{"database":"d","texto":"DELETE FROM t","so_leitura":false}}}"#;
+        let p = Ponte::nova(Espiao::novo());
+        atender(&p, chamada);
+        let pedido = p.executor.ultimo();
+        // Pelo nome do FIO, e nao pela constante: e ele que o servidor le.
+        assert!(pedido.booleano_ou("so_leitura", false));
+        assert_eq!(
+            pedido
+                .chaves()
+                .iter()
+                .filter(|k| **k == CAMPO_SO_LEITURA)
+                .count(),
+            1
+        );
+
+        let p = Ponte::nova(Espiao::novo()).com_escrita(true);
+        atender(&p, chamada);
+        assert!(p.executor.ultimo().campo(CAMPO_SO_LEITURA).is_none());
     }
 
     #[test]

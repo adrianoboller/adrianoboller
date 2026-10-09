@@ -302,6 +302,10 @@ pub struct Atividade {
     /// e o que zera o anel no pedido seguinte sem o `comecou_pedido` ter de
     /// lembrar disso.
     anel_gravado: AtomicU64,
+    /// O serial do pedido cuja linha `nasceu` ja foi ao `aquario.log` (707,
+    /// A15). Serial, e nao booleano, pelo mesmo motivo do `anel_gravado`: o
+    /// pedido seguinte nasce de novo sem o `comecou_pedido` ter de zerar nada.
+    nasceu_gravado: AtomicU64,
     /// A camada de ocorrencias do servidor DESTA atividade (495, F2): o
     /// alarme da tarefa vai ao arquivo do servidor que a serve, e nao ao de
     /// outro que more no mesmo processo. Vazia fora do `entrar`.
@@ -346,6 +350,7 @@ impl Atividade {
             ultimo_ms: AtomicI64::new(agora_ms),
             alarmes: AtomicU32::new(0),
             anel_gravado: AtomicU64::new(0),
+            nasceu_gravado: AtomicU64::new(0),
             ocorrencias: std::sync::Weak::new(),
         }
     }
@@ -2190,15 +2195,99 @@ impl Telemetria {
                 subiram.push((Arc::clone(a), ms, anel));
             }
         }
-        if subiram.is_empty() {
+        let linhas = subiram
+            .into_iter()
+            .map(|(a, ms, anel)| (a, crate::aquario::log::Linha::anel(agora_ms, ms, anel)))
+            .collect();
+        self.pintar_as_vivas(&atividades, linhas, agora_ms)
+    }
+
+    /// As linhas `nasceu` do `aquario.log` (707, A15): cada tarefa viva que
+    /// passou de [`crate::aquario::log::VIVEU_NO_AQUARIO_MS`] e ainda nao foi
+    /// ao log -- a mesma regua do `estourou`, para que so nasca quem pode
+    /// estourar. Chamado pelo amostrador, como o anel: uma vez por evento, e
+    /// so com a telemetria ligada.
+    ///
+    /// # O que ela NAO pega
+    ///
+    /// O amostrador olha de segundo em segundo: a tarefa que vive entre 1 e
+    /// ~2 s pode estourar sem ter passado por uma volta dele, e entao o log
+    /// traz o `estourou` sem o `nasceu`. Gravar o `nasceu` atrasado no fim
+    /// poria no arquivo uma linha datada antes das vizinhas, e o leitor de
+    /// tras para a frente (`percorrer`) para na primeira linha anterior ao
+    /// `desde` -- cortaria a leitura cedo. A tela, que pede o retrato no
+    /// mesmo ritmo, tambem pode nunca ter mostrado essa bolha.
+    ///
+    /// O caminho comum custa um atomico por tarefa viva: a que ja nasceu
+    /// neste pedido para no `nasceu_gravado`, antes do relogio.
+    pub fn nascidas(&self, agora_ms: i64) -> Vec<crate::aquario::log::Linha> {
+        let atividades = self.atividades();
+        let mut nasceram = Vec::new();
+        for a in &atividades {
+            if a.estado() == Estado::Ociosa {
+                continue;
+            }
+            let serial = a.serial.load(Ordering::Relaxed);
+            let velho = a.nasceu_gravado.load(Ordering::Relaxed);
+            if serial == 0 || velho == serial {
+                continue;
+            }
+            let ms = a.ha_ms();
+            if ms < crate::aquario::log::VIVEU_NO_AQUARIO_MS {
+                continue;
+            }
+            if a.nasceu_gravado
+                .compare_exchange(velho, serial, Ordering::SeqCst, Ordering::Relaxed)
+                .is_err()
+            {
+                continue;
+            }
+            // A replicacao espera por desenho e fica fora do `estourou`
+            // (`tarefa_terminou`); fica fora daqui pelo mesmo motivo. Lida
+            // depois de marcar: uma vez por pedido, e nao a cada volta.
+            if crate::servidor::OPS_DE_REPLICACAO.contains(&a.alvo().op.as_str()) {
+                continue;
+            }
+            let mut l =
+                crate::aquario::log::Linha::nova(crate::aquario::log::Evento::Nasceu, agora_ms);
+            l.ms = Some(ms);
+            nasceram.push((Arc::clone(a), l));
+        }
+        self.pintar_as_vivas(&atividades, nasceram, agora_ms)
+    }
+
+    /// A linha `morta` (707, A15) de quem vai ser encerrado, tirada ANTES do
+    /// encerrar: depois dele a operacao pode ter acabado e a cor seria a de
+    /// outra. `desfecho` e o estado que o encerrar devolveu, e vai em
+    /// `dados` -- o motivo da morte, sem `quem`: o `aquario.log` nunca leva
+    /// login (decisao do dono, 09/10), e quem encerrou fica no `acessos.log`.
+    pub fn linha_da_morta(&self, a: &Arc<Atividade>, agora_ms: i64) -> crate::aquario::log::Linha {
+        let mut l = crate::aquario::log::Linha::nova(crate::aquario::log::Evento::Morta, agora_ms);
+        l.ms = Some(a.ha_ms());
+        let atividades = self.atividades();
+        self.pintar_as_vivas(&atividades, vec![(Arc::clone(a), l)], agora_ms)
+            .pop()
+            .expect("uma entra, uma sai")
+    }
+
+    /// A tarefa, a op, a tabela e a cor de cada viva, pela MESMA
+    /// `classe_viva` do retrato -- um lugar so para o anel, o nasceu e a
+    /// morta. O `stress` e a pintura se leem uma vez, e so quando ha linha.
+    fn pintar_as_vivas(
+        &self,
+        atividades: &[Arc<Atividade>],
+        vivas: Vec<(Arc<Atividade>, crate::aquario::log::Linha)>,
+        agora_ms: i64,
+    ) -> Vec<crate::aquario::log::Linha> {
+        if vivas.is_empty() {
             return Vec::new();
         }
         let (stress, _) = self.stress();
         let ha_fila = atividades.iter().any(|a| a.estado() == Estado::Esperando);
         let pintura = self.pintura();
-        subiram
+        vivas
             .into_iter()
-            .map(|(a, ms, anel)| {
+            .map(|(a, l)| {
                 let c = a.corrente_copiada();
                 let classe = a.classe_viva(
                     &c,
@@ -2208,8 +2297,7 @@ impl Telemetria {
                     Some(self.aquario.base()),
                     agora_ms,
                 );
-                let mut l = crate::aquario::log::Linha::anel(agora_ms, ms, anel)
-                    .com_classe(classe, a.alarmes());
+                let mut l = l.com_classe(classe, a.alarmes());
                 l.tarefa = a.tarefa();
                 l.op = c.op;
                 l.database = c.database;

@@ -968,7 +968,11 @@ TETO_TESTE_SEM_MODULO = 0
 # plano largo, uma da reescrita grande, uma da camada no ponto dos irmaos e
 # duas dos caminhos escondidos (motor das rotinas e job). Contado: 883 + 2
 # aposentadas.
-PISO_DAS_ENTRADAS = 885
+# +9 (09/10/2026): quatro do 781 (o carimbo da ponte MCP de leitura, os
+# ramos comando e rotina do `op_sql`, e a leitura que continua) e cinco da
+# A15 do 707 (`nasceu` uma vez por pedido, `morta` pelos dois encerrar, o
+# portao antes do trabalho e os graficos que nao contam a `morta`).
+PISO_DAS_ENTRADAS = 894
 
 # ------------------------------------------------------------- APOSENTADAS
 #

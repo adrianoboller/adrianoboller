@@ -724,8 +724,11 @@ impl Servidor {
                     // ausente (`null`), nunca zero. A linha do minuto vai ao
                     // `aquario.log` la dentro.
                     servidor.virar_a_contagem(agora);
-                    // Os aneis da bolha que passou do teto (780), no mesmo
-                    // relogio e pelo mesmo escritor do log.
+                    // O nascimento da bolha (707, A15) e os aneis da que
+                    // passou do teto (780), no mesmo relogio e pelo mesmo
+                    // escritor do log -- o nascimento antes, para a linha do
+                    // tempo de uma tarefa nao abrir pelo anel.
+                    servidor.gravar_as_nascidas(agora);
                     servidor.gravar_os_aneis(agora);
                     fio.fazendo("amostra tirada");
                 } else {

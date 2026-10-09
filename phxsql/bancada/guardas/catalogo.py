@@ -27944,4 +27944,221 @@ fn anotar(""",
             "servidor::testes_dos_caminhos_da_protecao::rotina_e_gatilho_after_passam_pela_mesma_camada",
         ],
     },
+    # Pedido 781 (09/10/2026): a ponte MCP somente de leitura oferecia o
+    # `phx_sql`, e ele escrevia -- um DELETE apagou 1.500 linhas. Quatro
+    # guardas: o carimbo da ponte, os dois ramos do `op_sql` que mais pesam
+    # (comando e rotina) e o comportamento velho (a leitura continua).
+    {
+        "id": "mcp-ponte-de-leitura-sem-carimbo",
+        "titulo": "a ponte MCP somente de leitura deixava o phx_sql escrever: DELETE apagou 1.500 linhas (pedido 781)",
+        "porque": (
+            "pedido 781: filtrar as ferramentas que escrevem nao bastava, o "
+            "`phx_sql` le e escreve conforme o texto. A ponte carimba "
+            "`so_leitura` e o `op_sql` recusa pelo analisador de cada ramo; "
+            "sem o carimbo, o DELETE pela ponte de leitura volta a executar."
+        ),
+        "arquivo": "crates/phxsql-server/src/mcp.rs",
+        "trecho": """        if self.somente_leitura {
+            pedido.push((CAMPO_SO_LEITURA.into(), Json::Bool(true)));
+""",
+        "troca": """        if self.somente_leitura && false {
+            pedido.push((CAMPO_SO_LEITURA.into(), Json::Bool(true)));
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_dos_caminhos_da_protecao::a_ponte_de_leitura_recusa_o_sql_que_escreve_antes_do_trabalho",
+            "mcp::testes::a_ponte_de_leitura_carimba_o_so_leitura_e_o_modelo_nao_tira",
+        ],
+        "seguem": [
+            "servidor::testes_dos_caminhos_da_protecao::a_ponte_de_leitura_continua_lendo_pelo_phx_sql",
+        ],
+    },
+    {
+        "id": "mcp-sql-dml-passa-na-ponte-de-leitura",
+        "titulo": "o op_sql nao perguntava ao analisador se o comando so le: INSERT/UPDATE/DELETE e VIEW passavam pela ponte de leitura (781)",
+        "porque": (
+            "pedido 781: a decisao e do `sintaxe::Comando::so_le`, o mesmo "
+            "analisador que executa -- nao um segundo classificador por "
+            "texto. Pular a pergunta reabre o DELETE pela ponte."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor/servico_sql_01.rs",
+        "trecho": """        if !comando.so_le() {
+            self.recusar_na_ponte_de_leitura(so_leitura, comando.verbo())?;
+""",
+        "troca": """        if false && !comando.so_le() {
+            self.recusar_na_ponte_de_leitura(so_leitura, comando.verbo())?;
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_dos_caminhos_da_protecao::a_ponte_de_leitura_recusa_o_sql_que_escreve_antes_do_trabalho",
+        ],
+        "seguem": [
+            "servidor::testes_dos_caminhos_da_protecao::a_ponte_de_leitura_continua_lendo_pelo_phx_sql",
+        ],
+    },
+    {
+        "id": "mcp-sql-rotina-passa-na-ponte-de-leitura",
+        "titulo": "CREATE PROCEDURE e CALL passavam pela ponte MCP de leitura (781)",
+        "porque": (
+            "pedido 781: o ramo das rotinas e irmao do ramo do comando -- o "
+            "mesmo `op_sql`, outro analisador. O CALL roda um corpo que pode "
+            "gravar, e a ponte nao sabe o que o corpo faz antes de rodar."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor/servico_sql_01.rs",
+        "trecho": """            if !comando.so_le() {
+                self.recusar_na_ponte_de_leitura(so_leitura, "rotina")?;
+""",
+        "troca": """            if false && !comando.so_le() {
+                self.recusar_na_ponte_de_leitura(so_leitura, "rotina")?;
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_dos_caminhos_da_protecao::a_ponte_de_leitura_recusa_o_sql_que_escreve_antes_do_trabalho",
+        ],
+        "seguem": [
+            "servidor::testes_dos_caminhos_da_protecao::a_ponte_de_leitura_continua_lendo_pelo_phx_sql",
+        ],
+    },
+    {
+        "id": "mcp-ponte-de-leitura-recusa-o-select",
+        "titulo": "o conserto do 781 nao pode tirar a leitura: SELECT pela ponte de leitura continua saindo",
+        "porque": (
+            "comportamento velho do 781: a ponte de leitura existe para ler. "
+            "Um `so_le` que errasse para o lado seguro recusaria o SELECT, e "
+            "a ponte inteira deixaria de servir."
+        ),
+        "arquivo": "crates/phxsql-sql/src/sintaxe.rs",
+        "trecho": """            Comando::Selecao(_) | Comando::Consulta(_) | Comando::Uniao(_) => true,
+            Comando::Insercao(_)
+""",
+        "troca": """            Comando::Consulta(_) | Comando::Uniao(_) => true,
+            Comando::Selecao(_) | Comando::Insercao(_)
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_dos_caminhos_da_protecao::a_ponte_de_leitura_continua_lendo_pelo_phx_sql",
+        ],
+        "seguem": [
+            "servidor::testes_dos_caminhos_da_protecao::a_ponte_de_leitura_recusa_o_sql_que_escreve_antes_do_trabalho",
+        ],
+    },
+    # Pedido 707, A15 (09/10/2026): os eventos `nasceu` e `morta` do
+    # `aquario.log`, item 5 do dono. Cinco guardas: uma vez por pedido, os
+    # dois produtores da morta, o portao antes do trabalho e os graficos que
+    # nao contam em dobro.
+    {
+        "id": "aquario-nasceu-repete",
+        "titulo": "a mesma bolha nascia de novo a cada volta do amostrador (707, A15)",
+        "porque": (
+            "707 A15: o `nasceu` vai ao log UMA vez por pedido, pelo serial "
+            "guardado em `nasceu_gravado` -- como o anel do 780. Sem a "
+            "conferencia, cada segundo grava outra linha."
+        ),
+        "arquivo": "crates/phxsql-server/src/telemetria.rs",
+        "trecho": """            if serial == 0 || velho == serial {
+""",
+        "troca": """            if serial == 0 {
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_do_aquario::a_bolha_que_nasce_vai_ao_aquario_log_uma_vez_por_pedido",
+        ],
+        "seguem": [
+            "servidor::testes_do_aquario::o_anel_que_sobe_vai_ao_aquario_log",
+        ],
+    },
+    {
+        "id": "aquario-morta-sem-linha",
+        "titulo": "encerrar uma tarefa pela telemetria nao deixava a linha morta no aquario.log (707, A15)",
+        "porque": (
+            "707 A15, item 5 do dono: «ser morta» tem log, com o desfecho. "
+            "A linha e tirada antes do ato e gravada depois dele."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor/servico_admin_01.rs",
+        "trecho": """            self.gravar_a_morta(morta, estado);
+""",
+        "troca": """            let _ = (morta, estado);
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_do_aquario::a_tarefa_encerrada_vai_ao_aquario_log_como_morta",
+        ],
+        "seguem": [
+            "servidor::testes_do_aquario::a_bolha_que_nasce_vai_ao_aquario_log_uma_vez_por_pedido",
+        ],
+    },
+    {
+        "id": "aquario-derrubada-sem-linha",
+        "titulo": "derrubar a conexao que executava nao deixava a linha morta (derrubada) no aquario.log (707, A15)",
+        "porque": (
+            "707 A15: o `encerrar_sessao` e o irmao do `telemetria_encerrar` "
+            "-- o outro jeito de matar a bolha. Consertar so um deixaria o "
+            "KILL CONNECTION sem rastro no aquario."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor/servico_admin_01.rs",
+        "trecho": """            self.gravar_a_morta(morta, "derrubada");
+""",
+        "troca": """            let _ = morta;
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_do_aquario::a_tarefa_encerrada_vai_ao_aquario_log_como_morta",
+        ],
+        "seguem": [
+            "servidor::testes_do_aquario::desligada_nao_nasce_nem_morre_e_nao_trabalha",
+        ],
+    },
+    {
+        "id": "aquario-morta-trabalha-desligada",
+        "titulo": "com a telemetria desligada o retrato da morta achava a atividade antes do portao (707, A15)",
+        "porque": (
+            "lei da casa: instrumentacao desligada custa zero, e o portao vem "
+            "ANTES do trabalho. A atividade chega por funcao para a busca no "
+            "registro nao rodar com o aquario desligado."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor/servico_aquario_01.rs",
+        "trecho": """        self.telemetria.aquario_se_ligada()?;
+        let a = &atividade()?;
+""",
+        "troca": """        let a = &atividade()?;
+        self.telemetria.aquario_se_ligada()?;
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_do_aquario::desligada_nao_nasce_nem_morre_e_nao_trabalha",
+        ],
+        "seguem": [
+            "servidor::testes_do_aquario::a_tarefa_encerrada_vai_ao_aquario_log_como_morta",
+        ],
+    },
+    {
+        "id": "aquario-graficos-contam-a-morta",
+        "titulo": "os graficos de dia/semana/mes contariam a linha morta como minuto (707, A15)",
+        "porque": (
+            "707 A15: os graficos e a retomada leem o MESMO aquario.log, e so "
+            "as linhas `contagem` sao minuto. A `morta` traz `dados` (o "
+            "desfecho), e sem o filtro por evento ela entraria na conta."
+        ),
+        "arquivo": "crates/phxsql-server/src/aquario/log.rs",
+        "trecho": """            if j.texto_ou("evento", "") == Evento::Contagem.nome() {
+""",
+        "troca": """            if true {
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_do_aquario::nasceu_e_morta_nao_entram_na_conta_dos_graficos",
+        ],
+        "seguem": [
+            "servidor::testes_do_aquario::a_tarefa_encerrada_vai_ao_aquario_log_como_morta",
+        ],
+    },
 ]

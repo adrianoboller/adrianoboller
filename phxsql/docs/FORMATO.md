@@ -4926,7 +4926,7 @@ No arranque, o servidor lê do `aquario.log` (e do rodízio) as linhas
 `contagem` das **duas** últimas horas — a corrente e a anterior, que pode ter
 caído sem fechar — e refaz a hora a partir delas.
 
-## 26. `aquario.log` — as linhas `estourou`, `mudou` e `contagem` (pedido 707, A6 + A5 + A8)
+## 26. `aquario.log` — as linhas `estourou`, `mudou`, `contagem`, `anel`, `nasceu` e `morta` (pedido 707, A6 + A5 + A8 + A15; 780)
 
 JSON Lines ao lado do `acessos.log`, rodízio de 8 MiB × 8, pelo mesmo
 `LogAcessos::registrar_json`. Campo vazio não entra. **Nunca** `usuario` nem
@@ -4945,6 +4945,9 @@ JSON Lines ao lado do `acessos.log`, rodízio de 8 MiB × 8, pelo mesmo
 | `estourou` | a tarefa que viveu ≥ 1 s (`VIVEU_NO_AQUARIO_MS`) terminou (fora as `OPS_DE_REPLICACAO`); `quando_ms` é o **fim**. Leva `op`, `database`, `tabela`, `ms` (a duração), `ok` e, quando `ok` é falso e o código não é 0, `codigo` |
 | `mudou` | a base (A4) achou o pedido fora do habitual; `quando_ms` é o fim do pedido. Leva `op`, `database`, `tabela`, `alarme`, `ocorrencia` (§27, quando o alarme virou ocorrência) e `dados` (`z`, `n`, `p95_habitual_us`, `servico_us`); **não** leva `ms` nem `ok` |
 | `contagem` | a contagem de um minuto fechado, no formato do §25: `quando_ms` é a **virada**, e o minuto vai em `dados` |
+| `anel` | (780) a tarefa viva subiu de anel; `quando_ms` é a volta do amostrador. Leva `tarefa`, `op`, `database`, `tabela`, `ms` (há quanto roda) e `dados` (`anel`, `de`) |
+| `nasceu` | (A15) a tarefa viva passou de 1 s (`VIVEU_NO_AQUARIO_MS`, a mesma régua do `estourou`) e virou bolha, fora as `OPS_DE_REPLICACAO`; uma vez por pedido. `quando_ms` é a volta do amostrador que a viu, e não o instante exato do 1 s. Leva `tarefa` (`chave#serial`: a sessão é a parte antes do `#`), `op`, `database`, `tabela`, `ms` (há quanto roda) e a classe. A tarefa de 1 a ~2 s pode estourar sem `nasceu` |
+| `morta` | (A15) alguém encerrou a tarefa: `telemetria_encerrar` (desfecho `encerrando`, `marcada` ou `nao_cancelavel`; `ociosa` não grava) ou `encerrar_sessao` de conexão que executava (`derrubada`). `quando_ms` é o ato. Leva `tarefa`, `op`, `database`, `tabela`, `ms` (há quanto rodava), a classe tirada **antes** do ato, e `dados` (`desfecho`). **Sem** quem encerrou: está no `acessos.log` |
 | `cor` / `tamanho` / `motivo` / `grupo` | **desde a A5**: a classe que a `aquario::classificar` deu à tarefa **naquele instante** — a mesma função do retrato (`aquario_retrato`) e do `nivel` do painel. `motivo` é chave da fábrica; `grupo` só quando o motivo tem família |
 | `alarmes` | **desde a A5**: os alarmes de tarefa (A3) marcados, **pelos nomes** — nunca o número do bit |
 
@@ -4958,9 +4961,7 @@ calculada na leitura por `contagem::faixa_da_op`. Ela não está gravada: é fun
 da `op`, e a tela não tem lista de operações própria.
 
 **Declarado e ainda não gravado.** O tipo `Evento` (`aquario/log.rs`) também
-nomeia `nasceu`, `morta`, `retrato` e `sedimento`, e a `Linha` tem um campo
-`tarefa`; nenhum produtor grava essas linhas hoje (só `estourou`, `mudou` e
-`contagem`). Um leitor deve tolerá-las: `Alarme::de_nome` devolve `None` para
+nomeia `retrato` e `sedimento`; nenhum produtor grava essas linhas hoje. Um leitor deve tolerá-las: `Alarme::de_nome` devolve `None` para
 nome que não conhece, e um log de versão mais nova não vira outro alarme.
 
 **Desde a F2 do 495**, a linha `mudou` leva `"ocorrencia": <id>` quando o alarme

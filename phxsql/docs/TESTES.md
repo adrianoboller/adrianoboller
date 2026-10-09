@@ -1554,10 +1554,19 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `camada-de-protecao-fora-do-ponto-unico` | sem a camada no ponto dos três irmãos, o DROP passava pela rede, pelo MCP, pelo job e pelo motor das rotinas (765, P4/P5) | 5 | ✅ provada |
 | `motor-da-rotina-pula-a-camada` | o motor das rotinas chamando o executar direto pulava a camada de proteção e os portões (765, P5) | 2 | ✅ provada |
 | `job-pula-a-camada` | o job chamando o executar direto rodava o comando perigoso sem a senha (765, P5) | 2 | ✅ provada |
+| `mcp-ponte-de-leitura-sem-carimbo` | a ponte MCP somente de leitura deixava o phx_sql escrever: DELETE apagou 1.500 linhas (pedido 781) | 2 | ✅ provada |
+| `mcp-sql-dml-passa-na-ponte-de-leitura` | o op_sql nao perguntava ao analisador se o comando so le: INSERT/UPDATE/DELETE e VIEW passavam pela ponte de leitura (781) | 1 | ✅ provada |
+| `mcp-sql-rotina-passa-na-ponte-de-leitura` | CREATE PROCEDURE e CALL passavam pela ponte MCP de leitura (781) | 1 | ✅ provada |
+| `mcp-ponte-de-leitura-recusa-o-select` | o conserto do 781 nao pode tirar a leitura: SELECT pela ponte de leitura continua saindo | 1 | ✅ provada |
+| `aquario-nasceu-repete` | a mesma bolha nascia de novo a cada volta do amostrador (707, A15) | 1 | ✅ provada |
+| `aquario-morta-sem-linha` | encerrar uma tarefa pela telemetria nao deixava a linha morta no aquario.log (707, A15) | 1 | ✅ provada |
+| `aquario-derrubada-sem-linha` | derrubar a conexao que executava nao deixava a linha morta (derrubada) no aquario.log (707, A15) | 1 | ✅ provada |
+| `aquario-morta-trabalha-desligada` | com a telemetria desligada o retrato da morta achava a atividade antes do portao (707, A15) | 1 | ✅ provada |
+| `aquario-graficos-contam-a-morta` | os graficos de dia/semana/mes contariam a linha morta como minuto (707, A15) | 1 | ✅ provada |
 | `alter-com-regra-sem-aviso` | `acrescentar_coluna` com `check` ou `calculada` numa tabela com linha é aceito SEM AVISO, e a linha velha fica fora da regra | — | 🪦 aposentada (01/10/2026) |
 | `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | — | 🪦 aposentada (18/09/2026) |
 
-**885 guardas: 2 aposentadas, 878 provadas, 5 redundantes** — 44295 s de mutação, medido de 2026-09-16 15:25 a 2026-10-09 20:18, em 8 datas (2026-09-16: 1, 2026-09-30: 27, 2026-10-01: 93, 2026-10-02: 93, 2026-10-06: 36, 2026-10-07: 219, 2026-10-08: 308, 2026-10-09: 108).
+**894 guardas: 2 aposentadas, 887 provadas, 5 redundantes** — 45504 s de mutação, medido de 2026-09-16 15:25 a 2026-10-09 21:52, em 8 datas (2026-09-16: 1, 2026-09-30: 27, 2026-10-01: 93, 2026-10-02: 93, 2026-10-06: 36, 2026-10-07: 219, 2026-10-08: 308, 2026-10-09: 117).
 
 As guardas que esta corrida ainda cita, hoje aposentadas:
 

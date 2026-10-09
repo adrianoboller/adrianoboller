@@ -315,9 +315,17 @@ fn a_reescrita_acima_do_piso_pede_a_senha_com_o_tamanho() {
 
 // ------------------------------------------------------------------ P5
 
-/// A ponte MCP deste servidor, somente de leitura como nasce.
+/// A ponte MCP deste servidor, com a escrita liberada: a camada de protecao
+/// e a prova destes testes, e a ponte de leitura recusaria antes dela (781).
 fn mcp(s: &Arc<Servidor>, texto: &str) -> Json {
+    mcp_da_ponte(s, texto, true)
+}
+
+/// A ponte MCP pelo caminho real (`ExecutorLocal` -> `despachar`). Sem
+/// `escrita`, somente de leitura, como nasce.
+fn mcp_da_ponte(s: &Arc<Servidor>, texto: &str, escrita: bool) -> Json {
     let ponte = crate::mcp::Ponte::nova(ExecutorLocal::novo(Arc::clone(s), "mcp:prova"))
+        .com_escrita(escrita)
         .com_campo_fixo("token", Json::texto_de("t"));
     let pedido = Json::objeto(vec![
         ("jsonrpc", Json::texto_de("2.0")),
@@ -340,10 +348,10 @@ fn mcp(s: &Arc<Servidor>, texto: &str) -> Json {
     Json::analisar(&ponte.atender(&pedido.escrever()).unwrap()).unwrap()
 }
 
-/// P5, MCP: a ferramenta `phx_sql` -- que a ponte oferece MESMO somente de
-/// leitura -- leva o `DROP VIEW` e o `DELETE` largo ao `despachar`, e a
-/// camada recusa os dois. Sem a camada, os dois EXECUTAM pela ponte
-/// «somente de leitura»: e o achado desta prova, registrado no relatorio.
+/// P5, MCP: a ferramenta `phx_sql` leva o `DROP VIEW` e o `DELETE` largo
+/// ao `despachar`, e a camada recusa os dois. Sem a camada, os dois executam
+/// -- pela ponte com escrita; a de leitura recusa antes (pedido 781, o teste
+/// de baixo).
 ///
 /// RED: a corrida com a camada desligada; e sem o `protecao_do_pedido` no
 /// `executar_e_contar_escrita_local`, a visao some pela ponte.
@@ -474,4 +482,91 @@ fn nenhum_executar_direto_novo() {
         n >= TETO_EXECUTAR_DIRETO,
         "{n} < {TETO_EXECUTAR_DIRETO}: baixe a catraca no mesmo commit"
     );
+}
+
+/// O texto que a ponte devolve numa chamada, e se ela o marcou como erro.
+fn texto_do_mcp(r: &Json) -> (String, bool) {
+    let res = r.campo("result").expect("tools/call devolve result");
+    let erro = res.booleano_ou("isError", false);
+    let texto = res.campo("content").unwrap().lista().unwrap()[0]
+        .texto_ou("text", "")
+        .to_string();
+    (texto, erro)
+}
+
+/// Pedido 781: a ponte MCP somente de leitura oferece o `phx_sql`, e ele
+/// ESCREVIA -- medido, um DELETE apagou 1.500 linhas com a camada de
+/// protecao desligada. Agora o `op_sql` recusa pelo analisador de cada ramo
+/// tudo o que nao so le, ANTES do trabalho: o DELETE numa tabela que nem
+/// existe volta com a recusa da ponte, e nao com «tabela nao existe».
+///
+/// Camada DESLIGADA de proposito: a recusa tem de vir da ponte, nao dela.
+///
+/// RED: com `CAMPO_SO_LEITURA` sem ser carimbado em `Ponte::tools_call` (ou
+/// com o `so_le` de `sintaxe::Comando` devolvendo `true`), o DELETE volta com
+/// `"afetadas": 1500` e a primeira asercao cai.
+#[test]
+fn a_ponte_de_leitura_recusa_o_sql_que_escreve_antes_do_trabalho() {
+    let (s, _d) = servidor_com("781-mcp-leitura", false, 1_500, Cadastro::default());
+    for texto in [
+        "DELETE FROM c WHERE id > 0",
+        "DELETE FROM nao_existe WHERE id = 1",
+        "UPDATE c SET nome = 'x' WHERE id = 1",
+        "INSERT INTO c (id, nome) VALUES (9999, 'novo')",
+        "DROP VIEW v",
+        "CREATE VIEW w AS SELECT id FROM c",
+        "CREATE PROCEDURE poe() BEGIN INSERT INTO c (id, nome) VALUES (9998, 'x'); END",
+        "CALL poe()",
+        "BEGIN",
+        "CREATE USER bia PASSWORD 'segredo123'",
+        "ALTER TABLE c SET dicas.observacao = 'x'",
+        "ALTER TABLE c ENCRYPT",
+    ] {
+        let (msg, erro) = texto_do_mcp(&mcp_da_ponte(&s, texto, false));
+        assert!(erro, "{texto}: executou pela ponte de leitura -- {msg}");
+        // A frase da `erro.mcp_so_leitura`, e nao «somente de leitura», que
+        // outros caminhos do servidor tambem dizem.
+        assert!(
+            msg.contains("este comando SQL escreve"),
+            "{texto}: recusou por outro motivo -- {msg}"
+        );
+    }
+    assert!(!marcada(&s, "n1"), "o DELETE pela ponte de leitura apagou");
+    assert_eq!(quantas(&s, "n1"), 1);
+    assert_eq!(
+        quantas(&s, "novo"),
+        0,
+        "o INSERT pela ponte de leitura gravou"
+    );
+    assert_eq!(quantas(&s, "x"), 0, "o UPDATE pela ponte de leitura gravou");
+}
+
+/// O comportamento VELHO, que o 781 nao pode tirar: pela ponte de leitura o
+/// SELECT simples, o composto, a uniao, a visao e o SHOW continuam saindo.
+/// E a ponte com escrita continua escrevendo pelo `phx_sql` -- a recusa e
+/// da ponte de leitura, nao do `phx_sql`.
+///
+/// RED: com o `so_le` de `sintaxe::Comando` devolvendo `false` para
+/// `Selecao`, o primeiro SELECT cai.
+#[test]
+fn a_ponte_de_leitura_continua_lendo_pelo_phx_sql() {
+    let (s, _d) = servidor_com("781-mcp-le", false, 30, Cadastro::default());
+    for texto in [
+        "SELECT id, nome FROM c WHERE id = 7",
+        "SELECT COUNT(*) FROM c",
+        "SELECT id FROM c WHERE id IN (SELECT id FROM c WHERE id = 3)",
+        "SELECT * FROM c UNION SELECT * FROM c",
+        "SELECT id FROM v",
+        "SHOW TRIGGERS",
+        "SHOW TABLE c SETTINGS",
+    ] {
+        let (msg, erro) = texto_do_mcp(&mcp_da_ponte(&s, texto, false));
+        assert!(!erro, "{texto}: a leitura parou -- {msg}");
+    }
+    let (msg, _) = texto_do_mcp(&mcp_da_ponte(&s, "SELECT nome FROM c WHERE id = 7", false));
+    assert!(msg.contains("n7"), "{msg}");
+
+    let (msg, erro) = texto_do_mcp(&mcp_da_ponte(&s, "DELETE FROM c WHERE id = 7", true));
+    assert!(!erro, "a ponte com escrita parou de escrever: {msg}");
+    assert!(marcada(&s, "n7"));
 }

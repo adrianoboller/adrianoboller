@@ -1180,3 +1180,211 @@ fn a_telemetria_marca_a_tarefa_do_servico() {
     a.terminou_pedido("");
     s.telemetria.sair("dados:92");
 }
+
+// ------------------------------------------- nasceu e morta (707, A15)
+
+/// As linhas de um `evento` no `aquario.log`.
+fn eventos(s: &Arc<Servidor>, evento: &str) -> Vec<Json> {
+    let r = linhas_do_aquario(s, "");
+    r.campo("linhas")
+        .and_then(Json::lista)
+        .unwrap()
+        .iter()
+        .filter(|j| j.texto_ou("evento", "") == evento)
+        .cloned()
+        .collect()
+}
+
+/// A15: a tarefa que passa de um segundo vira bolha e deixa a linha
+/// `nasceu` no `aquario.log`, pelo laco do amostrador e sem ninguem olhando
+/// -- uma vez por pedido, de novo no pedido seguinte, e nunca para a
+/// replicacao (que tambem nao estoura). Sem login nem IP na linha.
+///
+/// RED: sem o `velho == serial` em `Telemetria::nascidas`, a segunda volta
+/// grava de novo e o `assert_eq!(.., 0)` cai; sem o `gravar` em
+/// `gravar_as_nascidas`, o log fica sem a linha.
+#[test]
+fn a_bolha_que_nasce_vai_ao_aquario_log_uma_vez_por_pedido() {
+    let dir = dir_temp("nasceu");
+    let s = servidor(&dir, Cadastro::default());
+    s.telemetria.ligar(crate::agora_ms());
+    let a = s
+        .telemetria
+        .entrar("dados:8", "dados", "10.0.0.8", 8, 0)
+        .expect("telemetria ligada");
+    let serial = a.comecou_pedido("varrer", "ana", "loja", "vendas", 0);
+    let r = s
+        .telemetria
+        .entrar("dados:9", "dados", "10.0.0.9", 9, 0)
+        .unwrap();
+    r.comecou_pedido("replicar", "", "loja", "", 0);
+    let agora = crate::agora_ms();
+    assert_eq!(s.gravar_as_nascidas(agora), 0, "recem-chegada nao e bolha");
+
+    a.recuar_o_pedido(1_500);
+    r.recuar_o_pedido(1_500);
+    assert_eq!(s.gravar_as_nascidas(agora), 1, "so a de cliente nasce");
+    assert_eq!(
+        s.gravar_as_nascidas(agora),
+        0,
+        "a mesma bolha nao nasce duas vezes"
+    );
+
+    let l = eventos(&s, "nasceu");
+    assert_eq!(l.len(), 1);
+    let j = l[0].escrever();
+    assert_eq!(
+        l[0].texto_ou("tarefa", ""),
+        format!("dados:8#{serial}"),
+        "{j}"
+    );
+    assert_eq!(l[0].texto_ou("op", ""), "varrer");
+    assert_eq!(l[0].texto_ou("database", ""), "loja");
+    assert_eq!(l[0].texto_ou("tabela", ""), "vendas");
+    assert!(l[0].inteiro_ou("ms", 0) >= 1_500, "{j}");
+    assert!(
+        l[0].campo("cor").is_some(),
+        "a cor e o motivo vao junto: {j}"
+    );
+    assert!(
+        !j.contains("ana") && !j.contains("10.0.0.8"),
+        "login ou IP no log: {j}"
+    );
+
+    // pedido novo: nasce de novo
+    a.terminou_pedido("ana");
+    a.comecou_pedido("varrer", "ana", "loja", "vendas", 0);
+    a.recuar_o_pedido(1_500);
+    assert_eq!(s.gravar_as_nascidas(agora), 1);
+    a.terminou_pedido("ana");
+    r.terminou_pedido("");
+}
+
+/// A15: encerrar pela telemetria deixa a linha `morta` com o desfecho que a
+/// resposta deu, a tarefa e a tabela -- e sem quem encerrou, que fica no
+/// `acessos.log`. Derrubar a conexao que executa deixa `morta` com
+/// `derrubada`.
+///
+/// RED: sem o `gravar_a_morta` no `op_telemetria_encerrar` (ou no
+/// `op_encerrar_sessao`), a lista de `morta` fica vazia.
+#[test]
+fn a_tarefa_encerrada_vai_ao_aquario_log_como_morta() {
+    let dir = dir_temp("morta");
+    let s = servidor(&dir, Cadastro::default());
+    s.telemetria.ligar(crate::agora_ms());
+    let a = s
+        .telemetria
+        .entrar("dados:31", "dados", "10.0.0.31", 31, 0)
+        .unwrap();
+    let serial = a.comecou_pedido("varrer", "ana", "loja", "vendas", 0);
+    a.recuar_o_pedido(5_000);
+    let resp = pede(
+        &s,
+        &Cadastro::default(),
+        &format!(r#""op":"telemetria_encerrar","id":"dados:31#{serial}""#),
+    )
+    .unwrap();
+    let estado = resp.texto_ou("estado", "").to_string();
+    let l = eventos(&s, "morta");
+    assert_eq!(l.len(), 1, "{}", resp.escrever());
+    let j = l[0].escrever();
+    assert_eq!(
+        l[0].texto_ou("tarefa", ""),
+        format!("dados:31#{serial}"),
+        "{j}"
+    );
+    assert_eq!(l[0].texto_ou("tabela", ""), "vendas");
+    assert!(l[0].inteiro_ou("ms", 0) >= 5_000, "{j}");
+    assert_eq!(
+        l[0].campo("dados").unwrap().texto_ou("desfecho", ""),
+        estado
+    );
+    // Quem encerrou fica no `acessos.log`: a linha nao tem onde po-lo.
+    assert!(
+        l[0].campo("quem").is_none() && l[0].campo("usuario").is_none(),
+        "{j}"
+    );
+    assert!(!j.contains("ana"), "{j}");
+    a.terminou_pedido("ana");
+    s.telemetria.sair("dados:31");
+
+    // A conexao derrubada pelo `encerrar_sessao`.
+    let agora = crate::agora_ms();
+    let (id, _morrer) = s
+        .ligacoes
+        .lock()
+        .unwrap()
+        .entrar("10.0.0.32", 1, agora, None);
+    s.ligacoes
+        .lock()
+        .unwrap()
+        .comecou(id, "varrer", "ana", "loja", "itens", agora);
+    let b = s
+        .telemetria
+        .entrar(&format!("dados:{id}"), "dados", "10.0.0.32", id, agora)
+        .unwrap();
+    b.comecou_pedido("varrer", "ana", "loja", "itens", agora);
+    pede(
+        &s,
+        &Cadastro::default(),
+        &format!(r#""op":"encerrar_sessao","id":{id},"tipo":"conexao""#),
+    )
+    .unwrap();
+    let l = eventos(&s, "morta");
+    assert_eq!(l.len(), 2, "a conexao derrubada nao foi ao log");
+    assert_eq!(l[1].texto_ou("tabela", ""), "itens");
+    assert_eq!(
+        l[1].campo("dados").unwrap().texto_ou("desfecho", ""),
+        "derrubada"
+    );
+    b.terminou_pedido("ana");
+}
+
+/// O custo zero: com a telemetria DESLIGADA o retrato da `morta` nao faz
+/// trabalho nenhum -- o portao vem ANTES de achar a atividade (a busca no
+/// registro e a funcao que nunca deve rodar). E desligada nao ha `nasceu`.
+///
+/// RED: tirar o `aquario_se_ligada()?` de `retrato_da_morta` (ou move-lo
+/// para depois do `atividade()`) chama a funcao, e o panico derruba o teste.
+#[test]
+fn desligada_nao_nasce_nem_morre_e_nao_trabalha() {
+    let dir = dir_temp("a15-desligada");
+    let s = servidor(&dir, Cadastro::default());
+    s.telemetria.desligar();
+    let r = s.retrato_da_morta(|| panic!("o portao veio depois do trabalho"));
+    assert!(r.is_none());
+    assert_eq!(s.gravar_as_nascidas(crate::agora_ms()), 0);
+}
+
+/// Os graficos de dia, semana e mes leem o MESMO `aquario.log`, mas so as
+/// linhas `contagem` -- `nasceu` e `morta` nao contam em dobro. A contagem
+/// do minuto sai do `anotar` (um pedido, uma conta), e a retomada so le
+/// `contagem`.
+///
+/// RED: tirar o filtro `evento == contagem` de
+/// `LogDoAquario::contagens_desde` faz a retomada receber o `dados` da
+/// `morta` como se fosse um minuto.
+#[test]
+fn nasceu_e_morta_nao_entram_na_conta_dos_graficos() {
+    use crate::aquario::log::{Evento, Linha};
+    let dir = dir_temp("a15-graficos");
+    let s = servidor(&dir, Cadastro::default());
+    let log = s.telemetria.aquario().log();
+    let agora = crate::agora_ms();
+    log.gravar(&Linha::nova(Evento::Nasceu, agora)).unwrap();
+    log.gravar(&Linha::contagem(
+        agora,
+        Json::objeto(vec![("minuto_ms", Json::de_i64(agora))]),
+    ))
+    .unwrap();
+    // A `morta` como o servidor a grava: com `dados`, que e o campo que a
+    // retomada colhe.
+    let mut morta = Linha::nova(Evento::Morta, agora);
+    morta.dados = Some(Json::objeto(vec![(
+        "desfecho",
+        Json::texto_de("derrubada"),
+    )]));
+    log.gravar(&morta).unwrap();
+    let c = log.contagens_desde(agora - 1).unwrap();
+    assert_eq!(c.len(), 1, "{c:?}");
+}

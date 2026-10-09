@@ -1445,11 +1445,15 @@ passa); **a hora é o fecho do minuto, não um segundo contador**.
   erro de E/S ao `evento_de_disco` (saúde do disco), e a consulta devolve
   `gravadas`, `falhas_de_escrita` e `ultima_falha`. Arquivo que não abriu no
   arranque AVISA e o servidor sobe (o aquário é acessório).
-- **Tipos de evento declarados sem escritor:** `Evento::Nasceu`, `Morta`,
-  `Retrato` e `Sedimento` existem em `log.rs`, e o campo `tarefa` da `Linha`
-  também, mas nada grava essas linhas hoje. O pedido do dono (707, item 5) quer
-  «nascer, mudar de cor, ser morta, estourar» no log; só `estourou`, `mudou` e
-  `contagem` existem.
+- **`nasceu` e `morta` (A15, 09/10/2026):** `nasceu` sai do amostrador
+  (`Telemetria::nascidas`, uma vez por pedido pelo `nasceu_gravado`, como o
+  anel do 780); `morta` sai do `telemetria_encerrar` e do `encerrar_sessao`,
+  com o desfecho em `dados` e a classe tirada antes do ato. Desligada, o portão
+  `aquario_se_ligada` vem antes de achar a atividade. Os gráficos de dia,
+  semana e mês leem só as linhas `contagem`, e por isso não contam as duas.
+  **Falta:** `Retrato` e `Sedimento` seguem declarados sem escritor; e a tarefa
+  de 1 a ~2 s pode estourar sem `nasceu` (o amostrador olha de segundo em
+  segundo).
 
 ### 11.8 O `aquario-horas.jsonl` e o `ocorrencias.log`
 

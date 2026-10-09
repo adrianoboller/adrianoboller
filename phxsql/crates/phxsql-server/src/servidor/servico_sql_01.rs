@@ -128,12 +128,19 @@ impl Servidor {
             ));
         }
         let lido = self.ler_o_sql(&texto);
+        // Pedido 781: a ponte MCP somente de leitura carimba `so_leitura`, e
+        // cada ramo abaixo pergunta ao PROPRIO analisador que o reconheceu se
+        // o comando so le -- antes de executar qualquer coisa. Quem decide e
+        // o mesmo despacho que executaria: um segundo classificador por texto
+        // divergiria deste no primeiro verbo novo. Um cliente de rede que
+        // mande o campo so restringe a si mesmo.
+        let so_leitura = p.booleano_ou(crate::mcp::CAMPO_SO_LEITURA, false);
         // CREATE/ALTER/DROP USER, antes de tudo: `rotina::comando` reclama
         // todo CREATE e todo DROP para si, e `CREATE USER` chegando la vira
         // erro de sintaxe pedindo TRIGGER. Uma LINHA de despacho, de
         // proposito -- o corpo mora em `sql_de_cadastro`, e assim outra
         // frente mexendo nesta funcao nao esbarra nele.
-        if let Some(r) = self.sql_de_cadastro(&texto, sessao) {
+        if let Some(r) = self.sql_de_cadastro(&texto, so_leitura, sessao) {
             return r;
         }
         // Os comandos de TRANSACAO vem PRIMEIRO, e a ordem foi corrigida por um
@@ -159,6 +166,9 @@ impl Servidor {
         // a frase quando a palavra depois do SHOW e SERVER, DATABASE, TABLE ou
         // CONNECTION, e nenhuma delas o outro atendia.
         if let Some(c) = phxsql_sql::diretiva::comando(&texto)? {
+            if !c.so_le() {
+                self.recusar_na_ponte_de_leitura(so_leitura, &c.op)?;
+            }
             let mut pedido = c.pedido();
             // O `database` do pedido de fora viaja junto: `SHOW TABLE clientes
             // SETTINGS` nao repete a base que a sessao ja disse.
@@ -189,6 +199,9 @@ impl Servidor {
         }
 
         if let Some(c) = phxsql_sql::transacao::comando(&texto)? {
+            // Nenhum comando de transacao so le: o `BEGIN` segura trava entre
+            // chamadas, e o `LOCK`/`SAVEPOINT` nao sao pergunta.
+            self.recusar_na_ponte_de_leitura(so_leitura, &c.op)?;
             let mut pedido = c.pedido();
             // O `database` do pedido de fora viaja junto: quem manda
             // `{"op":"sql","database":"loja","texto":"BEGIN"}` nao precisa
@@ -215,6 +228,9 @@ impl Servidor {
             .map(<[Json]>::to_vec)
             .unwrap_or_default();
         if let Some(comando) = phxsql_sql::rotina::comando_com(&texto, &parametros)? {
+            if !comando.so_le() {
+                self.recusar_na_ponte_de_leitura(so_leitura, "rotina")?;
+            }
             return self.executar_rotina(comando, p, sessao);
         }
 
@@ -239,6 +255,9 @@ impl Servidor {
             }
             None => phxsql_sql::analisar_comando_com(&texto, &parametros)?,
         };
+        if !comando.so_le() {
+            self.recusar_na_ponte_de_leitura(so_leitura, comando.verbo())?;
+        }
         let selecao = match comando {
             phxsql_sql::Comando::Selecao(s) => s,
             // O SELECT COMPOSTO -- `WITH`, subconsulta, `IN (SELECT ...)`,
@@ -312,6 +331,18 @@ impl Servidor {
         Ok(resposta_do_sql(&texto, &plano, bruto))
     }
 
+    /// A recusa da ponte MCP somente de leitura (pedido 781). Uma funcao so
+    /// para os cinco ramos do `op_sql`, para a mensagem nao divergir; quem
+    /// decide SE recusa e o `so_le` do analisador de cada ramo.
+    fn recusar_na_ponte_de_leitura(&self, so_leitura: bool, oque: &str) -> Result<()> {
+        if !so_leitura {
+            return Ok(());
+        }
+        Err(PhxError::Autorizacao(
+            self.msg("erro.mcp_so_leitura", &[("comando", oque)]),
+        ))
+    }
+
     /// `CREATE USER`, `ALTER USER` e `DROP USER` vindos pela op `sql`.
     ///
     /// `None` quando o texto nao e nenhum dos tres -- e ai a op `sql` segue o
@@ -324,12 +355,21 @@ impl Servidor {
     /// por recorte: o Profiler tapa o campo `senha` do JSON pelo NOME, e num
     /// texto SQL nao ha nome -- ha uma frase. Sem esta redacao, `CREATE USER`
     /// pela op `sql` poria a senha no `perfil.txt` e na resposta.
-    fn sql_de_cadastro(&self, texto: &str, sessao: &Sessao) -> Option<Result<Json>> {
+    fn sql_de_cadastro(
+        &self,
+        texto: &str,
+        so_leitura: bool,
+        sessao: &Sessao,
+    ) -> Option<Result<Json>> {
         let c = match phxsql_sql::usuario::comando(texto) {
             Ok(Some(c)) => c,
             Ok(None) => return None,
             Err(e) => return Some(Err(e)),
         };
+        // Os tres mexem no cadastro: nenhum passa pela ponte de leitura.
+        if let Err(e) = self.recusar_na_ponte_de_leitura(so_leitura, &c.op) {
+            return Some(Err(e));
+        }
         // Este caminho chama o `executar` direto, sem os irmaos -- e por isso
         // pergunta a camada de protecao por conta propria: sem esta linha o
         // `DROP USER` pela op `sql` seria a porta dos fundos da lista de

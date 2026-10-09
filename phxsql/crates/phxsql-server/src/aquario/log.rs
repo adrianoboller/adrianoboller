@@ -29,13 +29,16 @@
 //! quando a base da A4 acha o pedido fora do habitual e o produtor da A3 o
 //! marca; `contagem` sai da virada do minuto da A8, no amostrador -- e a
 //! mesma A8 a le de volta no arranque, pelo [`LogDoAquario::contagens_desde`].
-//! Um escritor so para os tres.
+//! `nasceu` (A15) e `anel` (780) saem do amostrador, que olha as vivas de
+//! segundo em segundo, uma linha por evento; `morta` (A15) sai do
+//! `telemetria_encerrar` e do `encerrar_sessao`, com o desfecho em `dados`.
+//! Um escritor so para todos.
 //!
 //! # O que AINDA NAO grava
 //!
-//! `nasceu` pede o id da tarefa no `Acesso` (§4.1) e o amostrador a olhar as
-//! vivas; `retrato` e `sedimento` sao da A5. Os nomes estao aqui para que
-//! cada fatia grave pela mesma porta.
+//! `retrato` e `sedimento`. Os nomes estao aqui para que cada fatia grave
+//! pela mesma porta. E o `nasceu` da tarefa que vive entre 1 e ~2 s pode
+//! faltar: ver `Telemetria::nascidas`.
 
 use std::fmt;
 use std::fs::File;

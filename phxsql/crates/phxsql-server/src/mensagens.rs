@@ -1132,6 +1132,19 @@ pub const FABRICA: &[MensagemFabrica] = &[
             "servidor en modo de solo lectura",
         ],
     },
+    // Pedido 781: a ponte MCP nasce somente de leitura, e o `phx_sql` dela
+    // so aceita o que o analisador SQL classifica como leitura.
+    MensagemFabrica {
+        nome: "erro.mcp_so_leitura",
+        textos: [
+            "a ponte MCP e somente de leitura e este comando SQL escreve ({comando}): aqui o phx_sql so aceita SELECT e SHOW",
+            "le pont MCP est en lecture seule et cette commande SQL écrit ({comando}) : ici phx_sql n'accepte que SELECT et SHOW",
+            "the MCP bridge is read-only and this SQL command writes ({comando}): here phx_sql only accepts SELECT and SHOW",
+            "il ponte MCP è di sola lettura e questo comando SQL scrive ({comando}): qui phx_sql accetta solo SELECT e SHOW",
+            "die MCP-Brücke ist nur lesbar und dieser SQL-Befehl schreibt ({comando}): hier akzeptiert phx_sql nur SELECT und SHOW",
+            "el puente MCP es de solo lectura y este comando SQL escribe ({comando}): aquí phx_sql solo acepta SELECT y SHOW",
+        ],
+    },
     MensagemFabrica {
         nome: "erro.sem_direito",
         textos: [

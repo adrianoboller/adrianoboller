@@ -945,6 +945,9 @@ window.PhxAquario = (function () {
     marcada: () => txt("tela.aq_k_res_marcada", "marcada: a marca vale no primeiro ponto seguro que vier."),
     nao_cancelavel: () => txt("tela.aq_k_res_nao_cancelavel", "não cancelável agora: está dentro do ponto crítico e vai terminar."),
     ociosa: () => txt("tela.aq_k_res_ociosa", "não havia operação em curso."),
+    /* O `encerrar_sessao` (707, A15): a linha `morta` do log traz o mesmo
+     * campo, e a lista o traduz por esta tabela. */
+    derrubada: () => txt("tela.aq_k_res_derrubada", "derrubada: a conexão foi fechada; a operação em curso termina e o resultado não vai a lugar nenhum."),
   };
 
   /** `tela(host, { api, compacto, periodo, tv, quem })` — o aquario ligado ao
@@ -1268,6 +1271,7 @@ window.PhxAquario = (function () {
         const d = l.dados || {};
         const textoEv = ev();
         const textoMot = [l.evento === "anel" && d.anel ? textoDoAnel(l.ms, d.anel, d.de) : "",
+                          l.evento === "morta" && DESFECHO[d.desfecho] ? DESFECHO[d.desfecho]() : "",
                           l.motivo ? motivo(l.motivo) : ""].filter(Boolean).join(" — ");
         const textoCor = ROTULO_DA_COR[l.cor] ? ROTULO_DA_COR[l.cor]() : "";
         const alvo = [l.database, l.tabela].filter(Boolean).join(".");

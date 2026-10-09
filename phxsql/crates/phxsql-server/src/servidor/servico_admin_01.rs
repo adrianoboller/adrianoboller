@@ -1076,6 +1076,7 @@ impl Servidor {
             )));
         }
         let agora = crate::agora_ms();
+        let morta = self.retrato_da_morta(|| Some(Arc::clone(&atividade)));
         let desfecho = atividade.encerrar_mirando(&quem, Some(alvo.serial));
         let (estado, op_alvo, aviso) = match &desfecho {
             crate::telemetria::Encerramento::JaTerminou { .. } => {
@@ -1119,6 +1120,9 @@ impl Servidor {
             ),
         };
         self.telemetria.contar_encerramento();
+        if estado != "ociosa" {
+            self.gravar_a_morta(morta, estado);
+        }
         // Vai para o log de acessos, e nao so para a resposta: derrubar o
         // trabalho de outra pessoa e um ato de administracao, e ato de
         // administracao tem de deixar rastro de quem fez o que e quando.
@@ -1288,6 +1292,9 @@ impl Servidor {
         }
         let id = id as u64;
         let agora = crate::agora_ms();
+        // A bolha da conexao, tirada ANTES de derrubar e fora da trava das
+        // ligacoes; so vai ao log se a conexao existia e estava executando.
+        let morta = self.retrato_da_morta(|| self.telemetria.atividade(&format!("dados:{id}")));
         let mut l = self.ligacoes.tomar("ligacoes")?;
         let antes = l.todas().into_iter().find(|x| x.id == id);
         if !l.encerrar(id) {
@@ -1296,6 +1303,10 @@ impl Servidor {
             )));
         }
         let executando = antes.as_ref().map(|x| !x.op.is_empty()).unwrap_or(false);
+        drop(l);
+        if executando {
+            self.gravar_a_morta(morta, "derrubada");
+        }
         Ok(Json::objeto(vec![
             ("encerrada", Json::de_u64(id)),
             (

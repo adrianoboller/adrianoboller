@@ -139,6 +139,12 @@ impl Comando {
     pub fn e_migracao_da_cifra(&self) -> bool {
         matches!(self.op.as_str(), "criptografar" | "descriptografar")
     }
+
+    /// So o `SHOW … SETTINGS` le; o `ALTER … SET` grava a diretiva e o
+    /// `ENCRYPT`/`DECRYPT` reescreve a tabela (pedido 781).
+    pub fn so_le(&self) -> bool {
+        self.op == "diretivas"
+    }
 }
 
 /// Quantas linhas do diario o `SHOW … SETTINGS` traz junto.

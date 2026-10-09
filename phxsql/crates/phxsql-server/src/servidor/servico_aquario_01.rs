@@ -161,6 +161,50 @@ impl Servidor {
         linhas.len()
     }
 
+    /// As linhas `nasceu` (707, A15): a tarefa que passou de um segundo vai
+    /// ao `aquario.log` uma vez por pedido, no relogio do amostrador e pelo
+    /// escritor de sempre -- como o anel. Devolve quantas gravou.
+    pub(super) fn gravar_as_nascidas(&self, agora_ms: i64) -> usize {
+        let aquario = self.telemetria.aquario();
+        let linhas = self.telemetria.nascidas(agora_ms);
+        for l in &linhas {
+            self.no_aquario_log(aquario.log().gravar(l));
+        }
+        linhas.len()
+    }
+
+    /// A linha `morta` (707, A15) de quem `telemetria_encerrar` ou
+    /// `encerrar_sessao` vai encerrar, tirada ANTES do ato: depois dele a
+    /// operacao pode ter acabado. O portao da telemetria vem primeiro e
+    /// antes de qualquer trabalho -- desligada, isto custa um `load`.
+    ///
+    /// A atividade chega por FUNCAO, e nao por valor, pelo mesmo motivo: o
+    /// `encerrar_sessao` a acha numa busca no registro, e um argumento seria
+    /// avaliado antes do portao -- o trabalho que o portao existe para poupar.
+    pub(super) fn retrato_da_morta(
+        &self,
+        atividade: impl FnOnce() -> Option<Arc<crate::telemetria::Atividade>>,
+    ) -> Option<crate::aquario::log::Linha> {
+        self.telemetria.aquario_se_ligada()?;
+        let a = &atividade()?;
+        if a.estado() == crate::telemetria::Estado::Ociosa {
+            return None;
+        }
+        Some(self.telemetria.linha_da_morta(a, crate::agora_ms()))
+    }
+
+    /// Grava a `morta` tirada antes do ato, com o desfecho que o ato deu
+    /// (`encerrando`, `marcada`, `nao_cancelavel`, `derrubada`). O desfecho
+    /// e o MOTIVO da morte, e vai pela palavra do protocolo, nao por frase:
+    /// a tela o traduz.
+    pub(super) fn gravar_a_morta(&self, linha: Option<crate::aquario::log::Linha>, desfecho: &str) {
+        let Some(mut l) = linha else {
+            return;
+        };
+        l.dados = Some(Json::objeto(vec![("desfecho", Json::texto_de(desfecho))]));
+        self.no_aquario_log(self.telemetria.aquario().log().gravar(&l));
+    }
+
     /// O arranque no meio da hora: a contagem refaz a hora corrente (e fecha
     /// a anterior que o processo velho nao fechou) das linhas `contagem` que
     /// ficaram no `aquario.log`. Chamado depois de os dois arquivos estarem

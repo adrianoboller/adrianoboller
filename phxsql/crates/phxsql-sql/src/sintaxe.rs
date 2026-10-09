@@ -476,6 +476,25 @@ pub enum Comando {
 }
 
 impl Comando {
+    /// O comando so LE? E a pergunta da ponte MCP somente de leitura (pedido
+    /// 781), respondida aqui, pelo analisador, e nao por um segundo
+    /// classificador de texto: quem decide o que o comando e e o mesmo
+    /// `analisar_comando` que o executa.
+    ///
+    /// Sem `_ =>` de proposito: variante nova nao compila ate alguem decidir
+    /// se ela le ou escreve -- o padrao esquecido seria «le», e a ponte
+    /// deixaria passar uma escrita calada.
+    pub fn so_le(&self) -> bool {
+        match self {
+            Comando::Selecao(_) | Comando::Consulta(_) | Comando::Uniao(_) => true,
+            Comando::Insercao(_)
+            | Comando::Atualizacao(_)
+            | Comando::Exclusao(_)
+            | Comando::CriarVisao { .. }
+            | Comando::ExcluirVisao { .. } => false,
+        }
+    }
+
     /// O verbo, para as mensagens.
     pub fn verbo(&self) -> &'static str {
         match self {
