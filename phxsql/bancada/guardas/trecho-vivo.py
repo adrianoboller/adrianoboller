@@ -955,7 +955,11 @@ TETO_TESTE_SEM_MODULO = 0
 # «ok 0 por engano» reposto; e +1 da frente do 720 na mesma arvore
 # (`commit-sem-as-duas-recusas-antes-da-marca`). Contado, nao somado.
 # 860: +1 do pedido 759 (`gancho-filho-direto-com-a-trava`).
-PISO_DAS_ENTRADAS = 861
+# 862: +1 do pedido 339, achado 2 (`ndx-sobre-coluna-marcada-em-claro`),
+# PROVADA pelo provador (`--so`), 2/2 cairam.
+# 865: +3 do parecer do papel C sobre o 339 (capacidade antes de truncar,
+# recusa na declaracao, aviso da arvore em claro), RED medido a mao.
+PISO_DAS_ENTRADAS = 865
 
 # ------------------------------------------------------------- APOSENTADAS
 #

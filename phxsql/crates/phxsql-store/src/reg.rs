@@ -2532,6 +2532,7 @@ impl RegFile {
             cab_len: cab_len_novo,
             slot_size: slot_novo,
             data_offset: destino,
+            ndx_ao_lado: None,
         })
     }
 
@@ -3983,6 +3984,10 @@ pub struct TrocaDaCifra {
     cab_len: usize,
     slot_size: usize,
     data_offset: u64,
+    /// O `<tabela>.ndx.novo` selado que a FASE A da `Table` montou (pedido
+    /// 339, achado 2). Mora aqui, e nao num campo da `Table`, para viajar
+    /// junto com os `*.novo` do `.reg`: quem descarta um descarta o outro.
+    ndx_ao_lado: Option<std::path::PathBuf>,
 }
 
 impl TrocaDaCifra {
@@ -3996,9 +4001,26 @@ impl TrocaDaCifra {
         self.troca.slots()
     }
 
-    /// Joga fora os `*.novo`, quando a FASE B nao vai acontecer.
-    pub fn descartar(self) -> usize {
-        self.troca.descartar()
+    /// Joga fora os `*.novo`, quando a FASE B nao vai acontecer -- o
+    /// `.ndx.novo` junto, que conta como mais um.
+    pub fn descartar(mut self) -> usize {
+        let ndx = usize::from(self.descartar_ndx_ao_lado());
+        self.troca.descartar() + ndx
+    }
+
+    pub(crate) fn com_ndx_ao_lado(mut self, caminho: std::path::PathBuf) -> Self {
+        self.ndx_ao_lado = Some(caminho);
+        self
+    }
+
+    pub(crate) fn tirar_ndx_ao_lado(&mut self) -> Option<std::path::PathBuf> {
+        self.ndx_ao_lado.take()
+    }
+
+    fn descartar_ndx_ao_lado(&mut self) -> bool {
+        self.ndx_ao_lado
+            .take()
+            .is_some_and(|p| std::fs::remove_file(p).is_ok())
     }
 }
 

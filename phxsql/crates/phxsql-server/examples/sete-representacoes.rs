@@ -17,10 +17,16 @@
 //! 3. lixeira + trilha (`.trash`,    6. `.reason` (motivo da exclusao)
 //!    `.lgpd`)                       7. `.pag` (particao por letra)
 //!
-//! O CONTROLE POSITIVO vem antes do veredito: o `.ndx` sobre a coluna marcada
-//! TEM de sair «claro» e o `.reg` TEM de sair «cifrado». Sonda que nao acha o
-//! caso conhecido nao vale para os desconhecidos -- foi assim que a primeira
-//! rodada da sonda original errou. Se o controle falhar, o exemplo sai 2.
+//! O CONTROLE vem antes do veredito: uma tabela GEMEA, mesma carga com o
+//! cofre DESLIGADO, TEM de sair «claro» no `.ndx` e no `.reg`, e o `.reg` da
+//! cifrada TEM de sair «cifrado». Sonda que nao acha o caso conhecido nao vale
+//! para os desconhecidos -- foi assim que a primeira rodada da sonda original
+//! errou. Se o controle falhar, o exemplo sai 2.
+//!
+//! Ate 09/10/2026 o controle positivo era o `.ndx` da propria tabela cifrada,
+//! que vazava por decisao registrada. O pedido 339 (achado 2) selou a pagina
+//! dele, e o controle passou para a gemea em claro: o `.ndx` virou a linha 0,
+//! uma representacao medida como as outras.
 //!
 //! # Limites, ditos
 //!
@@ -115,7 +121,20 @@ fn main() {
     let copia = dir.join("copia");
     std::fs::create_dir_all(&dados).expect("diretorio");
 
+    // A gemea em claro: o controle positivo EM DISCO. Mesma carga, cofre
+    // desligado -- se a sonda nao achar o nome aqui, ela nao acha nada.
     cofre::desligar();
+    let gemea = dir.join("gemea");
+    std::fs::create_dir_all(&gemea).expect("diretorio");
+    {
+        let mut g = Table::criar(&gemea, esquema()).expect("criar gemea");
+        for i in 1..=3i64 {
+            g.inserir(&[Value::Int(i), Value::Str(format!("{SONDA}{i:04}"))])
+                .expect("inserir gemea");
+        }
+        g.sincronizar().expect("sincronizar gemea");
+    }
+
     cofre::definir("sonda das sete representacoes", cofre::ITERACOES_MINIMAS).expect("cofre");
 
     // A trilha e opt-in: sem isto o `.lgpd` nem nasce e a linha 3 da saida
@@ -181,16 +200,23 @@ fn main() {
         },
     };
 
-    let ctrl_ndx = tem("ndx");
+    let na_gemea = |ext: &'static str| contem(&bytes_de(&gemea, &com_extensao(ext)), agulha);
+    let ctrl_gemea_ndx = na_gemea("ndx");
+    let ctrl_gemea_reg = na_gemea("reg");
     let ctrl_reg = tem("reg");
     println!(
-        "controle   .ndx  {:8}  (esperado: claro)",
-        veredito(ctrl_ndx)
+        "controle   .ndx  {:8}  (gemea sem cofre; esperado: claro)",
+        veredito(ctrl_gemea_ndx)
+    );
+    println!(
+        "controle   .reg  {:8}  (gemea sem cofre; esperado: claro)",
+        veredito(ctrl_gemea_reg)
     );
     println!(
         "controle   .reg  {:8}  (esperado: cifrado)",
         veredito(ctrl_reg)
     );
+    println!("0 .ndx           {}", veredito(tem("ndx")));
     println!(
         "1 .fts           {}",
         veredito(tem(phxsql_store::fts::EXT_FTS))
@@ -225,7 +251,7 @@ fn main() {
 
     cofre::desligar();
     let _ = std::fs::remove_dir_all(&dir);
-    if !ctrl_ndx || ctrl_reg {
+    if !ctrl_gemea_ndx || !ctrl_gemea_reg || ctrl_reg {
         eprintln!("CONTROLE FALHOU: a sonda nao reproduziu o caso conhecido; o veredito nao vale");
         std::process::exit(2);
     }

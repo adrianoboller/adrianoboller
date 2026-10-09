@@ -1515,6 +1515,10 @@ pub struct Relatorio {
     /// Indices marcados que o arranque NAO conseguiu reconstruir (pedido
     /// 522): a tabela continua recusando, e cada linha diz qual e por que.
     pub indices_pendentes: Vec<String>,
+    /// Arvores sobre coluna marcada EM CLARO com o cofre ligado (pedido 339,
+    /// condicao A do papel C): avisadas, nunca convertidas. Ver
+    /// [`Database::indices_em_claro_sobre_coluna_marcada`].
+    pub indices_em_claro: Vec<String>,
     pub impossiveis: Vec<String>,
     /// Marcas CIFRADAS que este servidor nao conseguiu abrir. **Ficaram no
     /// disco**, e cada linha diz qual e por que -- ver [`Leitura::SemChave`].
@@ -1539,13 +1543,17 @@ impl Relatorio {
         self.ja_aplicadas += outro.ja_aplicadas;
         self.indices_reconstruidos += outro.indices_reconstruidos;
         self.indices_pendentes.extend(outro.indices_pendentes);
+        self.indices_em_claro.extend(outro.indices_em_claro);
         self.impossiveis.extend(outro.impossiveis);
         self.paradas.extend(outro.paradas);
         self.sem_leitura.extend(outro.sem_leitura);
     }
 
     pub fn houve(&self) -> bool {
-        self.achadas > 0 || self.indices_reconstruidos > 0 || !self.indices_pendentes.is_empty()
+        self.achadas > 0
+            || self.indices_reconstruidos > 0
+            || !self.indices_pendentes.is_empty()
+            || !self.indices_em_claro.is_empty()
     }
 
     /// Ha marca que o arranque nao leu: o servidor nao pode subir (503, 1a).
@@ -1583,6 +1591,15 @@ impl Relatorio {
                 self.indices_pendentes.len()
             ));
             for i in &self.indices_pendentes {
+                s.push_str(&format!("     ! {i}\n"));
+            }
+        }
+        if !self.indices_em_claro.is_empty() {
+            s.push_str(&format!(
+                "\x20 indices EM CLARO sob o cofre .. {}   (coluna marcada; o `reindexar` sela)\n",
+                self.indices_em_claro.len()
+            ));
+            for i in &self.indices_em_claro {
                 s.push_str(&format!("     ! {i}\n"));
             }
         }
@@ -2886,6 +2903,9 @@ impl Database {
         let (feitas, pendentes) = self.reconstruir_indices_marcados();
         r.indices_reconstruidos += feitas;
         r.indices_pendentes.extend(pendentes);
+        // DEPOIS da reconstrucao: a arvore que o arranque acabou de refazer
+        // ja nasceu selada e nao entra no aviso.
+        r.indices_em_claro = self.indices_em_claro_sobre_coluna_marcada();
         r.ms = comeco.elapsed().as_millis() as u64;
         r
     }

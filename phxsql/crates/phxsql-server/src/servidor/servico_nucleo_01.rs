@@ -333,6 +333,15 @@ impl Servidor {
         ) {
             saude.entregar(evento);
         }
+        // Pedido 339, condicao A do papel C: a arvore em claro sobre coluna
+        // marcada se AVISA, e nao se converte sozinha.
+        let em_claro = crate::saude_do_disco::evento_dos_indices_em_claro(
+            crate::agora_ms(),
+            &recuperacao.indices_em_claro,
+        );
+        if let Some(evento) = em_claro {
+            saude.entregar(evento);
+        }
         // A camada de ocorrencias (495, F2) sobre o correio da saude: o
         // carteiro e um so, e a fila tambem.
         let ocorrencias = Arc::new(crate::ocorrencias::Ocorrencias::nova(Arc::clone(

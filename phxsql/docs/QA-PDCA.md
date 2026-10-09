@@ -627,7 +627,7 @@ tabela.
 | `trocar_o_cabecalho_de_um_evento_cifrado_nao_passa` | `cifra-dos-diarios.rs:555` | cabeçalho de evento cifrado adulterado tinha de ser detectado |
 | `trocar_o_corpo_de_uma_linha_pela_outra_nao_passa` | `phxsql-store/tests/cifra-dos-dados.rs:403` | trocar o corpo cifrado de uma linha por outra linha tinha de falhar a autenticação |
 | `regravar_a_mesma_linha_nunca_repete_o_texto_cifrado` | `cifra-dos-dados.rs:459` | reuso de nonce/keystream ao regravar a mesma linha |
-| `o_indice_sobre_a_coluna_marcada_continua_em_claro` | `cifra-dos-dados.rs:251` | decisão documentada: o índice não cifra, e o teste prende esse limite conhecido |
+| `o_indice_sobre_a_coluna_marcada_nao_guarda_o_texto_claro` (até 09/10/2026 `..._continua_em_claro`) | `cifra-dos-dados.rs` | o limite caiu no pedido 339: a página do `.ndx` sobre coluna marcada vai selada, e o teste passou a exigir o texto AUSENTE |
 | `cliente_sem_cifra_continua_como_antes` | `phxsql-server/tests/cifra-do-fio.rs:258` | **histórico de vacuidade, já corrigido** — ver seção de guardas suspeitas abaixo |
 | `fio_cortado_vira_erro_e_despedida_nao` | `cifra-do-fio.rs:454` | fio cortado no meio virando "despedida normal" em vez de erro |
 | `a_privada_do_fio_nunca_sai` | `phxsql-server/src/config.rs:3331` | a chave privada do fio vazando pela resposta de configuração |

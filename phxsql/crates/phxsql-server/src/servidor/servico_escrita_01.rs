@@ -1474,11 +1474,23 @@ impl Servidor {
             .iter()
             .map(|n| Json::texto_de(*n))
             .collect();
+        // Pedido 339, item 3b: marcar nao refaz a arvore -- e a decisao do
+        // DBA, guarda nova entra pedida, e refazer aqui cobraria uma
+        // varredura da tabela inteira sob a trava a quem so declarou. Diz-se
+        // o que ficou em claro e o comando que sela.
+        let avisos: Vec<Json> = if t.ndx_em_claro_sobre_coluna_marcada() {
+            vec![Json::texto_de(
+                self.msg("erro.marcar_ndx_em_claro", &[("tabela", t.nome())]),
+            )]
+        } else {
+            Vec::new()
+        };
         Ok(Json::objeto(vec![
             ("database", Json::texto_de(p.texto_ou("database", ""))),
             ("tabela", Json::texto_de(p.texto_ou("tabela", ""))),
             ("alteradas", Json::de_u64(marcas.len() as u64)),
             ("colunas_marcadas", Json::Lista(marcadas)),
+            ("avisos", Json::Lista(avisos)),
             // O caminho caro reescreve os volumes; a tela avisa quando foi ele,
             // porque numa tabela grande isso demora e quem clicou merece saber
             // por que. Numa tabela ja v6 e sempre `false`.
@@ -1507,8 +1519,10 @@ impl Servidor {
     ///
     /// # O que a resposta diz em voz alta
     ///
-    /// `.log`, `.trash`, `.reason` e `.ndx` ficam em claro, e a migracao e
-    /// LOCAL: nao replica. Fica no campo `avisos`, na lingua do servidor.
+    /// `.log`, `.trash` e `.reason` ficam em claro, e a migracao e LOCAL: nao
+    /// replica. O `.ndx` com indice sobre coluna marcada sai SELADO: a FASE A
+    /// o monta ao lado, fora da trava, e a FASE B o troca por `rename`
+    /// (pedido 339). Fica no campo `avisos`, na lingua do servidor.
     pub(super) fn op_migrar_cifra(&self, p: &Json, sessao: &Sessao, cifrar: bool) -> Result<Json> {
         let inicio = std::time::Instant::now();
         let dados = self.travar_dados()?;

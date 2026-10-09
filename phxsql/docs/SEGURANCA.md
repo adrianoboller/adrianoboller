@@ -1960,16 +1960,16 @@ Toda escolha aqui deixa algo em claro. Esconder isso seria pior que não cifrar.
 
 | continua legível | por quê |
 |---|---|
-| **o `.ndx` sobre a coluna marcada** | um índice guarda a chave para poder **comparar**. Cifrar a chave destrói a ordem, e sem ordem não há B+tree — seria trocar o índice por uma varredura |
+| ~~o `.ndx` sobre a coluna marcada~~ **FECHADO em 09/10/2026 (pedido 339, achado 2)** | O motivo escrito aqui — «cifrar a chave destrói a ordem» — era verdadeiro para a saída que ele descrevia, e **não alcançava** a que o 340 trouxe: cifra-se a **página**, e a chave continua comparável dentro dela (§11.12). Com o cofre ligado, o `.ndx` cuja árvore tem coluna marcada nasce na versão 2, e o `reindexar` e o `criptografar` selam o que nasceu em claro. Sobra em claro o cabeçalho de 32 bytes de cada página, que não guarda chave. Custo medido em `FORMATO.md` §2 (`--example custo-do-selo-do-ndx`) |
 | toda coluna **não** marcada | é a escolha (c): o motor cifra o que foi declarado |
 | o **bitmap de nulos** | diz **quais** linhas têm a coluna marcada vazia |
 | o `rowid`, a versão da linha, o status do slot | é por eles que se anda no arquivo sem a chave — e é o que faz o reparo funcionar |
 | o **esquema**, inclusive o nome da coluna marcada | `porCPF` já conta o que a tabela guarda |
 | o **tamanho** de um `Memo` marcado | o bloco tem o comprimento no cabeçalho |
-| o **`.ndx` inteiro**, o `.pag`, o catálogo | não entraram nesta rodada |
+| o **`.ndx` sem coluna marcada**, o `.pag`, o catálogo | o `.ndx` cuja árvore não tem coluna marcada não guarda dado pessoal, e continua na versão 1; os outros dois não entraram em rodada nenhuma |
 | **o tráfego** | esta cifra é do arquivo em repouso. O fio tem a sua, e é outra coisa (§7) — e ela não é TLS |
 | ~~o `.fts` sobre a coluna marcada~~ **FECHADO em 23/09/2026 (pedido 340)** | Estava aqui porque o índice de texto guardava o **termo inteiro**: ele quebra o texto em palavras e grava cada uma como chave de um `.ndx` próprio, e onde o `.ndx` vaza o valor da coluna o `.fts` vazava o **vocabulário** dela. Hoje a **página** do `.fts` vai selada — ver §11.12 —, e o que sobra em claro ali é só o cabeçalho de 32 bytes da página, que não guarda termo nenhum |
-| o **backup** (`backup::executar`, `phxsql-store/src/backup.rs`) | copia a pasta **sem filtrar extensao**: herda o `.ndx` sobre a coluna marcada **em claro**, exatamente como ele esta no disco. O `.reg`, o `.fts`, o `.bkp`, o `.trash`, o `.lgpd` e o `.reason` vao como estao, **selados**. Tirar o indice da coluna depois nao limpa copia nenhuma que ja saiu |
+| o **backup** (`backup::executar`, `phxsql-store/src/backup.rs`) — **o `.ndx` dele FECHADO em 09/10/2026** | copia a pasta **sem filtrar extensao**, e por isso herda o que esta no disco: desde o pedido 339 o `.ndx` sobre a coluna marcada vai **selado**, como o `.reg`, o `.fts`, o `.bkp`, o `.trash`, o `.lgpd` e o `.reason`. **O que nao se conserta daqui**: copia que ja saiu com o `.ndx` em claro continua em claro, e um `.ndx` versao 1 que ninguem reindexou tambem — refaca o backup depois do `reindexar` |
 | a **exportacao** (`exportar::Planilha`, `phxsql-server/src/exportar.rs`) | sai em claro **por desenho**: o arquivo pedido e o produto, e quem pede passou pelo direito por coluna. A cifra de coluna e do arquivo em repouso, nao do que o dono do banco manda gerar. O arquivo exportado deixa de ser protegido no instante em que sai |
 | a **imagem de replicacao** no fio (`Table::imagem_para_o_fio`, `phxsql-store/src/table.rs`) | a imagem sai **aberta** para o fio, de proposito: a replica usa a chave dela, e o sal e sorteado por arquivo (pedidos 293 e 344). No `.log` do diario a mesma imagem fica selada. O fio tem a cifra dele (§7), que nao e TLS |
 | **a marca `.tx` do `COMMIT`** | **FECHADO em 22/09/2026 — esta linha estava velha nas DUAS afirmações dela, e conferi as duas no fonte.** (1) «Nasce `0644`»: hoje `transacao::criar_privado` usa `create_new` + `mode(0o600)`, e há teste que falha se voltar a `File::create`. (2) «É o único lugar do motor que tira o valor do selo e o devolve ao disco sem selo»: a marca ganhou uma **v4** que carrega o material de cifra no cabeçalho e **sela o payload de cada operação** quando o cofre está ligado — o `transacao.rs` tinha **zero** menção a cofre/cifra/selar quando o pedido 354 nasceu e tem **30** hoje. A v3 continua sendo o que se escreve com o cofre desligado, e aí o `.tx` está em claro como todo o resto — o que não é vazamento **deste** arquivo. Pedido 354, **fechado**; o rótulo BLOQUEIO sai daqui. |
@@ -1982,24 +1982,34 @@ Toda escolha aqui deixa algo em claro. Esconder isso seria pior que não cifrar.
 **As sete representações se refazem com um comando**, sem sonda fora do
 repositório: `cargo run --example sete-representacoes -p phxsql-server`. Ele
 grava um valor-sonda numa coluna marcada, com controle positivo antes do
-veredito (o `.ndx` tem de sair «claro» e o `.reg` «cifrado», senão sai 2), e
-imprime «claro»/«cifrado» para `.fts`, imagem, lixeira/trilha, backup,
+veredito (uma tabela gêmea com o cofre desligado tem de sair «claro» no
+`.ndx` e no `.reg`, e o `.reg` da cifrada «cifrado», senão sai 2), e
+imprime «claro»/«cifrado» para `.ndx`, `.fts`, imagem, lixeira/trilha, backup,
 exportação, `.reason` e `.pag` (este último é recusado na declaração, §11.3
 pedido 358). A exportação do servidor só se alcança pelo soquete; o exemplo
 exerce o gerador que ela chama.
 
-Isto está num teste, e não só aqui:
-`o_indice_sobre_a_coluna_marcada_continua_em_claro` **prova o vazamento** —
-procura o nome dentro do `.ndx` e exige achá-lo. Se um dia o `.ndx` for
-cifrado, o teste cai, e cair é o aviso para apagar esta linha da tabela acima.
+Isto está num teste, e não só aqui. Até 09/10/2026 era
+`o_indice_sobre_a_coluna_marcada_continua_em_claro`, que **provava o
+vazamento** e avisava: «se um dia o `.ndx` for cifrado, o teste cai». Caiu, e
+virou `o_indice_sobre_a_coluna_marcada_nao_guarda_o_texto_claro`
+(`tests/cifra-dos-dados.rs`), que procura o nome dentro do `.ndx` e exige
+**não** achá-lo — com o `criar_ndx` reposto a `NdxFile::criar`, ele reprova
+com «o texto claro da coluna marcada apareceu dentro do .ndx». Os irmãos:
+`reindexar_sela_o_ndx_que_nasceu_em_claro`,
+`arvore_sem_coluna_marcada_continua_na_versao_1_com_o_cofre_ligado` e, na
+migração, `criptografar_sela_o_ndx_sobre_a_coluna_marcada`.
 
 > **Um banco que diz «cifrado» e vaza a chave pelo índice está mentindo para o
-> usuário.** Uma tabela com coluna marcada e índice sobre ela protege o
-> `.reg` copiado, e **não** protege contra quem copiou o `.ndx` junto. Quem
-> precisa dos dois deve tirar o índice da coluna sensível — **e refazer os
-> backups que já saíram**: o `backup::executar` herda o `.ndx` em claro, então
-> o conselho vale daqui em diante e não alcança a cópia antiga. As exportações
-> e a imagem no fio saem em claro por desenho (linhas acima).
+> usuário.** Esta frase valeu até 09/10/2026 para toda tabela com índice sobre
+> a coluna marcada. Hoje vale para o **`.ndx` versão 1 que sobrou**: tabela
+> criada antes do conserto, ou com o cofre ligado depois, mantém a árvore em
+> claro até o `reindexar` (ou o `criptografar`) — e os backups que já saíram
+> com ela continuam em claro. Refaça o índice **e** o backup. Desde o parecer
+> do papel C (09/10/2026) esse estado **não é mais calado**: o arranque o
+> lista por tabela, com o comando, e o `marcar_lgpd` que o cria diz o mesmo
+> na resposta. Não se converte sozinho — guarda nova entra pedida. As exportações e
+> a imagem no fio saem em claro por desenho (linhas acima).
 > A lista acima é usada como **inventário**, e em 18/09/2026 ela ganhou seis
 > linhas de uma vez: nenhuma representação nova, todas antigas e nenhuma
 > listada.
@@ -2607,9 +2617,12 @@ modo, e reabre em AEAD.
   Não é `tem_dado_pessoal`: tabela com `cpf` marcado e `descricao` indexada por
   texto não guarda segredo no `.fts`, e selar ali cobraria capacidade para
   proteger nada.
-- **O `.ndx` continua em claro** — §11.3, decisão em vigor. O mecanismo é o
-  mesmo (`NdxFile::criar_selado`) e serviria aos dois; ligá-lo muda o formato
-  de toda tabela indexada e paga a cifra no laço quente do `inserir`.
+- ~~**O `.ndx` continua em claro**~~ — **mudou em 09/10/2026 (pedido 339,
+  achado 2).** O mesmo `NdxFile::criar_selado` passou a servir o `.ndx` cuja
+  árvore tem coluna marcada; o que segurava era «muda o formato de toda tabela
+  indexada e paga a cifra no laço quente», e as duas metades se resolveram
+  pelo **alcance**: só a árvore com coluna marcada sela (a de `id` continua
+  versão 1), e o laço quente paga só ali — medido em `FORMATO.md` §2.
 - **Ligar a cifra depois não sela o que já existe**, como em §11.6. A
   diferença é que o `.fts` é **derivado**: `reindexar` o refaz do `.reg` e o
   novo nasce selado. Refazê-lo sozinho na abertura seria impor uma varredura
@@ -2746,6 +2759,11 @@ mesmas quatro camadas que o cabeçalho do `cofre.rs` recusa por escrito, em
 crates, mais **32** usos do cofre em `src/`, em 6 arquivos e 2 crates.
 
 ### 12.3 Premissa 2 — o `.ndx` em claro faz de senha por tabela uma aparência?
+
+*Nota de 09/10/2026: esta seção é o retrato de quando o `.ndx` não tinha
+cifra. Desde o pedido 339 (achado 2) a árvore sobre coluna marcada vai selada
+— ver §11.3 —, e os 28 KB abertos abaixo valem só para o `.ndx` versão 1 que
+ninguém reindexou.*
 
 O `.ndx` é o único arquivo de dados que **não tem uma linha de cifra**: zero
 menções a `cifra`, `Material` ou `cofre` em `ndx.rs`, contra 12 usos em

@@ -261,25 +261,26 @@ fn o_dado_da_coluna_marcada_some_do_disco() {
     let _ = std::fs::remove_dir_all(&d);
 }
 
-/// O `.ndx` sobre a coluna marcada CONTINUA EM CLARO -- e este teste existe
-/// para essa verdade nao poder ser esquecida.
+/// O `.ndx` sobre a coluna marcada NAO guarda o texto claro (pedido 339,
+/// achado 2) -- a pagina vai selada, a mesma versao 2 do `.fts` do 340.
 ///
-/// # Por que um teste que prova um vazamento
+/// # Prova real, nos dois sentidos
 ///
-/// Porque a escolha e por COLUNA, e um indice guarda a chave da coluna para
-/// poder compara-la. Cifrar a chave destruiria a ordem, e sem ordem nao ha
-/// B+tree -- seria trocar o indice por uma varredura. A alternativa honesta e
-/// dizer: **indice sobre coluna marcada vaza o valor e a ordem**. Esta em
-/// `docs/SEGURANCA.md` §10, e este teste e o que impede alguem escrever no
-/// painel que a tabela esta cifrada sem essa frase do lado.
+/// Ate 09/10/2026 este teste se chamava
+/// `o_indice_sobre_a_coluna_marcada_continua_em_claro` e AFIRMAVA o vazamento.
+/// Com o `criar_ndx` de `table.rs` reposto a `NdxFile::criar` sempre, o
+/// segredo volta a aparecer nos bytes do `.ndx` e a segunda assercao reprova
+/// -- medido assim antes de o conserto valer.
 ///
-/// Se um dia o `.ndx` passar a ser cifrado, este teste cai -- e cair aqui e o
-/// aviso para apagar a ressalva do documento.
+/// O controle e o que impede o verde por engano: o arquivo tem bytes, a
+/// arvore tem as 50 chaves e a busca pela coluna marcada acha a linha, antes
+/// e depois de reabrir e de reindexar. Um `.ndx` vazio tambem «nao conteria
+/// o segredo».
 #[test]
-fn o_indice_sobre_a_coluna_marcada_continua_em_claro() {
+fn o_indice_sobre_a_coluna_marcada_nao_guarda_o_texto_claro() {
     let _t = UM_DE_CADA_VEZ.lock().unwrap_or_else(|e| e.into_inner());
     cofre::desligar();
-    let d = dir("indice-vaza");
+    let d = dir("indice-selado");
     cofre::definir(SENHA, RAPIDO).unwrap();
     {
         let mut t = Table::criar(&d, esquema("clientes")).unwrap();
@@ -288,11 +289,102 @@ fn o_indice_sobre_a_coluna_marcada_continua_em_claro() {
         }
         t.sincronizar().unwrap();
     }
+    let ndx = bytes_com_extensao(&d, "ndx");
+    assert!(ndx.len() > 4096, "o .ndx nao tem pagina de arvore nenhuma");
     assert!(
-        contem(&bytes_com_extensao(&d, "ndx"), SEGREDO.as_bytes()),
-        "o .ndx deixou de guardar a chave em claro -- se isso foi de proposito, \
-         apague a ressalva do SEGURANCA.md §10 junto com este teste"
+        !contem(&ndx, SEGREDO.as_bytes()),
+        "o texto claro da coluna marcada apareceu dentro do .ndx"
     );
+    assert_eq!(
+        versao(&d, "clientes", "ndx"),
+        2,
+        "o .ndx nao declara a pagina selada"
+    );
+
+    // Reabre (a chave sai do cabecalho) e busca pela coluna marcada.
+    {
+        let mut t = Table::abrir(&d, "clientes").unwrap();
+        let achados = t
+            .buscar("porNome", &[Value::Str(format!("{SEGREDO} 0042"))])
+            .unwrap();
+        assert_eq!(achados, vec![42], "a busca pelo indice selado nao achou");
+        // O reparo do indice nao pode devolver o texto ao disco.
+        let contagem = t.reindexar().unwrap();
+        assert!(contagem.iter().any(|(n, q)| n == "porNome" && *q == 50));
+        assert!(t.ndx_selado(), "o reindexar refez o .ndx em claro");
+        t.sincronizar().unwrap();
+    }
+    assert!(
+        !contem(&bytes_com_extensao(&d, "ndx"), SEGREDO.as_bytes()),
+        "o reindexar devolveu o texto claro ao .ndx"
+    );
+    cofre::desligar();
+    let _ = std::fs::remove_dir_all(&d);
+}
+
+/// O alcance, pelo lado de fora: arvore SEM coluna marcada continua na
+/// versao 1 com o cofre ligado -- selar ali cobraria a cifra no laco quente
+/// do `inserir` para proteger nada. Sem esta prova, um conserto que selasse
+/// todo `.ndx` passaria igual.
+#[test]
+fn arvore_sem_coluna_marcada_continua_na_versao_1_com_o_cofre_ligado() {
+    let _t = UM_DE_CADA_VEZ.lock().unwrap_or_else(|e| e.into_inner());
+    cofre::desligar();
+    let d = dir("indice-sem-marca");
+    cofre::definir(SENHA, RAPIDO).unwrap();
+    {
+        // `nome` e marcada, mas a unica arvore e sobre `id`.
+        let mut t = Table::criar(&d, esquema_inline("clientes")).unwrap();
+        assert!(t.cifrada(), "o .reg tinha de nascer cifrado");
+        assert!(!t.ndx_selado(), "a arvore sobre `id` nasceu selada");
+        for i in 1..=10 {
+            t.inserir(&[Value::Int(i), Value::Str(format!("{SEGREDO} {i:04}"))])
+                .unwrap();
+        }
+        t.sincronizar().unwrap();
+    }
+    assert_eq!(versao(&d, "clientes", "ndx"), 1);
+    cofre::desligar();
+    let _ = std::fs::remove_dir_all(&d);
+}
+
+/// O `.ndx` em claro de uma tabela que existia antes do cofre (ou antes
+/// deste conserto) vira selado pelo `reindexar` -- a saida escrita, a mesma
+/// do `.fts`. A abertura NAO o refaz sozinha: arquivo de versao 1 continua
+/// abrindo e continua em claro, como o `FORMATO.md` diz.
+#[test]
+fn reindexar_sela_o_ndx_que_nasceu_em_claro() {
+    let _t = UM_DE_CADA_VEZ.lock().unwrap_or_else(|e| e.into_inner());
+    cofre::desligar();
+    let d = dir("indice-reindexa");
+    {
+        let mut t = Table::criar(&d, esquema("clientes")).unwrap();
+        for i in 1..=20 {
+            t.inserir(&linha(i)).unwrap();
+        }
+        t.sincronizar().unwrap();
+    }
+    assert_eq!(versao(&d, "clientes", "ndx"), 1);
+    cofre::definir(SENHA, RAPIDO).unwrap();
+    {
+        let mut t = Table::abrir(&d, "clientes").unwrap();
+        assert!(!t.ndx_selado(), "a abertura nao refaz o .ndx");
+        t.reindexar().unwrap();
+        assert!(t.ndx_selado());
+        t.sincronizar().unwrap();
+    }
+    assert_eq!(versao(&d, "clientes", "ndx"), 2);
+    assert!(
+        !contem(&bytes_com_extensao(&d, "ndx"), SEGREDO.as_bytes()),
+        "o reindexar com o cofre ligado deixou o texto claro no .ndx"
+    );
+    let mut t = Table::abrir(&d, "clientes").unwrap();
+    assert_eq!(
+        t.buscar("porNome", &[Value::Str(format!("{SEGREDO} 0007"))])
+            .unwrap(),
+        vec![7]
+    );
+    drop(t);
     cofre::desligar();
     let _ = std::fs::remove_dir_all(&d);
 }
@@ -1353,4 +1445,303 @@ fn calculada_declarada_na_criacao_herda_a_marca_e_so_a_que_cita() {
     let grau = |n: &str| e.colunas()[e.coluna_por_nome(n).unwrap()].dado_pessoal;
     assert_eq!(grau("c"), DadoPessoal::Pessoal);
     assert_eq!(grau("d"), DadoPessoal::Nao);
+}
+
+// ---------------------------------------------------------------------------
+// O parecer do papel C sobre o 339: capacidade, unicidade e FK selados
+// ---------------------------------------------------------------------------
+
+/// O `n` de um `Str(n)` cuja chave (com o rowid) da exatamente `ck` bytes.
+/// Sai do proprio esquema, e nao de uma conta refeita aqui: a largura da
+/// chave e do `keyenc`, e copia-la envelheceria calada.
+fn str_com_chave_de(ck: usize) -> u16 {
+    (1u16..4000)
+        .find(|&n| {
+            let e = Schema::new(
+                "x",
+                vec![Column::new("s", ColumnType::Str(n))],
+                vec![IndexDef::new("i", vec![IndexColumn::asc(0)])],
+            )
+            .unwrap();
+            e.largura_chave(0).unwrap() + 8 == ck
+        })
+        .expect("nenhum Str(n) da essa chave")
+}
+
+/// `id` + `nome Str(n)`; `nome` marcada se `marcada`, indexada se `indexada`.
+fn esquema_largo(n: u16, marcada: bool, indexada: bool) -> Schema {
+    let mut nome = Column::new("nome", ColumnType::Str(n)).obrigatoria();
+    if marcada {
+        nome = nome.com_dado_pessoal(DadoPessoal::Pessoal);
+    }
+    let mut indices = vec![IndexDef::new("porId", vec![IndexColumn::asc(0)]).unico()];
+    if indexada {
+        indices.push(IndexDef::new("porNome", vec![IndexColumn::asc(1)]));
+    }
+    Schema::new(
+        "largos",
+        vec![Column::new("id", ColumnType::Int8).obrigatoria(), nome],
+        indices,
+    )
+    .unwrap()
+}
+
+fn linha_larga(i: i64) -> Vec<Value> {
+    vec![Value::Int(i), Value::Str(format!("{SEGREDO} {i:04}"))]
+}
+
+/// A chave de 1005 bytes cabe na pagina em claro (teto 1008) e NAO na selada
+/// (teto 1002). Tabela criada sem cofre, cofre ligado depois: o `reindexar`
+/// pediria a pagina selada, e a recusa tem de chegar ANTES de truncar.
+///
+/// # Prova real
+///
+/// Com a conferencia de capacidade de volta para DEPOIS do
+/// `recriar_do_banco` no `NdxFile::criar_com`, o `.ndx` sai truncado e a
+/// comparacao dos bytes reprova -- e a tabela, reaberta, nao serve a busca.
+#[test]
+fn reindexar_recusa_limpo_a_chave_que_so_cabe_em_claro() {
+    let _t = UM_DE_CADA_VEZ.lock().unwrap_or_else(|e| e.into_inner());
+    cofre::desligar();
+    let d = dir("cabe-so-em-claro");
+    let n = str_com_chave_de(1005);
+    {
+        let mut t = Table::criar(&d, esquema_largo(n, true, true)).unwrap();
+        for i in 1..=5 {
+            t.inserir(&linha_larga(i)).unwrap();
+        }
+        t.sincronizar().unwrap();
+    }
+    let antes = std::fs::read(d.join("largos.ndx")).unwrap();
+    cofre::definir(SENHA, RAPIDO).unwrap();
+    {
+        let mut t = Table::abrir(&d, "largos").unwrap();
+        let e = t
+            .reindexar()
+            .expect_err("a chave de 1005 nao cabe na pagina selada");
+        let m = e.to_string();
+        assert!(
+            m.contains("1005") && m.contains("o teto e 1002 bytes"),
+            "{m}"
+        );
+    }
+    assert_eq!(
+        std::fs::read(d.join("largos.ndx")).unwrap(),
+        antes,
+        "a recusa truncou o .ndx vivo"
+    );
+    let mut t = Table::abrir(&d, "largos").unwrap();
+    assert_eq!(
+        t.buscar("porNome", &[Value::Str(format!("{SEGREDO} 0003"))])
+            .unwrap(),
+        vec![3],
+        "a tabela reaberta nao serve a busca"
+    );
+    t.inserir(&linha_larga(6)).unwrap();
+    drop(t);
+    cofre::desligar();
+}
+
+/// Criar indice sobre coluna marcada com chave que nao cabe selada e
+/// recusado na DECLARACAO, com o esquema e o `.ndx` intactos.
+///
+/// # Prova real
+///
+/// Sem o `conferir_que_a_arvore_cabe` no `acrescentar_indices`, o esquema
+/// grava o indice e o `reindexar` recusa depois: a reabertura acha «o .ndx
+/// tem 1 indices, o esquema do .reg declara 2» e a tabela nao abre.
+#[test]
+fn criar_indice_que_nao_cabe_selado_e_recusado_na_declaracao() {
+    let _t = UM_DE_CADA_VEZ.lock().unwrap_or_else(|e| e.into_inner());
+    cofre::desligar();
+    let d = dir("indice-nao-cabe");
+    let n = str_com_chave_de(1005);
+    cofre::definir(SENHA, RAPIDO).unwrap();
+    {
+        let mut t = Table::criar(&d, esquema_largo(n, true, false)).unwrap();
+        for i in 1..=5 {
+            t.inserir(&linha_larga(i)).unwrap();
+        }
+        t.sincronizar().unwrap();
+    }
+    let antes = std::fs::read(d.join("largos.ndx")).unwrap();
+    {
+        let mut t = Table::abrir(&d, "largos").unwrap();
+        let e = t
+            .acrescentar_indices(vec![IndexDef::new("porNome", vec![IndexColumn::asc(1)])])
+            .expect_err("o indice nao cabe na pagina selada");
+        assert!(e.to_string().contains("o teto e 1002 bytes"), "{e}");
+    }
+    assert_eq!(std::fs::read(d.join("largos.ndx")).unwrap(), antes);
+    let t = Table::abrir(&d, "largos").expect("a tabela tem de reabrir");
+    assert_eq!(
+        t.esquema().indices().len(),
+        1,
+        "o indice recusado ficou no esquema"
+    );
+    drop(t);
+    cofre::desligar();
+}
+
+/// Marcar uma coluna JA indexada cuja chave nao cabe selada e recusado na
+/// declaracao: o proximo `reindexar` pediria a pagina selada e nao teria
+/// conserto.
+///
+/// # Prova real
+///
+/// Sem o `conferir_que_a_arvore_cabe` no `marcar_dado_pessoal_com`, a marca
+/// entra e o `reindexar` seguinte recusa -- a ultima assercao reprova.
+#[test]
+fn marcar_coluna_indexada_que_nao_cabe_selada_e_recusado() {
+    let _t = UM_DE_CADA_VEZ.lock().unwrap_or_else(|e| e.into_inner());
+    cofre::desligar();
+    let d = dir("marcar-nao-cabe");
+    let n = str_com_chave_de(1005);
+    cofre::definir(SENHA, RAPIDO).unwrap();
+    {
+        let mut t = Table::criar(&d, esquema_largo(n, false, true)).unwrap();
+        for i in 1..=5 {
+            t.inserir(&linha_larga(i)).unwrap();
+        }
+        t.sincronizar().unwrap();
+        let e = t
+            .marcar_dado_pessoal(&[("nome".to_string(), DadoPessoal::Pessoal)])
+            .expect_err("a marca poria a chave numa pagina onde ela nao cabe");
+        assert!(e.to_string().contains("o teto e 1002 bytes"), "{e}");
+    }
+    let mut t = Table::abrir(&d, "largos").unwrap();
+    assert!(t.colunas_marcadas().is_empty(), "a marca recusada ficou");
+    t.reindexar().expect("o reindexar continua tendo conserto");
+    drop(t);
+    cofre::desligar();
+}
+
+/// A mesma recusa na CRIACAO da tabela, e sem deixar `.ndx` para tras.
+#[test]
+fn criar_tabela_com_chave_que_nao_cabe_selada_e_recusado() {
+    let _t = UM_DE_CADA_VEZ.lock().unwrap_or_else(|e| e.into_inner());
+    cofre::desligar();
+    let d = dir("criar-nao-cabe");
+    let n = str_com_chave_de(1005);
+    cofre::definir(SENHA, RAPIDO).unwrap();
+    let e = match Table::criar(&d, esquema_largo(n, true, true)) {
+        Err(e) => e,
+        Ok(_) => panic!("a tabela nasceu com uma chave que nao cabe na pagina selada"),
+    };
+    assert!(e.to_string().contains("o teto e 1002 bytes"), "{e}");
+    assert!(!d.join("largos.ndx").exists(), "a recusa deixou um .ndx");
+    // O limite e o da pagina SELADA: a de 1002 cabe.
+    let d2 = dir("criar-cabe");
+    Table::criar(&d2, esquema_largo(str_com_chave_de(1002), true, true))
+        .expect("a chave de 1002 cabe na pagina selada");
+    cofre::desligar();
+}
+
+/// O indice UNICO selado continua recusando a chave repetida.
+///
+/// # Prova real
+///
+/// Com `NdxFile::existe` respondendo `false` em arquivo selado, a segunda
+/// insercao passa e este teste reprova -- a pergunta «ja existe?» passa
+/// mesmo pela pagina decifrada.
+#[test]
+fn indice_unico_selado_recusa_a_chave_repetida() {
+    let _t = UM_DE_CADA_VEZ.lock().unwrap_or_else(|e| e.into_inner());
+    cofre::desligar();
+    let d = dir("unico-selado");
+    cofre::definir(SENHA, RAPIDO).unwrap();
+    let esq = Schema::new(
+        "pessoas",
+        vec![
+            Column::new("id", ColumnType::Int8).obrigatoria(),
+            Column::new("cpf", ColumnType::Str(14))
+                .obrigatoria()
+                .com_dado_pessoal(DadoPessoal::Sensivel),
+        ],
+        vec![IndexDef::new("porCpf", vec![IndexColumn::asc(1)]).unico()],
+    )
+    .unwrap();
+    let mut t = Table::criar(&d, esq).unwrap();
+    assert!(t.ndx_selado());
+    t.inserir(&[Value::Int(1), Value::Str("123.456.789-00".into())])
+        .unwrap();
+    let r = t.inserir(&[Value::Int(2), Value::Str("123.456.789-00".into())]);
+    assert!(r.is_err(), "o indice unico selado aceitou o cpf repetido");
+    t.inserir(&[Value::Int(3), Value::Str("987.654.321-00".into())])
+        .expect("cpf diferente tem de entrar");
+    drop(t);
+    cofre::desligar();
+}
+
+/// A regra primordial com os DOIS lados selados: a filha nao nasce sem a mae,
+/// e a mae que tem filha nao se exclui.
+///
+/// # Prova real
+///
+/// Com a busca reversa do `conferir_filhas_com` cega para a filha selada
+/// (`filha.buscar` trocado por lista vazia quando `filha.ndx_selado()`), o
+/// `excluir` da mae passa e a assercao «a mae com filha foi excluida»
+/// reprova. Com `NdxFile::buscar` cego em todo arquivo selado, cai antes: a
+/// filha de mae que existe e recusada.
+#[test]
+fn fk_com_os_dois_lados_selados_nao_mata_a_mae_que_tem_filha() {
+    let _t = UM_DE_CADA_VEZ.lock().unwrap_or_else(|e| e.into_inner());
+    cofre::desligar();
+    let d = dir("fk-selada");
+    cofre::definir(SENHA, RAPIDO).unwrap();
+    let mae = Schema::new(
+        "clientes",
+        vec![
+            Column::new("id", ColumnType::Int8).obrigatoria(),
+            Column::new("cpf", ColumnType::Str(14))
+                .obrigatoria()
+                .com_dado_pessoal(DadoPessoal::Sensivel),
+        ],
+        vec![IndexDef::new("porCpf", vec![IndexColumn::asc(1)])
+            .unico()
+            .primaria()],
+    )
+    .unwrap();
+    let filha = Schema::new(
+        "pedidos",
+        vec![
+            Column::new("id", ColumnType::Int8).obrigatoria(),
+            Column::new("cpf", ColumnType::Str(14))
+                .obrigatoria()
+                .com_dado_pessoal(DadoPessoal::Sensivel),
+        ],
+        vec![IndexDef::new("porCpf", vec![IndexColumn::asc(1)])],
+    )
+    .unwrap()
+    .com_chaves_estrangeiras(vec![phxsql_core::schema::ForeignKey::new(
+        "fk_cliente",
+        vec![1],
+        "clientes",
+        vec!["cpf".into()],
+    )])
+    .unwrap();
+    let mut m = Table::criar(&d, mae).unwrap();
+    m.inserir(&[Value::Int(1), Value::Str("111.111.111-11".into())])
+        .unwrap();
+    m.inserir(&[Value::Int(2), Value::Str("222.222.222-22".into())])
+        .unwrap();
+    m.sincronizar().unwrap();
+    drop(m);
+    let mut f = Table::criar(&d, filha).unwrap();
+    assert!(f.ndx_selado(), "a arvore da filha tinha de nascer selada");
+    f.inserir(&[Value::Int(1), Value::Str("111.111.111-11".into())])
+        .expect("filha de mae que existe");
+    assert!(
+        f.inserir(&[Value::Int(2), Value::Str("999.999.999-99".into())])
+            .is_err(),
+        "a filha nasceu sem mae"
+    );
+    f.sincronizar().unwrap();
+    drop(f);
+    let mut m = Table::abrir(&d, "clientes").unwrap();
+    assert!(m.ndx_selado());
+    assert!(m.excluir(1).is_err(), "a mae com filha foi excluida");
+    m.excluir(2).expect("a mae sem filha sai");
+    drop(m);
+    cofre::desligar();
 }

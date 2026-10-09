@@ -171,6 +171,30 @@ pub fn evento_do_arranque(
     })
 }
 
+/// O evento do arranque que achou arvore sobre coluna marcada EM CLARO com o
+/// cofre ligado (pedido 339, condicao A do papel C) -- `None` quando nao ha
+/// nenhuma. Separado do [`evento_do_arranque`] porque a pergunta e outra: la
+/// e «o arranque consertou?», aqui e «quem opera precisa mandar selar?».
+/// Pelo carteiro, e nao so no `stderr`: quem opera le e-mail.
+pub fn evento_dos_indices_em_claro(agora_ms: i64, em_claro: &[String]) -> Option<Evento> {
+    if em_claro.is_empty() {
+        return None;
+    }
+    Some(Evento {
+        quando_ms: agora_ms,
+        tipo: Tipo::Arranque,
+        origem: "arranque".into(),
+        database: String::new(),
+        tabela: String::new(),
+        texto: format!(
+            "{} tabela(s) com o indice sobre coluna marcada EM CLARO no .ndx, com o \
+             cofre ligado -- o `reindexar` de cada uma sela a arvore: {}",
+            em_claro.len(),
+            em_claro.join("; ")
+        ),
+    })
+}
+
 /// Classifica um erro do sistema operacional pelo `kind` E pelo errno.
 pub fn classificar(e: &std::io::Error) -> Tipo {
     tipo_do_codigo(e.raw_os_error()).unwrap_or(match e.kind() {
@@ -711,6 +735,17 @@ mod testes {
         assert!(ev.texto.starts_with("2 indice(s)"), "{}", ev.texto);
         assert!(ev.texto.contains("1 NAO se reconstruiram"), "{}", ev.texto);
         assert!(ev.texto.contains("loja/itens"), "{}", ev.texto);
+    }
+
+    /// O aviso do 339 nomeia a tabela e o comando, e cala sem nada.
+    #[test]
+    fn o_evento_dos_indices_em_claro_nomeia_a_tabela_e_cala_sem_nada() {
+        assert!(evento_dos_indices_em_claro(1, &[]).is_none());
+        let linha = vec!["loja/clientes: ... {\"op\":\"reindexar\"}".to_string()];
+        let ev = evento_dos_indices_em_claro(1, &linha).unwrap();
+        assert_eq!(ev.tipo, Tipo::Arranque);
+        assert!(ev.texto.contains("loja/clientes"), "{}", ev.texto);
+        assert!(ev.texto.contains("reindexar"), "{}", ev.texto);
     }
 
     use super::*;

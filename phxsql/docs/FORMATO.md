@@ -1215,16 +1215,66 @@ pagina da versao 2 (pagina 1 em diante):
   FrogCript é 167 bytes maior que o claro e não caberia dentro da página que
   cifraria.
 
-**Quem nasce assim:** só o `.fts`, e só quando algum índice de texto cai sobre
-coluna marcada como dado pessoal, com o cofre ligado. O `.ndx` da tabela
-continua na versão 1 — decisão registrada em `SEGURANCA.md` §11.3. **Não há
-migração:** arquivo da versão 1 continua abrindo e continua em claro, e só o
-`reindexar` faz nascer um selado.
+**Quem nasce assim**, sempre com o cofre ligado:
 
-**Custo medido** (`--example custo-do-selo-do-fts`, 20.000 linhas / 180.000
-termos): **0,862%** da capacidade de folha (116 → 115 entradas), **+0,032%**
-em disco, **1,23×–1,49×** por termo indexado e **2,40×–2,76×** por busca de
-palavra. A tabela inteira está em `SEGURANCA.md` §11.12.
+- o `.fts`, quando algum índice de texto cai sobre coluna marcada como dado
+  pessoal (pedido 340, 23/09/2026);
+- o `.ndx` da tabela, quando **algum índice da árvore** tem coluna marcada —
+  inclusive a coluna de um índice por expressão (`lower(nome)`) e a de um
+  índice parcial; o filtro `onde` sozinho não conta, porque não guarda valor
+  (pedido 339, achado 2, 09/10/2026). A decisão é `indice_sobre_coluna_marcada`
+  em `table.rs`, e ela é UMA para o `criar` e o `reindexar`.
+
+Árvore sem coluna marcada continua na **versão 1** com o cofre ligado, byte a
+byte a de antes. **O leiaute da versão 2 não mudou** — o que mudou é quem pode
+nascer nela —, e todo binário desde o pedido 340 já abre um `.ndx` versão 2;
+o anterior a ele recusa com `VersaoNaoSuportada`, que é a recusa certa.
+
+**Não há migração na abertura:** arquivo da versão 1 continua abrindo e
+continua em claro. Viram selados pelo `reindexar` (manual ou o do arranque) e,
+no `.ndx`, também pelo `criptografar` quando a árvore guarda coluna marcada:
+a FASE A monta `<tabela>.ndx.novo` **selado**, sincronizado e com a marca de
+queda baixada, **fora** da trava global, e a FASE B o troca por `rename`
+durável **depois** do `.reg` — o mesmo desenho do `.fts.novo` do pedido 364.
+Queda entre as fases deixa o `.ndx.novo` sem dono, e a abertura gravável o
+recolhe; queda entre o `rename` do `.reg` e o do `.ndx` deixa o `.reg` cifrado
+servido pela árvore velha em claro (as mesmas chaves e rowids), que é o estado
+anterior a este conserto e se resolve com `reindexar`.
+
+**O arranque avisa, e não converte** (condição A do papel C, 09/10/2026): com
+o cofre ligado, toda tabela cuja árvore tem coluna marcada e cujo `.ndx` está
+na versão 1 sai no relatório do arranque («indices EM CLARO sob o cofre») e
+no carteiro, nomeando a tabela e o `{"op":"reindexar",…}` que a sela. Chegam
+aí três casos: a tabela de antes do conserto, a queda entre os dois `rename`
+da FASE B do `criptografar`, e a **marca** posta numa coluna já indexada —
+`marcar_lgpd` não refaz a árvore (guarda nova entra pedida; e a marca também
+não cifra o `.reg`), e a resposta dele traz o mesmo aviso em `avisos`.
+
+**A capacidade é da página que vai nascer** (condição B do papel C). A página
+selada tem 24 bytes a menos, e o teto da chave com o rowid cai de **1.008**
+para **1.002** bytes (página de 4.096). Uma chave entre os dois cabe na versão
+1 e não na 2, então: (a) o `NdxFile::criar_com` confere a capacidade **antes**
+de truncar o arquivo vivo — antes, o `reindexar` recusava com o `.ndx` já
+truncado e a tabela deixava de abrir para escrita; (b) criar índice, marcar
+coluna e criar tabela **recusam na declaração** quando a árvore nasceria
+selada e a chave não cabe, dizendo o tamanho e o teto. Cofre desligado
+continua com o teto da versão 1.
+
+**Custo medido no `.fts`** (`--example custo-do-selo-do-fts`, 20.000 linhas /
+180.000 termos): **0,862%** da capacidade de folha (116 → 115 entradas),
+**+0,032%** em disco, **1,23×–1,49×** por termo indexado e **2,40×–2,76×** por
+busca de palavra. A tabela inteira está em `SEGURANCA.md` §11.12.
+
+**Custo medido no `.ndx`** (`--example custo-do-selo-do-ndx`, chave `Str(40)`,
+cofre ligado nos dois lados, mediana [mín–máx] de 3 voltas, 09/10/2026):
+com a árvore **dentro** do cache (50.000 chaves, 892 páginas) a inserção foi de
+1,243 [0,980–1,351] para 1,450 [1,336–1,592] µs e a busca de 0,730 [0,604–1,148]
+para 0,759 [0,589–0,819] µs — **faixas cruzadas, diferença não declarada**;
+com a árvore **maior** que o cache (200.000 chaves, 3.567 páginas contra 2.048)
+a inserção foi de 2,764 [2,377–3,830] para 5,666 [5,434–6,042] µs (**2,05×**) e
+a busca de 3,205 [2,948–3,462] para 9,326 [8,288–9,451] µs (**2,91×**). A folha
+de 82 entradas não perdeu nenhuma (`Str(40)` + rowid deixa folga maior que os
+24 bytes do rabo). Quem paga é só a tabela cuja árvore guarda coluna marcada.
 
 #### O índice suspenso por carga (byte 53, pedido 324, 30/09/2026)
 
@@ -4125,10 +4175,9 @@ meio (§2.1 do `FTS.md`).
 **A versão é onde ele deixou de ser igual ao `.ndx`, em 23/09/2026.** Quando
 algum índice de texto cai sobre coluna marcada como dado pessoal e o cofre
 está ligado, o `.fts` nasce na **versão 2** e grava a **página selada** — o
-formato está na §2, e o porquê em `SEGURANCA.md` §11.12. O `.ndx` da tabela
-continua na versão 1. É o primeiro lugar em que os dois divergem, e a
-diferença é de política e não de mecanismo: o código é o mesmo
-`NdxFile::criar_selado`.
+formato está na §2, e o porquê em `SEGURANCA.md` §11.12. Desde 09/10/2026
+(pedido 339) o `.ndx` segue a mesma política para a árvore sobre coluna
+marcada; o código é o mesmo `NdxFile::criar_selado`.
 
 ## 18. `diretivas.log` — o diário administrativo
 
@@ -4676,10 +4725,11 @@ Documentado aqui para não haver surpresa:
   vieram primeiro (versão 3; o `.log` novo é a versão 4 desde o pedido 676, a
   cifra pela flag); depois vieram o `.reg` (versão 5), o `.bin` e o
   `.memo` pela coluna marcada, e a marca `.tx` do `COMMIT` (versão 4); e em
-  23/09/2026 veio o `.fts` (versão 2, página selada). **O que continua em
-  claro é o `.ndx`**, por decisão registrada em `SEGURANCA.md` §11.3 — ali a
-  chave é comparada, e cifrar a chave destrói a ordem da B+tree. O `.pag` e o
-  catálogo também, e nunca entraram em rodada nenhuma.
+  23/09/2026 veio o `.fts` (versão 2, página selada), e em 09/10/2026 o
+  `.ndx` cuja árvore guarda coluna marcada (a mesma versão 2: cifra-se a
+  **página**, e a chave continua comparável dentro dela — pedido 339). O
+  `.ndx` sem coluna marcada continua em claro, e não guarda dado pessoal. O
+  `.pag` e o catálogo também, e nunca entraram em rodada nenhuma.
 - **Ligar a cifra não cifra o que já existe.** Vale do volume seguinte em
   diante. Não há comando de recifragem.
 

@@ -997,6 +997,25 @@ fn caminho_fts_ao_lado(diretorio: &Path, nome: &str) -> PathBuf {
 ///
 /// So no caminho que ESCREVE: sob a ficha compartilhada leitura nao apaga, e
 /// o proximo a abrir com a exclusiva recolhe.
+/// O `<tabela>.ndx.novo` da FASE A do `Criptografar` (pedido 339). UM lugar
+/// que monta o nome, como o [`caminho_fts_ao_lado`]: quem escreve e quem
+/// recolhe tem de nomear o mesmo arquivo.
+fn caminho_ndx_ao_lado(diretorio: &Path, nome: &str) -> PathBuf {
+    caminho(diretorio, nome, &format!("{EXT_NDX}.novo"))
+}
+
+/// Recolhe o `.ndx.novo` que uma migracao interrompida deixou. Mesma regra do
+/// [`recolher_fts_ao_lado`]: ele so tem dono com a tabela congelada, e
+/// congelada ela nao abre para escrever. Selado, ele nao vaza nada -- mas
+/// arquivo sem dono e o que ninguem sabe se pode apagar.
+fn recolher_ndx_ao_lado(diretorio: &Path, nome: &str) -> Result<()> {
+    match std::fs::remove_file(caminho_ndx_ao_lado(diretorio, nome)) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(PhxError::from(e)),
+    }
+}
+
 fn recolher_fts_ao_lado(diretorio: &Path, nome: &str) -> Result<()> {
     match std::fs::remove_file(caminho_fts_ao_lado(diretorio, nome)) {
         Ok(()) => Ok(()),
@@ -1036,6 +1055,25 @@ fn texto_sobre_coluna_marcada(esquema: &Schema) -> bool {
             .get(it.coluna)
             .is_some_and(|c| c.dado_pessoal.e_pessoal())
     })
+}
+
+/// A pergunta do selo mora no `ndx.rs`, ao lado da conta de capacidade que
+/// depende dela: uma decisao, um lugar.
+use crate::ndx::indice_sobre_coluna_marcada;
+
+/// Cria o `.ndx` da tabela, selado quando a arvore guarda coluna marcada.
+///
+/// UM caminho para os dois que fazem nascer o arquivo -- o `criar` da tabela
+/// e o `reindexar` --, porque a decisao «selar ou nao» escrita duas vezes e
+/// a que um dia diverge: o `reindexar` esquecendo a pergunta faria o primeiro
+/// reparo de indice devolver ao disco, em claro, o que o `criar` selou.
+fn criar_ndx(diretorio: &Path, nome: &str, esquema: &Schema) -> Result<NdxFile> {
+    let c = caminho(diretorio, nome, EXT_NDX);
+    if indice_sobre_coluna_marcada(esquema) {
+        NdxFile::criar_selado(c, esquema)
+    } else {
+        NdxFile::criar(c, esquema)
+    }
 }
 
 /// As posicoes das colunas marcadas como dado pessoal, de qualquer grau.
@@ -1396,7 +1434,7 @@ impl Table {
             }
         }
 
-        let ndx = NdxFile::criar(caminho(&diretorio, &nome, EXT_NDX), &esquema)?;
+        let ndx = criar_ndx(&diretorio, &nome, &esquema)?;
         // Os arquivos que NAO se partem por letra levam o sufixo numerico.
         // Ver `Paginacao::para_externos`: um `Clientes#B.log` se leria como o
         // diario do balde B, e o diario e da tabela inteira.
@@ -1570,6 +1608,7 @@ impl Table {
         marcas: &[(String, phxsql_core::types::DadoPessoal)],
     ) -> Result<Option<TrocaDoEsquema>> {
         let novo = self.reg.esquema_com_marcas(marcas)?;
+        crate::ndx::conferir_que_a_arvore_cabe(&novo)?;
         self.preparar_troca(novo)
     }
 
@@ -1591,15 +1630,91 @@ impl Table {
     ///
     /// O motor e o do `marcar_lgpd` e do `acrescentar_coluna`, nao um
     /// segundo: ver [`RegFile::migrar_cifra_fase_a`].
+    ///
+    /// # E o `.ndx` selado nasce aqui, ao lado (pedido 339, achado 2)
+    ///
+    /// Cifrar o `.reg` e deixar a arvore sobre a mesma coluna em claro diria
+    /// «cifrada» com o valor legivel no arquivo vizinho -- o mesmo defeito que
+    /// faz esta migracao recusar indice de texto sobre coluna marcada. O
+    /// `.ndx` e derivado, entao nao se recusa: monta-se o `<tabela>.ndx.novo`
+    /// SELADO pelo mesmo laco do `reindexar`, sincronizado e com a marca de
+    /// queda baixada, e a FASE B so o troca por `rename`. AQUI, e nao na FASE
+    /// B: a varredura e O(linhas), e montar sob a trava global poria mais uma
+    /// secao com `fsync` na mao dela (`alcancam-fsync-3`, medido 24 -> 25 na
+    /// primeira versao deste conserto, que refazia a arvore na FASE B).
     pub fn preparar_migracao_da_cifra(&mut self, cifrar: bool) -> Result<TrocaDaCifra> {
-        self.reg.migrar_cifra_fase_a(cifrar)
+        let troca = self.reg.migrar_cifra_fase_a(cifrar)?;
+        if !cifrar || !indice_sobre_coluna_marcada(&self.esquema) || self.ndx.selado() {
+            return Ok(troca);
+        }
+        let ao_lado = caminho_ndx_ao_lado(&self.diretorio, &self.nome);
+        match self.montar_ndx_selado_ao_lado(&ao_lado) {
+            Ok(()) => Ok(troca.com_ndx_ao_lado(ao_lado)),
+            Err(e) => {
+                let _ = std::fs::remove_file(&ao_lado);
+                troca.descartar();
+                Err(e)
+            }
+        }
+    }
+
+    /// Monta o `.ndx` selado em `destino` pelo MESMO laco do `reindexar`, sem
+    /// tocar no `.ndx` vivo deste punho -- que volta ao lugar inclusive no
+    /// erro. O irmao do [`Table::montar_fts_ao_lado`].
+    fn montar_ndx_selado_ao_lado(&mut self, destino: &Path) -> Result<()> {
+        let montado = NdxFile::criar_selado(destino, &self.esquema)?;
+        let mut vivo = std::mem::replace(&mut self.ndx, montado);
+        let feito = self.encher_e_sincronizar_o_ndx();
+        std::mem::swap(&mut self.ndx, &mut vivo);
+        // `vivo` agora e o montado. No erro ele sai calado: o `Drop` gravaria
+        // a arvore pela metade num arquivo que vai ser apagado.
+        if feito.is_err() {
+            vivo.abandonar();
+        }
+        feito
+    }
+
+    fn encher_e_sincronizar_o_ndx(&mut self) -> Result<()> {
+        self.encher_o_ndx()?;
+        // Os `fsync` e a marca baixada AQUI, fora da trava: o arquivo entra
+        // no lugar ja limpo, e a FASE B nao sincroniza nada dele.
+        self.ndx.sincronizar()
     }
 
     /// A FASE B da migracao da cifra: so `rename`, com o retrato conferido.
     /// Devolve quantos slots a FASE A reescreveu.
-    pub fn aplicar_migracao_da_cifra(&mut self, troca: TrocaDaCifra) -> Result<u64> {
-        let slots = self.reg.migrar_cifra_fase_b(troca)?;
+    ///
+    /// # E o `.ndx` selado entra depois do `.reg` (pedido 339, achado 2)
+    ///
+    /// Pelo `rename` duravel, o mesmo `fsync` de pasta que os `rename` do
+    /// `.reg` logo acima ja pagaram. A ordem e a que deixa toda queda sem
+    /// dano: antes do `.reg` virar, a arvore velha em claro serve o `.reg`
+    /// em claro; entre os dois, o `.reg` cifrado e servido pela arvore velha
+    /// -- as MESMAS chaves e rowids, so que em claro, o estado de antes deste
+    /// conserto -- e o `.ndx.novo` que sobrou e recolhido na abertura.
+    pub fn aplicar_migracao_da_cifra(&mut self, mut troca: TrocaDaCifra) -> Result<u64> {
+        let ndx_ao_lado = troca.tirar_ndx_ao_lado();
+        let slots = match self.reg.migrar_cifra_fase_b(troca) {
+            Ok(s) => s,
+            Err(e) => {
+                if let Some(p) = &ndx_ao_lado {
+                    let _ = std::fs::remove_file(p);
+                }
+                return Err(e);
+            }
+        };
         self.esquema = self.reg.esquema().clone();
+        panico_de_teste::passar(panico_de_teste::Ponto::CifraEntreOsDoisRenames);
+        if let Some(ao_lado) = ndx_ao_lado {
+            let vivo = caminho(&self.diretorio, &self.nome, EXT_NDX);
+            crate::sincronia::trocar_duravel(&ao_lado, &vivo)?;
+            let mut velho = std::mem::replace(&mut self.ndx, NdxFile::abrir(&vivo)?);
+            // O punho velho aponta o inode que o `rename` desligou, e a tabela
+            // esteve congelada: ele nao tem o que gravar. Sai calado mesmo
+            // assim, para o `fechar` do `Drop` nao atestar o caminho com o
+            // cabecalho de uma arvore que nao mora mais nele (pedido 522).
+            velho.abandonar();
+        }
         Ok(slots)
     }
 
@@ -1761,6 +1876,11 @@ impl Table {
             return Ok(Vec::new());
         }
         let nomes: Vec<String> = novos.iter().map(|i| i.nome.clone()).collect();
+        // ANTES de gravar o esquema (condicao B do papel C sobre o 339): com
+        // o indice ja no `.reg` e o `.ndx` recusando a chave, a abertura
+        // seguinte acharia «o .ndx tem N indices, o esquema declara N+1» e a
+        // tabela nao abriria mais.
+        crate::ndx::conferir_que_a_arvore_cabe(&self.esquema.clone().com_indices(novos.clone())?)?;
         self.reg.regravar_indices(novos)?;
         self.esquema = self.reg.esquema().clone();
         self.colunas_marcadas = marcadas_do_esquema(&self.esquema);
@@ -2524,6 +2644,7 @@ impl Table {
         };
         if escrever {
             recolher_fts_ao_lado(&diretorio, nome)?;
+            recolher_ndx_ao_lado(&diretorio, nome)?;
             // O irmao do de cima para o `.reg` (pedido 625): a copia inteira
             // que uma FASE A morta deixou ao lado. Aqui, e nao no
             // `RegFile::abrir`, porque aquele tambem serve quem so le.
@@ -9695,21 +9816,7 @@ impl Table {
     /// A varredura e feita na ordem de digitacao, entao a arvore sai com os
     /// rowids inseridos em ordem crescente dentro de cada chave.
     pub fn reindexar(&mut self) -> Result<Vec<(String, u64)>> {
-        // `NdxFile::criar` trunca o arquivo: a arvore antiga vai embora
-        // inteira, em vez de ser remendada. E o punho velho sai ANTES, e
-        // calado: a atribuicao cria o arquivo novo primeiro e so depois roda
-        // o `Drop` do velho, que levava paginas e cabecalho da arvore antiga
-        // para dentro do arquivo novo -- e, desde o pedido 522, atestava.
-        self.ndx.abandonar();
-        self.ndx = NdxFile::criar(caminho(&self.diretorio, &self.nome, EXT_NDX), &self.esquema)?;
-        // Da criacao ate a ultima arvore montada o `.ndx` esta ATRAS do `.reg`
-        // -- vazio, no comeco. Um panico na varredura deixava o `Drop` gravar
-        // o arquivo vazio marcado limpo, e a tabela inteira ficava fora do
-        // indice, calada. E o irmao do pedido 456 que chama as mesmas pecas.
-        self.ndx.comecar_escrita()?;
-        let feito = self.montar_indices_do_reg();
-        self.ndx.terminar_escrita(feito.is_ok());
-        feito?;
+        self.refazer_ndx()?;
         // O `.fts` e o caminho IRMAO, e ele nao vinha junto: a propria
         // mensagem do `.fts` manda «reconstrua o indice de texto com
         // `reindexar`», e o `reindexar` nao sabia cumprir a ordem. Uma queda
@@ -9720,6 +9827,63 @@ impl Table {
         // comeca pelo portao `self.fts.is_none()`.
         self.reconstruir_fts()?;
         self.ndx.verificar()
+    }
+
+    /// O `.ndx` grava a pagina SELADA? (pedido 339, achado 2)
+    ///
+    /// `true` so com o cofre ligado e algum indice sobre coluna marcada; um
+    /// `.ndx` nascido em claro antes disso continua `false` ate o `reindexar`.
+    pub fn ndx_selado(&self) -> bool {
+        self.ndx.selado()
+    }
+
+    /// A arvore guarda coluna marcada EM CLARO com o cofre ligado?
+    ///
+    /// E o estado que o selo do pedido 339 nao alcanca sozinho, e que a casa
+    /// AVISA em vez de converter (condicao A do papel C; guarda nova entra
+    /// pedida): tabela criada antes do conserto, coluna indexada marcada
+    /// depois (`marcar_dado_pessoal` nao refaz a arvore), ou uma queda entre
+    /// os dois `rename` da FASE B do `Criptografar`. O remedio e um so, o
+    /// `reindexar`. O `.ndx` rasgado fica de fora: ele ja pede o `reindexar`
+    /// por outro motivo, e o refeito nasce selado.
+    pub fn ndx_em_claro_sobre_coluna_marcada(&self) -> bool {
+        crate::cofre::ligado()
+            && indice_sobre_coluna_marcada(&self.esquema)
+            && !self.ndx.selado()
+            && !self.ndx.precisa_reconstruir()
+    }
+
+    /// Recria so o `.ndx` a partir do `.reg`, no arquivo vivo: a metade de
+    /// [`Table::reindexar`] que nao toca o `.fts`.
+    fn refazer_ndx(&mut self) -> Result<()> {
+        // `NdxFile::criar` trunca o arquivo: a arvore antiga vai embora
+        // inteira, em vez de ser remendada. E o punho velho sai ANTES, e
+        // calado: a atribuicao cria o arquivo novo primeiro e so depois roda
+        // o `Drop` do velho, que levava paginas e cabecalho da arvore antiga
+        // para dentro do arquivo novo -- e, desde o pedido 522, atestava.
+        self.ndx.abandonar();
+        // E aqui que um `.ndx` nascido em claro vira selado (pedido 339): o
+        // mesmo caminho do `.fts` no `montar_fts_em`. Com o cofre ligado e
+        // indice sobre coluna marcada, o arquivo novo nasce com a pagina
+        // fechada -- e a saida para quem ligou a cifra depois de a tabela
+        // existir, e a que o `Criptografar` usa por dentro.
+        self.ndx = criar_ndx(&self.diretorio, &self.nome, &self.esquema)?;
+        self.encher_o_ndx()
+    }
+
+    /// Enche o `.ndx` deste punho, recem-criado, pelo `.reg` -- dentro da
+    /// janela de escrita. UM laco para o `reindexar` (arquivo vivo) e para a
+    /// FASE A do `Criptografar` (arquivo ao lado, pedido 339).
+    fn encher_o_ndx(&mut self) -> Result<()> {
+        // Da criacao ate a ultima arvore montada o `.ndx` esta ATRAS do `.reg`
+        // -- vazio, no comeco. Um panico na varredura deixava o `Drop` gravar
+        // o arquivo vazio marcado limpo, e a tabela inteira ficava fora do
+        // indice, calada. E o irmao do pedido 456 que chama as mesmas pecas.
+        self.ndx.comecar_escrita()?;
+        let feito = self.montar_indices_do_reg();
+        self.ndx.terminar_escrita(feito.is_ok());
+        feito?;
+        Ok(())
     }
 
     /// A varredura do `.reg` e a construcao em lote de cada indice.
@@ -9909,11 +10073,13 @@ impl Table {
         marcas: &[(String, phxsql_core::types::DadoPessoal)],
         troca: Option<TrocaDoEsquema>,
     ) -> Result<bool> {
+        // A marca que poe coluna indexada sob o selo tem de caber na pagina
+        // selada: o proximo `reindexar` a pediria, e recusaria sem conserto.
+        // Recusa-se aqui, na declaracao, com o esquema ainda intacto.
+        let novo = self.reg.esquema_com_marcas(marcas)?;
+        crate::ndx::conferir_que_a_arvore_cabe(&novo)?;
         let reescreveu = match troca {
-            Some(t) => {
-                let novo = self.reg.esquema_com_marcas(marcas)?;
-                self.aplicar_troca(t, novo)?
-            }
+            Some(t) => self.aplicar_troca(t, novo)?,
             None => self.reg.remarcar_dado_pessoal(marcas)?,
         };
         self.esquema = self.reg.esquema().clone();

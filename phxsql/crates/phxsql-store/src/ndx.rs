@@ -353,6 +353,114 @@ pub fn esquecer_atestados_para_teste(diretorio: &Path) {
     com_a_chave(diretorio, |d| atestados().retain(|c, _| !c.starts_with(d)));
 }
 
+/// Bytes que a selagem cobra no fim de cada pagina de um arquivo com este
+/// material. UMA conta para o arquivo aberto e para o que vai nascer.
+fn rabo_do_material(material: &cofre::Material) -> usize {
+    if material.cifrado() {
+        TEMPERO_LEN + material.acrescimo()
+    } else {
+        0
+    }
+}
+
+/// O rabo de uma pagina SELADA: o tempero e a etiqueta do AEAD. A pagina
+/// sela sempre em AEAD (ver [`NdxFile::criar_selado`]), entao a conta nao
+/// depende do modo do cofre.
+const RABO_SELADO: usize = TEMPERO_LEN + cofre::ACRESCIMO;
+
+/// A chave de `ck_len` bytes (com o rowid) cabe na pagina?
+///
+/// A recusa diz o tamanho e o TETO, e quanto o selo tira: quem modela le o
+/// numero e decide encurtar a coluna, em vez de adivinhar.
+fn validar_capacidade_com(page_size: usize, rabo: usize, ck_len: usize, nome: &str) -> Result<()> {
+    let util = page_size - rabo - PAG_CAB;
+    let cap_folha = util / ck_len;
+    let cap_interno = util / (ck_len + 8);
+    if cap_folha < MIN_ENTRADAS || cap_interno < MIN_ENTRADAS {
+        // O maior `ck_len` que ainda deixa MIN_ENTRADAS no no interno, que e
+        // o mais apertado dos dois (a entrada dele leva o filho junto).
+        let teto = util / MIN_ENTRADAS - 8;
+        let selo = if rabo > 0 {
+            format!(
+                " -- a pagina SELADA (cofre ligado e indice sobre coluna marcada) perde \
+                 {rabo} bytes para o selo"
+            )
+        } else {
+            String::new()
+        };
+        return Err(PhxError::Esquema(format!(
+            "indice {nome}: chave de {ck_len} bytes (com o rowid) e grande demais para \
+             paginas de {page_size} bytes: o teto e {teto} bytes{selo}. Encurte a chave"
+        )));
+    }
+    Ok(())
+}
+
+/// Confere, sem tocar em arquivo nenhum, que todo indice de `esquema` cabe
+/// numa pagina de `page_size` com `rabo` bytes de selo.
+fn conferir_capacidade_em(esquema: &Schema, page_size: usize, rabo: usize) -> Result<()> {
+    for (i, idx) in esquema.indices().iter().enumerate() {
+        let ck_len = esquema.largura_chave(i)? + ROWID_LEN;
+        validar_capacidade_com(page_size, rabo, ck_len, &idx.nome)?;
+    }
+    Ok(())
+}
+
+/// Algum indice da ARVORE guarda chave de coluna marcada?
+///
+/// E a pergunta que decide se o `.ndx` nasce com a pagina selada (pedido
+/// 339, achado 2). O `.ndx` guarda a chave INTEIRA de cada coluna do indice
+/// -- inclusive quando a coluna e a de uma expressao (`lower(nome)`), que
+/// continua derivada do valor --, entao basta UMA coluna marcada em UM indice
+/// para o valor da linha estar no arquivo. O filtro do indice parcial
+/// (`onde`) nao guarda valor nenhum, e por isso nao conta.
+///
+/// Nao e `tem_dado_pessoal`: tabela com `cpf` marcado e indice so sobre `id`
+/// nao tem segredo na arvore, e selar ali cobraria a cifra no laco quente do
+/// `inserir` para proteger nada.
+pub fn indice_sobre_coluna_marcada(esquema: &Schema) -> bool {
+    esquema.indices().iter().any(|idx| {
+        idx.colunas.iter().any(|ic| {
+            esquema
+                .colunas()
+                .get(ic.coluna)
+                .is_some_and(|c| c.dado_pessoal.e_pessoal())
+        })
+    })
+}
+
+/// A arvore que `esquema` pede cabe no `.ndx` que ela teria AGORA? A recusa
+/// das DECLARACOES (criar indice, marcar coluna), antes de gravar esquema
+/// nenhum -- parecer do papel C sobre o 339, condicao B.
+///
+/// So pergunta pela pagina selada quando ela nasceria selada: cofre ligado e
+/// indice sobre coluna marcada. Fora disso a conta e a da versao 1, que o
+/// proprio `NdxFile::criar` ja faz -- e repeti-la aqui seria a mesma decisao
+/// escrita duas vezes.
+pub fn conferir_que_a_arvore_cabe(esquema: &Schema) -> Result<()> {
+    if cofre::ligado() && indice_sobre_coluna_marcada(esquema) {
+        conferir_capacidade_em(esquema, PAGINA_PADRAO, RABO_SELADO)?;
+    }
+    Ok(())
+}
+
+/// A versao do `.ndx` no arquivo, lida so do cabecalho -- para o arranque
+/// achar a arvore em claro sobre coluna marcada sem abrir a tabela.
+pub fn versao_no_arquivo(caminho: impl AsRef<Path>) -> Result<u16> {
+    let caminho = caminho.as_ref();
+    let mut arquivo = File::open(caminho)?;
+    let mut cab = [0u8; CAB_LEN];
+    ler_exato(&mut arquivo, 0, &mut cab)?;
+    conferir_magic(&caminho.display().to_string(), MAGIC_NDX, &cab[0..8])?;
+    if crc32(&cab[..124]) != Campos(&cab).u32(124) {
+        return Err(PhxError::Corrompido(format!(
+            "cabecalho de {} com CRC invalido",
+            caminho.display()
+        )));
+    }
+    Ok(Campos(&cab).u16(8))
+}
+
 /// O byte 52 deste `.ndx` esta em 1 no arquivo? Le so o cabecalho.
 ///
 /// Existe para o arranque achar, sem abrir tabela nenhuma, o indice que a
@@ -546,10 +654,10 @@ pub struct NdxFile {
     page_size: usize,
     /// O material de cifra deste arquivo: sal, iteracoes e a chave derivada.
     ///
-    /// [`cofre::Material::EM_CLARO`] em todo `.ndx` -- a arvore da TABELA
-    /// continua em claro por decisao registrada (`SEGURANCA.md` §11.3).
-    /// Cifrado so no `.fts` de tabela com coluna marcada indexada por texto,
-    /// e so quando o cofre esta ligado: ver [`NdxFile::criar_selado`].
+    /// [`cofre::Material::EM_CLARO`] por padrao. Cifrado, com o cofre
+    /// ligado, em dois casos: o `.fts` com indice de texto sobre coluna
+    /// marcada (pedido 340) e o `.ndx` com algum indice sobre coluna marcada
+    /// (pedido 339) -- ver [`NdxFile::criar_selado`].
     material: cofre::Material,
     qtd_paginas: u64,
     pagina_livre: u64,
@@ -852,13 +960,14 @@ impl NdxFile {
     /// nossa se opoe, e o modelo de ameaca e o que `cofre.rs` ja declara:
     /// disco levado, backup vazado, copia numa maquina que nao e esta.
     ///
-    /// # Por que so o `.fts` chama
+    /// # Quem chama
     ///
-    /// Porque o pedido 340 e do `.fts`, e o `.ndx` da tabela e outra decisao,
-    /// registrada e em vigor (`SEGURANCA.md` §11.3). O mecanismo aqui serve
-    /// aos dois; ligar o `.ndx` muda o formato de TODA tabela indexada e paga
-    /// a cifra no laco quente do `inserir` -- e isso se decide medido e com o
-    /// DBA, nao de passagem.
+    /// O `.fts` com indice de texto sobre coluna marcada (pedido 340) e, desde
+    /// 09/10/2026, o `.ndx` da tabela com algum indice sobre coluna marcada
+    /// (pedido 339, achado 2; a decisao fica em `Table` e nao aqui). NAO e
+    /// toda tabela indexada: a arvore sem coluna marcada nao tem o que
+    /// esconder, e continua na versao 1 sem pagar a cifra no laco quente do
+    /// `inserir`.
     ///
     /// Cofre desligado devolve um arquivo em claro, versao 1, igual ao de
     /// antes: a cifra e do PROCESSO e nao deste caminho.
@@ -889,6 +998,13 @@ impl NdxFile {
                 "page_size {page_size} invalido: use potencia de 2 >= 512"
             )));
         }
+        // A capacidade ANTES de tocar no arquivo (parecer do papel C sobre o
+        // 339, condicao B). A pagina selada tem 24 bytes a menos, e uma chave
+        // que cabia na versao 1 pode nao caber na 2: conferida depois do
+        // `recriar_do_banco`, a recusa chegava com o `.ndx` vivo ja truncado,
+        // e a tabela deixava de abrir para escrita.
+        let rabo = rabo_do_material(&material);
+        conferir_capacidade_em(esquema, page_size, rabo)?;
         let caminho = caminho.as_ref().to_path_buf();
         // O arquivo vai ser truncado: o atestado do que morava aqui nao vale
         // para o que vai nascer (pedido 522).
@@ -1128,11 +1244,7 @@ impl NdxFile {
     /// Bytes que a selagem cobra no fim de cada pagina: o tempero e a
     /// etiqueta. Zero num arquivo em claro, e ai nada muda de lugar.
     fn rabo(&self) -> usize {
-        if self.material.cifrado() {
-            TEMPERO_LEN + self.material.acrescimo()
-        } else {
-            0
-        }
+        rabo_do_material(&self.material)
     }
 
     /// Onde a area util da pagina termina.
@@ -1163,16 +1275,7 @@ impl NdxFile {
     }
 
     fn validar_capacidade(&self, ck_len: usize, nome: &str) -> Result<()> {
-        let cap_folha = (self.corpo() - PAG_CAB) / ck_len;
-        let cap_interno = (self.corpo() - PAG_CAB) / (ck_len + 8);
-        if cap_folha < MIN_ENTRADAS || cap_interno < MIN_ENTRADAS {
-            return Err(PhxError::Esquema(format!(
-                "indice {nome}: chave de {ck_len} bytes e grande demais para paginas de {} bytes \
-                 (cabem {cap_folha} por folha, minimo {MIN_ENTRADAS})",
-                self.page_size
-            )));
-        }
-        Ok(())
+        validar_capacidade_com(self.page_size, self.rabo(), ck_len, nome)
     }
 
     fn serializar_diretorio(&self) -> Vec<u8> {
@@ -2745,6 +2848,11 @@ pub mod panico_de_teste {
         /// vizinho fora do congelamento faz NASCER um volume que o retrato
         /// nao viu.
         FaseADepoisDoRetrato,
+        /// `Table::aplicar_migracao_da_cifra` (pedido 339, condicao A do papel
+        /// C): o `.reg` ja trocado pelo cifrado, e o `.ndx.novo` selado ainda
+        /// ao lado, sem o `rename`. E a queda que deixa a tabela cifrada com a
+        /// arvore em claro.
+        CifraEntreOsDoisRenames,
     }
 
     #[cfg(debug_assertions)]

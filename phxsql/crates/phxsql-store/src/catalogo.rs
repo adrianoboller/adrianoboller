@@ -1112,6 +1112,53 @@ impl Database {
         (feitas, pendentes)
     }
 
+    /// As tabelas deste database cuja arvore guarda coluna marcada EM CLARO
+    /// com o cofre ligado -- condicao A do papel C sobre o pedido 339. Uma
+    /// linha por tabela, nomeando-a e dizendo o comando que a sela.
+    ///
+    /// AVISA e nao converte: guarda nova entra pedida, e refazer sozinho no
+    /// arranque seria impor uma varredura de tabela inteira a quem nao pediu.
+    /// Os casos que chegam aqui sao tres -- tabela de antes do conserto,
+    /// coluna indexada marcada depois, e a queda entre os dois `rename` da
+    /// FASE B do `Criptografar` --, e o remedio dos tres e o `reindexar`.
+    ///
+    /// # Por que o cabecalho antes do esquema
+    ///
+    /// Cofre desligado nao pergunta nada. Ligado, o `.ndx` versao 2 ja esta
+    /// selado e sai com 128 bytes lidos; so o versao 1 abre o `.reg` -- sem
+    /// escrever -- para saber se a arvore tem coluna marcada.
+    pub fn indices_em_claro_sobre_coluna_marcada(&self) -> Vec<String> {
+        let mut achados = Vec::new();
+        if self.tipo != TipoDatabase::Padrao || !crate::cofre::ligado() {
+            return achados;
+        }
+        let Ok(tabelas) = self.todas_as_tabelas() else {
+            return achados;
+        };
+        for qualificada in tabelas {
+            let (schema, tabela) = separar_qualificado(&qualificada);
+            let Ok(dir) = self.diretorio(schema.as_deref()) else {
+                continue;
+            };
+            let ndx = dir.join(format!("{tabela}.ndx"));
+            if crate::ndx::versao_no_arquivo(&ndx).ok() != Some(1) {
+                continue;
+            }
+            let Ok(Some(reg)) = crate::reg::RegFile::abrir_sem_escrever(&dir, &tabela) else {
+                continue;
+            };
+            if crate::ndx::indice_sobre_coluna_marcada(reg.esquema()) {
+                achados.push(format!(
+                    "{db}/{qualificada}: o indice sobre coluna marcada esta EM CLARO no .ndx \
+                     com o cofre ligado -- sele com \
+                     {{\"op\":\"reindexar\",\"database\":\"{db}\",\"tabela\":\"{qualificada}\"}}",
+                    db = self.nome
+                ));
+            }
+        }
+        achados
+    }
+
     /// Cria uma tabela, e responde depois de os arquivos dela, a pasta e --
     /// se a pasta do schema nasceu aqui -- o database estarem no disco (pedido
     /// 589). Quem segura a trava global usa

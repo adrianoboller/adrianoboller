@@ -987,7 +987,7 @@ GUARDAS = [
         # quebrou mais do que devia e a guarda nao esta provada.
         "seguem": [
             "cifrada_a_tabela_funciona_igual",
-            "o_indice_sobre_a_coluna_marcada_continua_em_claro",
+            "o_indice_sobre_a_coluna_marcada_nao_guarda_o_texto_claro",
             "regravar_a_mesma_linha_nunca_repete_o_texto_cifrado",
         ],
     },
@@ -1023,6 +1023,123 @@ GUARDAS = [
         "seguem": [
             "cifrada_a_tabela_funciona_igual",
             "tabela_escrita_antes_da_cifra_continua_abrindo",
+        ],
+    },
+    {
+        "id": "ndx-sobre-coluna-marcada-em-claro",
+        "titulo": "o `.ndx` sobre coluna marcada guarda o valor em claro com o cofre ligado",
+        "porque": (
+            "pedido 339, achado 2 do parecer externo de 17/09/2026, fechado em "
+            "09/10/2026. O `.reg` selava a coluna marcada e a arvore ao lado "
+            "guardava o mesmo valor inteiro, com o rowid, legivel a quem "
+            "copiasse o diretorio ou o backup. O conserto sela a PAGINA do "
+            "`.ndx` (a versao 2 do `.fts` do 340) quando algum indice tem "
+            "coluna marcada, por UM caminho (`criar_ndx`) para o `criar` e o "
+            "`reindexar`. Reposto, o texto claro volta aos bytes do arquivo."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """    if indice_sobre_coluna_marcada(esquema) {
+        NdxFile::criar_selado(c, esquema)
+""",
+        "troca": """    // DEFEITO REPOSTO: a arvore nasce sempre em claro.
+    if false && indice_sobre_coluna_marcada(esquema) {
+        NdxFile::criar_selado(c, esquema)
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "cifra-dos-dados"],
+        "caem": [
+            "o_indice_sobre_a_coluna_marcada_nao_guarda_o_texto_claro",
+            "reindexar_sela_o_ndx_que_nasceu_em_claro",
+        ],
+        # O alcance: a arvore sem coluna marcada ja nascia em claro, e a
+        # tabela cifrada continua funcionando -- se estes cairem, a troca
+        # quebrou mais do que o selo.
+        "seguem": [
+            "arvore_sem_coluna_marcada_continua_na_versao_1_com_o_cofre_ligado",
+            "cifrada_a_tabela_funciona_igual",
+        ],
+    },
+    {
+        "id": "ndx-trunca-antes-de-conferir-a-capacidade",
+        "titulo": "o `.ndx` vivo é truncado antes de a capacidade da página selada ser conferida",
+        "porque": (
+            "parecer do papel C sobre o 339, condicao B (09/10/2026). A pagina "
+            "selada tem 24 bytes a menos; uma chave de 1003 a 1008 bytes cabe na "
+            "versao 1 e nao na 2. Conferida DEPOIS do `recriar_do_banco`, a "
+            "recusa do `reindexar` chegava com o arquivo vivo ja truncado."
+        ),
+        "arquivo": "crates/phxsql-store/src/ndx.rs",
+        "trecho": """        let rabo = rabo_do_material(&material);
+        conferir_capacidade_em(esquema, page_size, rabo)?;
+""",
+        "troca": """        // DEFEITO REPOSTO: a capacidade so e conferida depois de truncar.
+        let rabo = rabo_do_material(&material);
+        let _ = (rabo, conferir_capacidade_em as fn(&Schema, usize, usize) -> Result<()>);
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "cifra-dos-dados"],
+        "caem": [
+            "reindexar_recusa_limpo_a_chave_que_so_cabe_em_claro",
+            "criar_tabela_com_chave_que_nao_cabe_selada_e_recusado",
+        ],
+        "seguem": [
+            "o_indice_sobre_a_coluna_marcada_nao_guarda_o_texto_claro",
+        ],
+    },
+    {
+        "id": "declaracao-aceita-chave-que-nao-cabe-selada",
+        "titulo": "criar índice ou marcar coluna aceita chave que não cabe na página selada",
+        "porque": (
+            "parecer do papel C sobre o 339, condicao B. Sem a recusa na "
+            "DECLARACAO, o esquema grava o indice (ou a marca) e o `.ndx` recusa "
+            "depois: o indice novo deixa «o .ndx tem N indices, o esquema "
+            "declara N+1» e a tabela nao abre; a marca deixa o proximo "
+            "`reindexar` sem conserto."
+        ),
+        "arquivo": "crates/phxsql-store/src/ndx.rs",
+        "trecho": """    if cofre::ligado() && indice_sobre_coluna_marcada(esquema) {
+        conferir_capacidade_em(esquema, PAGINA_PADRAO, RABO_SELADO)?;
+""",
+        "troca": """    // DEFEITO REPOSTO: a declaracao nao confere a pagina selada.
+    if false && cofre::ligado() && indice_sobre_coluna_marcada(esquema) {
+        conferir_capacidade_em(esquema, PAGINA_PADRAO, RABO_SELADO)?;
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "cifra-dos-dados"],
+        "caem": [
+            "criar_indice_que_nao_cabe_selado_e_recusado_na_declaracao",
+            "marcar_coluna_indexada_que_nao_cabe_selada_e_recusado",
+        ],
+        "seguem": [
+            "reindexar_recusa_limpo_a_chave_que_so_cabe_em_claro",
+        ],
+    },
+    {
+        "id": "arvore-em-claro-sob-o-cofre-sem-aviso",
+        "titulo": "a árvore sobre coluna marcada fica em claro com o cofre ligado e o arranque cala",
+        "porque": (
+            "parecer do papel C sobre o 339, condicao A e item 3b. A queda entre "
+            "os dois `rename` da FASE B do `Criptografar` e a marca de coluna ja "
+            "indexada deixam a arvore em claro; a casa nao converte a forca "
+            "(guarda nova entra pedida), entao o aviso no arranque e a unica "
+            "coisa que diz a quem opera que falta o `reindexar`."
+        ),
+        "arquivo": "crates/phxsql-store/src/catalogo.rs",
+        "trecho": """        if self.tipo != TipoDatabase::Padrao || !crate::cofre::ligado() {
+            return achados;
+""",
+        "troca": """        // DEFEITO REPOSTO: o arranque nao procura a arvore em claro.
+        if true || self.tipo != TipoDatabase::Padrao || !crate::cofre::ligado() {
+            return achados;
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "migracao-da-cifra"],
+        "caem": [
+            "a_queda_entre_os_dois_renames_da_fase_b_e_avisada_no_arranque",
+            "marcar_coluna_ja_indexada_e_avisado_e_nao_refaz_a_arvore",
+        ],
+        "seguem": [
+            "criptografar_sela_o_ndx_sobre_a_coluna_marcada",
         ],
     },
     {

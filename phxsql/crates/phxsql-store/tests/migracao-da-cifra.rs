@@ -1066,3 +1066,305 @@ fn a_fase_b_segura_o_volume_velho_ate_soltar() {
     conferir_linhas(&d, 70);
     cofre::desligar();
 }
+
+// ---------------------------------------------------------------------------
+// O `.ndx` vai junto (pedido 339, achado 2)
+// ---------------------------------------------------------------------------
+
+/// `Criptografar` numa tabela cuja ARVORE guarda a coluna marcada leva o
+/// `.ndx` junto, selado: cifrar o `.reg` e deixar o indice ao lado em claro
+/// diria «cifrada» com o valor legivel no arquivo vizinho.
+///
+/// # Prova real
+///
+/// Sem o `refazer_ndx` no `aplicar_migracao_da_cifra`, o `.reg` sai v5 sem o
+/// segredo e o `.ndx` continua v1 COM ele -- a terceira assercao reprova.
+/// A busca pelo indice depois da migracao e o controle: um `.ndx` vazio
+/// tambem nao conteria o segredo.
+#[test]
+fn criptografar_sela_o_ndx_sobre_a_coluna_marcada() {
+    let _t = UM_DE_CADA_VEZ.lock().unwrap_or_else(|e| e.into_inner());
+    cofre::desligar();
+    let d = DirTemp::novo("migra-ndx-selado");
+    let com_arvore_marcada = Schema::new(
+        "clientes",
+        vec![
+            Column::new("id", ColumnType::Int8).obrigatoria(),
+            Column::new("nome", ColumnType::Str(40))
+                .obrigatoria()
+                .com_dado_pessoal(DadoPessoal::Pessoal),
+            Column::new("cpf", ColumnType::Str(14)).com_dado_pessoal(DadoPessoal::Sensivel),
+            Column::new("cidade", ColumnType::Str(20)),
+        ],
+        vec![
+            IndexDef::new("porId", vec![IndexColumn::asc(0)])
+                .unico()
+                .primaria(),
+            IndexDef::new("porNome", vec![IndexColumn::asc(1)]),
+        ],
+    )
+    .unwrap();
+    {
+        let mut t = Table::criar(&d, com_arvore_marcada).unwrap();
+        for i in 1..=40 {
+            t.inserir(&linha(i)).unwrap();
+        }
+        t.sincronizar().unwrap();
+    }
+    let ndx = d.join("clientes.ndx");
+    assert!(
+        contem(&std::fs::read(&ndx).unwrap(), SEGREDO.as_bytes()),
+        "controle: em claro, o .ndx TEM de guardar o nome"
+    );
+    cofre::definir(SENHA, RAPIDO).unwrap();
+
+    migrar(&d, true);
+    assert_eq!(versao(&d), 5);
+    assert!(
+        !contem(&std::fs::read(&ndx).unwrap(), SEGREDO.as_bytes()),
+        "Criptografar deixou o nome em claro no .ndx"
+    );
+    assert_eq!(versao_do(&ndx), 2, "o .ndx nao declara a pagina selada");
+
+    let mut t = Table::abrir(&d, "clientes").unwrap();
+    assert!(t.ndx_selado());
+    assert_eq!(
+        t.buscar("porNome", &[Value::Str(format!("{SEGREDO} 0013"))])
+            .unwrap(),
+        vec![13],
+        "a busca pela arvore refeita nao achou"
+    );
+    drop(t);
+    cofre::desligar();
+}
+
+/// A FASE A monta o `.ndx.novo` selado FORA da trava, e a queda entre as
+/// fases o deixa sem dono: a abertura gravavel seguinte o recolhe, e a
+/// tabela volta ao estado de antes -- o `.reg` em claro servido pela arvore
+/// em claro.
+///
+/// # Prova real
+///
+/// Sem o `recolher_ndx_ao_lado` na abertura, o `.ndx.novo` sobra e a
+/// primeira assercao depois da reabertura reprova.
+#[test]
+fn a_queda_entre_as_fases_recolhe_o_ndx_ao_lado() {
+    let _t = UM_DE_CADA_VEZ.lock().unwrap_or_else(|e| e.into_inner());
+    cofre::desligar();
+    let d = DirTemp::novo("migra-ndx-queda");
+    let com_arvore_marcada = Schema::new(
+        "clientes",
+        vec![
+            Column::new("id", ColumnType::Int8).obrigatoria(),
+            Column::new("nome", ColumnType::Str(40))
+                .obrigatoria()
+                .com_dado_pessoal(DadoPessoal::Pessoal),
+            Column::new("cpf", ColumnType::Str(14)).com_dado_pessoal(DadoPessoal::Sensivel),
+            Column::new("cidade", ColumnType::Str(20)),
+        ],
+        vec![IndexDef::new("porNome", vec![IndexColumn::asc(1)])],
+    )
+    .unwrap();
+    {
+        let mut t = Table::criar(&d, com_arvore_marcada).unwrap();
+        for i in 1..=15 {
+            t.inserir(&linha(i)).unwrap();
+        }
+        t.sincronizar().unwrap();
+    }
+    cofre::definir(SENHA, RAPIDO).unwrap();
+    {
+        let mut t = Table::abrir(&d, "clientes").unwrap();
+        let troca = t.preparar_migracao_da_cifra(true).unwrap();
+        let ao_lado = d.join("clientes.ndx.novo");
+        assert!(ao_lado.exists(), "a FASE A nao montou o .ndx ao lado");
+        assert_eq!(versao_do(&ao_lado), 2, "o .ndx ao lado nasceu em claro");
+        assert!(
+            !contem(&std::fs::read(&ao_lado).unwrap(), SEGREDO.as_bytes()),
+            "o .ndx ao lado guarda o nome em claro"
+        );
+        // A queda: nem FASE B nem descarte.
+        std::mem::forget(troca);
+    }
+    let mut t = Table::abrir(&d, "clientes").unwrap();
+    // So o `.ndx.novo`: o `clientes.reg.novo` continua com dono NESTE
+    // processo (o `forget` nao solta o registro do pedido 625), e quem o
+    // recolhe numa queda de verdade e o processo novo.
+    assert!(
+        !d.join("clientes.ndx.novo").exists(),
+        "o .ndx.novo sem dono sobrou: {:?}",
+        novos(&d)
+    );
+    assert_eq!(versao(&d), 4);
+    assert!(!t.ndx_selado());
+    assert_eq!(
+        t.buscar("porNome", &[Value::Str(format!("{SEGREDO} 0009"))])
+            .unwrap(),
+        vec![9]
+    );
+    drop(t);
+    cofre::desligar();
+}
+
+/// Uma base `loja` com `clientes`, arvore sobre a coluna marcada, criada com
+/// o cofre DESLIGADO e devolvida com ele LIGADO.
+fn base_com_arvore_marcada(rotulo: &str) -> (DirTemp, phxsql_store::catalogo::Instancia) {
+    cofre::desligar();
+    let base = DirTemp::novo(rotulo);
+    let inst = phxsql_store::catalogo::Instancia::nova(&base).unwrap();
+    let db = inst.criar_database("loja").unwrap();
+    let esq = Schema::new(
+        "clientes",
+        vec![
+            Column::new("id", ColumnType::Int8).obrigatoria(),
+            Column::new("nome", ColumnType::Str(40))
+                .obrigatoria()
+                .com_dado_pessoal(DadoPessoal::Pessoal),
+            Column::new("cpf", ColumnType::Str(14)).com_dado_pessoal(DadoPessoal::Sensivel),
+            Column::new("cidade", ColumnType::Str(20)),
+        ],
+        vec![IndexDef::new("porNome", vec![IndexColumn::asc(1)])],
+    )
+    .unwrap();
+    let mut t = db.criar_tabela(None, esq).unwrap();
+    for i in 1..=12 {
+        t.inserir(&linha(i)).unwrap();
+    }
+    t.sincronizar().unwrap();
+    drop(t);
+    cofre::definir(SENHA, RAPIDO).unwrap();
+    (base, inst)
+}
+
+/// **A queda ENTRE os dois `rename` da FASE B** (condicao A do papel C): o
+/// `.reg` ja cifrado, o `.ndx.novo` selado ao lado. A abertura recolhe o
+/// `.ndx.novo` -- ele nao tem dono --, e a tabela fica cifrada com a arvore
+/// em claro. Nao se converte a forca (guarda nova entra pedida): o arranque
+/// AVISA, nomeando a tabela e o `reindexar`, e o `reindexar` sela.
+///
+/// # Prova real
+///
+/// Com o `indices_em_claro_sobre_coluna_marcada` devolvendo lista vazia, o
+/// arranque cala e a assercao do aviso reprova. O `a_queda_entre_as_fases_...`
+/// nao pegava isto: ele cai ANTES da FASE B, quando o `.reg` ainda e claro.
+#[test]
+fn a_queda_entre_os_dois_renames_da_fase_b_e_avisada_no_arranque() {
+    let _t = UM_DE_CADA_VEZ.lock().unwrap_or_else(|e| e.into_inner());
+    let (base, inst) = base_com_arvore_marcada("migra-entre-renames");
+    let db = inst.abrir_database("loja").unwrap();
+    let loja = base.join("loja");
+    {
+        let mut t = db.abrir_tabela(None, "clientes").unwrap();
+        let troca = t.preparar_migracao_da_cifra(true).unwrap();
+        armar(Ponto::CifraEntreOsDoisRenames);
+        let caiu = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _ = t.aplicar_migracao_da_cifra(troca);
+        }));
+        desarmar();
+        assert!(caiu.is_err(), "o ponto entre os dois rename nao disparou");
+    }
+    assert_eq!(versao(&loja), 5, "o .reg nao chegou a virar");
+    assert!(
+        loja.join("clientes.ndx.novo").exists(),
+        "a FASE A nao deixou o .ndx ao lado"
+    );
+
+    // O arranque AVISA -- ele so le cabecalhos, e quem recolhe o `.ndx.novo`
+    // e a primeira abertura gravavel, logo abaixo.
+    let r = db.recuperar_marcas();
+    assert_eq!(versao_do(&loja.join("clientes.ndx")), 1);
+    assert!(contem(
+        &std::fs::read(loja.join("clientes.ndx")).unwrap(),
+        SEGREDO.as_bytes()
+    ));
+    assert_eq!(
+        r.indices_em_claro.len(),
+        1,
+        "o arranque calou: {:?}",
+        r.indices_em_claro
+    );
+    let aviso = &r.indices_em_claro[0];
+    assert!(
+        aviso.contains("loja/clientes") && aviso.contains("reindexar"),
+        "{aviso}"
+    );
+    assert!(aviso.contains("com o cofre ligado -- sele com"), "{aviso}");
+    assert!(
+        r.texto(&base).contains("EM CLARO sob o cofre"),
+        "{}",
+        r.texto(&base)
+    );
+
+    // Nao converte sozinho; o `reindexar` pedido sela, e o aviso some.
+    let mut t = db.abrir_tabela(None, "clientes").unwrap();
+    assert!(
+        !loja.join("clientes.ndx.novo").exists(),
+        "o .ndx.novo sem dono sobrou"
+    );
+    assert!(t.ndx_em_claro_sobre_coluna_marcada());
+    t.reindexar().unwrap();
+    t.sincronizar().unwrap();
+    assert!(!t.ndx_em_claro_sobre_coluna_marcada());
+    drop(t);
+    assert!(db.recuperar_marcas().indices_em_claro.is_empty());
+    assert!(!contem(
+        &std::fs::read(loja.join("clientes.ndx")).unwrap(),
+        SEGREDO.as_bytes()
+    ));
+    cofre::desligar();
+}
+
+/// **O irmao: marcar coluna JA indexada** (item 3b do papel C). A marca nao
+/// refaz a arvore -- decisao do DBA, guarda nova entra pedida --, e a mesma
+/// deteccao avisa no arranque.
+///
+/// # Prova real
+///
+/// Com a deteccao calada, o aviso nao aparece e a assercao reprova.
+#[test]
+fn marcar_coluna_ja_indexada_e_avisado_e_nao_refaz_a_arvore() {
+    let _t = UM_DE_CADA_VEZ.lock().unwrap_or_else(|e| e.into_inner());
+    cofre::desligar();
+    let base = DirTemp::novo("migra-marcar-indexada");
+    let inst = phxsql_store::catalogo::Instancia::nova(&base).unwrap();
+    let db = inst.criar_database("loja").unwrap();
+    cofre::definir(SENHA, RAPIDO).unwrap();
+    let esq = Schema::new(
+        "clientes",
+        vec![
+            Column::new("id", ColumnType::Int8).obrigatoria(),
+            Column::new("nome", ColumnType::Str(40)).obrigatoria(),
+            Column::new("cpf", ColumnType::Str(14)),
+            Column::new("cidade", ColumnType::Str(20)),
+        ],
+        vec![IndexDef::new("porNome", vec![IndexColumn::asc(1)])],
+    )
+    .unwrap();
+    let mut t = db.criar_tabela(None, esq).unwrap();
+    for i in 1..=5 {
+        t.inserir(&linha(i)).unwrap();
+    }
+    assert!(
+        !t.ndx_em_claro_sobre_coluna_marcada(),
+        "sem marca nao ha o que avisar"
+    );
+    t.marcar_dado_pessoal(&[("nome".to_string(), DadoPessoal::Pessoal)])
+        .unwrap();
+    t.sincronizar().unwrap();
+    assert!(!t.ndx_selado(), "marcar nao refaz a arvore");
+    assert!(t.ndx_em_claro_sobre_coluna_marcada());
+    drop(t);
+    let r = db.recuperar_marcas();
+    assert_eq!(
+        r.indices_em_claro.len(),
+        1,
+        "o arranque calou: {:?}",
+        r.indices_em_claro
+    );
+    assert!(
+        r.indices_em_claro[0].contains("com o cofre ligado -- sele com"),
+        "{:?}",
+        r.indices_em_claro
+    );
+    cofre::desligar();
+}

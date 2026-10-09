@@ -1428,10 +1428,11 @@ pub const OPERACOES: &[Operacao] = &[
         apelidos: &[],
         resumo: "Cifra o dado ATUAL de uma tabela que já existe em claro \
                  (colunas inline marcadas como dado pessoal; cofre ligado). \
-                 Reescreve o `.reg` inteiro, sal novo; o rowid e o `.ndx` não \
-                 mudam. Recusa coluna Memo/Bin marcada e índice de texto sobre \
-                 coluna marcada. O histórico (`.log`, `.trash`, `.reason`) e o \
-                 `.ndx` ficam em claro, e a migração não replica.",
+                 Reescreve o `.reg` inteiro, sal novo; o rowid não muda, e o \
+                 `.ndx` com índice sobre coluna marcada é refeito selado. Recusa \
+                 coluna Memo/Bin marcada e índice de texto sobre coluna marcada. \
+                 O histórico (`.log`, `.trash`, `.reason`) fica em claro, e a \
+                 migração não replica.",
         parametros: &[DB, TAB],
         exemplo: r#"{"op":"criptografar","database":"loja","tabela":"clientes"}"#,
         ferramenta_mcp: false,

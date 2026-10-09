@@ -881,7 +881,7 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `config-phz-copia-guardada-fica-aberta` | a copia em claro que a migracao guarda leva o `0644` da instalacao, com o token, para sempre | 1 | ✅ provada |
 | `config-phz-migra-o-link` | a migracao de um config que e LINK move so o link e diz que guardou o original | 1 | ✅ provada |
 | `config-phz-aviso-procura-a-copia-pelo-lido` | o aviso de arranque procura a copia em claro por um nome que a migracao nao usou, e cala | 1 | ✅ provada |
-| `gravar-privado-temporario-e-o-proprio-config` | o temporario do `gravar_privado` troca a extensao, e com `--config servidor.tmp` ele e o proprio config | 2 | ✅ provada |
+| `gravar-privado-temporario-e-o-proprio-config` | o irmao-por-sufixo troca a extensao, e com `--config servidor.tmp` (ou `"jobs": "agenda.log"`) o irmao e o proprio arquivo | 2 | ✅ provada |
 | `config-phz-desfazer-apaga-a-unica-copia` | o desfazer da troca apaga o arquivo novo mesmo quando o velho sumiu, e diz que o velho «continua valendo» | 1 | ✅ provada |
 | `config-phz-grava-o-texto-cru` | o servidor que subiu de um `config.phz` grava o texto cru dentro dele: o token volta a ler-se num editor | 1 | ✅ provada |
 | `replica-lista-e-pedida-nao-imposta` | replicas_autorizadas vazia libera todos -- e so isso e' pedida, nao imposta | 1 | ✅ provada |
@@ -899,6 +899,7 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `pulso-sem-prova-de-identidade` | o pulso do cluster aceitando identidade auto-declarada | 3 | ✅ provada |
 | `aperto-de-mao-sem-teto` | a leitura do aperto de mao fora do `Canal`, sem teto nenhum | 1 | ✅ provada |
 | `erro-do-pulso-mapeia-quem-nao-tem-pino` | a recusa da prova do pulso dizendo quais nós ainda não têm pino | 1 | ✅ provada |
+| `relogio-do-pulso-com-sono-plantado` | um atraso de 100 µs só no nó sem pino, com a frase já igual | 1 | ✅ provada |
 | `pino-cego-sem-a-recusa-do-no-sem-pino` | a forja contra o pino cego entrando pelo nó sem pino | 1 | ✅ provada |
 | `nonce-do-pulso-sem-regua-de-bytes` | o nonce do pulso retido do tamanho que o remetente escolheu | 2 | ✅ provada |
 | `antirrepeticao-envenenada-vira-pulso-inedito` | a antirrepetição do pulso desligada, calada, por uma trava envenenada | 2 | ✅ provada |
@@ -911,7 +912,8 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `resposta-sem-prova-assina-e-esconde` | a resposta a um pulso sem prova igual na forma e diferente no relógio | 1 | ✅ provada |
 | `reescrita-sem-portao-na-trava` | a migração congela a tabela que o COMMIT de uma transação aberta vai abrir | 1 | ✅ provada |
 | `acrescentar-coluna-sem-portao` | o acrescentar_coluna congela a tabela que o COMMIT de uma transação aberta vai abrir | 1 | ✅ provada |
-| `commit-sem-rede-antes-da-marca` | o COMMIT grava a marca com uma tabela do alcance congelada | — | ❌ **não pegou** |
+| `commit-sem-rede-antes-da-marca` | o COMMIT grava a marca com uma tabela do alcance congelada | — | 🟰 redundante |
+| `commit-sem-as-duas-recusas-antes-da-marca` | o COMMIT grava a marca com a tabela congelada quando a rede do 426 E a pre-conferencia do 448 somem | 1 | ✅ provada |
 | `instrucao-na-vizinha-da-congelada` | a escrita ligada pela chave a uma tabela congelada entra na lista da transação | 1 | ✅ provada |
 | `braco-de-erro-retrava` | a passada do COMMIT quebra depois da marca e a recuperação da hora não roda | 2 | ✅ provada |
 | `completar-apaga-a-marca-impossivel` | a recuperação do COMMIT apaga a marca de uma operação que só estava congelada | 1 | ✅ provada |
@@ -1000,7 +1002,7 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `nulo-colide-no-unico-do-commit` | o COMMIT com o segundo NULL num indice unico sai pela metade | 1 | ✅ provada |
 | `fsync-recusado-repete-no-diario` | o `fsync` recusado de um volume é repetido e responde Ok: o `Volumes` devolvia a lista ao registro «para o fecho tentar de novo» | 1 | ✅ provada |
 | `fsync-recusado-repete-no-indice` | o `.ndx` cujo `fsync` foi recusado responde Ok no fecho seguinte, pela porta da árvore que não presta | 1 | ✅ provada |
-| `drop-baixa-o-byte-52-depois-do-fsync-recusado` | depois de um `fsync` recusado no diretório, o `Drop` do `.ndx` grava o cabeçalho limpo por cima das páginas que o núcleo pode ter perdido | 2 | ✅ provada |
+| `drop-baixa-o-byte-52-depois-do-fsync-recusado` | depois de um `fsync` recusado no diretório, o `.ndx` sai do `Drop` dizendo que presta — até o 522 gravando o 0, desde o 522 atestando para a reabertura | 2 | ✅ provada |
 | `pagina-que-o-disco-recusou-sai-das-sujas` | a página do `.ndx` que o disco cheio recusou sai da lista de sujas antes de ser gravada, e o segundo fecho baixa o byte 52 sobre ela | 2 | ✅ provada |
 | `pagina-despejada-que-o-disco-recusou-some` | a página suja despejada do cache que o disco recusou some: nem no arquivo, nem na RAM | 1 | ✅ provada |
 | `servidor-segue-de-pe-depois-do-fsync-recusado` | o servidor segue de pé depois de um `fsync` recusado, gravando num disco que já se sabe que mente | 1 | ✅ provada |
@@ -1448,6 +1450,7 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `gancho-programa-de-outro-dono` | o programa do gancho pertence a outro usuario e passa (pedido 639) | 1 | ✅ provada |
 | `gancho-diretorio-de-outro-dono` | o diretorio do programa do gancho pertence a outro usuario e passa (pedido 639) | 1 | ✅ provada |
 | `gancho-linha-so-troca-crlf` | a linha do SMS e do stdin do gancho so troca CR e LF (pedido 643) | 1 | ✅ provada |
+| `gancho-filho-direto-com-a-trava` | o filho do gancho nasce direto do servidor, com a trava de instancia na mao (pedido 759) | 1 | ✅ provada |
 | `json-texto-sem-escapar-a-aspa` | o escritor de JSON deixa a aspa do valor sem escapar: texto vira campo (pedido 249, B1a) | 1 | ✅ provada |
 | `io-do-caminho-pedido-avisa-o-disco` | o Io de um caminho digitado pelo usuario dispara o aviso de saude do disco (pedido 641) | 1 | ✅ provada |
 | `profiler-caminho-pedido-como-io` | o `arquivo` do profiler que nao abre volta como erro de E/S (pedido 641) | 1 | ✅ provada |
@@ -1530,11 +1533,14 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `alter-com-regra-sem-aviso` | `acrescentar_coluna` com `check` ou `calculada` numa tabela com linha é aceito SEM AVISO, e a linha velha fica fora da regra | — | 🪦 aposentada (01/10/2026) |
 | `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | — | 🪦 aposentada (18/09/2026) |
 
-**858 das 857 guardas do catálogo: 2 aposentadas, 1 não pegou, 851 provadas, 4 redundantes** — 38959 s de mutação, medido de 2026-09-16 15:25 a 2026-10-08 20:14, em 8 datas (2026-09-16: 1, 2026-09-24: 62, 2026-09-30: 30, 2026-10-01: 140, 2026-10-02: 97, 2026-10-06: 36, 2026-10-07: 221, 2026-10-08: 271).
+**861 das 863 guardas do catálogo: 2 aposentadas, 854 provadas, 5 redundantes** — 41983 s de mutação, medido de 2026-09-16 15:25 a 2026-10-09 13:21, em 8 datas (2026-09-16: 1, 2026-09-30: 27, 2026-10-01: 93, 2026-10-02: 93, 2026-10-06: 36, 2026-10-07: 220, 2026-10-08: 309, 2026-10-09: 82).
 
-> **Esta rodada NÃO julgou 1 das 857 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 1 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 4 das 863 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 4 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
-- `commit-sem-as-duas-recusas-antes-da-marca` — o COMMIT grava a marca com a tabela congelada quando a rede do 426 E a pre-conferencia do 448 somem
+- `ndx-sobre-coluna-marcada-em-claro` — o `.ndx` sobre coluna marcada guarda o valor em claro com o cofre ligado
+- `ndx-trunca-antes-de-conferir-a-capacidade` — o `.ndx` vivo é truncado antes de a capacidade da página selada ser conferida
+- `declaracao-aceita-chave-que-nao-cabe-selada` — criar índice ou marcar coluna aceita chave que não cabe na página selada
+- `arvore-em-claro-sob-o-cofre-sem-aviso` — a árvore sobre coluna marcada fica em claro com o cofre ligado e o arranque cala
 
 As guardas que esta corrida ainda cita, hoje aposentadas:
 
@@ -1549,7 +1555,7 @@ As notas que a rodada deixou:
 - `ffi-panico-atravessa` — o binario abortou, que e como esta guarda pega
 - `rest-fecha-sem-escoar` — confirmado: nenhum teste de unidade sente isto, e nao poderia -- o RST e do sistema operacional, e so aparece com um soquete de verdade. Quem pega e o passo 13 de `bancada/rest/provar.py`, e esta entrada existe para dizer, com o numero da rodada, que a cobertura mora la e nao aqui
 - `recuperar-sem-reindexar` — o binario abortou, que e como esta guarda pega
-- `commit-sem-rede-antes-da-marca` — PASSOU COM O DEFEITO REPOSTO: o_commit_contra_a_tabela_congelada_nao_sai_pela_metade
+- `commit-sem-rede-antes-da-marca` — confirmado (pedido 720): sem a rede do 426, quem recusa o COMMIT antes da marca e a pre-conferencia do 448 -- EM_MIGRACAO 4006 sem a frase da rede, 0 de 2 linhas gravadas. Tirando as duas camadas, o teste CAI com 1 de 2 linhas no disco e o arranque aplicando a outra (`commit-sem-as-duas-recusas-antes-da-marca`)
 - `backup-destino-que-contem-a-raiz` — medido em 02/10/2026 (frente do 513 passo 2), e nao deduzido: desde o pedido 611 (S7, `conferir_destino_aberto`, commit 940e0e31 de 01/10 06:57) a mesma pergunta e feita ao DESCRITOR da pasta aberta, antes da primeira copia -- entao repor so' a conferencia de texto no `conferir_destino` nao e sentido por teste nenhum: os quatro destinos do teste recusam no descritor. A guarda que pega o par e `destino-do-backup-conferido-so-pelo-nome`. A ultima PROVADA desta entrada e de 01/10 02:26, ANTES do 611.
 - `prova-do-gravar-privado-dentro-do-processo` — o binario abortou, que e como esta guarda pega
 <!-- guardas:fim -->

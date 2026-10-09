@@ -970,26 +970,44 @@ pub const FABRICA: &[MensagemFabrica] = &[
     MensagemFabrica {
         nome: "erro.migracao_aviso_criptografou",
         textos: [
-            "cifrado o dado ATUAL do .reg. O historico (.log, .trash, .reason) e o \
-             indice (.ndx) continuam em claro, e a migracao e local: nao replica. \
-             Faca o mesmo nos outros servidores",
-            "la donnée ACTUELLE du .reg est chiffrée. L'historique (.log, .trash, \
-             .reason) et l'index (.ndx) restent en clair, et la migration est \
-             locale : elle ne se réplique pas. Faites de même sur les autres serveurs",
-            "the CURRENT data in the .reg is now encrypted. The history (.log, \
-             .trash, .reason) and the index (.ndx) stay in plaintext, and the \
-             migration is local: it does not replicate. Do the same on the other \
-             servers",
-            "il dato ATTUALE del .reg è ora cifrato. Lo storico (.log, .trash, \
-             .reason) e l'indice (.ndx) restano in chiaro, e la migrazione è \
-             locale: non si replica. Fai lo stesso sugli altri server",
-            "die AKTUELLEN Daten im .reg sind jetzt verschlüsselt. Verlauf (.log, \
-             .trash, .reason) und Index (.ndx) bleiben im Klartext, und die \
-             Migration ist lokal: sie wird nicht repliziert. Auf den anderen \
-             Servern wiederholen",
-            "el dato ACTUAL del .reg ahora está cifrado. El historial (.log, \
-             .trash, .reason) y el índice (.ndx) siguen en claro, y la migración \
-             es local: no se replica. Haga lo mismo en los otros servidores",
+            "cifrado o dado ATUAL do .reg; o .ndx sobre coluna marcada saiu selado. \
+             O historico (.log, .trash, .reason) continua em claro, e a migracao \
+             e local: nao replica. Faca o mesmo nos outros servidores",
+            "donnée ACTUELLE du .reg chiffrée ; le .ndx sur colonne marquée est \
+             scellé. L'historique (.log, .trash, .reason) reste en clair, et la \
+             migration est locale. Faites de même sur les autres serveurs",
+            "the CURRENT data in the .reg is encrypted; the .ndx on a marked column \
+             is sealed. The history (.log, .trash, .reason) stays in plaintext, \
+             and the migration is local: do the same on the other servers",
+            "dato ATTUALE del .reg cifrato; il .ndx su colonna marcata è sigillato. \
+             Lo storico (.log, .trash, .reason) resta in chiaro, e la migrazione è \
+             locale: fai lo stesso sugli altri server",
+            "AKTUELLE Daten im .reg verschlüsselt; der .ndx über markierter Spalte \
+             ist versiegelt. Verlauf (.log, .trash, .reason) bleibt im Klartext; \
+             die Migration ist lokal: auf den anderen Servern wiederholen",
+            "dato ACTUAL del .reg cifrado; el .ndx sobre columna marcada quedó \
+             sellado. El historial (.log, .trash, .reason) sigue en claro, y la \
+             migración es local: haga lo mismo en los otros servidores",
+        ],
+    },
+    // Pedido 339, item 3b do papel C: marcar coluna ja indexada nao refaz a
+    // arvore (guarda nova entra pedida) -- a resposta diz o que ficou em
+    // claro e o comando que sela.
+    MensagemFabrica {
+        nome: "erro.marcar_ndx_em_claro",
+        textos: [
+            "o indice de {tabela} sobre coluna marcada continua EM CLARO no .ndx: \
+             marcar nao refaz a arvore. Rode reindexar para sela-la",
+            "l'index de {tabela} sur une colonne marquée reste EN CLAIR dans le \
+             .ndx : marquer ne refait pas l'arbre. Lancez reindexar pour le sceller",
+            "the index of {tabela} on a marked column stays in PLAINTEXT in the \
+             .ndx: marking does not rebuild the tree. Run reindexar to seal it",
+            "l'indice di {tabela} su colonna marcata resta IN CHIARO nel .ndx: \
+             marcare non rifà l'albero. Esegui reindexar per sigillarlo",
+            "der Index von {tabela} über einer markierten Spalte bleibt im \
+             KLARTEXT im .ndx: Markieren baut den Baum nicht neu. reindexar versiegelt ihn",
+            "el índice de {tabela} sobre columna marcada sigue EN CLARO en el \
+             .ndx: marcar no rehace el árbol. Ejecute reindexar para sellarlo",
         ],
     },
     MensagemFabrica {
