@@ -239,8 +239,6 @@ URLS_PUBLICADAS = {
     # que mudou de conteudo. Corte que se move e' o preco de caber no teto.
     "pedidos-001-190.html": "https://claude.ai/artifact/4jSZ5yZFnjEnbGGbE3i5nz",
     "pedidos-191-260.html": "https://claude.ai/artifact/MAc3CcjfCPbjVm5sQZwYoC",
-    "pedidos-261-310.html": "https://claude.ai/artifact/R4iGBeRQt7ao6yffQkmGCp",
-    "pedidos-311-350.html": "https://claude.ai/artifact/S1oHX53g9q4oqHSn7Yv3vm",
     # As faixas 351+ ja se deslocaram DUAS vezes em 23/09/2026, e e por isso
     # que a chave e o NOME e nao o numero: de `351-mais` para `351-410` +
     # `411-mais` pela manha, e de novo para `351-420` + `421-mais` a noite,
@@ -252,9 +250,17 @@ URLS_PUBLICADAS = {
     # E pela terceira vez em 30/09/2026: `351-410`, `411-500` e `501-mais`,
     # publicadas NOVAS e so depois postas aqui. As de `351-420` e `421-mais`
     # ficaram orfas no servico -- apagar e do dono.
-    "pedidos-351-410.html": "https://claude.ai/artifact/GPpyFuyY9gzCGtSh7o4x1W",
-    "pedidos-411-500.html": "https://claude.ai/artifact/GgPYzTX4rx12BX4SxmfQKK",
-    "pedidos-501-mais.html": "https://claude.ai/artifact/HrYgYQ6UYNTBP1hPt127b2",
+    # E pela quarta vez em 09/10/2026, no selo da 0.20.0: os cortes viraram
+    # `261-320`, `321-360`, `361-430`, `431-540`, `541-670` e `671-mais`,
+    # publicadas NOVAS e so depois postas aqui. As de `261-310`, `311-350`,
+    # `351-410`, `411-500` e `501-mais` ficaram orfas no servico -- apagar
+    # e do dono.
+    "pedidos-261-320.html": "https://claude.ai/artifact/8NyMWXanJFbpsNAbWu1RU3",
+    "pedidos-321-360.html": "https://claude.ai/artifact/UAN1DASSFWsLroFmJfufTb",
+    "pedidos-361-430.html": "https://claude.ai/artifact/F1N9ZkNW9K5fD1CHr7jsf4",
+    "pedidos-431-540.html": "https://claude.ai/artifact/8yxw4iBsJJ8KeWEAWB64PB",
+    "pedidos-541-670.html": "https://claude.ai/artifact/KrzPcsd9fqLHfz8XTyzGgY",
+    "pedidos-671-mais.html": "https://claude.ai/artifact/TJ3nzrNVK6MWpBQzRz8DMg",
 }
 
 

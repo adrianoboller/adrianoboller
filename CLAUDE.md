@@ -144,15 +144,18 @@ O que falta no projeto está em `phxsql/docs/PENDENCIAS.md` — atualize junto c
 o dossiê.
 
 Dessa lista sai uma **segunda página**, a relação dos pedidos com o estado de
-cada um — e desde 23/09/2026 ela são **cinco**, por decisão sua, porque uma só
+cada um — e desde 23/09/2026 ela são **8**, por decisão sua, porque uma só
 deixou de caber:
 
 - **URLs**, uma por faixa:
   - 1–190 · https://claude.ai/artifact/4jSZ5yZFnjEnbGGbE3i5nz
   - 191–260 · https://claude.ai/artifact/MAc3CcjfCPbjVm5sQZwYoC
-  - 261–310 · https://claude.ai/artifact/R4iGBeRQt7ao6yffQkmGCp
-  - 311–350 · https://claude.ai/artifact/S1oHX53g9q4oqHSn7Yv3vm
-  - 351 em diante · https://claude.ai/artifact/6iLs2ho6wDKgEF6eja6Kpm
+  - 261–320 · https://claude.ai/artifact/8NyMWXanJFbpsNAbWu1RU3
+  - 321–360 · https://claude.ai/artifact/UAN1DASSFWsLroFmJfufTb
+  - 361–430 · https://claude.ai/artifact/F1N9ZkNW9K5fD1CHr7jsf4
+  - 431–540 · https://claude.ai/artifact/8yxw4iBsJJ8KeWEAWB64PB
+  - 541–670 · https://claude.ai/artifact/KrzPcsd9fqLHfz8XTyzGgY
+  - 671 em diante · https://claude.ai/artifact/TJ3nzrNVK6MWpBQzRz8DMg
 - **Fonte:** `phxsql/docs/dossie/pedidos-*.html`, que **não se edita** —
   `python3 phxsql/docs/dossie/pagina-dos-pedidos.py` as gera do `PENDENCIAS.md`
   e conta os três estados sozinho.
@@ -165,7 +168,7 @@ publicada é uma janela inteira** —, e daí a decisão de partir. Mas **faixa 
 de pedidos não é faixa fixa de bytes**: cortar de 100 em 100 produziu uma última
 página de **562 KiB**, já acima do teto. Então **os cortes saem do TAMANHO,
 medidos e impressos a cada corrida**, e o número de páginas muda quando o
-conteúdo manda: nesta rodada deram cinco, e os seis pedidos abertos no mesmo
+conteúdo manda: nesta rodada deram 8, e os seis pedidos abertos no mesmo
 commit já deslocaram duas faixas.
 
 Consequências que valem saber antes de mexer: **publique cada faixa passando a
