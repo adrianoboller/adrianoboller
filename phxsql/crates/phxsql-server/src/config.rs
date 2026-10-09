@@ -575,14 +575,29 @@ impl NoCluster {
     /// escrito errado vira ERRO em vez de virar `None`, senao ele viraria em
     /// silencio um tunel sem pino -- o estrago que o pino existe para impedir.
     /// E a MESMA regra do [`Origem::pino_do_fio`].
+    ///
+    /// # Trabalho igual com e sem pino (pedido 760)
+    ///
+    /// O no sem pino NAO volta cedo: decodifica o hex do ponto-base no lugar
+    /// do pino e o descarta. Este e o primeiro passo da recusa do pulso
+    /// (`conferir_identidade`), e la ele era o unico trecho que so o no COM
+    /// pino pagava -- dois `format!` e a leitura de 64 hex. Medido em
+    /// processo, 2.000 pares intercalados, binario de teste: o com pino saia
+    /// ~6 us mais lento na mediana, e mais lento em 1.100 contra 900 pares
+    /// (1.089 contra 911 na corrida seguinte); pelo fio, o `ms` da resposta
+    /// carregava o mesmo vies, 2.239 contra 1.901 somadas 6 corridas de 2.000
+    /// sondas. Era o mapa do 435 de novo, pequeno, por um trecho que o pino
+    /// cego nao cobria. Os outros chamadores pagam uma leitura de hex a mais
+    /// por conexao, que nao se mede ao lado do X25519 que vem depois dela.
     pub fn pino_do_fio(&self) -> Result<Option<[u8; 32]>> {
-        if self.chave_do_fio.is_empty() {
-            return Ok(None);
-        }
-        Ok(Some(chave_de_hex(
-            &self.chave_do_fio,
-            &format!("cluster.nos[{}].chave_do_fio", self.id),
-        )?))
+        let sem_pino = self.chave_do_fio.is_empty();
+        let texto = if sem_pino {
+            HEX_DO_PONTO_BASE
+        } else {
+            self.chave_do_fio.as_str()
+        };
+        let pino = chave_de_hex(texto, &format!("cluster.nos[{}].chave_do_fio", self.id))?;
+        Ok(if sem_pino { None } else { Some(pino) })
     }
 
     /// O pino TLS deste no, ja em bytes -- a regra do [`Origem::pino_tls`].
@@ -2630,6 +2645,11 @@ pub(crate) fn pino_tls_de(texto: &str, de_onde: &str) -> Result<Option<[u8; 32]>
         .map(Some)
         .map_err(|e| PhxError::Esquema(format!("{de_onde}: {e}")))
 }
+
+/// O `x25519::BASE` em hexadecimal, do tamanho de um pino de verdade -- o que
+/// o no sem pino decodifica no lugar dele (ver [`NoCluster::pino_do_fio`]).
+/// Um teste o amarra ao `BASE`, para os dois nunca divergirem.
+const HEX_DO_PONTO_BASE: &str = "0900000000000000000000000000000000000000000000000000000000000000";
 
 pub(crate) fn chave_de_hex(texto: &str, de_onde: &str) -> Result<[u8; 32]> {
     bytes32_de_hex(
@@ -7323,6 +7343,26 @@ mod tests {
         assert!(o.pino_do_fio().is_err(), "31 bytes passaram por 32");
         o.chave_do_fio = "aa".repeat(32);
         assert_eq!(o.pino_do_fio().unwrap(), Some([0xaau8; 32]));
+    }
+
+    /// O hex que o no sem pino decodifica no lugar do pino (pedido 760) tem
+    /// de ser LEGIVEL e do tamanho de um pino: torto, o no sem pino passaria
+    /// a dar erro onde dava `None`; curto, voltaria a pagar menos trabalho
+    /// que o com pino, que e o vies que ele existe para fechar.
+    #[test]
+    fn o_hex_do_ponto_base_e_o_base_do_x25519() {
+        assert_eq!(
+            chave_de_hex(HEX_DO_PONTO_BASE, "teste").unwrap(),
+            phxsql_core::x25519::BASE
+        );
+        let sem_pino = NoCluster {
+            id: "noC".into(),
+            endereco: "127.0.0.1".into(),
+            porta: 1,
+            chave_do_fio: String::new(),
+            pino_tls: String::new(),
+        };
+        assert_eq!(sem_pino.pino_do_fio().unwrap(), None);
     }
 
     /* ------------------------------- a senha do banco nao e a de administracao

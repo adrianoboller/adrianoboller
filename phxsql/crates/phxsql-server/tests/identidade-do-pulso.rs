@@ -701,25 +701,17 @@ fn o_pulso_nao_diz_quais_nos_tem_pino() {
     // separavam; com o conserto, 0 e 1 em 40. O teto era 34 -- e a revisao
     // SEC (B3, pedido 445) mostrou que uma volta PARCIAL a 30/40, 75% de
     // acerto por amostra, ja classifica com tres sondas e passava verde.
-    // Agora e o mesmo teto do ramo sem prova, sobre o VIES (ver
-    // `vies_do_relogio`), que separa mapa de ruido.
-    let (separadas, vies) = vies_do_relogio(|| {
-        let b = falar(
-            porta,
-            &pulso_de("noB", "master", 9, Some(PRIV_INTRUSO), &pulso::nonce()),
-        );
-        let c = falar(
-            porta,
-            &pulso_de("noC", "master", 9, Some(PRIV_INTRUSO), &pulso::nonce()),
-        );
-        (b.inteiro_ou("ms", -1), c.inteiro_ou("ms", -1))
+    // Agora e a mesma regua do ramo sem prova (`regua_do_relogio`, pedido
+    // 760), que separa mapa de ruido mesmo com a maquina carregada.
+    let regua = regua_do_relogio(porta, |id| {
+        pulso_de(id, "master", 9, Some(PRIV_INTRUSO), &pulso::nonce())
     });
-    assert!(
-        vies <= LIMITE_DO_RELOGIO_SEM_PROVA,
-        "o `ms` da resposta separa o no com pino do sem pino com vies de \
-         {vies} em 40 ({separadas} diferentes): a frase fechou e o relogio \
-         reabriu o mesmo mapa"
-    );
+    if let Some(mapa) = regua.mapa() {
+        panic!(
+            "o relogio separa o no com pino do sem pino -- a frase fechou e o \
+             relogio reabriu o mesmo mapa: {mapa}\n  {regua:?}"
+        );
+    }
 
     // O que o mapa VALIA: o `noC`, sem pino, continua sendo aceito sem prova
     // nenhuma -- e exatamente onde o 278 nao pega. Enquanto isto for verdade,
@@ -1017,49 +1009,153 @@ fn a_resposta_com_o_id_deste_no_nao_rebaixa_o_master() {
 // O ramo SEM prova nao diz quem tem pino -- pedido 435 reaberto (SEC A2)
 // ---------------------------------------------------------------------------
 
-/// Quantas de 40 sondas pares o `ms` pode separar no ramo sem prova antes de
-/// virar mapa. MEDIDO em 24/09/2026, no binario de teste: com o conserto,
-/// **1, 0, 0 e 0 de 40** em quatro corridas; com a resposta que assina e so
-/// esconde os campos (a variante que o `resposta-sem-prova-assina-e-esconde`
-/// do catalogo repoe), **40, 40 e 40**. Dez fica dez vezes acima do pior
-/// ruido visto e trinta abaixo do defeito -- e nao os 34 do teste do 435, que
-/// a revisao SEC chamou de frouxos (B3).
-///
-/// Vale tambem para o ramo COM prova (`o_pulso_nao_diz_quais_nos_tem_pino`),
-/// desde o pedido 445: la o medido com o conserto era o mesmo 0 e 1 de 40, e
-/// os 34 que sobraram la eram a catraca frouxa que o B3 apontou.
-///
-/// E o que se compara com ele e o VIES, e nao a contagem de pares diferentes
-/// (`vies_do_relogio`): apertado de 34 para 10, o teste do ramo com prova
-/// caiu em 11 de 40 numa corrida da bateria inteira -- o `ms` arredondado
-/// vira de um lado para o outro quando o trabalho fica perto da fronteira do
-/// milissegundo, e vira para OS DOIS lados. Isso e ruido, e nao mapa: mapa e
-/// um lado mais lento SEMPRE.
-const LIMITE_DO_RELOGIO_SEM_PROVA: usize = 10;
+/// Quantos pares de sondas a regua do relogio colhe. Eram 40 ate o pedido
+/// 760, e 40 nao aguentam a maquina carregada: com 4 `yes` ao lado, o ramo
+/// com prova caiu em **1 de 50** corridas da bateria com `vies de 13 em 40
+/// (19 diferentes)` -- 13 de 19 para um lado, um sorteio de moeda que sai
+/// uma vez em cinquenta. Medido no mesmo dia: sob carga o `ms` difere em
+/// ~40% dos pares (163 de 400), e a diferenca vira para OS DOIS lados. O
+/// ruido do vies cresce com a raiz dos pares e o teto com os pares: em 40,
+/// ~4 de ruido contra teto 10 (2,5 desvios); em 200, ~9 contra teto 50
+/// (5,6 desvios). Custa ~3 s por teste no binario de debug.
+const PARES_DO_RELOGIO: usize = 200;
 
-/// Quarenta sondas pares (`noB`, `noC`), e o que o relogio delas entrega:
-/// quantas deram `ms` diferente e o VIES -- `|noB mais lento - noC mais
-/// lento|`.
+/// O desvio a partir do qual um lado mais lento deixa de ser sorteio: a
+/// chance de o ruido simetrico passar dele e de 6 em 10 milhoes por canal.
+/// O defeito do 435 (1 ms so para um lado) da ~14 com 200 pares, e a volta
+/// parcial do B3 (30 de 40) da mais de 10.
+const DESVIOS_DO_MAPA: f64 = 5.0;
+
+/// O que o relogio de `PARES_DO_RELOGIO` sondas pares (`noB`, `noC`) entrega,
+/// em DOIS canais: o `ms` que o servidor escreve na resposta, e o tempo de
+/// parede que o cliente mede em microssegundos -- o que um atacante na rede
+/// mede sem pedir licenca a campo nenhum, e que enxerga diferencas que o
+/// arredondamento do `ms` engole.
 ///
-/// O vies e o que um classificador usa. O defeito do 435 da 40 (o lado com
-/// pino sempre um milissegundo acima); uma volta parcial a 30 de 40, que o B3
-/// da revisao SEC chamou de suficiente para classificar com tres sondas, da
-/// 30; o arredondamento sob carga, que vira para os dois lados, fica perto de
-/// zero mesmo com onze pares diferentes.
-fn vies_do_relogio(mut par: impl FnMut() -> (i64, i64)) -> (usize, usize) {
-    let (mut b_mais_lento, mut c_mais_lento) = (0usize, 0usize);
-    for _ in 0..40 {
-        let (b, c) = par();
-        if b > c {
-            b_mais_lento += 1;
-        } else if c > b {
-            c_mais_lento += 1;
+/// # Por que contar LADOS, e nao comparar medias
+///
+/// O que um classificador usa e o vies -- um lado mais lento mais vezes que
+/// o outro --, e e o que o teste do sinal mede sem supor forma nenhuma de
+/// distribuicao. Media cai no primeiro pico de carga; o lado mais lento de
+/// cada par, nao, porque o pico pega os dois membros do par juntos.
+///
+/// # Por que intercalar a ordem
+///
+/// Antes do 760 o `noB` ia sempre primeiro. Qualquer efeito de POSICAO no par
+/// -- cache frio, o escalonador acordando o servidor -- virava vies de
+/// IDENTIDADE e contava como mapa. Com a ordem trocada a cada par, efeito de
+/// posicao cai metade para cada lado e se anula.
+#[derive(Debug)]
+struct ReguaDoRelogio {
+    pares: usize,
+    /// Em quantos pares o `ms` do `noB` saiu maior, e o do `noC`.
+    ms_b_mais_lento: usize,
+    ms_c_mais_lento: usize,
+    /// O mesmo, pelo tempo de parede do cliente.
+    us_b_mais_lento: usize,
+    us_c_mais_lento: usize,
+    /// A mediana e a faixa interquartil de `parede(noB) - parede(noC)`, em
+    /// microssegundos, par a par -- so para quem le a falha.
+    diferenca_us: (i64, i64, i64),
+}
+
+impl ReguaDoRelogio {
+    /// `Some(motivo)` quando um dos dois canais separa os nos. Dois crivos
+    /// por canal, e os dois apertam:
+    ///
+    /// - **o teto de antes, proporcional**: vies acima de 1/4 dos pares. Era
+    ///   o `10 de 40` do 445; com 200 pares e o mesmo quarto, e nao 10 de
+    ///   200, porque o que se garantia era a FRACAO de sondas que um
+    ///   classificador acerta a mais, nao o numero absoluto;
+    /// - **o desvio**: vies maior que `DESVIOS_DO_MAPA` vezes o ruido de
+    ///   moeda dos pares que diferiram (`sqrt(k)`). Pega o vazamento menor que
+    ///   um quarto mas consistente, que 40 sondas nunca separavam do ruido.
+    fn mapa(&self) -> Option<String> {
+        let canais = [
+            ("ms da resposta", self.ms_b_mais_lento, self.ms_c_mais_lento),
+            (
+                "parede do cliente",
+                self.us_b_mais_lento,
+                self.us_c_mais_lento,
+            ),
+        ];
+        for (canal, b, c) in canais {
+            let vies = b.abs_diff(c);
+            let lado = if b > c {
+                "noB (com pino)"
+            } else {
+                "noC (sem pino)"
+            };
+            if vies * 4 > self.pares {
+                return Some(format!(
+                    "{canal}: {lado} mais lento com vies de {vies} em {} pares \
+                     ({b} contra {c}), acima de um quarto; parede(noB) - \
+                     parede(noC) q1/mediana/q3 = {:?} us",
+                    self.pares, self.diferenca_us
+                ));
+            }
+            let desvios = vies as f64 / ((b + c).max(1) as f64).sqrt();
+            if desvios > DESVIOS_DO_MAPA {
+                return Some(format!(
+                    "{canal}: {lado} mais lento em {b} contra {c} pares, \
+                     {desvios:.1} desvios do sorteio; parede(noB) - \
+                     parede(noC) q1/mediana/q3 = {:?} us",
+                    self.diferenca_us
+                ));
+            }
         }
+        None
     }
-    (
-        b_mais_lento + c_mais_lento,
-        b_mais_lento.abs_diff(c_mais_lento),
-    )
+}
+
+/// Colhe a `ReguaDoRelogio`: `sonda(id)` monta o pedido de cada no, e o
+/// pedido se monta ANTES do relogio, porque assinar (um X25519 do lado do
+/// cliente) nao e trabalho do servidor.
+fn regua_do_relogio(porta: u16, mut sonda: impl FnMut(&str) -> String) -> ReguaDoRelogio {
+    let mut r = ReguaDoRelogio {
+        pares: PARES_DO_RELOGIO,
+        ms_b_mais_lento: 0,
+        ms_c_mais_lento: 0,
+        us_b_mais_lento: 0,
+        us_c_mais_lento: 0,
+        diferenca_us: (0, 0, 0),
+    };
+    let mut diferencas = Vec::with_capacity(PARES_DO_RELOGIO);
+    for i in 0..PARES_DO_RELOGIO {
+        let b_primeiro = i % 2 == 0;
+        let ordem = if b_primeiro {
+            ["noB", "noC"]
+        } else {
+            ["noC", "noB"]
+        };
+        let mut medido = [(0i64, 0i64); 2];
+        for (k, id) in ordem.iter().enumerate() {
+            let pedido = sonda(id);
+            let t = Instant::now();
+            let j = falar(porta, &pedido);
+            medido[k] = (t.elapsed().as_micros() as i64, j.inteiro_ou("ms", -1));
+        }
+        let ((us_b, ms_b), (us_c, ms_c)) = if b_primeiro {
+            (medido[0], medido[1])
+        } else {
+            (medido[1], medido[0])
+        };
+        match ms_b.cmp(&ms_c) {
+            std::cmp::Ordering::Greater => r.ms_b_mais_lento += 1,
+            std::cmp::Ordering::Less => r.ms_c_mais_lento += 1,
+            std::cmp::Ordering::Equal => {}
+        }
+        match us_b.cmp(&us_c) {
+            std::cmp::Ordering::Greater => r.us_b_mais_lento += 1,
+            std::cmp::Ordering::Less => r.us_c_mais_lento += 1,
+            std::cmp::Ordering::Equal => {}
+        }
+        diferencas.push(us_b - us_c);
+    }
+    diferencas.sort_unstable();
+    let n = diferencas.len();
+    r.diferenca_us = (diferencas[n / 4], diferencas[n / 2], diferencas[3 * n / 4]);
+    r
 }
 
 /// A sonda do A2, como a revisao a mandou: pulso SEM prova com uma posicao
@@ -1114,14 +1210,11 @@ fn o_pulso_sem_prova_nao_diz_quais_nos_tem_pino() {
 
     // O RELOGIO. Com as respostas iguais em forma, o que sobraria e o custo de
     // assinar uma e nao a outra.
-    let (separadas, vies) = vies_do_relogio(|| {
-        let b = falar(porta, &sonda_sem_prova("noB"));
-        let c = falar(porta, &sonda_sem_prova("noC"));
-        (b.inteiro_ou("ms", -1), c.inteiro_ou("ms", -1))
-    });
-    assert!(
-        vies <= LIMITE_DO_RELOGIO_SEM_PROVA,
-        "o `ms` da resposta sem prova separa o no com pino do sem pino com \
-         vies de {vies} em 40 ({separadas} diferentes)"
-    );
+    let regua = regua_do_relogio(porta, sonda_sem_prova);
+    if let Some(mapa) = regua.mapa() {
+        panic!(
+            "o relogio da resposta sem prova separa o no com pino do sem pino: \
+             {mapa}\n  {regua:?}"
+        );
+    }
 }

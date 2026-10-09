@@ -146,6 +146,12 @@ COPIAR = [
     # segredo nao existia dentro dela.
     "bancada/guardas/debug-com-segredo.py",
     "bancada/concorrencia/mapa-das-threads.py",
+    # Lido em tempo de COMPILACAO, por `include_str!` relativo, pelos testes
+    # da F1/F3 do 495 (o ARSENAL mora la, e nao digitado no teste). Faltou em
+    # 09/10/2026: a copia nao o levava, `testes_do_observador.rs` nao
+    # compilava, e as guardas de `phxsql-server --lib` voltavam quebradas.
+    # O `verificar_copiar()` passou a ver `include_str!`/`include_bytes!`.
+    "bancada/seguranca/injecao.py",
 ]
 
 CORES = {"ok": "\033[32m", "mal": "\033[31m", "fraco": "\033[90m",
@@ -255,6 +261,23 @@ def _fontes_em_escopo():
                 yield os.path.join(dirpath, nome)
 
 
+INCLUSAO = re.compile(r'include_(?:str|bytes)!\(\s*"([^"]+)"')
+
+
+def _inclusoes_fora_do_crate(caminho, texto):
+    """`include_str!`/`include_bytes!` cujo caminho RELATIVO sai do proprio
+    crate. E leitura em tempo de COMPILACAO: se a copia nao leva o arquivo,
+    o alvo inteiro nao compila, e a guarda volta quebrada em vez de julgada
+    (09/10/2026, o ARSENAL de `bancada/seguranca/injecao.py`)."""
+    crate = os.path.join(RAIZ, *os.path.relpath(caminho, RAIZ).split(os.sep)[:2])
+    achados = []
+    for m in INCLUSAO.finditer(texto):
+        alvo = os.path.normpath(os.path.join(os.path.dirname(caminho), m.group(1)))
+        if not alvo.startswith(crate + os.sep):
+            achados.append(os.path.relpath(alvo, RAIZ).replace(os.sep, "/"))
+    return achados
+
+
 def verificar_copiar(copiar=None):
     """(arquivo, caminho) para cada leitura fora do crate que `copiar` (por
     omissao, `COPIAR`) nao cobre. Vazio quando tudo esta coberto.
@@ -265,10 +288,11 @@ def verificar_copiar(copiar=None):
     for caminho in _fontes_em_escopo():
         with open(caminho, encoding="utf-8", errors="replace") as f:
             texto = f.read()
-        if "CARGO_MANIFEST_DIR" not in texto:
-            continue
         rel = os.path.relpath(caminho, RAIZ)
-        for alvo in _leituras_fora_do_crate(texto):
+        alvos = _inclusoes_fora_do_crate(caminho, texto)
+        if "CARGO_MANIFEST_DIR" in texto:
+            alvos += _leituras_fora_do_crate(texto)
+        for alvo in sorted(set(alvos)):
             coberto = any(
                 alvo == item or alvo.startswith(item.rstrip("/") + "/")
                 for item in copiar
@@ -293,6 +317,14 @@ def autoteste_copiar():
                                "" if cond else "  -- " + detalhe))
         if not cond:
             falhas.append(nome)
+
+    sem_inc = [c for c in COPIAR if c != "bancada/seguranca/injecao.py"]
+    achado_inc = verificar_copiar(sem_inc)
+    conferir(
+        "sem o injecao.py em COPIAR, o conferidor ve o include_str! e reprova",
+        any(a == "bancada/seguranca/injecao.py" for _, a in achado_inc),
+        repr(achado_inc),
+    )
 
     sem = [c for c in COPIAR if c != "bancada/guardas/debug-com-segredo.py"]
     achado_sem = verificar_copiar(sem)

@@ -1,5 +1,5 @@
 {
-  "quando": "2026-10-09 10:39",
+  "quando": "2026-10-09 13:21",
   "mais_antigo": "2026-09-16 15:25",
   "guardas": [
     {
@@ -1839,6 +1839,14 @@
       "quando": "2026-10-07 14:39"
     },
     {
+      "id": "relogio-do-pulso-com-sono-plantado",
+      "titulo": "um atraso de 100 µs só no nó sem pino, com a frase já igual",
+      "veredito": "PROVADA",
+      "segundos": 28.28,
+      "notas": [],
+      "quando": "2026-10-09 13:21"
+    },
+    {
       "id": "pino-cego-sem-a-recusa-do-no-sem-pino",
       "titulo": "a forja contra o pino cego entrando pelo nó sem pino",
       "veredito": "PROVADA",
@@ -3244,9 +3252,9 @@
       "id": "elo-do-empilhar-pelo-disco",
       "titulo": "o elo que o `empilhar` planeja pelo disco sobrescreve o que a própria lista já escreveu na filha",
       "veredito": "PROVADA",
-      "segundos": 83.9,
+      "segundos": 101.96,
       "notas": [],
-      "quando": "2026-10-08 14:30"
+      "quando": "2026-10-09 13:21"
     },
     {
       "id": "tabela-que-some-segura-as-marcas",

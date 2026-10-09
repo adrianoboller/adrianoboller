@@ -9375,6 +9375,44 @@ pub fn limpar() {
         ],
         "prazo": 120,
     },
+    # 29b. Um vazamento CURTO de relogio no no sem pino -- pedido 760
+    # -----------------------------------------------------------------------
+    {
+        "id": "relogio-do-pulso-com-sono-plantado",
+        "titulo": "um atraso de 100 µs só no nó sem pino, com a frase já igual",
+        "porque": (
+            "pedido 760: o teste do relogio do 435 caiu em 1 de 50 corridas "
+            "sob carga (4 `yes`), com vies de 13 em 40 -- a regua de 40 pares "
+            "com teto fixo nao aguentava ruido. A regua nova (200 pares de "
+            "ordem intercalada, teste do sinal em dois canais, teto de um "
+            "quarto e 5 desvios) tem de continuar pegando vazamento de "
+            "verdade. Esta troca deixa a frase e o veredito identicos e so "
+            "planta 100 us de sono no caminho do no sem pino, ANTES do "
+            "X25519: medido sob carga, 5 de 5 vermelhos com vies de 59 a 119 "
+            "em 200 pares (1 ms: 5 de 5, vies 152 a 178). O defeito do 435 "
+            "(guarda 29) cai pela frase antes de chegar ao relogio; esta e a "
+            "que prova o relogio sozinho."
+        ),
+        "arquivo": "crates/phxsql-server/src/cluster.rs",
+        "trecho": """        let publica = pino.unwrap_or(phxsql_core::x25519::BASE);
+""",
+        "troca": """        // DEFEITO REPOSTO (760): 100 us a mais so para o no sem pino.
+        if pino.is_none() {
+            std::thread::sleep(std::time::Duration::from_micros(100));
+        }
+        let publica = pino.unwrap_or(phxsql_core::x25519::BASE);
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "identidade-do-pulso"],
+        "caem": [
+            "o_pulso_nao_diz_quais_nos_tem_pino",
+        ],
+        "seguem": [
+            "um_pulso_forjado_nao_destrona_o_master",
+            "o_pulso_sem_prova_nao_diz_quais_nos_tem_pino",
+        ],
+        "prazo": 300,
+    },
     # 30. O pino cego do 435 sem a recusa incondicional -- a volta do 435
     # -----------------------------------------------------------------------
     {
@@ -15177,11 +15215,11 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "descartava como «adiante»."
         ),
         "arquivo": "crates/phxsql-server/src/servidor/servico_nucleo_01.rs",
-        "trecho": """        t.planejar_cascata_da_alteracao(antes, crua, Some(&prefixo))
+        "trecho": """        let plano = t.planejar_cascata_da_alteracao(antes, crua, Some(&prefixo))?;
 """,
         "troca": """        // DEFEITO REPOSTO (515): o plano do empilhar so ve o disco.
         let _ = &prefixo;
-        t.planejar_cascata_da_alteracao(antes, crua, None)
+        let plano = t.planejar_cascata_da_alteracao(antes, crua, None)?;
 """,
         "pacote": "phxsql-server",
         "alvo": ["--lib"],
