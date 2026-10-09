@@ -12,189 +12,16 @@
 //! banca e montar outra do zero sobre a MESMA pasta: nada em memoria atravessa -- so o
 //! disco, que e o que sobra de um processo que cai.
 
-use phxclaw_agent::api::{AgentFactory, ApiState, Limite, criar_fluxo_com, router};
+mod comum_fluxo;
+
+use comum_fluxo::*;
+use phxclaw_agent::api::criar_fluxo_com;
 use phxclaw_agent::fluxos::{self, Execucao, Poda};
 use phxclaw_agent::gatilhos::{GatilhoDeWebhook, Gatilhos};
-use phxclaw_agent::subfluxo::FluxoTool;
 use phxclaw_agent::*;
-use phxclaw_agent_core::{BoxFut, Tool, ToolContext, ToolError, ToolOutput, ToolSpec};
 use serde_json::{Value, json};
-use std::collections::HashMap;
-use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::atomic::Ordering;
 use std::time::Duration;
-
-fn tmp(nome: &str) -> PathBuf {
-    let d = std::env::temp_dir().join(format!("phx-onda3-{nome}-{}", phxclaw_types::new_uuid_v7()));
-    std::fs::create_dir_all(&d).unwrap();
-    d
-}
-
-/// `eco`: devolve `texto` (cru, ou JSON quando nao e texto) depois de `dorme_ms`; com
-/// `falhar`, falha. Conta as chamadas e quantas estao em voo ao mesmo tempo.
-#[derive(Default)]
-struct Eco {
-    chamadas: AtomicUsize,
-    agora: AtomicUsize,
-    max: AtomicUsize,
-}
-
-impl Eco {
-    fn n(&self) -> usize {
-        self.chamadas.load(Ordering::SeqCst)
-    }
-}
-
-impl Tool for Eco {
-    fn spec(&self) -> ToolSpec {
-        ToolSpec {
-            name: "eco".into(),
-            description: "eco".into(),
-            parameters: json!({"type":"object"}),
-        }
-    }
-    fn capability(&self) -> &'static str {
-        "fs.read"
-    }
-    fn run<'a>(
-        &'a self,
-        args: Value,
-        _ctx: &'a ToolContext,
-    ) -> BoxFut<'a, Result<ToolOutput, ToolError>> {
-        Box::pin(async move {
-            self.chamadas.fetch_add(1, Ordering::SeqCst);
-            let n = self.agora.fetch_add(1, Ordering::SeqCst) + 1;
-            self.max.fetch_max(n, Ordering::SeqCst);
-            if let Some(ms) = args.get("dorme_ms").and_then(Value::as_u64) {
-                tokio::time::sleep(Duration::from_millis(ms)).await;
-            }
-            self.agora.fetch_sub(1, Ordering::SeqCst);
-            if let Some(m) = args.get("falhar").and_then(Value::as_str) {
-                return Err(ToolError::Failed(m.into()));
-            }
-            Ok(ToolOutput::text(match args.get("texto") {
-                Some(Value::String(s)) => s.clone(),
-                Some(v) => v.to_string(),
-                None => String::new(),
-            }))
-        })
-    }
-}
-
-struct Banca {
-    a: Agent,
-    eco: Arc<Eco>,
-}
-
-/// O agente sobre a pasta `raiz/tasks`; com `fluxos`, a ferramenta `fluxo` entra.
-fn banca_em(raiz: &Path, fluxos_dir: Option<&Path>) -> Banca {
-    let eco = Arc::new(Eco::default());
-    let mut tools: Vec<Arc<dyn Tool>> = vec![eco.clone(), Arc::new(ReadFileTool)];
-    let ft = fluxos_dir.map(|p| Arc::new(FluxoTool::nova(p)));
-    if let Some(ft) = &ft {
-        tools.push(ft.clone());
-    }
-    let a = Agent::new(
-        Arc::new(ScriptedLlm::new(vec![ScriptedLlm::text("nada")])),
-        tools,
-        AgentConfig::default().grant(&["fs.read", "flow.run"]),
-        TaskStore::new(raiz.join("tasks")).unwrap(),
-    );
-    if let Some(ft) = ft {
-        let _ = ft.base.set(a.clone());
-    }
-    Banca { a, eco }
-}
-
-fn fluxo(v: Value) -> fluxos::Fluxo {
-    fluxos::ler(&v.to_string()).unwrap()
-}
-
-fn passo<'a>(r: &'a fluxos::Relatorio, id: &str) -> &'a fluxos::Resultado {
-    r.passos
-        .iter()
-        .find(|p| p.id == id)
-        .unwrap_or_else(|| panic!("passo {id} nao esta no relatorio: {r:#?}"))
-}
-
-fn sha256(t: &[u8]) -> String {
-    use sha2::Digest;
-    sha2::Sha256::digest(t)
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect()
-}
-
-fn gravar(pasta: &Path, nome: &str, v: &Value) -> PathBuf {
-    let p = pasta.join(format!("{nome}.json"));
-    std::fs::write(&p, v.to_string()).unwrap();
-    p
-}
-
-fn cru(a: &Agent, id: &str) -> String {
-    std::fs::read_to_string(a.store.dir(id).join("task.json")).unwrap()
-}
-
-/// O relatorio como esta no `task.json` (o campo `answer`), sem passar pelo `Resultado`.
-fn relatorio_cru(a: &Agent, id: &str) -> Value {
-    serde_json::from_str(a.store.load(id).unwrap().answer.as_deref().unwrap()).unwrap()
-}
-
-const TOKEN: &str = "token-de-teste-com-tamanho-suficiente";
-
-/// O estado da API: cada agente que a fabrica monta tem o seu `eco` (o processo da API nao
-/// guarda ferramenta entre pedidos), sobre a MESMA pasta de tarefas.
-fn estado(raiz: &Path) -> ApiState {
-    let store = TaskStore::new(raiz.join("tasks")).unwrap();
-    let st = store.clone();
-    let factory: AgentFactory = Arc::new(move |_m: &str| {
-        let tools: Vec<Arc<dyn Tool>> = vec![Arc::new(Eco::default()), Arc::new(ReadFileTool)];
-        Ok(Agent::new(
-            Arc::new(ScriptedLlm::new(vec![ScriptedLlm::text("feito")])),
-            tools,
-            AgentConfig::default().grant(&["fs.read"]),
-            st.clone(),
-        ))
-    });
-    ApiState {
-        store,
-        factory,
-        default_model: "roteiro".into(),
-        token: TOKEN.into(),
-        running: Arc::new(Mutex::new(HashMap::new())),
-        agenda: Arc::new(Mutex::new(Agenda::open(raiz.join("agenda.json")).unwrap())),
-        webhook_origins: vec![],
-        limite: Arc::new(Limite::por_minuto(1000)),
-    }
-}
-
-async fn servir(s: &ApiState, g: Gatilhos) -> String {
-    let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let base = format!("http://{}", l.local_addr().unwrap());
-    let app = router(s.clone()).merge(phxclaw_agent::gatilhos::router(s.clone(), Arc::new(g)));
-    tokio::spawn(async move { axum::serve(l, app).await.unwrap() });
-    base
-}
-
-async fn ate_o_estado(s: &ApiState, id: &str, estados: &[TaskStatus]) -> Task {
-    for _ in 0..400 {
-        if let Ok(t) = s.store.load(id)
-            && estados.contains(&t.status)
-        {
-            return t;
-        }
-        tokio::time::sleep(Duration::from_millis(25)).await;
-    }
-    panic!(
-        "tarefa {id} nao chegou a {estados:?}: {:#?}",
-        s.store.load(id)
-    );
-}
-
-fn relatorio(t: &Task) -> fluxos::Relatorio {
-    serde_json::from_str(t.answer.as_deref().unwrap()).unwrap()
-}
 
 // ======================================================================== espera
 
@@ -274,7 +101,7 @@ async fn espera_wait() {
     assert!(t.question.is_none());
     // Terminada, nao se retoma de novo pelo disco.
     let e = fluxos::retomar_do_disco(&b2.a, &id).await.unwrap_err();
-    assert!(e.contains("nao esta parada numa espera"), "{e}");
+    assert!(e.to_string().contains("nao esta parada numa espera"), "{e}");
     // Validacao: um modo so, sem por_item, data valida, hash e nao segredo.
     for (esp, esperado) in [
         (json!({"ms": 1, "pergunta": "x"}), "exatamente um"),
@@ -380,8 +207,18 @@ async fn espera_wait_pergunta_e_webhook_pela_api() {
         let txt = std::fs::read_to_string(dir.join(arq)).unwrap();
         assert!(!txt.contains(segredo), "{arq}");
     }
-    // espera ja entregue: a segunda chamada nao acha espera aberta
-    assert_eq!(retomar(Some(segredo)).await.unwrap().status(), 409);
+    // espera ja entregue: sem o token, a segunda chamada nao alcanca espera nenhuma e
+    // ouve o mesmo 401 de quem nao tem segredo (quem nao tem o token nao distingue «sem
+    // espera» de «segredo errado»); com o token, o 409 diz que nao ha espera aberta.
+    assert_eq!(retomar(Some(segredo)).await.unwrap().status(), 401);
+    let r = http
+        .post(format!("{base}/v1/flows/{id}/resume"))
+        .bearer_auth(TOKEN)
+        .body("{}")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 409);
 }
 
 // ======================================================================== pins
@@ -411,7 +248,17 @@ async fn dados_pinados() {
     assert!(fluxos::arquivo_de_pins(&arq).is_file());
     let f = fluxos::ler_arquivo(&arq).unwrap();
     let b = banca_em(&raiz, None);
-    let r = fluxos::rodar(&b.a, &f).await.unwrap();
+    // O pin so vale na execucao manual que o pede (`--pins`; achado M1).
+    let r = fluxos::rodar_com(
+        &b.a,
+        &f,
+        Execucao {
+            pins: true,
+            ..Execucao::default()
+        },
+    )
+    .await
+    .unwrap();
     assert!(r.sucesso, "{r:#?}");
     assert!(passo(&r, "b").pinado);
     assert_eq!(passo(&r, "b").itens, vec![json!({"k": "PIN"})]);
@@ -425,6 +272,7 @@ async fn dados_pinados() {
         &f,
         Execucao {
             ate: Some("c"),
+            pins: true,
             ..Execucao::default()
         },
     )
@@ -502,6 +350,8 @@ async fn dados_pinados() {
 ///
 /// RED medido: em `fluxos::podar`, a condicao `!t.status.is_final() ||` removida (a
 /// execucao esperando e a em andamento entram na conta e sao apagadas).
+/// E (09/10, revisao) a outra metade, `|| desc.iter().any(|d| !d.status.is_final())`, removida:
+/// a mae terminada com a filha rodando entra na conta (RED medido).
 #[tokio::test]
 async fn poda_execucoes() {
     let raiz = tmp("poda");
@@ -528,6 +378,16 @@ async fn poda_execucoes() {
     rodando.status = TaskStatus::Running;
     rodando.updated_at = chrono::Utc::now() - chrono::Duration::days(90);
     b.a.store.save(&rodando).unwrap();
+    // terminada, mas com a filha ainda rodando: as duas ficam (a metade
+    // `desc.any(|d| !d.status.is_final())` da condicao, que o caso acima nao cobre)
+    let mae_viva = fluxos::rodar(&b.a, &f).await.unwrap().tarefa;
+    let mut t = b.a.store.load(&mae_viva).unwrap();
+    t.updated_at = chrono::Utc::now() - chrono::Duration::days(90);
+    b.a.store.save(&t).unwrap();
+    let mut filha_viva = Task::new("subagente rodando", "m");
+    filha_viva.parent = Some(mae_viva.clone());
+    filha_viva.status = TaskStatus::Running;
+    b.a.store.save(&filha_viva).unwrap();
     // nao e fluxo, terminada e velha
     let mut comum = Task::new("tarefa comum", "m");
     comum.status = TaskStatus::Completed;
@@ -552,6 +412,8 @@ async fn poda_execucoes() {
     assert!(existe(&esperando), "esperando nunca sai");
     assert!(existe(&rodando.id), "em andamento nunca sai");
     assert!(existe(&comum.id), "tarefa comum nao e da poda de fluxo");
+    assert!(existe(&mae_viva), "mae com filha rodando nunca sai");
+    assert!(existe(&filha_viva.id), "a filha rodando nunca sai");
     assert_eq!(p.removidas.len(), 4);
 
     // por idade: a terminada que sobrou, envelhecida, sai; as outras continuam
@@ -568,6 +430,7 @@ async fn poda_execucoes() {
     );
     assert_eq!(p.removidas, vec![terminadas[3].clone()]);
     assert!(existe(&esperando) && existe(&rodando.id) && existe(&comum.id));
+    assert!(existe(&mae_viva) && existe(&filha_viva.id));
 }
 
 /// O comportamento VELHO da poda: sem configuracao, NADA se apaga -- nem com cem
@@ -589,9 +452,29 @@ async fn poda_sem_configuracao_nada_apagado() {
         b.a.store.save(&t).unwrap();
         ids.push(id);
     }
-    assert_eq!(Poda::do_config(), Poda::default());
-    assert!(!Poda::default().ligada());
-    let p = fluxos::podar(&b.a.store, Poda::do_config(), fluxos::agora());
+    // A configuracao ISOLADA da maquina: a do processo le o ambiente e o `config.json` de
+    // quem roda, e um `fluxos.poda_*` la daria RED falso aqui. Uma configuracao carregada
+    // de pasta vazia e ambiente vazio e o «sem configuracao» de verdade.
+    let vazia = raiz.join("config-vazia");
+    std::fs::create_dir_all(&vazia).unwrap();
+    let cfg = phxclaw_config_runtime::agente::carga::carregar(
+        &|_: &str| None,
+        &vazia.join("config.json"),
+        None,
+    )
+    .unwrap();
+    let poda = Poda::de(|k| cfg.inteiro(k));
+    assert_eq!(poda, Poda::default());
+    assert!(!poda.ligada());
+    // e o leitor e o de verdade: a variavel de ambiente liga a poda
+    let com = phxclaw_config_runtime::agente::carga::carregar(
+        &|k: &str| (k == "PHXCLAW_FLUXOS_PODA_DIAS").then(|| "7".to_string()),
+        &vazia.join("config.json"),
+        None,
+    )
+    .unwrap();
+    assert_eq!(Poda::de(|k| com.inteiro(k)).dias, Some(7));
+    let p = fluxos::podar(&b.a.store, poda, fluxos::agora());
     assert!(p.removidas.is_empty() && p.erros.is_empty());
     for id in &ids {
         assert!(b.a.store.load(id).is_ok());
@@ -653,7 +536,7 @@ async fn poda_com_dias_enormes_nao_derruba_e_nao_apaga() {
 /// segredo e corpo acima do teto sao recusados; o segredo do formulario nao vai para o
 /// item nem para o `task.json`.
 ///
-/// RED medido: em `gatilhos::webhook`, o `segredo.as_deref()` passado ao `portao` trocado
+/// RED medido: em `gatilhos::webhook`, o `codigo.as_deref()` passado ao `portao` trocado
 /// por `None` (o formulario do navegador nunca autentica: 401 onde se esperava 202).
 #[tokio::test]
 async fn gatilho_formulario() {
@@ -684,13 +567,16 @@ async fn gatilho_formulario() {
                 nome: "contato".into(),
                 objetivo: String::new(),
                 fluxo: Some(contato.to_string_lossy().into_owned()),
-                segredo: Some(segredo.into()),
+                segredo: Some("segredo-do-gatilho-que-humano-nao-ve-123".into()),
+                // O codigo que a pagina pede e o do formulario, nao o do gatilho (M6).
+                segredo_formulario: Some(segredo.into()),
             },
             GatilhoDeWebhook {
                 nome: "sem".into(),
                 objetivo: String::new(),
                 fluxo: Some(sem_form.to_string_lossy().into_owned()),
                 segredo: None,
+                segredo_formulario: None,
             },
         ],
     };
@@ -925,7 +811,7 @@ fn cli_importar_exportar() {
     assert!(
         fluxos::importar(&torto.to_string())
             .unwrap_err()
-            .contains("assinatura")
+            .contains("conferencia")
     );
     let mut segredo = pacote.clone();
     segredo["fluxo"]["variaveis"]["api_key"] = json!("x");

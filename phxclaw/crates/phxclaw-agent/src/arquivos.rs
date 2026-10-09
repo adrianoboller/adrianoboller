@@ -96,8 +96,11 @@ fn ler_limitado(alvo: &Path, teto: u64) -> Result<Vec<u8>, ToolError> {
 
 // ---------------------------------------------------------------- processos externos
 
-/// O bwrap que o `shell` usa: o mesmo sandbox, achado num lugar so.
+/// O bwrap que o `shell` usa: o mesmo sandbox, achado num lugar so. E aqui que a mascara
+/// da pasta do agente se registra: nenhum caminho desta crate chega ao bwrap sem passar
+/// por esta funcao, entao nenhum processo do sandbox nasce antes da mascara.
 pub fn achar_bwrap() -> Option<PathBuf> {
+    crate::processo::mascarar_a_pasta_do_agente();
     ["/usr/bin/bwrap", "/bin/bwrap", "/usr/local/bin/bwrap"]
         .iter()
         .map(PathBuf::from)

@@ -552,6 +552,53 @@ vindos de fora (pendência da onda 1, não é id do n8n); `prazo` da espera huma
 esperar para sempre; hoje só a poda não a toca, de propósito); upload de arquivo no formulário
 (multipart); fila_workers e observabilidade_insights da onda 4 (pedem número de bancada).
 
+**⏸ Falso positivo do motor único de credencial (integrador, 09/10):** `sk-` com 12+ caracteres
+de corpo tarja (e a entrada recusa) caminhos como `/home/user/sk-learn-experiments/x.py` e
+`github.com/acme/sk-learn-tutorial-2024`. Erra para o lado de tarjar; a entrada já recusava antes
+desta rodada. Conserto possível: exigir corpo sem `-` depois de `sk-` (as chaves reais são
+alfanuméricas), medido contra os vetores de chave da casa antes de mudar.
+
+**Revisão da onda 3 (09/10, mesma data; QA, DBA e SEC sobre `211b9cd6`).** 16 achados + 5 da
+prova real + o da repetição do gatilho, em `tests/fluxo_onda3b.rs` (20 testes) e
+`apps/phxclaw/tests/fluxo_cli.rs`. **RED medido em 20 testes** (defeito reposto com
+`// REPOSTO`, recompilado, caído pelo motivo certo, restaurado sem `cp -p`): esperar.ms enorme,
+entrada com segredo, erro tipado da retomada, entregar formato futuro, `manter_fluxos`, pin de
+binário (2 defeitos), ordem do importar, lápide, pin manual, M5 (o determinístico e o de 2 POST
+simultâneos pelo soquete), M6, CSP, B5, FIFO, repetição do gatilho, `listar`, binário que
+chega à espera e a metade `desc.any` da poda. Sem RED reposto um a um: `abrir_espera` checada
+(teste unitário), `binarios/` link, `criar_pastas` (o `fsync` não se vê sem desligar a
+energia).
+
+Decisões, com o motivo:
+- **Pin só na execução manual** (`fluxo rodar --pins`): o `pinData` do n8n só vale manual; aqui
+  valia em gatilho e agenda, e quem escrevesse o `ARQ.pins.json` trocava a saída de um passo de
+  produção. Ignorado (não recusado) fora do manual — o fluxo de gatilho com pin esquecido roda o
+  passo de verdade em vez de parar. `esperar` pinado é recusa na leitura.
+- **`esperar.ms` acima de 366 dias é recusa na leitura** (não «espera para sempre»): espera
+  longa é data e se escreve em `ate`; e a abertura usa `try_milliseconds` + `checked_add_signed`
+  como segunda barreira.
+- **Pin de binário volta a `{base64, mime}`** (não recusado): `saida_para_pin` reidrata do
+  `binarios/` da origem, conferido pelo sha256, e a execução nova grava no dela. A referência crua
+  num pin é recusada.
+- **Código do formulário próprio** (`segredo_formulario`): o código vai a humanos e não pode ser
+  a credencial JSON/HMAC do gatilho. O formulário nasceu hoje e não tem cliente para quebrar.
+- **Repetição do gatilho em memória**, pela assinatura (ou `Idempotency-Key`), validade de 2 ×
+  300 s, teto de 10.000 chaves (cheio é 429, não descarte). Não pelo motor dos canais: a caixa
+  deles descarta por `id` de mensagem e grava a mensagem; o gatilho não tem id no contrato.
+
+Pendências (na conta, com o motivo):
+- ☐ **Detector de segredo — o `config.json` na lista única.** O desenho: a lista mora em
+  `phxclaw_types::segredo` (o crate mais baixo, que o config-runtime já usa); o
+  `gravacao::chave_secreta` já delega. Falta o `carga::nome_de_segredo` delegar (arquivo de outra
+  frente nesta rodada). O teste que falha hoje: `fluxo_onda3b::config_json_usa_a_lista_unica_de_segredo`
+  (`--ignored`): `credencial`, `authorization`, `cookie`, `passwd`, `bearer`, `segredo`.
+- ☐ **Repetição do gatilho depois de reinício:** a guarda é em memória; um reinício dentro da
+  janela aceita uma repetição. Persistir as chaves vistas (arquivo com teto) fecha.
+- ⏸ **HMAC do pacote (`FORMATO_PACOTE` 2):** o sha256 do pacote é conferência de integridade,
+  não assinatura — doc, tela e CLI já dizem «conferência». Assinar pede chave do operador.
+- ⏸ Textos fixos da página do formulário fora dos campos do `Formulario`: «Protocolo:» e a nota
+  «* obrigatório» do designer (a nota não entrou).
+
 ### O que o `fluxos.rs` já é (470 linhas, lido)
 
 DAG declarativo em JSON (`passos[]` com `depende`, `tarefa` OU `ferramenta`, `tentativas`), validado na

@@ -243,9 +243,15 @@ pub fn broker_em(pasta: &Path) -> Result<Arc<SecretBroker>, String> {
     Ok(b)
 }
 
+/// A pasta do broker dentro da pasta que o abre, e a chave-mestra dentro dela. Nomes
+/// publicos porque o `confine` (tarefa.rs) reconhece um broker pela forma em disco: a
+/// regra de onde o broker mora e a regra de onde o disco nao serve tem de ser a mesma.
+pub const PASTA_DO_BROKER: &str = "segredos";
+pub const CHAVE_MESTRA: &str = "master.key";
+
 fn abrir_broker(pasta: &Path) -> Result<Arc<SecretBroker>, String> {
-    let dir = pasta.join("segredos");
-    let chave = Arc::new(FileMasterKeyProvider::new(dir.join("master.key")));
+    let dir = pasta.join(PASTA_DO_BROKER);
+    let chave = Arc::new(FileMasterKeyProvider::new(dir.join(CHAVE_MESTRA)));
     chave.ensure().map_err(|e| e.to_string())?;
     let ledger = EvidenceLedger::open(dir.join("evidence.jsonl")).map_err(|e| e.to_string())?;
     SecretBroker::new(dir.join("cofre"), chave, LiveEventHub::new(16, 16), ledger)

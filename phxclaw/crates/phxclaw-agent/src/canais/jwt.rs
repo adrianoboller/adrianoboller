@@ -13,7 +13,11 @@
 //!   que chega um `kid` desconhecido -- e a troca de chave do servico --, mas no maximo uma
 //!   vez por minuto: sem esse teto, cada pedido com `kid` inventado viraria um pedido nosso
 //!   ao servico, e o agente seria o amplificador de quem bate na porta;
-//! - JWKS vencido que nao recarrega e recusa (503), e nao a chave velha: falha fechada.
+//! - JWKS vencido que nao recarrega e recusa (503), e nao a chave velha: falha fechada;
+//! - o download do JWKS corre fora da trava do cache, um por vez, e quem chega durante ele
+//!   usa o conjunto atual -- um servico de chaves lento nao segura token bom;
+//! - a conferencia da assinatura tem teto de vagas em voo por JWKS (429 acima dele): e a
+//!   conta cara que qualquer um dispara sem credencial (`teto_em_voo_padrao`);
 //! - a recusa sai sem detalhe (`Motivo::recusa`): quem forja um token nao aprende qual
 //!   pedaco errou. O `Motivo` existe para o teste provar que recusou PELO motivo certo.
 
@@ -23,6 +27,7 @@ use super::rsa::ChavePublica;
 use base64::Engine;
 use serde_json::Value;
 use std::collections::BTreeMap;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -52,6 +57,8 @@ pub enum Motivo {
     /// Token bom, mas que nao vale para ESTE pedido (o `serviceUrl` ou o endosso do Teams,
     /// o `email` do ID token do Google).
     NaoVaiAqui,
+    /// O teto de conferencias de assinatura em voo esta cheio (`Jwks::vaga`).
+    Ocupado,
 }
 
 impl Motivo {
@@ -62,6 +69,7 @@ impl Motivo {
         match self {
             Motivo::ChavesIndisponiveis => (503, "chaves de assinatura indisponiveis".into()),
             Motivo::NaoVaiAqui => (403, "token nao vale para este pedido".into()),
+            Motivo::Ocupado => (429, "conferencias de assinatura demais em andamento".into()),
             _ => (401, "token nao confere".into()),
         }
     }
@@ -117,15 +125,69 @@ struct Cache {
     chaves: Chaves,
     lido: Option<Instant>,
     tentado: Option<Instant>,
+    /// Alguem esta baixando agora. O download corre FORA da trava (o cliente HTTP e
+    /// bloqueante e um servico lento segura ate o prazo dele, ~50 s): com a trava presa,
+    /// todo token -- inclusive o de `kid` conhecido -- esperava atras do download.
+    baixando: bool,
+}
+
+/// A vez de baixar o JWKS. Solta a vez ate num panico do download: sem isto, um panico
+/// deixaria `baixando` ligado para sempre e o JWKS nunca mais recarregaria.
+struct Vez<'a>(&'a Mutex<Cache>);
+
+impl Vez<'_> {
+    /// Guarda o resultado e solta a vez no MESMO trecho travado: soltar antes abriria uma
+    /// fresta para outro download comecar e o resultado mais velho sobrescrever o novo.
+    fn concluir<R>(self, f: impl FnOnce(&mut Cache) -> R) -> R {
+        let mut c = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        c.baixando = false;
+        let r = f(&mut c);
+        drop(c);
+        // O `Drop` so existe para o caminho do panico; aqui a vez ja foi solta acima.
+        std::mem::forget(self);
+        r
+    }
+}
+
+impl Drop for Vez<'_> {
+    fn drop(&mut self) {
+        self.0.lock().unwrap_or_else(|e| e.into_inner()).baixando = false;
+    }
+}
+
+/// Quantas conferencias de assinatura podem correr ao mesmo tempo num JWKS antes de a
+/// proxima sair 429. A conferencia e a unica conta cara que um desconhecido dispara sem
+/// credencial nenhuma: basta um `kid` publico e lixo do tamanho da chave. Medido (reducao
+/// bit a bit, binario otimizado, 4 nucleos): ~1,4 ms por verificacao de 2048 bits e ~4,9 ms
+/// de 4096. Com uma em voo, ja sao ~700 por segundo (2048) -- muito acima do que um bot
+/// recebe --, entao o teto e baixo de proposito: metade dos nucleos, no minimo 2 (com dois
+/// webhooks legitimos chegando juntos, o segundo nao leva 429 a toa). Acima dele RECUSA em
+/// vez de enfileirar: fila seguraria uma thread do `spawn_blocking` por pedido do atacante.
+pub fn teto_em_voo_padrao() -> usize {
+    std::thread::available_parallelism()
+        .map(|n| n.get() / 2)
+        .unwrap_or(1)
+        .max(2)
+}
+
+/// Uma vaga de conferencia de assinatura; devolve a vaga ao sair, ate em panico.
+struct Vaga<'a>(&'a AtomicUsize);
+
+impl Drop for Vaga<'_> {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::AcqRel);
+    }
 }
 
 /// O JWKS de um servico, com cache. A busca passa pela politica de destinos como todo
-/// pedido dos canais (`Http`).
+/// pedido dos canais (`Http`), que recusa `http://` fora de loopback.
 pub struct Jwks {
     http: Http,
     recarga: Duration,
     intervalo: Duration,
     cache: Mutex<Cache>,
+    em_voo: AtomicUsize,
+    teto_em_voo: usize,
 }
 
 impl Jwks {
@@ -140,7 +202,40 @@ impl Jwks {
             recarga,
             intervalo,
             cache: Mutex::new(Cache::default()),
+            em_voo: AtomicUsize::new(0),
+            teto_em_voo: teto_em_voo_padrao(),
         })
+    }
+
+    /// O JWKS que a configuracao pediu, ou o `oficial` sem configuracao. A URL do JWKS e a
+    /// ancora de confianca do canal -- quem a troca escolhe quais chaves assinam por nos --:
+    /// nao e segredo, mas nao pode ser trocada calada, entao a troca sai como aviso ao subir.
+    pub fn configurado(canal: &str, url: Option<&str>, oficial: &str) -> Result<Self, String> {
+        let url = url
+            .map(str::trim)
+            .filter(|u| !u.is_empty())
+            .unwrap_or(oficial);
+        if let Some(a) = aviso_jwks(canal, url, oficial) {
+            eprintln!("{a}");
+        }
+        Self::novo(url)
+    }
+
+    /// O teste fixa o teto para provar a recusa sem depender de quantos nucleos tem.
+    pub fn com_teto_em_voo(mut self, teto: usize) -> Self {
+        self.teto_em_voo = teto;
+        self
+    }
+
+    /// A vaga, ou `None` com o teto cheio. Decide ANTES da conta: o portao que corta o
+    /// trabalho caro tem de vir antes dele.
+    fn vaga(&self) -> Option<Vaga<'_>> {
+        self.em_voo
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |n| {
+                (n < self.teto_em_voo).then_some(n + 1)
+            })
+            .ok()
+            .map(|_| Vaga(&self.em_voo))
     }
 
     fn baixar(&self) -> Result<Chaves, String> {
@@ -152,37 +247,74 @@ impl Jwks {
         chaves_do_jwks(&v)
     }
 
-    /// A chave do `kid`, recarregando se o cache venceu ou se o `kid` e novo.
+    /// A chave do `kid`, recarregando se o cache venceu ou se o `kid` e novo. Um so baixa
+    /// por vez, e sem a trava: quem chega durante o download responde com o conjunto atual
+    /// -- a chave conhecida vale (inclusive a de um cache que acabou de vencer: o vencido so
+    /// vira recusa quando a recarga FALHA), o `kid` desconhecido e 401, e sem conjunto
+    /// nenhum ainda e 503. Ninguem espera o download alheio, entao um servico de chaves
+    /// lento nao segura token bom.
     pub fn chave(&self, kid: &str) -> Result<Arc<ChaveJwks>, Motivo> {
-        let mut c = self.cache.lock().map_err(|_| Motivo::ChavesIndisponiveis)?;
         let agora = Instant::now();
-        let vencido = c
-            .lido
-            .is_none_or(|t| agora.duration_since(t) >= self.recarga);
-        if vencido || !c.chaves.contains_key(kid) {
+        let vez;
+        let vencido;
+        {
+            let mut c = self.cache.lock().map_err(|_| Motivo::ChavesIndisponiveis)?;
+            vencido = c
+                .lido
+                .is_none_or(|t| agora.duration_since(t) >= self.recarga);
+            let conhecida = c.chaves.get(kid).cloned();
+            if !vencido && let Some(k) = conhecida {
+                return Ok(k);
+            }
+            if c.baixando {
+                return match (conhecida, c.lido) {
+                    (Some(k), _) => Ok(k),
+                    (None, None) => Err(Motivo::ChavesIndisponiveis),
+                    (None, Some(_)) => Err(Motivo::KidDesconhecido),
+                };
+            }
             let pode = c
                 .tentado
                 .is_none_or(|t| agora.duration_since(t) >= self.intervalo);
-            if pode {
-                c.tentado = Some(agora);
-                match self.baixar() {
-                    Ok(m) => {
-                        c.chaves = m;
-                        c.lido = Some(agora);
-                    }
-                    Err(_) if vencido => {
-                        c.chaves.clear();
-                        c.lido = None;
-                        return Err(Motivo::ChavesIndisponiveis);
-                    }
-                    Err(_) => {}
-                }
-            } else if vencido {
-                return Err(Motivo::ChavesIndisponiveis);
+            if !pode {
+                return Err(if vencido {
+                    Motivo::ChavesIndisponiveis
+                } else {
+                    Motivo::KidDesconhecido
+                });
             }
+            c.tentado = Some(agora);
+            c.baixando = true;
+            vez = Vez(&self.cache);
         }
-        c.chaves.get(kid).cloned().ok_or(Motivo::KidDesconhecido)
+        let baixado = self.baixar();
+        vez.concluir(|c| {
+            match baixado {
+                Ok(m) => {
+                    c.chaves = m;
+                    c.lido = Some(agora);
+                }
+                Err(_) if vencido => {
+                    c.chaves.clear();
+                    c.lido = None;
+                    return Err(Motivo::ChavesIndisponiveis);
+                }
+                Err(_) => {}
+            }
+            c.chaves.get(kid).cloned().ok_or(Motivo::KidDesconhecido)
+        })
     }
+}
+
+/// O aviso de JWKS trocado, ou `None` quando e o oficial. Separado do `eprintln!` para o
+/// teste provar o texto sem capturar a saida de erro.
+pub fn aviso_jwks(canal: &str, url: &str, oficial: &str) -> Option<String> {
+    (url.trim() != oficial).then(|| {
+        format!(
+            "aviso: {canal}: JWKS trocado para {url} (o oficial e {oficial}); as chaves \
+             dessa URL decidem quem assina os webhooks deste canal"
+        )
+    })
 }
 
 /// O que o servico tem de ter escrito no token.
@@ -261,9 +393,11 @@ pub fn conferir(
         .map_err(|_| Motivo::Formato)?;
     let chave = jwks.chave(kid)?;
     let assinado = &token[..cab.len() + 1 + corpo.len()];
+    let vaga = jwks.vaga().ok_or(Motivo::Ocupado)?;
     if !chave.chave.verificar(assinado.as_bytes(), &assinatura) {
         return Err(Motivo::Assinatura);
     }
+    drop(vaga);
     let claims = parte_json(corpo)?;
     let iss = claims["iss"].as_str().unwrap_or("");
     if !exigido.emissores.contains(&iss) {

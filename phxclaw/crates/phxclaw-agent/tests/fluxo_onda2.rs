@@ -575,6 +575,7 @@ async fn gatilho_dispara_fluxo() {
             objetivo: String::new(),
             fluxo: Some(cada.to_string_lossy().into_owned()),
             segredo: Some("segredo-do-gatilho-1234567890".into()),
+            segredo_formulario: None,
         }],
     });
     let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();

@@ -3145,14 +3145,14 @@ fn vetores_rsa(arquivo: &str) -> Vec<CasoRsa> {
 /// Chave com `e = 65537` e 2048+ bits passa pelo caminho do JWKS (`ChavePublica::de_jwk`),
 /// que e o que o token usa; as outras, pelo primitivo sem politica.
 fn rodar_rsa(casos: &[CasoRsa]) -> (usize, usize, BTreeMap<String, usize>, Vec<String>) {
-    use phxclaw_agent::canais::rsa::{ChavePublica, verificar_pkcs1_sha256};
+    use phxclaw_agent::canais::rsa::{ChavePublica, verificar_pkcs1_sha256_sem_politica};
     let (mut aceitos, mut recusados) = (0, 0);
     let mut por_flag = BTreeMap::new();
     let mut erros = Vec::new();
     for c in casos {
         let aceito = match ChavePublica::de_jwk(&b64url(&c.n), &b64url(&c.e)) {
             Ok(k) => k.verificar(&c.msg, &c.sig),
-            Err(_) => verificar_pkcs1_sha256(&c.n, &c.e, &c.msg, &c.sig),
+            Err(_) => verificar_pkcs1_sha256_sem_politica(&c.n, &c.e, &c.msg, &c.sig),
         };
         match (c.veredito.as_str(), aceito) {
             ("valido", true) => aceitos += 1,
@@ -3341,6 +3341,19 @@ async fn teams_confere_o_jwt_rs256_do_bot_framework() {
         )
         .unwrap(),
     );
+    let sem_app = Teams::novo(
+        Caixa::abrir(dir.join("teams-sem-app.caixa.jsonl")).unwrap(),
+        None,
+        cred(&b, "teams", "teams-app_secret", TOKEN),
+        "  ".into(),
+        &base,
+        politica_para(&base).unwrap(),
+        Jwks::novo(&format!("{jwks_url}/keys")).unwrap(),
+    );
+    assert_eq!(
+        sem_app.err().as_deref(),
+        Some("App ID vazio: sem ele nao ha audiencia para conferir o token")
+    );
     let agora = jwt::agora();
     let servico = format!("{base}/amer/");
     let claims = json!({"iss": EMISSOR, "aud": "app-1", "exp": agora + 600,
@@ -3427,6 +3440,26 @@ async fn teams_confere_o_jwt_rs256_do_bot_framework() {
             Motivo::SemKid,
         ),
         ("duas partes", "a.b".into(), Motivo::Formato),
+        (
+            // `crit` pede uma extensao que nao entendemos: recusa, ainda que assinado.
+            "crit no cabecalho",
+            jwt_assinado(
+                &bf,
+                &json!({"alg": "RS256", "kid": "k1", "crit": ["exp"]}),
+                &claims,
+            ),
+            Motivo::Formato,
+        ),
+        (
+            // Bem assinado e valido em tudo, mas acima do teto de 16 KiB.
+            "token acima de 16 KiB",
+            tk(
+                &bf,
+                "k1",
+                &com(&|c| c["enchimento"] = json!("a".repeat(17_000))),
+            ),
+            Motivo::Formato,
+        ),
     ];
     // Corpo trocado sob a assinatura de um token bom: o `aud` outro, a assinatura a mesma.
     let mut partes: Vec<String> = bom.split('.').map(str::to_string).collect();
@@ -3438,15 +3471,35 @@ async fn teams_confere_o_jwt_rs256_do_bot_framework() {
         audiencia: "app-1",
     };
     let jw = Jwks::novo(&format!("{jwks_url}/keys")).unwrap();
-    for (nome, token, motivo) in tokens_ruins.clone() {
+    // As falhas se juntam e o teste reprova no fim, com todas: a prova real repoe varias
+    // conferencias de uma vez e cada uma tem de aparecer pelo nome.
+    let mut falhas: Vec<String> = Vec::new();
+    let conferir_fora = |token: String, ex: &Exigido| {
         let jw2 = &jw;
-        let ex = &exigido;
-        let r = std::thread::scope(|s| {
+        std::thread::scope(|s| {
             s.spawn(move || jwt::conferir(&token, jw2, ex, agora))
                 .join()
                 .unwrap()
-        });
-        assert_eq!(r.unwrap_err(), motivo, "{nome}");
+        })
+    };
+    for (nome, token, motivo) in tokens_ruins.clone() {
+        let r = conferir_fora(token, &exigido);
+        if r.as_ref().err() != Some(&motivo) {
+            falhas.push(format!("{nome}: {:?} em vez de {motivo:?}", r.map(|_| ())));
+        }
+    }
+    // Audiencia configurada vazia nao casa com `aud` vazio: sem audiencia nao ha o que
+    // conferir, e aceitar seria aceitar token de qualquer app.
+    let aud_vazia = tk(&bf, "k1", &com(&|c| c["aud"] = json!("")));
+    let r = conferir_fora(
+        aud_vazia,
+        &Exigido {
+            emissores: &[EMISSOR],
+            audiencia: "",
+        },
+    );
+    if r.as_ref().err() != Some(&Motivo::Audiencia) {
+        falhas.push(format!("audiencia vazia: {:?}", r.map(|_| ())));
     }
     // A folga de 5 min vale nos dois lados.
     for c in [
@@ -3477,24 +3530,34 @@ async fn teams_confere_o_jwt_rs256_do_bot_framework() {
     let l = bloq(move || x.receber(None, 0)).await.unwrap();
     assert_eq!(so_mensagens(&l)[0].texto.as_deref(), Some("faca X"));
     // Sem token, com outro esquema, ou com a chave da URL errada: 401.
-    for p in [
-        pedido(&[], "chave=CHAVE-URL", &corpo_bom),
-        pedido(
-            &[("Authorization", &format!("Basic {bom}"))],
-            "chave=CHAVE-URL",
-            &corpo_bom,
+    for (nome, p) in [
+        ("sem token", pedido(&[], "chave=CHAVE-URL", &corpo_bom)),
+        (
+            "esquema Basic",
+            pedido(
+                &[("Authorization", &format!("Basic {bom}"))],
+                "chave=CHAVE-URL",
+                &corpo_bom,
+            ),
         ),
-        com_bearer(&bom, &corpo_bom, "chave=ERRADA"),
+        (
+            "chave da URL errada",
+            com_bearer(&bom, &corpo_bom, "chave=ERRADA"),
+        ),
     ] {
-        assert_eq!(post(p).await.unwrap_err().0, 401);
+        let r = post(p).await;
+        if r.as_ref().err().map(|e| e.0) != Some(401) {
+            falhas.push(format!("post {nome}: {r:?}"));
+        }
     }
     // Todo token ruim e 401, e a resposta nao diz o que errou.
     for (nome, token, _) in tokens_ruins {
-        let e = post(com_bearer(&token, &corpo_bom, "chave=CHAVE-URL"))
-            .await
-            .unwrap_err();
-        assert_eq!(e, (401, "token nao confere".to_string()), "{nome}");
+        let r = post(com_bearer(&token, &corpo_bom, "chave=CHAVE-URL")).await;
+        if r.as_ref().err() != Some(&(401, "token nao confere".to_string())) {
+            falhas.push(format!("post {nome}: {:?}", r.map(|_| ())));
+        }
     }
+    assert!(falhas.is_empty(), "{} falhas: {falhas:#?}", falhas.len());
     // Token bom que nao vale para ESTA Activity: 403.
     let outro_servico = act("msteams", &format!("{base}/emea/"));
     let canal_sem_endosso = act("skype", &servico);
@@ -3694,12 +3757,22 @@ async fn googlechat_confere_o_jwt_nos_dois_modos_e_sai_pelo_webhook_do_espaco() 
     ] {
         ruins.push((nome, com_bearer(&tk(c), &ev, "chave=CHAVE-URL")));
     }
+    // As falhas se juntam e reprovam no fim, todas pelo nome (ver o teste do Teams).
+    let mut falhas: Vec<String> = Vec::new();
     for (nome, p) in ruins {
-        assert_eq!(post(g.clone(), p).await.unwrap_err().0, 401, "{nome}");
+        let r = post(g.clone(), p).await;
+        if r.as_ref().err().map(|e| e.0) != Some(401) {
+            falhas.push(format!("{nome}: {r:?}"));
+        }
     }
     let x = g.clone();
     let l = bloq(move || x.receber(None, 0)).await.unwrap();
-    assert_eq!(so_mensagens(&l).len(), 1, "so o pedido bom entrou");
+    if so_mensagens(&l).len() != 1 {
+        falhas.push(format!(
+            "entraram {} na caixa, e so o bom",
+            so_mensagens(&l).len()
+        ));
+    }
     assert_eq!(so_mensagens(&l)[0].texto.as_deref(), Some("oi"));
 
     // Modo URL do endpoint (ID token): o `email` assinado tem de ser o do Chat, verificado.
@@ -3715,19 +3788,29 @@ async fn googlechat_confere_o_jwt_nos_dois_modos_e_sai_pelo_webhook_do_espaco() 
     )
     .await
     .unwrap();
+    let mut sem_verificado = oidc(CONTA_DO_CHAT, true);
+    sem_verificado
+        .as_object_mut()
+        .unwrap()
+        .remove("email_verified");
     for (nome, c) in [
         ("outro email", oidc("alguem@gmail.com", true)),
         ("email nao verificado", oidc(CONTA_DO_CHAT, false)),
+        // Ausente nao e verdadeiro: so `true` assinado conta.
+        ("sem email_verified", sem_verificado),
         (
+            // Com o `email` certo e verificado: so o emissor pode recusar este.
             "emissor do modo projeto",
-            json!({"iss": CONTA_DO_CHAT, "aud": url_ep, "exp": agora + 600}),
+            json!({"iss": CONTA_DO_CHAT, "aud": url_ep, "exp": agora + 600,
+                "email": CONTA_DO_CHAT, "email_verified": true}),
         ),
     ] {
-        let e = post(g2.clone(), com_bearer(&tk(c), &ev, ""))
-            .await
-            .unwrap_err();
-        assert_eq!(e, (401, "token nao confere".to_string()), "{nome}");
+        let r = post(g2.clone(), com_bearer(&tk(c), &ev, "")).await;
+        if r.as_ref().err() != Some(&(401, "token nao confere".to_string())) {
+            falhas.push(format!("{nome}: {r:?}"));
+        }
     }
+    assert!(falhas.is_empty(), "{} falhas: {falhas:#?}", falhas.len());
 
     // A saida continua pelo webhook do espaco, e so dele.
     let x = g.clone();
@@ -3799,4 +3882,288 @@ async fn teams_e_googlechat_montam_pelo_ambiente_com_o_jwt() {
         .is_ok()
     );
     let _ = std::fs::remove_dir_all(dir);
+}
+
+/// O servidor de chaves lento (2 s por download) nao segura o token de `kid` conhecido:
+/// o download corre fora da trava, um por vez, e quem chega durante ele usa o conjunto
+/// atual. Com a trava presa durante o download, o token bom esperava os 2 s (RED medido).
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn jwks_lento_nao_segura_token_de_kid_conhecido() {
+    use phxclaw_agent::canais::jwt::{self, Exigido, Jwks, Motivo};
+    use phxclaw_test_support::pulado;
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    use std::time::Instant;
+    let dir = tmp();
+    let Some(par) = par_rsa(&dir, "lento") else {
+        pulado::pular(
+            "openssl",
+            "sem openssl nao ha como assinar o token de teste",
+        );
+        return;
+    };
+    let lento = Arc::new(AtomicBool::new(false));
+    let pedidos = Arc::new(AtomicUsize::new(0));
+    let (l2, p2, n) = (lento.clone(), pedidos.clone(), par.n.clone());
+    let app = Router::new().route(
+        "/keys",
+        axum::routing::get(move || {
+            let (l, p, n) = (l2.clone(), p2.clone(), n.clone());
+            async move {
+                p.fetch_add(1, Ordering::SeqCst);
+                let chave = |kid: &str| json!({"kty": "RSA", "kid": kid, "n": n, "e": "AQAB"});
+                if l.load(Ordering::SeqCst) {
+                    tokio::time::sleep(Duration::from_secs(2)).await;
+                    json!({"keys": [chave("k1"), chave("k2")]}).to_string()
+                } else {
+                    json!({"keys": [chave("k1")]}).to_string()
+                }
+            }
+        }),
+    );
+    let url = format!("{}/keys", servir(app).await);
+    let agora = jwt::agora();
+    let claims = json!({"iss": "emissor", "aud": "aud", "exp": agora + 600});
+    let tk = |kid: &str| jwt_assinado(&par, &json!({"alg": "RS256", "kid": kid}), &claims);
+    let conferir = |j: Arc<Jwks>, token: String| {
+        bloq(move || {
+            let ex = Exigido {
+                emissores: &["emissor"],
+                audiencia: "aud",
+            };
+            let t = Instant::now();
+            (
+                jwt::conferir(&token, &j, &ex, agora).map(|_| ()),
+                t.elapsed(),
+            )
+        })
+    };
+    // Espera o download lento comecar (o servidor contou o pedido).
+    let ate_pedir = |alvo: usize| {
+        let p = pedidos.clone();
+        async move {
+            for _ in 0..200 {
+                if p.load(Ordering::SeqCst) >= alvo {
+                    return;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+            panic!("o download lento nao comecou");
+        }
+    };
+    let mut falhas: Vec<String> = Vec::new();
+
+    // 1) `kid` novo dispara o download lento; o `kid` conhecido nao espera por ele.
+    let jw = Arc::new(Jwks::com_prazos(&url, Duration::from_secs(3600), Duration::ZERO).unwrap());
+    assert_eq!(conferir(jw.clone(), tk("k1")).await.0, Ok(()));
+    lento.store(true, Ordering::SeqCst);
+    let novo = tokio::spawn(conferir(jw.clone(), tk("k2")));
+    ate_pedir(2).await;
+    let (r, t) = conferir(jw.clone(), tk("k1")).await;
+    if r.is_err() || t > Duration::from_millis(1000) {
+        falhas.push(format!("kid conhecido durante o download: {r:?} em {t:?}"));
+    }
+    // Outro `kid` desconhecido durante o download: 401 na hora, sem segundo download.
+    let (r, t) = conferir(jw.clone(), tk("k3")).await;
+    if r != Err(Motivo::KidDesconhecido) || t > Duration::from_millis(1000) {
+        falhas.push(format!(
+            "kid desconhecido durante o download: {r:?} em {t:?}"
+        ));
+    }
+    let (r, _) = novo.await.unwrap();
+    assert_eq!(r, Ok(()), "o kid novo chegou no download");
+    let baixados = pedidos.load(Ordering::SeqCst);
+    if baixados != 2 {
+        falhas.push(format!("{baixados} downloads, e era um so"));
+    }
+
+    // 2) Cache vencido recarregando devagar: a chave do conjunto atual vale enquanto isso.
+    lento.store(false, Ordering::SeqCst);
+    let jw = Arc::new(Jwks::com_prazos(&url, Duration::from_millis(200), Duration::ZERO).unwrap());
+    assert_eq!(conferir(jw.clone(), tk("k1")).await.0, Ok(()));
+    tokio::time::sleep(Duration::from_millis(250)).await;
+    lento.store(true, Ordering::SeqCst);
+    let recarga = tokio::spawn(conferir(jw.clone(), tk("k1")));
+    ate_pedir(4).await;
+    let (r, t) = conferir(jw.clone(), tk("k1")).await;
+    if r.is_err() || t > Duration::from_millis(1000) {
+        falhas.push(format!("cache vencido durante a recarga: {r:?} em {t:?}"));
+    }
+    assert_eq!(recarga.await.unwrap().0, Ok(()));
+
+    // 3) Sem conjunto nenhum ainda: quem chega durante o primeiro download leva 503.
+    let jw = Arc::new(Jwks::com_prazos(&url, Duration::from_secs(3600), Duration::ZERO).unwrap());
+    let primeiro = tokio::spawn(conferir(jw.clone(), tk("k1")));
+    ate_pedir(5).await;
+    let (r, t) = conferir(jw.clone(), tk("k1")).await;
+    if r != Err(Motivo::ChavesIndisponiveis) || t > Duration::from_millis(1000) {
+        falhas.push(format!("primeiro download em curso: {r:?} em {t:?}"));
+    }
+    assert_eq!(primeiro.await.unwrap().0, Ok(()));
+    assert!(falhas.is_empty(), "{} falhas: {falhas:#?}", falhas.len());
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+/// O custo de UMA verificacao RSA, que qualquer um dispara com um `kid` publico e lixo do
+/// tamanho da chave. Imprime a mediana; o numero que decide o teto em voo e o do binario
+/// otimizado (o deste perfil vai junto, dito qual e).
+#[test]
+fn rsa_custo_de_uma_verificacao_2048_e_4096() {
+    use phxclaw_agent::canais::rsa::ChavePublica;
+    use std::time::Instant;
+    let aqab = [1u8, 0, 1];
+    let wy = vetores_rsa("wycheproof_rsa_2048_sha256.txt");
+    let mut n4096 = vec![0x9bu8; 512];
+    n4096[0] = 0xc5;
+    n4096[511] |= 1;
+    let perfil = if cfg!(debug_assertions) {
+        "sem otimizacao"
+    } else {
+        "otimizado"
+    };
+    for n in [wy[0].n.clone(), n4096] {
+        let k = ChavePublica::nova(&n, &aqab).unwrap();
+        // Lixo abaixo do modulo (o primeiro byte 01 garante) e do tamanho certo: passa os
+        // dois cortes baratos do passo 1 e 2 e paga a conta inteira.
+        // (o `n` do Wycheproof traz o zero a esquerda do DER: o tamanho sai dos bits).
+        let lixo = vec![0x01u8; k.bits().div_ceil(8)];
+        let mut us: Vec<u128> = (0..9)
+            .map(|_| {
+                let t = Instant::now();
+                assert!(!k.verificar(b"corpo", std::hint::black_box(&lixo)));
+                t.elapsed().as_micros()
+            })
+            .collect();
+        us.sort();
+        println!(
+            "rsa verificar {} bits: mediana {} us, min {} us ({perfil})",
+            k.bits(),
+            us[4],
+            us[0]
+        );
+    }
+}
+
+/// A conferencia de assinatura tem teto de vagas em voo: acima dele, 429 na hora, ANTES
+/// da conta. Sem o portao, dezesseis conferencias de lixo correm juntas (RED medido). E a
+/// vaga volta: depois da rajada, o token bom passa.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn conferencia_de_assinatura_tem_teto_em_voo_e_429_acima_dele() {
+    use phxclaw_agent::canais::jwt::{self, Exigido, Jwks, Motivo};
+    use phxclaw_test_support::pulado;
+    let dir = tmp();
+    let Some(par) = par_rsa(&dir, "voo") else {
+        pulado::pular(
+            "openssl",
+            "sem openssl nao ha como assinar o token de teste",
+        );
+        return;
+    };
+    let n = par.n.clone();
+    let (url, _) = falso(move |_| {
+        (
+            200,
+            json!({"keys": [{"kty": "RSA", "kid": "k1", "n": n, "e": "AQAB"}]}).to_string(),
+        )
+    })
+    .await;
+    let jw = Arc::new(Jwks::novo(&url).unwrap().com_teto_em_voo(2));
+    let agora = jwt::agora();
+    let bom = jwt_assinado(
+        &par,
+        &json!({"alg": "RS256", "kid": "k1"}),
+        &json!({"iss": "emissor", "aud": "aud", "exp": agora + 600}),
+    );
+    // A assinatura trocada por lixo do tamanho da chave (e abaixo do modulo).
+    let (corpo, _) = bom.rsplit_once('.').unwrap();
+    let lixo = format!("{corpo}.{}", b64url(&[0x01u8; 256]));
+    let j = jw.clone();
+    let rodada = bloq(move || {
+        let ex = Exigido {
+            emissores: &["emissor"],
+            audiencia: "aud",
+        };
+        assert_eq!(jwt::conferir(&bom, &j, &ex, agora).map(|_| ()), Ok(()));
+        let largada = std::sync::Barrier::new(16);
+        let motivos: Vec<Motivo> = std::thread::scope(|s| {
+            let h: Vec<_> = (0..16)
+                .map(|_| {
+                    s.spawn(|| {
+                        largada.wait();
+                        (0..3)
+                            .map(|_| jwt::conferir(&lixo, &j, &ex, agora).unwrap_err())
+                            .collect::<Vec<_>>()
+                    })
+                })
+                .collect();
+            h.into_iter().flat_map(|x| x.join().unwrap()).collect()
+        });
+        let depois = jwt::conferir(&bom, &j, &ex, agora).map(|_| ());
+        (motivos, depois)
+    });
+    let (motivos, depois) = rodada.await;
+    let ocupado = motivos.iter().filter(|m| **m == Motivo::Ocupado).count();
+    let assinatura = motivos.iter().filter(|m| **m == Motivo::Assinatura).count();
+    println!("teto 2, 48 conferencias de lixo: {assinatura} pagaram a conta, {ocupado} 429");
+    assert_eq!(ocupado + assinatura, 48, "{motivos:?}");
+    assert!(ocupado > 0, "dezesseis em voo com teto 2 e nenhum 429");
+    assert_eq!(depois, Ok(()), "a vaga volta depois da rajada");
+    assert_eq!(Motivo::Ocupado.recusa().0, 429);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+/// A URL do JWKS e a ancora de confianca: trocada, avisa ao subir; `http://` so loopback.
+#[test]
+fn jwks_trocado_avisa_e_http_fora_de_loopback_recusa() {
+    use phxclaw_agent::canais::googlechat::{JWKS_PROJETO, Verificacao};
+    use phxclaw_agent::canais::jwt::{Jwks, aviso_jwks};
+    use phxclaw_agent::canais::teams::JWKS;
+    assert_eq!(aviso_jwks("teams", JWKS, JWKS), None);
+    let a = aviso_jwks("teams", "https://chaves.exemplo.com/k", JWKS).unwrap();
+    assert!(
+        a.contains("teams") && a.contains("https://chaves.exemplo.com/k") && a.contains(JWKS),
+        "{a}"
+    );
+    assert!(aviso_jwks("googlechat", JWKS_PROJETO, JWKS_PROJETO).is_none());
+    for u in ["http://chaves.exemplo.com/keys", "http://10.0.0.1/keys"] {
+        assert!(Jwks::novo(u).is_err(), "{u}");
+        assert!(Jwks::configurado("teams", Some(u), JWKS).is_err(), "{u}");
+        assert!(Verificacao::nova("123".into(), Some(u)).is_err(), "{u}");
+    }
+    assert!(Jwks::configurado("teams", Some("http://127.0.0.1:9/keys"), JWKS).is_ok());
+    assert!(Jwks::configurado("teams", None, JWKS).is_ok());
+    assert!(Jwks::configurado("teams", Some("  "), JWKS).is_ok());
+}
+
+/// `iguais` nao conta o tamanho do segredo: comparar com um chute de 1 byte custa o mesmo
+/// que com um do tamanho certo. Saindo cedo quando o tamanho difere, o chute curto voltava
+/// em nanossegundos e o longo pagava o laco inteiro (RED medido).
+#[test]
+fn iguais_nao_conta_o_tamanho_do_segredo() {
+    use phxclaw_agent::canais::cripto::iguais;
+    use std::hint::black_box;
+    use std::time::Instant;
+    let segredo = vec![b'x'; 256 << 10];
+    let mut longo = segredo.clone();
+    *longo.last_mut().unwrap() = b'y';
+    let curto = b"x".to_vec();
+    assert!(iguais(&segredo, &segredo.clone()));
+    assert!(!iguais(&segredo, &longo));
+    assert!(!iguais(&segredo, &curto));
+    assert!(!iguais(b"", b"x"));
+    let medir = |chute: &[u8]| {
+        (0..7)
+            .map(|_| {
+                let t = Instant::now();
+                black_box(iguais(black_box(&segredo), black_box(chute)));
+                t.elapsed()
+            })
+            .min()
+            .unwrap()
+    };
+    let (t_curto, t_longo) = (medir(&curto), medir(&longo));
+    println!("iguais: chute curto {t_curto:?}, chute do tamanho certo {t_longo:?}");
+    assert!(
+        t_curto * 4 >= t_longo,
+        "o chute curto saiu {t_curto:?} contra {t_longo:?}: o tempo conta o tamanho"
+    );
 }

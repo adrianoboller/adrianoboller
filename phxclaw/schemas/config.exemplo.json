@@ -414,7 +414,7 @@
   },
   "fluxos": {
     "//": [
-      "max_simultaneos: Fluxos rodando ao mesmo tempo na instância; vazio ou 0 = sem limite (o excedente espera a vez) [inteiro; ambiente PHXCLAW_FLUXOS_MAX_SIMULTANEOS]",
+      "max_simultaneos: Máximo de fluxos rodando ao mesmo tempo na instância; vazio ou 0 = sem limite (o excedente espera a vaga); lido no primeiro fluxo, mudar pede reinício [inteiro; ambiente PHXCLAW_FLUXOS_MAX_SIMULTANEOS]",
       "poda_dias: Apaga execuções de fluxo terminadas há mais de N dias; vazio ou 0 = nunca [inteiro; ambiente PHXCLAW_FLUXOS_PODA_DIAS]",
       "poda_max: Mantém só as N execuções de fluxo terminadas mais novas; vazio ou 0 = todas [inteiro; ambiente PHXCLAW_FLUXOS_PODA_MAX]"
     ],

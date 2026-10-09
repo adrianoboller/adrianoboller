@@ -59,7 +59,7 @@ impl Teams {
         jwks: Jwks,
     ) -> Result<Self, String> {
         if app_id.trim().is_empty() {
-            return Err("App ID vazio: seria a audiencia do token".into());
+            return Err("App ID vazio: sem ele nao ha audiencia para conferir o token".into());
         }
         Ok(Self {
             caixa,

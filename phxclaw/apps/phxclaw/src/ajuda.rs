@@ -163,7 +163,7 @@ pub const COMANDOS: &[Comando] = &[
         nome: "fluxo",
         resumo: "Fluxo em DAG: rodar, retomar, responder esperas, pinar, podar, exportar e listar",
         apelidos: &["workflow"],
-        uso: "fluxo rodar ARQ.json [--ate PASSO] | retomar TAREFA [ARQ.json] | responder TAREFA \
+        uso: "fluxo rodar ARQ.json [--ate PASSO] [--pins] | retomar TAREFA [ARQ.json] | responder TAREFA \
               TEXTO | esperas | pinar ARQ.json PASSO (--json V | --tarefa T) | despinar ARQ.json \
               PASSO | podar [--dias N] [--max N] | exportar ARQ.json [--saida P] | importar \
               PACOTE.json DESTINO.json | listar [DIR] [--etiqueta E] [--subpasta P] [--modelo M] \
@@ -173,8 +173,10 @@ pub const COMANDOS: &[Comando] = &[
                     retomar continua dali e pula os passos que deram certo (sem ARQ, pela \
                     definicao que a espera gravou). O passo esperar descarrega o fluxo para o \
                     disco: responder entrega a resposta, esperas retoma as de tempo vencidas. \
-                    pinar troca a execucao de um passo pelo dado do ARQ.pins.json; podar segue \
-                    fluxos.poda_dias/poda_max (sem eles, nada se apaga).",
+                    pinar troca a execucao de um passo pelo dado do ARQ.pins.json, e o pin so \
+                    vale no rodar com --pins (gatilho, agenda e sub-fluxo rodam o passo de \
+                    verdade); exportar leva um sha256 de conferencia, nao assinatura; podar \
+                    segue fluxos.poda_dias/poda_max (sem eles, nada se apaga).",
     },
     Comando {
         grupo: Grupo::EquipeEFluxos,

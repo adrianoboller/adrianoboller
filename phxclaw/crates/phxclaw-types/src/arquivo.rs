@@ -22,14 +22,45 @@ fn temporario_de(arq: &Path) -> PathBuf {
     ))
 }
 
+/// Cria `pasta` e os pais que faltam, com o `fsync` do pai de CADA pasta criada. O
+/// `create_dir_all` sozinho deixa a entrada da pasta nova so na memoria do sistema: o
+/// `fsync` da pasta de destino (o que `gravar_atomico` faz) segura o arquivo dentro dela,
+/// mas nao a propria pasta dentro do pai -- e a energia que cai leva `binarios/` inteira,
+/// com o arquivo «gravado» junto. A decisao de como se cria pasta duravel e UMA, e vive
+/// aqui, ao lado da de como se grava arquivo.
+pub fn criar_pastas(pasta: &Path) -> io::Result<()> {
+    if pasta.as_os_str().is_empty() || pasta.is_dir() {
+        return Ok(());
+    }
+    // Do mais alto que falta para baixo: o pai de cada uma ja existe quando ela nasce.
+    let mut faltam = Vec::new();
+    let mut atual = Some(pasta);
+    while let Some(p) = atual.filter(|p| !p.as_os_str().is_empty() && !p.is_dir()) {
+        faltam.push(p);
+        atual = p.parent();
+    }
+    for p in faltam.into_iter().rev() {
+        match std::fs::create_dir(p) {
+            Ok(()) => {}
+            // Outro processo criou no meio: a pasta existe, e o `fsync` do pai vale igual.
+            Err(e) if e.kind() == io::ErrorKind::AlreadyExists && p.is_dir() => {}
+            Err(e) => return Err(e),
+        }
+        let pai = p
+            .parent()
+            .filter(|x| !x.as_os_str().is_empty())
+            .unwrap_or(Path::new("."));
+        File::open(pai)?.sync_all()?;
+    }
+    Ok(())
+}
+
 /// Troca atomica: temporario por pid, `fsync` do temporario, `rename`, `fsync` da pasta.
 /// Sem o `fsync` da pasta a renomeacao pode nao estar no disco quando a energia cai, e o
 /// leitor acha o arquivo antigo -- ou nenhum, se era a primeira gravacao.
 pub fn gravar_atomico(arq: &Path, conteudo: &[u8]) -> io::Result<()> {
     let pasta = arq.parent().unwrap_or(Path::new("."));
-    if !pasta.as_os_str().is_empty() {
-        std::fs::create_dir_all(pasta)?;
-    }
+    criar_pastas(pasta)?;
     let tmp = temporario_de(arq);
     let escrever = || -> io::Result<()> {
         let mut f = File::create(&tmp)?;
@@ -54,8 +85,8 @@ pub fn gravar_atomico(arq: &Path, conteudo: &[u8]) -> io::Result<()> {
 /// `File` devolvido fecha. A trava e sobre um arquivo PROPRIO, nunca sobre o que se troca
 /// por `rename`: trava no inode velho nao segura quem abre o novo.
 pub fn travar(arq: &Path) -> io::Result<File> {
-    if let Some(p) = arq.parent().filter(|p| !p.as_os_str().is_empty()) {
-        std::fs::create_dir_all(p)?;
+    if let Some(p) = arq.parent() {
+        criar_pastas(p)?;
     }
     let f = OpenOptions::new()
         .create(true)
@@ -130,6 +161,23 @@ mod tests {
         std::fs::create_dir(&pasta).unwrap();
         assert!(gravar_atomico(&pasta, b"x").is_err());
         assert!(!temporario_de(&pasta).exists());
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// Os pais que faltam nascem um a um (e cada um com o `fsync` do pai, que teste nenhum
+    /// enxerga sem desligar a energia); o que ja existe nao e erro, e um ARQUIVO no meio do
+    /// caminho e erro com o motivo, nao pasta criada por cima.
+    #[test]
+    fn criar_pastas_cria_os_pais_que_faltam() {
+        let d = tmp("pastas");
+        let funda = d.join("a").join("b").join("c");
+        criar_pastas(&funda).unwrap();
+        assert!(funda.is_dir());
+        criar_pastas(&funda).unwrap();
+        gravar_atomico(&d.join("x").join("y").join("z.json"), b"1").unwrap();
+        assert_eq!(std::fs::read(d.join("x/y/z.json")).unwrap(), b"1");
+        std::fs::write(d.join("arq"), b"").unwrap();
+        assert!(criar_pastas(&d.join("arq").join("dentro")).is_err());
         let _ = std::fs::remove_dir_all(&d);
     }
 

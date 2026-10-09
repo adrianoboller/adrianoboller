@@ -259,28 +259,8 @@ pub fn token(pasta: &str, projeto: Option<&str>) -> String {
 }
 
 /// Prefixos de credencial conhecidos. Valor que comeca assim nao e configuracao.
-const PREFIXOS: &[&str] = &[
-    "ghp_",
-    "gho_",
-    "ghu_",
-    "ghs_",
-    "ghr_",
-    "github_pat_",
-    "glpat-",
-    "xoxb-",
-    "xoxp-",
-    "xoxa-",
-    "xoxs-",
-    "xapp-",
-    "sk-",
-    "sk_live_",
-    "rk_live_",
-    "AIza",
-    "AKIA",
-    "ya29.",
-    "xai-",
-    "-----BEGIN",
-];
+/// A lista unica de `phxclaw_types::segredo` (antes havia uma aqui e outra no broker).
+const PREFIXOS: &[&str] = phxclaw_types::segredo::PREFIXOS_DE_CREDENCIAL;
 
 /// Tamanho a partir do qual um texto de classe secreta e tratado como chave.
 pub const CHAVE_MINIMA: usize = 20;
@@ -324,19 +304,12 @@ fn classe_secreta(t: &str) -> bool {
     (hexa || misto) && entropia(t) >= ENTROPIA_MINIMA
 }
 
-/// O nome tem cara de segredo (`*_key`, `*_token`, `*_secret`, `password`, `senha`)?
-/// Olha o ultimo segmento da chave pontuada, inteiro ou pelo sufixo depois de `_`:
-/// `max_tokens` e contagem, `bot_token` e credencial.
+/// O nome tem cara de segredo? Delega a lista UNICA de `phxclaw_types::segredo`: havia uma
+/// lista aqui e outra no agente (`gravacao::chave_secreta`), e elas divergiam (`segredo`,
+/// `cookie`, `authorization`, `passwd` eram segredo no fluxo e nao no `config.json`; medido
+/// em 09/10). Duas listas divergem no dia em que alguem acrescenta um nome numa so.
 pub fn nome_de_segredo(chave: &str) -> bool {
-    let ultimo = chave
-        .rsplit('.')
-        .next()
-        .unwrap_or(chave)
-        .to_ascii_lowercase();
-    const SUFIXOS: &[&str] = &["key", "token", "secret", "password", "senha", "apikey"];
-    SUFIXOS.iter().any(|s| {
-        ultimo == *s || ultimo.ends_with(&format!("_{s}")) || ultimo.ends_with(&format!("-{s}"))
-    })
+    phxclaw_types::segredo::nome_de_segredo(chave)
 }
 
 /// O motivo, se o texto tem cara de credencial: prefixo conhecido, URL com senha

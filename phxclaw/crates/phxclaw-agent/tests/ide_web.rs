@@ -181,6 +181,10 @@ async fn o_websocket_do_terminal_recusa_token_errado_e_bash_e_abre_so_o_helix() 
         phxclaw_test_support::pulado::pular("hx", "hx ausente neste hospedeiro");
         return;
     }
+    if phxclaw_agent::arquivos::achar_bwrap().is_none() {
+        phxclaw_test_support::pulado::pular("bwrap", "sem bwrap o terminal do IDE recusa");
+        return;
+    }
     let _serial = UM_DE_CADA_VEZ.lock().await;
     let proj = projeto_de_teste("ws");
     let (base, _dir) = subir(proj.path(), "ws").await;
@@ -496,6 +500,21 @@ async fn o_arquivo_do_minimapa_fica_na_pasta_do_projeto_exige_bearer_e_tem_teto(
     assert_eq!(r.status(), 413);
     let v: Value = r.json().await.unwrap();
     assert!(v["error"].as_str().unwrap().contains("teto"), "{v}");
+    // O teto e de LEITURA, nao so de resposta: um arquivo esparso de 8 GiB (nada em disco)
+    // tem de recusar lendo so o teto. Lido inteiro, o 413 sairia igual -- depois de segundos
+    // e gigabytes de memoria --, e por isso a prova mede o tempo e nao so o codigo.
+    std::fs::File::create(proj.path().join("esparso.txt"))
+        .unwrap()
+        .set_len(8 << 30)
+        .unwrap();
+    let t0 = std::time::Instant::now();
+    let r = pedir("esparso.txt".into()).await;
+    let gasto = t0.elapsed();
+    assert_eq!(r.status(), 413);
+    assert!(
+        gasto < std::time::Duration::from_secs(2),
+        "o esparso de 8 GiB levou {gasto:?}: a rota leu alem do teto"
+    );
 
     // O nome antigo do parametro (o do `simbolos`) tambem serve.
     let r = c
@@ -505,4 +524,288 @@ async fn o_arquivo_do_minimapa_fica_na_pasta_do_projeto_exige_bearer_e_tem_teto(
         .await
         .unwrap();
     assert_eq!(r.status(), 200);
+}
+
+/// Solta a variavel de ambiente ao sair, inclusive no panico: a proxima prova da serie nao
+/// pode herdar a pasta do agente desta.
+struct Ambiente(&'static str);
+impl Drop for Ambiente {
+    fn drop(&mut self) {
+        unsafe {
+            std::env::remove_var(self.0);
+        }
+    }
+}
+
+/// O layout padrao poe a pasta do agente DENTRO do projeto (`var/agente`, relativa a pasta
+/// corrente, que e o proprio projeto): confinar a raiz do projeto deixava o minimapa servir a
+/// chave-mestra do broker em texto. A rota recusa a area do agente e o cofre por todas as
+/// portas -- relativo, absoluto por raiz do workspace e symlink -- e o arquivo comum segue.
+#[tokio::test(flavor = "multi_thread")]
+async fn o_minimapa_nao_serve_a_pasta_do_agente_nem_o_cofre() {
+    let _serial = UM_DE_CADA_VEZ.lock().await;
+    let proj = projeto_de_teste("cofre");
+    let agente = proj.path().join("var/agente");
+    std::fs::create_dir_all(&agente).unwrap();
+    let _home = Ambiente("PHXCLAW_HOME");
+    unsafe {
+        std::env::set_var("PHXCLAW_HOME", &agente);
+    }
+    // O broker de verdade: a chave-mestra nasce no primeiro uso, e o cofre recebe um envelope.
+    let broker = phxclaw_agent::canais::broker_em(&agente).unwrap();
+    phxclaw_agent::canais::guardar_segredo(
+        &broker,
+        "prova",
+        "ide",
+        &["channel:ide:send"],
+        phxclaw_secret_broker::SecretValue::new("valor-do-cofre-que-nao-sai".into()),
+    )
+    .unwrap();
+    let mestra = agente.join("segredos/master.key");
+    let texto_da_mestra = std::fs::read_to_string(&mestra).unwrap();
+    assert!(texto_da_mestra.trim().len() >= 40, "{texto_da_mestra}");
+    let envelope = std::fs::read_dir(agente.join("segredos/cofre"))
+        .unwrap()
+        .filter_map(Result::ok)
+        .map(|e| e.path())
+        .find(|p| p.extension().is_some_and(|x| x == "phxsecret"))
+        .expect("o cofre tem um envelope");
+    let texto_do_envelope = std::fs::read_to_string(&envelope).unwrap();
+    // O Bearer da API e a chave do no tambem moram na pasta do agente, fora do cofre.
+    std::fs::write(agente.join("api.token"), "bearer-da-pasta-do-agente\n").unwrap();
+    // A raiz do proprio projeto declarada no workspace: e o que abre a porta do absoluto
+    // (a mesma das ferramentas de arquivo).
+    std::fs::create_dir_all(proj.path().join(".phxclaw")).unwrap();
+    std::fs::write(
+        proj.path().join(".phxclaw/workspace.json"),
+        r#"{"raizes": ["."]}"#,
+    )
+    .unwrap();
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(&mestra, proj.path().join("chave.txt")).unwrap();
+    let (base, _dir) = subir(proj.path(), "cofre").await;
+    let c = reqwest::Client::new();
+    let pedir = |q: String| {
+        let c = c.clone();
+        let url = format!("http://{base}/v1/ide/arquivo?caminho={q}");
+        async move { c.get(url).bearer_auth(TOKEN).send().await.unwrap() }
+    };
+
+    // O comum do projeto continua 200.
+    let r = pedir("src/main.rs".into()).await;
+    assert_eq!(r.status(), 200);
+
+    let rel_envelope = envelope
+        .strip_prefix(proj.path())
+        .unwrap()
+        .display()
+        .to_string();
+    let mut portas = vec![
+        "var/agente/segredos/master.key".to_string(),
+        "./var/agente/segredos/master.key".into(),
+        mestra.display().to_string(),
+        rel_envelope,
+        envelope.display().to_string(),
+        "var/agente/api.token".into(),
+        agente.join("api.token").display().to_string(),
+    ];
+    if cfg!(unix) {
+        portas.push("chave.txt".into());
+    }
+    let mut vazou = vec![];
+    for q in portas {
+        let r = pedir(q.clone()).await;
+        let st = r.status();
+        let corpo = r.text().await.unwrap();
+        let tem_segredo = corpo.contains(texto_da_mestra.trim())
+            || corpo.contains(texto_do_envelope.trim())
+            || corpo.contains("bearer-da-pasta-do-agente");
+        if st != 403 || tem_segredo {
+            vazou.push(format!("{q} -> {st}: {corpo}"));
+        }
+    }
+    assert!(
+        vazou.is_empty(),
+        "a area do agente saiu:\n{}",
+        vazou.join("\n")
+    );
+}
+
+/// Um FIFO no projeto (ou um symlink para ele) nao prende quem le: a rota abre sem esperar
+/// escritor e recusa o que nao e arquivo comum.
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread")]
+async fn o_minimapa_recusa_fifo_sem_travar() {
+    let _serial = UM_DE_CADA_VEZ.lock().await;
+    let proj = projeto_de_teste("fifo");
+    let cano = proj.path().join("cano");
+    let ok = std::process::Command::new("mkfifo")
+        .arg(&cano)
+        .status()
+        .is_ok_and(|s| s.success());
+    if !ok {
+        phxclaw_test_support::pulado::pular("mkfifo", "mkfifo indisponivel nesta maquina");
+        return;
+    }
+    std::os::unix::fs::symlink(&cano, proj.path().join("atalho-do-cano")).unwrap();
+    let (base, _dir) = subir(proj.path(), "fifo").await;
+    let c = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .unwrap();
+    for q in ["cano", "atalho-do-cano"] {
+        let r = c
+            .get(format!("http://{base}/v1/ide/arquivo?caminho={q}"))
+            .bearer_auth(TOKEN)
+            .send()
+            .await
+            .unwrap_or_else(|e| panic!("{q}: a rota travou no FIFO: {e}"));
+        assert_eq!(r.status(), 422, "{q}");
+    }
+    // E o agente continua respondendo depois.
+    let r = c
+        .get(format!("http://{base}/v1/ide/arquivo?caminho=src/main.rs"))
+        .bearer_auth(TOKEN)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 200);
+}
+
+/// O texto de cada linha alterada de uma mensagem de grade (os trechos colados: o cursor
+/// parte uma palavra em dois trechos).
+fn linhas_da_grade(m: &Value) -> Vec<String> {
+    m["linhas_alteradas"]
+        .as_array()
+        .map(|ls| {
+            ls.iter()
+                .map(|l| {
+                    l["trechos"]
+                        .as_array()
+                        .map(|ts| {
+                            ts.iter()
+                                .map(|t| t["texto"].as_str().unwrap_or(""))
+                                .collect::<String>()
+                        })
+                        .unwrap_or_default()
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// O mesmo vazamento do minimapa, pela porta do terminal: o Helix rodava no hospedeiro, na
+/// pasta do projeto, e `:open var/agente/segredos/master.key` desenhava a chave-mestra na
+/// grade. Agora ele sobe no bwrap com a pasta do agente mascarada: o arquivo comum abre (o
+/// controle: sem ele, tecla perdida passaria por prova) e a chave nao aparece.
+#[tokio::test(flavor = "multi_thread")]
+async fn o_helix_do_ide_nao_abre_a_chave_da_pasta_do_agente() {
+    if phxclaw_terminal::helix::achar(None).is_none() {
+        phxclaw_test_support::pulado::pular("hx", "hx ausente neste hospedeiro");
+        return;
+    }
+    if phxclaw_agent::arquivos::achar_bwrap().is_none() {
+        phxclaw_test_support::pulado::pular("bwrap", "sem bwrap o terminal do IDE recusa");
+        return;
+    }
+    let _serial = UM_DE_CADA_VEZ.lock().await;
+    let proj = projeto_de_teste("hx-cofre");
+    let agente = proj.path().join("var/agente");
+    std::fs::create_dir_all(&agente).unwrap();
+    let _home = Ambiente("PHXCLAW_HOME");
+    unsafe {
+        std::env::set_var("PHXCLAW_HOME", &agente);
+    }
+    phxclaw_agent::canais::broker_em(&agente).unwrap();
+    let mestra = std::fs::read_to_string(agente.join("segredos/master.key")).unwrap();
+    let mestra = mestra.trim().to_string();
+    assert!(mestra.len() >= 40, "{mestra}");
+    let (base, _dir) = subir(proj.path(), "hx-cofre").await;
+
+    let tem = |texto: &'static str| {
+        move |m: &Value| m["ev"] == "grade" && linhas_da_grade(m).iter().any(|l| l.contains(texto))
+    };
+    let mut c = Conexao::abrir(&base).await;
+    c.mandar(&[
+        json!({"op": "auth", "token": TOKEN}),
+        json!({"op": "abrir", "programa": "helix", "colunas": 120, "linhas": 30}),
+    ])
+    .await;
+    let v = c.esperar(tem("NOR"), 30).await;
+    assert!(v.iter().any(tem("NOR")), "o Helix nao subiu: {v:?}");
+    let comando = |linha: &str| json!({"op": "texto", "texto": format!(":{linha}\r")});
+    let esc = json!({"op": "texto", "texto": "\u{1b}"});
+
+    // Controle: o arquivo comum do projeto abre e o texto dele chega na grade.
+    c.mandar(std::slice::from_ref(&esc)).await;
+    tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+    c.mandar(&[comando("open src/main.rs")]).await;
+    let v = c.esperar(tem("fn soma"), 15).await;
+    assert!(v.iter().any(tem("fn soma")), "o arquivo comum nao abriu");
+
+    c.mandar(std::slice::from_ref(&esc)).await;
+    tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+    c.mandar(&[comando("open var/agente/segredos/master.key")])
+        .await;
+    let v = c.esperar(|_| false, 4).await;
+    let visto: Vec<String> = v.iter().flat_map(linhas_da_grade).collect();
+    assert!(
+        visto.iter().any(|l| l.contains("master.key")),
+        "o :open nao chegou ao Helix: {visto:?}"
+    );
+    let vazou: Vec<&String> = visto.iter().filter(|l| l.contains(&mestra[..24])).collect();
+    assert!(vazou.is_empty(), "a chave-mestra saiu na grade: {vazou:?}");
+
+    c.mandar(std::slice::from_ref(&esc)).await;
+    tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+    c.mandar(&[comando("qa!")]).await;
+    c.fechar().await;
+}
+
+/// O explorador de testes roda o `cargo test` do projeto no bwrap com o projeto em `/work`:
+/// um teste do projeto que tenta ler a chave-mestra do agente nao a acha, e o que le o
+/// arquivo comum continua passando.
+#[tokio::test(flavor = "multi_thread")]
+async fn os_testes_do_ide_nao_leem_a_pasta_do_agente() {
+    if phxclaw_agent::arquivos::achar_bwrap().is_none() {
+        phxclaw_test_support::pulado::pular("bwrap", "o explorador de testes so roda no bwrap");
+        return;
+    }
+    let _serial = UM_DE_CADA_VEZ.lock().await;
+    let proj = projeto_de_teste("testes-cofre");
+    std::fs::write(
+        proj.path().join("src/main.rs"),
+        "fn soma(a: i32, b: i32) -> i32 {\n    a + b\n}\nfn main() { println!(\"{}\", soma(1, 2)); }\n\
+         #[cfg(test)]\nmod t {\n    #[test]\n    fn o_projeto_se_le() {\n        \
+         assert!(std::fs::read_to_string(\"src/main.rs\").unwrap().contains(\"soma\"));\n    }\n    \
+         #[test]\n    fn a_chave_do_agente_nao_se_le() {\n        \
+         let r = std::fs::read_to_string(\"var/agente/segredos/master.key\");\n        \
+         assert!(r.is_err(), \"leu a chave: {r:?}\");\n    }\n}\n",
+    )
+    .unwrap();
+    let agente = proj.path().join("var/agente");
+    std::fs::create_dir_all(&agente).unwrap();
+    let _home = Ambiente("PHXCLAW_HOME");
+    unsafe {
+        std::env::set_var("PHXCLAW_HOME", &agente);
+    }
+    phxclaw_agent::canais::broker_em(&agente).unwrap();
+    assert!(agente.join("segredos/master.key").is_file());
+    let (base, _dir) = subir(proj.path(), "testes-cofre").await;
+    let r = reqwest::Client::new()
+        .post(format!("http://{base}/v1/ide/testes/rodar"))
+        .bearer_auth(TOKEN)
+        .json(&json!({"no": "calc"}))
+        .send()
+        .await
+        .unwrap();
+    if r.status() == 503 {
+        phxclaw_test_support::pulado::pular("cargo", "explorador de testes sem toolchain Rust");
+        return;
+    }
+    assert_eq!(r.status(), 200);
+    let v: Value = r.json().await.unwrap();
+    assert_eq!(v["ok"], 2, "{v}");
+    assert_eq!(v["falhou"], 0, "a chave foi lida dentro do sandbox: {v}");
+    assert_eq!(v["passou"], true, "{v}");
 }

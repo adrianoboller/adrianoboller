@@ -345,6 +345,9 @@ const PORTAS: &[&str] = &[
     "transcribe_verified(",
     "Browser::launch(",
     "StdioSession::spawn(",
+    // O PTY do terminal do IDE: o Helix rodava no hospedeiro por aqui, fora da varredura,
+    // e `:open var/agente/segredos/master.key` mostrava a chave (09/10/2026).
+    "Terminal::abrir(",
 ];
 
 /// O que prova, na MESMA funcao da porta, que o processo nasce no bwrap: o `Command` do
@@ -355,6 +358,7 @@ const PROVA_DO_BWRAP: &[&str] = &[
     "espec_no_bwrap(",
     "servidor_no_bwrap(",
     "envoltorio_do_navegador(",
+    "terminal_no_bwrap(",
 ];
 
 #[test]

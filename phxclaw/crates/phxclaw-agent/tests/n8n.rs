@@ -454,6 +454,7 @@ async fn webhook_do_n8n_dispara_o_gatilho_por_segredo_ou_por_hmac() {
             objetivo: "Trate o resultado do fluxo: {corpo}".into(),
             fluxo: None,
             segredo: Some(SEGREDO.into()),
+            segredo_formulario: None,
         }],
     });
     let (base, state) = subir(Some(g)).await;

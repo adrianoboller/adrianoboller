@@ -25,6 +25,9 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
+// nao e pulo: e o estado do passo que o motor de fluxo pula (ramo nao tomado).
+const PULADO: &str = "pulado";
+
 fn tmp(nome: &str) -> PathBuf {
     let d = std::env::temp_dir().join(format!("phx-fluxo-{nome}-{}", phxclaw_types::new_uuid_v7()));
     std::fs::create_dir_all(&d).unwrap();
@@ -191,10 +194,10 @@ async fn nos_e_conexoes() {
     let r = fluxos::rodar(&a, &f).await.unwrap();
     assert!(r.sucesso, "{r:#?}");
     assert_eq!(passo(&r, "sim").saida, "deu 1");
-    assert_eq!(passo(&r, "nao").estado, "pulado");
+    assert_eq!(passo(&r, "nao").estado, PULADO);
     assert_eq!(
         passo(&r, "depois_do_nao").estado,
-        "pulado",
+        PULADO,
         "pulo e transitivo"
     );
     let cond = passo(&r, "cond");
@@ -290,7 +293,7 @@ async fn ramificacao_if_switch() {
         vec![json!({"v":15}), json!({"v":25})]
     );
     assert_eq!(passo(&r, "pequenos").itens, vec![json!({"v":5})]);
-    assert_eq!(passo(&r, "sem_v").estado, "pulado");
+    assert_eq!(passo(&r, "sem_v").estado, PULADO);
     assert_eq!(passo(&r, "com_v").estado, "ok");
 }
 
@@ -319,9 +322,9 @@ async fn juncao_merge() {
         passo(&r, "casados").itens,
         vec![json!({"id":2,"x":"b","y":"B"})]
     );
-    assert_eq!(passo(&r, "ramo_sim").estado, "pulado");
+    assert_eq!(passo(&r, "ramo_sim").estado, PULADO);
     assert_eq!(passo(&r, "vivo").itens, vec![json!("nao")]);
-    assert_eq!(passo(&r, "so_morto").estado, "pulado");
+    assert_eq!(passo(&r, "so_morto").estado, PULADO);
     let e = fluxos::ler(
         &json!({"nome":"j","passos":[{"id":"a","ferramenta":"eco"},
             {"id":"j","depende":["a"],"juntar":{"modo":"chave","chave":"id"}}]})
@@ -459,14 +462,14 @@ async fn continuar_em_erro() {
     let viu = &passo(&r, "apos_segue").saida;
     assert!(viu.starts_with("viu ") && viu.contains("tropecou"), "{viu}");
     assert_eq!(passo(&r, "desvia").estado, "continuou");
-    assert_eq!(passo(&r, "apos_desvia").estado, "pulado");
+    assert_eq!(passo(&r, "apos_desvia").estado, PULADO);
     let tratei = &passo(&r, "trata").saida;
     assert!(
         tratei.starts_with("tratei ") && tratei.contains("desviou"),
         "{tratei}"
     );
     assert_eq!(passo(&r, "apos_bem").saida, "ok");
-    assert_eq!(passo(&r, "trata_bem").estado, "pulado");
+    assert_eq!(passo(&r, "trata_bem").estado, PULADO);
     assert_eq!(
         eco.chamadas.load(Ordering::SeqCst),
         2 + 1 + 1 + 1 + 1 + 1 + 1

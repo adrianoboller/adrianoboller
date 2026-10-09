@@ -256,8 +256,10 @@ pub async fn ligar(
                 p = p.with_origin(u.origin().ascii_serialization());
             }
             // O JWT RS256 e conferido sempre; a chave da URL so soma, se configurada.
-            let jwks = super::jwt::Jwks::novo(
-                &ctx.cfg("JWKS").unwrap_or_else(|| super::teams::JWKS.into()),
+            let jwks = super::jwt::Jwks::configurado(
+                "teams",
+                ctx.cfg("JWKS").as_deref(),
+                super::teams::JWKS,
             )?;
             let x = Arc::new(super::teams::Teams::novo(
                 ctx.caixa("")?,

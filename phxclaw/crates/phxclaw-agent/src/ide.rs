@@ -8,12 +8,15 @@
 //!   num websocket) e e conferido pela mesma `auth` das outras rotas. Uma sessao por
 //!   usuario: a conexao nova fecha a anterior, em vez de a aba velha prender o terminal.
 //!   SO o Helix abre por aqui: um bash livre pela rede seria o `execute_shell` sem a
-//!   politica dele. O que o Helix roda com `:sh` continua sendo o que ele ja rodava na mesa.
+//!   politica dele. E ele roda no MESMO bwrap dos outros processos
+//!   (`processo::terminal_no_bwrap`): o projeto em `/work`, a pasta do agente mascarada, e
+//!   o `:sh` dele preso ao mesmo sandbox. Sem bwrap, recusa.
 //! - `GET /v1/ide/simbolos?arquivo=`: os simbolos do arquivo (documentSymbol) pelo `lsp.rs`,
 //!   para a barra de caminho acima do editor.
 //! - `GET /v1/ide/arquivo?caminho=`: o texto do arquivo aberto no Helix, para o minimapa da
 //!   tela. Pelo MESMO `confine` das ferramentas e do `simbolos` (pasta do projeto, ou absoluto
-//!   dentro de uma raiz do workspace) e com teto de bytes. E o arquivo EM DISCO: o buffer e do
+//!   dentro de uma raiz do workspace, nunca a area reservada do agente) e com teto de bytes;
+//!   o caminho real e conferido de novo no descritor aberto. E o arquivo EM DISCO: o buffer e do
 //!   Helix, outro processo, e o que nao foi salvo nao aparece (limite declarado na tela).
 //! - `POST /v1/ide/completar`: uma continuacao de codigo pelo modelo configurado do agente
 //!   (o mesmo provedor das tarefas), que o `phxclaw-snippet-ls` oferece ao Helix como item
@@ -277,6 +280,10 @@ fn abrir(
         .flatten()
         .map(PathBuf::from);
     let p = phxclaw_terminal::helix::programa(&cwd, pedido, env)?;
+    // No bwrap, com a pasta do agente mascarada. Sem bwrap nao abre: fora do sandbox o hx le
+    // qualquer caminho absoluto do hospedeiro (a pasta do agente onde quer que more), entao
+    // nao ha caso em que abri-lo assim seja seguro.
+    let p = crate::processo::terminal_no_bwrap(p, &raizes)?;
     let id = phxclaw_types::new_uuid_v7().to_string();
     let t = Terminal::abrir(p, Tamanho { colunas, linhas }, move |g| {
         let _ = tx.send(g);
@@ -372,39 +379,12 @@ async fn arquivo(
 ) -> Result<Json<Value>, Erro> {
     auth(&s, &h)?;
     let cwd = pasta_do_projeto().map_err(|e| erro(StatusCode::SERVICE_UNAVAILABLE, e))?;
-    // A unica porta de disco: a mesma das ferramentas de arquivo e do `simbolos`. Recusa
-    // `..`, absoluto fora das raizes e symlink que aponte para fora.
-    let alvo =
-        crate::tarefa::confine(&cwd, &q.caminho).map_err(|e| erro(StatusCode::FORBIDDEN, e))?;
-    let m = std::fs::metadata(&alvo)
-        .map_err(|e| erro(StatusCode::NOT_FOUND, format!("{}: {e}", q.caminho)))?;
-    if !m.is_file() {
-        return Err(erro(
-            StatusCode::UNPROCESSABLE_ENTITY,
-            format!("{}: nao e arquivo", q.caminho),
-        ));
-    }
-    // O teto vale no que se LE, nao so no tamanho dito antes: o arquivo pode crescer entre
-    // o `metadata` e a leitura.
-    use std::io::Read;
-    let mut bytes = Vec::new();
-    std::fs::File::open(&alvo)
-        .and_then(|f| f.take(TETO_DO_ARQUIVO + 1).read_to_end(&mut bytes))
-        .map_err(|e| {
-            erro(
-                StatusCode::UNPROCESSABLE_ENTITY,
-                format!("{}: {e}", q.caminho),
-            )
-        })?;
-    if bytes.len() as u64 > TETO_DO_ARQUIVO {
-        return Err(erro(
-            StatusCode::PAYLOAD_TOO_LARGE,
-            format!(
-                "{}: acima do teto de {TETO_DO_ARQUIVO} bytes do minimapa",
-                q.caminho
-            ),
-        ));
-    }
+    // Disco fora do laco assincrono: um disco lento (ou o que sobrar de espera no `open`)
+    // prende uma thread do pool de bloqueio, nunca o worker que atende as outras rotas.
+    let caminho = q.caminho.clone();
+    let bytes = tokio::task::spawn_blocking(move || ler_para_o_minimapa(&cwd, &caminho))
+        .await
+        .map_err(|e| erro(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))??;
     if bytes.iter().take(8192).any(|b| *b == 0) {
         return Err(erro(
             StatusCode::UNSUPPORTED_MEDIA_TYPE,
@@ -418,6 +398,108 @@ async fn arquivo(
         "linhas": texto.lines().count(),
         "texto": texto,
     })))
+}
+
+/// `O_NONBLOCK` sem crate nova: o valor do `asm-generic/fcntl.h` vale nas arquiteturas em
+/// que o agente roda; alpha, mips, parisc e sparc tem outro numero e caem no 0 (abrir
+/// comum), com a conferencia do tipo pelo descritor continuando de pe.
+#[cfg(all(
+    target_os = "linux",
+    any(
+        target_arch = "x86_64",
+        target_arch = "x86",
+        target_arch = "aarch64",
+        target_arch = "arm",
+        target_arch = "riscv64",
+        target_arch = "powerpc64",
+        target_arch = "s390x",
+        target_arch = "loongarch64"
+    )
+))]
+const SEM_ESPERA: i32 = 0o4000;
+#[cfg(any(target_os = "macos", target_os = "freebsd", target_os = "openbsd"))]
+const SEM_ESPERA: i32 = 0x0004;
+#[cfg(not(any(
+    all(
+        target_os = "linux",
+        any(
+            target_arch = "x86_64",
+            target_arch = "x86",
+            target_arch = "aarch64",
+            target_arch = "arm",
+            target_arch = "riscv64",
+            target_arch = "powerpc64",
+            target_arch = "s390x",
+            target_arch = "loongarch64"
+        )
+    ),
+    target_os = "macos",
+    target_os = "freebsd",
+    target_os = "openbsd"
+)))]
+const SEM_ESPERA: i32 = 0;
+
+/// Le o arquivo do minimapa abrindo UMA vez e conferindo o que foi aberto, nao o nome.
+///
+/// O nome passa pelo `confine` (pasta do projeto, raizes e a area reservada do agente), mas
+/// entre conferir o nome e abrir o arquivo o caminho pode virar outro -- um symlink trocado
+/// ou um FIFO no lugar. Por isso: abre sem esperar escritor (um FIFO abriria e prenderia a
+/// thread ate alguem escrever), pergunta ao kernel o caminho REAL do descritor e o confere
+/// de novo, e so le se o descritor for arquivo comum. A recusa nao diz o motivo: dizer
+/// «area do agente» confirmaria o que existe la dentro.
+fn ler_para_o_minimapa(cwd: &std::path::Path, caminho: &str) -> Result<Vec<u8>, Erro> {
+    use std::io::Read;
+    let recusado = || {
+        erro(
+            StatusCode::FORBIDDEN,
+            format!("{caminho}: caminho recusado"),
+        )
+    };
+    let alvo = crate::tarefa::confine(cwd, caminho).map_err(|_| recusado())?;
+    let mut abrir = std::fs::OpenOptions::new();
+    abrir.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        abrir.custom_flags(SEM_ESPERA);
+    }
+    let _ = SEM_ESPERA;
+    let f = abrir.open(&alvo).map_err(|e| match e.kind() {
+        std::io::ErrorKind::NotFound => {
+            erro(StatusCode::NOT_FOUND, format!("{caminho}: nao encontrado"))
+        }
+        _ => erro(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            format!("{caminho}: nao abriu"),
+        ),
+    })?;
+    #[cfg(target_os = "linux")]
+    {
+        use std::os::fd::AsRawFd;
+        let real = std::fs::read_link(format!("/proc/self/fd/{}", f.as_raw_fd()))
+            .map_err(|_| recusado())?;
+        crate::tarefa::confere_aberto(cwd, &real).map_err(|_| recusado())?;
+    }
+    let m = f.metadata().map_err(|_| recusado())?;
+    if !m.is_file() {
+        return Err(erro(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            format!("{caminho}: nao e arquivo"),
+        ));
+    }
+    // O teto vale no que se LE, nao so no tamanho dito antes: o arquivo pode crescer entre
+    // o `metadata` e a leitura.
+    let mut bytes = Vec::new();
+    f.take(TETO_DO_ARQUIVO + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|e| erro(StatusCode::UNPROCESSABLE_ENTITY, format!("{caminho}: {e}")))?;
+    if bytes.len() as u64 > TETO_DO_ARQUIVO {
+        return Err(erro(
+            StatusCode::PAYLOAD_TOO_LARGE,
+            format!("{caminho}: acima do teto de {TETO_DO_ARQUIVO} bytes do minimapa"),
+        ));
+    }
+    Ok(bytes)
 }
 
 // ---------------------------------------------------------------- completar

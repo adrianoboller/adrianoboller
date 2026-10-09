@@ -371,9 +371,9 @@ nao, de 59); eram 62,7% depois da onda 2. Prova em `crates/phxclaw-agent/tests/f
 
 | Onde | Campo | O que e | Regra do `validar` |
 | --- | --- | --- | --- |
-| passo | `esperar` | `{ms}` \| `{ate}` (RFC 3339) \| `{webhook: {segredo_sha256}}` \| `{pergunta}` | exatamente um; sem `por_item`; `ms` > 0; `segredo_sha256` e 64 hex (nunca o segredo); `pergunta` aceita `{{x}}` de dependencia |
-| passo | `pin` | valor que SUBSTITUI a execucao (array = N itens) | nao em `se`; recusado se parece segredo; entra na assinatura |
-| fluxo | `formulario` | `{titulo, descricao?, botao?, campos: [{nome, rotulo?, tipo?, obrigatorio?}]}` | 1 a 32 campos; `tipo` em texto, area, numero, email, data; nome de segredo recusado |
+| passo | `esperar` | `{ms}` \| `{ate}` (RFC 3339) \| `{webhook: {segredo_sha256}}` \| `{pergunta}` | exatamente um; sem `por_item`; `ms` > 0 e ate `MAX_ESPERA_MS` (366 dias; mais que isso, `ate`); `segredo_sha256` e 64 hex (nunca o segredo); `pergunta` aceita `{{x}}` de dependencia; nao aceita `pin` |
+| passo | `pin` | valor que SUBSTITUI a execucao (array = N itens) -- SO na execucao manual com `--pins` | nao em `se` nem em `esperar`; recusado se parece segredo ou se traz referencia `{"binario": ...}`; entra na assinatura |
+| fluxo | `formulario` | `{titulo, descricao?, botao?, idioma?, rotulo_segredo?, mensagem_enviado?, campos: [{nome, rotulo?, tipo?, obrigatorio?}]}` | 1 a 32 campos; `tipo` em texto, area, numero, email, data; nome de segredo recusado; `idioma` BCP 47; textos ate 200 |
 | fluxo | `etiquetas` | lista de textos | ate 16, letra/digito/`-`/`_`; FORA da assinatura |
 
 **Como a espera funciona.** O passo `esperar` abre a espera (o vencimento de `ms` e calculado
@@ -399,7 +399,8 @@ trocar o pin recusa a retomada da execucao feita com o pin velho.
 
 **Formulario.** O gatilho de webhook (`gatilhos.json`) cujo `fluxo` declara `formulario` serve
 `GET /v1/triggers/{nome}` (HTML minimo, sem script) e aceita `POST` urlencoded pelo mesmo portao
-do webhook -- o segredo do gatilho chega no campo `_segredo`, que nao vira item. Corpo acima de
+do webhook -- o codigo do formulario (`segredo_formulario`, NAO o segredo do gatilho; ver 8f)
+chega no campo `_segredo`, que nao vira item. Corpo acima de
 16 KiB e 413; campo nao declarado, obrigatorio vazio, numero/e-mail/data invalidos e valor com
 forma de segredo sao 400. O fluxo recebe UM item com os campos (`{{entrada.nome}}`).
 
@@ -416,7 +417,8 @@ recusa arquivo adulterado.
 **Gestao (onda 4, os simples).** `fluxos.poda_dias` / `fluxos.poda_max` (vazio = nada se apaga;
 so execucao de cima terminada, com as filhas; esperando ou em andamento nunca);
 `fluxos.max_simultaneos` (o excedente espera a vaga; o sub-fluxo usa a vaga do pai);
-`phxclaw fluxo exportar|importar` (pacote com pins e assinatura conferida) e
+`phxclaw fluxo exportar|importar` (pacote com pins e um sha256 de **conferencia** -- nao e
+assinatura: sem chave, quem edita recalcula; o HMAC fica para o `FORMATO_PACOTE` 2) e
 `phxclaw fluxo listar [DIR] [--etiqueta E] [--subpasta P]` (a subpasta de `fluxos/` e a pasta).
 
 **Onde diverge do n8n, e a restricao nossa:**
@@ -431,3 +433,53 @@ so execucao de cima terminada, com as filhas; esperando ou em andamento nunca);
 
 Fora, com o motivo: prazo da espera humana, upload de arquivo no formulario (multipart),
 fila com workers e `/metrics` (pedem numero de bancada).
+
+### 8f. Revisao da onda 3 (09/10/2026): QA, DBA e seguranca
+
+Prova em `crates/phxclaw-agent/tests/fluxo_onda3b.rs` (20 testes) e
+`apps/phxclaw/tests/fluxo_cli.rs`; a banca dos testes de fluxo e uma so
+(`tests/comum_fluxo/mod.rs`).
+
+**Entrada que vem de fora (webhook, arquivo, sub-fluxo, resposta de espera).** Quem integra o n8n
+recebe 400 se o corpo trouxer credencial pela FORMA: chave de provedor com corpo (`ghp_…`, `sk-…`,
+`xoxb-…`, `AKIA…`, tambem depois de `:` ou `=`), JWT de tres partes, bloco PEM, URL com senha
+(`https://usuario:senha@host`) ou cabecalho `Basic`/`Bearer` com valor. Nome de campo (`key`,
+`api_key`, `next_page_token`) e entropia (SHA de commit) NAO contam: o dado e de terceiros. O
+criterio e o motor unico `phxclaw_types::segredo::texto_tem_credencial`.
+
+- **Pin so na execucao manual (M1).** `phxclaw fluxo rodar ARQ --pins` (ou `Execucao::pins`)
+  aplica os pins; gatilho, agenda, API e sub-fluxo rodam o passo de verdade, como o `pinData`
+  do n8n. Na retomada, a assinatura gravada decide (com pin, se o comeco rodou com pin).
+  `fluxo pinar --tarefa T` pina binario como `{base64, mime}`, e a execucao o grava em
+  `binarios/` dela.
+- **Toda entrada de fluxo passa pela guarda de segredo** (`fluxos::conferir_entrada`): corpo do
+  webhook, arquivo do gatilho, item do formulario, entrada do sub-fluxo e o que chega a uma
+  espera. No webhook, 400 antes de criar a tarefa.
+- **Duas esperas de webhook:** a espera que recebe e a que o segredo alcanca (ou `?passo=ID`
+  com o token), e a entrega confere, sob a trava, que ela continua aberta -- o segredo de A
+  nunca entrega em B. A resposta da pergunta tambem vai para a pergunta que a tela mostrou.
+- **`/v1/flows/{tarefa}/resume` confere a credencial antes do disco:** sem token e sem segredo,
+  401; sem o token, tarefa inexistente tambem e 401.
+- **Codigo do formulario e proprio:** `segredo_formulario` no `gatilhos.json` (o `_segredo` da
+  pagina) so autoriza o POST do formulario; o `segredo` do gatilho nao vale no campo e o codigo
+  nao vale como credencial JSON/HMAC. Iguais, a carga recusa. Sem `segredo_formulario`, a pagina
+  nao pede codigo e o POST exige o token ou a credencial do gatilho.
+- **Pagina do formulario:** CSP `default-src 'none'; style-src 'sha256-<do bloco>';
+  form-action 'self'; frame-ancestors 'none'; base-uri 'none'`, `Cache-Control: no-store`,
+  `Referrer-Policy: no-referrer`, `lang`, `color-scheme`, codigo com `autocomplete="off"`, o
+  CSS do designer (dois temas). Recusa pelo navegador (`Accept: text/html`) volta o formulario
+  com os valores (nunca o codigo) e o motivo; quem integra recebe o JSON de sempre.
+- **Repeticao do gatilho:** a requisicao assinada reenviada dentro da janela, ou a mesma
+  `Idempotency-Key`, devolve `200 {"id": <o primeiro>, "repetida": true}` sem disparar de novo.
+  A guarda vive em memoria: um reinicio dentro da janela aceita UMA repeticao (pendencia).
+- **Binario:** nome com o sha256 inteiro; conferencia so em `binarios/<nome>`, arquivo regular
+  (FIFO e link recusados sem abrir), ate `MAX_BYTES_BINARIO` (64 MiB); `binarios/` que e link
+  nao recebe nada.
+- **DBA:** `entregar` recusa relatorio de formato futuro; o laco do servidor (e `fluxo esperas`)
+  retoma tambem a entrega gravada sem retomada (`entregas_sem_retomada`); `gravar_importado`
+  grava os pins antes do fluxo; a poda troca o nome para a lapide `.<id>.podando` antes de
+  apagar e varre as lapides no comeco; pasta criada por `gravar_atomico` tem o `fsync` do pai
+  (`arquivo::criar_pastas`); `listar` ordena as subpastas.
+- **Detector de segredo unico:** `phxclaw_types::segredo::nome_de_segredo` (a uniao das duas
+  listas); o `gravacao::chave_secreta` delega a ele. O `config.json` ainda usa a lista propria
+  do `carga` (pendencia, com o teste que falha hoje).

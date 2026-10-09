@@ -961,7 +961,7 @@ async fn subir_dispositivos(
 /// nada que a API ou o servidor decidam de outro jeito.
 async fn fluxo(args: &[String]) -> Result<()> {
     use phxclaw_agent::fluxos;
-    const USO: &str = "uso: phxclaw fluxo rodar ARQ.json [--ate PASSO] | retomar TAREFA [ARQ.json] \
+    const USO: &str = "uso: phxclaw fluxo rodar ARQ.json [--ate PASSO] [--pins] | retomar TAREFA [ARQ.json] \
 | responder TAREFA TEXTO | esperas | pinar ARQ.json PASSO (--json VALOR | --tarefa T) | despinar \
 ARQ.json PASSO | podar [--dias N] [--max N] | exportar ARQ.json [--saida PACOTE.json] | importar \
 PACOTE.json DESTINO.json | listar [DIR] [--etiqueta E] [--subpasta P]  [--modelo M] [--pasta DIR]";
@@ -1098,6 +1098,9 @@ PACOTE.json DESTINO.json | listar [DIR] [--etiqueta E] [--subpasta P]  [--modelo
                 &f,
                 fluxos::Execucao {
                     ate: opcao(args, "--ate").as_deref(),
+                    // O pin so vale na execucao manual que o pede: sem `--pins`, o passo
+                    // pinado roda de verdade, como em gatilho, agenda e sub-fluxo.
+                    pins: args.iter().any(|a| a == "--pins"),
                     ..fluxos::Execucao::default()
                 },
             )
@@ -1116,7 +1119,9 @@ PACOTE.json DESTINO.json | listar [DIR] [--etiqueta E] [--subpasta P]  [--modelo
                     fluxos::retomar(&agente()?, &f, t).await
                 }
                 // Sem o arquivo: a definicao que a espera gravou na pasta da tarefa.
-                None => fluxos::retomar_do_disco(&agente()?, t).await,
+                None => fluxos::retomar_do_disco(&agente()?, t)
+                    .await
+                    .map_err(String::from),
             }
         }
         "responder" | "answer" => {
@@ -1127,14 +1132,28 @@ PACOTE.json DESTINO.json | listar [DIR] [--etiqueta E] [--subpasta P]  [--modelo
                 &store,
                 t,
                 fluxos::Via::Pergunta,
+                None,
                 vec![serde_json::json!({"resposta": texto.trim()})],
             )
             .map_err(anyhow::Error::msg)?;
-            fluxos::retomar_do_disco(&agente()?, t).await
+            fluxos::retomar_do_disco(&agente()?, t)
+                .await
+                .map_err(String::from)
         }
         "esperas" | "waits" => {
-            let vencidas = fluxos::esperas_vencidas(&store, fluxos::agora());
-            println!("{} espera(s) de tempo vencida(s)", vencidas.len());
+            // O mesmo par do laco do servidor (`api::manter_fluxos`): as esperas de tempo
+            // vencidas e as entregas gravadas que o processo caido nao retomou.
+            let mut vencidas = fluxos::esperas_vencidas(&store, fluxos::agora());
+            let entregues: Vec<String> = fluxos::entregas_sem_retomada(&store)
+                .into_iter()
+                .filter(|t| !vencidas.contains(t))
+                .collect();
+            println!(
+                "{} espera(s) de tempo vencida(s), {} entrega(s) sem retomada",
+                vencidas.len(),
+                entregues.len()
+            );
+            vencidas.extend(entregues);
             for t in vencidas {
                 match fluxos::retomar_do_disco(&agente()?, &t).await {
                     Ok(r) => println!("  {t}: {}", if r.sucesso { "ok" } else { "nao terminou" }),

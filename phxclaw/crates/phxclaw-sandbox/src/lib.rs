@@ -3,6 +3,7 @@ use std::{
     env, fs,
     path::{Path, PathBuf},
     process::{Command, ExitStatus},
+    sync::OnceLock,
     thread,
     time::{Duration, Instant},
 };
@@ -246,6 +247,59 @@ pub struct SandboxExtras {
     pub env: Vec<(String, String)>,
 }
 
+/// Quem diz as pastas do hospedeiro que nenhum sandbox mostra, mesmo quando uma montagem
+/// as contem. Existe porque o layout padrao do agente poe a pasta dele (chave-mestra do
+/// broker, cofre, `api.token`) DENTRO do projeto, e o projeto e o `/work` do terminal do
+/// IDE, do explorador de testes, dos servidores de linguagem e do tunel: montar o projeto
+/// montava a chave junto. Quem sabe ONDE mora a pasta e o agente (a configuracao dele); o
+/// sandbox so sabe montar, e por isso recebe uma funcao, avaliada a cada processo (o
+/// ambiente que decide a pasta pode mudar entre um e outro).
+static OCULTAS: OnceLock<fn() -> Vec<PathBuf>> = OnceLock::new();
+
+/// Registra, uma vez por processo, quem diz as pastas ocultas. A segunda chamada nao troca
+/// a primeira: duas fontes de verdade sobre o que se esconde divergiriam calado.
+pub fn ocultar_com(f: fn() -> Vec<PathBuf>) {
+    let _ = OCULTAS.set(f);
+}
+
+/// Para cada pasta oculta (caminho canonico do hospedeiro) que cai DENTRO de uma montagem
+/// ja feita em `args`, um tmpfs vazio e so leitura no caminho dela visto de dentro. A
+/// conta e pela lista de montagens e nao por quem chamou: toda montagem que alguem
+/// acrescentar amanha (raiz do workspace, toolchain, `/usr`) entra na conferencia sem
+/// lembrar dela. Montagem que mora DENTRO da pasta oculta (a pasta de trabalho da tarefa,
+/// `<agente>/tasks/<id>/work`) nao a contem e fica como esta: e a excecao do `confine` do
+/// agente pelo mesmo motivo -- a tarefa enxerga a propria pasta, e so ela.
+pub fn mascaras(args: &[String], ocultas: &[PathBuf]) -> Vec<String> {
+    let mut montagens: Vec<(PathBuf, &str)> = Vec::new();
+    let mut i = 0;
+    while i + 2 < args.len() {
+        if matches!(args[i].as_str(), "--bind" | "--ro-bind" | "--dev-bind") {
+            if let Ok(host) = fs::canonicalize(&args[i + 1]) {
+                montagens.push((host, args[i + 2].as_str()));
+            }
+            i += 3;
+        } else {
+            i += 1;
+        }
+    }
+    let mut v: Vec<String> = Vec::new();
+    for oculta in ocultas {
+        for (host, guest) in &montagens {
+            let Ok(rel) = oculta.strip_prefix(host) else {
+                continue;
+            };
+            let alvo = Path::new(guest).join(rel).display().to_string();
+            if v.contains(&alvo) {
+                continue;
+            }
+            // So leitura: gravar ali dentro tem de falhar, nao sumir com o fim do processo
+            // achando que gravou no projeto.
+            v.extend(["--tmpfs".into(), alvo.clone(), "--remount-ro".into(), alvo]);
+        }
+    }
+    v
+}
+
 pub fn workdir_sandbox_command_com(
     bwrap: &Path,
     cmd: &WorkdirCommand,
@@ -304,6 +358,9 @@ pub fn workdir_sandbox_command_com(
             guest.clone(),
         ]);
     }
+    let ocultas = OCULTAS.get().map(|f| f()).unwrap_or_default();
+    let mascaras = mascaras(&args, &ocultas);
+    args.extend(mascaras);
     args.extend([
         "--".into(),
         "/bin/sh".into(),
@@ -502,5 +559,50 @@ mod tests {
             Err(SandboxError::Timeout(_))
         ));
         let _ = fs::remove_dir_all(dir);
+    }
+
+    /// A conta das mascaras pela lista de montagens: a pasta oculta dentro do `/work` vira o
+    /// caminho de dentro; a de uma raiz montada no proprio caminho tambem; a pasta de
+    /// trabalho que mora DENTRO da oculta nao a contem e nao ganha mascara.
+    #[test]
+    fn mascara_so_onde_uma_montagem_contem_a_pasta_oculta() {
+        let d = env::temp_dir().join(format!("phx-masc-{}", std::process::id()));
+        let agente = d.join("proj/var/agente");
+        let tarefa = agente.join("tasks/t1/work");
+        fs::create_dir_all(&tarefa).unwrap();
+        let proj = fs::canonicalize(d.join("proj")).unwrap();
+        let agente = fs::canonicalize(&agente).unwrap();
+        let tarefa = fs::canonicalize(&tarefa).unwrap();
+        let a = |v: &[&str]| v.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+        let p = proj.display().to_string();
+        let args = a(&[
+            "--ro-bind",
+            "/usr",
+            "/usr",
+            "--bind",
+            &p,
+            "/work",
+            "--ro-bind",
+            &p,
+            &p,
+        ]);
+        let m = mascaras(&args, std::slice::from_ref(&agente));
+        let raiz = agente.display().to_string();
+        assert_eq!(
+            m,
+            a(&[
+                "--tmpfs",
+                "/work/var/agente",
+                "--remount-ro",
+                "/work/var/agente",
+                "--tmpfs",
+                &raiz,
+                "--remount-ro",
+                &raiz,
+            ])
+        );
+        let t = tarefa.display().to_string();
+        assert!(mascaras(&a(&["--bind", &t, "/work"]), &[agente]).is_empty());
+        let _ = fs::remove_dir_all(d);
     }
 }

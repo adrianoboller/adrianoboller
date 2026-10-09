@@ -26,7 +26,7 @@
 //!   assinatura nao vale: um pedido capturado nao dispara o gatilho para sempre.
 
 use crate::api::{ApiState, Criada, Recusa, criar_fluxo_com, criar_tarefa_com};
-use axum::extract::{Path as Caminho, State};
+use axum::extract::{Path as Caminho, Query, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::response::Html;
 use axum::response::{IntoResponse, Response};
@@ -174,6 +174,13 @@ pub struct GatilhoDeWebhook {
     /// Quem nao tem o token da API manda este no cabecalho `X-PhxClaw-Segredo`.
     #[serde(default)]
     pub segredo: Option<String>,
+    /// O codigo de acesso do FORMULARIO (o campo `_segredo` da pagina), diferente do
+    /// `segredo`: o formulario vai a humanos, e o codigo que eles digitam so autoriza o POST
+    /// do formulario, com os campos conferidos -- nunca o POST JSON nem a assinatura, que
+    /// entregam ao fluxo a entrada que quiserem (achado M6). Sem ele, a pagina nao pede
+    /// codigo e o POST do formulario exige o token ou a credencial do gatilho.
+    #[serde(default)]
+    pub segredo_formulario: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -219,6 +226,14 @@ impl Gatilhos {
         }
         for w in &g.webhooks {
             um_so(&w.nome, &w.objetivo, &w.fluxo)?;
+            if w.segredo_formulario.is_some() && w.segredo_formulario == w.segredo {
+                return Err(format!(
+                    "{}: gatilho {}: segredo_formulario igual ao segredo: o codigo do \
+formulario vai a humanos e nao pode valer como credencial do gatilho",
+                    arq.display(),
+                    w.nome
+                ));
+            }
         }
         for f in g
             .arquivos
@@ -435,6 +450,7 @@ pub fn disparar_arquivos(s: &ApiState, obs: &mut [Observador]) -> Vec<Result<Cri
 struct EstadoWebhook {
     api: ApiState,
     gatilhos: Arc<Gatilhos>,
+    vistos: Arc<Vistos>,
 }
 
 /// `POST /v1/triggers/{nome}` (e o `GET` do formulario, quando o fluxo declara um) e
@@ -444,33 +460,137 @@ pub fn router(api: ApiState, gatilhos: Arc<Gatilhos>) -> Router {
     Router::new()
         .route("/v1/triggers/{nome}", post(webhook).get(formulario))
         .route("/v1/flows/{tarefa}/resume", post(retomar_espera))
-        .with_state(EstadoWebhook { api, gatilhos })
+        .with_state(EstadoWebhook {
+            api,
+            gatilhos,
+            vistos: Arc::new(Vistos::default()),
+        })
 }
 
-/// O portao UNICO dos gatilhos: o token da API, ou o segredo do gatilho em claro
-/// (`X-PhxClaw-Segredo`, ou o campo `_segredo` de um formulario, que o navegador nao sabe
-/// mandar em cabecalho), ou a assinatura sobre o corpo cru. O segredo passa pela MESMA
-/// conferencia de tempo constante do Bearer.
+/// Por onde o pedido provou que pode disparar o gatilho.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Credencial {
+    Token,
+    Segredo,
+    Assinatura,
+    /// O codigo de acesso do formulario: so vale no POST do formulario.
+    CodigoDoFormulario,
+}
+
+/// O portao UNICO dos gatilhos: o token da API, o segredo do gatilho em claro
+/// (`X-PhxClaw-Segredo`), a assinatura sobre o corpo cru e -- so quando quem chama e o POST
+/// do formulario (`codigo` presente) -- o campo `_segredo` conferido contra o
+/// `segredo_formulario`, NUNCA contra o segredo do gatilho. Toda conferencia de segredo e a
+/// MESMA de tempo constante do Bearer.
 fn portao(
-    segredo_do_gatilho: Option<&str>,
+    g: &GatilhoDeWebhook,
     token: &str,
     h: &HeaderMap,
     corpo: &[u8],
-    segredo_no_corpo: Option<&str>,
-) -> bool {
-    let pelo_segredo = segredo_do_gatilho.is_some_and(|seg| {
-        let mandado = h
-            .get("x-phxclaw-segredo")
-            .and_then(|v| v.to_str().ok())
-            .or(segredo_no_corpo);
+    codigo: Option<&str>,
+) -> Option<Credencial> {
+    let confere = |seg: &str, mandado: Option<&str>| {
         let mut falso = HeaderMap::new();
         mandado
             .and_then(|v| HeaderValue::from_str(&format!("Bearer {v}")).ok())
             .map(|v| falso.insert(header::AUTHORIZATION, v));
         phxclaw_api_gateway::authorized(&falso, seg)
-    });
-    let pela_assinatura = segredo_do_gatilho.is_some_and(|seg| assinatura_confere(seg, h, corpo));
-    pelo_segredo || pela_assinatura || phxclaw_api_gateway::authorized(h, token)
+    };
+    if phxclaw_api_gateway::authorized(h, token) {
+        return Some(Credencial::Token);
+    }
+    if let Some(seg) = g.segredo.as_deref() {
+        let no_cabecalho = h.get("x-phxclaw-segredo").and_then(|v| v.to_str().ok());
+        if no_cabecalho.is_some() && confere(seg, no_cabecalho) {
+            return Some(Credencial::Segredo);
+        }
+        if assinatura_confere(seg, h, corpo) {
+            return Some(Credencial::Assinatura);
+        }
+    }
+    if let (Some(seg), Some(c)) = (g.segredo_formulario.as_deref(), codigo)
+        && confere(seg, Some(c))
+    {
+        return Some(Credencial::CodigoDoFormulario);
+    }
+    None
+}
+
+/// Disparos ja vistos dentro da janela: a requisicao assinada reenviada (a MESMA
+/// assinatura vale 300 s para cada lado do carimbo) e a `Idempotency-Key` repetida voltam
+/// o id do primeiro disparo em vez de disparar de novo. O webhook dos canais descarta pelo
+/// `id` da mensagem na caixa; o gatilho nao tem id no contrato, e a chave e a assinatura
+/// (ou a que o chamador mandou). Em memoria: um reinicio dentro da janela aceita UMA
+/// repeticao -- pendencia registrada (SP000035), nao esquecida.
+#[derive(Default)]
+struct Vistos {
+    m: std::sync::Mutex<HashMap<String, (Instant, Option<String>)>>,
+}
+
+/// Teto de chaves guardadas: so quem passou pelo portao reserva, mas um chamador com o
+/// segredo nao pode crescer a memoria do servidor sem fim. Cheio, recusa -- descartar a
+/// mais velha reabriria a repeticao dela.
+const VISTOS_MAX: usize = 10_000;
+
+enum Reserva {
+    Nova,
+    /// Ja disparado (o id), ou em curso (`None`).
+    Repetida(Option<String>),
+    Cheia,
+}
+
+impl Vistos {
+    fn validade() -> Duration {
+        Duration::from_secs(2 * crate::canais::webhook::JANELA_SEG as u64)
+    }
+
+    fn reservar(&self, chave: &str) -> Reserva {
+        let mut m = self.m.lock().unwrap_or_else(|p| p.into_inner());
+        let agora = Instant::now();
+        m.retain(|_, (quando, _)| agora.duration_since(*quando) < Self::validade());
+        if let Some((_, id)) = m.get(chave) {
+            return Reserva::Repetida(id.clone());
+        }
+        if m.len() >= VISTOS_MAX {
+            return Reserva::Cheia;
+        }
+        m.insert(chave.to_string(), (agora, None));
+        Reserva::Nova
+    }
+
+    fn concluir(&self, chave: &str, id: Option<&str>) {
+        let mut m = self.m.lock().unwrap_or_else(|p| p.into_inner());
+        match id {
+            Some(id) => {
+                if let Some(e) = m.get_mut(chave) {
+                    e.1 = Some(id.to_string());
+                }
+            }
+            // O disparo recusado (limite, fluxo invalido) solta a chave: a nova tentativa
+            // do chamador nao e repeticao de nada que aconteceu.
+            None => {
+                m.remove(chave);
+            }
+        }
+    }
+}
+
+/// A chave de repeticao do pedido: a assinatura (so quando foi ela que autorizou), ou a
+/// `Idempotency-Key` que o chamador mandou. Sempre por gatilho.
+fn chave_de_repeticao(nome: &str, cred: Credencial, h: &HeaderMap) -> Option<String> {
+    let cab = |k: &str| {
+        h.get(k)
+            .and_then(|v| v.to_str().ok())
+            .map(str::trim)
+            .filter(|v| !v.is_empty())
+    };
+    if let Some(k) = cab("idempotency-key") {
+        return Some(format!("{nome}\nchave\n{k}"));
+    }
+    (cred == Credencial::Assinatura)
+        .then(|| cab("x-phxclaw-assinatura"))
+        .flatten()
+        .map(|a| format!("{nome}\nassinatura\n{a}"))
 }
 
 /// O fluxo do gatilho, quando ele declara formulario.
@@ -487,24 +607,107 @@ fn escapar(t: &str) -> String {
         .replace('\'', "&#39;")
 }
 
-/// O HTML minimo do formulario: so os textos que o fluxo declarou (titulo, rotulos, botao)
-/// e nenhum script -- de terceiros ou nosso. Sem pagina da fabrica de idiomas para ele: o
-/// texto e do operador que escreveu o fluxo, como o objetivo de um gatilho.
+/// O CSS da pagina do formulario (designer, 09/10): dois temas por `prefers-color-scheme`,
+/// contraste medido >= 4,5:1 no texto e >= 3:1 nas bordas, 390 px. Inline e sem fonte
+/// remota: a CSP so libera ESTE bloco, pelo sha256 dele.
+const CSS_DO_FORMULARIO: &str = r#":root{color-scheme:dark light;--fundo:#010418;--painel:#0a1122;--linha:#1e2940;--texto:#dde2eb;--texto-2:#a8b0c0;--texto-3:#848da0;--laranja:#ff8a1c;--acao-incluir:#6cc98c;--erro:#ff5f5f;--marca:"Exo 2","Helvetica Neue",Arial,sans-serif;--dado:system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif}
+@media(prefers-color-scheme:light){:root{--fundo:#f7f5f2;--painel:#ffffff;--linha:#ded7cf;--texto:#1a1210;--texto-2:#4a3f3a;--texto-3:#6b5e57;--laranja:#c63c0a;--acao-incluir:#2f7a3e;--erro:#b71414}}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;background:var(--fundo);color:var(--texto);font:16px/1.5 var(--marca);display:flex;justify-content:center;align-items:flex-start;padding:clamp(16px,6vw,56px) 16px}
+main{width:100%;max-width:560px;background:var(--painel);border:1px solid var(--linha);border-top:2px solid var(--laranja);border-radius:10px;padding:clamp(20px,5vw,32px)}
+h1{margin:0 0 6px;font-size:clamp(22px,5.5vw,28px);line-height:1.2;font-weight:700;letter-spacing:-.01em}
+.descricao{margin:0 0 20px;color:var(--texto-2);font-family:var(--dado);font-size:15px}
+.erro{margin:0 0 20px;color:var(--erro);font-family:var(--dado);font-size:15px}
+.campo{margin:0 0 16px}
+.campo label{display:block;margin-bottom:6px;font-size:14px;font-weight:600;color:var(--texto-2);letter-spacing:.02em}
+.campo:has(:required) label::after{content:" *";color:var(--laranja)}
+.campo input,.campo textarea{display:block;width:100%;min-height:44px;padding:10px 12px;border:1px solid color-mix(in srgb,var(--texto-3) 75%,var(--painel));border-radius:6px;background:var(--fundo);color:var(--texto);font:16px/1.4 var(--dado)}
+.campo textarea{min-height:120px;resize:vertical}
+.campo input:focus-visible,.campo textarea:focus-visible,button:focus-visible{outline:2px solid var(--laranja);outline-offset:2px;border-color:var(--laranja)}
+.campo :user-invalid{border-color:var(--erro)}
+.acesso{margin-top:20px;padding-top:16px;border-top:1px solid var(--linha)}
+.acesso label{color:var(--texto-3)}
+.envio{margin:24px 0 0;display:flex;justify-content:flex-end}
+button{min-height:44px;padding:10px 22px;border:1px solid var(--acao-incluir);border-radius:6px;background:transparent;color:var(--acao-incluir);font:700 14px/1 var(--marca);letter-spacing:.12em;text-transform:uppercase;cursor:pointer}
+@media(hover:hover){button:hover{background:var(--acao-incluir);color:var(--fundo)}}
+@media(max-width:480px){.envio{justify-content:stretch}.envio button{width:100%}}
+.nota{margin:0;color:var(--texto-3);font-size:13px}
+.protocolo{font-family:ui-monospace,Menlo,monospace;color:var(--texto)}"#;
+
+/// A CSP das paginas do formulario: nada carrega (sem script, sem imagem, sem fonte de
+/// fora), so o bloco de estilo acima pelo hash dele, o envio so para a propria origem, e a
+/// pagina nao entra em moldura de outro site (o codigo de acesso digitado num iframe
+/// alheio). O hash sai do proprio CSS: editar o estilo nao deixa a CSP velha calada.
+pub fn csp_do_formulario() -> String {
+    use base64::Engine as _;
+    use sha2::Digest;
+    let h = sha2::Sha256::digest(CSS_DO_FORMULARIO.as_bytes());
+    format!(
+        "default-src 'none'; style-src 'sha256-{}'; form-action 'self'; frame-ancestors 'none'; \
+base-uri 'none'",
+        base64::engine::general_purpose::STANDARD.encode(h)
+    )
+}
+
+/// Uma pagina do formulario com os cabecalhos de seguranca: a CSP, sem cache (a pagina de
+/// sucesso tem o protocolo; a de erro, o que a pessoa digitou), sem referer (a URL do
+/// gatilho nao vaza para link nenhum) e sem farejar tipo.
+fn pagina(status: StatusCode, html: String) -> Response {
+    (
+        status,
+        [
+            (header::CONTENT_SECURITY_POLICY, csp_do_formulario()),
+            (header::CACHE_CONTROL, "no-store".to_string()),
+            (header::REFERRER_POLICY, "no-referrer".to_string()),
+            (header::X_CONTENT_TYPE_OPTIONS, "nosniff".to_string()),
+        ],
+        Html(html),
+    )
+        .into_response()
+}
+
+fn cabeca(form: &crate::fluxos::Formulario) -> String {
+    format!(
+        "<!doctype html><html lang=\"{}\"><head><meta charset=\"utf-8\">\
+<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\
+<meta name=\"color-scheme\" content=\"dark light\"><title>{}</title><style>{CSS_DO_FORMULARIO}</style>\
+</head><body><main><h1>{}</h1>",
+        escapar(form.idioma.as_deref().unwrap_or("pt-BR")),
+        escapar(&form.titulo),
+        escapar(&form.titulo)
+    )
+}
+
+/// O HTML do formulario: so os textos que o fluxo declarou (titulo, rotulos, botao, codigo
+/// de acesso) e nenhum script -- de terceiros ou nosso. Sem pagina da fabrica de idiomas: o
+/// texto e do operador que escreveu o fluxo, como o objetivo de um gatilho, e os fixos tem
+/// campo proprio no `Formulario` com padrao em portugues.
 pub fn html_do_formulario(
     form: &crate::fluxos::Formulario,
     acao: &str,
     pede_segredo: bool,
 ) -> String {
-    let mut h = String::new();
-    h.push_str("<!doctype html><html><head><meta charset=\"utf-8\">");
-    h.push_str("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">");
-    h.push_str(&format!(
-        "<title>{}</title></head><body>",
-        escapar(&form.titulo)
-    ));
-    h.push_str(&format!("<h1>{}</h1>", escapar(&form.titulo)));
+    html_do_formulario_com(form, acao, pede_segredo, &[], None)
+}
+
+/// O formulario de volta depois de uma recusa: com os valores que a pessoa digitou (menos
+/// o codigo de acesso, que nunca volta) e a mensagem do motivo.
+fn html_do_formulario_com(
+    form: &crate::fluxos::Formulario,
+    acao: &str,
+    pede_segredo: bool,
+    valores: &[(String, String)],
+    erro: Option<&str>,
+) -> String {
+    let mut h = cabeca(form);
     if let Some(d) = &form.descricao {
-        h.push_str(&format!("<p>{}</p>", escapar(d)));
+        h.push_str(&format!("<p class=\"descricao\">{}</p>", escapar(d)));
+    }
+    if let Some(e) = erro {
+        h.push_str(&format!(
+            "<p class=\"erro\" role=\"alert\">{}</p>",
+            escapar(e)
+        ));
     }
     h.push_str(&format!(
         "<form method=\"post\" action=\"{}\" accept-charset=\"utf-8\">",
@@ -514,34 +717,64 @@ pub fn html_do_formulario(
         let rotulo = escapar(c.rotulo.as_deref().unwrap_or(&c.nome));
         let nome = escapar(&c.nome);
         let req = if c.obrigatorio { " required" } else { "" };
-        h.push_str(&format!("<p><label for=\"{nome}\">{rotulo}</label><br>"));
+        let valor = valores
+            .iter()
+            .find(|(k, _)| *k == c.nome)
+            .map(|(_, v)| escapar(v))
+            .unwrap_or_default();
+        h.push_str(&format!(
+            "<p class=\"campo\"><label for=\"{nome}\">{rotulo}</label>"
+        ));
         match c.tipo.as_deref().unwrap_or("texto") {
             "area" => h.push_str(&format!(
-                "<textarea id=\"{nome}\" name=\"{nome}\"{req}></textarea>"
+                "<textarea id=\"{nome}\" name=\"{nome}\" rows=\"5\"{req}>{valor}</textarea>"
             )),
             t => {
                 let tipo = match t {
-                    "numero" => "number\" step=\"any",
+                    "numero" => "number\" step=\"any\" inputmode=\"decimal",
                     "email" => "email",
                     "data" => "date",
                     _ => "text",
                 };
+                let v = if valor.is_empty() {
+                    String::new()
+                } else {
+                    format!(" value=\"{valor}\"")
+                };
                 h.push_str(&format!(
-                    "<input id=\"{nome}\" name=\"{nome}\" type=\"{tipo}\"{req}>"
+                    "<input id=\"{nome}\" name=\"{nome}\" type=\"{tipo}\"{v}{req}>"
                 ));
             }
         }
         h.push_str("</p>");
     }
     if pede_segredo {
-        h.push_str("<p><label for=\"_segredo\">segredo</label><br>");
-        h.push_str("<input id=\"_segredo\" name=\"_segredo\" type=\"password\" required></p>");
+        h.push_str(&format!(
+            "<p class=\"campo acesso\"><label for=\"_segredo\">{}</label>\
+<input id=\"_segredo\" name=\"_segredo\" type=\"password\" autocomplete=\"off\" required></p>",
+            escapar(form.rotulo_segredo.as_deref().unwrap_or("Código de acesso"))
+        ));
     }
     h.push_str(&format!(
-        "<p><button type=\"submit\">{}</button></p></form></body></html>",
+        "<p class=\"envio\"><button type=\"submit\">{}</button></p></form></main></body></html>",
         escapar(form.botao.as_deref().unwrap_or("Enviar"))
     ));
     h
+}
+
+/// A pagina de envio recebido: a frase do formulario e o protocolo (o id da tarefa).
+fn html_do_enviado(form: &crate::fluxos::Formulario, id: &str) -> String {
+    format!(
+        "{}<p class=\"descricao\">{}</p><p class=\"nota\">Protocolo: <span class=\"protocolo\">{}\
+</span></p></main></body></html>",
+        cabeca(form),
+        escapar(
+            form.mensagem_enviado
+                .as_deref()
+                .unwrap_or("Recebido. Obrigado.")
+        ),
+        escapar(id)
+    )
 }
 
 /// `application/x-www-form-urlencoded` -> pares, na ordem. `+` e espaco; `%XX` e byte.
@@ -591,58 +824,93 @@ async fn formulario(State(e): State<EstadoWebhook>, Caminho(nome): Caminho<Strin
         return (StatusCode::NOT_FOUND, "gatilho sem formulario").into_response();
     };
     let form = f.formulario.as_ref().expect("conferido acima");
-    Html(html_do_formulario(
-        form,
-        &format!("/v1/triggers/{nome}"),
-        g.segredo.is_some(),
-    ))
-    .into_response()
+    pagina(
+        StatusCode::OK,
+        html_do_formulario(
+            form,
+            &format!("/v1/triggers/{nome}"),
+            g.segredo_formulario.is_some(),
+        ),
+    )
 }
 
 /// `POST /v1/flows/{tarefa}/resume`: entrega o corpo a espera de webhook e retoma o fluxo
 /// do disco. Passa pelo token da API ou pelo segredo cujo sha256 a espera guarda.
+///
+/// A credencial vem ANTES do disco: sem token e sem segredo nenhum, a resposta e 401 sem
+/// ler a tarefa -- e quem nao tem o token nunca distingue «tarefa que nao existe» de
+/// «segredo errado». A espera que recebe e a que o SEGREDO alcanca (ou `?passo=`), e a
+/// entrega confere que ela continua aberta: com duas esperas, o segredo de A nunca entrega
+/// em B, nem com dois POST simultaneos (achado M5).
 async fn retomar_espera(
     State(e): State<EstadoWebhook>,
     Caminho(tarefa): Caminho<String>,
+    Query(q): Query<HashMap<String, String>>,
     h: HeaderMap,
     corpo: String,
 ) -> Response {
     let resp = |st: StatusCode, msg: &str| (st, Json(json!({"error": msg}))).into_response();
-    let Some(t) = e.api.store.load(&tarefa).ok() else {
-        return resp(StatusCode::NOT_FOUND, "tarefa inexistente");
-    };
-    let Some((_, a)) = crate::fluxos::espera_aberta(&t).filter(|(_, a)| a.tipo == "webhook") else {
-        // A mesma resposta para «nao existe espera» e «nao autorizado» seria mais opaca,
-        // mas a existencia da tarefa ja e publica pelo id que o chamador tem.
-        return resp(StatusCode::CONFLICT, "tarefa sem espera de webhook aberta");
-    };
-    let pelo_segredo = h
-        .get("x-phxclaw-segredo")
-        .and_then(|v| v.to_str().ok())
-        .is_some_and(|s| crate::fluxos::segredo_da_espera_confere(&a, s));
-    if !pelo_segredo && !phxclaw_api_gateway::authorized(&h, &e.api.token) {
-        return resp(
+    let negado = || {
+        resp(
             StatusCode::UNAUTHORIZED,
             "token ou segredo ausente ou invalido",
-        );
-    }
+        )
+    };
     if corpo.len() > CORPO_MAX {
         return resp(StatusCode::PAYLOAD_TOO_LARGE, "corpo passa do teto");
     }
+    let pelo_token = phxclaw_api_gateway::authorized(&h, &e.api.token);
+    let segredo = h.get("x-phxclaw-segredo").and_then(|v| v.to_str().ok());
+    if !pelo_token && segredo.is_none() {
+        return negado();
+    }
+    let Some(t) = e.api.store.load(&tarefa).ok() else {
+        return if pelo_token {
+            resp(StatusCode::NOT_FOUND, "tarefa inexistente")
+        } else {
+            negado()
+        };
+    };
+    let passo = q.get("passo").map(String::as_str);
+    let Some(id) = crate::fluxos::espera_de_webhook(&t, passo, segredo, pelo_token) else {
+        return if pelo_token {
+            resp(StatusCode::CONFLICT, "tarefa sem espera de webhook aberta")
+        } else {
+            negado()
+        };
+    };
     let itens = if corpo.trim().is_empty() {
         vec![json!({})]
     } else {
         crate::fluxos::itens_de_texto(&corpo)
     };
-    if let Err(x) =
-        crate::fluxos::entregar(&e.api.store, &tarefa, crate::fluxos::Via::Webhook, itens)
-    {
+    if let Err(x) = crate::fluxos::conferir_entrada(&itens) {
         return resp(StatusCode::BAD_REQUEST, &x);
     }
+    if let Err(x) = crate::fluxos::entregar(
+        &e.api.store,
+        &tarefa,
+        crate::fluxos::Via::Webhook,
+        Some(&id),
+        itens,
+    ) {
+        return resp(StatusCode::CONFLICT, &x);
+    }
     match crate::api::retomar_fluxo(&e.api, &tarefa) {
-        Ok(_) => (StatusCode::ACCEPTED, Json(json!({"id": tarefa}))).into_response(),
+        Ok(_) => (
+            StatusCode::ACCEPTED,
+            Json(json!({"id": tarefa, "passo": id})),
+        )
+            .into_response(),
         Err(r) => resp(r.status, &r.erro),
     }
+}
+
+/// O navegador pede HTML; quem integra (n8n, curl, teste) recebe o JSON de sempre.
+fn quer_html(h: &HeaderMap) -> bool {
+    h.get(header::ACCEPT)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|a| a.contains("text/html"))
 }
 
 async fn webhook(
@@ -663,85 +931,83 @@ async fn webhook(
         .and_then(|v| v.to_str().ok())
         .is_some_and(|c| c.starts_with("application/x-www-form-urlencoded"));
     if e_formulario && let Some(f) = fluxo_com_formulario(g) {
+        let form = f.formulario.as_ref().expect("conferido acima");
+        let acao = format!("/v1/triggers/{nome}");
+        let html = quer_html(&h);
+        let pede = g.segredo_formulario.is_some();
+        let recusa = |st: StatusCode, msg: &str, pares: &[(String, String)]| {
+            if html {
+                pagina(
+                    st,
+                    html_do_formulario_com(form, &acao, pede, pares, Some(msg)),
+                )
+            } else {
+                resp(st, msg)
+            }
+        };
         if corpo.len() > CORPO_MAX {
-            return resp(StatusCode::PAYLOAD_TOO_LARGE, "formulario passa do teto");
+            return recusa(
+                StatusCode::PAYLOAD_TOO_LARGE,
+                "formulario passa do teto",
+                &[],
+            );
         }
         let mut pares = decodificar_formulario(&corpo);
-        let segredo = pares
+        let codigo = pares
             .iter()
             .position(|(k, _)| k == "_segredo")
             .map(|i| pares.remove(i).1);
-        if !portao(
-            g.segredo.as_deref(),
-            &e.api.token,
-            &h,
-            corpo.as_bytes(),
-            segredo.as_deref(),
-        ) {
-            return resp(
+        let Some(cred) = portao(g, &e.api.token, &h, corpo.as_bytes(), codigo.as_deref()) else {
+            return recusa(
                 StatusCode::UNAUTHORIZED,
                 "token ou segredo ausente ou invalido",
+                &pares,
             );
-        }
-        let form = f.formulario.as_ref().expect("conferido acima");
+        };
         let item = match crate::fluxos::item_do_formulario(form, &pares) {
             Ok(i) => i,
-            Err(x) => return resp(StatusCode::BAD_REQUEST, &x),
+            Err(x) => return recusa(StatusCode::BAD_REQUEST, &x, &pares),
         };
         let arq = g.fluxo.as_deref().unwrap_or_default();
-        return match criar_fluxo_com(&e.api, arq, vec![item], |_| Ok(())) {
-            Ok(c) => (
-                StatusCode::ACCEPTED,
-                Html(format!(
-                    "<!doctype html><html><head><meta charset=\"utf-8\"><title>{t}</title></head>\
-<body><h1>{t}</h1><p>{id}</p></body></html>",
-                    t = escapar(&form.titulo),
-                    id = escapar(&c.id)
-                )),
-            )
-                .into_response(),
-            Err(r) => resp(r.status, &r.erro),
-        };
+        return disparar(&e, &nome, cred, &h, || {
+            criar_fluxo_com(&e.api, arq, vec![item], |_| Ok(()))
+        })
+        .map_or_else(
+            |(st, msg, retry)| match retry {
+                Some(seg) => resp_429(&msg, seg),
+                None => recusa(st, &msg, &pares),
+            },
+            |(id, _)| pagina(StatusCode::ACCEPTED, html_do_enviado(form, &id)),
+        );
     }
-    if !portao(
-        g.segredo.as_deref(),
-        &e.api.token,
-        &h,
-        corpo.as_bytes(),
-        None,
-    ) {
+    // O POST que nao e o do formulario: so a credencial do GATILHO (token, segredo no
+    // cabecalho, assinatura). O codigo do formulario nunca chega aqui.
+    let Some(cred) = portao(g, &e.api.token, &h, corpo.as_bytes(), None) else {
         return resp(
             StatusCode::UNAUTHORIZED,
             "token ou segredo ausente ou invalido",
         );
-    }
+    };
     let mut c: String = corpo.chars().take(CORPO_MAX).collect();
     if corpo.chars().count() > CORPO_MAX {
         c.push_str("\n[... corpo truncado]");
     }
-    let responder = |r: Result<Criada, Recusa>| match r {
-        Ok(c) => (StatusCode::ACCEPTED, Json(json!({"id": c.id}))).into_response(),
-        Err(Recusa {
-            retry_after: Some(seg),
-            erro,
-            ..
-        }) => (
-            StatusCode::TOO_MANY_REQUESTS,
-            [(header::RETRY_AFTER, seg.to_string())],
-            Json(json!({"error": erro, "retry_after": seg})),
-        )
-            .into_response(),
-        Err(r) => resp(r.status, &r.erro),
+    let responder = |r: Disparo| match r {
+        Ok((id, false)) => (StatusCode::ACCEPTED, Json(json!({"id": id}))).into_response(),
+        // A repeticao nao dispara: volta o id do primeiro disparo, dizendo que repetiu.
+        Ok((id, true)) => {
+            (StatusCode::OK, Json(json!({"id": id, "repetida": true}))).into_response()
+        }
+        Err((_, erro, Some(seg))) => resp_429(&erro, seg),
+        Err((st, erro, None)) => resp(st, &erro),
     };
     if let Some(f) = &g.fluxo {
         // O corpo entra como DADO do fluxo (`{{entrada}}`), nunca como texto de objetivo:
         // JSON vira itens, texto vira um item de texto.
-        return responder(criar_fluxo_com(
-            &e.api,
-            f,
-            crate::fluxos::itens_de_texto(&c),
-            |_| Ok(()),
-        ));
+        let itens = crate::fluxos::itens_de_texto(&c);
+        return responder(disparar(&e, &nome, cred, &h, || {
+            criar_fluxo_com(&e.api, f, itens, |_| Ok(()))
+        }));
     }
     // A cerca nao pode ser fechada pelo proprio corpo.
     let c = c.replace("```", "'''");
@@ -753,15 +1019,67 @@ async fn webhook(
     } else {
         format!("{}\n{cercado}", g.objetivo)
     };
-    let r = criar_tarefa_com(
-        &e.api,
-        NovaTarefa {
-            objective: format!("[webhook {}] {objetivo}", g.nome),
-            ..NovaTarefa::default()
-        },
-        |_| Ok(()),
-    );
-    responder(r)
+    responder(disparar(&e, &nome, cred, &h, || {
+        criar_tarefa_com(
+            &e.api,
+            NovaTarefa {
+                objective: format!("[webhook {}] {objetivo}", g.nome),
+                ..NovaTarefa::default()
+            },
+            |_| Ok(()),
+        )
+    }))
+}
+
+fn resp_429(erro: &str, seg: u64) -> Response {
+    (
+        StatusCode::TOO_MANY_REQUESTS,
+        [(header::RETRY_AFTER, seg.to_string())],
+        Json(json!({"error": erro, "retry_after": seg})),
+    )
+        .into_response()
+}
+
+/// O disparo com a guarda de repeticao: a mesma requisicao assinada reenviada dentro da
+/// janela (ou a mesma `Idempotency-Key`) devolve o id do primeiro disparo, sem disparar de
+/// novo. Toda porta do gatilho -- formulario, fluxo e objetivo -- passa por aqui.
+/// O id disparado e se foi repeticao; ou a recusa com o status e o `Retry-After`.
+type Disparo = Result<(String, bool), (StatusCode, String, Option<u64>)>;
+
+fn disparar(
+    e: &EstadoWebhook,
+    nome: &str,
+    cred: Credencial,
+    h: &HeaderMap,
+    criar: impl FnOnce() -> Result<Criada, Recusa>,
+) -> Disparo {
+    let chave = chave_de_repeticao(nome, cred, h);
+    if let Some(k) = &chave {
+        match e.vistos.reservar(k) {
+            Reserva::Nova => {}
+            Reserva::Repetida(Some(id)) => return Ok((id, true)),
+            Reserva::Repetida(None) => {
+                return Err((
+                    StatusCode::CONFLICT,
+                    "o mesmo disparo ja esta em curso".into(),
+                    None,
+                ));
+            }
+            Reserva::Cheia => {
+                return Err((
+                    StatusCode::TOO_MANY_REQUESTS,
+                    "guarda de repeticao cheia; tente em alguns minutos".into(),
+                    Some(60),
+                ));
+            }
+        }
+    }
+    let r = criar();
+    if let Some(k) = &chave {
+        e.vistos.concluir(k, r.as_ref().ok().map(|c| c.id.as_str()));
+    }
+    r.map(|c| (c.id, false))
+        .map_err(|r| (r.status, r.erro, r.retry_after))
 }
 
 /// `X-PhxClaw-Carimbo` + `X-PhxClaw-Assinatura` sobre o corpo cru, com a assinatura do

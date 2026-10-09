@@ -336,6 +336,10 @@ pub fn criar_fluxo_com(
     };
     let f = crate::fluxos::ler_arquivo(std::path::Path::new(caminho))
         .map_err(|e| recusa(StatusCode::BAD_REQUEST, format!("fluxo: {e}")))?;
+    // A guarda de segredo da entrada e a do motor (`fluxos::conferir_entrada`, que o
+    // `executar` chama de novo): aqui so ANTES, para quem posta ouvir 400 em vez de ganhar
+    // uma tarefa que falha, e sem gastar ficha nem disco.
+    crate::fluxos::conferir_entrada(&entrada).map_err(|e| recusa(StatusCode::BAD_REQUEST, e))?;
     let agente = (s.factory)(&s.default_model).map_err(|e| recusa(StatusCode::BAD_REQUEST, e))?;
     if let Err(seg) = s.limite.tomar() {
         return Err(Recusa {
@@ -409,10 +413,12 @@ pub fn retomar_fluxo(s: &ApiState, id: &str) -> Result<tokio::task::JoinHandle<(
     })?;
     let (store, id) = (s.store.clone(), id.to_string());
     Ok(tokio::spawn(async move {
-        if let Err(e) = crate::fluxos::retomar_do_disco(&agente, &id).await
+        // A retomada que ja corre (a resposta e o laco do servidor chegando juntos) nao e
+        // falha: a outra termina o trabalho. Decidido pelo TIPO, nunca pela frase.
+        if let Err(crate::fluxos::FalhaDaRetomada::Recusada(e)) =
+            crate::fluxos::retomar_do_disco(&agente, &id).await
             && let Ok(mut t) = store.load(&id)
             && t.status == TaskStatus::AwaitingInput
-            && !e.contains("ja esta sendo retomada")
         {
             t.status = TaskStatus::Failed;
             t.error = Some(e);
@@ -427,10 +433,18 @@ pub fn retomar_fluxo(s: &ApiState, id: &str) -> Result<tokio::task::JoinHandle<(
 /// nada se apaga). Devolve as retomadas, para quem quiser esperar.
 pub fn manter_fluxos(s: &ApiState) -> Vec<tokio::task::JoinHandle<()>> {
     let mut v = Vec::new();
-    for id in crate::fluxos::esperas_vencidas(&s.store, Utc::now()) {
+    // As esperas de tempo vencidas e as entregas gravadas sem retomada (a resposta chegou e
+    // o processo caiu antes de retomar): as duas so tem o laco para acorda-las.
+    let mut ids = crate::fluxos::esperas_vencidas(&s.store, Utc::now());
+    for id in crate::fluxos::entregas_sem_retomada(&s.store) {
+        if !ids.contains(&id) {
+            ids.push(id);
+        }
+    }
+    for id in ids {
         match retomar_fluxo(s, &id) {
             Ok(h) => v.push(h),
-            Err(e) => eprintln!("fluxo {id}: espera vencida nao retomada: {}", e.erro),
+            Err(e) => eprintln!("fluxo {id}: espera nao retomada: {}", e.erro),
         }
     }
     let p = crate::fluxos::podar(&s.store, crate::fluxos::Poda::do_config(), Utc::now());
@@ -595,17 +609,25 @@ async fn responder(
     // Fluxo parado num passo `esperar` com pergunta: ninguem segura a espera em memoria
     // (ela descarregou para o disco), entao a resposta e GRAVADA no passo e o fluxo e
     // retomado do disco -- a mesma rota, para a tela e os canais nao saberem a diferenca.
+    let pergunta = crate::fluxos::esperas_abertas(&t)
+        .into_iter()
+        .find(|(_, a)| a.tipo == "pergunta")
+        .map(|(id, _)| id);
     if !crate::perguntas::esperando(&t.id)
-        && crate::fluxos::espera_aberta(&t).is_some_and(|(_, a)| a.tipo == "pergunta")
+        && let Some(passo) = pergunta
     {
         let resposta = r.answer.trim();
         if resposta.is_empty() {
             return Err(erro(StatusCode::BAD_REQUEST, "resposta vazia"));
         }
+        // A resposta e da pergunta que o `question` mostrou (a primeira aberta), e a entrega
+        // confere que ELA ainda espera: duas respostas juntas nao caem a segunda na
+        // proxima pergunta.
         crate::fluxos::entregar(
             &s.store,
             &t.id,
             crate::fluxos::Via::Pergunta,
+            Some(&passo),
             vec![json!({"resposta": resposta})],
         )
         .map_err(|e| erro(StatusCode::CONFLICT, e))?;

@@ -39,36 +39,12 @@ pub const VERSOES_LIDAS: [u64; 2] = [1, 2];
 
 const TARJA: &str = "[REDACTED]";
 
-/// Chaves cujo VALOR inteiro e segredo, em qualquer profundidade. Compara-se o nome inteiro
-/// ou o sufixo depois de `_` (`x_api_key`, `github_token`), nunca substring: `max_tokens`
-/// e `input_tokens` sao contagem, nao credencial.
-const CHAVES_SECRETAS: &[&str] = &[
-    "password",
-    "passwd",
-    "senha",
-    "secret",
-    "segredo",
-    "token",
-    "api_key",
-    "apikey",
-    "authorization",
-    "cookie",
-    "set_cookie",
-    "private_key",
-    "chave_privada",
-    "client_secret",
-    "credential",
-    "credencial",
-    "bearer",
-];
-
-/// Publica porque o fluxo recusa variavel com nome de segredo pela MESMA lista: duas
-/// listas divergiriam no dia em que alguem acrescentasse um nome numa so.
+/// Chave cujo VALOR inteiro e segredo, em qualquer profundidade. A lista e a UNICA da base
+/// (`phxclaw_types::segredo`): o fluxo recusa variavel, pin, campo e entrada pelo mesmo
+/// nome, e o `config.json` deveria recusar por ela tambem -- duas listas divergiam
+/// (`openai_key` era segredo so para uma).
 pub fn chave_secreta(k: &str) -> bool {
-    let k = k.to_ascii_lowercase().replace('-', "_");
-    CHAVES_SECRETAS
-        .iter()
-        .any(|s| k == *s || k.ends_with(&format!("_{s}")))
+    phxclaw_types::segredo::nome_de_segredo(k)
 }
 
 /// Tira segredo de um valor JSON analisando-o. Idempotente: a repeticao redige a chamada

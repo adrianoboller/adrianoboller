@@ -647,28 +647,19 @@ pub fn scrub_text(text: &str, known_values: &[SecretValue]) -> String {
     output
 }
 
-/// Prefixos de credencial que se reconhecem SEM marcador ao lado: quem cola uma chave num
-/// texto livre raramente escreve `token=` antes dela.
-const PREFIXOS_DE_CREDENCIAL: &[&str] = &[
-    "sk-",
-    "ghp_",
-    "gho_",
-    "ghs_",
-    "ghu_",
-    "github_pat_",
-    "glpat-",
-    "xoxb-",
-    "xoxp-",
-    "AKIA",
-    "AIza",
-];
+// Os prefixos de credencial que se reconhecem SEM marcador ao lado (quem cola uma chave num
+// texto livre raramente escreve `token=` antes dela) e a regra da palavra moram em
+// `phxclaw_types::segredo`: um motor so para o broker, o `config.json` e o motor de fluxo.
 
 /// O que `scrub_text` faz sem segredo conhecido, mais o que tem FORMA de credencial: chave
 /// privada PEM, palavra com prefixo de chave de provedor e JWT. Existe a parte de
 /// `scrub_text` porque mudar o que ela tapa mudaria em silencio a saida de quem ja a chama;
 /// quem quer a tarja mais larga pede esta.
 pub fn scrub_secret_like(text: &str) -> String {
-    let mut output = scrub_text(text, &[]);
+    // Basic/Bearer ANTES do `scrub_text`: o marcador dele (`auth_token=`, `password=`) engole a
+    // palavra «Bearer» e deixa o valor orfao, que a entrada do fluxo recusa e a tarja soltaria.
+    let output = phxclaw_types::segredo::tarjar_basic_bearer(text, "[REDACTED]");
+    let mut output = scrub_text(&output, &[]);
     while let Some(ini) = output.find("-----BEGIN ") {
         let resto = &output[ini..];
         let fim = resto
@@ -687,9 +678,12 @@ pub fn scrub_secret_like(text: &str) -> String {
         }
         palavra.clear();
     };
+    // A senha de URL e o separador de palavras vem do motor unico (`phxclaw_types::segredo`):
+    // o mesmo criterio que a entrada do motor de fluxo usa para recusar.
+    let output = phxclaw_types::segredo::tarjar_url_com_senha(&output, "[REDACTED]");
+    let output = phxclaw_types::segredo::tarjar_basic_bearer(&output, "[REDACTED]");
     for ch in output.chars() {
-        if ch.is_whitespace() || matches!(ch, '"' | '\'' | ',' | ';' | '(' | ')' | '<' | '>' | '`')
-        {
+        if phxclaw_types::segredo::e_separador(ch) {
             fecha(&mut palavra, &mut saida);
             saida.push(ch);
         } else {
@@ -701,20 +695,7 @@ pub fn scrub_secret_like(text: &str) -> String {
 }
 
 fn parece_credencial(palavra: &str) -> bool {
-    // A palavra pode vir com `chave:` colado na frente; olha-se o pedaco depois do ultimo
-    // separador de rotulo.
-    let nucleo = palavra.rsplit([':', '=']).next().unwrap_or(palavra);
-    let nucleo = nucleo.trim_end_matches(['.', '!', '?']);
-    let corpo_ok = |s: &str| {
-        s.chars()
-            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
-    };
-    // Prefixo sozinho ("sk-" numa frase) nao e chave: exige-se corpo depois dele.
-    let com_prefixo = PREFIXOS_DE_CREDENCIAL
-        .iter()
-        .any(|p| nucleo.starts_with(p) && nucleo.len() >= p.len() + 12 && corpo_ok(nucleo));
-    let jwt = nucleo.starts_with("eyJ") && nucleo.split('.').count() == 3 && nucleo.len() >= 30;
-    com_prefixo || jwt
+    phxclaw_types::segredo::palavra_parece_credencial(palavra)
 }
 
 fn scrub_after_marker(text: &str, marker: &str) -> String {
@@ -785,5 +766,66 @@ mod tests {
         // Nenhum temporario sobra ao lado.
         assert_eq!(fs::read_dir(&dir).unwrap().count(), 1);
         let _ = fs::remove_dir_all(dir);
+    }
+
+    /// A tarja e a recusa da entrada do fluxo usam o MESMO motor (`phxclaw_types::segredo`):
+    /// os corpos que o fluxo recusa nao podem passar em claro aqui. RED medido em 09/10: com o
+    /// separador proprio de antes, `[ghp_…]`, `{ghp_…}`, `x=ghp_…&y=1` e as duas URLs com senha
+    /// passavam; com a lista propria de 11 prefixos, `xapp-…` e `sk_live_…` passavam; sem o
+    /// `tarjar_basic_bearer`, os quatro `Bearer`/`Basic` fora do marcador exato passavam.
+    #[test]
+    fn tarja_pelo_mesmo_motor_da_entrada_do_fluxo() {
+        let ghp = "ghp_0123456789abcdefABCDEF";
+        for sim in [
+            format!("[{ghp}]"),
+            format!("{{{ghp}}}"),
+            format!("x={ghp}&y=1"),
+            format!("token:{ghp}"),
+            format!("https://x-access-token:{ghp}@github.com/a/b"),
+            "https://eu:senha123@busca.local:443/x".to_string(),
+            "xapp-1-A0123456789-0123456789".to_string(),
+            "sk_live_0123456789abcdefgh".to_string(),
+            "Bearer abcdefghijklmnopqrstuvwx".to_string(),
+            r#"{"auth":"Bearer abcdefghijklmnopqrstuvwx"}"#.to_string(),
+            r#"{"Authorization":"Bearer abcdefghijklmnopqrstuvwx"}"#.to_string(),
+            "curl -H 'authorization: bearer abcdefghijklmnopqrstuvwx'".to_string(),
+            "Basic dXNlcjpwYXNzd29yZA==".to_string(),
+            "use `Bearer a1b2c3d4e5f6g7h8i9j0` no header".to_string(),
+            "<Bearer a1b2c3d4e5f6g7h8i9j0>".to_string(),
+            "[Bearer a1b2c3d4e5f6g7h8i9j0]".to_string(),
+            "headers=Bearer a1b2c3d4e5f6g7h8i9j0&x=1".to_string(),
+            "Basic dXNlcjpwYXNzd29yZA==.".to_string(),
+            "Bearer 7f3k-9QxZ_2mN8.pL4v~R6tY".to_string(),
+            "auth_token=Bearer a1b2c3d4e5f6g7h8i9j0".to_string(),
+            "x-api-key: Bearer a1b2c3d4e5f6g7h8i9j0".to_string(),
+            "password=Basic dXNlcjpwYXNzd29yZA==".to_string(),
+            "Authorization: Bearer  a1b2c3d4e5f6g7h8i9j0".to_string(),
+            "Authorization: Basic  dXNlcjpwYXNzd29yZA==".to_string(),
+        ] {
+            let t = scrub_secret_like(&sim);
+            assert!(t.contains("[REDACTED]"), "{sim} -> {t}");
+            assert!(
+                !t.contains("0123456789")
+                    && !t.contains("senha123")
+                    && !t.contains("abcdefghijklmnop")
+                    && !t.contains("a1b2c3d4e5f6")
+                    && !t.contains("dXNlcjpw")
+                    && !t.contains("9QxZ_2mN8"),
+                "{sim} -> {t}"
+            );
+            assert!(phxclaw_types::segredo::texto_tem_credencial(&sim), "{sim}");
+        }
+        // `token=` continua tarjado aqui pelo marcador do `scrub_text` (redigir erra para o lado
+        // largo, de proposito); a ENTRADA do fluxo nao o recusa, e isso se prova no fluxo_onda3b.
+        for nao in [
+            "sk-SK",
+            "sk-telecom",
+            "PROJ-123",
+            "Add basic validation to the form",
+            "basic authentication is deprecated",
+            "bearer responsibilities",
+        ] {
+            assert_eq!(scrub_secret_like(nao), nao);
+        }
     }
 }

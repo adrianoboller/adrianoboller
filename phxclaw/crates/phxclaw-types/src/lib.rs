@@ -1,5 +1,7 @@
 /// Troca atomica, trava entre processos e cauda cortada: a escrita em disco de toda a base.
 pub mod arquivo;
+/// O nome com cara de segredo: a lista unica da base.
+pub mod segredo;
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};

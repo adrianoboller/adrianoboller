@@ -91,12 +91,16 @@ pub fn base64(b: &[u8]) -> String {
 }
 
 /// Comparacao que nao para no primeiro byte diferente: o tempo de resposta nao diz quantos
-/// bytes da assinatura forjada estavam certos.
+/// bytes da assinatura forjada estavam certos. Compara os SHA-256 dos dois lados, e nao os
+/// lados: sair cedo quando o tamanho difere contava a quem chuta a `?chave=` da URL o
+/// tamanho do segredo. O resumo tem sempre 32 bytes, entao o laco tem sempre o mesmo
+/// tamanho; o custo de resumir o segredo e o mesmo a cada chute, e o do chute e do chute.
 pub fn iguais(a: &[u8], b: &[u8]) -> bool {
-    if a.len() != b.len() {
-        return false;
-    }
-    a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
+    let (ha, hb) = (Sha256::digest(a), Sha256::digest(b));
+    ha.iter()
+        .zip(hb.iter())
+        .fold(0u8, |acc, (x, y)| acc | (x ^ y))
+        == 0
 }
 
 #[cfg(test)]

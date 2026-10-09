@@ -1142,8 +1142,8 @@ const FIXAS: &[L] = &[
         I,
         None,
         (
-            "Fluxos rodando ao mesmo tempo na instância; vazio ou 0 = sem limite (o excedente espera a vez)",
-            "Flows running at the same time in the instance; empty or 0 = no limit (the excess waits its turn)",
+            "Máximo de fluxos rodando ao mesmo tempo na instância; vazio ou 0 = sem limite (o excedente espera a vaga); lido no primeiro fluxo, mudar pede reinício",
+            "Maximum flows running at once on the instance; empty or 0 = no limit (extra flows wait for a slot); read on the first flow, changing it needs a restart",
         ),
     ),
     c(
@@ -1153,7 +1153,7 @@ const FIXAS: &[L] = &[
         None,
         (
             "Apaga execuções de fluxo terminadas há mais de N dias; vazio ou 0 = nunca",
-            "Deletes flow executions finished more than N days ago; empty or 0 = never",
+            "Delete finished flow runs older than N days; empty or 0 = never",
         ),
     ),
     c(
@@ -1163,7 +1163,7 @@ const FIXAS: &[L] = &[
         None,
         (
             "Mantém só as N execuções de fluxo terminadas mais novas; vazio ou 0 = todas",
-            "Keeps only the N newest finished flow executions; empty or 0 = all of them",
+            "Keep only the N newest finished flow runs; empty or 0 = keep all",
         ),
     ),
     // --- canal do Telegram (os demais saem de CANAIS) ---
@@ -1901,14 +1901,14 @@ const CANAIS: &[CanalDef] = &[
                 "AUDIENCIA",
                 K::T((
                     "Audiência do token: número do projeto, ou URL https:// do endpoint (ID token)",
-                    "Token audience: project number, or the endpoint https:// URL (ID token)",
+                    "Token audience: the project number, or the endpoint's https:// URL (ID token)",
                 )),
             ),
             (
                 "JWKS",
                 K::T((
                     "URL das chaves (JWKS); vazio = a oficial do modo",
-                    "Key set (JWKS) URL; empty = the mode's official one",
+                    "Key set (JWKS) URL; empty = the official one for the mode",
                 )),
             ),
             (

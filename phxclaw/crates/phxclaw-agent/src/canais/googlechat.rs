@@ -47,9 +47,11 @@ pub struct Verificacao {
 }
 
 impl Verificacao {
-    /// `jwks`: a URL das chaves; `None` e a oficial do modo.
+    /// `jwks`: a URL das chaves; `None` e a oficial do modo, e outra sai como aviso.
     pub fn nova(audiencia: String, jwks: Option<&str>) -> Result<Self, String> {
-        Self::com_jwks(audiencia, |padrao| Jwks::novo(jwks.unwrap_or(padrao)))
+        Self::com_jwks(audiencia, |padrao| {
+            Jwks::configurado("googlechat", jwks, padrao)
+        })
     }
 
     /// Com o JWKS montado por quem chama (o teste o monta com prazos curtos).

@@ -249,17 +249,17 @@ Prova, contra um servidor XMPP falso (nenhum servidor MUC real foi exercitado):
 Desde a SP000032 R1 (09/10/2026) a entrada dos dois canais confere o JWT RS256 que o serviço
 põe no `Authorization: Bearer` — a assinatura pela chave do JWKS do serviço, o emissor, a
 audiência e a validade (5 min de folga nos dois lados). **Não há como desligar**: sem token
-válido, o webhook responde 401 sem dizer o que errou. O RSA (só verificação, PKCS#1 v1.5 +
+válido, o webhook responde 401 sem dizer o que falhou. O RSA (só verificação, PKCS#1 v1.5 +
 SHA-256) é escrito aqui, sem crate nova: `crates/phxclaw-agent/src/canais/rsa.rs`, e o JWT em
 `canais/jwt.rs`.
 
 | Chave do catálogo | Variável | O que faz |
 | --- | --- | --- |
-| `canais.teams.app_id` | `PHXCLAW_TEAMS_APP_ID` | o App ID do bot; é a audiência (`aud`) exigida no token. |
-| `canais.teams.jwks` | `PHXCLAW_TEAMS_JWKS` | URL das chaves; vazio = `https://login.botframework.com/v1/.well-known/keys`. |
-| `canais.googlechat.audiencia` | `PHXCLAW_GOOGLECHAT_AUDIENCIA` | **obrigatória.** O número do projeto (token da conta `chat@system.gserviceaccount.com`) **ou** a URL `https://` do endpoint (ID token OIDC de `accounts.google.com`, com `email` = a conta do Chat e `email_verified`). O modo sai daqui, um só. |
-| `canais.googlechat.jwks` | `PHXCLAW_GOOGLECHAT_JWKS` | URL das chaves; vazio = a oficial do modo (`service_accounts/v1/jwk/chat@…` ou `oauth2/v3/certs`). |
-| `canais.teams.chave_url`, `canais.googlechat.chave_url` | `PHXCLAW_*_CHAVE_URL` | **agora opcional**: se configurada, a `?chave=` da URL continua conferida, **além** do token. |
+| `canais.teams.app_id` | `PHXCLAW_TEAMS_APP_ID` | O App ID do bot; é a audiência (`aud`) exigida no token. |
+| `canais.teams.jwks` | `PHXCLAW_TEAMS_JWKS` | URL das chaves; vazio = `https://login.botframework.com/v1/.well-known/keys`. Trocada, sai um aviso ao subir; `http://` só em loopback. |
+| `canais.googlechat.audiencia` | `PHXCLAW_GOOGLECHAT_AUDIENCIA` | **Obrigatória.** O número do projeto (token da conta `chat@system.gserviceaccount.com`) **ou** a URL `https://` do endpoint (ID token OIDC de `accounts.google.com`, com `email` = a conta do Chat e `email_verified`). É ela que escolhe o modo, um só por canal. |
+| `canais.googlechat.jwks` | `PHXCLAW_GOOGLECHAT_JWKS` | URL das chaves; vazio = a oficial do modo (`service_accounts/v1/jwk/chat@…` ou `oauth2/v3/certs`). Trocada, sai um aviso ao subir; `http://` só em loopback. |
+| `canais.teams.chave_url`, `canais.googlechat.chave_url` | `PHXCLAW_*_CHAVE_URL` | **Agora opcional**: se configurada, a `?chave=` da URL continua conferida, **além** do token. |
 
 No Teams, além disso, o claim `serviceUrl` assinado tem de ser **igual** ao `serviceUrl` da
 Activity e a chave tem de estar endossada para o `channelId` dela; se não, 403 (o token é bom,
@@ -275,6 +275,20 @@ máximo uma vez por minuto — sem esse teto, cada `kid` inventado seria um pedi
 serviço). JWKS vencido que não recarrega recusa com 503: a chave velha não é usada. Chave fora
 da política é pulada: só RSA de 2048 a 4096 bits com `e = 65537`.
 
+O download do JWKS corre fora da trava do cache, um por vez: quem chega enquanto ele baixa usa
+o conjunto que já está em memória (um serviço de chaves lento não segura o token de `kid`
+conhecido), o `kid` desconhecido leva 401 e, antes do primeiro conjunto chegar, 503.
+
+A conferência da assinatura é a única conta cara que qualquer um dispara sem credencial
+(basta um `kid` público e lixo do tamanho da chave). Medido: ~1,4 ms por verificação de 2048
+bits e ~4,9 ms de 4096, binário otimizado. Por isso cada canal tem um teto de conferências em
+voo — metade dos núcleos, no mínimo 2 —, e acima dele o webhook responde **429** na hora, sem
+fazer a conta. Uma vaga só já atende ~700 tokens de 2048 bits por segundo.
+
+A URL do JWKS é a âncora de confiança do canal: não é segredo, mas quem a troca escolhe quais
+chaves assinam por nós. Configurada diferente da oficial, o canal sobe com um
+`aviso: <canal>: JWKS trocado para …` na saída de erro.
+
 Prova: vetores oficiais em `crates/phxclaw-agent/tests/dados/rsa/` (Wycheproof
 `rsa_signature_2048_sha256_test.json`, 259 casos, e NIST CAVP SigVer15 SHA-256, 54 casos; o
 `extrair.py` de lá refaz os arquivos a partir dos originais e o cabeçalho de cada um traz a
@@ -284,10 +298,29 @@ fonte, o SHA-256 do original e a licença) e, em `tests/canais.rs`,
 `teams_confere_o_jwt_rs256_do_bot_framework`,
 `jwks_recarrega_no_kid_novo_e_no_vencimento_e_falha_fechado`,
 `googlechat_confere_o_jwt_nos_dois_modos_e_sai_pelo_webhook_do_espaco` e
-`teams_e_googlechat_montam_pelo_ambiente_com_o_jwt`. Os tokens dos testes são assinados por
+`teams_e_googlechat_montam_pelo_ambiente_com_o_jwt`, `jwks_lento_nao_segura_token_de_kid_conhecido`,
+`conferencia_de_assinatura_tem_teto_em_voo_e_429_acima_dele`,
+`rsa_custo_de_uma_verificacao_2048_e_4096`, `jwks_trocado_avisa_e_http_fora_de_loopback_recusa`
+e `iguais_nao_conta_o_tamanho_do_segredo`. Os tokens dos testes são assinados por
 um par RSA gerado na hora pelo `openssl` do sistema (nenhuma chave privada no repositório);
 sem `openssl`, esses testes registram o pulo. Nenhum token real da Microsoft ou do Google foi
 conferido ainda: a prova é contra servidor falso.
+
+### Terminal do IDE no navegador: só no sandbox
+
+O terminal do IDE (`/v1/ide/terminal`, o Helix no navegador) roda **somente** dentro do `bwrap`,
+com a pasta do projeto em `/work` e a pasta do agente (`var/agente`, com o cofre de segredos e o
+`api.token`) escondida. Sem `bwrap` na máquina, o terminal **recusa** abrir, com a mensagem
+`sem bwrap: o terminal do IDE so roda no sandbox` — é a mesma regra do shell do agente. Fora do
+sandbox o Helix abre qualquer caminho, e foi assim que a chave-mestra do cofre aparecia na tela
+(medido em 09/10). Os testes do IDE e os servidores de linguagem também rodam com a pasta do
+agente escondida. Em máquina sem `bwrap` (Windows), o terminal web fica indisponível.
+
+### Motor de fluxo: quantos rodam ao mesmo tempo
+
+`fluxos.max_simultaneos` (`PHXCLAW_FLUXOS_MAX_SIMULTANEOS`) é o máximo de fluxos rodando ao
+mesmo tempo na instância; vazio ou 0 = sem limite, e o excedente espera a vaga. O valor é
+**lido no primeiro fluxo** que roda: mudá-lo depois não tem efeito até o agente reiniciar.
 
 ### Forjas (GitHub, GitLab)
 

@@ -1625,7 +1625,7 @@
           ]
         },
         "max_simultaneos": {
-          "description": "Fluxos rodando ao mesmo tempo na instância; vazio ou 0 = sem limite (o excedente espera a vez) (ambiente: PHXCLAW_FLUXOS_MAX_SIMULTANEOS)",
+          "description": "Máximo de fluxos rodando ao mesmo tempo na instância; vazio ou 0 = sem limite (o excedente espera a vaga); lido no primeiro fluxo, mudar pede reinício (ambiente: PHXCLAW_FLUXOS_MAX_SIMULTANEOS)",
           "type": [
             "integer",
             "null"

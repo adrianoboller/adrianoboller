@@ -113,6 +113,22 @@ try {
   check('clique no mapa manda :goto N e o Helix vai (cursor da linha de estado = N)', alvo > 100 && p2.cursor === String(alvo), `alvo ${alvo} | ${JSON.stringify(p2)}`);
   check('a faixa acompanha o cursor (de <= N <= ate, faixa saiu do topo)', Number(p2.de) > 1 && Number(p2.de) <= alvo && alvo <= Number(p2.ate), JSON.stringify(p2));
 
+  // A faixa DESENHADA, nao so o dataset: le os pixels da coluna da borda direita do canvas e
+  // acha as linhas pintadas com a cor da faixa (--acao-consultar). O topo do contorno tem de
+  // cair na linha `de` do dataset (+-2 linhas), senao o estado diz uma coisa e a tela outra.
+  const faixaPx = await page.$eval('#minimapaCanvas', c => {
+    const cor = getComputedStyle(document.documentElement).getPropertyValue('--acao-consultar').trim();
+    const t = document.createElement('canvas').getContext('2d'); t.fillStyle = cor; t.fillRect(0, 0, 1, 1);
+    const [R, G, B] = t.getImageData(0, 0, 1, 1).data;
+    const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+    const x = c.width - 1, ys = [];
+    for (let y = 0; y < c.height; y++) { const i = (y * c.width + x) * 4; if (d[i + 3] > 120 && Math.abs(d[i] - R) + Math.abs(d[i + 1] - G) + Math.abs(d[i + 2] - B) < 60) ys.push(y); }
+    const dpr = window.devicePixelRatio || 1, H = c.getBoundingClientRect().height;
+    const total = Number(c.getAttribute('aria-valuemax')); const p = Math.min(3, H / Math.max(1, total));
+    return { ys: ys.length, topo: ys.length ? Math.floor(ys[0] / dpr / p) + 1 : null, base: ys.length ? Math.floor(ys.at(-1) / dpr / p) + 1 : null, cor };
+  });
+  check('a faixa DESENHADA cai onde o dataset diz (topo do contorno = de, +-2 linhas)', faixaPx.topo !== null && Math.abs(faixaPx.topo - Number(p2.de)) <= 2 && Math.abs(faixaPx.base - Number(p2.ate)) <= 2, `${JSON.stringify(faixaPx)} de ${p2.de} ate ${p2.ate}`);
+
   // Teclado: o mapa e um slider; End leva a ultima linha.
   await page.focus('#minimapaCanvas');
   await page.keyboard.press('End');

@@ -442,6 +442,7 @@ async fn heartbeat_e_gatilhos_criam_tarefa_pela_mesma_funcao() {
             objetivo: "Analise o evento de deploy: {corpo}".into(),
             fluxo: None,
             segredo: Some("segredo-do-gatilho-1234567890".into()),
+            segredo_formulario: None,
         }],
     });
     let base = subir(&s, Some(phxclaw_agent::gatilhos::router(s.clone(), g))).await;

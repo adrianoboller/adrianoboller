@@ -84,7 +84,7 @@ fn pulo_calado_plantado_reprova() {
     planta(
         &r,
         "crates/z/tests/limpo.rs",
-        "// o teste pulado e o problema\nfn t() { let _ = \"repulsa\"; }\n",
+        "// o teste pulado e o problema\nfn t() { let _ = \"repulsa\"; }\nfn u() {\n    // nao e pulo: estado do passo do fluxo\n    let _ = \"pulado\";\n}\n",
     );
     let achados = pulos_calados(&r);
     let chaves: Vec<(String, usize, &str)> = achados

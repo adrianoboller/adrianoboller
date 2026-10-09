@@ -221,8 +221,17 @@ impl Modulo {
 
 /// O primitivo SEM politica de chave (qualquer tamanho, qualquer expoente), para os vetores
 /// oficiais, que trazem 1024 bits e expoentes que o JWKS nunca traria. Quem confere token
-/// usa `ChavePublica`, que poe a politica antes.
-pub fn verificar_pkcs1_sha256(n: &[u8], e: &[u8], msg: &[u8], assinatura: &[u8]) -> bool {
+/// usa `ChavePublica`, que poe a politica antes. Continua `pub` porque os vetores rodam no
+/// teste de integracao (`tests/canais.rs`), que so enxerga a API publica -- e por isso o nome
+/// carrega o `sem_politica` e a doc o esconde: chamar isto com chave de fora pularia o teto
+/// de 4096 bits e o expoente 65537, que sao a defesa contra custo e contra Bleichenbacher.
+#[doc(hidden)]
+pub fn verificar_pkcs1_sha256_sem_politica(
+    n: &[u8],
+    e: &[u8],
+    msg: &[u8],
+    assinatura: &[u8],
+) -> bool {
     Modulo::novo(n).is_some_and(|m| m.verificar(e, msg, assinatura))
 }
 

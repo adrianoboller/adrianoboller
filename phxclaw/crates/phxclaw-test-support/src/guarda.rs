@@ -229,7 +229,12 @@ pub fn pulos_calados_no_texto(arquivo: &str, texto: &str) -> Vec<Achado> {
             // quebrados pelo rustfmt fica a uma ou duas linhas da string.
             let de = i.saturating_sub(3);
             let ate = (i + 4).min(linhas.len());
-            if !linhas[de..ate].iter().any(|l| l.contains("pular(")) {
+            // A mesma saida declarada da regra 3, na linha de cima: o estado `"pulado"` do
+            // passo do motor de fluxo e vocabulario do produto, nao mensagem de pulo.
+            let declarado = linhas[i.saturating_sub(1)..=i]
+                .iter()
+                .any(|l| l.contains("// nao e pulo:"));
+            if !declarado && !linhas[de..ate].iter().any(|l| l.contains("pular(")) {
                 saida.push(Achado {
                     arquivo: arquivo.into(),
                     linha: i + 1,
