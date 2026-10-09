@@ -4876,7 +4876,7 @@ No arranque, o servidor lê do `aquario.log` (e do rodízio) as linhas
 `contagem` das **duas** últimas horas — a corrente e a anterior, que pode ter
 caído sem fechar — e refaz a hora a partir delas.
 
-## 26. `aquario.log` — as linhas `estourou` e `mudou` (pedido 707, A6 + A5)
+## 26. `aquario.log` — as linhas `estourou`, `mudou` e `contagem` (pedido 707, A6 + A5 + A8)
 
 JSON Lines ao lado do `acessos.log`, rodízio de 8 MiB × 8, pelo mesmo
 `LogAcessos::registrar_json`. Campo vazio não entra. **Nunca** `usuario` nem
@@ -4891,14 +4891,27 @@ JSON Lines ao lado do `acessos.log`, rodízio de 8 MiB × 8, pelo mesmo
 
 | campo | o que é |
 |---|---|
-| `estourou` | a tarefa que viveu ≥ 1 s terminou (fora as `OPS_DE_REPLICACAO`); `quando_ms` é o **fim** |
-| `mudou` | a base (A4) achou o pedido fora do habitual; leva `alarme` e `dados` (`z`, `n`, `p95_habitual_us`, `servico_us`) |
+| `quando` / `quando_ms` / `evento` | sempre presentes: o instante (texto `AAAA-MM-DD hh:mm:ss,mmm` e ms desde a época) e o nome do evento |
+| `estourou` | a tarefa que viveu ≥ 1 s (`VIVEU_NO_AQUARIO_MS`) terminou (fora as `OPS_DE_REPLICACAO`); `quando_ms` é o **fim**. Leva `op`, `database`, `tabela`, `ms` (a duração), `ok` e, quando `ok` é falso e o código não é 0, `codigo` |
+| `mudou` | a base (A4) achou o pedido fora do habitual; `quando_ms` é o fim do pedido. Leva `op`, `database`, `tabela`, `alarme`, `ocorrencia` (§27, quando o alarme virou ocorrência) e `dados` (`z`, `n`, `p95_habitual_us`, `servico_us`); **não** leva `ms` nem `ok` |
+| `contagem` | a contagem de um minuto fechado, no formato do §25: `quando_ms` é a **virada**, e o minuto vai em `dados` |
 | `cor` / `tamanho` / `motivo` / `grupo` | **desde a A5**: a classe que a `aquario::classificar` deu à tarefa **naquele instante** — a mesma função do retrato (`aquario_retrato`) e do `nivel` do painel. `motivo` é chave da fábrica; `grupo` só quando o motivo tem família |
 | `alarmes` | **desde a A5**: os alarmes de tarefa (A3) marcados, **pelos nomes** — nunca o número do bit |
 
 A cor vai **gravada**, não recalculada na leitura: a volta de cinco minutos
 (A13) mostra a bolha da cor que a tela mostrou. Linha anterior à A5 vem sem
 os cinco campos; o leitor trata ausência como «sem classe», nunca como verde.
+
+**O que a leitura acrescenta e o arquivo não tem.** O `aquario_log` põe `faixa`
+(`select`, `insert`, `update`, `delete`, `outras`) em cada linha que tem `op`,
+calculada na leitura por `contagem::faixa_da_op`. Ela não está gravada: é função
+da `op`, e a tela não tem lista de operações própria.
+
+**Declarado e ainda não gravado.** O tipo `Evento` (`aquario/log.rs`) também
+nomeia `nasceu`, `morta`, `retrato` e `sedimento`, e a `Linha` tem um campo
+`tarefa`; nenhum produtor grava essas linhas hoje (só `estourou`, `mudou` e
+`contagem`). Um leitor deve tolerá-las: `Alarme::de_nome` devolve `None` para
+nome que não conhece, e um log de versão mais nova não vira outro alarme.
 
 **Desde a F2 do 495**, a linha `mudou` leva `"ocorrencia": <id>` quando o alarme
 virou ocorrência (§27) — o **valor**, nunca a decisão.
@@ -4923,7 +4936,7 @@ Campo vazio não entra.
 | `id` | semeado com o relógio (ms × 1000) e crescente: não se repete entre arranques |
 | `tarefa` | a chave da atividade: `dados:17` (a conexão) ou `web:<16 hex>` — na web, os 8 primeiros bytes do SHA-256 do id da sessão, **nunca o id**, que é a credencial do `X-Sessao` (achado na F9, 09/10/2026: até então a linha gravava o id cru, e o mesmo valor saía no `telemetria` e no `aquario_retrato`) |
 | `alarme` / `gravidade` / `grupo` | o `enum Alarme` do 707 — o tipo da ocorrência é ele |
-| `tabelas` | `[{"database","tabela"}]`: toda tabela que o pedido nomeia, **pela árvore inteira** (o lado B de `juntar`, a lista do `unir`) |
+| `tabelas` | `[{"database","tabela"}]`: toda tabela que o pedido nomeia, **pela árvore inteira** (o lado B de `juntar`, a lista do `unir`); no máximo `TETO_DAS_TABELAS` (`ocorrencias.rs`) |
 | `digital` | a digital do SQL (F1), hexadecimal (u64 não cabe num número JSON) |
 | `sinais` | só no alarme `injecao_suspeita` (F3, grupo `ataque`): as classes do `phxsql_sql::sinais` que acusaram o pedido, na ordem `empilhado`, `constante_sob_or`, `uniao_de_sondagem`, `comentario_engole_aspa`. Nomes fixos do motor, nunca texto do cliente |
 | `dados` | o `dados` do produtor **redigido por análise**: pedido JSON vira a **forma** (segredo por nome, SQL normalizado, todo outro valor `?`); texto vira o SQL normalizado; o que não se analisa vira o tamanho. Corte de 4.096 caracteres só **depois** da redação |

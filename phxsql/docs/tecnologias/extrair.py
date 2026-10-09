@@ -637,7 +637,11 @@ def bloco_dependencias() -> str:
     linhas_out.append("|---|---|")
     for nome in crates_workspace:
         toml = ler(crates_dir / nome / "Cargo.toml")
-        m = re.search(r"\[dependencies\]\n((?:.+\n?)*?)(?:\n\[|\Z)", toml)
+        # Ate o proximo cabecalho `[...]` no comeco de linha (ou o fim). A forma
+        # antiga, `((?:.+\n?)*?)(?:\n\[|\Z)`, tinha backtracking exponencial
+        # quando o cabecalho seguinte vinha SEM linha em branco antes (o
+        # `[features]` do phxzip e do phxsql-sql): o gerador girava 20 min.
+        m = re.search(r"^\[dependencies\][ \t]*\n(.*?)(?=^\[|\Z)", toml, re.M | re.S)
         deps_txt = m.group(1) if m else ""
         deps = [
             l.split("=")[0].strip()

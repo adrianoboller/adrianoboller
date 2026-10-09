@@ -975,7 +975,10 @@ verificação segurando a trava.
 | `telemetria` | o retrato: séries, atividades, threads, cache, servidor | administrador |
 | `telemetria_ligar` | liga a coleta | administrador |
 | `telemetria_desligar` | desliga e **descarta** a série e as atividades | administrador |
-| `telemetria_encerrar` | encerra a operação em curso de uma atividade | administrador |
+| `telemetria_encerrar` | encerra a operação em curso de uma atividade, ou a **tarefa** do aquário (`dados:N#serial`, §11.1) | administrador |
+| `aquario_retrato` | as tarefas vivas com cor e motivo, e o sedimento do servidor (§11) | `monitorar` |
+| `aquario_log` | a linha do tempo do `aquario.log` (§11.7) | `monitorar` |
+| `aquario_contagens` | as oito séries por minuto e por hora (§11.6) | `monitorar` |
 
 ### 8.1 O portão próprio — a lição do `juntar`/`unir`
 
@@ -1127,3 +1130,363 @@ calmo, e essa confusão é exatamente o que não pode acontecer num monitor.
 Pausar também congela a tela, e por isso ganhou marca **própria**: «pausado por
 você». Congelado por vontade de alguém e congelado porque o servidor caiu
 param de atualizar do mesmo jeito; só um dos dois é notícia.
+
+---
+
+## 11. O aquário (pedido 707, fatias A2 a A13)
+
+O aquário é a tela de monitoramento em bolhas (`ui/aquario.js`, aberta por
+`?tela=aquario`): cada **tarefa** viva é uma bolha, a cor diz a gravidade, e ela
+estoura ao terminar. Este capítulo diz o que o **servidor** faz por trás. Cada
+afirmação cita o arquivo e a função de onde saiu, em
+`crates/phxsql-server/src/`. Desenho e decisões do dono:
+`docs/propostas/aquario-707.md` (a §11 manda onde as seções antigas a
+contradizem). Os limiares e tetos abaixo aparecem **pelo nome da constante**:
+o número mora no fonte e este documento não o repete.
+
+### 11.1 As operações
+
+| op | o que devolve | onde |
+|---|---|---|
+| `aquario_retrato` | `tarefas` (cada uma com `cor`, `tamanho`, `motivo`, `faixa`, `ms`, `servico_ms`, `espera_ms`, `alarmes`, `pseudonimo`), `sedimento`, `limiares`, `voce`, `completo` | `servidor/servico_aquario_01.rs::op_aquario_retrato` → `telemetria.rs::Telemetria::retrato_do_aquario` |
+| `aquario_log` | `linhas`, `truncado`, `arquivos_lidos`, `gravadas`, `falhas_de_escrita`, `ultima_falha` | `op_aquario_log` → `aquario/log.rs::LogDoAquario::consultar` |
+| `aquario_contagens` | `series`, `horas`, `hora_corrente`, `minuto_parcial`, `arquivo_de_horas`, `horas_por_gravar`, `horas_perdidas` | `op_aquario_contagens` → `aquario/contagem.rs::Contagem::consultar` |
+| `telemetria_encerrar` | o mesmo de §4, agora também com a tarefa do retrato | `servidor/servico_admin_01.rs::op_telemetria_encerrar` |
+
+- **`aquario_retrato`** não traz a conexão **ociosa**: a bolha é a tarefa, e
+  conexão sem pedido não tem tarefa (`retrato_do_aquario` filtra
+  `Estado::Ociosa`). `voce` é a tarefa de quem perguntou, para a tela não
+  desenhar o próprio pedido estourando de dois em dois segundos. `limiares`
+  devolve `alto_uso_ms` e `stress_ms` (da `Painel` do `config.json`,
+  `telemetria.alto_uso_ms` e `telemetria.stress_ms`; de fábrica, as constantes
+  `ALTO_USO_MS` e `STRESS_MS` de `telemetria.rs`) e `tarefa_media_ms` e
+  `tarefa_grande_ms` (as constantes `TAREFA_MEDIA_MS` e `TAREFA_GRANDE_MS` de
+  `aquario/classe.rs`).
+- **`aquario_log`** aceita `desde` e `ate` (ms desde a época) e `max`: sem ele
+  vale `MAX_PADRAO`, e o teto é `MAX_TETO` (ambos em `aquario/log.rs`; um `max`
+  de um milhão montaria na memória o rodízio inteiro). `desde` depois de `ate`
+  e `max` menor que 1 voltam `Tipo`. Lê **de trás para a frente** pelo rodízio
+  (`percorrer`), parando na primeira linha anterior a `desde` ou ao juntar
+  `max`. **Não há filtro chamado `tabela`**: o portão geral lê esse campo e
+  conferiria o direito naquela tabela, e o aquário é do servidor inteiro. Com o
+  arquivo fechado a resposta é `NAO_ENCONTRADO` com o motivo — nunca uma lista
+  vazia, que diria «nada aconteceu». Cada linha devolvida ganha `faixa`,
+  calculada na leitura por `contagem::faixa_da_op` (não está no arquivo).
+- **`aquario_contagens`** aceita `desde` e `ate`. Zero não é `null`: o minuto
+  medido em que nada aconteceu sai com zeros; o minuto em que o servidor estava
+  fora, ou a telemetria desligada, sai `null` em `hora_corrente.minutos`. As
+  horas fechadas vêm do `aquario-horas.jsonl` (§11.8), mais as que esperam o
+  disco (`horas_por_gravar`); as que passaram do teto de memória contam em
+  `horas_perdidas`.
+- **`telemetria_encerrar`** aceita `id` em duas formas do **mesmo** motor:
+  `dados:17` (a atividade, da lista da `telemetria`) e `dados:17#42` (a
+  **tarefa** do retrato: atividade, `#`, serial). O serial vem de fora para a
+  marca mirar o pedido que a pessoa viu; se a conexão já está noutro, a
+  resposta é `NAO_ENCONTRADO` e nada se encerra. `#` seguido de algo que não é
+  número maior que zero volta `Esquema`. Detalhes em §4.5a.
+
+### 11.2 O direito `Monitorar` e o portão
+
+`Atividade::Monitorar` (`usuarios.rs`) é um direito novo, **de servidor**: só
+tem sentido na regra `"*"` ou no nível. O `da_operacao` (`usuarios.rs`) mapeia
+`aquario_log`, `aquario_contagens` e `aquario_retrato` para ele.
+
+- **Quem administra já monitora.** `Permissoes::pode` responde `monitorar`
+  também por `administrar` — a única implicação que existe. Quem administrava
+  já via tudo antes de o direito nascer, e nenhuma regra antiga diz
+  `"monitorar": true`. O que volta ao `config.json` é só o que a regra escreve
+  (`concedido`), sem a implicação: o cadastro não muda de forma por ter passado
+  pela tela.
+- **Ver não é matar.** `monitorar` não alcança `telemetria_encerrar` nem
+  `encerrar_sessao`.
+- **O portão próprio** (`Servidor::portao_do_aquario`, em
+  `servico_aquario_01.rs`): a lição do `juntar` (§8.1) de novo. O portão geral
+  lê o campo `"database"`, e as ops do aquário não têm esse campo de verdade;
+  quem tivesse `monitorar` só na `loja` mandaria `"database":"loja"` e leria a
+  linha do tempo de todas as bases. A função pergunta
+  `pode_em("", "", Monitorar)` — a regra do **servidor**. Sem cadastro de
+  usuários, o token de serviço passa, como em toda op de administração.
+- **Login e IP só a quem passa no portão da telemetria.** `op_aquario_retrato`
+  chama `portao_da_telemetria` e passa o resultado como `completo` a
+  `retrato_do_aquario`. Sem `completo`, `usuario` e `ip` **nunca chegam a ser
+  escritos** no JSON (não há filtro depois): quem só monitora (a TV) não os vê.
+  Com `completo` vão também `ligacao`, `fase`, `cancelavel` e `tem_ponto`, que o
+  cartão de encerrar (§11.9) mostra antes de confirmar.
+- **O `encerrar_sessao` ganhou portão próprio** (pedido 755, achado na A7):
+  antes, `administrar` só na `loja` com `"database":"loja"` derrubava a conexão
+  de qualquer base.
+
+### 11.3 A função única da cor: `classificar`
+
+`aquario/classe.rs::classificar(&Fatos, &Painel) -> Classe`. É a **única** regra
+de cor: o retrato (`Atividade::bolha_do_aquario`, via `classe_viva`), o `nivel`
+do painel da telemetria (`Cor::nivel`, a projeção da cor em quatro degraus) e as
+linhas `estourou` e `mudou` do `aquario.log`
+(`servico_aquario_01.rs::classe_do_fim`) chamam a mesma função. Duas regras
+seriam duas cores para a mesma tarefa, e a TV que volta cinco minutos pelo log
+mostraria uma bolha de outra cor da que estava na tela. A função recebe
+**fatos** (`Fatos`: estado, bits de alarme, `servico_ms`, `parede_ms`,
+`com_trava`, `ha_fila`, `servidor_em_stress` e o `Habitual` da linha de base) e
+não decide nada além da cor.
+
+A precedência, de cima para baixo, a primeira que casa vence (doc de
+`classificar`; `alto_uso_ms` e `stress_ms` vêm da `Painel`):
+
+| # | cor | quando |
+|---|---|---|
+| 1 | rosa | `Estado::Encerrando` — vence até alarme vermelho |
+| 2 | verde | `Estado::Ociosa` — o bit do pedido que acabou não pinta a conexão |
+| 3 | vermelho | alarme vermelho marcado (o primeiro na ordem de `Alarme::TODOS`); ou esperando a trava com `parede_ms ≥ stress_ms`; ou executando **com a trava na mão** e (`servico_ms ≥ stress_ms`, ou servidor em stress com fila) |
+| 4 | amarelo | alarme amarelo marcado (fora `ForaDoHabitual`, que é classe); ou esperando a trava com `parede_ms ≥ alto_uso_ms`; ou anormal sem ser grande; ou sem habitual formado e `parede_ms ≥ alto_uso_ms` |
+| 5 | azul escuro | grande **e** anormal |
+| 6 | azul claro | grande |
+| 7 | verde | o resto (motivo `no_habitual`) |
+
+- **Tamanho** (`Tamanho::de_ms`): pelo tempo de **serviço**, não pela espera —
+  a vítima da fila não cresce. Média a partir de `TAREFA_MEDIA_MS` (que é o
+  `PERIODO_DA_AMOSTRA_MS`), grande a partir de `TAREFA_GRANDE_MS`.
+- **Estado × alarme.** Esperar a trava, segurar a trava com fila, ser grande e
+  passar do tempo fixo se leem do **estado** e dos tempos, e moram na
+  `classificar`. Alarme é o que alguém **marcou na origem** (§11.5), porque o
+  estado não o distingue.
+- **A tabela de casos** é o teste `a_tabela_de_casos`, em `classe.rs`: cada
+  linha (`caso("nome", bits, estado, trava/fila/stress, tempos, habitual,
+  (cor, motivo))`) trava uma regra da precedência. Quem muda a regra muda a
+  tabela — é ela a especificação. `o_nivel_e_a_projecao_da_cor` trava a
+  projeção para o painel.
+- **Efeitos no painel de hoje** (commit `6d5e8e3d`): esperar a trava menos de
+  `alto_uso_ms` volta a normal; mais de `stress_ms` **sem a trava na mão** deixa
+  de ser stress; com habitual formado o tempo fixo não pinta. A guarda de que a
+  vítima da fila nunca fica vermelha continua.
+- **O motivo é chave neutra de idioma** (`aquario.motivo.*`): o log grava a
+  chave, a tela traduz (`docs/MENSAGENS.md`, «As chaves do aquário»).
+
+### 11.4 A linha de base («fora do habitual»)
+
+`aquario/base.rs::BaseDeConsultas`. Para cada chave, o habitual do **tempo de
+serviço** (sem a espera na fila da trava), em duas metades.
+
+- **Estatística:** Welford sobre `ln(µs)` (`Welford::somar`), as duas metades
+  unidas pela fórmula de Chan (`Welford::unir`), sem guardar amostra. Sobre o
+  logaritmo porque tempo de banco tem cauda longa: o z sobre µs crus acusaria a
+  cauda normal.
+- **Janela:** duas metades de `METADE_MS`; o habitual é o das duas últimas
+  (`Linha::girar`). Relógio que recuou não vira nada.
+- **O corte** (`julgar`): `Habitual::Poucas` enquanto o habitual tem menos de
+  `N_MINIMO` amostras; acima disso, alarma (`Habitual::Fora`, alarme
+  `ForaDoHabitual`) quando o serviço é ≥ `PISO_US` **e** `z ≥ Z_MINIMO`. O
+  desvio tem chão, `CHAO_DO_DESVIO`: a série constante (vinte pedidos de
+  exatamente 1 ms) tem desvio zero, e um z que devolvesse 0 deixava passar o de
+  10 s logo depois. `p95_habitual_us` (`exp(média + Z_DO_P95·desvio)`) é
+  **estimado** e só mostrado; o corte é o z.
+- **A chave** (`chave_do_pedido`): `op + database + tabela`. O `sql` entra pela
+  **digital** (`phxsql_sql::digital`, F1 do 495: FNV-1a 64 sobre os símbolos),
+  porque todo `sql` tem a mesma op e o `SELECT` de 300 ms legítimo alarmaria
+  contra o habitual dos de 1 ms; sem digital, fica **fora**. As
+  `OPS_DE_REPLICACAO` ficam fora por desenho (`replicar_aguardar` espera): sem
+  essa exclusão eram 14 dos 51 alarmes da A0.
+- **Teto com coringa:** `TETO_DE_CHAVES` chaves próprias; a seguinte vai a uma
+  linha única que soma mas **nunca alarma** (despejar apagaria o habitual de
+  quem já estava ali; misturar chaves faria o z mentir). Colisão de hash
+  também vai à coringa (`Identidade::e` confere a identidade).
+- **Um julgamento só** (`julgar`): o pedido que termina e a tarefa viva usam a
+  mesma função, senão a bolha viva mudaria de cor no instante em que estoura.
+- **Quando roda:** só com a telemetria ligada (`Telemetria::aquario_se_ligada`
+  devolve `None` desligada; o contador `Aquario::anotados` prova que o portão
+  vem antes do trabalho). O custo se mede com
+  `cargo run --release --example custo-da-base-do-aquario -p phxsql-server`.
+- **O gerador das constantes:** `bancada/aquario/regra.py` regera o par 11 do
+  Apêndice B de `aquario-707.md`. Na A1 ele desmentiu dois números escritos à
+  mão (o Welford dava 54 alarmes sem exclusão da replicação contra 40 com ela;
+  o gerador deu 51 contra 37 nos mesmos 24 logs). A conclusão ficou, o número
+  escrito saiu.
+
+### 11.5 Os alarmes e o sedimento
+
+`aquario/mod.rs::Alarme` é **um enum só** para a bolha e para a `Ocorrencia`
+do 495 (§27 do `FORMATO.md`): dois enums responderiam duas vezes «isto é
+grave?». São `Alarme::TODOS.len()` variantes, cada uma com `chave()` (a chave
+de idioma), `nome()` (a chave sem o prefixo, o que o log grava), `gravidade()`,
+`grupo()`, `escopo()` e `bit()`.
+
+- **Escopo `Tarefa`:** o alarme vira um **bit** no `AtomicU32` da `Atividade`
+  (`alarme.rs::produzir`), marcado **onde o fato acontece** — a trava
+  reentrante e a envenenada (`servidor.rs`), o prazo (no `siga`), o gancho de
+  E/S do `anotar`, a recusa de integridade. O bit volta a zero no
+  `comecou_pedido`: o alarme é da tarefa (`chave#serial`).
+  **Os números dos bits são fixos** (`Alarme::bit`), não a posição na lista: o
+  bit pode ir ao log, e reordenar a declaração não pode mudar o que um log
+  antigo quer dizer.
+- **O dado corrompido é o único deduzido** (`alarme.rs::conferir_o_1001`,
+  chamada do `anotar`): o código 1001 é o mesmo da trava pedida duas vezes, da
+  trava envenenada e do arquivo corrompido, e só o bit que a trava deixou antes
+  separa as três causas. Sem bit de trava, é `DadoCorrompido`.
+- **Escopo `Servidor`:** o alarme não é de nenhuma tarefa e vira **sedimento**.
+  `alarme.rs::sedimentar` guarda, por alarme, o último `visto_ms` e as `vezes`
+  desde o arranque, em estático do processo (`VISTO_MS`, `VEZES`: as origens são
+  funções livres que não têm o `Telemetria` na mão). `alarme::sedimento()`
+  devolve só os já vistos, e é o que o retrato entrega em `sedimento`
+  (`alarme`, `motivo`, `cor`, `grupo`, `visto_ms`, `vezes`). Quanto tempo uma
+  pedra fica na tela é decisão da tela, que tem o relógio de quem olha; ela a
+  mostra como «Fundo do aquário».
+- **Um produtor só:** `telemetria::sinal`, `sinal_com_sinais` e `sinal_em`
+  chamam o mesmo `produzir`, e é ele que também entrega a `Ocorrencia` ao
+  `ocorrencias.log` (§11.8). **O bit tem portão; a ocorrência, não:** com a
+  telemetria desligada não há atividade onde pôr o bit, mas o fato continua
+  indo à camada de ocorrências — registro de segurança que some quando a tela
+  do aquário foi desligada mentiria sobre o servidor. Todo ponto de marca está
+  num erro (caminho raro): o caminho normal não chama nada daqui.
+- **Gravidade** (`Alarme::gravidade`): amarelos são `ForaDoHabitual`,
+  `IntegridadeRecusada`, `DiscoLento`, `EsgotamentoPrevisto`, `ReplicaAtrasada`
+  e `PlanoLargo`; os demais, vermelho. `IntegridadeRecusada` é amarelo de
+  propósito: o motor fez o trabalho dele e o dado está protegido.
+- **Grupos** (a letra da bolha, `Grupo::nome`): `lock`, `disco`, `dado`,
+  `replica`, `seguranca`, `prazo`, `previsao`, `ataque`.
+
+**O que o código acende hoje, e o que só está declarado.** Medido por busca no
+fonte em 09/10/2026 (`Alarme::X` fora de `aquario/` e dos testes). Produzem:
+`TravaReentrante`, `TravaEnvenenada`, `ErroDeDisco`, `DadoCorrompido`,
+`ForcaBruta`, `SenhaEmClaro`, `PrazoEstourado`, `ForaDoHabitual`,
+`IntegridadeRecusada`, `EsgotamentoPrevisto`, `EsgotamentoIminente`,
+`ReplicaAtrasada`, `InjecaoSuspeita` e `PlanoLargo`. **Declarados sem produtor
+nenhum:** `TransacaoAcimaDoTeto`, `FechoRecusado` (só em teste),
+`FsyncRecusadoAntes`, `MarcaNaoResolvida`, `IndiceAtrasado`,
+`ContinuidadeRompida`, `OrigemInalcancavel`, `FirewallBloqueou`, `DiscoLento` e
+`ForaDoHabitualReincidente`. Do sedimento, portanto, só `EsgotamentoPrevisto`,
+`EsgotamentoIminente` e `ReplicaAtrasada` acendem. A tela já traduz as chaves
+dos 24; o vermelho de disco, de dado em risco, de réplica e de segurança do
+item 7 do pedido 707 **ainda não tem origem** nesses dez (cognição
+`cognicao_alarme-declarado-sem-produtor_20261009_1400.md`).
+
+### 11.6 A contagem
+
+`aquario/contagem.rs::Contagem`. Um acumulador só, alimentado por
+`Aquario::anotar` (o `anotar` do servidor é o sumidouro por onde toda resposta
+passa); **a hora é o fecho do minuto, não um segundo contador**.
+
+- **Oito séries** (`Serie::TODAS`): `select`, `insert`, `update`,
+  `excluir_suave`, `excluir_fisico`, `backup`, `erro`, `aviso`.
+- **A unidade é o pedido**, não a linha: lote de 5.000 conta 1.
+- **Quem decide a categoria é a resposta** (`Desfecho::da_resposta`, calculado
+  por `Servidor::desfecho_para_contar` só com a telemetria ligada): o `excluir`
+  que a tabela sem marca fez físico conta como físico mesmo sem `"fisico"` no
+  pedido; o `sql` diz na resposta qual op atendeu. As listas são
+  `OPS_DE_LEITURA`, `OPS_DE_INSERCAO` e `OPS_DE_BACKUP`, e há teste que reprova
+  nome que não existe no catálogo.
+- **As barras contam só o que terminou `ok`:** `ok:false` sobe só `erro` (o
+  backup que falhou não sobe a barra de backup); `aviso` é `ok:true` com
+  `aviso`/`avisos` não vazio no nível de cima, e conta também na barra da
+  categoria.
+- **A virada** (`Contagem::virar`, chamada pelo amostrador de 1 s via
+  `Servidor::virar_a_contagem`): fecha o minuto, devolve a linha para o
+  `aquario.log` e, se o minuto novo está noutra hora, fecha a hora e a grava. O
+  pedido que termina entre a virada do relógio e a chamada conta no minuto que
+  fecha: até um período do amostrador de deslize.
+- **O arranque** (`Servidor::retomar_a_contagem`): lê as linhas `contagem` do
+  `aquario.log` desde o início da hora **anterior** (a corrente, e a anterior
+  inteira, que pode ter caído sem fechar) e refaz a hora (`Contagem::retomar`).
+  Minuto que o rodízio comeu fica fora de `minutos_medidos`: parcial, nunca
+  inventado.
+
+### 11.7 O `aquario.log`
+
+`aquario/log.rs`, arquivo `NOME_DO_ARQUIVO` (`aquario.log`), ao lado do
+`acessos.log` (aberto no arranque, `servico_nucleo_01.rs`). Formato das linhas:
+`FORMATO.md` §26.
+
+- **Mesmo escritor do `acessos.log`** (`LogAcessos::registrar_json`, numa
+  segunda instância): abrir 0600, girar por tamanho, contar a falha do rodízio.
+  Rodízio de `TETO_DO_ARQUIVO` por arquivo, `ARQUIVOS_ANTIGOS` antigos mais o
+  corrente. A escrita é um `write_all` só: com o disco cheio a escrita parcial
+  deixava meia linha e a seguinte colava nela; agora o escritor marca a linha
+  partida e se ressincroniza (o `acessos.log` ganhou o mesmo conserto na A6, e o
+  `Diario` no pedido 753).
+- **Grava sem ninguém perguntar** — a TV que abre depois do fato acha o fato no
+  disco. Três linhas hoje, todas do `anotar` ou do amostrador do servidor:
+  `estourou` (`LogDoAquario::tarefa_terminou`: a tarefa que viveu
+  `VIVEU_NO_AQUARIO_MS` ou mais, fora as `OPS_DE_REPLICACAO`; o corte por
+  duração vem **antes** de qualquer alocação), `mudou`
+  (`Servidor::sinalizar_desvio`: a base achou o pedido fora do habitual; leva
+  `alarme`, `ocorrencia` e `dados` com `z`, `n`, `p95_habitual_us` e
+  `servico_us`) e `contagem` (`virar_a_contagem`).
+- **Nunca `usuario` nem `ip`:** a `Linha` não tem esses campos — a garantia é do
+  **tipo**, não de um filtro que alguém lembraria de aplicar. Os campos vindos
+  do pedido passam pelo `profiler::de_uma_linha` com o teto `TETO_DO_CAMPO`.
+- **A cor vai gravada, não recalculada na leitura:** é a que a `classificar`
+  deu **naquele instante**, para a volta de 5 minutos mostrar a bolha da cor que
+  a tela mostrou.
+- **Falha de gravação não sobe ao cliente:** `Servidor::no_aquario_log` manda o
+  erro de E/S ao `evento_de_disco` (saúde do disco), e a consulta devolve
+  `gravadas`, `falhas_de_escrita` e `ultima_falha`. Arquivo que não abriu no
+  arranque AVISA e o servidor sobe (o aquário é acessório).
+- **Tipos de evento declarados sem escritor:** `Evento::Nasceu`, `Morta`,
+  `Retrato` e `Sedimento` existem em `log.rs`, e o campo `tarefa` da `Linha`
+  também, mas nada grava essas linhas hoje. O pedido do dono (707, item 5) quer
+  «nascer, mudar de cor, ser morta, estourar» no log; só `estourou`, `mudou` e
+  `contagem` existem.
+
+### 11.8 O `aquario-horas.jsonl` e o `ocorrencias.log`
+
+- **`aquario-horas.jsonl`** (`contagem.rs::ARQUIVO_DE_HORAS`, `FORMATO.md`
+  §25): uma linha por **hora UTC** fechada, ao lado do `acessos.log`, **fora do
+  rodízio**. O motor não tem fuso (`datahora.rs`); fechar por dia UTC poria 3
+  das 24 h do dia de Brasília no dia errado, e por isso a tela soma as horas no
+  fuso do navegador. Aberto uma vez por hora (`gravar_pendentes`). A hora que o
+  disco recusa espera em memória, até `TETO_DE_HORAS_POR_GRAVAR`; passou
+  disso, a mais velha sai e entra em `horas_perdidas`. A recusa vai à saúde do
+  disco. `minutos_medidos` diz quantos dos 60 minutos foram medidos: parcial é
+  desenhado parcial, nunca completado com zero.
+- **`ocorrencias.log`** (`ocorrencias.rs`, `FORMATO.md` §27): o **fato** de cada
+  alarme, para quem administra. Mesmo escritor (`LogDoAquario::gravar_json`),
+  papel diferente: leva `usuario` e `ip`, e por isso nasce 0600 e é de quem
+  administra. O `dados` chega **redigido analisando** (`profiler::forma_do_pedido`
+  ou `phxsql_sql::usuario::normalizado`; o que não se analisa vira o tamanho),
+  com o corte `TETO_DOS_DADOS` só depois. Silêncio por (alarme, usuário, IP) de
+  `SILENCIO_MS`, com `TETO_DO_SILENCIO` chaves e uma coringa por alarme. A fila
+  e o carteiro (`Correio`, `TETO_DA_FILA`) saíram da saúde do disco e são um só.
+  A ocorrência sai mesmo com o aquário desligado; só o bit fica atrás do
+  portão. A linha `mudou` do `aquario.log` leva o **id** da ocorrência (o valor,
+  nunca a decisão). Quem o lê é a op `ocorrencias` (direito `administrar`, fatia F9 do 495), com filtros de período, alarme e máximo.
+
+### 11.9 O cartão de encerrar e o modo TV
+
+- **O cartão (A12)** mostra, na própria página (nunca `confirm()`), tarefa,
+  alvo, usuário, IP, fase e o que se perde. Só abre quando o servidor diz
+  `completo` — a mesma pergunta com que o `telemetria_encerrar` recusaria
+  (`aquario.js::podeEncerrar`). Quem só monitora não abre cartão, e o pedido
+  forjado volta `ACESSO_NEGADO`. «Encerrar» chama `telemetria_encerrar` com
+  `dados:N#serial`; «Derrubar» chama `encerrar_sessao`. A tarefa de serviço
+  vem com `"servico": true` e a tela esconde o botão pela mesma função com que
+  o servidor recusa (`telemetria::tarefa_de_servico`, §4.5a).
+- **O modo TV (A13)** é `?tela=aquario&tv=1` (lido em `ui/multitela.js`):
+  `tv: true` cobre a página inteira (menus e barras somem) e **nunca abre o
+  cartão**. O selo de frescor passa a VELHO quando o último retrato bom tem mais
+  que `LIMITE_VELHO_MS` ou o último pedido falhou — painel congelado mente pior
+  que painel vazio. A volta de `VOLTA_MS` pausa o ao vivo e reconstrói o tanque
+  pelo `aquario.log`: cada `estourou` diz quando a tarefa acabou e quanto
+  durou. (As duas constantes estão em `ui/aquario.js`.)
+- **O pseudônimo** (`telemetria.rs::pseudonimo`, decisão do dono,
+  09/10/2026): a TV mostra o usuário por **pseudônimo**, nunca o login nem o
+  IP. É **HMAC-SHA256** (`phxsql_core::hash::hmac_sha256`) do login com um sal
+  de 32 bytes sorteado na primeira vez que alguém pede o retrato
+  (`Telemetria::sal_do_pseudonimo`, `phxsql_core::senha::bytes_aleatorios`),
+  **só em memória**: nunca vai a disco nem a resposta. Ficam os 4 primeiros
+  bytes do HMAC, em 8 hexadecimais. SHA-256 puro seria desfeito por dicionário
+  (os logins são poucos e adivinháveis); com o sal secreto não há dicionário.
+  Estável enquanto o processo vive; o arranque sorteia outro, e a mesma pessoa
+  vira outro pseudônimo no dia seguinte, o que é a favor da LGPD. Vai a todos
+  os que passam no portão do aquário, inclusive quem administra, porque não
+  identifica ninguém; `usuario` e `ip` só com `completo`. O módulo da tela lê
+  do retrato só `tarefa`, `op`, `tabela`, `cor`, `faixa`, `motivo`, `ms` e
+  `pseudonimo`, e a prova no navegador planta login e IP no retrato para
+  conferir que não chegam ao DOM.
+
+### 11.10 A prova
+
+`servidor/testes_do_aquario.rs` (ops, portão, bits, contagem, log),
+`tests/aquario-encerrar.rs` (o encerrar pelo soquete, nos dois sentidos),
+`aquario/classe.rs::testes::a_tabela_de_casos` e
+`testes-web/prova-707-aquario.mjs` (o navegador contra o servidor real, nos dois
+temas: aba escondida faz 0 pedidos, um `inserir` real sobe a barra do dia,
+servidor derrubado vira VELHO). Cada ligação das fatias tem um teste que cai sem
+ela; os RED estão nas mensagens de commit do 707.

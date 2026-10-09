@@ -36,18 +36,20 @@ foi estimado no lugar de uma medição que faltou.
 |---|---:|---:|---:|---:|---:|---:|
 | `phxsql-cli` | 1 | 875 | 119 | 162 | 83 | 1239 |
 | `phxsql-cmd` | 2 | 664 | 110 | 220 | 67 | 1061 |
-| `phxsql-core` | 48 | 19086 | 6790 | 5413 | 2308 | 33597 |
+| `phxsql-core` | 50 | 19571 | 7052 | 5701 | 2381 | 34705 |
 | `phxsql-ffi` | 7 | 1524 | 1803 | 930 | 297 | 4554 |
 | `phxsql-odbc` | 7 | 3462 | 1663 | 1218 | 304 | 6647 |
-| `phxsql-server` | 178 | 97147 | 20073 | 38463 | 7626 | 163309 |
-| `phxsql-sql` | 10 | 7377 | 4179 | 2899 | 852 | 15307 |
-| `phxsql-store` | 33 | 29876 | 6528 | 12733 | 2863 | 52000 |
-| `phxzip` | 9 | 3074 | 501 | 804 | 284 | 4663 |
-| **total** | **295** | **163085** | **41766** | **62842** | **14684** | **282377** |
+| `phxsql-server` | 195 | 103428 | 21985 | 41012 | 8269 | 174694 |
+| `phxsql-sql` | 11 | 7958 | 4179 | 3050 | 903 | 16090 |
+| `phxsql-store` | 33 | 29904 | 6528 | 12763 | 2868 | 52063 |
+| `phxzip` | 11 | 4063 | 540 | 1053 | 365 | 6021 |
+| `phxzip-cmd` | 3 | 1206 | 164 | 202 | 79 | 1651 |
+| `phxzip-web` | 4 | 1415 | 386 | 231 | 136 | 2168 |
+| **total** | **324** | **174070** | **44529** | **66542** | **15752** | **300893** |
 
-Proporcao teste/codigo (so `src/`, sem comentario nem linha vazia): **41766/163085 = 0.26×**.
+Proporcao teste/codigo (so `src/`, sem comentario nem linha vazia): **44529/174070 = 0.26×**.
 
-Alem do `src/`: **97** programas de medicao em `examples/` (23517 linhas — bancada em Rust, nao produto nem teste) e **168** arquivos em `tests/` de integracao fora de `src/` (62184 linhas).
+Alem do `src/`: **100** programas de medicao em `examples/` (23767 linhas — bancada em Rust, nao produto nem teste) e **182** arquivos em `tests/` de integracao fora de `src/` (66467 linhas).
 <!-- /GERADO -->
 
 A proporção teste/código sai medida no bloco acima, não digitada aqui. O
@@ -74,17 +76,18 @@ Lista extraida de `crates/phxsql-server/src/http.rs` (todo `include_str!`/`inclu
 
 | arquivo embutido | linhas | KiB |
 |---|---:|---:|
-| `ui/index.html` | 16250 | 930.4 |
+| `ui/index.html` | 16337 | 934.7 |
 | `ui/grid/phx-grid.css` | 194 | 14.3 |
 | `ui/grid/phx-grid.js` | 1864 | 90.3 |
 | `ui/diagrama-er.js` | 712 | 29.1 |
 | `ui/telemetria.css` | 447 | 19.8 |
 | `ui/telemetria.js` | 1823 | 89.4 |
-| `ui/multitela.css` | 156 | 8.6 |
-| `ui/multitela.js` | 1588 | 69.1 |
+| `ui/aquario.js` | 1415 | 69.6 |
+| `ui/multitela.css` | 167 | 9.0 |
+| `ui/multitela.js` | 1591 | 69.3 |
 | `ui/claude.js` | 1618 | 82.6 |
 | `ui/grid/CHANGELOG-phx-grid.md` | 248 | 31.1 |
-| **total (10 arquivos)** | **24900** | **1364.7** |
+| **total (11 arquivos)** | **26416** | **1439.2** |
 
 Embutidos pelo `http.rs` **fora** de `ui/`, e por isso **fora** do total acima (1 arquivo(s)):
 - `crates/phxzip-web/ui/fonte/exo2-latin.woff2`, 39.9 KiB
@@ -111,11 +114,11 @@ mesmo motivo que o rodapé já errou uma vez.
 <!-- GERADO: bloco_outras_linguagens() -->
 | o que | onde | arquivos | linhas |
 |---|---|---:|---:|
-| JavaScript (prova ponta a ponta) | `testes-web/` | 79 | 18058 |
-| Python (bancada de medicao) | `bancada/` | 156 | 83661 |
-| Shell (empacotar, zelador, provas) | todo o repositorio | 27 | 3951 |
-| Markdown (documentacao tecnica) | `docs/`, **recursivo** (inclui `cognicao/`, `dossie/`, `propostas/`, `pmo/`) | 704 | 145883 |
-| Python (geradores de documentacao) | `docs/`, **recursivo** (`dossie/`, `pmo/`, `status/`, `planilha/`, `tecnologias/`, `geradores/`) | 44 | 19397 |
+| JavaScript (prova ponta a ponta) | `testes-web/` | 82 | 19077 |
+| Python (bancada de medicao) | `bancada/` | 161 | 84817 |
+| Shell (empacotar, zelador, provas) | todo o repositorio | 28 | 4259 |
+| Markdown (documentacao tecnica) | `docs/`, **recursivo** (inclui `cognicao/`, `dossie/`, `propostas/`, `pmo/`) | 713 | 147684 |
+| Python (geradores de documentacao) | `docs/`, **recursivo** (`dossie/`, `pmo/`, `status/`, `planilha/`, `tecnologias/`, `geradores/`) | 44 | 19407 |
 
 A linha «Markdown (documentacao tecnica)» acima **exclui o proprio `docs/TECNOLOGIAS.md`** da contagem — ele e a SAIDA deste extrator, e contar a saida como entrada faz cada gravacao mudar o numero que a gravacao seguinte vai ler (pedido 404: tres corridas seguidas sem edicao nenhuma publicaram 106.750 -> 106.752 -> 106.753 linhas, nunca um ponto fixo). Mesmo molde da §17 da setima pagina de status, que escreve «— (esta pagina)» em vez de medir a si mesma.
 <!-- /GERADO -->
@@ -133,7 +136,7 @@ A regra do projeto é **zero dependências externas** — só a `std`. Provado
 pelo arquivo, não pela lembrança:
 
 <!-- GERADO: bloco_dependencias() -->
-`Cargo.lock` lista **9** pacotes. Todos: `phxsql-cli, phxsql-cmd, phxsql-core, phxsql-ffi, phxsql-odbc, phxsql-server, phxsql-sql, phxsql-store, phxzip`.
+`Cargo.lock` lista **11** pacotes. Todos: `phxsql-cli, phxsql-cmd, phxsql-core, phxsql-ffi, phxsql-odbc, phxsql-server, phxsql-sql, phxsql-store, phxzip, phxzip-cmd, phxzip-web`.
 
 Nenhuma linha `source = ` no arquivo (contadas: 0) -- todo pacote e `path`, isto e, um crate deste proprio workspace. Pacotes externos ao workspace: **0**.
 
@@ -149,7 +152,9 @@ Confirmando pelo `[dependencies]` de cada `Cargo.toml`:
 | `phxsql-server` | phxsql-core.workspace, phxsql-store.workspace, phxsql-sql.workspace, phxzip.workspace |
 | `phxsql-sql` | phxsql-core.workspace |
 | `phxsql-store` | phxsql-core.workspace |
-| `phxzip` | (nenhuma) |
+| `phxzip` | phxsql-core.workspace |
+| `phxzip-cmd` | phxzip.workspace, phxsql-core.workspace |
+| `phxzip-web` | phxsql-core.workspace, phxzip.workspace |
 <!-- /GERADO -->
 
 `phxsql-core` é a base e não depende de nada — nem de outro crate deste
@@ -294,7 +299,7 @@ com o motivo escrito**, que é o que a cláusula realmente cobra.
 ### 4.2 Como se mediu
 
 <!-- GERADO: bloco_bancadas() -->
-`bancada/` tem **64** frentes de medicao (__pycache__, acid, alfanumerica, alter, arm, backup, bateria, caixa-offline, carga, catastrofes, catracas, cifra, cifra-do-fio, cifra-migracao, cluster, cobertura-da-tela, colmeia, comparacao, comparativo, concorrencia, conexoes, dblink, diretivas, dns-cloudflare, docker, durabilidade, embutido, exclusao, fts, gaps-sql, gestao, guardas, instancia, jobs, lgpd, manual, mvcc, odbc, pacote, particao-por-faixa, pitr, profiler, proibidos, quorum, referencias, registro, replicacao, rest, rotinas, seguranca, sequencias, servermail, sql-exemplos, sqlite, telemetria, tomada, transacoes, uniao, usuarios, utilizacao-padrao, vagas-da-tela, vetorial, windows, zelador), das quais **44** documentam a propria metodologia em `LEIA-ME.md`.
+`bancada/` tem **66** frentes de medicao (__pycache__, acid, alfanumerica, alter, aquario, arm, backup, bateria, caixa-offline, carga, catastrofes, catracas, cifra, cifra-do-fio, cifra-migracao, cluster, cobertura-da-tela, colmeia, comparacao, comparativo, concorrencia, conexoes, dblink, diretivas, dns-cloudflare, docker, durabilidade, embutido, exclusao, fts, gaps-sql, gestao, guardas, instancia, jobs, lgpd, manual, mvcc, odbc, pacote, particao-por-faixa, phxzip, pitr, profiler, proibidos, quorum, referencias, registro, replicacao, rest, rotinas, seguranca, sequencias, servermail, sql-exemplos, sqlite, telemetria, tomada, transacoes, uniao, usuarios, utilizacao-padrao, vagas-da-tela, vetorial, windows, zelador), das quais **44** documentam a propria metodologia em `LEIA-ME.md`.
 <!-- /GERADO -->
 
 A carga do lado do motor é
@@ -314,6 +319,10 @@ Conferidores em `crates/phxsql-server/src/`: `conferidor.rs`, `conferidor_botoes
 
 | constante | valor | arquivo |
 |---|---:|---|
+| `TETO_DE_CHAVES` | 5_000 | `crates/phxsql-server/src/aquario/base.rs` |
+| `TETO_DE_HORAS_POR_GRAVAR` | 168 | `crates/phxsql-server/src/aquario/contagem.rs` |
+| `TETO_DO_ARQUIVO` | 8 * 1024 * 1024 | `crates/phxsql-server/src/aquario/log.rs` |
+| `TETO_DA_LINHA` | 64 * 1024 | `crates/phxsql-server/src/aquario/log.rs` |
 | `TETO_DE_TOQUES_PADRAO` | 1_000_000 | `crates/phxsql-server/src/bidirecional.rs` |
 | `TETO_DE_COLUNAS` | 12 | `crates/phxsql-server/src/bidirecional.rs` |
 | `TETO_DO_VALOR` | phxsql_core::error::TETO_DA_CITACAO | `crates/phxsql-server/src/bidirecional.rs` |
@@ -324,6 +333,7 @@ Conferidores em `crates/phxsql-server/src/`: `conferidor.rs`, `conferidor_botoes
 | `TETO_COLADO` | 0 | `crates/phxsql-server/src/conferidor.rs` |
 | `TETO_FRASE_REPETIDA` | 0 | `crates/phxsql-server/src/conferidor.rs` |
 | `TETO_ROTULOS_CRASE_E_JS` | 798 | `crates/phxsql-server/src/conferidor.rs` |
+| `TETO_ZIP_WEB` | 0 | `crates/phxsql-server/src/conferidor.rs` |
 | `TETO_BOTAO_SEM_PROVA` | 0 | `crates/phxsql-server/src/conferidor_botoes.rs` |
 | `TETO_LEITURA_FORA_DO_CANAL` | 0 | `crates/phxsql-server/src/conferidor_canal.rs` |
 | `TETO_TABELA_NA_MAO` | 0 | `crates/phxsql-server/src/conferidor_grades.rs` |
@@ -338,12 +348,16 @@ Conferidores em `crates/phxsql-server/src/`: `conferidor.rs`, `conferidor_botoes
 | `TETO_DE_COLUNAS` | 4096 | `crates/phxsql-server/src/dblink/mod.rs` |
 | `TETO_DE_LINHAS_DE_CONTINUACAO` | 1000 | `crates/phxsql-server/src/email.rs` |
 | `TETO_DE_PARES_DO_NOISE` | 1024 | `crates/phxsql-server/src/fio_dados.rs` |
+| `TETO_DA_FILA` | 32 | `crates/phxsql-server/src/ocorrencias.rs` |
+| `TETO_DO_SILENCIO` | 1_024 | `crates/phxsql-server/src/ocorrencias.rs` |
+| `TETO_DOS_DADOS` | 4_096 | `crates/phxsql-server/src/ocorrencias.rs` |
+| `TETO_DAS_TABELAS` | 64 | `crates/phxsql-server/src/ocorrencias.rs` |
 | `TETO_DE_ITERACOES_DO_PAR` | 1_000_000 | `crates/phxsql-server/src/pg/scram.rs` |
+| `TETO_DAS_VISTAS` | 64 | `crates/phxsql-server/src/previsao.rs` |
 | `TETO_DO_CAMPO` | 120 | `crates/phxsql-server/src/profiler.rs` |
 | `TETO_DO_ERRO` | 500 | `crates/phxsql-server/src/profiler.rs` |
 | `TETO_DO_CABECALHO` | 400 | `crates/phxsql-server/src/profiler.rs` |
 | `TETO` | Duration::from_secs(60) | `crates/phxsql-server/src/replica.rs` |
-| `TETO_DA_FILA` | 32 | `crates/phxsql-server/src/saude_do_disco.rs` |
 | `TETO_DA_VEZ_CEDIDA` | Duration::from_secs(5) | `crates/phxsql-server/src/servidor/servico_bidirecional_01.rs` |
 | `TETO_PIVOT` | 5_000_000 | `crates/phxsql-server/src/servidor/servico_composicao_01.rs` |
 | `TETO_JUNCAO` | 500_000 | `crates/phxsql-server/src/servidor/servico_composicao_01.rs` |
@@ -353,9 +367,9 @@ Conferidores em `crates/phxsql-server/src/`: `conferidor.rs`, `conferidor_botoes
 | `TETO_DE_EVENTOS_POR_LOTE` | 5_000 | `crates/phxsql-server/src/servidor/servico_quorum_01.rs` |
 | `TETO_DO_LOTE_SERVIDO` | 16 * 1024 * 1024 | `crates/phxsql-server/src/servidor/servico_replicacao_02.rs` |
 
-**38** catracas (`TETO*`) encontradas em `crates/phxsql-server/src/`.
+**47** catracas (`TETO*`) encontradas em `crates/phxsql-server/src/`.
 
-`bancada/guardas/catalogo.py` cataloga **857** defeitos repostos, contados de `len(GUARDAS)` depois de importar o modulo (nao por regex no texto -- entradas com `trocas` tem mais de um `{` cada, e uma contagem de chaves as conta em dobro ou mais). Linhas do arquivo: 27281. Refazer a prova: `python3 bancada/guardas/provar-guardas.py`.
+`bancada/guardas/catalogo.py` cataloga **859** defeitos repostos, contados de `len(GUARDAS)` depois de importar o modulo (nao por regex no texto -- entradas com `trocas` tem mais de um `{` cada, e uma contagem de chaves as conta em dobro ou mais). Linhas do arquivo: 27350. Refazer a prova: `python3 bancada/guardas/provar-guardas.py`.
 <!-- /GERADO -->
 
 - **Ponta a ponta, pelo navegador**: os arquivos `.mjs` de `testes-web/` —
@@ -587,6 +601,38 @@ verdade, servidor sobe dele), e a receita de ANTES do pedido 478 — reposta ali
 por valor, porque depois deste pedido integrado o `empacotar.sh` de `HEAD`
 deixa de ter essa versão — fecha com `config.json` em claro, a assinatura do
 defeito.
+
+---
+
+## 9. Os pacotes do PhxZip (pedido 455)
+
+```bash
+./empacotar-phxzip.sh              # linux, windows, arm64 e arm32, em pacotes/phxzip/
+./empacotar-phxzip.sh arm64        # uma plataforma só
+./empacotar-phxzip.sh conferir     # forma, SHA256SUMS e manifesto de cada zip
+python3 bancada/pacote/provar-phxzip.py   # a conferência fica vermelha quando deve
+```
+
+`phxzip-<versão>-<plataforma>.zip` leva `phxzipcmd`, `phxzipweb`, o
+`MANUAL-PHXZIP.md`, `LICENCA.txt` (o SPDX do `Cargo.toml`; o texto da licença
+continua decisão do dono, §4), `fonte-exo2-OFL.txt` (a OFL da fonte que o
+`phxzipweb` embute, que a licença dela manda acompanhar), `COMECE-AQUI.txt` e o
+`MANIFESTO.sha256`.
+
+**Mesmo motor.** O `empacotar-phxzip.sh` carrega este `empacotar.sh` com
+`source` — o arquivo para antes do despacho quando é carregado — e chama as
+funções de cá: `confere_versoes`, `alvo_instalado`, `ligador_musl`,
+`confere_ferramentas_windows`, `fecha` (que chama `manifesto`) e `conferir`.
+Não há segunda receita de manifesto, de zip nem de conferência. O que é dele:
+o conteúdo do pacote, a conferência da **forma** de cada binário (a
+arquitetura pelo `file`: o binário de Linux no zip de ARM passa no manifesto,
+porque o hash é do arquivo que está lá) e a plataforma que não monta virar
+`phxzip-<versão>-<plataforma>.NAO-MONTADO.txt`, com o motivo e o comando, e
+saída 3 — em vez do `exit 1` que para tudo no PhxSql.
+
+A conferência por dentro é o `phxsql conferir-pacote`, o mesmo do PhxSql: o
+pacote do PhxZip **não** traz conferidor próprio, e o `COMECE-AQUI.txt` diz
+isso e manda usar o `sha256sum -c` (ou o `Get-FileHash` no Windows).
 <!-- /GERADO -->
 
 ### 4.5 Testes, medidos agora
@@ -662,7 +708,7 @@ proposta de voltar sem medição nova.
 ### 5.1 Pedidos recusados, do próprio `PENDENCIAS.md`
 
 <!-- GERADO: bloco_recusados() -->
-`docs/PENDENCIAS.md` tem **751** pedidos numerados; **141** trazem a palavra RECUSADO no proprio texto:
+`docs/PENDENCIAS.md` tem **761** pedidos numerados; **141** trazem a palavra RECUSADO no proprio texto:
 
 | # | pedido |
 |---:|---|

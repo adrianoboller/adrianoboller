@@ -308,6 +308,50 @@ cargo run --example textos-fora-da-fabrica -p phxsql-server -- --isentos
 
 3. **Rode os portões.** `cargo test --workspace` já cobre os três laços.
 
+### As chaves do aquário: `tela.aq_*` e `aquario.motivo.*` (pedido 707)
+
+São **dois tipos de chave**, e confundi-los quebra a tradução:
+
+| prefixo | o que é | onde mora |
+|---|---|---|
+| `tela.aq_*` | texto de tela, na **fábrica** como qualquer outro (as seis línguas) | uma linha `texto!(…)` em `FABRICA_TELA`, `crates/phxsql-server/src/idiomas.rs`, no bloco «o aquario (`aquario.js`, pedido 707)»; usada em `crates/phxsql-server/ui/aquario.js` e, para o rótulo do menu, em `ui/index.html` e `ui/multitela.js` |
+| `aquario.motivo.*` | **identificador neutro de idioma** do motivo da cor; **não está na fábrica** | `Alarme::chave()` (`src/aquario/mod.rs`, os alarmes) e o módulo `motivo` de `src/aquario/classe.rs` (os de estado: `encerrando`, `ociosa`, `esperando_a_trava`, `segurando_a_trava`, `acima_do_tempo_fixo`, `grande`, `no_habitual`) |
+
+O servidor manda `aquario.motivo.*` no retrato (`motivo`) e o grava no
+`aquario.log`; o log é neutro de idioma. Quem traduz é a **tela**: a tabela
+`MOTIVOS` de `ui/aquario.js` troca cada `aquario.motivo.*` pela chave de tela
+(`tela.aq_m_*`, ou uma já existente: `tela.aq_cor_rosa` para `encerrando`,
+`tela.sd_tipo_lento` para `disco_lento`) — **por chave, nunca pela frase**.
+Chave que a tela não conhece (servidor mais novo que a tela) sai crua em vez
+de inventar texto.
+
+**Como acrescentar um motivo novo** (um alarme novo no enum, ou um estado novo
+na `classificar`):
+
+1. O alarme entra em `Alarme` (`aquario/mod.rs`): variante, `TODAS`, `chave()`
+   escrita **por extenso** (`"aquario.motivo.xxx"`; o conferidor acha chave
+   usada procurando o literal, e chave montada de prefixo + nome seria chave
+   morta para ele), `gravidade()`, `grupo()` e `bit()`. Motivo de estado entra
+   no módulo `motivo` de `classe.rs`.
+2. A frase em português e as outras cinco: uma linha `texto!("tela.aq_m_xxx", …)`
+   na `FABRICA_TELA`, na ordem Português, Francês, Inglês, Italiano, Alemão,
+   Espanhol.
+3. Uma linha em `MOTIVOS`, em `ui/aquario.js`, por extenso:
+   `"aquario.motivo.xxx": () => txt("tela.aq_m_xxx", "frase em português"),`.
+4. `cargo test -p phxsql-server` — o laço da fábrica reprova a chave que a tela
+   pede e não existe, e o texto que existe e ninguém pede.
+
+**Lacuna dita:** nenhum teste liga o enum `Alarme` à tabela `MOTIVOS`. Esquecer o
+passo 3 não reprova nada — a tela mostra a chave crua (`aquario.motivo.xxx`).
+Para conferir à mão se as duas batem: `Alarme::TODOS.len()` mais as constantes
+do módulo `motivo` de `classe.rs` devem igualar as linhas `"aquario.motivo.…":`
+de `MOTIVOS` (`grep -c '^    "aquario.motivo\.' ui/aquario.js`); em 09/10/2026
+fechavam, sem o número escrito aqui para não envelhecer.
+
+**O que a tela não traduz, de propósito:** operação, tabela e `database` são
+**dado** e entram como vieram (a lição do «Blumenau»); o pseudônimo do usuário
+(8 hexadecimais) idem.
+
 ### Frase picada por marcação é intraduzível **por construção**
 
 Esta é a lição que a leva do `multitela.js` pagou, e ela vale para toda tela
