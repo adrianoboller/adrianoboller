@@ -305,6 +305,17 @@ CATALOGO = [
                 "pelo `pode_avisar` que roda ANTES do `subir`; vive o tempo de "
                 "UM envio ao rele.",
     },
+    # ------------------------------------------------ PhxZipWeb (pedido 454, Z5)
+    {
+        "arquivo": "crates/phxzip-web/src/lib.rs",
+        "agulha": '.name("phxzipweb".into())',
+        "nome": "phxzipweb (uma por conexao)",
+        "teto": "`CONEXOES_MAX` (32) pelo `Semaforo vagas` do `Servidor`: "
+                "`tentar()` no `accept`, e sem vaga o proprio aceitador "
+                "responde `503 OCUPADO` e drena 20 ms, sem subir thread. A "
+                "`Permissao` viaja para dentro da thread e morre com ela, "
+                "inclusive em panico -- o mesmo desenho da porta de dados.",
+    },
 ]
 
 # --------------------------------------------------------------- a varredura

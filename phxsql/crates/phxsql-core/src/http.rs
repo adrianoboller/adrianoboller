@@ -264,6 +264,69 @@ pub fn drenar<F: FioHttp + ?Sized>(fluxo: &mut F, teto: u64, prazo: Duration) ->
     lidos
 }
 
+/// A frase da linha de estado de cada codigo que as portas desta casa
+/// respondem.
+///
+/// Mora aqui pela mesma razao do [`ler_pedido`]: o PhxZipWeb responde HTTP e
+/// o servidor do PhxSql tambem, e duas tabelas de frases seriam duas tabelas
+/// para alguem esquecer de completar. As frases sao as da RFC 9110 §15; o 499
+/// nao e da norma, e o que os balanceadores usam para «o cliente desistiu», e
+/// o REST do servidor o adotou.
+pub fn frase_do_codigo(codigo: u16) -> &'static str {
+    match codigo {
+        200 => "OK",
+        // O MCP sobre HTTP responde 202 sem corpo a uma notificacao (mensagem
+        // sem `id`): responder qualquer outra coisa quebra o cliente logo no
+        // `notifications/initialized`, a mesma armadilha do transporte stdio.
+        202 => "Accepted",
+        400 => "Bad Request",
+        401 => "Unauthorized",
+        403 => "Forbidden",
+        404 => "Not Found",
+        405 => "Method Not Allowed",
+        409 => "Conflict",
+        411 => "Length Required",
+        413 => "Payload Too Large",
+        415 => "Unsupported Media Type",
+        // A frase do 421 e a da norma: "o servidor nao consegue produzir uma
+        // resposta para a autoridade pedida" -- e e exatamente o caso de
+        // escrever numa replica.
+        421 => "Misdirected Request",
+        422 => "Unprocessable Content",
+        431 => "Request Header Fields Too Large",
+        499 => "Client Closed Request",
+        500 => "Internal Server Error",
+        503 => "Service Unavailable",
+        _ => "Error",
+    }
+}
+
+/// A cabeca de uma resposta: linha de estado, `Content-Type`,
+/// `Content-Length`, os `extras` de cada porta e o `Connection: close`.
+///
+/// # Por que so a cabeca, e o corpo fica com quem chama
+///
+/// O servidor do PhxSql responde texto e o PhxZipWeb responde bytes (a fonte,
+/// o pacote). Devolver a cabeca e deixar o corpo com quem chama serve aos dois
+/// sem copiar o corpo nem converter bytes em texto. A politica de seguranca
+/// (CSP e irmaos) e de cada porta e entra pelos `extras`, cada linha ja
+/// terminada em `\r\n`: o que e comum -- o `Content-Length` contado e a
+/// conexao que fecha -- e o que mora aqui.
+///
+/// `Connection: close` sempre: uma resposta por conexao e o que as duas
+/// portas fazem, e dizer isso poupa o cliente de esperar uma segunda.
+pub fn montar_cabeca(codigo: u16, tipo: &str, tamanho: usize, extras: &str) -> String {
+    format!(
+        "HTTP/1.1 {codigo} {}\r\n\
+         Content-Type: {tipo}\r\n\
+         Content-Length: {tamanho}\r\n\
+         {extras}\
+         Connection: close\r\n\
+         \r\n",
+        frase_do_codigo(codigo)
+    )
+}
+
 #[cfg(test)]
 mod testes {
     use super::*;

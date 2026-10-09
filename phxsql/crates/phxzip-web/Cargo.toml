@@ -1,0 +1,21 @@
+[package]
+name = "phxzip-web"
+description = "PhxZipWeb -- a porta web do PhxZip, so em 127.0.0.1, com a tela embutida"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[lib]
+name = "phxzip_web"
+path = "src/lib.rs"
+
+[[bin]]
+name = "phxzipweb"
+path = "src/main.rs"
+
+# So o `phxsql-core`: o HTTP sai do motor dele (`http.rs`, pedido 454, fatia
+# Z1), e nao de uma copia aqui. O `phxzip` entra com as rotas que o chamam
+# (fatias Z6 a Z8); dependencia que nenhuma linha usa e superficie sem motivo.
+[dependencies]
+phxsql-core.workspace = true

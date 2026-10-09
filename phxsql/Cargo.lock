@@ -75,3 +75,10 @@ dependencies = [
  "phxsql-core",
  "phxzip",
 ]
+
+[[package]]
+name = "phxzip-web"
+version = "0.20.0"
+dependencies = [
+ "phxsql-core",
+]

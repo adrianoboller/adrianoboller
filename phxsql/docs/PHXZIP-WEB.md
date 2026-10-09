@@ -249,6 +249,8 @@ quem protege é o servidor.
 | `entrada`, `bloco`, `cabecalho` | no motor (`Limites`), antes de alocar | `413 GRANDE_DEMAIS` com o `oque` do motor |
 | `espiar` | no `ate` | `ate` maior é rebaixado ao teto, sem erro |
 | `simultaneas` | na entrada da rota `POST` | `503 OCUPADO`; a memória de pico é ≈ `envio` × `simultaneas` × 3 (pacote, bloco decodificado, resposta) |
+| cabeçalho HTTP (16 KiB, `CABECALHO_MAX`) | na leitura, pelo motor do core | `431 GRANDE_DEMAIS` `{"oque":"cabecalho_http","teto":16384}`. Não vai a `/api/estado`: navegador nenhum chega perto, e a tela não tem o que conferir |
+| conexões (32, `CONEXOES_MAX`) | no `accept`, antes de subir thread | `503 OCUPADO`. É o teto de threads da porta, e não o `simultaneas`: uma conexão aberta e calada prende uma thread por até 10 s |
 
 **Achado do exercício, e regra para o servidor:** responder `413` sem ler o corpo
 e fechar a conexão faz o navegador ver **erro de rede**, não o `413` — ele ainda

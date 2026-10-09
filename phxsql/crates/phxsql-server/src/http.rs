@@ -430,27 +430,6 @@ fn montar_com_folga_e_extras(
     claude: bool,
     extras: &str,
 ) -> String {
-    let motivo = match codigo {
-        200 => "OK",
-        // O MCP sobre HTTP responde 202 sem corpo a uma notificacao (mensagem
-        // sem `id`): responder qualquer outra coisa quebra o cliente logo no
-        // `notifications/initialized`, a mesma armadilha do transporte stdio.
-        202 => "Accepted",
-        400 => "Bad Request",
-        401 => "Unauthorized",
-        403 => "Forbidden",
-        404 => "Not Found",
-        405 => "Method Not Allowed",
-        409 => "Conflict",
-        413 => "Payload Too Large",
-        // Os tres do REST. A frase do 421 e a da norma: "o servidor nao
-        // consegue produzir uma resposta para a autoridade pedida" -- e e
-        // exatamente o caso de escrever numa replica.
-        421 => "Misdirected Request",
-        499 => "Client Closed Request",
-        503 => "Service Unavailable",
-        _ => "Error",
-    };
     // Cabecalhos de seguranca: a pagina nao vai para dentro de um quadro
     // alheio, nao adivinha tipo de conteudo e so conversa com esta origem.
     //
@@ -475,11 +454,11 @@ fn montar_com_folga_e_extras(
     } else {
         "connect-src 'self'; ".to_string()
     };
-    format!(
-        "HTTP/1.1 {codigo} {motivo}\r\n\
-         Content-Type: {tipo}\r\n\
-         Content-Length: {}\r\n\
-         Cache-Control: no-store\r\n\
+    // A linha de estado, o tamanho e o fecho saem do motor do core (pedido
+    // 454, fatia Z5): o PhxZipWeb monta a resposta pelo mesmo caminho, e so
+    // a politica desta porta fica aqui.
+    let politica = format!(
+        "Cache-Control: no-store\r\n\
          X-Content-Type-Options: nosniff\r\n\
          X-Frame-Options: DENY\r\n\
          Referrer-Policy: no-referrer\r\n\
@@ -487,11 +466,11 @@ fn montar_com_folga_e_extras(
          script-src 'unsafe-inline'; \
          img-src data:; {conexao}form-action 'none'; \
          frame-ancestors 'none'; base-uri 'none'\r\n\
-         {extras}\
-         Connection: close\r\n\
-         \r\n{corpo}",
-        corpo.len()
-    )
+         {extras}"
+    );
+    let mut resposta = phxsql_core::http::montar_cabeca(codigo, tipo, corpo.len(), &politica);
+    resposta.push_str(corpo);
+    resposta
 }
 
 /// Le e joga fora o que o cliente ainda estava mandando, antes de fechar.

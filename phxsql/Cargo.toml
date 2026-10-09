@@ -11,6 +11,7 @@ members = [
     "crates/phxsql-ffi",
     "crates/phxzip",
     "crates/phxzip-cmd",
+    "crates/phxzip-web",
 ]
 
 [workspace.package]
