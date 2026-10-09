@@ -14,7 +14,7 @@
  * veneno perdeu a validade, nao que o conserto funciona.
  *
  * O veneno e um `<img src=x onerror=...>`, e nao um `<script>`: a CSP da casa
- * bloqueia o script injetado por `innerHTML`, mas `script-src 'unsafe-inline'`
+ * bloqueia o script injetado por `innerHTML`, mas `script-src 'unsafe-inline'` (ate o 771)
  * deixa o manipulador de evento rodar. Provar com `<script>` daria verde por
  * motivo errado. */
 import { chromium } from '/opt/node22/lib/node_modules/playwright/index.mjs';

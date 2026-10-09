@@ -14,7 +14,7 @@
 //! `est.textos[nome] || padrao` **sem tratamento** -> literal de gabarito ->
 //! `innerHTML`.
 //!
-//! A CSP nao salva: `<script>` injetado por `innerHTML` nao roda, mas
+//! A CSP nao salvava (ate o pedido 771): `<script>` injetado por `innerHTML` nao roda, mas
 //! `script-src 'unsafe-inline'` deixa um manipulador de evento rodar, e
 //! `connect-src 'self'` permite o `fetch` para o proprio servidor -- a
 //! exfiltracao e 100% conforme a CSP.

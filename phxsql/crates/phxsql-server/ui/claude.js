@@ -69,7 +69,16 @@ window.PhxIA = (function () {
      caminho inteiro sem gastar chave. A tela DIZ quando ele não é o oficial,
      porque endereço trocado calado seria a forma mais fácil de desviar uma
      chave. */
-  const E = s => (window.esc ? esc(s) : String(s));
+  /* `typeof esc`, e NAO `window.esc` (pedido 771): o `esc` da pagina e um
+     `const` de topo, que mora no escopo global LEXICO e nunca vira
+     propriedade de `window`. Com `window.esc` o teste dava sempre falso e
+     o `E` devolvia o texto CRU na pagina servida -- medido no Chromium:
+     um endereco com `<b id=…>` virava elemento na tela de Configuracoes.
+     Sem a pagina em volta (o modulo exercitado sozinho), o degrau continua
+     ESCAPANDO: o degrau de reserva de um escapador nunca pode ser «cru». */
+  const E = s => (typeof esc === "function" ? esc(s)
+    : String(s ?? "").replace(/[&<>"']/g, c =>
+        ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])));
 
   /** O texto de tela pela fabrica de idiomas, com o portugues de fabrica ao
    *  lado. Delega no global pelo mesmo motivo do `E` logo abaixo: este modulo

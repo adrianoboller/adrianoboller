@@ -221,7 +221,15 @@ pub const ORIGEM_ANTHROPIC: &str = "https://api.anthropic.com";
 /// O `<title>`, o `<meta>` e os `<link>` do fragmento sao subidos para o
 /// cabecalho pelo proprio analisador de HTML, exatamente como acontece quando
 /// a pagina e publicada como artefato.
-pub fn montar_pagina() -> String {
+pub fn montar_pagina() -> &'static str {
+    // Uma vez por processo (pedido 771): a pagina e a mesma a vida inteira do
+    // servidor, e e ESSA constancia que deixa autorizar os scripts dela por
+    // hash calculado uma vez, e nao por nonce remontando 1,5 MB a cada pedido.
+    static PAGINA_MONTADA: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    PAGINA_MONTADA.get_or_init(montar_pagina_agora)
+}
+
+fn montar_pagina_agora() -> String {
     let fonte = folha_da_fonte();
     format!(
         "<!doctype html>\n<html lang=\"pt-BR\">\n<head>\n<meta charset=\"utf-8\">\n\
@@ -430,6 +438,90 @@ pub fn responder_cheio(fluxo: &mut TcpStream, segundos: u64, corpo: &str) -> std
     Ok(())
 }
 
+/// Os conteudos dos `<script>` embutidos de uma pagina, na ordem.
+///
+/// Le como o analisador de HTML le, no que importa aqui: o conteudo de um
+/// `<script>` vai ate o primeiro `</script`, comentario `<!-- … -->` fora de
+/// script nao abre script nenhum, e o conteudo de um `<style>` nao e olhado.
+/// O hash tem de bater com o texto que o navegador ve, byte a byte -- e as
+/// fontes de `ui/` nao tem `\r`, que o navegador normalizaria antes de
+/// calcular (ha teste para isso).
+pub fn conteudos_de_script(pagina: &str) -> Vec<&str> {
+    let baixa = pagina.to_ascii_lowercase();
+    let abre = |de: usize, tag: &str| -> Option<usize> {
+        let mut p = de;
+        while let Some(i) = baixa[p..].find(tag) {
+            let fim = p + i + tag.len();
+            match baixa.as_bytes().get(fim) {
+                Some(b'>' | b' ' | b'\n' | b'\t' | b'/') => return Some(p + i),
+                _ => p = fim,
+            }
+        }
+        None
+    };
+    let mut saida = Vec::new();
+    let mut pos = 0;
+    loop {
+        let comentario = baixa[pos..].find("<!--").map(|i| pos + i);
+        let script = abre(pos, "<script");
+        let estilo = abre(pos, "<style");
+        let Some(onde) = [comentario, script, estilo].into_iter().flatten().min() else {
+            break;
+        };
+        if Some(onde) == comentario {
+            match baixa[onde + 4..].find("-->") {
+                Some(f) => pos = onde + 4 + f + 3,
+                None => break,
+            }
+            continue;
+        }
+        let eh_script = Some(onde) == script;
+        let fecho = if eh_script { "</script" } else { "</style" };
+        let Some(gt) = baixa[onde..].find('>') else {
+            break;
+        };
+        let ini = onde + gt + 1;
+        let Some(f) = baixa[ini..].find(fecho) else {
+            break;
+        };
+        if eh_script {
+            saida.push(&pagina[ini..ini + f]);
+        }
+        pos = ini + f + fecho.len();
+    }
+    saida
+}
+
+/// A lista `'sha256-…'` dos scripts embutidos de uma pagina, ou `'none'`.
+pub fn hashes_dos_scripts(pagina: &str) -> String {
+    let lista: Vec<String> = conteudos_de_script(pagina)
+        .into_iter()
+        .map(|c| {
+            format!(
+                "'sha256-{}'",
+                phxsql_core::base64::codificar(&phxsql_core::hash::sha256(c.as_bytes()))
+            )
+        })
+        .collect();
+    if lista.is_empty() {
+        "'none'".to_string()
+    } else {
+        lista.join(" ")
+    }
+}
+
+/// Os hashes do corpo -- e os da pagina da interface uma vez por processo:
+/// passar SHA-256 em 1,5 MB a cada `GET /` seria pagar por nada, porque a
+/// pagina nao muda enquanto o servidor vive.
+fn hashes_dos_scripts_da(corpo: &str) -> String {
+    let pagina = montar_pagina();
+    if std::ptr::eq(corpo, pagina) {
+        static DA_PAGINA: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+        return DA_PAGINA.get_or_init(|| hashes_dos_scripts(pagina)).clone();
+    }
+    hashes_dos_scripts(corpo)
+}
+
 fn montar_com_folga_e_extras(
     codigo: u16,
     tipo: &str,
@@ -452,11 +544,41 @@ fn montar_com_folga_e_extras(
     // origem, so no HTML e so para `connect-src`: as respostas de dados
     // continuam com `connect-src 'self'`, e nenhum `script-src` novo entra --
     // nenhum script de fora roda nesta pagina.
-    let estilo = if externo {
-        "style-src 'unsafe-inline'; font-src data:; "
-    } else {
-        "style-src 'unsafe-inline'; "
+    //
+    // # Pedido 771: o `script-src` sem `'unsafe-inline'`
+    //
+    // Ate aqui a pagina servia `script-src 'unsafe-inline'`, que anula a parte
+    // da CSP que protege de XSS: um `<img onerror=…>` que escapasse de um
+    // `innerHTML` rodava. Agora cada `<script>` embutido da pagina entra por
+    // HASH (`'sha256-…'`, CSP3 §2.3.1), calculado com o SHA-256 desta casa
+    // (conferido contra FIPS 180-4), e manipulador em atributo nao roda
+    // (`script-src-attr 'none'`). Hash e nao nonce porque a pagina e montada
+    // uma vez por processo ([`montar_pagina`]): nonce exigiria remontar 1,5 MB
+    // por resposta para chegar ao mesmo lugar.
+    //
+    // O `style-src 'unsafe-inline'` FICA, por ora, e o motivo e medido: 97
+    // `style="…"` dentro de modelos de HTML da `ui/` e dois `<style>` que o
+    // proprio JS monta com conteudo variavel (a grade e o aquario). CSS nao
+    // executa script; o que ele ainda permite (desenho falso por cima da tela)
+    // e a etapa seguinte do 771.
+    //
+    // Resposta que NAO e HTML nao carrega script nem estilo: o `default-src
+    // 'none'` responde por ela, e a folga da pagina nao vaza para os dados.
+    let html = tipo.starts_with("text/html");
+    let estilo = match (html, externo) {
+        (true, true) => "style-src 'unsafe-inline'; font-src data:; ",
+        (true, false) => "style-src 'unsafe-inline'; ",
+        (false, _) => "",
     };
+    let script = if html {
+        format!(
+            "script-src {}; script-src-attr 'none'; ",
+            hashes_dos_scripts_da(corpo)
+        )
+    } else {
+        String::new()
+    };
+    let imagem = if html { "img-src data:; " } else { "" };
     let conexao = if externo && claude {
         format!("connect-src 'self' {ORIGEM_ANTHROPIC}; ")
     } else {
@@ -465,14 +587,22 @@ fn montar_com_folga_e_extras(
     // A linha de estado, o tamanho e o fecho saem do motor do core (pedido
     // 454, fatia Z5): o PhxZipWeb monta a resposta pelo mesmo caminho, e so
     // a politica desta porta fica aqui.
+    //
+    // COOP e CORP (pedido 771): a janela desta origem nao divide grupo de
+    // navegacao com pagina de fora (o `window.opener` de um site alheio nao a
+    // alcanca), e nenhuma resposta daqui serve de recurso embutido em outra
+    // origem. A `Permissions-Policy` desliga o que a tela nao usa; a API de
+    // telas da multitela (`window-management`) fica de fora de proposito.
     let politica = format!(
         "Cache-Control: no-store\r\n\
          X-Content-Type-Options: nosniff\r\n\
          X-Frame-Options: DENY\r\n\
          Referrer-Policy: no-referrer\r\n\
-         Content-Security-Policy: default-src 'none'; {estilo}\
-         script-src 'unsafe-inline'; \
-         img-src data:; {conexao}form-action 'none'; \
+         Cross-Origin-Opener-Policy: same-origin\r\n\
+         Cross-Origin-Resource-Policy: same-origin\r\n\
+         Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=()\r\n\
+         Content-Security-Policy: default-src 'none'; {script}{estilo}\
+         {imagem}{conexao}object-src 'none'; form-action 'none'; \
          frame-ancestors 'none'; base-uri 'none'\r\n\
          {extras}"
     );
@@ -1205,9 +1335,14 @@ mod testes_da_claude {
             "a pagina precisa alcancar {ORIGEM_ANTHROPIC}; veio: {csp}"
         );
         // E a folga NAO pode ter virado script de fora: o que roda na pagina
-        // continua sendo so o que este binario carrega.
-        assert!(csp.contains("script-src 'unsafe-inline';"));
-        assert!(!csp.contains(&format!("script-src 'unsafe-inline' {ORIGEM_ANTHROPIC}")));
+        // continua sendo so o que este binario carrega -- e, desde o pedido
+        // 771, so o que ele carrega POR HASH.
+        let script = csp
+            .split("; ")
+            .find(|d| d.starts_with("script-src "))
+            .expect("a pagina declara script-src");
+        assert!(!script.contains(ORIGEM_ANTHROPIC), "{script}");
+        assert!(!script.contains("'unsafe-inline'"), "{script}");
     }
 
     /// Pedido 339(a): o administrador desliga a Claude e o NAVEGADOR barra.
@@ -1291,5 +1426,122 @@ mod testes_da_claude {
         // navegador. Nao ha nenhum costurado na tela nem numa rota daqui.
         assert!(!PAGINA.contains("x-api-key"));
         assert!(CLAUDE_JS.contains("x-api-key"));
+    }
+}
+
+/// Pedido 771: a CSP da pagina sem `'unsafe-inline'` no `script-src`.
+#[cfg(test)]
+mod testes_da_csp {
+    use super::*;
+
+    fn csp(resposta: &str) -> String {
+        resposta
+            .lines()
+            .find(|l| l.starts_with("Content-Security-Policy:"))
+            .expect("toda resposta tem politica de seguranca")
+            .to_string()
+    }
+
+    fn diretiva<'a>(csp: &'a str, nome: &str) -> Option<&'a str> {
+        csp.trim_start_matches("Content-Security-Policy: ")
+            .split("; ")
+            .find(|d| d.split(' ').next() == Some(nome))
+    }
+
+    /// O hash sai do NOSSO SHA-256 e em Base64 padrao, e confere contra o
+    /// vetor da FIPS 180-4 («abc»): e o mesmo numero que o navegador calcula.
+    #[test]
+    fn o_hash_do_script_confere_contra_o_vetor_oficial() {
+        assert_eq!(
+            hashes_dos_scripts("<p>x</p><script>abc</script>"),
+            "'sha256-ungWv48Bz+pBQUDeXa4iI7ADYaOWF3qctBD/YfIAFa0='"
+        );
+        assert_eq!(hashes_dos_scripts("<p>sem script</p>"), "'none'");
+    }
+
+    /// O leitor de blocos le como o navegador: comentario fora de script nao
+    /// abre script, `<style>` nao e olhado por dentro, e o conteudo de um
+    /// script vai ate o primeiro `</script` -- mesmo que traga `<script>` no
+    /// meio de um comentario de JS, como o `index.html` traz.
+    #[test]
+    fn o_leitor_de_blocos_le_como_o_navegador() {
+        let p = "<!-- <script>falso</script> --><style>a{content:\"<script>\"}</style>\
+                 <SCRIPT>um /* <script> */ fim</SCRIPT><scripts>nao</scripts>\
+                 <script type=\"x\">dois</script>";
+        assert_eq!(
+            conteudos_de_script(p),
+            vec!["um /* <script> */ fim", "dois"]
+        );
+    }
+
+    /// A pagina da interface: script so por hash, um hash por bloco embutido,
+    /// nenhum `'unsafe-inline'` nem `'unsafe-eval'`, atributo `on*` barrado.
+    /// Reponha o `script-src 'unsafe-inline'` na politica e este teste cai.
+    #[test]
+    fn a_pagina_autoriza_cada_script_por_hash_e_nada_inline() {
+        let pagina = montar_pagina();
+        let r = montar_resposta_da_interface(pagina, true);
+        let c = csp(&r);
+        let script = diretiva(&c, "script-src").expect("script-src declarado");
+        assert!(!script.contains("unsafe-inline"), "{script}");
+        assert!(!script.contains("unsafe-eval"), "{script}");
+        let blocos = conteudos_de_script(pagina).len();
+        // Seis modulos de `ui/` mais o script do proprio `index.html`.
+        assert_eq!(blocos, 7, "blocos <script> embutidos na pagina");
+        assert_eq!(script.matches("'sha256-").count(), blocos, "{script}");
+        assert_eq!(
+            diretiva(&c, "script-src-attr"),
+            Some("script-src-attr 'none'")
+        );
+        for d in [
+            "object-src 'none'",
+            "frame-ancestors 'none'",
+            "base-uri 'none'",
+            "form-action 'none'",
+            "default-src 'none'",
+        ] {
+            assert!(c.contains(d), "falta {d}: {c}");
+        }
+        for cab in [
+            "Cross-Origin-Opener-Policy: same-origin\r\n",
+            "Cross-Origin-Resource-Policy: same-origin\r\n",
+            "X-Frame-Options: DENY\r\n",
+            "X-Content-Type-Options: nosniff\r\n",
+        ] {
+            assert!(r.contains(cab), "falta {cab:?}");
+        }
+    }
+
+    /// O hash bate com o texto que o navegador ve: o analisador de HTML troca
+    /// `\r\n` por `\n` ANTES de calcular, e um `\r` numa fonte de `ui/` faria
+    /// o hash daqui divergir do de la -- a pagina inteira sem script, calada.
+    #[test]
+    fn nenhuma_fonte_embutida_tem_retorno_de_carro() {
+        let pagina = montar_pagina();
+        assert!(!pagina.contains('\r'), "um \\r na pagina quebraria o hash");
+    }
+
+    /// Resposta de DADOS nao carrega script nem estilo: o `default-src 'none'`
+    /// responde por ela. E o explorador da API, HTML de outra porta, ganha os
+    /// hashes DELE, nao os da interface.
+    #[test]
+    fn dados_nao_ganham_script_e_o_explorador_ganha_os_proprios_hashes() {
+        let dados = csp(&montar_resposta(
+            200,
+            "application/json; charset=utf-8",
+            "{}",
+        ));
+        assert!(diretiva(&dados, "script-src").is_none(), "{dados}");
+        assert!(diretiva(&dados, "style-src").is_none(), "{dados}");
+
+        let corpo = "<html><script>explorar()</script></html>";
+        let fechada = csp(&montar_resposta_fechada(
+            200,
+            "text/html; charset=utf-8",
+            corpo,
+        ));
+        let s = diretiva(&fechada, "script-src").unwrap();
+        assert_eq!(s, format!("script-src {}", hashes_dos_scripts(corpo)));
+        assert!(!fechada.contains(ORIGEM_ANTHROPIC));
     }
 }

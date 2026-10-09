@@ -852,8 +852,11 @@
         var ci = multiIni && multiIni.condicoes[ix2];
         var h = '<div class="phx-fpop-numlin"><select data-nop="' + ix2 + '">', j3;
         for (j3 = 0; j3 < OPS_NUM.length; j3++)
-          h += '<option value="' + OPS_NUM[j3][0] + '"' + (ci && ci.op === OPS_NUM[j3][0] ? " selected" : "") + ">" + OPS_NUM[j3][1] + "</option>";
-        h += '</select><input type="number" step="any" data-nval="' + ix2 + '"' + (ci ? ' value="' + ci.valor + '"' : "") + "></div>";
+          h += '<option value="' + OPS_NUM[j3][0] + '"' + (ci && ci.op === OPS_NUM[j3][0] ? " selected" : "") + ">" + esc(OPS_NUM[j3][1]) + "</option>";
+        // `ci.valor` volta do layout LEMBRADO (localStorage) e o rotulo da
+        // fabrica de idiomas: os dois sao texto, e texto nunca vira HTML
+        // (pedido 771) -- um `"` no valor fecharia o atributo.
+        h += '</select><input type="number" step="any" data-nval="' + ix2 + '"' + (ci ? ' value="' + esc(ci.valor) + '"' : "") + "></div>";
         return h;
       }
       var marcados = {}, todosMarcados = !atual || atual.tipo !== "valores", j2;

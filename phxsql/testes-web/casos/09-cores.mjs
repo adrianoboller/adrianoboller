@@ -11,7 +11,7 @@
  * temas. Se alguem mexer numa cor e esquecer o comentario, aqui quebra.
  *
  * A conta do contraste vai por dentro de cada `evaluate`, e nao por um
- * `eval()` de um texto: a pagina serve `script-src 'unsafe-inline'` SEM
+ * `eval()` de um texto: a pagina serve `script-src` por hash (771) SEM
  * `unsafe-eval`, e um teste que precisasse afrouxar o CSP para rodar seria
  * pior que teste nenhum. */
 import { entrar, cenario, capturar, verdade, bancoDoCaso, abrirLinhaDaGrade } from '../apoio.mjs';

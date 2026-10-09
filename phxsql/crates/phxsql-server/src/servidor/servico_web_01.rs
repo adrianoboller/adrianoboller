@@ -110,7 +110,7 @@ impl Servidor {
                 // Pedido 339(a): a folga da Anthropic no CSP sai da config.
                 let _ = http::responder_interface(
                     &mut fluxo,
-                    &http::montar_pagina(),
+                    http::montar_pagina(),
                     self.config.web.integracao_claude,
                 );
             }

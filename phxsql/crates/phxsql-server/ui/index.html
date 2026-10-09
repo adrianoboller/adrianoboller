@@ -3667,7 +3667,7 @@ function ligarDiario() {
       { campo:"rowid", titulo:"rowid", tipo:"numero" },
       { campo:"versao", titulo:txt("tela.col_versao","versão"), tipo:"numero" },
       { campo:"usuario", titulo:txt("tela.col_usuario","usuário"), tipo:"numero",
-        formato:v => v || "—" },
+        formato:v => esc(v || "—") },
     ],
     dados: est.diarioAtual,
     pagina: { tamanho: 100, opcoes: [50, 100, 200] },
@@ -3927,7 +3927,7 @@ const fmtTaxa = b => fmtBytes(Number(b) || 0) + "/s";
 function maquinaHtml(m) {
   if (!m) return "";
   const carta = (titulo, legenda, corpo, larga) =>
-    `<div class="carta ${larga ? "larga" : ""}"><h4>${titulo}</h4>
+    `<div class="carta ${larga ? "larga" : ""}"><h4>${esc(titulo)}</h4>
        <p class="leg">${legenda}</p>${corpo}</div>`;
 
   if (!m.disponivel) {
@@ -3936,7 +3936,7 @@ function maquinaHtml(m) {
       `<div class="vazioc">${marcado(txt("tela.pa_indisponivel_corpo",
         "CPU, memória e rede saem do /proc, que só existe no Linux. O espaço em disco continua valendo — ele vem do `df`."))}</div>`,
       true) + (m.discos && m.discos.length ? carta(txt("tela.pa_espaco_disco", "Espaço em disco"),
-        txt("tela.pa_espaco_disco_leg", "cada caminho que este servidor usa"), discosHtml(m), true) : "");
+        esc(txt("tela.pa_espaco_disco_leg", "cada caminho que este servidor usa")), discosHtml(m), true) : "");
   }
 
   const cpu = m.cpu || {}, mem = m.memoria || {};
@@ -3958,13 +3958,13 @@ function maquinaHtml(m) {
   const io = (m.io || []).filter(d => d.leituras || d.escritas);
 
   return carta(txt("tela.pa_maquina", "A máquina"), primeira
-      ? txt("tela.pa_primeira_leitura", "primeira leitura · a taxa aparece na próxima, porque taxa precisa de dois instantes")
+      ? esc(txt("tela.pa_primeira_leitura", "primeira leitura · a taxa aparece na próxima, porque taxa precisa de dois instantes"))
       : marcado(txt("tela.pa_medido_ha", "medido nos últimos {s} s"), { s: (m.segundos_desde_a_ultima || "0").replace(".", ",") }),
       `<div class="maquina">${medidores}
          <div>${m.discos && m.discos.length ? discosHtml(m) : ""}</div>
        </div>`, true) +
     carta(txt("tela.pa_placas_rede", "Placas de rede"),
-      primeira ? txt("tela.pa_aguardando", "aguardando o segundo instante") : txt("tela.pa_trafego_leg", "tráfego por interface"),
+      primeira ? esc(txt("tela.pa_aguardando", "aguardando o segundo instante")) : esc(txt("tela.pa_trafego_leg", "tráfego por interface")),
       barras(rede.map(r => ({
         nome: r.interface,
         valor: Number(r.rx_bytes_s) + Number(r.tx_bytes_s),
@@ -3972,7 +3972,7 @@ function maquinaHtml(m) {
         cor: r.erros > 0 ? "var(--log)" : "var(--reg)",
       })), { titulo: txt("tela.pa_trafego_titulo", "Tráfego por placa de rede") })) +
     carta(txt("tela.pa_discos_titulo", "Discos"),
-      primeira ? txt("tela.pa_aguardando", "aguardando o segundo instante") : txt("tela.pa_disco_leg", "leitura e escrita por disco físico"),
+      primeira ? esc(txt("tela.pa_aguardando", "aguardando o segundo instante")) : esc(txt("tela.pa_disco_leg", "leitura e escrita por disco físico")),
       barras(io.map(d => ({
         nome: d.disco,
         valor: Number(d.lidos_bytes_s) + Number(d.escritos_bytes_s),
@@ -4076,7 +4076,7 @@ function ligarLarguraDoGrafico() {
 function saudeDiscoHtml(sd) {
   if (!sd) return "";
   const carta = (titulo, legenda, corpo) =>
-    `<div class="carta"><h4>${titulo}</h4><p class="leg">${legenda}</p>${corpo}</div>`;
+    `<div class="carta"><h4>${esc(titulo)}</h4><p class="leg">${legenda}</p>${corpo}</div>`;
   const FORMA = { ok: "●", aviso: "▲", erro: "✕", nao_medido: "○" };
   const CLASSE = { ok: "ok", aviso: "aviso", erro: "mal", nao_medido: "nao" };
   // Chave LITERAL por estado e por tipo -- nunca montada por concatenação:
@@ -4120,7 +4120,7 @@ function saudeDiscoHtml(sd) {
     + (av.ultima_falha ? `<div class="fraco">${esc(txt("tela.sd_ultima_falha", "falha ao avisar"))}: ${esc(av.ultima_falha)}</div>` : "");
 
   return carta(txt("tela.sd_titulo", "Saúde do disco"),
-    txt("tela.sd_leg", "o disco onde o banco grava · sonda canário e erros de E/S"),
+    esc(txt("tela.sd_leg", "o disco onde o banco grava · sonda canário e erros de E/S")),
     `<dl class="sd" id="saudeDisco">
        <dt>${esc(txt("tela.sd_ultima_sonda", "última sonda"))}</dt><dd>${pino} ${sonda}</dd>
        <dt>${esc(txt("tela.sd_erros_es", "erros de E/S"))}</dt><dd>${esc(preencher(txt("tela.sd_desde_arranque", "{n} desde o arranque"), { n: fmt(sd.erros_es || 0) }))}</dd>
@@ -4157,7 +4157,7 @@ async function vPainel() {
   ].join("");
 
   const carta = (titulo, legenda, corpo, larga) =>
-    `<div class="carta ${larga ? "larga" : ""}"><h4>${titulo}</h4>
+    `<div class="carta ${larga ? "larga" : ""}"><h4>${esc(titulo)}</h4>
        <p class="leg">${legenda}</p>${corpo}</div>`;
 
   const CORES = { admin:"var(--vermelhao)", dono:"var(--laranja)", operador:"var(--ambar)",
@@ -4166,24 +4166,24 @@ async function vPainel() {
   return `<div class="kpis">${kpis}</div><div class="cartas" id="cartas">
     <div id="maquina" class="passa">${maquinaHtml(maquina)}</div>
     ${saudeDiscoHtml(d.saude_do_disco)}
-    ${carta(txt("tela.pa_ops_hora_titulo", "Operações por hora"), txt("tela.pa_ops_hora_leg", "últimas 24 horas · as barras vermelhas são as recusadas"),
+    ${carta(txt("tela.pa_ops_hora_titulo", "Operações por hora"), esc(txt("tela.pa_ops_hora_leg", "últimas 24 horas · as barras vermelhas são as recusadas")),
         `<div id="grafHoras"></div>`, true)}
-    ${carta(txt("tela.pa_ops_pedidas_titulo", "Operações mais pedidas"), txt("tela.pa_ops_pedidas_leg", "verde é o que passou, vermelho o que foi recusado"),
+    ${carta(txt("tela.pa_ops_pedidas_titulo", "Operações mais pedidas"), esc(txt("tela.pa_ops_pedidas_leg", "verde é o que passou, vermelho o que foi recusado")),
         barras(d.por_operacao.map(o => ({ nome:o.op, valor:o.ok, segundo:o.recusados,
           texto: o.recusados ? `${fmt(o.ok)} + ${fmt(o.recusados)}✕` : fmt(o.ok) })),
           { titulo:txt("tela.pa_ops_pedidas_titulo", "Operações mais pedidas") }))}
-    ${carta(txt("tela.pa_usuarios_nivel_titulo", "Usuários por nível"), txt("tela.pa_usuarios_nivel_leg", "quem pode o quê, do config.json"),
+    ${carta(txt("tela.pa_usuarios_nivel_titulo", "Usuários por nível"), esc(txt("tela.pa_usuarios_nivel_leg", "quem pode o quê, do config.json")),
         anel(d.por_nivel.map(n => ({ nome:n.nivel, valor:n.quantos, cor:CORES[n.nivel] || "var(--texto-3)" }))))}
-    ${carta(txt("tela.pa_maiores_tabelas_titulo", "Maiores tabelas"), txt("tela.pa_maiores_tabelas_leg", "por registro · o tamanho é o do .reg"),
+    ${carta(txt("tela.pa_maiores_tabelas_titulo", "Maiores tabelas"), esc(txt("tela.pa_maiores_tabelas_leg", "por registro · o tamanho é o do .reg")),
         barras(d.maiores_tabelas.map(t => ({ nome:t.tabela, valor:t.registros,
           texto: `${fmt(t.registros)} · ${fmtBytes(t.bytes)}` })), { titulo:txt("tela.pa_maiores_tabelas_titulo", "Maiores tabelas") }))}
-    ${carta(txt("tela.pa_de_onde_titulo", "De onde vêm"), txt("tela.pa_de_onde_leg", "por IP · vermelho é o que foi recusado"),
+    ${carta(txt("tela.pa_de_onde_titulo", "De onde vêm"), esc(txt("tela.pa_de_onde_leg", "por IP · vermelho é o que foi recusado")),
         barras(d.top_ips.map(i => ({ nome:i.ip, valor:i.acessos - i.recusados, segundo:i.recusados,
           texto: fmt(i.acessos) })), { titulo:txt("tela.pa_acessos_ip_titulo", "Acessos por IP") }))}
-    ${carta(txt("tela.pa_bancos_titulo", "Bancos"), txt("tela.pa_bancos_leg", "tabelas por banco de dados"),
+    ${carta(txt("tela.pa_bancos_titulo", "Bancos"), esc(txt("tela.pa_bancos_leg", "tabelas por banco de dados")),
         barras(d.bancos.map(b => ({ nome:b.nome, valor:b.tabelas,
           texto: `${b.tabelas} tab · ${fmt(b.registros)} reg`, cor:"var(--reg)" })), { titulo:txt("tela.pa_tabelas_banco_titulo", "Tabelas por banco") }))}
-    ${carta(txt("tela.pa_quem_mais_titulo", "Quem mais usou"), txt("tela.pa_quem_mais_leg", "por login, no log inteiro"),
+    ${carta(txt("tela.pa_quem_mais_titulo", "Quem mais usou"), esc(txt("tela.pa_quem_mais_leg", "por login, no log inteiro")),
         barras(d.usuarios_ativos.map(u => ({ nome:u.usuario, valor:u.acessos, cor:"var(--memo)" })),
           { titulo:txt("tela.pa_acessos_usuario_titulo", "Acessos por usuário") }))}
   </div>`;
@@ -7589,7 +7589,7 @@ async function telaRestaurarBackup(pasta) {
   if (!aindaNoPainel(vez)) return;
   folha(txt("tela.tt_restaurar_backup","Restaurar um backup"),
     txt("tela.st_backup_volta_outro_nome","a cópia volta com outro nome, ou por cima — e o SHA-256 é conferido antes"),
-    `<form class="criar" id="formRst" autocomplete="off" onsubmit="return false">
+    `<form class="criar" id="formRst" autocomplete="off">
        <div class="bloco">
          <label class="largo"><span>pasta onde procurar
              <em>o <code>backup.destino</code> do <code>config.json</code>, ou qualquer caminho</em></span>
@@ -7615,6 +7615,10 @@ async function telaRestaurarBackup(pasta) {
        <button class="botao secundario" id="btRstVolta">← Backup e restauração</button>
      </div>`);
 
+  // O `onsubmit="return false"` que morava no HTML virou ouvinte (pedido
+  // 771): a CSP sem `'unsafe-inline'` no `script-src` nao roda manipulador
+  // escrito em atributo, e o Enter no campo submeteria o formulario.
+  $("#formRst").addEventListener("submit", ev => ev.preventDefault());
   $("#btRstVolta").onclick = () => verBackupRestaure(databaseCorrente());
   $("#btRstListar").onclick = () => listarBackups();
   $("#rstPasta").onkeydown = ev => {
@@ -13441,7 +13445,7 @@ async function verCluster() {
       { campo: "pulso", titulo: txt("tela.cl_col_pulso", "último pulso"), tipo: "numero",
         formato: v => v === null ? "—" : `${fmt(v)} ms` },
       { campo: "atras", titulo: txt("tela.cl_col_atras", "atrás em"),
-        formato: v => v === null ? txt("tela.cl_nao_medido", "não medido") : (v || "—") },
+        formato: v => esc(v === null ? txt("tela.cl_nao_medido", "não medido") : (v || "—")) },
     ],
     dados: linhas,
   });
@@ -15852,7 +15856,7 @@ async function verResidentes() {
         formato:(v, l) => esc(v || l.nome || "—") },
       { campo:"linhas", titulo:txt("tela.col_linhas","linhas"), tipo:"numero", agregador:"sum", formato:v => v ?? "—" },
       { campo:"bytes", titulo:txt("tela.col_bytes","bytes"), tipo:"numero", agregador:"sum", formato:v => v ?? "—" },
-      { campo:"carregada_em", titulo:txt("tela.col_carregada_em","carregada em"), formato:v => v ?? "—" },
+      { campo:"carregada_em", titulo:txt("tela.col_carregada_em","carregada em"), formato:v => esc(v ?? "—") },
     ],
     dados: linhas,
     pagina: { tamanho: 100, opcoes: [50, 100, 200] },
@@ -15876,7 +15880,7 @@ async function verIps() {
       { campo:"ip", titulo:txt("tela.col_ip","IP"), fixa:"esq" },
       { campo:"acessos", titulo:txt("tela.col_acessos","acessos"), tipo:"numero", agregador:"sum", formato:v => v ?? 0 },
       { campo:"recusados", titulo:txt("tela.col_recusados","recusados"), tipo:"numero", agregador:"sum", formato:v => v ?? 0 },
-      { campo:"ultimo", titulo:txt("tela.col_ultimo","último"), formato:v => v ?? "—" },
+      { campo:"ultimo", titulo:txt("tela.col_ultimo","último"), formato:v => esc(v ?? "—") },
     ],
     dados: linhas,
     pagina: { tamanho: 100, opcoes: [50, 100, 200] },

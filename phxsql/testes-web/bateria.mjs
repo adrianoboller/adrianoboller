@@ -191,6 +191,21 @@ const GRAVADOR = () => {
   }, true);
 };
 
+/* O vigia da CSP: cada `securitypolicyviolation` da pagina vai para o Node.
+ * Entra por `addInitScript`, que o navegador roda antes do primeiro script
+ * da pagina e FORA da politica dela (e o DevTools quem injeta). */
+const VIGIA_DA_CSP = () => {
+  document.addEventListener('securitypolicyviolation', e => {
+    if (!window.__phxViolacao) return;
+    window.__phxViolacao({
+      diretiva: e.effectiveDirective, bloqueado: e.blockedURI,
+      fonte: e.sourceFile, linha: e.lineNumber, amostra: e.sample,
+      // A sonda do caso `csp` levanta esta marca enquanto injeta o veneno.
+      sonda: !!window.__phx771Sonda,
+    });
+  }, true);
+};
+
 /* Evidencia PARCIAL e pior que evidencia faltando: uma corrida com `--caso`
  * reescreveria o arquivo com um punhado de chaves e daria por nao-provado
  * tudo o que a corrida inteira prova. Por isso so a corrida inteira grava. */
@@ -291,6 +306,15 @@ async function principal() {
           for (const g of ganchos) botoesClicados.add(g);
         });
         await ctxNav.addInitScript(GRAVADOR);
+        // A CSP vigiada em TODA tela que a bateria abre (pedido 771). A
+        // politica so prova alguma coisa se o que ela barra for visto: uma
+        // violacao de `script-src` quer dizer um script da casa que deixou de
+        // rodar (hash que nao bate, manipulador em atributo que sobrou), e a
+        // tela fica calada -- sem `pageerror`, sem nada. O ouvinte entra
+        // antes de qualquer script da pagina e o Node acumula, como os botoes.
+        const violacoes = [];
+        await ctxNav.exposeBinding('__phxViolacao', (_fonte, v) => { violacoes.push(v); });
+        await ctxNav.addInitScript(VIGIA_DA_CSP);
         const page = await ctxNav.newPage();
         const errosDePagina = [];
         const errosDeConsole = [];
@@ -317,8 +341,29 @@ async function principal() {
             throw new Falha(`${errosDePagina.length} erro(s) de pagina:\n      `
               + errosDePagina.join('\n      '));
           }
+          // A violacao de proposito (a sonda do caso `csp`) vem marcada e nao
+          // conta: ela e a prova, nao o defeito.
+          const reais = violacoes.filter(v => !v.sonda);
+          if (reais.length) {
+            throw new Falha(`${reais.length} violacao(oes) da CSP — um script ou recurso `
+              + 'da casa que o navegador BARROU:\n      '
+              + reais.slice(0, 8).map(v => `${v.diretiva} ${v.bloqueado} `
+                + `${v.fonte}:${v.linha} «${v.amostra}»`).join('\n      '));
+          }
         } catch (e) {
           falha = e;
+          // O caso caiu por outro motivo: a violacao e o erro de pagina que
+          // ele nao chegou a conferir vao JUNTO, porque muitas vezes sao a
+          // causa -- um script barrado deixa a tela calada e o caso so ve o
+          // botao que nunca apareceu.
+          const reais = violacoes.filter(v => !v.sonda);
+          const junto = [
+            ...reais.slice(0, 5).map(v => `violacao ${v.diretiva} ${v.fonte}:${v.linha}`),
+            ...errosDePagina.slice(0, 5).map(m => `erro de pagina: ${m}`),
+          ];
+          if (junto.length && e && typeof e.message === 'string') {
+            e.message += '\n      ' + junto.join('\n      ');
+          }
         }
         const ms = Date.now() - t0;
 
