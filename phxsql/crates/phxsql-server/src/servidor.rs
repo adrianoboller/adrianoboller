@@ -1802,7 +1802,14 @@ impl Servidor {
         //
         // Pedido sem tabela -- `bancos`, `criar_database`, `sistema` -- cai na
         // regra da base, que e como sempre foi.
-        let base = pedido.texto_ou("database", "").to_string();
+        //
+        // Op do SERVIDOR ignora o `"database"` do pedido (pedido 756): senao
+        // quem administra uma base so listaria e mandaria em todas, so por
+        // nomear a dele.
+        let base = match Atividade::e_do_servidor(op) {
+            true => String::new(),
+            false => pedido.texto_ou("database", "").to_string(),
+        };
         if let (Some(atividade), Some(usuario)) =
             (Atividade::da_operacao(op), sessao.usuario.as_ref())
         {

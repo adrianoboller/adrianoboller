@@ -499,7 +499,119 @@ impl Atividade {
             _ => Atividade::Administrar,
         })
     }
+
+    /// Esta op e do SERVIDOR, e nao de uma base? Entao o direito dela vale na
+    /// regra `"*"` ou no nivel, e o `"database"` do pedido nao conta.
+    ///
+    /// # Por que a lista existe (pedido 756)
+    ///
+    /// O portao geral le o `"database"` do pedido, e nenhuma destas ops e de
+    /// base nenhuma: quem tinha `administrar` so na `loja` mandava
+    /// `"database":"loja"` e listava as sessoes de todas as bases (login, IP,
+    /// op), lia o cadastro de usuarios, o log de acessos, a configuracao --
+    /// e parava o servico. Medido pelo soquete em 09/10/2026
+    /// (`tests/ops-do-servidor.rs`, defeito reposto): 42 das ops desta lista
+    /// passavam o portao assim. O 755 tinha fechado UMA (`encerrar_sessao`) com portao
+    /// proprio; espalhar um portao por op e o que a lei proibe, porque a que
+    /// alguem esquecer vira a porta dos fundos. Aqui e UMA lista, lida pelo
+    /// portao unico.
+    ///
+    /// # O criterio, e a convergencia que o decidiu
+    ///
+    /// Ver as sessoes dos outros e poder de SERVIDOR nos tres maduros: o
+    /// `PROCESS` do MySQL e do MariaDB so se concede `ON *.*` (e global), e o
+    /// `pg_read_all_stats` do PostgreSQL e papel do cluster inteiro. Nenhum
+    /// filtra a lista por base -- PG 4 + MariaDB 3 + MySQL 2 = 9 a 0 (o SQLite
+    /// nao tem sessao de servidor e nao vota).
+    ///
+    /// # Quem NAO entra, de proposito
+    ///
+    /// Op que usa o `"database"` como OBJETO continua na base: `backup`,
+    /// `backups`, `restaurar_backup`, `replicacao_pular` (que exige a
+    /// tabela), as `idiomas_*` (conferidas na tabela de textos por dentro), e
+    /// a DDL de tabela. Tira-las daqui tiraria o direito de quem administra a
+    /// propria base. O `dblink_ligar`/`dblink_sincronizar` gravam numa base
+    /// daqui, mas com a CREDENCIAL do servidor -- e a credencial e o poder
+    /// (comentario do `da_operacao`), entao entram com o resto do dblink.
+    pub fn e_do_servidor(op: &str) -> bool {
+        OPS_DO_SERVIDOR.contains(&op)
+    }
 }
+
+/// As ops cujo direito vale na regra do servidor. Ver
+/// [`Atividade::e_do_servidor`].
+pub const OPS_DO_SERVIDOR: &[&str] = &[
+    // Quem esta conectado, o que faz, o que segura -- e derrubar.
+    "sessoes",
+    "processlist",
+    "encerrar_sessao",
+    "kill",
+    "transacoes",
+    "cargas",
+    "telemetria",
+    "telemetria_ligar",
+    "telemetria_desligar",
+    "telemetria_encerrar",
+    // O aquario NAO entra: o `portao_do_aquario` ja faz exatamente esta
+    // pergunta (`monitorar` na base vazia), e responde com o motivo -- «o
+    // direito vale na regra "*" ou no nivel» --, que a recusa generica daqui
+    // trocaria por «(sem base)». O teste dele trava o motivo.
+    "profiler",
+    "profiler_ligar",
+    "profiler_desligar",
+    "profiler_limpar",
+    // O movimento de todo mundo, e a porta da rede.
+    "acessos",
+    "ips",
+    "estatisticas",
+    "estatisticas_uso",
+    "bloqueios",
+    "bloqueios_exportar",
+    "desbloquear",
+    "whitelist_salvar",
+    // O cadastro e a configuracao do servidor.
+    "usuarios",
+    "usuario_criar",
+    "usuario_alterar",
+    "usuario_excluir",
+    "config",
+    "config_gravar",
+    "diretivas",
+    "diretiva_gravar",
+    "mensagens",
+    "mensagens_semear",
+    // A maquina e o servico.
+    "sistema",
+    "servico",
+    "servico_parar",
+    "servico_subir",
+    // Jobs rodam com o login de quem os salvou, e o DbLink carrega credencial
+    // de outro servidor: os dois sao cadastro do servidor.
+    "jobs",
+    "job_listar",
+    "job_salvar",
+    "job_excluir",
+    "job_rodar",
+    "job_ligar",
+    "dblink",
+    "dblink_salvar",
+    "dblink_excluir",
+    "dblink_testar",
+    "dblink_bancos",
+    "dblink_tabelas",
+    "dblink_estrutura",
+    "dblink_ler",
+    "dblink_consultar",
+    "dblink_ligar",
+    "dblink_sincronizar",
+    // O papel do servidor e a lista de nos.
+    "replicacao_estado",
+    "replicacao_testar",
+    "replicacao_ligar",
+    "spare_promover",
+    "cluster_no_acrescentar",
+    "cluster_no_remover",
+];
 
 /// Nivel do usuario: um nome no lugar de dez booleanos.
 ///
@@ -2178,6 +2290,31 @@ mod tests {
         let id = a.por_login("adriano").unwrap().id;
         assert_eq!(id, b.por_login("adriano").unwrap().id);
         assert!(id > 0, "o id vai para o .log e nao pode ser zero");
+    }
+
+    /// Nome errado na lista do servidor e furo calado: a op verdadeira
+    /// continuaria lendo o `"database"` do pedido, e o teste pelo soquete
+    /// so percorre a lista -- nao acharia o nome que nao esta nela. Cada
+    /// nome tem de ser um ramo do despachar.
+    #[test]
+    fn toda_op_do_servidor_existe_no_despachar() {
+        let despachar = include_str!("servidor.rs");
+        for op in OPS_DO_SERVIDOR {
+            let ramo = [
+                format!("\"{op}\" =>"),
+                format!("\"{op}\" |"),
+                format!("| \"{op}\""),
+            ];
+            assert!(
+                ramo.iter().any(|r| despachar.contains(r.as_str())),
+                "{op} esta em OPS_DO_SERVIDOR e nao e ramo do despachar"
+            );
+            assert_ne!(
+                Atividade::da_operacao(op),
+                None,
+                "{op}: op do servidor sem poder nenhum seria aberta a todos"
+            );
+        }
     }
 
     #[test]
