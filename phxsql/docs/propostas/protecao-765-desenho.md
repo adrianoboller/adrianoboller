@@ -1,5 +1,7 @@
 # Proteção — pedidos 765, 766 e 767: desenho do papel J
 
+> **PRECISÃO DO DONO, 09/10/2026:** «Pode ter um comando que reative a segurança na mesma sessão.» Na P14 entra o **trancar de novo** (como o `sudo -k`): op `trancar_execucao` / SQL `LOCK EXECUTION` / botão na tela, um motor só. Não exige senha, é idempotente e vai à trilha; o próximo comando perigoso volta a pedir a segunda senha.
+
 > **PRECISÃO DO DONO, 09/10/2026:** «Uma vez informada, a senha mestre fica na sessão; não é necessário para cada comando.» Na P14, a segunda senha **libera a sessão** até ela terminar (logout, inatividade do 770, queda da conexão) — no lugar do token de 5 min e uso único. A liberação não passa para outra sessão nem outro IP; cada comando perigoso continua registrado na trilha e no aquário.
 
 > **PRECISÃO DO DONO, 09/10/2026:** «Não é a senha do usuário, é uma **segunda senha**.» Na P14, a senha de execução é uma **credencial própria**: cadastro à parte, PBKDF2 e sal próprios, recusada se igual à de login, troca e bloqueio por tentativas próprios. Ter a sessão ou a senha de login **não basta**. Substitui a «reautenticação pelo desafio-resposta do login» proposta abaixo; o token de 5 min, uso único e escopo (op, base, tabela, linhas do plano) continua — ele é emitido **por essa segunda senha**.
