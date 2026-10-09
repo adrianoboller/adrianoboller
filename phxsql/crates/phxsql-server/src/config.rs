@@ -4501,23 +4501,67 @@ impl Default for ExpurgoDoDiario {
 pub struct Protecao {
     /// Liga a camada. Padrao `true`.
     pub ligada: bool,
+    /// P2 do 765: o prazo de COMANDO, em ms, de todo pedido -- dentro e fora
+    /// de transacao. Zero = sem prazo, e e o de fabrica: os tres maduros
+    /// nascem 0 (`statement_timeout`, `max_statement_time`,
+    /// `max_execution_time`), e o numero que diria qual prazo nao para quem
+    /// trabalha (L1 do desenho, o tempo que uma varredura segura a trava
+    /// global) nao foi medido. Morde nos pontos de cancelamento (`siga`), o
+    /// mesmo relogio do `STATEMENT TIMEOUT` da transacao, do qual e TETO.
+    pub prazo_comando_ms: u64,
+    /// `observar`: o prazo estourado vira ocorrencia `PrazoEstourado` e a
+    /// operacao termina. `proteger` (fabrica, a decisao do dono para o 765):
+    /// cancela. Este e um SINAL, nao comando da lista de perigo -- e so para
+    /// sinal que o dono deixou existir o modo observar.
+    pub prazo_comando_so_observa: bool,
 }
 
 impl Default for Protecao {
     fn default() -> Protecao {
-        Protecao { ligada: true }
+        Protecao {
+            ligada: true,
+            prazo_comando_ms: 0,
+            prazo_comando_so_observa: false,
+        }
     }
 }
 
 impl Protecao {
     /// Le a secao `protecao`. Ausente = ligada.
     fn de_json(j: &Json, avisos: &mut Vec<String>) -> Protecao {
-        let pedida = j
-            .campo("protecao")
-            .map(|c| c.booleano_ou("ligada", true))
-            .unwrap_or(true);
+        let secao = j.campo("protecao");
+        let pedida = secao.map(|c| c.booleano_ou("ligada", true)).unwrap_or(true);
+        let prazo = secao
+            .and_then(|c| c.campo("prazo_comando_ms"))
+            .map(|v| match v.inteiro() {
+                Some(n) if n >= 0 => n as u64,
+                _ => {
+                    avisos.push(format!(
+                        "protecao.prazo_comando_ms = {} nao e um inteiro >= 0; vale 0 \
+                         (sem prazo de comando)",
+                        v.escrever()
+                    ));
+                    0
+                }
+            })
+            .unwrap_or(0);
+        // Modo torto vale o MAIS estrito: um erro de digitacao nao pode ser
+        // o que desliga o cancelamento.
+        let so_observa = match secao.map(|c| c.texto_ou("prazo_comando_modo", "proteger").trim()) {
+            None | Some("proteger") => false,
+            Some("observar") => true,
+            Some(outro) => {
+                avisos.push(format!(
+                    "protecao.prazo_comando_modo = {outro:?} nao e proteger nem observar; \
+                     vale proteger"
+                ));
+                false
+            }
+        };
         Protecao {
             ligada: Self::efetiva(pedida, cfg!(debug_assertions), avisos),
+            prazo_comando_ms: prazo,
+            prazo_comando_so_observa: so_observa,
         }
     }
 
@@ -4543,7 +4587,18 @@ impl Protecao {
     }
 
     pub fn para_json(&self) -> Json {
-        Json::objeto(vec![("ligada", Json::Bool(self.ligada))])
+        Json::objeto(vec![
+            ("ligada", Json::Bool(self.ligada)),
+            ("prazo_comando_ms", Json::de_u64(self.prazo_comando_ms)),
+            (
+                "prazo_comando_modo",
+                Json::texto_de(if self.prazo_comando_so_observa {
+                    "observar"
+                } else {
+                    "proteger"
+                }),
+            ),
+        ])
     }
 }
 
@@ -5335,7 +5390,10 @@ const SECOES_CONHECIDAS: [(&str, &[&str]); 19] = [
             "volume_dias",
         ],
     ),
-    ("protecao", &["ligada"]),
+    (
+        "protecao",
+        &["ligada", "prazo_comando_ms", "prazo_comando_modo"],
+    ),
     (
         "diario",
         &[

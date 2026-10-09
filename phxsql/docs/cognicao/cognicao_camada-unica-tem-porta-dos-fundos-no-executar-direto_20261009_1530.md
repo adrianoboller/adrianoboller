@@ -45,3 +45,9 @@ passar por ela. A lista de irmãos de outro portão não serve de inventário pa
 O `sql_de_cadastro` passou a perguntar à camada (`protecao_do_pedido`), e o teste citado acima
 recusa o `DROP USER`. Ainda não existe um conferidor que reprove um `self.executar(` novo fora
 dos irmãos. Se alguém criar outro caminho direto amanhã, nenhum teste vai acusar.
+
+**Atualização, P5 (09/10/2026):** o conferidor que faltava agora existe. É a catraca
+`TETO_EXECUTAR_DIRETO = 24`, no teste `nenhum_executar_direto_novo`
+(`servidor/testes_dos_caminhos_da_protecao.rs`). Ela conta `.executar(` no código de produção
+das fontes do servidor, e uma chamada nova reprova. As 24 de hoje continuam lá: a catraca
+segura o número, mas não julga cada chamada.

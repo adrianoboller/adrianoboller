@@ -1546,10 +1546,18 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `disco-lento-sem-alarme` | a sonda lenta pintava o painel de «aviso» e não virava pedra `disco_lento` (pedido 769) | 1 | ✅ provada |
 | `reincidente-nunca-reincide` | o terceiro desvio da mesma chave em 5 min continuava amarelo: `fora_do_habitual_reincidente` não tinha regra (pedido 769) | 1 | ✅ provada |
 | `alarme-sem-motivo-na-tela` | variante do `enum Alarme` sem entrada na tabela `MOTIVOS` do `ui/aquario.js` chegava à tela como chave crua (A16 do 707) | 1 | ✅ provada |
+| `prazo-de-comando-nao-armado` | o prazo de comando não se armava a cada pedido, e o STATEMENT TIMEOUT de uma transação já confirmada cancelava a varredura seguinte (765, P2) | 4 | ✅ provada |
+| `prazo-de-comando-sem-teto` | um BEGIN com statement_timeout longo afrouxava o prazo de comando do servidor (765, P2) | 1 | ✅ provada |
+| `prazo-observado-cancela` | o prazo de comando em observar cancelava em vez de deixar terminar com uma ocorrência (765, P2) | 1 | ✅ provada |
+| `plano-largo-sem-protecao` | o UPDATE/DELETE largo do SQL gravava sem a senha de execução (765, P3) | 4 | ✅ provada |
+| `reescrita-grande-livre` | a reescrita de tabela grande (ALTER, cifra, indice de texto) executava sem a senha (765, P4) | 2 | ✅ provada |
+| `camada-de-protecao-fora-do-ponto-unico` | sem a camada no ponto dos três irmãos, o DROP passava pela rede, pelo MCP, pelo job e pelo motor das rotinas (765, P4/P5) | 5 | ✅ provada |
+| `motor-da-rotina-pula-a-camada` | o motor das rotinas chamando o executar direto pulava a camada de proteção e os portões (765, P5) | 2 | ✅ provada |
+| `job-pula-a-camada` | o job chamando o executar direto rodava o comando perigoso sem a senha (765, P5) | 2 | ✅ provada |
 | `alter-com-regra-sem-aviso` | `acrescentar_coluna` com `check` ou `calculada` numa tabela com linha é aceito SEM AVISO, e a linha velha fica fora da regra | — | 🪦 aposentada (01/10/2026) |
 | `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | — | 🪦 aposentada (18/09/2026) |
 
-**877 guardas: 2 aposentadas, 870 provadas, 5 redundantes** — 43411 s de mutação, medido de 2026-09-16 15:25 a 2026-10-09 17:03, em 8 datas (2026-09-16: 1, 2026-09-30: 27, 2026-10-01: 93, 2026-10-02: 93, 2026-10-06: 36, 2026-10-07: 219, 2026-10-08: 308, 2026-10-09: 100).
+**885 guardas: 2 aposentadas, 878 provadas, 5 redundantes** — 44295 s de mutação, medido de 2026-09-16 15:25 a 2026-10-09 20:18, em 8 datas (2026-09-16: 1, 2026-09-30: 27, 2026-10-01: 93, 2026-10-02: 93, 2026-10-06: 36, 2026-10-07: 219, 2026-10-08: 308, 2026-10-09: 108).
 
 As guardas que esta corrida ainda cita, hoje aposentadas:
 

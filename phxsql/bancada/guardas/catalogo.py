@@ -27739,4 +27739,209 @@ fn anotar(""",
             "aquario::testes::a_leitura_de_motivos_ve_a_linha_tirada",
         ],
     },
+    # -----------------------------------------------------------------------
+    # Pedidos 765/767, fatias P2-P5: o prazo de comando, o plano largo, a DDL
+    # acima do piso e os caminhos escondidos, cada um pela MESMA camada.
+    {
+        "id": "prazo-de-comando-nao-armado",
+        "titulo": "o prazo de comando não se armava a cada pedido, e o STATEMENT TIMEOUT de uma transação já confirmada cancelava a varredura seguinte (765, P2)",
+        "porque": (
+            "765 P2: fora de transacao nenhuma operacao tinha prazo, e a trava "
+            "de dados e global. Medido ao escrever a prova: o prazo de 20 ms de "
+            "um `ler` dentro de uma transacao ficava no relogio depois do COMMIT "
+            "e cancelava a varredura seguinte da mesma conexao. O `despachar` "
+            "arma (e zera) o relogio uma vez por pedido."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """            a.armar_prazo_de_comando(
+                crate::agora_ms(),
+                pr.prazo_comando_ms,
+                pr.prazo_comando_so_observa,
+            );
+""",
+        "troca": """            let _ = (a, pr);
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_do_prazo_de_comando::o_prazo_de_comando_cancela_a_varredura_e_solta_a_trava",
+            "servidor::testes_do_prazo_de_comando::em_observar_a_varredura_termina_e_emite_uma_ocorrencia",
+            "servidor::testes_do_prazo_de_comando::o_prazo_da_transacao_confirmada_nao_vaza_para_o_pedido_seguinte",
+            "servidor::testes_do_prazo_de_comando::a_transacao_nao_afrouxa_o_prazo_de_comando",
+        ],
+        "seguem": [
+            "servidor::testes_dos_alarmes::o_prazo_marca_e_o_encerrar_manual_nao",
+        ],
+    },
+    {
+        "id": "prazo-de-comando-sem-teto",
+        "titulo": "um BEGIN com statement_timeout longo afrouxava o prazo de comando do servidor (765, P2)",
+        "porque": (
+            "765 P2: o relogio e um so, e o prazo da transacao era gravado por "
+            "cima. O prazo de comando em `proteger` e TETO: a transacao aperta, "
+            "nunca afrouxa."
+        ),
+        "arquivo": "crates/phxsql-server/src/telemetria.rs",
+        "trecho": """        let teto = self.teto_do_comando_ms.load(Ordering::Relaxed);
+""",
+        "troca": """        let teto = self.teto_do_comando_ms.load(Ordering::Relaxed) * 0;
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_do_prazo_de_comando::a_transacao_nao_afrouxa_o_prazo_de_comando",
+        ],
+        "seguem": [
+            "servidor::testes_do_prazo_de_comando::o_prazo_de_comando_cancela_a_varredura_e_solta_a_trava",
+            "servidor::testes_do_prazo_de_comando::o_prazo_da_transacao_confirmada_nao_vaza_para_o_pedido_seguinte",
+        ],
+    },
+    {
+        "id": "prazo-observado-cancela",
+        "titulo": "o prazo de comando em observar cancelava em vez de deixar terminar com uma ocorrência (765, P2)",
+        "porque": (
+            "765 P2: o modo observar e o do sinal, nao do comando perigoso -- "
+            "estoura, emite `PrazoEstourado` uma vez e deixa terminar."
+        ),
+        "arquivo": "crates/phxsql-server/src/telemetria.rs",
+        "trecho": """                PrazoDe::ComandoObservado => {}
+""",
+        "troca": """                PrazoDe::ComandoObservado => return Err(PhxError::Cancelado(String::new())),
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_do_prazo_de_comando::em_observar_a_varredura_termina_e_emite_uma_ocorrencia",
+        ],
+        "seguem": [
+            "servidor::testes_do_prazo_de_comando::o_prazo_de_comando_cancela_a_varredura_e_solta_a_trava",
+        ],
+    },
+    {
+        "id": "plano-largo-sem-protecao",
+        "titulo": "o UPDATE/DELETE largo do SQL gravava sem a senha de execução (765, P3)",
+        "porque": (
+            "765 P3: o plano largo da F8 so observava; o `protecao_do_plano` no "
+            "`executar_dml_por_faixa` recusa com o numero do plano antes da "
+            "primeira linha -- por qualquer porta, o MCP somente de leitura "
+            "inclusive (a ferramenta `phx_sql` leva DELETE)."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor/servico_sql_01.rs",
+        "trecho": """            self.protecao_do_plano(rotulo, &database, &tabela, medida, sessao)?;
+""",
+        "troca": """            let _ = (rotulo, medida);
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_dos_caminhos_da_protecao::o_update_largo_recusa_com_o_numero_e_nada_muda",
+            "servidor::testes_dos_caminhos_da_protecao::abaixo_do_piso_passa_e_o_delete_largo_diz_o_numero",
+            "servidor::testes_dos_caminhos_da_protecao::o_mcp_passa_pela_mesma_camada",
+            "servidor::testes_da_protecao::o_delete_largo_e_recusado_antes_da_primeira_linha",
+        ],
+        "seguem": [
+            "servidor::testes_dos_caminhos_da_protecao::o_drop_de_tabela_grande_deixa_todos_os_arquivos",
+        ],
+    },
+    {
+        "id": "reescrita-grande-livre",
+        "titulo": "a reescrita de tabela grande (ALTER, cifra, indice de texto) executava sem a senha (765, P4)",
+        "porque": (
+            "765 P4: acrescentar coluna, cifrar e redeclarar o indice de texto "
+            "reescrevem a tabela inteira com a trava global; acima do piso da "
+            "F8 pedem a senha com o tamanho, e o `ALTER TABLE ... ENCRYPT` do "
+            "SQL chega pela mesma camada."
+        ),
+        "arquivo": "crates/phxsql-server/src/protecao.rs",
+        "trecho": """        "acrescentar_coluna" | "criptografar" | "descriptografar" | "redeclarar_indices_texto" => {
+            Classe::SeGrande
+        }
+""",
+        "troca": """        "acrescentar_coluna" | "criptografar" | "descriptografar" | "redeclarar_indices_texto" => {
+            Classe::Livre
+        }
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_dos_caminhos_da_protecao::a_reescrita_acima_do_piso_pede_a_senha_com_o_tamanho",
+            "servidor::testes_da_protecao::acrescentar_coluna_so_e_perigoso_em_tabela_grande",
+        ],
+        "seguem": [
+            "servidor::testes_dos_caminhos_da_protecao::o_drop_de_tabela_grande_deixa_todos_os_arquivos",
+        ],
+    },
+    {
+        "id": "camada-de-protecao-fora-do-ponto-unico",
+        "titulo": "sem a camada no ponto dos três irmãos, o DROP passava pela rede, pelo MCP, pelo job e pelo motor das rotinas (765, P4/P5)",
+        "porque": (
+            "765 P4/P5: a camada mora no `executar_e_contar_escrita_local`, por "
+            "onde passam `despachar`, `executar_derivado` e o job -- e por isso "
+            "o REST, o MCP, o CALL e o gatilho AFTER. Tirar a linha abre todos "
+            "de uma vez; o plano largo, que tem ponto proprio, segue."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor/servico_permissao_01.rs",
+        "trecho": """        let liberado = self.protecao_do_pedido(op, pedido, sessao)?;
+""",
+        "troca": """        let liberado: Option<crate::protecao::Escopo> = None;
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_dos_caminhos_da_protecao::o_drop_de_tabela_grande_deixa_todos_os_arquivos",
+            "servidor::testes_dos_caminhos_da_protecao::o_mcp_passa_pela_mesma_camada",
+            "servidor::testes_dos_caminhos_da_protecao::o_job_com_comando_perigoso_recusa_com_a_4009",
+            "servidor::testes_dos_caminhos_da_protecao::rotina_e_gatilho_after_passam_pela_mesma_camada",
+            "servidor::testes_da_protecao::o_drop_e_recusado_pela_rede",
+        ],
+        "seguem": [
+            "servidor::testes_dos_caminhos_da_protecao::o_update_largo_recusa_com_o_numero_e_nada_muda",
+        ],
+    },
+    {
+        "id": "motor-da-rotina-pula-a-camada",
+        "titulo": "o motor das rotinas chamando o executar direto pulava a camada de proteção e os portões (765, P5)",
+        "porque": (
+            "765 P5 e a lei «funcao e comando vem do mesmo motor»: o CALL e o "
+            "gatilho AFTER falam com o servidor so pelo `MotorDoServidor`, e ele "
+            "entrega pelo `executar_derivado`. O atalho pelo `executar` cai na "
+            "prova do motor E na catraca das chamadas diretas."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor/servico_sql_01.rs",
+        "trecho": """        self.servidor.executar_derivado(op, &pedido, self.sessao)
+""",
+        "troca": """        self.servidor.executar(op, &pedido, self.sessao)
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_dos_caminhos_da_protecao::rotina_e_gatilho_after_passam_pela_mesma_camada",
+            "servidor::testes_dos_caminhos_da_protecao::nenhum_executar_direto_novo",
+        ],
+        "seguem": [
+            "servidor::testes_dos_caminhos_da_protecao::o_job_com_comando_perigoso_recusa_com_a_4009",
+        ],
+    },
+    {
+        "id": "job-pula-a-camada",
+        "titulo": "o job chamando o executar direto rodava o comando perigoso sem a senha (765, P5)",
+        "porque": (
+            "765 P5: o job e o terceiro irmao; sem a senha propria (P12), o "
+            "comando perigoso dele recusa com a 4009 da rede."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor/servico_jobs_01.rs",
+        "trecho": """        self.executar_e_contar_escrita_local(op, &job.pedido, &sessao)
+""",
+        "troca": """        self.executar(op, &job.pedido, &sessao)
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_dos_caminhos_da_protecao::o_job_com_comando_perigoso_recusa_com_a_4009",
+            "servidor::testes_dos_caminhos_da_protecao::nenhum_executar_direto_novo",
+        ],
+        "seguem": [
+            "servidor::testes_dos_caminhos_da_protecao::rotina_e_gatilho_after_passam_pela_mesma_camada",
+        ],
+    },
 ]

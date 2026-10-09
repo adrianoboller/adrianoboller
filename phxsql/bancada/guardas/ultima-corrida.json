@@ -1,5 +1,5 @@
 {
-  "quando": "2026-10-09 17:03",
+  "quando": "2026-10-09 20:18",
   "mais_antigo": "2026-09-16 15:25",
   "guardas": [
     {
@@ -7019,6 +7019,70 @@
       "segundos": 154.95,
       "notas": [],
       "quando": "2026-10-09 16:38"
+    },
+    {
+      "id": "prazo-de-comando-nao-armado",
+      "titulo": "o prazo de comando não se armava a cada pedido, e o STATEMENT TIMEOUT de uma transação já confirmada cancelava a varredura seguinte (765, P2)",
+      "veredito": "PROVADA",
+      "segundos": 127.24,
+      "notas": [],
+      "quando": "2026-10-09 20:18"
+    },
+    {
+      "id": "prazo-de-comando-sem-teto",
+      "titulo": "um BEGIN com statement_timeout longo afrouxava o prazo de comando do servidor (765, P2)",
+      "veredito": "PROVADA",
+      "segundos": 129.9,
+      "notas": [],
+      "quando": "2026-10-09 20:18"
+    },
+    {
+      "id": "prazo-observado-cancela",
+      "titulo": "o prazo de comando em observar cancelava em vez de deixar terminar com uma ocorrência (765, P2)",
+      "veredito": "PROVADA",
+      "segundos": 111.09,
+      "notas": [],
+      "quando": "2026-10-09 20:18"
+    },
+    {
+      "id": "plano-largo-sem-protecao",
+      "titulo": "o UPDATE/DELETE largo do SQL gravava sem a senha de execução (765, P3)",
+      "veredito": "PROVADA",
+      "segundos": 105.62,
+      "notas": [],
+      "quando": "2026-10-09 20:18"
+    },
+    {
+      "id": "reescrita-grande-livre",
+      "titulo": "a reescrita de tabela grande (ALTER, cifra, indice de texto) executava sem a senha (765, P4)",
+      "veredito": "PROVADA",
+      "segundos": 114.27,
+      "notas": [],
+      "quando": "2026-10-09 20:18"
+    },
+    {
+      "id": "camada-de-protecao-fora-do-ponto-unico",
+      "titulo": "sem a camada no ponto dos três irmãos, o DROP passava pela rede, pelo MCP, pelo job e pelo motor das rotinas (765, P4/P5)",
+      "veredito": "PROVADA",
+      "segundos": 101.08,
+      "notas": [],
+      "quando": "2026-10-09 20:18"
+    },
+    {
+      "id": "motor-da-rotina-pula-a-camada",
+      "titulo": "o motor das rotinas chamando o executar direto pulava a camada de proteção e os portões (765, P5)",
+      "veredito": "PROVADA",
+      "segundos": 97.27,
+      "notas": [],
+      "quando": "2026-10-09 20:18"
+    },
+    {
+      "id": "job-pula-a-camada",
+      "titulo": "o job chamando o executar direto rodava o comando perigoso sem a senha (765, P5)",
+      "veredito": "PROVADA",
+      "segundos": 96.92,
+      "notas": [],
+      "quando": "2026-10-09 20:18"
     },
     {
       "id": "alter-com-regra-sem-aviso",

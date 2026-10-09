@@ -1538,6 +1538,29 @@ struct MotorDoServidor<'a> {
     database: String,
 }
 
+/// A porta do motor das rotinas para a prova da P5 (765): o `CALL` e o
+/// gatilho AFTER falam com o servidor SO pelo `operacao`/`consultar` abaixo,
+/// e a prova chama o mesmo `operacao` com uma op da lista de perigo -- uma
+/// que a linguagem de hoje nao sabe escrever, para o dia em que souber.
+#[cfg(test)]
+impl Servidor {
+    pub(super) fn operacao_pelo_motor_de_rotina(
+        &self,
+        base: &str,
+        op: &str,
+        pedido: &Json,
+        sessao: &Sessao,
+    ) -> Result<Json> {
+        use phxsql_sql::rotina::Motor;
+        MotorDoServidor {
+            servidor: self,
+            sessao,
+            database: base.to_string(),
+        }
+        .operacao(op, pedido)
+    }
+}
+
 impl phxsql_sql::rotina::Motor for MotorDoServidor<'_> {
     fn operacao(&mut self, op: &str, pedido: &Json) -> Result<Json> {
         let pedido = match pedido.campo("database") {

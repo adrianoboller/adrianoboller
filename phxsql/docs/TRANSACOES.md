@@ -481,6 +481,20 @@ ter: parar entre gravar o slot e manter o índice deixaria os dois discordando.
 Um prazo que só morde onde há laço é um prazo honesto; um campo que promete
 cortar qualquer coisa seria configuração que mente.
 
+**O prazo de comando do servidor (pedido 765, P2) usa o mesmo relógio.** Ele
+vem de `protecao.prazo_comando_ms` (0 de fábrica) e de
+`protecao.prazo_comando_modo`:
+
+- `proteger` cancela o pedido com `6001`;
+- `observar` emite uma ocorrência `prazo_estourado` e deixa o pedido terminar.
+
+O `despachar` arma o prazo **a cada pedido**, dentro e fora de transação, e o
+prazo vale como **teto** do `STATEMENT TIMEOUT`: uma transação pode apertá-lo,
+mas não afrouxá-lo. Armar também zera o relógio. Antes disso, o prazo de uma
+transação já confirmada ficava armado e cancelava a varredura seguinte da
+mesma conexão. Há um limite: sem telemetria ligada não existe atividade, e
+nenhum dos dois prazos funciona.
+
 ### 4.8 Otimista e pessimista: nenhum dos dois é o certo sempre
 
 A **janela de conflito de escrita** (pedido 123) já existia: o cliente manda

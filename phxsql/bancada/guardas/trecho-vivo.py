@@ -963,7 +963,12 @@ TETO_TESTE_SEM_MODULO = 0
 # alarmes que estavam sem `sinal` (o teto da transacao conta duas, COMMIT e
 # carga) e a `alarme-sem-motivo-na-tela` (A16). Provadas pelo provador, 12/12.
 # 877 = 861 + 1 + 3 (339) + 12 (769), somados na integracao.
-PISO_DAS_ENTRADAS = 877
+# +8 (765/767, fatias P2-P5, 09/10/2026): tres do prazo de comando (armar
+# por pedido, teto sobre a transacao, observar que deixa terminar), uma do
+# plano largo, uma da reescrita grande, uma da camada no ponto dos irmaos e
+# duas dos caminhos escondidos (motor das rotinas e job). Contado: 883 + 2
+# aposentadas.
+PISO_DAS_ENTRADAS = 885
 
 # ------------------------------------------------------------- APOSENTADAS
 #

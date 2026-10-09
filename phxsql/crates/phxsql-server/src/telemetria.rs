@@ -125,6 +125,37 @@ pub const OPS_CANCELAVEIS: &[&str] = &[
     "carga",
 ];
 
+/// Quem armou o prazo da operacao corrente -- o relogio e UM so
+/// (`Atividade::prazo_ate_ms`), e isto diz so o que fazer quando ele estoura.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PrazoDe {
+    /// O `STATEMENT TIMEOUT` declarado na transacao.
+    Transacao = 0,
+    /// O prazo de comando da protecao, no modo `proteger`: cancela.
+    Comando = 1,
+    /// O prazo de comando no modo `observar`: emite a ocorrencia e segue.
+    ComandoObservado = 2,
+}
+
+impl PrazoDe {
+    fn de_u32(v: u32) -> PrazoDe {
+        match v {
+            1 => PrazoDe::Comando,
+            2 => PrazoDe::ComandoObservado,
+            _ => PrazoDe::Transacao,
+        }
+    }
+
+    /// O `dados` da ocorrencia `PrazoEstourado`.
+    fn rotulo(self) -> &'static str {
+        match self {
+            PrazoDe::Transacao => "statement_timeout",
+            PrazoDe::Comando => "prazo_comando",
+            PrazoDe::ComandoObservado => "prazo_comando (observar)",
+        }
+    }
+}
+
 /// Estado de uma atividade, do mais parado ao mais barulhento.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Estado {
@@ -222,7 +253,10 @@ pub struct Atividade {
     /// Unidades de trabalho ja percorridas na operacao corrente.
     passos: AtomicU64,
     /// Instante (ms da epoca) em que a operacao corrente tem de terminar.
-    /// Zero = sem prazo, e e o valor de toda operacao fora de transacao.
+    /// Zero = sem prazo. Quem arma: o `STATEMENT TIMEOUT` da transacao e,
+    /// desde a P2 do 765, o prazo de COMANDO da camada de protecao
+    /// (`protecao.prazo_comando_ms`), armado a cada pedido no `despachar`.
+    /// UM relogio para os dois: ver [`PrazoDe`].
     ///
     /// # Por que ele mora aqui, e nao num relogio de fundo
     ///
@@ -232,6 +266,15 @@ pub struct Atividade {
     /// o `siga`, entre duas unidades de trabalho seguras --, e por isso ele
     /// morde exatamente onde o cancelamento coopera, e em nenhum outro lugar.
     prazo_ate_ms: AtomicI64,
+    /// Quem armou o `prazo_ate_ms` ([`PrazoDe`] como `u32`). So e lido
+    /// quando o prazo ESTOURA -- o caminho comum do `siga` nao paga nada.
+    prazo_de: AtomicU32,
+    /// O prazo de comando (modo `proteger`) deste pedido, guardado a parte
+    /// como TETO do relogio: o `STATEMENT TIMEOUT` da transacao e rearmado a
+    /// cada pedido derivado, e sem o teto a terceira operacao derivada
+    /// passaria do prazo do servidor. Zero = sem teto. Nao e um segundo
+    /// relogio: o `siga` so le o `prazo_ate_ms`.
+    teto_do_comando_ms: AtomicI64,
     /// Milissegundos de servidor ja gastos pelas operacoes CONCLUIDAS.
     consumido_ms: AtomicU64,
     /// Quantos pedidos ja passaram por aqui.
@@ -293,6 +336,8 @@ impl Atividade {
             com_trava: AtomicBool::new(false),
             passos: AtomicU64::new(0),
             prazo_ate_ms: AtomicI64::new(0),
+            prazo_de: AtomicU32::new(PrazoDe::Transacao as u32),
+            teto_do_comando_ms: AtomicI64::new(0),
             consumido_ms: AtomicU64::new(0),
             pedidos: AtomicU64::new(0),
             comecou: Mutex::new(None),
@@ -493,17 +538,31 @@ impl Atividade {
         let ate = self.prazo_ate_ms.load(Ordering::Relaxed);
         if ate != 0 && crate::agora_ms() >= ate {
             self.prazo_ate_ms.store(0, Ordering::Relaxed);
-            sinal_em(
-                self,
-                crate::aquario::Alarme::PrazoEstourado,
-                "statement_timeout",
-            );
-            return Err(PhxError::Cancelado(format!(
-                "a operacao passou do STATEMENT TIMEOUT da transacao apos {} \
-                 unidade(s) de trabalho; o que ja estava gravado continua \
-                 gravado e o arquivo esta integro",
-                self.passos.load(Ordering::Relaxed)
-            )));
+            let de = PrazoDe::de_u32(self.prazo_de.load(Ordering::Relaxed));
+            sinal_em(self, crate::aquario::Alarme::PrazoEstourado, de.rotulo());
+            let passos = self.passos.load(Ordering::Relaxed);
+            match de {
+                // Observar e deixar terminar: a ocorrencia ja saiu, uma vez
+                // so (o prazo zerou acima), e o laco segue para o encerrar
+                // manual logo abaixo, que continua valendo.
+                PrazoDe::ComandoObservado => {}
+                PrazoDe::Comando => {
+                    return Err(PhxError::Cancelado(format!(
+                        "a operacao passou do prazo de comando do servidor \
+                         (protecao.prazo_comando_ms) apos {passos} unidade(s) de \
+                         trabalho e foi encerrada para soltar a trava de dados; o \
+                         que ja estava gravado continua gravado e o arquivo esta \
+                         integro"
+                    )));
+                }
+                PrazoDe::Transacao => {
+                    return Err(PhxError::Cancelado(format!(
+                        "a operacao passou do STATEMENT TIMEOUT da transacao apos \
+                         {passos} unidade(s) de trabalho; o que ja estava gravado \
+                         continua gravado e o arquivo esta integro"
+                    )));
+                }
+            }
         }
         let mirado = self.encerrar_serial.load(Ordering::Relaxed);
         if mirado != 0 && mirado == self.serial.load(Ordering::Relaxed) {
@@ -550,7 +609,46 @@ impl Atividade {
     /// `STATEMENT TIMEOUT` declarado. Fora disso ninguem chama, e o campo
     /// continua zero -- o caminho comum nao paga nada.
     pub fn definir_prazo(&self, ate_ms: i64) {
-        self.prazo_ate_ms.store(ate_ms, Ordering::Relaxed);
+        // O prazo de comando do servidor e TETO: a transacao pode apertar,
+        // nunca afrouxar. Sem isto, um `BEGIN` com `statement_timeout` de uma
+        // hora seria a porta para segurar a trava global que a protecao
+        // existe para soltar. O prazo de transacao anterior (de outro pedido
+        // derivado da mesma operacao) e substituido, como sempre foi.
+        let teto = self.teto_do_comando_ms.load(Ordering::Relaxed);
+        let (ate, de) = if teto != 0 && (ate_ms == 0 || teto <= ate_ms) {
+            (teto, PrazoDe::Comando)
+        } else {
+            (ate_ms, PrazoDe::Transacao)
+        };
+        self.prazo_de.store(de as u32, Ordering::Relaxed);
+        self.prazo_ate_ms.store(ate, Ordering::Relaxed);
+    }
+
+    /// Arma o prazo de COMANDO deste pedido (765, P2), ou o tira (`ms` 0).
+    ///
+    /// Chamado UMA vez por pedido, no `despachar`, antes de tudo -- e por
+    /// isso tambem e o que zera o prazo que um pedido anterior deixou armado:
+    /// sem esta linha, o `STATEMENT TIMEOUT` de uma transacao ja confirmada
+    /// continuava no relogio e cancelava a varredura seguinte da conexao.
+    /// `so_observa` e o modo `observar`: estourar emite a ocorrencia e deixa
+    /// terminar.
+    pub fn armar_prazo_de_comando(&self, agora_ms: i64, ms: u64, so_observa: bool) {
+        let (ate, de) = match ms {
+            0 => (0, PrazoDe::Transacao),
+            _ => (
+                agora_ms.saturating_add(ms.min(i64::MAX as u64) as i64),
+                if so_observa {
+                    PrazoDe::ComandoObservado
+                } else {
+                    PrazoDe::Comando
+                },
+            ),
+        };
+        // So o `proteger` e teto; o `observar` nao segura a transacao.
+        let teto = if de == PrazoDe::Comando { ate } else { 0 };
+        self.teto_do_comando_ms.store(teto, Ordering::Relaxed);
+        self.prazo_de.store(de as u32, Ordering::Relaxed);
+        self.prazo_ate_ms.store(ate, Ordering::Relaxed);
     }
 
     pub fn encerrar(&self, quem: &str) -> Encerramento {

@@ -299,6 +299,29 @@ histograma de 24 horas UTC (a tela converte; o motor não tem fuso, A0). Ocorrê
 
 Ordem: P0 (defeito, na conta) → P1 → P14 → P2/P3/P4/P5 → P12/P13 → P6/P7 → P8/P9/P10/P11 → P15.
 
+**Andamento P2–P5 (09/10/2026, papel B).** Provas em `servidor/testes_do_prazo_de_comando.rs` e
+`servidor/testes_dos_caminhos_da_protecao.rs`, e oito guardas no catálogo.
+
+- **P2:** `protecao.prazo_comando_ms` (fábrica 0, porque a L1 não foi medida) e
+  `protecao.prazo_comando_modo` (`proteger` cancela; `observar` emite uma `PrazoEstourado` e deixa
+  terminar). O prazo é armado a cada pedido no `despachar` e usa o relógio do STATEMENT TIMEOUT,
+  do qual é **teto**.
+- **P2, achado:** o prazo de uma transação já confirmada vazava para o pedido seguinte. Corrigido
+  pelo mesmo armar.
+- **P3/P4:** a mecânica já tinha entrado na P1. Esta fatia acrescentou as provas com o número.
+  - O aceite «conferir `rowstamp`» virou conferir **versão e conteúdo**: o `rowstamp` não muda no
+    `atualizar`.
+  - O aceite «token de 2.000 com plano 2.001» **caiu** pela precisão do dono: a liberação é da
+    sessão, e não um token com escopo.
+  - `DROP TABLE` pelo SQL não existe. A linguagem recusa.
+- **P5:**
+  - REST (P1), MCP, job (4009), motor das rotinas (CALL e gatilho AFTER, que a linguagem de hoje
+    não deixa escrever DROP/DELETE) e réplica isenta.
+  - A catraca `TETO_EXECUTAR_DIRETO` reprova `.executar(` novo.
+  - **Achado:** a ponte MCP somente de leitura oferece `phx_sql`, que escreve (cognição de
+    09/10 19:30).
+- **Limite:** sem telemetria ligada não há relógio, e o prazo não morde.
+
 ---
 
 ## 7. Choque com pétrea?

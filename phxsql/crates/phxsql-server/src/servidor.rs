@@ -1390,6 +1390,22 @@ impl Servidor {
         // O quorum do pedido (207) nasce limpo: o de um pedido anterior desta
         // thread nao pode vazar para a resposta deste.
         QUORUM_DO_PEDIDO.with(|q| q.borrow_mut().take());
+        // O prazo de COMANDO (765, P2), armado aqui porque este e o UNICO
+        // ponto por onde passa cada pedido de cada porta -- dados, `/api`,
+        // REST e MCP -- uma vez, e antes dos pedidos derivados: o prazo e do
+        // pedido inteiro, nao de cada `ler` que um `UPDATE` produz. Armar
+        // tambem e ZERAR: o `STATEMENT TIMEOUT` que um pedido anterior desta
+        // conexao deixou no relogio morre aqui, em vez de cancelar a
+        // varredura seguinte. Sem atividade (telemetria desligada) nao ha
+        // relogio, e o `siga` tambem nao tem onde olhar.
+        if let Some(a) = crate::telemetria::corrente() {
+            let pr = &self.config.protecao;
+            a.armar_prazo_de_comando(
+                crate::agora_ms(),
+                pr.prazo_comando_ms,
+                pr.prazo_comando_so_observa,
+            );
+        }
         let (op, autenticado, mut resultado) = self.despachar_o_pedido(linha, sessao, ip);
         // A espera aconteceu no `Drop` da trava, la dentro; a resposta sai
         // daqui. Sem quorum ligado nada foi guardado, e a resposta e byte a
@@ -2754,6 +2770,7 @@ fontes_do_servidor! {
     "servidor/testes_do_observador.rs",
     "servidor/testes_do_panico_sob_a_trava.rs",
     "servidor/testes_do_plano_largo.rs",
+    "servidor/testes_do_prazo_de_comando.rs",
     "servidor/testes_do_pular_manual.rs",
     "servidor/testes_do_pulso_que_morre.rs",
     "servidor/testes_do_rebaixar_sem_disco.rs",
@@ -2764,6 +2781,7 @@ fontes_do_servidor! {
     "servidor/testes_do_terceiro_na_tabela_que_nasce.rs",
     "servidor/testes_do_valor_citado_com_teto.rs",
     "servidor/testes_dos_alarmes.rs",
+    "servidor/testes_dos_caminhos_da_protecao.rs",
     "servidor/testes_dos_numeros_de_origem.rs",
     "servidor/testes_dos_produtores_769.rs",
     "servidor/testes_encerrar_sessao_644.rs",
@@ -3111,6 +3129,12 @@ mod testes_da_protecao;
 
 #[cfg(test)]
 mod testes_do_plano_largo;
+
+#[cfg(test)]
+mod testes_do_prazo_de_comando;
+
+#[cfg(test)]
+mod testes_dos_caminhos_da_protecao;
 
 #[cfg(test)]
 mod testes_dos_produtores_769;
