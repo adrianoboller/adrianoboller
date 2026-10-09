@@ -46,8 +46,12 @@ fn replica_em_dia_com_o_mestre_gravando_nao_gera_ocorrencia() {
         }
         std::thread::sleep(Duration::from_millis(200));
     }
-    let escritos = escritor.escritos.load(Ordering::SeqCst);
+    // Parar ANTES de ler: o `inserir` em voo no momento da leitura entrava
+    // depois dela, a replica chegava a um evento a mais e o `==` caia
+    // (pedido 764). O `drop` junta a thread; so entao o contador e final.
+    let contador = std::sync::Arc::clone(&escritor.escritos);
     drop(escritor);
+    let escritos = contador.load(Ordering::SeqCst);
     assert!(
         escritos > 20,
         "o mestre mal gravou ({escritos}): a prova nao provou"
