@@ -17,7 +17,7 @@ novo entram **aqui primeiro**.
 | endereço | **só `127.0.0.1`**. Não há opção de escutar em outra interface: a porta extrai arquivos e aceita senha, e ela nasce presa à máquina (pedido 454) |
 | porta | constante única no servidor, `PORTA_PADRAO` (sugestão: **7700** — livre das quatro do PhxSql: 5000, 5001, 6000, 7000), configurável na linha de comando. A tela não sabe a porta: usa caminho relativo |
 | HTTP | 1.1, uma resposta por pedido, `Content-Length` sempre (sem `chunked` na ida nem na volta) |
-| disco | **o servidor não lê nem escreve caminho escolhido pelo navegador.** Nenhuma rota recebe caminho de disco. O que entra chega no corpo; o que sai, sai como download |
+| disco | **o servidor não lê nem escreve caminho escolhido pelo navegador.** Nenhuma rota recebe caminho de disco. O que entra chega no corpo; o que sai, sai como download — **ou**, só se o OPERADOR subiu a porta com `--pasta DIR`, é gravado em `DIR` pelo `phxzip::disco::Destino` quando a tela pede `"na_pasta": true` (§3.4). A pasta é da linha de comando, nunca do pedido |
 | estado | **nenhum entre pedidos.** Cada pedido traz o pacote inteiro e a senha, e ao responder o servidor não guarda nada — nem o pacote, nem a chave derivada. O preço está dito em §7 |
 | HTTP vem de onde | do **mesmo motor** do PhxSql (`http.rs`/`fio.rs`), nunca de uma cópia (pétrea «função e comando vêm do mesmo motor»; pedido 454). Se reusar pedir extração, extrai-se |
 
@@ -65,7 +65,8 @@ servido cru (§5). Método errado numa rota que existe é `405 METODO_HTTP`, com
   },
   "niveis": ["armazenar", "lzma2"],
   "formatos": ["7z", "phz"],
-  "idiomas": ["Portugues", "Frances", "Ingles", "Italiano", "Alemao", "Espanhol"]
+  "idiomas": ["Portugues", "Frances", "Ingles", "Italiano", "Alemao", "Espanhol"],
+  "extrair_na_pasta": false
 }
 ```
 
@@ -185,11 +186,8 @@ Cabeça: `{"senha": "…"}` (ou `{}`). Carga: o pacote.
   existe** — dividir o do bloco entre elas seria inventar número. A tela mostra o
   compactado na linha quando o bloco tem uma entrada só, e diz «sólido» quando
   tem mais.
-- **Pendente na biblioteca:** `bloco` e `blocos` pedem um acessor público que a
-  API ainda não tem (`Entrada::lugar` é `pub(crate)` e `Arquivo::blocos` é
-  privado). Enquanto não houver, o servidor manda `"bloco": null` e
-  `"blocos": []`, e a tela cai no que é medível sem eles: o tamanho do pacote
-  contra a soma das entradas.
+- `bloco` e `blocos` saem de `Entrada::bloco()` e `Arquivo::blocos()` (fatia
+  Z3). `"bloco": null` só para pasta e arquivo vazio, que não têm fluxo.
 - Cabeçalho cifrado sem senha → `SENHA_AUSENTE`. Só o conteúdo cifrado (nomes à
   vista) → lista sem senha, com `"cifrada": true`; a senha passa a ser pedida
   ao extrair.
@@ -227,14 +225,25 @@ Cabeça:
   um segundo juiz de «JSON válido» diria sim onde o motor diz não. Responde em
   `X-PhxZip-Json: valido | invalido | nao_e_texto | nao_avaliado` (este último
   acima de `limites.avaliar_json`), e `X-PhxZip-Json-Posicao: <byte>` quando
-  `invalido`. **Pendente no `phxsql-core`:** hoje a posição só existe dentro da
-  frase do erro («JSON invalido na posicao N: …»); a rota precisa dela como
-  número, e recortar a frase é decidir por texto. Até lá, o servidor manda o
-  veredito sem a posição, e a tela diz «inválido» sem linha.
+  `invalido`. A posição sai como NÚMERO de `Json::analisar_com_posicao` (fatia
+  Z3), o mesmo analisador — recortar a frase do erro seria decidir por texto.
 - **Vários índices, ou `todas`** → um `.tar` (POSIX ustar; nome que não cabe no
   ustar vai em cabeçalho pax, como GNU tar e bsdtar leem), com as pastas e as
   datas. Tar e não ZIP: o ZIP é recusa nomeada do PhxZip (pedido 454), e o tar
-  não comprime — não há segunda compressão para decidir.
+  não comprime — não há segunda compressão para decidir. Um índice só que é
+  PASTA também sai em `.tar`, com o que mora debaixo dela.
+- **`na_pasta: true`** (com `indices` ou `todas`) → em vez de download, grava
+  na pasta que o operador deu com `--pasta` (`extrair_na_pasta` do estado diz
+  se ela existe; sem ela, `422 SEM_PASTA`). Vai **só** pelo
+  `phxzip::disco::Destino` — o mesmo do PhxZipCmd e do tar: nome conferido de
+  novo, colisão arquivo/pasta antes do primeiro byte, nada segue link, nada se
+  sobrescreve, conteúdo cifrado nasce `0600`, e **o dono de cada pasta do
+  caminho é conferido a cada pedido** (revisão SEC da Z9: pasta onde outro
+  usuário escreve é recusada, porque ele trocaria uma pasta por um link no meio
+  da extração). A porta também **não sobe** com uma `--pasta` que o `Destino`
+  recusa. Resposta `200`: `{"ok": true, "gravadas": 3,
+  "links_gravados_como_arquivo": 0}`. Falha no meio: o erro nomeado com
+  `detalhe.gravadas` — o que já foi gravado fica, e a resposta diz quantas.
 
 ## 4. Limites
 
@@ -248,9 +257,15 @@ quem protege é o servidor.
 | `cabeca` | no `N` do envelope, antes de alocar | `413 GRANDE_DEMAIS` `{"oque":"cabeca"}` |
 | `entrada`, `bloco`, `cabecalho` | no motor (`Limites`), antes de alocar | `413 GRANDE_DEMAIS` com o `oque` do motor |
 | `espiar` | no `ate` | `ate` maior é rebaixado ao teto, sem erro |
-| `simultaneas` | na entrada da rota `POST` | `503 OCUPADO`; a memória de pico é ≈ `envio` × `simultaneas` × 3 (pacote, bloco decodificado, resposta) |
+| `simultaneas` | na entrada da rota `POST`, **antes de ler o corpo** | `503 OCUPADO`; a memória de pico é ≈ `envio` × `simultaneas` × 3 (pacote, bloco decodificado, resposta) — a vaga só se solta depois de a resposta sair |
 | cabeçalho HTTP (16 KiB, `CABECALHO_MAX`) | na leitura, pelo motor do core | `431 GRANDE_DEMAIS` `{"oque":"cabecalho_http","teto":16384}`. Não vai a `/api/estado`: navegador nenhum chega perto, e a tela não tem o que conferir |
 | conexões (32, `CONEXOES_MAX`) | no `accept`, antes de subir thread | `503 OCUPADO`. É o teto de threads da porta, e não o `simultaneas`: uma conexão aberta e calada prende uma thread por até 10 s |
+
+**A cabeça antes do corpo.** O servidor lê primeiro só a cabeça do pedido
+(`phxsql_core::http::ler_cabeca`) e decide ali `Host`, `Origin`, rota, método,
+`Content-Type`, `Content-Length`, o teto do envio e a vaga do `simultaneas`; só
+o pedido que passou tem o corpo lido (`ler_corpo`). Toda recusa desse ponto
+responde e **drena** (abaixo), não só o `413`.
 
 **Achado do exercício, e regra para o servidor:** responder `413` sem ler o corpo
 e fechar a conexão faz o navegador ver **erro de rede**, não o `413` — ele ainda
@@ -336,6 +351,8 @@ renomeação no servidor — a web e o terminal decidem pelo mesmo nome. O
 | `ENTRADA_INEXISTENTE` | 422 | `indice` | listar de novo |
 | `SEM_ENTRADA`, `MAIS_DE_UMA_ENTRADA`, `SEM_CIFRA`, `ENTRADA_E_PASTA` | 422 | `quantas` / `nome` | a regra do `.phz` |
 | `NOME_REPETIDO` | 422 | `nome` | tirar o repetido |
+| `DESTINO_INSEGURO` | 422 | `onde` | (só `na_pasta`) algo no caminho já existe, ou a pasta aceita escrita de outros |
+| `DISCO` | 500 | `onde` | (só `na_pasta`) o sistema de arquivos recusou gravar |
 
 E os da web, que o motor não conhece:
 
@@ -349,6 +366,7 @@ E os da web, que o motor não conhece:
 | `ROTA_INEXISTENTE` | 404 | |
 | `METODO_HTTP` | 405 | |
 | `OCUPADO` | 503 | `limites.simultaneas` atingido |
+| `SEM_PASTA` | 422 | `na_pasta` pedido a uma porta que subiu sem `--pasta` |
 | `INTERNO` | 500 | pânico ou falha de E/S — **sem** o texto do pânico |
 
 **`onde` é texto do motor, em português, e não se traduz** — o mesmo naipe das
@@ -363,7 +381,7 @@ como «detalhe técnico», fechado, e nunca como a frase principal.
 | `Host` conferido | um site de fora não religa o próprio nome para `127.0.0.1` e conversa com a porta |
 | `Origin`/`Sec-Fetch-Site` conferidos, `Content-Type` exigido | `application/octet-stream` não é tipo «simples»: o `POST` de outra origem cai no *preflight*, e o servidor não responde CORS |
 | senha só na cabeça do envelope | URL e cabeçalho acabam em log |
-| nada de caminho de disco | não há o que um pedido malicioso escolha no disco |
+| nada de caminho de disco | não há o que um pedido malicioso escolha no disco; a `--pasta` é do operador, e o que se grava nela passa pelo `Destino` do motor |
 | `conferir_nome` no motor, na ida e na volta | zip-slip se recusa onde o nome nasce, não na tela |
 | estáticos por lista fechada | não existe `../` para pedir |
 | sem estado entre pedidos | nada fica em memória esperando ser achado |

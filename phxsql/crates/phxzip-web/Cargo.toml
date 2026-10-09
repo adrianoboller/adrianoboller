@@ -14,8 +14,9 @@ path = "src/lib.rs"
 name = "phxzipweb"
 path = "src/main.rs"
 
-# So o `phxsql-core`: o HTTP sai do motor dele (`http.rs`, pedido 454, fatia
-# Z1), e nao de uma copia aqui. O `phxzip` entra com as rotas que o chamam
-# (fatias Z6 a Z8); dependencia que nenhuma linha usa e superficie sem motivo.
+# O `phxsql-core` da o HTTP (`http.rs`, fatia Z1), o JSON e a maquina de
+# idiomas (Z2); o `phxzip` e o motor das rotas (Z6 a Z8). Os dois de caminho,
+# nenhum de fora.
 [dependencies]
 phxsql-core.workspace = true
+phxzip.workspace = true

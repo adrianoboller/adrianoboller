@@ -3,7 +3,7 @@
 
 use std::process::ExitCode;
 
-use phxzip_web::{ler_argumentos, Acao, Servidor, AJUDA};
+use phxzip_web::{conferir_pasta, ler_argumentos, Acao, Servidor, AJUDA};
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -22,13 +22,20 @@ fn main() -> ExitCode {
             return ExitCode::from(2);
         }
     };
+    // A pasta antes da porta: o erro dela e dela, e nao «outra porta».
+    if let Some(p) = &cfg.pasta {
+        if let Err(motivo) = conferir_pasta(p) {
+            eprintln!("phxzipweb: {motivo}");
+            return ExitCode::from(2);
+        }
+    }
+    let porta = cfg.porta;
     let servidor = match Servidor::escutar(cfg) {
         Ok(s) => s,
         Err(e) => {
             eprintln!(
-                "phxzipweb: nao consegui abrir 127.0.0.1:{} ({e}); \
-                 outra porta com --porta N",
-                cfg.porta
+                "phxzipweb: nao consegui abrir 127.0.0.1:{porta} ({e}); \
+                 outra porta com --porta N"
             );
             return ExitCode::from(1);
         }
@@ -37,7 +44,7 @@ fn main() -> ExitCode {
     // e o que a pessoa vai colar no navegador.
     match servidor.endereco() {
         Ok(e) => println!("PhxZipWeb em http://{e}/ (so nesta maquina)"),
-        Err(_) => println!("PhxZipWeb em http://127.0.0.1:{}/", cfg.porta),
+        Err(_) => println!("PhxZipWeb em http://127.0.0.1:{porta}/"),
     }
     match servidor.servir() {
         Ok(()) => ExitCode::SUCCESS,

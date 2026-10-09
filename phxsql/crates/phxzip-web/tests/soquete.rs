@@ -13,7 +13,12 @@ use phxzip_web::{Config, Servidor, CSP};
 
 /// Sobe a porta numa thread e devolve o endereco que o sistema deu.
 fn subir(envio: usize) -> SocketAddr {
-    let s = Servidor::escutar(Config { porta: 0, envio }).expect("a porta abre");
+    let s = Servidor::escutar(Config {
+        porta: 0,
+        envio,
+        ..Config::default()
+    })
+    .expect("a porta abre");
     let end = s.endereco().unwrap();
     std::thread::spawn(move || s.servir());
     end
@@ -56,6 +61,7 @@ fn escuta_so_no_127_0_0_1() {
     let s = Servidor::escutar(Config {
         porta: 0,
         envio: 1024,
+        ..Config::default()
     })
     .unwrap();
     let end = s.endereco().unwrap();

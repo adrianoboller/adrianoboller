@@ -88,7 +88,7 @@ use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
 use crate::erro::Erro;
-use crate::leitor::conferir_nome;
+use crate::leitor::{conferir_nome, Entrada};
 
 /// `FILE_ATTRIBUTE_UNIX_EXTENSION` do 7-Zip: os 16 bits altos sao o `st_mode`.
 const ATRIBUTO_UNIX: u32 = 0x8000;
@@ -368,6 +368,26 @@ impl Destino {
         modificado: Option<i64>,
     ) -> Result<(), Erro> {
         self.gravar(nome, conteudo, modificado, true)
+    }
+
+    /// Grava uma entrada de 7z com o conteudo dela: pasta vira pasta,
+    /// arquivo vira arquivo com a data do 7z, e o que veio CIFRADO nasce
+    /// privado ([`Destino::arquivo_privado`]).
+    ///
+    /// Mora aqui, e nao em quem extrai, porque o terminal e a web extraem 7z
+    /// (fatias Z8 e Z9): «cifrada nasce 0600» escrito nos dois seria a mesma
+    /// decisao duas vezes, e a copia que alguem esquecesse deixaria o
+    /// conteudo cifrado legivel ao grupo.
+    pub fn entrada(&self, e: &Entrada, conteudo: &[u8]) -> Result<(), Erro> {
+        if e.pasta {
+            return self.pasta(&e.nome);
+        }
+        let quando = e.modificado.map(crate::filetime_para_unix);
+        if e.cifrada {
+            self.arquivo_privado(&e.nome, conteudo, quando)
+        } else {
+            self.arquivo(&e.nome, conteudo, quando)
+        }
     }
 
     fn gravar(

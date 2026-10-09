@@ -361,6 +361,38 @@
    "Alemao": "Antwort, die diese Seite nicht kennt: {codigo}",
    "Espanhol": "Respuesta que esta página no conoce: {codigo}"
   },
+  "zip.erro_destino_inseguro": {
+   "Portugues": "A pasta do servidor recusou a extração",
+   "Frances": "Le dossier du serveur a refusé l'extraction",
+   "Ingles": "The server folder refused the extraction",
+   "Italiano": "La cartella del server ha rifiutato l'estrazione",
+   "Alemao": "Der Serverordner hat das Entpacken abgelehnt",
+   "Espanhol": "La carpeta del servidor rechazó la extracción"
+  },
+  "zip.erro_destino_inseguro_faca": {
+   "Portugues": "Algo no caminho já existe, ou a pasta aceita escrita de outros usuários. Nada foi seguido nem sobrescrito; veja o detalhe técnico.",
+   "Frances": "Un élément du chemin existe déjà, ou le dossier accepte l'écriture d'autres utilisateurs. Rien n'a été suivi ni écrasé ; voir le détail technique.",
+   "Ingles": "Something on the path already exists, or the folder accepts writes from other users. Nothing was followed or overwritten; see the technical detail.",
+   "Italiano": "Qualcosa nel percorso esiste già, oppure la cartella accetta scritture di altri utenti. Nulla è stato seguito né sovrascritto; vedi il dettaglio tecnico.",
+   "Alemao": "Etwas im Pfad existiert bereits, oder der Ordner erlaubt Schreibzugriff für andere Benutzer. Nichts wurde verfolgt oder überschrieben; siehe technisches Detail.",
+   "Espanhol": "Algo en la ruta ya existe, o la carpeta acepta escritura de otros usuarios. No se siguió ni se sobrescribió nada; vea el detalle técnico."
+  },
+  "zip.erro_disco": {
+   "Portugues": "O disco do servidor recusou gravar",
+   "Frances": "Le disque du serveur a refusé l'écriture",
+   "Ingles": "The server disk refused to write",
+   "Italiano": "Il disco del server ha rifiutato la scrittura",
+   "Alemao": "Der Serverdatenträger hat das Schreiben abgelehnt",
+   "Espanhol": "El disco del servidor rechazó la escritura"
+  },
+  "zip.erro_disco_faca": {
+   "Portugues": "Confira o espaço livre e as permissões da pasta; veja o detalhe técnico.",
+   "Frances": "Vérifiez l'espace libre et les droits du dossier ; voir le détail technique.",
+   "Ingles": "Check the free space and the folder permissions; see the technical detail.",
+   "Italiano": "Controlla lo spazio libero e i permessi della cartella; vedi il dettaglio tecnico.",
+   "Alemao": "Prüfen Sie den freien Speicher und die Ordnerrechte; siehe technisches Detail.",
+   "Espanhol": "Revise el espacio libre y los permisos de la carpeta; vea el detalle técnico."
+  },
   "zip.erro_entrada_e_pasta": {
    "Portugues": "A única entrada do .phz é uma pasta: {nome}",
    "Frances": "L'unique entrée du .phz est un dossier : {nome}",
@@ -593,6 +625,22 @@
    "Alemao": "Das .phz hat keinen Eintrag",
    "Espanhol": "El .phz no tiene ninguna entrada"
   },
+  "zip.erro_sem_pasta": {
+   "Portugues": "Este servidor não tem pasta de extração",
+   "Frances": "Ce serveur n'a pas de dossier d'extraction",
+   "Ingles": "This server has no extraction folder",
+   "Italiano": "Questo server non ha una cartella di estrazione",
+   "Alemao": "Dieser Server hat keinen Entpackordner",
+   "Espanhol": "Este servidor no tiene carpeta de extracción"
+  },
+  "zip.erro_sem_pasta_faca": {
+   "Portugues": "Baixe as entradas, ou suba o phxzipweb com --pasta.",
+   "Frances": "Téléchargez les entrées, ou lancez phxzipweb avec --pasta.",
+   "Ingles": "Download the entries, or start phxzipweb with --pasta.",
+   "Italiano": "Scarica le voci, oppure avvia phxzipweb con --pasta.",
+   "Alemao": "Laden Sie die Einträge herunter, oder starten Sie phxzipweb mit --pasta.",
+   "Espanhol": "Descargue las entradas, o inicie phxzipweb con --pasta."
+  },
   "zip.erro_senha_ausente": {
    "Portugues": "Este pacote é cifrado e pede senha",
    "Frances": "Cette archive est chiffrée et demande un mot de passe",
@@ -753,6 +801,30 @@
    "Alemao": "Vorschau, ohne Entpacken",
    "Espanhol": "Vista previa, sin extraer"
   },
+  "zip.extraido_na_pasta": {
+   "Portugues": "Entradas gravadas: {n}. Nada foi sobrescrito.",
+   "Frances": "Entrées écrites : {n}. Rien n'a été écrasé.",
+   "Ingles": "Entries written: {n}. Nothing was overwritten.",
+   "Italiano": "Voci scritte: {n}. Nulla è stato sovrascritto.",
+   "Alemao": "Geschriebene Einträge: {n}. Nichts wurde überschrieben.",
+   "Espanhol": "Entradas grabadas: {n}. No se sobrescribió nada."
+  },
+  "zip.extraido_na_pasta_titulo": {
+   "Portugues": "Extraído na pasta do servidor",
+   "Frances": "Extrait dans le dossier du serveur",
+   "Ingles": "Extracted to the server folder",
+   "Italiano": "Estratto nella cartella del server",
+   "Alemao": "In den Serverordner entpackt",
+   "Espanhol": "Extraído en la carpeta del servidor"
+  },
+  "zip.extrair_na_pasta": {
+   "Portugues": "Extrair na pasta do servidor",
+   "Frances": "Extraire dans le dossier du serveur",
+   "Ingles": "Extract to the server folder",
+   "Italiano": "Estrai nella cartella del server",
+   "Alemao": "In den Serverordner entpacken",
+   "Espanhol": "Extraer en la carpeta del servidor"
+  },
   "zip.fase_enviando": {
    "Portugues": "Enviando ao servidor local…",
    "Frances": "Envoi au serveur local…",
@@ -840,6 +912,14 @@
    "Italiano": "Il server non legge né scrive nulla sul tuo disco: tutto entra dal browser ed esce come download.",
    "Alemao": "Der Server liest und schreibt nichts auf Ihrer Festplatte: Alles kommt über den Browser herein und geht als Download hinaus.",
    "Espanhol": "El servidor no lee ni escribe nada en tu disco: todo entra por el navegador y sale como descarga."
+  },
+  "zip.garantia_disco_com_pasta": {
+   "Portugues": "O servidor não lê nada do seu disco, e só grava na pasta que recebeu ao subir, quando você pede «Extrair na pasta do servidor». O resto sai como download.",
+   "Frances": "Le serveur ne lit rien sur votre disque, et n'écrit que dans le dossier reçu au démarrage, quand vous demandez « Extraire dans le dossier du serveur ». Le reste sort en téléchargement.",
+   "Ingles": "The server reads nothing from your disk, and writes only to the folder it was given at startup, when you ask for “Extract to the server folder”. Everything else leaves as a download.",
+   "Italiano": "Il server non legge nulla dal tuo disco, e scrive solo nella cartella ricevuta all'avvio, quando chiedi «Estrai nella cartella del server». Il resto esce come download.",
+   "Alemao": "Der Server liest nichts von Ihrer Festplatte und schreibt nur in den Ordner, den er beim Start erhalten hat, wenn Sie „In den Serverordner entpacken“ wählen. Alles andere geht als Download hinaus.",
+   "Espanhol": "El servidor no lee nada de tu disco, y solo escribe en la carpeta que recibió al iniciar, cuando pides «Extraer en la carpeta del servidor». El resto sale como descarga."
   },
   "zip.hex_primeiros": {
    "Portugues": "Mostrando os primeiros {n} bytes.",

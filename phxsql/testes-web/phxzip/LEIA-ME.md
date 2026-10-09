@@ -24,6 +24,7 @@ Medido nesta frente.
 |---|---|
 | `servidor_falso.py` | o contrato respondido com dados de exemplo, **inclusive os erros**. Biblioteca padrão do Python, preso ao `127.0.0.1`. Decide o cenário pelo **conteúdo** do pacote (assinatura do 7z + `\0CENARIO:<nome>\n`), nunca pelo nome do arquivo. Registra linha de pedido e cabeçalhos (nunca o corpo) no `--log`, para o roteiro procurar a senha lá |
 | `exercitar.mjs` | os casos: compactar, soltar, `.phz`, senhas, progresso, cancelar, teto, abrir, senha errada, listar, baixar uma, baixar tudo (conferido pelo `tar` do sistema), testar, espiar (JSON válido, inválido com a linha marcada, cortado, binário), os estados de erro, nomes hostis, o `413` com e sem dreno, a senha fora da URL, as cores e o contraste nos dois temas, os seis idiomas, o pseudoidioma e 360 px |
+| `real.mjs` | a mesma tela contra o servidor **real** (`target/debug/phxzipweb`, com `--pasta` e `--envio` baixo): idioma, compactar com senha, abrir, listar, testar, baixar uma entrada, extrair na pasta e **conferir no disco** byte a byte e o modo `0600`, a recusa de sobrescrever, e o `413` legível. Capturas e `resultado.json` em `target/phxzip-web-real/` |
 | `prova-das-guardas.mjs` | repõe, numa **cópia** da tela, o defeito que motivou cada guarda, e exige que a guarda falhe com a frase esperada e passe sem ele |
 | `capturas/` | as telas da última corrida completa, e `resultado.json` / `prova-das-guardas.json` com a data |
 

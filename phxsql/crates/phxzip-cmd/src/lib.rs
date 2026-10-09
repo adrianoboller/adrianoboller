@@ -714,17 +714,7 @@ fn extrair(p: &Pedido, out: &mut dyn Write, err: &mut dyn Write) -> Result<(), F
                 )
             );
         }
-        let r = if e.pasta {
-            destino.pasta(&e.nome)
-        } else {
-            let quando = e.modificado.map(phxzip::filetime_para_unix);
-            if e.cifrada {
-                destino.arquivo_privado(&e.nome, d, quando)
-            } else {
-                destino.arquivo(&e.nome, d, quando)
-            }
-        };
-        match r {
+        match destino.entrada(e, d) {
             Ok(()) => {
                 gravadas += 1;
                 let _ = writeln!(out, "{}", para_tela(&e.nome));

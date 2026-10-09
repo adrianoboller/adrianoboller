@@ -151,6 +151,7 @@
       <div class="pacote-acoes">
         <button type="button" class="acao consultar" id="btTestar" data-trava data-icone="testar"><span data-txt="zip.testar"></span></button>
         <button type="button" class="acao consultar" id="btBaixarTodas" data-trava data-icone="baixar"><span data-txt="zip.baixar_todas"></span></button>
+        <button type="button" class="acao incluir" id="btExtrairNaPasta" data-trava data-icone="pasta" hidden><span data-txt="zip.extrair_na_pasta"></span></button>
         <button type="button" class="acao neutra" id="btFechar" data-icone="fechar"><span data-txt="zip.fechar_pacote"></span></button>
       </div>
     </div>
@@ -218,7 +219,7 @@
 
 <footer class="rodape">
   <p class="lema">Built to store. Engineered to scale.</p>
-  <p class="garantia" data-icone="cadeado"><span data-txt="zip.garantia_disco"></span></p>
+  <p class="garantia" data-icone="cadeado"><span id="garantiaDisco"></span></p>
   <p class="versao dado" id="versao"></p>
 </footer>
 </body>

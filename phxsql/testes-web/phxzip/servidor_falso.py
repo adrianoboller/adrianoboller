@@ -36,7 +36,8 @@ from urllib.parse import parse_qs, urlsplit
 
 RAIZ = Path(__file__).resolve().parents[2]            # phxsql/
 UI = RAIZ / "crates" / "phxzip-web" / "ui"
-MENSAGENS = RAIZ / "crates" / "phxsql-server" / "src" / "mensagens.rs"
+# O motor de idiomas mora no core desde a Z2 (pedido 454).
+MENSAGENS = RAIZ / "crates" / "phxsql-core" / "src" / "idiomas.rs"
 
 ASSINATURA = b"7z\xbc\xaf\x27\x1c"
 MARCA_FALSO = b"\x00PHXZIP-FALSO\n"
@@ -61,7 +62,7 @@ def idiomas_do_motor():
     fonte = MENSAGENS.read_text(encoding="utf-8")
     m = re.search(r"pub const IDIOMAS: \[&str; \d+\] = \[(.*?)\];", fonte, re.S)
     if not m:
-        sys.exit("nao achei o IDIOMAS em mensagens.rs")
+        sys.exit("nao achei o IDIOMAS em phxsql-core/src/idiomas.rs")
     return re.findall(r'"([^"]+)"', m.group(1))
 
 

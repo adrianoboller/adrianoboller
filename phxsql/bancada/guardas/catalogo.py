@@ -10525,14 +10525,14 @@ pub fn limpar() {
             "teto."
         ),
         "arquivo": "crates/phxsql-core/src/http.rs",
-        "trecho": """    let linha = match canal.ler_ate(&mut leitor, teto_linha) {
+        "trecho": """    let linha = match canal.ler_ate(leitor, teto_linha) {
         Ok(Recebido::Linha(l)) => l,
         Err(PhxError::LimiteExcedido(_)) => {
-            return PedidoLido::GrandeDemais(Excesso::Linha {
+            return CabecaLida::GrandeDemais(Excesso::Linha {
                 teto: tetos.cabecalho,
             })
         }
-        _ => return PedidoLido::Nada,
+        _ => return CabecaLida::Nada,
     };
 """,
         "troca": """    // DEFEITO REPOSTO (434): a linha do pedido por `read_line` cru, fora
@@ -10545,7 +10545,7 @@ pub fn limpar() {
     };
     let linha = match lido {
         Ok(n) if n > 0 => cru,
-        _ => return PedidoLido::Nada,
+        _ => return CabecaLida::Nada,
     };
     let _ = (&mut canal, teto_linha);
 """,
@@ -10569,14 +10569,14 @@ pub fn limpar() {
             "mesma troca da guarda do soquete, julgada agora pelo fonte."
         ),
         "arquivo": "crates/phxsql-core/src/http.rs",
-        "trecho": """    let linha = match canal.ler_ate(&mut leitor, teto_linha) {
+        "trecho": """    let linha = match canal.ler_ate(leitor, teto_linha) {
         Ok(Recebido::Linha(l)) => l,
         Err(PhxError::LimiteExcedido(_)) => {
-            return PedidoLido::GrandeDemais(Excesso::Linha {
+            return CabecaLida::GrandeDemais(Excesso::Linha {
                 teto: tetos.cabecalho,
             })
         }
-        _ => return PedidoLido::Nada,
+        _ => return CabecaLida::Nada,
     };
 """,
         "troca": """    // DEFEITO REPOSTO (434): a linha do pedido por `read_line` cru, fora
@@ -10589,7 +10589,7 @@ pub fn limpar() {
     };
     let linha = match lido {
         Ok(n) if n > 0 => cru,
-        _ => return PedidoLido::Nada,
+        _ => return CabecaLida::Nada,
     };
     let _ = (&mut canal, teto_linha);
 """,

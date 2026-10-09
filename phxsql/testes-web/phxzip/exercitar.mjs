@@ -247,7 +247,7 @@ await caso("laco-das-chaves", async () => {
   const mortas = [...temos].filter(k => !pedidas.has(k));
   exigir(!faltam.length, `chave pedida e ausente: ${faltam.join(", ")}`);
   exigir(!mortas.length, `chave morta (ninguem pede): ${mortas.join(", ")}`);
-  const cols = readFileSync(join(RAIZ, "crates/phxsql-server/src/mensagens.rs"), "utf8")
+  const cols = readFileSync(join(RAIZ, "crates/phxsql-core/src/idiomas.rs"), "utf8")
     .match(/pub const IDIOMAS: \[&str; \d+\] = \[(.*?)\];/s)[1].match(/"([^"]+)"/g).map(s => s.slice(1, -1));
   for (const [k, cel] of Object.entries(dic)) {
     for (const c of cols) exigir(cel[c], `${k}: celula ${c} vazia`);

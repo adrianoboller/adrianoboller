@@ -361,6 +361,9 @@ main { flex: 1; width: 100%; max-width: 1120px; margin: 0 auto; padding: 20px cl
 .numeros { margin-top: 8px; font-size: 13px; color: var(--texto-2); }
 
 /* ------------------------------------------------------------ avisos */
+/* O teste e a extracao na pasta podem estar na tela juntos: dois cartoes
+   colados viravam uma borda so (achado no servidor real). */
+#resultadoTeste { display: grid; gap: 10px; }
 .aviso {
   --cor-aviso: var(--acao-consultar);
   display: flex; gap: 14px; align-items: flex-start;

@@ -113,6 +113,7 @@ const est = {
   lista: null,         // a resposta de /api/listar
   msgAbrir: null,      // {tipo:"erro", erro}
   msgTeste: null,      // {tipo:"ok", r} | {tipo:"erro", erro}
+  msgPasta: null,      // {n}: quantas entradas a extracao na pasta gravou
   recadoAbrir: null,
   filtro: "",
   // Espiar
@@ -385,6 +386,11 @@ const ERROS = {
   SEM_CIFRA:                  { familia: "pedido",     titulo: "zip.erro_sem_cifra", faca: "zip.erro_regra_phz" },
   ENTRADA_E_PASTA:            { familia: "pedido",     titulo: "zip.erro_entrada_e_pasta", faca: "zip.erro_regra_phz" },
   NOME_REPETIDO:              { familia: "pedido",     titulo: "zip.erro_nome_repetido", faca: "zip.erro_nome_repetido_faca" },
+  // Os da extracao na pasta do servidor (`--pasta`): o `onde` vai no detalhe
+  // tecnico, como o do motor -- e o caminho da pasta que o operador escolheu.
+  DESTINO_INSEGURO:           { familia: "perigo",     titulo: "zip.erro_destino_inseguro", faca: "zip.erro_destino_inseguro_faca" },
+  DISCO:                      { familia: "servidor",   titulo: "zip.erro_disco", faca: "zip.erro_disco_faca" },
+  SEM_PASTA:                  { familia: "pedido",     titulo: "zip.erro_sem_pasta", faca: "zip.erro_sem_pasta_faca" },
   PEDIDO_MALFORMADO:          { familia: "servidor",   titulo: "zip.erro_pedido_malformado", faca: "zip.erro_avise_quem_mantem" },
   TIPO_DE_CONTEUDO:           { familia: "servidor",   titulo: "zip.erro_pedido_malformado", faca: "zip.erro_avise_quem_mantem" },
   TAMANHO_AUSENTE:            { familia: "servidor",   titulo: "zip.erro_pedido_malformado", faca: "zip.erro_avise_quem_mantem" },
@@ -894,6 +900,7 @@ function fecharPacote(repintar = true) {
   est.pedirSenha = null;
   est.msgAbrir = null;
   est.msgTeste = null;
+  est.msgPasta = null;
   est.recadoAbrir = null;
   est.filtro = "";
   // A senha sai da pagina junto com o pacote: nao fica esperando no campo.
@@ -971,6 +978,18 @@ async function baixarEntrada(e) {
   pintarAbrir();
 }
 
+/** Extrai na pasta que o OPERADOR deu ao subir o servidor (`--pasta`). O
+    botao so existe quando `/api/estado` diz que a pasta existe; o navegador
+    nunca escolhe caminho (contrato §1). */
+async function extrairNaPasta() {
+  est.msgPasta = null;
+  const r = await pedirSobrePacote("/api/extrair", { todas: true, na_pasta: true });
+  if (!r) return;
+  est.msgPasta = { n: (r.json && r.json.gravadas) || 0 };
+  pintarAbrir();
+  anunciar(t("zip.extraido_na_pasta_titulo"));
+}
+
 async function baixarTodas() {
   const r = await pedirSobrePacote("/api/extrair", { todas: true });
   if (!r) return;
@@ -999,6 +1018,8 @@ function pintarAbrir() {
   const temLista = !!est.lista;
   $("#btTestar").disabled = est.ocupado || !temLista;
   $("#btBaixarTodas").disabled = est.ocupado || !temLista || !(est.lista.entradas || []).length;
+  $("#btExtrairNaPasta").hidden = !(est.estado && est.estado.extrair_na_pasta);
+  $("#btExtrairNaPasta").disabled = $("#btBaixarTodas").disabled;
   pintarTeste();
   pintarResumo();
   pintarLista();
@@ -1007,15 +1028,24 @@ function pintarAbrir() {
 function pintarTeste() {
   const alvo = $("#resultadoTeste");
   const m = est.msgTeste;
-  alvo.hidden = !m;
-  if (!m) { alvo.replaceChildren(); return; }
-  const r = m.r || {};
-  alvo.replaceChildren(cartaoOk(
-    document.createTextNode(t("zip.teste_ok_titulo")),
-    frase("zip.teste_ok", {
-      entradas: document.createTextNode(plural(r.entradas || 0, "zip.arquivos_um", "zip.arquivos_varios", "zip.arquivos_zero")),
-      bytes: fmtTam(r.bytes || 0),
-    })));
+  const pasta = est.msgPasta;
+  alvo.hidden = !m && !pasta;
+  const cartoes = [];
+  if (m) {
+    const r = m.r || {};
+    cartoes.push(cartaoOk(
+      document.createTextNode(t("zip.teste_ok_titulo")),
+      frase("zip.teste_ok", {
+        entradas: document.createTextNode(plural(r.entradas || 0, "zip.arquivos_um", "zip.arquivos_varios", "zip.arquivos_zero")),
+        bytes: fmtTam(r.bytes || 0),
+      })));
+  }
+  if (pasta) {
+    cartoes.push(cartaoOk(
+      document.createTextNode(t("zip.extraido_na_pasta_titulo")),
+      frase("zip.extraido_na_pasta", { n: fmtInt(pasta.n) })));
+  }
+  alvo.replaceChildren(...cartoes);
 }
 
 function pintarResumo() {
@@ -1300,6 +1330,10 @@ function pintarRodape() {
   const e = est.estado;
   $("#endereco").textContent = location.host;
   $("#versao").textContent = e ? `${e.produto} ${e.versao}` : "";
+  // A garantia do rodape depende de como o servidor subiu: com `--pasta` ele
+  // GRAVA no disco (so ali, e so quando se pede), e a frase de sempre
+  // passaria a mentir. Achado exercitando contra o servidor real.
+  $("#garantiaDisco").textContent = t(e && e.extrair_na_pasta ? "zip.garantia_disco_com_pasta" : "zip.garantia_disco");
 }
 
 // ================================================================ ARRANQUE
@@ -1389,6 +1423,7 @@ function ligar() {
   });
   $("#btTestar").addEventListener("click", testar);
   $("#btBaixarTodas").addEventListener("click", baixarTodas);
+  $("#btExtrairNaPasta").addEventListener("click", extrairNaPasta);
   $("#btFechar").addEventListener("click", () => fecharPacote(true));
   $("#inFiltro").addEventListener("input", e => { est.filtro = e.target.value; pintarLista(); });
 

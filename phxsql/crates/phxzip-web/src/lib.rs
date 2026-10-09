@@ -1,14 +1,12 @@
-//! PhxZipWeb -- a porta web do PhxZip (pedido 454, fatia Z5).
+//! PhxZipWeb -- a porta web do PhxZip (pedido 454, fatias Z5 a Z8).
 //!
 //! O contrato e o `docs/PHXZIP-WEB.md`; onde este arquivo e o contrato
-//! discordarem, o contrato manda. Esta fatia entrega o servidor e os
-//! estaticos; as rotas `/api/*` sao das fatias Z6 a Z8 e, ate la, respondem
-//! `404 ROTA_INEXISTENTE` -- que e verdade, e nao uma lista vazia fingindo
-//! que a rota existe.
+//! discordarem, o contrato manda. A Z5 entregou o servidor e os estaticos; as
+//! rotas `/api/*` (Z6 a Z8) moram em [`ops`] e os textos em [`textos`].
 //!
-//! # As tres decisoes que seguram a porta
+//! # As decisoes que seguram a porta
 //!
-//! * **So `127.0.0.1`.** A porta vai extrair arquivos e aceitar senha. Nao ha
+//! * **So `127.0.0.1`.** A porta extrai arquivos e aceita senha. Nao ha
 //!   opcao de endereco, nem na linha de comando nem na [`Config`]: o endereco
 //!   sai de [`endereco_de_escuta`], que so recebe a porta. Opcao que nao
 //!   existe nao se liga por engano.
@@ -18,23 +16,33 @@
 //! * **Estaticos por lista fechada, embutidos.** Nao existe «servir a pasta
 //!   `ui/`», entao nao existe `../` para pedir: o caminho e comparado por
 //!   igualdade com quatro nomes, e o resto e 404.
+//! * **A recusa vem ANTES do corpo.** A cabeca do pedido e lida primeiro
+//!   ([`http::ler_cabeca`]); `Host`, `Origin`, rota, tipo, tamanho e a vaga
+//!   do `simultaneas` se decidem ali, e so o pedido que passou recebe o
+//!   corpo. Quem recusa ali responde e DRENA (contrato §4): sem o dreno, o
+//!   navegador que ainda esta mandando ve erro de rede no lugar da recusa.
 //!
 //! # O HTTP vem do core
 //!
-//! A leitura e o [`phxsql_core::http::ler_pedido`] e a montagem da cabeca e
-//! o [`phxsql_core::http::montar_cabeca`] -- o mesmo motor do servidor do
+//! A leitura e o [`phxsql_core::http`] e a montagem da cabeca e o
+//! [`phxsql_core::http::montar_cabeca`] -- o mesmo motor do servidor do
 //! PhxSql (petrea «funcao e comando vem do mesmo motor»). Daqui sai so o que
 //! e desta porta: os tetos, a politica de seguranca e as rotas.
 
+pub mod ops;
+pub mod textos;
+
 use std::borrow::Cow;
-use std::io::Write;
+use std::io::{BufReader, Write};
 use std::net::{Ipv4Addr, Shutdown, SocketAddr, TcpListener, TcpStream};
 use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::Duration;
 
-use phxsql_core::http::{self, Excesso, Pedido, PedidoLido, Tetos};
+use phxsql_core::http::{self, CabecaLida, Excesso, Pedido, Tetos};
 use phxsql_core::json::Json;
-use phxsql_core::semaforo::Semaforo;
+use phxsql_core::semaforo::{Permissao, Semaforo};
 
 /// A porta de fabrica. Livre das quatro do PhxSql (5000, 5001, 6000, 7000);
 /// a tela nao a conhece, porque so usa caminho relativo.
@@ -49,7 +57,7 @@ pub const ENVIO_MAX: usize = 256 * 1024 * 1024;
 pub const CABECALHO_MAX: usize = 16 * 1024;
 
 /// Quantas conexoes se atendem ao mesmo tempo. Nao e o `simultaneas` do
-/// contrato -- aquele conta os `POST` que descomprimem, e entra com eles (Z6).
+/// contrato -- aquele conta os `POST` que descomprimem ([`ops::SIMULTANEAS`]).
 /// Este e o teto de threads da porta: sem ele, cada conexao aberta e uma
 /// thread, e quem abre mil sem mandar nada prende mil threads por
 /// [`PRAZO_DE_LEITURA`].
@@ -57,6 +65,11 @@ pub const CONEXOES_MAX: usize = 32;
 
 /// Quanto se espera por um pedido que comecou e nao terminou.
 const PRAZO_DE_LEITURA: Duration = Duration::from_secs(10);
+
+/// Quanto uma escrita da resposta pode ficar parada. A vaga do `simultaneas`
+/// e segurada ate a resposta sair (ela e um dos tres pedacos da memoria de
+/// pico), e um cliente que para de ler nao pode prende-la para sempre.
+const PRAZO_DE_ESCRITA: Duration = Duration::from_secs(30);
 
 /// O prazo do dreno, por leitura (ver [`http::drenar`]). Na mesma maquina o
 /// navegador que ainda esta mandando nao fica um segundo calado; o que ficou,
@@ -103,13 +116,17 @@ const ESTATICOS: [Estatico; 4] = [
 ];
 
 /// O que se pode ajustar. Nao ha campo de endereco, e isso e a decisao.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Config {
     /// Zero pede ao sistema uma porta livre (os testes usam isso).
     pub porta: u16,
-    /// O teto do corpo. Os testes o baixam para provar o 413 sem mandar
-    /// 256 MiB; o binario usa sempre o [`ENVIO_MAX`].
+    /// O teto do corpo, ate [`ENVIO_MAX`]. Os testes e a prova no navegador
+    /// o baixam para provar o 413 sem mandar 256 MiB.
     pub envio: usize,
+    /// A pasta onde `/api/extrair` com `"na_pasta": true` grava. Quem a
+    /// escolhe e o OPERADOR, na linha de comando; o navegador nunca manda
+    /// caminho (contrato §1). Sem ela, a extracao e so download.
+    pub pasta: Option<PathBuf>,
 }
 
 impl Default for Config {
@@ -117,6 +134,7 @@ impl Default for Config {
         Config {
             porta: PORTA_PADRAO,
             envio: ENVIO_MAX,
+            pasta: None,
         }
     }
 }
@@ -138,11 +156,15 @@ pub enum Acao {
 /// O texto do `--ajuda`.
 pub const AJUDA: &str = "phxzipweb -- o PhxZip no navegador, so nesta maquina\n\
 \n\
-uso: phxzipweb [--porta N]\n\
+uso: phxzipweb [--porta N] [--pasta DIR] [--envio BYTES]\n\
 \n\
-  --porta N     a porta em 127.0.0.1 (padrao 7700)\n\
-  -V, --version a versao\n\
-  -h, --ajuda   este texto\n\
+  --porta N      a porta em 127.0.0.1 (padrao 7700)\n\
+  --pasta DIR    onde a tela pode extrair (\"extrair na pasta\"); sem ela, so\n\
+                 download. A pasta e de quem roda o phxzipweb, sem escrita\n\
+                 para outros usuarios -- senao a porta nao sobe\n\
+  --envio BYTES  baixa o teto do envio (padrao e maximo: 256 MiB)\n\
+  -V, --version  a versao\n\
+  -h, --ajuda    este texto\n\
 \n\
 Nao ha opcao de endereco: a porta extrai arquivos e aceita senha, e por\n\
 isso escuta so em 127.0.0.1.\n";
@@ -160,27 +182,42 @@ pub fn ler_argumentos(args: &[String]) -> Result<Acao, String> {
             Some((n, v)) => (n, Some(v.to_string())),
             None => (a, None),
         };
+        let mut valor = |pede: &str| -> Result<String, String> {
+            match valor_junto.clone() {
+                Some(v) => Ok(v),
+                None => {
+                    i += 1;
+                    args.get(i).cloned().ok_or_else(|| pede.to_string())
+                }
+            }
+        };
         match nome {
             "-V" | "--version" | "--versao" => return Ok(Acao::Versao),
             "-h" | "--help" | "--ajuda" => return Ok(Acao::Ajuda),
             "--porta" | "--port" => {
-                let valor = match valor_junto {
-                    Some(v) => v,
-                    None => {
-                        i += 1;
-                        args.get(i)
-                            .cloned()
-                            .ok_or("--porta pede um numero de 1 a 65535")?
-                    }
-                };
-                cfg.porta = match valor.parse::<u16>() {
+                let v = valor("--porta pede um numero de 1 a 65535")?;
+                cfg.porta = match v.parse::<u16>() {
                     Ok(p) if p > 0 => p,
                     _ => {
                         return Err(format!(
-                            "porta invalida: {valor:?} -- e um numero de 1 a 65535; \
+                            "porta invalida: {v:?} -- e um numero de 1 a 65535; \
                              o endereco e sempre 127.0.0.1"
                         ))
                     }
+                };
+            }
+            "--pasta" => {
+                let v = valor("--pasta pede uma pasta")?;
+                if v.is_empty() {
+                    return Err("--pasta pede uma pasta".to_string());
+                }
+                cfg.pasta = Some(PathBuf::from(v));
+            }
+            "--envio" => {
+                let v = valor("--envio pede um numero de bytes")?;
+                cfg.envio = match v.parse::<usize>() {
+                    Ok(n) if n > 0 && n <= ENVIO_MAX => n,
+                    _ => return Err(format!("envio invalido: {v:?} -- de 1 a {ENVIO_MAX} bytes")),
                 };
             }
             "--endereco" | "--host" | "--bind" | "--escutar" | "--listen" => {
@@ -272,31 +309,134 @@ fn origem_valida(pedido: &Pedido, porta: u16) -> bool {
     }
 }
 
-/// A resposta para um pedido ja lido. Nao toca no soquete, e por isso se
-/// testa sem rede; a prova pelo soquete esta em `tests/soquete.rs`.
-pub fn decidir(pedido: &Pedido, porta: u16) -> Resposta {
+/// Uma operacao `POST` sobre o motor.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Op {
+    Compactar,
+    Listar,
+    Testar,
+    Extrair,
+}
+
+/// O que um caminho e.
+#[derive(Clone, Copy)]
+enum Rota {
+    Estatico(&'static Estatico),
+    Estado,
+    Idiomas,
+    Op(Op),
+}
+
+impl Rota {
+    fn de(caminho: &str) -> Option<Rota> {
+        // Igualdade com a lista fechada, e nada mais: nao se normaliza, nao
+        // se decodifica `%2e`, nao se junta a caminho nenhum. `/../Cargo.toml`
+        // nao e igual a nenhuma rota, e e 404 pelo mesmo motivo que `/x` e.
+        if let Some(e) = ESTATICOS.iter().find(|e| e.rota == caminho) {
+            return Some(Rota::Estatico(e));
+        }
+        Some(match caminho {
+            "/api/estado" => Rota::Estado,
+            "/api/idiomas" => Rota::Idiomas,
+            "/api/compactar" => Rota::Op(Op::Compactar),
+            "/api/listar" => Rota::Op(Op::Listar),
+            "/api/testar" => Rota::Op(Op::Testar),
+            "/api/extrair" => Rota::Op(Op::Extrair),
+            _ => return None,
+        })
+    }
+
+    fn metodo(self) -> &'static str {
+        match self {
+            Rota::Op(_) => "POST",
+            _ => "GET",
+        }
+    }
+}
+
+/// O que cada atendimento precisa saber da porta.
+#[derive(Debug, Clone)]
+pub struct Contexto {
+    pub porta: u16,
+    pub envio: usize,
+    pub pasta: Option<PathBuf>,
+}
+
+/// O tipo de midia do pedido, sem parametros e sem caixa.
+fn tipo_do_pedido(pedido: &Pedido) -> Option<String> {
+    pedido.cabecalho("content-type").map(|t| {
+        t.split(';')
+            .next()
+            .unwrap_or("")
+            .trim()
+            .to_ascii_lowercase()
+    })
+}
+
+/// A triagem pela CABECA: tudo o que se decide sem o corpo. `Err` e a
+/// recusa, ja pronta.
+fn triar(pedido: &Pedido, porta: u16) -> Result<Rota, Resposta> {
     if !host_valido(pedido, porta) {
-        return Resposta::erro(403, "HOST_RECUSADO", None);
+        return Err(Resposta::erro(403, "HOST_RECUSADO", None));
     }
     if pedido.metodo != "GET" && !origem_valida(pedido, porta) {
-        return Resposta::erro(403, "ORIGEM_RECUSADA", None);
+        return Err(Resposta::erro(403, "ORIGEM_RECUSADA", None));
     }
-    // Igualdade com a lista fechada, e nada mais: nao se normaliza, nao se
-    // decodifica `%2e`, nao se junta a caminho nenhum. `/../Cargo.toml` nao
-    // e igual a nenhuma rota, e e 404 pelo mesmo motivo que `/x` e.
-    let Some(e) = ESTATICOS.iter().find(|e| e.rota == pedido.caminho) else {
-        return Resposta::erro(404, "ROTA_INEXISTENTE", None);
+    let Some(rota) = Rota::de(&pedido.caminho) else {
+        return Err(Resposta::erro(404, "ROTA_INEXISTENTE", None));
     };
-    if pedido.metodo != "GET" {
+    if pedido.metodo != rota.metodo() {
         let mut r = Resposta::erro(405, "METODO_HTTP", None);
-        r.extras = "Allow: GET\r\n".to_string();
-        return r;
+        r.extras = format!("Allow: {}\r\n", rota.metodo());
+        return Err(r);
     }
-    Resposta {
-        codigo: 200,
-        tipo: e.tipo,
-        extras: String::new(),
-        corpo: Cow::Borrowed(e.bytes),
+    if let Rota::Op(_) = rota {
+        // `application/octet-stream` nao e tipo «simples»: o `POST` de outra
+        // origem cai no preflight, que esta porta nao responde (contrato §7).
+        if tipo_do_pedido(pedido).as_deref() != Some("application/octet-stream") {
+            return Err(Resposta::erro(415, "TIPO_DE_CONTEUDO", None));
+        }
+        if pedido.cabecalho("content-length").is_none() {
+            return Err(Resposta::erro(411, "TAMANHO_AUSENTE", None));
+        }
+    }
+    Ok(rota)
+}
+
+/// A resposta de uma rota que ja passou pela triagem, com o corpo lido.
+fn executar(rota: Rota, pedido: &Pedido, ctx: &Contexto) -> Resposta {
+    match rota {
+        Rota::Estatico(e) => Resposta {
+            codigo: 200,
+            tipo: e.tipo,
+            extras: String::new(),
+            corpo: Cow::Borrowed(e.bytes),
+        },
+        Rota::Estado => ops::estado(ctx.envio, ctx.pasta.is_some()),
+        Rota::Idiomas => ops::idiomas(&pedido.consulta),
+        Rota::Op(op) => {
+            let env = match ops::abrir_envelope(&pedido.corpo) {
+                Ok(e) => e,
+                Err(r) => return r,
+            };
+            let r = match op {
+                Op::Compactar => ops::compactar(&env),
+                Op::Listar => ops::listar(&env),
+                Op::Testar => ops::testar(&env),
+                Op::Extrair => ops::extrair(&env, ctx.pasta.as_deref()),
+            };
+            r.unwrap_or_else(|e| e)
+        }
+    }
+}
+
+/// A resposta para um pedido ja lido INTEIRO: a triagem e a rota. Nao toca
+/// no soquete nem na vaga do `simultaneas`, e por isso se testa sem rede; a
+/// prova pelo soquete esta em `tests/soquete.rs`.
+pub fn decidir(pedido: &Pedido, ctx: &Contexto) -> Resposta {
+    match triar(pedido, ctx.porta) {
+        Ok(rota) => executar(rota, pedido, ctx),
+        Err(r) => r,
     }
 }
 
@@ -320,59 +460,133 @@ fn resposta_do_excesso(excesso: &Excesso) -> Resposta {
     Resposta::erro(excesso.codigo_http(), "GRANDE_DEMAIS", Some(detalhe))
 }
 
-/// Atende UMA conexao: le o pedido pelo motor do core, responde e fecha.
-pub fn atender(mut fluxo: TcpStream, porta: u16, envio: usize) {
+/// O que fazer com a conexao, decidido enquanto o leitor ainda a empresta.
+enum Passo {
+    /// Responder; a vaga do `simultaneas`, quando houver, vai junto ate a
+    /// resposta sair.
+    Responder(Resposta, Option<Permissao>),
+    /// Responder sem ter lido o corpo -- e drenar se ele estiver no fio.
+    Recusar(Resposta, bool),
+}
+
+fn http_torto() -> Resposta {
+    let detalhe = Json::objeto(vec![("campo", Json::texto_de("http"))]);
+    Resposta::erro(400, "PEDIDO_MALFORMADO", Some(detalhe))
+}
+
+/// Atende UMA conexao: le a cabeca pelo motor do core, faz a triagem, toma a
+/// vaga se a rota descomprime, le o corpo, responde e fecha.
+pub fn atender(mut fluxo: TcpStream, ctx: &Contexto, ops_vagas: &Semaforo) {
     let _ = fluxo.set_read_timeout(Some(PRAZO_DE_LEITURA));
+    let _ = fluxo.set_write_timeout(Some(PRAZO_DE_ESCRITA));
     let tetos = Tetos {
         cabecalho: CABECALHO_MAX,
-        corpo: envio,
+        corpo: ctx.envio,
     };
-    match http::ler_pedido(&mut fluxo, tetos) {
-        PedidoLido::Pedido(p) => {
-            // Panico vira 500 sem o texto dele (contrato §6): a mensagem de
-            // um panico e do programa, e pode carregar dado do pedido.
-            let r = catch_unwind(AssertUnwindSafe(|| decidir(&p, porta)))
-                .unwrap_or_else(|_| Resposta::erro(500, "INTERNO", None));
-            let _ = r.escrever(&mut fluxo);
-        }
-        PedidoLido::GrandeDemais(excesso) => {
-            // Recusou ANTES de ler o corpo: o resto ainda esta chegando. Sem
-            // drenar, o fecho vira RST e o navegador ve «erro de rede» no
-            // lugar do 413 (contrato §4). O descarte e o dobro do teto; acima
-            // dele fecha, e o cliente ve a conexao cair, que e verdade.
-            let _ = resposta_do_excesso(&excesso).escrever(&mut fluxo);
-            let _ = fluxo.shutdown(Shutdown::Write);
-            http::drenar(&mut fluxo, 2 * envio as u64, PRAZO_DO_DRENO);
-        }
-        PedidoLido::Nada => {
+    let passo = {
+        let mut leitor = BufReader::new(&fluxo);
+        match http::ler_cabeca(&mut leitor, tetos) {
+            CabecaLida::Cabeca(mut p, tamanho) => {
+                let no_fio = tamanho > 0 || p.cabecalho("transfer-encoding").is_some();
+                match triar(&p, ctx.porta) {
+                    Err(r) => Passo::Recusar(r, no_fio),
+                    Ok(rota) => {
+                        let vaga = match rota {
+                            Rota::Op(_) => ops_vagas.tentar().map(Some),
+                            _ => Some(None),
+                        };
+                        match vaga {
+                            // Sem vaga: recusa ANTES de receber o pacote --
+                            // e o que faz a memoria de pico ser a declarada.
+                            None => Passo::Recusar(Resposta::erro(503, "OCUPADO", None), no_fio),
+                            Some(vaga) => {
+                                if http::ler_corpo(&mut leitor, &mut p, tamanho) {
+                                    // Panico vira 500 sem o texto dele (contrato
+                                    // §6): a mensagem de um panico e do programa,
+                                    // e pode carregar dado do pedido.
+                                    let r =
+                                        catch_unwind(AssertUnwindSafe(|| executar(rota, &p, ctx)))
+                                            .unwrap_or_else(|_| {
+                                                Resposta::erro(500, "INTERNO", None)
+                                            });
+                                    Passo::Responder(r, vaga)
+                                } else {
+                                    Passo::Responder(http_torto(), None)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             // Conexao vazia ou pedido torto. Se o outro lado ainda ouve, ouve
             // o motivo; se ja foi, o erro de escrita nao interessa a ninguem.
-            let detalhe = Json::objeto(vec![("campo", Json::texto_de("http"))]);
-            let _ = Resposta::erro(400, "PEDIDO_MALFORMADO", Some(detalhe)).escrever(&mut fluxo);
+            CabecaLida::Nada => Passo::Responder(http_torto(), None),
+            // Recusou ANTES de ler o corpo: o resto ainda esta chegando.
+            CabecaLida::GrandeDemais(excesso) => {
+                Passo::Recusar(resposta_do_excesso(&excesso), true)
+            }
+        }
+    };
+    match passo {
+        Passo::Responder(r, vaga) => {
+            let _ = r.escrever(&mut fluxo);
+            drop(vaga);
+        }
+        Passo::Recusar(r, drenar) => {
+            let _ = r.escrever(&mut fluxo);
+            if drenar {
+                // Sem drenar, o fecho vira RST e o navegador ve «erro de rede»
+                // no lugar da recusa (contrato §4). O descarte e o dobro do
+                // teto; acima dele fecha, e o cliente ve a conexao cair, que e
+                // verdade.
+                let _ = fluxo.shutdown(Shutdown::Write);
+                http::drenar(&mut fluxo, 2 * ctx.envio as u64, PRAZO_DO_DRENO);
+            }
         }
     }
+}
+
+/// Confere a pasta de extracao do operador pelo `disco::Destino` do motor --
+/// a mesma regra que cada extracao confere de novo. Existe para a porta NAO
+/// subir com uma pasta que toda extracao recusaria: o erro sai no terminal de
+/// quem a escolheu, e nao num cartao do navegador horas depois.
+pub fn conferir_pasta(pasta: &Path) -> Result<(), String> {
+    phxzip::disco::Destino::novo(pasta)
+        .map(|_| ())
+        .map_err(|e| format!("a pasta de extracao {pasta:?} foi recusada: {e}"))
 }
 
 /// A porta aberta, antes de comecar a atender.
 pub struct Servidor {
     ouvinte: TcpListener,
-    porta: u16,
-    envio: usize,
+    ctx: Arc<Contexto>,
     vagas: Semaforo,
+    ops: Semaforo,
 }
 
 impl Servidor {
     /// Abre a porta em [`endereco_de_escuta`]. Separado de [`Servidor::servir`]
     /// para quem chama saber o endereco de verdade (porta zero) antes de a
     /// thread ficar presa no laco.
+    ///
+    /// Recusa subir com o dicionario de textos torto ou com uma pasta de
+    /// extracao que o motor recusa.
     pub fn escutar(cfg: Config) -> std::io::Result<Servidor> {
+        textos::tabela().map_err(std::io::Error::other)?;
+        if let Some(p) = &cfg.pasta {
+            conferir_pasta(p).map_err(std::io::Error::other)?;
+        }
         let ouvinte = TcpListener::bind(endereco_de_escuta(cfg.porta))?;
         let porta = ouvinte.local_addr()?.port();
         Ok(Servidor {
             ouvinte,
-            porta,
-            envio: cfg.envio,
+            ctx: Arc::new(Contexto {
+                porta,
+                envio: cfg.envio.min(ENVIO_MAX),
+                pasta: cfg.pasta,
+            }),
             vagas: Semaforo::novo(CONEXOES_MAX),
+            ops: Semaforo::novo(ops::SIMULTANEAS),
         })
     }
 
@@ -393,12 +607,13 @@ impl Servidor {
                 http::drenar(&mut fluxo, CABECALHO_MAX as u64, Duration::from_millis(20));
                 continue;
             };
-            let (porta, envio) = (self.porta, self.envio);
+            let ctx = Arc::clone(&self.ctx);
+            let ops = self.ops.clone();
             let lancou = std::thread::Builder::new()
                 .name("phxzipweb".into())
                 .spawn(move || {
                     let _vaga = vaga;
-                    atender(fluxo, porta, envio);
+                    atender(fluxo, &ctx, &ops);
                 });
             if lancou.is_err() {
                 // Sem thread a conexao cai sozinha (o fluxo foi junto e
@@ -416,6 +631,14 @@ mod testes {
     use std::collections::HashMap;
 
     const PORTA: u16 = 7700;
+
+    fn ctx() -> Contexto {
+        Contexto {
+            porta: PORTA,
+            envio: ENVIO_MAX,
+            pasta: None,
+        }
+    }
 
     fn pedido(metodo: &str, caminho: &str, cabecalhos: &[(&str, &str)]) -> Pedido {
         let mut c: HashMap<String, String> = cabecalhos
@@ -446,13 +669,13 @@ mod testes {
             ("/phxzip.js", "text/javascript; charset=utf-8"),
             ("/fonte/exo2-latin.woff2", "font/woff2"),
         ] {
-            let r = decidir(&pedido("GET", rota, &[]), PORTA);
+            let r = decidir(&pedido("GET", rota, &[]), &ctx());
             assert_eq!((r.codigo, r.tipo), (200, tipo), "{rota}");
             assert!(!r.corpo.is_empty(), "{rota}");
         }
         // A fonte e binaria e chega como esta no disco: 40.896 bytes,
         // assinatura `wOF2` (contrato §2).
-        let f = decidir(&pedido("GET", "/fonte/exo2-latin.woff2", &[]), PORTA);
+        let f = decidir(&pedido("GET", "/fonte/exo2-latin.woff2", &[]), &ctx());
         assert_eq!(f.corpo.len(), 40_896);
         assert_eq!(&f.corpo[..4], b"wOF2");
     }
@@ -469,10 +692,12 @@ mod testes {
             "/%2e%2e/Cargo.toml",
             "/fonte/../phxzip.js",
             "//phxzip.js",
-            "/api/estado",
+            "/api/",
+            "/api/estado/",
+            "/api/../api/estado",
             "",
         ] {
-            let r = decidir(&pedido("GET", rota, &[]), PORTA);
+            let r = decidir(&pedido("GET", rota, &[]), &ctx());
             assert_eq!(r.codigo, 404, "{rota:?}");
             assert_eq!(erro_de(&r), "ROTA_INEXISTENTE");
         }
@@ -489,16 +714,16 @@ mod testes {
             "0.0.0.0:7700",
             "127.0.0.1:7700.evil.com",
         ] {
-            let r = decidir(&pedido("GET", "/", &[("Host", host)]), PORTA);
+            let r = decidir(&pedido("GET", "/", &[("Host", host)]), &ctx());
             assert_eq!(r.codigo, 403, "{host}");
             assert_eq!(erro_de(&r), "HOST_RECUSADO");
         }
         let mut sem_host = pedido("GET", "/", &[]);
         sem_host.cabecalhos.remove("host");
-        assert_eq!(decidir(&sem_host, PORTA).codigo, 403);
+        assert_eq!(decidir(&sem_host, &ctx()).codigo, 403);
         for host in ["127.0.0.1:7700", "localhost:7700", "LocalHost:7700"] {
             assert_eq!(
-                decidir(&pedido("GET", "/", &[("Host", host)]), PORTA).codigo,
+                decidir(&pedido("GET", "/", &[("Host", host)]), &ctx()).codigo,
                 200
             );
         }
@@ -513,7 +738,7 @@ mod testes {
             ("Sec-Fetch-Site", "cross-site"),
             ("Sec-Fetch-Site", "same-site"),
         ] {
-            let r = decidir(&pedido("POST", "/", &[(nome, valor)]), PORTA);
+            let r = decidir(&pedido("POST", "/", &[(nome, valor)]), &ctx());
             assert_eq!(r.codigo, 403, "{nome}: {valor}");
             assert_eq!(erro_de(&r), "ORIGEM_RECUSADA");
         }
@@ -527,11 +752,107 @@ mod testes {
                     ("Sec-Fetch-Site", "same-origin"),
                 ],
             ),
-            PORTA,
+            &ctx(),
         );
         assert_eq!(r.codigo, 405);
         assert_eq!(r.extras, "Allow: GET\r\n");
         assert_eq!(erro_de(&r), "METODO_HTTP");
+        // E nas rotas que gravam: a origem alheia e recusada ANTES da rota.
+        for rota in [
+            "/api/compactar",
+            "/api/extrair",
+            "/api/listar",
+            "/api/testar",
+        ] {
+            let r = decidir(
+                &pedido("POST", rota, &[("Origin", "http://evil.com")]),
+                &ctx(),
+            );
+            assert_eq!((r.codigo, erro_de(&r)), (403, "ORIGEM_RECUSADA".into()));
+        }
+    }
+
+    /// Os `POST` exigem o tipo e o tamanho (contrato §6): 415 e 411. O GET
+    /// numa rota de `POST` e 405 com `Allow: POST`.
+    #[test]
+    fn post_sem_tipo_ou_sem_tamanho_e_get_em_rota_de_post() {
+        let r = decidir(
+            &pedido("POST", "/api/listar", &[("Content-Length", "0")]),
+            &ctx(),
+        );
+        assert_eq!((r.codigo, erro_de(&r)), (415, "TIPO_DE_CONTEUDO".into()));
+        let r = decidir(
+            &pedido(
+                "POST",
+                "/api/listar",
+                &[("Content-Type", "text/plain"), ("Content-Length", "0")],
+            ),
+            &ctx(),
+        );
+        assert_eq!(r.codigo, 415);
+        let r = decidir(
+            &pedido(
+                "POST",
+                "/api/listar",
+                &[("Content-Type", "application/octet-stream")],
+            ),
+            &ctx(),
+        );
+        assert_eq!((r.codigo, erro_de(&r)), (411, "TAMANHO_AUSENTE".into()));
+        // Com tipo e tamanho, o envelope vazio e pedido torto -- passou da
+        // triagem.
+        let r = decidir(
+            &pedido(
+                "POST",
+                "/api/listar",
+                &[
+                    ("Content-Type", "Application/Octet-Stream; x=1"),
+                    ("Content-Length", "0"),
+                ],
+            ),
+            &ctx(),
+        );
+        assert_eq!((r.codigo, erro_de(&r)), (400, "PEDIDO_MALFORMADO".into()));
+        let r = decidir(&pedido("GET", "/api/extrair", &[]), &ctx());
+        assert_eq!((r.codigo, r.extras.as_str()), (405, "Allow: POST\r\n"));
+        let r = decidir(&pedido("POST", "/api/estado", &[]), &ctx());
+        assert_eq!((r.codigo, r.extras.as_str()), (405, "Allow: GET\r\n"));
+    }
+
+    /// O estado declara o que o motor confere -- nenhum numero digitado.
+    #[test]
+    fn o_estado_sai_das_constantes() {
+        let r = decidir(&pedido("GET", "/api/estado", &[]), &ctx());
+        assert_eq!(r.codigo, 200);
+        let j = Json::analisar(std::str::from_utf8(&r.corpo).unwrap()).unwrap();
+        let l = j.campo("limites").unwrap();
+        let m = phxzip::Limites::default();
+        assert_eq!(
+            l.campo("entrada").and_then(Json::inteiro),
+            Some(m.entrada as i64)
+        );
+        assert_eq!(
+            l.campo("cabecalho").and_then(Json::inteiro),
+            Some(m.cabecalho as i64)
+        );
+        assert_eq!(
+            l.campo("envio").and_then(Json::inteiro),
+            Some(ENVIO_MAX as i64)
+        );
+        assert_eq!(
+            l.campo("simultaneas").and_then(Json::inteiro),
+            Some(ops::SIMULTANEAS as i64)
+        );
+        assert_eq!(
+            j.campo("idiomas").and_then(Json::lista).map(|v| v.len()),
+            Some(phxsql_core::idiomas::QUANTOS)
+        );
+        assert_eq!(j.campo("extrair_na_pasta"), Some(&Json::Bool(false)));
+        let mut p = pedido("GET", "/api/idiomas", &[]);
+        p.consulta = "idioma=Ingles".into();
+        let r = decidir(&p, &ctx());
+        let j = Json::analisar(std::str::from_utf8(&r.corpo).unwrap()).unwrap();
+        assert_eq!(j.campo("idioma").and_then(Json::texto), Some("Ingles"));
     }
 
     /// A politica do contrato (§7) em TODA resposta, inclusive nas de erro --
@@ -540,9 +861,9 @@ mod testes {
     #[test]
     fn toda_resposta_leva_a_politica() {
         let respostas = [
-            decidir(&pedido("GET", "/", &[]), PORTA),
-            decidir(&pedido("GET", "/x", &[]), PORTA),
-            decidir(&pedido("GET", "/", &[("Host", "evil.com")]), PORTA),
+            decidir(&pedido("GET", "/", &[]), &ctx()),
+            decidir(&pedido("GET", "/x", &[]), &ctx()),
+            decidir(&pedido("GET", "/", &[("Host", "evil.com")]), &ctx()),
             resposta_do_excesso(&Excesso::Corpo {
                 declarado: 9,
                 teto: 1,
@@ -591,6 +912,22 @@ mod testes {
     fn argumentos() {
         let a = |v: &[&str]| ler_argumentos(&v.iter().map(|s| s.to_string()).collect::<Vec<_>>());
         assert_eq!(a(&[]), Ok(Acao::Servir(Config::default())));
+        match a(&["--pasta", "/tmp/x", "--envio=1000"]) {
+            Ok(Acao::Servir(c)) => {
+                assert_eq!(c.pasta.as_deref(), Some(Path::new("/tmp/x")));
+                assert_eq!(c.envio, 1000);
+            }
+            outro => panic!("{outro:?}"),
+        }
+        let acima = format!("--envio={}", ENVIO_MAX + 1);
+        for v in [
+            &["--envio", "0"][..],
+            &[acima.as_str()],
+            &["--pasta"],
+            &["--pasta="],
+        ] {
+            assert!(a(v).is_err(), "{v:?} devia ser recusado");
+        }
         assert_eq!(Config::default().porta, 7700);
         for v in [&["--porta", "8123"][..], &["--porta=8123"]] {
             match a(v) {

@@ -27,7 +27,7 @@
 //!   para ninguem (ver a funcao).
 
 use std::collections::HashMap;
-use std::io::{BufReader, Read};
+use std::io::{BufRead, BufReader, Read};
 use std::net::TcpStream;
 use std::time::Duration;
 
@@ -136,46 +136,82 @@ pub enum PedidoLido {
     GrandeDemais(Excesso),
 }
 
-/// Le um pedido HTTP/1.1 com os tetos da porta.
+/// Le um pedido HTTP/1.1 com os tetos da porta: a cabeca ([`ler_cabeca`]) e,
+/// se ela passou, o corpo ([`ler_corpo`]).
+pub fn ler_pedido<R: Read>(fluxo: R, tetos: Tetos) -> PedidoLido {
+    let mut leitor = BufReader::new(fluxo);
+    match ler_cabeca(&mut leitor, tetos) {
+        CabecaLida::Cabeca(mut p, tamanho) => {
+            if ler_corpo(&mut leitor, &mut p, tamanho) {
+                PedidoLido::Pedido(p)
+            } else {
+                PedidoLido::Nada
+            }
+        }
+        CabecaLida::Nada => PedidoLido::Nada,
+        CabecaLida::GrandeDemais(e) => PedidoLido::GrandeDemais(e),
+    }
+}
+
+/// O que a leitura da CABECA deu.
+#[derive(Debug)]
+pub enum CabecaLida {
+    /// O pedido com o corpo ainda VAZIO, e o tamanho declarado (zero sem
+    /// `Content-Length`). O corpo continua no fio, esperando [`ler_corpo`].
+    Cabeca(Pedido, u64),
+    Nada,
+    GrandeDemais(Excesso),
+}
+
+/// Le so a linha do pedido e os cabecalhos, conferindo o `Content-Length`
+/// contra o teto -- e para ai.
+///
+/// # Por que a cabeca separada do corpo
+///
+/// A porta que recusa pelo CABECALHO (origem alheia, tipo errado, rota que
+/// nao existe, nenhuma vaga) recusaria depois de receber 256 MiB se so
+/// houvesse o [`ler_pedido`] inteiro: o corpo ja estaria na memoria, e o teto
+/// de memoria da porta deixaria de ser o que ela declara (no PhxZipWeb, «envio
+/// × simultaneas», e nao «envio × conexoes»). Quem le em duas vezes decide
+/// entre elas, e quem recusa ali tem de [`drenar`].
 ///
 /// A linha vem do [`Canal::Claro`] -- o mesmo `take` que protege a porta de
 /// dados (pedido 434) --, entao o teto da linha vale ANTES de a linha existir
 /// na memoria.
-pub fn ler_pedido<R: Read>(fluxo: R, tetos: Tetos) -> PedidoLido {
-    let mut leitor = BufReader::new(fluxo);
+pub fn ler_cabeca<L: BufRead>(leitor: &mut L, tetos: Tetos) -> CabecaLida {
     let mut canal = Canal::Claro;
     let teto_linha = tetos.cabecalho as u64;
 
-    let linha = match canal.ler_ate(&mut leitor, teto_linha) {
+    let linha = match canal.ler_ate(leitor, teto_linha) {
         Ok(Recebido::Linha(l)) => l,
         Err(PhxError::LimiteExcedido(_)) => {
-            return PedidoLido::GrandeDemais(Excesso::Linha {
+            return CabecaLida::GrandeDemais(Excesso::Linha {
                 teto: tetos.cabecalho,
             })
         }
-        _ => return PedidoLido::Nada,
+        _ => return CabecaLida::Nada,
     };
     let mut partes = linha.split_whitespace();
     let (Some(metodo), Some(caminho)) = (partes.next(), partes.next()) else {
-        return PedidoLido::Nada;
+        return CabecaLida::Nada;
     };
     let (metodo, caminho) = (metodo.to_string(), caminho.to_string());
 
     let mut cabecalhos = HashMap::new();
     let mut lidos = linha.len();
     loop {
-        let l = match canal.ler_ate(&mut leitor, teto_linha) {
+        let l = match canal.ler_ate(leitor, teto_linha) {
             Ok(Recebido::Linha(l)) => l,
             Err(PhxError::LimiteExcedido(_)) => {
-                return PedidoLido::GrandeDemais(Excesso::LinhaDeCabecalho {
+                return CabecaLida::GrandeDemais(Excesso::LinhaDeCabecalho {
                     teto: tetos.cabecalho,
                 })
             }
-            _ => return PedidoLido::Nada,
+            _ => return CabecaLida::Nada,
         };
         lidos += l.len();
         if lidos > tetos.cabecalho {
-            return PedidoLido::GrandeDemais(Excesso::Cabecalho {
+            return CabecaLida::GrandeDemais(Excesso::Cabecalho {
                 teto: tetos.cabecalho,
             });
         }
@@ -195,37 +231,48 @@ pub fn ler_pedido<R: Read>(fluxo: R, tetos: Tetos) -> PedidoLido {
         None => 0,
         Some(v) => match v.parse() {
             Ok(n) => n,
-            Err(_) => return PedidoLido::Nada,
+            Err(_) => return CabecaLida::Nada,
         },
     };
     if tamanho > tetos.corpo as u64 {
-        return PedidoLido::GrandeDemais(Excesso::Corpo {
+        return CabecaLida::GrandeDemais(Excesso::Corpo {
             declarado: tamanho,
             teto: tetos.corpo,
         });
-    }
-    // A reserva inicial e limitada: o que cresce o vetor e o que CHEGA. Quem
-    // declara o teto inteiro e manda so o cabecalho nao faz este lado
-    // reservar nada alem disto.
-    let mut corpo = Vec::with_capacity((tamanho as usize).min(64 * 1024));
-    if tamanho > 0 {
-        match (&mut leitor).take(tamanho).read_to_end(&mut corpo) {
-            Ok(n) if n as u64 == tamanho => {}
-            _ => return PedidoLido::Nada,
-        }
     }
 
     let (so_caminho, consulta) = match caminho.split_once('?') {
         Some((c, q)) => (c.to_string(), q.to_string()),
         None => (caminho, String::new()),
     };
-    PedidoLido::Pedido(Pedido {
-        metodo,
-        caminho: so_caminho,
-        consulta,
-        cabecalhos,
-        corpo,
-    })
+    CabecaLida::Cabeca(
+        Pedido {
+            metodo,
+            caminho: so_caminho,
+            consulta,
+            cabecalhos,
+            corpo: Vec::new(),
+        },
+        tamanho,
+    )
+}
+
+/// Le os `tamanho` bytes do corpo para dentro do pedido. `false` quando o fio
+/// acabou antes (corpo mais curto que o declarado).
+///
+/// O tamanho ja passou pelo teto em [`ler_cabeca`]. A reserva inicial e
+/// limitada: o que cresce o vetor e o que CHEGA -- quem declara o teto inteiro
+/// e manda so o cabecalho nao faz este lado reservar nada alem disto.
+pub fn ler_corpo<L: Read>(leitor: &mut L, pedido: &mut Pedido, tamanho: u64) -> bool {
+    let mut corpo = Vec::with_capacity((tamanho as usize).min(64 * 1024));
+    if tamanho > 0 {
+        match leitor.take(tamanho).read_to_end(&mut corpo) {
+            Ok(n) if n as u64 == tamanho => {}
+            _ => return false,
+        }
+    }
+    pedido.corpo = corpo;
+    true
 }
 
 /// Le e joga fora o que o cliente ainda estava mandando, ate `teto` bytes ou
@@ -399,6 +446,29 @@ mod testes {
             }
             outro => panic!("esperava 413, veio {outro:?}"),
         }
+    }
+
+    /// A cabeca sozinha nao toca no corpo: quem recusa entre as duas leituras
+    /// recusa sem ter recebido o pacote, e quem aceita le o corpo inteiro e
+    /// intacto do mesmo leitor -- inclusive o que o `BufReader` ja trouxe.
+    #[test]
+    fn a_cabeca_deixa_o_corpo_no_fio() {
+        let bruto = b"POST /api/x?a=1 HTTP/1.1\r\nContent-Length: 4\r\n\r\n\xff\x00ab";
+        let mut leitor = std::io::BufReader::new(&bruto[..]);
+        let CabecaLida::Cabeca(mut p, tamanho) = ler_cabeca(&mut leitor, TETOS) else {
+            panic!("esperava a cabeca");
+        };
+        assert_eq!((tamanho, p.corpo.len()), (4, 0));
+        assert_eq!((p.caminho.as_str(), p.consulta.as_str()), ("/api/x", "a=1"));
+        assert!(ler_corpo(&mut leitor, &mut p, tamanho));
+        assert_eq!(p.corpo, b"\xff\x00ab");
+        // Corpo mais curto que o declarado: `false`, e nao um corpo cortado.
+        let mut curto =
+            std::io::BufReader::new(&b"POST / HTTP/1.1\r\nContent-Length: 9\r\n\r\nab"[..]);
+        let CabecaLida::Cabeca(mut p, t) = ler_cabeca(&mut curto, TETOS) else {
+            panic!()
+        };
+        assert!(!ler_corpo(&mut curto, &mut p, t));
     }
 
     /// O teto exato cabe: `>` e nao `>=`.
