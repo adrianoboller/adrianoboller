@@ -59,7 +59,11 @@ fn pede(s: &Arc<Servidor>, c: &Cadastro, corpo: &str) -> Result<Json> {
     r
 }
 
-const AS_DUAS: [&str; 2] = [r#""op":"aquario_log""#, r#""op":"aquario_contagens""#];
+const AS_TRES: [&str; 3] = [
+    r#""op":"aquario_log""#,
+    r#""op":"aquario_contagens""#,
+    r#""op":"aquario_retrato""#,
+];
 
 /// Passou do portao: o que volta e a resposta -- as series da contagem (A8),
 /// as linhas do log (A6) --, ou o «ainda nao existe» do log ainda fechado; e
@@ -69,6 +73,11 @@ fn passou_do_portao(r: Result<Json>, corpo: &str) {
     if corpo.contains("aquario_contagens") {
         let j = r.unwrap_or_else(|e| panic!("{corpo}: {e}"));
         assert!(j.campo("series").is_some(), "{corpo}: {}", j.escrever());
+        return;
+    }
+    if corpo.contains("aquario_retrato") {
+        let j = r.unwrap_or_else(|e| panic!("{corpo}: {e}"));
+        assert!(j.campo("tarefas").is_some(), "{corpo}: {}", j.escrever());
         return;
     }
     match r {
@@ -93,7 +102,7 @@ fn quem_tem_monitorar_passa_nas_duas() {
     let dir = dir_temp("monitor");
     let c = cadastro("leitor", r#"{"*":{"ler":true,"monitorar":true}}"#);
     let s = servidor(&dir, c.clone());
-    for corpo in AS_DUAS {
+    for corpo in AS_TRES {
         passou_do_portao(pede(&s, &c, corpo), corpo);
     }
     assert_eq!(
@@ -104,6 +113,10 @@ fn quem_tem_monitorar_passa_nas_duas() {
         Atividade::da_operacao("aquario_contagens"),
         Some(Atividade::Monitorar)
     );
+    assert_eq!(
+        Atividade::da_operacao("aquario_retrato"),
+        Some(Atividade::Monitorar)
+    );
 }
 
 #[test]
@@ -111,7 +124,7 @@ fn leitor_sem_monitorar_nao_ve_o_aquario() {
     let dir = dir_temp("leitor");
     let c = cadastro("leitor", r#"{"*":{"ler":true}}"#);
     let s = servidor(&dir, c.clone());
-    for corpo in AS_DUAS {
+    for corpo in AS_TRES {
         barrado(pede(&s, &c, corpo), corpo);
     }
 }
@@ -161,7 +174,7 @@ fn quem_administra_continua_vendo() {
         let dir = dir_temp(&format!("adm-{nivel}"));
         let c = cadastro(nivel, bases);
         let s = servidor(&dir, c.clone());
-        for corpo in AS_DUAS {
+        for corpo in AS_TRES {
             passou_do_portao(pede(&s, &c, corpo), corpo);
         }
     }
@@ -171,7 +184,7 @@ fn quem_administra_continua_vendo() {
 fn sem_cadastro_nada_muda() {
     let dir = dir_temp("sem-cadastro");
     let s = servidor(&dir, Cadastro::default());
-    for corpo in AS_DUAS {
+    for corpo in AS_TRES {
         let mut ses = Sessao::default();
         let (_, _, r) = s.despachar(
             &format!(r#"{{"token":"t",{corpo}}}"#),
@@ -730,4 +743,226 @@ fn fora_do_habitual_acende_o_bit_e_grava_mudou() {
     assert_eq!(mudou[0].texto_ou("alarme", ""), "fora_do_habitual");
     assert_eq!(mudou[0].texto_ou("tabela", ""), "pedidos");
     assert!(mudou[0].campo("dados").unwrap().inteiro_ou("n", 0) >= 20);
+}
+
+// ------------------------------------------------- A5: a classificar unica
+
+fn retrato(s: &Arc<Servidor>) -> Json {
+    let mut ses = Sessao::default();
+    let (_, _, r) = s.despachar(
+        r#"{"token":"t","op":"aquario_retrato"}"#,
+        &mut ses,
+        "127.0.0.1",
+    );
+    r.unwrap()
+}
+
+/// **O RED da A5: o log e o retrato dao a MESMA cor para a mesma tarefa.**
+///
+/// Cada caso pinta uma tarefa viva (o retrato, pela op `aquario_retrato`) e
+/// depois a faz terminar pelo `anotar` do servidor (a linha `estourou` do
+/// `aquario.log`). Cor e motivo tem de bater, caso a caso. Dar ao log uma
+/// regra propria -- por exemplo `ok` = verde e erro = vermelho no
+/// `classe_do_fim`, em vez da `classificar` -- faz cair o «integridade» (o
+/// log diria verde) e o «tempo fixo»; trocar o `nivel` do painel por uma
+/// regra propria cai no teste do painel logo abaixo.
+///
+/// O caso por tempo usa `alto_uso_ms` = 1 ms para caber num teste: a tarefa
+/// viva tem poucos ms e a terminada tem 1,5 s, e as duas passam do limiar
+/// pela MESMA regra (sem habitual formado, acima do tempo fixo).
+#[test]
+fn o_log_e_o_retrato_pintam_a_mesma_tarefa_da_mesma_cor() {
+    use crate::aquario::Alarme;
+    use crate::config::Painel;
+    let dir = dir_temp("mesma-cor");
+    let s = servidor(&dir, Cadastro::default());
+    let casos: [(&str, Option<Alarme>, u64, &str); 5] = [
+        (
+            "reentrante",
+            Some(Alarme::TravaReentrante),
+            2_000,
+            "vermelho",
+        ),
+        (
+            "corrompido",
+            Some(Alarme::DadoCorrompido),
+            2_000,
+            "vermelho",
+        ),
+        (
+            "integridade",
+            Some(Alarme::IntegridadeRecusada),
+            2_000,
+            "amarelo",
+        ),
+        ("tempo fixo", None, 1, "amarelo"),
+        ("calma", None, 2_000, "verde"),
+    ];
+    for (i, (nome, alarme, alto_uso_ms, cor)) in casos.into_iter().enumerate() {
+        s.telemetria.definir_pintura(Painel {
+            alto_uso_ms,
+            ..Painel::default()
+        });
+        let n = 100 + i as u64;
+        let chave = format!("dados:{n}");
+        let a = s
+            .telemetria
+            .entrar(&chave, "dados", "198.51.100.9", n, crate::agora_ms())
+            .unwrap();
+        let _amarrada = crate::telemetria::amarrar(Some(Arc::clone(&a)));
+        a.comecou_pedido("varrer", "ana", "loja", "vendas", crate::agora_ms());
+        if let Some(al) = alarme {
+            crate::telemetria::sinal(al, "teste");
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+
+        let r = retrato(&s);
+        let prefixo = format!("{chave}#");
+        let bolha = r
+            .campo("tarefas")
+            .and_then(Json::lista)
+            .and_then(|l| {
+                l.iter()
+                    .find(|t| t.texto_ou("tarefa", "").starts_with(&prefixo))
+            })
+            .unwrap_or_else(|| panic!("{nome}: a tarefa nao esta no retrato: {}", r.escrever()))
+            .clone();
+
+        s.anotar(&lento("varrer", 1_500));
+        let log = linhas_do_aquario(&s, "");
+        let linha = log
+            .campo("linhas")
+            .and_then(Json::lista)
+            .and_then(|l| l.last())
+            .unwrap()
+            .clone();
+        assert_eq!(linha.texto_ou("evento", ""), "estourou", "{nome}");
+
+        for campo in ["cor", "motivo"] {
+            assert_eq!(
+                bolha.texto_ou(campo, "?"),
+                linha.texto_ou(campo, "!"),
+                "{nome}: o {campo} do retrato e o do log divergem\nretrato: {}\nlog: {}",
+                bolha.escrever(),
+                linha.escrever()
+            );
+        }
+        assert_eq!(
+            bolha.texto_ou("cor", ""),
+            cor,
+            "{nome}: {}",
+            bolha.escrever()
+        );
+        if let Some(al) = alarme {
+            let nomes = |j: &Json| j.campo("alarmes").map(Json::escrever).unwrap_or_default();
+            assert!(nomes(&bolha).contains(al.nome()), "{nome}");
+            assert_eq!(nomes(&bolha), nomes(&linha), "{nome}");
+        }
+        a.terminou_pedido("ana");
+        s.telemetria.sair(&chave);
+    }
+}
+
+/// A TV ve operacao, tabela e cor -- nunca login nem IP (decisao do dono,
+/// 09/10). Quem administra (aqui: o token, sem usuario) ve os dois. Tirar o
+/// `if completo` do `bolha_do_aquario` faz a primeira metade cair.
+#[test]
+fn a_tv_ve_operacao_tabela_e_cor_e_nunca_login_nem_ip() {
+    let dir = dir_temp("tv");
+    let c = cadastro("leitor", r#"{"*":{"ler":true,"monitorar":true}}"#);
+    let s = servidor(&dir, c.clone());
+    let a = s
+        .telemetria
+        .entrar("dados:77", "dados", "198.51.100.77", 77, crate::agora_ms())
+        .unwrap();
+    a.comecou_pedido(
+        "varrer",
+        "login-secreto",
+        "loja",
+        "vendas",
+        crate::agora_ms(),
+    );
+    // Uma ociosa ao lado: conexao sem pedido nao e tarefa, e nao vira bolha.
+    s.telemetria
+        .entrar("dados:78", "dados", "198.51.100.78", 78, crate::agora_ms())
+        .unwrap();
+
+    let r = pede(&s, &c, r#""op":"aquario_retrato""#).unwrap();
+    let t = r.escrever();
+    assert_eq!(r.campo("completo"), Some(&Json::Bool(false)), "{t}");
+    let tarefas = r.campo("tarefas").and_then(Json::lista).unwrap();
+    assert_eq!(tarefas.len(), 1, "{t}");
+    for esperado in [
+        "\"op\":\"varrer\"",
+        "\"tabela\":\"vendas\"",
+        "\"cor\":\"verde\"",
+    ] {
+        assert!(t.contains(esperado), "{esperado}: {t}");
+    }
+    for proibido in ["login-secreto", "198.51.100.77", "\"usuario\"", "\"ip\""] {
+        assert!(!t.contains(proibido), "{proibido} vazou para a TV: {t}");
+    }
+
+    // O administrador logado, no mesmo servidor, com a mesma tarefa no ar.
+    let dir_adm = dir_temp("tv-adm");
+    let c_adm = cadastro("admin", "{}");
+    let s_adm = servidor(&dir_adm, c_adm.clone());
+    let b = s_adm
+        .telemetria
+        .entrar("dados:77", "dados", "198.51.100.77", 77, crate::agora_ms())
+        .unwrap();
+    b.comecou_pedido(
+        "varrer",
+        "login-secreto",
+        "loja",
+        "vendas",
+        crate::agora_ms(),
+    );
+    let r = pede(&s_adm, &c_adm, r#""op":"aquario_retrato""#).unwrap();
+    let t = r.escrever();
+    assert_eq!(r.campo("completo"), Some(&Json::Bool(true)), "{t}");
+    assert!(
+        t.contains("login-secreto") && t.contains("198.51.100.77"),
+        "{t}"
+    );
+}
+
+/// Os bits da A3 aparecem no retrato da TELEMETRIA tambem, e o `nivel` do
+/// painel e a projecao da mesma cor: o reentrante pinta `stress` la e
+/// `vermelho` aqui. Uma regra propria no `nivel` (a de antes da A5, que nao
+/// via bit nenhum) diria `normal`.
+#[test]
+fn o_painel_ve_os_bits_e_o_nivel_e_a_mesma_cor() {
+    let dir = dir_temp("painel-bits");
+    let s = servidor(&dir, Cadastro::default());
+    let a = s
+        .telemetria
+        .entrar("dados:90", "dados", "198.51.100.90", 90, crate::agora_ms())
+        .unwrap();
+    let _amarrada = crate::telemetria::amarrar(Some(Arc::clone(&a)));
+    a.comecou_pedido("inserir", "ana", "loja", "vendas", crate::agora_ms());
+    crate::telemetria::sinal(crate::aquario::Alarme::TravaReentrante, "teste");
+    let painel = s.telemetria.para_json(crate::agora_ms(), 1);
+    let bolha = painel
+        .campo("atividades")
+        .and_then(Json::lista)
+        .and_then(|l| l.iter().find(|x| x.texto_ou("id", "") == "dados:90"))
+        .unwrap()
+        .clone();
+    assert_eq!(
+        bolha.texto_ou("nivel", ""),
+        "stress",
+        "{}",
+        bolha.escrever()
+    );
+    assert_eq!(bolha.texto_ou("cor", ""), "vermelho");
+    assert_eq!(
+        bolha.texto_ou("motivo", ""),
+        "aquario.motivo.trava_reentrante"
+    );
+    assert!(bolha
+        .campo("alarmes")
+        .map(Json::escrever)
+        .unwrap_or_default()
+        .contains("trava_reentrante"));
 }

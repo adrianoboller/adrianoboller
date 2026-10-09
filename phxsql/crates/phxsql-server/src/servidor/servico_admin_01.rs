@@ -836,7 +836,7 @@ impl Servidor {
     /// Sem cadastro de usuarios, quem entrou pelo token de servico continua
     /// podendo -- e assim que toda operacao de administracao ja funciona, e
     /// apertar isso aqui tiraria um direito que ninguem pediu para tirar.
-    fn portao_da_telemetria(&self, sessao: &Sessao) -> Result<()> {
+    pub(super) fn portao_da_telemetria(&self, sessao: &Sessao) -> Result<()> {
         match &sessao.usuario {
             None => Ok(()),
             Some(u) if u.e_admin() => Ok(()),

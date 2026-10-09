@@ -241,15 +241,20 @@ impl Servidor {
         // TODO pedido. Uma chamada so; o portao da telemetria esta dentro do
         // `aquario_se_ligada`, antes de qualquer trabalho.
         if let Some(aquario) = self.telemetria.aquario_se_ligada() {
-            if let Some(desvio) = aquario.anotar(acesso) {
-                self.sinalizar_desvio(aquario, acesso, &desvio);
+            let habitual = aquario.anotar(acesso);
+            if let Some(desvio) = habitual.desvio() {
+                self.sinalizar_desvio(aquario, acesso, habitual, &desvio);
             }
             // A linha `estourou` do `aquario.log` (A6). Fora do
             // `Aquario::anotar` porque a falha e noticia de disco, e o
             // `evento_de_disco` e daqui -- o mesmo destino da falha do
             // `acessos.log` logo acima. O corte por duracao vem antes de
-            // qualquer trabalho la dentro.
-            self.no_aquario_log(aquario.log().tarefa_terminou(acesso));
+            // qualquer trabalho la dentro, inclusive antes da classificacao.
+            self.no_aquario_log(
+                aquario
+                    .log()
+                    .tarefa_terminou(acesso, || self.classe_do_fim(acesso, habitual)),
+            );
         }
     }
 

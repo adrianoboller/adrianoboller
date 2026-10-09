@@ -4866,3 +4866,27 @@ formato que a retomada lê de volta:
 No arranque, o servidor lê do `aquario.log` (e do rodízio) as linhas
 `contagem` das **duas** últimas horas — a corrente e a anterior, que pode ter
 caído sem fechar — e refaz a hora a partir delas.
+
+## 26. `aquario.log` — as linhas `estourou` e `mudou` (pedido 707, A6 + A5)
+
+JSON Lines ao lado do `acessos.log`, rodízio de 8 MiB × 8, pelo mesmo
+`LogAcessos::registrar_json`. Campo vazio não entra. **Nunca** `usuario` nem
+`ip`: a `Linha` não tem esses campos (decisão do dono, 09/10).
+
+```json
+{"quando":"2026-10-09 13:05:01,500","quando_ms":1791551101500,"evento":"estourou",
+ "op":"varrer","database":"loja","tabela":"vendas","ms":2500,"ok":true,
+ "cor":"amarelo","tamanho":"media","motivo":"aquario.motivo.integridade_recusada",
+ "grupo":"dado","alarmes":["integridade_recusada"]}
+```
+
+| campo | o que é |
+|---|---|
+| `estourou` | a tarefa que viveu ≥ 1 s terminou (fora as `OPS_DE_REPLICACAO`); `quando_ms` é o **fim** |
+| `mudou` | a base (A4) achou o pedido fora do habitual; leva `alarme` e `dados` (`z`, `n`, `p95_habitual_us`, `servico_us`) |
+| `cor` / `tamanho` / `motivo` / `grupo` | **desde a A5**: a classe que a `aquario::classificar` deu à tarefa **naquele instante** — a mesma função do retrato (`aquario_retrato`) e do `nivel` do painel. `motivo` é chave da fábrica; `grupo` só quando o motivo tem família |
+| `alarmes` | **desde a A5**: os alarmes de tarefa (A3) marcados, **pelos nomes** — nunca o número do bit |
+
+A cor vai **gravada**, não recalculada na leitura: a volta de cinco minutos
+(A13) mostra a bolha da cor que a tela mostrou. Linha anterior à A5 vem sem
+os cinco campos; o leitor trata ausência como «sem classe», nunca como verde.

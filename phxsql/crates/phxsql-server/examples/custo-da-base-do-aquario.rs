@@ -24,7 +24,7 @@ fn rodada(t: &Telemetria, acesso: &Acesso, n: u64) -> f64 {
     let mut alarmes = 0u64;
     for _ in 0..n {
         if let Some(aq) = black_box(t).aquario_se_ligada() {
-            alarmes += aq.anotar(black_box(acesso)).is_some() as u64;
+            alarmes += aq.anotar(black_box(acesso)).desvio().is_some() as u64;
         }
     }
     black_box(alarmes);

@@ -48,7 +48,7 @@ use phxsql_core::datahora::instante_iso;
 use phxsql_core::error::{PhxError, Result};
 use phxsql_core::json::Json;
 
-use super::Alarme;
+use super::{Alarme, Classe};
 use crate::acesso::{Acesso, LogAcessos};
 
 /// O nome do arquivo, ao lado do `acessos.log`.
@@ -115,10 +115,17 @@ impl Evento {
 /// # O que nao tem, de proposito
 ///
 /// Nao tem `usuario` nem `ip`: nao ha como esquecer de tira-los, porque nao
-/// ha onde po-los. E nao tem a decisao (cor, grupo, gravidade): a linha
-/// repete o VALOR -- o nome do alarme -- e quem le decide pelo
-/// [`Alarme::de_nome`], para que um log antigo nao conte a decisao velha
-/// depois que a regra mudar (§11.3).
+/// ha onde po-los. Do alarme, a linha repete o VALOR -- o nome -- e quem le
+/// a gravidade dele decide pelo [`Alarme::de_nome`] (§11.3).
+///
+/// # A cor vai, e sai da `classificar` (A5)
+///
+/// A cor de `estourou` e `mudou` e a que a [`super::classificar`] deu NAQUELE
+/// instante, a mesma funcao do retrato -- e nao uma regra do log. Ela vai
+/// gravada, e nao recalculada na leitura, porque a volta de cinco minutos
+/// (A13) tem de mostrar a bolha da cor que a tela MOSTROU; recalcular exigiria
+/// gravar todos os fatos da tarefa, e pintaria com a regra de hoje o que
+/// ontem tinha outra cor.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Linha {
     pub evento: Evento,
@@ -139,6 +146,10 @@ pub struct Linha {
     /// Os numeros do evento (o `z` e o `n` da base, a contagem do minuto).
     /// Interno: nenhum produtor poe texto do cliente aqui.
     pub dados: Option<Json>,
+    /// A classe que a [`super::classificar`] deu (A5).
+    pub classe: Option<Classe>,
+    /// Os bits de alarme da tarefa (A3), gravados pelos NOMES.
+    pub alarmes: u32,
 }
 
 impl Linha {
@@ -156,7 +167,16 @@ impl Linha {
             alarme: None,
             ocorrencia: None,
             dados: None,
+            classe: None,
+            alarmes: 0,
         }
+    }
+
+    /// Pinta a linha com a classe da tarefa e os alarmes dela.
+    pub fn com_classe(mut self, classe: Classe, alarmes: u32) -> Linha {
+        self.classe = Some(classe);
+        self.alarmes = alarmes;
+        self
     }
 
     /// A tarefa terminou. O instante e o FIM (`quando_ms` do `Acesso` e o
@@ -248,6 +268,12 @@ impl Linha {
         }
         if let Some(id) = self.ocorrencia {
             pares.push(("ocorrencia", Json::de_u64(id)));
+        }
+        if let Some(k) = &self.classe {
+            pares.extend(k.campos());
+        }
+        if self.alarmes != 0 {
+            pares.push(("alarmes", super::classe::nomes_dos_alarmes(self.alarmes)));
         }
         if let Some(d) = &self.dados {
             pares.push(("dados", d.clone()));
@@ -359,13 +385,23 @@ impl LogDoAquario {
     /// As `OPS_DE_REPLICACAO` ficam fora pelo mesmo motivo de ficarem fora da
     /// base (§11.1): o `replicar_aguardar` espera por desenho, e estouraria
     /// uma linha por rodada de cada replica, enterrando as tarefas de gente.
-    pub fn tarefa_terminou(&self, a: &Acesso) -> Result<()> {
+    ///
+    /// A cor chega por `classe`, que so roda DEPOIS do corte: a
+    /// classificacao le a pintura do servidor, e o pedido de 3 ms nao paga
+    /// isso. E quem a calcula e o servidor, pela [`super::classificar`] -- o
+    /// log nao tem regra de cor propria (A5).
+    pub fn tarefa_terminou(
+        &self,
+        a: &Acesso,
+        classe: impl FnOnce() -> (Classe, u32),
+    ) -> Result<()> {
         if a.duracao_ms < VIVEU_NO_AQUARIO_MS
             || crate::servidor::OPS_DE_REPLICACAO.contains(&a.op.as_str())
         {
             return Ok(());
         }
-        self.gravar(&Linha::estourou(a))
+        let (k, alarmes) = classe();
+        self.gravar(&Linha::estourou(a).com_classe(k, alarmes))
     }
 
     /// As contagens por minuto gravadas a partir de `desde_ms`, em ordem
@@ -595,6 +631,16 @@ mod testes {
     use super::*;
     use crate::apoio_teste::DirTemp;
 
+    /// A classe que o servidor daria a uma tarefa sem nada de especial --
+    /// estes testes sao do escritor, e a cor e da `classificar`.
+    fn verde() -> (Classe, u32) {
+        let f = super::super::Fatos::do_fim(0, 1_500, 1_500, super::super::base::Habitual::SemBase);
+        (
+            super::super::classificar(&f, &crate::config::Painel::default()),
+            0,
+        )
+    }
+
     fn lento(op: &str, quando_ms: i64, ms: u64) -> Acesso {
         Acesso {
             quando_ms,
@@ -630,7 +676,8 @@ mod testes {
     fn quebra_forjada_no_op_nao_quebra_a_linha() {
         let (d, log) = aberto("forjada");
         let op = "varrer\n{\"quando_ms\":1,\"evento\":\"morta\",\"op\":\"x\"}";
-        log.tarefa_terminou(&lento(op, 1_000_000, 2_000)).unwrap();
+        log.tarefa_terminou(&lento(op, 1_000_000, 2_000), verde)
+            .unwrap();
         let texto = std::fs::read_to_string(d.join(NOME_DO_ARQUIVO)).unwrap();
         assert_eq!(texto.lines().count(), 1, "a quebra virou linha: {texto}");
         let l = linhas_de(&log.consultar(&Json::Nulo).unwrap());
@@ -649,7 +696,8 @@ mod testes {
     #[test]
     fn a_linha_nunca_leva_login_nem_ip() {
         let (d, log) = aberto("sem-ip");
-        log.tarefa_terminou(&lento("varrer", 5_000, 1_500)).unwrap();
+        log.tarefa_terminou(&lento("varrer", 5_000, 1_500), verde)
+            .unwrap();
         let texto = std::fs::read_to_string(d.join(NOME_DO_ARQUIVO)).unwrap();
         for proibido in ["203.0.113.77", "login-secreto", "\"ip\"", "\"usuario\""] {
             assert!(!texto.contains(proibido), "{proibido} vazou: {texto}");
@@ -682,11 +730,11 @@ mod testes {
     #[test]
     fn so_estoura_quem_viveu_no_aquario() {
         let (_d, log) = aberto("viveu");
-        log.tarefa_terminou(&lento("inserir", 1, VIVEU_NO_AQUARIO_MS - 1))
+        log.tarefa_terminou(&lento("inserir", 1, VIVEU_NO_AQUARIO_MS - 1), verde)
             .unwrap();
-        log.tarefa_terminou(&lento("replicar_aguardar", 2, 30_000))
+        log.tarefa_terminou(&lento("replicar_aguardar", 2, 30_000), verde)
             .unwrap();
-        log.tarefa_terminou(&lento("inserir", 3, VIVEU_NO_AQUARIO_MS))
+        log.tarefa_terminou(&lento("inserir", 3, VIVEU_NO_AQUARIO_MS), verde)
             .unwrap();
         assert_eq!(log.gravadas(), 1);
     }
@@ -791,7 +839,8 @@ mod testes {
     #[test]
     fn fechado_diz_que_nao_ha_arquivo_e_nao_grava() {
         let log = LogDoAquario::default();
-        log.tarefa_terminou(&lento("varrer", 1, 5_000)).unwrap();
+        log.tarefa_terminou(&lento("varrer", 1, 5_000), verde)
+            .unwrap();
         assert_eq!(log.gravadas(), 0);
         let e = log.consultar(&Json::Nulo).unwrap_err();
         assert_eq!(e.nome(), "NAO_ENCONTRADO");
@@ -811,7 +860,7 @@ mod testes {
         let log = LogDoAquario::default();
         log.abrir("/dev/full").unwrap();
         let e = log
-            .tarefa_terminou(&lento("varrer", 1, 5_000))
+            .tarefa_terminou(&lento("varrer", 1, 5_000), verde)
             .expect_err("/dev/full aceitou a escrita");
         assert!(matches!(e, PhxError::Io(_)), "{e}");
         assert_eq!((log.gravadas(), log.falhas()), (0, 1));

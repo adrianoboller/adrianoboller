@@ -582,25 +582,131 @@ impl Atividade {
     /// para o campo `limiares` da resposta, que e o que a legenda escreve. Dois
     /// numeros para a mesma regra e como a tela acaba pintando o que o
     /// servidor nao concorda.
+    fn corrente_copiada(&self) -> Corrente {
+        self.dentro
+            .lock()
+            .map(|c| c.clone())
+            .unwrap_or_else(|e| e.into_inner().clone())
+    }
+
+    /// Os fatos desta tarefa viva e a classe que a
+    /// [`crate::aquario::classificar`] da a eles -- o UNICO caminho de uma
+    /// atividade ate a cor, para o painel (`nivel`) e para o aquario.
+    ///
+    /// `base` e a linha de base do aquario (A4): sem ela (os testes do painel)
+    /// a tarefa e julgada sem habitual, que e o limiar fixo de hoje.
+    fn classe_viva(
+        &self,
+        c: &Corrente,
+        stress_no_servidor: bool,
+        ha_fila: bool,
+        limiares: &crate::config::Painel,
+        base: Option<&crate::aquario::base::BaseDeConsultas>,
+        agora_ms: i64,
+    ) -> crate::aquario::Classe {
+        let trabalhando = self.trabalhando_ha_ms();
+        let habitual = match base {
+            Some(b) if !c.op.is_empty() => b.avaliar_viva(
+                &c.op,
+                &c.database,
+                &c.tabela,
+                trabalhando.saturating_mul(1_000),
+                agora_ms,
+            ),
+            _ => crate::aquario::base::Habitual::SemBase,
+        };
+        let fatos = crate::aquario::Fatos {
+            estado: Some(self.estado()),
+            alarmes: self.alarmes(),
+            servico_ms: trabalhando,
+            parede_ms: self.ha_ms(),
+            com_trava: self.com_trava.load(Ordering::Relaxed),
+            ha_fila,
+            servidor_em_stress: stress_no_servidor,
+            habitual,
+        };
+        crate::aquario::classificar(&fatos, limiares)
+    }
+
+    /// A bolha do aquario (A5): a TAREFA (`chave#serial`), com a classe e
+    /// o que quem so monitora pode ver. `completo` acrescenta login e IP,
+    /// so para quem passaria no portao da telemetria.
+    #[allow(clippy::too_many_arguments)]
+    fn bolha_do_aquario(
+        &self,
+        agora_ms: i64,
+        stress_no_servidor: bool,
+        ha_fila: bool,
+        limiares: &crate::config::Painel,
+        base: &crate::aquario::base::BaseDeConsultas,
+        completo: bool,
+    ) -> Json {
+        let c = self.corrente_copiada();
+        let classe = self.classe_viva(
+            &c,
+            stress_no_servidor,
+            ha_fila,
+            limiares,
+            Some(base),
+            agora_ms,
+        );
+        let serial = self.serial.load(Ordering::Relaxed);
+        let mut pares = vec![
+            ("tarefa", Json::texto_de(format!("{}#{serial}", self.chave))),
+            ("origem", Json::texto_de(self.origem)),
+            ("estado", Json::texto_de(self.estado().nome())),
+        ];
+        for (nome, valor) in [
+            ("op", &c.op),
+            ("database", &c.database),
+            ("tabela", &c.tabela),
+        ] {
+            if !valor.is_empty() {
+                pares.push((nome, Json::texto_de(valor)));
+            }
+        }
+        let ha = self.ha_ms();
+        let trabalhando = self.trabalhando_ha_ms();
+        pares.push(("ms", Json::de_u64(ha)));
+        pares.push(("servico_ms", Json::de_u64(trabalhando)));
+        pares.push(("espera_ms", Json::de_u64(ha.saturating_sub(trabalhando))));
+        pares.extend(classe.campos());
+        let alarmes = self.alarmes();
+        if alarmes != 0 {
+            pares.push((
+                "alarmes",
+                crate::aquario::classe::nomes_dos_alarmes(alarmes),
+            ));
+        }
+        if completo {
+            if !c.usuario.is_empty() {
+                pares.push(("usuario", Json::texto_de(&c.usuario)));
+            }
+            pares.push(("ip", Json::texto_de(&self.ip)));
+        }
+        Json::objeto(pares)
+    }
+
     pub fn para_json(
         &self,
         agora_ms: i64,
         stress_no_servidor: bool,
         ha_fila: bool,
         limiares: &crate::config::Painel,
+        base: Option<&crate::aquario::base::BaseDeConsultas>,
     ) -> Json {
-        let c = self
-            .dentro
-            .lock()
-            .map(|c| c.clone())
-            .unwrap_or_else(|e| e.into_inner().clone());
+        let c = self.corrente_copiada();
         let ha = self.ha_ms();
         let peso = self.peso_ms();
         let estado = self.estado();
         let cancelavel = self.cancelavel.load(Ordering::Relaxed);
-        let executando = !c.op.is_empty();
         // A cor sai do SERVIDOR, e nao da tela. A tela pinta o que este campo
         // diz; se a regra morasse la, mudar o limiar exigiria mudar os dois.
+        //
+        // E sai da `classificar` UNICA do aquario (pedido 707, A5): o `nivel`
+        // e a projecao da cor em quatro degraus (`Cor::nivel`), e nao uma
+        // segunda regra -- o painel e o aquario nunca discordam de quem esta
+        // vermelho. As licoes abaixo moram agora la, regra por regra.
         //
         // # O vermelho tem de apontar UMA atividade
         //
@@ -622,26 +728,14 @@ impl Atividade {
         // «Segurando todo mundo» exige a TRAVA na mao, e nao apenas estar
         // executando: quem nunca pediu a trava nao segura ninguem.
         let com_trava = self.com_trava.load(Ordering::Relaxed);
-        let segurando_todo_mundo =
-            stress_no_servidor && ha_fila && com_trava && estado == Estado::Executando;
         // O vermelho olha o tempo de TRABALHO, e nao o de parede. Uma conexao
         // parada ha meio minuto na fila tem `ha` enorme e nao esta fazendo
         // nada de errado -- ela e vitima. Pinta-la de vermelho junto com o
         // culpado foi o que deixou o painel inteiro vermelho na primeira
         // rodada, e cor que pinta todo mundo nao separa ninguem.
         let trabalhando = self.trabalhando_ha_ms();
-        let nivel = if estado == Estado::Encerrando {
-            "encerrando"
-        } else if estado == Estado::Executando
-            && (trabalhando >= limiares.stress_ms || segurando_todo_mundo)
-        {
-            "stress"
-        } else if executando && (ha >= limiares.alto_uso_ms || estado == Estado::Esperando) {
-            "alto"
-        } else {
-            "normal"
-        };
-        Json::objeto(vec![
+        let classe = self.classe_viva(&c, stress_no_servidor, ha_fila, limiares, base, agora_ms);
+        let mut pares = vec![
             ("id", Json::texto_de(&self.chave)),
             ("origem", Json::texto_de(self.origem)),
             (
@@ -697,7 +791,7 @@ impl Atividade {
             ("trabalhando_ms", Json::de_u64(trabalhando)),
             ("esperou_ms", Json::de_u64(ha.saturating_sub(trabalhando))),
             ("estado", Json::texto_de(estado.nome())),
-            ("nivel", Json::texto_de(nivel)),
+            ("nivel", Json::texto_de(classe.cor.nivel())),
             ("peso_ms", Json::de_u64(peso)),
             ("passos", Json::de_u64(self.passos.load(Ordering::Relaxed))),
             (
@@ -741,7 +835,15 @@ impl Atividade {
                     Estado::Ociosa => "o proximo pedido do cliente",
                 }),
             ),
-        ])
+        ];
+        // A classe inteira (cor, tamanho, motivo, grupo) e os alarmes da A3
+        // pelos nomes -- o mesmo par de campos que o aquario e o log escrevem.
+        pares.extend(classe.campos());
+        pares.push((
+            "alarmes",
+            crate::aquario::classe::nomes_dos_alarmes(self.alarmes()),
+        ));
+        Json::objeto(pares)
     }
 }
 
@@ -1606,6 +1708,64 @@ impl Telemetria {
         (!motivos.is_empty(), motivos.join("; "))
     }
 
+    /// O retrato do aquario (pedido 707, A5): as tarefas vivas, cada uma com
+    /// a classe da [`crate::aquario::classificar`] -- a mesma do `nivel` do
+    /// painel e das linhas do `aquario.log` --, e o sedimento do servidor.
+    ///
+    /// A conexao ociosa nao entra: a bolha do aquario e a TAREFA, e uma
+    /// conexao sem pedido nao tem tarefa nenhuma (§2.1).
+    ///
+    /// `completo` decide se vao login e IP: a TV (so `monitorar`) nunca os ve
+    /// (decisao do dono, 09/10). Login e IP NAO entram por um filtro depois de
+    /// montados -- sem `completo`, eles nunca chegam a ser escritos.
+    pub fn retrato_do_aquario(&self, agora_ms: i64, completo: bool) -> Json {
+        let (stress, _) = self.stress();
+        let atividades = self.atividades();
+        let ha_fila = atividades.iter().any(|a| a.estado() == Estado::Esperando);
+        let pintura = self.pintura();
+        let base = self.aquario.base();
+        let tarefas: Vec<Json> = atividades
+            .iter()
+            .filter(|a| a.estado() != Estado::Ociosa)
+            .map(|a| a.bolha_do_aquario(agora_ms, stress, ha_fila, &pintura, base, completo))
+            .collect();
+        let sedimento: Vec<Json> = crate::aquario::alarme::sedimento()
+            .into_iter()
+            .map(|p| {
+                Json::objeto(vec![
+                    ("alarme", Json::texto_de(p.alarme.nome())),
+                    ("motivo", Json::texto_de(p.alarme.chave())),
+                    ("cor", Json::texto_de(p.alarme.gravidade().nome())),
+                    ("grupo", Json::texto_de(p.alarme.grupo().nome())),
+                    ("visto_ms", Json::de_i64(p.visto_ms)),
+                    ("vezes", Json::de_u64(p.vezes)),
+                ])
+            })
+            .collect();
+        Json::objeto(vec![
+            ("ligada", Json::Bool(self.ligada())),
+            ("agora_ms", Json::de_i64(agora_ms)),
+            ("completo", Json::Bool(completo)),
+            (
+                "limiares",
+                Json::objeto(vec![
+                    ("alto_uso_ms", Json::de_u64(pintura.alto_uso_ms)),
+                    ("stress_ms", Json::de_u64(pintura.stress_ms)),
+                    (
+                        "tarefa_media_ms",
+                        Json::de_u64(crate::aquario::classe::TAREFA_MEDIA_MS),
+                    ),
+                    (
+                        "tarefa_grande_ms",
+                        Json::de_u64(crate::aquario::classe::TAREFA_GRANDE_MS),
+                    ),
+                ]),
+            ),
+            ("tarefas", Json::Lista(tarefas)),
+            ("sedimento", Json::Lista(sedimento)),
+        ])
+    }
+
     /// O retrato inteiro, pronto para a tela.
     pub fn para_json(&self, agora_ms: i64, max_amostras: usize) -> Json {
         let (stress, motivo_do_stress) = self.stress();
@@ -1725,7 +1885,15 @@ impl Telemetria {
                 Json::Lista(
                     atividades
                         .iter()
-                        .map(|a| a.para_json(agora_ms, stress, ha_fila, &pintura))
+                        .map(|a| {
+                            a.para_json(
+                                agora_ms,
+                                stress,
+                                ha_fila,
+                                &pintura,
+                                Some(self.aquario.base()),
+                            )
+                        })
                         .collect(),
                 ),
             ),
@@ -2461,18 +2629,27 @@ mod testes {
         vitima.comecou_pedido("varrer", "adm", "loja", "clientes", 0);
         vitima.esperando_trava();
 
-        let j = culpado.para_json(0, true, true, &de_fabrica()).escrever();
+        let j = culpado
+            .para_json(0, true, true, &de_fabrica(), None)
+            .escrever();
         assert!(
             j.contains("\"nivel\":\"stress\""),
             "o culpado nao ficou vermelho: {j}"
         );
-        let j = vitima.para_json(0, true, true, &de_fabrica()).escrever();
+        let j = vitima
+            .para_json(0, true, true, &de_fabrica(), None)
+            .escrever();
+        // Vitima nunca e vermelha. Desde a A5 (pedido 707, §2.4) esperar a
+        // trava so vira amarelo a partir do `alto_uso_ms`: a espera de 0 ms
+        // daqui e verde -- a tabela da `classificar` trava os dois degraus.
         assert!(
-            j.contains("\"nivel\":\"alto\""),
+            j.contains("\"nivel\":\"normal\"") && j.contains("\"cor\":\"verde\""),
             "quem espera na fila e vitima, e nao culpado: {j}"
         );
         // E sem fila, uma consulta longa sozinha nao incomoda ninguem.
-        let j = culpado.para_json(0, true, false, &de_fabrica()).escrever();
+        let j = culpado
+            .para_json(0, true, false, &de_fabrica(), None)
+            .escrever();
         assert!(
             !j.contains("\"nivel\":\"stress\""),
             "sem ninguem na fila, ela nao esta segurando nada: {j}"
@@ -2496,14 +2673,14 @@ mod testes {
         // com folga o limiar de 5 ms e ficam longe dos 2 s de fabrica.
         std::thread::sleep(std::time::Duration::from_millis(20));
 
-        let j = a.para_json(0, false, false, &de_fabrica()).escrever();
+        let j = a.para_json(0, false, false, &de_fabrica(), None).escrever();
         assert!(j.contains("\"nivel\":\"normal\""), "de fabrica: {j}");
 
         let apertado = Painel {
             alto_uso_ms: 5,
             ..Painel::default()
         };
-        let j = a.para_json(0, false, false, &apertado).escrever();
+        let j = a.para_json(0, false, false, &apertado, None).escrever();
         assert!(
             j.contains("\"nivel\":\"alto\""),
             "com o limiar do config: {j}"

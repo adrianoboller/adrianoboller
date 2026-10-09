@@ -33,11 +33,13 @@
 //! |---|---|---|
 //! | A3 | `aquario/alarme.rs` | `telemetria::sinal(Alarme, dados)`: o bit [`Alarme::bit`] na tarefa corrente, e o sedimento para [`Escopo::Servidor`] |
 //! | A4 | `aquario/base.rs` | em [`Aquario::anotar`]: a base Welford sobre `ln(µs)`; o desvio volta ao servidor |
+//! | A5 | `aquario/classe.rs` | a [`classificar`] unica: o retrato (`Telemetria::retrato_do_aquario` e o `nivel` do painel) e as linhas `estourou`/`mudou` do log pintam por ela |
 //! | A6 | `aquario/log.rs` | o `aquario.log` pelo [`crate::acesso::LogAcessos::registrar_json`], e o corpo de [`Aquario::consultar_log`] |
 //! | A8 | `aquario/contagem.rs` | em [`Aquario::anotar`]: o acumulador do minuto; o corpo de [`Aquario::contagens`] (feito) |
 
 pub mod alarme;
 pub mod base;
+pub mod classe;
 pub mod contagem;
 pub mod log;
 
@@ -47,6 +49,8 @@ use phxsql_core::error::Result;
 use phxsql_core::json::Json;
 
 use crate::acesso::Acesso;
+
+pub use classe::{classificar, Classe, Cor, Fatos, Tamanho};
 
 /// Quao grave e um alarme -- a cor que ele empresta a bolha.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -330,8 +334,9 @@ impl Aquario {
     /// O ponto unico onde o fim de todo pedido chega ao aquario. Chamado pelo
     /// `anotar` do servidor, o unico sumidouro por onde toda resposta passa.
     ///
-    /// Devolve o `fora_do_habitual` que a base achou, quando achou.
-    pub fn anotar(&self, acesso: &Acesso) -> Option<base::Desvio> {
+    /// Devolve o julgamento da base: o desvio quando houve, e se havia
+    /// habitual -- a [`classificar`] do pedido que termina precisa dos dois.
+    pub fn anotar(&self, acesso: &Acesso) -> base::Habitual {
         self.anotados.fetch_add(1, Ordering::Relaxed);
         self.contagem.somar(acesso);
         // O desvio volta ao `anotar` do servidor, que o entrega ao produtor

@@ -2299,6 +2299,14 @@ pub const OPERACOES: &[Operacao] = &[
         ferramenta_mcp: false,
     },
     Operacao {
+        nome: "aquario_retrato",
+        apelidos: &[],
+        resumo: "As tarefas vivas do aquário com a cor, o tamanho e o motivo de cada uma, e os alarmes do servidor. Login e IP só para quem administra.",
+        parametros: &[],
+        exemplo: r#"{"op":"aquario_retrato"}"#,
+        ferramenta_mcp: false,
+    },
+    Operacao {
         nome: "painel",
         apelidos: &[],
         resumo: "Os números do painel: bancos, tabelas e linhas que quem olha poderia abrir.",

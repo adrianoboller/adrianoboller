@@ -271,6 +271,69 @@ impl Linha {
     fn habitual(&self) -> Welford {
         Welford::unir(self.anterior, self.atual)
     }
+
+    /// O habitual como o [`Linha::girar`] o deixaria em `periodo`, SEM girar:
+    /// quem so le (o retrato da tarefa viva) nao pode mexer na janela de quem
+    /// soma.
+    fn habitual_em(&self, periodo: i64) -> Welford {
+        if periodo <= self.periodo {
+            self.habitual()
+        } else if periodo == self.periodo + 1 {
+            self.atual
+        } else {
+            Welford::default()
+        }
+    }
+}
+
+/// O julgamento UNICO de um tempo de servico contra um habitual -- o mesmo
+/// para o pedido que termina (que depois soma) e para a tarefa viva (que so
+/// le). Dois cortes aqui seriam duas respostas para «isto e anormal?», e a
+/// bolha viva mudaria de cor no instante em que estoura.
+fn julgar(habitual: Welford, servico_us: u64) -> Habitual {
+    if habitual.n < N_MINIMO {
+        return Habitual::Poucas { n: habitual.n };
+    }
+    if servico_us >= PISO_US {
+        let x = (servico_us.max(1) as f64).ln();
+        let z = (x - habitual.media) / habitual.desvio();
+        if z >= Z_MINIMO {
+            return Habitual::Fora(Desvio {
+                alarme: Alarme::ForaDoHabitual,
+                z,
+                n: habitual.n,
+                p95_habitual_us: p95(habitual),
+                servico_us,
+            });
+        }
+    }
+    Habitual::Dentro { n: habitual.n }
+}
+
+/// A chave de um pedido, ou `None` quando ele fica FORA da base por desenho.
+///
+/// Um lugar so para o pedido que termina e para a tarefa viva: a replicacao
+/// excluida de um e nao do outro pintaria o `replicar_aguardar` de anormal
+/// so enquanto ele esta vivo.
+fn chave_do_pedido<'a>(op: &'a str, database: &'a str, tabela: &'a str) -> Option<Chave<'a>> {
+    // A replica espera POR DESENHO: `replicar_aguardar` de 1 s e o habitual
+    // dele, e sem esta exclusao eram 14 dos 51 alarmes da A0.
+    if op.is_empty() || OPS_DE_REPLICACAO.contains(&op) {
+        return None;
+    }
+    // O `sql` precisa da DIGITAL (F1 do 495), que ainda nao existe: sem
+    // ela todo `sql` cairia numa chave so, e o `SELECT` de 300 ms legitimo
+    // alarmaria contra o habitual dos `SELECT` de 1 ms -- alarme falso na
+    // TV e pior que alarme nenhum. PONTO MARCADO: quando o `Acesso`
+    // trouxer a digital, a chave e `Chave::Digital(digital)`.
+    if op == "sql" {
+        return None;
+    }
+    Some(Chave::Op {
+        op,
+        database,
+        tabela,
+    })
 }
 
 /// O que a base achou de um pedido fora do habitual: o alarme e os numeros
@@ -285,6 +348,41 @@ pub struct Desvio {
     /// que o dono leu, ESTIMADO -- o corte e o z, nao este numero.
     pub p95_habitual_us: u64,
     pub servico_us: u64,
+}
+
+/// O que a base diz de um tempo de servico -- o «desvio» que a
+/// [`super::classificar`] (A5) recebe.
+///
+/// Mais que `Option<Desvio>` porque a classificacao precisa saber POR QUE
+/// nao houve desvio: sem habitual ainda (vale o limiar fixo de hoje, §2.4) e
+/// dentro do habitual (o limiar fixo ja nao manda) pintam diferente.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Habitual {
+    /// Fora da base por desenho: replicacao, `sql` sem digital, pedido sem
+    /// medida em µs, a coringa (cujo habitual e de ninguem).
+    SemBase,
+    /// Ainda sem habitual: menos de [`N_MINIMO`] amostras.
+    Poucas {
+        n: u64,
+    },
+    Dentro {
+        n: u64,
+    },
+    Fora(Desvio),
+}
+
+impl Habitual {
+    pub fn desvio(&self) -> Option<Desvio> {
+        match self {
+            Habitual::Fora(d) => Some(*d),
+            _ => None,
+        }
+    }
+
+    /// Ha habitual formado (com ou sem desvio)?
+    pub fn formado(&self) -> bool {
+        matches!(self, Habitual::Dentro { .. } | Habitual::Fora(_))
+    }
 }
 
 /// O que a tela le de uma chave.
@@ -306,7 +404,7 @@ struct Base {
 }
 
 impl Base {
-    fn observar(&mut self, chave: Chave<'_>, servico_us: u64, agora_ms: i64) -> Option<Desvio> {
+    fn observar(&mut self, chave: Chave<'_>, servico_us: u64, agora_ms: i64) -> Habitual {
         self.atualizacoes += 1;
         let periodo = agora_ms.div_euclid(METADE_MS);
         let h = chave.hash();
@@ -332,25 +430,32 @@ impl Base {
         // ele mesmo e julgado. Depois entra, inclusive o anormal -- o regra.py
         // da A0 mediu assim, e um habitual que mudou de verdade tem de poder
         // virar habitual.
-        let habitual = linha.habitual();
-        let mut desvio = None;
-        if pode_alarmar && habitual.n >= N_MINIMO && servico_us >= PISO_US {
-            let sd = habitual.desvio();
-            let z = (x - habitual.media) / sd;
-            if z >= Z_MINIMO {
-                linha.alarmes += 1;
-                desvio = Some(Desvio {
-                    alarme: Alarme::ForaDoHabitual,
-                    z,
-                    n: habitual.n,
-                    p95_habitual_us: p95(habitual),
-                    servico_us,
-                });
-            }
+        let julgado = if pode_alarmar {
+            julgar(linha.habitual(), servico_us)
+        } else {
+            Habitual::SemBase
+        };
+        if julgado.desvio().is_some() {
+            linha.alarmes += 1;
         }
         linha.atual.somar(x);
         linha.maximo_us = linha.maximo_us.max(servico_us);
-        desvio
+        julgado
+    }
+
+    /// A tarefa VIVA contra o habitual da chave dela, sem somar nada.
+    fn avaliar(&self, chave: Chave<'_>, servico_us: u64, agora_ms: i64) -> Habitual {
+        let periodo = agora_ms.div_euclid(METADE_MS);
+        match self
+            .linhas
+            .get(&chave.hash())
+            .filter(|l| l.identidade.as_ref().is_some_and(|i| i.e(chave)))
+        {
+            Some(l) => julgar(l.habitual_em(periodo), servico_us),
+            // Chave que nunca terminou um pedido: nenhum habitual ainda. (A
+            // que caiu na coringa tambem cai aqui -- e a coringa nunca alarma.)
+            None => Habitual::Poucas { n: 0 },
+        }
     }
 
     fn ler(&self, chave: Chave<'_>) -> Option<Leitura> {
@@ -382,35 +487,47 @@ pub struct BaseDeConsultas {
 impl BaseDeConsultas {
     /// O fim de um pedido. Chega aqui so pelo `Aquario::anotar`, que so se
     /// alcanca com a telemetria ligada.
-    pub fn anotar(&self, acesso: &Acesso) -> Option<Desvio> {
+    ///
+    /// Devolve o julgamento inteiro (A5): a classificacao do pedido que
+    /// termina precisa saber se havia habitual, e nao so se houve desvio.
+    pub fn anotar(&self, acesso: &Acesso) -> Habitual {
         // Sem medida em µs nao ha o que somar: recusa de porta, job (medido
         // em ms noutra thread) e linha antiga do log.
         if acesso.us == 0 {
-            return None;
+            return Habitual::SemBase;
         }
-        // A replica espera POR DESENHO: `replicar_aguardar` de 1 s e o
-        // habitual dele, e sem esta exclusao eram 14 dos 51 alarmes da A0.
-        if OPS_DE_REPLICACAO.contains(&acesso.op.as_str()) {
-            return None;
-        }
-        // O `sql` precisa da DIGITAL (F1 do 495), que ainda nao existe: sem
-        // ela todo `sql` cairia numa chave so, e o `SELECT` de 300 ms legitimo
-        // alarmaria contra o habitual dos `SELECT` de 1 ms -- alarme falso na
-        // TV e pior que alarme nenhum. PONTO MARCADO: quando o `Acesso`
-        // trouxer a digital, a chave e `Chave::Digital(digital)`.
-        if acesso.op == "sql" {
-            return None;
-        }
-        let servico_us = acesso.us.saturating_sub(acesso.espera_us);
-        let chave = Chave::Op {
-            op: &acesso.op,
-            database: &acesso.database,
-            tabela: &acesso.tabela,
+        let Some(chave) = chave_do_pedido(&acesso.op, &acesso.database, &acesso.tabela) else {
+            return Habitual::SemBase;
         };
-        self.observar(chave, servico_us, acesso.quando_ms)
+        let servico_us = acesso.us.saturating_sub(acesso.espera_us);
+        self.julgar_e_somar(chave, servico_us, acesso.quando_ms)
+    }
+
+    /// A tarefa VIVA contra o habitual da propria operacao e tabela, sem
+    /// somar (o retrato do aquario, A5). Mesmo julgamento e mesma exclusao do
+    /// [`BaseDeConsultas::anotar`].
+    pub fn avaliar_viva(
+        &self,
+        op: &str,
+        database: &str,
+        tabela: &str,
+        servico_us: u64,
+        agora_ms: i64,
+    ) -> Habitual {
+        let Some(chave) = chave_do_pedido(op, database, tabela) else {
+            return Habitual::SemBase;
+        };
+        match self.dentro.lock() {
+            Ok(b) => b.avaliar(chave, servico_us, agora_ms),
+            Err(veneno) => veneno.into_inner().avaliar(chave, servico_us, agora_ms),
+        }
     }
 
     pub fn observar(&self, chave: Chave<'_>, servico_us: u64, agora_ms: i64) -> Option<Desvio> {
+        self.julgar_e_somar(chave, servico_us, agora_ms).desvio()
+    }
+
+    fn julgar_e_somar(&self, chave: Chave<'_>, servico_us: u64, agora_ms: i64) -> Habitual {
         let mut base = match self.dentro.lock() {
             Ok(b) => b,
             Err(veneno) => veneno.into_inner(),
@@ -519,15 +636,18 @@ mod testes {
     fn a_vitima_da_fila_nao_vira_anormal() {
         let b = BaseDeConsultas::default();
         for _ in 0..30 {
-            assert_eq!(b.anotar(&acesso("inserir", 1_000, 0)), None);
+            assert_eq!(b.anotar(&acesso("inserir", 1_000, 0)).desvio(), None);
         }
         assert_eq!(
-            b.anotar(&acesso("inserir", 5_001_000, 5_000_000)),
+            b.anotar(&acesso("inserir", 5_001_000, 5_000_000)).desvio(),
             None,
             "a vitima da fila virou anormal"
         );
         // E a culpada, que gastou os 5 s de SERVICO, alarma.
-        assert!(b.anotar(&acesso("inserir", 5_000_000, 0)).is_some());
+        assert!(b
+            .anotar(&acesso("inserir", 5_000_000, 0))
+            .desvio()
+            .is_some());
     }
 
     #[test]
@@ -537,11 +657,15 @@ mod testes {
             for _ in 0..25 {
                 b.anotar(&acesso(op, 1_000, 0));
             }
-            assert_eq!(b.anotar(&acesso(op, 1_000_000, 0)), None, "{op}");
+            assert_eq!(
+                b.anotar(&acesso(op, 1_000_000, 0)),
+                Habitual::SemBase,
+                "{op}"
+            );
         }
         assert_eq!(b.atualizacoes(), 0);
         // Sem medida em µs, tambem nao.
-        assert_eq!(b.anotar(&acesso("inserir", 0, 0)), None);
+        assert_eq!(b.anotar(&acesso("inserir", 0, 0)), Habitual::SemBase);
         assert_eq!(b.atualizacoes(), 0);
     }
 

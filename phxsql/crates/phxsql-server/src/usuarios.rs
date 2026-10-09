@@ -406,7 +406,7 @@ impl Atividade {
             // duas tem campo "database", e por isso as duas conferem por
             // dentro (`portao_do_aquario`) na regra do servidor, e nao na base
             // que o pedido inventasse.
-            "aquario_log" | "aquario_contagens" => Atividade::Monitorar,
+            "aquario_log" | "aquario_contagens" | "aquario_retrato" => Atividade::Monitorar,
             // `config_gravar` esta aqui declarado, e nao so caindo no `_`:
             // a operacao que reescreve o config.json e a ultima que deveria
             // depender do padrao para negar. A op ainda confere por dentro.

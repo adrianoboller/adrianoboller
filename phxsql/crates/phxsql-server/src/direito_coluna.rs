@@ -342,6 +342,7 @@ pub const CLASSES: &[(&str, PorColuna)] = &[
     // e numero por categoria. Nao ha linha em nenhum dos dois.
     ("aquario_log", PorColuna::Nenhum),
     ("aquario_contagens", PorColuna::Nenhum),
+    ("aquario_retrato", PorColuna::Nenhum),
     ("painel", PorColuna::Nenhum),
     // A saude do disco nao le linha nenhuma: e o canario e os contadores.
     ("saude_disco", PorColuna::Nenhum),

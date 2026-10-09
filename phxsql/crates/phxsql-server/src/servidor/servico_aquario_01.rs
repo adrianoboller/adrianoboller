@@ -46,6 +46,65 @@ impl Servidor {
         self.telemetria.aquario().contagens(p)
     }
 
+    /// `aquario_retrato`: as tarefas vivas com a cor e o motivo, e o
+    /// sedimento do servidor (A5).
+    ///
+    /// # Por que uma op do aquario, e nao `telemetria` com `vista`
+    ///
+    /// O desenho (§6) pedia `telemetria` com `vista: "aquario"`. Mas a
+    /// `telemetria` e `Administrar` no `da_operacao`, e o portao geral olha so
+    /// o NOME da op: o usuario da TV, que tem so `monitorar`, seria barrado
+    /// antes de a `vista` ser lida -- e ensinar o portao geral a ler um campo
+    /// do pedido e reabrir o furo do campo que ele le. O motor continua um so:
+    /// o retrato e o `Telemetria::retrato_do_aquario`, que pinta pela mesma
+    /// `classe_viva` do painel.
+    ///
+    /// # O que cada um ve
+    ///
+    /// Quem so monitora (a TV) ve operacao, tabela, cor e tempo -- nunca login
+    /// nem IP (decisao do dono, 09/10, LGPD). Quem passaria no portao da
+    /// telemetria -- administrador, ou o token de servico sem cadastro -- ja
+    /// ve login e IP la, e ve aqui tambem: a pergunta «quem ve o login?" e a
+    /// MESMA, e por isso e o mesmo portao que a responde.
+    pub(super) fn op_aquario_retrato(&self, _p: &Json, sessao: &Sessao) -> Result<Json> {
+        self.portao_do_aquario(sessao)?;
+        let completo = self.portao_da_telemetria(sessao).is_ok();
+        Ok(self
+            .telemetria
+            .retrato_do_aquario(crate::agora_ms(), completo))
+    }
+
+    /// A classe de um pedido que TERMINOU, para as linhas `estourou` e
+    /// `mudou` do `aquario.log` -- pela [`crate::aquario::classificar`], a
+    /// mesma do retrato. Devolve tambem os alarmes que a pintaram.
+    ///
+    /// Os bits vem da atividade amarrada (o pedido corrente desta thread); o
+    /// `fora_do_habitual` vem tambem do julgamento, porque o job sem atividade
+    /// nao tem onde guardar o bit e o fato aconteceu do mesmo jeito.
+    pub(super) fn classe_do_fim(
+        &self,
+        acesso: &Acesso,
+        habitual: crate::aquario::base::Habitual,
+    ) -> (crate::aquario::Classe, u32) {
+        let mut alarmes = crate::telemetria::corrente()
+            .map(|a| a.alarmes())
+            .unwrap_or(0);
+        if let Some(d) = habitual.desvio() {
+            alarmes |= d.alarme.bit();
+        }
+        // Com o `us`, o servico e o de verdade (sem a fila); sem ele (job,
+        // recusa de porta), a duracao inteira e o que ha.
+        let servico_ms = match acesso.us {
+            0 => acesso.duracao_ms,
+            us => us.saturating_sub(acesso.espera_us) / 1_000,
+        };
+        let fatos = crate::aquario::Fatos::do_fim(alarmes, servico_ms, acesso.duracao_ms, habitual);
+        (
+            crate::aquario::classificar(&fatos, &self.telemetria.pintura()),
+            alarmes,
+        )
+    }
+
     /// O desfecho que a contagem do aquario le (A8), calculado por quem tem a
     /// resposta na mao -- e so com a telemetria ligada: o portao vem antes de
     /// olhar a resposta, e desligada isto custa uma carga atomica.
@@ -121,20 +180,26 @@ impl Servidor {
     /// Sem atividade amarrada (job, backup agendado) nao ha tarefa onde por o
     /// bit, mas o fato aconteceu: a linha `mudou` sai do mesmo jeito, com a
     /// operacao e a tabela, para a TV que abre depois achar o pedido lento.
+    ///
+    /// A cor da linha sai da [`crate::aquario::classificar`], pela mesma
+    /// [`Servidor::classe_do_fim`] do `estourou` (A5).
     pub(super) fn sinalizar_desvio(
         &self,
         aquario: &crate::aquario::Aquario,
         acesso: &Acesso,
+        habitual: crate::aquario::base::Habitual,
         desvio: &crate::aquario::base::Desvio,
     ) {
         if let Some(atividade) = crate::telemetria::corrente() {
             crate::aquario::alarme::sinal_em(&atividade, desvio.alarme, &acesso.op);
         }
+        let (classe, alarmes) = self.classe_do_fim(acesso, habitual);
         let mut linha = crate::aquario::log::Linha::mudou(
             desvio.alarme,
             None,
             acesso.quando_ms.saturating_add(acesso.duracao_ms as i64),
-        );
+        )
+        .com_classe(classe, alarmes);
         linha.op = acesso.op.clone();
         linha.database = acesso.database.clone();
         linha.tabela = acesso.tabela.clone();
