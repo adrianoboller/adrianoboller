@@ -1,5 +1,7 @@
 # Proteção — pedidos 765, 766 e 767: desenho do papel J
 
+> **PRECISÃO DO DONO, 09/10/2026:** «Não é a senha do usuário, é uma **segunda senha**.» Na P14, a senha de execução é uma **credencial própria**: cadastro à parte, PBKDF2 e sal próprios, recusada se igual à de login, troca e bloqueio por tentativas próprios. Ter a sessão ou a senha de login **não basta**. Substitui a «reautenticação pelo desafio-resposta do login» proposta abaixo; o token de 5 min, uso único e escopo (op, base, tabela, linhas do plano) continua — ele é emitido **por essa segunda senha**.
+
 > **PRECISÃO DO DONO, 09/10/2026:** «Sem a senha de execução esses comandos perigosos não são executados.» O token de passo acima (P14) é **obrigatório em qualquer modo** para todo comando da lista de perigo: sem ele, **recusa**. O modo «observar» não se aplica a esses comandos; vale só para os sinais que não são comando (perfil habitual, IP novo). O job de manutenção tem senha de execução própria, com escopo e prazo (P12); a réplica fica isenta (P5).
 
 > **DECISÃO DO DONO, 09/10/2026, depois deste desenho:** a promessa ao cliente é **«protege e bloqueia»**, e o modo **proteger é o padrão de fábrica** das linhas de `phxsys.protecao`. É exceção explícita à pétrea «guarda nova entra pedida, não imposta», só para 765/766/767. Onde este documento diz «observar de fábrica», vale **proteger de fábrica**; a consequência (job e cliente que hoje rodam DROP/TRUNCATE/alteração em massa passam a precisar do token de passo acima — P12/P14) é aceita pelo dono.
