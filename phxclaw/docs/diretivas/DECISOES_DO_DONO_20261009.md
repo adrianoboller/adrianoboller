@@ -57,3 +57,12 @@ Decisão: **a interface continua em JS puro**; Leptos, Yew, Dioxus e React não 
 «Rust sempre que possível» vale para o resto do produto; na tela, velocidade medida manda. O
 `'wasm-unsafe-eval'` não entra na CSP. O endurecimento segue pelo que a bancada achou: os
 `innerHTML` (9 linhas no nosso JS, 73 no `phx-grid`) são o ponto de XSS a fechar.
+
+## Laya (09/10/2026, noite)
+
+Empate real levado ao dono: os pesos do `laya-multilingual` (678 MB) cabem na letra de «modelos
+pequenos, até centenas de MB», mas o servidor usa 1,8–2,4 GB de RAM e o runtime Python 1,2 GB.
+Medido: 16/20 acertos em português (Wilson 95%: 0,58–0,92), p50 246 ms em CPU.
+
+Decisão do dono, seguindo a recomendação: **o adaptador fica no código e DESLIGADO por padrão**
+até ser medido na VM do dono; ligar depende de nova medição lá.
