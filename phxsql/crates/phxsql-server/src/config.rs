@@ -5731,7 +5731,19 @@ impl Config {
             cluster,
             cadastro: Cadastro::de_json(j)?,
             politica: match j.campo("seguranca") {
-                Some(seg) => Politica::de_json(seg),
+                Some(seg) => {
+                    let p = Politica::de_json(seg);
+                    // O firewall LIGADO confere os programas no arranque
+                    // (pedido 766, P11), pela mesma conferencia do gancho: o
+                    // erro certo e o lido ao subir, e nao o do primeiro
+                    // bloqueio, as tres da manha.
+                    if let Some(fw) = &p.firewall {
+                        fw.validar().map_err(|e| {
+                            PhxError::Esquema(format!("o firewall ligado nao sobe assim: {e}"))
+                        })?;
+                    }
+                    p
+                }
                 None => Politica::default(),
             },
             blacklist: PathBuf::from(
@@ -6519,6 +6531,8 @@ impl Config {
                         "observar_injecao_sql",
                         Json::Bool(self.politica.observar_injecao_sql),
                     ),
+                    ("poupar_loopback", Json::Bool(self.politica.poupar_loopback)),
+                    ("escalonar", Json::Bool(self.politica.escalonar)),
                 ]),
             ),
             (
@@ -8845,7 +8859,7 @@ mod tests {
             "bloqueio_minutos":120,
             "whitelist":["127.0.0.1","192.168.50.0/24"],
             "blacklist":"bl.json",
-            "firewall":{"ligado":true,"bloquear":["/sbin/iptables","-s","{ip}"]}
+            "firewall":{"ligado":true,"bloquear":["/bin/true","-s","{ip}"]}
           }
         }"#;
         let c = Config::de_json(&Json::analisar(txt).unwrap()).unwrap();

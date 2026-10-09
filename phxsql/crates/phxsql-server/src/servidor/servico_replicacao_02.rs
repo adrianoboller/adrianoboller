@@ -141,6 +141,12 @@ impl Servidor {
         if self.fio_aceita_credencial(sessao) {
             return Ok(());
         }
+        // O alarme (pedido 779) AQUI, no ponto unico da recusa: o login local
+        // e o remoto pela web passam os dois por esta funcao. O `dados` e so
+        // um texto FIXO -- nada do pedido entra no alarme, nem redigido: o
+        // fato e «chegou senha por fio em claro», e nao qual, nem em que
+        // campo alguem a escondeu.
+        crate::telemetria::sinal(crate::aquario::Alarme::SenhaEmClaro, "login");
         Err(PhxError::Autorizacao(
             self.msg("erro.senha_em_claro_pela_rede", &[]),
         ))

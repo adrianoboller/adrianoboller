@@ -349,6 +349,10 @@ fn subir_com_politica(base: &std::path::Path, ajustar: impl FnOnce(&mut Config))
     // passaria a medir o portao errado.
     c.cifra_fio.exigir = false;
     c.web.ligado = false;
+    // O SEGUNDO ESCAPE ESCRITO: todo soquete daqui chega de 127.0.0.1, e o
+    // loopback nasce poupado (pedido 766, P9). O que esta bateria mede e o
+    // bloqueio pela porta -- sem esta linha ela passaria a medir a guarda.
+    c.politica.poupar_loopback = false;
     ajustar(&mut c);
     let s = Servidor::novo(c).unwrap();
     let copia = Arc::clone(&s);

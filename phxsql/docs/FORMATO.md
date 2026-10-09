@@ -4680,7 +4680,7 @@ decide o que o `.phz` custaria:
 | arquivo | onde lê | o que um arquivo ilegível vira |
 |---|---|---|
 | `dblink.json` | `dblink/mod.rs`, `Registro::abrir_ou_trancar` | desde o pedido 466, cadastro **TRANCADO**: o motor sobe, toda operação do DbLink recusa nomeando o arquivo, e nada o regrava. O binário anterior o lia VAZIO, e a primeira ligação salva regravava por cima das outras. E a senha e o token de fora já vão selados com chave **externa** (§19), cifra de verdade |
-| `blacklist.json` | `blacklist.rs:494-497` | nenhum bloqueio e nenhuma whitelist; a gravação seguinte perde os dois |
+| `blacklist.json` | `Blacklist::abrir` | nenhum bloqueio, nenhuma whitelist e nenhum histórico de reincidência (§29); a gravação seguinte perde os três |
 | `jobs.json` | `jobs.rs`, `Registro::abrir_ou_trancar` | desde o irmão do pedido 466, cadastro **TRANCADO**: o motor sobe sem relógio de jobs, as operações de job recusam nomeando o arquivo, e nada o regrava. O binário anterior não subia com o arquivo torto e lia VAZIO o que não se lia |
 | `replicacao-posicoes.json` | `bidirecional::ler_posicoes` | posições do zero: custa releitura, não dado. Desde o pedido 535 grava pela troca durável (`gravar_privado`) e **só depois** do `fsync` do dado que ela conta |
 | `replicacao-numeros.json` | `bidirecional::ler_numeros` | desde o pedido 329 (01/10/2026), o dono de cada número de origem já visto (`{"7":"caixa-07"}`); ilegível = registro vazio, e a conferência de colisão recomeça do que se vê dali em diante — sem perder dado, mas sem lembrar quem já teve cada número. Grava pela troca durável, só quando aparece um par novo |
@@ -5001,3 +5001,61 @@ até 5.000, de trás para a frente pelo rodízio) mais o filtro `alarme` — um 
 ou uma lista; nome desconhecido é erro. A resposta traz `alarmes` (nome,
 gravidade e grupo de todos, na ordem do `Alarme::TODOS`). Nada se redige na
 leitura: a linha já nasceu redigida.
+
+## 28. `ips-vistos.jsonl` — quem entrou de onde (pedido 765, P6)
+
+JSON Lines ao lado do `acessos.log`, **0600** pelo motor da permissão do banco
+(diz quem entrou de onde, que é dado de acesso como o próprio log). Uma linha
+por **fato**, acrescentada: a chave nova, o último login de uma chave que andou
+mais de 1 h, ou a chave que passou a ser de administrador. Leitor e escritor:
+`crates/phxsql-server/src/ips_vistos.rs`.
+
+```json
+{"usuario":"ana","database":"","ip":"203.0.113.5","primeiro_ms":1791551101500,"ultimo_ms":1791554701500,"admin":false}
+```
+
+| campo | o que é |
+|---|---|
+| `usuario` / `database` / `ip` | a chave. O `ip` é **canônico** (`::ffff:a.b.c.d` vira `a.b.c.d`); linha com `ip` que não é endereço é ignorada |
+| `primeiro_ms` | o primeiro login com sucesso da chave — e o último que a fez «nova» (90 dias sem login a renovam) |
+| `ultimo_ms` | o último login com sucesso, com folga de 1 h (o passo de regravação) |
+| `admin` | o login tinha `administrar` na regra do servidor. Uma vez `true`, fica |
+
+**No arranque** as linhas se dobram (o menor `primeiro_ms`, o maior
+`ultimo_ms`, o `admin` que já foi `true`) e, quando o arquivo tem mais que
+`3 × chaves + 1.000` linhas, ele se **reescreve dobrado** pela troca durável
+(`gravar_duravel`). Linha torta (a última, cortada numa queda) é ignorada.
+
+**Arquivo ausente** é a primeira vez: a memória nasce dos logins com sucesso
+do `acessos.log` (`op = "login"`, `ok`, com usuário) e o arquivo é gravado
+inteiro — a semente não roda de novo. Arquivo que não se lê por E/S: o servidor
+**avisa e sobe** com a memória vazia e sem arquivo.
+
+**Teto:** 50.000 chaves. Cheio, sai o que passou dos 90 dias; se ainda não
+couber, a chave nova **não entra** (o login segue acusado como novo) e conta no
+`coringa`, só em memória.
+
+Quem lê: só o servidor — o `IpNovo` (amarelo, grupo `seguranca`) e as guardas
+`administrador` (login de admin nas últimas 24 h) e `compartilhado` (≥ 2
+usuários distintos em 30 dias) do bloqueio (§29). Nenhuma op devolve o arquivo.
+
+## 29. `blacklist.json` — o campo `historico` (pedido 766, P10)
+
+O `blacklist.json` (`blacklist.rs`) ganhou um terceiro campo ao lado de
+`whitelist` e `bloqueios`: os instantes dos bloqueios de cada IP nos últimos
+30 dias, que dão o `n` do escalonamento (`bloqueio_minutos × 2^n`, `n ≤ 20`,
+teto de 7 dias que nunca encurta um `bloqueio_minutos` maior).
+
+```json
+{"whitelist":[],"bloqueios":[…],
+ "historico":{"203.0.113.9":[1791551101500,1791554701500]}}
+```
+
+- A chave é o IP **canônico**; o valor, a lista de `desde_ms` dos bloqueios,
+  no máximo **21** por IP (mais que isso não muda o prazo) e só os de 30 dias.
+- No máximo **50.000** IPs; passou, sai o IP cujo último bloqueio é o mais velho.
+- **Sobrevive ao `desbloquear`**: soltar é perdoar o bloqueio, não a reincidência.
+- Arquivo de antes do 766 (sem o campo) lê como histórico vazio: todo IP
+  começa do zero, que é o comportamento de antes. O binário anterior, lendo um
+  arquivo novo, **ignora** o campo e o **perde** na gravação seguinte — o
+  escalonamento recomeça do zero, sem perder bloqueio nem whitelist.

@@ -231,6 +231,24 @@ CATALOGO = [
         "teto": "uma por origem em `replicacao.origens` (lista fixa do config)",
     },
     {
+        "arquivo": "crates/phxsql-server/src/servidor/servico_nucleo_01.rs",
+        "agulha": '"reconciliar-firewall"',
+        "nome": "reconciliar-firewall",
+        "teto": "1 (sobe uma vez no arranque, so com `seguranca.firewall` "
+                "ligado e com o comando `listar`; o portao e o `if` antes do "
+                "`subir`). Vive o tempo dos comandos, cada um com o prazo do "
+                "firewall (teto 120 s). Pedido 766, P11.",
+    },
+    {
+        "arquivo": "crates/phxsql-server/src/gancho.rs",
+        "agulha": '.name("saida-do-filho".into())',
+        "nome": "saida-do-filho",
+        "teto": "uma por execucao que PEDE saida (`teto_da_saida` > 0) -- hoje "
+                "so o `listar` do firewall, uma vez no arranque. Vive ate o "
+                "filho fechar o stdout; quem a criou espera no maximo o prazo "
+                "do programa e segue. Pedido 766, P11.",
+    },
+    {
         "arquivo": "crates/phxsql-server/src/servidor/servico_backup_01.rs",
         "agulha": '"backup-agendado"',
         "nome": "backup-agendado",

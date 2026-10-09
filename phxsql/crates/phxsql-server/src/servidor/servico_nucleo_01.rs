@@ -247,6 +247,27 @@ impl Servidor {
         // sem girar, como sempre.
         log.definir_rodizio(config.acessos.teto_do_arquivo(), config.acessos.arquivos);
         let lista_negra = Blacklist::abrir(&config.blacklist)?;
+        // A memoria de IPs (pedido 765, P6), ao lado do `acessos.log`. A
+        // semente le o `acessos.log` so no arranque em que ela ainda nao
+        // existe. Falhar AVISA e sobe com a memoria vazia e sem arquivo: ela
+        // e aviso e guarda, e um banco que nao sobe por causa dela trocaria
+        // o dado pelo aviso.
+        let ips_vistos = {
+            let caminho = config
+                .log_acessos
+                .with_file_name(crate::ips_vistos::NOME_DO_ARQUIVO);
+            let do_log = config.log_acessos.clone();
+            crate::ips_vistos::IpsVistos::abrir(&caminho, || {
+                LogAcessos::ler(&do_log).unwrap_or_default()
+            })
+            .unwrap_or_else(|e| {
+                eprintln!(
+                    "AVISO: a memoria de IPs ({}) nao abriu: {e}",
+                    caminho.display()
+                );
+                crate::ips_vistos::IpsVistos::default()
+            })
+        };
         // Com a chave mestra do cadastro (pedido 372). A chave que falta, ou
         // a errada, NAO recusa aqui: tranca so as ligacoes cifradas, e o aviso
         // ja saiu pela lista do `Config::ler`. E o arquivo torto, o formato
@@ -386,6 +407,7 @@ impl Servidor {
             reparos_da_trava: AtomicU64::new(0),
             log: Mutex::new(log),
             lista_negra: Mutex::new(lista_negra),
+            ips_vistos: Mutex::new(ips_vistos),
             sessoes: Mutex::new(http::Sessoes::default()),
             residentes: Mutex::new(HashMap::new()),
             remotos: Mutex::new(HashMap::new()),
@@ -570,6 +592,32 @@ impl Servidor {
         // AQUI, antes de a porta abrir -- o irmao do `recuperar` la de cima,
         // que precisa do servidor de pe (o mapa de toques e dele).
         servidor.completar_marcas_do_bidi();
+        // Pedido 766, P11: o firewall do SO reconciliado com a lista -- o
+        // bloqueio que o reboot tirou do conjunto volta com o prazo que
+        // falta, e a regra que ficou de um processo morto sai. Numa thread
+        // propria e so com o `listar` configurado: os comandos tem prazo, e
+        // a porta nao espera por eles (o servidor ja barra pela lista).
+        if servidor
+            .config
+            .politica
+            .firewall
+            .as_ref()
+            .is_some_and(|f| f.ligado && !f.listar.is_empty())
+        {
+            let s = Arc::clone(&servidor);
+            servidor.telemetria.subir(
+                "reconciliar-firewall",
+                "reconcilia UMA vez o firewall do SO com a lista de bloqueio, no \
+                 arranque, e sai; em thread propria porque cada comando tem o \
+                 prazo do firewall e a porta nao espera por eles",
+                "servico",
+                crate::agora_ms(),
+                move |fio| {
+                    fio.fazendo("reconciliando o firewall do SO com a lista");
+                    let _ = s.reconciliar_o_firewall();
+                },
+            );
+        }
         // Quem configurou "idioma" pediu o recurso: a tabela de mensagens e
         // semeada no arranque se ainda nao existe. Sem o campo, nada e criado
         // -- guarda nova entra pedida, nao imposta.

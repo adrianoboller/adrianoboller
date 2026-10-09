@@ -4424,9 +4424,27 @@ telefone, supervisor e o poder sobre cada base. A SENHA E GUARDADA COMO HASH.
     inclusive um bloqueio ja gravado antes de a regra entrar. Nao da poder
     nenhum: o comando proibido continua recusado, so o IP fica livre.
 
-    127.0.0.1 NAO tem excecao implicita -- ponha na whitelist se quiser uma.
-    Quem administra a maquina nunca fica trancado de verdade: o
-    phxsqld --desbloquear mexe no arquivo sem passar pela porta.
+    NAO SE TRANCAR (pedido 766). No limite de tentativas, quatro guardas
+    poupam o IP -- a operacao continua recusada e a tentativa continua
+    contada, so o IP nao vai para a lista:
+
+        whitelist       a fixa e a da tela
+        loopback        127.0.0.0/8 e ::1 ("poupar_loopback", padrao true)
+        administrador   um login com administrar deste IP em 24 h
+        compartilhado   2 usuarios distintos deste IP em 30 dias
+
+    A senha ou o token errado no limite vira a ocorrencia forca_bruta,
+    bloqueando ou poupado. "poupar_loopback": false devolve o comportamento
+    de antes (o loopback bloqueia como qualquer IP).
+
+    O PRAZO ESCALONA: cada bloqueio do mesmo IP em 30 dias dobra o seguinte
+    -- 60, 120, 240... ate 7 dias ("escalonar", padrao true). A conta mora
+    no blacklist.json e sobrevive ao reinicio e ao desbloquear.
+
+    IP NOVO: o primeiro login com sucesso de (usuario, base, IP) em 90 dias
+    vira a ocorrencia amarela ip_novo. Nunca recusa login. A memoria e o
+    ips-vistos.jsonl, ao lado do acessos.log, semeada do acessos.log no
+    primeiro arranque.
 
 15.3 A lista de bloqueio
 
@@ -4466,8 +4484,17 @@ telefone, supervisor e o poder sobre cada base. A SENHA E GUARDADA COMO HASH.
           "ligado": false,
           "bloquear":    ["/usr/sbin/iptables","-I","INPUT","-s","{ip}","-j","DROP"],
           "desbloquear": ["/usr/sbin/iptables","-D","INPUT","-s","{ip}","-j","DROP"],
+          "listar":      [],
           "timeout_s": 10
         }
+
+    Marcadores: {ip} (o endereco REESCRITO na forma canonica, nunca o texto
+    que chegou), {familia} (4 ou 6) e {segundos} (o prazo que falta; 0 no
+    permanente). Ligado, o programa de cada comando tem de ser caminho
+    ABSOLUTO, conferido no arranque como o do gancho. Com "listar", o
+    arranque reconcilia: o bloqueio ativo que sumiu do SO volta com o prazo
+    que falta, e a regra sem bloqueio sai. Exemplo com nftables (conjunto
+    com prazo no kernel) em docs/SEGURANCA.md, secao 5.
 
     O BLOQUEIO NUNCA DEPENDE DISTO. Um IP na lista e recusado dentro do
     servidor, sem firewall e sem root. A regra e um extra.

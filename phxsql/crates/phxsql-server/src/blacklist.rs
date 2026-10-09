@@ -186,6 +186,99 @@ pub struct Politica {
     /// E o portao do gancho: desligado, o pedido paga a leitura deste `bool`
     /// e nada mais -- nem a classificacao, nem o estado da thread.
     pub observar_injecao_sql: bool,
+    /// O loopback nunca entra na lista (pedido 766, P9).
+    ///
+    /// Nasce LIGADO, e o caso que o motivou foi medido em 09/10/2026: cinco
+    /// logins com token errado vindos de `127.0.0.1` bloquearam o proprio
+    /// loopback por 60 minutos -- a tela, a TV e o `phxsqld --desbloquear`
+    /// que o operador rodaria na mesma maquina. E a convergencia de quem ja
+    /// apanhou disso: o MySQL nao poe o loopback no *host cache* do
+    /// `max_connect_errors`, e o fail2ban nasce com `ignoreself`. A tentativa
+    /// continua contando, e a forca bruta continua virando ocorrencia; o que
+    /// some e so a porta trancada para quem esta na propria maquina.
+    ///
+    /// Desligar (`"poupar_loopback": false`) e o comportamento de antes, e e
+    /// o que os testes de soquete usam para provar o bloqueio -- todo teste de
+    /// soquete chega de `127.0.0.1`.
+    pub poupar_loopback: bool,
+    /// Escalonar o prazo do bloqueio pela reincidencia (pedido 766, P10):
+    /// `bloqueio_minutos x 2^n`, com `n` os bloqueios do IP nos ultimos 30
+    /// dias, `n <= 20` como o `bantime.increment` do fail2ban, e teto de 7
+    /// dias. Nasce LIGADO pela decisao do dono de 09/10/2026 (765/766: o
+    /// padrao de fabrica e proteger); desligado, todo bloqueio dura
+    /// `bloqueio_minutos`, como antes.
+    pub escalonar: bool,
+}
+
+/// O expoente maximo do escalonamento: o `ban.Count < 20` do fail2ban.
+pub const TETO_DO_EXPOENTE: u32 = 20;
+/// O teto do prazo escalonado: 7 dias. Nunca ENCURTA um `bloqueio_minutos`
+/// maior que ele -- o teto e da multiplicacao, nao do que o administrador
+/// pediu.
+pub const TETO_DO_ESCALONADO_MIN: u64 = 7 * 24 * 60;
+/// Quanto tempo um bloqueio conta para o escalonamento: 30 dias.
+pub const JANELA_DA_REINCIDENCIA_MS: i64 = 30 * 24 * 3_600_000;
+/// Quantos IPs o historico de reincidencia guarda. Quem varia o IP nao faz o
+/// `blacklist.json` crescer sem fim: passou disto, sai o IP cujo ultimo
+/// bloqueio e o mais velho.
+pub const TETO_DO_HISTORICO: usize = 50_000;
+
+/// O IP na forma CANONICA: `::ffff:a.b.c.d` vira `a.b.c.d` (pedido 766,
+/// P11). E a forma que vai ao firewall, ao historico e a memoria de IPs: o
+/// mesmo endereco chegando por um soquete dual-stack nao pode virar duas
+/// chaves, nem chegar ao `iptables` na forma v6. `None` para o que nao e
+/// endereco -- e o que nao e endereco nao vai a lugar nenhum.
+pub fn ip_canonico(ip: &str) -> Option<IpAddr> {
+    ip.parse::<IpAddr>().ok().map(|e| e.to_canonical())
+}
+
+/// Por que um IP que passou do limite NAO foi bloqueado (pedido 766, P9).
+///
+/// As quatro guardas de nao se trancar para fora. Elas so decidem o DESTINO
+/// do IP: a operacao continua recusada, a tentativa continua contada e a
+/// forca bruta continua virando ocorrencia.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Guarda {
+    /// A whitelist fixa do `config.json` ou a editavel da tela.
+    Whitelist,
+    /// `127.0.0.0/8` ou `::1`, com `poupar_loopback` ligado.
+    Loopback,
+    /// Um administrador entrou deste IP nas ultimas 24 h: bloquea-lo
+    /// trancaria para fora justamente quem solta o bloqueio.
+    Administrador,
+    /// Dois usuarios distintos entraram deste IP em 30 dias: e um NAT ou um
+    /// proxy, e bloquea-lo derrubaria quem nao fez nada.
+    Compartilhado,
+}
+
+impl Guarda {
+    pub fn nome(self) -> &'static str {
+        match self {
+            Guarda::Whitelist => "whitelist",
+            Guarda::Loopback => "loopback",
+            Guarda::Administrador => "administrador",
+            Guarda::Compartilhado => "compartilhado",
+        }
+    }
+}
+
+/// O que uma tentativa LEVE rendeu.
+#[derive(Debug)]
+pub enum Leve {
+    /// Contou, e ainda nao chegou ao limite.
+    Contada(u32),
+    /// Chegou ao limite, e uma guarda poupou o IP. A conta recomeca.
+    Poupada { guarda: Guarda, tentativas: u32 },
+    /// Chegou ao limite e bloqueou.
+    Bloqueada(Bloqueio, Option<String>),
+}
+
+impl Leve {
+    /// Chegou ao limite -- bloqueando ou nao. E a «tentativa seguida» que a
+    /// forca bruta conta.
+    pub fn chegou_ao_limite(&self) -> bool {
+        !matches!(self, Leve::Contada(_))
+    }
 }
 
 impl Default for Politica {
@@ -204,6 +297,8 @@ impl Default for Politica {
             contar_linha_acima_do_teto: false,
             contar_pulso_desconhecido: false,
             observar_injecao_sql: true,
+            poupar_loopback: true,
+            escalonar: true,
         }
     }
 }
@@ -256,7 +351,21 @@ impl Politica {
             ),
             observar_injecao_sql: j
                 .booleano_ou("observar_injecao_sql", padrao.observar_injecao_sql),
+            poupar_loopback: j.booleano_ou("poupar_loopback", padrao.poupar_loopback),
+            escalonar: j.booleano_ou("escalonar", padrao.escalonar),
         }
+    }
+
+    /// Quantos minutos dura o bloqueio de um IP com `anteriores` bloqueios
+    /// nos ultimos 30 dias. Zero continua sendo «permanente».
+    pub fn minutos_do_bloqueio(&self, anteriores: u32) -> u64 {
+        let base = self.bloqueio_minutos;
+        if base == 0 || !self.escalonar {
+            return base;
+        }
+        let fator = 1u64 << anteriores.min(TETO_DO_EXPOENTE);
+        base.saturating_mul(fator)
+            .min(TETO_DO_ESCALONADO_MIN.max(base))
     }
 
     /// O IP esta na whitelist FIXA do `config.json`?
@@ -345,12 +454,28 @@ pub fn proibidos_por_base(j: &Json) -> Vec<(String, String)> {
         .unwrap_or_default()
 }
 
-/// Comando de firewall, como lista de argumentos. `{ip}` vira o endereco.
+/// Comando de firewall, como lista de argumentos.
+///
+/// # Os marcadores (pedido 766, P11)
+///
+/// * `{ip}` -- o endereco REESCRITO a partir do `IpAddr` analisado, na forma
+///   canonica: nunca o texto que chegou. E esta a barreira contra injecao, e
+///   nao a falta de shell: o `nft` junta o argv numa linha e a analisa de
+///   novo, entao `127.0.0.3 }; delete table inet x` passaria inteiro por um
+///   argv sem shell nenhum (medido, M4 do desenho).
+/// * `{familia}` -- `4` ou `6`, para o conjunto certo (`negros{familia}`).
+/// * `{segundos}` -- o prazo que falta do bloqueio, inteiro; `0` no
+///   permanente e no desbloquear. E o `timeout` do conjunto com prazo no
+///   kernel: a regra se desfaz sozinha mesmo com o PhxSql morto.
 #[derive(Debug, Clone)]
 pub struct Firewall {
     pub ligado: bool,
     pub bloquear: Vec<String>,
     pub desbloquear: Vec<String>,
+    /// O comando que LISTA o que esta no firewall, para a reconciliacao do
+    /// arranque. A saida e analisada token a token como `IpAddr`; o que nao
+    /// e endereco e ignorado. Vazio: sem reconciliacao.
+    pub listar: Vec<String>,
     /// Prazo duro de CADA execucao, em segundos. Passou, o filho leva `kill`.
     pub timeout_s: u64,
 }
@@ -372,6 +497,7 @@ impl Firewall {
             ligado: j.booleano_ou("ligado", false),
             bloquear: j.textos("bloquear"),
             desbloquear: j.textos("desbloquear"),
+            listar: j.textos("listar"),
             timeout_s: (j.inteiro_ou("timeout_s", PRAZO_DO_FIREWALL_S as i64).max(1) as u64)
                 .min(TETO_DO_PRAZO_DO_FIREWALL_S),
         };
@@ -382,11 +508,38 @@ impl Firewall {
         }
     }
 
-    /// Roda o comando, trocando `{ip}` pelo endereco.
+    /// O firewall ligado aponta para programas que existem, por caminho
+    /// absoluto, e que so root ou o usuario do servidor podem trocar? E a
+    /// MESMA conferencia do gancho (`gancho::conferir_programa_de`), no
+    /// arranque: o `PATH` do servidor nao escolhe qual `nft` roda como quem
+    /// tem o direito de mexer no firewall.
+    pub fn validar(&self) -> std::result::Result<(), String> {
+        if !self.ligado {
+            return Ok(());
+        }
+        for (campo, argv) in [
+            ("seguranca.firewall.bloquear", &self.bloquear),
+            ("seguranca.firewall.desbloquear", &self.desbloquear),
+            ("seguranca.firewall.listar", &self.listar),
+        ] {
+            let Some(programa) = argv.first() else {
+                continue;
+            };
+            if argv.len() > 32 || argv.iter().any(|a| a.len() > 1024 || a.contains('\0')) {
+                return Err(format!(
+                    "{campo}: no maximo 32 itens de 1024 bytes, sem byte nulo"
+                ));
+            }
+            crate::gancho::conferir_programa_de(&format!("{campo}[0]"), programa)?;
+        }
+        Ok(())
+    }
+
+    /// Roda o comando, trocando os marcadores (ver [`Firewall`]).
     ///
     /// Devolve `Ok(false)` quando o firewall esta desligado. Sem shell: cada
-    /// argumento vai inteiro, e o IP so entra depois de ser validado como
-    /// endereco de verdade.
+    /// argumento vai inteiro, e o IP so entra REESCRITO do endereco
+    /// analisado.
     ///
     /// # Quem chama NAO pode estar segurando a `lista_negra`
     ///
@@ -399,37 +552,99 @@ impl Firewall {
     /// A execucao e a do gancho do operador (`gancho::rodar`): prazo com
     /// `kill`+`wait`, ambiente limpo, saida descartada. O erro nunca leva o
     /// que o programa imprimiu.
-    pub fn aplicar(&self, argumentos: &[String], ip: &str) -> Result<bool> {
+    pub fn aplicar(&self, argumentos: &[String], ip: &str, segundos: u64) -> Result<bool> {
         if !self.ligado || argumentos.is_empty() {
             return Ok(false);
         }
-        if ip.parse::<IpAddr>().is_err() {
-            return Err(phxsql_core::error::PhxError::Tipo(format!(
-                "{ip:?} nao e um endereco IP; nao vai para o firewall"
-            )));
-        }
-        let trocado: Vec<String> = argumentos.iter().map(|a| a.replace("{ip}", ip)).collect();
-        crate::gancho::rodar(&crate::gancho::Execucao {
-            rotulo: "comando de firewall",
-            argv: &trocado,
-            path: PATH_DO_FIREWALL,
-            ambiente: &[],
-            entrada: None,
-            prazo_s: self.timeout_s,
-        })
-        .map_err(|e| {
+        let trocado = trocar_marcadores(argumentos, ip, segundos)?;
+        crate::gancho::rodar(&self.execucao(&trocado, 0)).map_err(|e| {
             phxsql_core::error::PhxError::Corrompido(format!("o comando de firewall falhou: {e}"))
         })?;
         Ok(true)
     }
 
-    pub fn bloquear_ip(&self, ip: &str) -> Result<bool> {
-        self.aplicar(&self.bloquear, ip)
+    fn execucao<'a>(
+        &self,
+        argv: &'a [String],
+        teto_da_saida: usize,
+    ) -> crate::gancho::Execucao<'a> {
+        crate::gancho::Execucao {
+            rotulo: "comando de firewall",
+            argv,
+            path: PATH_DO_FIREWALL,
+            ambiente: &[],
+            entrada: None,
+            prazo_s: self.timeout_s,
+            teto_da_saida,
+        }
+    }
+
+    pub fn bloquear_ip(&self, ip: &str, segundos: u64) -> Result<bool> {
+        self.aplicar(&self.bloquear, ip, segundos)
     }
 
     pub fn desbloquear_ip(&self, ip: &str) -> Result<bool> {
-        self.aplicar(&self.desbloquear, ip)
+        self.aplicar(&self.desbloquear, ip, 0)
     }
+
+    /// O que o firewall do SO diz que esta bloqueado, pelo comando `listar`.
+    /// `None` quando nao ha o que listar (desligado ou sem comando).
+    ///
+    /// A saida e ANALISADA, nunca usada como texto: separada nos espacos e
+    /// na pontuacao do `nft`/`ipset`/`netsh`, e so o pedaco que e um
+    /// `IpAddr` inteiro conta -- `timeout`, `2m`, `10.0.0.0/8` e nome de
+    /// conjunto caem fora. Sem duplicata, na forma canonica.
+    pub fn listar_ips(&self) -> Result<Option<Vec<IpAddr>>> {
+        if !self.ligado || self.listar.is_empty() {
+            return Ok(None);
+        }
+        let saida = crate::gancho::rodar_e_ler(
+            &self.execucao(&self.listar, crate::gancho::TETO_DA_SAIDA_LIDA),
+        )
+        .map_err(|e| {
+            phxsql_core::error::PhxError::Corrompido(format!(
+                "o comando de firewall (listar) falhou: {e}"
+            ))
+        })?;
+        Ok(Some(ips_da_listagem(&saida)))
+    }
+}
+
+/// Os marcadores trocados. O IP entra so depois de analisado, e REESCRITO da
+/// forma canonica -- o texto que chegou nunca vai ao argv.
+fn trocar_marcadores(argumentos: &[String], ip: &str, segundos: u64) -> Result<Vec<String>> {
+    let Some(endereco) = ip_canonico(ip) else {
+        return Err(phxsql_core::error::PhxError::Tipo(format!(
+            "{ip:?} nao e um endereco IP; nao vai para o firewall"
+        )));
+    };
+    let texto = endereco.to_string();
+    let familia = if endereco.is_ipv6() { "6" } else { "4" };
+    let segundos = segundos.to_string();
+    Ok(argumentos
+        .iter()
+        .map(|a| {
+            a.replace("{ip}", &texto)
+                .replace("{familia}", familia)
+                .replace("{segundos}", &segundos)
+        })
+        .collect())
+}
+
+/// Os enderecos que aparecem numa listagem de firewall, analisados token a
+/// token. Ver [`Firewall::listar_ips`].
+pub fn ips_da_listagem(saida: &str) -> Vec<IpAddr> {
+    let mut vistos: Vec<IpAddr> = Vec::new();
+    let separa = |c: char| c.is_whitespace() || matches!(c, ',' | '{' | '}' | ';' | '"' | '=');
+    for pedaco in saida.split(separa) {
+        if let Ok(ip) = pedaco.parse::<IpAddr>() {
+            let ip = ip.to_canonical();
+            if !vistos.contains(&ip) {
+                vistos.push(ip);
+            }
+        }
+    }
+    vistos
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -449,6 +664,17 @@ pub struct Bloqueio {
 impl Bloqueio {
     pub fn ativo_em(&self, agora_ms: i64) -> bool {
         self.ate_ms == 0 || agora_ms < self.ate_ms
+    }
+
+    /// O prazo que falta, em segundos inteiros arredondados para CIMA -- o
+    /// `{segundos}` do firewall. Zero no permanente: o conjunto sem prazo e
+    /// decisao de quem escreveu o comando, nao um numero inventado aqui.
+    pub fn segundos_restantes(&self, agora_ms: i64) -> u64 {
+        if self.ate_ms == 0 {
+            return 0;
+        }
+        let ms = (self.ate_ms - agora_ms).max(0) as u64;
+        ms.div_ceil(1_000).max(1)
     }
 
     pub fn desde(&self) -> String {
@@ -526,7 +752,7 @@ pub fn aplicar_no_firewall(
     let Some(fw) = &politica.firewall else {
         return;
     };
-    match fw.bloquear_ip(&b.ip) {
+    match fw.bloquear_ip(&b.ip, b.segundos_restantes(crate::agora_ms())) {
         Ok(true) => {
             b.firewall = true;
             let marcado = match lista.lock() {
@@ -565,6 +791,85 @@ pub fn soltar_no_firewall(politica: &Politica, ips: &[String]) -> Result<()> {
     primeiro.map_or(Ok(()), Err)
 }
 
+/// O que a reconciliacao do arranque fez (pedido 766, P11).
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct Reconciliacao {
+    /// Ativos na lista e ausentes no SO (o reboot esvaziou o conjunto, ou o
+    /// processo morreu antes do `add`): voltaram, com o prazo que falta.
+    pub acrescentados: Vec<String>,
+    /// No SO e sem bloqueio ativo na lista (o PhxSql morreu antes do `del`,
+    /// ou o bloqueio venceu com ele parado): sairam.
+    pub removidos: Vec<String>,
+    /// As falhas de comando, uma frase por IP; a reconciliacao nao para nelas.
+    pub falhas: Vec<String>,
+}
+
+/// Reconcilia o firewall do SO com a lista, no arranque (pedido 766, P11).
+///
+/// `Ok(None)` quando nao ha o que reconciliar: firewall desligado ou sem o
+/// comando `listar`. O SO e a fonte do que ESTA aplicado; a lista e a fonte
+/// do que DEVERIA estar. A comparacao e pelo IP canonico, e o que o SO lista
+/// so conta se for um `IpAddr` inteiro ([`ips_da_listagem`]).
+///
+/// Pelo `&Mutex`, e a lista so na mao para tirar o retrato dos ativos e para
+/// marcar o que voltou: os comandos rodam com ela SOLTA, pelo motivo do
+/// pedido 638.
+///
+/// A whitelist e o loopback poupado nunca voltam ao firewall, mesmo com um
+/// bloqueio antigo na lista: o `barrado()` ja os deixa entrar, e regra no SO
+/// trancaria por fora o que o servidor solta por dentro.
+pub fn reconciliar_firewall(
+    lista: &Mutex<Blacklist>,
+    politica: &Politica,
+    agora_ms: i64,
+) -> Result<Option<Reconciliacao>> {
+    let Some(fw) = &politica.firewall else {
+        return Ok(None);
+    };
+    let Some(no_so) = fw.listar_ips()? else {
+        return Ok(None);
+    };
+    let ativos: Vec<(IpAddr, Bloqueio)> = {
+        let Ok(l) = lista.lock() else {
+            return Ok(None);
+        };
+        l.ativos(agora_ms)
+            .into_iter()
+            .filter(|b| l.guarda(politica, &b.ip, || None).is_none())
+            .filter_map(|b| ip_canonico(&b.ip).map(|ip| (ip, b.clone())))
+            .collect()
+    };
+    let mut r = Reconciliacao::default();
+    for ip in &no_so {
+        if ativos.iter().any(|(a, _)| a == ip) {
+            continue;
+        }
+        let texto = ip.to_string();
+        match fw.desbloquear_ip(&texto) {
+            Ok(_) => r.removidos.push(texto),
+            Err(e) => r.falhas.push(format!("{texto}: {e}")),
+        }
+    }
+    for (ip, b) in &ativos {
+        if no_so.contains(ip) {
+            continue;
+        }
+        match fw.bloquear_ip(&b.ip, b.segundos_restantes(agora_ms)) {
+            Ok(true) => {
+                if let Ok(mut l) = lista.lock() {
+                    if let Err(e) = l.marcar_firewall(&b.ip, b.desde_ms) {
+                        r.falhas.push(format!("{}: {e}", b.ip));
+                    }
+                }
+                r.acrescentados.push(ip.to_string());
+            }
+            Ok(false) => {}
+            Err(e) => r.falhas.push(format!("{ip}: {e}")),
+        }
+    }
+    Ok(Some(r))
+}
+
 /// A lista de bloqueio, com o contador de tentativas recentes.
 pub struct Blacklist {
     caminho: PathBuf,
@@ -582,6 +887,13 @@ pub struct Blacklist {
     /// proposito: misturar faria um token errado adiantar o bloqueio de um
     /// comando proibido, e os dois limites sao configuraveis em separado.
     tentativas_graves: HashMap<String, Vec<i64>>,
+    /// Os bloqueios de cada IP nos ultimos 30 dias, pelo instante (pedido
+    /// 766, P10): o `n` do escalonamento. Mora no ARQUIVO, e nao em memoria
+    /// como as tentativas: reiniciar o servidor nao pode devolver a quem ja
+    /// foi bloqueado dez vezes o prazo de quem foi bloqueado uma. Sobrevive
+    /// ao `desbloquear` pelo mesmo motivo -- soltar e perdoar ESTE bloqueio,
+    /// nao a reincidencia.
+    historico: HashMap<String, Vec<i64>>,
     /// Quando o arquivo foi gravado da ultima vez que o lemos.
     ///
     /// O `phxsqld --desbloquear` roda em OUTRO processo e mexe no mesmo
@@ -597,10 +909,10 @@ impl Blacklist {
         if let Some(dir) = caminho.parent().filter(|d| !d.as_os_str().is_empty()) {
             phxsql_store::permissao::criar_diretorio_do_banco(dir)?;
         }
-        let (bloqueios, whitelist) = match std::fs::read_to_string(&caminho) {
-            Err(_) => (Vec::new(), Vec::new()),
+        let (bloqueios, whitelist, historico) = match std::fs::read_to_string(&caminho) {
+            Err(_) => (Vec::new(), Vec::new(), HashMap::new()),
             Ok(texto) => match Json::analisar(&texto) {
-                Err(_) => (Vec::new(), Vec::new()),
+                Err(_) => (Vec::new(), Vec::new(), HashMap::new()),
                 Ok(j) => (
                     j.campo("bloqueios")
                         .and_then(Json::lista)
@@ -611,6 +923,7 @@ impl Blacklist {
                         .map(|w| w.trim().to_string())
                         .filter(|w| !w.is_empty())
                         .collect(),
+                    historico_de_json(j.campo("historico")),
                 ),
             },
         };
@@ -621,6 +934,7 @@ impl Blacklist {
             whitelist,
             tentativas: HashMap::new(),
             tentativas_graves: HashMap::new(),
+            historico,
             lido_em,
         })
     }
@@ -637,6 +951,7 @@ impl Blacklist {
         let recarregada = Blacklist::abrir(&self.caminho)?;
         self.bloqueios = recarregada.bloqueios;
         self.whitelist = recarregada.whitelist;
+        self.historico = recarregada.historico;
         self.lido_em = recarregada.lido_em;
         // As tentativas em memoria seguem: elas nao moram no arquivo.
         Ok(true)
@@ -668,14 +983,80 @@ impl Blacklist {
     /// O IP esta protegido contra bloqueio? Uniao das duas whitelists: a fixa
     /// do `config.json` e a editavel deste arquivo. Whitelist vence SEMPRE --
     /// inclusive sobre um bloqueio ja gravado antes de a regra entrar.
+    ///
+    /// Desde o pedido 766 (P9) o loopback poupado entra aqui tambem: um
+    /// `127.0.0.1` bloqueado ANTES da guarda existir volta a entrar na
+    /// proxima conexao, sem esperar o bloqueio vencer.
     pub fn protegido(&self, politica: &Politica, ip: &str) -> bool {
+        self.guarda(politica, ip, || None).is_some()
+    }
+
+    /// A guarda que poupa este IP, se alguma -- o ponto UNICO da decisao «nao
+    /// se trancar para fora» (pedido 766, P9).
+    ///
+    /// As duas guardas fixas moram aqui (whitelist e loopback); as duas que
+    /// dependem de quem ENTROU deste IP (administrador, compartilhado) vem
+    /// de fora em `externa`, porque a memoria de IPs vistos e do servidor --
+    /// e entram depois das fixas, que sao as que o operador escreveu.
+    pub fn guarda(
+        &self,
+        politica: &Politica,
+        ip: &str,
+        externa: impl FnOnce() -> Option<Guarda>,
+    ) -> Option<Guarda> {
         if politica.na_whitelist(ip) {
-            return true;
+            return Some(Guarda::Whitelist);
         }
-        let Ok(endereco) = ip.trim().parse::<IpAddr>() else {
-            return false;
-        };
-        self.whitelist.iter().any(|r| regra_cobre_ip(r, &endereco))
+        if let Ok(endereco) = ip.trim().parse::<IpAddr>() {
+            if self.whitelist.iter().any(|r| regra_cobre_ip(r, &endereco)) {
+                return Some(Guarda::Whitelist);
+            }
+            if politica.poupar_loopback && endereco.to_canonical().is_loopback() {
+                return Some(Guarda::Loopback);
+            }
+        }
+        externa()
+    }
+
+    /// Quantos bloqueios este IP teve nos ultimos 30 dias -- o `n` do
+    /// escalonamento.
+    pub fn bloqueios_anteriores(&self, ip: &str, agora_ms: i64) -> u32 {
+        let chave = chave_do_historico(ip);
+        self.historico.get(&chave).map_or(0, |v| {
+            v.iter()
+                .filter(|t| agora_ms - **t < JANELA_DA_REINCIDENCIA_MS)
+                .count() as u32
+        })
+    }
+
+    /// Anota um bloqueio no historico, com as podas: so os 30 dias, no
+    /// maximo `TETO_DO_EXPOENTE + 1` instantes por IP (mais que isso nao
+    /// muda o prazo), e no maximo `TETO_DO_HISTORICO` IPs.
+    fn anotar_no_historico(&mut self, ip: &str, agora_ms: i64) {
+        let chave = chave_do_historico(ip);
+        let v = self.historico.entry(chave.clone()).or_default();
+        v.retain(|t| agora_ms - *t < JANELA_DA_REINCIDENCIA_MS);
+        v.push(agora_ms);
+        let sobra = v.len().saturating_sub(TETO_DO_EXPOENTE as usize + 1);
+        v.drain(..sobra);
+        if self.historico.len() > TETO_DO_HISTORICO {
+            self.historico.retain(|_, v| {
+                v.retain(|t| agora_ms - *t < JANELA_DA_REINCIDENCIA_MS);
+                !v.is_empty()
+            });
+        }
+        while self.historico.len() > TETO_DO_HISTORICO {
+            let Some(velho) = self
+                .historico
+                .iter()
+                .filter(|(k, _)| **k != chave)
+                .min_by_key(|(_, v)| v.last().copied().unwrap_or(0))
+                .map(|(k, _)| k.clone())
+            else {
+                break;
+            };
+            self.historico.remove(&velho);
+        }
     }
 
     pub fn caminho(&self) -> &Path {
@@ -718,6 +1099,7 @@ impl Blacklist {
                 "bloqueios",
                 Json::Lista(self.bloqueios.iter().map(Bloqueio::para_json).collect()),
             ),
+            ("historico", historico_para_json(&self.historico)),
         ]);
         // Pedido 598: pela troca duravel (temporario 0600 pelo motor da
         // permissao, `fsync`, `rename`, `fsync` da pasta), e nao NO LUGAR.
@@ -752,11 +1134,15 @@ impl Blacklist {
         politica: &Politica,
         agora_ms: i64,
     ) -> (Bloqueio, Option<String>) {
-        let ate_ms = if politica.bloqueio_minutos == 0 {
+        // O escalonamento (pedido 766, P10): o prazo sai da reincidencia
+        // ANTES de anotar este bloqueio, entao o primeiro dura a base.
+        let minutos = politica.minutos_do_bloqueio(self.bloqueios_anteriores(ip, agora_ms));
+        let ate_ms = if minutos == 0 {
             0
         } else {
-            agora_ms + (politica.bloqueio_minutos as i64) * 60_000
+            agora_ms.saturating_add((minutos as i64).saturating_mul(60_000))
         };
+        self.anotar_no_historico(ip, agora_ms);
 
         let mut aviso = None;
         let bloqueio = Bloqueio {
@@ -823,7 +1209,21 @@ impl Blacklist {
         politica: &Politica,
         agora_ms: i64,
     ) -> Grave {
-        if self.protegido(politica, ip) {
+        self.violacao_grave_guardada(ip, comando, motivo, politica, agora_ms, || None)
+    }
+
+    /// A [`Blacklist::violacao_grave`] com as guardas que dependem de quem
+    /// entrou deste IP (pedido 766, P9). E esta que o servidor chama.
+    pub fn violacao_grave_guardada(
+        &mut self,
+        ip: &str,
+        comando: &str,
+        motivo: &str,
+        politica: &Politica,
+        agora_ms: i64,
+        externa: impl FnOnce() -> Option<Guarda>,
+    ) -> Grave {
+        if self.guarda(politica, ip, externa).is_some() {
             return Grave::Protegido;
         }
         let limite = politica.tentativas_para_bloqueio.max(1);
@@ -858,20 +1258,47 @@ impl Blacklist {
         politica: &Politica,
         agora_ms: i64,
     ) -> Option<(Bloqueio, Option<String>)> {
-        if self.protegido(politica, ip) {
-            return None;
+        match self.tentativa_leve_guardada(ip, comando, motivo, politica, agora_ms, || None) {
+            Leve::Bloqueada(b, aviso) => Some((b, aviso)),
+            _ => None,
         }
+    }
+
+    /// A [`Blacklist::tentativa_leve`] com as guardas (pedido 766, P9). E
+    /// esta que o servidor chama.
+    ///
+    /// # O IP poupado CONTA
+    ///
+    /// Antes desta guarda, o protegido saia sem contar, e a forca bruta que
+    /// vinha da whitelist era invisivel. Agora conta como todo mundo, e ao
+    /// chegar ao limite devolve [`Leve::Poupada`] em vez de bloquear: quem
+    /// chama transforma isso em ocorrencia, e a conta recomeca.
+    pub fn tentativa_leve_guardada(
+        &mut self,
+        ip: &str,
+        comando: &str,
+        motivo: &str,
+        politica: &Politica,
+        agora_ms: i64,
+        externa: impl FnOnce() -> Option<Guarda>,
+    ) -> Leve {
         let janela = (politica.janela_minutos as i64) * 60_000;
         let recentes = self.tentativas.entry(ip.to_string()).or_default();
         recentes.retain(|t| agora_ms - *t < janela);
         recentes.push(agora_ms);
         let quantas = recentes.len() as u32;
-
-        if quantas >= politica.tentativas_ate_bloquear {
-            Some(self.bloquear(ip, motivo, comando, quantas, politica, agora_ms))
-        } else {
-            None
+        if quantas < politica.tentativas_ate_bloquear {
+            return Leve::Contada(quantas);
         }
+        if let Some(guarda) = self.guarda(politica, ip, externa) {
+            self.tentativas.remove(ip);
+            return Leve::Poupada {
+                guarda,
+                tentativas: quantas,
+            };
+        }
+        let (b, aviso) = self.bloquear(ip, motivo, comando, quantas, politica, agora_ms);
+        Leve::Bloqueada(b, aviso)
     }
 
     /// Quantas tentativas leves recentes este IP tem.
@@ -958,6 +1385,49 @@ impl Blacklist {
         }
         Ok(texto)
     }
+}
+
+/// A chave do historico: o IP canonico, para o `::ffff:` nao ser outro IP;
+/// o texto como veio quando nao e endereco (nao deveria chegar aqui).
+fn chave_do_historico(ip: &str) -> String {
+    ip_canonico(ip).map_or_else(|| ip.to_string(), |e| e.to_string())
+}
+
+/// `{"203.0.113.9":[ms, ms], ...}` -- o historico como vai ao arquivo.
+fn historico_para_json(h: &HashMap<String, Vec<i64>>) -> Json {
+    let mut chaves: Vec<&String> = h.keys().collect();
+    chaves.sort();
+    Json::Objeto(
+        chaves
+            .into_iter()
+            .map(|k| {
+                (
+                    k.clone(),
+                    Json::Lista(h[k].iter().map(|t| Json::Numero(*t as f64)).collect()),
+                )
+            })
+            .collect(),
+    )
+}
+
+/// O historico lido de volta. Campo ausente (arquivo de antes do 766) e
+/// historico vazio: todo IP comeca do zero, que e o comportamento de antes.
+fn historico_de_json(j: Option<&Json>) -> HashMap<String, Vec<i64>> {
+    let Some(Json::Objeto(pares)) = j else {
+        return HashMap::new();
+    };
+    pares
+        .iter()
+        .filter_map(|(k, v)| {
+            let instantes: Vec<i64> = v
+                .lista()?
+                .iter()
+                .filter_map(Json::numero)
+                .map(|n| n as i64)
+                .collect();
+            (!instantes.is_empty()).then(|| (k.clone(), instantes))
+        })
+        .collect()
 }
 
 /// Carimbo de alteracao do arquivo, ou `None` se ele nao existe.
@@ -1524,9 +1994,10 @@ mod tests {
             ligado: false,
             bloquear: vec!["/bin/false".into(), "{ip}".into()],
             desbloquear: vec![],
+            listar: vec![],
             timeout_s: 5,
         };
-        assert!(!fw.bloquear_ip("10.0.0.1").unwrap());
+        assert!(!fw.bloquear_ip("10.0.0.1", 60).unwrap());
     }
 
     #[test]
@@ -1535,11 +2006,12 @@ mod tests {
             ligado: true,
             bloquear: vec!["/bin/true".into(), "{ip}".into()],
             desbloquear: vec![],
+            listar: vec![],
             timeout_s: 5,
         };
         // Endereco de verdade passa.
-        assert!(fw.bloquear_ip("192.0.2.1").unwrap());
-        assert!(fw.bloquear_ip("2001:db8::1").unwrap());
+        assert!(fw.bloquear_ip("192.0.2.1", 60).unwrap());
+        assert!(fw.bloquear_ip("2001:db8::1", 60).unwrap());
         // Qualquer outra coisa e recusada ANTES de virar argumento.
         for ruim in [
             "; rm -rf /",
@@ -1548,7 +2020,10 @@ mod tests {
             "",
             "localhost",
         ] {
-            assert!(fw.bloquear_ip(ruim).is_err(), "deveria recusar {ruim:?}");
+            assert!(
+                fw.bloquear_ip(ruim, 60).is_err(),
+                "deveria recusar {ruim:?}"
+            );
         }
     }
 
@@ -1558,6 +2033,7 @@ mod tests {
                 ligado: true,
                 bloquear,
                 desbloquear,
+                listar: vec![],
                 timeout_s: 1,
             }),
             ..politica()
@@ -1641,9 +2117,10 @@ mod tests {
             ligado: true,
             bloquear: vec![ruim, "{ip}".into()],
             desbloquear: vec![],
+            listar: vec![],
             timeout_s: 5,
         };
-        let e = fw.bloquear_ip(ip).unwrap_err().to_string();
+        let e = fw.bloquear_ip(ip, 60).unwrap_err().to_string();
         assert!(e.contains("codigo 3"), "{e}");
         assert!(!e.contains("SEGREDO"), "a saida do filho vazou: {e}");
 
@@ -1659,9 +2136,10 @@ mod tests {
             ligado: true,
             bloquear: vec![bom, "{ip}".into()],
             desbloquear: vec![],
+            listar: vec![],
             timeout_s: 5,
         };
-        assert!(fw.bloquear_ip(ip).unwrap());
+        assert!(fw.bloquear_ip(ip, 60).unwrap());
         let t = std::fs::read_to_string(&saida).unwrap();
         assert!(t.starts_with("192.0.2.7\n"), "{t}");
         assert!(!t.contains("CARGO"), "o ambiente do servidor vazou: {t}");
@@ -1678,10 +2156,11 @@ mod tests {
             ligado: true,
             bloquear: vec![pendura],
             desbloquear: vec![],
+            listar: vec![],
             timeout_s: 1,
         };
         let t0 = std::time::Instant::now();
-        let e = fw.bloquear_ip(ip).unwrap_err().to_string();
+        let e = fw.bloquear_ip(ip, 60).unwrap_err().to_string();
         assert!(
             t0.elapsed() < std::time::Duration::from_secs(5),
             "{:?}",
@@ -1730,5 +2209,579 @@ mod tests {
         );
         fio.join().unwrap();
         std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    /* ------------------------------------------------ pedido 766, P9-P11 */
+
+    /// Configuracao que nao e lida mente: os dois interruptores novos e o
+    /// `listar` tem leitor, e o padrao de cada um e o escrito.
+    #[test]
+    fn os_interruptores_novos_vem_do_config() {
+        let p = Politica::de_json(&Json::analisar("{}").unwrap());
+        assert!(p.poupar_loopback && p.escalonar);
+        let p = Politica::de_json(
+            &Json::analisar(r#"{"poupar_loopback":false,"escalonar":false}"#).unwrap(),
+        );
+        assert!(!p.poupar_loopback && !p.escalonar);
+        let fw = Firewall::de_json(
+            &Json::analisar(
+                r#"{"ligado":true,"bloquear":["/bin/true"],"listar":["/bin/true","-a"]}"#,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(fw.listar, ["/bin/true", "-a"]);
+    }
+
+    /// O firewall ligado so aceita programa por caminho absoluto, pela
+    /// conferencia do gancho; desligado, nada se confere (o comportamento de
+    /// antes para quem nunca o ligou).
+    #[cfg(unix)]
+    #[test]
+    fn o_firewall_ligado_exige_programa_por_caminho_absoluto() {
+        let fw = |ligado: bool, programa: &str| Firewall {
+            ligado,
+            bloquear: vec![programa.into(), "{ip}".into()],
+            desbloquear: vec![],
+            listar: vec![],
+            timeout_s: 5,
+        };
+        let e = fw(true, "nft").validar().unwrap_err();
+        assert!(
+            e.contains("seguranca.firewall.bloquear[0]") && e.contains("absoluto"),
+            "{e}"
+        );
+        assert!(fw(true, "/bin/true").validar().is_ok());
+        assert!(fw(false, "nft").validar().is_ok());
+        let mut listar_ruim = fw(true, "/bin/true");
+        listar_ruim.listar = vec!["/nao/existe/nft".into()];
+        assert!(listar_ruim.validar().unwrap_err().contains("listar"));
+        // E o arranque chama a conferencia: o `config.json` com `nft` pelo
+        // PATH nao sobe.
+        let ler = |programa: &str| {
+            crate::config::Config::de_json(
+                &Json::analisar(&format!(
+                    r#"{{"token":"x","seguranca":{{"firewall":{{"ligado":true,"bloquear":["{programa}","{{ip}}"]}}}}}}"#
+                ))
+                .unwrap(),
+            )
+        };
+        let e = ler("nft").unwrap_err().to_string();
+        assert!(e.contains("o firewall ligado nao sobe assim"), "{e}");
+        assert!(e.contains("seguranca.firewall.bloquear[0]"), "{e}");
+        assert!(ler("/bin/true").is_ok());
+    }
+
+    /// **P10, a regra:** `bloqueio_minutos x 2^n`, n <= 20, teto de 7 dias
+    /// que nunca encurta o que o administrador pediu; zero continua
+    /// permanente; `escalonar: false` e o comportamento de antes.
+    #[test]
+    fn o_prazo_escalona_por_dois_ate_sete_dias() {
+        let p = Politica::default();
+        assert_eq!(p.minutos_do_bloqueio(0), 60);
+        assert_eq!(p.minutos_do_bloqueio(1), 120);
+        assert_eq!(p.minutos_do_bloqueio(2), 240);
+        assert_eq!(p.minutos_do_bloqueio(7), 7_680);
+        assert_eq!(p.minutos_do_bloqueio(8), TETO_DO_ESCALONADO_MIN);
+        assert_eq!(p.minutos_do_bloqueio(24), TETO_DO_ESCALONADO_MIN);
+        assert_eq!(p.minutos_do_bloqueio(u32::MAX), TETO_DO_ESCALONADO_MIN);
+        let permanente = Politica {
+            bloqueio_minutos: 0,
+            ..Politica::default()
+        };
+        assert_eq!(permanente.minutos_do_bloqueio(5), 0);
+        let velho = Politica {
+            escalonar: false,
+            ..Politica::default()
+        };
+        assert_eq!(velho.minutos_do_bloqueio(5), 60);
+        let longo = Politica {
+            bloqueio_minutos: 20_000,
+            ..Politica::default()
+        };
+        assert_eq!(
+            longo.minutos_do_bloqueio(0),
+            20_000,
+            "o teto encurtou o pedido"
+        );
+        assert_eq!(longo.minutos_do_bloqueio(3), 20_000);
+    }
+
+    /// **O aceite da P10:** 3o bloqueio = 240 min; o 25o = 7 dias, sem
+    /// estouro; o reinicio (reabrir o arquivo) preserva o `n`; 30 dias
+    /// depois, volta a base. RED: o `historico` fora do `gravar` -> depois
+    /// de reabrir, o 4o volta a 60.
+    #[test]
+    fn o_terceiro_bloqueio_dura_240_e_o_vigesimo_quinto_sete_dias() {
+        let d = dir_temp("escalona");
+        let caminho = d.join("blacklist.json");
+        let p = politica();
+        let ip = "203.0.113.90";
+        let minutos = |b: &Bloqueio| (b.ate_ms - b.desde_ms) / 60_000;
+        let mut bl = Blacklist::abrir(&caminho).unwrap();
+        let mut t = T0;
+        let mut prazos = Vec::new();
+        for _ in 0..3 {
+            let (b, _) = bloqueou(bl.violacao_grave(ip, "excluir", "comando proibido", &p, t));
+            prazos.push(minutos(&b));
+            bl.desbloquear(ip).unwrap();
+            t += 60_000;
+        }
+        assert_eq!(prazos, vec![60, 120, 240]);
+        // O reinicio: o historico mora no arquivo.
+        let mut bl = Blacklist::abrir(&caminho).unwrap();
+        let (b, _) = bloqueou(bl.violacao_grave(ip, "excluir", "comando proibido", &p, t));
+        assert_eq!(minutos(&b), 480, "o reinicio zerou a reincidencia");
+        for _ in 4..25 {
+            bl.desbloquear(ip).unwrap();
+            t += 60_000;
+            let _ = bl.violacao_grave(ip, "excluir", "comando proibido", &p, t);
+        }
+        let b = bl.bloqueado(ip, t).unwrap().clone();
+        assert_eq!(minutos(&b), TETO_DO_ESCALONADO_MIN as i64);
+        assert_eq!(bl.bloqueios_anteriores(ip, t), TETO_DO_EXPOENTE + 1);
+        // O historico nao cresce alem do que muda o prazo.
+        assert_eq!(
+            bl.historico[ip].len() as u32,
+            bl.bloqueios_anteriores(ip, t),
+            "o historico guardou instante que nao conta"
+        );
+        // 30 dias depois do ultimo, a reincidencia acabou.
+        bl.desbloquear(ip).unwrap();
+        let depois = t + JANELA_DA_REINCIDENCIA_MS;
+        let (b, _) = bloqueou(bl.violacao_grave(ip, "excluir", "comando proibido", &p, depois));
+        assert_eq!(minutos(&b), 60);
+        // E a forma mapeada e o MESMO IP para a reincidencia.
+        assert_eq!(bl.bloqueios_anteriores("::ffff:203.0.113.90", depois), 1);
+    }
+
+    /// O historico tem teto de IPs: quem varia o IP nao faz o arquivo
+    /// crescer sem fim. RED: tirar o `while ... > TETO_DO_HISTORICO`.
+    #[test]
+    fn o_historico_de_reincidencia_tem_teto() {
+        let d = dir_temp("historico-teto");
+        let mut bl = Blacklist::abrir(d.join("blacklist.json")).unwrap();
+        for i in 0..=TETO_DO_HISTORICO as u32 {
+            let ip = std::net::Ipv4Addr::from(0x0A00_0000 + i).to_string();
+            bl.anotar_no_historico(&ip, T0 + i as i64);
+        }
+        assert_eq!(bl.historico.len(), TETO_DO_HISTORICO);
+        assert!(
+            !bl.historico.contains_key("10.0.0.0"),
+            "o mais velho tinha de sair"
+        );
+    }
+
+    /// **P9, a guarda unica:** whitelist e loopback sao fixas; a externa so
+    /// e perguntada quando nenhuma fixa vale (e a closure nem roda).
+    #[test]
+    fn a_guarda_fixa_vem_antes_da_externa_e_a_externa_e_preguicosa() {
+        let d = dir_temp("guarda");
+        let bl = Blacklist::abrir(d.join("blacklist.json")).unwrap();
+        let p = Politica {
+            whitelist: vec!["198.51.100.0/24".into()],
+            ..Politica::default()
+        };
+        let nunca = || -> Option<Guarda> { panic!("a guarda externa rodou sem precisar") };
+        assert_eq!(
+            bl.guarda(&p, "198.51.100.7", nunca),
+            Some(Guarda::Whitelist)
+        );
+        assert_eq!(bl.guarda(&p, "127.0.0.1", nunca), Some(Guarda::Loopback));
+        assert_eq!(bl.guarda(&p, "127.8.9.10", nunca), Some(Guarda::Loopback));
+        assert_eq!(bl.guarda(&p, "::1", nunca), Some(Guarda::Loopback));
+        assert_eq!(
+            bl.guarda(&p, "::ffff:127.0.0.1", nunca),
+            Some(Guarda::Loopback)
+        );
+        assert_eq!(
+            bl.guarda(&p, "203.0.113.1", || Some(Guarda::Compartilhado)),
+            Some(Guarda::Compartilhado)
+        );
+        assert_eq!(bl.guarda(&p, "203.0.113.1", || None), None);
+        let sem = Politica {
+            poupar_loopback: false,
+            ..Politica::default()
+        };
+        assert_eq!(bl.guarda(&sem, "127.0.0.1", || None), None);
+    }
+
+    /// O poupado CONTA e, no limite, volta `Poupada` -- e a conta recomeca.
+    #[test]
+    fn a_tentativa_leve_do_poupado_conta_e_recomeca() {
+        let d = dir_temp("poupada");
+        let mut bl = Blacklist::abrir(d.join("blacklist.json")).unwrap();
+        let p = politica();
+        let ip = "127.0.0.1";
+        for n in 1..3 {
+            match bl.tentativa_leve_guardada(ip, "ping", "token invalido", &p, T0, || None) {
+                Leve::Contada(c) => assert_eq!(c, n),
+                outro => panic!("{outro:?}"),
+            }
+        }
+        match bl.tentativa_leve_guardada(ip, "ping", "token invalido", &p, T0, || None) {
+            Leve::Poupada {
+                guarda: Guarda::Loopback,
+                tentativas: 3,
+            } => {}
+            outro => panic!("{outro:?}"),
+        }
+        assert!(bl.bloqueado(ip, T0).is_none());
+        assert_eq!(bl.tentativas_de(ip), 0, "a conta tinha de recomecar");
+    }
+
+    /// **P11, os marcadores:** o `{ip}` e o endereco REESCRITO, na forma
+    /// canonica; `{familia}` e `{segundos}` saem de tipos, e nao de texto.
+    #[test]
+    fn os_marcadores_saem_do_endereco_analisado() {
+        let argv: Vec<String> = [
+            "nft",
+            "negros{familia}",
+            "{",
+            "{ip}",
+            "timeout",
+            "{segundos}s",
+            "}",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+        assert_eq!(
+            trocar_marcadores(&argv, "::ffff:203.0.113.9", 3_600).unwrap(),
+            [
+                "nft",
+                "negros4",
+                "{",
+                "203.0.113.9",
+                "timeout",
+                "3600s",
+                "}"
+            ]
+        );
+        assert_eq!(
+            trocar_marcadores(&argv, "2001:db8:0:0::1", 5).unwrap()[3],
+            "2001:db8::1"
+        );
+        assert_eq!(
+            trocar_marcadores(&argv, "2001:db8::1", 5).unwrap()[1],
+            "negros6"
+        );
+        for ruim in [
+            "127.0.0.3 }; delete table inet vitima; add element inet phxsql negros4 { 127.0.0.4",
+            "203.0.113.9 ",
+            "",
+            "localhost",
+        ] {
+            assert!(trocar_marcadores(&argv, ruim, 5).is_err(), "{ruim:?}");
+        }
+        let b = Bloqueio {
+            ip: "x".into(),
+            desde_ms: T0,
+            ate_ms: T0 + 1_500,
+            motivo: String::new(),
+            comando: String::new(),
+            tentativas: 1,
+            firewall: false,
+        };
+        assert_eq!(b.segundos_restantes(T0), 2, "arredonda para cima");
+        assert_eq!(
+            b.segundos_restantes(T0 + 10_000),
+            1,
+            "nunca zero no temporario"
+        );
+        assert_eq!(Bloqueio { ate_ms: 0, ..b }.segundos_restantes(T0), 0);
+    }
+
+    /// **P11, o `listar` analisado:** so o pedaco que e um `IpAddr` inteiro
+    /// conta -- a saida do `nft`, do `ipset` e do `netsh` passam pela mesma
+    /// faca.
+    #[test]
+    fn a_listagem_e_analisada_token_a_token() {
+        let nft = "table inet phxsql {\n\tset negros4 {\n\t\ttype ipv4_addr\n\t\tflags timeout\n\
+                   \t\telements = { 203.0.113.9 timeout 2m expires 1m58s, 10.0.0.0/8,\n\
+                   \t\t\t     ::ffff:198.51.100.2, 203.0.113.9 }\n\t}\n}\n";
+        let ips: Vec<String> = ips_da_listagem(nft).iter().map(|i| i.to_string()).collect();
+        assert_eq!(ips, ["203.0.113.9", "198.51.100.2"]);
+        let netsh = "Rule Name: phxsql-2001:db8::5\nRemoteIP: 2001:db8::5/128\n";
+        let ips: Vec<String> = ips_da_listagem(netsh)
+            .iter()
+            .map(|i| i.to_string())
+            .collect();
+        assert_eq!(
+            ips,
+            Vec::<String>::new(),
+            "o nome e a faixa nao sao IP inteiro"
+        );
+        assert!(ips_da_listagem("Ok.\n").is_empty());
+    }
+
+    /// **P11, a reconciliacao:** o ativo ausente no SO volta com o prazo que
+    /// falta; o que esta no SO sem bloqueio ativo sai; o loopback poupado e
+    /// a whitelist nunca vao ao firewall. Com scripts no lugar do `nft`.
+    #[cfg(unix)]
+    #[test]
+    fn a_reconciliacao_poe_o_que_falta_e_tira_o_que_sobra() {
+        use crate::gancho::apoio_de_teste::{dir, script};
+        let apoio = dir("fw-reconcilia");
+        let registro = apoio.join("feito.txt");
+        let listar = script(
+            &apoio,
+            "listar.sh",
+            "echo 'elements = { 203.0.113.50 timeout 1h, 203.0.113.99 timeout 5m }'",
+        );
+        let add = script(
+            &apoio,
+            "add.sh",
+            &format!("echo \"add $1 $2 $3\" >> {}", registro.display()),
+        );
+        let del = script(
+            &apoio,
+            "del.sh",
+            &format!("echo \"del $1\" >> {}", registro.display()),
+        );
+        let p = Politica {
+            whitelist: vec!["198.51.100.1".into()],
+            firewall: Some(Firewall {
+                ligado: true,
+                bloquear: vec![add, "{ip}".into(), "{familia}".into(), "{segundos}".into()],
+                desbloquear: vec![del, "{ip}".into()],
+                listar: vec![listar],
+                timeout_s: 5,
+            }),
+            ..politica()
+        };
+        let d = dir_temp("reconcilia");
+        let caminho = d.join("blacklist.json");
+        let agora = crate::agora_ms();
+        {
+            let mut bl = Blacklist::abrir(&caminho).unwrap();
+            let sem_guarda = Politica {
+                poupar_loopback: false,
+                whitelist: Vec::new(),
+                ..p.clone()
+            };
+            for ip in ["203.0.113.50", "203.0.113.51", "127.0.0.1", "198.51.100.1"] {
+                bl.bloquear(ip, "teste", "ping", 1, &sem_guarda, agora);
+            }
+        }
+        let lista = Mutex::new(Blacklist::abrir(&caminho).unwrap());
+        let r = reconciliar_firewall(&lista, &p, agora + 1_000)
+            .unwrap()
+            .unwrap();
+        assert_eq!(r.acrescentados, ["203.0.113.51"]);
+        assert_eq!(r.removidos, ["203.0.113.99"]);
+        assert!(r.falhas.is_empty(), "{:?}", r.falhas);
+        let feito = std::fs::read_to_string(&registro).unwrap();
+        assert!(feito.contains("del 203.0.113.99"), "{feito}");
+        assert!(feito.contains("add 203.0.113.51 4 3599"), "{feito}");
+        assert!(
+            !feito.contains("127.0.0.1") && !feito.contains("198.51.100.1"),
+            "{feito}"
+        );
+        let relida = Blacklist::abrir(&caminho).unwrap();
+        assert!(relida.bloqueado("203.0.113.51", agora).unwrap().firewall);
+        // Sem o `listar`, nao ha reconciliacao -- e nada roda.
+        let mut sem_listar = p.clone();
+        sem_listar.firewall.as_mut().unwrap().listar.clear();
+        assert!(reconciliar_firewall(&lista, &sem_listar, agora)
+            .unwrap()
+            .is_none());
+    }
+
+    /// O filho que roda DENTRO de `unshare --net`: um namespace de rede so
+    /// dele, com o `nft` de verdade. Ver o teste de baixo.
+    #[cfg(unix)]
+    #[test]
+    #[ignore = "roda so dentro de o_nft_de_verdade_recusa_a_injecao_e_reconcilia"]
+    fn filho_do_nft_em_namespace_proprio() {
+        use std::process::Command;
+        let nft = std::env::var("PHX_766_NFT").unwrap();
+        let nft_ok = |args: &[&str]| Command::new(&nft).args(args).status().unwrap().success();
+        let lista_do_conjunto = || {
+            String::from_utf8(
+                Command::new(&nft)
+                    .args(["list", "set", "inet", "phxsql", "negros4"])
+                    .output()
+                    .unwrap()
+                    .stdout,
+            )
+            .unwrap()
+        };
+        assert!(nft_ok(&["add", "table", "inet", "vitima"]));
+        assert!(nft_ok(&["add", "table", "inet", "phxsql"]));
+        assert!(nft_ok(&[
+            "add",
+            "set",
+            "inet",
+            "phxsql",
+            "negros4",
+            "{ type ipv4_addr; flags timeout; }"
+        ]));
+        let por_argv = |modelo: &[&str]| -> Vec<String> {
+            std::iter::once(nft.clone())
+                .chain(modelo.iter().map(|s| s.to_string()))
+                .collect()
+        };
+        let fw = Firewall {
+            ligado: true,
+            bloquear: por_argv(&[
+                "add",
+                "element",
+                "inet",
+                "phxsql",
+                "negros{familia}",
+                "{",
+                "{ip}",
+                "timeout",
+                "{segundos}s",
+                "}",
+            ]),
+            desbloquear: por_argv(&[
+                "delete",
+                "element",
+                "inet",
+                "phxsql",
+                "negros{familia}",
+                "{",
+                "{ip}",
+                "}",
+            ]),
+            listar: por_argv(&["list", "set", "inet", "phxsql", "negros4"]),
+            timeout_s: 5,
+        };
+        let injecao =
+            "127.0.0.3 }; delete table inet vitima; add element inet phxsql negros4 { 127.0.0.4";
+
+        // O CONTROLE POSITIVO -- o defeito reposto, aqui dentro: o mesmo argv
+        // com o texto CRU no lugar do `{ip}`, sem analisar, pelo mesmo motor.
+        // O `nft` junta o argv e a injecao apaga a tabela. E isto que prova
+        // que a afirmacao de baixo mede alguma coisa.
+        assert!(nft_ok(&["add", "table", "inet", "controle"]));
+        let cru: Vec<String> = fw
+            .bloquear
+            .iter()
+            .map(|a| {
+                a.replace("{ip}", &injecao.replace("vitima", "controle"))
+                    .replace("{familia}", "4")
+                    .replace("{segundos}", "60")
+            })
+            .collect();
+        let _ = crate::gancho::rodar(&fw.execucao(&cru, 0));
+        assert!(
+            !nft_ok(&["list", "table", "inet", "controle"]),
+            "o controle falhou: a injecao crua nao apagou a tabela, e o teste nao mede nada"
+        );
+
+        // O caminho de verdade recusa ANTES do `nft`, e a vitima continua la.
+        assert!(fw.bloquear_ip(injecao, 60).is_err());
+        assert!(
+            nft_ok(&["list", "table", "inet", "vitima"]),
+            "a injecao passou"
+        );
+
+        // O caminho feliz: o elemento entra com prazo, e o `listar` o ve.
+        assert!(fw.bloquear_ip("::ffff:203.0.113.9", 120).unwrap());
+        assert!(
+            lista_do_conjunto().contains("203.0.113.9"),
+            "{}",
+            lista_do_conjunto()
+        );
+        let vistos = fw.listar_ips().unwrap().unwrap();
+        assert!(
+            vistos.contains(&"203.0.113.9".parse().unwrap()),
+            "{vistos:?}"
+        );
+        // O escalonamento chega ao kernel pelo MESMO `bloquear`: o `add` do
+        // elemento que ja existe troca o prazo dele (P10; a hipotese de que o
+        // prazo antigo ficava morreu medida -- cognicao de 09/10/2026 19:40).
+        assert!(fw.bloquear_ip("203.0.113.9", 600).unwrap());
+        assert!(
+            lista_do_conjunto().contains("timeout 10m"),
+            "{}",
+            lista_do_conjunto()
+        );
+
+        // A reconciliacao contra o SO de verdade: o «reboot» (`flush set`)
+        // tirou tudo; a lista tem 203.0.113.10 ativo; o SO tem 203.0.113.11
+        // que nao esta na lista.
+        assert!(nft_ok(&["flush", "set", "inet", "phxsql", "negros4"]));
+        assert!(nft_ok(&[
+            "add",
+            "element",
+            "inet",
+            "phxsql",
+            "negros4",
+            "{ 203.0.113.11 timeout 600s }"
+        ]));
+        let d = dir_temp("nft-reconcilia");
+        let p = Politica {
+            firewall: Some(fw.clone()),
+            ..Politica::default()
+        };
+        let agora = crate::agora_ms();
+        let mut bl = Blacklist::abrir(d.join("blacklist.json")).unwrap();
+        bl.bloquear("203.0.113.10", "teste", "ping", 1, &p, agora);
+        let lista = Mutex::new(bl);
+        let r = reconciliar_firewall(&lista, &p, agora).unwrap().unwrap();
+        assert!(r.falhas.is_empty(), "{:?}", r.falhas);
+        let depois = lista_do_conjunto();
+        assert!(
+            depois.contains("203.0.113.10"),
+            "o ativo nao voltou: {depois}"
+        );
+        assert!(
+            !depois.contains("203.0.113.11"),
+            "o orfao nao saiu: {depois}"
+        );
+        assert!(depois.contains("expires"), "voltou sem prazo: {depois}");
+    }
+
+    /// **P11 contra o sistema operacional:** o `nft` de verdade, num
+    /// namespace de rede proprio (`unshare --net`, nada do host e tocado).
+    /// (1) a injecao pelo IP e recusada e a tabela `vitima` EXISTE -- com o
+    /// controle positivo dentro do filho: o mesmo argv com o texto cru apaga
+    /// a tabela `controle`, que e o RED (M4 do desenho) reposto a cada
+    /// corrida; (2) o elemento entra com prazo e o `listar` o ve; (3) a
+    /// reconciliacao, depois de um `flush set` (o reboot), devolve o ativo
+    /// e tira o orfao.
+    ///
+    /// **Nao medido aqui:** o SYN do IP bloqueado que nao chega (M5 do
+    /// desenho mediu); o `netsh` do Windows.
+    #[cfg(unix)]
+    #[test]
+    fn o_nft_de_verdade_recusa_a_injecao_e_reconcilia() {
+        use std::process::Command;
+        let Some(nft) = ["/usr/sbin/nft", "/sbin/nft"]
+            .into_iter()
+            .find(|p| Path::new(p).exists())
+        else {
+            eprintln!("sem nft nesta maquina: a prova da P11 contra o SO NAO MEDIDA");
+            return;
+        };
+        let pode = Command::new("unshare")
+            .args(["--net", "true"])
+            .status()
+            .is_ok_and(|s| s.success());
+        if !pode {
+            eprintln!("sem unshare --net (precisa de root): a prova da P11 NAO MEDIDA");
+            return;
+        }
+        let saida = Command::new("unshare")
+            .arg("--net")
+            .arg(std::env::current_exe().unwrap())
+            .args([
+                "--ignored",
+                "--exact",
+                "blacklist::tests::filho_do_nft_em_namespace_proprio",
+                "--test-threads=1",
+                "--nocapture",
+            ])
+            .env("PHX_766_NFT", nft)
+            .output()
+            .unwrap();
+        let texto = String::from_utf8_lossy(&saida.stdout).into_owned()
+            + &String::from_utf8_lossy(&saida.stderr);
+        assert!(saida.status.success(), "{texto}");
+        assert!(texto.contains("1 passed"), "o filho nao rodou: {texto}");
     }
 }

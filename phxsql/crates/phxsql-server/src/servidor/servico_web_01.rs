@@ -964,7 +964,7 @@ impl Servidor {
             // constante, como o portao 1 -- aqui era `==`.
             Some(self.config.token.clone())
         } else {
-            self.violacao_leve(ip, op, "token do REST invalido");
+            self.violacao_de_credencial(ip, op, "token do REST invalido");
             self.anotar(&Acesso {
                 quando_ms: agora,
                 ip: ip.to_string(),

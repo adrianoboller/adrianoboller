@@ -25072,7 +25072,11 @@ fn anotar(""",
             "binario de teste e le o stderr do servidor de verdade."
         ),
         "arquivo": "crates/phxsql-server/src/gancho.rs",
-        "trecho": """        .stdout(Stdio::null())
+        "trecho": """        .stdout(if e.teto_da_saida > 0 {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        })
         .stderr(Stdio::null());""",
         "troca": """        // DEFEITO REPOSTO (pedido 249): a saida do filho e herdada.
         .stdout(Stdio::inherit())
@@ -25169,12 +25173,12 @@ fn anotar(""",
             "`barrado()` pega o mutex da lista negra em TODA conexao. Um comando de firewall que pendura, rodando com esse mutex preso, para o servidor inteiro -- e quem o dispara e um cliente SEM credencial (tres tokens errados). A prova e pelo soquete: outro cliente tem de ser atendido em menos de 2 s."
         ),
         "arquivo": "crates/phxsql-server/src/blacklist.rs",
-        "trecho": """    match fw.bloquear_ip(&b.ip) {
+        "trecho": """    match fw.bloquear_ip(&b.ip, b.segundos_restantes(crate::agora_ms())) {
         Ok(true) => {
 """,
         "troca": """    // DEFEITO REPOSTO (pedido 638): o comando roda com a lista na mao.
     let _preso = lista.lock().ok();
-    match fw.bloquear_ip(&b.ip) {
+    match fw.bloquear_ip(&b.ip, b.segundos_restantes(crate::agora_ms())) {
         Ok(true) => {
 """,
         "pacote": "phxsql-server",
@@ -25192,15 +25196,7 @@ fn anotar(""",
             "o firewall tem de passar pelo MESMO motor do gancho (prazo com kill e wait, env_clear, saida descartada). `output()` e o motor velho: pendura sem limite, herda o ambiente do servidor e devolve o stderr do filho dentro de um erro que vai a log e a tela."
         ),
         "arquivo": "crates/phxsql-server/src/blacklist.rs",
-        "trecho": """        crate::gancho::rodar(&crate::gancho::Execucao {
-            rotulo: "comando de firewall",
-            argv: &trocado,
-            path: PATH_DO_FIREWALL,
-            ambiente: &[],
-            entrada: None,
-            prazo_s: self.timeout_s,
-        })
-        .map_err(|e| {
+        "trecho": """        crate::gancho::rodar(&self.execucao(&trocado, 0)).map_err(|e| {
             phxsql_core::error::PhxError::Corrompido(format!("o comando de firewall falhou: {e}"))
         })?;
 """,
@@ -27657,9 +27653,9 @@ fn anotar(""",
             "nenhum relogio do episodio existia para dizer «ha 3 min»."
         ),
         "arquivo": "crates/phxsql-server/src/servidor/servico_replicacao_01.rs",
-        "trecho": """                    crate::telemetria::sinal(crate::aquario::Alarme::OrigemInalcancavel, origem);
+        "trecho": """            crate::telemetria::sinal(crate::aquario::Alarme::OrigemInalcancavel, origem);
 """,
-        "troca": """                    let _ = (crate::aquario::Alarme::OrigemInalcancavel, origem);
+        "troca": """            let _ = (crate::aquario::Alarme::OrigemInalcancavel, origem);
 """,
         "pacote": "phxsql-server",
         "alvo": ["--lib"],
@@ -28160,5 +28156,511 @@ fn anotar(""",
         "seguem": [
             "servidor::testes_do_aquario::a_tarefa_encerrada_vai_ao_aquario_log_como_morta",
         ],
+    },
+    {
+        "id": "ip-novo-sem-produtor",
+        "titulo": 'o login com sucesso de um IP nunca visto não virava ocorrência: o `IpNovo` não tinha produtor (pedido 765, P6)',
+        "porque": ('pedido 765, P6: a memoria de IPs so vale se o login que deu certo passa por ela.'),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """                (Ok(_), Some(u)) => self.ip_visto_no_login(
+                    ip,
+                    &base,
+                    &u.login,
+                    u.pode_em("", "", Atividade::Administrar),
+                ),""",
+        "troca": """                (Ok(_), Some(_u)) => {}""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_da_protecao_766::o_primeiro_login_de_um_ip_novo_gera_uma_ocorrencia_e_o_segundo_nenhuma",
+        ],
+        "seguem": [
+            "ips_vistos::testes::o_primeiro_login_de_um_ip_e_novo_e_o_segundo_nao",
+        ],
+    },
+    {
+        "id": "ip-novo-sem-semente",
+        "titulo": 'a memória de IPs nascia vazia e acusava como novo todo IP que o `acessos.log` já conhecia (pedido 765, P6)',
+        "porque": ('pedido 765, P6 / desenho 4.4: sem a semente, todo usuario vira IP novo no dia em que a versao sobe.'),
+        "arquivo": "crates/phxsql-server/src/servidor/servico_nucleo_01.rs",
+        "trecho": """LogAcessos::ler(&do_log).unwrap_or_default()""",
+        "troca": """{ let _ = &do_log; Vec::new() }""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_da_protecao_766::o_ip_que_ja_esta_no_acessos_log_nao_gera_ocorrencia",
+        ],
+        "seguem": [
+            "ips_vistos::testes::o_ip_que_ja_esta_no_acessos_log_nao_e_novo",
+        ],
+    },
+    {
+        "id": "ip-novo-so-em-memoria",
+        "titulo": 'a memória de IPs só valia em processo: depois de reiniciar, o IP já visto voltava a ser novo (pedido 765, P6)',
+        "porque": ('pedido 765, P6: o silencio da camada de ocorrencias morre com o servidor; quem lembra e o arquivo.'),
+        "arquivo": "crates/phxsql-server/src/ips_vistos.rs",
+        "trecho": """        let Some(caminho) = &self.caminho else {
+            return Ok(());
+        };
+        let mut f = phxsql_store""",
+        "troca": """        let Some(caminho) = &self.caminho else {
+            return Ok(());
+        };
+        if caminho.exists() { return Ok(()); }
+        let mut f = phxsql_store""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "ips_vistos::testes::o_primeiro_login_de_um_ip_e_novo_e_o_segundo_nao",
+            "servidor::testes_da_protecao_766::o_primeiro_login_de_um_ip_novo_gera_uma_ocorrencia_e_o_segundo_nenhuma",
+        ],
+        "seguem": [
+            "ips_vistos::testes::administrador_em_24h_e_dois_usuarios_em_30_dias_guardam_o_ip",
+        ],
+    },
+    {
+        "id": "ips-vistos-sem-teto",
+        "titulo": 'a memória de IPs crescia sem fim com quem varia o IP (pedido 765, P6)',
+        "porque": ('pedido 765, P6: 50.000 chaves e coringa; o mapa nao cresce.'),
+        "arquivo": "crates/phxsql-server/src/ips_vistos.rs",
+        "trecho": """                if self.mapa.len() >= TETO_DE_CHAVES {
+                    self.coringa += 1;""",
+        "troca": """                if self.mapa.len() > usize::MAX - 1 {
+                    self.coringa += 1;""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "ips_vistos::testes::com_o_teto_cheio_o_mapa_nao_cresce",
+        ],
+        "seguem": [
+            "ips_vistos::testes::o_primeiro_login_de_um_ip_e_novo_e_o_segundo_nao",
+        ],
+    },
+    {
+        "id": "loopback-se-tranca",
+        "titulo": 'cinco tokens errados de 127.0.0.1 bloqueavam o próprio loopback por 60 min, a tela e a TV junto (pedido 766, P9)',
+        "porque": ('pedido 766, P9: o caso medido em 09/10/2026; convergencia MySQL host cache + fail2ban ignoreself.'),
+        "arquivo": "crates/phxsql-server/src/blacklist.rs",
+        "trecho": """if politica.poupar_loopback && endereco.to_canonical().is_loopback() {""",
+        "troca": """if false && politica.poupar_loopback && endereco.to_canonical().is_loopback() {""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_da_protecao_766::cinco_tokens_errados_do_loopback_nao_bloqueiam_o_loopback",
+            "servidor::testes_da_protecao_766::o_loopback_bloqueado_antes_da_guarda_entra_de_novo",
+        ],
+        "seguem": [
+            "servidor::testes_da_protecao_766::o_ip_desconhecido_e_o_de_um_usuario_so_continuam_bloqueando",
+        ],
+    },
+    {
+        "id": "poupar-loopback-sem-leitor",
+        "titulo": '`seguranca.poupar_loopback` sem leitor: o `false` do config não devolvia o comportamento de antes (pedido 766, P9)',
+        "porque": ('lei «configuracao que nao e lida mente».'),
+        "arquivo": "crates/phxsql-server/src/blacklist.rs",
+        "trecho": """poupar_loopback: j.booleano_ou("poupar_loopback", padrao.poupar_loopback),""",
+        "troca": """poupar_loopback: true,""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "blacklist::tests::os_interruptores_novos_vem_do_config",
+        ],
+        "seguem": [
+            "blacklist::tests::politica_reconhece_proibidos_sem_ligar_para_caixa",
+        ],
+    },
+    {
+        "id": "ip-do-admin-bloqueado",
+        "titulo": 'o IP de onde um administrador entrou nas últimas 24 h era bloqueado — trancava quem solta o bloqueio (pedido 766, P9)',
+        "porque": ('pedido 766, P9 / desenho 4.6.'),
+        "arquivo": "crates/phxsql-server/src/ips_vistos.rs",
+        "trecho": """if v.admin && agora_ms - v.ultimo_ms < JANELA_DO_ADMINISTRADOR_MS {""",
+        "troca": """if false && v.admin && agora_ms - v.ultimo_ms < JANELA_DO_ADMINISTRADOR_MS {""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_da_protecao_766::o_ip_de_quem_administra_nao_e_bloqueado",
+        ],
+        "seguem": [
+            "servidor::testes_da_protecao_766::o_ip_de_dois_usuarios_nao_e_bloqueado",
+        ],
+    },
+    {
+        "id": "ip-compartilhado-bloqueado",
+        "titulo": 'o IP de dois usuários em 30 dias (NAT, proxy) era bloqueado pela força bruta de um (pedido 766, P9)',
+        "porque": ('pedido 766, P9 / desenho 4.4 e 4.6: o risco real e o IP de muitos, nao a forja.'),
+        "arquivo": "crates/phxsql-server/src/ips_vistos.rs",
+        "trecho": """(usuarios.len() >= 2).then_some(Guarda::Compartilhado)""",
+        "troca": """(usuarios.len() >= 99).then_some(Guarda::Compartilhado)""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_da_protecao_766::o_ip_de_dois_usuarios_nao_e_bloqueado",
+        ],
+        "seguem": [
+            "servidor::testes_da_protecao_766::o_ip_de_quem_administra_nao_e_bloqueado",
+        ],
+    },
+    {
+        "id": "whitelist-editavel-sem-guarda",
+        "titulo": 'a whitelist editável pela tela deixava de proteger depois que a guarda virou um ponto só (pedido 766, P9)',
+        "porque": ('pedido 766, P9: a guarda unica tem de cobrir as duas whitelists.'),
+        "arquivo": "crates/phxsql-server/src/blacklist.rs",
+        "trecho": """            if self.whitelist.iter().any(|r| regra_cobre_ip(r, &endereco)) {
+                return Some(Guarda::Whitelist);
+            }""",
+        "troca": """""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "blacklist::tests::whitelist_por_cidr_e_a_dinamica_do_arquivo",
+        ],
+        "seguem": [
+            "blacklist::tests::whitelist_nunca_bloqueia",
+        ],
+    },
+    {
+        "id": "guarda-que-poupa-todo-mundo",
+        "titulo": 'a guarda de não se trancar poupava todo IP — o desconhecido nunca mais bloqueava (pedido 766, P9, comportamento velho)',
+        "porque": ('o teste que mais importa numa guarda nova e o do comportamento velho.'),
+        "arquivo": "crates/phxsql-server/src/servidor/servico_avisos_01.rs",
+        "trecho": """        self.ips_vistos.lock().ok()?.guarda(ip, crate::agora_ms())""",
+        "troca": """        let _ = ip;
+        Some(crate::blacklist::Guarda::Compartilhado)""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_da_protecao_766::o_ip_desconhecido_e_o_de_um_usuario_so_continuam_bloqueando",
+        ],
+        "seguem": [
+            "servidor::testes_da_protecao_766::cinco_tokens_errados_do_loopback_nao_bloqueiam_o_loopback",
+        ],
+    },
+    {
+        "id": "reincidencia-sem-disco",
+        "titulo": 'o reinício zerava a reincidência: o histórico de bloqueios não ia ao `blacklist.json` (pedido 766, P10)',
+        "porque": ('pedido 766, P10: «reinicio preserva n».'),
+        "arquivo": "crates/phxsql-server/src/blacklist.rs",
+        "trecho": """            ("historico", historico_para_json(&self.historico)),
+""",
+        "troca": """""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "blacklist::tests::o_terceiro_bloqueio_dura_240_e_o_vigesimo_quinto_sete_dias",
+            "servidor::testes_da_protecao_766::o_bloqueio_reincidente_dobra_e_o_reinicio_preserva_a_conta",
+        ],
+        "seguem": [
+            "blacklist::tests::o_prazo_escalona_por_dois_ate_sete_dias",
+        ],
+    },
+    {
+        "id": "prazo-sem-escalonar",
+        "titulo": 'o bloqueio reincidente durava sempre `bloqueio_minutos` (pedido 766, P10)',
+        "porque": ('pedido 766, P10: bantime.increment do fail2ban, n <= 20, teto 7 d.'),
+        "arquivo": "crates/phxsql-server/src/blacklist.rs",
+        "trecho": """let fator = 1u64 << anteriores.min(TETO_DO_EXPOENTE);""",
+        "troca": """let fator = 1u64;""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "blacklist::tests::o_prazo_escalona_por_dois_ate_sete_dias",
+        ],
+        "seguem": [
+            "blacklist::tests::comando_proibido_bloqueia_na_hora",
+        ],
+    },
+    {
+        "id": "historico-sem-teto",
+        "titulo": 'o histórico de reincidência crescia sem fim com quem varia o IP (pedido 766, P10)',
+        "porque": ('pedido 766, P10: 50.000 IPs no blacklist.json.'),
+        "arquivo": "crates/phxsql-server/src/blacklist.rs",
+        "trecho": """while self.historico.len() > TETO_DO_HISTORICO {""",
+        "troca": """while self.historico.len() > usize::MAX - 1 {""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "blacklist::tests::o_historico_de_reincidencia_tem_teto",
+        ],
+        "seguem": [
+            "blacklist::tests::o_prazo_escalona_por_dois_ate_sete_dias",
+        ],
+    },
+    {
+        "id": "ip-cru-no-firewall",
+        "titulo": 'o texto do IP entrava cru no argv do firewall; o `nft` junta o argv e `127.0.0.3 }; delete table …` apagava a tabela (pedido 766, P11, M4)',
+        "porque": ('pedido 766, P11: sem shell nao basta; a barreira e o IpAddr analisado e reescrito.'),
+        "arquivo": "crates/phxsql-server/src/blacklist.rs",
+        "trecho": """    let Some(endereco) = ip_canonico(ip) else {
+        return Err(phxsql_core::error::PhxError::Tipo(format!(
+            "{ip:?} nao e um endereco IP; nao vai para o firewall"
+        )));
+    };
+    let texto = endereco.to_string();
+    let familia = if endereco.is_ipv6() { "6" } else { "4" };""",
+        "troca": """    let (texto, familia) = match ip_canonico(ip) {
+        Some(e) => (e.to_string(), if e.is_ipv6() { "6" } else { "4" }),
+        None => (ip.to_string(), "4"),
+    };""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "blacklist::tests::os_marcadores_saem_do_endereco_analisado",
+            "blacklist::tests::o_nft_de_verdade_recusa_a_injecao_e_reconcilia",
+        ],
+        "seguem": [
+            "blacklist::tests::a_listagem_e_analisada_token_a_token",
+        ],
+    },
+    {
+        "id": "ip-nao-canonico-no-firewall",
+        "titulo": 'o `::ffff:a.b.c.d` chegava ao firewall na forma v6, e o conjunto v4 não o casava (pedido 766, P11)',
+        "porque": ('pedido 766, P11 / desenho 4.6: `{ip}` reserializado de `to_canonical()`.'),
+        "arquivo": "crates/phxsql-server/src/blacklist.rs",
+        "trecho": """    let texto = endereco.to_string();
+    let familia""",
+        "troca": """    let texto = ip.to_string();
+    let familia""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "blacklist::tests::os_marcadores_saem_do_endereco_analisado",
+        ],
+        "seguem": [
+            "blacklist::tests::a_listagem_e_analisada_token_a_token",
+        ],
+    },
+    {
+        "id": "firewall-pelo-path",
+        "titulo": 'o firewall ligado aceitava `nft` pelo PATH, sem a conferência de dono do gancho (pedido 766, P11)',
+        "porque": ('pedido 766, P11: programa por caminho absoluto, pela mesma conferencia do gancho (pedido 639).'),
+        "arquivo": "crates/phxsql-server/src/config.rs",
+        "trecho": """                    if let Some(fw) = &p.firewall {
+                        fw.validar().map_err(|e| {
+                            PhxError::Esquema(format!("o firewall ligado nao sobe assim: {e}"))
+                        })?;
+                    }""",
+        "troca": """""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "blacklist::tests::o_firewall_ligado_exige_programa_por_caminho_absoluto",
+        ],
+        "seguem": [
+            "blacklist::tests::os_interruptores_novos_vem_do_config",
+        ],
+    },
+    {
+        "id": "reconciliacao-nao-tira-o-orfao",
+        "titulo": 'a regra do SO sem bloqueio ativo ficava para sempre depois de o PhxSql morrer antes do `del` (pedido 766, P11)',
+        "porque": ('pedido 766, P11: reconciliacao no arranque.'),
+        "arquivo": "crates/phxsql-server/src/blacklist.rs",
+        "trecho": """        match fw.desbloquear_ip(&texto) {
+            Ok(_) => r.removidos.push(texto),""",
+        "troca": """        match Ok::<bool, phxsql_core::error::PhxError>(true) {
+            Ok(_) => r.removidos.push(texto),""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "blacklist::tests::a_reconciliacao_poe_o_que_falta_e_tira_o_que_sobra",
+            "blacklist::tests::o_nft_de_verdade_recusa_a_injecao_e_reconcilia",
+        ],
+        "seguem": [
+            "blacklist::tests::a_listagem_e_analisada_token_a_token",
+        ],
+    },
+    {
+        "id": "reconciliacao-nao-devolve-o-ativo",
+        "titulo": 'o bloqueio ativo que o reboot tirou do conjunto não voltava ao firewall (pedido 766, P11)',
+        "porque": ('pedido 766, P11: o reboot esvazia o conjunto; o servidor barra, o SO nao.'),
+        "arquivo": "crates/phxsql-server/src/blacklist.rs",
+        "trecho": """        if no_so.contains(ip) {
+            continue;
+        }""",
+        "troca": """        if no_so.contains(ip) || true {
+            continue;
+        }""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "blacklist::tests::a_reconciliacao_poe_o_que_falta_e_tira_o_que_sobra",
+            "blacklist::tests::o_nft_de_verdade_recusa_a_injecao_e_reconcilia",
+        ],
+        "seguem": [
+            "blacklist::tests::a_listagem_e_analisada_token_a_token",
+        ],
+    },
+    {
+        "id": "forca-bruta-sem-produtor",
+        "titulo": 'a credencial errada no limite não virava ocorrência: `ForcaBruta` sem produtor (pedido 779)',
+        "porque": ('pedido 779: alarme declarado sem produtor fora de teste (cognicao de 09/10/2026 14:00).'),
+        "arquivo": "crates/phxsql-server/src/servidor/servico_avisos_01.rs",
+        "trecho": """crate::telemetria::sinal(crate::aquario::Alarme::ForcaBruta, comando);""",
+        "troca": """let _ = comando;""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_dos_produtores_779::a_quinta_credencial_errada_e_forca_bruta_e_a_quarta_nao",
+            "servidor::testes_dos_produtores_779::o_token_da_porta_errado_tambem_e_forca_bruta",
+            "servidor::testes_da_protecao_766::cinco_tokens_errados_do_loopback_nao_bloqueiam_o_loopback",
+        ],
+        "seguem": [
+            "servidor::testes_dos_produtores_779::a_tentativa_leve_que_nao_e_credencial_nao_e_forca_bruta",
+        ],
+    },
+    {
+        "id": "forca-bruta-em-todo-leve",
+        "titulo": 'a forca bruta acendia para toda tentativa leve, inclusive a que não é credencial (pedido 779, comportamento velho)',
+        "porque": ('pedido 779: forca bruta e credencial; o IP fora da lista nao e.'),
+        "arquivo": "crates/phxsql-server/src/servidor/servico_avisos_01.rs",
+        "trecho": """            crate::blacklist::Leve::Contada(_) => {}
+        }
+        leve""",
+        "troca": """            crate::blacklist::Leve::Contada(_) => {}
+        }
+        if leve.chegou_ao_limite() {
+            crate::telemetria::sinal(crate::aquario::Alarme::ForcaBruta, comando);
+        }
+        leve""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_dos_produtores_779::a_tentativa_leve_que_nao_e_credencial_nao_e_forca_bruta",
+        ],
+        "seguem": [
+            "servidor::testes_dos_produtores_779::a_quinta_credencial_errada_e_forca_bruta_e_a_quarta_nao",
+        ],
+    },
+    {
+        "id": "senha-em-claro-sem-produtor",
+        "titulo": 'a senha por fio em claro era recusada e não virava ocorrência: `SenhaEmClaro` sem produtor (pedido 779)',
+        "porque": ('pedido 779 / 667.'),
+        "arquivo": "crates/phxsql-server/src/servidor/servico_replicacao_02.rs",
+        "trecho": """crate::telemetria::sinal(crate::aquario::Alarme::SenhaEmClaro, "login");""",
+        "troca": """""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_dos_produtores_779::a_senha_em_claro_pela_rede_alarma_sem_levar_a_senha",
+        ],
+        "seguem": [
+            "servidor::testes_dos_produtores_779::a_senha_pelo_loopback_nao_alarma",
+        ],
+    },
+    {
+        "id": "integridade-sem-produtor",
+        "titulo": 'a recusa de unicidade, chave ou conflito não acendia nada: `IntegridadeRecusada` sem produtor (pedido 779)',
+        "porque": ('pedido 779; o `sem_alarme_nada_muda` fixava o defeito como comportamento.'),
+        "arquivo": "crates/phxsql-server/src/servidor/servico_avisos_01.rs",
+        "trecho": """crate::telemetria::sinal(crate::aquario::Alarme::IntegridadeRecusada, &acesso.op);""",
+        "troca": """let _ = &acesso.op;""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_dos_produtores_779::a_recusa_de_unicidade_vira_integridade_recusada",
+            "servidor::testes_dos_alarmes::sem_alarme_nada_muda",
+        ],
+        "seguem": [
+            "servidor::testes_dos_produtores_779::os_codigos_de_integridade_sao_os_do_erro",
+        ],
+    },
+    {
+        "id": "bidi-sem-chave-calada",
+        "titulo": 'a marca do bidirecional sem chave ficava no disco sem ocorrência (pedido 779)',
+        "porque": ('pedido 779: ramo sem teste do `completar_marcas_do_bidi`.'),
+        "arquivo": "crates/phxsql-server/src/servidor/servico_bidirecional_01.rs",
+        "trecho": """                            "a marca do bidirecional {} esta PARADA sem a chave \\
+                             ({motivo}); ela NAO foi apagada",
+                            caminho.display()
+                        );
+                        crate::telemetria::sinal(crate::aquario::Alarme::MarcaNaoResolvida, &texto);""",
+        "troca": """                            "a marca do bidirecional {} esta PARADA sem a chave \\
+                             ({motivo}); ela NAO foi apagada",
+                            caminho.display()
+                        );""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_dos_produtores_779::a_marca_do_bidi_sem_chave_vira_ocorrencia_e_fica",
+        ],
+        "seguem": [
+            "servidor::testes_dos_produtores_779::a_marca_do_bidi_que_nao_confere_sai_sem_alarme",
+        ],
+    },
+    {
+        "id": "bidi-ilegivel-calada",
+        "titulo": 'a marca do bidirecional que não se lê ficava no disco sem ocorrência (pedido 779)',
+        "porque": ('pedido 779: ramo sem teste do `completar_marcas_do_bidi`.'),
+        "arquivo": "crates/phxsql-server/src/servidor/servico_bidirecional_01.rs",
+        "trecho": """                            "a marca do bidirecional {} nao se leu ({e}); ela NAO foi \\
+                             apagada",
+                            caminho.display()
+                        );
+                        crate::telemetria::sinal(crate::aquario::Alarme::MarcaNaoResolvida, &texto);""",
+        "troca": """                            "a marca do bidirecional {} nao se leu ({e}); ela NAO foi \\
+                             apagada",
+                            caminho.display()
+                        );""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_dos_produtores_779::a_marca_do_bidi_que_nao_se_le_vira_ocorrencia_e_fica",
+        ],
+        "seguem": [
+            "servidor::testes_dos_produtores_779::a_marca_do_bidi_que_nao_confere_sai_sem_alarme",
+        ],
+    },
+    {
+        "id": "bidi-incompleta-calada",
+        "titulo": 'o grupo do bidirecional que não se completa ficava no disco sem ocorrência (pedido 779)',
+        "porque": ('pedido 779: ramo sem teste do `completar_marcas_do_bidi`.'),
+        "arquivo": "crates/phxsql-server/src/servidor/servico_bidirecional_01.rs",
+        "trecho": """                             ({e}); ela NAO foi apagada",
+                            caminho.display()
+                        );
+                        crate::telemetria::sinal(crate::aquario::Alarme::MarcaNaoResolvida, &texto);""",
+        "troca": """                             ({e}); ela NAO foi apagada",
+                            caminho.display()
+                        );""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_dos_produtores_779::a_marca_do_bidi_que_nao_se_completa_vira_ocorrencia_e_fica",
+        ],
+        "seguem": [
+            "servidor::testes_dos_produtores_779::a_marca_do_bidi_que_nao_confere_sai_sem_alarme",
+        ],
+    },
+    {
+        "id": "agendada-sem-ritmo",
+        "titulo": 'a réplica agendada com a origem fora do ar a noite inteira nunca virava `origem_inalcancavel` (pedido 779)',
+        "porque": ('pedido 779: o laco agendado nao passava pelo Ritmo.'),
+        "arquivo": "crates/phxsql-server/src/servidor/servico_replicacao_01.rs",
+        "trecho": """let _ = self.registrar_a_falha(&origem.nome, ritmo, falha);""",
+        "troca": """let _ = falha;""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_dos_produtores_779::a_replica_agendada_alarma_a_origem_inalcancavel_alem_do_prazo",
+        ],
+        "seguem": [
+            "servidor::testes_dos_produtores_769::a_origem_inalcancavel_alem_do_prazo_vira_uma_pedra_por_episodio",
+        ],
+    },
+    {
+        "id": "fw-pendura-sem-premissa",
+        "titulo": "o teste do firewall pendurado ficava verde sem o firewall rodar: com o loopback poupado o terceiro token não bloqueava (pedido 766, P9)",
+        "porque": ("cognicao de 09/10/2026 18:30: guarda que poupa um caminho esvazia o teste que dependia dele."),
+        "arquivo": "crates/phxsql-server/tests/firewall-que-pendura.rs",
+        "trecho": """    c.politica.poupar_loopback = false;
+""",
+        "troca": """    // DEFEITO REPOSTO (766, P9): o escape do loopback saiu.
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "firewall-que-pendura"],
+        "caem": [
+            "firewall_que_pendura_nao_para_o_servidor",
+        ],
+        "seguem": [],
     },
 ]

@@ -171,13 +171,25 @@ fn o_pedido_seguinte_nasce_sem_o_alarme_do_anterior() {
 }
 
 /// O caminho comum nao marca nada: pedido que deu certo, e erro que nao e
-/// de nenhuma origem marcada (integridade, 3006), saem com zero.
+/// de nenhuma origem marcada («nao achei», 3001), saem com zero.
+///
+/// A recusa de integridade (3006) era o exemplo de «erro sem marca» ate o
+/// pedido 779 -- e era o defeito: o alarme `IntegridadeRecusada` existia, a
+/// tela o traduzia, e nada o acendia. Agora ela marca o bit DELA, e so ele.
 #[test]
 fn sem_alarme_nada_muda() {
     let (s, _dir) = servidor("comum");
     assert_eq!(pedido_com(&s, "dados:8", |_, _| Ok(())), 0);
+    let nao_achei = pedido_com(&s, "dados:10", |_, _| {
+        Err(PhxError::NaoEncontrado("linha 7".into()))
+    });
+    assert_eq!(nao_achei, 0, "{nao_achei:#b}");
     let integridade = pedido_com(&s, "dados:9", |_, _| {
         Err(PhxError::Integridade("filha sem mae".into()))
     });
-    assert_eq!(integridade, 0, "{integridade:#b}");
+    assert_eq!(
+        integridade,
+        crate::aquario::Alarme::IntegridadeRecusada.bit(),
+        "{integridade:#b}"
+    );
 }

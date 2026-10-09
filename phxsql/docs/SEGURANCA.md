@@ -228,15 +228,65 @@ mora no `blacklist.json` — arquivo próprio pelo mesmo motivo do `dblink.json`
 o que muda pela tela não reescreve o config. Regra ilegível é recusada
 inteira, sem gravar metade.
 
-### `127.0.0.1` não tem exceção implícita
+### As quatro guardas de não se trancar (pedido 766, P9)
 
-Decisão deliberada, e o motivo está em duas partes. Primeiro, uma exceção
-embutida mudaria o comportamento que já existe — hoje o localhost bloqueia
-como qualquer IP, e há teste de soquete que depende disso. Segundo, o operador
-local **nunca fica trancado de verdade**: `phxsqld --desbloquear 127.0.0.1`
-roda na máquina, mexe no arquivo sem passar pela porta, e o servidor relê
-sozinho. Quem quiser a exceção pede por ela: `"whitelist": ["127.0.0.1"]`, que
-é o que o exemplo de config sugere.
+**A decisão de antes mudou, e o motivo foi medido.** Esta seção dizia
+«`127.0.0.1` não tem exceção implícita», com dois argumentos: a exceção
+mudaria o comportamento e o operador local nunca fica trancado de verdade. O
+segundo caiu em 09/10/2026: **cinco logins com token errado vindos de
+`127.0.0.1` bloquearam o próprio loopback por 60 minutos** — a tela e a TV
+junto, que chegam pelo loopback. O `--desbloquear` existe, mas a tela trancada
+é a que o operador olharia para descobrir o que houve.
+
+Hoje, quando as tentativas chegam ao limite, quatro guardas decidem o
+**destino do IP** — nunca o da operação, que continua recusada, nem a conta,
+que continua contando:
+
+| guarda | quando | de onde |
+|---|---|---|
+| whitelist | a fixa do `config.json` ou a da tela | `Blacklist::guarda` |
+| loopback | `127.0.0.0/8`, `::1` e a forma mapeada, com `poupar_loopback` (nasce `true`) | `Blacklist::guarda` |
+| administrador | um login com `administrar` deste IP nas últimas 24 h | `ips-vistos.jsonl` (FORMATO §28) |
+| compartilhado | ≥ 2 usuários distintos deste IP em 30 dias (NAT, proxy) | `ips-vistos.jsonl` |
+
+O loopback poupado é a convergência de quem já apanhou disso: o MySQL não põe
+o loopback no *host cache* do `max_connect_errors`, e o fail2ban nasce com
+`ignoreself`. As duas guardas de memória só são perguntadas **no limite**: o
+erro comum não paga a varredura.
+
+**O poupado não some.** Antes, o IP protegido saía sem contar, e a força bruta
+que vinha da whitelist era invisível. Agora conta como todo mundo, e a
+credencial errada no limite vira a ocorrência `ForcaBruta` (pedido 779) —
+bloqueando ou poupado. Atrás de um proxy na mesma máquina, todo cliente chega
+de `127.0.0.1`: o aviso é tudo o que sobra, e por isso ele existe.
+
+**O bloqueio gravado antes da guarda** não segura a porta: o `barrado()` de
+toda conexão pergunta a mesma guarda, e o loopback bloqueado por um binário
+anterior volta a entrar na conexão seguinte.
+
+**Quem quer o comportamento de antes pede:** `"poupar_loopback": false` em
+`seguranca`. É o que os testes de soquete usam para provar o bloqueio — e foi
+ao ligar a guarda que um deles, `tests/firewall-que-pendura.rs`, **passou a
+passar por engano** (o terceiro token não bloqueava mais, o firewall nunca
+rodava, e o «servidor não parou» era verdade por outro motivo). Ele ganhou o
+escape escrito e uma conferência da premissa: o `127.0.0.1` tem de estar na
+lista ao fim.
+
+**O que ficou de fora:** o desenho pede também **encerrar a sessão** do usuário
+cujo IP foi poupado. Nos caminhos que chegam ao limite hoje (token, senha, IP
+fora da lista, comando proibido) não há sessão autenticada para encerrar, ou a
+resposta já recusa; o encerrar entra com a P8, onde o código malicioso de quem
+já está dentro passa a contar.
+
+### O prazo escalona (pedido 766, P10)
+
+Cada bloqueio do mesmo IP nos últimos 30 dias dobra o seguinte:
+`bloqueio_minutos × 2^n`, `n ≤ 20` (o `bantime.increment` do fail2ban), com
+teto de **7 dias** que nunca encurta um `bloqueio_minutos` maior. Com o padrão
+de 60 min: 60, 120, 240, 480… até 10.080. O histórico mora no `blacklist.json`
+(FORMATO §29) e **sobrevive ao reinício e ao `desbloquear`** — soltar é perdoar
+o bloqueio, não a reincidência. `"escalonar": false` é o comportamento de antes;
+`bloqueio_minutos: 0` continua permanente.
 
 ### O aviso ao administrador, por e-mail
 
@@ -515,6 +565,52 @@ lista. Custa um `stat` por conexão.
 
 `timeout_s` é o prazo duro de cada execução (padrão 10, de 1 a 120).
 
+**Os marcadores (pedido 766, P11).** `{ip}` é o endereço **reescrito** do
+`IpAddr` analisado, na forma canônica (`::ffff:203.0.113.9` chega como
+`203.0.113.9`) — nunca o texto que chegou; `{familia}` é `4` ou `6`;
+`{segundos}` é o prazo que falta do bloqueio, inteiro (`0` no permanente e no
+desbloquear). Com eles, o conjunto com prazo no kernel:
+
+```json
+"firewall": {
+  "ligado": true,
+  "bloquear":    ["/usr/sbin/nft", "add", "element", "inet", "phxsql", "negros{familia}", "{", "{ip}", "timeout", "{segundos}s", "}"],
+  "desbloquear": ["/usr/sbin/nft", "delete", "element", "inet", "phxsql", "negros{familia}", "{", "{ip}", "}"],
+  "listar":      ["/usr/sbin/nft", "list", "table", "inet", "phxsql"],
+  "timeout_s": 10
+}
+```
+
+O kernel desfaz a regra sozinho no fim do prazo, mesmo com o PhxSql morto. Os
+conjuntos `negros4` (`ipv4_addr`) e `negros6` (`ipv6_addr`) com
+`flags timeout` e a regra `saddr @negros4 drop` são criados uma vez por quem
+tem o privilégio. **Escalonamento:** o `add element` de um elemento que já
+existe **troca o prazo dele** — medido em 09/10/2026 com nftables 1.0.9 e
+kernel 6.18 (`timeout 60s` e depois `timeout 600s` no mesmo IP: o conjunto
+ficou com `timeout 10m`, saída 0); a hipótese contrária, de que o prazo antigo
+ficava, morreu nessa medição. Em outra versão, confira com o mesmo par de comandos; o servidor barra pelo
+prazo dele de qualquer jeito.
+
+**Caminho absoluto, conferido no arranque.** Com `ligado`, o `[0]` de
+`bloquear`, `desbloquear` e `listar` passa pela **mesma** conferência do gancho
+(`gancho::conferir_programa_de`): caminho absoluto, arquivo comum, executável,
+de root ou do usuário do servidor, sem diretório gravável por outros na
+cadeia. O `config.json` com `"nft"` pelo `PATH` não sobe.
+
+**A reconciliação do arranque.** Com `listar`, uma thread própria roda o
+comando uma vez ao subir e **analisa** a saída token a token: só o pedaço que é
+um `IpAddr` inteiro conta (`timeout`, `2m`, `10.0.0.0/8` e nomes caem fora). O
+ativo da lista ausente no SO (o reboot esvaziou o conjunto, ou o processo
+morreu antes do `add`) **volta com o prazo que falta**; o que está no SO sem
+bloqueio ativo (morreu antes do `del`, ou venceu com ele parado) **sai**. A
+whitelist e o loopback poupado nunca vão ao firewall. Provado contra o `nft` de
+verdade num namespace de rede próprio (`unshare --net`,
+`blacklist::tests::o_nft_de_verdade_recusa_a_injecao_e_reconcilia`), com o
+controle positivo dentro do teste: o mesmo argv com o texto **cru** no lugar do
+`{ip}` apaga a tabela `controle` — a injeção que só a análise do IP segura.
+**Não exercitado:** o `netsh` do Windows, e o SYN do IP bloqueado que não
+chega (medido pelo papel J, M5 do desenho, e não por esta bateria).
+
 **O bloqueio nunca depende disto.** Um IP na lista é recusado dentro do
 servidor, sem firewall, sem root, sem poder falhar. A regra é um extra que
 tira o tráfego antes de ele chegar ao processo.
@@ -524,9 +620,12 @@ Três cuidados, e eles não são decorativos:
 1. **Desligado por padrão.** Ligar é decisão consciente.
 2. **Sem shell.** O comando vem como lista de argumentos e é executado direto,
    sem `sh -c`. Um daemon de rede que monta linha de comando com texto vindo de
-   fora é uma porta dos fundos.
-3. **O IP é validado como endereço** antes de entrar no lugar do `{ip}`. Há
-   teste que recusa `"; rm -rf /"`, `"10.0.0.1 && reboot"` e `"$(whoami)"`.
+   fora é uma porta dos fundos. **Sem shell não basta**, e isso foi medido: o
+   `nft` junta o argv numa linha e a analisa de novo, então
+   `127.0.0.3 }; delete table inet x` passaria inteiro.
+3. **O IP é analisado como endereço e REESCRITO** no lugar do `{ip}` — é esta
+   a barreira. Há teste que recusa `"; rm -rf /"`, `"10.0.0.1 && reboot"`,
+   `"$(whoami)"` e a injeção do `nft`, esta contra o `nft` de verdade.
 
 Se o comando falhar, o bloqueio **continua valendo** dentro do servidor e a
 falha vira aviso no log. Firewall quebrado não vira porta aberta.

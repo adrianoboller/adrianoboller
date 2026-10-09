@@ -133,6 +133,7 @@ window.PhxAquario = (function () {
     "aquario.motivo.plano_largo": () => txt("tela.aq_m_plano_largo", "o plano alcança metade da tabela ou mais"),
     "aquario.motivo.comando_bloqueado": () => txt("tela.aq_m_comando_bloqueado", "comando perigoso bloqueado: faltou a senha de execução"),
     "aquario.motivo.senha_de_execucao_recusada": () => txt("tela.aq_m_senha_de_execucao_recusada", "a senha de execução não conferiu"),
+    "aquario.motivo.ip_novo": () => txt("tela.aq_m_ip_novo", "primeiro login vindo deste IP"),
   };
   /* Chave que esta versao da tela nao conhece (servidor mais novo): sai a
    * chave crua, que e honesta — inventar uma frase seria pior. */

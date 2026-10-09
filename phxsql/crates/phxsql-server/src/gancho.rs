@@ -57,6 +57,12 @@ use crate::config::Gancho;
 /// o gancho nao tem de depender dele.
 pub const PATH_DO_FILHO: &str = "/usr/local/bin:/usr/bin:/bin";
 
+/// O maximo de `stdout` que volta de uma execucao que pede saida (o `listar`
+/// do firewall). 1 MiB cabe ~40.000 enderecos v4 na forma do `nft list set`;
+/// o lancador recusa pedido acima disto, para um pedido torto nao fazer o
+/// processo de fora guardar memoria sem fim.
+pub const TETO_DA_SAIDA_LIDA: usize = 1 << 20;
+
 /// De quanto em quanto tempo a vigia olha se o filho acabou. Curto o bastante
 /// para um script rapido nao esperar, longo o bastante para nao queimar CPU.
 const PASSO_DA_VIGIA: Duration = Duration::from_millis(20);
@@ -143,6 +149,7 @@ pub fn executar(g: &Gancho, c: &Chamada, em_voo: &AtomicBool) -> Result<(), Stri
             ambiente: &ambiente,
             entrada: Some(c.linha),
             prazo_s: g.timeout_s,
+            teto_da_saida: 0,
         })
     })?
 }
@@ -166,6 +173,12 @@ pub struct Execucao<'a> {
     pub entrada: Option<&'a str>,
     /// O prazo duro, em segundos (no minimo 1).
     pub prazo_s: u64,
+    /// Quantos bytes do `stdout` voltam a quem pediu. Zero -- o caso de todo
+    /// gancho e de todo `bloquear`/`desbloquear` -- descarta a saida, como
+    /// sempre foi. So o `listar` do firewall (pedido 766, P11) pede saida, e
+    /// pede porque a reconciliacao precisa ANALISAR o que o SO diz; o erro
+    /// continua nunca carregando o que o programa imprimiu.
+    pub teto_da_saida: usize,
 }
 
 /// Roda o programa UMA vez, com prazo duro, e devolve uma frase que nunca
@@ -176,6 +189,14 @@ pub struct Execucao<'a> {
 /// Sem lancador -- binario de teste, ou um lancador que nao nasceu --, roda
 /// aqui mesmo, pelo MESMO [`rodar_aqui`] que o lancador usa do lado dele.
 pub fn rodar(e: &Execucao) -> Result<(), String> {
+    rodar_e_ler(e).map(|_| ())
+}
+
+/// O [`rodar`] que devolve o `stdout` -- ate `e.teto_da_saida` bytes, em
+/// texto com a troca do que nao e UTF-8. O MESMO motor, pelo lancador quando
+/// ha um: a saida e o unico acrescimo, e so no sucesso; a frase do erro
+/// continua sem ela.
+pub fn rodar_e_ler(e: &Execucao) -> Result<String, String> {
     #[cfg(unix)]
     if let Some(r) = lancador::pedir(e) {
         return r;
@@ -183,10 +204,40 @@ pub fn rodar(e: &Execucao) -> Result<(), String> {
     rodar_aqui(e)
 }
 
+/// Le o `stdout` do filho numa thread propria: o filho que imprime mais que
+/// o buffer do pipe pararia no `write` esperando quem leia, e a vigia o
+/// mataria no prazo por um motivo que nao e dele. Guarda ate `teto` bytes e
+/// DRENA o resto, pelo mesmo motivo.
+fn ler_a_saida(
+    saida: std::process::ChildStdout,
+    teto: usize,
+) -> std::sync::mpsc::Receiver<Vec<u8>> {
+    use std::io::Read;
+    let (tx, rx) = std::sync::mpsc::channel();
+    let _ = std::thread::Builder::new()
+        .name("saida-do-filho".into())
+        .spawn(move || {
+            let mut guardado = Vec::new();
+            let mut saida = saida;
+            let mut bloco = [0u8; 8192];
+            loop {
+                match saida.read(&mut bloco) {
+                    Ok(0) | Err(_) => break,
+                    Ok(n) => {
+                        let cabe = teto.saturating_sub(guardado.len()).min(n);
+                        guardado.extend_from_slice(&bloco[..cabe]);
+                    }
+                }
+            }
+            let _ = tx.send(guardado);
+        });
+    rx
+}
+
 /// O motor de execucao de fato. E o que o [`lancador`] chama do lado dele, e
 /// o que o servidor chama quando nao ha lancador: uma copia so das garantias
 /// (`env_clear`, sem shell, saida descartada, prazo com `kill`+`wait`).
-fn rodar_aqui(e: &Execucao) -> Result<(), String> {
+fn rodar_aqui(e: &Execucao) -> Result<String, String> {
     let Some(programa) = e.argv.first() else {
         return Err(format!("{} sem comando", e.rotulo));
     };
@@ -202,9 +253,14 @@ fn rodar_aqui(e: &Execucao) -> Result<(), String> {
         } else {
             Stdio::null()
         })
-        .stdout(Stdio::null())
+        .stdout(if e.teto_da_saida > 0 {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        })
         .stderr(Stdio::null());
     let mut filho = iniciar(&mut cmd, rotulo)?;
+    let leitura = filho.stdout.take().map(|s| ler_a_saida(s, e.teto_da_saida));
     if let (Some(linha), Some(mut entrada)) = (e.entrada, filho.stdin.take()) {
         // 160 caracteres cabem no pipe sem bloquear. Um programa que nao
         // le o stdin faz o `write` falhar com EPIPE, e isso nao e erro.
@@ -218,7 +274,16 @@ fn rodar_aqui(e: &Execucao) -> Result<(), String> {
         match filho.try_wait() {
             Ok(Some(estado)) => {
                 return if estado.success() {
-                    Ok(())
+                    // O neto que herdou o pipe e ficou vivo seguraria a
+                    // leitura para sempre: espera-se no maximo um passo de
+                    // vigia por segundo de prazo, e o que nao chegou fica
+                    // vazio -- a reconciliacao le «nada no SO», que e o lado
+                    // seguro (ela so ACRESCENTA o que falta).
+                    let texto = leitura
+                        .and_then(|rx| rx.recv_timeout(Duration::from_secs(prazo)).ok())
+                        .map(|b| String::from_utf8_lossy(&b).into_owned())
+                        .unwrap_or_default();
+                    Ok(texto)
                 } else {
                     Err(match estado.code() {
                         Some(n) => format!("o {rotulo} saiu com codigo {n}"),
@@ -277,7 +342,7 @@ fn rodar_aqui(e: &Execucao) -> Result<(), String> {
 /// vez, a do proprio lancador, em vez de a cada evento.
 #[cfg(unix)]
 pub mod lancador {
-    use super::{rodar_aqui, Execucao};
+    use super::{rodar_aqui, Execucao, TETO_DA_SAIDA_LIDA};
     use phxsql_core::json::Json;
     use std::collections::HashMap;
     use std::io::{BufRead, BufReader, Write};
@@ -296,7 +361,7 @@ pub mod lancador {
     /// para sempre quem pediu.
     const FOLGA: Duration = Duration::from_secs(10);
 
-    type Resposta = Result<(), String>;
+    type Resposta = Result<String, String>;
     type Pendentes = HashMap<u64, mpsc::Sender<Resposta>>;
 
     static EXECUTAVEL: OnceLock<PathBuf> = OnceLock::new();
@@ -379,7 +444,7 @@ pub mod lancador {
             };
             let r = match j.campo("erro").and_then(Json::texto) {
                 Some(e) => Err(e.to_string()),
-                None => Ok(()),
+                None => Ok(j.texto_ou("saida", "").to_string()),
             };
             let tx = l.pendentes().as_mut().and_then(|m| m.remove(&(id as u64)));
             if let Some(tx) = tx {
@@ -468,6 +533,7 @@ pub mod lancador {
                 e.entrada.map(Json::texto_de).unwrap_or(Json::Nulo),
             ),
             ("prazo_s", Json::de_u64(e.prazo_s)),
+            ("teto_da_saida", Json::de_u64(e.teto_da_saida as u64)),
         ])
     }
 
@@ -497,6 +563,11 @@ pub mod lancador {
                 .and_then(Json::inteiro)
                 .unwrap_or(1)
                 .max(1) as u64,
+            teto_da_saida: j
+                .campo("teto_da_saida")
+                .and_then(Json::inteiro)
+                .unwrap_or(0)
+                .clamp(0, TETO_DA_SAIDA_LIDA as i64) as usize,
         })
     }
 
@@ -519,8 +590,10 @@ pub mod lancador {
             let saida = Arc::clone(&saida);
             em_voo.push(std::thread::spawn(move || {
                 let mut pares = vec![("id", Json::de_i64(id))];
-                if let Err(e) = atender(&j) {
-                    pares.push(("erro", Json::texto_de(e)));
+                match atender(&j) {
+                    Err(e) => pares.push(("erro", Json::texto_de(e))),
+                    Ok(saida) if !saida.is_empty() => pares.push(("saida", Json::texto_de(saida))),
+                    Ok(_) => {}
                 }
                 let mut w = saida.lock().unwrap_or_else(|e| e.into_inner());
                 let _ = writeln!(w, "{}", Json::objeto(pares).escrever());
@@ -644,31 +717,36 @@ fn dono_confiavel(uid: u32, servidor: Option<u32>) -> bool {
 /// No Windows nao ha checagem de dono nem de ACL (so existencia): o bloco e
 /// `cfg(unix)`, e o operador la protege o programa pelas ACLs do sistema.
 pub fn conferir_programa(programa: &str) -> Result<(), String> {
+    conferir_programa_de("alertas.gancho.comando[0]", programa)
+}
+
+/// A [`conferir_programa`] com o CAMPO que a frase da recusa nomeia: o
+/// gancho do operador e os tres comandos do firewall (pedido 766, P11) sao
+/// a mesma pergunta -- «este programa pode rodar com os poderes do
+/// servidor?» --, e uma segunda conferencia para o firewall seria a copia que
+/// envelhece sem a outra.
+pub fn conferir_programa_de(campo: &str, programa: &str) -> Result<(), String> {
     let caminho = Path::new(programa);
     if !caminho.is_absolute() {
         return Err(format!(
-            "alertas.gancho.comando[0]: {programa:?} nao e um caminho absoluto \
+            "{campo}: {programa:?} nao e um caminho absoluto \
              (o PATH do servidor nao vale aqui)"
         ));
     }
     let meta = std::fs::metadata(caminho).map_err(|e| {
         format!(
-            "alertas.gancho.comando[0]: {programa:?} nao existe ou nao se le ({:?})",
+            "{campo}: {programa:?} nao existe ou nao se le ({:?})",
             e.kind()
         )
     })?;
     if !meta.is_file() {
-        return Err(format!(
-            "alertas.gancho.comando[0]: {programa:?} nao e um arquivo comum"
-        ));
+        return Err(format!("{campo}: {programa:?} nao e um arquivo comum"));
     }
     #[cfg(unix)]
     {
         use std::os::unix::fs::{MetadataExt, PermissionsExt};
         if meta.permissions().mode() & 0o111 == 0 {
-            return Err(format!(
-                "alertas.gancho.comando[0]: {programa:?} nao e executavel"
-            ));
+            return Err(format!("{campo}: {programa:?} nao e executavel"));
         }
         let servidor = uid_do_servidor();
         // Cada ELO da cadeia (o caminho dado, os links que ele atravessa e o
@@ -679,15 +757,11 @@ pub fn conferir_programa(programa: &str) -> Result<(), String> {
         // consegue repontar.
         let mut atual = caminho.to_path_buf();
         for _ in 0..16 {
-            let m = std::fs::symlink_metadata(&atual).map_err(|e| {
-                format!(
-                    "alertas.gancho.comando[0]: {programa:?} nao se resolve ({:?})",
-                    e.kind()
-                )
-            })?;
+            let m = std::fs::symlink_metadata(&atual)
+                .map_err(|e| format!("{campo}: {programa:?} nao se resolve ({:?})", e.kind()))?;
             if !dono_confiavel(m.uid(), servidor) {
                 return Err(format!(
-                    "alertas.gancho.comando[0]: {programa:?} pertence a outro usuario \
+                    "{campo}: {programa:?} pertence a outro usuario \
                      (uid {}); so root ou o usuario do servidor podem ser donos",
                     m.uid()
                 ));
@@ -697,14 +771,14 @@ pub fn conferir_programa(programa: &str) -> Result<(), String> {
             let pai = atual.parent().unwrap_or(Path::new("/"));
             let pai_real = std::fs::canonicalize(pai).map_err(|e| {
                 format!(
-                    "alertas.gancho.comando[0]: o diretorio de {programa:?} nao se resolve ({:?})",
+                    "{campo}: o diretorio de {programa:?} nao se resolve ({:?})",
                     e.kind()
                 )
             })?;
             for dir in pai_real.ancestors() {
                 let d = std::fs::metadata(dir).map_err(|e| {
                     format!(
-                        "alertas.gancho.comando[0]: o diretorio de {programa:?} nao se le ({:?})",
+                        "{campo}: o diretorio de {programa:?} nao se le ({:?})",
                         e.kind()
                     )
                 })?;
@@ -712,14 +786,14 @@ pub fn conferir_programa(programa: &str) -> Result<(), String> {
                 let sticky = modo & 0o1000 != 0;
                 if modo & 0o022 != 0 && !sticky {
                     return Err(format!(
-                        "alertas.gancho.comando[0]: um diretorio de {programa:?} e gravavel \
+                        "{campo}: um diretorio de {programa:?} e gravavel \
                          por grupo ou outros e sem o bit sticky; quem escreve nele troca o \
                          programa por `rename`"
                     ));
                 }
                 if !dono_confiavel(d.uid(), servidor) {
                     return Err(format!(
-                        "alertas.gancho.comando[0]: um diretorio de {programa:?} pertence a \
+                        "{campo}: um diretorio de {programa:?} pertence a \
                          outro usuario (uid {})",
                         d.uid()
                     ));
@@ -727,10 +801,7 @@ pub fn conferir_programa(programa: &str) -> Result<(), String> {
             }
             if m.file_type().is_symlink() {
                 let alvo = std::fs::read_link(&atual).map_err(|e| {
-                    format!(
-                        "alertas.gancho.comando[0]: o link de {programa:?} nao se le ({:?})",
-                        e.kind()
-                    )
+                    format!("{campo}: o link de {programa:?} nao se le ({:?})", e.kind())
                 })?;
                 atual = if alvo.is_absolute() {
                     alvo
@@ -745,21 +816,19 @@ pub fn conferir_programa(programa: &str) -> Result<(), String> {
             let modo = m.permissions().mode();
             if modo & 0o002 != 0 {
                 return Err(format!(
-                    "alertas.gancho.comando[0]: {programa:?} e gravavel por qualquer usuario \
+                    "{campo}: {programa:?} e gravavel por qualquer usuario \
                      (tire a permissao de escrita de \"outros\")"
                 ));
             }
             if modo & 0o020 != 0 {
                 return Err(format!(
-                    "alertas.gancho.comando[0]: {programa:?} e gravavel pelo grupo \
+                    "{campo}: {programa:?} e gravavel pelo grupo \
                      (tire a permissao de escrita do \"grupo\")"
                 ));
             }
             return Ok(());
         }
-        Err(format!(
-            "alertas.gancho.comando[0]: {programa:?} atravessa links demais"
-        ))
+        Err(format!("{campo}: {programa:?} atravessa links demais"))
     }
     #[cfg(not(unix))]
     Ok(())

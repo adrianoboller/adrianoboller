@@ -208,12 +208,17 @@ pub enum Alarme {
     /// lugar dela, ou a conta bloqueada por tentativas). Vermelho e de
     /// TAREFA: e a tentativa de liberar comando perigoso que falhou.
     SenhaDeExecucaoRecusada,
+    /// Pedido 765, P6: o primeiro login com sucesso de (usuario, database,
+    /// IP) nunca visto em 90 dias. De TAREFA (e o pedido de login) e
+    /// amarelo: nada foi recusado -- o aviso e para quem administra olhar se
+    /// reconhece a origem.
+    IpNovo,
 }
 
 impl Alarme {
     /// Todos, na ordem da declaracao. Os testes conferem que nenhum fica de
     /// fora, pelo `match` exaustivo do [`Alarme::chave`].
-    pub const TODOS: [Alarme; 26] = [
+    pub const TODOS: [Alarme; 27] = [
         Alarme::TravaReentrante,
         Alarme::TravaEnvenenada,
         Alarme::ErroDeDisco,
@@ -240,6 +245,7 @@ impl Alarme {
         Alarme::PlanoLargo,
         Alarme::ComandoBloqueado,
         Alarme::SenhaDeExecucaoRecusada,
+        Alarme::IpNovo,
     ];
 
     /// A chave da fabrica de idiomas. E o MESMO texto da bolha e do e-mail,
@@ -275,6 +281,7 @@ impl Alarme {
             Alarme::PlanoLargo => "aquario.motivo.plano_largo",
             Alarme::ComandoBloqueado => "aquario.motivo.comando_bloqueado",
             Alarme::SenhaDeExecucaoRecusada => "aquario.motivo.senha_de_execucao_recusada",
+            Alarme::IpNovo => "aquario.motivo.ip_novo",
         }
     }
 
@@ -297,7 +304,8 @@ impl Alarme {
             | Alarme::DiscoLento
             | Alarme::EsgotamentoPrevisto
             | Alarme::ReplicaAtrasada
-            | Alarme::PlanoLargo => Gravidade::Amarelo,
+            | Alarme::PlanoLargo
+            | Alarme::IpNovo => Gravidade::Amarelo,
             _ => Gravidade::Vermelho,
         }
     }
@@ -321,7 +329,8 @@ impl Alarme {
             | Alarme::SenhaEmClaro
             | Alarme::FirewallBloqueou
             | Alarme::ComandoBloqueado
-            | Alarme::SenhaDeExecucaoRecusada => Grupo::Seguranca,
+            | Alarme::SenhaDeExecucaoRecusada
+            | Alarme::IpNovo => Grupo::Seguranca,
             Alarme::PrazoEstourado | Alarme::ForaDoHabitual | Alarme::ForaDoHabitualReincidente => {
                 Grupo::Prazo
             }
@@ -364,6 +373,7 @@ impl Alarme {
             Alarme::PlanoLargo => 12,
             Alarme::ComandoBloqueado => 13,
             Alarme::SenhaDeExecucaoRecusada => 14,
+            Alarme::IpNovo => 15,
             Alarme::FechoRecusado
             | Alarme::FsyncRecusadoAntes
             | Alarme::MarcaNaoResolvida

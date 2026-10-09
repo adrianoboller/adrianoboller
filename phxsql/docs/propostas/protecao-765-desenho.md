@@ -324,6 +324,53 @@ Ordem: P0 (defeito, na conta) → P1 → P14 → P2/P3/P4/P5 → P12/P13 → P6/
 
 ---
 
+### 6.1 O que o papel B entregou de P6, P9, P10 e P11 — e o RED (09/10/2026)
+
+Cada linha: o defeito reposto e os testes que caíram com ele (medido por um
+script da frente que aplica a troca, roda só os testes nomeados e restaura;
+as mesmas trocas viraram entradas do `bancada/guardas/catalogo.py`). **26 de
+26 trocas derrubaram o teste que as acusa**; o 27.º, `fw-pendura-sem-premissa`,
+é de teste de integração e foi provado pelo provador.
+
+| fatia | defeito reposto | caiu |
+|---|---|---|
+| P6 | sem a chamada `ip_visto_no_login` no `login` | `o_primeiro_login_de_um_ip_novo_gera_uma_ocorrencia_e_o_segundo_nenhuma` |
+| P6 | semente vazia no lugar do `acessos.log` | `o_ip_que_ja_esta_no_acessos_log_nao_gera_ocorrencia` |
+| P6 | memória só em processo (o arquivo não recebe a linha) | os dois «segundo login não é novo», depois do reinício |
+| P6 | sem o teto de 50.000 | `com_o_teto_cheio_o_mapa_nao_cresce` |
+| P9 | sem o ramo do loopback | `cinco_tokens_errados_do_loopback_nao_bloqueiam_o_loopback`, `o_loopback_bloqueado_antes_da_guarda_entra_de_novo` |
+| P9 | `poupar_loopback` sem leitor | `os_interruptores_novos_vem_do_config` |
+| P9 | sem a guarda do administrador | `o_ip_de_quem_administra_nao_e_bloqueado` |
+| P9 | sem a guarda do compartilhado | `o_ip_de_dois_usuarios_nao_e_bloqueado` |
+| P9 | sem a whitelist editável na guarda única | `whitelist_por_cidr_e_a_dinamica_do_arquivo` |
+| P9 | guarda que poupa todo mundo (comportamento velho) | `o_ip_desconhecido_e_o_de_um_usuario_so_continuam_bloqueando` |
+| P10 | histórico fora do `blacklist.json` | `o_terceiro_bloqueio_dura_240_e_o_vigesimo_quinto_sete_dias`, `o_bloqueio_reincidente_dobra_e_o_reinicio_preserva_a_conta` |
+| P10 | fator sempre 1 | `o_prazo_escalona_por_dois_ate_sete_dias` |
+| P10 | histórico sem teto | `o_historico_de_reincidencia_tem_teto` |
+| P11 | IP cru no argv (o M4) | `os_marcadores_saem_do_endereco_analisado`, `o_nft_de_verdade_recusa_a_injecao_e_reconcilia` |
+| P11 | IP não canônico | `os_marcadores_saem_do_endereco_analisado` |
+| P11 | firewall sem a conferência de caminho absoluto | `o_firewall_ligado_exige_programa_por_caminho_absoluto` |
+| P11 | reconciliação que não tira o órfão / não devolve o ativo | `a_reconciliacao_poe_o_que_falta_e_tira_o_que_sobra`, `o_nft_de_verdade_recusa_a_injecao_e_reconcilia` |
+
+O teste contra o `nft` de verdade (`unshare --net`) carrega o **controle
+positivo dentro dele**: o mesmo argv com o texto cru no lugar do `{ip}` apaga a
+tabela `controle` a cada corrida — o M4 reposto, sem depender de mutação.
+
+**Divergência do desenho, com o motivo.** O §4.6 dizia que o loopback é isento
+«no caminho automático e no firewall» e que «o caminho velho (senha errada etc.)
+fica como é». O caso medido em 09/10/2026 é justamente do caminho velho (cinco
+tokens errados de `127.0.0.1` trancando a tela e a TV por 60 min), então a
+guarda vale para **todo** caminho de bloqueio — leve, grave e o `barrado()` —,
+com `poupar_loopback: false` devolvendo o comportamento de antes. Os dois testes
+de soquete que dependiam do bloqueio do loopback ganharam o escape escrito; um
+deles passou a passar por engano antes do escape (cognição de 09/10/2026 18:30).
+
+**De fora, e por quê:** encerrar a sessão do usuário do IP poupado (nos caminhos
+de hoje não há sessão autenticada no limite; entra com a P8); o ajudante
+`phxsql-fw` + `sudoers` do pacote (empacotamento, não código do servidor); o
+SYN do IP bloqueado medido pela suíte (o M5 deste desenho continua sendo a
+medida); o `netsh` do Windows, não exercitado neste contêiner — PENDENTE.
+
 ## 7. Choque com pétrea?
 
 **Nenhum.** «Guarda nova entra pedida»: tudo nasce `observar` (não muda resposta), o `bloquear_por_codigo`

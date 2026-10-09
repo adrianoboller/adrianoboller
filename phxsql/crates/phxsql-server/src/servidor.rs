@@ -647,6 +647,11 @@ pub struct Servidor {
     trava_das_sequencias: Mutex<()>,
     log: Mutex<LogAcessos>,
     lista_negra: Mutex<Blacklist>,
+    /// Quem entrou de onde (pedido 765, P6): o `IpNovo` e as duas guardas de
+    /// nao se trancar que dependem de quem entrou (766, P9). Mutex proprio,
+    /// fora da lista negra: o login escreve aqui e o `barrado()` de toda
+    /// conexao nao espera por isso.
+    ips_vistos: Mutex<crate::ips_vistos::IpsVistos>,
     /// Sessoes do navegador. Vazio enquanto a interface web estiver desligada.
     sessoes: Mutex<http::Sessoes>,
     /// Tabelas residentes em RAM, por "database/tabela". Nada entra aqui
@@ -1584,7 +1589,7 @@ impl Servidor {
 
         // Portao 1 -- o token. E a chave da porta da rede, nao a identidade.
         if !self.config.token_confere(pedido.texto_ou("token", "")) {
-            self.violacao_leve(ip, &op, "token invalido");
+            self.violacao_de_credencial(ip, &op, "token invalido");
             return (
                 op,
                 false,
@@ -1602,8 +1607,17 @@ impl Servidor {
             // estava antes nesta conexao nao passa para quem entra agora.
             sessao.execucao_liberada = None;
             let r = self.op_login(&pedido, sessao);
-            if r.is_err() {
-                self.violacao_leve(ip, "login", "credencial invalida");
+            match (&r, &sessao.usuario) {
+                (Err(_), _) => self.violacao_de_credencial(ip, "login", "credencial invalida"),
+                // O login que deu certo vai a memoria de IPs (pedido 765,
+                // P6): o `IpNovo` e as guardas do 766 saem dela.
+                (Ok(_), Some(u)) => self.ip_visto_no_login(
+                    ip,
+                    &base,
+                    &u.login,
+                    u.pode_em("", "", Atividade::Administrar),
+                ),
+                (Ok(_), None) => {}
             }
             return (op, r.is_ok(), r);
         }
@@ -2747,6 +2761,7 @@ fontes_do_servidor! {
     "servidor/testes_da_linhagem_na_replica.rs",
     "servidor/testes_da_previsao.rs",
     "servidor/testes_da_protecao.rs",
+    "servidor/testes_da_protecao_766.rs",
     "servidor/testes_da_recusa_por_unicidade.rs",
     "servidor/testes_da_saude_do_disco.rs",
     "servidor/testes_da_sonda_de_rede.rs",
@@ -2784,6 +2799,7 @@ fontes_do_servidor! {
     "servidor/testes_dos_caminhos_da_protecao.rs",
     "servidor/testes_dos_numeros_de_origem.rs",
     "servidor/testes_dos_produtores_769.rs",
+    "servidor/testes_dos_produtores_779.rs",
     "servidor/testes_encerrar_sessao_644.rs",
     "servidor/testes_escala_decimal.rs",
     "servidor/testes_escopo_do_begin_607.rs",
@@ -3138,3 +3154,9 @@ mod testes_dos_caminhos_da_protecao;
 
 #[cfg(test)]
 mod testes_dos_produtores_769;
+
+#[cfg(test)]
+mod testes_dos_produtores_779;
+
+#[cfg(test)]
+mod testes_da_protecao_766;

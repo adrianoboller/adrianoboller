@@ -52,13 +52,24 @@ fn vezes(alarme: Alarme) -> u64 {
         .map_or(0, |p| p.vezes)
 }
 
-/// As ocorrencias de `alarme` que esperam o carteiro neste servidor.
+/// O prefixo da tarefa das atividades amarradas por este arquivo.
+///
+/// O alarme de SERVIDOR que outro teste do binario dispara sem atividade
+/// amarrada vai a camada do PROCESSO -- a do ultimo servidor criado, que pode
+/// ser o de um teste daqui. Medido em 09/10/2026 no irmao deste arquivo
+/// (`testes_da_protecao_766`): um `FirewallBloqueou` vizinho fez o
+/// `len() == 1` ver 2. Contar so o que nasceu nas atividades daqui tira o
+/// vizinho da conta, sem afrouxar nada.
+const TAREFA: &str = "dados:p769-";
+
+/// As ocorrencias de `alarme` que esperam o carteiro neste servidor, nascidas
+/// nas atividades deste arquivo.
 fn ocorrencias_de(s: &Arc<Servidor>, alarme: Alarme) -> Vec<crate::ocorrencias::Ocorrencia> {
     s.ocorrencias
         .correio()
         .retirar(
             std::time::Duration::from_millis(1),
-            |c| matches!(c, Carta::Ocorrencia(o) if o.alarme == alarme),
+            |c| matches!(c, Carta::Ocorrencia(o) if o.alarme == alarme && o.tarefa.starts_with(TAREFA)),
         )
         .into_iter()
         .filter_map(|c| match c {

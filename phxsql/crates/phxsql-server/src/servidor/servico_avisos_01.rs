@@ -20,6 +20,12 @@ use super::*;
 /// `PhxError::Io(..).codigo()`, para o numero nao poder derivar calado.
 pub(super) const CODIGO_DE_ES: u16 = 5001;
 
+/// Os codigos da recusa de integridade (pedido 779): `Duplicado` (3002),
+/// `Conflito` (3004) e `Integridade` (3006) -- o `IntegridadeRecusada` do
+/// aquario, «recusa de integridade, duplicado ou conflito». Ha teste que os
+/// compara com os `PhxError` de verdade, para o numero nao derivar calado.
+pub(super) const CODIGOS_DE_INTEGRIDADE: [u16; 3] = [3002, 3004, 3006];
+
 impl Servidor {
     /// Violacao grave: bloqueia (na hora ou na enesima, conforme a politica)
     /// e avisa no log. Devolve o que aconteceu, porque a RESPOSTA depende
@@ -38,12 +44,13 @@ impl Servidor {
             let Ok(mut lista) = self.lista_negra.lock() else {
                 return crate::blacklist::Grave::Protegido;
             };
-            lista.violacao_grave(
+            lista.violacao_grave_guardada(
                 ip,
                 comando,
                 motivo,
                 &self.config.politica,
                 crate::agora_ms(),
+                || self.guarda_de_quem_entrou(ip),
             )
         };
         if let crate::blacklist::Grave::Bloqueado(b, aviso) = &mut resultado {
@@ -248,35 +255,141 @@ impl Servidor {
         t
     }
 
-    /// Tentativa leve: conta, e bloqueia se passar do limite na janela.
-    pub(super) fn violacao_leve(&self, ip: &str, comando: &str, motivo: &str) {
+    /// Tentativa leve: conta, e bloqueia se passar do limite na janela --
+    /// salvo se uma guarda de nao se trancar poupar o IP (pedido 766, P9).
+    /// Devolve o que aconteceu, para o irmao da credencial
+    /// ([`Self::violacao_de_credencial`]) saber se chegou ao limite.
+    pub(super) fn violacao_leve(
+        &self,
+        ip: &str,
+        comando: &str,
+        motivo: &str,
+    ) -> crate::blacklist::Leve {
         // A lista sai de cena ANTES do firewall (pedido 638): so o resultado
         // atravessa o fim do bloco.
-        let bloqueou = match self.lista_negra.lock() {
-            Ok(mut lista) => lista.tentativa_leve(
+        let mut leve = match self.lista_negra.lock() {
+            Ok(mut lista) => lista.tentativa_leve_guardada(
                 ip,
                 comando,
                 motivo,
                 &self.config.politica,
                 crate::agora_ms(),
+                || self.guarda_de_quem_entrou(ip),
             ),
-            Err(_) => None,
+            Err(_) => crate::blacklist::Leve::Contada(0),
         };
-        if let Some((mut b, mut aviso)) = bloqueou {
-            crate::blacklist::aplicar_no_firewall(
-                &self.lista_negra,
-                &self.config.politica,
-                &mut b,
-                &mut aviso,
-            );
-            eprintln!(
-                "BLOQUEADO {ip} ate {} -- {} apos {} tentativas",
-                b.ate(),
-                b.motivo,
-                b.tentativas
-            );
-            if let Some(a) = aviso {
-                eprintln!("AVISO: {a}");
+        match &mut leve {
+            crate::blacklist::Leve::Bloqueada(b, aviso) => {
+                crate::blacklist::aplicar_no_firewall(
+                    &self.lista_negra,
+                    &self.config.politica,
+                    b,
+                    aviso,
+                );
+                eprintln!(
+                    "BLOQUEADO {ip} ate {} -- {} apos {} tentativas",
+                    b.ate(),
+                    b.motivo,
+                    b.tentativas
+                );
+                if let Some(a) = aviso {
+                    eprintln!("AVISO: {a}");
+                }
+            }
+            crate::blacklist::Leve::Poupada { guarda, tentativas } => eprintln!(
+                "POUPADO {ip} ({}) -- {motivo} apos {tentativas} tentativas; \
+                 a operacao continua recusada e o IP nao foi bloqueado",
+                guarda.nome()
+            ),
+            crate::blacklist::Leve::Contada(_) => {}
+        }
+        leve
+    }
+
+    /// A tentativa leve de quem errou a CREDENCIAL -- o token da porta, a
+    /// senha do login, o token do REST. E a mesma politica leve, e mais o
+    /// alarme `ForcaBruta` (pedido 779) quando as tentativas seguidas chegam
+    /// ao limite, bloqueando ou poupado pela guarda.
+    ///
+    /// # Por que no limite, e nao a cada erro
+    ///
+    /// Errar a senha uma vez e humano, e uma ocorrencia vermelha por erro de
+    /// digitacao ensinaria o administrador a ignorar a vermelha. O limite e
+    /// o mesmo `tentativas_ate_bloquear` que decide o bloqueio: uma regua so
+    /// para «isto ja e insistencia».
+    ///
+    /// # Por que o poupado tambem alarma
+    ///
+    /// E ele que a guarda do loopback e do IP compartilhado esconderia: a
+    /// forca bruta que atravessa um proxy na mesma maquina chega de
+    /// `127.0.0.1`, e o IP nao pode ser bloqueado -- entao o aviso e a unica
+    /// coisa que sobra a quem administra. O `dados` e so a operacao: senha
+    /// nunca entra em alarme.
+    pub(super) fn violacao_de_credencial(&self, ip: &str, comando: &str, motivo: &str) {
+        if self.violacao_leve(ip, comando, motivo).chegou_ao_limite() {
+            crate::telemetria::sinal(crate::aquario::Alarme::ForcaBruta, comando);
+        }
+    }
+
+    /// A guarda que depende de quem ENTROU deste IP (pedido 766, P9): o
+    /// administrador nas ultimas 24 h, ou o IP de dois usuarios em 30 dias.
+    /// So e perguntada quando a tentativa chega ao limite (a `Blacklist` a
+    /// recebe como closure): o erro comum nao paga a varredura da memoria.
+    pub(super) fn guarda_de_quem_entrou(&self, ip: &str) -> Option<crate::blacklist::Guarda> {
+        self.ips_vistos.lock().ok()?.guarda(ip, crate::agora_ms())
+    }
+
+    /// O login com sucesso vai a memoria de IPs (pedido 765, P6), e o
+    /// primeiro de (usuario, database, IP) em 90 dias vira a ocorrencia
+    /// amarela `IpNovo`. Nunca recusa: o login ja deu certo.
+    ///
+    /// O `dados` da ocorrencia e o login, e so ele: o IP e o usuario da
+    /// conexao ja vao nos campos da ocorrencia, que so quem administra le
+    /// (decisao LGPD do dono, 09/10/2026).
+    pub(super) fn ip_visto_no_login(&self, ip: &str, database: &str, login: &str, admin: bool) {
+        if login.is_empty() {
+            return;
+        }
+        let novo = match self.ips_vistos.lock() {
+            Ok(mut m) => m.registrar(login, database, ip, admin, crate::agora_ms()),
+            Err(_) => return,
+        };
+        match novo {
+            Ok(true) => {
+                crate::telemetria::sinal(crate::aquario::Alarme::IpNovo, login);
+            }
+            Ok(false) => {}
+            Err(e) => eprintln!("AVISO: a memoria de IPs nao gravou: {e}"),
+        }
+    }
+
+    /// A reconciliacao do firewall do SO com a lista (pedido 766, P11), pelo
+    /// motor unico da `blacklist`. O arranque a chama numa thread propria: os
+    /// comandos tem prazo, mas a porta nao espera por eles.
+    pub(super) fn reconciliar_o_firewall(&self) -> Option<crate::blacklist::Reconciliacao> {
+        match crate::blacklist::reconciliar_firewall(
+            &self.lista_negra,
+            &self.config.politica,
+            crate::agora_ms(),
+        ) {
+            Ok(Some(r)) => {
+                if !r.acrescentados.is_empty() || !r.removidos.is_empty() {
+                    eprintln!(
+                        "firewall: reconciliado no arranque -- {} bloqueio(s) voltaram, \
+                         {} regra(s) sem bloqueio sairam",
+                        r.acrescentados.len(),
+                        r.removidos.len()
+                    );
+                }
+                for f in &r.falhas {
+                    eprintln!("AVISO: firewall (reconciliacao): {f}");
+                }
+                Some(r)
+            }
+            Ok(None) => None,
+            Err(e) => {
+                eprintln!("AVISO: firewall: a reconciliacao do arranque nao rodou: {e}");
+                None
             }
         }
     }
@@ -306,6 +419,15 @@ impl Servidor {
         // e uma comparacao de inteiro e vem ANTES de qualquer trabalho: o
         // caminho de sucesso, e o de todo outro erro, nao paga nada.
         crate::aquario::alarme::conferir_o_1001(acesso.codigo);
+        // A RECUSA DE INTEGRIDADE (pedido 779), pelo mesmo motivo e no mesmo
+        // ponto do 1001: quem recusa e o `store`/`core` (unicidade, chave,
+        // conflito de versao), que nao enxerga a telemetria, e este e o
+        // primeiro lugar do servidor que ve o erro TIPADO com a atividade
+        // ainda amarrada -- de toda porta. Comparacao de inteiro antes de
+        // tudo: o sucesso e todo outro erro param nela.
+        if CODIGOS_DE_INTEGRIDADE.contains(&acesso.codigo) {
+            crate::telemetria::sinal(crate::aquario::Alarme::IntegridadeRecusada, &acesso.op);
+        }
         if acesso.codigo == CODIGO_DE_ES {
             let texto = acesso.erro.as_deref().unwrap_or("");
             crate::telemetria::sinal(crate::aquario::Alarme::ErroDeDisco, &acesso.op);

@@ -1363,22 +1363,28 @@ declarados). Uma linha do produtor único em cada fato:
 | `MarcaNaoResolvida` | `impossiveis` e `paradas` da recuperação (`sinalizar_o_arranque`) e as três marcas do bidirecional que ficam no disco (`completar_marcas_do_bidi`) |
 | `IndiceAtrasado` | o mesmo `evento_do_arranque` que avisa por e-mail (`sinalizar_o_arranque`) |
 | `ContinuidadeRompida` | `romper_continuidade`, uma vez por ruptura (o ramo da outra história não consulta o veredito guardado) |
-| `OrigemInalcancavel` | `apos_a_falha_vigiando` (laço comum e do cluster), quando o episódio do `Ritmo` passa de `PRAZO_DE_INALCANCAVEL` (3 min, *raciocinado*); uma vez por episódio |
+| `OrigemInalcancavel` | `Servidor::registrar_a_falha`, o ponto único dos três laços: o comum e o do cluster pelo `apos_a_falha_vigiando`, e o **agendado** pelo `alcancar_na_janela` (pedido 779), com um `Ritmo` para a vida do laço — quando o episódio passa de `PRAZO_DE_INALCANCAVEL` (3 min, *raciocinado*); uma vez por episódio |
 | `DiscoLento` | `SaudeDoDisco::sondar`, em toda passada lenta |
 | `ForaDoHabitualReincidente` | `Base::observar` (§11.4, a reincidência) |
+| `ForcaBruta` | `Servidor::violacao_de_credencial` (pedido 779): as três credenciais — o token da porta, a senha do login e o token do REST — quando as tentativas seguidas chegam ao `tentativas_ate_bloquear`, **bloqueando ou poupado** pela guarda do 766 (é no poupado que o aviso é tudo o que sobra). `dados` = a operação; a senha nunca |
+| `SenhaEmClaro` | `conferir_o_fio_da_senha`, na recusa (pedido 779): o login local e o remoto pela web passam por ela. `dados` é o texto fixo `login` — nada do pedido |
+| `IntegridadeRecusada` | o `anotar`, pelos códigos `CODIGOS_DE_INTEGRIDADE` (3002 duplicado, 3004 conflito, 3006 integridade), no mesmo ponto e pelo mesmo motivo do 1001: quem recusa é o `store`/`core`, que não vê a telemetria (pedido 779) |
+| `IpNovo` | `Servidor::ip_visto_no_login`, no `login` que deu certo: a primeira vez de (usuário, database, IP) em 90 dias, pela memória do `ips-vistos.jsonl` (FORMATO §28; pedido 765, P6). Amarelo, grupo `seguranca`, bit 15. `dados` = o login |
 
 Os alarmes do **arranque** saem depois de `ocorrencias::instalar`: o fato é de
 antes, mas sinalizado lá a ocorrência iria à camada de outro servidor do
 processo, ou a nenhuma. A marca que nem se leu (`sem_leitura`) impede a subida
-e não vira pedra. A réplica **agendada** (`laco_agendado`) não passa pelo
-`Ritmo` na falha de rede e não alarma `OrigemInalcancavel`.
+e não vira pedra.
 
-**Ainda sem produtor fora de teste**, medido em 09/10/2026 pela mesma busca —
-que a contagem anterior fez errado, por incluir o `mod testes` do
-`ocorrencias.rs`: `ForcaBruta`, `SenhaEmClaro` e `IntegridadeRecusada`. A tela
-os traduz e o fato acontece (o `violacao_leve` do login, o
-`conferir_o_fio_da_senha`, a recusa de integridade), mas nenhum deles chama o
-`sinal`. Cognição `cognicao_alarme-declarado-sem-produtor_20261009_1400.md`.
+**Os três que ficaram sem produtor no 769** — `ForcaBruta`, `SenhaEmClaro` e
+`IntegridadeRecusada`, contados errado por uma busca que incluía o `mod testes`
+do `ocorrencias.rs` (cognição
+`cognicao_alarme-declarado-sem-produtor_20261009_1400.md`) — ganharam produtor
+no pedido 779, com a réplica agendada e os três ramos do bidirecional que
+nenhum teste alcançava. Prova em `servidor/testes_dos_produtores_779.rs`, pela
+ocorrência no correio **deste** servidor (atividade amarrada), e não pelo
+sedimento do processo, que outro teste do mesmo binário faria subir com o
+produtor tirado.
 
 A guarda da tela: `aquario::testes::todo_alarme_tem_motivo_na_tabela_da_tela`
 lê a tabela `MOTIVOS` do `ui/aquario.js` embutido e reprova variante do enum

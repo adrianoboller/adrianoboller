@@ -56,10 +56,16 @@ fn subir(base: &std::path::Path, firewall: Vec<String>) -> u16 {
     c.cifra_fio.exigir = false;
     c.web.ligado = false;
     c.politica.tentativas_ate_bloquear = 3;
+    // O ESCAPE ESCRITO do pedido 766 (P9): o soquete chega de 127.0.0.1, e
+    // o loopback nasce poupado -- sem esta linha o terceiro token nunca
+    // bloquearia, o firewall nunca rodaria, e o teste passaria POR ENGANO
+    // (medido em 09/10/2026: verde sem o comando de firewall rodar).
+    c.politica.poupar_loopback = false;
     c.politica.firewall = Some(Firewall {
         ligado: true,
         bloquear: firewall,
         desbloquear: vec![],
+        listar: vec![],
         timeout_s: 5,
     });
     let s = Servidor::novo(c).unwrap();
@@ -111,5 +117,14 @@ fn firewall_que_pendura_nao_para_o_servidor() {
         t0.elapsed() < Duration::from_secs(9),
         "o prazo do firewall nao valeu: {:?}",
         t0.elapsed()
+    );
+    // A PREMISSA, conferida: o terceiro bloqueou de verdade, e foi por isso
+    // que o firewall rodou. Sem esta linha, uma guarda que poupasse o IP
+    // deixava o teste verde sem o comando pendurado nunca ter existido.
+    let bl = phxsql_server::Blacklist::abrir(base.join("blacklist.json")).unwrap();
+    assert!(
+        bl.bloqueado("127.0.0.1", phxsql_server::agora_ms())
+            .is_some(),
+        "o terceiro token nao bloqueou: o firewall nao rodou e o teste nao mediu nada"
     );
 }

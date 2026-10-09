@@ -972,7 +972,14 @@ TETO_TESTE_SEM_MODULO = 0
 # ramos comando e rotina do `op_sql`, e a leitura que continua) e cinco da
 # A15 do 707 (`nasceu` uma vez por pedido, `morta` pelos dois encerrar, o
 # portao antes do trabalho e os graficos que nao contam a `morta`).
-PISO_DAS_ENTRADAS = 894
+# +27 (pedidos 765/766 P6, P9-P11 e 779, 09/10/2026): 4 da memoria de IPs
+# (P6), 6 das guardas de nao se trancar (P9, com o comportamento velho e o
+# interruptor), 3 do escalonamento (P10), 5 do firewall (P11, uma contra o
+# `nft` real em `unshare --net`), 8 dos produtores do 779 e a
+# `fw-pendura-sem-premissa` (o teste que passou a passar por engano). RED
+# medido pelo `red.py` da frente; o provador rodou com `--so` nas 27.
+# 921 = 877 + 8 (P2-P5) + 9 (781 e A15) + 27 (P6, P9-P11 e 779), somados na integracao.
+PISO_DAS_ENTRADAS = 921
 
 # ------------------------------------------------------------- APOSENTADAS
 #

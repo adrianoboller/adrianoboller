@@ -349,14 +349,8 @@ impl Servidor {
         falha: crate::replica::Falha,
         segue: &dyn Fn() -> bool,
     ) -> bool {
-        match ritmo.apos(falha) {
+        match self.registrar_a_falha(origem, ritmo, falha) {
             crate::replica::Decisao::Dormir(espera) => {
-                // Aqui, e nao no laco: o laco comum e o do cluster chegam os
-                // dois por este ponto (pedido 587), e o relogio do episodio e
-                // o do mesmo `Ritmo` que decide o recuo (pedido 769).
-                if ritmo.cruzou_o_prazo() {
-                    crate::telemetria::sinal(crate::aquario::Alarme::OrigemInalcancavel, origem);
-                }
                 let seguidas = ritmo.seguidas;
                 self.anotar_estado(origem, |e| {
                     e.falhas_de_rede_seguidas = seguidas;
@@ -388,6 +382,24 @@ impl Servidor {
                 continua
             }
         }
+    }
+
+    /// A falha entra no `Ritmo`, e o episodio que passou do prazo vira UMA
+    /// pedra `OrigemInalcancavel` (pedido 769). O ponto UNICO por onde os
+    /// tres lacos passam -- o comum e o do cluster pelo
+    /// [`Self::apos_a_falha_vigiando`], e o agendado direto (pedido 779), que
+    /// nao dorme o recuo (espera a janela) mas tem o mesmo episodio a contar.
+    pub(super) fn registrar_a_falha(
+        &self,
+        origem: &str,
+        ritmo: &mut crate::replica::Ritmo,
+        falha: crate::replica::Falha,
+    ) -> crate::replica::Decisao {
+        let decisao = ritmo.apos(falha);
+        if ritmo.cruzou_o_prazo() {
+            crate::telemetria::sinal(crate::aquario::Alarme::OrigemInalcancavel, origem);
+        }
+        decisao
     }
 
     /// Consome o pedido de religar desta origem, se houver.
@@ -462,6 +474,11 @@ impl Servidor {
     /// replica que sobe atrasada nao deve ficar horas fingindo que esta em
     /// dia. Dali em diante, so nas janelas.
     fn laco_agendado(self: Arc<Self>, origem: crate::config::Origem) {
+        // UM `Ritmo` para a vida do laco, e nao um por falha: e ele que conta
+        // ha quanto tempo a origem nao se alcanca, de janela em janela
+        // (pedido 779). O recuo dele nao e usado aqui -- quem dita a espera e
+        // a janela --, so o episodio.
+        let mut ritmo = crate::replica::Ritmo::novo(Duration::from_secs(origem.reconectar_em));
         loop {
             if !self.papel_atual().puxa_de_origem() {
                 eprintln!(
@@ -470,39 +487,8 @@ impl Servidor {
                 );
                 return;
             }
-            // Alcancar TUDO: repete enquanto houver o que aplicar, porque a
-            // proxima chance e so na janela seguinte.
-            loop {
-                match self.uma_rodada(&origem) {
-                    Ok(0) => break,
-                    Ok(n) => {
-                        eprintln!(
-                            "replicacao [{}]: {n} evento(s) aplicado(s) na janela",
-                            origem.nome
-                        )
-                    }
-                    // A credencial recusada estaciona aqui tambem: janela a
-                    // cada minuto e uma tentativa por minuto, e cinco delas
-                    // bloqueiam o IP no master do mesmo jeito (pedido 203).
-                    // Religada, tenta de novo agora, sem esperar a janela.
-                    Err((crate::replica::Falha::CredencialRecusada, e)) => {
-                        eprintln!("replicacao [{}]: {e}", origem.nome);
-                        let mut ritmo =
-                            crate::replica::Ritmo::novo(Duration::from_secs(origem.reconectar_em));
-                        if !self.apos_a_falha(
-                            &origem.nome,
-                            &mut ritmo,
-                            crate::replica::Falha::CredencialRecusada,
-                        ) {
-                            return;
-                        }
-                    }
-                    // O resto espera a janela seguinte, como sempre.
-                    Err((_, e)) => {
-                        eprintln!("replicacao [{}]: {e}", origem.nome);
-                        break;
-                    }
-                }
+            if !self.alcancar_na_janela(&origem, &mut ritmo) {
+                return;
             }
             let ms =
                 bidirecional::ms_ate_a_janela(crate::agora_ms(), origem.cada_minutos, &origem.hora)
@@ -522,6 +508,57 @@ impl Servidor {
                     return;
                 }
                 std::thread::sleep(resta.min(Duration::from_secs(1)));
+            }
+        }
+    }
+
+    /// A janela do laco agendado: alcancar TUDO, repetindo enquanto houver o
+    /// que aplicar, porque a proxima chance e so na janela seguinte. Devolve
+    /// `false` quando o laco tem de encerrar (promovido com a credencial
+    /// estacionada).
+    ///
+    /// A falha de rede passa pelo MESMO [`Self::registrar_a_falha`] dos
+    /// outros dois lacos (pedido 779): antes ela so ia ao `stderr`, e a
+    /// replica agendada com a origem fora do ar a noite inteira nunca virava
+    /// pedra no aquario.
+    pub(super) fn alcancar_na_janela(
+        &self,
+        origem: &crate::config::Origem,
+        ritmo: &mut crate::replica::Ritmo,
+    ) -> bool {
+        loop {
+            match self.uma_rodada(origem) {
+                Ok(n) => {
+                    ritmo.sucesso();
+                    if n == 0 {
+                        return true;
+                    }
+                    eprintln!(
+                        "replicacao [{}]: {n} evento(s) aplicado(s) na janela",
+                        origem.nome
+                    );
+                }
+                // A credencial recusada estaciona aqui tambem: janela a
+                // cada minuto e uma tentativa por minuto, e cinco delas
+                // bloqueiam o IP no master do mesmo jeito (pedido 203).
+                // Religada, tenta de novo agora, sem esperar a janela.
+                Err((crate::replica::Falha::CredencialRecusada, e)) => {
+                    eprintln!("replicacao [{}]: {e}", origem.nome);
+                    if !self.apos_a_falha(
+                        &origem.nome,
+                        ritmo,
+                        crate::replica::Falha::CredencialRecusada,
+                    ) {
+                        return false;
+                    }
+                }
+                // O resto espera a janela seguinte, como sempre -- e conta
+                // no episodio do `Ritmo`, sem dormir o recuo dele.
+                Err((falha, e)) => {
+                    eprintln!("replicacao [{}]: {e}", origem.nome);
+                    let _ = self.registrar_a_falha(&origem.nome, ritmo, falha);
+                    return true;
+                }
             }
         }
     }
