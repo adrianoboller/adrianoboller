@@ -73,6 +73,13 @@ export const caso = {
     await page.fill('#azUsu', 'ninguem');
     await page.click('#azIr1');
     await esperar(page, '#azVolta');
+    // O «Testando a conexao» ja traz o seu proprio #azVolta: esperar so por
+    // ele lia o passo 2 ANTES da resposta (1 de 2 temas em 09/10/2026, com o
+    // texto «falando com...»). Espera o quadro do resultado substituir o da
+    // espera, e so entao confere o que ele diz.
+    await page.waitForFunction(
+      () => !/falando com/.test(document.querySelector('.sobre .caixa')?.textContent || 'falando com'),
+      null, { timeout: 15000 });
     const naoConectou = await page.$eval('.sobre .caixa', e => e.textContent);
     verdade(/conect/i.test(naoConectou), `o passo 2 devia falar da conexao; veio «${naoConectou.slice(0, 80)}»`);
 
