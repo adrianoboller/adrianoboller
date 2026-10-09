@@ -4,7 +4,7 @@
      `--catraca` reprova se este arquivo nao bater com o que o extrator
      geraria agora; rode o comando sem flag para atualizar. -->
 
-Gerado dos `cognicao_*.md` com `**Estado:** FRUTIFERO` -- 17 hoje, de 449 cognicoes no total.
+Gerado dos `cognicao_*.md` com `**Estado:** FRUTIFERO` -- 18 hoje, de 450 cognicoes no total.
 
 ## A calculada é a coluna protegida por outro nome — e o preenchimento em lote promove o vazamento de linha a vazamento de tabela
 
@@ -55,6 +55,11 @@ Gerado dos `cognicao_*.md` com `**Estado:** FRUTIFERO` -- 17 hoje, de 449 cognic
 
 - Evidencia: `crates/phxsql-server/tests/venda-inteira-na-queda-da-replica.rs::o_sigkill_entre_o_reg_e_o_diario_nao_duplica_a_linha`; `9e067e1b`
 - Arquivo: [cognicao_ja-aplicada-na-replica-deixa-o-diario-atras_20261008_1500.md](cognicao_ja-aplicada-na-replica-deixa-o-diario-atras_20261008_1500.md)
+
+## Motor com prazo não cabe no lançador de uma linha: o binário se reexecuta
+
+- Evidencia: `crates/phxsql-server/tests/queda-nao-prende-a-trava.rs::o_filho_do_gancho_nasce_do_lancador_com_as_garantias_do_motor`; `crates/phxsql-server/tests/queda-nao-prende-a-trava.rs::o_sigkill_com_o_gancho_ligado_nao_deixa_a_trava_no_filho_do_gancho`
+- Arquivo: [cognicao_motor-com-prazo-nao-cabe-no-lancador-de-uma-linha-o-binario-se-reexecuta_20261009_0950.md](cognicao_motor-com-prazo-nao-cabe-no-lancador-de-uma-linha-o-binario-se-reexecuta_20261009_0950.md)
 
 ## O terceiro da tabela que nasce se mede com `strace`, sem derrubar nada
 

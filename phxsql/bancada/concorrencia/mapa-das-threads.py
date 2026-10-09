@@ -281,11 +281,33 @@ CATALOGO = [
                 "quem registra um evento so entrega a fila (`SaudeDoDisco::"
                 "entregar`, sem rede, porque pode estar com a trava de dados na "
                 "mao), e esta thread acorda por `Condvar` e fala com o rele -- "
-                "e, desde 02/10/2026, executa o gancho do operador NELA (a "
-                "vigia do prazo e o `try_wait` desta thread, sem thread nova: "
+                "e, desde 02/10/2026, executa o gancho do operador NELA (sem "
+                "lancador, a vigia do prazo e o `try_wait` desta thread; com o "
+                "lancador do pedido 759, esta thread so espera a resposta dele: "
                 "o teto continua 1). O "
                 "teto mora no `if` de `ligar_sonda_de_disco`, que roda uma vez "
                 "no `servir`.",
+    },
+    {
+        "arquivo": "crates/phxsql-server/src/gancho.rs",
+        "agulha": '.name("lancador-gancho".into())',
+        "nome": "lancador-gancho (o leitor das respostas)",
+        "teto": "1 por lancador vivo, e lancador vivo e no maximo 1 (o `ATUAL` "
+                "sob mutex): nasce com ele no `Servidor::novo` (so com gancho "
+                "ou firewall ligados) e sai no fim da saida dele, que e quando "
+                "o lancador morre -- e ai o proximo pedido cria outro par. "
+                "Pedido 759.",
+    },
+    {
+        "arquivo": "crates/phxsql-server/src/gancho.rs",
+        "agulha": "em_voo.push(std::thread::spawn",
+        "nome": "uma por execucao, DENTRO do processo lancador (pedido 759)",
+        "teto": "uma por pedido em voo, e quem pede espera a resposta: o "
+                "gancho tem a execucao unica (`em_voo`, a segunda e "
+                "descartada) e o firewall roda numa thread de conexao, que ja "
+                "tem o teto do `Semaforo` da porta dela. Cada uma vive ate o "
+                "prazo do programa (teto 120 s), com `kill`+`wait`. Fora do "
+                "servidor: e o processo `--lancador-de-ganchos`.",
     },
     # ------------------------------------------------ uma por EVENTO, com silencio
     {

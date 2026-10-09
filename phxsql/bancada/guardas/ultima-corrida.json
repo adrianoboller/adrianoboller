@@ -1,5 +1,5 @@
 {
-  "quando": "2026-10-09 04:32",
+  "quando": "2026-10-09 10:39",
   "mais_antigo": "2026-09-16 15:25",
   "guardas": [
     {
@@ -6112,41 +6112,41 @@
       "id": "gancho-por-shell",
       "titulo": "o comando do gancho passa por `sh -c`: `;` e `$()` viram execução",
       "veredito": "PROVADA",
-      "segundos": 84.05,
+      "segundos": 164.84,
       "notas": [],
-      "quando": "2026-10-02 08:27"
+      "quando": "2026-10-09 10:39"
     },
     {
       "id": "gancho-ambiente-herdado",
       "titulo": "o filho do gancho herda o ambiente do servidor",
       "veredito": "PROVADA",
-      "segundos": 78.99,
+      "segundos": 131.18,
       "notas": [],
-      "quando": "2026-10-02 08:27"
+      "quando": "2026-10-09 10:39"
     },
     {
       "id": "gancho-sem-kill-no-prazo",
       "titulo": "o gancho que passa de `timeout_s` continua vivo",
       "veredito": "PROVADA",
-      "segundos": 93.75,
+      "segundos": 146.47,
       "notas": [],
-      "quando": "2026-10-08 19:25"
+      "quando": "2026-10-09 10:39"
     },
     {
       "id": "gancho-zumbi",
       "titulo": "o gancho morto por prazo vira zumbi (kill sem wait)",
       "veredito": "PROVADA",
-      "segundos": 91.53,
+      "segundos": 128.95,
       "notas": [],
-      "quando": "2026-10-08 19:25"
+      "quando": "2026-10-09 10:39"
     },
     {
       "id": "gancho-saida-do-filho-vaza",
       "titulo": "o stdout/stderr do gancho cai no stderr do servidor",
       "veredito": "PROVADA",
-      "segundos": 74.22,
+      "segundos": 148.3,
       "notas": [],
-      "quando": "2026-10-02 06:32"
+      "quando": "2026-10-09 10:39"
     },
     {
       "id": "gancho-editavel-pela-api",
@@ -6184,9 +6184,9 @@
       "id": "firewall-output-sem-prazo-e-com-stderr",
       "titulo": "o firewall volta a `Command::output()`: sem prazo, ambiente herdado, stderr no erro (pedido 638)",
       "veredito": "PROVADA",
-      "segundos": 84.99,
+      "segundos": 143.3,
       "notas": [],
-      "quando": "2026-10-02 08:27"
+      "quando": "2026-10-09 10:39"
     },
     {
       "id": "gancho-reserva-sem-raii",
@@ -6243,6 +6243,14 @@
       "segundos": 83.4,
       "notas": [],
       "quando": "2026-10-08 13:33"
+    },
+    {
+      "id": "gancho-filho-direto-com-a-trava",
+      "titulo": "o filho do gancho nasce direto do servidor, com a trava de instancia na mao (pedido 759)",
+      "veredito": "PROVADA",
+      "segundos": 29.34,
+      "notas": [],
+      "quando": "2026-10-09 10:39"
     },
     {
       "id": "json-texto-sem-escapar-a-aspa",

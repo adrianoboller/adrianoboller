@@ -409,9 +409,9 @@ mutex** — ver §5. Lente e o que cada decisão fecha (provas e guardas
    `acessos.log`. O que não se captura não vaza, e a garantia não depende de
    um crivo. Provado em **outro processo**, lendo o stderr do servidor.
 7. **Prazo duro e sem zumbi.** `try_wait` até `timeout_s` (teto 120), depois
-   `kill` e `wait`; prova contra o SO (`/proc/<pid>` some). Sem thread nova:
-   a vigia é a thread do carteiro. Uma execução em voo; a segunda é
-   descartada.
+   `kill` e `wait`; prova contra o SO (`/proc/<pid>` some). A vigia roda no
+   lançador (item 13), numa thread por execução; sem lançador, na thread do
+   carteiro. Uma execução em voo; a segunda é descartada.
 8. **O erro do gancho não carrega saída**: «saiu com código N», «foi morto
    por prazo», «não foi possível iniciar (tipo do erro)» — sem o caminho do
    programa. Vai ao log e a `avisos.ultima_falha`.
@@ -437,6 +437,16 @@ mutex** — ver §5. Lente e o que cada decisão fecha (provas e guardas
     *sem* `CLOEXEC` por um shell pai aparece na mesma listagem. Residual: fds
     não-`CLOEXEC` herdados do lançador (socket activation do systemd)
     passariam.
+13. **O filho nasce de quem nunca segurou a trava de instância** (pedido
+    759). O `flock` da `.phxsql.trava` é da descrição aberta e todo `spawn`
+    a copia até o `exec`: com o servidor morto nesse instante, o órfão
+    segurava a instância (31 de 800 quedas medidas). O `phxsqld` se
+    reexecuta como `--lancador-de-ganchos` antes da primeira trava (só com
+    gancho ou firewall ligados), e o gancho e o firewall nascem dele, pelo
+    mesmo motor — as garantias 3 a 12 valem do mesmo jeito, e o teste
+    `o_filho_do_gancho_nasce_do_lancador_com_as_garantias_do_motor` confere
+    o pai, o ambiente e o stdin pelo `/proc`. O lançador recebe só o pedido
+    pelo cano do servidor e sai quando o servidor sai.
 
 **Risco residual, dito:** o `kill` alcança o filho direto, não os netos (a
 `std` não tem `killpg`; `unsafe`/FFI não entra). **Quem escreve o

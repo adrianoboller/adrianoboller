@@ -954,7 +954,8 @@ TETO_TESTE_SEM_MODULO = 0
 # aperto do ODBC, pelo soquete e pela catraca) e 7 dos conferidores com o
 # «ok 0 por engano» reposto; e +1 da frente do 720 na mesma arvore
 # (`commit-sem-as-duas-recusas-antes-da-marca`). Contado, nao somado.
-PISO_DAS_ENTRADAS = 859
+# 860: +1 do pedido 759 (`gancho-filho-direto-com-a-trava`).
+PISO_DAS_ENTRADAS = 860
 
 # ------------------------------------------------------------- APOSENTADAS
 #

@@ -25226,6 +25226,31 @@ fn anotar(""",
         ],
     },
     {
+        "id": "gancho-filho-direto-com-a-trava",
+        "titulo": "o filho do gancho nasce direto do servidor, com a trava de instancia na mao (pedido 759)",
+        "porque": (
+            "a `.phxsql.trava` e `flock`, da descricao aberta: todo `spawn` copia o descritor ate o `exec`, e o servidor morto por SIGKILL nesse instante deixa o orfao segurando a instancia. Medido pelo SO: com o spawn direto, 31 de 800 quedas recusadas (8 corridas vermelhas em 8). O filho nasce do lancador (`phxsqld --lancador-de-ganchos`), que nunca segurou a trava. A prova que cai e a deterministica -- o pai do gancho tem de ser o lancador --; a das 100 quedas e por probabilidade e por isso nao entra no `caem`."
+        ),
+        "arquivo": "crates/phxsql-server/src/gancho.rs",
+        "trecho": """    if let Some(r) = lancador::pedir(e) {
+        return r;
+    }
+""",
+        "troca": """    // DEFEITO REPOSTO (pedido 759): o filho nasce direto do servidor.
+    if let Some(r) = None::<Result<(), String>> {
+        return r;
+    }
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "queda-nao-prende-a-trava"],
+        "caem": [
+            "o_filho_do_gancho_nasce_do_lancador_com_as_garantias_do_motor",
+        ],
+        "seguem": [
+            "o_sigkill_no_arranque_nao_deixa_a_trava_no_filho_do_df",
+        ],
+    },
+    {
         "id": "json-texto-sem-escapar-a-aspa",
         "titulo": "o escritor de JSON deixa a aspa do valor sem escapar: texto vira campo (pedido 249, B1a)",
         "porque": (

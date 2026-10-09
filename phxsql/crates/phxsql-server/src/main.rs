@@ -486,6 +486,20 @@ fn main() -> ExitCode {
     tirar_a_memoria_do_core();
     let args: Vec<String> = std::env::args().skip(1).collect();
 
+    // O lancador do gancho (pedido 759) e este mesmo binario, reexecutado
+    // pelo servidor antes da primeira trava. Nao e flag de quem opera: fica
+    // fora de FLAGS e responde antes da conferencia delas.
+    #[cfg(unix)]
+    {
+        if args.len() == 1 && args[0] == phxsql_server::gancho::lancador::ARGUMENTO {
+            phxsql_server::gancho::lancador::servir();
+            return ExitCode::SUCCESS;
+        }
+        if let Ok(exe) = std::env::current_exe() {
+            phxsql_server::gancho::lancador::habilitar(exe);
+        }
+    }
+
     // A recusa vem ANTES de tudo, inclusive antes do -V/--help -- que ja
     // estao em FLAGS e por isso passam batido por aqui. Sem isto, um
     // binario velho que ganhasse uma flag nova a ignorava e caia direto no

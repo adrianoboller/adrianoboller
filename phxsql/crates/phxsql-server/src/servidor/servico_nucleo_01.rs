@@ -123,6 +123,14 @@ impl Servidor {
         // dela e, orfao de um `SIGKILL`, a seguraria (pedido 758).
         #[cfg(unix)]
         crate::sistema::Lancador::preparar();
+        // O irmao do gancho e do firewall (pedido 759), pelo mesmo motivo. So
+        // quando um deles esta ligado: desligado, nenhum processo a mais.
+        #[cfg(unix)]
+        if config.alertas.gancho.ligado
+            || config.politica.firewall.as_ref().is_some_and(|f| f.ligado)
+        {
+            crate::gancho::lancador::preparar();
+        }
         // Antes de tudo, e antes da recuperacao abaixo -- que tambem
         // sincroniza: o `fsync` recusado derruba o processo (pedido 509).
         phxsql_store::sincronia::ao_recusar(fsync_recusado_derruba_o_processo);

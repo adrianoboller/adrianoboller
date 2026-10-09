@@ -31,8 +31,9 @@
 //!   `acessos.log`. O que nao se captura nao vaza, e e a unica forma de a
 //!   garantia nao depender de um crivo.
 //! * Prazo duro: o filho e vigiado por `try_wait` ate `timeout_s`, e ao
-//!   estourar leva `kill` e `wait` (colhido, sem zumbi). Sem thread nova:
-//!   a vigia e a propria thread do carteiro.
+//!   estourar leva `kill` e `wait` (colhido, sem zumbi). A vigia roda no
+//!   [`lancador`] (pedido 759), ou na thread do carteiro quando nao ha
+//!   lancador.
 //! * No maximo UMA execucao em voo; a que chega com outra rodando e
 //!   descartada, nao enfileirada.
 //!
@@ -169,7 +170,23 @@ pub struct Execucao<'a> {
 
 /// Roda o programa UMA vez, com prazo duro, e devolve uma frase que nunca
 /// carrega o que ele imprimiu nem o caminho dele.
+///
+/// Pelo [`lancador`] quando o executavel o habilitou (o `phxsqld`): o filho
+/// nasce de um processo que nunca segurou a trava de instancia (pedido 759).
+/// Sem lancador -- binario de teste, ou um lancador que nao nasceu --, roda
+/// aqui mesmo, pelo MESMO [`rodar_aqui`] que o lancador usa do lado dele.
 pub fn rodar(e: &Execucao) -> Result<(), String> {
+    #[cfg(unix)]
+    if let Some(r) = lancador::pedir(e) {
+        return r;
+    }
+    rodar_aqui(e)
+}
+
+/// O motor de execucao de fato. E o que o [`lancador`] chama do lado dele, e
+/// o que o servidor chama quando nao ha lancador: uma copia so das garantias
+/// (`env_clear`, sem shell, saida descartada, prazo com `kill`+`wait`).
+fn rodar_aqui(e: &Execucao) -> Result<(), String> {
     let Some(programa) = e.argv.first() else {
         return Err(format!("{} sem comando", e.rotulo));
     };
@@ -223,6 +240,296 @@ pub fn rodar(e: &Execucao) -> Result<(), String> {
             return Err(format!("o {rotulo} passou de {prazo} s e foi morto"));
         }
         std::thread::sleep(PASSO_DA_VIGIA);
+    }
+}
+
+/// **Pedido 759: o filho do gancho nasce de um processo que nunca segurou a
+/// trava.** O irmao do `sistema::Lancador` do `df` (pedido 758).
+///
+/// # O defeito
+///
+/// A `.phxsql.trava` e `flock`, da DESCRICAO aberta: todo `spawn` copia o
+/// descritor para o filho, que o segura ate o `exec`. O gancho do operador e o
+/// comando de firewall nasciam com a trava na mao do servidor; se ele morre por
+/// `SIGKILL` nesse instante, o orfao segura a instancia e a abertura gravavel
+/// seguinte ouve `InstanciaOcupada`. Medido pelo SO com o `phxsqld` real e o
+/// gancho chamado no arranque (`tests/queda-nao-prende-a-trava.rs`): 31 de
+/// 800 quedas recusadas, 8 corridas vermelhas em 8; com o gancho desligado,
+/// 0 em 300.
+///
+/// # O conserto
+///
+/// O `phxsqld` reexecuta a si mesmo com [`ARGUMENTO`] ANTES da primeira trava
+/// (`Servidor::novo`, so quando o gancho ou o firewall estao ligados), e esse
+/// processo -- que nunca teve a trava -- roda cada [`Execucao`] pelo MESMO
+/// [`rodar_aqui`]. O `Lancador` do `df` e um `sh` de uma linha; o gancho
+/// precisa de `env_clear`, entrada, prazo e `kill`, e reescreve-los em `sh`
+/// seria a segunda copia do motor que esta casa proibe.
+///
+/// Cada pedido leva um numero e roda numa thread propria do lancador: o
+/// firewall (thread de conexao) nao espera atras de um gancho de 120 s. A
+/// resposta e so o `Result` -- a mesma frase que nunca carrega a saida do
+/// programa.
+///
+/// O lancador morre com o servidor: o fim da entrada o faz esperar as
+/// execucoes em voo (cada uma ja tem prazo) e sair. Se ele cair sozinho, o
+/// proximo pedido cria outro -- e ai a janela do `spawn` volta a existir uma
+/// vez, a do proprio lancador, em vez de a cada evento.
+#[cfg(unix)]
+pub mod lancador {
+    use super::{rodar_aqui, Execucao};
+    use phxsql_core::json::Json;
+    use std::collections::HashMap;
+    use std::io::{BufRead, BufReader, Write};
+    use std::path::{Path, PathBuf};
+    use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::{mpsc, Arc, Mutex, OnceLock};
+    use std::time::Duration;
+
+    /// O argumento UNICO com que o `phxsqld` vira lancador. Interceptado no
+    /// `main` antes de tudo, inclusive da conferencia das flags.
+    pub const ARGUMENTO: &str = "--lancador-de-ganchos";
+
+    /// Folga sobre o prazo do programa para a resposta do lancador chegar. O
+    /// prazo e do lancador; isto so impede um lancador pendurado de prender
+    /// para sempre quem pediu.
+    const FOLGA: Duration = Duration::from_secs(10);
+
+    type Resposta = Result<(), String>;
+    type Pendentes = HashMap<u64, mpsc::Sender<Resposta>>;
+
+    static EXECUTAVEL: OnceLock<PathBuf> = OnceLock::new();
+    static ATUAL: Mutex<Option<Arc<Lancador>>> = Mutex::new(None);
+
+    struct Lancador {
+        entrada: Mutex<ChildStdin>,
+        /// `None` depois que a saida do lancador acabou: ninguem mais responde.
+        pendentes: Mutex<Option<Pendentes>>,
+        proximo: AtomicU64,
+    }
+
+    impl Lancador {
+        fn pendentes(&self) -> std::sync::MutexGuard<'_, Option<Pendentes>> {
+            self.pendentes.lock().unwrap_or_else(|e| e.into_inner())
+        }
+    }
+
+    /// O executavel que sabe ser lancador (o `phxsqld` passa o proprio
+    /// caminho). Sem isto, [`pedir`] devolve `None` e o servidor roda direto.
+    pub fn habilitar(executavel: PathBuf) {
+        let _ = EXECUTAVEL.set(executavel);
+    }
+
+    /// Cria o lancador se o executavel o habilitou e ele ainda nao existe.
+    /// Chamado ANTES da primeira trava de instancia.
+    pub fn preparar() {
+        let _ = obter();
+    }
+
+    fn obter() -> Option<Arc<Lancador>> {
+        let executavel = EXECUTAVEL.get()?;
+        let mut g = ATUAL.lock().unwrap_or_else(|e| e.into_inner());
+        if g.is_none() {
+            *g = nascer(executavel);
+        }
+        g.clone()
+    }
+
+    fn nascer(executavel: &Path) -> Option<Arc<Lancador>> {
+        let mut filho = Command::new(executavel)
+            .arg(ARGUMENTO)
+            // Fora da pasta de quem o subiu: o zelador prova que ninguem usa
+            // uma pasta pelo `cwd` dos processos.
+            .current_dir("/")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .ok()?;
+        let (Some(entrada), Some(saida)) = (filho.stdin.take(), filho.stdout.take()) else {
+            let _ = filho.kill();
+            let _ = filho.wait();
+            return None;
+        };
+        let l = Arc::new(Lancador {
+            entrada: Mutex::new(entrada),
+            pendentes: Mutex::new(Some(HashMap::new())),
+            proximo: AtomicU64::new(1),
+        });
+        let leitor = Arc::clone(&l);
+        std::thread::Builder::new()
+            .name("lancador-gancho".into())
+            .spawn(move || ler_respostas(leitor, saida, filho))
+            .ok()
+            .map(|_| l)
+    }
+
+    /// A thread que entrega cada resposta a quem a pediu. No fim da saida (o
+    /// lancador saiu), solta todos os que esperam, tira o lancador de
+    /// circulacao e o colhe -- sem zumbi.
+    fn ler_respostas(l: Arc<Lancador>, saida: ChildStdout, mut filho: Child) {
+        for linha in BufReader::new(saida).lines() {
+            let Ok(linha) = linha else { break };
+            let Ok(j) = Json::analisar(&linha) else {
+                continue;
+            };
+            let Some(id) = j.campo("id").and_then(Json::inteiro) else {
+                continue;
+            };
+            let r = match j.campo("erro").and_then(Json::texto) {
+                Some(e) => Err(e.to_string()),
+                None => Ok(()),
+            };
+            let tx = l.pendentes().as_mut().and_then(|m| m.remove(&(id as u64)));
+            if let Some(tx) = tx {
+                let _ = tx.send(r);
+            }
+        }
+        l.pendentes().take();
+        descartar(&l);
+        let _ = filho.wait();
+    }
+
+    fn descartar(l: &Arc<Lancador>) {
+        let mut g = ATUAL.lock().unwrap_or_else(|e| e.into_inner());
+        if g.as_ref().is_some_and(|a| Arc::ptr_eq(a, l)) {
+            *g = None;
+        }
+    }
+
+    /// Roda `e` pelo lancador. `None` quando nao ha lancador (e entao quem
+    /// chama roda direto); `Some` com o resultado, ou com a frase de que o
+    /// lancador caiu DEPOIS de receber o pedido -- e ai nao se roda de novo,
+    /// porque o programa pode ter rodado (um SMS em dobro).
+    pub fn pedir(e: &Execucao) -> Option<Resposta> {
+        // Duas tentativas: o pedido que nem chegou a ser escrito num lancador
+        // morto vai ao proximo, criado na hora.
+        for _ in 0..2 {
+            let l = obter()?;
+            let id = l.proximo.fetch_add(1, Ordering::Relaxed);
+            let (tx, rx) = mpsc::channel();
+            let registrado = l.pendentes().as_mut().map(|m| m.insert(id, tx)).is_some();
+            if !registrado {
+                descartar(&l);
+                continue;
+            }
+            let mut linha = pedido(id, e).escrever();
+            linha.push('\n');
+            let escrito = {
+                let mut w = l.entrada.lock().unwrap_or_else(|e| e.into_inner());
+                w.write_all(linha.as_bytes()).and_then(|_| w.flush())
+            };
+            if escrito.is_err() {
+                if let Some(m) = l.pendentes().as_mut() {
+                    m.remove(&id);
+                }
+                descartar(&l);
+                continue;
+            }
+            let prazo = Duration::from_secs(e.prazo_s.max(1)) + FOLGA;
+            return Some(match rx.recv_timeout(prazo) {
+                Ok(r) => r,
+                Err(mpsc::RecvTimeoutError::Timeout) => {
+                    if let Some(m) = l.pendentes().as_mut() {
+                        m.remove(&id);
+                    }
+                    Err(format!("o lancador do {} nao respondeu no prazo", e.rotulo))
+                }
+                Err(mpsc::RecvTimeoutError::Disconnected) => Err(format!(
+                    "o lancador do {} caiu antes de responder",
+                    e.rotulo
+                )),
+            });
+        }
+        None
+    }
+
+    fn pedido(id: u64, e: &Execucao) -> Json {
+        Json::objeto(vec![
+            ("id", Json::de_u64(id)),
+            ("rotulo", Json::texto_de(e.rotulo)),
+            (
+                "argv",
+                Json::Lista(e.argv.iter().map(|a| Json::texto_de(a.as_str())).collect()),
+            ),
+            ("path", Json::texto_de(e.path)),
+            (
+                "ambiente",
+                Json::Lista(
+                    e.ambiente
+                        .iter()
+                        .map(|(k, v)| Json::Lista(vec![Json::texto_de(*k), Json::texto_de(*v)]))
+                        .collect(),
+                ),
+            ),
+            (
+                "entrada",
+                e.entrada.map(Json::texto_de).unwrap_or(Json::Nulo),
+            ),
+            ("prazo_s", Json::de_u64(e.prazo_s)),
+        ])
+    }
+
+    /// Um pedido lido do fio, de volta a `Execucao`, rodado pelo motor.
+    fn atender(j: &Json) -> Resposta {
+        let texto = |c: &str| j.campo(c).and_then(Json::texto).unwrap_or("");
+        let lista = |c: &str| j.campo(c).and_then(Json::lista).unwrap_or(&[]);
+        let argv: Vec<String> = lista("argv")
+            .iter()
+            .filter_map(|a| a.texto().map(str::to_string))
+            .collect();
+        let pares: Vec<(&str, &str)> = lista("ambiente")
+            .iter()
+            .filter_map(|p| match p.lista()? {
+                [k, v] => Some((k.texto()?, v.texto()?)),
+                _ => None,
+            })
+            .collect();
+        rodar_aqui(&Execucao {
+            rotulo: texto("rotulo"),
+            argv: &argv,
+            path: texto("path"),
+            ambiente: &pares,
+            entrada: j.campo("entrada").and_then(Json::texto),
+            prazo_s: j
+                .campo("prazo_s")
+                .and_then(Json::inteiro)
+                .unwrap_or(1)
+                .max(1) as u64,
+        })
+    }
+
+    /// O lado do lancador: le um pedido por linha, roda cada um numa thread,
+    /// e responde `{"id":n}` ou `{"id":n,"erro":"..."}`. No fim da entrada (o
+    /// servidor saiu ou morreu), espera as execucoes em voo -- cada uma com
+    /// prazo, `kill` e `wait` -- e sai.
+    pub fn servir() {
+        let saida = Arc::new(Mutex::new(std::io::stdout()));
+        let mut em_voo: Vec<std::thread::JoinHandle<()>> = Vec::new();
+        for linha in std::io::stdin().lock().lines() {
+            let Ok(linha) = linha else { break };
+            let Ok(j) = Json::analisar(&linha) else {
+                continue;
+            };
+            let Some(id) = j.campo("id").and_then(Json::inteiro) else {
+                continue;
+            };
+            em_voo.retain(|t| !t.is_finished());
+            let saida = Arc::clone(&saida);
+            em_voo.push(std::thread::spawn(move || {
+                let mut pares = vec![("id", Json::de_i64(id))];
+                if let Err(e) = atender(&j) {
+                    pares.push(("erro", Json::texto_de(e)));
+                }
+                let mut w = saida.lock().unwrap_or_else(|e| e.into_inner());
+                let _ = writeln!(w, "{}", Json::objeto(pares).escrever());
+                let _ = w.flush();
+            }));
+        }
+        for t in em_voo {
+            let _ = t.join();
+        }
     }
 }
 
