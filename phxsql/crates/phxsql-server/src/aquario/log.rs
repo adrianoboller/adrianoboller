@@ -94,6 +94,8 @@ pub enum Evento {
     Sedimento,
     /// A contagem do minuto (A8).
     Contagem,
+    /// A bolha que passou do teto do raio ganhou um anel (pedido 780).
+    Anel,
 }
 
 impl Evento {
@@ -106,6 +108,7 @@ impl Evento {
             Evento::Retrato => "retrato",
             Evento::Sedimento => "sedimento",
             Evento::Contagem => "contagem",
+            Evento::Anel => "anel",
         }
     }
 }
@@ -205,6 +208,19 @@ impl Linha {
         let mut l = Linha::nova(Evento::Mudou, quando_ms);
         l.alarme = Some(alarme);
         l.ocorrencia = ocorrencia;
+        l
+    }
+
+    /// A tarefa viva ganhou o anel `anel` de [`super::anel::ANEIS`] (780).
+    /// `ms` e ha quanto tempo ela roda -- o motivo que a tela escreve,
+    /// «rodando ha N min, anel K de M», sai inteiro desta linha.
+    pub fn anel(quando_ms: i64, ms: u64, anel: u8) -> Linha {
+        let mut l = Linha::nova(Evento::Anel, quando_ms);
+        l.ms = Some(ms);
+        l.dados = Some(Json::objeto(vec![
+            ("anel", Json::de_u64(anel as u64)),
+            ("de", Json::de_u64(super::anel::ANEIS as u64)),
+        ]));
         l
     }
 

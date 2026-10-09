@@ -1076,3 +1076,35 @@ fn telemetria_desligada_o_sql_nao_calcula_digital() {
     r.unwrap();
     assert!(crate::aquario::base::tomar_digital().is_some());
 }
+
+/// Pedido 780: a tarefa que passou do teto do raio e subiu de anel deixa a
+/// linha `anel` no `aquario.log` pelo laco do amostrador, sem ninguem olhando
+/// a tela -- e uma vez so por anel. Tirar o `gravar` do `gravar_os_aneis`
+/// faz este teste cair.
+#[test]
+fn o_anel_que_sobe_vai_ao_aquario_log() {
+    let dir = dir_temp("anel");
+    let s = servidor(&dir, Cadastro::default());
+    s.telemetria.ligar(crate::agora_ms());
+    let a = s
+        .telemetria
+        .entrar("dados:7", "dados", "10.0.0.7", 7, 0)
+        .expect("telemetria ligada");
+    a.comecou_pedido("checksum", "adm", "loja", "clientes", 0);
+    a.recuar_o_pedido(130_000);
+    let agora = crate::agora_ms();
+    assert_eq!(s.gravar_os_aneis(agora), 1);
+    assert_eq!(s.gravar_os_aneis(agora), 0, "o mesmo anel nao repete");
+    let r = linhas_do_aquario(&s, "");
+    let l = r.campo("linhas").and_then(Json::lista).unwrap();
+    let aneis: Vec<&Json> = l
+        .iter()
+        .filter(|j| j.texto_ou("evento", "") == "anel")
+        .collect();
+    assert_eq!(aneis.len(), 1, "{}", r.escrever());
+    let d = aneis[0].campo("dados").unwrap();
+    assert_eq!(d.inteiro_ou("anel", 0), 2);
+    assert_eq!(d.inteiro_ou("de", 0), 5);
+    assert_eq!(aneis[0].texto_ou("tabela", ""), "clientes");
+    assert!(aneis[0].inteiro_ou("ms", 0) >= 120_000);
+}

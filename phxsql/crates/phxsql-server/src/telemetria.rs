@@ -254,6 +254,11 @@ pub struct Atividade {
     /// Os alarmes da operacao corrente, um bit por `Alarme` de tarefa,
     /// marcados na ORIGEM pelo `aquario::alarme::sinal` (pedido 707, A3).
     pub(crate) alarmes: AtomicU32,
+    /// O ultimo anel (780) que foi ao `aquario.log`, junto do serial do
+    /// pedido que o ganhou: `serial << 8 | anel`. O serial no mesmo atomico
+    /// e o que zera o anel no pedido seguinte sem o `comecou_pedido` ter de
+    /// lembrar disso.
+    anel_gravado: AtomicU64,
     /// A camada de ocorrencias do servidor DESTA atividade (495, F2): o
     /// alarme da tarefa vai ao arquivo do servidor que a serve, e nao ao de
     /// outro que more no mesmo processo. Vazia fora do `entrar`.
@@ -295,6 +300,7 @@ impl Atividade {
             encerradas: AtomicU64::new(0),
             ultimo_ms: AtomicI64::new(agora_ms),
             alarmes: AtomicU32::new(0),
+            anel_gravado: AtomicU64::new(0),
             ocorrencias: std::sync::Weak::new(),
         }
     }
@@ -656,6 +662,18 @@ impl Atividade {
             .unwrap_or(0)
     }
 
+    /// Recua o comeco do pedido corrente em `ms` -- so para teste: o relogio
+    /// da atividade e o `Instant` de verdade, e esperar 16 minutos para ver
+    /// a bolha preta nao e teste (780).
+    #[cfg(test)]
+    pub(crate) fn recuar_o_pedido(&self, ms: u64) {
+        if let Ok(mut i) = self.pedido_desde.lock() {
+            if let Some(t) = *i {
+                *i = t.checked_sub(std::time::Duration::from_millis(ms));
+            }
+        }
+    }
+
     /// Quanto tempo de SERVIDOR a operacao corrente ja gastou.
     pub fn trabalhando_ha_ms(&self) -> u64 {
         self.comecou
@@ -777,6 +795,11 @@ impl Atividade {
         pares.push(("ms", Json::de_u64(ha)));
         pares.push(("servico_ms", Json::de_u64(trabalhando)));
         pares.push(("espera_ms", Json::de_u64(ha.saturating_sub(trabalhando))));
+        // O anel (780) sai do MESMO `ms` que o raio da tela usa.
+        let anel = crate::aquario::anel::anel(ha);
+        if anel > 0 {
+            pares.push(("anel", Json::de_u64(anel as u64)));
+        }
         pares.extend(classe.campos());
         let alarmes = self.alarmes();
         if alarmes != 0 {
@@ -1997,11 +2020,95 @@ impl Telemetria {
                         "tarefa_grande_ms",
                         Json::de_u64(crate::aquario::classe::TAREFA_GRANDE_MS),
                     ),
+                    (
+                        "teto_do_raio_ms",
+                        Json::de_u64(crate::aquario::anel::TETO_DO_RAIO_MS),
+                    ),
+                    // A tabela dos aneis, para a volta de cinco minutos, que
+                    // nao tem retrato: a tela le, nao recalcula.
+                    (
+                        "aneis_ms",
+                        Json::Lista(
+                            crate::aquario::anel::limites()
+                                .iter()
+                                .map(|l| Json::de_u64(*l))
+                                .collect(),
+                        ),
+                    ),
                 ]),
             ),
             ("tarefas", Json::Lista(tarefas)),
             ("sedimento", Json::Lista(sedimento)),
         ])
+    }
+
+    /// As linhas `anel` do `aquario.log` (780): cada tarefa viva cujo anel
+    /// SUBIU desde a ultima vez que este laco passou. Chamado pelo
+    /// amostrador, de segundo em segundo e so com a telemetria ligada -- o
+    /// log fica sem ninguem olhando, que e a ordem do dono.
+    ///
+    /// O caminho comum custa uma leitura de relogio e um atomico por tarefa
+    /// viva; a classe (que pede o `stress`) so se calcula para quem subiu,
+    /// e isso acontece cinco vezes na vida de uma tarefa de 16 minutos.
+    pub fn aneis_que_subiram(&self, agora_ms: i64) -> Vec<crate::aquario::log::Linha> {
+        let atividades = self.atividades();
+        let mut subiram = Vec::new();
+        for a in &atividades {
+            if a.estado() == Estado::Ociosa {
+                continue;
+            }
+            let ms = a.ha_ms();
+            let anel = crate::aquario::anel::anel(ms);
+            if anel == 0 {
+                continue;
+            }
+            let serial = a.serial.load(Ordering::Relaxed);
+            let novo = (serial << 8) | anel as u64;
+            let velho = a.anel_gravado.load(Ordering::Relaxed);
+            let anel_velho = if velho >> 8 == serial {
+                velho & 0xff
+            } else {
+                0
+            };
+            if anel as u64 <= anel_velho {
+                continue;
+            }
+            // Um laco so grava (o amostrador); o `compare_exchange` e para
+            // nunca gravar duas vezes o mesmo anel se um dia forem dois.
+            if a.anel_gravado
+                .compare_exchange(velho, novo, Ordering::SeqCst, Ordering::Relaxed)
+                .is_ok()
+            {
+                subiram.push((Arc::clone(a), ms, anel));
+            }
+        }
+        if subiram.is_empty() {
+            return Vec::new();
+        }
+        let (stress, _) = self.stress();
+        let ha_fila = atividades.iter().any(|a| a.estado() == Estado::Esperando);
+        let pintura = self.pintura();
+        subiram
+            .into_iter()
+            .map(|(a, ms, anel)| {
+                let c = a.corrente_copiada();
+                let classe = a.classe_viva(
+                    &c,
+                    stress,
+                    ha_fila,
+                    &pintura,
+                    Some(self.aquario.base()),
+                    agora_ms,
+                );
+                let mut l = crate::aquario::log::Linha::anel(agora_ms, ms, anel)
+                    .com_classe(classe, a.alarmes());
+                l.tarefa = a.tarefa();
+                l.op = c.op;
+                l.database = c.database;
+                l.tabela = c.tabela;
+                l
+            })
+            .collect()
     }
 
     /// O retrato inteiro, pronto para a tela.
@@ -3030,5 +3137,51 @@ mod testes {
         // Jiffies podem ser zero num processo recem-nascido; a memoria nao.
         let _ = jiffies;
         assert!(kb > 0, "memoria residente zero: o campo saiu do lugar");
+    }
+
+    /// **780: o anel vai ao log UMA vez por subida, e zera no pedido
+    /// seguinte.** Reponha o defeito -- gravar sem conferir o anel ja
+    /// gravado -- e a segunda volta do amostrador repete a linha; esqueca o
+    /// serial no atomico e o pedido novo, que ainda esta no anel 1, herda o
+    /// 5 do anterior e nunca grava.
+    #[test]
+    fn o_anel_vai_ao_log_uma_vez_por_subida() {
+        let t = Telemetria::nova(true);
+        let a = t.entrar("dados:1", "dados", "10.0.0.1", 1, 0).unwrap();
+        a.comecou_pedido("checksum", "adm", "loja", "clientes", 0);
+        assert!(
+            t.aneis_que_subiram(0).is_empty(),
+            "recem-nascida nao tem anel"
+        );
+        a.recuar_o_pedido(61_000);
+        let l = t.aneis_que_subiram(0);
+        assert_eq!(l.len(), 1);
+        let j = l[0].para_json().escrever();
+        assert!(j.contains("\"evento\":\"anel\""), "{j}");
+        assert!(j.contains("\"anel\":1,\"de\":5"), "{j}");
+        assert!(j.contains("\"tabela\":\"clientes\""), "{j}");
+        assert!(j.contains("\"cor\":"), "a cor de gravidade vai junto: {j}");
+        assert!(t.aneis_que_subiram(0).is_empty(), "o mesmo anel nao repete");
+        // pulou de 1 para 5 entre duas voltas: uma linha, a do anel novo
+        a.recuar_o_pedido(1_000_000);
+        let l = t.aneis_que_subiram(0);
+        assert_eq!(l.len(), 1);
+        assert!(l[0].para_json().escrever().contains("\"anel\":5"));
+        // o retrato manda o anel e a tabela dos limites
+        let r = t.retrato_do_aquario(0, false).escrever();
+        assert!(r.contains("\"anel\":5"), "{r}");
+        assert!(
+            r.contains("\"aneis_ms\":[60000,120000,240000,480000,960000]"),
+            "{r}"
+        );
+        // pedido novo: o anel recomeca
+        a.terminou_pedido("adm");
+        a.comecou_pedido("checksum", "adm", "loja", "clientes", 0);
+        a.recuar_o_pedido(61_000);
+        assert_eq!(
+            t.aneis_que_subiram(0).len(),
+            1,
+            "o pedido novo grava o proprio anel 1"
+        );
     }
 }

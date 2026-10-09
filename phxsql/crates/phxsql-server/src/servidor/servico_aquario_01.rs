@@ -149,6 +149,18 @@ impl Servidor {
         virada.minuto
     }
 
+    /// As linhas `anel` (780): a tarefa que passou do teto do raio e subiu de
+    /// anel vai ao `aquario.log` aqui, pelo escritor de sempre. Devolve
+    /// quantas gravou, para quem testa.
+    pub(super) fn gravar_os_aneis(&self, agora_ms: i64) -> usize {
+        let aquario = self.telemetria.aquario();
+        let linhas = self.telemetria.aneis_que_subiram(agora_ms);
+        for l in &linhas {
+            self.no_aquario_log(aquario.log().gravar(l));
+        }
+        linhas.len()
+    }
+
     /// O arranque no meio da hora: a contagem refaz a hora corrente (e fecha
     /// a anterior que o processo velho nao fechou) das linhas `contagem` que
     /// ficaram no `aquario.log`. Chamado depois de os dois arquivos estarem

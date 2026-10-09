@@ -724,6 +724,9 @@ impl Servidor {
                     // ausente (`null`), nunca zero. A linha do minuto vai ao
                     // `aquario.log` la dentro.
                     servidor.virar_a_contagem(agora);
+                    // Os aneis da bolha que passou do teto (780), no mesmo
+                    // relogio e pelo mesmo escritor do log.
+                    servidor.gravar_os_aneis(agora);
                     fio.fazendo("amostra tirada");
                 } else {
                     fio.fazendo("telemetria desligada: nao amostra");

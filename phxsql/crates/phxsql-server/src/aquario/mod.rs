@@ -35,9 +35,11 @@
 //! | A4 | `aquario/base.rs` | em [`Aquario::anotar`]: a base Welford sobre `ln(µs)`; o desvio volta ao servidor |
 //! | A5 | `aquario/classe.rs` | a [`classificar`] unica: o retrato (`Telemetria::retrato_do_aquario` e o `nivel` do painel) e as linhas `estourou`/`mudou` do log pintam por ela |
 //! | A6 | `aquario/log.rs` | o `aquario.log` pelo [`crate::acesso::LogAcessos::registrar_json`], e o corpo de [`Aquario::consultar_log`] |
+//! | 780 | `aquario/anel.rs` | o anel da bolha que passou do teto do raio: o retrato o manda em `anel`, e o amostrador grava a linha `anel` do log quando ele sobe |
 //! | A8 | `aquario/contagem.rs` | em [`Aquario::anotar`]: o acumulador do minuto; o corpo de [`Aquario::contagens`] (feito) |
 
 pub mod alarme;
+pub mod anel;
 pub mod base;
 pub mod classe;
 pub mod contagem;

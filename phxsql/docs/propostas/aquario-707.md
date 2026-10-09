@@ -735,6 +735,49 @@ legenda; (3) o «p95» que o dono leu vira **estimado e mostrado**, e o corte é
 - 322 µs, 741 ns e 885 ns: de 24/09, não remedidos. A bancada de hoje rodou sob carga 5,1.
 - 24 logs de bancada, nenhum de produção.
 
+## 12. Pedido 780 — depois do teto, ANÉIS até a bolha preta (09/10/2026, papel E)
+
+Ordem do dono: *«o tamanho aumenta com o tempo de execução até uma medida máxima que ainda
+permita ver as outras bolhas; daí começa a ter mais cores internas ou camadas até ficar preta».*
+O raio já parava aos **30 s** (`raioAlvo`, 9 → 46 px, logarítmico). O tempo a mais vira anel.
+
+**A escala: cada DOBRA de tempo além do teto é um anel, cinco até a preta.**
+
+| anel | 1 | 2 | 3 | 4 | 5 (preta) |
+|---|---|---|---|---|---|
+| rodando há | 1 min | 2 min | 4 min | 8 min | 16 min |
+
+- **Dobra, e não minuto:** o raio é logarítmico até o teto, e o anel continua a mesma régua —
+  cada anel diz «demorou o dobro». Um anel por minuto pintaria de preto aos 6 min uma carga que
+  é normal levar 15, e diria a mesma coisa para 6 min e para 6 h.
+- **Cinco:** com o raio no teto (46 px) os anéis ficam a ~7,7 px um do outro; com a `escala`
+  do tanque encolhendo tudo à metade, ainda ~3,8 px. Seis ou mais viram borrão, e deixam de ser
+  forma.
+- **Desenho:** anel *i* é a forma da bolha (círculo, losango, octógono) no raio
+  `r·(1 − i/6)`; cada um escurece o miolo (`fill #000` a 0,22, acumulando para o centro); no
+  quinto a bolha inteira fica `#000` opaca. O traço do anel é **duplo** — escuro 2,6 px por
+  baixo, claro 1,1 px por cima —, e por isso aparece no papel e no miolo preto. A cor de
+  gravidade fica na **borda**, intacta. A preta ganha **halo** na cor do texto a `r + 2,5`.
+- **Contraste medido** (`testes-web/prova-780-aneis.mjs`, Chromium, 09/10): preto × fundo
+  **1,03:1** no escuro (`#010418`) — é por isso que o halo existe —; halo × fundo **15,65:1**
+  (escuro) e **16,96:1** (claro); borda azul-escuro × fundo **11,30:1** / **9,41:1**; traço
+  claro do anel × preto **19,23:1**.
+
+**Onde mora — um motor só.** A escala é do servidor (`aquario/anel.rs`): o `aquario.log` tem
+de gravar a troca de anel sem ninguém olhando (item 5 do dono), então quem decide é quem grava.
+O amostrador, de segundo em segundo e só com a telemetria ligada, grava a linha `anel`
+(`dados: {anel, de}`, com `ms`, a cor e o motivo da classe) uma vez por subida — o serial do
+pedido mora no mesmo atômico do anel gravado, e o pedido seguinte recomeça do zero. O retrato
+manda `anel` em cada bolha e a tabela `limiares.aneis_ms`; a tela desenha o `anel` e, na volta
+de 5 min (sem retrato), conta os limites da tabela — lê, não recalcula. O teto de 30 s existe
+nos dois lados (`msGrande` do JS e `TETO_DO_RAIO_MS`), e um teste lê o literal do JS e compara.
+
+**O motivo** «rodando há N min, anel K de M» sai pela chave `tela.aq_anel_motivo` no `<title>`,
+no cartão de quem encerra, na **dica do toque** (quem não pode encerrar — a TV, quem só
+monitora — toca na bolha e lê o que o `<title>` diz: no toque não há hover) e na linha `anel`
+da linha do tempo. Custo com o aquário fechado: zero na tela (o desenho só roda no laço); no
+servidor, uma leitura de relógio e um atômico por tarefa viva por segundo.
+
 ## Apêndice B — os medidores da A0 (refazer: `python3 regras.py`, `python3 nmin.py`, `rustc -O --edition 2021 bench.rs && ./bench`)
 
 Vão para `bancada/aquario/` pela A1 (script que resolveu não morre com a sessão).

@@ -145,7 +145,16 @@ window.PhxAquario = (function () {
     estourou: () => txt("tela.aq_ev_estourou", "terminou"),
     morta: () => txt("tela.tl_th_encerrada", "encerrada"),
     sedimento: () => txt("tela.aq_ev_sedimento", "alarme do servidor"),
+    anel: () => txt("tela.aq_ev_anel", "ganhou um anel"),
   };
+
+  /* O motivo do anel (pedido 780), o mesmo texto no toque, no cartao e no
+   * log. `k` e `m` vem do SERVIDOR (o retrato ou a linha `anel`): a escala
+   * mora no `aquario/anel.rs`, e a tela nao a recalcula. */
+  function textoDoAnel(ms, k, m) {
+    return preencher(txt("tela.aq_anel_motivo", "rodando há {min} min, anel {k} de {m}"),
+      { min: Math.floor((+ms || 0) / 60000), k: k, m: m });
+  }
 
   /* cor -> { forma, variavel, tracejado } (aquario-707.md §2.3). */
   const CORES = {
@@ -160,7 +169,7 @@ window.PhxAquario = (function () {
   const M = {
     rMin: 9,            // px, bolha recem-nascida que ja existe
     rMax: 46,           // px, a maior (tarefa de 30 s ou mais)
-    msGrande: 30000,    // tarefa que atinge rMax
+    msGrande: 30000,    // tarefa que atinge rMax (= TETO_DO_RAIO_MS do aquario/anel.rs, teste confere)
     cresce: 2.2,        // 1/s, quanto a bolha corre para o raio-alvo
     ocupacaoMax: 0.46,  // fracao da caixa que as bolhas podem cobrir
     molaFaixa: 5,       // 1/s², puxao suave ate a faixa
@@ -320,6 +329,11 @@ window.PhxAquario = (function () {
         b.op = t.op; b.tabela = t.tabela; b.motivo = t.motivo; b.pessoa = t.pseudonimo || "";
         b.cor = CORES[t.cor] ? t.cor : "verde";
         b.faixa = faixa; b.ms = t.ms || 0;
+        // O anel (780) e o total deles chegam prontos; sem o total (a bancada
+        // da A9, um retrato antigo) nao ha anel nenhum -- inventar a escala
+        // aqui seria a segunda formula.
+        b.aneis = Math.max(0, Math.floor(+t.aneis || 0));
+        b.anel = b.aneis ? Math.min(b.aneis, Math.max(0, Math.floor(+t.anel || 0))) : 0;
         b.bruto = raioAlvo(b.ms);
       }
       for (const b of e.bolhas) {
@@ -393,6 +407,24 @@ window.PhxAquario = (function () {
 .aq .aq-b .aq-rot{fill:var(--texto,#e6ecf7);text-anchor:middle;font-size:10px;pointer-events:none;
   paint-order:stroke;stroke:var(--fundo,#010418);stroke-width:2px;text-transform:none}
 .aq .aq-b.aq-fim .aq-forma{fill-opacity:0}
+/* Os ANEIS (780): cada um e a forma da bolha em ponto menor, com um traco
+   DUPLO -- escuro por baixo, claro por cima --, que aparece tanto sobre o
+   papel quanto sobre o miolo preto. A cor da gravidade fica na borda. */
+.aq .aq-b .aq-anel{fill:#000;fill-opacity:.22;stroke:none}
+.aq .aq-b .aq-anel-e{fill:none;stroke:#000;stroke-width:2.6}
+.aq .aq-b .aq-anel-c{fill:none;stroke:#f2f5fb;stroke-width:1.1}
+.aq .aq-b.aq-preta .aq-forma{fill:#000;fill-opacity:1}
+.aq .aq-b.aq-preta .aq-anel{fill-opacity:0}
+/* o nome sobre o miolo preto: claro com contorno preto nos DOIS temas -- o
+   --texto do tema claro e escuro, e sumiria no preto */
+.aq .aq-b.aq-preta .aq-rot{fill:#f2f5fb;stroke:#000}
+/* O BRILHO da preta: preto sobre o #010418 some, como o azul escuro; o halo
+   na cor do texto e o que a separa do fundo. */
+.aq .aq-b .aq-halo{fill:none;stroke:var(--texto,#e6ecf7);stroke-width:1.5}
+.aq .aq-dica{position:absolute;z-index:4;max-width:min(360px,80%);padding:6px 9px;border-radius:6px;
+  background:var(--painel,#0a1122);border:1px solid var(--linha-forte,#2b3a56);color:var(--texto,#e6ecf7);
+  font-size:12px;line-height:1.4;pointer-events:none;text-transform:none;box-shadow:0 4px 14px rgba(0,0,0,.35)}
+.aq .aq-dica[hidden]{display:none}
 .aq.aq-clic .aq-b:not(.aq-fim){cursor:pointer}
 .aq .aq-b:focus{outline:none}
 .aq .aq-b:focus-visible .aq-forma,.aq .aq-b.aq-sel .aq-forma{stroke-width:4px}
@@ -533,7 +565,25 @@ window.PhxAquario = (function () {
     svg.append(gFaixas, gBolhas, gNomes);
     const vazio = document.createElement("div");
     vazio.className = "aq-vazio"; vazio.textContent = txt("tela.aq_vazio", "nenhuma tarefa em andamento");
-    host.append(svg, vazio);
+    // A DICA do toque (780): quem nao pode encerrar (a TV, quem so monitora)
+    // toca na bolha e le o que o <title> diz -- no toque nao ha hover.
+    const dica = document.createElement("div");
+    dica.className = "aq-dica"; dica.hidden = true; dica.setAttribute("role", "status");
+    host.append(svg, vazio, dica);
+    let dicaRelogio = 0;
+    function mostrarDica(g, ev) {
+      const t = g.querySelector("title");
+      dica.textContent = t ? t.textContent : "";
+      const caixaHost = host.getBoundingClientRect();
+      const x = (ev && ev.clientX != null ? ev.clientX : caixaHost.left) - caixaHost.left;
+      const y = (ev && ev.clientY != null ? ev.clientY : caixaHost.top) - caixaHost.top;
+      dica.style.left = Math.max(4, Math.min(x + 10, caixaHost.width - 200)) + "px";
+      dica.style.top = Math.max(4, Math.min(y + 10, caixaHost.height - 60)) + "px";
+      dica.setAttribute("data-id", g.getAttribute("data-id") || "");
+      dica.hidden = false;
+      clearTimeout(dicaRelogio);
+      dicaRelogio = setTimeout(() => { dica.hidden = true; }, 5000);
+    }
 
     const caixa = { w: host.clientWidth || 800, h: host.clientHeight || 400 };
     const motor = criarMotor(caixa, op);
@@ -543,9 +593,12 @@ window.PhxAquario = (function () {
     // tela pergunta ao retrato (`completo`), nunca decide sozinha.
     let clic = false, selecionada = "";
     function aoEscolher(ev) {
-      if (!clic || !op.aoClicar) return;
       const g = ev.target && ev.target.closest && ev.target.closest(".aq-b");
       if (!g || g.classList.contains("aq-fim")) return;
+      if (!clic || !op.aoClicar) {
+        if (ev.type === "click") mostrarDica(g, ev);
+        return;
+      }
       if (ev.type === "keydown" && ev.key !== "Enter" && ev.key !== " ") return;
       ev.preventDefault();
       op.aoClicar(g.getAttribute("data-id"));
@@ -578,15 +631,60 @@ window.PhxAquario = (function () {
       if (n) return n;
       const g = el("g", { class: "aq-b", "data-id": b.id, "data-cor": b.cor });
       const tit = el("title");
-      const forma = el(CORES[b.cor].forma === "circulo" ? "circle" : "polygon", { class: "aq-forma" });
+      const ehCirculo = CORES[b.cor].forma === "circulo";
+      const halo = el(ehCirculo ? "circle" : "polygon", { class: "aq-halo" });
+      halo.style.display = "none";
+      const forma = el(ehCirculo ? "circle" : "polygon", { class: "aq-forma" });
+      const gAneis = el("g", { class: "aq-aneis" });
       const dupla = el("circle", { class: "aq-dupla" });
       const rot = el("text", { class: "aq-rot", y: 3 });
-      g.append(tit, forma, dupla, rot);
+      g.append(tit, halo, forma, gAneis, dupla, rot);
       tornarClicavel(g);
       gBolhas.append(g);
-      n = { g: g, forma: forma, dupla: dupla, rot: rot, tit: tit, cor: b.cor };
+      n = { g: g, forma: forma, dupla: dupla, rot: rot, tit: tit, cor: b.cor, halo: halo, gAneis: gAneis,
+            aneis: [], desenho: "" };
       nos.set(b.id, n);
       return n;
+    }
+
+    /* Os aneis de uma bolha (780): `anel` de `aneis`, cada um a forma da
+     * bolha no raio r·(1 − i/(aneis+1)) -- espacamento igual, o miolo some no
+     * ultimo. Cada anel escurece o que esta dentro dele (fill .22, que se
+     * acumula para o centro); no ultimo a bolha inteira e preta, com o halo.
+     * So refaz os nos quando o anel ou o total mudam; o raio muda todo quadro
+     * e so mexe em atributos. */
+    function pintarAneis(n, b, c, r) {
+      const k = b.anel || 0, m = b.aneis || 0;
+      const preta = k > 0 && k >= m;
+      const desenho = k + "/" + m;
+      if (n.desenho !== desenho) {
+        n.desenho = desenho;
+        n.gAneis.textContent = "";
+        n.aneis = [];
+        for (let i = 1; i <= k; i++) {
+          const tag = c.forma === "circulo" ? "circle" : "polygon";
+          const disco = el(tag, { class: "aq-anel" });
+          const escuro = el(tag, { class: "aq-anel-e" });
+          const claro = el(tag, { class: "aq-anel-c" });
+          n.gAneis.append(disco, escuro, claro);
+          n.aneis.push([disco, escuro, claro]);
+        }
+        n.g.setAttribute("data-anel", String(k));
+        n.g.setAttribute("data-aneis", String(m));
+        n.g.classList.toggle("aq-preta", preta);
+      }
+      for (let i = 1; i <= n.aneis.length; i++) {
+        const ri = r * (1 - i / (m + 1));
+        for (const no of n.aneis[i - 1]) {
+          if (c.forma === "circulo") no.setAttribute("r", ri.toFixed(1));
+          else no.setAttribute("points", pontos(c.forma, ri));
+        }
+      }
+      if (preta) {
+        if (c.forma === "circulo") n.halo.setAttribute("r", (r + 2.5).toFixed(1));
+        else n.halo.setAttribute("points", pontos(c.forma, r + 2.5));
+        n.halo.style.display = "";
+      } else n.halo.style.display = "none";
     }
 
     function desenhar() {
@@ -615,6 +713,7 @@ window.PhxAquario = (function () {
         else n.forma.removeAttribute("stroke-dasharray");
         if (c.forma === "circulo") n.forma.setAttribute("r", r.toFixed(1));
         else n.forma.setAttribute("points", pontos(c.forma, r));
+        pintarAneis(n, b, c, r);
         // borda dupla clara do azul escuro: e o que o torna visivel (3,04:1)
         if (b.id === selecionada && !b.estourando) {
           // a escolhida do cartao ganha um anel de fora, tracejado na cor do
@@ -643,6 +742,7 @@ window.PhxAquario = (function () {
             : nome.length <= cabe ? nome : nome.slice(0, Math.max(1, cabe - 1)) + "…";
           const tx = String(b.op || "") + " " + String(b.tabela || "") +
             " (" + ROTULO_DA_COR[b.cor]() + ")" + (b.motivo ? " — " + motivo(b.motivo) : "") +
+            (b.anel ? " · " + textoDoAnel(b.ms, b.anel, b.aneis) : "") +
             (b.pessoa ? " · " + preencher(txt("tela.aq_pessoa", "pessoa {p}"), { p: b.pessoa }) : "");
           n.tit.textContent = tx;
           n.g.setAttribute("aria-label", tx);
@@ -992,6 +1092,12 @@ window.PhxAquario = (function () {
       }
     }
 
+    /* Quantos aneis ate a preta: o tamanho da tabela do servidor. */
+    function totalDeAneis(r) {
+      const lim = r && r.limiares && r.limiares.aneis_ms;
+      return Array.isArray(lim) ? lim.length : 0;
+    }
+
     /* Pode encerrar? A pergunta e do SERVIDOR (`completo`, o portao da
      * telemetria), e a TV nunca abre o cartao, nem com login de quem pode. */
     const podeEncerrar = () => !!(caixaCartao && !c.tv && ultimo && ultimo.completo === true);
@@ -1005,9 +1111,11 @@ window.PhxAquario = (function () {
       // Os campos que a bolha desenha, e nenhum outro: `usuario` e `ip`, que
       // o servidor manda ao administrador, ficam no retrato e so o cartao os
       // le.
+      const aneis = totalDeAneis(r);
       const tarefas = [...porId.values()]
         .map(t => ({ id: t.tarefa, op: t.op, tabela: t.tabela, cor: t.cor,
-                     faixa: t.faixa, motivo: t.motivo, ms: t.ms, pseudonimo: t.pseudonimo }));
+                     faixa: t.faixa, motivo: t.motivo, ms: t.ms, pseudonimo: t.pseudonimo,
+                     anel: t.anel || 0, aneis: aneis }));
       fisica.atualizar(tarefas);
       pintarFundo(r.sedimento);
       estado.classList.remove("aqt-mal");
@@ -1078,6 +1186,7 @@ window.PhxAquario = (function () {
       linha(txt("tela.tl_c_fase", "fase"), t.fase);
       linha(txt("tela.tl_c_op_dura", "operação dura há"), dur(t.ms));
       linha(txt("tela.tl_c_na_fila", "desse tempo, na fila da trava"), dur(t.espera_ms));
+      if (t.anel) linha(txt("tela.aq_k_anel", "anéis"), textoDoAnel(t.ms, t.anel, totalDeAneis(ultimo)));
       linha(txt("tela.aq_k_cor", "cor"), (ROTULO_DA_COR[t.cor] ? ROTULO_DA_COR[t.cor]() : t.cor) +
         (t.motivo ? " — " + motivo(t.motivo) : ""));
       // O que a promessa vale: as frases da ficha da telemetria, pela chave.
@@ -1154,7 +1263,10 @@ window.PhxAquario = (function () {
         const l = log[i];
         const ev = EVENTOS[l.evento];
         if (!ev) continue;   // contagem e retrato alimentam os graficos e a volta
-        const textoEv = ev(), textoMot = l.motivo ? motivo(l.motivo) : "";
+        const d = l.dados || {};
+        const textoEv = ev();
+        const textoMot = [l.evento === "anel" && d.anel ? textoDoAnel(l.ms, d.anel, d.de) : "",
+                          l.motivo ? motivo(l.motivo) : ""].filter(Boolean).join(" — ");
         const textoCor = ROTULO_DA_COR[l.cor] ? ROTULO_DA_COR[l.cor]() : "";
         const alvo = [l.database, l.tabela].filter(Boolean).join(".");
         if (q) {
@@ -1219,9 +1331,13 @@ window.PhxAquario = (function () {
      * que a tarefa terminou, e as linhas `nasceu`/`retrato` ainda nao existem
      * para dizer a do meio. */
     function tanqueEm(t) {
+      // Sem retrato na reprise: o anel sai da TABELA que o ultimo retrato
+      // publicou (`limiares.aneis_ms`), contando os limites ja passados.
+      const lim = (ultimo && ultimo.limiares && ultimo.limiares.aneis_ms) || [];
       return rep.faixas.filter(x => x.ini <= t && t < x.fim)
         .map(x => ({ id: x.id, op: x.op, tabela: x.tabela, cor: x.cor, faixa: x.faixa,
-                     motivo: x.motivo, ms: t - x.ini }));
+                     motivo: x.motivo, ms: t - x.ini,
+                     anel: lim.filter(l => t - x.ini >= l).length, aneis: lim.length }));
     }
     function pintarReprise() {
       const tarefas = tanqueEm(rep.t);
