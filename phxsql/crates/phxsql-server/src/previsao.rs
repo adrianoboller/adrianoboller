@@ -147,6 +147,197 @@ impl Degrau {
     }
 }
 
+// ------------------------------------------------------------------ F6
+//
+// A contagem regressiva ate um TETO DURO: o que so cresce e tem um fim
+// declarado (slots de uma tabela paginada, volumes do diario, a idade do
+// backup, a duracao dele). Mesma pergunta da F5 -- «quanto falta?» --, mesmo
+// degrau, mesmo `Alarme`: o recurso vai no `dados`. Variante nova partiria o
+// sedimento em dois lugares para ler a mesma noticia («isto acaba»).
+
+/// Acima disto do teto, aviso. Estritamente acima: 80% exatos ainda e dia
+/// comum, e o teste de fronteira trava o `>` contra o `>=`.
+pub const PERCENTUAL_DO_AVISO: u128 = 80;
+/// Acima disto do teto, critico.
+pub const PERCENTUAL_DO_CRITICO: u128 = 95;
+/// A tendencia cruza o teto em menos de 30 dias: aviso.
+pub const DIAS_DO_AVISO: f64 = 30.0;
+/// ...em menos de 3 dias: critico.
+pub const DIAS_DO_CRITICO: f64 = 3.0;
+
+/// O degrau pela RAZAO usado/teto -- a conta que nao precisa de historico.
+///
+/// Em inteiros (`u128`) e nao em `f64`: `slots` e `capacidade` chegam a 10^12,
+/// e a fronteira de 80% tem de ser exata, nao «quase».
+pub fn degrau_da_razao(usado: u64, teto: u64) -> Option<Degrau> {
+    if teto == 0 {
+        return None;
+    }
+    let u = usado as u128 * 100;
+    let t = teto as u128;
+    if u > PERCENTUAL_DO_CRITICO * t {
+        Some(Degrau::Critico)
+    } else if u > PERCENTUAL_DO_AVISO * t {
+        Some(Degrau::Aviso)
+    } else {
+        None
+    }
+}
+
+/// O degrau pela TENDENCIA: quantos dias faltam, na taxa de agora.
+pub fn degrau_dos_dias(p: &Previsao) -> Option<Degrau> {
+    if p.horas < DIAS_DO_CRITICO * 24.0 {
+        Some(Degrau::Critico)
+    } else if p.horas < DIAS_DO_AVISO * 24.0 {
+        Some(Degrau::Aviso)
+    } else {
+        None
+    }
+}
+
+/// O mais grave dos dois: a razao e a tendencia respondem coisas diferentes
+/// (quanto ja encheu, quando enche) e vale a pior noticia.
+fn pior(a: Option<Degrau>, b: Option<Degrau>) -> Option<Degrau> {
+    match (a, b) {
+        (Some(Degrau::Critico), _) | (_, Some(Degrau::Critico)) => Some(Degrau::Critico),
+        (Some(Degrau::Aviso), _) | (_, Some(Degrau::Aviso)) => Some(Degrau::Aviso),
+        _ => None,
+    }
+}
+
+/// Uma leitura contra um teto duro.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Contagem {
+    /// `tabela:<db>.<t>`, `diario:<db>.<t>`, `backup:idade` ou `backup:janela`.
+    pub recurso: String,
+    pub usado: u64,
+    pub teto: u64,
+    /// Guarda a serie e preve por tendencia? Falso para o que ja nasce como
+    /// razao (idade e duracao do backup): a serie de uma idade que zera a cada
+    /// backup e um dente de serra, e o R² a descartaria de qualquer jeito.
+    pub tendencia: bool,
+}
+
+/// Uma contagem dentro dos degraus.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AvisoDaContagem {
+    pub recurso: String,
+    pub degrau: Degrau,
+    pub usado: u64,
+    pub teto: u64,
+    /// So quando a tendencia existe e e a que pesou.
+    pub previsao: Option<Previsao>,
+    pub mudou: bool,
+}
+
+impl AvisoDaContagem {
+    pub fn percentual(&self) -> f64 {
+        if self.teto == 0 {
+            0.0
+        } else {
+            self.usado as f64 * 100.0 / self.teto as f64
+        }
+    }
+}
+
+/// Quantos periodos sem backup bom ate o teto duro: `1,5 x periodo` (C6).
+/// Em fracao inteira (3/2) pela mesma razao da fronteira de 80%.
+const TOLERANCIA_NUM: u64 = 3;
+const TOLERANCIA_DEN: u64 = 2;
+
+/// C6: a IDADE do ultimo backup bom contra `1,5 x periodo`.
+///
+/// `ultimo_ok_ms` zero = nunca houve um; ai a conta parte de `desde_ms` (a
+/// primeira vez que o vigia olhou): um servidor que acabou de subir nao deve
+/// um backup ao mundo, mas tambem nao ganha prazo infinito -- e o backup que
+/// NUNCA rodou e o caso que a falha-avisa-desde-o-510 nao alcanca.
+///
+/// O teto e `1,5 x periodo`, e o aviso comeca a 80% dele (1,2 periodo): o
+/// mesmo degrau de tudo na F6. Divergencia da letra do desenho (alarme so
+/// acima de 1,5), causada por uma restricao nossa: o degrau e UM so para os
+/// quatro sinais, e dois degraus diferentes seriam a decisao escrita duas
+/// vezes.
+pub fn contagem_da_idade(
+    recurso: String,
+    agora_ms: i64,
+    ultimo_ok_ms: i64,
+    desde_ms: i64,
+    periodo_ms: u64,
+) -> Contagem {
+    let referencia = if ultimo_ok_ms > 0 {
+        ultimo_ok_ms
+    } else {
+        desde_ms
+    };
+    Contagem {
+        recurso,
+        usado: (agora_ms - referencia).max(0) as u64,
+        teto: periodo_ms.saturating_mul(TOLERANCIA_NUM) / TOLERANCIA_DEN,
+        tendencia: false,
+    }
+}
+
+/// C5: quanto o backup LEVOU contra o periodo dele. Um backup que dura mais
+/// que o periodo atropela o seguinte -- e o teto duro que a configuracao ja
+/// implica, sem inventar um campo de «janela aceita» que ninguem preencheu.
+pub fn contagem_da_janela(recurso: String, duracao_ms: u64, periodo_ms: u64) -> Contagem {
+    Contagem {
+        recurso,
+        usado: duracao_ms,
+        teto: periodo_ms,
+        tendencia: false,
+    }
+}
+
+/// O que o backup agendado deixou, para o vigia ler de outra thread.
+#[derive(Debug, Default)]
+pub struct MarcasDoBackup {
+    ultimo_ok_ms: std::sync::atomic::AtomicI64,
+    ultima_duracao_ms: std::sync::atomic::AtomicI64,
+    /// A primeira vez que o vigia olhou. Zero = nunca olhou.
+    desde_ms: std::sync::atomic::AtomicI64,
+}
+
+impl MarcasDoBackup {
+    /// O backup agendado terminou BEM. So o sucesso entra: a falha ja avisa
+    /// (pedido 510) e nao renova a validade de ninguem.
+    pub fn deu_certo(&self, fim_ms: i64, duracao_ms: i64) {
+        use std::sync::atomic::Ordering::Relaxed;
+        self.ultimo_ok_ms.store(fim_ms, Relaxed);
+        self.ultima_duracao_ms.store(duracao_ms.max(0), Relaxed);
+    }
+
+    /// Fixa e devolve o instante da primeira olhada.
+    pub fn primeira_olhada(&self, agora_ms: i64) -> i64 {
+        use std::sync::atomic::Ordering::Relaxed;
+        match self
+            .desde_ms
+            .compare_exchange(0, agora_ms, Relaxed, Relaxed)
+        {
+            Ok(_) => agora_ms,
+            Err(ja) => ja,
+        }
+    }
+
+    /// O ultimo sucesso. Se a memoria nao tem (processo novo), `do_disco` diz
+    /// quando o destino foi tocado pela ultima vez -- o disco sobrevive ao
+    /// reinicio, a memoria nao. Chamado a cada rodada; so consulta o disco
+    /// enquanto a memoria esta vazia.
+    pub fn ultimo_ok(&self, do_disco: impl FnOnce() -> i64) -> i64 {
+        use std::sync::atomic::Ordering::Relaxed;
+        match self.ultimo_ok_ms.load(Relaxed) {
+            0 => do_disco(),
+            ms => ms,
+        }
+    }
+
+    pub fn ultima_duracao_ms(&self) -> u64 {
+        self.ultima_duracao_ms
+            .load(std::sync::atomic::Ordering::Relaxed)
+            .max(0) as u64
+    }
+}
+
 /// Uma leitura de um recurso: quanto resta e onde fica o piso.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Leitura {
@@ -184,24 +375,79 @@ impl Previsor {
     pub fn rodada(&mut self, agora_ms: i64, leituras: &[Leitura]) -> Vec<Aviso> {
         let mut avisos = Vec::new();
         for l in leituras {
-            let serie = self.series.entry(l.recurso.clone()).or_default();
-            if serie.len() == JANELA_LONGA {
-                serie.pop_front();
-            }
-            serie.push_back((agora_ms, l.resta));
-            let previsao = esgota_em(serie.make_contiguous(), l.piso);
+            let previsao = self.empilhar(&l.recurso, agora_ms, l.resta, l.piso);
             match previsao.and_then(|p| Degrau::de(&p).map(|d| (p, d))) {
                 Some((previsao, degrau)) => {
-                    let antes = self.degraus.insert(l.recurso.clone(), degrau);
+                    let mudou = self.anotar_degrau(&l.recurso, Some(degrau));
                     avisos.push(Aviso {
                         recurso: l.recurso.clone(),
                         degrau,
                         previsao,
-                        mudou: antes != Some(degrau),
+                        mudou,
                     });
                 }
                 None => {
-                    self.degraus.remove(&l.recurso);
+                    self.anotar_degrau(&l.recurso, None);
+                }
+            }
+        }
+        avisos
+    }
+
+    /// Guarda a amostra no anel do recurso e preve a partir dele. UM lugar
+    /// para a F5 e a F6, senao o tamanho do anel divergiria entre as duas.
+    fn empilhar(
+        &mut self,
+        recurso: &str,
+        agora_ms: i64,
+        resta: u64,
+        piso: u64,
+    ) -> Option<Previsao> {
+        let serie = self.series.entry(recurso.to_string()).or_default();
+        if serie.len() == JANELA_LONGA {
+            serie.pop_front();
+        }
+        serie.push_back((agora_ms, resta));
+        esgota_em(serie.make_contiguous(), piso)
+    }
+
+    /// Anota o degrau de um recurso e diz se ele MUDOU desde a rodada
+    /// anterior (`None` = saiu dos degraus).
+    fn anotar_degrau(&mut self, recurso: &str, degrau: Option<Degrau>) -> bool {
+        match degrau {
+            Some(d) => self.degraus.insert(recurso.to_string(), d) != Some(d),
+            None => {
+                self.degraus.remove(recurso);
+                false
+            }
+        }
+    }
+
+    /// Uma rodada da F6: cada leitura contra o seu teto duro. Vale a pior
+    /// entre a razao (`> 80%` / `> 95%`) e a tendencia (`< 30 d` / `< 3 d`).
+    pub fn contar(&mut self, agora_ms: i64, leituras: &[Contagem]) -> Vec<AvisoDaContagem> {
+        let mut avisos = Vec::new();
+        for c in leituras {
+            let previsao = if c.tendencia {
+                self.empilhar(&c.recurso, agora_ms, c.teto.saturating_sub(c.usado), 0)
+            } else {
+                None
+            };
+            let dias = previsao.as_ref().and_then(degrau_dos_dias);
+            match pior(degrau_da_razao(c.usado, c.teto), dias) {
+                Some(degrau) => {
+                    let mudou = self.anotar_degrau(&c.recurso, Some(degrau));
+                    avisos.push(AvisoDaContagem {
+                        recurso: c.recurso.clone(),
+                        degrau,
+                        usado: c.usado,
+                        teto: c.teto,
+                        previsao: previsao.filter(|_| dias.is_some()),
+                        mudou,
+                    });
+                }
+                None => {
+                    self.anotar_degrau(&c.recurso, None);
                 }
             }
         }
@@ -457,6 +703,104 @@ mod testes {
             }
         }
         assert_eq!(mudancas, 1);
+    }
+
+    #[test]
+    fn a_razao_tem_fronteira_estrita_em_80_e_95() {
+        // RED: `>` trocado por `>=` -> o 80% exato vira aviso e cai aqui.
+        assert_eq!(degrau_da_razao(790, 1_000), None);
+        assert_eq!(degrau_da_razao(800, 1_000), None);
+        assert_eq!(degrau_da_razao(801, 1_000), Some(Degrau::Aviso));
+        assert_eq!(degrau_da_razao(810, 1_000), Some(Degrau::Aviso));
+        assert_eq!(degrau_da_razao(950, 1_000), Some(Degrau::Aviso));
+        assert_eq!(degrau_da_razao(951, 1_000), Some(Degrau::Critico));
+        assert_eq!(degrau_da_razao(5, 0), None, "teto zero nao e cheio");
+        // Sem estouro de aritmetica no limite do tipo.
+        assert_eq!(degrau_da_razao(u64::MAX, u64::MAX), Some(Degrau::Critico));
+        assert_eq!(degrau_da_razao(u64::MAX / 2, u64::MAX), None);
+    }
+
+    #[test]
+    fn os_dias_tem_fronteira_em_30_e_3() {
+        let p = |dias: f64| Previsao {
+            horas: dias * 24.0,
+            por_hora: 1.0,
+            r2: 1.0,
+            amostras: 4,
+        };
+        assert_eq!(degrau_dos_dias(&p(31.0)), None);
+        assert_eq!(degrau_dos_dias(&p(30.0)), None);
+        assert_eq!(degrau_dos_dias(&p(29.0)), Some(Degrau::Aviso));
+        assert_eq!(degrau_dos_dias(&p(3.0)), Some(Degrau::Aviso));
+        assert_eq!(degrau_dos_dias(&p(2.9)), Some(Degrau::Critico));
+    }
+
+    fn contagem(usado: u64, tendencia: bool) -> Vec<Contagem> {
+        vec![Contagem {
+            recurso: "tabela:b.t".into(),
+            usado,
+            teto: 1_000,
+            tendencia,
+        }]
+    }
+
+    /// A tendencia sozinha avisa: a 50% cheia, mas enchendo a 1 slot por
+    /// quarto de hora, o teto chega em ~5 dias. Controle: a mesma ocupacao
+    /// parada nao avisa.
+    #[test]
+    fn a_tendencia_avisa_antes_da_razao() {
+        let mut crescendo = Previsor::default();
+        let mut parado = Previsor::default();
+        let (mut a, mut b) = (Vec::new(), Vec::new());
+        for i in 0..6i64 {
+            a = crescendo.contar(i * 15 * MIN, &contagem(500 + i as u64, true));
+            b = parado.contar(i * 15 * MIN, &contagem(500, true));
+        }
+        assert_eq!(a.len(), 1, "{a:?}");
+        assert_eq!(a[0].degrau, Degrau::Aviso);
+        assert!(a[0].previsao.is_some());
+        assert!(b.is_empty(), "{b:?}");
+    }
+
+    #[test]
+    fn a_mudanca_de_degrau_da_contagem_e_dita_uma_vez() {
+        let mut pv = Previsor::default();
+        let mut mudancas = 0;
+        for (i, usado) in [700u64, 810, 820, 830, 700].into_iter().enumerate() {
+            for a in pv.contar(i as i64 * MIN, &contagem(usado, false)) {
+                mudancas += a.mudou as usize;
+            }
+        }
+        assert_eq!(mudancas, 1);
+    }
+
+    #[test]
+    fn a_idade_do_backup_tem_teto_de_um_periodo_e_meio() {
+        let hora = 3_600_000u64;
+        let c = |agora: i64, ok: i64| contagem_da_idade("b".into(), agora, ok, 1_000, hora);
+        assert_eq!(c(0, 0).teto, hora * 3 / 2);
+        // Nunca rodou: parte do `desde`; 1,6 periodo depois, critico.
+        let nunca = c(1_000 + (hora as i64) * 16 / 10, 0);
+        assert_eq!(
+            degrau_da_razao(nunca.usado, nunca.teto),
+            Some(Degrau::Critico)
+        );
+        // Rodou ha pouco: nada, mesmo com o `desde` muito antigo.
+        let bom = c(10 * hora as i64, 10 * hora as i64 - 60_000);
+        assert_eq!(degrau_da_razao(bom.usado, bom.teto), None);
+        // Relogio que andou para tras nao vira idade negativa.
+        assert_eq!(c(0, 5_000_000).usado, 0);
+    }
+
+    #[test]
+    fn as_marcas_do_backup_semeiam_do_disco_so_com_a_memoria_vazia() {
+        let m = MarcasDoBackup::default();
+        assert_eq!(m.ultimo_ok(|| 42), 42, "memoria vazia: vale o disco");
+        m.deu_certo(100, 7);
+        assert_eq!(m.ultimo_ok(|| panic!("nao consulta o disco")), 100);
+        assert_eq!(m.ultima_duracao_ms(), 7);
+        assert_eq!(m.primeira_olhada(5), 5);
+        assert_eq!(m.primeira_olhada(9), 5, "a primeira vale");
     }
 
     #[cfg(target_os = "linux")]

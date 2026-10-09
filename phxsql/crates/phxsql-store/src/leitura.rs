@@ -187,6 +187,18 @@ impl TabelaLeitura {
         self.0.tem_espelho()
     }
 
+    /// A marca d'agua do `.reg` (slots usados, vivos ou mortos). So le.
+    /// Pedido 496, F6: e o numerador da «tabela paginada cheia».
+    pub fn slots(&self) -> u64 {
+        self.0.slots()
+    }
+
+    /// Volumes existentes de cada arquivo paginado, na ordem do
+    /// `Table::volumes_por_arquivo`. So le.
+    pub fn volumes_por_arquivo(&self) -> (Vec<u32>, Vec<u32>, Vec<u32>, Vec<u32>) {
+        self.0.volumes_por_arquivo()
+    }
+
     /// O que a transacao desta conexao ja pediu e ainda nao gravou.
     ///
     /// Mora em memoria, nao no disco: e a unica coisa que uma leitura "muda", e

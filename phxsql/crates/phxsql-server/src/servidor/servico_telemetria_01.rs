@@ -135,6 +135,8 @@ impl Servidor {
                 loop {
                     fio.fazendo("amostrando para a previsao de esgotamento");
                     servidor.amostrar_e_prever(crate::agora_ms());
+                    fio.fazendo("contando o que falta ate o teto duro");
+                    servidor.amostrar_e_contar(crate::agora_ms());
                     if servidor.config.alertas.ligado {
                         fio.fazendo("conferindo o espaco em disco");
                         servidor.conferir_disco();
@@ -188,13 +190,7 @@ impl Servidor {
         agora_ms: i64,
         leituras: &[crate::previsao::Leitura],
     ) -> Vec<crate::previsao::Aviso> {
-        let avisos = match self.previsor.lock() {
-            Ok(mut p) => p.rodada(agora_ms, leituras),
-            // Envenenada por panico de outra rodada: a serie pode estar
-            // pela metade, mas continua sendo serie -- calar o previsor no
-            // dia em que algo ja deu errado e o pior momento.
-            Err(e) => e.into_inner().rodada(agora_ms, leituras),
-        };
+        let avisos = self.com_o_previsor(|p| p.rodada(agora_ms, leituras));
         for a in &avisos {
             let dados = format!(
                 "{} esgota em {:.2} h ({:.0}/h, r2 {:.2})",
@@ -206,6 +202,187 @@ impl Servidor {
             }
         }
         avisos
+    }
+
+    /// O previsor, com o veneno recuperado: a serie pode estar pela metade,
+    /// mas continua sendo serie -- calar o previsor no dia em que algo ja deu
+    /// errado e o pior momento. UMA porta para a F5 e a F6.
+    fn com_o_previsor<R>(&self, f: impl FnOnce(&mut crate::previsao::Previsor) -> R) -> R {
+        match self.previsor.lock() {
+            Ok(mut p) => f(&mut p),
+            Err(e) => f(&mut e.into_inner()),
+        }
+    }
+
+    /// Uma rodada da contagem regressiva (pedido 496, F6): le o que tem teto
+    /// duro e avisa o que esta perto dele.
+    pub(super) fn amostrar_e_contar(&self, agora_ms: i64) -> Vec<crate::previsao::AvisoDaContagem> {
+        let leituras = self.contagens_do_servidor(agora_ms);
+        self.contar_regressivo(agora_ms, &leituras)
+    }
+
+    /// Guarda as contagens e leva toda uma dentro dos degraus ao sedimento
+    /// pelo produtor UNICO. O `Alarme` e o da F5 (`Esgotamento*`): a pergunta
+    /// e a mesma («quanto falta ate o teto?»), e o recurso vai no `dados`.
+    pub(super) fn contar_regressivo(
+        &self,
+        agora_ms: i64,
+        leituras: &[crate::previsao::Contagem],
+    ) -> Vec<crate::previsao::AvisoDaContagem> {
+        let avisos = self.com_o_previsor(|p| p.contar(agora_ms, leituras));
+        for a in &avisos {
+            let dados = format!(
+                "{} a {:.1}% do teto ({}/{}){}",
+                a.recurso,
+                a.percentual(),
+                a.usado,
+                a.teto,
+                match &a.previsao {
+                    Some(p) => format!(", cheio em {:.1} d", p.horas / 24.0),
+                    None => String::new(),
+                }
+            );
+            crate::telemetria::sinal(a.degrau.alarme(), &dados);
+            if a.mudou {
+                eprintln!("CONTAGEM REGRESSIVA ({:?}): {dados}", a.degrau);
+            }
+        }
+        avisos
+    }
+
+    /// Tudo o que tem teto duro neste servidor, nesta rodada.
+    fn contagens_do_servidor(&self, agora_ms: i64) -> Vec<crate::previsao::Contagem> {
+        let mut v = self.contagens_dos_dados();
+        v.extend(self.contagens_do_backup(agora_ms));
+        v
+    }
+
+    /// C7 e C3: a tabela paginada que enche e o diario que bate no teto de
+    /// volumes. Sob a ficha COMPARTILHADA e por tabelas abertas SO para ler:
+    /// o vigia nao pode parar a escrita de ninguem a cada 15 min. Tabela que
+    /// quer a ficha exclusiva para abrir fica sem amostra nesta rodada --
+    /// amostra que falta nao e amostra que zerou.
+    fn contagens_dos_dados(&self) -> Vec<crate::previsao::Contagem> {
+        use phxsql_core::paginacao::ModoParticao;
+        let mut v = Vec::new();
+        let Ok(trava) = self.travar_dados_para_ler() else {
+            return v;
+        };
+        for db in trava.databases().unwrap_or_default() {
+            let Ok(Some(tabelas)) = trava.tabelas_para_ler(&db) else {
+                continue;
+            };
+            for t in tabelas {
+                let Ok(Aberta::Pronta(l)) = trava.abrir_diario_para_ler(&db, &t) else {
+                    continue;
+                };
+                let pag = l.esquema().paginacao();
+                if !pag.ligada() {
+                    continue;
+                }
+                let (reg, _, _, log) = l.volumes_por_arquivo();
+                match pag.modo {
+                    // O endereco e uma divisao: o rowid so existe ate a
+                    // capacidade, e `slots` e a marca d'agua que nunca recua.
+                    ModoParticao::PorQuantidade => v.push(crate::previsao::Contagem {
+                        recurso: format!("tabela:{db}.{t}"),
+                        usado: l.slots(),
+                        teto: pag.capacidade(),
+                        tendencia: true,
+                    }),
+                    // Aqui o corte e o calendario: o que acaba e a conta de
+                    // volumes, e e ela que o `.reg` confere ao virar de volume.
+                    ModoParticao::PorPeriodo { .. } => v.push(crate::previsao::Contagem {
+                        recurso: format!("tabela:{db}.{t}"),
+                        usado: reg.len() as u64,
+                        teto: pag.max_arquivos as u64,
+                        tendencia: true,
+                    }),
+                    // 37 baldes fixos: o teto e por letra, e nao ha uma conta
+                    // unica de «quanto falta» para a tabela inteira.
+                    ModoParticao::PorLetra { .. } => {}
+                }
+                // O `.log` rola por tamanho em todos os modos (a particao
+                // por letra volta ao sufixo numerico: `para_externos`), e o
+                // numero do volume nunca recua -- o ultimo e o quanto ja se
+                // gastou do teto.
+                if let Some(&ultimo) = log.last() {
+                    v.push(crate::previsao::Contagem {
+                        recurso: format!("diario:{db}.{t}"),
+                        usado: ultimo as u64,
+                        teto: pag.para_externos().max_arquivos as u64,
+                        tendencia: true,
+                    });
+                }
+            }
+        }
+        v
+    }
+
+    /// C6 e C5: a idade do ultimo backup bom e quanto ele levou, do agendado
+    /// e dos jobs cujo `op` e `backup`.
+    ///
+    /// Sem backup nenhum declarado, nada: «guarda nova entra pedida» -- um
+    /// servidor de desenvolvimento nao tem periodo contra o qual comparar.
+    fn contagens_do_backup(&self, agora_ms: i64) -> Vec<crate::previsao::Contagem> {
+        use crate::previsao::{contagem_da_idade, contagem_da_janela};
+        const HORA_MS: u64 = 3_600_000;
+        const DIA_MS: u64 = 24 * HORA_MS;
+        let mut v = Vec::new();
+        let desde = self.backup_marcas.primeira_olhada(agora_ms);
+        let b = &self.config.backup;
+        if b.agendado {
+            let periodo = if b.hora.is_empty() {
+                b.cada_horas.saturating_mul(HORA_MS)
+            } else {
+                DIA_MS
+            };
+            let ultimo = self
+                .backup_marcas
+                .ultimo_ok(|| ultimo_toque_do_destino(&b.destino));
+            v.push(contagem_da_idade(
+                "backup:idade".into(),
+                agora_ms,
+                ultimo,
+                desde,
+                periodo,
+            ));
+            let duracao = self.backup_marcas.ultima_duracao_ms();
+            if duracao > 0 {
+                v.push(contagem_da_janela("backup:janela".into(), duracao, periodo));
+            }
+        }
+        let jobs = self
+            .jobs
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        for j in jobs.jobs.iter().filter(|j| j.op() == "backup") {
+            let periodo = match j.agenda {
+                crate::jobs::Agenda::Cada { minutos } => minutos.saturating_mul(60_000),
+                crate::jobs::Agenda::Diaria { .. } => DIA_MS,
+            };
+            // So a ultima corrida e conhecida: se ela falhou, nao ha «ultimo
+            // bom» a citar e a conta parte de `desde` -- a falha ja avisa
+            // (510), o que falta aqui e a passagem do tempo sem sucesso.
+            let boa = jobs
+                .ultima_corrida_de(&j.nome)
+                .filter(|c| c.ok && !c.em_curso);
+            v.push(contagem_da_idade(
+                format!("backup:idade:{}", j.nome),
+                agora_ms,
+                boa.map_or(0, |c| c.quando_ms),
+                desde,
+                periodo,
+            ));
+            if let Some(c) = boa.filter(|c| c.duracao_ms > 0) {
+                v.push(contagem_da_janela(
+                    format!("backup:janela:{}", j.nome),
+                    c.duracao_ms as u64,
+                    periodo,
+                ));
+            }
+        }
+        v
     }
 
     /// Uma rodada do vigia: olha os discos, avisa o que estiver apertado.
@@ -1395,6 +1572,24 @@ impl Servidor {
             ("usuario", Json::de_u64(sessao.id() as u64)),
         ]))
     }
+}
+
+/// Quando alguem tocou pela ultima vez no destino do backup (ms desde 1970),
+/// ou zero se nao ha nada la. A lapide da corrida em curso nao conta: ela
+/// prova que o backup COMECOU, e a idade pergunta pelo que TERMINOU. Serve de
+/// semente depois de um reinicio, quando a memoria do servidor nao sabe de
+/// backup nenhum mas o disco sabe.
+fn ultimo_toque_do_destino(destino: &Path) -> i64 {
+    let Ok(dir) = std::fs::read_dir(destino) else {
+        return 0;
+    };
+    dir.flatten()
+        .filter(|e| e.file_name() != LAPIDE_DO_BACKUP)
+        .filter_map(|e| e.metadata().ok()?.modified().ok())
+        .filter_map(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_millis() as i64)
+        .max()
+        .unwrap_or(0)
 }
 
 /// Uma coluna, pelo nome ou pelo numero. Aceitar os dois e o que deixa a

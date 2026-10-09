@@ -627,6 +627,9 @@ pub struct Servidor {
     /// memoria e descritores, amostrados pelo vigia a cada rodada -- SEMPRE,
     /// porque «desligado» quer dizer «nao manda e-mail», nao «nao olha».
     previsor: Mutex<crate::previsao::Previsor>,
+    /// Quando o backup agendado deu certo pela ultima vez e quanto levou
+    /// (pedido 496, F6, C5/C6): o vigia le de outra thread.
+    backup_marcas: crate::previsao::MarcasDoBackup,
     /// A saude do disco onde o banco grava (pedido 249): a sonda canario, o
     /// contador de erros de E/S e o silencio por tipo. O vigia de ESPACO
     /// acima pergunta «quanto falta»; esta pergunta «o disco ainda aceita

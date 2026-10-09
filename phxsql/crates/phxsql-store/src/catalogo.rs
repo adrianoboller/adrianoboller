@@ -683,19 +683,46 @@ impl Raiz {
         self.abrir_para_ler_com(database, qualificado, Table::abrir_para_ler_o_diario)
     }
 
+    /// Os databases da raiz -- so olha o diretorio, nao abre nada. Existe para
+    /// o vigia de previsao (pedido 496, F6), que roda sob a ficha
+    /// compartilhada e nao pode pedir a exclusiva so para fazer uma lista.
+    pub fn databases(&self) -> Result<Vec<String>> {
+        subdiretorios(&self.base)
+    }
+
+    /// Toda tabela de um database, qualificada, para quem so LE. `None` quando
+    /// o database ainda nao tem a marca do formato de nome (pedido 508): ali
+    /// listar ja exige escrever, e quem chama deixa a vez para a ficha
+    /// exclusiva -- a mesma regra do [`Raiz::abrir_para_ler`].
+    pub fn tabelas_para_ler(&self, database: &str) -> Result<Option<Vec<String>>> {
+        validar_nome("database", database)?;
+        if crate::separador::precisa_migrar(&self.base.join(database)) {
+            return Ok(None);
+        }
+        self.so_para_achar_o_caminho()
+            .abrir_database(database)?
+            .todas_as_tabelas()
+            .map(Some)
+    }
+
+    /// A `Instancia` que serve so para resolver nomes e caminhos. A politica
+    /// nao importa: o que sai dela e leitura.
+    fn so_para_achar_o_caminho(&self) -> Instancia {
+        Instancia {
+            base: self.base.clone(),
+            politica: self.politica,
+            fixadas: Arc::clone(&self.fixadas),
+            _so_com_a_ficha: PhantomData,
+        }
+    }
+
     fn abrir_para_ler_com(
         &self,
         database: &str,
         qualificado: &str,
         abrir: fn(PathBuf, &str) -> Result<SemEscrever>,
     ) -> Result<Aberta> {
-        // A politica nao importa aqui: o que sai e uma tabela de LEITURA.
-        let so_para_achar_o_caminho = Instancia {
-            base: self.base.clone(),
-            politica: self.politica,
-            fixadas: Arc::clone(&self.fixadas),
-            _so_com_a_ficha: PhantomData,
-        };
+        let so_para_achar_o_caminho = self.so_para_achar_o_caminho();
         // O database que ainda nao tem a marca do formato de nome (pedido
         // 508) ganha a marca -- ou recusa -- na abertura; e marca e escrita.
         validar_nome("database", database)?;

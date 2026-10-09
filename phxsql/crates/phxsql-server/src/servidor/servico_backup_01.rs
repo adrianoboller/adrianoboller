@@ -231,6 +231,9 @@ impl Servidor {
         match resultado {
             Ok(onde) => {
                 eprintln!("backup agendado: {onde}");
+                // So o sucesso renova a idade do backup (pedido 496, F6, C6).
+                let fim = crate::agora_ms();
+                self.backup_marcas.deu_certo(fim, fim - agora);
                 self.saude.backup_voltou();
             }
             Err(e) => {
