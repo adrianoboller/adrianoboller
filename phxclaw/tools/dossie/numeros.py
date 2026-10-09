@@ -339,6 +339,7 @@ PASSOS_DO_PORTAO = [
     ("crate::segredos::recusa_no_shell(", "segredos", "Segredo: o shell não grava no git", "com a varredura exigida, só o git_write grava história — e ele passa pelo gitleaks"),
     ("crate::hooks::Evento::AntesDaFerramenta", "hooks", "Hook PreToolUse", "saída de bloqueio recusa a chamada, com o motivo"),
     ("crate::checkpoint::no_portao(", "checkpoint", "Ponto de restauração", "antes de toda escrita, depois das regras e do hook"),
+    ("crate::orcamento::sob_a_conta(", "orcamento", "Orçamento da tarefa", "o modelo chamado por dentro da ferramenta cobra a mesma conta; ao bater o teto, a tarefa para"),
 ]
 EXECUTA = "t.run("
 

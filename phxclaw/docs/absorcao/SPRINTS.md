@@ -30,7 +30,7 @@ abaixo aparece em exatamente uma sprint.
 | SP000012 | 5 | Integração da onda 5 e commit | — | CONCLUÍDA (f27402e5) |
 | SP000013 | — | Endurecimento (achados ⏸ das revisões) | — | CONCLUÍDA (02/10: A/B/C + D; o que sobrou está nas pendências avulsas) |
 | SP000014 | — | Prova real com credenciais | — | BLOQUEADA (dono) |
-| SP000015 | — | Ciclo de auto-evolução | — | EM ANDAMENTO |
+| SP000015 | — | Ciclo de auto-evolução | — | EM EXECUÇÃO |
 | SP000016 | — | Entrega v0.71 | — | PLANEJADA |
 | SP000017 | — | Provedores ElevenLabs (fala e transcrição) e Nano Banana (gerar e editar imagem) | — | CONCLUÍDA (f27402e5) |
 | SP000018 | — | config.json central, fase 1: catálogo, precedência, recusa de segredo, `phxclaw config`, catraca | — | CONCLUÍDA (f27402e5) |
@@ -252,7 +252,7 @@ Troca «contra falso» por «real». Depende do dono:
 
 ---
 
-## SP000015 — Ciclo de auto-evolução — EM ANDAMENTO (desbloqueada pelo dono em 09/10/2026)
+## SP000015 — Ciclo de auto-evolução — EM EXECUÇÃO (desbloqueada pelo dono em 09/10/2026)
 
 | Campo | Conteúdo |
 |---|---|
