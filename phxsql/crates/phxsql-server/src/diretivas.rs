@@ -34,9 +34,10 @@
 //! segredos envelhece calada, e o primeiro segredo que faltar nela vaza em
 //! texto puro num arquivo que ninguem trata como sigiloso.
 
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::Mutex;
 
 use phxsql_core::datahora::instante_iso;
 use phxsql_core::error::Result;
@@ -144,6 +145,9 @@ pub struct Diario {
     rodizios: AtomicU64,
     /// Rodizios que nao deram certo -- renomear ou reabrir falhou.
     falhas_de_rodizio: AtomicU64,
+    /// A ultima escrita falhou e pode ter deixado meia linha -- ver
+    /// `acesso::gravar_linha_inteira`, que e quem le e zera a marca.
+    linha_partida: Mutex<bool>,
 }
 
 impl Diario {
@@ -168,6 +172,7 @@ impl Diario {
             manter: AtomicUsize::new(0),
             rodizios: AtomicU64::new(0),
             falhas_de_rodizio: AtomicU64::new(0),
+            linha_partida: Mutex::new(false),
         }
     }
 
@@ -246,8 +251,17 @@ impl Diario {
                 .append(true)
                 .open(&self.caminho)?
         };
-        writeln!(arquivo, "{linha}")?;
-        arquivo.flush()?;
+        // Pelo escritor UNICO dos logs (pedido 753): disco cheio deixa meia
+        // linha, e a proxima nao pode se colar nela. O Mutex segura a marca
+        // e, de quebra, serializa dois `registrar` simultaneos.
+        let mut partida = self
+            .linha_partida
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        // O tamanho aqui e descartado: este diario le o `metadata` a cada
+        // chamada, nao carrega contador.
+        let mut bytes = 0;
+        crate::acesso::gravar_linha_inteira(&mut arquivo, &linha, &mut partida, &mut bytes)?;
         Ok(())
     }
 
@@ -279,6 +293,7 @@ impl Diario {
 mod testes {
     use super::*;
     use crate::apoio_teste::DirTemp;
+    use std::io::Write;
 
     fn alteracao(recurso: &str, de: Json, para: Json) -> Alteracao {
         Alteracao {
@@ -465,10 +480,79 @@ mod testes {
                 manter: AtomicUsize::new(0),
                 rodizios: AtomicU64::new(0),
                 falhas_de_rodizio: AtomicU64::new(0),
+                linha_partida: Mutex::new(false),
             };
             total += d_antigo.ultimas(1000).len();
         }
         assert_eq!(total, 10, "girar nao pode perder nem duplicar diretiva");
         std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    /// Pedido 753, contra o SISTEMA OPERACIONAL: um tmpfs de 16 KiB cheio de
+    /// verdade. Disco cheio grava o que cabe da diretiva e recusa o resto; a
+    /// primeira diretiva depois que o disco volta nao pode se colar na meia
+    /// linha -- e e justamente a que conta que ele voltou.
+    ///
+    /// Prova real: com o `writeln!` de antes (ou sem a quebra do
+    /// `linha_partida` em `acesso::gravar_linha_inteira`) o marcador se cola
+    /// na metade cortada e `ultimas` nao o devolve; com o escritor unico,
+    /// passa.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn disco_cheio_nao_cola_a_proxima_diretiva_na_meia_linha() {
+        // Desmonta ao sair (`-l`: pode haver descritor aberto), e e declarado
+        // DEPOIS do DirTemp para cair antes dele.
+        struct Tmpfs(PathBuf);
+        impl Drop for Tmpfs {
+            fn drop(&mut self) {
+                let _ = std::process::Command::new("umount")
+                    .arg("-l")
+                    .arg(&self.0)
+                    .output();
+            }
+        }
+        let d = DirTemp::novo("diario-disco-cheio");
+        let ponto = d.join("tmpfs");
+        std::fs::create_dir_all(&ponto).unwrap();
+        let montou = std::process::Command::new("mount")
+            .args(["-t", "tmpfs", "-o", "size=16k", "tmpfs"])
+            .arg(&ponto)
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false);
+        if !montou {
+            eprintln!("PULADO: nao consegui montar tmpfs (precisa de root)");
+            return;
+        }
+        let _tmpfs = Tmpfs(ponto.clone());
+        let diario = Diario::ao_lado_de(&ponto.join("acessos.log"));
+        let pequena = |n: f64| alteracao("max_linhas", Json::Numero(0.0), Json::Numero(n));
+        diario.registrar(&pequena(1.0)).unwrap();
+        // Enche o resto do tmpfs: sobra so o que cabe na pagina do diario.
+        let enchimento = ponto.join("enchimento");
+        {
+            let mut f = std::fs::File::create(&enchimento).unwrap();
+            let bloco = vec![b'x'; 1024];
+            while f.write_all(&bloco).is_ok() {}
+        }
+        // Linha maior que a sobra da pagina: entra um pedaco e o resto falha.
+        let grande = alteracao(
+            "backup.destino",
+            Json::Numero(0.0),
+            Json::texto_de("y".repeat(6000)),
+        );
+        assert!(diario.registrar(&grande).is_err(), "o tmpfs nao encheu");
+        // O disco volta.
+        std::fs::remove_file(&enchimento).unwrap();
+        diario.registrar(&pequena(3.0)).unwrap();
+        let lidas = diario.ultimas(10);
+        assert_eq!(
+            lidas.first().and_then(|a| a.valor_novo.numero()),
+            Some(3.0),
+            "a primeira diretiva depois do disco cheio se perdeu"
+        );
+        let texto = std::fs::read_to_string(diario.caminho()).unwrap();
+        let ilegiveis = texto.lines().filter(|t| Json::analisar(t).is_err()).count();
+        assert!(ilegiveis <= 1, "{ilegiveis} linhas ilegiveis:\n{texto}");
     }
 }

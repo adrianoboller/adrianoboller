@@ -153,6 +153,41 @@ pub struct LogAcessos {
     linha_partida: bool,
 }
 
+/// O escritor de linha dos logs (`acessos.log`, `aquario.log`, diario das
+/// diretivas): UM so, para a quebra de linha partida nao divergir entre eles.
+///
+/// Um `write_all` so, e nao o `writeln!`, que escreve em pedacos: o pedaco
+/// que falta e o que o disco cheio corta. Se a escrita anterior falhou
+/// (`*linha_partida`), a quebra vai na frente desta linha. Na falha, o
+/// tamanho vem do arquivo (`metadata`), nao da conta: quanto entrou de fato
+/// e ele que diz.
+pub(crate) fn gravar_linha_inteira(
+    arquivo: &mut File,
+    linha: &str,
+    linha_partida: &mut bool,
+    bytes_no_arquivo: &mut u64,
+) -> std::io::Result<()> {
+    let mut tudo = String::with_capacity(linha.len() + 2);
+    if *linha_partida {
+        tudo.push('\n');
+    }
+    tudo.push_str(linha);
+    tudo.push('\n');
+    if let Err(e) = arquivo
+        .write_all(tudo.as_bytes())
+        .and_then(|()| arquivo.flush())
+    {
+        *linha_partida = true;
+        if let Ok(m) = arquivo.metadata() {
+            *bytes_no_arquivo = m.len();
+        }
+        return Err(e);
+    }
+    *linha_partida = false;
+    *bytes_no_arquivo += tudo.len() as u64;
+    Ok(())
+}
+
 impl LogAcessos {
     /// Abre para acrescentar, criando o arquivo e o diretorio se preciso.
     /// Nasce SEM rodizio (`teto_do_arquivo: 0`) -- quem quiser liga com
@@ -257,27 +292,12 @@ impl LogAcessos {
                 self.caminho.display()
             )))
         })?;
-        // Um `write_all` so, e nao o `writeln!`, que escreve em pedacos: o
-        // pedaco que falta e o que o disco cheio corta.
-        let mut tudo = String::with_capacity(linha.len() + 2);
-        if self.linha_partida {
-            tudo.push('\n');
-        }
-        tudo.push_str(&linha);
-        tudo.push('\n');
-        if let Err(e) = arquivo
-            .write_all(tudo.as_bytes())
-            .and_then(|()| arquivo.flush())
-        {
-            self.linha_partida = true;
-            // Quanto entrou de fato e o arquivo que diz, nao a conta.
-            if let Ok(m) = arquivo.metadata() {
-                self.bytes_no_arquivo = m.len();
-            }
-            return Err(e.into());
-        }
-        self.linha_partida = false;
-        self.bytes_no_arquivo += tudo.len() as u64;
+        gravar_linha_inteira(
+            arquivo,
+            &linha,
+            &mut self.linha_partida,
+            &mut self.bytes_no_arquivo,
+        )?;
         Ok(())
     }
 
