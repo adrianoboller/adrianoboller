@@ -658,7 +658,34 @@ quebra: o botão simplesmente não aparece.
 
 Todo `telemetria_encerrar` vai para o log de acessos com quem mandou, o quê e
 quando. Derrubar o trabalho de outra pessoa é ato de administração, e ato de
-administração deixa rastro.
+administração deixa rastro. Desde a A7 do pedido 707 a linha traz o **alvo**
+nos campos `database` e `tabela` (a base e a tabela da operação encerrada, não
+as do pedido de quem encerrou), para a trilha responder «quem derrubou o que
+rodava em `loja.clientes`?».
+
+### 4.5a Encerrar pela tarefa do aquário (pedido 707, A7)
+
+O mesmo `telemetria_encerrar`, com o mesmo portão (administrador), aceita a
+**tarefa** do `aquario_retrato` — `dados:17#42`, a atividade e o serial do
+pedido visto. Não há segundo caminho de matar.
+
+- **A marca mira o serial do retrato**, não o corrente: se a conexão já está
+  em outro pedido (ou parada), a resposta é `NAO_ENCONTRADO` «a tarefa já
+  terminou» e nada se encerra. Sem isso, o clique atrasado mataria o pedido
+  seguinte, que ninguém viu.
+- **Tarefa do serviço não se encerra, por ninguém** (`ACESSO_NEGADO` com o
+  motivo): operação de replicação (`OPS_DE_REPLICACAO`) e atividade que não
+  seja `dados`/`web`. Régua: PG 4 + MariaDB 3 = 7 contra MySQL 2. A mesma
+  função (`telemetria::tarefa_de_servico`) põe `"servico": true` na tarefa do
+  retrato, para a tela esconder o botão pela pergunta com que o servidor recusa.
+  Vale também para o id velho (`dados:17`).
+- **Ver não é matar**: `monitorar` não alcança `telemetria_encerrar` nem
+  `encerrar_sessao`. O `encerrar_sessao` ganhou portão próprio na regra do
+  servidor (`"*"` ou nível): antes, quem tinha `administrar` só na `loja`
+  mandava `"database":"loja"` e derrubava conexão de qualquer base. Quem tem
+  `administrar` no `"*"` continua derrubando, como sempre.
+
+Prova pelo soquete: `crates/phxsql-server/tests/aquario-encerrar.rs`.
 
 ### 4.6 A prova
 

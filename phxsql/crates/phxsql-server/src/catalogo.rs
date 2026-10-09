@@ -2270,7 +2270,7 @@ pub const OPERACOES: &[Operacao] = &[
         parametros: &[obr(
             "id",
             "string",
-            "o identificador da atividade, da lista de `telemetria`: `dados:17` ou `web:a1b2c3d4`",
+            "o identificador da atividade, da lista de `telemetria` (`dados:17` ou `web:a1b2c3d4`), ou a tarefa do `aquario_retrato` (`dados:17#42`), que só encerra se ainda for aquele pedido. Tarefa do serviço (replicação) é recusada",
         )],
         exemplo: r#"{"op":"telemetria_encerrar","id":"dados:17"}"#,
         ferramenta_mcp: false,

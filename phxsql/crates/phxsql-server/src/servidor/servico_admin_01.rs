@@ -1013,16 +1013,33 @@ impl Servidor {
             Some(u) => u.login.clone(),
             None => "token de servico".to_string(),
         };
-        let atividade = self.telemetria.atividade(&id).ok_or_else(|| {
+        // Duas formas do MESMO id, e um motor so: `dados:17` (a atividade,
+        // da lista da `telemetria`) e `dados:17#42` (a TAREFA, do retrato do
+        // aquario -- pedido 707, A7). A segunda mira o pedido que a pessoa
+        // viu, e nao o que a conexao estiver fazendo quando o clique chegar.
+        let (chave, mirado) = match id.split_once('#') {
+            None => (id.as_str(), None),
+            Some((chave, serial)) => match serial.parse::<u64>() {
+                Ok(n) if n > 0 => (chave, Some(n)),
+                _ => {
+                    return Err(PhxError::Esquema(format!(
+                        "encerrar: a tarefa do aquario e chave#numero, nao {}",
+                        phxsql_core::error::citar(&id)
+                    )))
+                }
+            },
+        };
+        let atividade = self.telemetria.atividade(chave).ok_or_else(|| {
             PhxError::NaoEncontrado(format!(
-                "nao ha atividade {id:?}; a lista esta em `telemetria`"
+                "nao ha atividade {}; a lista esta em `telemetria` e em `aquario_retrato`",
+                phxsql_core::error::citar(chave)
             ))
         })?;
         // Encerrar a propria atividade seria pedir para a tela se matar no
         // meio de perguntar -- e o pedido morreria antes de responder o que
         // aconteceu.
         if let Some(minha) = crate::telemetria::corrente() {
-            if minha.chave == id {
+            if minha.chave == chave {
                 return Err(PhxError::Esquema(
                     "esta e a sua propria atividade: encerra-la mataria o pedido \
                      que esta perguntando"
@@ -1030,9 +1047,30 @@ impl Servidor {
                 ));
             }
         }
+        // O alvo e lido UMA vez, e a marca mira o serial dele: a operacao que
+        // a recusa do servico julgou e a trilha registra e a mesma que leva a
+        // marca. Se ela trocar no meio, o motor responde `JaTerminou`.
+        let alvo = atividade.alvo();
+        if let Some(m) = mirado {
+            if m != alvo.serial || alvo.op.is_empty() {
+                return Err(Self::tarefa_que_ja_terminou(&id));
+            }
+        }
+        if let Some(motivo) = alvo.servico() {
+            return Err(PhxError::Autorizacao(format!(
+                "a tarefa {} ({}) {motivo}: tarefa do servico nao se encerra, por \
+                 ninguem. Para tirar um no da conversa, use `encerrar_sessao` na \
+                 conexao dele",
+                phxsql_core::error::citar(&id),
+                alvo.op
+            )));
+        }
         let agora = crate::agora_ms();
-        let desfecho = atividade.encerrar(&quem);
+        let desfecho = atividade.encerrar_mirando(&quem, Some(alvo.serial));
         let (estado, op_alvo, aviso) = match &desfecho {
+            crate::telemetria::Encerramento::JaTerminou { .. } => {
+                return Err(Self::tarefa_que_ja_terminou(&id));
+            }
             crate::telemetria::Encerramento::Ociosa => (
                 "ociosa",
                 String::new(),
@@ -1091,8 +1129,12 @@ impl Servidor {
                     &op_alvo
                 }
             )),
-            database: String::new(),
-            tabela: String::new(),
+            // O ALVO, e nao o pedido de quem encerrou (que nao nomeia base
+            // nenhuma): a trilha tem de responder «quem derrubou o que foi
+            // feito em loja.clientes?», e e por estes dois campos que ela se
+            // filtra (pedido 707, A7).
+            database: alvo.database.clone(),
+            tabela: alvo.tabela.clone(),
             codigo: 0,
             ..Acesso::default()
         });
@@ -1115,6 +1157,44 @@ impl Servidor {
         ]))
     }
 
+    /// A tarefa do retrato ja terminou: nada foi encerrado, e dizer isso e o
+    /// que impede a tela de mostrar «encerrada» sobre um pedido que acabou
+    /// sozinho -- ou de matar o seguinte, que ninguem viu.
+    fn tarefa_que_ja_terminou(id: &str) -> PhxError {
+        PhxError::NaoEncontrado(format!(
+            "a tarefa {} ja terminou; a conexao esta parada ou em outro pedido, que ninguem \
+             mandou encerrar. Nada foi encerrado -- o retrato novo esta em \
+             `aquario_retrato`",
+            phxsql_core::error::citar(id)
+        ))
+    }
+
+    /// Quem pode DERRUBAR conexoes deste servidor -- a pergunta que o portao
+    /// geral nao consegue fazer sobre o `encerrar_sessao`.
+    ///
+    /// O portao geral le `"database"`, e o `encerrar_sessao` nao e de base
+    /// nenhuma: quem tem `monitorar` no servidor e `administrar` so na `loja`
+    /// mandava `"database":"loja"` e derrubava a conexao de qualquer base --
+    /// ver virava matar pela porta dos fundos (pedido 707, A7). Aqui se
+    /// pergunta na regra do SERVIDOR (base vazia: o `"*"` e o nivel), como o
+    /// [`Servidor::portao_do_aquario`] faz para ver.
+    ///
+    /// E nao o [`Servidor::portao_da_telemetria`] (`e_admin`): quem tinha
+    /// `administrar` no `"*"` com nivel de leitor sempre derrubou conexao, e
+    /// continua -- o comportamento velho que a guarda nova nao pode tirar.
+    fn portao_do_encerrar_sessao(&self, sessao: &Sessao) -> Result<()> {
+        match &sessao.usuario {
+            None => Ok(()),
+            Some(u) if u.pode_em("", "", Atividade::Administrar) => Ok(()),
+            Some(u) => Err(PhxError::Autorizacao(format!(
+                "{} nao administra este servidor: derrubar uma conexao alcanca \
+                 todas as bases, e o direito vale na regra \"*\" ou no nivel, \
+                 nao numa base so",
+                u.login
+            ))),
+        }
+    }
+
     /// Derruba uma conexao pelo numero.
     ///
     /// E o `KILL` -- e o que ele alcanca esta dito na resposta, em vez de
@@ -1122,7 +1202,8 @@ impl Servidor {
     /// conexao parada esperando pedido. Uma operacao que ja entrou na trava de
     /// dados termina assim mesmo; o que muda e que o resultado nao vai para
     /// lugar nenhum e a conexao nao volta.
-    pub(super) fn op_encerrar_sessao(&self, p: &Json) -> Result<Json> {
+    pub(super) fn op_encerrar_sessao(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
+        self.portao_do_encerrar_sessao(sessao)?;
         // Quem e o alvo -- sessao do navegador ou conexao da porta de dados --
         // e dito PELO PEDIDO (`"tipo": "web"|"conexao"`), nunca adivinhado pela
         // forma do texto: o id web tem 8 digitos hex e 2,3% deles ((10/16)^8)

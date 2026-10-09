@@ -2103,7 +2103,7 @@ impl Servidor {
             "aquario_log" => self.op_aquario_log(p, sessao),
             "aquario_contagens" => self.op_aquario_contagens(p, sessao),
             "aquario_retrato" => self.op_aquario_retrato(p, sessao),
-            "encerrar_sessao" | "kill" => self.op_encerrar_sessao(p),
+            "encerrar_sessao" | "kill" => self.op_encerrar_sessao(p, sessao),
             "checksum" | "soma_de_verificacao" => self.op_checksum(p, sessao),
             "exportar" | "export" => self.op_exportar(p, sessao),
             "sistema" => Ok(self.op_sistema()),

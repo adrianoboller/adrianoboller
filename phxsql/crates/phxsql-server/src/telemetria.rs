@@ -493,12 +493,52 @@ impl Atividade {
     }
 
     pub fn encerrar(&self, quem: &str) -> Encerramento {
-        let serial = self.serial.load(Ordering::Relaxed);
-        let (op, fase) = self
-            .dentro
-            .lock()
-            .map(|c| (c.op.clone(), c.fase.clone()))
-            .unwrap_or_default();
+        self.encerrar_mirando(quem, None)
+    }
+
+    /// O que esta atividade esta fazendo AGORA, numa leitura so: o serial e o
+    /// alvo saem do mesmo trecho sob a trava do `dentro`, para quem decide
+    /// (o servico protegido, a trilha) julgar a operacao que vai ser marcada,
+    /// e nao uma vizinha.
+    pub fn alvo(&self) -> AlvoDoEncerrar {
+        let (serial, c) = match self.dentro.lock() {
+            Ok(c) => (self.serial.load(Ordering::SeqCst), c.clone()),
+            Err(e) => (self.serial.load(Ordering::SeqCst), e.into_inner().clone()),
+        };
+        AlvoDoEncerrar {
+            serial,
+            origem: self.origem,
+            op: c.op,
+            database: c.database,
+            tabela: c.tabela,
+        }
+    }
+
+    /// O MESMO encerrar, mirando um serial dito por quem pede -- a tarefa
+    /// `chave#serial` do retrato do aquario (pedido 707, A7).
+    ///
+    /// # Por que o serial vem de fora
+    ///
+    /// O retrato e de um instante; o clique vem segundos depois. Mirar o
+    /// serial CORRENTE mataria a operacao que entrou depois da que a pessoa
+    /// viu -- a marca que sobrevive ao alvo, por outro caminho. Com o serial
+    /// mirado, a operacao que ja terminou responde `JaTerminou`, e quem
+    /// conferiu o alvo antes (o servico protegido) sabe que a marca vai na
+    /// MESMA operacao que ele julgou.
+    pub fn encerrar_mirando(&self, quem: &str, mirado: Option<u64>) -> Encerramento {
+        let (serial, op, fase) = match self.dentro.lock() {
+            Ok(c) => (
+                self.serial.load(Ordering::SeqCst),
+                c.op.clone(),
+                c.fase.clone(),
+            ),
+            Err(_) => (0, String::new(), String::new()),
+        };
+        if let Some(m) = mirado {
+            if m != serial {
+                return Encerramento::JaTerminou { vivo: serial };
+            }
+        }
         if op.is_empty() {
             return Encerramento::Ociosa;
         }
@@ -656,6 +696,11 @@ impl Atividade {
             ("origem", Json::texto_de(self.origem)),
             ("estado", Json::texto_de(self.estado().nome())),
         ];
+        // So quando e: a tela esconde o botao de encerrar pela MESMA pergunta
+        // com que o servidor recusa (A7).
+        if tarefa_de_servico(self.origem, &c.op).is_some() {
+            pares.push(("servico", Json::Bool(true)));
+        }
         for (nome, valor) in [
             ("op", &c.op),
             ("database", &c.database),
@@ -847,10 +892,57 @@ impl Atividade {
     }
 }
 
+/// O que uma atividade esta fazendo, lido de uma vez para quem vai
+/// encerra-la: o serial que a marca mira e o alvo que a trilha registra.
+pub struct AlvoDoEncerrar {
+    pub serial: u64,
+    pub origem: &'static str,
+    pub op: String,
+    pub database: String,
+    pub tabela: String,
+}
+
+impl AlvoDoEncerrar {
+    /// Ver [`tarefa_de_servico`].
+    pub fn servico(&self) -> Option<&'static str> {
+        tarefa_de_servico(self.origem, &self.op)
+    }
+}
+
+/// **Tarefa do servico nao se encerra, por ninguem** -- o motivo, ou `None`
+/// para tarefa de cliente.
+///
+/// Decidido pela regua (`docs/propostas/aquario-707.md` §5): o PostgreSQL nao
+/// sinaliza processo auxiliar e o MariaDB nao mata `COM_DAEMON` nem com
+/// privilegio; o MySQL deixa o `SUPER` matar thread de sistema. Proteger soma
+/// PG 4 + MariaDB 3 = 7 contra 2.
+///
+/// Uma funcao so, lida pelo `telemetria_encerrar` (que recusa) e pelo retrato
+/// do aquario (que diz `servico`): se a tela e o servidor decidissem cada um
+/// por si, o botao escondido e a recusa divergiriam no primeiro caso novo.
+pub fn tarefa_de_servico(origem: &str, op: &str) -> Option<&'static str> {
+    if !matches!(origem, "dados" | "web") {
+        // As threads do proprio servidor (amostrador, replica, cluster,
+        // jobs-relogio) hoje nao viram atividade (lacuna L3); quando virarem,
+        // nascem protegidas em vez de esperar alguem lembrar.
+        return Some("e uma thread do proprio servidor");
+    }
+    if crate::servidor::OPS_DE_REPLICACAO.contains(&op) {
+        // A replicacao chega por uma conexao comum da porta de dados; o que a
+        // distingue e a operacao. Para derrubar o no inteiro ha o
+        // `encerrar_sessao`, que fecha o soquete e a replica reconecta.
+        return Some("e replicacao entre nos do servidor");
+    }
+    None
+}
+
 /// O que `encerrar` conseguiu prometer.
 pub enum Encerramento {
     /// Nao havia operacao em curso.
     Ociosa,
+    /// A tarefa mirada (o serial do retrato) ja terminou: a atividade esta
+    /// parada, ou no pedido `vivo`, que ninguem mandou encerrar.
+    JaTerminou { vivo: u64 },
     /// Esta DENTRO do laco: aborta na proxima unidade de trabalho.
     Marcada { op: String, fase: String },
     /// A operacao tem ponto de cancelamento, mas nao esta nele agora --
@@ -2574,6 +2666,29 @@ mod testes {
             "o leitor do fonte achou so {achadas} chamadas de fase_cancelavel: \
              ele quebrou, e um teste que nao ve nada passa por engano"
         );
+    }
+
+    /// A tarefa do retrato (A7) mira o serial que a pessoa VIU: com a
+    /// atividade ja no pedido seguinte, o encerrar responde `JaTerminou` e o
+    /// pedido novo segue. Mirar o serial corrente (o `encerrar` sem alvo) o
+    /// mataria -- e e isso que este teste derruba se a comparacao sair.
+    #[test]
+    fn a_tarefa_velha_do_retrato_nao_mata_o_pedido_seguinte() {
+        let a = nova_atividade();
+        let visto = a.comecou_pedido("checksum", "adm", "loja", "clientes", 1_000);
+        a.terminou_pedido("adm");
+        a.comecou_pedido("checksum", "adm", "loja", "clientes", 2_000);
+        let _fase = a.fase_cancelavel("somando a tabela");
+        assert!(matches!(
+            a.encerrar_mirando("root", Some(visto)),
+            Encerramento::JaTerminou { .. }
+        ));
+        assert!(a.siga(1).is_ok(), "a marca velha alcancou o pedido novo");
+        assert!(matches!(
+            a.encerrar_mirando("root", Some(visto + 1)),
+            Encerramento::Marcada { .. }
+        ));
+        assert!(a.siga(1).is_err());
     }
 
     /// Marcar uma operacao que TEM ponto mas ainda nao chegou nele -- o caso
