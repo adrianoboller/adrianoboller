@@ -6152,6 +6152,35 @@ impl Table {
             .map_or((0, 0), |c| (c.orfas, c.sem_conferir))
     }
 
+    /// `(orfas, sem_conferir)` das linhas que JA estao no `.reg` -- pedido
+    /// 737. E a contagem do 300 §2.7 para quem chegou sem passar pelo
+    /// `aplicar_evento`: a tabela trocada inteira pelo retrato da origem
+    /// (706), filtrada pelo alcance da replica, pode trazer a filha cuja mae
+    /// ficou de fora. A MESMA conferencia ([`Table::conferir_fks_com`] com a
+    /// [`ContagemDeOrfas`] como resolvedor) e a mesma classificacao: uma
+    /// segunda ideia de «orfa» divergiria da do `aplicar` no primeiro
+    /// conserto. Tabela sem chave conferida responde `(0, 0)` sem ler nada.
+    pub fn orfas_no_disco(&mut self) -> Result<(u64, u64)> {
+        if fks_que_conferem(&self.esquema).next().is_none() {
+            return Ok((0, 0));
+        }
+        let mut c = ContagemDeOrfas {
+            diretorio: self.diretorio.clone(),
+            ..ContagemDeOrfas::default()
+        };
+        let mut rowid = 1;
+        while let Some((id, payload)) = self.reg.proximo_ativo(rowid)? {
+            rowid = id + 1;
+            let linha = self.decodificar(&payload, false)?;
+            match self.conferir_fks_com(&linha, Some(&mut c)) {
+                Ok(()) => {}
+                Err(PhxError::Integridade(_)) => c.orfas += 1,
+                Err(_) => c.sem_conferir += 1,
+            }
+        }
+        Ok((c.orfas, c.sem_conferir))
+    }
+
     /// Fecha o veredito da linha replicada: so a escrita que DEU CERTO conta.
     fn fechar_orfa(&mut self, gravou: bool) {
         if let Some(c) = self.orfas.as_mut() {

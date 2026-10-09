@@ -694,6 +694,10 @@ impl Servidor {
             // lugar: a conexao caiu, a transacao e desfeita. Nada foi gravado,
             // entao desfazer e jogar a lista fora -- zero bytes de trabalho.
             self.soltar_transacao_da_ligacao(id_ligacao);
+            // E o retrato da replica (pedido 731): a replica que caiu no meio
+            // nao volta por esta conexao, e a copia dela e dado pessoal fora
+            // do ciclo da tabela.
+            self.soltar_retrato_da_ligacao(id_ligacao);
         });
 
         // O canal comeca EM CLARO, sempre. E o comportamento de hoje, e ele so

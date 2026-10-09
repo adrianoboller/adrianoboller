@@ -615,6 +615,84 @@ pub const FABRICA: &[MensagemFabrica] = &[
              de una copia de este origen",
         ],
     },
+    // O retrato da replica vive amarrado a CONEXAO que o tirou (pedidos 727 e
+    // 731): a porta web nao tem conexao para amarrar, e um retrato tirado por
+    // ela ficaria na raiz sem dono.
+    MensagemFabrica {
+        nome: "erro.retrato_so_pela_porta_de_dados",
+        textos: [
+            "o retrato da replica so se tira pela porta de dados: ele fica amarrado \
+             a conexao que o pediu e some quando ela cai",
+            "l'instantané de réplique ne se prend que par le port de données : il \
+             reste lié à la connexion qui l'a demandé et disparaît avec elle",
+            "the replica snapshot is only taken through the data port: it stays \
+             bound to the connection that asked for it and goes away when it drops",
+            "l'istantanea della replica si prende solo dalla porta dati: resta legata \
+             alla connessione che l'ha chiesta e sparisce quando cade",
+            "der Replik-Schnappschuss geht nur über den Datenport: er bleibt an die \
+             anfordernde Verbindung gebunden und verschwindet mit ihr",
+            "la instantánea de la réplica solo se toma por el puerto de datos: queda \
+             atada a la conexión que la pidió y desaparece cuando esta cae",
+        ],
+    },
+    // O pedaco ou o `soltar` com o id de um retrato que NAO e desta conexao,
+    // deste login e deste database (pedido 727). Uma recusa so para «nao
+    // existe» e «nao e seu»: duas frases seriam o oraculo do id.
+    MensagemFabrica {
+        nome: "erro.retrato_alheio",
+        textos: [
+            "nao ha retrato {id} desta conexao para este database: o retrato vale so \
+             para a conexao que o tirou. Peca um novo",
+            "pas d'instantané {id} de cette connexion pour cette base : il ne vaut \
+             que pour la connexion qui l'a pris. Demandez-en un nouveau",
+            "there is no snapshot {id} of this connection for this database: it is \
+             only valid for the connection that took it. Ask for a new one",
+            "non c'è l'istantanea {id} di questa connessione per questo database: \
+             vale solo per la connessione che l'ha presa. Ne chieda una nuova",
+            "kein Schnappschuss {id} dieser Verbindung für diese Datenbank: er gilt \
+             nur für die Verbindung, die ihn nahm. Fordern Sie einen neuen an",
+            "no hay instantánea {id} de esta conexión para esta base: vale solo para \
+             la conexión que la tomó. Pida una nueva",
+        ],
+    },
+    // O teto de retratos ao mesmo tempo (pedido 729): cada um e uma copia
+    // inteira de um database, tirada com a trava global na mao.
+    MensagemFabrica {
+        nome: "erro.retratos_no_teto",
+        textos: [
+            "ja ha {teto} retratos de replica sendo servidos aqui, o teto: o retrato \
+             fica para a rodada seguinte",
+            "{teto} instantanés de réplique déjà servis ici, le plafond : \
+             l'instantané attend le tour suivant",
+            "{teto} replica snapshots are already being served here, the ceiling: \
+             the snapshot waits for the next round",
+            "ci sono già {teto} istantanee di replica servite qui, il tetto: \
+             l'istantanea aspetta il giro successivo",
+            "hier werden bereits {teto} Replik-Schnappschüsse bedient, die \
+             Obergrenze: der Schnappschuss wartet auf die nächste Runde",
+            "ya hay {teto} instantáneas de réplica servidas aquí, el techo: la \
+             instantánea queda para la ronda siguiente",
+        ],
+    },
+    // O teto de disco do retrato (pedido 729): a copia que levasse o disco da
+    // origem a zero pararia a venda do caixa.
+    MensagemFabrica {
+        nome: "erro.retrato_sem_disco",
+        textos: [
+            "o retrato de {database} precisa de {precisa} bytes e o disco tem {livre} \
+             livres: o retrato fica para depois, para nao encher o disco desta origem",
+            "l'instantané de {database} demande {precisa} octets et le disque en a \
+             {livre} de libres : il attend, pour ne pas remplir ce disque",
+            "the snapshot of {database} needs {precisa} bytes and the disk has \
+             {livre} free: it waits, so as not to fill this source's disk",
+            "l'istantanea di {database} richiede {precisa} byte e il disco ne ha \
+             {livre} liberi: aspetta, per non riempire il disco di questa sorgente",
+            "der Schnappschuss von {database} braucht {precisa} Bytes, der Datenträger \
+             hat {livre} frei: er wartet, um diesen Datenträger nicht zu füllen",
+            "la instantánea de {database} necesita {precisa} bytes y el disco tiene \
+             {livre} libres: espera, para no llenar el disco de este origen",
+        ],
+    },
     // Amarracao da credencial ao canal (channel binding). O cliente pediu
     // `amarrar_canal` mas a conexao esta em claro -- nao ha tunel a que amarrar.
     // A saida honesta e mandar abrir o aperto antes do login, e nao aceitar uma

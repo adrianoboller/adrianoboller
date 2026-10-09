@@ -1937,7 +1937,8 @@ bancos de desenvolvimento.
 
 Quando o `write` de um evento falha **depois** de a linha estar no `.reg` — o
 disco que encheu entre as duas gravações —, o motor regrava **no lugar** o
-cabeçalho do volume 1 com a marca de pé e derruba o servidor (decisão do dono,
+cabeçalho do **primeiro volume que existe** (era o volume 1 até o pedido 706;
+pedido 738) com a marca de pé e derruba o servidor (decisão do dono,
 30/09/2026: derrubar e completar, como o PANIC do PostgreSQL na falha de
 escrita do WAL). Sobrescrever bytes que já existem não pede espaço novo; um
 arquivo à parte pediria, e medido no tmpfs cheio ele nasce com 0 bytes.
@@ -1962,7 +1963,7 @@ gravado antes da marca traz zero ali, e por isso ela **não sobe a versão**
 (ausência benigna).
 
 O volume que **nasceu sem cabeçalho** (o arquivo criado na virada, o cabeçalho
-que não coube) é o último, acima do 1 e com menos de 64 bytes: nunca teve
+que não coube) é o último, acima do primeiro volume que existe e com menos de 64 bytes: nunca teve
 evento, e a abertura com escrita o apaga em vez de deixar o `.log` inteiro sem
 abrir.
 
@@ -3696,10 +3697,20 @@ O que vai selado e o que não vai:
 | pedaço | onde | por quê |
 |---|---|---|
 | `payload` (linha, motivo, linha antiga, byte da cascata) | **selado** | é o dado |
-| tabela, `op`, `rowid alvo`, `id`, `carimbo` | **em claro** | a recuperação precisa saber *onde* reaplicar antes de abrir *o que* reaplicar |
+| tabela, `op`, `rowid alvo`, `id` (e, na v6/v8, `carimbo`, `n_operacoes`, `tx` e o índice) | **em claro** | a recuperação precisa saber *onde* reaplicar antes de abrir *o que* reaplicar |
 
 Os campos em claro não ficam sem proteção: eles entram como **dado associado**
-da etiqueta. Até a v3 só o CRC os cobria, e CRC não é selo — quem edita o
+da etiqueta. Na **v4** o dado associado é `id`, tabela, `op` e `rowid` — o
+`carimbo` **não** entra, e esta linha dizia que entrava (pedido 735). Na **v6 e
+na v8** (pedido 735, 08/10/2026) entram também o `carimbo`, o `n_operacoes`, o
+`tx` do cabeçalho (zero na v6) e o índice da operação: só o CRC os cobria, e
+quem editasse o arquivo baixava o `n` de 3 para 2, refazia o CRC e a
+recuperação aplicava **meia transação** — medido no teste
+`o_cabecalho_da_v8_mexido_nao_abre`, que passou a ver «não confere». As duas
+versões nasceram no mesmo dia e nenhum binário selado as grava, então mudar o
+AAD não pediu versão nova; uma marca v6/v8 de pé gravada com o AAD anterior
+(só binário de desenvolvimento de 08/10) cai em «não confere». A v7, em claro,
+fica como está: CRC não é selo. Até a v3 só o CRC os cobria, e CRC não é selo — quem edita o
 arquivo recalcula os quatro bytes e ninguém percebe. Como dado associado, um
 `rowid` trocado de 7 para 8 deixa de abrir, em vez de reaplicar a linha certa
 no slot errado.
@@ -3989,20 +4000,25 @@ descreve trabalho parado esperando gente, em vez de trabalho já resolvido.
 
 Duas garantias separadas, e as duas com teste:
 
-1. **A marca só sobe para a v4 quando o cofre está ligado.** Com ele desligado
-   ela continua nascendo **v3, byte por byte como antes** — guarda nova entra
-   pedida, não imposta, e quem nunca pediu cifra continua com uma marca que um
-   servidor anterior sabe ler.
+1. **A marca só nasce cifrada quando o cofre está ligado.** Desde o pedido
+   709 o `COMMIT` grava a marca posicional: **v8** com cofre, **v7** sem ele
+   (a v3/v4 só se gravam pelo `gravar_marca` antigo, que sobrevive para as
+   provas de leitura). Esta linha dizia «sem cofre continua v3», e deixou de
+   ser verdade no 709 (pedido 738). A cifra continua pedida, não imposta: a v7
+   é a v8 sem o selo.
 2. **A v3, a v2 e a v1 continuam sendo lidas com o cofre ligado.** É o caso
    real de quem liga a cifra num banco que já roda: a marca que estava no disco
    é um `COMMIT` que já aconteceu. O leitor decide o tamanho do cabeçalho pela
    **versão**, lida antes do CRC — na v4 o material entrou entre o contador e o
    CRC, então é a versão que diz onde o CRC está.
 
-O que **não** volta: uma marca v4 lida por um servidor anterior ao pedido 354.
-Ele vê versão 4, não a reconhece e a descarta como «commit que nunca começou».
-Isso só alcança quem ligou a cifra e depois voltou o binário — e a marca em
-claro, que é a de todo mundo que não ligou, atravessa nas duas direções.
+O que **não** volta: uma marca v5–v8 lida por um binário anterior a ela —
+inclusive a 0.18.0 selada: todo binário anterior ao pedido 734 a descarta como
+«commit que nunca começou» e a apaga. A
+marca em claro **não** atravessa mais nas duas direções (pedido 738): desde o
+709 ela nasce v7, que nenhum binário anterior ao 709 lê. **Daqui em diante a
+versão desconhecida para sem apagar** (pedido 734) — ver «O que a leitura faz
+com uma marca que não confere».
 
 Os testes são `crates/phxsql-server/tests/cifra-da-marca-de-transacao.rs` (o
 claro nos bytes crus, a terceira resposta, a senha errada e a marca de antes) e
@@ -4060,13 +4076,23 @@ que a etiqueta virou outra coisa.
 ### O que a leitura faz com uma marca que não confere
 
 Devolve «não confere». Um CRC quebrado, uma assinatura errada, uma versão
-desconhecida (nenhuma das oito), um arquivo truncado ou uma etiqueta que não
+desconhecida **menor** que a mais nova (zero, ou um buraco na numeração), um arquivo truncado ou uma etiqueta que não
 fecha **depois de a chave já se provar certa** são todos a **mesma** resposta:
 um commit que **nunca começou** — porque a marca é sincronizada inteira antes
 de qualquer escrita. Ela é apagada, e o disco continua como estava.
 
 O que **não** cai aqui é a marca cifrada que não abriu por falta da chave certa:
 essa é a terceira resposta, e ela **para sem apagar**.
+
+E a **versão maior que a mais nova que este binário conhece** também cai na
+terceira resposta (pedido 734, 08/10/2026): não é commit que nunca começou, é
+marca de um binário mais novo — quem voltou o binário depois de gravá-la. Até
+o 734 ela virava «não confere» e o arranque a **apagava**, e é daí que nasceu o
+«só para frente» de cada versão nova. Os três maduros convergem em não
+descartar o que não entendem (o PostgreSQL dá FATAL na versão do controle, o
+InnoDB recusa o redo de formato mais novo): aceite automático. O motivo diz a
+versão e manda subir o binário que a gravou. Teste:
+`marca::testes::a_marca_de_versao_mais_nova_para_e_nao_e_apagada`.
 
 ---
 
@@ -4190,7 +4216,7 @@ lugar do objeto também é aceita. `"formato": 1` escrito é o mesmo formato.
 | `cifra_do_cadastro.iteracoes` | arquivo | do PBKDF2-HMAC-SHA256: de **210.000** (o padrão da casa) a **2.100.000**; fora disso, o arquivo é recusado **antes** de qualquer derivação |
 | `cifra_do_cadastro.modo` | arquivo | sempre `"aead"` — outro valor é recusado como arquivo corrompido |
 | `cifra_do_cadastro.prova` | arquivo | 16 bytes em hexadecimal: recusa a chave errada **na abertura**, e não na primeira conexão |
-| `ligacoes` | arquivo | a lista — **não** mais em `"dblink"`: ver *O binário anterior*, abaixo. `"dblink"` ao lado dela é recusado, e `cifra_do_cadastro` num arquivo sem `"formato": 2` também |
+| `ligacoes` | arquivo | a lista — **não** mais em `"dblink"`: ver *O binário anterior*, abaixo. `"dblink"` ao lado dela é recusado, e `cifra_do_cadastro` num arquivo sem `"formato"` 2 ou 3 também |
 | `senha_cifrada` | ligação | o envelope da senha — **mutuamente exclusivo** com `senha` e com `senha_env` |
 | `token_remoto_cifrado` | ligação | o envelope do token — mutuamente exclusivo com `token_remoto` e `token_remoto_env` |
 
@@ -4203,6 +4229,27 @@ disco quando escritos -- um cadastro de antes regrava igual):
 | `pino_tls` | phxsql, postgres, mysql | `sha256//<base64>` do SPKI do outro lado: TLS 1.3 conferido pela chave (pedido 572, T6b-2 e T6d) |
 | `tls` | postgres, mysql | `desligado` (ausente), `exigir` ou `verificar` -- o `sslmode` do libpq (pedido 572, T6d) |
 | `tls_ca` | postgres, mysql | as âncoras do `verificar`: caminho de um PEM, ou `sistema`; ausente é o sistema |
+
+### Formato 3 — o cadastro com segurança do fio (pedido 733)
+
+Quando **alguma** ligação tem um dos campos acima (`tls` diferente de
+`desligado`, `tls_ca`, `pino_tls` ou `chave_do_fio`), o arquivo sai com
+`"formato": 3` e a lista em `ligacoes` -- com ou sem `cifra_do_cadastro`. É o
+mesmo desenho do formato 2, pelo mesmo motivo: um binário anterior que achasse
+a lista **ignoraria** os campos que não conhece, ligaria **sem TLS** e, na
+primeira gravação dele, regravaria o arquivo **sem eles**. Assim ele recusa:
+
+- a 0.18.0 (e todo binário anterior ao 372) não acha `"dblink"` nem a lista
+  crua e não sobe -- **medido** com o `phxsqld` compilado do commit `baff46e3`
+  em 08/10/2026: «nao consegui iniciar: … esperava uma lista de ligacoes, ou um
+  objeto com "dblink"». O mesmo cadastro em formato 1, com o `tls` escrito, a
+  0.18.0 sobe e liga sem TLS -- o estrago que o formato 3 fecha;
+- o binário entre o 372 e o 733 lê até o formato 2 e recusa o 3 com
+  `VERSAO_NAO_SUPORTADA`.
+
+**Quem não pede TLS continua igual, byte a byte**: sem campo do fio, o arquivo
+é o formato 1 (sem chave mestra) ou o 2 (com ela), como sempre. A guarda entra
+pedida. Teste: `o_cadastro_com_seguranca_do_fio_nao_se_entrega_ao_binario_anterior`.
 
 Campo de um motor escrito em outro é **recusado na declaração** (`tls` numa
 ligação phxsql, `chave_do_fio` numa postgres), e o salvar que não manda

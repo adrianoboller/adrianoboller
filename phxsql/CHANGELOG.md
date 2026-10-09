@@ -12,7 +12,7 @@ Os números são **medidos**, nunca estimados.
 
 ## Não lançado
 
-### 0.19.0, rodada de 01–02/10/2026 — NÃO SELADA
+### 0.19.0, rodadas de 01 a 08/10/2026 — NÃO SELADA
 
 Resumo por tema do que esta rodada fechou, **só com o que tem prova** (cada
 item traz o pedido; o detalhe, o defeito reposto e a data estão nas seções
@@ -92,6 +92,10 @@ da seção `## 0.19.0` mais abaixo, regravado por
   completo do `caching_sha2_password` por dentro) e o rele SMTP (`STARTTLS` e
   465). Provado contra o PostgreSQL 16 real e um rele em Python; o MySQL só
   contra servidor falso — não há `mysqld` na máquina.
+- **572, T6e (08/10) — o 572 fecha.** O cliente manda
+  `signature_algorithms_cert`; o servidor manda a cadeia inteira do PEM (o
+  `openssl s_client` a confere só pela raiz) e recusa o segundo `ClientHello`
+  que troca o conjunto escolhido no HRR.
 
 **Backup e durabilidade**
 
@@ -118,9 +122,15 @@ da seção `## 0.19.0` mais abaixo, regravado por
 - **573** — o arranque recusado pela sentinela do `fsync` (509) agora **avisa o
   operador** (e-mail, SMS por e-mail e gancho, pelo tipo `Carteiro`, motor
   único) antes de devolver o erro.
-- **646** (◐, **parcial**) — o `fsync` do grosso saiu do backup, com 3 guardas
-  provadas; o aceite («máximo da fase 1 ≤ ~100 ms») **não reproduziu** com a
-  máquina carregada. Falta uma volta de 1 GB com a máquina quieta.
+- **646** — o `fsync` do grosso saiu do backup, com 3 guardas provadas. Com a
+  máquina quieta, 1 GB, 5 voltas, o máximo de uma escrita durante a fase 1 cai
+  de **473 ms** (faixa 400–1.051) para **62–76 ms** (faixa 10–101), faixas sem
+  cruzar; o aceite «até ~100 ms» vale com a ressalva de que o pior caso do
+  cenário B deu **101,4 ms** (commit `60259768`).
+- **647** — a FASE B da troca de volume (migração de cifra,
+  `acrescentar_coluna`) a **10 M de linhas** caiu de **1.164 ms** para
+  **2,6 ms** com a trava na mão: o custo era liberar o inode velho, agora solto
+  depois da trava (commit `ba65032e`).
 - **427** — o retrato da fase A passa a ver o volume que nasce durante ela. A
   dúvida «tamanho e `mtime` bastam?» foi medida no ext4 (**0 de 2.000** passaram
   invisíveis); o tique grosso de FAT/HFS+/NFS foi **simulado**, não medido.
@@ -233,40 +243,76 @@ da seção `## 0.19.0` mais abaixo, regravado por
   chega à réplica inteira ou não chega), **677** um escritor por database (campo
   `espelho`), **678** bancada (zero meia venda, central religado alcança as 20 origens
   em 1,38–1,86 s, `vendas`/`itens`/`estoque` iguais por SHA-256), **679** visão da loja
-  pelo `unir`, **680** contrato no MANUAL e no CONTRATO.
+  pelo `unir`, **680** contrato no MANUAL e no CONTRATO (commits `7a83e4da`,
+  `4ee03b74`, `7faf2c7f`, `bf4bbdb9`, `024e42c1`).
+- **706** — o diário do caixa expurga o que o central confirmou, solta o nunca puxado
+  depois de 30 dias (decisão do dono) e o central se refaz pelo retrato quando fica
+  para trás do expurgo; o caixa não para em #999 (commit `ba65032e`).
 - **681, 682, 684–686, 698–702** — quórum e bidirecional por transação, o grupo da
   réplica e o do bidi gravam a marca `.tx`, a recuperação confere o `.reg` e nunca
   duplica linha, e a marca completada no arranque adota o id da metade que entrou;
-  carga acima do teto é recusada na origem.
+  carga acima do teto é recusada na origem (commits `15a65f82`, `4ee03b74`,
+  `550a1f2a`, `9e067e1b`, `06c7ee1e`, `bf4bbdb9`).
 - **687, 688** — o `phxsqld` para limpo no SIGTERM/SIGINT e a recusa do índice nomeia o
   comando que existe; achados pelo vídeo do CRUD (`testes-web/video-crud.mjs`, 7 de 9
-  itens conferem; nove defeitos de tela).
-- **Em curso, não commitada:** a divisão do `servidor.rs` (etapa 1, os testes saem para
-  arquivos próprios: 77.631 para 36.860 linhas, commit `68ad47da`; o restante ainda na árvore).
+  itens conferem; nove defeitos de tela) (commits `f0a92a99`, `6ddba32e`).
+- **689–694** — seis dos defeitos de tela do vídeo do CRUD; a prova no navegador dá
+  **16** reprovas antes e **0** depois (commit `a0325c80`).
+
+**Desenho único da recuperação e da réplica (708–716, 722–724)**
+
+- **708** — ordem do dono: um motor de marca só (`marca.rs` generalizado), bilhete
+  posicional v7/v8 e uma régua só de «já entrou?», convergindo com PostgreSQL, InnoDB
+  e SQLite (desenho no commit `577b9a58`, provas E0 no `51d7e5cc`).
+- **709** (F1, defeito ativo) — a marca do COMMIT reaplicada no arranque por cima de
+  escrita posterior fazia o valor **voltar ao antigo**; a marca v7/v8 carrega a versão
+  do slot. Com ela, **710–716**: a ordem da recuperação é a da trava e não a do id, um
+  gerador só de id de marca com piso do disco, a restauração completa as marcas antes
+  do índice, e **723**/**724** (marcas `bidi_` no backup; custo do 709 medido). Formato:
+  marca v7/v8 e `.log` bytes 104..120, no `FORMATO.md` (commit `ba65032e`).
+- **722** — o grupo bidirecional não entra pela metade: ensaio a seco sob a mesma
+  trava antes do primeiro evento. Vermelho medido: com o único secundário ocupado o
+  retrato saía (2,8,2), meia venda; agora (1,6,1). Custo: **31.074** contra **29.526**
+  eventos/s, faixas que se cruzam — sem perda afirmável (commit `2c9f0936`).
+
+**Divisão do `servidor.rs`, segurança e prova de 08/10**
+
+- **Divisão do `servidor.rs`** — ordem do dono: de **77.631** linhas para **2.893**, o
+  resto em 25 serviços `servidor/servico_<dominio>_NN.rs`; só movimento,
+  **632/632** funções iguais por tokens, guardas repontadas e provadas **130 de 131**
+  (a que não pegava já não pegava antes e virou o **720**, fechado) (commits
+  `68ad47da`, `a0325c80`).
+- **719, 674, 339a** — id de sessão HTTP novo a cada login (fixação de sessão, achado
+  ALTO do papel SEC); a emissão em claro pela rede é recusada por um predicado só; a
+  chave da API da Claude fica só em memória, desligável e com aprovação do que sai
+  (commit `ba65032e`).
+- **662** — no Windows, o motor de arquivo deixa de seguir link na janela entre
+  `lstat` e `open`: o job `windows-latest` deu verde com `FILE_FLAG_OPEN_REPARSE_POINT`
+  e vermelho sem ela (commit `2c9f0936`).
+- **675, 704, 718, 669** — o `portoes.sh` nomeia o teste que caiu; as mensagens
+  deixam de mandar ajustar `recursos.max_linhas`, campo que nada lê; a régua de
+  mensagem ambígua aposentada e renascida no número medido; a §11.3 do
+  `SEGURANCA.md` lista o que sai em claro (commit `a0325c80`).
+- **655, 657, 263, 703, 720, 721, 673, 695** — prova e catálogo de guardas (commit
+  `ba65032e`); e dois vermelhos do CI que só o executor do GitHub via, ambos com o
+  defeito reproduzido aqui antes do conserto (commits `4d96a439`, `df120036`).
 
 ### O que NÃO está nesta versão
 
-- **Expurgo do diário do caixa (706, ☐):** sem expurgo o `.log` cresce 1.454–1.629 B por
-  venda; decisão do dono de 08/10: segurar no máximo 30 dias com o central fora.
-- **Aquário de monitoramento (707, ☐):** só protótipo.
-- **Desenho único da recuperação (708–717):** furos lidos no código, não medidos; a
-  etapa E0 os confirma ou mata contra o SO.
-
-- **TLS obrigatório (660, ⏸):** decisão do dono de 07/10 — opcional na 0.19, **obrigatório
-  por padrão na 1.0**; o aviso no `ping` para conexão não cifrada ainda **não
-  existe**.
-- **Parada da troca de volume (647, ☐ aberto):** a FASE B é linear no tamanho
-  (extrapolação, não medida, a 100 milhões); decisão do dono de 07/10: **medir a
-  10 M de linhas antes de mexer**, promessa de produto de parada de escrita ≤ 1 s
-  a 10 M, número final só depois da medição.
-- **Windows (662, ☐):** o motor de arquivo não distingue link no Windows; as
-  recusas dos pedidos 648 e 661 valem em Linux.
-
-- **Windows (637, ⏸):** o `mtime` do NTFS (resolução, «racily clean») só se
-  mede numa máquina Windows; a prova do backup em duas passadas é Linux/ext4
-  com tique simulado. A recusa da trava de instância no Windows não diz o pid.
-- **`Memo`/`Bin` na migração de cifra (268):** não são migrados; coluna
-  marcada recusa a migração. Histórico e `.ndx` ficam em claro.
+- **Ficam para a 0.20, por decisão do dono (⏸):** **333** (chat e robô no PhxMail),
+  **454** e **455** (servidor web e `PhxZipCmd`, e o pacote só do PhxZip; a interface
+  do PhxZip entrou), **495** e **496** (IA que analisa ataque e prevê catástrofe:
+  decidido o desenho, nada implementado) e **707** (aquário de monitoramento: desenho
+  e protótipo, commits `63a1c178` e `55b29fce`).
+- **Pré-requisitos de venda, não feitos:** **revisão de segurança independente** (as
+  revisões SEC desta casa são internas) e **validação jurídica da LGPD** (a marca de
+  dado pessoal e a trilha `.lgpd` existem; nenhum jurista as conferiu).
+- **TLS 1.3 (572, ◐):** o TLS de saída para o **MySQL(R) só foi provado contra
+  servidor falso** — não há `mysqld` na máquina. Revogação (CRL/OCSP) e políticas de
+  certificado não são conferidas, decidido, como no Go e no `webpki`.
+- **TLS obrigatório (660, ⏸):** decisão do dono de 07/10 — opcional na 0.19,
+  **obrigatório por padrão na 1.0**; o aviso no `ping` para conexão não cifrada
+  ainda **não existe**. O Noise segue aceito na 0.19 (652).
 - **«ACID compliant» não é afirmado** (pedidos 189, 246, 337) — a pétrea veda
   enquanto a prova de cada letra, no nível declarado, não existir. O que se pode
   dizer, e tem prova: **atomicidade e durabilidade** no servidor que commita
@@ -276,17 +322,15 @@ da seção `## 0.19.0` mais abaixo, regravado por
   ou `BEGIN ISOLATION LEVEL REPEATABLE READ`); e que **a atomicidade de um
   commit entre tabelas não atravessa o fio da réplica** (299, preço declarado).
   `SERIALIZABLE` não é reivindicado.
-- **TLS com terceiros:** revogação (CRL/OCSP) não é conferida, e o TLS do
-  MySQL(R) só foi provado contra servidor falso. O TLS de saída para PostgreSQL,
-  MySQL e SMTP (T6d) não existe; o cliente SMTP dos alertas fala sem TLS
-  (pedido 89), servindo a relé interno.
+- **F10 a F12 do desenho único (717, ⏸):** PITR fora de unidade, «impossível» falso
+  no relatório depois de troca de esquema, ordenação das marcas por texto.
+- **Windows (637, ⏸):** o `mtime` do NTFS (resolução, «racily clean») só se
+  mede numa máquina Windows; a prova do backup em duas passadas é Linux/ext4
+  com tique simulado. A recusa da trava de instância no Windows não diz o pid.
+- **`Memo`/`Bin` na migração de cifra (268):** não são migrados; coluna
+  marcada recusa a migração. Histórico e `.ndx` ficam em claro.
 - **Sequência nomeada e contador:** a nomeada não replica (decisão da §C.5.3) e
   a promovida recusa pedir o `proximo`; `Inteiro(i64)` no `Json` não foi feito.
-- **Produtos que seguem planejados ☐/◐:** **325** (20 caixas sem servidor:
-  fila local e reconexão não existem), **333** (chat e robô no PhxMail),
-  **454** e **455** (servidor web e `PhxZipCmd`; a interface do PhxZip entrou,
-  o resto e o pacote não), **495** e **496** (IA que analisa ataque e prevê
-  catástrofe: decidido o desenho, nada implementado).
 - **Não medidos, ditos:** a queda real do `fsync` do 524; o FAT/HFS+/NFS reais
   do 427; a sonda ODBC não roda no `./portoes.sh` (exige `unixodbc-dev` e `pyodbc`).
 

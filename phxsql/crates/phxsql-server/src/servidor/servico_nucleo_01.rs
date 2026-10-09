@@ -150,6 +150,15 @@ impl Servidor {
         // A imagem no diario e decisao do servidor, e entra AQUI, antes da
         // recuperacao logo abaixo -- que era quem a esquecia (pedido 564).
         raiz.definir_politica_do_diario(politica_do_diario(&config));
+        // Pedido 731: a copia de retrato que uma vida anterior deixou na raiz
+        // sai aqui, antes de a porta abrir -- e antes da migracao do separador
+        // logo abaixo, que senao renomearia volumes dentro da arvore de uma
+        // copia que vai para o lixo (pedido 729: o retrato servido e pasta).
+        // Um segundo processo na MESMA base apagaria o retrato vivo do
+        // primeiro -- mas dois processos numa base
+        // ja sao o erro que a trava de instancia de cada database recusa
+        // (pedido 635), e o retrato do primeiro so serve a um database dele.
+        servico_diario_01::limpar_retratos_no_arranque(&config.base);
         // O separador de volume do binario anterior (`_`) vira `#` AQUI, uma
         // vez, antes da primeira operacao e fora de qualquer trava: a abertura
         // de database, que roda dentro das secoes, so confere a marca (pedido
@@ -359,7 +368,7 @@ impl Servidor {
             expurgo_da_trilha: Mutex::new(()),
             expurgo_do_diario: Mutex::new(()),
             confirmados_do_diario: Mutex::new(HashMap::new()),
-            retrato_servido: Mutex::new(None),
+            retrato_servido: Mutex::new(Vec::new()),
             avisos_de_seguranca: Mutex::new(HashMap::new()),
             porta_no_ar: AtomicBool::new(false),
             parar_de_aceitar: AtomicBool::new(false),

@@ -2,6 +2,8 @@
 
 **Estado:** PENDENTE
 
+**Alcance da pétrea, não lei nova (08/10/2026):** o aprendizado é o alcance de «teste que passa por engano» (papel F, prova real nos dois sentidos): com dois caminhos de cifra, só um destino que RECUSA o velho prova o novo. Segue PENDENTE: a guarda `dblink-ignora-pino-tls` (`pino_tls()` → `None` em `dblink/phx.rs`) ainda não existe no catálogo; as irmãs `remoto-em-claro-para-quem-exige` e `pulso-do-cluster-em-claro` estão PROVADAS mas cobrem o Remoto e o cluster, não o caso que fundou este arquivo.
+
 ## O que aconteceu
 
 Pedido 572, T6b-2: o `pino_tls` entrou nos iniciadores (replica, cluster,

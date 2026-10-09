@@ -6,14 +6,24 @@
  * por isso so existem com gente conectada. Aqui "gente" sao soquetes de
  * verdade na porta de dados (`conexaoViva`, apoio.mjs): o "Derrubar" e provado
  * pelo soquete cair VISTO DE FORA, e o "Encerrar a operacao" por uma carga de
- * 1,6 milhao de linhas que o servidor esta lendo no momento do clique.
+ * 480 mil linhas que o servidor esta convertendo no momento do clique.
  *
  * Por que uma carga enorme e nao uma operacao "esperando trava": medido
  * (sonda de 02/10/2026) que escrita concorrente em outra tabela nao espera, a
  * leitura nao bloqueia, e a escrita contra tabela em transacao e RECUSADA na
  * hora (EM_TRANSACAO) -- nenhuma das tres deixa uma operacao viva por tempo
- * suficiente para clicar. Uma carga de ~23 MB por 800 mil linhas leva ~4,7 s;
- * a de 1,6 milhao, o dobro.
+ * suficiente para clicar.
+ *
+ * PEDIDO 741: a carga cabe no teto do diario, e a espera e pelo EVENTO. Era de
+ * 1,6 milhao de linhas, e desde o 686 a carga acima de 64 MiB no diario e
+ * RECUSADA no fim da conversao (204,8 MB previstos): o ramo «nao_cancelavel»
+ * nunca podia passar, e o «encerrando» passava por engano, porque a recusa
+ * do teto tambem e `ok:false`. E a espera era de 20 voltas (~11 s) contra uma
+ * carga que, com a maquina em load 8, so vira operacao depois de 60-90 s
+ * lendo o pedido -- 10 em 10 corridas cairam assim. Agora: 480 mil linhas
+ * (~61 MB previstos), a espera dura enquanto a carga nao respondeu (120 s so
+ * de desistencia), e a resposta tem de ser o CANCELADO, nao um ok:false
+ * qualquer.
  *
  * O relogio da tela fica PAUSADO durante os cliques: o cartao da bolha e
  * reescrito a cada volta, e um clique que cai na troca some (o caso 36 ja
@@ -130,7 +140,9 @@ async function corpo(ctx, extras) {
     colunas: [{ nome: 'id', tipo: 'Int4', obrigatoria: true }, { nome: 'nome', tipo: 'Str(40)' }],
     indices: [{ nome: 'porId', colunas: ['id'], unico: true, primario: true }],
   });
-  const N = 1600000;
+  // 128 bytes previstos por linha desta tabela no diario: 480 mil ficam em
+  // ~61 MB, abaixo dos 64 MiB do teto (`log::TETO_DA_TRANSACAO`).
+  const N = 480000;
   const partes = ['id;nome\n'];
   for (let i = 1; i <= N; i++) partes.push(`${i};Cliente numero ${i}\n`);
   const texto = partes.join('');
@@ -142,14 +154,38 @@ async function corpo(ctx, extras) {
   verdade(!(await page.$('#tlmEncerrar')), 'com a conexao ociosa o Encerrar nao pode estar armado');
 
   c.enviar({ op: 'inserir_lote', database: db, tabela: 'carga', texto, formato: 'csv' });
-  // O servidor leva 2-3 s so para LER os ~46 MB do pedido; a operacao so
-  // existe depois. Com o relogio pausado, quem pergunta de novo e o caso.
+  // O servidor primeiro LE o pedido inteiro (~14 MB); a operacao so existe
+  // depois, e quanto isso leva depende da maquina -- 2 s sozinha, mais de um
+  // minuto em load 8. Por isso o relogio nao decide: decide o EVENTO. Ou o
+  // Encerrar arma, ou a carga responde antes de armar -- e ai a operacao
+  // existiu e a tela nunca a mostrou cancelavel, que e a falha que este
+  // passo caca. O prazo e so de desistencia, para um servidor mudo.
+  //
+  // E o clique espera tambem o SERVIDOR dizer «cancelavel neste instante» (a
+  // fase de conversao). Clicar so com o botao armado pegava a carga ainda na
+  // fila, a resposta vinha «marcada», e «marcada» aceita os dois desfechos --
+  // medido com o defeito reposto (a marca que nao se poe): o caso aprovava.
+  // Na fase cancelavel a promessa e a forte, e o desfecho tem de ser um so.
   let armado = false;
-  for (let i = 0; i < 20 && !armado; i++) {
+  const t0 = Date.now();
+  let voltas = 0;
+  const cancelavelAgora = async () => {
+    const tl = await api(page, 'telemetria');
+    const at = (tl.atividades || []).find(x => x.id === idc);
+    return !!(at && at.cancelavel);
+  };
+  while (!armado && c.pendentes() === 0 && Date.now() - t0 < 120000) {
     await agora();
-    armado = !!(await page.$('#tlmEncerrar'));
+    voltas++;
+    armado = !!(await page.$('#tlmEncerrar')) && await cancelavelAgora();
   }
-  verdade(armado, 'a carga nunca apareceu como operacao em curso com ponto de cancelamento');
+  if (!armado) {
+    const gasto = Date.now() - t0, jaRespondeu = c.pendentes() > 0;
+    const r = await c.proxima(120000).catch(() => null);
+    throw new Falha(`a carga nunca apareceu como operacao em curso, cancelavel neste instante -- `
+      + `${voltas} voltas em ${gasto} ms; a carga ${jaRespondeu ? 'JA tinha respondido' : 'ainda nao tinha respondido'}`
+      + ` e respondeu ${r ? `ok=${r.ok}${r.ok ? '' : ` (${String(r.erro).slice(0, 120)})`}` : 'nada'} ${Date.now() - t0} ms depois do envio`);
+  }
   await capturar(ctx, ctx.nomeCaptura('encerrar-operacao'));
   const pedido = page.waitForRequest(r => /"op"\s*:\s*"telemetria_encerrar"/.test(r.postData() || ''), { timeout: 5000 });
   await clicarOuExplicar(page, '#tlmEncerrar');
@@ -163,12 +199,20 @@ async function corpo(ctx, extras) {
   // A resposta da carga diz se a marca valeu: cancelada (ok=false) ou, se o
   // clique caiu na fase critica, terminada -- e nesse caso a tela TEM de ter
   // dito «nao_cancelavel». Dizer «encerrando» e deixar gravar tudo e mentira.
-  const resposta = await c.proxima(60000);
+  //
+  // O fim da carga se le pelo NOME do erro, e nao pelo `ok:false`: a recusa do
+  // teto do diario tambem e `ok:false`, e foi assim que este passo aprovou
+  // durante o 686 sem cancelar nada. «marcada» admite os dois desfechos (a
+  // marca vale no proximo ponto seguro, se ainda houver um); qualquer outro
+  // erro e defeito.
+  const resposta = await c.proxima(120000);
+  const fim = resposta.ok ? 'terminou' : resposta.nome;
   if (/nao_cancelavel|não cancelável/i.test(aviso)) {
-    verdade(resposta.ok === true, `a tela disse «${aviso}» mas a carga nao terminou: ${JSON.stringify(resposta).slice(0, 200)}`);
+    verdade(fim === 'terminou', `a tela disse «${aviso}» mas a carga nao terminou: ${JSON.stringify(resposta).slice(0, 200)}`);
+  } else if (/marcada/i.test(aviso)) {
+    verdade(fim === 'terminou' || fim === 'CANCELADO', `a tela disse «${aviso}» e a carga acabou em ${fim}: ${String(resposta.erro).slice(0, 160)}`);
   } else {
-    verdade(resposta.ok === false, `a tela disse «${aviso}» mas a carga TERMINOU (${resposta.resultado && resposta.resultado.gravadas} linhas)`);
-    verdade(!/gravadas/.test(JSON.stringify(resposta.resultado || {})), 'a carga cancelada nao devia devolver resultado de gravacao');
+    verdade(fim === 'CANCELADO', `a tela disse «${aviso}» e a carga acabou em ${fim}, nao cancelada: ${String(resposta.erro || '').slice(0, 160)}`);
   }
   igual(c.aberta(), true, 'encerrar a OPERACAO nao pode derrubar a conexao (isso e o Derrubar)');
 }

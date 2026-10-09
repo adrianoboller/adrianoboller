@@ -1,5 +1,7 @@
 # A ordem de aplicação das marcas não é a ordem do id delas
 
+**Estado:** PENDENTE
+
 ## O que aconteceu
 
 O desenho único da recuperação (`docs/propostas/recuperacao-e-replica-desenho-unico.md`)

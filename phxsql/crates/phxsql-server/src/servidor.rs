@@ -783,9 +783,11 @@ pub struct Servidor {
     /// proposito: perdido no reinicio, o expurgo SEGURA ate o consumidor
     /// pedir de novo -- a falha cai do lado de guardar, nunca de soltar.
     confirmados_do_diario: Mutex<HashMap<(String, String), u64>>,
-    /// O retrato que esta origem serve a uma replica que se refaz (pedido
-    /// 706): um por vez, e o seguinte apaga o anterior.
-    retrato_servido: Mutex<Option<servico_diario_01::RetratoServido>>,
+    /// Os retratos que esta origem serve a replicas que se refazem (pedido
+    /// 706): um por CONEXAO, amarrado a ela, ao login e ao database, ate o
+    /// teto `TETO_DE_RETRATOS` -- pedidos 727 e 729. Era um slot global, e a
+    /// segunda replica atrasada apagava o retrato da primeira.
+    retrato_servido: Mutex<Vec<servico_diario_01::RetratoServido>>,
     /// Quando o aviso de VIOLACAO GRAVE de cada IP saiu por e-mail, por chave
     /// `grave:<ip>` -- o mesmo silencio dos jobs e do disco.
     avisos_de_seguranca: Mutex<HashMap<String, i64>>,

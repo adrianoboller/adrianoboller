@@ -1,6 +1,12 @@
 # A régua que separa produção de teste precisa ver todo `cfg(test)`, não só o literal
 
-**Estado:** PENDENTE
+**Estado:** FRUTÍFERO
+
+**Evidência:** `ba65032e`
+
+**Validação (08/10/2026):** o caso «a cópia dentro de `#[cfg(all(test, unix))]` não conta» do `bancada/guardas/trecho-vivo.py --autoteste` passa (a execução de hoje termina em «todos passaram»), e o número 137 → 131 é reproduzível; o conserto está no commit `ba65032e`. Promovido em 08/10/2026 pelo papel H.
+
+**Alcance da pétrea, não lei nova:** é o alcance de «régua que passa a medir mais aposenta a catraca» (G) e de «a receita de um número também envelhece» (H). **Cruzamento:** é o segundo defeito do mesmo `producao()` no mesmo dia do #12 (`cognicao_regua-por-arquivo-muda-de-numero-quando-o-arquivo-se-divide_20261008_1300.md`); os dois são o alcance da mesma régua de corte por texto, e ler um sem o outro repete o erro.
 
 ## O que aconteceu
 

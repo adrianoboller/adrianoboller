@@ -147,6 +147,29 @@ pub const MANIFESTO: &str = "backup.json";
 /// motor da raiz de dados: o arquivo regular de OUTRO dono (ou com `nlink >
 /// 1`) que ja esta no nome nao recebe o conteudo do banco -- o nome sai e o
 /// nosso nasce. Vale para as tres gravacoes: copia, `.part` e manifesto.
+/// O que [`Fase1::gravar`] poe na copia: os bytes ja lidos (o backup, que
+/// precisa deles para o SHA-256 do manifesto) ou o arquivo de origem aberto
+/// (o retrato da replica, copiado pelo nucleo -- pedido 729).
+enum Conteudo<'a> {
+    Bytes(&'a [u8]),
+    Arquivo(File),
+}
+
+/// O [`escrever_sem_sync`] de quem copia de arquivo para arquivo: o mesmo
+/// destino recriado, o mesmo descarte da copia parcial, e `io::copy` no
+/// lugar do `write_all`. Devolve o descritor e os bytes copiados.
+fn copiar_sem_sync(alvo: &Path, mut origem: File) -> Result<(File, u64)> {
+    let mut arquivo = crate::util::recriar_no_destino(alvo, false)?;
+    match std::io::copy(&mut origem, &mut arquivo) {
+        Ok(n) => Ok((arquivo, n)),
+        Err(e) => {
+            drop(arquivo);
+            descartar_parcial(alvo);
+            Err(e.into())
+        }
+    }
+}
+
 fn escrever_sem_sync(alvo: &Path, dados: &[u8]) -> Result<File> {
     let arquivo = crate::util::recriar_no_destino(alvo, false)?;
     let escrito = (|| -> Result<()> {
@@ -467,7 +490,20 @@ pub(crate) fn listar(raiz: &Path) -> Result<Vec<PathBuf>> {
         for entrada in leitura {
             let entrada = entrada?;
             let caminho = entrada.path();
-            if caminho.is_dir() {
+            let do_retrato = dir == raiz
+                && entrada
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with(crate::catalogo::PREFIXO_DO_RETRATO_DA_REPLICA);
+            if do_retrato {
+                // O retrato da replica (pedido 731) e copia passageira de
+                // tabelas com coluna marcada, que so vive enquanto a conexao
+                // que o pediu: levado ao backup, sobreviveria ao esquecimento
+                // e a exclusao que a tabela de verdade recebe depois.
+                // Medido antes do conserto: o `listar` da raiz o copiava.
+                // Desde o 729 ele e uma PASTA (a arvore da copia em duas
+                // passadas), e a pasta tambem fica de fora.
+            } else if caminho.is_dir() {
                 pilha.push(caminho);
             } else if entrada.file_name() == crate::trava_de_instancia::NOME_DO_ARQUIVO {
                 // A trava de instancia (pedido 635) e estado do processo que
@@ -621,7 +657,7 @@ pub fn copiar_fase_1_para_zip(
     };
     // Teto ZERO de descritores: a arvore temporaria nao recebe `fsync` (o
     // zip e' quem sincroniza), entao nao ha por que segurar descritor nenhum.
-    copiar_fase_1_com_teto(&origem, &arvore, 0, Some(pedido)).map(Some)
+    copiar_fase_1_com_teto(&origem, &arvore, 0, Some(pedido), None).map(Some)
 }
 
 /// O nome da arvore temporaria de um zip: `<nome>.retrato.part/`. Um
@@ -1117,7 +1153,7 @@ pub fn executar(raiz: &Path, destino: &Path, _quando_ms: i64) -> Result<(Relator
 /// [`executar`] com o teto de descritores dado -- separado para a prova do
 /// caminho alem do teto nao precisar de milhares de arquivos.
 fn executar_com_teto(raiz: &Path, destino: &Path, teto: usize) -> Result<(Relatorio, Copias)> {
-    let fase = copiar_fase_1_com_teto(raiz, destino, teto, None)?;
+    let fase = copiar_fase_1_com_teto(raiz, destino, teto, None, None)?;
     Ok(terminar(fase))
 }
 
@@ -1259,6 +1295,9 @@ pub struct Fase1 {
     inventario: Inventario,
     ancora_de: BTreeMap<PathBuf, usize>,
     zip: Option<PedidoDeZip>,
+    /// So os arquivos de retrato destas tabelas -- o retrato da replica
+    /// (pedido 729). `None` e o backup: tudo.
+    so_tabelas: Option<std::collections::BTreeSet<String>>,
 }
 
 /// O que a fase 2 fez, para a resposta e para a bancada.
@@ -1281,7 +1320,33 @@ pub struct Acerto {
 /// de cada arquivo. O servidor chama com o retrato ligado so para o bloqueio
 /// de manutencao; a consistencia vem inteira da fase 2.
 pub fn copiar_fase_1(raiz: &Path, destino: &Path) -> Result<Fase1> {
-    copiar_fase_1_com_teto(raiz, destino, teto_de_abertos(), None)
+    copiar_fase_1_com_teto(raiz, destino, teto_de_abertos(), None, None)
+}
+
+/// A FASE 1 do retrato da replica (pedidos 706 e 729): a mesma copia sem
+/// trava do backup, so dos arquivos que o retrato leva das `tabelas`
+/// (qualificadas, relativas a `origem`, que e a pasta de UM database).
+///
+/// O motor e o do backup de proposito: a copia em duas passadas -- fase 1
+/// sem trava, fase 2 com o escritor parado, recopiando so o que mudou -- e
+/// uma decisao so, e uma segunda copia dela para o retrato divergiria da
+/// primeira no primeiro conserto (o 568, o 576, o 593 ja passaram por aqui).
+pub fn copiar_fase_1_das_tabelas(
+    origem: &Path,
+    destino: &Path,
+    tabelas: std::collections::BTreeSet<String>,
+) -> Result<Fase1> {
+    copiar_fase_1_com_teto(origem, destino, teto_de_abertos(), None, Some(tabelas))
+}
+
+/// O caminho de cada copia de uma corrida em arvore, pelo relativo -- quem
+/// serve o retrato o le de la. A fase 2 ja passou: nada mais muda.
+pub fn copias_por_caminho(fase: &Fase1) -> Vec<(String, PathBuf, u64)> {
+    fase.r
+        .arquivos
+        .iter()
+        .map(|a| (a.caminho.clone(), fase.arvore.join(&a.caminho), a.bytes))
+        .collect()
 }
 
 fn copiar_fase_1_com_teto(
@@ -1289,6 +1354,7 @@ fn copiar_fase_1_com_teto(
     arvore: &Path,
     teto: usize,
     zip: Option<PedidoDeZip>,
+    so_tabelas: Option<std::collections::BTreeSet<String>>,
 ) -> Result<Fase1> {
     if !origem.is_dir() {
         return Err(PhxError::NaoEncontrado(format!(
@@ -1315,6 +1381,7 @@ fn copiar_fase_1_com_teto(
         inventario: Inventario::default(),
         ancora_de: BTreeMap::new(),
         zip,
+        so_tabelas,
     };
     // Pedido 576: a recusa no meio da copia (disco cheio, `EFBIG`, nome
     // ocupado) sai daqui com o que esta corrida fez nascer ja apagado --
@@ -1385,6 +1452,17 @@ impl Fase1 {
 
     /// O laco da fase 1 -- o corpo de [`copiar_fase_1`], separado para o erro
     /// dele passar pela faxina da corrida num lugar so'.
+    /// Esta corrida leva `arquivo`? O backup leva tudo; o retrato, so os
+    /// arquivos de retrato das tabelas dele -- nas DUAS passadas, senao a
+    /// fase 2 traria o que a fase 1 deixou de fora.
+    fn leva(&self, arquivo: &Path) -> bool {
+        let Some(tabelas) = &self.so_tabelas else {
+            return true;
+        };
+        crate::catalogo::tabela_do_arquivo_do_retrato(&relativo(&self.origem, arquivo))
+            .is_some_and(|t| tabelas.contains(&t))
+    }
+
     fn copiar_tudo(&mut self) -> Result<()> {
         // Pedido 568: daqui para dentro o destino se percorre pelo descritor
         // de cada pasta, sem seguir link em componente nenhum. Na arvore o
@@ -1415,7 +1493,9 @@ impl Fase1 {
         // mudou e o backup velho continua valendo.
         invalidar_manifesto_velho(&self.copias)?;
         for arquivo in arquivos {
-            self.copiar_um(&arquivo)?;
+            if self.leva(&arquivo) {
+                self.copiar_um(&arquivo)?;
+            }
         }
         Ok(())
     }
@@ -1432,25 +1512,38 @@ impl Fase1 {
             Err(PhxError::Io(e)) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
             Err(e) => return Err(e),
         };
+        // O retrato da replica (pedido 729) nao tem manifesto nem SHA-256: a
+        // copia vai de arquivo para arquivo pelo nucleo (`io::copy`, que no
+        // Linux e `copy_file_range`), sem passar o arquivo inteiro pela
+        // memoria. Medido no acerto da fase 2 com a tabela quente de 99 MiB:
+        // ~100 ms com `read` + `write`, que e o tempo da escrita parada.
+        if self.so_tabelas.is_some() {
+            let origem = match File::open(arquivo) {
+                Ok(f) => f,
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+                Err(e) => return Err(e.into()),
+            };
+            return self
+                .gravar(&rel, Conteudo::Arquivo(origem), ficha)
+                .map(Some);
+        }
         let dados = match std::fs::read(arquivo) {
             Ok(d) => d,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
             Err(e) => return Err(e.into()),
         };
-        let bytes = dados.len() as u64;
-        self.gravar(&rel, &dados, ficha)?;
-        Ok(Some(bytes))
+        self.gravar(&rel, Conteudo::Bytes(&dados), ficha).map(Some)
     }
 
     /// Grava `dados` como a copia de `rel` -- a primeira vez (fase 1, ou
     /// arquivo que nasceu) empilha nas [`Copias`]; a segunda (fase 2) troca
     /// NO LUGAR, no mesmo indice, para as listas paralelas continuarem
     /// paralelas e o `fsync` de depois alcancar o descritor novo.
-    fn gravar(&mut self, rel: &str, dados: &[u8], ficha: Ficha) -> Result<()> {
+    fn gravar(&mut self, rel: &str, conteudo: Conteudo<'_>, ficha: Ficha) -> Result<u64> {
         let alvo = self.arvore.join(rel);
         let rel_p = Path::new(rel);
         let Some(nome) = rel_p.file_name() else {
-            return Ok(());
+            return Ok(0);
         };
         let pasta = entrar_na_pasta(&mut self.copias, &mut self.ancora_de, rel_p.parent())?;
         let por_dentro = self.copias.ancoras[pasta].por_dentro(nome);
@@ -1458,17 +1551,27 @@ impl Fase1 {
         // agora da que ja existia (destino reaproveitado): so' a primeira e'
         // desta corrida, e so' ela pode sair numa falha.
         let nasce = std::fs::symlink_metadata(&por_dentro).is_err();
-        let arquivo = escrever_sem_sync(&por_dentro, dados)
-            .map_err(|e| no_nome_real(e, &por_dentro, &alvo))?;
+        let (arquivo, bytes, sha256) = match conteudo {
+            Conteudo::Bytes(dados) => (
+                escrever_sem_sync(&por_dentro, dados)
+                    .map_err(|e| no_nome_real(e, &por_dentro, &alvo))?,
+                dados.len() as u64,
+                para_hex(&sha256(dados)),
+            ),
+            Conteudo::Arquivo(origem) => {
+                let (f, n) = copiar_sem_sync(&por_dentro, origem)
+                    .map_err(|e| no_nome_real(e, &por_dentro, &alvo))?;
+                (f, n, String::new())
+            }
+        };
         if nasce {
             self.copias.nascidas.push(por_dentro.clone());
         }
         let anotado = identidade(&arquivo.metadata()?);
-        let bytes = dados.len() as u64;
         let registro = Arquivo {
             caminho: rel.to_string(),
             bytes,
-            sha256: para_hex(&sha256(dados)),
+            sha256,
         };
         let indice = self.copias.indice.get(rel).copied();
         match indice {
@@ -1502,7 +1605,7 @@ impl Fase1 {
             }
         }
         self.inventario.fichas.insert(rel.to_string(), ficha);
-        Ok(())
+        Ok(bytes)
     }
 
     /// Tira do destino a copia de `rel`, que sumiu da origem durante a fase
@@ -1532,6 +1635,9 @@ impl Fase1 {
         let mut acerto = Acerto::default();
         let mut vistos: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
         for arquivo in listar(&self.origem)? {
+            if !self.leva(&arquivo) {
+                continue;
+            }
             let rel = relativo(&self.origem, &arquivo);
             acerto.conferidos += 1;
             let agora = match ficha_de(&arquivo) {

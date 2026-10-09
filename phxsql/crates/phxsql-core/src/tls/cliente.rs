@@ -70,6 +70,22 @@ const ASSINATURAS: [u16; 6] = [
     RSA_PSS_RSAE_SHA512,
 ];
 
+/// `signature_algorithms_cert` (RFC 8446 §4.2.3).
+const EXT_ASSINATURAS_CERT: u16 = 50;
+
+/// As assinaturas que a validacao de cadeia (`crate::cadeia`) confere num
+/// CERTIFICADO: ECDSA P-256/P-384, RSA PKCS#1 v1.5 com SHA-256/384/512 e
+/// Ed25519. O `rsa_pss_rsae_*` em certificado nao: a `cadeia` recusa PSS em
+/// certificado, e anunciar o que se recusa convidaria a falha.
+const ASSINATURAS_CERT: [u16; 6] = [
+    ECDSA_SECP256R1_SHA256,
+    ECDSA_SECP384R1_SHA384,
+    0x0401, // rsa_pkcs1_sha256
+    0x0501, // rsa_pkcs1_sha384
+    0x0601, // rsa_pkcs1_sha512
+    ED25519,
+];
+
 /// A maior mensagem `Certificate` aceita. Uma cadeia publica de tres
 /// certificados RSA fica em 4-6 KiB; o teto da folga sem deixar o servidor
 /// alheio fazer este processo alocar 16 MiB (o campo e de 24 bits) -- a
@@ -207,6 +223,16 @@ pub(super) fn ola_do_cliente(
     e.extend_from_slice(&extensao(ext::GRUPOS, &vetor16(&grupos)));
     let ass: Vec<u8> = ASSINATURAS.iter().flat_map(|a| a.to_be_bytes()).collect();
     e.extend_from_slice(&extensao(ext::ASSINATURAS, &vetor16(&ass)));
+    // §4.2.3: sem esta extensao, a `signature_algorithms` vale TAMBEM para as
+    // assinaturas dos certificados -- e ela nao pode ter o `rsa_pkcs1_*`, que
+    // o 1.3 proibe no CertificateVerify. Um servidor estrito escolheria entao
+    // uma cadeia sem RSA PKCS#1, que e quase toda a WebPKI. A lista e o que
+    // a `cadeia` confere (T6c-2), e so isso.
+    let ass_cert: Vec<u8> = ASSINATURAS_CERT
+        .iter()
+        .flat_map(|a| a.to_be_bytes())
+        .collect();
+    e.extend_from_slice(&extensao(EXT_ASSINATURAS_CERT, &vetor16(&ass_cert)));
     let mut chave = troca.grupo().to_be_bytes().to_vec();
     chave.extend_from_slice(&vetor16(&troca.publica()));
     e.extend_from_slice(&extensao(ext::CHAVES, &vetor16(&chave)));
@@ -1338,6 +1364,76 @@ mod testes {
             .unwrap_err()
             .to_string();
         assert!(e.contains("cadeia X.509"), "{e}");
+    }
+
+    /// T6e: o `ClientHello` leva a `signature_algorithms_cert` com o que a
+    /// cadeia confere -- lido pelo `-trace` do `openssl s_server`, que parte
+    /// o ClientHello por conta propria e nomeia a extensao.
+    #[test]
+    fn o_client_hello_leva_signature_algorithms_cert_lido_pelo_openssl() {
+        let d = dir("sig-cert");
+        let (cert, chave, pino) = identidade_p256(&d);
+        let porta = TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port();
+        let filho = Command::new("openssl")
+            .args([
+                "s_server", "-www", "-tls1_3", "-trace", "-naccept", "1", "-accept",
+            ])
+            .arg(porta.to_string())
+            .arg("-cert")
+            .arg(&cert)
+            .arg("-key")
+            .arg(&chave)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        let mut s = SServer(filho, porta);
+        let mut f = None;
+        for _ in 0..100 {
+            if let Ok(x) = TcpStream::connect(("127.0.0.1", porta)) {
+                f = Some(x);
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        let f = f.expect("o s_server nao abriu");
+        f.set_read_timeout(Some(Duration::from_secs(20))).unwrap();
+        let op = OpcoesCliente {
+            nome: Some("localhost"),
+            alpn: &[],
+            confianca: Confianca::Pino(pino),
+        };
+        let mut t = conectar(f, &op).expect("o aperto falhou");
+        t.write_all(b"GET / HTTP/1.0\r\n\r\n").unwrap();
+        let mut v = Vec::new();
+        let _ = t.read_to_end(&mut v);
+        drop(t);
+        let _ = s.0.wait();
+        let mut traco = String::new();
+        s.0.stdout
+            .take()
+            .unwrap()
+            .read_to_string(&mut traco)
+            .unwrap();
+        let ext = traco
+            .split("extension_type=signature_algorithms_cert")
+            .nth(1)
+            .unwrap_or_else(|| panic!("o ClientHello nao levou a extensao:\n{traco}"));
+        // O OpenSSL 3.0 nomeia a extensao (50) e mostra o corpo em hex: a
+        // lista de 12 bytes, ecdsa P-256/P-384, rsa_pkcs1 SHA-256/384/512 e
+        // ed25519 -- e nenhum `rsa_pss` (08 04..08 06), que a cadeia recusa
+        // em certificado.
+        let bloco = ext.split("extension_type=").next().unwrap();
+        assert!(bloco.contains("(50), length=14"), "{bloco}");
+        assert!(
+            bloco.contains("00 0c 04 03 05 03 04 01-05 01 06 01 08 07"),
+            "a lista nao e a esperada:\n{bloco}"
+        );
     }
 
     #[test]

@@ -4722,6 +4722,14 @@ incluindo multi-source e failover.
       "diario": {"expurgo": true, "consumidores": ["central"],
                  "prazo_dias": 30}
 
+    QUEM CONFIRMA (pedido 728). Em servidor COM cadastro de usuarios, cada
+    nome de "consumidores" e o LOGIN com que a replica entra no caixa
+    (replicacao.origens[].usuario do lado dela), e nao o id_servidor dela: a
+    confirmacao vale pela sessao autenticada, e o campo "consumidor" do pedido
+    e ignorado. Assim outra sessao com direito de replicar nao confirma em nome
+    do central para forcar o expurgo. Em servidor SEM cadastro (so o token),
+    o nome continua sendo o id_servidor que a replica diz.
+
     Sai do .log so o volume que o central confirmou ter no disco, ou o que
     passou de prazo_dias (30, decisao do dono) mesmo sem confirmacao: o caixa
     nunca para de vender. O central que volta depois do prazo ve que ficou
@@ -4742,9 +4750,15 @@ incluindo multi-source e failover.
         so para ensaio); a bancada usou 30 s. Com 30 dias de verdade, nao.
       - So a replica fiel e o espelho se refazem pelo retrato; o par
         bidirecional (papel multi) nao.
-      - O retrato copia o database inteiro numa tomada da trava global do
-        caixa: a venda espera a copia (megabytes, fracao de segundo; nao
-        medido em database grande).
+      - O retrato copia em DUAS PASSADAS, pelo mesmo motor do backup
+        (pedido 729): a copia grossa corre sem trava, e a venda espera so a
+        segunda passada, que descarrega o database e recopia o que mudou.
+        Medido (99 MiB, release, cache quente): database parado, 0 ms de venda
+        parada (antes, 52-65 ms); com venda gravando na MESMA tabela durante o
+        retrato, 51-56 ms -- o arquivo que mudou e recopiado inteiro.
+      - Retratos ao mesmo tempo: no maximo 4, um por conexao, e so com espaco
+        em disco para a copia mais 256 MiB; o retrato some quando a conexao
+        que o pediu cai, e o arranque apaga o que sobrou.
 
     A LOJA NO CENTRAL (pedido 679). Cada caixa chega ao central no database
     dele (caixa01, caixa02, ...), e a loja se le EMPILHANDO os caixas com

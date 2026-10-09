@@ -715,7 +715,7 @@ A tabela abaixo sai de `python3 docs/geradores/catracas-do-trecho-vivo.py`, que 
 <!-- GERADO: catracas-do-trecho-vivo.py -->
 | Régua | Lado | Valor | Medido | Nasceu |
 |---|---|---:|---:|---|
-| `TETO_TRECHO_MORTO` | teto | 0 | **0** | 16/09, em 8; desceu para 0 no mesmo dia |
+| `TETO_TRECHO_MORTO` | teto | 0 | **1** | 16/09, em 8; desceu para 0 no mesmo dia |
 | `TETO_TRECHO_AMBIGUO` | teto | 0 | **0** | 16/09, nesta frente |
 | `TETO_TESTE_MORTO` | teto | 0 | **0** | 16/09 |
 | `TETO_TESTE_FORA_DO_BINARIO` | teto | 0 | **0** | 16/09, nesta frente |

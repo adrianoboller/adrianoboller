@@ -350,3 +350,86 @@ fn a_marca_v8_volta_com_o_bilhete_e_sem_o_claro() {
     assert_eq!(m.operacoes[0].linha[1], Value::Str(SEGREDO.into()));
     assert_eq!(m.operacoes[1].motivo, SEGREDO_MOTIVO);
 }
+
+// --------------------------------------- 6. o cabecalho no selo (pedido 735)
+
+/// Uma marca v8 de tres operacoes; devolve o caminho e os bytes.
+fn marca_v8_de_tres(d: &std::path::Path, id: u64) -> std::path::PathBuf {
+    let mut ops = escritas();
+    ops.push(ops[1].clone());
+    transacao::gravar_marca_posicional(
+        d,
+        id,
+        1_700_000_000_000,
+        &ops,
+        transacao::Bilhete {
+            tx: 0x0abc_0000,
+            versoes_antes: &[1, 1, 2],
+        },
+    )
+    .unwrap()
+}
+
+/// Regrava o CRC do cabecalho da v8 (bytes 0..80, CRC em 80..84) -- o que
+/// quem edita o arquivo faz depois de mexer.
+fn refazer_o_crc_do_cabecalho(b: &mut [u8]) {
+    let crc = phxsql_core::crc::crc32(&b[..80]);
+    b[80..84].copy_from_slice(&crc.to_le_bytes());
+}
+
+/// **Pedido 735 (M2).** O `n_operacoes`, o `tx` e o carimbo do cabecalho da
+/// v8 so tinham o CRC, e CRC nao e selo: quem baixa o `n` de 3 para 2 e refaz o
+/// CRC tinha uma marca que ABRIA com duas operacoes -- e a recuperacao aplicava
+/// meia transacao, dada como completada. No selo de cada operacao, a marca
+/// mexida deixa de abrir (`NaoConfere`).
+///
+/// Vermelho medido antes do conserto: a marca com o `n` baixado abria com 2
+/// operacoes; a com o `tx` trocado abria com o `tx` falso.
+#[test]
+fn o_cabecalho_da_v8_mexido_nao_abre() {
+    let _t = UM_DE_CADA_VEZ.lock().unwrap_or_else(|e| e.into_inner());
+    let d = DirTemp::novo("marca-v8-mexida");
+    cofre::definir(SENHA, RAPIDO).unwrap();
+
+    let caminho = marca_v8_de_tres(&d, 106);
+    let mut b = std::fs::read(&caminho).unwrap();
+    b[28..32].copy_from_slice(&2u32.to_le_bytes());
+    refazer_o_crc_do_cabecalho(&mut b);
+    std::fs::write(&caminho, &b).unwrap();
+    match ler_marca(&caminho).unwrap() {
+        Leitura::NaoConfere => {}
+        Leitura::Aberta(m) => panic!(
+            "a marca com o n_operacoes baixado abriu com {} operacao(oes): a \
+             recuperacao aplicaria meia transacao",
+            m.operacoes.len()
+        ),
+        outra => panic!("{outra:?}"),
+    }
+
+    let caminho = marca_v8_de_tres(&d, 107);
+    let mut b = std::fs::read(&caminho).unwrap();
+    b[72..80].copy_from_slice(&0x0def_0000u64.to_le_bytes());
+    refazer_o_crc_do_cabecalho(&mut b);
+    std::fs::write(&caminho, &b).unwrap();
+    assert!(
+        matches!(ler_marca(&caminho).unwrap(), Leitura::NaoConfere),
+        "a marca com o tx trocado abriu: a recuperacao juntaria eventos de outra transacao"
+    );
+
+    let caminho = marca_v8_de_tres(&d, 108);
+    let mut b = std::fs::read(&caminho).unwrap();
+    b[20..28].copy_from_slice(&1_600_000_000_000i64.to_le_bytes());
+    refazer_o_crc_do_cabecalho(&mut b);
+    std::fs::write(&caminho, &b).unwrap();
+    assert!(
+        matches!(ler_marca(&caminho).unwrap(), Leitura::NaoConfere),
+        "a marca com o carimbo trocado abriu"
+    );
+
+    // E a intacta continua abrindo, inteira.
+    let caminho = marca_v8_de_tres(&d, 109);
+    match ler_marca(&caminho).unwrap() {
+        Leitura::Aberta(m) => assert_eq!((m.operacoes.len(), m.tx), (3, 0x0abc_0000)),
+        outra => panic!("a v8 intacta nao abriu: {outra:?}"),
+    }
+}

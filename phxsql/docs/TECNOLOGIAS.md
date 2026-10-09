@@ -34,20 +34,20 @@ foi estimado no lugar de uma medição que faltou.
 <!-- GERADO: bloco_linguagens_rust() -->
 | crate | arquivos .rs | codigo | teste | comentario | vazias | total |
 |---|---:|---:|---:|---:|---:|---:|
-| `phxsql-cli` | 1 | 872 | 119 | 160 | 83 | 1234 |
-| `phxsql-cmd` | 2 | 621 | 110 | 210 | 65 | 1006 |
-| `phxsql-core` | 41 | 16068 | 6510 | 4980 | 2095 | 29653 |
+| `phxsql-cli` | 1 | 875 | 119 | 162 | 83 | 1239 |
+| `phxsql-cmd` | 2 | 664 | 110 | 220 | 67 | 1061 |
+| `phxsql-core` | 48 | 19086 | 6790 | 5413 | 2308 | 33597 |
 | `phxsql-ffi` | 7 | 1524 | 1803 | 930 | 297 | 4554 |
-| `phxsql-odbc` | 7 | 3339 | 1663 | 1206 | 300 | 6508 |
-| `phxsql-server` | 176 | 94149 | 19244 | 37439 | 7466 | 158298 |
+| `phxsql-odbc` | 7 | 3462 | 1663 | 1218 | 304 | 6647 |
+| `phxsql-server` | 178 | 97008 | 19979 | 38348 | 7619 | 162954 |
 | `phxsql-sql` | 10 | 7377 | 4179 | 2899 | 852 | 15307 |
-| `phxsql-store` | 33 | 28153 | 6372 | 12402 | 2768 | 49695 |
+| `phxsql-store` | 33 | 29774 | 6501 | 12683 | 2854 | 51812 |
 | `phxzip` | 9 | 3074 | 501 | 804 | 284 | 4663 |
-| **total** | **286** | **155177** | **40501** | **61030** | **14210** | **270918** |
+| **total** | **295** | **162844** | **41645** | **62677** | **14668** | **281834** |
 
-Proporcao teste/codigo (so `src/`, sem comentario nem linha vazia): **40501/155177 = 0.26×**.
+Proporcao teste/codigo (so `src/`, sem comentario nem linha vazia): **41645/162844 = 0.26×**.
 
-Alem do `src/`: **96** programas de medicao em `examples/` (23278 linhas — bancada em Rust, nao produto nem teste) e **154** arquivos em `tests/` de integracao fora de `src/` (56055 linhas).
+Alem do `src/`: **97** programas de medicao em `examples/` (23517 linhas — bancada em Rust, nao produto nem teste) e **167** arquivos em `tests/` de integracao fora de `src/` (61735 linhas).
 <!-- /GERADO -->
 
 A proporção teste/código sai medida no bloco acima, não digitada aqui. O
@@ -74,17 +74,20 @@ Lista extraida de `crates/phxsql-server/src/http.rs` (todo `include_str!`/`inclu
 
 | arquivo embutido | linhas | KiB |
 |---|---:|---:|
-| `ui/index.html` | 16008 | 909.5 |
-| `ui/grid/phx-grid.css` | 178 | 12.8 |
-| `ui/grid/phx-grid.js` | 1860 | 90.1 |
+| `ui/index.html` | 16242 | 930.0 |
+| `ui/grid/phx-grid.css` | 194 | 14.3 |
+| `ui/grid/phx-grid.js` | 1864 | 90.3 |
 | `ui/diagrama-er.js` | 712 | 29.1 |
 | `ui/telemetria.css` | 447 | 19.8 |
 | `ui/telemetria.js` | 1823 | 89.4 |
 | `ui/multitela.css` | 156 | 8.6 |
-| `ui/multitela.js` | 1588 | 69.0 |
-| `ui/claude.js` | 1533 | 77.8 |
-| `ui/grid/CHANGELOG-phx-grid.md` | 232 | 30.2 |
-| **total (10 arquivos)** | **24537** | **1336.2** |
+| `ui/multitela.js` | 1588 | 69.1 |
+| `ui/claude.js` | 1618 | 82.6 |
+| `ui/grid/CHANGELOG-phx-grid.md` | 248 | 31.1 |
+| **total (10 arquivos)** | **24892** | **1364.3** |
+
+Embutidos pelo `http.rs` **fora** de `ui/`, e por isso **fora** do total acima (1 arquivo(s)):
+- `crates/phxzip-web/ui/fonte/exo2-latin.woff2`, 39.9 KiB
 
 Em `ui/` mas **fora** do `include_str!`/`include_bytes!` (4 arquivos, não embutidos no binário):
 - `crates/phxsql-server/ui/explorador.css`
@@ -108,11 +111,11 @@ mesmo motivo que o rodapé já errou uma vez.
 <!-- GERADO: bloco_outras_linguagens() -->
 | o que | onde | arquivos | linhas |
 |---|---|---:|---:|
-| JavaScript (prova ponta a ponta) | `testes-web/` | 76 | 17201 |
-| Python (bancada de medicao) | `bancada/` | 154 | 82487 |
-| Shell (empacotar, zelador, provas) | todo o repositorio | 27 | 3925 |
-| Markdown (documentacao tecnica) | `docs/`, **recursivo** (inclui `cognicao/`, `dossie/`, `propostas/`, `pmo/`) | 680 | 143473 |
-| Python (geradores de documentacao) | `docs/`, **recursivo** (`dossie/`, `pmo/`, `status/`, `planilha/`, `tecnologias/`, `geradores/`) | 44 | 19297 |
+| JavaScript (prova ponta a ponta) | `testes-web/` | 79 | 18012 |
+| Python (bancada de medicao) | `bancada/` | 156 | 83641 |
+| Shell (empacotar, zelador, provas) | todo o repositorio | 27 | 3951 |
+| Markdown (documentacao tecnica) | `docs/`, **recursivo** (inclui `cognicao/`, `dossie/`, `propostas/`, `pmo/`) | 698 | 145329 |
+| Python (geradores de documentacao) | `docs/`, **recursivo** (`dossie/`, `pmo/`, `status/`, `planilha/`, `tecnologias/`, `geradores/`) | 44 | 19336 |
 
 A linha «Markdown (documentacao tecnica)» acima **exclui o proprio `docs/TECNOLOGIAS.md`** da contagem — ele e a SAIDA deste extrator, e contar a saida como entrada faz cada gravacao mudar o numero que a gravacao seguinte vai ler (pedido 404: tres corridas seguidas sem edicao nenhuma publicaram 106.750 -> 106.752 -> 106.753 linhas, nunca um ponto fixo). Mesmo molde da §17 da setima pagina de status, que escreve «— (esta pagina)» em vez de medir a si mesma.
 <!-- /GERADO -->
@@ -202,7 +205,7 @@ confere cada um contra vetor publicado.
 | arquivo | o que implementa | norma citada no proprio codigo | teste(s) que conferem |
 |---|---|---|---|
 | `sha1.rs` | SHA-1, so para falar o protocolo do MySQL(R). | FIPS 180-4 | `vetores_do_fips_180_4` |
-| `sha512.rs` | SHA-512, conferido contra o FIPS 180-4. | FIPS 180-4, RFC 8032 | `vetores_oficiais` |
+| `sha512.rs` | SHA-512, conferido contra o FIPS 180-4. | FIPS 180-4, RFC 6234, RFC 8032 | `sha384_dos_vetores_da_rfc_6234`, `vetores_oficiais` |
 | `hash.rs` | SHA-256, HMAC-SHA256 e PBKDF2-HMAC-SHA256, sem dependencias externas. | FIPS 180-4, RFC 2104, RFC 2898, RFC 4231, RFC 6070 | `sha256_vetores_oficiais`, `hmac_vetores_rfc4231`, `pbkdf2_vetores_conhecidos`, `pbkdf2_senha_maior_que_o_bloco_vetores_wycheproof` |
 | `ed25519.rs` | Ed25519: assinatura com chave publica e privada, conferida contra a RFC 8032. | RFC 8032 | `vetores_da_rfc_8032`, `o_vetor_de_1023_bytes` |
 | `x25519.rs` | X25519: a troca de chaves da RFC 7748, sem dependencias externas. | RFC 7748, RFC 8032 | `vetor_1_da_secao_5_2`, `vetor_2_da_secao_5_2` |
@@ -213,7 +216,7 @@ confere cada um contra vetor publicado.
 | `crc.rs` | CRC-32 (IEEE 802.3, refletido, polinomio 0xEDB88320). | (nenhuma citada) | `vetores_conhecidos` |
 | `json.rs` | Leitor e escritor de JSON, sem dependencias externas. | RFC 8259 | (nenhum teste com esse padrao de nome) |
 | `zip.rs` | Arquivo ZIP: escrita e leitura, com o DEFLATE escrito aqui. | RFC 1951 | (nenhum teste com esse padrao de nome) |
-| `pg/scram.rs` | SCRAM-SHA-256 (RFC 5802 + RFC 7677), do lado do CLIENTE. | RFC 5802, RFC 7677 | `troca_do_rfc_7677` |
+| `pg/scram.rs` | SCRAM-SHA-256 (RFC 5802 + RFC 7677), do lado do CLIENTE. | RFC 5802, RFC 5929, RFC 7677 | `troca_do_rfc_7677` |
 <!-- /GERADO -->
 
 A coluna de teste é achada por padrão de **nome** de função (`vetor`, `rfc`,
@@ -317,10 +320,10 @@ Conferidores em `crates/phxsql-server/src/`: `conferidor.rs`, `conferidor_botoes
 | `TETO_DO_PRAZO_DO_FIREWALL_S` | 120 | `crates/phxsql-server/src/blacklist.rs` |
 | `TETO_DE_TABELAS_NO_PULSO` | 512 | `crates/phxsql-server/src/cluster.rs` |
 | `TETO_DO_NOME_NO_PULSO` | 256 | `crates/phxsql-server/src/cluster.rs` |
-| `TETO_NUMERO_CRAVADO_EM_TELA` | 6 | `crates/phxsql-server/src/conferidor.rs` |
+| `TETO_NUMERO_CRAVADO_EM_TELA` | 3 | `crates/phxsql-server/src/conferidor.rs` |
 | `TETO_COLADO` | 0 | `crates/phxsql-server/src/conferidor.rs` |
 | `TETO_FRASE_REPETIDA` | 0 | `crates/phxsql-server/src/conferidor.rs` |
-| `TETO_ROTULOS_E_CRASE` | 861 | `crates/phxsql-server/src/conferidor.rs` |
+| `TETO_ROTULOS_CRASE_E_JS` | 798 | `crates/phxsql-server/src/conferidor.rs` |
 | `TETO_BOTAO_SEM_PROVA` | 0 | `crates/phxsql-server/src/conferidor_botoes.rs` |
 | `TETO_LEITURA_FORA_DO_CANAL` | 0 | `crates/phxsql-server/src/conferidor_canal.rs` |
 | `TETO_TABELA_NA_MAO` | 0 | `crates/phxsql-server/src/conferidor_grades.rs` |
@@ -345,13 +348,14 @@ Conferidores em `crates/phxsql-server/src/`: `conferidor.rs`, `conferidor_botoes
 | `TETO_PIVOT` | 5_000_000 | `crates/phxsql-server/src/servidor/servico_composicao_01.rs` |
 | `TETO_JUNCAO` | 500_000 | `crates/phxsql-server/src/servidor/servico_composicao_01.rs` |
 | `TETO_ANINHAMENTO` | 8 | `crates/phxsql-server/src/servidor/servico_consulta_01.rs` |
+| `TETO_DE_RETRATOS` | 4 | `crates/phxsql-server/src/servidor/servico_diario_01.rs` |
 | `TETO_COLETA_ROWIDS` | 1_000_000 | `crates/phxsql-server/src/servidor/servico_leitura_01.rs` |
 | `TETO_DE_EVENTOS_POR_LOTE` | 5_000 | `crates/phxsql-server/src/servidor/servico_quorum_01.rs` |
 | `TETO_DO_LOTE_SERVIDO` | 16 * 1024 * 1024 | `crates/phxsql-server/src/servidor/servico_replicacao_02.rs` |
 
-**37** catracas (`TETO*`) encontradas em `crates/phxsql-server/src/`.
+**38** catracas (`TETO*`) encontradas em `crates/phxsql-server/src/`.
 
-`bancada/guardas/catalogo.py` cataloga **845** defeitos repostos, contados de `len(GUARDAS)` depois de importar o modulo (nao por regex no texto -- entradas com `trocas` tem mais de um `{` cada, e uma contagem de chaves as conta em dobro ou mais). Linhas do arquivo: 26719. Refazer a prova: `python3 bancada/guardas/provar-guardas.py`.
+`bancada/guardas/catalogo.py` cataloga **857** defeitos repostos, contados de `len(GUARDAS)` depois de importar o modulo (nao por regex no texto -- entradas com `trocas` tem mais de um `{` cada, e uma contagem de chaves as conta em dobro ou mais). Linhas do arquivo: 27261. Refazer a prova: `python3 bancada/guardas/provar-guardas.py`.
 <!-- /GERADO -->
 
 - **Ponta a ponta, pelo navegador**: os arquivos `.mjs` de `testes-web/` —
@@ -658,7 +662,7 @@ proposta de voltar sem medição nova.
 ### 5.1 Pedidos recusados, do próprio `PENDENCIAS.md`
 
 <!-- GERADO: bloco_recusados() -->
-`docs/PENDENCIAS.md` tem **718** pedidos numerados; **134** trazem a palavra RECUSADO no proprio texto:
+`docs/PENDENCIAS.md` tem **739** pedidos numerados; **139** trazem a palavra RECUSADO no proprio texto:
 
 | # | pedido |
 |---:|---|
@@ -695,7 +699,11 @@ proposta de voltar sem medição nova.
 | 685 | **A transação acima do teto da réplica (64 MiB) é RECUSADA na origem, no COMMIT, em vez de chegar em pedaços** |
 | 686 | **`inserir_lote`, `importar` e `carga` fora de transação gravam numa tomada só sem passar pela pré-conferência do teto: a réplica ainda pode partir a carga** |
 | 687 | **O `phxsqld` não trata SIGTERM: a parada normal mata o processo sem fechar, e o `.ndx` fica marcado como «ficou para trás numa queda»** |
+| 706 | **O diário do caixa não tem expurgo: cresce ~1,6 KB por venda sem limite, e numa loja que fica meses no ar enche o disco do caixa** |
 | 707 | **PEDIDO DO DONO — o painel de bolhas (no molde do SQL Check da Idera) vira um aquário de monitoramento: esticável ou em tela própria, bolhas que estouram ao terminar, colisão, cor e peso pela gravidade, e matar a bolha** |
+| 721 | **A rede do 426 ainda serve para alguma escrita? O `congelada_no_alcance` olha o componente da chave inteiro, mais largo do que a pré-conferência do 448 abre** |
+| 727 | **ALTO: o pedaço do retrato não está amarrado ao database nem à sessão — o id é `agora_ms()`, adivinhável, e quem tem `replicar` só em `loja` lê o `.reg` cru de `rh` por fio em claro (e solta o retrato do outro)** |
+| 730 | **MÉDIO: a restrição de nome excluída `secreto.exemplo.com` não segura o SAN `*.exemplo.com` (classe do CVE-2025-61727 do Go)** |
 | 191 | **Bateria de testes de utilização padrão: criar base, incluir 20.000 registros em tabela complexa, com e sem binários e memos** |
 | 192 | **Testes de paginação alfabética** |
 | 194 | **Senha própria por tabela na cifra em repouso — medir primeiro, decidir depois** |
@@ -719,6 +727,7 @@ proposta de voltar sem medição nova.
 | 258 | **`Volumes::sincronizar` sincroniza todo descritor aberto sem pular os limpos: 8 `fsync` por inserir e 9 por excluir no regime por operação** |
 | 259 | **O excluir do padrão custa 24–28 µs mesmo sem fsync, contra 3,7–4,4 do inserir: 8 `write` e ~5 `openat` por exclusão** |
 | 262 | **Gatilho AFTER que grava pela mesma sessão dentro do COMMIT não chega a gravar** |
+| 263 | **Onze guardas do catálogo estavam QUEBRADAS — o `trecho` que repõe o defeito não existe mais, então a guarda não pode nem ser tentada** |
 | 265 | **Um gerador de telemetria e logs medidos — a seção NÃO NASCE na sétima página** |
 | 267 | **`panico_dentro_do_atender_devolve_a_vaga_da_porta_de_dados` exige que os TRÊS pânicos aconteçam, e sob carga o terceiro não chega** |
 | 268 | **A migração `Criptografar`/`Descriptografar` — declarar em `cifra.tabelas` não cifra o que já está gravado** |

@@ -988,10 +988,13 @@ fn propagar_padrao_continua_igual() {
 fn config_mostra_a_lista_viva_do_cluster() {
     let (s, _, _guarda) = servidor_em_cluster("config-vivo", Cadastro::default());
     let pino = "ab".repeat(32);
+    // Pedido 740: o no que fala TLS por pino tem de aparecer como tal na
+    // lista viva, senao a tela o mostra «sem pino».
+    let tls = phxsql_core::tls::pino_em_texto(&[0xcd; 32]);
     s.executar(
         "cluster_no_acrescentar",
         &pedido(&format!(
-            r#"{{"id":"no3","endereco":"10.0.0.3","porta":5400,"chave_do_fio":"{pino}","propagar":false}}"#
+            r#"{{"id":"no3","endereco":"10.0.0.3","porta":5400,"chave_do_fio":"{pino}","pino_tls":"{tls}","propagar":false}}"#
         )),
         &Sessao::default(),
     )
@@ -1028,7 +1031,13 @@ fn config_mostra_a_lista_viva_do_cluster() {
         no3.booleano_ou("tem_pino", false),
         "a lista viva diz menos que a do arquivo"
     );
+    assert!(
+        no3.booleano_ou("tem_pino_tls", false),
+        "a lista viva nao diz que o no fala TLS por pino: {}",
+        no3.escrever()
+    );
     assert!(!cfg.escrever().contains(&pino), "o pino vazou no config");
+    assert!(!cfg.escrever().contains(&tls), "o pino TLS vazou no config");
 }
 
 // ------------------------------------------------ A11: o pulso nao e oraculo

@@ -520,3 +520,167 @@ fn tls_ca_de_arquivo_le_e_recusa_o_torto() {
     assert!(ancoras(d.0.join("vazio.pem").to_str().unwrap()).is_err());
     assert!(ancoras(d.0.join("nao-existe.pem").to_str().unwrap()).is_err());
 }
+
+// ------------------------------------------------- pedido 730 (SEC) ----
+
+#[test]
+fn o_curinga_e_o_conjunto_que_ele_cobre() {
+    // Um rotulo sobre o curinga: e um dos nomes dele.
+    assert!(curinga_toca("exemplo.com", "secreto.exemplo.com"));
+    // O dominio do curinga, ou um acima: todos os nomes dele.
+    assert!(curinga_toca("exemplo.com", "exemplo.com"));
+    assert!(curinga_toca("exemplo.com", "com"));
+    assert!(curinga_toca("exemplo.com", ".exemplo.com"));
+    // Dois rotulos sobre o curinga, ou subdominio estrito de um nome dele:
+    // o curinga cobre um rotulo so (RFC 9525), entao nao alcanca.
+    assert!(!curinga_toca("exemplo.com", "a.secreto.exemplo.com"));
+    assert!(!curinga_toca("exemplo.com", ".secreto.exemplo.com"));
+    // Outro dominio.
+    assert!(!curinga_toca("exemplo.com", "outro.org"));
+    assert!(!curinga_toca("exemplo.com", "plexemplo.com"));
+}
+
+/// **Pedido 730.** A intermediaria EXCLUI `secreto.exemplo.com`, e a folha
+/// tem SAN `*.exemplo.com` -- que cobre `secreto.exemplo.com`. Lido como
+/// texto o curinga passava na exclusao, e o `dns_casa` o aceitava depois
+/// para aquele host. Agora a folha e recusada, para qualquer nome.
+///
+/// O `openssl verify` 3.0 desta maquina da OK nesta cadeia -- e a mesma
+/// classe de defeito (o CVE-2025-61727 do Go), e o teste o registra em vez
+/// de usa-lo como gabarito. O controle (folha sem curinga, nome fora da
+/// exclusao) passa nos dois.
+#[test]
+fn curinga_que_cobre_um_nome_excluido_e_recusado() {
+    let inter_ex =
+        format!("{EXT_INTER}\nnameConstraints=critical,excluded;DNS:secreto.exemplo.com");
+    for (rotulo, san, deve) in [
+        ("730-curinga", "DNS:*.exemplo.com", false),
+        ("730-controle", "DNS:www.exemplo.com", true),
+    ] {
+        let d = Dir::novo(&format!("cadeia-{rotulo}"));
+        let ef = format!(
+            "basicConstraints=CA:FALSE\nkeyUsage=critical,digitalSignature\n\
+             extendedKeyUsage=serverAuth\nsubjectAltName={san}"
+        );
+        let (raiz, inter, folha) = cadeia_do_openssl(&d.0, &inter_ex, &ef, "2");
+        let raizes = [raiz];
+        for nome in ["secreto.exemplo.com", "www.exemplo.com"] {
+            let r =
+                validar_servidor_tls(&[folha.clone(), inter.clone()], &raizes, nome, agora_real());
+            let esperado = deve && nome == "www.exemplo.com";
+            assert_eq!(r.is_ok(), esperado, "{rotulo} {nome}: {r:?}");
+        }
+        let deles = openssl(
+            &d.0,
+            &[
+                "verify",
+                "-x509_strict",
+                "-purpose",
+                "sslserver",
+                "-CAfile",
+                "raiz.pem",
+                "-untrusted",
+                "inter.pem",
+                "-verify_hostname",
+                "secreto.exemplo.com",
+                "folha.pem",
+            ],
+        );
+        if rotulo == "730-curinga" {
+            eprintln!(
+                "openssl verify na cadeia do 730: {}",
+                if deles.status.success() {
+                    "OK (o defeito, la)"
+                } else {
+                    "recusa"
+                }
+            );
+        } else {
+            assert!(!deles.status.success(), "o controle: www nao e secreto");
+        }
+    }
+}
+
+/// A restricao de nome da ANCORA vale (pedido 730): raiz privada limitada a
+/// `exemplo.com` nao emite para `outro.org`, nem por intermediaria sem
+/// restricao propria. O `openssl verify` concorda.
+#[test]
+fn restricao_de_nome_da_ancora_vale() {
+    let d = Dir::novo("cadeia-730-ancora");
+    let ok = |args: &[&str]| {
+        let s = openssl(&d.0, args);
+        assert!(s.status.success(), "{}", String::from_utf8_lossy(&s.stderr));
+    };
+    ok(&[
+        "req",
+        "-x509",
+        "-newkey",
+        "ec",
+        "-pkeyopt",
+        "ec_paramgen_curve:P-256",
+        "-nodes",
+        "-keyout",
+        "raiz.key",
+        "-out",
+        "raiz.pem",
+        "-days",
+        "2",
+        "-subj",
+        "/CN=Raiz restrita",
+        "-addext",
+        "basicConstraints=critical,CA:TRUE",
+        "-addext",
+        "keyUsage=critical,keyCertSign",
+        "-addext",
+        "nameConstraints=critical,permitted;DNS:exemplo.com",
+    ]);
+    std::fs::write(
+        d.0.join("ext"),
+        "[f]\nbasicConstraints=CA:FALSE\nextendedKeyUsage=serverAuth\nsubjectAltName=DNS:outro.org\n",
+    )
+    .unwrap();
+    ok(&[
+        "genpkey",
+        "-algorithm",
+        "EC",
+        "-pkeyopt",
+        "ec_paramgen_curve:P-256",
+        "-out",
+        "f.key",
+    ]);
+    ok(&[
+        "req",
+        "-new",
+        "-key",
+        "f.key",
+        "-subj",
+        "/CN=outro.org",
+        "-out",
+        "f.csr",
+    ]);
+    ok(&[
+        "x509",
+        "-req",
+        "-in",
+        "f.csr",
+        "-CA",
+        "raiz.pem",
+        "-CAkey",
+        "raiz.key",
+        "-CAcreateserial",
+        "-days",
+        "1",
+        "-extfile",
+        "ext",
+        "-extensions",
+        "f",
+        "-out",
+        "f.pem",
+    ]);
+    let raiz = der_de_pem(&d.0.join("raiz.pem"));
+    let folha = der_de_pem(&d.0.join("f.pem"));
+    let r = validar_servidor_tls(&[folha], &[raiz], "outro.org", agora_real());
+    assert!(r.is_err(), "a raiz restrita a exemplo.com emitiu outro.org");
+    let deles = openssl(&d.0, &["verify", "-CAfile", "raiz.pem", "f.pem"]);
+    assert!(!deles.status.success(), "o openssl aceitou");
+}

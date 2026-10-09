@@ -1,6 +1,10 @@
 # Camada nova antes da marca esconde a rede velha: a guarda de uma camada passa por engano
 
-**Estado:** PENDENTE
+**Estado:** FRUTÍFERO
+
+**Evidência:** `crates/phxsql-server/tests/commit-pelo-soquete.rs::o_commit_contra_a_tabela_congelada_nao_sai_pela_metade`; `ba65032e`
+
+**Validação (08/10/2026):** guarda `commit-sem-as-duas-recusas-antes-da-marca` com veredito PROVADA em `bancada/guardas/ultima-corrida.json` (corrida de 08/10/2026 20:17): o provador repôs o defeito (as duas camadas tiradas), o teste caiu, e passa com o conserto. Promovido em 08/10/2026 pelo papel H; a hipótese (b) morreu e está na §3.
 
 **Descoberto em 08/10/2026, 16:50**, pelo papel F, medindo o pedido 720.
 
@@ -54,6 +58,8 @@ pré-conferência ligada é verde por desenho). O `congelada_no_alcance` olha o
 componente da chave inteiro, mais largo que o que a pré-conferência abre;
 não medi se existe escrita cuja passada abre uma tabela que a pré-conferência
 não abre — é a hipótese que sobra para dizer se a rede ainda compra algo.
+
+**Alcance, não lei nova:** isto é o alcance de «teste que passa por engano» (papel F): a guarda de uma camada só vale com a camada vizinha também tirada.
 
 **Medido depois (pedido 721, 08/10/2026):** matriz de 11 escritas numa cópia
 do HEAD `a0325c80`, com mãe, filha e neta encadeadas por cascata. Com a rede, ela

@@ -49,7 +49,19 @@ use crate::config::{ChaveMestra, CifraDoDblink, Segredo};
 /// que e exatamente o estrago que o binario anterior faria no formato 2 se
 /// achasse a lista (ver [`LISTA_DO_FORMATO_2`]). A recusa sobe pelo `?` do
 /// arranque: o servidor NAO sobe, e isso esta escrito no MANUAL e no FORMATO.
-pub const FORMATO_DO_CADASTRO: u16 = 2;
+///
+/// O 3 (pedido 733) e o cadastro com SEGURANCA DO FIO numa ligacao (`tls`,
+/// `tls_ca`, `pino_tls`, `chave_do_fio`): a lista vai para `ligacoes`, como
+/// no 2, para que todo binario anterior RECUSE em vez de ligar sem TLS e
+/// apagar os campos na primeira gravacao dele. O binario de antes do 372 nao
+/// acha a lista; o de antes deste ve um formato maior que o dele.
+pub const FORMATO_DO_CADASTRO: u16 = 3;
+
+/// O formato do cadastro com seguranca do fio (ver [`FORMATO_DO_CADASTRO`]).
+const FORMATO_COM_FIO: u64 = 3;
+/// O formato do cadastro cifrado sem seguranca do fio -- o de antes do 733,
+/// que continua sendo escrito igual.
+const FORMATO_CIFRADO: u64 = 2;
 
 /// A parte estavel que a prova do material amarra. Um material copiado de
 /// outro arquivo cifrado da casa (um `.reg`, um diario) nao passa por prova
@@ -916,6 +928,15 @@ impl Definicao {
             &self.chave_do_fio,
             &format!("dblink[{}].chave_do_fio", self.nome),
         )?))
+    }
+
+    /// A ligacao tem algum campo de seguranca do fio que um binario anterior
+    /// ignoraria -- e por isso ligaria sem ele (pedido 733)?
+    pub fn tem_seguranca_do_fio(&self) -> bool {
+        !matches!(self.tls.trim(), "" | "desligado")
+            || !self.tls_ca.trim().is_empty()
+            || !self.pino_tls.trim().is_empty()
+            || !self.chave_do_fio.trim().is_empty()
     }
 
     /// O TLS de saida pedido -- `Desligado` no motor phxsql, que tem o
@@ -2033,12 +2054,27 @@ impl Registro {
             .iter()
             .map(|l| l.para_disco(selo.as_ref()))
             .collect::<Result<Vec<_>>>()?;
-        let j = match escrito {
+        // Pedido 733: campo de seguranca do fio em qualquer ligacao leva o
+        // arquivo ao formato 3, que binario anterior recusa. Sem ele, os
+        // formatos 1 e 2 de sempre, byte a byte -- a guarda entra pedida.
+        let com_fio = novas.iter().any(Definicao::tem_seguranca_do_fio);
+        let j = match (escrito, com_fio) {
             // O cadastro de sempre, sem um campo a mais: quem nao declarou
-            // chave nao pode ter o arquivo mudado por baixo.
-            None => Json::objeto(vec![(LISTA_DO_FORMATO_1, Json::Lista(ligacoes))]),
-            Some(m) => Json::objeto(vec![
-                ("formato", Json::de_u64(FORMATO_DO_CADASTRO as u64)),
+            // chave nem pediu TLS nao pode ter o arquivo mudado por baixo.
+            (None, false) => Json::objeto(vec![(LISTA_DO_FORMATO_1, Json::Lista(ligacoes))]),
+            (None, true) => Json::objeto(vec![
+                ("formato", Json::de_u64(FORMATO_COM_FIO)),
+                (LISTA_DO_FORMATO_2, Json::Lista(ligacoes)),
+            ]),
+            (Some(m), com_fio) => Json::objeto(vec![
+                (
+                    "formato",
+                    Json::de_u64(if com_fio {
+                        FORMATO_COM_FIO
+                    } else {
+                        FORMATO_CIFRADO
+                    }),
+                ),
                 ("cifra_do_cadastro", m.para_json()),
                 (LISTA_DO_FORMATO_2, Json::Lista(ligacoes)),
             ]),
@@ -3517,20 +3553,94 @@ mod testes {
         assert!(lido.achar("loja").unwrap().senha().ok() == Some(SENHA_372));
     }
 
+    /// **Pedido 733.** Ligacao com seguranca do fio (`tls`, `tls_ca`,
+    /// `pino_tls`, `chave_do_fio`) leva o cadastro ao formato 3, com a lista
+    /// em `ligacoes`: o leitor do binario anterior (o `campo("dblink")` ou a
+    /// lista crua da 0.18.0) nao a acha e RECUSA, em vez de ligar sem TLS e
+    /// apagar os campos na primeira gravacao. Sem campo do fio, o arquivo e o
+    /// de sempre. Com o defeito reposto (o fio ignorado na escolha), o leitor
+    /// legado acha a lista -- e o vermelho diz quantos campos ele apagaria.
+    #[test]
+    fn o_cadastro_com_seguranca_do_fio_nao_se_entrega_ao_binario_anterior() {
+        let casa = DirTemp::novo("dblink-733");
+        let caminho = casa.join("dblink.json");
+        let mut r = Registro::abrir(&caminho).unwrap();
+        salvar_json(
+            &mut r,
+            r#"{"nome":"erp","motor":"mysql","host":"h","senha_env":"X"}"#,
+        )
+        .unwrap();
+        let sem_fio = std::fs::read_to_string(&caminho).unwrap();
+        assert!(
+            !sem_fio.contains("formato"),
+            "o cadastro sem TLS mudou: {sem_fio}"
+        );
+        assert!(Json::analisar(&sem_fio).unwrap().campo("dblink").is_some());
+
+        for (nome, campos) in [
+            ("pg", r#""motor":"postgres","tls":"exigir""#),
+            (
+                "my",
+                r#""motor":"mysql","tls_ca":"sistema","tls":"verificar""#,
+            ),
+            (
+                "phx",
+                r#""motor":"phxsql","chave_do_fio":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa""#,
+            ),
+        ] {
+            let casa = DirTemp::novo(&format!("dblink-733-{nome}"));
+            let caminho = casa.join("dblink.json");
+            let mut r = Registro::abrir(&caminho).unwrap();
+            salvar_json(
+                &mut r,
+                &format!(r#"{{"nome":"seguro",{campos},"host":"h","senha_env":"X"}}"#),
+            )
+            .unwrap();
+            let texto = std::fs::read_to_string(&caminho).unwrap();
+            let j = Json::analisar(&texto).unwrap();
+            // O leitor da 0.18.0, copiado de la: `dblink` ou a lista crua.
+            if let Some(lista) = j
+                .campo("dblink")
+                .and_then(Json::lista)
+                .or_else(|| j.lista())
+            {
+                let perdidos: Vec<&str> = lista
+                    .iter()
+                    .flat_map(|l| l.chaves())
+                    .filter(|k| ["tls", "tls_ca", "pino_tls", "chave_do_fio"].contains(k))
+                    .collect();
+                panic!(
+                    "{nome}: o binario anterior ACHA a lista e ligaria sem {perdidos:?},                      apagando-os na primeira gravacao dele"
+                );
+            }
+            assert_eq!(
+                j.campo("formato").and_then(Json::inteiro),
+                Some(3),
+                "{texto}"
+            );
+            // E este binario le o que gravou, com o campo do fio inteiro.
+            let lido = Registro::abrir(&caminho).unwrap();
+            assert!(
+                lido.achar("seguro").unwrap().tem_seguranca_do_fio(),
+                "{nome}"
+            );
+        }
+    }
+
     /// O formato mais NOVO que este binario e recusado alto -- regravar por
     /// cima apagaria o que ele nao entende.
     #[test]
     fn o_formato_mais_novo_e_recusado_alto() {
         let casa = DirTemp::novo("dblink-372-formato");
         let caminho = casa.join("dblink.json");
-        std::fs::write(&caminho, r#"{"formato":3,"dblink":[]}"#).unwrap();
+        std::fs::write(&caminho, r#"{"formato":4,"ligacoes":[]}"#).unwrap();
         let e = match Registro::abrir(&caminho) {
-            Ok(_) => panic!("o formato 3 abriu num binario que so conhece o 2"),
+            Ok(_) => panic!("o formato 4 abriu num binario que so conhece o 3"),
             Err(e) => e,
         };
         assert_eq!(e.nome(), "VERSAO_NAO_SUPORTADA", "{e}");
         let texto = e.to_string();
-        assert!(texto.contains('3') && texto.contains("le ate 2"), "{texto}");
+        assert!(texto.contains('4') && texto.contains("le ate 3"), "{texto}");
         // O 1 escrito e o 2 continuam abrindo.
         std::fs::write(&caminho, r#"{"formato":1,"dblink":[]}"#).unwrap();
         assert!(Registro::abrir(&caminho).is_ok());

@@ -158,20 +158,7 @@ impl Servidor {
                             // mesma regra da senha: resposta de protocolo nao
                             // carrega material de chave em texto puro.
                             "servidores_seguranca",
-                            Json::Lista(
-                                self.config
-                                    .web
-                                    .servidores
-                                    .iter()
-                                    .map(|s| {
-                                        Json::objeto(vec![
-                                            ("endereco", Json::texto_de(&s.endereco)),
-                                            ("cifra", Json::Bool(s.cifra)),
-                                            ("tem_pino", Json::Bool(!s.chave_do_fio.is_empty())),
-                                        ])
-                                    })
-                                    .collect(),
-                            ),
+                            self.servidores_seguranca(),
                         ),
                         (
                             "exige_chave",
@@ -533,6 +520,29 @@ impl Servidor {
     /// `Err` = pediu e nao deu, e a porta NAO sobe: cair calado para o claro
     /// seria o rebaixamento silencioso que o fio de dados ja recusa
     /// (`docs/CIFRA-DO-FIO.md` §2).
+    /// O estado do fio de cada `web.servidores`, para o `/saude`: o
+    /// interruptor e o FATO de haver pino (Noise e, desde o pedido 740, TLS)
+    /// -- nunca o pino. Num lugar so para o teste alcancar o que a tela le.
+    pub(super) fn servidores_seguranca(&self) -> Json {
+        Json::Lista(
+            self.config
+                .web
+                .servidores
+                .iter()
+                .map(|s| {
+                    Json::objeto(vec![
+                        ("endereco", Json::texto_de(&s.endereco)),
+                        ("cifra", Json::Bool(s.cifra)),
+                        ("tem_pino", Json::Bool(!s.chave_do_fio.is_empty())),
+                        // Pedido 740: com pino TLS o destino fala TLS
+                        // conferido, ate com a `cifra` desligada.
+                        ("tem_pino_tls", Json::Bool(!s.pino_tls.is_empty())),
+                    ])
+                })
+                .collect(),
+        )
+    }
+
     pub(super) fn identidade_http(
         &self,
         secao: &str,

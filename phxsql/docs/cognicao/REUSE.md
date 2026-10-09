@@ -4,12 +4,17 @@
      `--catraca` reprova se este arquivo nao bater com o que o extrator
      geraria agora; rode o comando sem flag para atualizar. -->
 
-Gerado dos `cognicao_*.md` com `**Estado:** FRUTIFERO` -- 11 hoje, de 438 cognicoes no total.
+Gerado dos `cognicao_*.md` com `**Estado:** FRUTIFERO` -- 17 hoje, de 445 cognicoes no total.
 
 ## A calculada é a coluna protegida por outro nome — e o preenchimento em lote promove o vazamento de linha a vazamento de tabela
 
 - Evidencia: `crates/phxsql-store/tests/cifra-dos-dados.rs::calculada_sobre_externo_selado_nasce_marcada_e_nao_vaza_no_reg`; `crate::servidor::testes_direito_por_coluna::calculada_que_cita_coluna_negada_e_recusada_na_declaracao`; `crate::servidor::testes_direito_por_coluna::calculada_derivada_de_coluna_negada_nao_se_le`; `crates/phxsql-store/tests/acrescentar-coluna.rs::a_recusa_da_calculada_sobre_coluna_marcada_nao_diz_a_linha`
 - Arquivo: [cognicao_calculada-e-a-coluna-protegida-por-outro-nome_20261001_1930.md](cognicao_calculada-e-a-coluna-protegida-por-outro-nome_20261001_1930.md)
+
+## Camada nova antes da marca esconde a rede velha: a guarda de uma camada passa por engano
+
+- Evidencia: `crates/phxsql-server/tests/commit-pelo-soquete.rs::o_commit_contra_a_tabela_congelada_nao_sai_pela_metade`; `ba65032e`
+- Arquivo: [cognicao_camada-nova-antes-da-marca-esconde-a-rede-velha_20261008_1650.md](cognicao_camada-nova-antes-da-marca-esconde-a-rede-velha_20261008_1650.md)
 
 ## O carimbo do arquivo faz o papel do catálogo reverso sem cobrar de ninguém — e o medidor do diretório recém-criado não o vê
 
@@ -26,6 +31,11 @@ Gerado dos `cognicao_*.md` com `**Estado:** FRUTIFERO` -- 11 hoje, de 438 cognic
 - Evidencia: `crates/phxsql-server/src/servidor.rs::a_janela_da_varredura_solta_a_vizinha_e_segura_filha_e_mae`
 - Arquivo: [cognicao_congelar-a-filha-nao-basta-a-mae-tambem_20260929_1600.md](cognicao_congelar-a-filha-nao-basta-a-mae-tambem_20260929_1600.md)
 
+## A conta que a origem faz para recusar tem de ser um TETO da conta que a réplica faz para partir
+
+- Evidencia: `crates/phxsql-server/tests/transacao-acima-do-teto.rs::a_transacao_acima_do_teto_e_recusada_no_commit_e_a_que_cabe_chega_inteira`; `4b388e62`
+- Arquivo: [cognicao_conta-da-origem-tem-de-ser-teto-da-conta-da-replica_20261008_0100.md](cognicao_conta-da-origem-tem-de-ser-teto-da-conta-da-replica_20261008_0100.md)
+
 ## Corpo de falso positivo tirado de uma fonte só mede essa fonte
 
 - Evidencia: `crates/phxsql-sql/src/sintaxe.rs::comando_empilhado_nao_acusa_o_legitimo`; `crates/phxsql-sql/src/sintaxe.rs::comando_empilhado_acha_o_segundo_comando`; `bancada/seguranca/495/prova_215.py`. Validada pelo integrador, que não é o autor do conserto, em 24/09/2026, na árvore exata. Com o defeito ORIGINAL reposto, o teste do legítimo cai (`nao devia acusar`, `sintaxe.rs:2079`). Com a 1a versão do conserto, o do ataque cai (`devia acusar`, `sintaxe.rs:2035`). Com o conserto final, os dois passam (2/2).
@@ -35,6 +45,16 @@ Gerado dos `cognicao_*.md` com `**Estado:** FRUTIFERO` -- 11 hoje, de 438 cognic
 
 - Evidencia: `crates/phxsql-server/tests/porta-lida-pela-metade.rs::o_endereco_pela_metade_espera_o_resto`; `crates/phxsql-server/tests/porta-lida-pela-metade.rs::a_porta_pela_metade_nao_vira_outra_porta`
 - Arquivo: [cognicao_eprintln-nao-e-uma-escrita-so-a-linha-so-vale-com-o-fim_20260930_2017.md](cognicao_eprintln-nao-e-uma-escrita-so-a-linha-so-vale-com-o-fim_20260930_2017.md)
+
+## A idempotência do evento da réplica é pela POSIÇÃO do diário, conferida — e a recusa tem de parar o resto
+
+- Evidencia: `crates/phxsql-store/src/marca.rs::a_marca_do_grupo_nao_grava_por_cima_de_outra_historia`; `crates/phxsql-store/src/marca.rs::a_recuperacao_completa_o_grupo_da_replica_pela_posicao`; `550a1f2a`
+- Arquivo: [cognicao_idempotencia-do-evento-da-replica-e-pela-posicao-conferida_20261008_1200.md](cognicao_idempotencia-do-evento-da-replica-e-pela-posicao-conferida_20261008_1200.md)
+
+## «Já aplicada» na réplica deixa o diário um evento atrás
+
+- Evidencia: `crates/phxsql-server/tests/venda-inteira-na-queda-da-replica.rs::o_sigkill_entre_o_reg_e_o_diario_nao_duplica_a_linha`; `9e067e1b`
+- Arquivo: [cognicao_ja-aplicada-na-replica-deixa-o-diario-atras_20261008_1500.md](cognicao_ja-aplicada-na-replica-deixa-o-diario-atras_20261008_1500.md)
 
 ## O terceiro da tabela que nasce se mede com `strace`, sem derrubar nada
 
@@ -50,6 +70,16 @@ Gerado dos `cognicao_*.md` com `**Estado:** FRUTIFERO` -- 11 hoje, de 438 cognic
 
 - Evidencia: `crates/phxsql-store/src/catalogo.rs::criar_recusa_sufixo_de_letra_da_particao_sem_perguntar_ao_disco`; `crates/phxsql-store/src/catalogo.rs::criar_recusa_ponto_no_nome_por_colidir_com_o_qualificado`. Validada pelo integrador, que nao e o autor do conserto, em 24/09/2026 na arvore exata: com as duas guardas novas de `exigir_nome_que_volta` neutralizadas, os dois testes caem (`catalogo.rs:2281` e `:2321`); com o conserto, os tres passam.
 - Arquivo: [cognicao_recusa-simetrica-de-sufixo-nao-e-so-a-letra-1_20260924_1438.md](cognicao_recusa-simetrica-de-sufixo-nao-e-so-a-letra-1_20260924_1438.md)
+
+## Régua que lê «o arquivo» muda de número quando o arquivo se divide — e uma delas nunca tinha lido o `servidor.rs`
+
+- Evidencia: `a0325c80`
+- Arquivo: [cognicao_regua-por-arquivo-muda-de-numero-quando-o-arquivo-se-divide_20261008_1300.md](cognicao_regua-por-arquivo-muda-de-numero-quando-o-arquivo-se-divide_20261008_1300.md)
+
+## A régua que separa produção de teste precisa ver todo `cfg(test)`, não só o literal
+
+- Evidencia: `ba65032e`
+- Arquivo: [cognicao_regua-que-corta-o-teste-precisa-ver-todo-cfg-test_20261008_1730.md](cognicao_regua-que-corta-o-teste-precisa-ver-todo-cfg-test_20261008_1730.md)
 
 ## Aviso de corte por teto: 01000, nunca 01004 -- e onde ele mora sozinho
 

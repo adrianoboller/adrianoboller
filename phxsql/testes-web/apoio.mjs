@@ -338,6 +338,8 @@ export async function conexaoViva(ctx, { de = '127.0.0.1', login = false } = {})
   }
   return {
     socket, local: socket.localPort, fechou, enviar, proxima, perguntar,
+    // Quantas respostas chegaram e ninguem leu ainda -- espiar sem consumir.
+    pendentes: () => fila.length,
     aberta: () => !fechado && !socket.destroyed,
     derrubar: () => { if (!socket.destroyed) socket.destroy(); },
   };

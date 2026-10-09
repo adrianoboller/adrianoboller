@@ -1,6 +1,12 @@
 # Régua que lê «o arquivo» muda de número quando o arquivo se divide — e uma delas nunca tinha lido o `servidor.rs`
 
-**Estado:** PENDENTE
+**Estado:** FRUTÍFERO
+
+**Evidência:** `a0325c80`
+
+**Validação (08/10/2026):** `python3 bancada/guardas/trecho-vivo.py --autoteste` roda hoje e termina em «todos passaram»; o conserto do `producao()` está no commit `a0325c80`. Promovido em 08/10/2026 pelo papel H.
+
+**Alcance da pétrea, não lei nova:** o aprendizado é o alcance de «a receita de um número também envelhece» (papel H) e de «régua que passa a medir mais aposenta a catraca» (papel G): uma régua nunca tinha lido o `servidor.rs`, e isso só apareceu quando o arquivo se dividiu. **Cruzamento:** o #13 (`cognicao_regua-que-corta-o-teste-precisa-ver-todo-cfg-test_20261008_1730.md`) é o segundo defeito do mesmo `producao()` no mesmo dia; os dois são o alcance da mesma régua de corte por texto, e ler um sem o outro repete o erro.
 
 ## O que aconteceu
 
@@ -42,8 +48,8 @@ indentação nem a visibilidade antes dele.
 ## Como está guardado hoje
 
 `trecho-vivo.py` (`mensagem_ambigua`) e `todas.py` (`teste_que_confere`) leem
-a união; o teste da telemetria tira o `pub(super)` antes de cortar. **O
-buraco continua:** `TETO_MENSAGEM_AMBIGUA` segue cega ao servidor (a união
-começa pelo `servidor.rs`, e o corte da linha 21 vale para ela). Consertar o
-`producao()` muda a régua — pela regra do papel G, aposenta a catraca e nasce
-outra no número do dia; decisão de QA, não desta frente.
+a união; o teste da telemetria tira o `pub(super)` antes de cortar. **Atualizado em 08/10/2026:** o
+«buraco continua» desta seção foi fechado pelo pedido 718: a catraca
+`TETO_MENSAGEM_AMBIGUA` foi aposentada e nasceu
+`TETO_MENSAGEM_AMBIGUA_COM_O_SERVIDOR_INTEIRO` (hoje 130 em `trecho-vivo.py`, depois
+de 148 → 130 no pedido 657). O `producao()` corta por arquivo, não mais a união.

@@ -11745,11 +11745,16 @@ pub fn limpar() {
         # Reancorada na segunda rodada do 372 (24/09/2026): a chave da lista
         # virou constante (`LISTA_DO_FORMATO_1`), porque o formato 2 passou a
         # guardar a lista noutra. O defeito reposto e o mesmo.
-        "trecho": """            None => Json::objeto(vec![(LISTA_DO_FORMATO_1, Json::Lista(ligacoes))]),
+        # Reancorada em 09/10/2026 (pedido 733): o `match` ganhou o braco
+        # `(None, true)` (formato 3, com fio) e o sem-chave-sem-fio virou
+        # `(None, false)`. O defeito reposto e o mesmo -- o formato 2 em quem
+        # nao pediu --, agora escrito com `FORMATO_CIFRADO` (2) e nao com a
+        # constante do cadastro, que passou a ser 3.
+        "trecho": """            (None, false) => Json::objeto(vec![(LISTA_DO_FORMATO_1, Json::Lista(ligacoes))]),
 """,
         "troca": """            // DEFEITO REPOSTO (372): o formato 2 carimbado em quem nao pediu.
-            None => Json::objeto(vec![
-                ("formato", Json::de_u64(FORMATO_DO_CADASTRO as u64)),
+            (None, false) => Json::objeto(vec![
+                ("formato", Json::de_u64(FORMATO_CIFRADO)),
                 (LISTA_DO_FORMATO_1, Json::Lista(ligacoes)),
             ]),
 """,
@@ -20812,11 +20817,19 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "conserto; a escrita espera 1,5 s nos dois."
         ),
         "arquivo": "crates/phxsql-server/src/servidor/servico_backup_01.rs",
-        "trecho": """        let _retrato = self.retrato.tirar_retrato();
-        let _trava = self.travar_dados_para_ler()?;
+        # Reancorada em 09/10/2026 (pedido 729): a trava virou o parametro
+        # `exclusiva` do `copiar_o_retrato`, compartilhado com o retrato da
+        # replica. O defeito reposto e o backup pedindo a exclusiva.
+        "trecho": """            &self.config.base,
+            false,
+            || {
+                let t = Instant::now();
 """,
-        "troca": """        // DEFEITO REPOSTO (513): a copia segura a ficha exclusiva.
-        let _trava = self.travar_dados()?;
+        "troca": """            // DEFEITO REPOSTO (513): a copia segura a ficha exclusiva.
+            &self.config.base,
+            true,
+            || {
+                let t = Instant::now();
 """,
         "pacote": "phxsql-server",
         "alvo": ["--lib"],
@@ -20840,11 +20853,13 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "portao."
         ),
         "arquivo": "crates/phxsql-server/src/servidor/servico_backup_01.rs",
-        "trecho": """        let _retrato = self.retrato.tirar_retrato();
-        let _trava = self.travar_dados_para_ler()?;
+        # Reancorada em 09/10/2026 (pedido 729): o trecho agora mora no ramo
+        # nao exclusivo do `copiar_o_retrato`, um nivel mais fundo.
+        "trecho": """            let _retrato = self.retrato.tirar_retrato();
+            let trava = self.travar_dados_para_ler()?;
 """,
-        "troca": """        // DEFEITO REPOSTO (513): a ficha compartilhada sem o portao.
-        let _trava = self.travar_dados_para_ler()?;
+        "troca": """            // DEFEITO REPOSTO (513): a ficha compartilhada sem o portao.
+            let trava = self.travar_dados_para_ler()?;
 """,
         "pacote": "phxsql-server",
         "alvo": ["--lib"],
@@ -24024,20 +24039,25 @@ fn anotar(""",
             "mede num banco de verdade."
         ),
         "arquivo": "crates/phxsql-server/src/servidor/servico_backup_01.rs",
-        "trecho": """        let em_curso = phxsql_store::congelamento::comecar_retrato(&self.config.base)?;
-        let pronto = fase_1()?;
+        # Reancorada em 09/10/2026 (pedido 729): a fase 1 agora e' o
+        # `fase_1()` do `copiar_o_retrato`. O defeito reposto e o mesmo --
+        # a copia inteira sob o portao e a ficha de leitura --, num bloco
+        # que solta as duas antes da fase 2 (senao a fase 2 se trancaria).
+        "trecho": """        let feito_1 = fase_1()?;
         #[cfg(test)]
         self.armar_panico_de_teste("backup_fase_1");
-        let _retrato = self.retrato.tirar_retrato();
-        let _trava = self.travar_dados_para_ler()?;
 """,
-        "troca": """        // DEFEITO REPOSTO (513/2): a fase 1 inteira sob a trava.
-        let em_curso = phxsql_store::congelamento::comecar_retrato(&self.config.base)?;
-        let _retrato = self.retrato.tirar_retrato();
-        let _trava = self.travar_dados_para_ler()?;
-        let pronto = fase_1()?;
-        #[cfg(test)]
-        self.armar_panico_de_teste("backup_fase_1");
+        "troca": """        // DEFEITO REPOSTO (513/2): a fase 1 inteira sob a trava -- e o
+        // gancho de teste (a pausa da prova) tambem, porque e' nele que a
+        // escrita da prova tenta entrar.
+        let feito_1 = {
+            let _retrato = self.retrato.tirar_retrato();
+            let _trava = self.travar_dados_para_ler()?;
+            let feito_1 = fase_1()?;
+            #[cfg(test)]
+            self.armar_panico_de_teste("backup_fase_1");
+            feito_1
+        };
 """,
         "pacote": "phxsql-server",
         "alvo": ["--lib"],

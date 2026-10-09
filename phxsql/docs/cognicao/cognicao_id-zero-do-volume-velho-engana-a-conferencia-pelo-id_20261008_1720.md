@@ -1,5 +1,7 @@
 # O id zero do volume velho engana a conferência pelo id
 
+**Estado:** PENDENTE
+
 ## O que aconteceu
 
 Pedido 710 (F2): a recuperação da marca do `COMMIT` passou a conferir as duas faces — o slot

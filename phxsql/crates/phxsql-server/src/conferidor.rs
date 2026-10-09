@@ -1718,7 +1718,12 @@ pub fn token_sem_definicao_e_sem_fallback() -> Vec<(&'static str, String)> {
 /// **806**. Ficou de fora de proposito a lista `FORMATOS_ENTRADA` (quatro):
 /// e da tela de Importar, que tem duas dezenas de textos cravados, e meia
 /// tela traduzida e meia mentira.
-pub const TETO_ROTULOS_CRASE_E_JS: usize = 806;
+///
+/// **798** em 08/10/2026: o TLS de saida chegando as telas (pedido 572)
+/// trocou por chave os dois paragrafos do aviso do DbLink que diziam «nao ha
+/// TLS» -- que tinham deixado de ser verdade -- e a dica do e-mail que dizia
+/// o mesmo.
+pub const TETO_ROTULOS_CRASE_E_JS: usize = 798;
 #[cfg(test)]
 mod testes {
     use std::collections::HashSet;

@@ -3783,16 +3783,16 @@ O teste que trava isso é o do comportamento **velho**:
 ---
 
 <!-- direito-por-coluna: gerado por docs/geradores/direito-por-coluna.py -->
-## 15. Direito por coluna: as 6 que devolvem linha, as 3 que escrevem e as 20 que recusam
+## 15. Direito por coluna: as 6 que devolvem linha, as 3 que escrevem e as 21 que recusam
 
-Medido em 150 operações do catálogo (`crates/phxsql-server/src/catalogo.rs`), classificadas uma a uma em `CLASSES`, no `crates/phxsql-server/src/direito_coluna.rs`. Os apelidos viajam com a operação e não contam de novo.
+Medido em 151 operações do catálogo (`crates/phxsql-server/src/catalogo.rs`), classificadas uma a uma em `CLASSES`, no `crates/phxsql-server/src/direito_coluna.rs`. Os apelidos viajam com a operação e não contam de novo.
 
 | classe | quantas | o que o servidor faz |
 |---|---:|---|
 | `Le` | 6 | devolve linha, e a peneira a alcança |
 | `Escreve` | 3 | recebe colunas para gravar |
 | `Estrutura` | 1 | descreve a estrutura |
-| `Recusa` | 20 | devolve ou grava linha por caminho que a peneira não alcança |
+| `Recusa` | 21 | devolve ou grava linha por caminho que a peneira não alcança |
 | `Nenhum` | 114 | não toca em dado de linha |
 
 As listas que decidem alguma coisa:
@@ -3800,7 +3800,7 @@ As listas que decidem alguma coisa:
 - **Devolvem linha, e a coluna negada sai da resposta** (6): `ler`, `varrer`, `coletar_rowids`, `buscar`, `procurar_texto`, `SelectMemory`.
 - **Recebem colunas, e a coluna negada é conferida** (3): `inserir`, `inserir_lote`, `atualizar`.
 - **Descreve a estrutura, que continua inteira** (1): `esquema`.
-- **Recusam a tabela restrita, para não vazar** (20): `diferencas`, `agrupar`, `pivotar`, `juntar`, `unir`, `checksum`, `exportar`, `importar_conferir`, `lixeira`, `motivos`, `trilha`, `duplicar_tabela`, `renomear_tabela`, `copiar_tabela`, `diario`, `replicar`, `aplicar`, `backup`, `profiler`, `dblink_sincronizar`.
+- **Recusam a tabela restrita, para não vazar** (21): `diferencas`, `agrupar`, `pivotar`, `juntar`, `unir`, `checksum`, `exportar`, `importar_conferir`, `lixeira`, `motivos`, `trilha`, `duplicar_tabela`, `renomear_tabela`, `copiar_tabela`, `diario`, `replicar`, `retrato_da_replica`, `aplicar`, `backup`, `profiler`, `dblink_sincronizar`.
 
 As outras 114 não devolvem nem recebem dado de linha, e por isso passam sem custo nenhum.
 

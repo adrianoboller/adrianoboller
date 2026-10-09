@@ -35,6 +35,8 @@ use phxsql_server::{Config, Origem, Papel, Servidor};
 
 const TOKEN: &str = "expurgo-do-diario";
 const ESPERA: Duration = Duration::from_secs(60);
+/// A senha de todo login das provas com cadastro (pedidos 728 e 737).
+const SENHA: &str = "senha-do-expurgo";
 
 struct NoAr {
     _s: Arc<Servidor>,
@@ -76,6 +78,10 @@ fn caixa(base: &Path, consumidores: &[&str]) -> NoAr {
 /// O caixa com o prazo de ENSAIO (`diario.prazo_s`): o que ninguem
 /// confirmou sai depois de `prazo_s` segundos, e nao de trinta dias.
 fn caixa_com_prazo(base: &Path, consumidores: &[&str], prazo_s: u64) -> NoAr {
+    subir(config_do_caixa(base, consumidores, prazo_s))
+}
+
+fn config_do_caixa(base: &Path, consumidores: &[&str], prazo_s: u64) -> Config {
     let mut c = config(base, "caixa01", Papel::Source);
     c.diario.prazo_s = prazo_s;
     c.diario.expurgo = true;
@@ -85,7 +91,7 @@ fn caixa_com_prazo(base: &Path, consumidores: &[&str], prazo_s: u64) -> NoAr {
     c.diario.prazo_dias = 30;
     // `Config::ler` aplica; quem monta a configuracao no codigo aplica aqui.
     c.diario.aplicar();
-    subir(c)
+    c
 }
 
 fn central(base: &Path, porta_da_origem: u16) -> NoAr {
@@ -119,10 +125,28 @@ fn subir(c: Config) -> NoAr {
 }
 
 fn pedir(porta: u16, corpo: &str) -> Option<Json> {
+    pedir_como(porta, "", corpo)
+}
+
+/// O pedido numa conexao que entra antes como `login` (vazio = so o token).
+fn pedir_como(porta: u16, login: &str, corpo: &str) -> Option<Json> {
     let fluxo = TcpStream::connect(("127.0.0.1", porta)).ok()?;
     fluxo.set_read_timeout(Some(Duration::from_secs(20))).ok()?;
     let mut escrita = fluxo.try_clone().ok()?;
     let mut leitor = BufReader::new(fluxo);
+    if !login.is_empty() {
+        writeln!(
+            escrita,
+            "{{\"token\":\"{TOKEN}\",\"op\":\"login\",\"usuario\":\"{login}\",\
+             \"senha\":\"{SENHA}\"}}"
+        )
+        .ok()?;
+        let mut r = String::new();
+        leitor.read_line(&mut r).ok()?;
+        if !Json::analisar(&r).ok()?.booleano_ou("ok", false) {
+            panic!("o login de {login} foi recusado: {r}");
+        }
+    }
     writeln!(
         escrita,
         "{{\"token\":\"{TOKEN}\",{}}}",
@@ -566,5 +590,226 @@ fn o_pitr_mais_velho_que_a_base_recusa_dizendo_expurgo() {
     assert!(
         texto.contains("so guarda desde"),
         "a recusa do PITR nao saiu pela fabrica: {texto}"
+    );
+}
+
+/// O cadastro das provas 728 e 737: `root` (supervisor) e os dois logins de
+/// replicacao. `central` nao alcanca `clientes` -- e a mae que fica fora do
+/// retrato no 737.
+fn cadastro_do_caixa() -> phxsql_server::usuarios::Cadastro {
+    let h = phxsql_core::senha::cifrar_com(SENHA, 1);
+    let texto = format!(
+        r#"{{ "usuarios": [
+              {{ "login": "root", "senha_hash": "{h}", "supervisor": true }},
+              {{ "login": "central", "senha_hash": "{h}",
+                 "bases": {{ "loja": {{ "replicar": true, "ler": true,
+                   "tabelas": {{ "clientes": {{ "replicar": false }} }} }} }} }},
+              {{ "login": "intruso", "senha_hash": "{h}",
+                 "bases": {{ "loja": {{ "replicar": true }} }} }} ] }}"#
+    );
+    phxsql_server::usuarios::Cadastro::de_json(&Json::analisar(&texto).unwrap()).unwrap()
+}
+
+fn caixa_com_cadastro(base: &Path, prazo_s: u64) -> NoAr {
+    let mut c = config_do_caixa(base, &["central"], prazo_s);
+    c.cadastro = cadastro_do_caixa();
+    subir(c)
+}
+
+fn exigir_como(porta: u16, login: &str, corpo: &str) -> Json {
+    let r = pedir_como(porta, login, corpo).unwrap_or_else(|| panic!("sem resposta para {corpo}"));
+    assert!(r.booleano_ou("ok", false), "{corpo} -> {}", r.escrever());
+    r
+}
+
+/// Os eventos do diario de `tabela` vistos por `login`.
+fn eventos_como(porta: u16, login: &str, tabela: &str) -> u64 {
+    pedir_como(porta, login, r#""op":"posicao","database":"loja""#)
+        .and_then(|r| {
+            r.campo("resultado")
+                .and_then(|r| r.campo("tabelas"))
+                .and_then(|t| t.campo(tabela))
+                .map(|v| {
+                    (
+                        v.inteiro_ou("eventos", 0).max(0) as u64,
+                        v.inteiro_ou("base", 0),
+                    )
+                })
+        })
+        .map_or(0, |(e, _)| e)
+}
+
+/// **Pedido 728 (M1 da revisao SEC):** o `intruso`, com `replicar` em `loja`,
+/// confirma o diario em nome do `central` -- com a ponta no `desde` e no
+/// `duravel`. A confirmacao e do LOGIN da sessao, e `intruso` nao e
+/// consumidor: nada sai. O irmao: o `central` de verdade, com a mesma
+/// confirmacao, solta o volume -- o portao nao recusa tudo.
+///
+/// Defeito reposto (o nome do campo): o pedido do intruso ja solta o volume 1
+/// na passada seguinte, e o teste cai.
+#[test]
+fn a_confirmacao_e_da_sessao_e_nao_do_campo_consumidor() {
+    let base_caixa = DirTemp::novo("expurgo-diario-728");
+    let cx = caixa_com_cadastro(&base_caixa.0, 0);
+    exigir_como(
+        cx.porta,
+        "root",
+        r#""op":"criar_database","database":"loja""#,
+    );
+    exigir_como(
+        cx.porta,
+        "root",
+        r#""op":"criar_tabela","database":"loja","tabela":"vendas",
+           "motivo_obrigatorio":false,
+           "colunas":[{"nome":"id","tipo":"Int8","obrigatoria":true},
+                      {"nome":"total","tipo":"Int8"}],
+           "indices":[{"nome":"pk_id","colunas":["id"],"unico":true,"primario":true}]"#,
+    );
+    for lote in 0..12u64 {
+        let linhas: Vec<String> = (lote * 500..(lote + 1) * 500)
+            .map(|k| format!(r#"{{"id":{k},"total":{}}}"#, k * 7))
+            .collect();
+        exigir_como(
+            cx.porta,
+            "root",
+            &format!(
+                r#""op":"inserir_lote","database":"loja","tabela":"vendas","linhas":[{}]"#,
+                linhas.join(",")
+            ),
+        );
+    }
+    let total = eventos_como(cx.porta, "root", "vendas");
+    assert!(total > 0);
+    let confirmar = |login: &str| {
+        exigir_como(
+            cx.porta,
+            login,
+            &format!(
+                r#""op":"replicar","database":"loja","tabela":"vendas","desde":{total},
+                   "max":1,"consumidor":"central","duravel":{total}"#
+            ),
+        )
+    };
+    confirmar("intruso");
+    std::thread::sleep(Duration::from_secs(3)); // tres passadas do expurgo
+    assert!(
+        base_caixa.0.join("loja").join("vendas#001.log").exists(),
+        "o intruso confirmou em nome do central e o volume 1 saiu"
+    );
+    confirmar("central");
+    esperar(
+        "o volume 1 sair com a confirmacao do central de verdade",
+        || !base_caixa.0.join("loja").join("vendas#001.log").exists(),
+    );
+}
+
+/// **Pedido 737 (R2 do parecer C):** o central NAO alcanca `clientes` na
+/// origem, so `pedidos`. Ele chega depois do expurgo pelo prazo, se refaz
+/// pelo retrato -- filtrado pelo alcance --, e as filhas chegam sem a mae.
+/// Elas tem de aparecer em `orfas_na_replica`, como apareceriam se viessem
+/// pelo `aplicar`.
+///
+/// Defeito reposto (sem contar no `refazer_por_retrato`): o central fica com
+/// as filhas orfas e o `replicacao_estado` diz zero.
+#[test]
+fn a_filha_que_chega_pelo_retrato_sem_a_mae_entra_na_conta_de_orfas() {
+    const PEDIDOS: u64 = 3_000;
+    let base_caixa = DirTemp::novo("expurgo-diario-737-caixa");
+    let base_central = DirTemp::novo("expurgo-diario-737-central");
+    let cx = caixa_com_cadastro(&base_caixa.0, 1);
+    exigir_como(
+        cx.porta,
+        "root",
+        r#""op":"criar_database","database":"loja""#,
+    );
+    exigir_como(
+        cx.porta,
+        "root",
+        r#""op":"criar_tabela","database":"loja","tabela":"clientes",
+           "motivo_obrigatorio":false,
+           "colunas":[{"nome":"id","tipo":"Int8","obrigatoria":true}],
+           "indices":[{"nome":"pk_id","colunas":["id"],"unico":true,"primario":true}]"#,
+    );
+    exigir_como(
+        cx.porta,
+        "root",
+        r#""op":"criar_tabela","database":"loja","tabela":"pedidos",
+           "motivo_obrigatorio":false,
+           "colunas":[{"nome":"id","tipo":"Int8","obrigatoria":true},
+                      {"nome":"cliente","tipo":"Int8"}],
+           "indices":[{"nome":"pk_id","colunas":["id"],"unico":true,"primario":true},
+                      {"nome":"por_cliente","colunas":["cliente"]}],
+           "chaves_estrangeiras":[{"nome":"fk_cliente","colunas":["cliente"],
+                                   "tabela_ref":"clientes","colunas_ref":["id"]}]"#,
+    );
+    for i in 1..=5 {
+        exigir_como(
+            cx.porta,
+            "root",
+            &format!(
+                r#""op":"inserir","database":"loja","tabela":"clientes","linha":{{"id":{i}}}"#
+            ),
+        );
+    }
+    for lote in 0..PEDIDOS / 500 {
+        let linhas: Vec<String> = (lote * 500..(lote + 1) * 500)
+            .map(|k| format!(r#"{{"id":{k},"cliente":{}}}"#, k % 5 + 1))
+            .collect();
+        exigir_como(
+            cx.porta,
+            "root",
+            &format!(
+                r#""op":"inserir_lote","database":"loja","tabela":"pedidos","linhas":[{}]"#,
+                linhas.join(",")
+            ),
+        );
+    }
+    let total = eventos_como(cx.porta, "root", "pedidos");
+    // O prazo de ensaio (1 s) solta o diario que ninguem confirmou: o central
+    // que chegar depois disso so se refaz pelo retrato.
+    esperar("o caixa expurgar o diario de pedidos pelo prazo", || {
+        pedir_como(cx.porta, "root", r#""op":"posicao","database":"loja""#)
+            .and_then(|r| {
+                r.campo("resultado")
+                    .and_then(|r| r.campo("tabelas"))
+                    .and_then(|t| t.campo("pedidos"))
+                    .map(|v| v.inteiro_ou("base", 0))
+            })
+            .unwrap_or(0)
+            > 0
+    });
+
+    let mut c = config(&base_central.0, "central", Papel::Replica);
+    c.somente_leitura = true;
+    c.replicacao.origens = vec![Origem {
+        nome: "caixa01".into(),
+        host: "127.0.0.1".into(),
+        porta: cx.porta,
+        token: TOKEN.into(),
+        databases: vec!["loja".into()],
+        reconectar_em: 1,
+        usuario: "central".into(),
+        senha_hash: String::new(),
+        senha: SENHA.into(),
+        cada_minutos: 0,
+        hora: String::new(),
+        cifra: false,
+        chave_do_fio: String::new(),
+        pino_tls: String::new(),
+        espelho: false,
+    }];
+    let ct = subir(c);
+    esperar(
+        "o central se refazer pelo retrato e alcancar pedidos",
+        || eventos_como(ct.porta, "", "pedidos") == total,
+    );
+    assert!(
+        !base_central.0.join("loja").join("clientes.reg").exists(),
+        "a mae veio no retrato -- o alcance do central nao a filtrou, e a prova nao prova"
+    );
+    let estado = exigir(ct.porta, r#""op":"replicacao_estado""#).escrever();
+    assert!(
+        estado.contains(&format!(r#""loja/pedidos":{{"orfas":{PEDIDOS}"#)),
+        "as {PEDIDOS} filhas que chegaram pelo retrato sem a mae nao foram contadas: {estado}"
     );
 }

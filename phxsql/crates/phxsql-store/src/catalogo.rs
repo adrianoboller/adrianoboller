@@ -284,6 +284,10 @@ pub(crate) fn subdiretorios(diretorio: &Path) -> Result<Vec<String>> {
         .filter_map(|e| e.ok())
         .filter(|e| e.path().is_dir())
         .filter_map(|e| e.file_name().to_str().map(str::to_string))
+        // A arvore do retrato da replica (pedido 729) e pasta na raiz, e
+        // toda pasta da raiz e um database: sem esta poda ela apareceria em
+        // `bancos`, na replicacao e no cluster como um database a mais.
+        .filter(|n| !n.starts_with(PREFIXO_DO_RETRATO_DA_REPLICA))
         .collect();
     nomes.sort();
     Ok(nomes)
@@ -1763,13 +1767,26 @@ impl Database {
     ///
     /// As extensoes da COPIA menos o espelho `.bkp`: o espelho e decisao do
     /// servidor que recebe (`espelho` no config dele), e nao da origem.
-    const EXTENSOES_DO_RETRATO: [&'static str; 5] = ["reg", "ndx", "bin", "memo", "log"];
-
-    /// Copia FIEL dos arquivos de uma tabela para `destino`, um arquivo por
-    /// nome `{prefixo}{n}` -- o retrato com que uma replica se refaz depois
-    /// que o diario que ela precisava saiu pelo expurgo (pedido 706).
     ///
-    /// # Por que nao a copia de sempre
+    /// A lixeira (`.trash`) e os motivos (`.reason`) VAO, desde o pedido 736:
+    /// a replica refeita pode ser promovida pelo cluster, e uma primaria que
+    /// nao restaura nem explica nada anterior ao retrato perdeu o que a origem
+    /// guardava. O `.fts`, o `.pag` e o `.bkp` nao vao: os tres se refazem na
+    /// abertura e nenhum e fonte de verdade.
+    const EXTENSOES_DO_RETRATO: [&'static str; 7] =
+        ["reg", "ndx", "bin", "memo", "log", "trash", "reason"];
+
+    /// O que o retrato NAO apaga na replica -- pedido 736. O `.lgpd` e a
+    /// trilha de quem leu dado pessoal NESTE servidor: o retrato nao a traz e
+    /// nao a substitui, e apaga-la seria destruir prova sem ninguem pedir.
+    const EXTENSOES_QUE_O_RETRATO_PRESERVA: [&'static str; 1] = ["lgpd"];
+
+    /// Deixa uma tabela pronta para o retrato de uma replica -- pedido 706:
+    /// a troca de volume do `.reg` que ficou por terminar termina aqui (e
+    /// escrita, entao quem chama segura a ficha exclusiva). A copia em si e a
+    /// do backup, em duas passadas (pedido 729): [`crate::backup::copiar_fase_1_das_tabelas`].
+    ///
+    /// # Por que a copia e fiel, e nao a de sempre
     ///
     /// O [`Self::copiar_tabela_para`] cunha uma LINHAGEM nova (pedido 601):
     /// a copia e outra historia. Aqui e o contrario -- a replica refeita
@@ -1777,41 +1794,51 @@ impl Database {
     /// eventos seguintes se a linhagem mudasse. Entao os bytes vao como
     /// estao, o `.log` inclusive: e a base dele (bytes 104..112) que faz a
     /// posicao da replica refeita ser a da origem, sem conta nenhuma.
+    pub fn preparar_para_o_retrato(&self, qualificado: &str) -> Result<()> {
+        if self.ha_troca_por_terminar(qualificado)? {
+            let (schema, nome) = separar_qualificado(qualificado);
+            let dir = self.diretorio(schema.as_deref())?;
+            crate::reg::RegFile::terminar_troca_antes_de_copiar(&dir, &nome)?;
+        }
+        Ok(())
+    }
+
+    /// O que o retrato de uma replica le de cada tabela (pedido 729) -- se
+    /// ela tem coluna marcada e quantos eventos o diario dela tem --, pela
+    /// abertura de LEITURA ([`Table::abrir_para_ler_o_diario`]). `None` quando
+    /// abrir exigiria escrever: quem chama decide se cura.
     ///
-    /// Quem chama segura a trava e garante que a tabela nao deve nada ao
-    /// disco (cabecalhos escritos). Devolve `(arquivo, caminho da copia,
-    /// bytes)`, sem `fsync`: o retrato e passageiro.
-    pub fn retratar_tabela(
-        &self,
-        qualificado: &str,
-        destino: &Path,
-        prefixo: &str,
-    ) -> Result<Vec<(String, PathBuf, u64)>> {
+    /// # Por que a leitura, se quem chama segura a ficha exclusiva
+    ///
+    /// Porque a abertura gravavel escreve mesmo na tabela sa -- a marca do
+    /// `.ndx` (pedido 522) --, e o retrato pergunta isto logo antes do acerto
+    /// da fase 2: o `.ndx` «recem-mudado» seria recopiado inteiro com a
+    /// escrita parada. Medido num database de 99 MiB: 93-107 ms de escrita
+    /// parada com a abertura gravavel, 0 ms com esta.
+    pub fn ler_para_o_retrato(&self, qualificado: &str) -> Result<Option<(bool, u64)>> {
         self.exigir_motor_padrao()?;
         let (schema, nome) = separar_qualificado(qualificado);
         validar_nome("tabela", &nome)?;
         let dir = self.diretorio(schema.as_deref())?;
-        let ha_novo_do_reg = std::fs::read_dir(&dir)?.flatten().any(|a| {
+        Ok(match Table::abrir_para_ler_o_diario(&dir, &nome)? {
+            SemEscrever::Aberta(mut t) => Some((t.tem_dado_pessoal(), t.eventos()?)),
+            SemEscrever::PrecisaEscrever(_) => None,
+        })
+    }
+
+    /// Ha `*.novo` do `.reg` desta tabela ao lado -- uma troca de volume por
+    /// terminar? So le a pasta: e a pergunta que a fase 2 do retrato faz com
+    /// a ficha de LEITURA, para nao copiar o `.reg` de antes da troca.
+    pub fn ha_troca_por_terminar(&self, qualificado: &str) -> Result<bool> {
+        self.exigir_motor_padrao()?;
+        let (schema, nome) = separar_qualificado(qualificado);
+        validar_nome("tabela", &nome)?;
+        let dir = self.diretorio(schema.as_deref())?;
+        Ok(std::fs::read_dir(&dir)?.flatten().any(|a| {
             let f = a.file_name();
             let f = f.to_string_lossy();
             pertence_ou_sobra(&f, &nome, EXT_REG) && !pertence(&f, &nome, EXT_REG)
-        });
-        if ha_novo_do_reg {
-            crate::reg::RegFile::terminar_troca_antes_de_copiar(&dir, &nome)?;
-        }
-        let mut saida = Vec::new();
-        for ext in Self::EXTENSOES_DO_RETRATO {
-            for arq in std::fs::read_dir(&dir)?.flatten() {
-                let f = arq.file_name().to_string_lossy().to_string();
-                if pertence(&f, &nome, ext) {
-                    let copia = destino.join(format!("{prefixo}{}", saida.len()));
-                    crate::util::copiar_do_banco(&arq.path(), &copia)?;
-                    let bytes = std::fs::metadata(&copia)?.len();
-                    saida.push((f, copia, bytes));
-                }
-            }
-        }
-        Ok(saida)
+        }))
     }
 
     /// Troca os arquivos de uma tabela pelos de um retrato -- pedido 706, o
@@ -1845,16 +1872,20 @@ impl Database {
                 )));
             }
         }
-        let dir = match schema.as_deref() {
-            None => self.caminho().to_path_buf(),
-            Some(sc) => {
-                let d = self.caminho().join(sc);
-                crate::util::criar_diretorio_do_banco(&d)?;
-                d
-            }
-        };
+        // O schema vem do fio tambem, e passa pelo MESMO `diretorio` que toda
+        // operacao de catalogo usa -- pedido 726. Antes ele ia direto ao
+        // `join`, e `Path::join` com caminho absoluto SUBSTITUI a base: a
+        // origem que mandasse `/srv/phxsql/base/central.produtos` apagava e
+        // reescrevia o `produtos` de OUTRO database desta replica.
+        let dir = self.diretorio(schema.as_deref())?;
+        if schema.is_some() {
+            crate::util::criar_diretorio_do_banco(&dir)?;
+        }
         let mut mexidos = Vec::new();
         for ext in Self::EXTENSOES_TODAS {
+            if Self::EXTENSOES_QUE_O_RETRATO_PRESERVA.contains(&ext) {
+                continue;
+            }
             for arq in std::fs::read_dir(&dir)?.flatten() {
                 let f = arq.file_name();
                 if pertence_ou_sobra(&f.to_string_lossy(), &nome, ext) {
@@ -1872,6 +1903,35 @@ impl Database {
         Ok(PorSincronizar::entradas_que_sairam(mexidos))
     }
 }
+
+/// A tabela (qualificada) cujo arquivo de retrato e `rel` -- o caminho
+/// relativo a pasta do database, com barra normal: `t.reg`, `t#001.log`,
+/// `sc/t.ndx`. `None` para o que o retrato nao leva (a trilha `.lgpd`, o
+/// `.fts`, o `*.novo`, a sequencia). E o filtro das duas passadas do retrato
+/// (pedido 729), e mora aqui porque a lista de extensoes e daqui.
+pub fn tabela_do_arquivo_do_retrato(rel: &str) -> Option<String> {
+    let (schema, arquivo) = match rel.split_once('/') {
+        Some((s, a)) if !a.contains('/') => (Some(s), a),
+        Some(_) => return None,
+        None => (None, rel),
+    };
+    let (sem_ext, ext) = arquivo.rsplit_once('.')?;
+    if !Database::EXTENSOES_DO_RETRATO.contains(&ext) {
+        return None;
+    }
+    let nome = separar_volume(sem_ext).map_or(sem_ext, |(t, _)| t);
+    validar_nome("tabela", nome).ok()?;
+    if let Some(s) = schema {
+        validar_nome("schema", s).ok()?;
+    }
+    Some(qualificar(schema, nome))
+}
+
+/// O prefixo de TODO arquivo de retrato da replica na raiz de dados (pedido
+/// 706): o servido e o recebido comecam por ele. Mora aqui, e nao no
+/// servidor, porque o backup precisa pula-lo (pedido 731) e o nome tem de
+/// ser UM so para os dois.
+pub const PREFIXO_DO_RETRATO_DA_REPLICA: &str = ".retrato-";
 
 /// Grava um pedaco de um arquivo de retrato recebido pelo fio (pedido 706),
 /// no `offset` dele, pelo motor da permissao: o retrato e dado da tabela e
@@ -2560,6 +2620,115 @@ mod testes_gestao {
     // Pedido 150: guarda de Drop, nao `rm` no fim do corpo.
     fn base_temp(rotulo: &str) -> crate::apoio_teste::DirTemp {
         crate::apoio_teste::DirTemp::novo(&format!("cat2-{rotulo}"))
+    }
+
+    /// O retrato de `a.t` (pedido 706) para a pasta `destino`, no formato que
+    /// a replica recebe: `(arquivo, copia)`.
+    fn retrato_de_t(base: &Path, a: &Database) -> Vec<(String, PathBuf)> {
+        a.preparar_para_o_retrato("t").unwrap();
+        let destino = base.join(".retrato-servido-teste");
+        let mut fase = crate::backup::copiar_fase_1_das_tabelas(
+            &base.join("a"),
+            &destino,
+            ["t".to_string()].into_iter().collect(),
+        )
+        .unwrap();
+        crate::backup::acertar_fase_2(&mut fase, &std::collections::BTreeMap::new()).unwrap();
+        crate::backup::copias_por_caminho(&fase)
+            .into_iter()
+            .map(|(rel, copia, _)| (rel, copia))
+            .collect()
+    }
+
+    /// Pedido 729: o filtro das duas passadas do retrato leva o que a troca
+    /// aceita, e deixa de fora a trilha, o `.fts` e o `*.novo`.
+    #[test]
+    fn o_filtro_do_retrato_leva_so_os_arquivos_da_tabela() {
+        let t = tabela_do_arquivo_do_retrato;
+        assert_eq!(t("t.reg").as_deref(), Some("t"));
+        assert_eq!(t("t#001.log").as_deref(), Some("t"));
+        assert_eq!(t("sc/t.ndx").as_deref(), Some("sc.t"));
+        assert_eq!(t("t.trash").as_deref(), Some("t"));
+        assert_eq!(t("t.lgpd"), None);
+        assert_eq!(t("t.fts"), None);
+        assert_eq!(t("t.reg.novo"), None);
+        assert_eq!(t("a/b/t.reg"), None);
+    }
+
+    /// Pedido 736 (R1 do parecer C): a troca pelo retrato NAO apaga o
+    /// `.lgpd` da replica -- a trilha de quem leu dado pessoal AQUI, que o
+    /// retrato nao traz --, e a lixeira e os motivos da origem VEM junto.
+    ///
+    /// Defeito reposto (o `.lgpd` na varredura de apagar, e `trash`/`reason`
+    /// fora do retrato): a trilha some e a replica fica sem lixeira.
+    #[test]
+    fn o_retrato_preserva_a_trilha_lgpd_e_traz_lixeira_e_motivos() {
+        let base = base_temp("retrato-736");
+        let inst = Instancia::nova(&base).unwrap();
+        let a = inst.criar_database("a").unwrap();
+        a.criar_tabela(None, esquema_simples("t")).unwrap();
+        std::fs::write(base.join("a/t.trash"), b"LIXEIRA-DA-ORIGEM").unwrap();
+        std::fs::write(base.join("a/t.reason"), b"MOTIVO-DA-ORIGEM").unwrap();
+        let b = inst.criar_database("b").unwrap();
+        b.criar_tabela(None, esquema_simples("t")).unwrap();
+        std::fs::write(base.join("b/t.lgpd"), b"TRILHA-DA-REPLICA").unwrap();
+
+        let novos = retrato_de_t(&base, &a);
+        b.trocar_pelo_retrato("t", &novos)
+            .unwrap()
+            .levar_ao_disco()
+            .unwrap();
+        assert_eq!(
+            std::fs::read(base.join("b/t.lgpd")).unwrap_or_default(),
+            b"TRILHA-DA-REPLICA",
+            "a troca pelo retrato apagou a trilha LGPD da replica"
+        );
+        assert_eq!(
+            std::fs::read(base.join("b/t.trash")).unwrap_or_default(),
+            b"LIXEIRA-DA-ORIGEM",
+            "a lixeira da origem nao veio no retrato"
+        );
+        assert_eq!(
+            std::fs::read(base.join("b/t.reason")).unwrap_or_default(),
+            b"MOTIVO-DA-ORIGEM",
+            "os motivos da origem nao vieram no retrato"
+        );
+    }
+
+    /// Pedido 726 (A1 da revisao SEC): o schema do nome que veio do fio passa
+    /// pelo `validar_nome`. Com caminho absoluto, `Path::join` SUBSTITUI a
+    /// base -- e a troca apagava e reescrevia a tabela de outro database.
+    ///
+    /// Defeito reposto (`self.caminho().join(sc)`): `b/t.reg` vira a copia
+    /// de `a`, e o teste cai.
+    #[test]
+    fn o_retrato_com_schema_absoluto_nao_sai_do_database() {
+        let base = base_temp("retrato-726");
+        let inst = Instancia::nova(&base).unwrap();
+        let a = inst.criar_database("a").unwrap();
+        a.criar_tabela(None, esquema_simples("t")).unwrap();
+        let b = inst.criar_database("b").unwrap();
+        b.criar_tabela(None, esquema_simples("t")).unwrap();
+        let c = inst.criar_database("c").unwrap();
+        // Uma linha so na origem: a copia tem de ser DIFERENTE do que esta em
+        // `b`, senao a troca indevida passaria despercebida.
+        let mut t = a.abrir_qualificada("t").unwrap();
+        t.inserir(&[phxsql_core::value::Value::Int(7)]).unwrap();
+        t.sincronizar().unwrap();
+        drop(t);
+        let antes = std::fs::read(base.join("b/t.reg")).unwrap();
+        let novos = retrato_de_t(&base, &a);
+        let alvo = format!("{}.t", base.join("b").display());
+        assert!(!base.join("b").display().to_string().contains('.'));
+        let Err(e) = c.trocar_pelo_retrato(&alvo, &novos) else {
+            panic!("o schema absoluto foi aceito");
+        };
+        assert!(matches!(e, PhxError::Esquema(_)), "{e}");
+        assert_eq!(
+            std::fs::read(base.join("b/t.reg")).unwrap(),
+            antes,
+            "a troca escreveu no database vizinho"
+        );
     }
 
     /// Pedido 229: a sequencia nomeada mora na pasta do database (ou do

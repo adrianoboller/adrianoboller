@@ -78,6 +78,7 @@ impl Servidor {
                                 // escreve para o no do arquivo: a lista viva
                                 // nao pode dizer menos que a do arranque.
                                 ("tem_pino", Json::Bool(!n.chave_do_fio.is_empty())),
+                                ("tem_pino_tls", Json::Bool(!n.pino_tls.is_empty())),
                             ])
                         })
                         .collect(),

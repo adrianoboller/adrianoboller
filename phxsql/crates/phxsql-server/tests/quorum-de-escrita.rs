@@ -117,7 +117,32 @@ struct Tres {
 }
 
 impl Tres {
+    /// Sobe o trio, repetindo o conjunto INTEIRO se uma replica perder a
+    /// porta (pedido 748).
+    ///
+    /// O `phxsqld` e um processo a parte: o numero da porta dele so pode
+    /// ser entregue soltando o ouvinte do teste antes do `bind` do filho, e
+    /// nessa janela -- que sob carga chega a centenas de ms -- o sistema
+    /// reentrega o numero a outro `bind(0)` ou a uma conexao de saida de
+    /// um vizinho (medido: 6 de 20 rodadas com 8 `yes` rodando, todas
+    /// «Address already in use»). Nao ha como segurar a porta ate o filho
+    /// ligar sem `SO_REUSEPORT`, que a `std` nao expoe; entao a janela fica
+    /// e o teste a trata: o mestre so sobe DEPOIS das replicas, de modo que
+    /// a tentativa perdida custa matar dois filhos e sortear tres portas
+    /// novas, sem deixar servidor em processo para tras.
     fn subir(rotulo: &str, quorum: u64, prazo_ms: u64) -> Tres {
+        let mut ultimo = String::new();
+        for _ in 0..8 {
+            match Tres::tentar(rotulo, quorum, prazo_ms) {
+                Ok(t) => return t,
+                Err(e) if e.contains("Address already in use") => ultimo = e,
+                Err(e) => panic!("{e}"),
+            }
+        }
+        panic!("a porta foi tomada em 8 tentativas seguidas: {ultimo}");
+    }
+
+    fn tentar(rotulo: &str, quorum: u64, prazo_ms: u64) -> Result<Tres, String> {
         let (ouvinte_m, porta_m) = comum::ouvinte_reservado();
         let (o2, p2) = comum::ouvinte_reservado();
         let (o3, p3) = comum::ouvinte_reservado();
@@ -130,14 +155,10 @@ impl Tres {
         let d2 = DirTemp::novo(&format!("q207-{rotulo}-no2"));
         let d3 = DirTemp::novo(&format!("q207-{rotulo}-no3"));
         let c1 = config_do_no(&d1, "no1", "source", &portas, quorum, prazo_ms);
-        let master = Servidor::novo(Config::ler(&c1).unwrap()).unwrap();
-        comum::no_ar_no_ouvinte(&master, ouvinte_m);
         let mut replicas = Vec::new();
         for (id, d, ouvinte, porta) in [("no2", &d2, o2, p2), ("no3", &d3, o3, p3)] {
             let c = config_do_no(d, id, "replica", &portas, quorum, prazo_ms);
             let erro = d.join("stderr.txt");
-            // O numero foi segurado ate aqui pelo ouvinte; solto agora, o
-            // filho o pega no `bind` -- e a conferencia abaixo diz se pegou.
             drop(ouvinte);
             let mut filho = Filho(
                 Command::new(env!("CARGO_BIN_EXE_phxsqld"))
@@ -148,16 +169,18 @@ impl Tres {
                     .spawn()
                     .unwrap(),
             );
-            let real = comum::porta_do_phxsqld(&mut filho, &erro).unwrap();
+            let real = comum::porta_do_phxsqld(&mut filho, &erro)?;
             assert_eq!(real, porta, "a replica {id} nao abriu a porta da lista");
             replicas.push((id.to_string(), porta, Some(filho)));
         }
-        Tres {
+        let master = Servidor::novo(Config::ler(&c1).unwrap()).unwrap();
+        comum::no_ar_no_ouvinte(&master, ouvinte_m);
+        Ok(Tres {
             _dirs: vec![d1, d2, d3],
             _master: master,
             porta_master: porta_m,
             replicas,
-        }
+        })
     }
 
     fn estado_do_quorum(&self, porta: u16) -> Json {

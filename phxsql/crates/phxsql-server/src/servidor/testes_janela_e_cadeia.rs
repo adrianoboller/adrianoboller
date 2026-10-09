@@ -523,6 +523,11 @@ fn so_um_lugar_toma_a_trava() {
 /// antes do primeiro byte. Quem a acompanha e o portao do retrato, que
 /// tira os escritores da fila (`crate::retrato`).
 ///
+/// Desde o pedido 729 o retrato da replica passa pela MESMA funcao (um motor
+/// so para as duas copias em duas passadas), e a contagem nao muda: a fase 2
+/// dele roda com a ficha EXCLUSIVA (`FichaDaFase2::Exclusiva`), porque
+/// descarrega as sujas antes de acertar -- nao entra nesta ficha.
+///
 /// A quarta entrou MEDIDA em 01/10/2026 (pedido 330): a pre-absorcao do
 /// diario local no mapa de toques do bidirecional,
 /// `pre_absorver_sob_leitura`. A medicao que a admitiu e de TIPO, como a
@@ -934,4 +939,48 @@ fn sem_reentrancia_nada_muda() {
     // E a trava esta livre no fim: uma marca que vazasse do `Drop`
     // trancaria esta thread sem ninguem segurando nada.
     assert!(s.travar_dados().is_ok());
+}
+
+/// **Pedido 647: o inode velho morre FORA da trava global** -- a ordem, no
+/// fonte, em cada FASE B do servidor (papel F, 08/10/2026).
+///
+/// A prova do store (`a_fase_b_segura_o_volume_velho_ate_soltar`) mostra que
+/// o descritor fica preso ate o `soltar`; ela nao ve QUEM chama o `soltar`
+/// nem com que trava na mao. Medido: com o `soltar` posto antes do
+/// `drop(dados)` no `criptografar`, as 1.784 provas da biblioteca e as 6 da
+/// migracao pelo soquete ficaram verdes -- e o 1,2 s do `close` a 10 M de
+/// linhas volta a acontecer sob a trava. Aqui: cada chamada tem um
+/// `drop(dados)` logo antes, sem a trava retomada no meio.
+#[test]
+fn o_soltar_dos_volumes_velhos_vem_depois_de_soltar_a_trava() {
+    let chamada = format!(".{}()", "soltar_volumes_velhos");
+    let solta = format!("{}(dados)", "drop");
+    let toma = format!("{}(", "travar_dados");
+    let linhas: Vec<&str> = FONTE
+        .lines()
+        .filter(|l| !l.trim_start().starts_with("//"))
+        .collect();
+    let onde: Vec<usize> = linhas
+        .iter()
+        .enumerate()
+        .filter(|(_, l)| l.contains(&chamada))
+        .map(|(i, _)| i)
+        .collect();
+    assert!(
+        onde.len() >= 3,
+        "as tres FASES B do servidor (cifra, acrescentar coluna, v10) deixaram de soltar \
+         os velhos: {} chamada(s)",
+        onde.len()
+    );
+    for i in onde {
+        let antes = &linhas[i.saturating_sub(8)..i];
+        let ultima_solta = antes.iter().rposition(|l| l.contains(&solta));
+        let ultima_toma = antes.iter().rposition(|l| l.contains(&toma));
+        assert!(
+            ultima_solta.is_some() && ultima_toma.is_none_or(|t| t < ultima_solta.unwrap()),
+            "o `soltar_volumes_velhos` da linha {:?} roda com a trava global na mao (pedido \
+             647): o `close` do inode velho volta a custar 1,2 s sob a trava a 10 M de linhas",
+            linhas[i].trim()
+        );
+    }
 }

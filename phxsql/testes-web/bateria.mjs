@@ -11,6 +11,7 @@
  *     --capturas <dir>      onde guardar os PNG (padrao: nenhum)
  *     --ver                 abre o navegador na tela, devagar
  *     --porta <n>           porta de dados (a web e ela + 1)
+ *     --phxsqld <arq>       outro binario (padrao: target/release/phxsqld)
  *
  * O QUE ELA E: a prova de que a interface ABRE e FUNCIONA contra o servidor
  * de verdade. O laco que percorre todos os itens de menu e de barra falhando
@@ -51,6 +52,10 @@ const opc = {
   capturas: arg('--capturas'),
   ver: tem('--ver'),
   porta: Number(arg('--porta', String(PORTA_DADOS))),
+  // Outro binario que nao o `target/release`: a frente que compila numa pasta
+  // propria (para nao disputar a trava do `target` com as vizinhas) mede o
+  // DELA. A conferencia do binario velho vale igual para ele.
+  phxsqld: arg('--phxsqld'),
 };
 
 // ------------------------------------------------------- o binario e novo?
@@ -221,7 +226,7 @@ const CORES = { ok: '\x1b[32m', mal: '\x1b[31m', fraco: '\x1b[90m', fim: '\x1b[0
 const diz = (...a) => console.log(...a);
 
 async function principal() {
-  const phxsqld = join(RAIZ, 'target', 'release', 'phxsqld');
+  const phxsqld = opc.phxsqld ? resolve(opc.phxsqld) : join(RAIZ, 'target', 'release', 'phxsqld');
   // A ORDEM IMPORTA: sintaxe antes do binario. Um script que nao compila
   // reprova tudo depois de cinco minutos de bateria; recusar aqui custa 200 ms.
   conferirSintaxeDaInterface();

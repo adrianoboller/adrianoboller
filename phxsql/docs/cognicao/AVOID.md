@@ -4,7 +4,7 @@
      `--catraca` reprova se este arquivo nao bater com o que o extrator
      geraria agora; rode o comando sem flag para atualizar. -->
 
-Gerado dos `cognicao_*.md` com `**Estado:** INFRUTIFERO` -- 10 hoje, de 438 cognicoes no total.
+Gerado dos `cognicao_*.md` com `**Estado:** INFRUTIFERO` -- 14 hoje, de 445 cognicoes no total.
 
 ## «O branch da frente é ancestral do HEAD» não prova que o trabalho dela foi integrado
 
@@ -35,6 +35,30 @@ Gerado dos `cognicao_*.md` com `**Estado:** INFRUTIFERO` -- 10 hoje, de 438 cogn
 - Causa: a hipótese «dono diferente do processo e do parceiro = terceiro» tomou o sinal que não se FORJA pelo sinal que IDENTIFICA o intruso. O root também é outro dono, e é o administrador: na instalação do MANUAL (§7.4), `sudo 7z x` para trocar um token vazado deixa o `.json` do root ao lado do `.phz` do serviço, e o serviço subia do `.phz` VELHO com o token revogado valendo — a revisão SEC provou pelo sistema operacional, e o teste `crates/phxsql-server/tests/config-phz.rs::o_json_do_root_ao_lado_do_phz_do_servico_recusa_o_arranque` cai com esta regra reposta («ainda rodava depois de 20 s: subiu como servidor», o servidor como uid 65534). O sticky bit, que é o que torna um nome alheio «plantado», nem era conferido. E a régua citada media outra coisa: MySQL e MariaDB ignoram por MODO (gravável por todos); medido, o `mysqld` 8.0.46 LÊ um `my.cnf` de outro dono com 0644.
 - Prevencao: antes de usar um metadado como prova de intruso, liste QUEM MAIS produz o mesmo sinal legitimamente (o root, o dono da pasta, o próprio serviço) e exija a condição do sistema operacional que torna o sinal exclusivo do intruso (aqui: sticky bit E pasta gravável por outros, com o root e o dono da pasta fora da conta de terceiro); e ao citar outro motor na régua, cite o CRITÉRIO dele medido pelo binário, não só o comportamento.
 - Arquivo: [cognicao_dono-de-arquivo-e-sinal-forte-nao-palpite_20260924_1024.md](cognicao_dono-de-arquivo-e-sinal-forte-nao-palpite_20260924_1024.md)
+
+## Hipótese morta: «a trava global atrasa o central» explicava o p95 de 10.719 ms
+
+- Causa: A cauda vinha de classificar a latência pela fase do commit: vendas cometidas no último segundo antes do `SIGKILL` ainda não tinham sido puxadas e só chegaram ~20 s depois, entrando no «antes». A trava não era a causa.
+- Prevencao: Classifique a latência de quem atravessa uma queda pela hora da chegada e publique a janela da queda como número à parte; antes de acusar a trava, separe a cauda por hora de chegada.
+- Arquivo: [cognicao_hipotese-a-trava-atrasa-o-central_20261008_0816.md](cognicao_hipotese-a-trava-atrasa-o-central_20261008_0816.md)
+
+## Hipótese morta: a E5 do desenho único («completar por id através das famílias») conserta o F5
+
+- Causa: O id do `COMMIT` sai no BEGIN e o da marca do grupo (bidirecional e réplica fiel) nasce fora da trava, antes de ela ser tomada: o id menor pode entrar depois. O id diz quando o bilhete nasceu, não quando a trava o aplicaria.
+- Prevencao: Recupere na ordem em que a trava teria aplicado, não na ordem de nascimento do bilhete; o primeiro termo da chave é «nasce fora da trava», lido da versão do cabeçalho da marca (5/6), nunca do nome.
+- Arquivo: [cognicao_hipotese-e5-ordenar-marcas-por-id-entre-familias_20261008_1700.md](cognicao_hipotese-e5-ordenar-marcas-por-id-entre-familias_20261008_1700.md)
+
+## Hipótese morta: o custo da FASE B é do `rename` em si, qualquer que seja a referência (H2)
+
+- Causa: O custo está na liberação do inode velho, que acontece onde cai a ÚLTIMA referência: com o descritor aberto ela sai do `rename` e vai para o `close`. O `rename` em si custa 0,0–0,1 ms.
+- Prevencao: Antes de atribuir o custo de uma troca de arquivo ao `rename` ou ao `fsync`, meça o `rename` e o `close` isolados, com e sem um descritor segurando o inode velho; só então escolha onde mexer.
+- Arquivo: [cognicao_hipotese-o-custo-e-do-rename-em-si_20261008_1850.md](cognicao_hipotese-o-custo-e-do-rename-em-si_20261008_1850.md)
+
+## Hipótese morta: o `sessionStorage` é «a» resposta OWASP para a chave da API da Claude
+
+- Causa: Foi lida uma só folha da OWASP (a comparativa) e não o requisito do ASVS; o «menos pior» foi tomado como «aceito».
+- Prevencao: Segredo de terceiro na tela fica em memória, nunca no armazenamento do navegador; a chamada que sai do navegador se desliga pelo CSP servido pelo servidor.
+- Arquivo: [cognicao_hipotese-session-storage-passa-no-asvs_20261008_1730.md](cognicao_hipotese-session-storage-passa-no-asvs_20261008_1730.md)
 
 ## «Mesmo julgamento do `conferir_filhas`» copiado espalha a falha aberta
 

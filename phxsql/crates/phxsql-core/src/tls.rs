@@ -1642,6 +1642,9 @@ pub(crate) mod testes {
         Nenhum,
         FinishedAdulterado,
         SobraNoClientHello,
+        /// `signature_algorithms_cert` so com `rsa_pkcs1_sha256`, que a cadeia
+        /// deste servidor (ECDSA) nao satisfaz.
+        AssinaturaCertSoRsa,
     }
 
     fn registro_cru(c: &mut TcpStream) -> ([u8; 5], Vec<u8>) {
@@ -1674,6 +1677,9 @@ pub(crate) mod testes {
             &vetor16(&ECDSA_SECP256R1_SHA256.to_be_bytes()),
         ));
         e.extend_from_slice(&extensao(ext::CHAVES, &vetor16(&chave)));
+        if desvio == Desvio::AssinaturaCertSoRsa {
+            e.extend_from_slice(&extensao(50, &vetor16(&0x0401u16.to_be_bytes())));
+        }
         corpo.extend_from_slice(&vetor16(&e));
         let ch = mensagem(hs::CLIENT_HELLO, &corpo);
         let mut transcricao = Transcricao::default();
@@ -1755,6 +1761,113 @@ pub(crate) mod testes {
         let (t, resposta) = app_de_la.abrir(&cab, &corpo).unwrap();
         assert_eq!(t, tipo::DADOS);
         Ok(String::from_utf8(resposta).unwrap())
+    }
+
+    /// §4.4.2.2: o servidor que nao tem cadeia assinada so pelo que o
+    /// `signature_algorithms_cert` pede «SHOULD continue» mandando a que tem
+    /// -- e quem decide e o cliente. Recusar o aperto aqui quebraria o
+    /// cliente que manda a extensao por zelo (T6e).
+    #[test]
+    fn signature_algorithms_cert_sem_casar_a_cadeia_nao_derruba_o_aperto() {
+        let (_d, id, _) = com_certificado("cru-sig-cert");
+        let (porta, h) = servir(id);
+        let r = cliente_cru(porta, Desvio::AssinaturaCertSoRsa);
+        h.join().unwrap().expect("o servidor recusou pela extensao");
+        assert!(r.expect("recebeu alerta").ends_with("ola!\n"));
+    }
+
+    /// Um `ClientHello` cru: os conjuntos, X25519 como grupo, e a chave so
+    /// quando `privada` vem (sem ela, a lista de chaves vai vazia -- o que
+    /// faz este servidor pedir de novo, o HRR).
+    fn ch_cru(conjuntos: &[Conjunto], privada: Option<&[u8; 32]>) -> Vec<u8> {
+        let mut corpo = vec![3, 3];
+        corpo.extend_from_slice(&[9u8; 32]);
+        corpo.extend_from_slice(&vetor8(&[]));
+        let ids: Vec<u8> = conjuntos
+            .iter()
+            .flat_map(|c| c.id().to_be_bytes())
+            .collect();
+        corpo.extend_from_slice(&vetor16(&ids));
+        corpo.extend_from_slice(&vetor8(&[0]));
+        let mut chaves = Vec::new();
+        if let Some(p) = privada {
+            chaves.extend_from_slice(&X25519.to_be_bytes());
+            chaves.extend_from_slice(&vetor16(&crate::x25519::chave_publica(p)));
+        }
+        let mut e = extensao(ext::VERSOES, &vetor8(&TLS13.to_be_bytes()));
+        e.extend_from_slice(&extensao(ext::GRUPOS, &vetor16(&X25519.to_be_bytes())));
+        e.extend_from_slice(&extensao(
+            ext::ASSINATURAS,
+            &vetor16(&ECDSA_SECP256R1_SHA256.to_be_bytes()),
+        ));
+        e.extend_from_slice(&extensao(ext::CHAVES, &vetor16(&chaves)));
+        corpo.extend_from_slice(&vetor16(&e));
+        let ch = mensagem(hs::CLIENT_HELLO, &corpo);
+        let mut reg = vec![22, 3, 3];
+        reg.extend_from_slice(&(ch.len() as u16).to_be_bytes());
+        reg.extend_from_slice(&ch);
+        reg
+    }
+
+    /// §4.1.4: o conjunto do segundo `ClientHello` (depois do HRR) tem de ser
+    /// o que o HRR escolheu -- a lacuna que o T5 deixou declarada. Os dois
+    /// sentidos: o segundo honesto recebe o ServerHello; o que tira o
+    /// conjunto escolhido recebe `illegal_parameter` (47).
+    #[test]
+    fn o_segundo_client_hello_nao_troca_o_conjunto_do_hrr() {
+        let todos = [Conjunto::Chacha20Poly1305Sha256, Conjunto::Aes128GcmSha256];
+        for (segundo, honesto) in [(&todos[..], true), (&todos[1..], false)] {
+            let (_d, id, _) = com_certificado("cru-hrr");
+            let (porta, h) = servir(id);
+            let mut c = TcpStream::connect(("127.0.0.1", porta)).unwrap();
+            c.set_read_timeout(Some(Duration::from_secs(20))).unwrap();
+            c.write_all(&ch_cru(&todos, None)).unwrap();
+            let (cab, hrr) = registro_cru(&mut c);
+            assert_eq!(cab[0], tipo::HANDSHAKE);
+            assert_eq!(&hrr[6..38], &RANDOM_HRR[..], "nao veio HRR");
+            let privada = crate::x25519::gerar_privada();
+            c.write_all(&ch_cru(segundo, Some(&privada))).unwrap();
+            let (cab, resp) = registro_cru(&mut c);
+            if honesto {
+                assert_eq!(cab[0], tipo::HANDSHAKE, "{resp:?}");
+                assert_eq!(resp[0], hs::SERVER_HELLO);
+                drop(c);
+                let _ = h.join();
+            } else {
+                assert_eq!(cab[0], tipo::ALERTA, "aceitou a troca de conjunto");
+                assert_eq!(resp, [2, alerta::ILLEGAL_PARAMETER]);
+                let e = h.join().unwrap().expect_err("o servidor aceitou");
+                assert!(e.contains("mudou o conjunto"), "{e}");
+            }
+        }
+    }
+
+    /// T6e: a cadeia do PEM vai INTEIRA no `Certificate` -- folha e
+    /// intermediaria geradas pelo openssl, e o `openssl s_client` conferindo
+    /// contra a RAIZ so: sem a intermediaria no fio, `unable to get local
+    /// issuer certificate`.
+    #[test]
+    fn a_cadeia_com_intermediaria_vai_inteira_e_o_openssl_a_confere() {
+        use crate::cadeia::testes::{cadeia_do_openssl, EXT_FOLHA, EXT_INTER};
+        let d = Dir::novo("cadeia-servidor");
+        let (_raiz, inter, folha) = cadeia_do_openssl(&d.0, EXT_INTER, EXT_FOLHA, "2");
+        let chave = crate::x509::chave_p256_de_pem(
+            &std::fs::read_to_string(d.0.join("folha.key")).unwrap(),
+        )
+        .unwrap();
+        let id = Identidade::nova(vec![folha, inter], chave).unwrap();
+        let (porta, h) = servir(id);
+        let (s, visto) = s_client(
+            porta,
+            &d.0.join("raiz.pem"),
+            &["-showcerts", "-verify_hostname", "localhost"],
+            &[PEDIDO],
+            h,
+        );
+        visto.expect("o servidor falhou");
+        assert!(s.contains("ola!"), "{s}");
+        assert!(s.contains("Verify return code: 0 (ok)"), "{s}");
+        assert_eq!(s.matches("-----BEGIN CERTIFICATE-----").count(), 2, "{s}");
     }
 
     #[test]

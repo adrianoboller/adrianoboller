@@ -105,6 +105,13 @@ impl BackupFeito {
     }
 }
 
+/// A ficha com que a fase 2 de uma copia em duas passadas roda -- ver
+/// [`Servidor::copiar_o_retrato`].
+pub(super) enum FichaDaFase2<'a> {
+    Leitura(#[allow(dead_code)] &'a Raiz),
+    Exclusiva(&'a Instancia),
+}
+
 impl Servidor {
     pub(super) fn subir_backup_agendado(self: &Arc<Self>) {
         if !self.config.backup.agendado {
@@ -330,33 +337,69 @@ impl Servidor {
     /// `backup_fase_1` dispara DEPOIS da fase 1 e antes da trava (a janela em
     /// que o escritor anda); o `gancho` de quem chama dispara com a ficha da
     /// fase 2 na mao.
-    fn copiar_o_retrato<F, T>(
+    ///
+    /// # Dois chamadores, um motor -- pedido 729
+    ///
+    /// O backup e o retrato da replica (`retrato_da_replica`, pedido 706)
+    /// pagam a MESMA copia em duas passadas. O retrato copiava o database
+    /// inteiro com a ficha EXCLUSIVA na mao; uma segunda copia em duas fases
+    /// ao lado desta seria a mesma decisao escrita duas vezes. O que muda
+    /// entre os dois e a ficha da FASE 2, e so ela ([`FichaDaFase2`]):
+    ///
+    /// - o **backup** acerta com a ficha de LEITURA e o portao fechado aos
+    ///   escritores -- a copia restaurada se cura na abertura;
+    /// - o **retrato** acerta com a ficha EXCLUSIVA, porque so vale com as
+    ///   tabelas do database descarregadas (cabecalhos do `.log` e do `.reg`
+    ///   escritos), e descarregar e escrever. Pela leitura ele precisava de
+    ///   tentar ate achar o database limpo -- e um escritor em laco na mesma
+    ///   tabela o sujava entre a descarga e o portao 50 vezes em 50 (medido).
+    ///   Com a exclusiva a descarga e o acerto sao uma tomada so; o leitor
+    ///   espera junto, e e a fase 2 -- `stat` e o que mudou --, nao a copia.
+    ///
+    /// Devolve tambem quanto tempo a fase 2 segurou a ficha -- o quanto um
+    /// escritor espera por esta copia.
+    pub(super) fn copiar_o_retrato<F, T>(
         &self,
         #[allow(unused_variables)] gancho: &str,
+        raiz: &Path,
+        exclusiva: bool,
         fase_1: impl FnOnce() -> Result<F>,
-        fase_2: impl FnOnce(F, &std::collections::BTreeMap<PathBuf, u64>) -> Result<T>,
-    ) -> Result<T> {
+        fase_2: impl FnOnce(F, &std::collections::BTreeMap<PathBuf, u64>, FichaDaFase2<'_>) -> Result<T>,
+    ) -> Result<(T, Duration)> {
         if COM_A_TRAVA.with(std::cell::Cell::get) {
             return Err(trava_reentrante());
         }
-        let em_curso = phxsql_store::congelamento::comecar_retrato(&self.config.base)?;
-        let pronto = fase_1()?;
+        let em_curso = phxsql_store::congelamento::comecar_retrato(raiz)?;
+        let feito_1 = fase_1()?;
         #[cfg(test)]
         self.armar_panico_de_teste("backup_fase_1");
-        let _retrato = self.retrato.tirar_retrato();
-        let _trava = self.travar_dados_para_ler()?;
-        // So nos testes: o panico (pedido 502) ou a pausa (pedido 513) com a
-        // ficha da copia na mao.
-        #[cfg(test)]
-        self.armar_panico_de_teste(gancho);
-        let eventos = em_curso.eventos();
-        let feito = fase_2(pronto, &eventos);
-        // O bloqueio de manutencao solta ANTES da trava e do portao, de
-        // proposito: o escritor que esperou no portao a fase 2 inteira
-        // entraria com o retrato ainda ligado por microssegundos e levaria um
-        // 4006 de um backup que ja acabou.
-        drop(em_curso);
-        feito
+        let fechado = Instant::now();
+        let feito = if exclusiva {
+            let trava = self.travar_dados()?;
+            #[cfg(test)]
+            self.armar_panico_de_teste(gancho);
+            let eventos = em_curso.eventos();
+            let feito = fase_2(feito_1, &eventos, FichaDaFase2::Exclusiva(&trava));
+            drop(em_curso);
+            feito
+        } else {
+            let _retrato = self.retrato.tirar_retrato();
+            let trava = self.travar_dados_para_ler()?;
+            // So nos testes: o panico (pedido 502) ou a pausa (pedido 513)
+            // com a ficha da copia na mao.
+            #[cfg(test)]
+            self.armar_panico_de_teste(gancho);
+            let eventos = em_curso.eventos();
+            let feito = fase_2(feito_1, &eventos, FichaDaFase2::Leitura(&trava));
+            // O bloqueio de manutencao solta ANTES da trava e do portao, de
+            // proposito: o escritor que esperou no portao a fase 2 inteira
+            // entraria com o retrato ainda ligado por microssegundos e levaria
+            // um 4006 de um backup que ja acabou.
+            drop(em_curso);
+            feito
+        };
+        let fechado = fechado.elapsed();
+        feito.map(|f| (f, fechado))
     }
 
     /// O que uma corrida de backup deixou, para a resposta do protocolo e
@@ -377,8 +420,10 @@ impl Servidor {
         // trava na mao (pedidos 513/524) -- ver `backup.rs`, condicoes C1 e
         // C2. O zip volta com o descritor de quem o escreveu (pedido 552).
         let inicio = Instant::now();
-        let (fase_1_ms, pronto, acerto) = self.copiar_o_retrato(
+        let ((fase_1_ms, pronto, acerto), _) = self.copiar_o_retrato(
             gancho,
+            &self.config.base,
+            false,
             || {
                 let t = Instant::now();
                 let pronto = if em_zip {
@@ -410,7 +455,7 @@ impl Servidor {
                 };
                 Ok((t.elapsed().as_millis() as u64, pronto))
             },
-            |(fase_1_ms, pronto), eventos| {
+            |(fase_1_ms, pronto), eventos, _| {
                 let (pronto, acerto) = match pronto {
                     Pronto::Arvore(mut fase) => {
                         let acerto = phxsql_store::backup::acertar_fase_2(&mut fase, eventos)?;
@@ -468,7 +513,7 @@ impl Servidor {
     /// O espaco livre, em bytes, no disco de `caminho` -- pelo `df`, o mesmo
     /// motor do painel (`sistema::espaco`). `None` quando nao se mede (fora
     /// do Linux, ou pasta que ainda nao existe e cujo pai tampouco).
-    fn espaco_livre_em(&self, caminho: &Path) -> Option<u64> {
+    pub(super) fn espaco_livre_em(&self, caminho: &Path) -> Option<u64> {
         let mut existente = caminho;
         while !existente.exists() {
             existente = existente.parent()?;

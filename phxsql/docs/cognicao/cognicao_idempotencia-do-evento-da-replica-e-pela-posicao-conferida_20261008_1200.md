@@ -1,6 +1,10 @@
 # A idempotência do evento da réplica é pela POSIÇÃO do diário, conferida — e a recusa tem de parar o resto
 
-**Estado:** PENDENTE
+**Estado:** FRUTÍFERO
+
+**Evidência:** `crates/phxsql-store/src/marca.rs::a_marca_do_grupo_nao_grava_por_cima_de_outra_historia`; `crates/phxsql-store/src/marca.rs::a_recuperacao_completa_o_grupo_da_replica_pela_posicao`; `550a1f2a`
+
+**Validação (08/10/2026):** guarda `grupo-da-replica-sem-marca` com veredito PROVADA em `bancada/guardas/ultima-corrida.json` (08/10/2026 16:38). Promovido em 08/10/2026 pelo papel H.
 
 ## O que aconteceu
 
@@ -41,5 +45,7 @@ grupo — comprimento que bate não é prova de que a história é a mesma.
 `crates/phxsql-store/src/marca.rs::a_marca_do_grupo_nao_grava_por_cima_de_outra_historia`,
 `crates/phxsql-store/src/marca.rs::a_recuperacao_completa_o_grupo_da_replica_pela_posicao`
 e `crates/phxsql-server/tests/venda-inteira-na-queda-da-replica.rs` (guarda
-`grupo-da-replica-sem-marca`, RED medido). O buraco que fica: o bidirecional
-(`aplicar_grupo_bidi`) aplica pela chave e não grava marca.
+`grupo-da-replica-sem-marca`, RED medido). **Atualizado em 08/10/2026:** o buraco que
+esta seção nomeava (o bidirecional, `aplicar_grupo_bidi`, aplicava pela chave e
+não gravava marca) foi fechado pelo commit `9e067e1b` («o bidirecional ganha a
+mesma marca»). Não há buraco aberto nomeado aqui.

@@ -1661,9 +1661,15 @@ mod tests {
         // do `sync_all` de cada arquivo (`sincronizar_arquivo_do_retrato`) e
         // com o `fsync` da pasta devolvido em `PorSincronizar`. Nenhum e
         // familia do `Volumes`: a tabela nao esta aberta enquanto troca.
+        // Pedido 729: `catalogo.rs` 7 -> 6 e `backup.rs` 2 -> 3 -- o MESMO
+        // caminho, mudado de casa. O `retratar_tabela` (e o `copiar_do_banco`
+        // dele) saiu: o retrato passou a copiar pelo motor do backup, em duas
+        // passadas, e o `copiar_sem_sync` do `backup.rs` (`recriar_no_destino`)
+        // e quem escreve a copia passageira. Ela continua fora da base das
+        // tabelas e nunca vira tabela la; o total nao mudou.
         const HOJE: &[(&str, usize)] = &[
-            ("backup.rs", 2),
-            ("catalogo.rs", 7),
+            ("backup.rs", 3),
+            ("catalogo.rs", 6),
             ("marca.rs", 1),
             ("ndx.rs", 2),
             ("pag.rs", 2),

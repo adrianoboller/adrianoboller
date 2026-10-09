@@ -30,8 +30,8 @@ function hashDaSenha(phxsqld, senha) {
   return m[1];
 }
 
-function config(base, hash, portaDados, portaWeb, hostWeb, webExtra = {}) {
-  return {
+function config(base, hash, portaDados, portaWeb, hostWeb, webExtra = {}, extra = {}) {
+  return comExtra({
     base,
     bind: `127.0.0.1:${portaDados}`,
     token: TOKEN,
@@ -60,7 +60,19 @@ function config(base, hash, portaDados, portaWeb, hostWeb, webExtra = {}) {
       supervisor: true, ativo: true, bases: {},
     }],
     replicacao: { papel: 'isolado' },
-  };
+  }, extra);
+}
+
+/* `extra` entra por cima do config inteiro, um nivel de fundo: objeto se
+ * mistura com o da bateria (o `alertas.email` de uma prova nao apaga o
+ * `alertas.disco` dela), o resto substitui. E o caminho da prova que precisa
+ * de um bloco que a bateria nao tem -- `cluster`, `replicacao`, o e-mail. */
+function comExtra(c, extra) {
+  for (const [k, v] of Object.entries(extra || {})) {
+    const objeto = x => x && typeof x === 'object' && !Array.isArray(x);
+    c[k] = objeto(v) && objeto(c[k]) ? { ...c[k], ...v } : v;
+  }
+  return c;
 }
 
 const dormir = ms => new Promise(r => setTimeout(r, ms));
@@ -95,12 +107,12 @@ function portaAberta(porta) {
  * e o loopback (pedido 667): o padrao continua sendo so o 127.0.0.1. */
 /* `webExtra` entra por cima da secao `web` -- e o caminho da prova que
  * precisa de um campo dela, como o `integracao_claude: false` do 339(a). */
-export async function subir({ phxsqld, portaDados = PORTA_DADOS, portaWeb = PORTA_WEB, hostWeb = '127.0.0.1', webExtra, log }) {
+export async function subir({ phxsqld, portaDados = PORTA_DADOS, portaWeb = PORTA_WEB, hostWeb = '127.0.0.1', webExtra, extra, log }) {
   const dir = mkdtempSync(join(tmpdir(), 'phx-bateria-'));
   const base = join(dir, 'dados');
   const caminhoConfig = join(dir, 'config.json');
   writeFileSync(caminhoConfig,
-    JSON.stringify(config(base, hashDaSenha(phxsqld, SENHA), portaDados, portaWeb, hostWeb, webExtra), null, 2));
+    JSON.stringify(config(base, hashDaSenha(phxsqld, SENHA), portaDados, portaWeb, hostWeb, webExtra, extra), null, 2));
 
   // PORTA JA OCUPADA E MEDIÇÃO DE OUTRO SERVIDOR.
   //
@@ -158,6 +170,7 @@ export async function subir({ phxsqld, portaDados = PORTA_DADOS, portaWeb = PORT
     pid: proc.pid,
     dir,
     base,
+    config: caminhoConfig,
     url: `http://127.0.0.1:${portaWeb}/`,
     saida,
     /** `null` enquanto vivo; o codigo de saida depois de morto.

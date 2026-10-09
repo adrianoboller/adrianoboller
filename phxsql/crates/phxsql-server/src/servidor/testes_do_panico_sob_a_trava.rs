@@ -1314,7 +1314,12 @@ fn subir_filho(dir: &std::path::Path, cenario: &str) -> (std::process::Child, u1
         .stderr(std::fs::File::create(dir.join("filho.err")).unwrap())
         .spawn()
         .expect("lancar o filho");
-    let ate = Instant::now() + Duration::from_secs(30);
+    // Pedido 748: o filho e um binario de testes inteiro que sobe um
+    // `Servidor::novo`, e com as quatorze provas lancando filho juntas sob
+    // compilacao paralela 30 s era prazo de relogio, nao de evento. A espera
+    // e pelo evento (o arquivo da porta, ou a morte do filho, que o laco
+    // ja ve); o prazo so impede o travamento eterno.
+    let ate = Instant::now() + Duration::from_secs(180);
     loop {
         if let Some(p) = std::fs::read_to_string(dir.join("porta"))
             .ok()
@@ -2683,7 +2688,10 @@ fn filho_do_panico_451() {
         outro => panic!("cenario desconhecido: {outro:?}"),
     }
     let porta = porta_de_dados_de_verdade(&s);
-    std::fs::write(dir.join("porta"), porta.to_string()).unwrap();
+    // Pedido 748: temporario + `rename`, para o pai nunca ler a porta pela
+    // metade (o `write` trunca antes de escrever: um `4` de `43210` parseia).
+    std::fs::write(dir.join("porta.tmp"), porta.to_string()).unwrap();
+    std::fs::rename(dir.join("porta.tmp"), dir.join("porta")).unwrap();
     // As threads de servico do 502 sobem DEPOIS da porta publicada: a
     // queda que a prova espera (ou recusa) acontece na primeira volta
     // delas, e o pai precisa da porta para dizer o que o processo servia.

@@ -509,8 +509,26 @@ fn o_erro_de_dado_no_meio_do_grupo_do_bidi_nao_deixa_a_venda_pela_metade() {
         );
         std::thread::sleep(Duration::from_millis(20));
     }
-    // Uma rodada inteira de folga: o `fsync` do alcance e a saida da marca.
-    std::thread::sleep(Duration::from_millis(1500));
+    // Por EVENTO, e nao por prazo (papel F, 08/10/2026): o erro e permanente
+    // e cada rodada o relata ao fim dela (`replicacao [caixa01]: ...`). O
+    // SEGUNDO relato prova que a primeira rodada terminou -- o `fsync` do
+    // alcance e a saida da lista, que e onde o defeito apagava a marca. Com o
+    // prazo fixo, o defeito reposto so aparecia porque a rodada cabia nele:
+    // medido, com 0 ms de espera o teste passava com o `reter: false`.
+    let ate = Instant::now() + ESPERA;
+    while std::fs::read_to_string(&erro)
+        .unwrap_or_default()
+        .lines()
+        .filter(|l| l.starts_with("replicacao [caixa01]:") && l.contains("erro de dado injetado"))
+        .count()
+        < 2
+    {
+        assert!(
+            Instant::now() < ate,
+            "a segunda rodada nunca relatou o erro"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
     let pasta = base_c.0.join("dados").join("loja");
     let sobra = marcas_do_bidi(&pasta);
     drop(filho);
@@ -778,4 +796,131 @@ fn o_erro_passageiro_no_meio_do_grupo_do_bidi_completa_na_hora() {
     }
     drop(filho);
     assert_eq!(r, (1, ITENS, 1), "a venda completada na hora ficou {r:?}");
+}
+
+/// O roteiro do 723 com uma venda que mora numa tabela SO: `ITENS` itens num
+/// `COMMIT`, sem `vendas` nem `pagamentos`. Devolve a resposta do
+/// `restaurar_backup` e o retrato do restaurado.
+///
+/// # Por que este roteiro existe (papel F, 08/10/2026)
+///
+/// O roteiro de cima vende em TRES tabelas, e o grupo se aplica na ordem do
+/// nome (`itens`, `pagamentos`, `vendas`): a queda no meio sempre deixa uma
+/// tabela inteira de fora, e o «parte» recusa por ela. Os eventos de uma venda
+/// dividem o carimbo -- medido: 6 dos 7 com o mesmo milissegundo --, e o
+/// conferidor do palco reconhecia o evento por `(carimbo, origem)`: UM item
+/// no diario fazia os cinco contarem presentes. Com a tabela pela metade sendo
+/// a ULTIMA do grupo, «parte» virava «todos», e a copia restaurava 2 de 5
+/// itens com `ok: true`.
+fn restaurar_a_copia_da_venda_de_uma_tabela(
+    rotulo: &str,
+    parar: Option<Parada>,
+) -> (Json, (usize, usize, usize)) {
+    let base_o = DirTemp::novo(&format!("{rotulo}-caixa"));
+    let base_c = DirTemp::novo(&format!("{rotulo}-central"));
+    std::fs::create_dir_all(&base_c.0).unwrap();
+    let (_outro, porta_o) = subir_origem(&base_o.0);
+    criar_as_tabelas(porta_o);
+    {
+        let mut b = Ligacao::nova(porta_o);
+        b.exigir(r#""op":"begin","database":"loja""#);
+        for i in 1..=ITENS {
+            b.exigir(&format!(
+                r#""op":"inserir","database":"loja","tabela":"itens","linha":{{"id":{i},"venda":1}}"#
+            ));
+        }
+        b.exigir(r#""op":"commit""#);
+    }
+    let (mut filho, _) = subir_central(&base_c.0, 1, porta_o, parar);
+    filho.0.kill().unwrap();
+    filho.0.wait().unwrap();
+    drop(filho);
+    assert_eq!(
+        marcas_do_bidi(&base_c.0.join("dados").join("loja")).len(),
+        1,
+        "premissa: a marca do grupo tinha de estar no disco caido"
+    );
+    let copias = base_c.0.join("copias");
+    let (zip, _) = phxsql_store::backup::executar_zip(
+        &base_c.0.join("dados"),
+        &copias,
+        "loja",
+        "teste",
+        phxsql_server::agora_ms(),
+    )
+    .unwrap();
+    phxsql_store::backup::finalizar_zip(&zip).unwrap();
+    let zip = std::fs::read_dir(&copias)
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .find(|p| p.extension().is_some_and(|x| x == "zip"))
+        .expect("a copia nao gerou .zip");
+
+    let base_d = DirTemp::novo(&format!("{rotulo}-destino"));
+    let mut c = Config {
+        bind: "127.0.0.1:0".into(),
+        base: base_d.0.join("dados"),
+        log_acessos: base_d.0.join("acessos.log"),
+        blacklist: base_d.0.join("blacklist.json"),
+        dblink: base_d.0.join("dblink.json"),
+        jobs: base_d.0.join("jobs.json"),
+        token: TOKEN.into(),
+        ..Default::default()
+    };
+    c.cifra_fio.exigir = false;
+    c.cifra_fio.arquivo = base_d.0.join("chave-do-fio.hex");
+    c.web.ligado = false;
+    let (ouvinte, _) = comum::ouvinte_reservado();
+    let s = Servidor::novo(c).unwrap();
+    let porta_d = comum::no_ar_no_ouvinte(&s, ouvinte);
+    let r = Json::analisar(&pedir(
+        porta_d,
+        &format!(
+            r#"{{"token":"{TOKEN}","op":"restaurar_backup","origem":"{}","database":"loja"}}"#,
+            zip.display()
+        ),
+    ))
+    .unwrap();
+    (r, retrato(porta_d))
+}
+
+/// **723, o «parte» na ULTIMA tabela do grupo.** O central morre depois do
+/// 2.o de 5 itens de uma venda de tabela so: a copia tem de recusar. Vermelho
+/// medido no HEAD ed582124: `ok: true` e retrato `(0, 2, 0)` -- dois itens de
+/// cinco restaurados, a marca apagada no palco.
+#[test]
+fn a_copia_com_a_ultima_tabela_do_grupo_pela_metade_recusa() {
+    for n in [2u64, 4] {
+        let (r, retrato) = restaurar_a_copia_da_venda_de_uma_tabela(
+            &format!("copia-bidi-ultima-{n}"),
+            no_grupo(n),
+        );
+        assert!(
+            !r.booleano_ou("ok", true) && r.texto_ou("erro", "").contains("bidi_"),
+            "no_grupo({n}): a copia com {n} de {ITENS} itens do grupo passou como inteira \
+             (retrato (vendas, itens, pagamentos) = {retrato:?}): {}",
+            r.escrever()
+        );
+        assert_eq!(
+            retrato,
+            (0, 0, 0),
+            "no_grupo({n}): o database pela metade entrou"
+        );
+    }
+}
+
+/// **723, a fronteira do «parte»: UM evento so do grupo no diario.** Sem
+/// este caso, um conferidor que so recusasse a partir de dois presentes
+/// (`presentes > 1`) passava pelo «parte» de cima, que deixa tres.
+#[test]
+fn a_copia_com_um_evento_so_do_grupo_recusa() {
+    let (r, retrato) = restaurar_a_copia_do_central("copia-bidi-um", no_grupo(1));
+    assert!(
+        !r.booleano_ou("ok", true) && r.texto_ou("erro", "").contains("1 de 7"),
+        "a copia com 1 evento do grupo do bidi nao recusou dizendo 1 de 7 (retrato \
+         {retrato:?}): {}",
+        r.escrever()
+    );
+    assert_eq!(retrato, (0, 0, 0), "o database pela metade entrou na raiz");
 }

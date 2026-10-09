@@ -987,6 +987,10 @@ impl Cluster {
                                 // precisa saber se o no vai cifrado com ou sem
                                 // ancora, e o pino em si e config, nao resposta.
                                 ("tem_pino", Json::Bool(!n.chave_do_fio.is_empty())),
+                                // O irmao do de cima para o TLS (pedido 740): o
+                                // no com `pino_tls` fala TLS conferido, e sem
+                                // este campo a tela dizia «sem pino».
+                                ("tem_pino_tls", Json::Bool(!n.pino_tls.is_empty())),
                             ])
                         })
                         .collect(),
@@ -6267,6 +6271,8 @@ impl Config {
                                         // proprio assistente oferece.
                                         ("cifra", Json::Bool(o.cifra)),
                                         ("tem_pino", Json::Bool(!o.chave_do_fio.is_empty())),
+                                        // Pedido 740: o pino TLS, so o fato.
+                                        ("tem_pino_tls", Json::Bool(!o.pino_tls.is_empty())),
                                         (
                                             "databases",
                                             Json::Lista(
@@ -9223,6 +9229,41 @@ mod tests {
         )
     }
 
+    /// **Pedido 740.** O no do cluster e a origem da replicacao com `pino_tls`
+    /// aparecem com `tem_pino_tls: true` na op `config` -- e o pino, nunca.
+    /// Sem o campo, a tela dizia «sem pino» para quem fala TLS conferido.
+    #[test]
+    fn a_op_config_diz_tem_pino_tls_e_nunca_o_pino() {
+        let pino = phxsql_core::tls::pino_em_texto(&[0x5a; 32]);
+        let txt = cluster_cifrado(true, &"aa".repeat(32)).replace(
+            r#""porta":5312,"#,
+            &format!(r#""porta":5312,"pino_tls":"{pino}","#),
+        );
+        let mut j = Json::analisar(&txt).unwrap();
+        let origem = Json::analisar(&format!(
+            r#"{{"nome":"matriz","host":"10.0.0.9","porta":5000,"pino_tls":"{pino}"}}"#
+        ))
+        .unwrap();
+        if let Json::Objeto(campos) = &mut j {
+            for (k, v) in campos.iter_mut() {
+                if k == "replicacao" {
+                    *v = Json::objeto(vec![
+                        ("papel", Json::texto_de("replica")),
+                        ("origens", Json::Lista(vec![origem.clone()])),
+                    ]);
+                }
+            }
+        }
+        let c = Config::de_json(&j).unwrap();
+        let resp = c.para_json().escrever();
+        assert!(!resp.contains(&pino), "o pino TLS vazou: {resp}");
+        assert_eq!(
+            resp.matches("\"tem_pino_tls\":true").count(),
+            2,
+            "o no3 e a origem: {resp}"
+        );
+    }
+
     /// Ligada e com pino por no: os dois campos chegam ao `Cluster`, e o pino
     /// vira os 32 bytes da X25519 sem passar pela leitura de nenhum laco.
     #[test]
@@ -11011,6 +11052,83 @@ mod testes_tls {
             certificado: certificado.into(),
             chave: chave.into(),
         }
+    }
+
+    /// T6e: o PEM com a folha e a intermediaria (gerado pelo openssl) vira a
+    /// cadeia inteira da identidade -- e e ela que o aperto manda (provado no
+    /// core contra o `openssl s_client` conferindo so a raiz).
+    #[test]
+    fn pem_com_intermediaria_vira_cadeia_de_dois() {
+        let d = DirTemp::novo("tls-cadeia");
+        let ok = |args: &[&str]| {
+            let s = std::process::Command::new("openssl")
+                .current_dir(&d.0)
+                .args(args)
+                .output()
+                .unwrap();
+            assert!(s.status.success(), "{}", String::from_utf8_lossy(&s.stderr));
+        };
+        ok(&[
+            "req",
+            "-x509",
+            "-newkey",
+            "ec",
+            "-pkeyopt",
+            "ec_paramgen_curve:P-256",
+            "-nodes",
+            "-keyout",
+            "inter.key",
+            "-out",
+            "inter.pem",
+            "-days",
+            "2",
+            "-subj",
+            "/CN=Inter",
+            "-addext",
+            "basicConstraints=critical,CA:TRUE",
+        ]);
+        ok(&[
+            "genpkey",
+            "-algorithm",
+            "EC",
+            "-pkeyopt",
+            "ec_paramgen_curve:P-256",
+            "-out",
+            "folha.key",
+        ]);
+        ok(&[
+            "req",
+            "-new",
+            "-key",
+            "folha.key",
+            "-subj",
+            "/CN=localhost",
+            "-out",
+            "f.csr",
+        ]);
+        ok(&[
+            "x509",
+            "-req",
+            "-in",
+            "f.csr",
+            "-CA",
+            "inter.pem",
+            "-CAkey",
+            "inter.key",
+            "-CAcreateserial",
+            "-days",
+            "1",
+            "-out",
+            "folha.pem",
+        ]);
+        let mut cadeia = std::fs::read_to_string(d.join("folha.pem")).unwrap();
+        cadeia.push_str(&std::fs::read_to_string(d.join("inter.pem")).unwrap());
+        std::fs::write(d.join("cadeia.pem"), cadeia).unwrap();
+        let config = d.join("config.json");
+        let (id, _) = porta("cadeia.pem", "folha.key")
+            .identidade("dados", &["localhost"], Some(&config))
+            .unwrap();
+        assert!(format!("{id:?}").contains("certificados: 2"), "{id:?}");
     }
 
     #[test]

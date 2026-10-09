@@ -550,6 +550,31 @@ fn dns_cabe(nome: &str, base: &str) -> bool {
     nome == base || nome.ends_with(&format!(".{base}"))
 }
 
+/// Algum nome que o curinga `*.x` cobre (um rotulo qualquer, e so um, antes
+/// de `x` -- RFC 9525 §6.3) cai na subarvore `base`? Sim quando `x` esta
+/// dentro dela (todos os nomes do curinga sao subdominios de `x`), ou quando
+/// a base e exatamente um rotulo sobre `x` (`segredo.x` e um dos nomes que o
+/// curinga cobre). Base com ponto a frente so pega subdominio estrito.
+fn curinga_toca(x: &str, base: &str) -> bool {
+    let x = x.trim_end_matches('.');
+    let base = base.trim_end_matches('.');
+    let (so_sub, b) = match base.strip_prefix('.') {
+        Some(b) => (true, b),
+        None => (false, base),
+    };
+    if b.is_empty() {
+        return true;
+    }
+    // `L.x` dentro de `b`: x == b, ou x subdominio de b.
+    if x == b || x.ends_with(&format!(".{b}")) {
+        return true;
+    }
+    // `L.x == b` para algum rotulo L (so quando a base inclui ela mesma).
+    !so_sub
+        && b.split_once('.')
+            .is_some_and(|(rotulo, resto)| !rotulo.is_empty() && resto == x)
+}
+
 /// E-mail (§4.2.1.10): base com `@` e caixa postal inteira; base com ponto a
 /// frente e qualquer host abaixo do dominio; base sem nenhum dos dois e o
 /// host exato.
@@ -625,7 +650,24 @@ impl Restricoes {
     /// Confere um nome de uma forma contra estas restricoes.
     fn aceita(&self, tag: u8, nome: &[u8]) -> Result<bool> {
         for (t, b) in &self.excluidas {
-            if *t == tag && cabe(tag, nome, b)? {
+            if *t != tag {
+                continue;
+            }
+            // O curinga e o CONJUNTO que ele cobre (pedido 730): basta um nome
+            // desse conjunto cair na exclusao para o SAN ser recusado. Lido
+            // como texto, `*.exemplo.com` nao «cabe» em `secreto.exemplo.com`
+            // -- e o `dns_casa` o aceitaria depois para aquele host. E a
+            // classe do CVE-2025-61727 do Go.
+            let excluido = if tag == 0x82 {
+                let n = minusculo(nome);
+                match n.strip_prefix("*.") {
+                    Some(x) => curinga_toca(x, &minusculo(b)),
+                    None => dns_cabe(&n, &minusculo(b)),
+                }
+            } else {
+                cabe(tag, nome, b)?
+            };
+            if excluido {
                 return Ok(false);
             }
         }
@@ -762,7 +804,14 @@ pub fn validar_caminho(
     let mut emissor = ancora.sujeito;
     let mut chave = ancora.spki;
     let mut comprimento_max = n;
+    // As restricoes de nome da ANCORA valem tambem (pedido 730): a §6.1 as
+    // deixa como entrada opcional, e o Go as aplica -- uma raiz privada
+    // limitada a um dominio e o caso comum, e ignorar a limitacao dela seria
+    // confiar mais do que quem a emitiu pediu.
     let mut restricoes: Vec<Restricoes> = Vec::new();
+    if let Some(e) = ancora.extensao(OID_NAME_CONSTRAINTS) {
+        restricoes.push(restricoes_de(e.valor)?);
+    }
     for (i, c) in caminho.iter().enumerate() {
         let ultimo = i + 1 == n;
         let rotulo = if ultimo {

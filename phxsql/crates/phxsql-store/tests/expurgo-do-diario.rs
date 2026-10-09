@@ -497,3 +497,66 @@ fn o_diario_sem_paginacao_passa_do_volume_999_sem_parar() {
     assert_eq!(l.total().unwrap(), i, "reaberto depois do volume 999");
     assert!(*l.volumes().last().unwrap() > 999);
 }
+
+/// **A ordem do `concluir_expurgo`, medida pelo proprio `concluir`** (papel
+/// F, 08/10/2026). A prova do `kill -9` simula a fase «meio» A MAO -- apaga o
+/// mais velho e morre --, entao ela prova que a abertura aguenta esse estado,
+/// mas nao que o `concluir` o produz: com o laco do `concluir` invertido (do
+/// mais novo para o mais velho) as doze provas de cima ficavam verdes. E no
+/// diario PAGINADO a queda no meio da ordem invertida desliza a posicao:
+/// medido, total 2.570 em vez de 3.000, calado.
+///
+/// Aqui o `unlink` do SEGUNDO volume do plano falha (EBUSY, o gancho do 598)
+/// e o `concluir` para no meio: o mais velho tem de ter saido e os
+/// seguintes, ficado. Depois, o disco volta a aceitar e a abertura ve o mesmo
+/// total e o mesmo evento em cada posicao -- nos dois formatos do diario.
+#[test]
+fn o_concluir_apaga_do_mais_velho_para_a_frente() {
+    use phxsql_store::sincronia::falha_de_teste::{armar, desarmar, Onde};
+    let _c = Corte::ligar();
+    let pag = Paginacao::nova(10, 999)
+        .unwrap()
+        .com_bytes_por_arquivo(64 * 1024)
+        .unwrap();
+    for (rotulo, p) in [("plano", Paginacao::DESLIGADA), ("paginado", pag)] {
+        let d = dir(&format!("ordem-do-concluir-{rotulo}"));
+        let mut l = LogFile::criar(&d, "t", p).unwrap();
+        gravar(&mut l, 0, 3_000);
+        let total = l.total().unwrap();
+        let plano = l.planejar_expurgo(Some(total), None).unwrap();
+        assert!(
+            plano.volumes.len() >= 3,
+            "{rotulo}: a prova pede tres volumes no plano"
+        );
+        l.gravar_bases_do_expurgo(&plano).unwrap();
+        plano.levar_bases_ao_disco().unwrap();
+        let segundo = l.caminho(plano.volumes[1].0);
+        armar(&segundo, Onde::RemocaoDeVolume, 1);
+        let r = l.concluir_expurgo(&plano);
+        desarmar(&segundo);
+        assert!(r.is_err(), "{rotulo}: o gancho do unlink nao disparou");
+        assert!(
+            !l.caminho(plano.volumes[0].0).exists(),
+            "{rotulo}: o concluir parou no meio e o volume MAIS VELHO ficou -- ele \
+             apaga fora de ordem"
+        );
+        for (v, _) in &plano.volumes[1..] {
+            assert!(
+                l.caminho(*v).exists(),
+                "{rotulo}: o volume {v} saiu antes do {} -- o concluir apaga do mais novo",
+                plano.volumes[1].0
+            );
+        }
+        drop(l);
+        let mut l = LogFile::abrir(&d, "t", p).unwrap();
+        assert_eq!(l.total().unwrap(), total, "{rotulo}: o total deslizou");
+        let base = l.base().unwrap();
+        for q in [base, base + 7, total - 1] {
+            assert_eq!(
+                l.ler(q, 1).unwrap()[0].rowid,
+                q,
+                "{rotulo}: a posicao {q} deslizou"
+            );
+        }
+    }
+}

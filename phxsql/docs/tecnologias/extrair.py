@@ -450,7 +450,14 @@ def arquivos_da_interface_embutidos() -> list[Path]:
     `include_str!`/`include_bytes!` que aponta para dentro de `ui/`."""
     http_rs = RAIZ / "crates" / "phxsql-server" / "src" / "http.rs"
     texto = ler(http_rs)
-    achados = re.findall(r'include_(?:str|bytes)!\("\.\./([^"]+)"\)', texto)
+    # So o que aponta para DENTRO de `ui/` entra na tabela, como a docstring
+    # promete. Em 08/10/2026 (commit a0325c80) o http.rs passou a embutir a
+    # fonte `../../phxzip-web/ui/fonte/exo2-latin.woff2` por `include_bytes!`,
+    # e o padrao antigo (qualquer `../`) a pegava e tentava contar LINHAS de
+    # um binario: o extrator caia com UnicodeDecodeError e o TECNOLOGIAS.md
+    # ficava parado sem ninguem ver. O que fica de fora daqui nao some: sai
+    # nomeado por `embutidos_fora_da_ui()`, logo abaixo da tabela.
+    achados = re.findall(r'include_(?:str|bytes)!\("\.\./(ui/[^"]+)"\)', texto)
     caminhos = [RAIZ / "crates" / "phxsql-server" / a for a in achados]
     faltando = [c for c in caminhos if not c.exists()]
     if faltando:
@@ -460,6 +467,25 @@ def arquivos_da_interface_embutidos() -> list[Path]:
             "arquivo sumiu. Conserte antes de gerar o documento."
         )
     return caminhos
+
+
+def embutidos_fora_da_ui() -> list[tuple[str, int]]:
+    """Todo `include_str!`/`include_bytes!` do http.rs que NAO aponta para
+    `ui/` -- a tabela de cima nao os conta, e por isso eles saem nomeados,
+    com o tamanho, em vez de sumirem calados."""
+    http_rs = RAIZ / "crates" / "phxsql-server" / "src" / "http.rs"
+    texto = ler(http_rs)
+    achados = re.findall(r'include_(?:str|bytes)!\("\.\./([^"]+)"\)', texto)
+    base = RAIZ / "crates" / "phxsql-server" / "src"
+    saida = []
+    for a in achados:
+        if a.startswith("ui/"):
+            continue
+        c = (base / ".." / a).resolve()
+        if not c.exists():
+            raise SystemExit(f"http.rs embute um arquivo que nao existe: {a}")
+        saida.append((str(c.relative_to(RAIZ.resolve())), c.stat().st_size))
+    return saida
 
 
 def bloco_interface() -> str:
@@ -486,6 +512,15 @@ def bloco_interface() -> str:
         f"| **total ({len(arquivos)} arquivos)** | **{total_linhas}** | "
         f"**{total_bytes / 1024:.1f}** |"
     )
+    fora_da_ui = embutidos_fora_da_ui()
+    if fora_da_ui:
+        linhas_out.append("")
+        linhas_out.append(
+            f"Embutidos pelo `http.rs` **fora** de `ui/`, e por isso **fora** do "
+            f"total acima ({len(fora_da_ui)} arquivo(s)):"
+        )
+        for rel, b in fora_da_ui:
+            linhas_out.append(f"- `{rel}`, {b / 1024:.1f} KiB")
     # tudo que existe em ui/ mas NAO e embutido (morto, ou servido de outro
     # jeito) -- vale registrar para nao mentir por omissao.
     todos = set((RAIZ / "crates" / "phxsql-server" / "ui").rglob("*"))

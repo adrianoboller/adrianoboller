@@ -258,6 +258,14 @@ fn abrir_remoto_fala_tls_quando_o_destino_tem_pino_tls() {
         }];
         Servidor::novo(c).unwrap()
     };
+    // Pedido 740: o `/saude` alimenta a nota do login, e sem o booleano a
+    // tela dizia «sem pino» para este destino, que fala TLS conferido.
+    let saude = interface(pino.clone()).servidores_seguranca().escrever();
+    assert!(saude.contains("\"tem_pino_tls\":true"), "{saude}");
+    assert!(
+        !saude.contains(&pino),
+        "o pino TLS vazou no /saude: {saude}"
+    );
     let (op, _v, remoto) = interface(pino.clone())
         .abrir_remoto(&destino, &linha_desafio(), "127.0.0.1")
         .unwrap_or_else(|(_, e)| panic!("o desafio pelo TLS nao passou: {e}"));

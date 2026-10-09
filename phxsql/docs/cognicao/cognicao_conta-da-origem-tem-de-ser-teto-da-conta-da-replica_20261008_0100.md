@@ -1,6 +1,10 @@
 # A conta que a origem faz para recusar tem de ser um TETO da conta que a réplica faz para partir
 
-**Estado:** PENDENTE
+**Estado:** FRUTÍFERO
+
+**Evidência:** `crates/phxsql-server/tests/transacao-acima-do-teto.rs::a_transacao_acima_do_teto_e_recusada_no_commit_e_a_que_cabe_chega_inteira`; `4b388e62`
+
+**Validação (08/10/2026):** guardas `custo-da-transacao-sem-a-imagem` (PROVADA, 08/10/2026 03:24) e `commit-acima-do-teto-aceito` (PROVADA, 08/10/2026 16:19) em `bancada/guardas/ultima-corrida.json`. Promovido em 08/10/2026 pelo papel H.
 
 ## O que aconteceu
 
@@ -37,4 +41,4 @@ caso **aceito** perto do teto, com o outro lado medindo, não só o recusado.
 
 Guarda `custo-da-transacao-sem-a-imagem` (a conta só do custo fixo; cai a
 prova do teto − 1) ao lado de `commit-acima-do-teto-aceito` (cai a do
-teto + 1). RED medido à mão; o provador não rodou nesta frente.
+teto + 1). As duas guardas deram PROVADA no provador (`bancada/guardas/ultima-corrida.json`, 08/10/2026: a primeira às 03:24, a segunda às 16:19). A frase anterior, «RED medido à mão; o provador não rodou nesta frente», envelheceu e foi trocada nesta data.

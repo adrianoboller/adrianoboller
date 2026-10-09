@@ -1,6 +1,10 @@
 # «Já aplicada» na réplica deixa o diário um evento atrás
 
-**Estado:** PENDENTE
+**Estado:** FRUTÍFERO
+
+**Evidência:** `crates/phxsql-server/tests/venda-inteira-na-queda-da-replica.rs::o_sigkill_entre_o_reg_e_o_diario_nao_duplica_a_linha`; `9e067e1b`
+
+**Validação (08/10/2026):** guarda `replica-reaplica-inclusao-sem-olhar-o-reg` com veredito PROVADA em `bancada/guardas/ultima-corrida.json` (08/10/2026 06:25). O buraco da exclusão, nomeado na §5, não impede a promoção: a regra aqui vale para a inclusão. Promovido em 08/10/2026 pelo papel H.
 
 ## O que aconteceu
 

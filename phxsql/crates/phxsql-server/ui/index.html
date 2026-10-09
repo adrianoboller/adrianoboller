@@ -1401,6 +1401,9 @@ td.num.mal{color:var(--log)}
    ganha do `[hidden]` do navegador, e o campo do token apareceria em toda
    ligacao MySQL(R), com rotulo e tudo, sem ninguem que o lesse. */
 .form-dbl .cmp[hidden]{display:none}
+/* A nota que atravessa o formulario (o TLS pede a credencial de novo): sem a
+   coluna inteira ela cairia numa celula de 230px e viraria uma tira. */
+.form-dbl > p.leg{grid-column:1/-1;margin:0;font-size:11.5px;color:var(--texto-3)}
 /* O assistente do DbLink. As caixas de marcar reusam o .linha-chk do
    form-dbl de proposito: o input{width:100%} global ja transformou um radio
    numa bolinha do tamanho da celula uma vez, e o linha-chk e o lugar onde
@@ -1688,6 +1691,10 @@ svg.er.editor text{user-select:none;-webkit-user-select:none}
   background:var(--painel);border:1px solid var(--linha);border-radius:5px;
 }
 .barra-acao .botao{width:auto}
+/* O pino TLS tem 51 caracteres de base64, e base64 distingue caixa: a caixa
+   tem de mostrar o pino inteiro, em mono, e do jeito que foi colado. */
+.barra-acao .cl-pino-tls input{min-width:min(56ch,90vw);font-family:"IBM Plex Mono",monospace;
+  text-transform:none;letter-spacing:0}
 /* Rótulo de célula não vira caixa-alta: «Blumenau» tem de continuar
    «Blumenau», senão a tela mente sobre o dado. */
 td label,td .rot-dado{text-transform:none;letter-spacing:0;font-size:inherit;
@@ -2655,6 +2662,13 @@ function mostrarCifraDoDestino() {
   try {
     const alvo = `${($("#h").value || "").trim()}:${($("#pt").value || "").trim()}`;
     const sv = (est.servidoresSeguranca || []).find(s => s && s.endereco === alvo);
+    // Pedido 740: o `pino_tls` decide antes da `cifra` no servidor, entao
+    // o destino que fala TLS por pino se anuncia mesmo com `cifra` falsa.
+    if (sv && sv.tem_pino_tls) {
+      nota.textContent = txt("tela.destino_tls_pino", "TLS 1.3, com pino.");
+      nota.hidden = false;
+      return;
+    }
     if (!sv || !sv.cifra) { nota.hidden = true; nota.textContent = ""; return; }
     nota.textContent = sv.tem_pino
       ? txt("tela.destino_cifrado", "Túnel cifrado, com pino.")
@@ -8046,10 +8060,11 @@ function rodapeDaCifra() {
  * `config.rs`, em comentário de fonte — e quem configura o e-mail não lê
  * fonte. A tela é onde a pessoa decide, e era o único lugar que calava.
  *
- * O conserto que ela oferece NÃO é criptográfico, e isso é o ponto: não há
- * TLS sem biblioteca, e zero dependências é pétrea. O que existe é o conserto
- * de topologia — relé interno, ou proxy que termine o TLS —, e prometer
- * qualquer outra coisa aqui seria vender proteção que não existe.
+ * Desde o pedido 572 o cliente SMTP fala TLS escrito aqui (zero
+ * dependências continua valendo), mas só quando `alertas.email.tls` PEDE: o
+ * padrão continua desligado. Por isso a nota de texto claro continua, e diz
+ * qual campo a desliga — e a nota do `exigir` existe porque TLS sem conferir
+ * quem responde protege da escuta passiva e de nada mais.
  *
  * O parágrafo do `AUTH LOGIN` só aparece com `usuario` preenchido, que é o
  * interruptor que põe uma credencial no fio: dizer «sua senha viaja em
@@ -8059,21 +8074,26 @@ function rodapeDaCifra() {
  * motivou. */
 function rodapeDoEmailDeAlerta(c) {
   const em = (c.alertas || {}).email || {};
-  if (em.tls === true) return "";
+  if (em.tls === true) {
+    // O pino confere a chave; o verificar, a cadeia. Só o exigir sem pino
+    // deixa o fio aberto a quem está no meio, e é só ele que se avisa.
+    return modoDoTls(em.tls_modo) === "exigir" && !em.tem_pino_tls
+      ? `<div class="nota"><p>${marcado(txt("tela.cfg_em_exigir",
+          "**O relé fala TLS sem conferir quem responde** (`exigir`): protege da escuta passiva, não de quem está no meio. Para conferir: `verificar`, ou um `pino_tls`."))}</p></div>`
+      : "";
+  }
   return `<div class="nota">
       <p><strong>${marcado(txt("tela.cfg_em_titulo",
         "**O aviso por e-mail sai em texto claro.**"))}</strong>
       ${marcado(txt("tela.cfg_em_claro",
-        "Este servidor fala SMTP **sem TLS**: a `std` não traz TLS e acrescentar uma biblioteca "
-        + "romperia o zero dependências. Quem escuta o fio lê a mensagem — e o SMS do alerta sai "
-        + "pelo mesmo relé."))}</p>
+        "O TLS com o relé está **desligado** (`alertas.email.tls`). Quem escuta o fio lê a "
+        + "mensagem — e o SMS do alerta sai pelo mesmo relé."))}</p>
       ${em.usuario ? `<p>${marcado(txt("tela.cfg_em_auth",
         "Com `alertas.email.usuario` preenchido, o `AUTH LOGIN` manda usuário e senha em "
         + "**base64, que é codificação e não cifra**: qualquer um no caminho os lê."))}</p>` : ""}
       <p>${marcado(txt("tela.cfg_em_conserto",
-        "O conserto realista é o mesmo da web: um relé interno que você controle (`postfix`, "
-        + "`exim`) na porta 25, que recebe em claro e cuida do TLS para fora — ou um proxy que "
-        + "termine o TLS ao lado."))}
+        "Para cifrar, escreva `\"tls\": \"verificar\"` no bloco (ou `exigir`, que cifra sem "
+        + "conferir quem responde) — ou use um relé interno que você controle na porta 25."))}
       ${marcado(txt("tela.cfg_em_ip",
         "No relé próprio, **libere o IP deste servidor em vez de mandar senha**: credencial que "
         + "não viaja não se escuta."))}</p>
@@ -8291,8 +8311,22 @@ async function verConfigServidor() {
        ["cifra.iteracoes", (c.cifra || {}).iteracoes, "iterações do PBKDF2 que deriva a chave"],
        ["cifra.senha", (c.cifra || {}).senha, "carrega credencial: nunca sai e nunca entra por aqui"],
        ["alertas.caminhos", (al.caminhos || []).join(", ") || "só o base e o backup", ""],
-       ["alertas.email.ligado", simNao(em.ligado), "sem TLS: serve para relé interno na porta 25"],
+       ["alertas.email.ligado", simNao(em.ligado), txt("tela.cfg_em_ligado_diz",
+         "o TLS com o relé é pedido em alertas.email.tls; sem ele, serve para relé interno na porta 25")],
        ["alertas.email.servidor", em.servidor ? `${em.servidor}:${em.porta}` : "", ""],
+       // O TLS com o relé (pedido 572), como o servidor o descreve: o modo e
+       // as âncoras, que dizem COMO se fala, e o FATO de haver pino -- nunca
+       // o pino. Só pelo arquivo como o resto do bloco: ele mora ao lado da
+       // senha do relé, e trocar o TLS pela web daria a uma sessão roubada o
+       // poder de rebaixar o fio que carrega essa senha.
+       ["alertas.email.tls", modoDoTls(em.tls_modo) || "desligado", txt("tela.cfg_em_tls_diz",
+         "exigir cifra sem conferir quem responde; verificar confere a cadeia e o nome do servidor. Na 465 é desde o primeiro byte; nas outras, STARTTLS")],
+       ["alertas.email.tls_ca", em.tls_ca || txt("tela.cfg_em_tls_ca_vazio", "(vazio — as raízes do sistema)"),
+         txt("tela.cfg_em_tls_ca_diz", "as âncoras do verificar: um PEM, ou sistema")],
+       ["alertas.email.pino_tls", em.tem_pino_tls
+           ? txt("tela.cfg_pino_tls_guardado", "(guardado — o pino não sai do arquivo)")
+           : txt("tela.cfg_pino_tls_vazio", "(vazio)"),
+         txt("tela.cfg_em_pino_tls_diz", "sha256// do SPKI do relé: confere a chave em vez da cadeia")],
        ["alertas.email.para", (em.para || []).join(", ") || "ninguém", ""],
        // O `usuario` estava fora da tabela, e é justamente o campo que decide
        // se uma credencial viaja: preenchido, o AUTH LOGIN manda os dois em
@@ -10755,7 +10789,7 @@ async function testarDbLink(nome) {
 async function assistenteDbLink() {
   const az = {
     def: { nome: "", motor: "mysql", host: "127.0.0.1", porta: 3306,
-           usuario: "", senha: "", database: "", somente_leitura: true },
+           usuario: "", senha: "", database: "", somente_leitura: true, tls: "" },
     base: "", tabelas: [], escolhidas: new Map(), local_db: "",
     job: { criar: true, minutos: 5 },
   };
@@ -10802,6 +10836,10 @@ async function assistenteDbLink() {
           <input id="azUsu" class="campo" value="${esc(d.usuario)}"></label>
         <label class="cmp"><span>Senha lá</span>
           <input id="azSen" class="campo" type="password"></label>
+        <label class="cmp"><span>${esc(txt("tela.dbl_tls", "TLS com o outro banco"))}</span>
+          <select id="azTls" class="campo">${opcoesDoTls(d.tls)}</select>
+          <span class="leg">${marcado(txt("tela.dbl_tls_az_leg",
+            "o verificar confere com as raízes do sistema; outra âncora ou um pino, na edição da ligação"))}</span></label>
         <label class="cmp linha-chk"><input type="checkbox" id="azEscreve"
           ${d.somente_leitura ? "" : "checked"}>
           <span>Esta ligação <b>pode escrever</b> no outro banco
@@ -10816,6 +10854,7 @@ async function assistenteDbLink() {
       d.host = $("#azHost").value.trim();
       d.porta = +$("#azPorta").value || 3306;
       d.usuario = $("#azUsu").value.trim();
+      d.tls = modoDoTls($("#azTls").value);
       const senha = $("#azSen").value;
       d.somente_leitura = !$("#azEscreve").checked;
       if (!d.nome) return recado("dê um apelido à ligação", true);
@@ -10824,6 +10863,10 @@ async function assistenteDbLink() {
           host: d.host, porta: d.porta, usuario: d.usuario,
           somente_leitura: d.somente_leitura };
         if (senha) pedido.senha = senha;
+        // So o modo escolhido: ausente, uma ligacao que ja existia com este
+        // apelido herda o que tinha, e o assistente nao desliga calado o TLS
+        // de ninguem. Os dois motores daqui falam TLS.
+        if (d.tls) pedido.tls = d.tls;
         await api("dblink_salvar", pedido);
         passo2();
       } catch (e) { recado(String(e), true); }
@@ -11050,11 +11093,10 @@ async function telaDbLinkDefinicoes() {
     `${ls.length} ligação(ões) · guardadas em ${esc(d.arquivo)}`,
     `<div id="gradeDbl"></div>` +
     `<div class="aviso">
-       <p><strong>A conversa com o banco do outro lado é em texto claro.</strong>
-       Não há TLS: a <code>std</code> do Rust não traz TLS e o projeto não
-       aceita dependência externa. Use rede interna ou um túnel — a senha
-       nunca viaja em texto (o MySQL(R) a embaralha com um sal por conexão),
-       mas o <em>dado devolvido</em> viaja.</p>
+       <p>${marcado(txt("tela.dbl_aviso_tls_titulo",
+         "**O fio até o outro banco só é cifrado se a ligação pedir.**"))}
+       ${marcado(txt("tela.dbl_aviso_tls",
+         "PostgreSQL e MySQL: `tls` exigir ou verificar, ou um pino TLS. Entre dois PhxSql: o pino TLS ou o túnel. Desligado, a senha não viaja em texto, mas o dado devolvido viaja."))}</p>
        <p><strong>A senha fica no arquivo de ligações</strong>, que é gravado
        com permissão só do dono (<code>0600</code>). Ela precisa ser
        apresentada ao outro banco, então não dá para guardar só o hash. Quem
@@ -11063,10 +11105,8 @@ async function telaDbLinkDefinicoes() {
        <p><strong>Uma ligação não carrega permissão.</strong> Ela guarda uma
        credencial, e todo mundo que a usa fala com o outro banco como aquele
        usuário. Por isso toda operação de DbLink exige <b>administrar</b>.</p>
-       <p><strong>MySQL(R) 8 e o <code>caching_sha2_password</code>:</strong>
-       o caminho rápido funciona quando o servidor já tem a senha em cache. O
-       caminho completo exige TLS ou a chave RSA e não cabe sem dependência —
-       nesse caso o teste diz exatamente isso e o que fazer.</p>
+       <p>${marcado(txt("tela.dbl_aviso_sha2",
+         "**MySQL 8 e o `caching_sha2_password`:** sem TLS, só o caminho rápido (a senha já em cache no servidor); por dentro do TLS, também o caminho completo."))}</p>
      </div>
      <div class="acoes">
        <button class="botao incluir" id="btNovaLig">${esc(txt("tela.dbl_nova_ligacao","Nova ligação…"))}</button>
@@ -11099,6 +11139,15 @@ async function telaDbLinkDefinicoes() {
         formato:(v, l) => l.motor === "phxsql" ? esc(v) : "—" },
       { campo:"somente_leitura", titulo:txt("tela.col_escrita","escrita"),
         formato:v => v ? `<span class="pino ok">só lê</span>` : `<span class="pino mal">escreve</span>` },
+      // O fio, como o servidor o descreve: o modo escrito e o FATO de haver
+      // pino -- nunca o pino. O phxsql sem pino TLS fala pelo tunel (ou em
+      // claro), que nao e assunto desta coluna.
+      { campo:"tls", titulo:txt("tela.col_tls","TLS"), ordenavel:false, filtravel:false,
+        formato:(v, l) => l.tem_pino_tls
+          ? `<span class="pino ok">${esc(txt("tela.dbl_tls_por_pino","por pino"))}</span>`
+          : modoDoTls(v) ? `<span class="pino ${modoDoTls(v) === "verificar" ? "ok" : ""} crua">${esc(modoDoTls(v))}</span>`
+          : DBL_MOTORES_TLS.has(l.motor) ? `<span class="pino mal">${esc(txt("tela.dbl_tls_em_claro","em claro"))}</span>`
+          : "—" },
       { campo:"max_linhas", titulo:txt("tela.col_teto","teto"), tipo:"numero", formato:fmt },
     ],
     dados: ls,
@@ -11110,6 +11159,39 @@ async function telaDbLinkDefinicoes() {
     const b = ev.target.closest(".bt-dbl");
     if (b) editarDbLink(b.dataset.n);
   });
+}
+
+/* Os motores que falam TLS pelo protocolo DELES -- o `Motor::fala_tls` do
+   `dblink/mod.rs`. A resposta `dblink` nao traz esse fato por motor, entao ele
+   mora aqui uma vez so; e e o que impede a tela de mandar `tls` a um motor
+   phxsql, que o servidor recusa (entre dois PhxSql o TLS confere por pino). */
+const DBL_MOTORES_TLS = new Set(["postgres", "mysql"]);
+
+/* O pino TLS como o servidor o le (`tls::pino_de_texto`): `sha256//` e o
+   base64 de 32 bytes, com ou sem o `=`. Conferir aqui custa um recado lido
+   enquanto se digita, e nao uma ida ao servidor. */
+const PINO_TLS_FORMA = /^sha256\/\/[A-Za-z0-9+/]{43}=?$/;
+/* A marca d'agua das caixas de pino: a FORMA, que e identificador e nao
+   frase -- nao se traduz, como o `sha256//` do curl nao se traduz. */
+const PINO_TLS_MOLDE = "sha256//…";
+
+/* `desligado` escrito e o campo vazio sao o MESMO modo no servidor
+   (`TlsDeSaida::de_config`); comparar sem normalizar contaria como troca de
+   destino e pediria a senha a quem nao mexeu em nada. */
+const modoDoTls = v => { v = String(v || "").trim(); return v === "desligado" ? "" : v; };
+
+/* As tres opcoes do modo, com o valor do arquivo e o rotulo pela fabrica. Um
+   modo que a tela nao conhece (escrito a mao no arquivo) entra como veio, em
+   vez de sumir e virar «desligado» num salvar que ninguem pediu. */
+function opcoesDoTls(atual) {
+  const modos = [
+    ["", txt("tela.dbl_tls_desligado", "desligado — em claro")],
+    ["exigir", txt("tela.dbl_tls_exigir", "exigir — sem conferir")],
+    ["verificar", txt("tela.dbl_tls_verificar", "verificar — cadeia e host")],
+  ];
+  if (atual && !modos.some(([v]) => v === atual)) modos.push([atual, atual]);
+  return modos.map(([v, rot]) =>
+    `<option value="${esc(v)}" ${v === atual ? "selected" : ""}>${esc(rot)}</option>`).join("");
 }
 
 async function editarDbLink(nome) {
@@ -11128,6 +11210,15 @@ async function editarDbLink(nome) {
   // no formulario nao obrigar a redesenhar a folha.
   const ePhx = l ? l.motor === "phxsql" : false;
   const soPhx = `data-so-phx ${ePhx ? "" : "hidden"}`;
+  // O TLS de saida (pedido 572). O pino NUNCA volta do servidor -- a ficha so
+  // diz `tem_pino_tls` --, entao o campo nasce vazio e «em branco» quer dizer
+  // «fica o guardado», a mesma regra da senha; apagar e uma caixa a parte,
+  // porque vazio nao pode significar duas coisas.
+  const tlsAntes = modoDoTls(l && l.tls);
+  const caAntes = ((l && l.tls_ca) || "").trim();
+  const temPinoTls = !!(l && l.tem_pino_tls);
+  const motorInicial = l ? l.motor : (motores[0] || {}).nome;
+  const soTls = `data-so-tls ${DBL_MOTORES_TLS.has(motorInicial) ? "" : "hidden"}`;
 
   if (!aindaNoPainel(vez)) return;
   folha(l ? `Ligação ${l.nome}` : "Nova ligação",
@@ -11157,6 +11248,25 @@ async function editarDbLink(nome) {
        ${campo("fTokenEnv", esc(txt("tela.dbl_token_env", "Variável de ambiente do token")), l ? l.token_remoto_env : "", "text",
          esc(txt("tela.dbl_env_dica", "preenchida, o segredo vem desta variável e não do arquivo")),
          soPhx)}
+       <label class="cmp" ${soTls}><span>${esc(txt("tela.dbl_tls", "TLS com o outro banco"))}</span>
+         <select id="fTls" class="campo">${opcoesDoTls(tlsAntes)}</select>
+         <span class="leg">${esc(txt("tela.dbl_tls_leg",
+           "exigir cifra sem conferir quem responde; verificar confere a cadeia e o nome do host. Quem recusa o TLS faz a ligação parar"))}</span></label>
+       <label class="cmp largo" ${soTls} data-so-verificar><span>${esc(txt("tela.dbl_tls_ca", "Âncoras do verificar"))}</span>
+         <input id="fTlsCa" class="campo mono" value="${esc(caAntes)}" spellcheck="false">
+         <span class="leg">${marcado(txt("tela.dbl_tls_ca_leg",
+           "caminho de um PEM, ou `sistema`; vazio são as raízes do sistema"))}</span></label>
+       <label class="cmp largo chave-hex"><span>${esc(txt("tela.dbl_pino_tls", "Pino TLS do outro lado"))}${
+           temPinoTls ? ` <span class="pino ok" id="fPinoTlsTem">${esc(txt("tela.dbl_pino_tls_guardado", "guardado"))}</span>` : ""}</span>
+         <input id="fPinoTls" class="campo mono" value="" spellcheck="false" autocomplete="off"
+                placeholder="${PINO_TLS_MOLDE}">
+         <span class="leg">${esc(temPinoTls
+           ? txt("tela.dbl_pino_tls_mantem", "em branco, fica o guardado — ele não volta a esta tela")
+           : txt("tela.dbl_pino_tls_leg", "sha256// e o base64 do SPKI do outro lado; confere a CHAVE no lugar da cadeia"))}</span></label>
+       ${temPinoTls ? `<label class="cmp linha-chk"><input type="checkbox" id="fPinoTlsApagar">
+         <span>${esc(txt("tela.dbl_pino_tls_apagar", "Apagar o pino TLS guardado"))}</span></label>` : ""}
+       <p class="leg dbl-tls-cred">${marcado(txt("tela.dbl_tls_pede_credencial",
+         "**Trocar o modo, as âncoras ou o pino pede a senha de novo** (e o token, no phxsql): a guardada foi dada ao destino antigo."))}</p>
        ${campo("fBase", "Base padrão", l ? l.database : "")}
        ${campo("fDesc", "Descrição", l ? l.descricao : "")}
        ${campo("fTeto", "Teto de linhas", l ? l.max_linhas : 1000, "number")}
@@ -11179,8 +11289,13 @@ async function editarDbLink(nome) {
   $("#btVolta2").onclick = () => telaDbLinkDefinicoes();
   $("#fMotor").onchange = () => {
     const phx = $("#fMotor").value === "phxsql";
+    const tls = DBL_MOTORES_TLS.has($("#fMotor").value);
+    const verificar = tls && $("#fTls").value === "verificar";
     document.querySelectorAll(".form-dbl [data-so-phx]").forEach(e => { e.hidden = !phx; });
+    document.querySelectorAll(".form-dbl [data-so-tls]").forEach(e => { e.hidden = !tls; });
+    document.querySelectorAll(".form-dbl [data-so-verificar]").forEach(e => { e.hidden = !verificar; });
   };
+  $("#fTls").onchange = $("#fMotor").onchange;
   $("#fMotor").onchange();
   const gravar = async () => {
     const nomeF = (l ? l.nome : $("#fNome").value).trim();
@@ -11210,6 +11325,43 @@ async function editarDbLink(nome) {
       const envTok = $("#fTokenEnv").value.trim();
       if (envTok) p.token_remoto_env = envTok;
       else if ($("#fToken").value) p.token_remoto = $("#fToken").value;
+    }
+    // O TLS vai SO quando mudou: campo ausente o servidor herda, e mandar o
+    // mesmo valor de volta seria inofensivo, mas mandar o modo num motor que
+    // nao o le (o phxsql) e recusa. Por isso, no phxsql, o que sobrou de um
+    // motor anterior sai VAZIO -- que e o apagar escrito.
+    const tlsAqui = DBL_MOTORES_TLS.has(p.motor);
+    const tlsAgora = tlsAqui ? modoDoTls($("#fTls").value) : "";
+    const caAgora = tlsAqui ? $("#fTlsCa").value.trim() : "";
+    if (tlsAgora !== tlsAntes) p.tls = tlsAgora;
+    if (caAgora !== caAntes) p.tls_ca = caAgora;
+    const pinoTls = $("#fPinoTls").value.replace(/\s+/g, "");
+    const apagarPino = !!($("#fPinoTlsApagar") && $("#fPinoTlsApagar").checked);
+    if (pinoTls) {
+      if (!PINO_TLS_FORMA.test(pinoTls))
+        throw new Error(txt("tela.pino_tls_torto",
+          "o pino TLS se escreve sha256// seguido do base64 de 32 bytes — o que o outro servidor imprime no arranque"));
+      p.pino_tls = pinoTls;
+    } else if (apagarPino) p.pino_tls = "";
+    // Pino e «verificar» se contradizem no servidor (um confere a chave, o
+    // outro a cadeia); dizer aqui poupa a ida e volta e nomeia a saida.
+    const ficaComPino = pinoTls || (temPinoTls && !apagarPino);
+    if (tlsAgora === "verificar" && ficaComPino)
+      throw new Error(txt("tela.dbl_tls_pino_contradiz",
+        "o pino TLS e o verificar se contradizem: um confere a chave, o outro a cadeia — escolha um"));
+    // A credencial guardada foi dada ao destino ANTIGO, e o servidor recusa
+    // herda-la quando o TLS muda (pedido 470). Recusar aqui diz o que fazer
+    // antes de a pessoa ler a recusa crua.
+    if (l) {
+      const mudouTls = "tls" in p || "tls_ca" in p || "pino_tls" in p;
+      const senhaGuardada = (l.senha && l.senha !== "(vazia)") || !!l.senha_env;
+      const tokenGuardado = p.motor === "phxsql"
+        && ((l.token_remoto && l.token_remoto !== "(vazio)") || !!l.token_remoto_env);
+      const faltaSenha = senhaGuardada && !p.senha && !p.senha_env;
+      const faltaToken = tokenGuardado && !p.token_remoto && !p.token_remoto_env;
+      if (mudouTls && (faltaSenha || faltaToken))
+        throw new Error(txt("tela.dbl_tls_falta_credencial",
+          "trocar o TLS muda a quem a credencial é apresentada: digite a senha de novo (e o token, no phxsql)"));
     }
     const r = await api("dblink_salvar", p);
     // A variavel que nao existe no ambiente do servidor tranca a ligacao. O
@@ -12926,6 +13078,8 @@ async function verCluster() {
          placeholder="${esc(txt("tela.cl_ph_endereco", "host ou IP"))}"></label>
        <label>${esc(txt("tela.cl_ph_porta", "porta"))}<input id="clNovaPorta" type="number"
          min="1" max="65535" value="5000"></label>
+       <label class="cl-pino-tls">${esc(txt("tela.cl_pino_tls", "pino TLS (opcional)"))}<input id="clNovoPinoTls"
+         class="mono" placeholder="${PINO_TLS_MOLDE}" spellcheck="false" autocomplete="off"></label>
        <button class="botao incluir" id="btClAdd">${esc(txt("tela.cl_bt_acrescentar", "Acrescentar"))}</button>
      </div>
 
@@ -12938,6 +13092,8 @@ async function verCluster() {
        <button class="botao excluir" id="btClDel">${esc(txt("tela.cl_bt_remover", "Remover"))}</button>
      </div>
 
+     <p class="leg">${marcado(txt("tela.cl_pino_tls_leg",
+       "Com o pino TLS, os outros nós falam com o novo em TLS 1.3 conferido por esta chave, no lugar do túnel. O pino viaja na propagação e não volta a esta tela."))}</p>
      <div class="nota"><p>${marcado(txt("tela.cl_a_quente",
        "**Acrescentar e remover nó valem A QUENTE.**"))}</p>
        <p>${marcado(txt("tela.cl_a_quente2",
@@ -12996,9 +13152,16 @@ async function verCluster() {
     const id = $("#clNovoId").value.trim(), endereco = $("#clNovoEnd").value.trim();
     if (!id || !endereco) return avisar(txt("tela.cl_falta_id",
       "Diga o id e o endereço do nó novo."), true);
+    // O pino torto o servidor recusa na gravacao da lista; aqui ele vira um
+    // recado antes de sair, nomeando a forma certa.
+    const pinoTls = $("#clNovoPinoTls").value.replace(/\s+/g, "");
+    if (pinoTls && !PINO_TLS_FORMA.test(pinoTls))
+      return avisar(txt("tela.pino_tls_torto",
+        "o pino TLS se escreve sha256// seguido do base64 de 32 bytes — o que o outro servidor imprime no arranque"), true);
     try {
-      const r = await api("cluster_no_acrescentar",
-        { id, endereco, porta: +$("#clNovaPorta").value || 5000 });
+      const pedido = { id, endereco, porta: +$("#clNovaPorta").value || 5000 };
+      if (pinoTls) pedido.pino_tls = pinoTls;
+      const r = await api("cluster_no_acrescentar", pedido);
       avisar(`${id} · ${r.nos}` + contarPropagacao(r), !!contarPropagacao(r));
       verCluster();
     } catch (e) { avisar(String(e), true); }
@@ -13139,7 +13302,8 @@ async function verReplicacao() {
       // travessão em vez de uma afirmação inventada: não saber e estar em
       // claro não são a mesma coisa.
       { campo:"cifra", titulo:txt("tela.col_fio","fio"), ordenavel:false, filtravel:false,
-        formato:(v, o) => v === undefined ? "—"
+        formato:(v, o) => o.tem_pino_tls ? esc(txt("tela.rp_fio_tls_pino","TLS · com pino"))
+          : v === undefined ? "—"
           : !v ? esc(txt("tela.rp_fio_claro","em claro"))
           : o.tem_pino ? esc(txt("tela.rp_fio_pino","cifrado · com pino"))
           : esc(txt("tela.rp_fio_sem_pino","cifrado · sem pino")) },
@@ -13220,7 +13384,8 @@ async function sondarOutro(rz, opcoes = {}) {
     // no padrão do motor, e sondar sem pino o que a replicação vai pinar
     // devolve «ligação boa» para uma configuração que não sobe.
     base.cifra = rz.cifra !== false;
-    if (base.cifra && rz.pino) base.chave_do_fio = rz.pino;
+    if (rz.pino_tls) base.pino_tls = rz.pino_tls;
+    else if (base.cifra && rz.pino) base.chave_do_fio = rz.pino;
   }
   const deQuem = "replicacao_testar";
   const bruto = await api("replicacao_testar", base);
@@ -13305,6 +13470,9 @@ async function assistenteReplicacao() {
     // arranque não é o valor, é a DECISÃO estar escrita. `pino` é a chave
     // pública esperada do outro servidor (chave_do_fio), e vazia é legítima.
     cifra: true, pino: "",
+    // O pino TLS (pedido 572): escrito, a origem fala TLS 1.3 conferido por
+    // ele no lugar do tunel, e a `cifra` deixa de decidir (`Cliente::proteger`).
+    pino_tls: "",
   };
 
   const fundo = document.createElement("div");
@@ -13411,6 +13579,11 @@ async function assistenteReplicacao() {
           <span class="leg">${esc(txt("tela.rz_pino_leg",
             "64 dígitos hexadecimais, o chave_do_fio da origem. «phxsqld --chave-do-fio» no outro "
             + "servidor imprime o dele. Deixe vazio se ainda não souber."))}</span></label>
+        <label class="cmp largo chave-hex"><span>${esc(txt("tela.rz_pino_tls", "Pino TLS do outro servidor (opcional)"))}</span>
+          <input id="rzPinoTls" class="campo mono" value="${esc(rz.pino_tls)}" spellcheck="false" autocomplete="off"
+                 placeholder="${PINO_TLS_MOLDE}">
+          <span class="leg">${esc(txt("tela.rz_pino_tls_leg",
+            "o que o outro servidor imprime no arranque («tls da porta dados: pino …»). Escrito, o fio vira TLS 1.3 e o túnel acima deixa de valer; o outro lado precisa de tls ligado."))}</span></label>
       </div>
       <div class="aviso" id="rzFioDiz"></div>`,
       `<button class="botao secundario" id="rzVolta">${esc(txt("tela.voltar", "← Voltar"))}</button>
@@ -13423,15 +13596,20 @@ async function assistenteReplicacao() {
     const dizerDoFio = () => {
       const ligada = $("#rzCifra").checked;
       const pino = $("#rzPino").value.trim();
-      $("#rzPino").disabled = !ligada;
+      // Com o pino TLS escrito, o tunel nao e usado: os dois controles dele
+      // ficam apagados para nao parecer que decidem alguma coisa.
+      const pinoTls = $("#rzPinoTls").value.trim();
+      $("#rzCifra").disabled = !!pinoTls;
+      $("#rzPino").disabled = !ligada || !!pinoTls;
       // A recusa anterior fala de um valor que não existe mais. Deixá-la na
       // tela punha dois vereditos contraditórios lado a lado — o vermelho
       // «pino torto» debaixo do verde «túnel cifrado, com pino». Apareceu na
       // captura, e não lendo o código.
       $("#rzRecado").innerHTML = "";
-      $("#rzFioDiz").className = "aviso" + (ligada && pino ? " bom" : "");
+      $("#rzFioDiz").className = "aviso" + ((ligada && pino) || pinoTls ? " bom" : "");
       $("#rzFioDiz").innerHTML = `<p>${
-        !ligada ? marcado(txt("tela.rz_claro",
+        pinoTls ? marcado(txt("tela.rz_res_tls_pino", "fio: **TLS 1.3, conferido pelo pino**"))
+        : !ligada ? marcado(txt("tela.rz_claro",
             "**Sem cifra, a conversa da replicação vai em claro** — token, credencial e as "
             + "linhas. O \"cifra\": false fica escrito na origem: é decisão registrada, não esquecimento."))
         : pino ? marcado(txt("tela.rz_res_cifra_pino", "fio: túnel cifrado, com pino"))
@@ -13441,6 +13619,7 @@ async function assistenteReplicacao() {
     };
     $("#rzCifra").onchange = dizerDoFio;
     $("#rzPino").oninput = dizerDoFio;
+    $("#rzPinoTls").oninput = dizerDoFio;
     dizerDoFio();
     $("#rzIr2").onclick = () => {
       rz.nome = $("#rzNome").value.trim();
@@ -13460,6 +13639,7 @@ async function assistenteReplicacao() {
       // Espaço no meio de um hexadecimal colado do terminal é comum, e cair
       // com «pino torto» por causa dele mandaria procurar defeito na chave.
       rz.pino = $("#rzPino").value.replace(/\s+/g, "");
+      rz.pino_tls = $("#rzPinoTls").value.replace(/\s+/g, "");
       if (!rz.nome) return recado(txt("tela.rz_p2_falta_nome", "dê um apelido à origem"), true);
       if (!rz.host) return recado(txt("tela.rz_p2_falta_host", "diga o endereço do outro servidor"), true);
       if (!rz.token_remoto && !rz.usuario)
@@ -13471,6 +13651,9 @@ async function assistenteReplicacao() {
       if (rz.pino && !/^[0-9a-fA-F]{64}$/.test(rz.pino))
         return recado(txt("tela.rz_pino_torto",
           "o pino são 64 dígitos hexadecimais — deixe vazio se ainda não souber o do outro servidor"), true);
+      if (rz.pino_tls && !PINO_TLS_FORMA.test(rz.pino_tls))
+        return recado(txt("tela.pino_tls_torto",
+          "o pino TLS se escreve sha256// seguido do base64 de 32 bytes — o que o outro servidor imprime no arranque"), true);
       passo3();
     };
   };
@@ -13661,8 +13844,10 @@ async function assistenteReplicacao() {
     // operador um aviso perpétuo por uma decisão que ele tomou aqui.
     o.cifra = rz.cifra;
     // O pino só acompanha o túnel: `chave_do_fio` numa origem em claro seria
-    // um campo que não compra nada, e campo que não compra nada mente.
-    if (rz.cifra && rz.pino) o.chave_do_fio = rz.pino;
+    // um campo que não compra nada, e campo que não compra nada mente. Pelo
+    // mesmo motivo ele não vai junto do pino TLS, que tira o túnel do fio.
+    if (rz.pino_tls) o.pino_tls = rz.pino_tls;
+    else if (rz.cifra && rz.pino) o.chave_do_fio = rz.pino;
     return o;
   };
 
@@ -13677,7 +13862,8 @@ async function assistenteReplicacao() {
         (${rz.token_remoto ? "token" : ""}${rz.token_remoto && rz.usuario ? " + " : ""}${rz.usuario ? `usuário <code>${esc(rz.usuario)}</code>` : ""})</li>
       <li>bancos: ${rz.todos ? "<b>todos</b>" : [...rz.escolhidos].map(esc).join(", ")}</li>
       <li>agenda: ${agenda} · reconferir a cada ${rz.reconectar} s</li>
-      <li>${!rz.cifra ? marcado(txt("tela.rz_res_claro", "fio: **em claro**, por decisão escrita"))
+      <li>${rz.pino_tls ? marcado(txt("tela.rz_res_tls_pino", "fio: **TLS 1.3, conferido pelo pino**"))
+        : !rz.cifra ? marcado(txt("tela.rz_res_claro", "fio: **em claro**, por decisão escrita"))
         : rz.pino ? marcado(txt("tela.rz_res_cifra_pino", "fio: túnel cifrado, com pino"))
         : marcado(txt("tela.rz_res_cifra_sem", "fio: túnel cifrado, **sem pino** — só escuta passiva"))}</li></ul>`;
   };
@@ -13772,7 +13958,7 @@ async function assistenteReplicacao() {
         : marcado(txt("tela.rz_bloco_claro",
           "O bloco traz o \"cifra\": false ESCRITO, e sem ele a origem nasceria CIFRADA — o padrão "
           + "desde 18/09/2026. Aqui o campo não cala um aviso: é o que faz valer a escolha desta tela."))}</p>
-        ${rz.cifra && !rz.pino ? `<p>${marcado(txt("tela.rz_sem_pino",
+        ${rz.cifra && !rz.pino && !rz.pino_tls ? `<p>${marcado(txt("tela.rz_sem_pino",
           "**Sem pino, o túnel protege da escuta passiva e não de quem está no meio**: o atacante "
           + "apresenta a chave dele e não há com o que comparar. O arranque avisa exatamente isso."))}</p>` : ""}</div>
       <p class="leg">${rz.modo.id === "multi_master"

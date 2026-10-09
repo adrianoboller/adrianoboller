@@ -42,52 +42,81 @@ contando `#[test]` por arquivo e agrupando:
 <!-- cobertura:inicio -->
 | área | testes | % |
 |---|---:|---:|
-| Motor de dados (arquivos, índice, diários) | 868 | 22,2 |
-| Protocolo e portões (despachar) | 850 | 21,8 |
-| Servidor (outros) | 553 | 14,2 |
-| Núcleo (JSON, tipos, UUID, zip, paralelo) | 323 | 8,3 |
-| Camada SQL (léxico, sintaxe, tradução) | 263 | 6,7 |
-| Configuração | 171 | 4,4 |
-| Criptografia e codificação | 146 | 3,7 |
-| DbLink | 141 | 3,6 |
-| ODBC | 81 | 2,1 |
-| Telemetria e profiler | 81 | 2,1 |
+| Motor de dados (arquivos, índice, diários) | 921 | 22,3 |
+| Protocolo e portões (despachar) | 861 | 20,9 |
+| Servidor (outros) | 637 | 15,4 |
+| Núcleo (JSON, tipos, UUID, zip, paralelo) | 368 | 8,9 |
+| Camada SQL (léxico, sintaxe, tradução) | 263 | 6,4 |
+| Configuração | 175 | 4,2 |
+| Criptografia e codificação | 147 | 3,6 |
+| DbLink | 145 | 3,5 |
+| ODBC | 84 | 2,0 |
+| Telemetria e profiler | 81 | 2,0 |
+| **Replicação** | **54** | **1,3** |
 | **Gatilhos e procedimentos** | **48** | **1,2** |
-| **Replicação** | **45** | **1,2** |
-| **Jobs** | **42** | **1,1** |
-| **Usuários e permissões** | **39** | **1,0** |
-| **Mensagens (i18n do servidor)** | **36** | **0,9** |
-| **Interface web (servidor HTTP)** | **30** | **0,8** |
+| **Jobs** | **42** | **1,0** |
+| **Usuários e permissões** | **39** | **0,9** |
+| **Mensagens (i18n do servidor)** | **37** | **0,9** |
+| **Interface web (servidor HTTP)** | **31** | **0,8** |
 | **Segurança de rede (blacklist, firewall)** | **27** | **0,7** |
 | **Cluster** | **27** | **0,7** |
-| **Console de terminal (phxsqlcmd)** | **21** | **0,5** |
+| **Console de terminal (phxsqlcmd)** | **22** | **0,5** |
+| **Alertas e e-mail** | **21** | **0,5** |
 | **MCP** | **21** | **0,5** |
 | **Transações** | **19** | **0,5** |
-| **Alertas e e-mail** | **17** | **0,4** |
 | **Junções e união** | **17** | **0,4** |
 | **Exportação** | **13** | **0,3** |
 | **Pivot** | **12** | **0,3** |
-| **CLI** | **10** | **0,3** |
-| **Monitor de máquina** | **6** | **0,2** |
-| **total** | **3907** | |
+| **CLI** | **11** | **0,3** |
+| **Monitor de máquina** | **6** | **0,1** |
+| **total** | **4129** | |
 
 Arquivos de `src` com mais de 120 linhas e **zero** `#[test]`:
 
 | arquivo | linhas |
 |---|---:|
-| `phxsql-store/src/table.rs` | 9778 |
-| `phxsql-store/src/ndx.rs` | 2856 |
+| `phxsql-store/src/table.rs` | 10122 |
+| `phxsql-store/src/ndx.rs` | 2873 |
+| `phxsql-server/src/servidor/servico_transacao_01.rs` | 2586 |
+| `phxsql-server/src/servidor/servico_escrita_01.rs` | 2176 |
+| `phxsql-server/src/servidor/servico_bidirecional_01.rs` | 2106 |
+| `phxsql-server/src/servidor/servico_marca_01.rs` | 2048 |
+| `phxsql-server/src/servidor/servico_consulta_01.rs` | 1943 |
+| `phxsql-server/src/servidor/servico_replicacao_01.rs` | 1859 |
+| `phxsql-server/src/servidor/servico_web_01.rs` | 1668 |
+| `phxsql-server/src/servidor/servico_rede_01.rs` | 1650 |
 | `phxsql-ffi/src/lib.rs` | 1640 |
-| `phxsql-server/src/main.rs` | 812 |
+| `phxsql-server/src/servidor/servico_backup_01.rs` | 1619 |
+| `phxsql-server/src/servidor/servico_cluster_01.rs` | 1599 |
+| `phxsql-server/src/servidor/servico_sql_01.rs` | 1511 |
+| `phxsql-server/src/servidor/servico_esquema_01.rs` | 1435 |
+| `phxsql-server/src/servidor/servico_leitura_01.rs` | 1395 |
+| `phxsql-server/src/servidor/servico_telemetria_01.rs` | 1379 |
+| `phxsql-server/src/servidor/servico_nucleo_01.rs` | 1329 |
+| `phxsql-server/src/servidor/servico_admin_01.rs` | 1242 |
+| `phxsql-server/src/servidor/servico_composicao_01.rs` | 1178 |
+| `phxsql-server/src/servidor/servico_permissao_01.rs` | 1152 |
+| `phxsql-core/src/cadeia.rs` | 1128 |
+| `phxsql-server/src/servidor/servico_replicacao_02.rs` | 1106 |
+| `phxsql-server/src/servidor/servico_config_01.rs` | 972 |
+| `phxsql-server/src/servidor/servico_avisos_01.rs` | 971 |
+| `phxsql-server/src/servidor/servico_jobs_01.rs` | 953 |
+| `phxsql-server/src/servidor/servico_diario_01.rs` | 849 |
+| `phxsql-server/src/main.rs` | 838 |
+| `phxsql-server/src/servidor/servico_quorum_01.rs` | 696 |
+| `phxsql-server/src/servidor/servico_dblink_01.rs` | 562 |
 | `phxsql-store/src/integridade.rs` | 336 |
 | `phxsql-ffi/src/punho.rs` | 303 |
 | `phxsql-ffi/src/valor.rs` | 290 |
+| `phxsql-core/src/p384.rs` | 271 |
 | `phxsql-server/src/carga.rs` | 260 |
-| `phxsql-cmd/src/main.rs` | 186 |
+| `phxsql-core/src/rsa.rs` | 256 |
+| `phxsql-cmd/src/main.rs` | 208 |
 | `phxzip/src/erro.rs` | 167 |
 | `phxsql-odbc/src/registro.rs` | 149 |
 | `phxzip/src/phz.rs` | 138 |
 | `phxsql-odbc/src/tipos.rs` | 135 |
+| `phxsql-server/src/sinais.rs` | 133 |
 <!-- cobertura:fim -->
 
 As duas tabelas acima **não se digitam**: `python3

@@ -1,5 +1,5 @@
 {
-  "quando": "2026-10-08 20:17",
+  "quando": "2026-10-09 01:13",
   "mais_antigo": "2026-09-16 15:25",
   "guardas": [
     {
@@ -96,9 +96,9 @@
       "id": "excluir-tabela-lista-curta",
       "titulo": "`excluir_tabela` apaga SEIS extensões e a tabela já tem NOVE",
       "veredito": "PROVADA",
-      "segundos": 7.63,
+      "segundos": 18.59,
       "notas": [],
-      "quando": "2026-09-30 23:46"
+      "quando": "2026-10-08 22:33"
     },
     {
       "id": "backup-sem-sha256",
@@ -372,9 +372,9 @@
       "id": "alter-espelho-para-tras",
       "titulo": "o espelho `.bkp` fica com a largura velha depois de acrescentar coluna",
       "veredito": "PROVADA",
-      "segundos": 7.76,
+      "segundos": 10.67,
       "notas": [],
-      "quando": "2026-10-01 19:03"
+      "quando": "2026-10-08 22:33"
     },
     {
       "id": "alter-queda-no-meio",
@@ -406,9 +406,9 @@
       "id": "ffi-punho-morto-lido-antes-de-conferir",
       "titulo": "a fronteira volta a ler a etiqueta de DENTRO do punho antes de saber se ele ainda existe",
       "veredito": "PROVADA",
-      "segundos": 1.44,
+      "segundos": 10.53,
       "notas": [],
-      "quando": "2026-09-24 04:37"
+      "quando": "2026-10-08 22:33"
     },
     {
       "id": "ffi-texto-ate-o-byte-zero",
@@ -586,9 +586,9 @@
       "id": "replica-julga-fk",
       "titulo": "a replica volta a conferir chave estrangeira no evento que aplica",
       "veredito": "PROVADA",
-      "segundos": 7.28,
+      "segundos": 10.55,
       "notas": [],
-      "quando": "2026-10-01 17:01"
+      "quando": "2026-10-08 22:33"
     },
     {
       "id": "cascata-sem-imagem-no-diario",
@@ -610,9 +610,9 @@
       "id": "marca-de-replica-fica-acesa",
       "titulo": "a marca de replica nao se apaga na volta do `aplicar_evento`",
       "veredito": "PROVADA",
-      "segundos": 7.25,
+      "segundos": 8.92,
       "notas": [],
-      "quando": "2026-10-01 17:01"
+      "quando": "2026-10-08 22:33"
     },
     {
       "id": "fk-nao-pergunta-se-a-mae-esta-viva",
@@ -666,25 +666,25 @@
       "id": "bidirecional-julga-fk",
       "titulo": "o bidirecional volta a conferir a chave do evento que aplica",
       "veredito": "PROVADA",
-      "segundos": 7.06,
+      "segundos": 9.56,
       "notas": [],
-      "quando": "2026-10-01 17:01"
+      "quando": "2026-10-08 22:33"
     },
     {
       "id": "bidirecional-julga-as-filhas",
       "titulo": "o bidirecional volta a recusar apagar a mae que tem filha",
       "veredito": "PROVADA",
-      "segundos": 7.08,
+      "segundos": 9.46,
       "notas": [],
-      "quando": "2026-10-01 11:11"
+      "quando": "2026-10-08 22:33"
     },
     {
       "id": "recascata-sem-conferir-a-arvore",
       "titulo": "a recuperação gravava a primeira filha e só então descobria que a neta da segunda restringe",
       "veredito": "PROVADA",
-      "segundos": 4.36,
+      "segundos": 11.11,
       "notas": [],
-      "quando": "2026-09-24 13:44"
+      "quando": "2026-10-08 22:33"
     },
     {
       "id": "auto-referencia-em-silencio",
@@ -698,17 +698,17 @@
       "id": "recado-manda-reparar-arquivo-sao",
       "titulo": "a mãe invisível manda reparar o índice — de um arquivo intacto",
       "veredito": "PROVADA",
-      "segundos": 3.87,
+      "segundos": 9.89,
       "notas": [],
-      "quando": "2026-09-30 15:57"
+      "quando": "2026-10-08 22:33"
     },
     {
       "id": "procura-das-filhas-manda-reparar-arquivo-sao",
       "titulo": "a procura pelas filhas manda reparar o índice — de um arquivo intacto",
       "veredito": "PROVADA",
-      "segundos": 4.01,
+      "segundos": 8.47,
       "notas": [],
-      "quando": "2026-09-30 15:57"
+      "quando": "2026-10-08 22:33"
     },
     {
       "id": "recuperacao-nao-reconstroi-a-filha",
@@ -882,9 +882,9 @@
       "id": "fts-reconstruir-sem-recriar",
       "titulo": "reconstruir o índice de texto sem recriar o arquivo não é idempotente",
       "veredito": "PROVADA",
-      "segundos": 7.98,
+      "segundos": 8.83,
       "notas": [],
-      "quando": "2026-10-01 14:51"
+      "quando": "2026-10-08 22:33"
     },
     {
       "id": "fts-abrir-recusa-a-tabela",
@@ -898,9 +898,9 @@
       "id": "fts-nasce-na-pista-de-leitura",
       "titulo": "a pista de leitura cria o .fts, e escrever sob a ficha compartilhada é o que ela existe para impedir",
       "veredito": "PROVADA",
-      "segundos": 8.67,
+      "segundos": 8.85,
       "notas": [],
-      "quando": "2026-10-01 14:51"
+      "quando": "2026-10-08 22:33"
     },
     {
       "id": "fts-chave-truncada-nao-se-declara",
@@ -946,9 +946,9 @@
       "id": "contador-de-sequence-atras-do-dado",
       "titulo": "contador de Sequence atrás do dado repete número, e não havia reparo",
       "veredito": "PROVADA",
-      "segundos": 6.78,
+      "segundos": 8.24,
       "notas": [],
-      "quando": "2026-10-01 05:59"
+      "quando": "2026-10-08 22:33"
     },
     {
       "id": "regra-de-coluna-com-typo-carrega-calada",
@@ -1066,9 +1066,9 @@
       "id": "tabela-inexistente-vaza-o-caminho",
       "titulo": "a tabela que não existe respondia «nenhum volume de x.reg em /tmp/…» — o caminho absoluto do disco do servidor, a todo cliente que erra uma letra",
       "veredito": "PROVADA",
-      "segundos": 9.78,
+      "segundos": 12.77,
       "notas": [],
-      "quando": "2026-10-01 03:59"
+      "quando": "2026-10-08 22:33"
     },
     {
       "id": "permissao-sem-devolver-a-vaga",
@@ -1098,9 +1098,9 @@
       "id": "ficha-do-fio-pulada-no-panico",
       "titulo": "a ficha da thread na telemetria fica «viva» para sempre quando o corpo entra em pânico",
       "veredito": "PROVADA",
-      "segundos": 64.93,
+      "segundos": 95.38,
       "notas": [],
-      "quando": "2026-09-24 13:28"
+      "quando": "2026-10-08 22:33"
     },
     {
       "id": "disco-erro-de-es-sem-aviso",
@@ -1138,17 +1138,17 @@
       "id": "recuperacao-deixa-a-marca-orfa",
       "titulo": "a recuperação completa (ou descarta) a marca `.tx` e a deixa no disco",
       "veredito": "PROVADA",
-      "segundos": 53.68,
+      "segundos": 157.24,
       "notas": [],
-      "quando": "2026-09-24 13:28"
+      "quando": "2026-10-08 23:09"
     },
     {
       "id": "recuperacao-nao-completa-o-commit",
       "titulo": "a recuperação conta e apaga a marca válida sem completar o commit",
       "veredito": "PROVADA",
-      "segundos": 57.72,
+      "segundos": 139.16,
       "notas": [],
-      "quando": "2026-09-24 15:15"
+      "quando": "2026-10-08 23:09"
     },
     {
       "id": "ndx-queda-com-cabecalho-limpo",
@@ -1218,9 +1218,9 @@
       "id": "threads-do-so-pela-diferenca",
       "titulo": "a prova de que o SO viu a thread subida é a diferença entre duas leituras do total do processo",
       "veredito": "PROVADA",
-      "segundos": 81.31,
+      "segundos": 133.15,
       "notas": [],
-      "quando": "2026-10-01 04:20"
+      "quando": "2026-10-08 23:09"
     },
     {
       "id": "varredura-sem-o-elo",
@@ -1234,9 +1234,9 @@
       "id": "linha-vazia-na-conferencia-de-filhas",
       "titulo": "a linha descida para a conferencia de filhas vai vazia, e toda mae parece sem filha",
       "veredito": "PROVADA",
-      "segundos": 4.36,
+      "segundos": 8.33,
       "notas": [],
-      "quando": "2026-09-24 13:44"
+      "quando": "2026-10-08 23:09"
     },
     {
       "id": "teto-de-64-bits-satura",
@@ -1386,17 +1386,17 @@
       "id": "debug-da-cifra-mostra-a-senha",
       "titulo": "o `Debug` da cifra imprime a senha: um `dbg!` apressado a joga no log",
       "veredito": "PROVADA",
-      "segundos": 7.63,
+      "segundos": 28.4,
       "notas": [],
-      "quando": "2026-09-24 04:58"
+      "quando": "2026-10-08 23:09"
     },
     {
       "id": "debug-do-segredo-mostra-o-valor",
       "titulo": "o `Debug` do tipo `Segredo` imprime o valor: todo dono que o chamar vaza",
       "veredito": "PROVADA",
-      "segundos": 4.94,
+      "segundos": 27.61,
       "notas": [],
-      "quando": "2026-09-24 04:58"
+      "quando": "2026-10-08 23:09"
     },
     {
       "id": "profiler-sem-a-senha-dentro-do-sql",
@@ -1418,25 +1418,25 @@
       "id": "trilha-sem-o-nome-de-segredo",
       "titulo": "a trilha LGPD deixa de olhar o NOME da coluna e só analisa o valor",
       "veredito": "PROVADA",
-      "segundos": 2.15,
+      "segundos": 18.89,
       "notas": [],
-      "quando": "2026-09-24 04:34"
+      "quando": "2026-10-08 23:09"
     },
     {
       "id": "trilha-so-olha-o-nome-da-coluna",
       "titulo": "a trilha LGPD deixa de ANALISAR o valor e só confia no nome da coluna",
       "veredito": "PROVADA",
-      "segundos": 2.03,
+      "segundos": 21.96,
       "notas": [],
-      "quando": "2026-09-24 04:34"
+      "quando": "2026-10-08 23:09"
     },
     {
       "id": "debug-da-ligacao-mostra-a-senha",
       "titulo": "o `Debug` da ligação de DbLink imprime a senha e o token do outro banco",
       "veredito": "PROVADA",
-      "segundos": 36.18,
+      "segundos": 141.92,
       "notas": [],
-      "quando": "2026-09-24 04:37"
+      "quando": "2026-10-08 23:09"
     },
     {
       "id": "fio-cifrado-manda-o-claro-junto",
@@ -1450,9 +1450,9 @@
       "id": "diario-das-diretivas-guarda-o-segredo-anterior",
       "titulo": "o diário das diretivas grava o valor ANTERIOR do campo sigiloso em claro",
       "veredito": "PROVADA",
-      "segundos": 34.2,
+      "segundos": 109.59,
       "notas": [],
-      "quando": "2026-09-24 04:34"
+      "quando": "2026-10-08 23:09"
     },
     {
       "id": "cluster-devolve-a-credencial-na-tela",
@@ -1466,9 +1466,9 @@
       "id": "token-do-rest-entra-pela-tela",
       "titulo": "o token da porta REST passa a se gravar pela tela de configuração",
       "veredito": "PROVADA",
-      "segundos": 35.59,
+      "segundos": 128.96,
       "notas": [],
-      "quando": "2026-09-24 04:34"
+      "quando": "2026-10-08 23:09"
     },
     {
       "id": "cifra-do-odbc-volta-a-nascer-em-claro",
@@ -1482,9 +1482,9 @@
       "id": "receita-odbc-devolve-a-senha",
       "titulo": "a connection string mascarada do ODBC devolve a senha inteira",
       "veredito": "PROVADA",
-      "segundos": 1.81,
+      "segundos": 11.48,
       "notas": [],
-      "quando": "2026-09-24 04:34"
+      "quando": "2026-10-08 23:09"
     },
     {
       "id": "cifra-do-fio-reserializa-a-privada",
@@ -1498,225 +1498,225 @@
       "id": "especificacao-openapi-leva-o-token",
       "titulo": "a especificação OpenAPI, servida sem portão, passa a carregar o token da porta",
       "veredito": "PROVADA",
-      "segundos": 43.25,
+      "segundos": 154.96,
       "notas": [],
-      "quando": "2026-09-24 04:34"
+      "quando": "2026-10-08 23:09"
     },
     {
       "id": "token-remoto-fora-da-lista-de-segredos",
       "titulo": "o `token_remoto` sai da lista de segredos: o token do OUTRO servidor vai em claro para o `perfil.txt` e para a op `profiler`",
       "veredito": "PROVADA",
-      "segundos": 56.02,
+      "segundos": 156.51,
       "notas": [],
-      "quando": "2026-09-24 04:34"
+      "quando": "2026-10-08 23:09"
     },
     {
       "id": "job-recusa-um-nome-e-grava-os-outros",
       "titulo": "a guarda do job volta a recusar só `token`: `senha`/`token_remoto` vão para o `jobs.json` e voltam na ficha",
       "veredito": "PROVADA",
-      "segundos": 40.46,
+      "segundos": 168.82,
       "notas": [],
-      "quando": "2026-09-24 04:34"
+      "quando": "2026-10-08 23:09"
     },
     {
       "id": "config-json-escreve-aberto-e-herda",
       "titulo": "o `config.json` volta a nascer na permissão do `umask` e a herdar o `0644` do original",
       "veredito": "PROVADA",
-      "segundos": 44.31,
+      "segundos": 82.58,
       "notas": [],
-      "quando": "2026-09-24 07:08"
+      "quando": "2026-10-09 00:44"
     },
     {
       "id": "config-phz-troca-escreve-aberto-e-herda",
       "titulo": "a troca de forma (`--empacotar-config`/`--desempacotar-config`) grava o arquivo novo aberto, herdando o `0644` do original",
       "veredito": "PROVADA",
-      "segundos": 43.17,
+      "segundos": 81.32,
       "notas": [],
-      "quando": "2026-09-24 07:08"
+      "quando": "2026-10-09 00:44"
     },
     {
       "id": "config-phz-abre-com-os-24-ciclos",
       "titulo": "o `config.phz` volta a abrir com o teto de 24 ciclos: um cabecalho hostil custa 2^24 rodadas ja no arranque",
       "veredito": "PROVADA",
-      "segundos": 84.15,
+      "segundos": 108.35,
       "notas": [],
-      "quando": "2026-09-24 07:08"
+      "quando": "2026-10-09 00:44"
     },
     {
       "id": "config-phz-abre-cabecalho-de-megabytes",
       "titulo": "o `config.phz` volta a aceitar cabecalho de megabytes: um arquivo de KiB aloca o que o cabecalho declarar",
       "veredito": "PROVADA",
-      "segundos": 43.28,
+      "segundos": 81.68,
       "notas": [],
-      "quando": "2026-09-24 07:08"
+      "quando": "2026-10-09 00:44"
     },
     {
       "id": "config-phz-dois-presentes-escolhe-calado",
       "titulo": "com `config.json` E `config.phz` presentes, o servidor escolhe um calado e sobe",
       "veredito": "PROVADA",
-      "segundos": 60.95,
+      "segundos": 80.96,
       "notas": [],
-      "quando": "2026-09-24 12:01"
+      "quando": "2026-10-09 00:44"
     },
     {
       "id": "config-phz-terceiro-nao-e-ignorado",
       "titulo": "o nome de um TERCEIRO numa pasta com sticky bit volta a travar o arranque",
       "veredito": "PROVADA",
-      "segundos": 66.2,
+      "segundos": 79.9,
       "notas": [],
-      "quando": "2026-09-24 12:01"
+      "quando": "2026-10-09 00:44"
     },
     {
       "id": "config-phz-terceiro-nao-avisa-no-arranque",
       "titulo": "o servidor ignora o nome de TERCEIRO e sobe calado sobre o que descartou",
       "veredito": "PROVADA",
-      "segundos": 23.81,
+      "segundos": 22.75,
       "notas": [],
-      "quando": "2026-09-24 12:01"
+      "quando": "2026-10-09 00:44"
     },
     {
       "id": "config-phz-par-root-vira-terceiro",
       "titulo": "o `.json` do ROOT ao lado do `.phz` do servico vira arquivo de terceiro, e o servico sobe do `.phz` VELHO",
       "veredito": "PROVADA",
-      "segundos": 38.89,
+      "segundos": 40.86,
       "notas": [],
-      "quando": "2026-09-24 12:01"
+      "quando": "2026-10-09 00:44"
     },
     {
       "id": "config-phz-par-root-e-terceiro",
       "titulo": "o root sai do lado de confianca: numa pasta com sticky bit, o `.json` dele vira arquivo de terceiro",
       "veredito": "PROVADA",
-      "segundos": 59.91,
+      "segundos": 80.37,
       "notas": [],
-      "quando": "2026-09-24 12:01"
+      "quando": "2026-10-09 00:44"
     },
     {
       "id": "config-phz-par-sem-sticky-escolhe",
       "titulo": "o nome de terceiro e ignorado numa pasta SEM sticky bit, onde quem o criou tambem troca o do servico",
       "veredito": "PROVADA",
-      "segundos": 63.24,
+      "segundos": 80.87,
       "notas": [],
-      "quando": "2026-09-24 12:01"
+      "quando": "2026-10-09 00:44"
     },
     {
       "id": "config-phz-par-pasta-que-so-o-dono-grava",
       "titulo": "o nome de outro dono e ignorado numa pasta com sticky bit que SO o dono grava",
       "veredito": "PROVADA",
-      "segundos": 66.16,
+      "segundos": 80.79,
       "notas": [],
-      "quando": "2026-09-24 12:01"
+      "quando": "2026-10-09 00:44"
     },
     {
       "id": "config-phz-par-dono-da-pasta-vira-terceiro",
       "titulo": "o nome do DONO da pasta e ignorado como se fosse de terceiro",
       "veredito": "PROVADA",
-      "segundos": 70.14,
+      "segundos": 80.46,
       "notas": [],
-      "quando": "2026-09-24 12:01"
+      "quando": "2026-10-09 00:44"
     },
     {
       "id": "config-phz-par-falha-aberto",
       "titulo": "o ramo que falha fechado escolhe o `.json` quando nenhum lado e de confianca",
       "veredito": "PROVADA",
-      "segundos": 68.73,
+      "segundos": 82.87,
       "notas": [],
-      "quando": "2026-09-24 12:01"
+      "quando": "2026-10-09 00:44"
     },
     {
       "id": "config-phz-par-sem-euid-escolhe",
       "titulo": "sem o uid de quem roda, o par supoe root e escolhe",
       "veredito": "PROVADA",
-      "segundos": 70.4,
+      "segundos": 81.43,
       "notas": [],
-      "quando": "2026-09-24 12:01"
+      "quando": "2026-10-09 00:44"
     },
     {
       "id": "config-phz-euid-le-o-uid-real",
       "titulo": "o uid de quem roda sai do campo REAL do `/proc/self/status`, e nao do efetivo",
       "veredito": "PROVADA",
-      "segundos": 73.47,
+      "segundos": 81.89,
       "notas": [],
-      "quando": "2026-09-24 12:01"
+      "quando": "2026-10-09 00:44"
     },
     {
       "id": "config-phz-troca-sobre-terceiro-diz-corrida",
       "titulo": "`--empacotar-config` com o `.phz` de um terceiro ao lado culpa uma corrida que nao houve",
       "veredito": "PROVADA",
-      "segundos": 23.32,
+      "segundos": 24.89,
       "notas": [],
-      "quando": "2026-09-24 12:01"
+      "quando": "2026-10-09 01:10"
     },
     {
       "id": "config-json-claro-vira-phz-sem-pedir",
       "titulo": "o servidor que subiu de um `config.json` em claro passa a grava-lo empacotado sem ninguem pedir",
       "veredito": "PROVADA",
-      "segundos": 41.17,
+      "segundos": 76.84,
       "notas": [],
-      "quando": "2026-09-24 07:08"
+      "quando": "2026-10-09 01:10"
     },
     {
       "id": "config-dica-do-modelo-sobre-arquivo-presente",
       "titulo": "o `phxsqld` que nao sobe manda gerar o modelo `> config.json` por cima do arquivo que o erro esta nomeando",
       "veredito": "PROVADA",
-      "segundos": 12.31,
+      "segundos": 21.9,
       "notas": [],
-      "quando": "2026-09-24 07:08"
+      "quando": "2026-10-09 01:10"
     },
     {
       "id": "config-phz-troca-so-depois-de-validar",
       "titulo": "a troca de forma so roda depois de o `Config::ler` aceitar: o `.phz` com um campo torto nao sai para conserto",
       "veredito": "PROVADA",
-      "segundos": 12.21,
+      "segundos": 21.23,
       "notas": [],
-      "quando": "2026-09-24 07:08"
+      "quando": "2026-10-09 01:10"
     },
     {
       "id": "config-phz-copia-guardada-fica-aberta",
       "titulo": "a copia em claro que a migracao guarda leva o `0644` da instalacao, com o token, para sempre",
       "veredito": "PROVADA",
-      "segundos": 45.28,
+      "segundos": 82.41,
       "notas": [],
-      "quando": "2026-09-24 07:08"
+      "quando": "2026-10-09 01:10"
     },
     {
       "id": "config-phz-migra-o-link",
       "titulo": "a migracao de um config que e LINK move so o link e diz que guardou o original",
       "veredito": "PROVADA",
-      "segundos": 45.96,
+      "segundos": 83.13,
       "notas": [],
-      "quando": "2026-09-24 07:08"
+      "quando": "2026-10-09 01:10"
     },
     {
       "id": "config-phz-aviso-procura-a-copia-pelo-lido",
       "titulo": "o aviso de arranque procura a copia em claro por um nome que a migracao nao usou, e cala",
       "veredito": "PROVADA",
-      "segundos": 43.56,
+      "segundos": 82.36,
       "notas": [],
-      "quando": "2026-09-24 07:08"
+      "quando": "2026-10-09 01:10"
     },
     {
       "id": "gravar-privado-temporario-e-o-proprio-config",
-      "titulo": "o temporario do `gravar_privado` troca a extensao, e com `--config servidor.tmp` ele e o proprio config",
+      "titulo": "o irmao-por-sufixo troca a extensao, e com `--config servidor.tmp` (ou `\"jobs\": \"agenda.log\"`) o irmao e o proprio arquivo",
       "veredito": "PROVADA",
-      "segundos": 45.67,
+      "segundos": 80.94,
       "notas": [],
-      "quando": "2026-09-24 07:08"
+      "quando": "2026-10-09 01:10"
     },
     {
       "id": "config-phz-desfazer-apaga-a-unica-copia",
       "titulo": "o desfazer da troca apaga o arquivo novo mesmo quando o velho sumiu, e diz que o velho «continua valendo»",
       "veredito": "PROVADA",
-      "segundos": 43.53,
+      "segundos": 81.65,
       "notas": [],
-      "quando": "2026-09-24 07:08"
+      "quando": "2026-10-09 01:10"
     },
     {
       "id": "config-phz-grava-o-texto-cru",
       "titulo": "o servidor que subiu de um `config.phz` grava o texto cru dentro dele: o token volta a ler-se num editor",
       "veredito": "PROVADA",
-      "segundos": 43.59,
+      "segundos": 83.02,
       "notas": [],
-      "quando": "2026-09-24 07:08"
+      "quando": "2026-10-09 01:10"
     },
     {
       "id": "replica-lista-e-pedida-nao-imposta",
@@ -1810,9 +1810,9 @@
       "id": "slot-de-outro-reg",
       "titulo": "o sal deixa de ser por arquivo: o slot cifrado de um `.reg` abre no outro",
       "veredito": "PROVADA",
-      "segundos": 12.59,
+      "segundos": 13.0,
       "notas": [],
-      "quando": "2026-09-24 04:34"
+      "quando": "2026-10-09 01:10"
     },
     {
       "id": "pulso-sem-prova-de-identidade",
@@ -1826,9 +1826,9 @@
       "id": "aperto-de-mao-sem-teto",
       "titulo": "a leitura do aperto de mao fora do `Canal`, sem teto nenhum",
       "veredito": "PROVADA",
-      "segundos": 46.39,
+      "segundos": 80.13,
       "notas": [],
-      "quando": "2026-09-24 04:34"
+      "quando": "2026-10-09 01:10"
     },
     {
       "id": "erro-do-pulso-mapeia-quem-nao-tem-pino",
@@ -1972,9 +1972,9 @@
       "id": "completar-apaga-a-marca-impossivel",
       "titulo": "a recuperação do COMMIT apaga a marca de uma operação que só estava congelada",
       "veredito": "PROVADA",
-      "segundos": 58.18,
+      "segundos": 83.32,
       "notas": [],
-      "quando": "2026-09-24 15:15"
+      "quando": "2026-10-09 01:10"
     },
     {
       "id": "after-no-commit-some-calado",
@@ -2020,9 +2020,9 @@
       "id": "copia-do-de-hex-envenena-a-trava-de-dados",
       "titulo": "o binário que corta um caractere envenena a trava global de dados",
       "veredito": "PROVADA",
-      "segundos": 18.64,
+      "segundos": 41.93,
       "notas": [],
-      "quando": "2026-09-24 13:28"
+      "quando": "2026-10-08 23:37"
     },
     {
       "id": "percent-da-web-fatia-texto-por-byte",
@@ -2052,9 +2052,9 @@
       "id": "smtp-linha-sem-teto",
       "titulo": "o cliente SMTP lê a linha do relé com `read_line` cru, sem teto de tamanho",
       "veredito": "PROVADA",
-      "segundos": 41.29,
+      "segundos": 139.4,
       "notas": [],
-      "quando": "2026-09-24 04:34"
+      "quando": "2026-10-08 23:37"
     },
     {
       "id": "leitura-fora-do-canal-na-web",
@@ -2252,9 +2252,9 @@
       "id": "drop-grava-o-ndx-rasgado",
       "titulo": "o `Drop` do `.ndx` grava a árvore rasgada por um pânico no meio da escrita e baixa o byte 52: a tabela volta limpa e errada",
       "veredito": "PROVADA",
-      "segundos": 4.99,
+      "segundos": 14.36,
       "notas": [],
-      "quando": "2026-09-24 15:15"
+      "quando": "2026-10-08 23:37"
     },
     {
       "id": "marca-do-ndx-sobe-depois-do-reg",
@@ -2268,17 +2268,17 @@
       "id": "drop-do-ndx-decide-por-panicking",
       "titulo": "o `Drop` do `.ndx` decide por `thread::panicking()`: o pânico capturado e o `Drop` depois gravam a árvore rasgada como limpa",
       "veredito": "PROVADA",
-      "segundos": 5.38,
+      "segundos": 16.9,
       "notas": [],
-      "quando": "2026-09-24 15:15"
+      "quando": "2026-10-08 23:37"
     },
     {
       "id": "drop-do-ndx-decide-por-panicking-pela-abi",
       "titulo": "pela ABI de C, o punho envenenado por um pânico no meio da escrita, ao ser fechado, grava o índice rasgado como limpo",
       "veredito": "PROVADA",
-      "segundos": 5.31,
+      "segundos": 21.65,
       "notas": [],
-      "quando": "2026-09-24 15:15"
+      "quando": "2026-10-08 23:37"
     },
     {
       "id": "sincronizar-limpa-o-ndx-aberto-sujo",
@@ -2340,9 +2340,9 @@
       "id": "dblink-cifra-formato-2-sem-chave",
       "titulo": "o `dblink.json` de hoje, sem chave declarada, ganha `formato: 2` ao ser regravado",
       "veredito": "PROVADA",
-      "segundos": 82.58,
+      "segundos": 80.03,
       "notas": [],
-      "quando": "2026-10-07 15:08"
+      "quando": "2026-10-09 00:51"
     },
     {
       "id": "dblink-cifra-chave-dentro-da-pasta",
@@ -2540,9 +2540,9 @@
       "id": "reparo-no-desenrolar-de-panico-de-fora",
       "titulo": "o `AoSair` de um pânico FORA da trava a toma no desenrolar, e o reparo roda (e pode abortar) por um pânico que nunca tocou em dado",
       "veredito": "PROVADA",
-      "segundos": 59.61,
+      "segundos": 194.42,
       "notas": [],
-      "quando": "2026-09-24 13:28"
+      "quando": "2026-10-08 23:37"
     },
     {
       "id": "reparo-ignora-a-operacao-impossivel",
@@ -2580,25 +2580,25 @@
       "id": "sobreposicao-acha-pela-chave-velha",
       "titulo": "o buscar da sobreposicao acha pela chave velha a linha do disco que o prefixo alterou",
       "veredito": "PROVADA",
-      "segundos": 4.4,
+      "segundos": 21.24,
       "notas": [],
-      "quando": "2026-09-24 13:44"
+      "quando": "2026-10-08 23:37"
     },
     {
       "id": "mae-viva-lida-por-baixo-da-sobreposicao",
       "titulo": "a conferencia de «mae viva» le o disco por baixo da marca pendente",
       "veredito": "PROVADA",
-      "segundos": 4.53,
+      "segundos": 18.49,
       "notas": [],
-      "quando": "2026-09-24 13:44"
+      "quando": "2026-10-08 23:37"
     },
     {
       "id": "indice-da-sobreposicao-parado",
       "titulo": "o indice das chaves pendentes fica no retrato da primeira busca",
       "veredito": "PROVADA",
-      "segundos": 4.68,
+      "segundos": 18.47,
       "notas": [],
-      "quando": "2026-09-24 13:44"
+      "quando": "2026-10-08 23:37"
     },
     {
       "id": "passada-replaneja-a-cascata",
@@ -2612,57 +2612,57 @@
       "id": "prefixo-copia-a-sobreposicao",
       "titulo": "o plano da cascata abre a filha com uma COPIA da sobreposicao dela",
       "veredito": "PROVADA",
-      "segundos": 49.18,
+      "segundos": 194.42,
       "notas": [],
-      "quando": "2026-09-24 13:44"
+      "quando": "2026-10-08 23:37"
     },
     {
       "id": "sobreposicao-guarda-a-linha-crua",
       "titulo": "a sobreposicao guarda a linha crua do empilhar, e nao a que o store vai gravar",
       "veredito": "PROVADA",
-      "segundos": 54.16,
+      "segundos": 210.95,
       "notas": [],
-      "quando": "2026-09-24 13:44"
+      "quando": "2026-10-08 23:37"
     },
     {
       "id": "nulo-colide-no-unico",
       "titulo": "o segundo NULL num indice unico cai em DUPLICADO",
       "veredito": "PROVADA",
-      "segundos": 4.55,
+      "segundos": 20.31,
       "notas": [],
-      "quando": "2026-09-24 13:44"
+      "quando": "2026-10-08 23:37"
     },
     {
       "id": "nulo-colide-no-unico-do-commit",
       "titulo": "o COMMIT com o segundo NULL num indice unico sai pela metade",
       "veredito": "PROVADA",
-      "segundos": 53.45,
+      "segundos": 176.98,
       "notas": [],
-      "quando": "2026-09-24 13:44"
+      "quando": "2026-10-08 23:37"
     },
     {
       "id": "fsync-recusado-repete-no-diario",
       "titulo": "o `fsync` recusado de um volume é repetido e responde Ok: o `Volumes` devolvia a lista ao registro «para o fecho tentar de novo»",
       "veredito": "PROVADA",
-      "segundos": 8.41,
+      "segundos": 13.96,
       "notas": [],
-      "quando": "2026-10-01 02:27"
+      "quando": "2026-10-08 23:37"
     },
     {
       "id": "fsync-recusado-repete-no-indice",
       "titulo": "o `.ndx` cujo `fsync` foi recusado responde Ok no fecho seguinte, pela porta da árvore que não presta",
       "veredito": "PROVADA",
-      "segundos": 4.89,
+      "segundos": 13.17,
       "notas": [],
-      "quando": "2026-09-24 15:15"
+      "quando": "2026-10-08 23:37"
     },
     {
       "id": "drop-baixa-o-byte-52-depois-do-fsync-recusado",
-      "titulo": "depois de um `fsync` recusado no diretório, o `Drop` do `.ndx` grava o cabeçalho limpo por cima das páginas que o núcleo pode ter perdido",
+      "titulo": "depois de um `fsync` recusado no diretório, o `.ndx` sai do `Drop` dizendo que presta — até o 522 gravando o 0, desde o 522 atestando para a reabertura",
       "veredito": "PROVADA",
-      "segundos": 4.87,
+      "segundos": 8.15,
       "notas": [],
-      "quando": "2026-09-24 15:15"
+      "quando": "2026-10-09 01:10"
     },
     {
       "id": "pagina-que-o-disco-recusou-sai-das-sujas",
@@ -2676,9 +2676,9 @@
       "id": "pagina-despejada-que-o-disco-recusou-some",
       "titulo": "a página suja despejada do cache que o disco recusou some: nem no arquivo, nem na RAM",
       "veredito": "PROVADA",
-      "segundos": 4.84,
+      "segundos": 7.83,
       "notas": [],
-      "quando": "2026-09-24 15:15"
+      "quando": "2026-10-09 01:13"
     },
     {
       "id": "servidor-segue-de-pe-depois-do-fsync-recusado",
@@ -2692,9 +2692,9 @@
       "id": "completar-engole-a-tabela-que-nao-foi-ao-disco",
       "titulo": "a recuperação engole o erro do `sincronizar` e apaga a marca de um commit cujo dado não foi ao disco",
       "veredito": "PROVADA",
-      "segundos": 69.56,
+      "segundos": 79.82,
       "notas": [],
-      "quando": "2026-09-24 15:15"
+      "quando": "2026-10-09 01:13"
     },
     {
       "id": "fk-antes-do-default",
@@ -4840,25 +4840,25 @@
       "id": "check-novo-contra-a-linha-velha",
       "titulo": "`acrescentar_coluna` com CHECK que linhas que ja existem violam e aceito, e a tabela fica com duas verdades",
       "veredito": "PROVADA",
-      "segundos": 78.18,
+      "segundos": 105.89,
       "notas": [],
-      "quando": "2026-10-01 19:19"
+      "quando": "2026-10-09 00:03"
     },
     {
       "id": "backup-copia-sob-a-exclusiva",
       "titulo": "O backup copiava com a ficha EXCLUSIVA da trava de dados: a leitura parava a cópia inteira (100 GB = 50 a 64 min sem ler nada)",
       "veredito": "PROVADA",
-      "segundos": 84.14,
+      "segundos": 83.02,
       "notas": [],
-      "quando": "2026-10-08 12:38"
+      "quando": "2026-10-09 00:51"
     },
     {
       "id": "backup-sem-portao-do-retrato",
       "titulo": "A cópia do backup com a ficha COMPARTILHADA e sem o portão do retrato: o primeiro escritor na fila do `RwLock` fazia toda leitura nova esperar a cópia inteira",
       "veredito": "PROVADA",
-      "segundos": 83.05,
+      "segundos": 81.07,
       "notas": [],
-      "quando": "2026-10-08 12:38"
+      "quando": "2026-10-09 00:51"
     },
     {
       "id": "faixa-do-config-nao-lida",
@@ -4872,73 +4872,73 @@
       "id": "faixa-sai-da-classe",
       "titulo": "o contador da `Sequence` com faixa saía da própria classe na primeira inserção (`v + 1`), e a abertura seguinte recusava a tabela como se fosse de outro nó",
       "veredito": "PROVADA",
-      "segundos": 6.79,
+      "segundos": 7.74,
       "notas": [],
-      "quando": "2026-10-01 11:21"
+      "quando": "2026-10-09 00:03"
     },
     {
       "id": "faixa-nao-declarada-tranca-a-leitura",
       "titulo": "a CLI e a FFI sem a faixa declarada recusavam ABRIR a tabela que outro nó numerou: nem `info`, nem `listar`, nem `verificar` por ferramenta oficial",
       "veredito": "PROVADA",
-      "segundos": 7.03,
+      "segundos": 8.15,
       "notas": [],
-      "quando": "2026-10-01 11:21"
+      "quando": "2026-10-09 00:03"
     },
     {
       "id": "faixa-nao-declarada-numera-na-zero",
       "titulo": "com a leitura liberada, o processo sem faixa declarada numerava a tabela de outro nó na faixa 0 -- a colisão que a faixa existe para impedir, calada",
       "veredito": "PROVADA",
-      "segundos": 9.19,
+      "segundos": 7.39,
       "notas": [],
-      "quando": "2026-10-01 23:32"
+      "quando": "2026-10-09 00:03"
     },
     {
       "id": "faixa-da-cli-nao-chega-ao-motor",
       "titulo": "a `--inicio-da-sequencia` da CLI era lida e não chegava ao motor: a ferramenta gravava como quem não declarou",
       "veredito": "PROVADA",
-      "segundos": 7.48,
+      "segundos": 7.98,
       "notas": [],
-      "quando": "2026-10-01 11:21"
+      "quando": "2026-10-09 00:03"
     },
     {
       "id": "faixa-da-ffi-nao-chega-ao-motor",
       "titulo": "a `phx_definir_inicio_da_sequencia` devolvia PHX_OK sem declarar nada: o aplicativo achava que numerava na faixa dele",
       "veredito": "PROVADA",
-      "segundos": 7.65,
+      "segundos": 9.33,
       "notas": [],
-      "quando": "2026-10-01 11:21"
+      "quando": "2026-10-09 00:03"
     },
     {
       "id": "vetor-do-pulso-ignorado",
       "titulo": "a posição POR TABELA do pulso não chegava ao painel: a soma escondia o nó em dia na tabela grande e cego na pequena",
       "veredito": "PROVADA",
-      "segundos": 72.69,
+      "segundos": 102.23,
       "notas": [],
-      "quando": "2026-10-01 05:58"
+      "quando": "2026-10-09 00:03"
     },
     {
       "id": "faixa-sem-saida",
       "titulo": "a tabela gravada pelo contador `v + 1` não abria (a faixa recusa) e o remédio exigia abrir: ficava sem saída",
       "veredito": "PROVADA",
-      "segundos": 8.7,
+      "segundos": 7.63,
       "notas": [],
-      "quando": "2026-10-01 13:06"
+      "quando": "2026-10-09 00:03"
     },
     {
       "id": "reconciliar-fora-da-faixa",
       "titulo": "o `reparar` reconciliava a `Sequence` com `maior + 1` cru: numa tabela com faixa o valor caía fora dela e o reparo virava erro",
       "veredito": "PROVADA",
-      "segundos": 6.84,
+      "segundos": 7.61,
       "notas": [],
-      "quando": "2026-10-01 11:21"
+      "quando": "2026-10-09 00:03"
     },
     {
       "id": "escopo-do-begin-sem-login",
       "titulo": "só com o token, sem login, um `begin` com `scope` e `lock_mode:EXCLUSIVE` travava qualquer tabela, e a recusa «está no SCOPE e não existe» enumerava o catálogo",
       "veredito": "PROVADA",
-      "segundos": 80.7,
+      "segundos": 81.02,
       "notas": [],
-      "quando": "2026-10-01 06:12"
+      "quando": "2026-10-09 00:03"
     },
     {
       "id": "escopo-do-begin-sem-direito",
@@ -4960,17 +4960,17 @@
       "id": "datarow-curta-do-postgres",
       "titulo": "a `DataRow` do PostgreSQL com menos campos que a `RowDescription` passava pelo leitor e entrava em pânico na sincronia, com a trava de dados na mão",
       "veredito": "PROVADA",
-      "segundos": 78.81,
+      "segundos": 90.5,
       "notas": [],
-      "quando": "2026-10-01 06:21"
+      "quando": "2026-10-09 00:03"
     },
     {
       "id": "linha-remota-curta-na-sincronia",
       "titulo": "`linha_remota_para_negocio` indexava a linha do par pela posição do cabeçalho (`remota[de]`): linha curta de qualquer motor era pânico, não recusa",
       "veredito": "PROVADA",
-      "segundos": 78.47,
+      "segundos": 98.36,
       "notas": [],
-      "quando": "2026-10-01 06:24"
+      "quando": "2026-10-09 00:03"
     },
     {
       "id": "dblink-ligar-grava-copia-velha",
@@ -4984,25 +4984,25 @@
       "id": "troca-de-chave-vira-linha-nova",
       "titulo": "No bidirecional, a alteração que troca a chave virava inserção nova do outro lado e a linha antiga ficava: a imagem só dizia o «depois»",
       "veredito": "PROVADA",
-      "segundos": 7.1,
+      "segundos": 7.0,
       "notas": [],
-      "quando": "2026-10-01 06:50"
+      "quando": "2026-10-09 00:03"
     },
     {
       "id": "fio-cifrado-perde-o-antes",
       "titulo": "A imagem aberta para o fio numa tabela cifrada era remontada só até os externos, e a troca de chave perdia o «antes» só ali",
       "veredito": "PROVADA",
-      "segundos": 8.53,
+      "segundos": 10.13,
       "notas": [],
-      "quando": "2026-10-01 07:24"
+      "quando": "2026-10-09 00:03"
     },
     {
       "id": "composta-casa-pela-primeira-coluna",
       "titulo": "A chave composta do bidirecional casando só pela primeira coluna: (1,2) e (1,3) caem na identidade de (1,1)",
       "veredito": "PROVADA",
-      "segundos": 77.36,
+      "segundos": 88.49,
       "notas": [],
-      "quando": "2026-10-01 06:50"
+      "quando": "2026-10-09 00:03"
     },
     {
       "id": "numero-de-origem-conferido-so-no-par",
@@ -5016,41 +5016,41 @@
       "id": "numero-de-origem-atribuido-ignorado",
       "titulo": "O `numero_servidor` lido do config e ignorado na conta do número de origem: o caixa inocente continua no hash que colide",
       "veredito": "PROVADA",
-      "segundos": 40.29,
+      "segundos": 44.4,
       "notas": [],
-      "quando": "2026-10-01 06:50"
+      "quando": "2026-10-09 00:14"
     },
     {
       "id": "replica-renumera-o-buraco-do-source",
       "titulo": "A réplica fiel e o PITR geravam o `rownum` deles: o buraco histórico do source (1,2,4) virava 1,2,3 na cópia, para sempre",
       "veredito": "PROVADA",
-      "segundos": 24.96,
+      "segundos": 20.5,
       "notas": [],
-      "quando": "2026-10-01 12:14"
+      "quando": "2026-10-09 00:14"
     },
     {
       "id": "bidirecional-honra-o-rownum-do-outro",
       "titulo": "O bidirecional honrando o `rownum` do outro servidor: as duas fontes de numeração colidem no mesmo `.reg`",
       "veredito": "PROVADA",
-      "segundos": 25.75,
+      "segundos": 20.62,
       "notas": [],
-      "quando": "2026-10-01 12:14"
+      "quando": "2026-10-09 00:14"
     },
     {
       "id": "imagem-com-sobra-ignorada",
       "titulo": "O decodificador da imagem ignorava calado os bytes que sobravam depois dos externos: um campo novo passaria despercebido por todo binário anterior",
       "veredito": "PROVADA",
-      "segundos": 7.16,
+      "segundos": 8.23,
       "notas": [],
-      "quando": "2026-10-01 06:50"
+      "quando": "2026-10-09 00:14"
     },
     {
       "id": "registro-de-numeros-ilegivel-vira-vazio",
       "titulo": "O `replicacao-numeros.json` ilegível lido como vazio: a colisão que ele existe para recusar passaria e iria para dentro dos `.log`",
       "veredito": "PROVADA",
-      "segundos": 78.0,
+      "segundos": 92.87,
       "notas": [],
-      "quando": "2026-10-01 06:50"
+      "quando": "2026-10-09 00:14"
     },
     {
       "id": "numero-aceito-antes-do-disco",
@@ -5064,9 +5064,9 @@
       "id": "manifesto-velho-apagado-pelo-nome",
       "titulo": "o backup apaga o manifesto velho pelo NOME do destino: um link trocado no meio da corrida apaga o backup.json de OUTRO backup",
       "veredito": "PROVADA",
-      "segundos": 8.55,
+      "segundos": 9.02,
       "notas": [],
-      "quando": "2026-10-01 06:59"
+      "quando": "2026-10-09 00:14"
     },
     {
       "id": "destino-do-backup-conferido-so-pelo-nome",
@@ -5080,33 +5080,33 @@
       "id": "chave-sem-urandom-pela-mistura",
       "titulo": "sem /dev/urandom (Windows), a chave efêmera do TLS e do Noise e a do autoassinado saem de SHA-256 de relógio, PID e endereço",
       "veredito": "PROVADA",
-      "segundos": 9.94,
+      "segundos": 16.38,
       "notas": [],
-      "quando": "2026-10-01 06:59"
+      "quando": "2026-10-09 00:14"
     },
     {
       "id": "dblink-phx-analisa-antes-de-pesar",
       "titulo": "O teto de bytes do DbLink não valia para o motor `phxsql`: a linha de até 128 MiB do `Canal` virava árvore `Json` antes de ser pesada, e o `max_mib` só limitava a cópia",
       "veredito": "PROVADA",
-      "segundos": 81.09,
+      "segundos": 85.76,
       "notas": [],
-      "quando": "2026-10-01 07:17"
+      "quando": "2026-10-09 00:14"
     },
     {
       "id": "pg-autenticado-sem-scram",
       "titulo": "O cliente PostgreSQL do DbLink aceitava `AuthenticationOk` sem SCRAM, com senha na ligação: quem respondesse no endereço dizia «pode entrar» sem conhecer a senha",
       "veredito": "PROVADA",
-      "segundos": 20.12,
+      "segundos": 21.08,
       "notas": [],
-      "quando": "2026-10-01 07:17"
+      "quando": "2026-10-09 00:14"
     },
     {
       "id": "replica-sem-cofre-grava-externo-marcado-em-claro",
       "titulo": "A réplica SEM cofre gravava a coluna externa marcada em claro no disco: o 344 trocou o selado (lixo) pelo dado aberto, sem a palavra do dono",
       "veredito": "PROVADA",
-      "segundos": 23.06,
+      "segundos": 22.71,
       "notas": [],
-      "quando": "2026-10-01 11:35"
+      "quando": "2026-10-09 00:14"
     },
     {
       "id": "restauracao-recusa-como-replica-sem-cofre",
@@ -5120,41 +5120,41 @@
       "id": "replica-sem-cofre-grava-inline-marcado-em-claro",
       "titulo": "A réplica SEM cofre recusava só a coluna EXTERNA marcada: a INLINE chegava aberta na imagem e pousava em claro no `.reg`",
       "veredito": "PROVADA",
-      "segundos": 10.55,
+      "segundos": 9.79,
       "notas": [],
-      "quando": "2026-10-01 11:35"
+      "quando": "2026-10-09 00:14"
     },
     {
       "id": "bidirecional-sem-cofre-inserir-marcado-em-claro",
       "titulo": "O bidirecional sem cofre passava pelo `inserir_replicado` com o dado marcado de OUTRO servidor: a recusa do 613 morava só no `aplicar_evento`",
       "veredito": "PROVADA",
-      "segundos": 10.04,
+      "segundos": 10.09,
       "notas": [],
-      "quando": "2026-10-01 11:11"
+      "quando": "2026-10-09 00:14"
     },
     {
       "id": "bidirecional-sem-cofre-atualizar-marcado-em-claro",
       "titulo": "O bidirecional sem cofre passava pelo `atualizar_replicado` com o dado marcado de OUTRO servidor: a recusa do 613 morava só no `aplicar_evento`",
       "veredito": "PROVADA",
-      "segundos": 9.67,
+      "segundos": 10.34,
       "notas": [],
-      "quando": "2026-10-01 11:11"
+      "quando": "2026-10-09 00:14"
     },
     {
       "id": "bidirecional-sem-cofre-excluir_de_vez-marcado-em-claro",
       "titulo": "O bidirecional sem cofre passava pelo `excluir_de_vez_replicado` com o dado marcado de OUTRO servidor: a recusa do 613 morava só no `aplicar_evento`",
       "veredito": "PROVADA",
-      "segundos": 9.7,
+      "segundos": 9.96,
       "notas": [],
-      "quando": "2026-10-01 11:11"
+      "quando": "2026-10-09 00:14"
     },
     {
       "id": "linhagem-nao-cunhada-na-declaracao",
       "titulo": "a tabela declarada nasce sem linhagem: duas origens com historias diferentes ficam indistinguiveis e o carimbo empatado de dois servidores recem-nascidos apaga a linha errada",
       "veredito": "PROVADA",
-      "segundos": 9.38,
+      "segundos": 13.53,
       "notas": [],
-      "quando": "2026-10-01 11:35"
+      "quando": "2026-10-09 00:14"
     },
     {
       "id": "alter-perde-a-linhagem",
@@ -5688,9 +5688,9 @@
       "id": "carimbo-por-tabela-empata-pai-e-filha",
       "titulo": "o `rowstamp` sai de um contador por tabela, e o pai e a filha nascem com o mesmo carimbo",
       "veredito": "PROVADA",
-      "segundos": 6.83,
+      "segundos": 8.66,
       "notas": [],
-      "quando": "2026-10-01 21:28"
+      "quando": "2026-10-09 00:22"
     },
     {
       "id": "versao-imposta-ao-cliente-antigo",
@@ -5712,17 +5712,17 @@
       "id": "operacao-cancelavel-fora-da-lista",
       "titulo": "uma operação com ponto de cancelamento fica fora de `OPS_CANCELAVEIS`, e a tela mostra o botão desabilitado",
       "veredito": "PROVADA",
-      "segundos": 85.81,
+      "segundos": 83.9,
       "notas": [],
-      "quando": "2026-10-01 21:28"
+      "quando": "2026-10-09 00:22"
     },
     {
       "id": "indice-da-chave-imposto-a-quem-nao-confere",
       "titulo": "a chave com `verificar: false` ganha índice na filha, e a guarda nova passa a ser imposta",
       "veredito": "PROVADA",
-      "segundos": 20.78,
+      "segundos": 21.77,
       "notas": [],
-      "quando": "2026-10-01 21:28"
+      "quando": "2026-10-09 00:22"
     },
     {
       "id": "retrato-da-fase-a-nao-ve-volume-que-nasce-427",
@@ -5744,25 +5744,25 @@
       "id": "selo-do-retrato-nao-devolve-o-mtime-634",
       "titulo": "a troca abortada deixa o volume com o `mtime` de 1980",
       "veredito": "PROVADA",
-      "segundos": 9.04,
+      "segundos": 7.65,
       "notas": [],
-      "quando": "2026-10-01 23:32"
+      "quando": "2026-10-09 00:22"
     },
     {
       "id": "segundo-gravador-sem-trava-de-instancia-635",
       "titulo": "dois processos abrem a mesma pasta para gravar e um sobrescreve os contadores do outro",
       "veredito": "PROVADA",
-      "segundos": 8.64,
+      "segundos": 7.75,
       "notas": [],
-      "quando": "2026-10-01 23:32"
+      "quando": "2026-10-09 00:22"
     },
     {
       "id": "raiz-ociosa-solta-a-trava-de-instancia-635",
       "titulo": "o servidor ocioso, entre dois pedidos, deixa a CLI gravar a pasta que ele serve",
       "veredito": "PROVADA",
-      "segundos": 9.02,
+      "segundos": 7.51,
       "notas": [],
-      "quando": "2026-10-01 23:32"
+      "quando": "2026-10-09 00:22"
     },
     {
       "id": "quorum-espera-sem-degradar",
@@ -5872,9 +5872,9 @@
       "id": "backup-fase-1-sob-a-trava",
       "titulo": "A fase 1 do backup (a cópia inteira) sob a ficha de leitura: a escrita esperava a cópia inteira, como no passo 1",
       "veredito": "PROVADA",
-      "segundos": 86.54,
+      "segundos": 84.76,
       "notas": [],
-      "quando": "2026-10-08 13:11"
+      "quando": "2026-10-09 00:54"
     },
     {
       "id": "backup-sem-fase-2",

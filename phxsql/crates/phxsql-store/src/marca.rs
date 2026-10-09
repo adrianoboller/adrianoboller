@@ -33,14 +33,14 @@ use crate::table::{nome_simples, MaesEmProgresso, Sobreposicao, Table};
 /// A assinatura do arquivo de marca. Oito bytes, como todo arquivo do motor.
 pub const MAGIC: &[u8; 8] = b"PHXTX\0\0\0";
 
-/// A versao mais nova do formato da marca. Ver `docs/FORMATO.md` §16.
+/// A versao do `gravar_marca` antigo (pedido 354), que hoje so as provas de
+/// leitura chamam. Ver `docs/FORMATO.md` §16.
 ///
-/// A **v4** (pedido 354) acrescenta o material de cifra no cabecalho e sela o
-/// payload de **cada operacao**. Ela so e escrita quando o cofre esta ligado:
-/// com ele desligado a marca continua nascendo [`VERSAO_CASCATA_EM_CLARO`],
-/// byte por byte como antes, porque guarda nova entra pedida e nao imposta --
-/// e porque um servidor anterior continua sabendo ler a marca de quem nunca
-/// pediu cifra.
+/// Nao e a versao com que o `COMMIT` grava: desde o pedido 709 a marca nasce
+/// posicional -- [`VERSAO_POSICIONAL_CIFRADA`] com o cofre ligado e
+/// [`VERSAO_POSICIONAL_EM_CLARO`] sem ele. Este comentario dizia que sem cofre a marca
+/// continuava v3 e que um servidor anterior a lia; deixou de valer no 709
+/// (pedido 738), e a v7 nenhum binario anterior a ela le.
 ///
 /// As tres anteriores **continuam sendo lidas**: marca deixada por um servidor
 /// anterior e commit que ja comecou, e descarta-la seria jogar fora uma
@@ -603,13 +603,49 @@ fn nonce_da_operacao(id: u64, i: usize) -> [u8; XNONCE_LEN] {
 /// ninguem percebe. Como dado associado eles entram na etiqueta: um rowid
 /// trocado de 7 para 8 deixa de abrir, em vez de reaplicar a linha certa no
 /// slot errado.
-fn aad_da_operacao(id: u64, tabela: &[u8], tag: u8, rowid: u64) -> Vec<u8> {
-    let mut a = Vec::with_capacity(tabela.len() + 17);
+///
+/// # E o cabecalho, nas v6/v8 (pedido 735)
+///
+/// O carimbo, o `n_operacoes` e o `tx` da v8 so tinham o CRC, e quem baixava o
+/// `n` de 3 para 2 e refazia o CRC tinha uma marca que ABRIA com duas
+/// operacoes -- a recuperacao aplicava meia transacao, dada como completada;
+/// trocar o `tx` juntava eventos de transacoes diferentes. Nas versoes que
+/// nasceram com o 682 e o 709 eles entram aqui, com o indice da operacao. A v4
+/// continua lida como sempre foi: muda-la quebraria a marca de pe de um
+/// binario ja selado.
+fn aad_da_operacao(
+    id: u64,
+    tabela: &[u8],
+    tag: u8,
+    rowid: u64,
+    cabecalho: Option<CabecalhoNoSelo>,
+) -> Vec<u8> {
+    let mut a = Vec::with_capacity(tabela.len() + 17 + 28);
     a.extend_from_slice(&id.to_le_bytes());
     a.extend_from_slice(tabela);
     a.push(tag);
     a.extend_from_slice(&rowid.to_le_bytes());
+    if let Some(c) = cabecalho {
+        a.extend_from_slice(&c.carimbo_ms.to_le_bytes());
+        a.extend_from_slice(&c.n_operacoes.to_le_bytes());
+        a.extend_from_slice(&c.tx.to_le_bytes());
+        a.extend_from_slice(&(c.indice as u64).to_le_bytes());
+    }
     a
+}
+
+/// O que do cabecalho entra no selo de cada operacao das v6/v8 -- pedido 735.
+#[derive(Clone, Copy)]
+struct CabecalhoNoSelo {
+    carimbo_ms: i64,
+    n_operacoes: u32,
+    tx: u64,
+    indice: usize,
+}
+
+/// A versao sela o cabecalho? -- as que nasceram com o selo dele (pedido 735).
+fn sela_o_cabecalho(versao: u32) -> bool {
+    matches!(versao, VERSAO_REPLICA_CIFRADA | VERSAO_POSICIONAL_CIFRADA)
 }
 
 /// Cria a marca NOVA e fechada para o resto da maquina -- 0600 no Unix; no
@@ -926,18 +962,29 @@ pub fn conferir_os_grupos_do_bidi(db: &Database) -> Result<usize> {
         let mut presentes = 0usize;
         let mut total = 0usize;
         let mut abertas: HashMap<String, Table> = HashMap::new();
+        // Pedido 743: os eventos se contam por CESTO `(tabela, carimbo,
+        // origem)`, e nao um a um. Os eventos de uma venda dividem o
+        // milissegundo -- medido, 6 de 7 --, e o evento um a um respondia
+        // «presente» para os cinco itens com UM no diario: na ultima tabela do
+        // grupo, «parte» virava «todos» e a copia restaurava meia venda com
+        // `ok: true`. O cesto so se enche com tantos eventos do diario quantos
+        // a marca tem nele.
+        let mut cestos: Vec<((String, i64, u16), usize)> = Vec::new();
         for op in &marca.operacoes {
             let Some(ev) = &op.replica else { continue };
             total += 1;
-            if !abertas.contains_key(&op.tabela) {
-                abertas.insert(op.tabela.clone(), db.abrir_qualificada(&op.tabela)?);
+            let chave = (op.tabela.clone(), ev.carimbo_ms, ev.origem);
+            match cestos.iter_mut().find(|(c, _)| *c == chave) {
+                Some((_, n)) => *n += 1,
+                None => cestos.push((chave, 1)),
             }
-            let t = abertas
-                .get_mut(&op.tabela)
-                .expect("acabou de entrar no mapa");
-            if evento_de_la_no_diario(t, ev.carimbo_ms, ev.origem, marca.carimbo_ms)? {
-                presentes += 1;
+        }
+        for ((tabela, carimbo, origem), n) in &cestos {
+            if !abertas.contains_key(tabela) {
+                abertas.insert(tabela.clone(), db.abrir_qualificada(tabela)?);
             }
+            let t = abertas.get_mut(tabela).expect("acabou de entrar no mapa");
+            presentes += eventos_de_la_no_diario(t, *carimbo, *origem, marca.carimbo_ms, *n)?;
         }
         // Nenhum evento no diario, mas a queda pode ter pego a PRIMEIRA
         // inclusao entre o slot e o evento (o 700): a linha no `.reg` sem
@@ -978,28 +1025,42 @@ pub fn conferir_os_grupos_do_bidi(db: &Database) -> Result<usize> {
     Ok(sairam)
 }
 
-/// O diario de `t` tem o evento nascido em `carimbo` na `origem`? Le de tras
-/// para a frente ate o primeiro evento de id anterior a marca: o id sai do
-/// relogio deslocado 16 bits (pedido 676), e todo evento aplicado por esta
-/// marca nasceu depois dela. Volume sem id (zero) nao tem esse corte, e a
-/// leitura segue ate o comeco.
-fn evento_de_la_no_diario(t: &mut Table, carimbo: i64, origem: u16, desde_ms: i64) -> Result<bool> {
+/// Quantos eventos nascidos em `carimbo` na `origem` o diario de `t` tem, ate
+/// `ate` -- pedido 743. Le de tras para a frente ate o primeiro evento de id
+/// anterior a marca: o id sai do relogio deslocado 16 bits (pedido 676), e
+/// todo evento aplicado por esta marca nasceu depois dela. Volume sem id
+/// (zero) nao tem esse corte, e a leitura segue ate o comeco.
+///
+/// Conta, e nao responde «tem?»: `(carimbo, origem)` nao identifica UM evento
+/// -- os de uma mesma transacao dividem o milissegundo --, entao a pergunta
+/// certa e quantos do cesto entraram.
+fn eventos_de_la_no_diario(
+    t: &mut Table,
+    carimbo: i64,
+    origem: u16,
+    desde_ms: i64,
+    ate: usize,
+) -> Result<usize> {
     const LOTE: u64 = 1024;
     let piso = (desde_ms.max(0) as u64) << 16;
+    let mut achados = 0usize;
     let mut fim = t.eventos()?;
     while fim > 0 {
         let ini = fim.saturating_sub(LOTE);
         for e in t.diario(ini, fim - ini)?.iter().rev() {
             if e.carimbo == carimbo && e.origem == origem {
-                return Ok(true);
+                achados += 1;
+                if achados >= ate {
+                    return Ok(achados);
+                }
             }
             if e.tx != 0 && e.tx < piso {
-                return Ok(false);
+                return Ok(achados);
             }
         }
         fim = ini;
     }
-    Ok(false)
+    Ok(achados)
 }
 
 /// As marcas do bidirecional de `dir`, na ordem do id -- o mesmo laco de
@@ -1116,7 +1177,21 @@ fn gravar_com(
         // transacao toda onde hoje custa o que o CRC daquele bloco custa.
         let guardado = material.selar(
             &nonce_da_operacao(id, i),
-            &aad_da_operacao(id, nome, e.acao.tag(), e.rowid),
+            &aad_da_operacao(
+                id,
+                nome,
+                e.acao.tag(),
+                e.rowid,
+                sela_o_cabecalho(versao).then_some(CabecalhoNoSelo {
+                    carimbo_ms,
+                    n_operacoes: ops.len() as u32,
+                    tx: match fim {
+                        Fim::Bilhete(bl) => bl.tx,
+                        _ => 0,
+                    },
+                    indice: i,
+                }),
+            ),
             &payload,
         );
         b.extend_from_slice(&(guardado.len() as u32).to_le_bytes());
@@ -1208,6 +1283,18 @@ pub fn ler_marca(caminho: &Path) -> Result<Leitura> {
         | VERSAO_REPLICA_EM_CLARO => CAB_ATE_CRC,
         VERSAO_POSICIONAL_EM_CLARO => CAB_ATE_CRC + 8,
         VERSAO_POSICIONAL_CIFRADA => CAB_ATE_CRC_CIFRADA + 8,
+        // Pedido 734: versao MAIOR que a conhecida e marca de um binario mais
+        // novo -- o que voltou depois de grava-la --, e nao «commit que nunca
+        // comecou». Para e nao apaga, como a cifrada sem chave: apaga-la
+        // jogaria fora uma transacao confirmada, e faria de toda versao nova
+        // da marca um «nao volte o binario».
+        v if v > VERSAO_POSICIONAL_CIFRADA => {
+            return Ok(Leitura::SemChave(format!(
+                "a marca e da versao {v}, mais nova que este binario (que le ate a \
+                 {VERSAO_POSICIONAL_CIFRADA}): ela foi gravada por um binario mais novo e \
+                 pode ser uma transacao confirmada -- suba o binario que a gravou"
+            )))
+        }
         _ => return Ok(Leitura::NaoConfere),
     };
     let posicional = matches!(
@@ -1286,7 +1373,18 @@ pub fn ler_marca(caminho: &Path) -> Result<Leitura> {
         // resposta do CRC quebrado, e nao a terceira.
         let payload = match material.abrir(
             &nonce_da_operacao(id, i),
-            &aad_da_operacao(id, &nome, tag, rowid),
+            &aad_da_operacao(
+                id,
+                &nome,
+                tag,
+                rowid,
+                sela_o_cabecalho(versao).then_some(CabecalhoNoSelo {
+                    carimbo_ms,
+                    n_operacoes: n as u32,
+                    tx,
+                    indice: i,
+                }),
+            ),
             &guardado,
             &nome_do_arquivo,
         ) {
@@ -3149,6 +3247,43 @@ mod testes {
         };
         assert!(gravar_marca_posicional(&d, 16, 0, &uma_escrita("x"), bilhete).is_err());
         assert!(marcas_em(&d).is_empty());
+    }
+
+    /// **Pedido 734 (M1).** A marca de uma versao MAIS NOVA que este binario
+    /// (o binario voltou depois de gravar uma marca da versao seguinte) nao e
+    /// «commit que nunca comecou»: para e nao apaga, como a cifrada sem chave.
+    /// Os maduros convergem em nao descartar o que nao entendem (o PostgreSQL
+    /// da FATAL na versao do controle, o InnoDB recusa o redo de formato novo).
+    ///
+    /// Prova real: com o `_ => NaoConfere` de volta, a leitura diz «nao
+    /// confere» e a recuperacao APAGA a marca.
+    #[test]
+    fn a_marca_de_versao_mais_nova_para_e_nao_e_apagada() {
+        let d = dir("versao-nova");
+        let caminho = gravar_marca_posicional(
+            &d,
+            21,
+            0,
+            &uma_escrita("x"),
+            Bilhete {
+                tx: 1,
+                versoes_antes: &[0],
+            },
+        )
+        .unwrap();
+        let mut b = std::fs::read(&caminho).unwrap();
+        b[8..12].copy_from_slice(&(VERSAO_POSICIONAL_CIFRADA + 1).to_le_bytes());
+        std::fs::write(&caminho, &b).unwrap();
+        match ler_marca(&caminho).unwrap() {
+            Leitura::SemChave(motivo) => assert!(motivo.contains("mais nova"), "{motivo}"),
+            outra => panic!("a marca de versao mais nova virou {outra:?}"),
+        }
+        let r = recuperar_no_diretorio(&d, crate::catalogo::PoliticaDoDiario::default());
+        assert!(
+            caminho.exists(),
+            "a recuperacao apagou a marca de versao mais nova"
+        );
+        assert_eq!((r.descartadas, r.paradas.len()), (0, 1));
     }
 
     /// As marcas se completam na ordem NUMERICA do id, e nao na do texto --

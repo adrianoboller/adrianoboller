@@ -302,7 +302,7 @@ impl Servidor {
         };
         // Quem puxa confirmou ter tudo antes de `desde` (pedido 706). Depois
         // da leitura, para a recusa de cima nunca contar como confirmacao.
-        self.anotar_confirmacao_do_diario(p, &chave, desde);
+        self.anotar_confirmacao_do_diario(p, sessao, &chave, desde);
 
         // A trilha de dado pessoal, UM registro por lote (revisao SEC de
         // 17/09/2026, A8): a imagem viaja com o valor da coluna marcada

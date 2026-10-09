@@ -58,16 +58,35 @@ impl Servidor {
     /// `diario.consumidores` nao segura nada: e o slot do PostgreSQL, que so
     /// existe declarado.
     ///
-    /// O nome vem de `consumidor` (a replica fiel e o espelho) ou de `para`
-    /// (o bidirecional, que ja dizia quem pede).
-    pub(super) fn anotar_confirmacao_do_diario(&self, p: &Json, chave: &str, desde: u64) {
+    /// # Quem confirma e a SESSAO, e nao o campo -- pedido 728
+    ///
+    /// Com login, o consumidor e o LOGIN da sessao, diga o pedido o que
+    /// disser: qualquer sessao com `replicar` mandava `"consumidor":"central"`
+    /// com a ponta no `desde`, a confirmacao (que e `max` e nao volta) soltava
+    /// o que o central de verdade nao puxou, e o bidirecional -- que nao se
+    /// refaz por retrato -- parava em `erro.diario_expurgado` com venda que
+    /// nao chegou. Quem declara `diario.consumidores` num servidor com
+    /// cadastro poe ali o LOGIN de cada replica.
+    ///
+    /// Sem login (servidor sem cadastro, onde o token e a identidade inteira)
+    /// o nome vem de `consumidor` (a replica fiel e o espelho) ou de `para`
+    /// (o bidirecional, que ja dizia quem pede): ali nao ha um segundo
+    /// alguem por quem se passar.
+    pub(super) fn anotar_confirmacao_do_diario(
+        &self,
+        p: &Json,
+        sessao: &Sessao,
+        chave: &str,
+        desde: u64,
+    ) {
         let cfg = &self.config.diario;
         if !cfg.expurgo || cfg.consumidores.is_empty() {
             return;
         }
-        let quem = match p.texto_ou("consumidor", "").trim() {
-            "" => p.texto_ou("para", "").trim(),
-            q => q,
+        let quem = match (sessao.usuario.as_ref(), p.texto_ou("consumidor", "").trim()) {
+            (Some(u), _) => u.login.as_str(),
+            (None, "") => p.texto_ou("para", "").trim(),
+            (None, q) => q,
         };
         if quem.is_empty() || !cfg.consumidores.iter().any(|c| c == quem) {
             return;
@@ -284,34 +303,136 @@ impl Servidor {
 /// fio, e um pedido por pedaco nao segura a origem.
 const PEDACO_DO_RETRATO: u64 = 8 * 1024 * 1024;
 
-/// Quantas vezes o retrato tenta achar o database sem tabela suja antes de
-/// desistir. A janela de durabilidade fecha em centenas de milissegundos;
-/// cinquenta tentativas so falham num database que nao para de escrever.
-const TENTATIVAS_DO_RETRATO: u32 = 50;
+/// Quantos retratos esta origem serve ao mesmo tempo -- pedido 729. Cada um e
+/// uma copia inteira de um database na raiz: sem teto, um laco de pedidos de
+/// quem tem `replicar` enchia o disco (e, ate a copia em duas passadas,
+/// congelava as escritas a copia inteira). Quatro cobrem as replicas atrasadas de um
+/// central com folga; a quinta ouve a recusa e tenta na rodada seguinte.
+pub(super) const TETO_DE_RETRATOS: usize = 4;
+
+/// O que o retrato deixa livre no disco DEPOIS da copia -- pedido 729. A
+/// copia que levasse o disco da origem a zero pararia a venda do caixa, que e
+/// o contrario do que o expurgo existe para garantir.
+const FOLGA_DE_DISCO_DO_RETRATO: u64 = 256 * 1024 * 1024;
 
 /// O prefixo dos arquivos de retrato na raiz de dados. Arquivo, e nao pasta:
-/// toda pasta da raiz e um database.
+/// toda pasta da raiz e um database. Os dois comecam pelo prefixo comum do
+/// motor, que o backup pula (pedido 731).
 const PREFIXO_SERVIDO: &str = ".retrato-servido-";
 const PREFIXO_RECEBIDO: &str = ".retrato-recebido-";
 
+/// Os dois prefixos comecam pelo do motor, que o backup pula: conferido pelo
+/// compilador, para o nome daqui nao divergir do de la calado.
+const _: () = {
+    const fn comeca_com(s: &str, p: &str) -> bool {
+        let (s, p) = (s.as_bytes(), p.as_bytes());
+        if p.len() > s.len() {
+            return false;
+        }
+        let mut i = 0;
+        while i < p.len() {
+            if s[i] != p[i] {
+                return false;
+            }
+            i += 1;
+        }
+        true
+    }
+    let comum = phxsql_store::catalogo::PREFIXO_DO_RETRATO_DA_REPLICA;
+    assert!(comeca_com(PREFIXO_SERVIDO, comum) && comeca_com(PREFIXO_RECEBIDO, comum));
+};
+
 /// O retrato que esta origem serve -- pedido 706.
+///
+/// Amarrado a CONEXAO que o tirou, ao login dela e ao database -- pedido 727.
+/// Ate ali ele guardava so o `id` (o `agora_ms()`, que se adivinha varrendo a
+/// janela) e os arquivos: o portao de permissao conferia o database do
+/// PEDIDO, e quem tinha `replicar` em `loja` lia o `.reg` cru de `rh` pedindo
+/// o pedaco com o id do outro, em claro, e o soltava.
 pub(super) struct RetratoServido {
     id: u64,
+    database: String,
+    ligacao: u64,
+    login: String,
+    /// Alguma tabela do retrato tem coluna marcada: o pedaco exige o fio
+    /// cifrado, como o `replicar` (pedido 342).
+    exige_cifra: bool,
     /// `(tabela, arquivo, copia, bytes)`.
     arquivos: Vec<(String, String, PathBuf, u64)>,
 }
 
-/// Apaga da raiz os arquivos de retrato com `prefixo` -- o servido que
-/// acabou, ou o que uma queda deixou para tras.
+impl RetratoServido {
+    /// O nome da PASTA da copia na raiz (pedido 729): a arvore da copia em
+    /// duas passadas do backup. O `subdiretorios` do catalogo a pula, senao
+    /// ela seria um database a mais.
+    fn prefixo(&self) -> String {
+        format!("{PREFIXO_SERVIDO}{}", self.id)
+    }
+}
+
+/// Apaga da raiz o que comeca com `prefixo` -- o retrato servido que acabou
+/// (uma pasta, desde o 729), os arquivos recebidos, ou o que uma queda
+/// deixou para tras.
 fn apagar_retratos(raiz: &Path, prefixo: &str) {
     let Ok(entradas) = std::fs::read_dir(raiz) else {
         return;
     };
     for e in entradas.flatten() {
         if e.file_name().to_string_lossy().starts_with(prefixo) {
-            let _ = std::fs::remove_file(e.path());
+            // `symlink_metadata`: um link com o nome do retrato sai como link,
+            // e nunca leva junto a pasta para onde aponta.
+            match std::fs::symlink_metadata(e.path()) {
+                Ok(m) if m.is_dir() => {
+                    let _ = std::fs::remove_dir_all(e.path());
+                }
+                Ok(_) => {
+                    let _ = std::fs::remove_file(e.path());
+                }
+                Err(_) => {}
+            }
         }
     }
+}
+
+/// O arranque apaga toda copia de retrato que uma vida anterior deixou --
+/// pedido 731. Servida ou recebida, ela e uma copia inteira de tabelas com
+/// coluna marcada FORA do ciclo da tabela: o esquecimento e a exclusao feitos
+/// depois nao a alcancam. Nenhum retrato sobrevive ao processo que o tirou
+/// (a conexao que o amarrava morreu junto), entao nao ha o que preservar.
+pub(super) fn limpar_retratos_no_arranque(raiz: &Path) {
+    apagar_retratos(raiz, PREFIXO_SERVIDO);
+    apagar_retratos(raiz, PREFIXO_RECEBIDO);
+}
+
+/// Os bytes dos arquivos de um database, para o teto de disco do retrato.
+/// Conta tudo, e nao so o que a replica alcanca: a estimativa por cima e a
+/// que erra do lado de nao encher o disco.
+fn bytes_do_database(dir: &Path) -> u64 {
+    let mut total = 0;
+    let mut pilha = vec![dir.to_path_buf()];
+    while let Some(d) = pilha.pop() {
+        let Ok(entradas) = std::fs::read_dir(&d) else {
+            continue;
+        };
+        for e in entradas.flatten() {
+            match e.metadata() {
+                Ok(m) if m.is_dir() => pilha.push(e.path()),
+                Ok(m) => total += m.len(),
+                Err(_) => {}
+            }
+        }
+    }
+    total
+}
+
+/// Um id que nao se adivinha -- pedido 727. 53 bits, porque o id viaja como
+/// numero do JSON (um `f64`): acima disso a replica pediria outro id. A
+/// amarracao a conexao e a guarda; o sorteio so tira o oraculo.
+fn sortear_id_do_retrato() -> u64 {
+    let b = phxsql_core::senha::bytes_aleatorios(8);
+    let mut v = [0u8; 8];
+    v.copy_from_slice(&b[..8]);
+    (u64::from_le_bytes(v) & ((1u64 << 53) - 1)).max(1)
 }
 
 impl Servidor {
@@ -324,24 +445,82 @@ impl Servidor {
     /// lista de arquivos; com `id` e `indice`, devolve um pedaco de um deles;
     /// com `soltar`, apaga o retrato. A posicao nao viaja: ela esta DENTRO do
     /// `.log` copiado, na base do primeiro volume (bytes 104..112).
+    ///
+    /// So pela porta de DADOS (pedido 727): o retrato vive amarrado a
+    /// conexao, e some quando ela cai (731). A porta web nao tem conexao para
+    /// amarrar -- um retrato tirado por ela ficaria na raiz sem dono.
     pub(super) fn op_retrato_da_replica(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
+        if sessao.ligacao == 0 {
+            return Err(PhxError::Autorizacao(
+                self.msg("erro.retrato_so_pela_porta_de_dados", &[]),
+            ));
+        }
         if p.booleano_ou("soltar", false) {
-            self.soltar_retrato_servido();
-            return Ok(Json::objeto(vec![("soltou", Json::Bool(true))]));
+            return self.soltar_pelo_pedido(p, sessao);
         }
         if p.campo("indice").is_some() {
-            return self.pedaco_do_retrato(p);
+            return self.pedaco_do_retrato(p, sessao);
         }
         self.tirar_retrato(p, sessao)
     }
 
-    fn soltar_retrato_servido(&self) {
-        let mut r = self
+    /// Solta o retrato DESTA conexao. Com `id` de outra, recusa e conta
+    /// violacao -- pedido 727: soltar o retrato alheio era o jeito de a
+    /// replica legitima nunca terminar.
+    fn soltar_pelo_pedido(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
+        if let Some(id) = p.campo("id").and_then(Json::inteiro) {
+            self.retrato_desta_sessao(id.max(0) as u64, p, sessao)?;
+        }
+        self.soltar_retrato_da_ligacao(sessao.ligacao);
+        Ok(Json::objeto(vec![("soltou", Json::Bool(true))]))
+    }
+
+    /// Solta o retrato que a conexao `ligacao` tirou, se ha -- no `soltar`
+    /// dela e quando ela cai (pedido 731: a replica que morre no meio nao
+    /// deixa copia de dado pessoal na raiz).
+    pub(super) fn soltar_retrato_da_ligacao(&self, ligacao: u64) {
+        let saiu: Vec<RetratoServido> = {
+            let mut r = self
+                .retrato_servido
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let (sai, fica) = std::mem::take(&mut *r)
+                .into_iter()
+                .partition(|x| x.ligacao == ligacao);
+            *r = fica;
+            sai
+        };
+        for r in saiu {
+            apagar_retratos(&self.config.base, &r.prefixo());
+        }
+    }
+
+    /// O retrato `id`, se e DESTA conexao, deste login e do database do
+    /// pedido -- o `database` que o portao de permissao conferiu. Qualquer
+    /// outra coisa e a mesma recusa, contada como violacao: o «nao ha» e o
+    /// «nao e seu» respondendo diferente seriam o oraculo do pedido 727.
+    fn retrato_desta_sessao(&self, id: u64, p: &Json, sessao: &Sessao) -> Result<()> {
+        let database = p.texto_ou("database", "").trim();
+        let r = self
             .retrato_servido
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        *r = None;
-        apagar_retratos(&self.config.base, PREFIXO_SERVIDO);
+        let meu = r.iter().any(|x| {
+            x.id == id
+                && x.ligacao == sessao.ligacao
+                && x.login == sessao.login()
+                && x.database.eq_ignore_ascii_case(database)
+        });
+        drop(r);
+        if meu {
+            return Ok(());
+        }
+        if !sessao.ip.is_empty() {
+            self.violacao_leve(&sessao.ip, "retrato_da_replica", "retrato de outra sessao");
+        }
+        Err(PhxError::Autorizacao(
+            self.msg("erro.retrato_alheio", &[("id", &id.to_string())]),
+        ))
     }
 
     fn tirar_retrato(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
@@ -349,57 +528,165 @@ impl Servidor {
         if database.is_empty() {
             return Err(PhxError::Esquema("informe \"database\"".into()));
         }
-        self.soltar_retrato_servido();
-        // O retrato so vale com os cabecalhos escritos: a tabela suja da
-        // janela de durabilidade tem o cabecalho do `.log` e o do `.reg` atras
-        // dos dados. Descarrega fora desta tomada (a descarga toma a trava e
-        // faz o `fsync` ela mesma), e confere de novo com a trava na mao.
-        let prefixo_db = format!("{}/", database.to_lowercase());
-        let mut tentativa = 0;
-        let dados = loop {
-            self.descarregar_sujas();
-            let dados = self.travar_dados()?;
-            let suja = self.sujas.lock().map_or(true, |s| {
-                s.iter().any(|k| k.to_lowercase().starts_with(&prefixo_db))
-            });
-            if !suja {
-                break dados;
-            }
-            drop(dados);
-            tentativa += 1;
-            if tentativa >= TENTATIVAS_DO_RETRATO {
-                return Err(PhxError::EmCarga(format!(
-                    "o database {database} nao parou de escrever em {TENTATIVAS_DO_RETRATO} \
-                     tentativas: o retrato fica para a rodada seguinte"
+        // O teto vem ANTES da copia (pedido 729): a recusa custa uma trava de
+        // `Mutex`, e a copia que ela evita custa o database inteiro com a
+        // trava global na mao. Um retrato por conexao: o novo pedido da mesma
+        // conexao troca o dela, e nao conta duas vezes.
+        self.soltar_retrato_da_ligacao(sessao.ligacao);
+        let vivos = self
+            .retrato_servido
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .len();
+        if vivos >= TETO_DE_RETRATOS {
+            return Err(PhxError::EmCarga(self.msg(
+                "erro.retratos_no_teto",
+                &[("teto", &TETO_DE_RETRATOS.to_string())],
+            )));
+        }
+        // O teto de disco (pedido 729), pelo mesmo `df` do backup. Sem medida
+        // (fora do Linux) nao recusa: o backup tambem nao.
+        let precisa = bytes_do_database(&self.config.base.join(&database));
+        if let Some(livre) = self.espaco_livre_em(&self.config.base) {
+            if livre < precisa.saturating_add(FOLGA_DE_DISCO_DO_RETRATO) {
+                return Err(PhxError::EmCarga(self.msg(
+                    "erro.retrato_sem_disco",
+                    &[
+                        ("database", &database),
+                        ("precisa", &precisa.to_string()),
+                        ("livre", &livre.to_string()),
+                    ],
                 )));
             }
-        };
-        let db = dados.abrir_database(&database)?;
-        let id = crate::agora_ms().max(1) as u64;
-        let mut arquivos = Vec::new();
-        let mut eventos = Vec::new();
-        for (k, nome) in db.todas_as_tabelas()?.into_iter().enumerate() {
-            if !replica_alcanca(sessao.usuario.as_ref(), &database, &nome) {
-                continue;
-            }
-            {
-                let mut t = db.abrir_qualificada(&nome)?;
-                // O mesmo portao do `replicar` (pedido 342): coluna marcada
-                // nao atravessa fio em claro, nem pelo retrato.
-                if t.tem_dado_pessoal() && !self.fio_cifrado(sessao) {
-                    return Err(PhxError::Autorizacao(
-                        self.msg("erro.replicar_marcada_exige_cifra", &[("tabela", &nome)]),
-                    ));
-                }
-                eventos.push((nome.clone(), Json::de_u64(t.eventos()?)));
-            }
-            let prefixo = format!("{PREFIXO_SERVIDO}{id}-{k}-");
-            for (arquivo, copia, bytes) in db.retratar_tabela(&nome, &self.config.base, &prefixo)? {
-                arquivos.push((nome.clone(), arquivo, copia, bytes));
-            }
         }
-        drop(dados);
-        let lista = arquivos
+        // Que tabelas o retrato leva: as que a replica alcanca (o mesmo
+        // `replica_alcanca` do `posicao`). Com a ficha exclusiva, curta -- a
+        // lista, a troca de volume por terminar e a abertura GRAVAVEL de cada
+        // uma, que cura o que a abertura de leitura da fase 2 recusaria.
+        // Nenhum byte copiado. A cura vem ANTES da fase 1 de proposito:
+        // feita so na fase 2, ela mudava os arquivos que a fase 1 ja tinha
+        // copiado, e a fase 2 os recopiava inteiros com o portao fechado --
+        // medido, 1.666 ms de escrita parada num database de 99 MiB. E so
+        // quando a leitura recusaria: a abertura gravavel escreve a marca do
+        // `.ndx` mesmo na tabela sa, e a fase 2 recopiava o arquivo
+        // «recem-mudado» -- medido, 93-107 ms parada contra 0.
+        let tabelas: std::collections::BTreeSet<String> = {
+            let dados = self.travar_dados()?;
+            let db = dados.abrir_database(&database)?;
+            let mut t = std::collections::BTreeSet::new();
+            for nome in db.todas_as_tabelas()? {
+                if replica_alcanca(sessao.usuario.as_ref(), &database, &nome) {
+                    db.preparar_para_o_retrato(&nome)?;
+                    if db.ler_para_o_retrato(&nome)?.is_none() {
+                        drop(db.abrir_qualificada(&nome)?);
+                    }
+                    t.insert(nome);
+                }
+            }
+            t
+        };
+        let mut retrato = RetratoServido {
+            id: sortear_id_do_retrato(),
+            database: database.clone(),
+            ligacao: sessao.ligacao,
+            login: sessao.login().to_string(),
+            exige_cifra: false,
+            arquivos: Vec::new(),
+        };
+        let pasta = self.config.base.join(retrato.prefixo());
+        let origem = self.config.base.join(&database);
+        // A copia em DUAS PASSADAS, pelo motor do backup (pedido 729): a fase
+        // 1 copia sem trava nenhuma, com a escrita andando; a fase 2, com a
+        // ficha exclusiva, descarrega as sujas e recopia so o que mudou. Antes a copia inteira corria com a ficha exclusiva --
+        // 52-65 ms por 99 MiB medidos, ~0,6 s por GiB de escrita parada.
+        let copiado = self.copiar_o_retrato(
+            "retrato_da_replica",
+            &origem,
+            true,
+            || {
+                let fase = phxsql_store::backup::copiar_fase_1_das_tabelas(
+                    &origem,
+                    &pasta,
+                    tabelas.clone(),
+                )?;
+                // So em debug: a pausa da prova do 729, DENTRO da copia --
+                // onde o escritor esperava a copia inteira e agora nao espera.
+                #[cfg(debug_assertions)]
+                if let Some(ms) = gancho_de_teste("PHXSQL_TESTE_PAUSA_NA_COPIA_DO_RETRATO_MS") {
+                    std::thread::sleep(Duration::from_millis(ms));
+                }
+                Ok(fase)
+            },
+            // A fase 2, com a ficha exclusiva: descarrega as sujas (o retrato
+            // so vale com os cabecalhos do `.log` e do `.reg` escritos),
+            // le o portao do 342 e os eventos de cada tabela, e acerta a copia
+            // -- `stat` de tudo, recopia do que mudou desde a fase 1.
+            |mut fase, eventos, ficha| {
+                let FichaDaFase2::Exclusiva(dados) = ficha else {
+                    unreachable!("o retrato pede a ficha exclusiva")
+                };
+                self.descarregar_sujas_com(dados);
+                let db = dados.abrir_database(&database)?;
+                let mut lidas = Vec::new();
+                for nome in &tabelas {
+                    db.preparar_para_o_retrato(nome)?;
+                    // Pela LEITURA: a gravavel escreve a marca do `.ndx`, e o
+                    // acerto logo abaixo o recopiaria inteiro. So a tabela que
+                    // pede cura (rara: a cura ja correu antes da fase 1) paga a
+                    // gravavel aqui.
+                    let (pessoal, n) = match db.ler_para_o_retrato(nome)? {
+                        Some(lido) => lido,
+                        None => {
+                            let mut t = db.abrir_qualificada(nome)?;
+                            (t.tem_dado_pessoal(), t.eventos()?)
+                        }
+                    };
+                    // O mesmo portao do `replicar` (pedido 342): coluna marcada
+                    // nao atravessa fio em claro, nem pelo retrato. Lido aqui,
+                    // com a escrita parada: a marcacao feita durante a fase 1
+                    // tambem conta.
+                    if pessoal && !self.fio_cifrado(sessao) {
+                        return Err(PhxError::Autorizacao(
+                            self.msg("erro.replicar_marcada_exige_cifra", &[("tabela", nome)]),
+                        ));
+                    }
+                    lidas.push((nome.clone(), pessoal, n));
+                }
+                phxsql_store::backup::acertar_fase_2(&mut fase, eventos)?;
+                Ok((fase, lidas))
+            },
+        );
+        let ((fase, lidas), com_o_portao_fechado) = match copiado {
+            Ok(c) => c,
+            Err(e) => {
+                // A copia que falha no meio nao fica na raiz: o retrato ainda
+                // nao esta na lista, e ninguem mais o apagaria.
+                apagar_retratos(&self.config.base, &retrato.prefixo());
+                return Err(e);
+            }
+        };
+        retrato.exige_cifra = lidas.iter().any(|(_, p, _)| *p);
+        let mut arquivos: Vec<(String, String, PathBuf, u64)> =
+            phxsql_store::backup::copias_por_caminho(&fase)
+                .into_iter()
+                .filter_map(|(rel, copia, bytes)| {
+                    let tabela = phxsql_store::catalogo::tabela_do_arquivo_do_retrato(&rel)?;
+                    let arquivo = rel.rsplit('/').next().unwrap_or(&rel).to_string();
+                    Some((tabela, arquivo, copia, bytes))
+                })
+                .collect();
+        drop(fase);
+        // Por tabela, e nao pelo caminho: a replica troca uma tabela por vez
+        // e junta os arquivos dela pelos vizinhos da lista (`t#001.log`,
+        // `t-a.reg` e `t.log` ficariam separados na ordem do caminho).
+        arquivos.sort_by(|a, b| (&a.0, &a.1).cmp(&(&b.0, &b.1)));
+        retrato.arquivos = arquivos;
+        let eventos: Vec<(String, Json)> = lidas
+            .iter()
+            .map(|(nome, _, n)| (nome.clone(), Json::de_u64(*n)))
+            .collect();
+        let lista = retrato
+            .arquivos
             .iter()
             .map(|(t, a, _, b)| {
                 Json::objeto(vec![
@@ -409,20 +696,26 @@ impl Servidor {
                 ])
             })
             .collect();
-        *self
-            .retrato_servido
+        let id = retrato.id;
+        self.retrato_servido
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) =
-            Some(RetratoServido { id, arquivos });
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .push(retrato);
         Ok(Json::objeto(vec![
             ("database", Json::texto_de(&database)),
             ("id", Json::de_u64(id)),
             ("arquivos", Json::Lista(lista)),
             ("eventos", Json::Objeto(eventos)),
+            // Quanto a escrita esperou por este retrato (pedido 729): o tempo
+            // com o portao fechado, a fase 2. Antes era a copia inteira.
+            (
+                "escrita_parada_ms",
+                Json::de_u64(com_o_portao_fechado.as_millis() as u64),
+            ),
         ]))
     }
 
-    fn pedaco_do_retrato(&self, p: &Json) -> Result<Json> {
+    fn pedaco_do_retrato(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
         let id = p.inteiro_ou("id", 0).max(0) as u64;
         let indice = p.inteiro_ou("indice", -1);
         let offset = p.inteiro_ou("offset", 0).max(0) as u64;
@@ -430,16 +723,25 @@ impl Servidor {
             n if n <= 0 => PEDACO_DO_RETRATO,
             n => (n as u64).min(PEDACO_DO_RETRATO),
         };
+        self.retrato_desta_sessao(id, p, sessao)?;
         let caminho = {
             let r = self
                 .retrato_servido
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
-            let Some(r) = r.as_ref().filter(|r| r.id == id) else {
+            let Some(r) = r.iter().find(|r| r.id == id && r.ligacao == sessao.ligacao) else {
                 return Err(PhxError::NaoEncontrado(format!(
                     "nao ha retrato {id} servido aqui: peca um novo"
                 )));
             };
+            // O portao do 342 tambem no pedaco (pedido 727): a conexao pode
+            // ter tirado o retrato cifrada, mas cada pedaco e um pedido.
+            if r.exige_cifra && !self.fio_cifrado(sessao) {
+                let tabela = r.arquivos.first().map(|a| a.0.as_str()).unwrap_or("");
+                return Err(PhxError::Autorizacao(
+                    self.msg("erro.replicar_marcada_exige_cifra", &[("tabela", tabela)]),
+                ));
+            }
             let Some((_, _, c, _)) = usize::try_from(indice).ok().and_then(|i| r.arquivos.get(i))
             else {
                 return Err(PhxError::NaoEncontrado(format!(
@@ -542,7 +844,10 @@ impl Servidor {
             ("database", Json::texto_de(database)),
             ("soltar", Json::Bool(true)),
         ]);
+        // Ordenada antes do `dedup`: com a tabela repetida fora de ordem na
+        // lista, a segunda troca apagaria o que a primeira acabou de por.
         let mut tabelas: Vec<String> = recebidos.iter().map(|(t, _, _)| t.clone()).collect();
+        tabelas.sort();
         tabelas.dedup();
         let pendente = {
             let dados = self.travar_dados()?;
@@ -577,6 +882,21 @@ impl Servidor {
                 self.anotar_estado(origem, |e| {
                     e.recusas.remove(&chave);
                 });
+            }
+            // Pedido 737: a tabela que chegou pelo retrato nao passou pelo
+            // `aplicar_evento`, e a contagem de orfas do 300 §2.7 nao a viu. O
+            // retrato e filtrado pelo alcance da replica na origem, entao a
+            // filha cuja mae ficou de fora chega orfa -- e e contada aqui,
+            // DEPOIS de todas as trocas (a mae pode vir no mesmo retrato, mais
+            // adiante na lista). O numero da tabela trocada e o do disco dela
+            // agora: o que se contou antes era de outra copia.
+            for tabela in &tabelas {
+                let chave = format!("{database}/{tabela}");
+                if let Ok(mut m) = self.orfas_na_replica.lock() {
+                    m.remove(&chave);
+                }
+                let contadas = db.abrir_qualificada(tabela)?.orfas_no_disco()?;
+                self.anotar_orfas(&chave, contadas);
             }
             // A copia residente era da tabela de antes do retrato.
             if let Ok(mut r) = self.residentes.lock() {
