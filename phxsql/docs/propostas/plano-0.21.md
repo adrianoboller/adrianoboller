@@ -83,3 +83,7 @@ A ordem do resto da 0.21 passa a ser **segurança antes de tudo**:
 6. Só então **A15/A16** do aquário.
 
 As exceções à pétrea «guarda nova entra pedida» (765/766/767 e 770) foram decididas pelo dono e valem só para esses pedidos.
+
+## Decisão do dono, 09/10/2026 — a interface
+
+771 (responsividade + endurecimento real) e 772 (dissuasão de F12, marcada como dissuasão) entram junto do 770. 773 (WASM) e 774 (React, exceção à pétrea só para a tela) ficam depois da lista de segurança, com desenho do J antes de código.
