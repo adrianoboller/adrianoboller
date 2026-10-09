@@ -245,10 +245,21 @@ pub fn ler_linha_de_senha<R: BufRead>(r: R) -> Result<Senha, Falha> {
 /// volta pelo cano do `stdout` do shell. `/bin/stty` pelo caminho inteiro: um
 /// `stty` no `PATH` de quem chama nao decide se o eco desliga.
 ///
+/// O `trap '' HUP` e o pedido 754. Este processo e, no terminal, quem morre
+/// primeiro pelo ctrl+C; se ele lidera a sessao (o caso do pseudo-terminal, e
+/// do programa rodado direto pelo `ssh`), a morte dele manda SIGHUP ao grupo
+/// da frente -- e o SIGHUP chegava no meio do `trap ... EXIT`, matando o
+/// `stty echo` que religava o eco. Medido com o `trap ... HUP` antigo: 5 de
+/// 50 corridas com o eco AINDA desligado 2 s depois; com o HUP ignorado (o
+/// shell e os filhos herdam o SIG_IGN), 0 de 50, e 0 de 50 sob carga. Num
+/// desligamento de verdade o terminal some, o `head` le o fim e sai, e o
+/// shell sai com ele: ignorar o HUP nao deixa processo pendurado.
+///
 /// O que fica de fora, dito: um `kill -9` neste processo E no shell deixa o
 /// eco desligado (nenhum processo sobra para religar); `stty echo` resolve.
-const SCRIPT_SEM_ECO: &str = "trap '/bin/stty echo 2>/dev/null' EXIT; \
-     trap 'exit 130' INT HUP TERM; \
+const SCRIPT_SEM_ECO: &str = "trap '' HUP; \
+     trap '/bin/stty echo 2>/dev/null' EXIT; \
+     trap 'exit 130' INT TERM; \
      /bin/stty -echo 2>/dev/null || exit 3; \
      /usr/bin/head -n 1";
 

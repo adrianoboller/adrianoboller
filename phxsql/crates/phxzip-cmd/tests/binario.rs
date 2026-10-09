@@ -560,6 +560,14 @@ fn compactar_nao_segue_link_trocado_na_corrida() {
 ///
 /// Prova real: com o `stty -echo` rodado pelo PROPRIO processo (o desenho
 /// antigo), o ctrl+C o mata com o eco desligado e o teste cai.
+///
+/// O roteiro espera por CONDICAO, nunca por prazo de parede (pedido 754): a
+/// pergunta tem de estar na tela E o eco desligado antes de digitar (eco
+/// desligado prova que os `trap` do shell ja estao armados, porque vem antes
+/// do `stty` no roteiro), e depois do ctrl+C espera o processo sair e o eco
+/// voltar, com 30 s de teto so para nao travar a bateria. A versao com prazos
+/// de 1 s caia 5 em 50 -- e o prazo nao era a causa: medido, nas 5 o eco
+/// continuava desligado 2 s depois (ver o `SCRIPT_SEM_ECO`, o `trap '' HUP`).
 #[cfg(unix)]
 #[test]
 fn o_eco_volta_no_ctrl_c_e_a_senha_nao_aparece() {
@@ -580,22 +588,31 @@ fn o_eco_volta_no_ctrl_c_e_a_senha_nao_aparece() {
          \x20   os.chdir(cwd); os.environ.pop('PHXZIP_SENHA', None)\n\
          \x20   os.execv(b, [b, 'compactar', 'c.7z', 'alvo', '--cifrar', '--ciclos', '4', '--sobrescrever'])\n\
          out = b''\n\
-         def ler(t):\n\
-         \x20   global out\n\
-         \x20   fim = time.time() + t\n\
+         saiu = False\n\
+         def eco():\n\
+         \x20   try: return bool(termios.tcgetattr(fd)[3] & termios.ECHO)\n\
+         \x20   except termios.error: return None\n\
+         def esperar(cond, oque, teto=30.0):\n\
+         \x20   global out, saiu\n\
+         \x20   fim = time.time() + teto\n\
          \x20   while time.time() < fim:\n\
+         \x20       if cond(): return\n\
          \x20       try:\n\
-         \x20           r, _, _ = select.select([fd], [], [], 0.05)\n\
+         \x20           r, _, _ = select.select([fd], [], [], 0.02)\n\
          \x20           if r: out += os.read(fd, 4096)\n\
-         \x20       except OSError: break\n\
-         ler(1.0)\n\
-         os.write(fd, b'S3GREDO-UNICO\\n'); ler(0.8)\n\
+         \x20       except OSError: time.sleep(0.02)\n\
+         \x20       if not saiu and os.waitpid(pid, os.WNOHANG)[0] == pid: saiu = True\n\
+         \x20   print('PRAZO', oque)\n\
+         esperar(lambda: b'senha: ' in out and eco() is False, 'primeira pergunta sem eco')\n\
+         os.write(fd, b'S3GREDO-UNICO\\n')\n\
+         esperar(lambda: b'de novo' in out and eco() is False, 'segunda pergunta sem eco')\n\
          if modo == 'intr':\n\
-         \x20   os.write(fd, b'\\x03'); ler(0.8)\n\
+         \x20   os.write(fd, b'\\x03')\n\
+         \x20   esperar(lambda: saiu and eco() is True, 'o eco voltar depois do ctrl+C')\n\
          else:\n\
-         \x20   os.write(fd, b'S3GREDO-UNICO\\n'); ler(2.0)\n\
-         eco = bool(termios.tcgetattr(fd)[3] & termios.ECHO)\n\
-         print('ECO', eco)\n\
+         \x20   os.write(fd, b'S3GREDO-UNICO\\n')\n\
+         \x20   esperar(lambda: saiu, 'o fim da compactacao')\n\
+         print('ECO', eco())\n\
          print('ECOOU', b'S3GREDO' in out)\n",
     )
     .unwrap();
@@ -609,6 +626,7 @@ fn o_eco_volta_no_ctrl_c_e_a_senha_nao_aparece() {
             .output()
             .unwrap();
         let saida = String::from_utf8_lossy(&o.stdout);
+        assert!(!saida.contains("PRAZO"), "{modo}: {saida}");
         assert!(
             saida.contains("ECO True"),
             "{modo}: o eco nao voltou: {saida}"
