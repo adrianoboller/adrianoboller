@@ -60,6 +60,7 @@
     lote: () => txt('fluxos.tipo.lote', 'LOTE'),
     parar_com_erro: () => txt('fluxos.tipo.parar', 'PARAR COM ERRO'),
     esperar: () => txt('fluxos.tipo.esperar', 'ESPERAR'),
+    politica: () => txt('fluxos.tipo.politica', 'POLÍTICA'),
   };
   // Os estados do `Resultado` do motor (fluxos.rs), um rotulo literal por estado. A COR sai
   // dos tokens de estado da marca (--ok, --aviso, --vermelho, --info, --texto-3) no CSS; a
@@ -79,6 +80,8 @@
     verdadeiro: () => txt('fluxos.porta.verdadeiro', 'verdadeiro'),
     falso: () => txt('fluxos.porta.falso', 'falso'),
     erro: () => txt('fluxos.porta.erro', 'erro'),
+    aprovado: () => txt('fluxos.porta.aprovado', 'aprovado'),
+    reprovado: () => txt('fluxos.porta.reprovado', 'reprovado'),
   };
 
   // O tipo do passo, pela chave que ele declara (a mesma lista do `tipo` do motor). Passo
@@ -96,13 +99,16 @@
       case 'se': return [v.caminho, v.operador, typeof v.valor === 'string' ? v.valor : JSON.stringify(v.valor ?? null)].filter(x => x !== '' && x !== undefined).join(' ');
       case 'juntar': return [v.modo, v.chave].filter(Boolean).join(' ');
       case 'esperar': return Object.entries(v).map(([c, x]) => `${c} ${typeof x === 'string' ? x : JSON.stringify(x)}`).join(' ');
+      // As regras ligadas, pelo nome do campo: o JSON inteiro nao cabe no no e saia por
+      // baixo do nome da porta (visto na captura do assistente).
+      case 'politica': return Object.keys(v || {}).join(' ');
       case null: case undefined: return '';
       default: return typeof v === 'string' ? v : JSON.stringify(v);
     }
   }
   const origemDe = d => String(d).split(':')[0];
   const portaDe = d => (String(d).includes(':') ? String(d).split(':').slice(1).join(':') : null);
-  const portasDe = p => [...(p.se ? ['verdadeiro', 'falso'] : []), ...(p.ao_errar === 'saida_de_erro' ? ['erro'] : [])];
+  const portasDe = p => [...(p.se ? ['verdadeiro', 'falso'] : []), ...(p.politica ? ['aprovado', 'reprovado'] : []), ...(p.ao_errar === 'saida_de_erro' ? ['erro'] : [])];
 
   function el(tag, classe, texto) {
     const e = document.createElement(tag);
@@ -592,6 +598,7 @@
     mcp: () => ({ mcp: { servidor: '', ferramenta: '' }, args: {} }), comando: () => ({ comando: '' }),
     se: () => ({ se: { caminho: '', operador: 'igual', valor: '' } }), juntar: () => ({ juntar: { modo: 'append' } }),
     lote: () => ({ lote: 10 }), parar_com_erro: () => ({ parar_com_erro: '' }), esperar: () => ({ esperar: { ms: 60000 } }),
+    politica: () => ({ politica: {} }),
   };
   function idLivre(base) {
     const usados = new Set((atual.obj.passos || []).map(p => p.id));
@@ -890,6 +897,28 @@
   $('fluxosRodar').addEventListener('click', () => disparar(null));
   $('fluxosReorganizar').addEventListener('click', reorganizar);
   $('fluxosRecarregar').addEventListener('click', carregar);
+  // O assistente: a descricao vai ao motor (fluxo_assistente.rs), que grava um RASCUNHO e
+  // devolve o nome relativo; a lista recarrega e o rascunho abre para revisao.
+  $('fluxosAssistente').addEventListener('submit', async ev => {
+    ev.preventDefault();
+    const campo = $('fluxosDescricao');
+    const descricao = campo.value.trim();
+    if (!descricao) { campo.focus(); return; }
+    const botaoCriar = $('fluxosCriar');
+    botaoCriar.disabled = true;
+    aviso(txt('fluxos.assistente_pensando', 'O assistente está montando o fluxo…'));
+    let v;
+    try { v = await api('POST', 'fluxos/assistente', { descricao }); } catch (e) {
+      botaoCriar.disabled = false;
+      if (e.status === 422) return aviso(txt('fluxos.assistente_falhou', 'O assistente não chegou a um fluxo válido — {erro}', { erro: e.message }), true);
+      return falhou(e);
+    }
+    botaoCriar.disabled = false;
+    campo.value = '';
+    await carregar();
+    await abrir(v.arquivo);
+    aviso(txt('fluxos.assistente_criado', 'Rascunho {arquivo} criado em {n} tentativa(s); revise antes de publicar.', { arquivo: v.arquivo, n: v.tentativas }));
+  });
   $('fluxosUltima').addEventListener('click', ultimaExecucao);
   // O minimapa so existe onde cabe (o CSS o esconde no celular); medir aqui evita desenhar
   // o que ninguem ve.

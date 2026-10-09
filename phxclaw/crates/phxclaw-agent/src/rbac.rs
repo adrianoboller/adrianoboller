@@ -96,6 +96,11 @@ pub enum Escopo {
     /// O token chega DEPOIS do pedido (primeira mensagem do websocket): o portao deixa
     /// passar e a rota chama `conferir_rota` com o token na mao.
     TokenNaMensagem,
+    /// O websocket do convidado do terminal compartilhado: a primeira mensagem traz um
+    /// CONVITE, nao uma credencial da API -- o convidado nao e usuario. O portao deixa passar
+    /// e a rota confere o convite pelo resumo; ESCREVER pede alem dele a credencial que a linha
+    /// do terminal pede, por `conferir_rota` (`compartilhar.rs`).
+    Convite,
 }
 
 /// Uma linha da matriz. `metodo` "*" vale para todos; HEAD conta como GET.
@@ -139,6 +144,8 @@ pub const MATRIZ: &[Regra] = &[
     r("GET", crate::pwa::ROTA_POLITICA, LE, X),
     r("GET", "/metrics", LE, I),
     r("GET", "/v1/tasks", LE, P),
+    // O painel le as mesmas tarefas da lista, cortadas pelo mesmo projeto.
+    r("GET", crate::insights::ROTA, LE, P),
     r("POST", "/v1/tasks", ME, P),
     r("GET", "/v1/tasks/{id}", LE, T),
     r("GET", "/v1/tasks/{id}/artifacts/{*path}", LE, T),
@@ -166,6 +173,9 @@ pub const MATRIZ: &[Regra] = &[
     r("POST", "/v1/fluxos/validar", LE, I),
     r("PUT", "/v1/fluxos/arquivo", AD, I),
     r("POST", "/v1/fluxos/rodar", AD, P),
+    // O assistente grava fluxo novo na pasta da instancia e gasta o modelo dela: e do admin,
+    // pelo mesmo motivo do gravar.
+    r("POST", "/v1/fluxos/assistente", AD, I),
     r(
         "GET",
         crate::ide::ROTA_TERMINAL,
@@ -174,7 +184,18 @@ pub const MATRIZ: &[Regra] = &[
     ),
     r("GET", "/v1/ide/simbolos", AD, I),
     r("GET", "/v1/ide/arquivo", AD, I),
-    r("POST", "/v1/ide/completar", AD, I),
+    r("GET", "/v1/ide/dobras", AD, I),
+    r("POST", crate::ide::ROTA_COMPLETAR, AD, I),
+    // O terminal compartilhado: criar e revogar sao do dono, como o terminal que se
+    // compartilha; o convidado entra pelo convite (e so escreve provando o papel do terminal).
+    r("POST", crate::compartilhar::ROTA_COMPARTILHAR, DO, I),
+    r("POST", crate::compartilhar::ROTA_REVOGAR, DO, I),
+    r(
+        "GET",
+        crate::compartilhar::ROTA_CONVIDADO,
+        LE,
+        Escopo::Convite,
+    ),
     r("GET", "/v1/ide/testes", AD, I),
     r("POST", "/v1/ide/testes/rodar", AD, I),
     r("GET", "/v1/plugins/catalogo", AD, I),
@@ -420,12 +441,23 @@ impl Acesso {
     }
 }
 
-/// Identifica o token: o `api.token` (dono) ou um usuario da lista.
-fn identificar(s: &ApiState, lista: &[Carregado], h: &HeaderMap) -> Option<Acesso> {
+/// Identifica o token: o `api.token` (dono), um usuario da lista, ou -- SO na rota para a
+/// qual foi emitida -- a credencial de sessao do terminal do IDE (`CredencialDoTerminal`).
+fn identificar(
+    s: &ApiState,
+    lista: &[Carregado],
+    h: &HeaderMap,
+    metodo: &Method,
+    rota: Option<&str>,
+) -> Option<Acesso> {
     if phxclaw_api_gateway::authorized(h, &s.token) {
         return Some(Acesso::legado());
     }
-    let (u, _) = achar_contando(lista, bearer(h)?);
+    let t = bearer(h)?;
+    if t.starts_with(PREFIXO_SESSAO) {
+        return acesso_da_sessao(s, lista, t, metodo, rota?);
+    }
+    let (u, _) = achar_contando(lista, t);
     u.map(|u| Acesso {
         quem: u.nome.clone(),
         papel: u.papel,
@@ -511,11 +543,11 @@ fn decidir(
     }
     let regra = regra_de(metodo, rota);
     match regra.escopo {
-        Escopo::Publico => return Ok(None),
+        Escopo::Publico | Escopo::Convite => return Ok(None),
         Escopo::TokenNaMensagem if !token_na_mao => return Ok(None),
         _ => {}
     }
-    let mut a = identificar(s, &lista, h)
+    let mut a = identificar(s, &lista, h, metodo, rota)
         .ok_or_else(|| recusa(StatusCode::UNAUTHORIZED, "token ausente ou invalido"))?;
     if a.papel < regra.minimo {
         return Err(recusa(
@@ -546,7 +578,7 @@ fn decidir(
             }
             a.projeto = p;
         }
-        Escopo::Instancia | Escopo::TokenNaMensagem | Escopo::Publico => {}
+        Escopo::Instancia | Escopo::TokenNaMensagem | Escopo::Publico | Escopo::Convite => {}
     }
     Ok(Some(a))
 }
@@ -637,6 +669,187 @@ pub fn visiveis(
         .zip(manter)
         .filter_map(|(t, m)| m.then_some(t))
         .collect()
+}
+
+// ---------------------------------------------------------------- credencial do terminal
+
+/// Prefixo da credencial de sessao do terminal do IDE: o detector de segredo a reconhece pela
+/// forma, como o `phxu_` do usuario.
+pub const PREFIXO_SESSAO: &str = "phxs_";
+
+/// Teto de vida da credencial do terminal, mesmo com o terminal aberto: um Helix esquecido
+/// aberto nao segura uma credencial para sempre (reabrir emite outra).
+pub const VALIDADE_DA_SESSAO: std::time::Duration = std::time::Duration::from_secs(12 * 3600);
+
+/// Quem abriu o terminal, guardado so como resumo: e o que a credencial confere de novo a
+/// cada uso -- revogar o usuario (ou trocar a chave dele) a derruba no pedido seguinte.
+#[derive(Clone, PartialEq, Eq)]
+enum Abridor {
+    /// O `api.token` (SHA-256 dele): vale enquanto o servidor for o mesmo.
+    ApiToken([u8; 32]),
+    /// Um usuario do `usuarios.json`: o nome e o hash do token DELE no momento da emissao.
+    Usuario { nome: String, hash: [u8; 32] },
+}
+
+struct Sessao {
+    abridor: Abridor,
+    metodo: &'static str,
+    rota: &'static str,
+    expira: std::time::Instant,
+}
+
+/// As credenciais vivas, pela chave SHA-256 do token -- o token nunca. O token tem 256 bits
+/// do CSPRNG: sal e estiramento nao comprariam nada (o mesmo raciocinio do token de usuario).
+fn sessoes() -> &'static Mutex<std::collections::HashMap<[u8; 32], Sessao>> {
+    static S: std::sync::OnceLock<Mutex<std::collections::HashMap<[u8; 32], Sessao>>> =
+        std::sync::OnceLock::new();
+    S.get_or_init(Default::default)
+}
+
+fn resumo(t: &str) -> [u8; 32] {
+    Sha256::digest(t.as_bytes()).into()
+}
+
+/// A credencial que o terminal do IDE leva no ambiente do `hx` (PHXCLAW_API_TOKEN), no lugar
+/// do `api.token` MESTRE. Medido em 09/10/2026: o `hx` usa o token so para a completacao por
+/// IA do `phxclaw-snippet-ls` (`POST /v1/ide/completar`); com o mestre, um `:sh printenv`
+/// no terminal entregava a API inteira (configuracao, tunel, plugins), e revogar o usuario que
+/// abriu o terminal nao tirava nada dele.
+///
+/// Por isso ela e: de UMA rota (a da emissao; o portao recusa em qualquer outra), do papel
+/// ATUAL de quem abriu (conferido de novo a cada uso, contra o `usuarios.json` relido),
+/// morta com o usuario revogado ou com a chave trocada, morta quando o terminal fecha (o
+/// `Drop`), e com prazo (`VALIDADE_DA_SESSAO`). Guardada so como resumo, so em memoria.
+pub struct CredencialDoTerminal {
+    token: String,
+    chave: [u8; 32],
+}
+
+// A mao: `{:?}` num log nao pode levar o token.
+impl std::fmt::Debug for CredencialDoTerminal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("CredencialDoTerminal(<redigido>)")
+    }
+}
+
+impl CredencialDoTerminal {
+    /// Emite para quem se autenticou com `token` (o `api.token` ou um usuario), valendo so em
+    /// `metodo rota`.
+    pub fn emitir(
+        s: &ApiState,
+        token: &str,
+        metodo: &'static str,
+        rota: &'static str,
+    ) -> Result<Self, String> {
+        Self::emitir_com(s, token, metodo, rota, VALIDADE_DA_SESSAO)
+    }
+
+    /// `emitir` com o prazo explicito (a prova do prazo emite uma ja vencida).
+    pub fn emitir_com(
+        s: &ApiState,
+        token: &str,
+        metodo: &'static str,
+        rota: &'static str,
+        validade: std::time::Duration,
+    ) -> Result<Self, String> {
+        let mut h = HeaderMap::new();
+        if let Ok(v) = format!("Bearer {token}").parse() {
+            h.insert(axum::http::header::AUTHORIZATION, v);
+        }
+        let abridor = if phxclaw_api_gateway::authorized(&h, &s.token) {
+            Abridor::ApiToken(resumo(&s.token))
+        } else {
+            let lista = s.usuarios.ativos();
+            let (u, _) = achar_contando(&lista, token);
+            let u = u.ok_or("token ausente ou invalido")?;
+            Abridor::Usuario {
+                nome: u.nome.clone(),
+                hash: u.hash,
+            }
+        };
+        let novo = format!(
+            "{PREFIXO_SESSAO}{}",
+            phxclaw_api_gateway::generate_bearer_token()
+        );
+        let chave = resumo(&novo);
+        let agora = std::time::Instant::now();
+        let mut m = sessoes().lock().unwrap_or_else(|p| p.into_inner());
+        m.retain(|_, x| x.expira > agora);
+        m.insert(
+            chave,
+            Sessao {
+                abridor,
+                metodo,
+                rota,
+                expira: agora + validade,
+            },
+        );
+        Ok(Self { token: novo, chave })
+    }
+
+    pub fn token(&self) -> &str {
+        &self.token
+    }
+}
+
+impl Drop for CredencialDoTerminal {
+    fn drop(&mut self) {
+        sessoes()
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .remove(&self.chave);
+    }
+}
+
+/// O acesso de uma credencial de terminal neste pedido, ou nada: rota e metodo da emissao,
+/// dentro do prazo, e quem abriu ainda existe com a MESMA chave -- e o papel e os projetos
+/// sao os dele AGORA, nao os da emissao.
+fn acesso_da_sessao(
+    s: &ApiState,
+    lista: &[Carregado],
+    token: &str,
+    metodo: &Method,
+    rota: &str,
+) -> Option<Acesso> {
+    let m = sessoes().lock().unwrap_or_else(|p| p.into_inner());
+    let x = m.get(&resumo(token))?;
+    let metodo = if metodo == Method::HEAD {
+        "GET"
+    } else {
+        metodo.as_str()
+    };
+    if x.rota != rota || x.metodo != metodo || x.expira <= std::time::Instant::now() {
+        return None;
+    }
+    let mut a = match &x.abridor {
+        Abridor::ApiToken(r) => (*r == resumo(&s.token)).then(Acesso::legado)?,
+        Abridor::Usuario { nome, hash } => {
+            let u = lista
+                .iter()
+                .find(|u| u.nome == *nome && comparar_contando(&u.hash, hash).0)?;
+            Acesso {
+                quem: u.nome.clone(),
+                papel: u.papel,
+                projetos: u.projetos.clone(),
+                projeto: None,
+            }
+        }
+    };
+    a.quem = format!("{} (terminal do IDE)", a.quem);
+    Some(a)
+}
+
+/// Para a rota que aceita a credencial do terminal (`ide::completar`), DEPOIS do `api::auth`
+/// recusar: a credencial vale para `metodo rota` com o papel que a matriz pede. A mesma
+/// `acesso_da_sessao` do portao -- com RBAC desligado o portao nao confere nada, e esta e a
+/// unica porta dela.
+pub fn sessao_alcanca(s: &ApiState, h: &HeaderMap, metodo: &Method, rota: &str) -> bool {
+    let Some(t) = bearer(h).filter(|t| t.starts_with(PREFIXO_SESSAO)) else {
+        return false;
+    };
+    let lista = s.usuarios.ativos();
+    acesso_da_sessao(s, &lista, t, metodo, rota)
+        .is_some_and(|a| a.papel >= regra_de(metodo, Some(rota)).minimo)
 }
 
 // ---------------------------------------------------------------- comando local (CLI)

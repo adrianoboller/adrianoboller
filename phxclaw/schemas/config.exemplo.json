@@ -332,6 +332,66 @@
     "api": null,
     "contato": null
   },
+  "cofres": {
+    "//": [
+      "cache_max: Entradas no cache em memória (teto 1024) [inteiro; ambiente PHXCLAW_COFRE_CACHE_MAX]",
+      "cache_segundos: Prazo do cache em memória dos valores lidos (0 desliga; teto 300) [inteiro; ambiente PHXCLAW_COFRE_CACHE_SEGUNDOS]",
+      "liberar: Origens internas liberadas para os cofres (Vault na rede privada, loopback) [lista; ambiente PHXCLAW_COFRE_LIBERAR]",
+      "usar_proxy_do_ambiente: Sair pelo proxy do ambiente até os cofres (o IP conferido deixa de ficar preso) [booleano; ambiente PHXCLAW_COFRE_USAR_PROXY]"
+    ],
+    "aws": {
+      "//": [
+        "chave_id: Access key ID da AWS (o secret access key fica no broker) [texto; ambiente PHXCLAW_COFRE_AWS_CHAVE_ID]",
+        "regiao: Região do AWS Secrets Manager (us-east-1); vazio = sem AWS [texto; ambiente PHXCLAW_COFRE_AWS_REGIAO]",
+        "url: Endpoint do Secrets Manager; vazio = https://secretsmanager.<região>.amazonaws.com [texto; ambiente PHXCLAW_COFRE_AWS_URL]"
+      ],
+      "chave_id": null,
+      "regiao": null,
+      "url": null
+    },
+    "azure": {
+      "//": [
+        "cliente_id: Client ID da aplicação no Entra ID (o segredo do cliente fica no broker) [texto; ambiente PHXCLAW_COFRE_AZURE_CLIENTE_ID]",
+        "tenant: Tenant do Entra ID [texto; ambiente PHXCLAW_COFRE_AZURE_TENANT]",
+        "token_url: Endpoint de token; vazio = https://login.microsoftonline.com/<tenant>/oauth2/v2.0/token [texto; ambiente PHXCLAW_COFRE_AZURE_TOKEN_URL]",
+        "url: URL do Azure Key Vault (https://nome.vault.azure.net); vazio = sem Azure [texto; ambiente PHXCLAW_COFRE_AZURE_URL]"
+      ],
+      "cliente_id": null,
+      "tenant": null,
+      "token_url": null,
+      "url": null
+    },
+    "cache_max": 64,
+    "cache_segundos": 60,
+    "gcp": {
+      "//": [
+        "projeto: Projeto do GCP Secret Manager; vazio = o project_id da conta de serviço [texto; ambiente PHXCLAW_COFRE_GCP_PROJETO]",
+        "token_url: Endpoint de token do Google; vazio = https://oauth2.googleapis.com/token [texto; ambiente PHXCLAW_COFRE_GCP_TOKEN_URL]",
+        "url: Endpoint do Secret Manager; vazio = https://secretmanager.googleapis.com [texto; ambiente PHXCLAW_COFRE_GCP_URL]"
+      ],
+      "projeto": null,
+      "token_url": null,
+      "url": null
+    },
+    "liberar": null,
+    "usar_proxy_do_ambiente": false,
+    "vault": {
+      "//": [
+        "approle_montagem: Ponto de montagem do AppRole no Vault [texto; ambiente PHXCLAW_COFRE_VAULT_APPROLE_MONTAGEM]",
+        "metodo: Como o agente entra no Vault: token guardado ou AppRole (role_id e secret_id) [enum token|approle; ambiente PHXCLAW_COFRE_VAULT_METODO]",
+        "montagem: Ponto de montagem do KV versão 2 no Vault [texto; ambiente PHXCLAW_COFRE_VAULT_MONTAGEM]",
+        "namespace: Namespace do Vault Enterprise (cabeçalho X-Vault-Namespace); vazio = raiz [texto; ambiente PHXCLAW_COFRE_VAULT_NAMESPACE]",
+        "role_id: role_id do AppRole (o secret_id fica no broker) [texto; ambiente PHXCLAW_COFRE_VAULT_ROLE_ID]",
+        "url: Origem do HashiCorp Vault do operador (https://vault.exemplo:8200); vazio = sem Vault [texto; ambiente PHXCLAW_COFRE_VAULT_URL]"
+      ],
+      "approle_montagem": "approle",
+      "metodo": "token",
+      "montagem": "secret",
+      "namespace": null,
+      "role_id": null,
+      "url": null
+    }
+  },
   "custo": {
     "//": [
       "precos: Arquivo JSON da tabela de preços por modelo (moeda; entrada, saída e cache por milhão de tokens; data e fonte da cotação); vazio = custo não medido [caminho; ambiente PHXCLAW_CUSTO_PRECOS]"
@@ -436,12 +496,34 @@
       "usuario": null
     }
   },
+  "fila": {
+    "//": [
+      "concorrencia: Execuções ao mesmo tempo em cada phxclaw worker [inteiro; ambiente PHXCLAW_FILA_CONCORRENCIA]",
+      "prazo_segundos: Prazo da posse de uma execução: sem batimento por este tempo, outro worker a retoma [inteiro; ambiente PHXCLAW_FILA_PRAZO_SEGUNDOS]",
+      "tentativas: Quantas vezes uma execução pode ser tomada antes de ir para dead_letter [inteiro; ambiente PHXCLAW_FILA_TENTATIVAS]",
+      "url: PostgreSQL da fila de execuções (postgresql://usuario@host:porta/banco); a senha vai pelo broker (phxclaw fila senha) [texto; ambiente PHXCLAW_FILA_URL]"
+    ],
+    "concorrencia": 4,
+    "prazo_segundos": 30,
+    "tentativas": 3,
+    "url": null
+  },
   "fluxos": {
     "//": [
       "max_simultaneos: Máximo de fluxos rodando ao mesmo tempo na instância; vazio ou 0 = sem limite (o excedente espera a vaga); lido no primeiro fluxo, mudar pede reinício [inteiro; ambiente PHXCLAW_FLUXOS_MAX_SIMULTANEOS]",
       "poda_dias: Apaga execuções de fluxo terminadas há mais de N dias; vazio ou 0 = nunca [inteiro; ambiente PHXCLAW_FLUXOS_PODA_DIAS]",
       "poda_max: Mantém só as N execuções de fluxo terminadas mais novas; vazio ou 0 = todas [inteiro; ambiente PHXCLAW_FLUXOS_PODA_MAX]"
     ],
+    "git": {
+      "//": [
+        "credencial_nome: Nome da credencial do remoto (declarada no http.json com a origem dele; segredo no broker: phxclaw credencial guardar NOME); vazio = sem Authorization [texto; ambiente PHXCLAW_FLUXOS_GIT_CREDENCIAL_NOME]",
+        "ramo: Ramo do git dos fluxos a que esta instância está ligada (o repositório novo nasce nele; em outro ramo, exportar/importar recusam); vazio = o ramo em que o repositório estiver [texto; ambiente PHXCLAW_FLUXOS_GIT_RAMO]",
+        "remoto: Remoto https do git dos fluxos (fluxo exportar --push / importar --pull sem --remoto); http só em loopback; vazio = só remoto local. Só do operador: o .git/config do repositório nunca escolhe para onde a rede vai [texto; ambiente PHXCLAW_FLUXOS_GIT_REMOTO]"
+      ],
+      "credencial_nome": null,
+      "ramo": null,
+      "remoto": null
+    },
     "max_simultaneos": null,
     "poda_dias": null,
     "poda_max": null
@@ -553,6 +635,16 @@
     "tarefa_tokens": null,
     "teto_custo": null,
     "teto_tokens": null
+  },
+  "otel": {
+    "//": [
+      "intervalo_segundos: Intervalo de envio das métricas ao coletor [inteiro; ambiente PHXCLAW_OTEL_INTERVALO_SEGUNDOS]",
+      "servico: service.name dos traces e métricas exportados [texto; ambiente PHXCLAW_OTEL_SERVICO]",
+      "url: Coletor OTLP/HTTP do operador (ex.: http://127.0.0.1:4318); vazio = sem exportação, e sem custo [texto; ambiente PHXCLAW_OTEL_URL]"
+    ],
+    "intervalo_segundos": 60,
+    "servico": "phxclaw",
+    "url": null
   },
   "pacotes": {
     "//": [

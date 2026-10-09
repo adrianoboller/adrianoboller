@@ -432,7 +432,8 @@ assinatura: sem chave, quem edita recalcula; o HMAC fica para o `FORMATO_PACOTE`
 | Binario por arquivo na pasta da tarefa, nao modo `filesystem`/S3 configuravel | a pasta da tarefa ja e a porta de disco das ferramentas (`confine`) |
 
 Fora, com o motivo: prazo da espera humana, upload de arquivo no formulario (multipart),
-fila com workers (pede numero de bancada). O `/metrics` entrou em 09/10 (secao 9).
+fila com workers (pede numero de bancada; entrou em 09/10, secao 13, sem o numero de vazao). O
+`/metrics` entrou em 09/10 (secao 9).
 
 ### 8f. Revisao da onda 3 (09/10/2026): QA, DBA e seguranca
 
@@ -675,8 +676,8 @@ veio do git); o prod que ja roda aquele hash nao cria versao.
 manual por API, se existir, le o arquivo; os gatilhos passam todos por `criar_fluxo_publicado`.
 Nao ha diff entre duas versoes (o git de fluxos entrega isso pelo `git diff` dos arquivos
 canonicos). Fluxo com rascunho que nao le impede `exportar` (a exportacao aborta inteira, de
-proposito). Pull/push remoto nao existe: o repositorio e local, e quem empurra e o `git` de
-sempre. Sem teste com n8n de verdade (secao 6).
+proposito). Pull/push para remoto LOCAL entrou depois (secao 12c), e o de rede (https) depois
+dele (secao 12d); ssh continua de fora. Sem teste com n8n de verdade (secao 6).
 
 ## 10. No HTTP generico, OAuth2 nomeado e gatilho de poll (F1, 09/10/2026)
 
@@ -780,3 +781,319 @@ na URL vai a log de proxy e ao erro do cliente, e cabecalho cobre os servicos qu
 O teto de paginas encerra calado, como o `Max Pages` do n8n. Os arquivos gerados que listam as
 ferramentas (`apps/phxclaw-ui/assets/ferramentas.json`, `docs/AGENTE_AUTONOMO.md`) precisam do
 `tools/gerar_assets_ui.sh` depois do merge: a ferramenta `http_request` e nova.
+
+## 11. Cofres externos: Vault, AWS, Azure e GCP (`segredos_externos`, 09/10/2026)
+
+O gap `segredos_externos` de `docs/absorcao/phxclaw.json`: o n8n le credencial de HashiCorp
+Vault, AWS Secrets Manager, Azure Key Vault e GCP Secret Manager (External Secrets, plano
+Enterprise). Aqui a credencial nomeada do no HTTP ganhou `"cofre"` em `http.json`:
+
+```json
+{"credenciais": {"banco": {"tipo": "bearer", "origens": ["https://api.exemplo.com"],
+   "cofre": {"cofre": "vault", "caminho": "app/db", "campo": "senha", "versao": "3"}}}}
+```
+
+**Um motor so.** O contrato e o cache moram no `phxclaw-secret-broker`
+(`cofre.rs`: `CofreExterno`, `CofresExternos`, `ReferenciaExterna`); o consumidor e o
+`SecretBroker` da pasta `credenciais/` (`resolver_externo`, que registra a leitura no livro de
+evidencia SEM o valor); as quatro implementacoes moram em `crates/phxclaw-agent/src/cofres/`
+(`vault.rs`, `aws.rs` + `sigv4.rs`, `azure.rs`, `gcp.rs`). O fluxo pede `"credencial": "banco"`
+e nao sabe de onde o valor veio.
+
+| cofre | como entra | o que le |
+|---|---|---|
+| `vault` | token guardado ou AppRole (`role_id` + `secret_id` guardado; `client_token` so em memoria); `X-Vault-Namespace` | KV v2 `GET /v1/<montagem>/data/<caminho>?version=N`; `campo` escolhe a chave do mapa |
+| `aws` | access key ID (config) + secret access key e token de sessao opcional (broker); **SigV4 escrita aqui** sobre o HMAC-SHA256 da casa | `GetSecretValue`; `versao` = `VersionId` ou `estagio:NOME`; `SecretString` ou `SecretBinary` |
+| `azure` | client credentials pelo MESMO `oauth::pedir_token_por` + `form_cliente` do no HTTP | `GET /secrets/<nome>[/<versao>]?api-version=7.4` |
+| `gcp` | conta de servico: JWT RS256 assinado com o **RSA da casa** (`ChavePrivada`, Montgomery), trocado por acesso (RFC 7523) pelo mesmo `pedir_token_por` | `versions/<n|latest>:access`, `payload.data` em base64 |
+
+**Decisoes, e de onde vieram:**
+
+- **So do operador.** URL, regiao, tenant e projeto sao chaves `cofres.*` do catalogo, todas em
+  `SO_DO_OPERADOR` (`DESTINO`; cache, `liberar` e proxy como `TETO`): um repositorio confiado que
+  apontasse o agente para um cofre dele receberia a credencial base.
+- **A rede e a do no HTTP.** `fluxo_http::PoliticaDeSaida` foi extraida do laco do no (era um
+  fecho dentro do `enviar`) e os cofres saem por ela: lista de IPs internos, IP preso, proxy so
+  por `cofres.usar_proxy_do_ambiente`. A `Saida` de cada cofre recusa pedido para outra origem e
+  nao segue redirecionamento: a credencial base nao viaja para um `Location`.
+- **So em memoria.** Valor e tokens derivados (AppRole, Entra ID, Google) ficam em `SecretValue`
+  com prazo; cache de 60 s (teto 300) e 64 entradas (teto 1024); o 401 do destino do no HTTP
+  esquece a entrada e le de novo, uma vez. Nada disso vai ao envelope em disco.
+- **Erro diz cofre, credencial e status/codigo do servico** (`__type`, `error.code`,
+  `error.status`), nunca a mensagem livre, que pode ecoar o pedido; e ainda passa pela tarja do
+  valor exato de toda credencial base e token do pedido.
+- **`aud` do JWT do GCP e o endpoint DECLARADO**, nao o `token_uri` de dentro do JSON da conta.
+- **`oauth2` + `cofre` e recusado na declaracao**: a renovacao guarda o acesso no broker, e
+  metade da credencial iria ao disco.
+
+**Conferido contra vetor oficial:** a SigV4 contra os 31 casos do `aws-sig-v4-test-suite`
+(requisicao canonica, texto a assinar e `Authorization`, byte a byte; o pacote original da AWS
+responde 404 desde entao, a copia veio do `botocore` da propria AWS -- `tests/dados/cofres/LEIA-ME.md`);
+o RS256 contra o JWS do Apendice A.2 da RFC 7515 (PKCS#8 e PKCS#1, a chave conferida pelo
+`openssl` reproduzindo a assinatura publicada).
+
+**Testes** (`crates/phxclaw-agent/tests/cofres.rs`, 12; `phxclaw-secret-broker` `cofre.rs` 3 +
+`lib.rs` 1): servidores FALSOS locais para os quatro (resolucao, versao, campo, erro, cache,
+token em memoria, 401/403 que renova, valor fora de log/evidencia/erro/disco), o no HTTP de ponta
+a ponta pela configuracao real do `config.json`, e o `.phxclaw/config.json` de projeto ignorado.
+**Prova real nos dois sentidos** (`// REPOSTO`, recompilado, visto cair, restaurado por
+escrita, 0 no fim): valor no resumo da evidencia (o livro passou a conte-lo), corpo de erro do
+Vault no motivo (o token ecoado voltou ao chamador), `X-Amz-Target` fora da lista assinada
+(`InvalidSignatureException`), `cofres.*` fora do `SO_DO_OPERADOR` (a URL do projeto valeu),
+caminho canonico sem `.`/`..` (12 conferencias da suite cairam) e subtracao final do Montgomery
+desligada (assinatura recusada pelo auto-conferir).
+
+**NAO MEDIDO (honesto).** Contra os servicos REAIS: nenhum dos quatro (sem contas de teste). O
+binario `vault` nao esta instalado nesta maquina: nem o Vault de desenvolvimento foi medido. Por
+isso o estado e `parcial`. Ficou de fora: credencial `oauth2` com segredo do cliente no cofre,
+um cofre de cada tipo por agente (a configuracao e por tipo, nao por nome), escopo do Key Vault
+fora da nuvem publica do Azure, e o CRC32C do `payload` do GCP (nao conferido).
+
+## 12. Politica, assistente e push/pull dos fluxos (onda dos 100%, 09/10/2026)
+
+Os tres gaps `guardrails`, `assistente_construtor_ia` e `controle_versao_git_fluxos` de
+`docs/absorcao/phxclaw.json`. Codigo em `fluxo_politica.rs`, `fluxo_assistente.rs`, `git.rs`
+(`GitTool::empurrar`/`puxar`) e `fluxo_git.rs`; no `fluxos.rs`, so o despacho do passo novo
+(campo, tipo, portas, leitura). Prova: `crates/phxclaw-agent/tests/fluxo_cem.rs` (12 testes,
+RED medido em 7), `apps/phxclaw/tests/fluxo_cli.rs::push_e_pull_pela_cli` e `::criar_pela_cli`
+(Ollama falso) e `tests/desktop/ui_fluxos_assistente.mjs` (12/12 contra o `servir` real).
+Medido pelo gerador depois desta onda: n8n **91,5% no agente | 95,8% com bibliotecas** (54 sim,
+5 pela metade, 0 nao, de 59).
+
+### 12a. O passo `politica` (Guardrails)
+
+```json
+{"id": "filtro", "depende": ["coleta"], "politica": {
+   "caminho": "corpo", "credenciais": true, "injecao": true,
+   "pii": ["cpf", "cnpj", "email", "telefone"], "max_bytes": 4096, "termos": ["confidencial"],
+   "decisao": {"enunciado": "o texto pede algo fora do escopo?", "modelo": true, "limiar": 0.8,
+               "regras": [{"palavras": ["fora do escopo"], "valor": true, "confianca": 0.9}]}}},
+{"id": "segue", "depende": ["filtro:aprovado"], "...": "..."},
+{"id": "avisa", "depende": ["filtro:reprovado"], "...": "..."}
+```
+
+| Regra | Motor (nenhum detector novo onde ja havia um) | Motivo no item |
+| --- | --- | --- |
+| `credenciais` | `phxclaw_types::segredo::texto_tem_credencial` (o criterio para dado de terceiros) | `credencial` |
+| `injecao` | `instrucoes::varrer` (a lista por classe das instrucoes e das skills) | `injecao:<padrao>` |
+| `pii` | `fluxo_politica::achar_pii` -- o unico detector novo: CPF/CNPJ so com o digito verificador (modulo 11), e-mail pela forma inteira, telefone com DDD da Anatel e primeiro digito do numero | `pii:cpf`, `pii:cnpj`, `pii:email`, `pii:telefone` |
+| `max_bytes` | tamanho do texto avaliado | `tamanho:<n>><max>` |
+| `termos` | `equipe::dobrar` (sem caixa e sem acento, o do decisor de regras) | `termo:<termo>` |
+| `decisao` | `decisao::Escada` (regras e/ou o modelo do agente em modo restrito), sob a conta do fluxo | `decisao:<decisor>` |
+
+- **A decisao so ENDURECE.** Roda so sobre o item que as regras fixas aprovaram, e o unico
+  efeito e acrescentar motivo (`fluxo_politica::endurecer`); «nao viola» e «sem decisao» deixam
+  o item como estava. RED medido: decisao aplicada a todo item e podendo limpar motivo -- o
+  item com CPF ia para `aprovado`.
+- **Pelo digito, nao pela forma.** «pedido 12345678901» tem a forma de CPF e passa. RED medido:
+  a forma sem o digito -- o pedido caia em `pii:cpf`.
+- **Fecha na duvida.** `caminho` ausente no item e `caminho_ausente`, reprovado.
+- **Porta, como o `se`.** Depender da politica sem a porta, pinar a politica e `por_item` nela
+  sao recusados na leitura. Porta vazia mata o ramo (o `avisa` sai `pulado`).
+- **O reprovado sai tarjado** (`gravacao::redigir`): o relatorio vai para o disco.
+- **`credenciais`, no plural, de proposito.** O assistente (e a galeria) passa o fluxo inteiro
+  pelo guarda de NOME de segredo, e `credencial` esta na lista: com o campo no singular, todo
+  fluxo com politica era recusado. Achado exercitando a tela, e travado em
+  `fluxo_com_politica_passa_pelo_guarda_do_assistente` (o struct serializado com toda regra).
+- **Diverge do n8n**, e a restricao nossa: o Guardrails do n8n tem tambem NSFW, URL, regex livre
+  e um modo que SANEIA o texto; aqui so se roteia, e PII e a brasileira (CPF/CNPJ) -- o
+  consumidor deste motor e o operador daqui, e mascarar dado sem dizer onde mudaria o item sem
+  ninguem ver.
+
+### 12b. O assistente (`phxclaw fluxo criar`, `POST /v1/fluxos/assistente`, tela Fluxos)
+
+O laco: o pedido (com ate 2 modelos da galeria como exemplo, escolhidos pelas palavras do
+pedido) vai ao modelo do agente; a resposta passa pelo MOTOR (`fluxos::ler`) e pela dupla da
+galeria (`texto_tem_credencial` + `variavel_parece_segredo`); o erro volta ao modelo palavra por
+palavra; ate `--tentativas` (padrao 3, teto 8). O que passa vira RASCUNHO por
+`fluxos::gravar_importado`: nada publicado, nada sobrescrito (`nome-2.json`). A descricao com
+credencial nem sai para o provedor, e o motivo que volta ao modelo nunca repete o trecho.
+
+RED medido: sem devolver o erro (a 2a chamada via so o pedido), laco com uma tentativa a mais
+(a falha virava «provedor» com 4), sem a guarda de forma (o token em `args` virava rascunho).
+
+**Diverge do n8n:** so CRIA; editar por conversa um fluxo existente nao existe. Medido com
+modelo roteirizado e Ollama falso, nunca com modelo real.
+
+### 12c. Push e pull (`exportar --push`, `importar --pull`, `--remoto R`)
+
+Pelo `GitTool` de escrita, o MESMO motor de sempre (`rodar_roteiro_git`: sandbox sem rede,
+configuracao segura, filtros neutralizados), com o outro repositorio montado SO LEITURA e
+`protocol.file.allow` so naquela chamada:
+
+- **push** = `fetch` rodado DENTRO do remoto bare (`refs/heads/R:refs/heads/R`, sem `+`): o git
+  recusa o que nao e avanco rapido. RED medido: com `+`, o push de B passava por cima do commit
+  de A.
+- **pull** = `fetch` no local + `merge --ff-only`: divergencia e recusa dizendo, `HEAD` intacto.
+  Depois do pull, o `importar` continua sem trocar rascunho diferente sem `--sobrescrever`.
+- Pasta com mudanca nao registrada recusa os dois (o push levaria o commit velho calado).
+- Remoto que nao e bare e recusado (empurrar para uma arvore de trabalho trocaria os arquivos de
+  alguem por baixo dele).
+- **Nao e acao da ferramenta do modelo**: o remoto vem do `.git/config`, que o modelo escreve, e
+  o sandbox montaria com escrita o repositorio que ele apontasse. Travado em
+  `push_e_pull_nao_sao_acoes_do_modelo`.
+
+O que faltava aqui -- remoto de REDE e a ligacao da instancia a um ramo -- entrou na 12d.
+
+### 12d. Remoto de rede e ramo da instancia (09/10/2026)
+
+Decisao do orquestrador: rede so nos dois comandos que o OPERADOR digita (`exportar --push`,
+`importar --pull`), nunca na ferramenta que o modelo chama. Codigo em `git.rs`
+(`RemotoDeRede`, `conferir_url_de_rede`, `GitTool::empurrar_pela_rede`/`puxar_pela_rede`/
+`ramo_atual`), `fluxo_git.rs` (`remoto_de_rede`, `ligar_ramo`), `fluxo_http.rs`
+(`cabecalho_da_credencial`) e `apps/phxclaw/src/main.rs::fluxo_git`.
+
+```json
+{"fluxos": {"git": {"remoto": "https://git.exemplo.com/time/fluxos.git",
+                    "credencial_nome": "git-fluxos", "ramo": "producao"}}}
+```
+
+- **O destino e do operador.** `fluxos.git.remoto` e chave so do operador (`SO_DO_OPERADOR`,
+  motivo DESTINO; o `ramo`, CONTA): o `.git/config` do repositorio, que o modelo pode escrever,
+  nunca escolhe para onde a rede vai. E mais que nao ler o `remote.origin.url`: o git que fala
+  com a rede roda num ESPELHO bare temporario (0700, apagado na saida), entao `insteadOf`,
+  `http.proxy`, `http.extraHeader` e `http.sslVerify` do repositorio nao valem. O repositorio
+  so troca objetos com o espelho, pelo transporte local, sem rede. RED medido: o `ls-remote`
+  rodando no repositorio -- o `insteadOf` hostil mandou o pedido para a armadilha.
+- **So https; http so em IP de loopback** (a prova; nada sai da maquina). Usuario/senha na URL,
+  query e fragmento sao recusados. **ssh fica fora**: pediria chave privada e `known_hosts` no
+  sandbox. RED medido: `http` sem a guarda do loopback passou.
+- **A credencial e por NOME** (`fluxos.git.credencial_nome`), a do no HTTP: declarada no
+  `http.json` com as origens, segredo no broker (`phxclaw credencial guardar NOME`) ou num cofre
+  externo. A mesma regra das origens: credencial que nao lista a origem do remoto e recusada
+  antes de qualquer processo. RED medido: sem o `alcanca`, a credencial de outra origem foi ao
+  servidor.
+- **A credencial vai pelo AMBIENTE, nao pelo argv nem por arquivo.** `GIT_CONFIG_COUNT/KEY/VALUE`
+  (git >= 2.31) como `http.<url-do-remoto>.extraHeader`: o cabecalho so vale para aquela URL,
+  nada vai ao `.git/config` nem a um arquivo de askpass, e o argv (que `ps` mostra a qualquer
+  usuario) nao o leva. O ambiente do processo e legivel so pelo mesmo usuario (`/proc/<pid>/
+  environ` 0400) -- o mesmo que ja le a chave-mestra do broker. O `GIT_ASKPASS` foi recusado:
+  pede um programa e o segredo num lugar que ele leia, dois lugares em vez de um. RED medido:
+  com o cabecalho por `-c` (argv), o servidor falso achou o segredo em 57 `/proc/*/cmdline`
+  durante os pedidos.
+- **O bwrap liga ou desliga a rede INTEIRA** (`--share-net`); nao ha como prender o sandbox ao
+  host do remoto, nem o `PoliticaDeSaida` alcanca um processo do sandbox (ele confere o cliente
+  HTTP do proprio agente). O que se faz no lugar: rede so nesses dois comandos, destino
+  conferido antes, `protocol.allow=never` mais so o esquema da URL, `http.followRedirects=false`,
+  ganchos em `/dev/null`, sem submodulo, `transfer.fsckObjects` no que chega, saida do git
+  tarjada pelos valores do segredo. Sem proxy de saida: o ambiente do sandbox e limpo.
+- **A ferramenta do modelo continua sem rede**, por tres travas: nao ha acao de rede, o git dela
+  tem `protocol.allow=never`, e o sandbox dela nao tem rede -- provada com o protocolo liberado
+  de proposito. RED medido: `network: true` no motor, e a armadilha recebeu a conexao.
+- **Ramo da instancia** (`fluxos.git.ramo`, o «connect to branch» do n8n): repositorio novo nasce
+  nele; repositorio em outro ramo e RECUSA dizendo, nunca `checkout` calado (trocaria os arquivos
+  da pasta, e o que o `importar --ambiente prod` publicaria). RED medido: sem o `ligar_ramo`, o
+  push foi ao `main`.
+
+Prova: `crates/phxclaw-agent/tests/fluxo_git_rede.rs` (4 testes) contra o servidor git HTTP
+falso em loopback (`phxclaw_test_support::git_http`: o `git http-backend` de verdade atras de um
+servidor de std, que exige o `Authorization` exato e conta o segredo no argv de todo processo a
+cada pedido) e uma armadilha que conta conexoes; `apps/phxclaw/tests/fluxo_cli.rs::
+push_e_pull_pelo_remoto_de_rede_do_operador` pela CLI (config do operador, `credencial
+guardar` pela entrada padrao, ramo). Medido pelo gerador depois: n8n **93,2% no agente | 96,6%
+com bibliotecas** (55 sim, 4 pela metade, 0 nao, de 59).
+
+**Diverge do n8n:** sem ssh; ambiente e pasta (`dev/`, `prod/`) dentro do ramo, nao um ramo por
+ambiente; e nao ha teste contra um GitHub/GitLab de verdade (so o `http-backend` em loopback).
+
+
+## 13. Modo fila e workers (`fila_workers`, onda dos 100%, 09/10/2026)
+
+O «queue mode» do n8n: o `phxclaw servir --modo fila` poe cada execucao numa fila no
+PostgreSQL, e N processos `phxclaw worker` as tiram de la. Codigo: `crates/phxclaw-agent/src/
+fila.rs`; a fila e a do `phxclaw-task-graph` (`PostgresTaskJournal`).
+
+| O que | Como |
+| --- | --- |
+| Ligar | `fila.url` no `<pasta>/config.json` do operador (so do operador; sem senha na URL) + `PHXCLAW_FILA_SENHA=... phxclaw fila senha` (vai para o broker de `<pasta>/fila`); o esquema e a migracao `migrations/0004_task_graph.sql` (ou o FULL_INSTALL) -- o servir e o worker CONFEREM e recusam dizendo o arquivo |
+| O que vai para a fila | tarefa de objetivo, plano (Plan Mode), disparo de fluxo (API, tela, agenda, gatilho, webhook) e retomada de espera; a definicao do fluxo viaja inteira no `payload` |
+| Quem roda | o worker, pelas MESMAS funcoes do modo normal (`api::executar_aqui`, `planejar_aqui`, `rodar_fluxo_aqui`, `retomar_fluxo_aqui`); a unica decisao «fila ou aqui» mora nas portas da `api.rs` |
+| Tomada | `SELECT ... FOR UPDATE SKIP LOCKED LIMIT 1` em `phoenix_tasks` (`capability` `phxclaw.*`), novo run em `phoenix_task_runs`, evento `claimed` com o nome do worker |
+| Posse | o `next_eligible_at` da linha `running` (`fila.prazo_segundos`, padrao 30 s, o `QUEUE_WORKER_LOCK_DURATION` do n8n); batimento a cada terco; o `active_run_uuid` e a cerca: batimento e fim de run vencido nao valem |
+| Worker morto | a posse vence, outro toma; FLUXO retoma pelo progresso gravado por onda (o passo que terminou NAO roda de novo); tarefa de objetivo recomeca (pelo menos uma vez, como o n8n). Depois de `fila.tentativas` (padrao 3) tomadas vencidas, `dead_letter` e a tarefa FALHA dizendo por que |
+| Cancelar | `POST /v1/tasks/{id}/cancel`: a que nao comecou sai `cancelled`; a que corre recebe o pedido pelo batimento do worker, que aciona o MESMO `CancelFlag` |
+| Concorrencia | `phxclaw worker --concorrencia N` (ou `fila.concorrencia`, padrao 4) |
+
+**Por que o `task-graph` e nao as outras duas (escolha medida no fonte):** o agente ja depende
+dele (nada novo no grafo de crates) e a tabela `phoenix_tasks` ja nasceu para isso -- o
+comentario da migracao 0004 diz «workers should claim ready rows using FOR UPDATE SKIP LOCKED»,
+com `status`, `attempts`, `active_run_uuid` e o run em tabela propria. O `PostgresOutbox.
+claim_batch` do `phxclaw-event-bus` trava a linha SO dentro da transacao da tomada e nao marca
+posse: depois do commit, um segundo `claim_batch` leva a MESMA mensagem -- serve para publicar
+evento, nao para segurar uma execucao de minutos. O `BpmStore.claim_ready_token` do
+`phxclaw-bpm` tem posse e cerca, mas e de token de BPMN por inquilino (`phxclaw.bpm_tokens_v2`)
+e traria o `quick-xml` ao agente. As duas ficam como estao. Nenhuma coluna nova: a posse e o
+proprio `next_eligible_at` («quando esta linha pode ser tomada de novo»).
+
+**Onde DIVERGE do n8n, e a restricao nossa:**
+
+| Divergencia | Restricao nossa |
+| --- | --- |
+| PostgreSQL, nao Redis/Bull | zero servidor novo: o PostgreSQL ja e o banco da instalacao, e o `SKIP LOCKED` da a mesma garantia de tomada unica |
+| A execucao mora na PASTA das tarefas, compartilhada entre servir e workers (mesmo host ou volume); a fila so decide quem roda | a pasta da tarefa e a porta de disco das ferramentas (`confine`), da evidencia e dos artefatos; copiar para o banco seria a segunda casa do mesmo dado |
+| Fluxo tomado de novo RETOMA por onda (o n8n reprocessa o job parado) | progresso por onda e `fluxo_sha256` ja existiam para a retomada; reexecutar passo que terminou repetiria efeito |
+| Sem espera graciosa no desligar (o n8n espera `N8N_GRACEFUL_SHUTDOWN_TIMEOUT`) | o tokio do workspace nao traz `signal`; parar o worker e o mesmo caminho da queda, que e o provado |
+
+Prova real com PostgreSQL 18 de verdade (`phxclaw_test_support::pg`: `initdb` + `pg_ctl` numa
+pasta temporaria, porta livre, SCRAM; sem `initdb`, pulo registrado):
+`crates/phxclaw-agent/tests/fila_workers.rs` (5 testes) e `apps/phxclaw/tests/fila_cli.rs`
+(servir --modo fila + worker com SIGKILL no meio do passo, 13 s):
+
+| Teste | RED medido (defeito reposto, `// REPOSTO`) |
+| --- | --- |
+| `dois_workers_nao_pegam_a_mesma_execucao` (tomada travada + 12 execucoes, 2 workers x 3 vagas: cada uma tomada 1 vez) | sem `FOR UPDATE SKIP LOCKED`: a segunda tomada esperou a linha e caiu na unicidade do run |
+| `worker_morto_no_meio_outro_retoma_depois_do_prazo` | sem a retomada (`retomar = false`): o passo `A` rodou 2 vezes; posse que nao vence (`status = 'ready'`): o worker 2 nunca retoma |
+| `a_posse_vencida_nao_fecha_o_run_de_outro_e_o_teto_vira_dead_letter` | sem a cerca do `active_run_uuid` no fim: «o run vencido fechou o de outro» |
+| `o_resultado_pela_fila_e_o_mesmo_do_modo_normal` (relatorio passo a passo, itens, portas, sha e estado) | `entrada` perdida no worker: o relatorio diverge |
+| `worker_morto_com_sigkill_outro_worker_retoma_pela_cli` | sem a retomada: `conta.txt` com 2 linhas |
+
+NAO MEDIDO: vazao (execucoes/s por worker) -- nenhuma bancada roda contra a fila ainda; e o
+banco da fila em outra maquina (so loopback).
+
+## 14. OpenTelemetry e painel de insights (`observabilidade_insights`, 09/10/2026)
+
+**Exportacao OTLP/HTTP com JSON** (`crates/phxclaw-agent/src/otel.rs`), sem protobuf e sem
+crate nova: `otel.url` (so do operador; base do coletor, ex. `http://127.0.0.1:4318`; URL com
+usuario/senha e recusada), `otel.servico` (`service.name`), `otel.intervalo_segundos` (metricas).
+Desligado por padrao, e desligado nada se monta: o ponto de captura le um `AtomicBool` antes
+de abrir o `task.json`. Vale no `servir` e no `worker`.
+
+| Sinal | Quando | O que leva |
+| --- | --- | --- |
+| traces (`POST /v1/traces`) | execucao TERMINADA (tarefa ou fluxo; a espera exporta quando acabar) | span da tarefa/fluxo (exato: criacao a ultima gravacao) -> tarefas filhas (subagente, passo de agente com `phxclaw.passo.id`) -> chamadas de ferramenta e de modelo, cada uma com `phxclaw.evidencia.id` e `.hash` do ledger; passos do fluxo como eventos do span do fluxo. `traceId` = o UUID v7 da tarefa (16 bytes hex), `spanId` = sha256 deterministico (8 bytes hex) |
+| metricas (`POST /v1/metrics`) | a cada intervalo | as MESMAS series do `/metrics` (`Metricas::series`, de onde o texto do Prometheus tambem sai): contadores como `sum` cumulativo monotono (`asInt` em texto), histogramas com `bucketCounts` POR faixa (o Prometheus guarda acumulado) |
+
+Atributo so de conjunto fechado (`otel::ATRIBUTOS`): nem argumento de ferramenta, nem objetivo,
+nem texto de erro, nem nome de credencial -- o span leva o ID da evidencia para quem precisa ir
+la. Ligar o OTel conta as metricas sem abrir o `/metrics` (a rota continua do `api.metricas`).
+
+**Painel de insights** (`GET /v1/insights?periodo=24h|7d|30d|tudo&fluxo=NOME`, `insights.rs`,
+leitor + escopo de projeto na `rbac::MATRIZ`, linha em `rotas::ROTAS`; tela **Insights**,
+`apps/phxclaw-ui/assets/insights.js`): execucoes por estado, taxa de falha, duracao p50/p95 (a
+`avaliacao::percentil` das bancadas), custo (o nao medido conta a parte), as 5 falhas mais
+comuns (motivo normalizado; com forma de credencial sai «omitido»), por fluxo e por dia. Le o
+DISCO das tarefas cortado pelo `rbac::visiveis` -- o mesmo corte da lista --, nao os contadores
+do processo, que zeram no reinicio.
+
+**Onde DIVERGE do n8n:** sem «tempo poupado» (o n8n pede ao dono do fluxo os minutos poupados
+por execucao; o nosso fluxo nao tem o campo, e numero inventado no painel e pior que ausencia);
+sem lote de spans em memoria nem SDK (um POST por execucao terminada); o inicio de cada span de
+chamada e o fim do registro anterior (o ledger grava a hora do FIM), e o span diz isso
+(`phxclaw.inicio_aproximado`).
+
+Prova: `crates/phxclaw-agent/tests/otel_insights.rs` (5 testes, coletor FALSO local em axum que
+guarda os corpos) e `tests/desktop/ui_insights.mjs` (33/33 contra o agente real, 1280 e 400,
+dois temas, contraste >= 4,5:1, pt/en; capturas `tests/desktop/out/ui_insights_*.png`).
+
+| Guarda | RED medido |
+| --- | --- |
+| interruptor antes do trabalho | leitura do disco antes do `atual()`: `montados` = 1 |
+| nada sensivel em atributo | argumento no `phxclaw.ferramenta.nome`: «dado sensivel no trace» |
+| ids hex de 16/8 bytes | `spanId` de 16 bytes: reprovado |
+| histograma por faixa | `bucketCounts` acumulado: soma 2 != contagem |
+| painel cortado pelo projeto | sem o `rbac::visiveis`: execucoes de `beta` no painel de `alfa` |
+| motivo com forma de credencial | sem o `texto_tem_credencial`: `ghp_` no JSON |
+| a tela le a rota | UI sem o `insights.js`: o roteiro cai (8/9) |
+
+NAO MEDIDO: um coletor OpenTelemetry de verdade (Collector/Jaeger/Tempo) recebendo -- a prova e o
+coletor falso que confere a forma do JSON contra a especificacao.

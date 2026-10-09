@@ -13,9 +13,11 @@
 //!   depois modelo, depois modelo mais forte); abaixo do limiar do degrau, sobe; no fim,
 //!   pessoa -- ou sem decisao, e quem perguntou fica com o comportamento de hoje.
 //! - **A decisao nunca concede permissao** (lei C1 da cognicao: a rede so endurece).
-//!   HOJE NENHUMA DECISAO TOCA O PORTAO: o unico uso em producao e o roteamento, que
+//!   HOJE NENHUMA DECISAO TOCA O PORTAO: os usos em producao sao o roteamento, que
 //!   classifica o tipo da tarefa para escolher a cadeia de provedores -- e o provedor nao
-//!   da capacidade a ninguem. `sobre_o_portao`/`capacidade_sob_decisao` existem e estao
+//!   da capacidade a ninguem --, e o no `politica` do fluxo (`fluxo_politica.rs`), em que a
+//!   decisao so acrescenta motivo de REPROVAR um item (`fluxo_politica::endurecer`) e nunca
+//!   tira o motivo de uma regra fixa. `sobre_o_portao`/`capacidade_sob_decisao` existem e estao
 //!   provadas, mas sem chamador: sao a porta OBRIGATORIA para o dia em que uma decisao
 //!   chegar ao portao, e so transformam `permitir` em `perguntar`/`negar` (a proposta que
 //!   tentasse afrouxar e recusada com motivo, e o veredito fica intacto). A catraca
@@ -290,8 +292,9 @@ impl DecisorPorModelo {
     }
 
     /// O JSON da resposta: o objeto inteiro, ou o primeiro `{...}` do texto (modelo
-    /// pequeno cerca com crase mesmo pedido para nao cercar).
-    fn ler(texto: &str) -> Option<Value> {
+    /// pequeno cerca com crase mesmo pedido para nao cercar). Tambem e o leitor do
+    /// assistente de fluxos (`fluxo_assistente`): um modelo, uma regra de achar o JSON.
+    pub(crate) fn ler(texto: &str) -> Option<Value> {
         let t = texto.trim();
         if let Ok(v) = serde_json::from_str::<Value>(t) {
             return Some(v);

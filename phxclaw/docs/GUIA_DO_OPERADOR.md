@@ -5,7 +5,7 @@ medir. É curto de propósito: o detalhe de cada comando é a ajuda do próprio 
 aqui pelo gerador.
 
 <!-- gerado:cabecalho:inicio -->
-Trechos marcados gerados em 2026-10-09 por `python3 tools/gerar_guia_operador.py`, do binario `PhxClaw 0.70.0` (compilado em 2026-10-09 19:15).
+Trechos marcados gerados em 2026-10-09 por `python3 tools/gerar_guia_operador.py`, do binario `PhxClaw 0.70.0` (compilado em 2026-10-09 21:58).
 <!-- gerado:cabecalho:fim -->
 
 **Nada entre marcadores `<!-- gerado:… -->` se edita à mão.** Comando, opção, variável de
@@ -134,7 +134,7 @@ A lista completa sai do catálogo, e ela diz também quais segredos **ainda não
 de broker (ficam na variável de ambiente ou num arquivo da pasta):
 
 <!-- gerado:segredos:inicio -->
-De `phxclaw config mostrar --json`: **52 segredos no catalogo**; 52 tem comando que os guarda no SecretBroker, 0 ainda nao.
+De `phxclaw config mostrar --json`: **59 segredos no catalogo**; 59 tem comando que os guarda no SecretBroker, 0 ainda nao.
 
 <details><summary>Os segredos, um por linha</summary>
 
@@ -177,9 +177,16 @@ De `phxclaw config mostrar --json`: **52 segredos no catalogo**; 52 tem comando 
 | `canais.whatsapp.verify_token` | `PHXCLAW_WHATSAPP_VERIFY_TOKEN` | `PHXCLAW_WHATSAPP_VERIFY_TOKEN=... phxclaw canal whatsapp (vai ao broker na primeira vez)` |
 | `canais.xmpp.senha` | `PHXCLAW_XMPP_SENHA` | `PHXCLAW_XMPP_SENHA=... phxclaw canal xmpp (vai ao broker na primeira vez)` |
 | `canais.zulip.chave` | `PHXCLAW_ZULIP_CHAVE` | `PHXCLAW_ZULIP_CHAVE=... phxclaw canal zulip (vai ao broker na primeira vez)` |
+| `cofres.aws.segredo` | `PHXCLAW_COFRE_AWS_SEGREDO` | `phxclaw cofre aws-segredo` |
+| `cofres.aws.token_sessao` | `PHXCLAW_COFRE_AWS_TOKEN_SESSAO` | `phxclaw cofre aws-token-sessao` |
+| `cofres.azure.segredo` | `PHXCLAW_COFRE_AZURE_SEGREDO` | `phxclaw cofre azure-segredo` |
+| `cofres.gcp.conta` | `PHXCLAW_COFRE_GCP_CONTA` | `phxclaw cofre gcp-conta` |
+| `cofres.vault.secret_id` | `PHXCLAW_COFRE_VAULT_SECRET_ID` | `phxclaw cofre vault-secret-id` |
+| `cofres.vault.token` | `PHXCLAW_COFRE_VAULT_TOKEN` | `phxclaw cofre vault-token` |
 | `dispositivos.token_pareamento` | `PHXCLAW_ENROLLMENT_TOKEN` | `phxclaw dispositivos chave` |
 | `elevenlabs.chave` | `PHXCLAW_ELEVENLABS_API_KEY` | `phxclaw elevenlabs chave` |
 | `email.smtp.senha` | `PHXCLAW_SMTP_PASSWORD` | `phxclaw email chave` |
+| `fila.senha` | `PHXCLAW_FILA_SENHA` | `phxclaw fila senha` |
 | `forja.github.token` | `PHXCLAW_GITHUB_TOKEN` | `phxclaw forja token github` |
 | `forja.gitlab.token` | `PHXCLAW_GITLAB_TOKEN` | `phxclaw forja token gitlab` |
 | `gemini.chave` | `PHXCLAW_GEMINI_API_KEY` | `phxclaw gemini chave` |
@@ -274,6 +281,58 @@ Prova, contra um servidor XMPP falso (nenhum servidor MUC real foi exercitado):
 `na_sala_so_quem_abriu_a_tarefa_responde_a_pergunta_dela`) e os testes de unidade do
 `xmpp.rs` e do `canais/mod.rs`.
 
+### Canal Nostr: mensagem direta cifrada (NIP-17 sobre NIP-44)
+
+Desde 09/10/2026 o canal `nostr` conversa por **DM cifrada**, além da nota pública que
+menciona o bot. Fonte: `crates/phxclaw-agent/src/canais/nostr.rs` (o canal),
+`canais/nip44.rs` (a cifra) e `canais/bip340.rs` (a curva, a assinatura e o ECDH), todos
+sem crate nova.
+
+```sh
+read -rs PHXCLAW_NOSTR_CHAVE && export PHXCLAW_NOSTR_CHAVE   # hex de 64, nao nsec
+PHXCLAW_NOSTR_RELAY=wss://relay.exemplo.com \
+PHXCLAW_NOSTR_PERMITIDOS=<chave publica hex de quem comanda> \
+phxclaw canal nostr
+unset PHXCLAW_NOSTR_CHAVE
+```
+
+O que o canal faz, na ordem:
+
+- **anuncia a caixa de DM do bot** (kind 10050 com o relay do canal) na primeira volta.
+  Sem ele, cliente que segue o NIP-17 recusa mandar DM ao bot;
+- **lê** as notas que mencionam o bot (kind 1) e os embrulhos endereçados a ele (kind
+  1059). O embrulho é pedido desde **dois dias antes** do cursor, porque o NIP-17 sorteia a
+  data dele até dois dias para trás;
+- **abre** o embrulho só com a assinatura dele e a do selo conferidas, e só aceita o rumor
+  (kind 14, texto; kind 15, arquivo, que o agente não lê) cuja chave **é a de quem assinou
+  o selo**. A carga é recusada por versão desconhecida, MAC que não confere (comparação em
+  tempo constante), padding errado ou tamanho fora dos limites;
+- **responde pelo caminho por onde a pessoa falou**, e o privado é pegajoso: quem já mandou
+  DM recebe DM mesmo quando menciona o bot em público, e conversa sem histórico (a
+  `channel_send`) sai cifrada;
+- **entrega a DM só nos relays do kind 10050 do destinatário** (até três, `wss://`); sem
+  lista, no relay do canal. A cópia do bot vai ao relay do canal;
+- **responde ao AUTH do NIP-42** com a chave do bot. Relay de caixa de DM costuma só
+  servir kind 1059 a quem se autenticou.
+
+O que **não** existe, de propósito ou por limite medido:
+
+- **NIP-04** (kind 4, AES-CBC sem MAC): nem envia nem lê. É legado e maleável, e o
+  OpenJarvis não lê DM nenhuma;
+- **texto acima de 65.535 bytes** por carga: o teto da casa, que é o do arquivo oficial de
+  vetores. O agente responde em pedaços de 2.000 caracteres;
+- **chave `nsec`**: a chave vai em hex;
+- **vários relays de leitura**: o canal lê de um relay só. Para receber DM de quem só
+  publica em outro, ponha esse relay no `PHXCLAW_NOSTR_RELAY`;
+- **tempo constante provado no binário**: o código da curva não tem desvio dependente da
+  chave no fonte (escada sempre-soma com soma completa, redução por máscara), mas nenhuma
+  medição de tempo foi feita.
+
+Prova: `cargo test -p phxclaw-agent --lib canais::nip44 canais::bip340` (vetores oficiais
+do NIP-44, RFC 8439, RFC 5869 e os 19 do BIP-340, com o sha256 de cada arquivo conferido) e
+`cargo test -p phxclaw-agent --test canais -- nostr` (ida e volta contra relay falso com
+AUTH, e os exemplos publicados no NIP-17 e no NIP-59 abrindo aqui).
+
 ### Canais Teams e Google Chat: o JWT RS256 de entrada
 
 Desde a SP000032 R1 (09/10/2026) a entrada dos dois canais confere o JWT RS256 que o serviço
@@ -346,6 +405,55 @@ sandbox o Helix abre qualquer caminho, e foi assim que a chave-mestra do cofre a
 (medido em 09/10). Os testes do IDE e os servidores de linguagem também rodam com a pasta do
 agente escondida. Em máquina sem `bwrap` (Windows), o terminal web fica indisponível.
 
+O Helix do terminal **não recebe o `api.token`**. A completação por IA (a única coisa para a qual
+ele usa token) recebe uma credencial de sessão própria (`phxs_…`): vale **só** em
+`POST /v1/ide/completar`, com o papel atual de quem abriu o terminal, e morre quando o terminal
+fecha, em 12 h, ou quando o usuário que o abriu é removido ou troca a chave — e nesse caso o
+terminal aberto também fecha. Ela fica só em memória, como resumo.
+
+### Leitura com dobra (IDE no navegador)
+
+O editor do IDE é o Helix 25.07, e **ele não dobra código** (não há comando `fold` nem
+`foldingRange` no cliente LSP dele). Quem dobra é o painel **Leitura com dobra**, ao lado do
+terminal: ele mostra o arquivo aberto no Helix **como está no disco** (`GET /v1/ide/dobras`, a
+mesma leitura confinada e com teto de 2 MiB do minimapa) e as regiões dobráveis do servidor de
+linguagem (`textDocument/foldingRange`). Sem servidor para a extensão, ou se ele não responde no
+prazo (10 s), as regiões vêm da reserva **por chaves** (`.rs`, `.js`, `.json`, `.c`…) ou **por
+indentação** (Python, YAML…), e o painel diz qual. Dobrar: clique na seta, ou, pelo teclado,
+↑/↓ entre as regiões, ← dobra, → desdobra, Enter alterna, Ctrl+Shift+[ e Ctrl+Shift+] como no
+VS Code. O estado fica guardado por arquivo neste navegador. Limites: o que não foi salvo no
+Helix não aparece (o painel avisa e relê ao salvar), e fechado o painel não pede nada ao agente.
+
+### Terminal compartilhado (o «Live Share» do PhxClaw)
+
+Decisão do dono: Live Share aqui é **terminal compartilhado** — um anfitrião, N convidados, um
+cursor (o do anfitrião). Sem edição simultânea, voz ou chat.
+
+- **Quem compartilha**: só o papel **dono** (as rotas `POST /v1/ide/compartilhar` e
+  `/v1/ide/compartilhar/revogar` estão na matriz do RBAC como o próprio terminal). Na tela IDE,
+  painel **Compartilhar terminal**: escolha a validade (15 min, 1 h ou 8 h; teto 8 h) e o número
+  de convidados (padrão 4, teto 16) e clique em **COMPARTILHAR**. O convite aparece **uma vez**,
+  como link `…/#convite=SESSAO.TOKEN`: o token tem 32 bytes aleatórios, o agente guarda só o
+  SHA-256 dele, e o fragmento `#` não vai ao servidor nem aos logs.
+- **O Helix comum não se compartilha.** Ele leva no ambiente a credencial da completação por IA,
+  e um `:sh` a mostraria a todos os convidados. A tela recusa e oferece **REABRIR SEM A
+  CREDENCIAL DA IA** (o que não foi salvo se perde); no terminal compartilhável a completação
+  por IA fica indisponível, o resto do Helix segue igual.
+- **O convidado só lê**: vê a tela do anfitrião e não digita, não cola, não muda o tamanho.
+  Escrever exige as **duas** coisas: o anfitrião marcar «Permitir escrita» **e** o convidado
+  provar o papel de dono pelo RBAC (a credencial guardada no navegador dele). Faltou uma, entra
+  lendo, e a tela diz em que modo está.
+- **Revogar** (todos ou um convidado) derruba quem assiste na hora; o mesmo link passa a ser
+  recusado. Ao expirar, quem está dentro cai e quem chega é recusado. Fechar ou reabrir o
+  terminal, ou a conexão do anfitrião cair, encerra o compartilhamento.
+- **Atenção**: quem tem o convite vê **tudo** o que aparece no terminal, inclusive segredos que
+  você exibir (um `.env` aberto, a saída de um comando). O selo «Compartilhado com N» fica ao
+  lado das abas enquanto o convite vale.
+- **Evidência**: cada sessão tem seu ledger (`<pasta>/tasks/<sessao>/evidence.jsonl`) com criar,
+  entrar (e a recusa, com o motivo), sair, revogar e encerrar — nunca o token.
+- Mesmo limite de rede da API: o fio é HTTP/WebSocket sem TLS próprio; para compartilhar fora
+  da máquina, ponha o agente atrás de TLS (`INSTALACAO_DOCKER_K8S.md`).
+
 ### Segurança da tela: o que protege e o que só dificulta
 
 **O que protege de verdade** (vale sempre, não se desliga):
@@ -404,7 +512,7 @@ gatilhos e o SDK.
 |---|---|
 | `leitor` | ler tarefas e artefatos dos projetos dele; listar, ler e validar fluxos; `GET /metrics` |
 | `member` | o do leitor, mais criar, aprovar, editar plano, responder e cancelar tarefas dos projetos dele |
-| `admin` | todos os projetos e as tarefas sem projeto; agenda, configuração (só leitura), IDE (menos o terminal), MCP; gravar e rodar fluxos |
+| `admin` | todos os projetos e as tarefas sem projeto; agenda, configuração (só leitura), IDE (menos o terminal), MCP; gravar e rodar fluxos e criar pelo assistente |
 | `owner` | tudo: gravar configuração, terminal do IDE e do túnel, instalar plugin |
 
 A tabela é a `MATRIZ` de `crates/phxclaw-agent/src/rbac.rs`, lida por um portão único (o
@@ -486,11 +594,135 @@ scrape_configs:
     static_configs: [{ targets: ["127.0.0.1:8787"] }]
 ```
 
+### OpenTelemetry e painel de insights
+
+`otel.url` (`PHXCLAW_OTEL_URL`, só do operador) é a base do seu coletor OTLP/HTTP
+(`http://127.0.0.1:4318`); vazio = nada se exporta e nada se monta. Ligado, o `servir` e o
+`worker` mandam, em JSON (sem protobuf):
+
+- **traces** em `POST /v1/traces` a cada execução terminada: a tarefa ou o fluxo, as tarefas
+  filhas e cada chamada de ferramenta e de modelo, com o id do registro de evidência
+  (`phxclaw.evidencia.id`). Nenhum argumento, objetivo, texto de erro ou nome de credencial
+  sai em atributo;
+- **métricas** em `POST /v1/metrics` a cada `otel.intervalo_segundos` (padrão 60): as mesmas
+  séries da tabela acima. Ligar o OTel conta as métricas sem abrir o `/metrics` (a rota
+  continua dependendo do `api.metricas`).
+
+`otel.servico` muda o `service.name` (padrão `phxclaw`). O cliente ignora `HTTP_PROXY` do
+ambiente: o coletor é servidor seu. URL com usuário e senha é recusada.
+
+A tela **Insights** (e `GET /v1/insights?periodo=24h|7d|30d|tudo&fluxo=NOME`, papel `leitor`)
+mostra execuções por estado, taxa de falha, duração p50/p95, custo, as falhas mais comuns, por
+fluxo e por dia. Ela lê as tarefas da pasta (sobrevive ao reinício), cortadas pelo projeto do
+usuário como a lista de tarefas.
+
+### Modo fila: `servir --modo fila` e `phxclaw worker`
+
+Para espalhar as execuções por vários processos (ou máquinas com a pasta compartilhada):
+
+```bash
+# 1. o esquema da fila (uma vez): a migracao 0004, ou o FULL_INSTALL
+psql "$URL" -f migrations/0004_task_graph.sql
+# 2. no <pasta>/config.json do operador (nunca no .phxclaw/ do projeto):
+#    {"fila": {"url": "postgresql://phxclaw@db:5432/phxclaw"}}
+# 3. a senha vai para o broker, nunca para a URL nem para o arquivo
+PHXCLAW_FILA_SENHA='...' phxclaw fila senha --pasta /var/phxclaw
+# 4. o servidor enfileira; os workers executam (quantos quiser)
+phxclaw servir --modo fila --pasta /var/phxclaw
+phxclaw worker --pasta /var/phxclaw --concorrencia 4
+```
+
+O `servir` e o `worker` conferem o esquema ao subir e recusam dizendo o arquivo que falta.
+A pasta das tarefas (`--pasta`) é a MESMA para os dois: o PostgreSQL decide quem roda, e a
+execução continua morando na pasta (evidência, artefatos, o `GET /v1/tasks/{id}`).
+
+| Chave | Padrão | O que faz |
+|---|---|---|
+| `fila.url` | — | o PostgreSQL da fila (sem senha) |
+| `fila.senha` | — | só pelo broker: `phxclaw fila senha` |
+| `fila.prazo_segundos` | 30 | sem batimento por este tempo, outro worker retoma a execução |
+| `fila.tentativas` | 3 | tomadas vencidas antes de `dead_letter` (a tarefa falha dizendo por quê) |
+| `fila.concorrencia` | 4 | execuções ao mesmo tempo por worker (`--concorrencia` ganha) |
+
+Worker que morre: as execuções dele param de bater, a posse vence e outro worker as retoma. Um
+**fluxo** retoma do ponto em que parou (o passo que terminou não roda de novo); uma **tarefa de
+objetivo** recomeça. Parar um worker é matá-lo: não há espera graciosa, e o efeito é o mesmo da
+queda. Cancelar (`POST /v1/tasks/{id}/cancel`) chega ao worker pelo batimento.
+
 ### Motor de fluxo: quantos rodam ao mesmo tempo
 
 `fluxos.max_simultaneos` (`PHXCLAW_FLUXOS_MAX_SIMULTANEOS`) é o máximo de fluxos rodando ao
 mesmo tempo na instância; vazio ou 0 = sem limite, e o excedente espera a vaga. O valor é
 **lido no primeiro fluxo** que roda: mudá-lo depois não tem efeito até o agente reiniciar.
+
+### Motor de fluxo: política, assistente e git com remoto
+
+**Política (o passo `politica`).** Filtra os itens que passam por ele e manda cada um para a
+porta `aprovado` ou `reprovado`, com `motivos` por item. As regras: `credenciais` (forma de
+chave, token, PEM, URL com senha), `injecao` (os padrões de ataque das instruções),
+`pii` (`cpf` e `cnpj` só com o dígito verificador certo, `email`, `telefone` com DDD válido),
+`max_bytes`, `termos` (sem caixa e sem acento) e `decisao` (uma pergunta sim/não às regras e,
+com `"modelo": true`, ao modelo do agente — ela só **reprova**, nunca aprova o que uma regra
+reprovou). `caminho` escolhe o campo do item; campo ausente reprova. Quem depende do passo diz
+a porta (`filtro:aprovado`). O item reprovado sai com a credencial tarjada.
+
+**Assistente.** `phxclaw fluxo criar --descricao "o que o fluxo faz"` (ou o formulário no topo
+da tela Fluxos, que é do `admin`) pede o fluxo ao modelo do agente, confere pelo motor, devolve
+o erro ao modelo e tenta de novo até `--tentativas` (padrão 3, teto 8). O que passa vira
+**rascunho** em `fluxos/` — nunca publicado e nunca por cima de outro (`nome-2.json`). Credencial
+só pelo **nome**: fluxo com valor de chave é recusado, e descrição com chave nem sai para o
+provedor. Revise, rode com `fluxo rodar` e publique com `fluxo publicar`.
+
+**Git com remoto.** `fluxo exportar --ambiente dev|prod --commit MSG --push [--remoto R]` envia
+o repositório de fluxos; `fluxo importar --ambiente dev|prod --pull [--remoto R]` traz e
+importa. Com `--remoto R`, o remoto é **local** (`git init --bare`, por `file:///caminho`,
+`/caminho` ou o nome de um remoto local do repositório). Sem `--remoto`, vale o remoto **https**
+que você declara na sua configuração — e só nela:
+
+```json
+{"fluxos": {"git": {"remoto": "https://git.exemplo.com/time/fluxos.git",
+                    "credencial_nome": "git-fluxos", "ramo": "producao"}}}
+```
+
+A credencial vai por **nome**: declare-a no `http.json` da pasta do agente com a origem do
+remoto (`{"credenciais": {"git-fluxos": {"tipo": "basico", "usuario": "x-access-token",
+"origens": ["https://git.exemplo.com"]}}}`) e guarde o segredo com
+`phxclaw credencial guardar git-fluxos` (pela entrada padrão). Credencial cuja lista de origens
+não tem a do remoto é recusada antes de qualquer conexão. O que vale saber:
+
+- O remoto de rede **nunca** vem do `.git/config` do repositório nem do projeto
+  (`fluxos.git.*` é chave só do operador): o modelo pode escrever arquivo, e não escolhe para
+  onde a rede vai. Nem `insteadOf`, nem `http.proxy` desse arquivo valem — o git que fala com a
+  rede roda num espelho temporário limpo.
+- Só `https`; `http` só para IP de loopback (`127.0.0.1`, `::1`). `ssh` não existe (pediria
+  chave privada e `known_hosts` no sandbox). Usuário ou senha na URL são recusados.
+- A rede é **só** destes dois comandos: a ferramenta git do modelo continua sem rede. O bwrap
+  liga a rede inteira ou nada (não prende ao host do remoto); por isso o destino é conferido
+  antes, sem redirecionamento, sem gancho e sem submódulo.
+- A credencial vai ao git pelo ambiente do processo, nunca por argumento nem por arquivo. Sem
+  proxy: a saída é direta ao remoto.
+- `ramo` liga esta instância a um ramo (o «connect to branch» do n8n): repositório novo nasce
+  nele; repositório em outro ramo é recusado dizendo, sem `checkout` por baixo de você.
+
+Só avanço rápido: o push que perderia commit do remoto e o pull que exigiria fundir são
+recusados dizendo, e nada muda; pasta com mudança não registrada também recusa (registre com
+`--commit`). Depois do pull, o `importar` continua sem trocar rascunho diferente sem
+`--sobrescrever`.
+
+<!-- gerado:ajuda:fluxo:inicio -->
+Saida de `phxclaw ajuda fluxo`:
+
+```text
+Fluxo em DAG: rodar, retomar, responder esperas, pinar, podar, exportar, listar e criar
+
+USO:
+  phxclaw fluxo rodar ARQ.json [--ate PASSO] [--pins] [--publicada] | retomar TAREFA [ARQ.json] | responder TAREFA TEXTO | esperas | pinar ARQ.json PASSO (--json V | --tarefa T) | despinar ARQ.json PASSO | podar [--dias N] [--max N] | exportar ARQ.json [--saida P] | importar PACOTE.json DESTINO.json | listar [DIR] [--etiqueta E] [--subpasta P] | modelos | usar MODELO DESTINO.json | publicar ARQ.json [--nota T] | versoes ARQ.json | voltar ARQ.json N | restaurar ARQ.json N [--forcar] | exportar --ambiente dev|prod [--fluxos DIR] [--repo DIR] [--commit MSG] [--push [--remoto R]] | importar --ambiente dev|prod [--fluxos DIR] [--repo DIR] [--pull [--remoto R]] [--sobrescrever] | criar --descricao TEXTO [--destino ARQ.json] [--tentativas N] [--modelo M] [--pasta DIR]
+
+Fluxo declarativo em DAG; cada passo e tarefa, ferramenta, skill, mcp, comando ou no de controle, pelo mesmo portao. --ate para no passo (inclusive) e grava; retomar continua dali e pula os passos que deram certo (sem ARQ, pela definicao que a espera gravou). O passo esperar descarrega o fluxo para o disco: responder entrega a resposta, esperas retoma as de tempo vencidas. pinar troca a execucao de um passo pelo dado do ARQ.pins.json, e o pin so vale no rodar com --pins (gatilho, agenda e sub-fluxo rodam o passo de verdade); exportar leva um sha256 de conferencia, nao assinatura; podar segue fluxos.poda_dias/poda_max (sem eles, nada se apaga). modelos/usar: a galeria de fluxos prontos. publicar/versoes/voltar/restaurar: as versoes publicadas de um fluxo (rodar --publicada roda a publicada). exportar/importar --ambiente: o git dos fluxos por ambiente (--commit registra pelo git do agente; --push e --pull falam com um remoto bare local (--remoto) ou, sem --remoto, com o remoto https da chave fluxos.git.remoto e a credencial fluxos.git.credencial_nome, no ramo fluxos.git.ramo, so por avanco rapido). criar: o assistente monta o fluxo da descricao pelo modelo, confere pelo motor e grava RASCUNHO (nunca publica).
+
+Tambem aceito como: workflow
+```
+<!-- gerado:ajuda:fluxo:fim -->
 
 ### Forjas (GitHub, GitLab)
 
@@ -658,6 +890,76 @@ USO:
 Le PHXCLAW_XAI_API_KEY do AMBIENTE do comando e guarda no broker de <pasta>/xai; x_search le SO do broker (capacidade x.search, fora do padrao).
 ```
 <!-- gerado:ajuda:xai:fim -->
+
+### Cofres externos (HashiCorp Vault, AWS, Azure, GCP)
+
+Uma credencial nomeada do nó HTTP (`http.json`) pode morar num cofre do operador em vez do
+broker local: o fluxo continua pedindo só o NOME, e o valor é lido sob demanda, fica só em
+memória (cache de 60 s por padrão) e nunca vai a disco, log, evidência ou mensagem de erro.
+
+```json
+{"credenciais": {"banco": {"tipo": "bearer", "origens": ["https://api.exemplo.com"],
+   "cofre": {"cofre": "vault", "caminho": "app/db", "campo": "senha", "versao": "3"}}}}
+```
+
+`cofre` é `vault` (KV v2: `caminho` sob a montagem, `campo` do mapa, `versao` inteira), `aws`
+(`caminho` é o `SecretId`; `versao` é um `VersionId` ou `estagio:AWSPREVIOUS`), `azure`
+(`caminho` é o nome; `versao` o id da versão) ou `gcp` (`caminho` é o id do segredo; `versao`
+o número, padrão `latest`). Vale para os tipos `bearer`, `basico` e `cabecalho`; no `oauth2` é
+recusado na declaração.
+
+O endereço de cada cofre é configuração **só do operador** (o `.phxclaw/config.json` de um
+projeto que a declare é ignorado com aviso), e a credencial BASE — o token do Vault, o secret
+access key da AWS, o segredo do cliente do Entra ID, o JSON da conta de serviço do GCP — vai
+para o broker de `<pasta>/cofres` pelo comando abaixo. A rede é a do nó HTTP: endereço interno
+só com `cofres.liberar`, IP conferido preso na conexão, HTTPS (HTTP só em loopback), sem
+seguir redirecionamento. Contra os serviços reais: **não medido** (sem contas de teste).
+
+<!-- gerado:ajuda:cofre:inicio -->
+Saida de `phxclaw ajuda cofre`:
+
+```text
+Credencial base de um cofre externo (Vault, AWS, Azure, GCP)
+
+USO:
+  phxclaw cofre vault-token|vault-secret-id|aws-segredo|aws-token-sessao|azure-segredo|gcp-conta [--pasta DIR]
+
+Le a variavel do catalogo (PHXCLAW_COFRE_VAULT_TOKEN, PHXCLAW_COFRE_VAULT_SECRET_ID, PHXCLAW_COFRE_AWS_SEGREDO, PHXCLAW_COFRE_AWS_TOKEN_SESSAO, PHXCLAW_COFRE_AZURE_SEGREDO, PHXCLAW_COFRE_GCP_CONTA) do AMBIENTE do comando e a guarda no broker de <pasta>/cofres. URL, regiao, tenant e projeto sao chaves cofres.* do config.json, so do operador. Uma credencial do no HTTP com "cofre": {"cofre": "vault|aws|azure|gcp", "caminho", "campo", "versao"} em http.json e resolvida no cofre, so em memoria.
+```
+<!-- gerado:ajuda:cofre:fim -->
+
+<!-- gerado:chaves:cofres:inicio -->
+De `phxclaw config mostrar --json` (catalogo do binario, pasta vazia): 26 chave(s) em `cofres`.
+
+| Chave | Variavel | Tipo | Padrao | Natureza | O que e |
+|---|---|---|---|---|---|
+| `cofres.aws.chave_id` | `PHXCLAW_COFRE_AWS_CHAVE_ID` | texto | — | config | Access key ID da AWS (o secret access key fica no broker) |
+| `cofres.aws.regiao` | `PHXCLAW_COFRE_AWS_REGIAO` | texto | — | config | Região do AWS Secrets Manager (us-east-1); vazio = sem AWS |
+| `cofres.aws.segredo` | `PHXCLAW_COFRE_AWS_SEGREDO` | texto | — | segredo: `phxclaw cofre aws-segredo` | Secret access key da AWS |
+| `cofres.aws.token_sessao` | `PHXCLAW_COFRE_AWS_TOKEN_SESSAO` | texto | — | segredo: `phxclaw cofre aws-token-sessao` | Token de sessão temporária da AWS (opcional) |
+| `cofres.aws.url` | `PHXCLAW_COFRE_AWS_URL` | texto | — | config | Endpoint do Secrets Manager; vazio = https://secretsmanager.<região>.amazonaws.com |
+| `cofres.azure.cliente_id` | `PHXCLAW_COFRE_AZURE_CLIENTE_ID` | texto | — | config | Client ID da aplicação no Entra ID (o segredo do cliente fica no broker) |
+| `cofres.azure.segredo` | `PHXCLAW_COFRE_AZURE_SEGREDO` | texto | — | segredo: `phxclaw cofre azure-segredo` | Segredo do cliente da aplicação no Entra ID |
+| `cofres.azure.tenant` | `PHXCLAW_COFRE_AZURE_TENANT` | texto | — | config | Tenant do Entra ID |
+| `cofres.azure.token_url` | `PHXCLAW_COFRE_AZURE_TOKEN_URL` | texto | — | config | Endpoint de token; vazio = https://login.microsoftonline.com/<tenant>/oauth2/v2.0/token |
+| `cofres.azure.url` | `PHXCLAW_COFRE_AZURE_URL` | texto | — | config | URL do Azure Key Vault (https://nome.vault.azure.net); vazio = sem Azure |
+| `cofres.cache_max` | `PHXCLAW_COFRE_CACHE_MAX` | inteiro | 64 | config | Entradas no cache em memória (teto 1024) |
+| `cofres.cache_segundos` | `PHXCLAW_COFRE_CACHE_SEGUNDOS` | inteiro | 60 | config | Prazo do cache em memória dos valores lidos (0 desliga; teto 300) |
+| `cofres.gcp.conta` | `PHXCLAW_COFRE_GCP_CONTA` | texto | — | segredo: `phxclaw cofre gcp-conta` | JSON da conta de serviço do GCP (com a chave privada) |
+| `cofres.gcp.projeto` | `PHXCLAW_COFRE_GCP_PROJETO` | texto | — | config | Projeto do GCP Secret Manager; vazio = o project_id da conta de serviço |
+| `cofres.gcp.token_url` | `PHXCLAW_COFRE_GCP_TOKEN_URL` | texto | — | config | Endpoint de token do Google; vazio = https://oauth2.googleapis.com/token |
+| `cofres.gcp.url` | `PHXCLAW_COFRE_GCP_URL` | texto | — | config | Endpoint do Secret Manager; vazio = https://secretmanager.googleapis.com |
+| `cofres.liberar` | `PHXCLAW_COFRE_LIBERAR` | lista | — | config | Origens internas liberadas para os cofres (Vault na rede privada, loopback) |
+| `cofres.usar_proxy_do_ambiente` | `PHXCLAW_COFRE_USAR_PROXY` | booleano | false | config | Sair pelo proxy do ambiente até os cofres (o IP conferido deixa de ficar preso) |
+| `cofres.vault.approle_montagem` | `PHXCLAW_COFRE_VAULT_APPROLE_MONTAGEM` | texto | approle | config | Ponto de montagem do AppRole no Vault |
+| `cofres.vault.metodo` | `PHXCLAW_COFRE_VAULT_METODO` | enum: token \| approle | token | config | Como o agente entra no Vault: token guardado ou AppRole (role_id e secret_id) |
+| `cofres.vault.montagem` | `PHXCLAW_COFRE_VAULT_MONTAGEM` | texto | secret | config | Ponto de montagem do KV versão 2 no Vault |
+| `cofres.vault.namespace` | `PHXCLAW_COFRE_VAULT_NAMESPACE` | texto | — | config | Namespace do Vault Enterprise (cabeçalho X-Vault-Namespace); vazio = raiz |
+| `cofres.vault.role_id` | `PHXCLAW_COFRE_VAULT_ROLE_ID` | texto | — | config | role_id do AppRole (o secret_id fica no broker) |
+| `cofres.vault.secret_id` | `PHXCLAW_COFRE_VAULT_SECRET_ID` | texto | — | segredo: `phxclaw cofre vault-secret-id` | secret_id do AppRole do Vault |
+| `cofres.vault.token` | `PHXCLAW_COFRE_VAULT_TOKEN` | texto | — | segredo: `phxclaw cofre vault-token` | Token do Vault (método token) |
+| `cofres.vault.url` | `PHXCLAW_COFRE_VAULT_URL` | texto | — | config | Origem do HashiCorp Vault do operador (https://vault.exemplo:8200); vazio = sem Vault |
+<!-- gerado:chaves:cofres:fim -->
 
 ## 3. Confiar num projeto
 

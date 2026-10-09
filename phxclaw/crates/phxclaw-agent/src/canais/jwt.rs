@@ -23,7 +23,7 @@
 
 use super::caixa::{PedidoWebhook, Recusa};
 use super::http::{Http, politica_para};
-use super::rsa::ChavePublica;
+use super::rsa::{ChavePrivada, ChavePublica};
 use base64::Engine;
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -424,4 +424,19 @@ pub fn conferir(
         claims,
         endossos: chave.endossos.clone(),
     })
+}
+
+/// O JWS compacto RS256 de `cabecalho` e `carga` (os BYTES do JSON, como vao): o lado que
+/// EMITE, para a conta de servico do GCP (`cofres/gcp.rs`). Recebe bytes e nao `Value` para
+/// o vetor da RFC 7515 A.2, cuja carga tem quebra de linha e espacos que um serializador
+/// tiraria, poder ser conferido byte a byte.
+pub fn assinar_rs256(
+    cabecalho: &[u8],
+    carga: &[u8],
+    chave: &ChavePrivada,
+) -> Result<String, String> {
+    let b64 = |b: &[u8]| base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(b);
+    let entrada = format!("{}.{}", b64(cabecalho), b64(carga));
+    let assinatura = chave.assinar(entrada.as_bytes())?;
+    Ok(format!("{entrada}.{}", b64(&assinatura)))
 }

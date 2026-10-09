@@ -141,3 +141,10 @@
   .fluxos-barra .acoes{width:100%}
   .fluxos-barra .acoes .acao{flex:1 1 auto}
 }
+/* Assistente de fluxos: a descricao e o botao numa linha; no celular, um embaixo do outro. */
+.fluxos-assistente{margin:0 0 14px}
+.fluxos-assistente-linha{display:flex;gap:10px;align-items:flex-start}
+/* Classe propria, e nao a .fp-campo do painel: quem procura «o campo do painel» pela classe
+   (a varredura da fabrica, o primeiro .fp-campo) acharia esta caixa antes do campo do passo. */
+.fluxos-descricao{flex:1;box-sizing:border-box;margin:4px 0 0;resize:vertical;background:var(--fundo);color:var(--texto);border:1px solid var(--linha-forte);border-radius:6px;padding:7px 8px;font-size:var(--fs-1);font-family:inherit}
+@media (max-width:640px){.fluxos-assistente-linha{flex-direction:column;align-items:stretch}}

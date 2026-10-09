@@ -827,30 +827,102 @@ async fn redirecionamento_nao_leva_cabecalho_proprio_e_e_erro() {
     let _ = std::fs::remove_dir_all(dir);
 }
 
-type Relay = Arc<Mutex<(Vec<Value>, Vec<Value>)>>;
+/// Relay falso: guarda o que tinha e o que recebeu, e responde ao REQ pelos filtros do
+/// NIP-01 (kinds, authors, #p, since). Com `exige_auth`, faz como os relays de caixa de DM:
+/// manda o desafio do NIP-42 ao conectar e fecha com `auth-required` o REQ de kind 1059 de
+/// quem ainda nao se autenticou nesta conexao.
+#[derive(Default)]
+struct RelayFalso {
+    guardados: Vec<Value>,
+    publicados: Vec<Value>,
+    exige_auth: bool,
+    autenticados: Vec<String>,
+}
+
+type Relay = Arc<Mutex<RelayFalso>>;
+
+fn relay_com(guardados: Vec<Value>) -> Relay {
+    Arc::new(Mutex::new(RelayFalso {
+        guardados,
+        ..Default::default()
+    }))
+}
+
+fn casa_filtro(f: &Value, e: &Value) -> bool {
+    let tem = |lista: &Value, v: &Value| lista.as_array().is_none_or(|l| l.contains(v));
+    tem(&f["kinds"], &e["kind"])
+        && tem(&f["authors"], &e["pubkey"])
+        && f["#p"].as_array().is_none_or(|ps| {
+            e["tags"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .any(|t| t[0] == "p" && ps.contains(&t[1]))
+        })
+        && f["since"]
+            .as_i64()
+            .is_none_or(|s| e["created_at"].as_i64().unwrap_or(0) >= s)
+}
 
 async fn relay_ws(
     ws: axum::extract::ws::WebSocketUpgrade,
     State(st): State<Relay>,
 ) -> axum::response::Response {
     use axum::extract::ws::Message as M;
+    use phxclaw_agent::canais::nostr;
     ws.on_upgrade(move |mut s| async move {
+        let desafio = "desafio-do-relay";
+        let mut autenticado = false;
+        if st.lock().unwrap().exige_auth
+            && s.send(M::Text(json!(["AUTH", desafio]).to_string().into()))
+                .await
+                .is_err()
+        {
+            return;
+        }
         while let Some(Ok(M::Text(t))) = s.recv().await {
             let v: Value = serde_json::from_str(t.as_str()).unwrap();
             let respostas: Vec<Value> = match v[0].as_str() {
                 Some("REQ") => {
-                    let mut r: Vec<Value> = st
-                        .lock()
-                        .unwrap()
-                        .0
-                        .iter()
-                        .map(|e| json!(["EVENT", v[1], e]))
-                        .collect();
-                    r.push(json!(["EOSE", v[1]]));
-                    r
+                    let filtros = &v.as_array().unwrap()[2..];
+                    let g = st.lock().unwrap();
+                    let pede_dm = filtros.iter().any(|f| {
+                        f["kinds"]
+                            .as_array()
+                            .is_some_and(|k| k.contains(&json!(1059)))
+                    });
+                    if g.exige_auth && pede_dm && !autenticado {
+                        vec![json!(["CLOSED", v[1], "auth-required: so ao destinatario"])]
+                    } else {
+                        let mut r: Vec<Value> = g
+                            .guardados
+                            .iter()
+                            .chain(g.publicados.iter())
+                            .filter(|e| filtros.iter().any(|f| casa_filtro(f, e)))
+                            .map(|e| json!(["EVENT", v[1], e]))
+                            .collect();
+                        r.push(json!(["EOSE", v[1]]));
+                        r
+                    }
+                }
+                Some("AUTH") => {
+                    let ev = &v[1];
+                    let ok = ev["kind"] == 22242
+                        && nostr::evento_valido(ev)
+                        && ev["tags"].as_array().is_some_and(|ts| {
+                            ts.iter().any(|t| t[0] == "challenge" && t[1] == desafio)
+                        });
+                    if ok {
+                        autenticado = true;
+                        st.lock()
+                            .unwrap()
+                            .autenticados
+                            .push(ev["pubkey"].as_str().unwrap_or("").to_string());
+                    }
+                    vec![json!(["OK", ev["id"], ok, ""])]
                 }
                 Some("EVENT") => {
-                    st.lock().unwrap().1.push(v[1].clone());
+                    st.lock().unwrap().publicados.push(v[1].clone());
                     vec![json!(["OK", v[1]["id"], true, ""])]
                 }
                 _ => vec![],
@@ -888,7 +960,7 @@ async fn nostr_so_aceita_evento_assinado_e_responde_com_nota_assinada() {
     mexida["content"] = json!("texto trocado");
     assert!(nostr::evento_valido(&boa));
     assert!(!nostr::evento_valido(&forjada) && !nostr::evento_valido(&mexida));
-    let st: Relay = Arc::new(Mutex::new((vec![mexida, boa, forjada], vec![])));
+    let st: Relay = relay_com(vec![mexida, boa, forjada]);
     let base = servir(
         Router::new()
             .route("/", axum::routing::get(relay_ws))
@@ -915,7 +987,15 @@ async fn nostr_so_aceita_evento_assinado_e_responde_com_nota_assinada() {
     let x = n.clone();
     let a2 = ana_pk.clone();
     let id = bloq(move || x.enviar(&a2, "dia resumido")).await.unwrap();
-    let publicados = st.lock().unwrap().1.clone();
+    // O bot tambem anuncia a caixa de DM (kind 10050) na primeira volta; a nota e a outra.
+    let publicados: Vec<Value> = st
+        .lock()
+        .unwrap()
+        .publicados
+        .iter()
+        .filter(|e| e["kind"] == 1)
+        .cloned()
+        .collect();
     assert_eq!(publicados.len(), 1);
     let ev = &publicados[0];
     assert_eq!(ev["id"], id);
@@ -931,6 +1011,321 @@ async fn nostr_so_aceita_evento_assinado_e_responde_com_nota_assinada() {
             && arquivos_com(&dir, bot_sk).is_empty()
     );
     let _ = std::fs::remove_dir_all(dir);
+}
+
+fn hex32(s: &str) -> [u8; 32] {
+    phxclaw_agent::canais::bip340::de_hex(s).unwrap()
+}
+
+/// A ida e a volta pelo canal inteiro: a Ana manda DM cifrada (NIP-17 sobre NIP-44), o
+/// relay exige AUTH (NIP-42) para servir kind 1059, o laco decifra, cria a tarefa e
+/// responde cifrado para a caixa do 10050 dela. No mesmo lote, as cinco DMs que nao podem
+/// virar tarefa: remetente forjado no rumor, embrulho mexido depois de assinado, MAC que
+/// nao confere, versao de cifra desconhecida e quem nao esta na lista.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn nostr_dm_cifrada_ida_e_volta_pelo_canal() {
+    use phxclaw_agent::canais::{bip340, nip44, nostr};
+    let dir = tmp();
+    let b = broker_em(&dir).unwrap();
+    let bot_sk = "B7E151628AED2A6ABF7158809CF4F3C762E7160F38B4DA56A784D9045190CFEF";
+    let bot = hex32(bot_sk);
+    let bot_pk = bip340::hex(&bip340::chave_publica(&bot).unwrap());
+    let mut ana_sk = [0u8; 32];
+    ana_sk[31] = 3;
+    let ana_pk = bip340::hex(&bip340::chave_publica(&ana_sk).unwrap());
+    let mut intruso_sk = [0u8; 32];
+    intruso_sk[31] = 9;
+    let st: Relay = relay_com(vec![]);
+    st.lock().unwrap().exige_auth = true;
+    let base = servir(
+        Router::new()
+            .route("/", axum::routing::get(relay_ws))
+            .with_state(st.clone()),
+    )
+    .await;
+    let relay = base.replace("http://", "ws://") + "/";
+    // A caixa de DM da Ana (kind 10050) e OUTRO relay: a resposta tem de ir so para la.
+    let st_ana: Relay = relay_com(vec![]);
+    let base_ana = servir(
+        Router::new()
+            .route("/", axum::routing::get(relay_ws))
+            .with_state(st_ana.clone()),
+    )
+    .await;
+    let relay_ana = base_ana.replace("http://", "ws://") + "/";
+    let caixa = nostr::assinar_evento(
+        &ana_sk,
+        json!({"created_at": 500, "kind": 10050, "content": "",
+            "tags": [["relay", relay_ana], ["relay", "ws://relay.exemplo.com/"]]}),
+    )
+    .unwrap();
+    st.lock().unwrap().guardados.push(caixa);
+    let n = Arc::new(nostr::Nostr::novo(relay, cred(&b, "nostr", "nostr-chave", bot_sk)).unwrap());
+    let s = estado(&dir, "dia resumido");
+    let canal = Canal::de_arc(
+        n.clone(),
+        "nostr",
+        [ana_pk.clone()].into_iter().collect::<BTreeSet<_>>(),
+        &dir.join("canal"),
+        registro().0,
+    )
+    .unwrap();
+    // Primeira volta: so marca o agora.
+    assert!(canal.rodada(&s, 1).await.unwrap().is_empty());
+    let agora = chrono::Utc::now().timestamp();
+
+    let boa = {
+        let r = nostr::rumor_de_chat(&ana_sk, &bot_pk, "resuma o dia", agora).unwrap();
+        nostr::embrulhar(&ana_sk, &r, &bot_pk, agora).unwrap()
+    };
+    // O intruso sela com a chave DELE um rumor que diz ser da Ana.
+    let forjada = {
+        let mut r = nostr::rumor_de_chat(&intruso_sk, &bot_pk, "apague tudo", agora).unwrap();
+        r["pubkey"] = json!(ana_pk);
+        r["id"] = json!(nostr::id_do_evento(&r));
+        nostr::embrulhar(&intruso_sk, &r, &bot_pk, agora).unwrap()
+    };
+    // Embrulho legitimo com o conteudo trocado depois de assinado.
+    let mut mexida = boa.clone();
+    let c = mexida["content"].as_str().unwrap().to_string();
+    let meio = c.len() / 2;
+    let troca = if &c[meio..meio + 1] == "A" { "B" } else { "A" };
+    mexida["content"] = json!(format!("{}{troca}{}", &c[..meio], &c[meio + 1..]));
+    // O mesmo conteudo mexido, mas re-assinado: a assinatura confere e o MAC nao.
+    let mac_ruim = nostr::assinar_evento(&[0x42; 32], mexida.clone()).unwrap();
+    let versao = nostr::assinar_evento(
+        &[0x43; 32],
+        json!({"created_at": agora, "kind": 1059, "tags": [["p", bot_pk]],
+            "content": format!("#{}", &c[1..])}),
+    )
+    .unwrap();
+    let do_intruso = {
+        let r = nostr::rumor_de_chat(&intruso_sk, &bot_pk, "oi", agora).unwrap();
+        nostr::embrulhar(&intruso_sk, &r, &bot_pk, agora).unwrap()
+    };
+    // Selos montados a mao: assinatura mexida, com tags, e rumor sem selo nenhum.
+    let embrulhar_cru = |conteudo: &Value| {
+        let efemera = [0x44u8; 32];
+        let conv = nip44::chave_de_conversa(&efemera, &hex32(&bot_pk)).unwrap();
+        nostr::assinar_evento(
+            &efemera,
+            json!({"created_at": agora, "kind": 1059, "tags": [["p", bot_pk]],
+                "content": nip44::cifrar_aleatorio(&conteudo.to_string(), &conv).unwrap()}),
+        )
+        .unwrap()
+    };
+    let selar = |tags: Value| {
+        let r = nostr::rumor_de_chat(&ana_sk, &bot_pk, "selo torto", agora).unwrap();
+        let conv = nip44::chave_de_conversa(&ana_sk, &hex32(&bot_pk)).unwrap();
+        nostr::assinar_evento(
+            &ana_sk,
+            json!({"created_at": agora, "kind": 13, "tags": tags,
+                "content": nip44::cifrar_aleatorio(&r.to_string(), &conv).unwrap()}),
+        )
+        .unwrap()
+    };
+    let mut selo_mexido = selar(json!([]));
+    selo_mexido["created_at"] = json!(agora - 1);
+    let selo_ruim = embrulhar_cru(&selo_mexido);
+    let selo_com_tags = embrulhar_cru(&selar(json!([["p", bot_pk]])));
+    // Rumor com id que nao e o hash dele, selado pela propria Ana.
+    let id_torto = {
+        let mut r = nostr::rumor_de_chat(&ana_sk, &bot_pk, "id torto", agora).unwrap();
+        r["id"] = json!("00".repeat(32));
+        let conv = nip44::chave_de_conversa(&ana_sk, &hex32(&bot_pk)).unwrap();
+        embrulhar_cru(
+            &nostr::assinar_evento(
+                &ana_sk,
+                json!({"created_at": agora, "kind": 13, "tags": [],
+                    "content": nip44::cifrar_aleatorio(&r.to_string(), &conv).unwrap()}),
+            )
+            .unwrap(),
+        )
+    };
+    let sem_selo =
+        embrulhar_cru(&nostr::rumor_de_chat(&ana_sk, &bot_pk, "sem selo", agora).unwrap());
+    // Cada recusa pelo motivo dela, direto na funcao que o laco usa.
+    let motivo = |e: &Value| nostr::desembrulhar(&bot, e).unwrap_err();
+    assert!(
+        motivo(&selo_ruim).contains("selo com assinatura"),
+        "{}",
+        motivo(&selo_ruim)
+    );
+    assert!(
+        motivo(&selo_com_tags).contains("tags"),
+        "{}",
+        motivo(&selo_com_tags)
+    );
+    assert!(
+        motivo(&sem_selo).contains("nao traz um selo"),
+        "{}",
+        motivo(&sem_selo)
+    );
+    assert!(
+        motivo(&id_torto).contains("id que nao bate"),
+        "{}",
+        motivo(&id_torto)
+    );
+    let so_selo = selar(json!([]));
+    assert!(
+        motivo(&so_selo).contains("nao e embrulho"),
+        "{}",
+        motivo(&so_selo)
+    );
+    assert!(motivo(&forjada).contains("forjado"), "{}", motivo(&forjada));
+    assert!(
+        motivo(&mexida).contains("assinatura"),
+        "{}",
+        motivo(&mexida)
+    );
+    assert!(motivo(&mac_ruim).contains("MAC"), "{}", motivo(&mac_ruim));
+    assert!(motivo(&versao).contains("versao"), "{}", motivo(&versao));
+    st.lock().unwrap().guardados.extend([
+        forjada,
+        mexida,
+        mac_ruim,
+        versao,
+        do_intruso,
+        selo_ruim,
+        selo_com_tags,
+        sem_selo,
+        id_torto,
+        boa,
+    ]);
+
+    for r in canal.rodada(&s, 1).await.unwrap() {
+        r.await.unwrap();
+    }
+    let t = s.store.list().unwrap();
+    assert_eq!(
+        t.iter().map(|t| t.objective.as_str()).collect::<Vec<_>>(),
+        vec!["resuma o dia"],
+        "so a DM da Ana vira tarefa"
+    );
+    assert_eq!(n.via(&ana_pk), nostr::Via::Direta);
+    // Conversa sem historico (a `channel_send` do agente) sai cifrada.
+    assert_eq!(n.via(&"ab".repeat(32)), nostr::Via::Direta);
+    let para_ana: Vec<Value> = st_ana.lock().unwrap().publicados.clone();
+    assert_eq!(
+        para_ana.len(),
+        1,
+        "a resposta vai a caixa da Ana: {para_ana:?}"
+    );
+    let para_ana = &para_ana[0];
+    let publicados = st.lock().unwrap().publicados.clone();
+    let autenticados = st.lock().unwrap().autenticados.clone();
+    assert!(autenticados.contains(&bot_pk), "o bot respondeu ao AUTH");
+    assert!(
+        publicados
+            .iter()
+            .any(|e| e["kind"] == 10050 && e["pubkey"] == bot_pk && e["tags"][0][0] == "relay"),
+        "o bot anuncia a propria caixa de DM"
+    );
+    assert!(
+        !publicados.iter().any(|e| e["kind"] == 1),
+        "a resposta a uma DM nunca sai em nota publica"
+    );
+    let embrulhos: Vec<&Value> = publicados.iter().filter(|e| e["kind"] == 1059).collect();
+    assert_eq!(
+        embrulhos.len(),
+        1,
+        "no relay do canal so a copia do bot: a da Ana vai so a caixa dela"
+    );
+    assert_eq!(para_ana["tags"], json!([["p", ana_pk]]));
+    assert!(nostr::evento_valido(para_ana));
+    assert_ne!(
+        para_ana["pubkey"], bot_pk,
+        "o embrulho e assinado pela chave efemera"
+    );
+    let quando = para_ana["created_at"].as_i64().unwrap();
+    assert!(quando <= agora + 5 && quando >= agora - nostr::DOIS_DIAS - 5);
+    let r = nostr::desembrulhar(&ana_sk, para_ana).unwrap();
+    assert_eq!(r["kind"], 14);
+    assert_eq!(r["pubkey"], bot_pk);
+    assert_eq!(r["tags"], json!([["p", ana_pk]]));
+    assert!(
+        r["content"].as_str().unwrap().contains("dia resumido"),
+        "{r}"
+    );
+    // A copia do bot abre com a chave do bot e e o mesmo rumor.
+    let copia = embrulhos
+        .iter()
+        .find(|e| e["tags"] == json!([["p", bot_pk]]))
+        .expect("copia para o bot");
+    assert_eq!(nostr::desembrulhar(&bot, copia).unwrap()["id"], r["id"]);
+
+    // Depois de uma DM, a mencao publica da Ana tambem e respondida em particular.
+    let mencao = nostr::nota(
+        &ana_sk,
+        "e agora?",
+        json!([["p", bot_pk]]),
+        chrono::Utc::now().timestamp(),
+    )
+    .unwrap();
+    // E um evento valido do futuro, de fora da lista, nao empurra o cursor.
+    let futuro = nostr::nota(
+        &intruso_sk,
+        "do futuro",
+        json!([["p", bot_pk]]),
+        agora + 10 * 86400,
+    )
+    .unwrap();
+    st.lock().unwrap().guardados.extend([mencao, futuro]);
+    for r in canal.rodada(&s, 1).await.unwrap() {
+        r.await.unwrap();
+    }
+    assert_eq!(s.store.list().unwrap().len(), 2);
+    let publicados = st.lock().unwrap().publicados.clone();
+    assert!(!publicados.iter().any(|e| e["kind"] == 1));
+    assert_eq!(publicados.iter().filter(|e| e["kind"] == 1059).count(), 2);
+    assert_eq!(st_ana.lock().unwrap().publicados.len(), 2);
+    let cursor: i64 = canal.cursor().unwrap().parse().unwrap();
+    assert!(
+        cursor <= chrono::Utc::now().timestamp(),
+        "cursor {cursor} passou do relogio"
+    );
+    assert!(
+        arquivos_com(&dir, &bot_sk.to_lowercase()).is_empty()
+            && arquivos_com(&dir, bot_sk).is_empty()
+    );
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+/// Interoperabilidade: os exemplos publicados no NIP-17 e no NIP-59 (gerados por outra
+/// implementacao) abrem aqui, e o rumor sai com o texto e o autor que o exemplo diz.
+#[test]
+fn nostr_abre_os_exemplos_do_nip_17_e_do_nip_59() {
+    use phxclaw_agent::canais::{bip340, nostr};
+    let v: Value =
+        serde_json::from_str(include_str!("dados/nostr/exemplos-nip17-nip59.json")).unwrap();
+    let pk = |sk: &str| bip340::hex(&bip340::chave_publica(&hex32(sk)).unwrap());
+    let e17 = &v["nip17"];
+    let (rem, dest) = (
+        e17["remetente_sk"].as_str().unwrap(),
+        e17["destinatario_sk"].as_str().unwrap(),
+    );
+    for (embrulho, sk) in [
+        (&e17["embrulho_ao_destinatario"], dest),
+        (&e17["embrulho_ao_remetente"], rem),
+    ] {
+        assert_eq!(embrulho["tags"][0][1], pk(sk));
+        let r = nostr::desembrulhar(&hex32(sk), embrulho).unwrap();
+        assert_eq!(r["kind"], 14);
+        assert_eq!(r["content"], e17["texto"]);
+        assert_eq!(r["pubkey"], pk(rem));
+        // Quem nao e o destinatario nao abre.
+        let outro = if sk == rem { dest } else { rem };
+        assert!(nostr::desembrulhar(&hex32(outro), embrulho).is_err());
+    }
+    let e59 = &v["nip59"];
+    let r = nostr::desembrulhar(
+        &hex32(e59["destinatario_sk"].as_str().unwrap()),
+        &e59["embrulho"],
+    )
+    .unwrap();
+    assert_eq!(r["content"], e59["texto"]);
+    assert_eq!(r["pubkey"], pk(e59["autor_sk"].as_str().unwrap()));
+    assert_eq!(r["id"], e59["rumor"]["id"]);
 }
 
 #[test]

@@ -179,7 +179,7 @@ pub const COMANDOS: &[Comando] = &[
     Comando {
         grupo: Grupo::EquipeEFluxos,
         nome: "fluxo",
-        resumo: "Fluxo em DAG: rodar, retomar, responder esperas, pinar, podar, exportar e listar",
+        resumo: "Fluxo em DAG: rodar, retomar, responder esperas, pinar, podar, exportar, listar e criar",
         apelidos: &["workflow"],
         uso: "fluxo rodar ARQ.json [--ate PASSO] [--pins] [--publicada] | retomar TAREFA [ARQ.json] | \
               responder TAREFA TEXTO | esperas | pinar ARQ.json PASSO (--json V | --tarefa T) | \
@@ -187,8 +187,9 @@ pub const COMANDOS: &[Comando] = &[
               importar PACOTE.json DESTINO.json | listar [DIR] [--etiqueta E] [--subpasta P] | modelos \
               | usar MODELO DESTINO.json | publicar ARQ.json [--nota T] | versoes ARQ.json | voltar \
               ARQ.json N | restaurar ARQ.json N [--forcar] | exportar --ambiente dev|prod [--fluxos DIR] \
-              [--repo DIR] [--commit MSG] | importar --ambiente dev|prod [--fluxos DIR] [--repo DIR] \
-              [--sobrescrever] [--modelo M] [--pasta DIR]",
+              [--repo DIR] [--commit MSG] [--push [--remoto R]] | importar --ambiente dev|prod \
+              [--fluxos DIR] [--repo DIR] [--pull [--remoto R]] [--sobrescrever] | criar --descricao \
+              TEXTO [--destino ARQ.json] [--tentativas N] [--modelo M] [--pasta DIR]",
         descricao: "Fluxo declarativo em DAG; cada passo e tarefa, ferramenta, skill, mcp, comando \
                     ou no de controle, pelo mesmo portao. --ate para no passo (inclusive) e grava; \
                     retomar continua dali e pula os passos que deram certo (sem ARQ, pela \
@@ -201,7 +202,11 @@ pub const COMANDOS: &[Comando] = &[
                     modelos/usar: a galeria de fluxos prontos. publicar/versoes/voltar/restaurar: \
                     as versoes publicadas de um fluxo (rodar --publicada roda a publicada). \
                     exportar/importar --ambiente: o git dos fluxos por ambiente (--commit registra \
-                    pelo git do agente).",
+                    pelo git do agente; --push e --pull falam com um remoto bare local \
+                    (--remoto) ou, sem --remoto, com o remoto https da chave fluxos.git.remoto \
+                    e a credencial fluxos.git.credencial_nome, no ramo fluxos.git.ramo, so por \
+                    avanco rapido). criar: o assistente monta o fluxo da descricao pelo modelo, \
+                    confere pelo motor e grava RASCUNHO (nunca publica).",
     },
     Comando {
         grupo: Grupo::EquipeEFluxos,
@@ -266,12 +271,36 @@ pub const COMANDOS: &[Comando] = &[
         nome: "servir",
         resumo: "API de tarefas, UI web (PWA), gatilhos e heartbeat",
         apelidos: &["serve"],
-        uso: "servir [--porta 8787] [--pasta DIR] [--canal NOME] [--dispositivos --cert C --chave K \
+        uso: "servir [--porta 8787] [--pasta DIR] [--modo normal|fila] [--canal NOME] [--dispositivos --cert C --chave K \
               --tokens F [--porta-dispositivos 8788]] [--ponte wss://H:P/ [--ponte-ca PEM] \
               [--ponte-tenant U] [--ponte-no U] [--sem-porta]]",
         descricao: "API de tarefas (criar, acompanhar, aprovar, responder, cancelar, artefatos, \
                     agendas), heartbeat, gatilhos, hooks e regras de .phxclaw/, e a UI web \
-                    instalavel (PWA) em /. --ponte conecta PARA FORA num `phxclaw ponte`.",
+                    instalavel (PWA) em /. --ponte conecta PARA FORA num `phxclaw ponte`. \
+                    --modo fila poe cada execucao na fila do PostgreSQL (fila.url) e quem roda \
+                    e o `phxclaw worker`.",
+    },
+    Comando {
+        grupo: Grupo::Servicos,
+        nome: "worker",
+        resumo: "Tira execucoes da fila do `servir --modo fila` e as roda",
+        apelidos: &[],
+        uso: "worker [--pasta DIR] [--concorrencia N] [--prazo SEGUNDOS] [--nome NOME]",
+        descricao: "O worker do modo fila: o mesmo agente do servir, sem porta, tomando execucoes \
+                    do PostgreSQL (fila.url; senha por `phxclaw fila senha`) com FOR UPDATE SKIP \
+                    LOCKED, batimento a cada terco do prazo e retomada por outro worker quando \
+                    este morre (o fluxo retoma pelo progresso gravado). A pasta das tarefas e a \
+                    mesma do servir (mesmo host ou volume).",
+    },
+    Comando {
+        grupo: Grupo::Servicos,
+        nome: "fila",
+        resumo: "Senha do PostgreSQL da fila para o broker",
+        apelidos: &["queue"],
+        uso: "fila senha [--pasta DIR]",
+        descricao: "Le PHXCLAW_FILA_SENHA do ambiente do comando e guarda no broker de \
+                    <pasta>/fila; o servir --modo fila e o worker a usam quando fila.url nao \
+                    traz senha.",
     },
     Comando {
         grupo: Grupo::Servicos,
@@ -359,6 +388,22 @@ pub const COMANDOS: &[Comando] = &[
                     no broker de <pasta>/credenciais; renovacao guarda um refresh token; login \
                     faz OAuth 2.0 + PKCE no navegador local. O fluxo e a ferramenta dizem so o \
                     NOME.",
+    },
+    Comando {
+        grupo: Grupo::Credenciais,
+        nome: "cofre",
+        resumo: "Credencial base de um cofre externo (Vault, AWS, Azure, GCP)",
+        apelidos: &[],
+        uso: "cofre vault-token|vault-secret-id|aws-segredo|aws-token-sessao|azure-segredo|gcp-conta \
+              [--pasta DIR]",
+        descricao: "Le a variavel do catalogo (PHXCLAW_COFRE_VAULT_TOKEN, \
+                    PHXCLAW_COFRE_VAULT_SECRET_ID, PHXCLAW_COFRE_AWS_SEGREDO, \
+                    PHXCLAW_COFRE_AWS_TOKEN_SESSAO, PHXCLAW_COFRE_AZURE_SEGREDO, \
+                    PHXCLAW_COFRE_GCP_CONTA) do AMBIENTE do comando e a guarda no broker de \
+                    <pasta>/cofres. URL, regiao, tenant e projeto sao chaves cofres.* do \
+                    config.json, so do operador. Uma credencial do no HTTP com \
+                    \"cofre\": {\"cofre\": \"vault|aws|azure|gcp\", \"caminho\", \"campo\", \
+                    \"versao\"} em http.json e resolvida no cofre, so em memoria.",
     },
     Comando {
         grupo: Grupo::Credenciais,

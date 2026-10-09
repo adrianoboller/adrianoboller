@@ -10,6 +10,14 @@
 //!   production deployments should inject a platform key provider / HSM / keyring.
 //!
 //! Portions of the storage/redaction design are informed by MIT-licensed openclaw-rs.
+//!
+//! Cofre externo (`cofre.rs`): a credencial nomeada pode ser RESOLVIDA num cofre do operador
+//! (Vault, AWS, Azure, GCP) pelo `resolver_externo`, so em memoria; o valor nao passa pelo
+//! envelope em disco.
+
+pub mod cofre;
+
+pub use cofre::{CofreExterno, CofresExternos, ErroDeCofre, ReferenciaExterna};
 
 use aes_gcm::{
     Aes256Gcm, Nonce,
@@ -28,7 +36,7 @@ use std::{
     collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, RwLock},
 };
 use thiserror::Error;
 use uuid::Uuid;
@@ -186,6 +194,9 @@ pub enum SecretBrokerError {
     Event(#[from] LiveBusError),
     #[error(transparent)]
     Evidence(#[from] LedgerError),
+    /// Cofre externo: diz qual cofre e qual credencial, nunca o valor.
+    #[error(transparent)]
+    Externo(#[from] ErroDeCofre),
 }
 
 #[derive(Default)]
@@ -201,6 +212,8 @@ pub struct SecretBroker {
     state: Arc<Mutex<BrokerState>>,
     live_bus: LiveEventHub,
     evidence: EvidenceLedger,
+    /// Os cofres externos ligados a este broker (`ligar_cofres`), se ha.
+    externos: Arc<RwLock<Option<Arc<CofresExternos>>>>,
 }
 
 impl SecretBroker {
@@ -217,6 +230,7 @@ impl SecretBroker {
             state: Arc::new(Mutex::new(BrokerState::default())),
             live_bus,
             evidence,
+            externos: Arc::new(RwLock::new(None)),
         };
         broker.reload()?;
         Ok(broker)
@@ -374,6 +388,79 @@ impl SecretBroker {
             EvidenceOutcome::Succeeded,
         )?;
         Ok(value)
+    }
+
+    /// Liga (ou troca) os cofres externos deste broker. O broker e um por pasta no processo,
+    /// entao quem liga passa a valer para todo consumidor da pasta.
+    pub fn ligar_cofres(&self, cofres: Arc<CofresExternos>) -> Result<(), SecretBrokerError> {
+        *self
+            .externos
+            .write()
+            .map_err(|_| SecretBrokerError::Poisoned)? = Some(cofres);
+        Ok(())
+    }
+
+    pub fn cofres(&self) -> Option<Arc<CofresExternos>> {
+        self.externos.read().ok().and_then(|g| g.clone())
+    }
+
+    /// A credencial `credencial` lida do cofre externo de `r`, so em memoria. A evidencia
+    /// registra a credencial, o cofre, o caminho e se veio do cache -- o valor, nunca.
+    pub async fn resolver_externo(
+        &self,
+        credencial: &str,
+        r: &ReferenciaExterna,
+        consumidor: &str,
+    ) -> Result<SecretValue, SecretBrokerError> {
+        let cofres = self.cofres().ok_or_else(|| ErroDeCofre {
+            cofre: r.cofre.clone(),
+            credencial: credencial.to_string(),
+            motivo: "nenhum cofre externo configurado (chaves cofres.* do config.json)".into(),
+        });
+        let resultado = match cofres {
+            Ok(c) => c.resolver(credencial, r).await,
+            Err(e) => Err(e),
+        };
+        let (outcome, evento, extra) = match &resultado {
+            Ok((_, cache)) => (
+                EvidenceOutcome::Succeeded,
+                "resolved_external",
+                json!({"cache": cache}),
+            ),
+            Err(e) => (
+                EvidenceOutcome::Failed,
+                "resolve_external_failed",
+                json!({"motivo": e.motivo}),
+            ),
+        };
+        let correlation = new_uuid_v7();
+        let resumo = json!({
+            "credencial": credencial,
+            "cofre": r.cofre,
+            "caminho": r.caminho,
+            "campo": r.campo,
+            "versao": r.versao,
+            "detalhe": extra,
+        });
+        self.live_bus.publish_json(
+            "secret.broker",
+            evento,
+            resumo.clone(),
+            Some(correlation),
+            None,
+        )?;
+        self.evidence.append(EvidenceDraft {
+            action_uuid: correlation,
+            correlation_uuid: Some(correlation),
+            actor: consumidor.to_string(),
+            capability: format!("secret.{evento}"),
+            action: format!("secret.{evento}"),
+            outcome,
+            request_summary: resumo,
+            result_summary: json!({"value":"[REDACTED]"}),
+            artifact_uris: vec![],
+        })?;
+        Ok(resultado?.0)
     }
 
     pub fn revoke_lease(&self, lease_uuid: Uuid) -> Result<SecretLease, SecretBrokerError> {
@@ -766,6 +853,80 @@ mod tests {
         // Nenhum temporario sobra ao lado.
         assert_eq!(fs::read_dir(&dir).unwrap().count(), 1);
         let _ = fs::remove_dir_all(dir);
+    }
+
+    /// O valor lido do cofre externo nao vai para a evidencia nem para o barramento: so o
+    /// nome, o cofre e o caminho. RED medido em 09/10: com `"valor": v.expose()` posto no
+    /// resumo (`// REPOSTO`), o `evidence.jsonl` passou a conter o valor e o teste caiu.
+    #[test]
+    fn resolver_externo_nao_grava_o_valor_em_disco_nem_na_evidencia() {
+        use crate::cofre::{BoxFut, CofreExterno, CofresExternos, ReferenciaExterna};
+        struct Fixo;
+        impl CofreExterno for Fixo {
+            fn tipo(&self) -> &'static str {
+                "fixo"
+            }
+            fn ler<'a>(
+                &'a self,
+                _r: &'a ReferenciaExterna,
+            ) -> BoxFut<'a, Result<SecretValue, String>> {
+                Box::pin(async { Ok(SecretValue::new("VALOR-DO-COFRE-7f3k9q".into())) })
+            }
+        }
+        let dir = std::env::temp_dir().join(format!("phx-cofre-{}", new_uuid_v7().simple()));
+        let chave = Arc::new(FileMasterKeyProvider::new(dir.join("master.key")));
+        let ledger = EvidenceLedger::open(dir.join("evidence.jsonl")).unwrap();
+        let b =
+            SecretBroker::new(dir.join("cofre"), chave, LiveEventHub::new(16, 16), ledger).unwrap();
+        let r = ReferenciaExterna {
+            cofre: "fixo".into(),
+            caminho: "app/db".into(),
+            campo: None,
+            versao: None,
+        };
+        let rodar = |f: &mut dyn FnMut() -> Result<SecretValue, SecretBrokerError>| f();
+        let mut sem = || {
+            let mut fut = std::pin::pin!(b.resolver_externo("db", &r, "teste"));
+            let mut cx = std::task::Context::from_waker(std::task::Waker::noop());
+            loop {
+                if let std::task::Poll::Ready(v) = fut.as_mut().poll(&mut cx) {
+                    return v;
+                }
+            }
+        };
+        let e = rodar(&mut sem).unwrap_err();
+        assert!(e.to_string().contains("cofre fixo: credencial db"), "{e}");
+        b.ligar_cofres(Arc::new(
+            CofresExternos::novo(std::time::Duration::from_secs(60), 8, "t").com(Arc::new(Fixo)),
+        ))
+        .unwrap();
+        let v = rodar(&mut sem).unwrap();
+        assert_eq!(v.expose(), "VALOR-DO-COFRE-7f3k9q");
+        let mut tudo = Vec::new();
+        for e in walk(&dir) {
+            tudo.extend(fs::read(e).unwrap());
+        }
+        let tudo = String::from_utf8_lossy(&tudo);
+        assert!(tudo.contains("resolved_external"), "a evidencia registrou");
+        assert!(
+            !tudo.contains("VALOR-DO-COFRE"),
+            "o valor vazou para o disco"
+        );
+        assert!(b.descriptors().unwrap().is_empty(), "nada virou envelope");
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    fn walk(d: &Path) -> Vec<PathBuf> {
+        let mut v = Vec::new();
+        for e in fs::read_dir(d).unwrap().flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                v.extend(walk(&p));
+            } else {
+                v.push(p);
+            }
+        }
+        v
     }
 
     /// A tarja e a recusa da entrada do fluxo usam o MESMO motor (`phxclaw_types::segredo`):

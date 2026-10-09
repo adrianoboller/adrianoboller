@@ -31,10 +31,18 @@
 // index.html, app.js, tarefas.js e textos.json mudaram junto.
 // Casca 14: o inspecao.js (bloqueio do inspetor, `ui.bloquear_inspecao`) entrou no <head>; sem
 // ele no cache, a primeira abertura sem rede perderia o bloqueio.
-const CACHE = 'phxclaw-casca-14';
+// Casca 15: o no `politica` e o assistente na tela Fluxos -- nenhum arquivo a mais, mas
+// index.html, fluxos.js, fluxos.css e textos.json mudaram juntos: um fluxos.js novo sobre um
+// index.html velho nao acha o #fluxosAssistente.
+// Casca 16: a leitura com dobra e o terminal compartilhado no IDE -- nenhum arquivo a mais, mas
+// index.html, app.css, app.js (o #convite=), ide.js e textos.json mudaram juntos: um ide.js novo
+// sobre um index.html velho nao acha o #ideLeitura nem o #ideCompartilhar.
+// Casca 17: a tela Insights (insights.js) -- um arquivo a mais, e index.html, app.css e
+// textos.json mudaram junto: um index.html novo sem o insights.js no cache abriria a tela vazia.
+const CACHE = 'phxclaw-casca-17';
 const CASCA = [
   './', './index.html', './manifest.webmanifest',
-  './assets/app.css', './assets/app.js', './assets/tema.js', './assets/inspecao.js', './assets/idiomas.js', './assets/tarefas.js', './assets/tarefas.css', './assets/fluxos.js', './assets/fluxos.css',
+  './assets/app.css', './assets/app.js', './assets/tema.js', './assets/inspecao.js', './assets/idiomas.js', './assets/tarefas.js', './assets/tarefas.css', './assets/fluxos.js', './assets/fluxos.css', './assets/insights.js',
   './assets/grades.js', './assets/grades.css', './assets/config.js', './assets/config-catalogo.json', './assets/ide.js', './assets/paineis.js',
   './assets/vendor/phx-grid/phx-grid.js', './assets/vendor/phx-grid/phx-grid.css',
   './assets/textos.json', './assets/fonte/exo2-latin.woff2',

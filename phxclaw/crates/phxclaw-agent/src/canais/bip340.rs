@@ -3,8 +3,14 @@
 //! permitidas valer -- sem ela, qualquer um poria a chave publica do dono num evento.
 //!
 //! Escrita a partir da norma (BIP-340 e SEC 2 para a curva), sem crate, e conferida contra
-//! os vetores oficiais do BIP-340 nos testes. Nao e tempo constante: assina com a chave do
-//! bot num processo que so ela usa, e o canal conta como PARCIAL tambem por isso.
+//! os 19 vetores oficiais do BIP-340 (`tests/dados/nostr/bip340-test-vectors.csv`). Serve
+//! tambem o ECDH do NIP-44 (`ecdh_x`), e ai a chave secreta do bot multiplica um ponto que
+//! QUALQUER um escolhe (a chave efemera do gift wrap).
+//!
+//! Por isso, sem desvio por segredo no FONTE: a multiplicacao e a escada sempre-soma com
+//! a soma completa (sem caso especial), e as reducoes escolhem por mascara em vez de `if`.
+//! O que isto NAO prova: o binario. Nenhuma medicao de tempo foi feita, e o compilador
+//! pode, em tese, reintroduzir um desvio; o expoente de `pot_p` e publico de proposito.
 //!
 //! Inteiros de 256 bits em quatro palavras de 64 (a menos significativa primeiro). A
 //! reducao modulo p usa p = 2^256 - 0x1000003D1; a modulo n (poucas contas por assinatura)
@@ -92,19 +98,33 @@ fn subtrair(a: &U, b: &U) -> (U, bool) {
     (r, emprestimo)
 }
 
-/// (a + b) mod m, com a e b ja menores que m.
+/// Tudo-um quando `b`, tudo-zero quando nao. Com ela a escolha entre dois resultados ja
+/// calculados nao vira desvio: um `if` sobre um bit da chave dizia, pelo tempo, qual era.
+fn mascara(b: bool) -> u64 {
+    (b as u64).wrapping_neg()
+}
+
+/// `a` onde a mascara e tudo-um, `b` onde e tudo-zero.
+fn escolher(m: u64, a: &U, b: &U) -> U {
+    let mut r = [0u64; 4];
+    for i in 0..4 {
+        r[i] = (a[i] & m) | (b[i] & !m);
+    }
+    r
+}
+
+/// (a + b) mod m, com a e b ja menores que m. As duas contas sempre acontecem e a mascara
+/// escolhe: a subtracao condicional e o lugar classico por onde o tempo conta o segredo.
 fn add_mod(a: &U, b: &U, m: &U) -> U {
     let (s, vai) = somar(a, b);
-    if vai || maior_ou_igual(&s, m) {
-        subtrair(&s, m).0
-    } else {
-        s
-    }
+    let (d, emprestou) = subtrair(&s, m);
+    escolher(mascara(vai | !emprestou), &d, &s)
 }
 
 fn sub_mod(a: &U, b: &U, m: &U) -> U {
     let (d, emprestou) = subtrair(a, b);
-    if emprestou { somar(&d, m).0 } else { d }
+    let (e, _) = somar(&d, m);
+    escolher(mascara(emprestou), &e, &d)
 }
 
 fn produto(a: &U, b: &U) -> [u64; 8] {
@@ -121,7 +141,8 @@ fn produto(a: &U, b: &U) -> [u64; 8] {
     t
 }
 
-/// t mod p, por 2^256 = C (mod p): dobra a metade alta duas vezes.
+/// t mod p, por 2^256 = C (mod p): dobra a metade alta duas vezes. O terceiro vai-um (0 ou
+/// 1) entra multiplicado em vez de testado, e a subtracao final e escolhida por mascara.
 fn reduzir_p(t: [u64; 8]) -> U {
     let mut x = [0u64; 5];
     let mut c = 0u128;
@@ -138,32 +159,28 @@ fn reduzir_p(t: [u64; 8]) -> U {
         y[i] = v as u64;
         c = v >> 64;
     }
-    if c != 0 {
-        let mut c = C as u128;
-        for yi in y.iter_mut() {
-            let v = *yi as u128 + c;
-            *yi = v as u64;
-            c = v >> 64;
-        }
+    // Com vai-um, y ficou menor que 2^67: somar C de novo nao transborda.
+    let mut c = c * C as u128;
+    for yi in y.iter_mut() {
+        let v = *yi as u128 + c;
+        *yi = v as u64;
+        c = v >> 64;
     }
-    if maior_ou_igual(&y, &P) {
-        y = subtrair(&y, &P).0;
-    }
-    y
+    let (d, emprestou) = subtrair(&y, &P);
+    escolher(mascara(!emprestou), &d, &y)
 }
 
 fn mul_p(a: &U, b: &U) -> U {
     reduzir_p(produto(a, b))
 }
 
-/// t mod m bit a bit, do mais alto para o mais baixo.
+/// t mod m bit a bit, do mais alto para o mais baixo. O bit entra como parcela (0 ou 1),
+/// nunca como `if`: aqui passam o produto com a chave secreta e o nonce da assinatura.
 fn reduzir(t: &[u64], m: &U) -> U {
     let mut r = [0u64; 4];
     for i in (0..t.len() * 64).rev() {
         r = add_mod(&r, &r, m);
-        if (t[i / 64] >> (i % 64)) & 1 == 1 {
-            r = add_mod(&r, &[1, 0, 0, 0], m);
-        }
+        r = add_mod(&r, &[(t[i / 64] >> (i % 64)) & 1, 0, 0, 0], m);
     }
     r
 }
@@ -172,6 +189,7 @@ fn mul_n(a: &U, b: &U) -> U {
     reduzir(&produto(a, b), &N)
 }
 
+/// Potencia com expoente PUBLICO (p - 2, (p + 1) / 4): o desvio pelo bit nao conta nada.
 fn pot_p(a: &U, e: &U) -> U {
     let mut r: U = [1, 0, 0, 0];
     for i in (0..256).rev() {
@@ -187,69 +205,64 @@ fn inv_p(a: &U) -> U {
     pot_p(a, &subtrair(&P, &[2, 0, 0, 0]).0)
 }
 
-/// Ponto em coordenadas jacobianas (X, Y, Z); Z = 0 e o ponto no infinito.
+/// Ponto em coordenadas projetivas homogeneas (X : Y : Z), x = X/Z e y = Y/Z; o infinito e
+/// (0 : 1 : 0). Homogeneas, e nao jacobianas, porque e nelas que existe a soma COMPLETA.
 #[derive(Clone, Copy)]
 struct Ponto(U, U, U);
 
 const INFINITO: Ponto = Ponto([0; 4], [1, 0, 0, 0], [0; 4]);
 
-fn dobrar(p: &Ponto) -> Ponto {
-    let Ponto(x, y, z) = p;
-    if zero(z) || zero(y) {
-        return INFINITO;
-    }
-    let y2 = mul_p(y, y);
-    let s = mul_p(&mul_p(x, &y2), &[4, 0, 0, 0]);
-    let m = mul_p(&mul_p(x, x), &[3, 0, 0, 0]);
-    let x3 = sub_mod(&mul_p(&m, &m), &add_mod(&s, &s, &P), &P);
-    let y4 = mul_p(&y2, &y2);
-    let y3 = sub_mod(
-        &mul_p(&m, &sub_mod(&s, &x3, &P)),
-        &mul_p(&y4, &[8, 0, 0, 0]),
-        &P,
-    );
-    let z3 = mul_p(&add_mod(y, y, &P), z);
-    Ponto(x3, y3, z3)
-}
+/// 3b, com b = 7 na curva y^2 = x^3 + 7.
+const B3: U = [21, 0, 0, 0];
 
+/// Soma completa de Renes, Costello e Batina (2016, algoritmo 7, a = 0): a MESMA conta
+/// serve para somar, dobrar e somar com o infinito, sem nenhum caso especial. Os casos
+/// especiais (`if u1 == u2`, `if zero(z)`) eram desvios sobre o ponto intermediario da
+/// multiplicacao pela chave secreta.
 fn somar_pontos(a: &Ponto, b: &Ponto) -> Ponto {
-    if zero(&a.2) {
-        return *b;
-    }
-    if zero(&b.2) {
-        return *a;
-    }
-    let z1z1 = mul_p(&a.2, &a.2);
-    let z2z2 = mul_p(&b.2, &b.2);
-    let u1 = mul_p(&a.0, &z2z2);
-    let u2 = mul_p(&b.0, &z1z1);
-    let s1 = mul_p(&a.1, &mul_p(&b.2, &z2z2));
-    let s2 = mul_p(&b.1, &mul_p(&a.2, &z1z1));
-    if u1 == u2 {
-        return if s1 == s2 { dobrar(a) } else { INFINITO };
-    }
-    let h = sub_mod(&u2, &u1, &P);
-    let r = sub_mod(&s2, &s1, &P);
-    let h2 = mul_p(&h, &h);
-    let h3 = mul_p(&h2, &h);
-    let u1h2 = mul_p(&u1, &h2);
-    let x3 = sub_mod(
-        &sub_mod(&mul_p(&r, &r), &h3, &P),
-        &add_mod(&u1h2, &u1h2, &P),
-        &P,
+    let mais = |x: &U, y: &U| add_mod(x, y, &P);
+    let menos = |x: &U, y: &U| sub_mod(x, y, &P);
+    let xx = mul_p(&a.0, &b.0);
+    let yy = mul_p(&a.1, &b.1);
+    let zz = mul_p(&a.2, &b.2);
+    let xy = menos(
+        &mul_p(&mais(&a.0, &a.1), &mais(&b.0, &b.1)),
+        &mais(&xx, &yy),
     );
-    let y3 = sub_mod(&mul_p(&r, &sub_mod(&u1h2, &x3, &P)), &mul_p(&s1, &h3), &P);
-    let z3 = mul_p(&h, &mul_p(&a.2, &b.2));
+    let yz = menos(
+        &mul_p(&mais(&a.1, &a.2), &mais(&b.1, &b.2)),
+        &mais(&yy, &zz),
+    );
+    let xz = menos(
+        &mul_p(&mais(&a.0, &a.2), &mais(&b.0, &b.2)),
+        &mais(&xx, &zz),
+    );
+    let bzz3 = mul_p(&B3, &zz);
+    let yy_m = menos(&yy, &bzz3);
+    let yy_p = mais(&yy, &bzz3);
+    let byz3 = mul_p(&B3, &yz);
+    let xx3 = mais(&mais(&xx, &xx), &xx);
+    let bxx9 = mul_p(&B3, &xx3);
+    let x3 = menos(&mul_p(&xy, &yy_m), &mul_p(&byz3, &xz));
+    let y3 = mais(&mul_p(&yy_p, &yy_m), &mul_p(&bxx9, &xz));
+    let z3 = mais(&mul_p(&yz, &yy_p), &mul_p(&xx3, &xy));
     Ponto(x3, y3, z3)
 }
 
+/// k * P pela escada sempre-soma: a cada bit dobra E soma, e a mascara escolhe qual dos
+/// dois fica. O numero de contas nao depende de k -- o de antes somava so nos bits 1, e o
+/// tempo da multiplicacao contava quantos bits 1 a chave secreta tinha.
 fn multiplicar(k: &U, p: &Ponto) -> Ponto {
     let mut r = INFINITO;
     for i in (0..256).rev() {
-        r = dobrar(&r);
-        if (k[i / 64] >> (i % 64)) & 1 == 1 {
-            r = somar_pontos(&r, p);
-        }
+        r = somar_pontos(&r, &r);
+        let t = somar_pontos(&r, p);
+        let m = ((k[i / 64] >> (i % 64)) & 1).wrapping_neg();
+        r = Ponto(
+            escolher(m, &t.0, &r.0),
+            escolher(m, &t.1, &r.1),
+            escolher(m, &t.2, &r.2),
+        );
     }
     r
 }
@@ -260,8 +273,7 @@ fn afim(p: &Ponto) -> Option<(U, U)> {
         return None;
     }
     let zi = inv_p(&p.2);
-    let zi2 = mul_p(&zi, &zi);
-    Some((mul_p(&p.0, &zi2), mul_p(&p.1, &mul_p(&zi2, &zi))))
+    Some((mul_p(&p.0, &zi), mul_p(&p.1, &zi)))
 }
 
 fn g() -> Ponto {
@@ -307,24 +319,43 @@ fn levantar_x(x: &U) -> Option<Ponto> {
     Some(Ponto(*x, y, [1, 0, 0, 0]))
 }
 
-/// Chave publica (so o x, 32 bytes) da chave secreta.
-pub fn chave_publica(segredo: &[u8; 32]) -> Result<[u8; 32], String> {
+/// A chave secreta como escalar em [1, n-1].
+fn escalar(segredo: &[u8; 32]) -> Result<U, String> {
     let d = de_bytes(segredo);
     if zero(&d) || maior_ou_igual(&d, &N) {
         return Err("chave secreta fora de [1, n-1]".into());
     }
-    let (x, _) = afim(&multiplicar(&d, &g())).ok_or("ponto no infinito")?;
+    Ok(d)
+}
+
+/// Chave publica (so o x, 32 bytes) da chave secreta.
+pub fn chave_publica(segredo: &[u8; 32]) -> Result<[u8; 32], String> {
+    let (x, _) = afim(&multiplicar(&escalar(segredo)?, &g())).ok_or("ponto no infinito")?;
+    Ok(em_bytes(&x))
+}
+
+/// O x (32 bytes, SEM hash) de `segredo * P`, com P o ponto de x = `pk` e y par: o
+/// `secp256k1_ecdh` do NIP-44. A chave publica passa pelo `lift_x`, entao ponto fora da
+/// curva -- inclusive os da torcao, que dariam um subgrupo pequeno e vazariam a chave
+/// secreta aos pedacos -- volta erro antes de qualquer conta com o segredo.
+pub fn ecdh_x(segredo: &[u8; 32], pk: &[u8; 32]) -> Result<[u8; 32], String> {
+    let d = escalar(segredo)?;
+    let p = levantar_x(&de_bytes(pk)).ok_or("chave publica fora da curva")?;
+    let (x, _) = afim(&multiplicar(&d, &p)).ok_or("ponto no infinito")?;
     Ok(em_bytes(&x))
 }
 
 /// Assina `msg` (32 bytes, no Nostr o id do evento) com `aux` de 32 bytes.
 pub fn assinar(segredo: &[u8; 32], msg: &[u8; 32], aux: &[u8; 32]) -> Result<[u8; 64], String> {
-    let d0 = de_bytes(segredo);
-    if zero(&d0) || maior_ou_igual(&d0, &N) {
-        return Err("chave secreta fora de [1, n-1]".into());
-    }
+    assinar_msg(segredo, msg, aux)
+}
+
+/// O BIP-340 aceita mensagem de qualquer tamanho (vetores 15 a 18); o Nostr so usa 32.
+fn assinar_msg(segredo: &[u8; 32], msg: &[u8], aux: &[u8; 32]) -> Result<[u8; 64], String> {
+    let d0 = escalar(segredo)?;
     let (px, py) = afim(&multiplicar(&d0, &g())).ok_or("ponto no infinito")?;
-    let d = if par(&py) { d0 } else { subtrair(&N, &d0).0 };
+    // Negar ou nao por mascara: a paridade de y e funcao do segredo.
+    let d = escolher(mascara(par(&py)), &d0, &subtrair(&N, &d0).0);
     let a = hash_marcado("BIP0340/aux", &[aux]);
     let db = em_bytes(&d);
     let t: Vec<u8> = db.iter().zip(a.iter()).map(|(x, y)| x ^ y).collect();
@@ -337,7 +368,7 @@ pub fn assinar(segredo: &[u8; 32], msg: &[u8; 32], aux: &[u8; 32]) -> Result<[u8
         return Err("nonce zero".into());
     }
     let (rx, ry) = afim(&multiplicar(&k0, &g())).ok_or("ponto no infinito")?;
-    let k = if par(&ry) { k0 } else { subtrair(&N, &k0).0 };
+    let k = escolher(mascara(par(&ry)), &k0, &subtrair(&N, &k0).0);
     let rxb = em_bytes(&rx);
     let e = reduzir(
         &de_bytes(&hash_marcado("BIP0340/challenge", &[&rxb, &pxb, msg])),
@@ -406,40 +437,66 @@ mod tests {
         );
     }
 
-    /// Vetores 0 e 1 do `test-vectors.csv` do BIP-340.
+    /// Os 19 vetores do `test-vectors.csv` do BIP-340, copiado sem mexer do repositorio
+    /// `bitcoin/bips` (o sha256 do arquivo e conferido, para ninguem «ajustar» um vetor).
     #[test]
     fn assinatura_contra_os_vetores_do_bip_340() {
-        let casos = [
-            (
-                "0000000000000000000000000000000000000000000000000000000000000003",
-                "F9308A019258C31049344F85F89D5229B531C845836F99B08601F113BCE036F9",
-                "0000000000000000000000000000000000000000000000000000000000000000",
-                "0000000000000000000000000000000000000000000000000000000000000000",
-                "E907831F80848D1069A5371B402410364BDF1C5F8307B0084C55F1CE2DCA821525F66A4A85EA8B71E482A74F382D2CE5EBEEE8FDB2172F477DF4900D310536C0",
-            ),
-            (
-                "B7E151628AED2A6ABF7158809CF4F3C762E7160F38B4DA56A784D9045190CFEF",
-                "DFF1D77F2A671C5F36183726DB2341BE58FEAE1DA2DECED843240F7B502BA659",
-                "0000000000000000000000000000000000000000000000000000000000000001",
-                "243F6A8885A308D313198A2E03707344A4093822299F31D0082EFA98EC4E6C89",
-                "6896BD60EEAE296DB48A229FF71DFE071BDE413E6D43F917DC8DCF8C78DE33418906D11AC976ABCCB20B091292BFF4EA897EFCB639EA871CFA95F6DE339E4B0A",
-            ),
-        ];
-        for (sk, pk, aux, msg, sig) in casos {
-            let (sk, aux, msg) = (h32(sk), h32(aux), h32(msg));
-            assert_eq!(hex(&chave_publica(&sk).unwrap()).to_uppercase(), pk);
-            let s = assinar(&sk, &msg, &aux).unwrap();
-            assert_eq!(hex(&s).to_uppercase(), sig);
-            assert!(conferir(&h32(pk), &msg, &s));
-            let mut errada = s;
-            errada[63] ^= 1;
-            assert!(
-                !conferir(&h32(pk), &msg, &errada),
-                "assinatura mexida passou"
+        use sha2::{Digest, Sha256};
+        let csv = include_str!("../../tests/dados/nostr/bip340-test-vectors.csv");
+        assert_eq!(
+            hex(&Sha256::digest(csv.as_bytes())),
+            "34c9d1d9c3a88d524bc80778540dc43f8306ec249a7485293063c376db851c2d"
+        );
+        let mut n = 0;
+        for linha in csv.lines().skip(1) {
+            let c: Vec<&str> = linha.split(',').collect();
+            let (sk, pk, aux, msg, sig, ok) = (c[1], c[2], c[3], c[4], c[5], c[6] == "TRUE");
+            let msg = (0..msg.len() / 2)
+                .map(|i| u8::from_str_radix(&msg[i * 2..i * 2 + 2], 16).unwrap())
+                .collect::<Vec<u8>>();
+            let sig: [u8; 64] = de_hex(sig).unwrap();
+            if !sk.is_empty() {
+                let sk = h32(sk);
+                assert_eq!(hex(&chave_publica(&sk).unwrap()).to_uppercase(), pk);
+                let s = assinar_msg(&sk, &msg, &h32(aux)).unwrap();
+                assert_eq!(s, sig, "vetor {}", c[0]);
+            }
+            assert_eq!(
+                conferir(&h32(pk), &msg, &sig),
+                ok,
+                "vetor {}: {}",
+                c[0],
+                c[7]
             );
-            let mut outra = msg;
-            outra[0] ^= 1;
-            assert!(!conferir(&h32(pk), &outra, &s), "mensagem mexida passou");
+            n += 1;
         }
+        assert_eq!(n, 19);
+    }
+
+    /// A escada com a soma completa contra a soma repetida de G: 1G..40G pelos dois
+    /// caminhos, e 3G contra o ponto conhecido.
+    #[test]
+    fn escada_bate_com_a_soma_repetida() {
+        let mut acumulado = INFINITO;
+        for k in 1u64..=40 {
+            acumulado = somar_pontos(&acumulado, &g());
+            let a = afim(&acumulado).unwrap();
+            let b = afim(&multiplicar(&[k, 0, 0, 0], &g())).unwrap();
+            assert!(a == b, "{k}G diverge");
+        }
+        // n - 1 vezes G e -G: mesmo x, y oposto; n vezes G e o infinito.
+        let menos_um = subtrair(&N, &[1, 0, 0, 0]).0;
+        let (x, y) = afim(&multiplicar(&menos_um, &g())).unwrap();
+        assert!(x == GX && y == sub_mod(&[0; 4], &GY, &P));
+        assert!(afim(&multiplicar(&N, &g())).is_none());
+    }
+
+    #[test]
+    fn ecdh_e_simetrico_e_recusa_ponto_fora_da_curva() {
+        let (a, b) = (h32(&"11".repeat(32)), h32(&"22".repeat(32)));
+        let (pa, pb) = (chave_publica(&a).unwrap(), chave_publica(&b).unwrap());
+        assert_eq!(ecdh_x(&a, &pb).unwrap(), ecdh_x(&b, &pa).unwrap());
+        assert!(ecdh_x(&a, &[0xff; 32]).is_err());
+        assert!(ecdh_x(&[0; 32], &pb).is_err());
     }
 }

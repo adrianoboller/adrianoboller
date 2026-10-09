@@ -84,6 +84,23 @@ fn main() -> Result<()> {
         "db" => db_command(&args[1..])?,
         "agente" | "agent" => runtime()?.block_on(agente(&args[1..]))?,
         "servir" | "serve" => runtime()?.block_on(servir(&args[1..]))?,
+        // `phxclaw worker`: tira execucoes da fila do `servir --modo fila` (docs/N8N.md).
+        "worker" => runtime()?.block_on(worker(&args[1..]))?,
+        // `phxclaw fila senha`: a senha do PostgreSQL da fila vai do ambiente para o broker.
+        "fila" | "queue" => match args.get(1).map(String::as_str) {
+            Some("senha" | "password") => {
+                let raiz = pasta(&args[2..]);
+                let s = &phxclaw_agent::fila::SENHA;
+                let id = s.guardar_do_ambiente(&raiz).map_err(anyhow::Error::msg)?;
+                println!(
+                    "{} guardada no broker de {} (segredo {id}); servir --modo fila e worker a usam \
+quando fila.url nao traz senha",
+                    s.rotulo,
+                    s.pasta(&raiz).display()
+                );
+            }
+            _ => bail!("uso: phxclaw fila senha [--pasta DIR]"),
+        },
         "canal" | "channel" => runtime()?.block_on(canal(&args[1..]))?,
         "mcp-serve" => runtime()?.block_on(mcp_serve(&args[1..]))?,
         // `phxclaw mcp token|login NOME`: credencial dos MCP remotos para o broker da pasta.
@@ -103,6 +120,14 @@ fn main() -> Result<()> {
                     &args[1..],
                     &mut std::io::stdin().lock(),
                 ))
+                .map_err(anyhow::Error::msg)?
+        ),
+        // `phxclaw cofre vault-token|vault-secret-id|aws-segredo|aws-token-sessao|azure-segredo|
+        // gcp-conta`: a credencial BASE de um cofre externo (docs/N8N.md) vai da variavel do
+        // catalogo, no ambiente do comando, para o broker de <pasta>/cofres.
+        "cofre" => println!(
+            "{}",
+            phxclaw_agent::cofres::cli(&pasta(&args[1..]), &args[1..])
                 .map_err(anyhow::Error::msg)?
         ),
         "acp" => runtime()?.block_on(acp(&args[1..]))?,
@@ -525,6 +550,26 @@ async fn servir(args: &[String]) -> Result<()> {
     phxclaw_agent::metricas::ligar(
         phxclaw_agent::config::booleano_de("api.metricas").unwrap_or(false),
     );
+    ligar_otel(&raiz, "servir")?;
+    // `--modo fila`: as execucoes vao para o PostgreSQL e os `phxclaw worker` as rodam. O
+    // esquema se confere AGORA: servidor que aceita tarefa numa fila sem tabela so descobriria
+    // na primeira execucao.
+    match opcao(args, "--modo").as_deref() {
+        None | Some("normal") => {}
+        Some("fila" | "queue") => {
+            let f = phxclaw_agent::fila::Fila::do_config(&raiz)
+                .map_err(anyhow::Error::msg)?
+                .ok_or_else(|| {
+                    anyhow::anyhow!("--modo fila pede fila.url no config.json do operador")
+                })?;
+            f.conferir_esquema().map_err(anyhow::Error::msg)?;
+            phxclaw_agent::fila::ligar(state.store.root(), Arc::new(f));
+            println!(
+                "modo fila: as execucoes vao para o PostgreSQL; rode `phxclaw worker` para executa-las"
+            );
+        }
+        Some(m) => bail!("--modo desconhecido: {m} (normal | fila)"),
+    }
     if state.usuarios.ligado() {
         println!(
             "usuarios da API: {} (papeis e projetos)",
@@ -585,6 +630,76 @@ async fn servir(args: &[String]) -> Result<()> {
     // gatilhos e o canal DEPOIS da blindagem deixava o formulario sem moldura proibida (M5).
     let app = phxclaw_agent::api::servidor(state, std::iter::once(gatilhos).chain(rotas_do_canal));
     axum::serve(l, app).await?;
+    Ok(())
+}
+
+/// `phxclaw worker`: o mesmo agente do `servir` (a mesma `Montagem`, a mesma pasta), sem
+/// porta HTTP, tirando execucoes da fila ate o processo morrer.
+async fn worker(args: &[String]) -> Result<()> {
+    let raiz = pasta(args);
+    let store = TaskStore::new(raiz.join("tasks"))?;
+    let mut fila = phxclaw_agent::fila::Fila::do_config(&raiz)
+        .map_err(anyhow::Error::msg)?
+        .ok_or_else(|| anyhow::anyhow!("o worker pede fila.url no config.json do operador"))?;
+    if let Some(s) = opcao(args, "--prazo") {
+        fila.prazo = Duration::from_secs(s.parse::<u64>()?.max(1));
+    }
+    fila.conferir_esquema().map_err(anyhow::Error::msg)?;
+    let concorrencia = match opcao(args, "--concorrencia") {
+        Some(n) => n.parse::<usize>()?,
+        None => phxclaw_agent::config::inteiro_de("fila.concorrencia")
+            .and_then(|n| usize::try_from(n).ok())
+            .unwrap_or(4),
+    }
+    .max(1);
+    let nome = opcao(args, "--nome").unwrap_or_else(|| {
+        format!(
+            "{}:{}",
+            std::fs::read_to_string("/etc/hostname")
+                .map(|h| h.trim().to_string())
+                .unwrap_or_else(|_| "worker".into()),
+            std::process::id()
+        )
+    });
+    let m = Montagem::new(store.clone());
+    let factory: AgentFactory = Arc::new(move |modelo: &str| m.agent(modelo));
+    // Sem porta, o token nao protege nada aqui; o estado e o mesmo do `servir` para a
+    // execucao ser a mesma (webhook, modelo padrao, usuarios).
+    let state = estado_api(&raiz, store, factory, String::new())?;
+    phxclaw_agent::metricas::ligar(false);
+    ligar_otel(&raiz, "worker")?;
+    let prazo = fila.prazo;
+    println!(
+        "worker {nome}: {concorrencia} vaga(s), posse de {}s",
+        prazo.as_secs()
+    );
+    // Parar o worker e mata-lo: as execucoes em curso param de bater, a posse vence e outro
+    // worker as retoma (o fluxo pelo progresso gravado). Sem espera graciosa de proposito --
+    // o tokio do workspace nao traz `signal`, e o caminho da queda e o mesmo que ja se prova.
+    let (_tx, rx) = tokio::sync::watch::channel(false);
+    phxclaw_agent::fila::trabalhar(
+        state,
+        Arc::new(fila),
+        phxclaw_agent::fila::Worker {
+            nome: nome.clone(),
+            concorrencia,
+            ocioso: Duration::from_millis(500),
+        },
+        rx,
+        |l: &str| println!("{l}"),
+    )
+    .await;
+    println!("worker {nome}: parado");
+    Ok(())
+}
+
+/// O exportador OpenTelemetry do processo (`otel.rs`): desligado sem `otel.url`, e ai nada
+/// mais roda. Ligado, as metricas sobem pelo laco do intervalo.
+fn ligar_otel(raiz: &std::path::Path, papel: &str) -> Result<()> {
+    if let Some(c) = phxclaw_agent::otel::Config::do_config(papel).map_err(anyhow::Error::msg)? {
+        println!("OpenTelemetry: traces e metricas para {}", c.destino());
+        phxclaw_agent::otel::ligar(Some(c), raiz);
+    }
     Ok(())
 }
 
@@ -1110,19 +1225,71 @@ async fn subir_dispositivos(
 }
 
 /// `phxclaw fluxo exportar|importar --ambiente dev|prod`: o git dos fluxos (`fluxo_git`).
-/// Porta fina: a pasta de fluxos e o repositorio sao opcoes, e `--commit MSG` registra pelo
-/// `GitTool` de escrita do agente (o mesmo sandbox e a mesma varredura de segredos).
+/// Porta fina: a pasta de fluxos e o repositorio sao opcoes, `--commit MSG` registra pelo
+/// `GitTool` de escrita do agente (o mesmo sandbox e a mesma varredura de segredos), e
+/// `--push`/`--pull` falam com o remoto pelo mesmo git: o LOCAL do `--remoto` (padrao
+/// `origin` do `.git/config`), ou -- sem `--remoto` e com a chave `fluxos.git.remoto` -- o de
+/// REDE que o operador declarou, com a credencial `fluxos.git.credencial_nome`. Com
+/// `fluxos.git.ramo`, tudo isso no ramo da instancia (`fluxo_git::ligar_ramo`).
 async fn fluxo_git(args: &[String], exportar: bool) -> Result<()> {
     use phxclaw_agent::fluxo_git::{self, Ambiente, Efeito};
     let amb = Ambiente::ler(&opcao(args, "--ambiente").unwrap_or_default())
         .map_err(anyhow::Error::msg)?;
+    let remoto = opcao(args, "--remoto").unwrap_or_else(|| fluxo_git::REMOTO_PADRAO.into());
+    // O remoto de rede so da configuracao do operador, e so quando o comando nao nomeia um
+    // local: o `.git/config` do repositorio (escrevivel pelo modelo) nunca o escolhe.
+    let rede = match opcao(args, "--remoto") {
+        Some(_) => None,
+        None => phxclaw_agent::config::texto_de(fluxo_git::CHAVE_REMOTO),
+    };
+    // O ramo da instancia, conferido (ou criado) antes de qualquer git do comando.
+    let ramo = phxclaw_agent::config::texto_de(fluxo_git::CHAVE_RAMO);
+    let ligar_ramo = |repo: PathBuf| {
+        let ramo = ramo.clone();
+        async move {
+            if let Some(r) = ramo {
+                let bwrap = phxclaw_agent::arquivos::achar_bwrap()
+                    .ok_or_else(|| anyhow::anyhow!("sem bwrap o git do agente nao roda"))?;
+                fluxo_git::ligar_ramo(&phxclaw_agent::git::GitTool::escrita(bwrap), &repo, &r)
+                    .await
+                    .map_err(anyhow::Error::msg)?;
+            }
+            Ok::<(), anyhow::Error>(())
+        }
+    };
+    let remoto_de_rede = || async {
+        let url = rede.clone().unwrap_or_default();
+        let cred = phxclaw_agent::config::texto_de(fluxo_git::CHAVE_CREDENCIAL);
+        fluxo_git::remoto_de_rede(&pasta(args), &url, cred.as_deref())
+            .await
+            .map_err(anyhow::Error::msg)
+    };
+    let git_de_escrita = || -> Result<phxclaw_agent::git::GitTool> {
+        let bwrap = phxclaw_agent::arquivos::achar_bwrap()
+            .ok_or_else(|| anyhow::anyhow!("sem bwrap o git do agente nao roda"))?;
+        Ok(phxclaw_agent::git::GitTool::escrita(bwrap))
+    };
     let fluxos_dir = opcao(args, "--fluxos")
         .map(PathBuf::from)
         .unwrap_or_else(|| pasta(args).join("fluxos"));
     let repo = opcao(args, "--repo")
         .map(PathBuf::from)
         .unwrap_or_else(|| pasta(args).join(fluxo_git::PASTA_PADRAO));
+    ligar_ramo(repo.clone()).await?;
     if !exportar {
+        // O pull ANTES de ler: o que se importa e o que o remoto tem. Se o importar recusar
+        // depois (rascunho diferente sem --sobrescrever), o projeto fica como estava.
+        if args.iter().any(|a| a == "--pull") {
+            let v = match &rede {
+                Some(_) => {
+                    let r = remoto_de_rede().await?;
+                    fluxo_git::puxar_pela_rede(&git_de_escrita()?, &repo, &r).await
+                }
+                None => fluxo_git::puxar(&git_de_escrita()?, &repo, &remoto).await,
+            }
+            .map_err(anyhow::Error::msg)?;
+            println!("pull: {v}");
+        }
         let feitos = fluxo_git::importar(
             &repo,
             amb,
@@ -1165,14 +1332,72 @@ async fn fluxo_git(args: &[String], exportar: bool) -> Result<()> {
         amb.nome()
     );
     if let Some(msg) = opcao(args, "--commit") {
-        let bwrap = phxclaw_agent::arquivos::achar_bwrap()
-            .ok_or_else(|| anyhow::anyhow!("sem bwrap o git do agente nao roda"))?;
-        let g = phxclaw_agent::git::GitTool::escrita(bwrap);
-        let v = fluxo_git::registrar(&g, &repo, &msg)
+        let v = fluxo_git::registrar(&git_de_escrita()?, &repo, &msg)
             .await
             .map_err(anyhow::Error::msg)?;
         println!("{v}");
     }
+    if args.iter().any(|a| a == "--push") {
+        let v = match &rede {
+            Some(_) => {
+                let r = remoto_de_rede().await?;
+                fluxo_git::empurrar_pela_rede(&git_de_escrita()?, &repo, &r).await
+            }
+            None => fluxo_git::empurrar(&git_de_escrita()?, &repo, &remoto).await,
+        }
+        .map_err(anyhow::Error::msg)?;
+        println!("push: {v}");
+    }
+    Ok(())
+}
+
+/// `phxclaw fluxo criar --descricao "..."`: o assistente (`fluxo_assistente`) pede o fluxo
+/// ao modelo do agente, confere pelo motor em laco e grava RASCUNHO na pasta de fluxos.
+async fn fluxo_criar(
+    args: &[String],
+    descricao: &str,
+    agente: &phxclaw_agent::Agent,
+) -> Result<()> {
+    use phxclaw_agent::fluxo_assistente::{self, Pedido};
+    let tentativas = match opcao(args, "--tentativas") {
+        Some(n) => n.parse().map_err(|_| {
+            anyhow::anyhow!(
+                "--tentativas: numero de 1 a {}",
+                fluxo_assistente::TETO_TENTATIVAS
+            )
+        })?,
+        None => fluxo_assistente::TENTATIVAS_PADRAO,
+    };
+    let pasta_dos_fluxos = pasta(args).join("fluxos");
+    let destino = opcao(args, "--destino").map(PathBuf::from);
+    let r = fluxo_assistente::criar(
+        agente.llm.as_ref(),
+        Pedido {
+            descricao,
+            pasta: &pasta_dos_fluxos,
+            destino: destino.as_deref(),
+            tentativas,
+        },
+    )
+    .await
+    .map_err(|f| anyhow::anyhow!("{f}"))?;
+    println!(
+        "rascunho {} ({} passos) em {} -- {} tentativa(s); nada foi publicado",
+        r.nome,
+        r.passos,
+        r.arquivo.display(),
+        r.tentativas
+    );
+    if !r.credenciais.is_empty() {
+        println!(
+            "guarde no broker antes de rodar (so o nome vem no fluxo): {}",
+            r.credenciais.join(", ")
+        );
+    }
+    println!(
+        "revise, rode com `phxclaw fluxo rodar {}` e publique com `phxclaw fluxo publicar`",
+        r.arquivo.display()
+    );
     Ok(())
 }
 
@@ -1187,8 +1412,10 @@ async fn fluxo(args: &[String]) -> Result<()> {
 ARQ.json PASSO | podar [--dias N] [--max N] | exportar ARQ.json [--saida PACOTE.json] | importar \
 PACOTE.json DESTINO.json | listar [DIR] [--etiqueta E] [--subpasta P] | modelos | usar MODELO \
 DESTINO.json | publicar ARQ.json [--nota T] | versoes ARQ.json | voltar ARQ.json N | restaurar \
-ARQ.json N [--forcar] | exportar --ambiente dev|prod [--fluxos DIR] [--repo DIR] [--commit MSG] | \
-importar --ambiente dev|prod [--fluxos DIR] [--repo DIR] [--sobrescrever]  [--modelo M] [--pasta DIR]";
+ARQ.json N [--forcar] | exportar --ambiente dev|prod [--fluxos DIR] [--repo DIR] [--commit MSG] \
+[--push [--remoto R]] | importar --ambiente dev|prod [--fluxos DIR] [--repo DIR] [--pull [--remoto R]] \
+[--sobrescrever] | criar --descricao TEXTO [--destino ARQ.json] [--tentativas N]  [--modelo M] \
+[--pasta DIR]";
     let sub = args.first().map(String::as_str).unwrap_or_default();
     let posicional = |i: usize| -> Option<&String> { args.get(i).filter(|a| !a.starts_with("--")) };
     match sub {
@@ -1423,6 +1650,12 @@ importar --ambiente dev|prod [--fluxos DIR] [--repo DIR] [--sobrescrever]  [--mo
             .agent(&modelo)
             .map_err(anyhow::Error::msg)
     };
+    if matches!(sub, "criar" | "create") {
+        // O argumento antes do modelo: a falta dele nao pode virar erro de provedor.
+        let descricao = opcao(args, "--descricao")
+            .ok_or_else(|| anyhow::anyhow!("falta --descricao \"o que o fluxo faz\""))?;
+        return fluxo_criar(args, &descricao, &agente()?).await;
+    }
     let r = match sub {
         "rodar" | "run" => {
             let Some(arq) = posicional(1) else {

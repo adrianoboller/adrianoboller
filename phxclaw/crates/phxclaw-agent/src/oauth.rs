@@ -235,21 +235,53 @@ pub async fn esperar_codigo(
     }
 }
 
-/// O que o endpoint de token devolve, sem o valor: os tokens vao direto para o broker.
-struct Resposta {
-    acesso: SecretValue,
+/// O que o endpoint de token devolve. Os MCP e o no HTTP guardam os tokens no broker; o
+/// cofre externo (`cofres/`) os segura so em memoria.
+pub(crate) struct Resposta {
+    pub(crate) acesso: SecretValue,
     renovacao: Option<SecretValue>,
-    validade: Duration,
+    pub(crate) validade: Duration,
 }
 
-/// Um POST ao endpoint de token (RFC 6749 §4.1.3 e §6). Os segredos do corpo saem de todo
-/// erro: servidor de token que ecoa o pedido no erro devolveria o refresh token ao log.
+/// Um POST ao endpoint de token (RFC 6749 §4.1.3 e §6) pelo cliente HTTP comum.
 async fn pedir_token(
+    cfg: &ConfigOauth,
+    form: Vec<(String, String)>,
+    cliente: Option<&str>,
+) -> Result<Resposta, String> {
+    pedir_token_por(cfg, form, cliente, |spec| async move {
+        http_request(&spec).await.map_err(|e| e.to_string())
+    })
+    .await
+}
+
+/// O formulario do client credentials (RFC 6749 §4.4): um so para o `Oauth::renovar` e para
+/// o cofre do Azure, que nao podem divergir de `grant_type` nem de `scope`.
+pub(crate) fn form_cliente(cfg: &ConfigOauth) -> Vec<(String, String)> {
+    let mut form = vec![("grant_type".into(), "client_credentials".into())];
+    if !cfg.escopos.is_empty() {
+        form.push(("scope".into(), cfg.escopos.join(" ")));
+    }
+    form
+}
+
+/// O pedido ao endpoint de token por um `enviar` dado: o cliente comum, ou o cliente preso ao
+/// destino declarado dos cofres externos (`cofres::Saida`). Os segredos do corpo saem de todo
+/// erro: servidor de token que ecoa o pedido no erro devolveria o refresh token ao log. Sem
+/// `cliente_id` (a asserção JWT da conta de servico do GCP, RFC 7523), o `client_id` nao vai.
+pub(crate) async fn pedir_token_por<F, Fut>(
     cfg: &ConfigOauth,
     mut form: Vec<(String, String)>,
     cliente: Option<&str>,
-) -> Result<Resposta, String> {
-    form.push(("client_id".into(), cfg.cliente_id.clone()));
+    enviar: F,
+) -> Result<Resposta, String>
+where
+    F: FnOnce(HttpRequestSpec) -> Fut,
+    Fut: std::future::Future<Output = Result<phxclaw_http_client::HttpResult, String>>,
+{
+    if !cfg.cliente_id.is_empty() {
+        form.push(("client_id".into(), cfg.cliente_id.clone()));
+    }
     if let Some(s) = cliente {
         form.push(("client_secret".into(), s.to_string()));
     }
@@ -258,7 +290,7 @@ async fn pedir_token(
         .filter(|(k, _)| {
             matches!(
                 k.as_str(),
-                "code" | "code_verifier" | "refresh_token" | "client_secret"
+                "code" | "code_verifier" | "refresh_token" | "client_secret" | "assertion"
             )
         })
         .map(|(_, v)| SecretValue::new(v.clone()))
@@ -271,11 +303,9 @@ async fn pedir_token(
     spec.headers
         .insert("Accept".into(), "application/json".into());
     spec.user_agent = Some(concat!("PhxClaw/", env!("CARGO_PKG_VERSION")).into());
-    let r = http_request(&spec)
+    let r = enviar(spec)
         .await
-        .map_err(|e| limpo(format!("endpoint de token: {e}")));
-    drop(spec);
-    let r = r?;
+        .map_err(|e| limpo(format!("endpoint de token: {e}")))?;
     let corpo = r.text().unwrap_or_default();
     let v: Value = serde_json::from_str(&corpo).unwrap_or(Value::Null);
     if r.status != 200 {
@@ -717,11 +747,12 @@ impl Oauth {
         if self.cfg.concessao == Concessao::Cliente {
             // Client credentials: o acesso sai do segredo do cliente, e nao ha refresh
             // token -- quando vence, pede-se outro do mesmo jeito.
-            let mut form = vec![("grant_type".into(), "client_credentials".into())];
-            if !self.cfg.escopos.is_empty() {
-                form.push(("scope".into(), self.cfg.escopos.join(" ")));
-            }
-            let r = pedir_token(&self.cfg, form, cliente.as_ref().map(|c| c.expor())).await?;
+            let r = pedir_token(
+                &self.cfg,
+                form_cliente(&self.cfg),
+                cliente.as_ref().map(|c| c.expor()),
+            )
+            .await?;
             guardar(&self.broker, &self.alvo, Tipo::Acesso, r.acesso)?;
             return Ok(Instant::now() + r.validade);
         }

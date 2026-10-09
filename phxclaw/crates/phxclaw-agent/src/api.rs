@@ -121,6 +121,8 @@ pub fn servidor(state: ApiState, extras: impl IntoIterator<Item = Router>) -> Ro
         .merge(crate::mcp::rotas())
         // A tela Fluxos (editor em grafo): listar, ler, validar, gravar e rodar `--ate`.
         .merge(crate::fluxos_tela::rotas())
+        // O painel de insights (execucoes por estado, p50/p95, custo, falhas), do disco.
+        .merge(crate::insights::rotas())
         // O portao do RBAC, por ULTIMO: `route_layer` cobre so as rotas que ja existem, e e
         // assim que nenhuma das acima escapa dele. Sem usuarios, ele nao faz nada.
         .route_layer(axum::middleware::from_fn_with_state(
@@ -373,22 +375,34 @@ fn criar_tarefa_em(
     let id = t.id.clone();
     let st = s.clone();
     let fim = if n.plan_first {
-        tokio::spawn(async move {
-            let mut t = t;
-            match agente.plan(&mut t).await {
-                Ok(()) => t.status = TaskStatus::AwaitingApproval,
-                Err(e) => {
-                    t.status = TaskStatus::Failed;
-                    t.error = Some(format!("plano: {e}"));
-                }
+        // Modo fila (`fila.rs`): o plano tambem e execucao (chama o modelo), e vai ao worker
+        // pela mesma `planejar_aqui`. Recusa da fila deixa a tarefa FALHA dizendo por que.
+        match crate::fila::da_instancia(s.store.root()) {
+            Some(f) => {
+                crate::fila::enfileirar_ou_falhar(&f, &s.store, t, crate::fila::Trabalho::Plano)
+                    .map_err(|e| recusa(StatusCode::SERVICE_UNAVAILABLE, e))?
             }
-            let _ = st.store.save(&t);
-            t
-        })
+            None => tokio::spawn(planejar_aqui(st, agente, t)),
+        }
     } else {
-        executar(st, agente, t)
+        despachar(st, agente, t).map_err(|e| recusa(StatusCode::SERVICE_UNAVAILABLE, e))?
     };
     Ok(Criada { id, fim })
+}
+
+/// O plano da tarefa (Plan Mode), aqui neste processo: o `criar_tarefa` sem fila e o worker
+/// da fila passam por esta, e por isso o plano e um so.
+pub async fn planejar_aqui(s: ApiState, agente: Agent, t: Task) -> Task {
+    let mut t = t;
+    match agente.plan(&mut t).await {
+        Ok(()) => t.status = TaskStatus::AwaitingApproval,
+        Err(e) => {
+            t.status = TaskStatus::Failed;
+            t.error = Some(format!("plano: {e}"));
+        }
+    }
+    let _ = s.store.save(&t);
+    t
 }
 
 /// O UNICO caminho de disparar um FLUXO gravado de fora (agenda, gatilho de arquivo,
@@ -476,61 +490,121 @@ pub fn criar_fluxo_ate(
         ));
     }
     let id = mae.id.clone();
+    // Modo fila: a definicao viaja na fila (o arquivo pode mudar ate um worker pegar), e o
+    // worker roda pela MESMA `rodar_fluxo_aqui`. Recusa da fila: a tarefa fica FALHA.
+    if let Some(fila) = crate::fila::da_instancia(s.store.root()) {
+        let fim = crate::fila::enfileirar_ou_falhar(
+            &fila,
+            &s.store,
+            mae,
+            crate::fila::Trabalho::Fluxo {
+                fluxo: serde_json::to_value(&f).unwrap_or_default(),
+                entrada,
+                ate,
+            },
+        )
+        .map_err(|e| recusa(StatusCode::SERVICE_UNAVAILABLE, e))?;
+        return Ok(Criada { id, fim });
+    }
     let store = s.store.clone();
     let fim = tokio::spawn(async move {
-        let id = mae.id.clone();
-        let r = crate::fluxos::rodar_com(
-            &agente,
-            &f,
+        rodar_fluxo_aqui(&store, &agente, &f, mae, entrada, ate.as_deref(), false).await
+    });
+    Ok(Criada { id, fim })
+}
+
+/// Uma execucao de fluxo ja criada (a tarefa-mae no disco), NESTE processo, ate parar: o
+/// disparo sem fila e o worker da fila passam por esta. `retomar` = a posse anterior desta
+/// execucao venceu no meio (worker morto): o que terminou bem nao roda de novo, pelo
+/// progresso que o motor grava a cada onda (`fluxos::retomar`).
+pub async fn rodar_fluxo_aqui(
+    store: &crate::tarefa::TaskStore,
+    agente: &Agent,
+    f: &crate::fluxos::Fluxo,
+    mae: Task,
+    entrada: Vec<Value>,
+    ate: Option<&str>,
+    retomar: bool,
+) -> Task {
+    let id = mae.id.clone();
+    let r = if retomar {
+        crate::fluxos::rodar_com(
+            agente,
+            f,
             crate::fluxos::Execucao {
+                retomada: Some(&id),
                 entrada,
-                mae: Some(mae),
-                ate: ate.as_deref(),
+                ate,
                 ..crate::fluxos::Execucao::default()
             },
         )
-        .await;
-        let fim = store.load(&id);
-        crate::metricas::GLOBAL.fim_de_fluxo(|| match (&r, &fim) {
-            (Err(_), Ok(t)) => Some(crate::metricas::FimDeFluxo {
-                estado: TaskStatus::Failed,
-                custo: crate::custo::total(t),
-            }),
-            (Err(_), _) => Some(crate::metricas::FimDeFluxo {
-                estado: TaskStatus::Failed,
-                custo: None,
-            }),
-            (Ok(_), Ok(t)) => Some(crate::metricas::FimDeFluxo::de(t)),
-            _ => None,
-        });
-        match fim {
-            Ok(mut t) => {
-                if let Err(e) = r {
-                    // Recusa antes do primeiro passo (ciclo, variavel sem config): a tarefa
-                    // ja esta no disco e nao pode ficar `Pending` para sempre.
-                    t.status = TaskStatus::Failed;
-                    t.error = Some(e);
-                    let _ = store.save(&t);
-                }
-                t
-            }
-            Err(e) => {
-                let mut t = Task::new(format!("{}?", crate::fluxos::PREFIXO_TAREFA), "");
-                t.id = id;
-                t.status = TaskStatus::Failed;
-                t.error = Some(format!("tarefa do fluxo sumiu do disco: {e}"));
-                t
-            }
-        }
+        .await
+    } else {
+        crate::fluxos::rodar_com(
+            agente,
+            f,
+            crate::fluxos::Execucao {
+                entrada,
+                mae: Some(mae),
+                ate,
+                ..crate::fluxos::Execucao::default()
+            },
+        )
+        .await
+    };
+    let fim = store.load(&id);
+    crate::metricas::GLOBAL.fim_de_fluxo(|| match (&r, &fim) {
+        (Err(_), Ok(t)) => Some(crate::metricas::FimDeFluxo {
+            estado: TaskStatus::Failed,
+            custo: crate::custo::total(t),
+        }),
+        (Err(_), _) => Some(crate::metricas::FimDeFluxo {
+            estado: TaskStatus::Failed,
+            custo: None,
+        }),
+        (Ok(_), Ok(t)) => Some(crate::metricas::FimDeFluxo::de(t)),
+        _ => None,
     });
-    Ok(Criada { id, fim })
+    crate::otel::GLOBAL.exportar_tarefa(store, &id);
+    match fim {
+        Ok(mut t) => {
+            if let Err(e) = r {
+                // Recusa antes do primeiro passo (ciclo, variavel sem config): a tarefa
+                // ja esta no disco e nao pode ficar `Pending` para sempre.
+                t.status = TaskStatus::Failed;
+                t.error = Some(e);
+                let _ = store.save(&t);
+            }
+            t
+        }
+        Err(e) => {
+            let mut t = Task::new(format!("{}?", crate::fluxos::PREFIXO_TAREFA), "");
+            t.id = id;
+            t.status = TaskStatus::Failed;
+            t.error = Some(format!("tarefa do fluxo sumiu do disco: {e}"));
+            t
+        }
+    }
 }
 
 /// Retoma em segundo plano um fluxo parado numa espera, SO pelo disco
 /// (`fluxos::retomar_do_disco`): e o caminho da resposta, do webhook de retomada e da espera
 /// de tempo que venceu. A recusa antes do primeiro passo (definicao trocada, arquivo que
 /// sumiu) vira `Failed` com o motivo: a tarefa nao fica esperando o que nunca vem.
+///
+/// Em modo fila, a retomada vai ao worker (a chave de idempotencia e a do progresso gravado,
+/// entao o laco que acorda a mesma espera a cada volta nao enfileira duas); o handle
+/// devolvido termina quando ela entra na fila, nao quando o worker termina.
 pub fn retomar_fluxo(s: &ApiState, id: &str) -> Result<tokio::task::JoinHandle<()>, Recusa> {
+    let falha = |e: String| Recusa {
+        status: StatusCode::SERVICE_UNAVAILABLE,
+        erro: e,
+        retry_after: None,
+    };
+    if let Some(fila) = crate::fila::da_instancia(s.store.root()) {
+        crate::fila::enfileirar_retomada(&fila, &s.store, id).map_err(falha)?;
+        return Ok(tokio::spawn(async {}));
+    }
     let agente = (s.factory)(&s.default_model).map_err(|e| Recusa {
         status: StatusCode::INTERNAL_SERVER_ERROR,
         erro: e,
@@ -539,29 +613,35 @@ pub fn retomar_fluxo(s: &ApiState, id: &str) -> Result<tokio::task::JoinHandle<(
     let agente = crate::metricas::GLOBAL.medindo(agente);
     let (store, id) = (s.store.clone(), id.to_string());
     Ok(tokio::spawn(async move {
-        let r = crate::fluxos::retomar_do_disco(&agente, &id).await;
-        // A retomada que ja corre (a resposta e o laco do servidor chegando juntos) nao e
-        // falha: a outra termina o trabalho. Decidido pelo TIPO, nunca pela frase.
-        if let Err(crate::fluxos::FalhaDaRetomada::Recusada(e)) = &r
-            && let Ok(mut t) = store.load(&id)
-            && t.status == TaskStatus::AwaitingInput
-        {
-            t.status = TaskStatus::Failed;
-            t.error = Some(e.clone());
-            t.updated_at = Utc::now();
-            let _ = store.save(&t);
-        }
-        // Caminho irmao do disparo (`criar_fluxo_ate`): a retomada tambem e uma execucao de
-        // fluxo e conta pelo estado em que parou -- menos a que nem comecou porque a outra
-        // ja corria, que nao executou nada.
-        crate::metricas::GLOBAL.fim_de_fluxo(|| match &r {
-            Err(crate::fluxos::FalhaDaRetomada::JaEmCurso(_)) => None,
-            _ => store
-                .load(&id)
-                .ok()
-                .map(|t| crate::metricas::FimDeFluxo::de(&t)),
-        });
+        retomar_fluxo_aqui(&store, &agente, &id).await;
     }))
+}
+
+/// A retomada de uma espera, NESTE processo: o caminho sem fila e o do worker.
+pub async fn retomar_fluxo_aqui(store: &crate::tarefa::TaskStore, agente: &Agent, id: &str) {
+    let r = crate::fluxos::retomar_do_disco(agente, id).await;
+    // A retomada que ja corre (a resposta e o laco do servidor chegando juntos) nao e
+    // falha: a outra termina o trabalho. Decidido pelo TIPO, nunca pela frase.
+    if let Err(crate::fluxos::FalhaDaRetomada::Recusada(e)) = &r
+        && let Ok(mut t) = store.load(id)
+        && t.status == TaskStatus::AwaitingInput
+    {
+        t.status = TaskStatus::Failed;
+        t.error = Some(e.clone());
+        t.updated_at = Utc::now();
+        let _ = store.save(&t);
+    }
+    // Caminho irmao do disparo (`criar_fluxo_ate`): a retomada tambem e uma execucao de
+    // fluxo e conta pelo estado em que parou -- menos a que nem comecou porque a outra
+    // ja corria, que nao executou nada.
+    crate::metricas::GLOBAL.fim_de_fluxo(|| match &r {
+        Err(crate::fluxos::FalhaDaRetomada::JaEmCurso(_)) => None,
+        _ => store
+            .load(id)
+            .ok()
+            .map(|t| crate::metricas::FimDeFluxo::de(&t)),
+    });
+    crate::otel::GLOBAL.exportar_tarefa(store, id);
 }
 
 /// A manutencao dos fluxos, no laco do servidor (o mesmo da agenda): retoma as esperas de
@@ -593,8 +673,36 @@ pub fn manter_fluxos(s: &ApiState) -> Vec<tokio::task::JoinHandle<()>> {
     v
 }
 
-/// Roda em segundo plano, registra o cancelamento e chama o webhook no fim.
+/// Roda a tarefa: no worker da fila quando a instancia esta em modo fila, aqui senao. A
+/// recusa da fila ja deixou a tarefa FALHA no disco dizendo por que; quem nao tem como
+/// recusar (aprovar, agenda) recebe o fim dela.
 pub fn executar(s: ApiState, agente: Agent, t: Task) -> tokio::task::JoinHandle<Task> {
+    let (store, id) = (s.store.clone(), t.id.clone());
+    despachar(s, agente, t).unwrap_or_else(|_| {
+        tokio::spawn(async move {
+            store.load(&id).unwrap_or_else(|_| {
+                let mut t = Task::new("?", "");
+                t.id = id;
+                t.status = TaskStatus::Failed;
+                t
+            })
+        })
+    })
+}
+
+/// A UNICA decisao «fila ou aqui» da tarefa de objetivo: o resto do caminho e o mesmo.
+fn despachar(s: ApiState, agente: Agent, t: Task) -> Result<tokio::task::JoinHandle<Task>, String> {
+    match crate::fila::da_instancia(s.store.root()) {
+        Some(f) => {
+            crate::fila::enfileirar_ou_falhar(&f, &s.store, t, crate::fila::Trabalho::Tarefa)
+        }
+        None => Ok(executar_aqui(s, agente, t)),
+    }
+}
+
+/// Roda em segundo plano NESTE processo, registra o cancelamento e chama o webhook no fim.
+/// E o caminho sem fila e o do worker da fila (`fila.rs`): a execucao e uma so.
+pub fn executar_aqui(s: ApiState, agente: Agent, t: Task) -> tokio::task::JoinHandle<Task> {
     // O interruptor das metricas vem antes de tudo: desligado, nem o relogio se le.
     let m = &crate::metricas::GLOBAL;
     let agente = m.medindo(agente);
@@ -609,6 +717,8 @@ pub fn executar(s: ApiState, agente: Agent, t: Task) -> tokio::task::JoinHandle<
         let fim = agente.run(t, &cancel, &NoObserver).await;
         s.running.lock().unwrap().remove(&id);
         m.fim_de_tarefa(|| crate::metricas::FimDeTarefa::de(&fim, inicio));
+        // O trace, so com `otel.url` (o interruptor e a primeira coisa la dentro).
+        crate::otel::GLOBAL.exportar_tarefa(&s.store, &id);
         if let Some(w) = fim.webhook.clone() {
             chamar_webhook(&s, &w, &fim).await;
         }
@@ -705,6 +815,19 @@ async fn editar_plano(
     Ok(Json(t).into_response())
 }
 
+/// O agente que executa uma tarefa ja gravada: o modelo dela e, se ela nasceu com `gravar`,
+/// a gravacao continuada (o cabecalho ja esta no disco). O `aprovar` e o worker da fila
+/// passam por aqui -- caminho irmao do `criar_tarefa_com`, que abre a gravacao.
+pub fn agente_da_tarefa(s: &ApiState, t: &Task) -> Result<Agent, String> {
+    let agente = (s.factory)(&t.model)?;
+    let arq = s.store.dir(&t.id).join(ARQUIVO_DE_GRAVACAO);
+    if !arq.exists() {
+        return Ok(agente);
+    }
+    let g = crate::gravacao::Gravador::continuar(&arq).map_err(|e| format!("gravacao: {e}"))?;
+    Ok(crate::gravacao::gravando(agente, &g))
+}
+
 async fn aprovar(State(s): State<ApiState>, h: HeaderMap, Path(id): Path<String>) -> Resp {
     auth(&s, &h)?;
     let t = carregar(&s, &id)?;
@@ -714,18 +837,8 @@ async fn aprovar(State(s): State<ApiState>, h: HeaderMap, Path(id): Path<String>
             "tarefa nao esta esperando aprovacao",
         ));
     }
-    let agente = (s.factory)(&t.model).map_err(|e| erro(StatusCode::BAD_REQUEST, e))?;
-    // Caminho irmao do `criar_tarefa_com`: tarefa criada com `gravar` e plano tem o
-    // cabecalho no disco, e e aqui que a execucao comeca.
-    let arq = s.store.dir(&id).join(ARQUIVO_DE_GRAVACAO);
-    let agente = if arq.exists() {
-        let g = crate::gravacao::Gravador::continuar(&arq)
-            .map_err(|e| erro(StatusCode::INTERNAL_SERVER_ERROR, format!("gravacao: {e}")))?;
-        crate::gravacao::gravando(agente, &g)
-    } else {
-        agente
-    };
-    executar(s.clone(), agente, t);
+    let agente = agente_da_tarefa(&s, &t).map_err(|e| erro(StatusCode::BAD_REQUEST, e))?;
+    despachar(s.clone(), agente, t).map_err(|e| erro(StatusCode::SERVICE_UNAVAILABLE, e))?;
     Ok((
         StatusCode::ACCEPTED,
         Json(json!({"id": id, "status": "running"})),
@@ -808,7 +921,21 @@ async fn cancelar(State(s): State<ApiState>, h: HeaderMap, Path(id): Path<String
     if t.status.is_final() {
         return Err(erro(StatusCode::CONFLICT, "tarefa ja terminou"));
     }
-    // plano esperando aprovacao: cancela direto
+    // Modo fila: a tarefa roda (ou espera) num worker. A que nao comecou sai da fila aqui;
+    // a que corre recebe o pedido pelo batimento do worker, que aciona o MESMO `CancelFlag`.
+    if let Some(f) = crate::fila::da_instancia(s.store.root()) {
+        match crate::fila::cancelar(&f, &t).map_err(|e| erro(StatusCode::SERVICE_UNAVAILABLE, e))? {
+            crate::fila::Cancelamento::Pedido => {
+                return Ok((
+                    StatusCode::ACCEPTED,
+                    Json(json!({"id": id, "status": "cancelling"})),
+                )
+                    .into_response());
+            }
+            crate::fila::Cancelamento::AntesDeComecar | crate::fila::Cancelamento::ForaDaFila => {}
+        }
+    }
+    // plano esperando aprovacao (ou execucao que saiu da fila antes de comecar): cancela direto
     t.status = TaskStatus::Cancelled;
     t.updated_at = Utc::now();
     let _ = s.store.save(&t);

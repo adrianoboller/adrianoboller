@@ -239,6 +239,35 @@ pub const ROTAS: &[Rota] = &[
         None,
     ),
     r(
+        "GET",
+        "/v1/ide/dobras",
+        "Texto e regioes dobraveis de um arquivo do projeto (LSP, chaves ou indentacao)",
+        "consulta: arquivo, prazo?",
+        None,
+    ),
+    r(
+        "POST",
+        "/v1/ide/compartilhar",
+        "Compartilha o terminal do IDE aberto (convite de leitura, expira, teto de convidados)",
+        "corpo: {expira_em_s?, max_convidados?, escrita?}",
+        None,
+    ),
+    r(
+        "POST",
+        "/v1/ide/compartilhar/revogar",
+        "Revoga um convidado ou o compartilhamento inteiro",
+        "corpo: {convidado?}",
+        None,
+    ),
+    Rota {
+        metodo: "GET",
+        caminho: "/v1/ide/compartilhado",
+        resumo: "Terminal compartilhado, lado do convidado",
+        parametros: "",
+        equivalente: None,
+        forma: Forma::WebSocket("fio do convidado: o convite vai na primeira mensagem"),
+    },
+    r(
         "POST",
         "/v1/ide/completar",
         "Completacao de codigo pelo modelo",
@@ -311,6 +340,21 @@ pub const ROTAS: &[Rota] = &[
         "/v1/fluxos/rodar",
         "Roda um fluxo (com --ate)",
         "corpo: {nome, ate?, orcamento?}",
+        None,
+    ),
+    r(
+        "POST",
+        "/v1/fluxos/assistente",
+        "Monta um fluxo pela descricao e grava rascunho",
+        "corpo: {descricao, tentativas?}",
+        None,
+    ),
+    // --- insights::rotas ---
+    r(
+        "GET",
+        "/v1/insights",
+        "Insights: estado, p50/p95, custo, falhas, por fluxo e dia",
+        "consulta: periodo (24h|7d|30d|tudo), fluxo",
         None,
     ),
     // --- gatilhos::router (juntado pelo `servir`) ---

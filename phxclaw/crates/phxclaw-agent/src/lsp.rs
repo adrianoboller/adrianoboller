@@ -45,6 +45,7 @@ const METODOS: &[&str] = &[
     "textDocument/definition",
     "textDocument/references",
     "textDocument/documentSymbol",
+    "textDocument/foldingRange",
     "textDocument/hover",
     "workspace/symbol",
     "shutdown",
@@ -287,7 +288,10 @@ impl Lsp {
                             "textDocument": {
                                 "diagnostic": {"dynamicRegistration": false},
                                 "hover": {"contentFormat": ["plaintext", "markdown"]},
-                                "documentSymbol": {"hierarchicalDocumentSymbolSupport": true}
+                                "documentSymbol": {"hierarchicalDocumentSymbolSupport": true},
+                                // So linhas: quem dobra e a tela do IDE, que esconde linha
+                                // inteira; coluna de inicio e fim nao teriam onde cair.
+                                "foldingRange": {"lineFoldingOnly": true}
                             },
                             "experimental": {"serverStatusNotification": true}
                         },
@@ -376,6 +380,33 @@ impl Lsp {
         rel: &str,
         prazo: Duration,
     ) -> Result<Option<Value>, ToolError> {
+        self.pedido_do_ide(workdir, rel, "textDocument/documentSymbol", prazo)
+            .await
+    }
+
+    /// As regioes dobraveis do arquivo (`textDocument/foldingRange`, JSON cru), para o
+    /// painel de leitura do IDE. Mesma sessao `ide` e mesmo `Ok(None)` dos simbolos: quem
+    /// chama cai na reserva por chaves/indentacao e diz que caiu.
+    pub async fn dobras_do_arquivo(
+        &self,
+        workdir: &Path,
+        rel: &str,
+        prazo: Duration,
+    ) -> Result<Option<Value>, ToolError> {
+        self.pedido_do_ide(workdir, rel, "textDocument/foldingRange", prazo)
+            .await
+    }
+
+    /// Um pedido da tela sobre UM documento: o servidor da extensao, o caminho pelo
+    /// `confine`, a sessao `ide` e o texto do disco sincronizado antes. Os dois pedidos da
+    /// tela passam por aqui para a sincronizacao e o confinamento nao se escreverem duas vezes.
+    async fn pedido_do_ide(
+        &self,
+        workdir: &Path,
+        rel: &str,
+        metodo: &str,
+        prazo: Duration,
+    ) -> Result<Option<Value>, ToolError> {
         let sv = self
             .servidor_de(rel)
             .cloned()
@@ -386,7 +417,7 @@ impl Lsp {
         sincronizar(&mut s, workdir, &rel).await?;
         pedir_pronto(
             &mut s,
-            "textDocument/documentSymbol",
+            metodo,
             json!({"textDocument": {"uri": uri_no_sandbox(&rel)}}),
             prazo,
         )

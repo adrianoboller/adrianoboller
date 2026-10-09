@@ -966,6 +966,85 @@ const FIXAS: &[L] = &[
         "phxclaw xai chave",
         Some(("xai", "xai", "xai-chave")),
     ),
+    // --- modo fila (`phxclaw servir --modo fila` + `phxclaw worker`; docs/N8N.md) ---
+    c(
+        "fila.url",
+        "PHXCLAW_FILA_URL",
+        T,
+        None,
+        (
+            "PostgreSQL da fila de execuções (postgresql://usuario@host:porta/banco); a senha vai pelo broker (phxclaw fila senha)",
+            "PostgreSQL of the execution queue (postgresql://user@host:port/db); the password goes through the broker (the queue password command)",
+        ),
+    ),
+    s(
+        "fila.senha",
+        "PHXCLAW_FILA_SENHA",
+        ("Senha do PostgreSQL da fila", "Queue PostgreSQL password"),
+        "phxclaw fila senha",
+        Some(("fila", "fila", "fila-senha")),
+    ),
+    c(
+        "fila.prazo_segundos",
+        "PHXCLAW_FILA_PRAZO_SEGUNDOS",
+        I,
+        Some("30"),
+        (
+            "Prazo da posse de uma execução: sem batimento por este tempo, outro worker a retoma",
+            "Lease of an execution: without a heartbeat for this long, another worker takes it over",
+        ),
+    ),
+    c(
+        "fila.tentativas",
+        "PHXCLAW_FILA_TENTATIVAS",
+        I,
+        Some("3"),
+        (
+            "Quantas vezes uma execução pode ser tomada antes de ir para dead_letter",
+            "How many times an execution may be taken before going to dead_letter",
+        ),
+    ),
+    c(
+        "fila.concorrencia",
+        "PHXCLAW_FILA_CONCORRENCIA",
+        I,
+        Some("4"),
+        (
+            "Execuções ao mesmo tempo em cada phxclaw worker",
+            "Concurrent executions in each phxclaw worker",
+        ),
+    ),
+    // --- OpenTelemetry (exportacao OTLP/HTTP com JSON; docs/N8N.md) ---
+    c(
+        "otel.url",
+        "PHXCLAW_OTEL_URL",
+        T,
+        None,
+        (
+            "Coletor OTLP/HTTP do operador (ex.: http://127.0.0.1:4318); vazio = sem exportação, e sem custo",
+            "Operator's OTLP/HTTP collector (e.g. http://127.0.0.1:4318); empty = no export, and no cost",
+        ),
+    ),
+    c(
+        "otel.servico",
+        "PHXCLAW_OTEL_SERVICO",
+        T,
+        Some("phxclaw"),
+        (
+            "service.name dos traces e métricas exportados",
+            "service.name of the exported traces and metrics",
+        ),
+    ),
+    c(
+        "otel.intervalo_segundos",
+        "PHXCLAW_OTEL_INTERVALO_SEGUNDOS",
+        I,
+        Some("60"),
+        (
+            "Intervalo de envio das métricas ao coletor",
+            "Interval for sending metrics to the collector",
+        ),
+    ),
     // --- n8n (ferramenta n8n_workflow e gatilhos; docs/N8N.md) ---
     c(
         "n8n.url",
@@ -993,6 +1072,255 @@ const FIXAS: &[L] = &[
         ),
         "phxclaw n8n segredo",
         Some(("n8n", "n8n", "n8n-webhook-segredo")),
+    ),
+    // --- cofres externos (credencial nomeada do no HTTP resolvida fora; docs/N8N.md) ---
+    c(
+        "cofres.vault.url",
+        "PHXCLAW_COFRE_VAULT_URL",
+        T,
+        None,
+        (
+            "Origem do HashiCorp Vault do operador (https://vault.exemplo:8200); vazio = sem Vault",
+            "Operator's HashiCorp Vault origin (https://vault.example:8200); empty = no Vault",
+        ),
+    ),
+    c(
+        "cofres.vault.namespace",
+        "PHXCLAW_COFRE_VAULT_NAMESPACE",
+        T,
+        None,
+        (
+            "Namespace do Vault Enterprise (cabeçalho X-Vault-Namespace); vazio = raiz",
+            "Vault Enterprise namespace (X-Vault-Namespace header); empty = root",
+        ),
+    ),
+    c(
+        "cofres.vault.montagem",
+        "PHXCLAW_COFRE_VAULT_MONTAGEM",
+        T,
+        Some("secret"),
+        (
+            "Ponto de montagem do KV versão 2 no Vault",
+            "Mount path of the KV version 2 engine in Vault",
+        ),
+    ),
+    c(
+        "cofres.vault.metodo",
+        "PHXCLAW_COFRE_VAULT_METODO",
+        Tipo::Enum(&["token", "approle"]),
+        Some("token"),
+        (
+            "Como o agente entra no Vault: token guardado ou AppRole (role_id e secret_id)",
+            "How the agent logs into Vault: stored token or AppRole (role_id and secret_id)",
+        ),
+    ),
+    c(
+        "cofres.vault.approle_montagem",
+        "PHXCLAW_COFRE_VAULT_APPROLE_MONTAGEM",
+        T,
+        Some("approle"),
+        (
+            "Ponto de montagem do AppRole no Vault",
+            "AppRole auth mount path in Vault",
+        ),
+    ),
+    c(
+        "cofres.vault.role_id",
+        "PHXCLAW_COFRE_VAULT_ROLE_ID",
+        T,
+        None,
+        (
+            "role_id do AppRole (o secret_id fica no broker)",
+            "AppRole role_id (the secret_id stays in the broker)",
+        ),
+    ),
+    s(
+        "cofres.vault.token",
+        "PHXCLAW_COFRE_VAULT_TOKEN",
+        ("Token do Vault (método token)", "Vault token (token method)"),
+        "phxclaw cofre vault-token",
+        Some(("cofres", "cofres", "cofre-vault-token")),
+    ),
+    s(
+        "cofres.vault.secret_id",
+        "PHXCLAW_COFRE_VAULT_SECRET_ID",
+        ("secret_id do AppRole do Vault", "Vault AppRole secret_id"),
+        "phxclaw cofre vault-secret-id",
+        Some(("cofres", "cofres", "cofre-vault-secret-id")),
+    ),
+    c(
+        "cofres.aws.regiao",
+        "PHXCLAW_COFRE_AWS_REGIAO",
+        T,
+        None,
+        (
+            "Região do AWS Secrets Manager (us-east-1); vazio = sem AWS",
+            "AWS Secrets Manager region (us-east-1); empty = no AWS",
+        ),
+    ),
+    c(
+        "cofres.aws.url",
+        "PHXCLAW_COFRE_AWS_URL",
+        T,
+        None,
+        (
+            "Endpoint do Secrets Manager; vazio = https://secretsmanager.<região>.amazonaws.com",
+            "Secrets Manager endpoint; empty = https://secretsmanager.<region>.amazonaws.com",
+        ),
+    ),
+    c(
+        "cofres.aws.chave_id",
+        "PHXCLAW_COFRE_AWS_CHAVE_ID",
+        T,
+        None,
+        (
+            "Access key ID da AWS (o secret access key fica no broker)",
+            "AWS access key ID (the secret access key stays in the broker)",
+        ),
+    ),
+    s(
+        "cofres.aws.segredo",
+        "PHXCLAW_COFRE_AWS_SEGREDO",
+        ("Secret access key da AWS", "AWS secret access key"),
+        "phxclaw cofre aws-segredo",
+        Some(("cofres", "cofres", "cofre-aws-segredo")),
+    ),
+    s(
+        "cofres.aws.token_sessao",
+        "PHXCLAW_COFRE_AWS_TOKEN_SESSAO",
+        (
+            "Token de sessão temporária da AWS (opcional)",
+            "AWS temporary session token (optional)",
+        ),
+        "phxclaw cofre aws-token-sessao",
+        Some(("cofres", "cofres", "cofre-aws-token-sessao")),
+    ),
+    c(
+        "cofres.azure.url",
+        "PHXCLAW_COFRE_AZURE_URL",
+        T,
+        None,
+        (
+            "URL do Azure Key Vault (https://nome.vault.azure.net); vazio = sem Azure",
+            "Azure Key Vault URL (https://name.vault.azure.net); empty = no Azure",
+        ),
+    ),
+    c(
+        "cofres.azure.tenant",
+        "PHXCLAW_COFRE_AZURE_TENANT",
+        T,
+        None,
+        ("Tenant do Entra ID", "Entra ID tenant"),
+    ),
+    c(
+        "cofres.azure.cliente_id",
+        "PHXCLAW_COFRE_AZURE_CLIENTE_ID",
+        T,
+        None,
+        (
+            "Client ID da aplicação no Entra ID (o segredo do cliente fica no broker)",
+            "Entra ID application client ID (the client secret stays in the broker)",
+        ),
+    ),
+    c(
+        "cofres.azure.token_url",
+        "PHXCLAW_COFRE_AZURE_TOKEN_URL",
+        T,
+        None,
+        (
+            "Endpoint de token; vazio = https://login.microsoftonline.com/<tenant>/oauth2/v2.0/token",
+            "Token endpoint; empty = https://login.microsoftonline.com/<tenant>/oauth2/v2.0/token",
+        ),
+    ),
+    s(
+        "cofres.azure.segredo",
+        "PHXCLAW_COFRE_AZURE_SEGREDO",
+        (
+            "Segredo do cliente da aplicação no Entra ID",
+            "Entra ID application client secret",
+        ),
+        "phxclaw cofre azure-segredo",
+        Some(("cofres", "cofres", "cofre-azure-segredo")),
+    ),
+    c(
+        "cofres.gcp.projeto",
+        "PHXCLAW_COFRE_GCP_PROJETO",
+        T,
+        None,
+        (
+            "Projeto do GCP Secret Manager; vazio = o project_id da conta de serviço",
+            "GCP Secret Manager project; empty = the service account project_id",
+        ),
+    ),
+    c(
+        "cofres.gcp.url",
+        "PHXCLAW_COFRE_GCP_URL",
+        T,
+        None,
+        (
+            "Endpoint do Secret Manager; vazio = https://secretmanager.googleapis.com",
+            "Secret Manager endpoint; empty = https://secretmanager.googleapis.com",
+        ),
+    ),
+    c(
+        "cofres.gcp.token_url",
+        "PHXCLAW_COFRE_GCP_TOKEN_URL",
+        T,
+        None,
+        (
+            "Endpoint de token do Google; vazio = https://oauth2.googleapis.com/token",
+            "Google token endpoint; empty = https://oauth2.googleapis.com/token",
+        ),
+    ),
+    s(
+        "cofres.gcp.conta",
+        "PHXCLAW_COFRE_GCP_CONTA",
+        (
+            "JSON da conta de serviço do GCP (com a chave privada)",
+            "GCP service account JSON (with the private key)",
+        ),
+        "phxclaw cofre gcp-conta",
+        Some(("cofres", "cofres", "cofre-gcp-conta")),
+    ),
+    c(
+        "cofres.cache_segundos",
+        "PHXCLAW_COFRE_CACHE_SEGUNDOS",
+        I,
+        Some("60"),
+        (
+            "Prazo do cache em memória dos valores lidos (0 desliga; teto 300)",
+            "In-memory cache lifetime of fetched values (0 disables; ceiling 300)",
+        ),
+    ),
+    c(
+        "cofres.cache_max",
+        "PHXCLAW_COFRE_CACHE_MAX",
+        I,
+        Some("64"),
+        (
+            "Entradas no cache em memória (teto 1024)",
+            "Entries in the in-memory cache (ceiling 1024)",
+        ),
+    ),
+    c(
+        "cofres.liberar",
+        "PHXCLAW_COFRE_LIBERAR",
+        V,
+        None,
+        (
+            "Origens internas liberadas para os cofres (Vault na rede privada, loopback)",
+            "Internal origins allowed for the vaults (Vault on the private network, loopback)",
+        ),
+    ),
+    c(
+        "cofres.usar_proxy_do_ambiente",
+        "PHXCLAW_COFRE_USAR_PROXY",
+        B,
+        Some("false"),
+        (
+            "Sair pelo proxy do ambiente até os cofres (o IP conferido deixa de ficar preso)",
+            "Reach the vaults through the environment proxy (the checked IP is no longer pinned)",
+        ),
     ),
     // --- e-mail (ferramenta send_email) ---
     c(
@@ -1310,6 +1638,36 @@ const FIXAS: &[L] = &[
         ),
     ),
     // --- motor de fluxo (SP000035, onda 3) ---
+    c(
+        "fluxos.git.remoto",
+        "PHXCLAW_FLUXOS_GIT_REMOTO",
+        T,
+        None,
+        (
+            "Remoto https do git dos fluxos (fluxo exportar --push / importar --pull sem --remoto); http só em loopback; vazio = só remoto local. Só do operador: o .git/config do repositório nunca escolhe para onde a rede vai",
+            "https remote of the flows git (fluxo exportar --push / importar --pull without --remoto); http only on loopback; empty = local remote only. Operator only: the repository .git/config never chooses where the network goes",
+        ),
+    ),
+    c(
+        "fluxos.git.credencial_nome",
+        "PHXCLAW_FLUXOS_GIT_CREDENCIAL_NOME",
+        T,
+        None,
+        (
+            "Nome da credencial do remoto (declarada no http.json com a origem dele; segredo no broker: phxclaw credencial guardar NOME); vazio = sem Authorization",
+            "Name of the remote's credential (declared in http.json with its origin; secret in the broker: phxclaw credencial guardar NAME); empty = no Authorization",
+        ),
+    ),
+    c(
+        "fluxos.git.ramo",
+        "PHXCLAW_FLUXOS_GIT_RAMO",
+        T,
+        None,
+        (
+            "Ramo do git dos fluxos a que esta instância está ligada (o repositório novo nasce nele; em outro ramo, exportar/importar recusam); vazio = o ramo em que o repositório estiver",
+            "Flows git branch this instance is bound to (a new repository starts on it; on another branch, exportar/importar refuse); empty = whatever branch the repository is on",
+        ),
+    ),
     c(
         "fluxos.max_simultaneos",
         "PHXCLAW_FLUXOS_MAX_SIMULTANEOS",
@@ -2422,6 +2780,18 @@ pub const SO_DO_OPERADOR: &[(&str, Txt)] = &[
     ("imagem.url", DESTINO),
     ("xai.api", DESTINO),
     ("n8n.url", DESTINO),
+    // O remoto de rede do git dos fluxos e a credencial que vai a ele; o ramo e o da instancia
+    // (o que o `importar --ambiente prod` publica sai dele).
+    ("fluxos.git.ramo", CONTA),
+    ("fluxos.git.", DESTINO),
+    // Os cofres externos: para onde vai a credencial base (token do Vault, chave da AWS,
+    // segredo do Entra ID, conta de servico do GCP). O cache, a lista de internos e o proxy
+    // sao teto.
+    ("cofres.cache_segundos", TETO),
+    ("cofres.cache_max", TETO),
+    ("cofres.liberar", TETO),
+    ("cofres.usar_proxy_do_ambiente", TETO),
+    ("cofres.", DESTINO),
     ("ide.api_url", DESTINO),
     ("mcp.config", DESTINO),
     ("forja.", DESTINO),
@@ -2441,6 +2811,10 @@ pub const SO_DO_OPERADOR: &[(&str, Txt)] = &[
     ("ui.bloquear_inspecao", TETO),
     ("pontes.rustclaw.prompt_no_argv", TETO),
     ("fluxos.max_simultaneos", TETO),
+    // A fila e o coletor sao servidores do operador: o projeto nao manda execucao nem
+    // telemetria (ids de tarefa, nomes de fluxo) para outro lugar.
+    ("fila.", CONTA),
+    ("otel.", DESTINO),
     ("imagem.entrada_pixels_max", TETO),
     ("desktop.", TETO),
     ("plugins.", TETO),

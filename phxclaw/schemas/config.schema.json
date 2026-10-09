@@ -1307,6 +1307,231 @@
       },
       "type": "object"
     },
+    "cofres": {
+      "additionalProperties": false,
+      "properties": {
+        "//": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "string",
+            "array"
+          ]
+        },
+        "aws": {
+          "additionalProperties": false,
+          "properties": {
+            "//": {
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "string",
+                "array"
+              ]
+            },
+            "chave_id": {
+              "description": "Access key ID da AWS (o secret access key fica no broker) (ambiente: PHXCLAW_COFRE_AWS_CHAVE_ID)",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "regiao": {
+              "description": "Região do AWS Secrets Manager (us-east-1); vazio = sem AWS (ambiente: PHXCLAW_COFRE_AWS_REGIAO)",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "url": {
+              "description": "Endpoint do Secrets Manager; vazio = https://secretsmanager.<região>.amazonaws.com (ambiente: PHXCLAW_COFRE_AWS_URL)",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "type": "object"
+        },
+        "azure": {
+          "additionalProperties": false,
+          "properties": {
+            "//": {
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "string",
+                "array"
+              ]
+            },
+            "cliente_id": {
+              "description": "Client ID da aplicação no Entra ID (o segredo do cliente fica no broker) (ambiente: PHXCLAW_COFRE_AZURE_CLIENTE_ID)",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "tenant": {
+              "description": "Tenant do Entra ID (ambiente: PHXCLAW_COFRE_AZURE_TENANT)",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "token_url": {
+              "description": "Endpoint de token; vazio = https://login.microsoftonline.com/<tenant>/oauth2/v2.0/token (ambiente: PHXCLAW_COFRE_AZURE_TOKEN_URL)",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "url": {
+              "description": "URL do Azure Key Vault (https://nome.vault.azure.net); vazio = sem Azure (ambiente: PHXCLAW_COFRE_AZURE_URL)",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "type": "object"
+        },
+        "cache_max": {
+          "default": 64,
+          "description": "Entradas no cache em memória (teto 1024) (ambiente: PHXCLAW_COFRE_CACHE_MAX)",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "cache_segundos": {
+          "default": 60,
+          "description": "Prazo do cache em memória dos valores lidos (0 desliga; teto 300) (ambiente: PHXCLAW_COFRE_CACHE_SEGUNDOS)",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "gcp": {
+          "additionalProperties": false,
+          "properties": {
+            "//": {
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "string",
+                "array"
+              ]
+            },
+            "projeto": {
+              "description": "Projeto do GCP Secret Manager; vazio = o project_id da conta de serviço (ambiente: PHXCLAW_COFRE_GCP_PROJETO)",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "token_url": {
+              "description": "Endpoint de token do Google; vazio = https://oauth2.googleapis.com/token (ambiente: PHXCLAW_COFRE_GCP_TOKEN_URL)",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "url": {
+              "description": "Endpoint do Secret Manager; vazio = https://secretmanager.googleapis.com (ambiente: PHXCLAW_COFRE_GCP_URL)",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "type": "object"
+        },
+        "liberar": {
+          "description": "Origens internas liberadas para os cofres (Vault na rede privada, loopback) (ambiente: PHXCLAW_COFRE_LIBERAR)",
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "usar_proxy_do_ambiente": {
+          "default": false,
+          "description": "Sair pelo proxy do ambiente até os cofres (o IP conferido deixa de ficar preso) (ambiente: PHXCLAW_COFRE_USAR_PROXY)",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "vault": {
+          "additionalProperties": false,
+          "properties": {
+            "//": {
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "string",
+                "array"
+              ]
+            },
+            "approle_montagem": {
+              "default": "approle",
+              "description": "Ponto de montagem do AppRole no Vault (ambiente: PHXCLAW_COFRE_VAULT_APPROLE_MONTAGEM)",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "metodo": {
+              "default": "token",
+              "description": "Como o agente entra no Vault: token guardado ou AppRole (role_id e secret_id) (ambiente: PHXCLAW_COFRE_VAULT_METODO)",
+              "enum": [
+                "token",
+                "approle",
+                null
+              ]
+            },
+            "montagem": {
+              "default": "secret",
+              "description": "Ponto de montagem do KV versão 2 no Vault (ambiente: PHXCLAW_COFRE_VAULT_MONTAGEM)",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "namespace": {
+              "description": "Namespace do Vault Enterprise (cabeçalho X-Vault-Namespace); vazio = raiz (ambiente: PHXCLAW_COFRE_VAULT_NAMESPACE)",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "role_id": {
+              "description": "role_id do AppRole (o secret_id fica no broker) (ambiente: PHXCLAW_COFRE_VAULT_ROLE_ID)",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "url": {
+              "description": "Origem do HashiCorp Vault do operador (https://vault.exemplo:8200); vazio = sem Vault (ambiente: PHXCLAW_COFRE_VAULT_URL)",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
     "custo": {
       "additionalProperties": false,
       "properties": {
@@ -1712,6 +1937,52 @@
       },
       "type": "object"
     },
+    "fila": {
+      "additionalProperties": false,
+      "properties": {
+        "//": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "string",
+            "array"
+          ]
+        },
+        "concorrencia": {
+          "default": 4,
+          "description": "Execuções ao mesmo tempo em cada phxclaw worker (ambiente: PHXCLAW_FILA_CONCORRENCIA)",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "prazo_segundos": {
+          "default": 30,
+          "description": "Prazo da posse de uma execução: sem batimento por este tempo, outro worker a retoma (ambiente: PHXCLAW_FILA_PRAZO_SEGUNDOS)",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "tentativas": {
+          "default": 3,
+          "description": "Quantas vezes uma execução pode ser tomada antes de ir para dead_letter (ambiente: PHXCLAW_FILA_TENTATIVAS)",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "url": {
+          "description": "PostgreSQL da fila de execuções (postgresql://usuario@host:porta/banco); a senha vai pelo broker (phxclaw fila senha) (ambiente: PHXCLAW_FILA_URL)",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
     "fluxos": {
       "additionalProperties": false,
       "properties": {
@@ -1723,6 +1994,42 @@
             "string",
             "array"
           ]
+        },
+        "git": {
+          "additionalProperties": false,
+          "properties": {
+            "//": {
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "string",
+                "array"
+              ]
+            },
+            "credencial_nome": {
+              "description": "Nome da credencial do remoto (declarada no http.json com a origem dele; segredo no broker: phxclaw credencial guardar NOME); vazio = sem Authorization (ambiente: PHXCLAW_FLUXOS_GIT_CREDENCIAL_NOME)",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "ramo": {
+              "description": "Ramo do git dos fluxos a que esta instância está ligada (o repositório novo nasce nele; em outro ramo, exportar/importar recusam); vazio = o ramo em que o repositório estiver (ambiente: PHXCLAW_FLUXOS_GIT_RAMO)",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "remoto": {
+              "description": "Remoto https do git dos fluxos (fluxo exportar --push / importar --pull sem --remoto); http só em loopback; vazio = só remoto local. Só do operador: o .git/config do repositório nunca escolhe para onde a rede vai (ambiente: PHXCLAW_FLUXOS_GIT_REMOTO)",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "type": "object"
         },
         "max_simultaneos": {
           "description": "Máximo de fluxos rodando ao mesmo tempo na instância; vazio ou 0 = sem limite (o excedente espera a vaga); lido no primeiro fluxo, mudar pede reinício (ambiente: PHXCLAW_FLUXOS_MAX_SIMULTANEOS)",
@@ -2161,6 +2468,44 @@
           "description": "Teto por pedido, em tokens: nenhum pedido (tarefa ou fluxo) passa dele; acima, a criação é recusada. Não soma pedidos diferentes: não é teto de gasto do processo (ambiente: PHXCLAW_ORCAMENTO_TETO_TOKENS)",
           "type": [
             "integer",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "otel": {
+      "additionalProperties": false,
+      "properties": {
+        "//": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "string",
+            "array"
+          ]
+        },
+        "intervalo_segundos": {
+          "default": 60,
+          "description": "Intervalo de envio das métricas ao coletor (ambiente: PHXCLAW_OTEL_INTERVALO_SEGUNDOS)",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "servico": {
+          "default": "phxclaw",
+          "description": "service.name dos traces e métricas exportados (ambiente: PHXCLAW_OTEL_SERVICO)",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "url": {
+          "description": "Coletor OTLP/HTTP do operador (ex.: http://127.0.0.1:4318); vazio = sem exportação, e sem custo (ambiente: PHXCLAW_OTEL_URL)",
+          "type": [
+            "string",
             "null"
           ]
         }

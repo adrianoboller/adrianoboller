@@ -99,17 +99,25 @@ impl Histograma {
         self.total.fetch_add(1, Relaxed);
     }
 
-    fn escrever(&self, o: &mut String, nome: &str, ajuda: &str) {
-        let _ = writeln!(o, "# HELP {nome} {ajuda}\n# TYPE {nome} histogram");
+    fn serie(&self, nome: &'static str, ajuda: &'static str) -> Serie {
         let mut acumulado = 0u64;
-        for (i, f) in self.faixas.iter().enumerate() {
-            acumulado += self.contagens[i].load(Relaxed);
-            let _ = writeln!(o, "{nome}_bucket{{le=\"{f}\"}} {acumulado}");
+        let acumuladas = self.contagens[..self.faixas.len()]
+            .iter()
+            .map(|c| {
+                acumulado += c.load(Relaxed);
+                acumulado
+            })
+            .collect();
+        Serie {
+            nome,
+            ajuda,
+            tipo: TipoDeSerie::Histograma {
+                faixas: self.faixas,
+                acumuladas,
+                total: self.total.load(Relaxed),
+                soma: self.soma_us.load(Relaxed) as f64 / 1e6,
+            },
         }
-        let total = self.total.load(Relaxed);
-        let _ = writeln!(o, "{nome}_bucket{{le=\"+Inf\"}} {total}");
-        let soma = self.soma_us.load(Relaxed) as f64 / 1e6;
-        let _ = writeln!(o, "{nome}_sum {soma}\n{nome}_count {total}");
     }
 }
 
@@ -181,9 +189,19 @@ pub struct Metricas {
 /// As metricas do processo do `servir`.
 pub static GLOBAL: Metricas = Metricas::nova();
 
-/// Liga ou desliga as do processo (o `servir`, pela chave `api.metricas`).
+/// A rota `GET /metrics` responde? Separada da contagem: o exportador OpenTelemetry
+/// (`otel.rs`) conta sem abrir uma rota que o operador nao pediu.
+static EXPOSTA: AtomicBool = AtomicBool::new(false);
+
+/// Liga ou desliga as do processo (o `servir`, pela chave `api.metricas`): conta e expoe.
 pub fn ligar(sim: bool) {
     GLOBAL.ligada.store(sim, Relaxed);
+    EXPOSTA.store(sim, Relaxed);
+}
+
+/// Conta sem expor: o `otel.url` precisa das series, nao da rota.
+pub fn contar_para_exportar() {
+    GLOBAL.ligada.store(true, Relaxed);
 }
 
 impl Default for Metricas {
@@ -306,141 +324,222 @@ impl Metricas {
         }
     }
 
-    /// O texto de exposicao, ou `None` desligada (a rota responde 404).
-    pub fn texto(&self) -> Option<String> {
+    /// As series, uma vez: o texto do Prometheus (`texto`) e o OTLP (`otel.rs`) saem daqui,
+    /// e por isso uma metrica nova aparece nos dois ou em nenhum. `None` desligada.
+    pub fn series(&self) -> Option<Vec<Serie>> {
         if !self.ligada() {
             return None;
         }
-        let mut o = String::new();
-        let por_estado = |o: &mut String, nome: &str, ajuda: &str, v: &[AtomicU64; N_ESTADOS]| {
-            let _ = writeln!(o, "# HELP {nome} {ajuda}\n# TYPE {nome} counter");
-            for (i, e) in ESTADOS.iter().enumerate() {
-                let _ = writeln!(o, "{nome}{{estado=\"{e}\"}} {}", v[i].load(Relaxed));
-            }
+        let por_estado = |nome, ajuda, v: &[AtomicU64; N_ESTADOS], dinheiro: bool| Serie {
+            nome,
+            ajuda,
+            tipo: TipoDeSerie::Contador(
+                ESTADOS
+                    .iter()
+                    .enumerate()
+                    .map(|(i, e)| {
+                        let x = v[i].load(Relaxed);
+                        (
+                            Some(("estado", *e)),
+                            if dinheiro {
+                                Numero::Dinheiro(x as f64 / 1e6)
+                            } else {
+                                Numero::Inteiro(x)
+                            },
+                        )
+                    })
+                    .collect(),
+            ),
         };
-        let dinheiro = |o: &mut String, nome: &str, ajuda: &str, v: &[AtomicU64; N_ESTADOS]| {
-            let _ = writeln!(o, "# HELP {nome} {ajuda}\n# TYPE {nome} counter");
-            for (i, e) in ESTADOS.iter().enumerate() {
-                let x = v[i].load(Relaxed) as f64 / 1e6;
-                let _ = writeln!(o, "{nome}{{estado=\"{e}\"}} {x:.6}");
-            }
-        };
-        por_estado(
-            &mut o,
-            "phxclaw_tarefas_total",
-            "Tarefas de objetivo terminadas, pelo estado final.",
-            &self.tarefas,
-        );
-        por_estado(
-            &mut o,
-            "phxclaw_fluxo_execucoes_total",
-            "Execucoes de fluxo (disparo ou retomada) pelo estado em que pararam.",
-            &self.fluxos,
-        );
-        dinheiro(
-            &mut o,
-            "phxclaw_tarefa_custo_total",
-            "Custo das tarefas de objetivo (com as filhas), pelo estado final, na moeda da tabela PHXCLAW_CUSTO_PRECOS.",
-            &self.tarefa_custo_micro,
-        );
-        por_estado(
-            &mut o,
-            "phxclaw_tarefa_custo_nao_medido_total",
-            "Tarefas de objetivo terminadas sem custo medido (modelo fora da tabela, ou sem tabela), pelo estado final.",
-            &self.tarefa_custo_nao_medido,
-        );
-        dinheiro(
-            &mut o,
-            "phxclaw_fluxo_custo_total",
-            "Custo das execucoes de fluxo (todos os passos), pelo estado em que pararam, na moeda da tabela PHXCLAW_CUSTO_PRECOS.",
-            &self.fluxo_custo_micro,
-        );
-        por_estado(
-            &mut o,
-            "phxclaw_fluxo_custo_nao_medido_total",
-            "Execucoes de fluxo paradas sem custo medido, pelo estado em que pararam.",
-            &self.fluxo_custo_nao_medido,
-        );
-        let contador = |o: &mut String, nome: &str, ajuda: &str, linhas: &[(&str, u64)]| {
-            let _ = writeln!(o, "# HELP {nome} {ajuda}\n# TYPE {nome} counter");
-            for (rotulo, v) in linhas {
-                let _ = writeln!(o, "{nome}{rotulo} {v}");
-            }
-        };
-        contador(
-            &mut o,
-            "phxclaw_passos_total",
-            "Passos gravados pelas tarefas de objetivo terminadas.",
-            &[("", self.passos.load(Relaxed))],
-        );
-        contador(
-            &mut o,
-            "phxclaw_ferramenta_chamadas_total",
-            "Chamadas de ferramenta, pelo resultado.",
-            &[
-                ("{resultado=\"ok\"}", self.ferramenta_ok.load(Relaxed)),
-                ("{resultado=\"erro\"}", self.ferramenta_erro.load(Relaxed)),
-            ],
-        );
-        contador(
-            &mut o,
-            "phxclaw_modelo_chamadas_total",
-            "Pedidos ao modelo, pelo resultado.",
-            &[
-                ("{resultado=\"ok\"}", self.modelo_chamadas.load(Relaxed)),
-                ("{resultado=\"erro\"}", self.modelo_erros.load(Relaxed)),
-            ],
-        );
-        contador(
-            &mut o,
-            "phxclaw_tokens_total",
-            "Tokens informados pelo provedor.",
-            &[
-                ("{tipo=\"entrada\"}", self.tokens_entrada.load(Relaxed)),
-                ("{tipo=\"saida\"}", self.tokens_saida.load(Relaxed)),
-            ],
-        );
-        contador(
-            &mut o,
-            "phxclaw_ide_completar_total",
-            "Completacoes por IA do editor (fora de qualquer tarefa e orcamento), pelo resultado; recusada = teto ide.ia_teto_tokens_hora.",
-            &[
-                ("{resultado=\"ok\"}", self.ide_completar_ok.load(Relaxed)),
-                (
-                    "{resultado=\"recusada\"}",
-                    self.ide_completar_recusadas.load(Relaxed),
+        let contador =
+            |nome, ajuda, pontos: Vec<(Option<(&'static str, &'static str)>, u64)>| Serie {
+                nome,
+                ajuda,
+                tipo: TipoDeSerie::Contador(
+                    pontos
+                        .into_iter()
+                        .map(|(r, v)| (r, Numero::Inteiro(v)))
+                        .collect(),
                 ),
-            ],
-        );
-        contador(
-            &mut o,
-            "phxclaw_ide_completar_custo_nao_medido_total",
-            "Completacoes do editor sem custo medido (modelo fora da tabela, ou sem tabela).",
-            &[("", self.ide_completar_custo_nao_medido.load(Relaxed))],
-        );
-        contador(
-            &mut o,
-            "phxclaw_ide_completar_tokens_total",
-            "Tokens (entrada + saida) gastos pela completacao por IA do editor.",
-            &[("", self.ide_completar_tokens.load(Relaxed))],
-        );
-        let _ = writeln!(
-            o,
-            "# HELP phxclaw_ide_completar_custo_total Custo da completacao por IA do editor, na moeda da tabela PHXCLAW_CUSTO_PRECOS.\n# TYPE phxclaw_ide_completar_custo_total counter\nphxclaw_ide_completar_custo_total {:.6}",
-            self.ide_completar_custo_micro.load(Relaxed) as f64 / 1e6
-        );
-        self.ferramenta_duracao.escrever(
-            &mut o,
-            "phxclaw_ferramenta_duracao_segundos",
-            "Latencia de cada chamada de ferramenta.",
-        );
-        self.tarefa_duracao.escrever(
-            &mut o,
-            "phxclaw_tarefa_duracao_segundos",
-            "Duracao da execucao de cada tarefa de objetivo.",
-        );
+            };
+        Some(vec![
+            por_estado(
+                "phxclaw_tarefas_total",
+                "Tarefas de objetivo terminadas, pelo estado final.",
+                &self.tarefas,
+                false,
+            ),
+            por_estado(
+                "phxclaw_fluxo_execucoes_total",
+                "Execucoes de fluxo (disparo ou retomada) pelo estado em que pararam.",
+                &self.fluxos,
+                false,
+            ),
+            por_estado(
+                "phxclaw_tarefa_custo_total",
+                "Custo das tarefas de objetivo (com as filhas), pelo estado final, na moeda da tabela PHXCLAW_CUSTO_PRECOS.",
+                &self.tarefa_custo_micro,
+                true,
+            ),
+            por_estado(
+                "phxclaw_tarefa_custo_nao_medido_total",
+                "Tarefas de objetivo terminadas sem custo medido (modelo fora da tabela, ou sem tabela), pelo estado final.",
+                &self.tarefa_custo_nao_medido,
+                false,
+            ),
+            por_estado(
+                "phxclaw_fluxo_custo_total",
+                "Custo das execucoes de fluxo (todos os passos), pelo estado em que pararam, na moeda da tabela PHXCLAW_CUSTO_PRECOS.",
+                &self.fluxo_custo_micro,
+                true,
+            ),
+            por_estado(
+                "phxclaw_fluxo_custo_nao_medido_total",
+                "Execucoes de fluxo paradas sem custo medido, pelo estado em que pararam.",
+                &self.fluxo_custo_nao_medido,
+                false,
+            ),
+            contador(
+                "phxclaw_passos_total",
+                "Passos gravados pelas tarefas de objetivo terminadas.",
+                vec![(None, self.passos.load(Relaxed))],
+            ),
+            contador(
+                "phxclaw_ferramenta_chamadas_total",
+                "Chamadas de ferramenta, pelo resultado.",
+                vec![
+                    (Some(("resultado", "ok")), self.ferramenta_ok.load(Relaxed)),
+                    (
+                        Some(("resultado", "erro")),
+                        self.ferramenta_erro.load(Relaxed),
+                    ),
+                ],
+            ),
+            contador(
+                "phxclaw_modelo_chamadas_total",
+                "Pedidos ao modelo, pelo resultado.",
+                vec![
+                    (
+                        Some(("resultado", "ok")),
+                        self.modelo_chamadas.load(Relaxed),
+                    ),
+                    (Some(("resultado", "erro")), self.modelo_erros.load(Relaxed)),
+                ],
+            ),
+            contador(
+                "phxclaw_tokens_total",
+                "Tokens informados pelo provedor.",
+                vec![
+                    (Some(("tipo", "entrada")), self.tokens_entrada.load(Relaxed)),
+                    (Some(("tipo", "saida")), self.tokens_saida.load(Relaxed)),
+                ],
+            ),
+            contador(
+                "phxclaw_ide_completar_total",
+                "Completacoes por IA do editor (fora de qualquer tarefa e orcamento), pelo resultado; recusada = teto ide.ia_teto_tokens_hora.",
+                vec![
+                    (
+                        Some(("resultado", "ok")),
+                        self.ide_completar_ok.load(Relaxed),
+                    ),
+                    (
+                        Some(("resultado", "recusada")),
+                        self.ide_completar_recusadas.load(Relaxed),
+                    ),
+                ],
+            ),
+            contador(
+                "phxclaw_ide_completar_custo_nao_medido_total",
+                "Completacoes do editor sem custo medido (modelo fora da tabela, ou sem tabela).",
+                vec![(None, self.ide_completar_custo_nao_medido.load(Relaxed))],
+            ),
+            contador(
+                "phxclaw_ide_completar_tokens_total",
+                "Tokens (entrada + saida) gastos pela completacao por IA do editor.",
+                vec![(None, self.ide_completar_tokens.load(Relaxed))],
+            ),
+            Serie {
+                nome: "phxclaw_ide_completar_custo_total",
+                ajuda: "Custo da completacao por IA do editor, na moeda da tabela PHXCLAW_CUSTO_PRECOS.",
+                tipo: TipoDeSerie::Contador(vec![(
+                    None,
+                    Numero::Dinheiro(self.ide_completar_custo_micro.load(Relaxed) as f64 / 1e6),
+                )]),
+            },
+            self.ferramenta_duracao.serie(
+                "phxclaw_ferramenta_duracao_segundos",
+                "Latencia de cada chamada de ferramenta.",
+            ),
+            self.tarefa_duracao.serie(
+                "phxclaw_tarefa_duracao_segundos",
+                "Duracao da execucao de cada tarefa de objetivo.",
+            ),
+        ])
+    }
+
+    /// O texto de exposicao, ou `None` desligada (a rota responde 404).
+    pub fn texto(&self) -> Option<String> {
+        let mut o = String::new();
+        for s in self.series()? {
+            let _ = writeln!(o, "# HELP {} {}", s.nome, s.ajuda);
+            match &s.tipo {
+                TipoDeSerie::Contador(pontos) => {
+                    let _ = writeln!(o, "# TYPE {} counter", s.nome);
+                    for (r, v) in pontos {
+                        let rotulo = r
+                            .map(|(k, v)| format!("{{{k}=\"{v}\"}}"))
+                            .unwrap_or_default();
+                        let _ = match v {
+                            Numero::Inteiro(x) => writeln!(o, "{}{rotulo} {x}", s.nome),
+                            Numero::Dinheiro(x) => writeln!(o, "{}{rotulo} {x:.6}", s.nome),
+                        };
+                    }
+                }
+                TipoDeSerie::Histograma {
+                    faixas,
+                    acumuladas,
+                    total,
+                    soma,
+                } => {
+                    let _ = writeln!(o, "# TYPE {} histogram", s.nome);
+                    for (f, n) in faixas.iter().zip(acumuladas) {
+                        let _ = writeln!(o, "{}_bucket{{le=\"{f}\"}} {n}", s.nome);
+                    }
+                    let _ = writeln!(o, "{}_bucket{{le=\"+Inf\"}} {total}", s.nome);
+                    let _ = writeln!(o, "{}_sum {soma}\n{}_count {total}", s.nome, s.nome);
+                }
+            }
+        }
         Some(o)
     }
+}
+
+/// Um numero de serie: contagem, ou dinheiro (seis casas, a do relatorio).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Numero {
+    Inteiro(u64),
+    Dinheiro(f64),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum TipoDeSerie {
+    /// Pontos de um contador; o rotulo, quando ha, e de conjunto fechado.
+    Contador(Vec<(Option<(&'static str, &'static str)>, Numero)>),
+    /// Histograma de faixas fixas, com as contagens ACUMULADAS do Prometheus.
+    Histograma {
+        faixas: &'static [f64],
+        acumuladas: Vec<u64>,
+        total: u64,
+        soma: f64,
+    },
+}
+
+/// Uma serie das metricas do processo.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Serie {
+    pub nome: &'static str,
+    pub ajuda: &'static str,
+    pub tipo: TipoDeSerie,
 }
 
 struct LlmMedido {
@@ -531,7 +630,13 @@ pub async fn expor(
     if let Err(e) = crate::api::auth(&s, &h) {
         return e.into_response();
     }
-    match GLOBAL.texto() {
+    // A rota fechada responde antes de montar texto nenhum.
+    let texto = if EXPOSTA.load(Relaxed) {
+        GLOBAL.texto()
+    } else {
+        None
+    };
+    match texto {
         Some(t) => (
             [(
                 header::CONTENT_TYPE,

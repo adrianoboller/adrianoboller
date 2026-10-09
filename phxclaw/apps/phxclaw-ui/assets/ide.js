@@ -164,7 +164,7 @@ const ide = (() => {
     desenhar(s, g.completa ? null : tocadas);
     // O status mostra o tamanho que o MOTOR confirmou, nao o que a tela pediu.
     if (g.titulo != null || g.encerrado || mudouTamanho) atualizarAbas();
-    if (s === ativa) { espelhar(); lerArquivo(s); minimapa.grade(s); }
+    if (s === ativa) { espelhar(); lerArquivo(s); minimapa.grade(s); leitura.grade(s); }
   }
 
   // ACESSIBILIDADE: o canvas e invisivel ao leitor de tela. O espelho (#termEspelho,
@@ -218,17 +218,19 @@ const ide = (() => {
     return null;
   }
   function lerArquivo(s) {
-    const a = s.programa === 'helix' ? arquivoDaGrade(s) : null;
+    // O convidado do terminal compartilhado nao le arquivo: nao tem Bearer, e o disco e do anfitriao.
+    const a = s.programa === 'helix' && !s.convidado ? arquivoDaGrade(s) : null;
     // O menu de completar do `:` cobre a linha de estado enquanto se digita um comando: sem
     // linha de estado nao ha «nenhum arquivo», ha linha coberta. Sem isto cada comando
     // digitado zerava a trilha e o minimapa e os pedia de novo ao agente (medido no Helix real).
-    if (!a && s.programa === 'helix' && s.grade?.length && linhaDeEstado(s) < 0) return;
+    if (!a && s.programa === 'helix' && !s.convidado && s.grade?.length && linhaDeEstado(s) < 0) return;
     if (a === arquivoAberto) return;
     arquivoAberto = a;
     simbolos = { arquivo: a, lista: null, erro: null, lendo: false };
     desenharTrilha();
     if (a && comHttp) buscarSimbolos(a);
     minimapa.arquivo(a);
+    leitura.arquivo(a);
   }
   async function buscarSimbolos(arquivo) {
     simbolos.lendo = true;
@@ -258,7 +260,7 @@ const ide = (() => {
   function desenharTrilha() {
     if (!trilha) return;
     trilha.replaceChildren();
-    if (!ativa || ativa.programa !== 'helix') { trilha.hidden = true; return; }
+    if (!ativa || ativa.programa !== 'helix' || ativa.convidado) { trilha.hidden = true; return; }
     trilha.hidden = false;
     if (!arquivoAberto) { trilha.append(el('span', 'trilha-vazia', txt('ide.trilha_nenhum', 'Nenhum arquivo aberto no Helix.'))); return; }
     const ol = el('ol', 'trilha-caminho');
@@ -348,7 +350,7 @@ const ide = (() => {
       estado(); pintar();
     }
     function arquivo(a) {
-      const helix = ativa?.programa === 'helix';
+      const helix = ativa?.programa === 'helix' && !ativa.convidado;
       painel.hidden = !helix;
       if (a === arq) return;
       arq = a; linhas = null; erro = null; pedido++;
@@ -451,6 +453,210 @@ const ide = (() => {
     return { arquivo, grade, estado, pintar };
   })();
 
+  // LEITURA COM DOBRA: o Helix 25.07 nao dobra (0 comandos `fold`, `foldingRange` ausente do
+  // cliente LSP dele -- docs/propostas/sp32-r5-r1-pesquisa.md) e o buffer dele e de OUTRO
+  // processo. Este painel mostra o arquivo aberto no Helix lido EM DISCO pelo agente, com as
+  // regioes do servidor de linguagem (/v1/ide/dobras: textDocument/foldingRange; sem servidor,
+  // a reserva por chaves ou por indentacao -- e o painel diz qual). O texto entra por
+  // textContent: e dado do arquivo, nunca HTML. Fechado, o painel nao pede nada ao agente.
+  // O estado (quais regioes estao dobradas) e por arquivo, guardado no aparelho.
+  const leitura = (() => {
+    const painel = document.getElementById('ideLeitura');
+    const codigo = document.getElementById('leituraCodigo');
+    const estadoEl = document.getElementById('leituraEstado');
+    if (!painel || !codigo || !estadoEl) return { arquivo() {}, grade() {}, estado() {} };
+    const GUARDADO = 'phxclaw.dobras';
+    // Arquivo gerado de dezenas de milhares de linhas nao e leitura de gente: o painel mostra
+    // as primeiras e diz que cortou.
+    const TETO_LINHAS = 20000;
+    const TETO_ARQUIVOS = 50;
+    let arq = null, dados = null, erro = null, lendo = false, pedido = 0, lido = null, modificado = false;
+    let dobradas = new Set();
+    let foco = null;
+    const guardadas = () => { try { return JSON.parse(localStorage.getItem(GUARDADO) || '{}') || {}; } catch { return {}; } };
+    // A pasta do projeto entra na chave: `src/main.rs` de dois projetos nao e o mesmo arquivo.
+    const chaveDe = a => `${ativa?.cwd || ''}::${a}`;
+    function guardar() {
+      if (!arq) return;
+      const g = guardadas();
+      const k = chaveDe(arq);
+      delete g[k];
+      if (dobradas.size) g[k] = [...dobradas];
+      // A ordem de insercao e a de uso: saem os mais antigos.
+      const ks = Object.keys(g);
+      for (const x of ks.slice(0, Math.max(0, ks.length - TETO_ARQUIVOS))) delete g[x];
+      try { localStorage.setItem(GUARDADO, JSON.stringify(g)); } catch { /* sem armazenamento: vale ate recarregar */ }
+    }
+    const alcas = () => [...codigo.querySelectorAll('button.ll-dobra')].filter(b => !b.parentElement.hidden);
+    async function buscar() {
+      if (!arq || !comHttp || !painel.open) return;
+      const meu = ++pedido;
+      const a = arq;
+      lendo = true; erro = null; estado();
+      try {
+        const r = await fetch(`./v1/ide/dobras?arquivo=${encodeURIComponent(a)}`, { headers: { Authorization: `Bearer ${token()}` }, cache: 'no-store' });
+        const v = await r.json().catch(() => ({}));
+        if (meu !== pedido) return;
+        if (r.ok) { dados = v; erro = null; lido = a; } else { dados = null; erro = v.error || `HTTP ${r.status}`; }
+      } catch {
+        if (meu !== pedido) return;
+        dados = null; erro = txt('erro.sem_rede', 'Sem conexão com o agente — confira a rede e toque em TENTAR DE NOVO.');
+      }
+      lendo = false;
+      // So as regioes guardadas que ainda existem neste texto.
+      const inicios = new Set((dados?.regioes || []).map(r => r.inicio));
+      dobradas = new Set((guardadas()[chaveDe(a)] || []).filter(n => inicios.has(n)));
+      desenhar();
+    }
+    function desenhar() {
+      codigo.replaceChildren();
+      if (!dados) { estado(); return; }
+      const linhas = String(dados.texto ?? '').replace(/\n$/, '').split('\n');
+      const n = Math.min(linhas.length, TETO_LINHAS);
+      const porInicio = new Map((dados.regioes || []).filter(r => r.inicio <= n).map(r => [r.inicio, r]));
+      const frag = document.createDocumentFragment();
+      for (let i = 1; i <= n; i++) {
+        const div = el('div', 'll');
+        div.dataset.n = String(i);
+        const num = el('span', 'll-n', String(i));
+        num.setAttribute('aria-hidden', 'true');
+        const r = porInicio.get(i);
+        let alca;
+        if (r) {
+          alca = el('button', 'll-dobra');
+          alca.type = 'button';
+          alca.dataset.inicio = String(i);
+          alca.dataset.fim = String(Math.min(r.fim, n));
+          alca.tabIndex = -1;
+        } else {
+          alca = el('span', 'll-dobra');
+          alca.setAttribute('aria-hidden', 'true');
+        }
+        div.append(num, alca, el('code', 'll-t', linhas[i - 1]));
+        if (r) div.append(el('span', 'll-oculto'));
+        frag.append(div);
+      }
+      codigo.append(frag);
+      aplicarDobras();
+    }
+    // Esconde as linhas de toda regiao dobrada (a de dentro continua dobrada quando a de fora
+    // abre) e redesenha as alcas: seta, rotulo e quantas linhas a regiao esconde.
+    function aplicarDobras() {
+      const divs = codigo.children;
+      const n = divs.length;
+      const oculta = new Uint8Array(n + 2);
+      for (const r of dados?.regioes || []) {
+        if (!dobradas.has(r.inicio)) continue;
+        for (let l = r.inicio + 1; l <= Math.min(r.fim, n); l++) oculta[l] = 1;
+      }
+      let ocultas = 0;
+      for (let i = 1; i <= n; i++) {
+        const div = divs[i - 1];
+        div.hidden = !!oculta[i];
+        if (oculta[i]) ocultas++;
+        const b = div.children[1];
+        if (b.tagName !== 'BUTTON') continue;
+        const fechada = dobradas.has(i);
+        const ate = Number(b.dataset.fim);
+        b.textContent = fechada ? '▸' : '▾';
+        b.setAttribute('aria-expanded', String(!fechada));
+        b.setAttribute('aria-label', fechada
+          ? txt('ide.leitura_desdobrar', 'Desdobrar as linhas {de}–{ate}', { de: i + 1, ate })
+          : txt('ide.leitura_dobrar', 'Dobrar as linhas {de}–{ate}', { de: i + 1, ate }));
+        div.classList.toggle('dobrada', fechada);
+        div.lastChild.textContent = fechada ? txt('ide.leitura_ocultas_n', '⋯ {n} linhas', { n: ate - i }) : '';
+      }
+      // Um so ponto de parada no Tab (roving tabindex): a alca do foco, ou a primeira visivel.
+      const vs = alcas();
+      if (!vs.some(b => Number(b.dataset.inicio) === foco)) foco = vs[0] ? Number(vs[0].dataset.inicio) : null;
+      for (const b of codigo.querySelectorAll('button.ll-dobra')) b.tabIndex = Number(b.dataset.inicio) === foco ? 0 : -1;
+      painel.dataset.ocultas = String(ocultas);
+      painel.dataset.dobradas = [...dobradas].sort((a, b) => a - b).join(',');
+      estado();
+    }
+    function alternar(inicio, dobrar) {
+      const d = dobrar ?? !dobradas.has(inicio);
+      if (d) dobradas.add(inicio); else dobradas.delete(inicio);
+      foco = inicio;
+      guardar();
+      aplicarDobras();
+      codigo.querySelector(`button.ll-dobra[data-inicio="${inicio}"]`)?.focus();
+    }
+    function estado() {
+      const total = dados ? dados.linhas : 0;
+      const modo = !arq ? 'nenhum' : !comHttp ? 'sem_rede' : lendo ? 'lendo' : erro ? 'erro' : dados ? 'pronto' : 'fechado';
+      painel.dataset.modo = modo;
+      painel.dataset.origem = dados?.fonte || '';
+      painel.dataset.arquivo = arq || '';
+      painel.dataset.regioes = dados ? String((dados.regioes || []).length) : '';
+      const fonte = { lsp: txt('ide.leitura_fonte_lsp', 'servidor de linguagem'), chaves: txt('ide.leitura_fonte_chaves', 'reserva por chaves'), indentacao: txt('ide.leitura_fonte_indentacao', 'reserva por indentação') }[dados?.fonte] || '';
+      let t = modo === 'nenhum' ? txt('ide.trilha_nenhum', 'Nenhum arquivo aberto no Helix.')
+        : modo === 'sem_rede' ? txt('ide.leitura_so_rede', 'A leitura com dobra lê o arquivo pelo agente: só no navegador.')
+        : modo === 'lendo' ? txt('ide.minimapa_lendo', 'Lendo o arquivo…')
+        : modo === 'erro' ? txt('ide.leitura_erro', 'Leitura indisponível: {erro}', { erro })
+        : modo === 'fechado' ? txt('ide.leitura_abra', 'Abra o painel para ler {arquivo} com dobra.', { arquivo: arq })
+        : txt('ide.leitura_estado', '{total} linhas, {regioes} regiões dobráveis ({fonte}); {ocultas} linhas dobradas.', { total, regioes: (dados.regioes || []).length, fonte, ocultas: painel.dataset.ocultas || 0 });
+      if (dados && total > TETO_LINHAS) t += ` ${txt('ide.leitura_corte', 'Mostrando as primeiras {n} linhas.', { n: TETO_LINHAS })}`;
+      if (dados?.aviso) t += ` ${txt('ide.leitura_aviso', 'O servidor de linguagem não respondeu: {aviso}', { aviso: dados.aviso })}`;
+      if (dados && modificado) t += ` ${txt('ide.leitura_nao_salvo', 'Há alterações não salvas: a leitura mostra a versão em disco.')}`;
+      estadoEl.textContent = t;
+      estadoEl.classList.toggle('aviso', modo === 'erro' || !!dados?.aviso || (!!dados && modificado));
+    }
+    function arquivo(a) {
+      painel.hidden = !(ativa?.programa === 'helix' && !ativa.convidado);
+      if (a === arq) return;
+      arq = a; dados = null; erro = null; lido = null; pedido++; dobradas = new Set(); foco = null;
+      codigo.replaceChildren();
+      if (a && painel.open) buscar(); else { lendo = false; estado(); }
+    }
+    // Salvou (o `[+]` sumiu da linha de estado): o disco mudou, a leitura rele.
+    function grade(s) {
+      if (s.convidado) return;
+      const y = linhaDeEstado(s);
+      if (y < 0) return;
+      const mod = /\[\+\]/.test(textoDaLinha(s, y));
+      if (modificado && !mod && arq && painel.open) buscar();
+      if (mod !== modificado) { modificado = mod; estado(); }
+    }
+    painel.addEventListener('toggle', () => { if (painel.open && arq && lido !== arq) buscar(); else estado(); });
+    codigo.addEventListener('click', e => {
+      const b = e.target.closest('button.ll-dobra');
+      if (b) alternar(Number(b.dataset.inicio));
+    });
+    // Teclado: as alcas sao uma lista (setas andam, Home/End vao as pontas), ← dobra e → desdobra
+    // como numa arvore, Enter e Espaco sao o clique do proprio botao, e o atalho do VS Code
+    // (Ctrl+Shift+[ e ]) vale pela tecla fisica, que nao muda com o layout.
+    codigo.addEventListener('keydown', e => {
+      const b = e.target.closest?.('button.ll-dobra');
+      if (!b) return;
+      const inicio = Number(b.dataset.inicio);
+      const dobrar = e.key === 'ArrowLeft' || (e.ctrlKey && e.shiftKey && e.code === 'BracketLeft');
+      const desdobrar = e.key === 'ArrowRight' || (e.ctrlKey && e.shiftKey && e.code === 'BracketRight');
+      if (dobrar || desdobrar) { e.preventDefault(); alternar(inicio, dobrar); return; }
+      const vs = alcas();
+      const i = vs.indexOf(b);
+      const alvo = { ArrowDown: vs[i + 1], ArrowUp: vs[i - 1], Home: vs[0], End: vs.at(-1) }[e.key];
+      if (!(e.key in { ArrowDown: 1, ArrowUp: 1, Home: 1, End: 1 })) return;
+      e.preventDefault();
+      if (!alvo) return;
+      foco = Number(alvo.dataset.inicio);
+      for (const x of codigo.querySelectorAll('button.ll-dobra')) x.tabIndex = x === alvo ? 0 : -1;
+      alvo.focus();
+      alvo.scrollIntoView({ block: 'nearest' });
+    });
+    document.getElementById('leituraDobrarTudo')?.addEventListener('click', () => {
+      if (!dados) return;
+      dobradas = new Set((dados.regioes || []).map(r => r.inicio));
+      guardar(); aplicarDobras();
+    });
+    document.getElementById('leituraDesdobrarTudo')?.addEventListener('click', () => {
+      dobradas = new Set();
+      guardar(); aplicarDobras();
+    });
+    document.getElementById('leituraReler')?.addEventListener('click', () => { lido = null; buscar(); });
+    return { arquivo, grade, estado: () => { if (dados) aplicarDobras(); else estado(); } };
+  })();
+
   function aoGrade(payload) {
     const s = sessoes.get(payload.id);
     if (!s) {
@@ -465,7 +671,8 @@ const ide = (() => {
   function atualizarAbas() {
     abas.replaceChildren(...[...sessoes.values()].map(s => {
       const b = el('button', `${s === ativa ? 'ativa' : ''} ${s.encerrado ? 'morto' : ''}`.trim(),
-        `${s.programa === 'helix' ? 'Helix' : 'bash'}${s.titulo ? ` — ${s.titulo}` : ''}`);
+        s.convidado ? txt('ide.aba_convidado', 'Terminal compartilhado')
+          : `${s.programa === 'helix' ? 'Helix' : 'bash'}${s.titulo ? ` — ${s.titulo}` : ''}`);
       b.dataset.id = s.id;
       b.onclick = () => ativar(s);
       return b;
@@ -474,6 +681,7 @@ const ide = (() => {
     vazio.hidden = !!ativa;
     botaoFechar.disabled = !ativa;
     if (!ativa) { status.textContent = txt('ide.nenhum', 'Nenhum terminal aberto.'); return; }
+    if (ativa.convidado) { status.textContent = convidado.status(); return; }
     const fim = ativa.encerrado
       ? txt('ide.encerrado', ' • encerrado (código {codigo})', { codigo: ativa.encerrado.codigo ?? txt('ide.sinal', 'sinal') }) : '';
     status.textContent = txt('ide.status', '{programa} • pid {pid} • {colunas}×{linhas} • {cwd}{fim}', {
@@ -487,7 +695,7 @@ const ide = (() => {
   // execute_shell sem a politica dele. Sem nenhum dos dois (arquivo local), a previa diz.
   const comHttp = location.protocol === 'http:' || location.protocol === 'https:';
   const token = () => { try { return localStorage.getItem('phxclaw.token') || ''; } catch { return ''; } };
-  const transporte = invoke ? {
+  let transporte = invoke ? {
     tipo: 'tauri',
     abrir: (programa, colunas, linhas) => invoke('terminal_abrir', { programa, colunas, linhas }),
     escrever: (id, o) => invoke('terminal_escrever', { id, ...o }),
@@ -513,6 +721,7 @@ const ide = (() => {
         let m;
         try { m = JSON.parse(ev.data); } catch { return; }
         if (m.ev === 'aberto') { idAberto = m.id; abrindo?.ok(m); abrindo = null; }
+        else if (m.ev === 'compartilhamento') compartilhar.evento(m);
         else if (m.ev === 'grade') ouvinte?.(m);
         else if (m.ev === 'erro') { if (abrindo) { abrindo.falha(new Error(m.erro)); abrindo = null; } else encerrar(); }
       };
@@ -520,11 +729,11 @@ const ide = (() => {
     }
     return {
       tipo: 'ws',
-      abrir: (programa, colunas, linhas) => new Promise((ok, falha) => {
+      abrir: (programa, colunas, linhas, compartilhavel = false) => new Promise((ok, falha) => {
         if (programa !== 'helix') { falha(Object.assign(new Error('so helix'), { soHelix: true })); return; }
         ligar();
         abrindo = { ok, falha };
-        const ir = () => mandar({ op: 'abrir', programa, colunas, linhas });
+        const ir = () => mandar({ op: 'abrir', programa, colunas, linhas, compartilhavel });
         // O `auth` do onopen sai antes: os ouvintes correm na ordem em que entraram.
         if (ws.readyState === 1) ir(); else ws.addEventListener('open', ir, { once: true });
       }),
@@ -546,6 +755,9 @@ const ide = (() => {
     espelhar();
     desenharTrilha();
     minimapa.estado();
+    leitura.estado();
+    compartilhar.desenhar();
+    if (convidado.ativo()) convidado.mostrar();
   });
 
   function ativar(s) {
@@ -560,12 +772,12 @@ const ide = (() => {
   }
 
   function avisar(f) { avisoFixo = f; status.textContent = f(); status.classList.add('aviso'); }
-  async function abrir(programa) {
+  async function abrir(programa, compartilhavel = false) {
     if (!transporte) { avisar(semHost); return; }
     if (transporte.tipo === 'ws' && programa !== 'helix') { avisar(soHelix); return; }
     const t = tamanhoQueCabe() || { colunas: 100, linhas: 30 };
     try {
-      const r = await transporte.abrir(programa, t.colunas, t.linhas);
+      const r = await transporte.abrir(programa, t.colunas, t.linhas, compartilhavel);
       const s = { ...r, colunas: t.colunas, linhas: t.linhas, grade: [], fundo: 0x010418, frente: 0xe6edf3, cursor: null, titulo: '', encerrado: null };
       sessoes.set(r.id, s);
       status.classList.remove('aviso');
@@ -618,7 +830,8 @@ const ide = (() => {
     escEm = e.key === 'Escape' ? Date.now() : 0;
     // So tecla de gente: um evento sintetico (dispatchEvent pela ponte de DOM) nao e
     // isTrusted, e nao pode digitar num shell.
-    if (!e.isTrusted || !ativa || ativa.encerrado || e.isComposing) return;
+    // Convidado de leitura: nada sai daqui (o agente tambem nao teria por onde aplicar).
+    if (!e.isTrusted || !ativa || ativa.encerrado || ativa.somenteLeitura || e.isComposing) return;
     if (e.metaKey) return;
     // Modificador sozinho nao vira byte; nem vale a ida ao host.
     if (['Control', 'Shift', 'Alt', 'AltGraph', 'Meta', 'CapsLock'].includes(e.key)) return;
@@ -629,7 +842,7 @@ const ide = (() => {
       .catch(err => console.error(err));
   });
   document.addEventListener('paste', e => {
-    if (document.activeElement !== canvas || !ativa || !e.isTrusted) return;
+    if (document.activeElement !== canvas || !ativa || ativa.somenteLeitura || !e.isTrusted) return;
     const texto = e.clipboardData?.getData('text/plain');
     if (!texto) return;
     e.preventDefault();
@@ -644,6 +857,186 @@ const ide = (() => {
   canvas.addEventListener('blur', () => { focado = false; if (ativa?.cursor) desenhar(ativa, [ativa.cursor.y]); });
   canvas.addEventListener('mousedown', () => canvas.focus());
   new ResizeObserver(redimensionar).observe(area);
+
+  const hora = iso => { try { return new Date(iso).toLocaleTimeString(document.documentElement.lang || 'pt-BR', { hour: '2-digit', minute: '2-digit' }); } catch { return iso; } };
+  const selo = document.getElementById('ideCompartilhado');
+
+  // COMPARTILHAR (o «Live Share» desta casa, decisao do dono: terminal compartilhado). O
+  // anfitriao cria o convite pela rota do dono (/v1/ide/compartilhar), ve quem assiste pelo
+  // proprio websocket do terminal (ev «compartilhamento») e revoga. So o Helix aberto SEM a
+  // credencial da completacao por IA se compartilha (R1: um `:sh` mostraria o token a quem
+  // assiste); o outro recusa e a tela oferece reabrir. O convite aparece UMA vez, no fragmento
+  // do link (#convite=), que nao vai ao servidor nem aos logs.
+  const compartilhar = (() => {
+    const painel = document.getElementById('ideCompartilhar');
+    if (!painel) return { evento() {}, desenhar() {} };
+    const q = id => document.getElementById(id);
+    const bCriar = q('compCriar'), bReabrir = q('compReabrir'), bRevogar = q('compRevogar');
+    const estadoEl = q('compEstado'), caixa = q('compConvite'), link = q('compLink'), lista = q('compConvidados');
+    let atual = null;     // ultimo ev «compartilhamento» do agente
+    let aviso = null;     // () => texto, quando a ultima acao falhou
+    let copiado = false;
+    async function pedir(rota, corpo) {
+      try {
+        const r = await fetch(`./v1/ide/${rota}`, { method: 'POST', headers: { Authorization: `Bearer ${token()}`, 'Content-Type': 'application/json' }, body: JSON.stringify(corpo), cache: 'no-store' });
+        return { ok: r.ok, v: await r.json().catch(() => ({})), status: r.status };
+      } catch { return { ok: false, rede: true, v: {} }; }
+    }
+    async function criar() {
+      aviso = null; copiado = false;
+      if (!ativa || ativa.encerrado || ativa.convidado || transporte?.tipo !== 'ws') {
+        aviso = () => txt('ide.comp_sem_terminal', 'Abra o Helix pelo navegador antes de compartilhar.');
+        desenhar(); return;
+      }
+      bCriar.disabled = true;
+      const r = await pedir('compartilhar', { expira_em_s: Number(q('compExpira').value), max_convidados: Number(q('compMax').value), escrita: q('compEscrita').checked });
+      bCriar.disabled = false;
+      if (!r.ok) {
+        bReabrir.hidden = !r.v.reabrir;
+        aviso = r.rede ? () => txt('erro.sem_rede', 'Sem conexão com o agente — confira a rede e toque em TENTAR DE NOVO.')
+          : r.v.reabrir ? () => txt('ide.comp_precisa_reabrir', 'Este Helix tem a credencial da completação por IA no ambiente, e um :sh a mostraria a quem assiste. Reabra-o sem a credencial para compartilhar (o que não foi salvo se perde).')
+            : () => txt('ide.comp_erro', 'Não compartilhou: {erro}', { erro: r.v.error || `HTTP ${r.status}` });
+        desenhar(); return;
+      }
+      bReabrir.hidden = true;
+      const base = location.pathname.replace(/[^/]*$/, '');
+      link.value = `${location.origin}${base}#convite=${r.v.convite}`;
+      caixa.hidden = false;
+      desenhar();
+    }
+    async function revogar(convidado) {
+      const r = await pedir('compartilhar/revogar', convidado ? { convidado } : {});
+      aviso = r.ok ? null : () => txt('ide.comp_erro', 'Não compartilhou: {erro}', { erro: r.v.error || `HTTP ${r.status}` });
+      desenhar();
+    }
+    function evento(m) {
+      atual = m;
+      if (!m.ativo) { caixa.hidden = true; link.value = ''; }
+      desenhar();
+    }
+    function desenhar() {
+      const ativo = !!atual?.ativo;
+      const conv = atual?.convidados || [];
+      painel.dataset.ativo = ativo ? '1' : '';
+      painel.dataset.convidados = String(conv.length);
+      bRevogar.disabled = !ativo;
+      painel.hidden = !!convidado.ativo();
+      let t = ativo
+        ? txt('ide.comp_ativo', 'Compartilhado até {hora} — {n} de {max} convidados; {modo}.', { hora: hora(atual.expira_em), n: conv.length, max: atual.max_convidados, modo: atual.escrita ? txt('ide.comp_modo_escrita', 'escrita para convidado dono') : txt('ide.convidado_le', 'somente leitura') })
+        : atual?.motivo ? txt('ide.comp_fim', 'Compartilhamento encerrado: {motivo}.', { motivo: atual.motivo })
+          : txt('ide.comp_inativo', 'Não compartilhado.');
+      if (copiado) t += ` ${txt('ide.comp_copiado', 'Convite copiado.')}`;
+      if (aviso) t = aviso();
+      estadoEl.textContent = t;
+      estadoEl.classList.toggle('aviso', !!aviso);
+      lista.replaceChildren(...conv.map(c => {
+        const li = el('li');
+        li.append(el('span', 'comp-quem', txt('ide.comp_convidado_item', 'Convidado {id} desde {hora} — {modo}', { id: c.id.slice(-6), hora: hora(c.desde), modo: c.escreve ? txt('ide.convidado_escreve', 'com escrita') : txt('ide.convidado_le', 'somente leitura') })));
+        const b = el('button', 'acao exclui', txt('ide.comp_revogar_um', 'REVOGAR'));
+        b.type = 'button';
+        b.dataset.convidado = c.id;
+        b.addEventListener('click', () => revogar(c.id));
+        li.append(b);
+        return li;
+      }));
+      // O indicador permanente, ao lado das abas: o anfitriao nunca esquece que compartilha.
+      if (!convidado.ativo()) {
+        selo.hidden = !ativo;
+        selo.textContent = ativo ? txt('ide.selo_compartilhado', 'Compartilhado com {n} de {max}', { n: conv.length, max: atual.max_convidados }) : '';
+      }
+    }
+    bCriar.addEventListener('click', criar);
+    bRevogar.addEventListener('click', () => revogar(null));
+    // Reabrir sem a credencial: fecha o Helix atual (o hx morre com o que nao foi salvo), abre
+    // o compartilhavel e cria o convite.
+    bReabrir.addEventListener('click', async () => {
+      bReabrir.hidden = true;
+      if (ativa && !ativa.convidado) await fechar();
+      await abrir('helix', true);
+      if (ativa?.compartilhavel) criar();
+    });
+    q('compCopiar').addEventListener('click', async () => {
+      link.select();
+      try { await navigator.clipboard.writeText(link.value); copiado = true; } catch { copiado = false; }
+      desenhar();
+    });
+    return { evento, desenhar };
+  })();
+
+  // CONVIDADO: a aba que chegou por um convite (#convite=SESSAO.TOKEN, tirado da URL pelo
+  // app.js antes de a navegacao reescrever o #) assiste ao terminal de outro pelo websocket do
+  // convidado (/v1/ide/compartilhado). Desenha pelo MESMO aplicar/desenhar do anfitriao; de
+  // leitura, o teclado nao manda nada. Escrever so se o convite permitir E a credencial da
+  // API guardada neste aparelho provar o papel do terminal -- quem decide e o agente.
+  const convidado = (() => {
+    let info = null, fim = null, erro = null, ligado = false;
+    const modo = () => info?.escreve ? txt('ide.convidado_escreve', 'com escrita') : txt('ide.convidado_le', 'somente leitura');
+    function texto() {
+      if (erro) return txt('ide.convidado_erro', 'Convite recusado: {erro}', { erro });
+      if (fim) return txt('ide.convidado_fim', 'O compartilhamento terminou: {motivo}.', { motivo: fim });
+      if (!info) return txt('ide.convidado_entrando', 'Entrando no terminal compartilhado…');
+      return txt('ide.convidado_status', 'Convidado • {modo} • expira às {hora}', { modo: modo(), hora: hora(info.expira_em) });
+    }
+    function mostrar() {
+      selo.hidden = false;
+      selo.textContent = fim || erro ? texto() : txt('ide.selo_convidado', 'Você assiste a um terminal compartilhado — {modo}', { modo: modo() });
+      selo.dataset.modo = erro ? 'erro' : fim ? 'fim' : info ? (info.escreve ? 'escreve' : 'le') : 'entrando';
+      // Sem sessao ainda (antes da primeira grade), o status e escrito aqui; com ela, pelo
+      // atualizarAbas de sempre, que pergunta o texto a este modulo.
+      if (!ativa) status.textContent = texto();
+      else atualizarAbas();
+    }
+    function entrar(convite) {
+      const [sessao, segredo] = convite.split('.');
+      ligado = true;
+      document.body.dataset.convidado = '1';
+      for (const b of [botaoHelix, botaoBash, botaoFechar]) b.disabled = true;
+      let s = null;
+      const base = location.pathname.replace(/[^/]*$/, '');
+      const ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}${base}v1/ide/compartilhado`);
+      ws.onopen = () => {
+        const o = { op: 'entrar', sessao, token: segredo };
+        const cred = token();
+        if (cred) o.credencial = cred;
+        ws.send(JSON.stringify(o));
+      };
+      ws.onmessage = ev => {
+        let m;
+        try { m = JSON.parse(ev.data); } catch { return; }
+        if (m.ev === 'entrou') { info = m; mostrar(); }
+        else if (m.ev === 'grade') {
+          if (!s) {
+            s = { id: m.id, programa: 'helix', convidado: true, somenteLeitura: !info?.escreve, pid: '—', cwd: '', colunas: m.colunas, linhas: m.linhas, grade: [], fundo: m.fundo, frente: m.frente, cursor: null, titulo: '', encerrado: null };
+            sessoes.set(s.id, s);
+            ativar(s);
+          }
+          aplicar(s, m);
+        } else if (m.ev === 'fim') { fim = m.motivo || '—'; if (s) { s.encerrado = { codigo: null }; desenhar(s, null); } mostrar(); }
+        else if (m.ev === 'erro' && !info) { erro = m.erro; mostrar(); }
+      };
+      ws.onclose = () => { if (!fim && !erro) { fim = txt('ide.convidado_caiu', 'conexão encerrada'); } if (s) s.encerrado = { codigo: null }; mostrar(); };
+      transporte = {
+        tipo: 'convidado',
+        abrir: () => Promise.reject(new Error(texto())),
+        // So chega aqui o convidado com escrita (o teclado barra o de leitura antes).
+        escrever: (id, o) => { if (ws.readyState === 1) ws.send(JSON.stringify(o.tecla ? { op: 'tecla', tecla: o.tecla } : o.colar !== undefined ? { op: 'colar', texto: o.colar } : { op: 'texto', texto: o.texto })); return Promise.resolve(true); },
+        // O tamanho e a rolagem sao do anfitriao.
+        redimensionar: () => Promise.resolve(),
+        rolar: () => Promise.resolve(),
+        fechar: () => { ws.close(); return Promise.resolve(); },
+        ouvir: () => {},
+      };
+      mostrar();
+      compartilhar.desenhar();
+    }
+    return { entrar, status: texto, ativo: () => ligado, mostrar };
+  })();
+  {
+    let convite = null;
+    try { convite = sessionStorage.getItem('phxclaw.convite'); sessionStorage.removeItem('phxclaw.convite'); } catch { /* sem armazenamento */ }
+    if (convite && comHttp) convidado.entrar(convite);
+    compartilhar.desenhar();
+  }
 
   botaoHelix.addEventListener('click', () => abrir('helix'));
   botaoBash.addEventListener('click', () => abrir('bash'));

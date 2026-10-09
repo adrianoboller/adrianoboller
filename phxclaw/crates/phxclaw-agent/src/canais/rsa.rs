@@ -16,6 +16,23 @@
 //!
 //! Conferido nos testes contra os vetores oficiais: Wycheproof `rsa_signature_2048_sha256`
 //! (259 casos) e NIST CAVP SigVer15 SHA-256 (54 casos, modulos de 1024, 2048 e 3072).
+//!
+//! **A assinatura** (`ChavePrivada`, desde 09/10/2026) existe para UM uso: o JWT RS256 que a
+//! conta de servico do GCP troca por token (`cofres/gcp.rs`). Ali a chave e NOSSA e o expoente
+//! e o privado (2048 bits, nao 17), e a reducao bit a bit do verificar custaria ~4.000
+//! reducoes de 4.096 passos por assinatura. Por isso a assinatura tem o seu proprio
+//! multiplicador -- Montgomery (CIOS) -- e o verificar continua como esta. Onde diverge:
+//! - **quadrado e multiplica SEMPRE**, com a escolha por mascara, e a subtracao final do
+//!   Montgomery tambem por mascara: o expoente e segredo, e o tempo nao pode depender dos
+//!   bits dele;
+//! - **sem CRT**: o CRT quadruplica a velocidade e acrescenta p, q, dp, dq e qinv ao codigo
+//!   e ao que se guarda em memoria; uma assinatura por hora (o token do GCP vale 1 h) nao
+//!   paga isso;
+//! - **toda assinatura se confere antes de sair** (`verificar` com o expoente publico): uma
+//!   falha de calculo devolvendo assinatura errada vira erro aqui, nao 401 opaco no Google.
+//!
+//! Conferida contra o vetor da RFC 7515 Apendice A.2 (JWS RS256 com a chave do apendice,
+//! assinatura deterministica byte a byte).
 
 use base64::Engine;
 use sha2::{Digest, Sha256};
@@ -280,5 +297,244 @@ impl ChavePublica {
     pub fn verificar(&self, msg: &[u8], assinatura: &[u8]) -> bool {
         self.modulo
             .verificar(&EXPOENTE.to_be_bytes()[1..], msg, assinatura)
+    }
+}
+
+// ------------------------------------------------------------------ assinatura
+
+/// Montgomery (CIOS, Koc et al. 1996) sobre o modulo de `Modulo`: `mul(a, b) = a*b*R^-1 mod n`
+/// com `R = 2^(64*l)`. So a assinatura usa; o verificar fica na reducao bit a bit.
+struct Montgomery {
+    n: Grande,
+    /// `-n^-1 mod 2^64`.
+    n0: u64,
+    /// `R^2 mod n`: leva um numero para a forma de Montgomery numa multiplicacao.
+    r2: Grande,
+}
+
+impl Montgomery {
+    fn novo(m: &Modulo) -> Self {
+        let l = m.n.len();
+        // Newton para o inverso modulo 2^64: cada passo dobra os bits certos (1 -> 64 em 6).
+        let mut inv: u64 = 1;
+        for _ in 0..6 {
+            inv = inv.wrapping_mul(2u64.wrapping_sub(m.n[0].wrapping_mul(inv)));
+        }
+        let mut r2 = vec![0u64; 2 * l + 1];
+        r2[2 * l] = 1;
+        Self {
+            n: m.n.clone(),
+            n0: inv.wrapping_neg(),
+            r2: m.reduzir(&r2),
+        }
+    }
+
+    /// `a*b*R^-1 mod n`, com `a, b < n` de `l` palavras.
+    fn mul(&self, a: &[u64], b: &[u64]) -> Grande {
+        let l = self.n.len();
+        let mut t = vec![0u64; l + 2];
+        for &bi in b.iter().take(l) {
+            let mut c: u128 = 0;
+            for j in 0..l {
+                let s = t[j] as u128 + (a[j] as u128) * (bi as u128) + c;
+                t[j] = s as u64;
+                c = s >> 64;
+            }
+            let s = t[l] as u128 + c;
+            t[l] = s as u64;
+            t[l + 1] = (s >> 64) as u64;
+            let m = t[0].wrapping_mul(self.n0);
+            let s = t[0] as u128 + (m as u128) * (self.n[0] as u128);
+            let mut c = s >> 64;
+            for j in 1..l {
+                let s = t[j] as u128 + (m as u128) * (self.n[j] as u128) + c;
+                t[j - 1] = s as u64;
+                c = s >> 64;
+            }
+            let s = t[l] as u128 + c;
+            t[l - 1] = s as u64;
+            t[l] = t[l + 1] + (s >> 64) as u64;
+            t[l + 1] = 0;
+        }
+        // t < 2n: subtrai n por mascara (sem desvio pelo valor).
+        let mut u = vec![0u64; l];
+        let mut emprestimo = 0u64;
+        for j in 0..l {
+            let (d1, e1) = t[j].overflowing_sub(self.n[j]);
+            let (d2, e2) = d1.overflowing_sub(emprestimo);
+            u[j] = d2;
+            emprestimo = (e1 | e2) as u64;
+        }
+        let maior = (t[l] | (emprestimo ^ 1)) & 1;
+        let mascara = 0u64.wrapping_sub(maior);
+        (0..l)
+            .map(|j| (u[j] & mascara) | (t[j] & !mascara))
+            .collect()
+    }
+
+    /// `base^exp mod n`, `base < n`: quadrado e multiplica sempre, escolha por mascara.
+    fn potencia(&self, base: &[u64], exp: &[u8]) -> Grande {
+        let l = self.n.len();
+        let mut um = vec![0u64; l];
+        um[0] = 1;
+        let x = self.mul(base, &self.r2);
+        let mut acc = self.mul(&um, &self.r2);
+        for byte in exp {
+            for b in (0..8).rev() {
+                acc = self.mul(&acc, &acc);
+                let t = self.mul(&acc, &x);
+                let mascara = 0u64.wrapping_sub(((byte >> b) & 1) as u64);
+                for j in 0..l {
+                    acc[j] = (t[j] & mascara) | (acc[j] & !mascara);
+                }
+            }
+        }
+        self.mul(&acc, &um)
+    }
+}
+
+/// Chave privada RSA para assinar RS256. Mesma politica da `ChavePublica` (2048 a 4096 bits,
+/// `e = 65537`): a chave vem de conta de servico, e qualquer coisa fora disso e arquivo
+/// errado, nao chave a acomodar.
+pub struct ChavePrivada {
+    modulo: Modulo,
+    mont: Montgomery,
+    /// O expoente privado, big-endian. Zerado no `drop`.
+    d: Vec<u8>,
+}
+
+impl std::fmt::Debug for ChavePrivada {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "ChavePrivada({} bits, [REDACTED])", self.modulo.bits())
+    }
+}
+
+impl Drop for ChavePrivada {
+    fn drop(&mut self) {
+        for b in self.d.iter_mut() {
+            *b = 0;
+        }
+        std::hint::black_box(&self.d);
+    }
+}
+
+/// Um TLV DER: (etiqueta, conteudo, resto). So comprimento definido, ate 4 bytes.
+fn der(b: &[u8]) -> Result<(u8, &[u8], &[u8]), String> {
+    let erro = || "DER truncado ou invalido".to_string();
+    let (&tag, resto) = b.split_first().ok_or_else(erro)?;
+    let (&c0, resto) = resto.split_first().ok_or_else(erro)?;
+    let (len, resto) = if c0 < 0x80 {
+        (c0 as usize, resto)
+    } else {
+        let n = (c0 & 0x7f) as usize;
+        if n == 0 || n > 4 || resto.len() < n {
+            return Err(erro());
+        }
+        let len = resto[..n]
+            .iter()
+            .fold(0usize, |a, x| (a << 8) | *x as usize);
+        (len, &resto[n..])
+    };
+    if resto.len() < len {
+        return Err(erro());
+    }
+    Ok((tag, &resto[..len], &resto[len..]))
+}
+
+fn der_esperado(b: &[u8], tag: u8, o_que: &str) -> Result<(Vec<u8>, usize), String> {
+    let (t, c, resto) = der(b)?;
+    if t != tag {
+        return Err(format!("DER: esperava {o_que}"));
+    }
+    Ok((c.to_vec(), b.len() - resto.len()))
+}
+
+/// O OID rsaEncryption (1.2.840.113549.1.1.1), ja codificado.
+const OID_RSA: [u8; 9] = [0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01, 0x01];
+
+impl ChavePrivada {
+    /// `n`, `e` e `d` big-endian (zeros a esquerda tolerados).
+    pub fn de_componentes(n: &[u8], e: &[u8], d: &[u8]) -> Result<Self, String> {
+        let publica = ChavePublica::nova(n, e)?;
+        let d = sem_zeros(d).to_vec();
+        if d.is_empty() {
+            return Err("expoente privado zero".into());
+        }
+        let mont = Montgomery::novo(&publica.modulo);
+        Ok(Self {
+            modulo: publica.modulo,
+            mont,
+            d,
+        })
+    }
+
+    /// `RSAPrivateKey` (RFC 8017 Apendice A.1.2): versao, n, e, d, e o resto ignorado.
+    fn de_pkcs1(der_: &[u8]) -> Result<Self, String> {
+        let (seq, _) = der_esperado(der_, 0x30, "SEQUENCE da RSAPrivateKey")?;
+        let mut resto: &[u8] = &seq;
+        let mut inteiros = Vec::new();
+        for o_que in ["versao", "n", "e", "d"] {
+            let (v, usado) = der_esperado(resto, 0x02, o_que)?;
+            inteiros.push(v);
+            resto = &resto[usado..];
+        }
+        if sem_zeros(&inteiros[0]).len() > 1 {
+            return Err("RSAPrivateKey de versao desconhecida".into());
+        }
+        Self::de_componentes(&inteiros[1], &inteiros[2], &inteiros[3])
+    }
+
+    /// `PrivateKeyInfo` (PKCS#8, RFC 5208): o que a conta de servico do Google traz.
+    fn de_pkcs8(der_: &[u8]) -> Result<Self, String> {
+        let (seq, _) = der_esperado(der_, 0x30, "SEQUENCE do PrivateKeyInfo")?;
+        let (_, usado) = der_esperado(&seq, 0x02, "versao")?;
+        let resto = &seq[usado..];
+        let (alg, usado) = der_esperado(resto, 0x30, "AlgorithmIdentifier")?;
+        let (oid, _) = der_esperado(&alg, 0x06, "OID do algoritmo")?;
+        if oid != OID_RSA {
+            return Err("a chave nao e RSA (rsaEncryption)".into());
+        }
+        let (chave, _) = der_esperado(&resto[usado..], 0x04, "OCTET STRING da chave")?;
+        Self::de_pkcs1(&chave)
+    }
+
+    /// PEM `PRIVATE KEY` (PKCS#8) ou `RSA PRIVATE KEY` (PKCS#1). O erro nunca cita o
+    /// conteudo: a chave e segredo.
+    pub fn de_pem(pem: &str) -> Result<Self, String> {
+        let corpo = |rotulo: &str| -> Option<String> {
+            let ini = format!("-----BEGIN {rotulo}-----");
+            let fim = format!("-----END {rotulo}-----");
+            let a = pem.find(&ini)? + ini.len();
+            let b = a + pem[a..].find(&fim)?;
+            Some(pem[a..b].chars().filter(|c| !c.is_whitespace()).collect())
+        };
+        let b64 = |t: String| {
+            base64::engine::general_purpose::STANDARD
+                .decode(t)
+                .map_err(|_| "PEM com base64 invalido".to_string())
+        };
+        if let Some(t) = corpo("PRIVATE KEY") {
+            return Self::de_pkcs8(&b64(t)?);
+        }
+        if let Some(t) = corpo("RSA PRIVATE KEY") {
+            return Self::de_pkcs1(&b64(t)?);
+        }
+        Err("PEM sem chave privada (PRIVATE KEY ou RSA PRIVATE KEY)".into())
+    }
+
+    pub fn bits(&self) -> usize {
+        self.modulo.bits()
+    }
+
+    /// RSASSA-PKCS1-V1_5-SIGN (RFC 8017 §8.2.1) com SHA-256, conferida antes de sair.
+    pub fn assinar(&self, msg: &[u8]) -> Result<Vec<u8>, String> {
+        let k = self.modulo.k;
+        let em = bloco_esperado(msg, k).ok_or("modulo pequeno demais para SHA-256")?;
+        let m = de_bytes(&em, self.modulo.n.len());
+        let s = para_bytes(&self.mont.potencia(&m, &self.d), k);
+        if !self.modulo.verificar(&EXPOENTE.to_be_bytes()[1..], msg, &s) {
+            return Err("a assinatura RSA nao conferiu com a chave publica".into());
+        }
+        Ok(s)
     }
 }
