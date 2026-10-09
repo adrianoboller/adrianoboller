@@ -53,6 +53,19 @@ pub enum Atividade {
     Administrar,
     /// Pedir o fluxo de replicacao.
     Replicar,
+    /// Ver o que o servidor esta fazendo -- o aquario (pedido 707) -- sem
+    /// poder matar nada.
+    ///
+    /// Nasce pela convergencia dos tres maduros (`aquario-707.md` §5): ver
+    /// todos e matar os outros sao dois poderes em todos eles
+    /// (`pg_monitor` × `pg_signal_backend`, `PROCESS` × `CONNECTION_ADMIN`).
+    /// E poder de SERVIDOR, nao de base: vale o que a regra `"*"` (ou o
+    /// nivel) disser, e a operacao confere isso por dentro, porque o portao
+    /// geral olharia a base que o pedido nomeasse.
+    ///
+    /// Entra pedido, nao imposto: quem administra continua vendo, porque
+    /// [`Permissoes::pode`] responde `monitorar` tambem por `administrar`.
+    Monitorar,
 }
 
 impl Atividade {
@@ -68,10 +81,11 @@ impl Atividade {
             Atividade::Verificar => "verificar",
             Atividade::Administrar => "administrar",
             Atividade::Replicar => "replicar",
+            Atividade::Monitorar => "monitorar",
         }
     }
 
-    pub const TODAS: [Atividade; 10] = [
+    pub const TODAS: [Atividade; 11] = [
         Atividade::Ler,
         Atividade::Inserir,
         Atividade::Alterar,
@@ -82,6 +96,7 @@ impl Atividade {
         Atividade::Verificar,
         Atividade::Administrar,
         Atividade::Replicar,
+        Atividade::Monitorar,
     ];
 
     /// Qual atividade uma operacao do protocolo exige.
@@ -385,6 +400,13 @@ impl Atividade {
             "telemetria" | "telemetria_ligar" | "telemetria_desligar" | "telemetria_encerrar" => {
                 Atividade::Administrar
             }
+            // O aquario (pedido 707) mostra a linha do tempo das tarefas com o
+            // usuario pseudonimizado e sem IP, e nao mata nada: e o poder de
+            // VER, separado do de matar como nos tres maduros. Nenhuma das
+            // duas tem campo "database", e por isso as duas conferem por
+            // dentro (`portao_do_aquario`) na regra do servidor, e nao na base
+            // que o pedido inventasse.
+            "aquario_log" | "aquario_contagens" => Atividade::Monitorar,
             // `config_gravar` esta aqui declarado, e nao so caindo no `_`:
             // a operacao que reescreve o config.json e a ultima que deveria
             // depender do padrao para negar. A op ainda confere por dentro.
@@ -573,7 +595,7 @@ impl Ord for Nivel {
     }
 }
 
-/// As dez permissoes de uma base. Tudo comeca em `false`.
+/// As onze permissoes de uma base. Tudo comeca em `false`.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Permissoes {
     pub ler: bool,
@@ -586,6 +608,9 @@ pub struct Permissoes {
     pub verificar: bool,
     pub administrar: bool,
     pub replicar: bool,
+    /// So tem sentido na regra `"*"` (ou no nivel): e poder de servidor. Ver
+    /// [`Atividade::Monitorar`].
+    pub monitorar: bool,
 }
 
 impl Permissoes {
@@ -601,10 +626,24 @@ impl Permissoes {
             verificar: true,
             administrar: true,
             replicar: true,
+            monitorar: true,
         }
     }
 
+    /// O que esta regra concede, contando o que um poder implica no outro.
+    ///
+    /// So uma implicacao existe: `administrar` concede `monitorar`. E o
+    /// comportamento velho que o direito novo nao pode quebrar -- quem
+    /// administrava ja via tudo antes de o `monitorar` nascer, e nenhuma regra
+    /// escrita antes dele diz `"monitorar": true`.
     pub fn pode(&self, a: Atividade) -> bool {
+        self.concedido(a) || (a == Atividade::Monitorar && self.administrar)
+    }
+
+    /// O que esta regra ESCREVE, sem implicacao nenhuma. E o que volta ao
+    /// `config.json`: gravar a implicacao faria o cadastro mudar de forma so
+    /// por ter passado pela tela.
+    fn concedido(&self, a: Atividade) -> bool {
         match a {
             Atividade::Ler => self.ler,
             Atividade::Inserir => self.inserir,
@@ -616,6 +655,7 @@ impl Permissoes {
             Atividade::Verificar => self.verificar,
             Atividade::Administrar => self.administrar,
             Atividade::Replicar => self.replicar,
+            Atividade::Monitorar => self.monitorar,
         }
     }
 
@@ -631,6 +671,7 @@ impl Permissoes {
             verificar: j.booleano_ou("verificar", false),
             administrar: j.booleano_ou("administrar", false),
             replicar: j.booleano_ou("replicar", false),
+            monitorar: j.booleano_ou("monitorar", false),
         }
     }
 
@@ -638,7 +679,7 @@ impl Permissoes {
         Json::objeto(
             Atividade::TODAS
                 .iter()
-                .map(|a| (a.nome(), Json::Bool(self.pode(*a))))
+                .map(|a| (a.nome(), Json::Bool(self.concedido(*a))))
                 .collect(),
         )
     }
@@ -648,7 +689,7 @@ impl Permissoes {
 ///
 /// So duas atividades cabem aqui, e a escolha e do dado, nao de gosto:
 /// `ler` decide se a coluna sai na resposta e `alterar` decide se ela pode
-/// mudar de valor. As outras oito da base nao tem significado por coluna --
+/// mudar de valor. As outras nove da base nao tem significado por coluna --
 /// nao se `reindexa` um campo nem se `administra` metade de uma linha --, e
 /// por isso um direito desconhecido dentro de `colunas` **recusa a carga do
 /// cadastro** em vez de ser ignorado: campo que ninguem le mente, e mente
@@ -666,7 +707,7 @@ impl DireitoDeColuna {
         match atividade {
             Atividade::Ler => self.ler,
             Atividade::Alterar => self.alterar,
-            // As outras oito nao existem por coluna, e responder `false` aqui
+            // As outras nove nao existem por coluna, e responder `false` aqui
             // faria `colunas_negadas` devolver a tabela inteira para uma
             // pergunta que nao se faz. Quem pergunta por elas nao tem
             // restricao de coluna nenhuma -- que e a verdade.

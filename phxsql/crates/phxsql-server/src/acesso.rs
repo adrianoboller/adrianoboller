@@ -207,7 +207,25 @@ impl LogAcessos {
     /// `profiler::girar_se_encheu`, pelo mesmo motivo: conferir depois
     /// deixaria a ultima linha de cada arquivo passar do teto.
     pub fn registrar(&mut self, a: &Acesso) -> Result<()> {
-        let linha = a.para_json().escrever();
+        self.registrar_json(&a.para_json())
+    }
+
+    /// O escritor de verdade, para qualquer linha JSON -- o `acessos.log` e
+    /// um cliente dele, e o `aquario.log` e o `ocorrencias.log` (pedidos 707
+    /// e 495) serao os outros dois.
+    ///
+    /// # Por que generalizar, e nao copiar
+    ///
+    /// Abrir com a permissao do banco, girar por tamanho, contar a falha do
+    /// rodizio e descarregar na hora sao decisoes que este arquivo ja pagou.
+    /// Um terceiro escritor ao lado deste e do `Diario` repetiria as quatro, e
+    /// a que alguem esquecesse num deles -- o teto conferido DEPOIS de
+    /// escrever, digamos -- so apareceria no dia do disco cheio.
+    ///
+    /// A linha sai do `Json::escrever`, que escapa `\n` dentro de texto: um
+    /// campo forjado com quebra de linha nao vira duas linhas no arquivo.
+    pub fn registrar_json(&mut self, j: &Json) -> Result<()> {
+        let linha = j.escrever();
         let cabem = linha.len() as u64 + 1;
         if crate::rodizio::deve_girar(self.bytes_no_arquivo, cabem, self.teto_do_arquivo) {
             // Solta o descritor ANTES de girar -- ver a nota em
@@ -474,6 +492,38 @@ mod tests {
             total += LogAcessos::ler(&sufixo).unwrap().len();
         }
         assert_eq!(total, 10, "girar nao pode perder nem duplicar linha");
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    /// O escritor generalizado grava QUALQUER linha JSON -- o aquario e a
+    /// ocorrencia vao usa-lo -- e uma quebra de linha forjada num campo nao
+    /// vira duas linhas: o arquivo e JSON Lines, e uma linha a mais seria um
+    /// evento inventado para quem le.
+    #[test]
+    fn registrar_json_grava_uma_linha_por_objeto_mesmo_com_quebra_forjada() {
+        let d = dir_temp("registrar-json");
+        let caminho = d.join("aquario.log");
+        {
+            let mut l = LogAcessos::abrir(&caminho).unwrap();
+            l.registrar_json(&Json::objeto(vec![
+                ("evento", Json::texto_de("nasceu".to_string())),
+                (
+                    "op",
+                    Json::texto_de("varrer\n{\"evento\":\"morta\"}".to_string()),
+                ),
+            ]))
+            .unwrap();
+            // E o acessos.log continua passando pelo mesmo escritor.
+            l.registrar(&acesso("192.0.2.1", 1_700_000_000_000, true))
+                .unwrap();
+        }
+        let texto = std::fs::read_to_string(&caminho).unwrap();
+        let linhas: Vec<&str> = texto.lines().collect();
+        assert_eq!(linhas.len(), 2, "a quebra forjada virou linha: {texto}");
+        let primeira = Json::analisar(linhas[0]).unwrap();
+        assert_eq!(primeira.texto_ou("evento", ""), "nasceu");
+        assert!(primeira.texto_ou("op", "").contains('\n'));
+        assert_eq!(LogAcessos::ler(&caminho).unwrap().len(), 1);
         std::fs::remove_dir_all(&d).unwrap();
     }
 }

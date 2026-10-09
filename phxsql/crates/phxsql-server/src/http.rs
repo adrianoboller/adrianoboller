@@ -32,13 +32,12 @@
 //! simples de nao ter travessia de diretorio -- nao tendo diretorio.
 
 use std::collections::HashMap;
-use std::io::{BufReader, Read, Write};
+use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::time::Duration;
 
 use phxsql_core::tls::FluxoTls;
 
-use phxsql_core::fio::{Canal, Recebido};
 use phxsql_core::hash::digito_hex;
 use phxsql_core::json::Json;
 
@@ -50,19 +49,10 @@ use phxsql_core::json::Json;
 /// `Canal` da porta de dados (`phxsql-core/src/fio.rs`): espalhar `if tls`
 /// por cada leitura seria repetir a decisao, e a que alguem esquecesse
 /// mandaria claro por um fio que o navegador acha cifrado.
-pub trait FioHttp: Read + Write {
-    fn prazo(&self) -> Option<Duration>;
-    fn por_prazo(&self, prazo: Option<Duration>) -> std::io::Result<()>;
-}
-
-impl FioHttp for TcpStream {
-    fn prazo(&self) -> Option<Duration> {
-        self.read_timeout().ok().flatten()
-    }
-    fn por_prazo(&self, prazo: Option<Duration>) -> std::io::Result<()> {
-        self.set_read_timeout(prazo)
-    }
-}
+///
+/// Mora no core desde o pedido 454: o `drenar` de la precisa dele, e o
+/// PhxZipWeb le pelo mesmo motor.
+pub use phxsql_core::http::FioHttp;
 
 /// O fio de uma porta HTTP depois da aceitacao: claro, ou ja com o aperto
 /// TLS feito (pedido 572).
@@ -273,13 +263,15 @@ impl Pedido {
 /// Pedido 434. As duas leituras daqui eram `read_line` CRU: a linha de pedido
 /// sem teto nenhum, e cada linha de cabecalho conferida contra o
 /// [`MAX_CABECALHO`] **depois** de ja estar na memoria -- o acumulado limitado,
-/// a linha nunca. Quem escreveu esta porta sabia a diferenca: quinze linhas
-/// abaixo, o `tamanho > MAX_CORPO` e conferido ANTES do `vec![0u8; tamanho]`.
+/// a linha nunca. Quem escreveu esta porta sabia a diferenca: logo abaixo, o
+/// `tamanho > MAX_CORPO` era conferido ANTES do `vec![0u8; tamanho]`.
 ///
 /// O conserto nao e um segundo teto pendurado ao lado do primeiro -- e vir do
-/// mesmo motor. [`Canal::Claro`] e o fio em claro, que e exatamente o que esta
+/// mesmo motor. `Canal::Claro` e o fio em claro, que e exatamente o que esta
 /// porta e, e o `ler_ate` dele aplica o teto por `take` antes de a linha
 /// existir. O mesmo `take` que protege a porta 5000 passa a proteger a web.
+/// Desde o pedido 454 esse laco mora em `phxsql_core::http::ler_pedido`, e
+/// esta porta so passa os tetos dela.
 ///
 /// E o teto e o [`MAX_CABECALHO`] que ja estava aqui, e nao um valor novo:
 /// **nenhum pedido que era aceito antes deixa de ser**. Toda linha de um
@@ -318,75 +310,31 @@ pub enum PedidoLido {
     GrandeDemais(String),
 }
 
+/// Os tetos desta porta, no formato do motor.
+const TETOS: phxsql_core::http::Tetos = phxsql_core::http::Tetos {
+    cabecalho: MAX_CABECALHO,
+    corpo: MAX_CORPO,
+};
+
 /// O [`ler_pedido`] que diz POR QUE nao leu -- e o que as tres portas chamam.
+///
+/// A leitura e a do core (`phxsql_core::http::ler_pedido`, pedido 454): o
+/// PhxZipWeb le pelo mesmo motor, com os tetos dele. Daqui so sai a
+/// adaptacao para o que esta porta fala -- JSON, entao o corpo vira texto, do
+/// mesmo jeito de antes (`from_utf8_lossy`).
 pub fn ler_pedido_medindo<R: Read>(fluxo: R) -> PedidoLido {
-    let mut leitor = BufReader::new(fluxo);
-    let mut canal = Canal::Claro;
-    let grande = |o_que: &str, teto: usize| {
-        PedidoLido::GrandeDemais(format!(
-            "pedido HTTP grande demais: {o_que} passou de {teto} bytes"
-        ))
-    };
-
-    let linha = match canal.ler_ate(&mut leitor, MAX_CABECALHO as u64) {
-        Ok(Recebido::Linha(l)) => l,
-        Err(phxsql_core::error::PhxError::LimiteExcedido(_)) => {
-            return grande("a linha do pedido", MAX_CABECALHO)
-        }
-        _ => return PedidoLido::Nada,
-    };
-    let mut partes = linha.split_whitespace();
-    let (Some(metodo), Some(caminho)) = (partes.next(), partes.next()) else {
-        return PedidoLido::Nada;
-    };
-    let (metodo, caminho) = (metodo.to_string(), caminho.to_string());
-
-    let mut cabecalhos = HashMap::new();
-    let mut lidos = linha.len();
-    loop {
-        let l = match canal.ler_ate(&mut leitor, MAX_CABECALHO as u64) {
-            Ok(Recebido::Linha(l)) => l,
-            Err(phxsql_core::error::PhxError::LimiteExcedido(_)) => {
-                return grande("uma linha de cabecalho", MAX_CABECALHO)
-            }
-            _ => return PedidoLido::Nada,
-        };
-        lidos += l.len();
-        if lidos > MAX_CABECALHO {
-            return grande("o cabecalho", MAX_CABECALHO);
-        }
-        let t = l.trim_end();
-        if t.is_empty() {
-            break;
-        }
-        if let Some((chave, valor)) = t.split_once(':') {
-            cabecalhos.insert(chave.trim().to_lowercase(), valor.trim().to_string());
-        }
+    use phxsql_core::http::PedidoLido as Lido;
+    match phxsql_core::http::ler_pedido(fluxo, TETOS) {
+        Lido::Pedido(p) => PedidoLido::Pedido(Pedido {
+            metodo: p.metodo,
+            caminho: p.caminho,
+            consulta: p.consulta,
+            cabecalhos: p.cabecalhos,
+            corpo: String::from_utf8_lossy(&p.corpo).into_owned(),
+        }),
+        Lido::Nada => PedidoLido::Nada,
+        Lido::GrandeDemais(e) => PedidoLido::GrandeDemais(e.motivo()),
     }
-
-    let tamanho: usize = cabecalhos
-        .get("content-length")
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(0);
-    if tamanho > MAX_CORPO {
-        return grande("o Content-Length", MAX_CORPO);
-    }
-    let mut corpo = vec![0u8; tamanho];
-    if tamanho > 0 && leitor.read_exact(&mut corpo).is_err() {
-        return PedidoLido::Nada;
-    }
-
-    let (so_caminho, consulta) = match caminho.split_once('?') {
-        Some((c, q)) => (c.to_string(), q.to_string()),
-        None => (caminho.clone(), String::new()),
-    };
-    PedidoLido::Pedido(Pedido {
-        metodo,
-        caminho: so_caminho,
-        consulta,
-        cabecalhos,
-        corpo: String::from_utf8_lossy(&corpo).into_owned(),
-    })
 }
 
 /// Monta o texto completo da resposta HTTP.
@@ -565,22 +513,15 @@ fn montar_com_folga_e_extras(
 /// O escoamento tem teto e prazo curto: quem foi barrado nao ganha o direito
 /// de fazer o servidor ler um corpo de megabytes.
 pub fn escoar<F: FioHttp + ?Sized>(fluxo: &mut F) {
-    let antes = fluxo.prazo();
-    let _ = fluxo.por_prazo(Some(Duration::from_millis(250)));
-    let mut resto = [0u8; 8192];
-    let mut lidos = 0usize;
-    let leitor = &mut *fluxo;
     // O teto e o mesmo de um pedido legitimo: escoar nao da a quem foi barrado
     // o direito de fazer o servidor ler MAIS do que ele ja leria de qualquer
     // um. E o primeiro teto (16 KiB) nao bastava -- um corpo de 20 KB ainda
-    // deixava resto, e resto e RST.
-    while lidos < MAX_CABECALHO + MAX_CORPO {
-        match leitor.read(&mut resto) {
-            Ok(0) | Err(_) => break,
-            Ok(n) => lidos += n,
-        }
-    }
-    let _ = fluxo.por_prazo(antes);
+    // deixava resto, e resto e RST. O laco e o `drenar` do core (pedido 454).
+    phxsql_core::http::drenar(
+        fluxo,
+        (MAX_CABECALHO + MAX_CORPO) as u64,
+        Duration::from_millis(250),
+    );
 }
 
 /// Envia a resposta.

@@ -7,6 +7,7 @@ pub mod acesso;
 pub mod agrupar;
 #[cfg(test)]
 mod apoio_teste;
+pub mod aquario;
 pub mod bidirecional;
 pub mod blacklist;
 pub mod carga;

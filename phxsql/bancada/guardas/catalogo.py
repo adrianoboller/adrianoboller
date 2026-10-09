@@ -10524,11 +10524,13 @@ pub fn limpar() {
             "Provado pelo soquete: a linha sem fim faz o servidor desistir no "
             "teto."
         ),
-        "arquivo": "crates/phxsql-server/src/http.rs",
-        "trecho": """    let linha = match canal.ler_ate(&mut leitor, MAX_CABECALHO as u64) {
+        "arquivo": "crates/phxsql-core/src/http.rs",
+        "trecho": """    let linha = match canal.ler_ate(&mut leitor, teto_linha) {
         Ok(Recebido::Linha(l)) => l,
-        Err(phxsql_core::error::PhxError::LimiteExcedido(_)) => {
-            return grande("a linha do pedido", MAX_CABECALHO)
+        Err(PhxError::LimiteExcedido(_)) => {
+            return PedidoLido::GrandeDemais(Excesso::Linha {
+                teto: tetos.cabecalho,
+            })
         }
         _ => return PedidoLido::Nada,
     };
@@ -10545,6 +10547,7 @@ pub fn limpar() {
         Ok(n) if n > 0 => cru,
         _ => return PedidoLido::Nada,
     };
+    let _ = (&mut canal, teto_linha);
 """,
         "pacote": "phxsql-server",
         "alvo": ["--test", "teto-da-linha-http"],
@@ -10565,11 +10568,13 @@ pub fn limpar() {
             "provava que ela acusa a leitura crua no lugar que a fundou. A "
             "mesma troca da guarda do soquete, julgada agora pelo fonte."
         ),
-        "arquivo": "crates/phxsql-server/src/http.rs",
-        "trecho": """    let linha = match canal.ler_ate(&mut leitor, MAX_CABECALHO as u64) {
+        "arquivo": "crates/phxsql-core/src/http.rs",
+        "trecho": """    let linha = match canal.ler_ate(&mut leitor, teto_linha) {
         Ok(Recebido::Linha(l)) => l,
-        Err(phxsql_core::error::PhxError::LimiteExcedido(_)) => {
-            return grande("a linha do pedido", MAX_CABECALHO)
+        Err(PhxError::LimiteExcedido(_)) => {
+            return PedidoLido::GrandeDemais(Excesso::Linha {
+                teto: tetos.cabecalho,
+            })
         }
         _ => return PedidoLido::Nada,
     };
@@ -10586,6 +10591,7 @@ pub fn limpar() {
         Ok(n) if n > 0 => cru,
         _ => return PedidoLido::Nada,
     };
+    let _ = (&mut canal, teto_linha);
 """,
         "pacote": "phxsql-server",
         "alvo": ["--lib"],

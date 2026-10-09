@@ -1220,6 +1220,7 @@ pub const FABRICA_TELA: &[TextoDeFabrica] = &[
     texto!("tela.at_verificar", "verificar", "vérifier", "verify", "verifica", "prüfen", "verificar"),
     texto!("tela.at_administrar", "administrar", "administrer", "administer", "amministra", "verwalten", "administrar"),
     texto!("tela.at_replicar", "replicar", "répliquer", "replicate", "replica", "replizieren", "replicar"),
+    texto!("tela.at_monitorar", "monitorar", "surveiller", "monitor", "monitora", "überwachen", "monitorizar"),
     texto!("tela.tt_novo_usuario", "Novo usuário", "Nouvel utilisateur", "New user", "Nuovo utente", "Neuer Benutzer", "Nuevo usuario"),
     texto!("tela.tt_editar_usuario", "Editar {login}", "Modifier {login}", "Edit {login}", "Modifica {login}", "{login} bearbeiten", "Editar {login}"),
     texto!("tela.lbl_repetir_senha", "Repetir senha", "Répéter le mot de passe", "Repeat password", "Ripeti password", "Kennwort wiederholen", "Repetir contraseña"),

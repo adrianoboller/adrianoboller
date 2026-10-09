@@ -1,5 +1,5 @@
 {
-  "quando": "2026-10-09 01:13",
+  "quando": "2026-10-09 04:32",
   "mais_antigo": "2026-09-16 15:25",
   "guardas": [
     {
@@ -2060,17 +2060,17 @@
       "id": "leitura-fora-do-canal-na-web",
       "titulo": "a porta HTTP le a linha do pedido por `read_line` cru, fora do `Canal` (o caso que fundou a lei, pedido 434)",
       "veredito": "PROVADA",
-      "segundos": 22.31,
+      "segundos": 23.1,
       "notas": [],
-      "quando": "2026-10-08 19:25"
+      "quando": "2026-10-09 04:32"
     },
     {
       "id": "leitura-fora-do-canal-na-web-pela-catraca",
       "titulo": "a leitura crua da linha do pedido HTTP volta e a catraca `TETO_LEITURA_FORA_DO_CANAL` nao sobe",
       "veredito": "PROVADA",
-      "segundos": 83.99,
+      "segundos": 78.58,
       "notas": [],
-      "quando": "2026-10-08 19:25"
+      "quando": "2026-10-09 04:32"
     },
     {
       "id": "leitura-fora-do-canal-no-aperto-do-odbc",

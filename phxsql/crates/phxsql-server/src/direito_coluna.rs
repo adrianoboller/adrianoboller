@@ -337,6 +337,11 @@ pub const CLASSES: &[(&str, PorColuna)] = &[
     ("telemetria_ligar", PorColuna::Nenhum),
     ("telemetria_desligar", PorColuna::Nenhum),
     ("telemetria_encerrar", PorColuna::Nenhum),
+    // O aquario (pedido 707) guarda op, tabela, tempo e cor -- nunca o texto
+    // do pedido nem valor de coluna (`aquario-707.md` §4.2) --, e a contagem
+    // e numero por categoria. Nao ha linha em nenhum dos dois.
+    ("aquario_log", PorColuna::Nenhum),
+    ("aquario_contagens", PorColuna::Nenhum),
     ("painel", PorColuna::Nenhum),
     // A saude do disco nao le linha nenhuma: e o canario e os contadores.
     ("saude_disco", PorColuna::Nenhum),

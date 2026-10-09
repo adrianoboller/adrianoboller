@@ -977,6 +977,9 @@ pub struct Telemetria {
     /// E lida uma vez por retrato -- de dois em dois segundos, quando alguem
     /// tem o painel aberto --, e nao no caminho quente de pedido nenhum.
     pintura: Mutex<crate::config::Painel>,
+    /// O aquario (pedido 707). Privado de proposito: para ANOTAR, so se chega
+    /// a ele pelo [`Telemetria::aquario_se_ligada`], que e o portao.
+    aquario: crate::aquario::Aquario,
 }
 
 impl Default for Telemetria {
@@ -1005,6 +1008,7 @@ impl Telemetria {
             encerramentos: AtomicU64::new(0),
             fios_vivos: AtomicUsize::new(0),
             pintura: Mutex::new(crate::config::Painel::default()),
+            aquario: crate::aquario::Aquario::default(),
         }
     }
 
@@ -1032,6 +1036,23 @@ impl Telemetria {
     #[inline]
     pub fn ligada(&self) -> bool {
         self.ligada.load(Ordering::Relaxed)
+    }
+
+    /// O aquario, so com a telemetria ligada -- o portao embutido no unico
+    /// caminho ate o `anotar` dele, para que nenhum chamador o esqueca.
+    ///
+    /// A base do aquario nasce LIGADA atras deste portao (`aquario-707.md`
+    /// §11.2), e o portao vem antes do hash, da digital e da trava que as
+    /// fatias A4 e A8 vao pagar ali dentro.
+    #[inline]
+    pub fn aquario_se_ligada(&self) -> Option<&crate::aquario::Aquario> {
+        self.ligada().then_some(&self.aquario)
+    }
+
+    /// O aquario para CONSULTAR (`aquario_log`, `aquario_contagens`). Ler o
+    /// que ja foi gravado nao depende de a coleta estar ligada agora.
+    pub fn aquario(&self) -> &crate::aquario::Aquario {
+        &self.aquario
     }
 
     pub fn ligar(&self, agora_ms: i64) {

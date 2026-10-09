@@ -234,6 +234,13 @@ impl Servidor {
                 texto,
             );
         }
+        // O AQUARIO (pedido 707), pelo mesmo motivo do gancho de cima: este e
+        // o unico sumidouro, e a base e a contagem do aquario precisam de
+        // TODO pedido. Uma chamada so; o portao da telemetria esta dentro do
+        // `aquario_se_ligada`, antes de qualquer trabalho.
+        if let Some(aquario) = self.telemetria.aquario_se_ligada() {
+            aquario.anotar(acesso);
+        }
     }
 
     /// Um erro de E/S visto em qualquer caminho: conta na saude do disco e,

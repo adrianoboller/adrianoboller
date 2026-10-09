@@ -32,6 +32,7 @@ pub mod fio;
 pub mod frogcript;
 pub mod hash;
 pub mod hkdf;
+pub mod http;
 pub mod json;
 pub mod keyenc;
 pub mod p256;

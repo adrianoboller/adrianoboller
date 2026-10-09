@@ -2276,6 +2276,29 @@ pub const OPERACOES: &[Operacao] = &[
         ferramenta_mcp: false,
     },
     Operacao {
+        nome: "aquario_log",
+        apelidos: &[],
+        resumo: "A linha do tempo do aquário: tarefas que nasceram, mudaram de cor, estouraram ou foram mortas, do mais novo para o mais antigo.",
+        parametros: &[
+            opc("desde", "integer", "milissegundos desde 1970: só eventos a partir daqui"),
+            opc("ate", "integer", "milissegundos desde 1970: só eventos até aqui"),
+            opc("max", "integer", "quantos eventos devolver, no máximo"),
+        ],
+        exemplo: r#"{"op":"aquario_log","max":100}"#,
+        ferramenta_mcp: false,
+    },
+    Operacao {
+        nome: "aquario_contagens",
+        apelidos: &[],
+        resumo: "As contagens do aquário por hora: select, insert, update, excluir suave e físico, backup, erro e aviso.",
+        parametros: &[
+            opc("desde", "integer", "milissegundos desde 1970: a primeira hora devolvida"),
+            opc("ate", "integer", "milissegundos desde 1970: a última hora devolvida"),
+        ],
+        exemplo: r#"{"op":"aquario_contagens"}"#,
+        ferramenta_mcp: false,
+    },
+    Operacao {
         nome: "painel",
         apelidos: &[],
         resumo: "Os números do painel: bancos, tabelas e linhas que quem olha poderia abrir.",

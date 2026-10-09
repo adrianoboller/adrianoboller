@@ -65,6 +65,7 @@ use crate::valores::{
 // dominio do `impl Servidor` mora num `servidor/servico_<dominio>_NN.rs`, e o
 // `use` de cada um traz de volta o que o resto do servidor chama.
 mod servico_admin_01;
+mod servico_aquario_01;
 mod servico_avisos_01;
 mod servico_backup_01;
 mod servico_bidirecional_01;
@@ -2099,6 +2100,8 @@ impl Servidor {
             "telemetria_ligar" => self.op_telemetria_ligar(sessao),
             "telemetria_desligar" => self.op_telemetria_desligar(sessao),
             "telemetria_encerrar" => self.op_telemetria_encerrar(p, sessao),
+            "aquario_log" => self.op_aquario_log(p, sessao),
+            "aquario_contagens" => self.op_aquario_contagens(p, sessao),
             "encerrar_sessao" | "kill" => self.op_encerrar_sessao(p),
             "checksum" | "soma_de_verificacao" => self.op_checksum(p, sessao),
             "exportar" | "export" => self.op_exportar(p, sessao),
@@ -2518,6 +2521,7 @@ macro_rules! fontes_do_servidor {
 fontes_do_servidor! {
     "servidor.rs",
     "servidor/servico_admin_01.rs",
+    "servidor/servico_aquario_01.rs",
     "servidor/servico_avisos_01.rs",
     "servidor/servico_backup_01.rs",
     "servidor/servico_bidirecional_01.rs",
@@ -2573,6 +2577,7 @@ fontes_do_servidor! {
     "servidor/testes_direito_por_coluna.rs",
     "servidor/testes_direito_por_tabela.rs",
     "servidor/testes_diretivas.rs",
+    "servidor/testes_do_aquario.rs",
     "servidor/testes_do_bit_indisponivel_na_trilha.rs",
     "servidor/testes_do_carimbo_do_futuro.rs",
     "servidor/testes_do_lote_de_replicacao.rs",
@@ -2912,3 +2917,6 @@ mod testes_janela_da_escrita_local;
 
 #[cfg(test)]
 mod testes_encerrar_sessao_644;
+
+#[cfg(test)]
+mod testes_do_aquario;
