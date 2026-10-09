@@ -17,3 +17,20 @@ Pendente do dono para os itens 3: o acesso à máquina Windows e à VM (endereç
 entregue pelo mesmo caminho seguro das credenciais.
 
 //Final do Arquivo
+
+## OpenMontage em Rust (09/10/2026, fim do dia)
+
+Palavra do dono: «Deve implementar em rust o open montage. Nosso foco é rust sempre que possível.»
+
+Via escolhida: **reimplementação limpa** (a única que a AGPL-3.0 do OpenMontage permite sem
+relicenciar o PhxClaw). Duas equipes separadas:
+
+1. **Especificação** — lê o OpenMontage e escreve o comportamento em palavras nossas
+   (`docs/propostas/openmontage-especificacao.md`): etapas, entradas, saídas, decisões. Sem código,
+   prompts, YAML ou trechos de texto dele.
+2. **Implementação** — escreve em Rust **só a partir da especificação**, sem abrir o repositório do
+   OpenMontage. O commit de cada frente diz isso.
+
+O que a licença dele não alcança e o PhxClaw continua respeitando: o FFmpeg entra como programa
+externo; dependência GPL (ex. `piper-tts`) não entra; serviços pagos (Remotion para empresas,
+provedores de vídeo) só por escolha do operador e com a licença deles.
