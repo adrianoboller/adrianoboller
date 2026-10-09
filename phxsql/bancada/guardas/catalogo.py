@@ -4937,10 +4937,12 @@ pub fn limpar() {
         "arquivo": "crates/phxsql-server/src/replica.rs",
         "trecho": """            Falha::CredencialRecusada => {
                 self.seguidas = 0;
+                self.alcancou();
                 Decisao::Estacionar
             }""",
         "troca": """            Falha::CredencialRecusada => {
                 self.seguidas = 0;
+                self.alcancou();
                 Decisao::Dormir(self.base)
             }""",
         "pacote": "phxsql-server",
@@ -15671,11 +15673,11 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "vazia com o indice reconstruido."
         ),
         "arquivo": "crates/phxsql-server/src/servidor/servico_nucleo_01.rs",
-        "trecho": """        ) {
+        "trecho": """        if let Some(evento) = evento_de_indice {
             saude.entregar(evento);
         }
 """,
-        "troca": """        ) {
+        "troca": """        if let Some(evento) = evento_de_indice {
             let _ = evento;
         }
 """,
@@ -27462,6 +27464,279 @@ fn anotar(""",
         ],
         "seguem": [
             "intervalo_respeita_os_limites",
+        ],
+    },
+    # -----------------------------------------------------------------------
+    # Pedido 769 (P0 do 765, A15/A16 do 707): os dez alarmes que estavam
+    # declarados no `enum Alarme` sem produtor. Cada guarda tira UMA linha do
+    # `telemetria::sinal` e o teste do produtor cai; o `seguem` e o
+    # comportamento velho ou o vizinho que nao passa pelo mesmo produtor.
+    {
+        "id": "bloqueio-sem-alarme",
+        "titulo": "o IP bloqueado (leve ou grave) não virava alarme `firewall_bloqueou` nem pedra (pedido 769, P0 do 765)",
+        "porque": (
+            "pedido 769: a variante existia, traduzida, e nenhum bloqueio a "
+            "produzia -- cinco senhas erradas bloqueavam calado para a tela e "
+            "para o ocorrencias.log. O sinal mora no `aplicar_no_firewall`, o "
+            "ponto unico por onde os dois irmaos passam fora do mutex."
+        ),
+        "arquivo": "crates/phxsql-server/src/blacklist.rs",
+        "trecho": """    crate::telemetria::sinal(crate::aquario::Alarme::FirewallBloqueou, &b.motivo);
+""",
+        "troca": """    let _ = (crate::aquario::Alarme::FirewallBloqueou, &b.motivo);
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_dos_produtores_769::cinco_senhas_erradas_bloqueiam_e_geram_uma_ocorrencia",
+            "servidor::testes_dos_produtores_769::comando_proibido_bloqueia_e_gera_uma_ocorrencia",
+        ],
+        "seguem": [
+            "servidor::testes_dos_produtores_769::ip_protegido_nao_bloqueia_e_nao_alarma",
+        ],
+    },
+    {
+        "id": "commit-acima-do-teto-sem-alarme",
+        "titulo": "o COMMIT recusado pelo teto da réplica não virava alarme `transacao_acima_do_teto` (pedido 769)",
+        "porque": (
+            "pedido 769: a recusa do 685 protegia a replica e nao dizia nada "
+            "ao aquario nem ao ocorrencias.log -- o cliente pode engolir o erro."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor/servico_marca_01.rs",
+        "trecho": """            crate::telemetria::sinal(
+                crate::aquario::Alarme::TransacaoAcimaDoTeto,
+                &format!("commit de {custo} bytes, teto {teto}"),
+            );
+""",
+        "troca": """            let _ = (
+                crate::aquario::Alarme::TransacaoAcimaDoTeto,
+                format!("commit de {custo} bytes, teto {teto}"),
+            );
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "alarme-da-transacao-acima-do-teto"],
+        "caem": [
+            "a_recusa_pelo_teto_e_alarme_no_commit_e_na_carga",
+        ],
+        "seguem": [],
+    },
+    {
+        "id": "carga-acima-do-teto-sem-alarme",
+        "titulo": "a carga recusada pelo teto da réplica não virava alarme — o IRMÃO do COMMIT (pedido 769)",
+        "porque": (
+            "pedido 769: o `op_inserir_lote` faz a mesma conta do COMMIT (686), "
+            "e o alarme tem de sair dos dois irmaos."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor/servico_escrita_01.rs",
+        "trecho": """            crate::telemetria::sinal(
+                crate::aquario::Alarme::TransacaoAcimaDoTeto,
+                &format!("carga de {custo} bytes, teto {teto}"),
+            );
+""",
+        "troca": """            let _ = (
+                crate::aquario::Alarme::TransacaoAcimaDoTeto,
+                format!("carga de {custo} bytes, teto {teto}"),
+            );
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "alarme-da-transacao-acima-do-teto"],
+        "caem": [
+            "a_recusa_pelo_teto_e_alarme_no_commit_e_na_carga",
+        ],
+        "seguem": [],
+    },
+    {
+        "id": "fecho-recusado-sem-alarme",
+        "titulo": "o fecho da janela recusado não virava pedra `fecho_recusado` (pedido 769)",
+        "porque": (
+            "pedido 769: so um teste acionava a variante; o fecho recusado de "
+            "verdade ia a saude do disco (e so quando era E/S) e nunca ao aquario."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor/servico_marca_01.rs",
+        "trecho": """        crate::telemetria::sinal(crate::aquario::Alarme::FechoRecusado, chave);
+""",
+        "troca": """        let _ = (crate::aquario::Alarme::FechoRecusado, chave);
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_dos_produtores_769::o_fecho_recusado_vira_pedra",
+        ],
+        "seguem": [
+            "servidor::testes_da_saude_do_disco::o_fsync_do_fecho_recusado_conta_como_erro_de_disco",
+        ],
+    },
+    {
+        "id": "fsync-de-boot-anterior-sem-alarme",
+        "titulo": "a sentinela do 509 de um boot anterior subia o servidor sem a pedra `fsync_recusado_antes` (pedido 769)",
+        "porque": (
+            "pedido 769: ao vivo o fsync recusado derruba o processo (509), e so "
+            "o arranque seguinte sabe -- que dizia so no stderr."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor/servico_nucleo_01.rs",
+        "trecho": """            crate::telemetria::sinal(crate::aquario::Alarme::FsyncRecusadoAntes, sentinela);
+""",
+        "troca": """            let _ = (crate::aquario::Alarme::FsyncRecusadoAntes, sentinela);
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_dos_produtores_769::a_sentinela_de_um_boot_anterior_vira_pedra_no_arranque",
+        ],
+        "seguem": [
+            "servidor::testes_dos_produtores_769::o_indice_que_ficou_para_tras_vira_pedra_no_arranque",
+        ],
+    },
+    {
+        "id": "marca-nao-resolvida-sem-alarme",
+        "titulo": "a marca que a recuperação do arranque deixou no disco não virava pedra `marca_nao_resolvida` (pedido 769)",
+        "porque": (
+            "pedido 769: `impossiveis` e `paradas` iam so ao relatorio do stderr."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor/servico_nucleo_01.rs",
+        "trecho": """            crate::telemetria::sinal(crate::aquario::Alarme::MarcaNaoResolvida, marca);
+""",
+        "troca": """            let _ = (crate::aquario::Alarme::MarcaNaoResolvida, marca);
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_dos_produtores_769::a_marca_que_o_arranque_nao_resolve_vira_pedra",
+        ],
+        "seguem": [
+            "servidor::testes_dos_produtores_769::o_indice_que_ficou_para_tras_vira_pedra_no_arranque",
+        ],
+    },
+    {
+        "id": "indice-atrasado-sem-alarme",
+        "titulo": "o índice que a queda deixou para trás avisava por e-mail e não virava pedra `indice_atrasado` (pedido 769)",
+        "porque": (
+            "pedido 769: o mesmo `evento_do_arranque` que avisa decide a pedra; "
+            "sem a linha, o aquario nao ve o que o e-mail disse."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor/servico_nucleo_01.rs",
+        "trecho": """            crate::telemetria::sinal(crate::aquario::Alarme::IndiceAtrasado, texto);
+""",
+        "troca": """            let _ = (crate::aquario::Alarme::IndiceAtrasado, texto);
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_dos_produtores_769::o_indice_que_ficou_para_tras_vira_pedra_no_arranque",
+        ],
+        "seguem": [
+            "servidor::testes_da_saude_do_disco::o_arranque_que_reconstroi_indice_avisa_pelo_carteiro",
+        ],
+    },
+    {
+        "id": "continuidade-rompida-sem-alarme",
+        "titulo": "a continuidade da réplica rompida ia só ao `replicacao_estado`, sem a pedra `continuidade_rompida` (pedido 769)",
+        "porque": (
+            "pedido 769: o ponto unico `romper_continuidade` gravava a recusa e "
+            "nao chamava o produtor."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor/servico_replicacao_01.rs",
+        "trecho": """            crate::telemetria::sinal(crate::aquario::Alarme::ContinuidadeRompida, chave);
+""",
+        "troca": """            let _ = (crate::aquario::Alarme::ContinuidadeRompida, chave);
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "continuidade-da-replica"],
+        "caem": [
+            "a_ruptura_da_continuidade_vira_pedra_no_sedimento",
+        ],
+        "seguem": [
+            "com_o_source_continuo_a_replica_segue_sem_recusa",
+        ],
+    },
+    {
+        "id": "origem-inalcancavel-sem-alarme",
+        "titulo": "a origem da réplica fora do ar além do prazo não virava pedra `origem_inalcancavel` (pedido 769)",
+        "porque": (
+            "pedido 769: o laco recuava e anotava `falhas_de_rede_seguidas`, e "
+            "nenhum relogio do episodio existia para dizer «ha 3 min»."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor/servico_replicacao_01.rs",
+        "trecho": """                    crate::telemetria::sinal(crate::aquario::Alarme::OrigemInalcancavel, origem);
+""",
+        "troca": """                    let _ = (crate::aquario::Alarme::OrigemInalcancavel, origem);
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_dos_produtores_769::a_origem_inalcancavel_alem_do_prazo_vira_uma_pedra_por_episodio",
+        ],
+        "seguem": [
+            "replica::testes_do_ritmo::rede_recua_dobrando_ate_o_teto",
+        ],
+    },
+    {
+        "id": "disco-lento-sem-alarme",
+        "titulo": "a sonda lenta pintava o painel de «aviso» e não virava pedra `disco_lento` (pedido 769)",
+        "porque": (
+            "pedido 769: o `sondar` registrava o evento Lento para o e-mail e "
+            "nao chamava o produtor."
+        ),
+        "arquivo": "crates/phxsql-server/src/saude_do_disco.rs",
+        "trecho": """                    crate::telemetria::sinal(
+                        crate::aquario::Alarme::DiscoLento,
+                        &format!("canario levou {} ms", duracao_us / 1_000),
+                    );
+""",
+        "troca": """                    let _ = (
+                        crate::aquario::Alarme::DiscoLento,
+                        format!("canario levou {} ms", duracao_us / 1_000),
+                    );
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_dos_produtores_769::a_sonda_lenta_vira_pedra",
+        ],
+        "seguem": [
+            "saude_do_disco::testes::a_sonda_lenta_vira_aviso_e_nao_erro",
+        ],
+    },
+    {
+        "id": "reincidente-nunca-reincide",
+        "titulo": "o terceiro desvio da mesma chave em 5 min continuava amarelo: `fora_do_habitual_reincidente` não tinha regra (pedido 769)",
+        "porque": (
+            "pedido 769: a regra do `aquario-707.md` §2.4 («3 vezes em 5 min») "
+            "nunca foi escrita; a variante existia so na tela."
+        ),
+        "arquivo": "crates/phxsql-server/src/aquario/base.rs",
+        "trecho": """                desvio.alarme = Alarme::ForaDoHabitualReincidente;
+""",
+        "troca": """                let _ = &desvio;
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_dos_produtores_769::o_terceiro_desvio_da_mesma_chave_em_cinco_minutos_reincide",
+        ],
+        "seguem": [
+            "servidor::testes_do_aquario::fora_do_habitual_acende_o_bit_e_grava_mudou",
+        ],
+    },
+    {
+        "id": "alarme-sem-motivo-na-tela",
+        "titulo": "variante do `enum Alarme` sem entrada na tabela `MOTIVOS` do `ui/aquario.js` chegava à tela como chave crua (A16 do 707)",
+        "porque": (
+            "pedido 769, A16: nada ligava o enum a tabela da tela; o conferidor "
+            "de idiomas fecha a chave da fabrica, nao a tabela do JavaScript."
+        ),
+        "arquivo": "crates/phxsql-server/ui/aquario.js",
+        "trecho": """    "aquario.motivo.origem_inalcancavel": () => txt("tela.aq_m_origem_inalcancavel", "a origem da réplica não responde"),
+""",
+        "troca": """    // DEFEITO REPOSTO (769, A16): a entrada de origem_inalcancavel saiu.
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "aquario::testes::todo_alarme_tem_motivo_na_tabela_da_tela",
+        ],
+        "seguem": [
+            "aquario::testes::a_leitura_de_motivos_ve_a_linha_tirada",
         ],
     },
 ]

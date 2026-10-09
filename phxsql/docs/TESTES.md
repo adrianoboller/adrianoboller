@@ -688,6 +688,10 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `nonce-sem-endereco` | só o endereço sai do nonce: o AAD sozinho ainda amarra | — | 🟰 redundante |
 | `endereco-fora-da-amarracao` | as DUAS fechaduras somem: dá para embaralhar as linhas cifradas | 1 | ✅ provada |
 | `cache-de-chaves-nao-limpo` | trocar a senha da cifra não limpa o cache: a senha errada abre | 1 | ✅ provada |
+| `ndx-sobre-coluna-marcada-em-claro` | o `.ndx` sobre coluna marcada guarda o valor em claro com o cofre ligado | 2 | ✅ provada |
+| `ndx-trunca-antes-de-conferir-a-capacidade` | o `.ndx` vivo é truncado antes de a capacidade da página selada ser conferida | 2 | ✅ provada |
+| `declaracao-aceita-chave-que-nao-cabe-selada` | criar índice ou marcar coluna aceita chave que não cabe na página selada | 2 | ✅ provada |
+| `arvore-em-claro-sob-o-cofre-sem-aviso` | a árvore sobre coluna marcada fica em claro com o cofre ligado e o arranque cala | 2 | ✅ provada |
 | `coluna-externa-sozinha-em-claro` | tabela cujas únicas colunas marcadas são externas nasce em claro | 3 | ✅ provada |
 | `catraca-dos-textos` | mais um texto de tela cravado, fora da fábrica de idiomas | 1 | ✅ provada |
 | `trava-fora-do-ponto-unico` | uma tomada da trava de dados fora do `travar_dados()` | 1 | ✅ provada |
@@ -1530,17 +1534,22 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `parada-afirma-sem-levar-ao-disco` | A parada em ordem sai com código 0 sem ter sincronizado as tabelas sujas (pedido 687) | 3 | ✅ provada |
 | `ponte-mcp-sai-sem-fechar-a-janela` | A ponte MCP termina no fim da entrada sem fechar a janela: o `.ndx` do que ela gravou fica marcado (irmão do 687) | 1 | ✅ provada |
 | `recusa-manda-comando-que-nao-existe` | A recusa do índice marcado manda rodar «`reparar indice`», comando que não existe em porta nenhuma (pedido 688) | 1 | ✅ provada |
+| `bloqueio-sem-alarme` | o IP bloqueado (leve ou grave) não virava alarme `firewall_bloqueou` nem pedra (pedido 769, P0 do 765) | 2 | ✅ provada |
+| `commit-acima-do-teto-sem-alarme` | o COMMIT recusado pelo teto da réplica não virava alarme `transacao_acima_do_teto` (pedido 769) | 1 | ✅ provada |
+| `carga-acima-do-teto-sem-alarme` | a carga recusada pelo teto da réplica não virava alarme — o IRMÃO do COMMIT (pedido 769) | 1 | ✅ provada |
+| `fecho-recusado-sem-alarme` | o fecho da janela recusado não virava pedra `fecho_recusado` (pedido 769) | 1 | ✅ provada |
+| `fsync-de-boot-anterior-sem-alarme` | a sentinela do 509 de um boot anterior subia o servidor sem a pedra `fsync_recusado_antes` (pedido 769) | 1 | ✅ provada |
+| `marca-nao-resolvida-sem-alarme` | a marca que a recuperação do arranque deixou no disco não virava pedra `marca_nao_resolvida` (pedido 769) | 1 | ✅ provada |
+| `indice-atrasado-sem-alarme` | o índice que a queda deixou para trás avisava por e-mail e não virava pedra `indice_atrasado` (pedido 769) | 1 | ✅ provada |
+| `continuidade-rompida-sem-alarme` | a continuidade da réplica rompida ia só ao `replicacao_estado`, sem a pedra `continuidade_rompida` (pedido 769) | 1 | ✅ provada |
+| `origem-inalcancavel-sem-alarme` | a origem da réplica fora do ar além do prazo não virava pedra `origem_inalcancavel` (pedido 769) | 1 | ✅ provada |
+| `disco-lento-sem-alarme` | a sonda lenta pintava o painel de «aviso» e não virava pedra `disco_lento` (pedido 769) | 1 | ✅ provada |
+| `reincidente-nunca-reincide` | o terceiro desvio da mesma chave em 5 min continuava amarelo: `fora_do_habitual_reincidente` não tinha regra (pedido 769) | 1 | ✅ provada |
+| `alarme-sem-motivo-na-tela` | variante do `enum Alarme` sem entrada na tabela `MOTIVOS` do `ui/aquario.js` chegava à tela como chave crua (A16 do 707) | 1 | ✅ provada |
 | `alter-com-regra-sem-aviso` | `acrescentar_coluna` com `check` ou `calculada` numa tabela com linha é aceito SEM AVISO, e a linha velha fica fora da regra | — | 🪦 aposentada (01/10/2026) |
 | `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | — | 🪦 aposentada (18/09/2026) |
 
-**861 das 863 guardas do catálogo: 2 aposentadas, 854 provadas, 5 redundantes** — 41983 s de mutação, medido de 2026-09-16 15:25 a 2026-10-09 13:21, em 8 datas (2026-09-16: 1, 2026-09-30: 27, 2026-10-01: 93, 2026-10-02: 93, 2026-10-06: 36, 2026-10-07: 220, 2026-10-08: 309, 2026-10-09: 82).
-
-> **Esta rodada NÃO julgou 4 das 863 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 4 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
-
-- `ndx-sobre-coluna-marcada-em-claro` — o `.ndx` sobre coluna marcada guarda o valor em claro com o cofre ligado
-- `ndx-trunca-antes-de-conferir-a-capacidade` — o `.ndx` vivo é truncado antes de a capacidade da página selada ser conferida
-- `declaracao-aceita-chave-que-nao-cabe-selada` — criar índice ou marcar coluna aceita chave que não cabe na página selada
-- `arvore-em-claro-sob-o-cofre-sem-aviso` — a árvore sobre coluna marcada fica em claro com o cofre ligado e o arranque cala
+**877 guardas: 2 aposentadas, 870 provadas, 5 redundantes** — 43411 s de mutação, medido de 2026-09-16 15:25 a 2026-10-09 17:03, em 8 datas (2026-09-16: 1, 2026-09-30: 27, 2026-10-01: 93, 2026-10-02: 93, 2026-10-06: 36, 2026-10-07: 219, 2026-10-08: 308, 2026-10-09: 100).
 
 As guardas que esta corrida ainda cita, hoje aposentadas:
 

@@ -30,7 +30,7 @@
 
 use std::io::{BufReader, Write};
 use std::net::TcpStream;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use phxsql_core::error::{PhxError, Result};
 use phxsql_core::json::Json;
@@ -1256,13 +1256,35 @@ pub struct Ritmo {
     base: Duration,
     /// Falhas de rede SEGUIDAS -- o expoente do recuo. Zera no sucesso.
     pub seguidas: u32,
+    /// Desde quando a origem nao se alcanca: a primeira falha de rede (ou de
+    /// limite) DESTE episodio. `None` enquanto ela responde.
+    ///
+    /// Um relogio proprio, e nao o `ultima_rodada_ms` do estado: aquele sobe
+    /// no erro tambem (lacuna L6 do `aquario-707.md`), e «inalcancavel ha
+    /// quanto tempo» nao sai dele.
+    inalcancavel_desde: Option<Instant>,
+    /// O alarme deste episodio ja saiu: uma pedra por queda, e nao uma por
+    /// tentativa -- a tentativa e a cada minuto, e a queda dura a noite.
+    avisado: bool,
 }
 
 impl Ritmo {
     pub const TETO: Duration = Duration::from_secs(60);
 
+    /// Quanto a origem pode ficar inalcancavel antes do alarme
+    /// `OrigemInalcancavel` (pedido 769): tres vezes o [`Ritmo::TETO`] --
+    /// tres tentativas no recuo maximo, todas em vao. *Raciocinado*, do
+    /// `aquario-707.md` §2.4 e §9: a falha que goteja uma vez volta na
+    /// tentativa seguinte e nao chega aqui.
+    pub const PRAZO_DE_INALCANCAVEL: Duration = Duration::from_secs(3 * 60);
+
     pub fn novo(base: Duration) -> Ritmo {
-        Ritmo { base, seguidas: 0 }
+        Ritmo {
+            base,
+            seguidas: 0,
+            inalcancavel_desde: None,
+            avisado: false,
+        }
     }
 
     /// O intervalo entre rodadas que nao acharam nada -- o `reconectar_em`.
@@ -1273,6 +1295,38 @@ impl Ritmo {
     /// A rodada deu certo (achou algo ou nao): o recuo volta ao comeco.
     pub fn sucesso(&mut self) {
         self.seguidas = 0;
+        self.alcancou();
+    }
+
+    /// A origem respondeu -- com sucesso, ou recusando (a credencial, o
+    /// esquema): ela esta la. O episodio de inalcancavel acaba.
+    fn alcancou(&mut self) {
+        self.inalcancavel_desde = None;
+        self.avisado = false;
+    }
+
+    /// A origem esta inalcancavel ha mais que o
+    /// [`Ritmo::PRAZO_DE_INALCANCAVEL`], e o alarme deste episodio ainda nao
+    /// saiu? Devolve `true` UMA vez por episodio.
+    pub fn cruzou_o_prazo(&mut self) -> bool {
+        self.cruzou_o_prazo_em(Instant::now())
+    }
+
+    fn cruzou_o_prazo_em(&mut self, agora: Instant) -> bool {
+        let Some(desde) = self.inalcancavel_desde else {
+            return false;
+        };
+        if self.avisado || agora.saturating_duration_since(desde) < Self::PRAZO_DE_INALCANCAVEL {
+            return false;
+        }
+        self.avisado = true;
+        true
+    }
+
+    /// PROVA: o episodio comecou `ha` atras, sem esperar o relogio.
+    #[cfg(test)]
+    pub(crate) fn inalcancavel_ha(&mut self, ha: Duration) {
+        self.inalcancavel_desde = Instant::now().checked_sub(ha);
     }
 
     /// A rodada falhou assim: o que fazer.
@@ -1280,6 +1334,7 @@ impl Ritmo {
         match falha {
             Falha::CredencialRecusada => {
                 self.seguidas = 0;
+                self.alcancou();
                 Decisao::Estacionar
             }
             // O limite recua no MESMO contador da rede, e nao num proprio:
@@ -1288,9 +1343,13 @@ impl Ritmo {
             Falha::Rede | Falha::Limite => {
                 let espera = self.espera_de_rede();
                 self.seguidas = self.seguidas.saturating_add(1);
+                self.inalcancavel_desde.get_or_insert_with(Instant::now);
                 Decisao::Dormir(espera)
             }
-            Falha::Outra => Decisao::Dormir(self.base),
+            Falha::Outra => {
+                self.alcancou();
+                Decisao::Dormir(self.base)
+            }
         }
     }
 

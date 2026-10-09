@@ -516,6 +516,13 @@ pub fn aplicar_no_firewall(
     b: &mut Bloqueio,
     aviso: &mut Option<String>,
 ) {
+    // O alarme do bloqueio (pedido 769, P0 do 765). AQUI, e nao no
+    // `Blacklist::bloquear`: este e o ponto por onde os dois irmaos -- a
+    // violacao grave e a leve -- passam com o bloqueio recem-gravado e a lista
+    // ja SOLTA, e o produtor nao entra no mutex que o `barrado()` de toda
+    // conexao pega. E ANTES do `firewall` opcional: o bloqueio que vale e o do
+    // servidor, com ou sem regra no sistema operacional.
+    crate::telemetria::sinal(crate::aquario::Alarme::FirewallBloqueou, &b.motivo);
     let Some(fw) = &politica.firewall else {
         return;
     };

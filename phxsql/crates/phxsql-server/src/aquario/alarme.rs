@@ -212,17 +212,20 @@ mod testes {
     }
 
     /// Alarme de servidor nao procura tarefa: vai ao sedimento, com o
-    /// instante e a conta. `FechoRecusado` e usado so aqui, porque o
-    /// sedimento e do processo e os testes correm juntos.
+    /// instante e a conta. `EsgotamentoIminente`, e nao um dos que o pedido
+    /// 769 ligou: o sedimento e do processo e os testes correm juntos, e um
+    /// `sinal` direto aqui faria passar por engano o RED do teste de produtor
+    /// daquele alarme (a pedra subiria sem o produtor). O iminente tem
+    /// produtor desde a F5, e os testes dele medem `>=`.
     #[test]
     fn alarme_de_servidor_vai_ao_sedimento() {
         let antes = crate::agora_ms();
-        sinal(Alarme::FechoRecusado, "teste");
-        sinal(Alarme::FechoRecusado, "teste");
+        sinal(Alarme::EsgotamentoIminente, "teste");
+        sinal(Alarme::EsgotamentoIminente, "teste");
         let pedra = sedimento()
             .into_iter()
-            .find(|p| p.alarme == Alarme::FechoRecusado)
-            .expect("o fecho recusado nao chegou ao sedimento");
+            .find(|p| p.alarme == Alarme::EsgotamentoIminente)
+            .expect("o esgotamento iminente nao chegou ao sedimento");
         assert!(pedra.vezes >= 2, "{pedra:?}");
         assert!(pedra.visto_ms >= antes, "{pedra:?}");
     }

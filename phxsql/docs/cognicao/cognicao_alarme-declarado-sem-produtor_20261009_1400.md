@@ -65,3 +65,30 @@ Documentado como está, com a lista dos dez, em `docs/TELEMETRIA.md` §11.5 e
 sem produtor, e a lista dos dez é retrato desta data (a busca acima a refaz).
 Falta decidir, por alarme, entre ligar a origem e retirar a variante; isso é
 trabalho de engenharia sobre o pedido 707, não desta fatia.
+
+## Depois: pedido 769 (09/10/2026, papel B)
+
+- **Os dez ganharam produtor**, nenhum saiu como chave morta: todo fato
+  existia no código (tabela em `docs/TELEMETRIA.md` §11.5). Um teste por
+  produtor em `servidor/testes_dos_produtores_769.rs`, mais
+  `tests/alarme-da-transacao-acima-do-teto.rs` (os dois irmãos do teto) e
+  `a_ruptura_da_continuidade_vira_pedra_no_sedimento` em
+  `tests/continuidade-da-replica.rs`. Doze guardas novas no catálogo, 12/12
+  PROVADA pelo `provar-guardas.py`.
+- **RED medido:** com as 14 linhas do `sinal` tiradas de uma vez (13 sinais e
+  a troca do `reincide`), 9 dos 10 testes de servidor caem (o décimo é o do
+  comportamento velho, a whitelist, que não alarma nos dois casos), o teste
+  do teto cai na metade do COMMIT, e o da continuidade cai na pedra. Tirada
+  só a linha da carga, o teste do teto cai na metade da carga. O bidirecional
+  (três marcas que ficam no disco) **não tem teste** que o alcance.
+- **A busca desta cognição contou errado três alarmes:** `ForcaBruta`,
+  `SenhaEmClaro` e `IntegridadeRecusada` aparecem só no `mod testes` do
+  `ocorrencias.rs`, e foram contados como produzidos. A regra de cima vale
+  para a própria busca: «fora dos testes» tem de excluir o **módulo** de
+  teste, não só os arquivos `testes_*`. Os três continuam sem produtor.
+- **A16:** `aquario::testes::todo_alarme_tem_motivo_na_tabela_da_tela` liga o
+  enum à tabela `MOTIVOS` do `ui/aquario.js`; tirar a linha de
+  `origem_inalcancavel` derrubou o teste nomeando a chave.
+
+Estado continua **PENDENTE**: a evidência acima está escrita, e a promoção
+não é de quem a produziu.

@@ -848,20 +848,27 @@ impl Servidor {
                         let _ = std::fs::remove_file(&caminho);
                         continue;
                     }
+                    // As tres marcas que ficam no disco sem completar sao o
+                    // IRMAO do `sinalizar_o_arranque` (pedido 769): o mesmo
+                    // arranque, o mesmo «marca nao resolvida».
                     Ok(crate::transacao::Leitura::SemChave(motivo)) => {
-                        eprintln!(
-                            "AVISO: a marca do bidirecional {} esta PARADA sem a chave \
+                        let texto = format!(
+                            "a marca do bidirecional {} esta PARADA sem a chave \
                              ({motivo}); ela NAO foi apagada",
                             caminho.display()
                         );
+                        crate::telemetria::sinal(crate::aquario::Alarme::MarcaNaoResolvida, &texto);
+                        eprintln!("AVISO: {texto}");
                         continue;
                     }
                     Err(e) => {
-                        eprintln!(
-                            "AVISO: a marca do bidirecional {} nao se leu ({e}); ela \
-                             NAO foi apagada",
+                        let texto = format!(
+                            "a marca do bidirecional {} nao se leu ({e}); ela NAO foi \
+                             apagada",
                             caminho.display()
                         );
+                        crate::telemetria::sinal(crate::aquario::Alarme::MarcaNaoResolvida, &texto);
+                        eprintln!("AVISO: {texto}");
                         continue;
                     }
                 };
@@ -884,11 +891,15 @@ impl Servidor {
                             }
                         );
                     }
-                    Err(e) => eprintln!(
-                        "AVISO: o grupo da marca do bidirecional {} nao se completou \
-                         ({e}); ela NAO foi apagada",
-                        caminho.display()
-                    ),
+                    Err(e) => {
+                        let texto = format!(
+                            "o grupo da marca do bidirecional {} nao se completou \
+                             ({e}); ela NAO foi apagada",
+                            caminho.display()
+                        );
+                        crate::telemetria::sinal(crate::aquario::Alarme::MarcaNaoResolvida, &texto);
+                        eprintln!("AVISO: {texto}");
+                    }
                 }
             }
         }

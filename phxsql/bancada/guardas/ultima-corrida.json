@@ -1,5 +1,5 @@
 {
-  "quando": "2026-10-09 13:21",
+  "quando": "2026-10-09 17:03",
   "mais_antigo": "2026-09-16 15:25",
   "guardas": [
     {
@@ -143,6 +143,38 @@
       "segundos": 14.07,
       "notas": [],
       "quando": "2026-10-07 12:11"
+    },
+    {
+      "id": "ndx-sobre-coluna-marcada-em-claro",
+      "titulo": "o `.ndx` sobre coluna marcada guarda o valor em claro com o cofre ligado",
+      "veredito": "PROVADA",
+      "segundos": 15.81,
+      "notas": [],
+      "quando": "2026-10-09 17:03"
+    },
+    {
+      "id": "ndx-trunca-antes-de-conferir-a-capacidade",
+      "titulo": "o `.ndx` vivo é truncado antes de a capacidade da página selada ser conferida",
+      "veredito": "PROVADA",
+      "segundos": 16.04,
+      "notas": [],
+      "quando": "2026-10-09 17:03"
+    },
+    {
+      "id": "declaracao-aceita-chave-que-nao-cabe-selada",
+      "titulo": "criar índice ou marcar coluna aceita chave que não cabe na página selada",
+      "veredito": "PROVADA",
+      "segundos": 16.71,
+      "notas": [],
+      "quando": "2026-10-09 17:03"
+    },
+    {
+      "id": "arvore-em-claro-sob-o-cofre-sem-aviso",
+      "titulo": "a árvore sobre coluna marcada fica em claro com o cofre ligado e o arranque cala",
+      "veredito": "PROVADA",
+      "segundos": 13.56,
+      "notas": [],
+      "quando": "2026-10-09 17:03"
     },
     {
       "id": "coluna-externa-sozinha-em-claro",
@@ -994,9 +1026,9 @@
       "id": "replica-insiste-na-credencial-recusada",
       "titulo": "a réplica com credencial recusada insistia a cada `reconectar_em` e bloqueava o próprio IP — derrubando o operador junto",
       "veredito": "PROVADA",
-      "segundos": 81.89,
+      "segundos": 121.51,
       "notas": [],
-      "quando": "2026-10-07 14:26"
+      "quando": "2026-10-09 16:38"
     },
     {
       "id": "upsert-zera-a-coluna-negada",
@@ -3380,9 +3412,9 @@
       "id": "arranque-reconstroi-calado",
       "titulo": "o arranque reconstroi indice marcado e so diz no `stderr`: quem opera nao fica sabendo da queda",
       "veredito": "PROVADA",
-      "segundos": 104.86,
+      "segundos": 107.66,
       "notas": [],
-      "quando": "2026-10-08 19:25"
+      "quando": "2026-10-09 16:38"
     },
     {
       "id": "reconstruir-fts-sem-janela",
@@ -6891,6 +6923,102 @@
       "segundos": 7.54,
       "notas": [],
       "quando": "2026-10-08 10:10"
+    },
+    {
+      "id": "bloqueio-sem-alarme",
+      "titulo": "o IP bloqueado (leve ou grave) não virava alarme `firewall_bloqueou` nem pedra (pedido 769, P0 do 765)",
+      "veredito": "PROVADA",
+      "segundos": 98.28,
+      "notas": [],
+      "quando": "2026-10-09 16:38"
+    },
+    {
+      "id": "commit-acima-do-teto-sem-alarme",
+      "titulo": "o COMMIT recusado pelo teto da réplica não virava alarme `transacao_acima_do_teto` (pedido 769)",
+      "veredito": "PROVADA",
+      "segundos": 34.51,
+      "notas": [],
+      "quando": "2026-10-09 16:38"
+    },
+    {
+      "id": "carga-acima-do-teto-sem-alarme",
+      "titulo": "a carga recusada pelo teto da réplica não virava alarme — o IRMÃO do COMMIT (pedido 769)",
+      "veredito": "PROVADA",
+      "segundos": 32.99,
+      "notas": [],
+      "quando": "2026-10-09 16:38"
+    },
+    {
+      "id": "fecho-recusado-sem-alarme",
+      "titulo": "o fecho da janela recusado não virava pedra `fecho_recusado` (pedido 769)",
+      "veredito": "PROVADA",
+      "segundos": 98.33,
+      "notas": [],
+      "quando": "2026-10-09 16:38"
+    },
+    {
+      "id": "fsync-de-boot-anterior-sem-alarme",
+      "titulo": "a sentinela do 509 de um boot anterior subia o servidor sem a pedra `fsync_recusado_antes` (pedido 769)",
+      "veredito": "PROVADA",
+      "segundos": 98.29,
+      "notas": [],
+      "quando": "2026-10-09 16:38"
+    },
+    {
+      "id": "marca-nao-resolvida-sem-alarme",
+      "titulo": "a marca que a recuperação do arranque deixou no disco não virava pedra `marca_nao_resolvida` (pedido 769)",
+      "veredito": "PROVADA",
+      "segundos": 101.69,
+      "notas": [],
+      "quando": "2026-10-09 16:38"
+    },
+    {
+      "id": "indice-atrasado-sem-alarme",
+      "titulo": "o índice que a queda deixou para trás avisava por e-mail e não virava pedra `indice_atrasado` (pedido 769)",
+      "veredito": "PROVADA",
+      "segundos": 105.41,
+      "notas": [],
+      "quando": "2026-10-09 16:47"
+    },
+    {
+      "id": "continuidade-rompida-sem-alarme",
+      "titulo": "a continuidade da réplica rompida ia só ao `replicacao_estado`, sem a pedra `continuidade_rompida` (pedido 769)",
+      "veredito": "PROVADA",
+      "segundos": 58.29,
+      "notas": [],
+      "quando": "2026-10-09 16:38"
+    },
+    {
+      "id": "origem-inalcancavel-sem-alarme",
+      "titulo": "a origem da réplica fora do ar além do prazo não virava pedra `origem_inalcancavel` (pedido 769)",
+      "veredito": "PROVADA",
+      "segundos": 298.03,
+      "notas": [],
+      "quando": "2026-10-09 16:38"
+    },
+    {
+      "id": "disco-lento-sem-alarme",
+      "titulo": "a sonda lenta pintava o painel de «aviso» e não virava pedra `disco_lento` (pedido 769)",
+      "veredito": "PROVADA",
+      "segundos": 107.46,
+      "notas": [],
+      "quando": "2026-10-09 16:38"
+    },
+    {
+      "id": "reincidente-nunca-reincide",
+      "titulo": "o terceiro desvio da mesma chave em 5 min continuava amarelo: `fora_do_habitual_reincidente` não tinha regra (pedido 769)",
+      "veredito": "PROVADA",
+      "segundos": 135.4,
+      "notas": [],
+      "quando": "2026-10-09 16:38"
+    },
+    {
+      "id": "alarme-sem-motivo-na-tela",
+      "titulo": "variante do `enum Alarme` sem entrada na tabela `MOTIVOS` do `ui/aquario.js` chegava à tela como chave crua (A16 do 707)",
+      "veredito": "PROVADA",
+      "segundos": 154.95,
+      "notas": [],
+      "quando": "2026-10-09 16:38"
     },
     {
       "id": "alter-com-regra-sem-aviso",

@@ -959,7 +959,11 @@ TETO_TESTE_SEM_MODULO = 0
 # PROVADA pelo provador (`--so`), 2/2 cairam.
 # 865: +3 do parecer do papel C sobre o 339 (capacidade antes de truncar,
 # recusa na declaracao, aviso da arvore em claro), RED medido a mao.
-PISO_DAS_ENTRADAS = 865
+# +12 (pedido 769, 09/10/2026): +12, uma guarda por produtor dos dez
+# alarmes que estavam sem `sinal` (o teto da transacao conta duas, COMMIT e
+# carga) e a `alarme-sem-motivo-na-tela` (A16). Provadas pelo provador, 12/12.
+# 877 = 861 + 1 + 3 (339) + 12 (769), somados na integracao.
+PISO_DAS_ENTRADAS = 877
 
 # ------------------------------------------------------------- APOSENTADAS
 #

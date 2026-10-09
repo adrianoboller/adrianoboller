@@ -253,6 +253,47 @@ fn ids_na_replica(porta: u16) -> Vec<i64> {
     .collect()
 }
 
+/// Quantas vezes a continuidade rompida ja foi ao sedimento neste processo.
+fn pedras_de_continuidade() -> u64 {
+    phxsql_server::aquario::alarme::sedimento()
+        .into_iter()
+        .find(|p| p.alarme == phxsql_server::aquario::Alarme::ContinuidadeRompida)
+        .map_or(0, |p| p.vezes)
+}
+
+/// **Pedido 769:** a ruptura da continuidade e tambem o alarme
+/// `continuidade_rompida`, pelo produtor unico, e a pedra sobe no sedimento.
+/// O mesmo cenario do teste de baixo, num teste proprio: aquele confere a
+/// frase da recusa, e a guarda do 769 precisa de um teste que caia SO pela
+/// pedra. RED: tirar o `sinal` do `romper_continuidade`.
+#[test]
+fn a_ruptura_da_continuidade_vira_pedra_no_sedimento() {
+    let pedras_antes = pedras_de_continuidade();
+    let base_s = pasta("source-pedra");
+    let base_r = pasta("replica-pedra");
+    let (_source, porta_s) = subir_source(&base_s);
+    exigir(porta_s, r#""op":"criar_database","database":"loja""#);
+    criar_clientes(porta_s);
+    inserir(porta_s, 1..=3);
+    let (_replica, porta_r) = subir_replica(&base_r, porta_s);
+    esperar_eventos(porta_r, 3);
+    exigir(
+        porta_s,
+        r#""op":"excluir_tabela","database":"loja","tabela":"clientes","confirmar":"clientes""#,
+    );
+    criar_clientes(porta_s);
+    inserir(porta_s, 11..=14);
+    let ate = Instant::now() + Duration::from_secs(20);
+    while recusa_de_clientes(porta_r).is_none() {
+        assert!(Instant::now() < ate, "a replica nao rompeu em 20 s");
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    assert!(
+        pedras_de_continuidade() > pedras_antes,
+        "a ruptura nao virou pedra no sedimento"
+    );
+}
+
 /// **Prova real.** O source apaga e recria `clientes` com MAIS linhas do que
 /// a replica tinha: a replica acusa em `replicacao_estado`, nomeando a
 /// tabela e dizendo que ela foi apagada e recriada, e NAO aplica a vida nova

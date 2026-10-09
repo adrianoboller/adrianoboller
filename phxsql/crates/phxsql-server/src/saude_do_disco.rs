@@ -318,6 +318,11 @@ pub struct SaudeDoDisco {
     /// descartado, e nao enfileirado. Por servidor, e nao global: dois
     /// servidores no mesmo processo (os testes) nao se descartam.
     pub gancho_em_voo: AtomicBool,
+    /// PROVA: µs somados a duracao medida do canario. O disco de verdade
+    /// nao fica lento quando o teste pede, e um `sleep` dentro da sonda
+    /// mediria o relogio e nao a regra.
+    #[cfg(test)]
+    pub(crate) atraso_de_teste_us: AtomicU64,
 }
 
 impl SaudeDoDisco {
@@ -335,6 +340,8 @@ impl SaudeDoDisco {
             passada: AtomicU64::new(0),
             correio: Arc::new(Correio::novo()),
             gancho_em_voo: AtomicBool::new(false),
+            #[cfg(test)]
+            atraso_de_teste_us: AtomicU64::new(0),
         }
     }
 
@@ -388,6 +395,8 @@ impl SaudeDoDisco {
         let inicio = Instant::now();
         let resultado = canario(&self.caminho_do_canario, agora_ms, n);
         let duracao_us = inicio.elapsed().as_micros() as u64;
+        #[cfg(test)]
+        let duracao_us = duracao_us + self.atraso_de_teste_us.load(Ordering::Relaxed);
         self.sondas.fetch_add(1, Ordering::Relaxed);
 
         let falha = resultado.err();
@@ -422,6 +431,13 @@ impl SaudeDoDisco {
                     }
                 }
                 if lenta {
+                    // O alarme e de toda passada lenta, e nao so da que passou
+                    // pelo silencio do e-mail: a pedra guarda quando foi vista
+                    // por ultimo, e o silencio e do aviso, nao do fato.
+                    crate::telemetria::sinal(
+                        crate::aquario::Alarme::DiscoLento,
+                        &format!("canario levou {} ms", duracao_us / 1_000),
+                    );
                     self.registrar(Evento {
                         quando_ms: agora_ms,
                         tipo: Tipo::Lento,

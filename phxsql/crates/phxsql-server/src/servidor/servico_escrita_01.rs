@@ -617,6 +617,12 @@ impl Servidor {
         let custo = t.custo_previsto_da_carga(&linhas);
         let teto = phxsql_store::log::teto_da_transacao();
         if teto < custo {
+            // O IRMAO do COMMIT (pedido 769): a mesma conta, a mesma recusa,
+            // o mesmo alarme -- para a replica a carga e UMA transacao.
+            crate::telemetria::sinal(
+                crate::aquario::Alarme::TransacaoAcimaDoTeto,
+                &format!("carga de {custo} bytes, teto {teto}"),
+            );
             return Err(PhxError::LimiteExcedido(self.msg(
                 "erro.carga_acima_do_teto",
                 &[

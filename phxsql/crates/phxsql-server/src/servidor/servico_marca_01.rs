@@ -394,6 +394,13 @@ impl Servidor {
             .fold(0usize, usize::saturating_add);
         let teto = phxsql_store::log::teto_da_transacao();
         if custo > teto {
+            // O alarme da tarefa (pedido 769): a recusa protege a replica, e
+            // o operador que olha o aquario precisa ver QUEM mandou a
+            // transacao grande, porque o cliente pode engolir o erro.
+            crate::telemetria::sinal(
+                crate::aquario::Alarme::TransacaoAcimaDoTeto,
+                &format!("commit de {custo} bytes, teto {teto}"),
+            );
             return Err(recusa(
                 escritas.len(),
                 None,
@@ -1364,6 +1371,11 @@ impl Servidor {
     /// `fsync` recusado derruba o processo antes de voltar (ver
     /// [`fsync_recusado_derruba_o_processo`]).
     pub(super) fn fecho_recusado(&self, chave: &str, e: &PhxError) {
+        // O alarme vem ANTES do filtro de E/S (pedido 769): a saude do disco
+        // so conta erro de disco, mas o fecho recusado por qualquer causa e o
+        // mesmo fato para quem opera -- a chave volta para as sujas e a marca
+        // do commit fica pendurada.
+        crate::telemetria::sinal(crate::aquario::Alarme::FechoRecusado, chave);
         let PhxError::Io(io) = e else {
             return;
         };

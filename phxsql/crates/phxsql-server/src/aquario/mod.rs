@@ -488,6 +488,66 @@ mod testes {
         assert_eq!(Alarme::DadoCorrompido.gravidade(), Gravidade::Vermelho);
     }
 
+    /// As chaves da tabela `MOTIVOS` do `ui/aquario.js`, lidas do PROPRIO
+    /// arquivo que o `http.rs` embute: entre `const MOTIVOS = {` e o `};`
+    /// que a fecha, o primeiro literal de cada linha.
+    fn chaves_de_motivos(js: &str) -> Vec<&str> {
+        let comeco = js
+            .find("const MOTIVOS = {")
+            .expect("a tabela MOTIVOS sumiu do aquario.js");
+        let corpo = &js[comeco..];
+        let fim = corpo.find("\n  };").expect("a tabela MOTIVOS nao fecha");
+        corpo[..fim]
+            .lines()
+            .filter_map(|l| {
+                let l = l.trim_start();
+                let resto = l.strip_prefix('"')?;
+                resto.split_once('"').map(|(chave, _)| chave)
+            })
+            .collect()
+    }
+
+    /// **A16 do 707:** todo alarme do enum tem motivo na tela. A tela que
+    /// recebe uma chave que nao conhece mostra a chave crua -- honesto, mas e
+    /// o alarme chegando ao operador sem frase. Tirar uma entrada da tabela
+    /// `MOTIVOS` (ou acrescentar uma variante sem a entrada) derruba este
+    /// teste nomeando a chave.
+    #[test]
+    fn todo_alarme_tem_motivo_na_tabela_da_tela() {
+        let js = include_str!("../../ui/aquario.js");
+        let motivos = chaves_de_motivos(js);
+        assert!(
+            motivos.len() >= Alarme::TODOS.len(),
+            "a leitura da tabela achou so {} chaves: {motivos:?}",
+            motivos.len()
+        );
+        let faltam: Vec<&str> = Alarme::TODOS
+            .iter()
+            .map(|a| a.chave())
+            .filter(|c| !motivos.contains(c))
+            .collect();
+        assert!(
+            faltam.is_empty(),
+            "alarme sem motivo na tabela MOTIVOS do ui/aquario.js: {faltam:?}"
+        );
+    }
+
+    /// O leitor de cima nao pode passar por engano: sem uma linha, a chave
+    /// dela some da lista.
+    #[test]
+    fn a_leitura_de_motivos_ve_a_linha_tirada() {
+        let js = include_str!("../../ui/aquario.js");
+        let tirada = "    \"aquario.motivo.disco_lento\":";
+        assert!(js.contains(tirada), "a linha do exemplo mudou de forma");
+        let sem: String = js
+            .lines()
+            .filter(|l| !l.starts_with(tirada))
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(!chaves_de_motivos(&sem).contains(&"aquario.motivo.disco_lento"));
+        assert!(chaves_de_motivos(js).contains(&"aquario.motivo.disco_lento"));
+    }
+
     #[test]
     fn as_consultas_que_faltam_dizem_que_faltam() {
         let aq = Aquario::default();

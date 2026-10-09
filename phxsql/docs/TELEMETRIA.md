@@ -1291,6 +1291,14 @@ serviço** (sem a espera na fila da trava), em duas metades.
   também vai à coringa (`Identidade::e` confere a identidade).
 - **Um julgamento só** (`julgar`): o pedido que termina e a tarefa viva usam a
   mesma função, senão a bolha viva mudaria de cor no instante em que estoura.
+- **A reincidência** (pedido 769, `Linha::reincide`): o desvio da **mesma
+  chave** pela `VEZES_DA_REINCIDENCIA`ª vez (3) dentro de
+  `JANELA_DA_REINCIDENCIA_MS` (5 min) sai como `ForaDoHabitualReincidente`
+  (vermelho, PRAZO) em vez de `ForaDoHabitual`. A regra é a do
+  `aquario-707.md` §2.4 («3 vezes em 5 min», *raciocinada*, lacuna do §9), com
+  o «acima de 2 × p95» trocado pelo julgamento da base (§11.1). Só o pedido que
+  **termina** conta (`Base::observar`); a tarefa viva só lê. Custo: 16 B por
+  chave (os instantes dos dois desvios anteriores), ≈ 80 KiB no teto.
 - **Quando roda:** só com a telemetria ligada (`Telemetria::aquario_se_ligada`
   devolve `None` desligada; o contador `Aquario::anotados` prova que o portão
   vem antes do trabalho). O custo se mede com
@@ -1343,20 +1351,38 @@ de idioma), `nome()` (a chave sem o prefixo, o que o log grava), `gravidade()`,
 - **Grupos** (a letra da bolha, `Grupo::nome`): `lock`, `disco`, `dado`,
   `replica`, `seguranca`, `prazo`, `previsao`, `ataque`.
 
-**O que o código acende hoje, e o que só está declarado.** Medido por busca no
-fonte em 09/10/2026 (`Alarme::X` fora de `aquario/` e dos testes). Produzem:
-`TravaReentrante`, `TravaEnvenenada`, `ErroDeDisco`, `DadoCorrompido`,
-`ForcaBruta`, `SenhaEmClaro`, `PrazoEstourado`, `ForaDoHabitual`,
-`IntegridadeRecusada`, `EsgotamentoPrevisto`, `EsgotamentoIminente`,
-`ReplicaAtrasada`, `InjecaoSuspeita` e `PlanoLargo`. **Declarados sem produtor
-nenhum:** `TransacaoAcimaDoTeto`, `FechoRecusado` (só em teste),
-`FsyncRecusadoAntes`, `MarcaNaoResolvida`, `IndiceAtrasado`,
-`ContinuidadeRompida`, `OrigemInalcancavel`, `FirewallBloqueou`, `DiscoLento` e
-`ForaDoHabitualReincidente`. Do sedimento, portanto, só `EsgotamentoPrevisto`,
-`EsgotamentoIminente` e `ReplicaAtrasada` acendem. A tela já traduz as chaves
-dos 24; o vermelho de disco, de dado em risco, de réplica e de segurança do
-item 7 do pedido 707 **ainda não tem origem** nesses dez (cognição
-`cognicao_alarme-declarado-sem-produtor_20261009_1400.md`).
+**Onde cada alarme nasce** (pedido 769, que ligou os dez que estavam só
+declarados). Uma linha do produtor único em cada fato:
+
+| alarme | onde o fato acontece |
+|---|---|
+| `FirewallBloqueou` | `blacklist::aplicar_no_firewall` — o ponto por onde a violação grave e a leve passam com o bloqueio recém-gravado e a lista já solta; antes do firewall opcional |
+| `TransacaoAcimaDoTeto` | a recusa do `COMMIT` (`servico_marca_01`) e o irmão da carga (`servico_escrita_01`, `op_inserir_lote`) |
+| `FechoRecusado` | `Servidor::fecho_recusado`, antes do filtro de E/S (o fecho recusado por qualquer causa) |
+| `FsyncRecusadoAntes` | a sentinela do 509 de um boot anterior (`conferir_sentinela_509` devolve o texto), sinalizada por `Servidor::sinalizar_o_arranque` |
+| `MarcaNaoResolvida` | `impossiveis` e `paradas` da recuperação (`sinalizar_o_arranque`) e as três marcas do bidirecional que ficam no disco (`completar_marcas_do_bidi`) |
+| `IndiceAtrasado` | o mesmo `evento_do_arranque` que avisa por e-mail (`sinalizar_o_arranque`) |
+| `ContinuidadeRompida` | `romper_continuidade`, uma vez por ruptura (o ramo da outra história não consulta o veredito guardado) |
+| `OrigemInalcancavel` | `apos_a_falha_vigiando` (laço comum e do cluster), quando o episódio do `Ritmo` passa de `PRAZO_DE_INALCANCAVEL` (3 min, *raciocinado*); uma vez por episódio |
+| `DiscoLento` | `SaudeDoDisco::sondar`, em toda passada lenta |
+| `ForaDoHabitualReincidente` | `Base::observar` (§11.4, a reincidência) |
+
+Os alarmes do **arranque** saem depois de `ocorrencias::instalar`: o fato é de
+antes, mas sinalizado lá a ocorrência iria à camada de outro servidor do
+processo, ou a nenhuma. A marca que nem se leu (`sem_leitura`) impede a subida
+e não vira pedra. A réplica **agendada** (`laco_agendado`) não passa pelo
+`Ritmo` na falha de rede e não alarma `OrigemInalcancavel`.
+
+**Ainda sem produtor fora de teste**, medido em 09/10/2026 pela mesma busca —
+que a contagem anterior fez errado, por incluir o `mod testes` do
+`ocorrencias.rs`: `ForcaBruta`, `SenhaEmClaro` e `IntegridadeRecusada`. A tela
+os traduz e o fato acontece (o `violacao_leve` do login, o
+`conferir_o_fio_da_senha`, a recusa de integridade), mas nenhum deles chama o
+`sinal`. Cognição `cognicao_alarme-declarado-sem-produtor_20261009_1400.md`.
+
+A guarda da tela: `aquario::testes::todo_alarme_tem_motivo_na_tabela_da_tela`
+lê a tabela `MOTIVOS` do `ui/aquario.js` embutido e reprova variante do enum
+sem entrada (A16).
 
 ### 11.6 A contagem
 

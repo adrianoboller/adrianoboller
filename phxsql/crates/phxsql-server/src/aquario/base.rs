@@ -65,6 +65,15 @@ pub const CHAO_DO_DESVIO: f64 = 0.1;
 pub const METADE_MS: i64 = 30 * 60 * 1_000;
 /// Quantas chaves proprias a base guarda antes da coringa.
 pub const TETO_DE_CHAVES: usize = 5_000;
+/// Quantas vezes a MESMA chave fora do habitual, dentro da
+/// [`JANELA_DA_REINCIDENCIA_MS`], fazem o `ForaDoHabitualReincidente` (pedido
+/// 769). *Raciocinado* no `aquario-707.md` §2.4 («3 vezes em 5 min», listado
+/// como lacuna no §9); o §11.1 trocou o «acima de 2 x p95» pelo julgamento
+/// da base, e o «3 em 5 min» ficou de pe sobre ele.
+pub const VEZES_DA_REINCIDENCIA: usize = 3;
+/// A janela da reincidencia.
+pub const JANELA_DA_REINCIDENCIA_MS: i64 = 5 * 60 * 1_000;
+
 /// O quantil normal de 95%, para o p95 habitual estimado que a tela mostra.
 const Z_DO_P95: f64 = 1.645;
 
@@ -276,9 +285,23 @@ struct Linha {
     periodo: i64,
     maximo_us: u64,
     alarmes: u64,
+    /// Quando foram os desvios anteriores desta chave, o mais novo primeiro
+    /// (zero = nenhum): os que a reincidencia precisa, e nenhum a mais. Um
+    /// arranjo fixo, e nao uma lista: a linha nao cresce com quem insiste.
+    desvios: [i64; VEZES_DA_REINCIDENCIA - 1],
 }
 
 impl Linha {
+    /// Anota um desvio em `agora_ms` e diz se ele e REINCIDENTE: os
+    /// [`VEZES_DA_REINCIDENCIA`] ultimos, este incluido, cabem na janela.
+    fn reincide(&mut self, agora_ms: i64) -> bool {
+        let mais_velho = self.desvios[self.desvios.len() - 1];
+        let reincide = mais_velho != 0 && agora_ms - mais_velho <= JANELA_DA_REINCIDENCIA_MS;
+        self.desvios.rotate_right(1);
+        self.desvios[0] = agora_ms;
+        reincide
+    }
+
     /// Vira a janela ate `periodo`. Relogio que recuou nao vira nada: o
     /// pedido entra na metade corrente, e o habitual nao se perde por causa
     /// de um ajuste de hora.
@@ -461,13 +484,19 @@ impl Base {
         // ele mesmo e julgado. Depois entra, inclusive o anormal -- o regra.py
         // da A0 mediu assim, e um habitual que mudou de verdade tem de poder
         // virar habitual.
-        let julgado = if pode_alarmar {
+        let mut julgado = if pode_alarmar {
             julgar(linha.habitual(), servico_us)
         } else {
             Habitual::SemBase
         };
-        if julgado.desvio().is_some() {
+        if let Habitual::Fora(desvio) = &mut julgado {
             linha.alarmes += 1;
+            // A reincidencia e do pedido que TERMINA, e so aqui: a tarefa
+            // viva (`avaliar`) so le, e contar a mesma tarefa a cada retrato
+            // a faria reincidir sozinha.
+            if linha.reincide(agora_ms) {
+                desvio.alarme = Alarme::ForaDoHabitualReincidente;
+            }
         }
         linha.atual.somar(x);
         linha.maximo_us = linha.maximo_us.max(servico_us);

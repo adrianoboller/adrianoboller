@@ -2623,6 +2623,7 @@ fontes_do_servidor! {
     "servidor/testes_do_valor_citado_com_teto.rs",
     "servidor/testes_dos_alarmes.rs",
     "servidor/testes_dos_numeros_de_origem.rs",
+    "servidor/testes_dos_produtores_769.rs",
     "servidor/testes_encerrar_sessao_644.rs",
     "servidor/testes_escala_decimal.rs",
     "servidor/testes_escopo_do_begin_607.rs",
@@ -2965,3 +2966,6 @@ mod testes_da_previsao;
 
 #[cfg(test)]
 mod testes_do_plano_largo;
+
+#[cfg(test)]
+mod testes_dos_produtores_769;

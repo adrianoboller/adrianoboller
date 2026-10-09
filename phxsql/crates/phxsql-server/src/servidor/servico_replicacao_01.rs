@@ -351,6 +351,12 @@ impl Servidor {
     ) -> bool {
         match ritmo.apos(falha) {
             crate::replica::Decisao::Dormir(espera) => {
+                // Aqui, e nao no laco: o laco comum e o do cluster chegam os
+                // dois por este ponto (pedido 587), e o relogio do episodio e
+                // o do mesmo `Ritmo` que decide o recuo (pedido 769).
+                if ritmo.cruzou_o_prazo() {
+                    crate::telemetria::sinal(crate::aquario::Alarme::OrigemInalcancavel, origem);
+                }
                 let seguidas = ritmo.seguidas;
                 self.anotar_estado(origem, |e| {
                     e.falhas_de_rede_seguidas = seguidas;
@@ -1035,8 +1041,16 @@ impl Servidor {
     /// repete. Nao e erro da rodada: as outras tabelas continuam.
     fn romper_continuidade(&self, origem: &str, chave: &str, posicao: u64, motivo: String) {
         eprintln!("replicacao [{origem}]: {chave}: {motivo}");
-        if let Ok(mut c) = self.continuidade_da_replica.lock() {
-            c.insert(chave.to_string(), (posicao, false));
+        let ja_rompida = match self.continuidade_da_replica.lock() {
+            Ok(mut c) => c.insert(chave.to_string(), (posicao, false)) == Some((posicao, false)),
+            Err(_) => false,
+        };
+        // Os quatro caminhos que rompem passam por aqui (pedido 769): o
+        // alarme mora no ponto unico, e nao em cada ramo do alcancar. Uma vez
+        // por ruptura: o ramo da OUTRA historia nao consulta o veredito
+        // guardado, e repetiria a pedra a cada rodada.
+        if !ja_rompida {
+            crate::telemetria::sinal(crate::aquario::Alarme::ContinuidadeRompida, chave);
         }
         self.anotar_estado(origem, |e| {
             e.recusas.insert(chave.to_string(), motivo);

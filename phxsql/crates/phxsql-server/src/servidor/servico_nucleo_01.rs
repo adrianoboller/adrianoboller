@@ -139,7 +139,7 @@ impl Servidor {
         // Pedido 573: o operador e AVISADO antes da recusa, pelo carteiro do
         // 249 -- o `fsync` recusado derrubou o processo e o carteiro morreu
         // junto, entao quem diz e o arranque seguinte.
-        conferir_sentinela_509(&config.base, |caminho, erro| {
+        let fsync_de_boot_anterior = conferir_sentinela_509(&config.base, |caminho, erro| {
             avisar_o_arranque_recusado(&config, caminho, erro)
         })?;
         registrar_base_da_sentinela(&config.base);
@@ -326,11 +326,16 @@ impl Servidor {
         ));
         // Pedido 255: o indice reconstruido no arranque tambem sai pelo
         // carteiro, e nao so no log -- quem opera le e-mail, nao `stderr`.
-        if let Some(evento) = crate::saude_do_disco::evento_do_arranque(
+        let evento_de_indice = crate::saude_do_disco::evento_do_arranque(
             crate::agora_ms(),
             recuperacao.indices_reconstruidos,
             &recuperacao.indices_pendentes,
-        ) {
+        );
+        // O alarme do indice atrasado (pedido 769) sai da MESMA decisao do
+        // aviso: o texto do evento, ou nada. Duas condicoes escritas em dois
+        // lugares avisariam por e-mail o que o aquario nao mostra.
+        let indice_atrasado = evento_de_indice.as_ref().map(|e| e.texto.clone());
+        if let Some(evento) = evento_de_indice {
             saude.entregar(evento);
         }
         // Pedido 339, condicao A do papel C: a arvore em claro sobre coluna
@@ -534,6 +539,15 @@ impl Servidor {
             .telemetria
             .definir_ocorrencias(&servidor.ocorrencias);
         crate::ocorrencias::instalar(&servidor.ocorrencias);
+        // Os alarmes do arranque (pedido 769) saem SO agora, com a camada de
+        // ocorrencias deste servidor instalada: o fato aconteceu antes (na
+        // sentinela, na recuperacao), mas sinalizado la a ocorrencia iria a
+        // camada de outro servidor do processo, ou a nenhuma.
+        servidor.sinalizar_o_arranque(
+            fsync_de_boot_anterior.as_deref(),
+            &recuperacao,
+            indice_atrasado.as_deref(),
+        );
         // As horas fechadas da contagem do aquario (pedido 707, A8), ao lado
         // do `acessos.log`, fora do rodizio.
         servidor.telemetria.aquario().contagem().definir_arquivo(
@@ -1246,6 +1260,34 @@ impl Servidor {
             pedido.min(teto)
         }
     }
+
+    /// Os tres alarmes de servidor que so o ARRANQUE ve (pedido 769), cada
+    /// um pelo produtor unico, e so quando o fato aconteceu: o arranque de
+    /// sempre nao sinaliza nada, como nao avisa nada.
+    ///
+    /// - `FsyncRecusadoAntes`: a sentinela do 509 de um boot anterior (ao
+    ///   vivo o processo cai, e quem conta e o arranque seguinte);
+    /// - `MarcaNaoResolvida`: marca que a recuperacao deixou no disco sem
+    ///   completar -- operacao impossivel ou cifrada sem a chave. A que nem
+    ///   se leu (`sem_leitura`) impede a subida e nao chega aqui;
+    /// - `IndiceAtrasado`: o texto do `evento_do_arranque`, a mesma decisao
+    ///   do aviso por e-mail.
+    pub(super) fn sinalizar_o_arranque(
+        &self,
+        fsync_de_boot_anterior: Option<&str>,
+        recuperacao: &crate::transacao::Relatorio,
+        indice_atrasado: Option<&str>,
+    ) {
+        if let Some(sentinela) = fsync_de_boot_anterior {
+            crate::telemetria::sinal(crate::aquario::Alarme::FsyncRecusadoAntes, sentinela);
+        }
+        for marca in recuperacao.impossiveis.iter().chain(&recuperacao.paradas) {
+            crate::telemetria::sinal(crate::aquario::Alarme::MarcaNaoResolvida, marca);
+        }
+        if let Some(texto) = indice_atrasado {
+            crate::telemetria::sinal(crate::aquario::Alarme::IndiceAtrasado, texto);
+        }
+    }
 }
 
 /// O papel num byte, para o `AtomicU8` do papel vivo.
@@ -1327,10 +1369,17 @@ fn registrar_base_da_sentinela(base: &Path) {
 /// `avisar(caminho, erro)` roda UMA vez, so no caminho que recusa, e ANTES de
 /// devolver a recusa (pedido 573): e o unico ponto que sabe que o servidor
 /// nao vai subir.
-pub(super) fn conferir_sentinela_509(base: &Path, avisar: impl FnOnce(&str, &str)) -> Result<()> {
+///
+/// Devolve o texto da sentinela de um boot ANTERIOR que ela achou e apagou --
+/// o fato do alarme `FsyncRecusadoAntes` (pedido 769) --, ou `None` no
+/// arranque de sempre.
+pub(super) fn conferir_sentinela_509(
+    base: &Path,
+    avisar: impl FnOnce(&str, &str),
+) -> Result<Option<String>> {
     let arquivo = base.join(SENTINELA_509);
     let Ok(texto) = std::fs::read_to_string(&arquivo) else {
-        return Ok(());
+        return Ok(None);
     };
     let gravado = texto
         .lines()
@@ -1348,7 +1397,7 @@ pub(super) fn conferir_sentinela_509(base: &Path, avisar: impl FnOnce(&str, &str
              daquele boot se foi, e o arranque segue pela recuperacao (pedido 509)",
             arquivo.display()
         );
-        return Ok(());
+        return Ok(Some(texto));
     }
     let caminho = texto
         .lines()
