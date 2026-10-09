@@ -987,7 +987,8 @@ impl Servidor {
         // PELO TIPO do modelo. Ver `crate::consultar` para o que isso comprou.
         if let Some(txt) = p.campo("expressao").and_then(Json::texto) {
             if !txt.trim().is_empty() {
-                let e = phxsql_core::expressao::Expressao::analisar(txt)?;
+                // Pela porta do observador de injecao (495, F3).
+                let e = crate::injecao::analisar_expressao(txt)?;
                 // A ligacao dos nomes acontece UMA vez, contra o modelo, e e
                 // ela que recusa o nome ambiguo -- por pedido, e nao por linha.
                 let ligacoes = cs::ligar(&modelo, e.colunas())?;
@@ -1778,7 +1779,8 @@ pub(super) fn tendo_do_pedido(
         Some(t) if !t.trim().is_empty() => t,
         _ => return Ok(None),
     };
-    let e = Expressao::analisar(txt)?;
+    // Pela porta do observador de injecao (495, F3).
+    let e = crate::injecao::analisar_expressao(txt)?;
     for nome in e.colunas() {
         let conhecido = nomes_por.iter().any(|n| n.eq_ignore_ascii_case(nome))
             || agregados

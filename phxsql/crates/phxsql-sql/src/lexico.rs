@@ -233,7 +233,32 @@ pub fn analisar_com_comentarios(entrada: &str) -> Result<Vec<Simbolo>> {
     lexar(entrada, true)
 }
 
+#[cfg(feature = "contar_passadas")]
+thread_local! {
+    static PASSADAS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// Quantas vezes o lexico leu um texto NESTA thread -- o medidor de custo do
+/// observador de injecao (pedido 495, F3).
+///
+/// # Por que contagem, e nao relogio
+///
+/// O desenho pedia «relexar no gancho passa de 2x o parse». Medido
+/// (`custo-do-observador`), reler custa 1,1x a 1,6x o parse:
+/// a regua de 2x nunca reprovaria quem relexa. A pergunta certa e a de
+/// contar -- o observador acrescenta ZERO passadas --, e contar nao floca
+/// numa maquina carregada.
+///
+/// So existe com a feature `contar_passadas`, que so o `phxsql-server` liga,
+/// e so nos testes: o binario do servidor nao paga nem o incremento.
+#[cfg(feature = "contar_passadas")]
+pub fn passadas_nesta_thread() -> u64 {
+    PASSADAS.with(std::cell::Cell::get)
+}
+
 fn lexar(entrada: &str, com_comentarios: bool) -> Result<Vec<Simbolo>> {
+    #[cfg(feature = "contar_passadas")]
+    PASSADAS.with(|p| p.set(p.get() + 1));
     let b: Vec<char> = entrada.chars().collect();
     let mut i = 0usize;
     let mut saida = Vec::new();

@@ -333,7 +333,13 @@
     "",
     "As duas nascem desligadas porque nenhuma e prova de ma-fe: um cliente com",
     "o lote mal dimensionado, ou um relatorio colado com dois comandos, seriam",
-    "trancados para fora por engano -- e o operador junto."
+    "trancados para fora por engano -- e o operador junto.",
+    "",
+    "observar_injecao_sql nasce LIGADO, e nao bloqueia nada: so OBSERVA (pedido",
+    "495, F3). O pedido com forma de injecao -- tautologia sob OR, comando",
+    "empilhado, UNION de sondagem, comentario que engole aspa -- vira uma",
+    "ocorrencia injecao_suspeita no ocorrencias.log, com o SQL normalizado e",
+    "sem literal. A resposta ao cliente sai byte a byte a mesma. false desliga."
   ],
 
   "seguranca": {
@@ -347,6 +353,7 @@
 
     "contar_injecao_sql": false,
     "contar_linha_acima_do_teto": false,
+    "observar_injecao_sql": true,
 
     "whitelist": [],
 

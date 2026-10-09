@@ -27,6 +27,8 @@
 
 use std::sync::atomic::{AtomicI64, AtomicU64, Ordering};
 
+use phxsql_sql::Sinais;
+
 use super::{Alarme, Escopo, Grupo};
 use crate::telemetria::Atividade;
 
@@ -50,21 +52,33 @@ const CODIGO_CORROMPIDO: u16 = 1001;
 /// registro de seguranca que some quando a tela do aquario foi desligada
 /// mentiria sobre o servidor.
 pub fn sinal(alarme: Alarme, dados: &str) -> Option<u64> {
+    sinal_com_sinais(alarme, dados, Sinais::NENHUM)
+}
+
+/// O [`sinal`] com as classes do observador de injecao (495, F3), que vao a
+/// ocorrencia ao lado do `dados` redigido. O mesmo corpo: `sinal` e este
+/// com as classes vazias.
+pub fn sinal_com_sinais(alarme: Alarme, dados: &str, sinais: Sinais) -> Option<u64> {
     // Tambem para o alarme de servidor: ele nao vira bit, mas a ocorrencia
     // ganha quem e de onde quando acontece dentro de uma conexao.
     let atividade = crate::telemetria::corrente();
-    produzir(atividade.as_deref(), alarme, dados)
+    produzir(atividade.as_deref(), alarme, dados, sinais)
 }
 
 /// O mesmo produtor, para quem ja tem a atividade na mao e pode nao ser a
 /// desta thread -- o `siga` e um metodo da propria atividade.
 pub fn sinal_em(atividade: &Atividade, alarme: Alarme, dados: &str) -> Option<u64> {
-    produzir(Some(atividade), alarme, dados)
+    produzir(Some(atividade), alarme, dados, Sinais::NENHUM)
 }
 
 /// O corpo unico dos dois de cima: o bit (ou o sedimento) E a ocorrencia.
 /// Nenhum outro caminho cria ocorrencia (§11.3, «um produtor»).
-fn produzir(atividade: Option<&Atividade>, alarme: Alarme, dados: &str) -> Option<u64> {
+fn produzir(
+    atividade: Option<&Atividade>,
+    alarme: Alarme,
+    dados: &str,
+    sinais: Sinais,
+) -> Option<u64> {
     match alarme.escopo() {
         Escopo::Tarefa => {
             if let Some(a) = atividade {
@@ -77,7 +91,7 @@ fn produzir(atividade: Option<&Atividade>, alarme: Alarme, dados: &str) -> Optio
     let camada = atividade
         .and_then(Atividade::ocorrencias)
         .or_else(crate::ocorrencias::do_processo)?;
-    camada.receber(alarme, dados, atividade, crate::agora_ms())
+    camada.receber_com_sinais(alarme, dados, sinais, atividade, crate::agora_ms())
 }
 
 /// O desfecho com codigo 1001 que nenhuma trava marcou e dado corrompido.
@@ -93,7 +107,7 @@ pub fn conferir_o_1001(codigo: u16) {
         return;
     };
     if a.alarmes() & mascara_da_trava() == 0 {
-        produzir(Some(&a), Alarme::DadoCorrompido, "");
+        produzir(Some(&a), Alarme::DadoCorrompido, "", Sinais::NENHUM);
     }
 }
 

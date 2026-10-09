@@ -1298,7 +1298,9 @@ pub(super) fn expressao_do_pedido(
     if texto.trim().is_empty() {
         return Ok(None);
     }
-    let e = phxsql_core::expressao::Expressao::analisar(texto)?;
+    // Pela porta do observador de injecao (495, F3): os simbolos desta
+    // analise sao os que ele classifica, sem ler o texto de novo.
+    let e = crate::injecao::analisar_expressao(texto)?;
     for nome in e.colunas() {
         if !esquema
             .colunas()

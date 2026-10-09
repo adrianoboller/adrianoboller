@@ -35,6 +35,7 @@ pub mod exportar;
 mod fio_dados;
 pub mod http;
 pub mod idiomas;
+pub(crate) mod injecao;
 pub mod jobs;
 pub mod juncao;
 pub mod ligacoes;

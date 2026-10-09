@@ -4924,6 +4924,7 @@ Campo vazio não entra.
 | `alarme` / `gravidade` / `grupo` | o `enum Alarme` do 707 — o tipo da ocorrência é ele |
 | `tabelas` | `[{"database","tabela"}]`: toda tabela que o pedido nomeia, **pela árvore inteira** (o lado B de `juntar`, a lista do `unir`) |
 | `digital` | a digital do SQL (F1), hexadecimal (u64 não cabe num número JSON) |
+| `sinais` | só no alarme `injecao_suspeita` (F3, grupo `ataque`): as classes do `phxsql_sql::sinais` que acusaram o pedido, na ordem `empilhado`, `constante_sob_or`, `uniao_de_sondagem`, `comentario_engole_aspa`. Nomes fixos do motor, nunca texto do cliente |
 | `dados` | o `dados` do produtor **redigido por análise**: pedido JSON vira a **forma** (segredo por nome, SQL normalizado, todo outro valor `?`); texto vira o SQL normalizado; o que não se analisa vira o tamanho. Corte de 4.096 caracteres só **depois** da redação |
 
 **Silêncio** por (alarme, usuário, IP), 60 s, no máximo 1.024 chaves (acima

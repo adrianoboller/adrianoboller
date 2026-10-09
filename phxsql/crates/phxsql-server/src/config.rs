@@ -6365,6 +6365,10 @@ impl Config {
                         "contar_pulso_desconhecido",
                         Json::Bool(self.politica.contar_pulso_desconhecido),
                     ),
+                    (
+                        "observar_injecao_sql",
+                        Json::Bool(self.politica.observar_injecao_sql),
+                    ),
                 ]),
             ),
             (

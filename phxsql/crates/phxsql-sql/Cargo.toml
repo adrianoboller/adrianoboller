@@ -8,3 +8,10 @@ license.workspace = true
 
 [dependencies]
 phxsql-core.workspace = true
+
+# `contar_passadas` liga o contador de passadas do lexico
+# (`lexico::passadas_nesta_thread`), o medidor de custo do observador de
+# injecao (pedido 495, F3). So o `phxsql-server` o liga, e so nos testes
+# (`[dev-dependencies]`): o binario nao paga nem o incremento.
+[features]
+contar_passadas = []

@@ -149,9 +149,9 @@ pub use dml::{
 pub use lexico::{Comparador, Simbolo, Token};
 pub use sinais::{digital, sinais, Sinais};
 pub use sintaxe::{
-    analisar, analisar_comando, analisar_comando_com, comando_empilhado, Alvo, ColunaPedida,
-    Comando, Condicao, FuncaoAgregada, ItemProjetado, Literal, Onde, Ordenacao, Projecao, Selecao,
-    Uniao, RESERVADAS_DO_MOTOR,
+    analisar, analisar_comando, analisar_comando_com, analisar_comando_dos_simbolos,
+    comando_empilhado, Alvo, ColunaPedida, Comando, Condicao, FuncaoAgregada, ItemProjetado,
+    Literal, Onde, Ordenacao, Projecao, Selecao, Uniao, RESERVADAS_DO_MOTOR,
 };
 pub use traduzir::{
     traduzir, traduzir_criar_visao, traduzir_excluir_visao, traduzir_uniao, ColunaDoIndice,

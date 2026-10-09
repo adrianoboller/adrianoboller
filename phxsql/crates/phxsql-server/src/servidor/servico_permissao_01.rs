@@ -104,6 +104,16 @@ impl Servidor {
         pedido: &Json,
         sessao: &Sessao,
     ) -> Result<Json> {
+        // O observador de injecao (495, F3) mora AQUI porque aqui passam os
+        // tres irmaos -- a rede, a op `sql` derivada e o job -- e porque so
+        // aqui se ve o desfecho dos dois lados. O portao e o `bool`, antes
+        // de tudo; a vez abre antes do `executar` porque e la dentro que a
+        // analise entrega as classes (`crate::injecao`).
+        let vez = self
+            .config
+            .politica
+            .observar_injecao_sql
+            .then(crate::injecao::abrir);
         // A conta entra ANTES da escrita e sai se ela falhar (pedido 630,
         // corrigido em 02/10/2026): contar depois deixava uma janela entre
         // a escrita aparecer no diario e o contador subir, e a rodada da
@@ -128,7 +138,27 @@ impl Servidor {
                 self.desfazer_escrita_local(&chave);
             }
         }
+        // Recolhe com `Ok` E com `Err`: a tautologia que da certo e o
+        // ataque, e e justamente ela que um gancho so no erro perderia.
+        if let Some(vez) = vez {
+            self.acusar_injecao(vez.fechar(), pedido);
+        }
         r
+    }
+
+    /// A ocorrencia do pedido que tem a forma de uma injecao. Nao muda a
+    /// resposta, nao recusa, nao bloqueia: so registra, para quem
+    /// administra. O `dados` e o pedido inteiro, que a camada redige
+    /// ANALISANDO -- o texto do SQL normalizado, todo valor `?`.
+    fn acusar_injecao(&self, sinais: phxsql_sql::Sinais, pedido: &Json) {
+        if sinais.vazio() {
+            return;
+        }
+        crate::telemetria::sinal_com_sinais(
+            crate::aquario::Alarme::InjecaoSuspeita,
+            &pedido.escrever(),
+            sinais,
+        );
     }
 
     /// Tira do mapa a escrita local contada por uma operacao que falhou. A

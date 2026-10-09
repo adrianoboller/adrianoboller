@@ -86,6 +86,11 @@ pub enum Grupo {
     /// descritores nao sao DISCO, e pintar a previsao de memoria com a letra
     /// do disco seria mentir sobre o que esta acabando.
     Previsao,
+    /// A familia «ataque» do 495 (`aquario-707.md` §11.3): o pedido que tem
+    /// a forma de uma injecao. Grupo proprio, e nao SEGURANCA: forca bruta e
+    /// senha em claro falam do LOGIN; esta fala do que o pedido de alguem ja
+    /// autenticado tentou fazer com os dados.
+    Ataque,
 }
 
 impl Grupo {
@@ -98,6 +103,7 @@ impl Grupo {
             Grupo::Seguranca => "seguranca",
             Grupo::Prazo => "prazo",
             Grupo::Previsao => "previsao",
+            Grupo::Ataque => "ataque",
         }
     }
 }
@@ -181,12 +187,16 @@ pub enum Alarme {
     /// consumido esperando mais de 60 s. Amarelo: nada se perdeu ainda, mas
     /// e o RPO de uma promocao feita agora.
     ReplicaAtrasada,
+    /// Pedido 495, F3: o pedido tem a forma de uma injecao de SQL -- uma das
+    /// quatro classes do `phxsql_sql::sinais`. Observa e nunca recusa:
+    /// vermelho porque a tautologia que da CERTO ja devolveu as linhas.
+    InjecaoSuspeita,
 }
 
 impl Alarme {
     /// Todos, na ordem da declaracao. Os testes conferem que nenhum fica de
     /// fora, pelo `match` exaustivo do [`Alarme::chave`].
-    pub const TODOS: [Alarme; 22] = [
+    pub const TODOS: [Alarme; 23] = [
         Alarme::TravaReentrante,
         Alarme::TravaEnvenenada,
         Alarme::ErroDeDisco,
@@ -209,6 +219,7 @@ impl Alarme {
         Alarme::EsgotamentoPrevisto,
         Alarme::EsgotamentoIminente,
         Alarme::ReplicaAtrasada,
+        Alarme::InjecaoSuspeita,
     ];
 
     /// A chave da fabrica de idiomas. E o MESMO texto da bolha e do e-mail,
@@ -240,6 +251,7 @@ impl Alarme {
             Alarme::EsgotamentoPrevisto => "aquario.motivo.esgotamento_previsto",
             Alarme::EsgotamentoIminente => "aquario.motivo.esgotamento_iminente",
             Alarme::ReplicaAtrasada => "aquario.motivo.replica_atrasada",
+            Alarme::InjecaoSuspeita => "aquario.motivo.injecao_suspeita",
         }
     }
 
@@ -288,6 +300,7 @@ impl Alarme {
                 Grupo::Prazo
             }
             Alarme::EsgotamentoPrevisto | Alarme::EsgotamentoIminente => Grupo::Previsao,
+            Alarme::InjecaoSuspeita => Grupo::Ataque,
         }
     }
 
@@ -317,6 +330,7 @@ impl Alarme {
             Alarme::ForaDoHabitual => 8,
             Alarme::ForaDoHabitualReincidente => 9,
             Alarme::IntegridadeRecusada => 10,
+            Alarme::InjecaoSuspeita => 11,
             Alarme::FechoRecusado
             | Alarme::FsyncRecusadoAntes
             | Alarme::MarcaNaoResolvida

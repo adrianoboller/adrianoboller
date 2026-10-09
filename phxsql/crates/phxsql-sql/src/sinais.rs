@@ -32,6 +32,9 @@ use crate::sintaxe::empilhado_nos_simbolos;
 pub struct Sinais(u8);
 
 impl Sinais {
+    /// Nenhuma classe. Constante para caber num `thread_local!` sem
+    /// inicializacao preguicosa (o gancho do servidor, F3).
+    pub const NENHUM: Sinais = Sinais(0);
     /// Simbolo depois de um `;`: um segundo comando. Decidido pelo MESMO
     /// motor do [`crate::comando_empilhado`] (pedido 501).
     pub const EMPILHADO: Sinais = Sinais(1);
@@ -69,7 +72,9 @@ impl Sinais {
             .map(|(_, n)| n)
     }
 
-    fn com(self, outra: Sinais) -> Sinais {
+    /// As duas juntas. Publica para o gancho do servidor (F3) somar o que
+    /// a op `sql` e os campos de expressao do mesmo pedido acusaram.
+    pub fn com(self, outra: Sinais) -> Sinais {
         Sinais(self.0 | outra.0)
     }
 }

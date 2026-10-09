@@ -61,7 +61,7 @@ use phxsql_core::json::Json;
 
 /// O produtor unico dos alarmes (pedido 707, A3) mora no aquario; o nome
 /// publico e este, porque e a telemetria que tem a atividade da vez.
-pub use crate::aquario::alarme::{sinal, sinal_em};
+pub use crate::aquario::alarme::{sinal, sinal_com_sinais, sinal_em};
 
 /// Quantas amostras ficam em memoria.
 ///

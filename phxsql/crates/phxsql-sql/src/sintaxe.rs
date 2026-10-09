@@ -660,7 +660,24 @@ pub fn analisar_comando_com(
     entrada: &str,
     parametros: &[phxsql_core::json::Json],
 ) -> Result<Comando> {
-    let simbolos = lexico::analisar(entrada)?;
+    analisar_comando_dos_simbolos(lexico::analisar(entrada)?, entrada, parametros)
+}
+
+/// A mesma leitura, sobre simbolos que o lexico JA produziu -- com ou sem os
+/// comentarios (`lexico::analisar_com_comentarios`); eles saem aqui.
+///
+/// Existe para a op `sql` ler o texto UMA vez e dar os mesmos simbolos ao
+/// observador de injecao (`crate::sinais`, pedido 495 F3), a digital e a
+/// esta sintaxe. Ler de novo para o observador custaria mais uma passada do
+/// lexico por pedido -- reler e 1,1x a 1,6x o parse, medido no exemplo
+/// `custo-do-observador` --, e o lexico e o mesmo: o comentario e a unica
+/// diferenca entre as duas listas, e e ela que sai.
+pub fn analisar_comando_dos_simbolos(
+    mut simbolos: Vec<Simbolo>,
+    entrada: &str,
+    parametros: &[phxsql_core::json::Json],
+) -> Result<Comando> {
+    simbolos.retain(|s| !matches!(s.token, Token::Comentario { .. }));
     if simbolos.is_empty() {
         return Err(PhxError::Esquema("comando SQL vazio".into()));
     }

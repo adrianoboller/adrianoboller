@@ -174,6 +174,18 @@ pub struct Politica {
     /// leve que ja existe, e quem tem a credencial de replicacao deixa de
     /// enumerar os ids do cluster de graca (revisao SEC de 17/09/2026, A11).
     pub contar_pulso_desconhecido: bool,
+    /// Observar a FORMA de injecao de SQL nos pedidos (pedido 495, F3)?
+    ///
+    /// Nasce LIGADO, ao contrario dos tres de cima, e a diferenca e o que ele
+    /// faz: os de cima CONTAM para bloquear, e bloquear quem erra tranca o
+    /// operador; este so OBSERVA -- a resposta ao cliente sai byte a byte a
+    /// mesma, ninguem e recusado nem bloqueado, e o que acusa vira uma
+    /// ocorrencia (`InjecaoSuspeita`) para quem administra. Decisao de
+    /// 24/09 mantida no desenho (`ia-495-496-desenho.md` §0, item 6).
+    ///
+    /// E o portao do gancho: desligado, o pedido paga a leitura deste `bool`
+    /// e nada mais -- nem a classificacao, nem o estado da thread.
+    pub observar_injecao_sql: bool,
 }
 
 impl Default for Politica {
@@ -191,6 +203,7 @@ impl Default for Politica {
             contar_injecao_sql: false,
             contar_linha_acima_do_teto: false,
             contar_pulso_desconhecido: false,
+            observar_injecao_sql: true,
         }
     }
 }
@@ -241,6 +254,8 @@ impl Politica {
                 "contar_pulso_desconhecido",
                 padrao.contar_pulso_desconhecido,
             ),
+            observar_injecao_sql: j
+                .booleano_ou("observar_injecao_sql", padrao.observar_injecao_sql),
         }
     }
 

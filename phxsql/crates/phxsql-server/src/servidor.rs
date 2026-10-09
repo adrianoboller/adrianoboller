@@ -2605,6 +2605,7 @@ fontes_do_servidor! {
     "servidor/testes_do_carimbo_do_futuro.rs",
     "servidor/testes_do_lote_de_replicacao.rs",
     "servidor/testes_do_memo_estragado_no_atualizar.rs",
+    "servidor/testes_do_observador.rs",
     "servidor/testes_do_panico_sob_a_trava.rs",
     "servidor/testes_do_pular_manual.rs",
     "servidor/testes_do_pulso_que_morre.rs",
@@ -2842,6 +2843,9 @@ mod testes_da_saude_do_disco;
 
 #[cfg(test)]
 mod testes_das_ocorrencias;
+
+#[cfg(test)]
+mod testes_do_observador;
 
 #[cfg(test)]
 mod testes_do_lote_de_replicacao;

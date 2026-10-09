@@ -290,7 +290,25 @@ impl Eq for Expressao {}
 
 impl Expressao {
     pub fn analisar(texto: &str) -> Result<Expressao> {
+        Self::analisar_vendo(texto, None)
+    }
+
+    /// A mesma analise, mostrando os simbolos a `ver` DEPOIS do lexico e
+    /// ANTES da sintaxe -- inclusive quando a sintaxe vai recusar.
+    ///
+    /// Existe para o observador de injecao do servidor (pedido 495, F3):
+    /// ele precisa dos simbolos que esta analise ja produziu, e ler o texto
+    /// de novo seria uma passada a mais por pedido. Antes da sintaxe porque
+    /// o observador olha o sucesso E o erro: a sondagem que nao fecha a
+    /// gramatica e justamente a que ele quer ver.
+    ///
+    /// Sem `ver` (o [`analisar`](Self::analisar) de sempre) nada se monta:
+    /// o iterador so existe quando alguem pediu.
+    pub fn analisar_vendo(texto: &str, ver: Option<&mut VerPecas<'_>>) -> Result<Expressao> {
         let (tokens, colunas_dos_simbolos) = lexer(texto)?;
+        if let Some(ver) = ver {
+            ver(&mut tokens.iter().map(Token::peca));
+        }
         if tokens.is_empty() {
             return Err(PhxError::Esquema("expressao vazia".into()));
         }
@@ -422,7 +440,40 @@ enum Token {
     Virgula,
 }
 
+/// Quem olha os simbolos de [`Expressao::analisar_vendo`].
+pub type VerPecas<'v> = dyn FnMut(&mut dyn Iterator<Item = Peca<'_>>) + 'v;
+
+/// Um simbolo da expressao visto de FORA deste modulo -- o que o observador
+/// de injecao do servidor le (pedido 495, F3).
+///
+/// O literal nao traz o conteudo: o observador pergunta «e literal?», e
+/// nunca «qual?». Sem o valor aqui, nenhum dado do pedido sai por este
+/// caminho, por construcao.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Peca<'a> {
+    Numero,
+    Texto,
+    Palavra(&'a str),
+    /// O operador como o lexico o normalizou (`!=` chega como `<>`).
+    Op(&'static str),
+    Abre,
+    Fecha,
+    Virgula,
+}
+
 impl Token {
+    fn peca(&self) -> Peca<'_> {
+        match self {
+            Token::Numero(_) => Peca::Numero,
+            Token::Texto(_) => Peca::Texto,
+            Token::Palavra(p) => Peca::Palavra(p),
+            Token::Op(o) => Peca::Op(o),
+            Token::Abre => Peca::Abre,
+            Token::Fecha => Peca::Fecha,
+            Token::Virgula => Peca::Virgula,
+        }
+    }
+
     /// Como o simbolo aparece numa mensagem de erro. O literal de texto sai
     /// como [`LITERAL_REDIGIDO`] -- o motivo esta na propria constante.
     fn mostrar(&self) -> String {

@@ -209,6 +209,10 @@ pub struct Ocorrencia {
     pub tabelas: Vec<(String, String)>,
     /// A digital do SQL (F1), quando havia SQL.
     pub digital: Option<u64>,
+    /// As classes do observador de injecao (F3) que acusaram o pedido.
+    /// Vazio para todo outro alarme. Sao nomes fixos do motor
+    /// (`Sinais::TODAS`), nunca texto do cliente: nao passam pela redacao.
+    pub sinais: phxsql_sql::Sinais,
     /// O `dados` do produtor, REDIGIDO.
     pub dados: Json,
 }
@@ -265,6 +269,12 @@ impl Ocorrencia {
         if let Some(d) = self.digital {
             // Em hexadecimal: u64 nao cabe num numero JSON sem perder bits.
             pares.push(("digital", Json::texto_de(format!("{d:016x}"))));
+        }
+        if !self.sinais.vazio() {
+            pares.push((
+                "sinais",
+                Json::Lista(self.sinais.nomes().map(Json::texto_de).collect()),
+            ));
         }
         if !matches!(&self.dados, Json::Texto(t) if t.is_empty()) {
             pares.push(("dados", self.dados.clone()));
@@ -379,6 +389,25 @@ impl Ocorrencias {
         atividade: Option<&Atividade>,
         agora_ms: i64,
     ) -> Option<u64> {
+        self.receber_com_sinais(
+            alarme,
+            dados,
+            phxsql_sql::Sinais::NENHUM,
+            atividade,
+            agora_ms,
+        )
+    }
+
+    /// O mesmo corpo, com as classes do observador de injecao (F3). Um
+    /// corpo so: o [`receber`](Self::receber) e este com as classes vazias.
+    pub fn receber_com_sinais(
+        &self,
+        alarme: Alarme,
+        dados: &str,
+        sinais: phxsql_sql::Sinais,
+        atividade: Option<&Atividade>,
+        agora_ms: i64,
+    ) -> Option<u64> {
         let ctx = atividade.map(Atividade::contexto).unwrap_or_default();
         let ip = atividade.map(|a| a.ip.clone()).unwrap_or_default();
         if !self.pode(alarme, &ctx.usuario, &ip, agora_ms) {
@@ -402,6 +431,7 @@ impl Ocorrencias {
             tabela: ctx.tabela,
             tabelas,
             digital: ctx.digital.or(digital),
+            sinais,
             dados,
         }));
         Some(id)

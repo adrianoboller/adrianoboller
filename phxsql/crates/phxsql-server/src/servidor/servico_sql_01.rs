@@ -55,24 +55,44 @@ impl Servidor {
             .unwrap_or_default()
     }
 
-    /// A digital deste `sql` para a linha de base do aquario (F1 do 495).
+    /// A leitura deste `sql` que serve a TRES: a digital da linha de base do
+    /// aquario (F1 do 495), as classes do observador de injecao (F3) e a
+    /// sintaxe, que recebe os mesmos simbolos de volta.
     ///
-    /// O portao vem ANTES do lexico: desligada, a telemetria custa um `load`
-    /// aqui e nada mais. Ligada, o texto se le uma vez a mais -- os detectores
-    /// de diretiva, transacao e rotina ja o leem cada um por si, e nenhum
-    /// devolve os simbolos. Antes de qualquer outro caminho, para que o `sql`
-    /// recusado tambem tenha digital: o evento existe para a tentativa.
-    fn digital_do_sql(&self, texto: &str) {
-        if !self.telemetria.ligada() {
-            return;
+    /// Os portoes vem ANTES do lexico: telemetria desligada e observador
+    /// desligado, isto custa um `load` e uma leitura de `thread_local`, e
+    /// devolve `None` -- a sintaxe le o texto como sempre leu. Ligado
+    /// qualquer um, o texto se le UMA vez, com os comentarios (a classe
+    /// «comentario que engole aspa» precisa deles), e a sintaxe reaproveita
+    /// a lista: o observador nao custa passada nenhuma do lexico. Os
+    /// detectores de diretiva, transacao e rotina ainda leem cada um por si.
+    ///
+    /// Antes de qualquer outro caminho, para que o `sql` recusado tambem
+    /// tenha digital e classes: o evento existe para a tentativa.
+    fn ler_o_sql(&self, texto: &str) -> Option<Result<Vec<phxsql_sql::Simbolo>>> {
+        let telemetria = self.telemetria.ligada();
+        let observa = crate::injecao::observando();
+        if !telemetria && !observa {
+            return None;
         }
-        let digital = phxsql_sql::lexico::analisar_com_comentarios(texto)
-            .ok()
-            .map(|s| phxsql_sql::digital(&s));
-        crate::aquario::base::anotar_digital(digital);
-        if let Some(a) = crate::telemetria::corrente() {
-            a.definir_digital(digital);
+        let simbolos = phxsql_sql::lexico::analisar_com_comentarios(texto);
+        if telemetria {
+            let digital = simbolos.as_ref().ok().map(|s| phxsql_sql::digital(s));
+            crate::aquario::base::anotar_digital(digital);
+            if let Some(a) = crate::telemetria::corrente() {
+                a.definir_digital(digital);
+            }
         }
+        if observa {
+            if let Ok(s) = &simbolos {
+                crate::injecao::entregar(phxsql_sql::sinais(s));
+            }
+            // O que roda dentro desta op -- o corpo de uma rotina chama o
+            // `op_sql` de novo, sem passar pelo gancho -- e codigo do dono,
+            // e nao o pedido de fora.
+            crate::injecao::encerrar_entrega();
+        }
+        Some(simbolos)
     }
 
     /// `sql`: um `SELECT` simples traduzido para as operacoes que ja existem.
@@ -107,7 +127,7 @@ impl Servidor {
                 "informe \"texto\" com o comando SQL".into(),
             ));
         }
-        self.digital_do_sql(&texto);
+        let lido = self.ler_o_sql(&texto);
         // CREATE/ALTER/DROP USER, antes de tudo: `rotina::comando` reclama
         // todo CREATE e todo DROP para si, e `CREATE USER` chegando la vira
         // erro de sintaxe pedindo TRIGGER. Uma LINHA de despacho, de
@@ -208,10 +228,16 @@ impl Servidor {
         // O erro de sintaxe ja vem com a coluna: «SQL, coluna 14: esperava
         // FROM». Reembalar aqui perderia a posicao, que e a unica parte da
         // mensagem que diz ONDE consertar.
-        let comando = if parametros.is_empty() {
-            phxsql_sql::analisar_comando(&texto)?
-        } else {
-            phxsql_sql::analisar_comando_com(&texto, &parametros)?
+        //
+        // Os simbolos da leitura de cima, quando houve: a mesma lista que a
+        // digital e o observador leram. O erro do lexico sai igual pelos dois
+        // caminhos -- e o mesmo `lexar`, e o comentario nao muda onde uma
+        // aspa fecha.
+        let comando = match lido {
+            Some(simbolos) => {
+                phxsql_sql::analisar_comando_dos_simbolos(simbolos?, &texto, &parametros)?
+            }
+            None => phxsql_sql::analisar_comando_com(&texto, &parametros)?,
         };
         let selecao = match comando {
             phxsql_sql::Comando::Selecao(s) => s,

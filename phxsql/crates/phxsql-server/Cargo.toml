@@ -17,3 +17,8 @@ phxsql-sql.workspace = true
 # O `.phz` do `config.json` (pedido 450, etapa 2). Dependencia de CAMINHO,
 # do proprio workspace: o 7z escrito aqui, sem crate de fora.
 phxzip.workspace = true
+
+# O medidor de custo do observador de injecao (495, F3) conta as passadas do
+# lexico. So nos testes: o binario `phxsqld` nao carrega o contador.
+[dev-dependencies]
+phxsql-sql = { workspace = true, features = ["contar_passadas"] }
