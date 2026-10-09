@@ -153,8 +153,18 @@ fn campo<'a>(resposta: &'a str, nome: &str) -> &'a str {
         .unwrap_or("")
 }
 
-/// Acha o `id` da atividade que esta executando a operacao pedida.
-fn achar_atividade(porta: u16, op: &str) -> Option<String> {
+/// Acha o `id` da atividade que esta executando a operacao pedida E traz o
+/// par `exige` -- `"cancelavel":true` para quem precisa da fase, ou
+/// `"estado":"esperando"` para quem precisa da fila.
+///
+/// # Por que a condicao, e nao so a operacao (pedido 761)
+///
+/// A bolha nasce no `comecou_pedido`, ANTES da fila da trava e da abertura
+/// da tabela; a fase cancelavel so abre quando o laco comeca. Esperar a bolha
+/// e encerrar caia, sob carga, no trecho entre as duas, e a resposta vinha
+/// «marcada» -- certa, porque ali a operacao ainda nao esta no ponto. A
+/// pergunta do teste e outra, e a condicao tem de ser a da pergunta.
+fn achar_atividade(porta: u16, op: &str, exige: &str) -> Option<String> {
     let mut c = Conexao::abrir(porta);
     let r = c.pedir("\"op\":\"telemetria\",\"amostras\":1");
     // Sem analisador de JSON aqui de proposito: o teste nao deve depender da
@@ -162,11 +172,34 @@ fn achar_atividade(porta: u16, op: &str) -> Option<String> {
     // objeto entre chaves; basta achar o que traz a operacao procurada.
     for pedaco in r.split("{\"id\":\"").skip(1) {
         let (id, resto) = pedaco.split_once('"')?;
-        if resto.contains(&format!("\"op\":\"{op}\"")) {
+        if resto.contains(&format!("\"op\":\"{op}\"")) && resto.contains(exige) {
             return Some(id.to_string());
         }
     }
     None
+}
+
+/// Espera, ate o prazo, a atividade de `op` que traz o par `exige`.
+fn esperar_atividade(porta: u16, op: &str, exige: &str) -> Option<String> {
+    let ate = Instant::now() + Duration::from_secs(30);
+    while Instant::now() < ate {
+        if let Some(id) = achar_atividade(porta, op, exige) {
+            return Some(id);
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    None
+}
+
+/// Uma soma de verificacao numa conexao propria; a resposta chega pelo canal.
+fn soma_em_fundo(porta: u16) -> std::sync::mpsc::Receiver<String> {
+    let (envia, recebe) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let mut c = Conexao::abrir(porta);
+        let r = c.pedir("\"op\":\"checksum\",\"database\":\"loja\",\"tabela\":\"clientes\"");
+        let _ = envia.send(r);
+    });
+    recebe
 }
 
 /// **A prova.** Uma soma de verificacao longa e encerrada de outra conexao, o
@@ -198,24 +231,14 @@ fn a_soma_longa_e_encerrada_e_a_tabela_continua_integra() {
         .to_string();
 
     // A vitima: uma soma de verificacao numa conexao propria.
-    let (envia, recebe) = std::sync::mpsc::channel();
-    std::thread::spawn(move || {
-        let mut c = Conexao::abrir(porta);
-        let r = c.pedir("\"op\":\"checksum\",\"database\":\"loja\",\"tabela\":\"clientes\"");
-        let _ = envia.send(r);
-    });
+    let recebe = soma_em_fundo(porta);
 
-    // Espera ela aparecer na telemetria -- e a prova de que a bolha existe
-    // enquanto a operacao esta em curso, e nao so depois.
-    let mut id = None;
-    let ate = Instant::now() + Duration::from_secs(10);
-    while Instant::now() < ate && id.is_none() {
-        id = achar_atividade(porta, "checksum");
-        if id.is_none() {
-            std::thread::sleep(Duration::from_millis(5));
-        }
-    }
-    let id = id.expect("a soma em curso nao apareceu na telemetria");
+    // Espera ela aparecer na telemetria DENTRO da fase cancelavel -- e a
+    // prova de que a bolha diz a fase enquanto a operacao esta em curso, e
+    // nao so depois. Esperar so a bolha caia no trecho da fila (pedido 761),
+    // e a promessa forte la embaixo nao e a daquele trecho.
+    let id = esperar_atividade(porta, "checksum", "\"cancelavel\":true")
+        .expect("a soma em curso nunca apareceu na telemetria em fase cancelavel");
 
     let mut carrasco = Conexao::abrir(porta);
     let r = carrasco.pedir(&format!("\"op\":\"telemetria_encerrar\",\"id\":\"{id}\""));
@@ -259,6 +282,72 @@ fn a_soma_longa_e_encerrada_e_a_tabela_continua_integra() {
 
     let v = conferente.pedir("\"op\":\"verificar\",\"database\":\"loja\",\"tabela\":\"clientes\"");
     assert!(v.contains("\"ok\":true"), "a verificacao recusou: {v}");
+}
+
+/// **A marca posta na FILA vale no primeiro ponto seguro** -- pelo soquete
+/// (pedido 761).
+///
+/// E a metade que o teste de cima deixou de cobrir quando passou a esperar a
+/// fase: o trecho entre a bolha nascer e o laco comecar. O unitario
+/// `operacao_com_ponto_fora_da_fase_responde_marcada` prova a mecanica numa
+/// atividade so; este prova que a marca atravessa a fila da trava de dados
+/// de verdade, com outra conexao segurando a trava, e que ela mira A
+/// operacao parada -- a que segura a trava termina inteira.
+///
+/// # O defeito reposto
+///
+/// Zere o `encerrar_serial` no `com_a_trava` (a marca que se perde ao sair
+/// da fila) e este teste cai: a segunda soma responde `"ok":true`.
+#[test]
+fn a_marca_posta_na_fila_vale_no_primeiro_ponto_seguro() {
+    let base = pasta("fila");
+    let (_s, porta) = subir_servidor(&base);
+    encher(porta);
+
+    // A soma da frente pode terminar antes de a de tras ser marcada -- sob
+    // carga a janela e de milissegundos contra centenas. Ai a de tras ja
+    // entrou no laco, a resposta e «encerrando», e a tentativa nao mede a
+    // fila: tenta de novo. Toda tentativa que mediu a fila tem de cumprir.
+    let mut medidas = 0;
+    for _ in 0..20 {
+        let frente = soma_em_fundo(porta);
+        // A da frente com a trava na mao: esta no laco.
+        esperar_atividade(porta, "checksum", "\"cancelavel\":true")
+            .expect("a soma da frente nunca entrou na fase cancelavel");
+        let tras = soma_em_fundo(porta);
+        let id = esperar_atividade(porta, "checksum", "\"estado\":\"esperando\"");
+
+        let r = id.map(|id| {
+            Conexao::abrir(porta).pedir(&format!("\"op\":\"telemetria_encerrar\",\"id\":\"{id}\""))
+        });
+        let r_frente = frente
+            .recv_timeout(Duration::from_secs(60))
+            .expect("a soma da frente nunca respondeu");
+        let r_tras = tras
+            .recv_timeout(Duration::from_secs(60))
+            .expect("a soma de tras nunca respondeu");
+        let Some(r) = r else { continue };
+        if !r.contains("\"estado\":\"marcada\"") {
+            continue;
+        }
+        medidas += 1;
+        assert!(
+            r_frente.contains("\"ok\":true"),
+            "a marca da soma de tras alcancou a da frente: {r_frente}"
+        );
+        assert!(
+            r_tras.contains("\"nome\":\"CANCELADO\""),
+            "a marca posta na fila se perdeu -- a soma de tras devia parar no \
+             primeiro ponto seguro: {r_tras}"
+        );
+        if medidas >= 3 {
+            break;
+        }
+    }
+    assert!(
+        medidas > 0,
+        "nenhuma tentativa pegou a soma de tras na fila -- o teste nao mediu nada"
+    );
 }
 
 /// Encerrar uma atividade PARADA nao promete nada -- e diz isso em vez de
