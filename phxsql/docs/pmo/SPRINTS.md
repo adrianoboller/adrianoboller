@@ -20,7 +20,7 @@ decisão do dono de 01/10/2026 — estabilizar (fechar os defeitos da conta) →
 ## Estado medido
 
 <!-- SPRINTS:inicio -->
-_Contado do `PENDENCIAS.md` por `python3 docs/pmo/sprints.py`, gerado em 08/10/2026 22:48 UTC. Não se edita: muda a linha `**Pedidos**` da sprint ou o estado no `PENDENCIAS.md`, e roda o gerador._
+_Contado do `PENDENCIAS.md` por `python3 docs/pmo/sprints.py`, gerado em 09/10/2026 03:08 UTC. Não se edita: muda a linha `**Pedidos**` da sprint ou o estado no `PENDENCIAS.md`, e roda o gerador._
 
 | Sprint | Pedidos | ☑️ feitos | ◐ | ☐ | ⏸ | Abertos (◐ + ☐) |
 |---|---:|---:|---:|---:|---:|---|
@@ -41,7 +41,7 @@ _Contado do `PENDENCIAS.md` por `python3 docs/pmo/sprints.py`, gerado em 08/10/2
 | SPR-15 · 495/496 — as duas IAs (crime cibernético; DBA sênior) | 2 | 0 | 0 | 0 | 2 | 0 |
 | **Total nas sprints** | 55 | 48 | 0 | 0 | 7 | 0 |
 
-**Abertos (◐ + ☐) no `PENDENCIAS.md` fora de sprint nenhuma: 8** — 726, 727, 728, 729, 731, 733, 736, 737.
+**Abertos (◐ + ☐) no `PENDENCIAS.md` fora de sprint nenhuma: 1** — 751.
 <!-- SPRINTS:fim -->
 
 O bloco conta o `PENDENCIAS.md` **da árvore de trabalho** na hora da corrida. Em

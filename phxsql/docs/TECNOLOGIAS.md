@@ -39,15 +39,15 @@ foi estimado no lugar de uma medição que faltou.
 | `phxsql-core` | 48 | 19086 | 6790 | 5413 | 2308 | 33597 |
 | `phxsql-ffi` | 7 | 1524 | 1803 | 930 | 297 | 4554 |
 | `phxsql-odbc` | 7 | 3462 | 1663 | 1218 | 304 | 6647 |
-| `phxsql-server` | 178 | 97008 | 19979 | 38348 | 7619 | 162954 |
+| `phxsql-server` | 178 | 97147 | 20073 | 38463 | 7626 | 163309 |
 | `phxsql-sql` | 10 | 7377 | 4179 | 2899 | 852 | 15307 |
-| `phxsql-store` | 33 | 29774 | 6501 | 12683 | 2854 | 51812 |
+| `phxsql-store` | 33 | 29876 | 6528 | 12733 | 2863 | 52000 |
 | `phxzip` | 9 | 3074 | 501 | 804 | 284 | 4663 |
-| **total** | **295** | **162844** | **41645** | **62677** | **14668** | **281834** |
+| **total** | **295** | **163085** | **41766** | **62842** | **14684** | **282377** |
 
-Proporcao teste/codigo (so `src/`, sem comentario nem linha vazia): **41645/162844 = 0.26×**.
+Proporcao teste/codigo (so `src/`, sem comentario nem linha vazia): **41766/163085 = 0.26×**.
 
-Alem do `src/`: **97** programas de medicao em `examples/` (23517 linhas — bancada em Rust, nao produto nem teste) e **167** arquivos em `tests/` de integracao fora de `src/` (61735 linhas).
+Alem do `src/`: **97** programas de medicao em `examples/` (23517 linhas — bancada em Rust, nao produto nem teste) e **168** arquivos em `tests/` de integracao fora de `src/` (62184 linhas).
 <!-- /GERADO -->
 
 A proporção teste/código sai medida no bloco acima, não digitada aqui. O
@@ -74,7 +74,7 @@ Lista extraida de `crates/phxsql-server/src/http.rs` (todo `include_str!`/`inclu
 
 | arquivo embutido | linhas | KiB |
 |---|---:|---:|
-| `ui/index.html` | 16242 | 930.0 |
+| `ui/index.html` | 16250 | 930.4 |
 | `ui/grid/phx-grid.css` | 194 | 14.3 |
 | `ui/grid/phx-grid.js` | 1864 | 90.3 |
 | `ui/diagrama-er.js` | 712 | 29.1 |
@@ -84,7 +84,7 @@ Lista extraida de `crates/phxsql-server/src/http.rs` (todo `include_str!`/`inclu
 | `ui/multitela.js` | 1588 | 69.1 |
 | `ui/claude.js` | 1618 | 82.6 |
 | `ui/grid/CHANGELOG-phx-grid.md` | 248 | 31.1 |
-| **total (10 arquivos)** | **24892** | **1364.3** |
+| **total (10 arquivos)** | **24900** | **1364.7** |
 
 Embutidos pelo `http.rs` **fora** de `ui/`, e por isso **fora** do total acima (1 arquivo(s)):
 - `crates/phxzip-web/ui/fonte/exo2-latin.woff2`, 39.9 KiB
@@ -111,11 +111,11 @@ mesmo motivo que o rodapé já errou uma vez.
 <!-- GERADO: bloco_outras_linguagens() -->
 | o que | onde | arquivos | linhas |
 |---|---|---:|---:|
-| JavaScript (prova ponta a ponta) | `testes-web/` | 79 | 18012 |
-| Python (bancada de medicao) | `bancada/` | 156 | 83641 |
+| JavaScript (prova ponta a ponta) | `testes-web/` | 79 | 18058 |
+| Python (bancada de medicao) | `bancada/` | 156 | 83661 |
 | Shell (empacotar, zelador, provas) | todo o repositorio | 27 | 3951 |
-| Markdown (documentacao tecnica) | `docs/`, **recursivo** (inclui `cognicao/`, `dossie/`, `propostas/`, `pmo/`) | 698 | 145329 |
-| Python (geradores de documentacao) | `docs/`, **recursivo** (`dossie/`, `pmo/`, `status/`, `planilha/`, `tecnologias/`, `geradores/`) | 44 | 19336 |
+| Markdown (documentacao tecnica) | `docs/`, **recursivo** (inclui `cognicao/`, `dossie/`, `propostas/`, `pmo/`) | 704 | 145883 |
+| Python (geradores de documentacao) | `docs/`, **recursivo** (`dossie/`, `pmo/`, `status/`, `planilha/`, `tecnologias/`, `geradores/`) | 44 | 19397 |
 
 A linha «Markdown (documentacao tecnica)» acima **exclui o proprio `docs/TECNOLOGIAS.md`** da contagem — ele e a SAIDA deste extrator, e contar a saida como entrada faz cada gravacao mudar o numero que a gravacao seguinte vai ler (pedido 404: tres corridas seguidas sem edicao nenhuma publicaram 106.750 -> 106.752 -> 106.753 linhas, nunca um ponto fixo). Mesmo molde da §17 da setima pagina de status, que escreve «— (esta pagina)» em vez de medir a si mesma.
 <!-- /GERADO -->
@@ -355,7 +355,7 @@ Conferidores em `crates/phxsql-server/src/`: `conferidor.rs`, `conferidor_botoes
 
 **38** catracas (`TETO*`) encontradas em `crates/phxsql-server/src/`.
 
-`bancada/guardas/catalogo.py` cataloga **857** defeitos repostos, contados de `len(GUARDAS)` depois de importar o modulo (nao por regex no texto -- entradas com `trocas` tem mais de um `{` cada, e uma contagem de chaves as conta em dobro ou mais). Linhas do arquivo: 27261. Refazer a prova: `python3 bancada/guardas/provar-guardas.py`.
+`bancada/guardas/catalogo.py` cataloga **857** defeitos repostos, contados de `len(GUARDAS)` depois de importar o modulo (nao por regex no texto -- entradas com `trocas` tem mais de um `{` cada, e uma contagem de chaves as conta em dobro ou mais). Linhas do arquivo: 27281. Refazer a prova: `python3 bancada/guardas/provar-guardas.py`.
 <!-- /GERADO -->
 
 - **Ponta a ponta, pelo navegador**: os arquivos `.mjs` de `testes-web/` —
@@ -592,7 +592,7 @@ defeito.
 ### 4.5 Testes, medidos agora
 
 <!-- GERADO: bloco_testes() -->
-`cargo test --workspace`: **3632** testes passaram, **0** falharam (medido em 2026-10-01 13:43:47, commit `b236d662`, do `CAPABILITIES.json`).
+`cargo test --workspace`: **4102** testes passaram, **0** falharam (medido em 2026-10-09 02:59:42, commit `9a25642f`, do `CAPABILITIES.json`).
 <!-- /GERADO -->
 
 Esta é a única linha deste documento que muda legitimamente a cada rodada, e
@@ -662,7 +662,7 @@ proposta de voltar sem medição nova.
 ### 5.1 Pedidos recusados, do próprio `PENDENCIAS.md`
 
 <!-- GERADO: bloco_recusados() -->
-`docs/PENDENCIAS.md` tem **739** pedidos numerados; **139** trazem a palavra RECUSADO no proprio texto:
+`docs/PENDENCIAS.md` tem **751** pedidos numerados; **141** trazem a palavra RECUSADO no proprio texto:
 
 | # | pedido |
 |---:|---|
@@ -704,6 +704,8 @@ proposta de voltar sem medição nova.
 | 721 | **A rede do 426 ainda serve para alguma escrita? O `congelada_no_alcance` olha o componente da chave inteiro, mais largo do que a pré-conferência do 448 abre** |
 | 727 | **ALTO: o pedaço do retrato não está amarrado ao database nem à sessão — o id é `agora_ms()`, adivinhável, e quem tem `replicar` só em `loja` lê o `.reg` cru de `rh` por fio em claro (e solta o retrato do outro)** |
 | 730 | **MÉDIO: a restrição de nome excluída `secreto.exemplo.com` não segura o SAN `*.exemplo.com` (classe do CVE-2025-61727 do Go)** |
+| 733 | **D1: um binário anterior (inclusive a 0.18.0 selada) lendo o `dblink.json` formato 1 ignora `tls`, `tls_ca`, `pino_tls` e `chave_do_fio`, liga SEM TLS e apaga os campos na primeira gravação** |
+| 741 | **O teste web `botoes-da-telemetria-viva [escuro]` floca sob carga: «a carga nunca apareceu como operação em curso» (0/2 e depois 1/1 com load 8,3 em 4 núcleos)** |
 | 191 | **Bateria de testes de utilização padrão: criar base, incluir 20.000 registros em tabela complexa, com e sem binários e memos** |
 | 192 | **Testes de paginação alfabética** |
 | 194 | **Senha própria por tabela na cifra em repouso — medir primeiro, decidir depois** |

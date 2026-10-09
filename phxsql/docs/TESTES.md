@@ -35,21 +35,21 @@ teste que o motivou ainda cai. [§8](#8-as-guardas-provar-que-a-prova-pega).
 ## 1. A cobertura de hoje, medida
 
 <!-- testes:total:inicio (gerado por docs/dossie/numeros-do-projeto.py) -->
-`cargo test --workspace`: **3.632 testes, 0 falhas** — somado dos `test result:` de uma rodada de verdade, e não digitado: quem escreve este número é `docs/dossie/numeros-do-projeto.py`, e ele **aborta se a suíte falhar**.
+`cargo test --workspace`: **4.102 testes, 0 falhas** — somado dos `test result:` de uma rodada de verdade, e não digitado: quem escreve este número é `docs/dossie/numeros-do-projeto.py`, e ele **aborta se a suíte falhar**.
 <!-- testes:total:fim --> Por área,
 contando `#[test]` por arquivo e agrupando:
 
 <!-- cobertura:inicio -->
 | área | testes | % |
 |---|---:|---:|
-| Motor de dados (arquivos, índice, diários) | 921 | 22,3 |
-| Protocolo e portões (despachar) | 861 | 20,9 |
-| Servidor (outros) | 637 | 15,4 |
+| Motor de dados (arquivos, índice, diários) | 923 | 22,3 |
+| Protocolo e portões (despachar) | 862 | 20,8 |
+| Servidor (outros) | 640 | 15,5 |
 | Núcleo (JSON, tipos, UUID, zip, paralelo) | 368 | 8,9 |
 | Camada SQL (léxico, sintaxe, tradução) | 263 | 6,4 |
-| Configuração | 175 | 4,2 |
+| Configuração | 176 | 4,3 |
 | Criptografia e codificação | 147 | 3,6 |
-| DbLink | 145 | 3,5 |
+| DbLink | 146 | 3,5 |
 | ODBC | 84 | 2,0 |
 | Telemetria e profiler | 81 | 2,0 |
 | **Replicação** | **54** | **1,3** |
@@ -57,7 +57,7 @@ contando `#[test]` por arquivo e agrupando:
 | **Jobs** | **42** | **1,0** |
 | **Usuários e permissões** | **39** | **0,9** |
 | **Mensagens (i18n do servidor)** | **37** | **0,9** |
-| **Interface web (servidor HTTP)** | **31** | **0,8** |
+| **Interface web (servidor HTTP)** | **31** | **0,7** |
 | **Segurança de rede (blacklist, firewall)** | **27** | **0,7** |
 | **Cluster** | **27** | **0,7** |
 | **Console de terminal (phxsqlcmd)** | **22** | **0,5** |
@@ -69,7 +69,7 @@ contando `#[test]` por arquivo e agrupando:
 | **Pivot** | **12** | **0,3** |
 | **CLI** | **11** | **0,3** |
 | **Monitor de máquina** | **6** | **0,1** |
-| **total** | **4129** | |
+| **total** | **4137** | |
 
 Arquivos de `src` com mais de 120 linhas e **zero** `#[test]`:
 
@@ -83,25 +83,25 @@ Arquivos de `src` com mais de 120 linhas e **zero** `#[test]`:
 | `phxsql-server/src/servidor/servico_marca_01.rs` | 2048 |
 | `phxsql-server/src/servidor/servico_consulta_01.rs` | 1943 |
 | `phxsql-server/src/servidor/servico_replicacao_01.rs` | 1859 |
-| `phxsql-server/src/servidor/servico_web_01.rs` | 1668 |
+| `phxsql-server/src/servidor/servico_web_01.rs` | 1678 |
+| `phxsql-server/src/servidor/servico_backup_01.rs` | 1664 |
 | `phxsql-server/src/servidor/servico_rede_01.rs` | 1650 |
 | `phxsql-ffi/src/lib.rs` | 1640 |
-| `phxsql-server/src/servidor/servico_backup_01.rs` | 1619 |
 | `phxsql-server/src/servidor/servico_cluster_01.rs` | 1599 |
 | `phxsql-server/src/servidor/servico_sql_01.rs` | 1511 |
 | `phxsql-server/src/servidor/servico_esquema_01.rs` | 1435 |
 | `phxsql-server/src/servidor/servico_leitura_01.rs` | 1395 |
 | `phxsql-server/src/servidor/servico_telemetria_01.rs` | 1379 |
-| `phxsql-server/src/servidor/servico_nucleo_01.rs` | 1329 |
+| `phxsql-server/src/servidor/servico_nucleo_01.rs` | 1332 |
 | `phxsql-server/src/servidor/servico_admin_01.rs` | 1242 |
 | `phxsql-server/src/servidor/servico_composicao_01.rs` | 1178 |
 | `phxsql-server/src/servidor/servico_permissao_01.rs` | 1152 |
 | `phxsql-core/src/cadeia.rs` | 1128 |
 | `phxsql-server/src/servidor/servico_replicacao_02.rs` | 1106 |
-| `phxsql-server/src/servidor/servico_config_01.rs` | 972 |
+| `phxsql-server/src/servidor/servico_config_01.rs` | 973 |
 | `phxsql-server/src/servidor/servico_avisos_01.rs` | 971 |
 | `phxsql-server/src/servidor/servico_jobs_01.rs` | 953 |
-| `phxsql-server/src/servidor/servico_diario_01.rs` | 849 |
+| `phxsql-server/src/servidor/servico_diario_01.rs` | 918 |
 | `phxsql-server/src/main.rs` | 838 |
 | `phxsql-server/src/servidor/servico_quorum_01.rs` | 696 |
 | `phxsql-server/src/servidor/servico_dblink_01.rs` | 562 |

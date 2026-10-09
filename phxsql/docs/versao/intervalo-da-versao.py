@@ -27,6 +27,15 @@ que sela. NAO entra no `PLANO` do `portao-dos-geradores.py` de proposito: o
 numero muda a CADA commit, entao nenhuma comparacao «re-rodar muda algo?»
 poderia ser verde -- ele se roda no fecho, no commit do selo.
 
+O bloco mora na secao da versao CORRENTE. Defeito pago no fecho da 0.20.0
+(09/10/2026): as marcas tinham ficado na `## 0.19.0`, e o `--gravar` escreveu
+la os numeros da 0.20.0 -- a secao da 0.19.0 passou a dizer «490 commits sobre a
+0.19.0» e o resumo da 0.20.0 apontava para um bloco que nao existia nela, com
+o gerador imprimindo «gravado». Hoje cada bloco e medido para a secao em que
+esta: na corrente, contra o HEAD; numa versao ja selada, o intervalo FECHADO
+(selo da anterior..selo dela), que nao muda mais. E se a corrente nao tem
+bloco, ele nasce logo abaixo do titulo dela, e a saida diz que nasceu.
+
 Sai != 0 se nao medir (repositorio raso, marca ausente, selo nao achado).
 """
 
@@ -116,6 +125,26 @@ def bloco(m):
     )
 
 
+def contar_entre(base, fim):
+    codigo, saida, erro = git("rev-list", "--count", f"{base}..{fim}")
+    if codigo != 0:
+        sys.exit(f"intervalo-da-versao: nao contei {base[:7]}..{fim[:7]} ({erro})")
+    return int(saida)
+
+
+def bloco_selado(versao, anterior, selo_ant, selo):
+    """Intervalo FECHADO de uma versao ja selada: nao depende do HEAD, entao
+    re-rodar nao o muda -- e o que impede a secao velha de dizer o numero novo."""
+    n = contar_entre(selo_ant, selo)
+    return (
+        f"{INICIO}\n"
+        f"**{n} commits** sobre a {anterior} até o selo da {versao} "
+        f"(`git rev-list --count {selo_ant[:7]}..{selo[:7]}`; intervalo fechado, "
+        f"não muda mais). Gerado por `docs/versao/intervalo-da-versao.py`.\n"
+        f"{FIM}"
+    ), n
+
+
 def main():
     m = medir()
     novo = bloco(m)
@@ -123,14 +152,46 @@ def main():
         print(novo)
         return 0
     texto = CHANGELOG.read_text(encoding="utf-8")
-    if INICIO not in texto or FIM not in texto:
+    # fatias de cada secao `## X.Y.Z`, na ordem do arquivo
+    cab = [(mt.start(), mt.group(1)) for mt in re.finditer(r"^## (\d+\.\d+\.\d+)", texto, re.M)]
+    if len(cab) < 2:
+        sys.exit("intervalo-da-versao: preciso de duas secoes `## X.Y.Z` no CHANGELOG")
+    limites = [(a, cab[i + 1][0] if i + 1 < len(cab) else len(texto), v) for i, (a, v) in enumerate(cab)]
+    if texto.count(INICIO) != texto.count(FIM):
+        sys.exit(f"intervalo-da-versao: marcas {INICIO} / {FIM} desemparelhadas no CHANGELOG.md")
+    relato = []
+    # de tras para frente, para os indices de cima continuarem validos
+    for i in range(len(limites) - 1, -1, -1):
+        a, b, versao = limites[i]
+        trecho = texto[a:b]
+        if i == 0:
+            if INICIO in trecho:
+                x = trecho.index(INICIO)
+                y = trecho.index(FIM) + len(FIM)
+                trecho = trecho[:x] + novo + trecho[y:]
+                relato.append(f"gravado na {versao}")
+            else:
+                fim_titulo = trecho.index("\n") + 1
+                trecho = trecho[:fim_titulo] + "\n" + novo + "\n" + trecho[fim_titulo:]
+                relato.append(f"NASCEU o bloco na {versao} (a secao corrente nao tinha)")
+        elif INICIO in trecho:
+            if i + 1 >= len(limites):
+                sys.exit(f"intervalo-da-versao: bloco na {versao}, que nao tem versao anterior")
+            anterior = limites[i + 1][2]
+            fechado, n = bloco_selado(versao, anterior, selo_de(anterior), selo_de(versao))
+            x = trecho.index(INICIO)
+            y = trecho.index(FIM) + len(FIM)
+            trecho = trecho[:x] + fechado + trecho[y:]
+            relato.append(f"fechado na {versao}: {n} commits sobre a {anterior} ate o selo dela")
+        texto = texto[:a] + trecho + texto[b:]
+    if INICIO not in texto:
         sys.exit(f"intervalo-da-versao: faltam as marcas {INICIO} / {FIM} no CHANGELOG.md")
-    a = texto.index(INICIO)
-    b = texto.index(FIM) + len(FIM)
-    CHANGELOG.write_text(texto[:a] + novo + texto[b:], encoding="utf-8")
+    CHANGELOG.write_text(texto, encoding="utf-8")
     print(f"gravado: {m['sobre_anterior']} commits sobre a {m['anterior']}, "
           f"{m['desde_selo']} desde o selo {m['selo_atual']}, "
           f"{m['frentes_nao_lancado']} frentes em Não lançado, {m['frentes_versao']} na {m['atual']}")
+    for r in reversed(relato):
+        print(f"  {r}")
     return 0
 
 

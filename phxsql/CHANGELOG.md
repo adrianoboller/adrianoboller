@@ -16,6 +16,10 @@ Os números são **medidos**, nunca estimados.
 
 ## 0.20.0 — 09/10/2026: TLS 1.3 escrito aqui, caixa offline e o desenho único da recuperação
 
+<!-- GERADO: intervalo-da-versao.py -->
+**490 commits** sobre a 0.19.0 (`git rev-list --count 805fb34..HEAD`, medido em 09/10/2026 02:40 UTC no commit `9a25642f`; o número muda a cada commit e vale o do que sela). Desde o commit que pôs `version = "0.20.0"` no `Cargo.toml` (`1993bce`) andaram **2**, e são eles que estão em «Não lançado» acima da seção abaixo: **0** títulos `###` ali e **71** na seção da 0.20.0. Gerado por `docs/versao/intervalo-da-versao.py`.
+<!-- /GERADO: intervalo-da-versao.py -->
+
 ### Resumo da 0.20.0, rodadas de 23/09 a 09/10/2026
 
 Resumo por tema do que esta rodada fechou, **só com o que tem prova** (cada
@@ -1515,16 +1519,17 @@ formato ainda é barata antes de haver cadastro formato 2 em uso
 
 ## 0.19.0 — centenas de commits depois: transações, cifra do fio, cluster, e o portão que devia ter acusado antes
 
-**NÃO SELADA.** Rodada de 29/08/2026 em diante:
+Selada em 23/09/2026 (`805fb34`, o commit que pôs `version = "0.19.0"` no `Cargo.toml`; o «NÃO SELADA» que esta linha dizia ficou falso desde então). Rodada de 29/08/2026 em diante:
 
 <!-- GERADO: intervalo-da-versao.py -->
-**1313 commits** sobre a 0.18.0 (`git rev-list --count baff46e..HEAD`, medido em 06/10/2026 22:26 UTC no commit `5d57de67`; o número muda a cada commit e vale o do que sela). Desde o commit que pôs `version = "0.19.0"` no `Cargo.toml` (`805fb34`) andaram **418**, e são eles que estão em «Não lançado» acima da seção abaixo: **71** títulos `###` ali e **35** na seção da 0.19.0. Gerado por `docs/versao/intervalo-da-versao.py`.
+**895 commits** sobre a 0.18.0 até o selo da 0.19.0 (`git rev-list --count baff46e..805fb34`; intervalo fechado, não muda mais). Gerado por `docs/versao/intervalo-da-versao.py`.
 <!-- /GERADO: intervalo-da-versao.py -->
 
 (O texto desta seção, abaixo, é o de 23/09/2026, quando o `Cargo.toml` passou a
 dizer 0.19.0: ele contava **894 commits** — número medido naquele dia e digitado,
 que ficou dez dias dizendo isso depois de a árvore andar mais de 400. A seção
-«Não lançado» acima é o que veio depois, e o bloco gerado é a medida de hoje.)
+«Não lançado» de então virou a seção da 0.20.0, e o bloco gerado acima é o intervalo
+fechado, contado pelo git até o selo.)
 Cada `###` abaixo era um "Não lançado" próprio, escrito na hora por quem fechou
 a rodada; a consolidação só mudou o nível do título, não o texto. Esta é a versão
 que devia ter sido selada muito antes: o `docs/versao/portao-da-versao.py`, novo
