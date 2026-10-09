@@ -378,6 +378,7 @@ impl Servidor {
             endereco_rest: Mutex::new(None),
             endereco_swagger: Mutex::new(None),
             avisados: Mutex::new(HashMap::new()),
+            previsor: Mutex::new(crate::previsao::Previsor::default()),
             saude,
             segredo_do_desafio,
             permissoes_de_dados,

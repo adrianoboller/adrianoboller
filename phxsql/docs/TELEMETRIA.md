@@ -770,7 +770,7 @@ O nome também vai para o sistema operacional (`thread::Builder::name`), então
 | `amostrador` | tira, de segundo em segundo, a amostra das séries | sempre |
 | `relogio-gravacao` | fecha a janela de durabilidade quando ninguém grava — sem ela a última venda do dia ficaria sem `fsync` a noite inteira | `durabilidade: por_lote` |
 | `ouvinte-web` | aceita as conexões da interface web e entrega cada pedido a uma thread própria; **só aceita, nunca atende** | `web.ligado` |
-| `vigia-disco` | chama o `df` de tempos em tempos e avisa quando o espaço aperta | `alertas.ligado` |
+| `vigia-disco` | chama o `df` de tempos em tempos, amostra disco, memória e descritores para a previsão de esgotamento (pedido 496, F5) e avisa quando o espaço aperta | sempre — `alertas.ligado` decide só o aviso de disco apertado |
 | `relogio-jobs` | vê quais jobs venceram a hora e os executa, com o poder do usuário de cada um | há job ligado |
 | `vigia-jobs` | avisa o job **parado** — ligado, hora vencida e sem relógio que o rode | `alertas.email.avisar_jobs` |
 | `aviso-job` | entrega **um** e-mail de job que falhou e sai | por falha |

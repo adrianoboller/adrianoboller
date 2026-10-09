@@ -100,36 +100,45 @@ impl Servidor {
     /// Thread propria porque a conferencia chama o `df` e, no caso do aviso,
     /// abre uma conexao TCP com o rele de e-mail -- nenhuma das duas coisas
     /// pode acontecer no caminho de uma consulta.
+    ///
+    /// Sobe SEMPRE (pedido 496, F5): a previsao de esgotamento precisa da
+    /// serie, e serie que so comeca no dia em que alguem liga o alerta nao
+    /// preve nada nesse dia. `alertas.ligado` decide so o aviso de disco
+    /// apertado; a previsao vai ao sedimento do aquario de qualquer jeito.
     pub(super) fn ligar_vigia_de_disco(self: &Arc<Self>) {
-        if !self.config.alertas.ligado {
-            return;
-        }
         let a = &self.config.alertas;
-        eprintln!(
-            "vigia de disco: a cada {} min | aperta abaixo de {:.0}% livre ou {} MB | {}",
-            a.checar_minutos,
-            a.livre_minimo_percentual,
-            a.livre_minimo_mb,
-            if a.email.ligado {
-                format!("avisa {}", a.email.para.join(", "))
-            } else {
-                "so no painel (e-mail desligado)".to_string()
-            }
-        );
+        if a.ligado {
+            eprintln!(
+                "vigia de disco: a cada {} min | aperta abaixo de {:.0}% livre ou {} MB | {}",
+                a.checar_minutos,
+                a.livre_minimo_percentual,
+                a.livre_minimo_mb,
+                if a.email.ligado {
+                    format!("avisa {}", a.email.para.join(", "))
+                } else {
+                    "so no painel (e-mail desligado)".to_string()
+                }
+            );
+        }
         let servidor = Arc::clone(self);
         self.telemetria.subir(
             "vigia-disco",
-            "chama o `df` de tempos em tempos e avisa quando o espaco aperta; \
-             thread propria porque ela roda um programa do sistema e pode abrir \
-             uma conexao com o rele de e-mail -- nenhuma das duas coisas cabe \
-             no caminho de uma consulta",
+            "chama o `df` de tempos em tempos, amostra disco, memoria e \
+             descritores para a previsao de esgotamento, e avisa quando o \
+             espaco aperta; thread propria porque ela roda um programa do \
+             sistema e pode abrir uma conexao com o rele de e-mail -- nenhuma \
+             das duas coisas cabe no caminho de uma consulta",
             "servico",
             crate::agora_ms(),
             move |fio| {
                 let intervalo = Duration::from_secs(servidor.config.alertas.checar_minutos * 60);
                 loop {
-                    fio.fazendo("conferindo o espaco em disco");
-                    servidor.conferir_disco();
+                    fio.fazendo("amostrando para a previsao de esgotamento");
+                    servidor.amostrar_e_prever(crate::agora_ms());
+                    if servidor.config.alertas.ligado {
+                        fio.fazendo("conferindo o espaco em disco");
+                        servidor.conferir_disco();
+                    }
                     fio.fazendo(&format!(
                         "dormindo {} min ate a proxima conferencia",
                         servidor.config.alertas.checar_minutos
@@ -138,6 +147,65 @@ impl Servidor {
                 }
             },
         );
+    }
+
+    /// O que o previsor le nesta rodada: o espaco livre de cada MONTAGEM
+    /// vigiada (o `base` e o backup na mesma particao sao um disco so, e
+    /// duas series dele dariam dois avisos de uma noticia), a memoria e os
+    /// descritores.
+    pub(super) fn leituras_do_previsor(&self) -> Vec<crate::previsao::Leitura> {
+        let caminhos = self.caminhos_vigiados();
+        let refs: Vec<&Path> = caminhos.iter().map(|p| p.as_path()).collect();
+        let mut v: Vec<crate::previsao::Leitura> = Vec::new();
+        for e in crate::sistema::espaco(&refs) {
+            let recurso = format!("disco:{}", e.montagem);
+            if v.iter().any(|l| l.recurso == recurso) {
+                continue;
+            }
+            v.push(crate::previsao::Leitura {
+                recurso,
+                resta: e.livre_kb,
+                piso: self.config.alertas.piso_kb(e.utilizavel_kb()),
+            });
+        }
+        v.extend(crate::previsao::leituras_da_maquina());
+        v
+    }
+
+    /// Uma rodada do previsor (pedido 496, F5): amostra e preve.
+    pub(super) fn amostrar_e_prever(&self, agora_ms: i64) -> Vec<crate::previsao::Aviso> {
+        let leituras = self.leituras_do_previsor();
+        self.prever(agora_ms, &leituras)
+    }
+
+    /// Guarda as leituras, e toda previsao dentro dos degraus vira alarme de
+    /// servidor pelo produtor UNICO (`telemetria::sinal`, A3) -- o sedimento
+    /// do aquario. A cada rodada, e nao so na mudanca: o `visto_ms` da pedra
+    /// e o que diz a tela que a previsao CONTINUA de pe. O `stderr` so ouve a
+    /// mudanca de degrau.
+    pub(super) fn prever(
+        &self,
+        agora_ms: i64,
+        leituras: &[crate::previsao::Leitura],
+    ) -> Vec<crate::previsao::Aviso> {
+        let avisos = match self.previsor.lock() {
+            Ok(mut p) => p.rodada(agora_ms, leituras),
+            // Envenenada por panico de outra rodada: a serie pode estar
+            // pela metade, mas continua sendo serie -- calar o previsor no
+            // dia em que algo ja deu errado e o pior momento.
+            Err(e) => e.into_inner().rodada(agora_ms, leituras),
+        };
+        for a in &avisos {
+            let dados = format!(
+                "{} esgota em {:.2} h ({:.0}/h, r2 {:.2})",
+                a.recurso, a.previsao.horas, a.previsao.por_hora, a.previsao.r2
+            );
+            crate::telemetria::sinal(a.degrau.alarme(), &dados);
+            if a.mudou {
+                eprintln!("PREVISAO DE ESGOTAMENTO ({:?}): {dados}", a.degrau);
+            }
+        }
+        avisos
     }
 
     /// Uma rodada do vigia: olha os discos, avisa o que estiver apertado.
@@ -160,15 +228,12 @@ impl Servidor {
             let Ok(mut vistos) = self.avisados.lock() else {
                 return;
             };
+            // O silencio e o do `jobs::pode_avisar`, e nao uma copia dele em
+            // linha (pedido 496, parecer do DBA §5: tres escritas da mesma
+            // decisao; esta era a primeira).
             apertados
                 .iter()
-                .filter(|e| match vistos.get(&e.caminho) {
-                    Some(quando) if agora - *quando < silencio => false,
-                    _ => {
-                        vistos.insert(e.caminho.clone(), agora);
-                        true
-                    }
-                })
+                .filter(|e| crate::jobs::pode_avisar(&mut vistos, &e.caminho, agora, silencio))
                 .collect()
         };
         if novos.is_empty() {

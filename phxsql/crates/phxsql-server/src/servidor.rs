@@ -623,6 +623,10 @@ pub struct Servidor {
     /// Ultimo aviso mandado por caminho, para nao repetir enquanto o disco
     /// continua cheio.
     avisados: Mutex<HashMap<String, i64>>,
+    /// As series do previsor de esgotamento (pedido 496, F5): disco livre,
+    /// memoria e descritores, amostrados pelo vigia a cada rodada -- SEMPRE,
+    /// porque «desligado» quer dizer «nao manda e-mail», nao «nao olha».
+    previsor: Mutex<crate::previsao::Previsor>,
     /// A saude do disco onde o banco grava (pedido 249): a sonda canario, o
     /// contador de erros de E/S e o silencio por tipo. O vigia de ESPACO
     /// acima pergunta «quanto falta»; esta pergunta «o disco ainda aceita
@@ -2566,6 +2570,7 @@ fontes_do_servidor! {
     "servidor/testes_da_cifra_exigida_na_replicacao.rs",
     "servidor/testes_da_ficha_compartilhada.rs",
     "servidor/testes_da_linhagem_na_replica.rs",
+    "servidor/testes_da_previsao.rs",
     "servidor/testes_da_recusa_por_unicidade.rs",
     "servidor/testes_da_saude_do_disco.rs",
     "servidor/testes_da_sonda_de_rede.rs",
@@ -2927,3 +2932,6 @@ mod testes_encerrar_sessao_644;
 
 #[cfg(test)]
 mod testes_do_aquario;
+
+#[cfg(test)]
+mod testes_da_previsao;

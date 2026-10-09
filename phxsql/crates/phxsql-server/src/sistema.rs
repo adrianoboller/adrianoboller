@@ -167,7 +167,8 @@ fn cpu_json(antes: &Amostra, agora: &Amostra) -> Json {
     ])
 }
 
-fn memoria_json() -> Json {
+/// O `/proc/meminfo` em kB, por nome. Vazio fora do Linux.
+fn meminfo() -> HashMap<String, u64> {
     let mut m: HashMap<String, u64> = HashMap::new();
     if let Ok(t) = std::fs::read_to_string("/proc/meminfo") {
         for l in t.lines() {
@@ -178,6 +179,37 @@ fn memoria_json() -> Json {
             }
         }
     }
+    m
+}
+
+/// `(MemTotal, MemAvailable)` em kB -- a serie da memoria do previsor
+/// (pedido 496, C14). Sai do MESMO leitor do painel, para o painel e a
+/// previsao nunca discordarem de qual numero e «disponivel».
+pub fn memoria_kb() -> Option<(u64, u64)> {
+    let m = meminfo();
+    Some((*m.get("MemTotal")?, *m.get("MemAvailable")?))
+}
+
+/// `(abertos, limite)` dos descritores deste processo -- a serie do C12.
+///
+/// O limite e o MOLE (`Max open files`, primeira coluna): e nele que o
+/// `open` recebe `EMFILE`, nao no duro. Contar `/proc/self/fd` abre um
+/// descritor para a propria contagem; um a mais nao muda a tendencia.
+pub fn descritores() -> Option<(u64, u64)> {
+    let limites = std::fs::read_to_string("/proc/self/limits").ok()?;
+    let linha = limites.lines().find(|l| l.starts_with("Max open files"))?;
+    let limite = linha
+        .trim_start_matches("Max open files")
+        .split_whitespace()
+        .next()?
+        .parse()
+        .ok()?;
+    let abertos = std::fs::read_dir("/proc/self/fd").ok()?.count() as u64;
+    Some((abertos, limite))
+}
+
+fn memoria_json() -> Json {
+    let m = meminfo();
     let g = |k: &str| m.get(k).copied().unwrap_or(0);
     let total = g("MemTotal");
     // `MemAvailable` e o numero certo, e nao `MemFree`: o nucleo conta como

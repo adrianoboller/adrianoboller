@@ -81,6 +81,11 @@ pub enum Grupo {
     Replica,
     Seguranca,
     Prazo,
+    /// A familia «previsao» do 495/496 (`aquario-707.md` §11.3): o recurso
+    /// que ainda nao acabou, mas vai. Grupo proprio porque memoria e
+    /// descritores nao sao DISCO, e pintar a previsao de memoria com a letra
+    /// do disco seria mentir sobre o que esta acabando.
+    Previsao,
 }
 
 impl Grupo {
@@ -92,6 +97,7 @@ impl Grupo {
             Grupo::Replica => "replica",
             Grupo::Seguranca => "seguranca",
             Grupo::Prazo => "prazo",
+            Grupo::Previsao => "previsao",
         }
     }
 }
@@ -164,12 +170,18 @@ pub enum Alarme {
     FirewallBloqueou,
     /// A sonda do disco o achou lento.
     DiscoLento,
+    /// Pedido 496, F5: a tendencia de um recurso que so diminui (disco livre,
+    /// `MemAvailable`, descritores) cruza o piso em menos de 24 h. Amarelo:
+    /// nada quebrou ainda -- e o degrau do aviso, no molde do 40M/3M do xid.
+    EsgotamentoPrevisto,
+    /// O mesmo, em menos de 2 h: o degrau critico.
+    EsgotamentoIminente,
 }
 
 impl Alarme {
     /// Todos, na ordem da declaracao. Os testes conferem que nenhum fica de
     /// fora, pelo `match` exaustivo do [`Alarme::chave`].
-    pub const TODOS: [Alarme; 19] = [
+    pub const TODOS: [Alarme; 21] = [
         Alarme::TravaReentrante,
         Alarme::TravaEnvenenada,
         Alarme::ErroDeDisco,
@@ -189,6 +201,8 @@ impl Alarme {
         Alarme::OrigemInalcancavel,
         Alarme::FirewallBloqueou,
         Alarme::DiscoLento,
+        Alarme::EsgotamentoPrevisto,
+        Alarme::EsgotamentoIminente,
     ];
 
     /// A chave da fabrica de idiomas. E o MESMO texto da bolha e do e-mail,
@@ -217,6 +231,8 @@ impl Alarme {
             Alarme::OrigemInalcancavel => "aquario.motivo.origem_inalcancavel",
             Alarme::FirewallBloqueou => "aquario.motivo.firewall_bloqueou",
             Alarme::DiscoLento => "aquario.motivo.disco_lento",
+            Alarme::EsgotamentoPrevisto => "aquario.motivo.esgotamento_previsto",
+            Alarme::EsgotamentoIminente => "aquario.motivo.esgotamento_iminente",
         }
     }
 
@@ -234,9 +250,10 @@ impl Alarme {
 
     pub fn gravidade(self) -> Gravidade {
         match self {
-            Alarme::ForaDoHabitual | Alarme::IntegridadeRecusada | Alarme::DiscoLento => {
-                Gravidade::Amarelo
-            }
+            Alarme::ForaDoHabitual
+            | Alarme::IntegridadeRecusada
+            | Alarme::DiscoLento
+            | Alarme::EsgotamentoPrevisto => Gravidade::Amarelo,
             _ => Gravidade::Vermelho,
         }
     }
@@ -261,6 +278,7 @@ impl Alarme {
             Alarme::PrazoEstourado | Alarme::ForaDoHabitual | Alarme::ForaDoHabitualReincidente => {
                 Grupo::Prazo
             }
+            Alarme::EsgotamentoPrevisto | Alarme::EsgotamentoIminente => Grupo::Previsao,
         }
     }
 
@@ -297,7 +315,9 @@ impl Alarme {
             | Alarme::ContinuidadeRompida
             | Alarme::OrigemInalcancavel
             | Alarme::FirewallBloqueou
-            | Alarme::DiscoLento => return 0,
+            | Alarme::DiscoLento
+            | Alarme::EsgotamentoPrevisto
+            | Alarme::EsgotamentoIminente => return 0,
         };
         1 << posicao
     }

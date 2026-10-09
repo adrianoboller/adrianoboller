@@ -1231,6 +1231,24 @@ impl Alertas {
             || (self.livre_minimo_mb > 0 && livre_kb / 1_024 < self.livre_minimo_mb)
     }
 
+    /// O espaco livre, em kB, abaixo do qual [`Alertas::apertado`] dispara --
+    /// o alvo da previsao do pedido 496 (F5).
+    ///
+    /// Os dois limites valem no OU, entao quem desce cruza primeiro o MAIOR
+    /// dos dois pisos. O alvo e o piso e nao o zero porque os defeitos de
+    /// disco cheio comecam no primeiro `ENOSPC`, e o operador ja disse onde
+    /// quer ser avisado. O teste `o_piso_da_previsao_e_o_do_apertado` amarra
+    /// os dois na fronteira, para nao divergirem calados.
+    pub fn piso_kb(&self, utilizavel_kb: u64) -> u64 {
+        let por_mb = self.livre_minimo_mb.saturating_mul(1_024);
+        let por_percentual = if self.livre_minimo_percentual > 0.0 {
+            (utilizavel_kb as f64 * self.livre_minimo_percentual / 100.0).ceil() as u64
+        } else {
+            0
+        };
+        por_mb.max(por_percentual)
+    }
+
     pub fn para_json(&self) -> Json {
         Json::objeto(vec![
             ("ligado", Json::Bool(self.ligado)),
@@ -10503,6 +10521,37 @@ mod testes_alertas {
         // Disco pequeno com 20% livre, mas so 500 MB: o piso aperta, mesmo com
         // o percentual folgado. E o caso que o percentual sozinho perderia.
         assert!(a.apertado(20.0, 500 * 1024));
+    }
+
+    /// O alvo da previsao (496, F5) e a fronteira do `apertado`, dos dois
+    /// lados: um kB acima do piso nao aperta, um abaixo aperta. Se um dia o
+    /// `apertado` mudar e o `piso_kb` nao, a previsao miraria um ponto que
+    /// nao e o do aviso -- este teste cai.
+    #[test]
+    fn o_piso_da_previsao_e_o_do_apertado() {
+        let livre_pct =
+            |livre: u64, util: u64| 100.0 - ((util - livre) as f64 / util as f64) * 100.0;
+        for (pct, mb, util) in [
+            (10.0, 1, 1_000_003u64),     // manda o percentual
+            (1.0, 1_024, 10_000_007u64), // manda o piso em MB
+            (0.0, 512, 10_000_007u64),   // so o MB
+            (10.0, 0, 1_000_003u64),     // so o percentual
+        ] {
+            let a = Alertas {
+                livre_minimo_percentual: pct,
+                livre_minimo_mb: mb,
+                ..Alertas::default()
+            };
+            let piso = a.piso_kb(util);
+            assert!(
+                !a.apertado(livre_pct(piso, util), piso),
+                "{pct} {mb} {piso}"
+            );
+            assert!(
+                a.apertado(livre_pct(piso - 1, util), piso - 1),
+                "{pct} {mb} {piso}"
+            );
+        }
     }
 
     #[test]
