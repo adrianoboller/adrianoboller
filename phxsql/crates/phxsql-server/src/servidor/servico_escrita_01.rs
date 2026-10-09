@@ -919,6 +919,10 @@ impl Servidor {
             std::iter::once((p.texto_ou("tabela", "").trim(), rowid)),
         )?;
         let (atual, plano) = Self::plano_da_cascata_solta(t, rowid, linha)?;
+        // Pedido 496, F8: o plano inteiro, antes da marca e de toda escrita.
+        // O irmao e o `planejar_cascata_empilhada`, a mesma pergunta dentro
+        // da transacao.
+        crate::plano_largo::observar_a_cascata(database, &plano);
         // E as filhas que a cascata grava sem que o pedido as nomeie (561,
         // a-c): antes da marca, com nada gravado.
         self.linhas_barradas_para_o_solto(

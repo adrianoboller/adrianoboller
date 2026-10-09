@@ -563,6 +563,22 @@ impl Servidor {
             return Ok(resposta_do_dml(texto, op, &notas, 0, &Json::Nulo, &[]));
         }
 
+        // Pedido 496, F8: o tamanho do plano, AQUI -- a lista esta fechada e
+        // nada foi gravado. Depois do laco seria o recibo do dano, e a
+        // primeira linha que recusasse calaria o aviso de vez. So observa:
+        // nada abaixo muda por causa disto.
+        crate::plano_largo::observar_a_faixa(
+            if atribuicoes.is_some() {
+                "atualizar_por_faixa"
+            } else {
+                "excluir_por_faixa"
+            },
+            &database,
+            &tabela,
+            rowids.len() as u64,
+            colhido.inteiro_ou("examinadas", 0).max(0) as u64,
+        );
+
         // Passo 2: por rowid, `ler` a linha e a versao, e gravar com a versao
         // LIDA. Os MESMOS `pedido_de_atualizar`/`pedido_de_excluir` do caminho
         // por chave -- a mescla, a marca de excluido preservada, o suave por

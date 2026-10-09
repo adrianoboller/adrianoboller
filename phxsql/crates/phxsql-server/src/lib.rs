@@ -44,6 +44,7 @@ pub mod mensagens;
 pub mod ocorrencias;
 pub mod pg;
 pub mod pivot;
+pub mod plano_largo;
 pub mod previsao;
 // O motor do prazo total mora no core desde o pedido 585: o driver ODBC
 // conversa pelo mesmo fio e nao depende deste crate. O caminho `crate::prazo`

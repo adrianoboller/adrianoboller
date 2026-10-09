@@ -1186,7 +1186,11 @@ impl Servidor {
             sessao,
             montados: std::cell::RefCell::new(HashMap::new()),
         };
-        t.planejar_cascata_da_alteracao(antes, crua, Some(&prefixo))
+        let plano = t.planejar_cascata_da_alteracao(antes, crua, Some(&prefixo))?;
+        // Pedido 496, F8: o irmao do `alterar_solto` -- empilhar nao grava,
+        // e o COMMIT e a primeira escrita.
+        crate::plano_largo::observar_a_cascata(database, &plano);
+        Ok(plano)
     }
 
     /// Anota na trilha que uma operacao LEU dado pessoal.

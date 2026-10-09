@@ -191,12 +191,18 @@ pub enum Alarme {
     /// quatro classes do `phxsql_sql::sinais`. Observa e nunca recusa:
     /// vermelho porque a tautologia que da CERTO ja devolveu as linhas.
     InjecaoSuspeita,
+    /// Pedido 496, F8 (C10/C11): o plano de um `UPDATE`/`DELETE` por faixa,
+    /// ou de uma cascata, alcanca >= 50% das linhas vivas e >= 1.000 --
+    /// medido ANTES da primeira escrita. De TAREFA, embora esteja no fim da
+    /// lista de servidor: o plano e de um pedido. Amarelo, porque so observa:
+    /// nada foi recusado e a resposta nao muda.
+    PlanoLargo,
 }
 
 impl Alarme {
     /// Todos, na ordem da declaracao. Os testes conferem que nenhum fica de
     /// fora, pelo `match` exaustivo do [`Alarme::chave`].
-    pub const TODOS: [Alarme; 23] = [
+    pub const TODOS: [Alarme; 24] = [
         Alarme::TravaReentrante,
         Alarme::TravaEnvenenada,
         Alarme::ErroDeDisco,
@@ -220,6 +226,7 @@ impl Alarme {
         Alarme::EsgotamentoIminente,
         Alarme::ReplicaAtrasada,
         Alarme::InjecaoSuspeita,
+        Alarme::PlanoLargo,
     ];
 
     /// A chave da fabrica de idiomas. E o MESMO texto da bolha e do e-mail,
@@ -252,6 +259,7 @@ impl Alarme {
             Alarme::EsgotamentoIminente => "aquario.motivo.esgotamento_iminente",
             Alarme::ReplicaAtrasada => "aquario.motivo.replica_atrasada",
             Alarme::InjecaoSuspeita => "aquario.motivo.injecao_suspeita",
+            Alarme::PlanoLargo => "aquario.motivo.plano_largo",
         }
     }
 
@@ -273,7 +281,8 @@ impl Alarme {
             | Alarme::IntegridadeRecusada
             | Alarme::DiscoLento
             | Alarme::EsgotamentoPrevisto
-            | Alarme::ReplicaAtrasada => Gravidade::Amarelo,
+            | Alarme::ReplicaAtrasada
+            | Alarme::PlanoLargo => Gravidade::Amarelo,
             _ => Gravidade::Vermelho,
         }
     }
@@ -299,7 +308,11 @@ impl Alarme {
             Alarme::PrazoEstourado | Alarme::ForaDoHabitual | Alarme::ForaDoHabitualReincidente => {
                 Grupo::Prazo
             }
-            Alarme::EsgotamentoPrevisto | Alarme::EsgotamentoIminente => Grupo::Previsao,
+            // O plano largo e previsao do DANO, nao do recurso: o numero
+            // existe antes da primeira escrita (horizonte «total», §6).
+            Alarme::EsgotamentoPrevisto | Alarme::EsgotamentoIminente | Alarme::PlanoLargo => {
+                Grupo::Previsao
+            }
             Alarme::InjecaoSuspeita => Grupo::Ataque,
         }
     }
@@ -331,6 +344,7 @@ impl Alarme {
             Alarme::ForaDoHabitualReincidente => 9,
             Alarme::IntegridadeRecusada => 10,
             Alarme::InjecaoSuspeita => 11,
+            Alarme::PlanoLargo => 12,
             Alarme::FechoRecusado
             | Alarme::FsyncRecusadoAntes
             | Alarme::MarcaNaoResolvida

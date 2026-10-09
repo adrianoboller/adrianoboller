@@ -2607,6 +2607,7 @@ fontes_do_servidor! {
     "servidor/testes_do_memo_estragado_no_atualizar.rs",
     "servidor/testes_do_observador.rs",
     "servidor/testes_do_panico_sob_a_trava.rs",
+    "servidor/testes_do_plano_largo.rs",
     "servidor/testes_do_pular_manual.rs",
     "servidor/testes_do_pulso_que_morre.rs",
     "servidor/testes_do_rebaixar_sem_disco.rs",
@@ -2957,3 +2958,6 @@ mod testes_do_aquario;
 
 #[cfg(test)]
 mod testes_da_previsao;
+
+#[cfg(test)]
+mod testes_do_plano_largo;

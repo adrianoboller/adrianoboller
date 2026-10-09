@@ -191,6 +191,14 @@ pub struct EscritaDaCascata {
     /// cada elo vem logo depois de quem o puxou. A pre-conferencia do COMMIT
     /// usa isto para saber de quem cada elo depende (pedido 448, achado A1).
     pub nivel: usize,
+    /// Quantas linhas vivas a filha tinha no disco quando o plano a abriu.
+    ///
+    /// Pedido 496, F8: o tamanho da cascata so assusta medido contra a
+    /// tabela que ela varre, e o servidor nao tem a filha aberta -- quem a
+    /// tem e esta travessia. Sai do cabecalho (`registros - marcadas`), em
+    /// tempo constante, uma vez por filha e nao por linha; a sobreposicao da
+    /// transacao fica de fora de proposito, porque o numero so OBSERVA.
+    pub vivas_na_filha: u64,
 }
 
 /// O que a primeira metade do `atualizar` deixa na mao da segunda -- ver
@@ -3676,6 +3684,10 @@ impl Table {
     ) -> Result<()> {
         for passo in passos.iter_mut() {
             let alvos = std::mem::take(&mut passo.rowids);
+            let vivas_na_filha = passo
+                .filha
+                .registros()
+                .saturating_sub(passo.filha.marcadas());
             for r in alvos {
                 let Some(antes) = passo.filha.ler(r)? else {
                     continue;
@@ -3692,6 +3704,7 @@ impl Table {
                     linha: depois.clone(),
                     linha_antiga: antes.clone(),
                     nivel,
+                    vivas_na_filha,
                 });
                 let mut netas = passo
                     .filha
