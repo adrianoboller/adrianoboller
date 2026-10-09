@@ -1,0 +1,16 @@
+<!doctype html><meta charset="utf-8"><title>aquario A9</title>
+<style>:root{--fundo:#010418;--realce:#152238;--mudo:#8b98b4;--texto:#e6ecf7;--ok:#6cc98c;--reg:#5fa6e8;--ambar:#ffc43d;--vermelho:#ff5f5f;--acao-marcar:#ff8fc7;--aq-azul-escuro:#9cc3ff}
+html,body{margin:0;background:#010418;height:100%}#host{width:1280px;height:720px}
+/* o CSS global que morde: tem de ser inofensivo aqui */
+label,span,text{text-transform:uppercase}input{width:100%}</style>
+<div id="host"></div>
+<script src="../../crates/phxsql-server/ui/aquario.js"></script>
+<script>
+// RETRATO INVENTADO: a ligacao ao servidor e a fatia A10.
+const OPS=["select","insert","update","delete","outra"],TAB=["Blumenau","clientes","pedidos","itens","estoque","notas"];
+const COR=["verde","verde","verde","azul_claro","azul_escuro","amarelo","vermelho","rosa"];
+window.retrato=function(n,sem){let s=sem||1;const r=()=>(s=(s*1103515245+12345)%2147483648)/2147483648;
+  return Array.from({length:n},(_,i)=>({id:"t"+i,op:OPS[Math.floor(r()*5)],tabela:TAB[Math.floor(r()*6)],
+   cor:COR[Math.floor(r()*8)],ms:Math.floor(Math.pow(r(),3)*30000),pseudo:"u·"+(1000+i).toString(16),
+   login:"joao.silva",ip:"10.1.2."+(i%250)}));};
+</script>
