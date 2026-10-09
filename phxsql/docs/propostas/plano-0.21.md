@@ -29,7 +29,7 @@ Abertura da 0.21, 09/10/2026. Prioridade do dono: 454, 455, 495, 496 e 707
 | # | o quê | prova (RED) |
 |---|---|---|
 | A0 | ☑ unificar linha de base, alarme/ocorrência e contagem com o 495/496 (`aquario-707.md` §11) | — |
-| A1 | `bancada/aquario/regra.py` regera o §11 (Ha1 × Ha4: 1/9.317 cada; sem piso 39 × 40; sem exclusão 15 × 54) | — |
+| A1 | `bancada/aquario/regra.py` regera o §11 (Ha1 × Ha4: 1/9.317 cada; sem piso 39 × 40; sem exclusão 15 × 51; com exclusão 37) | — |
 | A2 | `aquario/mod.rs`, `enum Alarme`, `registrar_json`, ops `aquario_log` e `aquario_contagens`, direito `Monitorar` | op sem direito declarado cai |
 | A3 | `aquario/alarme.rs`: bits na origem (LOCK, DADO, PRAZO, E/S) | tirar o bit do reentrante → as duas classes empatam |
 | A4 | `aquario/base.rs` (≡ F4 do 495): Welford `ln(µs)`, 2 × 30 min, n ≥ 20, z ≥ 4, ≥ 250 ms, sem replicação, atrás do `ligada()` | vítima da fila vira anormal; 20 × 1 ms exatos + 10 s não alarma; desligada custa 0 |

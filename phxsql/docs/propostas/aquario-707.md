@@ -534,7 +534,7 @@ não tem ferramenta de subagente; motor e bancada pelo J direto. Scripts no Apê
 | # | hipótese | veredito, com o número |
 |---|---|---|
 | Ha1 | a do aquário: histograma 4/oitava, `2 × p95`, n ≥ 20, piso 250 ms | **morre.** Custo **118,7 ns** contra **37,0 ns** (3,2×; faixas 97,6–128,5 × 28,9–39,1, não se cruzam); **652 B** contra **48 B** por chave (13,6×); falso alarme em lognormal σ = 1: **0,612%** contra **0,004%** (150×). No log real empata com a vencedora (1/9.317) |
-| Ha2 | a da IA: Welford **cumulativo** sobre `ln(µs)`, z ≥ 4, n ≥ 30, sem exclusão, sem piso, **desligada** | **morre em pedaços.** Sem a exclusão: **54** alarmes contra 40 nos 24 logs, 14 deles o `replicar_aguardar`; sem piso: **40/9.317** — ruído de 1 ms de resolução (29 `commit`) — contra **1**; n ≥ 30 não compra nada: aquecimento **0,018–0,020%** com 20 e com 30 (4.000 chaves × 60); cumulativo não esquece o habitual de ontem (raciocinado); desligada: §11.2 |
+| Ha2 | a da IA: Welford **cumulativo** sobre `ln(µs)`, z ≥ 4, n ≥ 30, sem exclusão, sem piso, **desligada** | **morre em pedaços.** Sem a exclusão: **51** alarmes contra 37 nos 24 logs, 14 deles o `replicar_aguardar`; sem piso: **40/9.317** — ruído de 1 ms de resolução (29 `commit`) — contra **1**; n ≥ 30 não compra nada: aquecimento **0,018–0,020%** com 20 e com 30 (4.000 chaves × 60); cumulativo não esquece o habitual de ontem (raciocinado); desligada: §11.2 |
 | Ha3 | duas bases, uma por consumidor | **morre pela lei**: duas respostas para «isto é anormal?» pintariam a bolha de uma cor e mandariam o e-mail por outra |
 | **Ha4** | **Welford sobre `ln(µs)` em duas metades de 30 min, n ≥ 20, z ≥ 4 e serviço ≥ 250 ms, sem o que espera por desenho** | **entra.** **1/9.317** (o `inserir` de 2.005 ms contra habitual de 5 ms — o mesmo único alarme da Ha1); 37,0 ns |
 
@@ -561,6 +561,60 @@ mesma medida que já vai ao `duracao_ms`: nenhum `Instant` novo.
 
 O 707 diz «critérios de grande, anormal e warning **decididos pelo pesquisador**»: trocar `2 × p95`
 por `z ≥ 4` sobre `ln` é decisão do J, não sobe.
+
+<!-- aquario-regra:inicio (gerado por bancada/aquario/regra.py --gravar; nao editar) -->
+
+logs reais lidos: 24 (esperados 24)
+
+| regra sobre os logs reais | alarmes | de | % | ops mais frequentes |
+|---|---|---|---|---|
+| A hist 2xp95 piso250 excl | 1 | 9317 | 0.01% | [('inserir', 1)] |
+| A sem excl | 15 | 10282 | 0.15% | [('replicar_aguardar', 14), ('inserir', 1)] |
+| A sem piso excl | 39 | 9317 | 0.42% | [('commit', 30), ('inserir', 6), ('sql', 2), ('atualizar', 1)] |
+| B welford ln z4 sem excl | 51 | 10282 | 0.50% | [('commit', 27), ('replicar_aguardar', 14), ('inserir', 9), ('sql', 1)] |
+| B welford excl | 37 | 9317 | 0.40% | [('commit', 27), ('inserir', 9), ('sql', 1)] |
+| C unificada n20 z4 piso250 excl | 1 | 9317 | 0.01% | [('inserir', 1)] |
+| C sem piso | 40 | 9317 | 0.43% | [('commit', 29), ('inserir', 9), ('sql', 1), ('atualizar', 1)] |
+
+| caso do F4 (30 amostras ~1 ms) | 200 ms alarma? | 1,3 ms alarma? |
+|---|---|---|
+| Hist piso 250000 | False | False |
+| Hist piso 0 | True | False |
+| Welf piso 0 | True | False |
+
+| sintetico (semente 7, 200.000) | estatistica | falso alarme |
+|---|---|---|
+| lognormal s=1 | hist 2xp95 | 0.612% |
+| lognormal s=1 | welford z4 | 0.004% |
+| lognormal s=0,3 | hist 2xp95 | 0.001% |
+| lognormal s=0,3 | welford z4 | 0.003% |
+| bimodal 90/10 400us/6ms | hist 2xp95 | 0.001% |
+| bimodal 90/10 400us/6ms | welford z4 | 0.000% |
+| bimodal 99/1 400us/6ms | hist 2xp95 | 1.028% |
+| bimodal 99/1 400us/6ms | welford z4 | 1.028% |
+
+| aquecimento (semente 11, 4.000 chaves x 60) | falso alarme |
+|---|---|
+| welford z4 n>=20 sigma=0.3 | 0.020% (32/160000) |
+| welford z4 n>=20 sigma=1.0 | 0.019% (31/160000) |
+| welford z4 n>=30 sigma=0.3 | 0.018% (21/120000) |
+| welford z4 n>=30 sigma=1.0 | 0.020% (24/120000) |
+
+| conferencia contra o par 11 | escrito | regerado | |
+|---|---|---|---|
+| Ha1 alarmes (hist 2xp95 piso250 excl) | 1 | 1 | ok |
+| Ha1 avaliacoes | 9317 | 9317 | ok |
+| Ha4 alarmes (unificada n20 z4 piso250 excl) | 1 | 1 | ok |
+| Ha4 avaliacoes | 9317 | 9317 | ok |
+| sem piso, Ha4 (C sem piso) | 40 | 40 | ok |
+| sem piso, Ha1 (A sem piso excl) | 39 | 39 | ok |
+| Welford sem exclusao | 51 | 51 | ok |
+| Welford com exclusao | 37 | 37 | ok |
+| Hist sem exclusao | 15 | 15 | ok |
+| lognormal s=1 hist 2xp95 (%) | 0.612 | 0.612 | ok |
+| lognormal s=1 welford z4 (%) | 0.004 | 0.004 | ok |
+
+<!-- aquario-regra:fim -->
 
 ### 11.2 Quem nasce ligado
 
@@ -659,7 +713,7 @@ Brasília.
 ### 11.5 O que muda nas fatias (o `plano-0.21.md` foi atualizado)
 
 - **A1** regera esta seção pelo Apêndice B (Ha1 × Ha4: 1/9.317 cada; sem piso 39 × 40; sem
-  exclusão 15 × 54), não mais «59/15/1».
+  exclusão 15 × 51), não mais «59/15/1».
 - **A2** nasce com o `enum Alarme` e o `registrar_json`: A3, A4, A6 e a F2 os usam, e quem os
   escrevesse primeiro viraria dono por acidente.
 - **A4 ≡ F4 do 495**: uma fatia, um arquivo, Welford.

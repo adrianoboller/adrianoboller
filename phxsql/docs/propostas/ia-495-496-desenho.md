@@ -260,7 +260,7 @@ Apêndice B. Aqui, o que mudou neste desenho:
 |---|---|---|
 | Welford **cumulativo** | morre → duas metades de 30 min | raciocinado (o cumulativo não esquece) |
 | n ≥ 30 | morre → n ≥ 20 | aquecimento 0,018% (30) × 0,020% (20), 4.000 chaves |
-| sem exclusão | morre → sem `OPS_DE_REPLICACAO` | 54 × 40 alarmes em 24 logs; 14 `replicar_aguardar` |
+| sem exclusão | morre → sem `OPS_DE_REPLICACAO` | 51 × 37 alarmes em 24 logs; 14 `replicar_aguardar` |
 | sem piso | morre → serviço ≥ 250 ms | 40/9.317 × 1/9.317 |
 | desligada (7 × 2) | morre → ligada atrás do portão | o 707 alcança o voto; ligada ≈ 0,5% |
 | `Ocorrencia` com tipo próprio | morre → o tipo é `Alarme` | lei «função e comando vêm do mesmo motor» |
