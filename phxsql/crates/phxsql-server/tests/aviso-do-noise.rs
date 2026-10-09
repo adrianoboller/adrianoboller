@@ -33,7 +33,7 @@ use phxsql_core::fio::{Canal, Iniciador, Recebido};
 use phxsql_core::json::Json;
 
 const TOKEN: &str = "o token do aviso do noise";
-const FRASE: &str = "o Noise será recusado na 0.20; use TLS";
+const FRASE: &str = "o Noise será recusado na 0.21; use TLS";
 
 fn ping() -> String {
     format!(r#"{{"token":"{TOKEN}","op":"ping"}}"#)

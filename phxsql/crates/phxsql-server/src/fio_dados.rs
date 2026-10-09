@@ -98,7 +98,7 @@ impl Drop for Escrita {
 /// A frase da transicao Noise -> TLS (decisao do dono, 01/10/2026, plano
 /// `plano-tls13-572` T6b-2). Uma so, para o teste e o operador procurarem o
 /// mesmo texto.
-pub const FRASE_DO_NOISE: &str = "o Noise será recusado na 0.20; use TLS";
+pub const FRASE_DO_NOISE: &str = "o Noise será recusado na 0.21; use TLS";
 
 /// Quanto tempo o aviso de UM par fica calado depois de dito.
 ///

@@ -94,15 +94,15 @@ integrador comita**, por caminho explícito.
 O dossiê é a página que o Adriano usa para enxergar o projeto inteiro:
 
 - **URL:** https://claude.ai/code/artifact/5c14044e-0dc5-4832-b015-224ab1e40033
-- **Fonte:** `phxsql/docs/dossie/dossie-phxsql-0.18.html` (versionado, para que
+- **Fonte:** `phxsql/docs/dossie/dossie-phxsql-0.20.html` (versionado, para que
   qualquer sessão consiga atualizá-lo)
 
 Publique sempre **passando essa URL**, para cair na mesma página em vez de
 criar outra. Instruções e as armadilhas de estilo em
 `phxsql/docs/dossie/LEIA-ME.md`.
 
-O nome muda a cada refação — era `dossie-phxsql.html`, virou `-0.15` e agora é
-`-0.18` — e **só existe um por vez**: o anterior sai do repositório no mesmo
+O nome muda a cada refação — era `dossie-phxsql.html`, virou `-0.15`, depois `-0.18` e agora é
+`-0.20` — e **só existe um por vez**: o anterior sai do repositório no mesmo
 commit, para que ninguém atualize o errado. E **«só existe um por vez» é o que
 faz os scripts acharem o dossiê sozinhos**: o `dossie_da_pasta.py` varre
 `dossie-phxsql-*.html` — um dono só —, e zero ou dois é parada com o motivo,

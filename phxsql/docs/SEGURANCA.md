@@ -7178,7 +7178,7 @@ servidor aceita um aperto Noise (`responder_aperto`) — o TLS se decide antes,
 no primeiro byte, e nunca passa por ali; Noise dentro de TLS não se avisa:
 
 ```text
-aviso: conexao por Noise do par 10.0.0.2 (iniciador: no no2): o Noise será recusado na 0.20; use TLS
+aviso: conexao por Noise do par 10.0.0.2 (iniciador: no no2): o Noise será recusado na 0.21; use TLS
 ```
 
 O par é o endereço (a porta é efêmera); o iniciador é o nó da lista do

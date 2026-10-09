@@ -1,7 +1,7 @@
 ================================================================================
 PHXSQL - PHOENIX DATABASE ENGINE
 Manual do operador                                        |   Linux e Windows
-Built to store. Engineered to scale.                      |   versao 0.19.0
+Built to store. Engineered to scale.                      |   versao 0.20.0
 ================================================================================
 
 
@@ -1746,13 +1746,13 @@ VARIAS INSTANCIAS, DOCKER E CLUSTER
     cluster que ja rodava continua em claro na atualizacao -- guarda nova entra
     pedida. Ligar exige que todo no atenda o aperto. Ver docs/CIFRA-DO-FIO.md.
 
-    NOISE NA 0.19, RECUSADO NA 0.20 (pedido 652). A porta de dados aceita o
+    NOISE ACEITO NA 0.20, RECUSADO NA 0.21 (pedido 652). A porta de dados aceita o
     aperto Noise e o TLS; quem ainda chega por Noise fica no erro padrao, UMA
     linha por par e depois uma hora calado:
         aviso: conexao por Noise do par 10.0.0.2 (iniciador: no no2): o Noise
-        será recusado na 0.20; use TLS
+        será recusado na 0.21; use TLS
     O iniciador e o no da lista do cluster com aquele endereco, ou "cliente".
-    Use as linhas para saber quem migrar antes da 0.20.
+    Use as linhas para saber quem migrar antes da 0.21.
 
     MIGRAR PARA O TLS: O PINO_TLS (pedido 572). O servidor que tem "tls": true
     imprime o pino do certificado dele no arranque:

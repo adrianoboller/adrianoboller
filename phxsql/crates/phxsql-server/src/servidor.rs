@@ -1029,7 +1029,7 @@ pub struct Servidor {
     /// cada rodada, e contar a abertura inflaria o numero sem tabela nova.
     ledger_marcado_recebido: AtomicU64,
     /// Pedido 652: quais pares ja foram avisados de que o Noise sera recusado
-    /// na 0.20. Silencio por par; consultado so em `responder_aperto`.
+    /// na 0.21. Silencio por par; consultado so em `responder_aperto`.
     aviso_do_noise: crate::fio_dados::AvisoDoNoise,
     /// Os outros dois ajustes que a tela de configuracao muda A QUENTE.
     ///

@@ -12,15 +12,19 @@ Os números são **medidos**, nunca estimados.
 
 ## Não lançado
 
-### 0.19.0, rodadas de 01 a 08/10/2026 — NÃO SELADA
+(nada ainda)
+
+## 0.20.0 — 09/10/2026: TLS 1.3 escrito aqui, caixa offline e o desenho único da recuperação
+
+### Resumo da 0.20.0, rodadas de 23/09 a 09/10/2026
 
 Resumo por tema do que esta rodada fechou, **só com o que tem prova** (cada
 item traz o pedido; o detalhe, o defeito reposto e a data estão nas seções
 `###` abaixo e no `PENDENCIAS.md`). Os números saíram dos pedidos fechados, não
-de memória. O selo é do dono: enquanto não houver commit de selagem esta
-entrada fica «não selada» (`docs/versao/portao-da-versao.py` mede a distância).
+de memória. Selada em 09/10/2026 por decisão do dono, com o número 0.20.0: a 0.19.0 já
+fora selada em 23/09/2026 (`805fb34`), e este trabalho são os commits sobre ela.
 O número de commits da rodada **não está digitado aqui**: está no bloco gerado
-da seção `## 0.19.0` mais abaixo, regravado por
+da seção `## 0.20.0`, regravado por
 `python3 docs/versao/intervalo-da-versao.py --gravar` no commit do selo.
 
 **Replicação e cluster**
@@ -57,7 +61,7 @@ da seção `## 0.19.0` mais abaixo, regravado por
   promove e a degradação diz «NAO promovo».
 - **652** — o servidor registra no log, **uma linha por par** (silêncio de 1 h,
   memória de até 1.024 pares), quem ainda chega por Noise, com a frase «o Noise
-  será recusado na 0.20; use TLS». O Noise segue aceito na 0.19.
+  será recusado na 0.21; use TLS». O Noise segue aceito na 0.20 (decisão do dono de 09/10/2026: a recusa passou para a 0.21).
 
 **TLS 1.3 escrito aqui (572)**
 
@@ -299,7 +303,7 @@ da seção `## 0.19.0` mais abaixo, regravado por
 
 ### O que NÃO está nesta versão
 
-- **Ficam para a 0.20, por decisão do dono (⏸):** **333** (chat e robô no PhxMail),
+- **Ficam para a 0.21, por decisão do dono (⏸):** **333** (chat e robô no PhxMail),
   **454** e **455** (servidor web e `PhxZipCmd`, e o pacote só do PhxZip; a interface
   do PhxZip entrou), **495** e **496** (IA que analisa ataque e prevê catástrofe:
   decidido o desenho, nada implementado) e **707** (aquário de monitoramento: desenho
