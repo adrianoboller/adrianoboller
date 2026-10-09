@@ -1583,7 +1583,10 @@ window.PhxTelemetria = (function () {
     // tinha `cancelavel:false` por um instante, o botão sumia, e encerrá-la
     // funcionava perfeitamente. Botão que some do nada é tão ruim quanto
     // botão que não cumpre.
-    const podeEncerrar = escolha.escolhida && !!a.op && !!a.tem_ponto && !a.encerrando;
+    // `servico` pela MESMA pergunta com que o servidor recusa (pedido 776):
+    // botao que oferece o que o servidor vai negar e promessa falsa.
+    const podeEncerrar = escolha.escolhida && !!a.op && !!a.tem_ponto && !a.encerrando
+      && !a.servico;
     const irmas = (d.atividades || []).filter(x => x.ip === a.ip).length;
     alvo.innerHTML = `
       <div class="tlm-cartao-cab" style="--n:${
@@ -1640,6 +1643,7 @@ window.PhxTelemetria = (function () {
           : `<button class="botao excluir" type="button" disabled
                title="${esc(!escolha.escolhida ? txt("tela.tl_encerrar_off_clique", "clique na bolha para poder encerrá-la")
                  : a.encerrando ? txt("tela.tl_encerrar_off_ja", "já está encerrando")
+                 : a.servico ? txt("tela.tl_encerrar_off_servico", "tarefa do serviço: não se encerra; para tirar um nó da conversa, derrube a conexão dele")
                  : a.op ? txt("tela.tl_encerrar_off_sem_ponto", "esta operação não tem ponto de cancelamento: vai terminar")
                  : txt("tela.tl_encerrar_off_sem_op", "não há operação em curso"))}">${
               esc(txt("tela.tl_encerrar", "Encerrar a operação"))}</button>`}
@@ -1679,10 +1683,19 @@ window.PhxTelemetria = (function () {
     if (bot) bot.onclick = async () => {
       bot.disabled = true;
       try {
-        const r = await estado.api("telemetria_encerrar", { id: a.id });
+        // Pela TAREFA (`chave#serial`, pedido 776), e nao pelo `id`: o `id`
+        // mira o que a conexao estiver fazendo quando o clique chega, e a
+        // tarefa mira o que a pessoa viu -- se ela ja trocou, o servidor
+        // recusa em vez de encerrar outra. O `id` fica so para servidor
+        // anterior ao 776, que nao devolve `tarefa`.
+        const r = await estado.api("telemetria_encerrar", { id: a.tarefa || a.id });
         // Só `nao_cancelavel` é notícia ruim: `marcada` quer dizer que a
         // marca está posta e vai valer, e pintá-la de erro assustaria à toa.
-        estado.aoAvisar(`${r.estado}: ${r.aviso}`, r.estado === "nao_cancelavel");
+        // O desfecho sai pela CHAVE do estado, pelo mesmo motor do aquario:
+        // o codigo do protocolo (`encerrando`, `ociosa`) nao e texto de tela.
+        const dito = window.PhxAquario && PhxAquario.desfecho
+          ? PhxAquario.desfecho(r.estado) : "";
+        estado.aoAvisar(dito || r.aviso || "", r.estado === "nao_cancelavel");
       } catch (e) { estado.aoAvisar(String(e), true); }
       volta();
     };

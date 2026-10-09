@@ -309,7 +309,8 @@ pub const OPERACOES: &[Operacao] = &[
     Operacao {
         nome: "bancos",
         apelidos: &[],
-        resumo: "Lista os bancos de dados deste servidor.",
+        resumo: "Lista os bancos de dados deste servidor, so os em que quem pediu tem algum direito \
+                 (o supervisor e quem tem direito no `\"*\"` veem todos).",
         parametros: &[],
         exemplo: r#"{"op":"bancos"}"#,
         ferramenta_mcp: true,

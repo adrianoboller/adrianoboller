@@ -1950,7 +1950,7 @@ impl Servidor {
             (Atividade::da_operacao(op), sessao.usuario.as_ref())
         {
             let tabela = pedido.texto_ou("tabela", "").trim().to_string();
-            if !usuario.pode_em(&base, &tabela, atividade) {
+            if !Atividade::filtra_pela_ficha(op) && !usuario.pode_em(&base, &tabela, atividade) {
                 return Err(self.recusa_sem_direito(usuario, atividade, &base, &tabela));
             }
         }
@@ -2149,7 +2149,7 @@ impl Servidor {
             "idiomas_padrao" => self.op_idiomas_padrao(p, sessao),
             "idiomas_exportar" => self.op_idiomas_exportar(sessao),
             "idiomas_importar" => self.op_idiomas_importar(p, sessao),
-            "bancos" => self.op_bancos(),
+            "bancos" => self.op_bancos(sessao),
             "tabelas" => self.op_tabelas(p, sessao),
             "bulkinsert" => self.op_bulkinsert(p, sessao),
             "cargas" => self.op_cargas(),

@@ -554,6 +554,29 @@ impl Atividade {
     pub fn e_do_servidor(op: &str) -> bool {
         OPS_DO_SERVIDOR.contains(&op)
     }
+
+    /// A op responde a pergunta do portao POR DENTRO, filtrando a resposta
+    /// pela ficha de quem pediu -- e por isso o portao da base nao a julga
+    /// (pedido 775).
+    ///
+    /// # Por que o `bancos` e o unico
+    ///
+    /// O portao pergunta «pode `ler` NESTA base?», e o `bancos` nao tem base:
+    /// a tela o chama sem `"database"`, e o portao conferia a base vazia. Quem
+    /// so tinha regra na `loja` caia na recusa e entrava numa tela VAZIA,
+    /// medido no Chromium. A pergunta certa e por base, e so a op sabe quais
+    /// bases existem -- entao ela devolve as que a pessoa alcanca, como o
+    /// `tabelas` ja faz com as tabelas.
+    ///
+    /// # O criterio, e a regua que o decidiu (papel J)
+    ///
+    /// Listar so as bases com algum direito e o `SHOW DATABASES` do MySQL (2)
+    /// e do MariaDB (3) = 5; listar todas e o `\l` do PostgreSQL = 4. Ganha
+    /// filtrar. Continua exigindo LOGIN (a atividade segue `Ler`, e nao
+    /// `None`): anonimo num servidor com cadastro nao lista nada.
+    pub fn filtra_pela_ficha(op: &str) -> bool {
+        op == "bancos"
+    }
 }
 
 /// As ops cujo direito vale na regra do servidor. Ver
@@ -1079,6 +1102,35 @@ impl Usuario {
             }
         }
         self.permissoes(database)
+    }
+
+    /// Esta base aparece para ele no `bancos`? (pedido 775)
+    ///
+    /// Aparece quando ha ALGUM direito de base nela -- pela regra dela, pela
+    /// `"*"` ou pelo nivel, na mesma precedencia do [`Usuario::permissoes`] --,
+    /// ou alguma regra de TABELA nela (ou na base `"*"`): dar uma tabela a
+    /// quem nao le a base e caso que a ficha preve, e a base dela tem de
+    /// aparecer na arvore. `monitorar` nao conta: e poder de servidor, nao de
+    /// base, e daria a lista inteira a quem so olha o aquario.
+    pub fn ve_a_base(&self, database: &str) -> bool {
+        if !self.ativo {
+            return false;
+        }
+        if self.supervisor {
+            return true;
+        }
+        let alguma = |p: &Permissoes| {
+            Atividade::TODAS
+                .iter()
+                .any(|a| *a != Atividade::Monitorar && p.concedido(*a))
+        };
+        if alguma(&self.permissoes(database)) {
+            return true;
+        }
+        self.tabelas
+            .iter()
+            .filter(|(b, _)| b == database || b == "*")
+            .any(|(_, regras)| regras.iter().any(|(_, p)| alguma(p)))
     }
 
     /// Pode fazer a atividade nesta base?

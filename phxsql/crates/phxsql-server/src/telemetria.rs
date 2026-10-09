@@ -890,6 +890,16 @@ impl Atividade {
         let classe = self.classe_viva(&c, stress_no_servidor, ha_fila, limiares, base, agora_ms);
         let mut pares = vec![
             ("id", Json::texto_de(&self.chave)),
+            // O serial da tarefa que esta fotografia mostra (pedido 776). A
+            // tela de Telemetria encerrava pelo `id`, e o `id` mira o que a
+            // conexao estiver fazendo QUANDO o pedido chega -- nao o que a
+            // pessoa viu. Com `chave#serial` o servidor recusa se a tarefa ja
+            // trocou, como no aquario (A7).
+            ("tarefa", Json::texto_de(self.tarefa())),
+            (
+                "servico",
+                Json::Bool(tarefa_de_servico(self.origem, &c.op).is_some()),
+            ),
             ("origem", Json::texto_de(self.origem)),
             (
                 "ligacao",

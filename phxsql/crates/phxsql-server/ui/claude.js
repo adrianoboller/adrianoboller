@@ -1514,22 +1514,44 @@ Regras que o PhxSql impõe e que a proposta tem de respeitar:
       return;
     }
     const feitos = [];
+    // O que NAO saiu fica na lista (pedido 777): zera-la com falha deixava as
+    // tabelas no banco e o botao dizendo que nao havia nada a desfazer. Sai
+    // so o que o servidor confirmou -- ou o que ele diz que ja nao existe,
+    // pelo NOME do erro e nunca pela frase.
+    const sumiu = e => e && e.nome === "NAO_ENCONTRADO";
+    // O 4009 (senha de execucao) PARA o desfazer: a `api()` ja abriu o
+    // dialogo uma vez e a pessoa nao liberou; seguir abriria um dialogo por
+    // item. O que nao foi tentado fica na lista, e o motivo sai uma vez.
+    let parou = null;
+    const parar = e => { if (e && e.nome === "SENHA_DE_EXECUCAO_EXIGIDA") parou = e; };
+    const fksQueFicam = [], tabelasQueFicam = [];
     for (const f of nascidos.fks) {
+      if (parou) { fksQueFicam.push(f); continue; }
       try { await api("excluir_fk", { database: db, tabela: f.tabela, nome: f.nome });
             feitos.push([true, E(preencher(txt("tela.ia_fk_removido", "relacionamento {nome} removido"),
               { nome: f.nome }))]); }
-      catch (e) { feitos.push([false, `${E(f.nome)}: ${E(String(e.message || e))}`]); }
+      catch (e) {
+        feitos.push([false, `${E(f.nome)}: ${E(String(e.message || e))}`]);
+        if (!sumiu(e)) fksQueFicam.push(f);
+        parar(e);
+      }
     }
     for (const nome of nascidos.tabelas) {
+      if (parou) { tabelasQueFicam.push(nome); continue; }
       try {
         await api("excluir_tabela", { database: db, tabela: nome, confirmar: nome });
         feitos.push([true, E(preencher(txt("tela.ia_tabela_removida", "tabela {nome} removida"),
           { nome }))]);
       } catch (e) {
         feitos.push([false, `${E(nome)}: ${E(String(e.message || e))}`]);
+        if (!sumiu(e)) tabelasQueFicam.push(nome);
+        parar(e);
       }
     }
-    nascidos = { db, tabelas: [], fks: [] };
+    // A chave de uma tabela que saiu foi junto com ela.
+    nascidos = { db, tabelas: tabelasQueFicam,
+                 fks: fksQueFicam.filter(f => tabelasQueFicam.includes(f.tabela)
+                                            || !nascidos.tabelas.includes(f.tabela)) };
     delete alvo.dataset.confirmado;
     alvo.innerHTML = `<div class="aviso">${feitos.map(([o, t]) =>
       `${o ? "·" : "×"} ${t}`).join("<br>")}</div>`;

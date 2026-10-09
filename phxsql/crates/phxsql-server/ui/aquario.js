@@ -1527,7 +1527,15 @@ window.PhxAquario = (function () {
   // de qualquer aquario existir, e sem o estilo o resumo dela nasceria cru.
   if (typeof document !== "undefined" && document.head) garantirCss();
 
+  /* O desfecho pela chave, para a ficha da Telemetria dizer o MESMO que o
+   * cartao daqui (pedido 776). Estado desconhecido devolve "" e quem chama
+   * decide o que mostrar -- nunca o codigo cru. */
+  function desfecho(estado) {
+    return DESFECHO[estado] ? DESFECHO[estado]() : "";
+  }
+
   return { criar: criar, criarMotor: criarMotor, sobreposicoes: sobreposicoes, tela: tela,
+           desfecho: desfecho,
            FAIXAS: FAIXAS, MOTIVOS: MOTIVOS, LIMITE_VELHO_MS: LIMITE_VELHO_MS,
            _somar: somar, _meiaNoite: meiaNoite };
 })();

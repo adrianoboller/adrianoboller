@@ -346,10 +346,20 @@ impl Servidor {
         Ok(idiomas::importar(&dados, backup)?.para_json())
     }
 
-    pub(super) fn op_bancos(&self) -> Result<Json> {
+    /// `bancos`: as bases, **so as que quem pediu alcanca** (pedido 775).
+    ///
+    /// O portao da base nao julga esta op (`Atividade::filtra_pela_ficha`):
+    /// o filtro e aqui, base a base, pelo [`crate::usuarios::Usuario::ve_a_base`].
+    /// Sem sessao -- servidor sem cadastro -- todas, como o `pode_ver_tabela`.
+    pub(super) fn op_bancos(&self, sessao: &Sessao) -> Result<Json> {
         let dados = self.travar_dados()?;
         Ok(Json::Lista(
-            dados.databases()?.into_iter().map(Json::texto_de).collect(),
+            dados
+                .databases()?
+                .into_iter()
+                .filter(|b| sessao.usuario.as_ref().is_none_or(|u| u.ve_a_base(b)))
+                .map(Json::texto_de)
+                .collect(),
         ))
     }
 

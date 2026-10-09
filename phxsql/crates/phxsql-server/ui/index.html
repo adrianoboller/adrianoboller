@@ -2918,7 +2918,21 @@ function admGo(qual, novaAba) {
  * voltava para a grade e a grade era substituida pelo painel meio segundo
  * depois. Quem vai pintar a propria tela passa `false`. */
 async function montarArvore(abrirPainel = true) {
-  const bancos = await api("bancos");
+  // A recusa do `bancos` nao derruba a entrada (pedido 775). Antes, a excecao
+  // subia ate o `abrirApp` e quem so tinha direito numa base entrava numa
+  // tela VAZIA, com o recado preso na tela de login ja escondida. O servidor
+  // novo filtra o `bancos` pela ficha e nao recusa mais; esta reserva cobre
+  // o servidor anterior: as bases da ficha (menos o curinga) e a digitada no
+  // login, e o motivo da recusa dito em vez de engolido.
+  let bancos;
+  try {
+    bancos = await api("bancos");
+  } catch (e) {
+    const u = est.usuario || {};
+    const daFicha = [...Object.keys(u.bases || {}), ...Object.keys(u.tabelas || {})];
+    bancos = [...new Set([...daFicha, est.database || ""])].filter(b => b && b !== "*");
+    avisar(String(e && e.message || e), true);
+  }
   est.bancos = bancos;
   let html = `<div class="no painel" data-admin="painel"><span class="ic">◎</span>${
       esc(txt("tela.painel", "Painel"))}</div>
@@ -2926,7 +2940,15 @@ async function montarArvore(abrirPainel = true) {
       <button class="mais" id="btNovoDb" title="${esc(txt("tela.novo_database", "Novo database"))}"
               aria-label="${esc(txt("tela.adicionar_database", "Adicionar um database"))}">+</button></div>`;
   for (const b of bancos) {
-    const t = await api("tabelas", { database:b });
+    // Uma base que recusa nao apaga as outras da arvore: ela aparece com o
+    // motivo no lugar das tabelas.
+    let t;
+    try { t = await api("tabelas", { database:b }); }
+    catch (e) {
+      html += `<div class="no db" data-db="${esc(b)}"><span class="ic">▾</span>${esc(b)}</div>
+        <div class="vazio">${esc(String(e && e.message || e))}</div>`;
+      continue;
+    }
     html += `<div class="no db" data-db="${esc(b)}"><span class="ic">▾</span>${esc(b)}</div>`;
     const raiz = t.tabelas.filter(x => !x.includes("."));
     const porEsq = {};
@@ -3004,7 +3026,11 @@ async function montarArvore(abrirPainel = true) {
   if (abrirPainel) {
     const no = a.querySelector('[data-admin="painel"]');
     marcar(no);
-    await admGo("painel", false);
+    // O Painel recusado (quem so tem direito numa base nao le o servidor)
+    // nao pode levar a arvore junto: o motivo vai ao aviso e a entrada
+    // termina (pedido 775).
+    try { await admGo("painel", false); }
+    catch (e) { avisar(String(e && e.message || e), true); }
   }
 }
 
@@ -3551,13 +3577,31 @@ function ligarConteudo() {
     // que a lixeira desfaz. Excluir de vez em lote, sem uma linha aberta na
     // frente, e estrago rapido demais para um botao.
     if (!confirm(preencher(txt("tela.g_confirmar_marcar_excluidas","Marcar {n} linha(s) como excluída(s)? A Lixeira desfaz."), {n: ids.length}))) return;
+    // O MOTIVO de cada falha vai junto (pedido 777): «N falharam» sem dizer
+    // por que deixava a pessoa sem saber se era permissao, filha apontando
+    // ou a linha que outro ja excluiu. Motivos iguais se juntam com a conta,
+    // para cem recusas iguais nao virarem cem linhas.
+    //
+    // E o 4009 (senha de execucao) PARA o lote: a `api()` ja abriu o dialogo
+    // uma vez, e se a excecao chegou aqui a pessoa nao liberou a sessao.
+    // Seguir pedindo abriria um dialogo por linha; as que nao foram tentadas
+    // contam como falha pelo MESMO motivo, dito uma vez.
     let falhou = 0;
-    for (const rowid of ids) {
-      try { await api("excluir", { database: db, tabela: tab, rowid: +rowid }); }
-      catch { falhou++; }
+    const motivos = new Map();
+    for (let i = 0; i < ids.length; i++) {
+      try { await api("excluir", { database: db, tabela: tab, rowid: +ids[i] }); }
+      catch (e) {
+        const m = String(e && e.message || e);
+        const parou = e && e.nome === "SENHA_DE_EXECUCAO_EXIGIDA";
+        const n = parou ? ids.length - i : 1;
+        falhou += n;
+        motivos.set(m, (motivos.get(m) || 0) + n);
+        if (parou) break;
+      }
     }
+    const porque = [...motivos].map(([m, n]) => n > 1 ? `${m} (${n})` : m).join("; ");
     avisar(falhou
-      ? preencher(txt("tela.g_excluidas_com_falhas","{ok} excluída(s), {falhou} falhou(ram)"), {ok: ids.length - falhou, falhou})
+      ? `${preencher(txt("tela.g_excluidas_com_falhas","{ok} excluída(s), {falhou} falhou(ram)"), {ok: ids.length - falhou, falhou})}: ${porque}`
       : preencher(txt("tela.g_linhas_marcadas_excluidas","{n} linha(s) marcada(s) como excluída(s)"), {n: ids.length}), !!falhou);
     est.grade.limparSelecao();
     desenharAba();

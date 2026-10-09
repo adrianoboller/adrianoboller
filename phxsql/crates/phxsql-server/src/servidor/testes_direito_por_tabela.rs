@@ -867,3 +867,110 @@ fn supervisor_passa_por_cima() {
     )
     .is_ok());
 }
+
+// ---------------------------------------------------------------------
+// Pedido 775 -- o `bancos` filtra pela ficha, como o `tabelas`.
+// ---------------------------------------------------------------------
+
+/// Duas bases vazias, `loja` e `rh`, e cinco fichas: so a `loja`, uma
+/// tabela so do `rh`, o curinga `"*"`, so o aquario e a supervisora.
+fn servidor_de_duas_bases(dir: &std::path::Path) -> (Arc<Servidor>, Cadastro) {
+    let cadastro = Cadastro::de_json(&pedido(
+        r#"{"usuarios":[
+             {"login":"lojaadm","id":11,"senha_hash":"pbkdf2-sha256$1000$00$00",
+              "bases":{"loja":{"ler":true,"inserir":true,"administrar":true}}},
+             {"login":"so_tabela","id":12,"senha_hash":"pbkdf2-sha256$1000$00$00",
+              "bases":{"rh":{"tabelas":{"ponto":{"ler":true}}}}},
+             {"login":"curinga","id":13,"senha_hash":"pbkdf2-sha256$1000$00$00",
+              "bases":{"*":{"ler":true}}},
+             {"login":"so_aquario","id":14,"senha_hash":"pbkdf2-sha256$1000$00$00",
+              "bases":{"*":{"monitorar":true}}},
+             {"login":"chefe","id":15,"supervisor":true,
+              "senha_hash":"pbkdf2-sha256$1000$00$00"}]}"#,
+    ))
+    .unwrap();
+    let c = Config {
+        base: dir.to_path_buf(),
+        log_acessos: dir.join("acessos.log"),
+        blacklist: dir.join("blacklist.json"),
+        dblink: dir.join("dblink.json"),
+        token: "t".into(),
+        cadastro: cadastro.clone(),
+        ..Config::default()
+    };
+    let s = Servidor::novo(c).unwrap();
+    for b in ["loja", "rh"] {
+        s.executar(
+            "criar_database",
+            &pedido(&format!(r#"{{"database":"{b}"}}"#)),
+            &Sessao::default(),
+        )
+        .unwrap();
+    }
+    (s, cadastro)
+}
+
+fn bancos_de(s: &Arc<Servidor>, cadastro: &Cadastro, login: &str) -> Result<Vec<String>> {
+    let ses = Sessao {
+        usuario: cadastro.por_login(login).cloned(),
+        ..Sessao::default()
+    };
+    assert!(ses.usuario.is_some(), "{login} nao esta no cadastro");
+    let r = pede(s, &ses, r#""op":"bancos""#)?;
+    Ok(r.lista()
+        .unwrap()
+        .iter()
+        .map(|b| b.texto().unwrap().to_string())
+        .collect())
+}
+
+/// **A prova do 775.** Quem tem direito so na `loja` entrava numa tela
+/// vazia: o portao conferia `ler` na base VAZIA e recusava o `bancos`.
+/// Defeito reposto que derruba este teste: tirar o
+/// `Atividade::filtra_pela_ficha` do portao 3 (volta a recusa) ou o filtro
+/// do `op_bancos` (aparece o `rh`).
+#[test]
+fn quem_tem_direito_numa_base_lista_so_ela() {
+    let dir = dir_temp("bancos-775");
+    let (s, cad) = servidor_de_duas_bases(&dir);
+    let v = bancos_de(&s, &cad, "lojaadm").expect("o bancos recusou quem tem a loja");
+    assert_eq!(v, vec!["loja".to_string()]);
+}
+
+/// A regra de TABELA tambem faz a base aparecer: e o caso que a ficha preve
+/// (dar uma tabela a quem nao le a base), e o `SHOW DATABASES` do MySQL
+/// conta o privilegio de tabela. E o `monitorar` sozinho NAO: e poder de
+/// servidor, e daria a lista inteira a quem so olha o aquario.
+#[test]
+fn a_regra_de_tabela_mostra_a_base_e_o_monitorar_nao() {
+    let dir = dir_temp("bancos-775-tab");
+    let (s, cad) = servidor_de_duas_bases(&dir);
+    assert_eq!(
+        bancos_de(&s, &cad, "so_tabela").unwrap(),
+        vec!["rh".to_string()]
+    );
+    assert!(bancos_de(&s, &cad, "so_aquario").unwrap().is_empty());
+}
+
+/// O comportamento VELHO, que o filtro nao pode tirar: o supervisor e quem
+/// le no `"*"` continuam vendo todas as bases.
+#[test]
+fn o_supervisor_e_o_curinga_continuam_vendo_todas_as_bases() {
+    let dir = dir_temp("bancos-775-velho");
+    let (s, cad) = servidor_de_duas_bases(&dir);
+    for quem in ["chefe", "curinga"] {
+        let mut v = bancos_de(&s, &cad, quem).unwrap();
+        v.sort();
+        assert_eq!(v, vec!["loja".to_string(), "rh".to_string()], "{quem}");
+    }
+}
+
+/// E o anonimo, num servidor com cadastro, continua sem listar nada: o
+/// filtro tirou o portao da BASE, nao o do login.
+#[test]
+fn o_anonimo_continua_sem_listar_as_bases() {
+    let dir = dir_temp("bancos-775-anonimo");
+    let (s, _) = servidor_de_duas_bases(&dir);
+    let e = pede(&s, &Sessao::default(), r#""op":"bancos""#).unwrap_err();
+    assert!(e.to_string().to_lowercase().contains("login"), "{e}");
+}

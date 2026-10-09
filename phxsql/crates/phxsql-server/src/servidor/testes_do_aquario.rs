@@ -1108,3 +1108,75 @@ fn o_anel_que_sobe_vai_ao_aquario_log() {
     assert_eq!(aneis[0].texto_ou("tabela", ""), "clientes");
     assert!(aneis[0].inteiro_ou("ms", 0) >= 120_000);
 }
+
+// ------------------------------------------- o serial na telemetria (776)
+
+/// A atividade `chave` como a op `telemetria` a devolve.
+fn na_telemetria(s: &Arc<Servidor>, chave: &str) -> Json {
+    let r = pede(s, &Cadastro::default(), r#""op":"telemetria""#).unwrap();
+    r.campo("atividades")
+        .and_then(Json::lista)
+        .and_then(|l| l.iter().find(|x| x.texto_ou("id", "") == chave))
+        .unwrap_or_else(|| panic!("{chave} nao esta na telemetria: {}", r.escrever()))
+        .clone()
+}
+
+/// **A prova do 776.** A tela de Telemetria encerrava pelo `id`, que mira o
+/// que a conexao estiver fazendo QUANDO o clique chega: a op `telemetria`
+/// nao devolvia o serial. Agora devolve `tarefa` (`chave#serial`), e o
+/// encerrar por ela recusa a tarefa que ja trocou -- em vez de encerrar a
+/// seguinte, que ninguem viu. Defeito reposto que derruba este teste: tirar
+/// o `"tarefa"` do `para_json` da atividade.
+#[test]
+fn a_telemetria_devolve_a_tarefa_e_o_encerrar_mira_a_que_a_pessoa_viu() {
+    let dir = dir_temp("serial-776");
+    let s = servidor(&dir, Cadastro::default());
+    let a = s
+        .telemetria
+        .entrar("dados:91", "dados", "198.51.100.91", 91, crate::agora_ms())
+        .unwrap();
+    let serial = a.comecou_pedido("varrer", "ana", "loja", "vendas", crate::agora_ms());
+    let vista = na_telemetria(&s, "dados:91");
+    let tarefa = vista.texto_ou("tarefa", "").to_string();
+    assert_eq!(tarefa, format!("dados:91#{serial}"), "{}", vista.escrever());
+    assert_eq!(vista.campo("servico"), Some(&Json::Bool(false)));
+
+    // A pessoa olhou a primeira; a conexao terminou e comecou outra.
+    a.terminou_pedido("ana");
+    a.comecou_pedido("varrer", "ana", "loja", "vendas", crate::agora_ms());
+    let e = pede(
+        &s,
+        &Cadastro::default(),
+        &format!(r#""op":"telemetria_encerrar","id":"{tarefa}""#),
+    )
+    .unwrap_err();
+    assert!(e.to_string().contains("ja terminou"), "{e}");
+    assert!(
+        a.estado() != crate::telemetria::Estado::Encerrando,
+        "o clique na tarefa velha encerrou a nova, que ninguem viu"
+    );
+    a.terminou_pedido("ana");
+    s.telemetria.sair("dados:91");
+}
+
+/// A replicacao e tarefa do servico: a telemetria diz isso, para a tela
+/// esconder o botao pela MESMA pergunta com que o servidor recusa.
+#[test]
+fn a_telemetria_marca_a_tarefa_do_servico() {
+    let dir = dir_temp("servico-776");
+    let s = servidor(&dir, Cadastro::default());
+    let a = s
+        .telemetria
+        .entrar("dados:92", "dados", "198.51.100.92", 92, crate::agora_ms())
+        .unwrap();
+    a.comecou_pedido("replicar", "", "loja", "", crate::agora_ms());
+    let vista = na_telemetria(&s, "dados:92");
+    assert_eq!(
+        vista.campo("servico"),
+        Some(&Json::Bool(true)),
+        "{}",
+        vista.escrever()
+    );
+    a.terminou_pedido("");
+    s.telemetria.sair("dados:92");
+}
