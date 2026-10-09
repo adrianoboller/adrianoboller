@@ -30,6 +30,7 @@ E os **acréscimos medidos** do comparativo com o Phoenix Cast
 | SEC | `seguranca` | revisor adversário de segurança — o único gap real; antes era ad hoc |
 | RES-subagentes | `pesquisa-motor`, `pesquisa-bancada` | o J deixa de ser um só e coordena subagentes por domínio |
 | RES-rede | `pesquisa-rede` | transporte P2P, gossip e anti-entropia — o pilar do e-mail P2P é domínio novo (16/09/2026) |
+| Ferramentas | `plugins` | zelador dos 4 plugins instalados a pedido do dono (09/10/2026): Chrome DevTools MCP, Vercel, Supabase e oh-my-claudecode. Confere se estão carregados e decide SE uma tarefa pede um deles — ferramenta do trabalho, nunca dependência do produto |
 
 **Recusado por escopo, não por mérito:** a camada de domínio do Phoenix Cast
 (conectores, redes sociais, anúncios, marketplaces, atribuição, React) serve a

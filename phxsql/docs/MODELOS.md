@@ -766,6 +766,7 @@ e o orquestrador o aplica na convocação.
 | `pesquisa-bancada` | J-sub | **meio** | a medição é roteirizada; a interpretação do número é projeto |
 | `pesquisa-rede` | J-sub | **forte** | transporte P2P, gossip e anti-entropia — o pilar do e-mail P2P é domínio novo, e desenho de rede é projeto e risco |
 | `seguranca` | SEC | **forte** (sempre o mais forte) | adversário; para a segurança, a saída mais conservadora |
+| `plugins` | Ferramentas | **leve** | conferência roteirizada (`claude plugin list`, `claude mcp list`) e uma decisão por tabela: o resultado se confere sozinho. Não usa o plugin nem publica nada — quem usa é o papel da tarefa, com a ordem do dono quando a ação sai para fora |
 
 **Papéis que NÃO viraram agente, e por quê:** A (orquestrador) é esta sessão —
 não se delega a si mesmo; D (zelador) e I (versionador/backup) rodam por
