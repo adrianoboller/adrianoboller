@@ -578,6 +578,19 @@ pub fn comando_empilhado(entrada: &str) -> bool {
     let Ok(simbolos) = lexico::analisar(entrada) else {
         return false;
     };
+    empilhado_nos_simbolos(simbolos, entrada)
+}
+
+/// O corpo do [`comando_empilhado`], sobre simbolos ja lidos -- e o motor que
+/// a classe «empilhado» do observador de injecao (`crate::sinais`, pedido
+/// 495) chama, para que a decisao «e um segundo comando?» exista UMA vez.
+///
+/// O `texto` so serve ao `CREATE VIEW`, que guarda o corpo pela posicao do
+/// caractere. Quem nao tem o texto passa `""`, e a resposta nao muda: com o
+/// texto, a visao consome todos os simbolos e nao sobra nada; sem ele, o
+/// corpo vazio nao se analisa e a sintaxe falha -- os dois caminhos dao
+/// `false`.
+pub(crate) fn empilhado_nos_simbolos(simbolos: Vec<Simbolo>, entrada: &str) -> bool {
     if simbolos.is_empty() {
         return false;
     }

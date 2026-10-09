@@ -132,6 +132,7 @@ pub mod diretiva;
 pub mod dml;
 pub mod lexico;
 pub mod rotina;
+pub mod sinais;
 pub mod sintaxe;
 pub mod traduzir;
 pub mod transacao;
@@ -146,6 +147,7 @@ pub use dml::{
     PlanoDml, SeExistir,
 };
 pub use lexico::{Comparador, Simbolo, Token};
+pub use sinais::{digital, sinais, Sinais};
 pub use sintaxe::{
     analisar, analisar_comando, analisar_comando_com, comando_empilhado, Alvo, ColunaPedida,
     Comando, Condicao, FuncaoAgregada, ItemProjetado, Literal, Onde, Ordenacao, Projecao, Selecao,

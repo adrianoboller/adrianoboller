@@ -177,6 +177,9 @@ struct Corrente {
     inicio_ms: i64,
     /// Em que ponto do trabalho ela esta -- so preenchido em fase cancelavel.
     fase: String,
+    /// A digital do `sql` em curso (F1 do 495), para a tarefa VIVA ser
+    /// julgada contra o mesmo habitual que o pedido terminado vai somar.
+    digital: Option<u64>,
 }
 
 /// Uma atividade viva: uma conexao, um pedido da tela, um laco de fundo.
@@ -351,6 +354,7 @@ impl Atividade {
             c.tabela = tabela.to_string();
             c.inicio_ms = agora_ms;
             c.fase.clear();
+            c.digital = None;
         }
         if let Ok(mut i) = self.pedido_desde.lock() {
             *i = Some(Instant::now());
@@ -376,6 +380,7 @@ impl Atividade {
             c.database.clear();
             c.tabela.clear();
             c.fase.clear();
+            c.digital = None;
             c.inicio_ms = 0;
             if !usuario.is_empty() {
                 c.usuario = usuario.to_string();
@@ -402,6 +407,14 @@ impl Atividade {
     /// Marca que soltou a trava de dados.
     pub fn sem_a_trava(&self) {
         self.com_trava.store(false, Ordering::Relaxed);
+    }
+
+    /// A digital do `sql` deste pedido. Chamado pelo `op_sql`, atras do
+    /// portao da telemetria.
+    pub fn definir_digital(&self, digital: Option<u64>) {
+        if let Ok(mut c) = self.dentro.lock() {
+            c.digital = digital;
+        }
     }
 
     /// Abre uma fase que o encerramento alcanca.
@@ -650,6 +663,7 @@ impl Atividade {
                 &c.op,
                 &c.database,
                 &c.tabela,
+                c.digital,
                 trabalhando.saturating_mul(1_000),
                 agora_ms,
             ),

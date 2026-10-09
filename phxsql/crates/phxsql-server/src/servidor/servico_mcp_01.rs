@@ -102,6 +102,7 @@ impl crate::mcp::Executor for ExecutorLocal {
             duracao_ms: duracao,
             us: decorrido.as_micros().max(1) as u64,
             espera_us: crate::aquario::base::tomar_espera(),
+            digital: crate::aquario::base::tomar_digital(),
             erro: resultado.as_ref().err().map(|e| e.to_string()),
             ..objeto_do_pedido(&linha, &resultado)
         });

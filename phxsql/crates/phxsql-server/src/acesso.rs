@@ -65,6 +65,10 @@ pub struct Acesso {
     /// recado de quem executou para o `anotar`, e a contagem tem arquivo
     /// proprio.
     pub desfecho: crate::aquario::contagem::Desfecho,
+    /// A digital do `sql` (`phxsql_sql::digital`, F1 do 495): a chave do
+    /// pedido na linha de base do aquario. So em memoria, como o `desfecho`,
+    /// e so com a telemetria ligada -- `None` em toda outra op.
+    pub digital: Option<u64>,
 }
 
 impl Acesso {
@@ -124,6 +128,7 @@ impl Acesso {
             us: j.inteiro_ou("us", 0).max(0) as u64,
             espera_us: j.inteiro_ou("espera_us", 0).max(0) as u64,
             desfecho: Default::default(),
+            digital: None,
         })
     }
 }

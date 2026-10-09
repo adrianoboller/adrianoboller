@@ -153,6 +153,18 @@ fn main() {
     let so_sim = cronometrar(voltas, n, || simbolos.iter().flatten().map(|s| classes_dos_simbolos(s) as usize).sum());
     let so_coment = cronometrar(voltas, n, || legit.iter().map(|x| varrer_comentarios(&x.0) as usize).sum());
     let digital = cronometrar(voltas, n, || simbolos.iter().flatten().map(|s| fnv1a64(&normalizar(s)) as usize).sum());
+    // A F1 de producao (phxsql_sql::sinais e ::digital), sobre os simbolos
+    // COM comentario e sem String -- o numero que o desenho mandou remedir.
+    let com_coment: Vec<Vec<lexico::Simbolo>> = legit
+        .iter()
+        .filter_map(|x| lexico::analisar_com_comentarios(&x.0).ok())
+        .collect();
+    let f1_sinais = cronometrar(voltas, com_coment.len(), || {
+        com_coment.iter().map(|s| phxsql_sql::sinais(s).vazio() as usize).sum()
+    });
+    let f1_digital = cronometrar(voltas, com_coment.len(), || {
+        com_coment.iter().map(|s| phxsql_sql::digital(s) as usize).sum()
+    });
     let flag = AtomicBool::new(black_box(false));
     let desl = cronometrar(voltas, n * 1000, || {
         let mut c = 0;
@@ -172,6 +184,8 @@ fn main() {
     println!("     .. so classes dos simbolos             : {:.0} / {:.0} / {:.0}", so_sim.0, so_sim.1, so_sim.2);
     println!("     .. so varredura de comentario          : {:.0} / {:.0} / {:.0}", so_coment.0, so_coment.1, so_coment.2);
     println!("   impressao digital (normalizar + fnv1a)   : {:.0} / {:.0} / {:.0}", digital.0, digital.1, digital.2);
+    println!("   F1 phxsql_sql::sinais (4 classes)      : {:.0} / {:.0} / {:.0}", f1_sinais.0, f1_sinais.1, f1_sinais.2);
+    println!("   F1 phxsql_sql::digital (sem String)    : {:.0} / {:.0} / {:.0}", f1_digital.0, f1_digital.1, f1_digital.2);
     println!("   DESLIGADO: leitura de um AtomicBool      : {:.2} / {:.2} / {:.2}", desl.0, desl.1, desl.2);
 }
 

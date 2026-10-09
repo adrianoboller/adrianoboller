@@ -55,6 +55,26 @@ impl Servidor {
             .unwrap_or_default()
     }
 
+    /// A digital deste `sql` para a linha de base do aquario (F1 do 495).
+    ///
+    /// O portao vem ANTES do lexico: desligada, a telemetria custa um `load`
+    /// aqui e nada mais. Ligada, o texto se le uma vez a mais -- os detectores
+    /// de diretiva, transacao e rotina ja o leem cada um por si, e nenhum
+    /// devolve os simbolos. Antes de qualquer outro caminho, para que o `sql`
+    /// recusado tambem tenha digital: o evento existe para a tentativa.
+    fn digital_do_sql(&self, texto: &str) {
+        if !self.telemetria.ligada() {
+            return;
+        }
+        let digital = phxsql_sql::lexico::analisar_com_comentarios(texto)
+            .ok()
+            .map(|s| phxsql_sql::digital(&s));
+        crate::aquario::base::anotar_digital(digital);
+        if let Some(a) = crate::telemetria::corrente() {
+            a.definir_digital(digital);
+        }
+    }
+
     /// `sql`: um `SELECT` simples traduzido para as operacoes que ja existem.
     ///
     /// # O portao continua sendo UM
@@ -87,6 +107,7 @@ impl Servidor {
                 "informe \"texto\" com o comando SQL".into(),
             ));
         }
+        self.digital_do_sql(&texto);
         // CREATE/ALTER/DROP USER, antes de tudo: `rotina::comando` reclama
         // todo CREATE e todo DROP para si, e `CREATE USER` chegando la vira
         // erro de sintaxe pedindo TRIGGER. Uma LINHA de despacho, de

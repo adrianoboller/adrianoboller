@@ -12,6 +12,7 @@ da sessão para não morrerem com ela.
 | `premissa_sec.py` | se a tautologia do `ARSENAL` executa no binário atual | `python3 premissa_sec.py` (sobe servidor próprio, porta 6795) |
 | `prova_215.py` | se o 215 ligado bloqueia o IP por SQL legítimo sem `;` | `python3 prova_215.py` (porta 6797) |
 | `rtt_sql.py` | ida e volta de um pedido `sql` pelo soquete | `python3 rtt_sql.py` (porta 6799) |
+| `catraca_sinais.py` | a catraca da F1: comandos legitimos do repositorio acusados por `phxsql_sql::sinais` (teto `TETO_SINAIS_NO_LEGITIMO`), e todo ataque do corpo de deteccao acusado | `python3 catraca_sinais.py --catraca` (refaz os dois extratores e roda o exemplo `sinais-no-legitimo` do `phxsql-sql`) |
 | `medida-1.txt`, `medida-2.txt` | as saídas das duas corridas de 24/09/2026 | — |
 
 Os `.jsonl` são saídas e não se versionam: os extratores os refazem, e

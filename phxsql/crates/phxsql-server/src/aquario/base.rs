@@ -5,6 +5,15 @@
 //! metades de 30 min, por chave op + `database.tabela` (ou a digital, para o
 //! `sql`). Alarma com n ≥ 20, z ≥ 4 e servico ≥ 250 ms.
 //!
+//! # Por que o `sql` entra pela DIGITAL
+//!
+//! Todo `sql` tem a mesma op e, no mais das vezes, a mesma base: numa chave
+//! so, o `SELECT` de 300 ms legitimo alarmaria contra o habitual dos `SELECT`
+//! de 1 ms -- alarme falso na TV e pior que alarme nenhum. A digital
+//! (`phxsql_sql::digital`, F1 do 495) e a forma da consulta com todo literal
+//! virando marcador: o mesmo `SELECT` com outro nome no `WHERE` cai na mesma
+//! linha, e outro `SELECT` cai noutra.
+//!
 //! # Por que `ln`, e nao o tempo cru
 //!
 //! Tempo de banco tem cauda longa: z sobre µs crus acusa a cauda normal como
@@ -67,6 +76,24 @@ thread_local! {
     /// muitos lugares que nao veem a trava. Quem monta o `Acesso` a TOMA
     /// (zera), e por isso a espera de um pedido nao vaza para o seguinte.
     static ESPERA_DO_PEDIDO_US: Cell<u64> = const { Cell::new(0) };
+
+    /// A digital do `sql` do pedido em curso nesta thread.
+    ///
+    /// Thread local pelo mesmo motivo da espera: quem le o texto do `sql` (o
+    /// `op_sql`) e quem monta o `Acesso` sao o mesmo laco de pedido, e entre
+    /// os dois ha o `despachar` inteiro. Quem monta o `Acesso` a TOMA.
+    static DIGITAL_DO_PEDIDO: Cell<Option<u64>> = const { Cell::new(None) };
+}
+
+/// Guarda a digital do `sql` desta thread. Chamado pelo `op_sql`, so com a
+/// telemetria ligada: e la que o portao vem antes do lexico.
+pub fn anotar_digital(digital: Option<u64>) {
+    DIGITAL_DO_PEDIDO.with(|c| c.set(digital));
+}
+
+/// A digital do pedido desta thread, zerando-a.
+pub fn tomar_digital() -> Option<u64> {
+    DIGITAL_DO_PEDIDO.with(|c| c.replace(None))
 }
 
 /// Soma espera de trava ao pedido desta thread. Chamado por
@@ -315,19 +342,23 @@ fn julgar(habitual: Welford, servico_us: u64) -> Habitual {
 /// Um lugar so para o pedido que termina e para a tarefa viva: a replicacao
 /// excluida de um e nao do outro pintaria o `replicar_aguardar` de anormal
 /// so enquanto ele esta vivo.
-fn chave_do_pedido<'a>(op: &'a str, database: &'a str, tabela: &'a str) -> Option<Chave<'a>> {
+fn chave_do_pedido<'a>(
+    op: &'a str,
+    database: &'a str,
+    tabela: &'a str,
+    digital: Option<u64>,
+) -> Option<Chave<'a>> {
     // A replica espera POR DESENHO: `replicar_aguardar` de 1 s e o habitual
     // dele, e sem esta exclusao eram 14 dos 51 alarmes da A0.
     if op.is_empty() || OPS_DE_REPLICACAO.contains(&op) {
         return None;
     }
-    // O `sql` precisa da DIGITAL (F1 do 495), que ainda nao existe: sem
-    // ela todo `sql` cairia numa chave so, e o `SELECT` de 300 ms legitimo
-    // alarmaria contra o habitual dos `SELECT` de 1 ms -- alarme falso na
-    // TV e pior que alarme nenhum. PONTO MARCADO: quando o `Acesso`
-    // trouxer a digital, a chave e `Chave::Digital(digital)`.
+    // O `sql` entra pela digital (ver o topo do arquivo). Sem ela -- o
+    // lexico recusou o texto, ou a telemetria ligou no meio do pedido --
+    // fica FORA, e nunca na chave op + tabela: ali todo `sql` dividiria um
+    // habitual so.
     if op == "sql" {
-        return None;
+        return digital.map(Chave::Digital);
     }
     Some(Chave::Op {
         op,
@@ -496,7 +527,9 @@ impl BaseDeConsultas {
         if acesso.us == 0 {
             return Habitual::SemBase;
         }
-        let Some(chave) = chave_do_pedido(&acesso.op, &acesso.database, &acesso.tabela) else {
+        let Some(chave) =
+            chave_do_pedido(&acesso.op, &acesso.database, &acesso.tabela, acesso.digital)
+        else {
             return Habitual::SemBase;
         };
         let servico_us = acesso.us.saturating_sub(acesso.espera_us);
@@ -511,10 +544,11 @@ impl BaseDeConsultas {
         op: &str,
         database: &str,
         tabela: &str,
+        digital: Option<u64>,
         servico_us: u64,
         agora_ms: i64,
     ) -> Habitual {
-        let Some(chave) = chave_do_pedido(op, database, tabela) else {
+        let Some(chave) = chave_do_pedido(op, database, tabela, digital) else {
             return Habitual::SemBase;
         };
         match self.dentro.lock() {
@@ -648,6 +682,28 @@ mod testes {
             .anotar(&acesso("inserir", 5_000_000, 0))
             .desvio()
             .is_some());
+    }
+
+    /// O `sql` entra pela digital: duas formas, duas linhas. Sem a digital
+    /// (a chave do `sql` voltando a op + tabela), os dois `SELECT` dividem um
+    /// habitual, e o de 300 ms legitimo alarma contra o de 1 ms.
+    #[test]
+    fn cada_forma_de_sql_tem_o_seu_habitual() {
+        let b = BaseDeConsultas::default();
+        let sql = |digital: u64, us: u64| Acesso {
+            digital: Some(digital),
+            ..acesso("sql", us, 0)
+        };
+        for _ in 0..25 {
+            b.anotar(&sql(0xA, 1_000));
+        }
+        for _ in 0..25 {
+            assert_eq!(b.anotar(&sql(0xB, 300_000)).desvio(), None);
+        }
+        assert_eq!(b.chaves(), 2);
+        assert_eq!(b.ler(Chave::Digital(0xA)).unwrap().n, 25);
+        // E a forma rapida continua alarmando contra o habitual DELA.
+        assert!(b.anotar(&sql(0xA, 300_000)).desvio().is_some());
     }
 
     #[test]

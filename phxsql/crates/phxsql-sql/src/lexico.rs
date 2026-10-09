@@ -76,6 +76,18 @@ pub enum Token {
     /// TEXTO em vez de por um token seria reabrir a porta que os parametros
     /// existem para fechar -- um valor viraria pedaco de comando.
     Parametro(usize),
+    /// Um comentario (`-- ...` ou `/* ... */`), so quando pedido por
+    /// [`analisar_com_comentarios`]. O [`analisar`] de sempre nunca o emite:
+    /// a sintaxe nao sabe o que fazer com ele, e nao precisa.
+    ///
+    /// Guarda so QUANTAS aspas simples havia dentro, nunca o texto: o
+    /// comentario pode carregar dado (o resto da consulta que ele engoliu), e
+    /// o observador do pedido 495 precisa so da paridade -- aspa impar num
+    /// comentario e a aspa de fechamento que o modelo da aplicacao tinha e
+    /// a injecao escondeu.
+    Comentario {
+        aspas: usize,
+    },
 }
 
 impl Token {
@@ -127,6 +139,7 @@ impl Token {
             Token::Menos => "-".into(),
             Token::Barra => "/".into(),
             Token::Parametro(_) => "?".into(),
+            Token::Comentario { .. } => "/* */".into(),
         }
     }
 
@@ -206,6 +219,21 @@ pub struct Simbolo {
 /// Aceita comentario de linha (`-- ate o fim`) e de bloco (`/* ... */`), que
 /// e o que qualquer cliente ODBC manda junto sem avisar.
 pub fn analisar(entrada: &str) -> Result<Vec<Simbolo>> {
+    lexar(entrada, false)
+}
+
+/// O mesmo lexico, com os comentarios na lista como [`Token::Comentario`].
+///
+/// Existe para o observador de injecao (`crate::sinais`, pedido 495): a
+/// classe «comentario que engole aspa» e invisivel depois que o comentario
+/// some. E o MESMO motor do [`analisar`] com um interruptor, e nao um segundo
+/// lexico: dois lexicos discordariam um dia sobre onde uma aspa fecha, e o
+/// observador acusaria o que o motor leu como dado.
+pub fn analisar_com_comentarios(entrada: &str) -> Result<Vec<Simbolo>> {
+    lexar(entrada, true)
+}
+
+fn lexar(entrada: &str, com_comentarios: bool) -> Result<Vec<Simbolo>> {
     let b: Vec<char> = entrada.chars().collect();
     let mut i = 0usize;
     let mut saida = Vec::new();
@@ -219,8 +247,12 @@ pub fn analisar(entrada: &str) -> Result<Vec<Simbolo>> {
         // Comentarios. Vem antes dos operadores porque `--` comeca com `-`, e
         // `/*` com `/`. O `-` e o `/` sozinhos caem nos operadores adiante.
         if c == '-' && b.get(i + 1) == Some(&'-') {
+            let inicio = i;
             while i < b.len() && b[i] != '\n' {
                 i += 1;
+            }
+            if com_comentarios {
+                saida.push(comentario(&b[inicio + 2..i], inicio));
             }
             continue;
         }
@@ -236,6 +268,9 @@ pub fn analisar(entrada: &str) -> Result<Vec<Simbolo>> {
                     break;
                 }
                 i += 1;
+            }
+            if com_comentarios {
+                saida.push(comentario(&b[inicio + 2..i - 2], inicio));
             }
             continue;
         }
@@ -361,6 +396,15 @@ pub fn analisar(entrada: &str) -> Result<Vec<Simbolo>> {
         });
     }
     Ok(saida)
+}
+
+fn comentario(dentro: &[char], posicao: usize) -> Simbolo {
+    Simbolo {
+        token: Token::Comentario {
+            aspas: dentro.iter().filter(|c| **c == '\'').count(),
+        },
+        posicao,
+    }
 }
 
 /// Troca cada `Token::Parametro(n)` pelo literal de `parametros[n]`, ANTES de

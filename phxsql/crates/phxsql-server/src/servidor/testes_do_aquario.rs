@@ -966,3 +966,70 @@ fn o_painel_ve_os_bits_e_o_nivel_e_a_mesma_cor() {
         .unwrap_or_default()
         .contains("trava_reentrante"));
 }
+
+// ------------------------------------------- a digital do `sql` (F1 do 495)
+
+/// O `sql` entra na linha de base pela DIGITAL, pelo caminho de verdade (o
+/// executor local: `despachar` e `anotar`). O mesmo `SELECT` com outro
+/// literal soma na mesma linha; outra forma abre outra. Tirar o
+/// `digital_do_sql` do `op_sql`, ou o `tomar_digital` do `Acesso`, deixa o
+/// `sql` fora da base e este teste cai.
+#[test]
+fn o_sql_entra_na_base_pela_digital() {
+    let dir = dir_temp("digital-sql");
+    let s = servidor(&dir, Cadastro::default());
+    assert!(s.telemetria.ligada(), "a telemetria nasce ligada");
+    com_tabela(&s);
+    let ex = ExecutorLocal::novo(Arc::clone(&s), "(teste)");
+    use crate::mcp::Executor;
+    let sql = |texto: &str| {
+        let mut p = Json::analisar(r#"{"op":"sql","database":"b"}"#).unwrap();
+        p.definir("token", Json::texto_de("t"));
+        p.definir("texto", Json::texto_de(texto));
+        ex.executar(&p).unwrap();
+    };
+    let digital = |texto: &str| {
+        phxsql_sql::digital(&phxsql_sql::lexico::analisar_com_comentarios(texto).unwrap())
+    };
+    let base = s.telemetria.aquario().base();
+    let antes = base.chaves();
+    for id in 1..=3 {
+        sql(&format!("SELECT * FROM c WHERE id = {id}"));
+    }
+    sql("SELECT id FROM c");
+    let a = base
+        .ler(crate::aquario::base::Chave::Digital(digital(
+            "SELECT * FROM c WHERE id = 99",
+        )))
+        .expect("o SELECT por id tem linha propria na base");
+    assert_eq!(a.n, 3);
+    let b = base
+        .ler(crate::aquario::base::Chave::Digital(digital(
+            "SELECT id FROM c",
+        )))
+        .expect("a outra forma tem a sua");
+    assert_eq!(b.n, 1);
+    assert_eq!(base.chaves(), antes + 2);
+    // O pedido seguinte nao herda a digital: ela se toma uma vez.
+    assert_eq!(crate::aquario::base::tomar_digital(), None);
+}
+
+/// Desligada, o `op_sql` nao le o texto para a digital: o portao vem antes
+/// do lexico.
+#[test]
+fn telemetria_desligada_o_sql_nao_calcula_digital() {
+    let dir = dir_temp("digital-desligada");
+    let s = servidor(&dir, Cadastro::default());
+    com_tabela(&s);
+    s.telemetria.desligar();
+    crate::aquario::base::tomar_digital();
+    let mut ses = Sessao::default();
+    let pedido = r#"{"token":"t","op":"sql","database":"b","texto":"SELECT * FROM c"}"#;
+    let (_, _, r) = s.despachar(pedido, &mut ses, "127.0.0.1");
+    r.unwrap();
+    assert_eq!(crate::aquario::base::tomar_digital(), None);
+    s.telemetria.ligar(crate::agora_ms());
+    let (_, _, r) = s.despachar(pedido, &mut ses, "127.0.0.1");
+    r.unwrap();
+    assert!(crate::aquario::base::tomar_digital().is_some());
+}

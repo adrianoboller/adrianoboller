@@ -1178,6 +1178,7 @@ impl Servidor {
             codigo: resultado.as_ref().err().map(|e| e.codigo()).unwrap_or(0),
             us: decorrido.as_micros().max(1) as u64,
             espera_us: crate::aquario::base::tomar_espera(),
+            digital: crate::aquario::base::tomar_digital(),
         });
         let _ = http::responder_json(fluxo, codigo_http, &Json::objeto(campos));
     }
@@ -1651,6 +1652,7 @@ impl Servidor {
             duracao_ms: ms,
             us: decorrido.as_micros().max(1) as u64,
             espera_us: crate::aquario::base::tomar_espera(),
+            digital: crate::aquario::base::tomar_digital(),
             erro: resultado.as_ref().err().map(|e| e.to_string()),
             desfecho: self.desfecho_para_contar(&op, resultado.as_ref().ok()),
             // O objeto sai do proprio pedido: e o unico ponto que ve os dois
