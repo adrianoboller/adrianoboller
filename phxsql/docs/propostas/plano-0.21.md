@@ -70,3 +70,16 @@ Abertura da 0.21, 09/10/2026. Prioridade do dono: 454, 455, 495, 496 e 707
   **PhxZipCmd** (`phxzipcmd`); o pacote é `phxzip-<versão>-<plataforma>`.
 - Ficam com o J, sem subir: a porta do PhxZipWeb (o contrato sugere 7700) e o
   PhxZipCmd falando pela fábrica de idiomas (recomendado: sim).
+
+## Decisão do dono, 09/10/2026 — «alta segurança e fidelidade dos dados»
+
+A ordem do resto da 0.21 passa a ser **segurança antes de tudo**:
+
+1. **769/P0** — todo alarme declarado ganha produtor (o `FirewallBloqueou` primeiro).
+2. **765/766/767** — a camada única de proteção (P1), o token de passo acima (P14), o prazo de comando (P2) e as fatias P3–P13, com **proteger de fábrica** e a promessa «protege e bloqueia».
+3. **770** — endurecer os padrões de fábrica (TLS exigido, senha forte, sessão curta), mesmo quebrando cliente antigo.
+4. **339** — os três achados do parecer externo; **338** — a revisão independente (o que é nosso entra; o revisor de fora é gate externo).
+5. **299** — a atomicidade do commit entre tabelas atravessa a réplica (fidelidade dos dados).
+6. Só então **A15/A16** do aquário.
+
+As exceções à pétrea «guarda nova entra pedida» (765/766/767 e 770) foram decididas pelo dono e valem só para esses pedidos.
