@@ -44,3 +44,16 @@ Respostas do dono às perguntas da especificação (`docs/propostas/phoenix-stud
   cada relação alterada (a regra primordial «nunca se mata o pai que tem filhos» vale para o app
   gerado nos dois bancos).
 - **Escopo:** só **PS0001–PS0003** entram na conta da versão; PS0004–PS0020 nascem ⏸.
+
+## Interface: o mais veloz ganha (09/10/2026, noite)
+
+Palavra do dono, depois da bancada de `docs/propostas/ui-wasm-2026-10.md`: «O mais veloz ganha.»
+
+Medido na mesma tela (tabela de 50 linhas, filtro, formulário, Chromium, 15 corridas): JS puro
+0,96 KB gz e 22,8 ms até a 1ª linha; Leptos 62,2 KB e 50,0 ms; Yew 76,5 KB e 53,8 ms; React
+69,9 KB e 75,1 ms; Dioxus 151–191 KB e 65–82 ms. Só o JS puro fica separado de todos.
+
+Decisão: **a interface continua em JS puro**; Leptos, Yew, Dioxus e React não entram. A diretriz
+«Rust sempre que possível» vale para o resto do produto; na tela, velocidade medida manda. O
+`'wasm-unsafe-eval'` não entra na CSP. O endurecimento segue pelo que a bancada achou: os
+`innerHTML` (9 linhas no nosso JS, 73 no `phx-grid`) são o ponto de XSS a fechar.
